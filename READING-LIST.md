@@ -15,6 +15,8 @@
 
 ## 1. Systems Performance: Enterprise and the Cloud 2nd — Brendan Gregg
 
+> 笔记目录：[Systems-Performance-2nd/](./Systems-Performance-2nd/)
+
 > 性能调优总纲：perf、NUMA、软中断、网卡调优，HFT 排抖动第一本。
 
 | 章节 | 标签 | HFT 关联 |
@@ -32,6 +34,8 @@
 ---
 
 ## 2. Linux Kernel Development 3rd — Robert Love
+
+> 笔记目录：[Linux-Kernel-Development-3rd/](./Linux-Kernel-Development-3rd/)
 
 > 内核调度、中断、CFS、CPU 隔离、绑核底层原理，承接 TLPI。
 
@@ -53,6 +57,8 @@
 
 ## 3. Understanding the Linux Virtual Memory Manager — Mel Gorman
 
+> 笔记目录：[Linux-Virtual-Memory-Manager/](./Linux-Virtual-Memory-Manager/)
+
 > Linux 虚拟内存、slab、THP、NUMA 内存、伪共享，内存池/订单簿优化。
 
 | 章节 | 标签 | HFT 关联 |
@@ -70,6 +76,8 @@
 ---
 
 ## 4. Linux Kernel Networking — Rami Rosen
+
+> 笔记目录：[Linux-Kernel-Networking/](./Linux-Kernel-Networking/)
 
 > 内核 TCP/UDP/IGMP/NAPI/RSS，交易所 UDP 组播内核实现，对接 UNP。
 
@@ -91,6 +99,8 @@
 
 ## 5. Computer Architecture: A Quantitative Approach 6th — Hennessy & Patterson
 
+> 笔记目录：[Computer-Architecture-6th/](./Computer-Architecture-6th/)
+
 > CPU 缓存、MESI、NUMA 访存、流水线，无锁代码硬件优化依据。
 
 | 章节 | 标签 | HFT 关联 |
@@ -108,6 +118,8 @@
 
 ## 6. Trading and Exchanges — Larry Harris
 
+> 笔记目录：[Trading-and-Exchanges/](./Trading-and-Exchanges/)
+
 > 市场微观、LOB、交易所撮合、机房托管，HFT 业务基石。
 
 | 章节 | 标签 | HFT 关联 |
@@ -123,6 +135,8 @@
 ---
 
 ## 7. BPF Performance Tools — Brendan Gregg
+
+> 笔记目录：[BPF-Performance-Tools/](./BPF-Performance-Tools/)
 
 > eBPF、XDP 小包过滤、内核观测，DPDK 配套调试，放在末尾。
 
