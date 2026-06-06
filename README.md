@@ -11,6 +11,10 @@
     高频交易系统开发实战
     覆盖：硬件优化、内核旁路、无锁编程、订单簿、低延迟网络、HFT专属策略
 
+## 📖 HFT 英文原版精读清单
+
+7 册必读书目（HFT 章节裁剪版）+ DPDK/RDMA 官方文档，含与 `HFT-Low-Latency-Practice` 各章映射表 → 见 [READING-LIST.md](./READING-LIST.md)
+
 ## 🛠️ 技术栈
 - 主力语言：Rust
 - 核心库：RustQuant、Barter-rs、Tokio、io_uring
