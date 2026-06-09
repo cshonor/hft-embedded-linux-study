@@ -1,4 +1,4 @@
-# Ch 5 交易规则与监管
+# Ch 6 交易规则与监管
 
 > **Trading and Exchanges** · Larry Harris · **选读**
 
