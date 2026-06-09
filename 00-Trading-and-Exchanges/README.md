@@ -20,14 +20,15 @@
 | Ch 2 交易故事 · Trading Stories | [chapter-02-交易故事.md](./chapter-02-交易故事.md) |
 | Ch 3 交易产业 · The Trading Industry | [chapter-03-交易产业.md](./chapter-03-交易产业.md) |
 | Ch 4 交易指令与订单类型 · Orders | [chapter-04-交易指令与订单类型.md](./chapter-04-交易指令与订单类型.md) |
-| Ch 5 限价订单簿 · LOB | [chapter-05-限价订单簿LOB.md](./chapter-05-限价订单簿LOB.md) |
+| Ch 5 市场结构 · Market Structures | [chapter-05-市场结构.md](./chapter-05-市场结构.md) |
+| 限价订单簿 · LOB（深化） | [chapter-06-限价订单簿LOB.md](./chapter-06-限价订单簿LOB.md) |
 
 ## 选读
 
 | 主题 | 笔记文件 | 升级条件 |
 |------|----------|----------|
-| 交易规则 / 透明度 / 监管 | [chapter-06-交易规则与监管.md](./chapter-06-交易规则与监管.md) | 上实盘前建议细读 |
-| 经纪 / 清算 / 结算 | [chapter-07-经纪清算与结算.md](./chapter-07-经纪清算与结算.md) | 对接券商/交易所时细读 |
+| 交易规则 / 透明度 / 监管 | [chapter-07-交易规则与监管.md](./chapter-07-交易规则与监管.md) | 上实盘前建议细读 |
+| 经纪 / 清算 / 结算 | [chapter-08-经纪清算与结算.md](./chapter-08-经纪清算与结算.md) | 对接券商/交易所时细读 |
 
 ## 跳过（无笔记文件）
 

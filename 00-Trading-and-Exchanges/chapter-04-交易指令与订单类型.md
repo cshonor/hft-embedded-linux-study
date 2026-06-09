@@ -186,4 +186,4 @@ MIT：   逆 momentum → 稳定市场
 ## 相关章节
 
 - 上一章：[chapter-03-交易产业.md](./chapter-03-交易产业.md)
-- 下一章：[chapter-05-限价订单簿LOB.md](./chapter-05-限价订单簿LOB.md)
+- 下一章：[chapter-05-市场结构.md](./chapter-05-市场结构.md)
