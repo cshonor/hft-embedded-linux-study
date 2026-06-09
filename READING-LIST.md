@@ -1,8 +1,8 @@
 # HFT 必读书目与章节精读清单
 
-本清单锁定 **7 本英文原版**（已剔除 *Programming Rust*），按 HFT 低延迟学习先后排序。每本仅保留与热路径相关的章节，其余可跳过或作目录查阅。
+本清单锁定 **8 本**英文原版（含 CSAPP，已剔除 *Programming Rust*），按 HFT 低延迟学习先后排序。每本仅保留与热路径相关的章节，其余可跳过或作目录查阅。
 
-**阅读顺序：** 1 → 2 → 3 → 4 → 5 → 6 → 7  
+**阅读顺序：** 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8  
 **补充资料：** DPDK、RDMA 仅读官方英文文档，不另加实体书。
 
 | 标签 | 含义 |
@@ -116,7 +116,31 @@
 
 ---
 
-## 6. Trading and Exchanges — Larry Harris
+## 6. Computer Systems: A Programmer's Perspective 3rd — Bryant & O'Neill
+
+> 笔记目录：[CSAPP-3rd/](./CSAPP-3rd/)
+
+> 程序员视角的系统实践：缓存优化、虚拟内存、网络 I/O、并发，Hennessy 的落地配套。
+
+| 章节 | 标签 | HFT 关联 |
+|------|------|----------|
+| Ch 1 A Tour of Computer Systems | **选读** | 程序生命周期、Amdahl 定律 |
+| Ch 3 Machine-Level Programs | **选读** | 热路径反汇编、栈帧 |
+| Ch 4 Processor Architecture | **精读** | 流水线、冒险、分支预测 |
+| Ch 5 Optimizing Program Performance | **精读** | 编译优化、循环、消除内存引用 |
+| **Ch 6 The Memory Hierarchy** | **精读** | 局部性、Cache 行、伪共享 |
+| **Ch 9 Virtual Memory** | **精读** | 页表、TLB、mmap、大页 |
+| Ch 10 System-Level I/O | **选读** | epoll、非阻塞 I/O |
+| **Ch 11 Network Programming** | **精读** | Socket、TCP/UDP、并发服务器 |
+| **Ch 12 Concurrent Programming** | **精读** | 线程、互斥、无锁铺垫 |
+| Ch 2 Information Representation | **跳过** | 除非做二进制协议解析 |
+| Ch 7 Linking / Ch 8 ECF | **跳过** | 链接与信号，非热路径核心 |
+
+**HFT 产出：** 从程序员角度落地 Hennessy 的缓存/一致性理论；并发与网络编程直接对接引擎开发。
+
+---
+
+## 7. Trading and Exchanges — Larry Harris
 
 > 笔记目录：[Trading-and-Exchanges/](./Trading-and-Exchanges/)
 
@@ -134,7 +158,7 @@
 
 ---
 
-## 7. BPF Performance Tools — Brendan Gregg
+## 8. BPF Performance Tools — Brendan Gregg
 
 > 笔记目录：[BPF-Performance-Tools/](./BPF-Performance-Tools/)
 
@@ -173,12 +197,12 @@
 |----------|------------|----------|
 | ch01 高频交易基础与生态 | Harris | — |
 | ch02 交易所架构与撮合原理 | Harris | Rosen（组播行情） |
-| ch03 订单簿深度与行情解析 | Harris | Gorman（内存布局） |
-| ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6 |
+| ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
+| ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen | DPDK 官方文档、Gregg BPF Ch9–10 |
-| ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman |
-| ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | DPDK 官方文档 |
+| ch06 低延迟网络与协议优化 | Rosen | CSAPP Ch11、DPDK 官方文档、Gregg BPF Ch9–10 |
+| ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12 |
+| ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、DPDK 官方文档 |
 | ch09 高频做市与套利策略 | Harris | — |
 | ch10 延迟测量与基准压测 | Gregg SysPerf + Gregg BPF | DPDK testpmd |
 | ch11 风控合规与滑点控制 | Harris（监管/规则） | — |
@@ -198,6 +222,8 @@ Gorman (虚拟内存/NUMA/THP)
 Rosen (内核网络栈/组播)
     ↓
 Hennessy (缓存/MESI/一致性)
+    ↓
+CSAPP (程序员视角：缓存/VM/网络/并发落地)
     ↓
 Harris (LOB/撮合/业务)
     ↓
