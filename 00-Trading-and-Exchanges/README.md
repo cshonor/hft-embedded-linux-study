@@ -1,6 +1,6 @@
 ﻿# Trading and Exchanges — Larry Harris
 
-**文件夹 00 · 阶段 0（建议最先读 LOB 章节）** · [返回总清单](../READING-LIST.md#7-trading-and-exchanges--larry-harris)
+**文件夹 00 · 阶段 0（建议最先读）** · [返回总清单](../READING-LIST.md#7-trading-and-exchanges--larry-harris)
 
 ## 本书 HFT 读法
 
@@ -14,17 +14,18 @@
 
 ## 必读（精读）
 
-| 主题 | 笔记文件 |
-|------|----------|
+| 原书章节 | 笔记文件 |
+|----------|----------|
 | Ch 1 引言 · 市场微观结构概述 | [chapter-01-引言与市场微观结构.md](./chapter-01-引言与市场微观结构.md) |
-| 订单 / 订单类型 / LOB | [chapter-02-订单类型与LOB.md](./chapter-02-订单类型与LOB.md) |
+| Ch 2 交易故事 · Trading Stories | [chapter-02-交易故事.md](./chapter-02-交易故事.md) |
+| 订单 / 订单类型 / LOB | [chapter-03-订单类型与LOB.md](./chapter-03-订单类型与LOB.md) |
 
 ## 选读
 
 | 主题 | 笔记文件 | 升级条件 |
 |------|----------|----------|
-| 交易规则 / 透明度 / 监管 | [chapter-03-交易规则与监管.md](./chapter-03-交易规则与监管.md) | 上实盘前建议细读 |
-| 经纪 / 清算 / 结算 | [chapter-04-经纪清算与结算.md](./chapter-04-经纪清算与结算.md) | 对接券商/交易所时细读 |
+| 交易规则 / 透明度 / 监管 | [chapter-04-交易规则与监管.md](./chapter-04-交易规则与监管.md) | 上实盘前建议细读 |
+| 经纪 / 清算 / 结算 | [chapter-05-经纪清算与结算.md](./chapter-05-经纪清算与结算.md) | 对接券商/交易所时细读 |
 
 ## 跳过（无笔记文件）
 

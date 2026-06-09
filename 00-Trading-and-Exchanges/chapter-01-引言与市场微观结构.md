@@ -129,5 +129,5 @@
 
 ## 相关章节
 
-- 下一章：[chapter-02-订单类型与LOB.md](./chapter-02-订单类型与LOB.md)
+- 下一章：[chapter-02-交易故事.md](./chapter-02-交易故事.md)
 - 路线图：[HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md) · 阶段 0
