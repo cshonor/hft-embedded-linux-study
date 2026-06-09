@@ -1,8 +1,10 @@
 # HFT 必读书目与章节精读清单
 
-本清单锁定 **8 本**英文原版（含 CSAPP，已剔除 *Programming Rust*），按 HFT 低延迟学习先后排序。每本仅保留与热路径相关的章节，其余可跳过或作目录查阅。
+本清单锁定 **8 本**英文原版（含 CSAPP，已剔除 *Programming Rust*），以及 **2 本外部仓库书目**（TCP/IP 卷一、UNP），按 HFT 低延迟学习先后排序。
 
-**阅读顺序：** 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8  
+**总阅读顺序与小节级读/跳指引** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)
+
+**推荐序号：** 0 Harris(LOB) → ① → ② → ③ → 外A → 外B → ④ → ⑤ → ⑥ → ⑦ → ⑧ → DPDK  
 **补充资料：** DPDK、RDMA 仅读官方英文文档，不另加实体书。
 
 | 标签 | 含义 |
@@ -178,6 +180,17 @@
 
 ---
 
+## 外部书目（笔记在另一仓库 · 本仓库仅索引）
+
+| 外 | 书目 | 索引 | 插入顺序 |
+|----|------|------|----------|
+| 外A | TCP/IP Illustrated Vol.1 — Stevens | [TCP-IP-Illustrated-Vol1/](./TCP-IP-Illustrated-Vol1/) | Rosen / UNP **之前** |
+| 外B | UNIX Network Programming Vol.1 — Stevens | [UNP-Vol1/](./UNP-Vol1/) | TCP/IP 卷一 **之后**，Rosen **并行** |
+
+> **不要整本迁入本仓库。** 三本网络书分工：TCP/IP = 协议；UNP = API；Rosen = 内核实现。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md#二外部仓库书目unp--tcpip-卷一)。
+
+---
+
 ## 补充：官方文档（无实体书）
 
 | 资料 | 链接 | 用途 |
@@ -213,11 +226,17 @@
 ## 阅读节奏总览
 
 ```
+Harris LOB（阶段 0，可并行）
+    ↓
 Gregg SysPerf (方法论/观测)
     ↓
 Love (调度/中断/定时器)
     ↓
 Gorman (虚拟内存/NUMA/THP)
+    ↓
+TCP/IP 卷一 (协议：UDP/组播/TCP)     ← 外部仓库
+    ↓
+UNP Vol.1 (Socket API：epoll/非阻塞)  ← 外部仓库
     ↓
 Rosen (内核网络栈/组播)
     ↓
@@ -225,7 +244,7 @@ Hennessy (缓存/MESI/一致性)
     ↓
 CSAPP (程序员视角：缓存/VM/网络/并发落地)
     ↓
-Harris (LOB/撮合/业务)
+Harris 剩余 (监管/清算)
     ↓
 Gregg BPF (eBPF/XDP 观测闭环)
     ↓
