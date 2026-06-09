@@ -184,8 +184,8 @@
 
 | 外 | 书目 | 索引 | 插入顺序 |
 |----|------|------|----------|
-| 外A | TCP/IP Illustrated Vol.1 — Stevens | [04-TCP-IP-Illustrated-Vol1/](./04-TCP-IP-Illustrated-Vol1/) | Rosen / UNP **之前** |
-| 外B | UNIX Network Programming Vol.1 — Stevens | [05-UNP-Vol1/](./05-UNP-Vol1/) | TCP/IP 卷一 **之后**，Rosen **并行** |
+| 外A | TCP/IP Illustrated Vol.1 — Stevens | [04-TCP-IP-Illustrated-Vol1/](./04-TCP-IP-Illustrated-Vol1/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | Rosen / UNP **之前** |
+| 外B | UNIX Network Programming Vol.1 — Stevens | [05-UNP-Vol1/](./05-UNP-Vol1/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | TCP/IP 卷一 **之后**，Rosen **并行** |
 
 > **不要整本迁入本仓库。** 三本网络书分工：TCP/IP = 协议；UNP = API；Rosen = 内核实现。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md#二外部仓库书目unp--tcpip-卷一)。
 

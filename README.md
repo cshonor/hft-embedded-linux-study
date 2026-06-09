@@ -37,8 +37,8 @@
 | 01 | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) | Gregg · 性能方法论 |
 | 02 | [02-Linux-Kernel-Development-3rd](./02-Linux-Kernel-Development-3rd/) | Love · 内核调度/中断 |
 | 03 | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | Gorman · 虚拟内存 |
-| 04 | [04-TCP-IP-Illustrated-Vol1](./04-TCP-IP-Illustrated-Vol1/) | Stevens · 协议（外部仓库索引） |
-| 05 | [05-UNP-Vol1](./05-UNP-Vol1/) | Stevens · Socket API（外部仓库索引） |
+| 04 | [04-TCP-IP-Illustrated-Vol1](./04-TCP-IP-Illustrated-Vol1/) | Stevens · 协议 → [Computer-Networking](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) |
+| 05 | [05-UNP-Vol1](./05-UNP-Vol1/) | Stevens · Socket API → [Computer-Networking](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) |
 | 06 | [06-Linux-Kernel-Networking](./06-Linux-Kernel-Networking/) | Rosen · 内核网络栈 |
 | 07 | [07-Computer-Architecture-6th](./07-Computer-Architecture-6th/) | Hennessy · 硬件/缓存 |
 | 08 | [08-CSAPP-3rd](./08-CSAPP-3rd/) | CSAPP · 程序员视角落地 |

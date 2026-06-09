@@ -4,12 +4,15 @@
 
 **文件夹 04 · 外部书目 外A** · [返回总清单](../READING-LIST.md#外部书目笔记在另一仓库--本仓库仅索引)
 
-## 你的笔记仓库
+## 笔记仓库（外部）
 
-<!-- 填入另一个仓库的链接，例如： -->
-<!-- **笔记地址：** https://github.com/cshonor/your-network-notes/tree/main/TCP-IP-Vol1 -->
+**仓库：** [cshonor/Computer-Networking](https://github.com/cshonor/Computer-Networking)
 
-**笔记地址：** _（待填入）_
+| 入口 | 链接 |
+|------|------|
+| TCP/IP 卷1 笔记目录 | [TCP-IP-Volume1-Protocols/](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) |
+| 章节目录 | [OUTLINE.md](https://github.com/cshonor/Computer-Networking/blob/main/TCP-IP-Volume1-Protocols/OUTLINE.md) |
+| 速查 | [QUICKREF.md](https://github.com/cshonor/Computer-Networking/blob/main/TCP-IP-Volume1-Protocols/QUICKREF.md) |
 
 ## HFT 必读 / 选读 / 跳过
 

@@ -64,13 +64,13 @@
 
 | 方案 | 说明 |
 |------|------|
-| ✅ **推荐** | 笔记留在原仓库；本仓库用下方 stub 目录 [`05-UNP-Vol1/`](./05-UNP-Vol1/)、[`04-TCP-IP-Illustrated-Vol1/`](./04-TCP-IP-Illustrated-Vol1/) 做**索引 + HFT 裁剪清单** + 外链 |
+| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`04-TCP-IP-Illustrated-Vol1/`](./04-TCP-IP-Illustrated-Vol1/)、[`05-UNP-Vol1/`](./05-UNP-Vol1/) 做**索引 + HFT 裁剪清单** |
 | ⚠️ 可选 | 只把「HFT 必读章节」的笔记摘要链过来，不要 duplicate 全书 |
 | ❌ 不推荐 | 整本迁移 — 与 Rosen / CSAPP Ch11 重叠，且双倍维护 |
 
 **为什么不漏：** Rosen 讲**内核怎么收发包**；UNP 讲**用户态怎么调 Socket**；TCP/IP 卷一讲**线上字节长什么样**。HFT 三条都要，但分属不同层，各读裁剪章节即可。
 
-> 请在 [`05-UNP-Vol1/README.md`](./05-UNP-Vol1/README.md) 和 [`04-TCP-IP-Illustrated-Vol1/README.md`](./04-TCP-IP-Illustrated-Vol1/README.md) 填入你另一个仓库的链接。
+> 笔记仓库：[cshonor/Computer-Networking](https://github.com/cshonor/Computer-Networking) · TCP/IP → [`TCP-IP-Volume1-Protocols/`](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) · UNP → [`UNP_Vol1/`](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1)
 
 ---
 
