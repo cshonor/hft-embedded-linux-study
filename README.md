@@ -33,7 +33,7 @@
 
 | 序号 | 文件夹 | 内容 |
 |------|--------|------|
-| 00 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | Harris · 市场/LOB（**阶段 0，建议先读**） |
+| 00 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | Harris · 市场/LOB（**29 章**，[目录](./00-Trading-and-Exchanges/OUTLINE.md)） |
 | 01 | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) | Gregg · 性能方法论 |
 | 02 | [02-Linux-Kernel-Development-3rd](./02-Linux-Kernel-Development-3rd/) | Love · 内核调度/中断 |
 | 03 | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | Gorman · 虚拟内存 |
