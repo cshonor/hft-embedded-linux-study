@@ -41,7 +41,7 @@
 | 05 | [05-UNP-Vol1](./05-UNP-Vol1/) | Stevens · Socket API → [Computer-Networking](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) |
 | 06 | [06-Linux-Kernel-Networking](./06-Linux-Kernel-Networking/) | Rosen · 内核网络栈 |
 | 07 | [07-Computer-Architecture-6th](./07-Computer-Architecture-6th/) | Hennessy · 硬件/缓存 |
-| 08 | [08-CSAPP-3rd](./08-CSAPP-3rd/) | CSAPP · 程序员视角落地 |
+| 08 | [08-CSAPP-3rd](./08-CSAPP-3rd/) | CSAPP · 12 章 + 附录 [OUTLINE](./08-CSAPP-3rd/OUTLINE.md) |
 | 09 | [09-BPF-Performance-Tools](./09-BPF-Performance-Tools/) | Gregg · eBPF 观测 |
 | 10 | [10-HFT-Low-Latency-Practice](./10-HFT-Low-Latency-Practice/) | HFT 实战笔记 · 12 章 |
 | 11 | [11-Rust-Quant-Trading-Guide](./11-Rust-Quant-Trading-Guide/) | Rust 量化工程 · 11 章 |
