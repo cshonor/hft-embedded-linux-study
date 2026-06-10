@@ -90,15 +90,14 @@
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
-| Socket 层 / sk_buff 路径 | **精读** | 发包收包完整路径 |
-| TCP 栈实现 | **选读** | 订单通道若走 TCP 则精读 |
-| UDP 实现 | **精读** | 行情组播/UDP 主流 |
-| IP 层 / Routing（核心） | **选读** | 同机房/托管网络 |
-| NAPI / softirq / Net RX | **精读** | 收包延迟核心 |
-| Multicast（IGMP/组播） | **精读** | 交易所行情组播 |
-| RSS / RPS / XPS | **精读** | 多队列网卡、CPU 分发 |
-| Netfilter / iptables 深读 | **跳过** | 生产 HFT 通常旁路或最小化 |
-| Wireless / Bluetooth | **跳过** | |
+| Ch 11 第 4 层协议（TCP/UDP/Socket/sk_buff） | **精读** | 对照 UNP 之下发生了什么 |
+| Ch 14 高级主题（NAPI/softirq/RSS/RPS/XPS） | **精读** | 收包延迟、多队列绑核 |
+| 组播 / IGMP | **精读** | 见 [note-组播IGMP.md](./06-Linux-Kernel-Networking/note-组播IGMP.md) |
+| Ch 4–5 IPv4 / 路由 | **选读** | 托管/共置网络 |
+| Ch 3 ICMP / Ch 7 邻居子系统 | **选读** | 排查网络 |
+| Ch 13 InfiniBand | **选读** | RDMA/共置低延迟 |
+| Ch 1 简介 / 附录 A–B | **选读** | 背景与 API 速查 |
+| Ch 2 Netlink / Ch 8 IPv6 / Ch 9 Netfilter / Ch 10 IPsec / Ch 12 无线 | **跳过** | HFT 通常旁路或不用 |
 
 **HFT 产出：** 从网卡 DMA → NAPI → 用户态 socket 的完整内核路径；与 UNP、DPDK 对照。
 

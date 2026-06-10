@@ -152,15 +152,16 @@
 
 ### ④ Linux Kernel Networking
 
-| 主题 | 标签 | HFT 为何读 |
+| 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
-| sk_buff、Socket 层收发路径 | 🔴 | 对照 UNP 之下发生了什么 |
-| UDP、**组播**、IGMP | 🔴 | 行情内核路径 |
-| NAPI、softirq、Net RX | 🔴 | 收包延迟核心 |
-| RSS / RPS / XPS | 🔴 | 网卡多队列绑核 |
-| TCP 栈 | 🟡 | 订单 TCP → 🔴 |
-| IP 路由 | 🟡 | 托管网络 |
-| Netfilter/iptables | ⚪ | 旁路或最小化 |
+| Ch 11 传输层：Socket、sk_buff、TCP/UDP | 🔴 | 内核收发路径 |
+| Ch 14 高级主题：NAPI、RSS/RPS/XPS | 🔴 | 收包延迟、绑核 |
+| 组播/IGMP（note） | 🔴 | 行情内核路径 |
+| Ch 4–5 IPv4、路由 | 🟡 | 托管网络 |
+| Ch 3 ICMP、Ch 7 邻居 | 🟡 | 排查 |
+| Ch 13 InfiniBand | 🟡 | RDMA 场景 |
+| Ch 1、附录 A/B | 🟡 | 背景 |
+| Ch 2/8/9/10/12 | ⚪ | Netlink、IPv6、Netfilter、无线 |
 
 ### ⑫ DPDK Low-Latency Network
 

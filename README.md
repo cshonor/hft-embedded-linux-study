@@ -43,7 +43,7 @@
 | 03 | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | Linux 系统 | Gorman · 14 章 + 附录 [OUTLINE](./03-Linux-Virtual-Memory-Manager/OUTLINE.md) |
 | 04 | [04-TCP-IP-Illustrated-Vol1](./04-TCP-IP-Illustrated-Vol1/) | **网络** | Stevens · 协议原理 → [外部仓库](https://github.com/cshonor/Computer-Networking) |
 | 05 | [05-UNP-Vol1](./05-UNP-Vol1/) | **网络** | Stevens · Socket API → [外部仓库](https://github.com/cshonor/Computer-Networking) |
-| 06 | [06-Linux-Kernel-Networking](./06-Linux-Kernel-Networking/) | **网络** | Rosen · 内核协议栈 |
+| 06 | [06-Linux-Kernel-Networking](./06-Linux-Kernel-Networking/) | **网络** | Rosen · 14 章 + 附录 [OUTLINE](./06-Linux-Kernel-Networking/OUTLINE.md) |
 | 07 | [07-Computer-Architecture-6th](./07-Computer-Architecture-6th/) | 硬件 CPU | Hennessy · 缓存/MESI |
 | 08 | [08-CSAPP-3rd](./08-CSAPP-3rd/) | 硬件 CPU | CSAPP · 12 章 + 附录 + Lab |
 | 09 | [09-BPF-Performance-Tools](./09-BPF-Performance-Tools/) | 性能观测 | Gregg · eBPF |

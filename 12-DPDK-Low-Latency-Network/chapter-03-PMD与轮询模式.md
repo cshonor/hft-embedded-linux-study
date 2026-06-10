@@ -8,4 +8,4 @@
 
 - 上一章：[chapter-02-mbuf与内存池.md](./chapter-02-mbuf与内存池.md)
 - 下一章：[chapter-04-零拷贝与用户态旁路.md](./chapter-04-零拷贝与用户态旁路.md)
-- 内核对照：[06 chapter-05 NAPI](../06-Linux-Kernel-Networking/chapter-05-NAPI与收包路径.md)
+- 内核对照：[06 Ch14 高级主题](../06-Linux-Kernel-Networking/chapter-14-高级主题.md)

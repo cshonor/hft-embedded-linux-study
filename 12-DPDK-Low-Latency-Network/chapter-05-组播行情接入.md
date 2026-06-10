@@ -8,5 +8,5 @@
 
 - 上一章：[chapter-04-零拷贝与用户态旁路.md](./chapter-04-零拷贝与用户态旁路.md)
 - 下一章：[note-openonload-rdma对比.md](./note-openonload-rdma对比.md)
-- 协议：[04 TCP/IP Ch7](../04-TCP-IP-Illustrated-Vol1/) · 内核：[06 组播](../06-Linux-Kernel-Networking/chapter-06-组播IGMP.md)
+- 协议：[04 TCP/IP Ch7](../04-TCP-IP-Illustrated-Vol1/) · 内核：[06 note-组播IGMP](../06-Linux-Kernel-Networking/note-组播IGMP.md)
 - 实验：[code/mcast-minimal/](./code/mcast-minimal/)

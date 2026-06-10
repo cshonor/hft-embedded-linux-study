@@ -1,45 +1,57 @@
 ﻿# Linux Kernel Networking — Rami Rosen
 
-**文件夹 06 · 原书目第 4 册** · [返回总清单](../READING-LIST.md#4-linux-kernel-networking--rami-rosen)
+**文件夹 06** · 全书 **14 章 + 附录 A–C** · [返回总清单](../READING-LIST.md#4-linux-kernel-networking--rami-rosen)
 
-## 本书 HFT 读法
+📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
-| 标签 | 含义 |
-|------|------|
-| **必读** | 本文件夹有笔记 · 精读，HFT 主线建议认真读 |
-| **选读** | 本文件夹有笔记 · 选读，有余力再读 |
-| **跳过** | 本文件夹无笔记，当前 HFT 目标下默认不读 |
+---
 
-> 有 `.md` 的章节 = 建议做笔记；没建文件的章节 = 默认跳过（有特殊需求再读）。
+## 核心章节（14 章）
 
-## 必读（精读）
+| 章 | 笔记 |
+|----|------|
+| 1 简介 | [chapter-01-简介.md](./chapter-01-简介.md) |
+| 2 Netlink 套接字 | [chapter-02-Netlink套接字.md](./chapter-02-Netlink套接字.md) |
+| 3 ICMP | [chapter-03-ICMP.md](./chapter-03-ICMP.md) |
+| 4 IPv4 | [chapter-04-IPv4.md](./chapter-04-IPv4.md) |
+| 5 IPv4 路由子系统 | [chapter-05-IPv4路由子系统.md](./chapter-05-IPv4路由子系统.md) |
+| 6 高级路由 | [chapter-06-高级路由.md](./chapter-06-高级路由.md) |
+| 7 邻居子系统 | [chapter-07-邻居子系统.md](./chapter-07-邻居子系统.md) |
+| 8 IPv6 | [chapter-08-IPv6.md](./chapter-08-IPv6.md) |
+| 9 Netfilter | [chapter-09-Netfilter.md](./chapter-09-Netfilter.md) |
+| 10 IPsec | [chapter-10-IPsec.md](./chapter-10-IPsec.md) |
+| 11 第 4 层协议 | [chapter-11-第4层协议.md](./chapter-11-第4层协议.md) |
+| 12 无线网络 | [chapter-12-无线网络.md](./chapter-12-无线网络.md) |
+| 13 InfiniBand | [chapter-13-InfiniBand.md](./chapter-13-InfiniBand.md) |
+| 14 高级主题 | [chapter-14-高级主题.md](./chapter-14-高级主题.md) |
 
-| 主题 | 笔记文件 |
-|------|----------|
-| Socket 层 / sk_buff 路径 | [chapter-01-Socket与sk_buff路径.md](./chapter-01-Socket与sk_buff路径.md) |
-| UDP 实现 | [chapter-03-UDP实现.md](./chapter-03-UDP实现.md) |
-| NAPI / softirq / Net RX | [chapter-05-NAPI与收包路径.md](./chapter-05-NAPI与收包路径.md) |
-| Multicast（IGMP/组播） | [chapter-06-组播IGMP.md](./chapter-06-组播IGMP.md) |
-| RSS / RPS / XPS | [chapter-07-RSS与多队列.md](./chapter-07-RSS与多队列.md) |
+### HFT 延伸
 
-## 选读
+| | 笔记 |
+|---|------|
+| 组播 / IGMP | [note-组播IGMP.md](./note-组播IGMP.md) |
 
-| 主题 | 笔记文件 | 升级条件 |
-|------|----------|----------|
-| TCP 栈实现 | [chapter-02-TCP协议栈.md](./chapter-02-TCP协议栈.md) | 订单通道走 TCP → 升为必读 |
-| IP 层 / Routing | [chapter-04-IP层与路由.md](./chapter-04-IP层与路由.md) | 同机房/托管网络部署时细读 |
+## 附录
 
-## 跳过（无笔记文件）
+| | 笔记 |
+|---|------|
+| A Linux API | [appendix-A-Linux-API.md](./appendix-A-Linux-API.md) |
+| B 网络管理 | [appendix-B-网络管理.md](./appendix-B-网络管理.md) |
+| C 词汇表 | [appendix-C-词汇表.md](./appendix-C-词汇表.md) |
 
-- Netfilter / iptables 深读 — 生产 HFT 通常旁路或最小化
-- Wireless / Bluetooth
+---
 
-## HFT 产出
+## HFT 精读捷径
 
-从网卡 DMA → NAPI → 用户态 socket 的完整内核路径；与 UNP、DPDK 对照。
+```
+Ch 11 → Ch 14 → note-组播IGMP
+```
+
+**HFT 产出：** 网卡 DMA → NAPI → sk_buff → socket → 用户态；与 UNP、DPDK 对照。
 
 ## 交叉阅读
 
 - 协议层 → [04-TCP-IP-Illustrated-Vol1](../04-TCP-IP-Illustrated-Vol1/)
-- 用户态旁路 → [12-DPDK-Low-Latency-Network](../12-DPDK-Low-Latency-Network/)
 - API 层 → [05-UNP-Vol1](../05-UNP-Vol1/)
+- 用户态旁路 → [12-DPDK-Low-Latency-Network](../12-DPDK-Low-Latency-Network/)
+- 跨模块对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)
