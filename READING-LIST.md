@@ -194,13 +194,15 @@
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
-| Ch 1–2 BPF 基础 / 工具链 | **精读** | bcc/bpftrace 快速上手 |
-| Ch 4–5 CPU / off-CPU 分析 | **精读** | 定位抖动、调度问题 |
-| Ch 6 Memory | **选读** | alloc、page fault 追踪 |
-| **Ch 9–10 Networking** | **精读** | 内核网络延迟、丢包、重传 |
-| XDP / tc-BPF 相关节 | **精读** | 小包过滤、DPDK 前置对比 |
-| Ch 7–8 File Systems / Disks | **跳过** | |
-| Ch 12 Security / 泛化应用 | **跳过** | |
+| Part I Ch 1–2 简介 / 技术背景 | **精读** | BPF/eBPF、kprobes/uprobes/火焰图 |
+| Part I Ch 4–5 BCC / bpftrace | **精读** | 工具链快速上手 |
+| Part II Ch 6 CPU | **精读** | off-CPU、run queue、抖动定位 |
+| Part II Ch 10 网络 | **精读** | 套接字延迟、TCP/UDP 重传丢包 |
+| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./09-BPF-Performance-Tools/note-XDP与tc-BPF.md)；vs DPDK |
+| Part II Ch 7 内存 / Ch 13–14 应用·内核 | **选读** | alloc、fault、调度唤醒 |
+| Part I Ch 3 / Part III Ch 17–18 | **选读** | 方法论、排障技巧 |
+| 附录 A/B bpftrace 单行/备忘单 | **精读** | 现场速查 |
+| Part II Ch 8–9 文件系统/磁盘 / Ch 11–12 安全/语言 / Ch 15–16 容器/虚拟化 | **跳过** | HFT 热路径无关 |
 
 **HFT 产出：** 生产环境 eBPF 观测；与 DPDK 文档配合做「内核栈 vs 用户态旁路」对比。
 
@@ -240,11 +242,11 @@
 | ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
 | ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen + **12 DPDK** | CSAPP Ch11、Gregg BPF Ch9–10 |
+| ch06 低延迟网络与协议优化 | Rosen + **12 DPDK** | CSAPP Ch11、**09 BPF Ch10** + XDP note |
 | ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12 |
 | ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**12 DPDK** |
 | ch09 高频做市与套利策略 | Harris | — |
-| ch10 延迟测量与基准压测 | Gregg SysPerf + Gregg BPF | **12 DPDK** testpmd |
+| ch10 延迟测量与基准压测 | Gregg SysPerf + **09 BPF** | **12 DPDK** testpmd |
 | ch11 风控合规与滑点控制 | Harris（监管/规则） | — |
 | ch12 实盘上线与运维进阶 | Gregg BPF | **12 DPDK** / OpenOnload / RDMA 对比笔记 |
 

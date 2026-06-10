@@ -1,37 +1,73 @@
 ﻿# BPF Performance Tools — Brendan Gregg
 
-**文件夹 09 · 原书目第 8 册** · [返回总清单](../READING-LIST.md#8-bpf-performance-tools--brendan-gregg)
+**文件夹 09** · 全书 **18 章 + 附录 A–E**（4 Parts）· [返回总清单](../READING-LIST.md#8-bpf-performance-tools--brendan-gregg)
 
-## 本书 HFT 读法
+📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
-| 标签 | 含义 |
-|------|------|
-| **必读** | 本文件夹有笔记 · 精读，HFT 主线建议认真读 |
-| **选读** | 本文件夹有笔记 · 选读，有余力再读 |
-| **跳过** | 本文件夹无笔记，当前 HFT 目标下默认不读 |
+---
 
-> 有 `.md` 的章节 = 建议做笔记；没建文件的章节 = 默认跳过（有特殊需求再读）。
+## Part I · 技术（Ch 1–5）
 
-## 必读（精读）
+| 章 | 笔记 |
+|----|------|
+| 1 简介 | [chapter-01-简介.md](./chapter-01-简介.md) |
+| 2 技术背景 | [chapter-02-技术背景.md](./chapter-02-技术背景.md) |
+| 3 性能分析 | [chapter-03-性能分析.md](./chapter-03-性能分析.md) |
+| 4 BCC | [chapter-04-BCC.md](./chapter-04-BCC.md) |
+| 5 bpftrace | [chapter-05-bpftrace.md](./chapter-05-bpftrace.md) |
 
-| 原书章节 | 笔记文件 |
-|----------|----------|
-| Ch 1–2 BPF 基础 / 工具链 | [chapter-01-BPF基础与工具链.md](./chapter-01-BPF基础与工具链.md) |
-| Ch 4–5 CPU / off-CPU 分析 | [chapter-02-CPU与off-CPU分析.md](./chapter-02-CPU与off-CPU分析.md) |
-| Ch 9–10 Networking | [chapter-04-网络延迟分析.md](./chapter-04-网络延迟分析.md) |
-| XDP / tc-BPF 相关节 | [chapter-05-XDP与tc-BPF.md](./chapter-05-XDP与tc-BPF.md) |
+## Part II · 使用 BPF 工具（Ch 6–16）
 
-## 选读
+| 章 | 笔记 |
+|----|------|
+| 6 CPU | [chapter-06-CPU.md](./chapter-06-CPU.md) |
+| 7 内存 | [chapter-07-内存.md](./chapter-07-内存.md) |
+| 8 文件系统 | [chapter-08-文件系统.md](./chapter-08-文件系统.md) |
+| 9 磁盘 I/O | [chapter-09-磁盘IO.md](./chapter-09-磁盘IO.md) |
+| 10 网络 | [chapter-10-网络.md](./chapter-10-网络.md) |
+| 11 安全 | [chapter-11-安全.md](./chapter-11-安全.md) |
+| 12 语言 | [chapter-12-语言.md](./chapter-12-语言.md) |
+| 13 应用程序 | [chapter-13-应用程序.md](./chapter-13-应用程序.md) |
+| 14 内核 | [chapter-14-内核.md](./chapter-14-内核.md) |
+| 15 容器 | [chapter-15-容器.md](./chapter-15-容器.md) |
+| 16 虚拟机管理程序 | [chapter-16-虚拟机管理程序.md](./chapter-16-虚拟机管理程序.md) |
 
-| 原书章节 | 笔记文件 |
-|----------|----------|
-| Ch 6 Memory | [chapter-03-内存追踪.md](./chapter-03-内存追踪.md) |
+### HFT 延伸
 
-## 跳过（无笔记文件）
+| | 笔记 |
+|---|------|
+| XDP / tc-BPF | [note-XDP与tc-BPF.md](./note-XDP与tc-BPF.md) |
 
-- Ch 7–8 File Systems / Disks
-- Ch 12 Security / 泛化应用
+## Part III · 其他主题（Ch 17–18）
 
-## HFT 产出
+| 章 | 笔记 |
+|----|------|
+| 17 其他 BPF 工具 | [chapter-17-其他BPF工具.md](./chapter-17-其他BPF工具.md) |
+| 18 技巧与常见问题 | [chapter-18-技巧与常见问题.md](./chapter-18-技巧与常见问题.md) |
 
-生产环境 eBPF 观测；与 DPDK 文档配合做「内核栈 vs 用户态旁路」对比。
+## Part IV · 附录（A–E）
+
+| | 笔记 |
+|---|------|
+| A bpftrace 单行命令 | [appendix-A-bpftrace单行命令.md](./appendix-A-bpftrace单行命令.md) |
+| B bpftrace 备忘单 | [appendix-B-bpftrace备忘单.md](./appendix-B-bpftrace备忘单.md) |
+| C BCC 工具开发 | [appendix-C-BCC工具开发.md](./appendix-C-BCC工具开发.md) |
+| D C 语言 BPF | [appendix-D-C语言BPF.md](./appendix-D-C语言BPF.md) |
+| E BPF 指令 | [appendix-E-BPF指令.md](./appendix-E-BPF指令.md) |
+
+---
+
+## HFT 精读捷径
+
+```
+Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
+```
+
+**HFT 产出：** 生产 eBPF 观测；与 DPDK 配合做内核栈 vs 用户态旁路对比。
+
+## 交叉阅读
+
+- 方法论前置 → [01-Systems-Performance-2nd](../01-Systems-Performance-2nd/)
+- SysPerf bpftrace 附录 → [01 appendix-C](../01-Systems-Performance-2nd/appendix-C-bpftrace单行命令.md)
+- DPDK 对照 → [12-DPDK](../12-DPDK-Low-Latency-Network/)
+- 跨模块 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)

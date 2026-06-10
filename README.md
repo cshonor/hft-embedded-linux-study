@@ -46,7 +46,7 @@
 | 06 | [06-Linux-Kernel-Networking](./06-Linux-Kernel-Networking/) | **网络** | Rosen · 14 章 + 附录 [OUTLINE](./06-Linux-Kernel-Networking/OUTLINE.md) |
 | 07 | [07-Computer-Architecture-6th](./07-Computer-Architecture-6th/) | 硬件 CPU | Hennessy · 缓存/MESI |
 | 08 | [08-CSAPP-3rd](./08-CSAPP-3rd/) | 硬件 CPU | CSAPP · 12 章 + 附录 + Lab |
-| 09 | [09-BPF-Performance-Tools](./09-BPF-Performance-Tools/) | 性能观测 | Gregg · eBPF |
+| 09 | [09-BPF-Performance-Tools](./09-BPF-Performance-Tools/) | 性能观测 | Gregg · 18 章 + 附录 [OUTLINE](./09-BPF-Performance-Tools/OUTLINE.md) |
 | 10 | [10-HFT-Low-Latency-Practice](./10-HFT-Low-Latency-Practice/) | **工程落地** | 整机调优 / 对接 / 架构 / 压测（≠ 网络书） |
 | 11 | [11-Rust-Quant-Trading-Guide](./11-Rust-Quant-Trading-Guide/) | Rust 开发 | 量化工程 · 无锁 |
 | 12 | [12-DPDK-Low-Latency-Network](./12-DPDK-Low-Latency-Network/) | **网络** | DPDK 用户态旁路 · **网络栈闭环** |

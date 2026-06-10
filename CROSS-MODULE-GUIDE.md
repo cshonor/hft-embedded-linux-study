@@ -55,7 +55,7 @@
 | 内存分配 | 内核 slab / 页分配 | 预分配 mempool（大页） |
 | 系统调用 | `recvfrom` / `epoll_wait` | 无（映射 UIO/VFIO） |
 | 适用场景 | 通用、开发快、TCP 友好 | 极致延迟、UDP 组播行情 |
-| 观测工具 | BPF Ch9–10、SysPerf Ch10 | testpmd、BPF（对比用） |
+| 观测工具 | **09 BPF Ch10** + XDP note、SysPerf Ch10 | testpmd、BPF（对比用） |
 
 **阅读顺序：** 先走通 04 → 05 → 06，再读 12 理解「绕过了什么」。
 

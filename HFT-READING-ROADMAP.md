@@ -213,12 +213,15 @@
 
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
-| Ch 1–2 BPF、bcc/bpftrace | 🔴 | 生产观测上手 |
-| Ch 4–5 CPU/on-off CPU、run queue | 🔴 | 查抖动 |
-| Ch 9–10 网络延迟、重传、丢包 | 🔴 | 行情/订单链路 |
-| XDP、tc-BPF | 🔴 | vs DPDK 决策 |
-| Ch 6 内存 alloc/fault | 🟡 | 内存泄漏、fault |
-| Ch 7–8 磁盘、Ch 12 安全泛化 | ⚪ | |
+| Part I Ch 1–2 BPF/eBPF 技术背景 | 🔴 | 观测基础 |
+| Part I Ch 4–5 BCC/bpftrace | 🔴 | 工具链上手 |
+| Part II Ch 6 CPU、off-CPU | 🔴 | 查抖动 |
+| Part II Ch 10 网络 | 🔴 | 行情/订单链路 |
+| note XDP/tc-BPF | 🔴 | vs DPDK 决策 |
+| 附录 A/B bpftrace 速查 | 🔴 | 现场单行命令 |
+| Part II Ch 7 内存、Ch 13–14 | 🟡 | fault、内核子系统 |
+| Part III Ch 17–18 | 🟡 | 面板集成、排障 |
+| Part II Ch 8–9/11–12/15–16 | ⚪ | 磁盘、安全、容器 |
 
 ---
 
