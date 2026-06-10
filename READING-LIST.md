@@ -133,12 +133,13 @@
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
-| Ch 1 Fundamentals / Roofline | **选读** | 性能上限直觉 |
-| **Ch 2 Memory Hierarchy** | **精读** | Cache line、MESI、false sharing、NUMA |
-| Ch 3 ILP（流水线、分支预测） | **选读** | 热循环微优化 |
-| Ch 5 Multiprocessors / Memory Consistency | **精读** | 无锁、memory order、store buffer |
-| Ch 4 SIMD / GPU | **跳过** | 除非做 SIMD 行情解析 |
-| Ch 6 Warehouse-Scale / Domain-Specific | **跳过** | |
+| Ch 2 存储器层次结构设计 | **精读** | Cache line、MESI、false sharing、NUMA |
+| Ch 5 线程级并行 / 内存一致性 | **精读** | 无锁、memory order、store buffer |
+| Ch 1 量化设计与分析基础 / Roofline | **选读** | 性能上限直觉 |
+| Ch 3 指令级并行（分支预测等） | **选读** | 热循环微优化 |
+| 附录 B/C、在线附录 L | **选读** | 存储层次/流水线/地址转换复习 |
+| Ch 4 SIMD/GPU / Ch 6–7 仓储·领域架构 | **跳过** | 除非 SIMD 行情解析 |
+| 在线附录 D/E/G–K/M | **跳过** | 非 HFT 热路径 |
 
 **HFT 产出：** 无锁队列、订单簿数组布局、cache-line padding 的硬件依据。
 

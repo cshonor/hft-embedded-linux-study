@@ -184,7 +184,8 @@
 | Ch 5 内存一致性、store buffer、memory order | 🔴 | 无锁队列硬件依据 |
 | Ch 1 Roofline | 🟡 | 性能上限直觉 |
 | Ch 3 ILP、分支预测 | 🟡 | 热循环微优化 |
-| Ch 4 SIMD/GPU、Ch 6 仓储规模 | ⚪ | 除非 SIMD 解析行情 |
+| Ch 4 SIMD/GPU、Ch 6 仓储级、Ch 7 领域架构 | ⚪ | 除非 SIMD 解析行情 |
+| 附录 B/C、在线 L | 🟡 | 与 Ch2/CSAPP 交叉 |
 
 ### ⑥ CSAPP 3rd
 
