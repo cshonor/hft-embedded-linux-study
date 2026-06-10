@@ -23,13 +23,16 @@
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
-| Ch 1–2 方法论、观测基础 | **精读** | USE/RED、延迟分解、perf 思维框架 |
+| Ch 1 简介 / Ch 2 方法论 | **精读** | USE/RED、延迟分解、perf 思维框架 |
+| Ch 4 观测工具 | **精读** | 工具选型、采样 vs 跟踪 |
 | Ch 6 CPU | **精读** | 调度、run queue、绑核、NUMA、context switch |
 | Ch 7 Memory | **精读** | TLB、page fault、NUMA 本地性、THP |
-| Ch 10 Networks | **精读** | 软中断、NAPI、RSS、队列、网卡调优 |
-| Ch 11 Protocols（TCP/UDP 部分） | **选读** | 协议栈开销、小包路径 |
-| Ch 8 File Systems / Ch 9 Disks | **跳过** | 除非做持久化日志/审计 |
-| Ch 12+ Cloud / Benchmarking 泛化 | **选读** | 压测方法论可借鉴，云章节跳过 |
+| Ch 10 Network | **精读** | 软中断、NAPI、RSS、队列、网卡调优、TCP/UDP 栈 |
+| Ch 13 perf / Ch 15 BPF | **精读** | 生产级 profiling 与 eBPF 观测 |
+| Ch 3 OS / Ch 5 Applications | **选读** | 内核与用户态背景 |
+| Ch 12 Benchmarking / Ch 14 Ftrace / Ch 16 Case Study | **选读** | 压测方法论、跟踪、案例 |
+| Ch 8 File Systems / Ch 9 Disks / Ch 11 Cloud | **跳过** | 除非持久化日志/审计；云章节跳过 |
+| 附录 A USE (Linux) / 附录 C bpftrace | **精读** | 速查清单与单行观测 |
 
 **HFT 产出：** 建立「延迟从哪来 → 怎么量 → 怎么调」的总框架。
 

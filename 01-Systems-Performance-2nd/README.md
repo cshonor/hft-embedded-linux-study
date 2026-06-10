@@ -1,38 +1,46 @@
 # Systems Performance 2nd — Brendan Gregg
 
-**文件夹 01 · 原书目第 1 册** · [返回总清单](../READING-LIST.md#1-systems-performance-enterprise-and-the-cloud-2nd--brendan-gregg)
+**文件夹 01** · 全书 **16 章 + 附录 A–E** · [返回总清单](../READING-LIST.md#1-systems-performance-enterprise-and-the-cloud-2nd--brendan-gregg)
 
-## 本书 HFT 读法
+📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
-| 标签 | 含义 |
-|------|------|
-| **必读** | 本文件夹有笔记 · 精读，HFT 主线建议认真读 |
-| **选读** | 本文件夹有笔记 · 选读，有余力再读 |
-| **跳过** | 本文件夹无笔记，当前 HFT 目标下默认不读 |
+---
 
-> 有 `.md` 的章节 = 建议做笔记；没建文件的章节 = 默认跳过（有特殊需求再读）。
+## 核心章节（16 章）
 
-## 必读（精读）
+| 章 | 笔记 |
+|----|------|
+| 1 简介 | [chapter-01-简介.md](./chapter-01-简介.md) |
+| 2 方法论 | [chapter-02-方法论.md](./chapter-02-方法论.md) |
+| 3 操作系统 | [chapter-03-操作系统.md](./chapter-03-操作系统.md) |
+| 4 观测工具 | [chapter-04-观测工具.md](./chapter-04-观测工具.md) |
+| 5 应用程序 | [chapter-05-应用程序.md](./chapter-05-应用程序.md) |
+| 6 中央处理器 | [chapter-06-中央处理器.md](./chapter-06-中央处理器.md) |
+| 7 内存 | [chapter-07-内存.md](./chapter-07-内存.md) |
+| 8 文件系统 | [chapter-08-文件系统.md](./chapter-08-文件系统.md) |
+| 9 磁盘 | [chapter-09-磁盘.md](./chapter-09-磁盘.md) |
+| 10 网络 | [chapter-10-网络.md](./chapter-10-网络.md) |
+| 11 云计算 | [chapter-11-云计算.md](./chapter-11-云计算.md) |
+| 12 基准测试 | [chapter-12-基准测试.md](./chapter-12-基准测试.md) |
+| 13 perf | [chapter-13-perf性能分析.md](./chapter-13-perf性能分析.md) |
+| 14 Ftrace | [chapter-14-Ftrace跟踪.md](./chapter-14-Ftrace跟踪.md) |
+| 15 BPF | [chapter-15-BPF技术.md](./chapter-15-BPF技术.md) |
+| 16 案例研究 | [chapter-16-案例研究.md](./chapter-16-案例研究.md) |
 
-| 原书章节 | 笔记文件 |
-|----------|----------|
-| Ch 1–2 方法论、观测基础 | [chapter-01-方法论与观测基础.md](./chapter-01-方法论与观测基础.md) |
-| Ch 6 CPU | [chapter-02-CPU调度与NUMA.md](./chapter-02-CPU调度与NUMA.md) |
-| Ch 7 Memory | [chapter-03-内存与TLB.md](./chapter-03-内存与TLB.md) |
-| Ch 10 Networks | [chapter-04-网络与网卡调优.md](./chapter-04-网络与网卡调优.md) |
+## 附录
 
-## 选读
+| | 笔记 |
+|---|------|
+| A USE 方法 (Linux) | [appendix-A-USE方法Linux.md](./appendix-A-USE方法Linux.md) |
+| B sar 总结 | [appendix-B-sar总结.md](./appendix-B-sar总结.md) |
+| C bpftrace 单行命令 | [appendix-C-bpftrace单行命令.md](./appendix-C-bpftrace单行命令.md) |
+| D 习题解答 | [appendix-D-习题解答.md](./appendix-D-习题解答.md) |
+| E 性能领域人物 | [appendix-E-性能领域人物.md](./appendix-E-性能领域人物.md) |
 
-| 原书章节 | 笔记文件 |
-|----------|----------|
-| Ch 11 Protocols（TCP/UDP） | [chapter-05-协议栈TCP与UDP.md](./chapter-05-协议栈TCP与UDP.md) |
-| Ch 12+ Benchmarking 泛化 | 无单独笔记，压测方法论可借鉴 |
+---
 
-## 跳过（无笔记文件）
+## HFT 精读捷径
 
-- Ch 8 File Systems / Ch 9 Disks — 除非做持久化日志/审计
-- Ch 12+ Cloud 章节
-
-## HFT 产出
-
-建立「延迟从哪来 → 怎么量 → 怎么调」的总框架。
+```
+Ch 1–2 → Ch 4 → Ch 6–7 → Ch 10 → Ch 13 → Ch 15 → 附录 A/C
+```

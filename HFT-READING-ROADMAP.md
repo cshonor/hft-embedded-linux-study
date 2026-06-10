@@ -81,12 +81,17 @@
 | 原书 | 小节/主题 | 标签 | HFT 为何读 |
 |------|-----------|------|-----------|
 | Ch 1–2 | USE 方法、延迟分解、perf 思维 | 🔴 | 所有调优的前置语言 |
+| Ch 4 | 观测工具：采样、跟踪、计数器 | 🔴 | 选型与排障工具链 |
 | Ch 6 | run queue、context switch、绑核、NUMA | 🔴 | 策略线程隔离 |
 | Ch 7 | TLB、page fault、THP、NUMA 访存 | 🔴 | 订单簿内存布局 |
-| Ch 10 | 软中断、NAPI、RSS、网卡队列 | 🔴 | 行情 burst 排抖动 |
-| Ch 11 | TCP/UDP 栈开销、小包 | 🟡 | 对照 UNP / Rosen |
+| Ch 10 | 软中断、NAPI、RSS、网卡队列、TCP/UDP | 🔴 | 行情 burst 排抖动；协议栈对照 UNP |
+| Ch 13 | perf 采样与火焰图 | 🔴 | 生产 profiling |
+| Ch 15 | BPF/eBPF 动态跟踪 | 🔴 | 低开销内核观测 |
+| 附录 A/C | USE 清单、bpftrace 单行 | 🔴 | 现场速查 |
+| Ch 3 / Ch 5 | 操作系统、应用程序 | 🟡 | 背景 |
+| Ch 12 / Ch 14 / Ch 16 | 基准测试、Ftrace、案例 | 🟡 | 方法论与跟踪 |
 | Ch 8–9 | 文件系统、磁盘 | ⚪ | 除非审计落盘 |
-| Ch 12+ | 公有云 | ⚪ | 托管用 bare metal |
+| Ch 11 | 云计算 | ⚪ | 托管用 bare metal |
 
 ### ② Linux Kernel Development 3rd
 
