@@ -111,14 +111,17 @@
 
 ### ③ Linux Virtual Memory Manager
 
-| 主题 | 标签 | HFT 为何读 |
+| 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
-| Zones、NUMA、物理内存布局 | 🔴 | `numactl --membind` |
-| 页表、TLB、大页 | 🔴 | 减少 TLB miss |
-| Slab/Slub | 🔴 | 内存池设计参照 |
-| THP 开/关 | 🔴 | 生产常见调优项 |
-| Page fault、reclaim | 🟡 | 避免运行时 fault |
-| Swap、file writeback | ⚪ | HFT 机器通常禁用 |
+| Ch 2 Zones、NUMA、物理内存布局 | 🔴 | `numactl --membind` |
+| Ch 3 页表、TLB、大页 | 🔴 | 减少 TLB miss；THP 见 note |
+| Ch 8 Slab/Slub | 🔴 | 内存池设计参照 |
+| Ch 4 进程地址空间、mmap、fault | 🟡 | 预分配订单簿 |
+| Ch 6 物理页分配、Ch 10 页框回收 | 🟡 | 避免运行时 fault/回收 |
+| Ch 12 共享内存 | 🟡 | 跨进程场景 |
+| Ch 1 简介 | 🟡 | 背景 |
+| 附录 B/C/H | 🟡 | 代码走读 |
+| Ch 5/7/9/11/13 | ⚪ | Swap、高端内存、OOM — HFT 通常禁用 |
 
 ### 外A TCP/IP Illustrated Vol.1（外部仓库）
 

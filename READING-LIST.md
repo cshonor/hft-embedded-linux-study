@@ -68,13 +68,15 @@
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
-| 物理内存 / Zones / NUMA | **精读** | 本地内存分配、跨 NUMA 代价 |
-| Page Tables / TLB | **精读** | 大页、TLB miss 对热路径影响 |
-| Slab / Slub 分配器 | **精读** | 内核/用户态内存池设计参照 |
-| Transparent Huge Pages (THP) | **精读** | HFT 机器 THP 开/关决策 |
-| Page Fault / Reclaim（核心部分） | **选读** | 避免运行时 fault 导致抖动 |
-| Swap / OOM 深读 | **跳过** | HFT 机器通常禁用 swap |
-| File-backed / Writeback | **跳过** | 除非做持久化 |
+| Ch 2 描述物理内存 / Zones / NUMA | **精读** | 本地内存分配、跨 NUMA 代价 |
+| Ch 3 页表管理 / TLB / 大页 | **精读** | TLB miss 对热路径影响；见 note-透明大页THP |
+| Ch 8 Slab / Slub 分配器 | **精读** | 内核/用户态内存池设计参照 |
+| Ch 4 进程地址空间 | **选读** | mmap、缺页 fault |
+| Ch 6 物理页分配 / Ch 10 页框回收 | **选读** | 预分配策略；避免运行时回收抖动 |
+| Ch 12 共享内存 | **选读** | 跨进程共享订单簿场景 |
+| Ch 1 简介 | **选读** | VM 子系统总览 |
+| Ch 5/7/9/11/13/14 | **跳过** | 启动分配器、vmalloc、高端内存、Swap、OOM |
+| 附录 B/C/D/H | **选读** | 对应章节的内核代码走读 |
 
 **HFT 产出：** 订单簿/内存池布局、NUMA 绑内存、伪共享（配合 Hennessy Ch2）的理论依据。
 

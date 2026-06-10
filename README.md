@@ -40,7 +40,7 @@
 | 00 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | 交易理论 | Harris · 市场/LOB（29 章） |
 | 01 | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) | Linux 系统 | Gregg · 性能方法论 |
 | 02 | [02-Linux-Kernel-Development-3rd](./02-Linux-Kernel-Development-3rd/) | Linux 系统 | Love · 内核调度/中断 |
-| 03 | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | Linux 系统 | Gorman · 虚拟内存 |
+| 03 | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | Linux 系统 | Gorman · 14 章 + 附录 [OUTLINE](./03-Linux-Virtual-Memory-Manager/OUTLINE.md) |
 | 04 | [04-TCP-IP-Illustrated-Vol1](./04-TCP-IP-Illustrated-Vol1/) | **网络** | Stevens · 协议原理 → [外部仓库](https://github.com/cshonor/Computer-Networking) |
 | 05 | [05-UNP-Vol1](./05-UNP-Vol1/) | **网络** | Stevens · Socket API → [外部仓库](https://github.com/cshonor/Computer-Networking) |
 | 06 | [06-Linux-Kernel-Networking](./06-Linux-Kernel-Networking/) | **网络** | Rosen · 内核协议栈 |
