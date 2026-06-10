@@ -61,6 +61,6 @@ Ch 2 → Ch 3 (+ THP) → Ch 8 → Ch 4 → Ch 10
 
 ## 交叉阅读
 
-- 内核概述 → [02-LKD](../02-Linux-Kernel-Development-3rd/)
+- 内核概述 → [02-LKD](../02-Linux-Kernel-Development/00_Book_3rd_Notes/)
 - 程序员落地 → [08-CSAPP Ch6/Ch9](../08-CSAPP-3rd/)
 - DPDK 大页 → [12-DPDK](../12-DPDK-Low-Latency-Network/)

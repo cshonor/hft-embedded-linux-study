@@ -43,6 +43,6 @@ Ch 11 定时器 / hrtimer
 Ch 3、12、15 选读补上下文
 ```
 
-→ [03-Linux-Virtual-Memory-Manager](../03-Linux-Virtual-Memory-Manager/) 深读内存
+→ [03-Linux-Virtual-Memory-Manager](../../03-Linux-Virtual-Memory-Manager/) 深读内存
 
-完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
+完整路线 → [HFT-READING-ROADMAP.md](../../HFT-READING-ROADMAP.md)

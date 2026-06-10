@@ -10,7 +10,7 @@
 | 板块 | 文件夹 | 维度 |
 |------|--------|------|
 | 交易金融理论 | `00` Trading and Exchanges | 业务 / LOB / 市场结构 |
-| Linux 系统层 | `01` SysPerf · `02` LKD · `03` Gorman | 性能 / 调度 / 虚拟内存 |
+| Linux 系统层 | `01` SysPerf · **`02` LKD（课+书）** · `03` Gorman | 性能 / 调度 / 虚拟内存 |
 | **网络完整栈** | `04` TCP/IP · `05` UNP · `06` Rosen · **`12` DPDK** | 协议 → Socket → 内核栈 → 用户态旁路 |
 | 硬件 CPU 层 | `07` Hennessy · `08` CSAPP | 缓存 / 流水线 / 程序员落地 |
 | 性能观测 | `09` BPF Tools | eBPF / XDP 生产排障 |

@@ -1,6 +1,8 @@
 ﻿# Linux Kernel Development 3rd — Robert Love
 
-**文件夹 02** · 全书 **20 章** · [返回总清单](../READING-LIST.md#2-linux-kernel-development-3rd--robert-love)
+**00_Book_3rd_Notes** · 全书 **20 章** · [返回 02 总目录](../README.md) · [返回总清单](../../READING-LIST.md#2-linux-kernel-development--robert-love)
+
+> **前置建议：** 先完成 [01 LFS](../01_Course_LFS/) → [02 7讲实操](../02_Course_Kernel_7Lectures/) → [03 架构理论](../03_Course_Kernel_Architecture/)，再通读本书。见 [LEARNING-PATH.md](../LEARNING-PATH.md)。
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
@@ -37,7 +39,6 @@
 
 ```
 Ch 4 → Ch 7–8 → Ch 9–10 → Ch 11
-（调度 → 中断 → 同步 → 定时器）
 ```
 
-内存深读 → [03-Linux-Virtual-Memory-Manager](../03-Linux-Virtual-Memory-Manager/)
+内存深读 → [03-Linux-Virtual-Memory-Manager](../../03-Linux-Virtual-Memory-Manager/)

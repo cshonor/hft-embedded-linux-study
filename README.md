@@ -16,7 +16,7 @@
 |------|--------|------|
 | **0** | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) · LOB/市场结构 | 业务锚点，先懂撮合再写引擎 |
 | **1** | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) | 会量延迟、会排抖动 |
-| **2** | [02-Linux-Kernel-Development-3rd](./02-Linux-Kernel-Development-3rd/) | 绑核、中断、调度 |
+| **2** | [02-Linux-Kernel-Development](./02-Linux-Kernel-Development/)（课 → 书） | 绑核、中断、调度 |
 | **3** | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) + [07-Computer-Architecture-6th](./07-Computer-Architecture-6th/) + [08-CSAPP-3rd](./08-CSAPP-3rd/) 内存章 | NUMA / TLB / 伪共享 |
 | **4** | [04-TCP-IP](./04-TCP-IP-Illustrated-Vol1/) → [05-UNP](./05-UNP-Vol1/) → [08-CSAPP-3rd](./08-CSAPP-3rd/) 网络章 → [06-Rosen](./06-Linux-Kernel-Networking/) → **[12-DPDK](./12-DPDK-Low-Latency-Network/)** | 协议 → Socket → 内核栈 → **用户态旁路（网络闭环）** |
 | **5** | [08-CSAPP-3rd](./08-CSAPP-3rd/) 优化/并发 + Hennessy 剩余 | 热路径代码优化 |
@@ -39,7 +39,7 @@
 |------|--------|------|------|
 | 00 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | 交易理论 | Harris · 市场/LOB（29 章） |
 | 01 | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) | Linux 系统 | Gregg · 性能方法论 |
-| 02 | [02-Linux-Kernel-Development-3rd](./02-Linux-Kernel-Development-3rd/) | Linux 系统 | Love · 内核调度/中断 |
+| 02 | [02-Linux-Kernel-Development](./02-Linux-Kernel-Development/) | Linux 系统 | Love · LKD 3rd + 3 门前置课 [LEARNING-PATH](./02-Linux-Kernel-Development/LEARNING-PATH.md) |
 | 03 | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | Linux 系统 | Gorman · 14 章 + 附录 [OUTLINE](./03-Linux-Virtual-Memory-Manager/OUTLINE.md) |
 | 04 | [04-TCP-IP-Illustrated-Vol1](./04-TCP-IP-Illustrated-Vol1/) | **网络** | Stevens · 协议原理 → [外部仓库](https://github.com/cshonor/Computer-Networking) |
 | 05 | [05-UNP-Vol1](./05-UNP-Vol1/) | **网络** | Stevens · Socket API → [外部仓库](https://github.com/cshonor/Computer-Networking) |

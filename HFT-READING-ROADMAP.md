@@ -25,7 +25,8 @@
    ①   Systems Performance 2nd
 
 阶段 2  内核时间线与 CPU 隔离
-   ②   Linux Kernel Development 3rd
+   ②   Linux Kernel Development（先 01–03 前置课，再 00 书本）
+        01 LFS → 02 7讲模块 → 03 架构理论 → 00 LKD 3rd
 
 阶段 3  内存：NUMA / TLB / THP / 伪共享
    ③   Understanding the Linux VM Manager
@@ -96,7 +97,9 @@
 | Ch 8–9 | 文件系统、磁盘 | ⚪ | 除非审计落盘 |
 | Ch 11 | 云计算 | ⚪ | 托管用 bare metal |
 
-### ② Linux Kernel Development 3rd
+### ② Linux Kernel Development
+
+> 子目录与课书关系 → [02/LEARNING-PATH.md](./02-Linux-Kernel-Development/LEARNING-PATH.md)
 
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|

@@ -67,6 +67,6 @@ Ch 10 页框回收（避免运行时抖动）
 ```
 
 → 程序员落地 → [08-CSAPP-3rd Ch9](../08-CSAPP-3rd/chapter-09-虚拟内存.md)  
-→ 内核概述 → [02-LKD Ch11](../02-Linux-Kernel-Development-3rd/chapter-12-内存管理.md)
+→ 内核概述 → [02-LKD Ch12](../02-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-12-内存管理.md)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
