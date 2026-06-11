@@ -1,6 +1,6 @@
 # p14 系统收尾 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **选读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **选读**
 
 <!-- 首次启动与验证 · 笔记待补充 -->
 

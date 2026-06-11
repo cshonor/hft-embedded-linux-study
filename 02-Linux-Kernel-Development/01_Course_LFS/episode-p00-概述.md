@@ -1,6 +1,6 @@
 # p00 概述 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **精读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **精读**
 
 <!-- LFS 整体流程、BIOS/MBR/内核加载 · 笔记待补充 -->
 

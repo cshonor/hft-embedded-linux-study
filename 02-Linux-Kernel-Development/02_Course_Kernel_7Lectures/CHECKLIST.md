@@ -1,6 +1,6 @@
 # 内核编程课 · 环境搭建与避坑
 
-> [02_Course_Kernel_7Lectures](./README.md) · B站 **码农的洋墨水** · 配合 [OUTLINE.md](./OUTLINE.md)
+> [02_Course_Kernel_7Lectures](./README.md) · B站 **内核编程视频教程** · 配合 [OUTLINE.md](./OUTLINE.md)
 
 ---
 
@@ -86,4 +86,4 @@
 | e6 调试 | Ch 18 | 生产 panic/Oops 分析 |
 | e2–e4 上下文 | Ch 7–8 | 中断/下半部（后续架构课深化） |
 
-→ [LEARNING-PATH.md § 内核实操](../LEARNING-PATH.md#2-码农的洋墨水--6-集内核编程--模块进程中段)
+→ [LEARNING-PATH.md § 内核实操](../LEARNING-PATH.md#2-内核编程视频--6-集--模块进程中段)

@@ -1,6 +1,6 @@
 # p13 引导程序安装 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **精读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **精读**
 
 <!-- GRUB、MBR、启动项 · 笔记待补充 -->
 

@@ -1,6 +1,6 @@
 # a04 固件与引导流程
 
-> **常春藤中英字幕课** · Complete Kernel Guide · **选读**
+> **中英字幕视频教程** · Complete Kernel Guide · **选读**
 
 <!-- Firmware and boot flow · 笔记待补充 -->
 

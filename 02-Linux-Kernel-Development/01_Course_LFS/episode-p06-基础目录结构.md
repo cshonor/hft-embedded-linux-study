@@ -1,6 +1,6 @@
 # p06 基础目录结构 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **精读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **精读**
 
 <!-- FHS 目录与基础布局 · 笔记待补充 -->
 

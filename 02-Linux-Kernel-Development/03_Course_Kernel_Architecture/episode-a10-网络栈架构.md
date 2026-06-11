@@ -1,6 +1,6 @@
 # a10 网络栈架构
 
-> **常春藤中英字幕课** · Complete Kernel Guide · **精读**
+> **中英字幕视频教程** · Complete Kernel Guide · **精读**
 
 <!-- Network stack architecture · 笔记待补充 -->
 

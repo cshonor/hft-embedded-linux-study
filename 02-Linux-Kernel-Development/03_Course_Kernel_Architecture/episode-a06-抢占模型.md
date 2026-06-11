@@ -1,6 +1,6 @@
 # a06 抢占模型
 
-> **常春藤中英字幕课** · Complete Kernel Guide · **精读**
+> **中英字幕视频教程** · Complete Kernel Guide · **精读**
 
 <!-- Preemption model · 笔记待补充 -->
 

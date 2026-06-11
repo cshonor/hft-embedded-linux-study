@@ -2,7 +2,7 @@
 
 **01_Course_LFS** · [返回 02 总目录](../README.md)
 
-> **来源：** B站 up主 **加加zero** · **16 集**（p0–p15）· 完整覆盖 Linux From Scratch 从零搭建流程  
+> **来源：** B站 **LFS 系列视频** · **16 集**（p0–p15）· 完整覆盖 Linux From Scratch 从零搭建流程  
 > **定位：** LKD 前置预习 — 内核编译、根文件系统、用户态/内核态边界的**整机构建**上下文
 
 📋 **分集目录** → [OUTLINE.md](./OUTLINE.md) · **跟做清单/避坑** → [CHECKLIST.md](./CHECKLIST.md)
@@ -12,7 +12,7 @@
 ## 学习顺序
 
 ```
-01 LFS（本文件夹）→ 02 码农的洋墨水 6 集 → 03 架构理论 → 00 LKD 第三版
+01 LFS（本文件夹）→ 02 内核编程视频 6 集 → 03 架构理论 → 00 LKD 第三版
 ```
 
 → 课书对照：[LEARNING-PATH.md § LFS](../LEARNING-PATH.md#1-lfs--编译系统上下文用户态内核态)

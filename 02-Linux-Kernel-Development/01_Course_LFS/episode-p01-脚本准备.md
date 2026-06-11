@@ -1,6 +1,6 @@
 # p01 脚本准备 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **选读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **选读**
 
 <!-- 构建脚本与环境变量 · 笔记待补充 -->
 

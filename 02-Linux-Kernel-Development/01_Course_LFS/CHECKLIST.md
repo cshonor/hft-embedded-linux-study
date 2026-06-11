@@ -9,7 +9,7 @@
 - [ ] 虚拟机分配 ≥ 20GB 磁盘、≥ 4GB RAM（编译内核建议 8GB）
 - [ ] 宿主安装：gcc、make、wget、bc、bison、flex 等 LFS 前置包
 - [ ] 单独分区或虚拟磁盘给 LFS 构建，**不要**在主系统根分区直接 chroot 实验
-- [ ] 克隆/下载 up 主脚本仓库 + 对照 [官方 LFS stable](https://www.linuxfromscratch.org/lfs/view/stable/) 版本
+- [ ] 克隆/下载 课程脚本仓库 + 对照 [官方 LFS stable](https://www.linuxfromscratch.org/lfs/view/stable/) 版本
 
 ---
 

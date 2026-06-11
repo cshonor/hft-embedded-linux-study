@@ -1,6 +1,6 @@
-# 第05课 BusyBox极简系统 · 码农的洋墨水
+# 第05课 BusyBox极简系统
 
-> **B站 · 码农的洋墨水** · Linux Kernel Programming · **跳过**
+> **B站 · 内核编程视频教程** · Linux Kernel Programming · **跳过**
 
 <!-- BusyBox 最小可启动系统 · 笔记待补充 -->
 

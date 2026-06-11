@@ -2,7 +2,7 @@
 
 **03_Course_Kernel_Architecture** · [返回 02 总目录](../README.md)
 
-> **来源：** B站 **常春藤中英字幕课** · *Linux Internals & Architecture: The Complete Kernel Guide*  
+> **来源：** B站 **中英字幕视频教程** · *Linux Internals & Architecture: The Complete Kernel Guide*  
 > **定位：** 理论前置 — 回答 **「为什么 Linux 这样设计」**，不是教编译/写模块（那是 01 LFS + 02 编程课）
 
 📋 **分讲目录** → [OUTLINE.md](./OUTLINE.md) · **学习清单** → [CHECKLIST.md](./CHECKLIST.md) · **三门课对照** → [CROSS-COURSE.md](./CROSS-COURSE.md)

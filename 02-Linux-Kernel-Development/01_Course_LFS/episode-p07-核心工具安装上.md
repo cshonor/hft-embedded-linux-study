@@ -1,6 +1,6 @@
 # p07 核心工具安装上 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **选读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **选读**
 
 <!-- 系统构建（上） · 笔记待补充 -->
 

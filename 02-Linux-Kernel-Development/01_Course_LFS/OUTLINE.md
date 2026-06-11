@@ -1,4 +1,4 @@
-# LFS 课程 · 分集目录（B站 · 加加zero · 16 集）
+# LFS 课程 · 分集目录（B站 · LFS 视频教程 · 16 集）
 
 > **Linux From Scratch** · 前置预习 · [返回课程 README](./README.md)
 

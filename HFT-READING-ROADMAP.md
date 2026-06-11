@@ -26,7 +26,7 @@
 
 阶段 2  内核时间线与 CPU 隔离
    ②   Linux Kernel Development（先 01–03 前置课，再 00 书本）
-        01 LFS → 02 码农的洋墨水 6 集 → 03 架构理论 → 00 LKD 3rd
+        01 LFS → 02 内核编程视频 6 集 → 03 架构理论 → 00 LKD 3rd
 
 阶段 3  内存：NUMA / TLB / THP / 伪共享
    ③   Understanding the Linux VM Manager

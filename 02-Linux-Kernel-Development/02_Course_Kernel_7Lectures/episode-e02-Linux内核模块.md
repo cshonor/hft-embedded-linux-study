@@ -1,6 +1,6 @@
-# 第02课 Linux内核模块 · 码农的洋墨水
+# 第02课 Linux内核模块
 
-> **B站 · 码农的洋墨水** · Linux Kernel Programming · **精读**
+> **B站 · 内核编程视频教程** · Linux Kernel Programming · **精读**
 
 <!-- 编写、编译、insmod/rmmod 第一个模块 · 笔记待补充 -->
 > 衔接 LKD：[Ch 17 设备与模块](../00_Book_3rd_Notes/chapter-17-设备与模块.md)

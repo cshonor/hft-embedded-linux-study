@@ -1,6 +1,6 @@
 # 架构理论课 · 学习清单
 
-> [03_Course_Kernel_Architecture](./README.md) · 常春藤 · *Complete Kernel Guide*
+> [03_Course_Kernel_Architecture](./README.md) · *Complete Kernel Guide*
 
 ---
 

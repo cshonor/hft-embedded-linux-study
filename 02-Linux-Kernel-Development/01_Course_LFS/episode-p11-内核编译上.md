@@ -1,6 +1,6 @@
 # p11 内核编译上 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **精读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **精读**
 
 <!-- menuconfig、内核编译（上） · 笔记待补充 -->
 

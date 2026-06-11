@@ -1,6 +1,6 @@
-# 第01课 编译与启动 · 码农的洋墨水
+# 第01课 编译与启动
 
-> **B站 · 码农的洋墨水** · Linux Kernel Programming · **精读**
+> **B站 · 内核编程视频教程** · Linux Kernel Programming · **精读**
 
 <!-- 环境、pacman/apt、编译运行自定义内核 · 笔记待补充 -->
 > 画面示例：`sudo pacman -S git` vs `sudo apt install git` — 发行版包管理差异

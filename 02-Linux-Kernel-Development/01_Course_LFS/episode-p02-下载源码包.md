@@ -1,6 +1,6 @@
 # p02 下载源码包 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **选读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **选读**
 
 <!-- 源码包获取与校验 · 笔记待补充 -->
 

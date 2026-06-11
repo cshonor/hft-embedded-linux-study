@@ -1,6 +1,6 @@
 # p15 BusyBox快速演示 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **跳过**
+> **B站 · LFS 视频教程** · Linux From Scratch · **跳过**
 
 <!-- 极简 Linux 快速路径 · 笔记待补充 -->
 

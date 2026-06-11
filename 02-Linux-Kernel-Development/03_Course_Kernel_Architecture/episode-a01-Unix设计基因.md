@@ -1,6 +1,6 @@
 # Unix DNA · Introduction to Unix Design Gene
 
-> **B站 · 常春藤中英字幕课** · *Linux Internals & Architecture: The Complete Kernel Guide* · **精读**
+> **B站 · 中英字幕视频教程** · *Linux Internals & Architecture: The Complete Kernel Guide* · **精读**
 
 ## 幻灯片要点
 

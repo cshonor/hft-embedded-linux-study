@@ -1,6 +1,6 @@
 # a05 SMP与NUMA
 
-> **常春藤中英字幕课** · Complete Kernel Guide · **精读**
+> **中英字幕视频教程** · Complete Kernel Guide · **精读**
 
 <!-- SMP and NUMA · 笔记待补充 -->
 

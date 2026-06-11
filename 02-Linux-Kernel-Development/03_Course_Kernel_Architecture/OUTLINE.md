@@ -1,6 +1,6 @@
 # 内核架构理论 · 分讲目录
 
-> **Linux Internals & Architecture: The Complete Kernel Guide** · B站 **常春藤中英字幕课** · [返回 README](./README.md)
+> **Linux Internals & Architecture: The Complete Kernel Guide** · B站 **中英字幕视频教程** · [返回 README](./README.md)
 
 | 标签 | 说明 |
 |------|------|

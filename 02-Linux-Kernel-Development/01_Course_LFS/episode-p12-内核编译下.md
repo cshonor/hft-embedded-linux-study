@@ -1,6 +1,6 @@
 # p12 内核编译下 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **精读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **精读**
 
 <!-- 内核安装、模块 · 笔记待补充 -->
 

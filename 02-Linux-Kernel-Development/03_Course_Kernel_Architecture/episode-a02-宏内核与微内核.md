@@ -1,6 +1,6 @@
 # a02 宏内核与微内核
 
-> **常春藤中英字幕课** · Complete Kernel Guide · **精读**
+> **中英字幕视频教程** · Complete Kernel Guide · **精读**
 
 <!-- Monolithic vs Microkernel · 笔记待补充 -->
 

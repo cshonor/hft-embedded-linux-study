@@ -1,6 +1,6 @@
-# 第04课 Linux驱动程序 · 码农的洋墨水
+# 第04课 Linux驱动程序
 
-> **B站 · 码农的洋墨水** · Linux Kernel Programming · **选读**
+> **B站 · 内核编程视频教程** · Linux Kernel Programming · **选读**
 
 <!-- 设备驱动入门 · 笔记待补充 -->
 

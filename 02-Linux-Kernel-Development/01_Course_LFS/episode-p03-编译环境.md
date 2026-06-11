@@ -1,6 +1,6 @@
 # p03 编译环境 · LFS 课程
 
-> **B站 · 加加zero** · Linux From Scratch · **选读**
+> **B站 · LFS 视频教程** · Linux From Scratch · **选读**
 
 <!-- 宿主依赖与编译环境配置 · 笔记待补充 -->
 

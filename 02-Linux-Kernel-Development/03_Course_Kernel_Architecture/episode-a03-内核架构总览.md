@@ -1,6 +1,6 @@
 # a03 内核架构总览
 
-> **常春藤中英字幕课** · Complete Kernel Guide · **精读**
+> **中英字幕视频教程** · Complete Kernel Guide · **精读**
 
 <!-- Kernel architecture overview · 笔记待补充 -->
 

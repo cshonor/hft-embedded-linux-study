@@ -2,7 +2,7 @@
 
 **02_Course_Kernel_7Lectures** · [返回 02 总目录](../README.md)
 
-> **来源：** B站 up主 **码农的洋墨水** · **6 集** · 中英字幕 · 编译内核 → LKM → 驱动 → 调试  
+> **来源：** B站 **内核编程系列视频** · **6 集** · 中英字幕 · 编译内核 → LKM → 驱动 → 调试  
 > **定位：** LKD 前置预习 — 亲手写、加载、调试内核模块，扫清书本「LKM、中断、调试」阅读障碍
 
 📋 **分集目录** → [OUTLINE.md](./OUTLINE.md) · **环境搭建/避坑** → [CHECKLIST.md](./CHECKLIST.md)
@@ -15,7 +15,7 @@
 01 LFS → 02 本课程（6集）→ 03 架构理论 → 00 LKD 第三版
 ```
 
-→ 课书对照：[LEARNING-PATH.md § 内核实操](../LEARNING-PATH.md#2-码农的洋墨水--6-集内核编程--模块进程中段)
+→ 课书对照：[LEARNING-PATH.md § 内核实操](../LEARNING-PATH.md#2-内核编程视频--6-集--模块进程中段)
 
 ---
 
@@ -36,7 +36,7 @@
 
 - `sudo pacman -S git` — Arch 系包管理
 - `sudo apt install git` — Debian/Ubuntu 系（课程对比不同发行版）
-- 讲师环境为德语本地化 Linux；**用自己发行版对应命令即可**
+- 演示环境为德语本地化 Linux；**用自己发行版对应命令即可**
 
 ---
 
