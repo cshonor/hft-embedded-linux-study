@@ -68,7 +68,8 @@ cat a.txt | grep "key" | sort
 | 文件 / socket 语义 | `sshd`、`systemd`、你的交易程序 |
 
 内核保持**精简稳定**；功能在 userland **灵活扩展**。  
-→ 这也是 **DPDK 旁路** 的语境：热路径能否少经过通用内核栈，取决于你把多少「功能」放在用户态（见 [12-DPDK](../../12-DPDK-Low-Latency-Network/)）。
+→ 深入：**内核态 vs 用户态** 见 [a03 架构总览 · Kernel/Userland Separation](./episode-a03-内核架构总览.md)  
+→ **DPDK 旁路** 语境：[12-DPDK](../../12-DPDK-Low-Latency-Network/)
 
 ### ④ 模块化 → 可维护、可创新
 

@@ -14,7 +14,7 @@
 |----|------|------|------|
 | a01 | Unix 设计基因 | [episode-a01](./episode-a01-Unix设计基因.md) | 🔴 |
 | a02 | 宏内核 vs 微内核 | [episode-a02](./episode-a02-宏内核与微内核.md) | 🔴 |
-| a03 | 内核架构总览 | [episode-a03](./episode-a03-内核架构总览.md) | 🔴 |
+| a03 | 内核架构总览 · **Kernel/Userland 分离** | [episode-a03](./episode-a03-内核架构总览.md) | 🔴 |
 | a04 | 固件与引导流程 | [episode-a04](./episode-a04-固件与引导流程.md) | 🟡 |
 
 ## Part II · 现代硬件与执行模型
