@@ -13,7 +13,7 @@
 | 00 | [00_Book_3rd_Notes](./00_Book_3rd_Notes/) | Love · LKD 第三版 · 20 章 | **主线** — 体系化梳理、查漏补缺 |
 | 01 | [01_Course_LFS](./01_Course_LFS/) | LFS 从零构建系统 | 前置：编译上下文、用户态/内核态边界 |
 | 02 | [02_Course_Kernel_7Lectures](./02_Course_Kernel_7Lectures/) | 码农的洋墨水 · 6 集 · LKM/驱动/调试 | 前置：LKM、中断、Oops/KGDB |
-| 03 | [03_Course_Kernel_Architecture](./03_Course_Kernel_Architecture/) | 内核原理与架构理论课 | 前置：VM、网络栈、调度、并发锁 |
+| 03 | [03_Course_Kernel_Architecture](./03_Course_Kernel_Architecture/) | 常春藤 · Complete Kernel Guide · 理论架构 |
 
 📋 课程 ↔ 书本阅读关系 → [LEARNING-PATH.md](./LEARNING-PATH.md)
 

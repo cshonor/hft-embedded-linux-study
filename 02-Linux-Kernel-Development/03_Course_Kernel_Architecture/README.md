@@ -2,36 +2,60 @@
 
 **03_Course_Kernel_Architecture** · [返回 02 总目录](../README.md)
 
-> **定位：** 前置预习 — 虚拟内存、网络栈、调度、并发锁的**理论地图**，对应 LKD 核心五大子系统。
+> **来源：** B站 **常春藤中英字幕课** · *Linux Internals & Architecture: The Complete Kernel Guide*  
+> **定位：** 理论前置 — 回答 **「为什么 Linux 这样设计」**，不是教编译/写模块（那是 01 LFS + 02 编程课）
+
+📋 **分讲目录** → [OUTLINE.md](./OUTLINE.md) · **学习清单** → [CHECKLIST.md](./CHECKLIST.md) · **三门课对照** → [CROSS-COURSE.md](./CROSS-COURSE.md)
+
+---
 
 ## 学习顺序
 
-建议在 [02 内核编程 6 集](../02_Course_Kernel_7Lectures/) 之后，[00 LKD 第三版](../00_Book_3rd_Notes/) 之前。
+```
+01 LFS → 02 内核编程 6 集 → 03 本课程（a01–a10）→ 00 LKD 第三版
+```
 
-→ 与书本对应：[LEARNING-PATH.md § 架构课](../LEARNING-PATH.md#3-内核原理架构课--五大子系统前置)
+| 课程 | 回答 |
+|------|------|
+| LFS | 系统从 0 怎么拼 |
+| 02 编程 | 怎么改/调试内核 |
+| **本课** | **为什么这样设计** |
 
-## 对应 LKD 第三版 / 延伸书目
+---
 
-| 本课主题 | 书本章节 | 延伸 |
-|----------|----------|------|
-| 虚拟内存、HugePage、NUMA、页表、缺页 | LKD Ch 12、Ch 15 | [03-Gorman](../../03-Linux-Virtual-Memory-Manager/) |
-| 网络栈分层、UDP、NAPI/软中断 | LKD 网络概述 | [06-Rosen](../../06-Linux-Kernel-Networking/) |
-| 调度器、RT 进程 | LKD Ch 4 | HFT 绑核 |
-| spinlock / mutex / RCU | LKD Ch 9–10 | 无锁订单簿 |
+## 分讲速查
 
-## 笔记目录
+| Part | 讲 | 主题 |
+|------|-----|------|
+| I | a01–a04 | Unix DNA、宏/微内核、总览、引导 |
+| II | a05–a07 | SMP/NUMA、抢占、同步 |
+| III | a08–a10 | 虚拟内存、调度、网络栈 |
 
-<!-- 按课程模块补充 -->
+完整链接 → [OUTLINE.md](./OUTLINE.md)
 
-| 模块 | 主题 | 笔记 | 状态 |
-|------|------|------|------|
-| VM | 虚拟内存 / NUMA / 大页 | — | 待补充 |
-| Net | 内核网络栈 / NAPI | — | 待补充 |
-| Sched | 调度 / RT | — | 待补充 |
-| Sync | 锁 / RCU | — | 待补充 |
+**首讲已笔记：** [a01 Unix 设计基因](./episode-a01-Unix设计基因.md)（Introduction to Unix DNA）
 
-## HFT 关联
+---
 
-本课覆盖内容与 HFT 低延迟调优**高度重叠** — 是筛出 LKD 精读章节的最好前置。
+## 与 LKD / HFT
+
+| 本课 | 书本 | HFT |
+|------|------|-----|
+| a08 VM | LKD Ch 12/15 · [03-Gorman](../../03-Linux-Virtual-Memory-Manager/) | NUMA/大页 |
+| a09 调度 | LKD Ch 4 | 绑核/RT |
+| a07 同步 | LKD Ch 9–10 | RCU/无锁 |
+| a10 网络 | [06-Rosen](../../06-Linux-Kernel-Networking/) | NAPI/softirq |
 
 → [10-HFT ch05–08](../../10-HFT-Low-Latency-Practice/)
+
+---
+
+## 前置
+
+- Linux 命令行 + 基础 C
+- 建议已完成 [02 e1–e2](../02_Course_Kernel_7Lectures/)（至少编译过内核、加载过模块）
+
+## 配套
+
+- 书本主线：[00_Book_3rd_Notes](../00_Book_3rd_Notes/)
+- 三门课打通：[CROSS-COURSE.md](./CROSS-COURSE.md)
