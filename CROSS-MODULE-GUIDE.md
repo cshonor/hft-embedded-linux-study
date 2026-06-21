@@ -1,28 +1,25 @@
 # 跨模块联动指南
 
 > 本仓库 **技术板块已封顶**（`00`–`12`），不再新增顶层编号文件夹。  
-> **学习链路 L1–L5**（与文件夹序号无关）→ [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
+> **文件夹 `00`–`12` = 阅读顺序** → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
 
 ---
 
 ## 一、仓库板块总览
 
-| 板块 | 文件夹 | 链路 | 维度 |
-|------|--------|------|------|
-| 交易金融理论 | `00` | L0 | 业务 / LOB |
-| **硬件 · 程序怎么跑** | **`08` CSAPP · `07` Hennessy** | **L1** | 知其所以然 |
-| **性能方法论** | **`01` SysPerf** | **L2** | 知其然 |
-| **eBPF 观测** | **`09` BPF** | **L3** | 工具落地 |
-| Linux 内核 / 内存 | `02` `03` | L4 | 调度 / VM / NUMA |
-| **网络完整栈** | `04`–`06` `12` | L4 | 协议 → DPDK |
-| **低延迟工程** | `10` HFT | **L5** | C++ 整机实践 |
-| **Rust 量化** | `11` | **L5** | Rust 工程 |
+| 板块 | 文件夹 | 维度 |
+|------|--------|------|
+| 交易金融理论 | `00` | 业务 / LOB |
+| **程序与硬件** | **`01` CSAPP · `04` Hennessy** | 知其所以然 |
+| **性能** | **`02` SysPerf · `03` BPF** | 方法论 + eBPF 落地 |
+| Linux 内核 / 内存 | `05` LKD · `06` Gorman | 调度 / VM / NUMA |
+| **网络完整栈** | `07`–`10` | 协议 → Socket → 内核 → DPDK |
+| **低延迟工程** | `11` HFT Practice | C++ 整机实践 |
+| **Rust 量化** | `12` Rust Guide | Rust 工程 |
 
-> **L1→L2→L3→L5 主叙事：** CSAPP → SysPerf → BPF → HFT/Rust；**L4** 系统纵深与 L5 可穿插。详见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)。
+### `11` 与网络板块（`07`–`10`）的分界
 
-### `10` 与网络板块（`04/05/06/12`）的分界
-
-| | `04/05/06/12` 网络技术栈 | `10` HFT 工程实践 |
+| | `07`–`10` 网络技术栈 | `11` HFT 工程实践 |
 |---|--------------------------|-------------------|
 | **关注点** | 报文收发、协议、网卡、内存收发模型 | 裸机调优、对接规范、系统架构、延迟压测 |
 | **产出** | 理解/实现网络路径 | 把技术栈落到交易系统工程 |
@@ -38,29 +35,29 @@
 
 ```
                     ┌─────────────────────────────────────┐
-  04 TCP/IP         │  协议语义：UDP/TCP/IGMP/组播        │
+  07 TCP/IP         │  协议语义：UDP/TCP/IGMP/组播        │
        ↓            └─────────────────────────────────────┘
                     ┌─────────────────────────────────────┐
-  05 UNP + CSAPP11  │  标准内核路径：socket → epoll       │
+  08 UNP + CSAPP11  │  标准内核路径：socket → epoll       │
        ↓            │  系统调用、内核协议栈、NAPI/softirq   │
-  06 Rosen          └─────────────────────────────────────┘
+  09 Rosen          └─────────────────────────────────────┘
                            ‖ 对照
                     ┌─────────────────────────────────────┐
-  12 DPDK           │  用户态旁路：PMD 轮询、mbuf、mempool │
+  10 DPDK           │  用户态旁路：PMD 轮询、mbuf、mempool │
                     │  绕过 sk_buff / socket 层           │
                     └─────────────────────────────────────┘
 ```
 
-| 对比项 | 内核栈（05 UNP / 06 Rosen） | 用户态旁路（12 DPDK） |
+| 对比项 | 内核栈（08 UNP / 09 Rosen） | 用户态旁路（10 DPDK） |
 |--------|----------------------------|----------------------|
 | 收包触发 | 中断 + NAPI 软中断 | 用户态 busy-poll |
 | 缓冲结构 | `sk_buff` | `rte_mbuf` |
 | 内存分配 | 内核 slab / 页分配 | 预分配 mempool（大页） |
 | 系统调用 | `recvfrom` / `epoll_wait` | 无（映射 UIO/VFIO） |
 | 适用场景 | 通用、开发快、TCP 友好 | 极致延迟、UDP 组播行情 |
-| 观测工具 | **09 BPF Ch10** + XDP note、SysPerf Ch10 | testpmd、BPF（对比用） |
+| 观测工具 | **03 BPF Ch10** + XDP note、SysPerf Ch10 | testpmd、BPF（对比用） |
 
-**阅读顺序：** 先走通 04 → 05 → 06，再读 12 理解「绕过了什么」。
+**阅读顺序：** 先走通 07 → 08 → 09，再读 10 理解「绕过了什么」。
 
 ---
 
@@ -75,8 +72,8 @@
 | `setsockopt(SO_RCVBUF)` | mempool 大小、`RX_RING_SIZE` | 预分配、无动态扩缩 |
 | `sendto()` | `rte_eth_tx_burst()` | 同理批量发包 |
 
-→ UNP 细节：[05-UNP-Vol1](./05-UNP-Vol1/) · CSAPP：[chapter-11](./08-CSAPP-3rd/chapter-11-网络编程.md)  
-→ DPDK 细节：[12-DPDK-Low-Latency-Network](./12-DPDK-Low-Latency-Network/)
+→ UNP 细节：[08-UNP-Vol1](./08-UNP-Vol1/) · CSAPP：[chapter-11](./01-CSAPP-3rd/chapter-11-网络编程.md)  
+→ DPDK 细节：[10-DPDK-Low-Latency-Network](./10-DPDK-Low-Latency-Network/)
 
 ---
 
@@ -90,8 +87,8 @@
 | 预分配 vs malloc | mempool 启动时一次性分配 | 热路径零分配 |
 | Roofline（Hennessy Ch1） | `rte_eth_rx_burst` 批量大小调优 | 平衡 cache 与延迟 |
 
-→ CSAPP：[chapter-06](./08-CSAPP-3rd/chapter-06-存储器层次结构.md)、[chapter-09](./08-CSAPP-3rd/chapter-09-虚拟内存.md)  
-→ DPDK：[chapter-02-mbuf与内存池](./12-DPDK-Low-Latency-Network/chapter-02-mbuf与内存池.md)
+→ CSAPP：[chapter-06](./01-CSAPP-3rd/chapter-06-存储器层次结构.md)、[chapter-09](./01-CSAPP-3rd/chapter-09-虚拟内存.md)  
+→ DPDK：[chapter-02-mbuf与内存池](./10-DPDK-Low-Latency-Network/chapter-02-mbuf与内存池.md)
 
 ---
 
@@ -99,16 +96,16 @@
 
 | 实验 | 目录 | 关联模块 |
 |------|------|----------|
-| CSAPP 五大 Lab | `08-CSAPP-3rd/code/` | Ch3–12 程序员视角 |
-| UNP Socket Demo | `05-UNP-Vol1/code/` 或外部仓库 | epoll / 非阻塞 / UDP |
-| Rust 无锁订单簿 | `11-Rust-Quant-Trading-Guide/code/` | Hennessy Ch5 + CSAPP Ch12 |
-| DPDK 组播最小工程 | `12-DPDK-Low-Latency-Network/code/mcast-minimal/` | Rosen 组播 + DPDK Ch5 |
+| CSAPP 五大 Lab | `01-CSAPP-3rd/code/` | Ch3–12 程序员视角 |
+| UNP Socket Demo | `08-UNP-Vol1/code/` 或外部仓库 | epoll / 非阻塞 / UDP |
+| Rust 无锁订单簿 | `12-Rust-Quant-Trading-Guide/code/` | Hennessy Ch5 + CSAPP Ch12 |
+| DPDK 组播最小工程 | `10-DPDK-Low-Latency-Network/code/mcast-minimal/` | Rosen 组播 + DPDK Ch5 |
 
 ---
 
 ## 六、OpenOnload / RDMA（轻量化，不建新文件夹）
 
-详见 [12-DPDK/note-openonload-rdma对比.md](./12-DPDK-Low-Latency-Network/note-openonload-rdma对比.md)：
+详见 [10-DPDK/note-openonload-rdma对比.md](./10-DPDK-Low-Latency-Network/note-openonload-rdma对比.md)：
 
 - **OpenOnload：** 内核旁路但保留 Socket API 语义 — 介于 UNP 与 DPDK 之间
 - **RDMA/RoCE：** 共置/托管超低延迟 — 与 DPDK 场景部分重叠，部署模型不同

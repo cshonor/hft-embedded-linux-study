@@ -1,13 +1,10 @@
-﻿# HFT 必读书目与章节精读清单
+# HFT 必读书目与章节精读清单
 
 本清单锁定 **8 本**英文原版（含 CSAPP，已剔除 *Programming Rust*），以及 **2 本外部仓库书目**（TCP/IP 卷一、UNP），按 HFT 低延迟学习先后排序。
 
-**总阅读顺序与小节级读/跳指引** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)  
-**进阶主叙事（L1→L5）** → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
+**总阅读顺序** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · **文件夹顺序** → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
 
-**链路序号：** L0 Harris → **L1 CSAPP** → **L2 SysPerf** → **L3 BPF** → L4 内核/网络 → **L5 10-HFT + 11-Rust**
-
-> 链路 L1–L5 ≠ 文件夹 `01`/`08`/`09`。L1=CSAPP（`08`），L2=SysPerf（`01`），L3=BPF（`09`）。
+**按文件夹读：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 12`
 
 | 标签 | 含义 |
 |------|------|
@@ -19,9 +16,9 @@
 
 ## 1. Systems Performance: Enterprise and the Cloud 2nd — Brendan Gregg
 
-> 笔记目录：[01-Systems-Performance-2nd/](./01-Systems-Performance-2nd/)
+> 笔记目录：[02-Systems-Performance-2nd/](./02-Systems-Performance-2nd/)
 
-> **建议前置：** [08-CSAPP-3rd](./08-CSAPP-3rd/) 地基篇（Ch4–6/8–9/12）+ [07-Hennessy](./07-Computer-Architecture-6th/) Ch2。  
+> **建议前置：** [01-CSAPP-3rd](./01-CSAPP-3rd/) 地基篇（Ch4–6/8–9/12）+ [04-Hennessy](./04-Computer-Architecture-6th/) Ch2。  
 > 性能调优总纲：perf、NUMA、软中断、网卡调优 — **在懂 cache/进程/锁之后再读，事半功倍**。
 
 | 章节 | 标签 | HFT 关联 |
@@ -43,9 +40,9 @@
 
 ## 2. Linux Kernel Development 3rd — Robert Love
 
-> 笔记目录：[02-Linux-Kernel-Development/](./02-Linux-Kernel-Development/) · 书本 [00_Book_3rd_Notes](./02-Linux-Kernel-Development/00_Book_3rd_Notes/)
+> 笔记目录：[05-Linux-Kernel-Development/](./05-Linux-Kernel-Development/) · 书本 [00_Book_3rd_Notes](./05-Linux-Kernel-Development/00_Book_3rd_Notes/)
 
-> **推荐顺序：** [01 LFS](./02-Linux-Kernel-Development/01_Course_LFS/) → [02 内核编程 6 集](./02-Linux-Kernel-Development/02_Course_Kernel_7Lectures/) → [03 架构理论](./02-Linux-Kernel-Development/03_Course_Kernel_Architecture/) → **书本通读**。详见 [LEARNING-PATH.md](./02-Linux-Kernel-Development/LEARNING-PATH.md)。
+> **推荐顺序：** [01 LFS](./05-Linux-Kernel-Development/01_Course_LFS/) → [02 内核编程 6 集](./05-Linux-Kernel-Development/02_Course_Kernel_7Lectures/) → [03 架构理论](./05-Linux-Kernel-Development/03_Course_Kernel_Architecture/) → **书本通读**。详见 [LEARNING-PATH.md](./05-Linux-Kernel-Development/LEARNING-PATH.md)。
 
 > 内核调度、中断、CFS、CPU 隔离、绑核底层原理。
 
@@ -67,7 +64,7 @@
 
 ## 3. Understanding the Linux Virtual Memory Manager — Mel Gorman
 
-> 笔记目录：[03-Linux-Virtual-Memory-Manager/](./03-Linux-Virtual-Memory-Manager/)
+> 笔记目录：[06-Linux-Virtual-Memory-Manager/](./06-Linux-Virtual-Memory-Manager/)
 
 > Linux 虚拟内存、slab、THP、NUMA 内存、伪共享，内存池/订单簿优化。
 
@@ -89,7 +86,7 @@
 
 ## 4. Linux Kernel Networking — Rami Rosen
 
-> 笔记目录：[06-Linux-Kernel-Networking/](./06-Linux-Kernel-Networking/)
+> 笔记目录：[09-Linux-Kernel-Networking/](./09-Linux-Kernel-Networking/)
 
 > 内核 TCP/UDP/IGMP/NAPI/RSS，交易所 UDP 组播内核实现，对接 UNP。
 
@@ -97,7 +94,7 @@
 |------|------|----------|
 | Ch 11 第 4 层协议（TCP/UDP/Socket/sk_buff） | **精读** | 对照 UNP 之下发生了什么 |
 | Ch 14 高级主题（NAPI/softirq/RSS/RPS/XPS） | **精读** | 收包延迟、多队列绑核 |
-| 组播 / IGMP | **精读** | 见 [note-组播IGMP.md](./06-Linux-Kernel-Networking/note-组播IGMP.md) |
+| 组播 / IGMP | **精读** | 见 [note-组播IGMP.md](./09-Linux-Kernel-Networking/note-组播IGMP.md) |
 | Ch 4–5 IPv4 / 路由 | **选读** | 托管/共置网络 |
 | Ch 3 ICMP / Ch 7 邻居子系统 | **选读** | 排查网络 |
 | Ch 13 InfiniBand | **选读** | RDMA/共置低延迟 |
@@ -110,7 +107,7 @@
 
 ## 12. DPDK — 用户态旁路网络（官方文档 + 本仓库笔记）
 
-> 笔记目录：[12-DPDK-Low-Latency-Network/](./12-DPDK-Low-Latency-Network/)
+> 笔记目录：[10-DPDK-Low-Latency-Network/](./10-DPDK-Low-Latency-Network/)
 
 > **网络栈闭环最后一环：** 内核协议原理（04）→ Socket API（05）→ 内核实现（06）→ **用户态旁路（12）**。与 UNP/TCP/IP **并行互补**，不是重复。
 
@@ -126,13 +123,13 @@
 
 **HFT 产出：** 理解内核栈 vs DPDK 旁路取舍；组播行情最小工程见 `code/mcast-minimal/`。
 
-**交叉阅读：** [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md) · 对照 [05-UNP](./05-UNP-Vol1/) · [08-CSAPP Ch6/Ch11](./08-CSAPP-3rd/)
+**交叉阅读：** [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md) · 对照 [08-UNP](./08-UNP-Vol1/) · [01-CSAPP Ch6/Ch11](./01-CSAPP-3rd/)
 
 ---
 
 ## 5. Computer Architecture: A Quantitative Approach 6th — Hennessy & Patterson
 
-> 笔记目录：[07-Computer-Architecture-6th/](./07-Computer-Architecture-6th/)
+> 笔记目录：[04-Computer-Architecture-6th/](./04-Computer-Architecture-6th/)
 
 > CPU 缓存、MESI、NUMA 访存、流水线，无锁代码硬件优化依据。
 
@@ -152,7 +149,7 @@
 
 ## 6. Computer Systems: A Programmer's Perspective 3rd — Bryant & O'Neill
 
-> 笔记目录：[08-CSAPP-3rd/](./08-CSAPP-3rd/)
+> 笔记目录：[01-CSAPP-3rd/](./01-CSAPP-3rd/)
 
 > **HFT 分两遍读：** **① 地基篇（SysPerf 之前）** — 程序如何在硬件上跑；**② 网络篇（阶段 5）** — Ch10–11 衔接 UNP。Hennessy 理论 → CSAPP 程序员落地。
 
@@ -194,9 +191,9 @@
 
 ## 8. BPF Performance Tools — Brendan Gregg
 
-> 笔记目录：[09-BPF-Performance-Tools/](./09-BPF-Performance-Tools/)
+> 笔记目录：[03-BPF-Performance-Tools/](./03-BPF-Performance-Tools/)
 
-> eBPF、XDP 小包过滤、内核观测。**紧接 [01-SysPerf](../01-Systems-Performance-2nd/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
+> eBPF、XDP 小包过滤、内核观测。**紧接 [02-SysPerf](../02-Systems-Performance-2nd/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -204,7 +201,7 @@
 | Part I Ch 4–5 BCC / bpftrace | **精读** | 工具链快速上手 |
 | Part II Ch 6 CPU | **精读** | off-CPU、run queue、抖动定位 |
 | Part II Ch 10 网络 | **精读** | 套接字延迟、TCP/UDP 重传丢包 |
-| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./09-BPF-Performance-Tools/note-XDP与tc-BPF.md)；vs DPDK |
+| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./03-BPF-Performance-Tools/note-XDP与tc-BPF.md)；vs DPDK |
 | Part II Ch 7 内存 / Ch 13–14 应用·内核 | **选读** | alloc、fault、调度唤醒 |
 | Part I Ch 3 / Part III Ch 17–18 | **选读** | 方法论、排障技巧 |
 | 附录 A/B bpftrace 单行/备忘单 | **精读** | 现场速查 |
@@ -218,8 +215,8 @@
 
 | 外 | 书目 | 索引 | 插入顺序 |
 |----|------|------|----------|
-| 外A | TCP/IP Illustrated Vol.1 — Stevens | [04-TCP-IP-Illustrated-Vol1/](./04-TCP-IP-Illustrated-Vol1/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | Rosen / UNP **之前** |
-| 外B | UNIX Network Programming Vol.1 — Stevens | [05-UNP-Vol1/](./05-UNP-Vol1/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | TCP/IP 卷一 **之后**，Rosen **并行** |
+| 外A | TCP/IP Illustrated Vol.1 — Stevens | [07-TCP-IP-Illustrated-Vol1/](./07-TCP-IP-Illustrated-Vol1/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | Rosen / UNP **之前** |
+| 外B | UNIX Network Programming Vol.1 — Stevens | [08-UNP-Vol1/](./08-UNP-Vol1/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | TCP/IP 卷一 **之后**，Rosen **并行** |
 
 > **不要整本迁入本仓库。** 三本网络书分工：TCP/IP = 协议；UNP = API；Rosen = 内核实现。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md#二外部仓库书目unp--tcpip-卷一)。
 
@@ -229,17 +226,17 @@
 
 | 资料 | 本仓库入口 | 用途 |
 |------|-----------|------|
-| **DPDK Programmer's Guide** | [12-DPDK-Low-Latency-Network/](./12-DPDK-Low-Latency-Network/) | 用户态轮询、PMD、mbuf、零拷贝旁路 |
-| **DPDK Sample Applications** | [12-DPDK/code/mcast-minimal/](./12-DPDK-Low-Latency-Network/code/mcast-minimal/) | 组播最小工程参考 |
-| **OpenOnload / RDMA** | [note-openonload-rdma对比.md](./12-DPDK-Low-Latency-Network/note-openonload-rdma对比.md) | 方案对比，不建新文件夹 |
+| **DPDK Programmer's Guide** | [10-DPDK-Low-Latency-Network/](./10-DPDK-Low-Latency-Network/) | 用户态轮询、PMD、mbuf、零拷贝旁路 |
+| **DPDK Sample Applications** | [10-DPDK/code/mcast-minimal/](./10-DPDK-Low-Latency-Network/code/mcast-minimal/) | 组播最小工程参考 |
+| **OpenOnload / RDMA** | [note-openonload-rdma对比.md](./10-DPDK-Low-Latency-Network/note-openonload-rdma对比.md) | 方案对比，不建新文件夹 |
 | **RDMA 规范** | https://www.infinibandta.org/ | RoCE 部署背景 |
 | **Linux RDMA 文档** | https://www.kernel.org/doc/html/latest/infiniband/ | ibverbs、rdma_cm |
 
-**建议阅读顺序：** 先 Rosen（06 内核栈）→ 再 12 DPDK（旁路对比）→ OpenOnload/RDMA 对比笔记（选型）。
+**建议阅读顺序：** 先 Rosen（`09` 内核栈）→ 再 `10` DPDK（旁路对比）→ OpenOnload/RDMA 对比笔记（选型）。
 
 ---
 
-## 与 `10-HFT-Low-Latency-Practice` 章节映射
+## 与 `11-HFT-Low-Latency-Practice` 章节映射
 
 | 仓库章节 | 主要参考书 | 补充资料 |
 |----------|------------|----------|
@@ -248,13 +245,13 @@
 | ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
 | ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen + **12 DPDK** | CSAPP Ch11、**09 BPF Ch10** + XDP note |
+| ch06 低延迟网络与协议优化 | Rosen + **10 DPDK** | CSAPP Ch11、**03 BPF Ch10** + XDP note |
 | ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12 |
-| ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**12 DPDK** |
+| ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**10 DPDK** |
 | ch09 高频做市与套利策略 | Harris | — |
-| ch10 延迟测量与基准压测 | Gregg SysPerf + **09 BPF** | **12 DPDK** testpmd |
+| ch10 延迟测量与基准压测 | Gregg SysPerf + **03 BPF** | **10 DPDK** testpmd |
 | ch11 风控合规与滑点控制 | Harris（监管/规则） | — |
-| ch12 实盘上线与运维进阶 | Gregg BPF | **12 DPDK** / OpenOnload / RDMA 对比笔记 |
+| ch12 实盘上线与运维进阶 | Gregg BPF | **10 DPDK** / OpenOnload / RDMA 对比笔记 |
 
 ---
 
