@@ -222,17 +222,20 @@
 
 ---
 
-## 补充：官方文档（无实体书 · 已纳入 12 号文件夹）
+## 补充：DPDK 官方文档 + 实体书（`10` 文件夹）
 
 | 资料 | 本仓库入口 | 用途 |
 |------|-----------|------|
 | **DPDK Programmer's Guide** | [10-DPDK-Low-Latency-Network/](./10-DPDK-Low-Latency-Network/) | 用户态轮询、PMD、mbuf、零拷贝旁路 |
-| **DPDK Sample Applications** | [10-DPDK/code/mcast-minimal/](./10-DPDK-Low-Latency-Network/code/mcast-minimal/) | 组播最小工程参考 |
-| **OpenOnload / RDMA** | [note-openonload-rdma对比.md](./10-DPDK-Low-Latency-Network/note-openonload-rdma对比.md) | 方案对比，不建新文件夹 |
+| **① 《深入浅出 DPDK》** | [note-DPDK实体书递进.md](./10-DPDK-Low-Latency-Network/note-DPDK实体书递进.md) | **先读** — 建立旁路认知（配 chapter-01–04） |
+| **② 《Linux 高性能网络详解》** | 同上 note | **后读** — DPDK/RDMA/XDP 深度与选型 |
+| **DPDK Sample Applications** | [code/mcast-minimal/](./10-DPDK-Low-Latency-Network/code/mcast-minimal/) | 组播最小工程参考 |
+| **OpenOnload / RDMA** | [note-openonload-rdma对比.md](./10-DPDK-Low-Latency-Network/note-openonload-rdma对比.md) | 方案对比 |
 | **RDMA 规范** | https://www.infinibandta.org/ | RoCE 部署背景 |
 | **Linux RDMA 文档** | https://www.kernel.org/doc/html/latest/infiniband/ | ibverbs、rdma_cm |
 
-**建议阅读顺序：** 先 Rosen（`09` 内核栈）→ 再 `10` DPDK（旁路对比）→ OpenOnload/RDMA 对比笔记（选型）。
+**建议顺序：** `09` Rosen → **① 深入浅出 DPDK** ∥ 官方 doc → **② Linux 高性能网络详解** ∥ RDMA/XDP 笔记。  
+**触发条件：** `01`/`02` 打底 + perf 确认网络是瓶颈后再开实体书（见 note）。
 
 ---
 

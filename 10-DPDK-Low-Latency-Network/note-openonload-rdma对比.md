@@ -29,5 +29,6 @@
 
 ## 相关章节
 
+- [note-DPDK实体书递进.md](./note-DPDK实体书递进.md) — ② 本书与 DPDK/RDMA/XDP 全书地图
 - 上一章：[chapter-05-组播行情接入.md](./chapter-05-组播行情接入.md)
 - 跨模块：[CROSS-MODULE-GUIDE §六](../CROSS-MODULE-GUIDE.md#六openonload--rdma轻量化不建新文件夹)

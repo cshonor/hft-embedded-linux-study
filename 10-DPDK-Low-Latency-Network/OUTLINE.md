@@ -23,6 +23,7 @@
 | 主题 | 笔记 | HFT |
 |------|------|-----|
 | OpenOnload / RDMA / RoCE 与 DPDK 取舍 | [note-openonload-rdma对比](./note-openonload-rdma对比.md) | 🟡 |
+| **实体书：** 深入浅出 DPDK → Linux 高性能网络详解 | [note-DPDK实体书递进](./note-DPDK实体书递进.md) | 🟡 |
 
 ## 官方文档选读（无单独笔记文件）
 
@@ -36,13 +37,15 @@
 ## 建议阅读顺序
 
 ```
-06 Rosen（内核栈收包路径）
+09 Rosen（内核栈收包路径）
     ↓
-10 DPDK Ch1–4（旁路原理与内存模型）
-  ↓
-10 DPDK Ch5 + code/mcast-minimal（组播落地）
+① 《深入浅出 DPDK》 ∥  chapter-01–04 + 官方 Programmer's Guide
     ↓
-note-openonload-rdma对比（方案选型）
+chapter-05 + code/mcast-minimal（组播落地）
+    ↓
+② 《Linux 高性能网络详解》 ∥  note-openonload-rdma对比 + 03-BPF XDP note
 ```
+
+> **何时开读：** `01` CSAPP + `02` SysPerf 打底，且 perf 已能定位「网络收发是瓶颈」后再上。详见 [note-DPDK实体书递进](./note-DPDK实体书递进.md)。
 
 跨模块对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)

@@ -8,10 +8,10 @@
 
 | 序号 | 文件夹 | 层级 | 回答的问题 |
 |------|--------|------|-----------|
-| 04 | [TCP/IP Illustrated Vol.1](../07-TCP-IP-Illustrated-Vol1/) | 协议 | 线上包长什么样？ |
-| 05 | [UNP Vol.1](../08-UNP-Vol1/) | 系统调用 / Socket API | 用户态怎么调内核网络栈？ |
-| 06 | [Linux Kernel Networking](../09-Linux-Kernel-Networking/) | 内核实现 | 内核怎么收发包？ |
-| **12** | **本文件夹** | **用户态旁路** | **如何绕过内核栈、轮询收包？** |
+| 07 | [TCP/IP Illustrated Vol.1](../07-TCP-IP-Illustrated-Vol1/) | 协议 | 线上包长什么样？ |
+| 08 | [UNP Vol.1](../08-UNP-Vol1/) | 系统调用 / Socket API | 用户态怎么调内核网络栈？ |
+| 09 | [Linux Kernel Networking](../09-Linux-Kernel-Networking/) | 内核实现 | 内核怎么收发包？ |
+| **10** | **本文件夹** | **用户态旁路** | **如何绕过内核栈、轮询收包？** |
 
 两条路线对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md#二内核网络栈-vs-用户态旁路)
 
@@ -24,6 +24,7 @@
 | PMD 与轮询模式 | [chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md) | 🔴 |
 | 零拷贝与用户态旁路 | [chapter-04-零拷贝与用户态旁路.md](./chapter-04-零拷贝与用户态旁路.md) | 🔴 |
 | 组播行情接入 | [chapter-05-组播行情接入.md](./chapter-05-组播行情接入.md) | 🔴 |
+| **实体书递进** | [note-DPDK实体书递进.md](./note-DPDK实体书递进.md) | 🟡 |
 | OpenOnload / RDMA 对比 | [note-openonload-rdma对比.md](./note-openonload-rdma对比.md) | 🟡 |
 
 📋 完整主题清单 → [OUTLINE.md](./OUTLINE.md)
@@ -36,7 +37,8 @@
 | Sample Applications | https://doc.dpdk.org/guides/sample_app_ug/ |
 | API Reference | https://doc.dpdk.org/api/ |
 
-> 本文件夹**不引入新实体书**，以官方文档 + 轻量化笔记 + 最小工程为主。
+> 本文件夹主线：**DPDK 官方文档** + chapter 笔记 + 最小工程。  
+> **实体书（场景触发）：** [《深入浅出 DPDK》→《Linux 高性能网络详解》](./note-DPDK实体书递进.md) — 先建立旁路认知，再串 RDMA/XDP 选型。
 
 ## 动手实验
 
