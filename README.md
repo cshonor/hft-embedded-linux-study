@@ -12,21 +12,21 @@
 
 > 详细小节级读/跳指引 → **[HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)**（建议先读此文件）
 
-> **文件夹编号 ≠ 阅读顺序。** `07`/`08` 在目录里归类为「硬件 CPU 层」；HFT 推荐 **先读 CSAPP（配合 Hennessy）再读 SysPerf** — 先把程序如何在硬件上跑、缓存/进程/锁是什么砸实，再学方法论和 perf/BPF，才能理解「火焰图里为何是这个函数」「锁为何拖慢尾延迟」，而不是背结论。
+> **文件夹编号 ≠ 阅读顺序。** `01` SysPerf 在性能板块最前；**读完紧接 [`09-BPF-Performance-Tools`](./09-BPF-Performance-Tools/)**（Gregg 双书）。阶段 0 后仍建议 CSAPP + Hennessy 地基再进 SysPerf。
 
 | 阶段 | 读什么 | 目的 |
 |------|--------|------|
 | **0** | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) · LOB/市场结构 | 业务锚点，先懂撮合再写引擎 |
 | **1** | [07-Computer-Architecture-6th](./07-Computer-Architecture-6th/) Ch2 + [08-CSAPP-3rd](./08-CSAPP-3rd/) **地基篇**（Ch1/4–6/8–9/12） | 缓存、进程、虚拟内存、锁 — **性能分析的底层逻辑架子** |
-| **2** | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) | 会量延迟、会排抖动（USE/perf/BPF） |
+| **2** | [01-Systems-Performance-2nd](./01-Systems-Performance-2nd/) → **[09-BPF-Performance-Tools](./09-BPF-Performance-Tools/)** | Gregg **二连读**：方法论 + eBPF/bpftrace 落地 |
 | **3** | [02-Linux-Kernel-Development](./02-Linux-Kernel-Development/)（课 → 书） | 绑核、中断、调度 |
 | **4** | [03-Linux-Virtual-Memory-Manager](./03-Linux-Virtual-Memory-Manager/) | NUMA / TLB / THP / slab（衔接 CSAPP Ch9） |
 | **5** | [04-TCP-IP](./04-TCP-IP-Illustrated-Vol1/) → [05-UNP](./05-UNP-Vol1/) → [08-CSAPP-3rd](./08-CSAPP-3rd/) 网络章 → [06-Rosen](./06-Linux-Kernel-Networking/) → **[12-DPDK](./12-DPDK-Low-Latency-Network/)** | 协议 → Socket → 内核栈 → **用户态旁路（网络闭环）** |
 | **6** | [08-CSAPP-3rd](./08-CSAPP-3rd/) Ch5 优化 + Hennessy 剩余 | 热路径编译/微结构补强 |
-| **7** | Harris 剩余 + [09-BPF-Performance-Tools](./09-BPF-Performance-Tools/) | 生产观测 |
+| **7** | Harris 剩余 | 监管 / 清算等业务补全 |
 | **8** | [10-HFT-Low-Latency-Practice](./10-HFT-Low-Latency-Practice/) + [11-Rust-Quant-Trading-Guide](./11-Rust-Quant-Trading-Guide/) | **交易系统工程落地**（非网络技术） |
 
-**推荐序号：** 0 → **⑤⑥(地基)** → ① → ② → ③ → 外A → 外B → ④ → ⑥(网络) → ⑫ → ⑤⑥(补) → ⑦ → ⑧ → 实战笔记
+**推荐序号：** 0 → **⑤⑥(地基)** → ① → **⑧** → ② → ③ → 外A → 外B → ④ → ⑥(网络) → ⑫ → ⑤⑥(补) → ⑦ → 实战笔记
 
 | 标签 | 含义 |
 |------|------|

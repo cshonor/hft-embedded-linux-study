@@ -57,6 +57,6 @@ Ch 15   BPF
 附录 A/C
 ```
 
-→ 深入 BPF → [09-BPF-Performance-Tools](../09-BPF-Performance-Tools/)
+→ 深入 BPF → [09-BPF-Performance-Tools](../09-BPF-Performance-Tools/)（**紧接本书**，不必等后续章节）
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

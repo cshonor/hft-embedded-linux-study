@@ -46,3 +46,5 @@
 ```
 Ch 1–2 → Ch 4 → Ch 6–7 → Ch 10 → Ch 13 → Ch 15 → 附录 A/C
 ```
+
+**下一本（紧接）：** [09-BPF-Performance-Tools](../09-BPF-Performance-Tools/) — Ch 15 预览在此展开为 bpftrace/BCC 全书。

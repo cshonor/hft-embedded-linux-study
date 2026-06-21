@@ -4,9 +4,10 @@
 
 **总阅读顺序与小节级读/跳指引** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)
 
-**推荐序号：** 0 Harris(LOB) → **⑤Hennessy + ⑥CSAPP(地基)** → ①SysPerf → ②LKD → ③Gorman → 外A → 外B → ④Rosen → ⑥CSAPP(网络) → ⑫DPDK → ⑥/⑤(优化补) → ⑦Harris → ⑧BPF → 实战笔记
+**推荐序号：** 0 Harris(LOB) → **⑤Hennessy + ⑥CSAPP(地基)** → ①SysPerf → **⑧BPF** → ②LKD → ③Gorman → 外A → 外B → ④Rosen → ⑥CSAPP(网络) → ⑫DPDK → ⑥/⑤(优化补) → ⑦Harris → 实战笔记
 
-> **先 CSAPP 再 SysPerf：** CSAPP 砸实缓存/进程/虚拟内存/锁；《性能之巅》的方法论和 perf/BPF 才有「为什么」可挂靠 — 详见 [ROADMAP · 为什么 CSAPP 在 SysPerf 前面](./HFT-READING-ROADMAP.md#为什么-csapp-放在-sysperf-前面)。
+> **Gregg 双书：** [01 SysPerf](./01-Systems-Performance-2nd/) 紧接 [09 BPF Performance Tools](./09-BPF-Performance-Tools/)（文件夹 `09`，非 `08` CSAPP）。  
+> **地基仍在前：** CSAPP + Hennessy → SysPerf — 详见 [ROADMAP](./HFT-READING-ROADMAP.md)。
 
 | 标签 | 含义 |
 |------|------|
@@ -195,7 +196,7 @@
 
 > 笔记目录：[09-BPF-Performance-Tools/](./09-BPF-Performance-Tools/)
 
-> eBPF、XDP 小包过滤、内核观测，DPDK 配套调试，放在末尾。
+> eBPF、XDP 小包过滤、内核观测。**紧接 [01-SysPerf](../01-Systems-Performance-2nd/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -268,6 +269,8 @@ CSAPP 地基（Ch1/4–6/8–9/12）─┘  进程 · Cache · VM · 锁
     ↓
 Gregg SysPerf (方法论/观测)     ← 能解释火焰图、锁、off-CPU
     ↓
+Gregg BPF Tools (eBPF/bpftrace)  ← 紧接 SysPerf，生产观测落地
+    ↓
 Love (调度/中断/定时器)
     ↓
 Gorman (虚拟内存/NUMA/THP)      ← 衔接 CSAPP Ch9
@@ -285,8 +288,6 @@ Rosen (内核网络栈/组播)
 CSAPP Ch5 + Hennessy 剩余（优化补强，可提前）
     ↓
 Harris 剩余 (监管/清算)
-    ↓
-Gregg BPF (eBPF/XDP 观测闭环)
     ↓
 10/11 实战笔记 (交易系统工程落地)
 ```

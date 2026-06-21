@@ -2,6 +2,8 @@
 
 **文件夹 09** · 全书 **18 章 + 附录 A–E**（4 Parts）· [返回总清单](../READING-LIST.md#8-bpf-performance-tools--brendan-gregg)
 
+> **紧接 [01-SysPerf](../01-Systems-Performance-2nd/) 阅读** — Gregg 性能双书第二本；SysPerf Ch 15 的 bpftrace/BCC 在此全书展开。
+
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
 ---
@@ -67,7 +69,8 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 
 ## 交叉阅读
 
-- 方法论前置 → [01-Systems-Performance-2nd](../01-Systems-Performance-2nd/)
+- **上一本（必读前置）** → [01-Systems-Performance-2nd](../01-Systems-Performance-2nd/) — 读完立刻读本目录
 - SysPerf bpftrace 附录 → [01 appendix-C](../01-Systems-Performance-2nd/appendix-C-bpftrace单行命令.md)
+- 后续内核/内存/网络 → [02-LKD](../02-Linux-Kernel-Development/) · [03-Gorman](../03-Linux-Virtual-Memory-Manager/) · [06-Rosen](../06-Linux-Kernel-Networking/)（读时可回头用 BPF 验证）
 - DPDK 对照 → [12-DPDK](../12-DPDK-Low-Latency-Network/)
 - 跨模块 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)

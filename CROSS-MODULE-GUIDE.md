@@ -17,7 +17,7 @@
 | **低延迟工程落地** | `10` HFT Practice | 整机调优 / 交易所对接 / 交易系统架构 / 压测 |
 | Rust 开发栈 | `11` Rust Quant Guide | 量化工程 / 无锁 / 订单簿 |
 
-> **阅读顺序 ≠ 文件夹序号。** HFT 推荐：`07`+`08` 地基 → `01` SysPerf → `02`/`03` → 网络栈 → `09` BPF。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)。
+> **阅读顺序 ≠ 文件夹序号。** HFT 推荐：`07`+`08` 地基 → `01` SysPerf → **`09` BPF（紧接）** → `02`/`03` → 网络栈。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)。
 
 ### `10` 与网络板块（`04/05/06/12`）的分界
 
