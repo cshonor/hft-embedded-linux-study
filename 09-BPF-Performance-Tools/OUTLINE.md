@@ -70,6 +70,6 @@ Part II  Ch 6 CPU → Ch 10 网络 (+ note-XDP)
 附录 A/B bpftrace 速查
 ```
 
-→ 衔接 [01-SysPerf](../01-Systems-Performance-2nd/) · vs DPDK → [12-DPDK](../12-DPDK-Low-Latency-Network/)
+→ **紧接** [01-SysPerf](../01-Systems-Performance-2nd/)（Gregg 双书第二本）· vs DPDK → [12-DPDK](../12-DPDK-Low-Latency-Network/)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
