@@ -2,6 +2,8 @@
 
 **文件夹 08** · 全书 **12 章 + 附录 A** · [返回总清单](../READING-LIST.md#6-computer-systems-a-programmers-perspective-3rd--bryant--oneill)
 
+> **HFT 阅读分两遍：** **① 地基篇（在 [01-SysPerf](../01-Systems-Performance-2nd/) 之前）** — 程序如何在硬件上跑；**② 网络篇（阶段 5）** — Ch10–11 衔接 UNP/Rosen。
+
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
 ---
@@ -45,10 +47,18 @@
 
 ## HFT 精读捷径
 
+### ① 地基篇（SysPerf 之前 · 与 Hennessy Ch2 交叉）
+
 ```
-Ch 4–6  处理器 / 优化 / Cache
-Ch 9    虚拟内存
-Ch 11–12 网络 / 并发
+Hennessy Ch2（理论）→ CSAPP Ch6（落地）
+→ Ch8 进程/syscall → Ch9 VM → Ch12 锁与并发
+选读 Ch1 概览 · Ch4 流水线 · 时间紧可 Ch5 后移
 ```
 
-Hennessy 理论 → CSAPP 程序员落地 → 见 [07-Computer-Architecture-6th](../07-Computer-Architecture-6th/)
+### ② 网络篇（阶段 5 · UNP 前后）
+
+```
+Ch 10–11 网络 / epoll
+```
+
+→ 读完地基再读 [01-SysPerf](../01-Systems-Performance-2nd/) · Hennessy 理论 → [07-Computer-Architecture-6th](../07-Computer-Architecture-6th/)

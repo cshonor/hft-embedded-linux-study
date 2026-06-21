@@ -2,6 +2,8 @@
 
 **文件夹 07** · 全书 **7 章 + 附录 A–M**（含在线附录）· [返回总清单](../READING-LIST.md#5-computer-architecture-a-quantitative-approach-6th--hennessy--patterson)
 
+> **HFT 阶段 1：** 先读 **Ch2**（配合 [08-CSAPP Ch6](../08-CSAPP-3rd/chapter-06-存储器层次结构.md)），再读 [01-SysPerf](../01-Systems-Performance-2nd/)。Ch5 内存一致性可与 CSAPP Ch12 交叉。
+
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
 ---

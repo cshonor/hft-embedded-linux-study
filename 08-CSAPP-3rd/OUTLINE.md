@@ -53,9 +53,15 @@
 ## HFT 推荐阅读顺序
 
 ```
-Ch 1（概览）→ Ch 4–6（CPU/优化/Cache）→ Ch 9（VM）
-→ Ch 11–12（网络/并发）
-Ch 3 需读反汇编时补 · Ch 10 epoll 与 UNP 交叉
+阶段 1（SysPerf 之前）
+  Hennessy Ch2 → CSAPP Ch6
+  → CSAPP Ch8–9–12（进程/VM/锁）
+  → 选读 CSAPP Ch4、Ch1
+
+阶段 2 起
+  → 01-SysPerf → 02-LKD → 03-Gorman …
+
+阶段 5 回来读 CSAPP Ch10–11（网络）
 ```
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

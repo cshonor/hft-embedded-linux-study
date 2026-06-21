@@ -45,6 +45,8 @@
 
 ## HFT 精读顺序
 
+> **全书前置（阶段 1）：** [08-CSAPP](../08-CSAPP-3rd/) 地基 + [07-Hennessy](../07-Computer-Architecture-6th/) Ch2 — 再读本目录。
+
 ```
 Ch 1–2  方法论（USE/RED）
 Ch 4    观测工具

@@ -4,8 +4,9 @@
 
 **总阅读顺序与小节级读/跳指引** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)
 
-**推荐序号：** 0 Harris(LOB) → ① → ② → ③ → 外A → 外B → ④ → ⑤ → ⑥ → ⑦ → ⑧ → **⑫ DPDK**  
-**补充资料：** OpenOnload / RDMA 对比见 [12-DPDK/note-openonload-rdma对比.md](./12-DPDK-Low-Latency-Network/note-openonload-rdma对比.md)；不另加实体书、不建新文件夹。
+**推荐序号：** 0 Harris(LOB) → **⑤Hennessy + ⑥CSAPP(地基)** → ①SysPerf → ②LKD → ③Gorman → 外A → 外B → ④Rosen → ⑥CSAPP(网络) → ⑫DPDK → ⑥/⑤(优化补) → ⑦Harris → ⑧BPF → 实战笔记
+
+> **先 CSAPP 再 SysPerf：** CSAPP 砸实缓存/进程/虚拟内存/锁；《性能之巅》的方法论和 perf/BPF 才有「为什么」可挂靠 — 详见 [ROADMAP · 为什么 CSAPP 在 SysPerf 前面](./HFT-READING-ROADMAP.md#为什么-csapp-放在-sysperf-前面)。
 
 | 标签 | 含义 |
 |------|------|
@@ -19,7 +20,8 @@
 
 > 笔记目录：[01-Systems-Performance-2nd/](./01-Systems-Performance-2nd/)
 
-> 性能调优总纲：perf、NUMA、软中断、网卡调优，HFT 排抖动第一本。
+> **建议前置：** [08-CSAPP-3rd](./08-CSAPP-3rd/) 地基篇（Ch4–6/8–9/12）+ [07-Hennessy](./07-Computer-Architecture-6th/) Ch2。  
+> 性能调优总纲：perf、NUMA、软中断、网卡调优 — **在懂 cache/进程/锁之后再读，事半功倍**。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -151,7 +153,7 @@
 
 > 笔记目录：[08-CSAPP-3rd/](./08-CSAPP-3rd/)
 
-> 程序员视角的系统实践：缓存优化、虚拟内存、网络 I/O、并发，Hennessy 的落地配套。
+> **HFT 分两遍读：** **① 地基篇（SysPerf 之前）** — 程序如何在硬件上跑；**② 网络篇（阶段 5）** — Ch10–11 衔接 UNP。Hennessy 理论 → CSAPP 程序员落地。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -165,7 +167,7 @@
 | **Ch 11 Network Programming** | **精读** | Socket、TCP/UDP、并发服务器 |
 | **Ch 12 Concurrent Programming** | **精读** | 线程、互斥、无锁铺垫 |
 | Ch 2 Information Representation | **跳过** | 除非做二进制协议解析 |
-| Ch 7 Linking / Ch 8 ECF | **跳过** | 链接与信号，非热路径核心 |
+| Ch 7 Linking / Ch 8 ECF | **选读→地基** | Ch8 进程/syscall/信号 — **SysPerf 之前建议读**；Ch7 链接非热路径 |
 
 **HFT 产出：** 从程序员角度落地 Hennessy 的缓存/一致性理论；并发与网络编程直接对接引擎开发。
 
@@ -260,27 +262,31 @@
 ```
 Harris LOB（阶段 0，可并行）
     ↓
-Gregg SysPerf (方法论/观测)
+Hennessy Ch2（+ 选读 Ch5）───┐
+    ↓                        │  底层逻辑架子
+CSAPP 地基（Ch1/4–6/8–9/12）─┘  进程 · Cache · VM · 锁
+    ↓
+Gregg SysPerf (方法论/观测)     ← 能解释火焰图、锁、off-CPU
     ↓
 Love (调度/中断/定时器)
     ↓
-Gorman (虚拟内存/NUMA/THP)
+Gorman (虚拟内存/NUMA/THP)      ← 衔接 CSAPP Ch9
     ↓
 TCP/IP 卷一 (协议：UDP/组播/TCP)     ← 外部仓库
     ↓
 UNP Vol.1 (Socket API：epoll/非阻塞)  ← 外部仓库
     ↓
+CSAPP 网络（Ch10–11）
+    ↓
 Rosen (内核网络栈/组播)
     ↓
-Hennessy (缓存/MESI/一致性)
+⑫ DPDK (用户态旁路 · 网络栈闭环)
     ↓
-CSAPP (程序员视角：缓存/VM/网络/并发落地)
+CSAPP Ch5 + Hennessy 剩余（优化补强，可提前）
     ↓
 Harris 剩余 (监管/清算)
     ↓
 Gregg BPF (eBPF/XDP 观测闭环)
-    ↓
-⑫ DPDK (用户态旁路 · 网络栈闭环)
     ↓
 10/11 实战笔记 (交易系统工程落地)
 ```

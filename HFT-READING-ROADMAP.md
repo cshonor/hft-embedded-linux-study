@@ -1,8 +1,20 @@
 ﻿# HFT 系统开发 · 完整阅读路线图
 
-> **文件夹序号即阅读顺序：** `00-` → `12-`，在资源管理器中按名称排序即可跟着读。
+> **文件夹序号 ≠ 阅读顺序。** 资源管理器里 `01` 是 SysPerf、`07`/`08` 是硬件 CPU 层 — 编号只作板块归类。  
+> **HFT 推荐：** 阶段 0（Harris）后 → **Hennessy + CSAPP 地基** → **SysPerf** → 内核/内存/网络…（见下文）。
 
 面向 **HFT 高频量化交易系统**（行情接入 → 订单簿 → 策略 → 发单 → 风控 → 观测），本文件给出**不漏项**的分阶段阅读顺序，以及每本书**小节级**读/跳指引。
+
+### 为什么 CSAPP 放在 SysPerf 前面？
+
+| 先读 CSAPP（+ Hennessy Ch2） | 再读 SysPerf |
+|------------------------------|--------------|
+| 程序如何在 CPU/缓存/内存上跑 | USE / RED / 延迟分解怎么量 |
+| 进程、虚拟内存、锁在代码里长什么样 | perf 火焰图、off-CPU、BPF 跟踪 |
+| 局部性、伪共享、cache line | 为何某个函数在火焰图里占比高 |
+| 互斥与并发成本 | 为何锁/上下文切换拖尾延迟 |
+
+**结论：** CSAPP 搭好底层逻辑架子；《性能之巅》教方法论和工具 — 有架子才不是背结论，后面学 Linux 内核、做量化调优能少绕弯路。
 
 | 标签 | HFT 含义 | 你要怎么做 |
 |------|----------|-----------|
@@ -21,39 +33,46 @@
 阶段 0  业务锚点（可与其他阶段并行）
         Harris《Trading and Exchanges》LOB + 市场结构
 
-阶段 1  会量、会调（排抖动方法论）
-   ①   Systems Performance 2nd
+阶段 1  底层逻辑架子（程序如何在硬件上跑）
+   ⑤   Computer Architecture 6th · Ch2（+ 选读 Ch5 内存一致性）
+   ⑥   CSAPP 3rd · 地基篇
+        Ch1 概览 → Ch4–6 CPU/优化/Cache
+        → Ch8 异常控制流（进程/syscall/信号）
+        → Ch9 虚拟内存 → Ch12 并发与锁
 
-阶段 2  内核时间线与 CPU 隔离
+阶段 2  会量、会调（方法论与观测）
+   ①   Systems Performance 2nd
+        ↑ 有 CSAPP 底子：火焰图、USE、锁竞争「能解释为什么」
+
+阶段 3  内核时间线与 CPU 隔离
    ②   Linux Kernel Development（先 01–03 前置课，再 00 书本）
         01 LFS → 02 内核编程视频 6 集 → 03 架构理论 → 00 LKD 3rd
 
-阶段 3  内存：NUMA / TLB / THP / 伪共享
+阶段 4  内存深化（内核视角 · 衔接 CSAPP Ch9）
    ③   Understanding the Linux VM Manager
-   ⑤   Computer Architecture 6th（与③⑤交叉）
-   ⑥   CSAPP 3rd · Ch6/9（程序员落地）
+        NUMA / TLB / THP / slab / 伪共享（配合 Hennessy Ch2）
 
-阶段 4  网络：协议 → API → 内核栈 → 用户态旁路（⚠️ 外部两本书插在这里）
+阶段 5  网络：协议 → API → 内核栈 → 用户态旁路（⚠️ 外部两本书插在这里）
    外A  TCP/IP Illustrated Vol.1（协议语义，另一仓库）
    外B  UNP Vol.1（Socket API，另一仓库）
-   ⑥   CSAPP 3rd · Ch10/11
+   ⑥   CSAPP 3rd · 网络篇 Ch10–11
    ④   Linux Kernel Networking
    ⑫   DPDK Low-Latency Network（用户态旁路 · 网络闭环）
 
-阶段 5  硬件 + 代码级优化 + 并发
-   ⑤   Computer Architecture 6th · 剩余精读
-   ⑥   CSAPP 3rd · Ch4/5/12
+阶段 6  代码级优化补强（可与阶段 1 合并，时间紧则后补）
+   ⑤   Computer Architecture 6th · 剩余精读（Ch1/Ch3 等）
+   ⑥   CSAPP 3rd · Ch5 优化程序性能（若阶段 1 未读）
 
-阶段 6  业务闭环 + 生产观测
+阶段 7  业务闭环 + 生产观测
    ⑦   Harris 剩余章节
    ⑧   BPF Performance Tools
 
-阶段 7  本仓库实战笔记（与以上穿插 · 非网络技术板块）
+阶段 8  本仓库实战笔记（与以上穿插 · 非网络技术板块）
         10-HFT-Low-Latency-Practice（12 章 · 交易系统工程）
         11-Rust-Quant-Trading-Guide（11 章 · Rust 量化工程）
 ```
 
-**推荐序号：** 0 → ① → ② → ③ → 外A → 外B → ④ → ⑤ → ⑥ → ⑦ → ⑧ → **⑫** → 实战笔记
+**推荐序号：** 0 → **⑤⑥(地基)** → ① → ② → ③ → 外A → 外B → ④ → ⑥(网络) → ⑫ → ⑤⑥(补) → ⑦ → ⑧ → 实战笔记
 
 > **板块封顶：** `00`–`12` 覆盖全部底层/网络/观测/工程/Rust/业务；不再新增顶层编号文件夹。  
 > 跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
@@ -181,10 +200,12 @@
 
 ### ⑤ Computer Architecture 6th
 
+> **阶段 1 先读 Ch2**（可与 CSAPP Ch6 交叉）；剩余章节阶段 6 补强或按需。
+
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
-| Ch 2 Cache line、MESI、false sharing | 🔴 | 订单簿伪共享 |
-| Ch 5 内存一致性、store buffer、memory order | 🔴 | 无锁队列硬件依据 |
+| Ch 2 Cache line、MESI、false sharing | 🔴 | **SysPerf 之前** — 伪共享、订单簿布局硬件依据 |
+| Ch 5 内存一致性、store buffer、memory order | 🔴 | 无锁队列；可与 CSAPP Ch12 交叉 |
 | Ch 1 Roofline | 🟡 | 性能上限直觉 |
 | Ch 3 ILP、分支预测 | 🟡 | 热循环微优化 |
 | Ch 4 SIMD/GPU、Ch 6 仓储级、Ch 7 领域架构 | ⚪ | 除非 SIMD 解析行情 |
@@ -192,16 +213,20 @@
 
 ### ⑥ CSAPP 3rd
 
-| 原书 | 标签 | HFT 为何读 |
-|------|------|-----------|
-| Ch 6 局部性、Cache、伪共享 | 🔴 | 与 Hennessy Ch2 配套实操 |
-| Ch 9 虚拟内存、mmap、大页 | 🔴 | 预分配订单簿 |
-| Ch 12 线程、互斥、并发 | 🔴 | 引擎多线程模型 |
-| Ch 4–5 流水线、编译优化 | 🔴 | 热路径 `-O3` / PGO 理解 |
-| Ch 11 Socket 编程 | 🔴 | 衔接 UNP |
-| Ch 10 epoll、非阻塞 I/O | 🟡 | 与 UNP Ch6/16 交叉 |
-| Ch 1 漫游、Ch 3 汇编 | 🟡 | 反汇编热函数 |
-| Ch 2 数据表示、Ch 7–8 链接/ECF | ⚪ | 除非二进制协议 |
+> **分两遍读：** **地基篇**（阶段 1，SysPerf 之前）与 **网络篇**（阶段 5，UNP 前后）。
+
+| 原书 | 标签 | 何时读 | HFT 为何读 |
+|------|------|--------|-----------|
+| Ch 6 局部性、Cache、伪共享 | 🔴 | **阶段 1 地基** | 火焰图热点、订单簿布局 |
+| Ch 9 虚拟内存、mmap、大页 | 🔴 | **阶段 1 地基** | 预分配；衔接 Gorman |
+| Ch 12 线程、互斥、并发 | 🔴 | **阶段 1 地基** | 理解锁为何拖性能 |
+| Ch 4–5 流水线、编译优化 | 🔴 | 阶段 1 或 6 | 热路径 `-O3` / PGO |
+| Ch 8 异常控制流（进程/syscall） | 🟡→🔴 | **阶段 1 建议读** | 衔接 SysPerf off-CPU、上下文切换 |
+| Ch 1 漫游 | 🟡 | 阶段 1 可选 | Amdahl、系统全景 |
+| Ch 11 Socket 编程 | 🔴 | **阶段 5 网络** | 衔接 UNP |
+| Ch 10 epoll、非阻塞 I/O | 🟡 | **阶段 5 网络** | 与 UNP Ch6/16 交叉 |
+| Ch 3 汇编 | 🟡 | 需反汇编时 | 读 perf 火焰图汇编 |
+| Ch 2 数据表示、Ch 7 链接 | ⚪ | 跳过 | 除非二进制协议 |
 
 ### ⑦ Trading and Exchanges
 
@@ -248,8 +273,10 @@
 
 | 目录 | 何时读 |
 |------|--------|
+| [07 Hennessy](./07-Computer-Architecture-6th/) + [08 CSAPP](./08-CSAPP-3rd/) **地基** | **阶段 1** — SysPerf 之前 |
+| [01 SysPerf](./01-Systems-Performance-2nd/) | **阶段 2** |
 | [04/05/06/12](./CROSS-MODULE-GUIDE.md#一仓库板块总览) | 网络技术栈（协议 → Socket → 内核 → DPDK） |
-| [10-HFT-Low-Latency-Practice/](./10-HFT-Low-Latency-Practice/) | 阶段 3–7 穿插 · **交易系统工程**（≠ 网络书） |
+| [10-HFT-Low-Latency-Practice/](./10-HFT-Low-Latency-Practice/) | 阶段 3–8 穿插 · **交易系统工程**（≠ 网络书） |
 | [11-Rust-Quant-Trading-Guide/](./11-Rust-Quant-Trading-Guide/) | 需要 Rust 全栈量化工程时并行 |
 | [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md) | DPDK↔UNP、DPDK↔CSAPP 对照 |
 | 各书文件夹 [README](./01-Systems-Performance-2nd/README.md) | 进入单本书时的速查 |
