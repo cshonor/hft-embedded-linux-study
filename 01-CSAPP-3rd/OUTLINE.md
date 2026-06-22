@@ -40,7 +40,7 @@
 |----|------|------|-----|
 | 10 | System-Level I/O | [chapter-10](./chapter-10-system-io/) | 🟡 |
 | 11 | Network Programming | [chapter-11](./chapter-11-network-programming/) | 🔴 |
-| 12 | Concurrent Programming | [chapter-12](./chapter-12-并发编程.md) | 🔴 |
+| 12 | Concurrent Programming | [chapter-12](./chapter-12-concurrent-programming/) | 🔴 |
 
 ## 附录
 

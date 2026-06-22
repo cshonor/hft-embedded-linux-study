@@ -44,7 +44,7 @@ chapter-XX-english-slug/   ← Ch 1 已采用；其余章仍为单文件，后�
 |----|------|
 | 10 系统级 I/O | [chapter-10-system-io/](./chapter-10-system-io/) |
 | 11 网络编程 | [chapter-11-network-programming/](./chapter-11-network-programming/) |
-| 12 并发编程 | [chapter-12-并发编程.md](./chapter-12-并发编程.md) |
+| 12 并发编程 | [chapter-12-concurrent-programming/](./chapter-12-concurrent-programming/) |
 
 ### 附录
 | | 笔记 |

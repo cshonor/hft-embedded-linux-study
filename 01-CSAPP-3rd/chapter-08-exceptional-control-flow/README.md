@@ -33,7 +33,7 @@
 **HFT 三件事：**
 
 1. **热路径少 syscall、少信号** — 收包用 DPDK/ busy poll；别在 tick 里 `fork`
-2. **懂上下文切换代价** — 绑核、少跨进程；线程优于多进程共享内存（→ [Ch 12](../chapter-12-并发编程.md)）
+2. **懂上下文切换代价** — 绑核、少跨进程；线程优于多进程共享内存（→ [Ch 12](../chapter-12-concurrent-programming/)）
 3. **优雅停机** — `SIGTERM`/`SIGINT` 处理、子进程回收、**EINTR** 重试
 
 ---
@@ -65,6 +65,6 @@
 
 - 上一章：[../chapter-07-linking/](../chapter-07-linking/)
 - 下一章：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
-- 并发：[../chapter-12-并发编程.md](../chapter-12-并发编程.md)
+- 并发：[../chapter-12-concurrent-programming/](../chapter-12-concurrent-programming/)
 - OS 专章：[02-SysPerf Ch 3](../../02-Systems-Performance-2nd/chapter-03-operating-systems/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

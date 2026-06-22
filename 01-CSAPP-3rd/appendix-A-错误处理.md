@@ -6,4 +6,4 @@
 
 ## 相关章节
 
-- 上一章：[chapter-12-并发编程.md](./chapter-12-并发编程.md)
+- 上一章：[chapter-12-concurrent-programming/](./chapter-12-concurrent-programming/)

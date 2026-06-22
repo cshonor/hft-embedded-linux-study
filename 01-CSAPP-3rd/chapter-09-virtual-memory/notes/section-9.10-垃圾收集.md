@@ -17,7 +17,7 @@
 
 **HFT：** 理解 GC **停顿 (stop-the-world)** 为何不适合 tick 线程；策略语言选型时考虑 **latency tail**。
 
-→ [Ch 5 应用/GC 对比](../chapter-05-optimizing-performance/) · [Ch 12 并发](../chapter-12-并发编程.md)
+→ [Ch 5 应用/GC 对比](../../chapter-05-optimizing-performance/) · [Ch 12 并发](../../chapter-12-concurrent-programming/)
 
 ---
 

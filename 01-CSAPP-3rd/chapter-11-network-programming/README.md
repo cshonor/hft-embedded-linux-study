@@ -59,7 +59,7 @@ read/write 收发字节（可能 short count）
 ## 相关章节
 
 - 上一章：[../chapter-10-system-io/](../chapter-10-system-io/)
-- 下一章：[../chapter-12-并发编程.md](../chapter-12-并发编程.md)
+- 下一章：[../chapter-12-concurrent-programming/](../chapter-12-concurrent-programming/)
 - 字节序：[../chapter-02-representing-information/](../chapter-02-representing-information/)
 - 协议理论：[07-TCP-IP-Illustrated-Vol1](../../07-TCP-IP-Illustrated-Vol1/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

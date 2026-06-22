@@ -41,7 +41,7 @@ strace -e trace=network ./gateway
 - **进程** 是 OS 核心抽象；**shell = fork/exec/wait + 信号作业控制**
 - 为 **VM (Ch9)** 和 **并发 (Ch12)** 铺路
 
-→ [Ch 9 虚拟内存](../chapter-09-virtual-memory/) · [Ch 12 并发](../chapter-12-并发编程.md)
+→ [Ch 9 虚拟内存](../../chapter-09-virtual-memory/) · [Ch 12 并发](../../chapter-12-concurrent-programming/)
 
 ---
 

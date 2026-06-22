@@ -60,7 +60,7 @@ Content-Length: 1234
 - **getaddrinfo** 写可移植客户端
 - Web/Tiny 展示 **应用层协议** 如何叠在 TCP 上
 
-→ [Ch 12 并发服务器](../../chapter-12-并发编程.md) · [09 内核网络栈](../../../09-Linux-Kernel-Networking/)
+→ [Ch 12 并发服务器](../../chapter-12-concurrent-programming/) · [09 内核网络栈](../../../09-Linux-Kernel-Networking/)
 
 ---
 

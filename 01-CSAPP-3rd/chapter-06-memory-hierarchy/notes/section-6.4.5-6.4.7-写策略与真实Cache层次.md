@@ -38,7 +38,7 @@ L3 LLC     共享，数十 MB
   **fix：** `alignas(64)` 隔离、`std::hardware_destructive_interference_size`（C++17）
 - `perf c2c`（若可用）或 PMC 看 **HITM** 事件
 
-→ 并发：[Ch 12](../../chapter-12-并发编程.md) · [02-SysPerf Ch 7 内存](../../../02-Systems-Performance-2nd/chapter-07-memory/)
+→ 并发：[Ch 12](../../chapter-12-concurrent-programming/) · [02-SysPerf Ch 7 内存](../../../02-Systems-Performance-2nd/chapter-07-memory/)
 
 ---
 

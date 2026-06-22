@@ -31,7 +31,7 @@
 **HFT 三件事：**
 
 1. **热数据 fit 在 cache** — order book、ring buffer 顺序访问
-2. **避免 false sharing** — 多线程别写同一 cache line（→ 3.9、[Ch 12](../chapter-12-并发编程.md)）
+2. **避免 false sharing** — 多线程别写同一 cache line（→ 3.9、[Ch 12](../chapter-12-concurrent-programming/)）
 3. **冷路径才碰磁盘/远程内存** — tick 路径零 I/O
 
 ---

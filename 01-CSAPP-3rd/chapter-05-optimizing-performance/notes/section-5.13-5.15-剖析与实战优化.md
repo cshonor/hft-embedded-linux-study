@@ -7,7 +7,7 @@
 | 算法 | 更低复杂度、更好数据结构 |
 | 源码 | 本章 5.4–5.12 |
 | 编译 | `-O3`、`-march=native`、PGO、LTO |
-| 并行 | 多线程、绑核、无锁（→ [Ch 12](../../chapter-12-并发编程.md)） |
+| 并行 | 多线程、绑核、无锁（→ [Ch 12](../../chapter-12-concurrent-programming/)） |
 | 系统 | hugepage、NUMA、隔离核（→ [11-HFT](../../../11-HFT-Low-Latency-Practice/)） |
 
 **顺序：** 先正确 + profile，再小步改；每次改 **测一遍**。
