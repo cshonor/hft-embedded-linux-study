@@ -10,26 +10,38 @@
 
 ---
 
+## 目录结构
+
+```
+chapter-XX-english-slug/
+├── README.md      ← 章导读（中文标题、Checklist、HFT 捷径）
+└── notes/         ← 按原书小节拆分的笔记（可增量追加）
+```
+
+每章 `README.md` 含 **小节笔记索引表**；新增内容写入 `notes/section-*.md`，不必再堆单文件。
+
+---
+
 ## 核心章节（16 章）
 
-| 章 | 笔记 |
+| 章 | 导读 |
 |----|------|
-| 1 简介 | [chapter-01-简介.md](./chapter-01-简介.md) |
-| 2 方法论 | [chapter-02-方法论.md](./chapter-02-方法论.md) |
-| 3 操作系统 | [chapter-03-操作系统.md](./chapter-03-操作系统.md) |
-| 4 观测工具 | [chapter-04-观测工具.md](./chapter-04-观测工具.md) |
-| 5 应用程序 | [chapter-05-应用程序.md](./chapter-05-应用程序.md) |
-| 6 中央处理器 | [chapter-06-中央处理器.md](./chapter-06-中央处理器.md) |
-| 7 内存 | [chapter-07-内存.md](./chapter-07-内存.md) |
-| 8 文件系统 | [chapter-08-文件系统.md](./chapter-08-文件系统.md) |
-| 9 磁盘 | [chapter-09-磁盘.md](./chapter-09-磁盘.md) |
-| 10 网络 | [chapter-10-网络.md](./chapter-10-网络.md) |
-| 11 云计算 | [chapter-11-云计算.md](./chapter-11-云计算.md) |
-| 12 基准测试 | [chapter-12-基准测试.md](./chapter-12-基准测试.md) |
-| 13 perf | [chapter-13-perf性能分析.md](./chapter-13-perf性能分析.md) |
-| 14 Ftrace | [chapter-14-Ftrace跟踪.md](./chapter-14-Ftrace跟踪.md) |
-| 15 BPF | [chapter-15-BPF技术.md](./chapter-15-BPF技术.md) |
-| 16 案例研究 | [chapter-16-案例研究.md](./chapter-16-案例研究.md) |
+| 1 简介 | [chapter-01-intro](./chapter-01-intro/) |
+| 2 方法论 | [chapter-02-methodologies](./chapter-02-methodologies/) |
+| 3 操作系统 | [chapter-03-operating-systems](./chapter-03-operating-systems/) |
+| 4 观测工具 | [chapter-04-observability-tools](./chapter-04-observability-tools/) |
+| 5 应用程序 | [chapter-05-applications](./chapter-05-applications/) |
+| 6 中央处理器 | [chapter-06-cpus](./chapter-06-cpus/) |
+| 7 内存 | [chapter-07-memory](./chapter-07-memory/) |
+| 8 文件系统 | [chapter-08-file-systems](./chapter-08-file-systems/) |
+| 9 磁盘 | [chapter-09-disks](./chapter-09-disks/) |
+| 10 网络 | [chapter-10-network](./chapter-10-network/) |
+| 11 云计算 | [chapter-11-cloud-computing](./chapter-11-cloud-computing/) |
+| 12 基准测试 | [chapter-12-benchmarking](./chapter-12-benchmarking/) |
+| 13 perf | [chapter-13-perf](./chapter-13-perf/) |
+| 14 Ftrace | [chapter-14-ftrace](./chapter-14-ftrace/) |
+| 15 BPF | [chapter-15-bpf](./chapter-15-bpf/) |
+| 16 案例研究 | [chapter-16-case-studies](./chapter-16-case-studies/) |
 
 ## 附录
 

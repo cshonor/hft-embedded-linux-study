@@ -12,22 +12,22 @@
 
 | 章 | 英文 | 笔记 | HFT |
 |----|------|------|-----|
-| 1 | Introduction | [chapter-01](./chapter-01-简介.md) | 🔴 |
-| 2 | Methodologies | [chapter-02](./chapter-02-方法论.md) | 🔴 |
-| 3 | Operating Systems | [chapter-03](./chapter-03-操作系统.md) | 🟡 |
-| 4 | Observability Tools | [chapter-04](./chapter-04-观测工具.md) | 🔴 |
-| 5 | Applications | [chapter-05](./chapter-05-应用程序.md) | 🔴 |
-| 6 | CPUs | [chapter-06](./chapter-06-中央处理器.md) | 🔴 |
-| 7 | Memory | [chapter-07](./chapter-07-内存.md) | 🔴 |
-| 8 | File Systems | [chapter-08](./chapter-08-文件系统.md) | 🟡 |
-| 9 | Disks | [chapter-09](./chapter-09-磁盘.md) | 🟡 |
-| 10 | Network | [chapter-10](./chapter-10-网络.md) | 🔴 |
-| 11 | Cloud Computing | [chapter-11](./chapter-11-云计算.md) | ⚪ |
-| 12 | Benchmarking | [chapter-12](./chapter-12-基准测试.md) | 🟡 |
-| 13 | perf | [chapter-13](./chapter-13-perf性能分析.md) | 🔴 |
-| 14 | Ftrace | [chapter-14](./chapter-14-Ftrace跟踪.md) | 🟡 |
-| 15 | BPF | [chapter-15](./chapter-15-BPF技术.md) | 🔴 |
-| 16 | Case Study | [chapter-16](./chapter-16-案例研究.md) | 🟡 |
+| 1 | Introduction | [chapter-01](./chapter-01-intro/) | 🔴 |
+| 2 | Methodologies | [chapter-02](./chapter-02-methodologies/) | 🔴 |
+| 3 | Operating Systems | [chapter-03](./chapter-03-operating-systems/) | 🟡 |
+| 4 | Observability Tools | [chapter-04](./chapter-04-observability-tools/) | 🔴 |
+| 5 | Applications | [chapter-05](./chapter-05-applications/) | 🔴 |
+| 6 | CPUs | [chapter-06](./chapter-06-cpus/) | 🔴 |
+| 7 | Memory | [chapter-07](./chapter-07-memory/) | 🔴 |
+| 8 | File Systems | [chapter-08](./chapter-08-file-systems/) | 🟡 |
+| 9 | Disks | [chapter-09](./chapter-09-disks/) | 🟡 |
+| 10 | Network | [chapter-10](./chapter-10-network/) | 🔴 |
+| 11 | Cloud Computing | [chapter-11](./chapter-11-cloud-computing/) | ⚪ |
+| 12 | Benchmarking | [chapter-12](./chapter-12-benchmarking/) | 🟡 |
+| 13 | perf | [chapter-13](./chapter-13-perf/) | 🔴 |
+| 14 | Ftrace | [chapter-14](./chapter-14-ftrace/) | 🟡 |
+| 15 | BPF | [chapter-15](./chapter-15-bpf/) | 🔴 |
+| 16 | Case Study | [chapter-16](./chapter-16-case-studies/) | 🟡 |
 
 ## 附录
 

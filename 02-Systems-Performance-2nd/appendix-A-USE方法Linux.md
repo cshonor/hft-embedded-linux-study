@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-16-案例研究.md](./chapter-16-案例研究.md)
+- 上一章：[chapter-16-case-studies](./chapter-16-case-studies/)
 - 下一章：[appendix-B-sar总结.md](./appendix-B-sar总结.md)
