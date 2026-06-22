@@ -31,7 +31,7 @@
 | 章 | 英文 | 笔记 | HFT |
 |----|------|------|-----|
 | 7 | Linking | [chapter-07](./chapter-07-linking/) | 🟡 |
-| 8 | Exceptional Control Flow | [chapter-08](./chapter-08-exceptional-control-flow/) | ⚪ |
+| 8 | Exceptional Control Flow | [chapter-08](./chapter-08-exceptional-control-flow/) | 🟡 |
 | 9 | Virtual Memory | [chapter-09](./chapter-09-虚拟内存.md) | 🔴 |
 
 ## Part III · Interaction and Communication（程序间交互和通信）
