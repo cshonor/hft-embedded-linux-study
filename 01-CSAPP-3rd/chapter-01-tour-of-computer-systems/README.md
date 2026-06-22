@@ -68,7 +68,7 @@ Ch 1 地图（本章，选读速通）
 
 ## 相关章节
 
-- 下一章：[../chapter-02-信息的表示和处理.md](../chapter-02-信息的表示和处理.md)
+- 下一章：[../chapter-02-representing-information/](../chapter-02-representing-information/)
 - 缓存深入：[../chapter-06-存储器层次结构.md](../chapter-06-存储器层次结构.md)
 - 虚拟内存：[../chapter-09-虚拟内存.md](../chapter-09-虚拟内存.md)
 - 性能方法论：[02-SysPerf Ch 2](../../02-Systems-Performance-2nd/chapter-02-methodologies/)

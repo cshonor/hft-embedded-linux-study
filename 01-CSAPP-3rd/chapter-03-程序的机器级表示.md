@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-02-信息的表示和处理.md](./chapter-02-信息的表示和处理.md)
+- 上一章：[chapter-02-representing-information/](./chapter-02-representing-information/)
 - 下一章：[chapter-04-处理器体系结构.md](./chapter-04-处理器体系结构.md)
