@@ -44,7 +44,7 @@ tc qdisc add dev eth0 root netem delay 2ms loss 0.1%
 | **`SO_BUSY_POLL`** |  socket  busy poll | 降 latency、增 CPU |
 | **非阻塞 + epoll** | 事件驱动 | Ch 5 · UNP |
 
-→ [08-UNP](../../../08-UNP-Vol1/) · [01-CSAPP Ch11](../../../01-CSAPP-3rd/chapter-11-网络编程/)
+→ [08-UNP](../../../08-UNP-Vol1/) · [01-CSAPP Ch11](../../../01-CSAPP-3rd/chapter-11-network-programming/)
 
 ---
 

@@ -43,7 +43,7 @@
 ## 交叉阅读
 
 - 内核栈对照 → [09-Linux-Kernel-Networking](../09-Linux-Kernel-Networking/)
-- Socket 模型 → [08-UNP-Vol1](../08-UNP-Vol1/)、[01-CSAPP-3rd Ch11](../01-CSAPP-3rd/chapter-11-网络编程.md)
+- Socket 模型 → [08-UNP-Vol1](../08-UNP-Vol1/)、[01-CSAPP-3rd Ch11](../01-CSAPP-3rd/chapter-11-network-programming/)
 - 缓存 / 内存 → [01-CSAPP-3rd Ch6](../01-CSAPP-3rd/chapter-06-memory-hierarchy/)、[04-Computer-Architecture-6th](../04-Computer-Architecture-6th/)
 - 生产观测 → [03-BPF-Performance-Tools](../03-BPF-Performance-Tools/)
 - 工程落地 → [11-HFT-Low-Latency-Practice](../11-HFT-Low-Latency-Practice/)

@@ -37,5 +37,5 @@
 - 协议层 → [07-TCP-IP-Illustrated-Vol1](../07-TCP-IP-Illustrated-Vol1/)
 - 内核层 → [09-Linux-Kernel-Networking](../09-Linux-Kernel-Networking/)
 - 用户态旁路 → [10-DPDK-Low-Latency-Network](../10-DPDK-Low-Latency-Network/)
-- 程序员实践 → [01-CSAPP-3rd/chapter-11-网络编程.md](../01-CSAPP-3rd/chapter-11-网络编程.md)
+- 程序员实践 → [01-CSAPP-3rd/chapter-11-network-programming/](../01-CSAPP-3rd/chapter-11-network-programming/)
 - 跨模块对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md#三dpdk--unp-socket-模型)

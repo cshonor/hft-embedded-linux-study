@@ -72,7 +72,7 @@
 | `setsockopt(SO_RCVBUF)` | mempool 大小、`RX_RING_SIZE` | 预分配、无动态扩缩 |
 | `sendto()` | `rte_eth_tx_burst()` | 同理批量发包 |
 
-→ UNP 细节：[08-UNP-Vol1](./08-UNP-Vol1/) · CSAPP：[chapter-11](./01-CSAPP-3rd/chapter-11-网络编程.md)  
+→ UNP 细节：[08-UNP-Vol1](./08-UNP-Vol1/) · CSAPP：[chapter-11](./01-CSAPP-3rd/chapter-11-network-programming/)  
 → DPDK 细节：[10-DPDK-Low-Latency-Network](./10-DPDK-Low-Latency-Network/)
 
 ---

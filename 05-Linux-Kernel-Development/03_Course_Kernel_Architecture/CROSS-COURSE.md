@@ -85,7 +85,7 @@ LKD + Gorman + Rosen：精读 + 绑核/排抖动
 | 设计原则 | LFS | 内核编程 | 网络 / HFT | 书本 |
 |----------|-----|----------|------------|------|
 | **做一件事并做好** | 每个包单独编译安装（p6–p9）；BusyBox 是极简对照（p15） | e2 最小 LKM；e4 单一字符设备 | 收包/解析/策略/发单职责拆分 | LKD Ch 17 |
-| **管道式组合** | 工具链阶段：`binutils→gcc→glibc` 流水线 | Makefile + 内核构建系统 | `epoll` + 非阻塞 fd 组合事件流 | [08-UNP](../../08-UNP-Vol1/) · [01-CSAPP Ch11](../../01-CSAPP-3rd/chapter-11-网络编程.md) |
+| **管道式组合** | 工具链阶段：`binutils→gcc→glibc` 流水线 | Makefile + 内核构建系统 | `epoll` + 非阻塞 fd 组合事件流 | [08-UNP](../../08-UNP-Vol1/) · [01-CSAPP Ch11](../../01-CSAPP-3rd/chapter-11-network-programming/) |
 | **内核管资源 / 用户态做功能** | p11–p12 内核 vs p6–p9 用户工具分离 | e1 内核 vs 用户态测试程序 | 标准栈 [06-Rosen](../../09-Linux-Kernel-Networking/) vs [10-DPDK](../../10-DPDK-Low-Latency-Network/) | LKD Ch 5 · [a03 分离](./episode-a03-内核架构总览.md) |
 | **模块可插拔** | 可选包、按需安装 | **e2 LKM**、e4 驱动 | 动态加载、`SO`、Rust `dylib`（工程层） | LKD Ch 17 · [10-HFT ch08](../../11-HFT-Low-Latency-Practice/chapter-08-超低延迟核心引擎开发.md) |
 
