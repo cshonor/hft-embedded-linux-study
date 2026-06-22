@@ -33,7 +33,7 @@ objdump -d ./a.out | less
 
 **HFT：** `perf annotate`、编译器输出多为 AT&T；对照 Intel 文档时注意 **操作数顺序相反**。
 
-→ 流水线与性能：[Ch 4](../../chapter-04-处理器体系结构.md)
+→ 流水线与性能：[Ch 4](../../chapter-04-processor-architecture/)
 
 ---
 

@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-04-处理器体系结构.md](./chapter-04-处理器体系结构.md)
+- 上一章：[chapter-04-processor-architecture/](./chapter-04-processor-architecture/)
 - 下一章：[chapter-06-存储器层次结构.md](./chapter-06-存储器层次结构.md)

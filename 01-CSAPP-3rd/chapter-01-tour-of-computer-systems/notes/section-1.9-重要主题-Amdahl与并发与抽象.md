@@ -30,7 +30,7 @@ S = \frac{1}{(1 - p) + \frac{p}{k}}
 | **并行 (parallelism)** | 同一时刻多核同时执行 |
 
 - **线程级并行** — 多核跑多线程
-- **指令级并行 (ILP)** — 单核流水线/超标量（→ [Ch 4](../../chapter-04-处理器体系结构.md)、Hennessy）
+- **指令级并行 (ILP)** — 单核流水线/超标量（→ [Ch 4](../../chapter-04-processor-architecture/)、Hennessy）
 
 **HFT：** 并发正确性（锁、内存序）与并行吞吐（绑核、无共享）往往 **同时** 要 — [Ch 12](../../chapter-12-并发编程.md)。
 
