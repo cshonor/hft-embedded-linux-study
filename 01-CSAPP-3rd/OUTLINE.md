@@ -38,7 +38,7 @@
 
 | 章 | 英文 | 笔记 | HFT |
 |----|------|------|-----|
-| 10 | System-Level I/O | [chapter-10](./chapter-10-系统级IO.md) | 🟡 |
+| 10 | System-Level I/O | [chapter-10](./chapter-10-system-io/) | 🟡 |
 | 11 | Network Programming | [chapter-11](./chapter-11-网络编程.md) | 🔴 |
 | 12 | Concurrent Programming | [chapter-12](./chapter-12-并发编程.md) | 🔴 |
 

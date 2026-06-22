@@ -27,7 +27,7 @@ valgrind --leak-check=full ./prog
 - 应用层：**mmap** 映射文件/大缓冲；**malloc** 管堆
 - 内存 bug 是 C 永恒主题 — 工具与架构双管齐下
 
-→ [Ch 10 系统级 I/O](../chapter-10-系统级IO.md) · [Ch 12 并发与同步](../chapter-12-并发编程.md)
+→ [Ch 10 系统级 I/O](../chapter-10-system-io/) · [Ch 12 并发与同步](../chapter-12-并发编程.md)
 
 ---
 

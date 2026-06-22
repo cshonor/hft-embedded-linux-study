@@ -38,7 +38,7 @@ mlock(p, size);  // 避免换出
 - **DPDK** — `hugetlbfs` + `mmap` 大页（→ [10-DPDK](../../../10-DPDK-Low-Latency-Network/)）
 - **注意：** `MAP_POPULATE`（若可用）启动时预 fault
 
-→ [Ch 10 I/O](../chapter-10-系统级IO.md)
+→ [Ch 10 I/O](../chapter-10-system-io/)
 
 ---
 

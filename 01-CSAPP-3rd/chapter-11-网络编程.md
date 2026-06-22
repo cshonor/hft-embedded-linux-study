@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-10-系统级IO.md](./chapter-10-系统级IO.md)
+- 上一章：[chapter-10-system-io/](./chapter-10-system-io/)
 - 下一章：[chapter-12-并发编程.md](./chapter-12-并发编程.md)

@@ -66,7 +66,7 @@ malloc：堆上 bump / 空闲链表管理
 ## 相关章节
 
 - 上一章：[../chapter-08-exceptional-control-flow/](../chapter-08-exceptional-control-flow/)
-- 下一章：[../chapter-10-系统级IO.md](../chapter-10-系统级IO.md)
+- 下一章：[../chapter-10-system-io/](../chapter-10-system-io/)
 - Cache：[../chapter-06-memory-hierarchy/](../chapter-06-memory-hierarchy/)
 - 链接加载：[../chapter-07-linking/](../chapter-07-linking/)
 - 内核 VM：[06-Gorman](../../../06-Linux-Virtual-Memory-Manager/)

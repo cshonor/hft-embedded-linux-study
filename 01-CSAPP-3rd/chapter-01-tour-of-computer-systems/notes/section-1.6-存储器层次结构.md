@@ -29,7 +29,7 @@
 - 冷路径：批量落盘、单独线程 + 专用核
 - 基准：区分 **memory-bound vs I/O-bound**（→ [02-SysPerf Ch 12 基准测试](../../../02-Systems-Performance-2nd/chapter-12-benchmarking/)）
 
-→ [Ch 6](../../chapter-06-memory-hierarchy/) · [Ch 10 系统级 I/O](../../chapter-10-系统级IO.md)
+→ [Ch 6](../../chapter-06-memory-hierarchy/) · [Ch 10 系统级 I/O](../../chapter-10-system-io/)
 
 ---
 
