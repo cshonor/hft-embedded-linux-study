@@ -63,6 +63,6 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 ## 相关章节
 
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
-- 下一章：[../chapter-05-优化程序性能.md](../chapter-05-优化程序性能.md)
+- 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 真实微架构：[04-Hennessy](../../04-Computer-Architecture-6th/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
