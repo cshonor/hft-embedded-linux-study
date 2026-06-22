@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-01-计算机系统漫游.md](./chapter-01-计算机系统漫游.md)
+- 上一章：[chapter-01-tour-of-computer-systems/](./chapter-01-tour-of-computer-systems/)
 - 下一章：[chapter-03-程序的机器级表示.md](./chapter-03-程序的机器级表示.md)

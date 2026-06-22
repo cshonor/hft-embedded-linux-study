@@ -12,10 +12,16 @@
 
 ## 全书结构
 
+```
+chapter-XX-english-slug/   ← Ch 1 已采用；其余章仍为单文件，后续可迁移
+├── README.md
+└── notes/section-*.md
+```
+
 ### 第 1 章
 | 章 | 笔记 |
 |----|------|
-| 1 计算机系统漫游 | [chapter-01-计算机系统漫游.md](./chapter-01-计算机系统漫游.md) |
+| 1 计算机系统漫游 | [chapter-01-tour-of-computer-systems](./chapter-01-tour-of-computer-systems/) |
 
 ### Part I · 程序结构和执行
 | 章 | 笔记 |

@@ -14,7 +14,7 @@
 
 | 章 | 英文 | 笔记 | HFT |
 |----|------|------|-----|
-| 1 | A Tour of Computer Systems | [chapter-01](./chapter-01-计算机系统漫游.md) | 🟡 |
+| 1 | A Tour of Computer Systems | [chapter-01](./chapter-01-tour-of-computer-systems/) | 🟡 |
 
 ## Part I · Program Structure and Execution（程序结构和执行）
 
