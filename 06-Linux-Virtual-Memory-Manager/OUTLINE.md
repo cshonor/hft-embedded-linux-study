@@ -66,7 +66,7 @@ Ch 10 页框回收（避免运行时抖动）
 附录 B/C/H（有余力时代码走读）
 ```
 
-→ 程序员落地 → [01-CSAPP-3rd Ch9](../01-CSAPP-3rd/chapter-09-虚拟内存.md)  
+→ 程序员落地 → [01-CSAPP-3rd Ch9](../01-CSAPP-3rd/chapter-09-virtual-memory/)  
 → 内核概述 → [02-LKD Ch12](../05-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-12-内存管理.md)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

@@ -62,7 +62,7 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
 | **O_DIRECT** | DB、时序库、自研 WAL | 小随机读、依赖 kernel read-ahead |
 | **mmap** | 大只读数据集、共享映射 | 需精确控制 fault 时序的热路径 |
 
-→ [01-CSAPP Ch9 mmap](../../../01-CSAPP-3rd/chapter-09-虚拟内存/) · Ch 5 [I/O 与缓冲](../../chapter-05-applications/)
+→ [01-CSAPP Ch9 mmap](../../../01-CSAPP-3rd/chapter-09-virtual-memory/) · Ch 5 [I/O 与缓冲](../../chapter-05-applications/)
 
 ### 元数据（Metadata）
 

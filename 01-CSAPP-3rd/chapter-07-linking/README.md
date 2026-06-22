@@ -66,5 +66,5 @@
 - 上一章：[../chapter-06-memory-hierarchy/](../chapter-06-memory-hierarchy/)
 - 下一章：[../chapter-08-exceptional-control-flow/](../chapter-08-exceptional-control-flow/)
 - 编译入门：[../chapter-01-tour-of-computer-systems/](../chapter-01-tour-of-computer-systems/)
-- 虚拟内存加载：[../chapter-09-虚拟内存.md](../chapter-09-虚拟内存.md)
+- 虚拟内存加载：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

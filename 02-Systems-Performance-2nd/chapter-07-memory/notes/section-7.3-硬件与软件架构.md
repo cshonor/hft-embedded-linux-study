@@ -62,7 +62,7 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 
 **原则：** HFT tick 路径 **预分配 / 对象池 / 无分配** 优于换分配器；换分配器是 **第二道防线**。
 
-→ [01-CSAPP Ch9 malloc](../../../01-CSAPP-3rd/chapter-09-虚拟内存/) · Ch 5 [GC vs 手动管理](../../chapter-05-applications/)
+→ [01-CSAPP Ch9 malloc](../../../01-CSAPP-3rd/chapter-09-virtual-memory/) · Ch 5 [GC vs 手动管理](../../chapter-05-applications/)
 
 ---
 

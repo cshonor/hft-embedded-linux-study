@@ -33,7 +33,7 @@ objdump -d prog      # 看重定位后的绝对/相对地址
 - **程序头表 (Program Headers)** — 描述 **LOAD** 段如何映射进内存
 - 典型：**`.text` R-X**、**`.data` RW-**、**`.bss` 零填充**
 
-**HFT：** `readelf -l ./strategy` 看 **LOAD** 对齐 — 与 **大页、hugepage** 对齐策略相关（→ [Ch 9](../chapter-09-虚拟内存.md)）。
+**HFT：** `readelf -l ./strategy` 看 **LOAD** 对齐 — 与 **大页、hugepage** 对齐策略相关（→ [Ch 9](../chapter-09-virtual-memory/)）。
 
 ---
 

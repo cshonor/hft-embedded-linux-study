@@ -35,7 +35,7 @@ LD_PRELOAD=./libmwrap.so ./prog
 - 静态 vs 动态 = **部署、启动、升级** 权衡
 - 与 **加载、VM** 一体 — 下一 Part II 章继续系统行为
 
-→ [Ch 8 异常控制流](../chapter-08-exceptional-control-flow/) · [Ch 9 VM](../chapter-09-虚拟内存.md)
+→ [Ch 8 异常控制流](../chapter-08-exceptional-control-flow/) · [Ch 9 VM](../chapter-09-virtual-memory/)
 
 ---
 

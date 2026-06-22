@@ -11,7 +11,7 @@
 
 **HFT：** 策略进程 + order book + 页缓存 + 监控 — 要算 **真实 RSS/PSS**，不能假设「还有 free 就安全」。
 
-→ [01-CSAPP Ch9](../../../01-CSAPP-3rd/chapter-09-虚拟内存/) · [06-Gorman](../../../06-Linux-Virtual-Memory-Manager/)
+→ [01-CSAPP Ch9](../../../01-CSAPP-3rd/chapter-09-virtual-memory/) · [06-Gorman](../../../06-Linux-Virtual-Memory-Manager/)
 
 ### 按需分页与缺页异常
 

@@ -64,7 +64,7 @@
 
 - 上一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 下一章：[../chapter-07-linking/](../chapter-07-linking/)
-- 虚拟内存：[../chapter-09-虚拟内存.md](../chapter-09-虚拟内存.md)
+- 虚拟内存：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
 - 理论：[04-Hennessy Ch2](../../04-Computer-Architecture-6th/)
 - 观测：[02-SysPerf Ch 6 CPUs](../../02-Systems-Performance-2nd/chapter-06-cpus/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

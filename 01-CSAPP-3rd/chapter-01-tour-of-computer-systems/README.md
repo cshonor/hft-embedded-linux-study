@@ -70,6 +70,6 @@ Ch 1 地图（本章，选读速通）
 
 - 下一章：[../chapter-02-representing-information/](../chapter-02-representing-information/)
 - 缓存深入：[../chapter-06-memory-hierarchy/](../chapter-06-memory-hierarchy/)
-- 虚拟内存：[../chapter-09-虚拟内存.md](../chapter-09-虚拟内存.md)
+- 虚拟内存：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
 - 性能方法论：[02-SysPerf Ch 2](../../02-Systems-Performance-2nd/chapter-02-methodologies/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

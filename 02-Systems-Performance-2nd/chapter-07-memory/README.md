@@ -96,6 +96,6 @@ Ch 7  内存（本章：VM、Swap、NUMA、TLB、分配器）
 - OS 虚拟内存：[../chapter-03-operating-systems/](../chapter-03-operating-systems/)
 - USE：[appendix-A-USE方法Linux.md](../appendix-A-USE方法Linux.md)
 - 内核 VM 专书：[06-Linux-Virtual-Memory-Manager](../../06-Linux-Virtual-Memory-Manager/)
-- CSAPP：[01-CSAPP-3rd Ch9](../../01-CSAPP-3rd/chapter-09-虚拟内存/)
+- CSAPP：[01-CSAPP-3rd Ch9](../../01-CSAPP-3rd/chapter-09-virtual-memory/)
 - HFT 调优：[11-HFT ch05](../../11-HFT-Low-Latency-Practice/chapter-05-操作系统内核极致调优/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

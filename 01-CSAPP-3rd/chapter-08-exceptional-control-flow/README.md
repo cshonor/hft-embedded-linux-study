@@ -64,7 +64,7 @@
 ## 相关章节
 
 - 上一章：[../chapter-07-linking/](../chapter-07-linking/)
-- 下一章：[../chapter-09-虚拟内存.md](../chapter-09-虚拟内存.md)
+- 下一章：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
 - 并发：[../chapter-12-并发编程.md](../chapter-12-并发编程.md)
 - OS 专章：[02-SysPerf Ch 3](../../02-Systems-Performance-2nd/chapter-03-operating-systems/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

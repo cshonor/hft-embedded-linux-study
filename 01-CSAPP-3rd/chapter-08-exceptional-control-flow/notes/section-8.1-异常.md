@@ -22,7 +22,7 @@
 **HFT：**
 
 - **高频收包** — 硬中断 + **NAPI** + **softirq**（→ [09 内核网络](../../../09-Linux-Kernel-Networking/)）
-- **缺页 on tick** — 灾难；`mlock`、预 fault（→ [Ch 9](../chapter-09-虚拟内存.md)）
+- **缺页 on tick** — 灾难；`mlock`、预 fault（→ [Ch 9](../chapter-09-virtual-memory/)）
 - **perf** 可看 **page-faults**、**context-switches**
 
 → [Ch 1.7 进程/OS](../chapter-01-tour-of-computer-systems/notes/section-1.7-操作系统管理硬件.md)

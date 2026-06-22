@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-09-虚拟内存.md](./chapter-09-虚拟内存.md)
+- 上一章：[chapter-09-virtual-memory/](./chapter-09-virtual-memory/)
 - 下一章：[chapter-11-网络编程.md](./chapter-11-网络编程.md)

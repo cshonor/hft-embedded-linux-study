@@ -41,7 +41,7 @@ gcc hello.o -o hello         # 链接
 **HFT：**
 
 - 策略引擎 **Release 构建 flags**（`-march=native`、LTO）要在 CI 与生产一致
-- 链接 **whole-archive** 静态库 vs 动态 `dlopen` 插件 — 影响启动延迟与页 fault（→ [Ch 7](../../chapter-07-linking/)、[Ch 9](../../chapter-09-虚拟内存.md)）
+- 链接 **whole-archive** 静态库 vs 动态 `dlopen` 插件 — 影响启动延迟与页 fault（→ [Ch 7](../../chapter-07-linking/)、[Ch 9](../../chapter-09-virtual-memory/)）
 
 ---
 

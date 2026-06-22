@@ -87,7 +87,7 @@
 | 预分配 vs malloc | mempool 启动时一次性分配 | 热路径零分配 |
 | Roofline（Hennessy Ch1） | `rte_eth_rx_burst` 批量大小调优 | 平衡 cache 与延迟 |
 
-→ CSAPP：[chapter-06](./01-CSAPP-3rd/chapter-06-memory-hierarchy/)、[chapter-09](./01-CSAPP-3rd/chapter-09-虚拟内存.md)  
+→ CSAPP：[chapter-06](./01-CSAPP-3rd/chapter-06-memory-hierarchy/)、[chapter-09](./01-CSAPP-3rd/chapter-09-virtual-memory/)  
 → DPDK：[01-Intro chapter-02-mbuf与内存池](./10-DPDK-Low-Latency-Network/01-Intro-Book/notes/chapter-02-mbuf与内存池.md)
 
 ---
