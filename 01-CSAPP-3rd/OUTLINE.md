@@ -30,7 +30,7 @@
 
 | 章 | 英文 | 笔记 | HFT |
 |----|------|------|-----|
-| 7 | Linking | [chapter-07](./chapter-07-linking/) | ⚪ |
+| 7 | Linking | [chapter-07](./chapter-07-linking/) | 🟡 |
 | 8 | Exceptional Control Flow | [chapter-08](./chapter-08-异常控制流.md) | ⚪ |
 | 9 | Virtual Memory | [chapter-09](./chapter-09-虚拟内存.md) | 🔴 |
 
