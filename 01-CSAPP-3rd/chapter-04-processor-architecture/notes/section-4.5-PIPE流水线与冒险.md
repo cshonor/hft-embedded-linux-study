@@ -60,7 +60,7 @@ addq %rbx, %rcx    # 需停顿
 - **SEQ** — 正确性参考；**PIPE** — 性能与冒险
 - 配套工具（课程常用）：**`csim`**（cache）、**`ssim`**（SEQ）、**`psim`**（PIPE）— 可选跑 Y86 程序加深印象
 
-→ 下一章在 **软件侧** 压榨 CPU：[Ch 5 优化程序性能](../../chapter-05-优化程序性能.md)  
+→ 下一章在 **软件侧** 压榨 CPU：[Ch 5 优化程序性能](../../chapter-05-optimizing-performance/)  
 → 真实流水线 / 乱序：[04-Hennessy](../../../04-Computer-Architecture-6th/)
 
 ---

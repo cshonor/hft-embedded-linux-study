@@ -29,7 +29,7 @@ chapter-XX-english-slug/   ← Ch 1 已采用；其余章仍为单文件，后�
 | 2 信息的表示和处理 | [chapter-02-representing-information](./chapter-02-representing-information/) |
 | 3 程序的机器级表示 | [chapter-03-machine-level-programs](./chapter-03-machine-level-programs/) |
 | 4 处理器体系结构 | [chapter-04-processor-architecture](./chapter-04-processor-architecture/) |
-| 5 优化程序性能 | [chapter-05-优化程序性能.md](./chapter-05-优化程序性能.md) |
+| 5 优化程序性能 | [chapter-05-optimizing-performance](./chapter-05-optimizing-performance/) |
 | 6 存储器层次结构 | [chapter-06-存储器层次结构.md](./chapter-06-存储器层次结构.md) |
 
 ### Part II · 在系统上运行程序

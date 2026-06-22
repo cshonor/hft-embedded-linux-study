@@ -27,7 +27,7 @@ leaq 8(%rdi,%rsi,4), %rax   # rax = rdi + rsi*4 + 8
 
 **HFT / 优化：**
 
-- 除法常比移位慢一个数量级 — 编译器 strength reduction（→ [Ch 5](../../chapter-05-优化程序性能.md)）
+- 除法常比移位慢一个数量级 — 编译器 strength reduction（→ [Ch 5](../../chapter-05-optimizing-performance/)）
 - `perf` 里热点若大量 `idiv` — 考虑倒数乘法或移位
 
 ---

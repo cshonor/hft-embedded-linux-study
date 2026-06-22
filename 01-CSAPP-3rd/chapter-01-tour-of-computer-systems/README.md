@@ -36,7 +36,7 @@
 
 1. **慢的不在 CPU 算力，在等数据** — cache miss、磁盘、网络、syscall（→ 1.5–1.6，深入 [Ch 6](../chapter-06-存储器层次结构.md)）
 2. **程序从不「直接摸硬件」** — OS 用进程/线程/虚拟内存/文件抽象隔开（→ 1.7，深入 Ch 8–9）
-3. **优化要有靶心** — 阿姆达尔：先打最慢的那段（→ 1.9，配合 [Ch 5](../chapter-05-优化程序性能.md)、[02-SysPerf](../../02-Systems-Performance-2nd/chapter-02-methodologies/)）
+3. **优化要有靶心** — 阿姆达尔：先打最慢的那段（→ 1.9，配合 [Ch 5](../chapter-05-optimizing-performance/)、[02-SysPerf](../../02-Systems-Performance-2nd/chapter-02-methodologies/)）
 
 ---
 

@@ -25,7 +25,7 @@
 
 ### 2.3.6 乘以常数
 
-- `x * (2^k ± c)` 可优化为 shift/add — 理解 [Ch 3](../../chapter-03-machine-level-programs/) / [Ch 5](../../chapter-05-优化程序性能.md) 里的 strength reduction
+- `x * (2^k ± c)` 可优化为 shift/add — 理解 [Ch 3](../../chapter-03-machine-level-programs/) / [Ch 5](../../chapter-05-optimizing-performance/) 里的 strength reduction
 
 ### 2.3.7 除以 2 的幂
 

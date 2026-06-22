@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-05-优化程序性能.md](./chapter-05-优化程序性能.md)
+- 上一章：[chapter-05-optimizing-performance/](./chapter-05-optimizing-performance/)
 - 下一章：[chapter-07-链接.md](./chapter-07-链接.md)
