@@ -16,7 +16,7 @@
 | 2 | Methodologies | [chapter-02](./chapter-02-方法论.md) | 🔴 |
 | 3 | Operating Systems | [chapter-03](./chapter-03-操作系统.md) | 🟡 |
 | 4 | Observability Tools | [chapter-04](./chapter-04-观测工具.md) | 🔴 |
-| 5 | Applications | [chapter-05](./chapter-05-应用程序.md) | 🟡 |
+| 5 | Applications | [chapter-05](./chapter-05-应用程序.md) | 🔴 |
 | 6 | CPUs | [chapter-06](./chapter-06-中央处理器.md) | 🔴 |
 | 7 | Memory | [chapter-07](./chapter-07-内存.md) | 🔴 |
 | 8 | File Systems | [chapter-08](./chapter-08-文件系统.md) | ⚪ |
