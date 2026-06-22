@@ -19,8 +19,8 @@
 | 5 | Applications | [chapter-05](./chapter-05-应用程序.md) | 🔴 |
 | 6 | CPUs | [chapter-06](./chapter-06-中央处理器.md) | 🔴 |
 | 7 | Memory | [chapter-07](./chapter-07-内存.md) | 🔴 |
-| 8 | File Systems | [chapter-08](./chapter-08-文件系统.md) | ⚪ |
-| 9 | Disks | [chapter-09](./chapter-09-磁盘.md) | ⚪ |
+| 8 | File Systems | [chapter-08](./chapter-08-文件系统.md) | 🟡 |
+| 9 | Disks | [chapter-09](./chapter-09-磁盘.md) | 🟡 |
 | 10 | Network | [chapter-10](./chapter-10-网络.md) | 🔴 |
 | 11 | Cloud Computing | [chapter-11](./chapter-11-云计算.md) | ⚪ |
 | 12 | Benchmarking | [chapter-12](./chapter-12-基准测试.md) | 🟡 |
