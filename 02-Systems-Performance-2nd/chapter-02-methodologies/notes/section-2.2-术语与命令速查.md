@@ -9,6 +9,7 @@
 | **IOPS** | 磁盘每秒读写次数 | `iostat -dx 1` | **r/s、w/s**；HFT 热路径少碰盘，多用于 **日志/NVMe 冷路径** |
 | | 磁盘极限 IOPS | `fio`（lab） | 压测签收容量，非实盘观测 |
 | **Throughput** | 网卡带宽 / pps | `sar -n DEV 1` | **rxkB/s、txkB/s**；行情/发单网卡 |
+| | 网卡 pps 粗测 | `tcpdump -i eth0 -c 1000 -tttt` | 1000 包时间差 → pps；与解析 counter **交叉验证** → [2.5](./section-2.5-性能分析方法论.md#第一步每秒多少-tick两路交叉验证) |
 | | 磁盘吞吐 | `dd` / `fio` | 冷路径或回放盘；`dd` 粗测 |
 | | 应用层 | 自建 counter | ticks/s、orders/s — **最贴近业务** |
 | **Latency / 响应时间** | 系统调用耗时 | `perf trace -s` | 跟踪 syscall 时间线 |
