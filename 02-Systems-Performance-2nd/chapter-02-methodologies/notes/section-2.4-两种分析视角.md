@@ -7,7 +7,7 @@
 自下而上  Resource Analysis   资源 → 业务   「CPU/网卡/盘够不够、排队多长？」
 ```
 
-→ 术语对照：[2.1–2.3](./section-2.1-2.3-核心概念与术语.md) · 方法论落地：[2.5](./section-2.5-性能分析方法论.md) · USE 详表：[附录 A](../../appendix-A-USE方法Linux.md)
+→ 术语对照：[2.1](./section-2.1-HFT术语与团队对齐.md) · [2.2 命令](./section-2.2-术语与命令速查.md) · [2.3 走查](./section-2.3-时间尺度与排查走查.md) · [2.5](./section-2.5-性能分析方法论.md) · [附录 A](../../appendix-A-USE方法Linux.md)
 
 ---
 
@@ -35,7 +35,7 @@
 | 磁盘 | `iostat -dx 1` |
 | 网络 | `sar -n DEV 1`、`ss -s`、`ethtool -S` |
 
-→ HFT 速查：[2.1–2.3 术语→命令](./section-2.1-2.3-核心概念与术语.md#术语--常用命令hft-速查)
+→ HFT 速查：[2.2 术语→命令](./section-2.2-术语与命令速查.md)
 
 ---
 
@@ -93,7 +93,7 @@ Resource 视角  →  对应阶段 CPU/NIC/队列是否 USE 异常？
 | **「CPU/磁盘告警打满」** | **自下而上** Resource | USE 定位饱和资源 → 关联进程 / 业务流量 |
 | **复杂线上故障** | **双视角联动** | 业务侧延迟↑ + 同时查资源饱和/drop — 区分代码问题 vs 资源瓶颈 |
 
-**HFT 合并用法（与 [2.1–2.3 排查顺序](./section-2.1-2.3-核心概念与术语.md#排查顺序-vs-优化优先级--网络是不是替罪羊) 一致）：**
+**HFT 合并用法（与 [2.3 排查顺序](./section-2.3-时间尺度与排查走查.md#排查顺序-vs-优化优先级) 一致）：**
 
 ```
 1. Workload：tick → parse → signal → send 各段 latency（应用 histogram + trace）
