@@ -172,4 +172,85 @@ X(N) = N / ( 1 + α(N-1) + βN(N-1) )
 
 ---
 
+### 现成工具：填参数即算（不必手推公式）
+
+**对** — 阿姆达尔、USL、排队论都有 **库 / 脚本 / 在线计算器**，把 **f、N、α、β、λ、μ** 等参数代入即可出 **加速比、扩展曲线、ρ 拐点**。
+
+#### 各模型要填什么、算什么
+
+| 模型 | 输入参数（从 profile / 压测来） | 输出 |
+|------|--------------------------------|------|
+| **阿姆达尔** | **f** 串行占比、**N** 核数、可选 **T₀** 基线延迟 | **S(N)**、**S_max=1/f**、**T_min=T₀/S_max** |
+| **USL** | 多组 **(N, 吞吐或加速)** 压测点 → 拟合 **α、β**；或手填 α、β | **X(N)** 曲线、**最优 N**（峰值前） |
+| **排队论** | **λ、μ、c**（→ [2.6.4](./section-2.6.4-排队论计算器.md)） | **W、L、ρ 拐点** |
+
+#### Python 示例（可直接贴进脚本）
+
+**阿姆达尔 — 纯公式，无需第三方包：**
+
+```python
+def amdahl_speedup(f: float, n: int) -> float:
+    """f=串行占比 0~1, n=核数 → 加速比 S(n)"""
+    return 1.0 / (f + (1 - f) / n)
+
+def amdahl_latency(T0_us: float, f: float, n: int) -> float:
+    return T0_us / amdahl_speedup(f, n)
+
+# f=10%, 8 核
+print(amdahl_speedup(0.1, 8))           # ~4.3
+print(1/0.1)                            # S_max = 10
+print(amdahl_latency(10.0, 0.1, 9999))  # 理想 → ~1 μs
+```
+
+**USL — 用压测数据拟合 α、β（`scipy` 做曲线拟合，非手推 USL 公式）：**
+
+```python
+import numpy as np
+from scipy.optimize import curve_fit
+
+def usl(n, alpha, beta):
+    n = np.asarray(n, dtype=float)
+    return n / (1 + alpha * (n - 1) + beta * n * (n - 1))
+
+# 压测：核数 vs 相对单核吞吐（示例数据，换成你的 orders/s 或 tick/s）
+N = np.array([1, 2, 4, 8, 16, 32])
+X = np.array([1.0, 1.8, 3.2, 4.5, 4.8, 4.2])  # 16 核后反降 → USL 典型
+
+(alpha, beta), _ = curve_fit(usl, N, X, p0=[0.01, 0.001], bounds=(0, np.inf))
+print(f"α={alpha:.4f}  β={beta:.4f}")
+print("N=8 预测:", usl(8, alpha, beta))
+```
+
+**排队论 — [`queueing-tool`](https://pypi.org/project/queueing-tool/)**（M/M/c、M/G/1；见 [2.6.4](./section-2.6.4-排队论计算器.md)）。
+
+> **说明：** `scipy` 本体 **没有** 内置 M/M/1 闭式解模块；常用组合是 **阿姆达尔手写 3 行 + USL 用 `scipy.optimize.curve_fit` + 排队用 `queueing-tool`**。
+
+#### 工具一览
+
+| 用途 | 工具 | 说明 |
+|------|------|------|
+| 阿姆达尔 | 上式 / Excel 一格 `=1/(f+(1-f)/N)` | 参数：**f, N** |
+| USL 拟合 | `scipy.optimize.curve_fit` | 输入：**(N, 吞吐)** 压测序列 |
+| 排队论 | `queueing-tool`、Web `M/M/c calculator` | 输入：**λ, μ, c** |
+| 在线 | 搜 `Amdahl's law calculator`、`USL calculator` | 快速试参 |
+
+#### HFT 压测自动化（集成到 [Ch 12](../../chapter-12-benchmarking/) 脚本）
+
+```
+1. perf / 段间 histogram  →  f（串行占比）、T₀
+2. 阶梯加压 N=1,2,4,8…     →  吞吐序列 → curve_fit 得 α、β
+3. 同一轮 λ、μ、c          →  queueing-tool 得 ρ、knee
+4. 脚本输出：
+     - 阿姆达尔 S(N)、S_max、T_min（理想）
+     - USL 最优 N、预测 2× tick 需几核
+     - 排队论 限流 λ_max、Grafana 告警 ρ
+5. 与实盘 Grafana 迭代校正
+```
+
+比手算 **更快、可复现** — 参数来自 **同一轮压测**，避免拍脑袋加机器。
+
+→ [容量规划三步法](./section-2.7-容量规划三步法.md) · [2.6.4 排队计算器](./section-2.6.4-排队论计算器.md)
+
+---
+
 ← [排队论](./section-2.6.1-排队论概览与Kendall记号.md) · [容量规划](./section-2.7-容量规划三步法.md) · [Ch 6 CPU](../../chapter-06-cpus/) · [本章导读](../README.md)
