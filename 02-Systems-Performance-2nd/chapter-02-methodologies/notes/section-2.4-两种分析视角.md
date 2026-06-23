@@ -9,7 +9,7 @@
          ────────────  先上后下，不是二选一  ────────────
 ```
 
-→ 术语对照：[2.1](./section-2.1-HFT术语与团队对齐.md) · [2.2 命令](./section-2.2-术语与命令速查.md) · [2.3 走查](./section-2.3-时间尺度与排查走查.md) · [2.5 分层埋点](./section-2.5-性能分析方法论.md) · [附录 A](../../appendix-A-USE方法Linux.md)
+→ 术语对照：[2.1](./section-2.1-HFT术语与团队对齐.md) · [2.2 命令](./section-2.2-术语与命令速查.md) · [2.3.1 走查](./section-2.3.1-时间尺度与排查走查.md) · [2.5 分层埋点](./section-2.5-性能分析方法论.md) · [附录 A](../../appendix-A-USE方法Linux.md)
 
 ---
 
@@ -148,7 +148,7 @@ ss -s / ethtool -S                          ← Resource 看重传、drop
 | 只看 Grafana，从不 `perf` / `ethtool` | 知道「慢了」但不知道 **CPU 还是网卡** |
 | 开发期零埋点，指望线上 `tcpdump` 补全 | `tcpdump` **解释不了** P99 从 10→100 μs 发生在哪段 |
 
-**HFT 合并用法（与 [2.3 排查顺序](./section-2.3-时间尺度与排查走查.md#排查顺序-vs-优化优先级) 一致）：**
+**HFT 合并用法（与 [2.3.1 排查顺序](./section-2.3.1-时间尺度与排查走查.md#排查顺序-vs-优化优先级) 一致）：**
 
 ```
 1. Workload：Grafana / histogram — tick→parse→signal→send 各段 Rate、Duration、Errors

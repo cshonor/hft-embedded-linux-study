@@ -12,9 +12,9 @@
 |----|------|
 | 2.1 HFT 术语与团队对齐 | [notes/section-2.1-HFT术语与团队对齐.md](./notes/section-2.1-HFT术语与团队对齐.md) |
 | 2.2 术语→命令速查 | [notes/section-2.2-术语与命令速查.md](./notes/section-2.2-术语与命令速查.md) |
-| 2.3 时间尺度与排查走查 | [notes/section-2.3-时间尺度与排查走查.md](./notes/section-2.3-时间尺度与排查走查.md) |
-| 2.3 性能权衡 | [notes/section-2.3-性能权衡.md](./notes/section-2.3-性能权衡.md) |
-| 2.3 负载与架构 | [notes/section-2.3-负载与架构.md](./notes/section-2.3-负载与架构.md) |
+| 2.3.1 时间尺度与排查走查 | [notes/section-2.3.1-时间尺度与排查走查.md](./notes/section-2.3.1-时间尺度与排查走查.md) |
+| 2.3.2 性能权衡 | [notes/section-2.3.2-性能权衡.md](./notes/section-2.3.2-性能权衡.md) |
+| 2.3.3 负载与架构 | [notes/section-2.3.3-负载与架构.md](./notes/section-2.3.3-负载与架构.md) |
 | 2.4 两种分析视角 | [notes/section-2.4-两种分析视角.md](./notes/section-2.4-两种分析视角.md) |
 | 2.5 性能分析方法论 | [notes/section-2.5-性能分析方法论.md](./notes/section-2.5-性能分析方法论.md) |
 | 2.6 排队论概览与 Kendall 记号 | [notes/section-2.6-排队论概览与Kendall记号.md](./notes/section-2.6-排队论概览与Kendall记号.md) |

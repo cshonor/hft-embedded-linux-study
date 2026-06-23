@@ -138,7 +138,7 @@ tcpdump -i eth0 -c 1000 -tttt --no-promisc 2>/dev/null | tee /tmp/ticks1000.log
 2. 异常时 tcpdump -c 1000  →  与 counter 交叉
 3. 对齐 → 拆 P99 / reject；不对齐 → ethtool / perf
 ```
-→ 命令索引：[2.2 Throughput 行](./section-2.2-术语与命令速查.md) · 排查顺序：[2.3](./section-2.3-时间尺度与排查走查.md)
+→ 命令索引：[2.2 Throughput 行](./section-2.2-术语与命令速查.md) · 排查顺序：[2.3.1](./section-2.3.1-时间尺度与排查走查.md)
 
 **串连预览（Workload 确认 Rate 后的下一层）：**
 
