@@ -53,7 +53,7 @@ perf top -p $(pgrep your_strategy)   # 生产用低频/短窗口
 
 ```
 10s 清单异常  →  计数器/Metrics 确认  →  perf 火焰图  →  eBPF trace 抓 tail
-                ↑ 与 [1.4 双视角](./section-1.4-1.5-分析视角与性能挑战.md) [tick Checklist](./section-1.1-1.3-系统性能角色与活动.md#hft--行情-tick-全链路-checklist) 衔接
+                ↑ 与 [1.4 双视角](./section-1.4-热路径Resource与双视角.md) [tick Checklist](./section-1.1-1.3-系统性能角色与活动.md#hft--行情-tick-全链路-checklist) 衔接
 ```
 
 **方法论落地原则：** 通用清单 **改顺序、删无关项、加 HFT 强相关项** — 形成自己的 **实盘 runbook**，发版/事故 **照表执行**。
