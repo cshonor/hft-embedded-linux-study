@@ -17,7 +17,12 @@
 | 2.3 负载与架构 | [notes/section-2.3-负载与架构.md](./notes/section-2.3-负载与架构.md) |
 | 2.4 两种分析视角 | [notes/section-2.4-两种分析视角.md](./notes/section-2.4-两种分析视角.md) |
 | 2.5 性能分析方法论 | [notes/section-2.5-性能分析方法论.md](./notes/section-2.5-性能分析方法论.md) |
-| 2.6–2.7 建模与容量规划 | [notes/section-2.6-2.7-建模与容量规划.md](./notes/section-2.6-2.7-建模与容量规划.md) |
+| 2.6 排队论概览与 Kendall 记号 | [notes/section-2.6-排队论概览与Kendall记号.md](./notes/section-2.6-排队论概览与Kendall记号.md) |
+| 2.6 M/M/1 拐点与预警线 | [notes/section-2.6-M-M-1-拐点与预警线.md](./notes/section-2.6-M-M-1-拐点与预警线.md) |
+| 2.6 M/D/1 · M/M/c · M/G/1 | [notes/section-2.6-M-D-1-M-M-c-M-G-1.md](./notes/section-2.6-M-D-1-M-M-c-M-G-1.md) |
+| 2.6 排队论计算器 | [notes/section-2.6-排队论计算器.md](./notes/section-2.6-排队论计算器.md) |
+| 2.7 阿姆达尔与 USL | [notes/section-2.7-阿姆达尔与USL.md](./notes/section-2.7-阿姆达尔与USL.md) |
+| 2.7 容量规划三步法 | [notes/section-2.7-容量规划三步法.md](./notes/section-2.7-容量规划三步法.md) |
 | 2.8–2.10 统计与可视化 | [notes/section-2.8-2.10-统计与可视化.md](./notes/section-2.8-2.10-统计与可视化.md) |
 
 ---
@@ -50,7 +55,7 @@ HFT：**先 Workload**（Grafana 确认 tick 掉速、P99 10→100 μs、reject 
 **④ 数字别只看平均值；资源别跑太满。**
 
 - 缓存命中极快、未命中极慢 → **平均值骗人**，看 **P99、热力图、火焰图**。
-- 排队论：**M/M/1** 拐点 **~70%**；**M/D/1** 固定耗时热路径 **~80%** — 见 [2.6–2.7](./notes/section-2.6-2.7-建模与容量规划.md)。
+- 排队论：**M/M/1 ~70%**、**M/D/1 ~80%** — 见 [2.6 概览](./notes/section-2.6-排队论概览与Kendall记号.md)、[M/M/1 预警线](./notes/section-2.6-M-M-1-拐点与预警线.md)。
 - 可扩展性：**Amdahl** 防盲目堆核；**USL** 预判 tick 2× 时的核数/网卡/内存 — 容量规划 **模型→压测→实盘** 三步闭环。
 
 下面按原书 2.1–2.10 展开。
