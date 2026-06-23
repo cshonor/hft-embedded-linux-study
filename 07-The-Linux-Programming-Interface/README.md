@@ -9,11 +9,10 @@
 
 ## 子目录
 
-| 文件 | 内容 |
+| 路径 | 内容 |
 |------|------|
 | [OUTLINE.md](./OUTLINE.md) | 全书章节 · HFT 🔴/🟡/⚪ 裁剪 |
-| `code/` | 实验代码（mmap、epoll、绑核等） |
-| `notes/` | 按章笔记（待补） |
+| `chapter-*/` | 每章 `notes.md` + 按需 `code/` |
 
 ## HFT 为什么读 TLPI
 
