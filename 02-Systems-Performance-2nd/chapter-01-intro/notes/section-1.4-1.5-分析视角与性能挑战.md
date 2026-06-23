@@ -28,6 +28,59 @@
 
 → 方法论细节见 [Ch 2](../../chapter-02-methodologies/)（USE/RED 等）· tick 全链路清单见 [1.1–1.3](./section-1.1-1.3-系统性能角色与活动.md#hft--行情-tick-全链路-checklist)
 
+### 案例 · 逐笔排序变慢 — 双视角怎么配合
+
+> **场景：** 上线「逐笔成交排序」后，端到端延迟变差。HFT **没有单一视角的解法** — 必须 workload + resource **对齐** 后再改。
+
+#### ① 自上而下 · 工作负载（先定位「哪段业务逻辑变重」）
+
+```bash
+perf record -g -p <策略进程 PID> -- sleep 30
+perf report --no-children
+# 或火焰图：perf script | stackcollapse-perf.pl | flamegraph.pl > fg.svg
+```
+
+| 观察 | 结论 |
+|------|------|
+| 行情解析相关栈 **10% → 40%** | 热路径确实变重 — **指向新功能** |
+| 点进 call chain | **「逐笔成交排序」** 占大头 — workload 问题点锁定 |
+
+**此时结论（未完成）：** 新排序逻辑拖慢了解析段 — **但别立刻只改代码**。
+
+#### ② 自下而上 · 资源（同步核查「底层是否在拖后腿」）
+
+| 命令 | 看什么 | 可能发现 |
+|------|--------|----------|
+| `mpstat -P ALL 1` | 每核 **%soft** / **%usr** / **%idle** | 某核 softirq 飙高；策略核 **不 idle 但也不在跑 usr** |
+| `numastat -p <pid>` | **跨节点** 内存访问 | `numa_foreign` / `other_node` 偏高 |
+| `ethtool -S eth0` | 网卡 **drop** / `rx_missed_errors` | 静默丢包 or 背压 |
+
+**典型叠加根因（本案例）：**
+
+```
+网卡 IRQ / softirq 绑定的核  ==  策略进程绑定的核
+  → CPU cache 被中断 handler 频繁冲刷
+  → 哪怕排序算法优化了，延迟仍压不下去
+```
+
+上层 workload 的「变慢」有时只是 **表象** — 底层 **资源争用** 同时在放大 tail latency。
+
+#### ③ 合并结论 · 双管齐下
+
+| 层 | 动作 | 解决什么 |
+|----|------|----------|
+| **Resource** | 网卡中断 / NAPI **迁到独立核**；策略进程与 feed **NUMA 本地**、同节点内存 | 消除 IRQ vs 策略的 **核竞争**、cross-NUMA |
+| **Workload** | 排序改为 **预分配固定数组**、无热路径 `malloc`；或移出 tick 热路径 | 降低解析段 **本身 CPU 时间** |
+
+```
+错误路径：只看 perf → 只改排序算法 → 延迟仍高（IRQ 还在抢核）
+正确路径：perf 定位段 + mpstat/numa/ethtool 找争用 → 先调亲和/NUMA → 再改逻辑
+```
+
+**HFT 原则：** 上层业务逻辑与底层资源调度 **完全对齐** — isolcpus、IRQ balance、RSS、进程 affinitity 要和 hot path 设计 **一起画在一张拓扑图里**。
+
+→ 工具：[Ch 4 观测工具](../../chapter-04-observability-tools/) · [Ch 6 CPU 绑核](../../chapter-06-cpus/) · [Ch 10 网络](../../chapter-10-network/) · [Ch 13 perf](../../chapter-13-perf/)
+
 ### 性能工程为何难
 
 | 挑战 | 说明 |
