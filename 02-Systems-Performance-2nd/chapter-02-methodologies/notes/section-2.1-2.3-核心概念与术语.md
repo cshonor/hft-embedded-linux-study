@@ -124,15 +124,6 @@ Gregg 经典类比：若 **1 CPU 周期 ≈ 1 秒**，则：
 | **百 μs～ms 级**（成交/ACK 变慢） | 内核栈、网卡、队列、对端 | **Throughput**、**RTT**、TCP **Saturation**、`ss -s`、`ethtool -S` | 纳秒级 cache 微调 |
 | **ms+ 级** | 网络路径、交易所、拥塞 | RTT、重传、队列饱和、路径变更 | 单机 CPU 指令级优化 |
 
-**例子（你的场景）：**
-
-```
-订单成交延迟掉在「毫秒级」
-  → 战场 = 网卡 / 交换机 / TCP 队列 / RTT
-  → 用：吞吐量、网络 RTT、TCP 队列饱和、ethtool、ss
-  → 不必先纠结：L1 cache 再 hit 1% 算不算赢
-```
-
 **反例 — 捡芝麻丢西瓜：**
 
 ```
@@ -140,6 +131,50 @@ Gregg 经典类比：若 **1 CPU 周期 ≈ 1 秒**，则：
   却没解决毫秒级网络抖动 / 队列饱和
   → 对 HFT 端到端几乎无感 — 时间尺度锚错了
 ```
+
+#### 实战走一遍：先锚量级，再拆组件
+
+> **口诀：** 先量一笔落在哪档 → 再选术语 + 命令，**别跳档优化**。
+
+**路径 A · 发单→ACK 慢了（毫秒级网络战场）**
+
+```
+1. 锚量级
+   tcpdump / 应用时间戳 / 交易所 ACK 日志
+   → 例：应用发出 → 收到 ACK = 2ms
+   → 锚定：**毫秒级网络尺度** — 不查纳秒 CPU cache
+
+2. 定术语 + 命令（Saturation / Throughput / Errors）
+   ss -s              →  TCP 队列是否积压、连接状态摘要
+   ethtool -S eth0    →  网卡 drop、rx_missed_errors（Errors）
+   sar -n DEV 1       →  带宽是否打满（Throughput）
+   ss -ti / ping      →  RTT、重传（Latency 网络段）
+
+3. 结论方向
+   队列满 / 丢包 / RTT 抖  →  迁 IRQ、换路径、控 peak — 不是改撮合 if-else
+```
+
+**路径 B · 撮合单步逻辑 500ns（纳秒～微秒 CPU 战场）**
+
+```
+1. 锚量级
+   应用内 rdtsc / 分段 histogram
+   → 例：单步撮合 = 500ns
+   → 锚定：**CPU / cache 热路径** — 此时才值得抠指令与 cache
+
+2. 定术语 + 命令（Utilization / Bottleneck）
+   perf top -p <pid>           →  热点函数（Bottleneck）
+   perf record -g → 火焰图     →  固化宽栈
+   perf stat -e cache-misses   →  L3 / cache 行为（ns～百 ns 档）
+
+3. 结论方向
+   某函数宽、cache miss 高  →  改数据结构、对齐、绑核 — 不是先怪交换机
+```
+
+| 你先量到什么 | 锚在哪 | 下一步工具 | 别误闯 |
+|--------------|--------|------------|--------|
+| 发单→ACK **2ms** | ms · 网络 | `ss -s`、`ethtool -S`、`sar -n DEV` | `perf` 抠 cache |
+| 撮合一步 **500ns** | ns～μs · CPU | `perf top`、火焰图、`cache-misses` | `tcpdump` 查 RTT |
 
 **和前面术语表的关系：**
 
