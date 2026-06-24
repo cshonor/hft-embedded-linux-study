@@ -1,7 +1,7 @@
 ## Day 17 · 命令行窗口
 
 > **原书第十七章** · **Console 雏形** — **idle 任务**、**`console_task`**、Tab 焦点、**每任务 FIFO**、Shift/CapsLock、**键盘 LED**。  
-> ← [Day 16](./day-16-多任务2.md) · [08-1 导读](../README.md) · → Day 18（待补）
+> ← [Day 16](./day-16-多任务2.md) · [08-1 导读](../README.md) · → [Day 18](./day-18-dir命令.md)
 
 ---
 
@@ -166,4 +166,4 @@ scancode → (shift ? keytable1 : keytable0)[code]
 
 ---
 
-← [Day 16](./day-16-多任务2.md) · [08-1 导读](../README.md) · Day 18（待补）
+← [Day 16](./day-16-多任务2.md) · [08-1 导读](../README.md) · [Day 18](./day-18-dir命令.md)

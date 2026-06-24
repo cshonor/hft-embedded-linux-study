@@ -60,6 +60,7 @@
 | **15** | 多任务（1） | [notes/day-15-多任务1.md](./notes/day-15-多任务1.md) |
 | **16** | 多任务（2） | [notes/day-16-多任务2.md](./notes/day-16-多任务2.md) |
 | **17** | 命令行窗口 | [notes/day-17-命令行窗口.md](./notes/day-17-命令行窗口.md) |
+| **18** | dir 命令 | [notes/day-18-dir命令.md](./notes/day-18-dir命令.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
