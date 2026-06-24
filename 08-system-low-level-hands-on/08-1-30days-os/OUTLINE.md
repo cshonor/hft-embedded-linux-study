@@ -16,7 +16,8 @@
 | **9** | 内存管理 | 🔴 | [day-09](./notes/day-09-内存管理.md) |
 | **10** | 叠加处理 | 🔴 | [day-10](./notes/day-10-叠加处理.md) |
 | **11** | 制作窗口 | 🔴 | [day-11](./notes/day-11-制作窗口.md) |
-| 12–15 | 定时器、多任务、API 等 | 🔴 | — |
+| **12** | 定时器（1） | 🔴 | [day-12](./notes/day-12-定时器1.md) |
+| 13–15 | 多任务、API、Shell 等 | 🔴 | — |
 | 16–23 | 内存分配、页表、多任务 | 🔴 | — |
 | 24–30 | 文件、API、Shell | 🟡 | — |
 
@@ -142,3 +143,14 @@
 - **`map[]` 像素归属** — 下层写 VRAM 前 **skip 上层像素**
 
 → 详读 [notes/day-11-制作窗口.md](./notes/day-11-制作窗口.md)
+
+---
+
+## Day 12 要点速览
+
+- **PIT** · **IRQ0** · **`inthandler20`** · ~**100Hz**
+- **`TIMERCTL.count`** — OS 秒表
+- **timeout → FIFO** · **500 路** · **`TIMER_FLAGS_USING`**
+- **`next`** — 只处理最近到期，避免每 tick 扫 500
+
+→ 详读 [notes/day-12-定时器1.md](./notes/day-12-定时器1.md)

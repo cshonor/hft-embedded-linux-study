@@ -54,6 +54,7 @@
 | **9** | 内存管理 | [notes/day-09-内存管理.md](./notes/day-09-内存管理.md) |
 | **10** | 叠加处理 | [notes/day-10-叠加处理.md](./notes/day-10-叠加处理.md) |
 | **11** | 制作窗口 | [notes/day-11-制作窗口.md](./notes/day-11-制作窗口.md) |
+| **12** | 定时器（1） | [notes/day-12-定时器1.md](./notes/day-12-定时器1.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -91,7 +92,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–10 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–12 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
