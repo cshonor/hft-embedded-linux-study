@@ -48,6 +48,7 @@
 | **3** | 进入 32 位模式并导入 C 语言 | [notes/day-03-32位模式与导入C语言.md](./notes/day-03-32位模式与导入C语言.md) |
 | **4** | C 语言与画面显示的练习 | [notes/day-04-C语言与画面显示练习.md](./notes/day-04-C语言与画面显示练习.md) |
 | **5** | 结构体、文字显示与 GDT/IDT 初始化 | [notes/day-05-结构体文字显示与GDT-IDT.md](./notes/day-05-结构体文字显示与GDT-IDT.md) |
+| **6** | 分割编译与中断处理 | [notes/day-06-分割编译与中断处理.md](./notes/day-06-分割编译与中断处理.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -85,7 +86,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–4 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–5 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
