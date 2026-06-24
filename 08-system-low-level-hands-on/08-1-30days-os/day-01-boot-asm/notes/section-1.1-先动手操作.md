@@ -246,14 +246,17 @@ D:\qemu\qemu-system-i386.exe -fda C:\Users\12392\Desktop\boot.img
 | **含字符串** | 文件内能搜到 **`hello, world`** | 错位后字符串损坏或消失 |
 | **`0x1FE`** | **`55 AA`** | 仅有签名但代码区错 |
 
-**最快修复：**
+**做法 A（推荐 · 一键替换正确映像）：**
 
-```cmd
-copy /Y C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\code\day-01\helloos.img C:\Users\12392\Desktop\boot.img
-D:\qemu\qemu-system-i386.exe -fda C:\Users\12392\Desktop\boot.img
+```powershell
+New-Item -ItemType Directory -Force D:\haribote | Out-Null
+Copy-Item -Force "C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\code\day-01\helloos.img" "D:\haribote\boot.img"
+D:\qemu\qemu-system-i386.exe -fda D:\haribote\boot.img
 ```
 
-若参考映像能出字 → QEMU 正常，再按 [helloos-boot-sector.hex](../../../code/day-01/helloos-boot-sector.hex) **从偏移 0 重填** 512 字节引导扇区，并 **`Ctrl+E` → `1474560`** 修正文件大小。
+验证：`D:\haribote\boot.img` 应为 **1,440 KB**，开头 **`EB 4E 90`**，含 **`hello, world`**。**勿**把映像放在 `D:\qemu\` 安装目录。
+
+**做法 B（手工重填 512 B 引导扇区）：** 见 [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) · `Ctrl+E` → **`1474560`**（不是 `21448608`）→ 从偏移 **`0`** 对照 [helloos-boot-sector.hex](../../../code/day-01/helloos-boot-sector.hex)。
 
 PowerShell 里 `WARNING: image format was not specified` 可忽略；也可写 `-drive format=raw,file=boot.img,index=0,if=floppy`。
 
