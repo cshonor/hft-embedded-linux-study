@@ -58,6 +58,7 @@
 | **13** | 定时器（2） | [notes/day-13-定时器2.md](./notes/day-13-定时器2.md) |
 | **14** | 高分辨率及键盘输入 | [notes/day-14-高分辨率及键盘输入.md](./notes/day-14-高分辨率及键盘输入.md) |
 | **15** | 多任务（1） | [notes/day-15-多任务1.md](./notes/day-15-多任务1.md) |
+| **16** | 多任务（2） | [notes/day-16-多任务2.md](./notes/day-16-多任务2.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -95,7 +96,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–14 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–15 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
