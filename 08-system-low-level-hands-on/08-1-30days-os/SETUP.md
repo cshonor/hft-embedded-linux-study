@@ -61,8 +61,11 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 ![QEMU 64-bit 镜像站](./assets/qemu-weilnetz-w64.png)
 
 3. 下载列表底部最新 **`qemu-w64-setup-YYYYMMDD.exe`**（例：`qemu-w64-setup-20230501.exe`）
-4. 双击安装包 → **`D:\DevTools\QEMU`** → 勾选 **PATH**（若有）
-5. 新开 cmd：`qemu-system-i386 --version`
+4. 双击安装包 → **Choose Install Location** → **`D:\qemu`**（或 `D:\DevTools\QEMU`）→ **Install**（约 1.1 GB）
+
+![QEMU 安装路径](./assets/qemu-install-path.png)
+
+5. 勾选 **PATH**（若有）→ 完成 → 新开 cmd：`qemu-system-i386 --version`
 
 > **跳过 MSYS2 / pacman** 段落 — 仅开发编译用；学习用书用 **setup 安装包** 即可。
 
@@ -84,7 +87,7 @@ qemu-system-i386 -fda boot.img
 **A. 临时（当前 cmd 窗口）：**
 
 ```cmd
-set PATH=D:\DevTools\QEMU;C:\dev\haribote\tolset;%PATH%
+set PATH=D:\qemu;C:\dev\haribote\tolset;%PATH%
 ```
 
 **B. 永久：** 系统环境变量 `Path` 追加上述目录（改完后新开终端）。
