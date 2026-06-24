@@ -1,7 +1,7 @@
 ## Day 1 · 从计算机结构到汇编程序入门
 
 > **原书第一章** · 目标：打破「写 OS 很难」的恐惧 — **黑屏白字** 先跑起来，再从机器码跨入汇编。  
-> ← [08-1 导读](../README.md) · → Day 2（待补）
+> ← [08-1 导读](../README.md) · → [Day 2](./day-02-汇编语言与Makefile入门.md)
 
 ---
 
@@ -125,4 +125,4 @@ helloos.nas  ──nask.exe──►  helloos.img   （与手工版一致）
 
 ---
 
-← [08-1 导读](../README.md) · Day 2（待补）
+← [08-1 导读](../README.md) · [Day 2](./day-02-汇编语言与Makefile入门.md)
