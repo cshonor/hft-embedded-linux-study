@@ -37,6 +37,8 @@
 
 **标签：** 🟡 选读 · 时间紧可后补，与 `05`/`06` 概念课 **并行** 也行。
 
+**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md)（三阶段方案）· [SETUP.md](./SETUP.md)（Day 0 环境）
+
 ---
 
 ## 目录结构
@@ -101,27 +103,29 @@ day-XX-slug/
 | **中断 / 多任务** | GDT/IDT、时钟、任务切换 | **上下文切换** 从哪来 |
 | **GUI / API** | 显存、窗口、系统调用接口 | 与 **Linux syscall**、用户态 API 对照 |
 
-### 建议阶段（按 Day 粗分）
+### 建议阶段（三周期 · 详见 LEARNING_PLAN）
 
-| 阶段 | 主题 | HFT 关联 |
-|------|------|----------|
-| Day 1–7 | 引导、实模式→保护模式、显存/键盘 | 启动链、I/O 与轮询 vs 中断 |
-| Day 8–15 | GDT/IDT、中断、时钟 | **上下文切换**、定时与调度感 |
-| Day 16–23 | 内存分配、页表、多任务 | TLB / 缺页 / 内存布局 |
-| Day 24–30 | 文件、API、Shell | 与 TLPI / LKD **syscall 表** 对照 |
+| 周期 | Day | 主题 | HFT 关联 |
+|------|-----|------|----------|
+| **地基** | 0–7 | tolset、引导扇区、保护模式、GDT/IDT、键鼠 FIFO | 启动链、中断 vs 轮询 |
+| **完善** | 8–14 | 内存管理、图层/窗口、PIT、键盘输入 | 定时、ISR 延迟 |
+| **生态** | 15–30 | 多任务、FAT/Shell、API、用户态程序 | syscall 边界、上下文切换 |
 
 ---
 
 ## 工具与环境
 
-- **原书配套：** 下载包内工具链 + 模拟器（通常 **QEMU** 启动 `.img`）
-- **本仓库：** 实验代码放 [../code/](../code/)，笔记按 Day 分布在 `day-XX-slug/`（见上表）
-- **不必先备：** 完整 OS 理论课；**需要：** 基本 C 语法 + 愿意改汇编（与 [01-CSAPP Ch3](../../01-CSAPP-3rd/chapter-03-machine-level-programs/) 互补）
+- **无需光驱：** 原书 tolset 资源包解压 + **QEMU** 加载 `.img` 即可（见 [SETUP.md](./SETUP.md)）
+- **路径规范：** 工程目录 **禁止中文与空格**
+- **本仓库：** 实验代码放 [../code/](../code/)，笔记按 Day 在 `day-XX-slug/`
+- **不必先备：** 完整 OS 理论课；**需要：** 基本 C + 简易汇编（与 [01-CSAPP Ch3](../../01-CSAPP-3rd/chapter-03-machine-level-programs/) 互补）
 
 ---
 
 ## 产出清单
 
+- [x] `LEARNING_PLAN.md` — 三阶段标准学习方案 + 避坑
+- [x] `SETUP.md` — Windows + QEMU Day 0 部署
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（**Day 1–30**）
 - [x] `day-XX-slug/` — 每日导读 + `notes/section-*.md`（**Day 1–30 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
