@@ -45,7 +45,7 @@ Booting from Floppy...
 hello, world
 ```
 
-![QEMU 启动过程：软盘引导成功](../../assets/qemu-hello-world-success.png)
+![QEMU `-boot a` 软盘引导成功](../../assets/qemu-boot-a-hello-world-success.png)
 
 > **不加 `-boot a` 时：** BIOS 默认 **先试硬盘 (C:)**，会先出现 `Boot failed: could not read the boot disk`，再试软盘 —— **不是失败**，只是多两行提示。加 **`-boot a`** 可跳过硬盘那一步。
 
