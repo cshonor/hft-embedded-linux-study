@@ -25,7 +25,8 @@
 | **18** | dir 命令 | 🔴 | [day-18](./notes/day-18-dir命令.md) |
 | **19** | 应用程序 | 🔴 | [day-19](./notes/day-19-应用程序.md) |
 | **20** | API | 🔴 | [day-20](./notes/day-20-API.md) |
-| 21–30 | 分页、更多 API、GUI 应用等 | 🟡 | — |
+| **21** | 保护操作系统 | 🔴 | [day-21](./notes/day-21-保护操作系统.md) |
+| 22–30 | 分页、更多 API、GUI 等 | 🟡 | — |
 | 16–23 | 内存分配、页表、多任务 | 🔴 | — |
 | 24–30 | 文件、API、Shell | 🟡 | — |
 
@@ -241,3 +242,15 @@
 - **`hlt.hrb`** · **GDT + farjmp**
 
 → 详读 [notes/day-19-应用程序.md](./notes/day-19-应用程序.md)
+
+---
+
+## Day 20 要点速览
+
+- **far-CALL / RETF** 回 Shell
+- **INT 0x40** 稳定 API · 替代硬编码地址
+- **`cmd_app`** → 任意 **`.hrb`**
+- **PUSHAD/POPAD** 保寄存器
+- **EDX** 功能号 **1/2/3** 路由
+
+→ 详读 [notes/day-20-API.md](./notes/day-20-API.md)

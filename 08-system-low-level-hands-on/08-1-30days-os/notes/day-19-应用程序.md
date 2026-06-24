@@ -150,4 +150,4 @@ Console: run hlt.hrb
 
 ---
 
-← [Day 18](./day-18-dir命令.md) · [08-1 导读](../README.md) · Day 20（待补）
+← [Day 18](./day-18-dir命令.md) · [08-1 导读](../README.md) · [Day 20](./day-20-API.md)

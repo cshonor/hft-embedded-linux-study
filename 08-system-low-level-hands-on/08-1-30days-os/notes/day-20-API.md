@@ -1,7 +1,7 @@
 ## Day 20 · API
 
 > **原书第二十章** · **内核 ↔ 应用桥梁** — **far-CALL/RETF**、**INT 0x40**、**`cmd_app`**、**PUSHAD/POPAD**、**EDX 功能号** 路由。  
-> ← [Day 19](./day-19-应用程序.md) · [08-1 导读](../README.md) · → Day 21（待补）
+> ← [Day 19](./day-19-应用程序.md) · [08-1 导读](../README.md) · → [Day 21](./day-21-保护操作系统.md)
 
 ---
 
@@ -184,4 +184,4 @@ INT 0x40 进入
 
 ---
 
-← [Day 19](./day-19-应用程序.md) · [08-1 导读](../README.md) · Day 21（待补）
+← [Day 19](./day-19-应用程序.md) · [08-1 导读](../README.md) · [Day 21](./day-21-保护操作系统.md)
