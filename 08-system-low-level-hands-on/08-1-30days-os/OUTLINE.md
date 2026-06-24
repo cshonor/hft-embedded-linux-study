@@ -21,7 +21,8 @@
 | **14** | 高分辨率及键盘输入 | 🔴 | [day-14](./notes/day-14-高分辨率及键盘输入.md) |
 | **15** | 多任务（1） | 🔴 | [day-15](./notes/day-15-多任务1.md) |
 | **16** | 多任务（2） | 🔴 | [day-16](./notes/day-16-多任务2.md) |
-| 17–30 | API、Shell、文件系统等 | 🟡 | — |
+| **17** | 命令行窗口 | 🔴 | [day-17](./notes/day-17-命令行窗口.md) |
+| 18–30 | 命令执行、API、文件系统等 | 🟡 | — |
 | 16–23 | 内存分配、页表、多任务 | 🔴 | — |
 | 24–30 | 文件、API、Shell | 🟡 | — |
 
@@ -191,3 +192,26 @@
 - **`mt_taskswitch` 进 timer ISR** — 抢占式调度雏形
 
 → 详读 [notes/day-15-多任务1.md](./notes/day-15-多任务1.md)
+
+---
+
+## Day 16 要点速览
+
+- **`TASKCTL`** · **`task_alloc` / `task_run`**
+- **`task_sleep` / FIFO wake**
+- **A + B0/B1/B2** 四任务
+- **`TASKLEVEL`** · 高层未睡 **不跑低层** · UI **瞬间抢占**
+
+→ 详读 [notes/day-16-多任务2.md](./notes/day-16-多任务2.md)
+
+---
+
+## Day 17 要点速览
+
+- **`console_task`** · **Idle** 最低优先级
+- **Tab / `key_to`** · 标题栏焦点色
+- **TASK.fifo** · Backspace **= 8**
+- **`keytable0/1`** · CapsLock · **±0x20**
+- **LED `0xED` @ 0x60**
+
+→ 详读 [notes/day-17-命令行窗口.md](./notes/day-17-命令行窗口.md)
