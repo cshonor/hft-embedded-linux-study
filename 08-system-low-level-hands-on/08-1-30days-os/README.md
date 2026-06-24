@@ -68,6 +68,7 @@
 | **23** | 图形处理相关 | [notes/day-23-图形处理相关.md](./notes/day-23-图形处理相关.md) |
 | **24** | 窗口操作 | [notes/day-24-窗口操作.md](./notes/day-24-窗口操作.md) |
 | **25** | 增加命令行窗口 | [notes/day-25-增加命令行窗口.md](./notes/day-25-增加命令行窗口.md) |
+| **26** | 为窗口移动提速 | [notes/day-26-为窗口移动提速.md](./notes/day-26-为窗口移动提速.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -105,7 +106,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–25 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–26 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
