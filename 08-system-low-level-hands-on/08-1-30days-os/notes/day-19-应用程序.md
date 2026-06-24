@@ -1,7 +1,7 @@
 ## Day 19 · 应用程序
 
 > **原书第十九章** · **外部程序时代** — **`type`/cat**、FAT 解压与大文件、**window/console/file.c**、**`hlt.hrb` + GDT + farjmp**。  
-> ← [Day 18](./day-18-dir命令.md) · [08-1 导读](../README.md) · → Day 20（待补）
+> ← [Day 18](./day-18-dir命令.md) · [08-1 导读](../README.md) · → [Day 20](./day-20-API.md)
 
 ---
 

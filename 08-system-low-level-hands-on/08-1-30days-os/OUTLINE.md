@@ -24,7 +24,8 @@
 | **17** | 命令行窗口 | 🔴 | [day-17](./notes/day-17-命令行窗口.md) |
 | **18** | dir 命令 | 🔴 | [day-18](./notes/day-18-dir命令.md) |
 | **19** | 应用程序 | 🔴 | [day-19](./notes/day-19-应用程序.md) |
-| 20–30 | API、分页、GUI 应用等 | 🟡 | — |
+| **20** | API | 🔴 | [day-20](./notes/day-20-API.md) |
+| 21–30 | 分页、更多 API、GUI 应用等 | 🟡 | — |
 | 16–23 | 内存分配、页表、多任务 | 🔴 | — |
 | 24–30 | 文件、API、Shell | 🟡 | — |
 
@@ -228,3 +229,15 @@
 - **FAT12** 根目录 **224×32B** · **`dir`**
 
 → 详读 [notes/day-18-dir命令.md](./notes/day-18-dir命令.md)
+
+---
+
+## Day 19 要点速览
+
+- **`type`** · **clustno×512+0x003e00**
+- **\\n \\r \\t** 排版
+- **FAT12 解压** · 链到 **0xFFF**
+- **window/console/file.c**
+- **`hlt.hrb`** · **GDT + farjmp**
+
+→ 详读 [notes/day-19-应用程序.md](./notes/day-19-应用程序.md)
