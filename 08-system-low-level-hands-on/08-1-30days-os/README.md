@@ -69,6 +69,7 @@
 | **24** | 窗口操作 | [notes/day-24-窗口操作.md](./notes/day-24-窗口操作.md) |
 | **25** | 增加命令行窗口 | [notes/day-25-增加命令行窗口.md](./notes/day-25-增加命令行窗口.md) |
 | **26** | 为窗口移动提速 | [notes/day-26-为窗口移动提速.md](./notes/day-26-为窗口移动提速.md) |
+| **27** | LDT 与库 | [notes/day-27-LDT与库.md](./notes/day-27-LDT与库.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 

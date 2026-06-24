@@ -31,7 +31,8 @@
 | **24** | 窗口操作 | 🔴 | [day-24](./notes/day-24-窗口操作.md) |
 | **25** | 增加命令行窗口 | 🔴 | [day-25](./notes/day-25-增加命令行窗口.md) |
 | **26** | 为窗口移动提速 | 🔴 | [day-26](./notes/day-26-为窗口移动提速.md) |
-| 27–30 | 分页、文件写入、网络等 | 🟡 | — |
+| **27** | LDT 与库 | 🔴 | [day-27](./notes/day-27-LDT与库.md) |
+| 28–30 | 分页、文件写入、网络等 | 🟡 | — |
 | 16–23 | 内存分配、页表、多任务 | 🔴 | — |
 | 24–30 | 文件、API、Shell | 🟡 | — |
 
@@ -326,3 +327,14 @@
 - **`start`** · **`ncst`** 无 Console GUI
 
 → 详读 [notes/day-26-为窗口移动提速.md](./notes/day-26-为窗口移动提速.md)
+
+---
+
+## Day 27 要点速览
+
+- **ncst** 关窗 · **先 hide 后 free**
+- **LDT** 防 **crack7** · app 互不可见段
+- API **按 .obj 链接** · **`apilib.lib`**
+- **haribote/apilib** · **`app_make.txt`**
+
+→ 详读 [notes/day-27-LDT与库.md](./notes/day-27-LDT与库.md)

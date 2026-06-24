@@ -1,7 +1,7 @@
 ## Day 26 · 为窗口移动提速
 
 > **原书第二十六章** · **GUI 性能 + Shell 增强** — **32 位写 VRAM**、**new_mx/new_my 延迟刷新**、**Shift+F2** 多 Console、**`start` / `ncst`**。  
-> ← [Day 25](./day-25-增加命令行窗口.md) · [08-1 导读](../README.md) · → Day 27（待补）
+> ← [Day 25](./day-25-增加命令行窗口.md) · [08-1 导读](../README.md) · → [Day 27](./day-27-LDT与库.md)
 
 ---
 
@@ -128,4 +128,4 @@ start color2
 
 ---
 
-← [Day 25](./day-25-增加命令行窗口.md) · [08-1 导读](../README.md) · Day 27（待补）
+← [Day 25](./day-25-增加命令行窗口.md) · [08-1 导读](../README.md) · [Day 27](./day-27-LDT与库.md)
