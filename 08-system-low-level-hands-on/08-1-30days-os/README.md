@@ -47,6 +47,7 @@
 | **2** | 汇编语言学习与 Makefile 入门 | [notes/day-02-汇编语言与Makefile入门.md](./notes/day-02-汇编语言与Makefile入门.md) |
 | **3** | 进入 32 位模式并导入 C 语言 | [notes/day-03-32位模式与导入C语言.md](./notes/day-03-32位模式与导入C语言.md) |
 | **4** | C 语言与画面显示的练习 | [notes/day-04-C语言与画面显示练习.md](./notes/day-04-C语言与画面显示练习.md) |
+| **5** | 结构体、文字显示与 GDT/IDT 初始化 | [notes/day-05-结构体文字显示与GDT-IDT.md](./notes/day-05-结构体文字显示与GDT-IDT.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
