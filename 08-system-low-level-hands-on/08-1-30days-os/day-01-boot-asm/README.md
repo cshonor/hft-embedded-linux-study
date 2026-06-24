@@ -27,6 +27,7 @@
 | └ 1.1.4 启动签名与自检 | [notes/section-1.1.4-启动签名与自检.md](./notes/section-1.1.4-启动签名与自检.md) |
 | └ 1.1.5 QEMU 安装与运行 | [notes/section-1.1.5-QEMU安装与运行.md](./notes/section-1.1.5-QEMU安装与运行.md) |
 | └ 1.1.6 启动链路与排错 | [notes/section-1.1.6-启动链路与排错.md](./notes/section-1.1.6-启动链路与排错.md) |
+| **实验文件** | [code/](./code/) — `helloos.img` · hex 对照 |
 | 究竟做了些什么 | [notes/section-1.2-究竟做了些什么.md](./notes/section-1.2-究竟做了些什么.md) |
 | 初次体验汇编程序 | [notes/section-1.3-初次体验汇编程序.md](./notes/section-1.3-初次体验汇编程序.md) |
 | 加工润色 | [notes/section-1.4-加工润色.md](./notes/section-1.4-加工润色.md) |

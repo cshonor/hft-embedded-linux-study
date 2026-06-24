@@ -64,7 +64,7 @@
 ## 三、正确学习方法（避坑）
 
 1. **严格按天迭代，不要跳章**  
-   每天在前一天源码上增量修改；跳过任意一天易导致 Makefile / 链接布局断裂。建议 `../code/day-NN/` 保留每日可编译快照。
+   每天在前一天源码上增量修改；跳过任意一天易导致 Makefile / 链接布局断裂。建议各 `day-XX-slug/code/` 保留每日可编译快照。
 
 2. **先跑通，再深挖原理**  
    作者路线是「先看见效果，再拆 CPU/BIOS/保护模式」。与笔记里的 **HFT 对照** 可第二遍精读时做。
@@ -107,7 +107,7 @@
 - [ ] **零工具链体感（推荐）：** 按 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) 用 HxD + QEMU 手工做第一个 `helloos.img`
 - [ ] 按 [SETUP.md](./SETUP.md) 完成 **Day 0** tolset 环境（为 Day 1 汇编版做准备）
 - [ ] 阅读 [day-01-boot-asm/](./day-01-boot-asm/) 笔记并对照源码
-- [ ] 在 `../code/` 建立 `day-01/` 工程目录并 `make run`
+- [ ] 在 [day-01-boot-asm/code/](./day-01-boot-asm/code/) 对照映像；tolset 到位后 `make run`
 
 ---
 

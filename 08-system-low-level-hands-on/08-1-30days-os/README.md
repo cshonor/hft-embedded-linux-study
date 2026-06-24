@@ -117,7 +117,7 @@ day-XX-slug/
 
 - **无需光驱：** 原书 tolset 资源包解压 + **QEMU** 加载 `.img` 即可（见 [SETUP.md](./SETUP.md)）
 - **路径规范：** 工程目录 **禁止中文与空格**
-- **本仓库：** 实验代码放 [../code/](../code/)，笔记按 Day 在 `day-XX-slug/`
+- **本仓库：** 实验代码与映像放各 Day 目录下 `code/`（如 [day-01-boot-asm/code/](./day-01-boot-asm/code/)），笔记在 `day-XX-slug/notes/`
 - **不必先备：** 完整 OS 理论课；**需要：** 基本 C + 简易汇编（与 [01-CSAPP Ch3](../../01-CSAPP-3rd/chapter-03-machine-level-programs/) 互补）
 
 ---
@@ -128,7 +128,7 @@ day-XX-slug/
 - [x] `SETUP.md` — Windows + QEMU Day 0 部署
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（**Day 1–30**）
 - [x] `day-XX-slug/` — 每日导读 + `notes/section-*.md`（**Day 1–30 ✓**）
-- [ ] `../code/day-01/` — helloos 映像与十六进制对照（**Day 1 ✓**）
+- [x] `day-01-boot-asm/code/` — helloos 映像与十六进制对照（**Day 1 ✓**）
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
 ---

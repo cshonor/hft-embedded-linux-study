@@ -1,6 +1,6 @@
 ## 写入引导扇区机器码
 
-**对照资料：** [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) · [helloos-boot-sector.hex](../../../code/day-01/helloos-boot-sector.hex) · [helloos.img](../../../code/day-01/helloos.img)
+**对照资料：** [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) · [helloos-boot-sector.hex](../code/helloos-boot-sector.hex) · [helloos.img](../code/helloos.img)
 
 从 **中间 hex 区偏移 0 的第一个格子** 起，对照附表输入或粘贴；也可一键复制参考 `helloos.img`（见 [1.1.6 做法 A](./section-1.1.6-启动链路与排错.md)）。
 

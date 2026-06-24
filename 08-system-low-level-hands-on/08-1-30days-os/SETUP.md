@@ -30,7 +30,7 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 │   └── ...
 ├── qemu\                 ← 若 tolset 未带 QEMU，可单独安装
 │   └── qemu-system-i386.exe
-└── proj\                 ← 每日工程（对应本仓库 ../code/）
+└── proj\                 ← 每日工程（对应本仓库各 day-XX-slug/code/）
     ├── day-01\
     ├── day-02\
     └── ...

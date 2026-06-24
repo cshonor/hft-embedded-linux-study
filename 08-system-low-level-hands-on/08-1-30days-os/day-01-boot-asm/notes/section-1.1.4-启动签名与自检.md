@@ -21,7 +21,7 @@ HxD：**`Ctrl+G` → `1FE`** 确认；文本栏可能显示为 **`Uª`**。
 | `Ctrl+G` → **`0`** | **`EB 4E 90`** |
 | `Ctrl+G` → **`76`** 或右侧文本栏 | **`hello, world`** |
 | `Ctrl+G` → **`1FE`** | **`55 AA`** |
-| ~`0x84`–`0x1FD` | 理想为全 **`00`**（与 [helloos-boot-sector.hex](../../../code/day-01/helloos-boot-sector.hex) 一致） |
+| ~`0x84`–`0x1FD` | 理想为全 **`00`**（与 [helloos-boot-sector.hex](../code/helloos-boot-sector.hex) 一致） |
 
 **快速自检：** 大小 **1,440 KB** · **`EB 4E 90`** · **`55 AA` @ `1FE`** · 含 **`hello, world`**。
 

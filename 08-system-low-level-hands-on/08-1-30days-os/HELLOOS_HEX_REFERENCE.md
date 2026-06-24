@@ -2,7 +2,7 @@
 
 > **原著配套：** 川合秀实《30 天自制操作系统》· tolset / `helloos` 工程  
 > **本仓库：** HxD 替代 BZ.exe 时的对照表 + **可复制的 512 字节引导扇区**  
-> **二进制文件：** [../code/day-01/](../code/day-01/)
+> **二进制文件：** [./day-01-boot-asm/code/](./day-01-boot-asm/code/)
 
 ---
 
@@ -47,7 +47,7 @@ tolset 是原书配套工具包；`helloos` 是第一个软盘镜像工程。书
 
 ## 三、引导扇区完整 512 字节（0x0000–0x01FF）
 
-与 tolset / `helloos.nas` 汇编输出一致。**可直接复制**下方表到 HxD 对照，或使用 [helloos-boot-sector.hex](../code/day-01/helloos-boot-sector.hex)。
+与 tolset / `helloos.nas` 汇编输出一致。**可直接复制**下方表到 HxD 对照，或使用 [helloos-boot-sector.hex](./day-01-boot-asm/code/helloos-boot-sector.hex)。
 
 ```
 0000  EB 4E 90 48 45 4C 4C 4F 49 50 4C 00 02 01 01 00
@@ -106,7 +106,7 @@ tolset 是原书配套工具包；`helloos` 是第一个软盘镜像工程。书
 | 数据区 | 其余 | 默认全 `00` |
 | **总大小** | — | **1,474,560 B** = 2880 × 512 B |
 
-本仓库 [helloos.img](../code/day-01/helloos.img) 已按 tolset 布局生成，**不必手填全盘**；手工实验只需保证 **引导扇区正确 + 全文件 1.44 MB**。
+本仓库 [helloos.img](./day-01-boot-asm/code/helloos.img) 已按 tolset 布局生成，**不必手填全盘**；手工实验只需保证 **引导扇区正确 + 全文件 1.44 MB**。
 
 ---
 
@@ -154,7 +154,7 @@ DB 0x55, 0xaa           ; 偏移 0x1FE
 2. tolset 包内 `readme.txt`  
 3. `projects/01_day/helloos1/helloos.img` — 用 BZ/HxD 打开逐字节对照  
 
-**本仓库快捷方式：** 直接运行 [../code/day-01/helloos.img](../code/day-01/helloos.img)。
+**本仓库快捷方式：** 直接运行 [./day-01-boot-asm/code/helloos.img](./day-01-boot-asm/code/helloos.img)。
 
 ---
 

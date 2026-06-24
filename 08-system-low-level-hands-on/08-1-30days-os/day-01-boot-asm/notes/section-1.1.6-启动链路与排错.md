@@ -22,7 +22,7 @@
 
 | # | 错误类型 | 现象 / 根因 | 正确做法 |
 |---|----------|-------------|----------|
-| **1** | **镜像容量不达标** | 只写 **512 B** 或 `Ctrl+E` 填错（如 **`21448608`**），未到 **1,474,560 B** | **`Ctrl+E` → `1474560`**；或复制 [helloos.img](../../../code/day-01/helloos.img) |
+| **1** | **镜像容量不达标** | 只写 **512 B** 或 `Ctrl+E` 填错（如 **`21448608`**），未到 **1,474,560 B** | **`Ctrl+E` → `1474560`**；或复制 [helloos.img](../code/helloos.img) |
 | **2** | **启动标记位置错误** | **`55 AA`** 写在 **1.44 MB 文件末尾**，而非扇区末 | **`Ctrl+G` → `1FE`** |
 | **3** | **开头被偏移干扰** | 把 **偏移 (h) 标尺** 当内容；文件仍以 **`00`** 开头 | hex 区第一格 **`EB 4E 90`**；偏移列只读 |
 
@@ -45,13 +45,13 @@ BIOS 已认盘（`0x1FE` 有 `55 AA`），但 **引导代码未正确执行**：
 
 ```powershell
 New-Item -ItemType Directory -Force D:\haribote | Out-Null
-Copy-Item -Force "C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\code\day-01\helloos.img" "D:\haribote\boot.img"
+Copy-Item -Force "<本仓库>\08-system-low-level-hands-on\08-1-30days-os\day-01-boot-asm\code\helloos.img" "D:\haribote\boot.img"
 D:\qemu\qemu-system-i386.exe -fda D:\haribote\boot.img
 ```
 
 **勿**把 `boot.img` 放在 `D:\qemu\` 安装目录。
 
-**做法 B（手工）：** [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) + [helloos-boot-sector.hex](../../../code/day-01/helloos-boot-sector.hex)
+**做法 B（手工）：** [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) + [helloos-boot-sector.hex](../code/helloos-boot-sector.hex)
 
 | 现象 | 原因 |
 |------|------|

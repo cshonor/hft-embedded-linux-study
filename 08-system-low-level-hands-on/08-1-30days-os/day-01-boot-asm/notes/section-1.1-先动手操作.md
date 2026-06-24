@@ -19,7 +19,7 @@
 | 5 | QEMU 安装与运行 | [section-1.1.5](./section-1.1.5-QEMU安装与运行.md) |
 | 6 | 启动链路 · 错误报告 · 排错 | [section-1.1.6](./section-1.1.6-启动链路与排错.md) |
 
-**十六进制对照：** [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) · [helloos.img](../../../code/day-01/helloos.img)
+**十六进制对照：** [HELLOOS_HEX_REFERENCE.md](../../HELLOOS_HEX_REFERENCE.md) · [helloos.img](../code/helloos.img)
 
 ---
 
