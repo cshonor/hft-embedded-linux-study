@@ -53,15 +53,15 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 **Day 1 手工 `boot.img`：** 只需 QEMU，**不必** VMware / VirtualBox。详见 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) §4。
 
-1. 打开 [qemu.org/download#windows](https://www.qemu.org/download/#windows)
-2. 进入 **Stefan Weil** 提供的 Windows 二进制页（官网链接的镜像站）
-3. 下载 **`qemu-w64-setup-….exe`**（名字含 `qemu-w64-setup` 的 **官方预编译安装包**，选最新版）
-4. 安装到 **`D:\DevTools\QEMU`**（推荐）并尽量勾选加入 **PATH**
-5. 新开 cmd 验证：
+![QEMU 官网 Windows 下载页](./assets/qemu-org-download-windows.png)
 
-```cmd
-qemu-system-i386 --version
-```
+1. [qemu.org/download#windows](https://www.qemu.org/download/#windows) → **Windows** 标签
+2. **Stefan Weil provides binaries…** → 点 **`64-bit`**
+3. 下载 **`qemu-w64-setup-….exe`**（最新版）
+4. 安装到 **`D:\DevTools\QEMU`**，勾选 **PATH**（若有）
+5. 新开 cmd：`qemu-system-i386 --version`
+
+> **跳过 MSYS2 / pacman** 段落 — 仅开发编译用；学习用书用 **setup 安装包** 即可。
 
 | 备选 | 说明 |
 |------|------|
