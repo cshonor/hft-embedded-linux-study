@@ -46,7 +46,8 @@
 
 ## 本日学习目标 · 自检
 
-- [ ] 能用工具链从 `helloos.nas` 生成 `helloos.img` 并启动看到输出
+- [ ] **（推荐先做）** 用 HxD 手工做 `helloos.img` 并在 QEMU 看到 `hello, world` — [section 1.1](./notes/section-1.1-先动手操作.md)
+- [ ] 能用工具链从 `helloos.nas` 生成 **相同效果** 的映像
 - [ ] 说清 **1440KB** 与 **512 字节引导扇区** 的关系
 - [ ] 解释 **IPL** 与 **boot** 的含义
 - [ ] 知道 **`55 AA`** 在引导扇区末尾的作用

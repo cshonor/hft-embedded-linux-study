@@ -104,8 +104,8 @@
 
 ## 五、现阶段第一步行动
 
-- [ ] 按 [SETUP.md](./SETUP.md) 完成 **Day 0** 环境
-- [ ] 编译运行 **Day 1** `helloos.img`，屏幕出现 `hello, world`
+- [ ] **零工具链体感（推荐）：** 按 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) 用 HxD + QEMU 手工做第一个 `helloos.img`
+- [ ] 按 [SETUP.md](./SETUP.md) 完成 **Day 0** tolset 环境（为 Day 1 汇编版做准备）
 - [ ] 阅读 [day-01-boot-asm/](./day-01-boot-asm/) 笔记并对照源码
 - [ ] 在 `../code/` 建立 `day-01/` 工程目录并 `make run`
 
