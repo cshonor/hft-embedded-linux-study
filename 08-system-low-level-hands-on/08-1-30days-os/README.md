@@ -61,6 +61,7 @@
 | **16** | 多任务（2） | [notes/day-16-多任务2.md](./notes/day-16-多任务2.md) |
 | **17** | 命令行窗口 | [notes/day-17-命令行窗口.md](./notes/day-17-命令行窗口.md) |
 | **18** | dir 命令 | [notes/day-18-dir命令.md](./notes/day-18-dir命令.md) |
+| **19** | 应用程序 | [notes/day-19-应用程序.md](./notes/day-19-应用程序.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -98,7 +99,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–17 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–18 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 

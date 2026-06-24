@@ -1,7 +1,7 @@
 ## Day 18 · dir 命令
 
 > **原书第十八章** · **Shell 活起来** — FIFO **光标 2/3**、回车滚动 **`cons_newline`**、**`strcmp`** · **mem/cls/dir**、**FAT12** 根目录。  
-> ← [Day 17](./day-17-命令行窗口.md) · [08-1 导读](../README.md) · → Day 19（待补）
+> ← [Day 17](./day-17-命令行窗口.md) · [08-1 导读](../README.md) · → [Day 19](./day-19-应用程序.md)
 
 ---
 
