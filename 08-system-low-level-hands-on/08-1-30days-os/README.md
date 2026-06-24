@@ -70,6 +70,7 @@
 | **25** | 增加命令行窗口 | [notes/day-25-增加命令行窗口.md](./notes/day-25-增加命令行窗口.md) |
 | **26** | 为窗口移动提速 | [notes/day-26-为窗口移动提速.md](./notes/day-26-为窗口移动提速.md) |
 | **27** | LDT 与库 | [notes/day-27-LDT与库.md](./notes/day-27-LDT与库.md) |
+| **28** | 文件操作与文字显示 | [notes/day-28-文件操作与文字显示.md](./notes/day-28-文件操作与文字显示.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -107,7 +108,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–26 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–28 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
