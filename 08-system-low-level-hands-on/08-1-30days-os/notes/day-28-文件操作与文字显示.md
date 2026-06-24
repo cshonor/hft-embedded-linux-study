@@ -1,7 +1,7 @@
 ## Day 28 · 文件操作与文字显示
 
 > **原书第二十八章** · **实用化 + 国际化** — **`__alloca`**、文件 API **EDX 21–25**、命令行 **EDX 26**、**nihongo.fnt** 全角 · **langmode** · **EDX 27**。  
-> ← [Day 27](./day-27-LDT与库.md) · [08-1 导读](../README.md) · → Day 29（待补）
+> ← [Day 27](./day-27-LDT与库.md) · [08-1 导读](../README.md) · → [Day 29](./day-29-压缩与简单应用程序.md)
 
 ---
 
@@ -152,4 +152,4 @@ api_getcmdline(buf)
 
 ---
 
-← [Day 27](./day-27-LDT与库.md) · [08-1 导读](../README.md) · Day 29（待补）
+← [Day 27](./day-27-LDT与库.md) · [08-1 导读](../README.md) · [Day 29](./day-29-压缩与简单应用程序.md)
