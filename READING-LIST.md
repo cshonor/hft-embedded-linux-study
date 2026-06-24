@@ -62,6 +62,25 @@
 
 ---
 
+## 2b. Understanding the Linux Kernel 3rd — Bovet & Cesati
+
+> 笔记目录：[16-Understanding-Linux-Kernel/](./16-Understanding-Linux-Kernel/)
+
+> **定位：** LKD **功能** ↔ 源码 **实现** 的桥梁（Linux 2.6 基线；概念对照 modern 5.x/6.x）。  
+> **顺序：** `05` LKD 后 **选章精读**；VM 深潜仍交给 `06` Gorman。
+
+| 章节 | 标签 | HFT 关联 |
+|------|------|----------|
+| Ch 2 内存寻址 / Ch 8–9 MM 与地址空间 | **精读** | 分页、页表 — 接 Gorman / CSAPP |
+| Ch 4 中断 / Ch 5 同步 / Ch 7 调度 | **精读** | 延迟、绑核、runqueue 数据结构 |
+| Ch 10 系统调用 | **精读** | 接 TLPI · 08 MikanOS Ch 20 |
+| Ch 19 IPC / Ch 20 程序执行 | **选读** | 远期 IPC 模块铺垫 |
+| Ch 12–18 VFS/块/Ext2 | **跳过** | 非热路径 |
+
+**HFT 产出：** 读 `perf`/BPF 栈时能对应到内核真实数据结构与路径。
+
+---
+
 ## 3. Understanding the Linux Virtual Memory Manager — Mel Gorman
 
 > 笔记目录：[06-Linux-Virtual-Memory-Manager/](./06-Linux-Virtual-Memory-Manager/)
@@ -289,7 +308,8 @@
 
 | 子模块 | 参考 | 标签 | HFT 关联 |
 |--------|------|------|----------|
-| [08-1-30days-os](./08-system-low-level-hands-on/08-1-30days-os/) | 《30 天自制操作系统》 | 🟡 选读 | 中断、上下文切换、页表 — 对照 LKD |
+| [08-1-30days-os](./08-system-low-level-hands-on/08-1-30days-os/) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
+| [08-3-mikan-os](./08-system-low-level-hands-on/08-3-mikan-os/) | 《ゼロからの OS 自作入門》MikanOS | 🟡 选读 | UEFI/64位/分页/syscall — 现代 OS 互补 |
 | [08-2-30days-cpu](./08-system-low-level-hands-on/08-2-30days-cpu/) | 《30 天自制 CPU》 | 🟡 选读 | 指令执行、数据通路 — 对照 Hennessy / CSAPP Ch4 |
 
 **HFT 产出：** 把「绑核、syscall、cache 类比」从读者变成作者；时间紧可后补，与 `05`/`06` 概念课并行。

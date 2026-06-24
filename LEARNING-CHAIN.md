@@ -15,10 +15,10 @@
 00  Harris
 01  CSAPP + 04 Hennessy
 02  SysPerf → 03  BPF
-05  LKD → 06  Gorman
+05  LKD → 16 ULK（实现细节）→ 06  Gorman
 
 07  TLPI                 ← Linux 用户态：epoll / mmap / 线程
-08  自制 OS / CPU
+08  自制 OS / CPU         ← 08-1 30天 → 08-3 MikanOS（UEFI/分页）
 09  陈硕 PNP / muduo
 10  UNP
 01  CSAPP Ch10–11
@@ -37,7 +37,8 @@
 | 文件夹 | 模块 | 阶段 |
 |--------|------|------|
 | **07** | [TLPI](./07-The-Linux-Programming-Interface/) | Linux 用户态 syscall |
-| **08** | [自制 OS/CPU](./08-system-low-level-hands-on/) | 底层动手 |
+| **08** | [自制 OS/CPU](./08-system-low-level-hands-on/) | 底层动手（30天 / MikanOS / CPU） |
+| **16** | [ULK](./16-Understanding-Linux-Kernel/) | Linux 内核实现细节（LKD↔Gorman 桥梁） |
 | **09–13** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
 | **14–15** | HFT / Rust | 工程实现 |
 
@@ -46,7 +47,7 @@
 ## 07 · TLPI 在链上的位置
 
 ```
-05 LKD（内核里是什么）  →  07 TLPI（用户态怎么调）
+05 LKD（内核里是什么）  →  16 ULK（实现/数据结构）  →  07 TLPI（用户态怎么调）
 06 Gorman（VM 深度）    →  07 TLPI（mmap/mlock）
 07 TLPI（epoll）        →  09 PNP（写网络服务）
 07 TLPI（socket 基础）  →  10 UNP（API 系统化）
@@ -60,4 +61,7 @@
 
 - [READING-LIST.md](./READING-LIST.md) · [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
-**执行序号：** `00 → 01(+04) → 02 → 03 → 05 → 06 → 07 → 08 → 09 → 10 → 01网络章 → 11 → 12 → 13 → 14 → 15`
+**执行序号：** `00 → 01(+04) → 02 → 03 → 05 → 16 → 06 → 07 → 08 → 09 → 10 → 01网络章 → 11 → 12 → 13 → 14 → 15`
+
+> **16 ULK：** 文件夹编号 16（避免重排 06–15）；**逻辑上紧接 05 LKD**，与 06 Gorman 并行/交叉。  
+> **远期（未建目录）：** 裸金属 HFT 生产部署 · IPC 进程间通信架构 — 结业阶段补 [14-HFT](./14-HFT-Low-Latency-Practice/)。
