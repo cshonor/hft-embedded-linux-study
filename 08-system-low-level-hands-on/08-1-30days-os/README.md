@@ -50,6 +50,7 @@
 | **5** | 结构体、文字显示与 GDT/IDT 初始化 | [notes/day-05-结构体文字显示与GDT-IDT.md](./notes/day-05-结构体文字显示与GDT-IDT.md) |
 | **6** | 分割编译与中断处理 | [notes/day-06-分割编译与中断处理.md](./notes/day-06-分割编译与中断处理.md) |
 | **7** | FIFO 与鼠标控制 | [notes/day-07-FIFO与鼠标控制.md](./notes/day-07-FIFO与鼠标控制.md) |
+| **8** | 鼠标控制与 32 位模式切换 | [notes/day-08-鼠标控制与32位模式切换.md](./notes/day-08-鼠标控制与32位模式切换.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -87,7 +88,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–6 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–7 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
