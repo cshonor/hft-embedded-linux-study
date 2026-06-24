@@ -46,6 +46,7 @@
 | **1** | 从计算机结构到汇编程序入门 | [notes/day-01-从计算机结构到汇编入门.md](./notes/day-01-从计算机结构到汇编入门.md) |
 | **2** | 汇编语言学习与 Makefile 入门 | [notes/day-02-汇编语言与Makefile入门.md](./notes/day-02-汇编语言与Makefile入门.md) |
 | **3** | 进入 32 位模式并导入 C 语言 | [notes/day-03-32位模式与导入C语言.md](./notes/day-03-32位模式与导入C语言.md) |
+| **4** | C 语言与画面显示的练习 | [notes/day-04-C语言与画面显示练习.md](./notes/day-04-C语言与画面显示练习.md) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。
 
@@ -83,7 +84,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（Day 1 起）
-- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–3 ✓**）
+- [ ] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–4 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 
