@@ -49,20 +49,25 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 1. 将资源包解压到 `C:\dev\haribote\tolset\`（路径按你本机调整）。
 2. 确认存在 `nask.exe` 与 Day 1 所需 `helloos.nas` 或等价源码目录。
 
-### 3.2 安装 / 确认 QEMU
+### 3.2 安装 QEMU（官方 `qemu-w64-setup`）
 
-**Day 1 手工 `boot.img`：** 只需 QEMU，**不必** VMware / VirtualBox。便携版解压即用（见 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) §4）。
+**Day 1 手工 `boot.img`：** 只需 QEMU，**不必** VMware / VirtualBox。详见 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) §4。
 
-| 来源 | 说明 |
-|------|------|
-| **便携版 / 安装版** | [QEMU 官网 Windows](https://www.qemu.org/download/#windows) 或社区 **「QEMU 便携版」** → 解压到 `D:\DevTools\qemu\` |
-| **tolset 自带** | `tolset` / `z_tools` 下的 `qemu-system-i386.exe` |
-
-**验证：**
+1. 打开 [qemu.org/download#windows](https://www.qemu.org/download/#windows)
+2. 进入 **Stefan Weil** 提供的 Windows 二进制页（官网链接的镜像站）
+3. 下载 **`qemu-w64-setup-….exe`**（名字含 `qemu-w64-setup` 的 **官方预编译安装包**，选最新版）
+4. 安装到 **`D:\DevTools\QEMU`**（推荐）并尽量勾选加入 **PATH**
+5. 新开 cmd 验证：
 
 ```cmd
 qemu-system-i386 --version
 ```
+
+| 备选 | 说明 |
+|------|------|
+| **tolset 自带** | `z_tools` 下的 `qemu-system-i386.exe`，后续 Day 与 make 脚本联用 |
+
+> 避免使用非官方的「QEMU 便携版」第三方整合包；**`qemu-w64-setup`** 即官网推荐的 Windows 安装方式。
 
 **Day 1 一行启动（软盘映像）：**
 
@@ -76,7 +81,7 @@ qemu-system-i386 -fda boot.img
 **A. 临时（当前 cmd 窗口）：**
 
 ```cmd
-set PATH=C:\dev\haribote\tolset;C:\dev\haribote\qemu;%PATH%
+set PATH=D:\DevTools\QEMU;C:\dev\haribote\tolset;%PATH%
 ```
 
 **B. 永久：** 系统环境变量 `Path` 追加上述目录（改完后新开终端）。
