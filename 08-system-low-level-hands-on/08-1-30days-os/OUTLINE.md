@@ -1,40 +1,40 @@
 # 《30 天自制操作系统》· 学习大纲
 
 > **裁剪说明：** 🔴 必做 · 🟡 建议 · ⚪ 可跳过（HFT 时间紧时）  
-> **笔记目录：** [notes/](./notes/)
+> **笔记目录：** 各 Day 独立目录 `day-XX-slug/`（导读 `README.md` + `notes/section-*.md`）
 
 | Day | 原书主题 | 标签 | 笔记 |
 |-----|----------|------|------|
-| **1** | 从计算机结构到汇编程序入门 | 🔴 | [day-01](./notes/day-01-从计算机结构到汇编入门.md) |
-| **2** | 汇编语言学习与 Makefile 入门 | 🔴 | [day-02](./notes/day-02-汇编语言与Makefile入门.md) |
-| **3** | 进入 32 位模式并导入 C 语言 | 🔴 | [day-03](./notes/day-03-32位模式与导入C语言.md) |
-| **4** | C 语言与画面显示的练习 | 🔴 | [day-04](./notes/day-04-C语言与画面显示练习.md) |
-| **5** | 结构体、文字显示与 GDT/IDT 初始化 | 🔴 | [day-05](./notes/day-05-结构体文字显示与GDT-IDT.md) |
-| **6** | 分割编译与中断处理 | 🔴 | [day-06](./notes/day-06-分割编译与中断处理.md) |
-| **7** | FIFO 与鼠标控制 | 🔴 | [day-07](./notes/day-07-FIFO与鼠标控制.md) |
-| **8** | 鼠标控制与 32 位模式切换 | 🔴 | [day-08](./notes/day-08-鼠标控制与32位模式切换.md) |
-| **9** | 内存管理 | 🔴 | [day-09](./notes/day-09-内存管理.md) |
-| **10** | 叠加处理 | 🔴 | [day-10](./notes/day-10-叠加处理.md) |
-| **11** | 制作窗口 | 🔴 | [day-11](./notes/day-11-制作窗口.md) |
-| **12** | 定时器（1） | 🔴 | [day-12](./notes/day-12-定时器1.md) |
-| **13** | 定时器（2） | 🔴 | [day-13](./notes/day-13-定时器2.md) |
-| **14** | 高分辨率及键盘输入 | 🔴 | [day-14](./notes/day-14-高分辨率及键盘输入.md) |
-| **15** | 多任务（1） | 🔴 | [day-15](./notes/day-15-多任务1.md) |
-| **16** | 多任务（2） | 🔴 | [day-16](./notes/day-16-多任务2.md) |
-| **17** | 命令行窗口 | 🔴 | [day-17](./notes/day-17-命令行窗口.md) |
-| **18** | dir 命令 | 🔴 | [day-18](./notes/day-18-dir命令.md) |
-| **19** | 应用程序 | 🔴 | [day-19](./notes/day-19-应用程序.md) |
-| **20** | API | 🔴 | [day-20](./notes/day-20-API.md) |
-| **21** | 保护操作系统 | 🔴 | [day-21](./notes/day-21-保护操作系统.md) |
-| **22** | 用 C 语言编写应用程序 | 🔴 | [day-22](./notes/day-22-用C语言编写应用程序.md) |
-| **23** | 图形处理相关 | 🔴 | [day-23](./notes/day-23-图形处理相关.md) |
-| **24** | 窗口操作 | 🔴 | [day-24](./notes/day-24-窗口操作.md) |
-| **25** | 增加命令行窗口 | 🔴 | [day-25](./notes/day-25-增加命令行窗口.md) |
-| **26** | 为窗口移动提速 | 🔴 | [day-26](./notes/day-26-为窗口移动提速.md) |
-| **27** | LDT 与库 | 🔴 | [day-27](./notes/day-27-LDT与库.md) |
-| **28** | 文件操作与文字显示 | 🔴 | [day-28](./notes/day-28-文件操作与文字显示.md) |
-| **29** | 压缩与简单的应用程序 | 🔴 | [day-29](./notes/day-29-压缩与简单应用程序.md) |
-| **30** | 高级的应用程序 | 🔴 | [day-30](./notes/day-30-高级的应用程序.md) |
+| **1** | 从计算机结构到汇编程序入门 | 🔴 | [day-01](./day-01-boot-asm/) |
+| **2** | 汇编语言学习与 Makefile 入门 | 🔴 | [day-02](./day-02-asm-makefile/) |
+| **3** | 进入 32 位模式并导入 C 语言 | 🔴 | [day-03](./day-03-32bit-c/) |
+| **4** | C 语言与画面显示的练习 | 🔴 | [day-04](./day-04-c-graphics/) |
+| **5** | 结构体、文字显示与 GDT/IDT 初始化 | 🔴 | [day-05](./day-05-gdt-idt/) |
+| **6** | 分割编译与中断处理 | 🔴 | [day-06](./day-06-split-compile-irq/) |
+| **7** | FIFO 与鼠标控制 | 🔴 | [day-07](./day-07-fifo-mouse/) |
+| **8** | 鼠标控制与 32 位模式切换 | 🔴 | [day-08](./day-08-mouse-32bit/) |
+| **9** | 内存管理 | 🔴 | [day-09](./day-09-memory/) |
+| **10** | 叠加处理 | 🔴 | [day-10](./day-10-layers/) |
+| **11** | 制作窗口 | 🔴 | [day-11](./day-11-window/) |
+| **12** | 定时器（1） | 🔴 | [day-12](./day-12-timer1/) |
+| **13** | 定时器（2） | 🔴 | [day-13](./day-13-timer2/) |
+| **14** | 高分辨率及键盘输入 | 🔴 | [day-14](./day-14-keyboard/) |
+| **15** | 多任务（1） | 🔴 | [day-15](./day-15-multitask1/) |
+| **16** | 多任务（2） | 🔴 | [day-16](./day-16-multitask2/) |
+| **17** | 命令行窗口 | 🔴 | [day-17](./day-17-console/) |
+| **18** | dir 命令 | 🔴 | [day-18](./day-18-dir/) |
+| **19** | 应用程序 | 🔴 | [day-19](./day-19-apps/) |
+| **20** | API | 🔴 | [day-20](./day-20-api/) |
+| **21** | 保护操作系统 | 🔴 | [day-21](./day-21-protection/) |
+| **22** | 用 C 语言编写应用程序 | 🔴 | [day-22](./day-22-c-apps/) |
+| **23** | 图形处理相关 | 🔴 | [day-23](./day-23-graphics/) |
+| **24** | 窗口操作 | 🔴 | [day-24](./day-24-window-ops/) |
+| **25** | 增加命令行窗口 | 🔴 | [day-25](./day-25-multi-console/) |
+| **26** | 为窗口移动提速 | 🔴 | [day-26](./day-26-window-speed/) |
+| **27** | LDT 与库 | 🔴 | [day-27](./day-27-ldt-lib/) |
+| **28** | 文件操作与文字显示 | 🔴 | [day-28](./day-28-files/) |
+| **29** | 压缩与简单的应用程序 | 🔴 | [day-29](./day-29-compression/) |
+| **30** | 高级的应用程序 | 🔴 | [day-30](./day-30-advanced-apps/) |
 
 ---
 
@@ -45,7 +45,7 @@
 - 引导扇区 **512 B**，末尾 **`55 AA`**；汇编 **`$`** 自动 padding
 - **IPL** · **Boot（bootstrap）**
 
-→ 详读 [notes/day-01-从计算机结构到汇编入门.md](./notes/day-01-从计算机结构到汇编入门.md)
+→ 详读 [day-01-boot-asm/](./day-01-boot-asm/)
 
 ---
 
@@ -56,7 +56,7 @@
 - 只编 **`ipl.bin`（512 B）**，整盘用映像工具拼
 - **`Makefile` + `make`** 替代一堆 `.bat`
 
-→ 详读 [notes/day-02-汇编语言与Makefile入门.md](./notes/day-02-汇编语言与Makefile入门.md)
+→ 详读 [day-02-asm-makefile/](./day-02-asm-makefile/)
 
 ---
 
@@ -67,7 +67,7 @@
 - **32 位前** 做完 BIOS；**`bootpack.c` / `HariMain`**
 - **`naskfunc.nas`** · **`io_hlt`** — 汇编 + C 链接
 
-→ 详读 [notes/day-03-32位模式与导入C语言.md](./notes/day-03-32位模式与导入C语言.md)
+→ 详读 [day-03-32bit-c/](./day-03-32bit-c/)
 
 ---
 
@@ -79,7 +79,7 @@
 - **`CLI`/`STI`** · **`PUSHFD`/`POPFD`**（EFLAGS）
 - **画矩形** → 底部任务条 · 内核 ~**1.2KB**
 
-→ 详读 [notes/day-04-C语言与画面显示练习.md](./notes/day-04-C语言与画面显示练习.md)
+→ 详读 [day-04-c-graphics/](./day-04-c-graphics/)
 
 ---
 
@@ -90,7 +90,7 @@
 - **16×16 鼠标箭头** · 透明背景
 - **GDT** 分段 · **IDT** 0~255 中断 → 处理函数
 
-→ 详读 [notes/day-05-结构体文字显示与GDT-IDT.md](./notes/day-05-结构体文字显示与GDT-IDT.md)
+→ 详读 [day-05-gdt-idt/](./day-05-gdt-idt/)
 
 ---
 
@@ -102,7 +102,7 @@
 - **`_asm_inthandler` + C + `IRETD`** · **栈 LIFO**
 - **IRQ1→0x21** 键盘 · 按 **A** 屏幕有提示
 
-→ 详读 [notes/day-06-分割编译与中断处理.md](./notes/day-06-分割编译与中断处理.md)
+→ 详读 [day-06-split-compile-irq/](./day-06-split-compile-irq/)
 
 ---
 
@@ -113,7 +113,7 @@
 - 鼠标经 **键盘控制器** **`0xFA`** · **IRQ12** · **128B FIFO**
 - 晃动鼠标 → **hex 瀑布**（指针 Day 8）
 
-→ 详读 [notes/day-07-FIFO与鼠标控制.md](./notes/day-07-FIFO与鼠标控制.md)
+→ 详读 [day-07-fifo-mouse/](./day-07-fifo-mouse/)
 
 ---
 
@@ -124,7 +124,7 @@
 - **A20GATE** · **CR0** · **bootpack @ 0x00280000** · **far-JMP → C**
 - Day 3–8 **硬件初始化** 贯通
 
-→ 详读 [notes/day-08-鼠标控制与32位模式切换.md](./notes/day-08-鼠标控制与32位模式切换.md)
+→ 详读 [day-08-mouse-32bit/](./day-08-mouse-32bit/)
 
 ---
 
@@ -135,7 +135,7 @@
 - 位图 3GB 要 **~768KB** 元数据 → **MEMMAN 空闲块列表**
 - **alloc / free** · **合并相邻空闲块**
 
-→ 详读 [notes/day-09-内存管理.md](./notes/day-09-内存管理.md)
+→ 详读 [day-09-memory/](./day-09-memory/)
 
 ---
 
@@ -146,7 +146,7 @@
 - **局部 refresh** · ~**0.8%** 像素 vs 全屏 64000
 - **倒推 bx0/bx1** · 循环只跑脏区
 
-→ 详读 [notes/day-10-叠加处理.md](./notes/day-10-叠加处理.md)
+→ 详读 [day-10-layers/](./day-10-layers/)
 
 ---
 
@@ -157,7 +157,7 @@
 - 高速计数器 · **只刷变化层及以上**
 - **`map[]` 像素归属** — 下层写 VRAM 前 **skip 上层像素**
 
-→ 详读 [notes/day-11-制作窗口.md](./notes/day-11-制作窗口.md)
+→ 详读 [day-11-window/](./day-11-window/)
 
 ---
 
@@ -168,7 +168,7 @@
 - **timeout → FIFO** · **500 路** · **`TIMER_FLAGS_USING`**
 - **`next`** — 只处理最近到期，避免每 tick 扫 500
 
-→ 详读 [notes/day-12-定时器1.md](./notes/day-12-定时器1.md)
+→ 详读 [day-12-timer1/](./day-12-timer1/)
 
 ---
 
@@ -179,7 +179,7 @@
 - 定时器 **链表 next** — 无数组移位
 - **哨兵 `0xFFFFFFFF`** — 简化插入
 
-→ 详读 [notes/day-13-定时器2.md](./notes/day-13-定时器2.md)
+→ 详读 [day-13-timer2/](./day-13-timer2/)
 
 ---
 
@@ -190,7 +190,7 @@
 - **`keytable[]`** · Backspace · 闪烁光标
 - **`sheet_slide`** · 左键 **拖窗口**
 
-→ 详读 [notes/day-14-高分辨率及键盘输入.md](./notes/day-14-高分辨率及键盘输入.md)
+→ 详读 [day-14-keyboard/](./day-14-keyboard/)
 
 ---
 
@@ -201,7 +201,7 @@
 - **TSS 初始栈 [ESP+4]** 传 **`sht_back`**
 - **`mt_taskswitch` 进 timer ISR** — 抢占式调度雏形
 
-→ 详读 [notes/day-15-多任务1.md](./notes/day-15-多任务1.md)
+→ 详读 [day-15-multitask1/](./day-15-multitask1/)
 
 ---
 
@@ -212,7 +212,7 @@
 - **A + B0/B1/B2** 四任务
 - **`TASKLEVEL`** · 高层未睡 **不跑低层** · UI **瞬间抢占**
 
-→ 详读 [notes/day-16-多任务2.md](./notes/day-16-多任务2.md)
+→ 详读 [day-16-multitask2/](./day-16-multitask2/)
 
 ---
 
@@ -224,7 +224,7 @@
 - **`keytable0/1`** · CapsLock · **±0x20**
 - **LED `0xED` @ 0x60**
 
-→ 详读 [notes/day-17-命令行窗口.md](./notes/day-17-命令行窗口.md)
+→ 详读 [day-17-console/](./day-17-console/)
 
 ---
 
@@ -235,7 +235,7 @@
 - **`strcmp`** · **mem / cls**
 - **FAT12** 根目录 **224×32B** · **`dir`**
 
-→ 详读 [notes/day-18-dir命令.md](./notes/day-18-dir命令.md)
+→ 详读 [day-18-dir/](./day-18-dir/)
 
 ---
 
@@ -247,7 +247,7 @@
 - **window/console/file.c**
 - **`hlt.hrb`** · **GDT + farjmp**
 
-→ 详读 [notes/day-19-应用程序.md](./notes/day-19-应用程序.md)
+→ 详读 [day-19-apps/](./day-19-apps/)
 
 ---
 
@@ -259,7 +259,7 @@
 - **PUSHAD/POPAD** 保寄存器
 - **EDX** 功能号 **1/2/3** 路由
 
-→ 详读 [notes/day-20-API.md](./notes/day-20-API.md)
+→ 详读 [day-20-api/](./day-20-api/)
 
 ---
 
@@ -270,7 +270,7 @@
 - **1003/1004** 段 · **`crack1.hrb`** 防御
 - **INT 0x0d** · **DPL +0x60** · 仅 **INT 0x40** 出入口
 
-→ 详读 [notes/day-21-保护操作系统.md](./notes/day-21-保护操作系统.md)
+→ 详读 [day-21-protection/](./day-21-protection/)
 
 ---
 
@@ -281,7 +281,7 @@
 - **.hrb 36B Hari 头** · 数据段装载
 - **窗口句柄** · 字符/方块 **GUI API**
 
-→ 详读 [notes/day-22-用C语言编写应用程序.md](./notes/day-22-用C语言编写应用程序.md)
+→ 详读 [day-22-c-apps/](./day-22-c-apps/)
 
 ---
 
@@ -293,7 +293,7 @@
 - **15** 键盘 · **walk.hrb**
 - **14** + **sheet→task** 强杀清窗
 
-→ 详读 [notes/day-23-图形处理相关.md](./notes/day-23-图形处理相关.md)
+→ 详读 [day-23-graphics/](./day-23-graphics/)
 
 ---
 
@@ -304,7 +304,7 @@
 - **EDX 16–19** · **noodle.hrb**
 - app 退出 **清遗留 timer** — 防 Console 乱码
 
-→ 详读 [notes/day-24-窗口操作.md](./notes/day-24-窗口操作.md)
+→ 详读 [day-24-window-ops/](./day-24-window-ops/)
 
 ---
 
@@ -315,7 +315,7 @@
 - **sel → 代码 1003~2002 / 数据 2003~3002**
 - 删 **task_a** · **key_win==0** 判空
 
-→ 详读 [notes/day-25-增加命令行窗口.md](./notes/day-25-增加命令行窗口.md)
+→ 详读 [day-25-multi-console/](./day-25-multi-console/)
 
 ---
 
@@ -326,7 +326,7 @@
 - 开机 **1 Console** · **Shift+F2** 新开 · **× 可关**
 - **`start`** · **`ncst`** 无 Console GUI
 
-→ 详读 [notes/day-26-为窗口移动提速.md](./notes/day-26-为窗口移动提速.md)
+→ 详读 [day-26-window-speed/](./day-26-window-speed/)
 
 ---
 
@@ -337,7 +337,7 @@
 - API **按 .obj 链接** · **`apilib.lib`**
 - **haribote/apilib** · **`app_make.txt`**
 
-→ 详读 [notes/day-27-LDT与库.md](./notes/day-27-LDT与库.md)
+→ 详读 [day-27-ldt-lib/](./day-27-ldt-lib/)
 
 ---
 
@@ -348,7 +348,7 @@
 - **`type.hrb`** 替代内核 type
 - **`nihongo.fnt`** · **16×16 全角**
 
-→ 详读 [notes/day-28-文件操作与文字显示.md](./notes/day-28-文件操作与文字显示.md)
+→ 详读 [day-28-files/](./day-28-files/)
 
 ---
 
@@ -360,7 +360,7 @@
 - **透明 255** · **bball**
 - **Invader ~2.28KB**
 
-→ 详读 [notes/day-29-压缩与简单应用程序.md](./notes/day-29-压缩与简单应用程序.md)
+→ 详读 [day-29-compression/](./day-29-compression/)
 
 ---
 
@@ -370,4 +370,4 @@
 - IPL **多扇区读** · **9 柱面** · tek 瘦身
 - **全书 30 天笔记完成**
 
-→ 详读 [notes/day-30-高级的应用程序.md](./notes/day-30-高级的应用程序.md)
+→ 详读 [day-30-advanced-apps/](./day-30-advanced-apps/)

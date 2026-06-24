@@ -36,6 +36,6 @@
 
 > **x86-64** 上约定不同（如号在 **`rax`**，参数用 **`rdi, rsi, rdx, r10, r8, r9`**）— 思想相同：**寄存器传号与参**。
 
-→ 教学对照：[08-1 Day 20 INT 0x40 API](../../../../08-system-low-level-hands-on/08-1-30days-os/notes/day-20-API.md)（**稳定号 + 功能号路由**）
+→ 教学对照：[08-1 Day 20 INT 0x40 API](../../../../08-system-low-level-hands-on/08-1-30days-os/day-20-api/)（**稳定号 + 功能号路由**）
 
 ---

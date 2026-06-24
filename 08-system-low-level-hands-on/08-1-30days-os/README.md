@@ -39,40 +39,53 @@
 
 ---
 
+## 目录结构
+
+与 [02-SysPerf](../../02-Systems-Performance-2nd/) / [05-LKD](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/) 一致：每个 Day 独立目录，导读 + 分段笔记。
+
+```
+day-XX-slug/
+├── README.md              ← 本日结构、小结、检查单、上下日导航
+└── notes/
+    └── section-N.M-标题.md
+```
+
+---
+
 ## 小节笔记
 
 | Day | 主题 | 笔记 |
 |-----|------|------|
-| **1** | 从计算机结构到汇编程序入门 | [notes/day-01-从计算机结构到汇编入门.md](./notes/day-01-从计算机结构到汇编入门.md) |
-| **2** | 汇编语言学习与 Makefile 入门 | [notes/day-02-汇编语言与Makefile入门.md](./notes/day-02-汇编语言与Makefile入门.md) |
-| **3** | 进入 32 位模式并导入 C 语言 | [notes/day-03-32位模式与导入C语言.md](./notes/day-03-32位模式与导入C语言.md) |
-| **4** | C 语言与画面显示的练习 | [notes/day-04-C语言与画面显示练习.md](./notes/day-04-C语言与画面显示练习.md) |
-| **5** | 结构体、文字显示与 GDT/IDT 初始化 | [notes/day-05-结构体文字显示与GDT-IDT.md](./notes/day-05-结构体文字显示与GDT-IDT.md) |
-| **6** | 分割编译与中断处理 | [notes/day-06-分割编译与中断处理.md](./notes/day-06-分割编译与中断处理.md) |
-| **7** | FIFO 与鼠标控制 | [notes/day-07-FIFO与鼠标控制.md](./notes/day-07-FIFO与鼠标控制.md) |
-| **8** | 鼠标控制与 32 位模式切换 | [notes/day-08-鼠标控制与32位模式切换.md](./notes/day-08-鼠标控制与32位模式切换.md) |
-| **9** | 内存管理 | [notes/day-09-内存管理.md](./notes/day-09-内存管理.md) |
-| **10** | 叠加处理 | [notes/day-10-叠加处理.md](./notes/day-10-叠加处理.md) |
-| **11** | 制作窗口 | [notes/day-11-制作窗口.md](./notes/day-11-制作窗口.md) |
-| **12** | 定时器（1） | [notes/day-12-定时器1.md](./notes/day-12-定时器1.md) |
-| **13** | 定时器（2） | [notes/day-13-定时器2.md](./notes/day-13-定时器2.md) |
-| **14** | 高分辨率及键盘输入 | [notes/day-14-高分辨率及键盘输入.md](./notes/day-14-高分辨率及键盘输入.md) |
-| **15** | 多任务（1） | [notes/day-15-多任务1.md](./notes/day-15-多任务1.md) |
-| **16** | 多任务（2） | [notes/day-16-多任务2.md](./notes/day-16-多任务2.md) |
-| **17** | 命令行窗口 | [notes/day-17-命令行窗口.md](./notes/day-17-命令行窗口.md) |
-| **18** | dir 命令 | [notes/day-18-dir命令.md](./notes/day-18-dir命令.md) |
-| **19** | 应用程序 | [notes/day-19-应用程序.md](./notes/day-19-应用程序.md) |
-| **20** | API | [notes/day-20-API.md](./notes/day-20-API.md) |
-| **21** | 保护操作系统 | [notes/day-21-保护操作系统.md](./notes/day-21-保护操作系统.md) |
-| **22** | 用 C 语言编写应用程序 | [notes/day-22-用C语言编写应用程序.md](./notes/day-22-用C语言编写应用程序.md) |
-| **23** | 图形处理相关 | [notes/day-23-图形处理相关.md](./notes/day-23-图形处理相关.md) |
-| **24** | 窗口操作 | [notes/day-24-窗口操作.md](./notes/day-24-窗口操作.md) |
-| **25** | 增加命令行窗口 | [notes/day-25-增加命令行窗口.md](./notes/day-25-增加命令行窗口.md) |
-| **26** | 为窗口移动提速 | [notes/day-26-为窗口移动提速.md](./notes/day-26-为窗口移动提速.md) |
-| **27** | LDT 与库 | [notes/day-27-LDT与库.md](./notes/day-27-LDT与库.md) |
-| **28** | 文件操作与文字显示 | [notes/day-28-文件操作与文字显示.md](./notes/day-28-文件操作与文字显示.md) |
-| **29** | 压缩与简单的应用程序 | [notes/day-29-压缩与简单应用程序.md](./notes/day-29-压缩与简单应用程序.md) |
-| **30** | 高级的应用程序 | [notes/day-30-高级的应用程序.md](./notes/day-30-高级的应用程序.md) |
+| **1** | 从计算机结构到汇编程序入门 | [day-01-boot-asm/](./day-01-boot-asm/) |
+| **2** | 汇编语言学习与 Makefile 入门 | [day-02-asm-makefile/](./day-02-asm-makefile/) |
+| **3** | 进入 32 位模式并导入 C 语言 | [day-03-32bit-c/](./day-03-32bit-c/) |
+| **4** | C 语言与画面显示的练习 | [day-04-c-graphics/](./day-04-c-graphics/) |
+| **5** | 结构体、文字显示与 GDT/IDT 初始化 | [day-05-gdt-idt/](./day-05-gdt-idt/) |
+| **6** | 分割编译与中断处理 | [day-06-split-compile-irq/](./day-06-split-compile-irq/) |
+| **7** | FIFO 与鼠标控制 | [day-07-fifo-mouse/](./day-07-fifo-mouse/) |
+| **8** | 鼠标控制与 32 位模式切换 | [day-08-mouse-32bit/](./day-08-mouse-32bit/) |
+| **9** | 内存管理 | [day-09-memory/](./day-09-memory/) |
+| **10** | 叠加处理 | [day-10-layers/](./day-10-layers/) |
+| **11** | 制作窗口 | [day-11-window/](./day-11-window/) |
+| **12** | 定时器（1） | [day-12-timer1/](./day-12-timer1/) |
+| **13** | 定时器（2） | [day-13-timer2/](./day-13-timer2/) |
+| **14** | 高分辨率及键盘输入 | [day-14-keyboard/](./day-14-keyboard/) |
+| **15** | 多任务（1） | [day-15-multitask1/](./day-15-multitask1/) |
+| **16** | 多任务（2） | [day-16-multitask2/](./day-16-multitask2/) |
+| **17** | 命令行窗口 | [day-17-console/](./day-17-console/) |
+| **18** | dir 命令 | [day-18-dir/](./day-18-dir/) |
+| **19** | 应用程序 | [day-19-apps/](./day-19-apps/) |
+| **20** | API | [day-20-api/](./day-20-api/) |
+| **21** | 保护操作系统 | [day-21-protection/](./day-21-protection/) |
+| **22** | 用 C 语言编写应用程序 | [day-22-c-apps/](./day-22-c-apps/) |
+| **23** | 图形处理相关 | [day-23-graphics/](./day-23-graphics/) |
+| **24** | 窗口操作 | [day-24-window-ops/](./day-24-window-ops/) |
+| **25** | 增加命令行窗口 | [day-25-multi-console/](./day-25-multi-console/) |
+| **26** | 为窗口移动提速 | [day-26-window-speed/](./day-26-window-speed/) |
+| **27** | LDT 与库 | [day-27-ldt-lib/](./day-27-ldt-lib/) |
+| **28** | 文件操作与文字显示 | [day-28-files/](./day-28-files/) |
+| **29** | 压缩与简单的应用程序 | [day-29-compression/](./day-29-compression/) |
+| **30** | 高级的应用程序 | [day-30-advanced-apps/](./day-30-advanced-apps/) |
 
 完整 Day 列表见 [OUTLINE.md](./OUTLINE.md)。**全书 Day 1–30 笔记已齐。**
 
@@ -102,7 +115,7 @@
 ## 工具与环境
 
 - **原书配套：** 下载包内工具链 + 模拟器（通常 **QEMU** 启动 `.img`）
-- **本仓库：** 实验代码放 [../code/](../code/)，笔记按 Day 补在 `notes/`（待建）
+- **本仓库：** 实验代码放 [../code/](../code/)，笔记按 Day 分布在 `day-XX-slug/`（见上表）
 - **不必先备：** 完整 OS 理论课；**需要：** 基本 C 语法 + 愿意改汇编（与 [01-CSAPP Ch3](../../01-CSAPP-3rd/chapter-03-machine-level-programs/) 互补）
 
 ---
@@ -110,7 +123,7 @@
 ## 产出清单
 
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（**Day 1–30**）
-- [x] `notes/` — 每日要点 + 与 Linux 对照（**Day 1–30 ✓**）
+- [x] `day-XX-slug/` — 每日导读 + `notes/section-*.md`（**Day 1–30 ✓**）
 - [ ] `../code/` — 可启动镜像与实验 diff
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
 

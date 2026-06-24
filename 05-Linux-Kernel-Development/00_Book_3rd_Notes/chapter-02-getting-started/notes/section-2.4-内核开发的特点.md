@@ -46,7 +46,7 @@ if (likely(ptr != NULL)) {
 | 内核栈常 **4KB 或 8KB** | **禁止** 栈上大数组/大结构体 |
 | 每进程独立内核栈 | 深度递归、大 `alloca` → **栈溢出** |
 
-→ 对照用户态：[01-CSAPP](../../../../01-CSAPP-3rd/) 栈与调用约定 · [08-1 Day 1 汇编栈帧](../../../../08-system-low-level-hands-on/08-1-30days-os/notes/day-01-从计算机结构到汇编入门.md)
+→ 对照用户态：[01-CSAPP](../../../../01-CSAPP-3rd/) 栈与调用约定 · [08-1 Day 1 汇编栈帧](../../../../08-system-low-level-hands-on/08-1-30days-os/day-01-boot-asm/)
 
 #### 同步与并发
 

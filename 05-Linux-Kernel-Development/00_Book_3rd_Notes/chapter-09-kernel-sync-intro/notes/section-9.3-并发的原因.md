@@ -27,6 +27,6 @@
 
 **内核开发者：** 写每一行访问共享数据时，问：**五种来源里谁会同时碰到这里？**
 
-→ [08-1 Day 14 临界区](../../../../08-system-low-level-hands-on/08-1-30days-os/notes/day-14-高分辨率及键盘输入.md)
+→ [08-1 Day 14 临界区](../../../../08-system-low-level-hands-on/08-1-30days-os/day-14-keyboard/)
 
 ---

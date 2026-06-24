@@ -21,6 +21,6 @@
 
 → [Ch 1](../../chapter-01-intro/) syscall vs 中断 · [Ch 5](../../chapter-05-system-calls/) 进程上下文
 
-→ 教学对照：[08-1 Day 5 GDT/IDT](../../../../08-system-low-level-hands-on/08-1-30days-os/notes/day-05-结构体文字显示与GDT-IDT.md) · [Day 7 PIC](../../../../08-system-low-level-hands-on/08-1-30days-os/notes/day-07-PIC与FIFO.md)
+→ 教学对照：[08-1 Day 5 GDT/IDT](../../../../08-system-low-level-hands-on/08-1-30days-os/day-05-gdt-idt/) · [Day 7 PIC](../../../../08-system-low-level-hands-on/08-1-30days-os/day-07-fifo-mouse/)
 
 ---
