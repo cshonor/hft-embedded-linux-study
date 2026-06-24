@@ -51,7 +51,7 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 ### 3.2 安装 QEMU（官方 `qemu-w64-setup`）
 
-**Day 1 手工 `boot.img`：** 只需 QEMU，**不必** VMware / VirtualBox。详见 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) §4。
+**Day 1 手工 `boot.img`：** 只需 QEMU，**不必** VMware / VirtualBox。详见 [day-01 section 1.1.5](./day-01-boot-asm/notes/section-1.1.5-QEMU安装与运行.md)。
 
 ![QEMU 官网 Windows 下载页](./assets/qemu-org-download-windows.png)
 

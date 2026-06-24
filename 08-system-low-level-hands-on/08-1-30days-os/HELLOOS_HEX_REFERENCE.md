@@ -134,7 +134,7 @@ DB 0x55, 0xaa           ; 偏移 0x1FE
 
 ### 易错点
 
-→ 完整条目见 [section 1.1 错误报告](./day-01-boot-asm/notes/section-1.1-先动手操作.md#day-1-错误报告条目规范)
+→ 完整条目见 [section 1.1.6 错误报告](./day-01-boot-asm/notes/section-1.1.6-启动链路与排错.md#day-1-错误报告条目规范)
 
 | # | 要点 |
 |---|------|

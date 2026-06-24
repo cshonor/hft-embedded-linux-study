@@ -20,7 +20,13 @@
 
 | 段 | 笔记 |
 |----|------|
-| 先动手操作 | [notes/section-1.1-先动手操作.md](./notes/section-1.1-先动手操作.md) |
+| 先动手操作 | [notes/section-1.1-先动手操作.md](./notes/section-1.1-先动手操作.md)（导读） |
+| └ 1.1.1 准备工具 · HxD | [notes/section-1.1.1-准备工具-HxD.md](./notes/section-1.1.1-准备工具-HxD.md) |
+| └ 1.1.2 HxD 界面与新建映像 | [notes/section-1.1.2-HxD界面与新建映像.md](./notes/section-1.1.2-HxD界面与新建映像.md) |
+| └ 1.1.3 写入引导扇区机器码 | [notes/section-1.1.3-写入引导扇区机器码.md](./notes/section-1.1.3-写入引导扇区机器码.md) |
+| └ 1.1.4 启动签名与自检 | [notes/section-1.1.4-启动签名与自检.md](./notes/section-1.1.4-启动签名与自检.md) |
+| └ 1.1.5 QEMU 安装与运行 | [notes/section-1.1.5-QEMU安装与运行.md](./notes/section-1.1.5-QEMU安装与运行.md) |
+| └ 1.1.6 启动链路与排错 | [notes/section-1.1.6-启动链路与排错.md](./notes/section-1.1.6-启动链路与排错.md) |
 | 究竟做了些什么 | [notes/section-1.2-究竟做了些什么.md](./notes/section-1.2-究竟做了些什么.md) |
 | 初次体验汇编程序 | [notes/section-1.3-初次体验汇编程序.md](./notes/section-1.3-初次体验汇编程序.md) |
 | 加工润色 | [notes/section-1.4-加工润色.md](./notes/section-1.4-加工润色.md) |
