@@ -21,6 +21,24 @@
 
 ![HxD 下载页](../../assets/hxd-downloads.png)
 
+#### 安装 HxD（Windows）
+
+1. 解压 `HxDSetup.zip`，运行 **`HxDSetup.exe`** → 欢迎页点 **下一步**。
+
+![HxD 安装向导](../../assets/hxd-install-wizard.png)
+
+2. **选择安装路径** 时，把默认 `C:\Program Files\...` 改到 **非系统盘 + 纯英文路径**，例如：
+
+   ```
+   D:\DevTools\HxD
+   ```
+
+   避免写镜像、保存工程时碰 **UAC / 系统目录权限**；也与全书「路径禁中文、禁空格」一致。
+
+3. 其余步骤 **一路默认** → 完成安装 → 打开 HxD，即可开始下方 **1.44 MB 软盘映像** 实验。
+
+> **便携版：** 若下载的是 Portable Edition，解压到 `D:\DevTools\HxD\` 直接运行 `HxD.exe`，跳过安装向导。
+
 全程 **不需要 tolset / nask** —— 本节故意与编译器绝缘。
 
 ---
