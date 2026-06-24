@@ -116,6 +116,19 @@
 
 HxD 底部状态栏可看 **当前偏移**；跳转到 `1FE` 确认是 `55 AA`。
 
+**粘贴后自检（对照下图）：**
+
+![boot.img 粘贴后自检：hello, world 与 55 AA](../../assets/hxd-boot-img-verify.png)
+
+| 检查 | 你的映像应出现 |
+|------|----------------|
+| `Ctrl+G` → **`76`** 或右侧文本栏 | 可见 **`hello, world`** |
+| `Ctrl+G` → **`1FE`** | **`55 AA`**（文本栏可能显示为 `Uª`） |
+| `Ctrl+G` → **`0`** | 开头 **`EB 4E 90`** |
+| 消息结束后 ~`0x84`–`0x1FD` | 理想为全 **`00`**（与 [helloos-boot-sector.hex](../../../code/day-01/helloos-boot-sector.hex) 逐字节一致） |
+
+若 `0x1FE` 已是 `55 AA` 且能看见 `hello, world`，**可以先 QEMU 试跑**；中间若有零星非 `00` 字节，一般不影响启动，保存后可用仓库参考文件逐行比对修正。
+
 #### 4. 保存并用 QEMU 启动
 
 **不必装 VMware / VirtualBox** — Day 1 只需 **QEMU** 模拟 **x86 PC 从软盘 A: 引导**。
