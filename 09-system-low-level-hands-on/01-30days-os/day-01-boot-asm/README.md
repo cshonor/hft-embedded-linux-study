@@ -11,7 +11,7 @@
 |----|--------|----------|
 | **① 先动手** | 二进制编辑器 → `helloos.img` | 1.44MB 软盘映像能 **boot 出 hello, world** |
 | **② 理解底层** | CPU 只认 0/1 电信号 | 手工输入的十六进制 = **机器语言指令** |
-| **③ 汇编入门** | `helloos.nas` + **NASM**（替代 nask） | 同一份 `.img`，不用手敲几十万位 |
+| **③ 汇编入门** | 装 **NASM** + `helloos.nas` 编译 | 同一份 `.img`；下载教程在 [1.3](./notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) |
 | **④ 润色 + 术语** | `$` 自动填 0、`55 AA` 启动签名 | **IPL**、**Boot** 两个词 |
 
 ---
@@ -29,7 +29,7 @@
 | └ 1.1.6 启动链路与排错 | [notes/section-1.1.6-启动链路与排错.md](./notes/section-1.1.6-启动链路与排错.md) |
 | **实验文件** | [code/](./code/) — `helloos.img` · hex 对照 |
 | 究竟做了些什么 | [notes/section-1.2-究竟做了些什么.md](./notes/section-1.2-究竟做了些什么.md) |
-| 初次体验汇编程序 | [notes/section-1.3-初次体验汇编程序.md](./notes/section-1.3-初次体验汇编程序.md) |
+| 初次体验汇编程序（含 **NASM 安装**） | [notes/section-1.3-初次体验汇编程序.md](./notes/section-1.3-初次体验汇编程序.md) |
 | 加工润色 | [notes/section-1.4-加工润色.md](./notes/section-1.4-加工润色.md) |
 | 关键术语 | [notes/section-1.5-关键术语.md](./notes/section-1.5-关键术语.md) |
 
@@ -54,6 +54,7 @@
 ## 本日学习目标 · 自检
 
 - [ ] **（推荐先做）** 用 HxD 手工做 `helloos.img` 并在 QEMU 看到 `hello, world` — [section 1.1](./notes/section-1.1-先动手操作.md)
+- [ ] 按 [1.3 安装 NASM](./notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) 并完成 `nasm -v`
 - [ ] 能用 **`nasm -f bin helloos.nas -o helloos.img`** 生成与 HxD / 原书 **相同效果** 的映像
 - [ ] 说清 **1440KB** 与 **512 字节引导扇区** 的关系
 - [ ] 解释 **IPL** 与 **boot** 的含义

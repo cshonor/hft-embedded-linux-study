@@ -13,9 +13,50 @@
 | 汇编 | **`nasm -f bin helloos.nas -o helloos.img`** | 与 nask 相同的纯二进制映像 |
 | 运行 | QEMU | 同样 `hello, world` |
 
-> **下不了 nask？** 只把书里的 **`nask helloos.nas helloos.img`** 换成 **`nasm -f bin helloos.nas -o helloos.img`** — 加 **`-f bin`** 输出纯二进制，效果和书里对上。安装 NASM → [SETUP §3.1](../../SETUP.md#31-安装-nasm)。详见 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+> **下不了 nask？** 只换编译命令、**不改 `.nas` 后缀** — 见下方 **安装 NASM** 与 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
 
 **要点：** 汇编是 **机器码的可读别名** — 一条 `MOV` 对应固定字节序列；**NASM 负责编码和布局**，你负责 **逻辑**。
+
+---
+
+### 安装 NASM（替代 nask）
+
+原书 tolset 里的 **nask** 往往下不到；**全程改用官网 NASM** 即可，语法兼容，输出与书一致。
+
+**官网：** [nasm.us](https://www.nasm.us/)
+
+![NASM 官网首页](../../assets/nasm-us-homepage.png)
+
+| 步骤 | 操作 |
+|------|------|
+| 1 | 顶部 **Download**，或首页 **Stable** 行的版本号（如 **`3.01`**）— **不要选 RC / Development snapshot** |
+| 2 | 下载页选 **Windows** → **Win64 `.exe`**（64 位系统） |
+| 3 | 安装 → 勾选 **Add to PATH**（否则手动把 `C:\Program Files\NASM` 加入系统 **Path**） |
+| 4 | **新开** cmd / PowerShell → `nasm -v`，应看到 `NASM version 3.xx …` |
+
+**包管理器（可选）：**
+
+| 系统 | 命令 |
+|------|------|
+| Windows（Chocolatey） | `choco install nasm` |
+| macOS（Homebrew） | `brew install nasm` |
+| MSYS2 | `pacman -S nasm` |
+
+**装好后立刻试编译（与书等价，只换命令）：**
+
+```cmd
+cd <含 helloos.nas 的目录>
+nasm -f bin helloos.nas -o helloos.img
+nasm -f bin helloos.nas -o helloos.img -l helloos.lst
+```
+
+| 原书 | 本仓库 |
+|------|--------|
+| `nask helloos.nas helloos.img` | `nasm -f bin helloos.nas -o helloos.img` |
+
+**`-f bin`** = 输出与 nask 相同的 **纯二进制**（引导扇区必加）。再用 [1.1.5 QEMU](./section-1.1.5-QEMU安装与运行.md) 启动验证 `hello, world`。
+
+> **GCC / Make / 完整 Day 0 环境**（Day 3 起才刚需）→ [SETUP.md](../../SETUP.md)；**本节只要 NASM + QEMU 就能完成 Day 1 汇编实验**。
 
 ---
 

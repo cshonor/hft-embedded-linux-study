@@ -37,7 +37,7 @@
 
 **标签：** 🟡 选读 · 时间紧可后补，与 `05`/`06` 概念课 **并行** 也行。
 
-**动手前必读：** [TOOLCHAIN.md](./TOOLCHAIN.md)（NASM 全程工具链）· [LEARNING_PLAN.md](./LEARNING_PLAN.md) · [SETUP.md](./SETUP.md)（Day 0 环境）
+**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md) · Day 1 汇编时跟 [§1.3 装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) · [SETUP.md](./SETUP.md)（QEMU / GCC / Make）
 
 ---
 

@@ -133,7 +133,7 @@ run: helloos.img
 | `naskfunc.nas` | 同名 `.nas` 或 `asmfunc.nasm` |
 | `helloos.lst` | `nasm -l` 生成 |
 
-**安装 NASM：** [SETUP.md §3.1](./SETUP.md#31-安装-nasm)（官网 / Chocolatey / brew）。
+**安装 NASM：** [day-01 section 1.3 · 安装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)（官网 / Chocolatey / brew）。
 
 ---
 

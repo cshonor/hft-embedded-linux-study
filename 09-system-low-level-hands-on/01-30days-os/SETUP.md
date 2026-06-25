@@ -9,7 +9,7 @@
 | 组件 | 作用 | 典型文件名 |
 |------|------|------------|
 | **HxD** | Day 1 手工写软盘映像（可先于 tolset） | `HxD.exe` — 见 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) |
-| **NASM** | **全程核心汇编器**（替代原书魔改 **nask**） | `nasm.exe` — 见 [TOOLCHAIN.md](./TOOLCHAIN.md) |
+| **NASM** | **全程核心汇编器**（替代原书 **nask**） | `nasm.exe` — **安装见 [day-01 §1.3](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)** |
 | **GCC** | C 内核与应用程序（替代 tolset **bcc**） | MinGW-w64 / MSYS2 的 `gcc.exe` |
 | **映像工具** | 把 `ipl.bin` 写入软盘映像 | `edimg` / `imgtool` / 书内脚本 |
 | **QEMU** | 加载 `.img` 模拟 x86 PC 启动 | `qemu-system-i386.exe` |
@@ -44,36 +44,11 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 ### 3.1 安装 NASM
 
-**官网（推荐）：** [nasm.us](https://www.nasm.us/)
+**完整图文步骤在 Day 1 本节 — 跟书走到汇编时再装即可：**
 
-![NASM 官网首页](./assets/nasm-us-homepage.png)
+→ [day-01 section 1.3 · 安装 NASM（替代 nask）](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)
 
-1. 顶部菜单点 **Download**（或首页表格 **Stable** 行里的版本号，当前例如 **`3.01`** — **选 Stable，不要 RC / Development snapshot**）
-2. 在下载页选 **Windows** → **Win64**（64 位系统）或 **Win32** 的 **`.exe` 安装包**
-3. 双击安装 → 一路下一步；勾选 **Add to PATH**（若没有，手动把 `C:\Program Files\NASM` 加到系统 **Path**）
-4. **新开** cmd / PowerShell：
-
-```cmd
-nasm -v
-```
-
-应看到类似 `NASM version 3.01 …`。
-
-**包管理器（更省心）：**
-
-| 系统 | 命令 |
-|------|------|
-| **Windows**（Chocolatey） | `choco install nasm` |
-| **macOS**（Homebrew） | `brew install nasm` |
-| **MSYS2** | `pacman -S nasm` |
-
-装完同样执行 `nasm -v`。Day 1 编译示例：
-
-```cmd
-nasm -f bin helloos.nas -o helloos.img
-```
-
-> 原书 **`nask helloos.nas helloos.img`** → 只改命令、**不改 `.nas` 后缀**；**`-f bin`** 让输出与 nask 一样的纯二进制。详见 [TOOLCHAIN.md](./TOOLCHAIN.md)。
+装完验证：`nasm -v` · 编译：`nasm -f bin helloos.nas -o helloos.img`
 
 ### 3.2 安装 GCC 与 Make
 
