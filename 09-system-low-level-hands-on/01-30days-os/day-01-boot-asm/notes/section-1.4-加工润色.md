@@ -96,9 +96,10 @@ nasm -f bin helloos.nas -o ipl.bin -l helloos.lst
 └────────────────────────────────┴──────────────────────────────────┘
 ```
 
-- **`nasm -f bin helloos.nas -o ipl.bin`** → 通常得到 **正好 512 B** 的 `ipl.bin`（不是 1.44 MB）。
+- **`nasm -f bin helloos.nas -o ipl.bin`** → 通常得到 **正好 512 B** 的 **`ipl.bin`**（纯二进制启动区，**不是** 1.44 MB）。
+- **`ipl.bin` 最后两字节必须是 `55 AA`** — BIOS 靠这对魔数判断「有效启动区」；源码里用 `DB 0x55,0xAA` 或 `DW 0xAA55`（见上文 §③）。
 - 昨天你在 HxD 里做的是：**先建 1.44 MB 全零文件**，再在 **最开头 512 字节** 里填代码和 `55 AA` — 其余保持 `00`。
-- 今天两种等价做法：
+- **今天：** 先用 NASM 得到 **`ipl.bin`（512 B）**，再 **拼到 1.44 MB 软盘映像开头** → 就是 BIOS / QEMU 能认的 **可启动镜像**。
 
 **做法 A（继续用 HxD，最快对照）**  
 1. 仍保留 [code/helloos.img](../code/helloos.img) 那种 **1,474,560 B** 模板（或 HxD 新建 1440 KB）。  
