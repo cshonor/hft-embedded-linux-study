@@ -56,7 +56,7 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
 
 **开发：** Python + BCC — 比 bpftrace 冗长，但 **可维护、可发布**。
 
-→ [03-BPF ch04 BCC](../../../03-BPF-Performance-Tools/chapter-04-BCC/)
+→ [03-BPF ch04 BCC](../../../03-BPF-Performance-Tools/chapter-04-bcc/)
 
 ---
 

@@ -13,7 +13,7 @@
 ## 全书结构
 
 ```
-chapter-XX-english-slug/   ← Ch 1 已采用；其余章仍为单文件，后续可迁移
+chapter-XX-english-slug/   ← 全书 12 章均已采用
 ├── README.md
 └── notes/section-*.md
 ```

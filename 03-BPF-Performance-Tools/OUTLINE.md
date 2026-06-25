@@ -10,29 +10,29 @@
 
 ## Part I · 技术 (Technologies)
 
-| 章 | 英文 | 笔记 | HFT |
+| 章 | 英文 | 导读 | HFT |
 |----|------|------|-----|
-| 1 | Introduction | [chapter-01](./chapter-01-简介.md) | 🔴 |
-| 2 | Technology Background | [chapter-02](./chapter-02-技术背景.md) | 🔴 |
-| 3 | Performance Analysis | [chapter-03](./chapter-03-性能分析.md) | 🟡 |
-| 4 | BCC | [chapter-04](./chapter-04-BCC.md) | 🔴 |
-| 5 | bpftrace | [chapter-05](./chapter-05-bpftrace.md) | 🔴 |
+| 1 | Introduction | [chapter-01-introduction](./chapter-01-introduction/) | 🔴 |
+| 2 | Technology Background | [chapter-02-technology-background](./chapter-02-technology-background/) | 🔴 |
+| 3 | Performance Analysis | [chapter-03-performance-analysis](./chapter-03-performance-analysis/) | 🟡 |
+| 4 | BCC | [chapter-04-bcc](./chapter-04-bcc/) | 🔴 |
+| 5 | bpftrace | [chapter-05-bpftrace](./chapter-05-bpftrace/) | 🔴 |
 
 ## Part II · 使用 BPF 工具 (Using BPF Tools)
 
-| 章 | 英文 | 笔记 | HFT |
+| 章 | 英文 | 导读 | HFT |
 |----|------|------|-----|
-| 6 | CPUs | [chapter-06](./chapter-06-CPU.md) | 🔴 |
-| 7 | Memory | [chapter-07](./chapter-07-内存.md) | 🟡 |
-| 8 | File Systems | [chapter-08](./chapter-08-文件系统.md) | ⚪ |
-| 9 | Disk I/O | [chapter-09](./chapter-09-磁盘IO.md) | ⚪ |
-| 10 | Networking | [chapter-10](./chapter-10-网络.md) | 🔴 |
-| 11 | Security | [chapter-11](./chapter-11-安全.md) | ⚪ |
-| 12 | Languages | [chapter-12](./chapter-12-语言.md) | ⚪ |
-| 13 | Applications | [chapter-13](./chapter-13-应用程序.md) | 🟡 |
-| 16 | Kernel | [chapter-14](./chapter-14-内核.md) | 🟡 |
-| 16 | Containers | [chapter-15](./chapter-15-容器.md) | ⚪ |
-| 16 | Hypervisors | [chapter-16](./chapter-16-虚拟机管理程序.md) | ⚪ |
+| 6 | CPUs | [chapter-06-cpus](./chapter-06-cpus/) | 🔴 |
+| 7 | Memory | [chapter-07-memory](./chapter-07-memory/) | 🟡 |
+| 8 | File Systems | [chapter-08-file-systems](./chapter-08-file-systems/) | ⚪ |
+| 9 | Disk I/O | [chapter-09-disk-io](./chapter-09-disk-io/) | ⚪ |
+| 10 | Networking | [chapter-10-networking](./chapter-10-networking/) | 🔴 |
+| 11 | Security | [chapter-11-security](./chapter-11-security/) | ⚪ |
+| 12 | Languages | [chapter-12-languages](./chapter-12-languages/) | ⚪ |
+| 13 | Applications | [chapter-13-applications](./chapter-13-applications/) | 🟡 |
+| 14 | Kernel | [chapter-14-kernel](./chapter-14-kernel/) | 🟡 |
+| 15 | Containers | [chapter-15-containers](./chapter-15-containers/) | ⚪ |
+| 16 | Hypervisors | [chapter-16-hypervisors](./chapter-16-hypervisors/) | ⚪ |
 
 ### HFT 延伸
 
@@ -42,10 +42,10 @@
 
 ## Part III · 其他主题 (Additional Topics)
 
-| 章 | 英文 | 笔记 | HFT |
+| 章 | 英文 | 导读 | HFT |
 |----|------|------|-----|
-| 17 | Other BPF Performance Tools | [chapter-17](./chapter-17-其他BPF工具.md) | 🟡 |
-| 18 | Tips, Tricks, and Common Problems | [chapter-18](./chapter-18-技巧与常见问题.md) | 🟡 |
+| 17 | Other BPF Performance Tools | [chapter-17-other-tools](./chapter-17-other-tools/) | 🟡 |
+| 18 | Tips, Tricks, and Common Problems | [chapter-18-tips-and-tricks](./chapter-18-tips-and-tricks/) | 🟡 |
 
 ## Part IV · 附录 (Appendixes)
 
@@ -70,6 +70,6 @@ Part II  Ch 6 CPU → Ch 10 网络 (+ note-XDP)
 附录 A/B bpftrace 速查
 ```
 
-→ **紧接** [02-SysPerf](../02-Systems-Performance-2nd/)（Gregg 双书第二本）· vs DPDK → [10-DPDK](../14-DPDK-Low-Latency-Network/)
+→ **紧接** [02-SysPerf](../02-Systems-Performance-2nd/)（Gregg 双书第二本）· vs DPDK → [14-DPDK](../14-DPDK-Low-Latency-Network/)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
