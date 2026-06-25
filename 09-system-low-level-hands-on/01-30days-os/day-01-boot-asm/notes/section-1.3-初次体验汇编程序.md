@@ -3,17 +3,17 @@
 手敲 **数十万** 个 0/1 或 hex：**慢、易错、不可维护** → 引入 **汇编语言**。
 
 ```
-helloos.nasm  ──nasm -f bin──►  helloos.img   （与手工版一致）
-   源码              汇编器            映像
+原书：  helloos.nas  ──nask────────►  helloos.img
+本仓库：helloos.nas  ──nasm -f bin──►  helloos.img   （后缀不用改）
 ```
 
 | 步骤 | 工具 | 产出 |
 |------|------|------|
-| 写源码 | 文本编辑器 | **`helloos.nasm`**（NASM 默认识别 `.nasm` / `.asm`） |
-| 汇编 | **`nasm -f bin helloos.nasm -o helloos.img`** | 机器码写入映像 |
+| 写源码 | 文本编辑器 | **`helloos.nas`**（`.nasm` / `.asm` 也行，**不必改后缀**） |
+| 汇编 | **`nasm -f bin helloos.nas -o helloos.img`** | 与 nask 相同的纯二进制映像 |
 | 运行 | QEMU | 同样 `hello, world` |
 
-> **nask 是什么？** 作者基于 NASM 风格定制的汇编器。**直接用原版 NASM 即可** — 自动把 `mov`/`jmp` 等译成机器码，并处理 **ORG、标签、偏移**；源码里 `TIMES` 填零 + `DB 0x55,0xAA`，**不必再像 HxD 那样手算 512 字节引导扇区**。详见 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+> **下不了 nask？** 只把书里的 **`nask helloos.nas helloos.img`** 换成 **`nasm -f bin helloos.nas -o helloos.img`** — 加 **`-f bin`** 输出纯二进制，效果和书里对上。安装 NASM → [SETUP §3.1](../../SETUP.md#31-安装-nasm)。详见 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
 
 **要点：** 汇编是 **机器码的可读别名** — 一条 `MOV` 对应固定字节序列；**NASM 负责编码和布局**，你负责 **逻辑**。
 
@@ -72,7 +72,7 @@ Day 1 在 HxD 里手敲的 **`B8 00 00`、`CD 10`、`55 AA`** 不是随机数，
 #### 用 NASM 列表文件核对（推荐）
 
 ```bash
-nasm -f bin helloos.nasm -o helloos.img -l helloos.lst
+nasm -f bin helloos.nas -o helloos.img -l helloos.lst
 ```
 
 **`helloos.lst`**：左边是 **偏移 + 机器码**，右边是 **源码行**。例如：
@@ -97,7 +97,7 @@ nasm -f bin helloos.nasm -o helloos.img -l helloos.lst
 
 ---
 
-### 最小 `helloos.nasm` 骨架（示意）
+### 最小 `helloos.nas` 骨架（示意）
 
 ```nasm
         ORG     0x7C00          ; BIOS 加载地址 — NASM 据此算标签/偏移

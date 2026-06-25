@@ -13,21 +13,46 @@
 | 构建 | 书内 Makefile + 批处理 | **GNU Make** |
 | 运行 | QEMU / 软驱 | **QEMU** |
 
-**nask 可以这么理解：** 川合秀实为了方便读者，在 NASM 语法风格上做了定制汇编器。**我们直接用原版 NASM** — 默认就认 **`.nasm`** 和 **`.asm`** 后缀，不必改扩展名骗工具。
+**nask 可以这么理解：** 川合秀实为了方便读者，在 NASM 语法风格上做了定制汇编器。**我们直接用原版 NASM** — 认 **`.nasm`、`.asm`**，**原书 `.nas` 也不用改后缀**。
+
+---
+
+## 后缀名：不用改
+
+原书写法：
+
+```
+helloos.nas  ──nask──►  helloos.img
+```
+
+**下不了 nask 没关系** — 源码 **继续叫 `helloos.nas` 完全没问题**（存成 `helloos.nasm` 也行）。**只换编译命令**，语法 NASM 能读：
+
+| 原书（nask） | **本仓库（NASM）** |
+|--------------|-------------------|
+| `nask helloos.nas helloos.img` | `nasm -f bin helloos.nas -o helloos.img` |
+| （nask 默认出纯二进制） | **加 `-f bin`**，让 NASM 输出与 nask **相同的纯二进制** |
+
+列表文件（对照 HxD hex）可选：
+
+```bash
+nasm -f bin helloos.nas -o helloos.img -l helloos.lst
+```
+
+编译结果应与书里、与 Day 1 HxD 手工版 **逐字节一致** — **不必纠结后缀名**。
 
 ---
 
 ## 第一次编译（Day 1）
 
-保存为 **`helloos.nasm`**，一行命令出机器码：
+保存为 **`helloos.nas`**（或 `helloos.nasm`），一行命令出机器码：
 
 ```bash
-nasm -f bin helloos.nasm -o helloos.img
+nasm -f bin helloos.nas -o helloos.img
 ```
 
 | 部分 | 含义 |
 |------|------|
-| **`helloos.nasm`** | 源码；NASM 自动识别 Intel 语法 |
+| **`helloos.nas`** | 源码；后缀 `.nas` / `.nasm` / `.asm` 均可 |
 | **`-f bin`** | 输出 **纯二进制**（引导扇区用，不是 `.obj`/ELF） |
 | **`-o helloos.img`** | 写入映像/二进制文件 |
 
@@ -103,9 +128,12 @@ run: helloos.img
 
 | 原书 | 本仓库 |
 |------|--------|
-| `helloos.nas` | **`helloos.nasm`**（或 `.asm`，NASM 默认识别） |
-| `naskfunc.nas` | `asmfunc.nasm` 等 |
-| `helloos.lst` | `nasm -l` 生成，偏移 + 机器码 + 源码 |
+| `helloos.nas` | **保持 `.nas` 即可**（或 `.nasm` / `.asm`） |
+| `nask helloos.nas …` | **`nasm -f bin helloos.nas -o …`** |
+| `naskfunc.nas` | 同名 `.nas` 或 `asmfunc.nasm` |
+| `helloos.lst` | `nasm -l` 生成 |
+
+**安装 NASM：** [SETUP.md §3.1](./SETUP.md#31-安装-nasm)（官网 / Chocolatey / brew）。
 
 ---
 

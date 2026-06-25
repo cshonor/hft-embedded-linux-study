@@ -42,21 +42,45 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 ## 3. 配置步骤
 
-### 3.1 安装 NASM 与 GCC
+### 3.1 安装 NASM
 
-1. **NASM：** [nasm.us](https://www.nasm.us/) 或 MSYS2：`pacman -S nasm`
-2. **GCC：** 推荐 [MSYS2](https://www.msys2.org/) → `pacman -S mingw-w64-x86_64-gcc make`
-3. 新开终端验证：
+**官网（推荐）：** [nasm.us](https://www.nasm.us/)
+
+1. 打开 **Get NASM** → 选最新稳定版
+2. **Windows：** 下载 **Win32/Win64 `.exe` 安装包**，一路下一步
+3. 安装时勾选 **Add to PATH**（若没有，手动把安装目录 — 常见 `C:\Program Files\NASM` — 加到系统环境变量 **Path**）
+4. **新开** cmd / PowerShell，验证：
 
 ```cmd
 nasm -v
+```
+
+**包管理器（更省心）：**
+
+| 系统 | 命令 |
+|------|------|
+| **Windows**（Chocolatey） | `choco install nasm` |
+| **macOS**（Homebrew） | `brew install nasm` |
+| **MSYS2** | `pacman -S nasm` |
+
+装完同样执行 `nasm -v`。Day 1 编译示例：
+
+```cmd
+nasm -f bin helloos.nas -o helloos.img
+```
+
+> 原书 **`nask helloos.nas helloos.img`** → 只改命令、**不改 `.nas` 后缀**；**`-f bin`** 让输出与 nask 一样的纯二进制。详见 [TOOLCHAIN.md](./TOOLCHAIN.md)。
+
+### 3.2 安装 GCC 与 Make
+
+推荐 [MSYS2](https://www.msys2.org/) → `pacman -S mingw-w64-x86_64-gcc make`
+
+```cmd
 gcc --version
 make --version
 ```
 
-> 原书 **nask** 是作者基于 NASM 风格的魔改汇编器；**直接用 NASM 即可**，见 [TOOLCHAIN.md](./TOOLCHAIN.md)。
-
-### 3.2 安装 QEMU（官方 `qemu-w64-setup`）
+### 3.3 安装 QEMU（官方 `qemu-w64-setup`）
 
 **Day 1 手工 `boot.img`：** 只需 QEMU，**不必** VMware / VirtualBox。详见 [day-01 section 1.1.5](./day-01-boot-asm/notes/section-1.1.5-QEMU安装与运行.md)。
 
@@ -89,17 +113,17 @@ cd <boot.img 所在目录>
 qemu-system-i386 -fda boot.img -boot a
 ```
 
-### 3.3 配置 PATH（二选一）
+### 3.4 配置 PATH（二选一）
 
 **A. 临时（当前 cmd 窗口）：**
 
 ```cmd
-set PATH=D:\qemu;C:\msys64\mingw64\bin;%PATH%
+set PATH=D:\qemu;C:\Program Files\NASM;C:\msys64\mingw64\bin;%PATH%
 ```
 
 **B. 永久：** 系统环境变量 `Path` 追加上述目录（改完后新开终端）。
 
-### 3.4 确认 Make
+### 3.5 确认 Make
 
 在 Day 1 工程目录执行：
 
@@ -113,7 +137,7 @@ make --version
 
 ## 4. Day 1 首次构建与运行
 
-进入 Day 1 工程目录（含 `Makefile` 与 `helloos.nasm`）：
+进入 Day 1 工程目录（含 `Makefile` 与 `helloos.nas`）：
 
 ```cmd
 cd C:\dev\haribote\proj\day-01

@@ -6,7 +6,7 @@
 
 ```makefile
 # 示意（非原书完整文件）
-ipl.bin: helloos.nasm
+ipl.bin: helloos.nas
 	nasm -f bin $< -o $@ -l helloos.lst
 
 helloos.img: ipl.bin
@@ -16,7 +16,7 @@ run: helloos.img
 	# 启动 QEMU …
 ```
 
-> 原书 Makefile 写 `nask helloos.nas …`；本仓库统一 **`nasm -f bin`** — 见 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+> 原书：`nask helloos.nas helloos.lst ipl.bin` → 本仓库：**`nasm -f bin helloos.nas -o ipl.bin -l helloos.lst`**（**`.nas` 后缀不用改**）。见 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
 
 命令行只打：
 

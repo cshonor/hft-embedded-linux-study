@@ -15,7 +15,7 @@
 编译：
 
 ```bash
-nasm -f bin helloos.nasm -o helloos.img
+nasm -f bin helloos.nas -o helloos.img
 ```
 
 ---

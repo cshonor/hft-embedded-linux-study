@@ -11,7 +11,7 @@
 |----|--------|----------|
 | **① 先动手** | 二进制编辑器 → `helloos.img` | 1.44MB 软盘映像能 **boot 出 hello, world** |
 | **② 理解底层** | CPU 只认 0/1 电信号 | 手工输入的十六进制 = **机器语言指令** |
-| **③ 汇编入门** | `helloos.nasm` + **NASM** | 同一份 `.img`，不用手敲几十万位 |
+| **③ 汇编入门** | `helloos.nas` + **NASM**（替代 nask） | 同一份 `.img`，不用手敲几十万位 |
 | **④ 润色 + 术语** | `$` 自动填 0、`55 AA` 启动签名 | **IPL**、**Boot** 两个词 |
 
 ---
@@ -54,7 +54,7 @@
 ## 本日学习目标 · 自检
 
 - [ ] **（推荐先做）** 用 HxD 手工做 `helloos.img` 并在 QEMU 看到 `hello, world` — [section 1.1](./notes/section-1.1-先动手操作.md)
-- [ ] 能用 **`nasm -f bin helloos.nasm -o helloos.img`** 生成与 HxD 版 **相同效果** 的映像
+- [ ] 能用 **`nasm -f bin helloos.nas -o helloos.img`** 生成与 HxD / 原书 **相同效果** 的映像
 - [ ] 说清 **1440KB** 与 **512 字节引导扇区** 的关系
 - [ ] 解释 **IPL** 与 **boot** 的含义
 - [ ] 知道 **`55 AA`** 在引导扇区末尾的作用
