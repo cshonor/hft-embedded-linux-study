@@ -139,7 +139,7 @@ run: helloos.img
 
 ## 相关
 
-- [SETUP.md](./SETUP.md) — Day 0 安装 NASM / GCC / QEMU
+- [SETUP.md](./SETUP.md) — Day 0：QEMU / GCC / Make（NASM 安装见 [day-01 §1.3](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)）
 - [LEARNING_PLAN.md](./LEARNING_PLAN.md) — 三阶段学习路径
 - [day-01 section 1.3](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md) — 汇编 ↔ 机器码
 - [day-02 section 2.4](./day-02-asm-makefile/notes/section-2.4-Makefile-入门.md) — Makefile 与 NASM 规则

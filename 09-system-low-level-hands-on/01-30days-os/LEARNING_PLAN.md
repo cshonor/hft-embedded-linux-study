@@ -107,7 +107,7 @@
 ## 五、现阶段第一步行动
 
 - [ ] **零工具链体感（推荐）：** 按 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) 用 HxD + QEMU 手工做第一个 `helloos.img`
-- [ ] 按 [SETUP.md](./SETUP.md) 完成 **Day 0**（NASM + GCC + QEMU）
+- [ ] 按 [1.3 安装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) + [SETUP.md](./SETUP.md) 完成 **Day 0**（QEMU；GCC/Make 可 Day 3 前再装）
 - [ ] 阅读 [day-01-boot-asm/](./day-01-boot-asm/) 笔记并对照源码
 - [ ] 在 [day-01-boot-asm/code/](./day-01-boot-asm/code/) 对照映像；`make run` 验证与 HxD 版一致
 
