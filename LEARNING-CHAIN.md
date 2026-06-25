@@ -18,7 +18,7 @@
 05  LKD → 08 ULK（实现细节）→ 06  Gorman
 
 07  TLPI                 ← Linux 用户态：epoll / mmap / 线程
-09  自制 OS / CPU         ← 08-1 30天 → 08-3 MikanOS（UEFI/分页）
+09  自制 OS / CPU         ← 01 30天 → 02 MikanOS（UEFI/分页）
 10  陈硕 PNP / muduo
 11  UNP
 01  CSAPP Ch10–11

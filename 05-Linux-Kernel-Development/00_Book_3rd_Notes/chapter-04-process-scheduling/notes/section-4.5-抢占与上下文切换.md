@@ -29,6 +29,6 @@
 
 **HFT：** **内核抢占 + 长临界区** → 调度延迟；`PREEMPT_RT`、短锁、绑核隔离是工程回应。→ **Ch 1** 宏内核+抢占
 
-→ [08-1 Day 16 多任务/切换](../../../../09-system-low-level-hands-on/08-1-30days-os/day-16-multitask2/)
+→ [01 Day 16 多任务/切换](../../../../09-system-low-level-hands-on/01-30days-os/day-16-multitask2/)
 
 ---

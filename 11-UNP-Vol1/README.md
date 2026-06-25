@@ -30,7 +30,7 @@
 
 ## 为何不在本仓库展开
 
-笔记已在你的网络书仓库维护；建议 **先 [08 PNP](../10-Practical-Network-Programming/) 再读本目录**。
+笔记已在你的网络书仓库维护；建议 **先 [10 PNP](../10-Practical-Network-Programming/) 再读本目录**。
 
 ## 交叉阅读
 

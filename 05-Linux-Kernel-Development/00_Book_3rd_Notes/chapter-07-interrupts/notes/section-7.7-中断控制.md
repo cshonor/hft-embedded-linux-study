@@ -36,6 +36,6 @@ local_irq_restore(flags);
 | **`in_interrupt()`** | 是否在中断（含软中断）相关上下文 |
 | **`in_irq()`** | 是否在 **硬 IRQ** 处理中 |
 
-→ **Ch 9–10** 自旋锁 + `local_irq_save` 组合 · [08-1 Day 14 临界区](../../../../09-system-low-level-hands-on/08-1-30days-os/day-14-keyboard/)
+→ **Ch 9–10** 自旋锁 + `local_irq_save` 组合 · [01 Day 14 临界区](../../../../09-system-low-level-hands-on/01-30days-os/day-14-keyboard/)
 
 ---

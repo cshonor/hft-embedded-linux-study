@@ -59,7 +59,7 @@
 06  Linux Virtual Memory Manager
 
 07  TLPI（The Linux Programming Interface）
-09  自制 OS / CPU（08-1 / 08-2）
+09  自制 OS / CPU（01 / 02 / 03）
 10  陈硕 PNP / muduo 实战（外P）
 11  UNP Vol.1（外B）
 01  CSAPP · 网络篇 Ch10–11

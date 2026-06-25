@@ -300,17 +300,17 @@
 
 ---
 
-## 补充：自制系统动手（`08` 文件夹）
+## 补充：自制系统动手（`09` 文件夹）
 
 > 笔记目录：[09-system-low-level-hands-on/](./09-system-low-level-hands-on/)
 
-> **插入位置：** `07` TLPI 之后、`09` PNP 之前。
+> **插入位置：** `07` TLPI 之后、`10` PNP 之前。
 
 | 子模块 | 参考 | 标签 | HFT 关联 |
 |--------|------|------|----------|
-| [08-1-30days-os](./09-system-low-level-hands-on/08-1-30days-os/) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
-| [08-3-mikan-os](./09-system-low-level-hands-on/08-3-mikan-os/) | 《ゼロからの OS 自作入門》MikanOS | 🟡 选读 | UEFI/64位/分页/syscall — 现代 OS 互补 |
-| [08-2-30days-cpu](./09-system-low-level-hands-on/08-2-30days-cpu/) | 《30 天自制 CPU》 | 🟡 选读 | 指令执行、数据通路 — 对照 Hennessy / CSAPP Ch4 |
+| [01-30days-os](./09-system-low-level-hands-on/01-30days-os/) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
+| [02-mikan-os](./09-system-low-level-hands-on/02-mikan-os/) | 《ゼロからの OS 自作入門》MikanOS | 🟡 选读 | UEFI/64位/分页/syscall — 现代 OS 互补 |
+| [03-30days-cpu](./09-system-low-level-hands-on/03-30days-cpu/) | 《30 天自制 CPU》 | 🟡 选读 | 指令执行、数据通路 — 对照 Hennessy / CSAPP Ch4 |
 
 **HFT 产出：** 把「绑核、syscall、cache 类比」从读者变成作者；时间紧可后补，与 `05`/`06` 概念课并行。
 
@@ -325,8 +325,8 @@
 | ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
 | ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen + **12 DPDK** | [08 PNP](./10-Practical-Network-Programming/)、CSAPP Ch11、**03 BPF Ch10** |
-| ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12、[08 自制 CPU](../09-system-low-level-hands-on/08-2-30days-cpu/) |
+| ch06 低延迟网络与协议优化 | Rosen + **12 DPDK** | [10 PNP](./10-Practical-Network-Programming/)、CSAPP Ch11、**03 BPF Ch10** |
+| ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12、[03 自制 CPU](../09-system-low-level-hands-on/03-30days-cpu/) |
 | ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**12 DPDK** |
 | ch09 高频做市与套利策略 | Harris | — |
 | ch10 延迟测量与基准压测 | Gregg SysPerf + **03 BPF** | **12 DPDK** testpmd |

@@ -28,6 +28,6 @@ Linux **没有** 单独的「线程」内核对象类型：
 
 **HFT 对照：** 行情/发单在 **用户线程 + 绑核**；延迟抖动也常来自 **内核线程** 与 **软中断** 争用同一 CPU — 见 **Ch 4、8**。
 
-→ [08-1 Day 15 多任务](../../../../09-system-low-level-hands-on/08-1-30days-os/day-15-multitask1/)（教学 OS 分层对照）
+→ [01 Day 15 多任务](../../../../09-system-low-level-hands-on/01-30days-os/day-15-multitask1/)（教学 OS 分层对照）
 
 ---
