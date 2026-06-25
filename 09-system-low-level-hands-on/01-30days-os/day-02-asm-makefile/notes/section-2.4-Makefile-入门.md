@@ -4,6 +4,69 @@
 
 **Makefile** 把「目标、依赖、命令」写进 **一个纯文本文件**；终端里只敲 **`make`**，由系统里的 **make 工具** 按规则自动执行（只重做改过的步骤）。
 
+先从 **适配自制 OS 第一天的极简版** 上手；拼 1.44 MB 软盘、QEMU 启动见下文 **进阶**。
+
+---
+
+### 第一天极简 Makefile（复制即用）
+
+在 VS Code 里 **新建 → 保存为 `Makefile`**（**M 大写**，无 `.txt`），与引导扇区汇编 **同一目录**，粘贴：
+
+```makefile
+# 定义用的编译器和参数
+NASM = nasm
+NASMFLAGS = -f bin
+
+# 目标：生成的镜像文件
+all: os-image.bin
+
+# 把汇编代码编译成二进制
+os-image.bin: boot.asm
+	$(NASM) $(NASMFLAGS) -o $@ $<
+
+# 清理生成的文件
+clean:
+	rm -f os-image.bin
+```
+
+| 行 | 含义 |
+|----|------|
+| **`NASM` / `NASMFLAGS`** | 用哪个汇编器、`-f bin` 出 **纯二进制**（不是 `.obj`） |
+| **`all: os-image.bin`** | 默认目标；终端只敲 **`make`** 就会编出 `os-image.bin` |
+| **`os-image.bin: boot.asm`** | **依赖**：`boot.asm` 改了才重新汇编 |
+| **`$(NASM) … -o $@ $<`** | 等价于 `nasm -f bin -o os-image.bin boot.asm`（`$@`=目标，`$<`=第一个依赖） |
+| **`clean`** | **`make clean`** 删掉生成物，方便重来 |
+
+**`boot.asm` 是什么？** 就是你写的 **引导扇区汇编**（Day 1 [§1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md) 里带 `TIMES` / `0xAA55` 的那份）。本仓库源码惯例叫 **`helloos.nas`**，内容相同 — 要么把文件改名为 `boot.asm`，要么把 Makefile 里依赖改成：
+
+```makefile
+os-image.bin: helloos.nas
+```
+
+**产出多大？** `nasm -f bin` 此时通常得到 **512 B** 引导扇区（不是整盘 1.44 MB）。下文把同样产物记作 **`ipl.bin`**；`os-image.bin` 只是第一天起的文件名。
+
+**怎么用：**
+
+```bash
+make          # 生成 os-image.bin（≈512 B）
+make clean    # 删除 os-image.bin
+```
+
+仓库里有一份同款副本：[code/Makefile](../code/Makefile)。
+
+---
+
+### Makefile 硬规则：配方行必须用 Tab
+
+```makefile
+os-image.bin: boot.asm
+	$(NASM) $(NASMFLAGS) -o $@ $<
+```
+
+上面 **`$(NASM) …` 那一行开头必须是 Tab 键**，**不能**用空格顶格。这是 Make 的语法规定 — 用空格会报 `missing separator` 之类错误，编不过。
+
+VS Code 技巧：**查看 → 渲染空白字符**，或装 **Makefile Tools** 扩展，Tab/空格一眼能分清。
+
 ---
 
 ### 不用专门软件 — VS Code 就能写
@@ -13,7 +76,7 @@
 | **格式** | **纯文本**，没有特殊二进制格式 |
 | **文件名** | 必须叫 **`Makefile`**（**M 大写**，无 `.txt` 后缀） |
 | **编辑器** | **VS Code** / Cursor / 记事本均可 — 与写 `helloos.nas` 一样 **新建 → 保存** |
-| **常见坑** | 若存成 `Makefile.txt`，`make` **找不到**；配方行必须用 **Tab 缩进**，不能全用空格 |
+| **常见坑** | 若存成 `Makefile.txt`，`make` **找不到**；配方行必须用 **Tab**（见上一节） |
 
 在 VS Code 中：
 
@@ -24,6 +87,10 @@
 > **make 本身** 是已安装的工具（[SETUP §3.5](../../SETUP.md#35-确认-make)：`make --version`）。**Makefile** 只是告诉 make「要做什么」的说明书。
 
 ---
+
+### 进阶：拼 1.44 MB 软盘 + QEMU（Day 2 完整链）
+
+极简版只解决 **「汇编 → 512 B 二进制」**。要把 [Day 1](../day-01-boot-asm/) 的 **`hello, world`** 在 QEMU 里跑起来，还要把引导扇区 **嵌进 1,474,560 B 软盘**（见 [§2.3](./section-2.3-先制作启动区.md)）。在极简 Makefile 上 **追加** 下面目标即可：
 
 ### 三条规则在干什么
 
@@ -104,11 +171,22 @@ make clean        # 若定义了 clean，删除中间文件
 
 ---
 
+### Windows 与 `make clean`
+
+极简版里 **`rm -f`** 在 **Git Bash / MSYS2** 终端可用（与 [SETUP](../../SETUP.md) 里跑 `make` 的环境一致）。若在 **纯 cmd** 里 `clean` 报错，可暂时手删 `os-image.bin`，或把 `clean` 改成：
+
+```makefile
+clean:
+	del /f os-image.bin
+```
+
+---
+
 ### 自检
 
 - [ ] 工程根目录有 **`Makefile`**（不是 `makefile.txt`）
-- [ ] 配方行用 **Tab** 缩进
-- [ ] `make` 能生成 **`ipl.bin`（512 B）**
+- [ ] 配方行用 **Tab** 缩进（不是空格）
+- [ ] **`make`** 能从 **`boot.asm` / `helloos.nas`** 生成 **`os-image.bin` / `ipl.bin`（512 B）**
 - [ ] `make` 能生成 **`helloos.img`（1,474,560 B）**，QEMU 仍出 **`hello, world`**
 - [ ] 说清：**Makefile 是文本**；**make 是读它的程序**
 

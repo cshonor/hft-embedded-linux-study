@@ -12,7 +12,7 @@
 | **① 文本编辑器** | **VS Code** 写汇编（装 NASM 插件） | 代码编辑器 ≠ 写文档；以后 Rust/Solidity 同源 |
 | **② 深入汇编** | 逐条解释 Day 1 代码 | 寄存器、内存、`[]`、BIOS、`0x7c00` |
 | **③ 制作启动区** | 只编译 **512 B** `ipl.bin` | IPL 与整盘映像 **分离** |
-| **④ Makefile** | VS Code 写 **`Makefile`**，终端 **`make`** | 一键 **nasm → img → run** |
+| **④ Makefile** | 极简：**`boot.asm` → `os-image.bin`**；进阶拼 **`helloos.img`** | VS Code 存 **`Makefile`**，配方行 **必须 Tab** |
 
 ---
 
@@ -24,6 +24,8 @@
 | 继续开发 | [notes/section-2.2-继续开发.md](./notes/section-2.2-继续开发.md) |
 | 先制作启动区 | [notes/section-2.3-先制作启动区.md](./notes/section-2.3-先制作启动区.md) |
 | Makefile 入门 | [notes/section-2.4-Makefile-入门.md](./notes/section-2.4-Makefile-入门.md) |
+
+**可复制 Makefile：** [code/Makefile](./code/Makefile)
 
 ---
 
