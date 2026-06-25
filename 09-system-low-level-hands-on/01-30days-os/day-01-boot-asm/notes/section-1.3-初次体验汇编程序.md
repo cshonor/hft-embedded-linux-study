@@ -13,7 +13,18 @@
 | 汇编 | **`nasm -f bin helloos.nas -o helloos.img`** | 与 nask 相同的纯二进制映像 |
 | 运行 | QEMU | 同样 `hello, world` |
 
-> **下不了 nask？** 只换编译命令、**不改 `.nas` 后缀** — 见下方 **安装 NASM** 与 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+> **下不了 nask？** **只换汇编器为 NASM、只换命令** — **`.nas` 文件名和后缀都不用改** — 见下方对照表与 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+
+### 只换 nask → NASM：命令对照（后缀照旧）
+
+**参与编译的软件从 nask 换成 NASM**；工程里 **`helloos.nas` 继续用 `.nas`**，NASM 同样能汇编（**.nas / .nasm / .asm** 均可，**不必改名**）。
+
+| 原书（nask） | 本仓库（NASM） |
+|--------------|----------------|
+| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.nas -o helloos.img`** |
+| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.nas -o ipl.bin -l helloos.lst`** |
+
+**`-f bin` 必加：** NASM 默认可能出 **`.obj` 等带格式目标文件**；**`-f bin`** 才输出 **纯二进制启动区**（与 nask 一致），后面才能拼 **1.44 MB 映像** 并用 **QEMU** 启动。
 
 **笔 vs 编译器：** 编辑器只产出 **给人看的 `.nas` 文本**；**`nasm.exe`** 才把它译成 **机器二进制** — 详见 [Day 2 §2.1 · 编辑器 vs NASM](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同)。
 
@@ -63,6 +74,8 @@ nasm -f bin helloos.nas -o helloos.img -l helloos.lst
 | 原书 | 本仓库 |
 |------|--------|
 | `nask helloos.nas helloos.img` | `nasm -f bin helloos.nas -o helloos.img` |
+
+（同上：**只换命令**，**`helloos.nas` 不用改后缀**。）
 
 **`-f bin`** = 输出与 nask 相同的 **纯二进制**（引导扇区必加）。再用 [1.1.5 QEMU](./section-1.1.5-QEMU安装与运行.md) 启动验证 `hello, world`。
 
@@ -144,7 +157,7 @@ nasm -f bin helloos.nas -o helloos.img -l helloos.lst
 | 手写 / 汇编 **固定 opcode** | 仍是指令编码，但寻址模式更多 |
 | `INT 0x10` 调 BIOS | 逐步改用 **自有 API / 驱动** |
 
-先建立 **「一行汇编 ↔ 一串 hex」** 的肌肉记忆，后面读 `boot.asm`、GDT 加载、模式切换时，看到 `MOV` / `JMP` / `LGDT` 就不会只把它们当成「魔法咒语」。
+先建立 **「一行汇编 ↔ 一串 hex」** 的肌肉记忆，后面读 **`helloos.nas`**、GDT 加载、模式切换时，看到 `MOV` / `JMP` / `LGDT` 就不会只把它们当成「魔法咒语」。**源码后缀保持 `.nas` 即可，只换 nask → NASM 命令。**
 
 ---
 

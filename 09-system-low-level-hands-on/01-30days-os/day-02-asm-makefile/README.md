@@ -11,8 +11,8 @@
 |----|--------|----------|
 | **① 文本编辑器** | **VS Code** 写汇编；**NASM** 编译成二进制 | 笔 vs 编译器；QEMU 只认 `.bin` / `.img` |
 | **② 深入汇编** | 逐条解释 Day 1 代码 | 寄存器、内存、`[]`、BIOS、`0x7c00` |
-| **③ 制作启动区** | **`ipl.asm` 必须汇编写** → **`ipl.bin`** | 无 OS/无运行时；内核加载后用 **C / Rust** |
-| **④ Makefile** | 极简：**`boot.asm` → `os-image.bin`**；进阶拼 **`helloos.img`** | VS Code 存 **`Makefile`**，配方行 **必须 Tab** |
+| **③ 制作启动区** | **`helloos.nas`** → **`nasm -f bin`** → **`ipl.bin`** | **只换 nask，不改 `.nas` 后缀** |
+| **④ Makefile** | 极简：**`helloos.nas` → `os-image.bin`**；进阶拼 **`helloos.img`** | VS Code 存 **`Makefile`**，配方行 **必须 Tab** |
 
 ---
 

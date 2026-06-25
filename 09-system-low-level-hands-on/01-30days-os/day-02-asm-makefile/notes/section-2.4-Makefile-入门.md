@@ -20,8 +20,8 @@ NASMFLAGS = -f bin
 # 目标：生成的镜像文件
 all: os-image.bin
 
-# 把汇编代码编译成二进制
-os-image.bin: boot.asm
+# 把 helloos.nas 编译成二进制（源码后缀不用改）
+os-image.bin: helloos.nas
 	$(NASM) $(NASMFLAGS) -o $@ $<
 
 # 清理生成的文件
@@ -33,15 +33,11 @@ clean:
 |----|------|
 | **`NASM` / `NASMFLAGS`** | 用哪个汇编器、`-f bin` 出 **纯二进制**（不是 `.obj`） |
 | **`all: os-image.bin`** | 默认目标；终端只敲 **`make`** 就会编出 `os-image.bin` |
-| **`os-image.bin: boot.asm`** | **依赖**：`boot.asm` 改了才重新汇编 |
-| **`$(NASM) … -o $@ $<`** | 等价于 `nasm -f bin -o os-image.bin boot.asm`（`$@`=目标，`$<`=第一个依赖） |
+| **`os-image.bin: helloos.nas`** | **依赖**：`helloos.nas` 改了才重新汇编 |
+| **`$(NASM) … -o $@ $<`** | 等价于 **`nasm -f bin helloos.nas -o os-image.bin`**（`$@`=目标，`$<`=第一个依赖） |
 | **`clean`** | **`make clean`** 删掉生成物，方便重来 |
 
-**`boot.asm` 是什么？** 就是你写的 **引导扇区汇编**（Day 1 [§1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md) 里带 `TIMES` / `0xAA55` 的那份）。本仓库源码惯例叫 **`helloos.nas`**，内容相同 — 要么把文件改名为 `boot.asm`，要么把 Makefile 里依赖改成：
-
-```makefile
-os-image.bin: helloos.nas
-```
+**`helloos.nas` 是什么？** 就是 Day 1 [§1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md) 的 **引导扇区汇编**（带 `TIMES` / `0xAA55`）。**原书就叫 `.nas`，用 NASM 时也不用改后缀** — 只把 nask 命令换成 **`nasm -f bin helloos.nas -o …`**（见 [§1.3 · nask→NASM 对照](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#只换-nask--nasm命令对照后缀照旧)）。
 
 **产出多大？** `nasm -f bin` 此时通常得到 **512 B** 引导扇区（不是整盘 1.44 MB）。下文把同样产物记作 **`ipl.bin`**；`os-image.bin` 只是第一天起的文件名。
 
@@ -59,7 +55,7 @@ make clean    # 删除 os-image.bin
 ### Makefile 硬规则：配方行必须用 Tab
 
 ```makefile
-os-image.bin: boot.asm
+os-image.bin: helloos.nas
 	$(NASM) $(NASMFLAGS) -o $@ $<
 ```
 
@@ -186,7 +182,7 @@ clean:
 
 - [ ] 工程根目录有 **`Makefile`**（不是 `makefile.txt`）
 - [ ] 配方行用 **Tab** 缩进（不是空格）
-- [ ] **`make`** 能从 **`boot.asm` / `helloos.nas`** 生成 **`os-image.bin` / `ipl.bin`（512 B）**
+- [ ] **`make`** 能从 **`helloos.nas`** 生成 **`os-image.bin` / `ipl.bin`（512 B）**
 - [ ] `make` 能生成 **`helloos.img`（1,474,560 B）**，QEMU 仍出 **`hello, world`**
 - [ ] 说清：**Makefile 是文本**；**make 是读它的程序**
 

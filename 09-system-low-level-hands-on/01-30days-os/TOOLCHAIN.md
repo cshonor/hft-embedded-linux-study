@@ -13,32 +13,33 @@
 | 构建 | 书内 Makefile + 批处理 | **GNU Make** |
 | 运行 | QEMU / 软驱 | **QEMU** |
 
-**nask 可以这么理解：** 川合秀实为了方便读者，在 NASM 语法风格上做了定制汇编器。**我们直接用原版 NASM** — 认 **`.nasm`、`.asm`**，**原书 `.nas` 也不用改后缀**。
+**nask 可以这么理解：** 川合秀实为了方便读者，在 NASM 语法风格上做了定制汇编器。**我们直接用原版 NASM** — **源码文件名、后缀都可以不动**。
 
 ---
 
-## 后缀名：不用改
+## 只换汇编器，不改 `.nas` 后缀（最重要）
 
-原书写法：
+原书 tolset 里是 **nask**；本仓库用 **NASM**。**换的是参与编译的软件，不是文件夹里的文件格式。**
+
+| 什么 **不用改** | 什么 **要换** |
+|----------------|--------------|
+| 源码仍叫 **`helloos.nas`**（原书命名） | 汇编器：**nask** → **`nasm.exe`** |
+| 后缀 **`.nas` / `.nasm` / `.asm`** NASM **都能读** | 编译 **命令格式**（见下表） |
+| 汇编 **语法** 多数逐行相同 | 必须加 **`-f bin`**（见下） |
 
 ```
-helloos.nas  ──nask──►  helloos.img
+原书：  helloos.nas  ──nask────────►  helloos.img / ipl.bin
+本仓库：helloos.nas  ──nasm -f bin──►  helloos.img / ipl.bin   ← 文件名照旧
 ```
-
-**下不了 nask 没关系** — 源码 **继续叫 `helloos.nas` 完全没问题**（存成 `helloos.nasm` 也行）。**只换编译命令**，语法 NASM 能读：
 
 | 原书（nask） | **本仓库（NASM）** |
 |--------------|-------------------|
-| `nask helloos.nas helloos.img` | `nasm -f bin helloos.nas -o helloos.img` |
-| （nask 默认出纯二进制） | **加 `-f bin`**，让 NASM 输出与 nask **相同的纯二进制** |
+| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.nas -o helloos.img`** |
+| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.nas -o ipl.bin -l helloos.lst`** |
 
-列表文件（对照 HxD hex）可选：
+**`-f bin` 是关键：** 告诉 NASM **不要** 生成带格式的目标文件（如 `.obj`），而是 **直接输出纯二进制** — 与 nask 默认行为一致，才能作为 **512 B 启动区**，再拼进映像、用 **QEMU** 启动。
 
-```bash
-nasm -f bin helloos.nas -o helloos.img -l helloos.lst
-```
-
-编译结果应与书里、与 Day 1 HxD 手工版 **逐字节一致** — **不必纠结后缀名**。
+> **不必** 为了用 NASM 而把 `helloos.nas` 改成 `boot.asm` — 笔记里若出现 `boot.asm` / `ipl.asm`，只是 **通称**；**本仓库默认文件名仍是 `helloos.nas`**。
 
 ---
 

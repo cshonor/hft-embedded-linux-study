@@ -1,12 +1,14 @@
-## ③ 先制作启动区 · `ipl.asm` → `ipl.bin`
+## ③ 先制作启动区 · `helloos.nas` → `ipl.bin`
 
-Day 1 用 HxD 手工填的 **512 字节引导扇区**，从今天起在 VS Code 里写成 **`ipl.asm`**（本仓库习惯叫 **`helloos.nas`**，内容相同），再交给 **NASM** 编译 — **只产出启动区**，不再一次吐满整盘 1.44 MB。
+Day 1 用 HxD 手工填的 **512 字节引导扇区**，从今天起在 VS Code 里写成 **`helloos.nas`**（原书文件名，**后缀不用改**；通称也可叫 *ipl* / *boot* 源码），再交给 **NASM** 编译 — **只产出启动区**，不再一次吐满整盘 1.44 MB。
+
+> **只换 nask → NASM，不改 `.nas`：** `nasm -f bin helloos.nas -o ipl.bin` — 见 [§1.3 · 命令对照](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#只换-nask--nasm命令对照后缀照旧)。
 
 ---
 
 ### 启动区是什么？IPL 是整盘 OS 的「敲门砖」
 
-你在 **VS Code** 里写的 **`ipl.asm`**，就是 **启动区源码** — 整个操作系统的 **「敲门砖」**：
+你在 **VS Code** 里写的 **`helloos.nas`**，就是 **启动区源码**（IPL）— 整个操作系统的 **「敲门砖」**：
 
 | | 说明 |
 |---|------|
@@ -17,12 +19,11 @@ Day 1 用 HxD 手工填的 **512 字节引导扇区**，从今天起在 VS Code 
 **编译关系：**
 
 ```
-VS Code 写 ipl.asm          nasm -f bin           启动区镜像
-（给人看的汇编文本）    ──────────────►      ipl.bin（512 B 纯二进制）
-helloos.nas 同上                               os-image.bin 同名产物
+VS Code 写 helloos.nas       nasm -f bin           启动区镜像
+（.nas 后缀不用改）      ──────────────►      ipl.bin（512 B 纯二进制）
 ```
 
-- **`ipl.asm` / `helloos.nas`** — 源码，编辑器里的 **文本**
+- **`helloos.nas`** — 源码，编辑器里的 **文本**（**.nas / .nasm / .asm** NASM 都能读）
 - **`ipl.bin`** — NASM 编出的 **512 字节启动区镜像**（与 [Day 1 §1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md) 的 `TIMES` / `0xAA55` 对应）
 
 ---
@@ -101,10 +102,12 @@ BIOS / UEFI 自检
 原书第二章起 **不再让汇编器一次吐满 1440 KB 软盘**，改为 **IPL 与整盘分离**：
 
 ```
-ipl.asm / helloos.nas  ──nasm -f bin──►  ipl.bin (512 B，纯 IPL)
-                                              │
-                                              └── 映像工具 / dd / HxD ──►  helloos.img (1,474,560 B)
+helloos.nas  ──nasm -f bin──►  ipl.bin (512 B，纯 IPL)
+                                    │
+                                    └── 映像工具 / dd / HxD ──►  helloos.img (1,474,560 B)
 ```
+
+（**`helloos.nas` 后缀不用改** — 只换 nask → NASM 命令。）
 
 | 产物 | 大小 | 作用 |
 |------|------|------|
@@ -116,16 +119,17 @@ ipl.asm / helloos.nas  ──nasm -f bin──►  ipl.bin (512 B，纯 IPL)
 - 改 IPL 只重编 **512 字节**，不用每次碰 1.44 MB
 - 整盘用 **HxD / `dd` / Makefile**（[2.4](./section-2.4-Makefile-入门.md)）拼装 — 为后面 **OS 内核放别的扇区** 铺路
 
-**和 [2.1 编辑器 vs NASM](./section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同) 的衔接：** VS Code 写 **`ipl.asm`** 仍是文本；**`nasm`** 才得到 **`ipl.bin`**；QEMU 的 **`-fda helloos.img`** 读的是 **拼好整盘后的二进制**，不是 `.asm` 文件。
+**和 [2.1 编辑器 vs NASM](./section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同) 的衔接：** VS Code 写 **`helloos.nas`** 仍是文本；**`nasm -f bin helloos.nas -o ipl.bin`** 才得到二进制；QEMU 的 **`-fda helloos.img`** 读的是 **拼好整盘后的二进制**，不是 `.nas` 文件。
 
 ---
 
 ### 自检
 
-- [ ] 说清：**`ipl.asm`** = 启动区 **源码**；**`ipl.bin`** = **512 B** 启动区 **镜像**
+- [ ] 说清：**`helloos.nas`** = 启动区 **源码**；**`ipl.bin`** = **512 B** 启动区 **镜像**
 - [ ] 说清：BIOS 先读这 **512 字节** 到内存，再把 **控制权交给 IPL**
 - [ ] 知道：完整 OS **内核以后才加载**；Day 1 IPL 只是「敲门砖」
 - [ ] 能解释：为什么要 **IPL 与 1.44 MB 整盘映像分离** 构建
+- [ ] 说清：**开机时没有 OS、没有 C/Rust 运行时**，启动区 **必须用汇编**；内核跑起来后再用高级语言
 
 ---
 

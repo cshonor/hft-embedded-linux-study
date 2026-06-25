@@ -19,7 +19,7 @@
 | | **文本编辑器**（VS Code / 记事本） | **NASM**（`nasm.exe`） |
 |---|-----------------------------------|------------------------|
 | 角色 | **写字** — 存成 **给人看的文本** | **翻译** — 产出 **给 CPU 看的二进制** |
-| 输入 | 你敲的 `MOV`、`JMP`… | `boot.asm` / `helloos.nas` 等 **源码文件** |
+| 输入 | 你敲的 `MOV`、`JMP`… | **`helloos.nas`** 等源码（**.nas / .nasm / .asm** 均可） |
 | 输出 | 仍是 **文本**（`.asm` / `.nas`） | **纯二进制**（`.bin` / `.img`） |
 | 能否启动 OS？ | **不能** — 模拟器读不懂源码 | **能** — 二进制才是引导扇区机器码 |
 
@@ -29,15 +29,15 @@
 VS Code / 记事本          nasm -f bin              QEMU
      │                        │                      │
      ▼                        ▼                      ▼
- boot.asm              boot.bin / ipl.bin        当成 OS 引导镜像
-（给人看的文本）         （机器能读懂的 0/1）        跑起来 → hello, world
+ helloos.nas            ipl.bin / os-image.bin      当成 OS 引导镜像
+（给人看的文本，.nas 后缀不用改）  （nasm -f bin 纯二进制）
 ```
 
-举例：你在 **记事本** 里写好 **`boot.asm`**，文件里仍是 **`MOV AX, 0` 这类字符** — CPU 和 QEMU **都认不得**。必须再跑 **`nasm`**，把它转成 **`boot.bin`**（或本仓库里的 **`ipl.bin` / `os-image.bin`**）这种 **不含字母、只有字节的纯二进制**，QEMU 才能 **` -fda …`** 把它 **当成操作系统引导镜像** 来启动。
+举例：你在 **VS Code** 里写好 **`helloos.nas`**，文件里仍是 **`MOV AX, 0` 这类字符** — CPU 和 QEMU **都认不得**。必须再跑 **`nasm -f bin helloos.nas -o ipl.bin`**，得到 **不含字母、只有字节的纯二进制**，再拼进 **1.44 MB** 映像后，QEMU 才能 **`-fda …`** 启动。
 
-| 你写的文件名 | NASM 常见产出 | 给 QEMU 用 |
-|--------------|---------------|------------|
-| `boot.asm` / `helloos.nas` | `boot.bin`、`ipl.bin`（通常 **512 B** 引导扇区） | 嵌入 **1.44 MB** 的 `helloos.img` 后再 `-fda`（见 [Day 1 §1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md)） |
+| 源码（默认名） | NASM 产出 | 给 QEMU 用 |
+|--------------|-----------|------------|
+| **`helloos.nas`** | **`ipl.bin`** / `os-image.bin`（通常 **512 B**） | 嵌入 **`helloos.img`** 后再 `-fda`（见 [Day 1 §1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md)） |
 
 **和下面两节的对应关系：**
 
