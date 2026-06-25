@@ -9,7 +9,7 @@
 
 | 步骤 | 工具 | 产出 |
 |------|------|------|
-| 写源码 | 文本编辑器 | **`helloos.nas`**（`.nasm` / `.asm` 也行，**不必改后缀**） |
+| 写源码 | **VS Code + NASM 扩展**（[Day 2 §2.1](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#安装-nasm-语法高亮vs-code-扩展)） | **`helloos.nas`**（`.nasm` / `.asm` 也行，**不必改后缀**） |
 | 汇编 | **`nasm -f bin helloos.nas -o helloos.img`** | 与 nask 相同的纯二进制映像 |
 | 运行 | QEMU | 同样 `hello, world` |
 
