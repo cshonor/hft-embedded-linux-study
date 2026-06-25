@@ -30,9 +30,17 @@
 | 步骤 | 操作 |
 |------|------|
 | 1 | 顶部 **Download**，或首页 **Stable** 行的版本号（如 **`3.01`**）— **不要选 RC / Development snapshot** |
-| 2 | 下载页选 **Windows** → **Win64 `.exe`**（64 位系统） |
-| 3 | 安装 → 勾选 **Add to PATH**（否则手动把 `C:\Program Files\NASM` 加入系统 **Path**） |
-| 4 | **新开** cmd / PowerShell → `nasm -v`，应看到 `NASM version 3.xx …` |
+| 2 | 进入 **`…/releasebuilds/3.01/win64/`** 下载页（64 位 Windows） |
+| 3 | 点 **`nasm-3.01-installer-x64.exe`**（Installable package，约 1.1 MB）— **推荐**，一路下一步安装 |
+| 4 | 安装时勾选 **Add to PATH**（若用 zip 便携版需自己解压并把目录加入 Path） |
+| 5 | **新开** cmd / PowerShell → `nasm -v`，应看到 `NASM version 3.01 …` |
+
+![NASM Win64 下载页](../../assets/nasm-win64-download.png)
+
+| 文件 | 说明 | 建议 |
+|------|------|------|
+| **`nasm-3.01-installer-x64.exe`** | 安装包，自动写 PATH | **选这个** |
+| `nasm-3.01-win64.zip` | 仅 `nasm.exe`，无安装向导 | 便携/手动配置时用 |
 
 **包管理器（可选）：**
 
