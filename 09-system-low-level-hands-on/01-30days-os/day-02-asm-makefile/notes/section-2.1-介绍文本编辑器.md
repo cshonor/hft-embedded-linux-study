@@ -31,17 +31,33 @@
 |------|------|
 | 1 | 打开 VS Code（或 Cursor） |
 | 2 | 左侧点 **扩展** 图标，或按 **`Ctrl+Shift+X`** |
-| 3 | 搜索框输入 **`NASM`** 或 **`x86asm`** |
-| 4 | 选一个评分高的扩展 → 点 **安装（Install）** |
+| 3 | 搜索框输入 **`NASM`** |
+| 4 | 安装 **The Netwide Assembler**（描述里写 *NASM highlight*）→ 见下方 **选哪个** |
 | 5 | 打开 **`helloos.nas`** — 若已打开，关掉再开一次或 **`Ctrl+Shift+P` → Reload Window** |
 
-**常见扩展名（任装其一即可）：**
+![扩展市场搜 NASM](../../assets/vscode-nasm-extension-search.png)
 
-| 搜索关键词 | 扩展名（市场显示，可能随版本变化） |
-|------------|--------------------------------------|
-| `NASM` | **NASM**（作者多为 *x86asm* 相关维护者） |
-| `x86asm` | **x86 and x86_64 Assembly** |
-| `assembly` | 带 **NASM** / **Intel** 语法支持的汇编高亮 |
+#### 选哪个？（搜 `NASM` 时别装错）
+
+市场里会混进 **Flutter、主题、Rust** 等无关项（作者名带 *nash*、*nas* 也会冒出来）— **只装汇编高亮** 即可。
+
+| 推荐 | 扩展名（截图里） | 说明 |
+|------|------------------|------|
+| **首选** | **The Netwide Assembler** | 全称就是 NASM 官方名；描述 **NASM highlight** — **装这个** |
+| 备选 | **Nasm_Nasmate** | 同样面向 NASM，首选装不上再试 |
+| 备选 | **Design Líquido**（下载量高） | 通用汇编语法；若上面两个没有，可试 |
+
+**不要装（与 helloos.nas 无关）：**
+
+| 截图里会出现 | 原因 |
+|--------------|------|
+| Awesome Flutter Snippets | 作者叫 Nash，**不是 NASM** |
+| Regard | **主题**，不是语法 |
+| Tests bin for Rust | **Rust 测试**，不是汇编高亮 |
+| StringEncrypt / CodePlayer | 与写引导扇区无关 |
+| x86 Intel ASM Formatter | **格式化**工具，不能替代高亮（以后可选） |
+
+**仍搜不到时：** 改搜 **`x86 assembly`**，装 **x86 and x86_64 Assembly**（Intel 语法，兼容本课 `MOV AX, …`）。
 
 **装好后应看到：** `MOV`、`JMP`、`ORG` 等着色；`;` 注释变灰/绿；`0x7C00` 等常数与字符串 `"hello, world"` 与指令颜色不同。
 
