@@ -46,14 +46,18 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 **官网（推荐）：** [nasm.us](https://www.nasm.us/)
 
-1. 打开 **Get NASM** → 选最新稳定版
-2. **Windows：** 下载 **Win32/Win64 `.exe` 安装包**，一路下一步
-3. 安装时勾选 **Add to PATH**（若没有，手动把安装目录 — 常见 `C:\Program Files\NASM` — 加到系统环境变量 **Path**）
-4. **新开** cmd / PowerShell，验证：
+![NASM 官网首页](./assets/nasm-us-homepage.png)
+
+1. 顶部菜单点 **Download**（或首页表格 **Stable** 行里的版本号，当前例如 **`3.01`** — **选 Stable，不要 RC / Development snapshot**）
+2. 在下载页选 **Windows** → **Win64**（64 位系统）或 **Win32** 的 **`.exe` 安装包**
+3. 双击安装 → 一路下一步；勾选 **Add to PATH**（若没有，手动把 `C:\Program Files\NASM` 加到系统 **Path**）
+4. **新开** cmd / PowerShell：
 
 ```cmd
 nasm -v
 ```
+
+应看到类似 `NASM version 3.01 …`。
 
 **包管理器（更省心）：**
 
