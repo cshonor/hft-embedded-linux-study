@@ -63,7 +63,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| [OUTLINE.md](./OUTLINE.md) | 第 0–31 章 + 附录索引 |
+| [OUTLINE.md](./OUTLINE.md) | 第 **0–31 章** + **附录 A–F** 完整目录 |
 | [LEARNING_PLAN.md](./LEARNING_PLAN.md) | 阶段划分 · 与 01 衔接 · 避坑 |
 | [SETUP.md](./SETUP.md) | WSL2 / EDK II / QEMU(OVMF) 环境 |
 
