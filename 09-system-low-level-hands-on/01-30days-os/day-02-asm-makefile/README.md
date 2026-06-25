@@ -9,7 +9,7 @@
 
 | 段 | 做什么 | 带走什么 |
 |----|--------|----------|
-| **① 文本编辑器** | **VS Code** + 扩展市场搜 **NASM / x86asm** | 打开 `helloos.nas` 即有语法高亮 |
+| **① 文本编辑器** | **VS Code** 写汇编；**NASM** 编译成二进制 | 笔 vs 编译器；QEMU 只认 `.bin` / `.img` |
 | **② 深入汇编** | 逐条解释 Day 1 代码 | 寄存器、内存、`[]`、BIOS、`0x7c00` |
 | **③ 制作启动区** | 只编译 **512 B** `ipl.bin` | IPL 与整盘映像 **分离** |
 | **④ Makefile** | 极简：**`boot.asm` → `os-image.bin`**；进阶拼 **`helloos.img`** | VS Code 存 **`Makefile`**，配方行 **必须 Tab** |
