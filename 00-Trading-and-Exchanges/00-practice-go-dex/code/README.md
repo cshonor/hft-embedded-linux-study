@@ -2,32 +2,36 @@
 
 独立 **Go module**，与 Harris 理论目录分离；从 **M1** 起按 [OUTLINE](../OUTLINE.md) 增量提交。
 
-## 初始化（首次在本目录写代码时）
+## 常用命令
+
+在 `code/` 目录下：
 
 ```bash
-cd 00-Trading-and-Exchanges/00-practice-go-dex/code
-go mod init github.com/<your-org>/practice-go-dex   # 或本地路径
+make        # 默认跑 test
+make build  # 编译全部包
+make test   # go test -v ./...
 ```
 
-## 建议包布局（随里程碑扩展）
+## 包布局（随里程碑扩展）
 
 ```
 code/
 ├── go.mod
+├── Makefile
 ├── order/          # M1：Order, Side, Type
-├── book/           # M1：OrderBook
-├── match/          # M2：Matcher, Trade
-├── metrics/        # M3：Spread, Depth
+├── book/           # M1：OrderBook, BestBid/Ask, TakeMarket
+├── match/          # M2：Matcher, Trade（待建）
+├── metrics/        # M3：Spread, Depth（待建）
 └── cmd/
-    └── dexd/       # M4：可选 HTTP 入口
+    └── dexd/       # M4：可选 HTTP 入口（待建）
 ```
 
 ## 与理论对照
 
-| 包 | Harris |
-|----|--------|
-| `order`, `book` | Ch 4–5 |
-| `match` | Ch 6 |
-| `metrics` | Ch 13–14, 19 |
+| 包 | Harris | 状态 |
+|----|--------|------|
+| `order`, `book` | Ch 4–5 | M1 ✅ |
+| `match` | Ch 6 | M2 |
+| `metrics` | Ch 13–14, 19 | M3 |
 
 实践笔记 → [../notes/](../notes/)
