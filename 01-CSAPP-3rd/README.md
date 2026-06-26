@@ -3,7 +3,7 @@
 **文件夹 01** · 全书 **12 章 + 附录 A** · [返回总清单](../READING-LIST.md#6-computer-systems-a-programmers-perspective-3rd--bryant--oneill)
 
 > **文件夹 01** · 知其所以然 — 程序如何在硬件上跑。  
-> **下一本：** [02-SysPerf](../02-Systems-Performance-2nd/) → [03-BPF](../03-BPF-Performance-Tools/) → [12-HFT](../15-HFT-Low-Latency-Practice/) / [13-Rust](../16-Rust-Quant-Trading-Guide/)  
+> **下一本：** [03-SysPerf](../03-Systems-Performance-2nd/) → [04-BPF](../04-BPF-Performance-Tools/) → [15-HFT](../15-HFT-Low-Latency-Practice/) / [13-Rust](../16-Rust-Quant-Trading-Guide/)  
 > 全链路 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md)
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
@@ -69,4 +69,4 @@ Hennessy Ch2（理论）→ CSAPP Ch6（落地）
 Ch 10–11 网络 / epoll
 ```
 
-→ 读完地基再读 [02-SysPerf](../02-Systems-Performance-2nd/) · Hennessy 理论 → [04-Computer-Architecture-6th](../04-Computer-Architecture-6th/)
+→ 读完地基再读 [03-SysPerf](../03-Systems-Performance-2nd/) · Hennessy 理论 → [02-Computer-Architecture-6th](../02-Computer-Architecture-6th/)

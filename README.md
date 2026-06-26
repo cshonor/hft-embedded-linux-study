@@ -2,46 +2,44 @@
 
 本仓库收录 **Rust 全栈量化** + **HFT 微秒级低延迟** 学习笔记，配套原理拆解、可运行源码与工程实践。
 
-**技术板块已封顶（`00`–`16`）** — 文件夹名排序；**推荐阅读顺序**见下与 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)。
+**技术板块已封顶（`00`–`16`）** — **文件夹编号 = 推荐阅读顺序**（见下与 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)）。
 
 → 一眼进阶路径：[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)  
 → 板块对照：[CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
 ---
 
-## 🗺️ 推荐阅读顺序
-
-> **文件夹名 `00`–`16` 不变**；**读序** 与目录编号不同处见下表「读序」列。
+## 🗺️ 推荐阅读顺序（= 文件夹编号）
 
 ```
-00 业务 → 01 CSAPP → 04 Hennessy → 02 SysPerf → 03 BPF
-→ 05 LKD → 08 ULK → 06 Gorman → 07 TLPI
+00 业务 → 01 CSAPP → 02 Hennessy → 03 SysPerf → 04 BPF
+→ 05 LKD → 06 ULK → 07 Gorman → 08 TLPI
 → 09 自制 OS/CPU → 10 陈硕 PNP/muduo → 11 UNP
 → 12 TCP/IP → 13 Rosen → 14 DPDK
 → 15 HFT 工程 → 16 Rust 量化
 ```
 
-| 读序 | 文件夹 | 内容 |
-|:----:|--------|------|
-| 1 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | Harris · LOB / 市场结构（练手：[00-practice-go-dex](./00-Trading-and-Exchanges/00-practice-go-dex/)） |
-| 2 | [01-CSAPP-3rd](./01-CSAPP-3rd/) | **知其所以然** · 程序与硬件 |
-| 3 | [04-Computer-Architecture-6th](./04-Computer-Architecture-6th/) | Hennessy · 体系结构（**紧接 01**，再进性能篇） |
-| 4 | [02-Systems-Performance-2nd](./02-Systems-Performance-2nd/) | **知其然** · 性能方法论 |
-| 5 | [03-BPF-Performance-Tools](./03-BPF-Performance-Tools/) | **工具落地** · eBPF / bpftrace（紧接 02） |
-| 6 | [05-Linux-Kernel-Development](./05-Linux-Kernel-Development/) | LKD · 课+书 [LEARNING-PATH](./05-Linux-Kernel-Development/LEARNING-PATH.md) |
-| 7 | [08-Understanding-Linux-Kernel](./08-Understanding-Linux-Kernel/) | **ULK** · 内核实现细节（**紧接 05**） |
-| 8 | [06-Linux-Virtual-Memory-Manager](./06-Linux-Virtual-Memory-Manager/) | Gorman · 虚拟内存 |
-| 9 | [07-The-Linux-Programming-Interface](./07-The-Linux-Programming-Interface/) | **TLPI** · Linux 用户态 · epoll / mmap / 线程 |
-| 10 | [09-system-low-level-hands-on](./09-system-low-level-hands-on/) | **系统底层动手** · 30 天 OS / MikanOS / CPU |
-| 11 | [10-Practical-Network-Programming](./10-Practical-Network-Programming/) | **C++ 网络实战** · 陈硕 PNP / muduo |
-| 12 | [11-UNP-Vol1](./11-UNP-Vol1/) | UNP · Socket API |
-| 13 | [12-TCP-IP-Illustrated-Vol1](./12-TCP-IP-Illustrated-Vol1/) | TCP/IP 卷一 · 协议语义 |
-| 14 | [13-Linux-Kernel-Networking](./13-Linux-Kernel-Networking/) | Rosen · 内核网络栈 |
-| 15 | [14-DPDK-Low-Latency-Network](./14-DPDK-Low-Latency-Network/) | DPDK · 用户态旁路 |
-| 16 | [15-HFT-Low-Latency-Practice](./15-HFT-Low-Latency-Practice/) | **动手实现** · C++ 低延迟工程 |
-| 17 | [16-Rust-Quant-Trading-Guide](./16-Rust-Quant-Trading-Guide/) | **动手实现** · Rust 量化 |
+| 文件夹 | 模块 |
+|:------:|------|
+| **00** | [Trading and Exchanges](./00-Trading-and-Exchanges/) — Harris · LOB（练手：[00-practice-go-dex](./00-Trading-and-Exchanges/00-practice-go-dex/)） |
+| **01** | [CSAPP-3rd](./01-CSAPP-3rd/) — 知其所以然 · 程序与硬件 |
+| **02** | [Computer-Architecture-6th](./02-Computer-Architecture-6th/) — Hennessy · 体系结构（紧接 01） |
+| **03** | [Systems-Performance-2nd](./03-Systems-Performance-2nd/) — 知其然 · 性能方法论 |
+| **04** | [BPF-Performance-Tools](./04-BPF-Performance-Tools/) — eBPF / bpftrace（紧接 03） |
+| **05** | [Linux-Kernel-Development](./05-Linux-Kernel-Development/) — LKD |
+| **06** | [Understanding-Linux-Kernel](./06-Understanding-Linux-Kernel/) — ULK（紧接 05） |
+| **07** | [Linux-Virtual-Memory-Manager](./07-Linux-Virtual-Memory-Manager/) — Gorman |
+| **08** | [The-Linux-Programming-Interface](./08-The-Linux-Programming-Interface/) — TLPI |
+| **09** | [system-low-level-hands-on](./09-system-low-level-hands-on/) — 30 天 OS / MikanOS / CPU |
+| **10** | [Practical-Network-Programming](./10-Practical-Network-Programming/) — PNP / muduo |
+| **11** | [UNP-Vol1](./11-UNP-Vol1/) |
+| **12** | [TCP-IP-Illustrated-Vol1](./12-TCP-IP-Illustrated-Vol1/) |
+| **13** | [Linux-Kernel-Networking](./13-Linux-Kernel-Networking/) — Rosen |
+| **14** | [DPDK-Low-Latency-Network](./14-DPDK-Low-Latency-Network/) |
+| **15** | [HFT-Low-Latency-Practice](./15-HFT-Low-Latency-Practice/) |
+| **16** | [Rust-Quant-Trading-Guide](./16-Rust-Quant-Trading-Guide/) |
 
-> **内核段：** `05` LKD → `08` ULK → `06` Gorman → `07` TLPI → `09` 自制 OS → `10` PNP → `11` UNP。
+> **内核段：** `05` LKD → `06` ULK → `07` Gorman → `08` TLPI → `09` 自制 OS → 网络栈 `10`–`14` → 工程 `15`–`16`。
 
 小节级读/跳 → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · 书目裁剪 → [READING-LIST.md](./READING-LIST.md)
 

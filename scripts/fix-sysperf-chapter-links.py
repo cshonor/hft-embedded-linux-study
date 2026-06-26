@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SYSPERF = ROOT / "02-Systems-Performance-2nd"
+SYSPERF = ROOT / "03-Systems-Performance-2nd"
 
 CHAPTER_LINK = re.compile(
     r"(?<!\./\./)(?<!\.\./\.\./)(\./)?(chapter-\d{2}-[^)\s#/]+\.md)"
@@ -83,14 +83,14 @@ def main():
         process_file(path)
     # Fix repo-wide links that explicitly point at SysPerf flat chapter files
     pattern = re.compile(
-        r"02-Systems-Performance-2nd/(chapter-\d{2}-[^)\s#/]+\.md)"
+        r"03-Systems-Performance-2nd/(chapter-\d{2}-[^)\s#/]+\.md)"
     )
     for path in ROOT.rglob("*.md"):
         if SYSPERF in path.parents or path.parent == SYSPERF:
             continue
         old = path.read_text(encoding="utf-8")
         new = pattern.sub(
-            lambda m: f"02-Systems-Performance-2nd/{m.group(1)[:-3]}/",
+            lambda m: f"03-Systems-Performance-2nd/{m.group(1)[:-3]}/",
             old,
         )
         if new != old:

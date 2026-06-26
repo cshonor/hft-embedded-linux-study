@@ -12,6 +12,6 @@ Day 11 **窗口内高速计数器** 复用为 **benchmark**。
 优化后 10s → count = B   (B > A 即 ISR/主循环更「空」)
 ```
 
-**原则：** 底层改算法 **必须可测** — 与 [02 SysPerf 基准](../../../../02-Systems-Performance-2nd/chapter-12-benchmarking/) 同源。
+**原则：** 底层改算法 **必须可测** — 与 [03 SysPerf 基准](../../../../03-Systems-Performance-2nd/chapter-12-benchmarking/) 同源。
 
 ---

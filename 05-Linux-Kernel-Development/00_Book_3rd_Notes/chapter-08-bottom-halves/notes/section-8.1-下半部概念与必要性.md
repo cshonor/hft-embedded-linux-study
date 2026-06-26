@@ -22,6 +22,6 @@ IRQ 上半部（极短）
 
 **HFT：** 收包尖刺不只在 **硬 IRQ**，常在 **softirq 网络 RX** — `mpstat` 看 **`%soft`**。
 
-→ [02 SysPerf §3.2 下半部](../../../../02-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [§1.5 IRQ/softirq 同核](../../../../02-Systems-Performance-2nd/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md)
+→ [03 SysPerf §3.2 下半部](../../../../03-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [§1.5 IRQ/softirq 同核](../../../../03-Systems-Performance-2nd/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md)
 
 ---

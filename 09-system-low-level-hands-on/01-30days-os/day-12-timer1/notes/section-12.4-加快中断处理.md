@@ -26,6 +26,6 @@ else
 
 **思路：** **事件驱动 + 最小堆/最近事件** 的雏形 — Linux **`timer wheel` / hrtimer`** 是同一问题的工业答案。
 
-→ [02 SysPerf ISR 要短](../../../../02-Systems-Performance-2nd/chapter-02-methodologies/) · [05-LKD 定时器/调度](../../../../05-Linux-Kernel-Development/)
+→ [03 SysPerf ISR 要短](../../../../03-Systems-Performance-2nd/chapter-02-methodologies/) · [05-LKD 定时器/调度](../../../../05-Linux-Kernel-Development/)
 
 ---

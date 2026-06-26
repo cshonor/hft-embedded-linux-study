@@ -11,6 +11,6 @@ Day 13 引入 **定时器链表 + 哨兵** 后，用 Day 11–13 的 **高速计
 
 **HFT：** **IRQ 里关中断窗口、lock hold time** — 同一 **「临界区越短，并发越稳」**。
 
-→ [Day 13](../day-13-timer2/) · [02 SysPerf P99/tail](../../../../02-Systems-Performance-2nd/chapter-02-methodologies/)
+→ [Day 13](../day-13-timer2/) · [03 SysPerf P99/tail](../../../../03-Systems-Performance-2nd/chapter-02-methodologies/)
 
 ---

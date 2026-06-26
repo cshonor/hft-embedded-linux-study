@@ -2,7 +2,7 @@
 
 > **CSAPP 3rd** · Bryant & O'Neill · **精读 🔴**（Part I）
 
-> 本章定位：**为什么 cache miss 比算慢** — 从 DRAM/SSD 到 L1/L3，靠 **局部性** 让层次结构有效；学会写 **cache-friendly** 代码与读 **存储器山**。HFT 地基篇核心，与 [04-Hennessy Ch2](../../04-Computer-Architecture-6th/) 交叉。
+> 本章定位：**为什么 cache miss 比算慢** — 从 DRAM/SSD 到 L1/L3，靠 **局部性** 让层次结构有效；学会写 **cache-friendly** 代码与读 **存储器山**。HFT 地基篇核心，与 [02-Hennessy Ch2](../../02-Computer-Architecture-6th/) 交叉。
 
 ---
 
@@ -55,7 +55,7 @@
 6.4 Cache 映射 — 理解 false sharing、对齐、padding
 6.6 存储器山 — 一次实验建立直觉
 6.1 存储技术 — 扫读；SSD/NVMe 细节在 SysPerf Ch9
-配套：04-Hennessy Ch2 · 02-SysPerf Ch6/Ch7 · DPDK mbuf 池
+配套：02-Hennessy Ch2 · 03-SysPerf Ch6/Ch7 · DPDK mbuf 池
 ```
 
 ---
@@ -65,6 +65,6 @@
 - 上一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 下一章：[../chapter-07-linking/](../chapter-07-linking/)
 - 虚拟内存：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
-- 理论：[04-Hennessy Ch2](../../04-Computer-Architecture-6th/)
-- 观测：[02-SysPerf Ch 6 CPUs](../../02-Systems-Performance-2nd/chapter-06-cpus/)
+- 理论：[02-Hennessy Ch2](../../02-Computer-Architecture-6th/)
+- 观测：[03-SysPerf Ch 6 CPUs](../../03-Systems-Performance-2nd/chapter-06-cpus/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

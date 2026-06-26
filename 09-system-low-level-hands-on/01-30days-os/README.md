@@ -26,11 +26,11 @@
 从 **零启动** 写出一个能跑多任务、有中断和内存管理的最小 OS — 把 LKD / CSAPP 里「进程、中断、页表」从 **读者** 变成 **作者**。
 
 ```
-07 TLPI（Linux 上怎么用 syscall / mmap）
+08 TLPI（Linux 上怎么用 syscall / mmap）
     ↓
 01 自制 OS（这些机制在裸机上怎么搭出来）
     ↓
-05 LKD / 06 Gorman（对照真实 Linux 内核实现）
+05 LKD / 07 Gorman（对照真实 Linux 内核实现）
     ↓
 15 HFT（绑核、热路径、少 syscall）
 ```
@@ -43,7 +43,7 @@
 
 ## 目录结构
 
-与 [02-SysPerf](../../02-Systems-Performance-2nd/) / [05-LKD](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/) 一致：每个 Day 独立目录，导读 + 分段笔记。
+与 [03-SysPerf](../../03-Systems-Performance-2nd/) / [05-LKD](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/) 一致：每个 Day 独立目录，导读 + 分段笔记。
 
 ```
 day-XX-slug/
@@ -141,6 +141,6 @@ day-XX-slug/
 |------|--------|
 | [01-CSAPP Ch8/9](../../01-CSAPP-3rd/chapter-08-exceptional-control-flow/) | 异常、进程、虚拟内存 |
 | [05-LKD](../../05-Linux-Kernel-Development/) | 中断、调度、内存管理 **真实实现** |
-| [07-TLPI](../../07-The-Linux-Programming-Interface/) | 用户态 API 与内核边界 |
+| [08-TLPI](../../08-The-Linux-Programming-Interface/) | 用户态 API 与内核边界 |
 | [02-mikan-os](../02-mikan-os/) | 现代 UEFI/64 位 OS — **01 通读后的推荐下一站** |
 | [03-30days-cpu](../03-30days-cpu/) | 指令怎么被 CPU **执行**（硬件侧，可与 02 并行或后补） |

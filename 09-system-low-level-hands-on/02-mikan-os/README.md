@@ -21,7 +21,7 @@
 | **目标读者** | 具备 **基础编程经验** 的开发者 — 鼓励 **亲手写代码** 理解 OS **运行原理** |
 | **语言栈** | **C++** + **EDK II**（与 [01 30 天](../01-30days-os/) 的 32 位 BIOS/C 路线互补） |
 
-**读完能带走什么：** 现代 PC 上的 **UEFI 启动链、长模式、页表、APIC、系统调用** — 与 [01-CSAPP](../../01-CSAPP-3rd/chapter-09-virtual-memory/) · [05-LKD](../../05-Linux-Kernel-Development/) · [07-TLPI](../../07-The-Linux-Programming-Interface/) 对照时，不再只是「读源码」，而是知道 **这些机制从零怎么搭**。
+**读完能带走什么：** 现代 PC 上的 **UEFI 启动链、长模式、页表、APIC、系统调用** — 与 [01-CSAPP](../../01-CSAPP-3rd/chapter-09-virtual-memory/) · [05-LKD](../../05-Linux-Kernel-Development/) · [08-TLPI](../../08-The-Linux-Programming-Interface/) 对照时，不再只是「读源码」，而是知道 **这些机制从零怎么搭**。
 
 ---
 
@@ -30,13 +30,13 @@
 > **定位：** **现代 64 位 UEFI OS** — 与 [01 30 天 OS](../01-30days-os/)（实模式 BIOS 软盘）**互补**，不替代 Linux 主线。
 
 ```
-07 TLPI（Linux 上怎么用 syscall / mmap）
+08 TLPI（Linux 上怎么用 syscall / mmap）
     ↓
 01 30 天 OS（BIOS 软盘 · 实模式体感）
     ↓
 02 MikanOS（UEFI · 64 位 · 分页 · syscall）← 本书
     ↓
-05 LKD / 06 Gorman（对照真实 Linux 内核）
+05 LKD / 07 Gorman（对照真实 Linux 内核）
 ```
 
 **标签：** 🟡 选读 · 建议 **01 通读或 Day 1–15 后** 再开。
@@ -55,13 +55,13 @@
 
 **推荐顺序：** 至少完成 **01 Day 1–15**（引导、GDT/IDT、中断、多任务雏形）→ 再开 MikanOS；或 **01 通读后** 整本 MikanOS 作「现代版重制」。
 
-**交叉：** [01-CSAPP](../01-CSAPP-3rd/) Ch 9 虚拟内存 · [04-Hennessy](../04-Computer-Architecture-6th/) · [07-TLPI](../07-The-Linux-Programming-Interface/) 进程/内存 API 对照。
+**交叉：** [01-CSAPP](../01-CSAPP-3rd/) Ch 9 虚拟内存 · [02-Hennessy](../02-Computer-Architecture-6th/) · [08-TLPI](../08-The-Linux-Programming-Interface/) 进程/内存 API 对照。
 
 ---
 
 ## 目录结构
 
-与 [01 30 天 OS](../01-30days-os/) · [02-SysPerf](../../02-Systems-Performance-2nd/) 一致：每章独立目录，导读 + 分段笔记。
+与 [01 30 天 OS](../01-30days-os/) · [03-SysPerf](../../03-Systems-Performance-2nd/) 一致：每章独立目录，导读 + 分段笔记。
 
 ```
 chapter-XX-slug/
@@ -166,4 +166,4 @@ chapter-XX-slug/
 | [01 30 天 OS](../01-30days-os/) | BIOS 实模式 → 保护模式（建议先读 Day 1–15） |
 | [01-CSAPP Ch9](../../01-CSAPP-3rd/chapter-09-virtual-memory/) | 虚拟内存 |
 | [05-LKD](../../05-Linux-Kernel-Development/) | 中断、调度、syscall 真实实现 |
-| [07-TLPI](../../07-The-Linux-Programming-Interface/) | 用户态 API 边界 |
+| [08-TLPI](../../08-The-Linux-Programming-Interface/) | 用户态 API 边界 |

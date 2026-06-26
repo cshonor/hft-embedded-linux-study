@@ -29,7 +29,7 @@
 
 | 讲 | 主题 | 笔记 | 标签 | 延伸 |
 |----|------|------|------|------|
-| a08 | 虚拟内存架构 | [episode-a08](./episode-a08-虚拟内存架构.md) | 🔴 | [03-Gorman](../../06-Linux-Virtual-Memory-Manager/) |
+| a08 | 虚拟内存架构 | [episode-a08](./episode-a08-虚拟内存架构.md) | 🔴 | [03-Gorman](../../07-Linux-Virtual-Memory-Manager/) |
 | a09 | 进程与调度 | [episode-a09](./episode-a09-进程与调度.md) | 🔴 | LKD Ch 4 |
 | a10 | 网络栈架构 | [episode-a10](./episode-a10-网络栈架构.md) | 🔴 | [06-Rosen](../../13-Linux-Kernel-Networking/) |
 

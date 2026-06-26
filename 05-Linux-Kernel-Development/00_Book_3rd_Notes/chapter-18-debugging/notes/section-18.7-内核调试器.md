@@ -14,6 +14,6 @@
 
 | 场景 | 深坑驱动 / 启动早期 — 实验室环境 |
 
-→ 日常开发更多 **printk + ftrace + BPF**（[SysPerf Ch14 ftrace](../../../../02-Systems-Performance-2nd/chapter-14-ftrace/)）
+→ 日常开发更多 **printk + ftrace + BPF**（[SysPerf Ch14 ftrace](../../../../03-Systems-Performance-2nd/chapter-14-ftrace/)）
 
 ---

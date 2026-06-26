@@ -28,7 +28,7 @@
 
 **目标：** **页表** · 用户/内核地址空间 · **系统调用门**。
 
-**交叉：** [01-CSAPP](../01-CSAPP-3rd/) Ch 9 · [05-LKD](../05-Linux-Kernel-Development/) Ch 5/10 · [08-ULK](../../08-Understanding-Linux-Kernel/) Ch 2/9/10。
+**交叉：** [01-CSAPP](../01-CSAPP-3rd/) Ch 9 · [05-LKD](../05-Linux-Kernel-Development/) Ch 5/10 · [06-ULK](../../06-Understanding-Linux-Kernel/) Ch 2/9/10。
 
 **产出：** 理解「TLPI 的 `mmap` 底下分页长什么样」的最小实现版。
 
@@ -41,7 +41,7 @@
     ↓
 02 MikanOS（UEFI/64位/分页/syscall）
     ↓
-07 TLPI（用户态 API）+ 05 LKD / 08 ULK（Linux 内核实现）
+08 TLPI（用户态 API）+ 05 LKD / 06 ULK（Linux 内核实现）
 ```
 
 **不必：** 在 MikanOS 里复刻 Linux；**要：** 用最小 OS 验证 CSAPP/LKD 里的抽象。

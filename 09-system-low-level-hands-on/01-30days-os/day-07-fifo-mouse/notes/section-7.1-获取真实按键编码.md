@@ -28,6 +28,6 @@ HariMain ◄────────────┘ 轮询/取 FIFO → sprintf 
 
 **HFT 对照：** 网卡 **NAPI / 收包 ISR 只 enqueue**、策略线程 ** dequeue 算信号** — 同一 **「中断短、业务慢」** 分工。
 
-→ [02 SysPerf 热路径](../../../../02-Systems-Performance-2nd/chapter-02-methodologies/) · 别在 IRQ 里做重活
+→ [03 SysPerf 热路径](../../../../03-Systems-Performance-2nd/chapter-02-methodologies/) · 别在 IRQ 里做重活
 
 ---

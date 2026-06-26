@@ -58,7 +58,7 @@ accept 新连接
 12.7 线程安全/race/死锁 — 必读
 12.6 CPU 并行 — 绑核、少超订；与 Ch5 Amdahl 呼应
 12.1 fork 服务器 — 知道即可，生产少用
-延伸：12-HFT 无锁 · 02-SysPerf Ch6 CPU · C++11 memory_order
+延伸：12-HFT 无锁 · 03-SysPerf Ch6 CPU · C++11 memory_order
 ```
 
 ---

@@ -24,6 +24,6 @@ Day 5 建了 GDT 表；Day 6 **补底层细节**。
          └──── 权限检查（GDT 描述符）──┘
 ```
 
-→ 对照 [05-LKD](../../../../05-Linux-Kernel-Development/) · 用户态/内核态 · [07-TLPI](../../../../07-The-Linux-Programming-Interface/) syscall 边界
+→ 对照 [05-LKD](../../../../05-Linux-Kernel-Development/) · 用户态/内核态 · [08-TLPI](../../../../08-The-Linux-Programming-Interface/) syscall 边界
 
 ---

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Rename SysPerf chapter folders to English slugs and update links under 02-SysPerf only."""
+"""Rename SysPerf chapter folders to English slugs and update links under 03-SysPerf only."""
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SYSPERF = ROOT / "02-Systems-Performance-2nd"
+SYSPERF = ROOT / "03-Systems-Performance-2nd"
 
 # Historical mapping (Chinese slug -> English slug). Idempotent if already renamed.
 RENAME_MAP: dict[str, str] = {

@@ -35,7 +35,7 @@ malloc：堆上 bump / 空闲链表管理
 **HFT 铁律：**
 
 1. **tick 路径零缺页** — `mlock`/`MAP_LOCKED`、启动时 touch 全工作集
-2. **大页 (hugepage/THP)** — 降 TLB miss（→ DPDK EAL、[06-Gorman THP](../../../06-Linux-Virtual-Memory-Manager/)）
+2. **大页 (hugepage/THP)** — 降 TLB miss（→ DPDK EAL、[07-Gorman THP](../../../07-Linux-Virtual-Memory-Manager/)）
 3. **热路径零 malloc** — 池化、arena、Rust 栈上/预分配
 
 ---
@@ -56,7 +56,7 @@ malloc：堆上 bump / 空闲链表管理
 
 ```
 必读：9.3 缺页 · 9.6 TLB/大页 · 9.8 mmap · 9.11 错误 · 9.9 懂 malloc 即可
-内核深入：9.7 + 06-Gorman · 02-SysPerf Ch7
+内核深入：9.7 + 07-Gorman · 03-SysPerf Ch7
 分配器实现 9.9.6–9.9.14：课程/面试；生产用 tcmalloc/jemalloc/池
 9.10 GC：懂概念；C++ 热路径不用
 ```
@@ -69,5 +69,5 @@ malloc：堆上 bump / 空闲链表管理
 - 下一章：[../chapter-10-system-io/](../chapter-10-system-io/)
 - Cache：[../chapter-06-memory-hierarchy/](../chapter-06-memory-hierarchy/)
 - 链接加载：[../chapter-07-linking/](../chapter-07-linking/)
-- 内核 VM：[06-Gorman](../../../06-Linux-Virtual-Memory-Manager/)
+- 内核 VM：[07-Gorman](../../../07-Linux-Virtual-Memory-Manager/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

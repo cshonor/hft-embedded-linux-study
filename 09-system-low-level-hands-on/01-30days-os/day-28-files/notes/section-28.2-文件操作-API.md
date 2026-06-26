@@ -14,6 +14,6 @@
 
 **`typeipl.hrb`：** 外部 app **独立读文件并显示** — 文件 I/O **用户态化**。
 
-→ [Day 18/19 FAT](../day-18-dir/) · [07-TLPI open/read/lseek](../../../../07-The-Linux-Programming-Interface/)
+→ [Day 18/19 FAT](../day-18-dir/) · [08-TLPI open/read/lseek](../../../../08-The-Linux-Programming-Interface/)
 
 ---

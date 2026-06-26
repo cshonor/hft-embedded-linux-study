@@ -25,7 +25,7 @@
 - **Order book / ring buffer** 顺序访问 → 空间局部性好
 - **指针 chasing、链表跳来跳去** → miss 多，P99 抖
 - **伪共享 (false sharing)** — 两线程改同一 cache line 不同字段 → 行乒乓（→ [Ch 6](../../chapter-06-memory-hierarchy/)、[Ch 12](../../chapter-12-concurrent-programming/)）
-- **perf `cache-misses` / `perf c2c`** — 生产验证（→ [02-SysPerf Ch 13](../../../02-Systems-Performance-2nd/chapter-13-perf/)）
+- **perf `cache-misses` / `perf c2c`** — 生产验证（→ [03-SysPerf Ch 13](../../../03-Systems-Performance-2nd/chapter-13-perf/)）
 
 ### 缓存按行 (cache line) 管理
 

@@ -43,13 +43,13 @@
 **在第一本基础上：**
 
 - 把 **DPDK、RDMA、XDP** 等路线放在同一张地图里对比
-- 解释 **DPDK 为何能把延迟压到微秒级**（旁路 + 轮询 + 预分配 + 绑核，与 `02` SysPerf 度量对齐）
+- 解释 **DPDK 为何能把延迟压到微秒级**（旁路 + 轮询 + 预分配 + 绑核，与 `03` SysPerf 度量对齐）
 - 说明 **什么时候该用 RDMA** 做更极致优化（共置、托管、纳秒级共址 — 见 [note-openonload-rdma对比](../../02-Advanced-Book/notes/note-openonload-rdma对比.md)）
 
 | 技术 | 与 DPDK 关系 | HFT 典型场景 |
 |------|--------------|--------------|
 | **DPDK** | 用户态完全旁路 | UDP 组播行情、极致 tick 处理 |
-| **XDP / tc-BPF** | 内核最早点丢/改包 | 对比 DPDK 的「半旁路」；见 [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) · [03-BPF note-XDP](../../../03-BPF-Performance-Tools/note-XDP与tc-BPF.md) |
+| **XDP / tc-BPF** | 内核最早点丢/改包 | 对比 DPDK 的「半旁路」；见 [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) · [04-BPF note-XDP](../../../04-BPF-Performance-Tools/note-XDP与tc-BPF.md) |
 | **RDMA / RoCE** | 硬件 offload、远端内存 | 共置机房、极低延迟通道 |
 | **OpenOnload** | 保留 socket API 的内核旁路 | TCP 发单、迁移成本较低 |
 
@@ -61,7 +61,7 @@
 
 ```
 ✅ 01 CSAPP 地基（尤其 Ch6 缓存、Ch10–11 网络）
-✅ 02 SysPerf 方法论 — 会用 perf/BPF 做延迟分解
+✅ 03 SysPerf 方法论 — 会用 perf/BPF 做延迟分解
 ✅ 08 → 09 → 10 走完 — 知道内核栈收发包路径（对照「绕过了什么」）
 ✅ perf 已能定位：网络收发是瓶颈（或 softirq / 网卡队列饱和）
 ```
@@ -74,7 +74,7 @@
 **读完 ① ② 之后：**
 
 - 回到 [15-HFT-Low-Latency-Practice](../../../15-HFT-Low-Latency-Practice/) ch06/ch08 — 把技术落到量化系统
-- 用 [03-BPF](../../../03-BPF-Performance-Tools/) + `02` SysPerf Ch10 在生产上**验证**旁路收益
+- 用 [04-BPF](../../../04-BPF-Performance-Tools/) + `03` SysPerf Ch10 在生产上**验证**旁路收益
 
 ---
 
@@ -87,7 +87,7 @@
     ↓
 01-Intro chapter-05 + code/mcast-minimal（组播落地）
     ↓
-② 《Linux 高性能网络详解》  ∥  02-Advanced-Book notes + 03-BPF XDP note
+② 《Linux 高性能网络详解》  ∥  02-Advanced-Book notes + 04-BPF XDP note
     ↓
 11 HFT Practice · ch06 低延迟网络
 ```

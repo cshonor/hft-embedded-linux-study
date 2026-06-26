@@ -10,10 +10,10 @@
 | 板块 | 文件夹 | 维度 |
 |------|--------|------|
 | 交易金融理论 | `00` | 业务 / LOB |
-| **程序与硬件** | **`01` CSAPP → `04` Hennessy**（读序 2–3） | 知其所以然 |
-| **性能** | **`02` SysPerf → `03` BPF**（读序 4–5） | 方法论 + eBPF 落地 |
-| Linux 内核 | **`05` LKD → `08` ULK → `06` Gorman**（读序 6–8） | 调度 / 源码 / VM |
-| **Linux 用户态** | `07` TLPI | syscall · epoll · mmap · 线程 |
+| **程序与硬件** | **`01` CSAPP → `02` Hennessy** | 知其所以然 |
+| **性能** | **`03` SysPerf → `04` BPF** | 方法论 + eBPF 落地 |
+| Linux 内核 | **`05` LKD → `06` ULK → `07` Gorman** | 调度 / 源码 / VM |
+| **Linux 用户态** | `08` TLPI | syscall · epoll · mmap · 线程 |
 | **系统底层动手** | `09` | 30 天 OS / MikanOS / CPU |
 | **C++ 网络实战** | `10` PNP / muduo | Reactor 实验骨架 |
 | **网络完整栈** | `11`–`14` | UNP → TCP/IP → Rosen → DPDK |
@@ -33,7 +33,7 @@
 ## 二、网络学习链（推荐顺序）
 
 ```
-05 LKD → 08 ULK → 06 Gorman → 07 TLPI（epoll / mmap / 调度）
+05 LKD → 06 ULK → 07 Gorman → 08 TLPI（epoll / mmap / 调度）
     ↓
 09 自制 OS/CPU
     ↓
@@ -67,7 +67,7 @@
 | 缓冲结构 | `sk_buff` | `rte_mbuf` |
 | 系统调用 | `recvfrom` / `epoll_wait` | 无（UIO/VFIO） |
 
-**阅读顺序：** `05` LKD → `08` ULK → `06` Gorman → `07` TLPI → `09` 自制 → `10` PNP → `11` UNP → `12`–`14` 网络纵深 → `15` HFT → `16` Rust。
+**阅读顺序：** `05` LKD → `06` ULK → `06` Gorman → `08` TLPI → `09` 自制 → `10` PNP → `11` UNP → `12`–`14` 网络纵深 → `15` HFT → `16` Rust。
 
 ---
 

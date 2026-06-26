@@ -73,7 +73,7 @@
 ## Ch 19–20 要点速览
 
 - **页表** · 用户/内核地址空间
-- **系统调用** — 对照 [01-CSAPP Ch9](../../01-CSAPP-3rd/chapter-09-virtual-memory/) · [05-LKD](../../05-Linux-Kernel-Development/) · [07-TLPI](../../07-The-Linux-Programming-Interface/)
+- **系统调用** — 对照 [01-CSAPP Ch9](../../01-CSAPP-3rd/chapter-09-virtual-memory/) · [05-LKD](../../05-Linux-Kernel-Development/) · [08-TLPI](../../08-The-Linux-Programming-Interface/)
 
 → 详读 [chapter-19-paging/](./chapter-19-paging/) · [chapter-20-syscall/](./chapter-20-syscall/)
 

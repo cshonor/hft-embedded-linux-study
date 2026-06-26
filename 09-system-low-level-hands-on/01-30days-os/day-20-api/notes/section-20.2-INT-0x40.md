@@ -26,6 +26,6 @@ INT 0x40            ; 呼叫 OS — 与 OS 版本解耦
 
 **现代对照：** x86 **`syscall`/`sysenter`**、Linux **号 + 寄存器** — 本课是 **INT 0x40 教学版**。
 
-→ [Day 5/6 IDT](../day-05-gdt-idt/) · [07-TLPI syscall](../../../../07-The-Linux-Programming-Interface/)
+→ [Day 5/6 IDT](../day-05-gdt-idt/) · [08-TLPI syscall](../../../../08-The-Linux-Programming-Interface/)
 
 ---

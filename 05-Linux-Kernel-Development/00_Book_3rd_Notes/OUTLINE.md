@@ -43,6 +43,6 @@ Ch 11 定时器 / jiffies / tick
 Ch 3、12、15 选读补上下文
 ```
 
-→ [06-Linux-Virtual-Memory-Manager](../../06-Linux-Virtual-Memory-Manager/) 深读内存
+→ [07-Linux-Virtual-Memory-Manager](../../07-Linux-Virtual-Memory-Manager/) 深读内存
 
 完整路线 → [HFT-READING-ROADMAP.md](../../HFT-READING-ROADMAP.md)

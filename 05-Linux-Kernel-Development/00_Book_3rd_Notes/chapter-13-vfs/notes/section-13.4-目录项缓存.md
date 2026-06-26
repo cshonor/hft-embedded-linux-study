@@ -17,7 +17,7 @@
 第二次同路径 open     ──► 不必再深入 FS 查找
 ```
 
-| 观测 | `sar -v` dentry/inode cache — [SysPerf §8.6](../../../../02-Systems-Performance-2nd/chapter-08-file-systems/notes/section-8.6-观测工具.md) |
+| 观测 | `sar -v` dentry/inode cache — [SysPerf §8.6](../../../../03-Systems-Performance-2nd/chapter-08-file-systems/notes/section-8.6-观测工具.md) |
 
 **HFT：** 日志/配置 **冷路径** 才关心 dcache；热路径 **已打开 fd** 或 **`mmap`** 绕过反复路径解析。
 

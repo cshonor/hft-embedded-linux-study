@@ -37,4 +37,4 @@
 - API 层 → [11-UNP-Vol1](../11-UNP-Vol1/)
 - 内核实现 → [13-Linux-Kernel-Networking](../13-Linux-Kernel-Networking/)
 - 用户态旁路 → [14-DPDK-Low-Latency-Network](../14-DPDK-Low-Latency-Network/)
-- 调优观测 → [02-Systems-Performance-2nd](../02-Systems-Performance-2nd/)、[03-BPF-Performance-Tools](../03-BPF-Performance-Tools/)
+- 调优观测 → [03-Systems-Performance-2nd](../03-Systems-Performance-2nd/)、[04-BPF-Performance-Tools](../04-BPF-Performance-Tools/)

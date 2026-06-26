@@ -87,9 +87,9 @@
 ```
 01 自制 OS（作者视角：引导、中断、页表、任务切换）
     ↓
-05 LKD / 06 Gorman（Linux 真实实现对照）
+05 LKD / 07 Gorman（Linux 真实实现对照）
     ↓
-07 TLPI（用户态 syscall 边界）
+08 TLPI（用户态 syscall 边界）
     ↓
 15 HFT（绑核、热路径、少 syscall）
 ```
@@ -98,7 +98,7 @@
 |----------|----------|
 | GDT/IDT/中断 | [05-LKD Ch7–8](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-07-interrupts/) |
 | 调度/上下文切换 | [05-LKD Ch4](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-04-process-scheduling/) |
-| INT 0x40 API | [05-LKD Ch5 syscall](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-05-system-calls/) · [07-TLPI](../../07-The-Linux-Programming-Interface/) |
+| INT 0x40 API | [05-LKD Ch5 syscall](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-05-system-calls/) · [08-TLPI](../../08-The-Linux-Programming-Interface/) |
 
 **后续可选：** 吃透本书后读 Linux 内核源码；或将内核逻辑用 **Rust** 重写，对接 [15-Rust](../../15-Rust/) 路线。
 

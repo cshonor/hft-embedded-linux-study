@@ -21,6 +21,6 @@
 | `/sys/block/*/queue/scheduler` | I/O 调度器（Ch 14） |
 | `/sys/class/net/*/queues/...` | RSS/RPS 等（→ Rosen Ch14） |
 
-→ [02 SysPerf Ch9 scheduler](../../../../02-Systems-Performance-2nd/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch 5](../../chapter-05-system-calls/) **优先 sysfs 而非新 syscall**
+→ [03 SysPerf Ch9 scheduler](../../../../03-Systems-Performance-2nd/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch 5](../../chapter-05-system-calls/) **优先 sysfs 而非新 syscall**
 
 ---

@@ -15,6 +15,6 @@
 
 **HFT 对照：** 网关仍活在 **「少 syscall、少拷贝、快 fork/线程」** 的 Unix 遗产里 — 热路径 **`read`/`send`/`mmap`** 皆是「一切皆文件」后代。
 
-→ [07-TLPI](../../../../07-The-Linux-Programming-Interface/) · [01-CSAPP Ch8](../../../../01-CSAPP-3rd/chapter-08-exceptional-control-flow/)
+→ [08-TLPI](../../../../08-The-Linux-Programming-Interface/) · [01-CSAPP Ch8](../../../../01-CSAPP-3rd/chapter-08-exceptional-control-flow/)
 
 ---

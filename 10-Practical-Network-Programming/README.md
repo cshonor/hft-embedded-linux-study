@@ -5,7 +5,7 @@
 **文件夹 `09`** · 外部书目 **PNP** · [返回总清单](../READING-LIST.md#补充陈硕-pnp--muduo-实战09-文件夹)
 
 > **与 UNP 分工：** [PNP](https://github.com/cshonor/Computer-Networking/tree/main/PNP) = 工程向实验；[UNP Vol.1](../11-UNP-Vol1/) = Stevens 系统化 API。  
-> **推荐顺序：** `07` TLPI → `09` 自制系统 → **本模块 `09`** → `10` UNP → `11`–`13` 网络
+> **推荐顺序：** `08` TLPI → `09` 自制系统 → **本模块 `09`** → `10` UNP → `11`–`13` 网络
 
 ## 笔记仓库（外部）
 

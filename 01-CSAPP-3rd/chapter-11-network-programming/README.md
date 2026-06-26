@@ -51,7 +51,7 @@ read/write 收发字节（可能 short count）
 11.1–11.4 套接字 API — 必读
 11.3 IP/端口/连接 — 与 10-TCP-IP 交叉
 11.5–11.6 Tiny/HTTP — 选读（理解 request/response 解析）
-延伸：08-UNP epoll · 09 内核网络 · 10 DPDK 旁路 · 02-SysPerf Ch10
+延伸：08-UNP epoll · 09 内核网络 · 10 DPDK 旁路 · 03-SysPerf Ch10
 ```
 
 ---

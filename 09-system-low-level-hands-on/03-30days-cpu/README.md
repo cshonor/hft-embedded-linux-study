@@ -19,10 +19,10 @@
 
 - [ ] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪
 - [ ] `code/` — 电路/汇编实验（按所用工具链）
-- [ ] 与 [04-Hennessy](../../04-Computer-Architecture-6th/) Ch2–3 对照表
+- [ ] 与 [02-Hennessy](../../02-Computer-Architecture-6th/) Ch2–3 对照表
 
 ## 交叉阅读
 
-- [01-CSAPP Ch4/5](../../01-CSAPP-3rd/chapter-04-processor-architecture/) · [04-Hennessy](../../04-Computer-Architecture-6th/)
+- [01-CSAPP Ch4/5](../../01-CSAPP-3rd/chapter-04-processor-architecture/) · [02-Hennessy](../../02-Computer-Architecture-6th/)
 - 上一步：[01-30days-os](../01-30days-os/)
 - 进 HFT：[15-HFT-Low-Latency-Practice](../../15-HFT-Low-Latency-Practice/)

@@ -27,6 +27,6 @@
 
 **HFT / 观测：** `D` 状态（不可中断睡眠）过多 → 磁盘/NFS 等阻塞拖慢整条流水线；`perf`/`ps` 与 **Ch 4 运行队列** 联读。
 
-→ [02 SysPerf §3.2 进程与调度](../../../../02-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
+→ [03 SysPerf §3.2 进程与调度](../../../../03-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
 
 ---

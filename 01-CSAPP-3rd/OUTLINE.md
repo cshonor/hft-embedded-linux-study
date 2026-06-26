@@ -59,7 +59,7 @@
   → 选读 CSAPP Ch4、Ch1
 
 阶段 2 起
-  → 02-SysPerf → 05-LKD → 06-Gorman …
+  → 03-SysPerf → 05-LKD → 07-Gorman …
 
 阶段 5 回来读 CSAPP Ch10–11（网络）
 ```

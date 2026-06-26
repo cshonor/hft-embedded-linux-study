@@ -17,6 +17,6 @@ Day 30    实用 app + IPL 终优化
 
 **纸娃娃 OS** — 从 **hello, world 扇区** 到 **能算能看能听能玩** 的 **32 位 GUI 多任务系统**。
 
-→ HFT 链：[01 导读](../../README.md) · [05-LKD](../../../../05-Linux-Kernel-Development/) · [07-TLPI](../../../../07-The-Linux-Programming-Interface/)
+→ HFT 链：[01 导读](../../README.md) · [05-LKD](../../../../05-Linux-Kernel-Development/) · [08-TLPI](../../../../08-The-Linux-Programming-Interface/)
 
 ---

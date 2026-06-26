@@ -32,7 +32,7 @@ PIPE：五段并行填满 — 理想 CPI→1，冒险时 stall / bubble
 
 1. **分支预测失败** → 流水线清空，和 Ch3「不可预测分支」同一物理根因
 2. **数据冒险** → 真相关要停顿或转发；写代码时减少 **load-use** 距离
-3. **CPI / IPC** — `perf` 里 IPC 低，往 cache miss、分支、后端瓶颈想（→ [02-SysPerf Ch 6](../../02-Systems-Performance-2nd/chapter-06-cpus/)）
+3. **CPI / IPC** — `perf` 里 IPC 低，往 cache miss、分支、后端瓶颈想（→ [03-SysPerf Ch 6](../../03-Systems-Performance-2nd/chapter-06-cpus/)）
 
 ---
 
@@ -64,5 +64,5 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
 - 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
-- 真实微架构：[04-Hennessy](../../04-Computer-Architecture-6th/)
+- 真实微架构：[02-Hennessy](../../02-Computer-Architecture-6th/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

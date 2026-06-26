@@ -22,6 +22,6 @@ Console: run hlt.hrb
 
 **转折点：** 从 **内置命令** → **加载外部二进制** — **`.hrb` = 纸娃娃的 exe**；Day 20+ **API/syscall** 在此基础上扩展。
 
-→ [Day 5/6 GDT Ring](../day-05-gdt-idt/) · [Day 15 far-JMP](../day-15-multitask1/) · [07-TLPI execve 概念](../../../../07-The-Linux-Programming-Interface/)
+→ [Day 5/6 GDT Ring](../day-05-gdt-idt/) · [Day 15 far-JMP](../day-15-multitask1/) · [08-TLPI execve 概念](../../../../08-The-Linux-Programming-Interface/)
 
 ---

@@ -44,6 +44,6 @@
 
 - 内核栈对照 → [13-Linux-Kernel-Networking](../13-Linux-Kernel-Networking/)
 - Socket 模型 → [11-UNP-Vol1](../11-UNP-Vol1/)、[01-CSAPP-3rd Ch11](../01-CSAPP-3rd/chapter-11-network-programming/)
-- 缓存 / 内存 → [01-CSAPP-3rd Ch6](../01-CSAPP-3rd/chapter-06-memory-hierarchy/)、[04-Computer-Architecture-6th](../04-Computer-Architecture-6th/)
-- 生产观测 → [03-BPF-Performance-Tools](../03-BPF-Performance-Tools/)
+- 缓存 / 内存 → [01-CSAPP-3rd Ch6](../01-CSAPP-3rd/chapter-06-memory-hierarchy/)、[02-Computer-Architecture-6th](../02-Computer-Architecture-6th/)
+- 生产观测 → [04-BPF-Performance-Tools](../04-BPF-Performance-Tools/)
 - 工程落地 → [15-HFT-Low-Latency-Practice](../15-HFT-Low-Latency-Practice/)

@@ -2,7 +2,7 @@
 
 > **Linux Kernel Development 3rd** · Robert Love · **选读**
 
-> 本章定位：内核侧 **页、区、kmalloc/vmalloc、Slab、高端内存、per-CPU** — 与用户态 malloc/mmap **不同规则**。为 **Ch 15 进程地址空间**、**06 Gorman**、HFT **大页/mlock/零缺页** 补内核视角。
+> 本章定位：内核侧 **页、区、kmalloc/vmalloc、Slab、高端内存、per-CPU** — 与用户态 malloc/mmap **不同规则**。为 **Ch 15 进程地址空间**、**07 Gorman**、HFT **大页/mlock/零缺页** 补内核视角。
 
 ---
 

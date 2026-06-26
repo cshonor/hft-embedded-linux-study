@@ -15,6 +15,6 @@
 
 **HFT：** 网卡 **每包一次 IRQ**（或合并中断）— ISR/上半部过长 → **P99 尾延迟**、cache 被冲刷。
 
-→ [02 SysPerf §1.5 IRQ 与策略同核](../../../../02-Systems-Performance-2nd/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md)
+→ [03 SysPerf §1.5 IRQ 与策略同核](../../../../03-Systems-Performance-2nd/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md)
 
 ---

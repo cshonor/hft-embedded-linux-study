@@ -16,6 +16,6 @@
 
 **HFT 对照：** 用户态 **无锁队列、原子计数** 与内核 **「临界区必须互斥」** 是同一问题的两层 — tail 延迟常来自 **锁争用** 或 **伪共享**。
 
-→ [02 SysPerf §5.2 mutex/spin](../../../../02-Systems-Performance-2nd/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
+→ [03 SysPerf §5.2 mutex/spin](../../../../03-Systems-Performance-2nd/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
 
 ---

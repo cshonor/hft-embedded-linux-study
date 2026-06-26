@@ -41,6 +41,6 @@
 Ch 4 调度 → Ch 7–8 中断/下半部 → Ch 9–10 同步 → Ch 11 定时器
 ```
 
-内存深读 → [03-Gorman](../06-Linux-Virtual-Memory-Manager/) · 网络栈 → [06-Rosen](../13-Linux-Kernel-Networking/)
+内存深读 → [03-Gorman](../07-Linux-Virtual-Memory-Manager/) · 网络栈 → [06-Rosen](../13-Linux-Kernel-Networking/)
 
 完整 HFT 路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

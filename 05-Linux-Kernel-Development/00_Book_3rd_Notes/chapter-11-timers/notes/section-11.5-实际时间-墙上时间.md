@@ -18,6 +18,6 @@
 
 **HFT：** 行情 **UTC 对齐**、日志时间戳 — 用户态更常用 **`clock_gettime(CLOCK_REALTIME/MONOTONIC)`**；懂 `xtime` 即懂 **系统时间从哪来**。
 
-→ [07-TLPI 时间章](../../../../07-The-Linux-Programming-Interface/)
+→ [08-TLPI 时间章](../../../../08-The-Linux-Programming-Interface/)
 
 ---

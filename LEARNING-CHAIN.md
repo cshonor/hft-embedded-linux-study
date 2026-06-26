@@ -1,24 +1,23 @@
 # HFT 学习链路 · 从知其所以然到动手实现
 
-> **文件夹 `00`–`16` 封顶不变**；**读序** 见下（与目录编号不一致处已标明）。
+> **文件夹 `00`–`16` = 推荐阅读顺序**（2025-06 物理重编号对齐）。
 
 ```
 知其所以然  →  知其然  →  工具落地  →  系统纵深  →  网络实战  →  工程实现
-  01+04         02          03          05–08         09–14           15–16
+  01–02         03          04          05–08         09–14           15–16
 ```
 
 ---
 
-## 一眼版 · 推荐执行顺序
+## 一眼版 · 执行顺序
 
 ```
 00  Harris
 01  CSAPP
-04  Hennessy              ← 原 02 位：紧接 01，再进性能篇
-02  SysPerf → 03  BPF      ← 原 02–03 顺延
+02  Hennessy
+03  SysPerf → 04  BPF
 
-05  LKD → 08 ULK           ← 内核概念 → 立刻下潜源码
-06  Gorman → 07  TLPI     ← 内存专精 → 用户态 syscall
+05  LKD → 06 ULK → 07 Gorman → 08 TLPI
 
 09  自制 OS / CPU
 10  陈硕 PNP / muduo
@@ -30,7 +29,7 @@
 16  Rust Guide
 ```
 
-**最短四步：** `01` → `04` → `02` → `03` → `15`/`16`（业务向加 `00`）
+**最短四步：** `01` → `02` → `03` → `04` → `15`/`16`（业务向加 `00`）
 
 ---
 
@@ -38,8 +37,8 @@
 
 | 调整 | 理由 |
 |------|------|
-| **`04` 提到 `02` 原位** | CSAPP 机器级程序刚建立直觉 → Hennessy 补 cache/流水线/一致性 → 再读 SysPerf **才有量化靶心** |
-| **`08` 紧接 `05`** | LKD 画内核地图 → ULK 立刻对照 **数据结构/路径** → 再 Gorman 专精 VM，比把 ULK 拖到 TLPI 后更顺 |
+| **`02` Hennessy 紧接 `01` CSAPP** | 机器级程序 → 体系结构理论 → 再读 SysPerf 才有量化靶心 |
+| **`06` ULK 紧接 `05` LKD** | 内核地图 → 立刻下潜源码 → `07` Gorman 专精 VM |
 
 ---
 
@@ -47,9 +46,9 @@
 
 | 文件夹 | 模块 | 阶段 |
 |--------|------|------|
-| **07** | [TLPI](./07-The-Linux-Programming-Interface/) | Linux 用户态 syscall |
-| **08** | [ULK](./08-Understanding-Linux-Kernel/) | Linux 内核实现（**读序紧接 05**） |
-| **09** | [自制 OS/CPU](./09-system-low-level-hands-on/) | 底层动手（30天 / MikanOS / CPU） |
+| **08** | [TLPI](./08-The-Linux-Programming-Interface/) | Linux 用户态 syscall |
+| **06** | [ULK](./06-Understanding-Linux-Kernel/) | Linux 内核实现（紧接 05） |
+| **09** | [自制 OS/CPU](./09-system-low-level-hands-on/) | 底层动手 |
 | **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
 | **15–16** | HFT / Rust | 工程实现 |
 
@@ -60,16 +59,16 @@
 ```
 05 LKD（内核里有什么）
     ↓
-08 ULK（代码里长什么样）
+06 ULK（代码里长什么样）
     ↓
-06 Gorman（VM 深度）
+07 Gorman（VM 深度）
     ↓
-07 TLPI（用户态怎么调 epoll/mmap）
+08 TLPI（用户态 epoll/mmap）
     ↓
-09 自制 OS（从零写一遍启动/中断/分页）
+09 自制 OS（从零写启动/中断/分页）
 ```
 
-→ [07 OUTLINE](./07-The-Linux-Programming-Interface/OUTLINE.md)
+→ [08 TLPI OUTLINE](./08-The-Linux-Programming-Interface/OUTLINE.md)
 
 ---
 
@@ -77,6 +76,6 @@
 
 - [READING-LIST.md](./READING-LIST.md) · [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
-**执行序号：** `00 → 01 → 04 → 02 → 03 → 05 → 08 → 06 → 07 → 09 → 10 → 11 → 01网络章 → 12 → 13 → 14 → 15 → 16`
+**执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11 → 01网络章 → 12 → 13 → 14 → 15 → 16`
 
-> **远期（未建目录）：** 裸金属 HFT 生产部署 · IPC 进程间通信架构 — 结业阶段补 [15-HFT](./15-HFT-Low-Latency-Practice/)。
+> **重编号脚本：** [scripts/renumber-modules-02-08-align.py](./scripts/renumber-modules-02-08-align.py)

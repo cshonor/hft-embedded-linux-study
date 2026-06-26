@@ -2,28 +2,28 @@
 
 > **文件夹 `00`–`16` 封顶；读序见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)。** 主叙事 → **[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)**
 
-### 读序 · 核心段（≠ 目录编号）
+### 核心段（文件夹编号 = 读序）
 
-| 读序 | 文件夹 | 内容 | 阶段 |
-|:----:|--------|------|------|
-| 2–3 | **01** + **04** | CSAPP → Hennessy | 知其所以然 |
-| 4–5 | **02** → **03** | SysPerf → BPF | 知其然 + 工具落地 |
-| 6–7 | **05** → **08** | LKD → ULK | 内核地图 → 源码走读 |
-| 8–9 | **06** → **07** | Gorman → TLPI | VM 深度 → 用户态 API |
-| 10 | **09** | 自制 OS / CPU | 底层动手 |
-| 11–15 | **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
-| 16–17 | **15–16** | HFT Practice / Rust | 动手实现 |
+| 文件夹 | 内容 | 阶段 |
+|--------|------|------|
+| **01** → **02** | CSAPP → Hennessy | 知其所以然 |
+| **03** → **04** | SysPerf → BPF | 知其然 + 工具落地 |
+| **05** → **06** | LKD → ULK | 内核地图 → 源码走读 |
+| **07** → **08** | Gorman → TLPI | VM 深度 → 用户态 API |
+| **09** | 自制 OS / CPU | 底层动手 |
+| **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
+| **15–16** | HFT Practice / Rust | 动手实现 |
 
-### Gregg 双书 · 02 → 03
+### Gregg 双书 · 03 → 04
 
-| 02 SysPerf | 03 BPF |
+| 03 SysPerf | 04 BPF |
 |------------|--------|
 | USE/RED、延迟分解、perf/Ftrace | bpftrace/BCC 生产落地 |
 | Ch 4 / 13 / 15 预览 | Part I–II + XDP note |
 
-**02 读完立刻 03** — 再进 05 内核；读 05–11 时用 BPF 验证。
+**03 读完立刻 04** — 再进 05 内核；读 05–11 时用 BPF 验证。
 
-### 01 为何在 02 之前
+### 03 为何在 02 之后
 |------------------------------|--------------|
 | 程序如何在 CPU/缓存/内存上跑 | USE / RED / 延迟分解怎么量 |
 | 进程、虚拟内存、锁在代码里长什么样 | perf 火焰图、off-CPU、BPF 跟踪 |
@@ -71,7 +71,7 @@
 16  Rust Quant Trading Guide
 ```
 
-**执行序号：** `00 → 01 → 04 → 02 → 03 → 05 → 08 → 06 → 07 → 09 → 10 → 11 → 01网络 → 12 → 13 → 14 → 15 → 16`
+**执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 07 → 09 → 10 → 11 → 01网络 → 12 → 13 → 14 → 15 → 16`
 
 > **板块封顶：** `00`–`15`；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
@@ -271,10 +271,10 @@
 
 | 目录 | 文件夹 |
 |------|--------|
-| [01 CSAPP](./01-CSAPP-3rd/) + [04 Hennessy](./04-Computer-Architecture-6th/) | 01 / 04 |
-| [02 SysPerf](./02-Systems-Performance-2nd/) | 02 |
-| [03 BPF](./03-BPF-Performance-Tools/) | 03 |
-| [05 LKD](./05-Linux-Kernel-Development/) · [06 Gorman](./06-Linux-Virtual-Memory-Manager/) · [08–11 网络](./CROSS-MODULE-GUIDE.md) | 05–11 |
+| [01 CSAPP](./01-CSAPP-3rd/) + [02 Hennessy](./02-Computer-Architecture-6th/) | 01 / 04 |
+| [03 SysPerf](./03-Systems-Performance-2nd/) | 02 |
+| [04 BPF](./04-BPF-Performance-Tools/) | 03 |
+| [05 LKD](./05-Linux-Kernel-Development/) · [07 Gorman](./07-Linux-Virtual-Memory-Manager/) · [08–11 网络](./CROSS-MODULE-GUIDE.md) | 05–11 |
 | [11 HFT](./15-HFT-Low-Latency-Practice/) · [12 Rust](./16-Rust-Quant-Trading-Guide/) | 15 / 16 |
 
 → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) · [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)

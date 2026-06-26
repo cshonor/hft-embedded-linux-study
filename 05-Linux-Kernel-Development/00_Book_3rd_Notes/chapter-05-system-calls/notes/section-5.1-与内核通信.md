@@ -28,6 +28,6 @@
 
 **HFT：** 热路径倾向 **批量 I/O、`mmap`、用户态轮询/DPDK** — 本质是在 **减少机制调用次数**。
 
-→ [02 SysPerf §3.2 syscall 成本](../../../../02-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [Ch 1 user/kernel 边界](../../chapter-01-intro/)
+→ [03 SysPerf §3.2 syscall 成本](../../../../03-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [Ch 1 user/kernel 边界](../../chapter-01-intro/)
 
 ---

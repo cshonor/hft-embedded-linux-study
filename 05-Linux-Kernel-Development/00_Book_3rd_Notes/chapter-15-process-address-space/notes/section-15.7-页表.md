@@ -25,6 +25,6 @@ VA ──► [PGD] ──► [PMD] ──► [PTE] ──► 物理页帧号 (PF
 
 **HFT：** **大页（hugepage）** — 同样覆盖范围 **更少 TLB 项** → 更少 miss → 更稳延迟。
 
-→ [01-CSAPP §9.6 TLB](../../../../01-CSAPP-3rd/chapter-09-virtual-memory/notes/section-9.6-9.7-地址翻译与Linux案例.md) · [06 Gorman](../../../../06-Linux-Virtual-Memory-Manager/)
+→ [01-CSAPP §9.6 TLB](../../../../01-CSAPP-3rd/chapter-09-virtual-memory/notes/section-9.6-9.7-地址翻译与Linux案例.md) · [07 Gorman](../../../../07-Linux-Virtual-Memory-Manager/)
 
 ---

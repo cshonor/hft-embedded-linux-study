@@ -41,7 +41,7 @@
 
 | 本课 | 书本 | HFT |
 |------|------|-----|
-| a08 VM | LKD Ch 12/15 · [03-Gorman](../../06-Linux-Virtual-Memory-Manager/) | NUMA/大页 |
+| a08 VM | LKD Ch 12/15 · [03-Gorman](../../07-Linux-Virtual-Memory-Manager/) | NUMA/大页 |
 | a09 调度 | LKD Ch 4 | 绑核/RT |
 | a07 同步 | LKD Ch 9–10 | RCU/无锁 |
 | a10 网络 | [06-Rosen](../../13-Linux-Kernel-Networking/) | NAPI/softirq |

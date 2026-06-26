@@ -104,7 +104,7 @@ while (1) {
 | **`SO_BUSY_POLL`** | 低延迟 busy poll（慎用 CPU） |
 | **UDP multicast** | 交易所组播行情 |
 
-→ [08-UNP](../../../11-UNP-Vol1/) · [02-SysPerf Ch10](../../../02-Systems-Performance-2nd/chapter-10-network/) · [12-HFT ch06](../../../15-HFT-Low-Latency-Practice/)
+→ [08-UNP](../../../11-UNP-Vol1/) · [03-SysPerf Ch10](../../../03-Systems-Performance-2nd/chapter-10-network/) · [12-HFT ch06](../../../15-HFT-Low-Latency-Practice/)
 
 ---
 

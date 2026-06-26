@@ -32,6 +32,6 @@ for (i = 0; i < 224; i++) {
 
 **`dir` 输出：** 文件名 · 扩展名 · 大小 — **交互式外壳第一次读「磁盘结构」**。
 
-→ 对照 [07-TLPI 文件 I/O](../../../../07-The-Linux-Programming-Interface/) · Linux **VFS/ext4** 是 FAT12 的远房后代
+→ 对照 [08-TLPI 文件 I/O](../../../../08-The-Linux-Programming-Interface/) · Linux **VFS/ext4** 是 FAT12 的远房后代
 
 ---

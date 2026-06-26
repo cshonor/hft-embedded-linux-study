@@ -18,6 +18,6 @@ IRQ ──► 上半部（快、常关该线）
 | 上半部常 **禁用当前中断线** | 防重入、保硬件状态一致 |
 | 重活 **推到下半部** | 缩短关中断窗口 |
 
-→ **Ch 8** 下半部机制详解 · [SysPerf §3.2 上下半部](../../../../02-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
+→ **Ch 8** 下半部机制详解 · [SysPerf §3.2 上下半部](../../../../03-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
 
 ---
