@@ -12,8 +12,8 @@
 
 | 状态 | 章节 |
 |------|------|
-| ✅ 已有笔记 | Ch [1](./chapter-01-引言与市场微观结构.md) [2](./chapter-02-交易故事.md) [3](./chapter-03-交易产业.md) [4](./chapter-04-交易指令与订单类型.md) [5](./chapter-05-市场结构.md) [6](./chapter-06-指令驱动市场.md) [7](./chapter-07-经纪人.md) [8](./chapter-08-为什么人们要交易.md) [9](./chapter-09-好市场.md) [10](./chapter-10-知情交易者与市场效率.md) [11](./chapter-11-指令预期者.md) [12](./chapter-12-虚张声势者与市场操纵.md) [13](./chapter-13-做市商.md) [14](./chapter-14-买卖价差.md) [15](./chapter-15-大宗交易者.md) [16](./chapter-16-价值交易者.md) [17](./chapter-17-套利者.md) |
-| 📝 待补充 | Ch [18](./chapter-18-买方交易者.md)–[29](./chapter-29-内幕交易.md) |
+| ✅ 已有笔记 | Ch [1](./chapter-01-引言与市场微观结构.md) [2](./chapter-02-交易故事.md) [3](./chapter-03-交易产业.md) [4](./chapter-04-交易指令与订单类型.md) [5](./chapter-05-市场结构.md) [6](./chapter-06-指令驱动市场.md) [7](./chapter-07-经纪人.md) [8](./chapter-08-为什么人们要交易.md) [9](./chapter-09-好市场.md) [10](./chapter-10-知情交易者与市场效率.md) [11](./chapter-11-指令预期者.md) [12](./chapter-12-虚张声势者与市场操纵.md) [13](./chapter-13-做市商.md) [14](./chapter-14-买卖价差.md) [15](./chapter-15-大宗交易者.md) [16](./chapter-16-价值交易者.md) [17](./chapter-17-套利者.md) [18](./chapter-18-买方交易者.md) |
+| 📝 待补充 | Ch [19](./chapter-19-流动性.md)–[29](./chapter-29-内幕交易.md) |
 
 ---
 
