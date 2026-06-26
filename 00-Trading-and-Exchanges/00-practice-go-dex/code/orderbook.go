@@ -2,12 +2,38 @@ package main
 
 import "fmt"
 
+// Side 买卖方向
+type Side int
+
+const (
+	Buy Side = iota
+	Sell
+)
+
+// OrderType 限价单 / 市价单（Harris Ch 4）
+type OrderType int
+
+const (
+	Limit OrderType = iota
+	Market
+)
+
+// Order 一条交易指令
+type Order struct {
+	ID    uint64
+	Side  Side
+	Type  OrderType
+	Price int64
+	Qty   int64
+	Time  int64
+}
+
 type priceLevel struct {
 	price  int64
 	orders []*Order
 }
 
-// OrderBook 双边限价订单簿（M1：单线程、纯内存）
+// OrderBook 双边限价订单簿
 type OrderBook struct {
 	bids map[int64]*priceLevel
 	asks map[int64]*priceLevel
@@ -22,10 +48,10 @@ func NewOrderBook() *OrderBook {
 
 func (ob *OrderBook) AddLimit(o *Order) error {
 	if o.Type != Limit {
-		return fmt.Errorf("book: expected limit order")
+		return fmt.Errorf("orderbook: expected limit order")
 	}
 	if o.Qty <= 0 {
-		return fmt.Errorf("book: quantity must be positive")
+		return fmt.Errorf("orderbook: quantity must be positive")
 	}
 
 	levels := ob.bids
@@ -52,7 +78,7 @@ func (ob *OrderBook) BestAsk() (int64, bool) {
 
 func (ob *OrderBook) TakeMarket(side Side, qty int64) (int64, error) {
 	if qty <= 0 {
-		return 0, fmt.Errorf("book: quantity must be positive")
+		return 0, fmt.Errorf("orderbook: quantity must be positive")
 	}
 
 	var levels map[int64]*priceLevel
@@ -65,7 +91,7 @@ func (ob *OrderBook) TakeMarket(side Side, qty int64) (int64, error) {
 		levels = ob.bids
 		highestFirst = true
 	default:
-		return 0, fmt.Errorf("book: unknown side")
+		return 0, fmt.Errorf("orderbook: unknown side")
 	}
 
 	filled := int64(0)
