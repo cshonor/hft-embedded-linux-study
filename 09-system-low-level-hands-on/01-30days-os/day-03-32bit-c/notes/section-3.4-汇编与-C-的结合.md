@@ -5,7 +5,7 @@ C **不能直接写** 某些 **CPU 专用指令**（如 **`HLT`** — 让 CPU **
 **做法：** 汇编 **包装**，C **调用**，链接器 **拼在一起**。
 
 ```
-bootpack.c          naskfunc.nas
+bootpack.c          naskfunc.asm
     │                    │
     │  调用 io_hlt()     │  io_hlt: HLT; RET
     └────────┬───────────┘
@@ -16,7 +16,7 @@ bootpack.c          naskfunc.nas
 | 层 | 职责 |
 |----|------|
 | **C** | 业务逻辑、`HariMain`、调用 `io_hlt()` |
-| **汇编 `naskfunc.nas`** | 提供 **`io_hlt`** 等 **底层原语** |
+| **汇编 `naskfunc.asm`** | 提供 **`io_hlt`** 等 **底层原语** |
 | **链接** | `.obj` / `.o` 合并成最终二进制 |
 
 **HFT 模式：** 热路径 **C++** + 少量 **内联汇编 / 独立 .S** — 同一思想：**高级语言写逻辑，汇编只包不可替代的几条指令**。

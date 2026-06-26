@@ -48,7 +48,7 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 → [day-01 section 1.3 · 安装 NASM（替代 nask）](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)
 
-装完验证：`nasm -v` · 编译：`nasm -f bin helloos.nas -o helloos.img`
+装完验证：`nasm -v` · 编译：`nasm -f bin helloos.asm -o helloos.img`
 
 ### 3.2 安装 GCC 与 Make
 
@@ -116,7 +116,7 @@ make --version
 
 ## 4. Day 1 首次构建与运行
 
-进入 Day 1 工程目录（含 `Makefile` 与 `helloos.nas`）：
+进入 Day 1 工程目录（含 `Makefile` 与 `helloos.asm`）：
 
 ```cmd
 cd C:\dev\haribote\proj\day-01
@@ -157,7 +157,7 @@ make run
 |-----|----------|
 | **2** | Makefile 多目标；只编 `ipl.bin` 再拼盘 — [day-02](./day-02-asm-makefile/) |
 | **3** | 引入 `bootpack.c`、`asmfunc.asm`；IPL 读盘 — [day-03](./day-03-32bit-c/) |
-| **6+** | 多 `.c` / `.nas` 分割编译；**不要跳天合并工程** |
+| **6+** | 多 `.c` / `.asm` 分割编译；**不要跳天合并工程** |
 
 每日完成后，将 `proj\day-NN\` 复制一份归档，便于回滚对照。
 

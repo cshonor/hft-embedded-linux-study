@@ -2,7 +2,7 @@
 
 #### 汇编 `_api_*` 包装
 
-C 不能直接 **`INT 0x40`**（或不便）→ **`api.asm` / `api.nas`**：
+C 不能直接 **`INT 0x40`**（或不便）→ **`api.asm` / `api.asm`**：
 
 ```nasm
 _api_putchar:    ; C 调用名

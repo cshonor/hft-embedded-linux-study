@@ -65,7 +65,7 @@
 - 真正 **IPL**：**`INT 0x13`** 读盘，**10 柱面 / 180KB**，**重试 5 次**
 - **haribote-os** · **`INT 0x10` → 320×200×8** 全黑 = OS 运行
 - **32 位前** 做完 BIOS；**`bootpack.c` / `HariMain`**
-- **`asmfunc.asm`**（原书 `naskfunc.nas`）· **`io_hlt`** — 汇编 + C 链接
+- **`asmfunc.asm`**（原书 `naskfunc.asm`）· **`io_hlt`** — 汇编 + C 链接
 
 → 详读 [day-03-32bit-c/](./day-03-32bit-c/)
 

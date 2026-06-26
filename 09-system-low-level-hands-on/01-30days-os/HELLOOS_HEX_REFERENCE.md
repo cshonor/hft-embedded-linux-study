@@ -47,7 +47,7 @@ tolset 是原书配套工具包；`helloos` 是第一个软盘镜像工程。书
 
 ## 三、引导扇区完整 512 字节（0x0000–0x01FF）
 
-与 tolset / `helloos.nas` 汇编输出一致。**HxD 整段粘贴请用** [helloos-boot-sector-paste.txt](./day-01-boot-asm/code/helloos-boot-sector-paste.txt)（无地址前缀）。下方表与 [helloos-boot-sector.hex](./day-01-boot-asm/code/helloos-boot-sector.hex) 仅供 **逐行对照手输** — **勿复制行首 `0000`/`0100` 等偏移**。
+与 tolset / `helloos.asm` 汇编输出一致。**HxD 整段粘贴请用** [helloos-boot-sector-paste.txt](./day-01-boot-asm/code/helloos-boot-sector-paste.txt)（无地址前缀）。下方表与 [helloos-boot-sector.hex](./day-01-boot-asm/code/helloos-boot-sector.hex) 仅供 **逐行对照手输** — **勿复制行首 `0000`/`0100` 等偏移**。
 
 ```
 0000  EB 4E 90 48 45 4C 4C 4F 49 50 4C 00 02 01 01 00

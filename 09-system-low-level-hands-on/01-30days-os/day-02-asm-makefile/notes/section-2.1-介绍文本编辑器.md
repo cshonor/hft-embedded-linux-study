@@ -1,19 +1,19 @@
 ## ① 介绍文本编辑器（写代码用）
 
-### 大白话 · NASM、`.nas` / `.asm`、nask 各是什么？
+### 大白话 · NASM、`.asm`、nask 各是什么？
 
 按你现在的场景，三件事分开记就够了：
 
 | 名字 | 是什么 | 你要怎么做 |
 |------|--------|------------|
 | **NASM** | **汇编器（工具）** — 把人写的汇编 **翻译成** CPU 能执行的二进制 | 命令行装 **`nasm.exe`**，用 **`nasm -f bin … -o …`** |
-| **`.asm` / `.nas`** | **源码后缀** — 里面都是 **纯文本汇编**，没有本质区别 | **本仓库统一用 `.asm`**（如 [code/helloos.asm](../code/helloos.asm)）；原书作者习惯 `.nas`，完全等价 |
+| **`.asm`** | **源码后缀** — 里面都是 **纯文本汇编**，没有本质区别 | **本仓库统一用 `.asm`**（如 [code/helloos.asm](../code/helloos.asm)）；原书作者写 `.nas`，本仓库一律 `.asm` |
 | **nask** | 原书 tolset 里的 **老汇编器**，现在 **已被 NASM 取代** | **直接忽略** — 只记：**用 NASM 编译 `.asm` 文件** |
 
 ```
 helloos.asm（文本，VS Code 写）  ──nasm -f bin──►  ipl.bin（512 B 二进制）
         ↑                                              ↑
-   后缀 .asm 或 .nas 都行                         机器能读的启动区
+   后缀统一 `.asm`                         机器能读的启动区
    编译时在命令里写对文件名即可
 ```
 
@@ -40,8 +40,8 @@ helloos.asm（文本，VS Code 写）  ──nasm -f bin──►  ipl.bin（512
 | | **文本编辑器**（VS Code / 记事本） | **NASM**（`nasm.exe`） |
 |---|-----------------------------------|------------------------|
 | 角色 | **写字** — 存成 **给人看的文本** | **翻译** — 产出 **给 CPU 看的二进制** |
-| 输入 | 你敲的 `MOV`、`JMP`… | **`helloos.nas`** 等源码（**.nas / .nasm / .asm** 均可） |
-| 输出 | 仍是 **文本**（`.asm` / `.nas`） | **纯二进制**（`.bin` / `.img`） |
+| 输入 | 你敲的 `MOV`、`JMP`… | **`helloos.asm`** 等 **`.asm`** 源码 |
+| 输出 | 仍是 **文本**（`.asm`） | **纯二进制**（`.bin` / `.img`） |
 | 能否启动 OS？ | **不能** — 模拟器读不懂源码 | **能** — 二进制才是引导扇区机器码 |
 
 **一条完整链路（以引导扇区为例）：**
@@ -50,20 +50,20 @@ helloos.asm（文本，VS Code 写）  ──nasm -f bin──►  ipl.bin（512
 VS Code / 记事本          nasm -f bin              QEMU
      │                        │                      │
      ▼                        ▼                      ▼
- helloos.nas            ipl.bin / os-image.bin      当成 OS 引导镜像
-（给人看的文本，.nas 后缀不用改）  （nasm -f bin 纯二进制）
+ helloos.asm            ipl.bin / os-image.bin      当成 OS 引导镜像
+（给人看的文本）              （nasm -f bin 纯二进制）
 ```
 
-举例：你在 **VS Code** 里写好 **`helloos.nas`**，文件里仍是 **`MOV AX, 0` 这类字符** — CPU 和 QEMU **都认不得**。必须再跑 **`nasm -f bin helloos.nas -o ipl.bin`**，得到 **不含字母、只有字节的纯二进制**，再拼进 **1.44 MB** 映像后，QEMU 才能 **`-fda …`** 启动。
+举例：你在 **VS Code** 里写好 **`helloos.asm`**，文件里仍是 **`MOV AX, 0` 这类字符** — CPU 和 QEMU **都认不得**。必须再跑 **`nasm -f bin helloos.asm -o ipl.bin`**，得到 **不含字母、只有字节的纯二进制**，再拼进 **1.44 MB** 映像后，QEMU 才能 **`-fda …`** 启动。
 
-| 源码（默认名） | NASM 产出 | 给 QEMU 用 |
+| 源码（本仓库） | NASM 产出 | 给 QEMU 用 |
 |--------------|-----------|------------|
-| **`helloos.nas`** | **`ipl.bin`** / `os-image.bin`（通常 **512 B**） | 嵌入 **`helloos.img`** 后再 `-fda`（见 [Day 1 §1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md)） |
+| **`helloos.asm`** | **`ipl.bin`**（**512 B**） | 嵌入 **`helloos.img`** 后再 `-fda`（见 [Day 1 §1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md)） |
 
 **和下面两节的对应关系：**
 
-- **本节 + VS Code 扩展** → 管好 **「笔」**（写、改、高亮 `helloos.nas`）
-- **[Day 1 §1.3 · 装 NASM](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)** → 装好 **「编译器」**（`nasm.exe`）
+- **本节 + VS Code 扩展** → 管好 **「笔」**（写、改、高亮 `helloos.asm`）
+- **[Day 1 §1.3 · 装 NASM](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)** → 装好 **「汇编器」**（`nasm.exe`；**nask 已废弃，不用装**）
 - **[2.4 Makefile](./section-2.4-Makefile-入门.md)** → 一条命令 **`make`** 自动 **nasm 翻译 + 拼映像**
 
 > **VS Code 里也有叫 NASM 的扩展** — 那是 **编辑时语法高亮**，不是 `nasm.exe`；别和命令行汇编器搞混（见下方安装步骤）。
@@ -81,7 +81,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 | 无工程感，文件一多就乱 | **文件夹打开整个工程**，侧边栏跳转 |
 | 要和 cmd 来回切 | **内置终端** `` Ctrl+` ``，`make` 直接在同窗口敲 |
 
-**汇编高亮：** 装一个 **NASM / x86 汇编** 扩展后，打开 `helloos.nas` 即可看到 **指令、寄存器、标签、注释** 分色 — 见下方 **安装步骤**。
+**汇编高亮：** 装一个 **NASM / x86 汇编** 扩展后，打开 `helloos.asm` 即可看到 **指令、寄存器、标签、注释** 分色 — 见下方 **安装步骤**。
 
 #### 安装 NASM 语法高亮（VS Code 扩展）
 
@@ -91,7 +91,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 | 2 | 左侧点 **扩展** 图标，或按 **`Ctrl+Shift+X`** |
 | 3 | 搜索框输入 **`NASM`** |
 | 4 | 安装 **The Netwide Assembler**（描述里写 *NASM highlight*）→ 见下方 **选哪个** |
-| 5 | 打开 **`helloos.nas`** — 若已打开，关掉再开一次或 **`Ctrl+Shift+P` → Reload Window** |
+| 5 | 打开 **`helloos.asm`** — 若已打开，关掉再开一次或 **`Ctrl+Shift+P` → Reload Window** |
 
 ![扩展市场搜 NASM](../../assets/vscode-nasm-extension-search.png)
 
@@ -105,7 +105,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 | 备选 | **Nasm_Nasmate** | 同样面向 NASM，首选装不上再试 |
 | 备选 | **Design Líquido**（下载量高） | 通用汇编语法；若上面两个没有，可试 |
 
-**不要装（与 helloos.nas 无关）：**
+**不要装（与 helloos.asm 无关）：**
 
 | 截图里会出现 | 原因 |
 |--------------|------|
@@ -119,11 +119,11 @@ VS Code / 记事本          nasm -f bin              QEMU
 
 **装好后应看到：** `MOV`、`JMP`、`ORG` 等着色；`;` 注释变灰/绿；`0x7C00` 等常数与字符串 `"hello, world"` 与指令颜色不同。
 
-**若 `.nas` 仍无高亮：** 右下角语言模式点 **纯文本** → 选 **NASM** 或 **Assembly**；或在 `settings.json` 里加：
+**若 `.asm` 仍无高亮：** 右下角语言模式点 **纯文本** → 选 **NASM** 或 **Assembly**；或在 `settings.json` 里加：
 
 ```json
 "files.associations": {
-  "*.nas": "asm-intel"
+  "*.asm": "asm-intel"
 }
 ```
 
@@ -133,7 +133,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 
 **本仓库还用它写：**
 
-- `helloos.nas`、`Makefile`（[2.4](./section-2.4-Makefile-入门.md)）
+- `helloos.asm`、`Makefile`（[2.4](./section-2.4-Makefile-入门.md)）
 - 各 Day 的 `notes/*.md`（Markdown 内置支持）
 - 日后 **Rust**（`rust-analyzer`）、**Solidity**（官方 Solidity 扩展）— 同一套环境延伸即可
 
@@ -159,7 +159,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 | 放哪 | 用什么 |
 |------|--------|
 | **仓库笔记**（`notes/section-*.md`） | VS Code / Obsidian / 任意 Markdown 编辑器 |
-| **可编译源码**（`.nas`、`.c`、`Makefile`、`Cargo.toml`…） | **VS Code + 对应语言插件** |
+| **可编译源码**（`.asm`、`.c`、`Makefile`、`Cargo.toml`…） | **VS Code + 对应语言插件** |
 
 笔记可以当文档读；**能 `nasm` / `make` / `cargo build` 的文件** 请在代码编辑器里维护，避免「存成 UTF-8 BOM + 错误换行」导致编译怪错。
 
@@ -168,7 +168,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 ### 自检
 
 - [ ] 已安装 **VS Code**（或 Cursor）
-- [ ] 已装 **NASM / 汇编** 相关扩展，`helloos.nas` 有语法高亮
+- [ ] 已装 **NASM / 汇编** 相关扩展，`helloos.asm` 有语法高亮
 - [ ] 能用 **文件 → 打开文件夹** 打开 Day 1 工程目录
 - [ ] 知道：**文本编辑器 = 写代码的笔**；**NASM = 把 `.asm` 译成二进制**；**QEMU 只认二进制映像**
 

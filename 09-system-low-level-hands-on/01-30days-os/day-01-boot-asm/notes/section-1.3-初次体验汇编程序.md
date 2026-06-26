@@ -4,29 +4,29 @@
 
 ```
 原书：  helloos.nas  ──nask────────►  helloos.img
-本仓库：helloos.nas  ──nasm -f bin──►  helloos.img   （后缀不用改）
+本仓库：helloos.asm  ──nasm -f bin──►  helloos.img
 ```
 
 | 步骤 | 工具 | 产出 |
 |------|------|------|
-| 写源码 | **VS Code + NASM 扩展**（[Day 2 §2.1](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#安装-nasm-语法高亮vs-code-扩展)） | **`helloos.nas`**（`.nasm` / `.asm` 也行，**不必改后缀**） |
-| 汇编 | **`nasm -f bin helloos.nas -o helloos.img`** | 与 nask 相同的纯二进制映像 |
+| 写源码 | **VS Code + NASM 扩展**（[Day 2 §2.1](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#安装-nasm-语法高亮vs-code-扩展)） | **`helloos.asm`**（本仓库统一 **`.asm`**） |
+| 汇编 | **`nasm -f bin helloos.asm -o helloos.img`** | 与 nask 相同的纯二进制映像 |
 | 运行 | QEMU | 同样 `hello, world` |
 
-> **下不了 nask？** **只换汇编器为 NASM、只换命令** — **`.nas` 文件名和后缀都不用改** — 见下方对照表与 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+> **下不了 nask？** **只换汇编器为 NASM、只换命令** — 源码统一 **`.asm`**（原书 `.nas`）— 见下方对照表与 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
 
-### 只换 nask → NASM：命令对照（后缀照旧）
+### 只换 nask → NASM：命令对照
 
-**参与编译的软件从 nask 换成 NASM**；工程里 **`helloos.nas` 继续用 `.nas`**，NASM 同样能汇编（**.nas / .nasm / .asm** 均可，**不必改名**）。
+**参与编译的软件从 nask 换成 NASM**；工程里源码统一为 **`helloos.asm`**（原书 `helloos.nas`）。
 
 | 原书（nask） | 本仓库（NASM） |
 |--------------|----------------|
-| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.nas -o helloos.img`** |
-| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.nas -o ipl.bin -l helloos.lst`** |
+| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.asm -o helloos.img`** |
+| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.asm -o ipl.bin -l helloos.lst`** |
 
 **`-f bin` 必加：** NASM 若用 **`-f elf`** 会出带程序头/段信息的目标文件，需 **`ld` 链接** — **BIOS 引导扇区用不了**。**`-f bin`** 才输出 **无头裸 `.bin`**（平铺机器码，与 nask 一致），后面才能拼 **1.44 MB 映像** 并用 **QEMU** 启动。详见 [TOOLCHAIN.md · `.bin` 是什么？](../../TOOLCHAIN.md#bin-是什么-f-bin-vs-f-elf-vs-img)。
 
-**笔 vs 编译器：** 编辑器只产出 **给人看的 `.nas` 文本**；**`nasm.exe`** 才把它译成 **机器二进制** — 详见 [Day 2 §2.1 · 编辑器 vs NASM](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同)。
+**笔 vs 编译器：** 编辑器只产出 **给人看的 `.asm` 文本**；**`nasm.exe`** 才把它译成 **机器二进制** — 详见 [Day 2 §2.1 · 编辑器 vs NASM](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同)。
 
 **要点：** 汇编是 **机器码的可读别名** — 一条 `MOV` 对应固定字节序列；**NASM 负责编码和布局**，你负责 **逻辑**。
 
@@ -66,16 +66,16 @@
 **装好后立刻试编译（与书等价，只换命令）：**
 
 ```cmd
-cd <含 helloos.nas 的目录>
-nasm -f bin helloos.nas -o helloos.img
-nasm -f bin helloos.nas -o helloos.img -l helloos.lst
+cd <含 helloos.asm 的目录>
+nasm -f bin helloos.asm -o helloos.img
+nasm -f bin helloos.asm -o helloos.img -l helloos.lst
 ```
 
 | 原书 | 本仓库 |
 |------|--------|
-| `nask helloos.nas helloos.img` | `nasm -f bin helloos.nas -o helloos.img` |
+| `nask helloos.nas helloos.img` | `nasm -f bin helloos.asm -o helloos.img` |
 
-（同上：**只换命令**，**`helloos.nas` 不用改后缀**。）
+（同上：**只换命令**；源码 **`.nas` → `.asm`**。）
 
 **`-f bin`** = 输出与 nask 相同的 **纯二进制**（引导扇区必加）。再用 [1.1.5 QEMU](./section-1.1.5-QEMU安装与运行.md) 启动验证 `hello, world`。
 
@@ -93,7 +93,7 @@ Day 1 在 HxD 里手敲的 **`B8 00 00`、`CD 10`、`55 AA`** 不是随机数，
 |------|------|
 | **一条指令 = 若干字节** | 第 1 字节多为 **操作码 (opcode)**；后面可能跟 **操作数** |
 | **立即数小端序** | 多字节数 **低字节在前**：`0x0123` 存成 `23 01` |
-| **汇编器只做翻译** | **NASM** 读 `.nasm`/`.asm`，编码助记符并处理偏移，输出与手工 **相同字节** |
+| **汇编器只做翻译** | **NASM** 读 **`.asm`** 源码，编码助记符并处理偏移，输出与手工 **相同字节** |
 
 #### 入门例子：`MOV AX, 立即数`
 
@@ -109,7 +109,7 @@ Day 1 在 HxD 里手敲的 **`B8 00 00`、`CD 10`、`55 AA`** 不是随机数，
 
 #### helloos 程序段：汇编与 hex 一一对应
 
-下面把 [1.1.3 写入的机器码](./section-1.1.3-写入引导扇区机器码.md) 与典型 `helloos.nas` 逻辑对照（偏移 **`0x050`–`0x073`** 为代码，**`0x076`** 起为字符串）：
+下面把 [1.1.3 写入的机器码](./section-1.1.3-写入引导扇区机器码.md) 与典型 `helloos.asm` 逻辑对照（偏移 **`0x050`–`0x073`** 为代码，**`0x076`** 起为字符串）：
 
 | 偏移 | 机器码 | 汇编（大意） | 作用 |
 |------|--------|--------------|------|
@@ -136,7 +136,7 @@ Day 1 在 HxD 里手敲的 **`B8 00 00`、`CD 10`、`55 AA`** 不是随机数，
 #### 用 NASM 列表文件核对（推荐）
 
 ```bash
-nasm -f bin helloos.nas -o helloos.img -l helloos.lst
+nasm -f bin helloos.asm -o helloos.img -l helloos.lst
 ```
 
 **`helloos.lst`**：左边是 **偏移 + 机器码**，右边是 **源码行**。例如：
@@ -157,11 +157,11 @@ nasm -f bin helloos.nas -o helloos.img -l helloos.lst
 | 手写 / 汇编 **固定 opcode** | 仍是指令编码，但寻址模式更多 |
 | `INT 0x10` 调 BIOS | 逐步改用 **自有 API / 驱动** |
 
-先建立 **「一行汇编 ↔ 一串 hex」** 的肌肉记忆，后面读 **`helloos.nas`**、GDT 加载、模式切换时，看到 `MOV` / `JMP` / `LGDT` 就不会只把它们当成「魔法咒语」。**源码后缀保持 `.nas` 即可，只换 nask → NASM 命令。**
+先建立 **「一行汇编 ↔ 一串 hex」** 的肌肉记忆，后面读 **`helloos.asm`**、GDT 加载、模式切换时，看到 `MOV` / `JMP` / `LGDT` 就不会只把它们当成「魔法咒语」。**本仓库源码统一 `.asm`，只换 nask → NASM 命令。**
 
 ---
 
-### 最小 `helloos.nas` 骨架（示意）
+### 最小 `helloos.asm` 骨架（示意）
 
 ```nasm
         ORG     0x7C00          ; BIOS 加载地址 — NASM 据此算标签/偏移

@@ -54,7 +54,7 @@ BIOS 规定引导扇区 **共 512 字节**：**前 510 字节** 放代码/数据
 
 ---
 
-### 示例：带「润色」的 `helloos.nas` 骨架
+### 示例：带「润色」的 `helloos.asm` 骨架
 
 ```nasm
         ORG     0x7C00
@@ -71,7 +71,7 @@ BIOS 规定引导扇区 **共 512 字节**：**前 510 字节** 放代码/数据
 编译：
 
 ```cmd
-nasm -f bin helloos.nas -o ipl.bin -l helloos.lst
+nasm -f bin helloos.asm -o ipl.bin -l helloos.lst
 ```
 
 用 **`helloos.lst`** 对照 [HELLOOS_HEX_REFERENCE](../../HELLOOS_HEX_REFERENCE.md) 或昨天 HxD 内容 — **应逐字节相同**。
@@ -96,7 +96,7 @@ nasm -f bin helloos.nas -o ipl.bin -l helloos.lst
 └────────────────────────────────┴──────────────────────────────────┘
 ```
 
-- **`nasm -f bin helloos.nas -o ipl.bin`** → 通常得到 **正好 512 B** 的 **`ipl.bin`**（纯二进制启动区，**不是** 1.44 MB）。
+- **`nasm -f bin helloos.asm -o ipl.bin`** → 通常得到 **正好 512 B** 的 **`ipl.bin`**（纯二进制启动区，**不是** 1.44 MB）。
 - **`ipl.bin` 最后两字节必须是 `55 AA`** — BIOS 靠这对魔数判断「有效启动区」；源码里用 `DB 0x55,0xAA` 或 `DW 0xAA55`（见上文 §③）。
 - 昨天你在 HxD 里做的是：**先建 1.44 MB 全零文件**，再在 **最开头 512 字节** 里填代码和 `55 AA` — 其余保持 `00`。
 - **今天：** 先用 NASM 得到 **`ipl.bin`（512 B）**，再 **拼到 1.44 MB 软盘映像开头** → 就是 BIOS / QEMU 能认的 **可启动镜像**。

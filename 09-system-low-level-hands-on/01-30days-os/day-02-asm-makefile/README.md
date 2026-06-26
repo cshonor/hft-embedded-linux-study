@@ -25,7 +25,7 @@
 | 先制作启动区 | [notes/section-2.3-先制作启动区.md](./notes/section-2.3-先制作启动区.md) |
 | Makefile 入门 | [notes/section-2.4-Makefile-入门.md](./notes/section-2.4-Makefile-入门.md) |
 
-**可复制 Makefile：** [code/Makefile](./code/Makefile)
+**可复制工程：** [code/helloos.asm](./code/helloos.asm) + [code/Makefile](./code/Makefile)（`make ipl`）
 
 ---
 

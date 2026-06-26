@@ -13,35 +13,35 @@
 | 构建 | 书内 Makefile + 批处理 | **GNU Make** |
 | 运行 | QEMU / 软驱 | **QEMU** |
 
-**nask 可以这么理解：** 川合秀实为了方便读者，在 NASM 语法风格上做了定制汇编器。**我们直接用原版 NASM** — **源码文件名、后缀都可以不动**。
+**nask 可以这么理解：** 川合秀实为了方便读者，在 NASM 语法风格上做了定制汇编器。**我们直接用原版 NASM** — 源码后缀统一 **`.asm`**（原书 `.nas`）。
 
 ---
 
-## 只换汇编器，不改 `.nas` 后缀（最重要）
+## 汇编器：nask → NASM，源码统一 `.asm`
 
-原书 tolset 里是 **nask**；本仓库用 **NASM**。**换的是参与编译的软件，不是文件夹里的文件格式。**
+原书 tolset 里是 **nask**；本仓库用 **NASM**。**换的是参与编译的软件；源码后缀从原书 `.nas` 统一为 `.asm`。**
 
 | 什么 **不用改** | 什么 **要换** |
 |----------------|--------------|
-| 源码仍叫 **`helloos.nas`**（原书命名） | 汇编器：**nask** → **`nasm.exe`** |
-| 后缀 **`.nas` / `.nasm` / `.asm`** NASM **都能读** | 编译 **命令格式**（见下表） |
+| 源码仍叫 **`helloos.asm`**（对应原书 `helloos.nas`） | 汇编器：**nask** → **`nasm.exe`** |
+| 后缀统一 **`.asm`** | 编译 **命令格式**（见下表） |
 | 汇编 **语法** 多数逐行相同 | 必须加 **`-f bin`**（见下） |
 
 ```
 原书：  helloos.nas  ──nask────────►  helloos.img / ipl.bin
-本仓库：helloos.nas  ──nasm -f bin──►  helloos.img / ipl.bin   ← 文件名照旧
+本仓库：helloos.asm  ──nasm -f bin──►  helloos.img / ipl.bin
 ```
 
 | 原书（nask） | **本仓库（NASM）** |
 |--------------|-------------------|
-| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.nas -o helloos.img`** |
-| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.nas -o ipl.bin -l helloos.lst`** |
+| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.asm -o helloos.img`** |
+| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.asm -o ipl.bin -l helloos.lst`** |
 
 **`-f bin` 是关键：** 告诉 NASM **不要** 生成带格式的目标文件（如 `.obj`），而是 **直接输出纯二进制** — 与 nask 默认行为一致，才能作为 **512 B 启动区**，再拼进映像、用 **QEMU** 启动。
 
 → 深入理解 **`.bin` / `-f bin` vs `-f elf` / `.img`**：见下一节 **[`.bin` 是什么？](#bin-是什么-f-bin-vs-f-elf-vs-img)**。
 
-> **不必** 为了用 NASM 而把 `helloos.nas` 改成 `boot.asm` — 笔记里若出现 `boot.asm` / `ipl.asm`，只是 **通称**；**本仓库默认文件名仍是 `helloos.nas`**。
+> **不必** 为了用 NASM 而把 `helloos.asm` 改成 `boot.asm` — 笔记里若出现 `boot.asm` / `ipl.asm`，只是 **通称**；**本仓库默认文件名仍是 `helloos.asm`**。
 
 ---
 
@@ -58,9 +58,9 @@
 | **怎么得到** | 汇编源码经 NASM **`-f bin`** 编译，**剥离所有附加信息**，原汁原味输出机器码 | NASM **`-f elf`**（或 `gcc -c`）→ 再 **`ld`** 链接 |
 
 ```
-helloos.nas（人类可读的汇编文本）
+helloos.asm（人类可读的汇编文本）
         │
-        ▼  nasm -f bin helloos.nas -o ipl.bin
+        ▼  nasm -f bin helloos.asm -o ipl.bin
 ipl.bin（CPU 可读的裸机器码，无「外壳」）
         │
         ▼  拼进 1.44 MB 软盘 img 偏移 0
@@ -80,7 +80,7 @@ helloos.img（带磁盘布局的完整镜像载体）
 
 | 步骤 | 文件 | 说明 |
 |------|------|------|
-| ① 手写引导 | **`helloos.nas`** | 汇编 **源码**（文本；后缀 `.nas` 不用改） |
+| ① 手写引导 | **`helloos.asm`** | 汇编 **源码**（文本；后缀 **`.asm`**） |
 | ② NASM 编译 | **`ipl.bin`** | **512 B 裸二进制**；源码末尾 **`0x55AA`** 魔数 → 文件偏移 **`0x1FE–0x1FF` 为 `55 AA`** |
 | ③ 封装进软盘 | **`helloos.img`** | 把 `ipl.bin` **填到 FAT12 规范软盘镜像开头**（1,474,560 B）；后面扇区随 Day 增加 OS 本体、文件系统内容 |
 | ④ 模拟启动 | QEMU **`-fda helloos.img`** | 模拟 BIOS 读盘 → 加载引导扇区 → 跑你的 IPL |
@@ -89,7 +89,7 @@ helloos.img（带磁盘布局的完整镜像载体）
 
 | 扩展名 | 谁读 | 是什么 |
 |--------|------|--------|
-| **`.nas` / `.asm`** | **人** | 人类可读的 **汇编源代码**（文本） |
+| **`.asm`** | **人** | 人类可读的 **汇编源代码**（文本） |
 | **`.bin`** | **CPU** | 原始 **机器码**（纯二进制，**无外壳**） |
 | **`.img`** | **BIOS / QEMU** | 在 `.bin` 之上，按 **磁盘分区 / 文件系统（FAT12）** 规则封装的 **完整镜像载体** |
 
@@ -99,15 +99,15 @@ Day 2 详述：[section 2.3 · `ipl.bin`](./day-02-asm-makefile/notes/section-2.
 
 ## 第一次编译（Day 1）
 
-保存为 **`helloos.nas`**（或 `helloos.nasm`），一行命令出机器码：
+保存为 **`helloos.asm`**，一行命令出机器码：
 
 ```bash
-nasm -f bin helloos.nas -o helloos.img
+nasm -f bin helloos.asm -o helloos.img
 ```
 
 | 部分 | 含义 |
 |------|------|
-| **`helloos.nas`** | 源码；后缀 `.nas` / `.nasm` / `.asm` 均可 |
+| **`helloos.asm`** | 源码；后缀 **`.asm`** |
 | **`-f bin`** | 输出 **纯二进制**（引导扇区用，不是 `.obj`/ELF） |
 | **`-o helloos.img`** | 写入映像/二进制文件 |
 
@@ -117,7 +117,7 @@ nasm -f bin helloos.nas -o helloos.img
 - 按 **`ORG`** 处理 **加载地址**；标签、`$` / `$$` 处理 **段内偏移**
 - 源码里 **`TIMES 510-($-$$) DB 0`** 自动 **填零到 510 字节**，再 **`DB 0x55, 0xAA`** — 不必手数「还要补多少个 `00` 才到 512 字节」
 
-> **与昨天 HxD 的关系：** 昨天是 **亲手填每一格 hex** 建立直觉；从今天起 **逻辑写进 `.nasm`，字节交给 NASM**。用 `nasm -l helloos.lst` 仍可逐字节对照 [HELLOOS_HEX_REFERENCE](./HELLOOS_HEX_REFERENCE.md)。
+> **与昨天 HxD 的关系：** 昨天是 **亲手填每一格 hex** 建立直觉；从今天起 **逻辑写进 `.asm`，字节交给 NASM**。用 `nasm -l helloos.lst` 仍可逐字节对照 [HELLOOS_HEX_REFERENCE](./HELLOOS_HEX_REFERENCE.md)。
 
 **完整 1.44 MB 软盘：** `-f bin` 直接产出的大小 = 源码定义的长度（通常先 **512 B 引导扇区**）；嵌入 1.44 MB 模板可交给 Makefile（见 [day-02 section 2.4](./day-02-asm-makefile/notes/section-2.4-Makefile-入门.md)）。
 
@@ -151,7 +151,7 @@ nasm -f bin helloos.nas -o helloos.img
 ```bash
 # -f bin：纯二进制（引导扇区必加）
 # -l：列表文件，对照 HxD 昨天敲的 hex
-nasm -f bin helloos.nasm -o helloos.img -l helloos.lst
+nasm -f bin helloos.asm -o helloos.img -l helloos.lst
 ```
 
 ### 与 C 协作（Day 3 起）
@@ -165,7 +165,7 @@ gcc -c bootpack.c -o bootpack.o
 ### Makefile 目标链
 
 ```makefile
-ipl.bin: helloos.nasm
+ipl.bin: helloos.asm
 	nasm -f bin $< -o $@ -l helloos.lst
 
 helloos.img: ipl.bin
@@ -183,9 +183,9 @@ run: helloos.img
 
 | 原书 | 本仓库 |
 |------|--------|
-| `helloos.nas` | **保持 `.nas` 即可**（或 `.nasm` / `.asm`） |
-| `nask helloos.nas …` | **`nasm -f bin helloos.nas -o …`** |
-| `naskfunc.nas` | 同名 `.nas` 或 `asmfunc.nasm` |
+| `helloos.nas` | **`helloos.asm`** |
+| `nask helloos.nas …` | **`nasm -f bin helloos.asm -o …`** |
+| `naskfunc.nas` | **`naskfunc.asm`**（或 `asmfunc.asm`） |
 | `helloos.lst` | `nasm -l` 生成 |
 
 **安装 NASM：** [day-01 section 1.3 · 安装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)（官网 / Chocolatey / brew）。

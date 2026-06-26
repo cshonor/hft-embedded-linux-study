@@ -1,7 +1,7 @@
 # Day 8 · 鼠标控制与 32 位模式切换
 
 
-> **原书第八章** · **里程碑** — 解析 3 字节鼠标包、指针跟手移动、回溯 **`asmhead.nas`** 进 32 位。
+> **原书第八章** · **里程碑** — 解析 3 字节鼠标包、指针跟手移动、回溯 **`asmhead.asm`** 进 32 位。
 
 ---
 
@@ -11,7 +11,7 @@
 |----|--------|----------|
 | **① 解读鼠标数据** | **`MOUSE_DEC`** · 校验 · 位运算 | **x/y/btn** 结构化 |
 | **② 移动指针** | **mx/my** + 边界 · 擦除/重绘 | 鼠标 **可动可点**（任务栏会花屏） |
-| **③ asmhead.nas** | **A20** · **CR0** · **memcpy** | **0x00280000** · **far-JMP → C** |
+| **③ asmhead.asm** | **A20** · **CR0** · **memcpy** | **0x00280000** · **far-JMP → C** |
 
 ---
 
@@ -21,7 +21,7 @@
 |----|------|
 | 解读鼠标数据 | [notes/section-8.1-解读鼠标数据.md](./notes/section-8.1-解读鼠标数据.md) |
 | 移动鼠标指针 | [notes/section-8.2-移动鼠标指针.md](./notes/section-8.2-移动鼠标指针.md) |
-| 揭秘 asmhead.nas | [notes/section-8.3-揭秘-asmheadnas.md](./notes/section-8.3-揭秘-asmheadnas.md) |
+| 揭秘 asmhead.asm | [notes/section-8.3-揭秘-asmheadnas.md](./notes/section-8.3-揭秘-asmheadnas.md) |
 
 ---
 
