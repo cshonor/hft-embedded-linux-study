@@ -21,7 +21,7 @@
 
 | 序号 | 文件夹 | 内容 |
 |------|--------|------|
-| 00 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | Harris · LOB / 市场结构 |
+| 00 | [00-Trading-and-Exchanges](./00-Trading-and-Exchanges/) | Harris · LOB / 市场结构（练手：[00-practice-go-dex](./00-Trading-and-Exchanges/00-practice-go-dex/)） |
 | 01 | [01-CSAPP-3rd](./01-CSAPP-3rd/) | **知其所以然** · 程序与硬件 |
 | 02 | [02-Systems-Performance-2nd](./02-Systems-Performance-2nd/) | **知其然** · 性能方法论 |
 | 03 | [03-BPF-Performance-Tools](./03-BPF-Performance-Tools/) | **工具落地** · eBPF / bpftrace |

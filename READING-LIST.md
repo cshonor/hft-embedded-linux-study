@@ -218,7 +218,8 @@
 
 ## 7. Trading and Exchanges — Larry Harris
 
-> 笔记目录：[00-Trading-and-Exchanges/](./00-Trading-and-Exchanges/)
+> 笔记目录：[00-Trading-and-Exchanges/](./00-Trading-and-Exchanges/)  
+> **配套练手：** [00-practice-go-dex/](./00-Trading-and-Exchanges/00-practice-go-dex/)（Go LOB/DEX · 理论 `chapter-*.md` + 实践 `notes/`/`code/` 分离）
 
 > 市场微观、LOB、交易所撮合、机房托管，HFT 业务基石。
 

@@ -93,4 +93,17 @@ Ch 25–27 内部化 · 多市场竞争 · 电子化（colocation 语境）
 Ch 21    成本衡量（回测与实盘 KPI）
 ```
 
+---
+
+## 配套练手 · Go DEX
+
+| | 路径 |
+|---|------|
+| **导读** | [00-practice-go-dex/README.md](./00-practice-go-dex/README.md) |
+| **里程碑 ↔ 章节** | [00-practice-go-dex/OUTLINE.md](./00-practice-go-dex/OUTLINE.md) |
+| **实践笔记** | [00-practice-go-dex/notes/](./00-practice-go-dex/notes/) |
+| **Go 源码** | [00-practice-go-dex/code/](./00-practice-go-dex/code/) |
+
+理论笔记 **仍在本目录 `chapter-*.md`**；练手代码 **不混入** `09` OS / `05` 内核等大模块。
+
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

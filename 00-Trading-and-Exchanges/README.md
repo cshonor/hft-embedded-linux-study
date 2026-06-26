@@ -4,6 +4,8 @@
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
+**配套练手（Go DEX · 与理论绑定、代码独立）：** [00-practice-go-dex/](./00-practice-go-dex/) — 理论仍读下方 `chapter-*.md`，实现与复盘见子目录 `notes/` + `code/`。
+
 ---
 
 ## 阅读进度
