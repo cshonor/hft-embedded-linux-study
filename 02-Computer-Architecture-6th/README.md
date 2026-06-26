@@ -12,7 +12,7 @@
 
 | 章 | 笔记 |
 |----|------|
-| 1 量化设计与分析基础 | [chapter-01-量化设计与分析基础.md](./chapter-01-量化设计与分析基础.md) |
+| 1 量化设计与分析基础 | [chapter-01-quantitative-design-fundamentals](./chapter-01-quantitative-design-fundamentals/) |
 | 2 存储器层次结构设计 | [chapter-02-存储器层次结构设计.md](./chapter-02-存储器层次结构设计.md) |
 | 3 指令级并行 | [chapter-03-指令级并行.md](./chapter-03-指令级并行.md) |
 | 4 向量/SIMD/GPU | [chapter-04-向量SIMD与GPU.md](./chapter-04-向量SIMD与GPU.md) |

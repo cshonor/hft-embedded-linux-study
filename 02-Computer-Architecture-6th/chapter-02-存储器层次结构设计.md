@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-01-量化设计与分析基础.md](./chapter-01-量化设计与分析基础.md)
+- 上一章：[chapter-01-quantitative-design-fundamentals](./chapter-01-quantitative-design-fundamentals/)
 - 下一章：[chapter-03-指令级并行.md](./chapter-03-指令级并行.md)

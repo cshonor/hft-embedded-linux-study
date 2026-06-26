@@ -12,7 +12,7 @@
 
 | 章 | 英文 | 笔记 | HFT |
 |----|------|------|-----|
-| 1 | Fundamentals of Quantitative Design and Analysis | [chapter-01](./chapter-01-量化设计与分析基础.md) | 🟡 |
+| 1 | Fundamentals of Quantitative Design and Analysis | [chapter-01](./chapter-01-quantitative-design-fundamentals/) | 🟡 |
 | 2 | Memory Hierarchy Design | [chapter-02](./chapter-02-存储器层次结构设计.md) | 🔴 |
 | 3 | Instruction-Level Parallelism | [chapter-03](./chapter-03-指令级并行.md) | 🟡 |
 | 4 | Vector, SIMD, and GPU | [chapter-04](./chapter-04-向量SIMD与GPU.md) | ⚪ |
