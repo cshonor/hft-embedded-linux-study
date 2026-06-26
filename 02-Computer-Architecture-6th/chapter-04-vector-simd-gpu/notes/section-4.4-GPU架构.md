@@ -39,6 +39,6 @@
 | **GPU 适用**：离线回测、蒙特卡洛、ML 训练/批量推理、大规模风险仿真 |
 | **不适用**：交易所 colo **tick-to-trade** — 延迟、确定性、PCIe 往返不可接受 |
 | 若用 GPU 做研究：注意 **合并访存**、少发散分支 — 与 Ch2 局部性同构 |
-| SmartNIC/FPGA 是另一路线（→ [Ch7 DSA](../../chapter-07-特定领域架构.md)、[14-DPDK](../../../14-DPDK-Low-Latency-Network/)） |
+| SmartNIC/FPGA 是另一路线（→ [Ch7 DSA](../../chapter-07-domain-specific-architectures/)、[14-DPDK](../../../14-DPDK-Low-Latency-Network/)） |
 
 ---

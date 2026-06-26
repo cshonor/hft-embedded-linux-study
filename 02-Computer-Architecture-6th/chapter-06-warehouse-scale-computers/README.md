@@ -33,12 +33,12 @@
 | **跨机架延迟 300×** | colo **同机架/同主机** 优化 |
 | **云规模经济** | 回测/研究上云；**生产 tick 路径裸金属** |
 
-→ [Ch1 RLP/WSC 类别](../chapter-01-quantitative-design-fundamentals/notes/section-1.1-1.2-引言与计算机分类.md) · [Ch7 DSA](../chapter-07-特定领域架构.md)
+→ [Ch1 RLP/WSC 类别](../chapter-01-quantitative-design-fundamentals/notes/section-1.1-1.2-引言与计算机分类.md) · [Ch7 DSA](../chapter-07-domain-specific-architectures/)
 
 ---
 
 ## 相关章节
 
 - 上一章：[chapter-05-thread-level-parallelism](../chapter-05-thread-level-parallelism/)
-- 下一章：[chapter-07-特定领域架构](../chapter-07-特定领域架构.md)
+- 下一章：[chapter-07-domain-specific-architectures](../chapter-07-domain-specific-architectures/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

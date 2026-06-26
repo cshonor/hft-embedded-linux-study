@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-07-特定领域架构.md](./chapter-07-特定领域架构.md)
+- 上一章：[chapter-07-domain-specific-architectures](./chapter-07-domain-specific-architectures/)
 - 下一章：[appendix-B-存储层次复习.md](./appendix-B-存储层次复习.md)

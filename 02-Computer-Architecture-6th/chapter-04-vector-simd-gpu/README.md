@@ -36,7 +36,7 @@ DLP 三变体：向量架构 (RVV) → 多媒体 SIMD (SSE/AVX) → GPU (SIMT/CU
 
 **默认跳过：** 实盘 tick-to-trade 以 **低延迟串行热路径 + Ch2/Ch3** 为主；GPU 极少上关键路径。
 
-→ [Ch1 DLP 引言](../chapter-01-quantitative-design-fundamentals/notes/section-1.1-1.2-引言与计算机分类.md) · [Ch3 ILP](../chapter-03-instruction-level-parallelism/) · [Ch7 DSA](../chapter-07-特定领域架构.md)
+→ [Ch1 DLP 引言](../chapter-01-quantitative-design-fundamentals/notes/section-1.1-1.2-引言与计算机分类.md) · [Ch3 ILP](../chapter-03-instruction-level-parallelism/) · [Ch7 DSA](../chapter-07-domain-specific-architectures/)
 
 ---
 

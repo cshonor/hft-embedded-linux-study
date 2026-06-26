@@ -18,7 +18,7 @@
 | 4 | Vector, SIMD, and GPU | [chapter-04](./chapter-04-vector-simd-gpu/) | ⚪ |
 | 5 | Thread-Level Parallelism | [chapter-05](./chapter-05-thread-level-parallelism/) | 🔴 |
 | 6 | Warehouse-Scale Computers | [chapter-06](./chapter-06-warehouse-scale-computers/) | ⚪ |
-| 7 | Domain-Specific Architectures | [chapter-07](./chapter-07-特定领域架构.md) | ⚪ |
+| 7 | Domain-Specific Architectures | [chapter-07](./chapter-07-domain-specific-architectures/) | ⚪ |
 
 ## 书内附录
 
