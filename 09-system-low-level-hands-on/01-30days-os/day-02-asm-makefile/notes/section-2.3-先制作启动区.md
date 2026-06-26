@@ -2,7 +2,7 @@
 
 Day 1 用 HxD 手工填的 **512 字节引导扇区**，从今天起在 VS Code 里写成 **`helloos.asm`**（原书文件名，**后缀为 `.asm`**；通称也可叫 *ipl* / *boot* 源码），再交给 **NASM** 编译 — **只产出启动区**，不再一次吐满整盘 1.44 MB。
 
-> **用 NASM 编译 `.asm`：** `nasm -f bin helloos.asm -o ipl.bin` — 见 [§1.3 · 命令对照](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#只换-nask--nasm命令对照)。
+> **用 NASM 编译 `.asm`：** `nasm -f bin helloos.asm -o ipl.bin` — 见 [§1.3 · 命令对照](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#nasm-命令)。
 
 ---
 
@@ -162,7 +162,7 @@ helloos.asm  ──nasm -f bin──►  ipl.bin (512 B，纯 IPL)
                                     └── 映像工具 / dd / HxD ──►  helloos.img (1,474,560 B)
 ```
 
-（**`helloos.asm` 后缀为 `.asm`** — 只换 nask → NASM 命令。）
+（**`helloos.asm` 后缀为 `.asm`** — 只换 NASM 命令。）
 
 | 产物 | 大小 | 作用 |
 |------|------|------|

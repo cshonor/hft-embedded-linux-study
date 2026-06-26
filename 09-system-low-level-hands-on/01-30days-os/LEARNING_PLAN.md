@@ -25,7 +25,7 @@
 
 **若你已有 C++/体系结构背景：** C 与内存布局通常不是门槛，主要补齐 **16 位汇编 + NASM + make** 即可。可与 [01-CSAPP Ch3](../../01-CSAPP-3rd/chapter-03-machine-level-programs/) 并行。
 
-**工具链：** 全程 **NASM + GCC + Make**（不用原书魔改 **nask/bcc**）— 见 [TOOLCHAIN.md](./TOOLCHAIN.md)。
+**工具链：** 全程 **NASM + GCC + Make**（用 **NASM + GCC**）— 见 [TOOLCHAIN.md](./TOOLCHAIN.md)。
 
 ---
 
@@ -75,7 +75,7 @@
    原书软盘/U 盘启动在现代学习环境非必要；QEMU 加载 `.img` 重启快、可脚本化。
 
 4. **工具链用 NASM + GCC 通用链**  
-   原书 **nask** 是作者基于 NASM 风格的魔改汇编器；**直接用 NASM** 即可，既能生成与 Day 1 手工 hex 一致的机器码，又能与 **GCC、Makefile** 配合，从引导扇区一直写到带 C 的内核，后续学 Linux 底层也能复用。tolset 仅作对照可选。
+   **直接用 NASM** 即可 — 从 Day 1 手工 hex 到带 C 的内核全程同一套工具，与 **GCC、Makefile** 自然配合，后续学 Linux 底层也能复用。
 
 5. **路径禁中文与空格**  
    tolset 与部分批处理对非 ASCII 路径敏感；工程根目录用纯英文，例如 `C:\dev\haribote\`。
@@ -107,7 +107,7 @@
 ## 五、现阶段第一步行动
 
 - [ ] **零工具链体感（推荐）：** 按 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) 用 HxD + QEMU 手工做第一个 `helloos.img`
-- [ ] 按 [1.3 安装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) + [SETUP.md](./SETUP.md) 完成 **Day 0**（QEMU；GCC/Make 可 Day 3 前再装）
+- [ ] 按 [1.3 安装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm) + [SETUP.md](./SETUP.md) 完成 **Day 0**（QEMU；GCC/Make 可 Day 3 前再装）
 - [ ] 阅读 [day-01-boot-asm/](./day-01-boot-asm/) 笔记并对照源码
 - [ ] 在 [day-01-boot-asm/code/](./day-01-boot-asm/code/) 对照映像；`make run` 验证与 HxD 版一致
 
@@ -120,4 +120,4 @@
 | [README.md](./README.md) | 模块导读与 Day 索引 |
 | [OUTLINE.md](./OUTLINE.md) | 每日要点速览 + 🔴/🟡/⚪ |
 | [SETUP.md](./SETUP.md) | Windows + NASM/GCC/QEMU Day 0 部署 |
-| [TOOLCHAIN.md](./TOOLCHAIN.md) | NASM vs nask · GCC · Make |
+| [TOOLCHAIN.md](./TOOLCHAIN.md) | NASM 工具链 · GCC · Make |

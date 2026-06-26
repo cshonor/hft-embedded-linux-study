@@ -18,13 +18,7 @@
 
 **你在 HFT 仓里已经见过同一套路：** [00-practice-go-dex/code/Makefile](../../../../00-Trading-and-Exchanges/00-practice-go-dex/code/Makefile) — `make build` 代替 `go build`，`make test` 跑撮合相关测试，`make clean` 清 `bin/`。今天学的是 **OS 引导扇区版**（NASM → `ipl.bin` → 软盘映像），思想一样：**频繁迭代撮合引擎或内核时，一条 `make` 比复制粘贴命令靠谱。**
 
-先从 **适配自制 OS 第一天的极简版** 上手；拼 1.44 MB 软盘、QEMU 启动见下文 **进阶**。
-
----
-
-### 第一天极简 Makefile（复制即用）
-
-仓库 **可直接练手的版本** 在 [code/](../code/)：
+先从 **仓库自带工程** 上手 — [code/](../code/)：
 
 | 文件 | 作用 |
 |------|------|
@@ -33,7 +27,7 @@
 
 ```bash
 cd day-02-asm-makefile/code
-make ipl
+make ipl      # helloos.asm → ipl.bin（512 B）
 ```
 
 核心规则（配方行首 **Tab**）：
@@ -42,6 +36,8 @@ make ipl
 ipl: helloos.asm
 	nasm -f bin $< -o $@
 ```
+
+拼 **1.44 MB** 软盘、`QEMU` 启动见下文 **进阶**。
 
 ---
 
@@ -72,7 +68,7 @@ clean:
 | **`$(NASM) … -o $@ $<`** | 等价于 **`nasm -f bin helloos.asm -o os-image.bin`**（`$@`=目标，`$<`=第一个依赖） |
 | **`clean`** | **`make clean`** 删掉生成物，方便重来 |
 
-**`helloos.asm` 是什么？** 就是 Day 1 [§1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md) 的 **引导扇区汇编**（带 `TIMES` / `0xAA55`）。**原书叫 `helloos.nas`，本仓库统一 `.asm`** — 只把 nask 命令换成 **`nasm -f bin helloos.asm -o …`**（见 [§1.3 · nask→NASM 对照](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#只换-nask--nasm命令对照)）。
+**`helloos.asm` 是什么？** 就是 Day 1 [§1.4](../day-01-boot-asm/notes/section-1.4-加工润色.md) 的 **引导扇区汇编**（带 `TIMES` / `0xAA55`）。**引导扇区汇编源码** — 用 **`nasm -f bin helloos.asm -o …`**（见 [§1.3 · NASM 对照](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#nasm-命令)）。
 
 **产出多大？** `nasm -f bin` 此时通常得到 **512 B** 引导扇区（不是整盘 1.44 MB）。下文把同样产物记作 **`ipl.bin`**；`os-image.bin` 只是第一天起的文件名。
 
@@ -153,7 +149,7 @@ run: helloos.img
 | **`$<`** | 本条规则的第一个依赖（如 `helloos.asm`） |
 | **`$@`** | 本条规则的目标（如 `ipl.bin`） |
 
-原书：`nask helloos.nas helloos.lst ipl.bin` → 本仓库：**`nasm -f bin helloos.asm -o ipl.bin -l helloos.lst`**
+**`nasm -f bin helloos.asm -o ipl.bin -l helloos.lst`**
 
 ---
 

@@ -11,7 +11,7 @@
 |----|--------|----------|
 | **① 先动手** | 二进制编辑器 → `helloos.img` | 1.44MB 软盘映像能 **boot 出 hello, world** |
 | **② 理解底层** | CPU 只认 0/1 电信号 | 手工输入的十六进制 = **机器语言指令** |
-| **③ 汇编入门** | 装 **NASM** + `helloos.asm` 编译 | 同一份 `.img`；下载教程在 [1.3](./notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) |
+| **③ 汇编入门** | 装 **NASM** + `helloos.asm` 编译 | 同一份 `.img`；下载教程在 [1.3](./notes/section-1.3-初次体验汇编程序.md#安装-nasm) |
 | **④ 润色 + 术语** | `TIMES` / `$` / `DW 0xAA55`；512 B 嵌入 1.44 MB | **IPL**、**Boot**、引导扇区 vs 整盘 |
 
 ---
@@ -54,7 +54,7 @@
 ## 本日学习目标 · 自检
 
 - [ ] **（推荐先做）** 用 HxD 手工做 `helloos.img` 并在 QEMU 看到 `hello, world` — [section 1.1](./notes/section-1.1-先动手操作.md)
-- [ ] 按 [1.3 安装 NASM](./notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) 并完成 `nasm -v`
+- [ ] 按 [1.3 安装 NASM](./notes/section-1.3-初次体验汇编程序.md#安装-nasm) 并完成 `nasm -v`
 - [ ] 能用 **`nasm -f bin helloos.asm -o ipl.bin`** 得到 **512 B** 引导扇区，并与 HxD 版 hex 对照
 - [ ] 读 [1.4 加工润色](./notes/section-1.4-加工润色.md)：说清 **`TIMES` / `$` / `$$` / `0xAA55`** 与 **512 B vs 1.44 MB**
 - [ ] 说清 **1440KB（1,474,560 B）** 与 **512 字节引导扇区** 的关系

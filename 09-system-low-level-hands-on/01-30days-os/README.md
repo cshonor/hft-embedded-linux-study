@@ -37,7 +37,7 @@
 
 **标签：** 🟡 选读 · 时间紧可后补，与 `05`/`06` 概念课 **并行** 也行。
 
-**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md) · Day 1 汇编时跟 [§1.3 装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) · [SETUP.md](./SETUP.md)（QEMU / GCC / Make）
+**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md) · Day 1 汇编时跟 [§1.3 装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm) · [SETUP.md](./SETUP.md)（QEMU / GCC / Make）
 
 ---
 
@@ -115,7 +115,7 @@ day-XX-slug/
 
 ## 工具与环境
 
-- **汇编：** **NASM**（全程核心；原书 nask 为作者魔改，本仓库用原版 NASM）— [TOOLCHAIN.md](./TOOLCHAIN.md)
+- **汇编：** **NASM**（全程核心；全程 **NASM**）— [TOOLCHAIN.md](./TOOLCHAIN.md)
 - **C / 构建：** **GCC** + **GNU Make**；运行 **QEMU** 加载 `.img`（见 [SETUP.md](./SETUP.md)）
 - **路径规范：** 工程目录 **禁止中文与空格**
 - **本仓库：** 实验代码与映像放各 Day 目录下 `code/`（如 [day-01-boot-asm/code/](./day-01-boot-asm/code/)），笔记在 `day-XX-slug/notes/`
@@ -127,7 +127,7 @@ day-XX-slug/
 
 - [x] `LEARNING_PLAN.md` — 三阶段标准学习方案 + 避坑
 - [x] `SETUP.md` — Windows + NASM/GCC/QEMU Day 0 部署
-- [x] `TOOLCHAIN.md` — NASM + GCC + Make 选型（替代 nask/bcc）
+- [x] `TOOLCHAIN.md` — NASM + GCC + Make 选型（NASM + GCC）
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（**Day 1–30**）
 - [x] `day-XX-slug/` — 每日导读 + `notes/section-*.md`（**Day 1–30 ✓**）
 - [x] `day-01-boot-asm/code/` — helloos 映像与十六进制对照（**Day 1 ✓**）

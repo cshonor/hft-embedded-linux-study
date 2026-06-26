@@ -9,7 +9,7 @@
 | 组件 | 作用 | 典型文件名 |
 |------|------|------------|
 | **HxD** | Day 1 手工写软盘映像（可先于 tolset） | `HxD.exe` — 见 [day-01 section 1.1](./day-01-boot-asm/notes/section-1.1-先动手操作.md) |
-| **NASM** | **全程核心汇编器**（替代原书 **nask**） | `nasm.exe` — **安装见 [day-01 §1.3](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)** |
+| **NASM** | **全程核心汇编器** | `nasm.exe` — **安装见 [day-01 §1.3](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm)** |
 | **GCC** | C 内核与应用程序（替代 tolset **bcc**） | MinGW-w64 / MSYS2 的 `gcc.exe` |
 | **映像工具** | 把 `ipl.bin` 写入软盘映像 | `edimg` / `imgtool` / 书内脚本 |
 | **QEMU** | 加载 `.img` 模拟 x86 PC 启动 | `qemu-system-i386.exe` |
@@ -18,7 +18,7 @@
 
 **获取方式：** NASM / GCC / QEMU / Make 均为开源工具，按下方步骤安装即可。原书 **tolset** 仅作对照可选，**本仓库不托管** 版权资源。
 
-**工具链说明：** [TOOLCHAIN.md](./TOOLCHAIN.md) — 为何用 NASM 而非 nask。
+**工具链说明：** [TOOLCHAIN.md](./TOOLCHAIN.md) — NASM 工具链。
 
 ---
 
@@ -46,7 +46,7 @@ C:\dev\haribote\          ← 推荐：纯英文、无空格
 
 **完整图文步骤在 Day 1 本节 — 跟书走到汇编时再装即可：**
 
-→ [day-01 section 1.3 · 安装 NASM（替代 nask）](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)
+→ [day-01 section 1.3 · 安装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm)
 
 装完验证：`nasm -v` · 编译：`nasm -f bin helloos.asm -o helloos.img`
 
@@ -147,7 +147,7 @@ make run
 | 路径乱码 / 找不到文件 | 工程移到纯英文路径 |
 | QEMU 黑屏无字 | 确认 `-fda` 指向的 img 大小为 1440KB；重新 `make` |
 | make 报语法错误 | Windows 工程用 **cmd/MSYS2** 下 GNU make，与 WSL 路径混用易错 |
-| nask 与 NASM 语法差异 | 见 [TOOLCHAIN.md](./TOOLCHAIN.md)；以 `nasm -l` 列表对照 hex 为准 |
+| NASM 语法注意 | 见 [TOOLCHAIN.md](./TOOLCHAIN.md)；以 `nasm -l` 列表对照 hex 为准 |
 
 ---
 
@@ -176,7 +176,7 @@ make run
 
 ## 相关
 
-- [TOOLCHAIN.md](./TOOLCHAIN.md) — NASM vs nask 选型
+- [TOOLCHAIN.md](./TOOLCHAIN.md) — NASM 工具链 选型
 - [LEARNING_PLAN.md](./LEARNING_PLAN.md) — 三阶段总方案
 - [README.md](./README.md) — 模块导读
 - [day-01-boot-asm/](./day-01-boot-asm/) — Day 1 笔记

@@ -1,23 +1,19 @@
 ## ① 介绍文本编辑器（写代码用）
 
-### 大白话 · NASM、`.asm`、nask 各是什么？
+### 大白话 · NASM 与 `.asm`
 
-按你现在的场景，三件事分开记就够了：
+两件事分开记就够了：
 
 | 名字 | 是什么 | 你要怎么做 |
 |------|--------|------------|
 | **NASM** | **汇编器（工具）** — 把人写的汇编 **翻译成** CPU 能执行的二进制 | 命令行装 **`nasm.exe`**，用 **`nasm -f bin … -o …`** |
-| **`.asm`** | **源码后缀** — 里面都是 **纯文本汇编**，没有本质区别 | **本仓库统一用 `.asm`**（如 [code/helloos.asm](../code/helloos.asm)）；原书作者写 `.nas`，本仓库一律 `.asm` |
-| **nask** | 原书 tolset 里的 **老汇编器**，现在 **已被 NASM 取代** | **直接忽略** — 只记：**用 NASM 编译 `.asm` 文件** |
+| **`.asm`** | **源码后缀** — 纯文本汇编 | 在 VS Code 里写，如 [code/helloos.asm](../code/helloos.asm) |
 
 ```
-helloos.asm（文本，VS Code 写）  ──nasm -f bin──►  ipl.bin（512 B 二进制）
-        ↑                                              ↑
-   后缀统一 `.asm`                         机器能读的启动区
-   编译时在命令里写对文件名即可
+helloos.asm（VS Code 写）  ──nasm -f bin──►  ipl.bin（512 B）──make──►  helloos.img ──QEMU──►  启动
 ```
 
-**一条口诀：** **NASM 是工具；`.asm` 是源码文件名；nask 不用管。**
+**一条口诀：** **NASM 是工具；`.asm` 是源码文件名。**
 
 ---
 
@@ -63,7 +59,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 **和下面两节的对应关系：**
 
 - **本节 + VS Code 扩展** → 管好 **「笔」**（写、改、高亮 `helloos.asm`）
-- **[Day 1 §1.3 · 装 NASM](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask)** → 装好 **「汇编器」**（`nasm.exe`；**nask 已废弃，不用装**）
+- **[Day 1 §1.3 · 装 NASM](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm)** → 装好 **「汇编器」**（`nasm.exe`）
 - **[2.4 Makefile](./section-2.4-Makefile-入门.md)** → 一条命令 **`make`** 自动 **nasm 翻译 + 拼映像**
 
 > **VS Code 里也有叫 NASM 的扩展** — 那是 **编辑时语法高亮**，不是 `nasm.exe`；别和命令行汇编器搞混（见下方安装步骤）。
@@ -129,7 +125,7 @@ VS Code / 记事本          nasm -f bin              QEMU
 
 （具体 `"asm-intel"` / `"nasm"` 取值取决于你装的扩展；选扩展文档里推荐的 ID 即可。）
 
-> **区分两个「NASM」：** [Day 1 §1.3](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm替代-nask) 装的是 **命令行汇编器 `nasm.exe`**（编译用）；本节是 **VS Code 扩展**（编辑时高亮用）— 两个都要，各干一件事。
+> **区分两个「NASM」：** [Day 1 §1.3](../day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm) 装的是 **命令行汇编器 `nasm.exe`**（编译用）；本节是 **VS Code 扩展**（编辑时高亮用）— 两个都要，各干一件事。
 
 **本仓库还用它写：**
 

@@ -3,28 +3,25 @@
 手敲 **数十万** 个 0/1 或 hex：**慢、易错、不可维护** → 引入 **汇编语言**。
 
 ```
-原书：  helloos.nas  ──nask────────►  helloos.img
-本仓库：helloos.asm  ──nasm -f bin──►  helloos.img
+helloos.asm  ──nasm -f bin──►  ipl.bin / helloos.img  ──QEMU──►  hello, world
 ```
 
 | 步骤 | 工具 | 产出 |
 |------|------|------|
-| 写源码 | **VS Code + NASM 扩展**（[Day 2 §2.1](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#安装-nasm-语法高亮vs-code-扩展)） | **`helloos.asm`**（本仓库统一 **`.asm`**） |
-| 汇编 | **`nasm -f bin helloos.asm -o helloos.img`** | 与 nask 相同的纯二进制映像 |
-| 运行 | QEMU | 同样 `hello, world` |
+| 写源码 | **VS Code + NASM 扩展**（[Day 2 §2.1](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#安装-nasm-语法高亮vs-code-扩展)） | **`helloos.asm`** |
+| 汇编 | **`nasm -f bin helloos.asm -o ipl.bin`** | **512 B** 引导扇区 |
+| 运行 | **QEMU** | 屏幕打印 `hello, world` |
 
-> **下不了 nask？** **只换汇编器为 NASM、只换命令** — 源码统一 **`.asm`**（原书 `.nas`）— 见下方对照表与 [TOOLCHAIN.md](../../TOOLCHAIN.md)。
+> **工具链：** VS Code 写 **`.asm`** → **NASM** 编译 → **Makefile** 拼映像 → **QEMU** 启动。详见 [TOOLCHAIN.md](../../TOOLCHAIN.md) 与 [day-02 code](../../day-02-asm-makefile/code/)。
 
-### 只换 nask → NASM：命令对照
+### NASM 常用命令
 
-**参与编译的软件从 nask 换成 NASM**；工程里源码统一为 **`helloos.asm`**（原书 `helloos.nas`）。
+| 命令 | 作用 |
+|------|------|
+| `nasm -f bin helloos.asm -o ipl.bin` | 汇编 → **512 B** `ipl.bin` |
+| `nasm -f bin helloos.asm -o ipl.bin -l helloos.lst` | 同上，并生成 **列表文件** 对照 hex |
 
-| 原书（nask） | 本仓库（NASM） |
-|--------------|----------------|
-| `nask helloos.nas helloos.img` | **`nasm -f bin helloos.asm -o helloos.img`** |
-| `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.asm -o ipl.bin -l helloos.lst`** |
-
-**`-f bin` 必加：** NASM 若用 **`-f elf`** 会出带程序头/段信息的目标文件，需 **`ld` 链接** — **BIOS 引导扇区用不了**。**`-f bin`** 才输出 **无头裸 `.bin`**（平铺机器码，与 nask 一致），后面才能拼 **1.44 MB 映像** 并用 **QEMU** 启动。详见 [TOOLCHAIN.md · `.bin` 是什么？](../../TOOLCHAIN.md#bin-是什么-f-bin-vs-f-elf-vs-img)。
+**`-f bin` 必加：** NASM 若用 **`-f elf`** 会出带程序头/段信息的目标文件，需 **`ld` 链接** — **BIOS 引导扇区用不了**。**`-f bin`** 才输出 **无头裸 `.bin`**（平铺机器码，纯二进制），后面才能拼 **1.44 MB 映像** 并用 **QEMU** 启动。详见 [TOOLCHAIN.md · `.bin` 是什么？](../../TOOLCHAIN.md#bin-是什么-f-bin-vs-f-elf-vs-img)。
 
 **笔 vs 编译器：** 编辑器只产出 **给人看的 `.asm` 文本**；**`nasm.exe`** 才把它译成 **机器二进制** — 详见 [Day 2 §2.1 · 编辑器 vs NASM](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同)。
 
@@ -32,9 +29,9 @@
 
 ---
 
-### 安装 NASM（替代 nask）
+### 安装 NASM
 
-原书 tolset 里的 **nask** 往往下不到；**全程改用官网 NASM** 即可，语法兼容，输出与书一致。
+安装官网 **NASM** 即可编译 `.asm` 源码。
 
 **官网：** [nasm.us](https://www.nasm.us/)
 
@@ -63,21 +60,20 @@
 | macOS（Homebrew） | `brew install nasm` |
 | MSYS2 | `pacman -S nasm` |
 
-**装好后立刻试编译（与书等价，只换命令）：**
+**装好后立刻试编译：**
 
 ```cmd
-cd <含 helloos.asm 的目录>
-nasm -f bin helloos.asm -o helloos.img
-nasm -f bin helloos.asm -o helloos.img -l helloos.lst
+cd day-02-asm-makefile\code
+make
 ```
 
-| 原书 | 本仓库 |
-|------|--------|
-| `nask helloos.nas helloos.img` | `nasm -f bin helloos.asm -o helloos.img` |
+或手动：
 
-（同上：**只换命令**；源码 **`.nas` → `.asm`**。）
+```cmd
+nasm -f bin helloos.asm -o ipl.bin -l helloos.lst
+```
 
-**`-f bin`** = 输出与 nask 相同的 **纯二进制**（引导扇区必加）。再用 [1.1.5 QEMU](./section-1.1.5-QEMU安装与运行.md) 启动验证 `hello, world`。
+**`-f bin`** = 输出 **512 B 纯二进制**引导扇区。再用 [1.1.5 QEMU](./section-1.1.5-QEMU安装与运行.md) 启动验证 `hello, world`。
 
 > **GCC / Make / 完整 Day 0 环境**（Day 3 起才刚需）→ [SETUP.md](../../SETUP.md)；**本节只要 NASM + QEMU 就能完成 Day 1 汇编实验**。
 
@@ -157,7 +153,7 @@ nasm -f bin helloos.asm -o helloos.img -l helloos.lst
 | 手写 / 汇编 **固定 opcode** | 仍是指令编码，但寻址模式更多 |
 | `INT 0x10` 调 BIOS | 逐步改用 **自有 API / 驱动** |
 
-先建立 **「一行汇编 ↔ 一串 hex」** 的肌肉记忆，后面读 **`helloos.asm`**、GDT 加载、模式切换时，看到 `MOV` / `JMP` / `LGDT` 就不会只把它们当成「魔法咒语」。**本仓库源码统一 `.asm`，只换 nask → NASM 命令。**
+先建立 **「一行汇编 ↔ 一串 hex」** 的肌肉记忆，后面读 **`helloos.asm`**、GDT 加载、模式切换时，看到 `MOV` / `JMP` / `LGDT` 就不会只把它们当成「魔法咒语」。
 
 ---
 
