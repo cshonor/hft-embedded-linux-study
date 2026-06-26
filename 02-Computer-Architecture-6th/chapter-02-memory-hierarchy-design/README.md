@@ -47,5 +47,5 @@
 ## 相关章节
 
 - 上一章：[chapter-01-quantitative-design-fundamentals](../chapter-01-quantitative-design-fundamentals/)
-- 下一章：[chapter-03-指令级并行](../chapter-03-指令级并行.md)
+- 下一章：[chapter-03-instruction-level-parallelism](../chapter-03-instruction-level-parallelism/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

@@ -14,7 +14,7 @@
 |----|------|------|-----|
 | 1 | Fundamentals of Quantitative Design and Analysis | [chapter-01](./chapter-01-quantitative-design-fundamentals/) | 🟡 |
 | 2 | Memory Hierarchy Design | [chapter-02](./chapter-02-memory-hierarchy-design/) | 🔴 |
-| 3 | Instruction-Level Parallelism | [chapter-03](./chapter-03-指令级并行.md) | 🟡 |
+| 3 | Instruction-Level Parallelism | [chapter-03](./chapter-03-instruction-level-parallelism/) | 🟡 |
 | 4 | Vector, SIMD, and GPU | [chapter-04](./chapter-04-向量SIMD与GPU.md) | ⚪ |
 | 5 | Thread-Level Parallelism | [chapter-05](./chapter-05-线程级并行.md) | 🔴 |
 | 6 | Warehouse-Scale Computers | [chapter-06](./chapter-06-仓储级计算机.md) | ⚪ |

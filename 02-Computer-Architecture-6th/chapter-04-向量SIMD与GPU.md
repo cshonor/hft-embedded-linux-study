@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-03-指令级并行.md](./chapter-03-指令级并行.md)
+- 上一章：[chapter-03-instruction-level-parallelism](./chapter-03-instruction-level-parallelism/)
 - 下一章：[chapter-05-线程级并行.md](./chapter-05-线程级并行.md)

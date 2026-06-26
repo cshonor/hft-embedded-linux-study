@@ -33,5 +33,6 @@ Ch2 把 [Ch1 局部性](../../chapter-01-quantitative-design-fundamentals/notes/
 1. `perf` 量 LLC miss / dTLB load miss  
 2. 审查订单簿与行情结构体的 **cache line 布局**  
 3. 读 [Ch5 线程级并行](../../../chapter-05-线程级并行.md) — 多核一致性  
+4. 读 [Ch3 ILP](../../../chapter-03-instruction-level-parallelism/) — 分支与乱序执行  
 
 ---
