@@ -15,7 +15,7 @@
 | 1 量化设计与分析基础 | [chapter-01-quantitative-design-fundamentals](./chapter-01-quantitative-design-fundamentals/) |
 | 2 存储器层次结构设计 | [chapter-02-memory-hierarchy-design](./chapter-02-memory-hierarchy-design/) |
 | 3 指令级并行 | [chapter-03-instruction-level-parallelism](./chapter-03-instruction-level-parallelism/) |
-| 4 向量/SIMD/GPU | [chapter-04-向量SIMD与GPU.md](./chapter-04-向量SIMD与GPU.md) |
+| 4 向量/SIMD/GPU | [chapter-04-vector-simd-gpu](./chapter-04-vector-simd-gpu/) |
 | 5 线程级并行 | [chapter-05-线程级并行.md](./chapter-05-线程级并行.md) |
 | 6 仓储级计算机 | [chapter-06-仓储级计算机.md](./chapter-06-仓储级计算机.md) |
 | 7 特定领域架构 | [chapter-07-特定领域架构.md](./chapter-07-特定领域架构.md) |

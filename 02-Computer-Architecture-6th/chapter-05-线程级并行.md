@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-04-向量SIMD与GPU.md](./chapter-04-向量SIMD与GPU.md)
+- 上一章：[chapter-04-vector-simd-gpu](./chapter-04-vector-simd-gpu/)
 - 下一章：[chapter-06-仓储级计算机.md](./chapter-06-仓储级计算机.md)

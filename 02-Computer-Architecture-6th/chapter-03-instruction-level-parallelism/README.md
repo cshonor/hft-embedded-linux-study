@@ -47,5 +47,5 @@ ILP 见底 → 多线程/SMT（→ 3.11，衔接 Ch5 TLP）
 ## 相关章节
 
 - 上一章：[chapter-02-memory-hierarchy-design](../chapter-02-memory-hierarchy-design/)
-- 下一章：[chapter-04-向量SIMD与GPU](../chapter-04-向量SIMD与GPU.md)
+- 下一章：[chapter-04-vector-simd-gpu](../chapter-04-vector-simd-gpu/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
