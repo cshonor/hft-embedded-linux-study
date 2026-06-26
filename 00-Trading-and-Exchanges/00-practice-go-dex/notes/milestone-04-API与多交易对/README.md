@@ -1,6 +1,6 @@
 # M4 · API 与多交易对（可选）
 
-> **理论：** [Ch 25–27](../../chapter-25-内部化优先撮合与交叉交易.md)（电子化交易、venue 竞争直觉）
+> **理论：** [Ch 25–27](../../chapter-25-internalization-preferencing-crossing/)（电子化交易、venue 竞争直觉）
 
 ## 笔记
 

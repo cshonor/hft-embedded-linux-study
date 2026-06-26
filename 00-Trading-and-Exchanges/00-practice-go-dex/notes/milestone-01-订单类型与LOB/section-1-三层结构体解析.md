@@ -1,7 +1,7 @@
 # 三层结构体解析（Order / Limit / Orderbook）
 
 > **代码：** [orderbook.go](../../code/orderbook.go)（字段旁有简短注释，本文是完整大白话版）  
-> **理论：** [Ch 4 交易指令与订单类型](../../../chapter-04-交易指令与订单类型.md) · [Ch 5 市场结构](../../../chapter-05-市场结构.md)
+> **理论：** [Ch 4 交易指令与订单类型](../../../chapter-04-orders-and-order-types/) · [Ch 5 市场结构](../../../chapter-05-market-structures/)
 
 ---
 

@@ -1,6 +1,6 @@
 # M3 · 价差与流动性
 
-> **理论：** [Ch 13 做市商](../../chapter-13-做市商.md) · [Ch 14 买卖价差](../../chapter-14-买卖价差.md) · [Ch 19 流动性](../../chapter-19-流动性.md)
+> **理论：** [Ch 13 做市商](../../chapter-13-dealers/) · [Ch 14 买卖价差](../../chapter-14-bid-ask-spreads/) · [Ch 19 流动性](../../chapter-19-liquidity/)
 
 ## 笔记
 

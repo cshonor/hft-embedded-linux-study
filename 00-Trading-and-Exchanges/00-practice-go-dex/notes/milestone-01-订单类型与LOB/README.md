@@ -1,6 +1,6 @@
 # M1 · 订单类型与 LOB 数据结构
 
-> **理论：** [Ch 4 交易指令与订单类型](../../chapter-04-交易指令与订单类型.md) · [Ch 5 市场结构](../../chapter-05-市场结构.md)
+> **理论：** [Ch 4 交易指令与订单类型](../../chapter-04-orders-and-order-types/) · [Ch 5 市场结构](../../chapter-05-market-structures/)
 
 ## 本里程碑目标
 

@@ -13,7 +13,7 @@
 | 排序 | 与 Harris **目录顺序一致** | 与 **实现进度** 一致（订单 → LOB → 撮合…） |
 | 模块边界 | 市场微观 **业务语言** | 与 `09` 自制 OS、`05` Linux 内核等 **系统模块清晰分开** |
 
-读 [chapter-04](../chapter-04-交易指令与订单类型.md) 的限价/市价单 → 来 [notes/milestone-01-订单类型与LOB](./notes/milestone-01-订单类型与LOB/) 看自己写的结构体与测试；读 Ch 6 指令驱动市场 → 对 [milestone-02](./notes/milestone-02-撮合引擎/) 的 match 逻辑 — **复盘路径顺**。
+读 [chapter-04](../chapter-04-orders-and-order-types/) 的限价/市价单 → 来 [notes/milestone-01-订单类型与LOB](./notes/milestone-01-订单类型与LOB/) 看自己写的结构体与测试；读 Ch 6 指令驱动市场 → 对 [milestone-02](./notes/milestone-02-撮合引擎/) 的 match 逻辑 — **复盘路径顺**。
 
 ---
 
@@ -36,10 +36,10 @@
 
 | 阶段 | 实践目标 | 对照 Harris |
 |------|----------|-------------|
-| **M1** | 订单类型、限价簿数据结构 | Ch [4](../chapter-04-交易指令与订单类型.md) · [5](../chapter-05-市场结构.md) |
-| **M2** | 价格–时间优先撮合、部分成交 | Ch [6](../chapter-06-指令驱动市场.md) |
-| **M3** | 价差、流动性、maker/taker 视角 | Ch [13](../chapter-13-做市商.md) · [14](../chapter-14-买卖价差.md) · [19](../chapter-19-流动性.md) |
-| **M4+** | 多交易对、HTTP/WS API、简单 DEX 前端（可选） | Ch [25](../chapter-25-内部化优先撮合与交叉交易.md)–[27](../chapter-27-场内交易与自动交易系统.md) |
+| **M1** | 订单类型、限价簿数据结构 | Ch [4](../chapter-04-orders-and-order-types/) · [5](../chapter-05-market-structures/) |
+| **M2** | 价格–时间优先撮合、部分成交 | Ch [6](../chapter-06-order-driven-markets/) |
+| **M3** | 价差、流动性、maker/taker 视角 | Ch [13](../chapter-13-dealers/) · [14](../chapter-14-bid-ask-spreads/) · [19](../chapter-19-liquidity/) |
+| **M4+** | 多交易对、HTTP/WS API、简单 DEX 前端（可选） | Ch [25](../chapter-25-internalization-preferencing-crossing/)–[27](../chapter-27-floor-vs-automated-trading/) |
 
 完整表 → [OUTLINE.md](./OUTLINE.md)
 

@@ -2,7 +2,7 @@
 
 结构体概念 → [section-1-三层结构体解析.md](./section-1-三层结构体解析.md)
 
-阅读 [Ch 4](../../chapter-04-交易指令与订单类型.md) 后继续记录：
+阅读 [Ch 4](../../chapter-04-orders-and-order-types/) 后继续记录：
 
 - [ ] 新增限价单 / 撮合方法（跟视频写）
 - [ ] LOB 价位排序维护方式
