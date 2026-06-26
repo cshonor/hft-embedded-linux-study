@@ -24,7 +24,7 @@
 | `nask helloos.nas helloos.img` | **`nasm -f bin helloos.nas -o helloos.img`** |
 | `nask helloos.nas helloos.lst ipl.bin` | **`nasm -f bin helloos.nas -o ipl.bin -l helloos.lst`** |
 
-**`-f bin` 必加：** NASM 默认可能出 **`.obj` 等带格式目标文件**；**`-f bin`** 才输出 **纯二进制启动区**（与 nask 一致），后面才能拼 **1.44 MB 映像** 并用 **QEMU** 启动。
+**`-f bin` 必加：** NASM 若用 **`-f elf`** 会出带程序头/段信息的目标文件，需 **`ld` 链接** — **BIOS 引导扇区用不了**。**`-f bin`** 才输出 **无头裸 `.bin`**（平铺机器码，与 nask 一致），后面才能拼 **1.44 MB 映像** 并用 **QEMU** 启动。详见 [TOOLCHAIN.md · `.bin` 是什么？](../../TOOLCHAIN.md#bin-是什么-f-bin-vs-f-elf-vs-img)。
 
 **笔 vs 编译器：** 编辑器只产出 **给人看的 `.nas` 文本**；**`nasm.exe`** 才把它译成 **机器二进制** — 详见 [Day 2 §2.1 · 编辑器 vs NASM](../../day-02-asm-makefile/notes/section-2.1-介绍文本编辑器.md#编辑器-vs-nasm笔和编译器分工不同)。
 
