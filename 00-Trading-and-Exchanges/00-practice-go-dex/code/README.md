@@ -1,40 +1,37 @@
 # Go DEX 练手 · 源码
 
-独立 **Go module**，与 Harris 理论目录分离；从 **M1** 起按 [OUTLINE](../OUTLINE.md) 增量提交。
+独立 **Go module**，与 Harris 理论目录分离。
 
-## 常用命令
-
-在 `code/` 目录下：
-
-```bash
-make        # 默认跑 test
-make build  # 编译 → bin/exchange
-make run    # build 后运行入口（打印 working）
-make test   # go test -v ./...
-```
-
-无 `make` 时可直接：`go build -o bin/exchange ./cmd/exchange`，再执行 `bin/exchange`（Windows 为 `bin/exchange.exe`）。
-
-## 包布局（随里程碑扩展）
+## 目录（跟视频一致，扁平）
 
 ```
 code/
-├── go.mod
-├── Makefile
-├── order/          # M1：Order, Side, Type
-├── book/           # M1：OrderBook, BestBid/Ask, TakeMarket
-├── match/          # M2：Matcher, Trade（待建）
-├── metrics/        # M3：Spread, Depth（待建）
-└── cmd/
-    └── exchange/   # 程序入口（先跑通，M4 可扩展 HTTP）
+├── go.mod       ← Go 模块声明
+├── Makefile     ← make build / run / test
+├── main.go      ← 程序入口（main 函数）
+├── order.go     ← 订单长什么样（M1）
+├── book.go      ← 订单簿逻辑（M1）
+├── book_test.go ← 单测
+└── bin/         ← 编译产物（git 忽略）
 ```
 
-## 与理论对照
+**没有** `order/`、`book/`、`cmd/` 这些子文件夹 —— 只是同一个项目里分了几个 `.go` 文件，跟视频里「一个 main.go 起步」一样；代码多了再拆文件，不用一开始就建包。
 
-| 包 | Harris | 状态 |
-|----|--------|------|
-| `order`, `book` | Ch 4–5 | M1 ✅ |
-| `match` | Ch 6 | M2 |
-| `metrics` | Ch 13–14, 19 | M3 |
+## 常用命令
+
+```bash
+make build   # → bin/exchange
+make run     # 编译并运行，应打印 working
+make test    # 跑 book_test.go
+```
+
+## 各文件是干什么的
+
+| 文件 | 含义 | 对应 Harris |
+|------|------|-------------|
+| `main.go` | 程序从哪开始跑 | — |
+| `order.go` | `Order` 结构体：买/卖、限价/市价、价格、数量 | Ch 4 |
+| `book.go` | `OrderBook`：挂单、最优买卖价、市价吃单 | Ch 4–5 |
+| `match.go` | （M2 再加）撮合成交 | Ch 6 |
 
 实践笔记 → [../notes/](../notes/)
