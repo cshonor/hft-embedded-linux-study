@@ -10,7 +10,7 @@
 
 **要点：** 今天 Linux 里的 VFS、slab、观测文化，很多来自这条演进线 — 不是「Linux 独有发明一切」。
 
-→ 设计脉络：[a01 Unix 设计基因](../../../05-Linux-Kernel-Development/03_Course_Kernel_Architecture/episode-a01-Unix设计基因.md)、[a02 宏内核 vs 微内核](../../../05-Linux-Kernel-Development/03_Course_Kernel_Architecture/episode-a02-宏内核与微内核.md)（待补）
+→ 设计脉络：[LKD Ch 1 简介](../../../05-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-01-intro/)（Unix 基因与 Linux 对比）
 
 ---
 

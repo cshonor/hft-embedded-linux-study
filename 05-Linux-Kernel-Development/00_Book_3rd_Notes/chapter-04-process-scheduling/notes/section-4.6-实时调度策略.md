@@ -16,6 +16,6 @@ RT 进程由 **独立实时调度器** 管理 — **不走 CFS 红黑树**。
 
 **HFT 实盘：** 关键线程常用 **`SCHED_FIFO` + 高 RT 优先级 + `sched_setaffinity`**；慎滥用 — 饿死 CFS 线程会导致 **系统管理/日志/网卡慢路径** 失灵。
 
-→ [08-TLPI Ch 34–37](../../../../08-The-Linux-Programming-Interface/) · [03 架构课 a09 调度](../../../05-Linux-Kernel-Development/03_Course_Kernel_Architecture/CHECKLIST.md)
+→ [08-TLPI Ch 34–37](../../../../08-The-Linux-Programming-Interface/) · [LKD Ch 4 调度](../../)
 
 ---

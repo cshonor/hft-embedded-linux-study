@@ -115,5 +115,5 @@ Ch 1–2  目标 + 方法论（USE / 延迟分解）
 - CPU / 内存：[../chapter-06-cpus/](../chapter-06-cpus/) · [../chapter-07-memory/](../chapter-07-memory/)
 - 网络：[../chapter-10-network/](../chapter-10-network/)
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
-- 内核架构课：[02/03_Course_Kernel_Architecture](../../05-Linux-Kernel-Development/03_Course_Kernel_Architecture/)
+- LKD 内核笔记：[05-LKD](../../05-Linux-Kernel-Development/00_Book_3rd_Notes/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

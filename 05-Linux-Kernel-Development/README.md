@@ -1,8 +1,8 @@
 # Linux Kernel Development — 内核开发总目录
 
-**文件夹 02** · 书本主线 + 三门前置课程 · [返回总清单](../READING-LIST.md#2-linux-kernel-development--robert-love)
+**文件夹 02** · 书本主线 + LFS 前置 · [返回总清单](../READING-LIST.md#2-linux-kernel-development--robert-love)
 
-> **归类逻辑：** 三门视频课是《Linux Kernel Development 第三版》的**前置预习**；书本是**主线核心**。全部归属「Linux 内核开发」大主题，检索与复习统一入口。
+> **归类逻辑：** LFS 视频课是《Linux Kernel Development 第三版》的**前置预习**；书本是**主线核心**。全部归属「Linux 内核开发」大主题，检索与复习统一入口。
 
 ---
 
@@ -12,26 +12,20 @@
 |------|--------|------|-----------|
 | 00 | [00_Book_3rd_Notes](./00_Book_3rd_Notes/) | Love · LKD 第三版 · 20 章 | **主线** — 体系化梳理、查漏补缺 |
 | 01 | [01_Course_LFS](./01_Course_LFS/) | LFS 从零构建系统 | 前置：编译上下文、用户态/内核态边界 |
-| 02 | [02_Course_Kernel_7Lectures](./02_Course_Kernel_7Lectures/) | 内核编程视频 · 6 集 · LKM/驱动/调试 | 前置：LKM、中断、Oops/KGDB |
-| 03 | [03_Course_Kernel_Architecture](./03_Course_Kernel_Architecture/) | Complete Kernel Guide 视频 · 理论架构 |
 
-📋 课程 ↔ 书本阅读关系 → [LEARNING-PATH.md](./LEARNING-PATH.md)
+📋 LFS ↔ 书本阅读关系 → [LEARNING-PATH.md](./LEARNING-PATH.md)
 
 ---
 
 ## 推荐学习顺序
 
 ```
-01 LFS
+01 LFS（整机构建、编译上下文）
   ↓
-02 内核编程视频 · 6 集（LKM/驱动/调试）
-  ↓
-03 内核原理架构（理论）
-  ↓
-00 LKD 第三版（通读 + 补全书本独有细节）
+00 LKD 第三版（通读 + 在 00_Book_3rd_Notes 补笔记）
 ```
 
-**正确节奏：** 三门课建立感性认知 → 书本系统化串联 → 把书本新增内容补回 `00_Book_3rd_Notes`。
+**正确节奏：** LFS 建立感性认知 → 书本系统化串联 → 把书本内容补回 `00_Book_3rd_Notes`。
 
 ---
 

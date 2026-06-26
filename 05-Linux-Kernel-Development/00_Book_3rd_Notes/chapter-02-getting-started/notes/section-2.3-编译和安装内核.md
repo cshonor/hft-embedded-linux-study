@@ -32,6 +32,6 @@ make -j$(nproc)    # 或 make -j8；通常 核心数 ~ 2× 核心
 
 **HFT 对照：** 调 **网卡驱动、PREEMPT、HZ、隔离 CPU** 往往从 **自建内核 + `menuconfig`** 开始；生产环境务必保留可回滚的已知-good 内核条目。
 
-→ 课程前置：[01 LFS](../../../05-Linux-Kernel-Development/01_Course_LFS/) · [02 内核编程 7 讲](../../../05-Linux-Kernel-Development/02_Course_Kernel_7Lectures/)
+→ 课程前置：[01 LFS](../../../05-Linux-Kernel-Development/01_Course_LFS/)
 
 ---

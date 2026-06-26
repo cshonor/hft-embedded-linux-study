@@ -12,10 +12,10 @@
 ## 学习顺序
 
 ```
-01 LFS（本文件夹）→ 02 内核编程视频 6 集 → 03 架构理论 → 00 LKD 第三版
+01 LFS（本文件夹）→ 00 LKD 第三版
 ```
 
-→ 课书对照：[LEARNING-PATH.md § LFS](../LEARNING-PATH.md#1-lfs--编译系统上下文用户态内核态)
+→ 课书对照：[LEARNING-PATH.md](../LEARNING-PATH.md)
 
 ---
 

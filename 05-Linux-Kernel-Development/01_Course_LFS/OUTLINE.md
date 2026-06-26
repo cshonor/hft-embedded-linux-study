@@ -55,4 +55,4 @@ p15       BusyBox 极简路径（选看）
 | **官方手册** | [LFS Book (stable)](https://www.linuxfromscratch.org/lfs/view/stable/) — 与视频互补 |
 | **操作清单** | [CHECKLIST.md](./CHECKLIST.md) — 按集跟做 + 避坑 |
 
-→ 完成后进入 [02 内核编程 6 集](../02_Course_Kernel_7Lectures/) · 书本 [LKD Ch2](../00_Book_3rd_Notes/chapter-02-getting-started/)
+→ 完成后进入 [LKD Ch2](../00_Book_3rd_Notes/chapter-02-getting-started/)

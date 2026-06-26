@@ -2,7 +2,7 @@
 
 **00_Book_3rd_Notes** · 全书 **20 章** · [返回 05 总目录](../README.md) · [返回总清单](../../READING-LIST.md#2-linux-kernel-development--robert-love)
 
-> **前置建议：** 先完成 [01 LFS](../01_Course_LFS/) → [02 内核编程 6 集](../02_Course_Kernel_7Lectures/) → [03 架构理论](../03_Course_Kernel_Architecture/)，再通读本书。见 [LEARNING-PATH.md](../LEARNING-PATH.md)。
+> **前置建议：** 建议先完成 [01 LFS](../01_Course_LFS/)，再通读本书。见 [LEARNING-PATH.md](../LEARNING-PATH.md)。
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
