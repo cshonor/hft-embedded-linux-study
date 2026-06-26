@@ -44,5 +44,5 @@ SMP/UMA vs DSM/NUMA → 监听(MESI) vs 目录一致性
 ## 相关章节
 
 - 上一章：[chapter-04-vector-simd-gpu](../chapter-04-vector-simd-gpu/)
-- 下一章：[chapter-06-仓储级计算机](../chapter-06-仓储级计算机.md)
+- 下一章：[chapter-06-warehouse-scale-computers](../chapter-06-warehouse-scale-computers/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

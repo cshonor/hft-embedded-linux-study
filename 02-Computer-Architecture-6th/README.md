@@ -17,7 +17,7 @@
 | 3 指令级并行 | [chapter-03-instruction-level-parallelism](./chapter-03-instruction-level-parallelism/) |
 | 4 向量/SIMD/GPU | [chapter-04-vector-simd-gpu](./chapter-04-vector-simd-gpu/) |
 | 5 线程级并行 | [chapter-05-thread-level-parallelism](./chapter-05-thread-level-parallelism/) |
-| 6 仓储级计算机 | [chapter-06-仓储级计算机.md](./chapter-06-仓储级计算机.md) |
+| 6 仓储级计算机 | [chapter-06-warehouse-scale-computers](./chapter-06-warehouse-scale-computers/) |
 | 7 特定领域架构 | [chapter-07-特定领域架构.md](./chapter-07-特定领域架构.md) |
 
 ## 书内附录（A–C）
