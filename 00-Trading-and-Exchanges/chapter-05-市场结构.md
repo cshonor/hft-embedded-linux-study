@@ -123,7 +123,7 @@
 
 | HFT 视角 |
 |----------|
-| **LOB = HFT 核心数据结构**；详见 [chapter-06-限价订单簿LOB.md](./chapter-06-限价订单簿LOB.md) |
+| **LOB = HFT 核心数据结构**；详见 [chapter-06-指令驱动市场.md](./chapter-06-指令驱动市场.md) |
 | 多 venue → **多个 order book** 需聚合 (SIP vs direct feed) |
 
 ### 4.3 交易代码 (Ticker symbols)
