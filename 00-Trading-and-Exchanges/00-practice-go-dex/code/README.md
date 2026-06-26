@@ -7,8 +7,8 @@ code/
 ├── go.mod
 ├── Makefile
 ├── main.go           ← 入口，打印 working
-├── orderbook.go      ← 订单 + 订单簿（跟视频一起写）
-├── orderbook_test.go ← 单测（Go 命名：源文件_test.go）
+├── orderbook.go      ← 跟视频写（当前为空）
+├── orderbook_test.go ← 跟视频写（当前为空）
 └── bin/              ← make build 产物
 ```
 
