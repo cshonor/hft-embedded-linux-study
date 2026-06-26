@@ -1,12 +1,16 @@
 package main
 
+// Harris 29 章 ↔ 代码索引：HARRIS-INDEX.md
+// 本文件：Ch 4 · Ch 5 · Ch 6（M1–M2）
+//   Ch 4 订单类型 → ../chapter-04-交易指令与订单类型.md
+//   Ch 5 市场结构 → ../chapter-05-市场结构.md
+//   Ch 6 指令驱动 → ../chapter-06-指令驱动市场.md
+// 概念笔记 → ../notes/milestone-01-订单类型与LOB/section-1-三层结构体解析.md
 // ── 三层结构：Order → Limit → Orderbook ─────────────────────────────
 // 只存放「还没成交的限价挂单」。市价单吃完对手盘就走，不进 Bids/Asks。
-// 详细笔记 → notes/milestone-01-订单类型与LOB/section-1-三层结构体解析.md
 
 // Order 最小单元：用户一笔限价挂单（未成交部分）
-type Order struct {
-	Size      float64 // 剩余未成交数量
+type Order struct {	Size      float64 // 剩余未成交数量
 	Limit     *Limit  // 反向指针：这条单挂在哪个价位档位（撮合时快速找到所属 Limit）
 	Timestamp int64   // 下单时间；同价位内先下单先成交（时间优先）
 }

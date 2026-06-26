@@ -49,6 +49,7 @@
 
 | 用途 | 链接 |
 |------|------|
+| **29 章 ↔ 代码索引** | [code/HARRIS-INDEX.md](./code/HARRIS-INDEX.md) |
 | 实践笔记索引 | [notes/](./notes/) |
 | Go 源码 | [code/](./code/) |
 | 全书理论目录 | [../OUTLINE.md](../OUTLINE.md) |
