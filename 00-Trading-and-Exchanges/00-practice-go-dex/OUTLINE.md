@@ -47,10 +47,10 @@
 
 | 项 | 内容 |
 |----|------|
-| **目标** | HTTP/JSON 或 WebSocket：`POST /order`、`GET /book`；多 `symbol` |
+| **目标** | HTTP/JSON 或 WebSocket：`POST /order`、`GET /book`；**Level 1** `GET /ticker`（best bid/ask）；多 `symbol` |
 | **Harris** | [Ch 25](../chapter-25-internalization-preferencing-crossing/)–[27](../chapter-27-floor-vs-automated-trading/)（电子化、多 venue 直觉） |
 | **笔记** | [notes/milestone-04-API与多交易对/](./notes/milestone-04-API与多交易对/) |
-| **验收** | 本地 curl 下单、查簿；QEMU 式「能跑通一条链路」即可 |
+| **验收** | 本地 curl 下单、查簿；**ticker 卖价 = min(Asks)**、买价 = max(Bids)，与手工一致 |
 
 ---
 

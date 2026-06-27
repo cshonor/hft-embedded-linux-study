@@ -51,3 +51,4 @@ type Orderbook struct {
 // 3. 市价买单：吃 Asks 最低价档；市价卖单：吃 Bids 最高价档
 // 4. 同档内按 Timestamp 时间优先；跨档按价格优先（Harris Ch 4–6）
 // 5. 路由/通道（SuperDOT）→ Ch 2 §1，M4+；自动撮合内核（SuperSOES）→ Match()，M2
+// 6. Match() 后 BestBid/BestAsk（Bids[0]/Asks[0]）→ Level 1 行情推送，M4

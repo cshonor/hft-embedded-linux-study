@@ -7,6 +7,7 @@
 - **价格优先**：买价高者优先；卖价低者优先
 - **同价时间优先**：FIFO
 - 输出 **Trade** 列表；支持 **部分成交**、剩余挂单
+- **`BestBid()` / `BestAsk()`**：簿顶最优价 — 为 M4 **Level 1 行情** 准备（[Ch 2 §1 Level 1 BBO](../../chapter-02-trading-stories/notes/section-1-1-散户股票交易.md#level-1全市场-bbo-是怎么拼出来的)）
 
 ## 笔记
 
