@@ -10,9 +10,10 @@
 
 | 代码文件 | 里程碑 | 直接相关的 Harris 章 | 实践笔记 |
 |----------|--------|----------------------|----------|
-| [orderbook.go](./orderbook.go) | M1–M2 | [Ch 4](../chapter-04-orders-and-order-types/) · [Ch 5](../chapter-05-market-structures/) · [Ch 6](../chapter-06-order-driven-markets/) | [M1 笔记](../notes/milestone-01-订单类型与LOB/) |
+| [orderbook.go](./orderbook.go) | M1–M2 | [Ch 4](../chapter-04-orders-and-order-types/) · [Ch 5](../chapter-05-market-structures/) · [Ch 6](../chapter-06-order-driven-markets/) | [M1](../notes/milestone-01-订单类型与LOB/) · [M2](../notes/milestone-02-撮合引擎/) |
+| [marketmaker.go](./marketmaker.go) | M2+ | [Ch 2 §1](../chapter-02-trading-stories/notes/section-1-1-散户股票交易.md) · [Ch 13](../chapter-13-dealers/) | 极简做市：定时挂买一/卖一 |
 | [orderbook_test.go](./orderbook_test.go) | M1–M2 | 同上 | 同上 |
-| [main.go](./main.go) | 入口 | — | — |
+| [main.go](./main.go) | demo | [Ch 2 §1](../chapter-02-trading-stories/notes/section-1-1-散户股票交易.md) | MM + 散户市价成交演示 |
 | `metrics.go`（待建） | M3 | [Ch 13](../chapter-13-dealers/) · [Ch 14](../chapter-14-bid-ask-spreads/) · [Ch 19](../chapter-19-liquidity/) | [M3 笔记](../notes/milestone-03-价差与流动性/) |
 | HTTP / WS（待建） | M4 | [Ch 25](../chapter-25-internalization-preferencing-crossing/)–[27](../chapter-27-floor-vs-automated-trading/) | [M4 笔记](../notes/milestone-04-API与多交易对/) |
 
@@ -27,14 +28,14 @@
 | 3 | The Trading Industry | [chapter-03](../chapter-03-trading-industry/) | — | 背景：产业全景 |
 | 4 | Orders and Order Properties | [chapter-04](../chapter-04-orders-and-order-types/) | **M1** | `Order` · 限价/市价 → [orderbook.go](./orderbook.go) |
 | 5 | Market Structures | [chapter-05](../chapter-05-market-structures/) | **M1** | `Bids`/`Asks` 双边簿 → [orderbook.go](./orderbook.go) |
-| 6 | Order-driven Markets | [chapter-06](../chapter-06-order-driven-markets/) | **M2** | 价格–时间优先撮合（方法待写） |
+| 6 | Order-driven Markets | [chapter-06](../chapter-06-order-driven-markets/) | **M2** | `AddOrder` · 价格–时间优先 · `BestBid`/`BestAsk` → [orderbook.go](./orderbook.go) |
 | 7 | Brokers | [chapter-07](../chapter-07-brokers/) | — | 选读：经纪商角色 |
 | 8 | Why People Trade | [chapter-08](../chapter-08-why-people-trade/) | — | 选读：交易动机 |
 | 9 | Good Markets | [chapter-09](../chapter-09-good-markets/) | — | 选读：好市场标准 |
 | 10 | Informed Traders | [chapter-10](../chapter-10-informed-traders-market-efficiency/) | — | 知情交易 / 逆向选择 |
 | 11 | Order Anticipators | [chapter-11](../chapter-11-order-anticipators/) | — | 指令预期 / front-running |
 | 12 | Bluffers and Manipulation | [chapter-12](../chapter-12-bluffers-market-manipulation/) | — | 选读：操纵 |
-| 13 | Dealers | [chapter-13](../chapter-13-dealers/) | **M3** | 做市商视角 → 价差（待建） |
+| 13 | Dealers | [chapter-13](../chapter-13-dealers/) | **M2+** | [marketmaker.go](./marketmaker.go) 极简做市 |
 | 14 | Bid-Ask Spreads | [chapter-14](../chapter-14-bid-ask-spreads/) | **M3** | spread = best_ask − best_bid |
 | 15 | Block Traders | [chapter-15](../chapter-15-block-traders/) | — | 选读：大宗 |
 | 16 | Value Traders | [chapter-16](../chapter-16-value-traders/) | — | 选读：价值交易 |

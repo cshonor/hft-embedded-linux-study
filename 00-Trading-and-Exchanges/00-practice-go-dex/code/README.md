@@ -6,15 +6,16 @@
 code/
 ├── go.mod
 ├── Makefile
-├── HARRIS-INDEX.md     ← 29 章理论笔记 ↔ 代码对照（查章节用这页）
-├── main.go             ← 入口，打印 working
-├── orderbook.go        ← Order / Limit / Orderbook 三个结构体
-└── orderbook_test.go   ← 单测骨架
+├── HARRIS-INDEX.md
+├── main.go             ← 演示：MM 后台报价 + 散户市价单成交
+├── orderbook.go        ← Order / Limit / Orderbook + AddOrder / BestBid / BestAsk
+├── marketmaker.go      ← 极简做市：定时刷新买一 / 卖一（Ch 2 §1）
+└── orderbook_test.go
 ```
 
 ```bash
 make build
-make run          # 或 go run main.go
+make run          # MM 做市 + 散户市价买卖 demo
 make test
 ```
 
