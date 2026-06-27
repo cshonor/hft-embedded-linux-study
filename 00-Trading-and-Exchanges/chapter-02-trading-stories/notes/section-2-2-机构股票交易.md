@@ -50,6 +50,7 @@ Bob 卖出 10,000 股 **价差极大、流动性极差** 的股票：
 | 能力 | 干什么 | Harris / 行业 |
 |------|--------|---------------|
 | **暗池 (Dark pool)** | 大单 **保密撮合**，不显示在 Level II | 本节 Bob → **POSIT**；Ch [25](../chapter-25-internalization-preferencing-crossing/) crossing / internalization |
+| **OTC / Upstairs** | **场外** 找对手、**折扣换流动性** | [§3 超大宗抛售](./section-3-3-超大宗股票抛售.md#otc-折扣--流动性补偿) — 与暗池互补：藏单 vs 直接议价 |
 | **冰山单 (Iceberg)** | 簿上只显示 **tip size**，其余 **隐藏** | Ch [4](../chapter-04-orders-and-order-types/) 隐藏/披露规则 |
 | **低延迟网关** | 不走零售 REST，走 **FIX / 专线 / 共置** | Ch [27](../chapter-27-floor-vs-automated-trading/) 电子化交易 |
 | **算法拆单** | 母单 (parent) → 引擎多次收到 **子单 (child)** | 降低 impact；与 HFT **拆单极小、极快** 形成对比（见上） |

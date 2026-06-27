@@ -42,7 +42,7 @@
 | **M2** | 价格–时间优先撮合、部分成交 | Ch [6](../chapter-06-order-driven-markets/) |
 | **M3** | 价差、流动性、maker/taker 视角 | Ch [13](../chapter-13-dealers/) · [14](../chapter-14-bid-ask-spreads/) · [19](../chapter-19-liquidity/) |
 | **M4+** | 多交易对、HTTP/WS API、简单 DEX 前端（可选） | Ch [25](../chapter-25-internalization-preferencing-crossing/)–[27](../chapter-27-floor-vs-automated-trading/) |
-| **M5** | 机构级：暗池、冰山、多 ingress、风控、算法拆单（backlog） | [Ch 2 §2 机构](../chapter-02-trading-stories/notes/section-2-2-机构股票交易.md) |
+| **M5** | 机构级：暗池、冰山、多 ingress、**OTC/upstairs 协商成交**、SOR、风控、拆单（backlog） | [Ch 2 §2–§3](../chapter-02-trading-stories/notes/) |
 
 完整表 → [OUTLINE.md](./OUTLINE.md)
 
