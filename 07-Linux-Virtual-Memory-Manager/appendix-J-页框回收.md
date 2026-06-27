@@ -2,7 +2,9 @@
 
 > **Code Commentary** · Mel Gorman · **跳过**
 
-<!-- 代码走读待补充 -->
+概念总览 → [chapter-10-页框回收.md](./chapter-10-页框回收.md)（现代 **`mm/vmscan.c`**）
+
+<!-- 走读 vmscan.c: shrink_lruvec, balance_pgdat, kswapd -->
 
 ## 相关章节
 
