@@ -2,7 +2,9 @@
 
 > **Code Commentary** · Mel Gorman · **跳过**
 
-<!-- 代码走读待补充 -->
+概念总览 → [chapter-11-交换管理.md](./chapter-11-交换管理.md)
+
+<!-- 走读 swap_state.c, swapfile.c, page_io.c -->
 
 ## 相关章节
 
