@@ -2,7 +2,8 @@
 
 > **父模块：** [00-Trading-and-Exchanges](../README.md)（Larry Harris · *Trading and Exchanges*）  
 > **定位：** 用 **Go** 写一个最小 **DEX / 指令驱动撮合** 练手项目 — **理论归理论、代码归代码**，复盘时一眼对上 Harris 章节。  
-> **边界：** 本项目是 **市场基础设施**（稳定、公平、全量撮合），不是 HFT 抢跑系统 — 见 [Ch 1 §3 · 基础设施 vs HFT](../chapter-01-introduction-market-microstructure/notes/section-3-3-交易工具与市场.md#四同一套订单簿两种完全不同的系统)。
+> **边界：** 本项目是 **市场基础设施**（稳定、公平、全量撮合），不是 HFT 抢跑系统 — 见 [Ch 1 §3](./../chapter-01-introduction-market-microstructure/notes/section-3-3-交易工具与市场.md#四同一套订单簿两种完全不同的系统)。  
+> **语言路线：** **Go = 原型**（先把 `Match()` 逻辑跑通）；行业里 **HFT 网关 / 核心热路径用 Rust 或 C++**（无 GC 抖动），Go 更适合回测、风控、监控等外围 — 见 [Ch 1 §4.4 · 技术栈分工](../chapter-01-introduction-market-microstructure/notes/section-4-4-贯穿全书的关键主题.md#hft-里谁用什么语言行业分工)。
 
 ---
 
@@ -67,7 +68,7 @@
 
 09 自制 OS / 05 LKD …（系统与内核 · 不同大模块，互不混放）
     ↓ 后期
-15 HFT 工程 · 16 Rust 量化（低延迟实现语言可换 Rust，业务模型仍来自 00）
+15 HFT 工程 · 16 Rust 量化（网关/撮合热路径 → Rust；Go 留外围；业务模型仍来自 00）
 ```
 
 返回 → [00 导读](../README.md) · [总路线 ../../HFT-READING-ROADMAP.md](../../HFT-READING-ROADMAP.md)
