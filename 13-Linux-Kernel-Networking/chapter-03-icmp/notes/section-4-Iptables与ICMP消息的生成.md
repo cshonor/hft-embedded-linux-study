@@ -80,7 +80,7 @@ iptables -A INPUT -p udp --dport 9999 -j REJECT --reject-with icmp-port-unreacha
 
 ## 相关章节
 
-- 下一章：[Ch 4 IPv4](../../chapter-04-IPv4.md)
+- 下一章：[Ch 4 IPv4](../../chapter-04-ipv4/)
 - Netfilter：[Ch 9](../../chapter-09-Netfilter.md)
 
 ---

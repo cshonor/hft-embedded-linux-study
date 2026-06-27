@@ -13,7 +13,7 @@
 | 1 简介 | [chapter-01-introduction/](./chapter-01-introduction/) |
 | 2 Netlink 套接字 | [chapter-02-netlink-sockets/](./chapter-02-netlink-sockets/) |
 | 3 ICMP | [chapter-03-icmp/](./chapter-03-icmp/) |
-| 4 IPv4 | [chapter-04-IPv4.md](./chapter-04-IPv4.md) |
+| 4 IPv4 | [chapter-04-ipv4/](./chapter-04-ipv4/) |
 | 5 IPv4 路由子系统 | [chapter-05-IPv4路由子系统.md](./chapter-05-IPv4路由子系统.md) |
 | 6 高级路由 | [chapter-06-高级路由.md](./chapter-06-高级路由.md) |
 | 7 邻居子系统 | [chapter-07-邻居子系统.md](./chapter-07-邻居子系统.md) |

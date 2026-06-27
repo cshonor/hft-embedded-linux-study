@@ -99,7 +99,7 @@ L3 异常 → icmp_send(type, code, info)
 | **PMTU 黑洞** | DF + 无 ICMP Fragmentation Needed → **挂死** — 共置网要 **固定 MTU / 开 PMTUD 路径** |
 | **安全扫描** | 对交易 VLAN **限制入站 ICMP** — 但别误伤 **必要 PMTU** |
 
-→ IPv4 主体：[Ch 4](../../chapter-04-IPv4.md)
+→ IPv4 主体：[Ch 4](../../chapter-04-ipv4/)
 
 ---
 

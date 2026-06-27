@@ -8,5 +8,5 @@
 
 ## 相关
 
-- [chapter-04-IPv4.md](./chapter-04-IPv4.md)
+- [chapter-04-ipv4/](./chapter-04-ipv4/)
 - [chapter-11-第4层协议.md](./chapter-11-第4层协议.md)

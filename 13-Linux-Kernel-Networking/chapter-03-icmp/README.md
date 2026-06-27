@@ -11,7 +11,7 @@
 | | 内容 |
 |---|------|
 | **本章** | ICMPv4 收发与限速 · ICMPv6/ND/MLD · Ping 套接字 · iptables REJECT |
-| **前置** | [Ch 1](../chapter-01-introduction/) 栈流转 · [Ch 4](../chapter-04-IPv4.md) IPv4 主体（可并行） |
+| **前置** | [Ch 1](../chapter-01-introduction/) 栈流转 · [Ch 4](../chapter-04-ipv4/) IPv4 主体（可并行） |
 | **HFT 读法** | **PMTU / 不可达** 影响连接建立；**ICMP rate limit** 与防火墙 **REJECT** 影响排查 — 非 tick 热路径但 **连通性/运维** 相关 |
 
 ---
@@ -30,7 +30,7 @@
 ## 相关章节
 
 - 上一章：[../chapter-02-netlink-sockets/](../chapter-02-netlink-sockets/)
-- 下一章：[../chapter-04-IPv4.md](../chapter-04-IPv4.md)
+- 下一章：[../chapter-04-ipv4/](../chapter-04-ipv4/)
 - IPv6 / ND：[../chapter-08-IPv6.md](../chapter-08-IPv6.md) · 邻居：[../chapter-07-邻居子系统.md](../chapter-07-邻居子系统.md)
 - 组播 MLD：[../note-组播IGMP.md](../note-组播IGMP.md)
 - Netfilter：[../chapter-09-Netfilter.md](../chapter-09-Netfilter.md)
