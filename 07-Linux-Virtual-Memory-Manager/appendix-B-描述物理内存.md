@@ -2,7 +2,9 @@
 
 > **Code Commentary** · Mel Gorman · **选读**
 
-<!-- 代码走读待补充 -->
+概念总览 → [chapter-02-描述物理内存.md](./chapter-02-描述物理内存.md)
+
+<!-- 按书附录逐文件走读 pg_data_t / struct zone / struct page -->
 
 ## 相关章节
 
