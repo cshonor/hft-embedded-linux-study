@@ -54,8 +54,10 @@
 ## HFT 精读捷径
 
 ```
-Ch 2 → Ch 3 (+ THP) → Ch 8 → Ch 4 → Ch 10
+Ch 1（选读 · 源码阅读路线）→ Ch 2 → Ch 3 (+ THP) → Ch 8 → Ch 4 → Ch 10
 ```
+
+**Ch 1** 不教 VM 公式，给 **`mm/` 入口文件**（`oom_kill.c` → `vmalloc.c` → `page_alloc.c` → VMA）— 见 [chapter-01-简介.md](./chapter-01-简介.md#4-阅读代码的策略-reading-the-code)。
 
 **HFT 产出：** 订单簿/内存池布局、NUMA 绑内存、伪共享（配合 Hennessy Ch2）的理论依据。
 
