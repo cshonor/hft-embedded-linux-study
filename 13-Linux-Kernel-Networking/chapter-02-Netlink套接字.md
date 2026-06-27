@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-01-简介.md](./chapter-01-简介.md)
+- 上一章：[chapter-01-introduction/](./chapter-01-introduction/)
 - 下一章：[chapter-03-ICMP.md](./chapter-03-ICMP.md)
