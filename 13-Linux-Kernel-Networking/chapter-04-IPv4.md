@@ -8,5 +8,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-03-ICMP.md](./chapter-03-ICMP.md)
+- 上一章：[chapter-03-icmp/](./chapter-03-icmp/)
 - 下一章：[chapter-05-IPv4路由子系统.md](./chapter-05-IPv4路由子系统.md)

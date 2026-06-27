@@ -31,6 +31,6 @@
 ## 相关章节
 
 - 上一章：[../chapter-01-introduction/](../chapter-01-introduction/)
-- 下一章：[../chapter-03-ICMP.md](../chapter-03-ICMP.md)
+- 下一章：[../chapter-03-icmp/](../chapter-03-icmp/)
 - 附录 B 网络管理：[../appendix-B-网络管理.md](../appendix-B-网络管理.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

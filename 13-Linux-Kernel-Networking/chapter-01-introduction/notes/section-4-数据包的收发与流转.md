@@ -14,7 +14,7 @@
 |------|------|
 | **本地主机** | 交给 L4（TCP/UDP/RAW）或 **raw/local** 处理 |
 | **转发** | 选 **出接口** → L2 重新封装发送（**不经过** 本机 socket） |
-| **不可达** | 丢弃或 ICMP 差错（→ [Ch 3 ICMP](../../chapter-03-ICMP.md)） |
+| **不可达** | 丢弃或 ICMP 差错（→ [Ch 3 ICMP](../../chapter-03-icmp/)） |
 
 路由表实现随版本演进（3.9：**FIB hash/ trie**；现代：**FIB multipath、BPF fib lookup**）— 细节见 [Ch 5](../../chapter-05-IPv4路由子系统.md) · [Ch 6](../../chapter-06-高级路由.md)。
 

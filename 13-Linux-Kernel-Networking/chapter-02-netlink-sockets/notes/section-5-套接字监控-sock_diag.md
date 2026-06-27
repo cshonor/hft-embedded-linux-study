@@ -70,7 +70,7 @@ ss (iproute2)
 ## 相关章节
 
 - 上一节：[4. Generic Netlink](./section-4-通用Netlink协议.md)
-- 下一章：[Ch 3 ICMP](../../chapter-03-ICMP.md)
+- 下一章：[Ch 3 ICMP](../../chapter-03-icmp/)
 - 传输层 socket 内部：[Ch 11](../../chapter-11-第4层协议.md)
 - 附录 B：[网络管理命令](../../appendix-B-网络管理.md)
 
