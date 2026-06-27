@@ -59,10 +59,10 @@
 | 项 | 内容 |
 |----|------|
 | **前提** | M2 公开簿 `Match()` 已正确；M4 多 symbol / 推送可选 |
-| **目标** | **暗池**（第二本簿或 internal cross）、**冰山单**（显示量 / 隐藏量）、**多 ingress**（零售 vs 机构队列）、**风控**（持仓/限额）、**算法拆单**（parent → child orders） |
+| **目标** | **暗池**、**冰山单**、**多 ingress**、**多层流动性路由 (SOR)**（MM → ECN → 下一 venue）、**风控**、**算法拆单**（parent → child orders） |
 | **Harris** | [Ch 4](../chapter-04-orders-and-order-types/) 隐藏量 · [Ch 25](../chapter-25-internalization-preferencing-crossing/) crossing · [Ch 27](../chapter-27-floor-vs-automated-trading/) FIX/电子化 |
 | **理论** | [Ch 2 §2 机构 vs 散户](../chapter-02-trading-stories/notes/section-2-2-机构股票交易.md#与-go-dex你现在写的是散户级现货交易所) |
-| **验收** | 冰山单对外深度 ≠ 真实可成交量；暗池成交 **不出现在** 公开 LOB；拆单引擎回放大单 impact 低于单笔市价 |
+| **验收** | 冰山单对外深度 ≠ 真实可成交量；暗池成交 **不出现在** 公开 LOB；**SOR**：第一层流动性不足时自动路由下一 venue；拆单 impact 低于单笔市价 |
 
 > **定位：** M1–M4 = **散户级现货交易所**；M5 = 向 **专业机构级平台** 进阶（热路径仍建议 Rust/C++，Go 做原型与外围）。
 
