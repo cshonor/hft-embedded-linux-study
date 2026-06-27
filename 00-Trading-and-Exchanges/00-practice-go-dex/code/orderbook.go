@@ -7,7 +7,9 @@ package main
 //   Ch 6 指令驱动 → ../chapter-06-order-driven-markets/
 // 概念笔记 → ../notes/milestone-01-订单类型与LOB/section-1-三层结构体解析.md
 // ── 三层结构：Order → Limit → Orderbook ─────────────────────────────
+// 交易所「大卖场」里的基础收银台：现货 LOB 撮合（Ch 1 §3）。
 // 只存放「还没成交的限价挂单」。市价单吃完对手盘就走，不进 Bids/Asks。
+// 衍生品区（保证金、行权、爆仓）→ 叠在本引擎外层，不混进 Match() 核心。
 
 // OrderType 散户最常用的两种单 — Match() 入口先分支（Ch 2 §1 · Ch 4）
 type OrderType int
