@@ -10,7 +10,7 @@
 
 | 章 | 笔记 |
 |----|------|
-| 1 简介 | [chapter-01-简介.md](./chapter-01-简介.md) |
+| 1 简介 | [chapter-01-introduction/](./chapter-01-introduction/) |
 | 2 Netlink 套接字 | [chapter-02-Netlink套接字.md](./chapter-02-Netlink套接字.md) |
 | 3 ICMP | [chapter-03-ICMP.md](./chapter-03-ICMP.md) |
 | 4 IPv4 | [chapter-04-IPv4.md](./chapter-04-IPv4.md) |
@@ -47,7 +47,7 @@
 Ch 11 → Ch 14 → note-组播IGMP
 ```
 
-**HFT 产出：** 网卡 DMA → NAPI → sk_buff → socket → 用户态；与 UNP、DPDK 对照。
+**HFT 产出：** 网卡 DMA → NAPI → sk_buff → socket → 用户态；与 UNP、DPDK 对照。Ch 1 建立 **L2–L4 全景** → [chapter-01 §1–§5](./chapter-01-introduction/)。
 
 ## 交叉阅读
 
