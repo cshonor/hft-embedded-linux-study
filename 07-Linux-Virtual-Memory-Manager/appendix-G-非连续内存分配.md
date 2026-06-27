@@ -2,7 +2,9 @@
 
 > **Code Commentary** · Mel Gorman · **跳过**
 
-<!-- 代码走读待补充 -->
+概念总览 → [chapter-07-非连续内存分配.md](./chapter-07-非连续内存分配.md)
+
+<!-- 走读 vmalloc.c: get_vm_area, map_vm_area, vfree -->
 
 ## 相关章节
 
