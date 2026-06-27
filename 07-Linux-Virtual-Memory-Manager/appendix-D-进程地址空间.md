@@ -2,7 +2,9 @@
 
 > **Code Commentary** · Mel Gorman · **选读**
 
-<!-- 代码走读待补充 -->
+概念总览 → [chapter-04-进程地址空间.md](./chapter-04-进程地址空间.md)
+
+<!-- 走读 mm_struct、vm_area_struct、do_page_fault、copy_*_user -->
 
 ## 相关章节
 
