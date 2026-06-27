@@ -39,6 +39,8 @@ type Orderbook struct {
 
 ### Limit 字段
 
+`Order.OrderType` 区分限价 / 市价（[orderbook.go](../../code/orderbook.go) 中 `OrderLimit` / `OrderMarket`）。
+
 | 字段 | 大白话 |
 |------|--------|
 | `Price` | 这一档的统一价格，如 50000 USDT |
@@ -51,6 +53,7 @@ type Orderbook struct {
 
 | 字段 | 大白话 |
 |------|--------|
+| `OrderType` | `OrderLimit` 进簿排队；`OrderMarket` 立刻扫对手盘 |
 | `Size` | 还没成交的剩余数量 |
 | `Limit *Limit` | 反向绑定：我属于哪个价位档位 |
 | `Timestamp` | 下单时间，同价时先下先成交 |

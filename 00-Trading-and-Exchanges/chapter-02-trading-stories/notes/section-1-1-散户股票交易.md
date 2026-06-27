@@ -37,7 +37,7 @@ Jennifer 购买微软 (Nasdaq)：
 
 | 书上（散户） | 你的代码（go-dex） |
 |--------------|-------------------|
-| **限价单 / 市价单** | `Order` 结构体最初就是为这两类设计的（[orderbook.go](../../00-practice-go-dex/code/orderbook.go)） |
+| **限价单 / 市价单** | `Order.OrderType`（`OrderLimit` / `OrderMarket`）→ `Match()` **先分支**，再价格–时间优先（[orderbook.go](../../00-practice-go-dex/code/orderbook.go)） |
 | **电子限价指令簿** | `Orderbook` · `Bids` / `Asks` · 每档 `Limit.Orders` 队列 |
 | 订单 **挂进簿里等** / **立刻吃对手盘** | 限价 → 进簿；市价 → `Match()` walk-the-book（M2 待写） |
 | 专家 / 做市商 **接单、报价、消化散户流** | 簿上 **挂着的限价单** 就是「等人来吃」；做市商 = 大量挂限价 + 快速撤改 |
@@ -63,6 +63,30 @@ Jennifer 购买微软 (Nasdaq)：
 | 限价单 = 挂在簿上提供 **免费期权** | `Limit` + `Order` 进 `Bids`/`Asks` |
 | 市价单 = **立刻** 找对手成交 | `Match()` 扫对手盘 |
 | 做市商 = 吃/挂散户流，不是魔法 | 对手方也是 **簿上的 Order**，或 **incoming 主动单** |
+
+#### SuperDOT → 订单优先级：路由也是撮合逻辑的一部分
+
+书上 Jennifer 的订单经 **SuperDot** 送进 NYSE — 本质是早期的 **「谁先被交易所处理」**：
+
+| 时代 | 机制 | 在问什么问题 |
+|------|------|--------------|
+| **SuperDot（NYSE）** | 电子路由进大厅 / 专家 | 订单 **从哪条通道进**、**先处理谁** |
+| **SuperSOES（Nasdaq）** | 自动执行系统 | 能否 **绕过** 人工、直接撞簿 |
+| **现在 · 加密所** | REST/WebSocket API、**做市商专用低延迟通道**、内部撮合队列 | 同一毫秒谁进 `Match()` **更前** |
+
+**和 `Match()` 的关系：**
+
+```
+API 收到订单
+  → （可选）路由层：散户通道 vs 做市商通道 vs 内部优先级  ← SuperDot 的现代版
+  → Match()：OrderType 分支（限价进簿 / 市价扫簿）
+  → 簿内：价格优先 → 同价 Timestamp 时间优先
+```
+
+- **散户能用到的** 就是 **市价 + 限价** — 也是你引擎 **M1–M2 的核心对象。  
+- **OrderType** 是 **簿内规则** 的第一道分支；**路由/通道** 是 **进引擎之前** 谁先谁后 — 两层都要想清楚，HFT 争的往往是 **both**。
+
+> go-dex **现在**：单通道 + `OrderType` + 价格–时间优先先把 **簿内逻辑** 写对；**M4+** 若要模拟做市商 API，再加 **队列优先级 / 多 ingress**（仍须公平、可审计 — §3 信息同步）。
 
 → 继续读 [Ch 4 订单类型](../../chapter-04-orders-and-order-types/) · [Ch 6 指令驱动市场](../../chapter-06-order-driven-markets/) · 动手 [M1 里程碑](../../00-practice-go-dex/notes/milestone-01-订单类型与LOB/)  
 → 被踩单 / 外部性：[Ch 1 §4.2 · 限价单期权](../../chapter-01-introduction-market-microstructure/notes/section-4-4-贯穿全书的关键主题.md#42-期权与外部性-options-and-externalities)

@@ -9,10 +9,20 @@ package main
 // ── 三层结构：Order → Limit → Orderbook ─────────────────────────────
 // 只存放「还没成交的限价挂单」。市价单吃完对手盘就走，不进 Bids/Asks。
 
-// Order 最小单元：用户一笔限价挂单（未成交部分）
-type Order struct {	Size      float64 // 剩余未成交数量
-	Limit     *Limit  // 反向指针：这条单挂在哪个价位档位（撮合时快速找到所属 Limit）
-	Timestamp int64   // 下单时间；同价位内先下单先成交（时间优先）
+// OrderType 散户最常用的两种单 — Match() 入口先分支（Ch 2 §1 · Ch 4）
+type OrderType int
+
+const (
+	OrderLimit  OrderType = iota // 限价：进簿排队，价格–时间优先
+	OrderMarket                  // 市价：立刻 walk-the-book，不进 Bids/Asks
+)
+
+// Order 最小单元：用户一笔订单（限价未成交部分挂在 Limit 上）
+type Order struct {
+	OrderType OrderType // 先区分限价 / 市价，再决定进簿还是立刻撮合
+	Size      float64   // 剩余未成交数量
+	Limit     *Limit    // 反向指针：限价单挂在哪个价位档（市价单通常为 nil）
+	Timestamp int64     // 下单时间；同价位内先下单先成交（时间优先）
 }
 
 // Limit 一个固定价格档位（不是「限价单」本身，而是「这个价位的盒子」）
@@ -33,7 +43,8 @@ type Orderbook struct {
 }
 
 // 撮合直觉（后续在方法里实现）：
-// - 限价单：找到/新建对应 Limit → Order 塞进 Limit.Orders → TotalVolume 累加
-// - 市价买单：吃 Asks 最低价档，从前到后成交，吃完换下一档
-// - 市价卖单：吃 Bids 最高价档
-// 规则：价格优先，同价时间优先（Harris Ch 4–6）
+// 1. 看 Order.OrderType → 限价 or 市价
+// 2. 限价单：找到/新建 Limit → Order 塞进 Limit.Orders → TotalVolume 累加
+// 3. 市价买单：吃 Asks 最低价档；市价卖单：吃 Bids 最高价档
+// 4. 同档内按 Timestamp 时间优先；跨档按价格优先（Harris Ch 4–6）
+// 5. 路由/通道优先级（SuperDOT、做市商 API）→ 见 Ch 2 §1，M4+ 可扩展
