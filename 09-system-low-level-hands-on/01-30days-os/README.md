@@ -143,4 +143,3 @@ day-XX-slug/
 | [05-LKD](../../05-Linux-Kernel-Development/) | 中断、调度、内存管理 **真实实现** |
 | [08-TLPI](../../08-The-Linux-Programming-Interface/) | 用户态 API 与内核边界 |
 | [02-mikan-os](../02-mikan-os/) | 现代 UEFI/64 位 OS — **01 通读后的推荐下一站** |
-| [03-30days-cpu](../03-30days-cpu/) | 指令怎么被 CPU **执行**（硬件侧，可与 02 并行或后补） |
