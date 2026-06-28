@@ -20,6 +20,6 @@
 ## 相关
 
 - 上一章：[chapter-05-kernel-synchronization/](../chapter-05-kernel-synchronization/)
-- 下一章：[chapter-07-process-scheduling.md](../chapter-07-process-scheduling.md)
+- 下一章：[chapter-07-process-scheduling/](../chapter-07-process-scheduling/)
 - 衔接：[chapter-04-interrupts-and-exceptions/](../chapter-04-interrupts-and-exceptions/) · [chapter-07-process-scheduling.md](../chapter-07-process-scheduling.md) · [chapter-10-system-calls.md](../chapter-10-system-calls.md)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)
