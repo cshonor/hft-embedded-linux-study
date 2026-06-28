@@ -15,7 +15,7 @@
 | 节 | 笔记 |
 |----|------|
 | 1. 市价单 (Market Orders) | [notes/section-1-1-市价单.md](./notes/section-1-1-市价单.md) — **新手：打车类比** · 三成本 · HFT 吃单 · `Match()` |
-| 2. 限价单 (Limit Orders) | [notes/section-2-2-限价单.md](./notes/section-2-2-限价单.md) |
+| 2. 限价单 (Limit Orders) | [notes/section-2-2-限价单.md](./notes/section-2-2-限价单.md) — **防滑点 vs 可能不成交** · 时效性对换 |
 | 3. 止损单 / 停止单 (Stop Orders) | [notes/section-3-3-止损单-停止单.md](./notes/section-3-3-止损单-停止单.md) |
 | 4. 触及市价单 (Market-if-Touched, MIT) | [notes/section-4-4-触及市价单.md](./notes/section-4-4-触及市价单.md) |
 | 5. 价格变动敏感指令 (Tick-Sensitive Orders) | [notes/section-5-5-价格变动敏感指令.md](./notes/section-5-5-价格变动敏感指令.md) |
