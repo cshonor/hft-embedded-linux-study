@@ -40,7 +40,7 @@
 | 3 | [chapter-03 交易所动态与 LOB](./chapter-03-订单簿深度与行情解析.md) | ✅ 要点 |
 | 4 | [chapter-04 硬件到 OS](./chapter-04-硬件选型与服务器配置.md) | ✅ 要点 |
 | 5 | [chapter-05 OS 调优（实操）](./chapter-05-操作系统内核极致调优.md) | ✅ 要点 |
-| 6 | [chapter-06 网络与协议](./chapter-06-低延迟网络与协议优化.md) | ✅ 要点 |
+| 6 | [chapter-06 动态网络（原书 Ch5）](./chapter-06-低延迟网络与协议优化.md) | ✅ 要点 |
 | 7 | [chapter-07 无锁与内存](./chapter-07-无锁数据结构与内存布局.md) | ✅ 要点 |
 | 8 | [chapter-08 核心引擎](./chapter-08-超低延迟核心引擎开发.md) | ✅ 要点 |
 | 9 | [chapter-09 做市与套利](./chapter-09-高频做市与套利策略.md) | 待补充 |

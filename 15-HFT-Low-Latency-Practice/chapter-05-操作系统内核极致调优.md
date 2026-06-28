@@ -42,7 +42,7 @@
 | **DPDK** | PMD 轮询 · **零拷贝 mbuf** |
 | **延迟量级** | 约 **1.5–10 μs → 0.5–2 μs**（视配置） |
 
-→ [14-DPDK](../14-DPDK-Low-Latency-Network/) · [chapter-06](./chapter-06-低延迟网络与协议优化.md)
+→ 原理：[chapter-06 动态网络 §5](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [14-DPDK](../14-DPDK-Low-Latency-Network/) · [chapter-06](./chapter-06-低延迟网络与协议优化.md)
 
 ---
 
