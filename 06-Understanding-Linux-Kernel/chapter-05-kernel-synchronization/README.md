@@ -22,6 +22,6 @@
 ## 相关
 
 - 上一章：[chapter-04-interrupts-and-exceptions/](../chapter-04-interrupts-and-exceptions/)
-- 下一章：[chapter-06-timing.md](../chapter-06-timing.md)
+- 下一章：[chapter-06-timing/](../chapter-06-timing/)
 - 衔接：[chapter-07-process-scheduling.md](../chapter-07-process-scheduling.md) · [chapter-03-processes/](../chapter-03-processes/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)
