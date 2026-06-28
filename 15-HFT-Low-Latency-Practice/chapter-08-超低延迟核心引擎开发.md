@@ -233,10 +233,10 @@ C++ 异常一旦 **throw**，代价 **数千 CPU 周期**。
 
 | 语言 | 角色 |
 |------|------|
-| **Java** | 风控报表 · 配置 · 监控 — **非 μs 路径**；GC 隔离于热点 |
-| **Python** | 研究回测；生产 **调 C++ .so** |
+| **Java** | 风控报表 · 配置 · 监控 — 或 **Disruptor μs 引擎** | [Ch9](./chapter-09-java-jvm-低延迟系统.md) |
+| **Python** | 研究回测；生产 **调 C++ .so** | 原书 Ch10 待笔记 |
 
-→ 原书 **Ch9 Java/JVM** 待扩展；边界见 [chapter-01 §4](./chapter-01-高频交易基础与生态.md#4-编程语言选择)
+→ 原书 **Ch9 Java/JVM**：[chapter-09](./chapter-09-java-jvm-低延迟系统.md) · 边界见 [chapter-01 §4](./chapter-01-高频交易基础与生态.md#4-编程语言选择)
 
 ---
 
@@ -251,7 +251,7 @@ C++ 异常一旦 **throw**，代价 **数千 CPU 周期**。
 | **静态分析** | Klocwork / Cppcheck / Clang SA |
 | **FX 实战** | 多进程绑核 · mmap 环 · OpenOnload · Hugepage · 预热 |
 
-**C++ 性能圣经落地后** → 原书 Ch9 Java/JVM（待笔记）· 策略层：[chapter-09 做市与套利](./chapter-09-高频做市与套利策略.md)
+**C++ 性能圣经落地后** → [chapter-09 Java/JVM（原书 Ch9）](./chapter-09-java-jvm-低延迟系统.md) · 策略：[chapter-13 做市与套利](./chapter-13-高频做市与套利策略.md)
 
 ---
 
@@ -265,7 +265,8 @@ C++ 异常一旦 **throw**，代价 **数千 CPU 周期**。
 | Ch8 §4 模板 | **本章 §4** |
 | Ch8 §5 静态分析 | **本章 §5** |
 | Ch8 §6 FX 实战 | **本章 §6–7** |
-| Ch9 Java/JVM | **Ch1 §4**（待专章）· 本仓库 Ch9 = 策略 |
+| Ch9 Java/JVM | **本章 Ch9** |
+| Ch10 Python | **待专章** · 本仓库 Ch13 = 策略 |
 
 ---
 

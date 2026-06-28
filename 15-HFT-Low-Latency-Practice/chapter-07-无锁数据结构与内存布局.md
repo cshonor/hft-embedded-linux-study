@@ -161,6 +161,8 @@ consume(slot[read_idx]);
 | **Sequence** | 全局序号 · **无锁 claim** |
 | **Batching** | 消费者 **批量** 处理降开销 |
 
+→ Java 实现：[chapter-09 §4 Disruptor](./chapter-09-java-jvm-低延迟系统.md#4-无锁数据结构disruptor-与环形缓冲)
+
 ---
 
 ## 本章小结
@@ -173,7 +175,7 @@ consume(slot[read_idx]);
 
 **三合一（原书 Ch6）：** 绑核 **+** 无锁 **+** 内存池 = **软件延迟压榨极限**。
 
-**下一步：** [chapter-08 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发.md) · [chapter-10 测量](./chapter-10-延迟测量与基准压测.md)
+**下一步：** [chapter-08 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发.md) · [chapter-09 Java/JVM](./chapter-09-java-jvm-低延迟系统.md) · [chapter-10 测量](./chapter-10-延迟测量与基准压测.md)
 
 ---
 
