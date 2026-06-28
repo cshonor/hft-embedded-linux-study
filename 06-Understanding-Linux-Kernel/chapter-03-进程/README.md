@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-02-内存寻址/](../chapter-02-内存寻址/)
-- 下一章：[chapter-04-中断与异常.md](../chapter-04-中断与异常.md)
+- 下一章：[chapter-04-中断与异常/](../chapter-04-中断与异常/)
 - 衔接：[chapter-07-进程调度.md](../chapter-07-进程调度.md) · [chapter-09-进程地址空间.md](../chapter-09-进程地址空间.md)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)
