@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-12-无线网络.md](./chapter-12-无线网络.md)
+- 上一章：[chapter-12-wireless-in-linux/](./chapter-12-wireless-in-linux/)
 - 下一章：[chapter-14-高级主题.md](./chapter-14-高级主题.md)

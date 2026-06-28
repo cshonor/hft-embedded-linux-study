@@ -33,7 +33,7 @@ Genl：  全部走 NETLINK_GENERIC
 | **nl802154** 等 | 其它链路层 |
 | **非网络** | ACPI、**taskstats**（进程 IO/调度统计）等也走 genl |
 
-无线子系统 [Ch 12](../../chapter-12-无线网络.md) 深度依赖 **nl80211 + genl**；共置 **以太网 HFT** 通常 **不碰**，但 **同一机制** 理解 **`libnl-genl`** 即可。
+无线子系统 [Ch 12](../../chapter-12-wireless-in-linux/) 深度依赖 **nl80211 + genl**；共置 **以太网 HFT** 通常 **不碰**，但 **同一机制** 理解 **`libnl-genl`** 即可。
 
 ---
 

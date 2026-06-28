@@ -31,7 +31,7 @@
 ## 相关章节
 
 - 上一章：[../chapter-10-ipsec/](../chapter-10-ipsec/)
-- 下一章：[../chapter-12-无线网络.md](../chapter-12-无线网络.md)
+- 下一章：[../chapter-12-wireless-in-linux/](../chapter-12-wireless-in-linux/)
 - 组播延伸：[../note-组播IGMP.md](../note-组播IGMP.md)
 - 高级主题 NAPI/RPS：[../chapter-14-高级主题.md](../chapter-14-高级主题.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

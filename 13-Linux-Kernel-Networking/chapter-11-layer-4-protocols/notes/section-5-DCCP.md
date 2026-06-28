@@ -67,7 +67,7 @@
 
 ## 相关章节
 
-- 下一章：[Ch 12 无线](../../chapter-12-无线网络.md)
+- 下一章：[Ch 12 无线](../../chapter-12-wireless-in-linux/)
 - NAPI/调优：[Ch 14 高级主题](../../chapter-14-高级主题.md)
 - 组播：[note-组播IGMP](../../note-组播IGMP.md)
 
