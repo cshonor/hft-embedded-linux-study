@@ -26,6 +26,7 @@
 | 4 | PMD、轮询模式 | [chapter-03](./notes/chapter-03-PMD与轮询模式.md) | 🔴 |
 | 5 | 零拷贝、旁路原理 | [chapter-04](./notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
 | 6 | UDP 组播行情 | [chapter-05](./notes/chapter-05-组播行情接入.md) | 🔴 |
+| 8 | 流分类与多队列（实体书 Ch8） | [chapter-08-流分类与多队列/](./chapter-08-流分类与多队列/) · [stub](./notes/chapter-08-流分类与多队列.md) | 🔴 |
 
 ---
 

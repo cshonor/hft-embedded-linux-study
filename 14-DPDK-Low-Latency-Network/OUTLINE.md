@@ -21,6 +21,7 @@
 | 4 | PMD、poll mode | [chapter-03](./01-Intro-Book/notes/chapter-03-PMD与轮询模式.md) | 🔴 |
 | 5 | 零拷贝、旁路 | [chapter-04](./01-Intro-Book/notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
 | 6 | UDP 组播行情 | [chapter-05](./01-Intro-Book/notes/chapter-05-组播行情接入.md) | 🔴 |
+| 8 | 流分类与多队列 | [chapter-08-流分类与多队列/](./01-Intro-Book/chapter-08-流分类与多队列/) · [stub](./01-Intro-Book/notes/chapter-08-流分类与多队列.md) | 🔴 |
 
 **code：** [01-Intro-Book/code/mcast-minimal/](./01-Intro-Book/code/mcast-minimal/)
 

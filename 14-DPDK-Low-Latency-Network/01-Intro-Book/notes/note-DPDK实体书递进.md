@@ -36,6 +36,7 @@
 | PMD、poll mode | [chapter-03-PMD与轮询模式](./chapter-03-PMD与轮询模式.md) |
 | 旁路、零拷贝 | [chapter-04-零拷贝与用户态旁路](./chapter-04-零拷贝与用户态旁路.md) |
 | 组播行情 | [chapter-05-组播行情接入](./chapter-05-组播行情接入.md) |
+| 流分类、RSS、多队列 | [chapter-08-流分类与多队列](./chapter-08-流分类与多队列/)（实体书 Ch8） |
 
 ---
 
