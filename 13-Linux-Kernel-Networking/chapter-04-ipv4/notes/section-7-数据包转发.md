@@ -73,7 +73,7 @@ ip_forward(skb)
 
 ## 相关章节
 
-- 下一章：[Ch 5 IPv4 路由子系统](../../chapter-05-IPv4路由子系统.md)
+- 下一章：[Ch 5 IPv4 路由子系统](../../chapter-05-ipv4-routing-subsystem/)
 - 转发钩子：[Ch 9 Netfilter](../../chapter-09-Netfilter.md)
 - 组播：[note-组播IGMP](../../note-组播IGMP.md)
 

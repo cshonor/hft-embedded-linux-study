@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-05-IPv4路由子系统.md](./chapter-05-IPv4路由子系统.md)
+- 上一章：[chapter-05-ipv4-routing-subsystem/](./chapter-05-ipv4-routing-subsystem/)
 - 下一章：[chapter-07-邻居子系统.md](./chapter-07-邻居子系统.md)

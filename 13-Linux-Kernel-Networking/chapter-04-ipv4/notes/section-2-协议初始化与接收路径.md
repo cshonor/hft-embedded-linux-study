@@ -45,7 +45,7 @@ inet_init() / dev_init 相关
 
 ## 路由查找（本章视角）
 
-`ip_route_input_noref()` / `ip_route_input_mc()` 等 — **FIB 查表** 细节在 [Ch 5](../../chapter-05-IPv4路由子系统.md)。
+`ip_route_input_noref()` / `ip_route_input_mc()` 等 — **FIB 查表** 细节在 [Ch 5](../../chapter-05-ipv4-routing-subsystem/)。
 
 本章只需记住：**路由 lookup 输出 `dst_entry`**，含 **input 函数指针**（local/forward/unreachable）。
 

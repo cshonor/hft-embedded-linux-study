@@ -39,6 +39,6 @@
 ## 相关章节
 
 - 上一章：[../chapter-03-icmp/](../chapter-03-icmp/)
-- 下一章：[../chapter-05-IPv4路由子系统.md](../chapter-05-IPv4路由子系统.md)
+- 下一章：[../chapter-05-ipv4-routing-subsystem/](../chapter-05-ipv4-routing-subsystem/)
 - 组播延伸：[../note-组播IGMP.md](../note-组播IGMP.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
