@@ -13,7 +13,7 @@
 | 节 | 笔记 |
 |----|------|
 | 1. 市场参与者：买方与卖方 (The Players) | [notes/section-1-1-市场参与者-买方与卖方.md](./notes/section-1-1-市场参与者-买方与卖方.md) |
-| 2. 交易促成机构 (Trade Facilitators) | [notes/section-2-2-交易促成机构.md](./notes/section-2-2-交易促成机构.md) |
+| 2. 交易促成机构 (Trade Facilitators) | [notes/section-2-2-交易促成机构.md](./notes/section-2-2-交易促成机构.md) — 交易所 · ECN · 暗池 · **基础设施不做市** |
 | 3. 交易工具 (Trading Instruments) | [notes/section-3-3-交易工具.md](./notes/section-3-3-交易工具.md) |
 | 4. 交易市场的分布 (Where are the Trading Markets?) | [notes/section-4-4-交易市场的分布.md](./notes/section-4-4-交易市场的分布.md) |
 | 5. 市场监管 (Market Regulation) | [notes/section-5-5-市场监管.md](./notes/section-5-5-市场监管.md) |
