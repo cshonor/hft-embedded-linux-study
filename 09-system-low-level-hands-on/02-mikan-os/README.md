@@ -167,6 +167,7 @@ chapter-XX-slug/
 - [x] [Ch 20 系统调用 / Ring 3](./chapter-20-syscall/) — 6 小节笔记
 - [x] [Ch 21 窗口应用 / winhello](./chapter-21-window-apps/) — 6 小节笔记
 - [x] [Ch 22 图形和事件（1）/ stars · ReadEvent](./chapter-22-graphics-events1/) — 6 小节笔记
+- [x] [Ch 23 图形和事件（2）/ eye · blocks](./chapter-23-graphics-events2/) — 6 小节笔记
 
 ---
 
