@@ -20,11 +20,12 @@
 | 3 | 并行计算 | [chapter-03-并行计算/](./01-Intro-Book/chapter-03-并行计算/) · [stub](./01-Intro-Book/notes/chapter-03-并行计算.md) | 🔴 |
 | 4 | 同步互斥机制 | [chapter-04-同步互斥机制/](./01-Intro-Book/chapter-04-同步互斥机制/) · [stub](./01-Intro-Book/notes/chapter-04-同步互斥机制.md) | 🔴 |
 | 5 | 报文转发 | [chapter-05-报文转发/](./01-Intro-Book/chapter-05-报文转发/) · [stub](./01-Intro-Book/notes/chapter-05-报文转发.md) | 🔴 |
-| 6 | mbuf、mempool | [chapter-02-mbuf](./01-Intro-Book/notes/chapter-02-mbuf与内存池.md) | 🔴 |
-| 7 | PMD、poll mode | [chapter-03-PMD](./01-Intro-Book/notes/chapter-03-PMD与轮询模式.md) | 🔴 |
-| 8 | 零拷贝、旁路 | [chapter-04-零拷贝](./01-Intro-Book/notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
-| 9 | UDP 组播行情 | [chapter-05-组播](./01-Intro-Book/notes/chapter-05-组播行情接入.md) | 🔴 |
-| 10 | 流分类与多队列 | [chapter-08-流分类与多队列/](./01-Intro-Book/chapter-08-流分类与多队列/) · [stub](./01-Intro-Book/notes/chapter-08-流分类与多队列.md) | 🔴 |
+| 6 | PCIe 与包处理 I/O | [chapter-06-PCIe与包处理IO/](./01-Intro-Book/chapter-06-PCIe与包处理IO/) · [stub](./01-Intro-Book/notes/chapter-06-PCIe与包处理IO.md) | 🔴 |
+| 7 | mbuf、mempool | [chapter-02-mbuf](./01-Intro-Book/notes/chapter-02-mbuf与内存池.md) | 🔴 |
+| 8 | PMD、poll mode | [chapter-03-PMD](./01-Intro-Book/notes/chapter-03-PMD与轮询模式.md) | 🔴 |
+| 9 | 零拷贝、旁路 | [chapter-04-零拷贝](./01-Intro-Book/notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
+| 10 | UDP 组播行情 | [chapter-05-组播](./01-Intro-Book/notes/chapter-05-组播行情接入.md) | 🔴 |
+| 11 | 流分类与多队列 | [chapter-08-流分类与多队列/](./01-Intro-Book/chapter-08-流分类与多队列/) · [stub](./01-Intro-Book/notes/chapter-08-流分类与多队列.md) | 🔴 |
 
 **code：** [01-Intro-Book/code/mcast-minimal/](./01-Intro-Book/code/mcast-minimal/)
 

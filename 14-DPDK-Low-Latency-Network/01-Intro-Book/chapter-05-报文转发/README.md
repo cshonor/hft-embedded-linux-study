@@ -21,5 +21,5 @@
 ## 相关
 
 - 上一章：[chapter-04-同步互斥机制/](../chapter-04-同步互斥机制/)
-- 下一章：[chapter-08-流分类与多队列/](../chapter-08-流分类与多队列/) · [chapter-02-mbuf](../chapter-02-mbuf与内存池.md)
+- 下一章：[chapter-06-PCIe与包处理IO/](../chapter-06-PCIe与包处理IO/) · [chapter-08-流分类与多队列/](../chapter-08-流分类与多队列/)
 - 对照：[Ch8 RSS/多队列](../chapter-08-流分类与多队列/) · [13-LKN 转发路径](../../../13-Linux-Kernel-Networking/)

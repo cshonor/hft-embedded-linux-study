@@ -16,4 +16,4 @@
 ## 相关
 
 - 上一章：[chapter-04-同步互斥机制/](./chapter-04-同步互斥机制/)
-- 下一章：[chapter-08-流分类与多队列/](./chapter-08-流分类与多队列/)
+- 下一章：[chapter-06-PCIe与包处理IO/](./chapter-06-PCIe与包处理IO/)

@@ -19,9 +19,11 @@ Ch4 同步互斥 — ring / LPM·ACL 锁
     ↓
 Ch5 报文转发（本章）— 框架 + 算法 + Distributor
     ↓
+Ch6 PCIe 与 I/O — DMA、mbuf/mempool
+    ↓
 Ch8 流分类与多队列 — 硬件 RSS / FD 分核
     ↓
-mbuf / PMD — 数据面落地
+PMD — burst 收发包
 ```
 
 ---
@@ -30,6 +32,7 @@ mbuf / PMD — 数据面落地
 
 | Ch5 主题 | 继续读 |
 |----------|--------|
+| PCIe / DMA / mbuf | [chapter-06-PCIe与包处理IO](../chapter-06-PCIe与包处理IO/) 🔴 |
 | 硬件分核 / RSS | [chapter-08-流分类与多队列](../chapter-08-流分类与多队列/) 🔴 |
 | mbuf / ring | [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) 🔴 |
 | PMD 轮询 | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
@@ -41,4 +44,4 @@ mbuf / PMD — 数据面落地
 
 ---
 
-← [5. 报文分发](./section-5-报文分发机制.md) · 下一章 [chapter-08-流分类](../chapter-08-流分类与多队列/) · [Ch4 同步](../chapter-04-同步互斥机制/)
+← [5. 报文分发](./section-5-报文分发机制.md) · 下一章 [chapter-06-PCIe与I/O](../chapter-06-PCIe与包处理IO/) · [Ch4 同步](../chapter-04-同步互斥机制/)
