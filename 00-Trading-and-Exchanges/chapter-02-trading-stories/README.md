@@ -17,7 +17,7 @@
 | 1. 散户股票交易 (Retail Equity Trades) | [notes/section-1-1-散户股票交易.md](./notes/section-1-1-散户股票交易.md) |
 | 2. 机构股票交易 (Institutional Equity Trades) | [notes/section-2-2-机构股票交易.md](./notes/section-2-2-机构股票交易.md) |
 | 3. 超大宗股票抛售 (A Very Large Block Stock Trade) | [notes/section-3-3-超大宗股票抛售.md](./notes/section-3-3-超大宗股票抛售.md) |
-| 4. 期货市场：套期保值 (A Futures Market Trade) | [notes/section-4-4-期货市场-套期保值.md](./notes/section-4-4-期货市场-套期保值.md) |
+| 4. 期货市场：套期保值 (A Futures Market Trade) | [notes/section-4-4-期货市场-套期保值.md](./notes/section-4-4-期货市场-套期保值.md) — 三要素匹配 · **同步性/敞口窗口** · **一键双挂原子单** · go-dex |
 | 5. 期权市场交易 (An Options Market Trade) | [notes/section-5-5-期权市场交易.md](./notes/section-5-5-期权市场交易.md) |
 | 6. 债券市场交易 (A Bond Market Trade) | [notes/section-6-6-债券市场交易.md](./notes/section-6-6-债券市场交易.md) |
 | 7. 外汇市场交易 (A Foreign Exchange Trade) | [notes/section-7-7-外汇市场交易.md](./notes/section-7-7-外汇市场交易.md) |

@@ -24,7 +24,7 @@
 | 章 | 英文 | 理论笔记 | 练手 | 说明 |
 |:--:|------|----------|:----:|------|
 | 1 | Introduction | [chapter-01](../chapter-01-introduction-market-microstructure/) | **框架** | 五维市场质量 ↔ 引擎设计总纲 → [§2 笔记](../chapter-01-introduction-market-microstructure/notes/section-2-2-核心目标-五个市场质量特征.md#六与-go-dex-撮合引擎对照) |
-| 2 | Trading Stories | [chapter-02](../chapter-02-trading-stories/) | **入门** | [§1 散户交易](../chapter-02-trading-stories/notes/section-1-1-散户股票交易.md#与-go-dex理解订单簿的最好切入点) → 限价/市价如何进簿、被做市商消化 |
+| 2 | Trading Stories | [chapter-02](../chapter-02-trading-stories/) | **入门** | [§1 散户交易](../chapter-02-trading-stories/notes/section-1-1-散户股票交易.md#与-go-dex理解订单簿的最好切入点) → 单簿撮合；[§4 套期保值](../chapter-02-trading-stories/notes/section-4-4-期货市场-套期保值.md#与-go-dex-撮合引擎的对照) → 现货+期货 **两腿** vs **组合单联动** |
 | 3 | The Trading Industry | [chapter-03](../chapter-03-trading-industry/) | — | 背景：产业全景 |
 | 4 | Orders and Order Properties | [chapter-04](../chapter-04-orders-and-order-types/) | **M1** | `Order` · 限价/市价 → [orderbook.go](./orderbook.go) |
 | 5 | Market Structures | [chapter-05](../chapter-05-market-structures/) | **M1** | `Bids`/`Asks` 双边簿 → [orderbook.go](./orderbook.go) |
