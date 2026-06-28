@@ -1,4 +1,4 @@
-# Ch 6 §3 多路径路由 · Multipath Routing
+﻿# Ch 6 §3 多路径路由 · Multipath Routing
 
 > **Linux Kernel Networking** · Rami Rosen · **选读 🟡**
 
@@ -76,7 +76,7 @@ ip route → 表内 **ECMP 前缀**
 
 - [ ] `ip route show` 是否 **nexthop 多行** / `proto boot` ECMP
 - [ ] **延迟抖动** 是否因 **跨链路 ECMP** — 可 **绑源** 或 **reduce to single nh**
-- [ ] **ARP/邻居** 每条 nh 独立 — [Ch 7](../../chapter-07-邻居子系统.md)
+- [ ] **ARP/邻居** 每条 nh 独立 — [Ch 7](../../chapter-07-neighbouring-subsystem/)
 - [ ] DPDK **bonding** 在用户态 — **不等价** 内核 ECMP
 
 ---
@@ -93,7 +93,7 @@ ip route → 表内 **ECMP 前缀**
 
 ## 相关章节
 
-- 下一章：[Ch 7 邻居子系统](../../chapter-07-邻居子系统.md)
+- 下一章：[Ch 7 邻居子系统](../../chapter-07-neighbouring-subsystem/)
 - FIB 基础：[Ch 5](../../chapter-05-ipv4-routing-subsystem/)
 
 ---

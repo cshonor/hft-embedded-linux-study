@@ -16,7 +16,7 @@
 | 4 IPv4 | [chapter-04-ipv4/](./chapter-04-ipv4/) |
 | 5 IPv4 路由子系统 | [chapter-05-ipv4-routing-subsystem/](./chapter-05-ipv4-routing-subsystem/) |
 | 6 高级路由 | [chapter-06-advanced-routing/](./chapter-06-advanced-routing/) |
-| 7 邻居子系统 | [chapter-07-邻居子系统.md](./chapter-07-邻居子系统.md) |
+| 7 邻居子系统 | [chapter-07-neighbouring-subsystem/](./chapter-07-neighbouring-subsystem/) |
 | 8 IPv6 | [chapter-08-IPv6.md](./chapter-08-IPv6.md) |
 | 9 Netfilter | [chapter-09-Netfilter.md](./chapter-09-Netfilter.md) |
 | 10 IPsec | [chapter-10-IPsec.md](./chapter-10-IPsec.md) |

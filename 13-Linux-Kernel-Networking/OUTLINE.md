@@ -18,7 +18,7 @@
 | 4 | IPv4 | [chapter-04](./chapter-04-ipv4/) | 🟡 |
 | 5 | The IPv4 Routing Subsystem | [chapter-05](./chapter-05-ipv4-routing-subsystem/) | 🟡 |
 | 6 | Advanced Routing | [chapter-06](./chapter-06-advanced-routing/) | 🟡 |
-| 7 | Linux Neighbouring Subsystem | [chapter-07](./chapter-07-邻居子系统.md) | 🟡 |
+| 7 | Linux Neighbouring Subsystem | [chapter-07](./chapter-07-neighbouring-subsystem/) | 🟡 |
 | 8 | IPv6 | [chapter-08](./chapter-08-IPv6.md) | ⚪ |
 | 9 | Netfilter | [chapter-09](./chapter-09-Netfilter.md) | ⚪ |
 | 10 | IPsec | [chapter-10](./chapter-10-IPsec.md) | ⚪ |

@@ -29,6 +29,6 @@
 ## 相关章节
 
 - 上一章：[../chapter-05-ipv4-routing-subsystem/](../chapter-05-ipv4-routing-subsystem/)
-- 下一章：[../chapter-07-邻居子系统.md](../chapter-07-邻居子系统.md)
+- 下一章：[../chapter-07-neighbouring-subsystem/](../chapter-07-neighbouring-subsystem/)
 - 组播延伸：[../note-组播IGMP.md](../note-组播IGMP.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

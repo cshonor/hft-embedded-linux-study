@@ -1,4 +1,4 @@
-# Ch 5 §2 路由子系统查找 · Performing a Lookup
+﻿# Ch 5 §2 路由子系统查找 · Performing a Lookup
 
 > **Linux Kernel Networking** · Rami Rosen · **选读 🟡**
 
@@ -66,7 +66,7 @@ fib_lookup(net, fl4, res, flags)
 | 结果 | 行为 |
 |------|------|
 | **不可达** | drop + **ICMP net/host unreachable**（[Ch 3](../../chapter-03-icmp/)） |
-| **需网关 ARP** | 先 **邻居解析**（[Ch 7](../../chapter-07-邻居子系统.md)） |
+| **需网关 ARP** | 先 **邻居解析**（[Ch 7](../../chapter-07-neighbouring-subsystem/)） |
 
 ---
 

@@ -35,5 +35,5 @@
 - 上一章：[../chapter-04-ipv4/](../chapter-04-ipv4/)
 - 下一章：[../chapter-06-advanced-routing/](../chapter-06-advanced-routing/)
 - ICMP / PMTU：[../chapter-03-icmp/](../chapter-03-icmp/)
-- 邻居解析：[../chapter-07-邻居子系统.md](../chapter-07-邻居子系统.md)
+- 邻居解析：[../chapter-07-neighbouring-subsystem/](../chapter-07-neighbouring-subsystem/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

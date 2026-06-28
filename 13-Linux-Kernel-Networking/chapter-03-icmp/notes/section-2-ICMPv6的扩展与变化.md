@@ -1,4 +1,4 @@
-# Ch 3 §2 ICMPv6 的扩展与变化
+﻿# Ch 3 §2 ICMPv6 的扩展与变化
 
 > **Linux Kernel Networking** · Rami Rosen · **选读 🟡**
 
@@ -41,7 +41,7 @@
 
 功能：**链路层地址解析**、**路由器发现**、**重复地址检测 (DAD)**。
 
-→ 深读：[Ch 7 邻居子系统](../../chapter-07-邻居子系统.md) · [Ch 8 IPv6](../../chapter-08-IPv6.md)
+→ 深读：[Ch 7 邻居子系统](../../chapter-07-neighbouring-subsystem/) · [Ch 8 IPv6](../../chapter-08-IPv6.md)
 
 ---
 

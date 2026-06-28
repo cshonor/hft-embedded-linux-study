@@ -1,4 +1,4 @@
-# Ch 3 ICMP · Internet Control Message Protocol
+﻿# Ch 3 ICMP · Internet Control Message Protocol
 
 > **Linux Kernel Networking** · Rami Rosen · **选读 🟡**
 
@@ -31,7 +31,7 @@
 
 - 上一章：[../chapter-02-netlink-sockets/](../chapter-02-netlink-sockets/)
 - 下一章：[../chapter-04-ipv4/](../chapter-04-ipv4/)
-- IPv6 / ND：[../chapter-08-IPv6.md](../chapter-08-IPv6.md) · 邻居：[../chapter-07-邻居子系统.md](../chapter-07-邻居子系统.md)
+- IPv6 / ND：[../chapter-08-IPv6.md](../chapter-08-IPv6.md) · 邻居：[../chapter-07-neighbouring-subsystem/](../chapter-07-neighbouring-subsystem/)
 - 组播 MLD：[../note-组播IGMP.md](../note-组播IGMP.md)
 - Netfilter：[../chapter-09-Netfilter.md](../chapter-09-Netfilter.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

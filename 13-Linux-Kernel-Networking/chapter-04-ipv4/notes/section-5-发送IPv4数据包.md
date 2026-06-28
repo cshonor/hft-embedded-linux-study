@@ -1,4 +1,4 @@
-# Ch 4 §5 发送 IPv4 数据包 · Sending IPv4 Packets
+﻿# Ch 4 §5 发送 IPv4 数据包 · Sending IPv4 Packets
 
 > **Linux Kernel Networking** · Rami Rosen · **选读 🟡**
 
@@ -44,7 +44,7 @@ UDP:  udp_sendmsg → ip_append_data (可能多次)
 ip_local_out / __ip_local_out
   → NF_INET_LOCAL_OUT
   → ip_output / ip_finish_output
-  → 邻居子系统解析 MAC（[Ch 7](../../chapter-07-邻居子系统.md)）
+  → 邻居子系统解析 MAC（[Ch 7](../../chapter-07-neighbouring-subsystem/)）
   → dev_queue_xmit
 ```
 
