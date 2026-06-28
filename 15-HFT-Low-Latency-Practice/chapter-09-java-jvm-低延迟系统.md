@@ -185,7 +185,7 @@ public void ringPublish(RingState s) {
 | **Gateway / Strategy μs 路径** | **C++** | 无 GC · 模板/CRTP |
 | **Java 引擎**（部分基金） | **Java + Disruptor** | 生态 · 团队技能 · 调优后可达 μs |
 | **风控 / 报表 / 配置 / 监控** | **Java** | 非 STW 敏感 · 库丰富 |
-| **研究回测** | **Python** | 见原书 Ch10（待笔记） |
+| **研究回测** | **Python** | [Ch14](./chapter-14-python-高性能混合架构.md) |
 
 → [chapter-08 §8](./chapter-08-超低延迟核心引擎开发.md#8-java--python-边界) · [chapter-01 §4](./chapter-01-高频交易基础与生态.md#4-编程语言选择)
 
@@ -214,7 +214,7 @@ public void ringPublish(RingState s) {
 | Ch9 §3 线程/绑核 | **本章 §3** · Ch5 |
 | Ch9 §4 Disruptor | **本章 §4** · Ch7 §5 |
 | Ch9 §5 JMH/日志 | **本章 §5** · Ch10 |
-| Ch10 Python | **待专章** |
+| Ch10 Python | **Ch14** |
 | 做市/套利（本仓库扩展） | **Ch13** |
 
 ---
