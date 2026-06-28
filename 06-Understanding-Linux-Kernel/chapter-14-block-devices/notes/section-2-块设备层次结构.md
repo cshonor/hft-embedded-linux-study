@@ -33,7 +33,7 @@
 | 磁头频繁寻道 | I/O Scheduler |
 | 硬件命令与 IRQ | Block Driver |
 
-→ VFS：[Ch 12](../chapter-12-VFS/) · 页缓存减少穿透：[Ch 15](../chapter-15-page-cache.md)
+→ VFS：[Ch 12](../chapter-12-VFS/) · 页缓存减少穿透：[Ch 15](../chapter-15-page-cache/)
 
 ---
 

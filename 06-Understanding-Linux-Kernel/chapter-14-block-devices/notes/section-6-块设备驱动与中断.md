@@ -39,7 +39,7 @@ end_that_request_last()   — 完成 request、释放 bio
 
 → IRQ 框架：[Ch 4 section-6](../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
 
-> **深潜可选：** I/O 完成 **回调**（`bio_endio`）— 页缓存写回、read 填充页 在此衔接 [Ch 15](../chapter-15-page-cache.md)。
+> **深潜可选：** I/O 完成 **回调**（`bio_endio`）— 页缓存写回、read 填充页 在此衔接 [Ch 15](../chapter-15-page-cache/)。
 
 ---
 
@@ -55,7 +55,7 @@ request_queue + elevator（合并/排序）
 唤醒进程 / 触发 bio 回调
 ```
 
-多数 **读** 在到达块层前已被 **页缓存** 命中 — [Ch 15](../chapter-15-page-cache.md)。
+多数 **读** 在到达块层前已被 **页缓存** 命中 — [Ch 15](../chapter-15-page-cache/)。
 
 ---
 
@@ -63,7 +63,7 @@ request_queue + elevator（合并/排序）
 
 | Ch 14 主题 | 继续读 |
 |------------|--------|
-| 页高速缓存 | [Ch 15 页缓存](../chapter-15-page-cache.md) ⚪ |
+| 页高速缓存 | [Ch 15 页缓存](../chapter-15-page-cache/) ⚪ |
 | 文件 read 完整路径 | [Ch 16 文件访问](../chapter-16-file-access.md) ⚪ |
 | VFS | [Ch 12](../chapter-12-VFS/) ⚪ |
 | 字符 / DMA / sysfs | [Ch 13](../chapter-13-io-architecture/) ⚪ |
@@ -71,4 +71,4 @@ request_queue + elevator（合并/排序）
 
 ---
 
-← [5. I/O 调度](./section-5-IO调度程序.md) · 下一章 [Ch 15 页缓存](../chapter-15-page-cache.md)
+← [5. I/O 调度](./section-5-IO调度程序.md) · 下一章 [Ch 15 页缓存](../chapter-15-page-cache/)

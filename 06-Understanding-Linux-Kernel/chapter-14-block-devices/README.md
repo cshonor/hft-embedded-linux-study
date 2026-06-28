@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-13-io-architecture/](../chapter-13-io-architecture/)
-- 下一章：[chapter-15-page-cache.md](../chapter-15-page-cache.md)
+- 下一章：[chapter-15-page-cache/](../chapter-15-page-cache/)
 - 衔接：[Ch 12 VFS](../chapter-12-VFS/) · [Ch 13 DMA/IRQ](../chapter-13-io-architecture/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)
