@@ -39,6 +39,7 @@
 | 15 | 半虚拟化 Virtio（实体书 Ch11） | [chapter-11-virtio-paravirtualization/](./chapter-11-virtio-paravirtualization/) · [stub](./notes/chapter-11-半虚拟化Virtio.md) | 🟡 |
 | 16 | vhost 优化（实体书 Ch12） | [chapter-12-vhost-optimization/](./chapter-12-vhost-optimization/) · [stub](./notes/chapter-12-vhost优化方案.md) | 🟡 |
 | 17 | DPDK 与 NFV（实体书 Ch13 · 应用篇） | [chapter-13-dpdk-nfv/](./chapter-13-dpdk-nfv/) · [stub](./notes/chapter-13-DPDK与网络功能虚拟化.md) | 🟡 |
+| 18 | OVS 中的 DPDK 加速（实体书 Ch14） | [chapter-14-ovs-dpdk-acceleration/](./chapter-14-ovs-dpdk-acceleration/) · [stub](./notes/chapter-14-Open-vSwitch中的DPDK性能加速.md) | 🟡 |
 
 ---
 

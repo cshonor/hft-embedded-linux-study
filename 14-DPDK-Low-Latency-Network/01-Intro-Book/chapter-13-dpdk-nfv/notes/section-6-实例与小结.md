@@ -58,6 +58,7 @@ MANO + 商业交付（vRouter、vBRAS…）
 
 | Ch13 主题 | 继续读 |
 |----------|--------|
+| OVS 虚拟交换机 | [chapter-14-ovs-dpdk-acceleration](../chapter-14-ovs-dpdk-acceleration/) 🟡 |
 | 虚拟化 NFVI | [chapter-10–12](../chapter-12-vhost-optimization/) 🟡 |
 | Pipeline / ring | [chapter-05-packet-forwarding](../chapter-05-packet-forwarding/) 🔴 |
 | 组播 / HFT 落地 | [chapter-05-组播行情接入.md](../chapter-05-组播行情接入.md) 🔴 |
