@@ -15,7 +15,7 @@
 相关标志（与 [Ch 7](../../chapter-07-process-scheduling/) 衔接）：
 
 - **`TIF_NEED_RESCHED`** — 返回前调用 `schedule()`  
-- **`TIF_SIGPENDING`** — 返回前处理信号（→ [Ch 11](../../chapter-11-signals.md)）
+- **`TIF_SIGPENDING`** — 返回前处理信号（→ [Ch 11](../../chapter-11-signals/)）
 
 → IDT / 异常框架：[Ch 4](../../chapter-04-interrupts-and-exceptions/)
 

@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-09-process-address-space/](../chapter-09-process-address-space/)
-- 下一章：[chapter-11-signals.md](../chapter-11-signals.md)
+- 下一章：[chapter-11-signals/](../chapter-11-signals/)
 - 衔接：[Ch 4 异常返回](../chapter-04-interrupts-and-exceptions/notes/section-8-中断返回.md) · [08 TLPI](../../08-The-Linux-Programming-Interface/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)
