@@ -15,4 +15,4 @@
 ## 相关
 
 - 上一章：[chapter-02-Cache与内存/](./chapter-02-Cache与内存/)
-- 下一章：[chapter-02-mbuf与内存池.md](./chapter-02-mbuf与内存池.md)
+- 下一章：[chapter-04-同步互斥机制/](./chapter-04-同步互斥机制/)

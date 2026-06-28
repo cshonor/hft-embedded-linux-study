@@ -20,5 +20,5 @@
 ## 相关
 
 - 上一章：[chapter-02-Cache与内存/](../chapter-02-Cache与内存/)
-- 下一章：实体书 Ch4 同步互斥（待笔记）· [chapter-02-mbuf](../chapter-02-mbuf与内存池.md)
+- 下一章：[chapter-04-同步互斥机制/](../chapter-04-同步互斥机制/) · [chapter-02-mbuf](../chapter-02-mbuf与内存池.md)
 - 对照：[02-Hennessy 并行](../../../02-Computer-Architecture-6th/chapter-04-vector-simd-gpu/) · [Ch1 方法论](../chapter-01-认识DPDK/notes/section-4-底层方法论.md)

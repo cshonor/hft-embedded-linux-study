@@ -33,6 +33,7 @@
 | DPDK 架构、EAL 入门 | [chapter-01-认识DPDK](./chapter-01-认识DPDK/)（实体书 Ch1） |
 | Cache、大页、NUMA | [chapter-02-Cache与内存](./chapter-02-Cache与内存/)（实体书 Ch2） |
 | 并行计算、SIMD | [chapter-03-并行计算](./chapter-03-并行计算/)（实体书 Ch3） |
+| 同步互斥、无锁 ring | [chapter-04-同步互斥机制](./chapter-04-同步互斥机制/)（实体书 Ch4） |
 | mbuf、mempool | [chapter-02-mbuf与内存池](./chapter-02-mbuf与内存池.md) |
 | PMD、poll mode | [chapter-03-PMD与轮询模式](./chapter-03-PMD与轮询模式.md) |
 | 旁路、零拷贝 | [chapter-04-零拷贝与用户态旁路](./chapter-04-零拷贝与用户态旁路.md) |

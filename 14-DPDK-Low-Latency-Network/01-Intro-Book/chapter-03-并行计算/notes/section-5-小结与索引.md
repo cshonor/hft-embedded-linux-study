@@ -30,10 +30,10 @@ Ch8 流分类与多队列 — 硬件+软件分核
 | Cache / NUMA / per-core | [chapter-02-Cache与内存](../chapter-02-Cache与内存/) 🔴 |
 | 多队列 / RSS | [chapter-08-流分类与多队列](../chapter-08-流分类与多队列/) 🔴 |
 | mbuf / ring | [chapter-02-mbuf](../chapter-02-mbuf与内存池.md) 🔴 |
-| 无锁 / 同步 | 实体书 **Ch4**（待笔记）· [ULK Ch5 RCU](../../../06-Understanding-Linux-Kernel/chapter-05-kernel-synchronization/) |
+| 无锁 / 同步 | [chapter-04-同步互斥机制](../chapter-04-同步互斥机制/) 🔴 · [ULK Ch5 RCU](../../../06-Understanding-Linux-Kernel/chapter-05-kernel-synchronization/) |
 | 体系结构 | [02-Hennessy](../../../02-Computer-Architecture-6th/) · [01-CSAPP Ch5](../../../01-CSAPP-3rd/chapter-05-optimization/) |
 | HFT 绑核 / 扩展 | [15 HFT 工程](../../../15-HFT-Low-Latency-Practice/) |
 
 ---
 
-← [4. SIMD](./section-4-数据并行与SIMD.md) · 下一章 [chapter-02-mbuf](../chapter-02-mbuf与内存池.md) · [Ch2 Cache](../chapter-02-Cache与内存/)
+← [4. SIMD](./section-4-数据并行与SIMD.md) · 下一章 [chapter-04-同步互斥](../chapter-04-同步互斥机制/) · [Ch2 Cache](../chapter-02-Cache与内存/)
