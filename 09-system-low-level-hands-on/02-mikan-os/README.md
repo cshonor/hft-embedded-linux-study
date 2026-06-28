@@ -164,6 +164,7 @@ chapter-XX-slug/
 - [x] [Ch 17 文件系统 / FAT · ls](./chapter-17-filesystem/) — 6 小节笔记
 - [x] [Ch 18 应用 / ELF · cat](./chapter-18-apps/) — 6 小节笔记
 - [x] [Ch 19 分页 / 应用 VA](./chapter-19-paging/) — 6 小节笔记
+- [x] [Ch 20 系统调用 / Ring 3](./chapter-20-syscall/) — 6 小节笔记
 
 ---
 
