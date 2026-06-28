@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-01-引言/](../chapter-01-引言/)
-- 下一章：[chapter-03-进程.md](../chapter-03-进程.md)
+- 下一章：[chapter-03-进程/](../chapter-03-进程/)
 - 深潜衔接：[chapter-08-内存管理.md](../chapter-08-内存管理.md) · [chapter-09-进程地址空间.md](../chapter-09-进程地址空间.md) · [07 Gorman](../../07-Linux-Virtual-Memory-Manager/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)

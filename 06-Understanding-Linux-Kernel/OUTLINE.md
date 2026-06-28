@@ -12,7 +12,7 @@
 |----|------|------|-----|----------|
 | 1 | Introduction | [chapter-01-引言.md](./chapter-01-引言.md) · [notes](./chapter-01-引言/) | 🟡 | LKD Ch 1 |
 | 2 | Memory Addressing | [chapter-02-内存寻址.md](./chapter-02-内存寻址.md) · [notes](./chapter-02-内存寻址/) | 🔴 | LKD Ch 11 概述 |
-| 3 | Processes | [chapter-03-进程.md](./chapter-03-进程.md) | 🔴 | LKD Ch 3 |
+| 3 | Processes | [chapter-03-进程.md](./chapter-03-进程.md) · [notes](./chapter-03-进程/) | 🔴 | LKD Ch 3 |
 | 4 | Interrupts and Exceptions | [chapter-04-中断与异常.md](./chapter-04-中断与异常.md) | 🔴 | LKD Ch 7 |
 | 5 | Kernel Synchronization | [chapter-05-内核同步.md](./chapter-05-内核同步.md) | 🔴 | LKD Ch 9–10 |
 | 6 | Timing Measurements | [chapter-06-计时.md](./chapter-06-计时.md) | 🟡 | LKD Ch 11 |
