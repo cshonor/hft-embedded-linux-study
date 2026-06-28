@@ -44,6 +44,7 @@
 | 流分类、RSS、多队列 | [chapter-08-flow-classification-multiqueue](./chapter-08-flow-classification-multiqueue/)（实体书 Ch8） |
 | 硬件 offload、TSO/RSC | [chapter-09-hardware-offload](./chapter-09-hardware-offload/)（实体书 Ch9） |
 | X86 I/O 虚拟化、VT-d/SR-IOV | [chapter-10-x86-io-virtualization](./chapter-10-x86-io-virtualization/)（实体书 Ch10 · **虚拟化篇**） |
+| 半虚拟化 Virtio、virtqueue | [chapter-11-virtio-paravirtualization](./chapter-11-virtio-paravirtualization/)（实体书 Ch11） |
 
 ---
 

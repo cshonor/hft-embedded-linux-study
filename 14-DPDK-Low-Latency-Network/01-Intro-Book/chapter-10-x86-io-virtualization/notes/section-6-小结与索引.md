@@ -17,9 +17,9 @@
 ```
 第一部分 Ch1–9（裸金属数据面）
     ↓
-Ch10 I/O 虚拟化（本章）— 虚拟化篇开篇 · VT-d · SR-IOV · 透传
+Ch10 I/O 虚拟化 — 虚拟化篇开篇 · VT-d · SR-IOV · 透传
     ↓
-实体书后续虚拟化章节 / NFV 实践
+Ch11 Virtio — 半虚拟化 · virtqueue · DPDK 前端优化
     ↓
 repo：零拷贝 · 组播 · 02-Advanced
 ```
@@ -30,6 +30,7 @@ repo：零拷贝 · 组播 · 02-Advanced
 
 | Ch10 主题 | 继续读 |
 |----------|--------|
+| 半虚拟化 Virtio | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/) 🟡 |
 | SR-IOV / VF 实战 | [chapter-08-flow-classification-multiqueue §4](../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 🔴 |
 | 大页 / NUMA | [chapter-02-cache-and-memory](../chapter-02-cache-and-memory/) 🔴 |
 | PCIe / DMA | [chapter-06-pcie-packet-io](../chapter-06-pcie-packet-io/) 🔴 |

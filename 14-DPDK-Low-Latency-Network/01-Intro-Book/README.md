@@ -36,6 +36,7 @@
 | 12 | 流分类与多队列（实体书 Ch8） | [chapter-08-flow-classification-multiqueue/](./chapter-08-flow-classification-multiqueue/) · [stub](./notes/chapter-08-流分类与多队列.md) | 🔴 |
 | 13 | 硬件加速与卸载（实体书 Ch9） | [chapter-09-hardware-offload/](./chapter-09-hardware-offload/) · [stub](./notes/chapter-09-硬件加速与功能卸载.md) | 🔴 |
 | 14 | X86 I/O 虚拟化（实体书 Ch10 · 虚拟化篇） | [chapter-10-x86-io-virtualization/](./chapter-10-x86-io-virtualization/) · [stub](./notes/chapter-10-X86平台IO虚拟化.md) | 🟡 |
+| 15 | 半虚拟化 Virtio（实体书 Ch11） | [chapter-11-virtio-paravirtualization/](./chapter-11-virtio-paravirtualization/) · [stub](./notes/chapter-11-半虚拟化Virtio.md) | 🟡 |
 
 ---
 
