@@ -17,9 +17,11 @@
 ```
 Ch11 Virtio 前端
     ↓
-Ch12 vhost 后端（本章）— 宿主机用户态加速
+Ch12 vhost — 用户态后端 · mem_table · vhost-switch
     ↓
-虚拟化篇收束 → repo 零拷贝 · 组播 · 02-Advanced
+Ch13 NFV（应用篇开篇）— VNF · OPNFV · 商业案例
+    ↓
+repo 零拷贝 · 组播 · 02-Advanced
 ```
 
 **结语：** 优异虚拟网络性能需 **前后端双管齐下** — DPDK 打通 Host↔VM **高速通道**。
@@ -30,6 +32,7 @@ Ch12 vhost 后端（本章）— 宿主机用户态加速
 
 | Ch12 主题 | 继续读 |
 |----------|--------|
+| NFV / VNF 应用篇 | [chapter-13-dpdk-nfv](../chapter-13-dpdk-nfv/) 🟡 |
 | Virtio 前端 | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/) 🟡 |
 | I/O 透传 | [chapter-10-x86-io-virtualization](../chapter-10-x86-io-virtualization/) 🟡 |
 | VMDQ / 多队列 | [chapter-08-flow-classification-multiqueue](../chapter-08-flow-classification-multiqueue/) 🔴 |

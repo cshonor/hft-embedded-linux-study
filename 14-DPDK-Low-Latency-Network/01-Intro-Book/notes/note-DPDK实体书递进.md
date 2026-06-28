@@ -46,6 +46,7 @@
 | X86 I/O 虚拟化、VT-d/SR-IOV | [chapter-10-x86-io-virtualization](./chapter-10-x86-io-virtualization/)（实体书 Ch10 · **虚拟化篇**） |
 | 半虚拟化 Virtio、virtqueue | [chapter-11-virtio-paravirtualization](./chapter-11-virtio-paravirtualization/)（实体书 Ch11） |
 | vhost-user、vhost PMD | [chapter-12-vhost-optimization](./chapter-12-vhost-optimization/)（实体书 Ch12） |
+| NFV、VNF、OPNFV | [chapter-13-dpdk-nfv](./chapter-13-dpdk-nfv/)（实体书 Ch13 · **应用篇**） |
 
 ---
 

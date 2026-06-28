@@ -31,6 +31,7 @@
 | 14 | X86 I/O 虚拟化 | [chapter-10-x86-io-virtualization/](./01-Intro-Book/chapter-10-x86-io-virtualization/) · [stub](./01-Intro-Book/notes/chapter-10-X86平台IO虚拟化.md) | 🟡 |
 | 15 | 半虚拟化 Virtio | [chapter-11-virtio-paravirtualization/](./01-Intro-Book/chapter-11-virtio-paravirtualization/) · [stub](./01-Intro-Book/notes/chapter-11-半虚拟化Virtio.md) | 🟡 |
 | 16 | vhost 优化 | [chapter-12-vhost-optimization/](./01-Intro-Book/chapter-12-vhost-optimization/) · [stub](./01-Intro-Book/notes/chapter-12-vhost优化方案.md) | 🟡 |
+| 17 | DPDK 与 NFV | [chapter-13-dpdk-nfv/](./01-Intro-Book/chapter-13-dpdk-nfv/) · [stub](./01-Intro-Book/notes/chapter-13-DPDK与网络功能虚拟化.md) | 🟡 |
 
 **code：** [01-Intro-Book/code/mcast-minimal/](./01-Intro-Book/code/mcast-minimal/)
 
