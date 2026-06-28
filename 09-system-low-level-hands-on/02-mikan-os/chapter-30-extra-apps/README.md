@@ -23,7 +23,7 @@
 | 1. 本章定位 | [notes/section-1-本章定位.md](./notes/section-1-本章定位.md) |
 | 2. FindCommand 与 PATH 搜索 | [notes/section-2-FindCommand与PATH搜索.md](./notes/section-2-FindCommand与PATH搜索.md) |
 | 3. more 命令与管道按键 | [notes/section-3-more命令与管道按键.md](./notes/section-3-more命令与管道按键.md) |
-| 4. cat 标准输入与重定向建文件 | [notes/section-4-cat标准输入与重定向建文件.md](./section-4-cat标准输入与重定向建文件.md) |
+| 4. cat 标准输入与重定向建文件 | [notes/section-4-cat标准输入与重定向建文件.md](./notes/section-4-cat标准输入与重定向建文件.md) |
 | 5. 窗口关闭按钮 | [notes/section-5-窗口关闭按钮.md](./notes/section-5-窗口关闭按钮.md) |
 | 6. tview、gview 与小结 | [notes/section-6-tview-gview与小结.md](./notes/section-6-tview-gview与小结.md) |
 
