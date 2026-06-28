@@ -1,4 +1,4 @@
-# 06-计时 · Timing Measurements
+﻿# 06-计时 · Timing Measurements
 
 > **Understanding the Linux Kernel** 3rd · Bovet & Cesati · **🟡 选读**
 
@@ -6,12 +6,12 @@
 
 | 节 | 笔记 |
 |----|------|
-| 1 | [本章定位](./chapter-06-timing/notes/section-1-chapter-scope.md) |
-| 2 | [硬件时钟与定时器](./chapter-06-timing/notes/section-2-hardware-clocks.md) |
-| 3 | [Linux 计时架构](./chapter-06-timing/notes/section-3-timekeeping-architecture.md) |
-| 4 | [更新时间与统计](./chapter-06-timing/notes/section-4-updating-time-and-stats.md) |
-| 5 | [软件定时器与 udelay](./chapter-06-timing/notes/section-5-software-timers-and-delays.md) |
-| 6 | [定时相关 syscall](./chapter-06-timing/notes/section-6-timing-syscalls.md) |
+| 1 | [本章定位](./chapter-06-timing/notes/section-1-本章定位.md) |
+| 2 | [硬件时钟与定时器](./chapter-06-timing/notes/section-2-硬件时钟与定时器.md) |
+| 3 | [Linux 计时架构](./chapter-06-timing/notes/section-3-Linux计时架构.md) |
+| 4 | [更新时间与统计](./chapter-06-timing/notes/section-4-更新时间与统计.md) |
+| 5 | [软件定时器与 udelay](./chapter-06-timing/notes/section-5-软件定时器与延迟函数.md) |
+| 6 | [定时相关 syscall](./chapter-06-timing/notes/section-6-定时相关系统调用.md) |
 
 ## 相关
 

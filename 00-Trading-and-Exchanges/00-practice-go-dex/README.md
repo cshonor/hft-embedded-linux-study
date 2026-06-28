@@ -1,4 +1,4 @@
-# 00-practice-go-dex · Harris 配套练手
+﻿# 00-practice-go-dex · Harris 配套练手
 
 > **父模块：** [00-Trading-and-Exchanges](../README.md)（Larry Harris · *Trading and Exchanges*）  
 > **定位：** 用 **Go** 写一个最小 **DEX / 指令驱动撮合** 练手项目 — **理论归理论、代码归代码**，复盘时一眼对上 Harris 章节。交易所 = **金融产品大卖场**；go-dex = 先造 **现货区的基础收银台**（通用 LOB 撮合），衍生品区的保证金/行权/爆仓以后 **叠在引擎外层** — 见 [Ch 1 §3 · 大卖场比喻](../chapter-01-introduction-market-microstructure/notes/section-3-3-交易工具与市场.md#三主流交易所--金融产品大卖场)。**M1–M4 覆盖散户级公开簿**；机构暗池/冰山/FIX/拆单 → [Ch 2 §2](../chapter-02-trading-stories/notes/section-2-2-机构股票交易.md#与-go-dex你现在写的是散户级现货交易所) · [M5](./OUTLINE.md#m5--机构级扩展-backlog)。  
@@ -15,7 +15,7 @@
 | 排序 | 与 Harris **目录顺序一致** | 与 **实现进度** 一致（订单 → LOB → 撮合…） |
 | 模块边界 | 市场微观 **业务语言** | 与 `09` 自制 OS、`05` Linux 内核等 **系统模块清晰分开** |
 
-读 [chapter-04](../chapter-04-orders-and-order-types/) 的限价/市价单 → 来 [notes/milestone-01-订单类型与LOB](./notes/milestone-01-订单类型与LOB/) 看自己写的结构体与测试；读 Ch 6 指令驱动市场 → 对 [milestone-02](./notes/milestone-02-撮合引擎/) 的 match 逻辑 — **复盘路径顺**。
+读 [chapter-04](../chapter-04-orders-and-order-types/) 的限价/市价单 → 来 [notes/milestone-01-order-and-lob](./notes/milestone-01-order-and-lob/) 看自己写的结构体与测试；读 Ch 6 指令驱动市场 → 对 [milestone-02](./notes/milestone-02-matching-engine/) 的 match 逻辑 — **复盘路径顺**。
 
 ---
 

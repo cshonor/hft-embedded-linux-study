@@ -1,11 +1,11 @@
-package main
+﻿package main
 
 // Harris 29 章 ↔ 代码索引：HARRIS-INDEX.md
 // 本文件：Ch 4 · Ch 5 · Ch 6（M1–M2）
 //   Ch 4 订单类型 → ../chapter-04-orders-and-order-types/
 //   Ch 5 市场结构 → ../chapter-05-market-structures/
 //   Ch 6 指令驱动 → ../chapter-06-order-driven-markets/
-// 概念笔记 → ../notes/milestone-01-订单类型与LOB/section-1-三层结构体解析.md
+// 概念笔记 → ../notes/milestone-01-order-and-lob/section-1-三层结构体解析.md
 // ── 三层结构：Order → Limit → Orderbook ─────────────────────────────
 // 交易所「大卖场」里的基础收银台：现货 LOB 撮合（Ch 1 §3）。
 // M1–M2 = 散户级单层公开簿（市价/限价）；多层 MM/ECN 路由 (SOR) → M5+（Ch 2 §1 Level II）。

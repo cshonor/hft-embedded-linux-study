@@ -1,13 +1,13 @@
-# 实践笔记索引
+﻿# 实践笔记索引
 
 理论章节仍在 **[上级目录 `chapter-*.md`](../README.md)**；此处只放 **实现与复盘**。
 
 | 里程碑 | 笔记 | 对照 Harris |
 |--------|------|-------------|
-| M1 订单与 LOB | [milestone-01-订单类型与LOB/](./milestone-01-订单类型与LOB/) | Ch 4–5 |
-| M2 撮合引擎 | [milestone-02-撮合引擎/](./milestone-02-撮合引擎/) | Ch 6 |
-| M3 价差与流动性 | [milestone-03-价差与流动性/](./milestone-03-价差与流动性/) | Ch 13–14, 19 |
-| M4 API（可选） | [milestone-04-API与多交易对/](./milestone-04-API与多交易对/) | Ch 25–27 |
+| M1 订单与 LOB | [milestone-01-order-and-lob/](./milestone-01-order-and-lob/) | Ch 4–5 |
+| M2 撮合引擎 | [milestone-02-matching-engine/](./milestone-02-matching-engine/) | Ch 6 |
+| M3 价差与流动性 | [milestone-03-spread-and-liquidity/](./milestone-03-spread-and-liquidity/) | Ch 13–14, 19 |
+| M4 API（可选） | [milestone-04-api-and-symbols/](./milestone-04-api-and-symbols/) | Ch 25–27 |
 
 写笔记建议模板：
 

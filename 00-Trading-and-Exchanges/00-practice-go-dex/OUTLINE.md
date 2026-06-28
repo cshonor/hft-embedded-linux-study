@@ -1,4 +1,4 @@
-# Go DEX 练手 · 里程碑与 Harris 章节对照
+﻿# Go DEX 练手 · 里程碑与 Harris 章节对照
 
 > **原则：** 理论按 **原书章节** 读（`../chapter-*.md`）；实现按 **本表里程碑** 推进（`notes/` + `code/`）。
 
@@ -16,7 +16,7 @@
 |----|------|
 | **目标** | `Order`（side, type, price, qty, time）；`OrderBook`（bid/ask 两侧价位队列） |
 | **Harris** | [Ch 4 Orders](../chapter-04-orders-and-order-types/) · [Ch 5 Market Structures](../chapter-05-market-structures/) |
-| **笔记** | [notes/milestone-01-订单类型与LOB/](./notes/milestone-01-订单类型与LOB/) |
+| **笔记** | [notes/milestone-01-order-and-lob/](./notes/milestone-01-order-and-lob/) |
 | **验收** | 单元测试：插入限价单后 best bid/ask 正确；市价单「吃」最优档 |
 
 ---
@@ -27,7 +27,7 @@
 |----|------|
 | **目标** | `Match()`：限价挂单入簿；可成交则按 **价格优先、同价时间优先** 生成 `Trade` |
 | **Harris** | [Ch 6 Order-driven Markets](../chapter-06-order-driven-markets/) |
-| **笔记** | [notes/milestone-02-撮合引擎/](./notes/milestone-02-撮合引擎/) |
+| **笔记** | [notes/milestone-02-matching-engine/](./notes/milestone-02-matching-engine/) |
 | **验收** | 回放固定订单序列，成交列表与手工推演一致 |
 
 ---
@@ -38,7 +38,7 @@
 |----|------|
 | **目标** | 实时 **spread**、档位深度、简单 **implementation shortfall** 统计 |
 | **Harris** | [Ch 13 Dealers](../chapter-13-dealers/) · [Ch 14 Bid-Ask Spreads](../chapter-14-bid-ask-spreads/) · [Ch 19 Liquidity](../chapter-19-liquidity/) |
-| **笔记** | [notes/milestone-03-价差与流动性/](./notes/milestone-03-价差与流动性/) |
+| **笔记** | [notes/milestone-03-spread-and-liquidity/](./notes/milestone-03-spread-and-liquidity/) |
 | **验收** | 对同一 LOB 快照，spread = best_ask − best_bid |
 
 ---
@@ -49,7 +49,7 @@
 |----|------|
 | **目标** | HTTP/JSON 或 WebSocket：`POST /order`、`GET /book`；**Level 1** `GET /ticker`（best bid/ask）；多 `symbol` |
 | **Harris** | [Ch 25](../chapter-25-internalization-preferencing-crossing/)–[27](../chapter-27-floor-vs-automated-trading/)（电子化、多 venue 直觉） |
-| **笔记** | [notes/milestone-04-API与多交易对/](./notes/milestone-04-API与多交易对/) |
+| **笔记** | [notes/milestone-04-api-and-symbols/](./notes/milestone-04-api-and-symbols/) |
 | **验收** | 本地 curl 下单、查簿；**ticker 卖价 = min(Asks)**、买价 = max(Bids)，与手工一致 |
 
 ---

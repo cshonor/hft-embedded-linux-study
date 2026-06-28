@@ -6,13 +6,13 @@
 
 | 节 | 笔记 |
 |----|------|
-| 1 | [本章定位](./chapter-05-kernel-synchronization/notes/section-1-chapter-scope.md) |
-| 2 | [内核抢占](./chapter-05-kernel-synchronization/notes/section-2-kernel-preemption.md) |
-| 3 | [基础原语 per-CPU/原子/屏障](./chapter-05-kernel-synchronization/notes/section-3-basic-primitives.md) |
-| 4 | [自旋锁与读写自旋锁](./chapter-05-kernel-synchronization/notes/section-4-spinlocks.md) |
-| 5 | [顺序锁与 RCU](./chapter-05-kernel-synchronization/notes/section-5-seqlocks-and-rcu.md) |
-| 6 | [信号量与完成变量](./chapter-05-kernel-synchronization/notes/section-6-semaphores-and-completions.md) |
-| 7 | [选型原则与内核实例](./chapter-05-kernel-synchronization/notes/section-7-selection-and-examples.md) |
+| 1 | [本章定位](./chapter-05-kernel-synchronization/notes/section-1-本章定位.md) |
+| 2 | [内核抢占](./chapter-05-kernel-synchronization/notes/section-2-内核抢占.md) |
+| 3 | [基础原语 per-CPU/原子/屏障](./chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md) |
+| 4 | [自旋锁与读写自旋锁](./chapter-05-kernel-synchronization/notes/section-4-自旋锁.md) |
+| 5 | [顺序锁与 RCU](./chapter-05-kernel-synchronization/notes/section-5-顺序锁与RCU.md) |
+| 6 | [信号量与完成变量](./chapter-05-kernel-synchronization/notes/section-6-信号量与完成变量.md) |
+| 7 | [选型原则与内核实例](./chapter-05-kernel-synchronization/notes/section-7-选型与实例.md) |
 
 ## 相关
 

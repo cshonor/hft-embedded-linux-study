@@ -9,11 +9,11 @@
 
 | 节 | 笔记 |
 |----|------|
-| 1. 本章定位 · 系统全景图 | [notes/section-1-overview-and-architecture.md](./notes/section-1-overview-and-architecture.md) |
-| 2. Linux 与其他类 Unix 内核 | [notes/section-2-linux-vs-unix.md](./notes/section-2-linux-vs-unix.md) |
-| 3. 基本操作系统概念 | [notes/section-3-basic-os-concepts.md](./notes/section-3-basic-os-concepts.md) |
-| 4. Unix 文件系统概述 | [notes/section-4-unix-filesystem-overview.md](./notes/section-4-unix-filesystem-overview.md) |
-| 5. Unix 内核概述 | [notes/section-5-unix-kernel-overview.md](./notes/section-5-unix-kernel-overview.md) |
+| 1. 本章定位 · 系统全景图 | [notes/section-1-全书概览与内核架构.md](./notes/section-1-全书概览与内核架构.md) |
+| 2. Linux 与其他类 Unix 内核 | [notes/section-2-Linux与Unix比较.md](./notes/section-2-Linux与Unix比较.md) |
+| 3. 基本操作系统概念 | [notes/section-3-基本操作系统概念.md](./notes/section-3-基本操作系统概念.md) |
+| 4. Unix 文件系统概述 | [notes/section-4-Unix文件系统概述.md](./notes/section-4-Unix文件系统概述.md) |
+| 5. Unix 内核概述 | [notes/section-5-Unix内核概述.md](./notes/section-5-Unix内核概述.md) |
 
 ---
 

@@ -9,12 +9,12 @@
 
 | 节 | 笔记 |
 |----|------|
-| 1. 本章定位 | [notes/section-1-chapter-scope.md](./notes/section-1-chapter-scope.md) |
-| 2. 三种内存地址与 MMU | [notes/section-2-three-address-types.md](./notes/section-2-three-address-types.md) |
-| 3. 硬件分段与 Linux 策略 | [notes/section-3-segmentation.md](./notes/section-3-segmentation.md) |
-| 4. 硬件分页 | [notes/section-4-hardware-paging.md](./notes/section-4-hardware-paging.md) |
-| 5. Linux 四级分页模型 | [notes/section-5-linux-four-level-paging.md](./notes/section-5-linux-four-level-paging.md) |
-| 6. 物理布局 · 页表 · TLB | [notes/section-6-memory-layout-and-tlb.md](./notes/section-6-memory-layout-and-tlb.md) |
+| 1. 本章定位 | [notes/section-1-本章定位.md](./notes/section-1-本章定位.md) |
+| 2. 三种内存地址与 MMU | [notes/section-2-三种内存地址.md](./notes/section-2-三种内存地址.md) |
+| 3. 硬件分段与 Linux 策略 | [notes/section-3-分段机制.md](./notes/section-3-分段机制.md) |
+| 4. 硬件分页 | [notes/section-4-硬件分页.md](./notes/section-4-硬件分页.md) |
+| 5. Linux 四级分页模型 | [notes/section-5-Linux四级分页.md](./notes/section-5-Linux四级分页.md) |
+| 6. 物理布局 · 页表 · TLB | [notes/section-6-内存布局与TLB.md](./notes/section-6-内存布局与TLB.md) |
 
 ---
 

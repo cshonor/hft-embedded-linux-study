@@ -6,11 +6,11 @@
 
 | 节 | 笔记 |
 |----|------|
-| 1 | [系统全景图](./chapter-01-introduction/notes/section-1-overview-and-architecture.md) |
-| 2 | [Linux 与 Unix 比较](./chapter-01-introduction/notes/section-2-linux-vs-unix.md) |
-| 3 | [基本操作系统概念](./chapter-01-introduction/notes/section-3-basic-os-concepts.md) |
-| 4 | [Unix 文件系统概述](./chapter-01-introduction/notes/section-4-unix-filesystem-overview.md) |
-| 5 | [Unix 内核概述 + 章节索引](./chapter-01-introduction/notes/section-5-unix-kernel-overview.md) |
+| 1 | [系统全景图](./chapter-01-introduction/notes/section-1-全书概览与内核架构.md) |
+| 2 | [Linux 与 Unix 比较](./chapter-01-introduction/notes/section-2-Linux与Unix比较.md) |
+| 3 | [基本操作系统概念](./chapter-01-introduction/notes/section-3-基本操作系统概念.md) |
+| 4 | [Unix 文件系统概述](./chapter-01-introduction/notes/section-4-Unix文件系统概述.md) |
+| 5 | [Unix 内核概述 + 章节索引](./chapter-01-introduction/notes/section-5-Unix内核概述.md) |
 
 ## 相关
 
