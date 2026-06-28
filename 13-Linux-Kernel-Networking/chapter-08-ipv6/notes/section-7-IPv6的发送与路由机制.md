@@ -66,7 +66,7 @@ ip -6 route get 2001:db8::1
 
 ## 相关章节
 
-- 下一章：[Ch 9 Netfilter](../../chapter-09-Netfilter.md)
+- 下一章：[Ch 9 Netfilter](../../chapter-09-netfilter/)
 - IPv4 平行：[Ch 4](../../chapter-04-ipv4/) · [Ch 5](../../chapter-05-ipv4-routing-subsystem/)
 
 ---

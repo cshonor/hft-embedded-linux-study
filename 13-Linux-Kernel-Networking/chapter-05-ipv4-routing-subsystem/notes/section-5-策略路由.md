@@ -50,7 +50,7 @@ ip route add default via 192.168.2.1 table 100
 | **复杂度成本** | 每包 **rule 链 + 二次 fib_lookup** — 规则 **宜少宜静态** |
 | **DPDK** | 旁路栈；策略在 **用户态** 或 **静态 ARP/ND** 等价实现 |
 
-→ 高级场景：[Ch 6 高级路由](../../chapter-06-advanced-routing/) · Netfilter mark：[Ch 9](../../chapter-09-Netfilter.md)
+→ 高级场景：[Ch 6 高级路由](../../chapter-06-advanced-routing/) · Netfilter mark：[Ch 9](../../chapter-09-netfilter/)
 
 ---
 

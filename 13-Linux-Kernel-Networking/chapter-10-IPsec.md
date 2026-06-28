@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-09-Netfilter.md](./chapter-09-Netfilter.md)
+- 上一章：[chapter-09-netfilter/](./chapter-09-netfilter/)
 - 下一章：[chapter-11-第4层协议.md](./chapter-11-第4层协议.md)

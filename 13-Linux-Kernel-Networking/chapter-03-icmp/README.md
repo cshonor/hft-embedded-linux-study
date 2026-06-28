@@ -33,5 +33,5 @@
 - 下一章：[../chapter-04-ipv4/](../chapter-04-ipv4/)
 - IPv6 / ND：[../chapter-08-ipv6/](../chapter-08-ipv6/) · 邻居：[../chapter-07-neighbouring-subsystem/](../chapter-07-neighbouring-subsystem/)
 - 组播 MLD：[../note-组播IGMP.md](../note-组播IGMP.md)
-- Netfilter：[../chapter-09-Netfilter.md](../chapter-09-Netfilter.md)
+- Netfilter：[../chapter-09-netfilter/](../chapter-09-netfilter/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

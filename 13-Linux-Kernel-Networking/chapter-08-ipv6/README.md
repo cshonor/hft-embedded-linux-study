@@ -33,7 +33,7 @@
 ## 相关章节
 
 - 上一章：[../chapter-07-neighbouring-subsystem/](../chapter-07-neighbouring-subsystem/)
-- 下一章：[../chapter-09-Netfilter.md](../chapter-09-Netfilter.md)
+- 下一章：[../chapter-09-netfilter/](../chapter-09-netfilter/)
 - ICMPv6 / ND：[../chapter-03-icmp/](../chapter-03-icmp/)
 - 组播对照：[../note-组播IGMP.md](../note-组播IGMP.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

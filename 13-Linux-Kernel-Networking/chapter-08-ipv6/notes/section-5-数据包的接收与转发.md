@@ -40,7 +40,7 @@ ETH_P_IPV6 → ipv6_rcv(skb)
 | 本地 | `ip_local_deliver` | **`ip6_input`** |
 | 转发 | `ip_forward` | **`ip6_forward`** |
 
-**Netfilter：** **同一 hook 点** — [Ch 9](../../chapter-09-Netfilter.md) · nft/iptables **family inet6**。
+**Netfilter：** **同一 hook 点** — [Ch 9](../../chapter-09-netfilter/) · nft/iptables **family inet6**。
 
 ---
 

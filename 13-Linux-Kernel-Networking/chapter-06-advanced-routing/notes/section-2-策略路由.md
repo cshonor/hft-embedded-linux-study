@@ -87,7 +87,7 @@ ip route add default via 192.168.100.1 dev eth1 table trading
 - 规则 **宜少** — 每包 **线性扫 rule**（规则数小则可忽略）。
 - **`ip rule`/`ip route` 变更** 与 **热路径** 无 syscall，但 **影响所有新 lookup**。
 
-→ Netfilter mark：[Ch 9](../../chapter-09-Netfilter.md)
+→ Netfilter mark：[Ch 9](../../chapter-09-netfilter/)
 
 ---
 

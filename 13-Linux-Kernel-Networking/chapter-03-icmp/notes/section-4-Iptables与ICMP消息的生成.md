@@ -55,7 +55,7 @@ iptables -A INPUT -p udp --dport 9999 -j REJECT --reject-with icmp-port-unreacha
                          从本机接口发出 ICMP
 ```
 
-→ 深读：[Ch 9 Netfilter](../../chapter-09-Netfilter.md) · [Ch 1 §4 钩子](../../chapter-01-introduction/notes/section-4-数据包的收发与流转.md)
+→ 深读：[Ch 9 Netfilter](../../chapter-09-netfilter/) · [Ch 1 §4 钩子](../../chapter-01-introduction/notes/section-4-数据包的收发与流转.md)
 
 ---
 
@@ -81,7 +81,7 @@ iptables -A INPUT -p udp --dport 9999 -j REJECT --reject-with icmp-port-unreacha
 ## 相关章节
 
 - 下一章：[Ch 4 IPv4](../../chapter-04-ipv4/)
-- Netfilter：[Ch 9](../../chapter-09-Netfilter.md)
+- Netfilter：[Ch 9](../../chapter-09-netfilter/)
 
 ---
 
