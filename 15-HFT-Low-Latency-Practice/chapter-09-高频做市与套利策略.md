@@ -2,7 +2,7 @@
 
 > **Signal / Execution · 延迟套利 · 做市逻辑**
 
-← 架构：[chapter-08 Strategy](./chapter-08-超低延迟核心引擎开发.md#3-strategysignal--execution) · 总览：[chapter-01](./chapter-01-高频交易基础与生态.md)
+← 架构：[chapter-08 §7 Strategy](./chapter-08-超低延迟核心引擎开发.md#7-关键路径组件应用层) · 总览：[chapter-01](./chapter-01-高频交易基础与生态.md)
 
 <!-- 章节深化待补充：inventory risk、quote skew、latency arb 实例 -->
 

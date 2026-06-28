@@ -22,7 +22,7 @@
 | 1 | **架构** Gateway / Book / Strategy / OMS | [Ch1](./chapter-01-高频交易基础与生态.md) · [Ch8](./chapter-08-超低延迟核心引擎开发.md) |
 | 2 | **硬件/OS** 绑核 · BIOS · Hugepage · Bypass | [Ch4 原理](./chapter-04-硬件选型与服务器配置.md) · [Ch5 实操](./chapter-05-操作系统内核极致调优.md) |
 | 3 | **IPC** 无锁 Ring · 内存池 | [Ch7 无锁/内存（原书 Ch6§2–3）](./chapter-07-无锁数据结构与内存布局.md) |
-| 4 | **语言** C++ 热点 · Java/Python 边界 | [Ch8 §5](./chapter-08-超低延迟核心引擎开发.md#5-c-引擎编码规范热点路径) |
+| 4 | **语言** C++ 内存模型/CRTP/模板 · Java 边界 | [Ch8 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发.md) |
 | 5 | **网络** 交换机 · TCP/UDP · 包路径 · PTP | [Ch6 动态网络](./chapter-06-低延迟网络与协议优化.md) |
 | 6 | **FPGA** ns 级 | [Ch4 §3](./chapter-04-硬件选型与服务器配置.md#3-fpga-加速) |
 | 7 | **测量** T2T 分段 · 异步日志 · Bypass 总纲 | [Ch10 日志/测量（原书 Ch7）](./chapter-10-延迟测量与基准压测.md) |
@@ -42,7 +42,7 @@
 | 5 | [chapter-05 OS 调优 · 上下文切换（原书 Ch6§1）](./chapter-05-操作系统内核极致调优.md) | ✅ 要点 |
 | 6 | [chapter-06 动态网络（原书 Ch5）](./chapter-06-低延迟网络与协议优化.md) | ✅ 要点 |
 | 7 | [chapter-07 无锁与内存池（原书 Ch6§2–3）](./chapter-07-无锁数据结构与内存布局.md) | ✅ 要点 |
-| 8 | [chapter-08 核心引擎](./chapter-08-超低延迟核心引擎开发.md) | ✅ 要点 |
+| 8 | [chapter-08 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发.md) | ✅ 要点 |
 | 9 | [chapter-09 做市与套利](./chapter-09-高频做市与套利策略.md) | 待补充 |
 | 10 | [chapter-10 日志与 TTT 测量（原书 Ch7）](./chapter-10-延迟测量与基准压测.md) | ✅ 要点 |
 | 11 | [chapter-11 风控合规](./chapter-11-风控合规与滑点控制.md) | 待补充 |
