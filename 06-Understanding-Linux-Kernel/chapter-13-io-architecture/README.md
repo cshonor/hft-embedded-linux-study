@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-12-VFS/](../chapter-12-VFS/)
-- 下一章：[chapter-14-block-devices.md](../chapter-14-block-devices.md)
+- 下一章：[chapter-14-block-devices/](../chapter-14-block-devices/)
 - 衔接：[Ch 4 I/O 中断](../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) · [Ch 12 VFS](../chapter-12-VFS/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)
