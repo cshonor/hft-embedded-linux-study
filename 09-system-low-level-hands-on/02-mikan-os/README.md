@@ -165,6 +165,7 @@ chapter-XX-slug/
 - [x] [Ch 18 应用 / ELF · cat](./chapter-18-apps/) — 6 小节笔记
 - [x] [Ch 19 分页 / 应用 VA](./chapter-19-paging/) — 6 小节笔记
 - [x] [Ch 20 系统调用 / Ring 3](./chapter-20-syscall/) — 6 小节笔记
+- [x] [Ch 21 窗口应用 / winhello](./chapter-21-window-apps/) — 6 小节笔记
 
 ---
 
@@ -174,7 +175,7 @@ chapter-XX-slug/
 - [ ] [Ch 0–2](./chapter-00-intro/) UEFI + 内存 map
 - [ ] [Ch 7–8](./chapter-07-interrupt-fifo/) 中断 + 内存管理
 - [ ] [Ch 13–14](./chapter-13-multitask1/) 多任务
-- [ ] [Ch 19–20](./chapter-19-paging/) 分页 + 系统调用
+- [x] [Ch 19–20](./chapter-19-paging/) 分页 + 系统调用
 - [ ] [Ch 29](./chapter-29-ipc/) 应用间通信
 
 ---
