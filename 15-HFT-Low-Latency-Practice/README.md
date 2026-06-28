@@ -20,7 +20,7 @@
 | 步骤 | 内容 | 章节 |
 |------|------|------|
 | 1 | **架构** Gateway / Book / Strategy / OMS | [Ch1](./chapter-01-高频交易基础与生态.md) · [Ch8](./chapter-08-超低延迟核心引擎开发.md) |
-| 2 | **硬件/OS** 绑核 · BIOS · Hugepage · Bypass | [Ch4](./chapter-04-硬件选型与服务器配置.md) · [Ch5](./chapter-05-操作系统内核极致调优.md) |
+| 2 | **硬件/OS** 绑核 · BIOS · Hugepage · Bypass | [Ch4 原理](./chapter-04-硬件选型与服务器配置.md) · [Ch5 实操](./chapter-05-操作系统内核极致调优.md) |
 | 3 | **IPC** 无锁 Ring · 共享内存 | [Ch7](./chapter-07-无锁数据结构与内存布局.md) |
 | 4 | **语言** C++ 热点 · Java/Python 边界 | [Ch8 §5](./chapter-08-超低延迟核心引擎开发.md#5-c-引擎编码规范热点路径) |
 | 5 | **网络** 二进制协议 · 微波 | [Ch6](./chapter-06-低延迟网络与协议优化.md) |
@@ -38,8 +38,8 @@
 | 1 | [chapter-01 基础与生态](./chapter-01-高频交易基础与生态.md) | ✅ 总览 |
 | 2 | [chapter-02 关键组件](./chapter-02-交易所架构与撮合原理.md) | ✅ 要点 |
 | 3 | [chapter-03 交易所动态与 LOB](./chapter-03-订单簿深度与行情解析.md) | ✅ 要点 |
-| 4 | [chapter-04 硬件与 FPGA](./chapter-04-硬件选型与服务器配置.md) | ✅ 要点 |
-| 5 | [chapter-05 OS 调优](./chapter-05-操作系统内核极致调优.md) | ✅ 要点 |
+| 4 | [chapter-04 硬件到 OS](./chapter-04-硬件选型与服务器配置.md) | ✅ 要点 |
+| 5 | [chapter-05 OS 调优（实操）](./chapter-05-操作系统内核极致调优.md) | ✅ 要点 |
 | 6 | [chapter-06 网络与协议](./chapter-06-低延迟网络与协议优化.md) | ✅ 要点 |
 | 7 | [chapter-07 无锁与内存](./chapter-07-无锁数据结构与内存布局.md) | ✅ 要点 |
 | 8 | [chapter-08 核心引擎](./chapter-08-超低延迟核心引擎开发.md) | ✅ 要点 |

@@ -1,8 +1,8 @@
 # 第5章 操作系统内核极致调优
 
-> **CPU 隔离 · Kernel Bypass · Memory Pool · Huge Pages**
+> **Ch4 原理的 Linux 落地** · CPU 隔离 · Kernel Bypass · Huge Pages
 
-← 总览：[chapter-01 §2](./chapter-01-高频交易基础与生态.md#2-硬件与操作系统优化)
+← 原理：[chapter-04 硬件到 OS](./chapter-04-硬件选型与服务器配置.md) · 总览：[chapter-01 §2](./chapter-01-高频交易基础与生态.md#2-硬件与操作系统优化)
 
 ---
 
