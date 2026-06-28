@@ -201,7 +201,7 @@ public void ringPublish(RingState s) {
 | **IPC** | **Disruptor** / Agrona 无锁环 |
 | **测量/日志** | **JMH** · Disruptor 异步日志 · **无 String 热点** |
 
-**硬核 Java 之后** → 原书 Ch10 Python（待笔记）· 策略层：[chapter-13 做市与套利](./chapter-13-高频做市与套利策略.md)
+**硬核 Java 之后** → [chapter-14 Python 混合（原书 Ch10）](./chapter-14-python-高性能混合架构.md) · 策略：[chapter-13](./chapter-13-高频做市与套利策略.md)
 
 ---
 
