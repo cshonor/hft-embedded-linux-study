@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-10-system-calls/](../chapter-10-system-calls/)
-- 下一章：[chapter-12-VFS.md](../chapter-12-VFS.md)
+- 下一章：[chapter-12-VFS/](../chapter-12-VFS/)
 - 衔接：[Ch 3 线程组](../chapter-03-processes/) · [Ch 10 TIF_SIGPENDING](../chapter-10-system-calls/notes/section-4-进入与退出.md) · [08 TLPI Ch 20–21](../../08-The-Linux-Programming-Interface/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)

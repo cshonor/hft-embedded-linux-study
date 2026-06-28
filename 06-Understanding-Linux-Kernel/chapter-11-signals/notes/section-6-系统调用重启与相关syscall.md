@@ -74,4 +74,4 @@ ERESTARTSYS → 重入 syscall
 
 ---
 
-← [5. 用户态 handler](./section-5-捕获与用户态处理.md) · 下一章 [Ch 12 VFS](../chapter-12-VFS.md)
+← [5. 用户态 handler](./section-5-捕获与用户态处理.md) · 下一章 [Ch 12 VFS](../chapter-12-VFS/)
