@@ -29,9 +29,11 @@
 ```
 Ch13 NFV 架构 / VNF 方法论
     ↓
-Ch14 OVS-DPDK（虚拟交换机数据面）← 本章
+Ch14 OVS-DPDK（虚拟交换机数据面）
     ↓
-后续应用章 / 02-Advanced / HFT 落地
+Ch15 SPDK 网络存储（应用篇压轴）← 见 [chapter-15](../chapter-15-dpdk-storage-optimization/)
+    ↓
+02-Advanced / HFT 落地
 ```
 
 ---

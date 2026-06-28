@@ -48,6 +48,7 @@
 | vhost-user、vhost PMD | [chapter-12-vhost-optimization](./chapter-12-vhost-optimization/)（实体书 Ch12） |
 | NFV、VNF、OPNFV | [chapter-13-dpdk-nfv](./chapter-13-dpdk-nfv/)（实体书 Ch13 · **应用篇**） |
 | OVS、dpif-netdev、netdev-dpdk | [chapter-14-ovs-dpdk-acceleration](./chapter-14-ovs-dpdk-acceleration/)（实体书 Ch14） |
+| SPDK、用户态 NVMe、iSCSI | [chapter-15-dpdk-storage-optimization](./chapter-15-dpdk-storage-optimization/)（实体书 Ch15 · **应用篇压轴**） |
 
 ---
 

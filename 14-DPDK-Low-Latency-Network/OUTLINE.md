@@ -33,6 +33,7 @@
 | 16 | vhost 优化 | [chapter-12-vhost-optimization/](./01-Intro-Book/chapter-12-vhost-optimization/) · [stub](./01-Intro-Book/notes/chapter-12-vhost优化方案.md) | 🟡 |
 | 17 | DPDK 与 NFV | [chapter-13-dpdk-nfv/](./01-Intro-Book/chapter-13-dpdk-nfv/) · [stub](./01-Intro-Book/notes/chapter-13-DPDK与网络功能虚拟化.md) | 🟡 |
 | 18 | OVS 中的 DPDK 加速 | [chapter-14-ovs-dpdk-acceleration/](./01-Intro-Book/chapter-14-ovs-dpdk-acceleration/) · [stub](./01-Intro-Book/notes/chapter-14-Open-vSwitch中的DPDK性能加速.md) | 🟡 |
+| 19 | 基于 DPDK 的存储优化 | [chapter-15-dpdk-storage-optimization/](./01-Intro-Book/chapter-15-dpdk-storage-optimization/) · [stub](./01-Intro-Book/notes/chapter-15-基于DPDK的存储软件优化.md) | 🟡 |
 
 **code：** [01-Intro-Book/code/mcast-minimal/](./01-Intro-Book/code/mcast-minimal/)
 
