@@ -48,7 +48,7 @@ Linux **无线子系统** 独立演进 — 补丁经 **邮件列表** 进 **wire
 
 ## 相关章节
 
-- 下一章：[Ch 13 InfiniBand](../../chapter-13-InfiniBand.md) — 共置 **🟡 选读**
+- 下一章：[Ch 13 InfiniBand](../../chapter-13-infiniband/) — 共置 **🟡 选读**
 - Netlink：[Ch 2 §4 genl/nl80211](../../chapter-02-netlink-sockets/notes/section-4-通用Netlink协议.md)
 
 ---

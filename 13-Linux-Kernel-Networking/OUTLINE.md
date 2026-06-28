@@ -24,7 +24,7 @@
 | 10 | IPsec | [chapter-10](./chapter-10-ipsec/) | ⚪ |
 | 11 | Layer 4 Protocols | [chapter-11](./chapter-11-layer-4-protocols/) | 🔴 |
 | 12 | Wireless in Linux | [chapter-12](./chapter-12-wireless-in-linux/) | ⚪ |
-| 13 | InfiniBand | [chapter-13](./chapter-13-InfiniBand.md) | 🟡 |
+| 13 | InfiniBand | [chapter-13](./chapter-13-infiniband/) | 🟡 |
 | 16 | Advanced Topics | [chapter-14](./chapter-14-高级主题.md) | 🔴 |
 
 ### HFT 延伸

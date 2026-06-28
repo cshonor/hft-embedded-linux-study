@@ -8,5 +8,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-13-InfiniBand.md](./chapter-13-InfiniBand.md)
+- 上一章：[chapter-13-infiniband/](./chapter-13-infiniband/)
 - 下一章：[appendix-A-Linux-API.md](./appendix-A-Linux-API.md)

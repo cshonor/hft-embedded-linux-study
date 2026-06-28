@@ -34,6 +34,6 @@
 ## 相关章节
 
 - 上一章：[../chapter-11-layer-4-protocols/](../chapter-11-layer-4-protocols/)
-- 下一章：[../chapter-13-InfiniBand.md](../chapter-13-InfiniBand.md)
+- 下一章：[../chapter-13-infiniband/](../chapter-13-infiniband/)
 - Netlink genl：[../chapter-02-netlink-sockets/notes/section-4-通用Netlink协议.md](../chapter-02-netlink-sockets/notes/section-4-通用Netlink协议.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
