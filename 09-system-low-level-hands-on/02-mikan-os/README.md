@@ -151,6 +151,7 @@ chapter-XX-slug/
 - [x] [Ch 4 像素 / make / ELF](./chapter-04-pixel-make/) — 6 小节笔记
 - [x] [Ch 5 文本 / Console / printk](./chapter-05-console-text/) — 6 小节笔记
 - [x] [Ch 6 鼠标 / PCI / xHCI](./chapter-06-mouse-pci/) — 6 小节笔记
+- [x] [Ch 7 中断 / FIFO](./chapter-07-interrupt-fifo/) — 6 小节笔记
 
 ---
 
