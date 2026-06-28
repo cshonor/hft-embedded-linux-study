@@ -71,7 +71,7 @@ nf_nat_set_ct(ct, manip)
 
 ## 相关章节
 
-- 下一章：[Ch 10 IPsec](../../chapter-10-IPsec.md)
+- 下一章：[Ch 10 IPsec](../../chapter-10-ipsec/)
 - IPsec 与 NAT 交互：部分 ESP **需 passthrough** 或 **policy 顺序**
 
 ---

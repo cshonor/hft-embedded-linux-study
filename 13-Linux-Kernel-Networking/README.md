@@ -19,7 +19,7 @@
 | 7 邻居子系统 | [chapter-07-neighbouring-subsystem/](./chapter-07-neighbouring-subsystem/) |
 | 8 IPv6 | [chapter-08-ipv6/](./chapter-08-ipv6/) |
 | 9 Netfilter | [chapter-09-netfilter/](./chapter-09-netfilter/) |
-| 10 IPsec | [chapter-10-IPsec.md](./chapter-10-IPsec.md) |
+| 10 IPsec | [chapter-10-ipsec/](./chapter-10-ipsec/) |
 | 11 第 4 层协议 | [chapter-11-第4层协议.md](./chapter-11-第4层协议.md) |
 | 12 无线网络 | [chapter-12-无线网络.md](./chapter-12-无线网络.md) |
 | 13 InfiniBand | [chapter-13-InfiniBand.md](./chapter-13-InfiniBand.md) |

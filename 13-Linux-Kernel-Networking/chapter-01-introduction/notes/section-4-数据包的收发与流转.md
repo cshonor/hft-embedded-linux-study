@@ -53,7 +53,7 @@ NIC → L2
 
 | 变化 | 场景 |
 |------|------|
-| **NAT / IPsec** | 改 IP/端口或加密封装（[Ch 9](../../chapter-09-netfilter/) · [Ch 10 IPsec](../../chapter-10-IPsec.md)） |
+| **NAT / IPsec** | 改 IP/端口或加密封装（[Ch 9](../../chapter-09-netfilter/) · [Ch 10 IPsec](../../chapter-10-ipsec/)） |
 | **丢弃** | 防火墙、rp_filter、TTL 耗尽 |
 | **ICMP 差错** | 不可达、需要分片等 |
 | **分片 / 重组** | MTU 小于包长 — **重组成本高**，HFT 常 **PMTUD + 避免分片** |

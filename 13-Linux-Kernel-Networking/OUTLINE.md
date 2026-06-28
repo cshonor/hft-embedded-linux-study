@@ -21,7 +21,7 @@
 | 7 | Linux Neighbouring Subsystem | [chapter-07](./chapter-07-neighbouring-subsystem/) | 🟡 |
 | 8 | IPv6 | [chapter-08](./chapter-08-ipv6/) | ⚪ |
 | 9 | Netfilter | [chapter-09](./chapter-09-netfilter/) | ⚪ |
-| 10 | IPsec | [chapter-10](./chapter-10-IPsec.md) | ⚪ |
+| 10 | IPsec | [chapter-10](./chapter-10-ipsec/) | ⚪ |
 | 11 | Layer 4 Protocols | [chapter-11](./chapter-11-第4层协议.md) | 🔴 |
 | 12 | Wireless in Linux | [chapter-12](./chapter-12-无线网络.md) | ⚪ |
 | 13 | InfiniBand | [chapter-13](./chapter-13-InfiniBand.md) | 🟡 |

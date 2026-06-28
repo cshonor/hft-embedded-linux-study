@@ -9,5 +9,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-10-IPsec.md](./chapter-10-IPsec.md)
+- 上一章：[chapter-10-ipsec/](./chapter-10-ipsec/)
 - 下一章：[chapter-12-无线网络.md](./chapter-12-无线网络.md)

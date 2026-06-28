@@ -32,6 +32,6 @@
 ## 相关章节
 
 - 上一章：[../chapter-08-ipv6/](../chapter-08-ipv6/)
-- 下一章：[../chapter-10-IPsec.md](../chapter-10-IPsec.md)
+- 下一章：[../chapter-10-ipsec/](../chapter-10-ipsec/)
 - iptables REJECT/ICMP：[../chapter-03-icmp/notes/section-4-Iptables与ICMP消息的生成.md](../chapter-03-icmp/notes/section-4-Iptables与ICMP消息的生成.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

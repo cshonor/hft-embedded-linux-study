@@ -30,7 +30,7 @@ IPv6 用 **链式扩展头** 替代 IPv4 **IP Options** — **中间路由器默
 | **Hop-by-Hop** | Router Alert、Jumbo payload 等 **稀有用** |
 | **Routing (RH)** | 源路由（**生产常禁**） |
 | **Fragment** | **分片信息** — only **源主机分片** |
-| **AH / ESP** | **IPsec**（[Ch 10](../../chapter-10-IPsec.md)） |
+| **AH / ESP** | **IPsec**（[Ch 10](../../chapter-10-ipsec/)） |
 | **Destination Options** | 目的端选项 |
 
 ---
