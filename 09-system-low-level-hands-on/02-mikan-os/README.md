@@ -155,6 +155,7 @@ chapter-XX-slug/
 - [x] [Ch 8 内存管理](./chapter-08-memory/) — 6 小节笔记
 - [x] [Ch 9 图层 / Shadow Buffer](./chapter-09-layers/) — 6 小节笔记
 - [x] [Ch 10 窗口 / Back Buffer](./chapter-10-window/) — 6 小节笔记
+- [x] [Ch 11 定时器 / ACPI](./chapter-11-timer-acpi/) — 6 小节笔记
 
 ---
 
