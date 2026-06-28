@@ -161,6 +161,7 @@ chapter-XX-slug/
 - [x] [Ch 14 多任务（2）](./chapter-14-multitask2/) — 6 小节笔记
 - [x] [Ch 15 终端](./chapter-15-terminal/) — 6 小节笔记
 - [x] [Ch 16 命令 / CLI](./chapter-16-commands/) — 6 小节笔记
+- [x] [Ch 17 文件系统 / FAT · ls](./chapter-17-filesystem/) — 6 小节笔记
 
 ---
 
