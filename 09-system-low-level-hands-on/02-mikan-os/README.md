@@ -174,6 +174,7 @@ chapter-XX-slug/
 - [x] [Ch 27 应用内存 / Demand · CoW](./chapter-27-app-memory/) — 6 小节笔记
 - [x] [Ch 28 日文显示 / 重定向](./chapter-28-japanese-redirect/) — 6 小节笔记
 - [x] [Ch 29 应用间通信 / 管道](./chapter-29-ipc/) — 6 小节笔记
+- [x] [Ch 30 额外应用 / tview · gview](./chapter-30-extra-apps/) — 6 小节笔记
 
 ---
 
