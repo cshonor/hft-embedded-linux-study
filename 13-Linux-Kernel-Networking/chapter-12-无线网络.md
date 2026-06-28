@@ -6,5 +6,5 @@
 
 ## 相关章节
 
-- 上一章：[chapter-11-第4层协议.md](./chapter-11-第4层协议.md)
+- 上一章：[chapter-11-layer-4-protocols/](./chapter-11-layer-4-protocols/)
 - 下一章：[chapter-13-InfiniBand.md](./chapter-13-InfiniBand.md)

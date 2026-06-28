@@ -58,7 +58,7 @@ ip_local_out / __ip_local_out
 - **UDP 行情** — 注意 **包长 vs MTU**；无 cork 时 **每 tick 一包** 最简单可预测。
 - **静态路由 + 固定 dst cache** — 减 **`ip_route_output` 慢路径**。
 
-→ L4 深读：[Ch 11](../../chapter-11-第4层协议.md)
+→ L4 深读：[Ch 11](../../chapter-11-layer-4-protocols/)
 
 ---
 

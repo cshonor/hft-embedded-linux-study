@@ -77,7 +77,7 @@ NIC → L2
     → dev_queue_xmit → qdisc → 驱动 xmit
 ```
 
-→ 邻居 ARP/ND：[Ch 7](../../chapter-07-neighbouring-subsystem/) · L4 队列与 backlog：[Ch 11](../../chapter-11-第4层协议.md)
+→ 邻居 ARP/ND：[Ch 7](../../chapter-07-neighbouring-subsystem/) · L4 队列与 backlog：[Ch 11](../../chapter-11-layer-4-protocols/)
 
 ---
 

@@ -38,7 +38,7 @@ ip_mr_input()          /* 多播路由输入 */
 
 主机加入组：**IGMP Report** — 内核 **`igmp.c`** 维护 **`ip_mc_list`**（每接口组播过滤器）。
 
-→ 深读：[note-组播IGMP](../../note-组播IGMP.md) · [Ch 11 L4](../../chapter-11-第4层协议.md) UDP 组播 socket
+→ 深读：[note-组播IGMP](../../note-组播IGMP.md) · [Ch 11 L4](../../chapter-11-layer-4-protocols/) UDP 组播 socket
 
 ---
 

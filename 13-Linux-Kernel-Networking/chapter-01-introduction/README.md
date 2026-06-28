@@ -32,6 +32,6 @@
 ## 相关章节
 
 - 下一章：[../chapter-02-netlink-sockets/](../chapter-02-netlink-sockets/)
-- 传输层深读：[../chapter-11-第4层协议.md](../chapter-11-第4层协议.md)
+- 传输层深读：[../chapter-11-layer-4-protocols/](../chapter-11-layer-4-protocols/)
 - 高级主题（NAPI/softirq/RSS）：[../chapter-14-高级主题.md](../chapter-14-高级主题.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
