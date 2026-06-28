@@ -1,0 +1,43 @@
+﻿## 4. 进程的组织与查找
+
+---
+
+### 一、等待队列（Wait Queues）
+
+进程需等待事件时（磁盘 I/O 完成、定时器到期等）：
+
+1. 内核将其放入 **等待队列**
+2. 进程进入 **睡眠状态**（如 `TASK_INTERRUPTIBLE`）
+3. 条件满足时，内核 **唤醒** 队列中的进程
+
+这是阻塞 I/O、锁、定时器的通用模式。
+
+→ 同步原语：[Ch 5 内核同步](../../chapter-05-kernel-synchronization.md) · 信号：[Ch 11](../../chapter-11-signals.md)
+
+---
+
+### 二、PID 哈希表
+
+通过 **PID** 快速找到 `task_struct`：
+
+内核维护 **四种哈希表**（2.6 模型）：
+
+| 哈希表 | 键 | 用途 |
+|--------|-----|------|
+| PID | 进程 ID | `kill(pid)`、调试等 |
+| TGID | 线程组 ID | 找整个线程组 |
+| PGID | 进程组 ID | 作业控制、信号广播 |
+| SID | 会话 ID | 终端会话管理 |
+
+哈希冲突用 **链表** 解决。
+
+---
+
+### 三、HFT 关联
+
+- 等锁 / 等 I/O 的 **唤醒延迟** 与等待队列路径相关  
+- `TASK_UNINTERRUPTIBLE` 过多 → 常见于 I/O 瓶颈排查（配合 BPF/perf）
+
+---
+
+← [3. 进程描述符](./section-3-process-descriptor.md) · 下一节 [5. 进程切换](./section-5-process-switch.md)
