@@ -160,6 +160,7 @@ chapter-XX-slug/
 - [x] [Ch 13 多任务（1）](./chapter-13-multitask1/) — 6 小节笔记
 - [x] [Ch 14 多任务（2）](./chapter-14-multitask2/) — 6 小节笔记
 - [x] [Ch 15 终端](./chapter-15-terminal/) — 6 小节笔记
+- [x] [Ch 16 命令 / CLI](./chapter-16-commands/) — 6 小节笔记
 
 ---
 
