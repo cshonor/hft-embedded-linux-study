@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-17-page-reclaim/](../chapter-17-page-reclaim/)
-- 下一章：[chapter-19-ipc.md](../chapter-19-ipc.md)
+- 下一章：[chapter-19-ipc/](../chapter-19-ipc/)
 - 衔接：[Ch 12 VFS](../chapter-12-VFS/) · [Ch 15 页缓存](../chapter-15-page-cache/) · [Ch 16 文件访问](../chapter-16-file-access/)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](./LEARNING_PLAN.md)

@@ -62,10 +62,10 @@ JBD 事务日志 → 崩溃快速恢复
 |------------|--------|
 | VFS / 路径查找 | [Ch 12 VFS](../chapter-12-VFS/) ⚪ |
 | 页缓存写回 | [Ch 15](../chapter-15-page-cache/) ⚪ |
-| 进程通信 | [Ch 19 IPC](../chapter-19-ipc.md) 🟡 |
+| 进程通信 | [Ch 19 IPC](../chapter-19-ipc/) 🟡 |
 | 程序加载 | [Ch 20 程序执行](../chapter-20-program-execution.md) 🟡 |
 | modern FS | ext4/xfs 文档；ULK 概念仍适用 |
 
 ---
 
-← [5. 内存结构](./section-5-Ext2内存数据结构.md) · 下一章 [Ch 19 进程通信](../chapter-19-ipc.md)
+← [5. 内存结构](./section-5-Ext2内存数据结构.md) · 下一章 [Ch 19 进程通信](../chapter-19-ipc/)

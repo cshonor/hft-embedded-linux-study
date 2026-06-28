@@ -28,7 +28,7 @@
 | 16 | Accessing Files | [chapter-16-file-access.md](./chapter-16-file-access.md) · [notes](./chapter-16-file-access/) | ⚪ | |
 | 17 | Page Frame Reclaiming | [chapter-17-page-reclaim.md](./chapter-17-page-reclaim.md) · [notes](./chapter-17-page-reclaim/) | 🟡 | Gorman Ch 10 |
 | 18 | Ext2 and Ext3 | [chapter-18-ext2-ext3.md](./chapter-18-ext2-ext3.md) · [notes](./chapter-18-ext2-ext3/) | ⚪ | |
-| 19 | Process Communication | [chapter-19-ipc.md](./chapter-19-ipc.md) | 🟡 | TLPI IPC · 远期 IPC 模块 |
+| 19 | Process Communication | [chapter-19-ipc.md](./chapter-19-ipc.md) · [notes](./chapter-19-ipc/) | 🟡 | TLPI IPC · 远期 IPC 模块 |
 | 20 | Program Execution | [chapter-20-program-execution.md](./chapter-20-program-execution.md) | 🟡 | CSAPP Ch 8 |
 
 ## 附录
