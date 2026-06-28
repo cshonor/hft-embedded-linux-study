@@ -63,10 +63,14 @@ Core 3: Gateway OUT
 
 | 对策 | 效果 |
 |------|------|
-| **OpenOnload / DPDK** | **轮询 RX ring** — 无阻塞 wait |
-| **Busy-poll socket**（次选） | 仍经内核 · 通常不如真 Bypass |
+| **User-space spinning** | **100% poll** NIC ring — 无 IRQ/阻塞 |
+| **Zero copy** | DMA → 用户映射 · 无 memcpy |
+| **OpenOnload / VMA / DPDK** | 商用 Bypass |
+| **Busy-poll socket**（次选） | 仍经内核 |
 
-→ [chapter-06 §5 包路径](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [14-DPDK](../14-DPDK-Low-Latency-Network/)
+| 效果（原书 Ch7） | **1.5–10 μs → 0.5–2 μs** |
+
+→ [chapter-06 §5](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [chapter-10 §1](./chapter-10-延迟测量与基准压测.md#1-内核旁路-kernel-bypass) · [14-DPDK](../14-DPDK-Low-Latency-Network/)
 
 ---
 

@@ -121,6 +121,18 @@ MarketEvent* acquire() {
 
 ---
 
+## 3. 共享内存 IPC：`mmap` + 无锁环
+
+| API | HFT 用法 |
+|-----|----------|
+| **`mmap(MAP_SHARED)`** | 文件 / **`/dev/shm`** / memfd → **多进程同物理页** |
+| **非持久化** | 纯 RAM 环 · 不必落盘 |
+| **+ FIFO** | Gateway 写 · Strategy 读 — **零拷贝 IPC** |
+
+→ 原书 Ch7 §2：[chapter-10 §2](./chapter-10-延迟测量与基准压测.md#2-内存映射文件-mmap-与-ipc)
+
+---
+
 ## 4. C++ 内存序（无锁必备）
 
 ```cpp
@@ -171,4 +183,4 @@ consume(slot[read_idx]);
 |------|--------|
 | Ch6 §1 上下文切换 | **Ch5** |
 | Ch6 §2–3 无锁/内存 | **本章 Ch7** |
-| Ch7 日志/性能/网络 | **Ch6 + Ch10**（Bypass/PTP/微波） |
+| Ch7 日志/性能/网络 | **Ch10** · Ch5/6/7 分节 |
