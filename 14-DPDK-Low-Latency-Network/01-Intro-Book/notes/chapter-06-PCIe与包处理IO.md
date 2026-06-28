@@ -17,4 +17,4 @@
 ## 相关
 
 - 上一章：[chapter-05-packet-forwarding/](./chapter-05-packet-forwarding/)
-- 下一章：[chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
+- 下一章：[chapter-07-nic-performance-optimization/](./chapter-07-nic-performance-optimization/)

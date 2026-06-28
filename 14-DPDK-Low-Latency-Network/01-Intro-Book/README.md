@@ -28,11 +28,12 @@
 | 4 | 同步互斥机制（实体书 Ch4） | [chapter-04-synchronization/](./chapter-04-synchronization/) · [stub](./notes/chapter-04-同步互斥机制.md) | 🔴 |
 | 5 | 报文转发（实体书 Ch5） | [chapter-05-packet-forwarding/](./chapter-05-packet-forwarding/) · [stub](./notes/chapter-05-报文转发.md) | 🔴 |
 | 6 | PCIe 与包处理 I/O（实体书 Ch6） | [chapter-06-pcie-packet-io/](./chapter-06-pcie-packet-io/) · [stub](./notes/chapter-06-PCIe与包处理IO.md) | 🔴 |
-| 7 | mbuf、mempool | [chapter-02-mbuf](./notes/chapter-02-mbuf与内存池.md) | 🔴 |
-| 8 | PMD、轮询模式 | [chapter-03-PMD](./notes/chapter-03-PMD与轮询模式.md) | 🔴 |
-| 9 | 零拷贝、旁路原理 | [chapter-04-零拷贝](./notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
-| 10 | UDP 组播行情 | [chapter-05-组播](./notes/chapter-05-组播行情接入.md) | 🔴 |
-| 11 | 流分类与多队列（实体书 Ch8） | [chapter-08-flow-classification-multiqueue/](./chapter-08-flow-classification-multiqueue/) · [stub](./notes/chapter-08-流分类与多队列.md) | 🔴 |
+| 7 | 网卡性能优化（实体书 Ch7） | [chapter-07-nic-performance-optimization/](./chapter-07-nic-performance-optimization/) · [stub](./notes/chapter-07-网卡性能优化.md) | 🔴 |
+| 8 | mbuf、mempool | [chapter-02-mbuf](./notes/chapter-02-mbuf与内存池.md) | 🔴 |
+| 9 | PMD、轮询模式 | [chapter-03-PMD](./notes/chapter-03-PMD与轮询模式.md) | 🔴 |
+| 10 | 零拷贝、旁路原理 | [chapter-04-零拷贝](./notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
+| 11 | UDP 组播行情 | [chapter-05-组播](./notes/chapter-05-组播行情接入.md) | 🔴 |
+| 12 | 流分类与多队列（实体书 Ch8） | [chapter-08-flow-classification-multiqueue/](./chapter-08-flow-classification-multiqueue/) · [stub](./notes/chapter-08-流分类与多队列.md) | 🔴 |
 
 ---
 

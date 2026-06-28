@@ -20,11 +20,11 @@ Ch2 Cache/大页/NUMA
     ↓
 Ch5 报文转发 — 软件框架
     ↓
-Ch6 PCIe 与 I/O（本章）— DMA + mbuf/mempool
+Ch6 PCIe 与 I/O — DMA + mbuf/mempool
     ↓
-PMD 轮询 — burst 收发包
+Ch7 网卡性能优化 — poll、burst、平台、环深
     ↓
-Ch8 多队列 — 分流减单链 PCIe 压力
+Ch8 多队列 — RSS / 硬件分流
 ```
 
 ---
@@ -33,6 +33,7 @@ Ch8 多队列 — 分流减单链 PCIe 压力
 
 | Ch6 主题 | 继续读 |
 |----------|--------|
+| 网卡性能 / poll / burst | [chapter-07-nic-performance-optimization](../chapter-07-nic-performance-optimization/) 🔴 |
 | PMD / burst | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
 | mbuf 实验 stub | [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) 🔴 |
 | Cache / 大页 / DDIO | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/) 🔴 |
@@ -44,4 +45,4 @@ Ch8 多队列 — 分流减单链 PCIe 压力
 
 ---
 
-← [6. Mbuf 与 Mempool](./section-6-Mbuf与Mempool.md) · 下一章 [chapter-03-PMD](../chapter-03-PMD与轮询模式.md) · [Ch5 转发](../chapter-05-packet-forwarding/)
+← [6. Mbuf 与 Mempool](./section-6-Mbuf与Mempool.md) · 下一章 [chapter-07 网卡优化](../chapter-07-nic-performance-optimization/) · [Ch5 转发](../chapter-05-packet-forwarding/)

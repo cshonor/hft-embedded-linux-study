@@ -35,7 +35,8 @@
 | 并行计算、SIMD | [chapter-03-并行计算](./chapter-03-parallel-computing/)（实体书 Ch3） |
 | 同步互斥、无锁 ring | [chapter-04-同步互斥机制](./chapter-04-synchronization/)（实体书 Ch4） |
 | 报文转发、RTC/Pipeline | [chapter-05-报文转发](./chapter-05-packet-forwarding/)（实体书 Ch5） |
-| PCIe、mbuf/mempool | [chapter-06-PCIe与包处理IO](./chapter-06-pcie-packet-io/)（实体书 Ch6） |
+| PCIe、mbuf/mempool | [chapter-06-pcie-packet-io](./chapter-06-pcie-packet-io/)（实体书 Ch6） |
+| 网卡性能、burst/poll | [chapter-07-nic-performance-optimization](./chapter-07-nic-performance-optimization/)（实体书 Ch7） |
 | mbuf、mempool | [chapter-02-mbuf与内存池](./chapter-02-mbuf与内存池.md) |
 | PMD、poll mode | [chapter-03-PMD与轮询模式](./chapter-03-PMD与轮询模式.md) |
 | 旁路、零拷贝 | [chapter-04-零拷贝与用户态旁路](./chapter-04-零拷贝与用户态旁路.md) |
