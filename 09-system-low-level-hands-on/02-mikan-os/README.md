@@ -158,6 +158,7 @@ chapter-XX-slug/
 - [x] [Ch 11 定时器 / ACPI](./chapter-11-timer-acpi/) — 6 小节笔记
 - [x] [Ch 12 键盘输入](./chapter-12-keyboard/) — 6 小节笔记
 - [x] [Ch 13 多任务（1）](./chapter-13-multitask1/) — 6 小节笔记
+- [x] [Ch 14 多任务（2）](./chapter-14-multitask2/) — 6 小节笔记
 
 ---
 
