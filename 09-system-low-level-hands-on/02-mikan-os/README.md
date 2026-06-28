@@ -169,6 +169,7 @@ chapter-XX-slug/
 - [x] [Ch 22 图形和事件（1）/ stars · ReadEvent](./chapter-22-graphics-events1/) — 6 小节笔记
 - [x] [Ch 23 图形和事件（2）/ eye · blocks](./chapter-23-graphics-events2/) — 6 小节笔记
 - [x] [Ch 24 多终端 / PML4 · KillApp](./chapter-24-multi-terminal/) — 6 小节笔记
+- [x] [Ch 25 应用读文件 / fd · grep](./chapter-25-app-read-file/) — 6 小节笔记
 
 ---
 
