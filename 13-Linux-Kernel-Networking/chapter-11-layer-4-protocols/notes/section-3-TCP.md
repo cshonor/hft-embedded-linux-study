@@ -111,7 +111,7 @@ tcp_sendmsg
     可选：kernel bypass (DPDK)、**固定连接**、**同 NUMA 网卡**
 ```
 
-与 **Ch 4 发送**、**Ch 7 邻居 ARP**、**Ch 14 NAPI/XPS** 串成 **端到端延迟预算**。
+与 **Ch 4 发送**、**Ch 7 邻居 ARP**、**[Ch 14 NAPI/XPS](../../chapter-14-advanced-topics/)** 串成 **端到端延迟预算**。
 
 ---
 

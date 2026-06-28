@@ -31,7 +31,7 @@
        → 数据帧 → 去 802.11 头 → 以太类型 demux → netif_rx
 ```
 
-与 [Ch 14 NAPI](../../chapter-14-高级主题.md) **同构** — 但无线 **额外 MAC 处理**。
+与 [Ch 14 NAPI](../../chapter-14-advanced-topics/) **同构** — 但无线 **额外 MAC 处理**。
 
 ---
 

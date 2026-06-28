@@ -55,7 +55,7 @@ ibv_poll_cq(cq, n, wc);
 | **用户态 verbs + busy poll CQ** | 与 **DPDK run-to-completion** 同哲学 |
 | **预建 QP、预注册 MR** | 避免 tick 上 **create/destroy** |
 | **单独 CM 线程** | 建链与 **数据面分离** |
-| **RoCE：** **CPU affinity + NUMA 对齐 HCA** | 与 [Ch 14 NAPI/RPS](../../chapter-14-高级主题.md) 以太调优 **并列** |
+| **RoCE：** **CPU affinity + NUMA 对齐 HCA** | 与 [Ch 14 NAPI/RPS](../../chapter-14-advanced-topics/) 以太调优 **并列** |
 
 ---
 
@@ -74,7 +74,7 @@ ibv_poll_cq(cq, n, wc);
 
 ## 相关章节
 
-- 下一章：[Ch 14 高级主题](../../chapter-14-高级主题.md) — **NAPI/softirq 🔴**
+- 下一章：[Ch 14 高级主题](../../chapter-14-advanced-topics/) — **NAPI/softirq 🔴**
 - L4 对照：[Ch 11 TCP/UDP](../../chapter-11-layer-4-protocols/)
 
 ---

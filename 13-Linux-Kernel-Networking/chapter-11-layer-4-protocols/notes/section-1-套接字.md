@@ -45,7 +45,7 @@
   → sk->sk_data_ready()  → wake_up 用户线程/epoll
 ```
 
-→ 软中断与 NAPI：[Ch 14](../../chapter-14-高级主题.md)
+→ 软中断与 NAPI：[Ch 14](../../chapter-14-advanced-topics/)
 
 ---
 

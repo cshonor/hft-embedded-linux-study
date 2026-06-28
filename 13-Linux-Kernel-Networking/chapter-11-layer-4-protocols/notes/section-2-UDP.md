@@ -88,7 +88,7 @@ udp_rcv(skb)
 | **softirq 调度** | **poll mode / busy poll** |
 | **通用 hash lookup** | **固定流、预绑 queue** |
 
-**行情典型：** **组播 UDP** + **单播 snapshot**；调 **`SO_RCVBUF`**、**`recvmmsg`**、**CPU 亲和**、**RPS/RFS**（Ch 14）。
+**行情典型：** **组播 UDP** + **单播 snapshot**；调 **`SO_RCVBUF`**、**`recvmmsg`**、**CPU 亲和**、**RPS/RFS**（[Ch 14 §3](../../chapter-14-advanced-topics/notes/section-3-忙轮询套接字与收包路径.md)）。
 
 ---
 

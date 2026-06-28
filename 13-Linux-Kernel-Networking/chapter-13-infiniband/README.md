@@ -32,6 +32,6 @@
 ## 相关章节
 
 - 上一章：[../chapter-12-wireless-in-linux/](../chapter-12-wireless-in-linux/)
-- 下一章：[../chapter-14-高级主题.md](../chapter-14-高级主题.md)
+- 下一章：[../chapter-14-advanced-topics/](../chapter-14-advanced-topics/)
 - 用户态旁路：[14-DPDK-Low-Latency-Network](../../14-DPDK-Low-Latency-Network/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

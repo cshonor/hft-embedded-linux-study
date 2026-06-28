@@ -2,7 +2,7 @@
 
 > **Linux Kernel Networking** · Rami Rosen · **精读 🔴**
 
-> **L4** — **Socket API**、`struct socket` / `struct sock`、**UDP/TCP** 收发路径；辅以 **SCTP/DCCP**。HFT **行情多 UDP 组播、发单多 TCP**；本章是 **内核栈 → 用户态** 的 **核心桥梁**，与 [Ch 14](../chapter-14-高级主题.md) **NAPI/softirq** 联读。
+> **L4** — **Socket API**、`struct socket` / `struct sock`、**UDP/TCP** 收发路径；辅以 **SCTP/DCCP**。HFT **行情多 UDP 组播、发单多 TCP**；本章是 **内核栈 → 用户态** 的 **核心桥梁**，与 [Ch 14](../chapter-14-advanced-topics/) **NAPI/softirq** 联读。
 
 ---
 
@@ -33,5 +33,5 @@
 - 上一章：[../chapter-10-ipsec/](../chapter-10-ipsec/)
 - 下一章：[../chapter-12-wireless-in-linux/](../chapter-12-wireless-in-linux/)
 - 组播延伸：[../note-组播IGMP.md](../note-组播IGMP.md)
-- 高级主题 NAPI/RPS：[../chapter-14-高级主题.md](../chapter-14-高级主题.md)
+- 高级主题 NAPI/RPS：[../chapter-14-advanced-topics/](../chapter-14-advanced-topics/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

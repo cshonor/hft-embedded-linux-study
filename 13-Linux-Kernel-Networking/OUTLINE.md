@@ -25,7 +25,7 @@
 | 11 | Layer 4 Protocols | [chapter-11](./chapter-11-layer-4-protocols/) | 🔴 |
 | 12 | Wireless in Linux | [chapter-12](./chapter-12-wireless-in-linux/) | ⚪ |
 | 13 | InfiniBand | [chapter-13](./chapter-13-infiniband/) | 🟡 |
-| 16 | Advanced Topics | [chapter-14](./chapter-14-高级主题.md) | 🔴 |
+| 14 | Advanced Topics | [chapter-14](./chapter-14-advanced-topics/) | 🔴 |
 
 ### HFT 延伸
 

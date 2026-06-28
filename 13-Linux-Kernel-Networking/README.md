@@ -23,7 +23,7 @@
 | 11 第 4 层协议 | [chapter-11-layer-4-protocols/](./chapter-11-layer-4-protocols/) |
 | 12 无线网络 | [chapter-12-wireless-in-linux/](./chapter-12-wireless-in-linux/) |
 | 13 InfiniBand | [chapter-13-infiniband/](./chapter-13-infiniband/) |
-| 14 高级主题 | [chapter-14-高级主题.md](./chapter-14-高级主题.md) |
+| 14 高级主题 | [chapter-14-advanced-topics/](./chapter-14-advanced-topics/) |
 
 ### HFT 延伸
 
