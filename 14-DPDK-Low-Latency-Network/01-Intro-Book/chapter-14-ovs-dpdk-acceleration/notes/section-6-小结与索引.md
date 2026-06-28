@@ -42,6 +42,7 @@ Ch15 SPDK 网络存储（应用篇压轴）← 见 [chapter-15](../chapter-15-dp
 
 | Ch14 主题 | 继续读 |
 |----------|--------|
+| SPDK 存储 | [chapter-15-dpdk-storage-optimization](../chapter-15-dpdk-storage-optimization/) 🟡 |
 | NFV / NFVI | [chapter-13-dpdk-nfv](../chapter-13-dpdk-nfv/) 🟡 |
 | vhost-user | [chapter-12-vhost-optimization](../chapter-12-vhost-optimization/) 🟡 |
 | Virtio 前端 | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/) 🟡 |
