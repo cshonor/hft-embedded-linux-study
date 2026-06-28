@@ -21,5 +21,5 @@
 ## 相关
 
 - 上一章：[chapter-01-认识DPDK/](../chapter-01-认识DPDK/)
-- 下一章：[chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) · [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md)
+- 下一章：[chapter-03-并行计算/](../chapter-03-并行计算/) · [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) · [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md)
 - 对照：[01-CSAPP Ch6 内存层次](../../../01-CSAPP-3rd/chapter-06-memory-hierarchy/) · [02-Hennessy Ch2](../../../02-Computer-Architecture-6th/chapter-02-memory-hierarchy-design/)

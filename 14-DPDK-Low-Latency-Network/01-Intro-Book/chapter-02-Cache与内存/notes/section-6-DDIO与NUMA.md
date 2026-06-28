@@ -71,6 +71,7 @@ mbuf/mempool 在正确内存上预分配
 | Ch2 主题 | 继续读 |
 |----------|--------|
 | mbuf / mempool | [chapter-02-mbuf](../chapter-02-mbuf与内存池.md) 🔴 |
+| 并行 / SIMD | [chapter-03-并行计算](../chapter-03-并行计算/) 🔴 |
 | PMD 收发包 | [chapter-03 PMD](../chapter-03-PMD与轮询模式.md) 🔴 |
 | 零拷贝旁路 | [chapter-04](../chapter-04-零拷贝与用户态旁路.md) |
 | CSAPP / Hennessy | [01 Ch6](../../../01-CSAPP-3rd/chapter-06-memory-hierarchy/) · [02 Ch2](../../../02-Computer-Architecture-6th/chapter-02-memory-hierarchy-design/) |

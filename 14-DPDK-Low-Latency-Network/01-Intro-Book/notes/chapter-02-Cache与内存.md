@@ -16,4 +16,4 @@
 ## 相关
 
 - 上一章：[chapter-01-认识DPDK/](./chapter-01-认识DPDK/)
-- 下一章：[chapter-02-mbuf与内存池.md](./chapter-02-mbuf与内存池.md)
+- 下一章：[chapter-03-并行计算.md](./chapter-03-并行计算.md)

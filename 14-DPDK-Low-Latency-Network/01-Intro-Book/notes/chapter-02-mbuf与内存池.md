@@ -8,6 +8,6 @@
 
 ## 相关章节
 
-- 上一章：[chapter-02-Cache与内存.md](./chapter-02-Cache与内存.md)
+- 上一章：[chapter-02-Cache与内存.md](./chapter-02-Cache与内存.md) · [chapter-03-并行计算.md](./chapter-03-并行计算.md)
 - 下一章：[chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
 - 缓存对照：[01-CSAPP Ch6](../../../01-CSAPP-3rd/chapter-06-memory-hierarchy/)
