@@ -21,6 +21,8 @@ Ch7 网卡性能优化（本章）— poll、burst、平台、环深
     ↓
 Ch8 流分类与多队列 — RSS / FD 硬件分流
     ↓
+Ch9 硬件 offload — Checksum/VLAN/TSO/PTP
+    ↓
 PMD stub / 组播落地
 ```
 

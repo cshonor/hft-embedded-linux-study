@@ -20,5 +20,6 @@
 
 ## 相关
 
-- 前置：[chapter-02-cache-and-memory/](../chapter-02-cache-and-memory/) · [chapter-03-PMD](../chapter-03-PMD与轮询模式.md)
+- 前置：[chapter-07-nic-performance-optimization/](../chapter-07-nic-performance-optimization/) · [chapter-03-PMD](../chapter-03-PMD与轮询模式.md)
+- 下一章：[chapter-09-hardware-offload/](../chapter-09-hardware-offload/)
 - 对照：[13-LKN 高级主题 RSS](../../../13-Linux-Kernel-Networking/chapter-14-advanced-topics/) · [chapter-05 组播](../chapter-05-组播行情接入.md)

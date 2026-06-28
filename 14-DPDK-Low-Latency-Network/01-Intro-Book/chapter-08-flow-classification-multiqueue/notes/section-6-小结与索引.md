@@ -23,6 +23,7 @@ RMT：Match+Action 统一理解智能网卡
 
 | Ch8 主题 | 继续读 |
 |----------|--------|
+| 硬件 offload | [chapter-09-hardware-offload](../chapter-09-hardware-offload/) 🔴 |
 | PMD / burst | [chapter-03 PMD](../chapter-03-PMD与轮询模式.md) 🔴 |
 | Cache / NUMA / per-core | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/) 🔴 |
 | 组播行情落地 | [chapter-05 组播](../chapter-05-组播行情接入.md) 🔴 |
@@ -33,4 +34,4 @@ RMT：Match+Action 统一理解智能网卡
 
 ---
 
-← [5. RMT](./section-5-RMT抽象模型.md) · [01-Intro README](../README.md)
+← [5. RMT](./section-5-RMT抽象模型.md) · 下一章 [chapter-09 硬件 offload](../chapter-09-hardware-offload/) · [01-Intro README](../README.md)

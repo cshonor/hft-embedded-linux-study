@@ -27,6 +27,7 @@
 | 10 | 零拷贝、旁路 | [chapter-04-零拷贝](./01-Intro-Book/notes/chapter-04-零拷贝与用户态旁路.md) | 🔴 |
 | 11 | UDP 组播行情 | [chapter-05-组播](./01-Intro-Book/notes/chapter-05-组播行情接入.md) | 🔴 |
 | 12 | 流分类与多队列 | [chapter-08-flow-classification-multiqueue/](./01-Intro-Book/chapter-08-flow-classification-multiqueue/) · [stub](./01-Intro-Book/notes/chapter-08-流分类与多队列.md) | 🔴 |
+| 13 | 硬件加速与卸载 | [chapter-09-hardware-offload/](./01-Intro-Book/chapter-09-hardware-offload/) · [stub](./01-Intro-Book/notes/chapter-09-硬件加速与功能卸载.md) | 🔴 |
 
 **code：** [01-Intro-Book/code/mcast-minimal/](./01-Intro-Book/code/mcast-minimal/)
 

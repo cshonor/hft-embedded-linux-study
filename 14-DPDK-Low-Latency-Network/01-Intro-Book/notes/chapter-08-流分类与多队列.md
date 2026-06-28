@@ -15,5 +15,6 @@
 
 ## 相关
 
-- 前置：[chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
+- 前置：[chapter-07-网卡性能优化.md](./chapter-07-网卡性能优化.md) · [chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
+- 下一章：[chapter-09-hardware-offload/](./chapter-09-hardware-offload/)
 - [10-DPDK 总目录](../README.md)
