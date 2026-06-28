@@ -22,7 +22,7 @@
 | 10 | System Calls | [chapter-10-system-calls.md](./chapter-10-system-calls.md) · [notes](./chapter-10-system-calls/) | 🔴 | LKD Ch 5 · TLPI Ch 2 |
 | 11 | Signals | [chapter-11-signals.md](./chapter-11-signals.md) · [notes](./chapter-11-signals/) | 🟡 | TLPI Ch 20–21 |
 | 12 | The Virtual Filesystem | [chapter-12-VFS.md](./chapter-12-VFS.md) · [notes](./chapter-12-VFS/) | ⚪ | LKD Ch 13 |
-| 13 | I/O Architecture and Device Drivers | [chapter-13-io-architecture.md](./chapter-13-io-architecture.md) | ⚪ | |
+| 13 | I/O Architecture and Device Drivers | [chapter-13-io-architecture.md](./chapter-13-io-architecture.md) · [notes](./chapter-13-io-architecture/) | ⚪ | |
 | 16 | Block Device Drivers | [chapter-14-block-devices.md](./chapter-14-block-devices.md) | ⚪ | |
 | 16 | The Page Cache | [chapter-15-page-cache.md](./chapter-15-page-cache.md) | ⚪ | |
 | 16 | Accessing Files | [chapter-16-file-access.md](./chapter-16-file-access.md) | ⚪ | |

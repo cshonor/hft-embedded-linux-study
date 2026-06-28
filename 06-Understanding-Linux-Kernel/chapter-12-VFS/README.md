@@ -21,6 +21,6 @@
 ## 相关
 
 - 上一章：[chapter-11-signals/](../chapter-11-signals/)
-- 下一章：[chapter-13-io-architecture.md](../chapter-13-io-architecture.md)
+- 下一章：[chapter-13-io-architecture/](../chapter-13-io-architecture/)
 - 衔接：[Ch 1 文件系统概述](../chapter-01-introduction/notes/section-4-Unix文件系统概述.md) · [Ch 16 文件访问](../chapter-16-file-access.md)
 - [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)

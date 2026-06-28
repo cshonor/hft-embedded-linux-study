@@ -48,11 +48,11 @@ VFS 对象（sb / inode / file / dentry）+ 缓存
 |------------|--------|
 | read/write 完整路径 | [Ch 16 文件访问](../chapter-16-file-access.md) ⚪ |
 | Ext2 具体实现 | [Ch 17 Ext2](../chapter-17-ext2.md) ⚪ |
-| 块 I/O | [Ch 13 I/O 架构](../chapter-13-io-architecture.md) ⚪ |
+| 块 I/O | [Ch 13 I/O 架构](../chapter-13-io-architecture/) ⚪ |
 | Unix FS 概念 | [Ch 1 section-4](../chapter-01-introduction/notes/section-4-Unix文件系统概述.md) |
 | LKD 对照 | Linux Kernel Development Ch 13 |
 | inode 锁实例 | [Ch 5 section-7](../chapter-05-kernel-synchronization/notes/section-7-选型与实例.md) |
 
 ---
 
-← [5. 挂载与路径查找](./section-5-挂载与路径查找.md) · 下一章 [Ch 13 I/O 架构](../chapter-13-io-architecture.md)
+← [5. 挂载与路径查找](./section-5-挂载与路径查找.md) · 下一章 [Ch 13 I/O 架构](../chapter-13-io-architecture/)
