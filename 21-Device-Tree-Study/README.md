@@ -1,6 +1,6 @@
 # 设备树（Device Tree）· ARM 硬件描述
 
-**文件夹 21** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–22)
+**文件夹 21** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–23)
 
 > **定位：** 现代 ARM Linux **不用 C 硬编码寄存器** — 用 **DTB** 描述板级硬件。  
 > **前置：** [20 驱动](../20-Linux-Device-Driver/) · [18 ARM64](../18-ARM64-Architecture/)

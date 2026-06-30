@@ -1,6 +1,6 @@
 # HFT 系统开发 · 完整阅读路线图
 
-> **文件夹 `00`–`16` + 外部 C++ 索引 `17` + 嵌入式 Linux 支线 `18`–`22`；读序见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)。** 主叙事 → **[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)**
+> **文件夹 `00`–`16` + 外部 C++ 索引 `17` + 嵌入式 Linux 支线 `18`–`23`；读序见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)。** 主叙事 → **[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)**
 
 ### 核心段（文件夹编号 = 读序）
 
@@ -14,7 +14,7 @@
 | **17** | [C++ 外部索引](./17-cpp-learning-notes/) | Modern C++ → 并发（PNP/HFT 前置） |
 | **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
 | **15–16** | HFT Practice / Rust | 动手实现 |
-| **18–22** | ARM64 · U-Boot/内核 · 驱动 · DT · 实战 | 嵌入式 Linux 退路（可选支线） |
+| **18–23** | ARM64 · 构建 · 驱动 · DT · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
 
 ### Gregg 双书 · 03 → 04
 
@@ -81,15 +81,16 @@
 20  Linux 设备驱动
 21  设备树
 22  无人机 / 网关实战
+23  PID · 电机 · 姿态解算 · 飞控整合（算法逻辑 · 非 MCU）
 ```
 
 **HFT 主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 17 → 10 → 11 → 01网络 → 12 → 13 → 14 → 15 → 16`
 
-**嵌入式支线（独立顺序 · 建议 05–08 后再开）：** `18 → 19 → 20 → 21 → 22`
+**嵌入式支线（独立顺序 · 建议 05–08 后再开 · 23 用业余时间）：** `18 → 19 → 20 → 21 → 22 → 23`
 
 > **C++ 外部仓：** [17-cpp-learning-notes/](./17-cpp-learning-notes/) — **09 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
 
-> **板块封顶：** `00`–`16` 在本仓 + **`17`** 外部 C++ 索引 + **`18`–`22`** 嵌入式 Linux 支线；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+> **板块封顶：** `00`–`16` 在本仓 + **`17`** 外部 C++ 索引 + **`18`–`23`** 嵌入式 Linux + 运动控制支线；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
 ---
 
@@ -297,17 +298,41 @@
 
 ---
 
-## 六、嵌入式 Linux 支线（`18`–`22`）
+## 六、嵌入式 Linux 支线（`18`–`23`）
 
 > **定位：** **第二职业退路** — 飞行器 / 网关 / 车载；**主线仍是 HFT**。  
-> **范围：** 仅 **ARM-A + 嵌入式 Linux**；**不学** STM32 / MCU 裸机。
+> **范围：** 仅 **ARM-A + 嵌入式 Linux**；**不学** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
+> **23 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
+
+### 主次优先级（不可颠倒）
+
+| 优先级 | 内容 | 时间 |
+|--------|------|------|
+| **P0 · 主线** | HFT — C++ / Rust / DPDK / `15` 引擎 | **全职学习** |
+| **P1 · 支线** | 嵌入式 Linux `18`–`22` | 并行或 HFT 阶段完成后 |
+| **P2 · 飞控算法** | `23` PID / IMU / 飞控环 | **仅 HFT 每日任务后的业余时间** |
+
+### 为何必须学 23（运动控制）
+
+1. **无人机 GitHub 项目缺这一环就飞不起来** — WiFi/图传/视觉不能替代 PID + 姿态 + 电机。  
+2. **岗位：** 驱动 + DT → 适配；**+ 自控** → 飞控 / 伺服整机。  
+3. **HFT 互补：** 飞控严格周期 ↔ 绑核 / PREEMPT_RT / p99 jitter 测量（03 · 05 · 15）。
+
+### 学习边界
+
+| ✅ 学 | ❌ 不学 |
+|-------|--------|
+| 位置式/增量式 PID · 离散闭环 · 抗饱和 | Cortex-M 裸机 · HAL 模板 |
+| 三轴 · 矩阵 · Kalman · IMU 融合 | 纯 FreeRTOS 飞控栈 |
+| Linux PWM / I2C 驱动 · 用户态飞控 | PCB / 硬件电路设计 |
+| PWM · 无刷 · ESC 协议（理论） | STM32-F4/H7 整条路线 |
 
 ### 何时开这条线
 
 | 条件 | 说明 |
 |------|------|
-| **建议前置** | [05 LKD](./05-Linux-Kernel-Development/) + [08 TLPI](./08-The-Linux-Programming-Interface/) 已有基础 |
-| **与 HFT 关系** | **并行或 HFT 主线阶段性完成后** — 不与 `17→10→15` 抢时间 |
+| **建议前置** | [05 LKD](./05-Linux-Kernel-Development/) + [08 TLPI](./08-The-Linux-Programming-Interface/) + [20 驱动](./20-Linux-Device-Driver/) |
+| **23 前置** | 建议 **22 或至少 20–21** 后再开算法整合 |
 | **C 语言** | K&R + 《C 和指针》+ 《嵌入式 C 自我修养》+ CSAPP/TLPI 可复用 |
 
 ### 严格顺序
@@ -322,6 +347,8 @@
 21  设备树 Device Tree
  ↓
 22  无人机 / 网关项目实战
+ ↓
+23  PID · 电机 · 姿态解算 · 飞控调度（PREEMPT_RT）
 ```
 
 ### 文件夹 ↔ 必读书（每模块 1–2 本 · 不冗余）
@@ -333,6 +360,9 @@
 | **20** | LDD3 · 《Linux 内核驱动深度开发》 | [20-Linux-Device-Driver/](./20-Linux-Device-Driver/) |
 | **21** | 《Device Tree for Embedded Linux》 | [21-Device-Tree-Study/](./21-Device-Tree-Study/) |
 | **22** | 《嵌入式 Linux 无人机开发实战》 | [22-Embedded-Linux-Practice/](./22-Embedded-Linux-Practice/) |
+| **23** | 《自动控制原理》胡寿松 · 《卡尔曼滤波与组合导航原理》秦永元 · （整合复用 22） | [23-Motion-Control-Motor/](./23-Motion-Control-Motor/) |
+
+**23 子目录：** [Ch1 PID](./23-Motion-Control-Motor/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./23-Motion-Control-Motor/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./23-Motion-Control-Motor/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./23-Motion-Control-Motor/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./23-Motion-Control-Motor/chapter-05-flight-control-scheduling/)
 
 ### 可直接复用（HFT 链 · 不用重学）
 
@@ -340,10 +370,20 @@
 |------|----------|
 | C / GNU-C / 指针 / 结构体 | CSAPP · TLPI · 《嵌入式 C 自我修养》 |
 | 进程 / VM / 中断 / 同步 | 05 LKD · 06 ULK · 07 Gorman |
-| 性能 / 绑核 / BPF | 03 SysPerf · 04 BPF |
-| 网络 / 零拷贝思想 | 11 UNP · 13 内核网 · 14 DPDK → 飞控实时链路 |
-| 低延迟工程思维 | 15 HFT — 绑核、无锁、异步日志、T2T 测量 |
+| 性能 / 绑核 / BPF / **周期 jitter** | 03 SysPerf · 04 BPF · **15 HFT 测量** |
+| 网络 / 零拷贝思想 | 11 UNP · 13 内核网 · 14 DPDK → 传感器链路 |
+| 低延迟工程思维 | 15 HFT — 绑核、无锁、异步日志、T2T |
 
 ### 岗位定位（支线完成后）
 
-嵌入式 Linux · 车载 Linux · 工业网关 · 无人机底层开发
+嵌入式 Linux · 车载 Linux · 工业网关 · **无人机飞控 / 运动控制**
+
+### GitHub 简介表述
+
+**English**
+
+> My primary research interest lies in HFT quantitative-trading backend development. As a long-term secondary path, I also learn embedded Linux on the ARM-A platform. I implement self-coded PID control algorithms, motor-driver programming, IMU-sensor communication and flight-control scheduling logic, avoiding STM32-M4 bare-metal development, to build a self-developed drone project as an alternative-career track.
+
+**中文**
+
+> 核心主攻方向为高频量化（HFT）后端开发；同时拓展 ARM-A 平台下的嵌入式 Linux，自研实现 PID 控制算法、电机驱动、IMU 传感器通信与飞控调度逻辑，绕开 STM32-M4 单片机裸机开发，自研无人机项目，作为职业备选路线。

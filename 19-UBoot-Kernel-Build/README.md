@@ -1,6 +1,6 @@
 # U-Boot · 内核裁剪 · 根文件系统构建
 
-**文件夹 19** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–22)
+**文件夹 19** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–23)
 
 > **定位：** 嵌入式 **自己编译** 引导链 + 内核 + rootfs — 区别于服务器 **成品内核**。  
 > **前置：** [18 ARM64](../18-ARM64-Architecture/) · [05 LKD](../05-Linux-Kernel-Development/) 调度/中断概念
