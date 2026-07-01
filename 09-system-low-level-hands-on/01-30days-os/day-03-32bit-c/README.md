@@ -18,12 +18,12 @@
 
 ## 小节笔记
 
-| 段 | 笔记 |
-|----|------|
-| 制作真正的 IPL 与读取磁盘 | [notes/section-3.1-制作真正的-IPL-与读取磁盘.md](./notes/section-3.1-制作真正的-IPL-与读取磁盘.md) |
-| 纸娃娃操作系统 | [notes/section-3.2-纸娃娃操作系统.md](./notes/section-3.2-纸娃娃操作系统.md) |
-| 32 位模式前期准备与导入 C 语言 | [notes/section-3.3-32-位模式前期准备与导入-C-语言.md](./notes/section-3.3-32-位模式前期准备与导入-C-语言.md) |
-| 汇编与 C 的结合 | [notes/section-3.4-汇编与-C-的结合.md](./notes/section-3.4-汇编与-C-的结合.md) |
+| 段 | 笔记 | 代码 |
+|----|------|------|
+| 制作真正的 IPL 与读取磁盘 | [notes/section-3.1-制作真正的-IPL-与读取磁盘.md](./notes/section-3.1-制作真正的-IPL-与读取磁盘.md) | [code/ipl.asm](./code/ipl.asm) |
+| 纸娃娃操作系统 | [notes/section-3.2-纸娃娃操作系统.md](./notes/section-3.2-纸娃娃操作系统.md) | — |
+| 32 位模式前期准备与导入 C 语言 | [notes/section-3.3-32-位模式前期准备与导入-C-语言.md](./notes/section-3.3-32-位模式前期准备与导入-C-语言.md) | — |
+| 汇编与 C 的结合 | [notes/section-3.4-汇编与-C-的结合.md](./notes/section-3.4-汇编与-C-的结合.md) | — |
 
 ---
 
