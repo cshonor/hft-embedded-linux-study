@@ -19,6 +19,8 @@
 
 **读完能带走什么：** 不只是「会改别人的内核」，而是理解 **启动、中断、页表、任务切换** 这些在 LKD / CSAPP 里当 **读者** 时容易滑过去的 **构造逻辑** — 对 HFT 里 **绑核、上下文切换、syscall 边界** 的直觉会扎实很多。
 
+> **HFT / 嵌入式主线（先看这篇）：** 现阶段 **主攻 C + CSAPP x86-64**；本书 **16 位实模式汇编浅看带过**，不必死磕 GDT/CR0。详表与 haribote 各天取舍 → **[HFT-AND-EMBEDDED-PRIORITY.md](../HFT-AND-EMBEDDED-PRIORITY.md)**
+
 ---
 
 ## 在本学习链中的定位
@@ -35,9 +37,10 @@
 15 HFT（绑核、热路径、少 syscall）
 ```
 
-**标签：** 🟡 选读 · 时间紧可后补，与 `05`/`06` 概念课 **并行** 也行。
+**标签：** 🟡 选读 · 时间紧可后补，与 `05`/`06` 概念课 **并行** 也行。  
+**节奏：** 不必等 30 天做完再开 TLPI — **C / CSAPP 可与 Day 3–4 并行**；按 [OUTLINE.md](./OUTLINE.md) 🔴/🟡/⚪ 裁剪即可。
 
-**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md) · Day 1 汇编时跟 [§1.3 装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm) · [SETUP.md](./SETUP.md)（QEMU / GCC / Make）
+**动手前必读：** [HFT-AND-EMBEDDED-PRIORITY.md](../HFT-AND-EMBEDDED-PRIORITY.md) · [LEARNING_PLAN.md](./LEARNING_PLAN.md) · Day 1 汇编时跟 [§1.3 装 NASM](./day-01-boot-asm/notes/section-1.3-初次体验汇编程序.md#安装-nasm) · [SETUP.md](./SETUP.md)（QEMU / GCC / Make）
 
 ---
 
@@ -73,7 +76,7 @@ day-XX-slug/
 | **13** | 定时器（2） | [day-13-timer2/](./day-13-timer2/) |
 | **14** | 高分辨率及键盘输入 | [day-14-keyboard/](./day-14-keyboard/) |
 | **15** | 多任务（1） | [day-15-multitask1/](./day-15-multitask1/) |
-| **08** | 多任务（2） | [day-16-multitask2/](./day-16-multitask2/) |
+| **16** | 多任务（2） | [day-16-multitask2/](./day-16-multitask2/) |
 | **17** | 命令行窗口 | [day-17-console/](./day-17-console/) |
 | **18** | dir 命令 | [day-18-dir/](./day-18-dir/) |
 | **19** | 应用程序 | [day-19-apps/](./day-19-apps/) |
@@ -105,11 +108,13 @@ day-XX-slug/
 
 ### 建议阶段（三周期 · 详见 LEARNING_PLAN）
 
-| 周期 | Day | 主题 | HFT 关联 |
-|------|-----|------|----------|
-| **地基** | 0–7 | NASM、引导扇区、保护模式、GDT/IDT、键鼠 FIFO | 启动链、中断 vs 轮询 |
-| **完善** | 8–14 | 内存管理、图层/窗口、PIT、键盘输入 | 定时、ISR 延迟 |
-| **生态** | 15–30 | 多任务、FAT/Shell、API、用户态程序 | syscall 边界、上下文切换 |
+| 周期 | Day | 主题 | HFT 关联 | 深浅 |
+|------|-----|------|----------|------|
+| **地基** | 0–7 | NASM、引导扇区、保护模式、GDT/IDT、键鼠 FIFO | 启动链、中断 vs 轮询 | Day 1–2 **浅看** 16 位；Day 3–4 **C 多练** |
+| **完善** | 8–14 | 内存管理、图层/窗口、PIT、键盘输入 | 定时、ISR 延迟 | Day 9 内存 **🔴**；GUI 类可压缩 |
+| **生态** | 15–30 | 多任务、FAT/Shell、API、用户态程序 | syscall 边界、上下文切换 | 多任务 **🔴**；窗口美化 **⚪** |
+
+**HFT 最简路径：** Day 1–2 跑通概念 → **Day 3–4 吃透 C** → Day 5–6 中断概念 → Day 9 内存 → Day 15+ 多任务；其余按 [OUTLINE](./OUTLINE.md) 选读。
 
 ---
 
@@ -129,6 +134,7 @@ day-XX-slug/
 - [x] `SETUP.md` — Windows + NASM/GCC/QEMU Day 0 部署
 - [x] `TOOLCHAIN.md` — NASM + GCC + Make 选型（NASM + GCC）
 - [x] `OUTLINE.md` — 按原书 Day 裁剪 🔴/🟡/⚪（**Day 1–30**）
+- [x] [HFT-AND-EMBEDDED-PRIORITY.md](../HFT-AND-EMBEDDED-PRIORITY.md) — C 优先、16 位浅看、学习顺序
 - [x] `day-XX-slug/` — 每日导读 + `notes/section-*.md`（**Day 1–30 ✓**）
 - [x] `day-01-boot-asm/code/` — helloos 映像与十六进制对照（**Day 1 ✓**）
 - [ ] 与 [05-LKD](../../05-Linux-Kernel-Development/) Ch4/7/8 对照表
@@ -139,7 +145,8 @@ day-XX-slug/
 
 | 仓库 | 对照点 |
 |------|--------|
-| [01-CSAPP Ch8/9](../../01-CSAPP-3rd/chapter-08-exceptional-control-flow/) | 异常、进程、虚拟内存 |
+| [HFT-AND-EMBEDDED-PRIORITY.md](../HFT-AND-EMBEDDED-PRIORITY.md) | **学什么、先搁置什么** — C / CSAPP 64 位 / 16 位浅看 |
+| [01-CSAPP Ch3/5/8](../../01-CSAPP-3rd/) | 机器码、缓存、异常与进程（**HFT 主攻**） |
 | [05-LKD](../../05-Linux-Kernel-Development/) | 中断、调度、内存管理 **真实实现** |
-| [08-TLPI](../../08-The-Linux-Programming-Interface/) | 用户态 API 与内核边界 |
+| [08-TLPI](../../08-The-Linux-Programming-Interface/) | 用户态 API 与内核边界（**可与本书并行**） |
 | [02-mikan-os](../02-mikan-os/) | 现代 UEFI/64 位 OS — **01 通读后的推荐下一站** |
