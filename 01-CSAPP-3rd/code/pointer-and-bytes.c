@@ -1,7 +1,7 @@
 /*
  * CSAPP Ch2 §2.1.3 · (unsigned char *) 逐字节读写 endian
  *
- * 对照: chapter-02/notes/section-2.1.1-2.1.3-*.md
+ * 对照: chapter-02/notes/section-2.1.3-寻址与字节序.md
  * 步长: code/pointer-stride-demo.c + chapter-03/notes/section-3.8-指针步长详解.md
  *
  * 编译: gcc -Wall -Wextra -std=c11 -o pointer_bytes pointer-and-bytes.c

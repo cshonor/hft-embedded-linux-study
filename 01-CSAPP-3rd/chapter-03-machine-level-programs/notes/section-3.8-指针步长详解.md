@@ -55,7 +55,7 @@ q + 1;                      /* 地址 +4 — 指针运算 */
 
 ### 5. 与 Ch2 §2.1.2 sizeof / ABI 串联
 
-- 步长 = **`sizeof(目标类型)`**，随 **ABI** 变 → [ABI 笔记](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
+- 步长 = **`sizeof(目标类型)`**，随 **ABI** 变 → [§2.1.2 数据大小](../../chapter-02-representing-information/notes/section-2.1.2-数据大小与sizeof.md) · [ABI 笔记](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
 - 不要硬编码「+4」「+8」扫内存
 
 ---
@@ -84,4 +84,4 @@ q + 1;                      /* 地址 +4 — 指针运算 */
 
 ---
 
-← [Ch3 导读](../README.md) · [Ch2 §2.1.3](../../chapter-02-representing-information/notes/section-2.1.1-2.1.3-十六进制寻址与字节序.md)
+← [Ch3 导读](../README.md) · [Ch2 §2.1.3 字节序](../../chapter-02-representing-information/notes/section-2.1.3-寻址与字节序.md)

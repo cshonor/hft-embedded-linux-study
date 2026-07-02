@@ -7,7 +7,8 @@
  *   ./ch02_demo
  *
  * 对照笔记:
- *   chapter-02-representing-information/notes/section-2.1.1-2.1.3-*.md
+ *   chapter-02-representing-information/notes/section-2.1.2-数据大小与sizeof.md
+ *   chapter-02-representing-information/notes/section-2.1.3-寻址与字节序.md
  */
 
 #include <stdio.h>

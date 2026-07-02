@@ -1,7 +1,7 @@
 # ABI · Application Binary Interface（应用二进制接口）
 
 > **01 CSAPP · Ch2 §2.1.2 延伸阅读** · 解释 `sizeof` 为何随平台变、结构体布局、函数怎么调  
-> **关联：** [§2.1.1–2.1.3 数据大小与字节序](./section-2.1.1-2.1.3-十六进制寻址与字节序.md) · [§3.7 调用约定](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md) · [§3.8 指针步长](../../chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md)
+> **关联：** [§2.1.2 数据大小与 sizeof](./section-2.1.2-数据大小与sizeof.md) · [§2.1.3 字节序](./section-2.1.3-寻址与字节序.md) · [§3.7 调用约定](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md) · [§3.8 指针步长](../../chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md)
 
 ---
 
@@ -92,4 +92,4 @@ API 看起来一样，**ABI 不同 → 二进制不能互换**。
 
 ---
 
-← [Ch2 导读](../README.md) · [01 CSAPP 动手代码](../../code/)
+← [Ch2 导读](../README.md) · [§2.1.2 数据大小](./section-2.1.2-数据大小与sizeof.md) · [01 code](../../code/)
