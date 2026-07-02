@@ -37,6 +37,8 @@
 
 **HFT：** C 调 Rust / 手写汇编 / `ioctl` 包装 — **必须遵守同一 ABI**；Windows 是另一套约定。
 
+→ ABI 总览：[02-c-programming/notes/abi-application-binary-interface.md](../../../02-c-programming/notes/abi-application-binary-interface.md)
+
 ### 3.7.4–3.7.5 局部存储：栈 vs 寄存器
 
 - 小局部变量、频繁使用 → 寄存器分配（`-O`）

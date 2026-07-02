@@ -114,7 +114,7 @@ q + 1;                      /* 地址 +4 */
 1. `int *p; p+1` 比 `p` 大几个字节？（典型 LP64）
 2. 为什么解析 endian 用 `unsigned char *` 而不是 `int *`？
 3. `(uintptr_t)p + 1` 和 `p + 1` 对 `int *` 有何不同？
-4. `long *` 的步长为什么不能在跨平台代码里写死？
+5. `long *` 的步长为什么不能在跨平台代码里写死？→ [ABI 笔记](./abi-application-binary-interface.md)
 
 ---
 

@@ -15,7 +15,7 @@
 | **C 语言专题** | [11-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) |
 | 外部仓首页 | [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) |
 | 本仓库裁剪 | [OUTLINE.md](./OUTLINE.md) |
-| **C 专练笔记** | [notes/pointer-arithmetic-and-stride.md](./notes/pointer-arithmetic-and-stride.md) |
+| **C 专练笔记** | [notes/abi-application-binary-interface.md](./notes/abi-application-binary-interface.md) · [pointer-arithmetic-and-stride.md](./notes/pointer-arithmetic-and-stride.md) |
 
 **克隆（C/C++ 笔记共用一个外部仓）：**
 

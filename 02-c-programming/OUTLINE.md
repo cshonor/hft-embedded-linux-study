@@ -27,7 +27,7 @@
 | **外部 `02` Pointers on C** | 核心章 | 内存布局、ABI — **读内核结构体基础** |
 | **01 CSAPP** | Ch2、Ch3、Ch5 导论 | 与 C **对照**，不另开纯语法课 |
 
-**验收：** 能写无 UB 的指针操作、解释结构体对齐、读懂简单 `malloc`/栈布局。
+**验收：** 能写无 UB 的指针操作、解释结构体对齐、读懂简单 `malloc`/栈布局；能说出 **API vs ABI** → [ABI 笔记](./notes/abi-application-binary-interface.md)
 
 ---
 

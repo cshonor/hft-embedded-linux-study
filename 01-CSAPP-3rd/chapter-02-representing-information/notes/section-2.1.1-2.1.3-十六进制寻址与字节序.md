@@ -46,6 +46,23 @@
 
 **要点：** 同样是 64 位 CPU，`sizeof(long)` 在 Linux 上常为 **8**，在 Windows x64 上常为 **4** — 差在 **ABI 命名（LP64 vs LLP64）**，不是「CPU 64 位」 alone 决定的。
 
+#### ABI 是什么？（Application Binary Interface）
+
+- **全称：** Application Binary Interface — **应用二进制接口**
+- **一句话：** 源码给人看；**ABI 是编译后的 `.o`/`.so`/`.exe` 之间约定好的二进制规则** — 不需源码也能链接、调用
+- **API vs ABI：** API = 头文件/函数声明（程序员）；ABI = 类型几字节、struct 布局、寄存器传参（CPU/链接器）
+
+**ABI 管什么（对应本章 + Ch3）：**
+
+| ABI 规定 | 例子 |
+|----------|------|
+| 类型宽度 | `long` LP64=8 / LLP64=4 → **`sizeof` 根源** |
+| 对齐 / padding | struct 为何 `sizeof` 不是字段简单相加 |
+| 调用约定 | Linux x64：参数 `%rdi,%rsi,…`，返回值 `%rax` → [§3.7](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md) |
+| endian / 链接 | 网络大端；ELF 动态链接 |
+
+→ 完整口述笔记：[02-c-programming/notes/abi-application-binary-interface.md](../../../02-c-programming/notes/abi-application-binary-interface.md)
+
 #### LP64 Linux x86-64 常见宽度
 
 | C 类型 | 字节 |
