@@ -1,6 +1,6 @@
 ## ① 用 C 写入显存与位运算 · 从黑屏到条纹
 
-Day 3 用 **`HariMain` + `for`** 把 **`0xA0000`** 填 **0** → **全黑**，证明 C 已在 **32 位保护模式** 下跑起来（见 [Day 3 bootpack.c](../../day-03-32bit-c/code/sec-3.4-bootpack-asm-and-c/bootpack.c) · [§3.2 纸娃娃 OS](../../day-03-32bit-c/notes/section-3.2-纸娃娃操作系统.md)）。
+Day 3 用 **`HariMain` + `for`** 把 **`0xA0000`** 填 **0** → **全黑**，证明 C 已在 **32 位保护模式** 下跑起来（见 [Day 3 bootpack.c](../../day-03-32bit-c/code/sec-3.4-bootpack-asm-and-c/bootpack.c) · [§3.2 纸娃娃 OS](../../day-03-32bit-c/notes/section-3.2-纸娃娃操作系统.md) · 模式 0x13 详解 [§3.2.1](../../day-03-32bit-c/notes/section-3.2.1-VGA模式0x13详解.md)）。
 
 Day 4 **第一节** 只做一件事：**用 C 直接写显存（VRAM）**，先 **整屏变白**，再用 **位运算** 画出 **黑白相间条纹** —— 证明 **GUI 的第一块砖** 是「往 framebuffer 写字节」，不是调 Windows API。
 
@@ -81,6 +81,8 @@ Day 4 的 haribote **还没有 ③ 这一步** — 没有 3D 管线、没有 GPU
 ---
 
 ### VGA Mode 13h · `0xA0000` 硬件属性全表
+
+> 模式号、**0x03 vs 0x13**、`int 0x10` 切换汇编：见 [Day 3 §3.2.1](../../day-03-32bit-c/notes/section-3.2.1-VGA模式0x13详解.md)。
 
 | 属性 | 标准参数 |
 |------|----------|

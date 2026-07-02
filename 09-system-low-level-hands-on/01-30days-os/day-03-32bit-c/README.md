@@ -21,7 +21,7 @@
 | 段 | 笔记 | 代码 |
 |----|------|------|
 | 制作真正的 IPL 与读取磁盘 | [notes/section-3.1-制作真正的-IPL-与读取磁盘.md](./notes/section-3.1-制作真正的-IPL-与读取磁盘.md)（[3.1.1](./notes/section-3.1.1-IPL-bootpack与镜像布局.md) · [3.1.2](./notes/section-3.1.2-软盘CHS结构与读盘范围.md) · [3.1.3](./notes/section-3.1.3-INT0x13与ipl代码拆解.md) · [3.1.4](./notes/section-3.1.4-实模式读盘与保护模式切换.md)） | [code/sec-3.1-ipl-int13-disk-load/](./code/sec-3.1-ipl-int13-disk-load/) |
-| 纸娃娃操作系统 | [notes/section-3.2-纸娃娃操作系统.md](./notes/section-3.2-纸娃娃操作系统.md) | [code/sec-3.2-vga-mode-0x13/](./code/sec-3.2-vga-mode-0x13/) |
+| 纸娃娃操作系统 | [notes/section-3.2-纸娃娃操作系统.md](./notes/section-3.2-纸娃娃操作系统.md)（[3.2.1](./notes/section-3.2.1-VGA模式0x13详解.md)） | [code/sec-3.2-vga-mode-0x13/](./code/sec-3.2-vga-mode-0x13/) |
 | 32 位模式前期准备与导入 C 语言 | [notes/section-3.3-32-位模式前期准备与导入-C-语言.md](./notes/section-3.3-32-位模式前期准备与导入-C-语言.md)（[3.3.1](./notes/section-3.3.1-16-32-64分工与Load-vs-Run.md) · [3.3.2](./notes/section-3.3.2-进32位前BIOS与启动链.md) · [3.3.3](./notes/section-3.3.3-32位保护模式与段页.md) · [3.3.4](./notes/section-3.3.4-16-32-64阶梯.md) · [3.3.5](./notes/section-3.3.5-MikanOS与UEFI对照.md) · [3.3.6](./notes/section-3.3.6-引入C与嵌入式HFT.md)） | — |
 | 汇编与 C 的结合 | [notes/section-3.4-汇编与-C-的结合.md](./notes/section-3.4-汇编与-C-的结合.md)（[3.4.1](./notes/section-3.4.1-为何C需要汇编包装.md) · [3.4.2](./notes/section-3.4.2-io_hlt与工程分层.md) · [3.4.3](./notes/section-3.4.3-16切32与call-C完整例子.md) · [3.4.4](./notes/section-3.4.4-嵌入式HFT与何时用汇编.md)） | [code/sec-3.4-bootpack-asm-and-c/](./code/sec-3.4-bootpack-asm-and-c/) |
 
