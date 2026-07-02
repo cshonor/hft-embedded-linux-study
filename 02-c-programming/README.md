@@ -15,7 +15,8 @@
 | **C 语言专题** | [11-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) |
 | 外部仓首页 | [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) |
 | 本仓库裁剪 | [OUTLINE.md](./OUTLINE.md) |
-| **C 专练笔记** | [notes/abi-application-binary-interface.md](./notes/abi-application-binary-interface.md) · [pointer-arithmetic-and-stride.md](./notes/pointer-arithmetic-and-stride.md) |
+
+> **CSAPP 笔记与实验在 [01-CSAPP-3rd](../01-CSAPP-3rd/)**（ABI、endian、指针步长、`code/` demo）— **不在 02 重复**。
 
 **克隆（C/C++ 笔记共用一个外部仓）：**
 
@@ -63,7 +64,7 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 | **ARM 裸机最小例**（QEMU） | EL 切换、异常向量、MMIO | 预演 [19 ARM64](../19-ARM64-Architecture/) |
 | 缓存/对齐微基准 | 结构体 padding、false sharing | Hennessy Ch2 · 后接 HFT 热路径 |
 
-**动手代码分工：** CSAPP Ch2 实验 → [01/code/ch02-demo](../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c) · C 指针专练 → [code/](./code/)
+**动手代码分工：** 一律在 **[01 CSAPP / code](../01-CSAPP-3rd/code/)** — Ch2 endian/ABI、Ch3 指针步长
 
 ---
 

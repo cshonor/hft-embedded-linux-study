@@ -37,7 +37,7 @@ p + i     // 地址增加 i * sizeof(int)，不是 i 字节
 
 **为何这样设计：** 数组连续同类型存放 — `p++` = 「下一个元素」，不必手算偏移。HFT ring buffer / 定长数组扫描依赖此语义。
 
-→ 02 C 专练详解：[pointer-arithmetic-and-stride.md](../../../02-c-programming/notes/pointer-arithmetic-and-stride.md) · [pointer-stride-demo.c](../../../02-c-programming/code/pointer-stride-demo.c)
+→ 口述详解：[§3.8 指针步长详解](./section-3.8-指针步长详解.md) · [pointer-stride-demo.c](../../code/pointer-stride-demo.c)
 
 - **指针减法** 得 **元素个数**（同类型、同数组内）
 

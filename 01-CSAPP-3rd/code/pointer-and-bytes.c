@@ -1,8 +1,8 @@
 /*
- * 02 C 专练 · 指针与内存字节 (K&R / Pointers on C)
+ * CSAPP Ch2 §2.1.3 · (unsigned char *) 逐字节读写 endian
  *
- * 配合 Ch2 §2.1.3 — (unsigned char *) 逐字节读写 endian。
- * 步长概念见: pointer-stride-demo.c + notes/pointer-arithmetic-and-stride.md
+ * 对照: chapter-02/notes/section-2.1.1-2.1.3-*.md
+ * 步长: code/pointer-stride-demo.c + chapter-03/notes/section-3.8-指针步长详解.md
  *
  * 编译: gcc -Wall -Wextra -std=c11 -o pointer_bytes pointer-and-bytes.c
  */

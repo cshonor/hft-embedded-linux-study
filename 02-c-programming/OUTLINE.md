@@ -27,7 +27,7 @@
 | **外部 `02` Pointers on C** | 核心章 | 内存布局、ABI — **读内核结构体基础** |
 | **01 CSAPP** | Ch2、Ch3、Ch5 导论 | 与 C **对照**，不另开纯语法课 |
 
-**验收：** 能写无 UB 的指针操作、解释结构体对齐、读懂简单 `malloc`/栈布局；能说出 **API vs ABI** → [ABI 笔记](./notes/abi-application-binary-interface.md)
+**验收：** 能写无 UB 的指针操作、解释结构体对齐、读懂简单 `malloc`/栈布局；能说出 **API vs ABI** → [01 CSAPP · ABI 笔记](../01-CSAPP-3rd/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
 
 ---
 
@@ -46,7 +46,7 @@
 
 | 练习 | 目的 |
 |------|------|
-| CSAPP Lab / 自写小程序 | 指针、内存布局、UB 边界 | [01/code/ch02-demo](../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c) · [02/code](../02-c-programming/code/) · [指针步长笔记](./notes/pointer-arithmetic-and-stride.md) |
+| CSAPP 实验 | 01 [code/](../01-CSAPP-3rd/code/) · [ABI](../01-CSAPP-3rd/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) · [指针步长](../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md) |
 | QEMU **ARM 裸机 hello + 异常**（可选） | CPU 模式/异常向量 — 预演 19 ARM64 |
 | 结构体对齐 / cache line 微测 | 对接 Hennessy Ch2 · 后接 HFT 伪共享 |
 

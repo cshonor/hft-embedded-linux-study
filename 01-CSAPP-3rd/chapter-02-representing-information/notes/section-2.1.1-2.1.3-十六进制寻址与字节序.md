@@ -61,7 +61,7 @@
 | 调用约定 | Linux x64：参数 `%rdi,%rsi,…`，返回值 `%rax` → [§3.7](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md) |
 | endian / 链接 | 网络大端；ELF 动态链接 |
 
-→ 完整口述笔记：[02-c-programming/notes/abi-application-binary-interface.md](../../../02-c-programming/notes/abi-application-binary-interface.md)
+→ 完整笔记：[§2.1.2 ABI](./section-2.1.2-abi-application-binary-interface.md)
 
 #### LP64 Linux x86-64 常见宽度
 
@@ -119,7 +119,7 @@ uint64_t seq;
 - CPU 通过 **地址总线** 访问内存；x86-64 为 **按字节寻址 (byte-addressable)** — **每个字节** 有唯一地址
 - 变量 `int x` 占 **4 个连续字节** 的地址，例如 `0x1000`、`0x1001`、`0x1002`、`0x1003`
 - `&x` = 对象 **起始（最低）字节** 的地址
-- 指针算术：`char* p; p+1` 前进 1 字节；`int* q; q+1` 前进 `sizeof(int)` 字节 — 见 [§3.8](../../chapter-03-machine-level-programs/notes/section-3.8-数组与指针运算.md) · [02 指针步长笔记](../../../02-c-programming/notes/pointer-arithmetic-and-stride.md)
+- 指针算术：`char* p; p+1` 前进 1 字节；`int* q; q+1` 前进 `sizeof(int)` 字节 — 见 [§3.8](../../chapter-03-machine-level-programs/notes/section-3.8-数组与指针运算.md) · [§3.8 指针步长详解](../../chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md)
 
 **寻址回答：** 数据在 **哪几个字节地址** 上。
 
@@ -168,8 +168,8 @@ for (size_t i = 0; i < sizeof a; i++)
     printf("%02x ", p[i]);
 ```
 
-完整 demo → [01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c](../../../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c)  
-C 指针专练 → [02-c-programming/code/pointer-and-bytes.c](../../../02-c-programming/code/pointer-and-bytes.c)（逐字节）· [pointer-stride-demo.c](../../../02-c-programming/code/pointer-stride-demo.c)（步长）
+完整 demo → [01/code/ch02-endian-and-padding-demo.c](../../code/ch02-endian-and-padding-demo.c)  
+逐字节 / 步长 → [pointer-and-bytes.c](../../code/pointer-and-bytes.c) · [pointer-stride-demo.c](../../code/pointer-stride-demo.c)
 
 #### 网络序转换
 

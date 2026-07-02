@@ -1,7 +1,7 @@
 /*
- * 02 C 专练 · 指针类型步长 (pointer stride)
+ * CSAPP Ch3 §3.8 · 指针类型步长 (pointer stride)
  *
- * 对照: 02-c-programming/notes/pointer-arithmetic-and-stride.md
+ * 对照: chapter-03/notes/section-3.8-指针步长详解.md
  *
  * 编译: gcc -Wall -Wextra -std=c11 -o pointer_stride pointer-stride-demo.c
  */
