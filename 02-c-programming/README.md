@@ -61,6 +61,7 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 | x86-64 小程序 | 调用约定、栈帧、对齐 | CSAPP Ch3 + 外部 `01`/`02` |
 | **ARM 裸机最小例**（QEMU） | EL 切换、异常向量、MMIO | 预演 [19 ARM64](../19-ARM64-Architecture/) |
 | 缓存/对齐微基准 | 结构体 padding、false sharing | Hennessy Ch2 · 后接 HFT 热路径 |
+| **字节序 + padding** | [endian_and_padding_demo.c](./code/endian_and_padding_demo.c) | CSAPP Ch2 · 一眼看清 x86 小端 |
 
 ---
 
