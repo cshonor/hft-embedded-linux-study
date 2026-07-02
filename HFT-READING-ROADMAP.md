@@ -85,7 +85,7 @@
 
 **嵌入式支线（独立顺序 · 建议 04–07 后再开 · 24 用业余时间）：** `19 → 20 → 21 → 22 → 23 → 24`
 
-> **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；K&R + *Pointers on C* 打底。
+> **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；K&R + *Pointers on C* 打底。HFT 与嵌入式 **共用** 这套 C 基础；学体系结构时可同步用 C 做硬件侧小实验。
 
 > **C++ 外部仓：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — **08 OS / 07 TLPI 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
 
@@ -303,7 +303,8 @@
 
 > **定位：** **第二职业退路** — 飞行器 / 网关 / 车载；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux**；**不学** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
-> **23 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
+> **C 基础：** [02 C](./02-c-programming/) 是支线 **硬前置** — 驱动写寄存器、飞控用户态环、与内核 `ioctl` 交互全是 C；主线 `01`→`02`→`03` 过关后，开 `19` 不必重学语法。读 Hennessy 时可 **用 C 做 ARM 裸机小实验**（QEMU 验证 EL 切换）同步练硬件理论。  
+> **24 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
 
 ### 主次优先级（不可颠倒）
 
