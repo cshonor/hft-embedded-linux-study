@@ -46,7 +46,7 @@
 
 | 练习 | 目的 |
 |------|------|
-| CSAPP Lab / 自写小程序 | 指针、内存布局、UB 边界 | [01/code/ch02-demo](../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c) · [02/code/pointer-and-bytes.c](./code/pointer-and-bytes.c) |
+| CSAPP Lab / 自写小程序 | 指针、内存布局、UB 边界 | [01/code/ch02-demo](../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c) · [02/code](../02-c-programming/code/) · [指针步长笔记](./notes/pointer-arithmetic-and-stride.md) |
 | QEMU **ARM 裸机 hello + 异常**（可选） | CPU 模式/异常向量 — 预演 19 ARM64 |
 | 结构体对齐 / cache line 微测 | 对接 Hennessy Ch2 · 后接 HFT 伪共享 |
 

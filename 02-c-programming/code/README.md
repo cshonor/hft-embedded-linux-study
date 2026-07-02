@@ -16,7 +16,8 @@
 
 | 文件 | 何时做 | 对接 |
 |------|--------|------|
-| [pointer-and-bytes.c](./pointer-and-bytes.c) | 读完 CSAPP §2.1.3 + K&R 指针章 | `(unsigned char *)`、逐字节读写 |
+| [pointer-and-bytes.c](./pointer-and-bytes.c) | Ch2 §2.1.3 endian | `unsigned char *` 逐字节 |
+| [pointer-stride-demo.c](./pointer-stride-demo.c) | [指针步长笔记](../notes/pointer-arithmetic-and-stride.md) | `char*` vs `int*` 的 `p+1` |
 | *(待补)* | 外部 `01` K&R Ch5 | 指针与函数 |
 | *(待补)* | 外部 `02` Pointers on C | 动态内存 |
 

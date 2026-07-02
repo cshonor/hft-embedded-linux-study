@@ -102,7 +102,7 @@ uint64_t seq;
 - CPU 通过 **地址总线** 访问内存；x86-64 为 **按字节寻址 (byte-addressable)** — **每个字节** 有唯一地址
 - 变量 `int x` 占 **4 个连续字节** 的地址，例如 `0x1000`、`0x1001`、`0x1002`、`0x1003`
 - `&x` = 对象 **起始（最低）字节** 的地址
-- 指针算术：`char* p; p+1` 前进 1 字节；`int* q; q+1` 前进 `sizeof(int)` 字节
+- 指针算术：`char* p; p+1` 前进 1 字节；`int* q; q+1` 前进 `sizeof(int)` 字节 — 见 [§3.8](../../chapter-03-machine-level-programs/notes/section-3.8-数组与指针运算.md) · [02 指针步长笔记](../../../02-c-programming/notes/pointer-arithmetic-and-stride.md)
 
 **寻址回答：** 数据在 **哪几个字节地址** 上。
 
@@ -152,7 +152,7 @@ for (size_t i = 0; i < sizeof a; i++)
 ```
 
 完整 demo → [01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c](../../../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c)  
-C 指针专练 → [02-c-programming/code/pointer-and-bytes.c](../../../02-c-programming/code/pointer-and-bytes.c)
+C 指针专练 → [02-c-programming/code/pointer-and-bytes.c](../../../02-c-programming/code/pointer-and-bytes.c)（逐字节）· [pointer-stride-demo.c](../../../02-c-programming/code/pointer-stride-demo.c)（步长）
 
 #### 网络序转换
 

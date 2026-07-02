@@ -7,12 +7,39 @@
 
 ### 3.8.2 指针运算
 
+**两层概念（口述）：**
+
+1. 指针 **存的是地址**（x86-64 下 8 字节的数字）
+2. 指针 **带类型** — `p+n` 不是地址裸 `+n`，而是 **+ n × sizeof(元素类型)**
+
+\[
+\texttt{p + n} \Rightarrow \text{地址} + n \times \sizeof(T)
+\]
+
 ```c
 int *p = A;
-*(p + i)  // 等价 A[i]；p+i 按 sizeof(int) 缩放
+*(p + i)  // 等价 A[i]
+p + i     // 地址增加 i * sizeof(int)，不是 i 字节
 ```
 
-- **指针减法** 得元素个数（同类型、同数组内）
+| 指针类型 | `p+1` 典型步长 |
+|----------|----------------|
+| `char *` | +1 字节 |
+| `int *` | +4 字节 |
+| `long *` | LP64 常 +8，ILP32 常 +4 |
+
+**易混：**
+
+```c
+(int *)q + 1;              /* 下一个 int，地址 +4 */
+(uintptr_t)q + 1;          /* 地址只 +1 — 不是指针运算 */
+```
+
+**为何这样设计：** 数组连续同类型存放 — `p++` = 「下一个元素」，不必手算偏移。HFT ring buffer / 定长数组扫描依赖此语义。
+
+→ 02 C 专练详解：[pointer-arithmetic-and-stride.md](../../../02-c-programming/notes/pointer-arithmetic-and-stride.md) · [pointer-stride-demo.c](../../../02-c-programming/code/pointer-stride-demo.c)
+
+- **指针减法** 得 **元素个数**（同类型、同数组内）
 
 ### 3.8.3 嵌套数组
 

@@ -15,7 +15,7 @@
 | 3.5 算术和逻辑操作 | [notes/section-3.5-算术与逻辑操作.md](./notes/section-3.5-算术与逻辑操作.md) |
 | 3.6 控制（条件码、分支、循环、switch） | [notes/section-3.6-控制流.md](./notes/section-3.6-控制流.md) |
 | 3.7 过程（栈、调用约定、递归） | [notes/section-3.7-过程与栈帧.md](./notes/section-3.7-过程与栈帧.md) |
-| 3.8 数组分配和访问 | [notes/section-3.8-数组与指针运算.md](./notes/section-3.8-数组与指针运算.md) |
+| 3.8 数组分配和访问 | [notes/section-3.8-数组与指针运算.md](./notes/section-3.8-数组与指针运算.md) · [02 指针步长](../../../02-c-programming/notes/pointer-arithmetic-and-stride.md) |
 | 3.9 结构、联合与对齐 | [notes/section-3.9-结构体联合与对齐.md](./notes/section-3.9-结构体联合与对齐.md) |
 | 3.10 指针、gdb 与缓冲区溢出 | [notes/section-3.10-指针调试与缓冲区溢出.md](./notes/section-3.10-指针调试与缓冲区溢出.md) |
 | 3.11 浮点代码 | [notes/section-3.11-浮点代码.md](./notes/section-3.11-浮点代码.md) |
