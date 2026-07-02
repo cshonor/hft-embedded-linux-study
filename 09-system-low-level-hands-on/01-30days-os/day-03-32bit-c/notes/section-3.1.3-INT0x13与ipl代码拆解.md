@@ -1,5 +1,7 @@
 ## ①.3 INT 0x13 与 ipl 代码拆解
 
+> **别和「VGA 模式 0x13」搞混：** 本节 **`INT 0x13`** 是 **磁盘中断**（读软盘），不是 320×200 图形模式。图形模式是 **`INT 0x10` + `AL=0x13`** → [§3.2.1](../section-3.2.1-VGA模式0x13详解.md) · [README 易混点表](../README.md#易混点int-0x13-和模式-0x13-不是一回事)。
+
 IPL 在 **16 位实模式** 下运行，读 bootpack 全靠 **`INT 0x13`**。本节对照 [ipl.asm](../code/sec-3.1-ipl-int13-disk-load/ipl.asm) 看 API 与三大逻辑块。
 
 ---
