@@ -13,35 +13,35 @@
 
 ```
 00 业务 → 01 CSAPP → 02 Hennessy
-→ 05 LKD → 06 ULK → 07 Gorman → 08 TLPI
-→ 09 MikanOS/30天OS → **17 C++（外部仓）** → 10 陈硕 PNP/muduo → 11 UNP
-→ 12 TCP/IP → 13 Rosen → 14 DPDK
-→ 03 SysPerf → 04 BPF（后置 · 有系统可观测后再开）
+→ 03 LKD → 04 ULK → 05 Gorman → 06 TLPI
+→ 07 MikanOS/30天OS → **17 C++（外部仓）** → 08 陈硕 PNP/muduo → 09 UNP
+→ 10 TCP/IP → 11 Rosen → 12 DPDK
+→ 13 SysPerf → 14 BPF
 → 15 HFT 工程 → 16 Rust 量化
 ```
 
-**可选支线 · 嵌入式 Linux + 飞控算法（ARM-A，非 MCU）：** `18 → … → 23`（建议 05–08 后再开 · **23 用业余时间**）→ [路线图 §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–23)
+**可选支线 · 嵌入式 Linux + 飞控算法（ARM-A，非 MCU）：** `18 → … → 23`（建议 03–06 后再开 · **23 用业余时间**）→ [路线图 §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–23)
 
 | 文件夹 | 模块 |
 |:------:|------|
 | **00** | [Trading and Exchanges](./00-Trading-and-Exchanges/) — Harris · LOB（练手：[00-practice-go-dex](./00-Trading-and-Exchanges/00-practice-go-dex/)） |
 | **01** | [CSAPP-3rd](./01-CSAPP-3rd/) — 知其所以然 · 程序与硬件 |
 | **02** | [Computer-Architecture-6th](./02-Computer-Architecture-6th/) — Hennessy · 体系结构（紧接 01） |
-| **03** | [Systems-Performance-2nd](./03-Systems-Performance-2nd/) — 性能方法论 · **执行顺序后置**（见 [LEARNING-CHAIN](./LEARNING-CHAIN.md)） |
-| **04** | [BPF-Performance-Tools](./04-BPF-Performance-Tools/) — eBPF · **紧接 03，同样后置** |
-| **05** | [Linux-Kernel-Development](./05-Linux-Kernel-Development/) — LKD |
-| **06** | [Understanding-Linux-Kernel](./06-Understanding-Linux-Kernel/) — ULK（紧接 05） |
-| **07** | [Linux-Virtual-Memory-Manager](./07-Linux-Virtual-Memory-Manager/) — Gorman |
-| **08** | [The-Linux-Programming-Interface](./08-The-Linux-Programming-Interface/) — TLPI |
-| **09** | [system-low-level-hands-on](./09-system-low-level-hands-on/) — MikanOS / 30 天 OS / CPU |
-| **17** | [**cpp-learning-notes**（外部）](./17-cpp-learning-notes/) — C++ · [GitHub 笔记仓](https://github.com/cshonor/cpp-learning-notes) |
-| **10** | [Practical-Network-Programming](./10-Practical-Network-Programming/) — PNP / muduo |
-| **11** | [UNP-Vol1](./11-UNP-Vol1/) |
-| **12** | [TCP-IP-Illustrated-Vol1](./12-TCP-IP-Illustrated-Vol1/) |
-| **13** | [Linux-Kernel-Networking](./13-Linux-Kernel-Networking/) — Rosen |
-| **14** | [DPDK-Low-Latency-Network](./14-DPDK-Low-Latency-Network/) |
+| **03** | [Linux-Kernel-Development](./03-Linux-Kernel-Development/) — LKD |
+| **04** | [Understanding-Linux-Kernel](./04-Understanding-Linux-Kernel/) — ULK（紧接 03） |
+| **05** | [Linux-Virtual-Memory-Manager](./05-Linux-Virtual-Memory-Manager/) — Gorman |
+| **06** | [The-Linux-Programming-Interface](./06-The-Linux-Programming-Interface/) — TLPI |
+| **07** | [system-low-level-hands-on](./07-system-low-level-hands-on/) — **01 MikanOS** / 02 30天 OS |
+| **08** | [Practical-Network-Programming](./08-Practical-Network-Programming/) — PNP / muduo |
+| **09** | [UNP-Vol1](./09-UNP-Vol1/) |
+| **10** | [TCP-IP-Illustrated-Vol1](./10-TCP-IP-Illustrated-Vol1/) |
+| **11** | [Linux-Kernel-Networking](./11-Linux-Kernel-Networking/) — Rosen |
+| **12** | [DPDK-Low-Latency-Network](./12-DPDK-Low-Latency-Network/) |
+| **13** | [Systems-Performance-2nd](./13-Systems-Performance-2nd/) — Gregg · 性能方法论 |
+| **14** | [BPF-Performance-Tools](./14-BPF-Performance-Tools/) — eBPF（紧接 13） |
 | **15** | [HFT-Low-Latency-Practice](./15-HFT-Low-Latency-Practice/) — 原书 Ch1–11 已映射 · Ch13 策略 / Ch14 Python 扩展 |
 | **16** | [Rust-Quant-Trading-Guide](./16-Rust-Quant-Trading-Guide/) |
+| **17** | [**cpp-learning-notes**（外部）](./17-cpp-learning-notes/) — C++ · [GitHub 笔记仓](https://github.com/cshonor/cpp-learning-notes) |
 | **18** | [ARM64-Architecture](./18-ARM64-Architecture/) — ARMv8-A · 对照 x86 |
 | **19** | [UBoot-Kernel-Build](./19-UBoot-Kernel-Build/) — U-Boot · 内核裁剪 · Buildroot |
 | **20** | [Linux-Device-Driver](./20-Linux-Device-Driver/) — LDD · 内核态驱动 |

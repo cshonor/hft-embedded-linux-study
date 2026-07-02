@@ -8,22 +8,22 @@
 |--------|------|------|
 | **01** → **02** | CSAPP → Hennessy | 知其所以然 |
 | **05** → **08** | LKD → ULK → Gorman → TLPI | 内核 + 用户态 API |
-| **09/01** | MikanOS | HFT OS 动手主线 |
-| **09/02** | 30 天 OS | 可选启蒙 |
-| **03** → **04** | SysPerf → BPF | **后置** · 14 DPDK 之后或 15 HFT 之前 |
+| **07/01** | MikanOS | HFT OS 动手主线 |
+| **07/02** | 30 天 OS | 可选启蒙 |
+| **03** → **04** | SysPerf → BPF | **后置** · 12 DPDK 之后或 15 HFT 之前 |
 | **17** | [C++ 外部索引](./17-cpp-learning-notes/) | Modern C++ → 并发（PNP/HFT 前置） |
-| **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
+| **08–12** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
 | **15–16** | HFT Practice / Rust | 动手实现 |
 | **18–23** | ARM64 · 构建 · 驱动 · DT · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
 
-### Gregg 双书 · 03 → 04（后置）
+### Gregg 双书 · 13 → 14（后置）
 
 | 03 SysPerf | 04 BPF |
 |------------|--------|
 | USE/RED、延迟分解、perf/Ftrace | bpftrace/BCC 生产落地 |
 | Ch 4 / 13 / 15 预览 | Part I–II + XDP note |
 
-**执行顺序：** 先完成 **05–08 内核/TLPI** 与 **09/01 MikanOS**、**10–14 网络/DPDK**，再开 **03 → 04** — 有真实系统可 profile 后再读方法论。
+**执行顺序：** 先完成 **05–08 内核/TLPI** 与 **07/01 MikanOS**、**08–12 网络/DPDK**，再开 **03 → 04** — 有真实系统可 profile 后再读方法论。
 
 ### 03 为何不在 02 之后立刻读
 
@@ -71,7 +71,7 @@
 14  DPDK
 
 03  Systems Performance 2nd      ← 后置
-04  BPF Performance Tools       ← 紧接 03
+04  BPF Performance Tools       ← 紧接 13
 
 15  HFT Low-Latency Practice
 16  Rust Quant Trading Guide
@@ -80,11 +80,11 @@
 18–23  …
 ```
 
-**HFT 主线执行序号：** `00 → 01 → 02 → 05 → 06 → 07 → 08 → 09/01 → 17 → 10 → 11 → 01网络 → 12 → 13 → 14 → 03 → 04 → 15 → 16`
+**HFT 主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07/01 → 17 → 08 → 09 → 01网络 → 10 → 11 → 12 → 13 → 14 → 15 → 16`
 
-**嵌入式支线（独立顺序 · 建议 05–08 后再开 · 23 用业余时间）：** `18 → 19 → 20 → 21 → 22 → 23`
+**嵌入式支线（独立顺序 · 建议 03–06 后再开 · 23 用业余时间）：** `18 → 19 → 20 → 21 → 22 → 23`
 
-> **C++ 外部仓：** [17-cpp-learning-notes/](./17-cpp-learning-notes/) — **09 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
+> **C++ 外部仓：** [17-cpp-learning-notes/](./17-cpp-learning-notes/) — **07 之后、08 PNP 之前** 至少读完 *Effective Modern C++*。
 
 > **板块封顶：** `00`–`16` 在本仓 + **`17`** 外部 C++ 索引 + **`18`–`23`** 嵌入式 Linux + 运动控制支线；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
@@ -98,7 +98,7 @@
 
 | 方案 | 说明 |
 |------|------|
-| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`12-TCP-IP-Illustrated-Vol1/`](./12-TCP-IP-Illustrated-Vol1/)、[`11-UNP-Vol1/`](./11-UNP-Vol1/) 做**索引 + HFT 裁剪清单** |
+| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`10-TCP-IP-Illustrated-Vol1/`](./10-TCP-IP-Illustrated-Vol1/)、[`09-UNP-Vol1/`](./09-UNP-Vol1/) 做**索引 + HFT 裁剪清单** |
 | ⚠️ 可选 | 只把「HFT 必读章节」的笔记摘要链过来，不要 duplicate 全书 |
 | ❌ 不推荐 | 整本迁移 — 与 Rosen / CSAPP Ch11 重叠，且双倍维护 |
 
@@ -129,7 +129,7 @@
 
 ### ② Linux Kernel Development
 
-> 子目录与课书关系 → [02/LEARNING-PATH.md](./05-Linux-Kernel-Development/LEARNING-PATH.md)
+> 子目录与课书关系 → [02/LEARNING-PATH.md](./03-Linux-Kernel-Development/LEARNING-PATH.md)
 
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
@@ -285,9 +285,9 @@
 | 目录 | 文件夹 |
 |------|--------|
 | [01 CSAPP](./01-CSAPP-3rd/) + [02 Hennessy](./02-Computer-Architecture-6th/) | 01 / 04 |
-| [03 SysPerf](./03-Systems-Performance-2nd/) | 02 |
-| [04 BPF](./04-BPF-Performance-Tools/) | 03 |
-| [05 LKD](./05-Linux-Kernel-Development/) · [07 Gorman](./07-Linux-Virtual-Memory-Manager/) · [08–11 网络](./CROSS-MODULE-GUIDE.md) | 05–11 |
+| [03 SysPerf](./13-Systems-Performance-2nd/) | 02 |
+| [04 BPF](./14-BPF-Performance-Tools/) | 03 |
+| [05 LKD](./03-Linux-Kernel-Development/) · [07 Gorman](./05-Linux-Virtual-Memory-Manager/) · [08–11 网络](./CROSS-MODULE-GUIDE.md) | 05–11 |
 | [11 HFT](./15-HFT-Low-Latency-Practice/) · [12 Rust](./16-Rust-Quant-Trading-Guide/) | 15 / 16 |
 
 → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) · [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
@@ -327,7 +327,7 @@
 
 | 条件 | 说明 |
 |------|------|
-| **建议前置** | [05 LKD](./05-Linux-Kernel-Development/) + [08 TLPI](./08-The-Linux-Programming-Interface/) + [20 驱动](./20-Linux-Device-Driver/) |
+| **建议前置** | [05 LKD](./03-Linux-Kernel-Development/) + [08 TLPI](./06-The-Linux-Programming-Interface/) + [20 驱动](./20-Linux-Device-Driver/) |
 | **23 前置** | 建议 **22 或至少 20–21** 后再开算法整合 |
 | **C 语言** | K&R + 《C 和指针》+ 《嵌入式 C 自我修养》+ CSAPP/TLPI 可复用 |
 

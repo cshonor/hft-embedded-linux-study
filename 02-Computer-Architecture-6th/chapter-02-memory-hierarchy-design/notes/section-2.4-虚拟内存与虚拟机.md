@@ -11,10 +11,10 @@
 | HFT 视角 |
 |----------|
 | 热路径避免 **频繁缺页** — `mlock`/`mmap(MAP_LOCKED)`、启动时 **touch 完全部热页** |
-| **透明大页 (THP)** / **显式 hugepage** — 减少 TLB miss；策略需与 [note-THP](../../../07-Linux-Virtual-Memory-Manager/chapter-03-page-table-management/notes/note-透明大页THP.md) 一致 |
+| **透明大页 (THP)** / **显式 hugepage** — 减少 TLB miss；策略需与 [note-THP](../../../05-Linux-Virtual-Memory-Manager/chapter-03-page-table-management/notes/note-透明大页THP.md) 一致 |
 | 多进程/多策略：**各自地址空间** — 共享内存（SHM）需显式设计，注意 **cache 一致性** |
 
-→ 深入：[03-Gorman](../../../07-Linux-Virtual-Memory-Manager/) · [01-CSAPP Ch9](../../../01-CSAPP-3rd/chapter-09-virtual-memory/)
+→ 深入：[03-Gorman](../../../05-Linux-Virtual-Memory-Manager/) · [01-CSAPP Ch9](../../../01-CSAPP-3rd/chapter-09-virtual-memory/)
 
 ---
 

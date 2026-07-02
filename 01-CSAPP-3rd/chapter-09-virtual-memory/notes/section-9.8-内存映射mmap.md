@@ -35,7 +35,7 @@ mlock(p, size);  // 避免换出
 
 - **大文件 replay** — `mmap` 行情文件，顺序读、内核页缓存
 - **环形缓冲 / 大数组** — 匿名 `mmap` 替代大 `malloc`
-- **DPDK** — `hugetlbfs` + `mmap` 大页（→ [10-DPDK](../../../14-DPDK-Low-Latency-Network/)）
+- **DPDK** — `hugetlbfs` + `mmap` 大页（→ [12-DPDK](../../../12-DPDK-Low-Latency-Network/)）
 - **注意：** `MAP_POPULATE`（若可用）启动时预 fault
 
 → [Ch 10 I/O](../chapter-10-system-io/)

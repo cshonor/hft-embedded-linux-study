@@ -2,7 +2,7 @@
 
 **文件夹 15** · [返回总清单](../READING-LIST.md#与-15-hft-low-latency-practice-章节映射)
 
-> **前置：** `08` TLPI → `09` 自制 OS → `09`–`14` 网络栈  
+> **前置：** `08` TLPI → `07` 自制 OS → `09`–`14` 网络栈  
 > 全链路 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md)
 
 ## 与网络板块的分界
@@ -55,6 +55,6 @@
 
 ## 交叉阅读
 
-- [08-TLPI](../08-The-Linux-Programming-Interface/) · [10-PNP](../10-Practical-Network-Programming/)
-- [14-DPDK](../14-DPDK-Low-Latency-Network/) · [00-Trading-and-Exchanges](../00-Trading-and-Exchanges/)
-- [16-Rust](../16-Rust-Quant-Trading-Guide/) · [09-system-low-level-hands-on](../09-system-low-level-hands-on/)
+- [06-The-Linux-Programming-Interface](../06-The-Linux-Programming-Interface/) · [10-PNP](../08-Practical-Network-Programming/)
+- [12-DPDK](../12-DPDK-Low-Latency-Network/) · [00-Trading-and-Exchanges](../00-Trading-and-Exchanges/)
+- [16-Rust](../16-Rust-Quant-Trading-Guide/) · [07-system-low-level-hands-on](../07-system-low-level-hands-on/)

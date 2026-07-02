@@ -2,7 +2,7 @@
 
 > **CSAPP 3rd** · Bryant & O'Neill · **精读 🔴**（Part III）
 
-> 本章定位：**socket API + TCP/IP 程序员视角** — 从客户端-服务器模型到 `socket/connect/bind/listen/accept`、`getaddrinfo`、Echo 与 Tiny Web。HFT **订单/行情通道** 的 POSIX 地基；极致延迟再叠 [08-UNP](../../11-UNP-Vol1/) · [10-DPDK](../../14-DPDK-Low-Latency-Network/)。
+> 本章定位：**socket API + TCP/IP 程序员视角** — 从客户端-服务器模型到 `socket/connect/bind/listen/accept`、`getaddrinfo`、Echo 与 Tiny Web。HFT **订单/行情通道** 的 POSIX 地基；极致延迟再叠 [09-UNP](../../09-UNP-Vol1/) · [12-DPDK](../../12-DPDK-Low-Latency-Network/)。
 
 ---
 
@@ -61,5 +61,5 @@ read/write 收发字节（可能 short count）
 - 上一章：[../chapter-10-system-io/](../chapter-10-system-io/)
 - 下一章：[../chapter-12-concurrent-programming/](../chapter-12-concurrent-programming/)
 - 字节序：[../chapter-02-representing-information/](../chapter-02-representing-information/)
-- 协议理论：[12-TCP-IP-Illustrated-Vol1](../../12-TCP-IP-Illustrated-Vol1/)
+- 协议理论：[10-TCP-IP-Illustrated-Vol1](../../10-TCP-IP-Illustrated-Vol1/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

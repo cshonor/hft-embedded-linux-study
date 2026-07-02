@@ -10,7 +10,7 @@
 | 原则 | 说明 |
 |------|------|
 | **C 先于 C++** | [01 CSAPP](../01-CSAPP-3rd/) 建立指针、内存、进程 — C++ 是「带 RAII 的 C++」不是第二门语言 |
-| **Modern 先于 muduo** | [10 PNP](../10-Practical-Network-Programming/) 是 C++ 工程；**`04-Effective-Modern-C++` 是硬门槛** |
+| **Modern 先于 muduo** | [10 PNP](../08-Practical-Network-Programming/) 是 C++ 工程；**`04-Effective-Modern-C++` 是硬门槛** |
 | **并发先于 HFT 引擎** | [15 HFT](../15-HFT-Low-Latency-Practice/) 热路径 = 多线程 + 无锁；**`08-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective 老书 + Modern C++11/14 打底，再 C++20 — 与 [外部仓 README](https://github.com/cshonor/cpp-learning-notes/blob/main/README.md) 一致 |
 
@@ -32,11 +32,11 @@
 
 | 外部目录 | 书目 | 何时 |
 |----------|------|------|
-| [04-Effective-Modern-C++](https://github.com/cshonor/cpp-learning-notes/tree/main/04-Effective-Modern-C++) | Effective Modern C++ | **08 TLPI 之后、10 PNP 之前**（09 自制 OS 可并行） |
+| [04-Effective-Modern-C++](https://github.com/cshonor/cpp-learning-notes/tree/main/04-Effective-Modern-C++) | Effective Modern C++ | **08 TLPI 之后、10 PNP 之前**（07 自制 OS 可并行） |
 
 **必会：** RAII、智能指针、`move`/完美转发、lambda、`=delete`/`=default`、`constexpr` 直觉。
 
-**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [10 PNP](../10-Practical-Network-Programming/)。
+**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [10 PNP](../08-Practical-Network-Programming/)。
 
 ---
 
@@ -77,7 +77,7 @@
 ```
 01 CSAPP ─────────────────────────────┐
                                       │ M0 可选 Primer
-08 TLPI ──→ 09 自制 OS（可选）        │
+08 TLPI ──→ 07 自制 OS（可选）        │
                 ↓                     │
            【17 · M1 Modern C++】◄────┘
                 ↓

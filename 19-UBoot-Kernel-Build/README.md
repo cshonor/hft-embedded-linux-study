@@ -3,7 +3,7 @@
 **文件夹 19** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线18–23)
 
 > **定位：** 嵌入式 **自己编译** 引导链 + 内核 + rootfs — 区别于服务器 **成品内核**。  
-> **前置：** [18 ARM64](../18-ARM64-Architecture/) · [05 LKD](../05-Linux-Kernel-Development/) 调度/中断概念
+> **前置：** [18 ARM64](../18-ARM64-Architecture/) · [05 LKD](../03-Linux-Kernel-Development/) 调度/中断概念
 
 ---
 
@@ -20,10 +20,10 @@
 
 | 模块 | 复用什么 |
 |------|----------|
-| [05 LKD](../05-Linux-Kernel-Development/) | Kconfig、模块、启动流程 |
-| [06 ULK](../06-Understanding-Linux-Kernel/) | 启动初期内存、中断初始化 |
-| [07 Gorman](../07-Linux-Virtual-Memory-Manager/) | 页表、ZONE — 裁剪内核时懂删什么 |
-| [08 TLPI](../08-The-Linux-Programming-Interface/) | rootfs 里用户态程序仍走 syscall |
+| [05 LKD](../03-Linux-Kernel-Development/) | Kconfig、模块、启动流程 |
+| [06 ULK](../04-Understanding-Linux-Kernel/) | 启动初期内存、中断初始化 |
+| [07 Gorman](../05-Linux-Virtual-Memory-Manager/) | 页表、ZONE — 裁剪内核时懂删什么 |
+| [08 TLPI](../06-The-Linux-Programming-Interface/) | rootfs 里用户态程序仍走 syscall |
 
 **差异一句话：** 服务器用 **发行版内核**；嵌入式用 **板级 defconfig + 设备树 + Buildroot/Yocto**。
 

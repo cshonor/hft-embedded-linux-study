@@ -32,7 +32,7 @@
 |----------|
 | **对照**：WSC 用 **冗余计算** 换尾延迟；HFT 用 **专用硬件、绑核、无共享** 换 **确定性** |
 | 回测集群可学 **straggler 检测**；实盘要避免「等最慢路径」 |
-| → [03-SysPerf 延迟分解](../../../03-Systems-Performance-2nd/chapter-02-methodologies/) |
+| → [13-Systems-Performance 延迟分解](../../../13-Systems-Performance-2nd/chapter-02-methodologies/) |
 
 ---
 

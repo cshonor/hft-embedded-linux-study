@@ -4,7 +4,7 @@
 
 > **定位：** **内核态模块** — 补齐 HFT 链里「只写用户态」的缺口。  
 > **范围：** 字符驱动 · platform 驱动 · **非** MCU 裸机 HAL。  
-> **前置：** [19 构建链](../19-UBoot-Kernel-Build/) · [05–06 内核](../05-Linux-Kernel-Development/) · GNU-C（《嵌入式 C 语言自我修养》）
+> **前置：** [19 构建链](../19-UBoot-Kernel-Build/) · [05–06 内核](../03-Linux-Kernel-Development/) · GNU-C（《嵌入式 C 语言自我修养》）
 
 ---
 
@@ -25,8 +25,8 @@
 |----------|------------|
 | 用户态 `epoll`/`mmap` | 内核 **poll/wait_queue** · **remap_pfn_range** |
 | 无锁 / spinlock 概念 | 内核 **spinlock_t** · **中断上下文** 规则 |
-| [13 内核网络](../13-Linux-Kernel-Networking/) | 网卡驱动是 **字符/网络设备** 的特例 |
-| [14 DPDK](../14-DPDK-Low-Latency-Network/) | UIO/VFIO **旁路** vs 内核驱动 **标准路径** |
+| [13 内核网络](../11-Linux-Kernel-Networking/) | 网卡驱动是 **字符/网络设备** 的特例 |
+| [14 DPDK](../12-DPDK-Low-Latency-Network/) | UIO/VFIO **旁路** vs 内核驱动 **标准路径** |
 
 **HFT 退路：** 工业网关 / 飞控 **传感器 SPI/I2C/UART** 驱动 — 同一套 LDD 技能。
 

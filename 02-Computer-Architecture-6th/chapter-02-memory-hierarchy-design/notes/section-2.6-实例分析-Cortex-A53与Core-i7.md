@@ -37,7 +37,7 @@
 | **colo 服务器常见类似层次** — L3 共享意味着多策略/多线程 **争用 LLC** |
 | 绑核 + 减少跨核共享数据 → 降低 L3 争用与 false sharing |
 | 压测时换 **同代不同 SKU**（L3 大小不同）可能显著改变 replay 性能 |
-| 与 [03-SysPerf Ch7](../../../03-Systems-Performance-2nd/chapter-07-memory/) 的 NUMA/TLB 观测对照 |
+| 与 [13-Systems-Performance Ch7](../../../13-Systems-Performance-2nd/chapter-07-memory/) 的 NUMA/TLB 观测对照 |
 
 ---
 

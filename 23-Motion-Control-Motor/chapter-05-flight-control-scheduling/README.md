@@ -11,10 +11,10 @@
 | 手段 | 说明 |
 |------|------|
 | **控制环周期** | 典型 250Hz–1kHz — 明确 `Ts` |
-| **isolcpus / taskset** | 飞控线程 **独占核** — [05 LKD](../../05-Linux-Kernel-Development/) |
+| **isolcpus / taskset** | 飞控线程 **独占核** — [05 LKD](../../03-Linux-Kernel-Development/) |
 | **SCHED_FIFO** | RT 调度策略 — 用户态飞控线程 |
 | **PREEMPT_RT 补丁** | 内核可抢占 — 降低内核延迟 |
-| **cyclictest / perf** | 验证 **周期 jitter p99** — [03 SysPerf](../../03-Systems-Performance-2nd/) |
+| **cyclictest / perf** | 验证 **周期 jitter p99** — [03 SysPerf](../../13-Systems-Performance-2nd/) |
 
 ## 与 HFT 对照
 

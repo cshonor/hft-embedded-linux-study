@@ -58,7 +58,7 @@ uint32_t ntohl(uint32_t netlong);
 - **同机 IPC / mmap 共享 struct** — 两端必须同 endian + 同 padding，否则 silent corruption
 - **错误用法：** 把 `struct Message` 直接 `send()` 而不序列化 — 字节序 + 对齐 + 版本都会炸
 
-→ 网络编程：[Ch 11](../../chapter-11-network-programming/) · [08-UNP](../../../11-UNP-Vol1/)
+→ 网络编程：[Ch 11](../../chapter-11-network-programming/) · [09-UNP](../../../09-UNP-Vol1/)
 
 ---
 

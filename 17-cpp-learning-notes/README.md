@@ -25,7 +25,7 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 ## 在主学习链里插在哪？
 
 ```
-… → 08 TLPI → 09 自制 OS（可选）
+… → 08 TLPI → 07 自制 OS（可选）
          ↓
     【17 C++ · 本索引】  ← 开 10 PNP 之前至少读完 Modern C++
          ↓
@@ -62,7 +62,7 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 |--------|-------------|
 | [01 CSAPP](../01-CSAPP-3rd/) Ch12 并发 | → [08-Cpp-Concurrency](https://github.com/cshonor/cpp-learning-notes/tree/main/08-Cpp-Concurrency) |
 | [01 CSAPP](../01-CSAPP-3rd/) Ch6 缓存 | → [07-Cpp-Object-Model](https://github.com/cshonor/cpp-learning-notes/tree/main/07-Cpp-Object-Model) |
-| [10 PNP / muduo](../10-Practical-Network-Programming/) | 前置 [04-Effective-Modern-C++](https://github.com/cshonor/cpp-learning-notes/tree/main/04-Effective-Modern-C++) |
+| [10 PNP / muduo](../08-Practical-Network-Programming/) | 前置 [04-Effective-Modern-C++](https://github.com/cshonor/cpp-learning-notes/tree/main/04-Effective-Modern-C++) |
 | [15 HFT](../15-HFT-Low-Latency-Practice/) | 前置 Modern + Concurrency + Object Model |
 
 ← [总路线 ../LEARNING-CHAIN.md](../LEARNING-CHAIN.md) · [READING-LIST § C++](../READING-LIST.md#补充-c-学习链17-文件夹)

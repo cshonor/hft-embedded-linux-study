@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / "09-system-low-level-hands-on" / "02-30days-os"
+ROOT = Path(__file__).resolve().parents[1] / "07-system-low-level-hands-on" / "02-30days-os"
 
 # Order matters: specific filenames first
 REPLACEMENTS = [

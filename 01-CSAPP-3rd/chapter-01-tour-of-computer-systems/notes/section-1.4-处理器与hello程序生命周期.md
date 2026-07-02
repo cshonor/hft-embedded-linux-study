@@ -67,7 +67,7 @@ PC = 0x400500   ← 举例：虚拟地址（进程视角；细节 → Ch 9）
 - 编译器 `-O3` / 人工 **把常用量攒在寄存器**、**减 indirection** → 少访存（→ [Ch 5](../../chapter-05-optimizing-performance/)）
 - 更大一层：**cache 局部性** — 下节 1.5；真正「几十倍」差距往往来自 **cache miss**，不只是寄存器 vs DRAM 字面倍数
 
-**注意：** 「冗余计算拖慢」有时是因为 **多算了**（占用执行端口），有时是因为 **算完放内存又反复 load** — `perf` 要分 **frontend/backend stall**（→ [03-SysPerf Ch6](../../../03-Systems-Performance-2nd/chapter-06-cpus/)）
+**注意：** 「冗余计算拖慢」有时是因为 **多算了**（占用执行端口），有时是因为 **算完放内存又反复 load** — `perf` 要分 **frontend/backend stall**（→ [13-Systems-Performance Ch6](../../../13-Systems-Performance-2nd/chapter-06-cpus/)）
 
 ### 控制器 + ALU — 谁指挥、谁算题
 
@@ -113,7 +113,7 @@ if (price > threshold)   // 编译后：cmp + 条件跳转
 
 - 热路径 **少深层 if-else 树**；能 **算完再分支** 就别边 load 边连环跳
 - **`likely`/`unlikely`**（GCC）或 **把 cold path 挪到函数外** — 帮编译器排布 + 帮预测器学模式
-- 真要抠：`perf stat` 看 **`branch-misses`**（→ Ch5、[03-SysPerf Ch6](../../../03-Systems-Performance-2nd/chapter-06-cpus/)）
+- 真要抠：`perf stat` 看 **`branch-misses`**（→ Ch5、[13-Systems-Performance Ch6](../../../13-Systems-Performance-2nd/chapter-06-cpus/)）
 
 ### 1.4.1 系统的硬件组成
 
@@ -208,7 +208,7 @@ hello.c
 |------------|------------|
 | shell 启动 | 固定 pin 的 daemon，无 shell |
 | libc `printf` | 预分配日志、异步写盘或禁 stdout |
-| 通用网络栈 | DPDK/onload 旁路（→ [10-DPDK](../../../14-DPDK-Low-Latency-Network/)） |
+| 通用网络栈 | DPDK/onload 旁路（→ [12-DPDK](../../../12-DPDK-Low-Latency-Network/)） |
 
 → 进程/syscall 细节：[Ch 8 异常控制流](../../chapter-08-exceptional-control-flow/)
 

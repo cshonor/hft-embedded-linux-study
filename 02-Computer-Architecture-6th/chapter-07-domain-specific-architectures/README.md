@@ -33,7 +33,7 @@
 
 **默认：** 实盘 tick 路径仍以 **通用 CPU + DPDK** 为主；DSA 多见于 **行情预处理、风控 ML、研究**。
 
-→ [Ch1 Dennard/DSA](../chapter-01-quantitative-design-fundamentals/notes/section-1.1-1.2-引言与计算机分类.md) · [Ch4 GPU/SIMD](../chapter-04-vector-simd-gpu/) · [14-DPDK](../../../14-DPDK-Low-Latency-Network/)
+→ [Ch1 Dennard/DSA](../chapter-01-quantitative-design-fundamentals/notes/section-1.1-1.2-引言与计算机分类.md) · [Ch4 GPU/SIMD](../chapter-04-vector-simd-gpu/) · [12-DPDK](../../../12-DPDK-Low-Latency-Network/)
 
 ---
 

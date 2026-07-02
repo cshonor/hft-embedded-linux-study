@@ -30,7 +30,7 @@
 
 - 热路径数据 **驻留 DRAM + L3**；日志/回放 **顺序写 NVMe**
 - 共置机器 **足够 DRAM** 装 working set；swap 禁用（→ [12-HFT](../../../15-HFT-Low-Latency-Practice/)）
-- DPDK **mbuf 池** 预分配 — 避免 tick 上 malloc（→ [10-DPDK](../../../14-DPDK-Low-Latency-Network/)）
+- DPDK **mbuf 池** 预分配 — 避免 tick 上 malloc（→ [12-DPDK](../../../12-DPDK-Low-Latency-Network/)）
 
 ---
 

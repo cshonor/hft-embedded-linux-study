@@ -37,7 +37,7 @@
 0. **比特本身无意义，上下文决定含义** — 编译器 / CPU / 内存 / 协议 layout（→ [1.1](./notes/section-1.1-信息就是位与上下文.md)）；行情 feed 解析错 offset = 上下文错
 1. **慢的不在 CPU 算力，在等数据** — cache miss、磁盘、网络、syscall（→ 1.5–1.6，深入 [Ch 6](../chapter-06-memory-hierarchy/)）
 2. **程序从不「直接摸硬件」** — OS 用进程/线程/虚拟内存/文件抽象隔开（→ 1.7，深入 Ch 8–9）
-3. **优化要有靶心** — 阿姆达尔：先打最慢的那段（→ 1.9，配合 [Ch 5](../chapter-05-optimizing-performance/)、[03-SysPerf](../../03-Systems-Performance-2nd/chapter-02-methodologies/)）
+3. **优化要有靶心** — 阿姆达尔：先打最慢的那段（→ 1.9，配合 [Ch 5](../chapter-05-optimizing-performance/)、[13-Systems-Performance](../../13-Systems-Performance-2nd/chapter-02-methodologies/)）
 
 ---
 
@@ -76,5 +76,5 @@ Ch 1 地图（本章，选读速通）
 - 下一章：[../chapter-02-representing-information/](../chapter-02-representing-information/)
 - 缓存深入：[../chapter-06-memory-hierarchy/](../chapter-06-memory-hierarchy/)
 - 虚拟内存：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
-- 性能方法论：[03-SysPerf Ch 2](../../03-Systems-Performance-2nd/chapter-02-methodologies/)
+- 性能方法论：[13-Systems-Performance Ch 2](../../13-Systems-Performance-2nd/chapter-02-methodologies/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

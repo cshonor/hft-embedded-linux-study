@@ -2,7 +2,7 @@
 
 **文件夹 07** · 全书 **7 章 + 附录 A–M**（含在线附录）· [返回总清单](../READING-LIST.md#5-computer-architecture-a-quantitative-approach-6th--hennessy--patterson)
 
-> **HFT 阶段 1：** 先读 **Ch2**（配合 [01-CSAPP Ch6](../01-CSAPP-3rd/chapter-06-memory-hierarchy/)），再读 [03-SysPerf](../03-Systems-Performance-2nd/)。Ch5 内存一致性可与 CSAPP Ch12 交叉。
+> **HFT 阶段 1：** 先读 **Ch2**（配合 [01-CSAPP Ch6](../01-CSAPP-3rd/chapter-06-memory-hierarchy/)），再读 [13-Systems-Performance](../13-Systems-Performance-2nd/)。Ch5 内存一致性可与 CSAPP Ch12 交叉。
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
@@ -57,5 +57,5 @@ Ch 2 → Ch 5 → Ch 1 → Ch 3
 ## 交叉阅读
 
 - 程序员落地 → [01-CSAPP-3rd](../01-CSAPP-3rd/)
-- 虚拟内存 → [03-Gorman](../07-Linux-Virtual-Memory-Manager/)
+- 虚拟内存 → [03-Gorman](../05-Linux-Virtual-Memory-Manager/)
 - 跨模块 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)

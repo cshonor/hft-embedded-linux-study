@@ -58,7 +58,7 @@ while (1) {
 | 无进程/线程切换开销 | 代码复杂；长 CPU 计算会阻塞事件循环 |
 | 无锁共享数据结构（单线程） | `select` O(n)；Linux 生产用 **`epoll`** |
 
-**HFT：** **reactor 模式** 主流 — 单（或每核）事件循环 + 非阻塞 socket；行情 feed、会话管理常如此。→ [08-UNP](../../../11-UNP-Vol1/) · [Ch 11](../../chapter-11-network-programming/)
+**HFT：** **reactor 模式** 主流 — 单（或每核）事件循环 + 非阻塞 socket；行情 feed、会话管理常如此。→ [09-UNP](../../../09-UNP-Vol1/) · [Ch 11](../../chapter-11-network-programming/)
 
 ---
 

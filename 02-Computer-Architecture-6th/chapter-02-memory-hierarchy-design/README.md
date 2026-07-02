@@ -40,7 +40,7 @@
 | 2.6 | 服务器 CPU 的 **L3 + 激进预取** vs 移动端省电缓存 — 选型参考 |
 | 2.7 | 别用别的程序的 cache 行为外推自己的热路径 |
 
-→ [01-CSAPP Ch6](../../01-CSAPP-3rd/chapter-06-memory-hierarchy/) · [03-Gorman](../../07-Linux-Virtual-Memory-Manager/) · [Ch5 线程级并行](../chapter-05-thread-level-parallelism/)（false sharing / MESI）
+→ [01-CSAPP Ch6](../../01-CSAPP-3rd/chapter-06-memory-hierarchy/) · [03-Gorman](../../05-Linux-Virtual-Memory-Manager/) · [Ch5 线程级并行](../chapter-05-thread-level-parallelism/)（false sharing / MESI）
 
 ---
 

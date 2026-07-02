@@ -1,0 +1,29 @@
+## ② GDT 与段属性 · Ring0 / Ring3
+
+Day 5 建了 GDT 表；Day 6 **补底层细节**。
+
+#### `LGDT`
+
+| 指令 | 作用 |
+|------|------|
+| **`LGDT`** | 把 **GDT 基址 + 界限** 装入 CPU **GDTR 寄存器** |
+
+之后 CPU 用 **段选择子** 查 GDT → 得到 **段基址、上限、属性**。
+
+#### 段属性 · 访问权
+
+| 概念 | 说明 |
+|------|------|
+| **系统模式 Ring 0** | **内核** — 可执行特权指令、访问硬件 |
+| **应用模式 Ring 3** | **普通程序** — **不能** 乱动 I/O、系统内存 |
+| **段描述符属性** | 给每段标 **DPL / 类型** — **OS 阻止应用破坏内核** |
+
+```
+应用 (ring3) ──syscall/中断──► 内核 (ring0) ──► 硬件
+         ▲                           │
+         └──── 权限检查（GDT 描述符）──┘
+```
+
+→ 对照 [03-Linux-Kernel-Development](../../../../03-Linux-Kernel-Development/) · 用户态/内核态 · [06-The-Linux-Programming-Interface](../../../../06-The-Linux-Programming-Interface/) syscall 边界
+
+---

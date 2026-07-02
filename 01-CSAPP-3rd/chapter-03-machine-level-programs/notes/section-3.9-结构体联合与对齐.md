@@ -38,7 +38,7 @@ alignas(64) struct { atomic<int> seq; } producer;
 alignas(64) struct { atomic<int> seq; } consumer;
 ```
 
-→ [Ch 12 并发](../../chapter-12-concurrent-programming/) · [03-SysPerf Ch 6](../../../03-Systems-Performance-2nd/chapter-06-cpus/)
+→ [Ch 12 并发](../../chapter-12-concurrent-programming/) · [13-Systems-Performance Ch 6](../../../13-Systems-Performance-2nd/chapter-06-cpus/)
 
 ---
 

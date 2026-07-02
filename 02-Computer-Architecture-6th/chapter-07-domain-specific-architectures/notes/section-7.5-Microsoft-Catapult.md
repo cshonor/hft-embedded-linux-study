@@ -25,6 +25,6 @@
 | **最接近交易场景的 DSA 案例之一**：在 **网线路上** 做解析/过滤/聚合 |
 | SmartNIC、FPGA 行情解码、**inline checksum** — 同「bump-in-the-wire」哲学 |
 | 灵活度 **FPGA > ASIC**；峰值能效 **ASIC > FPGA** — 量产后才固化 ASIC |
-| → [14-DPDK](../../../14-DPDK-Low-Latency-Network/) · [15-HFT 硬件选型](../../../15-HFT-Low-Latency-Practice/chapter-04-硬件选型与服务器配置.md) |
+| → [12-DPDK](../../../12-DPDK-Low-Latency-Network/) · [15-HFT 硬件选型](../../../15-HFT-Low-Latency-Practice/chapter-04-硬件选型与服务器配置.md) |
 
 ---

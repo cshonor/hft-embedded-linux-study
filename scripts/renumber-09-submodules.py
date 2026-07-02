@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Renumber 09-system-low-level-hands-on subdirs: 08-x → 01/02/03; swap 2↔3 (Mikan before CPU)."""
+"""Renumber 07-system-low-level-hands-on subdirs: 08-x → 01/02/03; swap 2↔3 (Mikan before CPU)."""
 from __future__ import annotations
 
 import subprocess
@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SUB = "09-system-low-level-hands-on"
+SUB = "07-system-low-level-hands-on"
 
 GIT_MV = [
     (f"{SUB}/08-1-30days-os", f"{SUB}/02-30days-os"),
@@ -66,12 +66,12 @@ TEXT_REPLACEMENTS = [
     ("08-1 30天 → 08-3 MikanOS", "01 30天 → 02 MikanOS"),
     # parent module README / chain fixes
     ("# 08 · 系统底层动手", "# 09 · 系统底层动手"),
-    ("08 自制 OS / CPU（本文件夹）", "09 自制 OS / CPU（本文件夹）"),
+    ("08 自制 OS / CPU（本文件夹）", "07 自制 OS / CPU（本文件夹）"),
     (
         "→ `09` PNP → `10` UNP → `11`–`13` 网络 → `14` HFT",
-        "→ `10` PNP → `11` UNP → `12`–`14` 网络 → `15` HFT",
+        "→ `08` PNP → `11` UNP → `12`–`14` 网络 → `15` HFT",
     ),
-    ("09 PNP → 10 UNP → 11–13 网络栈", "10 PNP → 11 UNP → 12–14 网络栈"),
+    ("09 PNP → 10 UNP → 11–13 网络栈", "08 PNP → 09 UNP → 10–12 网络栈"),
     ("14 HFT · 15 Rust", "15 HFT · 16 Rust"),
     ("子目录用 `08-1` / `08-2` / `08-3`", "子目录用 `01` / `02` / `03`"),
     ("## 补充：自制系统动手（`08` 文件夹）", "## 补充：自制系统动手（`09` 文件夹）"),

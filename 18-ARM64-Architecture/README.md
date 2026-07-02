@@ -22,7 +22,7 @@
 |----------------|------------|
 | [01 CSAPP](../01-CSAPP-3rd/) x86-64 | **对照学** — cache、流水线、调用约定 |
 | [02 Hennessy](../02-Computer-Architecture-6th/) Ch2 | MESI、一致性 — ARM 同样适用 |
-| [05 LKD](../05-Linux-Kernel-Development/) | 调度/中断 **概念** 通用；**实现** 看 ARM 异常级 |
+| [05 LKD](../03-Linux-Kernel-Development/) | 调度/中断 **概念** 通用；**实现** 看 ARM 异常级 |
 
 ---
 

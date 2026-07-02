@@ -66,5 +66,5 @@
 - 下一章：[../chapter-07-linking/](../chapter-07-linking/)
 - 虚拟内存：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
 - 理论：[02-Hennessy Ch2](../../02-Computer-Architecture-6th/)
-- 观测：[03-SysPerf Ch 6 CPUs](../../03-Systems-Performance-2nd/chapter-06-cpus/)
+- 观测：[13-Systems-Performance Ch 6 CPUs](../../13-Systems-Performance-2nd/chapter-06-cpus/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

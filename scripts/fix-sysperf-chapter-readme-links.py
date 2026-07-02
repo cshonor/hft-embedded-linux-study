@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-SYSPERF = Path(__file__).resolve().parents[1] / "03-Systems-Performance-2nd"
+SYSPERF = Path(__file__).resolve().parents[1] / "13-Systems-Performance-2nd"
 
 
 def fix_readme(path: Path) -> None:

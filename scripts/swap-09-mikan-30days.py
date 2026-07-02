@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SUB = ROOT / "09-system-low-level-hands-on"
+SUB = ROOT / "07-system-low-level-hands-on"
 
 GIT_MV = [
     ("01-30days-os", "_swap-tmp-30days"),
@@ -30,7 +30,7 @@ TEXT_REPLACEMENTS = [
     ("C 达标后 **直接 [02 MikanOS]", "C 达标后 **直接 [01 MikanOS]"),
     ("跳过本书，C 达标后 **直接 [02 MikanOS]", "跳过本书，C 达标后 **直接 [01 MikanOS]"),
     ("HFT 走 02，不走 01", "HFT 走 01-mikan-os，不走 02-30days-os"),
-    ("09/02` MikanOS", "09/01` MikanOS"),
+    ("07/02` MikanOS", "07/01` MikanOS"),
     ("| **01 川合 30 天** | **02 MikanOS** |", "| **02 川合 30 天** | **01 MikanOS** |"),
     ("| **01 川合 haribote** | **02 MikanOS** |", "| **02 川合 haribote** | **01 MikanOS** |"),
     ("01 启蒙 → 02 现代 OS", "02 30天启蒙 → 01 MikanOS"),

@@ -53,7 +53,7 @@ Core 3: Gateway OUT
 
 **禁止：** 热点线程与 **HT 兄弟核** 同跑重负载。
 
-→ [08-TLPI 调度](../08-The-Linux-Programming-Interface/)
+→ [06-The-Linux-Programming-Interface 调度](../06-The-Linux-Programming-Interface/)
 
 ---
 
@@ -70,7 +70,7 @@ Core 3: Gateway OUT
 
 | 效果（原书 Ch7） | **1.5–10 μs → 0.5–2 μs** |
 
-→ [chapter-06 §5](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [chapter-10 §1](./chapter-10-延迟测量与基准压测.md#1-内核旁路-kernel-bypass) · [14-DPDK](../14-DPDK-Low-Latency-Network/)
+→ [chapter-06 §5](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [chapter-10 §1](./chapter-10-延迟测量与基准压测.md#1-内核旁路-kernel-bypass) · [12-DPDK](../12-DPDK-Low-Latency-Network/)
 
 ---
 

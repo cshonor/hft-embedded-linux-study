@@ -13,7 +13,7 @@
 
 本章追踪数据包：**交易所 → 交换机 → NIC → OS/用户态 → Strategy**，并说明为何必须 **直通交换机、二进制协议、UDP 组播、Kernel Bypass、PTP**。
 
-→ 深化：[14-DPDK](../14-DPDK-Low-Latency-Network/) · [10-PNP](../10-Practical-Network-Programming/)
+→ 深化：[12-DPDK](../12-DPDK-Low-Latency-Network/) · [10-PNP](../08-Practical-Network-Programming/)
 
 ---
 
@@ -97,7 +97,7 @@ Orders:       Gateway OUT ──TCP or UDP──► Exchange
 - **OpenOnload / DPDK** — 用户态 **直接 poll RX ring** · **零拷贝**
 - 详见 [chapter-05 §3](./chapter-05-操作系统内核极致调优.md#3-kernel-bypass)
 
-→ [14-DPDK Intro](../14-DPDK-Low-Latency-Network/01-Intro-Book/)
+→ [12-DPDK Intro](../12-DPDK-Low-Latency-Network/01-Intro-Book/)
 
 ---
 

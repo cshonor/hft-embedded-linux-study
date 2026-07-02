@@ -11,7 +11,7 @@
 |------|--------|------|
 | 交易金融理论 | `00` | 业务 / LOB |
 | **程序与硬件** | **`01` CSAPP → `02` Hennessy** | 知其所以然 |
-| **性能（后置）** | **`03` SysPerf → `04` BPF** | 14 之后或 15 之前 · 文件夹编号不变 |
+| **性能（后置）** | **`03` SysPerf → `04` BPF** | 12 DPDK 之后、15 HFT 之前 · 文件夹编号不变 |
 | Linux 内核 | **`05` LKD → `06` ULK → `07` Gorman** | 调度 / 源码 / VM |
 | **Linux 用户态** | `08` TLPI | syscall · epoll · mmap · 线程 |
 | **系统底层动手** | `09` | **01 MikanOS**（主线）· 02 30天（可选） |
@@ -34,9 +34,9 @@
 ## 二、网络学习链（推荐顺序）
 
 ```
-05 LKD → 06 ULK → 07 Gorman → 08 TLPI（epoll / mmap / 调度）
+03 LKD → 04 ULK → 05 Gorman → 06 TLPI（epoll / mmap / 调度）
     ↓
-09/01 MikanOS（HFT 主线）
+07/01 MikanOS（HFT 主线）
     ↓
 17 C++（至少 M1 Modern C++）
     ↓
@@ -44,16 +44,16 @@
     ↓
 11 UNP + CSAPP Ch10–11
     ↓
-12 TCP/IP → 13 Rosen → 14 DPDK
+10 TCP/IP → 11 Rosen → 12 DPDK
     ↓
-03 SysPerf → 04 BPF（后置 · 观测落地）
+13 SysPerf → 14 BPF（后置 · 观测落地）
 ```
 
 | 轨道 | 外部仓库 | 本仓库索引 |
 |------|----------|------------|
 | **C++ 9 书 + 可选** | [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) | [17-cpp-learning-notes/](./17-cpp-learning-notes/) |
-| **PNP 实战** | [Computer-Networking/PNP](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | [10-Practical-Network-Programming/](./10-Practical-Network-Programming/) |
-| **UNP** | [UNP_Vol1](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | [11-UNP-Vol1/](./11-UNP-Vol1/) |
+| **PNP 实战** | [Computer-Networking/PNP](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | [08-Practical-Network-Programming/](./08-Practical-Network-Programming/) |
+| **UNP** | [UNP_Vol1](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | [09-UNP-Vol1/](./09-UNP-Vol1/) |
 
 ---
 
@@ -73,7 +73,7 @@
 | 缓冲结构 | `sk_buff` | `rte_mbuf` |
 | 系统调用 | `recvfrom` / `epoll_wait` | 无（UIO/VFIO） |
 
-**阅读顺序：** `05` LKD → `06` ULK → `07` Gorman → `08` TLPI → `09` 自制 → **`17` C++** → `10` PNP → `11` UNP → `12`–`14` 网络纵深 → `15` HFT → `16` Rust。
+**阅读顺序：** `03` LKD → `04` ULK → `05` Gorman → `06` TLPI → `07` 自制 → **`17` C++** → `08` PNP → `11` UNP → `12`–`14` 网络纵深 → `15` HFT → `16` Rust。
 
 ---
 
@@ -85,8 +85,8 @@
 | `epoll_wait()` | `while(1) { rx_burst; process; }` | 事件驱动 → 忙等 |
 | `recvfrom()` | `rte_eth_rx_burst()` | 批量收包；无 syscall |
 
-→ UNP：[11-UNP-Vol1](./11-UNP-Vol1/) · PNP：[10-Practical-Network-Programming](./10-Practical-Network-Programming/)  
-→ DPDK：[14-DPDK-Low-Latency-Network](./14-DPDK-Low-Latency-Network/)
+→ UNP：[09-UNP-Vol1](./09-UNP-Vol1/) · PNP：[08-Practical-Network-Programming](./08-Practical-Network-Programming/)  
+→ DPDK：[12-DPDK-Low-Latency-Network](./12-DPDK-Low-Latency-Network/)
 
 ---
 
@@ -97,7 +97,7 @@
 | 局部性、Cache line | mbuf 连续布局、mempool 同 NUMA | 避免跨 NUMA 取 mbuf |
 | TLB / 大页 | EAL `-huge` | DPDK 强制依赖大页 |
 
-→ [12-DPDK chapter-02-mbuf](./14-DPDK-Low-Latency-Network/01-Intro-Book/notes/chapter-02-mbuf与内存池.md)
+→ [12-DPDK chapter-02-mbuf](./12-DPDK-Low-Latency-Network/01-Intro-Book/notes/chapter-02-mbuf与内存池.md)
 
 ---
 
@@ -107,11 +107,11 @@
 |------|------|----------|
 | CSAPP Lab | `01-CSAPP-3rd/code/` | Ch3–12 |
 | PNP 网络实验 | [外部 PNP/code](https://github.com/cshonor/Computer-Networking/tree/main/PNP/code) | 对照 11 UNP |
-| 自制 OS/CPU | `09-system-low-level-hands-on/code/` | 中断、页表 |
+| 自制 OS/CPU | `07-system-low-level-hands-on/code/` | 中断、页表 |
 | DPDK 组播最小工程 | `12-DPDK/.../mcast-minimal/` | Rosen 组播 |
 
 ---
 
 ## 七、OpenOnload / RDMA
 
-详见 [note-openonload-rdma对比](./14-DPDK-Low-Latency-Network/02-Advanced-Book/notes/note-openonload-rdma对比.md)
+详见 [note-openonload-rdma对比](./12-DPDK-Low-Latency-Network/02-Advanced-Book/notes/note-openonload-rdma对比.md)

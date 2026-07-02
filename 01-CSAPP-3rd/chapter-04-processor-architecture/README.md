@@ -32,7 +32,7 @@ PIPE：五段并行填满 — 理想 CPI→1，冒险时 stall / bubble
 
 1. **分支预测失败** → 流水线清空，和 Ch3「不可预测分支」同一物理根因
 2. **数据冒险** → 真相关要停顿或转发；写代码时减少 **load-use** 距离
-3. **CPI / IPC** — `perf` 里 IPC 低，往 cache miss、分支、后端瓶颈想（→ [03-SysPerf Ch 6](../../03-Systems-Performance-2nd/chapter-06-cpus/)）
+3. **CPI / IPC** — `perf` 里 IPC 低，往 cache miss、分支、后端瓶颈想（→ [13-Systems-Performance Ch 6](../../13-Systems-Performance-2nd/chapter-06-cpus/)）
 
 ---
 

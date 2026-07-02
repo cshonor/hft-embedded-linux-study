@@ -58,6 +58,6 @@ Ch 3  ILP、分支预测（热循环微优化）
 ```
 
 → 程序员落地 → [01-CSAPP-3rd](../01-CSAPP-3rd/)  
-→ 虚拟内存衔接 → [03-Gorman](../07-Linux-Virtual-Memory-Manager/)
+→ 虚拟内存衔接 → [03-Gorman](../05-Linux-Virtual-Memory-Manager/)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

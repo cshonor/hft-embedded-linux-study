@@ -40,6 +40,6 @@
 | 固定格式行情解析：算术强度 **中等** — AVX 解多路 price/qty **可能划算** |
 | 实盘单 tick：**强度极低**（几次运算/百字节）— 在 **内存延迟/分支** 侧，不在 SIMD 屋顶 |
 
-→ [03-SysPerf 方法论](../../../03-Systems-Performance-2nd/chapter-02-methodologies/) · [01-CSAPP Ch5](../../../01-CSAPP-3rd/chapter-05-optimizing-performance/)
+→ [13-Systems-Performance 方法论](../../../13-Systems-Performance-2nd/chapter-02-methodologies/) · [01-CSAPP Ch5](../../../01-CSAPP-3rd/chapter-05-optimizing-performance/)
 
 ---
