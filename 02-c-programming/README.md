@@ -1,6 +1,6 @@
 # 02 · C 语言 · 系统级编程
 
-**文件夹 `02`** · [LEARNING-CHAIN](../LEARNING-CHAIN.md)
+**文件夹 `02`** · [LEARNING-CHAIN](../LEARNING-CHAIN.md) · [hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)
 
 > **定位：** **01 CSAPP 之后、03 Hennessy 之前** — 把「机器/程序长什么样」落成 **能写对的 C**。  
 > **笔记正文在外部仓：** [cpp-learning-notes / 11-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) — 本目录只负责 **HFT 读序、裁剪、与 01/03/19+ 的衔接**。  

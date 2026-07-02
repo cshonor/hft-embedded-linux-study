@@ -1,6 +1,6 @@
 # C++ 学习链 · 外部仓库索引
 
-**定位：** [cshonor/cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 的 **HFT 主仓库入口** — 笔记与代码 **留在外部仓库**，本目录只负责 **排序、里程碑、与 00–16 的衔接**。
+**定位：** [cshonor/cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 的 **HFT 主仓库入口** — 笔记与代码 **留在外部仓库**，本目录（[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study) 内）只负责 **排序、里程碑、与 00–18 的衔接**。
 
 > **你为什么需要它：** 本仓库 **`10` PNP / muduo**、**`15` HFT 工程** 都是 **C++**；**`16` Rust** 之前若 C++ 零基础，读 muduo / 低延迟引擎会像看天书。
 

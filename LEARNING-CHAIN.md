@@ -1,6 +1,6 @@
 # HFT 学习链路 · 从知其所以然到动手实现
 
-> **文件夹 `00`–`18` 主线 + 嵌入式 `19`–`24` = 物理编号 = 推荐阅读顺序**
+> **仓库：** [hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study) · **文件夹 `00`–`18` 主线 + 嵌入式 `19`–`24` = 物理编号 = 推荐阅读顺序**
 
 ```
 知其所以然 → 系统纵深 → 底层+C++ → 网络 → 性能观测 → 工程
@@ -85,7 +85,7 @@
 15 SysPerf → 16 BPF → 17 HFT
 ```
 
-→ [08 HFT 主次](./08-system-low-level-hands-on/HFT-AND-EMBEDDED-PRIORITY.md) · [02 C OUTLINE](./02-c-programming/OUTLINE.md) · [外部 C 笔记](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C)
+→ [08 HFT 主次](./08-system-low-level-hands-on/HFT-AND-EMBEDDED-PRIORITY.md) · [02 C OUTLINE](./02-c-programming/OUTLINE.md) · [外部 C 笔记](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) · [GitHub 仓库](https://github.com/cshonor/hft-embedded-linux-study)
 
 ---
 

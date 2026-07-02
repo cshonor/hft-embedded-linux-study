@@ -1,6 +1,6 @@
 # 跨模块联动指南
 
-> 本仓库 **技术板块 `00`–`18` 主线 + 嵌入式 `19`–`24`**。  
+> 本仓库 **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** · 技术板块 **`00`–`18` 主线 + 嵌入式 `19`–`24`**。  
 > **推荐阅读顺序** → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
 
 ---
@@ -53,6 +53,8 @@
 
 | 轨道 | 外部仓库 | 本仓库索引 |
 |------|----------|------------|
+| **本手册** | [hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study) | 读序 · OUTLINE · `00`–`24` scaffold |
+| **C 语言 5 书** | [cpp-learning-notes / 11-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) | [02-c-programming/](./02-c-programming/) |
 | **C++ 9 书 + 可选** | [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) | [09-cpp-learning-notes/](./09-cpp-learning-notes/) |
 | **PNP 实战** | [Computer-Networking/PNP](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | [10-Practical-Network-Programming/](./10-Practical-Network-Programming/) |
 | **UNP** | [UNP_Vol1](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | [11-UNP-Vol1/](./11-UNP-Vol1/) |

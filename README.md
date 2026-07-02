@@ -1,13 +1,38 @@
-# rust-quant-hft-handbook
+# hft-embedded-linux-study
 
-本仓库收录 **Rust 全栈量化** + **HFT 微秒级低延迟** 学习笔记，配套原理拆解、可运行源码与工程实践。
+> **GitHub：** [github.com/cshonor/hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)  
+> 为 **HFT 低延迟 Linux 底层** 与 **嵌入式 Linux 无人机飞控** 双线学习打造的笔记与路线仓库。
+
+本仓库收录 **Rust 全栈量化** + **HFT 微秒级低延迟** 学习笔记骨架，配套原理拆解、可运行源码索引与工程实践路线。
 
 **技术板块 `00`–`18` 主线 + 嵌入式支线 `19`–`24`** — **文件夹编号 = 推荐阅读顺序**（见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)）。
 
 → 一眼进阶路径：[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)  
-→ 板块对照：[CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+→ 板块对照：[CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)  
+→ 完整路线图：[HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)
 
 ---
+
+## 相关仓库（笔记写在哪）
+
+| 仓库 | 用途 | 本仓对应 |
+|------|------|----------|
+| **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** | **本仓库** — 读序、OUTLINE、章节 scaffold | `00`–`24` 文件夹 |
+| **[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)** | **C / C++ 详细笔记与代码** | [02 C](./02-c-programming/) → [`11-Linux-Kernel-DPDK-Network-C`](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) · [09 C++](./09-cpp-learning-notes/) → `01`–`10` |
+| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | PNP / UNP 实战代码 | [10 PNP](./10-Practical-Network-Programming/) · [11 UNP](./11-UNP-Vol1/) |
+
+**克隆本仓库：**
+
+```bash
+git clone https://github.com/cshonor/hft-embedded-linux-study.git
+```
+
+**C / C++ 笔记（与上表共用外部仓）：**
+
+```bash
+git clone https://github.com/cshonor/cpp-learning-notes.git
+```
+
 
 ## 🗺️ HFT 主线阅读顺序（= 文件夹编号）
 
