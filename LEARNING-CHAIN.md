@@ -94,5 +94,3 @@
 **HFT 主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07/01 → 08 → 09 → 01网络 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17`
 
 > **C++：** [08-cpp-learning-notes/](./08-cpp-learning-notes/) — **07 之后、09 PNP 之前** 至少读完 *Effective Modern C++*。
-
-> **重编号脚本：** [renumber-modules-17-to-08.py](./scripts/renumber-modules-17-to-08.py) · [renumber-modules-03-14-perf-defer.py](./scripts/renumber-modules-03-14-perf-defer.py)
