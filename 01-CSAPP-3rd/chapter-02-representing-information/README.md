@@ -10,7 +10,7 @@
 
 | 节 | 笔记 |
 |----|------|
-| 2.1.1–2.1.3 十六进制、数据大小、字节序 | [notes/section-2.1.1-2.1.3-十六进制寻址与字节序.md](./notes/section-2.1.1-2.1.3-十六进制寻址与字节序.md) |
+| 2.1.1–2.1.3 十六进制、数据大小、字节序 | [notes/section-2.1.1-2.1.3-十六进制寻址与字节序.md](./notes/section-2.1.1-2.1.3-十六进制寻址与字节序.md) · [demo 字节序](../../../02-c-programming/code/endian_and_padding_demo.c) |
 | 2.1.4–2.1.9 字符串、代码、布尔与 C 位/逻辑/移位 | [notes/section-2.1.4-2.1.9-字符串布尔与C位操作.md](./notes/section-2.1.4-2.1.9-字符串布尔与C位操作.md) |
 | 2.2 整数表示（2.2.1–2.2.8） | [notes/section-2.2-整数表示与类型转换.md](./notes/section-2.2-整数表示与类型转换.md) |
 | 2.3 整数算术（2.3.1–2.3.8） | [notes/section-2.3-整数算术.md](./notes/section-2.3-整数算术.md) |

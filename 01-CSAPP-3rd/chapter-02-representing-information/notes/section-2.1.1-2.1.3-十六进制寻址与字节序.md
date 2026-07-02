@@ -37,6 +37,8 @@
 
 **大端 (big-endian)：** 最高有效字节在低地址 — **网络字节序 (network byte order)、不少协议**
 
+> **术语：** 英文常叫 **byte order** / **endianness**；CSAPP 用 **Little-Endian** / **Big-Endian**。
+
 示例：`int x = 0x12345678`，地址 `&x` 起 4 字节：
 
 | 地址 | 小端 | 大端 |
@@ -46,11 +48,28 @@
 | +2 | 0x34 | 0x56 |
 | +3 | 0x12 | 0x78 |
 
+换 `0x11223344` 同理 — 小端低地址起为 `44 33 22 11`，大端为 `11 22 33 44`（与聊天里用的例子同一规则，只是 hex 不同）。
+
+**和字符串的直觉对比（类比，不是定义）：**
+
+| | 内存低地址 → 高地址 | 像什么 |
+|--|---------------------|--------|
+| 字符串 `"1234"` | `'1' '2' '3' '4'`（0x31…0x34） | 书写顺序「从左到右」，**接近大端「高位/左侧先出现」** |
+| 小端整数 `0x12345678` | `78 56 34 12` | **低位字节先放低地址**，和字符串习惯 **相反** |
+
+本质仍是：**多字节数值里，各字节按什么顺序占地址** — 不是单纯的「从左写还是从右写」。
+
+**动手验证（x86 上一眼看到小端）：**
+
+→ [02-c-programming/code/endian_and_padding_demo.c](../../../02-c-programming/code/endian_and_padding_demo.c) — 用 `(unsigned char *)&a` 逐字节打印 `0x11223344`。
+
 ```c
 // 网络序 ↔ 主机序
 uint32_t htonl(uint32_t hostlong);
 uint32_t ntohl(uint32_t netlong);
 ```
+
+**Padding（对齐填充）不在本节：** 属于 **Ch3 结构体布局**（`offsetof` / `sizeof struct`）；同一 demo 文件后半有 padding 示例 → [Ch3 3.9](../../chapter-03-machine-level-programs/notes/section-3.9-结构体联合与对齐.md)。
 
 **HFT：**
 
@@ -58,7 +77,7 @@ uint32_t ntohl(uint32_t netlong);
 - **同机 IPC / mmap 共享 struct** — 两端必须同 endian + 同 padding，否则 silent corruption
 - **错误用法：** 把 `struct Message` 直接 `send()` 而不序列化 — 字节序 + 对齐 + 版本都会炸
 
-→ 网络编程：[Ch 11](../../chapter-11-network-programming/) · [10-UNP](../../../11-UNP-Vol1/)
+→ 网络编程：[Ch 11](../../chapter-11-network-programming/) · [11 UNP](../../../11-UNP-Vol1/) · [02 C demo](../../../02-c-programming/code/endian_and_padding_demo.c)
 
 ---
 
