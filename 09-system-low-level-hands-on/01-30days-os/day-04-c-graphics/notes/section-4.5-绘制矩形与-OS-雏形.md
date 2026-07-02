@@ -20,4 +20,6 @@
 
 作者强调：此时 **内核约 1.2KB 级** 体量，已能画出 **像样 GUI 底座** — **指针 + 显存模型** 比堆功能名更重要。
 
+示例：[code/sec-4.5-boxfill-taskbar/](../code/sec-4.5-boxfill-taskbar/) — **`boxfill`** 底栏黑条。
+
 ---

@@ -18,4 +18,6 @@
 
 → 后续 Day **IDT / 自己的中断处理**；Linux 里对应 **local_irq_save/restore** 一类思路。
 
+示例：[code/sec-4.4-cli-sti-palette/](../code/sec-4.4-cli-sti-palette/) — **`io_cli` / `io_sti`** + **`palette_init_with_cli`**（`pushfd`…`popfd`）。
+
 ---

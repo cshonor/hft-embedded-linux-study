@@ -34,11 +34,14 @@ Day 4 在 HariMain 里陆续加上：
 | 阶段 | 现象 |
 |------|------|
 | §4.1 填显存 | **全白** 或 **黑白竖条纹** |
-| §4.5 画矩形 | 底部出现 **彩色横条**（任务条雏形） |
+| §4.2 指针 | **左黑右白** |
+| §4.3 调色板 | **黑 / 红 / 灰** 横区 |
+| §4.4 CLI | **全屏绿** |
+| §4.5 画矩形 | 底部 **黑色任务条** |
 
 **不必重写 IPL / nasmhead** — 图形模式 Day 3 已切好；Day 4 **专注 C 怎么操纵帧缓冲**。
 
-代码示例：[code/sec-4.1-vram-fill-and-stripes/](./code/sec-4.1-vram-fill-and-stripes/)
+代码示例：[code/](./code/)（**§4.1～4.5 各一节一例**，见 [code/README.md](./code/README.md)）
 
 ---
 
@@ -59,10 +62,10 @@ Day 4 在 HariMain 里陆续加上：
 | 段 | 笔记 | 代码 |
 |----|------|------|
 | 用 C 写入显存与位运算 | [notes/section-4.1-用-C-写入显存与位运算.md](./notes/section-4.1-用-C-写入显存与位运算.md) | [code/sec-4.1-vram-fill-and-stripes/](./code/sec-4.1-vram-fill-and-stripes/) |
-| 挑战并理解指针 | [notes/section-4.2-挑战并理解指针.md](./notes/section-4.2-挑战并理解指针.md) | — |
-| 调色板（Palette）与色号 | [notes/section-4.3-调色板Palette与色号.md](./notes/section-4.3-调色板Palette与色号.md) | — |
-| EFLAGS 寄存器与中断控制 | [notes/section-4.4-EFLAGS-寄存器与中断控制.md](./notes/section-4.4-EFLAGS-寄存器与中断控制.md) | — |
-| 绘制矩形与 OS 雏形 | [notes/section-4.5-绘制矩形与-OS-雏形.md](./notes/section-4.5-绘制矩形与-OS-雏形.md) | — |
+| 挑战并理解指针 | [notes/section-4.2-挑战并理解指针.md](./notes/section-4.2-挑战并理解指针.md) | [code/sec-4.2-vram-pointer-walk/](./code/sec-4.2-vram-pointer-walk/) |
+| 调色板（Palette）与色号 | [notes/section-4.3-调色板Palette与色号.md](./notes/section-4.3-调色板Palette与色号.md) | [code/sec-4.3-palette-16-colors/](./code/sec-4.3-palette-16-colors/) |
+| EFLAGS 寄存器与中断控制 | [notes/section-4.4-EFLAGS-寄存器与中断控制.md](./notes/section-4.4-EFLAGS-寄存器与中断控制.md) | [code/sec-4.4-cli-sti-palette/](./code/sec-4.4-cli-sti-palette/) |
+| 绘制矩形与 OS 雏形 | [notes/section-4.5-绘制矩形与-OS-雏形.md](./notes/section-4.5-绘制矩形与-OS-雏形.md) | [code/sec-4.5-boxfill-taskbar/](./code/sec-4.5-boxfill-taskbar/) |
 
 ---
 

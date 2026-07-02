@@ -20,4 +20,6 @@
 像素字节 0~255  ──索引──►  调色板表  ──►  显示器上的颜色
 ```
 
+示例：[code/sec-4.3-palette-16-colors/](../code/sec-4.3-palette-16-colors/) — **`set_palette_rgb`** + 三区填色。
+
 ---

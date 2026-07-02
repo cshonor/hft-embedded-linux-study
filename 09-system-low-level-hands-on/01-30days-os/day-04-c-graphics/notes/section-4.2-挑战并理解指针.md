@@ -17,4 +17,6 @@ char *p = (char *) 0xa0000;   /* VRAM 起点 */
 
 → 对照 [01-CSAPP Ch3 指针与数组](../../../../01-CSAPP-3rd/chapter-03-machine-level-programs/)
 
+示例：[code/sec-4.2-vram-pointer-walk/](../code/sec-4.2-vram-pointer-walk/) — **`char *p`**、**`*p`**、**`p++`** 左黑右白。
+
 ---

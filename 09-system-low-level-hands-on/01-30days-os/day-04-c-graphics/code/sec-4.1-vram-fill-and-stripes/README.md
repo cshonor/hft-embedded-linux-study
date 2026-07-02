@@ -4,7 +4,8 @@ Single-file **`HariMain`** demo: **full white** or **black/white stripes** via b
 
 | File | Role |
 |------|------|
-| [bootpack-day4.c](./bootpack-day4.c) | **`fill_screen`** + **`draw_stripes_x_mask`** + **`draw_stripes_xor_cols`** |
+| [bootpack.c](./bootpack.c) | **`fill_screen`** + **`draw_stripes_x_mask`** + **`draw_stripes_xor_cols`** |
+| [asmfunc.asm](./asmfunc.asm) | **`io_hlt`** |
 
 Notes: [§4.1](../../notes/section-4.1-用-C-写入显存与位运算.md)
 
@@ -16,8 +17,8 @@ Notes: [§4.1](../../notes/section-4.1-用-C-写入显存与位运算.md)
 |------|------|
 | `ipl.asm` / `ipl.bin` | [Day 3 sec-3.1-ipl-int13-disk-load](../../../day-03-32bit-c/code/sec-3.1-ipl-int13-disk-load/) |
 | `nasmhead.asm` | [Day 3 sec-3.4-bootpack-asm-and-c](../../../day-03-32bit-c/code/sec-3.4-bootpack-asm-and-c/) — **sets mode 0x13** |
-| `asmfunc.asm` | same — **`io_hlt`** |
-| **`bootpack.c`** | **use `bootpack-day4.c` here** (or paste `HariMain` body) |
+| `asmfunc.asm` | 本目录 |
+| **`bootpack.c`** | 本目录 |
 
 No `set_vga13h()` in C — nasmhead already did **`INT 0x10`**.
 
@@ -28,11 +29,8 @@ No `set_vga13h()` in C — nasmhead already did **`INT 0x10`**.
 ```bash
 cd day-04-c-graphics/code/sec-4.1-vram-fill-and-stripes
 
-# copy or symlink bootpack-day4.c as bootpack.c, or compile directly:
-cp bootpack-day4.c bootpack.c
-
 nasm -f elf32 ../../../day-03-32bit-c/code/sec-3.4-bootpack-asm-and-c/nasmhead.asm -o nasmhead.o
-nasm -f elf32 ../../../day-03-32bit-c/code/sec-3.4-bootpack-asm-and-c/asmfunc.asm   -o asmfunc.o
+nasm -f elf32 asmfunc.asm -o asmfunc.o
 gcc -m32 -c bootpack.c -o bootpack.o -ffreestanding -nostdlib -fno-pie
 
 ld -m elf_i386 -Ttext 0x8200 -e start -o bootpack.bin \

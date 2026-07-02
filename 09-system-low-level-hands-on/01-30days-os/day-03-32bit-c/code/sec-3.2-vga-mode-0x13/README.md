@@ -19,6 +19,6 @@ Restore text mode (debug only): `mov ax, 0x0003` + `int 0x10`.
 
 Full entry: [nasmhead.asm](../sec-3.4-bootpack-asm-and-c/nasmhead.asm)  
 Black-screen fill: [bootpack.c](../sec-3.4-bootpack-asm-and-c/bootpack.c)  
-Day 4 white/stripes: [bootpack-day4.c](../../../day-04-c-graphics/code/sec-4.1-vram-fill-and-stripes/bootpack-day4.c)
+Day 4 white/stripes: [sec-4.1-vram-fill-and-stripes](../../../day-04-c-graphics/code/sec-4.1-vram-fill-and-stripes/)
 
 Notes: [§3.2](../../notes/section-3.2-纸娃娃操作系统.md) · [§3.2.1](../../notes/section-3.2.1-VGA模式0x13详解.md)

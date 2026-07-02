@@ -156,7 +156,7 @@ HariMain（32 位 C）       写 0xA0000 → 黑 / 白 / 条纹（Day 4 §4.1）
 ```
 
 - 代码目录：[sec-3.2-vga-mode-0x13](../code/sec-3.2-vga-mode-0x13/) · [sec-3.4-bootpack-asm-and-c](../code/sec-3.4-bootpack-asm-and-c/)
-- Day 4 写显存：[§4.1](../../day-04-c-graphics/notes/section-4.1-用-C-写入显存与位运算.md) · [bootpack-day4.c](../../day-04-c-graphics/code/sec-4.1-vram-fill-and-stripes/bootpack-day4.c)
+- Day 4 写显存：[§4.1](../../day-04-c-graphics/notes/section-4.1-用-C-写入显存与位运算.md) · [sec-4.1-vram-fill-and-stripes](../../day-04-c-graphics/code/sec-4.1-vram-fill-and-stripes/)
 
 ---
 
