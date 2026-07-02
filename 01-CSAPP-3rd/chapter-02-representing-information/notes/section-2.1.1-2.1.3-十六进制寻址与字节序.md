@@ -151,7 +151,8 @@ for (size_t i = 0; i < sizeof a; i++)
     printf("%02x ", p[i]);
 ```
 
-完整 demo（含 struct padding 预告）→ [02-c-programming/code/endian_and_padding_demo.c](../../../02-c-programming/code/endian_and_padding_demo.c)
+完整 demo → [01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c](../../../01-CSAPP-3rd/code/ch02-endian-and-padding-demo.c)  
+C 指针专练 → [02-c-programming/code/pointer-and-bytes.c](../../../02-c-programming/code/pointer-and-bytes.c)
 
 #### 网络序转换
 
