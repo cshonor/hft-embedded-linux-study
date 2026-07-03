@@ -9,8 +9,8 @@
 
 | | |
 |---|---|
-| **本章干什么** | **MikanLoader 加载 `kernel.elf`**，经 **GOP** 把帧缓冲交给 **`KernelMain()`**；引入 Loader / 内核分离与 QEMU 调试。 |
-| **全书作用** | **分水岭** — UEFI 应用退场、**自制内核登场**；第一次「固件帮手 → 内核办公室」交接（尚未 ExitBootServices 全套，但加载链成立）。 |
+| **本章干什么** | **MikanLoader 加载 `kernel.elf`**，经 **GOP** 把 **帧缓冲硬件参数**（非截图）交给 **`KernelMain()`**；Loader / 内核分离 + QEMU 调试。 |
+| **全书作用** | **分水岭** — UEFI Loader 退场、**自制内核登场**；**ExitBootServices → 跳内核** 完整链在此章建立。 |
 | **← 前置** | [Ch2 memmap](../chapter-02-edk2-memmap/) — 知道哪些物理段能加载内核 |
 | **→ 后续** | [Ch4 像素 / make](../chapter-04-pixel-make/) — 在内核里画像素、熟悉构建系统 |
 
@@ -26,14 +26,19 @@
 
 ---
 
+**核心通读：** [完整流程 · MikanLoader + GOP → kernel main](./notes/section-1-完整流程Miniload-GOP-kernel.md)（建议 **先读**）
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |
 |----|------|
+| **0. 完整流程** | [**Miniload + GOP → kernel main**](./notes/section-1-完整流程Miniload-GOP-kernel.md)（**口述通读 · 五步法**） |
 | 1. 本章定位 | [notes/section-1-本章定位.md](./notes/section-1-本章定位.md) |
 | 2. QEMU 监视器与寄存器 | [notes/section-2-QEMU监视器与寄存器.md](./notes/section-2-QEMU监视器与寄存器.md) |
 | 3. 第一个内核与 ELF 加载 | [notes/section-3-第一个内核与ELF加载.md](./notes/section-3-第一个内核与ELF加载.md)（**索引**） |
-| | [3.1 kernel.elf 定义](./notes/section-3-1-kernel.elf基础定义与核心作用.md) · [3.2 **ELF 双视图**](./notes/section-3-2-ELF三大结构与链接执行双视图.md) · [3.3 链接脚本](./notes/section-3-3-编译链接脚本与生成流程.md) · [3.4 readelf/GDB](./notes/section-3-4-readelf调试与常用命令.md) · [3.5 vmlinux 对比](./notes/section-3-5-与vmlinux对比及常见问题.md) · [3.6 Loader 流程](./notes/section-3-6-MikanLoader加载流程.md) |
+| | [3.1 **ELF 误区与通用格式**](./notes/section-3-1-kernel.elf基础定义与核心作用.md) · [3.2 双视图](./notes/section-3-2-ELF三大结构与链接执行双视图.md) · [3.3 链接脚本](./notes/section-3-3-编译链接脚本与生成流程.md) · [3.4 readelf/GDB](./notes/section-3-4-readelf调试与常用命令.md) · [3.5 vmlinux](./notes/section-3-5-与vmlinux对比及常见问题.md) · [3.6 **六步加载**](./notes/section-3-6-MikanLoader加载流程.md) |
 | 4. GOP 与帧缓冲区 | [notes/section-4-GOP与帧缓冲区.md](./notes/section-4-GOP与帧缓冲区.md) |
 | 5. KernelMain 与错误处理 | [notes/section-5-KernelMain与错误处理.md](./notes/section-5-KernelMain与错误处理.md) |
 | 6. 汇编指针与小结 | [notes/section-6-汇编指针与小结.md](./notes/section-6-汇编指针与小结.md) |
@@ -54,7 +59,8 @@
 
 ## 本章学习目标 · 自检
 
-- [ ] 会用 **QEMU monitor** 查看寄存器 / 内存
+- [ ] 能复述 **§0 五步法**：Loader → ELF → GOP → ExitBootServices → KernelMain
+- [ ] 说清 **MikanLoader ≈ GRUB**，**GOP 传地址不传截图**
 - [ ] 说清 **ELF 是通用格式**（`ls` / `.so` / `vmlinux` 都是 ELF），**不是**「专给内核用的标签」
 - [ ] 说清 **磁盘上的 `kernel.elf` ≠ OS 在跑** — 须 **搬段 + 跳 `e_entry`**
 - [ ] 说清 **`.efi` 固件直接跑** vs **ELF 须 Loader 手写解析**

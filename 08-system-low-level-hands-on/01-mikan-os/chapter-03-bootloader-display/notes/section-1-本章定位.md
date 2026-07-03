@@ -14,6 +14,8 @@
 
 **本章问题：** 谁负责读盘、谁负责画图？硬件信息如何 **从固件时代交接到内核**？
 
+→ **完整五步法（通读）：** [§0 MikanLoader + GOP → kernel main](./section-1-完整流程Miniload-GOP-kernel.md)
+
 ---
 
 ### 二、本章讲什么
@@ -35,9 +37,9 @@
 ```
 ┌─────────────────────────────────────┐
 │  MikanLoader (UEFI .efi)            │
-│  · GOP → 帧缓冲信息                  │
+│  · GOP → **FrameBufferConfig**（基址+格式，非截图）│
 │  · 读 kernel.elf · ELF 加载          │
-│  · KernelMain(fb_base, fb_size, …)  │
+│  · ExitBootServices → KernelMain(…)  │
 └──────────────┬──────────────────────┘
                │ 跳转
                ▼
@@ -48,7 +50,7 @@
 └─────────────────────────────────────┘
 ```
 
-→ 衔接 [Ch2 §2.3 MikanLoader](../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md)
+→ 衔接 [Ch2 §2.3 MikanLoader](../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md) · 全链路 [§0 完整流程](./section-1-完整流程Miniload-GOP-kernel.md)
 
 ---
 

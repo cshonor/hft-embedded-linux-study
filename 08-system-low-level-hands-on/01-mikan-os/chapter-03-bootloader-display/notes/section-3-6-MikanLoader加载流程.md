@@ -102,7 +102,7 @@
 └─────────────────────────────────────┘
 ```
 
-→ [Ch2 §2.3 MikanLoader 定位](../../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md)
+→ [§0 完整流程（五步法）](./section-1-完整流程Miniload-GOP-kernel.md) · [Ch2 §2.3 MikanLoader 定位](../../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md)
 
 ---
 

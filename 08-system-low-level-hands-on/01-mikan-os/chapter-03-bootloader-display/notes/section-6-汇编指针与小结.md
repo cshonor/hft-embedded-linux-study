@@ -38,7 +38,7 @@ mov dword ptr [rbx + rdi*4], esi
 |--------|------|
 | **Loader ∥ Kernel** | MikanLoader (PE) + **kernel.elf (ELF)** |
 | **加载链** | 读盘 → 分配 → 解析 **Entry** → 跳转 |
-| **GOP** | 帧缓冲 · Loader 可刷白 · **KernelMain 接管绘图** |
+| **GOP** | **FrameBufferConfig**（基址+格式）· Loader 可刷白 · **KernelMain 接管显存** |
 | **健壮性** | **EFI_STATUS** + 失败死循环 |
 | **调试** | QEMU monitor · **RIP/RFLAGS** |
 | **本质** | 指针 = **lea / mov / []** |
@@ -46,7 +46,7 @@ mov dword ptr [rbx + rdi*4], esi
 ```
 Ch2 memmap（物理内存账本）
     ↓
-Ch3 Loader 加载内核 + GOP 交接  ← 分水岭
+Ch3 Loader 加载内核 + GOP + ExitBootServices  ← 分水岭
     ↓
 Ch4+ 像素/make · Ch5 文本 · Ch10 窗口…
 ```
