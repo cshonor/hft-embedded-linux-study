@@ -37,12 +37,12 @@ BOOTX64.EFI（PE/COFF，UEFI 可加载）
 
 **两条 LLVM 子路径（都能出 EFI，二选一）：**
 
-| 路径 | 编译 | 链接 | 触发 |
-|------|------|------|------|
-| **A1 · 官方 day01** | `clang -target x86_64-pc-win32-coff -c` | **`lld-link`** `/subsystem:efi_application` … | `make`（默认） |
-| **A2 · 纯 ld.lld** | `clang --target=x86_64-elf -ffreestanding -c` | **`ld.lld -flavor link -subsystem:efi_application -entry:EfiMain`** | **`make LINK=ld.lld`** |
+| 路径 | 编译 | 链接 PE/EFI |
+|------|------|-------------|
+| **A1 · Win 原生 / 官方 day01** | `clang --target=x86_64-elf -ffreestanding -c` 或 `-target x86_64-pc-win32-coff` | **`lld-link /subsystem:efi_application …`** |
+| **A2 · WSL/Linux 纯 ld.lld** | `clang --target=x86_64-elf -ffreestanding -c` | **`ld.lld -flavor link -subsystem:efi_application …`** |
 
-**A2 手动命令（与 [code/Makefile](../code/Makefile) 一致）：**
+**一键入口：** Windows → `.\build.ps1` · WSL → `make` 或 `make LINK=ld.lld`
 
 ```bash
 clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
@@ -56,7 +56,14 @@ ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o bootX64
 
 **为何 HFT 也值得关注 LLVM 线：** 编译/链接迭代快、**Ch1 EFI → Ch4 内核 → EDK II 可统一 Clang** — 低延迟工程的 Release 构建循环更顺。
 
-**环境：本仓库 [SETUP.md](../../SETUP.md) 主路径是 **Windows + WSL2**；**原生 Linux** 命令相同。**
+**环境：Windows 原生 LLVM 与 WSL/Linux 均可；流程一致，不必强依赖 WSL。**
+
+**Windows 原生（PowerShell）：** [LLVM 官网](https://releases.llvm.org/) 安装包 → 勾选 **Add LLVM to system PATH** → `clang --version` → [code/build.ps1](../code/build.ps1) 或：
+
+```powershell
+clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
+lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
+```
 
 **WSL / Linux 快速运行：**
 
