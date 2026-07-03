@@ -208,4 +208,4 @@ build
 
 ---
 
-← [§6 C 与 PE](./section-6-C语言过渡与文件格式.md) · [Ch2 §2 EDK II](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md) · [appendix-C](../../appendix-C-edk2-files/)
+← [§6 C 与 PE](./section-6-C语言过渡与文件格式.md) · [Ch2 §2 索引](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md) · [appendix-C](../../appendix-C-edk2-files/)

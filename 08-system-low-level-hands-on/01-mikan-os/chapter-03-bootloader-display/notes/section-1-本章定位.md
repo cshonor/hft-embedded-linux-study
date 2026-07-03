@@ -48,7 +48,7 @@
 └─────────────────────────────────────┘
 ```
 
-→ 衔接 [Ch2 MikanLoader](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)
+→ 衔接 [Ch2 §2.3 MikanLoader](../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md)
 
 ---
 

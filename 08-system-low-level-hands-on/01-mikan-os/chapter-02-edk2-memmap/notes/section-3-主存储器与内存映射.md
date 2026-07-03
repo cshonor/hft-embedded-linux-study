@@ -19,4 +19,4 @@
 
 ---
 
-← [2. EDK II](./section-2-EDK-II与MikanLoader.md) · 开始 [3.1](./section-3-1-内存映射指什么与RAM视图.md) · 下一章块 [4. GetMemoryMap](./section-4-GetMemoryMap与导出memmap.md)
+← [2. EDK II · 索引](./section-2-EDK-II与MikanLoader.md) · 开始 [3.1](./section-3-1-内存映射指什么与RAM视图.md) · 下一章块 [4. GetMemoryMap](./section-4-GetMemoryMap与导出memmap.md)

@@ -90,7 +90,7 @@ build
 # → Build/MyPkg/DEBUG_GCC5/X64/BareDemo.efi
 ```
 
-**LLVM 工具链：** `TOOL_CHAIN_TAG = CLANGPDB` → [Ch2 §5 CLANGPDB](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)
+**LLVM 工具链：** `TOOL_CHAIN_TAG = CLANGPDB` → [Ch2 §2.5 CLANGPDB](../chapter-02-edk2-memmap/notes/section-2-5-CLANGPDB与自检.md)
 
 ---
 

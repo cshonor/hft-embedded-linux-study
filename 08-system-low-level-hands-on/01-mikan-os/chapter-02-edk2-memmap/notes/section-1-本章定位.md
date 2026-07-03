@@ -20,7 +20,7 @@
 
 | 主题 | 要点 |
 |------|------|
-| **EDK II** | 开源 UEFI **参考实现 + 工具链** — BIOS / Loader / OVMF；详见 [§2 导读](./section-2-EDK-II与MikanLoader.md#一edk-ii-是什么) |
+| **EDK II** | 开源 UEFI **参考实现 + 工具链** — BIOS / Loader / OVMF；详见 [§2 导读 · 2.1](./section-2-1-EDK-II是什么与行业定位.md) |
 | **MikanLoader** | Ch1 Hello World 的 EDK II 版 + 内存导出 |
 | **Memory Map** | 物理地址段的 **类型与用途** 一览表 |
 | **Boot Services** | `gBS->GetMemoryMap()` |
@@ -43,4 +43,4 @@ Ch 3+ 显示 · 内核 · 页表 · 分配器…
 
 ---
 
-← [Ch 2 导读](../README.md) · 下一节 [2. EDK II](./section-2-EDK-II与MikanLoader.md)
+← [Ch 2 导读](../README.md) · 下一节 [2. EDK II · 2.1](./section-2-1-EDK-II是什么与行业定位.md)
