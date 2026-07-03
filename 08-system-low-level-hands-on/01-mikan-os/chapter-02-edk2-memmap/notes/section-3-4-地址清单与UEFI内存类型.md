@@ -132,4 +132,30 @@ MikanLoader 导出 **memmap CSV** → [§4 GetMemoryMap](./section-4-GetMemoryMa
 
 ---
 
+### 口述版 · 一次性理清（背这个）
+
+**第一层 — EFI 内存类型是什么？**
+
+UEFI 开机扫描 **整片物理地址**（**内存条 RAM** + **MMIO 硬件地址**），切成很多连续段，给 **每段贴一个 Type 标签**。  
+**不是** 单独划出一块「EFI 专属内存」，也 **不是** 在内存条里固定划出 N 块区。
+
+**第二层 — 常见 Type 全部平级**
+
+`Conventional` · `LoaderCode/Data` · `ACPIReclaim` · `RuntimeServicesCode/Data` · `BootServicesCode/Data` · `Reserved` · `MMIO` —— **同一套枚举，互不包含**。  
+`RuntimeServicesCode` **就是单独一条**，不属于 Boot、Loader 或 Reserved。
+
+**第三层 — 和 §3.2 四层图什么关系？**
+
+| 你看到的 | 本质 |
+|----------|------|
+| [3.2 四层图](./section-3-2-RAM四层占用.md) | **空间直觉** — 固件 / MMIO / Loader / 空闲 **大致** 在哪 |
+| [3.3 管家比喻](./section-3-3-固件与EFI应用内存隔离.md) | **谁在用** |
+| **本篇 Type 表 + CSV** | **精确标签** — `GetMemoryMap()` 每行的 **Type 字段** |
+
+**不是两套分类。** 四层里的「① 固件区」在 CSV 里会拆成 **Runtime / Boot / ACPI** 等多条 **平级 Type**。
+
+**一句话：** 内核分配池 **默认只从 Conventional 划**；Boot/Loader **Exit 后或可回收**；Runtime / Reserved / MMIO **全程别当堆**。
+
+---
+
 ← [3.3 固件 vs EFI 应用](./section-3-3-固件与EFI应用内存隔离.md) · [§3 索引](./section-3-主存储器与内存映射.md) · 下一篇 [3.5 与 mmap 区别 · 自检](./section-3-5-与mmap区别与自检.md)

@@ -104,6 +104,14 @@ qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd \
   -drive format=raw,file=fat:rw:esp -m 512M
 ```
 
+**Ubuntu 24.04 排错**
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| `could not load PC BIOS '...OVMF_CODE_4M.fd'` | 24.04 的 **CODE_4M** 是 **pflash 分体镜像**，不能直接用 `-bios` | 用 **`/usr/share/ovmf/OVMF.fd`**（Makefile 已自动选） |
+| `apt install` 报 **404 Not Found** | 包索引过期 | 先 `sudo apt update` 再装 |
+| `Could not get lock` | 另一个 apt 进程占锁 | `sudo killall apt apt-get` 后重试 |
+
 ---
 
 ## 4. 全书 MikanOS（Ch2 起 · 手动搭链）

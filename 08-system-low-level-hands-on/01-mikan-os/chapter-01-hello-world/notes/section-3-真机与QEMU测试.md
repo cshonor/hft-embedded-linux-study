@@ -26,7 +26,7 @@
 
 ```bash
 qemu-system-x86_64 \
-  -bios OVMF_CODE.fd \          # UEFI 固件（OVMF）
+  -bios /usr/share/ovmf/OVMF.fd \          # Ubuntu 24.04：用合并镜像，勿用 OVMF_CODE_4M.fd + -bios
   -drive format=raw,file=fat:rw:disk.img \   # 内含 EFI/BOOT/BOOTX64.EFI
   -m 512M
 ```
