@@ -39,7 +39,9 @@
 | **结构体 / 类型** | `EFI_SYSTEM_TABLE`、`EFI_MEMORY_DESCRIPTOR`、`BootServices`、`GetMemoryMap` |
 | **工具函数封装** | 字符串、Boot 期内存分配、`Print`、文件读写 |
 
-**单独拎出 `MdePkg`，可以当成 UEFI 专用 C 库** —— 和 Ch1 **手写 `uefi.h` 片段** 干同一件事，只是 EDK II **官方完整实现**。
+**单独拎出 `MdePkg`，可以当成 UEFI 专用 C 库** —— 和 Ch1 **手写 `uefi.h` 片段**（见 [hello.c](../../chapter-01-hello-world/code/01-clang-minimal/hello.c) 顶部）干同一件事，只是 EDK II **官方完整实现**；Ch1 是 **从 MdePkg 同源规范里手动剥离极简子集**，用通用 clang/lld 编译，不拉 EDK II 构建树。
+
+→ Ch1 详述：[§7 手写 uefi.h 与 MdePkg](../../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md#手写-uefih-与-edk-ii-mdepkg-uefih)
 
 #### 2. 但整体远不止「库」— 三大核心组成
 

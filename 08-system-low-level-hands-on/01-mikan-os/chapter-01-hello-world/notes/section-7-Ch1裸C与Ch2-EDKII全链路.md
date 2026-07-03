@@ -22,9 +22,20 @@
 
 ### A1. 本仓库默认（极简 · Clang）
 
-- **无** EDK II、**无** gnu-efi — 只声明本章用到的结构体
-- WSL：`clang --target=x86_64-elf …` + `ld.lld -flavor link` → [SETUP.md](../../SETUP.md)
+- **无** EDK II、**无** gnu-efi — 只声明本章用到的结构体（写在 `hello.c` 顶部，概念上即 **极简 `uefi.h`**）
+- WSL：`clang -target x86_64-pc-win32-coff …` + `lld-link` → [SETUP.md](../../SETUP.md)
 - **目的：** 最快跑通 + 理解 **PE / EfiMain / ConOut**
+
+#### 手写 `uefi.h` 与 EDK II MdePkg `<Uefi.h>`
+
+| # | 要点 |
+|---|------|
+| **1. EDK II 里已有完整官方头文件** | 核心包 **`MdePkg`** 实现 UEFI 规范全部 C 接口 — `EFI_SYSTEM_TABLE`、`EFI_MEMORY_DESCRIPTOR`、`GetMemoryMap`、`OutputString`、内存类型枚举、权限宏等。工业 EDK II 项目 **`#include <Uefi.h>`**，**不必手写**任何类型。 |
+| **2. 你手写的极简 `uefi.h` = 手动复刻 MdePkg 核心** | Ch1 不用 EDK II 框架，只用 **clang + lld-link** 编独立 `.efi`，所以在 `hello.c` 顶部**只摘** Loader 本章必用的结构体 / API / 枚举，砍掉 Pkg 驱动与平台相关海量定义 — **本质是把 MdePkg 核心类型剥离出来单独用**。 |
+| **3. 核心区别** | **MdePkg 全套头文件** → 配套 BaseTools、库函数、驱动模块，走 `.inf/.dsc` 构建，适合主板固件 / 完整驱动。**手写 `uefi.h`** → 脱离 EDK II，纯 C 头文件声明，兼容 **通用 LLVM 工具链**，专用于极简自制 OS 引导器 — **透明、无黑盒**。 |
+| **4. 一句话** | 手写 `uefi.h` 里每一条定义，**源头都在 UEFI 规范**；EDK II **MdePkg** 是官方完整实现，你的版本是 **提取 + 简化后的一小部分**。 |
+
+→ 源码：[hello.c](../code/01-clang-minimal/hello.c) · EDK II 侧：[Ch2 §2.1 MdePkg](../../chapter-02-edk2-memmap/notes/section-2-1-EDK-II是什么与行业定位.md#分层拆解edk-ii-里到底有什么)
 
 ### A2. GNU-EFI + GCC（真 `<Uefi.h>` · Linux）
 
@@ -205,7 +216,8 @@ build
 3. **GNU-EFI 和 EDK II 都提供 Uefi.h，区别？** — gnu-efi 是 **小包装+GCC 链接**；EDK II 是 **完整构建树+库生态+可产整板固件**。  
 4. **`efi_main` 和 `UefiMain`？** — 不同工具链 **入口符号名**；EDK 常用 **`UefiApplicationEntryPoint`** 再调你的 `UefiMain`。  
 5. **`.inf` 和 `.dsc` 谁管全局？** — **`.dsc`** 平台顶层；**`.inf`** 单个模块。  
-6. **OVMF 怎么来的？** — **EDK II 构建出的 UEFI 固件**，给 QEMU 当 `-bios`。
+6. **OVMF 怎么来的？** — **EDK II 构建出的 UEFI 固件**，给 QEMU 当 `-bios`。  
+7. **手写 `uefi.h` 和 EDK II `<Uefi.h>` 什么关系？** — **同源（UEFI 规范 / MdePkg）**；手写版是 **剥离 EDK II 框架后的极简子集**，用通用 clang/lld 编译。
 
 ---
 

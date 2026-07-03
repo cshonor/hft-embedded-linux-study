@@ -31,13 +31,16 @@ EFI_STATUS EFIAPI efi_main(...) { ... }
 3. **用工具链把 C 编成 PE** — Clang 产出 **COFF** `.o`，`lld-link` 加上 `subsystem:efi_application` 变成 `.EFI`
 4. **自己摆 FAT 目录** — 把 `BOOTX64.EFI` 放到 `esp/EFI/BOOT/`，固件按标准路径去找
 
-**和 `<Uefi.h>` 的关系：**
+**和 `<Uefi.h>` / EDK II MdePkg 的关系：**
 
-| | 本工程（裸 C） | 工程 02 / Ch2 |
+| | 本工程（裸 C · 极简 `uefi.h`） | 工程 02 / Ch2 |
 |---|----------------|---------------|
-| 头文件 | 手写 ~30 行结构体 | `#include <Uefi.h>` |
+| 头文件 | `hello.c` 顶部手写 ~30 行 — **手动复刻 MdePkg 本章必用子集** | `#include <Uefi.h>` — **MdePkg 官方完整实现** |
 | 入口 | `EfiMain` | 02 用 `efi_main`；Ch2 用 `UefiMain` |
-| 依赖 | 仅 Clang + lld-link | gnu-efi 或 EDK II 整套库 |
+| 构建 / 依赖 | **clang + lld-link + Makefile**，脱离 EDK II | gnu-efi（02）或 **BaseTools + `.inf/.dsc`**（Ch2） |
+| 目的 | 透明吃透类型语义与 PE 链接 | 工业标准工程化 |
+
+**一句话：** 你手写 `uefi.h` 里的内容，**源头与 EDK II MdePkg 同源**（都来自 UEFI 规范）；EDK II 是完整大框架，极简 `uefi.h` 只是 **提取、简化后的一小部分接口定义**。
 
 → 笔记：[§2 C + Makefile](../../notes/section-2-二进制编辑器与BOOTX64.md) · [§7 全链路](../../notes/section-7-Ch1裸C与Ch2-EDKII全链路.md)
 
