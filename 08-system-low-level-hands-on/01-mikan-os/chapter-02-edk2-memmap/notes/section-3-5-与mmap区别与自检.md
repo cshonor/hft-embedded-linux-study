@@ -28,12 +28,14 @@ Ch 19 分页           — 每个进程看到的虚拟地址
 
 ### §3 自检（概念）
 
+- [ ] 能背 **开发铁则**：分配池 **默认只从 Conventional** 划（[3.4](./section-3-4-地址清单与UEFI内存类型.md)）
 - [ ] 能说出 **四层 RAM 占用** 各是谁、内核能不能用（[3.2](./section-3-2-RAM四层占用.md)）
 - [ ] 能用 **管家 / 工作台 / 办公室** 比喻说清 **固件 vs `.efi` vs 内核**（[3.3](./section-3-3-固件与EFI应用内存隔离.md)）
 - [ ] 能解释 **GetMemoryMap ≠ 动态库共享**
-- [ ] 知道 **LoaderCode：可执行、别当普通可写 RAM**（[3.4](./section-3-4-地址清单与UEFI内存类型.md)）
-- [ ] 知道 **`ExitBootServices` 后** 哪些 Boot 期内存 **可回收**
-- [ ] 知道内核 **只能从 Conventional 等允许类型** 里划内存
+- [ ] 能说出 **`GetMemoryMap` 每行** 含地址、长度、**Type**、**Attribute**
+- [ ] 知道 **LoaderCode：可执行、不可写** — 别当普通数组乱改（[3.4](./section-3-4-地址清单与UEFI内存类型.md)）
+- [ ] 知道 **ACPI Reclaim**：Loader 期勿乱踩，内核后或可回收
+- [ ] 知道 **`ExitBootServices` 后** 须 **重读 map** 再看 Boot/Loader 区是否可回收
 
 ---
 
