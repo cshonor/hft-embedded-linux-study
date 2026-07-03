@@ -79,7 +79,7 @@ make LINK=ld.lld run    # 纯 LLVM；或 make run（默认 lld-link 路径）
 
 在 EDK II 工程里把 **`TOOL_CHAIN_TAG` 改为 `CLANGPDB`**（或构建时 `-t CLANGPDB`），Loader 可 **全程 Clang/LLVM**，不必绑 GCC 交叉链。
 
-→ 详见 [Ch2 §2 EDK II](./chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)（Ch2 笔记）
+→ 详见 [Ch2 §2 CLANGPDB](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)
 
 ---
 
