@@ -28,7 +28,7 @@ CLANG_TARGET = x86_64-elf
 CLANG_EXTRA  = -ffreestanding
 
 hello.o: hello.c
-	$(CLANG) --target=$(CLANG_TARGET) $(CLANG_EXTRA) -c -o $@ $<
+	$(CLANG) --target=$(CLANG_TARGET) $(CLANG_EXTRA) -fshort-wchar -c -o $@ $<
 
 $(EFI): hello.o
 	mkdir -p $(ESP)/EFI/BOOT

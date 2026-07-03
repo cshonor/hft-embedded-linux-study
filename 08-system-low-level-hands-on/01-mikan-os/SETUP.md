@@ -2,104 +2,115 @@
 
 > 官方附录 A + [os-from-zero README](https://github.com/uchan-nos/os-from-zero) · 细节随笔记更新
 
-**Ch1 Hello World 两条等价路径（二选一）：**
-
-| 路径 | 环境 | 适合 |
-|------|------|------|
-| **A · Windows 原生 LLVM** | [LLVM 官网](https://releases.llvm.org/) 预编译包 + PowerShell | **不必装 WSL** |
-| **B · WSL2 / Linux** | `apt install llvm lld` + `make` | 与官方脚本、EDK II 更顺 |
+**Ch1 Hello World：** Windows 原生 LLVM **即可**，不必 WSL。下面命令 **全部手敲**，无脚本。
 
 ---
 
-## 路径 A · Windows 原生 LLVM（推荐先试）
+## 路径 A · Windows 原生 LLVM
 
 ### 1. 安装 LLVM
 
-1. 打开 [LLVM Releases](https://github.com/llvm/llvm-project/releases) 或 [releases.llvm.org](https://releases.llvm.org/) 下载 **Windows 预编译安装包**（如 `LLVM-xx.x.x-win64.exe`）
-2. 安装时 **勾选 “Add LLVM to the system PATH for all users/current user”**
-3. **重开** PowerShell / cmd，验证：
+**winget（推荐）**
+
+```powershell
+winget install LLVM.LLVM --accept-package-agreements --accept-source-agreements
+```
+
+**或官网：** [LLVM Releases](https://github.com/llvm/llvm-project/releases) → `LLVM-xx.x.x-win64.exe` → 勾选 **Add LLVM to the system PATH** → **重开 PowerShell**。
+
+**验证**
 
 ```powershell
 clang --version
 lld-link /?
 ```
 
-能输出版本即成功。
+（本机已安装：**LLVM 22.1.8**，`C:\Program Files\LLVM\bin`。若刚装完当前窗口找不到 `clang`，先 **重开终端**，或临时执行：  
+`$env:Path = "C:\Program Files\LLVM\bin;" + $env:Path`）
 
-### 2. 编译 Ch1 EFI（PowerShell）
+---
+
+### 2. 编译第一个 BOOTX64.EFI
+
+在 PowerShell 中 **逐条执行**：
 
 ```powershell
 cd C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\01-mikan-os\chapter-01-hello-world\code
-.\build.ps1
-```
 
-或手动（与 WSL 流程 **基本一致**，链接用 Windows 自带的 **`lld-link`**）：
+clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
 
-```powershell
-clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
-mkdir -Force esp\EFI\BOOT | Out-Null
+New-Item -ItemType Directory -Force -Path esp\EFI\BOOT | Out-Null
+
 lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
 ```
 
-| 步骤 | Windows 原生 | WSL / Linux |
-|------|--------------|-------------|
-| 编译 | `clang --target=x86_64-elf -ffreestanding -c` | 相同 |
-| 链接 PE/EFI | **`lld-link /subsystem:efi_application …`** | `lld-link` 或 `ld.lld -flavor link …` |
-
-### 3. QEMU（可选 · 本机跑 Hello World）
-
-安装 [QEMU for Windows](https://www.qemu.org/download/#windows) 并准备 **OVMF** 固件，然后：
+**检查**
 
 ```powershell
-.\build.ps1 -Run
+dir esp\EFI\BOOT\BOOTX64.EFI
 ```
 
-OVMF 路径因安装包而异；脚本会尝试常见位置，找不到则需手动 `-bios`（见 [code/build.ps1](./chapter-01-hello-world/code/build.ps1)）。
+**清理重来**
+
+```powershell
+Remove-Item hello.o -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force esp -ErrorAction SilentlyContinue
+```
+
+| 步骤 | 命令 | 说明 |
+|------|------|------|
+| 编译 | `clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c …` | 产出 **COFF** `.o`，供 `lld-link` 使用 |
+| | `-fshort-wchar` | Windows 上必须加，否则 `L"..."` 与 UEFI **CHAR16** 宽度不一致 |
+| 建目录 | `New-Item … esp\EFI\BOOT` | UEFI 标准路径 |
+| 链接 | `lld-link /subsystem:efi_application /entry:EfiMain …` | `.o` → **BOOTX64.EFI** |
+
+> **为何不用 `--target=x86_64-elf`？** 在 Windows 上那会生成 **ELF** 格式的 `.o`，**`lld-link` 认不了**（会报 `unknown file type`）。WSL/Linux 下才用 `x86_64-elf` + `ld.lld -flavor link`。
 
 ---
 
-## 路径 B · WSL2 / Linux
+### 3. QEMU 运行（可选）
 
-| 组件 | 用途 |
-|------|------|
-| **WSL2** (Ubuntu 22.04+) | Linux 用户态 + apt |
-| **llvm + lld** | 纯 LLVM；`make LINK=ld.lld` |
-| **QEMU** + **OVMF** | UEFI 模拟 |
+**安装**
+
+```powershell
+winget install SoftwareFreedomConservancy.QEMU
+```
+
+**OVMF：** 在 QEMU 安装目录下搜 `OVMF_CODE.fd`（路径因版本而异）。
+
+**启动**（已编好 `esp\EFI\BOOT\BOOTX64.EFI`）：
+
+```powershell
+cd C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\01-mikan-os\chapter-01-hello-world\code
+$esp = (Resolve-Path esp).Path
+$ovmf = "C:\Program Files\qemu\share\edk2\x64\OVMF_CODE.fd"   # 改成你的路径
+
+qemu-system-x86_64 -bios $ovmf -drive "format=raw,file=fat:rw:$esp" -m 512M
+```
+
+---
+
+## 路径 B · WSL2 / Linux（可选）
 
 ```bash
-sudo apt update
 sudo apt install -y llvm lld qemu-system-x86 ovmf
-cd …/chapter-01-hello-world/code
-make LINK=ld.lld run
+cd /mnt/c/Users/12392/Desktop/hft/08-system-low-level-hands-on/01-mikan-os/chapter-01-hello-world/code
+
+clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
+mkdir -p esp/EFI/BOOT
+ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o esp/EFI/BOOT/BOOTX64.EFI
+
+qemu-system-x86_64 -bios /usr/share/OVMF/OVMF_CODE.fd -drive format=raw,file=fat:rw:esp -m 512M
 ```
 
-→ [chapter-01-hello-world/code/](./chapter-01-hello-world/code/README.md)
+---
+
+## 全书 MikanOS（稍后）
+
+Ch2+ 跟 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 时 WSL 往往更顺。Ch1 仅编 EFI，**Windows 原生 LLVM 足够**。
+
+EDK II 全程 LLVM：DSC 里 **`TOOL_CHAIN_TAG = CLANGPDB`**。
 
 ---
 
-## 全书 MikanOS（可选 · 稍后）
-
-跟官方 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 时，**WSL 通常更省事**（`buildenv.sh`、挂载 FAT 镜像）。Ch1 仅编 EFI 时 **Windows 原生 LLVM 足够**。
-
-Ch2 EDK II 全程 LLVM：DSC 里 **`TOOL_CHAIN_TAG = CLANGPDB`**。
-
----
-
-## QEMU + OVMF（WSL 示例）
-
-```bash
-qemu-system-x86_64 \
-  -bios /usr/share/OVMF/OVMF_CODE.fd \
-  -drive format=raw,file=fat:rw:esp \
-  -m 512M
-```
-
-> **与 02 30days-os 差异：** 那边 `qemu-system-i386 -fda`（BIOS 软盘）；MikanOS 用 **x86_64 + UEFI**。
-
-## 路径建议
-
-工程放 **纯英文路径**（与 [02-30days-os SETUP](../02-30days-os/SETUP.md) 相同），例如 `C:\dev\hft\` 或 `D:\dev\mikanos\`。
-
----
-
-环境跑通后，在 [chapter-01-hello-world](./chapter-01-hello-world/) 起记笔记。
+→ [chapter-01-hello-world](./chapter-01-hello-world/) · [code/README](./chapter-01-hello-world/code/README.md)

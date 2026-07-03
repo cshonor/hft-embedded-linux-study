@@ -39,13 +39,22 @@ BOOTX64.EFI（PE/COFF，UEFI 可加载）
 
 | 路径 | 编译 | 链接 PE/EFI |
 |------|------|-------------|
-| **A1 · Win 原生 / 官方 day01** | `clang --target=x86_64-elf -ffreestanding -c` 或 `-target x86_64-pc-win32-coff` | **`lld-link /subsystem:efi_application …`** |
-| **A2 · WSL/Linux 纯 ld.lld** | `clang --target=x86_64-elf -ffreestanding -c` | **`ld.lld -flavor link -subsystem:efi_application …`** |
+| **A1 · Windows 原生** | `clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c` | **`lld-link /subsystem:efi_application …`** |
+| **A2 · WSL/Linux** | `clang --target=x86_64-elf -ffreestanding -fshort-wchar -c` | **`ld.lld -flavor link -subsystem:efi_application …`** |
+| **A3 · 官方 day01（WSL）** | `clang -target x86_64-pc-win32-coff -c` | **`lld-link`** — `make` 默认 |
 
-**一键入口：** Windows → `.\build.ps1` · WSL → `make` 或 `make LINK=ld.lld`
+**Windows 原生（PowerShell，在 `code\` 目录逐条执行）：**
+
+```powershell
+clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
+New-Item -ItemType Directory -Force -Path esp\EFI\BOOT | Out-Null
+lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
+```
+
+→ 安装 LLVM、QEMU 完整步骤 [SETUP.md](../../SETUP.md)
 
 ```bash
-clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
+clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
 ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o bootX64.efi
 ```
 
@@ -58,10 +67,10 @@ ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o bootX64
 
 **环境：Windows 原生 LLVM 与 WSL/Linux 均可；流程一致，不必强依赖 WSL。**
 
-**Windows 原生（PowerShell）：** [LLVM 官网](https://releases.llvm.org/) 安装包 → 勾选 **Add LLVM to system PATH** → `clang --version` → [code/build.ps1](../code/build.ps1) 或：
+**Windows 原生（PowerShell）：** [SETUP.md](../../SETUP.md) — `winget install LLVM.LLVM` 或官网安装包，勾选 PATH，然后：
 
 ```powershell
-clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
+clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
 lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
 ```
 

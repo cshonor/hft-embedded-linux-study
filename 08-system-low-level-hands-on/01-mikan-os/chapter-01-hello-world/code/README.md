@@ -1,46 +1,31 @@
 # Ch1 · 第一个 BOOTX64.EFI
 
-**不必 WSL。** Windows 上装 [LLVM 预编译包](https://releases.llvm.org/)（勾选 **Add LLVM to system PATH**），`clang --version` 有输出即可。
+全部命令手敲，见 [SETUP.md](../../SETUP.md)。
 
-## Windows 原生（PowerShell）
-
-```powershell
-cd chapter-01-hello-world\code
-.\build.ps1          # 产出 esp\EFI\BOOT\BOOTX64.EFI
-.\build.ps1 -Run     # 需 QEMU + OVMF
-```
-
-手动命令（与 WSL 流程一致，链接用 **`lld-link`**）：
+## Windows · PowerShell（`code\` 目录）
 
 ```powershell
-clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
+clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
+New-Item -ItemType Directory -Force -Path esp\EFI\BOOT | Out-Null
 lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
 ```
+
+`-fshort-wchar`：Windows 上让 `L"..."` 匹配 UEFI 的 16 位宽字符。  
+`-target x86_64-pc-win32-coff`：产出 COFF 对象，**`lld-link` 才能链**（不要用 `x86_64-elf`，会报 `unknown file type`）。
 
 ## WSL / Linux
 
 ```bash
-sudo apt install -y llvm lld qemu-system-x86 ovmf
-make LINK=ld.lld run    # 链接可用 ld.lld -flavor link
+clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
+mkdir -p esp/EFI/BOOT
+ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o esp/EFI/BOOT/BOOTX64.EFI
 ```
-
-## 三环境对照
-
-| | **Windows 原生** | **WSL / Linux** |
-|---|------------------|-----------------|
-| 安装 | LLVM `.exe`，勾选 PATH | `apt install llvm lld` |
-| 编译 | `clang --target=x86_64-elf -ffreestanding -c` | 相同 |
-| 链 EFI | **`lld-link /subsystem:efi_application …`** | `lld-link` 或 `ld.lld -flavor link` |
-| 一键脚本 | **`build.ps1`** | **`make`** / **`make LINK=ld.lld`** |
-
-Ch2 EDK II：**`TOOL_CHAIN_TAG = CLANGPDB`** → [Ch2 §2](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)
 
 ## 文件
 
 | 文件 | 说明 |
 |------|------|
 | [hello.c](./hello.c) | UEFI C 源码 |
-| [build.ps1](./build.ps1) | **Windows** 一键编译 |
-| [Makefile](./Makefile) | **WSL/Linux** — `make` · `make LINK=ld.lld` |
+| [Makefile](./Makefile) | WSL/Linux 可选 |
 
-→ [SETUP.md](../../SETUP.md) · [§2 工具链](../notes/section-2-二进制编辑器与BOOTX64.md)
+→ [SETUP.md](../../SETUP.md)
