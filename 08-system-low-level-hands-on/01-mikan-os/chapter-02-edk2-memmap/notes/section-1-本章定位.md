@@ -20,7 +20,7 @@
 
 | 主题 | 要点 |
 |------|------|
-| **EDK II** | Intel 开源 UEFI 开发包 — BIOS / UEFI 应用 |
+| **EDK II** | 开源 UEFI **参考实现 + 工具链** — BIOS / Loader / OVMF；详见 [§2 导读](./section-2-EDK-II与MikanLoader.md#一edk-ii-是什么) |
 | **MikanLoader** | Ch1 Hello World 的 EDK II 版 + 内存导出 |
 | **Memory Map** | 物理地址段的 **类型与用途** 一览表 |
 | **Boot Services** | `gBS->GetMemoryMap()` |
