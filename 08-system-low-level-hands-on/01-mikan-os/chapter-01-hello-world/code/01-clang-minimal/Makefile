@@ -8,7 +8,7 @@
 CLANG ?= clang
 LINK  ?= $(shell command -v lld-link 2>/dev/null || command -v lld-link-18 2>/dev/null || echo lld-link)
 QEMU  ?= qemu-system-x86_64
-OVMF  ?= /usr/share/OVMF/OVMF_CODE.fd
+OVMF  ?= $(shell for f in /usr/share/ovmf/OVMF.fd /usr/share/qemu/OVMF.fd /usr/share/OVMF/OVMF_CODE.fd; do [ -f "$$f" ] && echo "$$f" && break; done)
 
 CLANG_TARGET = x86_64-pc-win32-coff
 

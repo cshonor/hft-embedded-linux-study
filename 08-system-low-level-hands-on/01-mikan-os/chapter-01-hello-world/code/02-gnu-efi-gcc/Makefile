@@ -9,7 +9,7 @@ CFLAGS  = -ffreestanding -fno-stack-protector -fpic -fshort-wchar -mno-red-zone 
 LDFLAGS = -nostdlib -Wl,-dll -shared -Wl,--subsystem,10 -e efi_main -L$(EFI_LIB)
 LIBS    = -lefi -lgnuefi
 
-OVMF    ?= /usr/share/OVMF/OVMF_CODE.fd
+OVMF    ?= $(shell for f in /usr/share/ovmf/OVMF.fd /usr/share/qemu/OVMF.fd /usr/share/OVMF/OVMF_CODE.fd; do [ -f "$$f" ] && echo "$$f" && break; done)
 ESP     = ESP
 
 .PHONY: all esp run clean

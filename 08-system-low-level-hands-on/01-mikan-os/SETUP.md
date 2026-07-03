@@ -42,7 +42,7 @@ sudo apt install -y clang lld make qemu-system-x86 ovmf git
 clang --version
 command -v lld-link || command -v lld-link-18
 qemu-system-x86_64 --version
-ls /usr/share/OVMF/OVMF_CODE.fd
+ls /usr/share/ovmf/OVMF.fd /usr/share/qemu/OVMF.fd 2>/dev/null | head -1
 ```
 
 ---
@@ -100,7 +100,7 @@ make run
 等价于：
 
 ```bash
-qemu-system-x86_64 -bios /usr/share/OVMF/OVMF_CODE.fd \
+qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd \
   -drive format=raw,file=fat:rw:esp -m 512M
 ```
 
