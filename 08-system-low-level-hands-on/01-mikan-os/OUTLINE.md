@@ -53,7 +53,7 @@
 ## Ch 1–2 要点速览
 
 - **UEFI** 启动链 · **EDK II** · **EFI 内存 map**
-- **Ch 1 Hello World：** 二进制 `BOOTX64.EFI` → Secure Boot / QEMU → **EfiMain + PE/COFF**
+- **Ch 1 Hello World：** **C + Makefile** → `BOOTX64.EFI` · Secure Boot / QEMU · **EfiMain + PE/COFF**（Ch2 EDK II）
 - **Ch 2 EDK II / memmap：** **MikanLoader** · `GetMemoryMap()` · **memmap CSV** · 指针 `->` / `**`
 - 与 [01 Day 1](../02-30days-os/day-01-boot-asm/) 对照：BIOS `0x7C00` vs UEFI **`/EFI/BOOT/BOOTX64.EFI`**
 

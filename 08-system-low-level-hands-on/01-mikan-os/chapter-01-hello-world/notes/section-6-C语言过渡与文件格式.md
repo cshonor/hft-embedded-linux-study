@@ -72,13 +72,11 @@ C 源码 → 编译 → COFF 对象 (.o)
 ### 四、本章收束
 
 ```
-二进制编辑器 BOOTX64.EFI     →  看见字节与启动
+C + Makefile → BOOTX64.EFI（[code/](../code/)）  →  先跑通再拆解 ConOut
         ↓
-CPU / 编码 / UEFI 启动链    →  理解「谁在什么时候运行」
+CPU / 编码 / UEFI 启动链                        →  理解「谁在什么时候运行」
         ↓
-C + Clang/LLD + EfiMain     →  可维护的 EDK II 开发起点
-        ↓
-Ch 2：EDK II 与内存映射      →  下一章
+Ch 2：EDK II + MikanLoader + 内存 map            →  `<Uefi.h>` 工程化
 ```
 
 ---
