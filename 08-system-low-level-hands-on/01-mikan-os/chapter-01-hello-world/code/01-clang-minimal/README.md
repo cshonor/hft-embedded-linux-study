@@ -28,7 +28,7 @@ EFI_STATUS EFIAPI efi_main(...) { ... }
 
 1. **只声明本章用到的类型** — `CHAR16`、`EFI_SYSTEM_TABLE`、`ConOut->OutputString` 等，见 `hello.c` 顶部
 2. **入口仍叫 `EfiMain`** — 和 UEFI 规范一致；链接时用 `-entry:EfiMain` 告诉链接器从哪开始执行
-3. **用工具链把 C 编成 PE** — Clang 产出 `.o`，`ld.lld -flavor link` 加上 `subsystem:efi_application` 变成 `.EFI`
+3. **用工具链把 C 编成 PE** — Clang 产出 **COFF** `.o`，`lld-link` 加上 `subsystem:efi_application` 变成 `.EFI`
 4. **自己摆 FAT 目录** — 把 `BOOTX64.EFI` 放到 `esp/EFI/BOOT/`，固件按标准路径去找
 
 **和 `<Uefi.h>` 的关系：**
@@ -37,7 +37,7 @@ EFI_STATUS EFIAPI efi_main(...) { ... }
 |---|----------------|---------------|
 | 头文件 | 手写 ~30 行结构体 | `#include <Uefi.h>` |
 | 入口 | `EfiMain` | 02 用 `efi_main`；Ch2 用 `UefiMain` |
-| 依赖 | 仅 Clang + ld.lld | gnu-efi 或 EDK II 整套库 |
+| 依赖 | 仅 Clang + lld-link | gnu-efi 或 EDK II 整套库 |
 
 → 笔记：[§2 C + Makefile](../../notes/section-2-二进制编辑器与BOOTX64.md) · [§7 全链路](../../notes/section-7-Ch1裸C与Ch2-EDKII全链路.md)
 
@@ -49,7 +49,8 @@ EFI_STATUS EFIAPI efi_main(...) { ... }
 
 ```bash
 sudo apt update
-sudo apt install -y llvm lld clang make qemu-system-x86 ovmf
+sudo apt install -y clang lld make qemu-system-x86 ovmf
+# 若 make 找不到 lld-link：sudo apt install -y lld-18
 ```
 
 → 详 [SETUP.md](../../../SETUP.md)
@@ -66,12 +67,12 @@ sudo apt install -y llvm lld clang make qemu-system-x86 ovmf
 ```bash
 cd chapter-01-hello-world/code/01-clang-minimal
 
-clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
+clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
 ```
 
 | 参数 | 作用 |
 |------|------|
-| `--target=x86_64-elf` | WSL 上 Clang 的交叉三元组 |
+| `-target x86_64-pc-win32-coff` | 产出 **COFF** `.o`，供 `lld-link` 链 PE/EFI |
 | `-ffreestanding` | 不链接 libc，UEFI 环境没有标准 C 库 |
 | `-fshort-wchar` | `L"..."` = 2 字节，匹配 UEFI **CHAR16** |
 | `-c` | 只编译，不链接 |
@@ -80,14 +81,14 @@ clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
 
 ```bash
 mkdir -p esp/EFI/BOOT
-ld.lld -flavor link -subsystem:efi_application -entry:EfiMain \
-  hello.o -o esp/EFI/BOOT/BOOTX64.EFI
+lld-link /subsystem:efi_application /entry:EfiMain \
+  hello.o /out:esp/EFI/BOOT/BOOTX64.EFI
 ```
 
 | 参数 | 作用 |
 |------|------|
-| `-subsystem:efi_application` | 标记为 UEFI 应用（不是 Linux ELF 可执行） |
-| `-entry:EfiMain` | 程序入口 = `hello.c` 里的函数 |
+| `/subsystem:efi_application` | 标记为 UEFI 应用 |
+| `/entry:EfiMain` | 程序入口 = `hello.c` 里的函数 |
 | `esp/EFI/BOOT/` | UEFI 约定：x64 默认从该路径加载 **BOOTX64.EFI** |
 
 检查：`ls -l esp/EFI/BOOT/BOOTX64.EFI`

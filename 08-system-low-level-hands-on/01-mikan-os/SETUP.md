@@ -30,14 +30,17 @@ cd /mnt/c/Users/12392/Desktop/hft/08-system-low-level-hands-on/01-mikan-os
 
 ```bash
 sudo apt update
-sudo apt install -y llvm lld clang make qemu-system-x86 ovmf git
+sudo apt install -y clang lld make qemu-system-x86 ovmf git
 ```
+
+> **Ubuntu 24.04 提示：** 若 `make` 报 `lld-link: not found`，再装 **`lld-18`**（或 `lld` 元包）：  
+> `sudo apt install -y lld-18` — Makefile 会自动用 `lld-link-18`。
 
 **验证**
 
 ```bash
 clang --version
-ld.lld --version
+command -v lld-link || command -v lld-link-18
 qemu-system-x86_64 --version
 ls /usr/share/OVMF/OVMF_CODE.fd
 ```
@@ -53,10 +56,12 @@ ls /usr/share/OVMF/OVMF_CODE.fd
 ```bash
 cd chapter-01-hello-world/code/01-clang-minimal
 
-clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
+clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
 mkdir -p esp/EFI/BOOT
-ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o esp/EFI/BOOT/BOOTX64.EFI
+lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp/EFI/BOOT/BOOTX64.EFI
 ```
+
+（Ubuntu 上可能是 `lld-link-18` 而不是 `lld-link`。）
 
 **或一键：**
 
@@ -74,12 +79,12 @@ ls -l esp/EFI/BOOT/BOOTX64.EFI
 
 | 步骤 | 命令 | 说明 |
 |------|------|------|
-| 编译 | `clang --target=x86_64-elf -ffreestanding -fshort-wchar -c …` | 产出 **ELF 三元组** 的 `.o`（WSL 上给 `ld.lld` 用） |
+| 编译 | `clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c …` | 产出 **COFF** `.o`（与官方 day01/c 一致） |
 | | `-fshort-wchar` | 必须加，否则 `L"..."` 与 UEFI **CHAR16** 宽度不一致 |
-| 链接 | `ld.lld -flavor link -subsystem:efi_application -entry:EfiMain …` | `.o` → **PE32+ BOOTX64.EFI** |
+| 链接 | `lld-link /subsystem:efi_application /entry:EfiMain …` | `.o` → **PE32+ BOOTX64.EFI** |
 | 运行 | `make run` | 挂载 `esp/` 为 FAT，OVMF 固件启动 |
 
-> **说明：** UEFI x64 应用底层是 **PE32+**；在 WSL 里用 **`clang --target=x86_64-elf` 编译 + `ld.lld -flavor link` 链接**，即可产出固件可加载的 `.EFI`，不必在 Windows 原生装 LLVM。
+> **说明：** UEFI x64 应用底层是 **PE32+**。WSL 里仍用 **COFF 对象 + lld-link** 交叉链（与 Windows 上同一套 PE 工具链），只是 **在 Linux 壳里跑**，不必 Windows 原生 LLVM。
 
 ---
 
