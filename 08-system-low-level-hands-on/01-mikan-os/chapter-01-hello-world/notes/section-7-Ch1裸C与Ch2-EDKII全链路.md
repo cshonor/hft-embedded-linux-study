@@ -202,7 +202,10 @@ build
 
 1. **EDK II 只是 C 库吗？** — **整体不是**；**`MdePkg` 一块** 可视为 UEFI C 库。  
 2. **`GetMemoryMap` 谁提供的？** — **主板 UEFI 固件**；EDK II 只提供 **头文件/封装**。  
-3. **GNU-EFI 和 EDK II 都提供 Uefi.h，区别？** — gnu-efi 是 **小包装+GCC 链接**；EDK II 是 **完整构建树+库生态+可产整板固件**。
+3. **GNU-EFI 和 EDK II 都提供 Uefi.h，区别？** — gnu-efi 是 **小包装+GCC 链接**；EDK II 是 **完整构建树+库生态+可产整板固件**。  
+4. **`efi_main` 和 `UefiMain`？** — 不同工具链 **入口符号名**；EDK 常用 **`UefiApplicationEntryPoint`** 再调你的 `UefiMain`。  
+5. **`.inf` 和 `.dsc` 谁管全局？** — **`.dsc`** 平台顶层；**`.inf`** 单个模块。  
+6. **OVMF 怎么来的？** — **EDK II 构建出的 UEFI 固件**，给 QEMU 当 `-bios`。
 
 ---
 
