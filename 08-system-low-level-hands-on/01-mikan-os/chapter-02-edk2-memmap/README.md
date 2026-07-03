@@ -21,7 +21,8 @@
 |----|------|
 | 1. 本章定位 | [notes/section-1-本章定位.md](./notes/section-1-本章定位.md) |
 | 2. EDK II 与 MikanLoader | [notes/section-2-EDK-II与MikanLoader.md](./notes/section-2-EDK-II与MikanLoader.md) · [Ch1 §7 两阶段全链路](../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) |
-| 3. 主存储器与内存映射 | [notes/section-3-主存储器与内存映射.md](./notes/section-3-主存储器与内存映射.md) — **物理 RAM 四层** · **固件 vs EFI 应用（管家/工作台）** · LoaderCode |
+| 3. 主存储器与内存映射 | [notes/section-3-主存储器与内存映射.md](./notes/section-3-主存储器与内存映射.md)（**索引**） |
+| | [3.1](./notes/section-3-1-内存映射指什么与RAM视图.md) · [3.2 四层](./notes/section-3-2-RAM四层占用.md) · [3.3 固件 vs EFI](./notes/section-3-3-固件与EFI应用内存隔离.md) · [3.4 类型](./notes/section-3-4-地址清单与UEFI内存类型.md) · [3.5 自检](./notes/section-3-5-与mmap区别与自检.md) |
 | 4. GetMemoryMap 与导出 memmap | [notes/section-4-GetMemoryMap与导出memmap.md](./notes/section-4-GetMemoryMap与导出memmap.md) |
 | 5. C/C++ 指针基础 | [notes/section-5-C指针基础.md](./notes/section-5-C指针基础.md) |
 | 6. 小结与索引 | [notes/section-6-小结与索引.md](./notes/section-6-小结与索引.md) |

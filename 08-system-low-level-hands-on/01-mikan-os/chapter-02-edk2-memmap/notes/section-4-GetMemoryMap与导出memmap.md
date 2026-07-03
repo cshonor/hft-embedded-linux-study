@@ -29,7 +29,7 @@ CSV 文本写入 U 盘根目录（或指定路径）
 | **典型参数** | MapSize、MapKey、DescriptorSize、DescriptorVersion |
 | **MapKey** | 映射版本键 — 内存分配后可能变化，后续 **ExitBootServices** 前需一致 |
 
-**输出：** 若干条描述符，每条 = **一段连续物理地址 + 类型 + 属性** —— 即 [§3 四层 RAM 地图](./section-3-主存储器与内存映射.md#二ram-占用四层--uefi-开机后的典型分层) 的 **机器可读清单**。
+**输出：** 若干条描述符，每条 = **一段连续物理地址 + 类型 + 属性** —— 即 [3.2 四层 RAM 地图](./section-3-2-RAM四层占用.md) 的 **机器可读清单**。
 
 | CSV 列（概念） | 对应 |
 |----------------|------|
@@ -93,4 +93,4 @@ OS 正式接管前，Loader 需调用 **`ExitBootServices`** — 此后 **Boot S
 
 ---
 
-← [3. 内存映射](./section-3-主存储器与内存映射.md) · 下一节 [5. 指针基础](./section-5-C指针基础.md)
+← [3.5 与 mmap 区别 · 自检](./section-3-5-与mmap区别与自检.md) · [§3 索引](./section-3-主存储器与内存映射.md) · 下一节 [5. 指针基础](./section-5-C指针基础.md)

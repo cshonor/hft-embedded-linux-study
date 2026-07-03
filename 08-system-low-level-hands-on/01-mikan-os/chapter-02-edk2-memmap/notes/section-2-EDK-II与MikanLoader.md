@@ -160,4 +160,4 @@ Ch2  MikanLoader  +  EDK II + CLANGPDB  →  Loader.efi（<Uefi.h> 工程化）
 
 ---
 
-← [1. 本章定位](./section-1-本章定位.md) · [appendix-C](../../appendix-C-edk2-files/) · 下一节 [3. 内存映射](./section-3-主存储器与内存映射.md)
+← [1. 本章定位](./section-1-本章定位.md) · [appendix-C](../../appendix-C-edk2-files/) · 下一节 [3. 内存映射 · 3.1](./section-3-1-内存映射指什么与RAM视图.md)

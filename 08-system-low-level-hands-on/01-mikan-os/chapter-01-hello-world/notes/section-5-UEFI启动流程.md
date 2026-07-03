@@ -138,7 +138,7 @@ Ch1 启动七步里 **⑤ 加载镜像、⑥ EfiMain** 发生在 RAM 里 —— 
 - **客厅工作台** = 已加载的 `BOOTX64.EFI`（LoaderCode / LoaderData）
 - **自己的办公室** = 内核加载进 Conventional RAM；**ExitBootServices** 后可回收 Loader 占用的空间
 
-→ **[Ch2 §3 主存储器与内存映射 · 第三节](../../chapter-02-edk2-memmap/notes/section-3-主存储器与内存映射.md#三固件-vs-已加载-efi-应用--内存里谁在哪)**
+→ **[Ch2 §3.3 固件 vs EFI 应用 · 内存隔离](../../chapter-02-edk2-memmap/notes/section-3-3-固件与EFI应用内存隔离.md)**
 
 ---
 
@@ -148,7 +148,7 @@ Ch1 启动七步里 **⑤ 加载镜像、⑥ EfiMain** 发生在 RAM 里 —— 
 2. **BIOS 传统启动认文件系统吗？** — **不认**，只执行 **0 扇区 IPL**（校验 **0xAA55**）。
 3. **MikanOS 为何用 UEFI？** — **64 位长模式 + C/LLVM 开发**，跳过实模式扇区汇编。
 4. **QEMU 如何模拟 UEFI？** — **OVMF 固件** + FAT 虚拟盘挂载含 `BOOTX64.EFI` 的目录。
-5. **固件和 BOOTX64.EFI 在内存里什么关系？** — 见 [Ch2 §3 第三节](../../chapter-02-edk2-memmap/notes/section-3-主存储器与内存映射.md#三固件-vs-已加载-efi-应用--内存里谁在哪)（**管家 / 工作台 / 办公室** 比喻）。
+5. **固件和 BOOTX64.EFI 在内存里什么关系？** — 见 [Ch2 §3.3](../../chapter-02-edk2-memmap/notes/section-3-3-固件与EFI应用内存隔离.md)（**管家 / 工作台 / 办公室** 比喻）。
 
 ---
 

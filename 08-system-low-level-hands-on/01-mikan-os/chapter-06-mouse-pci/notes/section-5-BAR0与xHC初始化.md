@@ -18,7 +18,7 @@ CPU 读写 [bar0 + offset]  →  xHC 硬件寄存器
 
 **与 PCI `in/out` 对比：** 配置空间用 **端口 IO**；xHC **运行时** 用 **MMIO**。
 
-→ [Ch2 memmap](../chapter-02-edk2-memmap/notes/section-3-主存储器与内存映射.md) — 勿与 **普通 RAM** 混淆
+→ [Ch2 §3.2 MMIO 层](../chapter-02-edk2-memmap/notes/section-3-2-RAM四层占用.md) — 勿与 **普通 RAM** 混淆
 
 ---
 
