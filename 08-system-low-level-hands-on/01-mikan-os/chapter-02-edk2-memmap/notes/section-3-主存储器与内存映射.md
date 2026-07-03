@@ -12,7 +12,7 @@
 | **3.1** | [内存映射指什么 · RAM 字节视图](./section-3-1-内存映射指什么与RAM视图.md) | 物理 map ≠ 进程 mmap；字节寻址 |
 | **3.2** | [RAM 四层占用](./section-3-2-RAM四层占用.md) | 固件 / MMIO / Loader / Conventional |
 | **3.3** | [固件 vs EFI 应用 · 内存隔离](./section-3-3-固件与EFI应用内存隔离.md) | **管家 / 工作台 / 办公室** · ExitBootServices |
-| **3.4** | [地址清单 · UEFI 内存类型 · **五类逐行解读**](./section-3-4-地址清单与UEFI内存类型.md) | GetMemoryMap 每条记录 · **四条一句总结** |
+| **3.4** | [地址清单 · UEFI 内存类型 · **两层理解 · 六类标签**](./section-3-4-地址清单与UEFI内存类型.md) | Type = 地址标签 · 大街比喻 · GetMemoryMap |
 | **3.5** | [与 mmap 区别 · 自检](./section-3-5-与mmap区别与自检.md) | Ch2 物理摸底 vs Ch19 分页 |
 
 **建议路径：** 3.1 → 3.2 → 3.3（直觉）→ 3.4（对照 CSV）→ 3.5 → [§4 GetMemoryMap](./section-4-GetMemoryMap与导出memmap.md)
