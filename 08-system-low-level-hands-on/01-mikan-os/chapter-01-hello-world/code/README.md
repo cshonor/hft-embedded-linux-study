@@ -1,6 +1,17 @@
 # Ch1 · 第一个 BOOTX64.EFI
 
-**不必从零手写整个 EFI 文件。** 本章动手路径：写符合 UEFI 规范的 **C 代码** → **Makefile 一键交叉编译** → 产出 **PE 格式** `BOOTX64.EFI` → 放进 **FAT** 目录树 → UEFI 固件识别并加载。
+**不必从零手写整个 EFI 文件。** 本章动手路径：写符合 UEFI 规范的 **C 代码** → **交叉编译器**（Ch1 默认 **Clang**；全书工程用 **x86_64-elf-gcc**）→ **Makefile 链接成 PE** → 放进 **FAT** → UEFI 加载。
+
+## 交叉编译器
+
+| 工具链 | Ch1 `make` | 说明 |
+|--------|------------|------|
+| **Clang + lld-link** | **默认** | `apt install clang lld`；`-target x86_64-pc-win32-coff` |
+| **x86_64-elf-gcc** | Ch2+ 与 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 同环境 | 下载 `x86_64-elf.tar.gz` · `source devenv/buildenv.sh` |
+
+覆盖路径：`make CLANG=/usr/bin/clang-18`。PE 头 / 入口 / subsystem 由 Makefile 处理，**不用自写链接脚本**。
+
+→ 详表 [§2.二 交叉编译器](../notes/section-2-二进制编辑器与BOOTX64.md#二用哪些交叉编译器)
 
 ## 文件
 

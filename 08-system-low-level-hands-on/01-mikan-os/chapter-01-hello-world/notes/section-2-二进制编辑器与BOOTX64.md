@@ -3,10 +3,55 @@
 > **实际开发路径：** 你 **不必从零手写整个 EFI 文件**。MikanOS 用 **C 语言 + 交叉工具链**（Ch2 起再接入完整 **EDK II** 框架）生成符合规范的 **64 位 PE/COFF** 程序，放到 **FAT 镜像** 里即可被 UEFI 固件加载。
 >
 > **动手入口：** [code/](../code/) — `make` 一键编译出第一个 `BOOTX64.EFI`，`make run` 在 QEMU+OVMF 里看 Hello World。先跑通流程，再慢慢拆解 **ConOut / SystemTable** 等 UEFI 调用。
+>
+> **一句话：** **`.efi` 就是 C 语言写的 UEFI 程序，经交叉编译器编译链接后的产物** — 你写业务逻辑（初始化屏幕、打印、日后加载内核），**PE 头、节区、入口点** 由 Makefile / 工具链代劳，不必手写链接脚本。
 
 ---
 
-### 一、推荐流程（四步）
+### 一、EFI 是什么：C 源码 → 交叉编译 → 可执行文件
+
+| 层次 | 你关心的 | 工具链代劳的 |
+|------|----------|--------------|
+| **源码** | `hello.c` — `EfiMain`、调 `ConOut` 打印、日后加载内核 | — |
+| **编译** | 选对接口与类型（`SystemTable` 等） | `.c` → **COFF 对象** `.o` |
+| **链接** | 指定入口符号名 `EfiMain` | 对象 → **PE32+** 格式的 **`BOOTX64.EFI`** |
+| **部署** | 放进 `EFI/BOOT/` on FAT | UEFI 固件识别并加载 |
+
+**MikanOS Ch1 入门示例** 就是几百行以内的 **最简 C UEFI 应用** — [code/hello.c](../code/hello.c) 只声明本章用到的结构体；**敲 `make` 即得 `bootX64.efi`**，不用碰底层 PE 字节布局（格式细节见 [§6](./section-6-C语言过渡与文件格式.md)）。
+
+---
+
+### 二、用哪些交叉编译器？
+
+跟着 [code/Makefile](../code/Makefile) 走，**把编译器路径设对** 即可；两种常见选择：
+
+| 工具链 | 典型命令 | 适用阶段 | 说明 |
+|--------|----------|----------|------|
+| **Clang + LLD**（**Ch1 默认**） | `clang -target x86_64-pc-win32-coff` · `lld-link` | Ch1 Hello · 官方 [day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) | **对 UEFI/PE 支持直接**；`-target …-win32-coff` 明确产出 COFF/PE，少踩 gcc 兼容坑 |
+| **x86_64-elf-gcc**（**MikanOS 全套推荐**） | `x86_64-elf-gcc` / `x86_64-elf-g++` | Ch2+ 内核 · Loader · EDK II 联调 | [mikanos-build](https://github.com/uchan-nos/mikanos-build) 发布包 / `devenv/buildenv.sh`；**`source buildenv.sh`** 后 PATH 与 `CPPFLAGS` 就绪 |
+| **EDK II `build`** | `source edksetup.sh && build` | Ch2 **MikanLoader** 工程化 | 底层仍多用 **Clang**；由 EDK II 描述文件驱动，见 [Ch2](../../chapter-02-edk2-memmap/) |
+
+**怎么选：**
+
+- **现在（Ch1）：** 用仓库 **`code/` + `make`** — 默认 **Clang + lld-link**，Ubuntu/WSL 下 `apt install clang lld` 即可。
+- **跟全书 MikanOS 工程：** 按 [SETUP.md](../../SETUP.md) 装 **mikanos-build** 的 **`x86_64-elf`** 交叉链；Ch2 起与 EDK II、内核 Makefile 同一套环境。
+- **也可全程偏 Clang** — 官方 day01 即 Clang；全树构建时 EDK II 文档常见 `DEBUG_CLANG38` 输出目录。
+
+**覆盖编译器路径（示例）：**
+
+```bash
+# 使用非默认 clang
+make CLANG=/usr/bin/clang-18
+
+# 若已 source mikanos-build 的 buildenv.sh，后续章节的 gcc 交叉链通常在 PATH 中
+# x86_64-elf-gcc --version
+```
+
+**你不需要：** 自写 **链接脚本（.ld）** 去拼 PE 头 — Makefile 里 **`/subsystem:efi_application` + `/entry:EfiMain`**（Clang 路径）或 EDK II / 官方 `build.sh` 已封装格式转换。
+
+---
+
+### 三、推荐流程（四步）
 
 ```
 ① 写 C 源码（EfiMain · 初始化控制台 · 打印字符）
@@ -44,7 +89,7 @@ Ch1 模板 **只声明用到的结构体字段**，避免拉入整个 EDK II；C
 
 ---
 
-### 二、Makefile 一键编译
+### 四、Makefile 一键编译
 
 在 [code/](../code/) 目录（WSL，已装 `clang` · `lld` · `qemu-system-x86_64` · `ovmf`）：
 
@@ -74,7 +119,7 @@ esp/EFI/BOOT/BOOTX64.EFI: hello.o
 
 ---
 
-### 三、部署与引导测试
+### 五、部署与引导测试
 
 ```
 FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
@@ -93,7 +138,7 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 
 ---
 
-### 四、原书可选：二进制编辑器（概念体感）
+### 六、原书可选：二进制编辑器（概念体感）
 
 原书 **第一节** 还演示用 **二进制编辑器** 直接填机器码生成 `BOOTX64.EFI` — 目的是看见「程序 = 文件里的字节序列」、理解 **PE 头比 512B IPL 复杂**。
 
@@ -107,16 +152,22 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 
 ---
 
-### 五、常见初坑
+### 七、常见初坑
 
 | 现象 | 可能原因 |
 |------|----------|
 | `make` 找不到 `lld-link` | 未装 `lld` 包；或 WSL 外未配置 PATH |
 | U 盘 / QEMU 无输出 | 路径非 `/EFI/BOOT/BOOTX64.EFI`、非 FAT、或 **Secure Boot** 拦截 |
 | 乱码 / 崩溃 | `OutputString` 用了窄字符串；UEFI 文本 API 要 **`L"..."` 宽串** |
+| 用宿主机 `gcc hello.c` 直接编 | 产出 **Linux ELF**，UEFI **不能加载** — 必须 **交叉** 到 PE/COFF（Clang `-target …-win32-coff` 或 MikanOS `x86_64-elf-*` 工具链） |
+
 | 与软盘启动混淆 | 本章是 **FAT 上的 .efi 文件**，不是软盘 **512B IPL** — [§1.四](./section-1-本章定位.md#四核心区分bootx64efi--软盘启动两条线) |
 
-**学习顺序建议：** 先 **`make run` 跑通** → 再读 `hello.c` 里每一行 UEFI 调用 → Ch2 接入 EDK II 后对照 `<Uefi.h>` 里的完整类型定义。
+**口述巩固 · 自测**
+
+1. **`.efi` 和 `.c` 是什么关系？** — 同一份程序：C 写逻辑，交叉编译链接成 UEFI 可执行的 PE 文件。
+2. **Ch1 默认用哪条链？** — **Clang + lld-link**；跟全书工程则用 **mikanos-build 的 x86_64-elf-gcc** + `buildenv.sh`。
+3. **为什么要交叉编译？** — 宿主机 `gcc` 默认出 **ELF**；x64 PC 的 UEFI 固件要 **PE32+** 形态的 `BOOTX64.EFI`。
 
 ---
 

@@ -1,7 +1,11 @@
 # Ch1 · 最小 UEFI Hello → BOOTX64.EFI
-# 用法（WSL / Linux，需 clang + lld-link + qemu-system-x86_64 + OVMF）：
-#   make          → esp/EFI/BOOT/BOOTX64.EFI
-#   make run      → QEMU + OVMF 启动
+#
+# 默认工具链：Clang + lld-link（对齐 mikanos-build day01/c）
+# 全书 MikanOS 工程：mikanos-build 的 x86_64-elf-gcc + source buildenv.sh（Ch2+）
+#
+#   make              → esp/EFI/BOOT/BOOTX64.EFI
+#   make run          → QEMU + OVMF
+#   make CLANG=clang-18   # 覆盖编译器路径
 #   make clean
 
 CLANG ?= clang

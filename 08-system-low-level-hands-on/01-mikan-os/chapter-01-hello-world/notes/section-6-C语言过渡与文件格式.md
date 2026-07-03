@@ -1,26 +1,27 @@
 ## 6. C 语言过渡与可执行文件格式
 
-> 手写机器语言 **不可持续** — 本章末尾用 **C/C++** 重写 Hello World，引入现代工具链。
+> **核心认识：** **`BOOTX64.EFI` 不是另一种语言** — 就是 **符合 UEFI 规范的 C 程序**，经 **交叉编译器 + 链接器** 生成的可执行文件。你写 `EfiMain`、调固件服务；**PE 格式细节** 交给 Makefile / 工具链。
 
 ---
 
 ### 一、现代构建流程
 
 ```
-源码 (.c / .cpp)
-    ↓  编译器 Clang
-对象文件 (.o / .obj) — 机器码 + 重定位信息
-    ↓  链接器 LLD
-可执行文件 BOOTX64.EFI
+hello.c（C 源码 · UEFI 业务逻辑）
+    ↓  交叉编译器（Clang 或 x86_64-elf-gcc）
+COFF 对象 (.o) — 机器码 + 重定位信息
+    ↓  链接器（lld-link 或 EDK II / 官方脚本）
+BOOTX64.EFI — PE32+ 形态，固件可加载
 ```
 
 | 工具 | 角色 |
 |------|------|
-| **Clang** | 将 C/C++ 编译为 **目标文件** |
-| **LLD** | 合并对象文件、解析符号、生成 **EFI 可执行** |
-| **EDK II** | Intel 开源 UEFI 开发包 — 提供头文件、库、构建描述（后续章节深入） |
+| **Clang** | Ch1 默认；`-target x86_64-pc-win32-coff` → **PE 对象**；UEFI 开发 **更省心** |
+| **x86_64-elf-gcc** | MikanOS [mikanos-build](https://github.com/uchan-nos/mikanos-build) 推荐交叉链；Ch2+ 内核 / Loader 与 **`buildenv.sh`** 同环境 |
+| **LLD / EDK II `build`** | 链接成 **`.efi`**；**`/subsystem:efi_application`** 等由 Makefile 写好，无需自写链接脚本 |
+| **EDK II** | Ch2 起：`<Uefi.h>`、库、工程描述 — 在交叉链之上再包一层规范 |
 
-→ [appendix-C EDK II 文件说明](../../appendix-C-edk2-files/) · [appendix-B 获取 MikanOS](../../appendix-B-get-mikanos/)
+→ 工具链对照 [§2.二](./section-2-二进制编辑器与BOOTX64.md#二用哪些交叉编译器) · [code/Makefile](../code/Makefile)
 
 ---
 
@@ -43,7 +44,16 @@ EFI_STATUS EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
 **对比：** 用户态 C 程序常见 `main(int argc, char **argv)` — UEFI 阶段 **尚无 argc/argv**，由 **SystemTable** 访问固件能力。
 
----
+**和 Linux 程序的对照：**
+
+| | **Linux 用户态** | **UEFI 应用（本章）** |
+|---|------------------|------------------------|
+| 入口 | `main()` | **`EfiMain()`** |
+| 源码语言 | C / C++ | **同样是 C / C++** |
+| 链接产物 | **ELF** | **PE（`.efi`）** |
+| 谁加载 | 内核 + 动态链接器 | **UEFI 固件** 从 FAT 读入 |
+
+→ [appendix-C EDK II 文件说明](../../appendix-C-edk2-files/) · [appendix-B 获取 MikanOS](../../appendix-B-get-mikanos/)
 
 ### 三、专栏：常见机器语言文件格式
 
