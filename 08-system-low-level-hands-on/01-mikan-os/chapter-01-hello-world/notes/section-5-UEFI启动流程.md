@@ -130,12 +130,69 @@ CPU 跳转到镜像入口 — C 程序里即 **`EfiMain(ImageHandle, SystemTable
 
 ---
 
+### 六、固件 vs 已加载 EFI 应用：内存里谁在哪？
+
+> **直觉版（先记住）：** UEFI 固件是 **「底层管家」**；你编译的 **`BOOTX64.EFI`** 是管家 **「请来的第一个临时帮手」** —— 二者在内存里是 **两块独立区域**，不是混在一起的一坨代码。
+
+#### 1. 比喻对照
+
+| 比喻 | 对应什么 | 说明 |
+|------|----------|------|
+| **管家的办公区** | **UEFI 固件** 占用的内存 | 固件核心服务、硬件初始化代码、**ACPI 表**、**Memory Map** 等 **系统级数据** |
+| **客厅临时工作台** | **已加载的 EFI 应用**（你的 `.efi`） | 固件把 `BOOTX64.EFI` **整份 PE 镜像** 载入 RAM 后，代码/数据在 **单独一段** |
+| **你自己的办公室** | **MikanOS 内核**（Ch3+） | Loader 把内核 ELF 加载进 **可用 RAM**，建立长模式页表后正式运行 |
+| **拆掉工作台、收回客厅** | **`ExitBootServices` 之后** | Boot 阶段占用的 **Loader / Boot Services 内存** 可标成可用，内核 **复用**（Ch2 MikanLoader） |
+
+**Ch1 Hello World：** 帮手只在 **客厅打印一行字** —— 还没有「拆工作台、开办公室」这一步。  
+**Ch2 MikanLoader：** 帮手负责 **读 memmap、加载 kernel.elf、调 ExitBootServices** —— 才是完整「临时工 → 内核交接」。
+
+#### 2. 技术版：不是「低地址=固件、高地址=应用」这么简单
+
+固件用 **内存映射表（Memory Map）** 按 **类型** 标记每一段 RAM，而不是固定「从 0 开始固件、后面全是应用」：
+
+| 类型（常见） | 谁占 | 内核能随便写吗？ |
+|--------------|------|------------------|
+| **EfiRuntimeServicesCode/Data** | 固件 **OS 运行后仍保留** 的部分 | ❌ 长期保留 — **勿动** |
+| **EfiBootServicesCode/Data** | 仅 **Boot 阶段** 的固件服务 | ❌ Boot 期间由固件管；**ExitBootServices 后** 往往可回收 |
+| **EfiLoaderCode / LoaderData** | **已加载的 `.efi`**（本章 / MikanLoader） | ⚠️ 应用 **正在跑** 时不能乱覆盖；交接后可回收 |
+| **EfiConventionalMemory** | **空闲可用 RAM** | ✅ 内核、栈、堆 **主要从这里划** |
+| **MMIO / Reserved** | 设备寄存器、显存等 | ❌ **不是普通 RAM** |
+
+**权限直觉（Boot Services 期间）：**
+
+- 你的 **`EfiMain`** **不能** 直接读写固件私有区 —— 只能经 **`SystemTable` → Boot Services / 协议**（如 `ConOut->OutputString`）**间接** 调管家干活。
+- 固件 **权限更高、布局它定**；应用 **只能在划给自己的那块 Loader 区 + 固件允许的接口** 里活动。
+
+#### 3. 和本章七步的对应
+
+```
+⑤ 加载 EFI 镜像到内存     → 管家在 RAM 里划出「客厅工作台」（LoaderCode/Data）
+⑥ 移交执行权 → EfiMain     → 临时帮手开始跑你的 C 代码
+⑦ Hello / 日后加载内核     → Ch1 只打印；Ch2 Loader 读 map、加载 ELF、ExitBootServices
+```
+
+#### 4. 一张总图（Ch1 视角）
+
+```
+[ UEFI 固件区 ]     ← 管家办公区（Runtime + Boot Services + ACPI…）
+[ MMIO / 保留区 ]   ← 设备、显存 — 不是堆内存
+[ BOOTX64.EFI ]     ← 客厅临时工作台（本章 Hello / 日后 MikanLoader）
+[ 可用 RAM ]        ← 将来内核的「办公室」主要从这里挑
+        ↑
+   Memory Map 登记每一段 — Ch2 GetMemoryMap / memmap CSV 详读
+```
+
+→ 四层分层详表：[Ch2 §3 主存储器与内存映射](../../chapter-02-edk2-memmap/notes/section-3-主存储器与内存映射.md)
+
+---
+
 ### 口述巩固 · 自测
 
 1. **UEFI 去哪找引导文件？** — **FAT ESP** 上固定路径 **`/EFI/BOOT/BOOTX64.EFI`**，不是 512B 扇区。
 2. **BIOS 传统启动认文件系统吗？** — **不认**，只执行 **0 扇区 IPL**（校验 **0xAA55**）。
 3. **MikanOS 为何用 UEFI？** — **64 位长模式 + C/LLVM 开发**，跳过实模式扇区汇编。
 4. **QEMU 如何模拟 UEFI？** — **OVMF 固件** + FAT 虚拟盘挂载含 `BOOTX64.EFI` 的目录。
+5. **固件和 BOOTX64.EFI 在内存里什么关系？** — **两块独立区域**；应用 **只能调接口**，不能乱写固件区；Loader 交接后 Boot 期内存 **可回收**（Ch2）。
 
 ---
 
