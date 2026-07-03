@@ -1,8 +1,67 @@
 ## 4. GetMemoryMap 与导出 memmap
 
+> **§4 子笔记** · [§3 内存类型](./section-3-4-地址清单与UEFI内存类型.md) · [Boot vs Runtime](../section-2-4-Boot与Runtime服务.md)
+
 ---
 
-### 一、调用链概览
+### 通俗版 · 先建立直觉
+
+#### 1. 本质定位
+
+**`GetMemoryMap` 是 UEFI Boot Services 里的一个固件 API** —— 让你的 **`bootx64.efi` / MikanLoader** 向主板 UEFI 固件 **索要整张整机物理内存分布图**。
+
+不是内核功能，不是 Linux `mmap` —— **只有 Boot 阶段、通过 `gBS` 调用**（→ [3.5 与 mmap 区别](./section-3-5-与mmap区别与自检.md)）。
+
+#### 2. 返回什么？
+
+调用后得到 **`EFI_MEMORY_DESCRIPTOR` 数组** —— 就是你 CSV / [3.4 类型表](./section-3-4-地址清单与UEFI内存类型.md) 里每一行的来源：
+
+| 每条记录 | 含义 |
+|----------|------|
+| **起始物理地址** | 这段从哪开始 |
+| **长度** | 这段多大 |
+| **Type** | Conventional / LoaderCode / MMIO / Runtime … |
+| **Attribute** | 可执行、可写、缓存策略 … |
+
+**白话：** 固件把 **全部 RAM + MMIO 硬件地址** 分块贴好标签，做成 **清单** 交给你的引导程序。
+
+#### 3. 为什么不能自己猜地址？
+
+| ❌ 硬编码 | ✅ 查表 |
+|-----------|---------|
+| 「0x100000 起一定是空闲内存」 | 换主板/显卡/内存条 **布局全变** |
+| 可能盖住 Runtime / ACPI | 只从 **Conventional** 划给内核 |
+| 可能写到 MMIO 当 RAM | MMIO / Reserved **碰了黑屏** |
+
+**开发铁则：** 分配池 **默认只认 `EfiConventionalMemory`** —— 其余 Type 特殊处理（→ [3.4](./section-3-4-地址清单与UEFI内存类型.md)）。
+
+#### 4. MikanLoader 里的使用时机（完整链）
+
+```
+EfiMain
+  → SystemTable->BootServices (gBS)
+  → GetMemoryMap()           ← 本章：导出 memmap CSV
+  → 遍历表，统计 Conventional 段
+  → （Ch3+）加载 kernel.elf 到 Conventional
+  → ExitBootServices()       ← 须带 MapKey；Boot API 此后不可用
+  → 再读一次 map（或沿用 Exit 前保存的表）← 看 Boot/Loader 区是否变可回收
+  → 跳内核，Ch8+ 在 Conventional 里做分配器
+```
+
+**Ch2 本章做到：** 第 2 步 + 导出 CSV —— **先建立「物理世界账本」**，不在此章 Exit 或加载内核。
+
+#### 5. HFT / 嵌入式延伸
+
+| 场景 | 同样逻辑 |
+|------|----------|
+| **HFT 裸金属 / 定制内核** | 划 **大页**、**隔离网卡 MMIO** — 避免把 BAR 当堆；低延迟路径不能踩错区 |
+| **ARM64 UEFI（如无人机）** | 同样有 **GetMemoryMap** — 划分飞控 MMIO、预留区，**Conventional** 给 Linux/自研内核 |
+
+**一句话：** `GetMemoryMap` = UEFI 给引导程序的 **「内存查询接口」** —— 拿到 **完整分区清单**，分清 **能用 / 固件保留 / 硬件保护区**，避免乱踩地址崩溃。
+
+---
+
+### 一、调用链概览（工程版）
 
 ```
 MikanLoader (EfiMain)
@@ -74,22 +133,26 @@ Status = gBS->GetMemoryMap(&MapSize, MemoryMap, &MapKey,
 
 ### 四、ExitBootServices 预告（概念）
 
-OS 正式接管前，Loader 需调用 **`ExitBootServices`** — 此后 **Boot Services（含 GetMemoryMap）不可用**。
+OS 正式接管前，Loader 需调用 **`ExitBootServices(MapKey)`** — 此后 **Boot Services（含 GetMemoryMap）不可用**。
 
 | 阶段 | 内存信息 |
 |------|----------|
-| **Loader 期（本章）** | 随时 `GetMemoryMap` |
-| **内核期** | 必须在 Exit 前 **保存** memmap，或自带探测逻辑 |
+| **Loader 期（Ch2 本章）** | 随时 `GetMemoryMap` · 导出 CSV |
+| **Exit 前** | 保存 map，或 **Exit 后再读一次**（若仍可用 Boot API 的窗口内） |
+| **内核期（Ch8+）** | 用 **Exit 前/后保存的表** 初始化物理页池 — 不能再调 `gBS` |
 
-→ Ch 3+ 引导流程会延续 MikanLoader 职责
+→ 类型与回收规则：[3.4 生命周期总表](./section-3-4-地址清单与UEFI内存类型.md) · Ch3+ 引导流程
 
 ---
 
 ### 五、实验自检
 
+- [ ] 能一句话说清 **GetMemoryMap = Boot 期向固件要内存清单**
+- [ ] 能说出 **每行含地址、长度、Type、Attribute**
+- [ ] 能解释 **为什么不能硬编码 0x100000**
 - [ ] QEMU 运行 MikanLoader 后 U 盘映像中出现 **`memmap`**
 - [ ] CSV 中含 **ConventionalMemory** 行 — 地址范围合理
-- [ ] 存在 **Reserved / ACPI** 等类型 — 非全盘可用
+- [ ] 存在 **Reserved / ACPI / MMIO** 等类型 — 非全盘可用
 
 ---
 
