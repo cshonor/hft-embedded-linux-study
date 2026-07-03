@@ -44,21 +44,39 @@
 
 ---
 
-### 4. 从 Ch1 启动到 Ch2 交接（一条线）
+### 3. Boot Services 阶段的规则（写 `EfiMain` 必须遵守）
+
+1. **`EfiMain` / MikanLoader 不能裸读写** 固件保留区、MMIO 硬件区 —— 只能走固件 API。  
+2. 查内存布局、分配 Boot 期内存、读文件 → 调 **`gBS`** 下接口，如 **`GetMemoryMap()`**。  
+3. 内存与硬件由 **固件统一管**；EFI 应用只在 **Loader 自身区（LoaderCode/Data）+ 开放 API** 内活动。
+
+**例子（Ch1 就用了）：**  
+`SystemTable->ConOut->OutputString(L"...")` = 走固件 **ConOut 协议** 打印 —— **不是** 自己往显存 MMIO 地址乱写。这就是 Boot Services 下的正确姿势。
+
+→ Boot / Runtime 概念：[§2.4 Boot vs Runtime 服务](../section-2-4-Boot与Runtime服务.md)
+
+---
+
+### 4. 启动主线：Ch1 → Ch2 → 内核（别混阶段）
+
+| 阶段 | 谁跑 | 做什么 | **不做什么** |
+|------|------|--------|--------------|
+| **Ch1** | 裸 C **`BOOTX64.EFI`** | `EfiMain` + **`ConOut` 打印** · 理解 PE/工具链 | ❌ **没有** GetMemoryMap · ❌ **没有** 加载 kernel · ❌ **没有** ExitBootServices |
+| **Ch2** | **MikanLoader**（EDK II） | **`GetMemoryMap()`** · 导出 **memmap CSV** · （后续章）加载 **kernel.elf** | 本章先 **摸底内存** |
+| **Ch2+ / Ch3+** | MikanLoader 继续演进 | 加载内核到 **Conventional** · **`ExitBootServices()`** · 跳内核 | Exit **之后** Boot 服务 API **不可用** |
+
+**交接顺序（MikanLoader 完整路径）：**
 
 ```
-[Ch1 §5 七步]
-  ⑤ 固件加载 BOOTX64.EFI 到 RAM     → 划出「客厅工作台」（LoaderCode/Data）
-  ⑥ 跳 EfiMain                      → 临时帮手开始跑
-
-[Ch2 本章]
-  GetMemoryMap()                     → 拿到整张「地址清单」
-  加载 kernel.elf 到 Conventional    → 在「可用 RAM」里摆内核
-  ExitBootServices()                 → 关掉 Boot Services；Loader 区等多可收回
-  跳内核                             → 「办公室」正式启用
+GetMemoryMap()              → 拿到「地址清单」（Boot 期）
+加载 kernel.elf 到 Conventional → 在可用 RAM 摆内核
+ExitBootServices()          → 关闭 Boot Services；须再读 map 看哪些页已可回收
+跳转入内核                   → 脱离 UEFI Boot 管控，OS 自管 Conventional 等
 ```
 
-→ Ch1 启动七步：[§5 UEFI 启动流程](../../chapter-01-hello-world/notes/section-5-UEFI启动流程.md)
+**Ch1 与 Ch2 分工：** Ch1 只证明 **「固件能加载你的 .efi 并打印」**；**读 map、加载内核、Exit** 是 **Ch2 MikanLoader** 的事 —— 不要写成「Ch1 就 GetMemoryMap 加载内核」。
+
+→ Ch1 七步：[§5 UEFI 启动流程](../../chapter-01-hello-world/notes/section-5-UEFI启动流程.md)
 
 ---
 
