@@ -53,7 +53,6 @@
 
 ## 相关
 
-- 上一章：[../chapter-00-intro/](../chapter-00-intro/)
 - 下一章：[../chapter-02-edk2-memmap/](../chapter-02-edk2-memmap/)
 - 对照：[01 Day 1 引导](../../02-30days-os/day-01-boot-asm/) · [附录 F ASCII](../appendix-F-ascii-table/) · [SETUP](../SETUP.md)
 - 模块导读：[../README.md](../README.md) · [../OUTLINE.md](../OUTLINE.md)

@@ -5,7 +5,6 @@
 
 | 章 | 中文标题 | 标签 | 笔记 |
 |----|----------|------|------|
-| **0** | 个人可以制作操作系统吗 | 🟡 | [chapter-00-intro](./chapter-00-intro/) |
 | **1** | 计算机工作原理和 Hello World | 🔴 | [chapter-01-hello-world](./chapter-01-hello-world/) |
 | **2** | EDK II 和内存映射 | 🔴 | [chapter-02-edk2-memmap](./chapter-02-edk2-memmap/) |
 | **3** | 屏幕显示实践和引导加载器 | 🟡 | [chapter-03-bootloader-display](./chapter-03-bootloader-display/) |
@@ -51,14 +50,14 @@
 
 ---
 
-## Ch 0–2 要点速览
+## Ch 1–2 要点速览
 
 - **UEFI** 启动链 · **EDK II** · **EFI 内存 map**
 - **Ch 1 Hello World：** 二进制 `BOOTX64.EFI` → Secure Boot / QEMU → **EfiMain + PE/COFF**
 - **Ch 2 EDK II / memmap：** **MikanLoader** · `GetMemoryMap()` · **memmap CSV** · 指针 `->` / `**`
 - 与 [01 Day 1](../02-30days-os/day-01-boot-asm/) 对照：BIOS `0x7C00` vs UEFI **`/EFI/BOOT/BOOTX64.EFI`**
 
-→ 详读 [chapter-00-intro/](./chapter-00-intro/) · [chapter-01-hello-world/](./chapter-01-hello-world/) · [chapter-02-edk2-memmap/](./chapter-02-edk2-memmap/)
+→ 详读 [chapter-01-hello-world/](./chapter-01-hello-world/) · [chapter-02-edk2-memmap/](./chapter-02-edk2-memmap/)
 
 ---
 

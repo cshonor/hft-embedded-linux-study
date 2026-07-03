@@ -2,9 +2,9 @@
 
 ## 三阶段（约 8–12 周，业余节奏）
 
-### 阶段 A · 现代启动链（Ch 0–2）🔴
+### 阶段 A · 现代启动链（Ch 1–2）🔴
 
-**笔记：** [chapter-00-intro](./chapter-00-intro/) · [chapter-01-hello-world](./chapter-01-hello-world/) · [chapter-02-edk2-memmap](./chapter-02-edk2-memmap/)
+**笔记：** [chapter-01-hello-world](./chapter-01-hello-world/) · [chapter-02-edk2-memmap](./chapter-02-edk2-memmap/)
 
 **目标：** UEFI → EDK II → **内存 map** → 第一个 C++ 内核输出。
 

@@ -90,7 +90,6 @@ chapter-XX-slug/
 
 | 章 | 主题 | 笔记 |
 |----|------|------|
-| **0** | 个人可以制作操作系统吗 | [chapter-00-intro](./chapter-00-intro/) |
 | **1** | 计算机工作原理和 Hello World | [chapter-01-hello-world](./chapter-01-hello-world/) |
 | **2** | EDK II 和内存映射 | [chapter-02-edk2-memmap](./chapter-02-edk2-memmap/) |
 | **3** | 屏幕显示实践和引导加载器 | [chapter-03-bootloader-display](./chapter-03-bootloader-display/) |
@@ -142,7 +141,7 @@ chapter-XX-slug/
 
 | 阶段 | 章 | 主题 | HFT 关联 |
 |------|-----|------|----------|
-| **启动链** | 0–2 | UEFI · EDK II · 内存 map | 现代 PC 启动 |
+| **启动链** | 1–2 | UEFI · EDK II · 内存 map | 现代 PC 启动 |
 | **内核骨架** | 7–8, 11, 13–14 | 中断 · 内存 · 定时器 · 多任务 | 上下文切换直觉 |
 | **分页 syscall** | 19–20 | 页表 · 系统调用 | CSAPP / LKD / TLPI |
 | **生态** | 17, 25–29 | FS · 文件 I/O · IPC | 用户态边界 |
@@ -192,7 +191,7 @@ chapter-XX-slug/
 ## 进度（学习自检）
 
 - [ ] 环境 [SETUP.md](./SETUP.md) / [appendix-A-dev-env](./appendix-A-dev-env/)
-- [ ] [Ch 0–2](./chapter-00-intro/) UEFI + 内存 map
+- [ ] [Ch 1–2](./chapter-01-hello-world/) UEFI + 内存 map
 - [ ] [Ch 7–8](./chapter-07-interrupt-fifo/) 中断 + 内存管理
 - [ ] [Ch 13–14](./chapter-13-multitask1/) 多任务
 - [x] [Ch 19–20](./chapter-19-paging/) 分页 + 系统调用
