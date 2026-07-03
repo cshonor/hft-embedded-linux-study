@@ -1,17 +1,18 @@
 # Ch1 · 最小 UEFI Hello → BOOTX64.EFI
 #
-# 工具链 A（推荐 · Ch1）：Clang + lld-link（LLVM：编译 + PE 链接）
-# 工具链 B（Ch2+ 全书）：x86_64-elf-gcc + ld.lld（见 mikanos-build buildenv.sh）
+# 路径 A（默认）：clang -target x86_64-pc-win32-coff + lld-link  — 对齐 mikanos-build day01/c
+# 路径 B（纯 LLVM）：clang --target=x86_64-elf -ffreestanding + ld.lld -flavor link  — make LINK=ld.lld
 #
-#   make              → esp/EFI/BOOT/BOOTX64.EFI
-#   make run          → QEMU + OVMF（WSL）
+#   make                  → esp/EFI/BOOT/BOOTX64.EFI
+#   make LINK=ld.lld      → 全程 ld.lld，不依赖 GCC 交叉链
+#   make run              → QEMU + OVMF（WSL / Linux）
 #   make CLANG=clang-18
 
 CLANG ?= clang
-LLD   ?= lld-link
+LINK  ?= lld-link
+LD_LLD ?= ld.lld
 QEMU  ?= qemu-system-x86_64
 
-# Ubuntu: /usr/share/OVMF/OVMF_CODE.fd  ·  也可 export OVMF=/path/to/OVMF_CODE.fd
 OVMF  ?= /usr/share/OVMF/OVMF_CODE.fd
 
 ESP   = esp
@@ -21,12 +22,28 @@ EFI   = $(ESP)/EFI/BOOT/BOOTX64.EFI
 
 all: $(EFI)
 
+ifeq ($(LINK),ld.lld)
+# 纯 LLVM：freestanding + ld.lld PE 链接（Linux/WSL 常见，只需 llvm + lld 包）
+CLANG_TARGET = x86_64-elf
+CLANG_EXTRA  = -ffreestanding
+
 hello.o: hello.c
-	$(CLANG) -target x86_64-pc-win32-coff -o $@ -c $<
+	$(CLANG) --target=$(CLANG_TARGET) $(CLANG_EXTRA) -c -o $@ $<
 
 $(EFI): hello.o
 	mkdir -p $(ESP)/EFI/BOOT
-	$(LLD) /subsystem:efi_application /entry:EfiMain /out:$@ $<
+	$(LD_LLD) -flavor link -subsystem:efi_application -entry:EfiMain $< -o $@
+else
+# 官方 day01/c 路径
+CLANG_TARGET = x86_64-pc-win32-coff
+
+hello.o: hello.c
+	$(CLANG) -target $(CLANG_TARGET) -o $@ -c $<
+
+$(EFI): hello.o
+	mkdir -p $(ESP)/EFI/BOOT
+	$(LINK) /subsystem:efi_application /entry:EfiMain /out:$@ $<
+endif
 
 run: $(EFI)
 	$(QEMU) -bios $(OVMF) -drive format=raw,file=fat:rw:$(ESP) -m 512M

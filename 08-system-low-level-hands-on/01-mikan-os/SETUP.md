@@ -6,9 +6,10 @@
 
 | 组件 | 用途 |
 |------|------|
-| **WSL2** (Ubuntu 22.04+) | 编译、QEMU |
-| **Clang + lld** | **Ch1 首选** — LLVM 编译 + PE 链接（`lld-link`） |
-| **x86_64-elf-gcc** | Ch2+ 跟 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 时再装 |
+| **WSL2** (Ubuntu 22.04+) | **主路径**：Windows 本机 + Linux 编译环境 |
+| **llvm + lld** | **Ch1 推荐** — 纯 LLVM；`make LINK=ld.lld` |
+| **Clang + lld-link** | 备选 — 对齐官方 day01/c |
+| **x86_64-elf-gcc** | 可选 — 仅跟官方 mikanos-build `buildenv.sh` 时需要 |
 | **QEMU** + **OVMF** | UEFI 固件模拟 |
 | **Git** | clone 官方仓库（可选） |
 
@@ -18,9 +19,9 @@
 
 ```bash
 sudo apt update
-sudo apt install -y clang lld qemu-system-x86 ovmf
+sudo apt install -y llvm lld qemu-system-x86 ovmf
 cd …/chapter-01-hello-world/code
-make run
+make LINK=ld.lld run
 ```
 
 → [chapter-01-hello-world/code/](./chapter-01-hello-world/code/README.md)

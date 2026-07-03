@@ -23,7 +23,7 @@
 
 ### 二、两套工具链怎么理解（上手版）
 
-**先选一套装好就行。** Ch1 推荐 **Clang + LLD**，WSL 下 `apt install clang lld` 即可，**环境简单、踩坑少**；跟完全书 MikanOS 时再补 **x86_64-elf-gcc**。
+**先选一套装好就行。** Ch1 推荐 **纯 LLVM（Clang + ld.lld）**，WSL/Linux 下 `apt install llvm lld`（或 `clang lld`）即可 — **不必依赖 GCC 交叉链**，还能提前熟悉 LLVM 生态。
 
 #### A. Clang + LLD — **LLVM 工具链组合**（**Ch1 首选**）
 
@@ -35,33 +35,51 @@ hello.o
 BOOTX64.EFI（PE/COFF，UEFI 可加载）
 ```
 
-| 组件 | 干什么 | Ch1 里叫什么 |
-|------|--------|--------------|
-| **Clang** | 前端编译器：解析 C、生成汇编、产出 **COFF 对象** `.o` | `clang -target x86_64-pc-win32-coff -c hello.c` |
-| **LLD** | LLVM 的 **轻量高速链接器** | Ch1 用 **`lld-link`**（PE/EFI 模式）；Ch2+ 链 **ELF 内核** 时常见 **`ld.lld`**（同一套 LLD，不同前端） |
+**两条 LLVM 子路径（都能出 EFI，二选一）：**
 
-**为何 HFT 也值得关注 LLVM 线：** 链接/编译迭代快、工具链统一 — 日后内核、热路径 C++、**Release 构建循环** 都受益（与 [CSAPP Ch3 编译链](../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.1-3.2-历史观点与程序编码.md#321-机器级代码完整编译链路) 同一套「编译→链接」模型）。
+| 路径 | 编译 | 链接 | 触发 |
+|------|------|------|------|
+| **A1 · 官方 day01** | `clang -target x86_64-pc-win32-coff -c` | **`lld-link`** `/subsystem:efi_application` … | `make`（默认） |
+| **A2 · 纯 ld.lld** | `clang --target=x86_64-elf -ffreestanding -c` | **`ld.lld -flavor link -subsystem:efi_application -entry:EfiMain`** | **`make LINK=ld.lld`** |
 
-**WSL 快速运行（只装这一套）：**
+**A2 手动命令（与 [code/Makefile](../code/Makefile) 一致）：**
 
 ```bash
-sudo apt install -y clang lld qemu-system-x86 ovmf
-cd chapter-01-hello-world/code
-make run
+clang --target=x86_64-elf -ffreestanding -c hello.c -o hello.o
+ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o bootX64.efi
 ```
 
-#### B. x86_64-elf-gcc — **GCC 交叉编译链**（**全书 MikanOS 工程**）
+| 组件 | 干什么 |
+|------|--------|
+| **Clang** | 前端：C → `.o`；`-ffreestanding` = 不依赖 libc，适合 UEFI/内核 |
+| **ld.lld** | 同一 LLVM 链接器；**`-flavor link`** 切到 PE/COFF 模式链 **EFI**；链 **ELF 内核** 时不加 `-flavor link` |
+
+**为何 HFT 也值得关注 LLVM 线：** 编译/链接迭代快、**Ch1 EFI → Ch4 内核 → EDK II 可统一 Clang** — 低延迟工程的 Release 构建循环更顺。
+
+**环境：本仓库 [SETUP.md](../../SETUP.md) 主路径是 **Windows + WSL2**；**原生 Linux** 命令相同。**
+
+**WSL / Linux 快速运行：**
+
+```bash
+sudo apt install -y llvm lld qemu-system-x86 ovmf   # 或 clang lld
+cd chapter-01-hello-world/code
+make LINK=ld.lld run    # 纯 LLVM；或 make run（默认 lld-link 路径）
+```
+
+#### B. x86_64-elf-gcc — **GCC 交叉编译链**（**可选 · 跟官方 build.sh**）
 
 | 项 | 说明 |
 |----|------|
-| **是什么** | 目标三元组 **`x86_64-elf-*`** 的 GCC/G++ — 给 **非 Linux 宿主上的裸 x86_64 程序** 生成代码（freestanding / 内核语境） |
-| **用来干什么** | 生成 MikanOS **64 位内核**、部分 **Loader/EFI** 与官方 `build.sh` 联编 |
-| **何时装** | Ch2 跟 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 时：下载 **`x86_64-elf.tar.gz`** → `source devenv/buildenv.sh` |
-| **Ch1 是否必须** | **否** — Hello World 用 **Clang + lld-link** 已够；两套不必第一天全装 |
+| **是什么** | 目标三元组 **`x86_64-elf-*`** 的 GCC/G++ |
+| **用来干什么** | 官方 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 默认内核 / 部分 Loader 构建 |
+| **何时装** | 要跟官方 **`build.sh` 一字不差** 时再装；**纯 LLVM 路线可跳过** |
+| **与 A2 区别** | A2 的 `--target=x86_64-elf` 是 **Clang 三元组**，不是这套 GCC 包 — 名字像，工具不同 |
 
-#### C. 第三层：EDK II `build`（Ch2 MikanLoader）
+#### C. EDK II `build` + **全程 LLVM**（Ch2 MikanLoader）
 
-在 **Clang 或 x86_64-elf** 交叉链之上，用 **`<Uefi.h>` + EDK II 描述文件** 工程化构建 Loader — 见 [Ch2](../../chapter-02-edk2-memmap/)。
+在 EDK II 工程里把 **`TOOL_CHAIN_TAG` 改为 `CLANGPDB`**（或构建时 `-t CLANGPDB`），Loader 可 **全程 Clang/LLVM**，不必绑 GCC 交叉链。
+
+→ 详见 [Ch2 §2 EDK II](./chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)（Ch2 笔记）
 
 ---
 
@@ -69,15 +87,17 @@ make run
 
 | 工具链 | 典型命令 | 适用阶段 | 说明 |
 |--------|----------|----------|------|
-| **Clang + lld-link**（**Ch1 默认**） | `clang -target x86_64-pc-win32-coff` · `lld-link` | Ch1 Hello · 官方 [day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) | **推荐先试**；`-target …-win32-coff` 直接出 PE/COFF |
-| **x86_64-elf-gcc + ld.lld 等** | `x86_64-elf-gcc` · `x86_64-elf-g++` | Ch2+ 内核 · Loader · 官方 `build.sh` | mikanos-build 发布包 + **`buildenv.sh`** |
-| **EDK II `build`** | `source edksetup.sh && build` | Ch2 **MikanLoader** | 在交叉链之上的 UEFI 工程框架 |
+| **Clang + ld.lld** | `--target=x86_64-elf -ffreestanding` · `ld.lld -flavor link …` | Ch1 · **纯 LLVM 推荐** | `make LINK=ld.lld`；**不依赖 GCC 交叉链** |
+| **Clang + lld-link** | `-target x86_64-pc-win32-coff` · `lld-link` | Ch1 · 官方 [day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) | `make` 默认 |
+| **x86_64-elf-gcc** | 官方 mikanos-build 包 | 跟官方 `build.sh` 时 | 与 Clang A2 **不是同一套工具** |
+| **EDK II + CLANGPDB** | `build -t CLANGPDB` | Ch2 **MikanLoader** | EDK II 全程 LLVM |
 
 **怎么选（一句话）：**
 
-- **今天：** 只装 **Clang + lld** → [code/](../code/) **`make run`** 跑通第一个 EFI。
-- **跟全书：** 再装 **x86_64-elf-gcc** 工具链，与 EDK II、内核 Makefile 对齐。
-- **LLD 名字别混：** Ch1 链接 PE 用 **`lld-link`**；以后链 **ELF 内核** 常见 **`ld.lld`** — 同属 **LLVM LLD**，只是链接格式不同。
+- **今天：** `apt install llvm lld` → **`make LINK=ld.lld run`** — 纯 LLVM 跑通 EFI。
+- **跟官方 day01 一字不差：** `make run`（lld-link 路径）。
+- **Ch2 EDK II：** `TOOL_CHAIN_TAG = CLANGPDB` — Loader 也走 LLVM。
+- **GCC 交叉链：** 仅在与官方 **buildenv.sh** 绑定时需要，**非 LLVM 路线必选项**。
 
 **覆盖编译器路径（示例）：**
 
@@ -205,8 +225,9 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 **口述巩固 · 自测**
 
 1. **`.efi` 和 `.c` 是什么关系？** — 同一份程序：C 写逻辑，交叉编译链接成 UEFI 可执行的 PE 文件。
-2. **Ch1 默认用哪条链？** — **Clang 编译 + lld-link 链 PE**；跟全书工程再装 **x86_64-elf-gcc** 链内核/ELF。
-3. **lld-link 和 ld.lld 区别？** — 同属 **LLVM LLD**；Ch1 **EFI/PE 用 lld-link**，Ch2+ **ELF 内核常用 ld.lld**。
+2. **Ch1 纯 LLVM 怎么编？** — `clang --target=x86_64-elf -ffreestanding -c` + `ld.lld -flavor link -subsystem:efi_application -entry:EfiMain`；或 **`make LINK=ld.lld`**。
+3. **lld-link 和 ld.lld？** — 同属 LLD；**`-flavor link`** 时 **ld.lld 也能链 EFI/PE**，不必绑 GCC。
+4. **EDK II 全程 LLVM？** — **`TOOL_CHAIN_TAG = CLANGPDB`**（或 `build -t CLANGPDB`）。
 
 ---
 
