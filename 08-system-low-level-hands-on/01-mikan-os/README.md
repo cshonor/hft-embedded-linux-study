@@ -133,7 +133,7 @@ chapter-XX-slug/
 | E | iPXE | [appendix-E-ipxe](./appendix-E-ipxe/) |
 | F | ASCII 码表 | [appendix-F-ascii-table](./appendix-F-ascii-table/) |
 
-完整章表与要点速览 → [OUTLINE.md](./OUTLINE.md)。**目录骨架 Ch 0–31 + 附录 A–F 已建。**
+完整章表与要点速览 → [OUTLINE.md](./OUTLINE.md)。**目录骨架 Ch 1–31 + 附录 A–F 已建。**
 
 ---
 
@@ -150,9 +150,9 @@ chapter-XX-slug/
 
 ## 产出清单
 
-- [x] `OUTLINE.md` — 第 0–31 章 + 附录 A–F
+- [x] `OUTLINE.md` — 第 1–31 章 + 附录 A–F
 - [x] `LEARNING_PLAN.md` · `SETUP.md`
-- [x] `chapter-XX-slug/` — Ch 0–31 导读骨架
+- [x] `chapter-XX-slug/` — Ch 1–31 导读骨架
 - [x] `appendix-A` … `appendix-F` 导读骨架
 - [ ] 各章 `notes/` 正文（随学习增量填写）
 - [x] [Ch 1 Hello World](./chapter-01-hello-world/) — 6 小节笔记

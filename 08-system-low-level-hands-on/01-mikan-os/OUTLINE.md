@@ -79,6 +79,6 @@
 
 ---
 
-**笔记进度：** 目录骨架已建（Ch 0–31 + 附录 A–F）；正文随学习在 `chapter-XX/notes/` 增量补充。
+**笔记进度：** 目录骨架已建（Ch 1–31 + 附录 A–F）；正文随学习在 `chapter-XX/notes/` 增量补充。
 
 → 学习计划 [LEARNING_PLAN.md](./LEARNING_PLAN.md) · 环境 [SETUP.md](./SETUP.md)
