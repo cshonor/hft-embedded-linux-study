@@ -5,6 +5,16 @@
 
 ---
 
+## 本章定位 · 前后章关系
+
+| | |
+|---|---|
+| **本章干什么** | **Demand Paging** · **sbrk** · **CoW** · **invlpg** · **memstat**。 |
+| **全书作用** | **进程内存管理**（🔴）— Linux `mmap`/堆/brk 的极简版；理解 **按需分页** 与 **写时复制**。 |
+| **← 前置** | [Ch19 分页](../chapter-19-paging/) + [Ch26 stdio](../chapter-26-app-write-file/) |
+| **→ 后续** | [Ch28 日文 / 重定向](../chapter-28-japanese-redirect/) |
+
+---
 ### 本章结构
 
 | 段 | 做什么 | 带走什么 |

@@ -5,6 +5,16 @@
 
 ---
 
+## 本章定位 · 前后章关系
+
+| | |
+|---|---|
+| **本章干什么** | **kLayer 消息** · **ActiveLayer** · **TaskTerminal** · **DrawArea** 局部重绘。 |
+| **全书作用** | **交互壳成熟** — 规范窗口焦点与终端 Task；为 Ch16 **shell 命令** 提供可输入的 UI 容器。 |
+| **← 前置** | [Ch14 抢占调度](../chapter-14-multitask2/) + [Ch9–12 GUI/键盘](../chapter-09-layers/) |
+| **→ 后续** | [Ch16 命令 / CLI](../chapter-16-commands/) — 在终端里执行 ls 等 |
+
+---
 ### 本章结构
 
 | 段 | 做什么 | 带走什么 |

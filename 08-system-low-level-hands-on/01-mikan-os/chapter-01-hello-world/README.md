@@ -5,6 +5,16 @@
 
 ---
 
+## 本章定位 · 前后章关系
+
+| | |
+|---|---|
+| **本章干什么** | 用 **裸 C + Makefile** 编出第一个 **`BOOTX64.EFI`**，在 UEFI 里打印 Hello World；建立 **C → PE → FAT → EfiMain** 的现代启动链直觉。 |
+| **全书作用** | **全书起点** — 破除 OS 神秘感；证明「没有 OS 也能跑你的代码」；为 Ch2 的 EDK II / MikanLoader 打工具链地基。 |
+| **← 前置** | 无（MikanOS 主线起点）；可选对照 [02 30 天 Day1](../../02-30days-os/day-01-boot-asm/) 的 BIOS 512B 启蒙 |
+| **→ 后续** | [Ch2 EDK II / 内存 map](../chapter-02-edk2-memmap/) — 从裸 C 升级到规范 Loader，并 **摸底物理 RAM** |
+
+---
 ### 本章四段结构
 
 | 段 | 做什么 | 带走什么 |

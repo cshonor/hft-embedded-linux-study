@@ -5,6 +5,16 @@
 
 ---
 
+## 本章定位 · 前后章关系
+
+| | |
+|---|---|
+| **本章干什么** | **进程虚拟地址** · **SetupPageMaps / CleanPageMaps** · 修复 **rpn** 链接基址问题。 |
+| **全书作用** | **地址空间隔离**（🔴）— CSAPP Ch9 / Linux `mmap` 的极简实现版；Ch20 syscall、Ch24 多终端、Ch27 应用内存的基础。 |
+| **← 前置** | [Ch8 页表基础](../chapter-08-memory/) + [Ch18 应用 ELF](../chapter-18-apps/) |
+| **→ 后续** | [Ch20 系统调用](../chapter-20-syscall/) — Ring 3 与内核边界 |
+
+---
 ### 本章结构
 
 | 段 | 做什么 | 带走什么 |

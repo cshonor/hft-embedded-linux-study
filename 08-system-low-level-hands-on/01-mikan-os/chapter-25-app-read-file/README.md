@@ -5,6 +5,16 @@
 
 ---
 
+## 本章定位 · 前后章关系
+
+| | |
+|---|---|
+| **本章干什么** | **OpenFile / ReadFile** syscall · **fd** · **grep**；Newlib **read** 接入。 |
+| **全书作用** | **用户态文件读**（🟡）— 把 Ch17 FAT 暴露给应用；Unix **read/open** 语义的最小实现。 |
+| **← 前置** | [Ch17 文件系统](../chapter-17-filesystem/) + [Ch24 多终端](../chapter-24-multi-terminal/) |
+| **→ 后续** | [Ch26 应用写文件](../chapter-26-app-write-file/) |
+
+---
 ### 本章结构
 
 | 段 | 做什么 | 带走什么 |

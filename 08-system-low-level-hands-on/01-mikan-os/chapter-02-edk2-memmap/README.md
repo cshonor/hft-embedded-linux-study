@@ -5,6 +5,16 @@
 
 ---
 
+## 本章定位 · 前后章关系
+
+| | |
+|---|---|
+| **本章干什么** | 用 **EDK II** 重写 Hello → **MikanLoader**；调用 **`GetMemoryMap()`** 导出 **memmap CSV**；理解 **UEFI 内存类型** 与 C 指针。 |
+| **全书作用** | **启动链第二环** — 从「能打印」到「能读物理世界账本」；Ch8 物理分配、Ch19 分页都依赖本章的 **Conventional / MMIO** 直觉。 |
+| **← 前置** | [Ch1 Hello World](../chapter-01-hello-world/) — 已理解 UEFI 七步与 `BOOTX64.EFI` |
+| **→ 后续** | [Ch3 Loader 加载内核](../chapter-03-bootloader-display/) — 用 Loader 读 ELF、跳 **kernel.elf** |
+
+---
 ### 本章三段结构
 
 | 段 | 做什么 | 带走什么 |
