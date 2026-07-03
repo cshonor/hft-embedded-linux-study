@@ -59,6 +59,7 @@
 
 ## 本章学习目标 · 自检
 
+- [ ] 能回答 **§0 三问**：kernel.elf 作用 · GOP 为何经 Loader · 为何 UEFI 不直载内核
 - [ ] 能复述 **§0 五步法**：Loader → ELF → GOP → ExitBootServices → KernelMain
 - [ ] 说清 **MikanLoader ≈ GRUB**，**GOP 传地址不传截图**
 - [ ] 说清 **ELF 是通用格式**（`ls` / `.so` / `vmlinux` 都是 ELF），**不是**「专给内核用的标签」

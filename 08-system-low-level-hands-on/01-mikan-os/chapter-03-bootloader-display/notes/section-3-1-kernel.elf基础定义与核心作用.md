@@ -4,6 +4,8 @@
 
 ## 先纠正两个关键误区
 
+> **三问通读（kernel.elf 作用 / GOP 为何经 Loader / 为何不能省 Loader）：** [§0 完整流程 · 第六节 Q&A](./section-1-完整流程Miniload-GOP-kernel.md#六三个核心问题详解qa)
+
 ### 误区 ① 「ELF 是给加载器识别内核用的」
 
 | ❌ 错误说法 | ✅ 修正 |
