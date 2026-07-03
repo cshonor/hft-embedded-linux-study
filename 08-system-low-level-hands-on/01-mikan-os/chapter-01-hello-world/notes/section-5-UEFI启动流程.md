@@ -5,6 +5,8 @@
 
 **核心图：** 从通电到 `EfiMain` 跑起来 — MikanOS 走 **UEFI 线**，不是 BIOS 512 字节扇区线。
 
+**逻辑框架（先建立再读子笔记）：** **UEFI ≈ HTTP**（只定规则）→ **EDK II** = 官方 C 完整实现（可编固件 + `.efi`）→ **`BOOTX64.EFI` 功能 ≈ 传统 IPL**（形态是完整 PE 程序）。详 [Ch2 §2.1](../../chapter-02-edk2-memmap/notes/section-2-1-EDK-II是什么与行业定位.md) · IPL 对照 [§1.四](./section-1-本章定位.md#ipl-与-bootx64efi功能等价形态不同)
+
 ---
 
 ## 阅读顺序

@@ -22,11 +22,14 @@ Ch1 启动七步里 **⑤ 加载镜像、⑥ EfiMain** 发生在 RAM 里 —— 
 
 ### §5 自检（口述巩固）
 
-1. **UEFI 去哪找引导文件？** — **FAT ESP** 上固定路径 **`/EFI/BOOT/BOOTX64.EFI`**，不是 512B 扇区。
-2. **BIOS 传统启动认文件系统吗？** — **不认**，只执行 **0 扇区 IPL**（校验 **0xAA55**）。
-3. **MikanOS 为何用 UEFI？** — **64 位长模式 + C/LLVM 开发**，跳过实模式扇区汇编。
-4. **QEMU 如何模拟 UEFI？** — **OVMF 固件** + FAT 虚拟盘挂载含 `BOOTX64.EFI` 的目录。
-5. **固件和 BOOTX64.EFI 在内存里什么关系？** — 见 [Ch2 §3.3](../../chapter-02-edk2-memmap/notes/section-3-3-固件与EFI应用内存隔离.md)（**管家 / 工作台 / 办公室**）。
+1. **UEFI 去哪找引导文件？** — **FAT ESP** 上固定路径 **`/EFI/BOOT/BOOTX64.EFI`**，不是 512B 扇区。  
+2. **BIOS 传统启动认文件系统吗？** — **不认**，只执行 **0 扇区 IPL**（校验 **0xAA55**）。  
+3. **BOOTX64.EFI 等于 IPL 吗？** — **功能等价**（第一级 OS 加载器），**形态不同** — 完整 `.efi` PE 程序，非 512B 扇区。  
+4. **UEFI 和 HTTP 类比成立吗？** — **成立** — 都只定规则；Nginx/OVMF 才是实现。  
+5. **EDK II 产出什么？** — **整板固件镜像**（BIOS/OVMF）+ **独立 `.efi`**（驱动/引导器）。  
+6. **MikanOS 为何用 UEFI？** — **64 位长模式 + C/LLVM 开发**，跳过实模式扇区汇编。  
+7. **QEMU 如何模拟 UEFI？** — **OVMF 固件** + FAT 虚拟盘挂载含 `BOOTX64.EFI` 的目录。  
+8. **固件和 BOOTX64.EFI 在内存里什么关系？** — 见 [Ch2 §3.3](../../chapter-02-edk2-memmap/notes/section-3-3-固件与EFI应用内存隔离.md)（**管家 / 工作台 / 办公室**）。
 
 ---
 

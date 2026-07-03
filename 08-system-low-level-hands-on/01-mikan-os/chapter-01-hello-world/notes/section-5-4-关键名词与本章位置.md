@@ -8,11 +8,12 @@
 
 | 名词 | 一句话 |
 |------|--------|
-| **UEFI** | Unified Extensible Firmware Interface — **替代老旧 BIOS** 的可扩展固件；固化在主板 Flash，提供 **Boot/Runtime Services** 等标准接口 |
+| **UEFI** | 固件交互**标准**（≈ **HTTP 只定协议**）— 不提供程序；主板/OVMF 是实现 |
+| **EDK II** | UEFI 规范的 **官方 C 完整实现套件** — 可编 **整板固件** 或 **独立 `.efi`** → [Ch2 §2.1](../../chapter-02-edk2-memmap/notes/section-2-1-EDK-II是什么与行业定位.md) |
 | **FAT / FAT32** | 简单跨平台文件系统；UEFI 规范要求 **EFI 系统分区** 常用 FAT32，固件才能按路径打开 **`BOOTX64.EFI`** |
-| **BOOTX64.EFI** | x86_64 **默认 UEFI 引导应用** 文件名；你用 **C + lld-link** 编译的 **PE 产物**，放对路径才被加载 |
+| **BOOTX64.EFI** | x86_64 **默认 UEFI 引导应用** — **功能 ≈ 传统 BIOS 的 IPL**，但是完整 PE 程序、可调固件 API；Ch1 用 **C + lld-link** 编译 |
 | **EfiMain** | UEFI 应用的 **C 入口** — 等价于用户态的 `main`，参数为 `ImageHandle` + **`SystemTable`** |
-| **OVMF + QEMU** | **OVMF** = QEMU 用的开源 UEFI 固件；`-bios /usr/share/ovmf/OVMF.fd` + `fat:rw:esp` **模拟** 真实 UEFI 启动 |
+| **OVMF + QEMU** | **OVMF** = EDK II 构建的开源 UEFI 固件；`-bios /usr/share/ovmf/OVMF.fd` + `fat:rw:esp` **模拟** 真实 UEFI 启动 |
 
 → OVMF 命令与排错 [SETUP.md](../../SETUP.md) · [§3 真机与 QEMU](./section-3-真机与QEMU测试.md)
 
