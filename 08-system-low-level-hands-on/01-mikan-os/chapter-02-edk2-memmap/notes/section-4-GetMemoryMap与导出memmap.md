@@ -29,7 +29,15 @@ CSV 文本写入 U 盘根目录（或指定路径）
 | **典型参数** | MapSize、MapKey、DescriptorSize、DescriptorVersion |
 | **MapKey** | 映射版本键 — 内存分配后可能变化，后续 **ExitBootServices** 前需一致 |
 
-**输出：** 若干条描述符，每条 = **一段连续物理地址 + 类型 + 属性**。
+**输出：** 若干条描述符，每条 = **一段连续物理地址 + 类型 + 属性** —— 即 [§3 四层 RAM 地图](./section-3-主存储器与内存映射.md#二ram-占用四层--uefi-开机后的典型分层) 的 **机器可读清单**。
+
+| CSV 列（概念） | 对应 |
+|----------------|------|
+| 起始地址、长度 | 这一段 **物理 RAM** 占哪 |
+| **Type** | `Conventional` / `LoaderCode` / `ACPI` … |
+| **Attribute** | 可执行、可写、缓存策略 … |
+
+**读 CSV 时：** 找 **`LoaderCode`** 行 —— 那是 **MikanLoader 自己的代码段**，属性常含 **可执行、不可写**；找 **`ConventionalMemory`** —— 那是你 **Ch 8 内核该从这里划页** 的候选区。
 
 ```c
 // 示意 — 实际需按 UEFI 规范处理缓冲区大小与重试
