@@ -9,7 +9,7 @@
 
 | # | 笔记 | 带走什么 |
 |---|------|----------|
-| **2.1** | [EDK II 是什么 · 行业定位](./section-2-1-EDK-II是什么与行业定位.md) | 规范 vs 参考实现 · 三类用途 · MdePkg |
+| **2.1** | [EDK II 是什么 · **全栈框架 vs MdePkg 库**](./section-2-1-EDK-II是什么与行业定位.md) | 规范 vs 参考实现 · 两路线 · API 来自固件 |
 | **2.2** | [用 EDK II 重写 Hello World](./section-2-2-用EDK-II重写HelloWorld.md) | `<Uefi.h>` · `.inf` 工程化 · 对比 Ch1 裸 C |
 | **2.3** | [MikanLoader 是什么 · **加载什么**](./section-2-3-MikanLoader是什么.md) | Loader ≠ 内核 · 两层加载 · 生命周期 |
 | **2.4** | [Boot vs Runtime 服务](./section-2-4-Boot与Runtime服务.md) | `gBS` / `gRT` · GetMemoryMap 在 Boot 期 |

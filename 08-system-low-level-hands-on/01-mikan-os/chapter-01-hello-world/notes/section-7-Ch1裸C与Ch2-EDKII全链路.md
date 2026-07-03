@@ -194,17 +194,15 @@ build
 
 ### 四、递进结论
 
-1. **Ch1 裸 C：** 剥离框架，理解 **Uefi.h 语义、入口 ABI、PE32+ 链接** — 三选一即可入门。  
-2. **Ch2 EDK II：** 工业标准 — **`.inf/.dsc/.dec`、库分层、AutoGen/GenFw** — 主板固件、量产 Loader、**OVMF** 的官方开发方式。
-
----
+1. **Ch1 裸 C：** 剥离框架，理解 **Uefi.h 语义、入口 ABI、PE32+ 链接** — **`GetMemoryMap` 等 API 来自主板固件，不来自 EDK II**。  
+2. **Ch2 EDK II：** 工业标准 **工程化** MikanLoader — **`.inf/.dsc/.dec`、MdePkg 库、AutoGen/GenFw**；量产 BIOS / OVMF 的官方开发方式。  
+3. **不必二选一误解：** 吃透原理 **不必先学完整 EDK II**；做整机 BIOS **才必须** EDK II 全栈。
 
 ### 口述巩固 · 自测
 
-1. **GNU-EFI 和 EDK II 都提供 Uefi.h，区别？** — gnu-efi 是 **小包装+GCC 链接**；EDK II 是 **完整构建树+库生态**。  
-2. **`efi_main` 和 `UefiMain`？** — 不同工具链 **入口符号名**；EDK 常用 **`UefiApplicationEntryPoint`** 再调你的 `UefiMain`。  
-3. **`.inf` 和 `.dsc` 谁管全局？** — **`.dsc`** 平台顶层；**`.inf`** 单个模块。  
-4. **OVMF 怎么来的？** — **EDK II 构建出的 UEFI 固件**，给 QEMU 当 `-bios`。
+1. **EDK II 只是 C 库吗？** — **整体不是**；**`MdePkg` 一块** 可视为 UEFI C 库。  
+2. **`GetMemoryMap` 谁提供的？** — **主板 UEFI 固件**；EDK II 只提供 **头文件/封装**。  
+3. **GNU-EFI 和 EDK II 都提供 Uefi.h，区别？** — gnu-efi 是 **小包装+GCC 链接**；EDK II 是 **完整构建树+库生态+可产整板固件**。
 
 ---
 

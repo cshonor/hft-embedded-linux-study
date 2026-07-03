@@ -19,9 +19,69 @@
 | | 角色 |
 |---|------|
 | **UEFI 规范** | 接口标准文档（类似 **HTTP 协议**） |
-| **EDK II** | 实现该标准的 **代码库 + 构建工具链**（类似 **Nginx / Apache** 之于 HTTP） |
+| **主板 UEFI 固件** | 真正跑在你机器上的 **实现** — `GetMemoryMap` 等 API **由它提供** |
+| **EDK II** | 开源 **参考实现 + 全栈开发框架**（不只头文件） |
 
-**与 Ch1 关系：** Ch1 用 **裸 C + 手写最小类型** 编出 `BOOTX64.EFI`；Ch2 起纳入 **EDK II 工程体系** — 头文件、库、`.inf/.dsc` 构建 **一条链搞定**。
+**一句话：** EDK II **不只是单纯的 C 库** —— 是 **工具链 + 标准库 + 驱动模块 + 固件构建系统** 的完整 UEFI 开发套件。
+
+→ Loader 与 API 归属：[2.3](./section-2-3-MikanLoader是什么.md) · 两路线对照：[Ch1 §7](../../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md)
+
+---
+
+### 分层拆解：EDK II 里到底有什么
+
+#### 1. 其中一块 ≈ 「标准 UEFI C 库」（写 `.efi` 程序会用到）
+
+核心包 **`MdePkg`** = 全套头文件 + 基础库：
+
+| 提供什么 | 例子 |
+|----------|------|
+| **结构体 / 类型** | `EFI_SYSTEM_TABLE`、`EFI_MEMORY_DESCRIPTOR`、`BootServices`、`GetMemoryMap` |
+| **工具函数封装** | 字符串、Boot 期内存分配、`Print`、文件读写 |
+
+**单独拎出 `MdePkg`，可以当成 UEFI 专用 C 库** —— 和 Ch1 **手写 `uefi.h` 片段** 干同一件事，只是 EDK II **官方完整实现**。
+
+#### 2. 但整体远不止「库」— 三大核心组成
+
+| # | 组成 | 干什么 |
+|---|------|--------|
+| **① 海量预制驱动 / Pkg 包** | USB、网卡、FAT、ACPI、TPM、平台初始化… | 主板厂 **拼出整板 BIOS** |
+| **② BaseTools 专属构建链** | Python 脚本、AutoGen、GenFw、`.inf/.dsc/.dec` | **不能** 只用普通 `gcc`+Makefile 替代整套流程 |
+| **③ 完整固件生成** | GenFds → FV → **Flash 镜像** | 烧进主板 ROM 的 **整板 UEFI**，不只单个 `.efi` |
+
+→ 构建详表见下节「EDK II 完整提供什么」· [附录 C](../../appendix-C-edk2-files/)
+
+#### 3. 核心疑问：能不能说 EDK II 是「库」？
+
+| 视角 | 答案 |
+|------|------|
+| **局部** | **`MdePkg` ≈ UEFI 标准 C 库** |
+| **整体** | **库 + 工具链 + 驱动模块 + 固件构建系统** — 不能简称为「一个库」 |
+
+---
+
+### EDK II 路线 vs Ch1 极简 Loader 路线
+
+| | **EDK II 路线（工业 / 量产）** | **Ch1 极简路线（本仓库默认入门）** |
+|---|-------------------------------|-------------------------------------|
+| **依赖** | EDK II 全框架 · MdePkg · BaseTools · `.inf/.dsc` | **手写极简类型** · **clang + lld-link + Makefile** |
+| **适合** | 主板固件、嵌入式整机 UEFI、OVMF、量产 Loader | **吃透原理** — PE、EfiMain、BootServices 调用 |
+| **驱动** | 内置成熟 FAT/USB/ACPI 等 **Pkg 模块** | **只调主板已有固件的 API** — 不自带 EDK 驱动 |
+| **本书** | **Ch2 MikanLoader** 按原书走 EDK II **工程化** | **Ch1 [01-clang-minimal](../../chapter-01-hello-world/code/01-clang-minimal/)** 默认先做 |
+
+**关键澄清（易混）：**
+
+- 你现在调的 **`GetMemoryMap`、`SystemTable`、`ConOut`** → **主板原生 UEFI 固件** 提供的标准 API，**不是 EDK II「运行时」给你的**。
+- EDK II 的 **`MdePkg` / `<Uefi.h>`** → 把这套规范 **翻译成 C 头文件与库函数**，方便你写 Loader。
+- **Ch2 用 EDK II** = 用 **工业级工程方式** 写 MikanLoader；**不是** 因为只有 EDK II 才能调 `GetMemoryMap` —— Ch1 手写声明 **理论上也能调同一套固件 API**。
+
+**学习路线建议：**
+
+1. **现阶段吃透原理** — Ch1 极简 **`uefi.h` + WSL clang** 足够理解启动链与固件 API。
+2. **本书 Ch2** — 用 EDK II **重写 / 工程化** MikanLoader（`.inf/.dsc`、导出 memmap）— 对接原书与量产习惯。
+3. **以后做商用嵌入式整机、定制服务器 BIOS** — 才必须深入 **EDK II 全套框架 + Pkg 拼固件**。
+
+**与 Ch1 关系：** Ch1 用 **裸 C + 手写最小类型** 编出 `BOOTX64.EFI`；Ch2 纳入 **EDK II 工程体系** — 头文件、库、`.inf/.dsc` 构建 **一条链搞定**。
 
 → [Ch1 §7 两阶段全链路](../../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md)
 
