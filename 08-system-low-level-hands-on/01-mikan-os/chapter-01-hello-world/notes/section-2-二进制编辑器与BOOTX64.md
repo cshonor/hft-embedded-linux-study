@@ -46,41 +46,29 @@ BOOTX64.EFI（PE/COFF，UEFI 可加载）
 **Windows 原生（PowerShell，在 `code\` 目录逐条执行）：**
 
 ```powershell
-clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
+clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
 New-Item -ItemType Directory -Force -Path esp\EFI\BOOT | Out-Null
 lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
 ```
 
-→ 安装 LLVM、QEMU 完整步骤 [SETUP.md](../../SETUP.md)
+**WSL / Linux（`ld.lld` 路径）：**
 
 ```bash
 clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
-ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o bootX64.efi
+ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o esp/EFI/BOOT/BOOTX64.EFI
 ```
+
+→ 安装与 QEMU：[SETUP.md](../../SETUP.md)
 
 | 组件 | 干什么 |
 |------|--------|
-| **Clang** | 前端：C → `.o`；`-ffreestanding` = 不依赖 libc，适合 UEFI/内核 |
-| **ld.lld** | 同一 LLVM 链接器；**`-flavor link`** 切到 PE/COFF 模式链 **EFI**；链 **ELF 内核** 时不加 `-flavor link` |
+| **Clang** | 前端：C → `.o`；`-ffreestanding` = 不依赖 libc；**`-fshort-wchar`** = UEFI 宽字符 |
+| **lld-link** | Windows 上链 **PE/EFI**（需 **COFF** 对象） |
+| **ld.lld -flavor link** | Linux/WSL 上链 **PE/EFI**（可配合 **ELF 三元组** 编译） |
 
 **为何 HFT 也值得关注 LLVM 线：** 编译/链接迭代快、**Ch1 EFI → Ch4 内核 → EDK II 可统一 Clang** — 低延迟工程的 Release 构建循环更顺。
 
-**环境：Windows 原生 LLVM 与 WSL/Linux 均可；流程一致，不必强依赖 WSL。**
-
-**Windows 原生（PowerShell）：** [SETUP.md](../../SETUP.md) — `winget install LLVM.LLVM` 或官网安装包，勾选 PATH，然后：
-
-```powershell
-clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
-lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
-```
-
-**WSL / Linux 快速运行：**
-
-```bash
-sudo apt install -y llvm lld qemu-system-x86 ovmf   # 或 clang lld
-cd chapter-01-hello-world/code
-make LINK=ld.lld run    # 纯 LLVM；或 make run（默认 lld-link 路径）
-```
+**环境：** Windows 原生 LLVM 即可，不必 WSL。安装：`winget install LLVM.LLVM`，重开终端后 `clang --version`。
 
 #### B. x86_64-elf-gcc — **GCC 交叉编译链**（**可选 · 跟官方 build.sh**）
 
@@ -110,8 +98,8 @@ make LINK=ld.lld run    # 纯 LLVM；或 make run（默认 lld-link 路径）
 
 **怎么选（一句话）：**
 
-- **今天：** `apt install llvm lld` → **`make LINK=ld.lld run`** — 纯 LLVM 跑通 EFI。
-- **跟官方 day01 一字不差：** `make run`（lld-link 路径）。
+- **Windows 今天：** `winget install LLVM.LLVM` → 按 [SETUP.md](../../SETUP.md) 三条命令编 EFI。
+- **WSL 今天：** `apt install llvm lld` → **`make LINK=ld.lld run`**。
 - **Ch2 EDK II：** `TOOL_CHAIN_TAG = CLANGPDB` — Loader 也走 LLVM。
 - **GCC 交叉链：** 仅在与官方 **buildenv.sh** 绑定时需要，**非 LLVM 路线必选项**。
 
