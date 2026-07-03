@@ -55,7 +55,9 @@
 ## 本章学习目标 · 自检
 
 - [ ] 会用 **QEMU monitor** 查看寄存器 / 内存
-- [ ] 说清 **`kernel.elf`** 与 UEFI `.efi` 的分工 · **Program Header vs Section Header**
+- [ ] 说清 **ELF 是通用格式**（`ls` / `.so` / `vmlinux` 都是 ELF），**不是**「专给内核用的标签」
+- [ ] 说清 **磁盘上的 `kernel.elf` ≠ OS 在跑** — 须 **搬段 + 跳 `e_entry`**
+- [ ] 说清 **`.efi` 固件直接跑** vs **ELF 须 Loader 手写解析**
 - [ ] 能对照 **链接视图 / 执行视图** 说明 Bootloader 读哪张表
 - [ ] 会用 **`readelf -h/-l/-s`** 查入口与 PT_LOAD 段
 - [ ] 描述 **读 ELF → 分配内存 → 跳入口** 流程

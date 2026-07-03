@@ -1,83 +1,117 @@
-# Ch 3 §3.6 MikanLoader 加载 kernel.elf 流程
+# Ch 3 §3.6 MikanLoader 加载 kernel.elf — 完整六步
 
 > **MikanOS** · 原书第 3 章
 
-把 [§3.2 执行视图](./section-3-2-ELF三大结构与链接执行双视图.md) 的 **Program Header** 落成 **MikanLoader 代码**。
+把 [§3.2 执行视图](./section-3-2-ELF三大结构与链接执行双视图.md) 的 Program Header 落成代码，并放在 **加载器 · ELF · 内核** 全链路里理解（见 [§3.1 误区与三者关系](./section-3-1-kernel.elf基础定义与核心作用.md#三加载器--elf--内核--三者关系mikanos)）。
+
+---
+
+## 三者各是什么
+
+| | 是什么 | 格式 | 能否自己跑 |
+|---|--------|------|------------|
+| **磁盘上的 `kernel.elf`** | 操作系统内核 **本体打包** | ELF | ❌ 只是文件 |
+| **`bootx64.efi` / MikanLoader** | **操作系统加载器** | PE / `.efi` | ✅ 固件直接执行 |
+| **跳转到 `e_entry` 之后** | **内核在内存中运行** | 已是机器码 | ✅ 这才是 OS 启动 |
+
+> **纠正：** 「加载 ELF」≠「OS 已在运行」— 必须 **搬段 + 跳入口**（通常还有 **ExitBootServices**）。
+
+---
+
+## 加载器完整六步（贴合你写的代码）
+
+```
+① 读文件
+   gBS / EFI_FILE_PROTOCOL
+   把磁盘上 kernel.elf 读入内存缓冲区
+
+② 解析 ELF
+   校验魔数 7F 45 4C 46
+   读 ELF Header（e_entry、Program Header 表位置）
+   遍历 Program Header（PT_LOAD）
+
+③ 按段搬运
+   对每个 PT_LOAD：
+     AllocatePages → EfiConventionalMemory（见 Ch2 memmap）
+     memcpy(文件 p_offset → 内存 p_paddr / p_vaddr)
+
+④ 清空 .bss
+   若 p_memsz > p_filesz：
+     多出来的字节清零（未初始化全局变量）
+
+⑤ ExitBootServices
+   释放 UEFI Boot Services 占用的临时资源
+   （全书后续会细讲；Ch3 可能部分简化，但逻辑上属于「交给内核前」）
+
+⑥ 跳转内核入口
+   函数指针 ← e_entry
+   传入 KernelMain 所需参数（GOP 帧缓冲等 — §4）
+   不再返回 EfiMain
+```
+
+| 步 | 失败时常见现象 |
+|----|----------------|
+| ① | 找不到 `kernel.elf`、FAT 路径错 |
+| ② | 魔数错、不是 **EXEC** 类型 ELF |
+| ③ | **AllocatePages** 失败、地址与 [Ch2](../../chapter-02-edk2-memmap/) 冲突 |
+| ④ | 变量乱值、莫名崩溃 |
+| ⑤ | 未 Exit 就跳内核 → 后续章节才稳定 |
+| ⑥ | **`e_entry` 错** → RIP 乱飞、黑屏（用 QEMU `info registers` 查） |
+
+---
+
+## 代码层对应
+
+| ELF 概念 | MikanLoader |
+|----------|-------------|
+| **ELF Header** | 魔数、`e_entry` |
+| **PT_LOAD** | AllocatePages + memcpy |
+| **p_memsz > p_filesz** | memset 清零 BSS |
+| **Section Header** | **本阶段不读** — 仅 `readelf`/gdb 用 |
+
+**UEFI 固件不会做 ②–⑥** — 它只会 **直接跑 `.efi`**。解析 ELF 是 **Loader 你的责任**。
 
 ---
 
 ## 与 02 川合 OS 对照
 
-| | **01 约 Day 4–5** | **MikanOS Ch 3** |
-|---|-------------------|------------------|
-| 内核格式 | 二进制 flat / 自定义 | **ELF** |
-| 加载者 | 引导扇区 / asm | **UEFI MikanLoader** |
-| 首屏 | VGA 文本 | **GOP 像素帧缓冲** |
+| | **01 Day 4–5** | **MikanOS Ch 3** |
+|---|----------------|------------------|
+| 内核格式 | flat / 自定义 | **ELF** |
+| 加载者 | 引导扇区 | **MikanLoader (.efi)** |
+| 首屏 | VGA 文本 | **GOP 帧缓冲** |
 
 ---
 
-## Loader 加载流程
-
-```
-1. EFI_FILE_PROTOCOL 读取 U 盘上 kernel.elf 到缓冲
-2. 解析 ELF Header — 魔数 7F 45 4C 46、架构 x86-64
-3. 遍历 Program Headers — 对每个 PT_LOAD：
-      gBS->AllocatePages（须在 Conventional 等可用区）
-      拷贝段内容到 p_paddr / p_vaddr
-      若 p_memsz > p_filesz → 清零 BSS 部分
-4. 取 e_entry → 函数指针
-5. 准备 KernelMain 参数（GOP 帧缓冲等 — 见 §4）
-6. 跳转 — 不再返回 EfiMain
-```
-
-| 步骤 | 失败点 |
-|------|--------|
-| 读文件 | 路径错误、FAT 无 `kernel.elf` |
-| 分配页 | **内存不足** — `EFI_STATUS`（§5） |
-| 解析 ELF | 魔数错、无 **PT_LOAD** |
-| 跳转 | **`e_entry` / 链接脚本** 错 → RIP 乱飞 |
-
----
-
-## 代码层对应关系
-
-| ELF 概念 | MikanLoader 动作 |
-|----------|------------------|
-| **ELF Header** | 校验魔数、读 **`e_entry`** |
-| **Program Header `PT_LOAD`** | **AllocatePages + memcpy** |
-| **Section Header** | **本阶段不读** — 调试用 `readelf` 即可 |
-| **`KernelMain` 参数** | GOP 查询结果 **按调用约定** 传入 |
-
----
-
-## 架构图（本章总览）
+## 架构图
 
 ```
 ┌─────────────────────────────────────┐
-│  MikanLoader (UEFI .efi / PE)       │
-│  · GetMemoryMap（Ch2）               │
-│  · GOP → 帧缓冲信息（§4）            │
-│  · 读 kernel.elf · 解析 PHT         │
-│  · KernelMain(fb_base, fb_size, …)  │
+│  MikanLoader (bootx64.efi / PE)     │
+│  固件可直接执行                       │
+│  · 读 kernel.elf（ELF — 固件不自动跑）│
+│  · 解析 PHT · 搬段 · 清 BSS          │
+│  · ExitBootServices（交棒前）        │
+│  · jump(e_entry) + KernelMain 参数   │
 └──────────────┬──────────────────────┘
-               │ jump(e_entry)
+               │
                ▼
 ┌─────────────────────────────────────┐
-│  kernel.elf (ELF)                   │
-│  · KernelMain — 后期像素绘图         │
-│  · 初期：hlt 死循环                  │
+│  内存中的内核（来自 kernel.elf）      │
+│  KernelMain · 后期 GOP 绘图          │
 └─────────────────────────────────────┘
 ```
 
-→ 衔接 [Ch2 §2.3 MikanLoader](../../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md)
+→ [Ch2 §2.3 MikanLoader 定位](../../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md)
 
 ---
 
 ## 自检
 
-- [ ] 能对照 **`readelf -l`** 输出解释 Loader **加载了哪几段**
-- [ ] 能说出 **为何 Loader 不读 Section Header**
-- [ ] 知道加载地址要避开 [Ch2 固件/MMIO 区](../../chapter-02-edk2-memmap/notes/section-3-2-RAM四层占用.md)
+- [ ] 能说出 **ELF 通用格式** vs **`kernel.elf` 只是其一**
+- [ ] 能说出 **磁盘 ELF ≠ OS 在跑**
+- [ ] 能复述 **六步**，并解释 **为何固件不能代替你解析 ELF**
+- [ ] 能对照 **`readelf -l`** 与 Loader 搬了哪几段
 
 ---
 
