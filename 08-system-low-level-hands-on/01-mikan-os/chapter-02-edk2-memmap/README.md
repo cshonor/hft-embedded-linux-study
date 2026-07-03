@@ -54,7 +54,10 @@
 
 ## 本章学习目标 · 自检
 
-- [ ] 说清 **EDK II** 的用途及 `<Uefi.h>` 带来的便利
+- [ ] 能区分 **UEFI 规范 / EDK II 工具链 / 手写 uefi.h** —— UEFI **不是** C 第三方库
+- [ ] 能说出 **MikanLoader = Boot Loader**，**不是** 内核
+- [ ] 能说出 Loader **加载两类东西**：**kernel 镜像** + **内存/硬件描述（GetMemoryMap、GOP…）**
+- [ ] 能描述 **Loader 生命周期**：EfiMain → BootServices → ExitBootServices → 跳内核
 - [ ] 解释 **内存映射** — 哪些物理地址段空闲、哪些已被 UEFI 占用
 - [ ] 描述 **`gBS->GetMemoryMap()`** 与 **memmap CSV** 导出流程
 - [ ] 会用 **`->`** 访问结构体成员，理解 UEFI 中 **指针的指针** 常见模式

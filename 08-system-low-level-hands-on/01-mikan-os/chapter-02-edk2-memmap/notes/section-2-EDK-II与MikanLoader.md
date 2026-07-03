@@ -11,7 +11,7 @@
 |---|------|----------|
 | **2.1** | [EDK II 是什么 · 行业定位](./section-2-1-EDK-II是什么与行业定位.md) | 规范 vs 参考实现 · 三类用途 · MdePkg |
 | **2.2** | [用 EDK II 重写 Hello World](./section-2-2-用EDK-II重写HelloWorld.md) | `<Uefi.h>` · `.inf` 工程化 · 对比 Ch1 裸 C |
-| **2.3** | [MikanLoader 是什么](./section-2-3-MikanLoader是什么.md) | 蜜柑加载器 · Hello + memmap · 后续演进 |
+| **2.3** | [MikanLoader 是什么 · **加载什么**](./section-2-3-MikanLoader是什么.md) | Loader ≠ 内核 · 两层加载 · 生命周期 |
 | **2.4** | [Boot vs Runtime 服务](./section-2-4-Boot与Runtime服务.md) | `gBS` / `gRT` · GetMemoryMap 在 Boot 期 |
 | **2.5** | [CLANGPDB 工具链 · 自检](./section-2-5-CLANGPDB与自检.md) | WSL 上 EDK II 继续用 Clang · 自测 |
 
