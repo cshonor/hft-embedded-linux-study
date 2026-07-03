@@ -166,6 +166,83 @@ UTF-8          变长 1~4B — Linux / 通用程序
 | UTF-8 | `0xE4 0xB8 0xAD`（3 字节） |
 | UTF-16LE | `0x2D 0x4E`（2 字节） |
 
+**字符串 `Hi`（两个 ASCII 字母）在内存里（UTF-16LE + `\0` 结束）：**
+
+```
+地址 →  48 00  69 00  00 00
+        H  ·   i  ·   NUL
+        └─ U+0048 ─┘ └ U+0069 ┘
+```
+
+**字符串 `Hello, world!\n` — [hello.c](../code/hello.c) 里 `L"..."` 数据段大致形态：**
+
+```
+每个可见字符 2 字节（ASCII 区仍扩展为 16 bit）+ 最后 00 00 结束
+'H' → 48 00
+'e' → 65 00
+…
+'\n' → 0A 00
+结束 → 00 00
+```
+
+用十六进制编辑器打开编好的 `BOOTX64.EFI`，搜 **`48 00 65 00 6C 00 6C 00 6F 00`** 可找到 `"Hello"` 的 UTF-16LE 嵌入。
+
+---
+
+#### 9. 代码例子（对 / 错 / 手写 UTF-16）
+
+**✅ 正确 — UEFI ConOut（本章 [hello.c](../code/hello.c)）**
+
+```c
+// CHAR16 = 16 位宽字符；L 前缀 → 编译器生成 UTF-16LE 字面量
+SystemTable->ConOut->OutputString(SystemTable->ConOut, L"Hello, world!\n");
+```
+
+**❌ 错误 — 把 ASCII C 串直接传给要 CHAR16* 的 API**
+
+```c
+// 错：每个 char 1 字节，固件按 2 字节读 → 乱码或越界
+SystemTable->ConOut->OutputString(SystemTable->ConOut, "Hello, world!\n");
+```
+
+**✅ 手写 UTF-16LE 数组（等价于 `L"Hi"`）**
+
+```c
+static CHAR16 msg[] = { 0x0048, 0x0069, 0x0000 };  // 'H' 'i' NUL
+SystemTable->ConOut->OutputString(SystemTable->ConOut, msg);
+```
+
+**对比：同一句「Hi」若用 C 窄串（UTF-8/ASCII）**
+
+```c
+char ascii[] = { 0x48, 0x69, 0x00 };  // 仅 3 字节 — UEFI 控制台不能直接用
+// Linux 内核 printk 日后常见 UTF-8 窄串或 char* — 与 EFI 阶段不同
+```
+
+**emoji 例子（UTF-16 代理对 · 4 字节一个码点）**
+
+| 字符 | 码点 | UTF-16LE 字节（小端） |
+|------|------|------------------------|
+| 🥳 | U+1F973 | `73 D8 97 DF`（**2 个 CHAR16 码元**） |
+
+基本多文面（BMP）内的 `中` 仍只需 **1 个 CHAR16**（2 字节）；超出 BMP 才要代理对。
+
+---
+
+#### 10. 用 PowerShell 自己验字节（Windows）
+
+```powershell
+# UTF-16LE 字节
+[System.Text.Encoding]::Unicode.GetBytes("A")     # 41 00
+[System.Text.Encoding]::Unicode.GetBytes("中")    # 2D 4E
+
+# UTF-8 字节
+[System.Text.Encoding]::UTF8.GetBytes("A")        # 41
+[System.Text.Encoding]::UTF8.GetBytes("中")      # E4 B8 AD
+```
+
+与 [§7 表](#7-直观字节例子小端主机) 对照，建立「码点 → 字节序列」直觉。
+
 ---
 
 #### 8. 贴合 MikanOS / UEFI 的三条结论
@@ -181,7 +258,7 @@ UTF-8          变长 1~4B — Linux / 通用程序
 1. **Unicode 是文件格式吗？** — **否**，只是码点编号；**UTF-8/16** 才是存储格式。
 2. **UEFI 为什么用 `L"Hello"`？** — **ConOut** 要 **UTF-16LE**，不是 ASCII C 串。
 3. **`中` 的 UTF-8 几字节？UTF-16LE 几字节？** — **3 字节** / **2 字节**（上表）。
-4. **UCS-2 和 UTF-16 区别？** — UTF-16 用 **代理对** 支持 **> U+FFFF** 的字符。
+5. **在 `.efi` 里怎么找到 Hello 字符串？** — 搜 hex **`48 00 65 00 6C 00 6C 00 6F 00`**（`Hello` 的 UTF-16LE）。
 
 ---
 
