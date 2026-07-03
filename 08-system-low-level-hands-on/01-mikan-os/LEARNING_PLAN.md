@@ -53,6 +53,6 @@
 | 坑 | 说明 |
 |----|------|
 | 跳过 02-30days-os 直接 MikanOS | 可以，但 **实模式→保护模式** 体感会缺一块 |
-| WSL 与 USB 启动 | 书内多种路径；笔记以 **QEMU + OVMF** 为主（见 SETUP） |
+| WSL 开发环境 | 全书 **WSL2 + Ubuntu**；笔记以 **QEMU + OVMF** 为主（见 [SETUP](./SETUP.md)） |
 | 整仓 copy os-from-zero | 用 **官方 tag + 本仓库 chapter/code 快照** |
 | Ch 4–6 GUI | HFT 可 ⚪ 速读，保留 Ch 7+ |

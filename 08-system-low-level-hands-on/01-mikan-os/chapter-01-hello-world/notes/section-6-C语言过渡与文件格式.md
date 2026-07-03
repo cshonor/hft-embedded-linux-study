@@ -10,14 +10,14 @@
 hello.c（C 源码 · UEFI 业务逻辑）
     ↓  交叉编译器（Clang 或 x86_64-elf-gcc）
 COFF 对象 (.o) — 机器码 + 重定位信息
-    ↓  链接器（lld-link 或 EDK II / 官方脚本）
+    ↓  链接器（ld.lld 或 EDK II `build`）
 BOOTX64.EFI — PE32+ 形态，固件可加载
 ```
 
 | 工具 | 角色 |
 |------|------|
-| **Clang** | Ch1 默认；`-target x86_64-pc-win32-coff` → **PE 对象**；UEFI 开发 **更省心** |
-| **x86_64-elf-gcc** | MikanOS [mikanos-build](https://github.com/uchan-nos/mikanos-build) 推荐交叉链；Ch2+ 内核 / Loader 与 **`buildenv.sh`** 同环境 |
+| **Clang + ld.lld** | Ch1 默认；`--target=x86_64-elf` 编译 + `ld.lld -flavor link` → **PE32+ .efi** |
+| **x86_64-elf-gcc** | Ch3+ 内核 ELF；WSL 手动安装，不用官方 Ansible 黑盒 |
 | **LLD / EDK II `build`** | 链接成 **`.efi`**；**`/subsystem:efi_application`** 等由 Makefile 写好，无需自写链接脚本 |
 | **EDK II** | Ch2 起：`<Uefi.h>`、库、工程描述 — 在交叉链之上再包一层规范 |
 

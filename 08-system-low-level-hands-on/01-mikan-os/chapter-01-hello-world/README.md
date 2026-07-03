@@ -44,17 +44,13 @@
 
 ## 动手 · code/
 
+**环境：** WSL2 + Ubuntu · 见 [SETUP.md](../SETUP.md)
+
 **先看索引：** [code/README.md](./code/README.md)
 
-```powershell
-# Windows · 工程 01
-cd chapter-01-hello-world\code\01-clang-minimal
-# 命令见 01-clang-minimal\README.md
-```
-
 ```bash
-# WSL · 工程 01
-cd chapter-01-hello-world/code/01-clang-minimal && make run
+cd chapter-01-hello-world/code/01-clang-minimal
+make run    # 需 clang · ld.lld · qemu-system-x86_64 · ovmf
 ```
 
 ---

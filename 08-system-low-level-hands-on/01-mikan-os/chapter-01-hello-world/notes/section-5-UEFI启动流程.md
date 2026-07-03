@@ -97,7 +97,7 @@ CPU 跳转到镜像入口 — C 程序里即 **`EfiMain(ImageHandle, SystemTable
 | **1** | **CPU 运行模式** | 开机 **16 位实模式**，寻址 **≈1MB** 瓶颈 | 开机 **x86_64 长模式**，可访问 **全部物理内存**（仍受固件 map 约束） |
 | **2** | **找引导程序** | **无视文件系统**，只读 **磁盘最前 512B 扇区** | **FAT 文件系统** + 固定路径 **`/EFI/BOOT/BOOTX64.EFI`** |
 | **3** | **文件系统** | **无** — 裸扇区概念 | **强制 ESP 为 FAT32** — 有文件/文件夹 |
-| **4** | **自制 OS 开发门槛** | 大量 **16 位汇编** 挤在 512B | **C 语言** + Clang/`lld-link` → `.efi`，**MikanOS 采用此方案** |
+| **4** | **自制 OS 开发门槛** | 大量 **16 位汇编** 挤在 512B | **C 语言** + Clang/**ld.lld** → `.efi`，**MikanOS 采用此方案** |
 
 **HFT 读法：** 共置/服务器几乎全走 **UEFI → boot loader → 长模式内核**；BIOS 软盘链是 **历史启蒙**，不是生产主线。
 
@@ -109,7 +109,7 @@ CPU 跳转到镜像入口 — C 程序里即 **`EfiMain(ImageHandle, SystemTable
 |------|--------|
 | **UEFI** | Unified Extensible Firmware Interface — **替代老旧 BIOS** 的可扩展固件；固化在主板 Flash，提供 **Boot/Runtime Services** 等标准接口 |
 | **FAT / FAT32** | 简单跨平台文件系统；UEFI 规范要求 **EFI 系统分区** 常用 FAT32，固件才能按路径打开 **`BOOTX64.EFI`** |
-| **BOOTX64.EFI** | x86_64 **默认 UEFI 引导应用** 文件名；你用 **C + `lld-link`** 编译的 **PE 产物**，放对路径才被加载 |
+| **BOOTX64.EFI** | x86_64 **默认 UEFI 引导应用** 文件名；你用 **C + ld.lld** 编译的 **PE 产物**，放对路径才被加载 |
 | **EfiMain** | UEFI 应用的 **C 入口** — 等价于用户态的 `main`，参数为 `ImageHandle` + **`SystemTable`** |
 | **OVMF + QEMU** | **OVMF** = QEMU 用的开源 UEFI 固件；`-bios OVMF_CODE.fd` + `fat:rw:esp` **完全模拟** 真实 UEFI 启动，无需实体机 |
 

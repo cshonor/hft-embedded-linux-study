@@ -82,7 +82,7 @@ chapter-XX-slug/
 └── code/                  ← 对照官方 osbook_dayXX 快照（可选）
 ```
 
-**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md) · 环境 [SETUP.md](./SETUP.md)（附录 A）
+**动手前必读：** [LEARNING_PLAN.md](./LEARNING_PLAN.md) · 环境 [SETUP.md](./SETUP.md)（**WSL2 + Ubuntu**，附录 A）
 
 ---
 

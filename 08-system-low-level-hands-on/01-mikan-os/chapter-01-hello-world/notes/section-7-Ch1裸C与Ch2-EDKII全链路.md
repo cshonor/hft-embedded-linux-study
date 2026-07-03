@@ -1,7 +1,7 @@
 ## 7. UEFI 开发两阶段：Ch1 裸 C → Ch2 EDK II 全链路
 
 > **递进逻辑：** Ch1 **剥离框架** 看懂 UEFI 入口 / PE32+ / 系统表；Ch2 **工业标准化** — `.inf/.dsc/.dec` + BaseTools + 官方库生态。  
-> 本仓库 Ch1 **默认**：[01-clang-minimal](../code/01-clang-minimal/)（Clang · Windows 可编）。
+> 本仓库 Ch1 **默认**：[01-clang-minimal](../code/01-clang-minimal/)（WSL · Clang + ld.lld）。
 
 ---
 
@@ -9,8 +9,8 @@
 
 ```
 阶段 A  裸 C 生成 BOOTX64.EFI（无 EDK II 构建树）
-          ├─ A1 极简：手写类型 + Clang/lld-link     [01-clang-minimal/](../code/01-clang-minimal/)  Windows/WSL
-          └─ A2 GNU-EFI：真 <Uefi.h> + GCC 链接    [02-gnu-efi-gcc/](../code/02-gnu-efi-gcc/)  Linux/WSL
+          ├─ A1 极简：手写类型 + Clang/ld.lld     [01-clang-minimal/](../code/01-clang-minimal/)  WSL
+          └─ A2 GNU-EFI：真 <Uefi.h> + GCC 链接    [02-gnu-efi-gcc/](../code/02-gnu-efi-gcc/)  WSL
 
 阶段 B  EDK II 工程化（Ch2 MikanLoader 及以后）
           .c + .inf + .dsc + build → Loader.efi
@@ -23,7 +23,7 @@
 ### A1. 本仓库默认（极简 · Clang）
 
 - **无** EDK II、**无** gnu-efi — 只声明本章用到的结构体
-- Windows：`clang -target x86_64-pc-win32-coff …` + `lld-link` → [SETUP.md](../../SETUP.md)
+- WSL：`clang --target=x86_64-elf …` + `ld.lld -flavor link` → [SETUP.md](../../SETUP.md)
 - **目的：** 最快跑通 + 理解 **PE / EfiMain / ConOut**
 
 ### A2. GNU-EFI + GCC（真 `<Uefi.h>` · Linux）
@@ -186,8 +186,8 @@ build
 |---|-------------------|----------------|--------------|
 | **Uefi.h** | 手写最小类型 | 包内真头文件 | **MdePkg** |
 | **入口** | `EfiMain` | `efi_main` | `UefiMain` |
-| **工具** | clang + lld-link | gcc + gnu-efi | `build` + BaseTools |
-| **平台** | **Windows 优先** | Linux/WSL | Win/Linux/macOS |
+| **工具** | clang + ld.lld | gcc + gnu-efi | `build` + BaseTools |
+| **平台** | **WSL / Linux** | WSL / Linux | WSL / Linux（全书统一） |
 | **本书章节** | Ch1 [01-clang-minimal](../code/01-clang-minimal/) | Ch1 [02-gnu-efi-gcc](../code/02-gnu-efi-gcc/) | **Ch2+** MikanLoader |
 
 ---

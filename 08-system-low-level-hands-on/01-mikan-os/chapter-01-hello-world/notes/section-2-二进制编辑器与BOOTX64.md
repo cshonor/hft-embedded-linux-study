@@ -21,67 +21,52 @@
 
 ---
 
-### 二、两套工具链怎么理解（上手版）
+### 二、工具链怎么理解（WSL · 上手版）
 
-**先选一套装好就行。** Ch1 推荐 **纯 LLVM（Clang + ld.lld）**，WSL/Linux 下 `apt install llvm lld`（或 `clang lld`）即可 — **不必依赖 GCC 交叉链**，还能提前熟悉 LLVM 生态。
+**Ch1 推荐：Clang + ld.lld** — WSL 里 `sudo apt install llvm lld` 即可，**不必依赖 GCC 交叉链**。
 
-#### A. Clang + LLD — **LLVM 工具链组合**（**Ch1 首选**）
+#### Clang + ld.lld — **LLVM 组合（Ch1 默认）**
 
 ```
 hello.c
-  ↓  Clang          编译：C → 汇编(.s) → 目标文件(.o)
+  ↓  Clang（--target=x86_64-elf -ffreestanding -fshort-wchar）
 hello.o
-  ↓  LLD 链接器     把 .o 拼成最终镜像
-BOOTX64.EFI（PE/COFF，UEFI 可加载）
+  ↓  ld.lld -flavor link（-subsystem:efi_application -entry:EfiMain）
+BOOTX64.EFI（PE32+，UEFI 可加载）
 ```
 
-**两条 LLVM 子路径（都能出 EFI，二选一）：**
-
-| 路径 | 编译 | 链接 PE/EFI |
-|------|------|-------------|
-| **A1 · Windows 原生** | `clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c` | **`lld-link /subsystem:efi_application …`** |
-| **A2 · WSL/Linux** | `clang --target=x86_64-elf -ffreestanding -fshort-wchar -c` | **`ld.lld -flavor link -subsystem:efi_application …`** |
-| **A3 · 官方 day01（WSL）** | `clang -target x86_64-pc-win32-coff -c` | **`lld-link`** — `make` 默认 |
-
-**Windows 原生（PowerShell，在 `code\` 目录逐条执行）：**
-
-```powershell
-clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
-New-Item -ItemType Directory -Force -Path esp\EFI\BOOT | Out-Null
-lld-link /subsystem:efi_application /entry:EfiMain hello.o /out:esp\EFI\BOOT\BOOTX64.EFI
-```
-
-**WSL / Linux（`ld.lld` 路径）：**
+**手敲命令**（在 [01-clang-minimal/](../code/01-clang-minimal/) 目录）：
 
 ```bash
 clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
-ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o esp/EFI/BOOT/BOOTX64.EFI
+mkdir -p esp/EFI/BOOT
+ld.lld -flavor link -subsystem:efi_application -entry:EfiMain \
+  hello.o -o esp/EFI/BOOT/BOOTX64.EFI
 ```
+
+**或一键：** `make` / `make run`
 
 → 安装与 QEMU：[SETUP.md](../../SETUP.md)
 
 | 组件 | 干什么 |
 |------|--------|
-| **Clang** | 前端：C → `.o`；`-ffreestanding` = 不依赖 libc；**`-fshort-wchar`** = UEFI 宽字符 |
-| **lld-link** | Windows 上链 **PE/EFI**（需 **COFF** 对象） |
-| **ld.lld -flavor link** | Linux/WSL 上链 **PE/EFI**（可配合 **ELF 三元组** 编译） |
+| **Clang** | C → `.o`；`-ffreestanding` = 不依赖 libc；**`-fshort-wchar`** = UEFI 宽字符 |
+| **ld.lld -flavor link** | 在 WSL 上把 `.o` 链成 **PE/EFI**（产出仍是 PE32+，不是 Linux 可执行 ELF） |
 
-**为何 HFT 也值得关注 LLVM 线：** 编译/链接迭代快、**Ch1 EFI → Ch4 内核 → EDK II 可统一 Clang** — 低延迟工程的 Release 构建循环更顺。
+**环境：** 全书 **WSL2 + Ubuntu**；Windows 只作 Cursor 编辑器宿主。
 
-**环境：** Windows 原生 LLVM 即可，不必 WSL。安装：`winget install LLVM.LLVM`，重开终端后 `clang --version`。
-
-#### B. x86_64-elf-gcc — **GCC 交叉编译链**（**可选 · 跟官方 build.sh**）
+#### x86_64-elf-gcc — **GCC 交叉编译链**（**Ch3+ · 可选**）
 
 | 项 | 说明 |
 |----|------|
 | **是什么** | 目标三元组 **`x86_64-elf-*`** 的 GCC/G++ |
-| **用来干什么** | 官方 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 默认内核 / 部分 Loader 构建 |
-| **何时装** | 要跟官方 **`build.sh` 一字不差** 时再装；**纯 LLVM 路线可跳过** |
-| **与 A2 区别** | A2 的 `--target=x86_64-elf` 是 **Clang 三元组**，不是这套 GCC 包 — 名字像，工具不同 |
+| **用来干什么** | MikanOS **内核 ELF** 构建（Ch3 起） |
+| **何时装** | 进内核章节时再装；**Ch1 不需要** |
+| **与 Clang 区别** | Clang 的 `--target=x86_64-elf` 是 **编译器三元组**；`x86_64-elf-gcc` 是 **另一套 GCC 包** — 名字像，工具不同 |
 
-#### C. EDK II `build` + **全程 LLVM**（Ch2 MikanLoader）
+#### EDK II `build` + **CLANGPDB**（Ch2 MikanLoader）
 
-在 EDK II 工程里把 **`TOOL_CHAIN_TAG` 改为 `CLANGPDB`**（或构建时 `-t CLANGPDB`），Loader 可 **全程 Clang/LLVM**，不必绑 GCC 交叉链。
+在 EDK II 工程里把 **`TOOL_CHAIN_TAG` 改为 `CLANGPDB`**（或构建时 `-t CLANGPDB`），Loader 可 **全程 Clang/LLVM**，与 Ch1 同一编译器家族。
 
 → 详见 [Ch2 §2 CLANGPDB](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)
 
@@ -91,17 +76,15 @@ ld.lld -flavor link -subsystem:efi_application -entry:EfiMain hello.o -o esp/EFI
 
 | 工具链 | 典型命令 | 适用阶段 | 说明 |
 |--------|----------|----------|------|
-| **Clang + ld.lld** | `--target=x86_64-elf -ffreestanding` · `ld.lld -flavor link …` | Ch1 · **纯 LLVM 推荐** | `make LINK=ld.lld`；**不依赖 GCC 交叉链** |
-| **Clang + lld-link** | `-target x86_64-pc-win32-coff` · `lld-link` | Ch1 · 官方 [day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) | `make` 默认 |
-| **x86_64-elf-gcc** | 官方 mikanos-build 包 | 跟官方 `build.sh` 时 | 与 Clang A2 **不是同一套工具** |
-| **EDK II + CLANGPDB** | `build -t CLANGPDB` | Ch2 **MikanLoader** | EDK II 全程 LLVM |
+| **Clang + ld.lld** | `--target=x86_64-elf` · `ld.lld -flavor link …` | **Ch1 默认** | `make` / `make run` |
+| **x86_64-elf-gcc** | `x86_64-elf-gcc` / 官方 build.sh | Ch3+ **内核 ELF** | Ch1 不必装 |
+| **EDK II + CLANGPDB** | `build -t CLANGPDB` | Ch2 **MikanLoader** | 与 Ch1 同 LLVM |
 
 **怎么选（一句话）：**
 
-- **Windows 今天：** `winget install LLVM.LLVM` → 按 [SETUP.md](../../SETUP.md) 三条命令编 EFI。
-- **WSL 今天：** `apt install llvm lld` → **`make LINK=ld.lld run`**。
+- **Ch1：** WSL 里 `apt install llvm lld` → **`make run`**（见 [SETUP.md](../../SETUP.md)）。
 - **Ch2 EDK II：** `TOOL_CHAIN_TAG = CLANGPDB` — Loader 也走 LLVM。
-- **GCC 交叉链：** 仅在与官方 **buildenv.sh** 绑定时需要，**非 LLVM 路线必选项**。
+- **Ch3+ 内核：** 再装 **x86_64-elf-gcc** 等交叉链。
 
 **覆盖编译器路径（示例）：**
 
@@ -110,7 +93,7 @@ make CLANG=/usr/bin/clang-18
 # x86_64-elf-gcc --version   # 已 source buildenv.sh 后
 ```
 
-**你不需要：** 自写 **链接脚本（.ld）** 拼 PE 头 — Makefile 里 **`/subsystem:efi_application` + `/entry:EfiMain`** 或官方 `build.sh` 已封装。
+**你不需要：** 自写 **链接脚本（.ld）** 拼 PE 头 — Makefile 里 **`-subsystem:efi_application` + `-entry:EfiMain`** 已封装。
 
 ---
 
@@ -119,7 +102,7 @@ make CLANG=/usr/bin/clang-18
 ```
 ① 写 C 源码（EfiMain · 初始化控制台 · 打印字符）
         ↓
-② Makefile：clang 编译 .o → lld-link 链接成 PE 格式的 .efi
+② Makefile：clang 编译 .o → ld.lld 链接成 PE 格式的 .efi
         ↓
 ③ 复制为 esp/EFI/BOOT/BOOTX64.EFI（FAT 目录布局）
         ↓
@@ -129,8 +112,8 @@ make CLANG=/usr/bin/clang-18
 | 步骤 | 工具 / 产物 | 说明 |
 |------|-------------|------|
 | **源码** | `hello.c` | 入口 **`EfiMain(ImageHandle, SystemTable)`** — UEFI 应用标准入口，不是 `main(argc, argv)` |
-| **编译** | `clang -target x86_64-pc-win32-coff` | **交叉编译** 为 Windows COFF 对象 — x64 UEFI 应用底层即 **PE32+** |
-| **链接** | `lld-link /subsystem:efi_application /entry:EfiMain` | 生成 **PE 格式** 的 `.efi` |
+| **编译** | `clang --target=x86_64-elf -ffreestanding -fshort-wchar` | 交叉编译为 `.o`；链接后产出 **PE32+** `.efi` |
+| **链接** | `ld.lld -flavor link -subsystem:efi_application -entry:EfiMain` | 生成 **PE 格式** 的 `.efi` |
 | **部署** | `EFI/BOOT/BOOTX64.EFI` on **FAT** | 固件按固定路径查找（见 [§3 测试](./section-3-真机与QEMU测试.md)） |
 
 **最小模板核心逻辑**（[01-clang-minimal/hello.c](../code/01-clang-minimal/hello.c)）：
@@ -166,17 +149,18 @@ make run    # → QEMU + OVMF，fat:rw:esp 挂载
 
 ```makefile
 hello.o: hello.c
-	clang -target x86_64-pc-win32-coff -o $@ -c $<
+	clang --target=x86_64-elf -ffreestanding -fshort-wchar -c -o $@ $<
 
 esp/EFI/BOOT/BOOTX64.EFI: hello.o
-	lld-link /subsystem:efi_application /entry:EfiMain /out:$@ $<
+	mkdir -p esp/EFI/BOOT
+	ld.lld -flavor link -subsystem:efi_application -entry:EfiMain $< -o $@
 ```
 
 | 目标 | 含义 |
 |------|------|
-| **`x86_64-pc-win32-coff`** | 告诉 Clang：产出 **PE/COFF** 对象，不是 Linux ELF |
-| **`/subsystem:efi_application`** | 链接器标记为 **UEFI 应用**，固件才认 |
-| **`/entry:EfiMain`** | 入口符号 = UEFI 加载后第一条执行的 C 函数 |
+| **`--target=x86_64-elf`** | WSL 上 Clang 交叉三元组 |
+| **`-subsystem:efi_application`** | 链接器标记为 **UEFI 应用**，固件才认 |
+| **`-entry:EfiMain`** | 入口符号 = UEFI 加载后第一条执行的 C 函数 |
 
 完整 devenv（`make_image.sh` · 实体 U 盘镜像）→ [SETUP.md](../../SETUP.md) · [appendix-B](../../appendix-B-get-mikanos/)。
 
@@ -219,18 +203,18 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 
 | 现象 | 可能原因 |
 |------|----------|
-| `make` 找不到 `lld-link` | 未装 `lld` 包；或 WSL 外未配置 PATH |
+| `make` 找不到 `ld.lld` | 未装 `lld` 包：`sudo apt install lld` |
 | U 盘 / QEMU 无输出 | 路径非 `/EFI/BOOT/BOOTX64.EFI`、非 FAT、或 **Secure Boot** 拦截 |
 | 乱码 / 崩溃 | `OutputString` 用了窄字符串；UEFI 文本 API 要 **`L"..."` 宽串** |
-| 用宿主机 `gcc hello.c` 直接编 | 产出 **Linux ELF**，UEFI **不能加载** — 必须 **交叉** 到 PE/COFF（Clang `-target …-win32-coff` 或 MikanOS `x86_64-elf-*` 工具链） |
+| 用宿主机 `gcc hello.c` 直接编 | 产出 **Linux ELF 可执行**，UEFI **不能加载** — 必须交叉链到 **PE/EFI**（`clang --target=x86_64-elf` + `ld.lld -flavor link`） |
 
 | 与软盘启动混淆 | 本章是 **FAT 上的 .efi 文件**，不是软盘 **512B IPL** — [§1.四](./section-1-本章定位.md#四核心区分bootx64efi--软盘启动两条线) |
 
 **口述巩固 · 自测**
 
 1. **`.efi` 和 `.c` 是什么关系？** — 同一份程序：C 写逻辑，交叉编译链接成 UEFI 可执行的 PE 文件。
-2. **Ch1 纯 LLVM 怎么编？** — `clang --target=x86_64-elf -ffreestanding -c` + `ld.lld -flavor link -subsystem:efi_application -entry:EfiMain`；或 **`make LINK=ld.lld`**。
-3. **lld-link 和 ld.lld？** — 同属 LLD；**`-flavor link`** 时 **ld.lld 也能链 EFI/PE**，不必绑 GCC。
+2. **Ch1 怎么编？** — `clang --target=x86_64-elf -ffreestanding -c` + `ld.lld -flavor link -subsystem:efi_application -entry:EfiMain`；或 **`make run`**。
+3. **`.o` 是 ELF 三元组，`.efi` 却是 PE？** — **链接阶段** `ld.lld -flavor link` 产出 **PE32+**；编译三元组与最终镜像格式可以不同。
 4. **EDK II 全程 LLVM？** — **`TOOL_CHAIN_TAG = CLANGPDB`**（或 `build -t CLANGPDB`）。
 
 ---
