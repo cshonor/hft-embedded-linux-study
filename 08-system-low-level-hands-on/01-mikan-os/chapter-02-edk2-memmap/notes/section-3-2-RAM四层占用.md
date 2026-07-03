@@ -6,6 +6,9 @@
 
 RAM **并非一整块空闲** 给未来的 MikanOS。UEFI 启动到 **MikanLoader 运行时**，物理地址从低到高 **大致** 可理解成四层：
 
+> **⚠️ 四层 ≠ 第二套分类。** 这是 **空间直觉图**，帮你记住「固件 / 硬件 / Loader / 空闲」谁在哪。  
+> CSV 里每一行的 **Type** 来自 **同一套平级 UEFI 枚举** —— `RuntimeServicesCode` 与 `BootServicesCode`、`LoaderCode` **互不包含、各贴各的标签** → 详 [3.4 平级枚举 · 生命周期总表](./section-3-4-地址清单与UEFI内存类型.md)
+
 ```
 物理地址 ↑
          │

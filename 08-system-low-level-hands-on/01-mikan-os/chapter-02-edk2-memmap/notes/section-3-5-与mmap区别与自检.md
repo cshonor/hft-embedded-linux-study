@@ -28,7 +28,9 @@ Ch 19 分页           — 每个进程看到的虚拟地址
 
 ### §3 自检（概念）
 
-- [ ] 能说出 **EFI 内存类型 = 整片物理地址的分段标签**（不是单独一块「EFI 内存」）（[3.1](./section-3-1-内存映射指什么与RAM视图.md) · [3.4](./section-3-4-地址清单与UEFI内存类型.md)）
+- [ ] 能说出 **全部 Type 平级** — 一段只有一个标签；**Runtime 不属于 Reserved/Boot/Loader**（[3.4](./section-3-4-地址清单与UEFI内存类型.md)）
+- [ ] 能区分 **BootServices（Exit 后可回收）vs Runtime（全程保留）vs Reserved（完全不能碰）**
+- [ ] 知道 **四层图 vs Type 枚举** 是同一套事实的两种讲法，不是两套分类（[3.2](./section-3-2-RAM四层占用.md) · [3.4](./section-3-4-地址清单与UEFI内存类型.md)）
 - [ ] 能背 **开发铁则**：分配池 **默认只从 Conventional** 划（[3.4](./section-3-4-地址清单与UEFI内存类型.md)）
 - [ ] 能说出 **四层 RAM 占用** 各是谁、内核能不能用（[3.2](./section-3-2-RAM四层占用.md)）
 - [ ] 能用 **管家 / 工作台 / 办公室** 比喻说清 **固件 vs `.efi` vs 内核**（[3.3](./section-3-3-固件与EFI应用内存隔离.md)）
