@@ -24,7 +24,7 @@
 | 2. C + Makefile 生成 BOOTX64 | [notes/section-2-二进制编辑器与BOOTX64.md](./notes/section-2-二进制编辑器与BOOTX64.md) · [code/](./code/) |
 | 3. 真机与 QEMU 测试 | [notes/section-3-真机与QEMU测试.md](./notes/section-3-真机与QEMU测试.md) |
 | 4. 计算机结构与编码 | [notes/section-4-计算机结构与编码.md](./notes/section-4-计算机结构与编码.md) |
-| 5. UEFI 启动流程 | [notes/section-5-UEFI启动流程.md](./notes/section-5-UEFI启动流程.md) |
+| 5. UEFI 启动流程 · BIOS 对比 | [notes/section-5-UEFI启动流程.md](./notes/section-5-UEFI启动流程.md) |
 | 6. C 语言过渡与文件格式 | [notes/section-6-C语言过渡与文件格式.md](./notes/section-6-C语言过渡与文件格式.md) |
 
 ---

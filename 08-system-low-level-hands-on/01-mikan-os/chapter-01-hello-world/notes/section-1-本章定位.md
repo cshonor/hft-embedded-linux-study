@@ -61,6 +61,8 @@ Ch 2 起：内存 map · 引导加载器 · 内核骨架…
 
 **MikanOS 为何选后者：** 绕开「实模式 → 保护模式 → 长模式」那套 **BIOS 软盘启蒙流程**，第一天就在 **现代 64 位 UEFI 环境** 里写可维护的 C/C++ — 与 [02 30 天 OS](../../02-30days-os/) **互补**（理解历史 IPL），但 **不必前置** 才能学 MikanOS。
 
+→ **UEFI 七步 · BIOS 四区别 · 名词表** 完整版 [§5 UEFI 启动流程](./section-5-UEFI启动流程.md)
+
 **HFT 读法：** 生产与回测机上的程序，最终都跑在 **UEFI → OS 加载器 → 长模式内核** 这条链上；搞清 **BOOTX64.EFI 是链上第一个「你的 .efi」**、而 **不是软盘 IPL**，后面读 [04 LKD](../../../04-Linux-Kernel-Development/) · [07 TLPI](../../../07-The-Linux-Programming-Interface/) 启动与内存布局时不会张冠李戴。
 
 ---
