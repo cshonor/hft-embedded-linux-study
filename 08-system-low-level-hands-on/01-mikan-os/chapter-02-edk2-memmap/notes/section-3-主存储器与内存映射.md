@@ -68,11 +68,74 @@ RAM **并非一整块空闲** 给未来的 MikanOS。UEFI 启动到 **MikanLoade
 
 **新手记住：** 写内核时 **不能随便 `malloc` 一块地址就写** —— 必须 **照着内存映射表**，只从标成 **「可用」** 的段里划。
 
-> **Ch1 直觉（§5）：** 把固件想成 **「管家办公区」**，`BOOTX64.EFI` 想成 **「客厅临时工作台」**，内核想成 **「自己的办公室」** —— Boot 期间二者 **内存隔离**，应用 **只能经接口调固件**；`ExitBootServices` 后工作台可拆、空间收回。→ [§5 固件 vs EFI 应用](../chapter-01-hello-world/notes/section-5-UEFI启动流程.md#六固件-vs-已加载-efi-应用内存里谁在哪)
+---
+
+### 三、固件 vs 已加载 EFI 应用 —— 内存里谁在哪？
+
+> **直觉版（先记住）：** UEFI 固件是 **「底层管家」**；你编译的 **`BOOTX64.EFI`**（Ch1 Hello / Ch2 **MikanLoader**）是管家 **「请来的临时帮手」** —— 二者在内存里是 **两块完全隔离的区域**，不是混在一起的一坨代码。
+
+#### 1. 比喻对照
+
+| 比喻 | 对应什么 | 说明 |
+|------|----------|------|
+| **管家的办公区** | **UEFI 固件** 占用的内存 | 固件核心服务、硬件初始化代码、**ACPI 表**、**Memory Map** 等 **系统级数据**；权限最高，**你的 Loader 不能直接乱写** |
+| **客厅临时工作台** | **已加载的 EFI 应用**（`.efi`） | 固件把 `BOOTX64.EFI` **整份 PE 镜像** 载入 RAM —— 代码/数据在 **单独一段**（上表 **③ LoaderCode / LoaderData**） |
+| **你自己的办公室** | **MikanOS 内核**（Ch3+） | Loader 把 **kernel.elf** 加载进 **④ 可用 RAM**，长模式页表建好后正式运行 |
+| **拆掉工作台、收回客厅** | **`ExitBootServices` 之后** | Boot 阶段占用的 **Loader / Boot Services 内存** 可在 map 里标成可用，内核 **回收复用** |
+
+| 阶段 | 「帮手」在干什么 |
+|------|----------------|
+| **Ch1 Hello World** | 只在 **工作台** 上 `ConOut` 打印 —— 尚未读 map、未加载内核、未 **ExitBootServices** |
+| **Ch2 MikanLoader** | **`GetMemoryMap`** → 导出 CSV → 加载 **kernel.elf** → **ExitBootServices** → 完整「临时工 → 内核」交接 |
+
+#### 2. 技术版：不是「低地址 = 固件、后面 = 应用」
+
+物理地址 **不是** 简单从 0 起「固件占前半、应用占后半」。固件用 **Memory Map** 按 **类型** 标记 **每一段** RAM（见 [§5 UEFI 内存类型](#五uefi-内存类型与属性对照-csv)）：
+
+| 类型（常见） | 对应四层 | 谁占 | 内核能随便写吗？ |
+|--------------|----------|------|------------------|
+| **EfiRuntimeServicesCode/Data** | ① 固件 | OS 运行后 **仍保留** 的固件部分 | ❌ **长期勿动** |
+| **EfiBootServicesCode/Data** | ① 固件 | 仅 **Boot 阶段** 的固件服务 | ❌ Boot 期间固件管；**ExitBootServices 后** 常可回收 |
+| **EfiLoaderCode / LoaderData** | ③ EFI 应用 | **已加载的 `.efi`** | ⚠️ **正在跑** 时别覆盖；交接后可回收 |
+| **EfiConventionalMemory** | ④ 可用 RAM | 空闲 | ✅ 内核、栈、堆 **主要从这里划** |
+| **MMIO / Reserved** | ② 硬件保留 | 设备寄存器、显存 | ❌ **不是普通 RAM** |
+
+#### 3. Boot Services 期间的「权限直觉」
+
+- 你的 **`EfiMain` / MikanLoader`** **不能** 直接读写 **管家办公区** —— 只能经 **`SystemTable` → `gBS` / 协议**（如 `ConOut`、`GetMemoryMap`）**间接** 调固件。
+- 固件 **定布局、管硬件**；EFI 应用 **只在 Loader 区 + 固件允许的 API** 里活动。
+- 这就是为什么 Ch1 手写 **`SystemTable->ConOut->OutputString`** 就够了 —— 你 **借管家的接口** 干活，而不是自己 mmap 固件区。
+
+#### 4. 从 Ch1 启动到 Ch2 交接（一条线）
+
+```
+[Ch1 §5 七步]
+  ⑤ 固件加载 BOOTX64.EFI 到 RAM     → 划出「客厅工作台」（LoaderCode/Data）
+  ⑥ 跳 EfiMain                      → 临时帮手开始跑
+
+[Ch2 本章]
+  GetMemoryMap()                     → 拿到整张「地址清单」
+  加载 kernel.elf 到 Conventional    → 在「可用 RAM」里摆内核
+  ExitBootServices()                 → 关掉 Boot Services；Loader 区等多可收回
+  跳内核                             → 「办公室」正式启用
+```
+
+#### 5. 总图（与 §二 四层对照）
+
+```
+[ ① UEFI 固件区 ]     ← 管家办公区（Runtime + Boot Services + ACPI…）
+[ ② MMIO / 保留区 ]   ← 设备、显存 — 不是堆内存
+[ ③ BOOTX64.EFI ]     ← 客厅临时工作台（Hello / MikanLoader）
+[ ④ 可用 RAM ]        ← 内核「办公室」主要从这里挑
+        ↑
+   GetMemoryMap / memmap CSV  — 每一段在表里都有类型与属性
+```
+
+→ Ch1 启动七步背景：[§5 UEFI 启动流程](../chapter-01-hello-world/notes/section-5-UEFI启动流程.md)
 
 ---
 
-### 三、内存映射的核心作用 —— 「地址清单」
+### 四、内存映射的核心作用 —— 「地址清单」
 
 **内存映射 = 给内核的一张明确清单：**
 
@@ -94,7 +157,7 @@ RAM **并非一整块空闲** 给未来的 MikanOS。UEFI 启动到 **MikanLoade
 
 ---
 
-### 四、UEFI 内存类型与属性（对照 CSV）
+### 五、UEFI 内存类型与属性（对照 CSV）
 
 `GetMemoryMap()` 返回 **`EFI_MEMORY_DESCRIPTOR`** 数组 —— 每一段连续物理区域一行。
 
@@ -121,7 +184,7 @@ RAM **并非一整块空闲** 给未来的 MikanOS。UEFI 启动到 **MikanLoade
 
 ---
 
-### 五、和动态库 mmap / 虚拟内存的区别（防混）
+### 六、和动态库 mmap / 虚拟内存的区别（防混）
 
 | 阶段 | 你在学什么 |
 |------|------------|
@@ -142,11 +205,13 @@ Ch 19 分页           — 每个进程看到的虚拟地址
 
 ---
 
-### 六、自检（概念）
+### 七、自检（概念）
 
 - [ ] 能说出 **四层 RAM 占用** 各是谁、内核能不能用  
+- [ ] 能用 **管家 / 工作台 / 办公室** 比喻说清 **固件 vs `.efi` vs 内核** 在内存里的关系  
 - [ ] 能解释 **GetMemoryMap ≠ 动态库共享**  
 - [ ] 知道 **LoaderCode：可执行、别当普通可写 RAM**  
+- [ ] 知道 **`ExitBootServices` 后** 哪些 Boot 期内存 **可回收**  
 - [ ] 知道内核 **只能从 Conventional 等允许类型** 里划内存  
 
 ---
