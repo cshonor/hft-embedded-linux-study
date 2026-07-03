@@ -1,5 +1,6 @@
-/* Ch1 最小 UEFI Hello — 对齐 uchan-nos/mikanos-build day01/c/hello.c
- * 仅声明本章用到的类型与 ConOut，无需完整 EDK II。Ch2 起改用 <Uefi.h>。 */
+/* 工程 01 · 极简 UEFI Hello
+ * 不依赖 EDK II / gnu-efi — 仅声明本章用到的类型。
+ * 对齐 mikanos-build day01/c 思路；Ch2 起改用完整 <Uefi.h>。 */
 
 typedef unsigned short CHAR16;
 typedef unsigned long long EFI_STATUS;

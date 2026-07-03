@@ -1,4 +1,5 @@
-# GNU-EFI · Linux/WSL only
+# 工程 02 · GNU-EFI + GCC（Linux/WSL only）
+
 EFI_INC  ?= /usr/include/x86_64-linux-gnu/efi
 EFI_LIB  ?= /usr/lib/x86_64-linux-gnu/gnuefi
 CRT0     ?= $(EFI_LIB)/crt0-efi-x86_64.o

@@ -101,7 +101,7 @@ CPU 处理 **二进制（0/1）**；人类编辑时常用 **十六进制（0–9
 - 代码里 **`CHAR16`**、`L"..."` 宽字符串 → 底层即 **UTF-16 码元**
 - **`OutputString` 传 ASCII 单字节 C 串** → 极易 **乱码/崩溃**；须 **`L"..."`** 或 UTF-16 缓冲
 
-→ [hello.c 的 EfiMain](../code/hello.c) · [§2 ConOut](./section-2-二进制编辑器与BOOTX64.md)
+→ [hello.c 的 EfiMain](../code/01-clang-minimal/hello.c) · [§2 ConOut](./section-2-二进制编辑器与BOOTX64.md)
 
 ---
 
@@ -174,7 +174,7 @@ UTF-8          变长 1~4B — Linux / 通用程序
         └─ U+0048 ─┘ └ U+0069 ┘
 ```
 
-**字符串 `Hello, world!\n` — [hello.c](../code/hello.c) 里 `L"..."` 数据段大致形态：**
+**字符串 `Hello, world!\n` — [hello.c](../code/01-clang-minimal/hello.c) 里 `L"..."` 数据段大致形态：**
 
 ```
 每个可见字符 2 字节（ASCII 区仍扩展为 16 bit）+ 最后 00 00 结束
@@ -191,7 +191,7 @@ UTF-8          变长 1~4B — Linux / 通用程序
 
 #### 9. 代码例子（对 / 错 / 手写 UTF-16）
 
-**✅ 正确 — UEFI ConOut（本章 [hello.c](../code/hello.c)）**
+**✅ 正确 — UEFI ConOut（本章 [hello.c](../code/01-clang-minimal/hello.c)）**
 
 ```c
 // CHAR16 = 16 位宽字符；L 前缀 → 编译器生成 UTF-16LE 字面量

@@ -32,10 +32,12 @@ lld-link /?
 
 ### 2. 编译第一个 BOOTX64.EFI
 
-在 PowerShell 中 **逐条执行**：
+**工程目录：** [01-clang-minimal/](./chapter-01-hello-world/code/01-clang-minimal/) — 完整说明见该目录 **README.md**。
+
+在 PowerShell 中 **逐条执行**（先 `cd` 到 `01-clang-minimal`）：
 
 ```powershell
-cd C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\01-mikan-os\chapter-01-hello-world\code
+cd C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\01-mikan-os\chapter-01-hello-world\code\01-clang-minimal
 
 clang -target x86_64-pc-win32-coff -ffreestanding -fshort-wchar -c hello.c -o hello.o
 
@@ -81,7 +83,7 @@ winget install SoftwareFreedomConservancy.QEMU
 **启动**（已编好 `esp\EFI\BOOT\BOOTX64.EFI`）：
 
 ```powershell
-cd C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\01-mikan-os\chapter-01-hello-world\code
+cd C:\Users\12392\Desktop\hft\08-system-low-level-hands-on\01-mikan-os\chapter-01-hello-world\code\01-clang-minimal
 $esp = (Resolve-Path esp).Path
 $ovmf = "C:\Program Files\qemu\share\edk2\x64\OVMF_CODE.fd"   # 改成你的路径
 
@@ -94,7 +96,7 @@ qemu-system-x86_64 -bios $ovmf -drive "format=raw,file=fat:rw:$esp" -m 512M
 
 ```bash
 sudo apt install -y llvm lld qemu-system-x86 ovmf
-cd /mnt/c/Users/12392/Desktop/hft/08-system-low-level-hands-on/01-mikan-os/chapter-01-hello-world/code
+cd …/chapter-01-hello-world/code/01-clang-minimal
 
 clang --target=x86_64-elf -ffreestanding -fshort-wchar -c hello.c -o hello.o
 mkdir -p esp/EFI/BOOT

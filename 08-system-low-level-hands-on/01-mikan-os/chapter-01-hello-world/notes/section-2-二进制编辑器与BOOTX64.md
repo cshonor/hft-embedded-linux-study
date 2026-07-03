@@ -2,7 +2,7 @@
 
 > **实际开发路径：** 你 **不必从零手写整个 EFI 文件**。MikanOS 用 **C 语言 + 交叉工具链**（Ch2 起再接入完整 **EDK II** 框架）生成符合规范的 **64 位 PE/COFF** 程序，放到 **FAT 镜像** 里即可被 UEFI 固件加载。
 >
-> **动手入口：** [code/](../code/) — `make` 一键编译出第一个 `BOOTX64.EFI`，`make run` 在 QEMU+OVMF 里看 Hello World。先跑通流程，再慢慢拆解 **ConOut / SystemTable** 等 UEFI 调用。
+> **动手入口：** [code/01-clang-minimal/](../code/01-clang-minimal/) — `make` 一键编译出第一个 `BOOTX64.EFI`，`make run` 在 QEMU+OVMF 里看 Hello World。先跑通流程，再慢慢拆解 **ConOut / SystemTable** 等 UEFI 调用。
 >
 > **一句话：** **`.efi` 就是 C 语言写的 UEFI 程序，经交叉编译器编译链接后的产物** — 你写业务逻辑（初始化屏幕、打印、日后加载内核），**PE 头、节区、入口点** 由 Makefile / 工具链代劳，不必手写链接脚本。
 
@@ -17,7 +17,7 @@
 | **链接** | 指定入口符号名 `EfiMain` | 对象 → **PE32+** 格式的 **`BOOTX64.EFI`** |
 | **部署** | 放进 `EFI/BOOT/` on FAT | UEFI 固件识别并加载 |
 
-**MikanOS Ch1 入门示例** 就是几百行以内的 **最简 C UEFI 应用** — [code/hello.c](../code/hello.c) 只声明本章用到的结构体；**敲 `make` 即得 `bootX64.efi`**，不用碰底层 PE 字节布局（格式细节见 [§6](./section-6-C语言过渡与文件格式.md)）。
+**MikanOS Ch1 入门示例** 就是几百行以内的 **最简 C UEFI 应用** — [01-clang-minimal/hello.c](../code/01-clang-minimal/hello.c) 只声明本章用到的结构体；**敲 `make` 即得 `bootX64.efi`**，不用碰底层 PE 字节布局（格式细节见 [§6](./section-6-C语言过渡与文件格式.md)）。
 
 ---
 
@@ -133,7 +133,7 @@ make CLANG=/usr/bin/clang-18
 | **链接** | `lld-link /subsystem:efi_application /entry:EfiMain` | 生成 **PE 格式** 的 `.efi` |
 | **部署** | `EFI/BOOT/BOOTX64.EFI` on **FAT** | 固件按固定路径查找（见 [§3 测试](./section-3-真机与QEMU测试.md)） |
 
-**最小模板核心逻辑**（[code/hello.c](../code/hello.c)）：
+**最小模板核心逻辑**（[01-clang-minimal/hello.c](../code/01-clang-minimal/hello.c)）：
 
 ```c
 EFI_STATUS EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
@@ -154,10 +154,10 @@ Ch1 模板 **只声明用到的结构体字段**，避免拉入整个 EDK II；C
 
 ### 五、Makefile 一键编译
 
-在 [code/](../code/) 目录（WSL，已装 `clang` · `lld` · `qemu-system-x86_64` · `ovmf`）：
+在 [code/01-clang-minimal/](../code/01-clang-minimal/) 目录（WSL，已装 `clang` · `lld` · `qemu-system-x86_64` · `ovmf`）：
 
 ```bash
-cd chapter-01-hello-world/code
+cd chapter-01-hello-world/code/01-clang-minimal
 make        # → esp/EFI/BOOT/BOOTX64.EFI
 make run    # → QEMU + OVMF，fat:rw:esp 挂载
 ```
@@ -209,7 +209,7 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 |---|------------------------------|------------------------------|
 | 目的 | 破除神秘感 · 感受字节与启动 | **可维护** 的日常路径 |
 | 产出 | 手写 hex → `.efi` | `hello.c` → 工具链 → `.efi` |
-| 是否必做 | **可选** — 时间紧可跳过 | **推荐** — 与本章 [code/](../code/) 对齐 |
+| 是否必做 | **可选** — 时间紧可跳过 | **推荐** — 与本章 [code/01-clang-minimal/](../code/01-clang-minimal/) 对齐 |
 
 → 十六进制读法可参考 [02 HELLOOS_HEX_REFERENCE](../../02-30days-os/HELLOOS_HEX_REFERENCE.md)（软盘 IPL 不同，读 hex 方法相同）
 
@@ -235,4 +235,4 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 
 ---
 
-← [1. 本章定位](./section-1-本章定位.md) · [code/ 动手](../code/) · 下一节 [3. 真机与 QEMU](./section-3-真机与QEMU测试.md)
+← [1. 本章定位](./section-1-本章定位.md) · [01-clang-minimal/](../code/01-clang-minimal/) · 下一节 [3. 真机与 QEMU](./section-3-真机与QEMU测试.md)

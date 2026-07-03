@@ -9,7 +9,7 @@
 
 | 段 | 做什么 | 带走什么 |
 |----|--------|----------|
-| **① C + Makefile** | [code/](./code/)：`make` → `BOOTX64.EFI` | **EfiMain · ConOut** · PE 交叉编译流程 |
+| **① C + Makefile** | [01-clang-minimal/](./code/01-clang-minimal/) | **EfiMain · ConOut** · PE 交叉编译 |
 | **② 真机 / QEMU** | FAT U 盘或 `make run` | **Secure Boot** 排错 · OVMF 快速迭代 |
 | **③ 底层原理** | CPU/内存/I/O · 进制 · 编码 · 小端 | 数字如何变成屏幕上的字符 |
 | **④ 格式与 EDK II 预告** | PE/ELF/COFF · Ch2 完整框架 | 工具链分工 · `<Uefi.h>` 演进方向 |
@@ -21,12 +21,12 @@
 | 节 | 笔记 |
 |----|------|
 | 1. 本章定位 | [notes/section-1-本章定位.md](./notes/section-1-本章定位.md) |
-| 2. C + Makefile 生成 BOOTX64 | [notes/section-2-二进制编辑器与BOOTX64.md](./notes/section-2-二进制编辑器与BOOTX64.md) · [code/](./code/) |
+| 2. C + Makefile 生成 BOOTX64 | [notes/section-2-二进制编辑器与BOOTX64.md](./notes/section-2-二进制编辑器与BOOTX64.md) · [01-clang-minimal/](./code/01-clang-minimal/) |
 | 3. 真机与 QEMU 测试 | [notes/section-3-真机与QEMU测试.md](./notes/section-3-真机与QEMU测试.md) |
 | 4. 计算机结构与编码 | [notes/section-4-计算机结构与编码.md](./notes/section-4-计算机结构与编码.md) — **ASCII/Unicode/UTF-8/16** |
 | 5. UEFI 启动流程 · BIOS 对比 | [notes/section-5-UEFI启动流程.md](./notes/section-5-UEFI启动流程.md) |
 | 6. C 语言过渡与文件格式 | [notes/section-6-C语言过渡与文件格式.md](./notes/section-6-C语言过渡与文件格式.md) |
-| 7. Ch1 裸 C → Ch2 EDK II 全链路 | [notes/section-7-Ch1裸C与Ch2-EDKII全链路.md](./notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [gnu-efi/](./code/gnu-efi/) |
+| 7. Ch1 裸 C → Ch2 EDK II 全链路 | [notes/section-7-Ch1裸C与Ch2-EDKII全链路.md](./notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [02-gnu-efi-gcc/](./code/02-gnu-efi-gcc/) |
 
 ---
 
@@ -44,18 +44,24 @@
 
 ## 动手 · code/
 
-```bash
-cd chapter-01-hello-world/code
-make run    # WSL：需 clang · lld · qemu-system-x86_64 · ovmf
+**先看索引：** [code/README.md](./code/README.md)
+
+```powershell
+# Windows · 工程 01
+cd chapter-01-hello-world\code\01-clang-minimal
+# 命令见 01-clang-minimal\README.md
 ```
 
-→ 详见 [code/README.md](./code/README.md)
+```bash
+# WSL · 工程 01
+cd chapter-01-hello-world/code/01-clang-minimal && make run
+```
 
 ---
 
 ## 本章学习目标 · 自检
 
-- [ ] 在 [code/](./code/) 用 **`make`** 编译出 **`BOOTX64.EFI`**，**`make run`** 在 QEMU 看到 Hello World
+- [ ] 在 [01-clang-minimal/](./code/01-clang-minimal/) 编出 **`BOOTX64.EFI`** 并在 QEMU 看到 Hello World
 - [ ] 真机失败时知道检查 **Secure Boot**；能用 **QEMU + OVMF** 或 `run_qemu.sh` 验证
 - [ ] 说清 **二进制 / 十六进制** 对应关系，以及 **ASCII / UCS-2** 字符编码
 - [ ] 描述 **UEFI 从通电到执行 EfiMain** 的启动链

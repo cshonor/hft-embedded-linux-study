@@ -1,7 +1,7 @@
 ## 7. UEFI 开发两阶段：Ch1 裸 C → Ch2 EDK II 全链路
 
 > **递进逻辑：** Ch1 **剥离框架** 看懂 UEFI 入口 / PE32+ / 系统表；Ch2 **工业标准化** — `.inf/.dsc/.dec` + BaseTools + 官方库生态。  
-> 本仓库 Ch1 **默认** 还有更极简的 [Clang hello.c](../code/hello.c)（无 gnu-efi、Windows 可编）。
+> 本仓库 Ch1 **默认**：[01-clang-minimal](../code/01-clang-minimal/)（Clang · Windows 可编）。
 
 ---
 
@@ -9,8 +9,8 @@
 
 ```
 阶段 A  裸 C 生成 BOOTX64.EFI（无 EDK II 构建树）
-          ├─ A1 极简：手写类型 + Clang/lld-link     [code/hello.c]  Windows/WSL
-          └─ A2 GNU-EFI：真 <Uefi.h> + GCC 链接    [code/gnu-efi/]  Linux/WSL
+          ├─ A1 极简：手写类型 + Clang/lld-link     [01-clang-minimal/](../code/01-clang-minimal/)  Windows/WSL
+          └─ A2 GNU-EFI：真 <Uefi.h> + GCC 链接    [02-gnu-efi-gcc/](../code/02-gnu-efi-gcc/)  Linux/WSL
 
 阶段 B  EDK II 工程化（Ch2 MikanLoader 及以后）
           .c + .inf + .dsc + build → Loader.efi
@@ -63,11 +63,11 @@ EFI_STATUS EFIAPI efi_main(
 #### 构建与运行
 
 ```bash
-cd chapter-01-hello-world/code/gnu-efi
+cd chapter-01-hello-world/code/02-gnu-efi-gcc
 make run    # BOOTX64.EFI → ESP/EFI/BOOT/ → QEMU+OVMF
 ```
 
-→ 完整 Makefile：[code/gnu-efi/](../code/gnu-efi/)
+→ 完整 Makefile：[02-gnu-efi-gcc/](../code/02-gnu-efi-gcc/)
 
 #### 裸 C 方案（A1+A2）优缺点
 
@@ -188,7 +188,7 @@ build
 | **入口** | `EfiMain` | `efi_main` | `UefiMain` |
 | **工具** | clang + lld-link | gcc + gnu-efi | `build` + BaseTools |
 | **平台** | **Windows 优先** | Linux/WSL | Win/Linux/macOS |
-| **本书章节** | Ch1 [code/](../code/) | Ch1 [gnu-efi/](../code/gnu-efi/) | **Ch2+** MikanLoader |
+| **本书章节** | Ch1 [01-clang-minimal](../code/01-clang-minimal/) | Ch1 [02-gnu-efi-gcc](../code/02-gnu-efi-gcc/) | **Ch2+** MikanLoader |
 
 ---
 

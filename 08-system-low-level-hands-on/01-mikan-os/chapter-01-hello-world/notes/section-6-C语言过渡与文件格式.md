@@ -21,7 +21,7 @@ BOOTX64.EFI — PE32+ 形态，固件可加载
 | **LLD / EDK II `build`** | 链接成 **`.efi`**；**`/subsystem:efi_application`** 等由 Makefile 写好，无需自写链接脚本 |
 | **EDK II** | Ch2 起：`<Uefi.h>`、库、工程描述 — 在交叉链之上再包一层规范 |
 
-→ 工具链对照 [§2.二](./section-2-二进制编辑器与BOOTX64.md#二用哪些交叉编译器) · [code/Makefile](../code/Makefile)
+→ 工具链对照 [§2.二](./section-2-二进制编辑器与BOOTX64.md#二两套工具链怎么理解上手版) · [01-clang-minimal/README](../code/01-clang-minimal/README.md)
 
 ---
 
@@ -82,7 +82,7 @@ C 源码 → 编译 → COFF 对象 (.o)
 ### 四、本章收束
 
 ```
-C + Makefile → BOOTX64.EFI（[code/](../code/)）  →  先跑通再拆解 ConOut
+C + Makefile → BOOTX64.EFI（[code/01-clang-minimal/](../code/01-clang-minimal/)）  →  先跑通再拆解 ConOut
         ↓
 CPU / 编码 / UEFI 启动链                        →  理解「谁在什么时候运行」
         ↓

@@ -52,4 +52,4 @@ qemu-system-x86_64 \
 
 ---
 
-← [2. C + Makefile](./section-2-二进制编辑器与BOOTX64.md) · [code/ 动手](../code/) · 下一节 [4. 结构与编码](./section-4-计算机结构与编码.md)
+← [2. C + Makefile](./section-2-二进制编辑器与BOOTX64.md) · [01-clang-minimal/](../code/01-clang-minimal/) · 下一节 [4. 结构与编码](./section-4-计算机结构与编码.md)
