@@ -1,59 +1,108 @@
 # 附录 C · EDK II 文件说明
 
-> **定位：** EDK II **工程元文件** 与目录结构 — 配合 [Ch2 §2 EDK II](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md) 阅读。
+> **定位：** `.inf` / `.dec` / `.dsc` 模板与构建链 — 配合 [Ch1 §7 两阶段全链路](../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [Ch2 §2](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)。
 
 ---
 
 ## 1. 三种核心元文件
 
-| 文件 | 全称 / 角色 | 类比 |
-|------|-------------|------|
-| **`.dec`** | **Declaration** — Package **声明** | 库的「头文件清单 + GUID 导出」 |
-| **`.inf`** | **Module Information** — **最小编译单元** | 单个 `.efi` / 驱动模块的「Makefile + 源文件列表」 |
-| **`.dsc`** | **Description** — **平台/产品描述** | 整个固件或 Loader **工程总览**：选哪些 Package、用哪条工具链 |
+| 文件 | 角色 | 层级 |
+|------|------|------|
+| **`.dec`** | Package **声明** — 导出头文件、GUID、PCD | 包 |
+| **`.inf`** | **Module** — 单程序编译单元：源文件、库、入口 | 模块 |
+| **`.dsc`** | **Platform** — 全局工具链、LibraryClasses、注册 `.inf` | 平台顶层 |
 
-**构建关系（简化）：**
+**BaseTools：** AutoGen → 编译 → 链接 → **GenFw** → `.efi`（固件开发再 **GenFds** → `.fd`）。
+
+---
+
+## 2. 示例工程 MyPkg（最小模板）
+
+### 目录
 
 ```
-.dsc（平台选模块 + 工具链）
-  → 引用多个 .inf（每个 Module 编译成 .efi / .lib）
-  → .dec 提供 Package 级头文件与 GUID 定义
+edk2/MyPkg/
+├── MyPkg.dsc
+├── MyPkg.dec              # 简易工程可主要依赖 MdePkg.dec
+└── Application/BareDemo/
+    ├── BareDemo.c
+    └── BareDemo.inf
+```
+
+### BareDemo.inf
+
+```inf
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = BareDemo
+  FILE_GUID                      = 12345678-ABCD-4EF0-1234-567890ABCDEF
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  BareDemo.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  BaseLib
+  BaseMemoryLib
+```
+
+### MyPkg.dsc（摘录）
+
+```dsc
+[Defines]
+  PLATFORM_NAME                  = MyPkg
+  PLATFORM_GUID                  = 87654321-DCBA-4FE0-9876-FEDCBA098765
+  DSC_SPECIFICATION              = 0x0001001A
+  OUTPUT_DIRECTORY               = Build/MyPkg
+  SUPPORTED_ARCHITECTURES        = X64
+  BUILD_TARGETS                  = DEBUG|RELEASE
+  SKUID_IDENTIFIER               = DEFAULT
+
+[LibraryClasses]
+  UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
+  UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
+  UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
+  BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
+  BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
+
+[Components]
+  MyPkg/Application/BareDemo/BareDemo.inf
 ```
 
 ---
 
-## 2. 常见 Package（先认名字）
+## 3. 构建命令
 
-| Package | 作用 |
-|---------|------|
-| **MdePkg** | **最基础** — `<Uefi.h>`、Boot/Runtime Services、核心 Protocol |
-| **MdeModulePkg** | 通用 UEFI 模块参考实现 |
-| **MikanLoaderPkg** | MikanOS 书中 **Loader 源码包**（链入 edk2 树） |
-
----
-
-## 3. MikanLoader 相关路径（概念）
-
-```
-edk2/                          ← clone tianocore/edk2
-  MdePkg/
-  MikanLoaderPkg/              ← ln -s 链到 mikanos 仓库
-    MikanLoader.inf
-    Main.c
-  …
-Build/MikanLoaderX64/…/Loader.efi   ← build 产出
+```bash
+cd edk2 && git submodule update --init
+make -C BaseTools
+source edksetup.sh
+# Conf/target.txt: ACTIVE_PLATFORM = MyPkg/MyPkg.dsc
+build
+# → Build/MyPkg/DEBUG_GCC5/X64/BareDemo.efi
 ```
 
-→ 官方流程 [mikanos-build](https://github.com/uchan-nos/mikanos-build) · [SETUP.md](../SETUP.md)
+**LLVM 工具链：** `TOOL_CHAIN_TAG = CLANGPDB` → [Ch2 §5 CLANGPDB](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md#五全程-llvmedk-ii-与-clangpdb)
 
 ---
 
-## 4. 待深入（随学习补充）
+## 4. MikanOS 对应
 
-- [ ] `.inf` 字段：`SOURCES` · `LIBRARY_CLASSES` · `ENTRY_POINT`
-- [ ] `.dsc` 中 `TOOL_CHAIN_TAG`（如 **CLANGPDB**）
-- [ ] `build -p MikanLoaderPkg/MikanLoader.dsc -a X64`
+| 示例 | 本书 |
+|------|------|
+| `MyPkg` | **MikanLoaderPkg** |
+| `BareDemo.efi` | **Loader.efi** / MikanLoader |
+
+→ [mikanos-build](https://github.com/uchan-nos/mikanos-build) · [SETUP.md](../SETUP.md)
 
 ---
 
-← [Ch2 §2](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md) · [附录 C 导读](../README.md)
+← [Ch1 §7 全链路](../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [Ch2 §2](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)

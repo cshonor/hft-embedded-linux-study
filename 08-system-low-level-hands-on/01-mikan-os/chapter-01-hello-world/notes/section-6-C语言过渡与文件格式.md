@@ -86,7 +86,7 @@ C + Makefile → BOOTX64.EFI（[code/](../code/)）  →  先跑通再拆解 Con
         ↓
 CPU / 编码 / UEFI 启动链                        →  理解「谁在什么时候运行」
         ↓
-Ch 2：EDK II + MikanLoader + 内存 map            →  `<Uefi.h>` 工程化
+Ch 2：EDK II + MikanLoader + 内存 map            →  `<Uefi.h>` 工程化（[§7 全链路](./section-7-Ch1裸C与Ch2-EDKII全链路.md#阶段-b--ch2-edk-ii-标准化工程)）
 ```
 
 ---

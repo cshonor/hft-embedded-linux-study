@@ -26,6 +26,7 @@
 | 4. 计算机结构与编码 | [notes/section-4-计算机结构与编码.md](./notes/section-4-计算机结构与编码.md) — **ASCII/Unicode/UTF-8/16** |
 | 5. UEFI 启动流程 · BIOS 对比 | [notes/section-5-UEFI启动流程.md](./notes/section-5-UEFI启动流程.md) |
 | 6. C 语言过渡与文件格式 | [notes/section-6-C语言过渡与文件格式.md](./notes/section-6-C语言过渡与文件格式.md) |
+| 7. Ch1 裸 C → Ch2 EDK II 全链路 | [notes/section-7-Ch1裸C与Ch2-EDKII全链路.md](./notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [gnu-efi/](./code/gnu-efi/) |
 
 ---
 
