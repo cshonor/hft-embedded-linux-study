@@ -32,7 +32,8 @@
 |----|------|
 | 1. 本章定位 | [notes/section-1-本章定位.md](./notes/section-1-本章定位.md) |
 | 2. QEMU 监视器与寄存器 | [notes/section-2-QEMU监视器与寄存器.md](./notes/section-2-QEMU监视器与寄存器.md) |
-| 3. 第一个内核与 ELF 加载 | [notes/section-3-第一个内核与ELF加载.md](./notes/section-3-第一个内核与ELF加载.md) |
+| 3. 第一个内核与 ELF 加载 | [notes/section-3-第一个内核与ELF加载.md](./notes/section-3-第一个内核与ELF加载.md)（**索引**） |
+| | [3.1 kernel.elf 定义](./notes/section-3-1-kernel.elf基础定义与核心作用.md) · [3.2 **ELF 双视图**](./notes/section-3-2-ELF三大结构与链接执行双视图.md) · [3.3 链接脚本](./notes/section-3-3-编译链接脚本与生成流程.md) · [3.4 readelf/GDB](./notes/section-3-4-readelf调试与常用命令.md) · [3.5 vmlinux 对比](./notes/section-3-5-与vmlinux对比及常见问题.md) · [3.6 Loader 流程](./notes/section-3-6-MikanLoader加载流程.md) |
 | 4. GOP 与帧缓冲区 | [notes/section-4-GOP与帧缓冲区.md](./notes/section-4-GOP与帧缓冲区.md) |
 | 5. KernelMain 与错误处理 | [notes/section-5-KernelMain与错误处理.md](./notes/section-5-KernelMain与错误处理.md) |
 | 6. 汇编指针与小结 | [notes/section-6-汇编指针与小结.md](./notes/section-6-汇编指针与小结.md) |
@@ -54,7 +55,9 @@
 ## 本章学习目标 · 自检
 
 - [ ] 会用 **QEMU monitor** 查看寄存器 / 内存
-- [ ] 说清 **`kernel.elf`** 与 UEFI `.efi` 的分工
+- [ ] 说清 **`kernel.elf`** 与 UEFI `.efi` 的分工 · **Program Header vs Section Header**
+- [ ] 能对照 **链接视图 / 执行视图** 说明 Bootloader 读哪张表
+- [ ] 会用 **`readelf -h/-l/-s`** 查入口与 PT_LOAD 段
 - [ ] 描述 **读 ELF → 分配内存 → 跳入口** 流程
 - [ ] 解释 **GOP**、Frame Buffer 及传给 **`KernelMain`** 的参数
 - [ ] 检查 **`EFI_STATUS`** 做失败停机；能读 **`lea`/`mov`/`[]`** 与指针对应关系
