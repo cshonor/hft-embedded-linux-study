@@ -6,18 +6,31 @@
 
 | 组件 | 用途 |
 |------|------|
-| **WSL2** (Ubuntu 22.04+) | EDK II 构建、clang/gcc |
-| **QEMU** + **OVMF** | UEFI 固件模拟（替代实体 U 盘调试） |
-| **Git** | clone `uchan-nos/os-from-zero` |
+| **WSL2** (Ubuntu 22.04+) | 编译、QEMU |
+| **Clang + lld** | **Ch1 首选** — LLVM 编译 + PE 链接（`lld-link`） |
+| **x86_64-elf-gcc** | Ch2+ 跟 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 时再装 |
+| **QEMU** + **OVMF** | UEFI 固件模拟 |
+| **Git** | clone 官方仓库（可选） |
 
-## 快速验证（WSL）
+## Ch1 最快路径（本仓库 · 不必先 clone 官方）
+
+**只装 Clang 线**，进笔记配套 `code/` 即可：
 
 ```bash
 sudo apt update
+sudo apt install -y clang lld qemu-system-x86 ovmf
+cd …/chapter-01-hello-world/code
+make run
+```
+
+→ [chapter-01-hello-world/code/](./chapter-01-hello-world/code/README.md)
+
+## 全书 MikanOS 验证（可选 · 稍后）
+
+```bash
 sudo apt install -y git build-essential clang lld xorriso mtools qemu-system-x86 ovmf
+# x86_64-elf 工具链：见 mikanos-build 发布包 + buildenv.sh
 git clone https://github.com/uchan-nos/os-from-zero.git
-cd os-from-zero
-# 按仓库 README 构建 day02a 等 tag
 ```
 
 ## QEMU + OVMF（示例）

@@ -21,37 +21,76 @@
 
 ---
 
-### 二、用哪些交叉编译器？
+### 二、两套工具链怎么理解（上手版）
 
-跟着 [code/Makefile](../code/Makefile) 走，**把编译器路径设对** 即可；两种常见选择：
+**先选一套装好就行。** Ch1 推荐 **Clang + LLD**，WSL 下 `apt install clang lld` 即可，**环境简单、踩坑少**；跟完全书 MikanOS 时再补 **x86_64-elf-gcc**。
+
+#### A. Clang + LLD — **LLVM 工具链组合**（**Ch1 首选**）
+
+```
+hello.c
+  ↓  Clang          编译：C → 汇编(.s) → 目标文件(.o)
+hello.o
+  ↓  LLD 链接器     把 .o 拼成最终镜像
+BOOTX64.EFI（PE/COFF，UEFI 可加载）
+```
+
+| 组件 | 干什么 | Ch1 里叫什么 |
+|------|--------|--------------|
+| **Clang** | 前端编译器：解析 C、生成汇编、产出 **COFF 对象** `.o` | `clang -target x86_64-pc-win32-coff -c hello.c` |
+| **LLD** | LLVM 的 **轻量高速链接器** | Ch1 用 **`lld-link`**（PE/EFI 模式）；Ch2+ 链 **ELF 内核** 时常见 **`ld.lld`**（同一套 LLD，不同前端） |
+
+**为何 HFT 也值得关注 LLVM 线：** 链接/编译迭代快、工具链统一 — 日后内核、热路径 C++、**Release 构建循环** 都受益（与 [CSAPP Ch3 编译链](../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.1-3.2-历史观点与程序编码.md#321-机器级代码完整编译链路) 同一套「编译→链接」模型）。
+
+**WSL 快速运行（只装这一套）：**
+
+```bash
+sudo apt install -y clang lld qemu-system-x86 ovmf
+cd chapter-01-hello-world/code
+make run
+```
+
+#### B. x86_64-elf-gcc — **GCC 交叉编译链**（**全书 MikanOS 工程**）
+
+| 项 | 说明 |
+|----|------|
+| **是什么** | 目标三元组 **`x86_64-elf-*`** 的 GCC/G++ — 给 **非 Linux 宿主上的裸 x86_64 程序** 生成代码（freestanding / 内核语境） |
+| **用来干什么** | 生成 MikanOS **64 位内核**、部分 **Loader/EFI** 与官方 `build.sh` 联编 |
+| **何时装** | Ch2 跟 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 时：下载 **`x86_64-elf.tar.gz`** → `source devenv/buildenv.sh` |
+| **Ch1 是否必须** | **否** — Hello World 用 **Clang + lld-link** 已够；两套不必第一天全装 |
+
+#### C. 第三层：EDK II `build`（Ch2 MikanLoader）
+
+在 **Clang 或 x86_64-elf** 交叉链之上，用 **`<Uefi.h>` + EDK II 描述文件** 工程化构建 Loader — 见 [Ch2](../../chapter-02-edk2-memmap/)。
+
+---
+
+### 三、对照表 · 现在该用哪套？
 
 | 工具链 | 典型命令 | 适用阶段 | 说明 |
 |--------|----------|----------|------|
-| **Clang + LLD**（**Ch1 默认**） | `clang -target x86_64-pc-win32-coff` · `lld-link` | Ch1 Hello · 官方 [day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) | **对 UEFI/PE 支持直接**；`-target …-win32-coff` 明确产出 COFF/PE，少踩 gcc 兼容坑 |
-| **x86_64-elf-gcc**（**MikanOS 全套推荐**） | `x86_64-elf-gcc` / `x86_64-elf-g++` | Ch2+ 内核 · Loader · EDK II 联调 | [mikanos-build](https://github.com/uchan-nos/mikanos-build) 发布包 / `devenv/buildenv.sh`；**`source buildenv.sh`** 后 PATH 与 `CPPFLAGS` 就绪 |
-| **EDK II `build`** | `source edksetup.sh && build` | Ch2 **MikanLoader** 工程化 | 底层仍多用 **Clang**；由 EDK II 描述文件驱动，见 [Ch2](../../chapter-02-edk2-memmap/) |
+| **Clang + lld-link**（**Ch1 默认**） | `clang -target x86_64-pc-win32-coff` · `lld-link` | Ch1 Hello · 官方 [day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) | **推荐先试**；`-target …-win32-coff` 直接出 PE/COFF |
+| **x86_64-elf-gcc + ld.lld 等** | `x86_64-elf-gcc` · `x86_64-elf-g++` | Ch2+ 内核 · Loader · 官方 `build.sh` | mikanos-build 发布包 + **`buildenv.sh`** |
+| **EDK II `build`** | `source edksetup.sh && build` | Ch2 **MikanLoader** | 在交叉链之上的 UEFI 工程框架 |
 
-**怎么选：**
+**怎么选（一句话）：**
 
-- **现在（Ch1）：** 用仓库 **`code/` + `make`** — 默认 **Clang + lld-link**，Ubuntu/WSL 下 `apt install clang lld` 即可。
-- **跟全书 MikanOS 工程：** 按 [SETUP.md](../../SETUP.md) 装 **mikanos-build** 的 **`x86_64-elf`** 交叉链；Ch2 起与 EDK II、内核 Makefile 同一套环境。
-- **也可全程偏 Clang** — 官方 day01 即 Clang；全树构建时 EDK II 文档常见 `DEBUG_CLANG38` 输出目录。
+- **今天：** 只装 **Clang + lld** → [code/](../code/) **`make run`** 跑通第一个 EFI。
+- **跟全书：** 再装 **x86_64-elf-gcc** 工具链，与 EDK II、内核 Makefile 对齐。
+- **LLD 名字别混：** Ch1 链接 PE 用 **`lld-link`**；以后链 **ELF 内核** 常见 **`ld.lld`** — 同属 **LLVM LLD**，只是链接格式不同。
 
 **覆盖编译器路径（示例）：**
 
 ```bash
-# 使用非默认 clang
 make CLANG=/usr/bin/clang-18
-
-# 若已 source mikanos-build 的 buildenv.sh，后续章节的 gcc 交叉链通常在 PATH 中
-# x86_64-elf-gcc --version
+# x86_64-elf-gcc --version   # 已 source buildenv.sh 后
 ```
 
-**你不需要：** 自写 **链接脚本（.ld）** 去拼 PE 头 — Makefile 里 **`/subsystem:efi_application` + `/entry:EfiMain`**（Clang 路径）或 EDK II / 官方 `build.sh` 已封装格式转换。
+**你不需要：** 自写 **链接脚本（.ld）** 拼 PE 头 — Makefile 里 **`/subsystem:efi_application` + `/entry:EfiMain`** 或官方 `build.sh` 已封装。
 
 ---
 
-### 三、推荐流程（四步）
+### 四、推荐流程（四步）
 
 ```
 ① 写 C 源码（EfiMain · 初始化控制台 · 打印字符）
@@ -89,7 +128,7 @@ Ch1 模板 **只声明用到的结构体字段**，避免拉入整个 EDK II；C
 
 ---
 
-### 四、Makefile 一键编译
+### 五、Makefile 一键编译
 
 在 [code/](../code/) 目录（WSL，已装 `clang` · `lld` · `qemu-system-x86_64` · `ovmf`）：
 
@@ -119,7 +158,7 @@ esp/EFI/BOOT/BOOTX64.EFI: hello.o
 
 ---
 
-### 五、部署与引导测试
+### 六、部署与引导测试
 
 ```
 FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
@@ -138,7 +177,7 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 
 ---
 
-### 六、原书可选：二进制编辑器（概念体感）
+### 七、原书可选：二进制编辑器（概念体感）
 
 原书 **第一节** 还演示用 **二进制编辑器** 直接填机器码生成 `BOOTX64.EFI` — 目的是看见「程序 = 文件里的字节序列」、理解 **PE 头比 512B IPL 复杂**。
 
@@ -152,7 +191,7 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 
 ---
 
-### 七、常见初坑
+### 八、常见初坑
 
 | 现象 | 可能原因 |
 |------|----------|
@@ -166,8 +205,8 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 **口述巩固 · 自测**
 
 1. **`.efi` 和 `.c` 是什么关系？** — 同一份程序：C 写逻辑，交叉编译链接成 UEFI 可执行的 PE 文件。
-2. **Ch1 默认用哪条链？** — **Clang + lld-link**；跟全书工程则用 **mikanos-build 的 x86_64-elf-gcc** + `buildenv.sh`。
-3. **为什么要交叉编译？** — 宿主机 `gcc` 默认出 **ELF**；x64 PC 的 UEFI 固件要 **PE32+** 形态的 `BOOTX64.EFI`。
+2. **Ch1 默认用哪条链？** — **Clang 编译 + lld-link 链 PE**；跟全书工程再装 **x86_64-elf-gcc** 链内核/ELF。
+3. **lld-link 和 ld.lld 区别？** — 同属 **LLVM LLD**；Ch1 **EFI/PE 用 lld-link**，Ch2+ **ELF 内核常用 ld.lld**。
 
 ---
 

@@ -1,28 +1,27 @@
 # Ch1 · 第一个 BOOTX64.EFI
 
-**不必从零手写整个 EFI 文件。** 本章动手路径：写符合 UEFI 规范的 **C 代码** → **交叉编译器**（Ch1 默认 **Clang**；全书工程用 **x86_64-elf-gcc**）→ **Makefile 链接成 PE** → 放进 **FAT** → UEFI 加载。
+**先选一套工具链。** Ch1 推荐 **Clang + LLD**（WSL 一条 `apt install` 搞定）；跟全书 MikanOS 时再装 **x86_64-elf-gcc**。
 
-## 交叉编译器
+## 两套工具链（对应上手）
 
-| 工具链 | Ch1 `make` | 说明 |
-|--------|------------|------|
-| **Clang + lld-link** | **默认** | `apt install clang lld`；`-target x86_64-pc-win32-coff` |
-| **x86_64-elf-gcc** | Ch2+ 与 [mikanos-build](https://github.com/uchan-nos/mikanos-build) 同环境 | 下载 `x86_64-elf.tar.gz` · `source devenv/buildenv.sh` |
+### Clang + LLD — LLVM 组合 · **先试这套**
 
-覆盖路径：`make CLANG=/usr/bin/clang-18`。PE 头 / 入口 / subsystem 由 Makefile 处理，**不用自写链接脚本**。
-
-→ 详表 [§2.二 交叉编译器](../notes/section-2-二进制编辑器与BOOTX64.md#二用哪些交叉编译器)
-
-## 文件
-
-| 文件 | 说明 |
+| 工具 | 作用 |
 |------|------|
-| [hello.c](./hello.c) | 最小模板：`EfiMain` · 经 `ConOut->OutputString` 打印 |
-| [Makefile](./Makefile) | `clang` + `lld-link` → `esp/EFI/BOOT/BOOTX64.EFI` |
+| **Clang** | C → 汇编 → **目标文件 `.o`** |
+| **LLD** | 轻量高速链接器，把 `.o` 拼成镜像 |
 
-与官方 [mikanos-build/day01/c](https://github.com/uchan-nos/mikanos-build/tree/master/day01/c) 对齐；完整 devenv（`make_image.sh` · `run_qemu.sh`）见 [appendix-B](../../appendix-B-get-mikanos/) · [SETUP.md](../../SETUP.md)。
+Ch1 链 **PE/EFI** 时 Makefile 调用 **`lld-link`**（LLD 的 PE 前端）。Ch2+ 链 **ELF 内核** 时常见 **`ld.lld`** — 同一 LLVM LLD，链接格式不同。
 
-## 快速运行（WSL）
+→ 对 HFT：LLVM 线编译/链接迭代快，适合频繁 **Release 构建** 与读汇编热路径（[CSAPP §3.2.1](../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.1-3.2-历史观点与程序编码.md)）。
+
+### x86_64-elf-gcc — GCC 交叉链 · **Ch2+ 全书工程**
+
+给 **非 Linux 宿主的裸 x86_64** 目标生成代码，用于 MikanOS **64 位内核** 与官方 `build.sh`。**Ch1 Hello 不必先装。**
+
+→ [mikanos-build](https://github.com/uchan-nos/mikanos-build) · `source devenv/buildenv.sh`
+
+## 快速运行（WSL · 只装 Clang 线）
 
 ```bash
 sudo apt install -y clang lld qemu-system-x86 ovmf
@@ -30,20 +29,24 @@ cd chapter-01-hello-world/code
 make run
 ```
 
-QEMU 窗口应出现 `Hello, world!`。
+QEMU 应出现 `Hello, world!`。
+
+## 文件
+
+| 文件 | 说明 |
+|------|------|
+| [hello.c](./hello.c) | `EfiMain` · `ConOut->OutputString` |
+| [Makefile](./Makefile) | `clang` + **`lld-link`** → `esp/EFI/BOOT/BOOTX64.EFI` |
+
+→ 详讲 [§2.二 两套工具链](../notes/section-2-二进制编辑器与BOOTX64.md#二两套工具链怎么理解上手版)
 
 ## 产出布局
 
 ```
-esp/
-└── EFI/
-    └── BOOT/
-        └── BOOTX64.EFI    ← lld-link 生成的 PE/COFF
+esp/EFI/BOOT/BOOTX64.EFI    ← PE/COFF，OVMF 从 FAT 加载
 ```
-
-`make run` 用 QEMU **`-drive file=fat:rw:esp`** 把该目录当作 FAT 卷挂载，OVMF 固件按规范加载其中的 `BOOTX64.EFI`。
 
 ## 下一步
 
-- 笔记 [§2 流程拆解](../notes/section-2-二进制编辑器与BOOTX64.md)
-- Ch2 起引入完整 **EDK II** · `<Uefi.h>` → [chapter-02-edk2-memmap](../../chapter-02-edk2-memmap/)
+- [§2 流程拆解](../notes/section-2-二进制编辑器与BOOTX64.md)
+- Ch2 **EDK II** → [chapter-02-edk2-memmap](../../chapter-02-edk2-memmap/)
