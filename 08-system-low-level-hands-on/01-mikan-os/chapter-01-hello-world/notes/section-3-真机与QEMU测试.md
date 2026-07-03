@@ -33,8 +33,8 @@ qemu-system-x86_64 \
 
 | 与 01 差异 | 说明 |
 |------------|------|
-| **02 川合** | `qemu-system-i386 -fda helloos.img` — **BIOS + 软盘** |
-| **MikanOS** | **x86_64 + OVMF** — **UEFI + FAT 虚拟盘** |
+| **02 川合** | `qemu-system-i386 -fda helloos.img` — **BIOS 读软盘第 0 扇区 IPL** |
+| **MikanOS** | **x86_64 + OVMF** — **UEFI 读 FAT 上的 BOOTX64.EFI 文件**（不是 `-fda` 引导扇区） |
 
 → 环境依赖见 [appendix-A-dev-env](../../appendix-A-dev-env/) · [SETUP.md](../../SETUP.md)
 
