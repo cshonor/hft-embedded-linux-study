@@ -125,14 +125,15 @@ qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd \
 | **Ch3+ 内核** | **x86_64-elf-gcc** 交叉链 + Newlib 等 | `sudo apt install gcc-x86-64-elf` 或按章节自行编译 Newlib（笔记随 Ch 更新） |
 | **运行** | **QEMU + OVMF** | 已在 §1 装好 |
 
-**源码仓库（按需 clone，不必 ansible）：**
+**源码在本仓库（不必再 clone 上游 mikanos 只为 Loader）：**
 
 ```bash
-git clone https://github.com/uchan-nos/mikanos.git ~/mikanos
-# Ch2：在 ~/edk2 下 ln -s ~/mikanos/MikanLoaderPkg ./
+HFT=/mnt/c/Users/12392/Desktop/hft   # 按你的路径改
+PKG=$HFT/08-system-low-level-hands-on/01-mikan-os/chapter-02-edk2-memmap/code/MikanLoaderPkg
+cd ~/edk2 && ln -sf "$PKG" ./MikanLoaderPkg
 ```
 
-→ Ch2 详述：[chapter-02-edk2-memmap/](./chapter-02-edk2-memmap/) · [§7 全链路](./chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md)
+→ 逐步说明：[chapter-02/code/README.md](./chapter-02-edk2-memmap/code/README.md)
 
 ---
 

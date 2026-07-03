@@ -6,6 +6,8 @@
 
 Ch1 已用 C + Clang/**lld-link** 写出 Hello World；本章改用 EDK II **基础库**：
 
+**本仓库源码：** [code/MikanLoaderPkg/](../code/MikanLoaderPkg/) · 构建步骤 [code/README.md](../code/README.md)（WSL / Linux）
+
 ```c
 #include <Uefi.h>
 // … 使用 EFI_SYSTEM_TABLE、ConOut 等已有抽象
@@ -21,7 +23,7 @@ Ch1 已用 C + Clang/**lld-link** 写出 Hello World；本章改用 EDK II **基
 
 **构建产物：** 仍是 **PE32+ `.efi`**，仍由 UEFI 固件从 FAT 加载 —— 变的是 **源码组织与库**，不是启动链本身。
 
-→ Ch1 对照：[§2 二进制与 BOOTX64](../../chapter-01-hello-world/notes/section-2-二进制编辑器与BOOTX64.md) · [01-clang-minimal](../../chapter-01-hello-world/code/01-clang-minimal/)  
+→ 源码：[Main.c](../code/MikanLoaderPkg/Main.c) · Ch1 对照：[§2 二进制与 BOOTX64](../../chapter-01-hello-world/notes/section-2-二进制编辑器与BOOTX64.md) · [01-clang-minimal](../../chapter-01-hello-world/code/01-clang-minimal/)  
 → 元文件：[appendix-C `.inf` / `.dsc`](../../appendix-C-edk2-files/)
 
 ---
