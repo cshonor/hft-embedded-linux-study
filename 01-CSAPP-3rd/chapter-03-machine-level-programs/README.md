@@ -61,7 +61,7 @@ C 源码
 热路径 profile：3.5 lea、3.6 分支 · 配合 Ch 5 优化
 协议 struct：3.8–3.9
 安全/运维：3.10 扫读；3.11 浮点路径按需
-3.1 历史、3.2.3 格式注解 — 可跳过
+做 MikanOS / 读 perf：3.1 ISA 路线、3.2.3 AT&T/Intel — 不可跳过
 ```
 
 ---
@@ -71,5 +71,6 @@ C 源码
 - 上一章：[../chapter-02-representing-information/](../chapter-02-representing-information/)
 - 下一章：[../chapter-04-processor-architecture/](../chapter-04-processor-architecture/)
 - 优化：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
-- perf 读栈：[14-Systems-Performance Ch 13](../../15-Systems-Performance-2nd/chapter-13-perf/)
+- perf 读栈：[15-Systems-Performance Ch 13](../../15-Systems-Performance-2nd/chapter-13-perf/)
+- MikanOS 实操：[08 MikanOS Ch1 UEFI](../../../08-system-low-level-hands-on/01-mikan-os/chapter-01-hello-world/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
