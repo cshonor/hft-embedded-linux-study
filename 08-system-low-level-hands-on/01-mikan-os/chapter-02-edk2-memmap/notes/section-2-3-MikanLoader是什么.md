@@ -44,7 +44,7 @@
 | 数据 | 怎么拿 | 交给内核干什么 |
 |------|--------|----------------|
 | **内存分区表** | `GetMemoryMap()` → 筛 **Conventional** | Ch8 物理页池 · 知道哪不能踩 |
-| **FrameBuffer** | **GOP** 协议 | 显存地址、分辨率、像素格式 → 屏幕输出 |
+| **FrameBuffer** | **GOP** 协议 | **显存基址 + 分辨率 + 像素格式**（非屏幕快照）→ 内核自己写显存 · [Ch3 §4](../../chapter-03-bootloader-display/notes/section-4-GOP与帧缓冲区.md) |
 | **ACPI 等** | 固件已映射 / 表地址 | 电源、中断控制器等（Ch11+ 定时器/ACPI） |
 
 **Ch2 本章做到：** 第二层里的 **GetMemoryMap + 导出 CSV** —— 第一层（加载 kernel）在 **Ch3+**。

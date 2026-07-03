@@ -4,6 +4,36 @@
 
 ---
 
+### 先纠正直觉：GOP 传的不是「屏幕画面」
+
+**不完全是「把屏幕画面传给内核」。** 准确分两层：
+
+#### ① Loader 交给内核的是什么？
+
+**GOP 传给内核的不是当前屏幕像素，而是「显存硬件的地址与配置信息」。**
+
+| GOP 读出 | 含义 |
+|----------|------|
+| **`FrameBufferBase`** | 帧缓冲 **物理内存起始地址** — 写这块内存，像素就变 |
+| **分辨率** | 水平 × 垂直像素数 |
+| **`PixelsPerScanLine`** | 每行像素长度（stride，可能大于宽度） |
+| **像素格式** | 如 BGR Reserved 8-bit |
+
+MikanLoader 把这堆参数打包（如 `FrameBufferConfig`）传给 **`KernelMain`**。  
+内核拿到地址后 **自己读写这块内存** 就能控制显示 —— **不是** 固件把现成画面发过去。
+
+#### ② 开机那一刻屏幕上是什么？
+
+UEFI / Loader 刷白、Logo、文字 —— 只是 **临时画在显存上的图案**。  
+内核拿到 `FrameBufferBase` 后，可以 **直接覆盖、清屏、重画** 文字/图形。
+
+**通俗类比：** GOP 相当于告诉你 —— *「画布在内存 **0xXXXX**，尺寸 **1920×1080**，颜料格式 **BGR**」*。  
+它 **不会** 把已经画好的图交给内核，只把画布的 **位置与规格** 交给内核；**内核自己在画布上作画**。
+
+→ Linux 同源：[§四 `/dev/fb0`](#四与-linux-devfb0-同源) · 传参详 [§5 KernelMain](./section-5-KernelMain与错误处理.md)
+
+---
+
 ### 一、Graphics Output Protocol（GOP）
 
 **GOP** — UEFI **图形输出协议**，替代 legacy VGA 文本模式的现代路径。
@@ -46,36 +76,55 @@ framebuffer[offset + 2] = 0xFF;  // R
 
 ### 三、绘图权移交给内核
 
-Loader 不应独占显示 — **启动内核时传递：**
+Loader 不应独占显示 — **ExitBootServices 前** 启动内核时传递 **硬件参数，不传像素快照**：
 
 | 参数（示意） | 含义 |
 |--------------|------|
-| **fb_base** | 帧缓冲物理/线性基址 |
-| **fb_size** 或 **width/height/stride** | 绘图边界 |
+| **`FrameBufferConfig`** / **fb_base** | 帧缓冲 **基址**（画布在哪） |
+| **width / height / stride** | 画布 **尺寸与行宽** |
+| **pixel_format** | **BGR / RGB** 等字节序 |
 
 ```cpp
-extern "C" void KernelMain(void* fb_base, uint64_t fb_size) {
-    // 内核内绘制彩色图案 — 不再依赖 UEFI ConOut
+extern "C" void KernelMain(const FrameBufferConfig* config, /* … */) {
+    // 内核按 config->frame_buffer 基址自己写像素 — 不依赖 UEFI ConOut
 }
 ```
 
 **设计原则：**
 
 ```
-Loader：硬件探测 + 资源分配 + 一次性交接
-Kernel：持久拥有帧缓冲 — 后续窗口系统（Ch 10+）的基础
+Loader：GOP 探测 → 打包地址/格式/分辨率 → 交给 KernelMain
+Kernel：持久拥有「画布规格」→ 自己清屏、重绘 → Ch10+ 窗口系统的基础
 ```
 
 → 下一章 [Ch4 像素与 make](../chapter-04-pixel-make/) 继续细化绘图
 
 ---
 
-### 四、与文本输出的关系
+### 四、与 Linux `/dev/fb0` 同源
+
+| | **MikanOS（GOP → KernelMain）** | **嵌入式 Linux** |
+|---|--------------------------------|------------------|
+| **拿到什么** | `FrameBufferBase` + 分辨率 + 像素格式 | `/dev/fb0` 映射的 **显存物理地址** |
+| **怎么显示** | 内核 **读写该物理内存** | 内核 / 用户态 **mmap 帧缓冲** 写像素 |
+| **本质** | 同一套逻辑 — **显存 = 一块可写内存** | 同上 |
+
+**HFT / 嵌入式读法：** 无桌面环境的板卡、KVM 帧缓冲调试 — 都是 **地址 + 格式**，不是「传一张截图」。
+
+---
+
+### 五、与文本输出的关系
 
 | 方式 | 阶段 | 特点 |
 |------|------|------|
 | **ConOut->OutputString** | Ch 1–2 调试 | 简单文本 · UEFI 服务 |
 | **GOP 写像素** | Ch 3+ | **图形 UI** · 需自管字体/位图（Ch 5） |
+
+### 口述巩固
+
+1. **GOP 传给内核的是屏幕截图吗？** — **不是**；是 **FrameBufferBase + 分辨率 + 格式**。
+2. **内核怎么显示？** — 按基址 **自己读写显存**；可覆盖 UEFI 临时画面。
+3. **和 Linux 哪一样？** — **`/dev/fb0` 帧缓冲** — 同一套「显存地址 + 写内存出图」逻辑。
 
 ---
 

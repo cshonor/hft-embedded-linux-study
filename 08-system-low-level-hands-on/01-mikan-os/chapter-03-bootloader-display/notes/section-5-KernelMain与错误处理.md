@@ -7,7 +7,7 @@
 Loader 完成 **ELF 加载 + GOP 探测** 后：
 
 ```
-1. 构造 KernelMain 所需参数（帧缓冲地址、大小…）
+1. 构造 KernelMain 所需参数（**FrameBufferConfig**：显存基址、分辨率、格式 — 非像素内容）
 2. 按 ABI 设置寄存器 / 栈
 3. 跳转到 kernel 入口（或包装函数再调 KernelMain）
 4. UEFI Boot Services 期仍可运行 — 完整 ExitBootServices 在更后章节
@@ -23,7 +23,7 @@ Loader 完成 **ELF 加载 + GOP 探测** 后：
 | Loader 做 | Kernel 做 |
 |-----------|-----------|
 | 读 `kernel.elf`、分配页 | 假设 **内存与 fb 已就绪** |
-| GOP、传参 | **像素逻辑**、未来调度/驱动 |
+| GOP、传参（**地址与格式，非画面**） | **像素逻辑**、未来调度/驱动 |
 | UEFI 错误处理 | 内核内 assert/panic（后续完善） |
 
 ---
