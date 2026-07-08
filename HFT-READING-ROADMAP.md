@@ -337,14 +337,29 @@
 | **24 前置** | 建议 **23 或至少 21–22** 后再开算法整合 |
 | **C 语言** | [02 C](./02-c-programming/) · K&R + *Pointers on C* + CSAPP/TLPI 可复用 |
 
-### 严格顺序
+### 全新阅读顺序（全外文 · 无国产书 · 汇编前置）
+
+> **原则：** 嵌入式支线 **19–21 核心五书** 仅用英文原版；**剔除** 国产《ARM64 汇编编程实战》《嵌入式 Linux 开发实战》《Linux 内核驱动深度开发》等。  
+> **汇编前置：** 先能读 ARM64 汇编，再进 U-Boot/内核构建与驱动。
+
+| 序 | 书目（英文原版） | 定位 | 文件夹 |
+|----|------------------|------|--------|
+| **1** | ***ARM Assembly Language*** — William Sw Smith | ARM64 **汇编前置** — 指令、调用约定、与 C 互调 | [**19**](./19-ARM64-Architecture/) |
+| **2** | ***Mastering Embedded Linux Programming*** — Chris Simmonds | **系统编译实操** — Yocto/Buildroot、rootfs、应用集成 | [**20**](./20-UBoot-Kernel-Build/) |
+| **3** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动底层原理** — Bootloader、内核启动、嵌入式 Linux 全貌 | [**20**](./20-UBoot-Kernel-Build/)（与 2 同模块 · 先实操后原理或穿插） |
+| **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动基础框架思想（file_operations、并发） | [**21**](./21-Linux-Device-Driver/) |
+| **5** | ***Linux Device Driver Development*, 2nd ed** — John Madieu | **新版内核现代驱动** — device model、5.x/6.x API（**替代国产驱动书**） | [**21**](./21-Linux-Device-Driver/) |
+
+**22–24 延续（仍以外文为主）：** [22 DT](./22-Device-Tree-Study/) · [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)
+
+### 严格顺序（文件夹级）
 
 ```
-19  ARM64 架构
+19  ARM Assembly Language（汇编前置）
  ↓
-20  U-Boot · 内核裁剪 · Buildroot
+20  Mastering Embedded Linux Programming → Embedded Linux Primer
  ↓
-21  Linux 设备驱动（LDD3 + 现代驱动）
+21  LDD3 → Linux Device Driver Development
  ↓
 22  设备树 Device Tree
  ↓
@@ -353,16 +368,18 @@
 24  PID · 电机 · 姿态解算 · 飞控调度（PREEMPT_RT）
 ```
 
-### 文件夹 ↔ 必读书（每模块 1–2 本 · 不冗余）
+### 文件夹 ↔ 必读书（19–21 · 全外文核心）
 
 | 文件夹 | 必读书 | 索引 |
 |--------|--------|------|
-| **19** | 《ARMv8-A Programmer's Guide》· 《ARM64 汇编编程实战》 | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
-| **20** | 《嵌入式 Linux 开发实战：U-Boot、内核、根文件系统》· 《Buildroot 实战指南》 | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
-| **21** | LDD3 · 《Linux 内核驱动深度开发》 | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
-| **22** | 《Device Tree for Embedded Linux》 | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
-| **23** | 《嵌入式 Linux 无人机开发实战》 | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
-| **24** | 《自动控制原理》胡寿松 · 《卡尔曼滤波与组合导航原理》秦永元 · （整合复用 23） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
+| **19** | ***ARM Assembly Language***（+ 可选 ARM 官方 *Programmer's Guide* 作参考） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
+| **20** | ***Mastering Embedded Linux Programming*** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
+| **21** | **LDD3** · ***Linux Device Driver Development*** | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
+| **22** | *Device Tree for Embedded Linux* | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
+| **23** | 项目实战（笔记随板卡选型） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
+| **24** | 自控 / Kalman（算法卷 · 与 23 整合） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
+
+<!-- 旧表（国产书）已废止 — 见 git 历史若需对照 -->
 
 **24 子目录：** [Ch1 PID](./24-Motion-Control-Motor/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./24-Motion-Control-Motor/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./24-Motion-Control-Motor/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./24-Motion-Control-Motor/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./24-Motion-Control-Motor/chapter-05-flight-control-scheduling/)
 
@@ -370,7 +387,7 @@
 
 | 类别 | 来源模块 |
 |------|----------|
-| C / GNU-C / 指针 / 结构体 | [02 C](./02-c-programming/) · CSAPP · TLPI · 《嵌入式 C 自我修养》 |
+| C / GNU-C / 指针 / 结构体 | [02 C](./02-c-programming/) · CSAPP · TLPI |
 | 进程 / VM / 中断 / 同步 | 04 LKD · 05 ULK · 06 Gorman |
 | 性能 / 绑核 / BPF / **周期 jitter** | 15 SysPerf · 16 BPF · **17 HFT 测量** |
 | 网络 / 零拷贝思想 | 11 UNP · 13 内核网 · 14 DPDK → 传感器链路 |

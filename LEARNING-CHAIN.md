@@ -34,8 +34,11 @@
 17  HFT Practice
 18  Rust Guide
 
-── 嵌入式 Linux 支线（19 起，建议 04–07 后）──
-19  ARM64 → … → 24  PID/飞控
+── 嵌入式 Linux 支线（19 起，建议 04–07 后 · 全外文 19–21）──
+19  ARM Assembly Language（汇编前置）
+20  Mastering Embedded Linux Programming → Embedded Linux Primer
+21  LDD3 → Linux Device Driver Development
+22  Device Tree → 23 实战 → 24  PID/飞控
 ```
 
 **HFT 最短路径：** `01` → **`02` C** → `03` → `04`–`07` → `08/01` MikanOS → `09` C++ → `14` DPDK → `15`–`16` → `17` HFT

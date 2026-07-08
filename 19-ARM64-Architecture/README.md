@@ -1,29 +1,43 @@
-# ARM64 架构 · 嵌入式 Linux 核心 CPU
+# ARM64 架构 · 汇编前置
 
 **文件夹 19** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
 
 > **定位：** ARM **A 架构**（应用处理器）— **非** STM32 / MCU 裸机。  
-> **主线：** HFT（x86-64）；**本模块：** 飞行器 / 网关等 **嵌入式 Linux 退路**。
+> **主线：** HFT（x86-64）；**本模块：** 飞行器 / 网关等 **嵌入式 Linux 退路**。  
+> **书目原则：** **全外文** — 以汇编书打地基，再进 U-Boot/内核/驱动。
 
 ---
 
-## 必读书（2 本 · 精简）
+## 必读书（1 本 · 核心）
 
 | # | 书目 | 读什么 |
 |---|------|--------|
-| 1 | **《ARMv8-A Programmer's Guide》**（ARM 官方） | 寄存器 · 异常 · 中断 · **内存模型** · EL0–EL3 |
-| 2 | **《ARM64 汇编编程实战》** | 指令集 · 汇编 · 与 C 互调 |
+| 1 | ***ARM Assembly Language*** — William Sw Smith | ARM64 **指令集** · 函数序言/尾声 · **与 C 互调** · 系统调用 `svc` |
+
+**可选参考（不替代主书）：** ARM 官方 *ARMv8-A Programmer's Guide* — EL0–EL3、异常、内存模型速查。
 
 ---
 
-## 复用（不必重学）
+## 为何汇编前置
 
-| 已有（HFT 链） | 本模块用法 |
-|----------------|------------|
-| **[02 C](../02-c-programming/)** | **汇编与 C 互调、指针/MMIO** — 嵌入式底层通用语 |
-| [01 CSAPP](../01-CSAPP-3rd/) x86-64 | **对照学** — cache、流水线、调用约定 |
-| [03 Hennessy](../03-Computer-Architecture-6th/) Ch2 | MESI、一致性 — ARM 同样适用 |
-| [04 LKD](../04-Linux-Kernel-Development/) | 调度/中断 **概念** 通用；**实现** 看 ARM 异常级 |
+| 后续模块 | 需要汇编直觉 |
+|----------|--------------|
+| [20 构建](../20-UBoot-Kernel-Build/) | U-Boot 启动早期、内核 `head.S` |
+| [21 驱动](../21-Linux-Device-Driver/) | 中断入口、原子指令 `ldxr`/`stxr` |
+| [04 LKD](../04-Linux-Kernel-Development/) | 对照 x86 `syscall` ↔ ARM `svc` |
+
+**顺序：** 读完本章 **再开** [20 Mastering Embedded Linux Programming](../20-UBoot-Kernel-Build/)。
+
+---
+
+## 复用（HFT 链）
+
+| 已有 | 本模块用法 |
+|------|------------|
+| **[02 C](../02-c-programming/)** | 汇编与 C 互调、指针/MMIO |
+| [01 CSAPP](../01-CSAPP-3rd/) x86-64 | **对照学** cache、调用约定 |
+| [03 Hennessy](../03-Computer-Architecture-6th/) Ch2 | MESI — ARM 同样适用 |
+| [08 MikanOS](../08-system-low-level-hands-on/01-mikan-os/) Ch3+ | UEFI/x86 启动链 — 与 ARM **概念平行**（Loader → 内核） |
 
 ---
 
@@ -42,6 +56,6 @@
 
 - [ ] 能解释 **EL1 内核 / EL0 用户态** 与 x86 Ring 的对应关系  
 - [ ] 能读简单 **ARM64 汇编**（函数序言、系统调用）  
-- [ ] 知道 **设备树** 为何取代 hard-coded 寄存器（→ [21](../22-Device-Tree-Study/)）
+- [ ] 知道 **设备树** 为何取代 hard-coded 寄存器（→ [22](../22-Device-Tree-Study/)）
 
-**下一章：** [19 U-Boot 与内核构建](../20-UBoot-Kernel-Build/)
+**下一章：** [20 嵌入式 Linux 构建](../20-UBoot-Kernel-Build/)
