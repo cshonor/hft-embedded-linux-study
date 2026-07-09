@@ -39,6 +39,7 @@
 20  Mastering Embedded Linux Programming → Embedded Linux Primer
 21  LDD3 → Linux Device Driver Development
 22  Device Tree → 23 实战 → 24  PID/飞控
+    （22 = 内核官方 DT Usage 文档，无单册书）
 ```
 
 **HFT 最短路径：** `01` → **`02` C** → `03` → `04`–`07` → `08/01` MikanOS → `09` C++ → `14` DPDK → `15`–`16` → `17` HFT

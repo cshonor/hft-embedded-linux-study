@@ -350,7 +350,7 @@
 | **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动基础框架思想（file_operations、并发） | [**21**](./21-Linux-Device-Driver/) |
 | **5** | ***Linux Device Driver Development*, 2nd ed** — John Madieu | **新版内核现代驱动** — device model、5.x/6.x API（**替代国产驱动书**） | [**21**](./21-Linux-Device-Driver/) |
 
-**22–24 延续（仍以外文为主）：** [22 DT](./22-Device-Tree-Study/) · [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)
+**22–24 延续：** [22 DT 官方文档](./22-Device-Tree-Study/) · [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)
 
 ### 严格顺序（文件夹级）
 
@@ -375,7 +375,7 @@
 | **19** | ***ARM Assembly Language***（+ 可选 ARM 官方 *Programmer's Guide* 作参考） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** | ***Mastering Embedded Linux Programming*** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
 | **21** | **LDD3** · ***Linux Device Driver Development*** | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
-| **22** | *Device Tree for Embedded Linux* | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
+| **22** | [内核官方 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) + [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
 | **23** | 项目实战（笔记随板卡选型） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
 | **24** | 自控 / Kalman（算法卷 · 与 23 整合） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
 
