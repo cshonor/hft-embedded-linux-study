@@ -14,39 +14,39 @@
 
 ## 正文章节
 
-| 章 | 英文标题 | 中文 | 标签 | 与 19→20→21 的关联 |
-|----|----------|------|------|---------------------|
-| **1** | An Overview of Computing Systems | 计算机系统概述 | **选读** | 建立 ARM 生态背景 |
-| **2** | The Programmer's Model | 程序员模型 | **精读** | 寄存器 · 模式 · 与 x86/CSAPP 对照 |
-| **3** | Introduction to Instruction Sets: v4T and v7-M | 指令集简介：v4T 和 v7-M | **精读** | ARM/Thumb 基础；**AArch64 语法另查 ARMv8-A Guide** |
-| **4** | Assembler Rules and Directives | 汇编器规则与伪指令 | **精读** | 读 U-Boot/内核 `.S` 中的 `.word` / `.align` 等 |
-| **5** | Loads, Stores, and Addressing | 加载、存储与寻址 | **精读** | **Load/Store 架构** — 驱动 MMIO 读写根基 |
-| **6** | Constants and Literal Pools | 常量与文字池 | **选读** | 理解 PC 相对寻址、常量表 |
-| **7** | Integer Logic and Arithmetic | 整数逻辑与算术 | **精读** | 位操作 · 地址计算 |
-| **8** | Branches and Loops | 分支与循环 | **精读** | 控制流 · 读启动/异常路径 |
-| **9** | Introduction to Floating-Point: Basics, Data Types, and Data Transfer | 浮点简介：基础、类型与传输 | **跳过** | Linux 内核/驱动热路径少用手写 FP 汇编 |
-| **10** | Introduction to Floating-Point: Rounding and Exceptions | 浮点简介：舍入与异常 | **跳过** | 同上 |
-| **11** | Floating-Point Data-Processing Instructions | 浮点数据处理指令 | **跳过** | 同上 |
-| **12** | Tables | 表 | **选读** | 查表跳转 · 部分 boot 代码风格 |
-| **13** | Subroutines and Stacks | 子程序与堆栈 | **精读** | **函数调用约定 · 栈帧** — 读 `head.S` / 与 C 互调 |
-| **14** | Exception Handling: ARM7TDMI | 异常处理：ARM7TDMI | **选读** | 异常概念；**Linux 用 AArch64 异常模型** |
-| **15** | Exception Handling: v7-M | 异常处理：v7-M | **选读** | Cortex-M 专用；**概念可对照** 内核中断入口 |
-| **16** | Memory-Mapped Peripherals | 内存映射外设 | **精读** | **MMIO** — 直连 [21 驱动](../21-Linux-Device-Driver/) · [22 DT reg](../22-Device-Tree-Study/) |
-| **17** | ARM, Thumb and Thumb-2 Instructions | ARM、Thumb 和 Thumb-2 指令 | **选读** | 指令速查；AArch64 用 ARM DDI 手册 |
-| **18** | Mixing C and Assembly | C 与汇编混合编程 | **精读** | **`extern` / 调用约定** — 与 [02 C](../02-c-programming/) 衔接 |
+| 章 | 英文标题 | 中文 | 标签 | 文件夹 |
+|----|----------|------|------|--------|
+| **1** | An Overview of Computing Systems | 计算机系统概述 | **选读** | [chapter-01](./chapter-01-overview-computing-systems/) |
+| **2** | The Programmer's Model | 程序员模型 | **精读** | [chapter-02](./chapter-02-programmers-model/) |
+| **3** | Introduction to Instruction Sets: v4T and v7-M | 指令集简介：v4T 和 v7-M | **精读** | [chapter-03](./chapter-03-instruction-sets-v4t-v7m/) |
+| **4** | Assembler Rules and Directives | 汇编器规则与伪指令 | **精读** | [chapter-04](./chapter-04-assembler-rules-directives/) |
+| **5** | Loads, Stores, and Addressing | 加载、存储与寻址 | **精读** | [chapter-05](./chapter-05-loads-stores-addressing/) |
+| **6** | Constants and Literal Pools | 常量与文字池 | **选读** | [chapter-06](./chapter-06-constants-literal-pools/) |
+| **7** | Integer Logic and Arithmetic | 整数逻辑与算术 | **精读** | [chapter-07](./chapter-07-integer-logic-arithmetic/) |
+| **8** | Branches and Loops | 分支与循环 | **精读** | [chapter-08](./chapter-08-branches-loops/) |
+| **9** | Introduction to Floating-Point: Basics, Data Types, and Data Transfer | 浮点简介：基础、类型与传输 | **跳过** | [chapter-09](./chapter-09-floating-point-basics/) |
+| **10** | Introduction to Floating-Point: Rounding and Exceptions | 浮点简介：舍入与异常 | **跳过** | [chapter-10](./chapter-10-floating-point-rounding-exceptions/) |
+| **11** | Floating-Point Data-Processing Instructions | 浮点数据处理指令 | **跳过** | [chapter-11](./chapter-11-floating-point-data-processing/) |
+| **12** | Tables | 表 | **选读** | [chapter-12](./chapter-12-tables/) |
+| **13** | Subroutines and Stacks | 子程序与堆栈 | **精读** | [chapter-13](./chapter-13-subroutines-stacks/) |
+| **14** | Exception Handling: ARM7TDMI | 异常处理：ARM7TDMI | **选读** | [chapter-14](./chapter-14-exception-handling-arm7tdmi/) |
+| **15** | Exception Handling: v7-M | 异常处理：v7-M | **选读** | [chapter-15](./chapter-15-exception-handling-v7m/) |
+| **16** | Memory-Mapped Peripherals | 内存映射外设 | **精读** | [chapter-16](./chapter-16-memory-mapped-peripherals/) |
+| **17** | ARM, Thumb and Thumb-2 Instructions | ARM、Thumb 和 Thumb-2 指令 | **选读** | [chapter-17](./chapter-17-arm-thumb-thumb2-instructions/) |
+| **18** | Mixing C and Assembly | C 与汇编混合编程 | **精读** | [chapter-18](./chapter-18-mixing-c-and-assembly/) |
 
 ---
 
 ## 附录及其他
 
-| 部分 | 英文 | 标签 | 说明 |
-|------|------|------|------|
-| **附录 A** | Running Code Composer Studio | **跳过** | TI CCS — 本书实验 IDE；**本路线用 WSL + GCC** |
-| **附录 B** | Running Keil Tools | **跳过** | Keil MDK — Cortex-M 商业链；**不纳入 Linux 支线** |
-| **附录 C** | ASCII Character Codes | **选读** | 调试字符/协议时速查 |
-| **附录 D** | Appendix D | **选读** | 按书内实际标题决定是否查阅 |
-| **术语表** | Glossary | **选读** | 遇到缩写时翻 |
-| **参考文献** | References | **选读** | 延伸 ARM 官方文档入口 |
+| 部分 | 英文 | 标签 | 文件夹 |
+|------|------|------|--------|
+| **附录 A** | Running Code Composer Studio | **跳过** | [appendix-A](./appendix-A-code-composer-studio/) |
+| **附录 B** | Running Keil Tools | **跳过** | [appendix-B](./appendix-B-keil-tools/) |
+| **附录 C** | ASCII Character Codes | **选读** | [appendix-C](./appendix-C-ascii-character-codes/) |
+| **附录 D** | Appendix D | **选读** | [appendix-D](./appendix-D/) |
+| **术语表** | Glossary | **选读** | [glossary/](./glossary/) |
+| **参考文献** | References | **选读** | [references/](./references/) |
 
 ---
 

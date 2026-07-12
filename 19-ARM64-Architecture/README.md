@@ -30,6 +30,40 @@
 
 ---
 
+## 章节目录（文件夹）
+
+📋 **阅读裁剪与标签** → [OUTLINE.md](./OUTLINE.md)
+
+### 正文（Ch 1–18）
+
+| 章 | 文件夹 | 标签 |
+|----|--------|------|
+| 1 | [chapter-01-overview-computing-systems](./chapter-01-overview-computing-systems/) | 选读 |
+| 2 | [chapter-02-programmers-model](./chapter-02-programmers-model/) | **精读** |
+| 3 | [chapter-03-instruction-sets-v4t-v7m](./chapter-03-instruction-sets-v4t-v7m/) | **精读** |
+| 4 | [chapter-04-assembler-rules-directives](./chapter-04-assembler-rules-directives/) | **精读** |
+| 5 | [chapter-05-loads-stores-addressing](./chapter-05-loads-stores-addressing/) | **精读** |
+| 6 | [chapter-06-constants-literal-pools](./chapter-06-constants-literal-pools/) | 选读 |
+| 7 | [chapter-07-integer-logic-arithmetic](./chapter-07-integer-logic-arithmetic/) | **精读** |
+| 8 | [chapter-08-branches-loops](./chapter-08-branches-loops/) | **精读** |
+| 9–11 | [ch09](./chapter-09-floating-point-basics/) · [ch10](./chapter-10-floating-point-rounding-exceptions/) · [ch11](./chapter-11-floating-point-data-processing/) | 跳过 |
+| 12 | [chapter-12-tables](./chapter-12-tables/) | 选读 |
+| 13 | [chapter-13-subroutines-stacks](./chapter-13-subroutines-stacks/) | **精读** |
+| 14–15 | [ch14](./chapter-14-exception-handling-arm7tdmi/) · [ch15](./chapter-15-exception-handling-v7m/) | 选读 |
+| 16 | [chapter-16-memory-mapped-peripherals](./chapter-16-memory-mapped-peripherals/) | **精读** |
+| 17 | [chapter-17-arm-thumb-thumb2-instructions](./chapter-17-arm-thumb-thumb2-instructions/) | 选读 |
+| 18 | [chapter-18-mixing-c-and-assembly](./chapter-18-mixing-c-and-assembly/) | **精读** |
+
+### 附录与其他
+
+| | 文件夹 |
+|---|--------|
+| 附录 A–D | [A](./appendix-A-code-composer-studio/) · [B](./appendix-B-keil-tools/) · [C](./appendix-C-ascii-character-codes/) · [D](./appendix-D/) |
+| 术语表 / 参考文献 | [glossary/](./glossary/) · [references/](./references/) |
+| 实验代码 | [code/](./code/) |
+
+---
+
 ## 复用（HFT 链）
 
 | 已有 | 本模块用法 |
@@ -54,8 +88,9 @@
 
 ## 验收
 
-- [ ] 能解释 **EL1 内核 / EL0 用户态** 与 x86 Ring 的对应关系  
-- [ ] 能读简单 **ARM64 汇编**（函数序言、系统调用）  
+- [ ] 按 [OUTLINE.md](./OUTLINE.md) 完成 **精读章**（Load/Store · 栈 · MMIO · C/汇编）  
+- [ ] 能解释 **EL1 内核 / EL0 用户态** 与 x86 Ring 的对应关系（ARMv8-A Guide）  
+- [ ] 能读简单 **ARM 汇编**（函数序言、MMIO 读写）  
 - [ ] 知道 **设备树** 为何取代 hard-coded 寄存器（→ [22](../22-Device-Tree-Study/)）
 
 **下一章：** [20 嵌入式 Linux 构建](../20-UBoot-Kernel-Build/)
