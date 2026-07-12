@@ -45,7 +45,7 @@
 | **[Ch8 BL](../chapter-08-branches-loops/notes/section-8-2-branches.md)** | 子程序 **入口指令** |
 | **[Ch12](../chapter-12-tables/)** | 查表/二分宜封装为 **`BL LookupSin`** |
 | **Ch14** | 异常 **硬件自动压栈** — 与子程序 **软件压栈** 对照 |
-| **Ch17** | C 调用 asm、asm 调用 `printf` — **必须 AAPCS** |
+| **Ch18** | C 调用 asm、asm 调用 `printf` — **必须 AAPCS** |
 
 ---
 

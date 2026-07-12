@@ -82,7 +82,7 @@ add:
     BL      printf          ; 按 AAPCS 传参；可能破坏 r0-r3,r12
 ```
 
-完整 **extern、.global、`.type`** → [Ch17 混合编程](../chapter-17-mixed-c-assembly/)。
+完整 **extern、.global、`.type`** → [Ch18 混合编程](../chapter-18-mixing-c-and-assembly/)。
 
 ---
 

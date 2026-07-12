@@ -46,7 +46,7 @@ Ch8：BL → LR = 返回地址
         ↓
 §13.5：AAPCS — callee-save r4-r11 · 8 字节栈对齐
         ↓
-Ch14 异常也改 SP/LR · Ch17 C↔Asm · 内核/UBoot .S
+Ch14 异常也改 SP/LR · Ch18 C↔Asm · 内核/UBoot .S
 ```
 
 ---
@@ -83,7 +83,7 @@ Ch14 异常也改 SP/LR · Ch17 C↔Asm · 内核/UBoot .S
 | [07 TLPI](../../07-The-Linux-Programming-Interface/) | x86/ARM 调用约定对照 |
 | [Ch11 泰勒 sin](../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | `BL` 浮点子程序 |
 | [Ch14 异常](../chapter-14-exception-handling-arm7tdmi/) | 异常帧 = 硬件压栈 |
-| [Ch17 混合编程](../chapter-17-mixed-c-assembly/) | `extern "C"` + AAPCS |
+| [Ch18 混合编程](../chapter-18-mixing-c-and-assembly/) | `extern "C"` + AAPCS |
 | [20 U-Boot](../../20-UBoot-Kernel-Build/) | 启动/板级 `.S` 大量 **SP 设置 + BL** |
 
 ---
@@ -91,4 +91,4 @@ Ch14 异常也改 SP/LR · Ch17 C↔Asm · 内核/UBoot .S
 ### 七、下一章（按 OUTLINE）
 
 → **[Ch14 异常处理 ARM7TDMI](../chapter-14-exception-handling-arm7tdmi/)**（选读 — 中断也会动 SP/LR）  
-→ 精读链继续：**Ch16 MMIO** 或 **Ch17 C/Asm**
+→ 精读链继续：**Ch16 MMIO** 或 **Ch18 C/Asm**
