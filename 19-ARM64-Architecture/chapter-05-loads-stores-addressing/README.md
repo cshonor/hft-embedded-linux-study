@@ -7,12 +7,15 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **精读** — RISC 铁律 **Load→算→Store** · 寻址 · Endian · MMIO 基础 |
+| **量级** | 动态指令约 **一半** 是 Load/Store |
+| **选读** | §5.6 位带 — M3/M4 专用；Linux/A 路径理解 R-M-W 即可 |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
+
+**前置：** [Ch4 伪指令](../chapter-04-assembler-rules-directives/notes/section-0-本章完整概述.md) · [Ch2 对齐](../chapter-02-programmers-model/notes/section-2-2-data-types.md)
 
 ---
 
@@ -33,9 +36,11 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 熟练使用 **LDR/STR · LDRH/STRH · LDRB/STRB · LDRSH/LDRSB**
+- [ ] 写对 **Pre `[Rn,#off]!`** 与 **Post `[Rn], #off`**
+- [ ] 用 **`[Rn, Rm, LSL #2]`** 访问 `arr[i]`
+- [ ] 解释 **little-endian** 与 **`REV`**
+- [ ] 说清 **链接脚本 / Scatter** 如何把代码与变量放进 Flash/RAM
 
 ---
 
