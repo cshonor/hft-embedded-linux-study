@@ -12,9 +12,9 @@
 
 | # | 书目 | 读什么 |
 |---|------|--------|
-| 1 | ***ARM Assembly Language*** — William Sw Smith | ARM64 **指令集** · 函数序言/尾声 · **与 C 互调** · 系统调用 `svc` |
+| 1 | ***ARM Assembly Language*** — William Sw Smith | **v4T / v7-M 汇编基础** · Load/Store · 栈 · MMIO · **C/汇编互调**（→ [OUTLINE.md](./OUTLINE.md) 章节目录） |
 
-**可选参考（不替代主书）：** ARM 官方 *ARMv8-A Programmer's Guide* — EL0–EL3、异常、内存模型速查。
+**架构边界：** 本书 **不是 AArch64 专用教材** — 正文为 **ARM7TDMI / Cortex-M**；嵌入式 Linux（ARM-A）读完后用 ARM 官方 [*ARMv8-A Programmer's Guide*](https://developer.arm.com/documentation/den0024/latest) 补 **64 位语法与 EL0–EL3**。
 
 ---
 
@@ -26,7 +26,7 @@
 | [21 驱动](../21-Linux-Device-Driver/) | 中断入口、原子指令 `ldxr`/`stxr` |
 | [04 LKD](../04-Linux-Kernel-Development/) | 对照 x86 `syscall` ↔ ARM `svc` |
 
-**顺序：** 读完本章 **再开** [20 Mastering Embedded Linux Programming](../20-UBoot-Kernel-Build/)。
+**顺序：** 按 [OUTLINE.md](./OUTLINE.md) 精读 **Ch2–8、13、16、18** → 再开 [20 Mastering Embedded Linux Programming](../20-UBoot-Kernel-Build/)。
 
 ---
 

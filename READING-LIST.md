@@ -398,7 +398,7 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 
 | 文件夹 | 必读书（精简） | 索引 |
 |--------|----------------|------|
-| **19** ARM64 | *ARM Assembly Language* | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
+| **19** ARM64 | *ARM Assembly Language* · [OUTLINE 目录](./19-ARM64-Architecture/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** 构建 | *Mastering Embedded Linux Programming* · *Embedded Linux Primer* | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
 | **21** 驱动 | LDD3 · *Linux Device Driver Development* | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
 | **22** 设备树 | [内核 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) · [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |

@@ -372,7 +372,7 @@
 
 | 文件夹 | 必读书 | 索引 |
 |--------|--------|------|
-| **19** | ***ARM Assembly Language***（+ 可选 ARM 官方 *Programmer's Guide* 作参考） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
+| **19** | ***ARM Assembly Language***（[章节目录](./19-ARM64-Architecture/OUTLINE.md)）+ 可选 *ARMv8-A Programmer's Guide* | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** | ***Mastering Embedded Linux Programming*** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
 | **21** | **LDD3** · ***Linux Device Driver Development*** | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
 | **22** | [内核官方 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) + [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
