@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **精读** — **MMIO 裸机综合**（UART · DAC · GPIO） |
+| **核心模式** | **LDR/STR 寄存器** · **PINSEL/RCGC** · **LSR 轮询** · **查表+缩放** · **地址掩码** |
+| **前置** | [Ch5](../chapter-05-loads-stores-addressing/) · [Ch12](../chapter-12-tables/) · [Ch13](../chapter-13-subroutines-stacks/) · [Ch15](../chapter-15-exception-handling-v7m/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -30,9 +31,12 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说清 **MMIO**：外设地址 + **LDR/STR**，无专用 I/O 指令
+- [ ] **LPC2104 UART**：PINSEL → LCR/波特率 → **轮询 LSR(THRE)** → **STRB THR**
+- [ ] **LPC2132 DAC**：**DACR @ 0xE006C000** · **[15:6]** · **Ch12 sin + `512·sin+512`**
+- [ ] **Tiva GPIO**：**RCGCGPIO** 开时钟 · **PF1/2/3 RGB** · **地址掩码写 DATA**
+- [ ] 对照 [Ch5 位带](../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) 理解 **单 pin 安全写**
+- [ ] 联想 [21 驱动](../../21-Linux-Device-Driver/) **`readl/writel`** 与 [20 U-Boot](../../20-UBoot-Kernel-Build/) early UART
 
 ---
 
