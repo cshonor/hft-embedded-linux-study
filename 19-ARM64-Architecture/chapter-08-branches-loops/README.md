@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **精读** — **Ch7 标志 → 控制流**；**BL** 衔接 **Ch13** |
+| **优化轴** | 流水线 flush · **条件执行/IT** · **SUBS+BNE** · **循环展开** |
+| **前置** | [Ch7 标志/CMP](../chapter-07-integer-logic-arithmetic/notes/section-0-本章完整概述.md) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -31,9 +32,11 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说清 **B / BL / BX / BLX** 与 **CBZ/CBNZ** 限制
+- [ ] 用 **SUBS + BNE** 写向下 For 循环
+- [ ] 实现 **While / Do-While** 骨架
+- [ ] 对比 **ARM 条件后缀** 与 **IT 块（T/E 掩码）**
+- [ ] 解释 **循环展开** 的空间/时间权衡
 
 ---
 
