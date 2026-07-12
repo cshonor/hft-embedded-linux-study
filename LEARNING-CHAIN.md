@@ -36,7 +36,7 @@
 
 ── 嵌入式 Linux 支线（19 起，建议 04–07 后 · 全外文 19–21）──
 19  ARM Assembly Language（汇编前置）
-20  Mastering Embedded Linux Programming → Embedded Linux Primer
+20  Mastering Embedded Linux Programming (3rd ed) → Embedded Linux Primer
 21  LDD3 → Linux Device Driver Development
 22  Device Tree → 23 实战 → 24  PID/飞控
     （22 = 内核官方 DT Usage 文档，无单册书）

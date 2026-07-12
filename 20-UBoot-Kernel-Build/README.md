@@ -1,54 +1,89 @@
-# U-Boot · 内核裁剪 · 根文件系统构建
+# 20 · U-Boot / Kernel / Build（嵌入式 Linux 构建）
 
-**文件夹 20** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
-
-> **定位：** 嵌入式 **自己编译** 引导链 + 内核 + rootfs — 区别于服务器 **成品内核**。  
-> **前置：** [19 ARM 汇编](../19-ARM64-Architecture/) · [04 LKD](../04-Linux-Kernel-Development/) 调度/中断概念  
-> **书目原则：** **全外文** — 无国产《嵌入式 Linux 开发实战》等。
+> **主线：** [*Mastering Embedded Linux Programming*](https://www.packtpub.com/product/mastering-embedded-linux-programming-third-edition/9781803234384)（Chris Simmonds，**第 3 版**）  
+> **补充：** *Embedded Linux Primer*（Hallinan）— 概念与历史视角，待建目录
 
 ---
 
-## 必读书（2 本 · 按路线图顺序）
+## 本模块做什么
 
-| 序 | 书目 | 读什么 |
-|----|------|--------|
-| **1** | ***Mastering Embedded Linux Programming***, 2nd ed — Chris Simmonds | **系统编译实操** — Yocto/Buildroot、工具链、rootfs、应用部署 |
-| **2** | ***Embedded Linux Primer***, 2nd ed — Christopher Hallinan | **启动底层原理** — Bootloader、内核启动流程、嵌入式 Linux 全貌 |
+从 **交叉工具链 → Bootloader（U-Boot）→ 内核配置/编译 → 根文件系统 → Buildroot/Yocto** 走通「单板启动」全链路；并覆盖存储、init、驱动交互、调试与实时等架构决策。
 
-**建议读法：** 以 **Simmonds 动手搭系统** 为主线；遇「为什么这样启动」时 **回查 Hallinan** 补原理。与 MikanOS **UEFI → Loader → kernel** 链可对照（x86 UEFI vs ARM U-Boot）。
-
----
-
-## 复用（HFT 链直接搬）
-
-| 模块 | 复用什么 |
-|------|----------|
-| [04 LKD](../04-Linux-Kernel-Development/) | Kconfig、模块、启动流程 |
-| [05 ULK](../05-Understanding-Linux-Kernel/) | 启动初期内存、中断初始化 |
-| [06 Gorman](../06-Linux-Virtual-Memory-Manager/) | 页表、ZONE — 裁剪内核时懂删什么 |
-| [07 TLPI](../07-The-Linux-Programming-Interface/) | rootfs 里用户态程序仍走 syscall |
-| [08 MikanOS](../08-system-low-level-hands-on/01-mikan-os/) | GetMemoryMap / GOP / ELF 加载 — **概念同源** |
-
-**差异一句话：** 服务器用 **发行版内核**；嵌入式用 **板级 defconfig + 设备树 + Buildroot/Yocto**。
+| 能力 | 对应章节（Simmonds 3rd） |
+|------|-------------------------|
+| 工具链与交叉编译 | Ch 2 |
+| U-Boot / 设备树 / 引导 | Ch 3–4 |
+| rootfs / Buildroot / Yocto | Ch 5–8 |
+| 存储与 OTA | Ch 9–10 |
+| 用户空间 init / 服务 | Ch 13–14 |
+| 进程/内存/调试/实时 | Ch 17–21 |
 
 ---
 
-## 典型构建链
+## 目录结构
 
 ```
-ROM/SPL → U-Boot → 加载 zImage/Image + DTB
-                        ↓
-                   Linux 内核（裁剪）
-                        ↓
-                   rootfs（Buildroot / Yocto）
+20-UBoot-Kernel-Build/
+├── README.md                          ← 本文件
+├── mastering-embedded-linux-programming/
+│   ├── OUTLINE.md                     ← 21 章 × 4 Section 大纲 + 精读标签
+│   ├── chapter-01-getting-started/
+│   ├── chapter-02-toolchain/
+│   └── … chapter-21-real-time-programming/
+├── _scripts/
+│   └── scaffold-simmonds-melp.py      ← 重建章节目录
+└── (embedded-linux-primer/)           ← Hallinan，待补充
 ```
 
 ---
 
-## 验收
+## Simmonds 第三版 · 快速入口
 
-- [ ] 能说明 **U-Boot → 内核 → DTB → rootfs** 启动顺序  
-- [ ] 会用 **menuconfig/defconfig** 裁剪无关子系统  
-- [ ] 能产出可启动的 **最小 rootfs**  
+**全书大纲：** [mastering-embedded-linux-programming/OUTLINE.md](./mastering-embedded-linux-programming/OUTLINE.md)
 
-**上一章：** [19 ARM 汇编](../19-ARM64-Architecture/) · **下一章：** [21 Linux 驱动](../21-Linux-Device-Driver/)
+| Section | 章 | 主题 |
+|---------|-----|------|
+| **S1** | 1–8 | 工具链、引导、内核、rootfs、Buildroot/Yocto |
+| **S2** | 9–15 | 存储、OTA、驱动、原型板、init、电源 |
+| **S3** | 16–18 | Python 打包、进程/线程、内存 |
+| **S4** | 19–21 | GDB、perf/BPF、PREEMPT_RT |
+
+**建议精读：** Ch 2–7、9、11、13、17–19、21（见 OUTLINE 标签表）。
+
+---
+
+## Embedded Linux Primer（Hallinan）
+
+第二本书，侧重嵌入式 Linux **概念模型**与经典流程；与 Simmonds 并行时：**Simmonds 动手、Hallinan 补概念**。目录待建。
+
+---
+
+## 环境约定
+
+| 项 | 约定 |
+|----|------|
+| 笔记 | Windows + Cursor |
+| 构建/烧录 | **WSL**（Ubuntu 等） |
+| 脚本 | Windows 下 `py` |
+
+---
+
+## 模块交叉链接
+
+| 模块 | 关系 |
+|------|------|
+| [19 ARM64](../19-ARM64-Architecture/) | U-Boot/内核/设备树与 AArch64 汇编 |
+| [21 Linux Device Drivers](../21-Linux-Device-Drivers/) | Ch 11 驱动交互 |
+| [22 Device Tree](../22-Device-Tree/) | Ch 3–4、12 设备树 |
+| [04 LKD](../04-Linux-Kernel-Development/) | 内核机制 |
+| [07 TLPI](../07-The-Linux-Programming-Interface/) | 进程/IPC/内存 |
+| [08 MikanOS 等](../08-system-low-level-hands-on/) | 自底向上对照 |
+
+---
+
+## 进度
+
+- [x] Simmonds 3rd — 21 章脚手架 + OUTLINE
+- [ ] 各章口述笔记（按 `{章号}` 或摘要驱动）
+- [ ] Hallinan 目录
+- [ ] WSL 实机构建记录（U-Boot / kernel / Buildroot）
