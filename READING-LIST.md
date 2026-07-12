@@ -383,14 +383,15 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 
 > **定位：** **第二职业退路**（飞行器 / 网关 / 车载）；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux** — **排除** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
-> **书目：** **19–21 核心五书全外文、无国产书** · **汇编前置**（*ARM Assembly Language*）。  
+> **书目：** **19–21 核心以英文原版为主** · **19 例外**：《ARM64体系结构编程与实践》（AArch64 实战主书）· **汇编前置**（Smith 可选 + 奔跑吧 A64）。  
 > **顺序：** `19 → … → 24` · 建议 **[04 LKD + 07 TLPI](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)** 后再开 · **24 用业余时间**。
 
 ### 全新阅读顺序（19–21 核心）
 
-| 序 | 书目（英文原版） | 文件夹 |
-|----|------------------|--------|
-| 1 | ***ARM Assembly Language*** | **19** [ARM64](./19-ARM64-Architecture/) |
+| 序 | 书目 | 文件夹 |
+|----|------|--------|
+| 1a | ***ARM Assembly Language***（可选/压缩） | **19** [ARM64](./19-ARM64-Architecture/) |
+| 1b | **《ARM64体系结构编程与实践》**（AArch64 主书） | **19** [arm64-programming-practice](./19-ARM64-Architecture/arm64-programming-practice/) |
 | 2 | ***Mastering Embedded Linux Programming*** | **20** [构建](./20-UBoot-Kernel-Build/) |
 | 3 | ***Embedded Linux Primer*** | **20** |
 | 4 | **LDD3** | **21** [驱动](./21-Linux-Device-Driver/) |
@@ -398,7 +399,7 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 
 | 文件夹 | 必读书（精简） | 索引 |
 |--------|----------------|------|
-| **19** ARM64 | *ARM Assembly Language* · [OUTLINE 目录](./19-ARM64-Architecture/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
+| **19** ARM64 | Smith · **《ARM64体系结构编程与实践》** · [Smith OUTLINE](./19-ARM64-Architecture/OUTLINE.md) · [奔跑吧 OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** 构建 | *Mastering Embedded Linux Programming* · *Embedded Linux Primer* | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
 | **21** 驱动 | LDD3 · *Linux Device Driver Development* | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
 | **22** 设备树 | [内核 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) · [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |

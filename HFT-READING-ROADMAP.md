@@ -337,14 +337,16 @@
 | **24 前置** | 建议 **23 或至少 21–22** 后再开算法整合 |
 | **C 语言** | [02 C](./02-c-programming/) · K&R + *Pointers on C* + CSAPP/TLPI 可复用 |
 
-### 全新阅读顺序（全外文 · 无国产书 · 汇编前置）
+### 全新阅读顺序（19 例外 · 汇编前置）
 
-> **原则：** 嵌入式支线 **19–21 核心五书** 仅用英文原版；**剔除** 国产《ARM64 汇编编程实战》《嵌入式 Linux 开发实战》《Linux 内核驱动深度开发》等。  
-> **汇编前置：** 先能读 ARM64 汇编，再进 U-Boot/内核构建与驱动。
+> **原则：** 嵌入式支线 **19–21 核心五书** 以英文原版为主；**剔除** 国产《嵌入式 Linux 开发实战》《Linux 内核驱动深度开发》等。  
+> **19 例外：** 《**ARM64体系结构编程与实践**》（奔跑吧Linux社区 · 人民邮电）— **AArch64 实战主书**，含异常/GIC/MM · 树莓派 4B / QEMU 实验，匹配无人机应用处理器路径。  
+> **汇编前置：** 先能读 ARM 汇编（Smith 可选 + 奔跑吧 A64 主书），再进 U-Boot/内核构建与驱动。
 
-| 序 | 书目（英文原版） | 定位 | 文件夹 |
-|----|------------------|------|--------|
-| **1** | ***ARM Assembly Language*** — William Sw Smith | ARM64 **汇编前置** — 指令、调用约定、与 C 互调 | [**19**](./19-ARM64-Architecture/) |
+| 序 | 书目 | 定位 | 文件夹 |
+|----|------|------|--------|
+| **1a** | ***ARM Assembly Language*** — William Sw Smith | **汇编思维入门**（v4T/v7-M，可选/压缩） | [**19**](./19-ARM64-Architecture/) |
+| **1b** | **《ARM64体系结构编程与实践》** — 奔跑吧Linux社区 | **AArch64 主书** — A64 · 异常/GIC · MM · 屏障/原子 · QEMU/树莓派 | [**19/arm64-programming-practice**](./19-ARM64-Architecture/arm64-programming-practice/) |
 | **2** | ***Mastering Embedded Linux Programming*** — Chris Simmonds | **系统编译实操** — Yocto/Buildroot、rootfs、应用集成 | [**20**](./20-UBoot-Kernel-Build/) |
 | **3** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动底层原理** — Bootloader、内核启动、嵌入式 Linux 全貌 | [**20**](./20-UBoot-Kernel-Build/)（与 2 同模块 · 先实操后原理或穿插） |
 | **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动基础框架思想（file_operations、并发） | [**21**](./21-Linux-Device-Driver/) |
@@ -355,7 +357,7 @@
 ### 严格顺序（文件夹级）
 
 ```
-19  ARM Assembly Language（汇编前置）
+19  Smith（可选）→ 《ARM64体系结构编程与实践》（AArch64 主书）
  ↓
 20  Mastering Embedded Linux Programming → Embedded Linux Primer
  ↓
@@ -372,7 +374,7 @@
 
 | 文件夹 | 必读书 | 索引 |
 |--------|--------|------|
-| **19** | ***ARM Assembly Language***（[章节目录](./19-ARM64-Architecture/OUTLINE.md)）+ 可选 *ARMv8-A Programmer's Guide* | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
+| **19** | Smith（[OUTLINE](./19-ARM64-Architecture/OUTLINE.md)）+ **《ARM64体系结构编程与实践》**（[OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md)） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** | ***Mastering Embedded Linux Programming*** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) |
 | **21** | **LDD3** · ***Linux Device Driver Development*** | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
 | **22** | [内核官方 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) + [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
