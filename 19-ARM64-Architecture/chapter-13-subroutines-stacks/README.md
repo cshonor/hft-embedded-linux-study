@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **精读** — **`BL` + 堆栈** 是可复用汇编与 **C 互调** 的基石 |
+| **核心模式** | **STMDB/LDMIA** ≡ PUSH/POP · **FD 栈** · 序言/尾声 · **AAPCS** |
+| **前置** | [Ch8 BL](../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch5 寻址](../chapter-05-loads-stores-addressing/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -31,9 +32,12 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说清 **PUSH/POP** 与 **STMDB/LDMIA** 的对应关系
+- [ ] 解释 **满递减 (FD)** 栈的生长方向与 **SP** 含义
+- [ ] 写可重入子程序：**`STMDB sp!, {r4-r7, lr}`** + **`LDMIA sp!, {r4-r7, pc}`**
+- [ ] 对比三种传参：**寄存器 / 指针 / 堆栈**
+- [ ] 背 **AAPCS**：**r0–r3**、**r4–r11** callee-save、**s16–s31**、**8 字节栈对齐**
+- [ ] 能对照 [02 C](../../02-c-programming/) 说明 `int foo(int a,int b)` 的寄存器布局
 
 ---
 
