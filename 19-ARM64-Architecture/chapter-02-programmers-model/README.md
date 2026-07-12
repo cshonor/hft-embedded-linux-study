@@ -7,12 +7,15 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **精读** — 程序员可见的 **寄存器、模式、向量表**；Ch3 写指令前的地图 |
+| **双线** | **ARM7TDMI (v4T)** 经典对照 · **Cortex-M4 (v7-M)** 本书实验平台 |
+| **架构** | 本书 **v4T / v7-M**；AArch64 EL/向量见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
+
+**前置：** [Ch1 概述](../chapter-01-overview-computing-systems/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -30,9 +33,10 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说出 **8/16/32 bit** 与 ARM7 **对齐规则**
+- [ ] 画清 ARM7 **7 模式** 与 **banked SP/LR** 的作用
+- [ ] 解释 M4 **MSP/PSP**、**Thread/Handler**、**向量表存地址且 LSB=1**
+- [ ] 能对照 [Ch3](../chapter-03-instruction-sets-v4t-v7m/) 示例辨认 r0–r15 用途
 
 ---
 
