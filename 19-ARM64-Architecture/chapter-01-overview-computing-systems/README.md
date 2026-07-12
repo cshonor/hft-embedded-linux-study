@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | 全书**基石** — RISC/ARM 史 · 存储程序模型 · 数据表示 · 工具链；**不写指令** |
+| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)）— 有 CSAPP/C 基础可压缩 |
+| **架构** | 本书 **v4T / v7-M**；Cortex-A / Linux 见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -33,9 +34,10 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 能对比 **RISC vs CISC** 并解释 **Load/Store** 访存
+- [ ] 熟练 **hex ↔ bin**；理解 **补码** 与 C 整数内存布局
+- [ ] 说清 **汇编器 / 链接器 / 目标文件** 各做什么
+- [ ] 区分 **Cortex-A / R / M** 典型场景
 
 ---
 
