@@ -7,12 +7,14 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **选读** — **ARM7 经典异常模型**（CPSR/SPSR/向量/FIQ/VIC） |
+| **核心模式** | 硬件四步序列 · **向量存 `B`** · **`SUBS pc,lr,#n`** · **VIC 向量 IRQ** |
+| **前置** | [Ch2 七种模式](../chapter-02-programmers-model/notes/section-2-3-arm7tdmi.md) · [Ch13 堆栈](../chapter-13-subroutines-stacks/) |
+| **实操对照** | **Cortex-M** → [Ch15](../chapter-15-exception-handling-v7m/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -34,9 +36,12 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说清 **中断 (IRQ/FIQ/SVC)** vs **错误 (Und/Prefetch/Data Abort)**
+- [ ] 背 **硬件异常四步** 与 **优先级**（Reset 最高 …）
+- [ ] 解释向量表为何放 **`B`/`LDR PC`**，FIQ **0x18 表末** 布局
+- [ ] 写 **IRQ handler** 骨架：**压栈 → 服务 → `SUBS pc, lr, #4`**
+- [ ] 说明 **VIC** 如何避免 IRQ 公共 handler **轮询**
+- [ ] 对比 [Ch15 v7-M](../chapter-15-exception-handling-v7m/)：**NVIC** vs **VIC**
 
 ---
 
