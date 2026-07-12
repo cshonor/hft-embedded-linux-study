@@ -7,12 +7,15 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **选读** — **`LDR rd,=imm`** / 文字池 / **MOVW·MOVT** 幕后机制 |
+| **痛点** | 32 bit 指令 **塞不下** 完整 32 bit 常数 |
+| **必记用法** | `LDR =` 加载基址/掩码 — 与 **Ch5** 一体 |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
+
+**前置：** [Ch5 Load/Store](../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -21,19 +24,21 @@
 | 小节 | 标题 | 笔记 |
 |------|------|------|
 | **§6.1** | 简介 | [notes/section-6-1-intro.md](./notes/section-6-1-intro.md) |
-| **§6.2** | ARM 循环移位方案 — 常数编码进指令 | [notes/section-6-2-rotate-constants.md](./notes/section-6-2-rotate-constants.md) |
-| **§6.3** | 加载常量 — MOVW/MOVT | [notes/section-6-3-load-constants.md](./notes/section-6-3-load-constants.md) |
-| **§6.4** | 文字池 (Literal Pools) | [notes/section-6-4-literal-pools.md](./notes/section-6-4-literal-pools.md) |
-| **§6.5** | 向寄存器加载地址 | [notes/section-6-5-load-addresses.md](./notes/section-6-5-load-addresses.md) |
+| **§6.2** | ARM 循环移位方案 — 8 bit + 偶数 ROR · MVN | [notes/section-6-2-rotate-constants.md](./notes/section-6-2-rotate-constants.md) |
+| **§6.3** | **`LDR =` 伪指令** — 汇编器选 MOV 或文字池 | [notes/section-6-3-load-constants.md](./notes/section-6-3-load-constants.md) |
+| **§6.4** | 文字池 · **LTORG** · **MOVW/MOVT** | [notes/section-6-4-literal-pools.md](./notes/section-6-4-literal-pools.md) |
+| **§6.5** | 加载地址 — **ADR** / **ADRL** / `LDR=label` | [notes/section-6-5-load-addresses.md](./notes/section-6-5-load-addresses.md) |
 | **§6.6** | 练习题 | [notes/section-6-6-exercises.md](./notes/section-6-6-exercises.md) |
 
 ---
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 解释 **imm8 + 偶数循环右移** 与 **MVN** 扩展
+- [ ] 说清 **`LDR r0,=X`** 何时变成 MOV vs `LDR [pc,#n]`
+- [ ] 知道何时插入 **`LTORG`**（PC 相对约 ±4KB）
+- [ ] 会用 **MOVW+MOVT** 加载任意 32 bit 常数
+- [ ] 区分 **`ADR`（近）** 与 **`LDR =label`（远/外部）**
 
 ---
 

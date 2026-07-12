@@ -108,10 +108,10 @@
 | 小节 | 内容 | 笔记 |
 |------|------|------|
 | **6.1** | 简介 | [§6.1](./chapter-06-constants-literal-pools/notes/section-6-1-intro.md) |
-| **6.2** | ARM 循环移位方案 — 常数编码进指令 | [§6.2](./chapter-06-constants-literal-pools/notes/section-6-2-rotate-constants.md) |
-| **6.3** | 加载常量 — MOVW/MOVT | [§6.3](./chapter-06-constants-literal-pools/notes/section-6-3-load-constants.md) |
-| **6.4** | 文字池 (Literal Pools) | [§6.4](./chapter-06-constants-literal-pools/notes/section-6-4-literal-pools.md) |
-| **6.5** | 向寄存器加载地址 | [§6.5](./chapter-06-constants-literal-pools/notes/section-6-5-load-addresses.md) |
+| **6.2** | ARM 循环移位方案 — 8 bit + 偶数 ROR · MVN | [§6.2](./chapter-06-constants-literal-pools/notes/section-6-2-rotate-constants.md) |
+| **6.3** | **`LDR =` 伪指令** — MOV 或文字池 | [§6.3](./chapter-06-constants-literal-pools/notes/section-6-3-load-constants.md) |
+| **6.4** | 文字池 · **LTORG** · **MOVW/MOVT** | [§6.4](./chapter-06-constants-literal-pools/notes/section-6-4-literal-pools.md) |
+| **6.5** | 加载地址 — **ADR** / **ADRL** / `LDR=label` | [§6.5](./chapter-06-constants-literal-pools/notes/section-6-5-load-addresses.md) |
 | **6.6** | 练习题 | [§6.6](./chapter-06-constants-literal-pools/notes/section-6-6-exercises.md) |
 
 ### 第 7 章 · 整数逻辑与算术运算 · **精读**
