@@ -7,12 +7,14 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **选读**（**M4 裸机/RTOS 实操权重高**）— **Cortex-M 标准异常模型** |
+| **核心模式** | **0x0=MSP · 向量=地址** · **硬件 8-word 栈帧** · **EXC_RETURN** · **NVIC** |
+| **前置** | [Ch2 Cortex-M4](../chapter-02-programmers-model/notes/section-2-4-cortex-m4.md) · [Ch14 ARM7 对照](../chapter-14-exception-handling-arm7tdmi/) |
+| **后续** | [Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) — 外设 + 中断联调 |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -33,9 +35,13 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说清 **Thread/Handler** 与 **Privileged/Unprivileged（CONTROL）**
+- [ ] 解释 **0x0=初始 MSP**、**0x4=Reset**；向量存 **地址** 非 `B`
+- [ ] 列出 **硬件压栈 8 寄存器** 与 **EXC_RETURN + BX lr** 返回
+- [ ] 区分 **MSP/PSP** 及 RTOS 中 **PendSV 换 PSP** 概念
+- [ ] 背 **Reset/NMI/HardFault** 优先级；知 **UsageFault/MemManage/BusFault**
+- [ ] 走通 **NVIC 配 Timer 中断** 流程（时钟 → 外设 → NVIC → ISR 清标志）
+- [ ] 对照 [Ch14](../chapter-14-exception-handling-arm7tdmi/)：**VIC vs NVIC**
 
 ---
 
