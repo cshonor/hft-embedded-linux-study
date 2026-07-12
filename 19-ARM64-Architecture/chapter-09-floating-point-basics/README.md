@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **跳过**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **标签** | **跳过**（嵌入式 Linux / 奔跑吧主线）— **M4F / [24 飞控](../../24-Motion-Control-Motor/)** 路径 **选读** |
+| **内容** | **IEEE 754 单精度** · **s0–s31** · **CPACR/FPSCR** · **VLDR/VCVT** |
+| **前置** | [Ch3 §3.6–3.7 FPU 预览](../chapter-03-instruction-sets-v4t-v7m/notes/section-3-6-example-float.md) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -37,9 +38,11 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 画出 **单精度 S/exp/f** 与 **bias 127** 公式
+- [ ] 区分 **Normal / Subnormal / ±0 / ∞ / NaN**
+- [ ] 说清 **CPACR 开 FPU** 与 **FPSCR** 作用
+- [ ] 区分 **`VLDR` / `VMOV`(位拷贝) / `VCVT`(换算)**
+- [ ] （选读）**half** 与 **定点 #fbits VCVT** 场景
 
 ---
 
