@@ -7,12 +7,14 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **选读** — **ISA 演进**（ARM7 双态 vs M4 Thumb-2 only） |
+| **核心模式** | 密度 **65–70%** · **PLA 解压** · **Thumb-2 16/32** · **`BX` bit0** · **Veneer** |
+| **M4 重点** | **§17.3 UAL**；§17.4–17.5 作历史/链接背景 |
+| **前置** | [Ch3](../chapter-03-instruction-sets-v4t-v7m/) · [Ch8 BX/IT](../chapter-08-branches-loops/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -31,9 +33,12 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 对比 **ARM 32 / Thumb 16 / Thumb-2** 宽度、条件执行、标志 **S**
+- [ ] 说清 **16-bit Thumb 限制**（r0–r7、同源同宿、小立即数）
+- [ ] 解释 **Thumb-2 高 5 bit** 如何区分 16 vs 32 bit 指令
+- [ ] **`BX`：bit0=0 ARM，bit0=1 Thumb**；**`BL` 不切状态**
+- [ ] 说明 **Veneer / Interworking**；**M4 为何不需要**
+- [ ] 对照 [Ch15](../chapter-15-exception-handling-v7m/)：**永远 Thumb-2**
 
 ---
 
