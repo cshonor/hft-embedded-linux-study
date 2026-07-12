@@ -12,15 +12,20 @@
 | | |
 |---|---|
 | **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§13.1** | 简介 | [notes/section-13-1-intro.md](./notes/section-13-1-intro.md) |
+| **§13.2** | 堆栈 — LDM/STM · PUSH/POP · 满/空 · 递增/递减 | [notes/section-13-2-stacks.md](./notes/section-13-2-stacks.md) |
+| **§13.3** | 子程序 | [notes/section-13-3-subroutines.md](./notes/section-13-3-subroutines.md) |
+| **§13.4** | 向子程序传递参数 — 寄存器 · 指针 · 堆栈 | [notes/section-13-4-parameters.md](./notes/section-13-4-parameters.md) |
+| **§13.5** | ARM APCS — 应用过程调用标准 | [notes/section-13-5-apcs.md](./notes/section-13-5-apcs.md) |
+| **§13.6** | 练习题 | [notes/section-13-6-exercises.md](./notes/section-13-6-exercises.md) |
 
 ---
 

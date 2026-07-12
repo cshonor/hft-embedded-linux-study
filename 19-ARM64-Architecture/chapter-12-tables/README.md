@@ -12,15 +12,19 @@
 | | |
 |---|---|
 | **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§12.1** | 简介 | [notes/section-12-1-intro.md](./notes/section-12-1-intro.md) |
+| **§12.2** | 整数查找表 | [notes/section-12-2-int-lookup.md](./notes/section-12-2-int-lookup.md) |
+| **§12.3** | 浮点查找表 | [notes/section-12-3-float-lookup.md](./notes/section-12-3-float-lookup.md) |
+| **§12.4** | 二分查找 (Binary Searches) | [notes/section-12-4-binary-search.md](./notes/section-12-4-binary-search.md) |
+| **§12.5** | 练习题 | [notes/section-12-5-exercises.md](./notes/section-12-5-exercises.md) |
 
 ---
 

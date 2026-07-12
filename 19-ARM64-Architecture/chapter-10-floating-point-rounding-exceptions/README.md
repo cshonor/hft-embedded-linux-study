@@ -12,15 +12,20 @@
 | | |
 |---|---|
 | **阅读标签** | **跳过**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§10.1** | 简介 | [notes/section-10-1-intro.md](./notes/section-10-1-intro.md) |
+| **§10.2** | 舍入 — IEEE 754-2008 舍入模式 | [notes/section-10-2-rounding.md](./notes/section-10-2-rounding.md) |
+| **§10.3** | 异常 — 除零 · 无效 · 溢出 · 下溢 · 不精确 | [notes/section-10-3-exceptions.md](./notes/section-10-3-exceptions.md) |
+| **§10.4** | 代数定律与浮点运算 | [notes/section-10-4-algebra.md](./notes/section-10-4-algebra.md) |
+| **§10.5** | 规格化与抵消 | [notes/section-10-5-normalization.md](./notes/section-10-5-normalization.md) |
+| **§10.6** | 练习题 | [notes/section-10-6-exercises.md](./notes/section-10-6-exercises.md) |
 
 ---
 

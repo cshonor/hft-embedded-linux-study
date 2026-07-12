@@ -12,15 +12,19 @@
 | | |
 |---|---|
 | **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§18.1** | 简介 | [notes/section-18-1-intro.md](./notes/section-18-1-intro.md) |
+| **§18.2** | 内联汇编 (Inline Assembler) | [notes/section-18-2-inline-asm.md](./notes/section-18-2-inline-asm.md) |
+| **§18.3** | 嵌入式汇编 (Embedded Assembler) | [notes/section-18-3-embedded-asm.md](./notes/section-18-3-embedded-asm.md) |
+| **§18.4** | C 与汇编相互调用 — APCS | [notes/section-18-4-c-asm-calls.md](./notes/section-18-4-c-asm-calls.md) |
+| **§18.5** | 练习题 | [notes/section-18-5-exercises.md](./notes/section-18-5-exercises.md) |
 
 ---
 

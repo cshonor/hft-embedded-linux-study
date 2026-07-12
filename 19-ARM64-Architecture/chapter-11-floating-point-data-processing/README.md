@@ -12,15 +12,23 @@
 | | |
 |---|---|
 | **阅读标签** | **跳过**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§11.1** | 简介 | [notes/section-11-1-intro.md](./notes/section-11-1-intro.md) |
+| **§11.2** | 浮点指令语法 | [notes/section-11-2-syntax.md](./notes/section-11-2-syntax.md) |
+| **§11.3** | 浮点指令摘要 | [notes/section-11-3-summary.md](./notes/section-11-3-summary.md) |
+| **§11.4** | 标志位 — 比较指令 · N/Z/C/V | [notes/section-11-4-flags.md](./notes/section-11-4-flags.md) |
+| **§11.5** | Flush-to-Zero · 默认 NaN 模式 | [notes/section-11-5-special-modes.md](./notes/section-11-5-special-modes.md) |
+| **§11.6** | 非算术指令 — 绝对值 · 求反 | [notes/section-11-6-non-arithmetic.md](./notes/section-11-6-non-arithmetic.md) |
+| **§11.7** | 算术指令 — 加减 · 乘加 · 除法 · 平方根 | [notes/section-11-7-arithmetic.md](./notes/section-11-7-arithmetic.md) |
+| **§11.8** | 编码示例 | [notes/section-11-8-examples.md](./notes/section-11-8-examples.md) |
+| **§11.9** | 练习题 | [notes/section-11-9-exercises.md](./notes/section-11-9-exercises.md) |
 
 ---
 

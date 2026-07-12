@@ -12,15 +12,20 @@
 | | |
 |---|---|
 | **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§8.1** | 简介 | [notes/section-8-1-intro.md](./notes/section-8-1-intro.md) |
+| **§8.2** | 分支机制 — ARM7TDMI · v7-M | [notes/section-8-2-branches.md](./notes/section-8-2-branches.md) |
+| **§8.3** | 循环 — While · For · Do-While | [notes/section-8-3-loops.md](./notes/section-8-3-loops.md) |
+| **§8.4** | 条件执行 — v4T 条件执行 · v7-M IT 块 | [notes/section-8-4-conditional.md](./notes/section-8-4-conditional.md) |
+| **§8.5** | 直线型编码 — 循环展开 | [notes/section-8-5-straight-line.md](./notes/section-8-5-straight-line.md) |
+| **§8.6** | 练习题 | [notes/section-8-6-exercises.md](./notes/section-8-6-exercises.md) |
 
 ---
 

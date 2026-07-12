@@ -12,15 +12,19 @@
 | | |
 |---|---|
 | **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§16.1** | 简介 | [notes/section-16-1-intro.md](./notes/section-16-1-intro.md) |
+| **§16.2** | LPC2104 — UART 通信 | [notes/section-16-2-lpc2104-uart.md](./notes/section-16-2-lpc2104-uart.md) |
+| **§16.3** | LPC2132 — D/A 转换器生成正弦波 | [notes/section-16-3-lpc2132-dac.md](./notes/section-16-3-lpc2132-dac.md) |
+| **§16.4** | Tiva Launchpad — GPIO 操作 | [notes/section-16-4-tiva-gpio.md](./notes/section-16-4-tiva-gpio.md) |
+| **§16.5** | 练习题 | [notes/section-16-5-exercises.md](./notes/section-16-5-exercises.md) |
 
 ---
 

@@ -12,15 +12,22 @@
 | | |
 |---|---|
 | **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§15.1** | 简介 | [notes/section-15-1-intro.md](./notes/section-15-1-intro.md) |
+| **§15.2** | 操作模式与特权级别 | [notes/section-15-2-modes-privilege.md](./notes/section-15-2-modes-privilege.md) |
+| **§15.3** | 向量表 | [notes/section-15-3-vector-table.md](./notes/section-15-3-vector-table.md) |
+| **§15.4** | 堆栈指针 — MSP/PSP | [notes/section-15-4-stack-pointers.md](./notes/section-15-4-stack-pointers.md) |
+| **§15.5** | 处理器出入栈序列 | [notes/section-15-5-stack-frames.md](./notes/section-15-5-stack-frames.md) |
+| **§15.6** | 异常类型 — 硬故障 · 内存管理故障等 | [notes/section-15-6-fault-types.md](./notes/section-15-6-fault-types.md) |
+| **§15.7** | 中断 — 基于 NVIC 的外部中断 | [notes/section-15-7-nvic.md](./notes/section-15-7-nvic.md) |
+| **§15.8** | 练习题 | [notes/section-15-8-exercises.md](./notes/section-15-8-exercises.md) |
 
 ---
 

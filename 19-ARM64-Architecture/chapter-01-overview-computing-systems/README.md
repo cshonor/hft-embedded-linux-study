@@ -12,15 +12,22 @@
 | | |
 |---|---|
 | **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 语法见 [ARMv8-A Guide](https://developer.arm.com/documentation/den0024/latest) |
+| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
 
 ---
 
 ## 小节笔记
 
-| 笔记 | 说明 |
-|------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| 小节 | 标题 | 笔记 |
+|------|------|------|
+| **§1.1** | 简介 | [notes/section-1-1-intro.md](./notes/section-1-1-intro.md) |
+| **§1.2** | RISC 历史 — ARM 起源 · Cortex A/R/M 系列 | [notes/section-1-2-risc-history.md](./notes/section-1-2-risc-history.md) |
+| **§1.3** | 计算设备 | [notes/section-1-3-computing-devices.md](./notes/section-1-3-computing-devices.md) |
+| **§1.4** | 数字系统 | [notes/section-1-4-number-systems.md](./notes/section-1-4-number-systems.md) |
+| **§1.5** | 数字与字符的表示 — 整数 · 浮点 · 字符 | [notes/section-1-5-representation.md](./notes/section-1-5-representation.md) |
+| **§1.6** | 将比特翻译为命令 | [notes/section-1-6-bits-to-commands.md](./notes/section-1-6-bits-to-commands.md) |
+| **§1.7** | 工具 — 开源 · Keil · Code Composer Studio | [notes/section-1-7-tools.md](./notes/section-1-7-tools.md) |
+| **§1.8** | 练习题 | [notes/section-1-8-exercises.md](./notes/section-1-8-exercises.md) |
 
 ---
 
