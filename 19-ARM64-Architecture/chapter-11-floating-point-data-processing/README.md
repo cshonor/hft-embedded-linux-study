@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **跳过**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **标签** | **跳过**（主线）— **M4F Ch9–11 收官**；C 代码路径 **选读 §11.4/11.7** |
+| **要点** | **VCMP+VMRS** · **VFMA vs VMLA** · FPU **无位操作** |
+| **前置** | [Ch10 舍入/异常](../chapter-10-floating-point-rounding-exceptions/notes/section-0-本章完整概述.md) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -34,9 +35,11 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 写 **`Vop.F32 Sd,Sn,Sm`** 示例
+- [ ] 掌握 **VCMP → VMRS APSR_nzcv → B/IT**
+- [ ] 对比 **VMLA（双舍入）与 VFMA（融合）**
+- [ ] 知 **FZ/DN** 对 subnormal/NaN 的影响
+- [ ] 口述 **二分法 + 泰勒 sin** 示例用了哪些 V 指令
 
 ---
 
