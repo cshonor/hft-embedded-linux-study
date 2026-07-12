@@ -7,12 +7,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **选读** — **查表换速度** + **有序表二分搜索** |
+| **核心模式** | 缩放寻址 · Q31 sin 象限压缩 · VLDR 文字池 · **mid=(lo+hi) ASR #1** |
+| **前置** | [Ch5 寻址](../chapter-05-loads-stores-addressing/) · [Ch7 Q 格式](../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) · [Ch8 循环](../chapter-08-branches-loops/) |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
@@ -30,9 +31,11 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 会用 **`LDR [base, index, LSL #2]`** / **`LDRH … LSL #1`** 读表项
+- [ ] 说清 **sin 只存 0°–90°** 的象限归约思路
+- [ ] 理解 **rsqrt 查表** 为何 beat 全精度 VSQRT/VDIV
+- [ ] 手写 **二分查找** 骨架（**ASR #1** 求 mid）
+- [ ] 对比 [Ch11 泰勒 sin](../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md)：**算** vs **查**
 
 ---
 
