@@ -7,12 +7,15 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、与 20 U-Boot / 21 驱动的衔接 -->
-
 | | |
 |---|---|
-| **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **架构** | 本书 **v4T / v7-M**；AArch64 主书见 [奔跑吧 ARM64](../arm64-programming-practice/) |
+| **角色** | **精读** — 全书 **最核心 ALU 章**；标志位 → **Ch8** 条件分支 |
+| **必做** | §7.2–7.4 · §7.6（位域与 MMIO） |
+| **选读** | §7.5 DSP · §7.7 Q 定点（无 FPU/飞控 int 路径再加深） |
+
+📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
+
+**前置：** [Ch5–6](../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -33,9 +36,12 @@
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 在 `notes/` 写下可复述的要点
-- [ ] （若 **精读**）能对照 [02 C](../../02-c-programming/) 或内核 `.S` 举例
+- [ ] 说清 **N · Z · C · V** 与 **`S` 后缀**
+- [ ] 区分 **CMP / CMN / TST / TEQ**
+- [ ] 会用 **shift-add** 乘小常数 · **ADC** 做 64 bit 加
+- [ ] 知道 **M4 UDIV/SDIV** vs ARM7 软件除法
+- [ ] 会用 **UBFX/BFI** 口述一个寄存器 bitfield
+- [ ] （选读）**SSAT** 与 **Q 格式** 乘法 shift 规则
 
 ---
 
