@@ -44,6 +44,66 @@ Thread Mode   →  Privileged 或 Unprivileged（由 CONTROL 决定）
 - Thread 是 **特权 / 非特权**
 - 专为小型 RTOS / 轻量 OS 提供任务隔离接口
 
+### 4. 两个独立概念：执行模式 vs 特权等级
+
+**勿混：** Thread/Handler 是 **「此刻在跑什么场景」**；特权/用户是 **「Thread 里这张权限标签」**。
+
+#### ① 执行模式（全局只有 2 种，不是每个任务专属一套）
+
+| 模式 | 何时 | 特权 |
+|------|------|------|
+| **Handler** | 进中断/异常 **自动**切 | **永久 Privileged**，不可改成用户态 |
+| **Thread** | 正常跑业务代码 | 特权等级 **可切换**（CONTROL） |
+
+所有任务 **共用** 这套划分：CPU 同一时刻只有一种执行模式；切任务不「自创第三种模式」。
+
+#### ② 特权等级（Privileged / Unprivileged）
+
+| | |
+|--|--|
+| **作用域** | **主要约束 Thread**（Handler 锁死特权） |
+| **Privileged** | 可碰 NVIC / MPU / CONTROL / 系统控制寄存器 — 内核、初始化默认 |
+| **Unprivileged** | 硬件限制上述访问 — 普通业务任务，防篡改内核配置 |
+
+**问题对答：**
+
+| 问 | 答 |
+|----|-----|
+| 特权/用户是不是两种状态？ | **是** — Thread 下二选一 |
+| 每个任务能否单独配特权等级？ | **能** — RTOS 在任务控制块里记「此任务 Priv 还是 Unpriv」，**切换任务时写 CONTROL**（常顺带换 PSP） |
+
+```
+内核任务 / 驱动任务  →  Thread + Privileged
+普通业务任务        →  Thread + Unprivileged
+IRQ/SysTick/SVC…    →  Handler（永远 Privileged）
+```
+
+**关键安全点：** Unprivileged 任务 **不能自己写 CONTROL 提权** — 只有 **Privileged** 代码（内核 / SVC handler）能改特权位与 SP 选择。  
+「每个任务独立配置」= **OS 替你配 + 切任务时切换**，不是 APP 自我升级。
+
+#### ③ 组合一览
+
+| 组合 | 谁在用 |
+|------|--------|
+| **Handler + Privileged** | 所有中断/异常（唯一组合） |
+| **Thread + Privileged** | 内核、驱动、初始化 |
+| **Thread + Unprivileged** | 普通业务任务 |
+| ~~Handler + Unprivileged~~ | **不存在** |
+
+#### ④ 大楼类比
+
+| | |
+|--|--|
+| **Handler** | 消防通道 — 一进来就是全部权限（固定特权） |
+| **Thread + 特权** | 管理员办公室 — 能进机房（内核寄存器） |
+| **Thread + 用户** | 普通员工办公室 — 机房门锁死 |
+| **任务切换** | 换办公室 → 换「管理员/员工」标签（写 CONTROL） |
+
+#### ⑤ 背诵两句
+
+> **模式 = 跑业务还是跑中断（全局场景）。**  
+> **特权 = Thread 上的权限标签；每任务可由 OS 单独配置，切任务时换标签；Handler 无用户态。**
+
 ### 对比 ARM7 核心优势
 
 | ARM7 | Cortex-M4 |
