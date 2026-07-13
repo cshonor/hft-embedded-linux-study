@@ -38,11 +38,51 @@ Thread Mode   →  Privileged 或 Unprivileged（由 CONTROL 决定）
 
 上电复位后典型：**Thread + Privileged + MSP**；跑 RTOS 时再切 **Thread Unprivileged + PSP**。
 
-### 3. CONTROL 寄存器（→ Ch15）
+### 3. CONTROL 寄存器（位图 + 栈指针选择）
 
-- Thread 用 **MSP** 还是 **PSP**
-- Thread 是 **特权 / 非特权**
-- 专为小型 RTOS / 轻量 OS 提供任务隔离接口
+> 图源：《ARM Cortex-M3 与 Cortex-M4 权威指南》图 4.9 / 4.10；Smith Ch2 · Ch15 展开。
+
+**作用（Thread 侧三件事）：**
+
+| 位 | 名 | 作用 |
+|----|-----|------|
+| **[0]** | **nPRIV** | Thread：**0=特权**（上电默认）· **1=非特权(User)** |
+| **[1]** | **SPSEL** | Thread：**0=MSP** · **1=PSP**；Handler **恒用 MSP**（读 SPSEL 常为 0） |
+| **[2]** | **FPCA** | **仅 M4F**：浮点上下文是否活跃（异常进出是否保存 FPU） |
+| [31:3] | — | 保留 |
+
+**各内核布局对照：**
+
+![图 4.9 CONTROL 寄存器](./assets/fig-4-9-control-register.png)
+
+| 内核 | nPRIV | SPSEL | FPCA |
+|------|-------|-------|------|
+| **M3 / M4（无 FPU）** | ✓ bit0 | ✓ bit1 | 无（保留） |
+| **M4 with FPU（M4F）** | ✓ | ✓ | ✓ bit2 |
+| **ARMv6-M（M0）** | **无**（图虚框） | ✓ | 无 |
+| **M0+** | **可选** | ✓ | 无 |
+
+**栈指针选择状态机（图 4.10）：**
+
+![图 4.10 栈指针选择](./assets/fig-4-10-sp-select.png)
+
+```
+启动 → Thread，SPSEL=0 → 用 MSP（①）
+软件写 CONTROL.SPSEL=1 → Thread 改用 PSP（②）
+任意异常请求 → Handler，强制 MSP（③）
+异常返回 ④ → 回到 Thread；用 MSP 还是 PSP 取决于返回时 CONTROL（与 EXC_RETURN）
+```
+
+| 状态 | 模式 | SP |
+|------|------|-----|
+| ① | Thread · SPSEL=0 | **MSP**（上电默认） |
+| ② | Thread · SPSEL=1 | **PSP**（RTOS 任务栈） |
+| ③ | Handler | **始终 MSP**（与 Thread 用哪栈无关） |
+| ④ | 异常返回 | 回到 Thread 的 ① 或 ② |
+
+**口述一句：**
+
+> **nPRIV 管权限，SPSEL 管 Thread 用哪根栈；Handler 永远 MSP。M4F 多一个 FPCA 管浮点压栈。**
 
 ### 4. 两个独立概念：执行模式 vs 特权等级
 
