@@ -326,6 +326,25 @@ User 里 APP 调 settings API
 | **r14 (LR)** | 已换 bank 且存返回址，**不用压旧 LR** | 同左 |
 | **CPSR** | 已在 **SPSR**，**不用压** | 同左 |
 
+**常见误区 — 不是压到 A（User）的栈：**
+
+| 错误想法 | 实际顺序 |
+|----------|----------|
+| 切到 B **之前**，用 **A 的 r13** 把 r0–r7 压进 **User 栈** | **IRQ 线一拉高，硬件已先切到 B** — handler 里 `sp` 已是 **r13_irq** |
+| 回 A 时从 **User 栈** 弹出 | 从 **IRQ 栈** 弹出，再 `SUBS pc,lr,#4` 回 User |
+
+```
+错：  User ──压 r0-r7 到 User栈──→ 切 IRQ ──处理──→ 切 User ──从 User栈 弹
+对：  User 跑着 ──IRQ 触发──→ 硬件切 IRQ（SP=r13_irq）
+                              ──STMFD 压 r0-r7 到 IRQ栈──→ 处理 ──LDMFD 从 IRQ栈 弹──→ SUBS 回 User
+```
+
+**为何必须用 B 的栈：** 进 IRQ 后 **看不见 User 的 r13**（bank 已切换）；`STMFD sp!, {r0-r7}` 里的 **`sp` = r13_irq**。User 栈 **全程不被 ISR 碰** — 回来 User 的 r13 仍指向原来的用户栈顶，和进中断前一致。
+
+**口述纠正：**
+
+> **共用 GPR 存进「当前异常模式的栈」（IRQ 栈 / FIQ 栈），不是进中断前那个 User 栈。** Bank 给 B 专属 r13；软件把 r0–r7 压在这个 r13 指向的 **B 栈空间**。
+
 **口述对照：**
 
 > **Bank 管「换栈、存返回地址、存 CPSR 快照」；栈管「剩下的共用 GPR」。**  
