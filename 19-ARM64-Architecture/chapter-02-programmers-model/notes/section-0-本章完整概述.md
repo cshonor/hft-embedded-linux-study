@@ -22,7 +22,7 @@
 
 | 主题 | 小节 | 笔记 |
 |------|------|------|
-| **数据类型与对齐** | §2.2 | [section-2-2-data-types.md](./section-2-2-data-types.md) |
+| **数据类型、对齐、s/u、f32/f64 映射** | §2.2 | [section-2-2-data-types.md](./section-2-2-data-types.md) |
 | **ARM7TDMI 模型** | §2.3 | [section-2-3-arm7tdmi.md](./section-2-3-arm7tdmi.md) |
 | **Cortex-M4 模型** | §2.4 | [section-2-4-cortex-m4.md](./section-2-4-cortex-m4.md) |
 
@@ -31,11 +31,13 @@
 ### 三、知识流（口述版）
 
 ```
-数据以 8/16/32 bit 访问 → ARM7 对齐严格，M4 可放宽
+32 bit 自然字长 · s8/u8…s32/u32 → byte/half/word
+        ↓
+对齐：访问宽度决定 · f32=word · f64=8B（算在 Ch9）
         ↓
 ARM7：7 模式 · banked SP/LR · 向量表 = B 指令
         ↓
-M4：Thread/Handler · MSP/PSP · 向量表 = 函数地址(LSB=1)
+M4：Thread/Handler · MSP/PSP · s0–s31（M4F）
         ↓
 Ch3：在这些寄存器上跑第一个示例程序
 ```
