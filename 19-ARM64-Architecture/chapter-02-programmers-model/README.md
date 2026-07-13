@@ -38,7 +38,8 @@
 - [ ] 背 **7 模式四类**：User/System · SVC · IRQ/FIQ · UND/ABT
 - [ ] 说清 **Bank 四作用**：独立 SP · LR 返址 · SPSR 快照 · FIQ r8–r12
 - [ ] 区分 **ARM32 7 模式** vs **ARM64 EL0–EL3**（[奔跑吧](../../arm64-programming-practice/)）
-- [ ] 解释 M4 **MSP/PSP**、**Thread/Handler**、**向量表存地址且 LSB=1**
+- [ ] 复述 M4：**Thread/Handler** · **Priv/User** · **MSP/PSP** · **CONTROL**
+- [ ] 对照 ARM7：向量表 **地址 vs B 指令**；首项 = **初始 MSP**；**LSB=1**
 - [ ] 能对照 [Ch3](../chapter-03-instruction-sets-v4t-v7m/) 示例辨认 r0–r15 用途
 
 ---
