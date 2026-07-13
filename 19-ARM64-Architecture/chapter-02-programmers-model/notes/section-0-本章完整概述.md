@@ -23,7 +23,7 @@
 | 主题 | 小节 | 笔记 |
 |------|------|------|
 | **数据类型、对齐、s/u、f32/f64 映射** | §2.2 | [section-2-2-data-types.md](./section-2-2-data-types.md) |
-| **ARM7TDMI 模型** | §2.3 | [section-2-3-arm7tdmi.md](./section-2-3-arm7tdmi.md) |
+| **ARM7 七种模式 · Bank · 向量表** | §2.3 | [section-2-3-arm7tdmi.md](./section-2-3-arm7tdmi.md) |
 | **Cortex-M4 模型** | §2.4 | [section-2-4-cortex-m4.md](./section-2-4-cortex-m4.md) |
 
 ---

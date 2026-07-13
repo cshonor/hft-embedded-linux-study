@@ -35,7 +35,9 @@
 
 - [ ] 说出 **s8/u8 … s32/u32** 与 **byte/halfword/word** 对应及 **对齐**
 - [ ] 说明 **f32/f64** 宽度、内存占用与 **s/d 寄存器**（细节 → Ch9）
-- [ ] 画清 ARM7 **7 模式** 与 **banked SP/LR** 的作用
+- [ ] 背 **7 模式四类**：User/System · SVC · IRQ/FIQ · UND/ABT
+- [ ] 说清 **CPSR.M[4:0]**、**FIQ bank r8–r12**、**System 与 User 共寄存器**
+- [ ] 区分 **ARM32 7 模式** vs **ARM64 EL0–EL3**（[奔跑吧](../../arm64-programming-practice/)）
 - [ ] 解释 M4 **MSP/PSP**、**Thread/Handler**、**向量表存地址且 LSB=1**
 - [ ] 能对照 [Ch3](../chapter-03-instruction-sets-v4t-v7m/) 示例辨认 r0–r15 用途
 
