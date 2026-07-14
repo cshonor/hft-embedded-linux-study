@@ -28,7 +28,27 @@
 | 单条指令粒度条件化 | **Thumb 16 bit** 多数无条件 |
 | 历史 ARM 性能亮点 | M 系主用 Thumb-2 + IT |
 
-**Ch3 阶乘 ARM 版：** `MULGT` / `SUBGT` — 本章系统化。
+**Ch3 阶乘 ARM 版：** `MULGT` / `SUBGT` — 下面展开 **GT** 规则。
+
+#### 深挖：MULGT / SUBGT（阶乘用的那对）
+
+| 指令 | = | 假时 |
+|------|---|------|
+| `MULGT Rd, Rm, Rs` | 仅 **有符号 >** 时 `Rd = Rm×Rs` | 不乘、不写 Rd |
+| `SUBGT Rd, Rn, Op2` | 仅 GT 时做减法 | 不减、不写 Rd |
+| `BGT label` | 仅 GT 时跳转 | 顺序下一条 |
+
+**GT 标志条件：** `Z==0 && N==V`（`CMP a,b` 后 ≈ **有符号 a > b**）。
+
+```asm
+        CMP     r0, #1
+        MULGT   r1, r1, r0
+        SUBGT   r0, r0, #1
+        BGT     loop
+; r0==1 时三条全“空过”，循环自然结束
+```
+
+**勿混：** M4 / Thumb-2 **不能** 像 ARM32 那样每条指令随意加后缀 — 须包在 **IT 块**里（下节）。
 
 ---
 
