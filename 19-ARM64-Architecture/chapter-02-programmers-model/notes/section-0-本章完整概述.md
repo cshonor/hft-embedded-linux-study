@@ -25,6 +25,8 @@
 | **数据类型、对齐、s/u、f32/f64 映射** | §2.2 | [section-2-2-data-types.md](./section-2-2-data-types.md) |
 | **ARM7 七种模式 · Bank · 向量表** | §2.3 | [section-2-3-arm7tdmi.md](./section-2-3-arm7tdmi.md) |
 | **Cortex-M4 模型** | §2.4 | [section-2-4-cortex-m4.md](./section-2-4-cortex-m4.md) |
+| **练习五大考点** | §2.5 | [section-2-5-exercises.md](./section-2-5-exercises.md) |
+| **v4T ↔ v7-M 总对照** | — | [armv4t-vs-armv7m.md](./armv4t-vs-armv7m.md) |
 
 ---
 
@@ -46,12 +48,15 @@ Ch3：在这些寄存器上跑第一个示例程序
 
 ### 四、架构对照速查
 
-| | ARM7TDMI | Cortex-M4 | AArch64（[奔跑吧](../../arm64-programming-practice/)） |
+| | ARM7TDMI (**v4T**) | Cortex-M4 (**v7-M**) | AArch64（[奔跑吧](../../arm64-programming-practice/)） |
 |---|----------|-----------|--------------------------------------------------------|
 | 特权 | 7 模式 | Thread/Handler + Priv | **EL0–EL3** |
 | 栈指针 | 按模式 bank | MSP / PSP | **SP_ELx** |
 | 向量表 | 跳转指令 | 地址表 | **VBAR** + 异常向量 |
+| 指令 | ARM + Thumb1 | **Thumb-2 only** | A64 |
 | 本书权重 | 概念/对照 | **实验主平台** | 嵌入式 Linux 主书 |
+
+**完整六维对比 + v7-A/M 勿混** → [armv4t-vs-armv7m.md](./armv4t-vs-armv7m.md)
 
 ---
 

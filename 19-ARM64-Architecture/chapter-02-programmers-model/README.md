@@ -28,6 +28,7 @@
 | **§2.3** | ARM7TDMI — 处理器模式 · 寄存器 · 向量表 | [notes/section-2-3-arm7tdmi.md](./notes/section-2-3-arm7tdmi.md) |
 | **§2.4** | Cortex-M4 — 处理器模式 · 寄存器 · 向量表 | [notes/section-2-4-cortex-m4.md](./notes/section-2-4-cortex-m4.md) |
 | **§2.5** | 练习题 | [notes/section-2-5-exercises.md](./notes/section-2-5-exercises.md) |
+| — | **ARMv4T ↔ ARMv7-M 总对照** | [notes/armv4t-vs-armv7m.md](./notes/armv4t-vs-armv7m.md) |
 
 ---
 
