@@ -1,6 +1,98 @@
 ## §7.4 数据处理 — 逻辑 · 移位 · 加减 · 乘除 · 饱和
 
-> **Ch 7 · 整数逻辑与算术** · [章导读](../README.md)
+> **Ch 7 · 整数逻辑与算术** · [章导读](../README.md) · [本章概述](./section-0-本章完整概述.md)
+
+---
+
+## 〇、四则运算 + 条件后缀（与 MULGT/SUBGT 统一）
+
+ARM32（A32）几乎所有数据处理指令都能写：
+
+```
+指令 + 条件码
+例：ADDGT · SUBEQ · MULNE · SDIVGT
+```
+
+| 条件真 | 执行运算，写 Rd |
+|--------|-----------------|
+| 条件假 | **NOP** — 不改寄存器（与 [Ch3 MULGT/SUBGT](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3-4-example-factorial.md) 同一规则） |
+
+**⚠ 标志不等于「自动更新」：** 基础 `ADD`/`SUB`/`MUL` **默认不改** N/Z/C/V；要刷标志须加 **`S`** → `ADDS` / `SUBS`（`CMP` ≈ **丢弃结果的 SUBS**）。
+
+> Thumb-2 / M4：条件后缀须包在 **IT 块** 内（→ [Ch8 §8.4](../../chapter-08-branches-loops/notes/section-8-4-conditional.md)）。
+
+### 1. 加法 ADD / ADDxx
+
+```asm
+        ADD     Rd, Rn, Op2         ; Rd = Rn + Op2（默认不改标志）
+        ADDGT   r0, r1, #2          ; 仅有符号大于时执行
+        ADDS    r0, r0, #1          ; 加法并强制更新 CPSR
+        ADC     r1, r1, r3          ; Rd = Rn + Op2 + C（大数高字）
+```
+
+| 变种 | 作用 |
+|------|------|
+| **ADD** | 普通加 |
+| **ADDS** | 加 + 更新标志（给后续 EQ/GT…） |
+| **ADC** | 带进位加 — 多字/64-bit 加链 |
+
+### 2. 减法 SUB / SUBxx
+
+```asm
+        SUB     Rd, Rn, Op2
+        SUBGT   r0, r0, #1          ; 你已学：仅 GT 时减
+        SUBS    r0, r0, #1          ; 减 + 更新标志
+        SBC     r1, r1, r3          ; 带借位减
+```
+
+| 变种 | 作用 |
+|------|------|
+| **SUB** | 普通减 |
+| **SUBS** | 减 + 标志；**`CMP Rn, Op2` ≈ SUBS 但不写 Rd** |
+| **SBC** | 带借位 — 大数相减 |
+
+### 3. 乘法 MUL / MULxx
+
+```asm
+        MUL     Rd, Rm, Rs          ; Rd = Rm × Rs（低 32 位）
+        MULGT   r1, r1, r0          ; 仅 GT 时乘（阶乘）
+        MLA     Rd, Rm, Rs, Rn      ; Rd = Rm×Rs + Rn
+        UMULL / SMULL               ; 32×32 → 64 位（无/有符号长乘）
+```
+
+### 4. 除法 — 看架构（重点）
+
+| 架构 / 核 | 硬件除法 |
+|-----------|----------|
+| **ARMv4T · ARM7TDMI** | **无** — 只能软件循环 / 库 |
+| **ARMv6-M · M0/M0+** | **无** |
+| **ARMv7-M · M3/M4/M7** | **有** `UDIV` / `SDIV` |
+
+⚠ 易错：「M3/M4 老内核没除法」— **不对**。没除法的是 **ARM7 / M0**；**M3/M4 已有硬件除**。
+
+```asm
+        UDIV    r0, r1, r2          ; r0 = r1 / r2 无符号
+        SDIV    r0, r1, r2          ; 有符号
+        ; ARM32 状态可写 SDIVGT；Thumb-2 须 IT + SDIVGT
+```
+
+除零 → UsageFault（驱动/裸机要检查）。
+
+### 5. 带条件的四则示例
+
+```asm
+        CMP     r0, #3
+        ADDGT   r1, r1, #1          ; r0>3 → r1++
+        SUBGT   r2, r2, #2
+        MULGT   r3, r1, r2
+        SDIVGT  r4, r3, #2          ; 有 SDIV 的核才可写
+```
+
+### 6. 口述总结
+
+1. **加减乘**：经典 ARM 通用；后缀规则统一 `指令+条件`  
+2. **除**：ARM7 **无**；**v7-M（M3/M4…）有 UDIV/SDIV**  
+3. 条件假 → **跳过运算**；刷标志靠 **`S`** 或 **CMP**，不是凡 ADD 都改 CPSR  
 
 ---
 
@@ -84,8 +176,8 @@
 
 | 平台 | 除法 |
 |------|------|
-| **ARM7 等早期** | **无硬件除法** — 软件 **移位-减法** 例程 |
-| **Cortex-M4** | **`UDIV` / `SDIV`** 硬件指令 |
+| **ARM7 / M0** | **无硬件除法** — 软件移位-减法或库 |
+| **Cortex-M3 / M4 / M7** | **`UDIV` / `SDIV`** 硬件指令 |
 
 **驱动注意：** 除零 → UsageFault — 与 C `/0` 不同，需显式检查。
 
