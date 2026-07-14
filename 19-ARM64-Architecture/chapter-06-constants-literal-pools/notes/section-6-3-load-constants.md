@@ -11,7 +11,8 @@
         VLDR    S0, =3.14159           ; 浮点常数（M4F，→ Ch3 §3.7）
 ```
 
-**这是伪指令** — CPU 不识别 `=`；汇编器 **展开** 为真实指令序列。
+**这是伪指令** — CPU 不识别 `=`；汇编器 **展开** 为真实指令序列。  
+小立即数优先真实 **`MOV`**（→ [Ch3 §3.3](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3-3-example-shift.md)）；编码不下才走本伪指令 / MOVW·MOVT。
 
 ---
 
