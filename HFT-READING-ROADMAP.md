@@ -374,7 +374,7 @@
 
 | 文件夹 | 必读书 | 索引 |
 |--------|--------|------|
-| **19** | Smith（[OUTLINE](./19-ARM64-Architecture/OUTLINE.md)）+ **《ARM64体系结构编程与实践》**（[OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md)） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
+| **19** | Smith（[OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md)）+ **《ARM64体系结构编程与实践》**（[OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md)） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** | ***Mastering Embedded Linux Programming*, 3rd ed** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
 | **21** | **LDD3** · ***Linux Device Driver Development*** | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
 | **22** | [内核官方 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) + [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |

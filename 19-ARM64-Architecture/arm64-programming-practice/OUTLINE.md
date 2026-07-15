@@ -1,4 +1,4 @@
-# 《ARM64体系结构编程与实践》— 章节目录与阅读裁剪
+﻿# 《ARM64体系结构编程与实践》— 章节目录与阅读裁剪
 
 > **作者：** 奔跑吧Linux社区 · **出版社：** 人民邮电出版社  
 > **模块：** [arm64-programming-practice/](./README.md) · [19 总览](../README.md)  
@@ -59,7 +59,7 @@
 21    OS 话题 → 开 20 U-Boot / 21 驱动
 ```
 
-**与 Smith 汇编书并行建议：** Smith [Ch2–8、13、16、18](../chapter-02-programmers-model/) 可 **压缩** 或 **选读** — 汇编思维已有则 **直接从本书 Ch1 开 AArch64**。
+**与 Smith 汇编书并行建议：** Smith [Ch2–8、13、16、18](../arm32-smith-assembly/OUTLINE.md) 可 **压缩** 或 **选读** — 汇编思维已有则 **直接从本书 Ch1 开 AArch64**。
 
 ---
 
