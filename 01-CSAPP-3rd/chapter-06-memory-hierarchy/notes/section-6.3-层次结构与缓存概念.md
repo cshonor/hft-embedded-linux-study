@@ -6,12 +6,14 @@
 
 ```
 L0 寄存器
-L1 d-cache / i-cache
-L2 统一 cache
-L3 LLC（常多核共享）
-主存
+L1 d-cache / i-cache（单核私有 · 指令/数据分离）
+L2 统一 cache（单核私有）
+L3 = LLC（Last Level Cache · 常多核共享）
+主存 DRAM
 本地磁盘 / 远程存储
 ```
+
+**LLC 口述：** 片上 **最后一级**；主流三级系统里 **L3 = LLC**。详解 → [Ch1 §1.5](../../chapter-01-tour-of-computer-systems/notes/section-1.5-高速缓存至关重要.md)。
 
 - **命中 (hit)** — 在上层找到
 - **缺失 (miss)** — 向下层取，**惩罚 latency**
@@ -32,9 +34,9 @@ L3 LLC（常多核共享）
 AMAT = HitTime + MissRate × MissPenalty
 ```
 
-**HFT：** 优化目标常是 **降 miss rate** 或 **降 miss penalty**（如 NUMA 本地内存、prefetch）；`perf` 量化 miss。
+**HFT：** 优化目标常是 **降 miss rate** 或 **降 miss penalty**（如 NUMA 本地内存、prefetch）；`perf` 量化 miss；关注 **LLC miss**（共享层与跨核）。
 
-→ [Ch 1.5 缓存直觉](../chapter-01-tour-of-computer-systems/notes/section-1.5-高速缓存至关重要.md)
+→ [Ch 1.5 缓存直觉 · LLC](../../chapter-01-tour-of-computer-systems/notes/section-1.5-高速缓存至关重要.md)
 
 ---
 
