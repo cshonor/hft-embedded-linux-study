@@ -97,12 +97,119 @@ API 看起来一样，**ABI 不同 → 协议不兼容 → 二进制不能互换
 
 ---
 
-## 6. HFT / 跨平台
+## 6. 遵守 ABI 的实战例子（ARM32 / AArch64 · C/汇编）
 
-1. **`sizeof(int/long)` 为何变** — 目标 **ABI** 写死类型模型，不是编译器随意
-2. **二进制协议** — `int32_t`/`int64_t` + 显式 endian；**禁止** 本地 `struct` / `long` 上 wire
-3. **C++ / Rust / DPDK / 内核** — 共享边界须 **同一 ABI**（HFT 常锁 Linux x64 LP64 + System V）
-4. **MikanOS / 汇编** — 无编译器兜底时 **手写** calling convention
+> 嵌入式 + HFT：汇编与 C/Rust 互调、跨 .so、进内核，**全靠同一套二进制协议**。  
+> ARM32 详规 → [Smith Ch13 AAPCS](../../../19-ARM64-Architecture/arm32-smith-assembly/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)（旧文献也称 **ATPCS**）。
+
+### 例 1 · ARM32 传参（AAPCS / ATPCS）
+
+**规则：** 前 4 个整型参数 → `r0–r3`；第 5 个起压栈；返回值 → `r0`；用到的 **callee-save**（如 `r4–r11`）须保存/恢复。
+
+```c
+int add(int a, int b, int c, int d, int e)
+{
+    return a + b + c + d + e;
+}
+```
+
+```asm
+add:
+    push    {r4, lr}          ; 示范：占用 callee-save 则须保存（本例未真用 r4）
+    add     r0, r0, r1        ; a+b
+    add     r0, r0, r2        ; +c
+    add     r0, r0, r3        ; +d
+    ldr     r1, [sp, #8]      ; 第 5 参 e：入口在栈上；push 后偏移 +8
+    add     r0, r0, r1
+    pop     {r4, pc}          ; 恢复 + 返回（返回值在 r0）
+```
+
+**合规点：** 寄存器传参、多余参数在栈、callee-save、返回 `r0` → 可与 GCC 编的 `.o` 互链。
+
+### 例 2 · AArch64 传参（HFT / Linux）
+
+**规则：** 整型参数 `x0–x7`；返回 `x0`；浮点常 `v0–v7`。
+
+```c
+long calc(long x, long y) { return x * y; }
+```
+
+```asm
+calc:
+    mul     x0, x0, x1        ; 入参即 x0/x1，积回 x0
+    ret
+```
+
+→ C / Rust / 手写汇编底层可无缝互调（同 AAPCS64）。
+
+### 例 3 · 结构体内存对齐（Linux ABI）
+
+**规则：** 成员按自身对齐；`long long` 常 **8 字节对齐**；结构体整体对齐 = 最大成员对齐 → 自动 **padding**。
+
+```c
+struct Data {
+    char c;          /* 1 字节 */
+    long long num;   /* 8 对齐 → c 后常填 7 字节空隙 */
+};
+```
+
+C 与汇编对 **`offsetof`** 必须一致；强行改对齐而不改两边 → 读错偏移、崩。
+
+### 例 4 · C++ 调 C：`extern "C"` 对齐 **C ABI 符号**
+
+C++ **名字修饰** 会弄出另一套符号名 → 链接对不上。  
+`extern "C"` 强制按 **C 链接/符号规则**（仍要同平台调用约定）。
+
+```c
+/* test.h — 被 C++ include 时 */
+#ifdef __cplusplus
+extern "C"
+#endif
+int func(int val);
+```
+
+```c
+/* C 实现 */
+int func(int val) { return val * 2; }
+```
+
+```cpp
+#include "test.h"
+int main() { return func(10); }  /* 符号匹配，能链接 */
+```
+
+### 例 5 · Linux 系统调用 ABI（用户态 → 内核）
+
+**AArch64 Linux：** 调用号 → **`x8`**；参数 → **`x0–x5`**；执行 **`svc #0`**。
+
+```asm
+    mov     x8, #63           ; read 的 syscall 号
+    mov     x0, #0            ; fd = stdin
+    adrp    x1, buf
+    add     x1, x1, :lo12:buf
+    mov     x2, #16
+    svc     #0                ; 进内核；寄存器放错则调用失败
+```
+
+### 例 6 · 动态库 `.so` 的 ABI 稳定
+
+glibc 长期保证 **`printf` 等符号的调用约定与布局** 不变 → 2018 年编的旧程序，2026 新系统上仍常能直接跑，核心就是 **ABI 不崩**。
+
+### 反面：不遵守会怎样
+
+ARM32 汇编若 **私自用 `r4` 传第一个参数**、又不保存恢复 `r4`：
+
+- 与 C 互调时参数错位  
+- 调用方认为「`r4` 没变」→ 变量被篡改 → 常见段错误 / 无法链接正确行为  
+
+---
+
+## 7. HFT / 跨平台
+
+1. **`sizeof(int/long)` 为何变** — 目标 **ABI** 写死类型模型，不是编译器随意  
+2. **二进制协议** — `int32_t`/`int64_t` + 显式 endian；**禁止** 本地 `struct` / `long` 上 wire  
+3. **C++ / Rust / DPDK / 内核** — 共享边界须 **同一 ABI**（HFT 常锁 Linux x64 LP64 + System V；ARM 板子锁 AAPCS/AAPCS64）  
+4. **手写汇编** — 无编译器兜底时 **自己守** 传参/callee-save（见上节例 1–2、例 5）
 
 ```c
 #include <stdint.h>   /* 固定宽度 */
@@ -111,10 +218,11 @@ API 看起来一样，**ABI 不同 → 协议不兼容 → 二进制不能互换
 
 ---
 
-## 7. 极简总结
+## 8. 极简总结
 
 **ABI = 二进制世界里的底层通信协议** — 数据怎么存、函数怎么传参、模块怎么链接；硬件与程序强制遵守。  
-**API = 源码世界里的开发协议** — 人与编译器之间的接口声明。
+**API = 源码世界里的开发协议** — 人与编译器之间的接口声明。  
+**实战：** C↔汇编、跨 .so、svc 进内核 — 条款写在对应架构的 AAPCS / System V / 内核 syscall ABI 里。
 
 ---
 
@@ -123,10 +231,11 @@ API 看起来一样，**ABI 不同 → 协议不兼容 → 二进制不能互换
 1. 为什么说 ABI 是「协议」？没有它会怎样？  
 2. API 和 ABI 分别约束谁、约束源码还是机器码？  
 3. AAPCS 和 System V 各举一条「条款」。  
-4. 为什么 Linux 的 `.so` 不能直接给 Windows 用？  
-5. 为什么 Linux 和 Windows 上 `sizeof(long)` 常不同？  
-6. 把 `struct Message` 直接 `send()` 会踩 ABI 的哪几条规则？  
-7. Ch3 里 `%rdi` 传第一个参数 — 属于 ABI 的哪一类规定？
+4. ARM32 第五个 `int` 参数应在哪？返回值在哪？  
+5. AArch64 Linux `read` 系统调用号放哪个寄存器？  
+6. 为什么 Linux 的 `.so` 不能直接给 Windows 用？  
+7. `extern "C"` 解决的是 ABI 的哪一层问题？  
+8. 把 `struct Message` 直接 `send()` 会踩 ABI 的哪几条规则？
 
 ---
 

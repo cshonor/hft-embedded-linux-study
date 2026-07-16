@@ -12,7 +12,9 @@
 | **asm 调 C** | `printf` 等期望 **r0 = format** |
 | **多编译器 / 静态库** | 目标文件 **可链接** |
 
-**APCS**（旧称）→ **AAPCS**（ARM Application Procedure Call Standard）— 本书 **§13.5** 讲同一 **契约**；AArch64 有 **AAPCS64**（[奔跑吧](../arm64-programming-practice/) 用 **x0–x7**）。
+**APCS / ATPCS**（旧称）→ **AAPCS**（ARM Application Procedure Call Standard）— 本书 **§13.5** 讲同一 **契约**；AArch64 有 **AAPCS64**（[奔跑吧](../../../arm64-programming-practice/) 用 **x0–x7**）。
+
+**合规汇编例（C 五参、栈上第 5 参、返回 r0）** → [CSAPP · ABI 实战例](../../../../01-CSAPP-3rd/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md#6-遵守-abi-的实战例子arm32--aarch64--c汇编)
 
 ---
 
