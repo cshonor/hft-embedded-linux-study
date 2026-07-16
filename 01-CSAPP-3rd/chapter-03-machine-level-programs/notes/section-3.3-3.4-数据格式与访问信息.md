@@ -34,11 +34,12 @@ movq (%rax), %rdi   ; q：间接寻址，读 rax 指向处的 8 字节 → rdi
 |-----|----------------|----------|--------------|
 | **x86-64** | `%rax`…`%r15`（64 bit） | **8 字节**（`movq`） | `%eax` 4 · `%ax` 2 · `%al` 1 |
 | **AArch64** | `x0`–`x30`（64 bit；`sp`/`xzr` 另论） | **8 字节** | `w0`–`w30` = 低 **4** 字节 |
-| **IA-32** | `%eax`…（32 bit） | **4 字节** | `%ax` 2 · `%al` 1 |
+| **ARM32 / IA-32** | `r0`… / `%eax`…（32 bit） | **4 字节** | 字节/半字用 `LDRB`/`LDRH` 或 `%ax`/`%al` |
 
-- **硬件容量固定**（64 位机 = 8B 一槽）；后缀/`w` 视图只是 **用其中一段**。
+- **硬件容量固定**（64 位机 = 8B 一槽；32 位机 = 4B 一槽）；后缀/`w` 视图只是 **用其中一段**。
+- **内存永远按字节编址**（每地址 1 字节）— 「32/64 位」指 **寄存器 + 地址宽度**，不是「内存格子变宽」。→ [Smith §2.2](../../../19-ARM64-Architecture/arm32-smith-assembly/chapter-02-programmers-model/notes/section-2-2-data-types.md)
 - AArch64：写 `wN` 时通常 **清零 `xN` 高 32 位**（与写 `%eax` 清高半类似，细则见手册）。
-- → ARM 侧对照：[19-ARM64](../../../19-ARM64-Architecture/) · Smith AAPCS：[§13.5](../../../19-ARM64-Architecture/arm32-smith-assembly/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)
+- → ARM 侧：[19-ARM64](../../../19-ARM64-Architecture/) · Smith AAPCS：[§13.5](../../../19-ARM64-Architecture/arm32-smith-assembly/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)
 
 ---
 
