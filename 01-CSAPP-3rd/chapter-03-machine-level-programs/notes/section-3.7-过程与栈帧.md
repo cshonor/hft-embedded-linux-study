@@ -23,6 +23,8 @@
 
 ### 3.7.3 数据传送 — **System V AMD64 ABI**（Linux x86-64）
 
+> **全景地图**（传参以外：栈对齐、ELF、syscall、SIMD、`.so`）→ [Ch2 · ABI §6](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md#6-x86-64-system-v-abi-全景linux--除类型占几字节以外)
+
 **整数/指针参数（前 6 个）：**
 
 | 顺序 | 寄存器 |
@@ -30,14 +32,16 @@
 | 1–6 | `%rdi, %rsi, %rdx, %rcx, %r8, %r9` |
 | 7+ | 栈上（从右到左压参的旧约定残留于栈布局） |
 
-**返回值：** `%rax`（及 `%rdx` 若 128 位）
+**浮点参数：** `%xmm0`–`%xmm7`（与 GPR 分开）
+
+**返回值：** `%rax`（及 `%rdx` 若 128 位）；浮点 → `%xmm0`
 
 **被调用者保存 (callee-saved)：** `%rbx, %rbp, %r12–%r15`  
 **调用者保存 (caller-saved)：** `%rax, %rcx, %rdx, %rsi, %rdi, %r8–%r11`
 
-**HFT：** C 调 Rust / 手写汇编 / `ioctl` 包装 — **必须遵守同一 ABI**；Windows 是另一套约定。
+**栈：** 向低地址增长；**`call` 前 `%rsp` 须 16 字节对齐**（SSE）。
 
-→ ABI 总览：[Ch2 §2.1.2 ABI](../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
+**HFT：** C 调 Rust / 手写汇编 / `ioctl` 包装 — **必须遵守同一 ABI**；Windows 是另一套约定。
 
 ### 3.7.4–3.7.5 局部存储：栈 vs 寄存器
 
