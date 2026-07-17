@@ -9,6 +9,61 @@
 
 ---
 
+### x86-64 寄存器分类统计
+
+#### 一、通用整数寄存器（**16** · CSAPP 重点）
+
+运算、传参、栈、指针全靠这组；每个 **64 bit**，可拆 `%rax` / `%eax` / `%ax` / `%al`。
+
+| 组 | 寄存器 |
+|----|--------|
+| 基础 8（兼容 IA-32 名） | `%rax %rbx %rcx %rdx %rsi %rdi %rbp %rsp` |
+| 扩展 8 | `%r8 %r9 %r10 %r11 %r12 %r13 %r14 %r15` |
+
+**ABI 记忆：**
+
+| 角色 | 寄存器 |
+|------|--------|
+| **caller-saved** | `%rax,%rcx,%rdx,%rsi,%rdi,%r8–%r11` |
+| **callee-saved** | `%rbx,%rbp,%r12–%r15` |
+| 专用 | `%rsp` 栈顶；`%rbp` 常作帧基址（可省略） |
+
+→ 传参顺序与全景：[§3.7](./section-3.7-过程与栈帧.md) · [ABI §6](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md#6-x86-64-system-v-abi-全景linux--除类型占几字节以外)
+
+#### 二、浮点 / SIMD（**16 × XMM**）
+
+| | |
+|--|--|
+| 名 | `%xmm0`–`%xmm15`（各 **128 bit**） |
+| 扩展 | AVX → `%ymm*`（256）；AVX-512 → `%zmm*`（512） |
+| 用途 | `float`/`double`、向量；传参/返回与 GPR **隔离** |
+
+→ [§3.11](./section-3.11-浮点代码.md)
+
+#### 三、段寄存器（6 · 用户态习题几乎不用）
+
+`%cs %ds %es %fs %gs %ss` — 现代平坦模型下少碰；Linux **TLS** 等会用到 `%fs`/`%gs`。
+
+#### 四、控制 / 系统（用户程序不直接乱写）
+
+| | 作用 |
+|--|------|
+| **`%rip`** | 下一条指令地址（指令指针） |
+| **`%rflags`** | ZF / CF / SF / OF… |
+| `CR0`–`CR8`、MSR… | 特权 / 模式；内核与虚拟化才管 |
+
+#### 分场景怎么数？
+
+| 场景 | 答 |
+|------|----|
+| CSAPP / 用户态整数汇编 / 传参 | **16 个 GPR（`rax`–`r15`）** |
+| 加上浮点编程 | 16 GPR + 16 XMM ≈ **32 个可编程槽** |
+| 含段/控制/系统 | 更多 — **日常不用背全表** |
+
+**vs ARM32：** 通用整数也是 **16**（`r0`–`r15`），**无** `al/ax` 拆分别名；浮点走 **VFP `s*`/`d*`**，不是 XMM。→ [Smith §2.2](../../../19-ARM64-Architecture/arm32-smith-assembly/chapter-02-programmers-model/notes/section-2-2-data-types.md)
+
+---
+
 ### 3.3 数据格式（x86-64 · CSAPP 原文表）
 
 | C 类型 | 字节 | 汇编后缀 | 寄存器片段 | 场景 |
