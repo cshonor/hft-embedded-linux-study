@@ -45,7 +45,7 @@ C 源码
 
 ## 本章 Checklist
 
-- [ ] 会用 `gcc -S`、`objdump -d`；认识 AT&T 与 Intel 汇编格式差异
+- [ ] 会用 `gcc -S`、`objdump -d`（**AT&T**）；认 `%reg`、`$imm`、`8(%rbp)`、源在左
 - [ ] 说出 x86-64 整数参数寄存器顺序：`%rdi, %rsi, %rdx, %rcx, %r8, %r9`
 - [ ] 解释 `%rsp`、栈向下增长、`push`/`pop`、返回地址在栈上的位置
 - [ ] 读懂 `cmp` + `jne`/`jg` 与条件码 `ZF/SF/OF/CF`
@@ -63,7 +63,7 @@ C 源码
 热路径 profile：3.5 lea、3.6 分支 · 配合 Ch 5 优化
 协议 struct：3.8–3.9
 安全/运维：3.10 扫读；3.11 浮点路径按需
-做 MikanOS / 读 perf：3.1 ISA 路线、3.2.3 AT&T/Intel — 不可跳过
+做 MikanOS / 读 perf：3.1 ISA 路线、**3.2.3 只练 AT&T** — 不可跳过
 ```
 
 ---
