@@ -3,6 +3,7 @@
 **文件夹 01** · 全书 **12 章 + 附录 A** · [返回总清单](../READING-LIST.md#6-computer-systems-a-programmers-perspective-3rd--bryant--oneill)
 
 > **文件夹 01** · 知其所以然 — 程序如何在硬件上跑。  
+> **机器级默认架构：** **x86-64（AMD64）+ Linux System V**（Ch3 起汇编/栈/链接）；Ch4 **Y86-64** 仅为流水线教学子集。ARM 对照 → [19-ARM64](../19-ARM64-Architecture/)。  
 > **下一本：** [14-Systems-Performance](../15-Systems-Performance-2nd/) → [15-BPF](../16-BPF-Performance-Tools/) → [16-HFT](../17-HFT-Low-Latency-Practice/) / [13-Rust](../18-Rust-Quant-Trading-Guide/)  
 > 全链路 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md)
 

@@ -2,7 +2,8 @@
 
 > **CSAPP 3rd** · Bryant & O'Neill · **精读 🔴**（Part I）
 
-> 本章定位：**CPU 怎么执行指令** — 用教学用 **Y86-64** 从单周期 SEQ 走到五段流水线 PIPE，理解 **流水线、冒险、分支预测**。真芯片比 Y86 复杂百倍，但 **stall、bubble、branch-miss** 的直觉来自本章。
+> 本章定位：**CPU 怎么执行指令** — 用教学用 **Y86-64** 从单周期 SEQ 走到五段流水线 PIPE，理解 **流水线、冒险、分支预测**。真芯片比 Y86 复杂百倍，但 **stall、bubble、branch-miss** 的直觉来自本章。  
+> **提醒：** 书中 **Ch3 真机汇编** 是 **x86-64**；Y86 是仿其风格的 **简化 ISA**，不是 Linux 上另一套生产标准。→ [Ch3 §3.3–3.4](../chapter-03-machine-level-programs/notes/section-3.3-3.4-数据格式与访问信息.md)
 
 ---
 
