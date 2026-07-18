@@ -45,7 +45,7 @@ ldrb r0, [r1]   @ 只读 1 字节到 r0 低 8 位
 | **x86-64** | 64 | 64 | 64 |
 | **ARM64（AArch64）** | 64 | 64 | 64 |
 
-→ 64 位分段细节（`rax`/`eax`/`ax`/`al`）：[CSAPP §3.3](../../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.3-3.4-数据格式与访问信息.md)
+→ 64 位分段细节（`rax`/`eax`/`ax`/`al`）：[CSAPP §3.3](../../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.3-数据格式.md)
 
 ---
 
@@ -125,7 +125,7 @@ x86 用 `movz`/`movs`；ARM 直接换指令名。→ 详表见上节 s8/u8…；
 
 **浮点（VFP）：** `float` → `s0`–`s31`；`double` → `d0`–`d15`（两 `s` 视图）；`vldr`/`vstr` — 与 `r0`–`r15` **分开**（见下节 f32/f64）。
 
-**极简：** 宽度用 **不同 LDR/STR**；寄存器 **不拆别名**；寻址逻辑与 x86 通，语法是 `#` / `[]`。完整 x86 表 → [CSAPP §3.3–3.4](../../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.3-3.4-数据格式与访问信息.md)
+**极简：** 宽度用 **不同 LDR/STR**；寄存器 **不拆别名**；寻址逻辑与 x86 通，语法是 `#` / `[]`。完整 x86 表 → [CSAPP §3.3](../../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.3-数据格式.md) · [§3.4.1](../../../../01-CSAPP-3rd/chapter-03-machine-level-programs/notes/section-3.4.1-操作数指示符.md)
 
 ---
 

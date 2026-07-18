@@ -1,7 +1,7 @@
 ## 4.1 Y86-64 指令集体系结构（4.1.1–4.1.6）
 
 > **和全书的关系：** CSAPP **生产级例子 / Ch3 汇编** 是真 **x86-64**；本章 **Y86-64** 是为讲流水线而造的 **简化教学 ISA**（命名、`movq` 风格故意贴近 x86-64），**不是** 另一套你要在 Linux 上跑的 ABI。  
-> 真机数据格式与寻址 → [Ch3 §3.3–3.4](../../chapter-03-machine-level-programs/notes/section-3.3-3.4-数据格式与访问信息.md)
+> 真机数据格式与寻址 → [Ch3 §3.3](../../chapter-03-machine-level-programs/notes/section-3.3-数据格式.md) · [§3.4.1](../../chapter-03-machine-level-programs/notes/section-3.4.1-操作数指示符.md)
 
 ### 4.1.1 程序员可见的状态
 
@@ -13,7 +13,7 @@
 | **Stat** | 程序状态：正常 / halt / 异常 |
 | **内存** | 字节数组，小端 |
 
-简化版 x86-64：**无特权级、无浮点、无向量** — 只为讲清数据通路。真机有 **16 GPR + 16 XMM** 等 → [Ch3 寄存器统计](../../chapter-03-machine-level-programs/notes/section-3.3-3.4-数据格式与访问信息.md#x86-64-寄存器分类统计)
+简化版 x86-64：**无特权级、无浮点、无向量** — 只为讲清数据通路。真机有 **16 GPR + 16 XMM** 等 → [Ch3 寄存器统计](../../chapter-03-machine-level-programs/notes/section-3.3-数据格式.md#x86-64-寄存器分类统计)
 
 ### 4.1.2–4.1.3 指令与编码
 

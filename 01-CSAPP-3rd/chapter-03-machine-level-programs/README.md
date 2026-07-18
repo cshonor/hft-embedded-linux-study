@@ -12,8 +12,14 @@
 
 | 节 | 笔记 |
 |----|------|
-| 3.1–3.2 历史观点与程序编码 | [notes/section-3.1-3.2-历史观点与程序编码.md](./notes/section-3.1-3.2-历史观点与程序编码.md) |
-| 3.3–3.4 数据格式与访问信息 | [notes/section-3.3-3.4-数据格式与访问信息.md](./notes/section-3.3-3.4-数据格式与访问信息.md) |
+| 3.1 历史观点 | [notes/section-3.1-历史观点.md](./notes/section-3.1-历史观点.md) |
+| 3.2.1 机器级代码与编译链路 | [notes/section-3.2.1-机器级代码与编译链路.md](./notes/section-3.2.1-机器级代码与编译链路.md) |
+| 3.2.2 栈帧 | [notes/section-3.2.2-栈帧.md](./notes/section-3.2.2-栈帧.md) |
+| 3.2.3 AT&T 汇编语法 | [notes/section-3.2.3-AT&T汇编语法.md](./notes/section-3.2.3-AT&T汇编语法.md) |
+| 3.3 数据格式与寄存器 | [notes/section-3.3-数据格式.md](./notes/section-3.3-数据格式.md) |
+| 3.4.1 操作数指示符 | [notes/section-3.4.1-操作数指示符.md](./notes/section-3.4.1-操作数指示符.md) |
+| 3.4.2–3.4.3 数据传送指令 | [notes/section-3.4.2-数据传送指令.md](./notes/section-3.4.2-数据传送指令.md) |
+| 3.4.4 压栈与弹栈 | [notes/section-3.4.4-压栈与弹栈.md](./notes/section-3.4.4-压栈与弹栈.md) |
 | 3.5 算术和逻辑操作 | [notes/section-3.5-算术与逻辑操作.md](./notes/section-3.5-算术与逻辑操作.md) |
 | 3.6 控制（条件码、分支、循环、switch） | [notes/section-3.6-控制流.md](./notes/section-3.6-控制流.md) |
 | 3.7 过程（栈、调用约定、递归） | [notes/section-3.7-过程与栈帧.md](./notes/section-3.7-过程与栈帧.md) |

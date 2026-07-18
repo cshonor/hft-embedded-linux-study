@@ -32,4 +32,4 @@ leaq 8(%rdi,%rsi,4), %rax   # rax = rdi + rsi*4 + 8
 
 ---
 
-← [本章导读](../README.md)
+← [本章导读](../README.md) · [§3.4.4 ←](./section-3.4.4-压栈与弹栈.md) · [§3.6 →](./section-3.6-控制流.md)
