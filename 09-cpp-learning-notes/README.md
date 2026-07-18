@@ -11,7 +11,7 @@
 | 入口 | 链接 |
 |------|------|
 | **仓库首页** | [github.com/cshonor/cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) |
-| **C 语言（02 对应）** | [11-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) |
+| **C 语言（02 对应）** | 本仓 [02-c-programming](../02-c-programming/)（自上游 [00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C) 复制） |
 | 全书目录 | [README.md（外部）](https://github.com/cshonor/cpp-learning-notes/blob/main/README.md) |
 | 本仓库 C++ 编排 | [OUTLINE.md](./OUTLINE.md) |
 
@@ -21,7 +21,7 @@
 git clone https://github.com/cshonor/cpp-learning-notes.git
 ```
 
-→ **C 语言读序与裁剪** 见本仓 [02-c-programming](../02-c-programming/)（HFT 槽位 `02`；外部目录 `11-…`）
+→ **C 语言读序与裁剪** 见本仓 [02-c-programming](../02-c-programming/)（HFT 槽位 `02`；笔记正文已在本地 `01`–`05`）
 
 ---
 

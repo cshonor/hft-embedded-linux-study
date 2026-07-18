@@ -85,7 +85,7 @@
 
 **嵌入式支线（独立顺序 · 建议 04–07 后再开 · 24 用业余时间）：** `19 → 20 → 21 → 22 → 23 → 24`
 
-> **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；笔记写在外部仓 [11-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C)（K&R → 指针 → GNU-C）。
+> **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；笔记正文在本地 `01`–`05`（源自 [00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C)）。
 
 > **C++ 外部仓：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — **08 OS / 07 TLPI 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
 

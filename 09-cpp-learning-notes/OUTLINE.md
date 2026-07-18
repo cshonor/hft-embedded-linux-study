@@ -9,7 +9,7 @@
 
 | 原则 | 说明 |
 |------|------|
-| **C 先于 C++** | [01 CSAPP](../01-CSAPP-3rd/) 图景 + **[02 C](../02-c-programming/)**（笔记 → [外部 11-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C)）— C++ 是「带 RAII 的 C++」不是第二门语言 |
+| **C 先于 C++** | [01 CSAPP](../01-CSAPP-3rd/) 图景 + **[02 C](../02-c-programming/)**（本地 `01`–`05` 笔记）— C++ 是「带 RAII 的 C++」不是第二门语言 |
 | **Modern 先于 muduo** | [10 PNP](../10-Practical-Network-Programming/) 是 C++ 工程；**`04-Effective-Modern-C++` 是硬门槛** |
 | **并发先于 HFT 引擎** | [16 HFT](../17-HFT-Low-Latency-Practice/) 热路径 = 多线程 + 无锁；**`08-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective 老书 + Modern C++11/14 打底，再 C++20 — 与 [外部仓 README](https://github.com/cshonor/cpp-learning-notes/blob/main/README.md) 一致 |
