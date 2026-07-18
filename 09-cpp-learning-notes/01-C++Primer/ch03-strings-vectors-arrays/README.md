@@ -1,0 +1,35 @@
+# 第 3 章 字符串、向量和数组
+
+在前一章内置类型的基础上，本章介绍 C++ 标准库中一组更高级的抽象数据类型：可变长字符串 `string`、可变长集合 `vector`、配套迭代器，以及底层内置数组。
+
+## 小节
+
+- [3.1 命名空间的 using 声明](./3.1-命名空间的using声明.md)
+- [3.2 标准库类型 string](./3.2-library-type-string/3.2-标准库类型string.md)
+  - [3.2.1 定义与初始化](./3.2-library-type-string/3.2.1-定义与初始化.md)
+  - [3.2.2 读写操作](./3.2-library-type-string/3.2.2-读写操作.md)
+  - [3.2.3 拼接与内存优化](./3.2-library-type-string/3.2.3-拼接与内存优化.md)
+  - [3.2.4 string 与 C 风格字符串](./3.2-library-type-string/3.2.4-string与C风格字符串.md)
+  - [3.2.5 cctype 字符校验](./3.2-library-type-string/3.2.5-cctype字符校验.md)
+  - [3.2.6 HFT 场景拓展](./3.2-library-type-string/3.2.6-HFT场景拓展.md)
+- [3.3 标准库类型 vector](./3.3-library-type-vector/3.3-标准库类型vector.md)
+  - [3.3.1 动态数组基础](./3.3-library-type-vector/3.3.1-动态数组基础.md)
+  - [3.3.2 圆括号与花括号初始化](./3.3-library-type-vector/3.3.2-圆括号与花括号初始化.md)
+  - [3.3.3 下标与增删](./3.3-library-type-vector/3.3.3-下标与增删.md)
+  - [3.3.4 元素类型与嵌套容器](./3.3-library-type-vector/3.3.4-元素类型与嵌套容器.md)
+  - [3.3.5 拷贝移动与扩容](./3.3-library-type-vector/3.3.5-拷贝移动与扩容.md)
+  - [3.3.6 HFT 实践与示例](./3.3-library-type-vector/3.3.6-HFT实践与示例.md)
+- [3.4 迭代器介绍](./3.4-introducing-iterators/3.4-迭代器介绍.md)
+  - [3.4.1 为何需要迭代器](./3.4-introducing-iterators/3.4.1-为何需要迭代器.md)
+  - [3.4.2 begin、end 与常量迭代器](./3.4-introducing-iterators/3.4.2-begin-end与常量迭代器.md)
+  - [3.4.3 迭代器运算符与遍历](./3.4-introducing-iterators/3.4.3-迭代器运算符与遍历.md)
+  - [3.4.4 随机访问算术运算](./3.4-introducing-iterators/3.4.4-随机访问算术运算.md)
+  - [3.4.5 易错点、失效与考点](./3.4-introducing-iterators/3.4.5-易错点失效与考点.md)
+- [3.5 数组](./3.5-arrays/3.5-数组.md)
+  - [3.5.1 定义与初始化](./3.5-arrays/3.5.1-定义与初始化.md)
+  - [3.5.2 下标访问与越界](./3.5-arrays/3.5.2-下标访问与越界.md)
+  - [3.5.3 数组退化与指针](./3.5-arrays/3.5.3-数组退化与指针.md)
+  - [3.5.4 begin/end 与 vector 对比](./3.5-arrays/3.5.4-begin-end与vector对比.md)
+  - [3.5.5 易错点与示例](./3.5-arrays/3.5.5-易错点与示例.md)
+- [3.6 多维数组](./3.6-多维数组.md)
+- [小结](./3.7-小结.md)

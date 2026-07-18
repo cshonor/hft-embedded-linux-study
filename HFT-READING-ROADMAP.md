@@ -87,7 +87,8 @@
 
 > **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；笔记正文在本地 `01`–`05`（源自 [00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C)）。
 
-> **C++ 外部仓：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — **08 OS / 07 TLPI 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
+> **C++ 模块：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — 笔记正文已在本地 `01`–`10`；**07 TLPI 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
+
 
 > **板块封顶：** `00`–`18` 在本仓（含 **`09` C++ 索引**）+ **`19`–`24`** 嵌入式 Linux + 运动控制支线；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
