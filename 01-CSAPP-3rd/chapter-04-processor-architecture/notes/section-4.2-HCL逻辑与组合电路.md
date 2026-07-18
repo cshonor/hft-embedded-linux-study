@@ -11,7 +11,7 @@ word out = a ? b : c;   // 字级多路选择器
 ```
 
 - **ALU、译码器、多路复用器** 都是组合逻辑堆出来的
-- **一位全加器** 例：`Sum = A⊕B⊕Cin`，`Cout = (A&B)|(Cin&(A⊕B))` — 不全是异或 → [§2.3.1](../../chapter-02-representing-information/notes/section-2.3-整数算术.md)
+- **一位全加器** 例：`Sum = A⊕B⊕Cin`，`Cout = (A&B)|(Cin&(A⊕B))` — 不全是异或；**4 个串联 = 4 位加法器 ⊂ ALU**，ALU 还要靠选择电路做减/逻辑 → [§2.3.1](../../chapter-02-representing-information/notes/section-2.3-整数算术.md)
 
 ### 4.2.4 集合关系
 
