@@ -21,6 +21,15 @@
 
 **要点：** 同样是 64 位 CPU，`sizeof(long)` 在 Linux 上常为 **8**，在 Windows x64 上常为 **4** — 差在 **ABI（LP64 vs LLP64）**，不是 CPU 位数 alone。
 
+**同一段 C 的直观例子：**
+
+```c
+sizeof(long);   /* ILP32（-m32）→ 4；Linux x86-64 LP64 → 8 */
+sizeof(void*);  /* ILP32 → 4；LP64 → 8 — 与上表一致 */
+```
+
+换 ABI 再编译，**数字自己变** — 正是表格里的差异。
+
 → ABI 完整笔记：[§2.1.2 ABI 延伸阅读](./section-2.1.2-abi-application-binary-interface.md)
 
 ### LP64 Linux x86-64 常见宽度
@@ -62,6 +71,34 @@ uint64_t seq;
 /* 避免：wire 格式用 int/long，换平台长度就变 */
 ```
 
+### `sizeof`：跨 ABI 该用，但别用错场景
+
+| 问题 | 答 |
+|------|----|
+| 跨 ABI 项目最好 **不用** `sizeof`？ | **刚好相反** — 本机分配/步长/对齐 **更该用** `sizeof`，**别硬编码** `4`/`8` |
+| 那 `if (sizeof(long) == 8)` 呢？ | **用错了** — 把 `sizeof` 当成「查文档写死数字」的分支条件 |
+
+**`sizeof` 真正价值：** 在 **当前 ABI** 下，让编译器给出正确类型大小。
+
+```c
+/* ✓ 分配 / 跨度：切 LP64 / LLP64 / ILP32 都对 */
+long *a = malloc(10 * sizeof(long));
+
+/* ✓ 结构体偏移、数组步长同理 */
+size_t stride = sizeof(MyLocalStruct);
+
+/* ✗ 拿结果硬判 4/8 做业务分支 — 等于又写死了「平台表」 */
+if (sizeof(long) == 8) { /* … */ }
+
+/* wire / 文件 / 网络：不用 long，用固定宽度 */
+int32_t tick;   /* 不用 sizeof(long) 当协议字段宽度 */
+```
+
+- **本机布局：** `malloc(n * sizeof(T))`、`offsetof`、栈帧直觉 — 靠 `sizeof`  
+- **跨机协议：** `int32_t`/`int64_t` + 显式 endian — **不用** `long`，也 **不要** 用 `sizeof(long)` 当 wire 宽度  
+
+老架构上 `int` 还可能是 **2 字节** — 硬编码 `4` 更危险；`sizeof` 跟当前目标走。
+
 ### HFT / 跨平台踩坑
 
 | 坑 | 后果 |
@@ -76,9 +113,10 @@ uint64_t seq;
 
 ## 口述巩固 · 自测
 
-1. `sizeof(long)` 在 Linux x64 和 Windows x64 各是多少？为什么同为 64 位却不同？
-2. 为什么协议字段用 `int32_t` 而不是 `int`？
-3. API 和 ABI 分别管什么？→ [ABI 笔记](./section-2.1.2-abi-application-binary-interface.md)
+1. `sizeof(long)` 在 Linux x64 和 Windows x64 各是多少？为什么同为 64 位却不同？  
+2. 跨 ABI 项目该不该用 `sizeof`？`if (sizeof(long)==8)` 为何是误用？  
+3. 为什么协议字段用 `int32_t` 而不是 `int`/`long`？  
+4. API 和 ABI 分别管什么？→ [ABI 笔记](./section-2.1.2-abi-application-binary-interface.md)
 
 ---
 
