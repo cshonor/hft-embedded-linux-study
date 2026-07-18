@@ -15,11 +15,21 @@
 | 2.1.1 十六进制表示法 | [notes/section-2.1.1-十六进制表示法.md](./notes/section-2.1.1-十六进制表示法.md) |
 | 2.1.2 数据大小 · `sizeof` | [notes/section-2.1.2-数据大小与sizeof.md](./notes/section-2.1.2-数据大小与sizeof.md) · [ABI 延伸](./notes/section-2.1.2-abi-application-binary-interface.md) · [code](../code/) |
 | 2.1.3 寻址与字节序 | [notes/section-2.1.3-寻址与字节序.md](./notes/section-2.1.3-寻址与字节序.md) |
-| 2.1.4–2.1.9 字符串、代码、布尔与 C 位/逻辑/移位 | [notes/section-2.1.4-2.1.9-字符串布尔与C位操作.md](./notes/section-2.1.4-2.1.9-字符串布尔与C位操作.md) |
+| 2.1.4 字符串表示 | [notes/section-2.1.4-字符串表示.md](./notes/section-2.1.4-字符串表示.md) |
+| 2.1.5 代码表示 | [notes/section-2.1.5-代码表示.md](./notes/section-2.1.5-代码表示.md) |
+| 2.1.6 布尔代数简介 | [notes/section-2.1.6-布尔代数简介.md](./notes/section-2.1.6-布尔代数简介.md) |
+| 2.1.7 C 位级操作 | [notes/section-2.1.7-C位级操作.md](./notes/section-2.1.7-C位级操作.md) |
+| 2.1.8 C 逻辑操作 | [notes/section-2.1.8-C逻辑操作.md](./notes/section-2.1.8-C逻辑操作.md) |
+| 2.1.9 C 移位操作 | [notes/section-2.1.9-C移位操作.md](./notes/section-2.1.9-C移位操作.md) |
 | 2.2 整数表示（2.2.1–2.2.8） | [notes/section-2.2-整数表示与类型转换.md](./notes/section-2.2-整数表示与类型转换.md) |
 | 2.3 整数算术（2.3.1–2.3.8） | [notes/section-2.3-整数算术.md](./notes/section-2.3-整数算术.md) |
-| 2.4.1–2.4.4 二进制小数、IEEE 格式与舍入 | [notes/section-2.4.1-2.4.4-IEEE浮点格式与舍入.md](./notes/section-2.4.1-2.4.4-IEEE浮点格式与舍入.md) |
-| 2.4.5–2.4.6 浮点运算与 C 浮点 | [notes/section-2.4.5-2.4.6-浮点运算与C浮点.md](./notes/section-2.4.5-2.4.6-浮点运算与C浮点.md) |
+| 2.4.1 分数二进制数 | [notes/section-2.4.1-分数二进制数.md](./notes/section-2.4.1-分数二进制数.md) |
+| 2.4.2 IEEE 754 浮点表示 | [notes/section-2.4.2-IEEE754浮点表示.md](./notes/section-2.4.2-IEEE754浮点表示.md) |
+| 2.4.3 浮点数字示例 | [notes/section-2.4.3-浮点数字示例.md](./notes/section-2.4.3-浮点数字示例.md) |
+| 2.4.4 舍入 | [notes/section-2.4.4-舍入.md](./notes/section-2.4.4-舍入.md) |
+| 2.4.5 浮点运算 | [notes/section-2.4.5-浮点运算.md](./notes/section-2.4.5-浮点运算.md) |
+| 2.4.6 C 语言浮点数 | [notes/section-2.4.6-C语言浮点数.md](./notes/section-2.4.6-C语言浮点数.md) |
+| 2.5 本章小结 | [notes/section-2.5-本章小结.md](./notes/section-2.5-本章小结.md) |
 
 ---
 

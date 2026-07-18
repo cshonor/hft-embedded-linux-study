@@ -57,7 +57,7 @@ CPU 处理 **二进制（0/1）**；人类编辑时常用 **十六进制（0–9
 
 **缺陷：** 无中文、日文、emoji — **只能舒适处理英文**。
 
-→ 完整表 [附录 F ASCII](../../appendix-F-ascii-table/) · [CSAPP §2.1.4 字符串](../../../01-CSAPP-3rd/chapter-02-representing-information/notes/section-2.1.4-2.1.9-字符串布尔与C位操作.md)
+→ 完整表 [附录 F ASCII](../../appendix-F-ascii-table/) · [CSAPP §2.1.4 字符串](../../../01-CSAPP-3rd/chapter-02-representing-information/notes/section-2.1.4-字符串表示.md)
 
 ---
 
