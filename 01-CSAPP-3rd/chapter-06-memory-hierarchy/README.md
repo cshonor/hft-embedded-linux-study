@@ -10,12 +10,20 @@
 
 | 节 | 笔记 |
 |----|------|
-| 6.1 存储技术（6.1.1–6.1.4） | [notes/section-6.1-存储技术.md](./notes/section-6.1-存储技术.md) |
-| 6.2 局部性（6.2.1–6.2.3） | [notes/section-6.2-局部性.md](./notes/section-6.2-局部性.md) |
-| 6.3 存储器层次结构（6.3.1–6.3.2） | [notes/section-6.3-层次结构与缓存概念.md](./notes/section-6.3-层次结构与缓存概念.md) |
-| 6.4.1–6.4.4 Cache 组织与映射 | [notes/section-6.4.1-6.4.4-Cache组织与映射.md](./notes/section-6.4.1-6.4.4-Cache组织与映射.md) |
-| 6.4.5–6.4.7 写策略与真实 Cache | [notes/section-6.4.5-6.4.7-写策略与真实Cache层次.md](./notes/section-6.4.5-6.4.7-写策略与真实Cache层次.md) |
-| 6.5–6.6 缓存友好代码与存储器山 | [notes/section-6.5-6.6-缓存友好代码与存储器山.md](./notes/section-6.5-6.6-缓存友好代码与存储器山.md) |
+| 6.1 存储技术 | [notes/section-6.1-存储技术.md](./notes/section-6.1-存储技术.md) |
+| 6.2 局部性 | [notes/section-6.2-局部性.md](./notes/section-6.2-局部性.md) |
+| 6.3 层次结构与缓存概念 | [notes/section-6.3-层次结构与缓存概念.md](./notes/section-6.3-层次结构与缓存概念.md) |
+| 6.4.1 通用组织结构 | [notes/section-6.4.1-通用组织结构.md](./notes/section-6.4.1-通用组织结构.md) |
+| 6.4.2 直接映射 | [notes/section-6.4.2-直接映射.md](./notes/section-6.4.2-直接映射.md) |
+| 6.4.3 组相联 | [notes/section-6.4.3-组相联.md](./notes/section-6.4.3-组相联.md) |
+| 6.4.4 全相联 | [notes/section-6.4.4-全相联.md](./notes/section-6.4.4-全相联.md) |
+| 6.4.5 有关写的问题 | [notes/section-6.4.5-有关写的问题.md](./notes/section-6.4.5-有关写的问题.md) |
+| 6.4.6 真实Cache层次解剖 | [notes/section-6.4.6-真实Cache层次解剖.md](./notes/section-6.4.6-真实Cache层次解剖.md) |
+| 6.4.7 Cache参数的性能影响 | [notes/section-6.4.7-Cache参数的性能影响.md](./notes/section-6.4.7-Cache参数的性能影响.md) |
+| 6.5 编写高速缓存友好的代码 | [notes/section-6.5-编写高速缓存友好的代码.md](./notes/section-6.5-编写高速缓存友好的代码.md) |
+| 6.6 存储器山 | [notes/section-6.6-存储器山.md](./notes/section-6.6-存储器山.md) |
+| 6.7 小结 | [notes/section-6.7-小结.md](./notes/section-6.7-小结.md) |
+
 
 ---
 
