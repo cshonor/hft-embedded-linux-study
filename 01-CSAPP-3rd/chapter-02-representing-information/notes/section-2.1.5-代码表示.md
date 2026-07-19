@@ -92,7 +92,8 @@ HFT 服务器一般全开 NX + ASLR + 栈金丝雀，编译加 `-fstack-protecto
 - **反调试/反注入：** 生产环境限制 `ptrace`、关掉不需要的 `dlopen` 路径
 - **内核 bypass：** DPDK/AF_XDP 把网卡数据直接映射到用户态内存——这块内存是 **数据** 不是代码，但需要大页 (hugepage) + pinned memory
 
-> 执行视角的深入 → [Ch 3 机器级程序](../../chapter-03-machine-level-programs/)
+> 执行视角的深入 → [Ch 3 机器级程序](../../chapter-03-machine-level-programs/)  
+> 栈/堆/.data/.bss 与 HFT 分配策略 → [Ch3 · 五大内存分区](../../chapter-03-machine-level-programs/notes/section-补充-C程序五大内存分区.md)
 
 ---
 

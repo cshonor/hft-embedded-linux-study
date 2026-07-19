@@ -15,6 +15,7 @@
 | 3.1 历史观点 | [notes/section-3.1-历史观点.md](./notes/section-3.1-历史观点.md) |
 | 3.2.1 机器级代码与编译链路 | [notes/section-3.2.1-机器级代码与编译链路.md](./notes/section-3.2.1-机器级代码与编译链路.md) |
 | 3.2.2 栈帧 | [notes/section-3.2.2-栈帧.md](./notes/section-3.2.2-栈帧.md) |
+| **补充** C 五大内存分区（栈/堆/.data/.bss/.text/.rodata） | [notes/section-补充-C程序五大内存分区.md](./notes/section-补充-C程序五大内存分区.md) |
 | 3.2.3 AT&T 汇编语法 | [notes/section-3.2.3-AT&T汇编语法.md](./notes/section-3.2.3-AT&T汇编语法.md) |
 | 3.3 数据格式与寄存器 | [notes/section-3.3-数据格式.md](./notes/section-3.3-数据格式.md) |
 | 3.4.1 操作数指示符 | [notes/section-3.4.1-操作数指示符.md](./notes/section-3.4.1-操作数指示符.md) |
@@ -61,6 +62,7 @@ C 源码
 - [ ] 读懂 `cmp` + `jne`/`jg` 与条件码 `ZF/SF/OF/CF`
 - [ ] 说明 **cmov** vs 分支 — 与分支预测、HFT 热路径的关系
 - [ ] 画出简单函数的栈帧：`call` 压返回地址、局部变量、`leave`/`ret`
+- [ ] 说出栈/堆/.data/.bss/.text/.rodata 各放什么；HFT 为何禁热路径 malloc
 - [ ] 计算带 padding 的 `struct` 大小；理解对齐与 **false sharing**
 - [ ] 简述缓冲区溢出、canary、NX、ASLR 各防什么
 
