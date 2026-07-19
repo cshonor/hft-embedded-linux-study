@@ -14,10 +14,11 @@ for (i = 0; i < n; i++)
     acc = acc + data[i];
 ```
 
-- **调用开销：** 参数传递、栈、分支、阻止内联
+- **调用开销：** 参数传递、栈、`call`/`ret`、打乱流水线  
+- **`inline` 是 C/C++ 关键字**（不是汇编指令）— 请编译器把函数体嵌到调用处；成功则机器码里常 **看不到 `call`**  
 - **`static inline`** + 同 TU；或 **模板/宏**（权衡可读性）
 
-**HFT：** 热路径 **禁止虚函数 per tick**（或 PGO/devirtualize）；小函数 `always_inline`。
+**HFT：** 热路径 **禁止虚函数 per tick**（或 PGO/devirtualize）；价差/小工具函数 `inline`/`always_inline`，少栈往返、寄存器更连着用。机制细节 → [Ch3 §3.7.7](../../chapter-03-machine-level-programs/notes/section-3.7-过程与栈帧.md)。
 
 ---
 
