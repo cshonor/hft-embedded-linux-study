@@ -10,10 +10,15 @@
 
 | 节 | 笔记 |
 |----|------|
-| 12.1–12.2 进程与 I/O 多路复用 | [notes/section-12.1-12.2-进程与IO多路复用.md](./notes/section-12.1-12.2-进程与IO多路复用.md) |
-| 12.3–12.4 线程与共享变量 | [notes/section-12.3-12.4-线程与共享变量.md](./notes/section-12.3-12.4-线程与共享变量.md) |
-| 12.5 信号量与预线程化服务器 | [notes/section-12.5-信号量与预线程化.md](./notes/section-12.5-信号量与预线程化.md) |
-| 12.6–12.8 并行与其他并发问题 | [notes/section-12.6-12.8-并行与其他并发问题.md](./notes/section-12.6-12.8-并行与其他并发问题.md) |
+| 12.1 基于进程的并发编程 | [notes/section-12.1-基于进程的并发编程.md](./notes/section-12.1-基于进程的并发编程.md) |
+| 12.2 基于I-O多路复用的并发编程 | [notes/section-12.2-基于I-O多路复用的并发编程.md](./notes/section-12.2-基于I-O多路复用的并发编程.md) |
+| 12.3 基于线程的并发编程 | [notes/section-12.3-基于线程的并发编程.md](./notes/section-12.3-基于线程的并发编程.md) |
+| 12.4 多线程程序中的共享变量 | [notes/section-12.4-多线程程序中的共享变量.md](./notes/section-12.4-多线程程序中的共享变量.md) |
+| 12.5 信号量与预线程化 | [notes/section-12.5-信号量与预线程化.md](./notes/section-12.5-信号量与预线程化.md) |
+| 12.6 使用线程提高并行性 | [notes/section-12.6-使用线程提高并行性.md](./notes/section-12.6-使用线程提高并行性.md) |
+| 12.7 其他并发问题 | [notes/section-12.7-其他并发问题.md](./notes/section-12.7-其他并发问题.md) |
+| 12.8 小结 | [notes/section-12.8-小结.md](./notes/section-12.8-小结.md) |
+
 
 ---
 
