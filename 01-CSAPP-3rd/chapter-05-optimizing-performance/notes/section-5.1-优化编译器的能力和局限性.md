@@ -29,7 +29,8 @@ static inline + 同文件
 -fno-strict-aliasing  // 妥协，非首选
 ```
 
-**HFT：** 热路径 `.cpp` **单文件或 LTO**；`restrict` 用于明确 buffer；避免热循环里调用 **未知副作用** 的函数。
+**HFT：** 热路径 `.cpp` **单文件或 LTO**；`restrict` 用于明确 buffer；避免热循环里调用 **未知副作用** 的函数。  
+Release 优化等级：`-O0`/`-Og` 学调，**`-O3` 热路径上线**（勿与 `-Ofast` 混用不审浮点）— 等级表 → [Ch3 §3.2.1](../../chapter-03-machine-level-programs/notes/section-3.2.1-机器级代码与编译链路.md)。
 
 ---
 
