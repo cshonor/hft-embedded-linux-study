@@ -10,14 +10,28 @@
 
 | 节 | 笔记 |
 |----|------|
-| 9.1–9.3 物理/虚拟寻址与页式缓存 | [notes/section-9.1-9.3-物理虚拟寻址与页式缓存.md](./notes/section-9.1-9.3-物理虚拟寻址与页式缓存.md) |
-| 9.4–9.5 VM 作为管理与保护工具 | [notes/section-9.4-9.5-VM管理与保护.md](./notes/section-9.4-9.5-VM管理与保护.md) |
-| 9.6–9.7 地址翻译、TLB 与 Linux 案例 | [notes/section-9.6-9.7-地址翻译与Linux案例.md](./notes/section-9.6-9.7-地址翻译与Linux案例.md) |
-| 9.8 内存映射 mmap | [notes/section-9.8-内存映射mmap.md](./notes/section-9.8-内存映射mmap.md) |
-| 9.9.1–9.9.6 malloc 基础与碎片 | [notes/section-9.9.1-9.9.6-malloc基础与碎片.md](./notes/section-9.9.1-9.9.6-malloc基础与碎片.md) |
-| 9.9.7–9.9.14 分配器实现 | [notes/section-9.9.7-9.9.14-分配器实现.md](./notes/section-9.9.7-9.9.14-分配器实现.md) |
+| 9.1 物理和虚拟寻址·名字辨析 | [notes/section-9.1-物理和虚拟寻址·名字辨析.md](./notes/section-9.1-物理和虚拟寻址·名字辨析.md) |
+| 9.2 地址空间 | [notes/section-9.2-地址空间.md](./notes/section-9.2-地址空间.md) |
+| 9.3 虚拟内存作为缓存工具 | [notes/section-9.3-虚拟内存作为缓存工具.md](./notes/section-9.3-虚拟内存作为缓存工具.md) |
+| 9.4 虚拟内存作为内存管理工具 | [notes/section-9.4-虚拟内存作为内存管理工具.md](./notes/section-9.4-虚拟内存作为内存管理工具.md) |
+| 9.5 虚拟内存作为保护工具 | [notes/section-9.5-虚拟内存作为保护工具.md](./notes/section-9.5-虚拟内存作为保护工具.md) |
+| 9.6 地址翻译 | [notes/section-9.6-地址翻译.md](./notes/section-9.6-地址翻译.md) |
+| 9.7 IntelCorei7-Linux案例 | [notes/section-9.7-IntelCorei7-Linux案例.md](./notes/section-9.7-IntelCorei7-Linux案例.md) |
+| 9.8 内存映射mmap | [notes/section-9.8-内存映射mmap.md](./notes/section-9.8-内存映射mmap.md) |
+| 9.9.1 malloc和free | [notes/section-9.9.1-malloc和free.md](./notes/section-9.9.1-malloc和free.md) |
+| 9.9.2 为何动态分配 | [notes/section-9.9.2-为何动态分配.md](./notes/section-9.9.2-为何动态分配.md) |
+| 9.9.3 分配器目标 | [notes/section-9.9.3-分配器目标.md](./notes/section-9.9.3-分配器目标.md) |
+| 9.9.4 碎片 | [notes/section-9.9.4-碎片.md](./notes/section-9.9.4-碎片.md) |
+| 9.9.5-9.9.6 实现问题与隐式空闲链表 | [notes/section-9.9.5-9.9.6-实现问题与隐式空闲链表.md](./notes/section-9.9.5-9.9.6-实现问题与隐式空闲链表.md) |
+| 9.9.7-9.9.9 放置、分割、扩展堆 | [notes/section-9.9.7-9.9.9-放置、分割、扩展堆.md](./notes/section-9.9.7-9.9.9-放置、分割、扩展堆.md) |
+| 9.9.10-9.9.11 合并与边界标记 | [notes/section-9.9.10-9.9.11-合并与边界标记.md](./notes/section-9.9.10-9.9.11-合并与边界标记.md) |
+| 9.9.12 简单分配器综合 | [notes/section-9.9.12-简单分配器综合.md](./notes/section-9.9.12-简单分配器综合.md) |
+| 9.9.13 显式空闲链表 | [notes/section-9.9.13-显式空闲链表.md](./notes/section-9.9.13-显式空闲链表.md) |
+| 9.9.14 分离空闲链表 | [notes/section-9.9.14-分离空闲链表.md](./notes/section-9.9.14-分离空闲链表.md) |
 | 9.10 垃圾收集 | [notes/section-9.10-垃圾收集.md](./notes/section-9.10-垃圾收集.md) |
-| 9.11–9.12 内存错误与小结 | [notes/section-9.11-9.12-内存错误与小结.md](./notes/section-9.11-9.12-内存错误与小结.md) |
+| 9.11 C程序常见内存错误 | [notes/section-9.11-C程序常见内存错误.md](./notes/section-9.11-C程序常见内存错误.md) |
+| 9.12 小结 | [notes/section-9.12-小结.md](./notes/section-9.12-小结.md) |
+
 
 ---
 

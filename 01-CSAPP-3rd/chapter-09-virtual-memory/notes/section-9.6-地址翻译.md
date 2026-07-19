@@ -1,6 +1,8 @@
-## 9.6–9.7 地址翻译、TLB 与 Linux 案例
+## 9.6 地址翻译
 
-### 9.6 地址翻译
+> **Ch9 §9.6** · [章导读](../README.md) · 上节 [§9.5 ←](./section-9.5-虚拟内存作为保护工具.md) · 下节 [§9.7 →](./section-9.7-IntelCorei7-Linux案例.md)
+
+---
 
 **VA 划分（概念）：** `VPN | VPO` → 经页表得 `PPN | PPO`
 
@@ -28,22 +30,12 @@
 VA → TLB hit? → PA → L1 → ... → 或 TLB miss → 页表 walk → 可能 page fault
 ```
 
-### 9.7 Intel Core i7 / Linux 案例（9.7.1–9.7.2）
+---
 
-- **4 级页表** + **PCID**（进程上下文 ID，减 TLB flush）
-- **Linux：** 每进程 `mm_struct`、**VMA** 链表、`/proc/pid/maps`
-- **透明大页 THP** — 内核自动 4K 合并 2M；**延迟敏感** 常 **显式 hugepage** 或关 THP（→ [note-THP](../../../06-Linux-Virtual-Memory-Manager/chapter-03-page-table-management/notes/note-透明大页THP.md)）
+### 口述巩固 · 自测
 
-**HFT 检查清单：**
-
-```bash
-grep -i huge /proc/meminfo
-numastat -p <pid>
-cat /proc/<pid>/smaps_rollup | head
-```
-
-- **`mbind`/`set_mempolicy`** — NUMA 本地分配（→ [14-Systems-Performance Ch7](../../../15-Systems-Performance-2nd/chapter-07-memory/)）
+1. （待口述补）本节核心一句话？
 
 ---
 
-← [本章导读](../README.md)
+← [§9.5 ←](./section-9.5-虚拟内存作为保护工具.md) · [本章导读](../README.md) · [§9.7 →](./section-9.7-IntelCorei7-Linux案例.md)

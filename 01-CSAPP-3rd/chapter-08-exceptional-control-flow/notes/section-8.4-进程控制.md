@@ -57,7 +57,7 @@ waitpid(pid, NULL, 0);
 
 - **不在 tick 路径 `fork/exec`** — 毫秒级、cache 冷、不可控
 - 用于 **守护进程化、子进程跑脚本、隔离工具**；主引擎 **长期运行单进程**
-- 理解 `execve` → 与 [Ch 7 加载](../chapter-07-linking/notes/section-7.9-7.11-加载与动态链接.md) 衔接
+- 理解 `execve` → 与 [Ch 7 加载](../../chapter-07-linking/notes/section-7.9-加载可执行目标文件.md) 衔接
 
 ---
 
