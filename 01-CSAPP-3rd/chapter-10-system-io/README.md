@@ -10,10 +10,19 @@
 
 | 节 | 笔记 |
 |----|------|
-| 10.1–10.4 Unix I/O 与读写 | [notes/section-10.1-10.4-Unix-IO与读写.md](./notes/section-10.1-10.4-Unix-IO与读写.md) |
-| 10.5 Rio 健壮读写 | [notes/section-10.5-Rio包.md](./notes/section-10.5-Rio包.md) |
-| 10.6–10.9 元数据、目录与共享 | [notes/section-10.6-10.9-元数据目录与共享.md](./notes/section-10.6-10.9-元数据目录与共享.md) |
-| 10.10–10.12 标准 I/O 与选型 | [notes/section-10.10-10.12-标准IO与选型.md](./notes/section-10.10-10.12-标准IO与选型.md) |
+| 10.1 UnixI-O | [notes/section-10.1-UnixI-O.md](./notes/section-10.1-UnixI-O.md) |
+| 10.2 文件 | [notes/section-10.2-文件.md](./notes/section-10.2-文件.md) |
+| 10.3 打开和关闭 | [notes/section-10.3-打开和关闭.md](./notes/section-10.3-打开和关闭.md) |
+| 10.4 读和写 | [notes/section-10.4-读和写.md](./notes/section-10.4-读和写.md) |
+| 10.5 Rio包 | [notes/section-10.5-Rio包.md](./notes/section-10.5-Rio包.md) |
+| 10.6 读取文件元数据 | [notes/section-10.6-读取文件元数据.md](./notes/section-10.6-读取文件元数据.md) |
+| 10.7 读取目录内容 | [notes/section-10.7-读取目录内容.md](./notes/section-10.7-读取目录内容.md) |
+| 10.8 共享文件 | [notes/section-10.8-共享文件.md](./notes/section-10.8-共享文件.md) |
+| 10.9 I-O重定向 | [notes/section-10.9-I-O重定向.md](./notes/section-10.9-I-O重定向.md) |
+| 10.10 标准I-O | [notes/section-10.10-标准I-O.md](./notes/section-10.10-标准I-O.md) |
+| 10.11 综合该用哪些I-O？ | [notes/section-10.11-综合该用哪些I-O？.md](./notes/section-10.11-综合该用哪些I-O？.md) |
+| 10.12 小结 | [notes/section-10.12-小结.md](./notes/section-10.12-小结.md) |
+
 
 ---
 
