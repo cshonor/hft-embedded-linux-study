@@ -10,9 +10,14 @@
 
 | 节 | 笔记 |
 |----|------|
-| 11.1–11.3 客户端模型与 IP 互联网 | [notes/section-11.1-11.3-客户端模型与IP互联网.md](./notes/section-11.1-11.3-客户端模型与IP互联网.md) |
-| 11.4 套接字接口（11.4.1–11.4.9） | [notes/section-11.4-套接字接口.md](./notes/section-11.4-套接字接口.md) |
-| 11.5–11.7 Web 服务器与 Tiny | [notes/section-11.5-11.7-Web服务器与Tiny.md](./notes/section-11.5-11.7-Web服务器与Tiny.md) |
+| 11.1 客户端-服务器编程模型 | [notes/section-11.1-客户端-服务器编程模型.md](./notes/section-11.1-客户端-服务器编程模型.md) |
+| 11.2 网络 | [notes/section-11.2-网络.md](./notes/section-11.2-网络.md) |
+| 11.3 全球IP互联网 | [notes/section-11.3-全球IP互联网.md](./notes/section-11.3-全球IP互联网.md) |
+| 11.4 套接字接口 | [notes/section-11.4-套接字接口.md](./notes/section-11.4-套接字接口.md) |
+| 11.5 Web服务器 | [notes/section-11.5-Web服务器.md](./notes/section-11.5-Web服务器.md) |
+| 11.6 综合TinyWebServer | [notes/section-11.6-综合TinyWebServer.md](./notes/section-11.6-综合TinyWebServer.md) |
+| 11.7 小结 | [notes/section-11.7-小结.md](./notes/section-11.7-小结.md) |
+
 
 ---
 
