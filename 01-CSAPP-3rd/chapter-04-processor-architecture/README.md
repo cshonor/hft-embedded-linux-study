@@ -19,7 +19,8 @@
 | **4.4** 流水线原理与局限 | [section-4.4-流水线原理与局限.md](./notes/section-4.4-流水线原理与局限.md) | 多指令重叠提吞吐；流水线寄存器；抛出三类冒险 → 4.5 |
 | **4.5** PIPE 与冒险 | [section-4.5-PIPE流水线与冒险.md](./notes/section-4.5-PIPE流水线与冒险.md) | **全书 CPU 硬件核心 / HFT 根基**：三类冒险 + 转发/stall/flush；软件如何少停顿 |
 | 4.6 小结与模拟器 | 见 [§4.5 文末](./notes/section-4.5-PIPE流水线与冒险.md#46-小结与模拟器) | `ssim` / `psim` 等（选做） |
-| **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 中文阎石 + **外文 Harris/Wakerly/6.004** + Logisim；服务 Ch4·HFT·STM32 |
+| **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 总表 |
+| **Harris ARM 单本笔记仓** | [digital_logic_harris_arm/](./notes/digital_logic_harris_arm/README.md) | **外文唯一主力**：Ch2/3/5/6 + cross_ref CSAPP/STM32/HFT |
 
 **学习顺序（严格从上到下，不能跳）：**
 
@@ -99,5 +100,5 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
 - 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 真实微架构：[02-Hennessy](../../03-Computer-Architecture-6th/)
-- **数字电路补课：** [notes/section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md)
+- **数字电路补课：** [资料总表](./notes/section-补充-数字电路学习资料.md) · **[Harris ARM 笔记仓](./notes/digital_logic_harris_arm/README.md)**（外文只学这一本）
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

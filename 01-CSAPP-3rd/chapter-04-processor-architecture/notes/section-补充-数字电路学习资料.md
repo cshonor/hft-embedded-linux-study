@@ -16,7 +16,10 @@
 3. 回读 CSAPP **§4.2～4.5**  
 4. 进阶 **MIT 6.004** → STM32 时序拓展  
 
-**纯外文车道（CSAPP 配套 · 推荐主力）：** 见下文「外文专线」— *Code* → **Harris** → 6.004+Logisim → Wakerly → COD/Hennessy。
+**纯外文车道（推荐 = 只学 Harris ARM）：**  
+→ 专属笔记仓：[digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)  
+节奏：Ch2+Ch5 → Ch3 → Ch6 + `cross_ref` → 回刷 CSAPP §4.2～4.5。**跳过 Ch4 HDL。**  
+不必再配 Wakerly / COD 作数字电路入门（COD/Hennessy 留给体系结构拔高）。
 
 **六大核心（其余浅看或跳过）：** MUX · 全加器 · D 触发器 · 寄存器 · 存储器 · 时序延迟（setup/hold）
 
@@ -52,28 +55,32 @@
 
 > 全部聚焦 **CPU/MCU 内部数字逻辑**；不学模拟电路、制版、电源。与 CSAPP Ch4、Y86 SEQ/PIPE 同思路。
 
-#### 外文学习顺序（按你的目标定制）
+#### 外文学习顺序（按你的目标定制 · **收敛为 Harris ARM 单本**）
 
-1. **打底：** *Code: The Hidden Language…*（**Petzold**）— 故事向，建立直觉  
-2. **主力：** **Harris & Harris《Digital Design and Computer Architecture》**（ARM 或 RISC-V 版二选一）  
-3. **实操：** [MIT 6.004](https://computationstructures.org) 讲义 + **Logisim**（及课程 Beta 仿真）  
-4. **巩固：** Wakerly《Digital Design: Principles and Practices》— 时序、竞争、延迟  
-5. **拔高：** Patterson & Hennessy《Computer Organization and Design》→ 再接仓库 [03 Hennessy 定量体系结构](../../../03-Computer-Architecture-6th/)（HFT 流水线/缓存）
+1. **主力唯一：** [Harris ARM 笔记仓](./digital_logic_harris_arm/README.md) — 精读 Ch2/3/5/6，跳过 Ch4 HDL  
+2. **实操：** Logisim（记在 `digital_logic_harris_arm/lab_logisim/`）  
+3. **可选打底：** *Code*（Petzold）— 仅当二进制直觉不够时  
+4. **可选免费课：** [MIT 6.004](https://computationstructures.org) — 与 Harris/CSAPP 对照，非必读第二教材  
+5. **体系结构拔高（数字电路之后）：** COD → [Hennessy](../../../03-Computer-Architecture-6th/)  
+
+> **决策：** 数字电路阶段 **只精读 Harris ARM** 即够；Wakerly 不再作为必读书。
 
 ---
 
 ### 二、外文教材 · 入门首选（与 Ch4 联动）
 
-#### 1. 《Digital Design and Computer Architecture》（Harris & Harris）— **最适合你**
+#### 1. 《Digital Design and Computer Architecture》（Harris & Harris）— **唯一外文主力 · ARM Edition**
 
-门 → MUX → 全加器/ALU → 触发器 → 寄存器堆 → **五级流水线 CPU** — 与 Y86 **SEQ/PIPE 同一套搭积木逻辑**；回刷 §4.2～4.5 框图会快很多。
+→ **笔记文件夹：** [digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)
 
-| 版本 | 适配你的哪条线 |
-|------|----------------|
-| **ARM 版** | STM32 / 嵌入式案例全程偏 ARM |
-| **RISC-V 版** | 流水线、缓存、冒险讲得更深 → 服务 **HFT 低延迟直觉**（真干活仍是 x86，原理通用） |
+门 → MUX → ALU → 触发器 → 单周期 → 五级流水线+hazards — 与 Y86 SEQ/PIPE 同思路。
 
-极少模电；站在软件/体系结构视角；深挖 **MUX、转发旁路、流水线寄存器、时序延迟** — 正是 Ch4 痛点。
+| 版本 | 决策 |
+|------|------|
+| **ARM Edition（选用）** | 贴合 STM32；同时覆盖流水线/冒险（HFT 原理通用） |
+| RISC-V Edition | **不选**（更偏服务器 ISA 教具） |
+
+**精读 Ch2/3/5/6；跳过 Ch4 HDL。** 深挖 MUX、转发、流水线寄存器、时序延迟。
 
 #### 2. 《Digital Design: Principles and Practices》（John F. Wakerly）
 
