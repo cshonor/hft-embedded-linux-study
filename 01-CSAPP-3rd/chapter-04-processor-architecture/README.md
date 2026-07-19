@@ -19,6 +19,7 @@
 | **4.4** 流水线原理与局限 | [section-4.4-流水线原理与局限.md](./notes/section-4.4-流水线原理与局限.md) | 多指令重叠提吞吐；流水线寄存器；抛出三类冒险 → 4.5 |
 | **4.5** PIPE 与冒险 | [section-4.5-PIPE流水线与冒险.md](./notes/section-4.5-PIPE流水线与冒险.md) | **全书 CPU 硬件核心 / HFT 根基**：三类冒险 + 转发/stall/flush；软件如何少停顿 |
 | 4.6 小结与模拟器 | 见 [§4.5 文末](./notes/section-4.5-PIPE流水线与冒险.md#46-小结与模拟器) | `ssim` / `psim` 等（选做） |
+| **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 阎石/Wakerly/MIT6.004/B站课 + Logisim；服务 Ch4·HFT·STM32 |
 
 **学习顺序（严格从上到下，不能跳）：**
 
@@ -88,6 +89,7 @@ PIPE：五段并行填满 — 理想 CPI→1，冒险时 stall / bubble
 Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 4.2 HCL：读懂即可，不必默写
 顺序：4.1→4.2→4.3→4.4→4.5，勿跳到 4.5 硬啃
+电路底子不够：补充「数字电路学习资料」→ Logisim 再回读 4.2–4.5
 ```
 
 ---
@@ -97,4 +99,5 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
 - 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 真实微架构：[02-Hennessy](../../03-Computer-Architecture-6th/)
+- **数字电路补课：** [notes/section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
