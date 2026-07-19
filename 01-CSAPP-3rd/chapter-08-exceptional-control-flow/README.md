@@ -10,12 +10,15 @@
 
 | 节 | 笔记 |
 |----|------|
-| 8.1 异常（8.1.1–8.1.3） | [notes/section-8.1-异常.md](./notes/section-8.1-异常.md) |
-| 8.2 进程（8.2.1–8.2.5） | [notes/section-8.2-进程.md](./notes/section-8.2-进程.md) |
+| 8.1 异常 | [notes/section-8.1-异常.md](./notes/section-8.1-异常.md) |
+| 8.2 进程 | [notes/section-8.2-进程.md](./notes/section-8.2-进程.md) |
 | 8.3 系统调用错误处理 | [notes/section-8.3-系统调用错误处理.md](./notes/section-8.3-系统调用错误处理.md) |
-| 8.4 进程控制（8.4.1–8.4.6） | [notes/section-8.4-进程控制.md](./notes/section-8.4-进程控制.md) |
-| 8.5 信号（8.5.1–8.5.7） | [notes/section-8.5-信号.md](./notes/section-8.5-信号.md) |
-| 8.6–8.8 非本地跳转、工具与小结 | [notes/section-8.6-8.8-非本地跳转与工具.md](./notes/section-8.6-8.8-非本地跳转与工具.md) |
+| 8.4 进程控制 | [notes/section-8.4-进程控制.md](./notes/section-8.4-进程控制.md) |
+| 8.5 信号 | [notes/section-8.5-信号.md](./notes/section-8.5-信号.md) |
+| 8.6 非本地跳转 | [notes/section-8.6-非本地跳转.md](./notes/section-8.6-非本地跳转.md) |
+| 8.7 操作进程的工具 | [notes/section-8.7-操作进程的工具.md](./notes/section-8.7-操作进程的工具.md) |
+| 8.8 小结 | [notes/section-8.8-小结.md](./notes/section-8.8-小结.md) |
+
 
 ---
 
