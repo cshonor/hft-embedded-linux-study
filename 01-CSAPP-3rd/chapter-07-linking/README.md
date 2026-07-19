@@ -10,13 +10,22 @@
 
 | 节 | 笔记 |
 |----|------|
-| 7.1–7.3 编译驱动与目标文件 | [notes/section-7.1-7.3-编译驱动与目标文件.md](./notes/section-7.1-7.3-编译驱动与目标文件.md) |
-| 7.4–7.5 可重定位文件与符号表 | [notes/section-7.4-7.5-可重定位文件与符号表.md](./notes/section-7.4-7.5-可重定位文件与符号表.md) |
+| 7.1 编译器驱动程序 | [notes/section-7.1-编译器驱动程序.md](./notes/section-7.1-编译器驱动程序.md) |
+| 7.2 静态链接 | [notes/section-7.2-静态链接.md](./notes/section-7.2-静态链接.md) |
+| 7.3 目标文件 | [notes/section-7.3-目标文件.md](./notes/section-7.3-目标文件.md) |
+| 7.4 可重定位目标文件 | [notes/section-7.4-可重定位目标文件.md](./notes/section-7.4-可重定位目标文件.md) |
+| 7.5 符号和符号表 | [notes/section-7.5-符号和符号表.md](./notes/section-7.5-符号和符号表.md) |
 | 7.6 符号解析与静态库 | [notes/section-7.6-符号解析与静态库.md](./notes/section-7.6-符号解析与静态库.md) |
-| 7.7–7.8 重定位与可执行文件 | [notes/section-7.7-7.8-重定位与可执行文件.md](./notes/section-7.7-7.8-重定位与可执行文件.md) |
-| 7.9–7.11 加载与动态链接 | [notes/section-7.9-7.11-加载与动态链接.md](./notes/section-7.9-7.11-加载与动态链接.md) |
-| 7.12 位置无关代码 (PIC) | [notes/section-7.12-PIC位置无关代码.md](./notes/section-7.12-PIC位置无关代码.md) |
-| 7.13–7.15 库打桩与工具 | [notes/section-7.13-7.15-库打桩与工具.md](./notes/section-7.13-7.15-库打桩与工具.md) |
+| 7.7 重定位 | [notes/section-7.7-重定位.md](./notes/section-7.7-重定位.md) |
+| 7.8 可执行目标文件 | [notes/section-7.8-可执行目标文件.md](./notes/section-7.8-可执行目标文件.md) |
+| 7.9 加载可执行目标文件 | [notes/section-7.9-加载可执行目标文件.md](./notes/section-7.9-加载可执行目标文件.md) |
+| 7.10 动态链接共享库 | [notes/section-7.10-动态链接共享库.md](./notes/section-7.10-动态链接共享库.md) |
+| 7.11 从应用程序加载共享库 | [notes/section-7.11-从应用程序加载共享库.md](./notes/section-7.11-从应用程序加载共享库.md) |
+| 7.12 PIC位置无关代码 | [notes/section-7.12-PIC位置无关代码.md](./notes/section-7.12-PIC位置无关代码.md) |
+| 7.13 库打桩 | [notes/section-7.13-库打桩.md](./notes/section-7.13-库打桩.md) |
+| 7.14 处理目标文件的工具 | [notes/section-7.14-处理目标文件的工具.md](./notes/section-7.14-处理目标文件的工具.md) |
+| 7.15 小结 | [notes/section-7.15-小结.md](./notes/section-7.15-小结.md) |
+
 
 ---
 
