@@ -10,13 +10,22 @@
 
 | 节 | 笔记 |
 |----|------|
-| 5.1–5.3 编译器能力、性能度量与示例 | [notes/section-5.1-5.3-编译器能力与性能度量.md](./notes/section-5.1-5.3-编译器能力与性能度量.md) |
-| 5.4–5.6 循环、过程调用与内存引用 | [notes/section-5.4-5.6-循环过程与内存引用优化.md](./notes/section-5.4-5.6-循环过程与内存引用优化.md) |
-| 5.7 理解现代处理器（5.7.1–5.7.3） | [notes/section-5.7-现代处理器抽象模型.md](./notes/section-5.7-现代处理器抽象模型.md) |
-| 5.8–5.10 循环展开与提高并行性 | [notes/section-5.8-5.10-循环展开与并行优化.md](./notes/section-5.8-5.10-循环展开与并行优化.md) |
-| 5.11 限制因素（溢出与分支） | [notes/section-5.11-寄存器溢出与分支预测.md](./notes/section-5.11-寄存器溢出与分支预测.md) |
-| 5.12 理解内存性能 | [notes/section-5.12-加载与存储性能.md](./notes/section-5.12-加载与存储性能.md) |
-| 5.13–5.15 实战技术与程序剖析 | [notes/section-5.13-5.15-剖析与实战优化.md](./notes/section-5.13-5.15-剖析与实战优化.md) |
+| 5.1 优化编译器的能力和局限性 | [notes/section-5.1-优化编译器的能力和局限性.md](./notes/section-5.1-优化编译器的能力和局限性.md) |
+| 5.2 表示程序性能 | [notes/section-5.2-表示程序性能.md](./notes/section-5.2-表示程序性能.md) |
+| 5.3 程序示例 | [notes/section-5.3-程序示例.md](./notes/section-5.3-程序示例.md) |
+| 5.4 消除循环的低效率 | [notes/section-5.4-消除循环的低效率.md](./notes/section-5.4-消除循环的低效率.md) |
+| 5.5 减少过程调用 | [notes/section-5.5-减少过程调用.md](./notes/section-5.5-减少过程调用.md) |
+| 5.6 消除不必要的内存引用 | [notes/section-5.6-消除不必要的内存引用.md](./notes/section-5.6-消除不必要的内存引用.md) |
+| 5.7 现代处理器抽象模型 | [notes/section-5.7-现代处理器抽象模型.md](./notes/section-5.7-现代处理器抽象模型.md) |
+| 5.8 循环展开 | [notes/section-5.8-循环展开.md](./notes/section-5.8-循环展开.md) |
+| 5.9 提高并行性 | [notes/section-5.9-提高并行性.md](./notes/section-5.9-提高并行性.md) |
+| 5.10 优化合并代码的结果小结 | [notes/section-5.10-优化合并代码的结果小结.md](./notes/section-5.10-优化合并代码的结果小结.md) |
+| 5.11 寄存器溢出与分支预测 | [notes/section-5.11-寄存器溢出与分支预测.md](./notes/section-5.11-寄存器溢出与分支预测.md) |
+| 5.12 加载与存储性能 | [notes/section-5.12-加载与存储性能.md](./notes/section-5.12-加载与存储性能.md) |
+| 5.13 现实生活性能提高技术 | [notes/section-5.13-现实生活性能提高技术.md](./notes/section-5.13-现实生活性能提高技术.md) |
+| 5.14 确认和消除性能瓶颈 | [notes/section-5.14-确认和消除性能瓶颈.md](./notes/section-5.14-确认和消除性能瓶颈.md) |
+| 5.15 小结 | [notes/section-5.15-小结.md](./notes/section-5.15-小结.md) |
+
 
 ---
 
