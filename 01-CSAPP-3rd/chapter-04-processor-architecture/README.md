@@ -19,7 +19,7 @@
 | **4.4** 流水线原理与局限 | [section-4.4-流水线原理与局限.md](./notes/section-4.4-流水线原理与局限.md) | 多指令重叠提吞吐；流水线寄存器；抛出三类冒险 → 4.5 |
 | **4.5** PIPE 与冒险 | [section-4.5-PIPE流水线与冒险.md](./notes/section-4.5-PIPE流水线与冒险.md) | **全书 CPU 硬件核心 / HFT 根基**：三类冒险 + 转发/stall/flush；软件如何少停顿 |
 | 4.6 小结与模拟器 | 见 [§4.5 文末](./notes/section-4.5-PIPE流水线与冒险.md#46-小结与模拟器) | `ssim` / `psim` 等（选做） |
-| **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 阎石/Wakerly/MIT6.004/B站课 + Logisim；服务 Ch4·HFT·STM32 |
+| **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 中文阎石 + **外文 Harris/Wakerly/6.004** + Logisim；服务 Ch4·HFT·STM32 |
 
 **学习顺序（严格从上到下，不能跳）：**
 
