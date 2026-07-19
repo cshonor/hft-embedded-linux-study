@@ -43,7 +43,10 @@
 
 **HFT：** C 调 Rust / 手写汇编 / `ioctl` 包装 — **必须遵守同一 ABI**；Windows 是另一套约定。
 
+**低延迟抓手（传参）：** 前 6 个在寄存器里几乎「免费」；第 7 个起进栈。交易热路径 API 尽量 **把参数压在 6 个以内**（或打包进一个指针/结构体指针），少压栈。
+
 ### 3.7.4–3.7.5 局部存储：栈 vs 寄存器
+
 
 - 小局部变量、频繁使用 → 寄存器分配（`-O`）
 - 取地址 `&x`、大结构、变长数组 → **必须在栈**
@@ -55,8 +58,10 @@
 
 **HFT 实践：**
 
-- 热路径 **禁止深递归**；订单簿遍历用循环 + 显式栈/arena
-- `perf` 看 `__stack_chk_fail` — stack canary 触发说明栈破坏
+- 热路径 **禁止深递归**；订单簿遍历用循环 + 显式栈/arena  
+- 热路径小函数优先 **`inline` / `always_inline` / 同文件可见** — 省 `call`/`ret`（及随之对流水线的扰动）；对照 [Ch4 控制冒险](../../chapter-04-processor-architecture/README.md)、[Ch5 §5.5 减少过程调用](../../chapter-05-optimizing-performance/notes/section-5.5-减少过程调用.md)  
+- `perf` 看 `__stack_chk_fail` — stack canary 触发说明栈破坏  
+- 强度削减（`*4`→移位等）→ [§3.5](./section-3.5-算术与逻辑操作.md) · [Ch5 §5.1](../../chapter-05-optimizing-performance/notes/section-5.1-优化编译器的能力和局限性.md)
 
 → 链接与符号：[Ch 7](../../chapter-07-linking/)
 

@@ -25,10 +25,11 @@ leaq 8(%rdi,%rsi,4), %rax   # rax = rdi + rsi*4 + 8
 - **溢出：** 无符号用 CF；有符号乘除用 `imul`/`idiv` 扩展 `cqto`（rax→rdx:rax）
 - `mul`/`div` — 无符号；`div` 慢，热路径避免
 
-**HFT / 优化：**
+**HFT / 优化（强度削减）：**
 
-- 除法常比移位慢一个数量级 — 编译器 strength reduction（→ [Ch 5](../../chapter-05-optimizing-performance/)）
-- `perf` 里热点若大量 `idiv` — 考虑倒数乘法或移位
+- `a*4` / `a*8` 等：好的编译器常译成 **`shl` / `lea`**，而不是慢 `imul` — 源码是乘，机器不一定是乘；用 `gcc -S` 核实  
+- 除法常比移位慢一个数量级 — 编译器 strength reduction（→ [Ch 5](../../chapter-05-optimizing-performance/)）  
+- `perf` 里热点若大量 `idiv` — 考虑倒数乘法或移位  
 
 ---
 
