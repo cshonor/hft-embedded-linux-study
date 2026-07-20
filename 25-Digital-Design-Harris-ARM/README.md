@@ -38,26 +38,26 @@
 
 ## 档位（写在每个小节文件头）
 
-- **精读** — 必抠（MUX / FF / ALU / ARM / 流水线冲突 / Cache）  
+- **精读** — 必抠（MUX / FF / **Verilog** / ALU / ARM / 流水线冲突 / Cache）  
 - **浅读** — 扫过建立直觉  
-- **跳过** — 第4章及 HDL 相关  
-- **可选\*** — 书中带星拓展  
+- **可选\*** — 书中带星拓展（如 4.7–4.8）  
 
 ## 学习节奏
 
-1. `ch02` 2.8–2.9 + `ch05` 5.2/5.5 + Logisim  
-2. `ch03` 3.2/3.5  
-3. `ch06` ARM + 6.8 x86  
-4. `ch07` 7.3/7.5 → `cross_ref/csapp_ch4_link.md`  
-5. `ch08` Cache/VM → `cross_ref/hft_x86_timing.md`  
-6. `ch09` 选做  
+1. `ch02` 2.8–2.9 + `ch03` 3.2/3.5  
+2. `ch04` Verilog（读 IP / FPGA）→ testbench  
+3. `ch05` 5.2/5.5 + Logisim（对照 HDL）  
+4. `ch06` ARM + 6.8 x86  
+5. `ch07` 7.3/7.5 → `cross_ref/csapp_ch4_link.md`  
+6. `ch08` Cache/VM → `cross_ref/hft_x86_timing.md`  
+7. `ch09` 选做  
 
 ## 小节笔记模板（已预置）
 
 ```markdown
 > **Core Concept:** …
 > **Link Target:** …
-> **档位:** 精读 | 浅读 | 跳过 | 可选*
+> **档位:** 精读 | 浅读 | 可选*
 
 ## 状态
 - [ ] 已读
@@ -69,4 +69,4 @@
 
 ## 一句话
 
-**一章一夹、一小节一文件**；正文 1–8 + 在线 9；对照 CSAPP 盯 **ch07 / 7.5 流水线冲突**。
+**一章一夹、一小节一文件**；正文 1–8 + 在线 9；**Ch4 Verilog 必学**；对照 CSAPP 盯 **ch07 / 7.5 流水线冲突**。
