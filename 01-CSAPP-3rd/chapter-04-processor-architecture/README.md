@@ -20,7 +20,7 @@
 | **4.5** PIPE 与冒险 | [section-4.5-PIPE流水线与冒险.md](./notes/section-4.5-PIPE流水线与冒险.md) | **全书 CPU 硬件核心 / HFT 根基**：三类冒险 + 转发/stall/flush；软件如何少停顿 |
 | 4.6 小结与模拟器 | 见 [§4.5 文末](./notes/section-4.5-PIPE流水线与冒险.md#46-小结与模拟器) | `ssim` / `psim` 等（选做） |
 | **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 总表 |
-| **Harris ARM 单本笔记仓** | [digital_logic_harris_arm/](./notes/digital_logic_harris_arm/README.md) | **外文唯一主力**：Ch2/3/5/6 + cross_ref CSAPP/STM32/HFT |
+| **Harris ARM 单本笔记仓** | [digital_logic_harris_arm/](./notes/digital_logic_harris_arm/README.md) | ARM Edition：精读 Ch2/3/5/**7**/8；流水线在 Ch7；跳过 Ch4 HDL |
 
 **学习顺序（严格从上到下，不能跳）：**
 

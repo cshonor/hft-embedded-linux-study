@@ -18,8 +18,6 @@
 
 ### MUX
 
-（精读正文写这里。）
-
 ### Timing
 
-（传播延迟如何变成「指令/周期」成本。）
+Next: [ch3_seq_logic.md](./ch3_seq_logic.md) → later **[ch7_microarchitecture.md](./ch7_microarchitecture.md)** for pipeline (not Ch6).
