@@ -44,6 +44,8 @@
 
 **HFT 最短路径：** `01` → **`02` C** → `03` → `04`–`07` → `08/01` MikanOS → `09` C++ → `14` DPDK → `15`–`16` → `17` HFT
 
+**数字电路（CSAPP Ch4 / 嵌入式桥）：** [25-Digital-Design-Harris-ARM](./25-Digital-Design-Harris-ARM/) — 独立书仓；可与 `01` Ch4、`19` ARM 交叉。
+
 ---
 
 ## 为何 02 C 在 CSAPP 与 Hennessy 之间？
@@ -74,6 +76,8 @@
 | **10–14** | 网络 + DPDK |
 | **15–16** | SysPerf · BPF |
 | **17–18** | HFT · Rust |
+| **19–24** | 嵌入式支线 |
+| **25** | [Harris 数字设计 ARM](./25-Digital-Design-Harris-ARM/) |
 
 ---
 

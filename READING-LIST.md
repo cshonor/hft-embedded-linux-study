@@ -404,5 +404,6 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 | **22** 设备树 | [内核 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) · [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
 | **23** 实战 | 项目实战（笔记随板卡） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
 | **24** 运动控制 | 自控 / Kalman（算法卷） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
+| **25** Harris 数字设计 ARM | 《数字设计和计算机体系结构：ARM版》· 对接 CSAPP Ch4 / 嵌入式 | [25-Digital-Design-Harris-ARM/](./25-Digital-Design-Harris-ARM/) |
 
 **可复用 HFT 链：** C/GNU-C · 05–07 内核 · 03–04 性能/BPF · 14 DPDK · 16 HFT 低延迟与 **PREEMPT_RT / 绑核**。

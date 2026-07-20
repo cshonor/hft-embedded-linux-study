@@ -20,7 +20,7 @@
 | **4.5** PIPE 与冒险 | [section-4.5-PIPE流水线与冒险.md](./notes/section-4.5-PIPE流水线与冒险.md) | **全书 CPU 硬件核心 / HFT 根基**：三类冒险 + 转发/stall/flush；软件如何少停顿 |
 | 4.6 小结与模拟器 | 见 [§4.5 文末](./notes/section-4.5-PIPE流水线与冒险.md#46-小结与模拟器) | `ssim` / `psim` 等（选做） |
 | **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 总表 |
-| **Harris ARM 单本笔记仓** | [digital_logic_harris_arm/](./notes/digital_logic_harris_arm/README.md) | 书目录：Ch5模块·Ch6 ARM·**Ch7微结构**·Ch8存储器；在线Ch9 I/O；跳过Ch4 |
+| **Harris ARM（独立书仓）** | [../../../25-Digital-Design-Harris-ARM/](../../../25-Digital-Design-Harris-ARM/README.md) | 已从本 notes 提出：一章一夹、一小节一文件 |
 
 **学习顺序（严格从上到下，不能跳）：**
 
@@ -100,5 +100,5 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
 - 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 真实微架构：[02-Hennessy](../../03-Computer-Architecture-6th/)
-- **数字电路补课：** [资料总表](./notes/section-补充-数字电路学习资料.md) · **[Harris ARM 笔记仓](./notes/digital_logic_harris_arm/README.md)**（外文只学这一本）
+- **数字电路补课：** [资料总表](./notes/section-补充-数字电路学习资料.md) · **[25-Harris ARM 独立书仓](../../../25-Digital-Design-Harris-ARM/README.md)**
 - 全书目录：[OUTLINE.md](../OUTLINE.md)
