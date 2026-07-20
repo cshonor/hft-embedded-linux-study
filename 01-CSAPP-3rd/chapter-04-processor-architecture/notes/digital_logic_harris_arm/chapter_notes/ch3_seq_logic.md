@@ -1,23 +1,18 @@
-# Ch3 · Sequential logic design
+# Ch3 · 时序逻辑设计
 
-> **Core Concept:** Latch, FF, register file, counters; sync sequential; setup/hold
-> **Link Target:** CSAPP §4.2/§4.4 pipe regs · skip Verilog sequential / deep FSM
+> **Core Concept:** Latch/FF/register; sync design; setup/hold; FSM skim
+> **Link Target:** CSAPP §4.2/§4.4 pipeline registers
 
-## Book coverage (2nd ARM)
+## 目录锚点
 
-- Latches & flip-flops
-- Registers, register file, counters
-- Synchronous sequential analysis & design
-- (Book) Verilog sequential + FSM → **skip or skim**
+- **3.2** SR/D 锁存、D-FF、寄存器、使能/复位；`*3.2.7` 晶体管级可跳
+- 3.3 同步逻辑设计
+- 3.4 FSM（Moore/Mealy）— 中读
+- **3.5** 动态约束、系统时序、亚稳态/同步器；`*时钟偏移/分辨时间` 可选
+- 3.6 并行 · 3.7 总结
 
 ## Status
 
-- [ ] D-FF / regfile notes
-- [ ] Logisim: D-FF + 8-bit register
-- [ ] Setup/hold → stall intuition
-
-## Notes
-
-### Storage elements
-
-### Sync design & timing constraints
+- [ ] 3.2 存储单元
+- [ ] 3.5 时序约束 → stall 直觉
+- [ ] Logisim D-FF + 寄存器

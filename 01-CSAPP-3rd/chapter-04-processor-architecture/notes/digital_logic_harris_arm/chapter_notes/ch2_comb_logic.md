@@ -1,26 +1,23 @@
-# Ch2 · Combinational logic design
+# Ch2 · 组合逻辑设计
 
-> **Core Concept:** Boolean algebra; decoder; **MUX**; adder; **ALU**; timing
-> **Link Target:** CSAPP §4.2 · Logisim labs · skip Verilog combo sections
+> **Core Concept:** Boolean; **MUX**; decoder; propagation delay / glitch
+> **Link Target:** CSAPP §4.2 · Logisim
 
-## Book coverage (2nd ARM)
+## 目录锚点（精读标粗）
 
-- Boolean algebra & simplification
-- Building blocks: decoder, **MUX**, adder, **ALU**
-- (Book) Verilog combinational modeling → **skip for software track**
+- 2.1–2.7 布尔、门、多级、X/Z、卡诺图 — 够用即可
+- **2.8 组合逻辑模块：2.8.1 多路选择器 · 2.8.2 译码器**
+- **2.9 时序：传输延迟、最小延迟、毛刺**
+- 2.10 总结
 
 ## Status
 
-- [ ] MUX / decoder / adder / ALU notes
-- [ ] Logisim: 2:1 MUX, 4:1 MUX, N-bit adder
-- [ ] Update `../cross_ref/csapp_ch4_link.md`
+- [ ] 2.8 MUX/译码器
+- [ ] 2.9 延迟
+- [ ] Logisim 2:1 / 4:1 MUX
 
 ## Notes
 
-### MUX & decoder
+### 2.8 MUX
 
-### Adder → ALU (+ result select)
-
-### Timing / delay (if in chapter)
-
-> 第2版把 ALU 放在 **Ch2**；不要再找「独立 Digital Building Blocks 章」。
+### 2.9 Timing

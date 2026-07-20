@@ -16,10 +16,9 @@
 3. 回读 CSAPP **§4.2～4.5**  
 4. 进阶 **MIT 6.004** → STM32 时序拓展  
 
-**纯外文车道（推荐 = 只学 Harris ARM 第2版 8 章目录）：**  
+**纯外文车道（Harris ARM 版 · 以书目录为准）：**  
 → [digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)  
-节奏：Ch2+Ch3 硬件 → Ch5 ARM → **Ch7 流水线** → Ch6 Cache → Ch8 选做；**跳过 Ch4 HDL**。  
-对照 CSAPP 盯 **Ch7**（不是旧英文版的别的章号）。
+Ch2/3 → Ch5 模块 → Ch6 ARM(+x86) → **Ch7 微结构** → Ch8 存储器；在线 Ch9 I/O 选做；**跳过 Ch4**。
 
 **六大核心（其余浅看或跳过）：** MUX · 全加器 · D 触发器 · 寄存器 · 存储器 · 时序延迟（setup/hold）
 
@@ -57,23 +56,22 @@
 
 #### 外文学习顺序（按你的目标定制 · **收敛为 Harris ARM 单本**）
 
-1. **主力唯一：** [Harris ARM 第2版笔记仓](./digital_logic_harris_arm/README.md) — 精读 **Ch2/3/5/6(cache)/7**，跳过 **Ch4 HDL** 与 Verilog 小节  
-2. **实操：** Logisim  
-3. **可选：** *Code* / [MIT 6.004](https://computationstructures.org)  
-4. **拔高：** COD → [Hennessy](../../../03-Computer-Architecture-6th/)  
+1. **主力：** [Harris ARM 笔记仓](./digital_logic_harris_arm/README.md) — 精读 Ch2.8–2.9 / Ch3 / Ch5 / Ch6 / **Ch7.5** / Ch8；**跳过 Ch4**  
+2. Logisim 实操  
+3. 可选 *Code* / [MIT 6.004](https://computationstructures.org)  
+4. 拔高：[Hennessy](../../../03-Computer-Architecture-6th/)  
 
-> **以你手里第2版 8 章为准：** Ch5=ARM ISA，Ch6=存储+I/O，**Ch7=微处理器/流水线**，Ch8=RPi。其他印刷章号可能不同。
+> **目录钉死：** Ch5=数字模块，Ch6=ARM 体系结构，Ch7=微结构(流水线)，Ch8=存储器，**在线 Ch9=I/O**。旧口述「Ch5=ARM、Ch8=RPi」已作废。
 
 ---
 
 ### 二、外文教材 · 入门首选（与 Ch4 联动）
 
-#### 1. Harris《Digital Design and Computer Architecture》— **ARM 第2版（你的目录）**
+#### 1. Harris《数字设计和计算机体系结构：ARM版》
 
-→ **笔记文件夹：** [digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)
+→ [digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)  
 
-按你书的 8 章：逻辑 →（跳过 HDL）→ **ARM** → 存储/I/O → **微处理器流水线** → RPi。  
-**精读 Ch2/3/5/7 + Ch6 Cache；跳过 Ch4。** 流水线对照 CSAPP → **Ch7**。
+正文 Ch1–8 + **在线 Ch9 I/O**。精读组合/时序关键节、Ch5 模块、Ch6 ARM、**Ch7 流水线冲突**、Ch8 Cache/VM；**跳过 Ch4 HDL**。
 
 #### 2. 《Digital Design: Principles and Practices》（John F. Wakerly）
 
