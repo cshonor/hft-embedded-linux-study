@@ -1,72 +1,71 @@
-# Harris ·《数字设计和计算机体系结构：ARM版》目录锁定
+# Harris ·《数字设计和计算机体系结构：ARM版》
 
-> **唯一外文数字电路主力** · 父章：[CSAPP Ch4](../../README.md) · [资料总表](../section-补充-数字电路学习资料.md)  
-> **以本书目录为准**（中文 ARM 版 = 英文 ARM Edition 同构）。带 `*` 为可选拓展。
+> **结构约定（按你的要求）：一章一个文件夹 · 一小节一个 md**  
+> 父章：[CSAPP Ch4](../../README.md) · [资料总表](../section-补充-数字电路学习资料.md)
 
-## 纠正：不要用错的「口述八章主题」
-
-| 错记（旧口述） | **正确（本书目录）** |
-|----------------|----------------------|
-| Ch5 = ARM 架构 | **Ch5 = 常见数字模块**（加法器/ALU/存储器阵列…） |
-| Ch6 = 存储器+I/O | **Ch6 = 体系结构**（ARM 汇编/机器语言；另有 x86 对照） |
-| Ch7 = 微处理器 | **Ch7 = 微结构**（单周期/多周期/**流水线+冲突**）✓ 主题对、名称以书为准 |
-| Ch8 = RPi 实战 | **Ch8 = 存储器系统**（Cache/VM）；**RPi/I/O → 在线第9章** |
-
-自底向上路径（书末总结）：二进制/门 → 组合/时序 → HDL → 数字模块 → **ARM 体系结构** → **微结构** → **存储器** →（在线）I/O。
-
-## 全书地图 + 你的读法
-
-| 章 | 书名 | 档位 | 对你 |
-|----|------|------|------|
-| **1** | 二进制 | 浅读 | 1.1–1.6、1.9；`*1.7 CMOS` `*1.8 功耗` 可跳 |
-| **2** | 组合逻辑设计 | **精读** | **2.8 MUX/译码器**、**2.9 时序(延迟/毛刺)**；2.2–2.5 够用即可 |
-| **3** | 时序逻辑设计 | **精读** | **3.2** 锁存/D-FF/寄存器；**3.5** 建立/保持等；3.4 FSM 中读；`*` 晶体管级可跳 |
-| **4** | 硬件描述语言 | **整章跳过** | 不写可综合 HDL |
-| **5** | 常见数字模块 | **精读** | **5.2** 加减/ALU/移位；**5.5** SRAM/寄存器堆；`*乘除/浮点`、FPGA 浅或跳 |
-| **6** | 体系结构 | **精读偏应用** | ARM 汇编 6.2–6.4；**6.7 Thumb 等**；**6.8 x86 视角**（对接 CSAPP/HFT）；`*6.5/6.6` 可选 |
-| **7** | 微结构 | **精读 · 最高价值** | **7.3 单周期**≈SEQ；**7.5 流水线+冲突**≈PIPE；7.4 多周期中读；`*7.6–7.8` HDL/超标量/乱序 — HFT 可浅读 7.7 |
-| **8** | 存储器系统 | **精读** | **8.3 Cache**；**8.4 虚拟内存**（对接 CSAPP Ch6/9） |
-| **在线 9** | I/O 系统 | 浅读/选做 | GPIO 等 + **RPi 实践**（若配套有） |
-| 附录 A/B/C | 实现 / ARM 指令 / C | 按需查 | B 当 ARM 速查 |
-
-## 目录
+## 文件夹地图
 
 ```
 digital_logic_harris_arm/
-├── chapter_notes/   # ch1…ch8 + ch9_io_online
-├── cross_ref/
+├── ch01_binary/              # 第1章 … 每小节一个 md
+├── ch02_combinational/       # 第2章  ★2.8 MUX  2.9 时序
+├── ch03_sequential/          # 第3章  ★3.2 触发器  3.5 时序约束
+├── ch04_hdl/                 # 第4章  整章跳过（仍保留空壳便于对照目录）
+├── ch05_digital_blocks/      # 第5章  ★5.2 ALU  5.5 存储器阵列
+├── ch06_architecture/        # 第6章  ★ARM ISA  + 6.8 x86
+├── ch07_microarchitecture/   # 第7章  ★7.3 单周期  7.5 流水线冲突
+├── ch08_memory/              # 第8章  ★8.3 Cache  8.4 VM
+├── ch09_io_online/           # 在线第9章 I/O / RPi
+├── cross_ref/                # ↔ CSAPP / STM32 / HFT
 ├── lab_logisim/
 └── summary/
 ```
 
-## 精读小节清单（硬件主线）
+进入某一章先看该目录下的 `README.md`（小节索引表）。
 
-**Ch2：** 2.8.1 多路选择器 · 2.8.2 译码器 · 2.9 传输延迟/毛刺  
-**Ch3：** 3.2 D 锁存/触发器/寄存器 · 3.5 动态约束与系统时序  
-**Ch5：** 5.2.1–5.2.5 加法→ALU · 5.5 存储器阵列/寄存器堆  
-**Ch6：** 6.2–6.4 ARM 编程与机器语言 · 6.8 x86 对照  
-**Ch7：** 7.3 单周期 · **7.5 流水线与冲突**  
-**Ch8：** 8.3 Cache · 8.4 VM 基础  
+| 章文件夹 | 书名 |
+|----------|------|
+| [ch01_binary](./ch01_binary/README.md) | 第1章 二进制 |
+| [ch02_combinational](./ch02_combinational/README.md) | 第2章 组合逻辑设计 |
+| [ch03_sequential](./ch03_sequential/README.md) | 第3章 时序逻辑设计 |
+| [ch04_hdl](./ch04_hdl/README.md) | 第4章 HDL（跳过） |
+| [ch05_digital_blocks](./ch05_digital_blocks/README.md) | 第5章 常见数字模块 |
+| [ch06_architecture](./ch06_architecture/README.md) | 第6章 体系结构 |
+| [ch07_microarchitecture](./ch07_microarchitecture/README.md) | 第7章 微结构 |
+| [ch08_memory](./ch08_memory/README.md) | 第8章 存储器系统 |
+| [ch09_io_online](./ch09_io_online/README.md) | 在线第9章 I/O |
 
-**跳过：** 第4章全部；各章 `*` 可选除非时间富裕。
+## 档位（写在每个小节文件头）
+
+- **精读** — 必抠（MUX / FF / ALU / ARM / 流水线冲突 / Cache）  
+- **浅读** — 扫过建立直觉  
+- **跳过** — 第4章及 HDL 相关  
+- **可选\*** — 书中带星拓展  
 
 ## 学习节奏
 
-1. Ch2（2.8–2.9）+ Ch5（5.2/5.5）+ Logisim  
-2. Ch3（3.2/3.5）  
-3. Ch6 ARM + 6.8 x86 桥  
-4. **Ch7** → 写满 `cross_ref/csapp_ch4_link.md`  
-5. **Ch8** Cache/VM → `hft_x86_timing.md`  
-6. 在线 Ch9 / RPi 选做 → `stm32_hardware.md`  
-7. 回刷 CSAPP Ch4  
+1. `ch02` 2.8–2.9 + `ch05` 5.2/5.5 + Logisim  
+2. `ch03` 3.2/3.5  
+3. `ch06` ARM + 6.8 x86  
+4. `ch07` 7.3/7.5 → `cross_ref/csapp_ch4_link.md`  
+5. `ch08` Cache/VM → `cross_ref/hft_x86_timing.md`  
+6. `ch09` 选做  
 
-## 笔记规范
+## 小节笔记模板（已预置）
 
 ```markdown
 > **Core Concept:** …
-> **Link Target:** CSAPP §x.x / ARM embedded / HFT …
+> **Link Target:** …
+> **档位:** 精读 | 浅读 | 跳过 | 可选*
+
+## 状态
+- [ ] 已读
+- [ ] 已写要点
+
+## 笔记
+（子小节如 2.8.1 用本文件内 ## 标题展开）
 ```
 
 ## 一句话
 
-正确主线：**模块(Ch5) → ARM ISA(Ch6) → 微结构流水线(Ch7) → 存储器(Ch8)**；I/O/RPi 在**在线第9章**。对照 CSAPP 盯 **Ch7.5 冲突**。
+**一章一夹、一小节一文件**；正文 1–8 + 在线 9；对照 CSAPP 盯 **ch07 / 7.5 流水线冲突**。
