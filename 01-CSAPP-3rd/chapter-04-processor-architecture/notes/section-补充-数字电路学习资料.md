@@ -16,10 +16,10 @@
 3. 回读 CSAPP **§4.2～4.5**  
 4. 进阶 **MIT 6.004** → STM32 时序拓展  
 
-**纯外文车道（推荐 = 只学 Harris ARM Edition）：**  
-→ 专属笔记仓：[digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)  
-节奏：Ch2+Ch5 → Ch3 → **Ch6 ISA 扫读 → Ch7 微架构精读** → Ch8 cache → Ch9/RPi 浅读 → 回刷 CSAPP §4.2～4.5。  
-**跳过 Ch4 HDL。** 流水线在 **Ch7**，不是 Ch6。
+**纯外文车道（推荐 = 只学 Harris ARM 第2版 8 章目录）：**  
+→ [digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)  
+节奏：Ch2+Ch3 硬件 → Ch5 ARM → **Ch7 流水线** → Ch6 Cache → Ch8 选做；**跳过 Ch4 HDL**。  
+对照 CSAPP 盯 **Ch7**（不是旧英文版的别的章号）。
 
 **六大核心（其余浅看或跳过）：** MUX · 全加器 · D 触发器 · 寄存器 · 存储器 · 时序延迟（setup/hold）
 
@@ -57,30 +57,23 @@
 
 #### 外文学习顺序（按你的目标定制 · **收敛为 Harris ARM 单本**）
 
-1. **主力唯一：** [Harris ARM 笔记仓](./digital_logic_harris_arm/README.md) — 精读 **Ch2/3/5/7/8**，Ch6 够用即可，Ch9 浅读，**跳过 Ch4 HDL**  
-2. **实操：** Logisim（`digital_logic_harris_arm/lab_logisim/`）  
-3. **可选打底：** *Code*（Petzold）  
-4. **可选免费课：** [MIT 6.004](https://computationstructures.org)  
-5. **体系结构拔高：** COD → [Hennessy](../../../03-Computer-Architecture-6th/)  
+1. **主力唯一：** [Harris ARM 第2版笔记仓](./digital_logic_harris_arm/README.md) — 精读 **Ch2/3/5/6(cache)/7**，跳过 **Ch4 HDL** 与 Verilog 小节  
+2. **实操：** Logisim  
+3. **可选：** *Code* / [MIT 6.004](https://computationstructures.org)  
+4. **拔高：** COD → [Hennessy](../../../03-Computer-Architecture-6th/)  
 
-> **章号钉死：** ARM Edition 里 **流水线/冒险 = Ch7 Microarchitecture**；Ch6 是 ARM **ISA**。全书约 Ch1–8 + I/O/RPi（常作 Ch9/配套）。
+> **以你手里第2版 8 章为准：** Ch5=ARM ISA，Ch6=存储+I/O，**Ch7=微处理器/流水线**，Ch8=RPi。其他印刷章号可能不同。
 
 ---
 
 ### 二、外文教材 · 入门首选（与 Ch4 联动）
 
-#### 1. 《Digital Design and Computer Architecture》（Harris & Harris）— **唯一外文主力 · ARM Edition**
+#### 1. Harris《Digital Design and Computer Architecture》— **ARM 第2版（你的目录）**
 
 → **笔记文件夹：** [digital_logic_harris_arm/](./digital_logic_harris_arm/README.md)
 
-门 → MUX → ALU → 触发器 → 单周期 → 五级流水线+hazards — 与 Y86 SEQ/PIPE 同思路。
-
-| 版本 | 决策 |
-|------|------|
-| **ARM Edition（选用）** | 贴合 STM32；同时覆盖流水线/冒险（HFT 原理通用） |
-| RISC-V Edition | **不选**（更偏服务器 ISA 教具） |
-
-**精读 Ch2/3/5/7/8；Ch6 ISA 中读；Ch9/RPi 浅读；跳过 Ch4 HDL。** 流水线对照 CSAPP → **Ch7**。
+按你书的 8 章：逻辑 →（跳过 HDL）→ **ARM** → 存储/I/O → **微处理器流水线** → RPi。  
+**精读 Ch2/3/5/7 + Ch6 Cache；跳过 Ch4。** 流水线对照 CSAPP → **Ch7**。
 
 #### 2. 《Digital Design: Principles and Practices》（John F. Wakerly）
 

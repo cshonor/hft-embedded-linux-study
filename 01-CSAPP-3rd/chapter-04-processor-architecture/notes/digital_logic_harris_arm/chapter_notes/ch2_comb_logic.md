@@ -1,23 +1,26 @@
-# Ch2 · Combinational Logic Design
+# Ch2 · Combinational logic design
 
-> **Core Concept:** MUX, decoder, combinational building blocks; propagation delay
-> **Link Target:** CSAPP §4.2 (MUX / ALU select) · HFT critical-path delay intuition
+> **Core Concept:** Boolean algebra; decoder; **MUX**; adder; **ALU**; timing
+> **Link Target:** CSAPP §4.2 · Logisim labs · skip Verilog combo sections
 
-## Must-read subsections
+## Book coverage (2nd ARM)
 
-- [ ] **2.8** Combinational Building Blocks — **MUX** (2:1, 4:1), decoder
-- [ ] **2.9** Timing — propagation / contamination delay
+- Boolean algebra & simplification
+- Building blocks: decoder, **MUX**, adder, **ALU**
+- (Book) Verilog combinational modeling → **skip for software track**
 
 ## Status
 
-- [ ] Chapter notes filled
-- [ ] Logisim: 2:1 MUX + 4:1 MUX → `../lab_logisim/`
+- [ ] MUX / decoder / adder / ALU notes
+- [ ] Logisim: 2:1 MUX, 4:1 MUX, N-bit adder
 - [ ] Update `../cross_ref/csapp_ch4_link.md`
 
 ## Notes
 
-### MUX
+### MUX & decoder
 
-### Timing
+### Adder → ALU (+ result select)
 
-Next: [ch3_seq_logic.md](./ch3_seq_logic.md) → later **[ch7_microarchitecture.md](./ch7_microarchitecture.md)** for pipeline (not Ch6).
+### Timing / delay (if in chapter)
+
+> 第2版把 ALU 放在 **Ch2**；不要再找「独立 Digital Building Blocks 章」。

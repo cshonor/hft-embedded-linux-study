@@ -1,21 +1,16 @@
-# Harris ARM — one-page summary
+# Harris ARM 第2版 — one-page summary
 
-> Fill after one full pass of must-read chapters.
-
-## Six cores
-
-1. MUX  
-2. Adder / ALU  
-3. D FF  
-4. Register / pipe latch  
-5. Memory (SRAM)  
-6. Timing (delay, setup/hold) + hazards  
-
-## Mind map (text)
+## Eight chapters (your edition)
 
 ```
-Gates → MUX/ALU → FF/Reg → ARM ISA (Ch6) → Microarch pipe (Ch7) → Memory (Ch8) → I/O/RPi (Ch9)
-                              ↕ STM32 asm              ↕ CSAPP SEQ/PIPE
+1 Binary → 2 Combo(MUX/ALU) → 3 Seq(FF)
+                ↓ skip 4 HDL
+5 ARM ISA → 6 Mem+I/O(Cache) → 7 Microarch(pipe) → 8 RPi
+                ↕ embedded              ↕ CSAPP SEQ/PIPE
 ```
 
-**精读：** Ch2, Ch3, Ch5, Ch7, Ch8 · **跳过：** Ch4 HDL · **浅读：** Ch1, Ch9
+## Must vs skip
+
+- **精读：** 2, 3, 5, 6(cache), **7**
+- **浅读：** 1, 6(peripherals), 8
+- **跳过：** 4 + 所有 Verilog 大段

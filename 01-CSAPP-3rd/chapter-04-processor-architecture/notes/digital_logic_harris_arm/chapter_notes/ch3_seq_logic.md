@@ -1,21 +1,23 @@
-# Ch3 · Sequential Logic Design
+# Ch3 · Sequential logic design
 
-> **Core Concept:** Latch, D flip-flop, register; setup / hold time
-> **Link Target:** CSAPP §4.2 sequential · §4.4 pipeline registers · PIPE stall root cause
+> **Core Concept:** Latch, FF, register file, counters; sync sequential; setup/hold
+> **Link Target:** CSAPP §4.2/§4.4 pipe regs · skip Verilog sequential / deep FSM
 
-## Must-read subsections
+## Book coverage (2nd ARM)
 
-- [ ] **3.2** Latches and flip-flops (D FF = register atom)
-- [ ] **3.5** Timing constraints — setup / hold
+- Latches & flip-flops
+- Registers, register file, counters
+- Synchronous sequential analysis & design
+- (Book) Verilog sequential + FSM → **skip or skim**
 
 ## Status
 
-- [ ] Chapter notes filled
-- [ ] Logisim: D FF + 8-bit register → `../lab_logisim/`
-- [ ] Update cross_ref
+- [ ] D-FF / regfile notes
+- [ ] Logisim: D-FF + 8-bit register
+- [ ] Setup/hold → stall intuition
 
 ## Notes
 
-### D flip-flop / register
+### Storage elements
 
-### Setup & hold → why pipelines stall
+### Sync design & timing constraints

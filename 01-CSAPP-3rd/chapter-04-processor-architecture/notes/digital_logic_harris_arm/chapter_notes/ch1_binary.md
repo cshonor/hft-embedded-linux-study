@@ -1,13 +1,20 @@
-# Ch1 · From Zero to One (binary / CMOS skim)
+# Ch1 · Binary & digital abstraction
 
-> **Core Concept:** Binary levels, gates as switches (skim — no device physics deep dive)
-> **Link Target:** CSAPP Ch2 bits / CSAPP §4.2 logic gates intuition / STM32 GPIO high-low
+> **Core Concept:** Abstraction / constraint; number systems; signed ops; gates & CMOS skim
+> **Link Target:** CSAPP Ch2 · managing complexity (systems view)
+
+## Book coverage (2nd ARM)
+
+- Course plan; abstraction & constraint
+- Dec / bin / hex; byte & word
+- Binary add/sub; signed representation
+- Logic gates; CMOS transistors (hardware floor)
 
 ## Status
 
-- [ ] Skim done
-- [ ] Cross-ref one-liner added to `../cross_ref/`
+- [ ] Skim done (no deep semiconductor physics)
+- [ ] One-liner in `../summary/`
 
 ## Notes
 
-（浅读：懂逻辑 0/1 与门级即可；半导体物理跳过。）
+（浅读。）

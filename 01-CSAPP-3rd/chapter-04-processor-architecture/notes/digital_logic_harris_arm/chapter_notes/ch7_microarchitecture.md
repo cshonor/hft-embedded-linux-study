@@ -1,25 +1,26 @@
-# Ch7 · Microarchitecture (highest value for CSAPP Ch4)
+# Ch7 · Microprocessor design (highest value ↔ CSAPP Ch4)
 
-> **Core Concept:** Single-cycle, multicycle, **5-stage pipeline**, hazards (forwarding / stall / flush)
-> **Link Target:** CSAPP §4.3 SEQ · §4.4 pipeline · §4.5 PIPE · HFT latency
+> **Core Concept:** Single-cycle datapath/control → multicycle → **pipeline**; hazards & exceptions
+> **Link Target:** CSAPP §4.3 SEQ · §4.4 · §4.5 PIPE · HFT latency
 
-## Must-read
+## Book coverage (2nd ARM)
 
-- [ ] Single-cycle processor ≈ CSAPP **SEQ**
-- [ ] Pipelined processor
-- [ ] **Pipeline hazards** — forwarding, stall, flush ≈ CSAPP **§4.5**
-- [ ] (Optional) multicycle — contrast only
+- Single-cycle structure, datapath & control
+- Multicycle & pipelined optimizations
+- **Hazards**; exception handling
+- Instruction → CPU implementation bridge
 
 ## Status
 
-- [ ] Chapter notes filled
+- [ ] Single-cycle ↔ SEQ
+- [ ] Pipeline + hazards ↔ PIPE
 - [ ] **Required:** `../cross_ref/csapp_ch4_link.md`
-- [ ] Touch `../cross_ref/hft_x86_timing.md`
+- [ ] `../cross_ref/hft_x86_timing.md`
 
 ## Notes
 
-### Single-cycle vs SEQ
+### Single-cycle
 
-### Five-stage + hazards vs PIPE
+### Pipeline & hazards (forwarding / stall / flush)
 
-> 旧笔记曾误把流水线标成 Ch6 — **ARM Edition 正确章号是 Ch7**。
+### Exceptions (skim vs CSAPP)

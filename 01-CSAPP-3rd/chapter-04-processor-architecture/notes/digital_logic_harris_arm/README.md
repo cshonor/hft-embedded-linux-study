@@ -1,88 +1,72 @@
-# Harris · Digital Design and Computer Architecture — **ARM Edition**
+# Harris · Digital Design and Computer Architecture — **ARM 第2版（你手中的目录）**
 
-> **唯一外文数字电路主力** — 打通数字逻辑 → CSAPP Ch4 → STM32 + HFT(x86) 直觉。  
+> **唯一外文数字电路主力** — 打通数字逻辑 → CSAPP Ch4 → 嵌入式 Linux / STM32 + HFT。  
 > 父章：[CSAPP Ch4 导读](../../README.md) · [数字电路资料总表](../section-补充-数字电路学习资料.md)
 
-## 版本说明
+## 版本钉死（避免和别的印刷章号打架）
 
-| 说法 | 实际 |
+你梳理的是 **ARM 第2版 · 8 章结构**（Ch5=ARM ISA，Ch7=微处理器/流水线，Ch8=RPi）。  
+
+部分英文 **ARM Edition（Elsevier）** 章序不同（例如 Digital Building Blocks、Architecture、Microarchitecture、Memory、I/O 拆开编号）。**以你手里书的目录为准**；下表按你的口述锁定。
+
+| 章 | 主题（你的第2版） | 档位 |
+|----|-------------------|------|
+| **1** | 二进制基础、抽象/约束、进制、有符号数、逻辑门/CMOS | 浅读 |
+| **2** | 组合逻辑：布尔、译码器、**MUX**、加法器、**ALU**；（书中含 Verilog 组合 — **跳过或扫一眼**） | **精读硬件** |
+| **3** | 时序：锁存/触发器、寄存器堆、计数器、同步设计；（Verilog 时序/FSM — **跳过或浅读**） | **精读硬件** |
+| **4** | HDL：Verilog 语法/层次/可综合建模 | **整章跳过** |
+| **5** | **ARM 架构**：寄存器、指令格式、寻址、Thumb — 嵌入式 Linux 硬件地基 | **精读** |
+| **6** | **存储器 + I/O**：层次/Cache/总线；GPIO/UART/SPI 编程模型 | Cache **精读**；外设 **中读** |
+| **7** | **微处理器设计**：单周期→多周期→流水线；冒险/异常 ≈ CSAPP SEQ/PIPE | **精读 · 最高价值** |
+| **8** | **Raspberry Pi 实战**：自定义外设、Linux 驱动、环境 — 理论落地 | 浅读/选做 |
+
+## 为何有用（软硬件打通）
+
+| 方向 | 收获 |
 |------|------|
-| 你说的「ARM 版 / 覆盖到 RPi」 | 指 **Sarah & David Harris《Digital Design and Computer Architecture: ARM Edition》** |
-| 章数 | 正文常见 **Ch1–Ch8**，**I/O（含 Raspberry Pi 实践）多为 Ch9 / 配套网站章** — 合计「逻辑→ARM 处理器→内存→I/O 落地」一整条 |
-| 易混 | 同系列 **MIPS《DDCA 2nd》** 章名类似，但 **ARM 版 Ch6=ISA、Ch7=微架构(流水线)** — **不要按旧笔记把流水线记成 Ch6** |
+| **嵌入式 Linux / 驱动** | 数字逻辑 + ARM + MMIO/中断 → 懂内核/驱动「为什么」，不只对着手册改位 |
+| **HFT** | 通路延迟、流水线冒险、Cache → 从底层看交易链路延迟从哪来 |
+| **CSAPP Ch4** | Ch2/3/7 与 Y86 SEQ/PIPE 同语言；回刷框图不再抽象 |
+| **RPi（Ch8）** | 把前面章节接到真实板子与驱动骨架（不替代完整驱动课） |
 
-官方配套：https://pages.hmc.edu/harris/ddca/ddcaarm.html
-
-## 为何只学这一本（ARM 版）— 对你有多「值钱」
-
-| 需求 | 覆盖 |
-|------|------|
-| CSAPP §4.2～4.5 | 门→MUX→ALU→触发器→单周期→流水线+hazards（主要在 **Ch7**） |
-| STM32 / 嵌入式 | ARM ISA（**Ch6**）+ I/O 直觉（**Ch9/RPi**） |
-| HFT / x86 | 冒险/缓存/通路延迟原理通用；书中 ARM 是教具，上线仍写 x86 |
-
-**可以当成打通软硬件的核心书（对你两条线都有用）：**
-
-| 方向 | 这本书给你什么 |
-|------|----------------|
-| **嵌入式 Linux / 驱动** | 从数字逻辑 + ARM 讲起 → 理解内核/驱动「为什么这么设计」，而不只是对着手册调寄存器；RPi 实践把理论接到真实外设 |
-| **HFT 低延迟** | 硬件优化、通路/流水线/存储层级思路 → 从底层看清延迟从哪来，再反推软件侧少 stall、少 miss、少冲刷 |
-| **CSAPP Ch4** | 同一套积木语言；回刷 SEQ/PIPE 框图不再抽象 |
-
-> 不是替代 Linux 驱动专书或 x86 优化专书，而是 **底层「为什么」** 的共同地基；上面再叠内核/驱动教程与 CSAPP/perf。
-
-## 全书地图（按 ARM Edition 真实目录）
-
-| 章 | 英文名 | 你的档位 | 一句话 |
-|----|--------|----------|--------|
-| **1** | From Zero to One | 浅读 | 数制、门、数字抽象；不抠 CMOS 物理 |
-| **2** | Combinational Logic Design | **精读** | **MUX**、译码、§2.9 Timing |
-| **3** | Sequential Logic Design | **精读** | D-FF、寄存器、setup/hold |
-| **4** | Hardware Description Languages | **跳过** | Verilog/VHDL — 不写 HDL |
-| **5** | Digital Building Blocks | **精读** | 加法器/ALU、SRAM |
-| **6** | Architecture | 精读偏 ISA / 可中读 | **ARM 指令集与程序员模型**（≠流水线实现） |
-| **7** | Microarchitecture | **精读 · 最高价值** | 单周期 / 多周期 / **五级流水线 + hazards** ≈ CSAPP SEQ/PIPE |
-| **8** | Memory Systems | **精读** | Cache、VM 基础 → HFT 局部性 |
-| **9** / 配套 | I/O Systems (+ **Raspberry Pi**) | 浅读 | GPIO/外设/RPi 实践 — 理论落地，不深挖驱动工程 |
+## 目录
 
 ```
 digital_logic_harris_arm/
-├── chapter_notes/     # ch1…ch9 脚手架
-├── cross_ref/         # ↔ CSAPP / STM32 / HFT
+├── chapter_notes/   # ch1…ch8（按第2版）
+├── cross_ref/
 ├── lab_logisim/
 └── summary/
 ```
 
-## 必学小节（对准 MUX / ALU / 流水线）
+## 必抠小节（硬件 / 体系；HDL 一律旁路）
 
-| 章 | 必抠 |
-|----|------|
-| **Ch2** | §2.8 Building Blocks（MUX）；§2.9 Timing |
-| **Ch3** | §3.2 Latches/FFs；§3.5 Sequential timing |
-| **Ch5** | §5.2 Arithmetic（ALU）；§5.5 Memory arrays |
-| **Ch6** | ARM 汇编/机器模型 — 够读懂后面微架构即可 |
-| **Ch7** | Single-cycle；**Pipelined + Pipeline Hazards**（转发/stall/flush） |
-| **Ch8** | Caches（对照 CSAPP Ch6 / HFT） |
+| 章 | 抓什么 | 放过什么 |
+|----|--------|----------|
+| Ch2 | MUX、译码器、加法器、ALU、传播延迟直觉 | Verilog 组合建模大段 |
+| Ch3 | D-FF、寄存器堆、同步时序、setup/hold | Verilog 时序 / FSM 深挖 |
+| Ch5 | ARM 寄存器、指令、寻址、Thumb 特点 | 不必背全编码表 |
+| Ch6 | Cache 原理与映射；总线/外设模型扫清 | 不在此章写完整驱动 |
+| Ch7 | 单周期数据通路；流水线；**冒险/转发/stall**；异常 | — |
+| Ch8 | 看一遍「理论如何落到板子+驱动」 | 可不全做实验 |
 
 ## 学习节奏
 
-1. **Ch2 + Ch5** → MUX / ALU；Logisim  
-2. **Ch3** → 触发器 / 锁存  
-3. **Ch6** 扫 ARM ISA → **Ch7** 精读微架构 + 写满 `cross_ref/csapp_ch4_link.md`  
-4. **Ch8** cache → `hft_x86_timing.md`  
-5. **Ch9/RPi** 浅读 → `stm32_hardware.md`  
-6. **回刷 CSAPP Ch4**
+1. **Ch2（硬件）+ Logisim MUX/加法器**  
+2. **Ch3（硬件）+ Logisim 寄存器**  
+3. **Ch5 ARM ISA** → `cross_ref/stm32_hardware.md`  
+4. **Ch7 微处理器** → 写满 `cross_ref/csapp_ch4_link.md` + `hft_x86_timing.md`  
+5. **Ch6 Cache** 精读；外设中读  
+6. **Ch8** 选做；**回刷 CSAPP Ch4**  
+7. **Ch4 整章不读**；Ch2/3 里的 Verilog 小节跳过
 
 ## 笔记规范
 
 ```markdown
 > **Core Concept:** …
-> **Link Target:** CSAPP §x.x / STM32 … / x86 pipeline …
+> **Link Target:** CSAPP §x.x / embedded Linux … / HFT …
 ```
-
-截图放 `lab_logisim/assets/` 或章内 `assets/`。
 
 ## 一句话
 
-ARM 版从数字逻辑一路讲到 **ARM 微架构、内存与 I/O（RPi）** — 帮你打通 **软硬件逻辑**（嵌入式 Linux「为何如此」+ HFT「延迟从哪来」）。  
-主线 **Ch2/3/5 + Ch7/8**，跳过 Ch4 HDL；流水线对照 CSAPP 盯 **Ch7**。RPi 章用来把理论接到嵌入式实操，不必当成完整驱动课。
+第2版 ARM：逻辑（1–3）→ 跳过 HDL（4）→ **ARM（5）** → **存储/I/O（6）** → **CPU 实现与流水线（7）** → **RPi 串起来（8）**。主线 **2/3/5/6(cache)/7**；对照 CSAPP 盯 **Ch7**。
