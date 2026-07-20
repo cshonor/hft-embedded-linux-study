@@ -10,7 +10,7 @@
 | §6.x ARM + 6.8 x86 | [ch06](../ch06_architecture/README.md) | [Ch3](../../01-CSAPP-3rd/chapter-03-machine-level-programs/) |
 | **§7.3 / 7.5** | [7.3](../ch07_microarchitecture/7.3_单周期处理器.md) · [7.5](../ch07_microarchitecture/7.5_流水线处理器.md)（**Forwarding/Stall/Flush**） | [§4.3](../../01-CSAPP-3rd/chapter-04-processor-architecture/notes/section-4.3-SEQ顺序处理器.md) · [§4.5](../../01-CSAPP-3rd/chapter-04-processor-architecture/notes/section-4.5-PIPE流水线与冒险.md) |
 | §7.7 高级微结构 | [7.7](../ch07_microarchitecture/7.7_高级微结构.md) | 超标量/乱序地图（Hennessy 拔高） |
-| §8.3 / 8.4 | [ch08](../ch08_memory/README.md) | CSAPP Ch6/9 |
+| **§8.3 / 8.4** | [8.3 Cache](../ch08_memory/8.3_高速缓存.md) · [8.4 VM](../ch08_memory/8.4_虚拟存储器.md)（AMAT · TLB） | CSAPP Ch6 / Ch9 |
 | 在线 Ch9 | [ch09](../ch09_io_online/README.md) | STM32 / RPi |
 
 ## Fill as you read

@@ -9,7 +9,9 @@
 | Data hazard / load-use | Break dependent chains; avoid load-then-use |
 | Control hazard / mispredict | Branchless, tables, `cmov`; `inline` cuts `call`/`ret` |
 | Structural / memory port | Locality, cache-line-aware layout |
-| Cache miss ≫ gate delay | Data layout > micro-mux tweaks |
+| Cache miss ≫ gate delay | Data layout > micro-mux tweaks · 见 [8.3](../ch08_memory/8.3_高速缓存.md) |
+| TLB / page fault | Huge pages、锁页；见 [8.4](../ch08_memory/8.4_虚拟存储器.md) |
+| AMAT 被 MissPenalty 主导 | 热路径避冷 miss；量化用 Hit+MR×Penalty |
 
 ## Why this book helps HFT
 
@@ -17,4 +19,4 @@
 
 ## Notes
 
-（Ch7/Ch8 读完后扩写；对接 `perf` branch-misses / IPC。）
+Ch7/Ch8 口述已落笔记；对接 `perf`：`cache-misses` / `dTLB-load-misses` / branch-misses / IPC。
