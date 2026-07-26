@@ -47,11 +47,15 @@
 HFT / CSAPP / 底层路线：**CMOS→NAND/NOR 门级必吃透；3–8/MUX 门级强烈建议；版图与工艺公式浅尝。**  
 → [学习深度_门级到译码.md](./学习深度_门级到译码.md)
 
+**Linux 驱动 / 系统（不上裸机门电路）· 时序章抓手：**  
+setup/hold/skew · 寄存器/FIFO/计数器职责 · FSM 思想；锁存/FF 内部可跳。  
+→ [学习深度_时序对Linux驱动.md](./学习深度_时序对Linux驱动.md)
+
 ## 学习节奏
 
-1. `ch02` 2.8–2.9 + `ch03` 3.2/3.5  
-2. `ch04` Verilog（读 IP / FPGA）→ testbench  
-3. `ch05` 5.2/5.5 + Logisim（对照 HDL）  
+1. `ch02` 2.8–2.9 + `ch03` **3.5 / 3.4 思想**（3.2 可归档）  
+2. `ch04` 跳过（本路线）  
+3. `ch05` 5.2/5.4/5.5（积木当黑盒）  
 4. `ch06` ARM + 6.8 x86  
 5. `ch07` 7.3/7.5 → `cross_ref/csapp_ch4_link.md`  
 6. `ch08` Cache/VM → `cross_ref/hft_x86_timing.md`  
