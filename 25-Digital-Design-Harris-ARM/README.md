@@ -30,7 +30,7 @@
 | [ch02_combinational](./ch02_combinational/README.md) | 第2章 组合逻辑设计 |
 | [ch03_sequential](./ch03_sequential/README.md) | 第3章 时序逻辑设计 |
 | [ch04_hdl](./ch04_hdl/README.md) | 第4章 HDL / Verilog（FPGA·读厂商 IP） |
-| [ch05_digital_blocks](./ch05_digital_blocks/README.md) | 第5章 常见数字模块 |
+| [ch05_digital_blocks](./ch05_digital_blocks/README.md) | 第5章 数字构建模块 |
 | [ch06_architecture](./ch06_architecture/README.md) | 第6章 体系结构 |
 | [ch07_microarchitecture](./ch07_microarchitecture/README.md) | 第7章 微结构 |
 | [ch08_memory](./ch08_memory/README.md) | 第8章 存储器系统 |
