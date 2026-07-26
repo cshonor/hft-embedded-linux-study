@@ -1,43 +1,26 @@
-# UNP Vol.1 — Unix Network Programming（外部仓库）
+# UNP Vol.1 — Unix Network Programming
 
-**定位：** 用户态 Socket API — 在 [09 PNP](../10-Practical-Network-Programming/) 与 **`08` TLPI** 之后，系统化 Stevens API。
+**定位：** 用户态 Socket API（Stevens）。
 
-**文件夹 `10`** · 外部书目 **外B**
+## 本地两套内容
 
-## 笔记仓库（外部）
+| 路径 | 来源 | 内容 |
+|------|------|------|
+| [`code/unpv13e/`](./code/unpv13e/) | [unpbook/unpv13e](https://github.com/unpbook/unpv13e) | **完整官方源码树**（编译用这个） |
+| [`notes-from-Computer-Networking/`](./notes-from-Computer-Networking/) | `Desktop\Computer Networking\UNP_Vol1` | 你整理的章节笔记 + 少量 intro 示例 `.c` |
 
-**仓库：** [cshonor/Computer-Networking](https://github.com/cshonor/Computer-Networking)
+构建（WSL/Linux）：
 
-| 入口 | 链接 |
-|------|------|
-| UNP 卷1 笔记目录 | [UNP_Vol1/](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) |
-| 阅读说明 | [README.md](https://github.com/cshonor/Computer-Networking/blob/main/UNP_Vol1/README.md) |
-| 章节目录 | [OUTLINE.md](https://github.com/cshonor/Computer-Networking/blob/main/UNP_Vol1/OUTLINE.md) |
+```bash
+cd code/unpv13e
+./configure && make
+```
 
-## HFT 必读 / 选读 / 跳过
+## HFT 优先源码目录（unpv13e）
 
-| 原书章节 | 标签 | HFT 关联 |
-|----------|------|----------|
-| Ch 3 Socket 简介 | 🔴 必读 | `sockaddr`、字节序、基本 API |
-| Ch 6 I/O 多路复用（select/poll/epoll） | 🔴 必读 | 对照 [PNP epoll 实验](https://github.com/cshonor/Computer-Networking/tree/main/PNP) |
-| Ch 7 Socket 选项 | 🔴 必读 | `TCP_NODELAY`、buffer、`SO_REUSEPORT` |
-| Ch 8 UDP sockets | 🔴 必读 | 组播行情 `recvfrom` |
-| Ch 16 非阻塞 I/O | 🔴 必读 | busy-poll / 自旋收包前置 |
-| Ch 4–5 TCP/UDP 概述 | 🟡 选读 | 与 [10 TCP/IP](../12-TCP-IP-Illustrated-Vol1/) 对照 |
-| Ch 9–10 TCP 客户端/服务端 | 🟡 选读 | 订单走 TCP 时升为必读 |
-| Ch 11 名字与时间 | 🟡 选读 | `getaddrinfo` |
-| SCTP、RPC、复杂服务器 | ⚪ 跳过 | HFT 不用 |
-
-## 为何不在本仓库展开
-
-笔记已在你的网络书仓库维护；建议 **先 [10 PNP](../10-Practical-Network-Programming/) 再读本目录**。
+`intro` · `tcpcliserv` · `select` · `nonblock` · `sockopt` · `udpcliserv` · `mcast`
 
 ## 交叉阅读
 
-- **上一步 · TLPI：** [07-The-Linux-Programming-Interface](../07-The-Linux-Programming-Interface/)
-- **上一步 · 实战：** [10-Practical-Network-Programming](../10-Practical-Network-Programming/)
-- 协议层 → [12-TCP-IP-Illustrated-Vol1](../12-TCP-IP-Illustrated-Vol1/)
-- 内核层 → [13-Linux-Kernel-Networking](../13-Linux-Kernel-Networking/)
-- 用户态旁路 → [14-DPDK-Low-Latency-Network](../14-DPDK-Low-Latency-Network/)
-- 程序员实践 → [01-CSAPP Ch11](../01-CSAPP-3rd/chapter-11-network-programming/)
-- 跨模块对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)
+- 实战：[10-Practical-Network-Programming](../10-Practical-Network-Programming/)
+- 协议：[12-TCP-IP-Illustrated-Vol1](../12-TCP-IP-Illustrated-Vol1/)
