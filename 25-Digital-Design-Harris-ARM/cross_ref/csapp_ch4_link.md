@@ -14,3 +14,6 @@
 | 在线 Ch9 | [ch09](../ch09_io_online/README.md) | STM32 / RPi |
 
 ## Fill as you read
+
+**嵌入式 Linux 路线：** 处理器执行/流水线/Cache/VM 以 **CSAPP 为主粮**；Harris 取黑盒时序与模块语义，门级/Verilog 不主攻。  
+→ [学习路线_CSAPP与Harris_Linux驱动.md](../学习路线_CSAPP与Harris_Linux驱动.md)

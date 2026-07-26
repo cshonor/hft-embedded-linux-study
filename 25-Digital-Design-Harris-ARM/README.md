@@ -55,6 +55,10 @@ setup/hold/skew · 寄存器/FIFO/计数器职责 · FSM 思想；锁存/FF 内�
 黑盒行为（位掩码 / 译码·复用）· **延迟与毛刺**；不选手绘门级。  
 → [学习深度_组合对Linux驱动.md](./学习深度_组合对Linux驱动.md)
 
+**CSAPP vs Harris（谁当主粮）：**  
+处理器执行/流水线/Cache/VM → **CSAPP**；Harris 门级/Verilog 不主攻。  
+→ [学习路线_CSAPP与Harris_Linux驱动.md](./学习路线_CSAPP与Harris_Linux驱动.md)
+
 ## 学习节奏
 
 1. `ch02` **2.8 黑盒 + 2.9**（布尔/画门可归档）+ `ch03` **3.5 / 3.4 思想**（3.2 可归档）  
