@@ -1,19 +1,30 @@
-# TCP/IP Illustrated Vol.1 — Stevens
+# TCP/IP Illustrated, Vol.1 — 2nd Edition (Fall, 2016)
 
-**定位：** 协议语义与首部 · 抓包理解「线上长什么样」。
+> **《TCP/IP 详解 卷1：协议》第 2 版** · Kevin R. Fall 等 · **全书 18 章**。  
+> 不是 Stevens 1994 的 30 章老版；**无 Telnet/FTP/SMTP/SNMP 独立章**。
 
-**本地权威笔记：** `C:\Users\12392\Desktop\Computer Networking\TCP-IP-Volume1-Protocols`  
-已复制到 [`notes-from-Computer-Networking/`](./notes-from-Computer-Networking/)（含 Ch01–Ch18）。
+| 文档 | 用途 |
+|------|------|
+| [VERSIONS.md](./VERSIONS.md) | 第 1 版 30 章 vs 第 2 版 18 章 |
+| [OUTLINE.md](./OUTLINE.md) | 18 章目录与文件夹映射 |
+| [QUICKREF.md](./QUICKREF.md) | **每章考点 + Go/Rust 一页速览** |
 
-## 编程配套
+## 章节目录（`chapterXX-主题/study.md` + 平铺 `1.x-*.md`）
 
-本书几乎无「整本客户端源码树」。写代码请用：
+各节笔记在**章文件夹根目录**（如 `1.1-architecture-principles.md`），与 `study.md` 同级，打开一章即可扫全节，无需再点进子文件夹。
 
-- [10 PNP `code/`](../10-Practical-Network-Programming/code/)
-- [11 UNP `code/unpv13e/`](../11-UNP-Vol1/code/unpv13e/)
+| 章 | 文件夹 | 笔记 |
+|----|--------|------|
+| 1–2 | `chapter01-overview` … `chapter02-ip-address-architecture` | 体系架构 |
+| 3 | `chapter03-link-layer` | 链路层 |
+| 4–8 | `chapter04-arp-protocol` … `chapter08-icmpv4-icmpv6` | 网络层 |
+| 9–10, 12–17 | `chapter09-broadcast-multicast` … `chapter17-tcp-keepalive` | 传输层 |
+| 11, 18 | `chapter11-dns-domain-resolve` · `chapter18-network-security` | 应用与安全 |
 
-可选小工具：[`code/hdr_dump.c`](./code/hdr_dump.c)（首部布局 dump）。
+完整映射见 [OUTLINE.md](./OUTLINE.md)。
 
-## HFT
+## 与源笔记目录
 
-广播/多播 · UDP ·（订单 TCP 时）TCP 章升精读 —— 见 notes 里 OUTLINE/QUICKREF。
+精读正文由 [`tcpip_vol1_ed2_notes/`](../tcpip_vol1_ed2_notes/) 同步至本仓库各章 `study.md`；后续可在任一侧编辑后再次同步。
+
+与 **[自顶向下](../README.md)** 并行；TCP/UDP 精读见 [03_transport_layer/study.md](../top_down/03_transport_layer/study.md)。
