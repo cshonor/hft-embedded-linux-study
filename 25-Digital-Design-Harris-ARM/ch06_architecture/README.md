@@ -1,7 +1,8 @@
 # 第6章 体系结构
 
 > **定位：** 离开「怎么造电路」，进入**程序员所见的计算机**：指令集 + 寄存器/存储器操作空间。  
-> **桥梁：** Ch5 黑盒 → 本章 ISA/汇编 → Ch7 用硬件实现这些指令。
+> **桥梁：** Ch5 黑盒 → 本章 **ISA/汇编（指令是什么）** → Ch7 **数据通路/控制（怎么执行）**。  
+> **纠一口误：** 「把 ALU、寄存器堆、存储器拼成能跑指令的简易 ARM」——主干在 **Ch7**，不在本章收尾。
 
 **对你两条线：**
 
@@ -24,4 +25,4 @@
 | 6.8 另一个视角-x86 | 精读 · **HFT** | [6.8_另一个视角-x86体系结构.md](./6.8_另一个视角-x86体系结构.md) |
 | 6.9 总结 | 浅读 | [6.9_总结.md](./6.9_总结.md) |
 
-← [书仓总 README](../README.md) · 上章 [ch05](../ch05_digital_blocks/README.md) · 下章 [ch07](../ch07_microarchitecture/README.md) · [↔ CSAPP Ch3](../cross_ref/csapp_ch4_link.md)
+← [书仓总 README](../README.md) · 上章 [ch05](../ch05_digital_blocks/README.md) · 下章 [ch07](../ch07_microarchitecture/README.md) · [↔ CSAPP Ch3/Ch4](../cross_ref/csapp_ch4_link.md)
