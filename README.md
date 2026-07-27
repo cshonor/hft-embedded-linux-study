@@ -5,11 +5,12 @@
 
 本仓库收录 **Rust 全栈量化** + **HFT 微秒级低延迟** 学习笔记骨架，配套原理拆解、可运行源码索引与工程实践路线。
 
-**技术板块 `00`–`18` 主线 + 嵌入式支线 `19`–`24`** — **文件夹编号 = 推荐阅读顺序**（见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)）。
+**技术板块 `00`–`25`** — 文件夹编号是库存标签；**执行顺序以锁定路线为准**（`25` Harris → C → CSAPP → …，编号≠读序）。
 
-→ 一眼进阶路径：[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)  
+→ **定稿执行顺序：** [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)  
+→ 链路摘要：[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)  
 → 板块对照：[CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)  
-→ 完整路线图：[HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)
+→ 完整路线图：[HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)（细节章节仍可用；Phase 以锁定文档为准）
 
 ---
 
@@ -34,18 +35,16 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 ```
 
 
-## 🗺️ HFT 主线阅读顺序（= 文件夹编号）
+## 🗺️ 执行顺序（锁定 · 编号≠读序）
 
 ```
-00 业务 → 01 CSAPP → 02 C 语言 → 03 Hennessy
-→ 04 LKD → 05 ULK → 06 Gorman → 07 TLPI
-→ 08 MikanOS/30天OS → 09 C++ → 10 陈硕 PNP/muduo → 11 UNP
-→ 12 TCP/IP → 13 Rosen → 14 DPDK
-→ 15 SysPerf → 16 BPF
-→ 17 HFT 工程 → 18 Rust 量化
+25 Harris → 02 C → 01 CSAPP → 07 TLPI（08/09 穿插）→ 10–12 网络
+→ 04 LKD + 06 Gorman
+→ A 嵌入式 19–23  ‖  B HFT 13 → 15 → 16 → 14 → 17
+→ 拓展 03 · 05 · 18 · 00 · 24
 ```
 
-**可选支线 · 嵌入式 Linux：** `19 → … → 24`（建议 04–07 后再开）→ [HFT-READING-ROADMAP §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+详情 → [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)
 
 | 文件夹 | 模块 |
 |:------:|------|
@@ -70,4 +69,4 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 | **18** | [Rust-Quant-Trading-Guide](./18-Rust-Quant-Trading-Guide/) |
 | **19–24** | 嵌入式 Linux + 飞控 — 见 [路线图](./HFT-READING-ROADMAP.md) |
 
-> **内核段：** `01` → **`02` C** → `03` Hennessy → `04`–`07` → `08` OS → `09` C++ → 网络 `10`–`14` → 性能 `15`–`16` → 工程 `17`–`18`。
+> **当前：** Phase1 `25` Harris。下一站 Phase2：`02` C → `01` CSAPP。

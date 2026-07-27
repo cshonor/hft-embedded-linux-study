@@ -1,6 +1,7 @@
 # HFT 系统开发 · 完整阅读路线图
 
-> **文件夹 `00`–`18` 主线 + 嵌入式 Linux 支线 `19`–`24`；读序见 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)。** 主叙事 → **[LEARNING-CHAIN.md](./LEARNING-CHAIN.md)**
+> **执行顺序定稿：** [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)（文件夹编号 ≠ 读序）。  
+> 本文保留分章精读细节；与锁定 Phase 冲突时 **以锁定文档为准**。摘要 → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
 
 ### 核心段（文件夹编号 = 读序）
 

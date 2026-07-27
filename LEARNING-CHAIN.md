@@ -1,102 +1,88 @@
 # HFT 学习链路 · 从知其所以然到动手实现
 
-> **仓库：** [hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study) · **文件夹 `00`–`18` 主线 + 嵌入式 `19`–`24` = 物理编号 = 推荐阅读顺序**
+> **仓库：** [hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)  
+> **执行顺序（定稿）：** [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md) — **文件夹编号 ≠ 读序**；本文保留旧编号索引导航。
 
 ```
-知其所以然 → 系统纵深 → 底层+C++ → 网络 → 性能观测 → 工程
-  01–03        04–07       08–09      10–14    15–16      17–18
-  （02=C）
+Phase 锁定（摘要）:
+  25 Harris → 02 C → 01 CSAPP → 07 TLPI + 10–12 网络
+  → 04 LKD + 06 Gorman → 分叉 A 嵌入式 19–23 / B HFT 13→15→16→14→17
+  → 拓展 03·05·18·00·24
 ```
 
 ---
 
-## 一眼版 · 执行顺序
+## 一眼版 · 执行顺序（与锁定文档一致）
 
 ```
-00  Harris
-01  CSAPP
-02  C 语言 · [c-programming](./02-c-programming/)（笔记 → [外部 11-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C)）
-03  Hennessy
-
-04  LKD → 05 ULK → 06 Gorman → 07 TLPI
-
-08  自制 OS
-    └─ 01-mikan-os（HFT 主线）· 02-30days-os（可选）
-
-09  C++ · [cpp-learning-notes](./09-cpp-learning-notes/)
-10  陈硕 PNP / muduo
-11  UNP
-01  CSAPP Ch10–11（网络篇，可与 10–11 交叉）
-12  TCP/IP → 13 Rosen → 14 DPDK
-
-15  SysPerf → 16 BPF
-
-17  HFT Practice
-18  Rust Guide
-
-── 嵌入式 Linux 支线（19 起，建议 04–07 后 · 全外文 19–21）──
-19  ARM Assembly Language（汇编前置）
-20  Mastering Embedded Linux Programming (3rd ed) → Embedded Linux Primer
-21  LDD3 → Linux Device Driver Development
-22  Device Tree → 23 实战 → 24  PID/飞控
-    （22 = 内核官方 DT Usage 文档，无单册书）
+Phase1  25  Harris（当前）
+Phase2  02  C 语言 · [c-programming](./02-c-programming/)
+        01  CSAPP
+Phase3  07  TLPI
+        08  自制 OS（穿插）· 09 C++（穿插）
+        10  PNP → 11 UNP → 12 TCP/IP
+Phase4  04  LKD + 06 Gorman
+Phase5A 19 → 20 → 21 → 22 → 23
+Phase5B 13 Rosen → 15 SysPerf → 16 BPF → 14 DPDK → 17 HFT
+Phase6  03 Hennessy · 05 ULK · 18 Rust · 00 交易 · 24 电机（兴趣）
 ```
 
-**HFT 最短路径：** `01` → **`02` C** → `03` → `04`–`07` → `08/01` MikanOS → `09` C++ → `14` DPDK → `15`–`16` → `17` HFT
+**HFT 最短路径：** `25` → `02` C → `01` → `07` → `10–12` → `04`+`06` → `13`→`15`→`16`→`14`→`17`
 
-**数字电路（CSAPP Ch4 / 嵌入式桥）：** [25-Digital-Design-Harris-ARM](./25-Digital-Design-Harris-ARM/) — 独立书仓；可与 `01` Ch4、`19` ARM 交叉。
+**Harris 深度：** 黑盒为主，见 [25 学习深度](./25-Digital-Design-Harris-ARM/学习深度_时序对Linux驱动.md) · [CSAPP↔Harris](./25-Digital-Design-Harris-ARM/学习路线_CSAPP与Harris_Linux驱动.md)
 
 ---
 
-## 为何 02 C 在 CSAPP 与 Hennessy 之间？
+## 为何 Phase2 是 02 C → 01 CSAPP（锁定）
 
 | 步骤 | 作用 |
 |------|------|
-| **01 CSAPP** | 硬件、机器级程序、内存层次 **整体图景** |
-| **02 C** | **系统级 C** — 底层开发的「通用母语」；指针、内存、链接；能读会写内核/驱动风格代码 |
-| **03 Hennessy** | CPU/缓存/ILP **量化** — 读 C/汇编时知道「慢在哪」；**可与 02 同步做小实验**（如 ARM 裸机验证 EL 切换） |
-| **04–07** | 内核与 syscall — 主体是 **C** |
-| **09 C++** | 在 C 过关后再加 RAII/Modern C++（muduo/HFT） |
-| **19–24 嵌入式** | ARM · 驱动 · 飞控 — **同样以 C 与硬件/内核交互**，02 过关后支线不重学语法 |
+| **25 Harris** | 硬件黑盒词汇（延迟、时序、寄存器/FIFO）—— Phase1 |
+| **02 C** | **系统级 C** — 指针、内存、链接；能读会写底层风格代码 |
+| **01 CSAPP** | 汇编、栈、缓存、VM、并发 **整体图景**（主粮） |
+| **03 Hennessy** | Phase6 拓展 — CSAPP 吃透后再量化加深 |
+| **07 再 04** | 先用户态 API/网络，再内核入门（LKD+Gorman） |
+| **09 C++** | C 过关后、PNP/HFT 前加 RAII/Modern C++ |
+| **19–23 嵌入式** | Phase5A — Phase4 后开；02 过关后不重学语法 |
 
-**理论 + 实践：** CSAPP 给图景 → **02 用 C 写程序** → 03 学体系结构时已有语言抓手 → 04+ 内核、08 MikanOS、19+ 嵌入式/HFT 底层都能接上。
-
----
-
-## 文件夹 ↔ 阶段
-
-| 文件夹 | 模块 |
-|--------|------|
-| **01** | CSAPP |
-| **02** | [C 语言](./02-c-programming/) |
-| **03** | Hennessy |
-| **04–07** | LKD · ULK · Gorman · TLPI |
-| **08/01** | MikanOS |
-| **09** | C++ 索引 |
-| **10–14** | 网络 + DPDK |
-| **15–16** | SysPerf · BPF |
-| **17–18** | HFT · Rust |
-| **19–24** | 嵌入式支线 |
-| **25** | [Harris 数字设计 ARM](./25-Digital-Design-Harris-ARM/) |
+**理论 + 实践：** Harris 词汇 → C 抓手 → CSAPP 图景 → TLPI/网络 → 内核 → 分叉嵌入式/HFT。
 
 ---
 
-## 内核段衔接
+## 文件夹 ↔ 阶段（库存标签）
+
+| 文件夹 | 模块 | 锁定 Phase |
+|--------|------|------------|
+| **25** | [Harris](./25-Digital-Design-Harris-ARM/) | **1** 当前 |
+| **02** | [C](./02-c-programming/) | **2** |
+| **01** | CSAPP | **2** |
+| **07** / **08** / **09** | TLPI · 动手 OS · C++ | **3** |
+| **10–12** | PNP · UNP · TCP/IP | **3** |
+| **04** + **06** | LKD · Gorman | **4** |
+| **19–23** | 嵌入式支线 | **5A** |
+| **13**→**15**→**16**→**14**→**17** | 内核网 · 性能 · DPDK · HFT | **5B** |
+| **03** / **05** / **18** / **00** / **24** | Hennessy · ULK · Rust · 交易 · 电机 | **6** 拓展 |
+
+---
+
+## 内核段衔接（锁定）
 
 ```
-01 CSAPP → 02 C → 03 Hennessy
+25 Harris → 02 C → 01 CSAPP
     ↓
-04 LKD → 05 ULK → 06 Gorman → 07 TLPI
+07 TLPI → 10–12 网络（08/09 穿插）
     ↓
-08/01 MikanOS → 09 C++ → 10–14 网络/DPDK
+04 LKD + 06 Gorman
     ↓
-15 SysPerf → 16 BPF → 17 HFT
+A: 19–23 嵌入式    |    B: 13 → 15 → 16 → 14 → 17 HFT
+    ↓
+Phase6: 03 · 05 ULK · 18 · 00 · 24
 ```
 
-→ [08 HFT 主次](./08-system-low-level-hands-on/HFT-AND-EMBEDDED-PRIORITY.md) · [02 C OUTLINE](./02-c-programming/OUTLINE.md) · [外部 C 笔记](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) · [GitHub 仓库](https://github.com/cshonor/hft-embedded-linux-study)
+→ **[LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)** · [08 HFT 主次](./08-system-low-level-hands-on/HFT-AND-EMBEDDED-PRIORITY.md) · [02 C OUTLINE](./02-c-programming/OUTLINE.md) · [GitHub 仓库](https://github.com/cshonor/hft-embedded-linux-study)
 
 ---
 
-**HFT 主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08/01 → 09 → 10 → 01网络 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18`
+**HFT 主线执行序号（锁定）：** `25 → 02 → 01 → 07 → 08/09穿插 → 10 → 11 → 12 → 04+06 → 13 → 15 → 16 → 14 → 17`（`03`/`05`/`18`/`00`/`24` = Phase6）
 
-> **C++：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — **08/07 之后、10 PNP 之前** · *Effective Modern C++*
+> **C++：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — Phase3 穿插，**10 PNP 前**至少过 *Effective Modern C++*
