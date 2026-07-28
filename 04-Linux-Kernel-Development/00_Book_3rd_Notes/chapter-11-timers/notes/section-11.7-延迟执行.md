@@ -42,4 +42,17 @@ schedule_timeout(HZ / 2);   /* 约 0.5 秒 @ HZ=1000 */
 | `udelay` | 任意？忙等 — 中断里也可用（慎用） |
 | `schedule_timeout` | **仅进程上下文** |
 
+#### 选型速查
+
+| 需求 | 首选 | 避免 |
+|------|------|------|
+| **< 几 ms、硬件握手** | `udelay` / `ndelay` | `schedule_timeout(0)` |
+| **毫秒～秒、可睡眠** | `schedule_timeout` / **`msleep`** | 忙等 `jiffies` |
+| **精确到 ns、可编程** | **`hrtimer`**（内核）/ **`timerfd`**（用户） | 仅靠 HZ |
+| **进程上下文长睡** | **`wait_event_*`** + timeout | 持 spinlock 睡 |
+
+**HFT 用户态镜像：** **`pthread_cond_timedwait`** ≈ `schedule_timeout`；**自旋等队列非空** ≈ `udelay` 思维 — 热路径 **预分配 + 无等待** 优于一切 delay API。
+
+→ [Ch 11.6 动态定时器](./section-11.6-动态定时器.md) · [Ch 4 睡眠](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md)
+
 ---
