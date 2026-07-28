@@ -1,6 +1,6 @@
 ## ③ 进程状态 · Process State
 
-`task_struct` 的 **`state`** 字段 — 任一时刻必居 **下列五态之一**（经典 3rd 表述）：
+`task_struct` 的 **`state`** 字段 — 任一时刻必居 **下列状态之一**（经典 3rd 表述；新内核用位掩码组合，直觉相同）：
 
 | 状态 | 宏 | 含义 |
 |------|-----|------|
@@ -9,24 +9,66 @@
 | **不可中断睡眠** | `TASK_UNINTERRUPTIBLE` | 阻塞等事件；**信号不能唤醒** — 常用于必须等完的 I/O |
 | **被跟踪** | `__TASK_TRACED` | 被调试器 **`ptrace`** 跟踪 |
 | **停止** | `__TASK_STOPPED` | 收到 **`SIGSTOP` / `SIGTSTP`** 等而暂停 |
+| **退出僵尸** | `EXIT_ZOMBIE` | 已 `exit`，等父 `wait` — [§3.6](./section-3.6-进程终结.md) |
+
+#### ps STAT 列对照
+
+| ps 字符 | 内核态 |
+|---------|--------|
+| **R** | `TASK_RUNNING` |
+| **S** | 可中断睡眠 |
+| **D** | 不可中断睡眠 |
+| **T/t** | 停止 / 跟踪停止 |
+| **Z** | 僵尸 |
 
 #### 状态迁移（简化）
 
 ```
-        调度选中
-  RUNNING ◄──────────── 就绪队列
-     │                      ▲
-     │ 等待资源/睡眠          │ 信号/事件就绪
-     ▼                      │
- INTERRUPTIBLE / UNINTERRUPTIBLE
+        调度选中                    wake_up / 信号
+  RUNNING ◄───────────────────────────────┐
+     │                                      │
+     │ schedule()                           │
+     │ 等待资源/睡眠                         │
+     ▼                                      │
+ INTERRUPTIBLE / UNINTERRUPTIBLE ────────────┘
      │
-     │ ptrace
+     │ SIGSTOP / ptrace
      ▼
  TRACED / STOPPED
 ```
 
-**HFT / 观测：** `D` 状态（不可中断睡眠）过多 → 磁盘/NFS 等阻塞拖慢整条流水线；`perf`/`ps` 与 **Ch 4 运行队列** 联读。
+#### 谁改 state？
 
-→ [03 SysPerf §3.2 进程与调度](../../../../15-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
+| 路径 | 典型调用链 |
+|------|------------|
+| **主动让出 CPU** | `schedule()` ← mutex、wait_queue |
+| **时间片耗尽** | 时钟中断 → 调度器 — [§4.5](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) |
+| **唤醒** | `try_to_wake_up()` → 入运行队列 |
+| **退出** | `do_exit()` → `EXIT_ZOMBIE` |
+
+#### 可中断 vs 不可中断
+
+| 类型 | 信号能打断？ | 典型场景 | 风险 |
+|------|-------------|----------|------|
+| **可中断** | 是 | 等 socket、等 futex | 需处理 `-EINTR` |
+| **不可中断** | 否 | 部分块设备、NFS 卡住 | **`D` 状态堆积** |
+
+```c
+/* 驱动里睡眠（示意） */
+set_current_state(TASK_INTERRUPTIBLE);
+schedule();          /* 不再返回直到被唤醒 */
+set_current_state(TASK_RUNNING);
+```
+
+#### 与调度器的边界
+
+| 状态 | 是否在 CFS/RT 运行队列？ |
+|------|--------------------------|
+| **RUNNING** | 是（含「就绪未跑」） |
+| **睡眠 / 停止 / 僵尸** | 否 |
+
+**HFT / 观测：** `D` 状态（不可中断睡眠）过多 → 磁盘/NFS 等阻塞拖慢整条流水线；`perf sched latency`、`ps aux` 与 **Ch 4 运行队列** 联读。用户态热路径若频繁 `futex` 睡眠，STAT 会长期在 **S** — 唤醒延迟是尾延迟来源之一。
+
+→ [Ch 4 §4.4 休眠与唤醒](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md) · [Ch 4 §4.5 抢占](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [15 SysPerf §3.2 进程与调度](../../../../15-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [07 TLPI Ch22–25 线程与调度](../../../../07-The-Linux-Programming-Interface/chapter-25-thread-scheduling/notes.md)
 
 ---
