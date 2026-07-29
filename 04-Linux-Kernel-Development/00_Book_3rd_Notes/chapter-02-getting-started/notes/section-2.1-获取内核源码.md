@@ -27,7 +27,7 @@ git pull    # 跟进主线更新
 
 ```bash
 # 示例：稳定版 tar.xz（镜像可换 tuna）
-curl -LO https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.5.tar.xz
+curl -LO https://mirrors.tuna.tsinghua.edu.cn/kernel/v7.x/linux-7.1.5.tar.xz
 tar -xf linux-7.1.5.tar.xz
 cd linux-7.1.5
 ```
@@ -36,6 +36,15 @@ cd linux-7.1.5
 |------|------|
 | **Git** | 易更新 · 补丁 · 分支/tag · 社区工作流 |
 | **压缩包** | 网络不稳时更省事；固定版本好对照笔记 |
+
+**本机（Windows 用户目录）：**
+
+| 项 | 路径 |
+|----|------|
+| 压缩包 | `C:\Users\12392\Desktop\linux-7.1.5.tar.xz` |
+| 解压树 | `C:\Users\12392\Desktop\linux-7.1.5\` |
+
+> Windows 下 `tar` 可能对 `tools/testing/selftests/` 里个别路径报 `Invalid argument`；**`kernel/` `mm/` `net/` `include/` `arch/` `drivers/` `init/` 等读 LKD 所需目录已齐全**，可忽略 selftests 噪点。真要完整树请在 Linux/WSL 再解压一份。
 
 #### 使用补丁 · Patches
 
