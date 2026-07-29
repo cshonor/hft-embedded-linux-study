@@ -12,7 +12,7 @@
 |----|------|----------|
 | **① 获取源码** | 版本定论 + tar/Git | **主树 7.1.5** · 书 **2.6.34** · 勿 `/usr/src` |
 | **② 源码树** | `arch` `drivers` `fs`… | 按子系统找代码 |
-| **③ 编译安装** | config → make → install | `menuconfig` · `make -j` · modules |
+| **③ 编译安装** | 工具 → config → make → install | **须在 Linux/WSL**；Win 树只读 |
 | **④ 开发差异** | Beast of a Different Nature | **无 libc · 小栈 · 同步 · 无 FP** |
 
 ---
