@@ -13,7 +13,8 @@
 | 00 | [00_Book_3rd_Notes](./00_Book_3rd_Notes/) | Love · LKD 第三版 · 20 章 | **主线** — 体系化梳理、查漏补缺 |
 | 01 | [01_Course_LFS](./01_Course_LFS/) | LFS 从零构建系统 | 前置：编译上下文、用户态/内核态边界 |
 
-📋 LFS ↔ 书本阅读关系 → [LEARNING-PATH.md](./LEARNING-PATH.md)
+📋 LFS ↔ 书本阅读关系 → [LEARNING-PATH.md](./LEARNING-PATH.md)  
+🗺️ 源码顶层目录 ↔ LKD 章节 → [00_Book_3rd_Notes/KERNEL-SOURCE-TREE-MAP.md](./00_Book_3rd_Notes/KERNEL-SOURCE-TREE-MAP.md)
 
 ---
 
