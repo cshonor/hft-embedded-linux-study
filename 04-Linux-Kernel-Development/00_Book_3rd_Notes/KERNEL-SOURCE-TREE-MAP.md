@@ -119,13 +119,16 @@ HFT 精读章顺序仍见 [OUTLINE.md](./OUTLINE.md)：`4 → 7–8 → 9–10 �
 
 ---
 
-## 源码放哪（再强调）
+## 源码放哪 · 下哪个版本
 
 | 建议 | 原因 |
 |------|------|
 | 用户目录（如 `~/linux-*`、Windows `Desktop\linux-*`） | 开发不必 root |
 | **不要** `/usr/src/linux` | 避免污染系统树、误链发行版头文件 |
-| Git 或 **tar.xz 包** 均可 | 见 [§2.1](./chapter-02-getting-started/notes/section-2.1-获取内核源码.md) |
+| **书本时代** | LKD 3rd = **2.6.34**（考古对照可选） |
+| **本仓库主树** | **linux-7.1.5**（已下到 Desktop并验收） |
+
+下载顺序、踩坑、验收清单 → [§2.1 获取内核源码](./chapter-02-getting-started/notes/section-2.1-获取内核源码.md)
 
 ---
 
