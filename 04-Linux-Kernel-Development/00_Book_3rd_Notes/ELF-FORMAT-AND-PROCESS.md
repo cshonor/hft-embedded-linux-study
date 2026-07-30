@@ -187,4 +187,4 @@ macOS = Mach-O（不是 ELF 亲戚）
 UEFI = PE；与 ELF 分阶段、分加载器
 ```
 
-→ [Ch3 §3.1 进程概念](./chapter-03-process-management/notes/section-3.1-进程的概念.md) · [ELF-UEFI-BOOT-CHAIN](./ELF-UEFI-BOOT-CHAIN.md) · [LEARNING-PATH-LOCKED](../../LEARNING-PATH-LOCKED.md)
+→ [PROCESS-IDENTITY-FD-FORK-EXEC](./PROCESS-IDENTITY-FD-FORK-EXEC.md)（PID/FD/`fork`+`exec` 总链）· [Ch3 §3.1](./chapter-03-process-management/notes/section-3.1-进程的概念.md) · [ELF-UEFI-BOOT-CHAIN](./ELF-UEFI-BOOT-CHAIN.md) · [LEARNING-PATH-LOCKED](../../LEARNING-PATH-LOCKED.md)

@@ -7,7 +7,8 @@
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)  
 🗺️ **源码顶层目录导航（书签）** → [KERNEL-SOURCE-TREE-MAP.md](./KERNEL-SOURCE-TREE-MAP.md)  
 🔗 **ELF vs UEFI PE32+ / 启动链路** → [ELF-UEFI-BOOT-CHAIN.md](./ELF-UEFI-BOOT-CHAIN.md)  
-📦 **ELF 体系 · exec/fork · 非 Unix 通用** → [ELF-FORMAT-AND-PROCESS.md](./ELF-FORMAT-AND-PROCESS.md)
+📦 **ELF 体系 · exec/fork · 非 Unix 通用** → [ELF-FORMAT-AND-PROCESS.md](./ELF-FORMAT-AND-PROCESS.md)  
+🪪 **PID / FD / fork+exec 身份-资源链** → [PROCESS-IDENTITY-FD-FORK-EXEC.md](./PROCESS-IDENTITY-FD-FORK-EXEC.md)
 
 ---
 
