@@ -3,7 +3,8 @@
 > **Linux Kernel Development 3rd** · Robert Love · **精读**
 
 > 本章定位：**谁跑、何时跑、跑多久** — 抢占式多任务、**CFS**、休眠/唤醒、内核抢占、**RT 策略** 与 **affinity** syscall。HFT **绑核 / `SCHED_FIFO` / 抖动** 的底层地图。  
-> 前置串联：PID/FD/`fork`+`exec` → [PROCESS-IDENTITY-FD-FORK-EXEC.md](../PROCESS-IDENTITY-FD-FORK-EXEC.md)
+> 前置串联：PID/FD/`fork`+`exec` → [PROCESS-IDENTITY-FD-FORK-EXEC.md](../PROCESS-IDENTITY-FD-FORK-EXEC.md)  
+> 连贯导读：抢占演进 + 策略 → [SCHEDULING-BASICS-CHAIN.md](../SCHEDULING-BASICS-CHAIN.md)
 
 ---
 
