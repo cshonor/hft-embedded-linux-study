@@ -18,7 +18,7 @@
 | **⑤ 线程** | 无专用线程类型 | **`clone()` + 标志** · 内核线程 |
 | **⑥ 终结** | `exit` · 僵尸 · 孤儿 | **`wait` · reparent → init** |
 | **⑦ ELF/exec**（拓展） | ET_* · Program Header | 静态 ELF → 进程映像 |
-| **⑧ PID/FD**（拓展） | 身份 vs 资源钥匙 | fork 新 PID；exec 换程序 |
+| **⑧ PID/FD**（拓展） | 身份 vs 资源钥匙 · **fork 共享 `struct file`/offset** | fork 新 PID；exec 换程序 |
 
 ---
 
