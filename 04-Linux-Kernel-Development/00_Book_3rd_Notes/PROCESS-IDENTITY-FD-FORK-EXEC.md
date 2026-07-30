@@ -78,22 +78,46 @@ Shell (PID=1000)
 
 | 点 | 说明 |
 |----|------|
-| 是什么 | 进程私有表（`files_struct` → fd 数组）里的 **下标**；指向内核对象（如 `file`） |
+| 是什么 | **单个进程内部** fd 数组的 **下标**（不是全局 ID）；经 `files_struct` 指向内核对象 |
 | 数量 | 一进程可持有多个 FD，指向不同对象 |
-| `fork` | 默认 **复制** 打开的 FD 表（父子各有一份表项，常共享同一底层 `file` 直至一方关闭/改） |
-| `execve` | **默认不关** FD；设了 **`FD_CLOEXEC`** 的才会在 exec 时关闭 |
+| `fork` | **复制 FD 表**；父子表项常指向 **同一底层 `file`/socket**，**引用计数 +1** |
+| `execve` | **默认不关** FD；设了 **`FD_CLOEXEC`** 的才在 exec 时自动关 |
 
 ### 关键区分
 
 | | 含义 |
 |--|------|
-| **PID** | 进程 **本体** 的身份 |
-| **FD** | 进程所持 **资源** 的钥匙 |
+| **PID** | 进程 **本体** 的身份（全局区分 task） |
+| **FD** | 进程所持 **资源** 的钥匙（进程私有下标） |
 
 ```
 PID  ──►  「我是谁」
 FD   ──►  「我能开哪扇门（文件/socket/…）」
 ```
+
+### `fork` 之后 FD 的坑（网络 / 高并发常踩）
+
+```
+父进程 listen_fd ──file/socket 引用计数 = 1
+        │ fork
+        ▼
+父 listen_fd ──┐
+               ├──► 同一 socket，引用计数 = 2
+子 listen_fd ──┘
+```
+
+| 陷阱 | 后果 |
+|------|------|
+| 子进程继承了 **监听 socket**，退出时 **没 close** | 引用计数 > 0 → **端口/监听不释放**，像「谁占着端口」排查噩梦 |
+| 父也一直握着子不该用的连接 fd | 连接关不干净、泄漏 |
+
+| 解法 | |
+|------|--|
+| 子进程 **主动 `close` 不需要的继承 FD**（监听 fd / 其它连接） | 最常见 |
+| 打开时设 **`FD_CLOEXEC`**（或 `SOCK_CLOEXEC`） | `exec` 时自动关；**纯 fork 多进程模型仍要自己 close** |
+| 优先考虑 **`posix_spawn`** / 明确 fd 动作的 API | 少踩多线程下 `fork` 的坑（见文末） |
+
+**Rust / 网络服务：** 多进程或 `Command` 前后，清点「子进程到底继承了哪些 socket」；监听 fd 只留在该听的那一侧。
 
 ---
 
@@ -191,7 +215,7 @@ task_struct
 │   ├── PID（调度/信号主键）
 │   └── UID/GID · 进程组 · 会话
 ├── 资源
-│   └── FD → files_struct（fork 复制；exec 默认可保留）
+│   └── FD → files_struct（fork 复制共享底层对象；exec 默认可保留）
 ├── 创建
 │   ├── fork  = 新 PID + 复制 mm/FD/上下文（同程序）
 │   └── execve = 同 PID + 加载 ELF + 重建 mm（换程序）
@@ -199,4 +223,14 @@ task_struct
     └── 磁盘 ELF（Program Header）← binfmt_elf
 ```
 
-→ [§3.1](./chapter-03-process-management/notes/section-3.1-进程的概念.md) · [§3.2 task_struct](./chapter-03-process-management/notes/section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./chapter-03-process-management/notes/section-3.4-进程创建与写时拷贝.md)
+---
+
+## 8. 延伸：`clone` / `posix_spawn`
+
+| API | 与本文关系 |
+|-----|------------|
+| **`clone()`** | 更通用；**`fork` ≈ 一组固定标志的 `clone`**（Linux 视角） |
+| **`posix_spawn`** | 把「创建 + 装映像 + fd/信号动作」收成一步，**规避多线程里乱 `fork` 的经典坑** |
+| Rust | 高并发服务起子进程时优先查清运行时/`Command` 是否走 spawn 语义，并管好 **CLOEXEC / 显式 close** |
+
+→ [§3.1](./chapter-03-process-management/notes/section-3.1-进程的概念.md) · [§3.2 task_struct](./chapter-03-process-management/notes/section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./chapter-03-process-management/notes/section-3.4-进程创建与写时拷贝.md) · [§3.5 clone/线程](./chapter-03-process-management/notes/section-3.5-Linux-的线程实现.md) · **下接调度** [Ch4 §4.1](./chapter-04-process-scheduling/notes/section-4.1-多任务与调度器演进.md)
