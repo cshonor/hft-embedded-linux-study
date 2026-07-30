@@ -2,7 +2,8 @@
 
 > **Linux Kernel Development 3rd** · Robert Love · **选读**
 
-> 本章定位：Linux **进程抽象** 的内核实现 — `task_struct`、状态机、`fork`+COW、`clone` 线程模型、退出与僵尸。为 **Ch 4 调度**、**Ch 15 地址空间** 打底。
+> 本章定位：Linux **进程抽象** 的内核实现 — `task_struct`、状态机、`fork`+COW、`clone` 线程模型、退出与僵尸。为 **Ch 4 调度**、**Ch 15 地址空间** 打底。  
+> 拓展：`execve` 如何加载 ELF、Program Header vs Section → [ELF-FORMAT-AND-PROCESS.md](../ELF-FORMAT-AND-PROCESS.md)
 
 ---
 
