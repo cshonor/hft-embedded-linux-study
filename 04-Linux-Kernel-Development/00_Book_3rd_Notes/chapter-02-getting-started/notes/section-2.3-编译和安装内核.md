@@ -167,4 +167,6 @@ sudo make install          # 发行版支持时
 
 **经验问题答一句：** 工具侧可以陪你从 `menuconfig` 到排错；你这边关键是 **准备好 Linux/WSL 环境**，在 Windows 上把 7.1.5 当「只读教科书」即可。真要第一次全量编译，建议 **Ubuntu 虚拟机** 里对拷过去的 `linux-7.1.5` 跑通 `defconfig → make -j`，成功后再谈 `modules_install`。
 
+编译产物如何被 UEFI/GRUB 加载、为何用户态是 ELF → [ELF-UEFI-BOOT-CHAIN.md](../../ELF-UEFI-BOOT-CHAIN.md)
+
 ---

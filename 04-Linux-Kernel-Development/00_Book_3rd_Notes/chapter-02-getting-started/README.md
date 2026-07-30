@@ -2,7 +2,8 @@
 
 > **Linux Kernel Development 3rd** · Robert Love · **实操入门**
 
-> 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C** 的硬性约束。
+> 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C** 的硬性约束。  
+> 拓展：编译出的镜像如何进 UEFI、与用户态 ELF 分界 → [ELF-UEFI-BOOT-CHAIN.md](../ELF-UEFI-BOOT-CHAIN.md)
 
 ---
 

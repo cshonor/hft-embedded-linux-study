@@ -5,7 +5,8 @@
 > **前置建议：** 建议先完成 [01 LFS](../01_Course_LFS/)，再通读本书。见 [LEARNING-PATH.md](../LEARNING-PATH.md)。
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)  
-🗺️ **源码顶层目录导航（书签）** → [KERNEL-SOURCE-TREE-MAP.md](./KERNEL-SOURCE-TREE-MAP.md)
+🗺️ **源码顶层目录导航（书签）** → [KERNEL-SOURCE-TREE-MAP.md](./KERNEL-SOURCE-TREE-MAP.md)  
+🔗 **ELF vs UEFI PE32+ / 启动链路** → [ELF-UEFI-BOOT-CHAIN.md](./ELF-UEFI-BOOT-CHAIN.md)
 
 ---
 
