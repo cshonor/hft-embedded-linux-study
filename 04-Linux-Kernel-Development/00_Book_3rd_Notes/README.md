@@ -4,12 +4,9 @@
 
 > **前置建议：** 建议先完成 [01 LFS](../01_Course_LFS/)，再通读本书。见 [LEARNING-PATH.md](../LEARNING-PATH.md)。
 
-📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)  
-🗺️ **源码顶层目录导航（书签）** → [KERNEL-SOURCE-TREE-MAP.md](./KERNEL-SOURCE-TREE-MAP.md)  
-🔗 **ELF vs UEFI PE32+ / 启动链路** → [ELF-UEFI-BOOT-CHAIN.md](./ELF-UEFI-BOOT-CHAIN.md)  
-📦 **ELF 体系 · exec/fork · 非 Unix 通用** → [ELF-FORMAT-AND-PROCESS.md](./ELF-FORMAT-AND-PROCESS.md)  
-🪪 **PID / FD / fork+exec 身份-资源链** → [PROCESS-IDENTITY-FD-FORK-EXEC.md](./PROCESS-IDENTITY-FD-FORK-EXEC.md)  
-⏱️ **调度基础连贯读（4.1→4.2→CFS/RT）** → [SCHEDULING-BASICS-CHAIN.md](./SCHEDULING-BASICS-CHAIN.md)
+📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
+
+> **笔记只在** `chapter-XX/notes/section-*.md` **体系内**（拓展节标「拓展」）。勿再依赖仓库根下独立散页。
 
 ---
 

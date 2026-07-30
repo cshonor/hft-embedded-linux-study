@@ -1,10 +1,9 @@
-# ELF 体系梳理（衔接进程模型 · 修正边界误区）
+﻿## ⑦ ELF 体系与 exec 加载 · ELF Format（拓展）
 
-> **用途：** 弄清 ELF 覆盖哪些文件、如何经 `execve` 变成进程，以及「类 Unix ≠ 全是 ELF」。  
-> **承接：** [ELF-UEFI-BOOT-CHAIN.md](./ELF-UEFI-BOOT-CHAIN.md)（固件 PE vs 内核后 ELF）· [Ch3 进程](./chapter-03-process-management/) · [Ch5 系统调用](./chapter-05-system-calls/) · [CSAPP 链接/异常](../../01-CSAPP-3rd/)
+> **拓展节：** ELF 覆盖哪些文件、`execve` 如何变成进程；类 Unix ≠ 全是 ELF。
+> 承接：[§2.5 UEFI/PE](../../chapter-02-getting-started/notes/section-2.5-ELF与UEFI启动链路.md) · [§3.8 PID/FD](./section-3.8-身份PID与资源FD.md) · [Ch5](../../chapter-05-system-calls/)
 
 ---
-
 ## 一、基础定义
 
 **ELF**（Executable and Linkable Format，可执行与可链接格式）源自 **System V Release 4 Unix**，是开放、跨架构的二进制标准。
@@ -118,7 +117,7 @@ Linux、FreeBSD、OpenBSD、NetBSD、Illumos（Solaris 分支）、Minix 3 等�
 | `grubx64.efi` 等 | 纯 PE |
 | `bzImage` + `EFI_STUB` | 外层 PE，内核载荷在 Stub 交接后进入 Linux 世界 |
 
-细节 → [ELF-UEFI-BOOT-CHAIN.md](./ELF-UEFI-BOOT-CHAIN.md)
+细节 → [§2.5 UEFI/ELF](../../chapter-02-getting-started/notes/section-2.5-ELF与UEFI启动链路.md)
 
 ---
 
@@ -187,4 +186,4 @@ macOS = Mach-O（不是 ELF 亲戚）
 UEFI = PE；与 ELF 分阶段、分加载器
 ```
 
-→ [PROCESS-IDENTITY-FD-FORK-EXEC](./PROCESS-IDENTITY-FD-FORK-EXEC.md)（PID/FD/`fork`+`exec` 总链）· [Ch3 §3.1](./chapter-03-process-management/notes/section-3.1-进程的概念.md) · [ELF-UEFI-BOOT-CHAIN](./ELF-UEFI-BOOT-CHAIN.md) · [LEARNING-PATH-LOCKED](../../LEARNING-PATH-LOCKED.md)
+→ [§3.8 PID/FD](./section-3.8-身份PID与资源FD.md) · [§3.1](./section-3.1-进程的概念.md) · [§2.5](../../chapter-02-getting-started/notes/section-2.5-ELF与UEFI启动链路.md)

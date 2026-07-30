@@ -1,11 +1,9 @@
-# ELF 与 UEFI PE32+ · Linux 启动链路（LKD / 底层视角）
+﻿## ⑤ ELF 与 UEFI 启动链路 · Boot Chain（拓展）
 
-> **用途：** 分清 **固件阶段二进制** 与 **内核接管后二进制**；承接 Ch2 镜像 / Ch3 进程与 `exec`。  
-> **范围：** 以 **x86_64 UEFI + Linux** 为主；ARM64 嵌入式逻辑同构（格式名/路径不同）。  
-> **关联：** [§2.3 编译安装](./chapter-02-getting-started/notes/section-2.3-编译和安装内核.md) · [Ch3 进程](./chapter-03-process-management/) · [§5 系统调用](./chapter-05-system-calls/) · [20 构建/启动](../../20-UBoot-Kernel-Build/)
+> **拓展节（非原书独立章）：** 分清固件 **PE32+** 与内核接管后 **ELF**；承接 §2.3 镜像产物与 Ch3 `exec`。
+> 范围：x86_64 UEFI + Linux 为主；ARM64 逻辑同构。
 
 ---
-
 ## 一、核心结论
 
 1. **UEFI 固件原生加载器只认 PE32/PE32+（`.efi`），不原生支持 ELF。**
@@ -169,4 +167,4 @@ file /boot/efi/EFI/*/grubx64.efi   # PE32+ executable
 | GRUB `.efi` | PE；之后由它加载内核文件 |
 | `fork`/`exec` | **只存在于 Linux 进程世界**，加载的是 ELF |
 
-→ [KERNEL-SOURCE-TREE-MAP](./KERNEL-SOURCE-TREE-MAP.md) · [§2.1 源码版本](./chapter-02-getting-started/notes/section-2.1-获取内核源码.md) · [LEARNING-PATH-LOCKED](../../LEARNING-PATH-LOCKED.md)
+→ [§2.2 源码树](./section-2.2-内核源码树.md) · [§2.1](./section-2.1-获取内核源码.md) · [LEARNING-PATH-LOCKED](../../../../LEARNING-PATH-LOCKED.md)

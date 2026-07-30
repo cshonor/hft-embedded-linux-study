@@ -153,7 +153,7 @@ patch -p1 < ../some.patch
 
 `-p1` 剥一层路径前缀；亦可用 `git apply` / `git am`。
 
-→ 顶层目录导航：[§2.2](./section-2.2-内核源码树.md) · [KERNEL-SOURCE-TREE-MAP](../../KERNEL-SOURCE-TREE-MAP.md)  
+→ 顶层目录导航：[§2.2](./section-2.2-内核源码树.md)
 → 收官：[Ch 20](../../chapter-20-patches-community/)
 
 ---

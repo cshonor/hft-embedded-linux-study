@@ -62,7 +62,7 @@ fork() → 新 task_struct + 新 PID
 | `task_struct` | 调度实体挂在上面（CFS 还有 `sched_entity`） |
 | `fork` | 造出可被调度的新身份；就绪后进 runqueue |
 | `execve` | **不换 PID**，换用户映像；调度身份仍是这个 task |
-| PID / FD | 身份与资源钥匙 — 见 [PROCESS-IDENTITY-FD-FORK-EXEC](../../PROCESS-IDENTITY-FD-FORK-EXEC.md) |
+| PID / FD | 身份与资源钥匙 — 见 [§3.8](../../chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md) |
 
 **一句话：** 调度器不「创建程序」；它只在 **已存在的 task** 里挑谁跑。创建靠 `fork`/`clone`，换程序靠 `exec`。
 

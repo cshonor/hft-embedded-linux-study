@@ -163,10 +163,10 @@ sudo make install          # 发行版支持时
 | [§2.1 获取源码](./section-2.1-获取内核源码.md) | 版本 7.1.5 / 2.6.34、下载验收 |
 | [01 LFS p11–p12](../../../01_Course_LFS/) | 从零构建语境下的编译课 |
 | [20-UBoot-Kernel-Build](../../../../20-UBoot-Kernel-Build/) | 嵌入式构建、交叉编译 |
-| [KERNEL-SOURCE-TREE-MAP](../../KERNEL-SOURCE-TREE-MAP.md) | 编译前先认目录 |
+| [§2.2 源码树](./section-2.2-内核源码树.md) | 编译前先认目录 |
 
 **经验问题答一句：** 工具侧可以陪你从 `menuconfig` 到排错；你这边关键是 **准备好 Linux/WSL 环境**，在 Windows 上把 7.1.5 当「只读教科书」即可。真要第一次全量编译，建议 **Ubuntu 虚拟机** 里对拷过去的 `linux-7.1.5` 跑通 `defconfig → make -j`，成功后再谈 `modules_install`。
 
-编译产物如何被 UEFI/GRUB 加载、为何用户态是 ELF → [ELF-UEFI-BOOT-CHAIN.md](../../ELF-UEFI-BOOT-CHAIN.md)
+编译产物如何被 UEFI/GRUB 加载、为何用户态是 ELF → [§2.5](./section-2.5-ELF与UEFI启动链路.md)
 
 ---

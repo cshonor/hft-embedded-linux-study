@@ -10,7 +10,7 @@ Linux 把任务隔成两大阵营（两套调度类，**不要混优先级标尺
 | **普通分时** | **CFS**（默认 `SCHED_OTHER`） | 绝大多数程序 |
 | **实时** | **`SCHED_FIFO` / `SCHED_RR`** | 高优先级；**压过全部 CFS** |
 
-连贯阅读：[SCHEDULING-BASICS-CHAIN.md](../../SCHEDULING-BASICS-CHAIN.md)
+连贯顺序见本章 [README 推荐阅读](../README.md)。
 
 ---
 
@@ -90,7 +90,7 @@ fork → task_struct（内存里带着：policy、nice/权重、vruntime、RT pr
 
 | 身份链 | 调度链 |
 |--------|--------|
-| PID = 是谁（[PROCESS-IDENTITY…](../../PROCESS-IDENTITY-FD-FORK-EXEC.md)） | policy + nice/RT = **怎么被挑上 CPU** |
+| PID = 是谁（[§3.8](../../chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)） | policy + nice/RT = **怎么被挑上 CPU** |
 | `exec` 不换 PID | `exec` **一般也不改** 你已设的调度策略（除非程序自己再 `sched_setscheduler`） |
 
 ---

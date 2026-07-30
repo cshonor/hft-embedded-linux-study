@@ -2,8 +2,8 @@
 
 > **Linux Kernel Development 3rd** · Robert Love · **实操入门**
 
-> 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C** 的硬性约束。  
-> 拓展：编译出的镜像如何进 UEFI、与用户态 ELF 分界 → [ELF-UEFI-BOOT-CHAIN.md](../ELF-UEFI-BOOT-CHAIN.md)
+> 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C**。  
+> 拓展⑤：编译镜像如何进 UEFI、与用户态 ELF 分界。
 
 ---
 
@@ -12,9 +12,10 @@
 | 节 | 主题 | 带走什么 |
 |----|------|----------|
 | **① 获取源码** | 版本定论 + tar/Git | **主树 7.1.5** · 书 **2.6.34** · 勿 `/usr/src` |
-| **② 源码树** | `arch` `drivers` `fs`… | 按子系统找代码 |
+| **② 源码树** | `arch` `drivers`… + 目录↔章对照 | 按子系统找代码 |
 | **③ 编译安装** | 工具 → config → make → install | **须在 Linux/WSL**；Win 树只读 |
 | **④ 开发差异** | Beast of a Different Nature | **无 libc · 小栈 · 同步 · 无 FP** |
+| **⑤ ELF/UEFI**（拓展） | PE vs ELF · 启动链路 | 固件认 PE；内核后认 ELF |
 
 ---
 
@@ -26,6 +27,7 @@
 | 内核源码树 | [notes/section-2.2-内核源码树.md](./notes/section-2.2-内核源码树.md) |
 | 编译和安装内核 | [notes/section-2.3-编译和安装内核.md](./notes/section-2.3-编译和安装内核.md) |
 | 内核开发的特点 | [notes/section-2.4-内核开发的特点.md](./notes/section-2.4-内核开发的特点.md) |
+| ELF 与 UEFI 启动链路（拓展） | [notes/section-2.5-ELF与UEFI启动链路.md](./notes/section-2.5-ELF与UEFI启动链路.md) |
 
 ---
 
@@ -33,21 +35,20 @@
 
 | 问题 | 答案 |
 |------|------|
-| 怎么拿源码？ | **`git clone` + `pull`** 优先；tarball 放用户目录 |
-| 怎么打补丁？ | **`patch -p1 <`** 或 git 系列 |
-| 关键目录？ | **`arch` `drivers` `fs` `kernel` `mm` `include`** |
-| 怎么编？ | **`menuconfig` → `make -jN` → 装镜像 + `modules_install`** |
-| 和用户态最大不同？ | **无 libc · printk · 小栈 · 无换页 · 严同步 · 慎 FP** |
+| 怎么拿源码？ | 首选 **国内镜像 tar.xz**（见 §2.1）；Git 易断 |
+| 主树版本？ | **7.1.5** 日常；书 **2.6.34** 考古 |
+| 关键目录？ | **`arch` `drivers` `fs` `kernel` `mm` `include` `net`** |
+| 怎么编？ | Linux/WSL：`menuconfig` → `make -j` → `modules_install` |
+| UEFI 认什么？ | **PE32+ `.efi`**；内核跑起来后用户态是 **ELF**（§2.5） |
 
 ---
 
 ## 本章学习目标 · 自检
 
-- [ ] 能在 **个人目录** 完成 clone、`menuconfig`、`make -j`
-- [ ] 说清 **`printk` vs `printf`**、**内核栈大小** 约束
-- [ ] 知道 **`likely/unlikely`** 是分支预测而非逻辑改变
-- [ ] 能指出 **`kernel/`、`mm/`、`fs/`** 各对应本书哪几章
-- [ ] 理解为何 HFT 调内核参数时要 **可回滚引导项**
+- [ ] 说清本机 **7.1.5** 路径与验收项（§2.1）
+- [ ] 能按目录找到 LKD 对应章（§2.2）
+- [ ] 知道 Windows 树只读、真编译在 Linux
+- [ ] 分清 **UEFI=PE** vs **Linux 后=ELF**
 
 ---
 

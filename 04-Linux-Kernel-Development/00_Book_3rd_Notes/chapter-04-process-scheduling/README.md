@@ -2,9 +2,26 @@
 
 > **Linux Kernel Development 3rd** · Robert Love · **精读**
 
-> 本章定位：**谁跑、何时跑、跑多久** — 抢占式多任务、**CFS**、休眠/唤醒、内核抢占、**RT 策略** 与 **affinity** syscall。HFT **绑核 / `SCHED_FIFO` / 抖动** 的底层地图。  
-> 前置串联：PID/FD/`fork`+`exec` → [PROCESS-IDENTITY-FD-FORK-EXEC.md](../PROCESS-IDENTITY-FD-FORK-EXEC.md)  
-> 连贯导读：抢占演进 + 策略 → [SCHEDULING-BASICS-CHAIN.md](../SCHEDULING-BASICS-CHAIN.md)
+> 本章定位：**谁跑、何时跑、跑多久** — 抢占、**CFS**、休眠/唤醒、内核抢占、**RT**、affinity。  
+> 前置：[Ch3 §3.8 PID/FD](../chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
+
+---
+
+## 推荐阅读顺序（原「连贯导读」已并入本章）
+
+```
+4.1  抢占式多任务 · runqueue · O(1)→CFS
+  → 4.2  谁优先/跑多久 · nice vs RT · I/O vs CPU
+  → 4.3  CFS 深挖（vruntime / 红黑树）  与/或  4.6 FIFO/RR
+  → 4.5 / 4.7  抢占切换 · syscall/affinity
+```
+
+| 一页记忆 | |
+|----------|--|
+| 死循环卡不死整机？ | **抢占**（4.1） |
+| 网络服务默认还行？ | CFS **vruntime** 偏爱常休眠（4.2/4.3） |
+| nice ≠ 实时 | RT 另套 1–99（4.2/4.6） |
+| HFT 热路径 | 隔离核 + FIFO；控制面留 CFS |
 
 ---
 
@@ -13,7 +30,7 @@
 | 节 | 主题 | 带走什么 |
 |----|------|----------|
 | **① 演进** | 抢占式多任务 | O(1) → **CFS（2.6.23）** |
-| **② 策略** | I/O vs CPU 型 · 优先级 | **nice** · **RT 0–99** |
+| **② 策略** | I/O vs CPU · 优先级 | **nice** · **RT 1–99** |
 | **③ CFS** | 公平调度算法 | **`vruntime`** · **红黑树** |
 | **④ 休眠唤醒** | 等待队列 | `wake_up()` |
 | **⑤ 抢占与切换** | `context_switch` | **用户/内核抢占** |
@@ -40,24 +57,10 @@
 
 | 问题 | 答案 |
 |------|------|
-| Linux 多任务？ | **抢占式** — 调度器可强制切换 |
-| 默认调度器？ | **CFS** — 公平 **比例**，非固定片长 |
-| CFS 选谁？ | **`vruntime` 最小** — **红黑树最左** |
-| nice vs RT？ | nice 调 **份额**；RT **0–99 压过** 所有普通进程 |
-| 睡眠去哪？ | **等待队列** — 唤醒后回红黑树 |
-| 内核能抢占吗？ | **能**（2.6+）— 持锁等 **非抢占** 区除外 |
-| RT 策略？ | **`SCHED_FIFO` / `SCHED_RR`** — **软实时** |
+| Linux 多任务？ | **抢占式** |
+| 默认调度器？ | **CFS** — `vruntime` 最小优先 |
+| nice vs RT？ | nice 调份额；RT **压过** 所有 CFS |
 | HFT 三板斧？ | **`affinity` + `chrt` + 隔离核** |
-
----
-
-## 本章学习目标 · 自检
-
-- [ ] 解释 **CFS 为何不分配传统时间片**，`vruntime` 何意
-- [ ] 区分 **nice** 与 **RT 优先级** 两套数值方向
-- [ ] 画出 **睡眠 → wait queue → wake_up → 红黑树**
-- [ ] 说出 **`sched_setaffinity` / `sched_yield`** 用途
-- [ ] 知 **软实时** 边界 — 生产上如何配 **FIFO + 绑核** 且不伤系统
 
 ---
 

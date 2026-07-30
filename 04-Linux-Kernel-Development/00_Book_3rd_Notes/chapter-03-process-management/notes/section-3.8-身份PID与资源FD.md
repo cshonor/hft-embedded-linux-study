@@ -1,10 +1,9 @@
-# 身份 · 资源 · 创建逻辑（PID / FD / fork+exec / ELF）
+﻿## ⑧ 身份 PID 与资源 FD · fork+exec（拓展）
 
-> **主线：** 身份 → 资源 → `fork`+`execve` → 静态 ELF 如何变成可调度进程。  
-> **承接：** [ELF-FORMAT-AND-PROCESS](./ELF-FORMAT-AND-PROCESS.md) · [ELF-UEFI-BOOT-CHAIN](./ELF-UEFI-BOOT-CHAIN.md) · [Ch3 进程管理](./chapter-03-process-management/) · [Ch15 地址空间](./chapter-15-process-address-space/)
+> **拓展节：** 身份 → 资源 → `fork`+`execve` → 静态 ELF 如何变成可调度进程。
+> 承接：[§3.7 ELF](./section-3.7-ELF体系与exec加载.md) · [§3.1–3.4](./section-3.1-进程的概念.md) · 下接 [Ch4 §4.1](../../chapter-04-process-scheduling/notes/section-4.1-多任务与调度器演进.md)
 
 ---
-
 ## 0. 速记卡（先稳住再往下翻）
 
 ### 核心类比
@@ -146,7 +145,7 @@ FD   ──►  「我能开哪扇门（文件/socket/…）」
 5. 改入口与寄存器等上下文  
 6. **PID 不变** — 档案还是那份，**跑的程序彻底换了**；`mm_struct` 常被重建
 
-细节 → [ELF-FORMAT-AND-PROCESS](./ELF-FORMAT-AND-PROCESS.md)
+细节 → [§3.7 ELF](./section-3.7-ELF体系与exec加载.md)
 
 ---
 
@@ -233,4 +232,4 @@ task_struct
 | **`posix_spawn`** | 把「创建 + 装映像 + fd/信号动作」收成一步，**规避多线程里乱 `fork` 的经典坑** |
 | Rust | 高并发服务起子进程时优先查清运行时/`Command` 是否走 spawn 语义，并管好 **CLOEXEC / 显式 close** |
 
-→ [§3.1](./chapter-03-process-management/notes/section-3.1-进程的概念.md) · [§3.2 task_struct](./chapter-03-process-management/notes/section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./chapter-03-process-management/notes/section-3.4-进程创建与写时拷贝.md) · [§3.5 clone/线程](./chapter-03-process-management/notes/section-3.5-Linux-的线程实现.md) · **下接调度** [Ch4 §4.1](./chapter-04-process-scheduling/notes/section-4.1-多任务与调度器演进.md)
+→ [§3.1](./section-3.1-进程的概念.md) · [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./section-3.4-进程创建与写时拷贝.md) · [§3.5 clone/线程](./section-3.5-Linux-的线程实现.md) · **下接调度** [Ch4 §4.1](../../chapter-04-process-scheduling/notes/section-4.1-多任务与调度器演进.md)

@@ -2,9 +2,8 @@
 
 > **Linux Kernel Development 3rd** · Robert Love · **选读**
 
-> 本章定位：Linux **进程抽象** 的内核实现 — `task_struct`、状态机、`fork`+COW、`clone` 线程模型、退出与僵尸。为 **Ch 4 调度**、**Ch 15 地址空间** 打底。  
-> 拓展：`execve` 如何加载 ELF、Program Header vs Section → [ELF-FORMAT-AND-PROCESS.md](../ELF-FORMAT-AND-PROCESS.md)  
-> 拓展：PID vs FD、`fork` 换身份 / `exec` 换程序 → [PROCESS-IDENTITY-FD-FORK-EXEC.md](../PROCESS-IDENTITY-FD-FORK-EXEC.md)
+> 本章定位：Linux **进程抽象** — `task_struct`、状态、`fork`+COW、`clone`、退出与僵尸。为 **Ch 4 调度**、**Ch 15 地址空间** 打底。  
+> 拓展⑦⑧：ELF 加载、PID/FD 与 `fork`+`exec` 身份-资源链。
 
 ---
 
@@ -18,6 +17,8 @@
 | **④ 创建与 COW** | `fork()` 优化 | **写时拷贝** |
 | **⑤ 线程** | 无专用线程类型 | **`clone()` + 标志** · 内核线程 |
 | **⑥ 终结** | `exit` · 僵尸 · 孤儿 | **`wait` · reparent → init** |
+| **⑦ ELF/exec**（拓展） | ET_* · Program Header | 静态 ELF → 进程映像 |
+| **⑧ PID/FD**（拓展） | 身份 vs 资源钥匙 | fork 新 PID；exec 换程序 |
 
 ---
 
@@ -31,6 +32,8 @@
 | 进程创建与写时拷贝 | [notes/section-3.4-进程创建与写时拷贝.md](./notes/section-3.4-进程创建与写时拷贝.md) |
 | Linux 的线程实现 | [notes/section-3.5-Linux-的线程实现.md](./notes/section-3.5-Linux-的线程实现.md) |
 | 进程终结 | [notes/section-3.6-进程终结.md](./notes/section-3.6-进程终结.md) |
+| ELF 体系与 exec 加载（拓展） | [notes/section-3.7-ELF体系与exec加载.md](./notes/section-3.7-ELF体系与exec加载.md) |
+| 身份 PID 与资源 FD（拓展） | [notes/section-3.8-身份PID与资源FD.md](./notes/section-3.8-身份PID与资源FD.md) |
 
 ---
 
@@ -39,27 +42,24 @@
 | 问题 | 答案 |
 |------|------|
 | 进程是什么？ | **执行中程序 + 资源集合** |
-| 内核怎么表示？ | **`task_struct`** on **task list** · Slab + **`thread_info`** |
-| 五态？ | **RUNNING / INTERRUPTIBLE / UNINTERRUPTIBLE / TRACED / STOPPED** |
-| `fork` 为何快？ | **COW** — 写时才复制物理页 |
-| 线程？ | **`clone` 标志共享资源** — 无单独线程结构 |
-| 内核线程？ | 仅内核态、无用户地址空间、内核创建 |
-| 退出后为何还有 PID？ | **僵尸** — 等父 **`wait`**；孤儿由 **init** 收养 |
+| 内核怎么表示？ | **`task_struct`** |
+| `fork` / `exec`？ | fork **新 PID** 复制；exec **同 PID** 换 ELF（§3.8） |
+| ELF？ | 磁盘模板；`execve`+Program Header 才进进程（§3.7） |
+| 线程？ | **`clone` 标志共享** — 无单独线程结构 |
 
 ---
 
 ## 本章学习目标 · 自检
 
-- [ ] 画出 **`fork` → COW → exec** 与 **pthread ≈ clone(CLONE_VM|…)** 的关系
-- [ ] 区分 **可中断 / 不可中断睡眠** 与信号行为
-- [ ] 解释 **僵尸** 占什么、**`wait`** 做什么
-- [ ] 知道 **内核线程** 与用户线程不是同一层抽象
-- [ ] 能对照 HFT：**少 fork、多线程、注意 D 状态与 kthread 争核**
+- [ ] 画出 **`fork` → COW → exec(ELF)`**
+- [ ] 区分 **PID（身份）** 与 **FD（钥匙）**
+- [ ] 解释僵尸与 `wait`
+- [ ] 下接调度：task 进 runqueue（Ch 4）
 
 ---
 
 ## 相关章节
 
-- 上一章：[../chapter-02-getting-started/](../chapter-02-getting-started/)
+- 上一章：[../chapter-02-getting-started/](../chapter-02-getting-started/)（含 [§2.5 UEFI/ELF](../chapter-02-getting-started/notes/section-2.5-ELF与UEFI启动链路.md)）
 - 下一章：[../chapter-04-process-scheduling/](../chapter-04-process-scheduling/)
 - 全书导读：[../README.md](../README.md) · [../OUTLINE.md](../OUTLINE.md)
