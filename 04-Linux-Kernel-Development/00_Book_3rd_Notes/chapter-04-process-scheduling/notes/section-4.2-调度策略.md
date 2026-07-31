@@ -321,18 +321,109 @@ nice → static_prio → index → 查表 weight →（wmult）→ vruntime 增�
 
 ---
 
-### 三、策略常量速查
+### 三、六种调度策略完整汇总
 
-| 策略 | 类 | 说明 |
-|------|-----|------|
-| **`SCHED_OTHER` / `SCHED_NORMAL`** | CFS | **默认**分时 |
-| **`SCHED_BATCH`** | CFS 变体 | 更偏吞吐、少交互优待 |
-| **`SCHED_IDLE`** | 极低 | 几乎只吃空闲 |
-| **`SCHED_FIFO`** | RT | 同 prio **无时间片**；跑到阻塞 / yield / 被更高 RT 抢 | 
-| **`SCHED_RR`** | RT | 同 prio **有时间片**，用完排队尾 |
-| **`SCHED_DEADLINE`** | 现代扩展 | 书版可能略；生产按需 |
+三大阵营：
 
-FIFO / RR 细节与带宽节流 → [4.6](./section-4.6-实时调度策略.md)
+| 阵营 | 策略 |
+|------|------|
+| **1. CFS 普通分时** | `SCHED_OTHER`/`NORMAL` · `SCHED_BATCH` · `SCHED_IDLE` |
+| **2. RT 实时** | `SCHED_FIFO` · `SCHED_RR` |
+| **3. Deadline 限期** | `SCHED_DEADLINE`（硬实时扩展，入门可浅看） |
+
+#### 逐行精讲
+
+##### 1. `SCHED_OTHER`（=`SCHED_NORMAL`）
+
+| | |
+|--|--|
+| 类 | **标准 CFS** |
+| 说明 | Linux **默认**；shell、应用、多数后台服务都是它 |
+| 机制 | nice → `static_prio` → weight → `vruntime` / 红黑树 |
+| 注意 | 无实时优先级；**抢不过** RT / DEADLINE |
+
+新内核正式名常写 **`SCHED_NORMAL`**，旧别名 **`SCHED_OTHER`** 仍保留。
+
+##### 2. `SCHED_BATCH`
+
+| | |
+|--|--|
+| 类 | **CFS 变体**（仍是 CFS，**不是**实时） |
+| 说明 | 批量 / 离线计算：吞吐优先、少交互 |
+| 特性 | **减少唤醒抢占优待**；短暂休眠不会像交互任务那样被优待 |
+| 仍用 | `vruntime`、nice / weight；**不适合**桌面交互 |
+
+##### 3. `SCHED_IDLE`
+
+| | |
+|--|--|
+| 类 | **极低** CFS 任务 |
+| 说明 | **只有 CPU 完全空闲**（没有 NORMAL/BATCH 可跑）才给 CPU |
+| 对比 | 哪怕 nice=19 的 NORMAL，也 **高于** IDLE |
+| 注意 | **不再受 nice 控制**；典型：闲时爬虫、碎片整理一类 |
+
+##### 4. `SCHED_FIFO`（RT）
+
+| | |
+|--|--|
+| 类 | RT 实时 |
+| 时间片 | **无**；同优先级不轮转 |
+| 何时让出 | ① 阻塞 ② `sched_yield()` ③ 被 **更高 `rt_priority`** 抢占 |
+| 同优先级 | 先就绪先跑；不主动让出就一直占 CPU |
+
+##### 5. `SCHED_RR`（RT）
+
+| | |
+|--|--|
+| 类 | RT 实时 |
+| 相对 FIFO | 同优先级加 **固定时间片**；用完排到同优先级队尾 |
+| 抢占 | 更高 RT 仍可抢占 |
+
+> **FIFO / RR：** 用 **`rt_priority`（约 0…99）**，与 nice **彻底无关**。→ [§4.6](./section-4.6-实时调度策略.md)
+
+##### 6. `SCHED_DEADLINE`
+
+| | |
+|--|--|
+| 类 | 现代 **限期实时**（EDF：最早截止优先） |
+| 说明 | 不靠固定优先级；任务声明 **运行时长 / 周期 / 截止时间**；优先跑 **最先到截止** 的 |
+| 场景 | 工控、音视频低延迟等；入门内核可先记名字，不必深挖 |
+
+#### 全局优先级顺序（高 → 低）
+
+```
+SCHED_DEADLINE
+  > SCHED_FIFO / SCHED_RR（RT）
+  > SCHED_NORMAL（OTHER）
+  > SCHED_BATCH
+  > SCHED_IDLE
+```
+
+只要有就绪的 **DEADLINE / RT**，**所有 CFS 普通进程全部靠边**。
+
+#### 易混点
+
+| 说法 | 对错 |
+|------|------|
+| OTHER / BATCH / IDLE 都走 CFS（`vruntime`） | ✅ |
+| FIFO / RR 独立 RT 队列，不走 CFS 红黑树 | ✅ |
+| RT 可抢 CFS；CFS **抢不了** RT | ✅ |
+| `SCHED_BATCH` 是实时策略 | ❌ 仍是 CFS |
+| `SCHED_IDLE` 用 nice 精细调 | ❌ **不受 nice 控制** |
+
+#### 和 `sched_setscheduler` 串联
+
+```
+task_struct ──sched_setscheduler()──► 设 policy
+  ├─ NORMAL / BATCH ──► nice / static_prio / CFS vruntime
+  ├─ IDLE ───────────► 极低 CFS（不靠 nice）
+  ├─ FIFO / RR ──────► rt_priority → RT 队列
+  └─ DEADLINE ───────► runtime / period / deadline 参数
+```
+
+接口细节 → [§4.7](./section-4.7-与调度相关的系统调用.md)
+
+FIFO / RR 带宽节流等 → [§4.6](./section-4.6-实时调度策略.md)
 
 ---
 

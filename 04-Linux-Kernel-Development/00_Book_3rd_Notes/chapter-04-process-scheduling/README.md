@@ -22,7 +22,8 @@
 | 网络服务默认还行？ | CFS **vruntime** 偏爱常休眠（4.2/4.3） |
 | CFS 怎么公平？ | 权重瓜分 CPU；**`vruntime` 最小**（红黑树最左）先跑 |
 | 初始 weight？ | 由 **nice** 定；默认 0→1024；`fork` 继承，`exec` 不改 |
-| nice ≠ 实时 | RT 另套 1–99（4.2/4.6） |
+| nice ≠ 实时 | RT 另套；nice **调不动** RT（4.2/4.6） |
+| 六策略谁最高？ | **DEADLINE > FIFO/RR > NORMAL > BATCH > IDLE** |
 | HFT 热路径 | 隔离核 + FIFO；控制面留 CFS |
 
 ---
@@ -32,7 +33,7 @@
 | 节 | 主题 | 带走什么 |
 |----|------|----------|
 | **① 演进** | 抢占式多任务 | O(1) → **CFS（2.6.23）** |
-| **② 策略** | I/O vs CPU · 优先级 | **nice** · **RT 1–99** |
+| **② 策略** | I/O vs CPU · 六策略 · 优先级 | **nice** · **RT** · DEADLINE |
 | **③ CFS** | 公平调度算法 | **`vruntime`** · **红黑树** |
 | **④ 休眠唤醒** | 等待队列 | `wake_up()` |
 | **⑤ 抢占与切换** | `context_switch` | **用户/内核抢占** |
@@ -68,6 +69,8 @@
 | nice vs RT？ | nice 调 CFS 份额；RT **压过** 所有 CFS；nice **调不动** RT |
 | `prio`？ | **全局标尺（越小越优先）**；CFS≈`static_prio`；RT=`99-rt_priority` |
 | `rt_priority`？ | 用户 RT 优先级，**越大越优先**（与 nice、`prio` 方向都易混） |
+| 六策略高低？ | **DEADLINE > FIFO/RR > NORMAL > BATCH > IDLE** |
+| BATCH 是 RT？ | **否** — 仍是 CFS；IDLE **不受 nice** |
 | HFT 三板斧？ | **`affinity` + `chrt` + 隔离核** |
 
 ---
