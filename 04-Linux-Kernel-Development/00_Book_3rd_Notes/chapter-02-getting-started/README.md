@@ -3,7 +3,7 @@
 > **Linux Kernel Development 3rd** · Robert Love · **实操入门**
 
 > 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C**。  
-> §2.4 钉死：**内核 = GNU C（`-std=gnu11`）**；**GNU C ≠ glibc**（语法方言 vs 用户态库）。  
+> §2.4 钉死：主线 **≥5.18 默认 `-std=gnu11`**（此前 `gnu89`）；**`gnu11` ≠ `c11`**；**GNU C ≠ glibc**。  
 > 拓展⑤：编译镜像如何进 UEFI、与用户态 ELF 分界。
 
 ---
@@ -41,7 +41,8 @@
 | 关键目录？ | **`arch` `drivers` `fs` `kernel` `mm` `include` `net`** |
 | 怎么编？ | Linux/WSL：`menuconfig` → `make -j` → `modules_install` |
 | UEFI 认什么？ | **PE32+ `.efi`**；内核跑起来后用户态是 **ELF**（§2.5） |
-| 内核用什么 C？ | **`-std=gnu11`（GNU C）**，不是纯 ISO C |
+| 内核用什么 C？ | **≥5.18：`-std=gnu11`**；**≤5.17：`gnu89`**（不是纯 ISO C） |
+| `gnu11` = C11？ | **否** — `gnu` = 开 GCC 扩展；基准是 C11，≠ `-std=c11` |
 | GNU C = glibc？ | **否** — 方言（编译期）≠ 用户态库（运行期）；内核不链 libc |
 
 GNU C 小实验：[`code/gnu_c_extension_demo.c`](./code/gnu_c_extension_demo.c)
