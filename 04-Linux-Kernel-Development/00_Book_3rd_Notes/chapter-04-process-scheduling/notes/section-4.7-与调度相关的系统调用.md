@@ -6,7 +6,7 @@
 
 | 接口（概念） | 作用 |
 |--------------|------|
-| **`nice` / `setpriority`** | 调 CFS **nice** |
+| **`nice` / `setpriority`** | 调 CFS **nice** → 改 **权重** → 改 **`vruntime` 增速**（见 [§4.3](./section-4.3-Linux-调度算法.md)） |
 | **`sched_setscheduler` / `sched_getscheduler`** | 设/取策略（OTHER/FIFO/RR…） |
 | **`sched_setparam` / `sched_getparam`** | RT 优先级等参数 |
 | **`sched_setattr`（现代）** | 统一设策略+参数（含 Deadline 等） |
