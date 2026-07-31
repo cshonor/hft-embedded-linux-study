@@ -10,7 +10,7 @@
 | 章 | 主题 | 标签 | HFT 关联 |
 |----|------|------|----------|
 | 1 | History and Standards | 🟡 快读 | **POSIX vs Linux 扩展**；发行版=内核+GNU |
-| 2 | 系统调用 API | 🔴 | errno、`syscall()`、用户/内核边界 |
+| 2 | Fundamental Concepts | **🔴 必读** | 用户/内核、syscall、进程、fd、inode、信号、时钟 |
 | 3 | 文件 I/O 通用 | 🟡 | `open/read/write`、非阻塞前置 |
 
 ## Part II · 文件 I/O 与属性
