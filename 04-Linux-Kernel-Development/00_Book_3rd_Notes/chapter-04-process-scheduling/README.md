@@ -65,7 +65,9 @@
 | 默认 weight？ | nice=0 → **1024**（查表 `sched_prio_to_weight`；理论≈`1024/1.25^nice`） |
 | `static_prio`？ | **`120 + nice`**，范围 **[100, 139]**；数字越小优先级越高 |
 | fork 后 nice？ | **继承父进程**；`exec` **不改** nice |
-| nice vs RT？ | nice 调 CFS 份额；RT **压过** 所有 CFS |
+| nice vs RT？ | nice 调 CFS 份额；RT **压过** 所有 CFS；nice **调不动** RT |
+| `prio`？ | **全局标尺（越小越优先）**；CFS≈`static_prio`；RT=`99-rt_priority` |
+| `rt_priority`？ | 用户 RT 优先级，**越大越优先**（与 nice、`prio` 方向都易混） |
 | HFT 三板斧？ | **`affinity` + `chrt` + 隔离核** |
 
 ---

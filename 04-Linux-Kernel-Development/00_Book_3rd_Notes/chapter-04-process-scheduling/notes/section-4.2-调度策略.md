@@ -35,17 +35,91 @@ Linux 把任务隔成两大阵营（两套调度类，**不要混优先级标尺
 
 ---
 
-### 二、两套优先级（高频踩坑 · 绝对分清）
+### 二、两大阵营 + 三套字段（一次性理顺）
 
-| 体系 | 范围 | 方向 | 作用 | 无效对象 |
-|------|------|------|------|----------|
-| **nice**（CFS） | −20 … +19（默认 0） | **越小份额越大** | 调 **权重 / CPU 比例**；**不能**靠 nice「抢占」别人出 CFS 世界 | **对 RT 任务完全无效** |
-| **RT prio**（FIFO/RR） | 1 … 99 | **越大越优先** | RT 压过 **所有 CFS**；高 RT 压低 RT | nice 调不动它 |
+Linux 调度两大类：
+
+| 阵营 | 策略 | 调度器 |
+|------|------|--------|
+| **普通分时** | `SCHED_OTHER`（及 BATCH 等） | **CFS**（nice / `vruntime`） |
+| **实时** | `SCHED_FIFO` / `SCHED_RR` | **RT 类**（独立队列，压过全部 CFS） |
+
+`task_struct` 里和优先级相关的三个核心字段：
+
+| 字段 | 角色 |
+|------|------|
+| **`static_prio`** | CFS **静态**源头（由 nice 换算） |
+| **`rt_priority`** | RT **用户态实时优先级**（FIFO/RR 用；CFS **不用**） |
+| **`prio`** | **动态/通用比较用优先级**（复合字段！调度器全局比谁更优先） |
+
+---
+
+#### ① 普通 CFS（`SCHED_OTHER`）→ nice 体系
+
+| 项 | 值 |
+|----|-----|
+| 控制参数 | **nice ∈ [−20, 19]** |
+| `static_prio` | `120 + nice` → **[100, 139]** |
+| `rt_priority` | **不参与调度**（字段可存在，但对 CFS 无效） |
+| 常态下 `prio` | **`prio = static_prio`** |
+| 份额 | `static_prio` → 查表 **weight** → **`vruntime`** |
+
+> 普通进程 **只有** nice / `static_prio` 这套；**没有**「实时优先级」语义。
+
+---
+
+#### ② 实时进程（`SCHED_FIFO` / `SCHED_RR`）→ `rt_priority` 体系
+
+| 项 | 值 |
+|----|-----|
+| 控制参数 | **`rt_priority`（用户态常 1…99；内核可到 0…99）** |
+| 方向 | **数值越大优先级越高**（和 nice **相反**！） |
+| nice / CFS / `vruntime` | **全部不用**；改 nice **无效** |
+| 抢占 | 只要就绪，**压过所有 CFS** |
+| FIFO | 一直跑到阻塞 / yield / 被更高 RT 抢 |
+| RR | 同优先级有时间片，轮流 |
+
+内核统一用 **`prio`** 做全局比较时（RT）：
+
+```
+prio = 99 - rt_priority          /* 即 MAX_RT_PRIO-1 - rt_priority；MAX_RT_PRIO=100 */
+```
+
+| `rt_priority` | `prio` |
+|---------------|--------|
+| 99（最高） | **0** |
+| 0（最低） | **99** |
+
+细节 → [§4.6](./section-4.6-实时调度策略.md) · 用户态接口 → [§4.7](./section-4.7-与调度相关的系统调用.md)
+
+---
+
+#### ③ `prio`：全局统一标尺（重中之重）
+
+内核约定：**`prio` 数字越小，优先级越高。**
+
+| 区间 | 谁 |
+|------|-----|
+| **0** | RT 最高 |
+| **…98** | 其余 RT（随 `rt_priority`） |
+| **99** | RT 侧低端 / 分界附近 |
+| **100…139** | **CFS**（nice −20…+19） |
+
+因此：**全体可运行 RT 的 `prio` 都小于 CFS** → 天然 **RT 永远优先于普通进程**。
+
+| 类型 | `prio` |
+|------|--------|
+| RT 最高（rt=99） | 0 |
+| RT 较低端 | ≈98 / 99 |
+| CFS 最高（nice=−20） | **100** |
+| CFS 默认（nice=0） | **120** |
+| CFS 最低（nice=19） | **139** |
 
 ```
 普通世界（CFS）                    实时世界（独立类）
-nice -20 ──────────► +19           RT 99 ──────────► 1
-  份额大              份额小         压过一切 CFS      仍压过 CFS
+nice -20 ──────────► +19           rt_priority 99 ────► 0/1
+static_prio 100 ───► 139           prio 0 ──────────► 99
+  （数字小=优先）                    （数字小=优先；整体压过 CFS）
 ```
 
 | 权限直觉 | |
@@ -57,6 +131,24 @@ nice -20 ──────────► +19           RT 99 ─────�
 |------|------|
 | `nice -20` ≈ 实时 | **否** — 再负的 nice 也压不过任意可运行 RT |
 | nice 数字方向 = RT 数字方向 | **否** — **两套标尺，方向相反** |
+| `prio` 就是 `static_prio` | **否** — CFS 时常相等；RT 时 `prio = 99 - rt_priority` |
+| RT 也能用 nice 调 | **否** — 必须 `sched_setscheduler` / `chrt` 设策略 + `rt_priority` |
+| `rt_priority` 越小越优先 | **否** — **越大越优先**（别和 `prio` 搞反） |
+
+#### 极简对比
+
+| | CFS `SCHED_OTHER` | RT FIFO/RR |
+|--|-------------------|------------|
+| 控制 | **nice** | **`rt_priority`** |
+| 关键字段 | `static_prio` | `rt_priority` |
+| 调度 | CFS 树 / weight / `vruntime` | RT 队列 |
+| 与另一套 | nice **调不动** RT | RT **压过** 全部 CFS |
+
+#### 链路背诵
+
+1. 普通：nice → `static_prio` →（常）`prio` → weight / `vruntime`  
+2. 实时：`rt_priority` → `prio` → RT 队列  
+3. 全局比 **`prio`（越小越优先）**；RT 整体 `<` CFS  
 
 ---
 
@@ -195,7 +287,7 @@ nice        = static_prio - 120   /* PRIO_TO_NICE */
 **「静态」含义：** 不主动改 nice / `setpriority`，`static_prio` **长期不变**（不会像某些 OS 那样自动升降）。  
 改 nice 时：先改 `static_prio`，再据此查 `sched_prio_to_weight[]` 更新 **weight**。
 
-勿与运行中的 **`p->prio`（动态优先级）** 混为一谈：后者还可受调度类、boost 等影响；**CFS 份额源头仍是 nice → static_prio → weight**。
+勿与 **`prio`（全局比较字段）** 混为一谈：CFS 常态下 `prio = static_prio`；RT 任务则是 `prio = 99 - rt_priority`（见上文「两大阵营」）。**CFS 份额源头仍是 nice → static_prio → weight。**
 
 #### 两条易混：`static_prio` vs `weight`
 
@@ -220,7 +312,8 @@ nice → static_prio → index → 查表 weight →（wmult）→ vruntime 增�
 
 1. **理论：** `weight ≈ 1024 / 1.25^nice`；nice+1 → ÷1.25。  
 2. **工程：** `sched_prio_to_weight[]` 查表；`wmult` 做定点乘。  
-3. shell 默认 0 → fork 继承 → exec 不改；要改就显式 `nice`/`setpriority`。
+3. **`static_prio = 120 + nice`** ∈ [100, 139]；越小越优先。  
+4. shell 默认 0 → fork 继承 → exec 不改；要改就显式 `nice`/`setpriority`。
 
 #### 自检
 
