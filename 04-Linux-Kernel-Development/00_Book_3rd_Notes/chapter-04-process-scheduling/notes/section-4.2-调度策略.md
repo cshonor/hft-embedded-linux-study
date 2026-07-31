@@ -167,12 +167,42 @@ vruntime += delta_exec * sched_prio_to_wmult[index] >> 32;
   exec → 子 nice 仍是 N（除非程序自己再改）
 ```
 
-#### 两条易混的内核值
+#### `static_prio`：静态优先级（CFS 优先级源头）
+
+保存在 **`task_struct`**，是普通 CFS 进程（`SCHED_OTHER` / `SCHED_BATCH` 等）**用户可见 nice 在内核里的静态镜像**。
+
+**死记换算：**
+
+```
+static_prio = 120 + nice          /* 即 NICE_TO_PRIO(nice)；DEFAULT_PRIO = 120 */
+nice        = static_prio - 120   /* PRIO_TO_NICE */
+```
+
+| | 范围 |
+|--|------|
+| nice | **[−20, 19]** |
+| **static_prio** | **[100, 139]** |
+
+| nice | static_prio | 含义 |
+|------|-------------|------|
+| **−20** | **100** | CFS 里 **最高** 优先级（数字最小） |
+| **0** | **120** | 默认 |
+| **+19** | **139** | CFS 里 **最低** 优先级（数字最大） |
+
+> 内核约定：**prio 数字越小，优先级越高**。  
+> RT 占 **0…99**；普通 CFS 任务落在 **100…139**（见 `include/linux/sched/prio.h`：`MAX_RT_PRIO=100`）。
+
+**「静态」含义：** 不主动改 nice / `setpriority`，`static_prio` **长期不变**（不会像某些 OS 那样自动升降）。  
+改 nice 时：先改 `static_prio`，再据此查 `sched_prio_to_weight[]` 更新 **weight**。
+
+勿与运行中的 **`p->prio`（动态优先级）** 混为一谈：后者还可受调度类、boost 等影响；**CFS 份额源头仍是 nice → static_prio → weight**。
+
+#### 两条易混：`static_prio` vs `weight`
 
 | 名字 | 是什么 | 怎么来 |
 |------|--------|--------|
-| **`static_prio`** | 静态优先级；**不改 nice 就长期不变** | `static_prio = 120 + nice` |
-| **`weight`** | CFS 真正用来算份额的权重 | `static_prio` → 索引 **`sched_prio_to_weight[]`** |
+| **`static_prio`** | 静态优先级数字（100…139） | `120 + nice` |
+| **`weight`** | CFS 真正用来算份额的权重 | `index = static_prio - 100` → **`sched_prio_to_weight[index]`** |
 
 ```
 nice → static_prio → index → 查表 weight →（wmult）→ vruntime 增速

@@ -63,6 +63,7 @@
 | 默认调度器？ | **CFS**（≥2.6.23）— `vruntime` 最小优先（红黑树最左） |
 | `vruntime`？ | ≈ 实际时间 × (1024/权重)；权重高则涨得慢 |
 | 默认 weight？ | nice=0 → **1024**（查表 `sched_prio_to_weight`；理论≈`1024/1.25^nice`） |
+| `static_prio`？ | **`120 + nice`**，范围 **[100, 139]**；数字越小优先级越高 |
 | fork 后 nice？ | **继承父进程**；`exec` **不改** nice |
 | nice vs RT？ | nice 调 CFS 份额；RT **压过** 所有 CFS |
 | HFT 三板斧？ | **`affinity` + `chrt` + 隔离核** |
