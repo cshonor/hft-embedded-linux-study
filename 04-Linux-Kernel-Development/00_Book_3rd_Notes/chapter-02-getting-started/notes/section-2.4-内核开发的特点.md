@@ -212,9 +212,65 @@ int x = val ?: -1;
 
 内核用 GNU C 语法写，但 **不链接 libc**。
 
-#### 误区：只有 GCC 能编内核？
+### 用什么编译器编内核？GCC vs Clang
 
-**Clang** 为能编 Linux，主动兼容绝大部分 GCC 扩展。可用 clang 构建，但代码仍是 **GNU C 方言**。
+**结论：历史传统、主流默认是 GCC；现在官方正式支持 Clang（LLVM）编译 Linux 内核。**
+
+#### 历史：最初只为 GCC 设计
+
+Linus 时代只有 GCC。内核大量依赖 **GCC 扩展（GNU C）**，早期 **只有 GCC 能编通**。  
+语法方言 = **GNU C（今为 `gnu11`）**，这套方言 **诞生于 GCC**。
+
+#### 现状：两套都可用
+
+| 编译器 | 定位 |
+|--------|------|
+| **GCC** | 最通用、社区主力；发行版/模块/学习首选；各架构最成熟；扩展原生完整 |
+| **Clang / LLVM** | **官方支持**（见 `Documentation/kbuild/llvm.rst`）；主动兼容绝大多数 GCC 扩展；Android 内核大量用 Clang |
+
+Clang 仍有细坑：极少数 builtin/汇编差异；部分厂商老模块只测过 GCC。
+
+#### 编译器 ≠ 语言标准（别和 `gnu11` 搅在一起）
+
+```
+编译器：GCC 或 Clang
+语言模式：-std=gnu11（C11 + GCC 扩展方言）
+```
+
+| 说法 | 对错 |
+|------|------|
+| 「内核是 GNU C，所以只能用 GCC」 | ❌ — GNU C 是语法集合；Clang **兼容了** 这套方言 |
+| 「gcc 就是 gnu11」 | ❌ — `gcc` 是编译器；可传 `-std=c11`。是 **Kbuild 主动传 `-std=gnu11`** 才开方言 |
+
+通俗：GNU C 原是 GCC「私人方言」；Clang **逆向兼容** 学会了它。  
+用户态可用 gcc/clang/msvc 写较标准 C；内核 **绑定 GNU C**，MSVC **编不了** Linux 内核。
+
+#### 实操建议
+
+| 场景 | 建议 |
+|------|------|
+| 日常学习、写模块/驱动 | ✅ **优先 GCC**（教程/搜错/兼容坑最少） |
+| Android、要 LLVM LTO / CFI 等 | 考虑 **Clang**（`make LLVM=1`） |
+
+#### 怎么看「当前用谁编」和 `-std` 在哪设
+
+在源码树根（本机对照 `linux-7.1.5`）：
+
+```bash
+# 默认 CC 是谁（未设 LLVM 时多为 gcc）
+make -C . kernelversion
+# 打印实际编译器版本字符串（需能跑 make）
+make -C . -s --no-print-directory "true" 2>/dev/null; \
+  grep -nE '^(CC|HOSTCC)\s|LLVM|CC_FLAGS_DIALECT|std=gnu' Makefile | head
+
+# Clang 构建时（官方入口）
+# make LLVM=1 ...
+
+# -std=gnu11 写在顶层 Makefile：CC_FLAGS_DIALECT := -std=gnu11
+grep -n 'CC_FLAGS_DIALECT\|std=gnu11' Makefile
+```
+
+本机树已核对：`Makefile` 约 805 行 `CC_FLAGS_DIALECT := -std=gnu11`；约 446+ 行处理 `LLVM=` 时改用 `clang`。
 
 ---
 
@@ -223,7 +279,8 @@ int x = val ?: -1;
 1. 现代内核（**≥5.18**）：默认 **`gnu11` = C11 基准 + GCC 扩展**；老内核（**<5.18**）：**`gnu89`**。  
 2. 基准规范是 C11，但代码习惯大量沿用 C99 特性；**几乎不用** 多数 C11 新特性，且 **禁 VLA**。  
 3. **`gnuXX` ≠ 标准 `cXX`** —— 带 `gnu` 就启用 GCC 扩展语法。  
-4. **GNU C（语法）≠ glibc（用户态库）** — 不要混淆。
+4. **GNU C（语法）≠ glibc（用户态库）** — 不要混淆。  
+5. **主流编译器 GCC**；Clang 官方支持且兼容 GNU C；学习内核优先 GCC。
 
 ---
 

@@ -3,7 +3,7 @@
 > **Linux Kernel Development 3rd** · Robert Love · **实操入门**
 
 > 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C**。  
-> §2.4 钉死：主线 **≥5.18 默认 `-std=gnu11`**（此前 `gnu89`）；**`gnu11` ≠ `c11`**；**GNU C ≠ glibc**。  
+> §2.4 钉死：主线 **≥5.18 默认 `-std=gnu11`**（此前 `gnu89`）；**`gnu11` ≠ `c11`**；**GNU C ≠ glibc**；编译器 **主流 GCC，Clang 官方支持**。  
 > 拓展⑤：编译镜像如何进 UEFI、与用户态 ELF 分界。
 
 ---
@@ -56,6 +56,7 @@ GNU C 小实验：[`code/gnu_c_extension_demo.c`](./code/gnu_c_extension_demo.c)
 - [ ] 知道 Windows 树只读、真编译在 Linux
 - [ ] 分清 **UEFI=PE** vs **Linux 后=ELF**
 - [ ] 分清 **ISO C / GNU C / glibc**；能举 `typeof`、`({ })`、`__attribute__`
+- [ ] 分清 **编译器（GCC/Clang）** vs **语言模式（`-std=gnu11`）**；学习优先 GCC
 
 ---
 
