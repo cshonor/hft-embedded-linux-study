@@ -42,7 +42,7 @@
 | **链表** | `list_head`, `list_for_each_entry` | 任务表、等待队列 |
 | **队列** | `kfifo_in/out` | 中断→线程、流缓冲 |
 | **映射** | `idr` | 整数 ID → 指针 |
-| **红黑树** | `rb_*`, 自建比较 | CFS、interval tree |
+| **红黑树** | `rb_*`, 自建比较；**`rb_first`=最左** | CFS（key=`vruntime`）、interval tree |
 | **原则** | 用内核现成的 | 别重复造轮子 |
 
 ---
@@ -54,6 +54,8 @@
 - [ ] 区分 **`idr`**（UID→ptr）与 **`rbtree`**（有序键）
 - [ ] 知道 **rbtree 无泛型插入** — 为何要手写比较函数
 - [ ] 用 Big-O 论证：为何 CFS 用树而不是链表扫最小 `vruntime`
+- [ ] 回答：`rb_first(cfs_rq 树)` 在 CFS 里意味着什么
+- [ ] 说出内核 rbtree **内嵌节点** 与堆的差异（动态改 key）
 
 ---
 
