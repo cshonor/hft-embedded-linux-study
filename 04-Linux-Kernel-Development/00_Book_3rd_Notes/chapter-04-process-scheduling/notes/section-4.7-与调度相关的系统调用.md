@@ -6,10 +6,16 @@
 
 | 接口（概念） | 作用 |
 |--------------|------|
-| **`nice` / `setpriority`** | 调 CFS **nice** → 改 **权重** → 改 **`vruntime` 增速**（见 [§4.3](./section-4.3-Linux-调度算法.md)） |
-| **`sched_setscheduler` / `sched_getscheduler`** | 设/取策略（OTHER/FIFO/RR…） |
+| **`nice` / `setpriority`** | 只调 **CFS** nice → weight / `vruntime`（对 RT **无效**） |
+| **`sched_setscheduler` / `sched_getscheduler`** | 设/取策略（OTHER / **FIFO** / **RR**…）+ RT 时带 **`rt_priority`** |
 | **`sched_setparam` / `sched_getparam`** | RT 优先级等参数 |
 | **`sched_setattr`（现代）** | 统一设策略+参数（含 Deadline 等） |
+| **`chrt -f/-r`** | 命令行设 FIFO/RR + 实时优先级 |
+
+| 想改谁 | 用什么 |
+|--------|--------|
+| 普通进程份额 | `nice` / `renice` / `setpriority` |
+| 变成 / 调整 RT | **`sched_setscheduler` 或 `chrt`**，设 `rt_priority`（越大越优先） |
 
 #### CPU 亲和 · Affinity
 
