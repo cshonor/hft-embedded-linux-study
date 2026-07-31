@@ -66,7 +66,8 @@
 | `vruntime`？ | ≈ 实际时间 × (1024/权重)；权重高则涨得慢 |
 | CFS 何时切？ | 周期份额达标 **或** 唤醒抢占；**无**固定唯一时间片 |
 | 默认 weight？ | nice=0 → **1024**（查表 `sched_prio_to_weight`；理论≈`1024/1.25^nice`） |
-| `static_prio`？ | **`120 + nice`**，范围 **[100, 139]**；数字越小优先级越高 |
+| `static_prio`？ | **`120 + nice`** ∈ **[100,139]**；固定基准；**不直接**选人，只查表得 weight |
+| `renice` 改谁？ | 底层改 **`static_prio`**（并更新 weight）→ 影响之后 `vruntime` 增速 |
 | fork 后 nice？ | **继承父进程**；`exec` **不改** nice |
 | nice vs RT？ | nice 调 CFS 份额；RT **压过** 所有 CFS；nice **调不动** RT |
 | `prio`？ | **全局标尺（越小越优先）**；CFS≈`static_prio`；RT=`99-rt_priority` |

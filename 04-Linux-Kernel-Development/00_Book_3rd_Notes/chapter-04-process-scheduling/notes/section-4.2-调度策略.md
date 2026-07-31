@@ -259,14 +259,14 @@ vruntime += delta_exec * sched_prio_to_wmult[index] >> 32;
   exec → 子 nice 仍是 N（除非程序自己再改）
 ```
 
-#### `static_prio`：静态优先级（CFS 优先级源头）
+#### `static_prio`：静态优先级（CFS 优先级源头 · 完整钉死）
 
-保存在 **`task_struct`**，是普通 CFS 进程（`SCHED_OTHER` / `SCHED_BATCH` 等）**用户可见 nice 在内核里的静态镜像**。
+`task_struct` 成员；**普通 CFS 进程优先级的原始基准值**。
 
-**死记换算：**
+**死记：**
 
 ```
-static_prio = 120 + nice          /* 即 NICE_TO_PRIO(nice)；DEFAULT_PRIO = 120 */
+static_prio = 120 + nice          /* NICE_TO_PRIO；DEFAULT_PRIO = 120 */
 nice        = static_prio - 120   /* PRIO_TO_NICE */
 ```
 
@@ -277,17 +277,60 @@ nice        = static_prio - 120   /* PRIO_TO_NICE */
 
 | nice | static_prio | 含义 |
 |------|-------------|------|
-| **−20** | **100** | CFS 里 **最高** 优先级（数字最小） |
+| **−20** | **100** | CFS **最高**权重侧（数字最小） |
 | **0** | **120** | 默认 |
-| **+19** | **139** | CFS 里 **最低** 优先级（数字最大） |
+| **+19** | **139** | CFS **最低**权重侧（数字最大） |
 
-> 内核约定：**prio 数字越小，优先级越高**。  
-> RT 占 **0…99**；普通 CFS 任务落在 **100…139**（见 `include/linux/sched/prio.h`：`MAX_RT_PRIO=100`）。
+> 内核约定：**prio / static_prio 数字越小，优先级越高**。  
+> RT 占约 **0…99**；CFS 落在 **100…139**（`MAX_RT_PRIO=100`）。
 
-**「静态」含义：** 不主动改 nice / `setpriority`，`static_prio` **长期不变**（不会像某些 OS 那样自动升降）。  
-改 nice 时：先改 `static_prio`，再据此查 `sched_prio_to_weight[]` 更新 **weight**。
+##### 「静态」= 不自动变
 
-勿与 **`prio`（全局比较字段）** 混为一谈：CFS 常态下 `prio = static_prio`；RT 任务则是 `prio = 99 - rt_priority`（见上文「两大阵营」）。**CFS 份额源头仍是 nice → static_prio → weight。**
+- 创建时从父进程 **继承**（随 nice 一起）；  
+- **不**主动 `nice()` / `setpriority()` / `renice` → **整生命周期固定**；  
+- **`exec()` 不改** `static_prio`。
+
+##### 在 CFS 链路里的位置
+
+```
+nice ↔ static_prio → 查表 weight → vruntime → 红黑树
+```
+
+1. 用户改 nice → 内核改 **`static_prio`**（再刷新 weight）；  
+2. **调度器不直接拿 `static_prio` 比谁先跑** — 它是 **中间存储 / 查表下标源头**；  
+3. 需要权重时：
+
+```c
+index = static_prio - 100;   /* = 20 + nice */
+weight = sched_prio_to_weight[index];
+```
+
+真正选人看的是 **`vruntime`**；`static_prio` 只通过 weight **间接**改变 `vruntime` 上涨速度。
+
+例：A(nice=0 → 120 → weight=1024) 与 B(nice=10 → 130 → weight 很小) — 调度器 **不比 120 vs 130**，只比两者 **`vruntime`**。
+
+##### 和另外两个字段
+
+| 字段 | 谁用 | 要点 |
+|------|------|------|
+| **`static_prio`** | CFS 基准 | nice 换算；长期不变 |
+| **`rt_priority`** | RT FIFO/RR | 0…99；与 nice/`static_prio` **无关** |
+| **`prio`** | 全局比较 | CFS：`prio = static_prio`；RT：`prio = 99 - rt_priority`；**越小越优先** |
+
+##### 误区
+
+| 说法 | 对错 |
+|------|------|
+| 调度器直接靠 `static_prio` 决定谁先运行 | ❌ 选人看 **`vruntime`** |
+| `prio` 永远等于 `static_prio` | ❌ 仅 CFS 常态；RT 另算 |
+
+##### 一句话背诵
+
+`static_prio = 120 + nice`，PCB 里的 **固定基准**；本身不直接分 CPU，作用是 **查表得 weight**，最终影响 **`vruntime` 增速**。
+
+##### 自检：`renice` 改了什么？
+
+内核底层改的是 **`static_prio`**（由新 nice 换算），并据此更新 **weight**；进而改变之后的 **`vruntime` 增速**。不是直接改 `vruntime`，也不是改 `rt_priority`。
 
 #### 两条易混：`static_prio` vs `weight`
 
