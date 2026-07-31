@@ -7,21 +7,23 @@
 
 ## Part I · 系统编程概念
 
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 1 | History and Standards | 🟡 快读 | **POSIX vs Linux 扩展**；发行版=内核+GNU |
-| 2 | Fundamental Concepts | **🔴 必读** | 用户/内核、syscall、进程、fd、inode、信号、时钟 |
-| 3 | 文件 I/O 通用 | 🟡 | `open/read/write`、非阻塞前置 |
+> **目录名 `chapter-NN` ≠ 书内章号。** 下表「书内章」为准；括号为仓库目录。
 
-## Part II · 文件 I/O 与属性
+| 书内章 | 主题 | 目录 | 标签 | 要点 |
+|--------|------|------|------|------|
+| 1 | History and Standards | `chapter-01-introduction` | 🟡 快读 | **POSIX vs Linux 扩展**；内核+GNU |
+| 2 | Fundamental Concepts | `chapter-02-basic-concepts` | **🔴** | 用户/内核、syscall、进程、fd、inode |
+| 3 | System Programming Concepts | （待建目录 / 先读正文） | 🔴 | 库函数 vs syscall、`errno`、可移植宏 |
+| 4 | File I/O: Universal I/O Model | **`chapter-03-file-io`** | **🔴** | `open/read/write/close/lseek`；短读/部分写 |
+| 5 | File I/O: Further Details | **`chapter-04-file-unbuffered-io`** | 🟡 | `dup`/`fcntl`/原子追加/非阻塞 |
 
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 4 | 文件 I/O 进阶 | 🟡 | `readv/writev`、大文件 |
-| 5 | 文件 I/O 缓冲 | ⚪ | 热路径常绕过 stdio |
-| 6 | 进程 | 🔴 | `fork`、`_exit`、僵尸进程 |
-| 7–8 | 特权 / 文件权限 | ⚪ | 除非实盘权限模型 |
-| 9–11 | 文件属性、扩展属性 | ⚪ | |
+⚠️ 勿与 **APUE Ch3**（也是文件 I/O）章号混用；TLPI 通用模型在 **第 4 章**。
+
+## Part II · 文件属性与其后（书内章号继续；目录名仍可能错位）
+
+| 书内章 | 主题 | 标签 | HFT 关联 |
+|--------|------|------|----------|
+| 6+ | 进程环境等（见各 `chapter-*`） | 按 OUTLINE 原裁剪 | — |
 
 ## Part III · 进程
 
@@ -67,7 +69,8 @@
 ## HFT 最短路径（时间紧）
 
 ```
-Ch 2 → 6 → 20–21 → 34–37 → 49 → 29–30 → 58–61 → 63 → 64
+书内: Ch2 → Ch4(通用I/O) → Ch5 → … → Ch20–21 → Ch34–37 → Ch49 → Ch29–30 → Ch58–61 → Ch63 → Ch64
+目录: chapter-02 → chapter-03-file-io → chapter-04-file-unbuffered-io → …
 ```
 
 → 实验代码放各章 `chapter-*/code/` · 网络纵深 → [10-UNP](../11-UNP-Vol1/)

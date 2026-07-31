@@ -93,7 +93,7 @@ Ch 2 → 6 → 20–21 → 34–37 → 49 → 29–30 → 58–61 → 63 → 64
 | 路径 | 内容 |
 |------|------|
 | [OUTLINE.md](./OUTLINE.md) | 全书章节 · HFT 🔴/🟡/⚪ 裁剪 |
-| `chapter-*/` | 每章 `notes.md` + 按需 `code/` |
+| `chapter-*/` | 每章 `notes.md` + 按需 `code/`（**目录号可能≠书内章号**，见 [OUTLINE](./OUTLINE.md)） |
 
 ---
 
