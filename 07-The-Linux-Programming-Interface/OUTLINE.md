@@ -7,19 +7,19 @@
 
 ## Part I · 系统编程概念
 
-> **目录名 `chapter-NN` ≠ 书内章号。** 下表「书内章」为准；括号为仓库目录。
+> **目录名与书内章号已对齐**（Ch3–5）。其余章节目录仍可能错位，以「书内章」列为准。
 
 | 书内章 | 主题 | 目录 | 标签 | 要点 |
 |--------|------|------|------|------|
 | 1 | History and Standards | `chapter-01-introduction` | 🟡 快读 | **POSIX vs Linux 扩展**；内核+GNU |
 | 2 | Fundamental Concepts | `chapter-02-basic-concepts` | **🔴** | 用户/内核、syscall、进程、fd、inode |
-| 3 | System Programming Concepts | （待建目录 / 先读正文） | 🔴 | 库函数 vs syscall、`errno`、可移植宏 |
-| 4 | File I/O: Universal I/O Model | **`chapter-03-file-io`** | **🔴** | `open/read/write/close/lseek`；短读/部分写 |
-| 5 | File I/O: Further Details | **`chapter-04-file-unbuffered-io`** | 🟡 | `dup`/`fcntl`/原子追加/非阻塞 |
+| 3 | System Programming Concepts | **`chapter-03-system-programming-concepts`** | 🔴 | 库函数 vs syscall、`errno`、可移植宏 |
+| 4 | File I/O: Universal I/O Model | **`chapter-04-file-io-universal`** | **🔴** | `open/read/write/close/lseek`；短读/部分写 |
+| 5 | File I/O: Further Details | **`chapter-05-file-io-further`** | 🟡 | `dup`/`fcntl`/原子追加/非阻塞 |
 
 ⚠️ 勿与 **APUE Ch3**（也是文件 I/O）章号混用；TLPI 通用模型在 **第 4 章**。
 
-## Part II · 文件属性与其后（书内章号继续；目录名仍可能错位）
+## Part II · 文件属性与其后（书内章号继续；后续目录名仍可能错位）
 
 | 书内章 | 主题 | 标签 | HFT 关联 |
 |--------|------|------|----------|

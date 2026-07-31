@@ -1,8 +1,8 @@
 # TLPI 第 04 章 — File I/O: The Universal I/O Model
 
-> **勘误（重要）：** 本书第 **4** 章是「通用 I/O 模型」；第 **3** 章才是 *System Programming Concepts*。  
+> **勘误（重要）：** 本书第 **4** 章是「通用 I/O 模型」；第 **3** 章是 *System Programming Concepts* → [`../chapter-03-system-programming-concepts/`](../chapter-03-system-programming-concepts/)。  
 > 易与 **APUE 第 3 章** 混淆。  
-> 仓库目录名 `chapter-03-file-io/` 是历史编号，**内容对应书内第 4 章**。  
+> 目录：`chapter-04-file-io-universal/`（与书内第 4 章对齐）。  
 > 官方样章：[TLPI-04 PDF](https://www.man7.org/tlpi/download/TLPI-04-File_IO_The_Universal_IO_Model.pdf)
 
 ## 学习状态
@@ -14,7 +14,7 @@
 
 **优先级**：🟡→🔴（嵌入式 / HFT 文件与设备 I/O 地基）  
 **前置**：Ch2 基本概念（fd）· Ch3 系统编程概念（错误处理等）  
-**后置**：书内 Ch5 Further Details（`dup`/`fcntl`/原子追加等）→ 目录 `chapter-04-file-unbuffered-io/`
+**后置**：书内 Ch5 Further Details → [`../chapter-05-file-io-further/`](../chapter-05-file-io-further/)
 
 ---
 
