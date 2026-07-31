@@ -186,4 +186,4 @@ cc -Wall -o copy code/copy.c
 ## 参考
 
 - 《The Linux Programming Interface》**第 04 章** — File I/O: The Universal I/O Model  
-- [OUTLINE](../OUTLINE.md) · 下一内容：书内 Ch5 → [`../chapter-04-file-unbuffered-io/`](../chapter-04-file-unbuffered-io/)
+- [OUTLINE](../OUTLINE.md) · 下一内容：书内 Ch5 → [`../chapter-05-file-io-further/`](../chapter-05-file-io-further/)
