@@ -15,7 +15,9 @@
 | 🟡 **04 LKD 前** | [04-Expert-C-Programming](./04-Expert-C-Programming/) | *C 专家编程* |
 | 🔴 **04 LKD 前** | [05-Embedded-C-Self-Cultivation](./05-Embedded-C-Self-Cultivation/) | 《嵌入式 C 自我修养》 |
 
-建议顺序：**01 → 02 → 03 → 04**（阶段 1）→ **05**（阶段 2，GNU-C）→ 再开 LKD / 内核网 / DPDK。
+建议顺序（内核向）：**01 → 02 → 03 → 04**（标准 C）→ **05**（GNU-C，打通内核）→ 再开 LKD / 内核网 / DPDK。
+
+> **01–04 ≈ 标准 C；05 = GNU C 补齐。** 详见 [README](./README.md)。
 
 ---
 

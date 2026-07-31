@@ -2,42 +2,58 @@
 
 **文件夹 `02`** · [LEARNING-CHAIN](../LEARNING-CHAIN.md) · [OUTLINE](./OUTLINE.md)
 
-> **定位：** **01 CSAPP 之后、03 Hennessy 之前** — 把「机器/程序长什么样」落成 **能写对的 C**。  
-> **笔记正文已在本目录：** 自 [cpp-learning-notes / 00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C) 复制的 **01–05** 五书。  
+> **定位：** 面向 **底层 / Linux 内核** 的经典 C 书单（五书 + `code`）。  
+> 路线：**K&R（C89）→ 进阶标准 C → GNU C → 内核**。  
+> 上游 [01 CSAPP](../01-CSAPP-3rd/)；下游 [04 LKD](../04-Linux-Kernel-Development/)（`-std=gnu11` / GNU C 见 [Ch2 §2.4](../04-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)）。  
 > **09 C++** 是后续加 RAII，不是跳过 C。
 
 ---
 
 ## 为什么学 C
 
-- Linux 内核、内核模块、网络协议栈以 C + GNU 扩展为主
+- Linux 内核、内核模块、网络协议栈以 **C + GNU 扩展** 为主
 - DPDK、高性能网卡旁路、用户态网络栈依赖 C 与底层内存模型
 - 与 C++ 主线配合：C++ 做业务与框架，C 啃内核与数据面
 
 ---
 
-## 书单（本目录）
+## 目录一一对应
 
-| 阶段 | 目录 | 书籍 | 侧重 |
-|------|------|------|------|
-| 1 | [01-K-and-R-C](./01-K-and-R-C/) | 《C 程序设计语言（K&R 第2版）》 | **= C89（非 C99/C11）**；`malloc`/指针/结构体 |
-| 1 | [02-Pointers-on-C](./02-Pointers-on-C/) | 《C 和指针》 | 内存布局、联合体、ABI |
-| 1 | [03-C-Traps-and-Pitfalls](./03-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷（第2版）》 | 宏、链接、库函数陷阱 |
-| 1 | [04-Expert-C-Programming](./04-Expert-C-Programming/) | 《C 专家编程》 | 链接器、深层指针、C 设计内幕 |
-| 2 | [05-Embedded-C-Self-Cultivation](./05-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》 | GNU-C（`__attribute__`、零长数组等） |
+| 目录 | 书 | 一句话 |
+|------|-----|--------|
+| [01-K-and-R-C](./01-K-and-R-C/) | 《C 程序设计语言》**K&R 第2版** | **= C89** 奠基（≠ C99/C11） |
+| [02-Pointers-on-C](./02-Pointers-on-C/) | 《C 和指针》· Kenneth Reek · *Pointers on C* | 指针 / 数组 / 内存模型（内核重中之重） |
+| [03-C-Traps-and-Pitfalls](./03-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑 |
+| [04-Expert-C-Programming](./04-Expert-C-Programming/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
+| [05-Embedded-C-Self-Cultivation](./05-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
+| [code](./code/) | 配套示例 | 练习与索引 |
 
-来源副本说明 → [README.external.md](./README.external.md)（上游原文）
+> **纠正常见书名混淆：** `02-Pointers-on-C` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
 
-> **CSAPP 实验在 [01-CSAPP-3rd/code](../01-CSAPP-3rd/code/)**（ABI、endian、指针步长）— **不在 02 重复**。
+来源副本说明 → [README.external.md](./README.external.md)
+
+> **CSAPP 实验在 [01-CSAPP-3rd/code](../01-CSAPP-3rd/code/)** — **不在 02 重复**。
 
 ---
 
-## 学习顺序
+## 推荐阅读顺序（Linux 内核目标）
 
-### 默认（HFT / 数据面优先）
+```
+01 K&R（C89 打底）
+ → 02 C 和指针（吃透指针）
+ → 03 陷阱与缺陷（避坑）
+ → 04 专家编程（内存 / 链接）
+ → 05 嵌入式 C 自我修养（GNU C 收尾）
+ → 04 LKD / 驱动 / DPDK
+```
 
-1. **阶段 1：** **01 → 02 → 03 → 04**
-2. **阶段 2：** **05**（GNU-C）→ [04 LKD](../04-Linux-Kernel-Development/) / [14 DPDK](../14-DPDK-Low-Latency-Network/) / 内核网络
+| 阶段 | 做什么 |
+|------|--------|
+| **1–4** | **标准 C 范畴**（C89 基底 + 进阶；习惯上也会碰到 C99 写法） |
+| **5** | **专门补 GCC/GNU C 扩展** — 打通「标准 C 书 → 读得懂内核」的鸿沟 |
+
+**重点收尾是 05**：标准 C 教材不讲、`typeof` / 语句表达式 / `__attribute__` / 内嵌汇编等内核天天用的东西，主要在这里补齐。  
+对照清单也在 [LKD §2.4「K&R 有 / 内核缺」](../04-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)。
 
 完整裁剪与验收 → [OUTLINE.md](./OUTLINE.md)
 
@@ -57,4 +73,4 @@
 |------|--------|------|
 | [01 CSAPP](../01-CSAPP-3rd/) | **指针、内存、GNU-C** | [03 Hennessy](../03-Computer-Architecture-6th/) → [04–07](../04-Linux-Kernel-Development/) → [08 MikanOS](../08-system-low-level-hands-on/01-mikan-os/) |
 
-**下一步：** 打开 **[01-K-and-R-C/ch01-introduction](./01-K-and-R-C/ch01-introduction/)**，或学完后进 [03-Computer-Architecture-6th](../03-Computer-Architecture-6th/)。
+**下一步：** 打开 **[01-K-and-R-C](./01-K-and-R-C/)**；若已过标准 C，直奔 **[05 · ch06 GNU C](./05-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/)** 再进 LKD。

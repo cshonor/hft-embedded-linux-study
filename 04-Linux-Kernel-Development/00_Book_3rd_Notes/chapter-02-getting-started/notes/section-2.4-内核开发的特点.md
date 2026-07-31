@@ -127,7 +127,7 @@ int b;
 | 旧内核（≤5.17） | `gnu89` = **C89 + GCC 扩展** ← 所以很多人先读 K&R |
 | 现代内核（≥5.18） | `gnu11` = **C11 + GCC 扩展** |
 
-**K&R 只覆盖「标准 C 基底」。** 内核里的 `typeof`、`({})`、`__attribute__`，以及大量 C99 习惯写法，K&R **不会讲** — 需另补 C99/C11 习惯 + 本节上文「GCC 扩展」+ [02 · 05 Embedded C / GNU-C](../../../../02-c-programming/05-Embedded-C-Self-Cultivation/)。
+**K&R 只覆盖「标准 C 基底」。** 内核里的 `typeof`、`({})`、`__attribute__`，以及大量 C99 习惯写法，K&R **不会讲** — 需另补 C99/C11 习惯 + 本节上文「GCC 扩展」+ 本仓 C 书单收尾 **[02 · 05 Embedded C / GNU-C](../../../../02-c-programming/05-Embedded-C-Self-Cultivation/)**（完整五书路线见 [02-c-programming/README](../../../../02-c-programming/README.md)）。
 
 #### 对照：K&R 有 / 内核大量用但 K&R 没有
 
