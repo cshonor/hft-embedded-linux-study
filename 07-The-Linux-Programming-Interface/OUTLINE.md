@@ -13,7 +13,7 @@
 |--------|------|------|------|------|
 | 1 | History and Standards | `chapter-01-introduction` | 🟡 快读 | **POSIX vs Linux 扩展**；内核+GNU |
 | 2 | Fundamental Concepts | `chapter-02-basic-concepts` | **🔴** | 用户/内核、syscall、进程、fd、inode |
-| 3 | System Programming Concepts | **`chapter-03-system-programming-concepts`** | 🔴 | 库函数 vs syscall、`errno`、可移植宏 |
+| 3 | System Programming Concepts | **`chapter-03-system-programming-concepts`** | **🔴** | syscall vs 库函数、`errno`、功能测试宏、`tlpi_hdr` |
 | 4 | File I/O: Universal I/O Model | **`chapter-04-file-io-universal`** | **🔴** | `open/read/write/close/lseek`；短读/部分写 |
 | 5 | File I/O: Further Details | **`chapter-05-file-io-further`** | 🟡 | `dup`/`fcntl`/原子追加/非阻塞 |
 
@@ -69,8 +69,8 @@
 ## HFT 最短路径（时间紧）
 
 ```
-书内: Ch2 → Ch4(通用I/O) → Ch5 → … → Ch20–21 → Ch34–37 → Ch49 → Ch29–30 → Ch58–61 → Ch63 → Ch64
-目录: chapter-02 → chapter-03-file-io → chapter-04-file-unbuffered-io → …
+书内: Ch2 → Ch3 → Ch4(通用I/O) → Ch5 → … → Ch20–21 → Ch34–37 → Ch49 → Ch29–30 → Ch58–61 → Ch63 → Ch64
+目录: chapter-02 → chapter-03-system-programming-concepts → chapter-04-file-io-universal → chapter-05-file-io-further → …
 ```
 
 → 实验代码放各章 `chapter-*/code/` · 网络纵深 → [10-UNP](../11-UNP-Vol1/)
