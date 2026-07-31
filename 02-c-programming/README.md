@@ -20,7 +20,7 @@
 
 | 阶段 | 目录 | 书籍 | 侧重 |
 |------|------|------|------|
-| 1 | [01-K-and-R-C](./01-K-and-R-C/) | 《C 程序设计语言（K&R 第2版）》 | 标准 C、`malloc`/指针/结构体 |
+| 1 | [01-K-and-R-C](./01-K-and-R-C/) | 《C 程序设计语言（K&R 第2版）》 | **= C89（非 C99/C11）**；`malloc`/指针/结构体 |
 | 1 | [02-Pointers-on-C](./02-Pointers-on-C/) | 《C 和指针》 | 内存布局、联合体、ABI |
 | 1 | [03-C-Traps-and-Pitfalls](./03-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷（第2版）》 | 宏、链接、库函数陷阱 |
 | 1 | [04-Expert-C-Programming](./04-Expert-C-Programming/) | 《C 专家编程》 | 链接器、深层指针、C 设计内幕 |
