@@ -1,14 +1,60 @@
 ## ⑤ 系统调用上下文 · System Call Context
 
-syscall 在 **进程上下文（process context）** 执行：
+---
+
+### 什么是上下文？
+
+系统调用执行期间，内核运行在 **进程上下文（Process Context）**：  
+当前正在执行的进程，就是 **发起系统调用的用户进程**。
 
 | 属性 | 含义 |
 |------|------|
-| **`current`** | 指向 **发起 syscall 的任务**（`task_struct`） |
-| **可睡眠** | 缺页、显式 `schedule()`、等锁… |
+| **`current`** | 指向发起 syscall 的任务（`task_struct`） |
+| **可睡眠** | 缺页、显式 `schedule()`、等 I/O / 锁… |
 | **可抢占** | 内核抢占开启时 — 同 **Ch 4** |
+| 可访问进程资源 | `task_struct`、fd 表、地址空间等 |
 
-因此 syscall 实现必须：
+---
+
+### 进程上下文 vs 中断上下文（必分清）
+
+| | 系统调用（进程上下文） | 硬件中断服务（中断上下文） |
+|--|------------------------|----------------------------|
+| 可否休眠 | ✅ **允许** | ❌ **绝对不能** |
+| 典型例子 | `read` 等磁盘 → 进程可休眠，调度器跑别的进程 | IRQ handler |
+| 信号等 | 可涉及信号处理路径（语义更复杂） | 通常不能做「像进程一样」的事 |
+
+很多内核 bug 的根源就是 **混淆二者** — 中断里调用了会睡眠的路径。
+
+**HFT：** 一次 `read`/`send` 尖刺 — 除用户态逻辑外，还要看 **是否阻塞、是否持锁过久、是否触发调度**。
+
+---
+
+### `current` 与 fd 模型
+
+在内核任意 **进程上下文** 代码里，`current` 宏永远指向当前进程 `task_struct`。  
+`current->files` 就是进程的文件描述符表 — 与 [§3.8](../../chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md) 的 fd / `struct file` 模型打通。
+
+`sys_read` 内部逻辑（极度简化）：
+
+```
+sys_read(fd, buf, len)
+    struct file *f = fget(fd);   // 在 current->files 按 fd 找 struct file
+    f->f_op->read(f, buf, len, &f->f_pos);  // 走文件操作，动共享 offset
+    fput(f);
+```
+
+这就是此前讨论的底层源头：
+
+| 用户操作 | 底层效果 |
+|----------|----------|
+| 两次 `open` 同一文件 | 两个独立 `struct file` → offset **互不干扰** |
+| `dup(fd)` | 新旧 fd 指向 **同一** `struct file` → **共享** offset |
+| `fork()` | 子进程复制 fd 表，相同 fd 仍指向 **同一** `struct file` → **共享** offset |
+
+---
+
+### 可重入要求
 
 | 要求 | 原因 |
 |------|------|
@@ -20,6 +66,6 @@ syscall 在 **进程上下文（process context）** 执行：
 进程 A 线程2 ──write()──► sys_write ──► 并发 ──► 需锁/无共享或可重入设计
 ```
 
-**HFT：** 一次 `read`/`send` 尖刺 — 除用户态逻辑外，还要看 **是否阻塞、是否持锁过久、是否触发调度**。
+→ 下一节 [§5.6 替代方案](./section-5.6-添加系统调用与替代方案.md) · 对比 **Ch 7** 中断上下文
 
 ---
