@@ -3,6 +3,7 @@
 > **Linux Kernel Development 3rd** · Robert Love · **选读**
 
 > 本章定位：**用户态 ↔ 内核** 的合法正门 — syscall 号、`sys_call_table`、陷入路径、**参数验证**、进程上下文。  
+> 先钉死：**libc ≠ 系统调用**（见 [§5.1](./notes/section-5.1-与内核通信.md)）。  
 > 与 [Ch3 §3.8 fd / struct file / inode](../chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md) 打通：`open/read/write/fork/dup` 全走 syscall。  
 > HFT：**少 syscall、懂延迟从哪来** 的底层一页。
 
@@ -38,8 +39,8 @@
 
 完整走一遍 `open()`：
 
-1. 用户态程序调用 libc `open()`
-2. libc 准备参数，执行 `syscall`，传入系统调用号
+1. 你的代码调用 libc `open()`（**用户态函数**，不是「系统调用本身」）
+2. glibc 准备参数，执行 `syscall`，传入系统调用号（现代常走 **`openat`**）
 3. CPU 陷入内核，进入 `entry_SYSCALL_64`
 4. `do_syscall_64` 找到 `sys_openat`（等）
 5. `sys_openat`：
@@ -47,7 +48,7 @@
    - 创建全新 **`struct file`**（打开会话，自带独立 offset）；
    - 在 `current->files`（进程文件表）分配一个空闲 **fd**；
    - **fd → struct file** 建立映射；
-6. 返回 fd 数字给用户态
+6. 内核把 fd 放入 `rax`，`sysret` 回用户态；glibc 再返回给你的代码
 
 场景对比（复习 §3.8）：
 
@@ -57,7 +58,10 @@
 | **dup(fd)** | `sys_dup` → 新 fd 指向 **同一** `struct file`，**共享** offset |
 | **fork()** | 子进程复制 fd 表 → 相同 fd 指向 **同一** `struct file`，**共享** offset |
 
-示例代码：  
+libc vs 裸 syscall 对比：  
+[`write_libc_demo.c`](./code/write_libc_demo.c) · [`write_raw_syscall.s`](./code/write_raw_syscall.s)
+
+FD 偏移示例（Ch3）：  
 [`dual_open_fd_offset_demo.c`](../chapter-03-process-management/code/dual_open_fd_offset_demo.c) ·  
 [`fork_fd_offset_demo.c`](../chapter-03-process-management/code/fork_fd_offset_demo.c)
 
@@ -80,7 +84,9 @@
 
 | 问题 | 答案 |
 |------|------|
+| libc 是什么？ | **用户态 C 库** — 封装 syscall + 纯用户态函数；**不依赖则也能裸 syscall** |
 | 用户如何进内核？ | **syscall（+ 异常）** — 常经 **libc 包装** |
+| `errno` 在哪？ | **libc**（内核只返回负错误码，不知 errno） |
 | 内核怎么分发？ | **号 → `sys_call_table` → `sys_*`** |
 | x86_64 怎么传号？ | **`rax`**（书中 32 位多为 `eax`） |
 | 安全核心？ | **验证指针 + `copy_*_user` + `capable`** |
