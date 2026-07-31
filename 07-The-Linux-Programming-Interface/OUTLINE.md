@@ -1,7 +1,9 @@
 # TLPI · 章节大纲与 HFT 裁剪
 
-> **Michael Kerrisk** · *The Linux Programming Interface*（2nd ed.）  
-> 标签：🔴 必读 · 🟡 选读 · ⚪ 跳过
+> **Michael Kerrisk** · *The Linux Programming Interface*（2nd ed.）·《Linux/UNIX 系统编程手册》  
+> **定位：** 用户态系统 API（先会用，再读 LKD 看实现）— 见 [README](./README.md)  
+> 标签：🔴 必读 · 🟡 选读 · ⚪ 跳过  
+> 锁定读序：Phase3 在 LKD 前 — [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md)
 
 ## Part I · 系统编程概念
 
