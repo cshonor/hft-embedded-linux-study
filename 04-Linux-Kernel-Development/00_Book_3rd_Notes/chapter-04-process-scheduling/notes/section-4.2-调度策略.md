@@ -37,118 +37,143 @@ Linux 把任务隔成两大阵营（两套调度类，**不要混优先级标尺
 
 ### 二、两大阵营 + 三套字段（一次性理顺）
 
-Linux 调度两大类：
+Linux 调度两大类（再加 DEADLINE）：
 
 | 阵营 | 策略 | 调度器 |
 |------|------|--------|
-| **普通分时** | `SCHED_OTHER`（及 BATCH 等） | **CFS**（nice / `vruntime`） |
+| **普通分时** | `SCHED_OTHER`（及 BATCH / IDLE） | **CFS**（nice / `vruntime`） |
 | **实时** | `SCHED_FIFO` / `SCHED_RR` | **RT 类**（独立队列，压过全部 CFS） |
+| **限期** | `SCHED_DEADLINE` | DL 类（通常压过 RT） |
 
-`task_struct` 里和优先级相关的三个核心字段：
+`task_struct` 优先级 **三兄弟**（外加 `rt_priority`）：
 
 | 字段 | 角色 |
 |------|------|
-| **`static_prio`** | CFS **静态**源头（由 nice 换算） |
-| **`rt_priority`** | RT **用户态实时优先级**（FIFO/RR 用；CFS **不用**） |
-| **`prio`** | **动态/通用比较用优先级**（复合字段！调度器全局比谁更优先） |
+| **`static_prio`** | CFS **静态**源头（`120 + nice`） |
+| **`normal_prio`** | **标准化基准** — 抹平 CFS / RT 两套标尺 |
+| **`prio`** | **调度真正用来比较、抢占判断的最终值** |
+| **`rt_priority`** | RT 用户优先级（FIFO/RR；CFS 不用） |
+
+#### 公式总览（必背）
+
+**CFS（NORMAL / BATCH / IDLE）：**
+
+```
+normal_prio = static_prio
+prio        = normal_prio = static_prio
+```
+
+**RT（FIFO / RR）：**
+
+```
+normal_prio = 99 - rt_priority
+prio        = normal_prio
+```
+
+**DEADLINE：** `prio` 固定为 **0** 量级（高于普通 RT 语义；走 DL 调度类）。
+
+> 现代主线 CFS：**常态下 `prio == normal_prio`**。  
+> O(1) 时代曾有交互 bonus，可使 `prio` 临时偏离 `normal_prio`；**CFS 已取消该动态奖励**。  
+> 例外：RT **优先级继承（PI）** 等路径下，`effective_prio` 仍可能让运行中的 `prio` 暂时不同于 `normal_prio`（锁相关 boost）— 入门先记「无 PI 时相等」。
 
 ---
 
-#### ① 普通 CFS（`SCHED_OTHER`）→ nice 体系
+#### ① 普通 CFS → nice 体系
 
 | 项 | 值 |
 |----|-----|
 | 控制参数 | **nice ∈ [−20, 19]** |
 | `static_prio` | `120 + nice` → **[100, 139]** |
-| `rt_priority` | **不参与调度**（字段可存在，但对 CFS 无效） |
-| 常态下 `prio` | **`prio = static_prio`** |
-| 份额 | `static_prio` → 查表 **weight** → **`vruntime`** |
-
-> 普通进程 **只有** nice / `static_prio` 这套；**没有**「实时优先级」语义。
+| `rt_priority` | **忽略**；改 nice **对 RT 无效** |
+| 三字段 | `prio = normal_prio = static_prio` |
+| 份额 | 用 `static_prio` 查表 **weight** → **`vruntime`**（选人看 vruntime，不看 static_prio 大小） |
 
 ---
 
-#### ② 实时进程（`SCHED_FIFO` / `SCHED_RR`）→ `rt_priority` 体系
+#### ② 实时 RT → `rt_priority` 体系
 
 | 项 | 值 |
 |----|-----|
-| 控制参数 | **`rt_priority`（用户态常 1…99；内核可到 0…99）** |
-| 方向 | **数值越大优先级越高**（和 nice **相反**！） |
-| nice / CFS / `vruntime` | **全部不用**；改 nice **无效** |
-| 抢占 | 只要就绪，**压过所有 CFS** |
-| FIFO | 一直跑到阻塞 / yield / 被更高 RT 抢 |
-| RR | 同优先级有时间片，轮流 |
+| 控制参数 | **`rt_priority`（约 0…99；越大越优先）** |
+| nice / `static_prio` / `vruntime` | **不用** |
+| 换算 | `normal_prio = 99 - rt_priority`；`prio = normal_prio` |
+| 抢占 | 就绪即压过全部 CFS |
 
-内核统一用 **`prio`** 做全局比较时（RT）：
-
-```
-prio = 99 - rt_priority          /* 即 MAX_RT_PRIO-1 - rt_priority；MAX_RT_PRIO=100 */
-```
-
-| `rt_priority` | `prio` |
-|---------------|--------|
+| `rt_priority` | `normal_prio` / `prio` |
+|---------------|------------------------|
 | 99（最高） | **0** |
+| 50 | **49** |
 | 0（最低） | **99** |
 
-细节 → [§4.6](./section-4.6-实时调度策略.md) · 用户态接口 → [§4.7](./section-4.7-与调度相关的系统调用.md)
+细节 → [§4.6](./section-4.6-实时调度策略.md) · [§4.7](./section-4.7-与调度相关的系统调用.md)
 
 ---
 
-#### ③ `prio`：全局统一标尺（重中之重）
+#### ③ 三兄弟逐个拆 + `prio` 全局标尺
 
-内核约定：**`prio` 数字越小，优先级越高。**
+| 字段 | 含义 |
+|------|------|
+| **`static_prio`** | CFS 专属基准；`120+nice`；不 renice 不变；**RT 忽略** |
+| **`normal_prio`** | 统一转换层：CFS 抄 `static_prio`；RT 由 `rt_priority` 换算 |
+| **`prio`** | **抢占/比较只看它**；**数字越小越优先** |
 
-| 区间 | 谁 |
-|------|-----|
-| **0** | RT 最高 |
-| **…98** | 其余 RT（随 `rt_priority`） |
-| **99** | RT 侧低端 / 分界附近 |
-| **100…139** | **CFS**（nice −20…+19） |
+```
+DEADLINE ── prio ≈ 0（最高档）
+RT ──────── prio ∈ [0, 98]（随 rt_priority）
+分界 ────── ≈ 99
+CFS ─────── prio ∈ [100, 139]
+```
 
-因此：**全体可运行 RT 的 `prio` 都小于 CFS** → 天然 **RT 永远优先于普通进程**。
+→ 就绪 RT 的 `prio` 整体 **小于 100**（CFS 最小为 100）→ **天然抢占 CFS**。
 
-| 类型 | `prio` |
-|------|--------|
-| RT 最高（rt=99） | 0 |
-| RT 较低端 | ≈98 / 99 |
-| CFS 最高（nice=−20） | **100** |
-| CFS 默认（nice=0） | **120** |
-| CFS 最低（nice=19） | **139** |
+##### 时序案例
+
+| 案例 | 计算 | `prio` |
+|------|------|--------|
+| CFS nice=0 | static=120 → normal=120 → prio=120 | 120 |
+| RT rt=50 | normal=`99-50`=49 → prio=49 | **49**（高于上者） |
+| RT rt=99 | normal=0 → prio=0 | **0** |
+| CFS nice=−20 | static=100 → prio=100 | 100 |
+
+**自检：** rt=99 的 RT，`prio=0`；nice=−20 的 CFS，`prio=100`。  
+`0 < 100` → **能抢占** 该 CFS。
+
+##### 链路对照
+
+```
+CFS:  nice → static_prio → normal_prio → prio
+         → 查表 weight → vruntime → 红黑树
+
+RT:   rt_priority → normal_prio → prio → RT 队列
+         （不走 CFS / vruntime）
+```
+
+##### 极简记忆
+
+1. `static_prio`：CFS 源头（nice）；  
+2. `normal_prio`：CFS/RT **统一转换层**；  
+3. `prio`：内核 **最终比较值**；  
+4. CFS：`prio = normal_prio = static_prio`；  
+5. RT：`prio = normal_prio = 99 - rt_priority`。
+
+| 谣言 | 真相 |
+|------|------|
+| `nice -20` ≈ 实时 | **否** — CFS 最小 `prio` 仍是 100 |
+| `prio` 就是 `static_prio` | **否** — 仅 CFS 常态相等 |
+| RT 用 nice 调 | **否** |
+| `rt_priority` 越小越优先 | **否** — **越大越优先** |
+| 现代 CFS 仍有 O(1) 式动态 bonus | **否** — 已取消；常态 `prio==normal_prio` |
 
 ```
 普通世界（CFS）                    实时世界（独立类）
 nice -20 ──────────► +19           rt_priority 99 ────► 0/1
 static_prio 100 ───► 139           prio 0 ──────────► 99
-  （数字小=优先）                    （数字小=优先；整体压过 CFS）
 ```
 
 | 权限直觉 | |
 |----------|--|
-| 普通用户 | 通常只能把 nice **调大**（更「谦让」） |
-| root / 能力 | 才能 nice 负数、设 RT 策略 |
-
-| 谣言 | 真相 |
-|------|------|
-| `nice -20` ≈ 实时 | **否** — 再负的 nice 也压不过任意可运行 RT |
-| nice 数字方向 = RT 数字方向 | **否** — **两套标尺，方向相反** |
-| `prio` 就是 `static_prio` | **否** — CFS 时常相等；RT 时 `prio = 99 - rt_priority` |
-| RT 也能用 nice 调 | **否** — 必须 `sched_setscheduler` / `chrt` 设策略 + `rt_priority` |
-| `rt_priority` 越小越优先 | **否** — **越大越优先**（别和 `prio` 搞反） |
-
-#### 极简对比
-
-| | CFS `SCHED_OTHER` | RT FIFO/RR |
-|--|-------------------|------------|
-| 控制 | **nice** | **`rt_priority`** |
-| 关键字段 | `static_prio` | `rt_priority` |
-| 调度 | CFS 树 / weight / `vruntime` | RT 队列 |
-| 与另一套 | nice **调不动** RT | RT **压过** 全部 CFS |
-
-#### 链路背诵
-
-1. 普通：nice → `static_prio` →（常）`prio` → weight / `vruntime`  
-2. 实时：`rt_priority` → `prio` → RT 队列  
-3. 全局比 **`prio`（越小越优先）**；RT 整体 `<` CFS  
+| 普通用户 | 通常只能把 nice **调大** |
+| root / 能力 | 才能 nice 负数、设 RT |
 
 ---
 

@@ -6,7 +6,7 @@ RT 任务由 **独立实时调度类** 管理 — **不走 CFS 红黑树**。只
 
 | 用户控制 | 内核字段 | 换算到全局 `prio` |
 |----------|----------|-------------------|
-| **`rt_priority`（越大越优先）** | `task_struct.rt_priority` | **`prio = 99 - rt_priority`** |
+| 控制参数 | **`rt_priority`（越大越优先）** | `task_struct.rt_priority` | **`normal_prio = prio = 99 - rt_priority`** |
 | nice | **无效** | — |
 
 `prio` 越小越优先；RT 落在约 **0…99**，CFS 在 **100…139** → 天然 RT 压过 CFS。  

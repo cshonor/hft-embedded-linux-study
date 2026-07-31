@@ -70,7 +70,9 @@
 | `renice` 改谁？ | 底层改 **`static_prio`**（并更新 weight）→ 影响之后 `vruntime` 增速 |
 | fork 后 nice？ | **继承父进程**；`exec` **不改** nice |
 | nice vs RT？ | nice 调 CFS 份额；RT **压过** 所有 CFS；nice **调不动** RT |
-| `prio`？ | **全局标尺（越小越优先）**；CFS≈`static_prio`；RT=`99-rt_priority` |
+| `prio`？ | **最终比较值（越小越优先）**；CFS：=`normal_prio`=`static_prio`；RT：=`99-rt_priority` |
+| `normal_prio`？ | **统一转换层**；抹平 nice 与 `rt_priority` 两套标尺 |
+| RT rt=99 能抢 nice=-20？ | **能**：prio **0** &lt; CFS 的 **100** |
 | `rt_priority`？ | 用户 RT 优先级，**越大越优先**（与 nice、`prio` 方向都易混） |
 | 六策略高低？ | **DEADLINE > FIFO/RR > NORMAL > BATCH > IDLE** |
 | BATCH 是 RT？ | **否** — 仍是 CFS；IDLE **不受 nice** |
