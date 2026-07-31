@@ -15,7 +15,7 @@
 | 2 | Fundamental Concepts | `chapter-02-basic-concepts` | **🔴** | 用户/内核、syscall、进程、fd、inode |
 | 3 | System Programming Concepts | **`chapter-03-system-programming-concepts`** | **🔴** | syscall vs 库函数、`errno`、功能测试宏、`tlpi_hdr` |
 | 4 | File I/O: Universal I/O Model | **`chapter-04-file-io-universal`** | **🔴** | `open/read/write/close/lseek`；短读/部分写 |
-| 5 | File I/O: Further Details | **`chapter-05-file-io-further`** | 🟡 | `dup`/`fcntl`/原子追加/非阻塞 |
+| 5 | File I/O: Further Details | **`chapter-05-file-io-further`** | **🔴** | 三层结构、dup、pread、fcntl、原子、非阻塞 |
 
 ⚠️ 勿与 **APUE Ch3**（也是文件 I/O）章号混用；TLPI 通用模型在 **第 4 章**。
 
