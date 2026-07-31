@@ -4,7 +4,7 @@
 
 **文件夹 `07`** · [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md) · [OUTLINE](./OUTLINE.md) · [CHAPTER-MAP](./CHAPTER-MAP.md) · [READING-LIST](../READING-LIST.md)
 
-> **章号：** `chapter-NN-*` 中 **NN = 书内章号**（已批量对齐）。一书多目录 / 缺章 / extras 见 [CHAPTER-MAP](./CHAPTER-MAP.md)。
+> **章号：** `chapter-NN-*` 中 **NN = 书内章号**；**Ch1–64 各恰好一个目录**（见 [CHAPTER-MAP](./CHAPTER-MAP.md)）。书外内容在 `extras-*`。
 
 ---
 
@@ -69,7 +69,7 @@ CSAPP → TLPI →（动手 / 网络）→ LKD · Gorman →（拓展）ULK
 最短路径（书内章节号，见 [OUTLINE](./OUTLINE.md)）：
 
 ```
-Ch 2 → 3 → 4 → 5 → 20–21 → 23 → 29–30 → 49 → 56–61 → 63
+Ch 2 → 3 → 4 → 5 → 20–21 → 23 → 29–30 → 35 → 49 → 56–61 → 63
 ```
 
 | 主题 | 为何 |

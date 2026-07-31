@@ -1,7 +1,7 @@
-# TLPI 第 64 章 — Pseudoterminals
+# TLPI 第 10 章 — Time
 
-> 对应目录：`chapter-64-pseudoterminals/`
-> 书内标题：**Pseudoterminals**
+> 对应目录：`chapter-10-time/`
+> 书内标题：**Time**
 
 ## 学习状态
 
@@ -17,11 +17,9 @@
 
 ## 章节定位
 
-（待填 · 读 Kerrisk Ch 64）
+（待填 · 读 Kerrisk Ch 10）
 
-### 本章涵盖
-- PTY 基础与进阶
-→ 全书：[../README.md](../README.md) · 上一章 / 下一章见 CHAPTER-MAP
+→ 全书：[../README.md](../README.md) · 对照：[../CHAPTER-MAP.md](../CHAPTER-MAP.md)
 
 ---
 
@@ -53,4 +51,5 @@
 
 ## 参考
 
-- Kerrisk, *The Linux Programming Interface*, Chapter 64
+- Kerrisk, *The Linux Programming Interface*, Chapter 10
+

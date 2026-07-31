@@ -69,6 +69,6 @@ set_current_state(TASK_RUNNING);
 
 **HFT / 观测：** `D` 状态（不可中断睡眠）过多 → 磁盘/NFS 等阻塞拖慢整条流水线；`perf sched latency`、`ps aux` 与 **Ch 4 运行队列** 联读。用户态热路径若频繁 `futex` 睡眠，STAT 会长期在 **S** — 唤醒延迟是尾延迟来源之一。
 
-→ [Ch 4 §4.4 休眠与唤醒](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md) · [Ch 4 §4.5 抢占](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [15 SysPerf §3.2 进程与调度](../../../../15-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [07 TLPI Ch29–33 线程与调度](../../../../07-The-Linux-Programming-Interface/chapter-33-thread-scheduling/notes.md)
+→ [Ch 4 §4.4 休眠与唤醒](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md) · [Ch 4 §4.5 抢占](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [15 SysPerf §3.2 进程与调度](../../../../15-Systems-Performance-2nd/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [07 TLPI Ch29–33 线程与调度](../../../../07-The-Linux-Programming-Interface/chapter-33-threads-further/notes.md)
 
 ---

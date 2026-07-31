@@ -1,7 +1,7 @@
-# TLPI 第 64 章 — Pseudoterminals
+# TLPI 第 33 章 — Threads: Further Details
 
-> 对应目录：`chapter-64-pseudoterminals/`
-> 书内标题：**Pseudoterminals**
+> 对应目录：`chapter-33-threads-further/`
+> 书内标题：**Threads: Further Details**
 
 ## 学习状态
 
@@ -17,10 +17,11 @@
 
 ## 章节定位
 
-（待填 · 读 Kerrisk Ch 64）
+（待填 · 读 Kerrisk Ch 33）
 
-### 本章涵盖
-- PTY 基础与进阶
+### 本章涵盖（原拆目录已合并）
+- 线程属性（`pthread_attr_*`）
+- 线程与调度相关细节
 → 全书：[../README.md](../README.md) · 上一章 / 下一章见 CHAPTER-MAP
 
 ---
@@ -53,4 +54,4 @@
 
 ## 参考
 
-- Kerrisk, *The Linux Programming Interface*, Chapter 64
+- Kerrisk, *The Linux Programming Interface*, Chapter 33

@@ -1,7 +1,7 @@
-# TLPI 第 64 章 — Pseudoterminals
+# TLPI 第 59 章 — Sockets: Internet Domains
 
-> 对应目录：`chapter-64-pseudoterminals/`
-> 书内标题：**Pseudoterminals**
+> 对应目录：`chapter-59-internet-domains/`
+> 书内标题：**Sockets: Internet Domains**
 
 ## 学习状态
 
@@ -17,10 +17,11 @@
 
 ## 章节定位
 
-（待填 · 读 Kerrisk Ch 64）
+（待填 · 读 Kerrisk Ch 59）
 
-### 本章涵盖
-- PTY 基础与进阶
+### 本章涵盖（原 DNS/TCP/UDP 拆目录已合并）
+- 域名解析
+- TCP / UDP Internet sockets
 → 全书：[../README.md](../README.md) · 上一章 / 下一章见 CHAPTER-MAP
 
 ---
@@ -53,4 +54,4 @@
 
 ## 参考
 
-- Kerrisk, *The Linux Programming Interface*, Chapter 64
+- Kerrisk, *The Linux Programming Interface*, Chapter 59

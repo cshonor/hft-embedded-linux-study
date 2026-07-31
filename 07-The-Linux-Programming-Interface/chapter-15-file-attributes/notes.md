@@ -1,6 +1,7 @@
 # TLPI 第 15 章 — File Attributes
 
 > 对应目录：`chapter-15-file-attributes/`
+> 书内标题：**File Attributes**
 
 ## 学习状态
 
@@ -9,8 +10,18 @@
 - [ ] C 示例已跑
 - [ ] Rust 对照已写
 
-**优先级**：⭐ / ⭐⭐ / ⭐⭐⭐（见根目录 [README.md](../README.md) 优先级表）  
-**与 Rust 仓库关联**：`atomic/` · `async_tokio/` · `rust_network_programming/` · `llvm_insight/`
+**优先级**：见 [OUTLINE](../OUTLINE.md) · [CHAPTER-MAP](../CHAPTER-MAP.md)  
+**路线**：嵌入式 Linux 应用 · HFT 用户态高性能
+
+---
+
+## 章节定位
+
+（待填 · 读 Kerrisk Ch 15）
+
+### 本章涵盖
+- `stat` / inode / 权限等文件属性
+→ 全书：[../README.md](../README.md) · 上一章 / 下一章见 CHAPTER-MAP
 
 ---
 
@@ -40,7 +51,6 @@
 
 ---
 
-## 8. 参考
+## 参考
 
-- 《The Linux Programming Interface》第 05 章 — File I/O: Metadata
-- `man 2` / `man 3` / `man 7`
+- Kerrisk, *The Linux Programming Interface*, Chapter 15
