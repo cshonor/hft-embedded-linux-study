@@ -9,7 +9,7 @@
 
 | 章 | 主题 | 标签 | HFT 关联 |
 |----|------|------|----------|
-| 1 | 系统编程概念 | 🟡 | 与 CSAPP / LKD 对照 |
+| 1 | History and Standards | 🟡 快读 | **POSIX vs Linux 扩展**；发行版=内核+GNU |
 | 2 | 系统调用 API | 🔴 | errno、`syscall()`、用户/内核边界 |
 | 3 | 文件 I/O 通用 | 🟡 | `open/read/write`、非阻塞前置 |
 
