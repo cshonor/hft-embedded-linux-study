@@ -18,6 +18,8 @@ struct my_task {
 
 #### `container_of()` — 从节点找回父结构
 
+依赖 **GCC 扩展**（`typeof` 等）— 见 [Ch2 §2.4 GNU C](../../chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)。纯 ISO C 很难优雅实现同等宏。
+
 ```c
 /* 从 list 成员指针 → 外层 my_task * */
 struct my_task *p = list_entry(ptr, struct my_task, list);

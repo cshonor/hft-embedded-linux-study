@@ -3,6 +3,7 @@
 > **Linux Kernel Development 3rd** · Robert Love · **实操入门**
 
 > 本章定位：**拿源码 → 认目录 → 配置编译安装**；并牢记 **内核开发 ≠ 用户态 C**。  
+> §2.4 钉死：**内核 = GNU C（`-std=gnu11`）**；**GNU C ≠ glibc**（语法方言 vs 用户态库）。  
 > 拓展⑤：编译镜像如何进 UEFI、与用户态 ELF 分界。
 
 ---
@@ -14,7 +15,7 @@
 | **① 获取源码** | 版本定论 + tar/Git | **主树 7.1.5** · 书 **2.6.34** · 勿 `/usr/src` |
 | **② 源码树** | `arch` `drivers`… + 目录↔章对照 | 按子系统找代码 |
 | **③ 编译安装** | 工具 → config → make → install | **须在 Linux/WSL**；Win 树只读 |
-| **④ 开发差异** | Beast of a Different Nature | **无 libc · 小栈 · 同步 · 无 FP** |
+| **④ 开发差异** | Beast of a Different Nature | **GNU C · 无 libc · 小栈 · 同步 · 无 FP** |
 | **⑤ ELF/UEFI**（拓展） | PE vs ELF · 启动链路 | 固件认 PE；内核后认 ELF |
 
 ---
@@ -40,6 +41,10 @@
 | 关键目录？ | **`arch` `drivers` `fs` `kernel` `mm` `include` `net`** |
 | 怎么编？ | Linux/WSL：`menuconfig` → `make -j` → `modules_install` |
 | UEFI 认什么？ | **PE32+ `.efi`**；内核跑起来后用户态是 **ELF**（§2.5） |
+| 内核用什么 C？ | **`-std=gnu11`（GNU C）**，不是纯 ISO C |
+| GNU C = glibc？ | **否** — 方言（编译期）≠ 用户态库（运行期）；内核不链 libc |
+
+GNU C 小实验：[`code/gnu_c_extension_demo.c`](./code/gnu_c_extension_demo.c)
 
 ---
 
@@ -49,6 +54,7 @@
 - [ ] 能按目录找到 LKD 对应章（§2.2）
 - [ ] 知道 Windows 树只读、真编译在 Linux
 - [ ] 分清 **UEFI=PE** vs **Linux 后=ELF**
+- [ ] 分清 **ISO C / GNU C / glibc**；能举 `typeof`、`({ })`、`__attribute__`
 
 ---
 

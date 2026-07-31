@@ -161,6 +161,9 @@ int fd = open("a.txt", O_RDWR);
 
 实现不同，作用一致：封装系统调用 + 提供标准 C 函数。
 
+> 别和 **GNU C** 搞混：glibc = 用户态库；GNU C = **GCC 语法扩展**（内核 `-std=gnu11`）。  
+> 内核用 GNU C 写，但 **不链接 glibc**。详见 [Ch2 §2.4](../../chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)。
+
 ---
 
 ### 背诵版
