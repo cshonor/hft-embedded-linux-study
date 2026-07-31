@@ -77,6 +77,8 @@ vruntime ≈ 实际运行时间 × (1024 / 权重)
            └─────────┘
 ```
 
+红黑树为何不用链表/堆、内核 `rb_node` 内嵌 + `container_of`、`rb_first` 语义 → **[Ch6 §6.5](../../chapter-06-kernel-data-structures/notes/section-6.5-二叉树.md)**
+
 ---
 
 ### 必须配套理解（笔记外补齐）
