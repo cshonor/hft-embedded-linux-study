@@ -45,6 +45,8 @@
 | 内核用什么 C？ | **≥5.18：`-std=gnu11`**；**≤5.17：`gnu89`**（不是纯 ISO C） |
 | `gnu11` = C11？ | **否** — `gnu` = 开 GCC 扩展；基准是 C11，≠ `-std=c11` |
 | GNU C = glibc？ | **否** — 方言（编译期）≠ 用户态库（运行期）；内核不链 libc |
+| 用什么编译器？ | **主流 GCC**；**Clang 官方支持**（`LLVM=1`）；MSVC 不行 |
+| K&R 第2版是？ | **C89**；不是 C99/C11；读完还要补 C99 习惯 + GNU C |
 
 GNU C 小实验：[`code/gnu_c_extension_demo.c`](./code/gnu_c_extension_demo.c)
 
