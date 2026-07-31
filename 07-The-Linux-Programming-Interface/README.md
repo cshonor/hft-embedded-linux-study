@@ -2,7 +2,9 @@
 
 **标准简称：TLPI** · 中文常译：《Linux/UNIX 系统编程手册》
 
-**文件夹 `07`** · [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md) · [OUTLINE](./OUTLINE.md) · [READING-LIST](../READING-LIST.md)
+**文件夹 `07`** · [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md) · [OUTLINE](./OUTLINE.md) · [CHAPTER-MAP](./CHAPTER-MAP.md) · [READING-LIST](../READING-LIST.md)
+
+> **章号：** 仅 `chapter-01`…`05-file-io-further` 与书对齐；其余目录号是自编顺序，见 [CHAPTER-MAP](./CHAPTER-MAP.md)。
 
 ---
 

@@ -3,11 +3,10 @@
 > **Michael Kerrisk** · *The Linux Programming Interface*（2nd ed.）·《Linux/UNIX 系统编程手册》  
 > **定位：** 用户态系统 API（先会用，再读 LKD 看实现）— 见 [README](./README.md)  
 > 标签：🔴 必读 · 🟡 选读 · ⚪ 跳过  
-> 锁定读序：Phase3 在 LKD 前 — [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md)
+> 锁定读序：Phase3 在 LKD 前 — [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md)  
+> **章号审计：** [CHAPTER-MAP.md](./CHAPTER-MAP.md) — **仅 Ch1–5 与书对齐；Ch6 起目录号≠书内章号**
 
-## Part I · 系统编程概念
-
-> **目录名与书内章号已对齐**（Ch3–5）。其余章节目录仍可能错位，以「书内章」列为准。
+## Part I · 已对齐书内章号（Ch1–5）
 
 | 书内章 | 主题 | 目录 | 标签 | 要点 |
 |--------|------|------|------|------|
@@ -17,60 +16,44 @@
 | 4 | File I/O: Universal I/O Model | **`chapter-04-file-io-universal`** | **🔴** | `open/read/write/close/lseek`；短读/部分写 |
 | 5 | File I/O: Further Details | **`chapter-05-file-io-further`** | **🔴** | 三层结构、dup、pread、fcntl、原子、非阻塞 |
 
-⚠️ 勿与 **APUE Ch3**（也是文件 I/O）章号混用；TLPI 通用模型在 **第 4 章**。
+⚠️ 另有错号目录 `chapter-05-file-attributes`（内容≈书内 **Ch15**），见映射表。  
+⚠️ 勿与 **APUE Ch3** 混用；TLPI 通用 I/O 在 **第 4 章**。
 
-## Part II · 文件属性与其后（书内章号继续；后续目录名仍可能错位）
+## 其后章节（Ch6–64）
 
-| 书内章 | 主题 | 标签 | HFT 关联 |
-|--------|------|------|----------|
-| 6+ | 进程环境等（见各 `chapter-*`） | 按 OUTLINE 原裁剪 | — |
+**文件夹序号是自编课程序号，不能当书内章号。**  
+读主题时：先查 [CHAPTER-MAP.md](./CHAPTER-MAP.md)，再打开对应目录。
 
-## Part III · 进程
+### HFT 优先主题（按**书内章号**；括号为现仓库目录）
 
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 20 | 信号：基本概念 | 🔴 | 热路径信号屏蔽 |
-| 21 | 信号：信号处理函数 | 🔴 | `sigaction`、可重入 |
-| 22 | 信号：高级话题 | 🟡 | `signalfd`、实时信号 |
-| 24–28 | 进程创建、exec、监控 | 🟡 | 守护进程、子进程 |
-| 34–37 | 进程组、优先级、调度 | 🔴 | `SCHED_FIFO`、nice、绑核前置 |
+| 书内章 | 主题 | 现目录（错号，仅定位用） |
+|--------|------|--------------------------|
+| 20–22 | 信号 | `chapter-10`…`12` |
+| 23 | 定时器 | `chapter-13-timers-sleep` |
+| 29–30 | 线程 | `chapter-22`…`23` |
+| 35 | 调度优先级 | （散落；见 map） |
+| 49 | mmap | `chapter-15-memory-mapping` |
+| 50 | VM / mlock | `chapter-45-virtual-memory` |
+| 56–61 | Socket | `chapter-46`…`53` |
+| 63 | poll/epoll/alt I/O | `chapter-41`/`42`/`43`/`54`/`58` |
 
-## Part IV · 内存
-
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 49 | 内存映射 | 🔴 | `mmap` 共享订单簿、大页 |
-| 50 | 虚拟内存操作 | 🟡 | `mlock` 锁内存、防 swap |
-
-## Part V · 线程
-
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 29–30 | 线程介绍、同步 | 🔴 | pthread、mutex 成本 |
-| 31–33 | 线程安全、TLS、取消 | 🟡 | 无锁前的 baseline |
-
-## Part VI · IPC（选读为主）
-
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 44–48 | 管道、FIFO | 🟡 | 进程间粗通信 |
-| 51–55 | 消息队列、信号量、共享内存 | 🟡 | 多进程行情分发场景 |
-
-## Part VII · 网络 + 高级 I/O
-
-| 章 | 主题 | 标签 | HFT 关联 |
-|----|------|------|----------|
-| 56–57 | Socket 简介、域名解析 | 🟡 | 进 UNP 前速览 |
-| 58–61 | TCP/UDP、socket 选项 | 🔴 | `TCP_NODELAY`、buffer、非阻塞 |
-| **63** | **备选 I/O 模型** | **🔴** | **select / poll / epoll** |
-| 64 | 高级 I/O：其他话题 | 🟡 | `eventfd`、`timerfd` |
-| 65 | 性能监控 | 🟡 | `/proc`、与 SysPerf 衔接 |
-
-## HFT 最短路径（时间紧）
+## HFT 最短路径（书内章号）
 
 ```
-书内: Ch2 → Ch3 → Ch4(通用I/O) → Ch5 → … → Ch20–21 → Ch34–37 → Ch49 → Ch29–30 → Ch58–61 → Ch63 → Ch64
-目录: chapter-02 → chapter-03-system-programming-concepts → chapter-04-file-io-universal → chapter-05-file-io-further → …
+Ch2 → Ch3 → Ch4 → Ch5 → Ch20–21 → Ch23 → Ch29–30 → Ch35 → Ch49 → Ch56–61 → Ch63
 ```
 
-→ 实验代码放各章 `chapter-*/code/` · 网络纵深 → [10-UNP](../11-UNP-Vol1/)
+→ 实验代码放各章 `chapter-*/code/` · 网络纵深 → [11-UNP](../11-UNP-Vol1/)
+
+<details>
+<summary>旧脚手架备忘（目录号不可信）</summary>
+
+| 旧目录约 | 主题 | 实为书内 |
+|----------|------|----------|
+| 10–12 | 信号 | 20–22 |
+| 15 | mmap | 49 |
+| 22–23 | 线程 | 29–30 |
+| 41–42 | poll/epoll | 63 |
+| 46–53 | Socket | 56–61 |
+
+</details>
