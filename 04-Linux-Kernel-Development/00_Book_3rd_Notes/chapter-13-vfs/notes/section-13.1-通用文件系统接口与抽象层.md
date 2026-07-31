@@ -19,7 +19,7 @@ sys_read() ──► VFS（统一语义）
 
 | 可共存示例 | NTFS · FAT · ext4 · 各类 Unix FS… |
 
-→ [Ch 1](../../chapter-01-intro/) **一切皆文件** · [Ch 5](../../chapter-05-system-calls/) · [07-The-Linux-Programming-Interface Ch3 文件 I/O](../../../../07-The-Linux-Programming-Interface/chapter-03-file-io/)
+→ [Ch 1](../../chapter-01-intro/) **一切皆文件** · [Ch 5](../../chapter-05-system-calls/) · [07-The-Linux-Programming-Interface Ch4 文件 I/O](../../../../07-The-Linux-Programming-Interface/chapter-04-file-io-universal/)
 
 **HFT：** 热路径 **`read`/`write`/`mmap`/`send`** 都经 VFS 或并行子系统；排障可分层：**syscall → VFS → 具体 FS/协议栈**。
 

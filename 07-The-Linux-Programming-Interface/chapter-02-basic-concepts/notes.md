@@ -1,6 +1,6 @@
 # TLPI 第 02 章 — Fundamental Concepts
 
-> 对应目录：`chapter-02-basic-concepts/`  
+> 对应目录：`chapter-02-basic-concepts/`
 > 书内标题：**Fundamental Concepts**（基本概念）
 
 ## 学习状态

@@ -64,6 +64,6 @@ if (p->state == TASK_RUNNING)
 
 **HFT：** 绑核、RT 策略改的是 **`sched` 子结构**；`perf top` 里的 comm 来自 `task_struct->comm`。排查「 mystery 线程」时 `/proc/<pid>/task/*/comm` 与内核栈 trace 要对上同一 `task_struct`。
 
-→ [§3.3 状态](./section-3.3-进程状态.md) · [Ch 4 调度](../../chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md) · [Ch 15 §15.2 mm_struct](../../chapter-15-process-address-space/notes/section-15.2-内存描述符.md) · [07 TLPI Ch6 进程环境](../../../../07-The-Linux-Programming-Interface/chapter-06-process-environment/notes.md)
+→ [§3.3 状态](./section-3.3-进程状态.md) · [Ch 4 调度](../../chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md) · [Ch 15 §15.2 mm_struct](../../chapter-15-process-address-space/notes/section-15.2-内存描述符.md) · [07 TLPI Ch6 进程环境](../../../../07-The-Linux-Programming-Interface/chapter-06-processes/notes.md)
 
 ---

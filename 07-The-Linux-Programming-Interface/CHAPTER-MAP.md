@@ -1,195 +1,101 @@
-# TLPI 书内章号 ↔ 仓库目录 对照审计
+# TLPI 书内章号 ↔ 仓库目录
 
-> 对照来源：[No Starch TLPI TOC](https://nostarch.com/tlpi) · [Kerrisk detailed TOC](https://www.michaelkerrisk.com/tlpi/toc-detailed.html)  
-> 审计日期：2026-07-31  
-> **结论见文首；全表在下方。**
+> 对照：[No Starch TOC](https://nostarch.com/tlpi) · [Kerrisk detailed TOC](https://www.michaelkerrisk.com/tlpi/toc-detailed.html)  
+> **2026-07-31：** 已按书内章号批量 `git mv`；目录号 = Kerrisk 章号。
 
 ---
 
-## 总判
+## 状态
 
-| 区间 | 结论 |
+| | |
+|--|--|
+| **对齐方式** | `chapter-NN-<slug>/` 中的 **NN = 书内章号** |
+| **一书多目录** | 同号多 slug（如 Ch15、Ch33、Ch59、Ch62–64、Ch63） |
+| **书外内容** | `extras-netlink-sockets/`、`extras-final-summary/` |
+| **尚无目录的书内章** | 8, 10, 11, 13, 25, 26, 28, 32, 35, 42, 45（脚手架原缺；读时直接对书） |
+
+---
+
+## 官方目录 → 仓库路径
+
+| # | 官方标题 | 仓库目录 |
+|---|----------|----------|
+| 1 | History and Standards | `chapter-01-introduction` |
+| 2 | Fundamental Concepts | `chapter-02-basic-concepts` |
+| 3 | System Programming Concepts | `chapter-03-system-programming-concepts` |
+| 4 | File I/O: The Universal I/O Model | `chapter-04-file-io-universal` |
+| 5 | File I/O: Further Details | `chapter-05-file-io-further` |
+| 6 | Processes | `chapter-06-processes` |
+| 7 | Memory Allocation | `chapter-07-memory-allocation` |
+| 8 | Users and Groups | *(缺)* |
+| 9 | Process Credentials | `chapter-09-process-credentials` |
+| 10 | Time | *(缺)* |
+| 11 | System Limits and Options | *(缺)* |
+| 12 | System and Process Information | `chapter-12-system-process-info` |
+| 13 | File I/O Buffering | *(缺)* |
+| 14 | File Systems | `chapter-14-file-systems` |
+| 15 | File Attributes | `chapter-15-file-attributes` · `chapter-15-inodes-files` |
+| 16 | Extended Attributes | `chapter-16-extended-attributes` |
+| 17 | Access Control Lists | `chapter-17-access-control-lists` |
+| 18 | Directories and Links | `chapter-18-directories-links` |
+| 19 | Monitoring File Events | `chapter-19-monitoring-file-events` |
+| 20 | Signals: Fundamental Concepts | `chapter-20-signals-fundamentals` |
+| 21 | Signals: Signal Handlers | `chapter-21-signal-handlers` |
+| 22 | Signals: Advanced Features | `chapter-22-signals-advanced` |
+| 23 | Timers and Sleeping | `chapter-23-timers-sleeping` |
+| 24 | Process Creation | `chapter-24-process-creation` |
+| 25 | Process Termination | *(缺)* |
+| 26 | Monitoring Child Processes | *(缺)* |
+| 27 | Program Execution | `chapter-27-program-execution` |
+| 28 | Process Creation… in More Detail | *(缺)* |
+| 29 | Threads: Introduction | `chapter-29-threads-intro` |
+| 30 | Threads: Thread Synchronization | `chapter-30-thread-synchronization` |
+| 31 | Threads: Thread Safety / TLS | `chapter-31-thread-safety-tsd` |
+| 32 | Threads: Thread Cancellation | *(缺)* |
+| 33 | Threads: Further Details | `chapter-33-thread-attributes` · `chapter-33-thread-scheduling` |
+| 34 | Process Groups, Sessions, Job Control | `chapter-34-process-groups-sessions` |
+| 35 | Process Priorities and Scheduling | *(缺)* |
+| 36 | Process Resources | `chapter-36-process-resources` |
+| 37 | Daemons | `chapter-37-daemons` |
+| 38 | Writing Secure Privileged Programs | `chapter-38-secure-privileged` |
+| 39 | Capabilities | `chapter-39-capabilities` |
+| 40 | Login Accounting | `chapter-40-login-accounting` |
+| 41 | Fundamentals of Shared Libraries | `chapter-41-shared-libraries` |
+| 42 | Advanced Features of Shared Libraries | *(缺)* |
+| 43 | IPC Overview | `chapter-43-ipc-overview` |
+| 44 | Pipes and FIFOs | `chapter-44-pipes-fifos` |
+| 45 | Introduction to System V IPC | *(缺)* |
+| 46 | System V Message Queues | `chapter-46-sysv-message-queues` |
+| 47 | System V Semaphores | `chapter-47-sysv-semaphores` |
+| 48 | System V Shared Memory | `chapter-48-sysv-shared-memory` |
+| 49 | Memory Mappings | `chapter-49-memory-mappings` |
+| 50 | Virtual Memory Operations | `chapter-50-virtual-memory` |
+| 51 | Introduction to POSIX IPC | `chapter-51-posix-ipc-intro` |
+| 52 | POSIX Message Queues | `chapter-52-posix-message-queues` |
+| 53 | POSIX Semaphores | `chapter-53-posix-semaphores` |
+| 54 | POSIX Shared Memory | `chapter-54-posix-shared-memory` |
+| 55 | File Locking | `chapter-55-file-locking` |
+| 56 | Sockets: Introduction | `chapter-56-sockets-intro` |
+| 57 | Sockets: UNIX Domain | `chapter-57-sockets-unix-domain` |
+| 58 | Sockets: TCP/IP Fundamentals | `chapter-58-tcpip-fundamentals` |
+| 59 | Sockets: Internet Domains | `chapter-59-internet-domains-dns` · `chapter-59-tcp-sockets` · `chapter-59-udp-sockets` |
+| 60 | Sockets: Server Design | `chapter-60-server-design` |
+| 61 | Sockets: Advanced Topics | `chapter-61-sockets-advanced` |
+| 62 | Terminals | `chapter-62-terminals` · `chapter-62-termios` |
+| 63 | Alternative I/O Models | `chapter-63-poll-select` · `chapter-63-epoll` · `chapter-63-asynchronous-io` · `chapter-63-io-multiplexing` · `chapter-63-alternative-io-overview` |
+| 64 | Pseudoterminals | `chapter-64-pseudoterminals` · `chapter-64-advanced-ptys` |
+
+### 书外
+
+| 目录 | 说明 |
 |------|------|
-| **书内 Ch1–5** | 已对齐（目录号 = 书内章号；笔记标题正确） |
-| **书内 Ch6–64** | **大面积错位**：目录是「自编课程序号」，**不是** Kerrisk 章号 |
-| **额外问题** | 两个 `chapter-05-*`；OUTLINE 后半用「书内章号」写 HFT 路径，和文件夹对不上 |
-
-**不是**「整书统一偏一位」这种简单错位，而是早期脚手架按另一套顺序建了约 64 个目录，后来只修了开头几章。
+| `extras-netlink-sockets` | Netlink（原脚手架；非 Kerrisk 独立章） |
+| `extras-final-summary` | 总结/延伸阅读 |
 
 ---
 
-## 官方目录（书内章号）
+## HFT 最短路径（目录已对齐）
 
-| # | 官方标题 |
-|---|----------|
-| 1 | History and Standards |
-| 2 | Fundamental Concepts |
-| 3 | System Programming Concepts |
-| 4 | File I/O: The Universal I/O Model |
-| 5 | File I/O: Further Details |
-| 6 | Processes |
-| 7 | Memory Allocation |
-| 8 | Users and Groups |
-| 9 | Process Credentials |
-| 10 | Time |
-| 11 | System Limits and Options |
-| 12 | System and Process Information |
-| 13 | File I/O Buffering |
-| 14 | File Systems |
-| 15 | File Attributes |
-| 16 | Extended Attributes |
-| 17 | Access Control Lists |
-| 18 | Directories and Links |
-| 19 | Monitoring File Events |
-| 20 | Signals: Fundamental Concepts |
-| 21 | Signals: Signal Handlers |
-| 22 | Signals: Advanced Features |
-| 23 | Timers and Sleeping |
-| 24 | Process Creation |
-| 25 | Process Termination |
-| 26 | Monitoring Child Processes |
-| 27 | Program Execution |
-| 28 | Process Creation and Program Execution in More Detail |
-| 29 | Threads: Introduction |
-| 30 | Threads: Thread Synchronization |
-| 31 | Threads: Thread Safety and Per-Thread Storage |
-| 32 | Threads: Thread Cancellation |
-| 33 | Threads: Further Details |
-| 34 | Process Groups, Sessions, and Job Control |
-| 35 | Process Priorities and Scheduling |
-| 36 | Process Resources |
-| 37 | Daemons |
-| 38 | Writing Secure Privileged Programs |
-| 39 | Capabilities |
-| 40 | Login Accounting |
-| 41 | Fundamentals of Shared Libraries |
-| 42 | Advanced Features of Shared Libraries |
-| 43 | Interprocess Communication Overview |
-| 44 | Pipes and FIFOs |
-| 45 | Introduction to System V IPC |
-| 46 | System V Message Queues |
-| 47 | System V Semaphores |
-| 48 | System V Shared Memory |
-| 49 | Memory Mappings |
-| 50 | Virtual Memory Operations |
-| 51 | Introduction to POSIX IPC |
-| 52 | POSIX Message Queues |
-| 53 | POSIX Semaphores |
-| 54 | POSIX Shared Memory |
-| 55 | File Locking |
-| 56 | Sockets: Introduction |
-| 57 | Sockets: UNIX Domain |
-| 58 | Sockets: Fundamentals of TCP/IP Networks |
-| 59 | Sockets: Internet Domains |
-| 60 | Sockets: Server Design |
-| 61 | Sockets: Advanced Topics |
-| 62 | Terminals |
-| 63 | Alternative I/O Models |
-| 64 | Pseudoterminals |
-
----
-
-## 仓库目录 vs 书内（按「笔记标题」猜应属哪一章）
-
-| 仓库目录 | 笔记自称章号/标题 | 应对书内章 | 状态 |
-|----------|-------------------|------------|------|
-| `chapter-01-introduction` | 01 History and Standards | **1** | ✅ |
-| `chapter-02-basic-concepts` | 02 Fundamental Concepts | **2** | ✅ |
-| `chapter-03-system-programming-concepts` | 03 System Programming Concepts | **3** | ✅ |
-| `chapter-04-file-io-universal` | 04 Universal I/O Model | **4** | ✅ |
-| `chapter-05-file-io-further` | 05 Further Details | **5** | ✅ |
-| `chapter-05-file-attributes` | 05 File I/O: Metadata | **15** File Attributes | ❌ 重号 + 错号 |
-| `chapter-06-process-environment` | 06 Process Environment | **6** Processes（部分） | ⚠️ 标题不全 |
-| `chapter-07-process-creation` | 07 Programs and Processes | **6** 或概览；创建是 **24** | ❌ |
-| `chapter-08-process-users-groups` | 08 Process Credentials | **9**（8=Users and Groups） | ❌ |
-| `chapter-09-process-execution` | 09 Process Execution | **27** Program Execution | ❌ |
-| `chapter-10-signals-basics` | 10 Signals Basic | **20** | ❌ |
-| `chapter-11-signal-handling` | 11 Signal Handlers | **21** | ❌ |
-| `chapter-12-signal-advanced` | 12 Advanced Signals | **22** | ❌ |
-| `chapter-13-timers-sleep` | 13 Timers and Sleeping | **23**（书 13=缓冲） | ❌ |
-| `chapter-14-file-locking` | 14 File Locking | **55**（书 14=文件系统） | ❌ |
-| `chapter-15-memory-mapping` | 15 Memory Mapping | **49**（书 15=文件属性） | ❌ |
-| `chapter-16-shared-libraries` | 16 Shared Libraries | **41** | ❌ |
-| `chapter-17-interprocess-comm` | 17 IPC Overview | **43** | ❌ |
-| `chapter-18-pipes-fifos` | 18 Pipes and FIFOs | **44** | ❌ |
-| `chapter-19-message-queues` | 19 System V MQ | **46** | ❌ |
-| `chapter-20-semaphores` | 20 System V Semaphores | **47**（书 20=信号） | ❌ |
-| `chapter-21-shared-memory` | 21 System V SHM | **48** | ❌ |
-| `chapter-22-threads-intro` | 22 POSIX Threads | **29** | ❌ |
-| `chapter-23-thread-synchronization` | 23 Thread Sync | **30** | ❌ |
-| `chapter-24-thread-attributes` | 24 Thread Attributes | **29–33** 一带 | ❌ |
-| `chapter-25-thread-scheduling` | 25 Thread Scheduling | **33** 一带 | ❌ |
-| `chapter-26-thread-specific-data` | 26 TSD | **31** | ❌ |
-| `chapter-27-process-groups-sessions` | 27 Process Groups… | **34** | ❌ |
-| `chapter-28-daemon-processes` | 28 Daemons | **37** | ❌ |
-| `chapter-29-credentials` | 29 Credentials 补充 | **9** / **38** | ❌ |
-| `chapter-30-process-resources` | 30 Process Resources | **36** | ❌ |
-| `chapter-31-posix-ipc` | 31 POSIX IPC Overview | **51** | ❌ |
-| `chapter-32-advanced-message-queues` | 32 POSIX MQ | **52** | ❌ |
-| `chapter-33-advanced-semaphores` | 33 POSIX Semaphores | **53** | ❌ |
-| `chapter-34-advanced-shared-memory` | 34 POSIX SHM | **54** | ❌ |
-| `chapter-35-file-systems` | 35 File Systems | **14** | ❌ |
-| `chapter-36-directories-links` | 36 Directories and Links | **18** | ❌ |
-| `chapter-37-inodes-files` | 37 File Attributes… | **15** | ❌ |
-| `chapter-38-extended-attributes` | 38 EA | **16** | ❌ |
-| `chapter-39-access-control-lists` | 39 ACL | **17** | ❌ |
-| `chapter-40-monitors` | 40 Monitors | **19** Monitoring File Events? | ⚠️ |
-| `chapter-41-poll-select` | 41 poll/select | **63** | ❌ |
-| `chapter-42-epoll` | 42 epoll | **63** | ❌ |
-| `chapter-43-asynchronous-io` | 43 Alternative I/O | **63** | ❌ |
-| `chapter-44-memory-allocation` | 44 Memory Allocation | **7** | ❌ |
-| `chapter-45-virtual-memory` | 45 Virtual Memory | **50** | ❌ |
-| `chapter-46-intro-sockets` | 46 Sockets Intro | **56** | ❌ |
-| `chapter-47`–`53` sockets… | 自编号 | **56–61** | ❌ |
-| `chapter-54-io-multiplexing` | Alt I/O Advanced | **63** | ❌ |
-| `chapter-55-netlink-sockets` | Netlink | **书中无此章** | ➕ 扩展 |
-| `chapter-56-terminals` | Terminals | **62** | ❌ |
-| `chapter-57-termios` | Termios | **62** | ❌ |
-| `chapter-58-alternative-io-models` | Alt I/O Overview | **63** | ❌ |
-| `chapter-59`–`60` pty | Pseudoterminals | **64** | ❌ |
-| `chapter-61-host-info` | Host info | **12** 一带? | ⚠️ |
-| `chapter-62-program-execution-details` | Login Accounting… | **40** | ❌ |
-| `chapter-63-capabilities` | Capabilities | **39** | ❌ |
-| `chapter-64-final-summary` | Summary | 附录/总结，非书 Ch64 | ⚠️ |
-
----
-
-## 典型「同号不同书」对照（一眼看出乱）
-
-| 仓库 `chapter-N` | 笔记在讲 | 书内真正的 Ch N |
-|------------------|----------|-----------------|
-| 13 | Timers | **File I/O Buffering** |
-| 14 | File Locking | **File Systems** |
-| 15 | mmap | **File Attributes** |
-| 20 | System V Semaphores | **Signals** |
-| 42 | epoll | **Shared Libraries (Advanced)** |
-| 49 | Domain Names | **Memory Mappings** |
-| 63 | Capabilities | **Alternative I/O Models** |
-| 64 | Final Summary | **Pseudoterminals** |
-
----
-
-## 建议怎么改
-
-### 方案 A（推荐）：按书内章号重命名目录 + 改正笔记标题
-
-1. 先全部改到临时名（避免重名冲突）  
-2. 再改成 `chapter-NN-<官方短名>/`  
-3. 笔记第一行统一：`# TLPI 第 NN 章 — <官方标题>`  
-4. 一书一章；一书多目录的（如 Ch63 拆成 poll/epoll）保留子目录或合并说明  
-5. 书中没有的（Netlink）放到 `extras/` 或 `chapter-xx-extra-netlink`
-
-工作量大（约 50+ 次 `git mv`），但一劳永逸。
-
-### 方案 B（省事）：不改目录号，只维护本映射表
-
-读的时候永远看 **书内章号**；文件夹当「主题标签」。OUTLINE / README 禁止再写「目录号=书内章」。
-
----
-
-## 当前已正确（勿再动）
-
-- `chapter-01` … `chapter-04-file-io-universal`
-- `chapter-05-file-io-further`
-
-待处理优先：去掉重复的 `chapter-05-file-attributes` 编号（应改为 15）。
+```
+chapter-02 → 03 → 04 → 05 → 20–21 → 23 → 29–30 → 49 → 56–61 → 63-epoll
+```

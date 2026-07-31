@@ -62,6 +62,6 @@ waitpid(pid, &status, 0);
 
 **HFT：** 热路径网关多用 **线程池 + `clone`/`pthread`**，极少 **每连接 `fork`**（页表/COW 与调度切换仍有成本）。Shell 脚本、配置守护、隔离沙箱才常见 `fork`+`exec`；行情/发单进程通常是 **长寿命单进程多线程**。
 
-→ [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./section-3.4-进程创建与写时拷贝.md) · [07 TLPI Ch7 进程创建](../../../../07-The-Linux-Programming-Interface/chapter-07-process-creation/notes.md) · [01 CSAPP Ch8 fork/exec](../../../../01-CSAPP-3rd/chapter-08-exceptional-control-flow/)
+→ [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./section-3.4-进程创建与写时拷贝.md) · [07 TLPI Ch24 进程创建](../../../../07-The-Linux-Programming-Interface/chapter-24-process-creation/notes.md) · [01 CSAPP Ch8 fork/exec](../../../../01-CSAPP-3rd/chapter-08-exceptional-control-flow/)
 
 ---

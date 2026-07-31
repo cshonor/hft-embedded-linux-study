@@ -1,6 +1,6 @@
 # TLPI 第 03 章 — System Programming Concepts
 
-> 对应目录：`chapter-03-system-programming-concepts/`  
+> 对应目录：`chapter-03-system-programming-concepts/`
 > 书内标题：**System Programming Concepts**（系统编程概念）
 
 ## 学习状态

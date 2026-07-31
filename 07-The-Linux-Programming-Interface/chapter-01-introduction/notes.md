@@ -1,6 +1,6 @@
 # TLPI 第 01 章 — History and Standards
 
-> 对应目录：`chapter-01-introduction/`  
+> 对应目录：`chapter-01-introduction/`
 > 书内标题：**History and Standards**（历史与标准）
 
 ## 学习状态
