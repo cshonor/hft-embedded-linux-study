@@ -60,6 +60,81 @@ nice -20 ──────────► +19           RT 99 ─────�
 
 ---
 
+### 二½、nice → weight：初始权重从哪来？（CFS 必钉）
+
+**一句话：** 进程初始权重 **由初始 nice 决定**；CFS 里 `nice` ↔ `weight` **一一映射**。
+
+#### 区间与查表（不是实时公式算出来的）
+
+| nice | 含义 | weight（内核表） |
+|------|------|------------------|
+| **−20** | 最高权重 | **88761** |
+| **0** | 默认 | **1024** |
+| **+19** | 最低权重 | **15** |
+
+nice 范围：**[−20, 19]**。  
+内核用静态数组 **`sched_prio_to_weight[]`**（40 项，对应每个 nice）查表；本机树见 `kernel/sched/core.c`。
+
+> 常见笔误：把 −20 的权重写成 `8876` — 源码是 **88761**。
+
+#### 新进程 nice 从哪继承？
+
+| 场景 | 结果 |
+|------|------|
+| shell 跑 `./a.out` | shell 默认 nice=0 → `fork` 子进程 **继承** → 通常 **nice=0, weight=1024** |
+| `fork()` | 子进程初始 nice = **父进程的 N** |
+| `exec()` | **不改 nice** — 只换程序镜像，调度属性保留 |
+| `nice -n -5 ./app` | 启动时直接设初始 nice |
+| `renice` / `nice()` / `setpriority()` | 运行中显式改 |
+
+```
+父 nice = N
+  fork → 子 nice = N
+  exec → 子 nice 仍是 N（除非程序自己再改）
+```
+
+#### 两条易混的内核值
+
+| 名字 | 是什么 | 怎么来 |
+|------|--------|--------|
+| **`static_prio`** | 静态优先级；**不改 nice 就长期不变** | `static_prio = 120 + nice`（即 `NICE_TO_PRIO`；`DEFAULT_PRIO=120`） |
+| **`weight`** | CFS 真正用来算份额的权重 | 用 `static_prio` 去索引 **`sched_prio_to_weight[]`** |
+
+例：nice=0 → `static_prio=120` → weight=1024；nice=−20 → 100 → 88761；nice=19 → 139 → 15。
+
+```
+初始 nice → static_prio → 查表 → weight（CFS）→ 影响 vruntime 增速
+```
+
+```
+vruntime += Δt × (1024 / weight)
+```
+
+weight 越大 → 同样 Δt，`vruntime` 涨得越慢 → 分到更多 CPU。细节 → [§4.3](./section-4.3-Linux-调度算法.md)
+
+#### 误区：权重会自动升降？
+
+| 说法 | 对错 |
+|------|------|
+| 普通 `SCHED_OTHER` 任务 weight 会自动动态升降 | ❌ |
+| **不改 nice，weight 终身不变**（对普通 CFS 任务） | ✅ |
+
+组调度、带宽控制、`SCHED_IDLE` 等另说；**普通进程不会自己改 weight**。
+
+#### 背诵链路
+
+1. shell 默认 nice=0；  
+2. `fork` 继承父 nice；`exec` 不改；  
+3. nice → `static_prio` → `sched_prio_to_weight[]` → weight；  
+4. CFS 用 weight 算 `vruntime`；  
+5. 要改权重：必须显式 `nice` / `setpriority` / `renice`。
+
+#### 自检
+
+父 nice=5，`fork` 后子进程 `exec` 新程序 → **子初始 nice 仍是 5**（继承自父；`exec` 不改调度属性）。
+
+---
+
 ### 三、策略常量速查
 
 | 策略 | 类 | 说明 |
