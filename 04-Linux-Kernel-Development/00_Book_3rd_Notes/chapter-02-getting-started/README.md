@@ -60,6 +60,7 @@ GNU C 小实验：[`code/gnu_c_extension_demo.c`](./code/gnu_c_extension_demo.c)
 - [ ] 分清 **UEFI=PE** vs **Linux 后=ELF**
 - [ ] 分清 **ISO C / GNU C / glibc**；能举 `typeof`、`({ })`、`__attribute__`
 - [ ] 分清 **编译器（GCC/Clang）** vs **语言模式（`-std=gnu11`）**；学习优先 GCC
+- [ ] 说清 **K&R2 = C89**，以及与 `gnu89` / `gnu11` 的关系
 
 ---
 
