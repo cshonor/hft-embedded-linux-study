@@ -6,13 +6,6 @@
 > - **Ch4** = File I/O: The Universal I/O Model（基础 `open/read/write`）→ [notes](../chapter-04-file-io-universal/notes.md)  
 > - **Ch5** = File I/O: Further Details（进阶文件 I/O）← 本章
 
-## 学习状态
-
-- [x] 已通读
-- [x] 已做笔记
-- [x] C 示例已跑（见 [`code/`](./code/)）
-- [ ] Rust 对照已写
-
 **优先级**：🟡→🔴（HFT：非阻塞、`pread`/`pwrite`、偏移共享）  
 **前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/notes.md)  
 **后置**：[Ch6 Processes](../chapter-06-processes/notes.md) · [Ch13 File I/O Buffering](../chapter-13-file-io-buffering/notes.md)  

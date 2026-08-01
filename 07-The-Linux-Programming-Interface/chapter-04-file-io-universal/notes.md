@@ -5,13 +5,6 @@
 > 目录：`chapter-04-file-io-universal/`（与书内第 4 章对齐）。  
 > 官方样章：[TLPI-04 PDF](https://www.man7.org/tlpi/download/TLPI-04-File_IO_The_Universal_IO_Model.pdf)
 
-## 学习状态
-
-- [x] 已通读
-- [x] 已做笔记
-- [ ] C 示例已跑（见 [`code/copy.c`](./code/copy.c)）
-- [ ] Rust 对照已写
-
 **优先级**：🟡→🔴（嵌入式 / HFT 文件与设备 I/O 地基）  
 **前置**：Ch2 基本概念（fd）· Ch3 系统编程概念（错误处理等）  
 **后置**：书内 Ch5 Further Details → [`../chapter-05-file-io-further/`](../chapter-05-file-io-further/)

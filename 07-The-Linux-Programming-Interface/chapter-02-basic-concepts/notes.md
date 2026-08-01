@@ -3,13 +3,6 @@
 > 对应目录：`chapter-02-basic-concepts/`
 > 书内标题：**Fundamental Concepts**（基本概念）
 
-## 学习状态
-
-- [x] 已通读（**地基章，勿快跳**）
-- [x] 已做笔记
-- [ ] C 示例已跑（本章以概念为主）
-- [ ] Rust 对照已写
-
 **优先级**：🔴 必读  
 **路线**：嵌入式 Linux 应用 · HFT 用户态高性能  
 **衔接**：[Ch1 标准](../chapter-01-introduction/notes.md) · [01 CSAPP](../../01-CSAPP-3rd/)（进程 / VM）· [04 LKD](../../04-Linux-Kernel-Development/)（内核实现）

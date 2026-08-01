@@ -3,13 +3,6 @@
 > 对应目录：`chapter-08-users-and-groups/`
 > 书内标题：**Users and Groups**
 
-## 学习状态
-
-- [ ] 已通读
-- [ ] 已做笔记
-- [ ] C 示例已跑
-- [ ] Rust 对照已写
-
 **优先级**：见 [OUTLINE](../OUTLINE.md) · [CHAPTER-MAP](../CHAPTER-MAP.md)  
 **路线**：嵌入式 Linux 应用 · HFT 用户态高性能
 

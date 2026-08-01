@@ -2,13 +2,6 @@
 
 > 对应目录：`chapter-46-sysv-message-queues/`
 
-## 学习状态
-
-- [ ] 已通读
-- [ ] 已做笔记
-- [ ] C 示例已跑
-- [ ] Rust 对照已写
-
 **优先级**：⭐ / ⭐⭐ / ⭐⭐⭐（见根目录 [README.md](../README.md) 优先级表）  
 **与 Rust 仓库关联**：`atomic/` · `async_tokio/` · `rust_network_programming/` · `llvm_insight/`
 

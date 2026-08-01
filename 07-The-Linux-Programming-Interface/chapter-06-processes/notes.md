@@ -4,13 +4,6 @@
 > 书名原文：**Processes**  
 > ⚠️ **本章不讲 `fork`/`exec`**，只打地基；创建/退出/等待/加载程序在 **Ch24–Ch27**。
 
-## 学习状态
-
-- [x] 已通读
-- [x] 已做笔记
-- [x] C 示例已跑（见 [`code/`](./code/)）
-- [ ] Rust 对照已写
-
 **优先级**：🔴（后续 fork/信号/多进程的地基）  
 **前置**：[Ch3](../chapter-03-system-programming-concepts/notes.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [Ch5](../chapter-05-file-io-further/notes.md)  
 **后置**：[Ch7 内存分配](../chapter-07-memory-allocation/notes.md) · [Ch8 用户与组](../chapter-08-users-and-groups/notes.md) · [Ch24 fork](../chapter-24-process-creation/notes.md)  

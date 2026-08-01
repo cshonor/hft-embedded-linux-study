@@ -3,13 +3,6 @@
 > 对应目录：`chapter-03-system-programming-concepts/`
 > 书内标题：**System Programming Concepts**（系统编程概念）
 
-## 学习状态
-
-- [x] 已通读
-- [x] 已做笔记
-- [ ] C 示例已跑
-- [ ] Rust 对照已写
-
 **优先级**：🔴 必读  
 **前置**：[Ch2 Fundamental Concepts](../chapter-02-basic-concepts/notes.md)  
 **后置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/notes.md)（第一个实战 syscall 集）  
