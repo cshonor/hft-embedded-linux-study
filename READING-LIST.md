@@ -391,15 +391,15 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 |----|------|--------|
 | 1a | ***ARM Assembly Language***（可选/压缩） | **19** [ARM64](./19-ARM64-Architecture/) |
 | 1b | **《ARM64体系结构编程与实践》**（AArch64 主书） | **19** [arm64-programming-practice](./19-ARM64-Architecture/arm64-programming-practice/) |
-| 2 | ***Mastering Embedded Linux Programming*, 3rd ed** | **20** [构建](./20-UBoot-Kernel-Build/) · [OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
-| 3 | ***Embedded Linux Primer*** | **20** |
-| 4 | **LDD3** | **21** [驱动](./21-Linux-Device-Driver/) |
-| 5 | ***Linux Device Driver Development*** | **21** |
+| 2 | ***Embedded Linux Primer***（先原理） | **20** [构建](./20-UBoot-Kernel-Build/) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
+| 3 | ***Mastering Embedded Linux Programming*, 3rd ed**（后实操） | **20** [OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
+| 4 | **LDD3**（思想） | **21** [驱动](./21-Linux-Device-Driver/) |
+| 5 | ***Linux Device Driver Development***（现代 API，与 4 对照） | **21** |
 
 | 文件夹 | 必读书（精简） | 索引 |
 |--------|----------------|------|
 | **19** ARM64 | Smith · **《ARM64体系结构编程与实践》** · [Smith OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md) · [奔跑吧 OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
-| **20** 构建 | *Mastering Embedded Linux Programming*, 3rd ed · *Embedded Linux Primer* | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
+| **20** 构建 | *Embedded Linux Primer* → *MELP* 3rd · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
 | **21** 驱动 | LDD3 · *Linux Device Driver Development* | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
 | **22** 设备树 | [内核 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) · [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
 | **23** 实战 | 项目实战（笔记随板卡） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
