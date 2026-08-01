@@ -89,6 +89,7 @@ Phase6  拓展: 03 · 08 · 22 · 23 ·（兴趣）14
 - **正在：** Phase1 · `00-digital-logic-cpu`
 - **下一站：** Phase2 · `01-c-language` → `02-computer-systems`
 - **暂不新开：** `07`/`17`/`18`/`21` 等（除非做极小对照实验）
+- **板卡动手清单（Pi5）：** [13-embedded-projects/RASPBERRY-PI5-LABS.md](./13-embedded-projects/RASPBERRY-PI5-LABS.md)（A→G 执行序；官方文档当工具书）
 
 ---
 
