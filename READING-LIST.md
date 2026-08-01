@@ -391,7 +391,7 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 |----|------|--------|
 | 1a | ***ARM Assembly Language***（可选/压缩） | **19** [ARM64](./19-ARM64-Architecture/) |
 | 1b | **《ARM64体系结构编程与实践》**（AArch64 主书） | **19** [arm64-programming-practice](./19-ARM64-Architecture/arm64-programming-practice/) |
-| 2 | ***Embedded Linux Primer***（先原理） | **20** [构建](./20-UBoot-Kernel-Build/) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
+| 2 | ***Embedded Linux Primer***（先原理） | **20** [primer OUTLINE](./20-UBoot-Kernel-Build/embedded-linux-primer/OUTLINE.md) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
 | 3 | ***Mastering Embedded Linux Programming*, 3rd ed**（后实操） | **20** [OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
 | 4 | **LDD3**（思想） | **21** [驱动](./21-Linux-Device-Driver/) |
 | 5 | ***Linux Device Driver Development***（现代 API，与 4 对照） | **21** |

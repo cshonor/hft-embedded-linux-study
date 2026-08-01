@@ -25,14 +25,15 @@
 ```
 20-UBoot-Kernel-Build/
 ├── README.md                          ← 本文件
+├── FOUR-BOOKS-OVERLAP.md              ← Primer / MELP / LDD3 / Madieu 分工
+├── embedded-linux-primer/             ← Hallinan · 先读（世界观）
+│   ├── README.md · OUTLINE.md         ← 19 章完整小节大纲
+│   └── chapter-01-introduction/ … chapter-19-udev/
 ├── mastering-embedded-linux-programming/
-│   ├── OUTLINE.md                     ← 21 章 × 4 Section 大纲 + 精读标签
-│   ├── chapter-01-getting-started/
-│   ├── chapter-02-toolchain/
-│   └── … chapter-21-real-time-programming/
-├── _scripts/
-│   └── scaffold-simmonds-melp.py      ← 重建章节目录
-└── (embedded-linux-primer/)           ← Hallinan，待补充
+│   ├── OUTLINE.md                     ← MELP 21 章 · 后读（实操）
+│   └── chapter-01-… / chapter-21-…
+└── _scripts/
+    └── scaffold-simmonds-melp.py
 ```
 
 ---
@@ -52,11 +53,15 @@
 
 ---
 
-## Embedded Linux Primer（Hallinan）
+## Embedded Linux Primer（Hallinan）· 先读
 
-**先读本书再 MELP**（见 [FOUR-BOOKS-OVERLAP](./FOUR-BOOKS-OVERLAP.md)）：偏 **概念模型 / 启动与系统全貌**；MELP 负责动手全流程。目录待建。
+| | |
+|--|--|
+| 入口 | [embedded-linux-primer/README.md](./embedded-linux-primer/README.md) |
+| 大纲 | [embedded-linux-primer/OUTLINE.md](./embedded-linux-primer/OUTLINE.md)（19 章 + 附录小节） |
+| 定位 | **概念模型 / 启动与系统全貌**；驱动只入门 |
 
-与 MELP 在 Bootloader / 内核编译 / rootfs 上有重叠 — Primer 懂了可跳过 MELP 对应重复章，直奔调试与构建系统。
+与 MELP 在 Bootloader / 内核编译 / rootfs 上有重叠 — Primer 懂了可跳过 MELP 对应重复章，直奔调试与构建系统。详见 [FOUR-BOOKS-OVERLAP](./FOUR-BOOKS-OVERLAP.md)。
 
 ---
 

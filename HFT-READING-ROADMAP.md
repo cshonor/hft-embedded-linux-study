@@ -349,7 +349,7 @@
 |----|------|------|--------|
 | **1a** | ***ARM Assembly Language*** — William Sw Smith | **汇编思维入门**（v4T/v7-M，可选/压缩） | [**19**](./19-ARM64-Architecture/) |
 | **1b** | **《ARM64体系结构编程与实践》** — 奔跑吧Linux社区 | **AArch64 主书** — A64 · 异常/GIC · MM · 屏障/原子 · QEMU/树莓派 | [**19/arm64-programming-practice**](./19-ARM64-Architecture/arm64-programming-practice/) |
-| **2** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动与系统全貌（先原理）** — Bootloader、内核启动、rootfs 模型 | [**20**](./20-UBoot-Kernel-Build/) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
+| **2** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动与系统全貌（先原理）** — Bootloader、内核启动、rootfs 模型 | [**20/primer**](./20-UBoot-Kernel-Build/embedded-linux-primer/) · [OUTLINE](./20-UBoot-Kernel-Build/embedded-linux-primer/OUTLINE.md) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
 | **3** | ***Mastering Embedded Linux Programming*, 3rd ed** — Chris Simmonds | **系统编译实操（后落地）** — 工具链/U-Boot/内核、Yocto/Buildroot（[OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md)） | [**20**](./20-UBoot-Kernel-Build/) |
 | **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动框架思想（2.6；勿照搬到 5.x） | [**21**](./21-Linux-Device-Driver/) |
 | **5** | ***Linux Device Driver Development*, 2nd ed** — John Madieu | **现代驱动** — DT / platform / 5.x+ API；与 LDD3 **并行对照** | [**21**](./21-Linux-Device-Driver/) |

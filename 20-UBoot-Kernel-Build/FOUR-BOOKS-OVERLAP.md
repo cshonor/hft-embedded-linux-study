@@ -8,7 +8,7 @@
 | 代号 | 书 | 模块 |
 |------|-----|------|
 | **A** | *Mastering Embedded Linux Programming*, 3rd（MELP / Simmonds） | [20](./mastering-embedded-linux-programming/) |
-| **B** | *Embedded Linux Primer*, 2nd（Hallinan） | [20](./README.md#embedded-linux-primer-hallinan)（目录待建） |
+| **B** | *Embedded Linux Primer*, 2nd（Hallinan） | [20/embedded-linux-primer](./embedded-linux-primer/) · [OUTLINE](./embedded-linux-primer/OUTLINE.md) |
 | **C** | *Linux Device Drivers*, 3rd（**LDD3** / 马书，2.6） | [21](../21-Linux-Device-Driver/) |
 | **D** | *Linux Device Drivers Development*（Madieu，4.x+ 现代驱动） | [21](../21-Linux-Device-Driver/) |
 
