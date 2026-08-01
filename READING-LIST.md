@@ -393,14 +393,14 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 | 1b | **《ARM64体系结构编程与实践》**（AArch64 主书） | **19** [arm64-programming-practice](./19-ARM64-Architecture/arm64-programming-practice/) |
 | 2 | ***Embedded Linux Primer***（先原理） | **20** [primer OUTLINE](./20-UBoot-Kernel-Build/embedded-linux-primer/OUTLINE.md) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
 | 3 | ***Mastering Embedded Linux Programming*, 3rd ed**（后实操） | **20** [OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
-| 4 | **LDD3**（思想） | **21** [驱动](./21-Linux-Device-Driver/) |
-| 5 | ***Linux Device Driver Development***（现代 API，与 4 对照） | **21** |
+| 4 | ***Linux Device Drivers Development***（Madieu 实操） | **21** [OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) |
+| 5 | **LDD3**（原理按需补课） | **21** [OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) · [评测](./21-Linux-Device-Driver/LDD3-EVAL.md) |
 
 | 文件夹 | 必读书（精简） | 索引 |
 |--------|----------------|------|
 | **19** ARM64 | Smith · **《ARM64体系结构编程与实践》** · [Smith OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md) · [奔跑吧 OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** 构建 | *Embedded Linux Primer* → *MELP* 3rd · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
-| **21** 驱动 | LDD3 · *Linux Device Driver Development* | [21-Linux-Device-Driver/](./21-Linux-Device-Driver/) |
+| **21** 驱动 | Madieu（实操）→ LDD3（原理补课） | [21](./21-Linux-Device-Driver/) · [Madieu OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
 | **22** 设备树 | [内核 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) · [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
 | **23** 实战 | 项目实战（笔记随板卡） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
 | **24** 运动控制 | 自控 / Kalman（算法卷） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |

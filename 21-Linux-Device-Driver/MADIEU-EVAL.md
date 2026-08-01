@@ -13,7 +13,7 @@
 
 **嵌入式驱动实操刚需、不可替代**（写模块 / DTS / I2C·SPI / DMA）。  
 纯用户态、不碰硬件 → 价值很低。  
-顺序：**Primer（系统）→ 本书（驱动动手）∥ LKD（调度/内存/实时原理）**；LDD3 对照思想、勿照搬代码。
+顺序：**Primer → 本书动手 → LDD3 按需补原理**；∥ LKD（调度/内存/实时）。LDD3 代码勿照搬。
 
 ---
 
@@ -93,8 +93,8 @@ IIO、Regmap、Regulator、GPIO 控制器、中断级联、网卡等 — 工业�
 ```
 1. Embedded Linux Primer（+ MELP 实操）  → Boot→内核→rootfs、交叉环境
 2. 本书 Madieu                            → 模块 / 字符 / DTS / I2C·SPI（树莓派动手）
-3. ∥ LKD                                   → 进程、调度、内存、实时（HFT / PREEMPT_RT）
-4. ∥ LDD3                                  → 驱动思想对照（2.6 代码勿抄到 5.x）
+3. LDD3（卡住锁/DMA/内存时回头）           → [LDD3-EVAL](./LDD3-EVAL.md) · [OUTLINE](./linux-device-drivers-3rd/OUTLINE.md)
+4. ∥ LKD                                   → 进程、调度、内存、实时（HFT / PREEMPT_RT）
 ```
 
 ### 树莓派实操建议

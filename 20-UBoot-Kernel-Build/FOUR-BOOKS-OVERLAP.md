@@ -9,7 +9,7 @@
 |------|-----|------|
 | **A** | *Mastering Embedded Linux Programming*, 3rd（MELP / Simmonds） | [20](./mastering-embedded-linux-programming/) |
 | **B** | *Embedded Linux Primer*, 2nd（Hallinan） | [20/embedded-linux-primer](./embedded-linux-primer/) · [OUTLINE](./embedded-linux-primer/OUTLINE.md) |
-| **C** | *Linux Device Drivers*, 3rd（**LDD3** / 马书，2.6） | [21](../21-Linux-Device-Driver/) |
+| **C** | *Linux Device Drivers*, 3rd（**LDD3**，2.6） | [21 LDD3 OUTLINE](../21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) · [评测](../21-Linux-Device-Driver/LDD3-EVAL.md) |
 | **D** | *Linux Device Drivers Development*（Madieu，成书 4.x） | [21 OUTLINE](../21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [评测](../21-Linux-Device-Driver/MADIEU-EVAL.md) |
 
 ---
@@ -43,13 +43,14 @@
 | 与 B | 启动 / 文件系统部分重复 — Primer 偏理论，MELP 偏动手 |
 | 与 C/D | 仅驱动**入门**少量重合；不深入子系统 |
 
-### C · LDD3（2.6）
+### C · LDD3（2.6.10）
 
 | | |
 |--|--|
-| 定位 | 经典驱动**理论**教材 |
-| 覆盖 | 字符/块驱动、中断、等待队列、sysfs、ioctl、并发锁 |
-| 局限 | 接口大量过时；**不适**直接照搬到 5.x |
+| 定位 | 经典驱动**原理圣经**（scull / 锁 / DMA / LDM / PCI·USB） |
+| 覆盖 | 见 [LDD3 OUTLINE](../21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
+| 局限 | **无 DTS**、无 I2C/SPI；API 过时 — **思想精读，代码勿抄** |
+| 详评 | [LDD3-EVAL.md](../21-Linux-Device-Driver/LDD3-EVAL.md) |
 
 ### D · Linux Device Drivers Development（Madieu · 成书 4.x）
 
@@ -77,18 +78,19 @@
 ## 推荐读序（规避无效重复）
 
 ```
-B  Primer     → 先建立「系统怎么跑起来」的全局观
+B  Primer     → 系统怎么跑起来
      ↓
-A  MELP       → 理论落地：板子搭建全流程
-                 （启动/rootfs 若已懂可跳，直奔应用/调试/Yocto 等）
+A  MELP       → 板子搭建落地（启动/rootfs 已懂可跳）
      ↓
-C + D 并行    → LDD3 吃思想；D 吃 4.x+/DT/devm（树莓派 5.x 以 D 为准）
+D  Madieu     → 树莓派写驱动（DTS / I2C·SPI）← 21 实操主书
+     ↓
+C  LDD3       → 锁/DMA/内存/并发/PCI·USB 不懂时回头精读
 ```
 
 | 阶段 | 做 | 不做 |
 |------|----|------|
-| 20 | B→A（或 A 跳过已重复的启动/rootfs） | 别把 MELP 当驱动主书 |
-| 21 | C 思想 + D 现代 API | **禁止**把 LDD3 样例当 5.x 模板硬抄 |
+| 20 | B→A | 别把 MELP 当驱动主书 |
+| 21 | **Madieu 先动手**；LDD3 按需补原理 | **禁止**把 LDD3 样例当 5.x 模板硬抄 |
 
 ### 树莓派 5 / 现代内核
 
