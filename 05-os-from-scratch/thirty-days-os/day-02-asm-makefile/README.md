@@ -1,0 +1,68 @@
+# Day 2 · 汇编语言与 Makefile 入门
+
+
+> **原书第二章** · 目标：**知其所以然** + **优化开发环境** — 读懂 Day 1 的汇编，拆出 `ipl.bin`，用 **Makefile** 自动化构建。
+
+---
+
+### 本节四段结构
+
+| 段 | 做什么 | 带走什么 |
+|----|--------|----------|
+| **① 文本编辑器** | **VS Code** 写汇编；**NASM** 编译成二进制 | 笔 vs 编译器；QEMU 只认 `.bin` / `.img` |
+| **② 深入汇编** | 逐条解释 Day 1 代码 | 寄存器、内存、`[]`、BIOS、`0x7c00` |
+| **③ 制作启动区** | **`helloos.asm` → `ipl.bin`（512B，`55 AA`）** → 拼 **1.44 MB** | 纯二进制启动区 + BIOS 可启动整盘映像 |
+| **④ Makefile** | **`make ipl`**：`helloos.asm` → `ipl.bin`；进阶拼 **`helloos.img`** | 一条 **`make`** 自动化构建（对照 [go-dex Makefile](../../../../23-markets-microstructure/00-practice-go-dex/code/Makefile)） |
+
+---
+
+## 小节笔记
+
+| 段 | 笔记 |
+|----|------|
+| 介绍文本编辑器 | [notes/section-2.1-介绍文本编辑器.md](./notes/section-2.1-介绍文本编辑器.md) |
+| 继续开发 | [notes/section-2.2-继续开发.md](./notes/section-2.2-继续开发.md) |
+| 先制作启动区 | [notes/section-2.3-先制作启动区.md](./notes/section-2.3-先制作启动区.md) |
+| Makefile 入门 | [notes/section-2.4-Makefile-入门.md](./notes/section-2.4-Makefile-入门.md) |
+
+**可复制工程：** [code/helloos.asm](./code/helloos.asm) + [code/Makefile](./code/Makefile)（`make ipl`）
+
+---
+
+## 本日小结
+
+| 问题 | 答案 |
+|------|------|
+| 本章主题？ | **读懂 Day 1 汇编** + **工程化构建** |
+| 寄存器 vs 内存？ | 寄存器 **16 B 级**、**快**；内存 **大**、**慢**；`[]` 访存 |
+| 显示谁做的？ | 早期靠 **`INT` → BIOS** |
+| 加载地址？ | 引导扇区 → **`0x7c00`**（IBM 约定） |
+| 构建怎么优化？ | **`ipl.bin`（512B）** 与整盘 **分离**；**`Makefile` + `make`** 一键构建 |
+
+**为 Day 3+ 铺路：** 寄存器/内存/中断模型清楚后，才能接 **C 语言** 写更复杂的 OS 功能。
+
+**下一章 Day 3：** 启动区不再「自己就是全部」— 变成 **只读盘的 IPL**，真正的 OS 在 **bootpack** 里用 **C** 跑 → [../day-03-32bit-c/](../day-03-32bit-c/)
+
+---
+
+---
+
+## 本日学习目标 · 自检
+
+- [ ] 能解释 **`ORG` / `JMP` / `MOV` / `INT`** 和 **`[SI]`** 含义
+- [ ] 说清 **8×16 位寄存器 ≈ 16 B** 与 **访存慢于寄存器**
+- [ ] 知道 **BIOS + 软件中断** 在 Day 1 输出里的角色
+- [ ] 能独立生成 **`ipl.bin`** 并拼进 **`helloos.img`**
+- [ ] 用 **`make`**（或等价规则）跑通 **编译 → 映像 → 运行**
+
+---
+
+← [Day 1](./day-01-从计算机结构到汇编入门.md) · [01 导读](../README.md) · [Day 3](./day-03-32位模式与导入C语言.md)
+
+---
+
+## 相关
+
+- 上一日：[../day-01-boot-asm/](../day-01-boot-asm/)
+- 下一日：[../day-03-32bit-c/](../day-03-32bit-c/)
+- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)

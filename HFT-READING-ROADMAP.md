@@ -1,38 +1,36 @@
 # HFT 系统开发 · 完整阅读路线图
 
-> **执行顺序定稿：** [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)（文件夹编号 ≠ 读序）。  
+> **执行顺序定稿：** [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)（**编号 = 读序**）。  
 > 本文保留分章精读细节；与锁定 Phase 冲突时 **以锁定文档为准**。摘要 → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
 
 ### 核心段（文件夹编号 = 读序）
 
 | 文件夹 | 内容 | 阶段 |
 |--------|------|------|
-| **01** → **02** → **03** | CSAPP → **C 语言** → Hennessy | 知其所以然 + 系统级 C |
-| **04** → **07** | LKD → ULK → Gorman → TLPI | 内核 + 用户态 API |
-| **08/01** | MikanOS | HFT OS 动手主线 |
-| **08/02** | 30 天 OS | 可选启蒙 |
-| **15** → **16** | SysPerf → BPF | **后置** · 14 DPDK 之后或 17 HFT 之前 |
-| **09** | [C++ 外部索引](./09-cpp-learning-notes/) | Modern C++ → 并发（PNP/HFT 前置） |
-| **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
-| **17–18** | HFT Practice / Rust | 动手实现 |
-| **19–23** | ARM64 · 构建 · 驱动(+DT) · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
+| **00** | digital-logic-cpu | 硬件底层 |
+| **01** → **02**（**03** 可后） | C → computer-systems（→ architecture） | 语言 + 程序=机器 |
+| **04** → **06** | userspace-api · os-from-scratch · cpp | 用户态 + 动手 + C++ |
+| **07** · **09**（**08** 可后） | linux-kernel · linux-mm | 内核共同基础 |
+| **10**–**14** | ARM · 构建 · 驱动/DT · 实战 · 飞控 | 嵌入式支线 |
+| **15**–**18** | sockets · TCP/IP · 内核网 · DPDK | 网络纵深 |
+| **19**–**20** | systems-performance · BPF | 性能观测 |
+| **21**–**23** | hft-engineering · rust-quant · markets | HFT 上层 |
 
-### Gregg 双书 · 15 → 16（后置）
+### Gregg 双书 · 19 → 20（后置）
 
-| 15 SysPerf | 16 BPF |
-|------------|--------|
+| 19 systems-performance | 20 bpf-observability |
+|------------------------|----------------------|
 | USE/RED、延迟分解、perf/Ftrace | bpftrace/BCC 生产落地 |
-| Ch 4 / 13 / 15 预览 | Part I–II + XDP note |
 
-**执行顺序：** 先完成 **04–07 内核/TLPI** 与 **08/01 MikanOS**、**10–14 网络/DPDK**，再开 **15 → 16** — 有真实系统可 profile 后再读方法论。
+**执行顺序：** 先完成 **04–09** 与 **15–18 网络/DPDK**，再开 **19 → 20** — 有真实系统可 profile 后再读方法论。
 
-### 15 为何不在 03 之后立刻读
+### 19/20 为何不在 02 之后立刻读
 
 | 过早读 SysPerf/BPF | 更合适的时机 |
 |--------------------|--------------|
-| 还没有 Linux 进程/内核/网络概念 | **07 TLPI + 08 MikanOS** 之后 |
-| 火焰图看不懂在烧什么 | **14 DPDK** 或 **17 HFT** 压测有靶子 |
-| 与 CSAPP 理论堆叠 | **02 C + 03 Hennessy 后直进 04 LKD** 更顺 |
+| 还没有 Linux 进程/内核/网络概念 | **04 用户态 + 05 自制 OS** 之后 |
+| 火焰图看不懂在烧什么 | **18 DPDK** 或 **21 HFT** 压测有靶子 |
+| 与计算机系统理论堆叠 | **01 C + 02 systems 后进 04** 更顺 |
 
 | 标签 | HFT 含义 | 你要怎么做 |
 |------|----------|-----------|
@@ -48,50 +46,42 @@
 ## 一、总阅读顺序（含外部仓库书目）
 
 ```
-00  Harris · 业务锚点
+00  digital-logic-cpu（硬件底层）
+01  c-language
+02  computer-systems
+03  computer-architecture（可后读）
 
-01  CSAPP · 地基篇（Ch1/4–6/8–9/12）
-02  C 语言 · K&R · Pointers on C（系统级 C）
-03  Hennessy · Ch2（+ 选读 Ch5）
+04  linux-userspace-api
+05  os-from-scratch（mikanos / thirty-days-os）
+06  cpp
 
-04  Linux Kernel Development
-05  Understanding the Linux Kernel
-06  Linux Virtual Memory Manager
-07  TLPI
+07  linux-kernel
+08  linux-kernel-deep（拓展）
+09  linux-mm
 
-08  自制 OS
-    ├─ 01-mikan-os（HFT 主线）
-    └─ 02-30days-os（可选启蒙）
+── 嵌入式支线 ──
+10–14  arm → boot-build → drivers-dt → projects → motion
 
-09  C++ · cpp-learning-notes（外仓 · 08 OS 后 10 PNP 前）
-
-10  陈硕 PNP / muduo
-11  UNP Vol.1
-01  CSAPP · 网络篇 Ch10–11
-12  TCP/IP 卷一
-13  Linux Kernel Networking
-14  DPDK
-
-15  Systems Performance 2nd      ← 后置
-16  BPF Performance Tools       ← 紧接 15
-
-17  HFT Low-Latency Practice
-18  Rust Quant Trading Guide
-
-── 可选支线 · 嵌入式 Linux ──
-19–23  …
+── HFT 网络 / 性能 / 业务 ──
+15  network-sockets
+16  tcpip-protocols
+17  kernel-networking
+18  dpdk
+19  systems-performance
+20  bpf-observability
+21  hft-engineering
+22  rust-quant（拓展）
+23  markets-microstructure（业务）
 ```
 
-**HFT 主线执行序号：** `00 → 01 → 02 C → 03 → 04 → 05 → 06 → 07 → 08/01 → 09 → 01网络 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18`
+**主线执行序号：** `00 → 01 → 02 → 04 → 05/06 → 07 → 09 →（A: 10–13 ‖ B: 15–21）→ 拓展 03/08/22/23/14`
 
-**嵌入式支线（独立顺序 · 建议 04–07 后再开 · 23 用业余时间）：** `19 → 20 → 21 → 22 → 23`
+**嵌入式支线：** `10 → 11 → 12 → 13`（`14` 业余）· 建议 Phase4（`07`/`09`）后再开
 
-> **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；笔记正文在本地 `01`–`05`（源自 [00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C)）。
+> **C：** [01-c-language/](./01-c-language/) — Phase2 第一课。  
+> **C++：** [06-cpp/](./06-cpp/) — Phase3 穿插；进 `15` sockets 前至少 Modern C++。
 
-> **C++ 模块：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — 笔记正文已在本地 `01`–`10`；**07 TLPI 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
-
-
-> **板块封顶：** `00`–`18` 在本仓（含 **`09` C++ 索引**）+ **`19`–`23`** 嵌入式 Linux + 运动控制支线（**`24` Harris** 为 Phase1 硬件地基）；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+> **板块：** `00`–`23` 技术模块；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
 ---
 
@@ -103,7 +93,7 @@
 
 | 方案 | 说明 |
 |------|------|
-| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`12-TCP-IP-Illustrated-Vol1/`](./12-TCP-IP-Illustrated-Vol1/)、[`11-UNP-Vol1/`](./11-UNP-Vol1/) 做**索引 + HFT 裁剪清单** |
+| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`16-tcpip-protocols/`](./16-tcpip-protocols/)、[`15-network-sockets/unix-network-api/`](./15-network-sockets/unix-network-api/) 做**索引 + HFT 裁剪清单** |
 | ⚠️ 可选 | 只把「HFT 必读章节」的笔记摘要链过来，不要 duplicate 全书 |
 | ❌ 不推荐 | 整本迁移 — 与 Rosen / CSAPP Ch11 重叠，且双倍维护 |
 
@@ -134,7 +124,7 @@
 
 ### ② Linux Kernel Development
 
-> 子目录与课书关系 → [02/LEARNING-PATH.md](./04-Linux-Kernel-Development/LEARNING-PATH.md)
+> 子目录与课书关系 → [02/LEARNING-PATH.md](./07-linux-kernel/LEARNING-PATH.md)
 
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
@@ -289,38 +279,36 @@
 
 | 目录 | 文件夹 |
 |------|--------|
-| [01 CSAPP](./01-CSAPP-3rd/) | 01 |
-| [02 C 语言](./02-c-programming/) | 02 |
-| [03 Hennessy](./03-Computer-Architecture-6th/) | 03 |
-| [15 SysPerf](./15-Systems-Performance-2nd/) | 15 |
-| [16 BPF](./16-BPF-Performance-Tools/) | 16 |
-| [04 LKD](./04-Linux-Kernel-Development/) · [06 Gorman](./06-Linux-Virtual-Memory-Manager/) · [10–14 网络](./CROSS-MODULE-GUIDE.md) | 04–07 · 10–14 |
-| [17 HFT](./17-HFT-Low-Latency-Practice/) · [18 Rust](./18-Rust-Quant-Trading-Guide/) | 17 / 18 |
+| [00 数字逻辑/CPU](./00-digital-logic-cpu/) | 00 |
+| [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
+| [04 用户态](./04-linux-userspace-api/) · [07 内核](./07-linux-kernel/) · [09 MM](./09-linux-mm/) | 04 · 07 · 09 |
+| [10–14 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线10–14) | 10–14 |
+| [15–18 网络](./15-network-sockets/) · [19–20 性能](./19-systems-performance/) · [21 HFT](./21-hft-engineering/) | 15–21 |
 
 → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) · [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
 ---
 
-## 六、嵌入式 Linux 支线（`19`–`23`）
+## 六、嵌入式 Linux 支线（`10`–`14`）
 
 > **定位：** **第二职业退路** — 飞行器 / 网关 / 车载；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux**；**不学** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
-> **C 基础：** [02 C](./02-c-programming/) 是支线 **硬前置** — 驱动写寄存器、飞控用户态环、与内核 `ioctl` 交互全是 C；主线 `01`→`02`→`03` 过关后，开 `19` 不必重学语法。读 Hennessy 时可 **用 C 做 ARM 裸机小实验**（QEMU 验证 EL 切换）同步练硬件理论。  
-> **23 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
+> **C 基础：** [01 C](./01-c-language/) 是支线 **硬前置**；Phase2–4 过关后开 `10`。  
+> **14 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
 
 ### 主次优先级（不可颠倒）
 
 | 优先级 | 内容 | 时间 |
 |--------|------|------|
-| **P0 · 主线** | HFT — C++ / Rust / DPDK / `17` 引擎 | **全职学习** |
-| **P1 · 支线** | 嵌入式 Linux `19`–`22` | 并行或 HFT 阶段完成后 |
-| **P2 · 飞控算法** | `23` PID / IMU / 飞控环 | **仅 HFT 每日任务后的业余时间** |
+| **P0 · 主线** | HFT — C++ / Rust / DPDK / `21` 引擎 | **全职学习** |
+| **P1 · 支线** | 嵌入式 Linux `10`–`13` | 并行或 HFT 阶段完成后 |
+| **P2 · 飞控算法** | `14` PID / IMU / 飞控环 | **仅业余时间** |
 
-### 为何必须学 23（运动控制）
+### 为何必须学 14（运动控制）
 
-1. **无人机 GitHub 项目缺这一环就飞不起来** — WiFi/图传/视觉不能替代 PID + 姿态 + 电机。  
+1. **无人机项目缺这一环就飞不起来** — WiFi/图传/视觉不能替代 PID + 姿态 + 电机。  
 2. **岗位：** 驱动 + DT → 适配；**+ 自控** → 飞控 / 伺服整机。  
-3. **HFT 互补：** 飞控严格周期 ↔ 绑核 / PREEMPT_RT / p99 jitter 测量（15 · 16 · 17）。
+3. **HFT 互补：** 飞控严格周期 ↔ 绑核 / PREEMPT_RT / p99（19 · 20 · 21）。
 
 ### 学习边界
 
@@ -335,65 +323,58 @@
 
 | 条件 | 说明 |
 |------|------|
-| **建议前置** | [04 LKD](./04-Linux-Kernel-Development/) + [07 TLPI](./07-The-Linux-Programming-Interface/) + [21 驱动](./21-Linux-Device-Driver/) |
-| **23 前置** | 建议 **22 或至少 21（含 DT）** 后再开算法整合 |
-| **C 语言** | [02 C](./02-c-programming/) · K&R + *Pointers on C* + CSAPP/TLPI 可复用 |
+| **建议前置** | [07 内核](./07-linux-kernel/) + [04 用户态](./04-linux-userspace-api/) |
+| **14 前置** | 建议 **13 或至少 12（含 DT）** 后再开算法整合 |
+| **C 语言** | [01 C](./01-c-language/) |
 
-### 全新阅读顺序（19 例外 · 汇编前置）
-
-> **原则：** 嵌入式支线 **19–21 核心五书** 以英文原版为主；**剔除** 国产《嵌入式 Linux 开发实战》《Linux 内核驱动深度开发》等。  
-> **19 例外：** 《**ARM64体系结构编程与实践**》（奔跑吧Linux社区 · 人民邮电）— **AArch64 实战主书**，含异常/GIC/MM · 树莓派 4B / QEMU 实验，匹配无人机应用处理器路径。  
-> **汇编前置：** 先能读 ARM 汇编（Smith 可选 + 奔跑吧 A64 主书），再进 U-Boot/内核构建与驱动。
+### 阅读顺序（书目在模块内；文件夹用技术名）
 
 | 序 | 书目 | 定位 | 文件夹 |
 |----|------|------|--------|
-| **1a** | ***ARM Assembly Language*** — William Sw Smith | **汇编思维入门**（v4T/v7-M，可选/压缩） | [**19**](./19-ARM64-Architecture/) |
-| **1b** | **《ARM64体系结构编程与实践》** — 奔跑吧Linux社区 | **AArch64 主书** — A64 · 异常/GIC · MM · 屏障/原子 · QEMU/树莓派 | [**19/arm64-programming-practice**](./19-ARM64-Architecture/arm64-programming-practice/) |
-| **2** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动与系统全貌（先原理）** — Bootloader、内核启动、rootfs 模型 | [**20/primer**](./20-UBoot-Kernel-Build/embedded-linux-primer/) · [OUTLINE](./20-UBoot-Kernel-Build/embedded-linux-primer/OUTLINE.md) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
-| **3** | ***Mastering Embedded Linux Programming*, 3rd ed** — Chris Simmonds | **系统编译实操（后落地）** — 工具链/U-Boot/内核、Yocto/Buildroot（[OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md)） | [**20**](./20-UBoot-Kernel-Build/) |
-| **4** | ***Linux Device Drivers Development*** — Madieu | **驱动实操主书** — [22 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [评测](./21-Linux-Device-Driver/MADIEU-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
-| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | **原理补课**（2.6；无 DTS）— [18 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) · [评测](./21-Linux-Device-Driver/LDD3-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
+| **1a** | ***ARM Assembly Language*** — Smith | 汇编思维（可选） | [**10**/arm32-asm](./10-arm-architecture/arm32-asm/) |
+| **1b** | **《ARM64体系结构编程与实践》** | AArch64 主书 | [**10**/aarch64-practice](./10-arm-architecture/aarch64-practice/) |
+| **2** | ***Embedded Linux Primer*** | 启动与系统全貌 | [**11**/primer](./11-embedded-boot-build/primer-system-overview/) |
+| **3** | ***Mastering Embedded Linux Programming*, 3rd** | 构建实操 | [**11**/build](./11-embedded-boot-build/build-toolchain-yocto/) |
+| **4** | ***Linux Device Drivers Development*** — Madieu | 驱动实操 | [**12**](./12-device-drivers-dt/) |
+| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./12-device-drivers-dt/refs/) |
 
-**22–23 延续：** [22 实战](./22-Embedded-Linux-Practice/) · [23 飞控算法](./23-Motion-Control-Motor/)  
-**设备树：** 并入 [21](./21-Linux-Device-Driver/)（Madieu Ch6 + [内核 DT Usage](https://docs.kernel.org/devicetree/usage-model.html)），不单开号。
+**13–14 延续：** [13 实战](./13-embedded-projects/) · [14 飞控](./14-motion-control/)  
+**设备树：** 并入 [12](./12-device-drivers-dt/)，不单开号。
 
 ### 严格顺序（文件夹级）
 
 ```
-19  Smith（可选）→ 《ARM64体系结构编程与实践》（AArch64 主书）
+10  ARM / AArch64
  ↓
-20  Embedded Linux Primer → Mastering Embedded Linux Programming
+11  Primer → 构建工具链 / Yocto
  ↓
-21  Madieu（实操，含 DTS）→ LDD3（原理按需）+ 官方 DT 文档
+12  驱动 + 设备树
  ↓
-22  无人机 / 网关项目实战
+13  无人机 / 网关项目实战
  ↓
-23  PID · 电机 · 姿态解算 · 飞控调度（PREEMPT_RT）
+14  PID · 电机 · 姿态 · 飞控调度
 ```
 
-### 文件夹 ↔ 必读书（19–21 · 全外文核心）
+### 文件夹 ↔ 模块
 
-| 文件夹 | 必读书 | 索引 |
-|--------|--------|------|
-| **19** | Smith（[OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md)）+ **《ARM64体系结构编程与实践》**（[OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md)） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
-| **20** | ***Mastering Embedded Linux Programming*, 3rd ed** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
-| **21** | **Madieu**（实操）· **LDD3**（原理补课）· DT 官方文档 | [21](./21-Linux-Device-Driver/) · [Madieu](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
-| **22** | 项目实战（笔记随板卡选型） | [22-Embedded-Linux-Practice/](./22-Embedded-Linux-Practice/) |
-| **23** | 自控 / Kalman（算法卷 · 与 22 整合） | [23-Motion-Control-Motor/](./23-Motion-Control-Motor/) |
+| 文件夹 | 索引 |
+|--------|------|
+| **10** | [10-arm-architecture/](./10-arm-architecture/) |
+| **11** | [11-embedded-boot-build/](./11-embedded-boot-build/) |
+| **12** | [12-device-drivers-dt/](./12-device-drivers-dt/) |
+| **13** | [13-embedded-projects/](./13-embedded-projects/) |
+| **14** | [14-motion-control/](./14-motion-control/) |
 
-<!-- 旧表（国产书）已废止 — 见 git 历史若需对照 -->
-
-**23 子目录：** [Ch1 PID](./23-Motion-Control-Motor/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./23-Motion-Control-Motor/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./23-Motion-Control-Motor/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./23-Motion-Control-Motor/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./23-Motion-Control-Motor/chapter-05-flight-control-scheduling/)
+**14 子目录：** [Ch1 PID](./14-motion-control/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./14-motion-control/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./14-motion-control/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./14-motion-control/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./14-motion-control/chapter-05-flight-control-scheduling/)
 
 ### 可直接复用（HFT 链 · 不用重学）
 
 | 类别 | 来源模块 |
 |------|----------|
-| C / GNU-C / 指针 / 结构体 | [02 C](./02-c-programming/) · CSAPP · TLPI |
-| 进程 / VM / 中断 / 同步 | 04 LKD · 05 ULK · 06 Gorman |
-| 性能 / 绑核 / BPF / **周期 jitter** | 15 SysPerf · 16 BPF · **17 HFT 测量** |
-| 网络 / 零拷贝思想 | 11 UNP · 13 内核网 · 14 DPDK → 传感器链路 |
-| 低延迟工程思维 | 17 HFT — 绑核、无锁、异步日志、T2T |
+| C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./04-linux-userspace-api/) |
+| 进程 / VM / 中断 / 同步 | [07](./07-linux-kernel/) · [09](./09-linux-mm/) |
+| 性能 / 绑核 / BPF | [19](./19-systems-performance/) · [20](./20-bpf-observability/) · [21](./21-hft-engineering/) |
+| 网络 / 零拷贝思想 | [15](./15-network-sockets/) · [17](./17-kernel-networking/) · [18](./18-dpdk/) |
 
 ### 岗位定位（支线完成后）
 

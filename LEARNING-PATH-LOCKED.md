@@ -1,129 +1,100 @@
 # 锁定学习路线（定稿）
 
 > **目标：** 嵌入式 Linux 底层开发 + HFT 低延迟。  
-> **结论：** 书单深度够、广度闭环；**不要再扩书**。成败在于 **自底向上顺序** + **动手 Demo**，不在文件夹多少。  
-> **重要：** 文件夹编号 `00`–`24` 是库存标签，**不等于**执行顺序。执行顺序以本文为准；旧文 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) / README 编号序仅作索引用。
+> **结论：** 书单深度够、广度闭环；**不要再扩书**。成败在于 **自底向上顺序** + **动手 Demo**。  
+> **重要：** **文件夹编号 = 学习顺序**（`00` → `23`）。书名只出现在各模块 README / `refs/`。
 
 ---
 
-## 整体判断
+## 递进主轴
 
-| 维度 | 判定 |
-|------|------|
-| 上限 | 足够支撑双线（嵌入式保底 + HFT 上限） |
-| 风险 | 顺序乱跳 → 底层概念断层、后面只能死记 |
-| 策略 | 分清 **核心主线 / 高阶拓展 / 按需取舍**；同一时段少开文件夹 |
+```text
+硬件底层 → 编程语言 → Linux 系统 → 驱动/设备树 → 嵌入式工程 → 网络栈 → 性能工具 → HFT 上层业务
+```
 
 ---
 
-## 全套资源分类
+## 模块一览（编号 = 读序）
 
-### 核心主线（必须按 Phase 推进）
-
-| 标签 | 文件夹 | 角色 |
-|------|--------|------|
-| 硬件地基 | `24-Digital-Design-Harris-ARM` | Phase1 · **当前** · CPU/逻辑/流水线/MMU 词汇源头（按已定深度：黑盒为主，门级不主攻） |
-| 软硬件桥 | `02-c-programming` → `01-CSAPP-3rd` | Phase2 · C 母语 + 汇编/栈/缓存/VM/并发图景 |
-| 用户态 | `07-TLPI` · `08-system-low-level-hands-on` · `09-cpp-learning-notes` | Phase3 · 进程/线程/信号/`mmap`；动手 OS；C++（HFT/嵌入式通用） |
-| 网络用户态 | `10-PNP` · `11-UNP` · `12-TCP/IP Vol.1` | Phase3 尾 · Socket 与协议语义 |
-| 内核共同基础 | `04-LKD` + `06-Gorman` | Phase4 · 分叉前共同内核地基 |
-| 嵌入式支线 A | `19`→`20`→`21`→`22`→`23` | Phase5A |
-| HFT 支线 B | `13`→`15`→`16`→`14`→`17` | Phase5B |
-
-### 高阶拓展（主线走完再开）
-
-| 文件夹 | 说明 |
-|--------|------|
-| `03-Computer-Architecture-6th` | Hennessy · CSAPP 吃透后量化加深 |
-| `05-Understanding-Linux-Kernel` | ULK · LKD+Gorman 之后内核深度 |
-| `18-Rust-Quant-Trading-Guide` | C/C++ 吃透再接触 |
-| `00-Trading-and-Exchanges` | 交易/交易所理论 · 工程主线后期或并行轻读 |
-
-### 按需取舍（非主线）
-
-| 文件夹 | 说明 |
-|--------|--------|
-| `23-Motion-Control-Motor` | 电机/飞控兴趣选修；求职主线几乎不用，放最后 |
-
-### Harris / CSAPP 深度约束（已定，不改）
-
-- Harris：组合/时序取 **黑盒语义**（setup/hold、FIFO/FSM 思想）；门级/Verilog 不主攻 → 见 `24-…/学习深度_*.md`
-- CSAPP：流水线/缓存/VM 为 **主粮**；Ch4 是 Y86+HCL，不是 Verilog → 见 `24-…/学习路线_CSAPP与Harris_Linux驱动.md`
+| # | 文件夹 | 定位 |
+|---|--------|------|
+| **00** | [00-digital-logic-cpu](./00-digital-logic-cpu/) | 硬件底层：组合/时序/CPU 词汇 |
+| **01** | [01-c-language](./01-c-language/) | C / 指针 / GNU-C |
+| **02** | [02-computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 |
+| **03** | [03-computer-architecture](./03-computer-architecture/) | 体系结构加深（可后读） |
+| **04** | [04-linux-userspace-api](./04-linux-userspace-api/) | 用户态系统编程 |
+| **05** | [05-os-from-scratch](./05-os-from-scratch/) | 自制 OS 动手 |
+| **06** | [06-cpp](./06-cpp/) | C++ |
+| **07** | [07-linux-kernel](./07-linux-kernel/) | 内核入门 |
+| **08** | [08-linux-kernel-deep](./08-linux-kernel-deep/) | 内核深度（拓展） |
+| **09** | [09-linux-mm](./09-linux-mm/) | 内核内存管理 |
+| **10** | [10-arm-architecture](./10-arm-architecture/) | ARM / AArch64 |
+| **11** | [11-embedded-boot-build](./11-embedded-boot-build/) | U-Boot / 内核构建 / rootfs |
+| **12** | [12-device-drivers-dt](./12-device-drivers-dt/) | 驱动 + 设备树 |
+| **13** | [13-embedded-projects](./13-embedded-projects/) | 板级 / 无人机 / 网关实战 |
+| **14** | [14-motion-control](./14-motion-control/) | PID / 姿态 / 飞控（兴趣） |
+| **15** | [15-network-sockets](./15-network-sockets/) | Socket 编程 |
+| **16** | [16-tcpip-protocols](./16-tcpip-protocols/) | TCP/IP 协议 |
+| **17** | [17-kernel-networking](./17-kernel-networking/) | 内核网络栈 |
+| **18** | [18-dpdk](./18-dpdk/) | 用户态高速网络 |
+| **19** | [19-systems-performance](./19-systems-performance/) | 系统性能方法论 |
+| **20** | [20-bpf-observability](./20-bpf-observability/) | BPF / 可观测 |
+| **21** | [21-hft-engineering](./21-hft-engineering/) | HFT 工程实践 |
+| **22** | [22-rust-quant](./22-rust-quant/) | Rust 量化（拓展） |
+| **23** | [23-markets-microstructure](./23-markets-microstructure/) | 交易 / 微观结构（业务） |
 
 ---
 
-## 严格执行的 Phase 顺序
+## Phase 顺序
 
 ```
-Phase1  24 Harris（当前；未完成前不正式开下一 Phase）
+Phase1  00 数字逻辑/CPU（当前；未完成前不正式开下一 Phase）
    ↓
-Phase2  02 C → 01 CSAPP
+Phase2  01 C → 02 计算机系统
    ↓
-Phase3  07 TLPI →（穿插 08 动手 / 09 C++）→ 10/11/12 网络
+Phase3  04 用户态 API →（穿插 05 自制 OS / 06 C++）
    ↓
-Phase4  04 LKD + 同步 06 Gorman
+Phase4  07 内核 + 同步 09 MM（08 内核深度可后补）
    ↓
-Phase5  分叉并行（可偏重一条，另一条保底推进）
-        A 嵌入式: 19 → 20 → 21（含 DT）→ 22
-        B HFT:    13 → 15 → 16 → 14 → 17
+Phase5  分叉并行
+        A 嵌入式: 10 → 11 → 12 → 13（14 兴趣）
+        B HFT:    15 → 16 → 17 → 18 → 19 → 20 → 21
    ↓
-Phase6  拓展: 03 · 05 · 18 · 00 ·（兴趣）23
+Phase6  拓展: 03 · 08 · 22 · 23 ·（兴趣）14
 ```
 
 ### Phase 细则
 
 | Phase | 内容 | 过关感 |
 |-------|------|--------|
-| **1** | `24` Harris（按已定 Linux 深度） | 能说清组合延迟/毛刺、setup/hold、寄存器与 FIFO 角色；不纠结门级 |
-| **2** | `02` C → `01` CSAPP | 指针/内存过关；CSAPP 流水线、Cache、VM、并发能自己讲通 |
-| **3** | `07` TLPI → 网络 `10–12`；`08`/`09` 穿插 | 熟练进程/线程/信号/Socket/`mmap`/`epoll`；能写小 Demo。**先会用接口，再开 Phase4 内核实现** |
-| **4** | `04` LKD · `06` VM | 内核调度、内存、同步的入门级地图清晰 |
-| **5A** | `19–22` | 能跟启动链、设备树、写简单驱动 |
-| **5B** | `13`→`15`→`16`→`14`→`17` | 内核网络 → 观测 → eBPF → DPDK → HFT 工程 |
-| **6** | 拓展书 | 主线闭环后再加深度/语言/业务 |
-
-### 与旧「编号=读序」的关键差异
-
-| 旧习惯 | 本锁定路线 |
-|--------|------------|
-| 先 CSAPP 再 C | **先 C 再 CSAPP**（Phase2） |
-| 编号序把 LKD 放在 TLPI 前 | **先用户态 TLPI+网络，再 LKD** |
-| `24` 当旁支 | **`24` 为 Phase1 第一课** |
-| `00` 业务最先 | **`00` 降为 Phase6 / 轻读** |
-| `03`/`05` 主线中段 | **Phase6 拓展** |
-| 嵌入式等内核后 | 仍建议 Phase4 后再开 A；可与 B 并行 |
+| **1** | `00` 数字逻辑/CPU（黑盒语义为主） | setup/hold、寄存器与 FIFO；不纠结门级 |
+| **2** | `01` C → `02` 计算机系统 | 指针/内存过关；流水线、Cache、VM、并发能讲通 |
+| **3** | `04` → 穿插 `05`/`06` | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
+| **4** | `07` · `09` | 调度、内存、同步入门地图清晰 |
+| **5A** | `10`–`13` | 启动链、设备树、简单驱动、板级闭环 |
+| **5B** | `15`–`21` | Socket → 协议 → 内核网 → DPDK → 观测 → HFT |
+| **6** | 拓展书/业务 | 主线闭环后再加 |
 
 ---
 
-## 优点（保留）
+## 深度约束（已定）
 
-1. 链路完整：硬件 → C → 体系 → 用户态 → 内核 → 网络 → 性能 → HFT/嵌入式。  
-2. 双线兼容：保底嵌入式 + 上限 HFT。  
-3. 教科书 + 工程笔记并存。
-
-## 必须警惕
-
-1. **禁止乱跳**：未完成 Phase1/2 不要冲内核、DPDK、HFT。  
-2. **时间不均分**：电机、Rust 量化、Hennessy/ULK 前期少投入。  
-3. **必须动手**：无锁队列、绑核、大页、简易 UDP 网关；嵌入式侧编译内核、设备树调试。书本是理论，Demo 是粘合剂。  
-4. **少开并行文件夹**：优先啃透当前 Phase。
+- `00`：组合/时序取黑盒语义；门级/Verilog 不主攻 → 见 `00-…/学习深度_*.md`
+- `02`：流水线/缓存/VM 为主粮；Ch4 是 Y86+HCL，不是 Verilog
 
 ---
 
 ## 当前状态
 
-- **正在：** Phase1 · `24-Digital-Design-Harris-ARM`  
-- **下一站：** Phase2 · `02-c-programming` → `01-CSAPP-3rd`  
-- **暂不新开：** `04`/`13`/`14`/`17` 等内核旁路与 HFT 工程（除非做极小对照实验）
+- **正在：** Phase1 · `00-digital-logic-cpu`
+- **下一站：** Phase2 · `01-c-language` → `02-computer-systems`
+- **暂不新开：** `07`/`17`/`18`/`21` 等（除非做极小对照实验）
 
 ---
 
-## 一句话
+## 必须警惕
 
-**资料上限足够，不必再搜新书；严格自底向上 + 持续写 Demo。**
-
----
-
-## 后续可拆（未做则先执行 Phase）
-
-按需再做：`阶段性时间规划` + `每目录精读章 / 粗览章` 清单（仍遵守本文 Phase，不改顺序）。
+1. **禁止乱跳**：未完成 Phase1/2 不要冲内核、DPDK、HFT。  
+2. **时间不均分**：电机、Rust 量化、体系结构加深前期少投入。  
+3. **必须动手**：无锁队列、绑核、大页、简易 UDP；嵌入式侧编译内核、设备树调试。  
+4. **少开并行文件夹**：优先啃透当前 Phase。

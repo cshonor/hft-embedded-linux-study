@@ -1,0 +1,90 @@
+# Ch 3 程序的机器级表示 · Machine-Level Representation of Programs
+
+> **CSAPP 3rd** · Bryant & O'Neill · **选读 🟡**（Part I）
+
+> **全书机器级基准：** **x86-64（AMD64）+ Linux AT&T gas + System V ABI** — 本章及后文汇编默认这套。  
+> **HFT 路径：只练 AT&T**（`gcc -S` / `objdump -d` / `perf`）；共置机在 Linux，**不必专门学 Intel 语法**。  
+> 本章定位：**读懂 x86-64 汇编** — C 控制流、函数调用、栈帧、结构体布局、缓冲区溢出。
+
+---
+
+## 小节笔记
+
+| 节 | 笔记 |
+|----|------|
+| 3.1 历史观点 | [notes/section-3.1-历史观点.md](./notes/section-3.1-历史观点.md) |
+| 3.2.1 机器级代码与编译链路 | [notes/section-3.2.1-机器级代码与编译链路.md](./notes/section-3.2.1-机器级代码与编译链路.md) |
+| 3.2.2 栈帧 | [notes/section-3.2.2-栈帧.md](./notes/section-3.2.2-栈帧.md) |
+| **补充** C 五大内存分区（栈/堆/.data/.bss/.text/.rodata） | [notes/section-补充-C程序五大内存分区.md](./notes/section-补充-C程序五大内存分区.md) |
+| 3.2.3 AT&T 汇编语法 | [notes/section-3.2.3-AT&T汇编语法.md](./notes/section-3.2.3-AT&T汇编语法.md) |
+| 3.3 数据格式与寄存器 | [notes/section-3.3-数据格式.md](./notes/section-3.3-数据格式.md) |
+| 3.4.1 操作数指示符 | [notes/section-3.4.1-操作数指示符.md](./notes/section-3.4.1-操作数指示符.md) |
+| 3.4.2–3.4.3 数据传送指令 | [notes/section-3.4.2-数据传送指令.md](./notes/section-3.4.2-数据传送指令.md) |
+| 3.4.4 压栈与弹栈 | [notes/section-3.4.4-压栈与弹栈.md](./notes/section-3.4.4-压栈与弹栈.md) |
+| 3.5 算术和逻辑操作 | [notes/section-3.5-算术与逻辑操作.md](./notes/section-3.5-算术与逻辑操作.md) |
+| 3.6 控制（条件码、分支、循环、switch） | [notes/section-3.6-控制流.md](./notes/section-3.6-控制流.md) |
+| 3.7 过程（栈、调用约定、递归） | [notes/section-3.7-过程与栈帧.md](./notes/section-3.7-过程与栈帧.md) |
+| 3.8 数组分配和访问 | [notes/section-3.8-数组与指针运算.md](./notes/section-3.8-数组与指针运算.md) · [§3.8 指针步长详解](./notes/section-3.8-指针步长详解.md) |
+| 3.9 结构、联合与对齐 | [notes/section-3.9-结构体联合与对齐.md](./notes/section-3.9-结构体联合与对齐.md) |
+| 3.10 指针、gdb 与缓冲区溢出 | [notes/section-3.10-指针调试与缓冲区溢出.md](./notes/section-3.10-指针调试与缓冲区溢出.md) |
+| 3.11 浮点代码 | [notes/section-3.11-浮点代码.md](./notes/section-3.11-浮点代码.md) |
+
+---
+
+## 大白话 · 本章一条线
+
+> **C 编译成机器码后，长什么样？函数怎么调？栈上放了什么？**
+
+```
+C 源码
+  → gcc -S / objdump -d
+  → mov / lea / cmp / jxx / call / ret
+  → 寄存器传参 + 栈帧 + 返回地址
+```
+
+**HFT：不必死记全部指令 — 先抓这 3 点（低延迟强相关）：**
+
+| # | 抓什么 | 落地 |
+|---|--------|------|
+| 1 | **传参规则**（System V） | 前 **6** 个整型/指针走寄存器（`%rdi…%r9`），再往后才压栈。热路径函数尽量 **参数 ≤6**，少一轮栈读写延迟 → [§3.7](./notes/section-3.7-过程与栈帧.md) |
+| 2 | **编译器把 C 译成啥** | 例：`a*4` 常变成 **左移** 而非 `imul`（强度削减）。用 `gcc -S` / `perf annotate` 核对，别假设源码长什么样机器就怎么做 → [§3.5](./notes/section-3.5-算术与逻辑操作.md) · [Ch5](../chapter-05-optimizing-performance/) |
+| 3 | **栈帧与调用开销** | `call`/`ret` 有代价。C/C++ 的 **`inline`**（不是汇编关键字）把函数体嵌进调用点，省压栈/跳转；热路径大量用 → [§3.7.7](./notes/section-3.7-过程与栈帧.md) · [§3.2.2](./notes/section-3.2.2-栈帧.md) |
+
+另：读热路径汇编看分支/load；`struct` 布局与 padding → 3.8–3.9。
+
+---
+
+## 本章 Checklist
+
+- [ ] 会用 `gcc -S`、`objdump -d`（**AT&T**）；认 `%reg`、`$imm`、`8(%rbp)`、源在左
+- [ ] 说出 x86-64 整数参数寄存器顺序：`%rdi, %rsi, %rdx, %rcx, %r8, %r9`
+- [ ] 解释 `%rsp`、栈向下增长、`push`/`pop`、返回地址在栈上的位置
+- [ ] 读懂 `cmp` + `jne`/`jg` 与条件码 `ZF/SF/OF/CF`
+- [ ] 说明 **cmov** vs 分支 — 与分支预测、HFT 热路径的关系
+- [ ] 画出简单函数的栈帧：`call` 压返回地址、局部变量、`leave`/`ret`
+- [ ] 说出栈/堆/.data/.bss/.text/.rodata 各放什么；HFT 为何禁热路径 malloc
+- [ ] 计算带 padding 的 `struct` 大小；理解对齐与 **false sharing**
+- [ ] 简述缓冲区溢出、canary、NX、ASLR 各防什么
+
+---
+
+## HFT 精读捷径
+
+```
+必读：3.4 传送/栈 · 3.6 控制与 cmov · 3.7 调用约定 · 3.9 对齐
+热路径 profile：3.5 lea、3.6 分支 · 配合 Ch 5 优化
+协议 struct：3.8–3.9
+安全/运维：3.10 扫读；3.11 浮点路径按需
+做 MikanOS / 读 perf：3.1 ISA 路线、**3.2.3 只练 AT&T** — 不可跳过
+```
+
+---
+
+## 相关章节
+
+- 上一章：[../chapter-02-representing-information/](../chapter-02-representing-information/)
+- 下一章：[../chapter-04-processor-architecture/](../chapter-04-processor-architecture/)
+- 优化：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
+- perf 读栈：[15-Systems-Performance Ch 13](../../19-systems-performance/chapter-13-perf/)
+- MikanOS 实操：[08 MikanOS Ch1 UEFI](../../../05-os-from-scratch/mikanos/chapter-01-hello-world/)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

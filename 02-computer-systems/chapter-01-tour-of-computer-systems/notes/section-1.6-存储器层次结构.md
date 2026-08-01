@@ -1,0 +1,41 @@
+## 1.6 存储设备形成层次结构
+
+### 存储层次（金字塔）
+
+从快到慢、从贵到便宜、从小到大的 **层次结构 (memory hierarchy)**：
+
+![CPU → L1 → L2 → L3 → 内存控制器 → RAM](./assets/fig-cache-hierarchy-cpu-l1-l2-l3-ram.png)
+
+```
+寄存器  →  L1 → L2 → L3(=LLC)  →（内存控制器）→  主存 DRAM  →  本地磁盘  →  远程存储
+  ↑ 更快、更贵、更小                                                          ↓ 更慢、更便宜、更大
+```
+
+**图注：** 框越宽 ≈ 容量越大；L3 miss 后才经 **内存控制器** 访问 RAM。详细 L1I/L1D 拆分见 [§1.5](./section-1.5-高速缓存至关重要.md)。
+
+**设计思想：** 上层是下层的 cache — 磁盘缓存页在内存，内存缓存行在 **LLC**，…
+
+| 层级 | 典型用途 | HFT |
+|------|----------|-----|
+| 寄存器 / L1–L2 | 热路径计算、order book 热行 | 单核布局主战场 |
+| **LLC (L3)** | 跨核共享、仍落片上 | 共享结构、避免无谓踩 LLC |
+| DRAM | 工作集、mmap 行情缓冲 | NUMA 绑定、大页 |
+| SSD | 日志、回放、配置 | 顺序写、避免热路径 sync |
+| 网络存储 | 备份、研究数据 | **不在 tick 路径** |
+
+### 与 1.5 的关系
+
+- **1.5** 强调 CPU–cache–DRAM 路径延迟，并分清 **L1/L2/LLC**（→ [§1.5](./section-1.5-高速缓存至关重要.md)）
+- **1.6** 把 **磁盘 I/O** 纳入同一图景 — I/O 慢几个数量级，必须 **异步 / 批量 / 摊销**
+
+**HFT 实践：**
+
+- 热路径：**零磁盘**（内存 ring、预分配）
+- 冷路径：批量落盘、单独线程 + 专用核
+- 基准：区分 **memory-bound vs I/O-bound**（→ [14-Systems-Performance Ch 12 基准测试](../../../19-systems-performance/chapter-12-benchmarking/)）
+
+→ [Ch 6](../../chapter-06-memory-hierarchy/) · [Ch 10 系统级 I/O](../../chapter-10-system-io/)
+
+---
+
+← [本章导读](../README.md)
