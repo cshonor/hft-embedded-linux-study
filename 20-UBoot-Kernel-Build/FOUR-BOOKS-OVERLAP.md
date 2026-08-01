@@ -10,7 +10,7 @@
 | **A** | *Mastering Embedded Linux Programming*, 3rd（MELP / Simmonds） | [20](./mastering-embedded-linux-programming/) |
 | **B** | *Embedded Linux Primer*, 2nd（Hallinan） | [20/embedded-linux-primer](./embedded-linux-primer/) · [OUTLINE](./embedded-linux-primer/OUTLINE.md) |
 | **C** | *Linux Device Drivers*, 3rd（**LDD3** / 马书，2.6） | [21](../21-Linux-Device-Driver/) |
-| **D** | *Linux Device Drivers Development*（Madieu，4.x+ 现代驱动） | [21](../21-Linux-Device-Driver/) |
+| **D** | *Linux Device Drivers Development*（Madieu，成书 4.x） | [21](../21-Linux-Device-Driver/) · [评测 MADIEU-EVAL](../21-Linux-Device-Driver/MADIEU-EVAL.md) |
 
 ---
 
