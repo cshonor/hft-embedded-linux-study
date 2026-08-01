@@ -10,7 +10,7 @@
 | **A** | *Mastering Embedded Linux Programming*, 3rd（MELP / Simmonds） | [20](./mastering-embedded-linux-programming/) |
 | **B** | *Embedded Linux Primer*, 2nd（Hallinan） | [20/embedded-linux-primer](./embedded-linux-primer/) · [OUTLINE](./embedded-linux-primer/OUTLINE.md) |
 | **C** | *Linux Device Drivers*, 3rd（**LDD3** / 马书，2.6） | [21](../21-Linux-Device-Driver/) |
-| **D** | *Linux Device Drivers Development*（Madieu，成书 4.x） | [21](../21-Linux-Device-Driver/) · [评测 MADIEU-EVAL](../21-Linux-Device-Driver/MADIEU-EVAL.md) |
+| **D** | *Linux Device Drivers Development*（Madieu，成书 4.x） | [21 OUTLINE](../21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [评测](../21-Linux-Device-Driver/MADIEU-EVAL.md) |
 
 ---
 
@@ -51,13 +51,15 @@
 | 覆盖 | 字符/块驱动、中断、等待队列、sysfs、ioctl、并发锁 |
 | 局限 | 接口大量过时；**不适**直接照搬到 5.x |
 
-### D · Linux Device Drivers Development（4.x+）
+### D · Linux Device Drivers Development（Madieu · 成书 4.x）
 
 | | |
 |--|--|
-| 定位 | **现代**驱动实战 |
-| 覆盖 | 新版字符驱动、platform、设备树、probe、现代锁、`devm` |
+| 定位 | **嵌入式驱动实操主书**（完整可编译示例） |
+| 覆盖 | 模块→字符→Platform→**DTS**→I2C/SPI→DMA/锁/`devm`/IIO… |
 | 与 C | 框架思想类似，API 差异大 → **对照学**，不算内容重复 |
+| 与 B | **几乎不重叠**：Primer 搭系统，Madieu 写驱动 |
+| 详评 | [MADIEU-EVAL.md](../21-Linux-Device-Driver/MADIEU-EVAL.md) |
 
 ---
 

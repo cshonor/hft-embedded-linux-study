@@ -3,7 +3,8 @@
 > **书名：** *Linux Device Drivers Development: Develop customized drivers for embedded Linux*  
 > **作者：** John Madieu  
 > **成书内核：** 约 Linux **4.1–4.13**（2017）  
-> **模块：** [21 README](./README.md) · 四书分工：[FOUR-BOOKS-OVERLAP](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md)（代号 **D**）  
+> **模块：** [21 README](./README.md) · **全书大纲：** [linux-device-drivers-development/OUTLINE.md](./linux-device-drivers-development/OUTLINE.md)（22 章）  
+> 四书分工：[FOUR-BOOKS-OVERLAP](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md)（代号 **D**）  
 > **板卡：** 书内示例偏 i.MX6；框架与写法**适配树莓派 ARM64**（5.x+ 需少量 API 适配）
 
 ---
@@ -117,6 +118,7 @@ IIO、Regmap、Regulator、GPIO 控制器、中断级联、网卡等 — 工业�
 ## 仓库内链接
 
 - 模块总览：[README](./README.md)  
+- **全书 22 章大纲：** [linux-device-drivers-development/OUTLINE.md](./linux-device-drivers-development/OUTLINE.md)  
 - 与 LDD3 / Primer / MELP：[FOUR-BOOKS-OVERLAP](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md)  
 - 设备树深化：[22-Device-Tree-Study](../22-Device-Tree-Study/)  
 - 内核原理：[04 LKD](../04-Linux-Kernel-Development/)

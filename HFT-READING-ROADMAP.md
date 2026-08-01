@@ -352,7 +352,7 @@
 | **2** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动与系统全貌（先原理）** — Bootloader、内核启动、rootfs 模型 | [**20/primer**](./20-UBoot-Kernel-Build/embedded-linux-primer/) · [OUTLINE](./20-UBoot-Kernel-Build/embedded-linux-primer/OUTLINE.md) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
 | **3** | ***Mastering Embedded Linux Programming*, 3rd ed** — Chris Simmonds | **系统编译实操（后落地）** — 工具链/U-Boot/内核、Yocto/Buildroot（[OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md)） | [**20**](./20-UBoot-Kernel-Build/) |
 | **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动框架思想（2.6；勿照搬到 5.x） | [**21**](./21-Linux-Device-Driver/) |
-| **5** | ***Linux Device Drivers Development*** — John Madieu | **驱动实操主书**（成书 4.x，5.x 少量适配）— DTS / I2C·SPI / DMA；[评测](./21-Linux-Device-Driver/MADIEU-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
+| **5** | ***Linux Device Drivers Development*** — John Madieu | **驱动实操主书**（成书 4.x）— [22 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [评测](./21-Linux-Device-Driver/MADIEU-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
 
 **22–24 延续：** [22 DT 官方文档](./22-Device-Tree-Study/) · [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)
 

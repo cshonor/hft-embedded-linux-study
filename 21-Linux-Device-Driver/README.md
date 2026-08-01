@@ -16,8 +16,8 @@
 | **1** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动框架**思想**（2.6；勿照搬到 5.x） |
 | **2** | ***Linux Device Drivers Development*** — John Madieu | **驱动实操主书** — 模块→字符→Platform→**DTS**→I2C/SPI/DMA（成书 4.x，5.x 少量适配） |
 
-> **Madieu 完整评测 / 优缺点 / 与 Primer·LKD 搭配：** [MADIEU-EVAL.md](./MADIEU-EVAL.md)  
-> **与 20 四本书分工：** [FOUR-BOOKS-OVERLAP](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) — C↔D 概念对照；树莓派动手 **以 Madieu 为准**。
+> **Madieu 评测：** [MADIEU-EVAL.md](./MADIEU-EVAL.md) · **全书 22 章大纲：** [linux-device-drivers-development/OUTLINE.md](./linux-device-drivers-development/OUTLINE.md)  
+> **与 20 四本书分工：** [FOUR-BOOKS-OVERLAP](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) — 树莓派动手 **以 Madieu 为准**。
 
 ---
 
