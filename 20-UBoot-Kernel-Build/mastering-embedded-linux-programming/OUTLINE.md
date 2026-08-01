@@ -1,7 +1,8 @@
 # Mastering Embedded Linux Programming — 3rd ed · 全书大纲
 
 > **Chris Simmonds** · Packt · 21 章 · 4 个 Section  
-> 本目录为 **Simmonds 主线**；同模块另备 [Embedded Linux Primer](../README.md#embedded-linux-primer-hallinan)（Hallinan）作补充。
+> 本目录为 **Simmonds / MELP 实操主线**；建议先读 [Embedded Linux Primer](../README.md#embedded-linux-primer-hallinan) 再建全局观。  
+> 四书重合与跳章：[FOUR-BOOKS-OVERLAP.md](../FOUR-BOOKS-OVERLAP.md)
 
 ---
 

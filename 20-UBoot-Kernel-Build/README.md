@@ -1,7 +1,7 @@
 # 20 · U-Boot / Kernel / Build（嵌入式 Linux 构建）
 
-> **主线：** [*Mastering Embedded Linux Programming*](https://www.packtpub.com/product/mastering-embedded-linux-programming-third-edition/9781803234384)（Chris Simmonds，**第 3 版**）  
-> **补充：** *Embedded Linux Primer*（Hallinan）— 概念与历史视角，待建目录
+> **读序：** *Embedded Linux Primer*（世界观）→ [*MELP* 3rd / Simmonds](https://www.packtpub.com/product/mastering-embedded-linux-programming-third-edition/9781803234384)（实操）  
+> **重合与跳章：** [FOUR-BOOKS-OVERLAP.md](./FOUR-BOOKS-OVERLAP.md)（含与 21 驱动书 C/D 的分工）
 
 ---
 
@@ -54,7 +54,9 @@
 
 ## Embedded Linux Primer（Hallinan）
 
-第二本书，侧重嵌入式 Linux **概念模型**与经典流程；与 Simmonds 并行时：**Simmonds 动手、Hallinan 补概念**。目录待建。
+**先读本书再 MELP**（见 [FOUR-BOOKS-OVERLAP](./FOUR-BOOKS-OVERLAP.md)）：偏 **概念模型 / 启动与系统全貌**；MELP 负责动手全流程。目录待建。
+
+与 MELP 在 Bootloader / 内核编译 / rootfs 上有重叠 — Primer 懂了可跳过 MELP 对应重复章，直奔调试与构建系统。
 
 ---
 

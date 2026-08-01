@@ -349,10 +349,10 @@
 |----|------|------|--------|
 | **1a** | ***ARM Assembly Language*** — William Sw Smith | **汇编思维入门**（v4T/v7-M，可选/压缩） | [**19**](./19-ARM64-Architecture/) |
 | **1b** | **《ARM64体系结构编程与实践》** — 奔跑吧Linux社区 | **AArch64 主书** — A64 · 异常/GIC · MM · 屏障/原子 · QEMU/树莓派 | [**19/arm64-programming-practice**](./19-ARM64-Architecture/arm64-programming-practice/) |
-| **2** | ***Mastering Embedded Linux Programming*, 3rd ed** — Chris Simmonds | **系统编译实操** — 工具链/U-Boot/内核、Yocto/Buildroot、rootfs（[OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) · 21 章） | [**20**](./20-UBoot-Kernel-Build/) |
-| **3** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动底层原理** — Bootloader、内核启动、嵌入式 Linux 全貌 | [**20**](./20-UBoot-Kernel-Build/)（与 2 同模块 · 先实操后原理或穿插） |
-| **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动基础框架思想（file_operations、并发） | [**21**](./21-Linux-Device-Driver/) |
-| **5** | ***Linux Device Driver Development*, 2nd ed** — John Madieu | **新版内核现代驱动** — device model、5.x/6.x API（**替代国产驱动书**） | [**21**](./21-Linux-Device-Driver/) |
+| **2** | ***Embedded Linux Primer*** — Christopher Hallinan | **启动与系统全貌（先原理）** — Bootloader、内核启动、rootfs 模型 | [**20**](./20-UBoot-Kernel-Build/) · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) |
+| **3** | ***Mastering Embedded Linux Programming*, 3rd ed** — Chris Simmonds | **系统编译实操（后落地）** — 工具链/U-Boot/内核、Yocto/Buildroot（[OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md)） | [**20**](./20-UBoot-Kernel-Build/) |
+| **4** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — 驱动框架思想（2.6；勿照搬到 5.x） | [**21**](./21-Linux-Device-Driver/) |
+| **5** | ***Linux Device Driver Development*, 2nd ed** — John Madieu | **现代驱动** — DT / platform / 5.x+ API；与 LDD3 **并行对照** | [**21**](./21-Linux-Device-Driver/) |
 
 **22–24 延续：** [22 DT 官方文档](./22-Device-Tree-Study/) · [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)
 
@@ -361,9 +361,9 @@
 ```
 19  Smith（可选）→ 《ARM64体系结构编程与实践》（AArch64 主书）
  ↓
-20  Mastering Embedded Linux Programming → Embedded Linux Primer
+20  Embedded Linux Primer → Mastering Embedded Linux Programming
  ↓
-21  LDD3 → Linux Device Driver Development
+21  LDD3 ∥ Linux Device Driver Development（思想 + 现代 API 对照）
  ↓
 22  设备树 Device Tree
  ↓

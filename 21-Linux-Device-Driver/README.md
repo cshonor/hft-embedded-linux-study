@@ -16,7 +16,8 @@
 | **1** | ***Linux Device Drivers*, 3rd ed** — Corbet / Rubini / Kroah-Hartman | **LDD3** — file_operations · 并发 · platform 基础 · **驱动框架思想** |
 | **2** | ***Linux Device Driver Development*, 2nd ed** — John Madieu | **5.x/6.x 现代驱动** — device model · 时钟/电源/总线 · **替代国产驱动书** |
 
-> LDD3 内核版本偏老，但 **思维模型不变**；Madieu 补 **现代内核 API** 与工程实践。
+> LDD3 内核版本偏老，但 **思维模型不变**；Madieu 补 **现代内核 API** 与工程实践。  
+> **与 20 四本书分工 / 重合度：** [20/FOUR-BOOKS-OVERLAP.md](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) — C↔D 概念对照、代码勿互抄；树莓派 5.x **以 D 为准**。
 
 ---
 
