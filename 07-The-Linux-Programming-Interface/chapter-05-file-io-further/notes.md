@@ -1,41 +1,48 @@
 # TLPI 第 05 章 — File I/O: Further Details
 
-> 目录：`chapter-05-file-io-further/`（与书内第 **5** 章对齐）  
-> 书名原文：**File I/O: Further Details**
+> 对应目录：`chapter-05-file-io-further/`  
+> 书名原文：**File I/O: Further Details**  
+> **勘误：** 很多人笔误写成第 4 章。  
+> - **Ch4** = File I/O: The Universal I/O Model（基础 `open/read/write`）→ [notes](../chapter-04-file-io-universal/notes.md)  
+> - **Ch5** = File I/O: Further Details（进阶文件 I/O）← 本章
 
 ## 学习状态
 
 - [x] 已通读
 - [x] 已做笔记
-- [ ] C 示例已跑
+- [x] C 示例已跑（见 [`code/`](./code/)）
 - [ ] Rust 对照已写
 
 **优先级**：🟡→🔴（HFT：非阻塞、`pread`/`pwrite`、偏移共享）  
 **前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/notes.md)  
-**后置**：进程环境；缓冲 / `fsync`（书内约 Ch13）  
+**后置**：[Ch6 Processes](../chapter-06-processes/notes.md) · [Ch13 File I/O Buffering](../chapter-13-file-io-buffering/notes.md)  
 **内核对照**：[LKD §3.8 fd / struct file / inode](../../04-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
 
 ---
 
-## 章节定位
+## 章节目标
+
+揭示 Linux 内核 **三层文件结构**，理解：fd 复制、原子操作、`pread`/`pwrite`、`fcntl`、非阻塞 I/O、大文件支持。
 
 | | |
 |--|--|
 | **Ch4** | 会用 `open/read/write/lseek`，只认识 fd **数字** |
-| **Ch5** | 看透内核 **三层结构**；解释偏移共享、多进程写覆盖、fd 重定向 |
-| **勿混** | Ch4 = Universal I/O Model；**Ch5 = Further Details** |
+| **Ch5** | 看透三层结构；解释偏移共享、多进程写覆盖、fd 重定向 |
+| **Ch13** | 页缓存、`write` 缓冲、`fsync`（「write 成功 ≠ 已落盘」） |
 
 ---
 
 ## 5.1 内核三层结构（本章核心 · 必考）
 
+进程内相关的三层，厘清无数文件 I/O 疑难：
+
 | 层 | 谁有 | 存什么 |
 |----|------|--------|
 | **1. 进程 fd 表** | 每进程独有 | 指向「打开文件描述」的指针 + **fd 标志**（主要是 `FD_CLOEXEC`） |
-| **2. 打开文件描述**（open file description / `struct file`） | 内核全局，可被多 fd 共享 | **文件偏移**、状态标志（`O_APPEND`/`O_NONBLOCK`…）、指向 inode |
-| **3. inode** | 文件本体 | 大小、权限、磁盘块、链接计数等 |
+| **2. 打开文件描述**（open file description） | 内核全局，可被多 fd 共享 | **文件偏移**（`lseek` 改的就是它）、状态标志（`O_APPEND`/`O_NONBLOCK`…）、指向 inode |
+| **3. inode** | 磁盘上真实文件 | 大小、权限、磁盘块位置、链接计数等 |
 
-### 关键推论
+### 关键推论（高频面试点）
 
 | 操作 | 打开文件描述 | 偏移 |
 |------|--------------|------|
@@ -52,12 +59,13 @@
 
 ```c
 #include <unistd.h>
-int dup(int oldfd);                      /* 最小可用编号，同一打开描述 */
-int dup2(int oldfd, int newfd);          /* newfd 已开则先 close；再复制 */
+int dup(int oldfd);                        /* 最小可用编号，同一打开描述 */
+int dup2(int oldfd, int newfd);            /* newfd 已开则先 close；再复制 */
 int dup3(int oldfd, int newfd, int flags); /* Linux；可带 O_CLOEXEC */
 ```
 
-典型用途：重定向 stdin/stdout（shell 管道、`exec` 前重定向）。
+典型用途：重定向 stdin/stdout（shell 管道、`exec` 前重定向）。  
+Demo：[`code/dup_share_offset.c`](./code/dup_share_offset.c)
 
 ---
 
@@ -74,6 +82,8 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset);
 | 原子性 | 单次调用原子；`lseek`+`read` **组合非原子**（多线程会乱） |
 | 场景 | 多线程随机读写、DB 引擎 |
 | 限制 | 不可用于管道/socket 等不可 seek 对象 |
+
+Demo：[`code/pread_demo.c`](./code/pread_demo.c)
 
 ---
 
@@ -92,7 +102,8 @@ if (open("a.txt", O_RDONLY) == -1)
 fd = open(path, O_WRONLY | O_CREAT | O_EXCL, mode);
 ```
 
-`O_EXCL` + `O_CREAT`：已存在则失败。
+`O_EXCL` + `O_CREAT`：已存在则失败。  
+Demo：[`code/o_excl_create.c`](./code/o_excl_create.c)
 
 ### `O_APPEND` 原子追加
 
@@ -120,7 +131,8 @@ int fcntl(int fd, int cmd, ...);
 | **fd 标志** | 进程 fd 表项 | `FD_CLOEXEC` | 每个 fd **私有** |
 | **文件状态标志** | 打开文件描述 | `O_APPEND`、`O_NONBLOCK` | `dup` 的 fd **共享** |
 
-`FD_CLOEXEC`：`exec` 时自动关该 fd，防泄漏。
+`FD_CLOEXEC`：`exec` 时自动关该 fd，防泄漏。  
+Demo：[`code/fcntl_nonblock.c`](./code/fcntl_nonblock.c)（管道上设 `O_NONBLOCK`）
 
 ---
 
@@ -148,7 +160,7 @@ int fcntl(int fd, int cmd, ...);
 
 ## 5.8 大文件 LFS
 
-历史：32 位 `off_t` 约 2GB 上限。  
+历史：32 位 `off_t` 约 2GB 上限。
 
 | 做法 | |
 |------|--|
@@ -174,12 +186,25 @@ int fcntl(int fd, int cmd, ...);
 
 ---
 
+## Ch4 vs Ch5 速查
+
+| | Ch4 Universal I/O | Ch5 Further Details |
+|--|-------------------|---------------------|
+| 焦点 | 同一套 API 操作万物 | 内核三层 + 进阶语义 |
+| API | `open/read/write/close/lseek` | `dup*`、`pread*`、`fcntl`、原子标志 |
+| 偏移 | 「有个游标」 | 游标在 **打开描述**；谁共享谁独立 |
+| 非阻塞 | 少提 | `O_NONBLOCK` 适用对象与语义 |
+| 落盘 | 未深入 | → Ch13 缓冲 / `fsync` |
+
+---
+
 ## 章节链路
 
 ```
 Ch4 会用 fd 数字
   → Ch5 三层结构解释「怪现象」
-  → 缓冲章：write 成功 ≠ 落盘（fsync）
+  → Ch6 进程环境
+  → Ch13 缓冲：write 成功 ≠ 落盘（fsync）
 ```
 
 ---
@@ -208,4 +233,4 @@ Ch4 会用 fd 数字
 ## 参考
 
 - 《The Linux Programming Interface》**第 05 章** — File I/O: Further Details  
-- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [LKD §3.8](../../04-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
+- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [Ch13](../chapter-13-file-io-buffering/notes.md) · [LKD §3.8](../../04-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
