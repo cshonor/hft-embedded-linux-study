@@ -64,7 +64,7 @@ Linux：同 MMIO → ioremap · 驱动 readl/writel
 | [Ch5 §5.6 位带](../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) | Tiva **地址掩码** 同类「单 bit 安全写」 |
 | [Ch12 查表](../chapter-12-tables/) | DAC 正弦 **LUT + 缩放** |
 | [21 驱动](../../21-Linux-Device-Driver/) | **`readl`/`writel`** · **`platform_device`** |
-| [22 DT](../../22-Device-Tree-Study/) | 寄存器基址进 **设备树** |
+| [21 驱动/DT](../../21-Linux-Device-Driver/) | 寄存器基址进 **设备树** |
 | [08 MikanOS GOP](../../08-system-low-level-hands-on/) | 帧缓冲也是 **MMIO 写像素** |
 | [20 U-Boot](../../20-UBoot-Kernel-Build/) | 板级 **early UART** 打印 |
 

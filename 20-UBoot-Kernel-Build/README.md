@@ -81,7 +81,7 @@
 |------|------|
 | [19 ARM64](../19-ARM64-Architecture/) | U-Boot/内核/设备树与 AArch64 汇编 |
 | [21 Linux Device Drivers](../21-Linux-Device-Drivers/) | Ch 11 驱动交互 |
-| [22 Device Tree](../22-Device-Tree/) | Ch 3–4、12 设备树 |
+| [21 驱动+DT](../21-Linux-Device-Driver/) | Ch 3–4、11–12 驱动与设备树 |
 | [04 LKD](../04-Linux-Kernel-Development/) | 内核机制 |
 | [07 TLPI](../07-The-Linux-Programming-Interface/) | 进程/IPC/内存 |
 | [08 MikanOS 等](../08-system-low-level-hands-on/) | 自底向上对照 |

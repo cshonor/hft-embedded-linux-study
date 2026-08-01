@@ -53,4 +53,4 @@
 - [ ] 用 **perf/延迟统计** 证明控制/采集路径 p99 可接受  
 - [ ] 能讲清 **DT + 驱动 + 应用** 分工  
 
-**上一章：** [21 设备树](../22-Device-Tree-Study/) · **下一章：** [24 运动控制 / PID / 飞控](../24-Motion-Control-Motor/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+**上一章：** [21 驱动+DT](../21-Linux-Device-Driver/) · **下一章：** [24 运动控制 / PID / 飞控](../24-Motion-Control-Motor/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)

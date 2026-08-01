@@ -400,8 +400,7 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 |--------|----------------|------|
 | **19** ARM64 | Smith · **《ARM64体系结构编程与实践》** · [Smith OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md) · [奔跑吧 OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** 构建 | *Embedded Linux Primer* → *MELP* 3rd · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
-| **21** 驱动 | Madieu（实操）→ LDD3（原理补课） | [21](./21-Linux-Device-Driver/) · [Madieu OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
-| **22** 设备树 | [内核 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) · [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
+| **21** 驱动+DT | Madieu（含 DTS）→ LDD3（按需）· [内核 DT Usage](https://docs.kernel.org/devicetree/usage-model.html) | [21](./21-Linux-Device-Driver/) · [Madieu OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
 | **23** 实战 | 项目实战（笔记随板卡） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
 | **24** 运动控制 | 自控 / Kalman（算法卷） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
 | **25** Harris 数字设计 ARM | 《数字设计和计算机体系结构：ARM版》· 对接 CSAPP Ch4 / 嵌入式 | [25-Digital-Design-Harris-ARM/](./25-Digital-Design-Harris-ARM/) |

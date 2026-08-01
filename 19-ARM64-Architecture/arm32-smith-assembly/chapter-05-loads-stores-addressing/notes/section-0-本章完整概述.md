@@ -1,4 +1,4 @@
-﻿## Ch5 完整概述 · 加载、存储与寻址
+## Ch5 完整概述 · 加载、存储与寻址
 
 > ***ARM Assembly Language*** — William Sw Smith  
 > **English:** Loads, Stores, and Addressing · **精读**  
@@ -56,7 +56,7 @@ Ch7 ALU · Ch16 MMIO 实战
 | CSAPP 内存/指针 | 同一 Load/Store，不同助记符 |
 | MikanOS MMIO | `LDR`/`STR` 写帧缓冲/端口 |
 | [21 驱动](../../../../21-Linux-Device-Driver/) | `readl`/`writel` = 宽度正确的 MMIO |
-| [22 DT](../../../22-Device-Tree-Study/) | 基址不再硬编码 `EQU` |
+| [21 驱动/DT](../../../21-Linux-Device-Driver/) | 基址不再硬编码 `EQU` |
 
 ---
 

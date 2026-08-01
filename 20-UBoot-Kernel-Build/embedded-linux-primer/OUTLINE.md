@@ -92,7 +92,7 @@
 | 7.1–7.2 | Bootloader 职责与硬件难点 | **精读** |
 | 7.3 U-Boot 使用 | 获取/编译/配置/串口网络命令 | **精读** |
 | 7.4 移植实战 | 板级移植要点 | 精读（落地跟 MELP） |
-| 7.5 DTB | DTS→dtb | **精读**（接 [22 DT](../../22-Device-Tree-Study/)） |
+| 7.5 DTB | DTS→dtb | **精读**（接 [21 驱动/DT](../../21-Linux-Device-Driver/)） |
 | 7.6 LILO/GRUB | PC 引导对比 | 速览 |
 
 ---

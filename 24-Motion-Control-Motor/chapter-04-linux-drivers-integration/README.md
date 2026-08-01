@@ -2,7 +2,7 @@
 
 ← [23 总览](../README.md)
 
-> **前置：** [20 LDD](../../21-Linux-Device-Driver/) · [21 DT](../../22-Device-Tree-Study/)
+> **前置：** [20 LDD](../../21-Linux-Device-Driver/) · [21 DT](../../21-Linux-Device-Driver/)
 
 ---
 
@@ -13,7 +13,7 @@
 | **IMU** | I2C/SPI **字符驱动** · `read()` 原始数据 |
 | **PWM / ESC** | **PWM 子系统** 或 platform 驱动 · sysfs/ioctl |
 | **飞控进程** | 用户态 C/C++：**采集 → 解算 → PID → 输出** |
-| **设备树** | IMU / PWM 节点 — [21 DT](../../22-Device-Tree-Study/) |
+| **设备树** | IMU / PWM 节点 — [21 DT](../../21-Linux-Device-Driver/) |
 
 ## 数据流
 

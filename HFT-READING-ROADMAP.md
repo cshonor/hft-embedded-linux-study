@@ -15,7 +15,7 @@
 | **09** | [C++ 外部索引](./09-cpp-learning-notes/) | Modern C++ → 并发（PNP/HFT 前置） |
 | **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
 | **17–18** | HFT Practice / Rust | 动手实现 |
-| **19–24** | ARM64 · 构建 · 驱动 · DT · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
+| **19–24** | ARM64 · 构建 · 驱动(+DT) · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
 
 ### Gregg 双书 · 15 → 16（后置）
 
@@ -336,7 +336,7 @@
 | 条件 | 说明 |
 |------|------|
 | **建议前置** | [04 LKD](./04-Linux-Kernel-Development/) + [07 TLPI](./07-The-Linux-Programming-Interface/) + [21 驱动](./21-Linux-Device-Driver/) |
-| **24 前置** | 建议 **23 或至少 21–22** 后再开算法整合 |
+| **24 前置** | 建议 **23 或至少 21（含 DT）** 后再开算法整合 |
 | **C 语言** | [02 C](./02-c-programming/) · K&R + *Pointers on C* + CSAPP/TLPI 可复用 |
 
 ### 全新阅读顺序（19 例外 · 汇编前置）
@@ -354,7 +354,8 @@
 | **4** | ***Linux Device Drivers Development*** — Madieu | **驱动实操主书** — [22 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [评测](./21-Linux-Device-Driver/MADIEU-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
 | **5** | ***Linux Device Drivers*, 3rd** — LDD3 | **原理补课**（2.6；无 DTS）— [18 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) · [评测](./21-Linux-Device-Driver/LDD3-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
 
-**22–24 延续：** [22 DT 官方文档](./22-Device-Tree-Study/) · [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)
+**23–24 延续：** [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)  
+**设备树：** 并入 [21](./21-Linux-Device-Driver/)（Madieu Ch6 + [内核 DT Usage](https://docs.kernel.org/devicetree/usage-model.html)）；**已删独立 22 文件夹**。
 
 ### 严格顺序（文件夹级）
 
@@ -363,9 +364,7 @@
  ↓
 20  Embedded Linux Primer → Mastering Embedded Linux Programming
  ↓
-21  Madieu（实操）→ LDD3（原理按需回头）
- ↓
-22  设备树 Device Tree
+21  Madieu（实操，含 DTS）→ LDD3（原理按需）+ 官方 DT 文档
  ↓
 23  无人机 / 网关项目实战
  ↓
@@ -378,8 +377,7 @@
 |--------|--------|------|
 | **19** | Smith（[OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md)）+ **《ARM64体系结构编程与实践》**（[OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md)） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** | ***Mastering Embedded Linux Programming*, 3rd ed** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
-| **21** | **Madieu**（实操）· **LDD3**（原理补课） | [21](./21-Linux-Device-Driver/) · [Madieu](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
-| **22** | [内核官方 **Device Tree Usage**](https://docs.kernel.org/devicetree/usage-model.html) + [Devicetree Spec](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | [22-Device-Tree-Study/](./22-Device-Tree-Study/) |
+| **21** | **Madieu**（实操）· **LDD3**（原理补课）· DT 官方文档 | [21](./21-Linux-Device-Driver/) · [Madieu](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
 | **23** | 项目实战（笔记随板卡选型） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
 | **24** | 自控 / Kalman（算法卷 · 与 23 整合） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
 

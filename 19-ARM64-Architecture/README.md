@@ -106,6 +106,6 @@ Smith Ch2–8、13、16、18（可选/压缩，在 arm32-smith-assembly/）
 - [ ] （可选）Smith 精读章 — Load/Store · 栈 · MMIO · C/汇编  
 - [ ] 能解释 **EL1 / EL0** 与 x86 Ring 的对应  
 - [ ] QEMU ARM64 或树莓派上跑通至少 1 个实验  
-- [ ] 知道设备树为何取代 hard-coded 寄存器（→ [22](../22-Device-Tree-Study/)）
+- [ ] 知道设备树为何取代 hard-coded 寄存器（→ [21](../21-Linux-Device-Driver/)）
 
 **下一章：** [20 嵌入式 Linux 构建](../20-UBoot-Kernel-Build/)

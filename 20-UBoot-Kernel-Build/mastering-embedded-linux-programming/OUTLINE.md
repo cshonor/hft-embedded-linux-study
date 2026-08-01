@@ -49,7 +49,7 @@
 | 14 | [chapter-14-busybox-runit](./chapter-14-busybox-runit/) | Starting with BusyBox runit | 服务划分、进程监督、日志 | 选读 |
 | 15 | [chapter-15-power-management](./chapter-15-power-management/) | Power Management | DVFS、空闲状态、挂起 | 选读 |
 
-**交叉链接：** Ch 3/4 ↔ [19 ARM64](../19-ARM64-Architecture/) · Ch 11 ↔ [21 Linux Device Drivers](../21-Linux-Device-Drivers/) · Ch 12 ↔ [22 Device Tree](../22-Device-Tree/)
+**交叉链接：** Ch 3/4 ↔ [19 ARM64](../../19-ARM64-Architecture/) · Ch 11–12 ↔ [21 驱动+DT](../../21-Linux-Device-Driver/)
 
 ---
 

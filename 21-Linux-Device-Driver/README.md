@@ -1,11 +1,12 @@
-# Linux 设备驱动 · 字符 / 平台驱动
+# Linux 设备驱动 · 字符 / 平台驱动 · 设备树
 
 **文件夹 21** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
 
 > **定位：** **内核态模块** — 补齐 HFT 链里「只写用户态」的缺口。  
-> **范围：** 字符驱动 · platform 驱动 · **非** MCU 裸机 HAL。  
+> **范围：** 字符驱动 · platform 驱动 · **设备树（DTS/DTB）** · **非** MCU 裸机 HAL。  
 > **前置：** [20 构建链](../20-UBoot-Kernel-Build/) · [04–05 内核](../04-Linux-Kernel-Development/) · [02 C](../02-c-programming/)  
-> **书目原则：** **全外文** — LDD3 思想 + Madieu 实操；**不用** 国产驱动书。
+> **书目原则：** **全外文** — LDD3 思想 + Madieu 实操；**不用** 国产驱动书。  
+> **设备树不单开文件夹** — 与 platform/I2C/SPI 一起学（原 22 已删除）。
 
 ---
 
@@ -46,9 +47,22 @@
 | 技能 | 主跟 |
 |------|------|
 | module_init/exit · 字符设备 | Madieu Ch2–4 · LDD3 Ch2–3 |
-| platform + **设备树** | Madieu Ch5–6 → [22](../22-Device-Tree-Study/) |
+| platform + **设备树** | Madieu Ch5–6 · 官方 DT 文档（下表） |
 | I2C / SPI / GPIO | Madieu Ch7–8、14 |
 | 中断 / 锁 / DMA | Madieu Ch3、12 · LDD3 Ch5、10、15 |
+
+---
+
+## 设备树（官方文档 · 与 Madieu Ch6 并行）
+
+| # | 文档 | 读什么 |
+|---|------|--------|
+| **1** | [Linux and the Devicetree（Usage Model）](https://docs.kernel.org/devicetree/usage-model.html) | `compatible` · platform 匹配 · FDT/DTB 启动链 |
+| **2** | [Devicetree Spec — Usage](https://devicetree-specification.readthedocs.io/en/latest/usage-model.html) | DTS 语法 · `reg` / `interrupts` · phandle |
+| **3** | [Bindings 索引](https://docs.kernel.org/devicetree/bindings/index.html) | 查外设 `compatible` |
+| **选读** | [Overlay Notes](https://docs.kernel.org/devicetree/overlay-notes.html) | DT overlay |
+
+Madieu Ch6 大纲：[OUTLINE §Ch6](./linux-device-drivers-development/OUTLINE.md#ch6-the-concept-of-a-device-tree)
 
 ---
 
@@ -58,5 +72,6 @@
 - [ ] 能解释 **用户态 open() 如何落到驱动的 open**  
 - [ ] 知道 **硬中断里不能 sleep**  
 - [ ] 树莓派上改过 **DTS** 并匹配 platform/I2C 驱动  
+- [ ] 读过 usage-model，能解释 DTB 从哪来、内核用来干什么  
 
-**上一章：** [20 构建](../20-UBoot-Kernel-Build/) · **下一章：** [22 设备树](../22-Device-Tree-Study/)
+**上一章：** [20 构建](../20-UBoot-Kernel-Build/) · **下一章：** [23 实战](../23-Embedded-Linux-Practice/)

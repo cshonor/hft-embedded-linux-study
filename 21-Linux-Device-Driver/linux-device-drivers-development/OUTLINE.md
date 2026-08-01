@@ -135,7 +135,7 @@
 | 6.6 Platform + OF 匹配 | | **精读** |
 | 6.7 兼容旧板级数据 | | 速览 |
 
-→ 深化：[22 Device Tree](../../22-Device-Tree-Study/)
+→ 深化：[21 README · 设备树](../README.md) · 官方 usage-model
 
 ---
 

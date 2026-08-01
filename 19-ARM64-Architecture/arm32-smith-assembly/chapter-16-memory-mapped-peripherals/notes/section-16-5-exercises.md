@@ -34,7 +34,7 @@
 | **Ch15** | Timer **中断** 驱动 DAC 采样率 / LED 节拍 |
 | **Ch18** | C **`volatile uint32_t *REG`** 访问 MMIO |
 | **21 驱动** | **`ioremap` + `readl/writel`** |
-| **22 DT** | `reg = <0x40004000 0x1000>` |
+| **21 DT** | `reg = <0x40004000 0x1000>` |
 
 ---
 

@@ -45,7 +45,7 @@
 
 ### 3. 设备树讲得细（树莓派刚需）
 
-DTS 语法、phandle、资源解析、OF 匹配；写/编 dtb、读寄存器/中断/GPIO — 老书 board-file 时代已废，本章价值高。深挖另见 [22 DT](../22-Device-Tree-Study/)。
+DTS 语法、phandle、资源解析、OF 匹配；写/编 dtb、读寄存器/中断/GPIO — 老书 board-file 时代已废，本章价值高。深挖另见 [21 驱动/DT](../21-Linux-Device-Driver/)。
 
 ### 4. 内核工具讲透（稳定 / 低延迟基础）
 
@@ -120,5 +120,5 @@ IIO、Regmap、Regulator、GPIO 控制器、中断级联、网卡等 — 工业�
 - 模块总览：[README](./README.md)  
 - **全书 22 章大纲：** [linux-device-drivers-development/OUTLINE.md](./linux-device-drivers-development/OUTLINE.md)  
 - 与 LDD3 / Primer / MELP：[FOUR-BOOKS-OVERLAP](../20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md)  
-- 设备树深化：[22-Device-Tree-Study](../22-Device-Tree-Study/)  
+- 设备树：[README 设备树节](./README.md) · Madieu Ch6  
 - 内核原理：[04 LKD](../04-Linux-Kernel-Development/)
