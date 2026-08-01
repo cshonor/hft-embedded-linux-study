@@ -39,14 +39,20 @@
 
 ## 3. Linux = 内核 + GNU 工具链（必分清）
 
+**GNU**（GNU's Not Unix）是 Stallman 发起的自由软件项目：目标是提供一套**完全自由**、兼容 UNIX 风格的操作系统，重点在**用户态**组件（编译器、编辑器、C 库、shell、常用命令等）。  
+Linus 写的是 **Linux 内核**（1991）：管进程、内存、驱动、系统调用等底层；**不含** shell/`ls`/`gcc` 这类用户态程序。  
+GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形成日常说的「Linux 系统」。
+
 | 部件 | 谁 | 内容 |
 |------|-----|------|
-| **Linux 内核** | Linus，1991 | 只有内核；缺用户态工具 |
-| **GNU 项目** | Stallman | 完整自由 UNIX 兼容用户态：glibc、bash、gcc、make、coreutils… |
+| **Linux 内核** | Linus 等 | 地基：硬件与资源管理、syscall |
+| **GNU 用户态** | Stallman 项目等 | 房子：glibc、bash、gcc、make、coreutils（`ls`/`cp`…） |
 
-**完整发行版 = Linux 内核 + GNU 用户态工具链**
+**完整发行版 ≈ Linux 内核 + GNU 用户态工具链**（再加包管理、桌面等；其中也有非 GNU 组件，如 systemd）
 
-> ❌ 勿混：**Linux ≠ GNU**。内核与用户态软件是两套独立项目。  
+类比：**内核 = 地基，GNU = 盖在上面的房子**；只有内核几乎没法日常用。
+
+> ❌ 勿混：**Linux ≠ GNU**。内核与用户态是两套独立项目；Linus 没写 GNU，Stallman 也没写 Linux 内核。  
 > glibc 封装 syscall — 对照 [04 LKD Ch5 libc≠syscall](../../04-Linux-Kernel-Development/00_Book_3rd_Notes/chapter-05-system-calls/notes/section-5.1-与内核通信.md)
 
 ---
