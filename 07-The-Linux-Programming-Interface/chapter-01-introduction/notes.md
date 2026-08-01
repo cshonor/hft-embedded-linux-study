@@ -59,43 +59,52 @@ GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形�
 
 ## 4. 标准化：POSIX / SUS / LSB
 
-| 标准 | 作用 |
-|------|------|
-| **POSIX** | Portable Operating System Interface — 统一 UNIX 系 API，一份代码可在 Linux / FreeBSD / macOS 编译运行 |
-| **SUS** | Single UNIX Specification；POSIX 超集。SUSv3≈POSIX.1-2001；SUSv4≈POSIX.1-2008（主流参考） |
-| **LSB** | Linux Standard Base — 发行版间兼容（如今影响力渐弱） |
+**一句话（双线共用）：主力标准 POSIX；SUS 当拓展参考；LSB 工程里忘掉。**
+
+| 标准 | 层级 | 作用 | 对本仓库 |
+|------|------|------|----------|
+| **POSIX**（IEEE 1003.1） | 源码级可移植 | 定义 syscall/文件 I/O/进程/信号/pthread/实时接口、`clock_gettime`、`mmap`… | **主力**；Linux 尽可能兼容（未花钱官方认证，日常按这套语义写） |
+| **SUS**（Single UNIX Specification） | POSIX + 额外扩展 | 通过认证才能合法用 **「UNIX」商标** | 了解即可；发行版几乎不花钱认证；写代码很少刻意追 SUS |
+| **LSB**（Linux Standard Base） | 曾求跨发行版**二进制**兼容 | 一份编译产物多发行版跑 | **已废**：末版约 2015，停维护；Yocto/主流发行版已撤；嵌入式/HFT **不考虑** |
+
+### 易混考点：Linux ≠ UNIX（商标）
+
+- **UNIX（商标）**：须通过 SUS 等认证。  
+- **Linux**：遵循 POSIX 接口语义，但**没有**官方 UNIX 认证 → 习惯称「类 UNIX」。
 
 ---
 
-## 5. 贯穿全书的最重要结论
+## 5. 贯穿全书：POSIX vs Linux 扩展
 
 | 类型 | 例子 | 可移植性 |
 |------|------|----------|
-| **POSIX 标准 API** | `fork`、`pipe`、`socket`、`pthread` | Linux / macOS / BSD 通用 |
-| **Linux 特有扩展** | `epoll`、`signalfd`、`timerfd`、`io_uring` | **仅 Linux**（macOS/FreeBSD 无） |
+| **POSIX 标准 API** | `fork`、`pipe`、`socket`、`pthread`、`clock_gettime`、`mlock`、`SCHED_FIFO`（实时扩展） | Linux / macOS / BSD 等通用（程度因实现而异） |
+| **Linux 特有扩展** | `epoll`、`signalfd`、`timerfd`、`io_uring`、`sched_setaffinity`、大页、`SO_BUSY_POLL` / TPACKET… | **仅 Linux** |
 
-### 开发取舍（贴合双线）
+### 嵌入式 Linux（用户态应用）
 
-| 场景 | 建议 |
-|------|------|
-| **嵌入式产品、跨平台** | 优先 **POSIX** |
-| **HFT / 只跑 Linux** | 大胆用 Linux 扩展（`epoll` / `io_uring` / `mlock`…）；读文档时标清「非标准」 |
+1. **应用层以 POSIX 为基准**（`open/read/write`、`fork`、`pthread`、信号、定时器、SHM…）→ 易在 x86 PC / ARM 板子间移植。  
+2. **驱动 / 内核模块不受 POSIX 约束**——POSIX 只管用户态 API；内核是 Linux 独有（走 LKD）。  
+3. SUS：几乎不关心（除非要迁 Solaris/AIX 等真 UNIX）。  
+4. LSB：静态链接、裁剪根文件系统场景下跨发行版二进制兼容无价值 → **忽略**。
+
+### HFT（低延迟用户态）
+
+1. **基础仍靠 POSIX**：单调时钟、pthread、实时信号、`mlock`、实时调度等。  
+2. **极致延迟会用大量 Linux 私有扩展**（`io_uring`、亲和性、大页、忙轮询 socket…）。  
+3. **规则：基础逻辑尽量 POSIX；热路径优化主动用 Linux 专属，放弃可移植。**  
+4. SUS / LSB 对固化机房（固定发行版+内核）**无意义**。
+
+### 极简工程守则
+
+1. 学习 / 面试：弄清三者关系，**核心吃透 POSIX**。  
+2. 业务：可移植 → 只用 POSIX；HFT/嵌入式底层优化 → 允许 Linux 扩展（文档标清「非标准」）。  
+3. SUS：概念即可，不当硬约束。  
+4. LSB：历史产物，现代开发不考虑。
 
 ---
 
-## 6. 两条路线提示
-
-### 嵌入式 Linux 应用
-
-跨 ARM / 多发行版时 **POSIX 意识**重要。驱动属内核态（LKD 等）；TLPI **只覆盖用户态**。
-
-### HFT
-
-几乎只跑 Linux → 不必强兼容 macOS；可用专属高性能 API。仍要分清哪些 **无法移植**。
-
----
-
-## 7. 术语清单（极简）
+## 6. 术语清单（极简）
 
 | 术语 | 一句话 |
 |------|--------|
@@ -109,7 +118,7 @@ GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形�
 
 ---
 
-## 8. 避坑
+## 7. 避坑
 
 1. 本章无实操 — 理解「标准化意义」即可，勿深挖年表。  
 2. **macOS 基于 BSD/XNU，不是 Linux**；POSIX 有重合，专属 API / 实现不同。  
@@ -117,7 +126,7 @@ GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形�
 
 ---
 
-## 9. 自检
+## 8. 自检
 
 1. **用了 `epoll` 的代码能否直接在 macOS 编译运行？**  
    **不能。** `epoll` 是 Linux 特有；macOS 需用 `kqueue` 等另写。
@@ -127,18 +136,19 @@ GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形�
 
 ---
 
-## 10. 背诵卡
+## 9. 背诵卡
 
 | # | 要点 |
 |---|------|
-| 1 | 商标 UNIX ≠ 习惯「类 UNIX」；Linux 属后者 |
+| 1 | 商标 UNIX ≠ 习惯「类 UNIX」；Linux 属后者（无 SUS 认证） |
 | 2 | 发行版 = Linux 内核 + GNU 用户态 |
-| 3 | POSIX 可移植；`epoll`/`io_uring` 等 Linux only |
-| 4 | 嵌入式偏 POSIX；HFT 可专吃 Linux 扩展 |
+| 3 | **主力 POSIX**；SUS 了解即可；**LSB 忘掉** |
+| 4 | POSIX 可移植；`epoll`/`io_uring` 等 Linux only |
+| 5 | 嵌入式用户态偏 POSIX（驱动无 POSIX）；HFT 热路径可专吃 Linux 扩展 |
 
 ---
 
-## 11. 参考
+## 10. 参考
 
 - 《The Linux Programming Interface》第 01 章 — History and Standards  
 - [OUTLINE](../OUTLINE.md) · [模块 README](../README.md)
