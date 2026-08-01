@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 03 章
+# Embedded Linux Primer 第 03 章 — Processor Basics
 
 > 对应目录：`chapter-03-processor-basics/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

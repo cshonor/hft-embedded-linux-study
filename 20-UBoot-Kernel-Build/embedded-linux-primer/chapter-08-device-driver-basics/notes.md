@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 08 章
+# Embedded Linux Primer 第 08 章 — Device Driver Basics
 
 > 对应目录：`chapter-08-device-driver-basics/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

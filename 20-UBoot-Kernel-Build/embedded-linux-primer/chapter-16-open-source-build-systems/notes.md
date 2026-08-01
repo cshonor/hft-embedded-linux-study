@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 16 章
+# Embedded Linux Primer 第 16 章 — Open Source Build Systems
 
 > 对应目录：`chapter-16-open-source-build-systems/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

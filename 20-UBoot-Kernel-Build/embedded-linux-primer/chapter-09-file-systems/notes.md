@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 09 章
+# Embedded Linux Primer 第 09 章 — File Systems
 
 > 对应目录：`chapter-09-file-systems/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

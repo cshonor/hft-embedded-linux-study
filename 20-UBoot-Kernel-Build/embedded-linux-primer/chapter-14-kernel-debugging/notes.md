@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 14 章
+# Embedded Linux Primer 第 14 章 — Kernel Debugging Techniques
 
 > 对应目录：`chapter-14-kernel-debugging/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

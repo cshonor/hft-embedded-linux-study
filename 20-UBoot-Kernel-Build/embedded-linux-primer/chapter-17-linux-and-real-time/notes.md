@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 17 章
+# Embedded Linux Primer 第 17 章 — Linux and Real Time
 
 > 对应目录：`chapter-17-linux-and-real-time/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

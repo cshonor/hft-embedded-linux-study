@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 01 章
+# Embedded Linux Primer 第 01 章 — Introduction
 
 > 对应目录：`chapter-01-introduction/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

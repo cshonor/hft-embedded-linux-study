@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 19 章
+# Embedded Linux Primer 第 19 章 — udev
 
 > 对应目录：`chapter-19-udev/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

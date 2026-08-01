@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 18 章
+# Embedded Linux Primer 第 18 章 — Universal Serial Bus
 
 > 对应目录：`chapter-18-usb/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

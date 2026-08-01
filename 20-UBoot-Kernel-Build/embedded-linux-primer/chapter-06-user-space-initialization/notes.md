@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 06 章
+# Embedded Linux Primer 第 06 章 — User Space Initialization
 
 > 对应目录：`chapter-06-user-space-initialization/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

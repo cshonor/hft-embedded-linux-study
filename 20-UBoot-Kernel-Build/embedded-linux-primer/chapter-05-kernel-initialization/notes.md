@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 05 章
+# Embedded Linux Primer 第 05 章 — Kernel Initialization
 
 > 对应目录：`chapter-05-kernel-initialization/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 07 章
+# Embedded Linux Primer 第 07 章 — Bootloaders
 
 > 对应目录：`chapter-07-bootloaders/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

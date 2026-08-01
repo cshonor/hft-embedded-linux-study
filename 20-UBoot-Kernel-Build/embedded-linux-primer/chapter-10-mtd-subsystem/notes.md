@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 10 章
+# Embedded Linux Primer 第 10 章 — MTD Subsystem
 
 > 对应目录：`chapter-10-mtd-subsystem/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

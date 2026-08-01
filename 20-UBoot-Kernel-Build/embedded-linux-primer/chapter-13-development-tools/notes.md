@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 13 章
+# Embedded Linux Primer 第 13 章 — Development Tools
 
 > 对应目录：`chapter-13-development-tools/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

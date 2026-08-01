@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 04 章
+# Embedded Linux Primer 第 04 章 — The Linux Kernel: A Different Perspective
 
 > 对应目录：`chapter-04-kernel-construction/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

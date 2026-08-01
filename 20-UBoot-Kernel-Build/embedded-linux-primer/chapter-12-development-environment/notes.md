@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 12 章
+# Embedded Linux Primer 第 12 章 — Embedded Development Environment
 
 > 对应目录：`chapter-12-development-environment/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  

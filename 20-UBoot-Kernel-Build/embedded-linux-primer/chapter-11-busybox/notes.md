@@ -1,4 +1,4 @@
-# Embedded Linux Primer 第 11 章
+# Embedded Linux Primer 第 11 章 — BusyBox
 
 > 对应目录：`chapter-11-busybox/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  
