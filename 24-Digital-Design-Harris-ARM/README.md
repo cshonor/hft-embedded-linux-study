@@ -1,13 +1,13 @@
 # Harris ·《数字设计和计算机体系结构：ARM版》
 
-> **独立书仓：** `25-Digital-Design-Harris-ARM/`（已从 CSAPP Ch4 notes 下提出）  
+> **独立书仓：** `24-Digital-Design-Harris-ARM/`（已从 CSAPP Ch4 notes 下提出）  
 > **结构：** 一章一个文件夹 · 一小节一个 md  
-> **联动：** [CSAPP Ch4](../01-CSAPP-3rd/chapter-04-processor-architecture/README.md) · [CSAPP 数字电路资料总表](../01-CSAPP-3rd/chapter-04-processor-architecture/notes/section-补充-数字电路学习资料.md) · [19-ARM64](../19-ARM64-Architecture/) · [23-Embedded-Linux](../23-Embedded-Linux-Practice/)
+> **联动：** [CSAPP Ch4](../01-CSAPP-3rd/chapter-04-processor-architecture/README.md) · [CSAPP 数字电路资料总表](../01-CSAPP-3rd/chapter-04-processor-architecture/notes/section-补充-数字电路学习资料.md) · [19-ARM64](../19-ARM64-Architecture/) · [22 实战](../22-Embedded-Linux-Practice/)
 
 ## 文件夹地图
 
 ```
-25-Digital-Design-Harris-ARM/
+24-Digital-Design-Harris-ARM/
 ├── ch01_binary/              # 第1章 … 每小节一个 md
 ├── ch02_combinational/       # 第2章  ★2.8 MUX  2.9 时序
 ├── ch03_sequential/          # 第3章  ★3.2 触发器  3.5 时序约束

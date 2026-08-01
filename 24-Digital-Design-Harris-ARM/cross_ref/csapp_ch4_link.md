@@ -1,6 +1,6 @@
 # Cross-ref · Harris ↔ CSAPP Ch4
 
-> 按「章文件夹 / 小节文件」链接 · 本仓已独立为 `25-Digital-Design-Harris-ARM`
+> 按「章文件夹 / 小节文件」链接 · 本仓已独立为 `24-Digital-Design-Harris-ARM`
 
 | Harris | 笔记路径 | CSAPP |
 |--------|----------|-------|

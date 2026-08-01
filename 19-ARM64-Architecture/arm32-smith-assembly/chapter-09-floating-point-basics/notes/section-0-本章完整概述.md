@@ -55,7 +55,7 @@ Ch10 舍入/异常 · Ch11 算术指令
 | **Linux 驱动/C float** | 概念即可；少写 V* |
 | **M4F 裸机** | 精读 |
 | **Ch7 Q 定点** | 无 FPU 替代方案 |
-| **[24 姿态/Kalman](../../../24-Motion-Control-Motor/)** | 通常 C + libm；本章懂 **NaN/使能** 即可 |
+| **[23 姿态/Kalman](../../../23-Motion-Control-Motor/)** | 通常 C + libm；本章懂 **NaN/使能** 即可 |
 
 ---
 

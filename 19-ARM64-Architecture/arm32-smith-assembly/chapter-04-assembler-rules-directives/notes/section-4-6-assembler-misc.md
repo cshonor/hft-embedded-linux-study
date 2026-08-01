@@ -51,7 +51,7 @@ CCS 汇编器可在 **数据段生成期** 调用内置函数，例如：
 
 **场景：** **浮点查找表**（→ **Ch12 Tables**）— 汇编时算好 ` .float` 序列，避免 MCU 启动后逐点计算。
 
-**本路线：** WSL + GNU **无** 同等内置 — 用 Python/CMake 生成 `.inc` 或 C 数组更常见（[24 飞控](../../../24-Motion-Control-Motor/) 姿态表）。
+**本路线：** WSL + GNU **无** 同等内置 — 用 Python/CMake 生成 `.inc` 或 C 数组更常见（[23 飞控](../../../23-Motion-Control-Motor/) 姿态表）。
 
 ---
 

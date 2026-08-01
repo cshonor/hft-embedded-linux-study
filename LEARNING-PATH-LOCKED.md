@@ -2,7 +2,7 @@
 
 > **目标：** 嵌入式 Linux 底层开发 + HFT 低延迟。  
 > **结论：** 书单深度够、广度闭环；**不要再扩书**。成败在于 **自底向上顺序** + **动手 Demo**，不在文件夹多少。  
-> **重要：** 文件夹编号 `00`–`25` 是库存标签，**不等于**执行顺序。执行顺序以本文为准；旧文 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) / README 编号序仅作索引用。
+> **重要：** 文件夹编号 `00`–`24` 是库存标签，**不等于**执行顺序。执行顺序以本文为准；旧文 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) / README 编号序仅作索引用。
 
 ---
 
@@ -22,7 +22,7 @@
 
 | 标签 | 文件夹 | 角色 |
 |------|--------|------|
-| 硬件地基 | `25-Digital-Design-Harris-ARM` | Phase1 · **当前** · CPU/逻辑/流水线/MMU 词汇源头（按已定深度：黑盒为主，门级不主攻） |
+| 硬件地基 | `24-Digital-Design-Harris-ARM` | Phase1 · **当前** · CPU/逻辑/流水线/MMU 词汇源头（按已定深度：黑盒为主，门级不主攻） |
 | 软硬件桥 | `02-c-programming` → `01-CSAPP-3rd` | Phase2 · C 母语 + 汇编/栈/缓存/VM/并发图景 |
 | 用户态 | `07-TLPI` · `08-system-low-level-hands-on` · `09-cpp-learning-notes` | Phase3 · 进程/线程/信号/`mmap`；动手 OS；C++（HFT/嵌入式通用） |
 | 网络用户态 | `10-PNP` · `11-UNP` · `12-TCP/IP Vol.1` | Phase3 尾 · Socket 与协议语义 |
@@ -43,19 +43,19 @@
 
 | 文件夹 | 说明 |
 |--------|--------|
-| `24-Motion-Control-Motor` | 电机/飞控兴趣选修；求职主线几乎不用，放最后 |
+| `23-Motion-Control-Motor` | 电机/飞控兴趣选修；求职主线几乎不用，放最后 |
 
 ### Harris / CSAPP 深度约束（已定，不改）
 
-- Harris：组合/时序取 **黑盒语义**（setup/hold、FIFO/FSM 思想）；门级/Verilog 不主攻 → 见 `25-…/学习深度_*.md`
-- CSAPP：流水线/缓存/VM 为 **主粮**；Ch4 是 Y86+HCL，不是 Verilog → 见 `25-…/学习路线_CSAPP与Harris_Linux驱动.md`
+- Harris：组合/时序取 **黑盒语义**（setup/hold、FIFO/FSM 思想）；门级/Verilog 不主攻 → 见 `24-…/学习深度_*.md`
+- CSAPP：流水线/缓存/VM 为 **主粮**；Ch4 是 Y86+HCL，不是 Verilog → 见 `24-…/学习路线_CSAPP与Harris_Linux驱动.md`
 
 ---
 
 ## 严格执行的 Phase 顺序
 
 ```
-Phase1  25 Harris（当前；未完成前不正式开下一 Phase）
+Phase1  24 Harris（当前；未完成前不正式开下一 Phase）
    ↓
 Phase2  02 C → 01 CSAPP
    ↓
@@ -64,21 +64,21 @@ Phase3  07 TLPI →（穿插 08 动手 / 09 C++）→ 10/11/12 网络
 Phase4  04 LKD + 同步 06 Gorman
    ↓
 Phase5  分叉并行（可偏重一条，另一条保底推进）
-        A 嵌入式: 19 → 20 → 21（含 DT）→ 23
+        A 嵌入式: 19 → 20 → 21（含 DT）→ 22
         B HFT:    13 → 15 → 16 → 14 → 17
    ↓
-Phase6  拓展: 03 · 05 · 18 · 00 ·（兴趣）24
+Phase6  拓展: 03 · 05 · 18 · 00 ·（兴趣）23
 ```
 
 ### Phase 细则
 
 | Phase | 内容 | 过关感 |
 |-------|------|--------|
-| **1** | `25` Harris（按已定 Linux 深度） | 能说清组合延迟/毛刺、setup/hold、寄存器与 FIFO 角色；不纠结门级 |
+| **1** | `24` Harris（按已定 Linux 深度） | 能说清组合延迟/毛刺、setup/hold、寄存器与 FIFO 角色；不纠结门级 |
 | **2** | `02` C → `01` CSAPP | 指针/内存过关；CSAPP 流水线、Cache、VM、并发能自己讲通 |
 | **3** | `07` TLPI → 网络 `10–12`；`08`/`09` 穿插 | 熟练进程/线程/信号/Socket/`mmap`/`epoll`；能写小 Demo。**先会用接口，再开 Phase4 内核实现** |
 | **4** | `04` LKD · `06` VM | 内核调度、内存、同步的入门级地图清晰 |
-| **5A** | `19–23` | 能跟启动链、设备树、写简单驱动 |
+| **5A** | `19–22` | 能跟启动链、设备树、写简单驱动 |
 | **5B** | `13`→`15`→`16`→`14`→`17` | 内核网络 → 观测 → eBPF → DPDK → HFT 工程 |
 | **6** | 拓展书 | 主线闭环后再加深度/语言/业务 |
 
@@ -88,7 +88,7 @@ Phase6  拓展: 03 · 05 · 18 · 00 ·（兴趣）24
 |--------|------------|
 | 先 CSAPP 再 C | **先 C 再 CSAPP**（Phase2） |
 | 编号序把 LKD 放在 TLPI 前 | **先用户态 TLPI+网络，再 LKD** |
-| `25` 当旁支 | **`25` 为 Phase1 第一课** |
+| `24` 当旁支 | **`24` 为 Phase1 第一课** |
 | `00` 业务最先 | **`00` 降为 Phase6 / 轻读** |
 | `03`/`05` 主线中段 | **Phase6 拓展** |
 | 嵌入式等内核后 | 仍建议 Phase4 后再开 A；可与 B 并行 |
@@ -112,7 +112,7 @@ Phase6  拓展: 03 · 05 · 18 · 00 ·（兴趣）24
 
 ## 当前状态
 
-- **正在：** Phase1 · `25-Digital-Design-Harris-ARM`  
+- **正在：** Phase1 · `24-Digital-Design-Harris-ARM`  
 - **下一站：** Phase2 · `02-c-programming` → `01-CSAPP-3rd`  
 - **暂不新开：** `04`/`13`/`14`/`17` 等内核旁路与 HFT 工程（除非做极小对照实验）
 

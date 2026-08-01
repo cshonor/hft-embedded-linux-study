@@ -54,7 +54,7 @@ sin(x) ≈ x - x³/3! + x⁵/5! - …
 
 ---
 
-### 与 [24 飞控](../../../24-Motion-Control-Motor/) / Linux
+### 与 [23 飞控](../../../23-Motion-Control-Motor/) / Linux
 
 | 路径 | 做法 |
 |------|------|

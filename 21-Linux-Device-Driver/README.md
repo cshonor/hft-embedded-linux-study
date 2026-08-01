@@ -1,6 +1,6 @@
 # Linux 设备驱动 · 字符 / 平台驱动 · 设备树
 
-**文件夹 21** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+**文件夹 21** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)
 
 > **定位：** **内核态模块** — 补齐 HFT 链里「只写用户态」的缺口。  
 > **范围：** 字符驱动 · platform 驱动 · **设备树（DTS/DTB）** · **非** MCU 裸机 HAL。  
@@ -74,4 +74,4 @@ Madieu Ch6 大纲：[OUTLINE §Ch6](./linux-device-drivers-development/OUTLINE.m
 - [ ] 树莓派上改过 **DTS** 并匹配 platform/I2C 驱动  
 - [ ] 读过 usage-model，能解释 DTB 从哪来、内核用来干什么  
 
-**上一章：** [20 构建](../20-UBoot-Kernel-Build/) · **下一章：** [23 实战](../23-Embedded-Linux-Practice/)
+**上一章：** [20 构建](../20-UBoot-Kernel-Build/) · **下一章：** [22 实战](../22-Embedded-Linux-Practice/)

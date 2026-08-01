@@ -12,7 +12,7 @@
 |---|---|
 | **补什么** | **ARMv8/v9 · A64 64 位指令** · 异常/中断 · **GIC** · **内存管理** |
 | **与 Smith 关系** | [Smith v4T/v7-M 汇编](../chapter-02-programmers-model/) = 汇编思维入门；**本书 = AArch64 主战场** |
-| **飞控/无人机** | 异常 · GIC · MM · 屏障/原子 — 对接 [21 驱动](../../21-Linux-Device-Driver/) · [24 飞控](../../24-Motion-Control-Motor/) |
+| **飞控/无人机** | 异常 · GIC · MM · 屏障/原子 — 对接 [21 驱动](../../21-Linux-Device-Driver/) · [23 飞控](../../23-Motion-Control-Motor/) |
 | **下一步** | [20 U-Boot/构建](../../20-UBoot-Kernel-Build/) |
 
 📋 **章节目录与裁剪** → [OUTLINE.md](./OUTLINE.md)

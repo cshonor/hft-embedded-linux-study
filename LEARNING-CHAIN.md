@@ -5,7 +5,7 @@
 
 ```
 Phase 锁定（摘要）:
-  25 Harris → 02 C → 01 CSAPP → 07 TLPI + 10–12 网络
+  24 Harris → 02 C → 01 CSAPP → 07 TLPI + 10–12 网络
   → 04 LKD + 06 Gorman → 分叉 A 嵌入式 19–23 / B HFT 13→15→16→14→17
   → 拓展 03·05·18·00·24
 ```
@@ -29,7 +29,7 @@ Phase6  03 Hennessy · 05 ULK · 18 Rust · 00 交易 · 24 电机（兴趣）
 
 **HFT 最短路径：** `25` → `02` C → `01` → `07` → `10–12` → `04`+`06` → `13`→`15`→`16`→`14`→`17`
 
-**Harris 深度：** 黑盒为主，见 [25 学习深度](./25-Digital-Design-Harris-ARM/学习深度_时序对Linux驱动.md) · [CSAPP↔Harris](./25-Digital-Design-Harris-ARM/学习路线_CSAPP与Harris_Linux驱动.md)
+**Harris 深度：** 黑盒为主，见 [24 学习深度](./24-Digital-Design-Harris-ARM/学习深度_时序对Linux驱动.md) · [CSAPP↔Harris](./24-Digital-Design-Harris-ARM/学习路线_CSAPP与Harris_Linux驱动.md)
 
 ---
 
@@ -37,7 +37,7 @@ Phase6  03 Hennessy · 05 ULK · 18 Rust · 00 交易 · 24 电机（兴趣）
 
 | 步骤 | 作用 |
 |------|------|
-| **25 Harris** | 硬件黑盒词汇（延迟、时序、寄存器/FIFO）—— Phase1 |
+| **24 Harris** | 硬件黑盒词汇（延迟、时序、寄存器/FIFO）—— Phase1 |
 | **02 C** | **系统级 C** — 指针、内存、链接；能读会写底层风格代码 |
 | **01 CSAPP** | 汇编、栈、缓存、VM、并发 **整体图景**（主粮） |
 | **03 Hennessy** | Phase6 拓展 — CSAPP 吃透后再量化加深 |
@@ -53,7 +53,7 @@ Phase6  03 Hennessy · 05 ULK · 18 Rust · 00 交易 · 24 电机（兴趣）
 
 | 文件夹 | 模块 | 锁定 Phase |
 |--------|------|------------|
-| **25** | [Harris](./25-Digital-Design-Harris-ARM/) | **1** 当前 |
+| **24** | [Harris](./24-Digital-Design-Harris-ARM/) | **1** 当前 |
 | **02** | [C](./02-c-programming/) | **2** |
 | **01** | CSAPP | **2** |
 | **07** / **08** / **09** | TLPI · 动手 OS · C++ | **3** |
@@ -61,14 +61,14 @@ Phase6  03 Hennessy · 05 ULK · 18 Rust · 00 交易 · 24 电机（兴趣）
 | **04** + **06** | LKD · Gorman | **4** |
 | **19–23** | 嵌入式支线 | **5A** |
 | **13**→**15**→**16**→**14**→**17** | 内核网 · 性能 · DPDK · HFT | **5B** |
-| **03** / **05** / **18** / **00** / **24** | Hennessy · ULK · Rust · 交易 · 电机 | **6** 拓展 |
+| **03** / **05** / **18** / **00** / **23** | Hennessy · ULK · Rust · 交易 · 电机 | **6** 拓展 |
 
 ---
 
 ## 内核段衔接（锁定）
 
 ```
-25 Harris → 02 C → 01 CSAPP
+24 Harris → 02 C → 01 CSAPP
     ↓
 07 TLPI → 10–12 网络（08/09 穿插）
     ↓

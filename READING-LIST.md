@@ -4,7 +4,7 @@
 
 **总阅读顺序** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · **文件夹顺序** → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
 
-**按文件夹读：** HFT 主线 `00 → … → 16` · C++ 索引 `17` · 嵌入式支线 `18 → … → 23`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线18–23-文件夹)）
+**按文件夹读：** HFT 主线 `00 → … → 16` · C++ 索引 `17` · 嵌入式支线 `18 → … → 23`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线19–23-文件夹)）
 
 | 标签 | 含义 |
 |------|------|
@@ -371,19 +371,19 @@ L4  Love → Gorman → 07 自制 → 08 PNP → 09–12 网络栈  ← 系统�
     ↓
 L5  13-HFT + 14-Rust              ← 动手实现（C++ / Rust）
     ↓
-L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外文 19–21 · DT · PID
+L6  19–23 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外文 19–21 · DT · PID
 ```
 
-→ 嵌入式支线详情：[HFT-READING-ROADMAP §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+→ 嵌入式支线详情：[HFT-READING-ROADMAP §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)
 
 ---
 
-## 补充：嵌入式 Linux 支线（`19`–`24` 文件夹）
+## 补充：嵌入式 Linux 支线（`19`–`23` 文件夹）
 
 > **定位：** **第二职业退路**（飞行器 / 网关 / 车载）；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux** — **排除** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
 > **书目：** **19–21 核心以英文原版为主** · **19 例外**：《ARM64体系结构编程与实践》（AArch64 实战主书）· **汇编前置**（Smith 可选 + 奔跑吧 A64）。  
-> **顺序：** `19 → … → 24` · 建议 **[04 LKD + 07 TLPI](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)** 后再开 · **24 用业余时间**。
+> **顺序：** `19 → … → 23` · 建议 **[04 LKD + 07 TLPI](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)** 后再开 · **23 用业余时间**。
 
 ### 全新阅读顺序（19–21 核心）
 
@@ -401,8 +401,8 @@ L6  19–24 嵌入式 Linux + 飞控（可选）  ← ARM 汇编前置 · 全外
 | **19** ARM64 | Smith · **《ARM64体系结构编程与实践》** · [Smith OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md) · [奔跑吧 OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md) | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** 构建 | *Embedded Linux Primer* → *MELP* 3rd · [四书分工](./20-UBoot-Kernel-Build/FOUR-BOOKS-OVERLAP.md) | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
 | **21** 驱动+DT | Madieu（含 DTS）→ LDD3（按需）· [内核 DT Usage](https://docs.kernel.org/devicetree/usage-model.html) | [21](./21-Linux-Device-Driver/) · [Madieu OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
-| **23** 实战 | 项目实战（笔记随板卡） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
-| **24** 运动控制 | 自控 / Kalman（算法卷） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
-| **25** Harris 数字设计 ARM | 《数字设计和计算机体系结构：ARM版》· 对接 CSAPP Ch4 / 嵌入式 | [25-Digital-Design-Harris-ARM/](./25-Digital-Design-Harris-ARM/) |
+| **22** 实战 | 项目实战（笔记随板卡） | [22-Embedded-Linux-Practice/](./22-Embedded-Linux-Practice/) |
+| **23** 运动控制 | 自控 / Kalman（算法卷） | [23-Motion-Control-Motor/](./23-Motion-Control-Motor/) |
+| **24** Harris 数字设计 ARM | 《数字设计和计算机体系结构：ARM版》· 对接 CSAPP Ch4 / 嵌入式 | [24-Digital-Design-Harris-ARM/](./24-Digital-Design-Harris-ARM/) |
 
 **可复用 HFT 链：** C/GNU-C · 05–07 内核 · 03–04 性能/BPF · 14 DPDK · 16 HFT 低延迟与 **PREEMPT_RT / 绑核**。

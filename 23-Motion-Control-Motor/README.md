@@ -1,9 +1,9 @@
 # 运动控制与电机 · PID · 姿态解算 · 飞控整合
 
-**文件夹 24** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+**文件夹 23** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)
 
 > **定位：** 无人机项目的 **算法内核** — 只学 **控制逻辑**，**不学** STM32 裸机 / FreeRTOS / PCB。  
-> **落地：** 全部依托 **ARM-A + 嵌入式 Linux**（[19–23](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)）。  
+> **落地：** 全部依托 **ARM-A + 嵌入式 Linux**（[19–23](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)）。  
 > **优先级：** **HFT 主线优先**；本模块用 **业余时间**，不抢占 `17→10→15` 进度。
 
 ---
@@ -96,7 +96,7 @@ PWM / ESC 驱动 ◄────────────────────
 - [ ] Linux 下 **PWM + I2C IMU** 驱动与用户态闭环跑通  
 - [ ] **cyclictest / perf** 证明控制周期 p99 达标  
 
-**上一章：** [23 嵌入式实战](../23-Embedded-Linux-Practice/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+**上一章：** [22 嵌入式实战](../22-Embedded-Linux-Practice/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)
 
 ---
 

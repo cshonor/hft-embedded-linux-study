@@ -1,6 +1,6 @@
 # 嵌入式 Linux 项目实战 · 无人机 / 网关
 
-**文件夹 23** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+**文件夹 22** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)
 
 > **定位：** **18–21 合集落地** — 飞行器 / 工业网关工程案例。  
 > **排除：** STM32 裸机 · RTOS-only · 不含 Linux 的 MCU 项目。
@@ -35,7 +35,7 @@
 | 2 | **字符驱动** 读 IMU · 用户态 poll |
 | 3 | **DT** 描述传感器 · 驱动 auto probe |
 | 4 | **多线程** 采集 + 融合 · 绑核 + 延迟统计 |
-| 5 | 按书目完成 **无人机子系统** — 控制环见 [23](../24-Motion-Control-Motor/) |
+| 5 | 按书目完成 **无人机子系统** — 控制环见 [23](../23-Motion-Control-Motor/) |
 
 ---
 
@@ -53,4 +53,4 @@
 - [ ] 用 **perf/延迟统计** 证明控制/采集路径 p99 可接受  
 - [ ] 能讲清 **DT + 驱动 + 应用** 分工  
 
-**上一章：** [21 驱动+DT](../21-Linux-Device-Driver/) · **下一章：** [24 运动控制 / PID / 飞控](../24-Motion-Control-Motor/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–24)
+**上一章：** [21 驱动+DT](../21-Linux-Device-Driver/) · **下一章：** [23 运动控制 / PID / 飞控](../23-Motion-Control-Motor/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线19–23)

@@ -10,7 +10,7 @@
 |---|---|
 | **标签** | **跳过**（Linux/奔跑吧主线）— **M4F 浮点三章收官**（Ch9–11） |
 | **承接** | [Ch9 搬运/转换](../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md) · [Ch10 舍入/异常](../chapter-10-floating-point-rounding-exceptions/notes/section-0-本章完整概述.md) |
-| **后续** | **Ch12** 查表 · **Ch22** NEON · [24 飞控](../../../24-Motion-Control-Motor/) 多用 C `float` |
+| **后续** | **Ch12** 查表 · **Ch22** NEON · [23 飞控](../../../23-Motion-Control-Motor/) 多用 C `float` |
 
 ---
 

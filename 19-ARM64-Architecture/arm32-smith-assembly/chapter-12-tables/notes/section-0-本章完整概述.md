@@ -68,7 +68,7 @@ Ch13：查表/搜索常包在 BL 子程序里
 | [Ch5 寻址](../chapter-05-loads-stores-addressing/) | 缩放索引是本章硬件基础 |
 | [Ch11 泰勒 sin](../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | 同一函数：**算** vs **查** |
 | [20 构建](../../20-UBoot-Kernel-Build/) | 链接脚本把 `.rodata` 表放进 Flash |
-| [24 飞控](../../24-Motion-Control-Motor/) | 姿态常用 **C libm**；MCU 侧可查表 |
+| [23 飞控](../../23-Motion-Control-Motor/) | 姿态常用 **C libm**；MCU 侧可查表 |
 
 ---
 

@@ -1,6 +1,6 @@
 # 23 · 运动控制与电机 · 提纲
 
-**顺序：** [18](../19-ARM64-Architecture/) → … → [22](../23-Embedded-Linux-Practice/) → **23**
+**顺序：** [18](../19-ARM64-Architecture/) → … → [22](../22-Embedded-Linux-Practice/) → **23**
 
 ---
 
@@ -11,7 +11,7 @@
 | 1 | PID · 离散闭环 | 《自动控制原理》胡寿松 — Ch6 PID / 数字控制相关章 | 待笔记 |
 | 2 | 姿态 · Kalman · IMU | 《卡尔曼滤波与组合导航原理》秦永元 | 待笔记 |
 | 3 | PWM · ESC · 无刷常识 | 章节笔记 + ESC 协议 datasheet | 待笔记 |
-| 4 | Linux 驱动对接 | LDD3 + [20](../21-Linux-Device-Driver/) + [22](../23-Embedded-Linux-Practice/) | 待笔记 |
+| 4 | Linux 驱动对接 | LDD3 + [20](../21-Linux-Device-Driver/) + [22](../22-Embedded-Linux-Practice/) | 待笔记 |
 | 5 | 飞控调度 · PREEMPT_RT | [05 LKD](../04-Linux-Kernel-Development/) Ch4 + [03 SysPerf](../15-Systems-Performance-2nd/) | 待笔记 |
 
 ---

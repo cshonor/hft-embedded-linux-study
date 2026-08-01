@@ -38,7 +38,7 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 ## 🗺️ 执行顺序（锁定 · 编号≠读序）
 
 ```
-25 Harris → 02 C → 01 CSAPP → 07 TLPI（08/09 穿插）→ 10–12 网络
+24 Harris → 02 C → 01 CSAPP → 07 TLPI（08/09 穿插）→ 10–12 网络
 → 04 LKD + 06 Gorman
 → A 嵌入式 19–23  ‖  B HFT 13 → 15 → 16 → 14 → 17
 → 拓展 03 · 05 · 18 · 00 · 24
@@ -67,6 +67,6 @@ git clone https://github.com/cshonor/cpp-learning-notes.git
 | **16** | [BPF-Performance-Tools](./16-BPF-Performance-Tools/) |
 | **17** | [HFT-Low-Latency-Practice](./17-HFT-Low-Latency-Practice/) |
 | **18** | [Rust-Quant-Trading-Guide](./18-Rust-Quant-Trading-Guide/) |
-| **19–24** | 嵌入式 Linux + 飞控 — 见 [路线图](./HFT-READING-ROADMAP.md) |
+| **19–23** | 嵌入式 Linux + 飞控 — 见 [路线图](./HFT-READING-ROADMAP.md) |
 
 > **当前：** Phase1 `25` Harris。下一站 Phase2：`02` C → `01` CSAPP。

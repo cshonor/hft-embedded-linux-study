@@ -1,4 +1,4 @@
-﻿## Ch7 完整概述 · 整数逻辑与算术
+## Ch7 完整概述 · 整数逻辑与算术
 
 > ***ARM Assembly Language*** — William Sw Smith  
 > **English:** Integer Logic and Arithmetic · **精读**  
@@ -59,7 +59,7 @@ Ch8：B.cond / IT / 循环
 | 内核 64 bit `jiffies` | ADC 链 |
 | 驱动 bitfield | UBFX/BFI |
 | [21 驱动](../../../../21-Linux-Device-Driver/) `readl`+掩码 | 同 TST/BFI 语义 |
-| [24 PID/Kalman](../../../24-Motion-Control-Motor/) | Q 或 float |
+| [23 PID/Kalman](../../../23-Motion-Control-Motor/) | Q 或 float |
 | HFT 定点 tick | Q 思想 |
 
 ---

@@ -15,7 +15,7 @@
 | **09** | [C++ 外部索引](./09-cpp-learning-notes/) | Modern C++ → 并发（PNP/HFT 前置） |
 | **10–14** | PNP / UNP / TCP/IP / Rosen / DPDK | 网络纵深 |
 | **17–18** | HFT Practice / Rust | 动手实现 |
-| **19–24** | ARM64 · 构建 · 驱动(+DT) · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
+| **19–23** | ARM64 · 构建 · 驱动(+DT) · 实战 · **PID/飞控** | 嵌入式 Linux 退路（可选支线） |
 
 ### Gregg 双书 · 15 → 16（后置）
 
@@ -79,19 +79,19 @@
 18  Rust Quant Trading Guide
 
 ── 可选支线 · 嵌入式 Linux ──
-19–24  …
+19–23  …
 ```
 
 **HFT 主线执行序号：** `00 → 01 → 02 C → 03 → 04 → 05 → 06 → 07 → 08/01 → 09 → 01网络 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18`
 
-**嵌入式支线（独立顺序 · 建议 04–07 后再开 · 24 用业余时间）：** `19 → 20 → 21 → 22 → 23 → 24`
+**嵌入式支线（独立顺序 · 建议 04–07 后再开 · 23 用业余时间）：** `19 → 20 → 21 → 22 → 23`
 
 > **C 语言模块：** [02-c-programming/](./02-c-programming/) — **01 CSAPP 之后、03 Hennessy 之前**；笔记正文在本地 `01`–`05`（源自 [00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C)）。
 
 > **C++ 模块：** [09-cpp-learning-notes/](./09-cpp-learning-notes/) — 笔记正文已在本地 `01`–`10`；**07 TLPI 之后、10 PNP 之前** 至少读完 *Effective Modern C++*。
 
 
-> **板块封顶：** `00`–`18` 在本仓（含 **`09` C++ 索引**）+ **`19`–`24`** 嵌入式 Linux + 运动控制支线；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+> **板块封顶：** `00`–`18` 在本仓（含 **`09` C++ 索引**）+ **`19`–`23`** 嵌入式 Linux + 运动控制支线（**`24` Harris** 为 Phase1 硬件地基）；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
 
 ---
 
@@ -301,22 +301,22 @@
 
 ---
 
-## 六、嵌入式 Linux 支线（`19`–`24`）
+## 六、嵌入式 Linux 支线（`19`–`23`）
 
 > **定位：** **第二职业退路** — 飞行器 / 网关 / 车载；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux**；**不学** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
 > **C 基础：** [02 C](./02-c-programming/) 是支线 **硬前置** — 驱动写寄存器、飞控用户态环、与内核 `ioctl` 交互全是 C；主线 `01`→`02`→`03` 过关后，开 `19` 不必重学语法。读 Hennessy 时可 **用 C 做 ARM 裸机小实验**（QEMU 验证 EL 切换）同步练硬件理论。  
-> **24 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
+> **23 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
 
 ### 主次优先级（不可颠倒）
 
 | 优先级 | 内容 | 时间 |
 |--------|------|------|
 | **P0 · 主线** | HFT — C++ / Rust / DPDK / `17` 引擎 | **全职学习** |
-| **P1 · 支线** | 嵌入式 Linux `19`–`23` | 并行或 HFT 阶段完成后 |
-| **P2 · 飞控算法** | `24` PID / IMU / 飞控环 | **仅 HFT 每日任务后的业余时间** |
+| **P1 · 支线** | 嵌入式 Linux `19`–`22` | 并行或 HFT 阶段完成后 |
+| **P2 · 飞控算法** | `23` PID / IMU / 飞控环 | **仅 HFT 每日任务后的业余时间** |
 
-### 为何必须学 24（运动控制）
+### 为何必须学 23（运动控制）
 
 1. **无人机 GitHub 项目缺这一环就飞不起来** — WiFi/图传/视觉不能替代 PID + 姿态 + 电机。  
 2. **岗位：** 驱动 + DT → 适配；**+ 自控** → 飞控 / 伺服整机。  
@@ -336,7 +336,7 @@
 | 条件 | 说明 |
 |------|------|
 | **建议前置** | [04 LKD](./04-Linux-Kernel-Development/) + [07 TLPI](./07-The-Linux-Programming-Interface/) + [21 驱动](./21-Linux-Device-Driver/) |
-| **24 前置** | 建议 **23 或至少 21（含 DT）** 后再开算法整合 |
+| **23 前置** | 建议 **22 或至少 21（含 DT）** 后再开算法整合 |
 | **C 语言** | [02 C](./02-c-programming/) · K&R + *Pointers on C* + CSAPP/TLPI 可复用 |
 
 ### 全新阅读顺序（19 例外 · 汇编前置）
@@ -354,8 +354,8 @@
 | **4** | ***Linux Device Drivers Development*** — Madieu | **驱动实操主书** — [22 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [评测](./21-Linux-Device-Driver/MADIEU-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
 | **5** | ***Linux Device Drivers*, 3rd** — LDD3 | **原理补课**（2.6；无 DTS）— [18 章 OUTLINE](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) · [评测](./21-Linux-Device-Driver/LDD3-EVAL.md) | [**21**](./21-Linux-Device-Driver/) |
 
-**23–24 延续：** [23 实战](./23-Embedded-Linux-Practice/) · [24 飞控算法](./24-Motion-Control-Motor/)  
-**设备树：** 并入 [21](./21-Linux-Device-Driver/)（Madieu Ch6 + [内核 DT Usage](https://docs.kernel.org/devicetree/usage-model.html)）；**已删独立 22 文件夹**。
+**22–23 延续：** [22 实战](./22-Embedded-Linux-Practice/) · [23 飞控算法](./23-Motion-Control-Motor/)  
+**设备树：** 并入 [21](./21-Linux-Device-Driver/)（Madieu Ch6 + [内核 DT Usage](https://docs.kernel.org/devicetree/usage-model.html)），不单开号。
 
 ### 严格顺序（文件夹级）
 
@@ -366,9 +366,9 @@
  ↓
 21  Madieu（实操，含 DTS）→ LDD3（原理按需）+ 官方 DT 文档
  ↓
-23  无人机 / 网关项目实战
+22  无人机 / 网关项目实战
  ↓
-24  PID · 电机 · 姿态解算 · 飞控调度（PREEMPT_RT）
+23  PID · 电机 · 姿态解算 · 飞控调度（PREEMPT_RT）
 ```
 
 ### 文件夹 ↔ 必读书（19–21 · 全外文核心）
@@ -378,12 +378,12 @@
 | **19** | Smith（[OUTLINE](./19-ARM64-Architecture/arm32-smith-assembly/OUTLINE.md)）+ **《ARM64体系结构编程与实践》**（[OUTLINE](./19-ARM64-Architecture/arm64-programming-practice/OUTLINE.md)） | [19-ARM64-Architecture/](./19-ARM64-Architecture/) |
 | **20** | ***Mastering Embedded Linux Programming*, 3rd ed** · ***Embedded Linux Primer*** | [20-UBoot-Kernel-Build/](./20-UBoot-Kernel-Build/) · [Simmonds OUTLINE](./20-UBoot-Kernel-Build/mastering-embedded-linux-programming/OUTLINE.md) |
 | **21** | **Madieu**（实操）· **LDD3**（原理补课）· DT 官方文档 | [21](./21-Linux-Device-Driver/) · [Madieu](./21-Linux-Device-Driver/linux-device-drivers-development/OUTLINE.md) · [LDD3](./21-Linux-Device-Driver/linux-device-drivers-3rd/OUTLINE.md) |
-| **23** | 项目实战（笔记随板卡选型） | [23-Embedded-Linux-Practice/](./23-Embedded-Linux-Practice/) |
-| **24** | 自控 / Kalman（算法卷 · 与 23 整合） | [24-Motion-Control-Motor/](./24-Motion-Control-Motor/) |
+| **22** | 项目实战（笔记随板卡选型） | [22-Embedded-Linux-Practice/](./22-Embedded-Linux-Practice/) |
+| **23** | 自控 / Kalman（算法卷 · 与 22 整合） | [23-Motion-Control-Motor/](./23-Motion-Control-Motor/) |
 
 <!-- 旧表（国产书）已废止 — 见 git 历史若需对照 -->
 
-**24 子目录：** [Ch1 PID](./24-Motion-Control-Motor/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./24-Motion-Control-Motor/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./24-Motion-Control-Motor/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./24-Motion-Control-Motor/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./24-Motion-Control-Motor/chapter-05-flight-control-scheduling/)
+**23 子目录：** [Ch1 PID](./23-Motion-Control-Motor/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./23-Motion-Control-Motor/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./23-Motion-Control-Motor/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./23-Motion-Control-Motor/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./23-Motion-Control-Motor/chapter-05-flight-control-scheduling/)
 
 ### 可直接复用（HFT 链 · 不用重学）
 

@@ -31,4 +31,4 @@
 - [ ] `cyclictest` 在目标板上给出可接受 **max latency**  
 - [ ] 飞控环 **overrun** 可日志 + 统计（异步，不阻塞控制）
 
-→ [22 无人机实战](../../23-Embedded-Linux-Practice/) · [16 HFT 测量](../../17-HFT-Low-Latency-Practice/chapter-10-延迟测量与基准压测.md)
+→ [22 无人机实战](../../22-Embedded-Linux-Practice/) · [16 HFT 测量](../../17-HFT-Low-Latency-Practice/chapter-10-延迟测量与基准压测.md)

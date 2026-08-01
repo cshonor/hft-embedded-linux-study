@@ -21,6 +21,6 @@
 /dev/imu0  ──read──► 姿态解算 ──► PID ──► /dev/pwm_esc 或 sysfs
 ```
 
-→ 书目：《嵌入式 Linux 无人机开发实战》（与 [22](../../23-Embedded-Linux-Practice/) 共用）
+→ 书目：《嵌入式 Linux 无人机开发实战》（与 [22](../../22-Embedded-Linux-Practice/) 共用）
 
 → 下一章：[Ch5 调度与实时性](../chapter-05-flight-control-scheduling/)
