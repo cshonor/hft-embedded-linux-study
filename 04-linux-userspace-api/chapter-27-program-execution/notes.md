@@ -6,9 +6,7 @@
 
 **优先级**：🔴（shell、服务拉起外部程序、fork+exec 标准模型）  
 **前置**：[Ch24 fork](../chapter-24-process-creation/notes.md) · [Ch25 终止](../chapter-25-process-termination/notes.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/notes.md)  
-**后置**：[Ch28 fork/exec 细节](../chapter-28-process-creation-exec-detail/notes.md) · [Ch9 凭证 / SUID](../chapter-09-process-credentials/notes.md)
-
-> 本书编号：凭证在 **Ch9**；Ch28 是 fork/exec 更细规则。用户大纲里的「Ch28 凭证」按仓库 CHAPTER-MAP 对应到 Ch9。
+**后置**：[Ch28 fork/exec 细节](../chapter-28-process-creation-exec-detail/notes.md) · [Ch9 凭证 / SUID](../chapter-09-process-credentials/notes.md)（SUID 在 exec 时生效）
 
 ---
 

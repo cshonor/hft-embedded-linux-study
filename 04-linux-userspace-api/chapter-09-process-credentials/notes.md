@@ -4,9 +4,11 @@
 > 书名原文：**Process Credentials**  
 > ⚠️ **本章讲进程运行时凭证**；账户数据库见 [Ch8 Users and Groups](../chapter-08-users-and-groups/notes.md)。
 
+> **编号说明：** 若大纲把「凭证 / SUID」标成 Ch28，那是与 Kerrisk 错位——本仓库按书：凭证 = **Ch9**；[Ch28](../chapter-28-process-creation-exec-detail/notes.md) = fork/exec 更细规则；调度 = [Ch35](../chapter-35-process-priorities-scheduling/notes.md)（Ch29 是线程导论）。
+
 **优先级**：🔴（权限检查 / setuid / 安全铺垫）  
-**前置**：[Ch8 Users and Groups](../chapter-08-users-and-groups/notes.md)  
-**后置**：[Ch10 Times and Dates](../chapter-10-time/notes.md) · [Ch27 Program Execution](../chapter-27-program-execution/notes.md) · Ch38/39 特权与 capabilities
+**前置**：[Ch8 Users and Groups](../chapter-08-users-and-groups/notes.md) · [Ch24 fork](../chapter-24-process-creation/notes.md) · [Ch27 exec](../chapter-27-program-execution/notes.md)  
+**后置**：[Ch10 Times and Dates](../chapter-10-time/notes.md) · [Ch38 特权程序](../chapter-38-secure-privileged/notes.md) · [Ch39 Capabilities](../chapter-39-capabilities/notes.md)
 
 ---
 
@@ -115,6 +117,18 @@ seteuid(0):
 
 若无 Saved-ID，降权后**无法**再回到 0。
 
+### 永久丢弃特权（对外 SUID 程序推荐）
+
+业务结束后不要保留可恢复 root：
+
+```c
+setuid(getuid());   /* 特权进程：R/E/S 全部钉成 RUID，无法再 seteuid(0) */
+```
+
+临时降权用 `seteuid(getuid())`（Saved 仍为 0，可再提权）——仅内部可信阶段使用。
+
+Demo：[`code/seteuid_drop_restore.c`](./code/seteuid_drop_restore.c) · [`code/setuid_permanent_drop.c`](./code/setuid_permanent_drop.c)
+
 ---
 
 ## 9.5 获取凭证 API
@@ -167,18 +181,24 @@ Demo：[`code/seteuid_drop_restore.c`](./code/seteuid_drop_restore.c)（需自�
 
 ---
 
-## 9.8 fork / exec / exit 时凭证
+## 9.8 fork / exec 对凭证（必考）
 
-| 时机 | 规则 |
-|------|------|
-| **fork** | 子进程**完整复制**父进程全部凭证 |
-| **exec** | RUID/RGID **不变** |
-| | 文件 **setuid 位开** → EUID = 文件属主 UID；**否则 EUID = RUID**（setgid 对称：EGID） |
-| | **新 EUID（及 EGID）复制到 Saved-ID**（无论是否带 setuid 位） |
-| | FUID 跟随 EUID |
-| **exit** | 凭证无单独「变更」；进程销毁即释放 |
+| 行为 | ruid | euid | saved-set UID |
+|------|------|------|---------------|
+| **fork()** | 继承 | 继承 | 继承 |
+| **exec 普通程序**（无 SUID 位） | 不变 | **不变** | ← 拷贝当前 euid |
+| **exec SUID 程序** | 不变 | = 文件属主 | ← 拷贝**新** euid（exec 前旧 euid 已反映在切换逻辑中；见 man/书表） |
 
-> 写安全代码时用 `getresuid` **打印验证**；边角细节见 `man 2 execve` / 书中表格。
+要点：
+
+- **只有 exec 加载带 SUID 位的程序**才会把 euid 换成文件属主；**fork 永不改 UID**。  
+- SUID 进程再 fork：子**继承 euid 特权**；子若再 exec **普通**程序，euid **不会自动掉回** ruid。  
+- Linux 上 shebang 脚本的 SUID/SGID **无效**（防脚本提权）。  
+- 补充组：`getgroups`/`setgroups`（仅 root 可改）；exec/SUID **不改**附属组列表。
+
+文件访问判定（看 euid / egid+附属组，Linux 文件侧还有 fsuid≈euid）：属主位 → 组位 → other。
+
+> 写安全代码时用 `getresuid` **打印验证**；边角见 `man 2 execve` / `man 7 credentials`。
 
 ---
 
@@ -187,13 +207,16 @@ Demo：[`code/seteuid_drop_restore.c`](./code/seteuid_drop_restore.c)（需自�
 1. **特权进程 ≠ RUID=0**  
    判据：**EUID==0**。普通用户跑 setuid-root：`RUID≠0, EUID=0` → 仍是特权进程。
 
-2. **为何同时有 `setuid` / `seteuid` / `setresuid`？**  
-   历史：BSD → SUS → Linux 扩展；能力递增，旧接口保留兼容。
+2. **`setuid` vs `seteuid`**  
+   特权下 `setuid(uid)` 常把 R+E+S 一并钉死；`seteuid` 只动有效 ID（可配合 Saved 来回切）。
 
-3. **Saved-ID 唯一核心用途**  
-   支持 setuid 程序 **多次** 降权 / 提权。
+3. **Saved-ID**  
+   支持 setuid 程序 **多次** 降权 / 提权；对外服务结束应用 `setuid(getuid())` 永久丢弃。
 
-4. **FUID**  
+4. **环境变量**  
+   SUID 程序须警惕 `LD_PRELOAD` / `LD_LIBRARY_PATH` 等劫持；见 Ch38。
+
+5. **FUID**  
    现代默认=EUID；POSIX 无；别写进可移植逻辑。
 
 ---
