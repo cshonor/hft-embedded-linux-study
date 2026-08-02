@@ -7,7 +7,7 @@
 
 **优先级**：🔴（信号×线程、fork、NPTL 认知）  
 **前置**：[Ch29](../chapter-29-threads-intro/notes.md)–[Ch32](../chapter-32-thread-cancellation/notes.md) · [Ch22 sigwait](../chapter-22-signals-advanced/notes.md) · [Ch28 fork](../chapter-28-process-creation-exec-detail/notes.md)  
-**后置**：[Ch34 进程组/会话](../chapter-34-process-groups-sessions/notes.md)（线程模块收束）
+**后置**：[Ch34 进程组/会话](../chapter-34-process-groups-sessions/notes.md)（线程模块收束；daemon 见 [Ch37](../chapter-37-daemons/notes.md)）
 
 ---
 
