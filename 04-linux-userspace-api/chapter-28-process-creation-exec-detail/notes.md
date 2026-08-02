@@ -15,7 +15,7 @@
 
 **优先级**：🔴（多线程 fork、信号/fd 生命周期、clone 关系）  
 **前置**：[Ch24](../chapter-24-process-creation/notes.md) · [Ch25](../chapter-25-process-termination/notes.md) · [Ch26](../chapter-26-monitoring-child-processes/notes.md) · [Ch27](../chapter-27-program-execution/notes.md)  
-**后置**：[Ch29 线程导论](../chapter-29-threads-intro/notes.md) · 凭证细节见 [Ch9](../chapter-09-process-credentials/notes.md)
+**后置**：[Ch29 线程导论](../chapter-29-threads-intro/notes.md)（同步见 [Ch30](../chapter-30-thread-synchronization/notes.md)）· 凭证见 [Ch9](../chapter-09-process-credentials/notes.md)
 
 ---
 

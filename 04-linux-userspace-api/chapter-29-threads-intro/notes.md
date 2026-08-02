@@ -1,39 +1,139 @@
 # TLPI 第 29 章 — Threads: Introduction
 
-> 对应目录：`chapter-29-threads-intro/`
+> 对应目录：`chapter-29-threads-intro/`  
+> （勿用 `chapter-29-threads-introduction` — 与 [CHAPTER-MAP](../CHAPTER-MAP.md) 不一致）  
+> 书名原文：**Threads: Introduction**  
+> ⚠️ **同进程线程共享地址空间；** 各有独立栈 / `errno` / 信号掩码。线程里禁 `exit()`（杀整进程）。可接合线程不 join → **僵尸线程**。
 
-**优先级**：⭐ / ⭐⭐ / ⭐⭐⭐（见根目录 [README.md](../README.md) 优先级表）  
-**与 Rust 仓库关联**：`atomic/` · `async_tokio/` · `rust_network_programming/` · `llvm_insight/`
+**优先级**：🔴（并发基础；下一章同步）  
+**前置**：[Ch28 fork/exec 深潜](../chapter-28-process-creation-exec-detail/notes.md)  
+**后置**：[Ch30 线程同步](../chapter-30-thread-synchronization/notes.md)
 
 ---
 
-## 1. 本章目标
+## 章节目标
 
+建立 Pthreads 模型；分清共享/私有资源；掌握 create / join / detach / `pthread_exit`；认识竞争条件，为互斥锁铺垫。
 
-## 2. 核心 API / syscall
+---
 
+## 29.1 概念
 
-## 3. 要点梳理
+线程 = 进程内执行流；至少有主线程。共享虚拟地址空间；**每线程独立栈**。
 
+| ✅ 共享 | ❌ 私有 |
+|---------|---------|
+| 代码/全局/堆、库 | `pthread_t`、线程栈 |
+| PID/PPID/PGID/SID、终端 | 线程信号掩码 |
+| fd 表、文件锁、cwd、umask | **每线程 `errno`** |
+| 信号 handler、rlimit、定时器 | 浮点上下文、调度属性等 |
+| UID/GID 凭证 | |
 
-## 4. C 示例摘要
+同进程线程切换无需换页表/刷 TLB，通常比进程切换便宜。
 
+---
 
-## 5. Rust 对照（`std` / `libc` / crate）
+## 29.2 Pthreads 规范
 
+- `#include <pthread.h>`，链接 **`-pthread`**  
+- 成功返回 **0**；失败返回**正错误码**（一般不设 `errno`）  
+- `pthread_t` 不透明 → 用 `pthread_equal`  
+- Linux：基于 `clone(CLONE_VM|CLONE_FILES|CLONE_SIGHAND,…)`  
 
-## 6. 常见坑与面试点
+---
 
+## 29.3 核心 API
 
-## 7. 背诵卡
+### 创建
+
+```c
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                   void *(*start_routine)(void *), void *arg);
+```
+
+`attr==NULL` → 默认可接合。新线程可能在 `create` 返回前已跑。自身 ID：`pthread_self()`。
+
+### 终止
+
+| 方式 | |
+|------|--|
+| start 函数 `return` | |
+| `pthread_exit(retval)` | |
+| `pthread_cancel` | Ch32 |
+
+❌ 线程内 **`exit()`** → 整个进程没。  
+⚠️ 主线程从 `main` **return** ≈ `exit()` → 其它线程一并死；要等子线程时主线程用 `pthread_join` 或 `pthread_exit`。
+
+### join / detach
+
+```c
+int pthread_join(pthread_t thread, void **retval);
+int pthread_detach(pthread_t thread);
+```
+
+| | joinable | detached |
+|--|----------|----------|
+| 回收 | 须 `pthread_join` | 终止后自动回收 |
+| 返回值 | 可取 | 不可 join |
+
+同一线程只能 join 一次。可接合退出无人 join → **僵尸线程**。
+
+### 属性（略）
+
+`pthread_attr_init` / `destroy`；可设栈大小、分离状态等。
+
+Demo：[`code/simple_thread.c`](./code/simple_thread.c) · [`code/thread_exit_retval.c`](./code/thread_exit_retval.c) · [`code/detached_thread.c`](./code/detached_thread.c) · [`code/thread_race.c`](./code/thread_race.c)
+
+---
+
+## 29.4 线程 vs 进程
+
+| | 进程 fork | 线程 pthread |
+|--|-----------|--------------|
+| 地址空间 | 独立（COW） | 共享 |
+| 创建开销 | 更高 | 更低 |
+| 共享数据 | IPC | 直接全局/堆 |
+| `exit` | 只杀本进程 | 杀**全部**线程 |
+| 回收 | `waitpid` | join / detach |
+
+---
+
+## 29.5 易错清单
+
+1. 线程里 `exit()`  
+2. 主线程 `return` 拖死其它线程  
+3. 把**即将失效的栈地址**传给新线程  
+4. 无同步读写共享变量 → 竞争（Ch30）  
+5. 混淆 PID 与 `pthread_t`  
+6. 忘 join → 僵尸线程  
+7. 多线程 fork：子进程只留调用线程（Ch28）  
+
+---
+
+## 实验清单
+
+1. create + join  
+2. 独立 `errno` / 共享全局  
+3. joinable vs detached  
+4. （选）主线程 exit 拖死线程  
+5. （选）栈指针传参野指针  
+
+---
+
+## 背诵卡
 
 | # | 要点 |
 |---|------|
-| 1 | |
+| 1 | 共享地址空间；私有栈与 errno |
+| 2 | `-pthread`；成功返回 0 |
+| 3 | 禁 `exit`；用 return / `pthread_exit` |
+| 4 | joinable 必须 join，否则僵尸 |
+| 5 | detach 自动回收，不可再 join |
+| 6 | 竞争 → 下一章互斥锁 |
 
 ---
 
-## 8. 参考
+## 参考
 
-- 《The Linux Programming Interface》第 22 章 — POSIX Threads
-- `man 2` / `man 3` / `man 7`
+- Kerrisk · TLPI Ch29  
+- `man 7 pthreads` · `man 3 pthread_create` · `man 3 pthread_join` · `man 3 pthread_detach`
