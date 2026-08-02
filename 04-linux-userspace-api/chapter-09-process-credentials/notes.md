@@ -173,12 +173,12 @@ Demo：[`code/seteuid_drop_restore.c`](./code/seteuid_drop_restore.c)（需自�
 |------|------|
 | **fork** | 子进程**完整复制**父进程全部凭证 |
 | **exec** | RUID/RGID **不变** |
-| | 文件有 setuid → EUID=文件 UID；否则 EUID 保持（常见即仍为原 EUID；与 RUID 关系见 man/`execve`） |
-| | **新 EUID 复制到 Saved-UID**（有无 setuid 位都会更新 Saved，与书中描述一致：exec 后 Saved 跟踪新的 effective） |
+| | 文件 **setuid 位开** → EUID = 文件属主 UID；**否则 EUID = RUID**（setgid 对称：EGID） |
+| | **新 EUID（及 EGID）复制到 Saved-ID**（无论是否带 setuid 位） |
 | | FUID 跟随 EUID |
-| **exit** | 无「凭证变更」；进程销毁即释放 |
+| **exit** | 凭证无单独「变更」；进程销毁即释放 |
 
-> 精确边角以 `man 2 execve` / Kerrisk 书表为准；写安全代码时用 `getresuid` **打印验证**，勿凭记忆赌。
+> 写安全代码时用 `getresuid` **打印验证**；边角细节见 `man 2 execve` / 书中表格。
 
 ---
 
@@ -187,10 +187,13 @@ Demo：[`code/seteuid_drop_restore.c`](./code/seteuid_drop_restore.c)（需自�
 1. **特权进程 ≠ RUID=0**  
    判据：**EUID==0**。普通用户跑 setuid-root：`RUID≠0, EUID=0` → 仍是特权进程。
 
-2. **Saved-ID 唯一核心用途**  
+2. **为何同时有 `setuid` / `seteuid` / `setresuid`？**  
+   历史：BSD → SUS → Linux 扩展；能力递增，旧接口保留兼容。
+
+3. **Saved-ID 唯一核心用途**  
    支持 setuid 程序 **多次** 降权 / 提权。
 
-3. **FUID**  
+4. **FUID**  
    现代默认=EUID；POSIX 无；别写进可移植逻辑。
 
 ---
