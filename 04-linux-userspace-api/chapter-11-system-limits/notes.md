@@ -6,7 +6,7 @@
 
 **优先级**：🟡→🔴（可移植 / 路径 / 管道缓冲）  
 **前置**：[Ch10 Times and Dates](../chapter-10-time/notes.md)（`_SC_CLK_TCK` ↔ `times()`）  
-**后置**：[Ch12 System and Process Information](../chapter-12-system-process-info/notes.md) · [Ch15 文件属性](../chapter-15-file-attributes/notes.md) · [Ch44 管道](../chapter-44-pipes-and-fifos/notes.md) · [Ch36 资源限制](../chapter-36-process-resources/notes.md)
+**后置**：[Ch12 System and Process Information](../chapter-12-system-process-info/notes.md) · [Ch15 文件属性](../chapter-15-file-attributes/notes.md) · [Ch44 管道](../chapter-44-pipes-fifos/notes.md) · [Ch36 资源限制](../chapter-36-process-resources/notes.md)
 
 ---
 
