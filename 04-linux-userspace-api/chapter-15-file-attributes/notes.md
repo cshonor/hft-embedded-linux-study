@@ -6,7 +6,7 @@
 
 **优先级**：🔴（权限 / 安全 / 目录与链接编程基础）  
 **前置**：[Ch14 File Systems](../chapter-14-file-systems/notes.md)（inode 模型）  
-**后置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/notes.md) · [Ch18 目录与链接](../chapter-18-directories-links/notes.md) · [Ch38 特权与安全](../chapter-38-process-privileges/notes.md)（若有）
+**后置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/notes.md) · [Ch18 目录与链接](../chapter-18-directories-links/notes.md) · [Ch38 特权与安全](../chapter-38-secure-privileged/notes.md)
 
 ---
 
