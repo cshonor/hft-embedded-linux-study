@@ -4,6 +4,8 @@ CFLAGS ?= -Wall -Wextra -std=c11 -g
 all:
 	$(MAKE) -C demo_argv
 	$(MAKE) -C demo_argv_usage
+	$(MAKE) -C demo_argv_mutate
 clean:
 	$(MAKE) -C demo_argv clean
 	$(MAKE) -C demo_argv_usage clean
+	$(MAKE) -C demo_argv_mutate clean
