@@ -4,7 +4,8 @@
 
 > **定位：** **板级落地** — 飞行器 / 工业网关工程案例。  
 > **排除：** STM32 裸机 · RTOS-only · 不含 Linux 的 MCU 项目。  
-> **树莓派 5 动手序（推荐）：** [RASPBERRY-PI5-LABS.md](./RASPBERRY-PI5-LABS.md) — 对齐 `04`–`21`，含官方文档查阅清单。
+> **树莓派 5 动手序（推荐）：** [RASPBERRY-PI5-LABS.md](./RASPBERRY-PI5-LABS.md) — 对齐 `04`–`21`，含官方文档查阅清单。  
+> **Project #1：** 树莓派 Linux 驱动视频课可作为**第一个项目式实践**（环境 → 模块 → GPIO/中断）；边界与验收见 Labs §1.5，**不替代**仓库主线。
 
 ---
 
