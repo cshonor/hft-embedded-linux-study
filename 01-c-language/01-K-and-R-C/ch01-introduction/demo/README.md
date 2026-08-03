@@ -6,4 +6,5 @@ cd demo && make all
 ./demo_argv_usage/main config.ini
 ./demo_argv_usage/main
 ./demo_argv_mutate/main hello
+./demo_ptr_arr_vs_arr_ptr/main
 ```
