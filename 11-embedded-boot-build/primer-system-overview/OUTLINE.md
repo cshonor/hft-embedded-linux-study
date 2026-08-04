@@ -94,7 +94,7 @@
 | 7.1–7.2 | Bootloader 职责与硬件难点 | **精读** |
 | 7.3 U-Boot 使用 | 获取/编译/配置/串口网络命令 | **精读** |
 | 7.4 移植实战 | 板级移植要点 | 精读（落地跟 MELP） |
-| 7.5 DTB | DTS→dtb | **精读**（接 [21 驱动/DT](../../12-device-drivers-dt/)） |
+| 7.5 DTB | DTS→dtb；≠ UEFI，见 [DT FAQ](./chapter-07-bootloaders/7.0-device-tree-vs-uefi.md)；接 [12 驱动/DT](../../12-device-drivers-dt/) | **精读** |
 | 7.6 LILO/GRUB | PC 引导对比 | 速览 |
 
 ---

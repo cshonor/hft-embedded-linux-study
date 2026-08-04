@@ -18,6 +18,7 @@
 | **原理补课** | ***Linux Device Drivers*, 3rd** — LDD3 | 锁/并发/中断/DMA/LDM/PCI·USB（2.6；**无 DTS**） | [OUTLINE](./refs/classic-driver-theory/OUTLINE.md) · [评测](./refs/LDD3-EVAL.md) |
 
 > **读序：** [Primer](../11-embedded-boot-build/primer-system-overview/) → **Madieu 动手** → 卡住锁/DMA/内存时 **回头 LDD3**。  
+> **概念：** 设备树 ≠ UEFI；DT 不分配 MMIO — [Primer DT FAQ](../11-embedded-boot-build/primer-system-overview/chapter-07-bootloaders/7.0-device-tree-vs-uefi.md)。  
 > **禁止**把 LDD3 样例当 5.x 模板硬抄。四书分工：[FOUR-BOOKS-OVERLAP](../11-embedded-boot-build/FOUR-BOOKS-OVERLAP.md)。
 
 ```
