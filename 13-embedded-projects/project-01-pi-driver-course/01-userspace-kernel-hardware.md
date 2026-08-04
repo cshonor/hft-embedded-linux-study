@@ -55,8 +55,9 @@
 
 ---
 
-## 自检
+**自检**
 
 - [ ] 能口述：为何用户态不能直接写 GPIO 寄存器  
 - [ ] 能指出：字符驱动的 `open/read` 回调跑在哪一层  
-- [ ] 能说出两条虚线各防止什么（乱碰内核内存 / 乱碰硬件细节）
+- [ ] 能说出两条虚线各防止什么（乱碰内核内存 / 乱碰硬件细节）  
+- [ ] 能区分：DT 不是驱动；`.ko` / built-in 都是内核代码 — [Primer 8.2](../../11-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.2-why-drivers-in-kernel.md)

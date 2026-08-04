@@ -103,7 +103,7 @@
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| （加硬件） | DTS 必改、驱动分三档 — [8.0](./chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md)；绑定/[8.1 关系](./chapter-08-device-driver-basics/8.1-dts-driver-relationship.md) | — |
+| （加硬件 / 内核） | [8.0 DTS vs 驱动](./chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md) · [8.1 绑定](./chapter-08-device-driver-basics/8.1-dts-driver-relationship.md) · [8.2 为何在内核](./chapter-08-device-driver-basics/8.2-why-drivers-in-kernel.md) | — |
 | 8.1 模块 · 最简字符驱动 | 概念预告 | 选读 |
 | 8.2 insmod/rmmod/lsmod/depmod | 模块工具 | 选读 |
 | 8.3 设备号 · mknod · fops | 节点与接口 | 选读 |
