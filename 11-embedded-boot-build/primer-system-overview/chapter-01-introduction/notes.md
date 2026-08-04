@@ -31,6 +31,9 @@
 
 对本仓库：树莓派 / ARM 板子走 Linux，正是吃这套优势；驱动与启动仍要自己学（[12](../../../12-device-drivers-dt/) · [11](../../)）。
 
+**扩展精读（优势 / 短板 / PREEMPT_RT / 混合架构）：**  
+[1.1-linux-vs-rtos.md](./1.1-linux-vs-rtos.md) — Linux 替代 RTOS 的动因、边界与选型口诀。
+
 ---
 
 ## 1.2 Embedded Linux Today（速览）
@@ -101,6 +104,7 @@
 | 本章收获 | 下一步 |
 |----------|--------|
 | 为何板子跑 Linux、GPL 底线 | **Ch2 Big Picture**（上电→Boot→内核→init）精读 |
+| Linux vs RTOS 边界 | [1.1-linux-vs-rtos](./1.1-linux-vs-rtos.md) → 日后 [Ch17](../chapter-17-linux-and-real-time/notes.md) |
 | 动手 | [Project #1 / Pi Labs](../../../13-embedded-projects/RASPBERRY-PI5-LABS.md) 刷卡上板 |
 | 驱动深入 | [12 设备驱动](../../../12-device-drivers-dt/)；本书 Ch8 仅入门 |
 
