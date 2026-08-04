@@ -12,7 +12,8 @@
 
 历史通识章：**无代码**。建立标准概念共识；快速通读即可。  
 贯穿全书要分清：**POSIX 标准接口（跨 UNIX）** vs **Linux 独有扩展 API**。  
-**Syscall 对外长什么样：** [1.x · 接口是 C / libc≠内核](./1.x-syscall-interface-is-c.md)
+**Syscall 对外长什么样：** [1.x · 接口是 C / libc≠内核](./1.x-syscall-interface-is-c.md)  
+**别和 Rust 普通库混：** [1.x · libc ≠ crate](./1.x-libc-vs-rust-crate.md)（表层像预制库，本质是 syscall 桥）
 
 → 全书定位：[../README.md](../README.md) · 下一章：[../chapter-02-basic-concepts/](../chapter-02-basic-concepts/)
 
