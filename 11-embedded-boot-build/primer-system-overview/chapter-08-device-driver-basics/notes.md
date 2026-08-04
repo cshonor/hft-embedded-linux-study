@@ -5,7 +5,7 @@
 > 大纲：[../OUTLINE.md](../OUTLINE.md)
 
 **优先级**：选读入门；**主课在 [12](../../../12-device-drivers-dt/)**  
-**FAQ：** [8.0](./8.0-new-hw-dts-vs-driver.md) · [8.1](./8.1-dts-driver-relationship.md) · [8.2](./8.2-why-drivers-in-kernel.md) · [8.3 全生命周期/中断](./8.3-driver-lifecycle-and-irq.md)  
+**FAQ：** [8.0](./8.0-new-hw-dts-vs-driver.md) · [8.1](./8.1-dts-driver-relationship.md) · [8.2](./8.2-why-drivers-in-kernel.md) · [8.3](./8.3-driver-lifecycle-and-irq.md) · [8.4 为何多数不用自写](./8.4-why-most-drivers-are-shared.md)  
 **前置：** [Ch7 · DT ≠ UEFI](../chapter-07-bootloaders/7.0-device-tree-vs-uefi.md) · [BSP 模板](../chapter-03-processor-basics/3.2-bsp-is-template-not-product.md)  
 **后置：** [12 Madieu + LDD3](../../../12-device-drivers-dt/) · [MELP](../../build-toolchain-yocto/)
 
@@ -18,12 +18,13 @@
 > **先建立心智：** 加硬件 ≠ 必写驱动；但 **DTS 几乎必动** — [8.0](./8.0-new-hw-dts-vs-driver.md)。  
 > **绑定机制：** `compatible` → `probe` → `of_*` — [8.1](./8.1-dts-driver-relationship.md)。  
 > **为何是内核代码：** 权限/中断/隔离 — [8.2](./8.2-why-drivers-in-kernel.md)。  
-> **不只初始化：** 读写 + IRQ + 异常 + 释放 — [8.3](./8.3-driver-lifecycle-and-irq.md)。
+> **不只初始化：** 读写 + IRQ + 异常 + 释放 — [8.3](./8.3-driver-lifecycle-and-irq.md)。  
+> **为何常零编码：** 主线/标准协议/BSP 已有驱动 — [8.4](./8.4-why-most-drivers-are-shared.md)。
 
 ---
 
 ## 参考
 
 - Hallinan, *Embedded Linux Primer*, 2nd ed, Chapter 8  
-- [8.0](./8.0-new-hw-dts-vs-driver.md) · [8.1](./8.1-dts-driver-relationship.md) · [8.2](./8.2-why-drivers-in-kernel.md) · [8.3](./8.3-driver-lifecycle-and-irq.md)  
+- [8.0](./8.0-new-hw-dts-vs-driver.md) · [8.1](./8.1-dts-driver-relationship.md) · [8.2](./8.2-why-drivers-in-kernel.md) · [8.3](./8.3-driver-lifecycle-and-irq.md) · [8.4](./8.4-why-most-drivers-are-shared.md)  
 - [12-device-drivers-dt](../../../12-device-drivers-dt/)
