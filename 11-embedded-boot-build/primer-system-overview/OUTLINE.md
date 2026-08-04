@@ -103,11 +103,12 @@
 
 | 节 | 重点 | 标签 |
 |----|------|------|
+| （加硬件） | DTS 必改、驱动分三档 — [FAQ](./chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md) | — |
 | 8.1 模块 · 最简字符驱动 | 概念预告 | 选读 |
 | 8.2 insmod/rmmod/lsmod/depmod | 模块工具 | 选读 |
 | 8.3 设备号 · mknod · fops | 节点与接口 | 选读 |
 
-→ **深入交给 [21 LDD3 + Madieu](../../12-device-drivers-dt/)**，此处勿当驱动主教材。
+→ **深入交给 [12 LDD3 + Madieu](../../12-device-drivers-dt/)**，此处勿当驱动主教材。
 
 ---
 
