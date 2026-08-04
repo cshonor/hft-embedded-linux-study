@@ -35,9 +35,17 @@ microSD ──插入──▶ 读卡器侧面插槽 ──USB──▶ 电脑
 
 https://www.raspberrypi.com/software/
 
-软件名：**Raspberry Pi Imager**（官方烧录器；不是别的「镜像/五菱」类山寨名）。
+页面标题是「树莓派软件」——**到对了**。软件名：**Raspberry Pi Imager**（官方烧录器）。
 
-装好即可；**先不要点写入**。
+### 在这一页怎么点
+
+1. Cookie 条随便：**拒绝可选的 Cookie** 或接受都行，不影响下载。  
+2. **往下滚**（粉红大标题下面还有内容），找到 **Raspberry Pi Imager** 区块。  
+3. 你是 Windows → 点 **Download for Windows**（下载 `.exe`）。  
+   - 直链备用：https://downloads.raspberrypi.com/imager/imager_latest.exe  
+4. 跑安装包，装到本机；装完从开始菜单打开 **Imager**。  
+
+**先不要点写入**；也先别点页面上的「树莓派操作系统」单独下镜像——交给 Imager 选就行。
 
 ---
 
