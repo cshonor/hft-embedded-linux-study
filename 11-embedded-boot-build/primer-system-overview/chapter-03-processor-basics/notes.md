@@ -5,6 +5,7 @@
 > 大纲：[../OUTLINE.md](../OUTLINE.md)
 
 **优先级**：3.1 速览；3.2 SoC **选读（ARM 精读）**；3.3–3.4 按需  
+**学什么：** [3.0-focus-on-soc.md](./3.0-focus-on-soc.md) — **重心 SoC**；独立 CPU 仅拓展  
 **前置**：[Ch2 Big Picture](../chapter-02-big-picture/notes.md) · [U-Boot vs UEFI](../chapter-02-big-picture/2.1-uboot-bios-uefi.md)  
 **后置**：[Ch4 内核工程视角](../chapter-04-kernel-construction/) · [Ch7 U-Boot](../chapter-07-bootloaders/) · [10 ARM](../../../10-arm-architecture/)
 
