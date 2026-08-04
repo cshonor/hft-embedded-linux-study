@@ -162,7 +162,8 @@
 
 **课内笔记（随视频追加）：** [project-01-pi-driver-course/](./project-01-pi-driver-course/)  
 - [01 · 用户态 / 内核 / 硬件三层图](./project-01-pi-driver-course/01-userspace-kernel-hardware.md)  
-- [02 · microSD + 读卡器（刷机准备）](./project-01-pi-driver-course/02-microsd-card-reader.md)
+- [02 · microSD + 读卡器（刷机准备）](./project-01-pi-driver-course/02-microsd-card-reader.md)  
+- GPIO 概念（Primer）：[8.5-gpio-basics](../11-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.5-gpio-basics.md)
 
 ---
 

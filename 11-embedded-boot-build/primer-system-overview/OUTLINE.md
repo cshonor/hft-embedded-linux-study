@@ -103,7 +103,7 @@
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| （加硬件 / 内核） | [8.0](./chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md)–[8.4](./chapter-08-device-driver-basics/8.4-why-most-drivers-are-shared.md)（DTS/绑定/内核/生命周期/主线复用） | — |
+| （加硬件 / 内核） | [8.0](./chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md)–[8.5 GPIO](./chapter-08-device-driver-basics/8.5-gpio-basics.md) | — |
 | 8.1 模块 · 最简字符驱动 | 概念预告 | 选读 |
 | 8.2 insmod/rmmod/lsmod/depmod | 模块工具 | 选读 |
 | 8.3 设备号 · mknod · fops | 节点与接口 | 选读 |
