@@ -48,7 +48,34 @@ https://www.raspberrypi.com/software/
    - 后面若问开始菜单/桌面快捷方式，按默认勾选继续 → 装完即可。  
 5. 从开始菜单打开 **Raspberry Pi Imager**。  
 
-**先不要点写入**；也先别在官网单独下 OS 镜像 zip——交给 Imager 选就行。
+**先不要点写入。**
+
+### Imager 提示 Offline / Unable to download OS list
+
+窗口标题带 **Offline**，或黄条 **Unable to download OS list**，说明软件拉不到官方系统列表（网络/代理/防火墙）。
+
+| 别点 | 原因 |
+|------|------|
+| **格式化** | 只会把卡弄成空 FAT32，**装不上**树莓派系统 |
+
+**优先：恢复联网列表（省事）**
+
+1. 确认电脑能打开 https://www.raspberrypi.com （浏览器能上官网）  
+2. 关 VPN / 系统代理试一下；公司网若拦 downloads.raspberrypi.com 换手机热点  
+3. 点左下角 **应用选项**，看有无代理相关设置；改完**关掉 Imager 再开**  
+4. 能联网后应出现完整 OS 列表（不再只有「格式化 / 自定义镜像」）→ 再按正常流程选 **Pi 5 + Lite 64-bit**
+
+**备选：本地下镜像（继续 Offline）**
+
+1. 浏览器打开：https://www.raspberrypi.com/software/operating-systems/  
+2. 找到 **Raspberry Pi OS Lite** 的 **64-bit**，下载 `.img.xz`（约几百 MB）  
+3. Imager 里点 **使用自定义镜像** → 选刚下的文件（一般**不用先解压**，Imager 认 `.xz`）  
+4. 再选储存设备（你的 SD 读卡器）→ 自定义设置里开 SSH → 写入  
+
+直链目录（版本会变，以官网页为准）：  
+https://downloads.raspberrypi.com/raspios_lite_arm64/images/
+
+**先不要点写入**；也先别在官网单独下 OS——**仅当 Offline 走不通联网列表时**才用「自定义镜像」。
 
 ---
 
