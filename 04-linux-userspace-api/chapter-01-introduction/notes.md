@@ -11,7 +11,8 @@
 ## 章节定位
 
 历史通识章：**无代码**。建立标准概念共识；快速通读即可。  
-贯穿全书要分清：**POSIX 标准接口（跨 UNIX）** vs **Linux 独有扩展 API**。
+贯穿全书要分清：**POSIX 标准接口（跨 UNIX）** vs **Linux 独有扩展 API**。  
+**Syscall 对外长什么样：** [1.x · 接口是 C / libc≠内核](./1.x-syscall-interface-is-c.md)
 
 → 全书定位：[../README.md](../README.md) · 下一章：[../chapter-02-basic-concepts/](../chapter-02-basic-concepts/)
 
@@ -110,8 +111,8 @@ GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形�
 |------|--------|
 | User / Kernel space | 用户态 / 内核态（Ch2 展开） |
 | System call | 用户进内核的合法入口 |
-| glibc | GNU C 库；封装 syscall + 高层接口 |
-| POSIX | 可移植 OS 接口标准 |
+| glibc | GNU C 库；封装 syscall + 高层接口；**你写的 open() 在这里，不在内核 .c 里** — [1.x](./1.x-syscall-interface-is-c.md) |
+| POSIX | 可移植 OS **C 接口**标准（契约，非内核实现） |
 | SUS | Single UNIX Specification |
 | BSD / System V | 两大经典 UNIX 分支 |
 | Linux 内核 vs GNU | 内核 ≠ 用户态工具链 |
