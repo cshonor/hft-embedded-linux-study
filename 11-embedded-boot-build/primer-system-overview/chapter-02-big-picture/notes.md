@@ -175,6 +175,7 @@
 |----------|----------|
 | 串口 + SSH/网 | Pi 刷机后 Phase A；串口日志看 Boot/内核 |
 | 四阶段启动 | Phase B；[Ch5](../chapter-05-kernel-initialization/) · [Ch6](../chapter-06-user-space-initialization/) · [Ch7](../chapter-07-bootloaders/) |
+| 处理器 / SoC 选型背景 | [Ch3](../chapter-03-processor-basics/notes.md)（ARM 精读） |
 | 交叉编译 | MELP · Labs D1 |
 | 内核 vs 用户 | [01 三层图](../../../13-embedded-projects/project-01-pi-driver-course/01-userspace-kernel-hardware.md) · [04 TLPI](../../../04-linux-userspace-api/) |
 | rootfs / BusyBox | [Ch11](../chapter-11-busybox/) · MELP rootfs 章 |
