@@ -11,6 +11,8 @@
 | 1 | 黑色小东西 | **USB 读卡器**（川宇 / Kawasau，约 `KUW204`） |
 | 2 | 小卡片 | **32GB SanDisk Ultra microSD**（microSDHC · UHS‑I · Class 10 · U1 · **A1**） |
 
+![microSD + USB 读卡器实物](./images/microsd-and-card-reader.png)
+
 树莓派用这张卡当「硬盘」：系统、rootfs、你的实验都写在上面。  
 32GB 做驱动课 / Labs Phase A–C 足够；以后内核树、大量日志再换更大卡。
 
@@ -45,6 +47,9 @@ https://www.raspberrypi.com/software/
    - 直链备用：https://downloads.raspberrypi.com/imager/imager_latest.exe  
 4. 跑安装包：  
    - **Select Destination Location** → 默认 `C:\Program Files\Raspberry Pi Ltd\Imager` 即可 → **Next**（一般不用改路径）。  
+
+   ![Imager 安装路径默认即可](./images/imager-install-destination.png)
+
    - 后面若问开始菜单/桌面快捷方式，按默认勾选继续 → 装完即可。  
 5. 从开始菜单打开 **Raspberry Pi Imager**。  
 
@@ -53,6 +58,8 @@ https://www.raspberrypi.com/software/
 ### Imager 提示 Offline / Unable to download OS list
 
 窗口标题带 **Offline**，或黄条 **Unable to download OS list**，说明软件拉不到官方系统列表（网络/代理/防火墙）。
+
+![Imager Offline：勿点格式化，优先联网或自定义镜像](./images/imager-offline-os-list.png)
 
 | 别点 | 原因 |
 |------|------|
