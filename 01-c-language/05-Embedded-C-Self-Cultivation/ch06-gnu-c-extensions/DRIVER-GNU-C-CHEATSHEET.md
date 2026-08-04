@@ -4,7 +4,7 @@
 
 | 扩展 | 典型写法 | 驱动里干什么 | 深挖 |
 |------|----------|--------------|------|
-| **指定初始化** | `{ .compatible = "a,b" }, { .probe = fn }` | `of_match_table`、`file_operations`、`platform_driver` | [6.2](./6.2-designated-init/) · [6.2.3 驱动注册](./6.2-designated-init/6.2.3-Linux内核驱动注册.md) |
+| **指定初始化** | `{ .compatible = "a,b" }, { .probe = fn }` | `of_match_table`、`file_operations`、`platform_driver` | [6.2](./6.2-designated-init/) · [struct 驱动向](../../../01-K-and-R-C/ch06-structures/6.0-struct-for-drivers.md) |
 | **`packed`** | `__attribute__((packed))` | 寄存器/协议结构体紧凑布局，忌乱对齐 | [6.7.4](./6.7-aligned/6.7.4-属性声明-packed.md) |
 | **`section`** | `__attribute__((section("…")))` | 放到指定 ELF 段（init、特殊表） | [6.6](./6.6-section/) |
 | **`unused` 等** | `__attribute__((unused))` | 消警告、标记 | 属性总览见 ch06 |
