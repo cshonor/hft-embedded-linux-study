@@ -73,7 +73,7 @@
 
 | 组织 / 规范 | 书中角色 | 今日怎么对待 |
 |-------------|----------|--------------|
-| **LSB**（Linux Standard Base） | 统一发行版二进制/库/命令/目录/init，多架构 | **工程上可忘掉**（见 [TLPI Ch1](../../../04-linux-userspace-api/chapter-01-introduction/)）；嵌入式各玩各的 rootfs |
+| **LSB**（Linux Standard Base） | 统一发行版二进制/库/命令/目录/init，多架构 | **工程上可忘掉**；为何书还讲、与 POSIX 分层见 [1.4-lsb-vs-posix.md](./1.4-lsb-vs-posix.md) · [TLPI Ch1](../../../04-linux-userspace-api/chapter-01-introduction/) |
 | **Linux Foundation** | 非营利联盟；资助内核与生态工作组 | 知存在即可；规范多在专项组 |
 | **CGL**（Carrier-Grade Linux） | 电信级：HA、集群、运维、性能、合规、硬件、安全 | 做基站/核心网时再翻；Pi 驱动课不需要 |
 | **Moblin → MeeGo** | 便携设备工作组（工具、IO、内存、多媒体、功耗…） | **历史名词**；当代看 Android / 各 SoC 厂商栈 |

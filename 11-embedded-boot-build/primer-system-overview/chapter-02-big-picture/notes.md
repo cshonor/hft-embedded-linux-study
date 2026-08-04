@@ -39,7 +39,9 @@
 | 定制 | 相对标准 | **必须按板移植 / 裁剪** |
 
 自定义板几乎都要移植 Bootloader；标准 ATCA/cPCI 等可能自带成熟方案。  
-深挖 → [Ch7](../chapter-07-bootloaders/notes.md)。
+
+**今日对照（BIOS → UEFI）：** 功能类比成立，但不能把 U-Boot 当成 UEFI。完整对比 → [2.1-uboot-bios-uefi.md](./2.1-uboot-bios-uefi.md)。  
+深挖 U-Boot → [Ch7](../chapter-07-bootloaders/notes.md)。
 
 ---
 

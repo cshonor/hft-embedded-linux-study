@@ -21,7 +21,8 @@
 | 1.1 Why Linux? | 硬件兼容、无版权费、协议多、社区；扩展 [Linux vs RTOS](./chapter-01-introduction/1.1-linux-vs-rtos.md) | 选读 |
 | 1.2 Embedded Linux Today | 市场与消费/通信落地 | 速览 |
 | 1.3 Open Source and the GPL · 1.3.1 Free vs Freedom | 「免费啤酒」vs「自由」；GPL 传染 | 精读 |
-| 1.4 Standards…（LSB / LF / CGL / Moblin / SA Forum） | LSB **工程可忘掉**（见 [TLPI Ch1](../../04-linux-userspace-api/chapter-01-introduction/)）；其余了解 | 速览 |
+| 1.4 Standards…（LSB / LF / CGL / Moblin / SA Forum） | LSB **工程可忘掉**；FAQ [为何书讲 LSB / vs POSIX](./chapter-01-introduction/1.4-lsb-vs-posix.md)；对照 [TLPI Ch1](../../04-linux-userspace-api/chapter-01-introduction/) | 速览 |
+
 | 1.5 Summary | — | — |
 
 ---
