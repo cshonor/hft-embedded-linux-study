@@ -2,6 +2,8 @@
 
 **GNU C Extensions for Kernel, Bootloader & DPDK**
 
+> **驱动向优先读：** [要学多少？](./6.0-driver-how-much-gnu-c.md) · [速查表](./DRIVER-GNU-C-CHEATSHEET.md)（不必先通读全章冷门属性）
+
 ## 本章目标
 
 分清 **ISO C99/C11** 与 **GNU 扩展**；掌握 **`__attribute__`**（packed/aligned/section/weak/format/noinline 等）、**语句表达式**、**typeof/container_of**、**零长度数组**、**指定初始化**、**inline/builtins**、**可变参宏**。能读 **Linux 内核 / U-Boot / DPDK** 头文件宏，并编写带 **format 检查** 的日志与 **weak hook** 默认实现。衔接 **ch05 堆布局**、**ch07 指针**、**ch08 位操作**。
