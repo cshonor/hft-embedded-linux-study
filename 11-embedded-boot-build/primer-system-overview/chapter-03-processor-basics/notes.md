@@ -84,7 +84,9 @@ PowerQUICC / QorIQ：通信设备标杆；常有 **CPM / 数据通路加速**，
 | 三星等 | 大量消费 SoC | 家电、便携 |
 
 深挖 ISA / 异常 / 启动：→ [10-arm-architecture](../../../10-arm-architecture/)。  
-板级今日例：Pi5 = 应用核 SoC + **RP1** 外设（见 [Pi Labs](../../../13-embedded-projects/RASPBERRY-PI5-LABS.md)）。
+板级今日例：Pi5 = 应用核 SoC + **RP1** 外设（见 [Pi Labs](../../../13-embedded-projects/RASPBERRY-PI5-LABS.md)）。  
+
+**FAQ：树莓派算哪一类？** → [3.2-raspberry-pi-is-soc.md](./3.2-raspberry-pi-is-soc.md)（结论：**SoC，不是独立处理器**）。
 
 ---
 

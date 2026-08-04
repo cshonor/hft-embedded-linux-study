@@ -2,7 +2,8 @@
 
 > **板卡：** Raspberry Pi 5（BCM2712 + RP1）  
 > **定位：** 吃透原理、验证代码；极致低延迟生产环境后续上 x86。  
-> **主线：** 仍按 [LEARNING-PATH-LOCKED.md](../LEARNING-PATH-LOCKED.md) 推进；本文是 **动手清单**，不是另开一条书。
+> **主线：** 仍按 [LEARNING-PATH-LOCKED.md](../LEARNING-PATH-LOCKED.md) 推进；本文是 **动手清单**，不是另开一条书。  
+> **硬件归类（Primer Ch3）：** BCM2712 是 **ARM SoC**，不是独立 CPU+南北桥 — [说明](../11-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-raspberry-pi-is-soc.md)。
 
 ---
 
