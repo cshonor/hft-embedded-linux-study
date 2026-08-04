@@ -86,14 +86,32 @@ https://downloads.raspberrypi.com/raspios_lite_arm64/images/
 
 ---
 
-## 本步完成标准（到这里停）
+## 第三步：Imager 向导（联网有列表时）
+
+### 3.1 选择设备 → Raspberry Pi 5
+
+左边步骤在 **设备**；列表里点 **Raspberry Pi 5**（含 500 / CM5）→ 右下角 **下一步**。
+
+![选择 Raspberry Pi 5](./images/imager-select-pi5.png)
+
+### 3.2 选择操作系统（下一屏再做）
+
+优先：**Raspberry Pi OS (other)** → **Raspberry Pi OS Lite (64-bit)**。  
+驱动课够用，无桌面更省事。选完再 **下一步**。
+
+### 3.3 之后（先别抢跑）
+
+储存设备 → 自定义设置（开 **SSH**、设用户名密码）→ 写入。  
+选完设备后先停在「选 OS」；**没选好 Lite、没开 SSH 前不要点写入**。
+
+---
+
+## 本步完成标准
 
 - [ ] 卡已正确插入读卡器（金手指朝里、卡紧）  
 - [ ] 读卡器已插上电脑，系统能看到盘符  
-- [ ] Raspberry Pi Imager 已下载并安装  
-
-三项都勾上再继续「选 Pi5 / 选 OS / 写卡」。
-
+- [ ] Raspberry Pi Imager 已安装并能打开（联网列表或自定义镜像二选一）  
+- [ ] 设备已选 **Raspberry Pi 5**
 ---
 
 ## 重要：不要手动格式化
