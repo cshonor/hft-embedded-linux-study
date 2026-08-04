@@ -5,7 +5,7 @@
 > 大纲：[../OUTLINE.md](../OUTLINE.md)
 
 **优先级**：选读入门；**主课在 [12](../../../12-device-drivers-dt/)**  
-**FAQ：** [8.0](./8.0-new-hw-dts-vs-driver.md) · [8.1](./8.1-dts-driver-relationship.md) · [8.2](./8.2-why-drivers-in-kernel.md) · [8.3](./8.3-driver-lifecycle-and-irq.md) · [8.4](./8.4-why-most-drivers-are-shared.md) · [8.5 GPIO](./8.5-gpio-basics.md)  
+**FAQ：** [8.0](./8.0-new-hw-dts-vs-driver.md)–[8.6 排针↔DTS](./8.6-gpio-header-vs-dts.md)  
 **前置：** [Ch7 · DT ≠ UEFI](../chapter-07-bootloaders/7.0-device-tree-vs-uefi.md) · [BSP 模板](../chapter-03-processor-basics/3.2-bsp-is-template-not-product.md)  
 **后置：** [12 Madieu + LDD3](../../../12-device-drivers-dt/) · [MELP](../../build-toolchain-yocto/)
 
@@ -20,12 +20,12 @@
 > **为何是内核代码：** 权限/中断/隔离 — [8.2](./8.2-why-drivers-in-kernel.md)。  
 > **不只初始化：** 读写 + IRQ + 异常 + 释放 — [8.3](./8.3-driver-lifecycle-and-irq.md)。  
 > **为何常零编码：** 主线/标准协议/BSP 已有驱动 — [8.4](./8.4-why-most-drivers-are-shared.md)。  
-> **最简外设：** GPIO 输入输出/中断 + DTS — [8.5](./8.5-gpio-basics.md)。
+> **最简外设：** GPIO — [8.5](./8.5-gpio-basics.md)；**排针≠全是 GPIO** — [8.6](./8.6-gpio-header-vs-dts.md)。
 
 ---
 
 ## 参考
 
 - Hallinan, *Embedded Linux Primer*, 2nd ed, Chapter 8  
-- [8.0](./8.0-new-hw-dts-vs-driver.md)–[8.5](./8.5-gpio-basics.md)  
+- [8.0](./8.0-new-hw-dts-vs-driver.md)–[8.6](./8.6-gpio-header-vs-dts.md)  
 - [12-device-drivers-dt](../../../12-device-drivers-dt/)
