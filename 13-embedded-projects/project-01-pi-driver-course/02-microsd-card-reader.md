@@ -43,9 +43,12 @@ https://www.raspberrypi.com/software/
 2. **往下滚**（粉红大标题下面还有内容），找到 **Raspberry Pi Imager** 区块。  
 3. 你是 Windows → 点 **Download for Windows**（下载 `.exe`）。  
    - 直链备用：https://downloads.raspberrypi.com/imager/imager_latest.exe  
-4. 跑安装包，装到本机；装完从开始菜单打开 **Imager**。  
+4. 跑安装包：  
+   - **Select Destination Location** → 默认 `C:\Program Files\Raspberry Pi Ltd\Imager` 即可 → **Next**（一般不用改路径）。  
+   - 后面若问开始菜单/桌面快捷方式，按默认勾选继续 → 装完即可。  
+5. 从开始菜单打开 **Raspberry Pi Imager**。  
 
-**先不要点写入**；也先别点页面上的「树莓派操作系统」单独下镜像——交给 Imager 选就行。
+**先不要点写入**；也先别在官网单独下 OS 镜像 zip——交给 Imager 选就行。
 
 ---
 
