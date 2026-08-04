@@ -31,7 +31,7 @@
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| 2.1 Embedded or Not? · 2.1.1 BIOS vs Bootloader | PC 固件 vs 嵌入式引导 | **精读** |
+| 2.1 Embedded or Not? · 2.1.1 BIOS vs Bootloader | PC 固件 vs 嵌入式引导；今日读 [U-Boot vs BIOS vs UEFI](./chapter-02-big-picture/2.1-uboot-bios-uefi.md) | **精读** |
 | 2.2 Anatomy… · 2.2.1–2.2.5 | 硬件框图；上电→U-Boot→内核→`init` | **精读** |
 | 2.3 Storage… · 2.3.1–2.3.8 | Flash/NAND/NOR、分区、FS、地址空间、内核/用户态、交叉开发架构 | **精读** |
 | 2.4 Embedded Linux Distributions | 商业发行版 vs 自制（LFS/Buildroot 思路） | 精读 |

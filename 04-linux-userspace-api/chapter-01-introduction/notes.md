@@ -65,7 +65,7 @@ GNU 自己的内核（Hurd）未成主流；和 Linux 内核一结合，才形�
 |------|------|------|----------|
 | **POSIX**（IEEE 1003.1） | 源码级可移植 | 定义 syscall/文件 I/O/进程/信号/pthread/实时接口、`clock_gettime`、`mmap`… | **主力**；Linux 尽可能兼容（未花钱官方认证，日常按这套语义写） |
 | **SUS**（Single UNIX Specification） | POSIX + 额外扩展 | 通过认证才能合法用 **「UNIX」商标** | 了解即可；发行版几乎不花钱认证；写代码很少刻意追 SUS |
-| **LSB**（Linux Standard Base） | 曾求跨发行版**二进制**兼容 | 一份编译产物多发行版跑 | **已废**：末版约 2015，停维护；Yocto/主流发行版已撤；嵌入式/HFT **不考虑** |
+| **LSB**（Linux Standard Base） | 曾求跨发行版**二进制**兼容 | 一份编译产物多发行版跑 | **已废**：末版约 2015，停维护；Yocto/主流发行版已撤；嵌入式/HFT **不考虑**。Primer 为何仍写：见 [1.4-lsb-vs-posix](../../11-embedded-boot-build/primer-system-overview/chapter-01-introduction/1.4-lsb-vs-posix.md) |
 
 ### 易混考点：Linux ≠ UNIX（商标）
 

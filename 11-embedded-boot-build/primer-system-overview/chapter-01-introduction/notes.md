@@ -105,6 +105,7 @@
 |----------|--------|
 | 为何板子跑 Linux、GPL 底线 | **Ch2 Big Picture**（上电→Boot→内核→init）精读 |
 | Linux vs RTOS 边界 | [1.1-linux-vs-rtos](./1.1-linux-vs-rtos.md) → 日后 [Ch17](../chapter-17-linux-and-real-time/notes.md) |
+| LSB 已废但书为何讲 / vs POSIX | [1.4-lsb-vs-posix](./1.4-lsb-vs-posix.md) |
 | 动手 | [Project #1 / Pi Labs](../../../13-embedded-projects/RASPBERRY-PI5-LABS.md) 刷卡上板 |
 | 驱动深入 | [12 设备驱动](../../../12-device-drivers-dt/)；本书 Ch8 仅入门 |
 
