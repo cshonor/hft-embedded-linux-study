@@ -44,7 +44,7 @@
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| （学习优先级） | **重心 SoC**；独立 CPU 拓展 — [focus](./chapter-03-processor-basics/3.0-focus-on-soc.md) | — |
+| （学习优先级） | **重心 SoC**；独立 CPU 拓展 — [focus](./chapter-03-processor-basics/3.0-focus-on-soc.md)；BSP=[模板非成品](./chapter-03-processor-basics/3.2-bsp-is-template-not-product.md) | — |
 | 3.1 Stand-Alone（Power 970 / Pentium M / Atom / MPC7448…） | 独立 CPU + 芯片组时代 | 速览 |
 | 3.2 Integrated SoC（PowerQUICC/QorIQ、MIPS、**ARM/i.MX**…） | SoC 主流；树莓 BCM 归类见 [Pi = SoC](./chapter-03-processor-basics/3.2-raspberry-pi-is-soc.md) | 选读（ARM 精读） |
 | 3.3 小众架构 · 3.4 CompactPCI / ATCA | 工业机箱 | 按需 |

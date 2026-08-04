@@ -6,6 +6,7 @@
 
 **优先级**：3.1 速览；3.2 SoC **选读（ARM 精读）**；3.3–3.4 按需  
 **学什么：** [3.0-focus-on-soc.md](./3.0-focus-on-soc.md) — **重心 SoC**；独立 CPU 仅拓展  
+**BSP 真相：** [3.2-bsp-is-template-not-product.md](./3.2-bsp-is-template-not-product.md) — 原厂包能开箱，**自研板仍要大改**  
 **前置**：[Ch2 Big Picture](../chapter-02-big-picture/notes.md) · [U-Boot vs UEFI](../chapter-02-big-picture/2.1-uboot-bios-uefi.md)  
 **后置**：[Ch4 内核工程视角](../chapter-04-kernel-construction/) · [Ch7 U-Boot](../chapter-07-bootloaders/) · [10 ARM](../../../10-arm-architecture/)
 
@@ -87,7 +88,8 @@ PowerQUICC / QorIQ：通信设备标杆；常有 **CPM / 数据通路加速**，
 深挖 ISA / 异常 / 启动：→ [10-arm-architecture](../../../10-arm-architecture/)。  
 板级今日例：Pi5 = 应用核 SoC + **RP1** 外设（见 [Pi Labs](../../../13-embedded-projects/RASPBERRY-PI5-LABS.md)）。  
 
-**FAQ：树莓派算哪一类？** → [3.2-raspberry-pi-is-soc.md](./3.2-raspberry-pi-is-soc.md)（结论：**SoC，不是独立处理器**）。
+**FAQ：树莓派算哪一类？** → [3.2-raspberry-pi-is-soc.md](./3.2-raspberry-pi-is-soc.md)（结论：**SoC，不是独立处理器**）。  
+**FAQ：原厂驱动/DTS 能否直接量产？** → [3.2-bsp-is-template-not-product.md](./3.2-bsp-is-template-not-product.md)（评估板开箱 ≠ 自研板成品）。
 
 ---
 
