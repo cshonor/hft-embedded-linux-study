@@ -1,6 +1,6 @@
 # Ch 1 · 计算机系统概述
 
-> ***ARM Assembly Language*** — William Sw Smith · **选读**  
+> ***ARM Assembly Language Fundamentals and Techniques*** — Hohl & Hinds · **选读**  
 > **English:** An Overview of Computing Systems
 
 ---
@@ -13,7 +13,7 @@
 | **阅读标签** | **选读**（见 [OUTLINE](../OUTLINE.md)）— 有 CSAPP/C 基础可压缩 |
 | **架构** | 本书 **v4T / v7-M**；Cortex-A / Linux 见 [奔跑吧 ARM64](../../aarch64-practice/) |
 
-📋 **口述总览** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
+📋 **完整精读总结** → [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md)
 
 ---
 
