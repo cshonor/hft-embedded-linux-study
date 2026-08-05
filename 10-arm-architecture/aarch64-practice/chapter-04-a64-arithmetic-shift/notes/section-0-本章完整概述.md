@@ -43,7 +43,7 @@ adds x0, x1, x2   ; 同上并更新 NZCV
 
 ## 4.2 NZCV 四个条件标志 ⭐
 
-> **展开专篇：** [NZCV.md](../../NZCV.md)（N/Z/C/V 规则 · 条件表 · 两道例题 · `mrs nzcv`）
+> **展开专篇：** [NZCV.md](../../NZCV.md) · [SIGNED-UNSIGNED.md](../../SIGNED-UNSIGNED.md)（补码 / 指令决定解读）
 
 只有 `ADDS` / `SUBS` 等带 **S** 的指令才会改写（以及部分带 S 的位运算）。
 
