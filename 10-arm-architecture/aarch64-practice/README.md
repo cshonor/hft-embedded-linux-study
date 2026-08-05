@@ -15,9 +15,9 @@
 | **飞控/无人机** | 异常 · GIC · MM · 屏障/原子 — 对接 [21 驱动](../../12-device-drivers-dt/) · [23 飞控](../../14-motion-control/) |
 | **下一步** | [20 U-Boot/构建](../../11-embedded-boot-build/) |
 
+📚 **全书总结** → [BOOK-SUMMARY.md](./BOOK-SUMMARY.md)  
 📋 **章节目录与裁剪** → [OUTLINE.md](./OUTLINE.md)  
 📛 **名词：** [AArch64 vs ARM64 vs A64](./AARCH64-NAMING.md)（为何不笼统叫「ARM」）
-
 ---
 
 ## 章节目录（Ch 1–23）

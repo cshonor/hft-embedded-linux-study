@@ -2,9 +2,9 @@
 
 > **作者：** 奔跑吧Linux社区 · **出版社：** 人民邮电出版社  
 > **模块：** [aarch64-practice/](./README.md) · [19 总览](../README.md)  
+> **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md) · **名词：** [AARCH64-NAMING.md](./AARCH64-NAMING.md)  
 > **代码：** [runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)  
 > **平台：** 树莓派 4B · **QEMU ARM64** — 类 **高端无人机 / 网关应用处理器** 实验环境
-
 | 标签 | 含义 |
 |------|------|
 | **精读** | 嵌入式 Linux / 飞控支线必看 |
