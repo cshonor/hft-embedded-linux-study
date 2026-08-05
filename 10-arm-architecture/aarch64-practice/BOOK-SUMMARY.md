@@ -63,13 +63,12 @@
 
 #### 第 3 章 · 加载 / 存储（Load-Store）
 
-[chapter-03-a64-load-store/](./chapter-03-a64-load-store/)
+[chapter-03-a64-load-store/](./chapter-03-a64-load-store/) · **详记** → [section-0-本章完整概述.md](./chapter-03-a64-load-store/notes/section-0-本章完整概述.md)
 
-- 指令 **32 位定长**；访存必经寄存器  
-- 寻址：基址、偏移、前/后变基、PC 相对；**LDR 真指令** vs **`ldr x0,=val` 伪指令**  
-- LDRB/LDRSB、LDUR、LDP/STP（无 PUSH/POP）；LDXR/STXR、LDAR/STLR、LDTR  
-- MOV 仅 16 位立即数（可移位）；大常量用 LDR 伪指令  
-- 实验：寻址、memcpy、栈操作  
+- 指令 **32 位定长**；访存必经寄存器
+- 五大寻址（含前/后变基、LDUR、寄存器偏移）；**STP/LDP** 代 PUSH/POP
+- 真 LDR vs `ldr =` 伪指令（litpool）；LDXR/STXR、LDAR/STLR、LDTR
+- 实验默认 **QEMU cortex-a76**
 
 #### 第 4 章 · 算术、移位、位操作
 
