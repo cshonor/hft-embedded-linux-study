@@ -19,6 +19,7 @@
 🔧 **Pi5 适配** → [PI5-ADAPT.md](./PI5-ADAPT.md)（vs 原书 Pi4B）  
 🚩 **NZCV 标志** → [NZCV.md](./NZCV.md)（PSTATE 四条件位）  
 ± **有符号/无符号** → [SIGNED-UNSIGNED.md](./SIGNED-UNSIGNED.md)（补码 · 指令决定解读）  
+❗ **S ≠ 有符号** → [S-SUFFIX.md](./S-SUFFIX.md)（末尾 Set flags vs 中间 Sign）  
 📋 **章节目录与裁剪** → [OUTLINE.md](./OUTLINE.md)  
 📛 **名词：** [AArch64 vs ARM64 vs A64](./AARCH64-NAMING.md)（为何不笼统叫「ARM」）
 

@@ -39,7 +39,8 @@ AArch64 是 **Load-Store 架构**：只有 **LDR/STR**（及变体）能碰内�
 
 记法：**B**=Byte(8)、**H**=Half(16)、Word≈32、**X**=64。  
 带 **S**：`LDRSB` / `LDRSH` = **符号扩展**；不带 S = 零扩展。  
-（同一字节、不同指令 → 见 [SIGNED-UNSIGNED.md](../../SIGNED-UNSIGNED.md)。）
+（同一字节、不同指令 → 见 [SIGNED-UNSIGNED.md](../../SIGNED-UNSIGNED.md)。）  
+（勿与 `ADDS` 末尾 S 混淆：那边是 Set flags → [S-SUFFIX.md](../../S-SUFFIX.md)。）
 
 ---
 

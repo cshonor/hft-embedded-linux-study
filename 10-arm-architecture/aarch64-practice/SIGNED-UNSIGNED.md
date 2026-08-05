@@ -41,7 +41,8 @@ C 的 `signed long` / `unsigned long` 只是**编译期类型**；落到机器�
 adds x0, x1, x2
 ```
 
-> NZCV 的设计：一次运算两套溢出信息，**软件按自己的类型选一套**。详解 → [NZCV.md](./NZCV.md)。
+> NZCV 的设计：一次运算两套溢出信息，**软件按自己的类型选一套**。详解 → [NZCV.md](./NZCV.md)。  
+> **`ADDS` 末尾 S = Set flags，≠ 有符号**；`LDRSB` 的 S 才是 Sign → [S-SUFFIX.md](./S-SUFFIX.md)。
 
 ---
 

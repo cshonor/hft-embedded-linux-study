@@ -2,6 +2,7 @@
 
 > AArch64 必懂 · 对齐《ARM64体系结构编程与实践》Ch1 PSTATE / Ch4 算术 / Ch5 条件跳转  
 > 配套：**有符号 vs 无符号（补码）** → [SIGNED-UNSIGNED.md](./SIGNED-UNSIGNED.md)  
+> **勿混：`ADDS` 的 S ≠ signed** → [S-SUFFIX.md](./S-SUFFIX.md)  
 > [Ch4 算术总结](./chapter-04-a64-arithmetic-shift/notes/section-0-本章完整概述.md) · [Ch1 基础](./chapter-01-arm64-fundamentals/notes/section-0-本章完整概述.md) · [本书导读](./README.md)
 
 ---
@@ -16,7 +17,8 @@
 | **谁不改** | 普通 `ADD` / `SUB` / `AND` … **不刷新** NZCV |
 | **谁读** | 条件跳转 / 条件选择；跳转本身**只读不改** NZCV |
 
-口诀（Ch4）：**带 S 改标志；不带 S 只算数值。**
+口诀（Ch4）：**带 S 改标志；不带 S 只算数值。**  
+（这里的 S = **Set flags**，不是 signed → [S-SUFFIX.md](./S-SUFFIX.md)。）
 
 ---
 

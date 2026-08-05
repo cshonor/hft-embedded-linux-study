@@ -23,6 +23,7 @@ ADD/ADDS、SUB/SUBS/CMP、NZCV、移位、AND/ORR/EOR/BIC、UBFX/SBFX/BFI；仍�
 | [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（算术 · NZCV · 移位 · 位段 · 思考题） |
 | [../NZCV.md](../NZCV.md) | **NZCV 专篇**（N/Z/C/V · 条件后缀 · 例题） |
 | [../SIGNED-UNSIGNED.md](../SIGNED-UNSIGNED.md) | 有符号/无符号：补码 · C vs V · LSR/ASR |
+| [../S-SUFFIX.md](../S-SUFFIX.md) | **S ≠ 有符号**：Set flags vs LDRSB 的 Sign |
 
 ---
 
