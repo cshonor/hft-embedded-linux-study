@@ -72,7 +72,7 @@
 
 #### 第 4 章 · 算术、移位、位操作
 
-[chapter-04-a64-arithmetic-shift/](./chapter-04-a64-arithmetic-shift/) · **详记** → [section-0-本章完整概述.md](./chapter-04-a64-arithmetic-shift/notes/section-0-本章完整概述.md)
+[chapter-04-a64-arithmetic-shift/](./chapter-04-a64-arithmetic-shift/) · **详记** → [section-0](./chapter-04-a64-arithmetic-shift/notes/section-0-本章完整概述.md) · **NZCV 专篇** → [NZCV.md](./NZCV.md)
 
 - ADD/ADDS/ADC、SUB/SUBS、CMP≡SUBS XZR；NZCV（C 无符号 / V 有符号）+ 条件后缀  
 - LSL/LSR/ASR/ROR；AND/ORR/EOR/BIC；UBFX/SBFX/BFI  
