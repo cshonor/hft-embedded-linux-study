@@ -43,11 +43,11 @@
 
 #### 第 1 章 · ARM64 体系基础知识
 
-[chapter-01-arm64-fundamentals/](./chapter-01-arm64-fundamentals/)
+[chapter-01-arm64-fundamentals/](./chapter-01-arm64-fundamentals/) · **详记** → [section-0-本章完整概述.md](./chapter-01-arm64-fundamentals/notes/section-0-本章完整概述.md)
 
 - ARM 脉络：v1→ARMv9；A/R/M 产品线；v8 双状态（**AArch64 / AArch32**）；v9 增 SVE2、CCA  
 - **EL0–EL3**；X0–X30 / W / XZR；PSTATE（NZCV、DAIF、PAN/UAO）；SP、ELR、SPSR、系统寄存器  
-- **Cortex-A72**（Pi4）：乱序超标量；48KB I / 32KB D / 1MB L2；ACE；内置 GIC；MMU 4K/16K/64K 页  
+- **Cortex-A72**（Pi4）：乱序超标量；I/D/L2；内置 GIC/MMU；Pi5=A76(v9) 概念兼容  
 
 #### 第 2 章 · 树莓派 4B 实验环境
 
