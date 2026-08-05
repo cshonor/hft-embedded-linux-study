@@ -57,11 +57,11 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 
 | 系列 | 场景 | 要点 |
 |------|------|------|
-| **Cortex-A** | 手机、平板、**树莓派** | **有 MMU**，跑 Linux/Android |
-| **Cortex-R** | 汽车、医疗等 | 硬实时、高可靠 |
-| **Cortex-M** | 家电、传感器 MCU | 常无 MMU；M4 可有 FPU/DSP |
+| **Cortex-A** | 手机、平板、树莓派等 | **有 MMU**，跑 Linux/Android — 本书**只科普** |
+| **Cortex-R** | 汽车、医疗等 | 硬实时 — 本书**只对比** |
+| **Cortex-M** | 家电、传感器 MCU | 常无 MMU；**全书实操主线** |
 
-本目录主练 **v4T / v7-M**；Pi5 Linux → [奔跑吧 AArch64](../../../aarch64-practice/)。
+**讲 A、不练 A：** [CORTEX-A-SCOPE.md](../../CORTEX-A-SCOPE.md)。本目录主练 **v4T / v7-M**；Pi5 Linux → [奔跑吧 AArch64](../../../aarch64-practice/)。
 
 → [§1.2](./section-1-2-risc-history.md)
 

@@ -1,9 +1,9 @@
 # ARM Assembly Language — 章节目录与阅读裁剪
 
 > **书目：** *ARM Assembly Language Fundamentals and Techniques*, 2nd ed — **William Hohl & Christopher Hinds**  
-> **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md)  
+> **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md) · **Cortex-A 边界：** [CORTEX-A-SCOPE.md](./CORTEX-A-SCOPE.md)  
 > **模块：** [10-arm-architecture/](../README.md) · 嵌入式支线 **汇编思维入门**  
-> **架构说明：** 本书正文以 **ARM v4T（ARM7TDMI）** 与 **v7-M（Cortex-M）** 为主 — **不是** AArch64 专用教材；学的是 **汇编思维、Load/Store、栈、异常、MMIO、C/汇编互调**。AArch64 实战见 [**《ARM64体系结构编程与实践》**](../aarch64-practice/OUTLINE.md)。
+> **架构说明：** 实操以 **v4T / v7-M（Cortex-M）** 为主；Cortex-A 仅谱系对比 — **不是** AArch64 / 树莓派课。AArch64 见 [奔跑吧](../aarch64-practice/OUTLINE.md)。
 
 | 标签 | 含义 |
 |------|------|

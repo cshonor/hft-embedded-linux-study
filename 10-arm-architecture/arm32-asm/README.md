@@ -2,8 +2,8 @@
 
 > **书目：** William **Hohl**、Christopher **Hinds** · *ARM Assembly Language Fundamentals and Techniques*, 2nd ed  
 > （目录旧称 “Smith” 已更正；章节骨架仍对应本书。）  
-> **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md)  
-> **架构：** **ARMv4T（ARM7TDMI）** + **ARMv7-M（Cortex-M）** — **不是** AArch64  
+> **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md) · **A 核边界：** [CORTEX-A-SCOPE.md](./CORTEX-A-SCOPE.md)  
+> **架构：** 实操 **ARMv4T + v7-M（Cortex-M）**；Cortex-A 仅对比科普 — **不是** AArch64 / 树莓派课  
 > **模块：** [10-arm-architecture](../README.md) · 与 [奔跑吧 ARM64](../aarch64-practice/) **并列**
 
 📋 **阅读裁剪与标签** → [OUTLINE.md](./OUTLINE.md)
@@ -12,7 +12,7 @@
 
 ## 本目录放什么
 
-Smith 全书笔记、附录、术语、代码与脚手架 — **ARM32 / Thumb / Cortex-M** 一条线收齐：
+Hohl/Hinds 全书笔记、附录、术语、代码与脚手架 — **ARM32 / Thumb / Cortex-M** 一条线收齐（**不是** Cortex-A Linux 板课）：
 
 | 内容 | 路径 |
 |------|------|

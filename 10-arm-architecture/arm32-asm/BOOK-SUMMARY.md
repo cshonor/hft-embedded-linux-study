@@ -2,8 +2,8 @@
 
 > **作者：** William **Hohl**、Christopher **Hinds**（书名全称常作 *ARM Assembly Language Fundamentals and Techniques*, 2nd ed）  
 > **本仓库目录：** [arm32-asm/](./) · 裁剪标签见 [OUTLINE.md](./OUTLINE.md)  
-> **架构范围：** ARMv4T（ARM7TDMI）+ ARMv7-M（Cortex-M）为主；**不是**树莓派 5 / Linux 用的 **AArch64** 主教材  
-> **AArch64：** → [../aarch64-practice/](../aarch64-practice/)
+> **架构范围：** 实操主线 = ARMv4T（ARM7TDMI）+ ARMv7-M（Cortex-M）；**Cortex-A 只作谱系科普** — 见 [CORTEX-A-SCOPE.md](./CORTEX-A-SCOPE.md)  
+> **不是**树莓派 5 / Linux 用的 **AArch64** 主教材 → [../aarch64-practice/](../aarch64-practice/)
 
 > **作者更正：** 目录里旧标签曾写 “William Sw Smith”；章节结构与 Keil/CCS/Tiva/浮点专章对应的是 **Hohl & Hinds** 本书。下文以正确书目为准。
 
@@ -14,8 +14,10 @@
 | 项 | 内容 |
 |----|------|
 | 角色 | 嵌入式 / CS 的 ARM **汇编教材 + 工程师手册** |
-| 覆盖 | ARM7TDMI、Cortex-A/R/M 叙事；指令以 **v4T、v7-M** 为主线 |
-| 特色 | 经典 ARM7 + 现代 Cortex；**IEEE754 浮点汇编**；Keil MDK / TI CCS；Tiva 等板级样例；异常→外设→C/汇编混合闭环 |
+| 覆盖 | **实操：** ARM7TDMI + Cortex-M；**对比科普：** Cortex-A/R（无 A 核板级实验） |
+| 特色 | 经典 ARM7 + 现代 Cortex-M；IEEE754；Keil/CCS；Tiva 等 **MCU** 样例 |
+
+**Cortex-A 边界（必读）：** [CORTEX-A-SCOPE.md](./CORTEX-A-SCOPE.md) — **讲 A、不练 A**。
 
 **对本仓库嵌入式 Linux（Pi5）的用法：**  
 吃透 **Load/Store、栈、调用约定、MMIO、C↔汇编**（精读章）；浮点 / Keil·CCS 附录可跳；板上 Linux 再转 **A64 + DT + 驱动**。
