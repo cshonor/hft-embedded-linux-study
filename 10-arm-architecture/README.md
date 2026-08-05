@@ -25,7 +25,7 @@
 
 | 子目录 | 书 | 架构 | 入口 |
 |--------|-----|------|------|
-| **[arm32-asm/](./arm32-asm/)** | Smith *ARM Assembly Language* | **ARM32** · v4T / v7-M（ARM7 · Cortex-M） | [OUTLINE](./arm32-asm/OUTLINE.md) |
+| **[arm32-asm/](./arm32-asm/)** | Hohl & Hinds *ARM Assembly Language Fundamentals and Techniques* | **ARM32** · v4T / v7-M（ARM7 · Cortex-M） | [OUTLINE](./arm32-asm/OUTLINE.md) · [全书总结](./arm32-asm/BOOK-SUMMARY.md) |
 | **[aarch64-practice/](./aarch64-practice/)** | 奔跑吧 *ARM64体系结构编程与实践* | **AArch64** · ARMv8/v9 | [OUTLINE](./aarch64-practice/OUTLINE.md) |
 
 ---
@@ -34,7 +34,7 @@
 
 | # | 书目 | 读什么 | 放哪 |
 |---|------|--------|------|
-| 1 | ***ARM Assembly Language*** — William Sw Smith | **v4T / v7-M 汇编思维** — Load/Store · 栈 · MMIO · C/汇编互调 | [**arm32-asm/**](./arm32-asm/) |
+| 1 | ***ARM Assembly Language Fundamentals and Techniques*** — Hohl & Hinds | **v4T / v7-M 汇编思维** — Load/Store · 栈 · MMIO · C/汇编互调 | [**arm32-asm/**](./arm32-asm/) · [总结](./arm32-asm/BOOK-SUMMARY.md) |
 | 2 | **《ARM64体系结构编程与实践》** — 奔跑吧 | **A64 · 异常/GIC · 内存管理** · 树莓派 4B / **QEMU** | [**aarch64-practice/**](./aarch64-practice/) |
 
 **架构边界：** Smith **不是 AArch64 教材**；**AArch64 主战场在奔跑吧**。
@@ -71,9 +71,9 @@ Smith Ch2–8、13、16、18（可选/压缩，在 arm32-asm/）
 
 ---
 
-## *ARM Assembly Language*（Smith · 摘要）
+## *ARM Assembly Language*（Hohl & Hinds · 摘要）
 
-📋 全文裁剪 → [arm32-asm/OUTLINE.md](./arm32-asm/OUTLINE.md) · [导读](./arm32-asm/README.md)
+📋 全文裁剪 → [arm32-asm/OUTLINE.md](./arm32-asm/OUTLINE.md) · [导读](./arm32-asm/README.md) · [**全书总结**](./arm32-asm/BOOK-SUMMARY.md)
 
 精读建议：**Ch2–5、7–8、13、16、18**（浮点 Ch9–11 可跳）。
 

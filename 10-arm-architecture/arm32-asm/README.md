@@ -1,6 +1,8 @@
-# *ARM Assembly Language* — Smith（ARM32 汇编思维）
+# *ARM Assembly Language: Fundamentals and Techniques*（ARM32 汇编思维）
 
-> **书目：** William Sw Smith · *ARM Assembly Language*  
+> **书目：** William **Hohl**、Christopher **Hinds** · *ARM Assembly Language Fundamentals and Techniques*, 2nd ed  
+> （目录旧称 “Smith” 已更正；章节骨架仍对应本书。）  
+> **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md)  
 > **架构：** **ARMv4T（ARM7TDMI）** + **ARMv7-M（Cortex-M）** — **不是** AArch64  
 > **模块：** [10-arm-architecture](../README.md) · 与 [奔跑吧 ARM64](../aarch64-practice/) **并列**
 
@@ -50,4 +52,4 @@ Smith 全书笔记、附录、术语、代码与脚手架 — **ARM32 / Thumb / 
 
 学完本目录再进 [奔跑吧 OUTLINE](../aarch64-practice/OUTLINE.md)，概念可一一映射。
 
-← [19 模块 README](../README.md)
+← [19 模块 README](../README.md) · [全书总结](./BOOK-SUMMARY.md)
