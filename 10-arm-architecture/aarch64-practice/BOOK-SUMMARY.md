@@ -2,8 +2,8 @@
 
 > **编著：** 奔跑吧Linux社区 · **出版：** 人民邮电出版社（2022-04）· 异步图书 · 安谋科技教育计划推荐教材  
 > **本仓库：** [aarch64-practice/](./) · 裁剪见 [OUTLINE.md](./OUTLINE.md) · 名词见 [AARCH64-NAMING.md](./AARCH64-NAMING.md)  
+> **平台：** 原书 **Pi4B**（A72）+ QEMU；**本仓库实机 Pi5**（A76）— [PI5-ADAPT.md](./PI5-ADAPT.md)  
 > **代码：** [runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)  
-> **平台：** 树莓派 **4B**（Cortex-A72）+ **QEMU ARM64**；覆盖 ARMv8.6、兼容 ARMv9；配套裸机 **BenOS**  
 > **不是** Hohl/Hinds 的 ARM32/Thumb（Cortex-M）→ [../arm32-asm/](../arm32-asm/)
 
 ---
@@ -13,7 +13,7 @@
 | 项 | 内容 |
 |----|------|
 | 定位 | 嵌入式 / 底层开发的 **AArch64 实操教材**（不讲 AArch32） |
-| 实验 | Ubuntu 20.04 · aarch64-gcc 9.3 · 定制 QEMU · Pi4B；串口 / J-Link |
+| 实验 | Ubuntu · aarch64-gcc · QEMU（**推荐 `-cpu cortex-a76`**）· 原书写 Pi4B；**上板见 [PI5-ADAPT](./PI5-ADAPT.md)** |
 | 资源 | GitHub 源码、Pi/QEMU VMware 镜像、调试教程；开篇 **20 道自测题**（高频面试） |
 | 汇编风格 | GNU as **小写**；官方手册大写 |
 | 名词 | 本书 = **AArch64 / A64**；口语 ARM64 见 [AARCH64-NAMING](./AARCH64-NAMING.md) |
@@ -49,13 +49,13 @@
 - **EL0–EL3**；X0–X30 / W / XZR；PSTATE（NZCV、DAIF、PAN/UAO）；SP、ELR、SPSR、系统寄存器  
 - **Cortex-A72**（Pi4）：乱序超标量；I/D/L2；内置 GIC/MMU；Pi5=A76(v9) 概念兼容  
 
-#### 第 2 章 · 树莓派 4B 实验环境
+#### 第 2 章 · 实验环境（原书 Pi4B · 本仓库 Pi5 适配）
 
-[chapter-02-raspberry-pi-lab/](./chapter-02-raspberry-pi-lab/)
+[chapter-02-raspberry-pi-lab/](./chapter-02-raspberry-pi-lab/) · **详记** → [Pi5 适配与实验路线](./chapter-02-raspberry-pi-lab/notes/section-0-Pi5适配与实验路线.md)
 
-- BCM2711 · 4×A72 · DDR4 · 双 HDMI · 千兆；SD / USB 串口 / J-Link EDU 接线  
-- 调试：**QEMU+GDB** 或 **J-Link+OpenOCD**；串口、OS 烧录、config 开串口/JTAG  
-- **BenOS**：链接脚本、启动汇编（多核仅主核）、PL011 串口、Makefile；QEMU Debian + 9p 共享  
+- 原书：BCM2711 · BenOS · 串口/JTAG · QEMU+GDB  
+- **适配：** 架构实验 **QEMU 优先**；PL011/GIC 基址与 `config.txt` 勿照抄 4B；工具链不变  
+- 两套用途：QEMU=裸机架构；Pi5=适配后外设 + 64-bit OS（TLPI/驱动课）
 
 ---
 
@@ -185,8 +185,8 @@
 1. **强实践：** 串口 → MMU → 带调度小型 OS，知识点可复现  
 2. **面试向：** 章首思考题 + 开篇 20 题 ≈ 大厂 ARM 底层高频点  
 3. **踩坑库：** MOV 范围、缓存别名、重定位崩溃、JTAG 等工程案例  
-4. **双平台：** Pi4B 硬件调试 + QEMU 快速迭代  
-5. **权威索引：** ARM v8.6/v9 手册、BCM2711、GNU 工具链文档  
+4. **双平台：** 原书 Pi4B + QEMU；本仓库 **QEMU（A76）+ Pi5 实物**（外设后迁）  
+5. **权威索引：** ARM v8.6/v9 手册、BCM2711（原书）/ **BCM2712（Pi5）**、GNU 工具链
 
 ---
 
@@ -205,4 +205,5 @@
 
 ## 五、一句话收束
 
-> 本书以 **Pi4B + QEMU + BenOS** 把 **AArch64/A64** 从指令写到简易 OS；口语叫 ARM64，规范名是 AArch64。对本仓库而言：这是树莓派应用核与内核/驱动前置的主战场。
+> 本书以 **QEMU + BenOS（原书兼写 Pi4B）** 把 **AArch64/A64** 从指令写到简易 OS；口语叫 ARM64，规范名是 AArch64。  
+> **本仓库实机 = Pi5**：架构实验跟 QEMU；板上外设按 [PI5-ADAPT](./PI5-ADAPT.md) 改基址后再迁。

@@ -2,9 +2,10 @@
 
 > **作者：** 奔跑吧Linux社区 · **出版社：** 人民邮电出版社  
 > **模块：** [aarch64-practice/](./README.md) · [19 总览](../README.md)  
+> **平台：** 原书树莓派 4B · **QEMU ARM64**；**实机按 Pi5 适配** — [PI5-ADAPT.md](./PI5-ADAPT.md) · Ch2 详记 [section-0](./chapter-02-raspberry-pi-lab/notes/section-0-Pi5适配与实验路线.md)  
 > **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md) · **名词：** [AARCH64-NAMING.md](./AARCH64-NAMING.md)  
-> **代码：** [runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)  
-> **平台：** 树莓派 4B · **QEMU ARM64** — 类 **高端无人机 / 网关应用处理器** 实验环境
+> **代码：** [runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)
+
 | 标签 | 含义 |
 |------|------|
 | **精读** | 嵌入式 Linux / 飞控支线必看 |
@@ -18,7 +19,7 @@
 | 章 | 标题 | 标签 | 文件夹 | 飞控/嵌入式关联 |
 |----|------|------|--------|-----------------|
 | **1** | ARM64体系结构基础知识 | **精读** | [ch01](./chapter-01-arm64-fundamentals/) | ARMv8/v9 · EL · A64 · 寄存器 |
-| **2** | 搭建树莓派实验环境 | **精读** | [ch02](./chapter-02-raspberry-pi-lab/) | **QEMU + GDB** · BenOS 实验链 |
+| **2** | 搭建树莓派实验环境 | **精读** | [ch02](./chapter-02-raspberry-pi-lab/) | **QEMU + GDB（`-cpu cortex-a76`）** · Pi5 外设后迁 |
 | **3** | A64指令集1——加载与存储 | **精读** | [ch03](./chapter-03-a64-load-store/) | Load/Store · MMIO 基础 |
 | **4** | A64指令集2——算术与移位 | **精读** | [ch04](./chapter-04-a64-arithmetic-shift/) | 位运算 · 地址计算 |
 | **5** | A64指令集3——比较与跳转 | **精读** | [ch05](./chapter-05-a64-compare-branch/) | 控制流 |

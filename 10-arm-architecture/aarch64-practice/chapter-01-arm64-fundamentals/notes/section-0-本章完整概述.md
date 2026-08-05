@@ -167,6 +167,6 @@ ARMv7 三条产品线：
 ## 学习建议
 
 - 本章 **只记概念**，不急着写汇编。  
-- 下一章 [Ch2 实验环境](../../chapter-02-raspberry-pi-lab/) 上板 / QEMU；EL 与寄存器在 Ch11 会再练一遍。
+- 下一章 [Ch2 实验环境 · Pi5 适配](../../chapter-02-raspberry-pi-lab/notes/section-0-Pi5适配与实验路线.md)；EL 与寄存器在 Ch11 会再练一遍。
 
 下一章若继续：可按同样格式输出 **第 2 章** 完整总结。

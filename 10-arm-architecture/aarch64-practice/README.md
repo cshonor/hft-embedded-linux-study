@@ -1,8 +1,8 @@
 # 《ARM64体系结构编程与实践》
 
 > **奔跑吧Linux社区** · 人民邮电出版社 · **模块 19 · AArch64 实战主书**  
-> **实验代码：** [github.com/runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)  
-> **平台：** 树莓派 4B · **QEMU ARM64**（类无人机应用处理器环境）
+> **平台：** 原书 **Pi4B** + QEMU；**本仓库实机 = Pi5** — 见 [PI5-ADAPT.md](./PI5-ADAPT.md)（架构实验主力 QEMU `-cpu cortex-a76`）  
+> **实验代码：** [github.com/runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)
 
 ---
 
@@ -16,8 +16,10 @@
 | **下一步** | [20 U-Boot/构建](../../11-embedded-boot-build/) |
 
 📚 **全书总结** → [BOOK-SUMMARY.md](./BOOK-SUMMARY.md)  
+🔧 **Pi5 适配** → [PI5-ADAPT.md](./PI5-ADAPT.md)（vs 原书 Pi4B）  
 📋 **章节目录与裁剪** → [OUTLINE.md](./OUTLINE.md)  
 📛 **名词：** [AArch64 vs ARM64 vs A64](./AARCH64-NAMING.md)（为何不笼统叫「ARM」）
+
 ---
 
 ## 章节目录（Ch 1–23）
