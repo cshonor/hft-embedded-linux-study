@@ -39,7 +39,7 @@
 
 - **讲：** 定位、有无 MMU、指令态差异、特权/异常模型对比  
 - **教（全书代码）：** 几乎全是 **M 核 / 书中 ARM7 例程**  
-- **你要树莓派 / Pi5：** 学完本书精读章的**思维**（Load/Store、栈、AAPCS、MMIO）→ 转 **[aarch64-practice](../aarch64-practice/)**（A64 · EL · GIC），不要指望本书当 Pi 汇编课
+- **你要树莓派 / Pi5：** 学完本书精读章的**思维**（Load/Store、栈、AAPCS、MMIO）→ 转 **[aarch64-practice](../aarch64-practice/)**（A64 · EL · GIC）；先分清 [AArch64 命名](../aarch64-practice/AARCH64-NAMING.md)，不要指望 Hohl/Hinds 当 Pi 汇编课
 
 ---
 

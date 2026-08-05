@@ -11,11 +11,12 @@
 | | |
 |---|---|
 | **补什么** | **ARMv8/v9 · A64 64 位指令** · 异常/中断 · **GIC** · **内存管理** |
-| **与 Smith 关系** | [Smith v4T/v7-M 汇编](../chapter-02-programmers-model/) = 汇编思维入门；**本书 = AArch64 主战场** |
+| **与 arm32-asm 关系** | [Hohl/Hinds v4T/v7-M](../arm32-asm/) = 汇编思维入门（**讲 A、练 M**）；**本书 = AArch64 / A64 主战场**（Pi5） |
 | **飞控/无人机** | 异常 · GIC · MM · 屏障/原子 — 对接 [21 驱动](../../12-device-drivers-dt/) · [23 飞控](../../14-motion-control/) |
 | **下一步** | [20 U-Boot/构建](../../11-embedded-boot-build/) |
 
-📋 **章节目录与裁剪** → [OUTLINE.md](./OUTLINE.md)
+📋 **章节目录与裁剪** → [OUTLINE.md](./OUTLINE.md)  
+📛 **名词：** [AArch64 vs ARM64 vs A64](./AARCH64-NAMING.md)（为何不笼统叫「ARM」）
 
 ---
 

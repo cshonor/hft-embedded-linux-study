@@ -59,7 +59,9 @@
 21    OS 话题 → 开 20 U-Boot / 21 驱动
 ```
 
-**与 Smith 汇编书并行建议：** Smith [Ch2–8、13、16、18](../arm32-asm/OUTLINE.md) 可 **压缩** 或 **选读** — 汇编思维已有则 **直接从本书 Ch1 开 AArch64**。
+**名词先分清：** [AArch64 vs ARM64 vs A64](./AARCH64-NAMING.md)
+
+**与 arm32-asm（Hohl/Hinds）并行建议：** [Ch2–8、13、16、18](../arm32-asm/OUTLINE.md) 可 **压缩** 或 **选读** — 汇编思维已有则 **直接从本书 Ch1 开 AArch64**。
 
 ---
 

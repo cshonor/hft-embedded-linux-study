@@ -11,6 +11,7 @@
 | | |
 |---|---|
 | **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
+| **名词** | [AArch64 / A64 / ARM64 为何不叫「ARM」](../AARCH64-NAMING.md) |
 | **实验** | 树莓派 4B / **QEMU ARM64**（官方仓库 [arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)） |
 
 ---
