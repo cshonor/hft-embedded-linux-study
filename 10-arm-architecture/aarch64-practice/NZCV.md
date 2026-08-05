@@ -1,6 +1,7 @@
 # NZCV 完整讲解（PSTATE 核心四标志）
 
 > AArch64 必懂 · 对齐《ARM64体系结构编程与实践》Ch1 PSTATE / Ch4 算术 / Ch5 条件跳转  
+> 配套：**有符号 vs 无符号（补码）** → [SIGNED-UNSIGNED.md](./SIGNED-UNSIGNED.md)  
 > [Ch4 算术总结](./chapter-04-a64-arithmetic-shift/notes/section-0-本章完整概述.md) · [Ch1 基础](./chapter-01-arm64-fundamentals/notes/section-0-本章完整概述.md) · [本书导读](./README.md)
 
 ---
@@ -47,7 +48,8 @@
 - 规则：有符号加/减结果超出有符号可表示范围 → **V=1**；否则 V=0。  
 - 例：两大正数相加变负 → 硬件置 **V=1**。
 
-> **C 与 V 完全独立：** C = 无符号；V = 有符号。勿混用。
+> **C 与 V 完全独立：** C = 无符号；V = 有符号。勿混用。  
+> 为何一次运算两套标志、以及 LDRB/LDRSB 的「同一比特不同解读」→ [SIGNED-UNSIGNED.md](./SIGNED-UNSIGNED.md)。
 
 ---
 

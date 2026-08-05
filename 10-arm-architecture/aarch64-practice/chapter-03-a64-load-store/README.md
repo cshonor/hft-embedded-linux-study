@@ -21,6 +21,7 @@
 | 笔记 | 说明 |
 |------|------|
 | [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（寻址 · LDP/STP · 伪 LDR · 思考题） |
+| [../SIGNED-UNSIGNED.md](../SIGNED-UNSIGNED.md) | 有符号/无符号：LDRB vs LDRSB、补码 |
 
 ---
 
