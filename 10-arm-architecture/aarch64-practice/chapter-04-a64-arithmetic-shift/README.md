@@ -21,6 +21,7 @@ ADD/ADDS、SUB/SUBS/CMP、NZCV、移位、AND/ORR/EOR/BIC、UBFX/SBFX/BFI；仍�
 | 笔记 | 说明 |
 |------|------|
 | [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（算术 · NZCV · 移位 · 位段 · 思考题） |
+| [../NZCV.md](../NZCV.md) | **NZCV 专篇**（N/Z/C/V · 条件后缀 · 例题） |
 
 ---
 
