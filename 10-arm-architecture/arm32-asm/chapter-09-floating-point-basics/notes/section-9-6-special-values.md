@@ -56,3 +56,5 @@
 1. **∞ = 溢出/除零的极端**；**NaN = 未定义或未初始化**。  
 2. **qNaN 静默传播** — C 里 `isnan()` 必备。  
 3. 嵌入式：**别让控制环跑出 NaN** — 与 Ch7 **SSAT** 同类「防崩」。
+
+**合并精读（五类 + 定点 Qm）：** [9.x-ieee754-special-and-fixed-point.md](./9.x-ieee754-special-and-fixed-point.md)

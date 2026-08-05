@@ -1,6 +1,6 @@
 ## Ch9 完整概述 · 浮点简介：基础、类型与传输
 
-> ***ARM Assembly Language*** — William Sw Smith  
+> ***ARM Assembly Language Fundamentals and Techniques*** — Hohl & Hinds  
 > **English:** Introduction to Floating-Point: Basics, Data Types, and Data Transfer · **跳过**（主线）/ **M4F 选读**  
 > [章导读](../README.md) · [OUTLINE](../../OUTLINE.md)
 
@@ -24,7 +24,8 @@
 |------|------|------|
 | **为何浮点** | §9.2–9.3 | [§9.2](./section-9-2-history.md) · [§9.3](./section-9-3-overview.md) |
 | **IEEE 格式** | §9.4 | [§9.4](./section-9-4-data-types.md) |
-| **五类值** | §9.5–9.6 | [§9.5](./section-9-5-representable.md) · [§9.6](./section-9-6-special-values.md) |
+| **五类值** | §9.5–9.6 | [§9.5](./section-9-5-representable.md) · [§9.6](./section-9-6-special-values.md) · **[合并精读：五类+定点](./9.x-ieee754-special-and-fixed-point.md)** |
+
 | **寄存器/控制** | §9.7–9.8 | [§9.7](./section-9-7-fp-registers.md) · [§9.8](./section-9-8-fpu-control.md) |
 | **搬运/转换** | §9.9–9.11 | [§9.9](./section-9-9-fp-transfer.md) … [§9.11](./section-9-11-int-float-convert.md) |
 

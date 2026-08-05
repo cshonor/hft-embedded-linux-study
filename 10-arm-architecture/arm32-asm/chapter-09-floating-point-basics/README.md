@@ -1,6 +1,6 @@
 # Ch 9 · 浮点简介：基础、类型与传输
 
-> ***ARM Assembly Language*** — William Sw Smith · **跳过**  
+> ***ARM Assembly Language Fundamentals and Techniques*** — Hohl & Hinds · **跳过**  
 > **English:** Introduction to Floating-Point: Basics, Data Types, and Data Transfer
 
 ---
@@ -27,6 +27,7 @@
 | **§9.4** | 浮点数据类型 | [notes/section-9-4-data-types.md](./notes/section-9-4-data-types.md) |
 | **§9.5** | 浮点可表示的值 — 正常 · 次正常 · 零 | [notes/section-9-5-representable.md](./notes/section-9-5-representable.md) |
 | **§9.6** | 特殊值 — 无穷大 · NaN | [notes/section-9-6-special-values.md](./notes/section-9-6-special-values.md) |
+| **（合并）** | **五类特殊值 + 无 FPU 定点** | [notes/9.x-ieee754-special-and-fixed-point.md](./notes/9.x-ieee754-special-and-fixed-point.md) |
 | **§9.7** | Cortex-M4 浮点寄存器文件 | [notes/section-9-7-fp-registers.md](./notes/section-9-7-fp-registers.md) |
 | **§9.8** | FPU 控制寄存器 — FPSCR · CPACR | [notes/section-9-8-fpu-control.md](./notes/section-9-8-fpu-control.md) |
 | **§9.9** | 浮点数据传输 | [notes/section-9-9-fp-transfer.md](./notes/section-9-9-fp-transfer.md) |

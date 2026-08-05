@@ -49,3 +49,5 @@
 1. **Normal** = 常规定义；**Subnormal** = 更靠近 0 的「残精度区」。  
 2. **±0** 比特不同、比较相等 — debug 浮点时别惊讶。  
 3. 次正常常是 **性能陷阱** — Ch10 FZ 模式相关。
+
+**合并精读（五类 + 定点 Qm）：** [9.x-ieee754-special-and-fixed-point.md](./9.x-ieee754-special-and-fixed-point.md)
