@@ -6,12 +6,13 @@
 
 ## 本章定位
 
-<!-- 读完后补充：要点、BenOS/QEMU 实验、与飞控/驱动的衔接 -->
+ADD/ADDS、SUB/SUBS/CMP、NZCV、移位、AND/ORR/EOR/BIC、UBFX/SBFX/BFI；仍遵守 Load-Store（只碰寄存器）。
 
 | | |
 |---|---|
 | **阅读标签** | **精读**（见 [OUTLINE](../OUTLINE.md)） |
-| **实验** | 树莓派 4B / **QEMU ARM64**（官方仓库 [arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)） |
+| **实验** | **QEMU** `-cpu cortex-a76`（见 [PI5-ADAPT](../PI5-ADAPT.md)） |
+| **代码** | [arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice) |
 
 ---
 
@@ -19,16 +20,16 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-本章待补充.md](./notes/section-本章待补充.md) | 阅读本章后填写 |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（算术 · NZCV · 移位 · 位段 · 思考题） |
 
 ---
 
 ## 本章 Checklist
 
-- [ ] 读完原书对应章
-- [ ] 完成书中实验（若有）
-- [ ] 在 `notes/` 记录可复述要点
+- [x] 读完原书对应章
+- [ ] GDB 单步观察 ADDS/SUBS 后 NZCV
+- [ ] 能口头答出思考题五道
 
 ---
 
-← [Ch 3](../chapter-03-a64-load-store/) · 下一章 [Ch 5](../chapter-05-a64-compare-branch/) · [OUTLINE](../OUTLINE.md) · [本书导读](../README.md) · [19 模块](../../README.md)
+← [Ch 3](../chapter-03-a64-load-store/) · 下一章 [Ch 5](../chapter-05-a64-compare-branch/) · [OUTLINE](../OUTLINE.md) · [本书导读](../README.md) · [全书总结](../BOOK-SUMMARY.md)
