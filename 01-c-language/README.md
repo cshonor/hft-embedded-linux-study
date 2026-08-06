@@ -21,14 +21,14 @@
 
 | 目录 | 书 | 一句话 |
 |------|-----|--------|
-| [01-C入门-K-and-R-C](./01-C入门-K-and-R-C/) | 《C 程序设计语言》**K&R 第2版** | **= C89** 奠基（≠ C99/C11） |
-| [02-指针-Pointers-on-C](./02-指针-Pointers-on-C/) | 《C 和指针》· Kenneth Reek · *Pointers on C* | 指针 / 数组 / 内存模型（内核重中之重） |
-| [03-进阶-Expert-C-Programming](./03-进阶-Expert-C-Programming/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
-| [04-内核基础-Embedded-C-Self-Cultivation](./04-内核基础-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
-| [05-工具书-C-Traps-and-Pitfalls](./05-工具书-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |
+| [01-Primer-K-and-R-C](./01-Primer-K-and-R-C/) | 《C 程序设计语言》**K&R 第2版** | **= C89** 奠基（≠ C99/C11） |
+| [02-Pointers-on-C](./02-Pointers-on-C/) | 《C 和指针》· Kenneth Reek · *Pointers on C* | 指针 / 数组 / 内存模型（内核重中之重） |
+| [03-Advanced-Expert-C-Programming](./03-Advanced-Expert-C-Programming/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
+| [04-Kernel-Prep-Embedded-C-Self-Cultivation](./04-Kernel-Prep-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
+| [05-Reference-C-Traps-and-Pitfalls](./05-Reference-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |
 | [code](./code/) | 配套示例 | 练习与索引 |
 
-> **纠正常见书名混淆：** `02-指针-Pointers-on-C` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
+> **纠正常见书名混淆：** `02-Pointers-on-C` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
 
 来源副本说明 → [README.external.md](./README.external.md)
 
@@ -88,4 +88,4 @@
 |------|--------|------|
 | [01 CSAPP](../02-computer-systems/) | **指针、内存、GNU-C** | [03 Hennessy](../03-computer-architecture/) → [04–07](../07-linux-kernel/) → [08 MikanOS](../05-os-from-scratch/mikanos/) |
 
-**下一步：** 打开 **[01-C入门-K-and-R-C](./01-C入门-K-and-R-C/)**；若已过标准 C，直奔 **[04 · ch06 GNU C](./04-内核基础-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/)** 再进 LKD。
+**下一步：** 打开 **[01-Primer-K-and-R-C](./01-Primer-K-and-R-C/)**；若已过标准 C，直奔 **[04 · ch06 GNU C](./04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/)** 再进 LKD。

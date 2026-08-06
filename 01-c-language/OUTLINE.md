@@ -9,11 +9,11 @@
 
 | 本链阶段 | 目录 | 书目 |
 |----------|------|------|
-| 🔴 02 必过 | [01-C入门-K-and-R-C](./01-C入门-K-and-R-C/) | K&R |
-| 🔴 02 必过 | [02-指针-Pointers-on-C](./02-指针-Pointers-on-C/) | *C 和指针* |
-| 🟡 **04 LKD 前** | [03-进阶-Expert-C-Programming](./03-进阶-Expert-C-Programming/) | *C 专家编程*（只读 ch05–ch07） |
-| 🔴 **04 LKD 前** | [04-内核基础-Embedded-C-Self-Cultivation](./04-内核基础-Embedded-C-Self-Cultivation/) | 《嵌入式 C 自我修养》 |
-| 🟡 工具书 | [05-工具书-C-Traps-and-Pitfalls](./05-工具书-C-Traps-and-Pitfalls/) | *C 陷阱与缺陷*（遇坑再查） |
+| 🔴 02 必过 | [01-Primer-K-and-R-C](./01-Primer-K-and-R-C/) | K&R |
+| 🔴 02 必过 | [02-Pointers-on-C](./02-Pointers-on-C/) | *C 和指针* |
+| 🟡 **04 LKD 前** | [03-Advanced-Expert-C-Programming](./03-Advanced-Expert-C-Programming/) | *C 专家编程*（只读 ch05–ch07） |
+| 🔴 **04 LKD 前** | [04-Kernel-Prep-Embedded-C-Self-Cultivation](./04-Kernel-Prep-Embedded-C-Self-Cultivation/) | 《嵌入式 C 自我修养》 |
+| 🟡 工具书 | [05-Reference-C-Traps-and-Pitfalls](./05-Reference-C-Traps-and-Pitfalls/) | *C 陷阱与缺陷*（遇坑再查） |
 
 建议顺序（内核向）：**01 → 02 → 03**（标准 C）→ **04**（GNU-C，打通内核）→ **05**（工具书，遇坑再查）→ 再开 LKD / 内核网 / DPDK。
 
