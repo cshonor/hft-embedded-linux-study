@@ -41,7 +41,7 @@ std::vector<int>::const_iterator cit = v.cbegin();
 | `const iterator` | `T* const` | 否 | 是 |
 | `const_iterator` | `const T*` | 是（++） | 否 |
 
-Primer 详见 [3.4.2 begin/end 与常量迭代器](../../01-C++Primer/ch03-strings-vectors-arrays/3.4-introducing-iterators/3.4.2-begin-end与常量迭代器.md)。
+Primer 详见 [3.4.2 begin/end 与常量迭代器](../../../M0-entry-syntax/01-C++Primer/ch03-strings-vectors-arrays/3.4-introducing-iterators/3.4.2-begin-end与常量迭代器.md)。
 
 ---
 

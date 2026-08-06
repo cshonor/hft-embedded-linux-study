@@ -27,7 +27,7 @@ C++17 不是革命性版本（像 C++11 那样），而是**演进性**版本—
 
 Josuttis 的 C++ 系列三本：
 1. **C++17 - The Complete Guide**（本书）：C++17 全特性。
-2. **C++20 - The Complete Guide**（[第 10 本](../10-C++20-The-Complete-Guide/)）：C++20 的 Concepts/Ranges/Modules/Coroutines。
+2. **C++20 - The Complete Guide**（[第 10 本](../../10-C++20-The-Complete-Guide/)）：C++20 的 Concepts/Ranges/Modules/Coroutines。
 3. C++23 - The Complete Guide：C++23 增量。
 
 阅读顺序建议：先 C++17 再 C++20。C++20 的很多特性建立在 C++17 之上（如 Concepts 约束 CTAD、Ranges 延续 string_view 思路、`std::span` 补充 string_view）。

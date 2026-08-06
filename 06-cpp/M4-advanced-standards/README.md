@@ -8,8 +8,8 @@
 
 | 目录 | 书 | 状态 |
 |------|-----|------|
-| [09-C++17-The-Complete-Guide](../09-C++17-The-Complete-Guide/) | C++17（35 章） | 整章 README 已写 |
-| [10-C++20-The-Complete-Guide](../10-C++20-The-Complete-Guide/) | C++20（24 章） | 整章 README 已写 |
+| [09-C++17-The-Complete-Guide](./09-C++17-The-Complete-Guide/) | C++17（35 章） | 整章 README 已写 |
+| [10-C++20-The-Complete-Guide](./10-C++20-The-Complete-Guide/) | C++20（24 章） | 整章 README 已写 |
 
 ## 怎么读
 
@@ -46,6 +46,10 @@ C++20 很多特性在 C++17 基础上完善：先吃透 17 再读 20 更顺。
 ## 小节笔记
 
 当前为整章 README 粒度。如需按小节拆分，等读到时再拆。
+
+## 跨模块参考
+
+- **06 STL 源码剖析** 物理上在 [M3](../M3-engineering-standards/06-STL-Source-Analysis/)（和 05 Effective STL 一起作工具书）。LEARNING-PATH 提到"如 M3 未读可放 M4"——指的是阅读时机可后移到 M4 阶段，书的物理位置不动。
 
 ---
 

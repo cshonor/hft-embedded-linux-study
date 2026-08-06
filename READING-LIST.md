@@ -278,11 +278,11 @@
 
 | 里程碑 | 本目录 | 标签 | 何时读 |
 |--------|--------|------|--------|
-| M0 语法扫盲 | [01-C++Primer](./06-cpp/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
-| M1 Modern C++ | [04-Effective-Modern-C++](./06-cpp/04-Effective-Modern-C++/) | 🔴 必读 | **10 PNP 之前** |
-| M2 并发 + 对象模型 | [08-Cpp-Concurrency](./06-cpp/08-Cpp-Concurrency/) · [07-Cpp-Object-Model](./06-cpp/07-Cpp-Object-Model/) | 🔴 必读 | **17 HFT 之前** |
-| M3 STL / Effective | [02–06](./06-cpp/) | 🟡 选读 | PNP / HFT 期间穿插 |
-| M4 C++17/20 | [09-C++17](./06-cpp/09-C++17-The-Complete-Guide/) · [10-C++20](./06-cpp/10-C++20-The-Complete-Guide/) | 🟡 选读 | **17 之后** |
+| M0 语法扫盲 | [01-C++Primer](./06-cpp/M0-entry-syntax/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
+| M1 Modern C++ | [04-Effective-Modern-C++](./06-cpp/M1-modern-cpp/04-Effective-Modern-C++/) | 🔴 必读 | **10 PNP 之前** |
+| M2 并发 + 对象模型 | [08-Cpp-Concurrency](./06-cpp/M2-deep-principles/08-Cpp-Concurrency/) · [07-Cpp-Object-Model](./06-cpp/M2-deep-principles/07-Cpp-Object-Model/) | 🔴 必读 | **17 HFT 之前** |
+| M3 STL / Effective | [02–06](./06-cpp/M3-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
+| M4 C++17/20 | [09-C++17](./06-cpp/M4-advanced-standards/09-C++17-The-Complete-Guide/) · [10-C++20](./06-cpp/M4-advanced-standards/10-C++20-The-Complete-Guide/) | 🟡 选读 | **17 之后** |
 
 **HFT 产出：** 能读 muduo / HFT 引擎源码；RAII、移动语义、线程同步不再卡脖子。
 

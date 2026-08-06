@@ -56,16 +56,16 @@
 
 | 章 | 目录 | 为什么读 | 优先级 |
 |----|------|----------|--------|
-| **ch01** | [入门](./01-C++Primer/ch01-getting-started/) | 快速翻，了解编译流程 | ⭐ |
-| **ch02** | [变量与基本类型](./01-C++Primer/ch02-variables-and-basic-types/) | 和 C 的差别（`auto`、`constexpr`、`enum class`） | ⭐⭐⭐ |
-| **ch03** | [string、vector、数组](./01-C++Primer/ch03-strings-vectors-arrays/) | C++ 替代 `char*`/裸数组的标准方式 | ⭐⭐⭐ |
-| **ch04** | [表达式](./01-C++Primer/ch04-expressions/) | 类型转换、运算符，和 C 类似但要看 `bool`/`constexpr` | ⭐⭐ |
-| **ch05** | [语句](./01-C++Primer/ch05-statements/) | 和 C 几乎一样，快速翻 | ⭐ |
-| **ch06** | [函数](./01-C++Primer/ch06-functions/) | 引用传参、默认参数、函数重载 —— C 没有的 | ⭐⭐⭐ |
-| **ch07** | [类](./01-C++Primer/ch07-classes/) | **核心**：构造/析构/拷贝/this/const 成员 | ⭐⭐⭐ |
-| **ch08** | [IO 库](./01-C++Primer/ch08-iostream-library/) | `cin`/`cout`/`fstream` 基础，写测试要用 | ⭐⭐ |
-| **ch12** | [动态内存](./01-C++Primer/ch12-dynamic-memory/) | **智能指针入门**，衔接 M1 的 `unique_ptr`/`shared_ptr` | ⭐⭐⭐ |
-| **ch13** | [拷贝控制](./01-C++Primer/ch13-copy-control/) | 拷贝构造/赋值/析构/移动 —— 衔接 M1 的 move 语义 | ⭐⭐⭐ |
+| **ch01** | [入门](./M0-entry-syntax/01-C++Primer/ch01-getting-started/) | 快速翻，了解编译流程 | ⭐ |
+| **ch02** | [变量与基本类型](./M0-entry-syntax/01-C++Primer/ch02-variables-and-basic-types/) | 和 C 的差别（`auto`、`constexpr`、`enum class`） | ⭐⭐⭐ |
+| **ch03** | [string、vector、数组](./M0-entry-syntax/01-C++Primer/ch03-strings-vectors-arrays/) | C++ 替代 `char*`/裸数组的标准方式 | ⭐⭐⭐ |
+| **ch04** | [表达式](./M0-entry-syntax/01-C++Primer/ch04-expressions/) | 类型转换、运算符，和 C 类似但要看 `bool`/`constexpr` | ⭐⭐ |
+| **ch05** | [语句](./M0-entry-syntax/01-C++Primer/ch05-statements/) | 和 C 几乎一样，快速翻 | ⭐ |
+| **ch06** | [函数](./M0-entry-syntax/01-C++Primer/ch06-functions/) | 引用传参、默认参数、函数重载 —— C 没有的 | ⭐⭐⭐ |
+| **ch07** | [类](./M0-entry-syntax/01-C++Primer/ch07-classes/) | **核心**：构造/析构/拷贝/this/const 成员 | ⭐⭐⭐ |
+| **ch08** | [IO 库](./M0-entry-syntax/01-C++Primer/ch08-iostream-library/) | `cin`/`cout`/`fstream` 基础，写测试要用 | ⭐⭐ |
+| **ch12** | [动态内存](./M0-entry-syntax/01-C++Primer/ch12-dynamic-memory/) | **智能指针入门**，衔接 M1 的 `unique_ptr`/`shared_ptr` | ⭐⭐⭐ |
+| **ch13** | [拷贝控制](./M0-entry-syntax/01-C++Primer/ch13-copy-control/) | 拷贝构造/赋值/析构/移动 —— 衔接 M1 的 move 语义 | ⭐⭐⭐ |
 
 #### 新手跳过章节（用到再查，别现在啃）
 

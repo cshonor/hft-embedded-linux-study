@@ -8,8 +8,8 @@
 
 | 目录 | 书 | 状态 |
 |------|-----|------|
-| [07-Cpp-Object-Model](../07-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 整章 README 已写，小节笔记待拆 |
-| [08-Cpp-Concurrency](../08-Cpp-Concurrency/) | C++ 并发编程实战 | 整章 README 已写，小节笔记待拆 |
+| [07-Cpp-Object-Model](./07-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 整章 README 已写，小节笔记待拆 |
+| [08-Cpp-Concurrency](./08-Cpp-Concurrency/) | C++ 并发编程实战 | 整章 README 已写，小节笔记待拆 |
 
 ## 为什么是硬门槛
 

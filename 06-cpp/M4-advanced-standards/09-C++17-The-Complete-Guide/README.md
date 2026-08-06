@@ -10,7 +10,7 @@
 | 折叠表达式 | 可变参模板、编译期聚合日志/校验 |
 | `if constexpr` | 热路径零开销分支，替代 SFINAE |
 | `string_view` | 零拷贝解析 FIX/CSV 字段 |
-| 并行 STL | 离线回测、批处理行情（见 [08 ch10](../08-Cpp-Concurrency/ch10-parallel-algorithms/)） |
+| 并行 STL | 离线回测、批处理行情（见 [08 ch10](../../M2-deep-principles/08-Cpp-Concurrency/ch10-parallel-algorithms/)） |
 | `optional` / `variant` | 可空字段、多态消息体而不必继承 |
 | PMR / `to_chars` | 可控分配、无 iostream 的快速数值格式化 |
 

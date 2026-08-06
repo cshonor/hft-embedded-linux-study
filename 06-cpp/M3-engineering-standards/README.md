@@ -8,10 +8,10 @@
 
 | 目录 | 书 | 状态 |
 |------|-----|------|
-| [02-Effective-C++](../02-Effective-C++/) | Effective C++（55 条） | 整章 README 已写 |
-| [03-More-Effective-C++](../03-More-Effective-C++/) | More Effective C++（35 条） | 整章 README 已写 |
-| [05-Effective-STL](../05-Effective-STL/) | Effective STL（50 条） | 整章 README 已写 |
-| [06-STL-Source-Analysis](../06-STL-Source-Analysis/) | STL 源码剖析 | 整章 README 已写 |
+| [02-Effective-C++](./02-Effective-C++/) | Effective C++（55 条） | 整章 README 已写 |
+| [03-More-Effective-C++](./03-More-Effective-C++/) | More Effective C++（35 条） | 整章 README 已写 |
+| [05-Effective-STL](./05-Effective-STL/) | Effective STL（50 条） | 整章 README 已写 |
+| [06-STL-Source-Analysis](./06-STL-Source-Analysis/) | STL 源码剖析 | 整章 README 已写 |
 
 ## 怎么读
 

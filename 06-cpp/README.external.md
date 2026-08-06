@@ -34,8 +34,8 @@
 | 优先级 | 目录 | 说明 |
 |--------|------|------|
 | **必学** | [00-Linux-Kernel-DPDK-Network-C](./00-Linux-Kernel-DPDK-Network-C/) | C 数据面核心 |
-| 高 | [08-Cpp-Concurrency](./08-Cpp-Concurrency/) | 多线程、锁、内存序 |
-| 中 | [04-Effective-Modern-C++](./04-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
+| 高 | [08-Cpp-Concurrency](./M2-deep-principles/08-Cpp-Concurrency/) | 多线程、锁、内存序 |
+| 中 | [04-Effective-Modern-C++](./M1-modern-cpp/04-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
 | 按需 | `13-Modern-C++-Performance-Engineering` | 低延迟、无锁、CPU 亲和（见下方可选拓展） |
 
 > 通用 C++ 主线（01–10）仍保留；不走 HFT 时可按下方 **C++ 学习顺序** 推进。
@@ -44,16 +44,16 @@
 
 | 顺序 | 目录 | 书籍 | 侧重 |
 |------|------|------|------|
-| 1 | [01-C++Primer](./01-C++Primer/) | 《C++ Primer 第5版》 | 语法、标准库基础 |
-| 2 | [02-Effective-C++](./02-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
-| 3 | [03-More-Effective-C++](./03-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
-| 4 | [04-Effective-Modern-C++](./04-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
-| 5 | [05-Effective-STL](./05-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
-| 6 | [06-STL-Source-Analysis](./06-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
-| 7 | [07-Cpp-Object-Model](./07-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
-| 8 | [08-Cpp-Concurrency](./08-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
-| 9 | [09-C++17-The-Complete-Guide](./09-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
-| 10 | [10-C++20-The-Complete-Guide](./10-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
+| 1 | [01-C++Primer](./M0-entry-syntax/01-C++Primer/) | 《C++ Primer 第5版》 | 语法、标准库基础 |
+| 2 | [02-Effective-C++](./M3-engineering-standards/02-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
+| 3 | [03-More-Effective-C++](./M3-engineering-standards/03-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
+| 4 | [04-Effective-Modern-C++](./M1-modern-cpp/04-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
+| 5 | [05-Effective-STL](./M3-engineering-standards/05-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
+| 6 | [06-STL-Source-Analysis](./M3-engineering-standards/06-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
+| 7 | [07-Cpp-Object-Model](./M2-deep-principles/07-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
+| 8 | [08-Cpp-Concurrency](./M2-deep-principles/08-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
+| 9 | [09-C++17-The-Complete-Guide](./M4-advanced-standards/09-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
+| 10 | [10-C++20-The-Complete-Guide](./M4-advanced-standards/10-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
 
 ## C 语言学习顺序
 

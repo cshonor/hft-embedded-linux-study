@@ -4,7 +4,7 @@
 
 ## 本章讲什么
 
-C++17 对并发的增量改进：`scoped_lock`、`shared_mutex`、并行算法（见第 22 章）。大部分并发特性在 C++11/14 已引入，C++17 是补充。（深入并发见 [08-Cpp-Concurrency](../08-Cpp-Concurrency/)。）
+C++17 对并发的增量改进：`scoped_lock`、`shared_mutex`、并行算法（见第 22 章）。大部分并发特性在 C++11/14 已引入，C++17 是补充。（深入并发见 [08-Cpp-Concurrency](../../../M2-deep-principles/08-Cpp-Concurrency/)。）
 
 ## 要点
 

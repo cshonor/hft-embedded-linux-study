@@ -22,7 +22,7 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [01-C++Primer](./01-C++Primer/) | C++ Primer 5e | **01 CSAPP** Ch3–5 后；只刷 **Part I + 标准库基础** |
+| [01-C++Primer](./M0-entry-syntax/01-C++Primer/) | C++ Primer 5e | **01 CSAPP** Ch3–5 后；只刷 **Part I + 标准库基础** |
 
 **验收：** 能写 `vector`/`string`、引用、类、析构；不在此阶段啃模板元编程。
 
@@ -32,7 +32,7 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [04-Effective-Modern-C++](./04-Effective-Modern-C++/) | Effective Modern C++ | **07 TLPI 之后、10 PNP 之前** |
+| [04-Effective-Modern-C++](./M1-modern-cpp/04-Effective-Modern-C++/) | Effective Modern C++ | **07 TLPI 之后、10 PNP 之前** |
 
 **必会：** RAII、智能指针、`move`/完美转发、lambda、`=delete`/`=default`、`constexpr` 直觉。
 
@@ -44,8 +44,8 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [08-Cpp-Concurrency](./08-Cpp-Concurrency/) | C++ 并发编程实战 | **10–14 网络栈进行中或之后、17 HFT 之前** |
-| [07-Cpp-Object-Model](./07-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
+| [08-Cpp-Concurrency](./M2-deep-principles/08-Cpp-Concurrency/) | C++ 并发编程实战 | **10–14 网络栈进行中或之后、17 HFT 之前** |
+| [07-Cpp-Object-Model](./M2-deep-principles/07-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
 
 **验收：** 能写 mutex/condition_variable、理解 data race；能解释类大小、对齐、继承布局。
 
@@ -55,10 +55,10 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [02-Effective-C++](./02-Effective-C++/) | Effective C++ | M1 之后按需 |
-| [03-More-Effective-C++](./03-More-Effective-C++/) | More Effective C++ | 同上 |
-| [05-Effective-STL](./05-Effective-STL/) | Effective STL | **10 PNP** 写缓冲区 / 容器时 |
-| [06-STL-Source-Analysis](./06-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
+| [02-Effective-C++](./M3-engineering-standards/02-Effective-C++/) | Effective C++ | M1 之后按需 |
+| [03-More-Effective-C++](./M3-engineering-standards/03-More-Effective-C++/) | More Effective C++ | 同上 |
+| [05-Effective-STL](./M3-engineering-standards/05-Effective-STL/) | Effective STL | **10 PNP** 写缓冲区 / 容器时 |
+| [06-STL-Source-Analysis](./M3-engineering-standards/06-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
 
 ---
 
@@ -66,8 +66,8 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [09-C++17-The-Complete-Guide](./09-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
-| [10-C++20-The-Complete-Guide](./10-C++20-The-Complete-Guide/) | C++20 | **17 HFT 主线跑通后**；Concepts / Coroutines / Modules |
+| [09-C++17-The-Complete-Guide](./M4-advanced-standards/09-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
+| [10-C++20-The-Complete-Guide](./M4-advanced-standards/10-C++20-The-Complete-Guide/) | C++20 | **17 HFT 主线跑通后**；Concepts / Coroutines / Modules |
 
 ---
 

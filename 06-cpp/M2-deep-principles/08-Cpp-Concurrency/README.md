@@ -15,7 +15,7 @@
 | 7 | [设计无锁数据结构](./ch07-lock-free-containers/) | CAS、无锁容器、内存回收 |
 | 8 | [设计并发代码](./ch08-designing-concurrent-code/) | 任务划分、减少共享、通信方案 |
 | 9 | [高级线程管理](./ch09-advanced-thread-management/) | 线程池、`thread_local`、中断 |
-| 10 | [并行算法函数](./ch10-parallel-algorithms/) | C++17 并行 STL、执行策略（详见 [09 ch22](../09-C++17-The-Complete-Guide/ch22-parallel-stl/)） |
+| 10 | [并行算法函数](./ch10-parallel-algorithms/) | C++17 并行 STL、执行策略（详见 [09 ch22](../../M4-advanced-standards/09-C++17-The-Complete-Guide/ch22-parallel-stl/)） |
 | 11 | [多线程应用的测试和除错](./ch11-testing-debugging/) | 数据竞争、死锁定位与测试 |
 
 ## 附录
