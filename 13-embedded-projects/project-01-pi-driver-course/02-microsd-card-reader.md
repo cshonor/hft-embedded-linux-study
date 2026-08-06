@@ -104,6 +104,8 @@ https://downloads.raspberrypi.com/raspios_lite_arm64/images/
 储存设备 → 自定义设置（开 **SSH**、设用户名密码）→ 写入。  
 选完设备后先停在「选 OS」；**没选好 Lite、没开 SSH 前不要点写入**。
 
+下一步实物：散热风扇接线 → [03 Active Cooler](./03-active-cooler-fan.md)。
+
 ---
 
 ## 本步完成标准
