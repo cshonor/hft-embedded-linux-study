@@ -6,7 +6,7 @@
 
 **优先级**：选读入门；**主课在 [12](../../../12-device-drivers-dt/)**  
 **FAQ：** [8.0](./8.0-new-hw-dts-vs-driver.md)–[8.6](./8.6-gpio-header-vs-dts.md)  
-**C 语言：** 标准 C 为根 — [struct 驱动向](../../../01-c-language/01-K-and-R-C/ch06-structures/6.0-struct-for-drivers.md)；高频 GNU 见 [速查表](../../../01-c-language/05-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/DRIVER-GNU-C-CHEATSHEET.md) · [学多少](../../../01-c-language/05-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.0-driver-how-much-gnu-c.md)  
+**C 语言：** 标准 C 为根 — [struct 驱动向](../../../01-c-language/01-C入门-K-and-R-C/ch06-structures/6.0-struct-for-drivers.md)；高频 GNU 见 [速查表](../../../01-c-language/04-内核基础-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/DRIVER-GNU-C-CHEATSHEET.md) · [学多少](../../../01-c-language/04-内核基础-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.0-driver-how-much-gnu-c.md)  
 **前置：** [Ch7 · DT ≠ UEFI](../chapter-07-bootloaders/7.0-device-tree-vs-uefi.md) · [BSP 模板](../chapter-03-processor-basics/3.2-bsp-is-template-not-product.md)  
 **后置：** [12 Madieu + LDD3](../../../12-device-drivers-dt/) · [MELP](../../build-toolchain-yocto/)
 

@@ -9,15 +9,15 @@
 
 | 本链阶段 | 目录 | 书目 |
 |----------|------|------|
-| 🔴 02 必过 | [01-K-and-R-C](./01-K-and-R-C/) | K&R |
-| 🔴 02 必过 | [02-Pointers-on-C](./02-Pointers-on-C/) | *C 和指针* |
-| 🟡 02 末 / 03 并行 | [03-C-Traps-and-Pitfalls](./03-C-Traps-and-Pitfalls/) | *C 陷阱与缺陷* |
-| 🟡 **04 LKD 前** | [04-Expert-C-Programming](./04-Expert-C-Programming/) | *C 专家编程* |
-| 🔴 **04 LKD 前** | [05-Embedded-C-Self-Cultivation](./05-Embedded-C-Self-Cultivation/) | 《嵌入式 C 自我修养》 |
+| 🔴 02 必过 | [01-C入门-K-and-R-C](./01-C入门-K-and-R-C/) | K&R |
+| 🔴 02 必过 | [02-指针-Pointers-on-C](./02-指针-Pointers-on-C/) | *C 和指针* |
+| 🟡 **04 LKD 前** | [03-进阶-Expert-C-Programming](./03-进阶-Expert-C-Programming/) | *C 专家编程*（只读 ch05–ch07） |
+| 🔴 **04 LKD 前** | [04-内核基础-Embedded-C-Self-Cultivation](./04-内核基础-Embedded-C-Self-Cultivation/) | 《嵌入式 C 自我修养》 |
+| 🟡 工具书 | [05-工具书-C-Traps-and-Pitfalls](./05-工具书-C-Traps-and-Pitfalls/) | *C 陷阱与缺陷*（遇坑再查） |
 
-建议顺序（内核向）：**01 → 02 → 03 → 04**（标准 C）→ **05**（GNU-C，打通内核）→ 再开 LKD / 内核网 / DPDK。
+建议顺序（内核向）：**01 → 02 → 03**（标准 C）→ **04**（GNU-C，打通内核）→ **05**（工具书，遇坑再查）→ 再开 LKD / 内核网 / DPDK。
 
-> **01–04 ≈ 标准 C；05 = GNU C 补齐。** 详见 [README](./README.md)。
+> **01–03 ≈ 标准 C；04 = GNU C 补齐；05 = 工具书。** 详见 [README](./README.md)。
 
 ---
 
@@ -37,9 +37,9 @@
 
 | 来源 | 何时 |
 |------|------|
-| **`03` C 陷阱与缺陷** | 宏、链接、库函数陷阱 — 02 末或 03 并行 |
-| **`04` C 专家编程** | 链接器、深层指针 — **04 LKD 前** |
-| **`05` 嵌入式 C 自我修养** | `__attribute__`、零长数组 — **04 LKD / 14 DPDK 前必读** |
+| **`03` C 专家编程** | 链接器、段、内存布局 — **只读 ch05–ch07**，04 LKD 前 |
+| **`04` 嵌入式 C 自我修养** | `__attribute__`、`typeof`、内嵌汇编、ELF — **04 LKD / 14 DPDK 前必读** |
+| **`05` C 陷阱与缺陷** | 宏、链接、库函数陷阱 — 工具书，遇坑再查 |
 | **K&R** Ch6–7 | 与 07 TLPI I/O 对照 |
 
 ---
@@ -57,7 +57,7 @@
 ## 阶段衔接
 
 ```text
-01 CSAPP → 02 C（本目录 01–02 必过；05 在 04 LKD 前）
+01 CSAPP → 02 C（本目录 01–02 必过；04 在 04 LKD 前）
     → 03 Hennessy → 04–07 内核/TLPI
     → 08/01 MikanOS → 09 C++ → … → 14 DPDK → 17 HFT
 ```

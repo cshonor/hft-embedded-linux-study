@@ -7,7 +7,7 @@
 | sizeof / ABI / endian / padding | [02-computer-systems/code/](../../02-computer-systems/code/) |
 | ABI 笔记 | [01 …/section-2.1.2-abi-*.md](../../02-computer-systems/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) |
 | 指针步长笔记 | [01 …/section-3.8-指针步长详解.md](../../02-computer-systems/chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md) |
-| K&R / Pointers on C **笔记** | 本模块 [01-K-and-R-C](../01-K-and-R-C/) · [02-Pointers-on-C](../02-Pointers-on-C/) |
+| K&R / Pointers on C **笔记** | 本模块 [01-C入门-K-and-R-C](../01-C入门-K-and-R-C/) · [02-指针-Pointers-on-C](../02-指针-Pointers-on-C/) |
 
 **02 模块职责：** 读序 + OUTLINE + 外部 C 五书索引 — **不把 CSAPP 笔记/实验再复制一份**。
 

@@ -77,7 +77,7 @@ make -C . V=1 kernel/sys.o 2>&1 | tr ' ' '\n' | grep '^-std='
 
 ### K&R 两版 vs C89 / C99 / C11（一次性分清）
 
-市面通行的《C 程序设计语言》几乎都是 **第二版** — 见本仓 [02 · 01-K-and-R-C](../../../../01-c-language/01-K-and-R-C/)。
+市面通行的《C 程序设计语言》几乎都是 **第二版** — 见本仓 [02 · 01-C入门-K-and-R-C](../../../../01-c-language/01-C入门-K-and-R-C/)。
 
 | 书 | 年代 | 语言基准 |
 |----|------|----------|
@@ -127,7 +127,7 @@ int b;
 | 旧内核（≤5.17） | `gnu89` = **C89 + GCC 扩展** ← 所以很多人先读 K&R |
 | 现代内核（≥5.18） | `gnu11` = **C11 + GCC 扩展** |
 
-**K&R 只覆盖「标准 C 基底」。** 内核里的 `typeof`、`({})`、`__attribute__`，以及大量 C99 习惯写法，K&R **不会讲** — 需另补 C99/C11 习惯 + 本节上文「GCC 扩展」+ 本仓 C 书单收尾 **[02 · 05 Embedded C / GNU-C](../../../../01-c-language/05-Embedded-C-Self-Cultivation/)**（完整五书路线见 [01-c-language/README](../../../../01-c-language/README.md)）。
+**K&R 只覆盖「标准 C 基底」。** 内核里的 `typeof`、`({})`、`__attribute__`，以及大量 C99 习惯写法，K&R **不会讲** — 需另补 C99/C11 习惯 + 本节上文「GCC 扩展」+ 本仓 C 书单收尾 **[02 · 05 Embedded C / GNU-C](../../../../01-c-language/04-内核基础-Embedded-C-Self-Cultivation/)**（完整五书路线见 [01-c-language/README](../../../../01-c-language/README.md)）。
 
 #### 对照：K&R 有 / 内核大量用但 K&R 没有
 
