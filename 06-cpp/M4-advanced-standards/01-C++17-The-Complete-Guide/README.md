@@ -1,6 +1,6 @@
 # 《C++17 - The Complete Guide》章节索引
 
-> Nicolai Josuttis 著，与 [10-C++20-The-Complete-Guide](../10-C++20-The-Complete-Guide/) 同作者。**08 并发 → 09 C++17 → 10 C++20** 按版本递进，C++17 是 HFT 技术栈里大量「现代特性」的过渡基线。
+> Nicolai Josuttis 著，与 [02-C++20-The-Complete-Guide](../02-C++20-The-Complete-Guide/) 同作者。**02 并发 → 01 C++17 → 02 C++20** 按版本递进，C++17 是 HFT 技术栈里大量「现代特性」的过渡基线。
 
 ## 为什么插在 08 与 09 之间
 
@@ -10,7 +10,7 @@
 | 折叠表达式 | 可变参模板、编译期聚合日志/校验 |
 | `if constexpr` | 热路径零开销分支，替代 SFINAE |
 | `string_view` | 零拷贝解析 FIX/CSV 字段 |
-| 并行 STL | 离线回测、批处理行情（见 [08 ch10](../../M2-deep-principles/08-Cpp-Concurrency/ch10-parallel-algorithms/)） |
+| 并行 STL | 离线回测、批处理行情（见 [08 ch10](../../M2-deep-principles/02-Cpp-Concurrency/ch10-parallel-algorithms/)） |
 | `optional` / `variant` | 可空字段、多态消息体而不必继承 |
 | PMR / `to_chars` | 可控分配、无 iostream 的快速数值格式化 |
 
@@ -75,7 +75,7 @@
 1. **语言层速通**：1（结构化绑定）→ 2 → 6 → 9–11（CTAD / `if constexpr` / 折叠表达式）
 2. **HFT 高频库**：19（`string_view`）→ 22（并行 STL，配合 08）→ 31（`to_chars`）→ 29（PMR）
 3. **类型安全与配置**：15–17（`optional` / `variant` / `any`）→ 20（filesystem 配置/日志路径）
-4. **收尾**：34（`-std=c++17` 等设置）→ 35（弃用特性）→ 进入 [10 C++20](../10-C++20-The-Complete-Guide/)
+4. **收尾**：34（`-std=c++17` 等设置）→ 35（弃用特性）→ 进入 [02 C++20](../02-C++20-The-Complete-Guide/)
 
 ## 学习进度
 

@@ -27,7 +27,7 @@ C++17 不是革命性版本（像 C++11 那样），而是**演进性**版本—
 
 Josuttis 的 C++ 系列三本：
 1. **C++17 - The Complete Guide**（本书）：C++17 全特性。
-2. **C++20 - The Complete Guide**（[第 10 本](../../10-C++20-The-Complete-Guide/)）：C++20 的 Concepts/Ranges/Modules/Coroutines。
+2. **C++20 - The Complete Guide**（[第 10 本](../../02-C++20-The-Complete-Guide/)）：C++20 的 Concepts/Ranges/Modules/Coroutines。
 3. C++23 - The Complete Guide：C++23 增量。
 
 阅读顺序建议：先 C++17 再 C++20。C++20 的很多特性建立在 C++17 之上（如 Concepts 约束 CTAD、Ranges 延续 string_view 思路、`std::span` 补充 string_view）。
@@ -43,7 +43,7 @@ Josuttis 的 C++ 系列三本：
 - **C++17 是 HFT 的实用基线**：很多 HFT 项目用 C++17（不一定升到 C++20/23），因为 17 的特性集已经覆盖了 string_view、optional、variant、PMR、to_chars 等核心需求。
 - **演进而非革命**：HFT 代码库大且对稳定性敏感，C++17 的"中小改进"风格适合渐进迁移，不像 C++20 的 Modules/Ranges 那样需要大改。
 - **作者务实风格契合 HFT**：HFT 关心"能不能用、有什么代价"，Josuttis 的特性评估视角与 HFT 一致。
-- **与 10 的衔接**：读完 09 再读 10-C++20，理解 C++20 如何在 17 基础上扩展（如 Concepts 约束模板、Ranges 替代迭代器、Coroutines 替代回调）。
+- **与 02 的衔接**：读完 01 再读 02-C++20，理解 C++20 如何在 17 基础上扩展（如 Concepts 约束模板、Ranges 替代迭代器、Coroutines 替代回调）。
 
 ## 自测题
 

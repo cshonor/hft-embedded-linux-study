@@ -4,7 +4,7 @@
 
 ## 本章讲什么
 
-C++17 对并发的增量改进：`scoped_lock`、`shared_mutex`、并行算法（见第 22 章）。大部分并发特性在 C++11/14 已引入，C++17 是补充。（深入并发见 [08-Cpp-Concurrency](../../../M2-deep-principles/08-Cpp-Concurrency/)。）
+C++17 对并发的增量改进：`scoped_lock`、`shared_mutex`、并行算法（见第 22 章）。大部分并发特性在 C++11/14 已引入，C++17 是补充。（深入并发见 [02-Cpp-Concurrency](../../../M2-deep-principles/02-Cpp-Concurrency/)。）
 
 ## 要点
 
@@ -59,7 +59,7 @@ C++17 并行 STL 已在第 22 章详述，本章是 C++17 库视角的概览。
 - **`shared_mutex` 行情快照读多写少**：行情快照多策略读、单线程写，用 `shared_lock` 并发读不互斥。
 - **`is_always_lock_free` 编译期保证**：热路径原子结构 `static_assert(atomic<T>::is_always_lock_free)` 确保无内部锁。
 - **热路径仍慎用 shared_mutex**：`shared_mutex` 读路径有原子计数开销，极高频率下不如无锁快照。
-- **与 08 的衔接**：本章是 C++17 新增并发工具的索引，深入原理和陷阱见 08-Cpp-Concurrency。
+- **与 08 的衔接**：本章是 C++17 新增并发工具的索引，深入原理和陷阱见 02-Cpp-Concurrency。
 
 ## 自测题
 

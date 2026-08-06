@@ -2,6 +2,8 @@
 
 > 来源：[cshonor/cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)  
 > 本仓入口以 [README.md](./README.md) 为准；下方为上游原文备份（路径按上游根目录）。
+>
+> **编号说明：** 上游原文用全局 `01`–`10` 编号；本仓已重组为 M0–M4 模块，每个模块内部书从 `01` 起重新编号。下方正文保留上游原貌，链接已指向本仓新位置。
 
 ---
 
@@ -26,7 +28,7 @@
   Linux socket/epoll、DPDK 官方文档与 demo、抓包与协议
         ↓
 阶段 C  C++ 按需（策略层 / 框架）
-  04 Modern C++ → 08 并发 → 09/10 C++17/20 → 13 性能工程（可选）
+  04 Modern C++ → 02 并发 → 09/10 C++17/20 → 13 性能工程（可选）
 ```
 
 ### HFT / 低延迟推荐顺序
@@ -34,8 +36,8 @@
 | 优先级 | 目录 | 说明 |
 |--------|------|------|
 | **必学** | [00-Linux-Kernel-DPDK-Network-C](./00-Linux-Kernel-DPDK-Network-C/) | C 数据面核心 |
-| 高 | [08-Cpp-Concurrency](./M2-deep-principles/08-Cpp-Concurrency/) | 多线程、锁、内存序 |
-| 中 | [04-Effective-Modern-C++](./M1-modern-cpp/04-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
+| 高 | [02-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | 多线程、锁、内存序 |
+| 中 | [01-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
 | 按需 | `13-Modern-C++-Performance-Engineering` | 低延迟、无锁、CPU 亲和（见下方可选拓展） |
 
 > 通用 C++ 主线（01–10）仍保留；不走 HFT 时可按下方 **C++ 学习顺序** 推进。
@@ -45,15 +47,15 @@
 | 顺序 | 目录 | 书籍 | 侧重 |
 |------|------|------|------|
 | 1 | [01-C++Primer](./M0-entry-syntax/01-C++Primer/) | 《C++ Primer 第5版》 | 语法、标准库基础 |
-| 2 | [02-Effective-C++](./M3-engineering-standards/02-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
-| 3 | [03-More-Effective-C++](./M3-engineering-standards/03-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
-| 4 | [04-Effective-Modern-C++](./M1-modern-cpp/04-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
-| 5 | [05-Effective-STL](./M3-engineering-standards/05-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
-| 6 | [06-STL-Source-Analysis](./M3-engineering-standards/06-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
-| 7 | [07-Cpp-Object-Model](./M2-deep-principles/07-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
-| 8 | [08-Cpp-Concurrency](./M2-deep-principles/08-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
-| 9 | [09-C++17-The-Complete-Guide](./M4-advanced-standards/09-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
-| 10 | [10-C++20-The-Complete-Guide](./M4-advanced-standards/10-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
+| 2 | [01-Effective-C++](./M3-engineering-standards/01-Effective-C++/) | 《Effective C++ 第三版》 | 基础编码规范 |
+| 3 | [02-More-Effective-C++](./M3-engineering-standards/02-More-Effective-C++/) | 《More Effective C++》 | 进阶语法、设计技巧 |
+| 4 | [01-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
+| 5 | [03-Effective-STL](./M3-engineering-standards/03-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
+| 6 | [04-STL-Source-Analysis](./M3-engineering-standards/04-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
+| 7 | [01-Cpp-Object-Model](./M2-deep-principles/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
+| 8 | [02-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
+| 9 | [01-C++17-The-Complete-Guide](./M4-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
+| 10 | [02-C++20-The-Complete-Guide](./M4-advanced-standards/02-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
 
 ## C 语言学习顺序
 
@@ -61,17 +63,17 @@
 
 ## C++ 学习顺序
 
-1. 先吃透 **04-Effective-Modern-C++**（C++11/14/17），建立现代 C++ 基础认知
+1. 先吃透 **01-Effective-Modern-C++**（C++11/14/17），建立现代 C++ 基础认知
 2. 完成 STL、对象模型、并发等底层章节（05–08）
-3. 读 **09-C++17-The-Complete-Guide**：结构化绑定、折叠表达式、并行 STL、`string_view` 等——HFT 技术栈里 17→20 的过渡基线
-4. 最后切入 **10-C++20-The-Complete-Guide**，理解 C++20 是对 C++17 的升级拓展（Concepts、Ranges、Coroutines 等）
+3. 读 **01-C++17-The-Complete-Guide**：结构化绑定、折叠表达式、并行 STL、`string_view` 等——HFT 技术栈里 17→20 的过渡基线
+4. 最后切入 **02-C++20-The-Complete-Guide**，理解 C++20 是对 C++17 的升级拓展（Concepts、Ranges、Coroutines 等）
 
 ## 学习提示
 
 - **HFT / 数据面**：优先 **00** + `00/01–05`；C++ 在能写策略后再补
 - **C++ 经典与现代**：Effective 系列 + Modern C++ 衔接；**原理 > 语法版本**
 - **C 的定位**：Linux 内核、DPDK、网络数据面；HFT 建议 **C 在前**
-- **对象模型**：`07-Cpp-Object-Model/` 与 `00-.../02-Pointers-on-C/` 对照理解内存布局
+- **对象模型**：`01-Cpp-Object-Model/` 与 `00-.../02-Pointers-on-C/` 对照理解内存布局
 - **全程保持**：笔记与代码写在对应书籍目录下，方便按书复盘
 
 ## 可选拓展（量化 / 低延迟方向）

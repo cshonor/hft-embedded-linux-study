@@ -4,7 +4,7 @@
 
 ## 本章讲什么
 
-C++20 的并发增强：`latch`/`barrier`/`semaphore` 同步原语、`atomic_ref`、`atomic<shared_ptr>`、`jthread`（第 12 章）、`std::stop` 机制、协程（第 14-15 章）。（深入并发见 [08-Cpp-Concurrency](../../../M2-deep-principles/08-Cpp-Concurrency/)。）
+C++20 的并发增强：`latch`/`barrier`/`semaphore` 同步原语、`atomic_ref`、`atomic<shared_ptr>`、`jthread`（第 12 章）、`std::stop` 机制、协程（第 14-15 章）。（深入并发见 [02-Cpp-Concurrency](../../../M2-deep-principles/02-Cpp-Concurrency/)。）
 
 ## 要点
 

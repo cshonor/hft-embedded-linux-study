@@ -8,7 +8,7 @@
 
 | 目录 | 书 | 状态 |
 |------|-----|------|
-| [04-Effective-Modern-C++](./04-Effective-Modern-C++/) | Effective Modern C++ | 整章 README 已写，小节笔记拆分中 |
+| [01-Effective-Modern-C++](./01-Effective-Modern-C++/) | Effective Modern C++ | 整章 README 已写，小节笔记拆分中 |
 
 ## 为什么是硬门槛
 
@@ -38,20 +38,20 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 - 自测题
 - 参考与延伸
 
-模板示例：[Item 1 模板类型推导](./04-Effective-Modern-C++/ch01-deducing-types/item01-template-type-deduction.md)
+模板示例：[Item 1 模板类型推导](./01-Effective-Modern-C++/ch01-deducing-types/item01-template-type-deduction.md)
 
 ## 章节清单（8 章 42 条款）
 
 | 章 | 目录 | 条款数 |
 |----|------|--------|
-| 1 | [类型推导](./04-Effective-Modern-C++/ch01-deducing-types/) | 4 |
-| 2 | [auto](./04-Effective-Modern-C++/ch02-auto/) | 2 |
-| 3 | [移步现代 C++](./04-Effective-Modern-C++/ch03-moving-to-modern-cpp/) | 4 |
-| 4 | [智能指针](./04-Effective-Modern-C++/ch04-smart-pointers/) | 5 |
-| 5 | [右值/移动/转发](./04-Effective-Modern-C++/ch05-rvalue-move-forwarding/) | 8 |
-| 6 | [Lambda](./04-Effective-Modern-C++/ch06-lambda-expressions/) | 4 |
-| 7 | [并发 API](./04-Effective-Modern-C++/ch07-concurrency-api/) | 4 |
-| 8 | [杂项](./04-Effective-Modern-C++/ch08-tweaks/) | 2 |
+| 1 | [类型推导](./01-Effective-Modern-C++/ch01-deducing-types/) | 4 |
+| 2 | [auto](./01-Effective-Modern-C++/ch02-auto/) | 2 |
+| 3 | [移步现代 C++](./01-Effective-Modern-C++/ch03-moving-to-modern-cpp/) | 4 |
+| 4 | [智能指针](./01-Effective-Modern-C++/ch04-smart-pointers/) | 5 |
+| 5 | [右值/移动/转发](./01-Effective-Modern-C++/ch05-rvalue-move-forwarding/) | 8 |
+| 6 | [Lambda](./01-Effective-Modern-C++/ch06-lambda-expressions/) | 4 |
+| 7 | [并发 API](./01-Effective-Modern-C++/ch07-concurrency-api/) | 4 |
+| 8 | [杂项](./01-Effective-Modern-C++/ch08-tweaks/) | 2 |
 
 ---
 

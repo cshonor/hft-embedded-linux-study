@@ -4,7 +4,7 @@
 
 ## 本章讲什么
 
-C++11 把线程、原子操作、future 首次标准化。但标准并发 API 有不少"看着对、其实错"的坑：`std::async` 的默认启动策略、`std::thread` 的异常安全与析构行为、`volatile` 与 `std::atomic` 的本质区别。本章是 HFT 并发的入门必修——更深的内容在 08-Cpp-Concurrency（C++ Concurrency in Action）。
+C++11 把线程、原子操作、future 首次标准化。但标准并发 API 有不少"看着对、其实错"的坑：`std::async` 的默认启动策略、`std::thread` 的异常安全与析构行为、`volatile` 与 `std::atomic` 的本质区别。本章是 HFT 并发的入门必修——更深的内容在 02-Cpp-Concurrency（C++ Concurrency in Action）。
 
 ---
 

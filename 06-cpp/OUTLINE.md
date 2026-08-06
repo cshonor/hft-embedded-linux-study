@@ -1,7 +1,7 @@
 # C++ 学习链 · 里程碑与 HFT 插入顺序
 
-> **笔记正文：** 本目录 `01`–`10`（自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制）  
-> **HFT 读序 ≠ 文件夹编号** — 以本表里程碑为准。
+> **笔记正文：** 本目录 M0–M4 五个模块（自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制）  
+> **HFT 读序 ≠ 模块编号 M0→M4** — 实际顺序 M0→M1→M3（穿插）→M2→M4，以本表里程碑为准。
 
 ---
 
@@ -10,8 +10,8 @@
 | 原则 | 说明 |
 |------|------|
 | **C 先于 C++** | [01 CSAPP](../02-computer-systems/) + [02 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
-| **Modern 先于 muduo** | [10 PNP](../15-network-sockets/muduo-sockets/) 是 C++ 工程；**`04-Effective-Modern-C++` 是硬门槛** |
-| **并发先于 HFT 引擎** | [17 HFT](../21-hft-engineering/)；**`08-Cpp-Concurrency` 必过** |
+| **Modern 先于 muduo** | [10 PNP](../15-network-sockets/muduo-sockets/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
+| **并发先于 HFT 引擎** | [17 HFT](../21-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
 ---
@@ -32,7 +32,7 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [04-Effective-Modern-C++](./M1-modern-cpp/04-Effective-Modern-C++/) | Effective Modern C++ | **07 TLPI 之后、10 PNP 之前** |
+| [01-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | Effective Modern C++ | **07 TLPI 之后、10 PNP 之前** |
 
 **必会：** RAII、智能指针、`move`/完美转发、lambda、`=delete`/`=default`、`constexpr` 直觉。
 
@@ -44,8 +44,8 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [08-Cpp-Concurrency](./M2-deep-principles/08-Cpp-Concurrency/) | C++ 并发编程实战 | **10–14 网络栈进行中或之后、17 HFT 之前** |
-| [07-Cpp-Object-Model](./M2-deep-principles/07-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
+| [02-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 | **10–14 网络栈进行中或之后、17 HFT 之前** |
+| [01-Cpp-Object-Model](./M2-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
 
 **验收：** 能写 mutex/condition_variable、理解 data race；能解释类大小、对齐、继承布局。
 
@@ -55,10 +55,10 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [02-Effective-C++](./M3-engineering-standards/02-Effective-C++/) | Effective C++ | M1 之后按需 |
-| [03-More-Effective-C++](./M3-engineering-standards/03-More-Effective-C++/) | More Effective C++ | 同上 |
-| [05-Effective-STL](./M3-engineering-standards/05-Effective-STL/) | Effective STL | **10 PNP** 写缓冲区 / 容器时 |
-| [06-STL-Source-Analysis](./M3-engineering-standards/06-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
+| [01-Effective-C++](./M3-engineering-standards/01-Effective-C++/) | Effective C++ | M1 之后按需 |
+| [02-More-Effective-C++](./M3-engineering-standards/02-More-Effective-C++/) | More Effective C++ | 同上 |
+| [03-Effective-STL](./M3-engineering-standards/03-Effective-STL/) | Effective STL | **10 PNP** 写缓冲区 / 容器时 |
+| [04-STL-Source-Analysis](./M3-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
 
 ---
 
@@ -66,8 +66,8 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [09-C++17-The-Complete-Guide](./M4-advanced-standards/09-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
-| [10-C++20-The-Complete-Guide](./M4-advanced-standards/10-C++20-The-Complete-Guide/) | C++20 | **17 HFT 主线跑通后**；Concepts / Coroutines / Modules |
+| [01-C++17-The-Complete-Guide](./M4-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
+| [02-C++20-The-Complete-Guide](./M4-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 | **17 HFT 主线跑通后**；Concepts / Coroutines / Modules |
 
 ---
 
@@ -93,9 +93,9 @@
 
 ## 最短路径（时间紧）
 
-1. **`04-Effective-Modern-C++`**（全书）
-2. **`08-Cpp-Concurrency`**（线程 + 同步 + 内存模型章）
-3. **`07-Cpp-Object-Model`**（选章：对象布局、继承、虚函数）
+1. **`01-Effective-Modern-C++`**（全书）
+2. **`02-Cpp-Concurrency`**（线程 + 同步 + 内存模型章）
+3. **`01-Cpp-Object-Model`**（选章：对象布局、继承、虚函数）
 
 其余 Effective / STL / C++17/20 **边做 17 HFT 边补**。
 

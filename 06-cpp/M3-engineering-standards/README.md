@@ -8,10 +8,10 @@
 
 | 目录 | 书 | 状态 |
 |------|-----|------|
-| [02-Effective-C++](./02-Effective-C++/) | Effective C++（55 条） | 整章 README 已写 |
-| [03-More-Effective-C++](./03-More-Effective-C++/) | More Effective C++（35 条） | 整章 README 已写 |
-| [05-Effective-STL](./05-Effective-STL/) | Effective STL（50 条） | 整章 README 已写 |
-| [06-STL-Source-Analysis](./06-STL-Source-Analysis/) | STL 源码剖析 | 整章 README 已写 |
+| [01-Effective-C++](./01-Effective-C++/) | Effective C++（55 条） | 整章 README 已写 |
+| [02-More-Effective-C++](./02-More-Effective-C++/) | More Effective C++（35 条） | 整章 README 已写 |
+| [03-Effective-STL](./03-Effective-STL/) | Effective STL（50 条） | 整章 README 已写 |
+| [04-STL-Source-Analysis](./04-STL-Source-Analysis/) | STL 源码剖析 | 整章 README 已写 |
 
 ## 怎么读
 
@@ -19,10 +19,10 @@
 
 | 书 | 何时查 | 必记条目 |
 |----|--------|----------|
-| 02 Effective C++ | 写代码踩坑时 | const/inline/enum 替代 #define、多态基类析构加 virtual |
-| 03 More Effective C++ | 同上 | 智能指针初版（已过时，看 04 代替） |
-| 05 Effective STL | 写容器/缓冲区时 | remove-erase 惯用法、reserve、迭代器失效 |
-| 06 STL 源码剖析 | HFT 碰到性能瓶颈时 | allocator、vector 三指针、RB-tree、introsort |
+| 01 Effective C++ | 写代码踩坑时 | const/inline/enum 替代 #define、多态基类析构加 virtual |
+| 02 More Effective C++ | 同上 | 智能指针初版（已过时，看 04 代替） |
+| 03 Effective STL | 写容器/缓冲区时 | remove-erase 惯用法、reserve、迭代器失效 |
+| 04 STL 源码剖析 | HFT 碰到性能瓶颈时 | allocator、vector 三指针、RB-tree、introsort |
 
 ## 注意
 

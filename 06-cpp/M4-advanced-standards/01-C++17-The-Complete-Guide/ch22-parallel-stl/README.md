@@ -4,7 +4,7 @@
 
 ## 本章讲什么
 
-C++17 给 `<algorithm>` 加了执行策略参数，让算法可并行/向量化运行。本章详述 `seq`/`par`/`par_unseq` 三种策略、并行算法的语义约束、以及性能预期。（概念基础见 [08 第 10 章](../../../M2-deep-principles/08-Cpp-Concurrency/ch10-parallel-algorithms/)，本章是 C++17 视角的深入。）
+C++17 给 `<algorithm>` 加了执行策略参数，让算法可并行/向量化运行。本章详述 `seq`/`par`/`par_unseq` 三种策略、并行算法的语义约束、以及性能预期。（概念基础见 [08 第 10 章](../../../M2-deep-principles/02-Cpp-Concurrency/ch10-parallel-algorithms/)，本章是 C++17 视角的深入。）
 
 ## 要点
 

@@ -8,13 +8,13 @@
 
 | 目录 | 书 | 状态 |
 |------|-----|------|
-| [07-Cpp-Object-Model](./07-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 整章 README 已写，小节笔记待拆 |
-| [08-Cpp-Concurrency](./08-Cpp-Concurrency/) | C++ 并发编程实战 | 整章 README 已写，小节笔记待拆 |
+| [01-Cpp-Object-Model](./01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 整章 README 已写，小节笔记待拆 |
+| [02-Cpp-Concurrency](./02-Cpp-Concurrency/) | C++ 并发编程实战 | 整章 README 已写，小节笔记待拆 |
 
 ## 为什么是硬门槛
 
-- **07 对象模型：** HFT 里每个字节的布局都算钱。不懂 vptr/vtable、继承布局、placement new，HFT 代码看不懂也写不出。
-- **08 并发：** HFT 是多线程引擎。不懂内存模型、data race、无锁结构，程序会"时好时坏"调试到崩溃。
+- **01 对象模型：** HFT 里每个字节的布局都算钱。不懂 vptr/vtable、继承布局、placement new，HFT 代码看不懂也写不出。
+- **02 并发：** HFT 是多线程引擎。不懂内存模型、data race、无锁结构，程序会"时好时坏"调试到崩溃。
 
 ## 阅读建议
 
