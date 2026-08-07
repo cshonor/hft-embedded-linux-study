@@ -81,6 +81,14 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 
 **HFT 产出：** 生产 eBPF 观测；与 DPDK 配合做内核栈 vs 用户态旁路对比。
 
+## 19↔20 联动参考文档
+
+| 文档 | 用途 |
+|------|------|
+| [Rubric 评审校验清单](./ref-rubric-checklist.md) | 一次排障/优化做完后逐项打勾（6 大类 30+ 检查项） |
+| [bpftrace 样例脚本集](./ref-bpftrace-scripts.md) | 8 个场景脚本：调度/IO/TCP/syscall/锁/缺页/slab/软中断 |
+| [故障排查决策树](./ref-troubleshooting-decision-tree.md) | 7 大症状入口 → 19 看现象 → 20 钻根因 |
+
 ## 交叉阅读
 
 - **上一本（必读前置）** → [19-systems-performance](../19-systems-performance/) — 读完立刻读本目录
