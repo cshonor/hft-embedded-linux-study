@@ -70,4 +70,43 @@ sudo tcpsynbl-bpfcc
 
 **HFT：** 低延迟 socket 通常 **`TCP_NODELAY`** — `tcpnagle` 验证是否误开 Nagle。
 
+
+### 常见陷阱
+
+1. **把重传等同于网络拥塞** — 重传可能由丢包（网络问题）或内核栈延迟（调度问题）引起；tcpretrans 能看重传时刻和序列号，但不直接告诉原因
+2. **忽视 TCP 重传对 HFT 的微秒级影响** — 一次重传至少增加一个 RTT 的延迟（通常几十微秒到毫秒）；HFT 策略循环中一次重传可能导致超时
+3. **混淆 tcpretrans 和 tcpretrans 的追踪范围** — tcpretrans 只追踪内核 TCP 栈的重传；DPDK 用户态 TCP 栈的重传不在此工具范围内
+
+<details>
+<summary>📝 自测题（点击展开）</summary>
+
+1. **TCP 协议层的关键 BPF 工具有哪些？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   (1) tcpretrans：追踪 TCP 重传事件（时间、源/目的、序列号、原因）；(2) tcpconnlat：测量 TCP 连接建立延迟；(3) tcptop：按连接统计发送/接收字节数；(4) tcprtt：TCP RTT 分布直方图；(5) tcpsize：读写大小分布。这些工具基于 tcp_tracepoint 或 kprobe 实现。
+
+   </details>
+
+2. **TCP 重传对 HFT 延迟有什么影响？如何追踪？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   一次重传至少增加一个 RTO（重传超时，通常 200ms+）或快重传时间（3 个重复 ACK，约 1 RTT）。HFT 策略循环中一次重传可能导致策略超时。追踪：BCC `tcpretrans`——显示每次重传的时间、连接、序列号、状态。bpftrace：`tracepoint:tcp:tcp_retransmit_skb { @[src,dst] = count() }` 按连接统计重传次数。
+
+   </details>
+
+3. **tcprtt 直方图对 HFT 有什么价值？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   tcprtt 显示 TCP RTT（往返时间）的分布直方图——内核根据 ACK 返回时间动态计算的 RTT 估计值。HFT 价值：(1) RTT 基线——正常 RTT 是多少，异常时偏移多少；(2) RTT 分布尾部——P99 RTT 是否远超中位数（说明有偶发网络抖动）；(3) 按连接对比——不同对端交易所的 RTT 差异。`bpftrace -e 'kprobe:tcp_rtt_estimator { @rtt = hist(arg2 / 1000) }'`。
+
+   </details>
+
+</details>
+
 ---

@@ -81,6 +81,26 @@ P999 不是「噪声」— 是 **P&L**。不删 outlier；**P999/Max 告警** + 
 - [ ] histogram：**是否双峰**
 - [ ] 不删 outlier；P999 可追溯
 
+
+### 常见陷阱
+
+1. 只报 mean 不报分位数——HFT 的 P99 可能是 mean 的 10 倍，mean 正常不代表没问题
+2. σ 大但不查原因——标准差大说明有抖动，可能是调度/锁/cache 问题，不是「正常波动」
+3. 采样率不够——每秒采一个点可能完全错过微秒级尖刺，HFT 需要高频采样或事件驱动
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 为什么不能用 mean 代替 P99？
+   <details><summary>答</summary>一次 P99 尖刺就可能导致错单，mean 被大量正常样本稀释，看不出问题</details>
+2. 标准差大说明什么？应该怎么处理？
+   <details><summary>答</summary>说明有抖动/不稳定——查调度延迟、锁竞争、cache miss、NUMA 迁移等根因</details>
+3. 采样监控为什么可能漏掉 HFT 尖刺？
+   <details><summary>答</summary>低频采样（如每 10 秒采一次）完全错过微秒级事件，需要事件驱动或高频 BPF 追踪</details>
+
+</details>
+
+
 ---
 
 ← [2.7.2](./section-2.7.2-容量规划三步法.md) · [2.8.2 五种图](./section-2.8.2-五种图与监控栈.md) · [本章导读](../README.md)

@@ -34,6 +34,25 @@ perf stat -e cycles,instructions -u -p $(pidof strategy) -- sleep 10
 ---
 
 
+### 常见陷阱
+
+1. perf stat 只跑一次——单次有抖动，应用 -r 5 重复 5 次看方差
+2. 不区分用户态/内核态——-u 只看用户态、-k 只看内核态，混在一起看不出是策略慢还是内核慢
+3. 不看 per-CPU——-A 每核分开，HFT 热核和其他核可能差很大
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. perf stat 的 -r 5 选项有什么用？
+   <details><summary>答</summary>重复 5 次看方差——单次有抖动，重复后看 std dev 判断稳定性</details>
+2. 如何区分用户态和内核态开销？
+   <details><summary>答</summary>-u 只看用户态（策略/解码）、-k 只看内核态（syscall/协议栈）——分别排查</details>
+3. HFT 为什么要用 -A（per-CPU）模式？
+   <details><summary>答</summary>热核和其他核可能差很大——全局平均掩盖热核问题</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

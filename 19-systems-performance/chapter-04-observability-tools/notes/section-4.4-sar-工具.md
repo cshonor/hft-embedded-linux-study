@@ -31,6 +31,25 @@ sar -B 1 5          # 分页统计
 ---
 
 
+### 常见陷阱
+
+1. sar 只看历史不告警——sar 记录历史但不主动告警，需要配合 Prometheus/Grafana 做实时告警
+2. sar 默认粒度太粗——10 分钟平均看不到 HFT 微秒级尖刺，需要 sar -I 1 或更高频
+3. 不存 sar 历史数据——出事才想看昨天的趋势，但 sadc 没配或被清理了
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. sar 的主要用途是什么？
+   <details><summary>答</summary>历史性能数据回溯——记录 CPU/内存/IO/网络等指标，事后分析趋势</details>
+2. sar 对 HFT 的局限性是什么？
+   <details><summary>答</summary>默认 10 分钟粒度太粗，看不到微秒级尖刺；且只记录不告警</details>
+3. 如何让 sar 数据对 HFT 有用？
+   <details><summary>答</summary>调高采样频率（sar -I 1）+ 长期存储 + 配合实时监控（Prometheus）</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

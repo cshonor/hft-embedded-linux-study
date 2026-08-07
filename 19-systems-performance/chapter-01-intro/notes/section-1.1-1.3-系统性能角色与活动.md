@@ -118,6 +118,26 @@
 
 → 方法论：[Ch 2](../chapter-02-methodologies/) · 工具：[Ch 4](../chapter-04-observability-tools/) · [Ch 13 perf](../chapter-13-perf/)
 
+
+### 常见陷阱
+
+1. 把延迟和吞吐混为一谈——HFT 行情机吞吐够高但 P99 尖刺照样致命，两者必须分开测分开报
+2. 上线后才定性能目标——SLO 应在架构设计阶段就定义（如 tick-to-trade P99 < X us），不是出事再补
+3. 只盯单点 CPU 跑分——全链路 Checklist（DMA→协议栈→解码→策略→发单）任何一段都可能成为瓶颈，单点跑分不能代替端到端
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 系统性能研究的对象是什么？和单进程性能分析有何区别？
+   <details><summary>答</summary>整个计算机系统在数据路径上的全部主要软硬件组件，而非单一进程或单块网卡</details>
+2. HFT 小团队在性能角色上的特点是什么？
+   <details><summary>答</summary>常一人兼多角——既要懂策略（workload），又要懂绑核/网络/内核（resource）</details>
+3. 性能生命周期中哪两项活动对 HFT tail latency 最关键？
+   <details><summary>答</summary>上线前的延迟/抖动 SLO 设定 + 生产事故回顾中的 P99 尖刺排查</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

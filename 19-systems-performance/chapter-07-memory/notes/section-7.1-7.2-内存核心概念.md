@@ -64,6 +64,25 @@ vmstat 1
 ---
 
 
+### 常见陷阱
+
+1. free 还多就以为安全——overcommit 允许承诺超过 RAM，OOM killer 随时可能触发
+2. minor fault 不当回事——大量 minor fault（COW/首次 touch）也增延迟，热路径应预热 mlock
+3. anonymous paging 当 file paging——file paging 正常（读 mmap 文件），anonymous paging（swap）= 灾难
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. Overcommit 对 HFT 的风险？
+   <details><summary>答</summary>内核允许承诺超过物理内存——free 看着够但实际 OOM 随时触发，需算真实 RSS/PSS</details>
+2. minor fault 和 major fault 的区别？
+   <details><summary>答</summary>minor = 页已在内存仅更新页表（轻），major = 需要 IO 读盘/swap-in（重，微秒~毫秒级）</details>
+3. HFT 热路径如何避免 unexpected page fault？
+   <details><summary>答</summary>启动后预热 touch 关键数据结构 + mlock 锁定热页——避免运行期首次访问触发 fault</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

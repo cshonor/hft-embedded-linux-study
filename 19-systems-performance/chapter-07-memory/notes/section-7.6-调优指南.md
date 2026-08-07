@@ -58,6 +58,25 @@ numactl --cpunodebind=0 --membind=0 --preferred=0 ./strategy
 ---
 
 
+### 常见陷阱
+
+1. swappiness 设 0 就安全——0 仍可能 swap（内核 3.5+ 改为 1），且 OOM 风险更高
+2. 大页不 benchmark 就上——大页减 TLB miss 但增内部碎片，HFT 需实测确认
+3. cgroup memory.max 用在裸机热路径——throttling 后 OOM kill 可能杀错进程
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. swappiness=0 是否完全禁用 swap？
+   <details><summary>答</summary>不完全——内核 3.5+ swappiness=0 等价于 1（极端内存压力仍 swap），应 swapoff -a 彻底禁</details>
+2. 大页的 trade-off 是什么？
+   <details><summary>答</summary>减 TLB miss（好）但增内部碎片（2MB 页即使只用 1KB 也占 2MB）——需 benchmark 确认</details>
+3. HFT 裸机 cgroup 内存控制的风险？
+   <details><summary>答</summary>memory.max throttling 后可能 OOM kill——关键策略进程不应与未知服务同 cgroup</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

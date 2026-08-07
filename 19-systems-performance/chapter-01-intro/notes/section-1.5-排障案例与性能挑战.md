@@ -181,6 +181,27 @@ perf 看到的「CRC 40%」≈  症状汇总
 **必须用自下而上补全 resource 信息** — 否则永远碰不到 **真正的根因组合**。
 
 → 排障模板：[逐笔排序案例](./section-1.5-排障案例与性能挑战.md#案例--逐笔排序变慢--双视角怎么配合) · [malloc/NUMA 案例](./section-1.5-排障案例与性能挑战.md#新手两大痛点--症状-vs-病根--快慢标尺) · [tick Checklist](./section-1.1-1.3-系统性能角色与活动.md#hft--行情-tick-全链路-checklist)
+
+
+### 常见陷阱
+
+1. 跳过基线直接排查——没有 baseline 就无法判断什么是「异常」，每次出事都从头摸
+2. 改一处不验证全局——修了 CPU 但引入了延迟抖动，性能优化必须前后对比完整指标集
+3. 用平均延迟代替分位数——HFT 场景 P99/P999 尖刺才是致命的，mean 可能完全正常
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 性能排障的第一步应该做什么？
+   <details><summary>答</summary>建立基线（baseline）——知道系统正常时的指标范围，才能判断异常</details>
+2. HFT 场景为什么 mean 延迟不够用？
+   <details><summary>答</summary>P99/P999 尖刺导致错单或漏单，mean 可能完全正常但 tail 已爆</details>
+3. Gregg 的性能挑战核心方法论是什么？
+   <details><summary>答</summary>科学方法——假设→实验→验证，避免盲目改参数（随机调优反模式）</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

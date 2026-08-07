@@ -36,6 +36,25 @@ Gregg 归纳的现代 Linux **高级追踪** 分工：
 ---
 
 
+### 常见陷阱
+
+1. strace 生产直接跑——strace 开销巨大（每个 syscall 两次 ptrace），生产禁用或限时
+2. perf trace 当 strace 用——perf trace 开销比 strace 低但仍有开销，生产限时长
+3. ftrace 和 BPF 不分场景——ftrace 适合内核内建追踪，BPF 适合可编程聚合
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 四大追踪器分别是什么？
+   <details><summary>答</summary>strace（syscall）、perf trace（低开销 strace）、ftrace（内核追踪）、BPF（可编程追踪）</details>
+2. 为什么 strace 不能在生产环境用？
+   <details><summary>答</summary>每个 syscall 两次 ptrace 陷入，开销巨大——HFT 热路径会变成原来的 10-100 倍慢</details>
+3. ftrace 和 BPF 各自适合什么场景？
+   <details><summary>答</summary>ftrace 适合内核内建 tracepoint/函数追踪，BPF 适合可编程聚合（直方图/过滤/计算）</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

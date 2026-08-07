@@ -61,6 +61,25 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
 ---
 
 
+### 常见陷阱
+
+1. BCC 工具名带 -bpfcc 后缀不知道——Debian/Ubuntu 包名 bpfcc-tools，命令名加 -bpfcc 后缀
+2. BCC 当 bpftrace 用——BCC 适合标准化工具（团队共享），bpftrace 适合即兴诊断（个人脚本）
+3. libbpf/CO-RE 不知道——新工具渐迁 libbpf + CO-RE（一次编译到处运行），BCC Python 方式是旧路径
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. BCC 工具在 Debian/Ubuntu 上的命令名后缀？
+   <details><summary>答</summary>-bpfcc——如 runqlat-bpfcc、biolatency-bpfcc（包名 bpfcc-tools）</details>
+2. BCC 和 bpftrace 的定位区别？
+   <details><summary>答</summary>BCC 适合标准化团队工具（Python CLI 封装可维护），bpftrace 适合即兴诊断（单行命令极快）</details>
+3. libbpf/CO-RE 相比 BCC 的优势？
+   <details><summary>答</summary>一次编译到处运行（CO-RE = Compile Once Run Everywhere），无需目标机装 BCC/Clang</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

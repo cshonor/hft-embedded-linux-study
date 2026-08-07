@@ -92,6 +92,27 @@ taskset -c 2 ./hash_microbench
 | 对策 | 降采样、生产只 Metrics | micro 隔离 + macro 验证 |
 
 ---
+
+
+### 常见陷阱
+
+1. 微基准结果外推到生产——微观 bench 无并发/无干扰，生产有调度抖动/NUMA/网络争用，直接外推必翻车
+2. 宏基准不控制变量——同时改了绑核+分配器+编译选项，无法归因哪个改了起作用
+3. 压测时间太短——HFT 的 tail latency 需要足够长的采样才能暴露 P99/P999 尖刺
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 微基准和宏基准分别适合什么场景？
+   <details><summary>答</summary>微基准适合隔离测试单个函数/组件性能，宏基准适合端到端系统级验证</details>
+2. 为什么微基准结果不能直接外推到生产？
+   <details><summary>答</summary>微基准无并发/无调度抖动/无 NUMA 影响，生产环境有这些干扰因素</details>
+3. HFT 压测应该持续多久才能暴露 tail latency？
+   <details><summary>答</summary>至少跑足够长时间覆盖 P99/P999 分位数——短压测只能看 mean，看不到尾部尖刺</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -78,6 +78,25 @@ recv_ts → decode_ts → book_update_ts → signal_ts → send_ts
 ---
 
 
+### 常见陷阱
+
+1. 应用 profiling 只看 on-CPU——off-CPU 时间（等锁/等 IO/等调度）可能才是延迟大头
+2. 火焰图只看宽度不看深度——深度（调用链长）也是问题，每层都有开销
+3. 不保留 profile 基线——优化前后不对比 perf stat，无法证明改有效
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. on-CPU 和 off-CPU 剖析的区别？
+   <details><summary>答</summary>on-CPU 看在 CPU 上执行的时间花在哪，off-CPU 看不在 CPU 上的时间花在哪（等锁/IO/调度）</details>
+2. HFT 为什么需要 on-CPU + off-CPU 双火焰图？
+   <details><summary>答</summary>延迟 = on-CPU 时间 + off-CPU 时间——只看 on-CPU 漏掉锁等待/调度延迟等大头</details>
+3. 火焰图深度和宽度分别代表什么？
+   <details><summary>答</summary>宽度 = 函数占样本比例（热点），深度 = 调用链层数——深调用链每层都有开销</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

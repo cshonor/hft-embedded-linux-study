@@ -88,6 +88,27 @@ perf record -g -p <pid> -- sleep 30 && perf report
 ```
 
 → [15-BPF Performance Tools](../../../20-bpf-observability/) · [Ch 4 工具选型](../../chapter-04-observability-tools/) · [Ch 13 perf](../../chapter-13-perf/) · [Ch 14 ftrace](../../chapter-14-ftrace/) · 双视角排障 [1.4](./section-1.4-热路径Resource与双视角.md)
+
+
+### 常见陷阱
+
+1. 一上来就用最重工具——应按计数器→采样→追踪→剖析四层递进，先用轻量工具定方向
+2. 生产环境不限时长跑追踪——高频率 tracepoint/kprobe 会产生 CPU 负载，必须限时限量
+3. 忽略工具自身的开销——perf record、BPF trace 本身消耗 CPU/内存，测量结果可能被污染
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 观测工具的四层递进是什么？
+   <details><summary>答</summary>计数器（/proc、stat）→ 采样（perf record）→ 追踪（tracepoint/kprobe）→ 剖析（火焰图）</details>
+2. 为什么生产环境要先轻后重？
+   <details><summary>答</summary>轻量工具开销低可长时间跑，重工具（trace、抓包）开销大必须限时，避免影响生产</details>
+3. HFT 中工具开销对测量结果有什么影响？
+   <details><summary>答</summary>BPF/perf 本身消耗 CPU，可能改变调度行为和 cache 状态，导致测到的延迟不是真实延迟</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

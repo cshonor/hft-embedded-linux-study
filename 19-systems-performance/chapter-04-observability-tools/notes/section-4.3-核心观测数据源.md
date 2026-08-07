@@ -93,6 +93,25 @@ CPU 热点     perf 剖析 + PMC（perf stat）
 ---
 
 
+### 常见陷阱
+
+1. /proc 不等于实时——/proc 是快照，两次读之间的事件看不到，高频场景需要 tracepoint
+2. PMC 不同 CPU 代际不同——L1-misses 事件名在 Intel vs AMD 不同，复制事件名可能无效
+3. 忽略 tracepoint 稳定性——tracepoint 是稳定 ABI，kprobe 不是，内核升级 kprobe 可能断
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. /proc 文件系统的局限性是什么？
+   <details><summary>答</summary>是快照不是实时流——两次读之间的事件看不到，且格式可能随内核版本变化</details>
+2. PMC 的跨平台问题是什么？
+   <details><summary>答</summary>不同 CPU 代际（Intel vs AMD）事件名不同，复制事件名可能无效或含义不同</details>
+3. tracepoint 和 kprobe 的稳定性区别？
+   <details><summary>答</summary>tracepoint 是稳定 ABI 不会变，kprobe 追踪内核函数名可能随版本变更而失效</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -58,6 +58,25 @@
 ---
 
 
+### 常见陷阱
+
+1. 过度优化——没 profile 就手动展开循环/内联汇编，编译器已经做得更好且更可维护
+2. 伪共享不查——多线程写同一 cache line 的不同字段，cache 一致性协议打穿性能
+3. 数据结构不量化——换 hashmap vs red-black tree 不测实际延迟，凭直觉选可能更慢
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 应用层优化的最高 ROI 是什么？
+   <details><summary>答</summary>消除不必要的工作——去掉冗余拷贝/分支/日志，比优化已有代码更有效</details>
+2. 伪共享如何检测和修复？
+   <details><summary>答</summary>perf c2c 或查 cache line 对齐——修复用 alignas(64) 填充使各线程数据不在同一 cache line</details>
+3. 为什么换数据结构前必须 benchmark？
+   <details><summary>答</summary>hashmap 查找 O(1) 但 cache miss 可能比红黑树 O(log n) 更慢——实际延迟取决于 cache 行为不是理论复杂度</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -61,6 +61,25 @@ mpstat -P ALL 1 5
 ---
 
 
+### 常见陷阱
+
+1. load average 当 CPU 利用率——load 包含 D 态线程（等 IO），不等于 CPU 忙闲
+2. 火焰图只看最宽的塔——最宽不一定是瓶颈，可能是正常主循环，要对比基线
+3. FlameScope 不用于 HFT——亚秒级热力图正好适合找 HFT P99 尖刺的时间窗口
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. load average 为什么不等于 CPU 利用率？
+   <details><summary>答</summary>load = 可运行 + D 态（等 IO）线程的指数平均——8 核 load=8 可能是 IO 瓶颈不是 CPU 满</details>
+2. 火焰图最宽的塔一定是瓶颈吗？
+   <details><summary>答</summary>不一定——可能是正常主循环（如 epoll_wait），要和基线对比看是否异常变宽</details>
+3. FlameScope 对 HFT 有什么用？
+   <details><summary>答</summary>亚秒级偏移热力图——在大样本里找周期性尖刺/抖动的时间窗口，再对齐到火焰图分析</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

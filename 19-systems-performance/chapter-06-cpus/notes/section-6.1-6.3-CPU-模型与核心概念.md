@@ -60,6 +60,25 @@ perf stat -e cycles,instructions,cache-misses,cache-references -- sleep 1
 ---
 
 
+### 常见陷阱
+
+1. SMT 假装是两个核——同核两个硬件线程争 L1/执行单元，HFT 热路径避免 SMT 共享
+2. 利用率 100% = 瓶颈——run queue 长度才是饱和度，利用率高但 run queue 空 = 正常在干活
+3. IPC 低只查 CPU——IPC 低可能是 cache miss（查数据结构布局）或 TLB miss（查大页），不是 CPU 不够快
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. SMT 对 HFT 热路径有什么影响？
+   <details><summary>答</summary>同核两个硬件线程争 L1 cache 和执行单元——热路径应绑独占物理核，避免 SMT 共享</details>
+2. Utilization 100% 是否一定是瓶颈？
+   <details><summary>答</summary>不一定——如果 run queue 为空说明只是当前线程在忙，不是瓶颈；run queue 持续 > 0 才是饱和</details>
+3. IPC 低应该查什么？
+   <details><summary>答</summary>先查 cache-misses（数据布局/NUMA）、再查 branch-misses（分支预测）、再查 TLB miss（大页）</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

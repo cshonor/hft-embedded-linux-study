@@ -83,6 +83,27 @@ Profiling →  同期 perf 火焰图 / 锁分析，找根因
 | 只优化 Mean，不盯 Max | **先 Max 红线，再 tail，最后 Mean** |
 | 只用 Metrics 平均值告警 | 必须 **histogram + Max 捕获** |
 | Max 出现后才凭感觉改代码 | **Tracking 抓样本 → Profiling 定根因** |
+
+
+### 常见陷阱
+
+1. 只看平均值——HFT 必须看 P99/P999/最大值，分布的尾部才是交易风险
+2. 延迟分解不彻底——只说「慢」不分解到 DNS/TCP/应用/内核各段，无法定位
+3. 混用不同测量点的延迟——TTFB ≠ RTT ≠ 端到端，口径不一致导致对比无意义
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. TTFB 和 RTT 的区别是什么？
+   <details><summary>答</summary>TTFB = 请求→首字节（含服务端 think time），RTT = 网络往返时间</details>
+2. HFT 延迟分解应该覆盖哪些段？
+   <details><summary>答</summary>signal→encode→send()→内核 TCP→NIC→wire RTT→交易所 ACK，每段独立测量</details>
+3. 为什么 P99 比 mean 更重要？
+   <details><summary>答</summary>HFT 中一次 P99 尖刺就可能导致错价或超限，mean 被大量正常样本稀释</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

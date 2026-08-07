@@ -52,6 +52,25 @@ perf list | grep -E 'cache|fault|sched'
 ---
 
 
+### 常见陷阱
+
+1. perf 版本不匹配内核——perf 需要 linux-tools-$(uname -r)，不匹配时事件不可用或数据错误
+2. perf record 生产不限时长——perf record 有开销（采样写入），生产应限 PID + 限时长
+3. perf trace 当 strace 长跑——perf trace 比 strace 轻但仍非零开销，生产限时长
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. perf 的核心子命令有哪些？
+   <details><summary>答</summary>stat（计数）、record（采样）、report（热点）、script（逐行→火焰图）、top（实时）、trace（syscall）</details>
+2. perf 版本为什么必须匹配内核？
+   <details><summary>答</summary>perf 需要 linux-tools-$(uname -r)——不匹配时 PMC/tracepoint 事件可能不可用或数据错误</details>
+3. HFT 生产环境 perf 的使用原则？
+   <details><summary>答</summary>stat/top 优先（低开销）；record 限 PID + 限时长；trace 仍限时长</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

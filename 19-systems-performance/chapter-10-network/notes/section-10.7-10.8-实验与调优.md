@@ -49,6 +49,25 @@ tc qdisc add dev eth0 root netem delay 2ms loss 0.1%
 ---
 
 
+### 常见陷阱
+
+1. 盲抄 Netflix sysctl——Netflix 面向高吞吐 Web，HFT 面向低延迟，参数集完全不同
+2. tcp_tw_reuse 不理解就开——TIME_WAIT 重用有风险（旧连接残留数据），需理解场景
+3. iperf3 当业务 benchmark——iperf3 测的是 TCP 吞吐上限，不是应用层 tick-to-trade 延迟
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 为什么不能直接抄 Netflix 的 sysctl 配置？
+   <details><summary>答</summary>Netflix 面向高吞吐 Web（大 buffer/BBR），HFT 面向低延迟（小 buffer/NODELAY）——参数集相反</details>
+2. tcp_tw_reuse 的风险是什么？
+   <details><summary>答</summary>TIME_WAIT 状态的端口重用——旧连接的残留数据可能被新连接误收，需确认场景适用</details>
+3. iperf3 能替代 HFT 应用层 benchmark 吗？
+   <details><summary>答</summary>不能——iperf3 测 TCP 吞吐上限，不包含编解码/策略/发单，需应用级 ping/订单通道测试</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

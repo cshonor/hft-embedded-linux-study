@@ -66,6 +66,25 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
 ---
 
 
+### 常见陷阱
+
+1. Nagle 不关——TCP Nagle 合并小包增延迟，HFT 发单必须 TCP_NODELAY
+2. softirq 不绑核——网卡 RX softirq 打到任意核，可能打断热路径线程
+3. DPDK 和标准栈混用不测——旁路内核后 ss/tcpdump 都看不到，监控出现盲区
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 发单为什么要 TCP_NODELAY？
+   <details><summary>答</summary>禁用 Nagle——小包立即发不等待合并，否则增加微秒~毫秒级延迟</details>
+2. 网卡 RX softirq 对 HFT 热路径的影响？
+   <details><summary>答</summary>softirq 可能在任意核上执行——如果不绑核可能打断热路径线程，应配 IRQ affinity</details>
+3. DPDK 旁路后的监控盲区？
+   <details><summary>答</summary>ss/tcpdump/netstat 都看不到 DPDK 收发的包——需要 DPDK 自带统计或硬件计数器</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -28,6 +28,25 @@
 ---
 
 
+### 常见陷阱
+
+1. 调优从绑核开始——应先消除不必要工作（ROI 最高），再编译优化，最后才绑核/调度
+2. RT 优先级不设上限——SCHED_FIFO 不设 cap 会饿死其他线程，甚至锁死系统
+3. cgroup CPU quota 用在裸机——HFT 裸机用隔离（isolcpus）不用 quota，quota 引入 throttling stall
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. CPU 调优的优先级顺序是什么？
+   <details><summary>答</summary>1) 消除不必要工作 2) 编译优化 3) 优先级/nice 4) 频率 governor 5) 绑核 6) cgroup/资源控制</details>
+2. SCHED_FIFO 在 HFT 中的风险？
+   <details><summary>答</summary>RT 线程不设 cap 会饿死其他线程——需要 rt throttling 兜底（/proc/sys/kernel/sched_rt_runtime_us）</details>
+3. HFT 裸机为什么用 isolcpus 而非 cgroup quota？
+   <details><summary>答</summary>quota 会 throttling（时间片用完被强制休眠引入 stall），isolcpus 是物理隔离无 throttling</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -48,6 +48,25 @@ perf script | stackcollapse-perf.pl | flamegraph.pl > major-fault.svg
 ---
 
 
+### 常见陷阱
+
+1. vmstat 只看 free 列——si/so 才是关键，si/so 持续非零 = swap 在发生 = HFT 灾难
+2. slabtop 不看——内核 slab（dentry/inode）膨胀挤占用户内存，sar/slabtop 才能看到
+3. pmap 不用 -X——pmap -x 只给 RSS，-X 给 PSS/共享/私有分项更详细
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. vmstat 中哪些列对 HFT 最关键？
+   <details><summary>答</summary>si/so（swap in/out）——持续非零 = anonymous paging 在发生 = 不可接受</details>
+2. slabtop 能发现什么问题？
+   <details><summary>答</summary>内核 slab cache（dentry/inode/task_struct）膨胀——挤占用户内存导致 direct reclaim</details>
+3. pmap -X 比 pmap -x 多什么信息？
+   <details><summary>答</summary>-X 包含 PSS（按比例分摊共享页）、Private_Dirty 等分项——定位是哪段映射占内存</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

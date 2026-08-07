@@ -62,6 +62,25 @@
 ---
 
 
+### 常见陷阱
+
+1. Verifier 不理解就绕过——Verifier 是安全保证（无越界/有界循环/类型安全），绕过 = 内核崩溃风险
+2. Ring Buffer vs Maps 不分场景——高频事件用 map 聚合（低开销），低频事件用 ring buffer（明细）
+3. kprobe 和 tracepoint 不分优先级——优先 tracepoint（稳定 ABI），kprobe 是后备
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. BPF Verifier 保证什么？
+   <details><summary>答</summary>无越界访问、有界循环（不能死循环）、类型安全指针——是生产安全的基础</details>
+2. Ring Buffer 和 BPF Maps 的场景区别？
+   <details><summary>答</summary>Ring Buffer 适合低频事件明细输出；Maps 适合高频事件聚合（计数/直方图）——高频用 map 低开销</details>
+3. 为什么优先 tracepoint 而非 kprobe？
+   <details><summary>答</summary>tracepoint 是稳定 ABI 不会随内核版本变；kprobe 追踪的函数名可能变更而失效</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

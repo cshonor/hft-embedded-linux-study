@@ -66,6 +66,25 @@ UDP/TCP 收包 → 解码 → 更新 order book → 策略计算 → 发单
 ---
 
 
+### 常见陷阱
+
+1. 应用层不剖析直接调内核——HFT 延迟 80% 在应用层（解码/策略），不先 profile 应用就调内核是本末倒置
+2. CPI 高只查 CPU——CPI 高可能是 cache miss（查数据结构）、分支预测失败（查 if/switch），不只是 CPU 算力
+3. 锁粒度不分层——全局锁 vs 分区锁 vs 无锁，不同竞争强度选不同方案，全局锁在高频路径是杀手
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 延迟优化的优先级是什么？
+   <details><summary>答</summary>先应用层（消除不必要工作、数据结构优化）→ 再编译优化 → 再调度/绑核 → 最后内核/硬件</details>
+2. CPI 高的可能原因有哪些？
+   <details><summary>答</summary>cache miss（数据布局差）、分支预测失败（不可预测 if）、TLB miss（大页）、依赖链（ILP 不足）</details>
+3. HFT 热路径锁优化方向？
+   <details><summary>答</summary>全局锁 → 分区锁 → lock-free（CAS/RCU）→ 无共享（per-thread 数据）</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

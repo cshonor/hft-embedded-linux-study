@@ -72,6 +72,25 @@ perf top -p $(pgrep your_strategy)   # 生产用低频/短窗口
 ---
 
 
+### 常见陷阱
+
+1. 云环境指标直接套裸机——云有 steal time、邻居噪声、虚拟化开销，裸机 checklist 不能直接用
+2. 忽略虚拟化层开销——HFT 共置裸机 vs 云实例延迟差数量级，不可混用 SLO
+3. 云上监控盲区——hypervisor 层事件（迁移、限流）对 guest 不可见，需要宿主机级监控
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 为什么通常选择裸机共置而非云实例？
+   <details><summary>答</summary>云有 steal time、虚拟化开销、邻居噪声，HFT 需要可预测的微秒级延迟</details>
+2. 云环境性能分析有哪些额外挑战？
+   <details><summary>答</summary>steal time、hypervisor 迁移、cgroup 限流、邻居噪声——guest 内不完全可见</details>
+3. 云上 Noisy Neighbor 问题如何检测？
+   <details><summary>答</summary>看 steal time（mpstat）、PSI、cgroup throttle 事件——非零说明被宿主机或其他租户挤</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

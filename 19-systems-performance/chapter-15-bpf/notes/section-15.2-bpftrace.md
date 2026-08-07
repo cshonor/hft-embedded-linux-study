@@ -40,6 +40,25 @@ sudo bpftrace -e 'uprobe:/path/strategy:decode { @start[tid] = nsecs; }
 ---
 
 
+### 常见陷阱
+
+1. bpftrace 生产直接跑自定义脚本——自定义 kprobe 可能加载失败或开销过大，应先 staging 验证
+2. bpftrace 每事件输出——高频事件（sched_switch）每条 print 打爆 CPU，应用 map 聚合
+3. bpftrace 当 BCC 用——复杂状态机/多 map 协作用 BCC Python，bpftrace DSL 表达力有限
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. bpftrace 自定义脚本在生产环境的风险？
+   <details><summary>答</summary>kprobe 可能加载失败/开销过大——应先在 staging 验证加载和开销</details>
+2. 为什么 bpftrace 高频事件不能每条 print？
+   <details><summary>答</summary>sched_switch 每秒上千次——每条送到用户态会打爆 CPU，应用 map histogram 聚合</details>
+3. bpftrace 和 BCC 的分工？
+   <details><summary>答</summary>bpftrace 适合即兴单行/简单脚本；复杂多事件状态机用 BCC Python</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

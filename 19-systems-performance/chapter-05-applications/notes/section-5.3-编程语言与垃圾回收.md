@@ -38,6 +38,25 @@
 ---
 
 
+### 常见陷阱
+
+1. GC 语言做 HFT 热路径——Java/Go 的 GC pause 即使是 ms 级也远超 HFT 预算，热路径应用 C++
+2. C++ 不管内存分配——默认 malloc 有锁竞争和碎片，HFT 应用对象池/arena/pre-allocated
+3. 不测 GC/分配器实际暂停——声称「无 GC」但不测，实际有 major page fault 或 malloc stall
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 热路径为什么通常用 C++ 而非 Java/Go？
+   <details><summary>答</summary>GC pause 即使 ms 级也远超 HFT 微秒级预算——C++ 手动内存管理可预分配/池化，无暂停</details>
+2. C++ 热路径内存管理应该怎么做？
+   <details><summary>答</summary>对象池/arena/pre-allocated——热路径零 malloc，避免分配器锁和 page fault</details>
+3. 如何验证热路径真的「无暂停」？
+   <details><summary>答</summary>BPF 追踪 malloc/page-fault/sched 时长——看热路径线程是否有非预期事件</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

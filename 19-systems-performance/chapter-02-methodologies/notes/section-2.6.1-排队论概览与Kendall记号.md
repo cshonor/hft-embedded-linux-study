@@ -89,6 +89,26 @@
 
 **Little 定律：** `L = λ × W`
 
+
+### 常见陷阱
+
+1. 忽略排队论直接加机器——不知道拐点在哪，可能在 70% 利用率就已经 tail latency 爆了
+2. M/M/1 套所有场景——服务时间确定型用 M/D/1，多服务台用 M/M/c，模型选错结论全错
+3. 只看利用率不看排队长度——利用率 80% 但 queue 已经很长，延迟已经在指数上升
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. Kendall 记号 A/S/c 的三个位置分别代表什么？
+   <details><summary>答</summary>A = 到达过程（M=泊松），S = 服务时间分布（M=指数/D=确定），c = 服务台数量</details>
+2. 为什么 HFT 要关心排队论？
+   <details><summary>答</summary>单线程网关在利用率 70%+ 时延迟指数上升（M/M/1 拐点），排队论提前算拐点设限流</details>
+3. M/M/1 和 M/D/1 的区别是什么？
+   <details><summary>答</summary>M/M/1 服务时间随机（指数分布），M/D/1 服务时间确定——同利用率下 M/M/1 排队更长</details>
+
+</details>
+
+
 ---
 
 ← [2.5 方法论](./section-2.5-性能分析方法论.md) · [2.6.2 M/M/1](./section-2.6.2-M-M-1-拐点与预警线.md) · [本章导读](../README.md)

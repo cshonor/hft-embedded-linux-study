@@ -118,6 +118,27 @@ mpstat：某核 %soft 飙高？策略核 usr 低但不 idle？
 
 → 案例 [1.5](./section-1.5-排障案例与性能挑战.md) · 指标 [1.6](./section-1.6-延迟指标与读法.md)
 → 方法论 [Ch 2](../../chapter-02-methodologies/)（USE/RED 等）· tick 全链路清单见 [1.1–1.3](./section-1.1-1.3-系统性能角色与活动.md#hft--行情-tick-全链路-checklist)
+
+
+### 常见陷阱
+
+1. 只看 resource 不看 workload——CPU 高但不知道在算什么，等于白看；workload 分析先于 resource 分析
+2. workload 和 resource 视角二选一——Gregg 强调互补而非互斥，排查用 workload 定位、容量规划用 resource 量化
+3. 热路径定义模糊——必须明确哪些函数/线程在 tick 关键路径上，否则优化方向跑偏
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. workload 分析和 resource 分析分别问什么问题？
+   <details><summary>答</summary>workload 问「程序在干什么」，resource 问「哪段在等/慢」</details>
+2. HFT 热路径包括哪些段？
+   <details><summary>答</summary>收包→进用户态→解码→策略→风控→发单，每段都有 workload 和 resource 两个维度</details>
+3. 为什么不能只看 resource 利用率？
+   <details><summary>答</summary>利用率高不代表在干有用的事——可能是 spin 忙等或内核锁开销，需要 workload 视角确认在做什么</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -159,6 +159,26 @@ ss -s / ethtool -S                          ← Resource 看重传、drop
 
 → 分层埋点套路：[2.5](./section-2.5-性能分析方法论.md#hft-实战业务链路分层埋点--工具串连) · 工具地图：[Ch 4](../../chapter-04-observability-tools/) · `perf`：[Ch 13](../../chapter-13-perf/)
 
+
+### 常见陷阱
+
+1. 只自底向上（资源视角）——从 CPU/内存往上推，容易陷入无目标的数据收集，HFT 应先自顶向下定位段
+2. 只自顶向下（工作负载视角）——从应用往下推，可能漏掉内核/硬件层的隐藏开销
+3. 两种视角不同时用——Gregg 强调互补：自顶向下定方向、自底向上钻根因
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 自顶向下和自底向上分析的区别？
+   <details><summary>答</summary>自顶向下从应用/工作负载开始往下追，自底向上从 CPU/内存等资源开始往上推</details>
+2. HFT 排障应该先用哪种视角？
+   <details><summary>答</summary>先自顶向下（workload）定位是哪段慢，再自底向上（resource）钻根因</details>
+3. 为什么不能只用一种视角？
+   <details><summary>答</summary>只自顶向下可能漏掉内核/硬件隐藏开销，只自底向上容易无目标地收集数据</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

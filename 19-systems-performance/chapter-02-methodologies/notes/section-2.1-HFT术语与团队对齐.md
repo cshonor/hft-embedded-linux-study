@@ -56,6 +56,26 @@ Latency 三分法（Mean/P999/Max）  →  [Ch1.6](../chapter-01-intro/notes/sec
 | **Saturation** | 超出即时处理能力后的排队程度 | run queue、NIC TX queue、锁等待 — **利用率高的下一层** |
 | **Bottleneck** | 限制整体性能的最慢环节 | 单核打满、跨 NUMA、TCP 栈 |
 
+
+### 常见陷阱
+
+1. 术语不对齐——开发说「延迟」指 P50、运维说「延迟」指 mean、交易员说「延迟」指最大值，必须统一口径
+2. IOPS 和吞吐混淆——小块高 IOPS ≠ 大块高吞吐，HFT 行情包小但pps高，和存储吞吐是两回事
+3. Latency 和 Response Time 不区分——Gregg 定义 latency = 服务时间，response time = latency + queue time
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. Latency 和 Response Time 的区别是什么？
+   <details><summary>答</summary>Latency = 服务时间（处理本身），Response Time = latency + 等待队列时间</details>
+2. HFT 团队为什么需要对齐术语？
+   <details><summary>答</summary>不同角色（开发/运维/交易员）对「延迟」「吞吐」「IOPS」理解不同，不对齐会导致沟通失误</details>
+3. Utilization 高是否一定意味着瓶颈？
+   <details><summary>答</summary>不一定——利用率高但饱和度低（run queue 短）说明 CPU 在干活但没排队；饱和度高才是瓶颈信号</details>
+
+</details>
+
+
 ---
 
 ← [2.2 术语→命令](./section-2.2-术语与命令速查.md) · [本章导读](../README.md)

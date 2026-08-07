@@ -47,4 +47,43 @@ sudo bpflist-bpfcc
 
 → 指令级：`bpftool prog dump` · [appendix-E-BPF指令.md](../../appendix-E-BPF指令.md)
 
+
+### 常见陷阱
+
+1. **BCC 工具无输出时不排查根因** — 常见原因：目标函数不存在、PID 错误、权限不足、事件未触发；应逐一排查而非反复重试
+2. **忽视 BPF verifier 拒绝的错误信息** — verifier 拒绝时输出详细的拒绝原因（如「invalid bpf_context access」），这些信息是调试 BPF C 代码的关键线索
+3. **在错误的内核版本上使用工具** — BCC 工具依赖特定内核功能（如某些 tracepoint 在旧内核不存在）；查看工具的 OS 字段确认兼容性
+
+<details>
+<summary>📝 自测题（点击展开）</summary>
+
+1. **BCC 工具无输出的常见原因有哪些？如何排查？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   (1) 目标函数不存在：用 `bpftrace -l 'kprobe:func*'` 验证；(2) PID 错误：用 `ps` 确认进程在运行；(3) 权限不足：需要 root 或 CAP_BPF；(4) 事件未触发：用 strace 先确认事件确实发生；(5) 过滤条件太严：放宽 filter 重试。
+
+   </details>
+
+2. **BPF verifier 拒绝程序时如何调试？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   Verifier 输出包含拒绝点（指令编号、寄存器状态、访问的偏移）。常见原因：(1) 指针未做 bounds check；(2) 循环无确定上界；(3) 栈溢出（>512B）；(4) Map 操作类型不匹配。用 `bcc -e` 或 `bpftool prog dump` 看生成的字节码辅助调试。
+
+   </details>
+
+3. **HFT 排障中 BCC 工具报「probe not found」怎么办？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   (1) 确认内核版本——函数可能在旧内核叫不同名字（用 `cat /proc/kallsyms | grep func`）；(2) 改用 tracepoint 替代 kprobe（`ls /sys/kernel/debug/tracing/events/`）；(3) 检查函数是否被 inline 或优化掉（编译时可能不存在独立符号）；(4) 考虑用 uprobe 在用户态追踪等效路径。
+
+   </details>
+
+</details>
+
 ---

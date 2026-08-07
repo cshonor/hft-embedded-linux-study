@@ -16,4 +16,43 @@
 grep CONFIG_UNWINDER_ORC /boot/config-$(uname -r)
 ```
 
+
+### 常见陷阱
+
+1. **栈 ID 过期导致栈信息错误** — BPF 用 stackid(Map) 返回栈的 ID 而非完整栈，Map 有大小限制，旧栈 ID 可能被新栈覆盖；用 `BPF_F_USER_STACK` 区分内核/用户栈
+2. **忽视符号解析的依赖** — 栈 ID 只是地址，需要符号表（/proc/kallsyms、二进制 debug info）解析为函数名；strip 过的二进制无法解析用户栈
+3. **在 HFT 热路径上频繁采栈** — 每次 stackid 调用有一定开销，高频 probe 上采栈会放大延迟；HFT 应用低频采样（如 99Hz）或按事件触发而非 per-hit
+
+<details>
+<summary>📝 自测题（点击展开）</summary>
+
+1. **BPF 如何获取和存储调用栈？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   BPF 程序调用 `bpf_get_stackid()` 将当前栈哈希后存入专用 Map，返回一个整型 ID。分析时用户态用该 ID 查 Map 获取地址列表，再通过符号表解析为函数名。这种方式避免每次都传完整栈数据到用户态。
+
+   </details>
+
+2. **栈 ID 过期是什么问题？如何缓解？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   stackid Map 有大小上限（默认有限），当栈数量超过上限时旧 ID 被覆盖，导致后续查询返回错误或错误栈。缓解：(1) 增大 Map；(2) 使用 `BPF_F_USER_STACK` / `BPF_F_KERNEL_STACK` 分别存储；(3) 接受少量丢失，关注高频栈。
+
+   </details>
+
+3. **为什么 strip 过的二进制无法解析用户态栈？**
+
+   <details>
+   <summary>参考答案</summary>
+
+   符号解析需要地址到函数名的映射表，strip 操作删除了 .symtab 和 .strtab 段。解决方案：(1) 保留未 strip 版本用于分析；(2) 使用 USDT 探针替代栈追踪；(3) 用 DWARF debug info（-g 编译）。
+
+   </details>
+
+</details>
+
 ---

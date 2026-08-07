@@ -77,6 +77,26 @@ CPU ↔ 内存               →  算力 vs 容量 / 访问速度
 
 → [Ch 12 基准](../../chapter-12-benchmarking/) · [2.5 方法论](./section-2.5-性能分析方法论.md)
 
+
+### 常见陷阱
+
+1. 延迟和吞吐同时优化——加 batch 提吞吐但增单笔延迟，HFT 通常牺牲吞吐保延迟
+2. 只优化不量化 trade-off——改了 Nagle/TCP_CORK 但没测延迟变化，无法判断改对了没有
+3. 忽略二级效应——绑核降调度延迟但增单核热点，cache miss 可能反而升高
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 中延迟和吞吐的 trade-off 体现在哪里？
+   <details><summary>答</summary>batch 合并提吞吐但增单笔等待延迟，HFT 通常选低延迟（小包直发）牺牲吞吐</details>
+2. 为什么性能优化必须量化 trade-off？
+   <details><summary>答</summary>没有量化就不知道改动是否真的改善——改了 CPU 但引入延迟抖动，需要前后对比完整指标</details>
+3. 绑核的二级效应是什么？
+   <details><summary>答</summary>绑核降调度延迟但所有负载集中到一个核，可能增 cache miss 和热点争用</details>
+
+</details>
+
+
 ---
 
 ← [2.3.1 时间尺度](./section-2.3.1-时间尺度与排查走查.md) · [2.3.3 负载与架构](./section-2.3.3-负载与架构.md) · [本章导读](../README.md)

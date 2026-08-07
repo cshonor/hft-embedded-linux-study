@@ -204,6 +204,25 @@ HFT 热路径：**1 > 3 > 2 > 6** 最常见（少路径、少分配、热数据 
 ---
 
 
+### 常见陷阱
+
+1. 用反模式排查——Blame-Someone-Else（甩锅给别人）、Random-Change-Tuning（随机改参数）是反面教材
+2. USE 方法只套 CPU——内存、网络、IO 每个资源都要单独跑 USE，不能只查 CPU 就下结论
+3. 不给容器/cgroup 单独跑 USE——容器内看到的资源是 cgroup 限额后的，和宿主机不同
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. USE 方法的三个字母分别代表什么？
+   <details><summary>答</summary>U = Utilization（利用率），S = Saturation（饱和度），E = Errors（错误）</details>
+2. 常见的性能反模式有哪些？
+   <details><summary>答</summary>Blame-Someone-Else（甩锅）、Random-Change-Tuning（随机调参）、我们加个缓存吧（盲目优化）</details>
+3. RED 方法适用于什么场景？
+   <details><summary>答</summary>微服务/网络服务——Rate（请求率）、Errors（错误率）、Duration（延迟分布）</details>
+
+</details>
+
+
 ---
 
 ← [2.4 两种视角](./section-2.4-两种分析视角.md) · [2.2 命令速查](./section-2.2-术语与命令速查.md) · [本章导读](../README.md)

@@ -251,6 +251,26 @@ print("N=8 预测:", usl(8, alpha, beta))
 
 → [容量规划三步法](./section-2.7.2-容量规划三步法.md) · [2.6.4 排队计算器](./section-2.6.4-排队论计算器.md)
 
+
+### 常见陷阱
+
+1. 阿姆达尔定律忽略串行部分——HFT 策略有全局锁/共享 order book，串行比比想象的大
+2. USL 的 β（ contention）和 γ（coherency）不区分——β 是资源争用，γ 是通信开销，优化方向不同
+3. 加核到 USL 拐点之后——超过拐点加核反而降吞吐（负扩展性），必须先算拐点再加机器
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 阿姆达尔定律的核心公式和含义？
+   <details><summary>答</summary>加速比 = 1 / (s + (1-s)/n)，s = 串行比例，n = 核数——串行部分限制最大加速比</details>
+2. USL 比阿姆达尔多了什么？
+   <details><summary>答</summary>多了 γ（coherency）项——通信/一致性开销随核数平方增长，导致负扩展性</details>
+3. HFT 策略加核什么时候开始降速？
+   <details><summary>答</summary>当 γ * n^2 项超过并行收益时——USL 拐点，需要实测确定而非猜</details>
+
+</details>
+
+
 ---
 
 ← [排队论](./section-2.6.1-排队论概览与Kendall记号.md) · [2.7.2 容量规划](./section-2.7.2-容量规划三步法.md) · [Ch 6 CPU](../../chapter-06-cpus/) · [本章导读](../README.md)

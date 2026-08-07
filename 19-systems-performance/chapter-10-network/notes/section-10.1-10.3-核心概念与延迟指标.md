@@ -58,6 +58,25 @@ Client SYN → 内核 SYN queue / accept queue → listen socket backlog 满
 ---
 
 
+### 常见陷阱
+
+1. ping 延迟当业务延迟——ping 是 ICMP 不经过 TCP 栈和应用层，和实际 tick-to-trade 完全不同
+2. bufferbloat 只关注交换机——内核 socket buffer/qdisc 过大也会导致排队延迟膨胀
+3. backlog 不调——syn flood 或突发连接时 accept queue 满，丢连接但应用看不到
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. ping 延迟为什么不能代表业务延迟？
+   <details><summary>答</summary>ping 是 ICMP 不经过 TCP 栈/应用层——实际 tick-to-trade 还包括编解码/策略/发单</details>
+2. Bufferbloat 在 HFT 中的表现？
+   <details><summary>答</summary>内核 socket buffer 或 qdisc 过大导致排队延迟膨胀——吞吐高但 latency 差</details>
+3. TCP accept queue 满会怎样？
+   <details><summary>答</summary>丢 SYN/ACK——客户端重传或超时，应用层看不到被丢弃的连接</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

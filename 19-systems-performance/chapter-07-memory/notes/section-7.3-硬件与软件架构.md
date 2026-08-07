@@ -67,6 +67,25 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 ---
 
 
+### 常见陷阱
+
+1. 不绑 NUMA——跨 socket 访存延迟 1.5-3 倍，HFT 必须 CPU + 内存同 NUMA 节点
+2. THP 当大页用——THP 自动合并但延迟不可预测（khugepaged 后台扫描），HFT 应用显式大页
+3. Direct Reclaim 不监控——内存不够时同步回收拖慢当前线程，BPF drsnoop 才能看到
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. NUMA 对 HFT 的影响？
+   <details><summary>答</summary>跨 socket 访存延迟 1.5-3 倍——numactl --cpunodebind=0 --membind=0 绑同节点</details>
+2. THP 为什么不适合 HFT？
+   <details><summary>答</summary>khugepaged 后台扫描合并 4KB→2MB 延迟不可预测——应用显式大页（mmap MAP_HUGETLB）</details>
+3. Direct Reclaim 如何检测？
+   <details><summary>答</summary>BPF drsnoop 追踪 direct reclaim 路径延迟——vmstat 只看 si/so 不够</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

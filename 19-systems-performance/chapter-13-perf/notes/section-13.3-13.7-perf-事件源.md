@@ -82,6 +82,25 @@ perf record -e probe_strategy:decode_entry -p PID -- sleep 10
 ---
 
 
+### 常见陷阱
+
+1. 硬件事件当软件事件用——PMC 数量有限（通常 4-8 个），同时监测的事件有上限
+2. kprobe 不理解稳定性——kprobe 追踪内核函数名可能随版本变更，应优先 tracepoint
+3. uprobe 不测开销——uprobe 每次函数调用都陷入，热路径高频函数显著增延迟
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. perf 事件源的四大类是什么？
+   <details><summary>答</summary>硬件事件（PMC）、软件事件（page-fault/cs）、tracepoint（稳定 ABI）、probe（kprobe/uprobe）</details>
+2. kprobe 和 tracepoint 的稳定性区别？
+   <details><summary>答</summary>tracepoint 是稳定 ABI 不会变；kprobe 追踪的内核函数名可能随版本变更而失效</details>
+3. uprobe 在热路径的风险？
+   <details><summary>答</summary>每次函数调用都陷入 BPF 处理——高频函数显著增延迟，应限时长或用 USDT 替代</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

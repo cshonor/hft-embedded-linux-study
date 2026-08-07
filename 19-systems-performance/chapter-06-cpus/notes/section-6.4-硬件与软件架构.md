@@ -71,6 +71,25 @@ IRQ / RPS  与数据面同 NUMA，避免 cross-socket
 ---
 
 
+### 常见陷阱
+
+1. C-State 不限制——深 C-State 唤醒延迟达微秒级，HFT 裸机应限制 C-State 到 C0/C1
+2. NUMA balancing 不关——内核自动迁内存到「正确」节点，但迁移过程引入延迟尖刺
+3. isolcpus 不配 IRQ 亲和——核隔离了但中断还往这核送，隔离白做
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 裸机为什么要限制 C-State？
+   <details><summary>答</summary>深 C-State（C6）唤醒延迟达微秒级——从睡眠到执行的转换时间不可预测，应限制到 C0/C1</details>
+2. NUMA balancing 对 HFT 的风险？
+   <details><summary>答</summary>内核自动把内存页迁移到「正确」NUMA 节点——迁移过程产生 page fault 和延迟尖刺</details>
+3. isolcpus 隔离后还需要做什么？
+   <details><summary>答</summary>配 IRQ 亲和性把中断送到 housekeeping 核——否则中断仍会打断隔离核上的热路径线程</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -112,6 +112,26 @@ perf record -F 49 -p $(pidof gateway) -g -- sleep 300
 - [ ] 压测出 **散点** 定限流
 - [ ] 线下 **perf 火焰图**；偶发 tail 用 **FlameScope**
 
+
+### 常见陷阱
+
+1. 监控只看折线图——延迟分布需要直方图（histogram），折线图看不到分布形状和尾部
+2. 告警阈值用绝对值——应该用相对基线（如 P99 > baseline * 1.5），绝对阈值不能适应负载变化
+3. 不存历史数据——出事才想看历史趋势，Prometheus 默认 15 天可能不够，需要长期存储
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 五种性能图分别是什么？
+   <details><summary>答</summary>折线图（趋势）、散点图（相关性）、直方图（分布）、热力图（亚秒级）、火焰图（栈热点）</details>
+2. 为什么延迟监控需要直方图而不是折线图？
+   <details><summary>答</summary>直方图显示完整分布形状和尾部，折线图只显示某个聚合值（如 mean），看不到 P99 尖刺</details>
+3. HFT 监控告警应该用什么阈值策略？
+   <details><summary>答</summary>相对基线——如 P99 超过正常值 1.5 倍告警，而非绝对值（绝对值不适应负载变化）</details>
+
+</details>
+
+
 ---
 
 ← [2.8.1 统计陷阱](./section-2.8.1-统计陷阱.md) · [本章导读](../README.md)

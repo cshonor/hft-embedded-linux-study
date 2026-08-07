@@ -44,6 +44,26 @@
 
 → 工具详解：[Ch 4](../../chapter-04-observability-tools/) · [Ch 13 perf](../../chapter-13-perf/) · [Ch 15 BPF](../../chapter-15-bpf/)
 
+
+### 常见陷阱
+
+1. 命令记不住就用复杂工具——先掌握 vmstat/mpstat/ss/iperf3 五个基础命令，再上 BPF
+2. 命令参数不记——vmstat 的 r 列、si/so 列含义不同，混淆会导致误判
+3. 只看一条命令的输出——vmstat + mpstat + iostat 三条合在一起看才能定位是 CPU/内存/IO 哪段
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. vmstat 输出中 r 列和 b 列分别表示什么？
+   <details><summary>答</summary>r = 运行队列长度（等 CPU 的线程数），b = 不可中断睡眠（通常等 I/O）的线程数</details>
+2. HFT 排障第一反应应该跑哪几条命令？
+   <details><summary>答</summary>vmstat 1（全局）、mpstat -P ALL 1（每核）、ss -tiepm（网络）、iostat -x 1（IO）</details>
+3. 为什么 uptime 的 load average 不能代替 per-CPU 分析？
+   <details><summary>答</summary>load average 是指数移动平均且混合了 D 态线程，8 核 load=8 不等于 100%，要看 mpstat 每核</details>
+
+</details>
+
+
 ---
 
 ← [2.1](./section-2.1-HFT术语与团队对齐.md) · [2.3.1 时间尺度](./section-2.3.1-时间尺度与排查走查.md) · [本章导读](../README.md)

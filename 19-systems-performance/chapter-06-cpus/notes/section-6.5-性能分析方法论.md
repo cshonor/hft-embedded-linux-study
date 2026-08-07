@@ -40,6 +40,25 @@
 ---
 
 
+### 常见陷阱
+
+1. USE 只查 Utilization——Saturation（run queue/调度延迟）才是 HFT 的关键指标
+2. profiling 不加帧指针——perf record -g 需要帧指针，编译去掉后栈全是 [unknown]
+3. 只看全局 CPU——HFT 热路径在特定核上，全局平均正常但热核可能已饱和
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. CPU 的 USE 方法中 HFT 最该关注哪个字母？
+   <details><summary>答</summary>Saturation——run queue 长度和调度延迟，HFT 延迟尖刺多因调度等待而非 CPU 不够</details>
+2. perf record 剖析的前置条件是什么？
+   <details><summary>答</summary>编译保留帧指针（-fno-omit-frame-pointer）——否则栈回溯全是 [unknown]</details>
+3. 为什么 HFT 要看 per-CPU 而不是全局 CPU？
+   <details><summary>答</summary>热路径绑在特定核上——全局平均可能正常，但热核已 100% + run queue 堆积</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -40,6 +40,25 @@ ethtool -S eth0 | grep -i drop
 ---
 
 
+### 常见陷阱
+
+1. ss 不加 -tiepm——只看连接列表不看 RTT/重传/cwnd/mss，丢失关键 TCP 内部状态
+2. ethtool -S 不看——驱动级统计（NIC drop/no buffer）比 ss 更底层更早发现问题
+3. BPF tcpretrans 不用——重传事件+栈定位丢包根因，比 netstat -s 的计数更精确
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. ss -tiepm 比普通 ss 多看什么？
+   <details><summary>答</summary>TCP 内部状态：RTT、cwnd、retrans、mss、mem、BBR 信息——诊断 TCP 性能必需</details>
+2. ethtool -S 能发现什么 ss 看不到的？
+   <details><summary>答</summary>驱动级统计——NIC drop/no buffer/rx_missed 等，比 ss 更早发现硬件层丢包</details>
+3. tcpretrans 比 netstat -s retrans 有什么优势？
+   <details><summary>答</summary>tcpretrans 给出每次重传的事件+栈——定位是哪个连接/哪段代码触发重传</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

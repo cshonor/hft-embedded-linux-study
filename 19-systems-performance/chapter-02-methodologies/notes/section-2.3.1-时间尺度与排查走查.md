@@ -112,6 +112,26 @@ Gregg **「网络是替罪羊」** = **排查顺序**，不是「网络不重要
 
 → JVM：[Ch 5.3](../../chapter-05-applications/notes/section-5.3-编程语言与垃圾回收.md) · 网络：[Ch 10](../../chapter-10-network/)
 
+
+### 常见陷阱
+
+1. 跳档优化——纳秒级问题用毫秒级工具查（如用 top 查微秒级抖动），工具精度不够根本看不到
+2. 时间尺度不匹配——HFT tick-to-trade 在微秒级，但 sar 默认 10 分钟粒度，完全看不到尖刺
+3. 忽略时钟源——TSC vs CLOCK_MONOTONIC vs gettimeofday 精度不同，混用导致测量不准
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. HFT 延迟排查为什么要按时间尺度分层？
+   <details><summary>答</summary>不同延迟量级需要不同精度的工具——纳秒级用 PMC/rdtsc，微秒级用 BPF，毫秒级用 vmstat</details>
+2. 为什么 sar 默认粒度对 HFT 没用？
+   <details><summary>答</summary>sar 默认 10 分钟平均，微秒级尖刺被完全平均掉，需要 sar -I 1 或更高频工具</details>
+3. HFT 测量应该用哪个时钟源？
+   <details><summary>答</summary>CLOCK_MONOTONIC 或 TSC（rdtsc），避免 gettimeofday 的闰秒/调整问题</details>
+
+</details>
+
+
 ---
 
 ← [2.2](./section-2.2-术语与命令速查.md) · [2.3.2 性能权衡](./section-2.3.2-性能权衡.md) · [本章导读](../README.md)

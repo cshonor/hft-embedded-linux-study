@@ -38,6 +38,25 @@ cat /proc/pressure/memory
 ---
 
 
+### 常见陷阱
+
+1. USE 只查 free——Saturation（swap/direct reclaim/PSI memory）才是关键
+2. RSS 当真实占用——RSS 包含共享库整页，PSS（按比例分摊）才反映真实占用
+3. leak 只看 RSS——RSS 涨可能是 cache/映射增多，要用 pmap -X 分项确认是 heap leak
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 内存的 USE 方法中 Saturation 看什么？
+   <details><summary>答</summary>swap si/so、direct reclaim、PSI memory stall——任一非零说明内存压力</details>
+2. RSS 和 PSS 的区别？
+   <details><summary>答</summary>RSS 把共享库整页算给每个进程（重复计算），PSS 按进程数分摊共享页（更真实）</details>
+3. 如何区分内存泄漏和正常增长？
+   <details><summary>答</summary>RSS 单调涨不回落 = leak；涨后平台 = 预热 cache——用 pmap -X 分项确认是 heap 还是映射</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

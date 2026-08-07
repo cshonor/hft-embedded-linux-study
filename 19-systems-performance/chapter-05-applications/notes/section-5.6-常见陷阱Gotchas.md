@@ -31,6 +31,25 @@ Debug symbols：单独 debug 包，生产按需挂载
 ---
 
 
+### 常见陷阱
+
+1. 编译去掉帧指针——-O2 默认 -fomit-frame-pointer，perf 栈回溯全是 [unknown]
+2. strip 掉符号表——生产二进制 strip 后 perf report 看不到函数名，应保留 debuginfo
+3. inline 过度——-O3 激进 inline 导致函数太大影响 I-cache，且火焰图栈变浅看不清层次
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+1. 为什么 HFT Release 构建要保留帧指针？
+   <details><summary>答</summary>perf 栈回溯需要帧指针（-fno-omit-frame-pointer）——去掉后栈全是 [unknown] 无法分析</details>
+2. strip 符号表有什么后果？
+   <details><summary>答</summary>perf report 看不到函数名——应保留 debuginfo 包或不在生产二进制上 strip</details>
+3. -O3 aggressive inline 有什么副作用？
+   <details><summary>答</summary>函数过大影响 I-cache（icache miss），且火焰图栈变浅看不清调用层次</details>
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)
