@@ -142,12 +142,39 @@ Y86 教学模型里常弱化；真机常用 **I-cache / D-cache 分离**、多�
 
 ---
 
-### 口述巩固 · 自测
+### 常见陷阱
 
-1. **三类冒险各举一例？** 硬件对策关键词？  
-2. **为何 load-use 常必须 stall？**  
-3. **`inline` / 无分支主要躲哪类冒险？**  
-4. **转发解决什么？解决不了什么？**  
+1. **以为转发能解决所有数据冒险** — 转发（forwarding/bypass）能解决多数 RAW 依赖，但 **load-use 冒险通常无法转发**——`mrmovq` 的数据要到 M 级才出来，紧接着的指令在 D 级就要读，来不及旁路，**必须 stall 一拍**。
+2. **忽略分支预测失败的代价** — 预测错误时，已进入流水线的错误路径指令全部作废（flush/bubble），白白烧掉多拍。HFT 热路径中不可预测的分支是延迟暴涨的常见原因。
+3. **混淆 CPI 与 IPC** — CPI（Cycles Per Instruction）= 1 + 停顿占比；IPC（Instructions Per Cycle）= 1/CPI。`perf stat` 看 `instructions`/`cycles` 算出 IPC，IPC < 1 说明有停顿（冒险、cache miss 等）。
+
+### 自测题
+
+<details>
+<summary>1. 三类冒险各举一例，硬件对策关键词是什么？</summary>
+
+- **数据冒险**：`addq %rax,%rbx` 后立刻 `subq %rbx,%rcx` → 对策：**转发**（forwarding/bypass），无法转发时 **stall**
+- **控制冒险**：`jle` 预测错误 → 对策：**分支预测** + 错则 **bubble/flush**
+- **结构冒险**：两条指令同拍争数据内存口 → 对策：**stall** 一条、双端口、分离 I-cache/D-cache
+</details>
+
+<details>
+<summary>2. 为何 load-use 冒险常必须 stall？转发解决不了吗？</summary>
+
+`mrmovq` 的数据要到 **M 级**（访存阶段）才从内存读出，而紧接着的指令在 **D 级**（译码阶段）就需要读这个寄存器。此时数据还没出来，**无法旁路转发**，只能 **stall 一拍**（插入 bubble），等数据就绪后再转发或直接读。HFT 热循环应避免 load 后立刻依赖。
+</details>
+
+<details>
+<summary>3. inline / 无分支编码主要躲哪类冒险？</summary>
+
+**控制冒险**。`inline` 消除 `call`/`ret` → 减少 PC 跳转引发的流水线冲刷；无分支/查表/`cmov` → 减少分支预测失败导致的 flush。两者都是让流水线少停少冲刷。
+</details>
+
+<details>
+<summary>4. 转发（forwarding）解决什么？解决不了什么？</summary>
+
+**解决**：多数 RAW（Read After Write）数据冒险——从 E/M 或 M/W 等阶段把结果旁路给后指令，不必等 W 级写回。**解决不了**：①load-use 冒险（数据在 M 级才出来，来不及）；②控制冒险（分支预测错误）；③结构冒险（硬件端口冲突）。这些需要 stall/flush/预测来处理。
+</details>
 
 ---
 

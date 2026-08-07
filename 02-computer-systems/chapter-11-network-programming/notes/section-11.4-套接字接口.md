@@ -106,6 +106,40 @@ while (1) {
 
 → [10-UNP](../../../15-network-sockets/unix-network-api/) · [14-Systems-Performance Ch10](../../../19-systems-performance/chapter-10-network/) · [12-HFT ch06](../../../21-hft-engineering/)
 
+### 常见陷阱
+1. **socket 返回 fd 但尚未连接** — 还需要 connect（客户端）或 bind+listen+accept（服务器）
+2. **accept 返回新 fd** — 监听 fd 继续接受新连接，不能用它收发数据
+3. **getaddrinfo 是协议无关的** — 同一代码兼容 IPv4/IPv6，替代废弃的 gethostbyname
+
+### 自测题
+
+<details>
+<summary>Q1: socket() 返回什么？此时连接建立了吗？</summary>
+
+返回一个 fd（文件描述符），但此时尚未连接。客户端需 connect() 发起连接，服务器需 bind()+listen()+accept() 等待连接。
+
+</details>
+
+<details>
+<summary>Q2: accept() 返回的 fd 和监听 fd 有什么区别？</summary>
+
+accept() 返回一个新的 fd（connected fd），用于与客户端通信。监听 fd 继续接受新连接，不能用于收发数据。一个监听 fd 可对应多个 connected fd。
+
+</details>
+
+<details>
+<summary>Q3: 为什么推荐 getaddrinfo 而不是 gethostbyname？</summary>
+
+getaddrinfo 协议无关（自动处理 IPv4/IPv6）、线程安全（gethostbyname 返回静态缓冲区，非线程安全）、支持服务名解析。gethostbyname 已废弃。
+
+</details>
+
+<details>
+<summary>Q4: HFT 常用的 socket 选项有哪些？各解决什么问题？</summary>
+
+TCP_NODELAY：禁 Nagle 算法，降小包延迟。SO_REUSEPORT：多进程/线程同时收包。SO_BUSY_POLL：内核 busy poll，减少中断延迟。O_NONBLOCK+epoll：单线程管理多连接。
+
+</details>
 ---
 
 ← [本章导读](../README.md)

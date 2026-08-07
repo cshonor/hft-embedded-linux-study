@@ -35,9 +35,31 @@ perf annotate -s hot_function
 
 ---
 
-### 口述巩固 · 自测
+### 常见陷阱
 
-1. （待口述补）本节核心一句话？
+1. **微基准误导** — 微基准只测单个函数的 CPE，可能跟端到端表现不一致。一个函数 CPE 降了 2× 但整体 P99 没改善——说明瓶颈在别处。用 trace replay 做端到端验证。
+2. **profile 采样率太低** — `perf record` 默认采样率可能漏掉短热路径。HFT 纳秒级路径需要高采样率（`-F 9999`）或用 `perf c2c`/`perf mem` 精确定位。
+3. **改了代码但 binary flags 不一致** — 回测用 `-O2`，生产用 `-O3`，优化效果不同。确保 benchmark 和生产用**完全相同的编译 flags、CPU 型号、OS 配置**。
+
+### 自测题
+
+<details>
+<summary>1. perf 的基本工作流是什么？</summary>
+
+①`perf record -g ./program` 采样（`-g` 记录调用栈）→ ②`perf report` 看热点函数 → ③`perf annotate -s hot_function` 看热点汇编 → ④改代码 → ⑤重新 benchmark 对比。HFT 还需要看 `branch-misses`、`cache-misses`、`stalled-cycles` 等硬件计数器。
+</details>
+
+<details>
+<summary>2. 如何区分 CPU bound vs memory bound？</summary>
+
+看 `perf stat` 的硬件计数器：**CPU bound** → `IPC > 1`、`stalled-cycles-backend` 低、`cache-misses` 低；**memory bound** → `IPC < 1`、`stalled-cycles-backend` 高、`cache-misses`/`L1-dcache-load-misses` 高。也可以看 `perf mem` 或 `perf c2c` 精确定位内存访问问题。
+</details>
+
+<details>
+<summary>3. 为什么微基准好但端到端没提升？</summary>
+
+可能原因：①微基准的 workload 不代表真实场景（数据分布、分支模式不同）；②优化的函数不是端到端瓶颈（阿姆达尔定律）；③优化引入了其他开销（如代码膨胀导致 icache miss）；④binary flags 不一致。**必须用 trace replay 做端到端 P99 回归验证**。
+</details>
 
 ---
 

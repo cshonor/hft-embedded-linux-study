@@ -9,9 +9,40 @@
 
 ---
 
-### 口述巩固 · 自测
+### 常见陷阱
+1. **边界标记用 footer 判断前块状态，但占空间** — 每块多 4-8B footer；可优化为只在空闲块存 footer
+2. **合并只合空闲块，已分配不动** — free 后检查前后块，只有空闲的才合并
+3. **合并方向：前后都看** — 只看后块会漏掉与前块合并的机会；前块用 footer 定位
 
-1. （待口述补）本节核心一句话？
+### 自测题
+
+<details>
+<summary>Q1: 为什么 free 时要合并相邻空闲块？</summary>
+
+防止外部碎片累积。如果不合并，多次 free 后产生大量小碎片，总和够大但不连续，无法满足大请求。
+
+</details>
+
+<details>
+<summary>Q2: 边界标记（boundary tag）是什么？解决什么问题？</summary>
+
+每个块尾部存一个 footer，内容和 header 一样（size + alloc bit）。解决「如何 O(1) 找到前一块」的问题：当前块地址 - 前一块 footer 中的 size = 前一块起始地址。
+
+</details>
+
+<details>
+<summary>Q3: 边界标记的代价是什么？如何优化？</summary>
+
+代价：每块多 4-8B（footer），小块开销比例大。优化：只在空闲块存 footer，已分配块不存（因为已分配块不会被合并，不需要查前块状态）。
+
+</details>
+
+<details>
+<summary>Q4: 合并时需要检查几个方向？为什么？</summary>
+
+两个方向：前一块和后一块。只合并后块会漏掉与前块合并的机会，导致碎片。前块通过 footer 的 size 字段定位，后块通过当前块 header 的 size 跳转。
+
+</details>
 
 ---
 

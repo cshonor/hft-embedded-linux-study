@@ -34,4 +34,32 @@
 
 ---
 
+### 常见陷阱
+
+1. **以为 DRAM 和 cache 差不多快** — DRAM ~50-100ns，L1 ~1ns，差 50-100 倍。一次 DRAM miss 能让 HFT 热路径延迟暴涨上百纳秒。
+2. **热路径数据不在 DRAM 就放心了** — DRAM miss 到 DRAM 仍有 ~100ns；HFT 热数据要驻留 L1/L2/L3，不只是「在内存里」。
+3. **swap 没禁用** — 热路径数据被换出到磁盘，一次 page fault 就是毫秒级。HFT 服务器必须 `swapoff` + `mlock` 关键内存。
+
+### 自测题
+
+<details>
+<summary>1. SRAM 和 DRAM 的主要区别是什么？各用在哪里？</summary>
+
+**SRAM**：快（~1ns）、贵、低功耗/bit，用于 **cache**（L1/L2/L3）。**DRAM**：慢（~50-100ns）、便宜、需定期刷新，用于 **主存**。HFT 热数据要尽量留在 SRAM（cache）层。
+</details>
+
+<details>
+<summary>2. memory wall 是什么？为什么 cache 层次越来越深？</summary>
+
+**CPU 速度增长远快于 DRAM 速度增长**，差距（memory wall）持续扩大。为了弥合差距，CPU 增加更多 cache 层级（L1→L2→L3），让热数据留在离核心更近的 SRAM 中。层次结构不会消失。
+</details>
+
+<details>
+<summary>3. HFT 服务器为什么必须禁用 swap？</summary>
+
+swap 会把内存页换出到磁盘。一旦热路径数据被换出，访问触发 **page fault**，延迟从纳秒暴涨到**毫秒**（慢 10⁶ 倍）。HFT 服务器必须 `swapoff` + `mlock` 锁定关键内存 + 足够 DRAM 装 working set。
+</details>
+
+---
+
 ← [本章导读](../README.md)

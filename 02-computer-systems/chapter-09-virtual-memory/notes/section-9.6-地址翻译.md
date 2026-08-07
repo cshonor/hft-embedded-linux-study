@@ -32,9 +32,40 @@ VA → TLB hit? → PA → L1 → ... → 或 TLB miss → 页表 walk → 可�
 
 ---
 
-### 口述巩固 · 自测
+### 常见陷阱
+1. **TLB miss ≠ page fault** — TLB miss 只是缓存未命中，MMU 去 walk 页表找 PTE；page fault 是 PTE 本身标记页不在内存
+2. **多级页表省空间但增加访存次数** — 每级页表需一次内存访问，4 级 = 4 次访存（TLB miss 时）；TLB 命中则只需 1 次
+3. **大页减 TLB 压力但增内部碎片** — 2MB 大页覆盖更多 VA，但分配后未用部分浪费；HFT 用大页覆盖热数据区域
 
-1. （待口述补）本节核心一句话？
+### 自测题
+
+<details>
+<summary>Q1: VA 如何划分为 VPN 和 VPO？4KB 页时各多少位？</summary>
+
+VPO = 页内偏移（4KB → 12 位），VPN = 剩余位。x86-64 48 位有效 VA：VPO 12 位 + VPN 36 位。
+
+</details>
+
+<details>
+<summary>Q2: TLB miss 时 MMU 做什么？和 page fault 有何区别？</summary>
+
+TLB miss → MMU walk 页表（多级），从内存读 PTE 装入 TLB，然后重试翻译。page fault 是 PTE 显示页不在 DRAM，需 OS 介入从磁盘装入。TLB miss 是硬件处理，page fault 是软件处理。
+
+</details>
+
+<details>
+<summary>Q3: 4 级页表如何节省内存？单级页表有什么问题？</summary>
+
+单级页表：48 位 VA / 4KB 页 = 2^36 个 PTE × 8B ≈ 512GB/进程，不可行。4 级页表只分配用到的区域，未用区域不占物理页。
+
+</details>
+
+<details>
+<summary>Q4: HFT 为什么用大页（2MB/1GB）？具体好处是什么？</summary>
+
+同样工作集用更少 TLB 项覆盖。2MB 页 vs 4KB 页 → TLB 项减少 512 倍，减少 TLB miss 导致的页表 walk（每次 walk 数十周期），降低尾延迟。
+
+</details>
 
 ---
 

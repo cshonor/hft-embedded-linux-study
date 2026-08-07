@@ -40,6 +40,38 @@ mlock(p, size);  // 避免换出
 
 → [Ch 10 I/O](../chapter-10-system-io/)
 
+### 常见陷阱
+
+1. **mmap 不立即分配物理页** — 只创建 VA→文件的映射，首次访问时才 page fault 分配物理页（lazy allocation）
+2. **MAP_PRIVATE 写触发 COW，不是共享** — 写操作复制新物理页，原文件不变；MAP_SHARED 才真正共享写入
+3. **munmap 不保证 flush** — 已写脏页由内核异步写回；需 `msync(MS_SYNC)` 强制同步
+
+### 自测题
+
+<details>
+<summary>Q1: MAP_SHARED 和 MAP_PRIVATE 的核心区别？</summary>
+
+MAP_SHARED：多进程映射同一物理页，写操作互相可见且（映射文件时）写回文件。MAP_PRIVATE：写时复制，各进程独立副本，互不影响，原文件不变。
+</details>
+
+<details>
+<summary>Q2: fork 后子进程的 mmap 区域如何继承？</summary>
+
+fork 复制页表。MAP_SHARED 区域父子共享同一物理页（写入互相可见）；MAP_PRIVATE 区域标记只读，写时 COW 分配新页。
+</details>
+
+<details>
+<summary>Q3: HFT 用 mmap 做行情文件 replay 有什么好处？需要注意什么？</summary>
+
+好处：1) 避免 read() 系统调用开销；2) 内核页缓存自动管理；3) 顺序访问局部性好。注意：首次访问 page fault 有延迟，应用 MAP_POPULATE 预 fault 或手动预读。
+</details>
+
+<details>
+<summary>Q4: DPDK 为什么用 hugetlbfs + mmap 大页？</summary>
+
+大页（2MB/1GB）减少 TLB 项数，避免页表 walk 延迟；hugetlbfs 预留大页池，保证分配不失败；mmap 直接映射到用户空间，零拷贝访问网卡 DMA 缓冲。
+</details>
+
 ---
 
 ← [本章导读](../README.md)

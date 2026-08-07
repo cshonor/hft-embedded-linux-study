@@ -25,9 +25,40 @@ valgrind --leak-check=full ./prog
 
 ---
 
-### 口述巩固 · 自测
+### 常见陷阱
+1. **ASan 有性能开销（2-5x），生产不能开** — ASan 在每次访存检查影子内存，开发/CI 开，生产关
+2. **Valgrind 慢 10-50x，只用于测试** — 它模拟 CPU 执行，不修改二进制；ASan 编译期插桩
+3. **UAF 比泄漏更危险** — 泄漏只是浪费内存；UAF 可能被利用（攻击者控制释放后的块内容）
 
-1. （待口述补）本节核心一句话？
+### 自测题
+
+<details>
+<summary>Q1: ASan 和 Valgrind 的工作原理和性能开销有什么区别？</summary>
+
+ASan：编译期插桩（-fsanitize=address），每次访存查影子内存，开销 2-5x，检测越界/UAF。Valgrind：运行期模拟 CPU 执行，不开编译选项，开销 10-50x，检测更全面（含未初始化读）。
+
+</details>
+
+<details>
+<summary>Q2: 为什么 UAF（use-after-free）比内存泄漏更危险？</summary>
+
+泄漏只是浪费内存，程序仍正确。UAF 访问已释放的内存，可能读到被重新分配的数据（逻辑错误），或被攻击者利用（控制释放块内容实现代码执行）。
+
+</details>
+
+<details>
+<summary>Q3: HFT 在 CI 和生产中分别用什么工具检查内存错误？</summary>
+
+CI：ASan + UBSan 编译测试二进制，Valgrind 跑集成测试。生产：不开 ASan（性能开销），靠代码规范 + 对象池 + RAII + Rust 策略层。
+
+</details>
+
+<details>
+<summary>Q4: off-by-one 错误如何防范？</summary>
+
+1) 循环用 `< n` 不是 `<= n`；2) 分配 `n+1` 字节给 n 字符串（留 '\0'）；3) 边界检查用 `fgets` 不用 `gets`；4) ASan 可检测栈/堆越界。
+
+</details>
 
 ---
 

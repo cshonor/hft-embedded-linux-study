@@ -25,9 +25,40 @@
 
 ---
 
-### 口述巩固 · 自测
+### 常见陷阱
+1. **虚拟地址不是「假地址」** — 它是程序实际使用的真地址，MMU 负责翻译为 PA，程序本身无感知
+2. **MMU 翻译发生在 cache 访问之前** — PIPT cache 用 PA 索引，所以 VA→PA 必须先完成（TLB hit 时接近零开销）
+3. **swap 是 OS 层面策略，cache 是硬件层面机制** — 不要把缺页处理和 cache miss 混为一谈；缺页代价（μs 级）比 cache miss（ns 级）大 1000 倍以上
 
-1. （待口述补）本节核心一句话？
+### 自测题
+
+<details>
+<summary>Q1: 程序指令里的指针是 VA 还是 PA？为什么程序不需要知道 PA？</summary>
+
+是 VA。MMU 在每次访存时自动完成 VA→PA 翻译，程序看到的是连续、整洁的虚拟地址空间，物理碎片由 OS 透明处理。
+
+</details>
+
+<details>
+<summary>Q2: 虚拟内存的四个作用分别是什么？</summary>
+
+1) 隔离 — 每进程独立 VA；2) 扩容 — 冷页 swap 到磁盘；3) 按需加载 — 只驻留用到的页；4) 简化编程 — 连续 VA，碎片透明。
+
+</details>
+
+<details>
+<summary>Q3: L1/L2/L3 cache 缓存的是 VA 还是 PA？</summary>
+
+PA（物理地址）。现代 x86 用 PIPT（物理索引物理标记），在 MMU 翻译后访问 cache，避免别名问题。
+
+</details>
+
+<details>
+<summary>Q4: 缺页（page fault）和 cache miss 的代价差多少量级？</summary>
+
+缺页 ≈ μs 级（可能触发磁盘 I/O），cache miss ≈ ns 级。差距约 1000–100000 倍。HFT 中缺页是灾难性事件。
+
+</details>
 
 ---
 
