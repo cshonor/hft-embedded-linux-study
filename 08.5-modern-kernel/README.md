@@ -1,4 +1,4 @@
-# 08.5-modern-kernel-book
+# 08.5-modern-kernel
 
 > 定位：**现代Linux内核（5.x / 6.x）内核子系统参考资料**
 > 前置：`07-linux-kernel`（ULK/LKD 2.6时代，只用来建立内核概念框架）
@@ -20,7 +20,7 @@
 ## 学习流转顺序
 
 1. `07-linux-kernel`：理解内核需要解决什么问题，**不要照搬旧版代码实现**
-2. `08.5-modern-kernel-book`：学习5.x~6.x真正的现代内核实现（非MM部分）
+2. `08.5-modern-kernel`：学习5.x~6.x真正的现代内核实现（非MM部分）
 3. `08-linux-kernel-deep`：阅读树莓派内核源码、编写内核模块、调试实验
 
 ### ⚠️ 关键警告

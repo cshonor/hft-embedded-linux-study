@@ -1,4 +1,4 @@
-# 09.5-modern-mm-book
+# 09.5-modern-mm
 
 > 定位：**现代Linux内核（5.x / 6.x）内存管理子系统参考资料**
 > 前置：`09-linux-mm`（Mel Gorman《Understanding the Linux Virtual Memory Manager》，基于2.4/2.6）
@@ -20,7 +20,7 @@
 ## 学习流转顺序
 
 1. `09-linux-mm`：理解内存管理需要解决什么问题，**不要照搬旧版代码实现**
-2. `09.5-modern-mm-book`：学习5.x~6.x真正的现代MM实现
+2. `09.5-modern-mm`：学习5.x~6.x真正的现代MM实现
 3. `09-linux-mm`：阅读树莓派内核源码 `mm/` 目录、调试实验
 
 ### ⚠️ 关键警告

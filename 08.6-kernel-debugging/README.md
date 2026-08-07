@@ -7,7 +7,7 @@
 > **前置：**
 > - [07-linux-kernel](../07-linux-kernel/)（LKD，内核概念框架）
 > - [08-linux-kernel-deep](../08-linux-kernel-deep/)（ULK3，内核深度原理）
-> - [08.5-modern-kernel-book](../08.5-modern-kernel-book/)（现代 5.x/6.x 内核资料，修正旧书过时内容）
+> - [08.5-modern-kernel](../08.5-modern-kernel/)（现代 5.x/6.x 内核资料，修正旧书过时内容）
 > - C 语言 + 内核模块开发基础
 >
 > **后续：**
