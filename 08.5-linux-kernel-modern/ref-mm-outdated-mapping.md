@@ -1,7 +1,7 @@
-# 现代内存管理资料中心
+# Mel Gorman 内存管理书过时评估 + 现代映射
 
-> 本文件夹存放 **Mel Gorman《Understanding the Linux Virtual Memory Manager》过时内容的现代替代资料**。
-> 该书基于 Linux 2.4/2.6（2004年），现代内核已迭代到 6.x，内存管理子系统变化巨大。
+> 本文评估 `09-linux-mm`（Mel Gorman《Understanding the Linux Virtual Memory Manager》）的过时程度，
+> 并给出笨叔《奔跑吧 Linux 内核》卷1 + LWN 文章的替代映射。
 
 ---
 
@@ -92,17 +92,7 @@
 
 ---
 
-## 四、官方文档与训练材料
-
-| 资料 | 说明 | 链接 |
-|------|------|------|
-| mm/ 文档 | 内核源码 Documentation/mm/ | https://www.kernel.org/doc/html/latest/mm/ |
-| bootlin MM 训练 | 免费内存管理培训文档 | https://bootlin.com/doc/training/linux-kernel/ |
-| Mel Gorman 的 MM 相关补丁 | 作者本人仍在维护 MM 子系统 | LKML 搜索 "Mel Gorman" |
-
----
-
-## 五、推荐学习路线
+## 四、推荐学习路线
 
 ```
 Mel Gorman 过时章节 → 笨叔卷1 → LWN 文章 → 内核源码 mm/
@@ -113,14 +103,4 @@ Mel Gorman 过时章节 → 笨叔卷1 → LWN 文章 → 内核源码 mm/
 4. SLUB:    09 Ch8 → 笨叔 Ch5 → mm/slub.c (注意: SLAB mm/slab.c 已删除)
 5. 页回收:  09 Ch10 → 笨叔 Ch5 → mm/vmscan.c (MGLRU: mm/vmscan.c multigen)
 6. OOM:     09 Ch13 → LWN PSI → mm/oom_kill.c
-```
-
----
-
-## 文件结构
-
-```
-9.5-Modern-Book/
-├── README.md    ← 本文件（过时评估 + 笨叔映射 + LWN 精选）
-└── (笨叔书笔记将按章节添加)
 ```
