@@ -1,5 +1,8 @@
 ## 6.1 存储技术（6.1.1–6.1.4）
 
+> ↔ [Hennessy §2.2 存储器技术](../../../03-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.2-存储器技术与优化.md)
+
+
 ### 6.1.1 随机访问存储器 (RAM)
 
 | 类型 | 特点 |

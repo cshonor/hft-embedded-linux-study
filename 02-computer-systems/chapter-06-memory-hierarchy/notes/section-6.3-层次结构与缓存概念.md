@@ -1,5 +1,8 @@
 ## 6.3 存储器层次结构（6.3.1–6.3.2）
 
+> ↔ [Hennessy §2.1 存储器层次](../../../03-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.1-引言与存储器层次.md)
+
+
 ### 6.3.1 层次结构中的缓存
 
 **核心思想：** 第 k+1 层是第 k 层的 **cache**，由硬件或软件管理。

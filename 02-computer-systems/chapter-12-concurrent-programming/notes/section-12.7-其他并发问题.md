@@ -1,5 +1,8 @@
 ## 12.7 其他并发问题
 
+> ↔ [Hennessy §5.6 一致性模型](../../../03-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.6-内存一致性模型.md)
+
+
 > **Ch12 §12.7** · [章导读](../README.md) · 上节 [§12.6 ←](./section-12.6-使用线程提高并行性.md) · 下节 [§12.8 →](./section-12.8-小结.md)
 
 ---

@@ -27,4 +27,33 @@
 
 → [14-Systems-Performance Ch6 NUMA](../../../19-systems-performance/chapter-06-cpus/)
 
+
+### 常见陷阱
+
+- 以为监听协议（Snooping）可以无限扩展 — Snooping 依赖 **广播**，核数增多 → 总线/互连带宽爆炸 → 必须切目录协议
+- 跨 socket 共享写变量不做分片 — 目录协议 + 远程 hop → 延迟尖刺；应 per-socket 工作集隔离
+- 不关 NUMA balancing 就上生产 — 内核自动迁移页到「热点」节点 → 运行时不可预测延迟；实盘必须关闭
+
+### 自测题（点击展开）
+
+<details>
+<summary>Q1. 为什么 Snooping 协议不适合大规模多核？Directory 协议如何解决？</summary>
+
+Snooping 依赖 **广播** → 核数增多时总线/互连带宽爆炸（O(N) 广播）。Directory 为每个内存块维护 **哪些节点有副本**（位向量）→ 只需 **点对点消息** 通知相关节点 → O(相关节点数) 而非 O(全体)。
+
+</details>
+
+<details>
+<summary>Q2. 双路 Xeon 服务器上，跨 socket 访问共享写变量为什么会延迟尖刺？</summary>
+
+跨 socket → **目录协议查找 + 远程 hop** → 经过互连（UPI/QPI）→ 延迟 2-3x 于本地访问。如果多核频繁写同一变量 → 反复跨 socket invalidate → 延迟尖刺。对策：per-socket 工作集、行情核与发单核同 socket。
+
+</details>
+
+<details>
+<summary>Q3. HFT 实盘为什么常关闭 NUMA balancing？怎么关？</summary>
+
+内核 NUMA balancing 自动把页迁移到「访问最频繁」的节点 → 运行时迁移 = 不可预测延迟尖刺。实盘要确定性 → 关闭。`echo 0 > /proc/sys/kernel/numa_balancing` 或启动参数 `numa_balancing=disable`。
+
+</details>
 ---

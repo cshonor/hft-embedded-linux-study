@@ -2,6 +2,7 @@
 
 > **Ch6 §6.4.7** · [章导读](../README.md) · 上节 [§6.4.6 ←](./section-6.4.6-真实Cache层次解剖.md) · 下节 [§6.5 →](./section-6.5-编写高速缓存友好的代码.md)
 > ↔ [Harris §8.2 性能分析](../../../00-digital-logic-cpu/ch08_memory/8.2_存储器系统性能分析.md)
+> ↔ [Hennessy §2.3 缓存优化](../../../03-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.3-缓存性能十项高级优化.md)
 
 ---
 

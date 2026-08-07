@@ -1,5 +1,8 @@
 ## 12.6 使用线程提高并行性
 
+> ↔ [Hennessy §5.1 TLP](../../../03-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.1-引言与多处理器挑战.md)
+
+
 > **Ch12 §12.6** · [章导读](../README.md) · 上节 [§12.5 ←](./section-12.5-信号量与预线程化.md) · 下节 [§12.7 →](./section-12.7-其他并发问题.md)
 
 ---

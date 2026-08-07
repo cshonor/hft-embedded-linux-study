@@ -1,5 +1,8 @@
 ## 2.4 虚拟内存与虚拟机
 
+
+> ↔ [CSAPP §9.3 VM作为缓存](../../../02-computer-systems/chapter-09-virtual-memory/notes/section-9.3-虚拟内存作为缓存工具.md) · [CSAPP §9.6 地址翻译](../../../02-computer-systems/chapter-09-virtual-memory/notes/section-9.6-地址翻译.md) · [Harris §8.4 虚拟存储器](../../../00-digital-logic-cpu/ch08_memory/8.4_虚拟存储器.md)
+
 ### 虚拟内存（复习）
 
 | 机制 | 作用 |
@@ -36,4 +39,35 @@
 | 云回测集群可接受 VM；**延迟敏感生产** 要测 **裸金属 vs VM** 的 P99 差 |
 | SR-IOV / 设备直通 — 减少网络虚拟化开销（衔接 DPDK 路径） |
 
+
+### 常见陷阱
+
+- 热路径没 touch 全部页就上线 — 首次访问触发缺页 → **延迟尖刺**。必须在启动时 touch 全部热页 + mlock 锁定
+- 依赖 THP 自动管理大页 — THP 的 **后台碎片整理/合并** 会引入不可预测的延迟尖刺；实盘应显式 hugepage 或关闭 THP
+- 以为 VM 环境的延迟差异可忽略 — 嵌套虚拟化/设备虚拟化引入 **不可控抖动**；P99 延迟可能比裸金属高 2-5x
+
+### 自测题（点击展开）
+
+<details>
+<summary>Q1. TLB miss 的代价是什么？为什么 hugepage 能减少 TLB miss？</summary>
+
+TLB miss → 遍历多级页表（x86-64 四级 → 4 次内存访问）→ ~100ns。4KB 页：1GB 需 262144 个 TLB 项；2MB hugepage 只需 512 项 → TLB 覆盖范围扩大 512x → miss 大幅减少。
+
+</details>
+
+<details>
+<summary>Q2. HFT 热路径上线前要做哪三件事来避免缺页？</summary>
+
+1) `mlockall(MCL_CURRENT | MCL_FUTURE)` 锁定内存 → 防止 swap
+2) 启动时 **touch 全部热页** → 触发缺页提前完成
+3) 使用 **显式 hugepage**（`mmap(MAP_HUGETLB)`）→ 减少 TLB miss
+
+</details>
+
+<details>
+<summary>Q3. SR-IOV 或设备直通对 HFT 网络有什么意义？</summary>
+
+SR-IOV/直通让网卡 **绕过 hypervisor** → 减少虚拟化层开销和上下文切换 → 降低网络延迟抖动。虚拟化网络路径（vSwitch）会增加不可预测延迟，不适合延迟敏感生产。
+
+</details>
 ---

@@ -45,4 +45,33 @@
 | **只读共享**（如策略配置表）MESI 的 S 态友好；**写多** 则 line 在核间 **乒乓** |
 | 理解 MESI 后，无锁算法的 **cache line 所有权** 竞争更可解释 |
 
+
+### 常见陷阱
+
+- 混淆 Coherence 和 Consistency — Coherence 管 **同一地址** 的一致性；Consistency 管 **不同地址** 的访问顺序。两者是不同层次的问题
+- 认为 MESI 的 S 态（共享只读）总是安全 — 多核同时持有 S 态没问题，但任一核写 → 其他核 invalidate → **乒乓**；只读共享 OK，写多则性能暴跌
+- 忽略 MOESI 的 O（Owned）态优化 — O 态允许脏块由所有者直接提供给读请求，避免写回内存；不理解会导致错误分析一致性流量
+
+### 自测题（点击展开）
+
+<details>
+<summary>Q1. MESI 四个状态分别是什么？M 和 E 的区别是什么？</summary>
+
+M=Modified（独占且脏，需写回）、E=Exclusive（独占且干净，无需写回）、S=Shared（多核只读）、I=Invalid。M 和 E 都是独占，但 M 已修改（与内存不一致），E 未修改（与内存一致）。写 E 态 line → 直接转 M，无需总线事务。
+
+</details>
+
+<details>
+<summary>Q2. 写失效（Write Invalidate）为什么比写更新（Write Update）更常用？</summary>
+
+写失效：写前使其他核副本失效，之后独占写，**无后续总线流量**（直到其他核再读）。写更新：每次写都广播新值 → 总线流量大。写失效的一次性开销通常低于写更新的持续性流量。
+
+</details>
+
+<details>
+<summary>Q3. HFT 场景：策略配置表是只读共享的。MESI 的哪个状态最友好？为什么？</summary>
+
+**S 态（Shared）**。多核只读同一 cache line → 都持有 S 态副本 → 无一致性流量。只要不写，S 态就是零开销共享。→ 配置表设计为 **启动后不可变**（const/read-only）。
+
+</details>
 ---

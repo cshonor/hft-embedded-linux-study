@@ -51,4 +51,33 @@
 | 预取 | 保守 | 激进 |
 | 典型场景 | 手机、IoT | 桌面、交易服务器 |
 
+
+### 常见陷阱
+
+- 用 Cortex-A53 的 cache 行为推断 i7 性能 — 两者预取策略（保守 vs 激进）、缓存层次（2 级 vs 3 级）、TLB 大小差异极大；行为不可互相推断
+- 以为 i7 激进预取一定更快 — 对 **不规则访问模式**（哈希表、指针追逐），激进预取可能 **预取污染** → 反而比保守预取慢
+- 换同代不同 SKU 不重新压测 — L3 容量差异（如 8MB vs 12MB）可能显著改变 replay 性能，尤其是多策略争用 LLC 的场景
+
+### 自测题（点击展开）
+
+<details>
+<summary>Q1. Cortex-A53 和 Core i7-6700 在缓存层次和预取策略上的主要差异是什么？</summary>
+
+A53：2 级 cache，保守预取（省电、可预测）。i7：3 级 cache（L3 共享），**激进预取**（为顺序扫描/规则 stride 优化）。A53 为功耗设计，i7 为性能设计。
+
+</details>
+
+<details>
+<summary>Q2. 为什么 i7 的激进预取对某些 HFT 负载反而有害？</summary>
+
+激进预取对 **顺序扫描** 友好，但对 **哈希表/指针追逐** 等不规则访问 → 预取无用 line → 挤掉热数据 → miss rate 上升 → 性能下降。HFT 订单簿查找、链表遍历等场景需 profile 确认预取是否有害。
+
+</details>
+
+<details>
+<summary>Q3. HFT colo 服务器为什么要注意 L3 共享？绑核有什么帮助？</summary>
+
+L3 多核共享 → 多策略/多线程工作集之和超 L3 → **互挤失效**（LLC eviction）。绑核隔离 → 每核工作集独享 L3 分区（Intel CAT 可硬件隔离）→ 减少 cross-core eviction → 降低 miss rate。
+
+</details>
 ---

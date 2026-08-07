@@ -1,5 +1,8 @@
 ## 12.5 用信号量同步线程
 
+> ↔ [Hennessy §5.5 同步基础](../../../03-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.5-同步基础.md)
+
+
 ### 12.5.1 进度图 (Progress Graphs)
 
 - 指令级 **轨迹** — 合法交错必须满足 **happens-before** 边

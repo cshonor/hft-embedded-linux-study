@@ -1,5 +1,8 @@
 ## 2.2 存储器技术与优化
 
+
+> ↔ [CSAPP §6.1 存储技术](../../../02-computer-systems/chapter-06-memory-hierarchy/notes/section-6.1-存储技术.md)
+
 ### SRAM — 缓存的物理基础
 
 | 特点 | 说明 |
@@ -58,4 +61,33 @@
 | 日志/回放 trace 放 **NVMe SSD** — 注意写放大与 fsync 延迟，不进 tick 热路径 |
 | 关键状态 **内存态**；持久化异步或专用线程 |
 
+
+### 常见陷阱
+
+- 用 DRAM 带宽规格推算随机访问性能 — DDR5 标称 64GB/s 是 **顺序突发** 带宽；随机指针追逐的实际带宽可能只有 1/10
+- 认为 HBM 会取代 DDR 做交易主机主存 — HBM 容量 per stack 有限（~16-32GB），成本高，交易主机仍以 DDR + L3 为主；HBM 主要用于 FPGA/加速卡
+- 忽略 Flash 写放大对日志系统的影响 — SSD 写放大系数可达 2-4x，大量小写（如逐 tick 日志）会加速磨损并引入延迟尖刺
+
+### 自测题（点击展开）
+
+<details>
+<summary>Q1. SRAM 和 DRAM 的根本区别是什么？为什么 L1 用 SRAM 而不用 DRAM？</summary>
+
+SRAM 不需刷新（静态），速度快但密度低（每 bit 6 晶体管）；DRAM 需周期刷新（动态），密度高（每 bit 1 电容+1 晶体管）但慢。L1 要求 1-4 周期访问，只有 SRAM 能满足；DRAM 的刷新周期和 RC 延迟使其无法做 L1。
+
+</details>
+
+<details>
+<summary>Q2. 多 Bank DDR 如何提高有效带宽？为什么对 HFT 行情 buffer 有意义？</summary>
+
+多 Bank 允许 **交错访问** — 一个 Bank 在行激活/预充电时，另一个 Bank 可以传输数据。行情 buffer 顺序读 → 多 Bank 并行 → 接近峰值带宽。随机访问则无法利用 Bank 交错。
+
+</details>
+
+<details>
+<summary>Q3. HFT 日志系统用 NVMe SSD。写放大是什么？为什么 fsync 在热路径上要避免？</summary>
+
+写放大 = 实际写入 NAND 的数据量 / 主机写入的数据量。SSD 以页写、块擦，小写被放大。fsync 强制刷盘 → 触发写缓冲 flush → 延迟尖刺。热路径应 **异步持久化**，不阻塞 tick 处理。
+
+</details>
 ---

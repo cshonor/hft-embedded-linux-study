@@ -1,5 +1,8 @@
 ## 2.3 缓存性能十项高级优化
 
+
+> ↔ [CSAPP §6.4.7 Cache参数影响](../../../02-computer-systems/chapter-06-memory-hierarchy/notes/section-6.4.7-Cache参数的性能影响.md) · [CSAPP §6.5 缓存友好代码](../../../02-computer-systems/chapter-06-memory-hierarchy/notes/section-6.5-编写高速缓存友好的代码.md) · [Harris §8.2 存储器性能分析](../../../00-digital-logic-cpu/ch08_memory/8.2_存储器系统性能分析.md)
+
 原书按对 **命中时间、未命中率、未命中惩罚、带宽、功耗** 的影响，将十项优化分为五类。本章核心之一。
 
 ---
@@ -112,4 +115,40 @@ CPU **预测** 即将访问的地址，提前拉入 cache。
 | 9 | 编译器预取 | 未命中率 |
 | 10 | HBM 作 L4 | 带宽、惩罚、层次扩展 |
 
+
+### 常见陷阱
+
+- 认为硬件预取总是有益 — 对 **指针追逐、哈希表** 等不可预测访问，预取拉入无用 cache line → **预取污染**，挤掉热数据反而变慢
+- 对 false sharing 只做 alignas(64) 就放心了 — 还需确保 **不同核不写同一 padded 结构的不同字段**；per-thread 私有计数器 + 周期合并才是正解
+- 分块（Tiling）大小不匹配 cache 容量 — 分块太大 → 工作集溢出 L1/L2 → miss 暴涨；必须用 `perf stat` 实测确定分块大小
+
+### 自测题（点击展开）
+
+<details>
+<summary>Q1. 十项优化中，哪些是 **软件可控** 的？哪些是纯硬件的？</summary>
+
+软件可控：#7 编译器分块/循环交换、#9 编译器预取。其余 8 项（小 L1、路预测、多 Bank、非阻塞、关键字优先、写合并、硬件预取、HBM）由 CPU 微架构决定，程序员只能间接利用（如数据布局适配硬件预取）。
+
+</details>
+
+<details>
+<summary>Q2. 什么是 false sharing？给出一个 HFT 场景的具体例子和对策。</summary>
+
+两核各写同一 cache line 内不同变量 → MESI 反复 invalidate → line 在核间乒乓。例：`struct { atomic<u64> order_count; atomic<u64> cancel_count; }` 两核各写一个字段。对策：`alignas(64)` 分 line，或 **per-thread 私有计数器**，周期合并。
+
+</details>
+
+<details>
+<summary>Q3. 关键字优先（Critical Word First）为什么对乱序 CPU 重要？没有它会怎样？</summary>
+
+cache miss 时，CPU 急需的 **关键字** 先返回，不等整 line 填满。没有它，CPU 要等整 line（64B）传输完才能继续 → 依赖该数据的指令全部 stall 更久。乱序 CPU 可以在关键字到达后立即执行依赖指令，其余 line 填充与执行并行。
+
+</details>
+
+<details>
+<summary>Q4. `__builtin_prefetch` 什么时候有用？什么时候有害？</summary>
+
+有用：访问模式 **极稳定** 的热循环（如预计算链表下一节点）。有害：访问不可预测（哈希表、指针追逐）→ 预取无用 line → 污染 cache → 挤掉热数据。务必 profile 对比。
+
+</details>
 ---
