@@ -1,6 +1,7 @@
 ## 4.5 Y86-64 流水线 PIPE（4.5.1–4.5.10）
 
 > [章导读](../README.md) · 上节 [§4.4](./section-4.4-流水线原理与局限.md)  
+> ↔ [Harris §7.5 流水线](../../../00-digital-logic-cpu/ch07_microarchitecture/7.5_流水线处理器.md) · [§7.7 高级微结构](../../../00-digital-logic-cpu/ch07_microarchitecture/7.7_高级微结构.md)
 > **Ch4 / 全书 CPU 硬件最核心一节（HFT）：** 搭完整 PIPE + 拆解三类冒险 + 转发 / stall / flush。  
 > 无分支、`inline`、拆依赖 — 本质都是 **少 stall / 少冲刷**。
 

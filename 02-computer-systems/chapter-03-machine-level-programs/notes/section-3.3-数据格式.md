@@ -4,6 +4,7 @@
 > 与 ARM32 对照 → [Smith §2.2](../../../10-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
 
 > [章导读](../README.md) · 上节 [§3.2.3](./section-3.2.3-AT&T汇编语法.md) · 下节 [§3.4.1 操作数](./section-3.4.1-操作数指示符.md)  
+> ↔ [Harris §6.8 x86体系结构](../../../00-digital-logic-cpu/ch06_architecture/6.8_另一个视角-x86体系结构.md)
 > ABI：[Ch2 · ABI](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) · 传参：[§3.7](./section-3.7-过程与栈帧.md) · Y86：[§4.1](../../chapter-04-processor-architecture/notes/section-4.1-Y86-64-ISA.md)
 
 ---

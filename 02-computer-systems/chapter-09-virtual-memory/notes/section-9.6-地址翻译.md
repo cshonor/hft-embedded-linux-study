@@ -1,6 +1,7 @@
 ## 9.6 地址翻译
 
 > **Ch9 §9.6** · [章导读](../README.md) · 上节 [§9.5 ←](./section-9.5-虚拟内存作为保护工具.md) · 下节 [§9.7 →](./section-9.7-IntelCorei7-Linux案例.md)
+> ↔ [Harris §8.4 虚拟存储器](../../../00-digital-logic-cpu/ch08_memory/8.4_虚拟存储器.md)
 
 ---
 

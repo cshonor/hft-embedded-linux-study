@@ -1,5 +1,7 @@
 ## 3.6 控制
 
+> ↔ [Harris §6.6 异常/中断](../../../00-digital-logic-cpu/ch06_architecture/6.6_其他主题.md)
+
 ### 3.6.1 条件码
 
 `cmp`、`test`、算术指令会设置 **EFLAGS** 片段：

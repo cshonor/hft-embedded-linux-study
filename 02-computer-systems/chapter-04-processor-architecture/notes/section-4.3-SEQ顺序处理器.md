@@ -1,6 +1,7 @@
 ## 4.3 Y86-64 的顺序实现 SEQ（4.3.1–4.3.4）
 
 > [章导读](../README.md) · 上节 [§4.2 HCL](./section-4.2-HCL逻辑与组合电路.md) · 下节 [§4.4 流水线](./section-4.4-流水线原理与局限.md)
+> ↔ [Harris §7.3 单周期](../../../00-digital-logic-cpu/ch07_microarchitecture/7.3_单周期处理器.md)
 
 ---
 

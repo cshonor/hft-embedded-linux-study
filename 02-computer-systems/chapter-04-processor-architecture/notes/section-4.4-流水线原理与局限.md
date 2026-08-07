@@ -1,6 +1,7 @@
 ## 4.4 流水线的通用原理（4.4.1–4.4.4）
 
 > [章导读](../README.md) · 上节 [§4.3 SEQ](./section-4.3-SEQ顺序处理器.md) · 下节 [§4.5 PIPE 与冒险](./section-4.5-PIPE流水线与冒险.md)
+> ↔ [Harris §3.5 时序约束](../../../00-digital-logic-cpu/ch03_sequential/3.5_时序逻辑电路的时序.md) · [§7.2 性能分析](../../../00-digital-logic-cpu/ch07_microarchitecture/7.2_性能分析.md)
 
 ---
 

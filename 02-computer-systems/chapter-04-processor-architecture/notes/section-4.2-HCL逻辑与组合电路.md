@@ -1,6 +1,7 @@
 ## 4.2 逻辑设计与 HCL（4.2.1–4.2.5）
 
 > [章导读](../README.md) · 上节 [§4.1 Y86-ISA](./section-4.1-Y86-64-ISA.md) · 下节 [§4.3 SEQ](./section-4.3-SEQ顺序处理器.md)
+> ↔ [Harris §2.8.3 MUX](../../../00-digital-logic-cpu/ch02_combinational/2.8.3_MUX.md) · [§2.8.5 加法器](../../../00-digital-logic-cpu/ch02_combinational/2.8.5_加法器.md) · [§2.9 时序](../../../00-digital-logic-cpu/ch02_combinational/2.9_时序.md) · [§3.2 触发器](../../../00-digital-logic-cpu/ch03_sequential/3.2_锁存器和触发器.md) · [§5.2 ALU](../../../00-digital-logic-cpu/ch05_digital_blocks/5.2_算术电路.md) · [§5.5 存储阵列](../../../00-digital-logic-cpu/ch05_digital_blocks/5.5_存储器阵列.md)
 
 ---
 

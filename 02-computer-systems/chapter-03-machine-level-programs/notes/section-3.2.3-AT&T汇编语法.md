@@ -1,6 +1,7 @@
 ## 3.2.3 汇编语法：HFT / Linux 只练 **AT&T（gas）**
 
 > [章导读](../README.md) · 上节 [§3.2.2 栈帧](./section-3.2.2-栈帧.md) · 下节 [§3.3 数据格式](./section-3.3-数据格式.md)
+> ↔ [Harris §6.2 汇编语言](../../../00-digital-logic-cpu/ch06_architecture/6.2_汇编语言.md)
 
 ---
 
