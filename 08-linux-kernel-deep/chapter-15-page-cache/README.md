@@ -5,6 +5,18 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **page cache + 基数树** | **folio** + **maple tree** (6.1+) | [Folios and the page cache](https://lwn.net/Articles/895104/) |
+| **`pdflush` 线程** | 已被 **`flusher`** 线程取代（per-device） | [Why folios?](https://lwn.net/Articles/880965/) |
+| `address_space` | 仍存在，但操作 `folio` 而非 `page` | [Folios for filesystems](https://lwn.net/Articles/931584/) |
+
+> **原则**：page→folio 是页缓存层面的核心重构。ULK3 的页缓存章节仅作概念理解。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

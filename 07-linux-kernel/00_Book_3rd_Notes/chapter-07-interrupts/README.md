@@ -6,6 +6,19 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| `do_IRQ()` 路径 | 仍存在但路径简化，IRQ 堆栈处理变化 | [Interrupt handling in Linux](https://lwn.net/Articles/302043/) |
+| 中断线程化 | LKD 3rd 仅提及，现代内核广泛使用 threaded IRQ | [Threaded interrupt handlers](https://lwn.net/Articles/302043/) |
+| `request_irq()` | 改为 `request_threaded_irq()`（推荐） | [Kernel doc: IRQ](https://docs.kernel.org/core-api/genericirq.html) |
+| IPI 机制 | 改用 `smp_call_function()` 系列 | [Kernel doc: IPI](https://docs.kernel.org/core-api/smp.html) |
+
+> **原则**：中断概念框架不变，但 threaded IRQ 是现代重要实践。LKD 的中断处理概念仍有效。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |

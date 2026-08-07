@@ -7,6 +7,19 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **CFS 调度器** | 6.6 起 **EEVDF** 取代 CFS | [EEVDF Scheduler](https://lwn.net/Articles/969062/) (2024) |
+| `vruntime` + 红黑树 | EEVDF 用虚拟截止时间，红黑树仍在但选择逻辑变 | [What is EEVDF?](https://lwn.net/Articles/927168/) |
+| `sched_prio_to_weight` | 权重表仍存在，但 EEVDF 算法不同 | [The earliest eligible virtual deadline first](https://lwn.net/Articles/925371/) |
+| `SCHED_DEADLINE` | LKD 3rd 未讲（2011 年加入），现代内核重要 RT 策略 | [Deadline scheduling](https://docs.kernel.org/scheduler/sched-deadline.html) |
+
+> **原则**：LKD 比 ULK3 新 5 年，CFS 概念仍有效，但 6.6+ 已切换到 EEVDF。补 LWN EEVDF 系列即可。
+
+---
+
 ## 推荐阅读顺序（原「连贯导读」已并入本章）
 
 ```

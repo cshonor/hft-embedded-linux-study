@@ -5,6 +5,19 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| IDT 门描述符 (x86-32) | x86-64 IDT 结构不同，中断入口路径重写 | [x86 interrupt handling](https://lwn.net/Articles/107554/) |
+| `do_IRQ()` 路径 | 仍存在但路径简化，IRQ 堆栈处理变化 | [Interrupt handling in Linux](https://lwn.net/Articles/302043/) |
+| IPI 机制 | 改用 `smp_call_function()` 系列 | [Kernel doc: IPI](https://docs.kernel.org/core-api/smp.html) |
+| 中断线程化 | ULK3 时代无，现代内核支持 threaded IRQ | [Threaded interrupt handlers](https://lwn.net/Articles/302043/) |
+
+> **原则**：ULK3 用来理解中断概念框架（IDT/门/上半部/下半部），现代实现查 bootlin 中断训练材料 + 源码 `kernel/irq/`。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

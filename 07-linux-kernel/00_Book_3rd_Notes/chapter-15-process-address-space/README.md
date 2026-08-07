@@ -6,6 +6,19 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **VMA 红黑树 + 链表** | **maple tree** 取代红黑树（6.1 起） | [The maple tree](https://lwn.net/Articles/845507/) |
+| `find_vma()` | 改为 maple tree 查找 | [A maple tree for VMA tracking](https://lwn.net/Articles/895690/) |
+| `vm_area_struct` | 仍存在，但查找结构变了 | [Maple tree documentation](https://docs.kernel.org/core-api/maple_tree.html) |
+| 页表 (4 级) | x86-64 现代 5 级页表（57 位虚拟地址） | [5-level page tables](https://lwn.net/Articles/717293/) |
+
+> **原则**：VMA 概念不变，但数据结构从红黑树到 maple tree。`task_struct→mm_struct→VMA` 层次仍有效。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |

@@ -5,6 +5,19 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **VMA 红黑树 + 链表** | **maple tree** 取代红黑树（6.1 起） | [The maple tree](https://lwn.net/Articles/845507/) |
+| `vm_area_struct` | 仍存在，但查找结构变了 | [A maple tree for VMA tracking](https://lwn.net/Articles/895690/) |
+| `find_vma()` | 改为 maple tree 查找 | [Maple tree documentation](https://docs.kernel.org/core-api/maple_tree.html) |
+| 缺页处理路径 | 概念不变，但 `fault` 回调接口更新 | [Kernel doc: mm](https://docs.kernel.org/admin-guide/mm/) |
+
+> **原则**：VMA 管理从红黑树到 maple tree 是数据结构层面的重构。`task_struct→mm_struct→VMA` 的层次不变，但查找路径完全不同。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

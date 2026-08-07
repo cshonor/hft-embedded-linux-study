@@ -5,6 +5,18 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **单队列块层** | **multiqueue (blk-mq)** 取代单队列 | [Multiqueue block layer](https://lwn.net/Articles/552904/) |
+| `request_queue` 单队列 | 改为 per-CPU 软件队列 + 硬件队列 | [Block I/O latency controller](https://lwn.net/Articles/716107/) |
+| I/O 调度器 | deadline/cfq 被替换为 mq-deadline/kyber/none | [Block layer multi-queue design](https://docs.kernel.org/block/blk-mq.html) |
+
+> **原则**：块层从单队列到 blk-mq 是架构级重构。ULK3 的块设备章节几乎全部过时，务必查 blk-mq 文档。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

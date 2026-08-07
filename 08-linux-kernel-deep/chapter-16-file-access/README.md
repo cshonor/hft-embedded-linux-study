@@ -5,6 +5,18 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **AIO** (`aio_read`/`aio_write`) | **io_uring** 取代 AIO（5.1+） | [io_uring](https://lwn.net/Articles/776703/) (Jens Axboe) |
+| `aio_read()`/`aio_write()` | 仍存在但已不推荐新代码使用 | [io_uring and networking](https://lwn.net/Articles/810414/) |
+| `epoll` | 仍存在，io_uring 可替代部分场景 | [Efficient IO with io_uring](https://kernel.dk/io_uring.pdf) |
+
+> **原则**：AIO→io_uring 是异步 I/O 的完全重写。ULK3 的 AIO 章节已过时，io_uring 是现代高性能 I/O 的核心。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

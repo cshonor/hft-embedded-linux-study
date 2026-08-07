@@ -5,6 +5,19 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **O(1) 调度器** | 2.6.23 起 **CFS** 取代；6.6 起 **EEVDF** 取代 CFS | [CFS scheduling](https://lwn.net/Articles/230501/) (2007) |
+| 优先级数组 + 时间片 | vruntime + 红黑树（CFS）；EEVDF 用虚拟截止时间 | [EEVDF Scheduler](https://lwn.net/Articles/969062/) (2024) |
+| `recalc_task_prio()` | **已删除** | [What is EEVDF?](https://lwn.net/Articles/927168/) |
+| `runqueue` 结构 | `cfs_rq` → `eevdf_rq`，数据结构重写 | [The earliest eligible virtual deadline first](https://lwn.net/Articles/925371/) |
+
+> **原则**：ULK3 的 O(1) 调度器已完全过时。CFS（2.6.23-6.5）和 EEVDF（6.6+）是两代全新设计。务必读 LWN EEVDF 系列文章。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

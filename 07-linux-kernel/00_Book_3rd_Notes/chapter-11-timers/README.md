@@ -6,6 +6,20 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **`HZ` 固定节拍** | **NOHZ（tickless）** 模式广泛使用 | [NO_HZ: Tickless kernel](https://lwn.net/Articles/229185/) |
+| `jiffies` | 仍存在，但高精度计时用 `hrtimer` | [hrtimer subsystem](https://lwn.net/Articles/167897/) |
+| `clocksource` 框架 | LKD 3rd 未详述，现代内核核心 | [Clocksource and clockevents](https://docs.kernel.org/timers/timekeeping.html) |
+| `timer_list` | 接口变化：`setup_timer()` → `timer_setup()` | [Kernel doc: timers](https://docs.kernel.org/timers/) |
+| 动态定时器 | `hrtimer` 提供高精度替代 | [High-resolution timers](https://lwn.net/Articles/167897/) |
+
+> **原则**：jiffies/timer_list 概念仍有效，但 hrtimer/clocksource/nohz 是现代核心。LKD 是入门好材料，但需补 hrtimer 文档。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |

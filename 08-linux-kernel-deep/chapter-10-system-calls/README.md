@@ -5,6 +5,19 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| `sys_call_table` | x86-64 仍用，但入口改用 `syscall` 指令 | [System call table for x86-64](https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/) |
+| **`0x80` 软中断入口** | **已废弃**，改用 `syscall` 指令 | [vDSO and system calls](https://lwn.net/Articles/627232/) |
+| 参数验证 | 概念类似，但 helper 函数更新 | [Kernel doc: syscall API](https://docs.kernel.org/core-api/syscalls.html) |
+| `sys_*` 命名 | 现代 `SYSCALL_DEFINE*` 宏 | [Kernel doc: syscall wrappers](https://docs.kernel.org/core-api/syscalls.html) |
+
+> **原则**：系统调用概念框架不变（用户态→内核态切换、参数传递、验证），但入口机制和命名约定已变。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

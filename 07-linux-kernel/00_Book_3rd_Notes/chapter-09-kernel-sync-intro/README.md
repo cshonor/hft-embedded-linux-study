@@ -6,6 +6,17 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| 死锁示例 | 概念不变，但现代内核有更多检测工具 | [Lockdep](https://www.kernel.org/doc/Documentation/locking/lockdep-design.txt) |
+| 争用与扩展性 | 概念不变，但 per-CPU 和 RCU 更广泛使用 | [What is RCU?](https://lwn.net/Articles/262464/) |
+
+> **原则**：同步概念框架（临界区/竞态/死锁/争用）完全有效，是入门同步的最佳讲解。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |

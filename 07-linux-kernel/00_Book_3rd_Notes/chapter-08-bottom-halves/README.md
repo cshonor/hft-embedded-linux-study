@@ -6,6 +6,19 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **tasklet** | **逐渐弃用**，现代内核推荐 workqueue 或 threaded IRQ | [The future of tasklets](https://lwn.net/Articles/830964/) |
+| 软中断 (softirq) | 仍存在，但 NAPI 网络软irq路径有演进 | [NAPI and softirq](https://docs.kernel.org/networking/napi.html) |
+| `schedule_work()` | workqueue 接口更新，`system_wq` vs `system_highpri_wq` | [Kernel doc: workqueue](https://docs.kernel.org/core-api/workqueue.html) |
+| `ksoftirqd` | 仍存在，但调度策略有调整 | [Kernel doc: softirq](https://docs.kernel.org/core-api/softirq.html) |
+
+> **原则**：软中断/workqueue 概念不变，tasklet 正在被淘汰。新代码用 workqueue 或 threaded IRQ。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |

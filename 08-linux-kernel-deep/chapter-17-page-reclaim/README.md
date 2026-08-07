@@ -5,6 +5,18 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **LRU 双链表** (active/inactive) | **Multi-generational LRU** (MGLRU, 6.1+) | [Multi-generational LRU](https://lwn.net/Articles/856931/) |
+| `shrink_zone()` | 重写为 MGLRU 回收路径 | [MGLRU documentation](https://docs.kernel.org/admin-guide/mm/multigen_lru.html) |
+| OOM killer | 仍存在但策略可配置 (cgroup OOM) | [Cgroup-aware OOM killer](https://lwn.net/Articles/704179/) |
+
+> **原则**：LRU→MGLRU 是页回收算法的重构。ULK3 的回收路径仅作概念理解，现代实现查 MGLRU 文档。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

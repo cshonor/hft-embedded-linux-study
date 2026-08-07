@@ -6,6 +6,20 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **大内核锁 (BKL) §10.7** | **已删除**（2.6.37 完全移除） | [The BKL lives on](https://lwn.net/Articles/400542/) |
+| RCU（LKD 仅简述） | Tree RCU、Sleepable RCU 大幅演进 | [What is RCU?](https://lwn.net/Articles/262464/) |
+| `atomic_t` | 仍存在，新增 `refcount_t`（防溢出） | [refcount_t](https://lwn.net/Articles/715037/) |
+| 顺序锁 | 概念不变，实现细节有更新 | [Kernel doc: locking](https://docs.kernel.org/locking/) |
+| `seqlock_t` | 仍存在，但 `seqcount_latch_t` 新增（时间keeping 用） | [Kernel doc: seqlock](https://docs.kernel.org/locking/seqlock.html) |
+
+> **原则**：§10.7 BKL 已过时可跳过。其余同步原语概念不变，RCU 需补 LWN 系列文章。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |

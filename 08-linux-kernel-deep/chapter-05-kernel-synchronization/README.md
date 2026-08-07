@@ -5,6 +5,20 @@
 
 ---
 
+## ⚠️ 过时标记（ULK3 基于 Linux 2.6，现为 6.x）
+
+| ULK3 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **大内核锁 (BKL)** | **已删除**（2.6.37 完全移除） | [The BKL lives on](https://lwn.net/Articles/400542/) |
+| RCU 基础版 | Tree RCU、Sleepable RCU、Tasks RCU 大幅演进 | [What is RCU?](https://lwn.net/Articles/262464/) (Paul McKenney) |
+| `read_lock()` | 仍存在，但 RCU 更推荐用于读多写少 | [Tree RCU](https://lwn.net/Articles/305782/) |
+| `atomic_t` | 仍存在，新增 `refcount_t`（防溢出） | [refcount_t](https://lwn.net/Articles/715037/) |
+| 顺序锁 | 概念不变，但实现细节有更新 | [Kernel doc: locking](https://docs.kernel.org/locking/) |
+
+> **原则**：同步原语的概念（自旋锁/信号量/RCU/顺序锁）不变，但 BKL 已删、RCU 大幅演进，务必补 LWN 文章。
+
+---
+
 ## 小节笔记
 
 | 节 | 笔记 |

@@ -6,6 +6,20 @@
 
 ---
 
+## ⚠️ 过时标记（LKD 3rd 基于 2.6.34，现为 6.x）
+
+| LKD 讲的 | 现代变化 | 替代资料 |
+|-----------|---------|----------|
+| **SLAB 分配器 §12.7** | **SLUB** 取代 SLAB（2.6.23 起默认） | [SLUB: The unqueued slab allocator](https://lwn.net/Articles/229096/) |
+| `struct page` | 大量字段移出，改用 **`struct folio`** | [Folios and the page cache](https://lwn.net/Articles/895104/) |
+| `kmalloc`/`vmalloc` | 接口仍在，但底层 SLUB 实现不同 | [Slab allocation improvements](https://lwn.net/Articles/887591/) |
+| per-CPU 分配器 | 仍存在，但接口和实现有更新 | [Kernel doc: percpu](https://docs.kernel.org/core-api/percpu.html) |
+| 高端内存 (highmem) | 64 位内核无 highmem 概念 | [Why folios?](https://lwn.net/Articles/880965/) |
+
+> **原则**：§12.7 SLAB 仅作概念理解（看 SLUB 替代）。`struct page`→`folio` 是重大重构。其余分配器概念仍有效。
+
+---
+
 ## 本节结构
 
 | 节 | 主题 | 带走什么 |
