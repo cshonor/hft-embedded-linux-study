@@ -70,4 +70,43 @@
 
 → **Ch 8** 下半部机制详解 · [Ch 7.5](section-7.5-中断上下文.md) 中断上下文 · [SysPerf §3.2 上下半部](../../../../19-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
 
+### 常见陷阱
+
+1. 混淆上半部和下半部——上半部在 hard IRQ 上下文（不可睡眠），下半部在 softirq/进程上下文
+2. 以为 tasklet 还被推荐——tasklet 已 deprecated，推荐 workqueue 或 threaded IRQ
+3. 在 softirq 中调用 mutex_lock()——softirq 不能睡眠，只能用 spinlock
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 上半部和下半部的分工原则？
+
+<details><summary>答案</summary>
+
+上半部（hard IRQ）：① 确认硬件 ACK。② 读取时间敏感数据。③ 调度下半部。必须 <10us。下半部（softirq/tasklet/workqueue）：① 大部分中断处理工作。② 可做 I/O、分配内存（workqueue 可睡眠）。③ 可被中断抢占但不能被同类型 softirq 抢占（per-CPU）。
+
+</details>
+
+**Q2.** softirq、tasklet、workqueue 三种下半部机制如何选择？
+
+<details><summary>答案</summary>
+
+softirq：编译时静态注册，性能最高，不能睡眠。tasklet：基于 softirq，动态注册，同类型不并发，已 deprecated。workqueue：在 kworker 线程运行，可睡眠/持 mutex，最灵活。选择：需要睡眠 → workqueue。需要高性能 → softirq（或 NAPI）。不再推荐 → tasklet（用 workqueue 或 threaded IRQ 替代）。
+
+</details>
+
+**Q3.** HFT 中下半部对延迟有什么影响？
+
+<details><summary>答案</summary>
+
+NIC 收包走 NET_RX_SOFTIRQ，在 hard IRQ 返回或 ksoftirqd 中执行。如果 softirq 积压，收包延迟增大。排查：`/proc/softirqs` 看 NET_RX 计数。解决：① 绑 softirq 到非交易核（RPS/RFS）。② NAPI 轮询模式。③ DPDK 完全绕过 softirq。④ `nohz_full` 减少软中断频率。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

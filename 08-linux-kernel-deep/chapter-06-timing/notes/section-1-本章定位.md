@@ -42,3 +42,4 @@ Ch 10 系统调用    — gettimeofday 等入口
 ---
 
 ← [Ch 6 导读](../README.md) · 下一节 [2. 硬件时钟](./section-2-硬件时钟与定时器.md)
+> ↔ [LKD Ch11 §11.1 内核时间概念与节拍率](../../../07-linux-kernel/00_Book_3rd_Notes/chapter-11-timers/notes/section-11.1-内核时间概念与节拍率.md)

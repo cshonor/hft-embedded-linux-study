@@ -77,4 +77,41 @@ Linux 下半部机制经历 **多次重写** — 理解历史可避免在读旧�
 
 → [Ch 8.3](section-8.3-软中断.md) softirq · [Ch 8.4](section-8.4-tasklet.md) tasklet · [Ch 8.5](section-8.5-工作队列.md) workqueue · [12 Rosen Ch14 NAPI](../../17-kernel-networking/chapter-14-advanced-topics/)
 
+### 常见陷阱
+
+1. 把 BH（Bottom Half）当现代机制——BH 在 2.5 已删除，被 softirq/tasklet/workqueue 取代
+2. 以为 tasklet 是新机制——tasklet 基于 softirq，且正在被废弃
+3. 混淆 workqueue 的旧版（keventd）和现代版（cmwq）——现代 workqueue 是并发可配置的
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 下半部机制的历史演进？哪些已被删除？
+
+<details><summary>答案</summary>
+
+① BH（Bottom Half）：2.0-2.4，全局串行（同一时间只有一个 BH 执行），2.5 删除。② Task Queue：2.0-2.5，复杂且不灵活，2.5 删除。③ softirq：2.3 引入，仍存在。④ tasklet：2.3 引入，基于 softirq，正在被废弃。⑤ workqueue：2.5 引入，2.6.36 改为 cmwq（Concurrency Managed Workqueue），仍存在且推荐。
+
+</details>
+
+**Q2.** tasklet 为什么被废弃？推荐用什么替代？
+
+<details><summary>答案</summary>
+
+tasklet 缺陷：① 同类型全局串行化（不能多 CPU 并发），性能差。② 基于 softirq 不能睡眠。③ API 复杂。替代：需要并发 → workqueue。需要低延迟 → threaded IRQ。需要定时回调 → hrtimer。内核已标记 tasklet 为 deprecated，新代码不应使用。
+
+</details>
+
+**Q3.** 现代 workqueue（cmwq）和旧版有什么区别？
+
+<details><summary>答案</summary>
+
+旧版（2.5-2.6.35）：每 CPU 一个 worker 线程（`events/n`），如果 work 阻塞会卡住该 CPU 所有 work。cmwq（2.6.36+）：动态创建/销毁 worker 线程，blocked worker 时自动 spawn 新的。`alloc_workqueue()` 可配置 `WQ_UNBOUND`（不绑 CPU）、`WQ_HIGHPRI`（高优先级）、`max_active`（最大并发）。
+
+</details>
+
+</details>
+
 ---

@@ -35,6 +35,43 @@ Linux 2.6 对分段**极大简化**：
 - x86-64 长模式下分段作用更弱，几乎**平坦模型 + 分页**
 - 读 2.6 时抓「**Linux 用分段满足硬件要求，用分页做真正隔离**」即可
 
+### 常见陷阱
+
+1. 在 64 位代码中还在纠结 GDT/LDT 的段选择符——x86-64 分段已被废弃，GDT 仍存在但只为权限切换服务
+2. 以为 `set_fs()` 还在现代内核中——`set_fs()`/`get_fs()` 在 5.10 被移除，内核/用户态地址检查改用 `access_ok()` + `get_user()`/`put_user()`
+3. 混淆 CPL/DPL/RPL——CPL 是当前代码权限（CS 低 2 位），DPL 是段描述符要求的权限，RPL 是选择符中的请求权限
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** GDT 在 x86-64 内核中还有用吗？
+
+<details><summary>答案</summary>
+
+有，但作用大为缩减。GDT 仍用于存放 TSS（任务状态段）、内核栈指针、权限级标记（DPL 0/3）。但段基址/段限长已无意义（flat model）。`syscall` 指令直接从 MSRs 加载 CS/SS，不走 GDT 查表。
+
+</details>
+
+**Q2.** `set_fs(KERNEL_DS)` 为什么被移除？移除后怎么替代？
+
+<details><summary>答案</summary>
+
+`set_fs()` 临时切换地址限制让内核能直接读写用户空间指针，容易引发安全漏洞（覆盖后忘记恢复）。5.10 起移除，改用显式的 `copy_from_user()`/`copy_to_user()` 和 `get_user()`/`put_user()`，所有用户指针必须通过这些安全函数访问。
+
+</details>
+
+**Q3.** ULK 讲的段描述符 8 字节结构在 x86-64 上变了吗？
+
+<details><summary>答案</summary>
+
+变了。x86-64 段描述符仍 8 字节，但 64 位代码段描述符（L=1）格式不同，且 64 位 TSS 描述符占 16 字节（两个 GDT slot）。ULK 基于的 32 位描述符格式不能直接用于 64 位分析。
+
+</details>
+
+</details>
+
 ---
 
 ← [2. 三种地址](./section-2-三种内存地址.md) · 下一节 [4. 硬件分页](./section-4-硬件分页.md)

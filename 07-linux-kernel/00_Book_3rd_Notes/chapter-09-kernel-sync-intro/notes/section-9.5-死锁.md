@@ -75,4 +75,41 @@ spin_lock_irqsave(&dev->lock, flags);
 
 → **Ch 8.8** `spin_lock_irqsave` · **Ch 10** Lockdep · [Ch 9.2](section-9.2-加锁.md) 加锁策略
 
+### 常见陷阱
+
+1. 以为死锁只会发生在多锁场景——单锁也能死锁（如递归加锁同一 spinlock）
+2. 混淆死锁的四种条件——互斥、持有并等待、不可剥夺、循环等待
+3. 忽略 lockdep——lockdep 能在开发阶段检测潜在死锁，生产阶段关掉
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 死锁的四个必要条件？
+
+<details><summary>答案</summary>
+
+① 互斥：资源同一时间只能被一个执行者使用。② 持有并等待：持有资源的执行者可以请求新资源。③ 不可剥夺：资源不能被强制夺走（只能持有者主动释放）。④ 循环等待：存在执行者的循环等待链。打破任一条件即可预防死锁。最常用：打破循环等待——规定锁的全局获取顺序。
+
+</details>
+
+**Q2.** 内核中常见的死锁场景？
+
+<details><summary>答案</summary>
+
+① 递归加锁：同一 spinlock 在持锁期间再次 lock → 自死锁。② AB-BA 死锁：线程1 lock(A)→lock(B)，线程2 lock(B)→lock(A)。③ 中断死锁：进程持 lock()，被中断，中断处理函数也 lock() → 死锁。解决：中断访问的锁用 spin_lock_irqsave()。④ softirq 死锁：用 spin_lock_bh()。预防：lockdep + 全局锁顺序。
+
+</details>
+
+**Q3.** lockdep 怎么使用？能检测什么？
+
+<details><summary>答案</summary>
+
+`CONFIG_LOCKDEP=y` 编译内核。开启：`echo 1 > /proc/sys/kernel/lock_stat`。检测：① AB-BA 死锁（锁顺序反转）。② 递归加锁。③ 中断上下文持有可睡眠锁。④ IRQ 安全性不匹配。开销：~10% 性能下降，仅开发阶段开启。用户态类似工具：ThreadSanitizer (`-fsanitize=thread`)。HFT 开发应 CI 中跑 lockdep/TSan。
+
+</details>
+
+</details>
+
 ---

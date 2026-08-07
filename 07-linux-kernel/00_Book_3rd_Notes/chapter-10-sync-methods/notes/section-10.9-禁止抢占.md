@@ -38,4 +38,41 @@ CPU0 上任务 A 操作 per_cpu(var, 0)
 
 → [Ch 4.5 抢占](../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [12.10 per-CPU 分配](../chapter-12-memory-management/notes/section-12.10-每个-CPU-的分配.md)
 
+### 常见陷阱
+
+1. 混淆 preempt_disable() 和 local_irq_disable()——前者只禁抢占，后者还禁中断
+2. 以为 preempt_disable() 后不能被中断——可以被中断，但不能被调度
+3. 在 preempt_disable() 区域做耗时操作——会延迟调度器，增加系统延迟
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** preempt_disable() 的精确效果？
+
+<details><summary>答案</summary>
+
+① 递增 preempt_count 的 preempt 位。② 当前 CPU 上的内核代码不会被抢占（schedule() 检查 preempt_count == 0 才调度）。③ 中断仍可触发（hard IRQ）。④ softirq 仍可执行。⑤ 其他 CPU 不受影响。用于保护 per-CPU 数据（防止被另一进程在同 CPU 上访问）。对应 preempt_enable() 递减并检查 need_resched。
+
+</details>
+
+**Q2.** preempt_enable() 时如果 need_resched 被设置会怎样？
+
+<details><summary>答案</summary>
+
+`preempt_enable()` 递减 preempt_count，如果 preempt_count 归零且 `need_resched` 被设置 → `preempt_schedule()` → `schedule()` 切换到更高优先级任务。这就是内核抢占点。`preempt_enable_no_resched()` 不检查 need_resched（延迟到下一个抢占点），用于明确不需要立即调度的场景。
+
+</details>
+
+**Q3.** HFT 如何利用抢占控制降低延迟？
+
+<details><summary>答案</summary>
+
+① `SCHED_FIFO`：RT 线程不可被 CFS 抢占（只有更高 RT 或中断能抢占）。② `isolcpus`：隔离核上无其他任务，调度器几乎不触发。③ `nohz_full`：停止定时器中断，减少 `scheduler_tick()`。④ `preempt=full`：让非 RT 任务的内核路径也可被抢占（减少长尾延迟）。⑤ 内核模块中 `preempt_disable()` 临界区 <1us。
+
+</details>
+
+</details>
+
 ---

@@ -55,4 +55,51 @@ schedule_timeout(HZ / 2);   /* 约 0.5 秒 @ HZ=1000 */
 
 → [Ch 11.6 动态定时器](./section-11.6-动态定时器.md) · [Ch 4 睡眠](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md)
 
+### 常见陷阱
+
+1. 混淆 udelay() 和 msleep()——前者忙等（spin，精确但浪费 CPU），后者睡眠（释放 CPU 但有调度延迟）
+2. 在持锁时用 msleep()——spinlock 持有时不能睡眠，mutex 可以
+3. 在 HFT 热路径用 sleep/wait——热路径应预分配 + 无等待，delay API 都是后备
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** udelay() / mdelay() / msleep() / schedule_timeout() 的区别？
+
+<details><summary>答案</summary>
+
+udelay(us)：忙等（spin），基于 BogoMIPS 校准的循环，精度 ns 级，不释放 CPU。mdelay(ms)：udelay 的毫秒版。msleep(ms)：睡眠（schedule_timeout + TASK_UNINTERRUPTIBLE），释放 CPU，精度 ms 级 + 调度延迟。schedule_timeout(timeout)：可设置 TASK_INTERRUPTIBLE/UNINTERRUPTIBLE，最灵活。选择：<10us → udelay；>10us 且可睡眠 → msleep/schedule_timeout。
+
+</details>
+
+**Q2.** 为什么 spinlock 持有时只能 udelay 不能 msleep？
+
+<details><summary>答案</summary>
+
+Spinlock 持有时 preempt_count > 0（或中断禁用）。msleep() 内部调 schedule()，schedule() 检查 preempt_count == 0 才允许调度。违反 → BUG: scheduling while atomic → panic。mutex 持有时 preempt_count == 0（mutex 不禁抢占），可以 msleep()。但如果 mutex 持有时睡眠，其他等待者被阻塞。
+
+</details>
+
+**Q3.** HFT 用户态如何做精确延迟？
+
+<details><summary>答案</summary>
+
+```c
+// 方法 1: 自旋 + RDTSC（最精确，浪费 CPU）
+uint64_t target = rdtsc() + ns * tsc_ghz;
+while (rdtsc() < target) _mm_pause();  // PAUSE 指令降功耗
+// 方法 2: nanosleep（释放 CPU，有调度延迟）
+struct timespec ts = { .tv_sec = 0, .tv_nsec = ns };
+nanosleep(&ts, NULL);  // 最小 ~50us（调度开销）
+// 方法 3: futex  spin（自适应）
+// HFT 热路径: 方法 1（自旋）, <1us 精确
+// HFT 非热路径: 方法 2, 节省 CPU
+```
+
+</details>
+
+</details>
+
 ---

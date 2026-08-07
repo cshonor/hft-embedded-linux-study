@@ -87,4 +87,41 @@ free_irq(dev->irq, dev);
 
 → [Ch 7.5](section-7.5-中断上下文.md) 中断上下文 · [Ch 8.4](../../chapter-08-bottom-halves/notes/section-8.4-tasklet.md) tasklet · [Ch 6](../../chapter-06-kernel-data-structures/) kfifo 入队模式
 
+### 常见陷阱
+
+1. 忘记在中断处理函数中 disable 该 IRQ——共享 IRQ 场景下可能导致重复触发
+2. 混淆 IRQF_SHARED 和 IRQF_TRIGGER_*——前者允许共享，后者指定触发方式（上升沿/下降沿）
+3. 在模块卸载时忘记 free_irq()——导致空指针/中断风暴
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** request_irq() 的 flags 参数中 IRQF_SHARED 和 IRQF_TRIGGER_* 的含义？
+
+<details><summary>答案</summary>
+
+IRQF_SHARED：允许多个设备共享同一 IRQ 号（所有共享者都收到中断，各自判断是否属于自己的设备）。IRQF_TRIGGER_RISING/FALLING/HIGH/LOW：指定中断触发方式（边沿/电平）。PCI 设备通常用 MSI（消息信号中断），不需要 IRQF_SHARED。
+
+</details>
+
+**Q2.** 共享 IRQ 的中断处理函数怎么判断中断是否属于自己？
+
+<details><summary>答案</summary>
+
+读取设备的中断状态寄存器（ISR），如果 pending 位为 0 则返回 IRQ_NONE（不是本设备的中断），为 1 则处理并返回 IRQ_HANDLED。所有共享者的 handler 按注册顺序依次调用。如果某个 handler 总是返回 IRQ_NONE，会被 spurious IRQ 检测禁用。
+
+</details>
+
+**Q3.** 模块卸载时为什么要先 free_irq()？如果忘记会怎样？
+
+<details><summary>答案</summary>
+
+free_irq() 释放 IRQ 线并注销 handler。如果忘记：① 硬件触发中断时 handler 已被卸载 → 空指针 dereference → kernel panic。② IRQ 持续触发无人处理 → 中断风暴 → CPU 100% 在中断处理。正确做法：模块 exit 函数中 `free_irq(irq, dev_id)` 先注销，再释放其他资源。
+
+</details>
+
+</details>
+
 ---

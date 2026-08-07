@@ -50,4 +50,43 @@
 
 → 教学对照：[01 Day 5 GDT/IDT](../../../../05-os-from-scratch/thirty-days-os/day-05-gdt-idt/) · [Day 7 PIC](../../../../05-os-from-scratch/thirty-days-os/day-07-fifo-mouse/)
 
+### 常见陷阱
+
+1. 混淆中断（异步硬件触发）和异常（同步指令触发）——中断不可预测，异常由特定指令引起
+2. 以为中断处理可以睡眠——hard IRQ 不能睡眠（无 task_struct），threaded IRQ 可以
+3. 忽略中断延迟对 HFT 的影响——一次 NIC 中断可能抢占交易线程数十微秒
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 中断和异常的根本区别？
+
+<details><summary>答案</summary>
+
+中断：异步、硬件触发（NIC/键盘/定时器），CPU 在两条指令间响应。异常：同步、指令执行触发（#PF 缺页/#GP 段错误/#DE 除零），CPU 在出错指令处响应。Fault 可恢复（重执行），Trap 用于调试（继续），Abort 不可恢复。
+
+</details>
+
+**Q2.** 为什么 hard IRQ 不能睡眠？
+
+<details><summary>答案</summary>
+
+Hard IRQ 运行在中断上下文：无 task_struct（不可调度）、无进程栈（用中断栈）、preempt_count 中 HARDIRQ 位被设置。schedule() 检查 preempt_count != 0 会 panic。解决方案：threaded IRQ（request_threaded_irq），hard IRQ 只确认硬件 + 唤醒内核线程，实际处理在线程中可睡眠。
+
+</details>
+
+**Q3.** HFT 如何减少中断对交易线程的干扰？
+
+<details><summary>答案</summary>
+
+① `/proc/irq/[n]/smp_affinity` 绑中断到非交易核。② `service irqbalance stop`。③ `isolcpus` 隔离交易核。④ `nohz_full` 减少定时器中断。⑤ DPDK 用户态轮询完全绕过中断。⑥ NAPI 轮询模式（网络收包）。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch4 §2 中断与异常分类](../../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-2-中断与异常分类.md)
 ---

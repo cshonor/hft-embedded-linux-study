@@ -60,4 +60,51 @@ tick / NTP  ──► 持续微调 xtime
 
 → [Ch 10 seqlock](../../chapter-10-kernel-synchronization/) · [07 TLPI 时间章](../../../../04-linux-userspace-api/) · [01 CSAPP 无时钟章但见并发](../../../../02-computer-systems/)
 
+### 常见陷阱
+
+1. 混淆 CLOCK_REALTIME 和 CLOCK_MONOTONIC——前者可被 NTP 调整（会跳变），后者不会
+2. 用 CLOCK_REALTIME 做计时——NTP 调整可能导致时间倒流，计时段为负
+3. 在内核中用 do_gettimeofday()——已废弃，应用 ktime_get_real_ts() / ktime_get()
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** CLOCK_REALTIME / CLOCK_MONOTONIC / CLOCK_MONOTONIC_RAW 的区别？
+
+<details><summary>答案</summary>
+
+REALTIME：墙上时间（1970-01-01 起的秒数），可被 NTP/settimeofday 调整，可能跳变。MONOTONIC：单调递增，不受 NTP 调整影响（但受 NTP 频率调整影响，可能快慢漂移）。MONOTONIC_RAW：纯硬件时钟，完全不受 NTP 影响。HFT 用 MONOTONIC（单调 + 不跳变）。`clock_gettime(CLOCK_MONOTONIC, &ts)` 走 vDSO（~20ns）。
+
+</details>
+
+**Q2.** 为什么 HFT 不用 CLOCK_REALTIME？
+
+<details><summary>答案</summary>
+
+① NTP 调整可能导致时间跳变（向前或向后）→ 计时段为负或异常大。② `settimeofday()` 可被 root 手动设置 → 不可预测。③ 跨机器时间同步需要 NTP/PTP，但同步应通过 PTP 硬件时间戳在应用层处理，不依赖系统时钟。HFT 用 MONOTONIC 做本地计时，用 PTP 做跨机器同步。
+
+</details>
+
+**Q3.** HFT 如何获取纳秒级单调时间？
+
+<details><summary>答案</summary>
+
+```c
+#include <time.h>
+struct timespec ts;
+clock_gettime(CLOCK_MONOTONIC, &ts);
+// 走 vDSO, ~20ns, 不进内核
+// 或直接 RDTSC:
+uint64_t tsc = __rdtsc();
+uint64_t ns = tsc * 1000 / tsc_khz;
+// 需要校准 TSC 频率: tsc_khz = 基准频率 * 1000
+// HFT 最佳: RDTSC + 预校准频率, 延迟 < 50ns
+```
+
+</details>
+
+</details>
+
 ---

@@ -191,4 +191,43 @@ A(nice=0, weight=**1024**)、B(nice=5, weight=**335**，表值；勿写成 312) 
 
 → **Ch 6** 红黑树 · [4.5 抢占](./section-4.5-抢占与上下文切换.md) · [15 SysPerf](../../../../19-systems-performance/)
 
+### 常见陷阱
+
+1. 把 vruntime 当物理运行时间——vruntime = Δt × (1024/weight)，权重高涨得慢
+2. 以为红黑树按优先级排序——按 vruntime 排序，最左节点 = vruntime 最小 = 最该运行的
+3. 混淆调度周期（sched_latency）和时间片——CFS 没有固定时间片，每人分到的时间随就绪任务数变化
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** CFS 的 vruntime 公式和物理含义？
+
+<details><summary>答案</summary>
+
+`vruntime += Δt × (1024 / weight)`。物理含义：把实际运行时间按权重标准化。权重高（nice 低）的进程 vruntime 涨得慢，更容易被选中（红黑树最左 = vruntime 最小）。效果：权重 1024 vs 512 的两进程，物理 CPU 比例 ≈ 2:1。
+
+</details>
+
+**Q2.** CFS 选下一个进程的复杂度是多少？为什么用红黑树？
+
+<details><summary>答案</summary>
+
+O(log n)。红黑树按 vruntime 排序，最左节点 = vruntime 最小 = 下一个运行。插入/删除 O(log n)。如果用排序数组则 O(n log n) 插入。红黑树是 Linux 内核通用数据结构（`struct rb_node`），CFS/CFS 运行队列/内存管理都在用。
+
+</details>
+
+**Q3.** HFT 用 SCHED_FIFO 后 CFS 还起作用吗？
+
+<details><summary>答案</summary>
+
+不起作用。调度优先级：DEADLINE > RT(FIFO/RR) > CFS(OTHER/BATCH/IDLE)。有就绪 RT 任务时，CFS 全体让路。HFT 交易线程用 SCHED_FIFO + 绑核后，CFS 的公平性/vruntime/红黑树都不影响该线程。但需注意 RT throttling（`rt_runtime_us`）。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch7 §4 调度算法与核心函数](../../../../08-linux-kernel-deep/chapter-07-process-scheduling/notes/section-4-调度算法与核心函数.md)
 ---

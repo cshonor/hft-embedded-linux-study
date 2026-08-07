@@ -94,4 +94,41 @@ disable_irq() 使用场景（概念）：
 
 → **Ch 9–10** 自旋锁 + `local_irq_save` 组合 · [Ch 8.8](../../chapter-08-bottom-halves/notes/section-8.8-锁定与禁用下半部.md) `local_bh_disable` · [01 Day 14 临界区](../../../../05-os-from-scratch/thirty-days-os/day-14-keyboard/)
 
+### 常见陷阱
+
+1. 混淆 local_irq_disable() 和 local_irq_save()——前者不保存状态，后者保存
+2. 以为 local_irq_disable() 禁用所有 CPU 的中断——只禁本地 CPU
+3. 在 spin_lock_irqsave() 后手动 local_irq_enable()——会破坏锁的 IRQ 保护
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** local_irq_disable() 和 local_irq_save(flags) 的区别？什么时候用哪个？
+
+<details><summary>答案</summary>
+
+local_irq_disable()：无条件关中断，不保存之前状态。如果你不知道调用前中断是否已关，用这个可能破坏调用者的状态。local_irq_save(flags)：保存 RFLAGS.IF 到 flags 再关中断。local_irq_restore(flags) 恢复。内核代码应始终用 _save/_restore 版本。
+
+</details>
+
+**Q2.** spin_lock() / spin_lock_irq() / spin_lock_irqsave() / spin_lock_bh() 的选择？
+
+<details><summary>答案</summary>
+
+spin_lock()：进程上下文 + 短临界区。spin_lock_irq()：知道中断当前开着时用。spin_lock_irqsave(flags)：最安全，保存+关中断（推荐）。spin_lock_bh()：禁 softirq 但不禁 hard IRQ。选择原则：如果中断也访问同一锁 → spin_lock_irqsave。如果只有 softirq 访问 → spin_lock_bh。进程上下文独享 → spin_lock。
+
+</details>
+
+**Q3.** HFT 如何减少中断控制的副作用？
+
+<details><summary>答案</summary>
+
+① 避免 `local_irq_disable()` 在用户态（用户态不能关中断）。② 用 `isolcpus` + 中断重定向代替手动关中断。③ `SCHED_FIFO` + 绑核让交易线程不受中断影响。④ 如果必须在内核模块中关中断，临界区 <1us（否则影响系统响应）。⑤ `preempt_disable()` 比 `local_irq_disable()` 开销小，优先考虑。
+
+</details>
+
+</details>
+
 ---

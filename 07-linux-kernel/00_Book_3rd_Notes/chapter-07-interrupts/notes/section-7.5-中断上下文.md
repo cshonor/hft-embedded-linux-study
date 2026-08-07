@@ -82,4 +82,41 @@ else
 
 → [Ch 5](../../chapter-05-system-calls/) 进程上下文 · [Ch 7.2](section-7.2-中断处理程序.md) ISR 编写 · [Ch 8](../../chapter-08-bottom-halves/) 下半部选型
 
+### 常见陷阱
+
+1. 混淆中断上下文和进程上下文——中断上下文无 task_struct、不可睡眠、不可调度
+2. 以为在中断上下文中可以调用任何内核函数——不能调用会睡眠的函数（mutex/kmalloc(GFP_KERNEL)）
+3. 忽略 preempt_count 的作用——preempt_count 跟踪当前是否在中断/softirq/持锁上下文
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 中断上下文和进程上下文的本质区别？
+
+<details><summary>答案</summary>
+
+进程上下文：有 task_struct（current 有效）、有进程栈、可调度/可睡眠。中断上下文：无 task_struct（current 是被中断的进程但不应使用）、用中断栈、不可调度/不可睡眠。判断：`in_interrupt()` 返回 true = 中断上下文。`in_irq()` = hard IRQ，`in_softirq()` = softirq。
+
+</details>
+
+**Q2.** preempt_count 的各字段含义？
+
+<details><summary>答案</summary>
+
+`preempt_count` 是 32 位计数器：[0-7] preempt（抢占计数）、[8-11] softirq、[12-15] hardirq、[16-19] NMI、[20-23] RCU read。每进一层 hard IRQ，hardirq 位 +1。`preempt_count() == 0` 时才允许 schedule()。HFT 可用 `bpftrace` 追踪 `preempt_count` 变化。
+
+</details>
+
+**Q3.** HFT 用户态如何避免进入中断上下文？
+
+<details><summary>答案</summary>
+
+用户态本身不进入中断上下文，但中断会抢占用户线程的 CPU。避免方法：① `isolcpus` 隔离交易核，中断路由到其他核。② `nohz_full` 停止定时器中断。③ DPDK 绕过内核网络栈。④ `SCHED_FIFO` 确保中断返回后立即恢复交易线程。
+
+</details>
+
+</details>
+
 ---

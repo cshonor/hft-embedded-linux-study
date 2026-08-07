@@ -68,4 +68,51 @@ while (!done) {
 
 → [Ch 10 seqlock](../../chapter-10-kernel-synchronization/) · [Gorman Ch3 时间](../../../../09-linux-mm/chapter-03-page-table-management/)（页表章亦涉及时序）
 
+### 常见陷阱
+
+1. 混淆 jiffies 和 jiffies_64——jiffies 是 32 位（可能回绕），jiffies_64 是 64 位
+2. 用 jiffies 做精确计时——jiffies 精度 = 1/HZ（1ms 或 10ms），不适合纳秒级计时
+3. 忽略 jiffies 回绕——32 位 jiffies 在 HZ=1000 时 ~49 天回绕，用 time_after() 比较
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** jiffies 回绕是什么问题？怎么安全比较时间？
+
+<details><summary>答案</summary>
+
+jiffies 是 unsigned long（32 位），HZ=1000 时 ~49.7 天回绕（2^32 / 1000 / 86400 ≈ 49.7）。直接比较 `jiffies > deadline` 在回绕时出错。安全比较：`time_after(jiffies, deadline)` 和 `time_before(jiffies, deadline)`——内部用有符号差值处理回绕。`time_in_range(jiffies, start, end)` 检查是否在范围内。
+
+</details>
+
+**Q2.** 为什么 jiffies 不适合 HFT 计时？
+
+<details><summary>答案</summary>
+
+① 精度低：HZ=1000 时只有 1ms 精度，HFT 需要纳秒级。② 不是单调的：wall time 可被 NTP 调整（跳变）。③ 32 位回绕风险。HFT 应使用：① `ktime_get()` / `ktime_get_ns()`：纳秒级，单调。② `rdtsc()` / `__rdtsc()`：CPU TSC，纳秒级，最快（~20ns）。③ `clock_gettime(CLOCK_MONOTONIC)`：走 vDSO，~20ns。
+
+</details>
+
+**Q3.** HFT 如何用 TSC 做精确计时？
+
+<details><summary>答案</summary>
+
+```c
+#include <x86intrin.h>
+uint64_t t1 = __rdtsc();  // 读 TSC
+// ... 待测代码 ...
+uint64_t t2 = __rdtsc();
+double ns = (double)(t2 - t1) / tsc_frequency_ghz;
+// 获取 TSC 频率: cat /proc/cpuinfo | grep MHz
+// 注意: 1) TSC 在现代 CPU 上是不变的(invariant)
+//       2) 多核间 TSC 同步(但老 CPU 可能不同步)
+//       3) 用 RDTSCP 替代 RDTSC 保证顺序
+```
+
+</details>
+
+</details>
+
 ---

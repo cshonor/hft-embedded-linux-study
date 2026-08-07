@@ -39,6 +39,44 @@
 | 来源 |  mostly 外设 | CPU 检测 / 主动 `int` |
 | 典型 | 网卡 IRQ | 缺页、除零、`syscall` |
 
+### 常见陷阱
+
+1. 混淆 fault/trap/abort——fault 可恢复（缺页），trap 用于调试（int3），abort 不可恢复（double fault）
+2. 以为所有异常都有 error code——只有部分异常推送 error code（如 page fault 推送 CR2），`int3`/`overflow` 不推送
+3. 把 ULK 的 32 位异常号和 64 位混淆——64 位异常号分配有调整，且增加了 IST（Interrupt Stack Table）机制
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Fault、Trap、Abort 三类异常的区别和典型例子？
+
+<details><summary>答案</summary>
+
+Fault：可恢复，CPU 恢复到触发指令重新执行（如 #PF 缺页、#GP 段错误）。Trap：调试用，CPU 恢复到下一条指令（如 #DB 断点、`int3`）。Abort：不可恢复，通常 panic（如 #DF double fault、#MC machine check）。HFT 中 #PF 在热路径上是大忌（微秒级延迟尖峰）。
+
+</details>
+
+**Q2.** x86-64 异常处理相比 32 位有什么新机制？
+
+<details><summary>答案</summary>
+
+① IST（Interrupt Stack Table）：某些关键异常（#DF, #NMI, #MC）切换到专用内核栈，避免栈溢出导致二次异常。② `IDTENTRY` 宏自动处理 error code 和栈切换。③ syscall 指令不走 IDT，直接从 MSR 加载入口。④ 64 位下 #SS（stack segment fault）基本不会触发。
+
+</details>
+
+**Q3.** HFT 如何检测热路径上的异常（如 page fault）？
+
+<details><summary>答案</summary>
+
+① `perf stat -e page-faults` 统计缺页次数。② `bpftrace -e 'tracepoint:exceptions:page_fault_user { @[comm] = count(); }'` 按进程统计。③ `/proc/[pid]/stat` 的 `minflt`（minor fault）和 `majflt`（major fault）字段。④ HFT 应确保热路径 `minflt = 0`（预分配 + 大页 + mlock）。
+
+</details>
+
+</details>
+
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. IDT 与门描述符](./section-3-IDT与门描述符.md)
+> ↔ [LKD Ch07 §7.1 中断的概念](../../../07-linux-kernel/00_Book_3rd_Notes/chapter-07-interrupts/notes/section-7.1-中断的概念.md)

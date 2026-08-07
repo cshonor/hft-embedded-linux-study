@@ -78,4 +78,41 @@ irq_exit: __do_softirq()
 
 → [Ch 8.3](section-8.3-软中断.md) softirq · [§1.5 SysPerf IRQ/softirq 同核](../../../../19-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 4](../../chapter-04-process-scheduling/) 调度与 nice
 
+### 常见陷阱
+
+1. 以为 softirq 只在 hard IRQ 返回时执行——ksoftirqd 内核线程也会处理积压的 softirq
+2. 混淆 softirq 在 IRQ 返回和 ksoftirqd 中的执行优先级——ksoftirqd 是普通优先级线程，可能被 RT 抢占
+3. 以为 ksoftirqd 是 per-IRQ 的——ksoftirqd 是 per-CPU 的（每 CPU 一个 ksoftirqd/n）
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** ksoftirqd 的作用和触发条件？
+
+<details><summary>答案</summary>
+
+每 CPU 一个 ksoftirqd/n 内核线程（nice=0，普通优先级）。触发条件：softirq 积压——`__do_softirq()` 在 hard IRQ 返回时执行后，如果还有 pending softirq（超过 10 次循环或 2ms 限制），唤醒 ksoftirqd 继续处理。ksoftirqd 在进程上下文运行（可被调度/抢占），但仍在 softirq 上下文（不能睡眠）。
+
+</details>
+
+**Q2.** ksoftirqd 和 hard IRQ 返回时的 softirq 执行有什么区别？
+
+<details><summary>答案</summary>
+
+hard IRQ 返回时：softirq 在中断上下文执行，优先级高，可能延迟用户线程。ksoftirqd：softirq 在 kworker 线程上下文执行，优先级低（nice=0），可被 RT/CFS 高优先级任务抢占。如果 softirq 频率太高，hard IRQ 返回路径会主动 defer 到 ksoftirqd，避免在中断上下文耗时过长。
+
+</details>
+
+**Q3.** HFT 如何避免 ksoftirqd 干扰交易核？
+
+<details><summary>答案</summary>
+
+① `isolcpus=N` + `nohz_full=N`：N 号核上 ksoftirqd 几乎不被唤醒（无 softirq 积压）。② RPS/RFS：网络 softirq 迁移到其他核。③ `ps -eo pid,comm,psr | grep ksoftirqd`：确认 ksoftirqd 不在交易核上运行。④ DPDK：绕过 softirq。⑤ `cat /proc/[ksoftirqd_pid]/stat`：检查 ksoftirqd 运行时间。
+
+</details>
+
+</details>
+
 ---

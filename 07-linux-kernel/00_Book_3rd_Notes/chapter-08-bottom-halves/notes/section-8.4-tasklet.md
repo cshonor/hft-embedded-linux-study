@@ -88,4 +88,52 @@ static irqreturn_t my_isr(int irq, void *dev_id)
 
 → [Ch 8.5](section-8.5-工作队列.md) 可睡眠下半部 · [Ch 8.8](section-8.8-锁定与禁用下半部.md) `spin_lock_bh` · [Ch 6](../../chapter-06-kernel-data-structures/) kfifo
 
+### 常见陷阱
+
+1. 在 6.x 内核中还在用 tasklet——tasklet 已 deprecated，推荐 workqueue/threaded IRQ
+2. 混淆 tasklet 和 softirq——tasklet 基于 softirq（TASKLET_SOFTIRQ/HI_SOFTIRQ），是 softirq 的封装
+3. 以为同类型 tasklet 可以多 CPU 并发——不行，同类型 tasklet 全局串行化
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** tasklet 的核心特征和限制？
+
+<details><summary>答案</summary>
+
+特征：① 基于 softirq（动态注册，不像 softirq 需编译时注册）。② 同类型 tasklet 不会在多 CPU 上并发执行（全局串行化）。③ 在 softirq 上下文运行，不能睡眠。限制：① 串行化导致性能差（不能利用多核）。② 不能睡眠/持 mutex。③ 已 deprecated。替代方案：workqueue（可并发可睡眠）或 threaded IRQ。
+
+</details>
+
+**Q2.** 为什么 tasklet 要被废弃？用什么替代？
+
+<details><summary>答案</summary>
+
+① 同类型串行化：多核系统上性能瓶颈。② 不能睡眠：限制了使用场景。③ API 复杂且容易误用。替代：需要并发 → workqueue（alloc_workqueue + queue_work）。需要低延迟 + 可睡眠 → threaded IRQ（request_threaded_irq）。需要定时 → hrtimer。内核社区计划在 future version 移除 tasklet API。
+
+</details>
+
+**Q3.** 如果遇到旧代码中的 tasklet，怎么迁移到 workqueue？
+
+<details><summary>答案</summary>
+
+```c
+// 旧: tasklet
+DECLARE_TASKLET(my_tasklet, my_func, data);
+tasklet_schedule(&my_tasklet);
+// 新: workqueue
+struct work_struct my_work;
+INIT_WORK(&my_work, my_func);
+schedule_work(&my_work);
+// 区别: work 可以睡眠/持mutex, 可多CPU并发
+```
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

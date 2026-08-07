@@ -64,4 +64,43 @@
 
 → [Ch 9.3](section-9.3-并发的原因.md) 五类并发源 · [Ch 9.2](section-9.2-加锁.md) 加锁 · [Ch 7](../../chapter-07-interrupts/) 中断并发 · [03 SysPerf §5.2 mutex/spin](../../../../19-systems-performance/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
 
+### 常见陷阱
+
+1. 以为单核不需要同步——UP 上仍需禁抢占/中断防止竞态
+2. 混淆「竞态条件」和「数据竞争」——竞态是逻辑层（结果依赖时序），数据竞争是内存层（并发读写同一地址）
+3. 以为原子操作能解决所有竞态——原子操作只保证单操作原子性，多操作组合仍需锁
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 什么是临界区？为什么需要保护？
+
+<details><summary>答案</summary>
+
+临界区是访问共享资源的代码段。如果不保护：多 CPU/中断/抢占并发执行 → 数据竞争 → 数据损坏/崩溃。例：`counter++` 实际是 load → add → store 三步，两 CPU 同时执行可能丢失一次更新。保护方式：spinlock/mutex/atomic/RCU，确保同一时间只有一个执行者进入临界区。
+
+</details>
+
+**Q2.** UP（单处理器）上为什么还需要同步？
+
+<details><summary>答案</summary>
+
+UP 上没有多 CPU 并行，但有：① 抢占：进程在临界区中被抢占，另一进程进入临界区。② 中断：进程在临界区中被中断，中断处理函数访问同一数据。解决：进程上下文 → preempt_disable() 或 spinlock（UP 上退化为 preempt_disable）。中断也访问 → spin_lock_irqsave()。
+
+</details>
+
+**Q3.** HFT 用户态的竞态条件和内核有什么不同？
+
+<details><summary>答案</summary>
+
+用户态竞态来源：多线程 + 信号 + atexit handlers。用户态不能用内核锁，用：① `std::atomic`（无锁，适合简单操作）。② `std::mutex`/`pthread_mutex`（基于 futex，适合复杂临界区）。③ 无锁数据结构（SPSC 队列等）。HFT 优先无锁设计避免 futex 的 syscall 开销。ThreadSanitizer 可检测数据竞争。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch5 §1 本章定位](../../../../08-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-1-本章定位.md)
 ---

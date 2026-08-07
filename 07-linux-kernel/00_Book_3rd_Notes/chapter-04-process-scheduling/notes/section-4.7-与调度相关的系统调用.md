@@ -69,4 +69,53 @@ sched_setscheduler(0, SCHED_FIFO, &sp);
 
 → [07 TLPI](../../../../04-linux-userspace-api/) · [4.6 RT](./section-4.6-实时调度策略.md) · [15 SysPerf](../../../../19-systems-performance/)
 
+### 常见陷阱
+
+1. 混淆 nice() 和 setpriority()——nice() 是相对调整（+=inc），setpriority() 是绝对设置
+2. 以为 sched_setaffinity() 需要 root——只需要 CAP_SYS_NICE 设置 RT 策略，affinity 任何进程都可以设
+3. 在 SCHED_FIFO 下用 sched_yield()——FIFO 下 yield 移到同优先级队列末尾，可能不立即重新运行
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** nice(inc)、setpriority()、sched_setscheduler() 的区别？
+
+<details><summary>答案</summary>
+
+nice(inc)：当前进程 nice += inc，受 RLIMIT_NICE 限制。setpriority(PRIO_PROCESS, pid, prio)：设置指定进程的 nice 绝对值。sched_setscheduler(pid, policy, &param)：切换调度策略和 RT 优先级。HFT 用 sched_setscheduler(SCHED_FIFO, 99) 设最高 RT 优先级。
+
+</details>
+
+**Q2.** sched_setaffinity() 和 isolcpus 有什么区别？
+
+<details><summary>答案</summary>
+
+sched_setaffinity()：运行时设置进程可运行的 CPU 集合，其他进程仍可被调度到这些核。isolcpus=2：启动时从调度器可运行集合移除 2 号核，普通任务不会调度到 2，需要手动 taskset/sched_setaffinity 把 RT 线程放上去。isolcpus 更彻底（连 kworker/RCU 都不走），affinity 更灵活。HFT 两者都用。
+
+</details>
+
+**Q3.** 如何用 sched_getaffinity() 和 sched_setaffinity() 绑核？
+
+<details><summary>答案</summary>
+
+```c
+#include <sched.h>
+cpu_set_t mask;
+CPU_ZERO(&mask);
+CPU_SET(2, &mask);  // 绑到 2 号核
+sched_setaffinity(0, sizeof(mask), &mask);  // 0=当前进程
+// 验证
+cpu_set_t get;
+sched_getaffinity(0, sizeof(get), &get);
+printf("CPU 2: %d\n", CPU_ISSET(2, &get));  // 1
+```
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch7 §6 调度相关系统调用](../../../../08-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md)
 ---

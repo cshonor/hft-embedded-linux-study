@@ -64,4 +64,41 @@ mutex（本 CPU 持锁且睡眠）：
 
 → **Ch 10** spinlock、mutex 详解 · [Ch 9.5](section-9.5-死锁.md) 死锁 · [Ch 8.8](../chapter-08-bottom-halves/notes/section-8.8-锁定与禁用下半部.md) `spin_lock_bh`
 
+### 常见陷阱
+
+1. 以为锁只是「加锁/解锁」——还需要考虑锁粒度、锁顺序、死锁预防
+2. 把锁粒度越细越好——太细导致锁开销 > 并发收益，太粗导致并行度低
+3. 在持锁时做 I/O 或睡眠——spinlock 不能睡眠，mutex 可以但会降低并发度
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 锁粒度怎么选择？太粗和太细各有什么问题？
+
+<details><summary>答案</summary>
+
+太粗（一把大锁保护整个数据结构）：① 并行度低（多线程串行化）。② 锁竞争严重。太细（每个字段一把锁）：① 锁开销 > 并发收益。② 锁管理复杂。③ 死锁风险高。原则：① 热路径用细粒度锁（per-CPU/per-bucket）。② 冷路径用粗粒度锁（简单不易错）。③ 先粗后细：先用一把大锁保证正确，prof 后细化热点。
+
+</details>
+
+**Q2.** spinlock 和 mutex 什么时候用？持锁时能做什么不能做什么？
+
+<details><summary>答案</summary>
+
+spinlock：短临界区（<1us），不能睡眠/调度。适合：中断上下文、per-CPU 数据、简单计数器。mutex：长临界区（>1us），可睡眠/调度/做 I/O。适合：复杂数据结构遍历、文件操作、内存分配。选择标准：持锁时间 < 上下文切换时间（~1-5us）→ spinlock；> → mutex。
+
+</details>
+
+**Q3.** HFT 中锁选择有什么特殊考量？
+
+<details><summary>答案</summary>
+
+① 热路径避免锁——用无锁数据结构（SPSC/MPMC 队列）。② 必须用锁时优先 spinlock（用户态 `std::atomic_flag` 自旋）——避免 futex syscall。③ `std::mutex` 底层是 futex，竞争时进内核 → 微秒级延迟。④ RT 优先级继承：`PTHREAD_PRIO_INHERIT` 防优先级反转。⑤ `perf lock` 分析锁持有时间和竞争。
+
+</details>
+
+</details>
+
 ---

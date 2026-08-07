@@ -44,6 +44,43 @@ Ch 13 I/O 架构    — 设备驱动与 IRQ
 
 交叉：[05 LKD Ch 7–8](../../../07-linux-kernel/) · [04 BPF 内核路径](../../../20-bpf-observability/) · [14 DPDK 绕过内核](../../../18-dpdk/)
 
+### 常见陷阱
+
+1. 把 ULK 的 IDT 结构直接用于 64 位分析——x86-64 IDT 条目格式不同（16 字节，含 IST 字段），且 `int $0x80` 不再是 syscall 入口
+2. 混淆「中断」和「异常」——中断是异步的（硬件触发），异常是同步的（指令执行触发）
+3. 以为中断处理不能睡眠——传统中断（hard IRQ）不能睡眠，但 threaded IRQ 和 workqueue 可以
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** ULK Ch4 讲的中断处理框架在现代内核中最大的变化是什么？
+
+<details><summary>答案</summary>
+
+① x86-64 用 `IDTENTRY` 宏统一管理 IDT 条目，取代手写汇编 stub。② `int $0x80` 被 `syscall` 指令取代作为系统调用入口。③ threaded IRQ（`request_threaded_irq()`）允许中断处理函数在内核线程中运行，可以睡眠。④ `irq_desc` 层级从全局数组改为 per-domain 的 IRQ domain 树。
+
+</details>
+
+**Q2.** hard IRQ 为什么不能睡眠？threaded IRQ 怎么解决这个限制？
+
+<details><summary>答案</summary>
+
+hard IRQ 运行在中断上下文（无 `task_struct`、无可调度实体），调度器无法切换。睡眠需要 `schedule()`，会 panic。threaded IRQ 把中断处理拆成两半：hard IRQ 只确认硬件 + 唤醒内核线程，实际处理在线程中运行（有 `task_struct`，可调度可睡眠）。用 `request_threaded_irq(dev, hard_fn, thread_fn, flags, ...)` 注册。
+
+</details>
+
+**Q3.** HFT 中如何减少中断对热路径的干扰？
+
+<details><summary>答案</summary>
+
+① `irqbalance` off + 手动绑中断到非交易核（`/proc/irq/[n]/smp_affinity`）。② `napi` 轮询模式代替中断驱动收包。③ DPDK 完全绕过内核中断，用用户态轮询。④ `isolcpus` + `nohz_full` 减少定时器中断。
+
+</details>
+
+</details>
+
 ---
 
 ← [Ch 4 导读](../README.md) · 下一节 [2. 中断与异常分类](./section-2-中断与异常分类.md)

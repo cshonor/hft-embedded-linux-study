@@ -90,4 +90,41 @@ mutex         │    ✓     │   ✗     │    ✗    │    ✓
 
 → **Ch 9–10** 内核同步详解 · [Ch 7.7](../../chapter-07-interrupts/notes/section-7.7-中断控制.md) `local_irq_save` · [Ch 9.5](../../chapter-09-kernel-sync-intro/notes/section-9.5-死锁.md) 死锁
 
+### 常见陷阱
+
+1. 混淆 spin_lock_bh() 和 local_bh_disable()——前者锁+禁 softirq，后者只禁 softirq
+2. 在 spin_lock_bh() 后手动 local_bh_enable()——会破坏锁保护
+3. 以为 local_bh_disable() 禁用了 hard IRQ——只禁 softirq，hard IRQ 仍可触发
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** spin_lock_bh() 和 local_bh_disable() 的区别？
+
+<details><summary>答案</summary>
+
+spin_lock_bh(lock)：① 获取 spinlock。② 禁用本地 softirq（递增 preempt_count 的 softirq 位）。用于保护 softirq 和进程上下文都访问的数据。local_bh_disable()：只禁 softirq，不锁。用于 softirq 临界区不需要锁但需要禁 softirq 的场景（如 per-CPU 统计）。对应的恢复：spin_unlock_bh() / local_bh_enable()。
+
+</details>
+
+**Q2.** local_bh_disable() 禁用 softirq 后，hard IRQ 还能触发吗？
+
+<details><summary>答案</summary>
+
+能。local_bh_disable() 只递增 preempt_count 的 softirq 位（SOFTIRQ_OFFSET），不影响 hard IRQ。hard IRQ 仍可触发和执行。如果需要同时禁 hard IRQ 和 softirq，用 local_irq_disable()。如果需要禁 softirq 但允许 hard IRQ，用 local_bh_disable()。
+
+</details>
+
+**Q3.** HFT 为什么需要关心 softirq 禁用？
+
+<details><summary>答案</summary>
+
+HFT 内核模块（如定制 NIC 驱动）可能需要在 softirq 上下文操作共享数据。spin_lock_bh() 确保 softirq 不会在持锁期间重入。但 HFT 用户态通常不直接处理 softirq——通过 `isolcpus` + 中断重定向 + RPS/RFS 把 softirq 推到非交易核。测量：`perf stat -e softirq` 统计 softirq 频率。
+
+</details>
+
+</details>
+
 ---

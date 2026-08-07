@@ -68,4 +68,43 @@ CFS 里两类常见触发（详见 [§4.3](./section-4.3-Linux-调度算法.md)�
 
 → **Ch 1** 宏内核+抢占 · [01 Day 16 多任务](../../../../05-os-from-scratch/thirty-days-os/day-16-multitask2/) · [4.6 RT](./section-4.6-实时调度策略.md)
 
+### 常见陷阱
+
+1. 混淆用户态抢占和内核态抢占——用户态在 syscall 返回/中断返回时抢占，内核态需要 CONFIG_PREEMPT
+2. 以为上下文切换只是保存寄存器——还要切换 mm_struct（页表/TLB）、FPU 状态、TLS
+3. 忽略 switch_mm 的开销——页表切换 + TLB 刷新是 context switch 中最昂贵的部分
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 用户态抢占和内核态抢占的触发点分别是什么？
+
+<details><summary>答案</summary>
+
+用户态抢占：① syscall 返回用户态时检查 need_resched。② 中断返回用户态时检查。内核态抢占（CONFIG_PREEMPT）：① 中断返回内核态时（preempt_count==0）。② preempt_enable() 时。③ 显式 schedule()。无 CONFIG_PREEMPT 时内核代码不可被抢占（除非自愿 schedule）。
+
+</details>
+
+**Q2.** context_switch 的两个核心步骤及各自开销？
+
+<details><summary>答案</summary>
+
+① switch_mm()：切换页表（写 CR3）+ TLB 刷新。开销 ~1-3us（TLB 重建最贵）。内核线程不需要（lazy TLB）。② switch_to()：保存/恢复寄存器 + FPU 状态。开销 ~100-300ns。总 context switch 延迟 ~1-5us。HFT 用绑核 + isolcpus 消除切换。
+
+</details>
+
+**Q3.** HFT 如何测量和消除 context switch？
+
+<details><summary>答案</summary>
+
+测量：① `perf stat -e context-switches`。② `/proc/[pid]/status` 的 `voluntary_ctxt_switches` / `nonvoluntary_ctxt_switches`。③ `pidstat -w -p [pid]`。消除：① 绑核 + SCHED_FIFO。② `isolcpus` 隔离。③ `mlockall` 防 swap 引起的切换。④ 无锁设计避免 mutex 阻塞。目标：0 nonvoluntary switches。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../08-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
 ---

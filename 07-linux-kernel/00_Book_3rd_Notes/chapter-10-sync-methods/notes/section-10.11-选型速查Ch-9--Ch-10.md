@@ -55,4 +55,53 @@
 
 → [Ch 9](../chapter-09-kernel-sync-intro/) · [Ch 7–8](../chapter-07-interrupts/) · 本章 README 小结表
 
+### 常见陷阱
+
+1. 在所有场景都用 spinlock——短临界区用 spinlock，长临界区用 mutex
+2. 忽略 RCU——读极多写极少时 RCU 是最优解（读端零开销）
+3. 忘记 lockdep——开发阶段开 lockdep 检测死锁/锁顺序问题
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 给定场景，如何快速选择同步原语？
+
+<details><summary>答案</summary>
+
+中断上下文 → spin_lock_irqsave()。softirq → spin_lock_bh()。进程上下文 + 短临界区（<1us） → spin_lock()。进程上下文 + 长临界区 → mutex。读极多写极少 + 简单数据 → seqlock。读极多写极少 + 复杂数据 → RCU。一次性等待 → completion。引用计数 → refcount_t。不确定 → spin_lock_irqsave()（最安全）。
+
+</details>
+
+**Q2.** 同步原语的性能排序？
+
+<details><summary>答案</summary>
+
+最快 → 最慢：① atomic 操作（~20ns）。② RCU 读端（~0ns，只禁抢占）。③ seqlock 读端（~10ns）。④ spinlock 无争用（~20ns）。⑤ rwlock 读端无争用（~20ns）。⑥ mutex 无争用（~20ns）。⑦ spinlock 有争用（~100ns-spin）。⑧ mutex 有争用（~1-5us，schedule）。⑨ RCU 写端（~ms，等 grace period）。选择：热路径用 ①-⑤，冷路径可用 ⑥-⑨。
+
+</details>
+
+**Q3.** HFT 同步原语选型决策树？
+
+<details><summary>答案</summary>
+
+```
+热路径？
+├─ 是 → 数据可 per-thread？
+│       ├─ 是 → 无锁（per-thread 变量）
+│       └─ 否 → SPSC 队列？
+│               ├─ 是 → atomic<head,tail> + release/acquire
+│               └─ 否 → 分片锁 / 无锁哈希表
+└─ 否 → 临界区 <1us？
+        ├─ 是 → spinlock / atomic
+        └─ 否 → mutex（+ rt_mutex 优先级继承）
+```
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch5 §7 选型与实例](../../../../08-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
 ---

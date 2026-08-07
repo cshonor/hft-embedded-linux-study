@@ -58,6 +58,44 @@ do_page_fault()
               └─ 文件映射 → 读磁盘 / 页缓存
 ```
 
+### 常见陷阱
+
+1. 把所有 page fault 当错误——demand paging 和 COW 是正常机制，不是错误
+2. 混淆 major fault 和 minor fault——major 要读磁盘（慢），minor 在内存中解决（快但仍纳秒级）
+3. 在 HFT 热路径触发 page fault——page fault 开销 1-10us，对 HFT 是灾难
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** page fault 的完整处理流程？
+
+<details><summary>答案</summary>
+
+① CPU 触发 #PF，`CR2` = 故障地址。② `do_page_fault()` → `handle_mm_fault()`。③ 查找 VMA（maple tree）：无 VMA → `SIGSEGV`。④ VMA 存在但权限不符（如写只读 VMA）→ `SIGSEGV`。⑤ PTE 不存在 + 匿名页 → `do_anonymous_page()`（分配零页）。⑥ PTE 不存在 + 文件页 → `do_fault()` → `vm_ops->fault()`。⑦ PTE 存在但只读 + 写操作 → `do_wp_page()`（COW）。⑧ 返回 0 = 成功，返回非 0 = `SIGSEGV`/OOM。
+
+</details>
+
+**Q2.** HFT 如何消除热路径上的 page fault？
+
+<details><summary>答案</summary>
+
+① `mlockall(MCL_CURRENT | MCL_FUTURE)`：锁定所有当前页 + 未来映射的页，禁止 swap。② `MAP_POPULATE`：`mmap` 时预建页表，物理页立即分配。③ `memset(buf, 0, size)`：强制触发所有页的 COW/minor fault，之后不再 fault。④ 大页（`MAP_HUGETLB`）：减少 TLB miss + 减少 PTE 数量。⑤ 检查：`perf stat -e page-faults ./hft_engine` 应显示 0 fault。
+
+</details>
+
+**Q3.** major fault 和 minor fault 分别在什么情况下发生？对 HFT 的影响？
+
+<details><summary>答案</summary>
+
+Minor fault：① demand paging（PTE 不存在但物理页在内存，如首次访问匿名页）。② COW（fork 后子进程首次写）。处理时间：~1-5us。Major fault：① 从 swap 读入。② 文件映射页不在 page cache（需磁盘 I/O）。处理时间：~毫秒。HFT 要求两者都为 0：`mlockall` 防 swap，`MAP_POPULATE` + 预 `read()` 填充 page cache。
+
+</details>
+
+</details>
+
 ---
 
 ← [3. 内存区 VMA](./section-3-内存区VMA.md) · 下一节 [5. 请求调页](./section-5-请求调页.md)
+> ↔ [LKD Ch15 §15.7 页表](../../../07-linux-kernel/00_Book_3rd_Notes/chapter-15-process-address-space/notes/section-15.7-页表.md)

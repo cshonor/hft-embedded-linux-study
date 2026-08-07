@@ -117,4 +117,43 @@ CFS（2.6.23+，Completely Fair Scheduler）
 → 下一节：[4.2 策略](./section-4.2-调度策略.md) · [4.3 CFS](./section-4.3-Linux-调度算法.md) · [4.5 抢占与切换](./section-4.5-抢占与上下文切换.md)  
 → [15 SysPerf §3.2 O(1)→CFS](../../../../19-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
 
+### 常见陷阱
+
+1. 把 O(1) 调度器当现代默认——2.6.23 起 CFS 取代 O(1)，6.6 起 EEVDF 取代 CFS
+2. 混淆「多任务」和「多线程」——多任务是 OS 级概念（多个进程分时），多线程是进程内并发
+3. 以为调度器只看优先级——CFS 看 vruntime（按权重标准化的虚拟运行时间），不看绝对优先级
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Linux 调度器从 O(1) 到 CFS 到 EEVDF 的演进动机分别是什么？
+
+<details><summary>答案</summary>
+
+O(1) → CFS：O(1) 的启发式优先级奖励（sleep 时间 → bonus）复杂且不公平，CFS 用 vruntime 实现精确公平。CFS → EEVDF：CFS 的唤醒抢占不够精确，EEVDF 用虚拟截止时间 + eligibility 提供延迟保证，且解决了某些公平性 corner case。
+
+</details>
+
+**Q2.** 多任务（multitasking）的两种模式？Linux 用哪种？
+
+<details><summary>答案</summary>
+
+① 协作式（cooperative）：进程主动让出 CPU（如早期 Windows 3.1）。② 抢占式（preemptive）：内核强制切换。Linux 用抢占式——时钟中断 + 优先级强制切换，即使进程不让出也会被调度。内核中 `CONFIG_PREEMPT` 进一步允许内核态抢占。
+
+</details>
+
+**Q3.** HFT 为什么不依赖 CFS 公平调度？
+
+<details><summary>答案</summary>
+
+CFS 面向通用公平性，不保证延迟上限。HFT 用 `SCHED_FIFO`（RT 策略）+ 绑核 + `isolcpus`，完全绕过 CFS。RT 线程独占 CPU 直到阻塞或被更高优先级抢占。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch7 §1 本章定位](../../../../08-linux-kernel-deep/chapter-07-process-scheduling/notes/section-1-本章定位.md)
 ---

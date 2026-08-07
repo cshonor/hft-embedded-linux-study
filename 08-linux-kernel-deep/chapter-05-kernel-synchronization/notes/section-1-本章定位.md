@@ -40,6 +40,44 @@ Ch 3  等待队列    — 信号量睡眠/唤醒
 
 交叉：[05 LKD Ch 9–10](../../../07-linux-kernel/) · HFT 热路径：**spinlock 持锁时间** 直接影响延迟
 
+### 常见陷阱
+
+1. 把 ULK 讲的 BKL（大内核锁）当现代机制——BKL 在 2.6.37 完全移除，现代内核不存在
+2. 以为内核同步只需要锁——还需要 memory barrier、原子操作、RCU 等无锁机制
+3. 混淆 SMP 和 UP 的同步需求——UP 上自旋锁退化为禁用抢占，但仍需要禁用抢占保护临界区
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** ULK 讲的哪些同步机制在现代内核中已被删除？
+
+<details><summary>答案</summary>
+
+① BKL（Big Kernel Lock，`lock_kernel()`）在 2.6.37 完全移除。② `seqlock` 仍存在但使用场景缩小。③ tasklet 正在被废弃。仍有效的：spinlock、mutex、semaphore、RCU（但版本更新了——Tree RCU、Sleepable RCU）。新增的：`refcount_t`（防溢出）、`percpu_rwsem`、`lockdep`（运行时锁依赖检测）。
+
+</details>
+
+**Q2.** 为什么 UP（单处理器）上仍需要同步机制？
+
+<details><summary>答案</summary>
+
+UP 上没有真正的并行，但有**抢占**——内核代码可能被中断/抢占打断。spinlock 在 UP 上退化为 `preempt_disable()`（防止当前 CPU 被抢占）。但不需要关中断（除非中断也访问该数据）。mutex 在 UP 上只禁用抢占，不做原子操作。
+
+</details>
+
+**Q3.** HFT 用户态为什么也要关心内核同步？
+
+<details><summary>答案</summary>
+
+用户态代码通过 syscall 进入内核，内核中的锁竞争会直接增加 syscall 延迟。例：多线程频繁 `futex` → 内核 `futex` lock 竞争 → 延迟抖动。解决：① 减少系统调用频率（batching）。② 用无锁数据结构（`std::atomic`）替代 `futex`。③ `isolcpus` 减少内核线程竞争。④ `perf lock` 分析锁竞争。
+
+</details>
+
+</details>
+
 ---
 
 ← [Ch 5 导读](../README.md) · 下一节 [2. 内核抢占](./section-2-内核抢占.md)
+> ↔ [LKD Ch09 §9.1 临界区与竞态条件](../../../07-linux-kernel/00_Book_3rd_Notes/chapter-09-kernel-sync-intro/notes/section-9.1-临界区与竞态条件.md)

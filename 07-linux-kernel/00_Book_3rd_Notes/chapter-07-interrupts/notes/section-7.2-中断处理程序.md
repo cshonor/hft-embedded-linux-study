@@ -72,4 +72,43 @@ static irqreturn_t my_interrupt(int irq, void *dev_id)
 
 → [03 SysPerf §1.5 IRQ 与策略同核](../../../../19-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 8](../../chapter-08-bottom-halves/) 下半部 · [Ch 7.4](section-7.4-注册与编写中断处理程序.md) `request_irq`
 
+### 常见陷阱
+
+1. 在中断处理函数中做耗时操作——应拆成上半部（确认硬件）+ 下半部（实际处理）
+2. 以为中断处理函数可以返回任意值——必须返回 IRQ_HANDLED 或 IRQ_NONE
+3. 混淆 request_irq() 和 request_threaded_irq()——前者不能睡眠，后者可在线程中处理
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 中断处理函数（上半部）的职责是什么？应该避免做什么？
+
+<details><summary>答案</summary>
+
+职责：① 确认硬件（ACK/EOI）。② 读取硬件数据。③ 调度下半部（softirq/tasklet/workqueue）。避免：① I/O 操作（磁盘/网络）。② 内存分配（GFP_ATOMIC 可能失败）。③ 持 mutex（不能睡眠）。④ 长时间计算。原则：越快越好（<10us），复杂工作交给下半部。
+
+</details>
+
+**Q2.** request_irq() 和 request_threaded_irq() 的区别？
+
+<details><summary>答案</summary>
+
+request_irq(dev, handler, flags, name, dev_id)：handler 在 hard IRQ 上下文运行，不能睡眠。request_threaded_irq(dev, hard_fn, thread_fn, flags, name, dev_id)：hard_fn 确认硬件 + 唤醒内核线程，thread_fn 在线程中处理（可睡眠/持 mutex/做 I/O）。现代驱动推荐 request_threaded_irq。
+
+</details>
+
+**Q3.** IRQ_HANDLED 和 IRQ_NONE 的区别？返回 IRQ_NONE 会怎样？
+
+<details><summary>答案</summary>
+
+IRQ_HANDLED：中断被本驱动处理。IRQ_NONE：中断不属于本驱动（共享 IRQ 场景）。内核统计 spurious IRQ：如果同一 IRQ 连续 99900 次返回 IRQ_NONE 而不到 100 次 IRQ_HANDLED，内核禁用该 IRQ 并打印警告。HFT 应确保中断处理函数正确判断中断来源。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch4 §6 IO中断处理](../../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
 ---

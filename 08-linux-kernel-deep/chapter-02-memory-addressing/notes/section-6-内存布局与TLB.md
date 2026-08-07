@@ -60,6 +60,43 @@
 | 用户态视角 | [01 CSAPP](../../../02-computer-systems/) Ch 9 · [08 TLPI](../../../04-linux-userspace-api/) |
 | 动手分页 | [09 MikanOS](../../../05-os-from-scratch/mikanos/) |
 
+### 常见陷阱
+
+1. 以为内核虚拟地址空间布局和 ULK 讲的一样——6.x 内核的布局有变化（module 区移到 0xffffffffa0000000 附近，KASLR 打乱了内核代码基址）
+2. 混淆 `ZONE_DMA`/`ZONE_DMA32`/`ZONE_NORMAL` 的边界——这取决于架构，x86-64 上 DMA=16MB，DMA32=4GB，其余是 NORMAL
+3. 以为 TLB 刷新是即时的——TLB shootdown 需要跨 CPU IPI，是异步操作，在 HFT 场景可能导致微秒级抖动
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** x86-64 内核虚拟地址空间的三大区域是什么？
+
+<details><summary>答案</summary>
+
+① direct mapping（直射区）：`0xffff888000000000` 起，映射所有物理内存；② vmalloc area：`0xffffc90000000000` 起，用于 `vmalloc()`；③ vmemmap：`0xffffea0000000000` 起，`struct page` 数组。ULK 讲的布局基于 32 位，地址完全不同。
+
+</details>
+
+**Q2.** 为什么 HFT 要避免跨 CPU 的内存操作？
+
+<details><summary>答案</summary>
+
+跨 CPU 访问共享数据可能导致 TLB shootdown（IPI 中断其他 CPU 刷新 TLB），耗时数微秒。绑核 + per-CPU 数据结构可以避免这个问题。`/proc/interrupts` 中的 `TLB` 行可以观察 shootdown 频率。
+
+</details>
+
+**Q3.** KASLR 对内核调试有什么影响？
+
+<details><summary>答案</summary>
+
+KASLR（Kernel Address Space Layout Randomization）随机化内核代码加载基址，`/proc/kallsyms` 默认显示 0 地址（非 root）。调试时需要 `nokaslr` 启动参数禁用，或用 `kptr_restrict=0` 暴露真实地址。HFT 生产环境通常保留 KASLR（安全）但调试时禁用。
+
+</details>
+
+</details>
+
 ---
 
 ← [5. Linux 四级分页](./section-5-Linux四级分页.md) · 下一章 [Ch 3 进程](../../chapter-03-processes.md)

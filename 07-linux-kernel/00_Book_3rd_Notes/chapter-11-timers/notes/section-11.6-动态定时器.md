@@ -68,4 +68,43 @@ run_timer_softirq(): 逐个 call function()
 
 → [Ch 8 softirq / tasklet](../../chapter-08-bottom-halves/) · [Ch 11.7 延迟执行](./section-11.7-延迟执行.md) · [07 TLPI 定时器](../../../../04-linux-userspace-api/)
 
+### 常见陷阱
+
+1. 混淆 timer_list（低精度）和 hrtimer（高精度）——现代内核优先 hrtimer
+2. 以为定时器回调在中断上下文执行——timer_list 在 softirq 上下文，hrtimer 在 hard IRQ 或 softirq
+3. 在定时器回调中睡眠——timer_list 回调在 softirq 上下文不能睡眠，hrtimer 也不能
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** timer_list 和 hrtimer 的区别？现代内核推荐用哪个？
+
+<details><summary>答案</summary>
+
+timer_list：低精度（ms 级，基于 jiffies/tick），回调在 TIMER_SOFTIRQ 上下文。hrtimer：高精度（ns 级，基于 hrtimer 框架 + clock_event_device），回调在 hard IRQ 或 HRTIMER_SOFTIRQ 上下文。现代内核推荐 hrtimer——精度更高，且 NO_HZ 模式下 timer_list 也被 hrtimer 模拟。新代码应始终用 hrtimer。
+
+</details>
+
+**Q2.** hrtimer 回调函数为什么不能睡眠？
+
+<details><summary>答案</summary>
+
+hrtimer 回调在 hard IRQ 或 softirq 上下文执行，无 task_struct、不可调度。睡眠需要 schedule()，但 preempt_count != 0 时 schedule() 会 panic。如果需要在定时器回调中做可睡眠操作：① hrtimer 回调返回 HRTIMER_RESTART → 在 softirq 中重新调度 → workqueue 处理。② 或用 delayed_work（基于 timer_list + workqueue）。
+
+</details>
+
+**Q3.** HFT 中定时器的使用场景和替代方案？
+
+<details><summary>答案</summary>
+
+场景：超时检测、心跳发送、定期采样。替代方案：① 用户态用 `timerfd_create()` + `epoll`（可合并到事件循环）。② 轮询模式（DPDK）：不用定时器，主循环中检查 TSC。③ `SCHED_FIFO` 线程 + `clock_nanosleep()`：精确睡眠（但仍有调度延迟）。④ 自旋等待 + RDTSC：最精确但浪费 CPU。HFT 热路径用 ③/④，非热路径用 ①。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch6 §5 软件定时器与延迟函数](../../../../08-linux-kernel-deep/chapter-06-timing/notes/section-5-软件定时器与延迟函数.md)
 ---

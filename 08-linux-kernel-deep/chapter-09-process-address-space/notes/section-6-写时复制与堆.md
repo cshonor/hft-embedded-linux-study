@@ -72,6 +72,43 @@ Ch 8 物理页分配
 | VMA / 缺页专著 | [07 Gorman Ch 4](../../../09-linux-mm/) |
 | 大页 / mlock / NUMA | [16 HFT 工程](../../../21-hft-engineering/) · [03 SysPerf Ch 7](../../../19-systems-performance/chapter-07-memory/) |
 
+### 常见陷阱
+
+1. 以为 COW 是零开销——COW 首次写触发 page fault + 分配新物理页 + 复制内容，开销 ~1-5us/页
+2. 混淆 `brk()` 和 `mmap()`——`brk()` 扩展堆（连续增长），`mmap()` 分配独立 VMA（可任意位置）
+3. 在 HFT 中频繁 `malloc`/`free`——glibc malloc 可能调用 `brk`/`mmap` 系统调用，引入延迟
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** COW 的完整流程？fork 后子进程写页时发生什么？
+
+<details><summary>答案</summary>
+
+① `fork()` → `copy_page_range()`：复制 PTE，所有 PTE 设为只读，物理页引用计数 +1。② 子进程写某页 → CPU 触发 #PF（写只读页）。③ `do_wp_page()`：分配新物理页，复制旧页内容，子进程 PTE 指向新页（可写），旧页引用计数 -1。④ 如果旧页引用计数降为 0，旧页被回收。COW 延迟 = 1 page fault + 1 alloc + 1 memcpy ≈ 2-5us/页。
+
+</details>
+
+**Q2.** `brk()` 和 `mmap()` 在堆管理上的区别？
+
+<details><summary>答案</summary>
+
+`brk(addr)`：设置 program break（堆顶），堆是连续的 VMA，`malloc` 小对象用 `brk`（快、局部性好）。`mmap(NULL, size, ...)`：在 mmap 区创建独立 VMA，`malloc` 大块（>128KB）用 `mmap`（避免堆碎片）。`brk` 只能收缩/扩展堆，`mmap` 可任意分配/释放。glibc `malloc` 默认：小对象→`brk`，大对象→`mmap(MAP_ANONYMOUS)`。HFT 应预分配内存池，避免运行时 `malloc`。
+
+</details>
+
+**Q3.** HFT 如何避免 `malloc`/`free` 引起的延迟？
+
+<details><summary>答案</summary>
+
+① 预分配内存池：启动时 `malloc` 所有需要的内存，运行时从池中分配（无系统调用）。② `mallopt(M_MMAP_THRESHOLD, ...)` 调大 `brk` 阈值，减少 `mmap` 调用。③ `LD_PRELOAD=libjemalloc.so` 用 jemalloc 替代 glibc malloc（更低的碎片和锁竞争）。④ 完全自管理：`mmap` 一大块 + 自实现 free list。⑤ `malloc_trim(0)` 归还碎片（但会引起 `brk` 系统调用）。
+
+</details>
+
+</details>
+
 ---
 
 ← [5. 请求调页](./section-5-请求调页.md) · 下一章 [Ch 10 系统调用](../chapter-10-system-calls/)

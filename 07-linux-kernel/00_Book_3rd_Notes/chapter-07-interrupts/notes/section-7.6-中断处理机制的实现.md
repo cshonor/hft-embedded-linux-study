@@ -83,4 +83,43 @@ irq_exit()
 
 → [Ch 8.3](../../chapter-08-bottom-halves/notes/section-8.3-软中断.md) softirq · [Ch 4](../../chapter-04-process-scheduling/) 调度与 `need_resched` · [Ch 7.7](section-7.7-中断控制.md) 关中断 API
 
+### 常见陷阱
+
+1. 把 ULK 的 do_IRQ() 当现代版——6.x 的 IRQ 入口用 IDTENTRY 宏 + IRQ domain 树
+2. 混淆硬件 IRQ 号和 Linux virtual IRQ（virq）——硬件号可能冲突，virq 全局唯一
+3. 以为 /proc/interrupts 显示的是硬件 IRQ 号——显示的是 virq
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 现代内核的 IRQ domain 机制解决了什么问题？
+
+<details><summary>答案</summary>
+
+ULK 时代 IRQ 号 = 硬件中断号，全局数组 irq_desc[] 直接索引。现代内核支持中断控制器级联（GIC → GPIO → MSI），硬件号可能冲突。IRQ domain 为每级中断控制器建立独立的号码空间，通过 irq_domain_translate() 将硬件号映射为唯一的 Linux virtual IRQ（virq）。/proc/interrupts 显示的是 virq。
+
+</details>
+
+**Q2.** do_IRQ() 的现代实现和 ULK 时代有什么区别？
+
+<details><summary>答案</summary>
+
+ULK：全局 irq_desc[] 数组直接索引。现代：① per-CPU `vector_irq[]` 映射 CPU vector → irq_desc。② IRQ domain 树处理级联控制器。③ `handle_irq()` 调用 `generic_handle_irq_desc()` → `__handle_irq_event_percpu()` 遍历 action 链。④ x86-64 用 IDTENTRY 宏自动生成入口 stub。
+
+</details>
+
+**Q3.** HFT 如何查看和调整中断分布？
+
+<details><summary>答案</summary>
+
+① `cat /proc/interrupts`：各 CPU 的中断计数。② `cat /proc/irq/[n]/smp_affinity_list`：IRQ 绑定的 CPU。③ `echo 0,1 > /proc/irq/[n]/smp_affinity_list`：绑中断到 CPU 0 和 1。④ `watch -n1 grep . /proc/interrupts`：实时监控。⑤ `ethtool -x eth0`：查看 RSS 中断分布。HFT 确保 NIC 中断不到交易核。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch4 §3 IDT与门描述符](../../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-3-IDT与门描述符.md)
 ---

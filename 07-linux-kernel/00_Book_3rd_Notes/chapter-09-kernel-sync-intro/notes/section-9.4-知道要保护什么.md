@@ -68,4 +68,41 @@
 
 → [Ch 9.3](section-9.3-并发的原因.md) 并发源 · [Ch 9.6](section-9.6-争用和可扩展性.md) 粒度 · **Ch 10** RCU/seqlock · [Ch 6](../chapter-06-kernel-data-structures/) 数据结构
 
+### 常见陷阱
+
+1. 以为只需要保护全局变量——局部变量也可能被中断/信号修改（如 static 局部变量）
+2. 忽略 per-CPU 变量的同步——per-CPU 变量在同一 CPU 上仍需禁中断/softirq 保护
+3. 混淆「共享」的范围——同一进程的多个线程共享全局变量，不同进程通过共享内存共享
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 什么数据需要同步保护？判断标准是什么？
+
+<details><summary>答案</summary>
+
+标准：① 多个执行路径可能同时访问。② 至少一个路径是写操作。满足两条 → 需要保护。典型：全局变量、共享数据结构（链表/树/哈希表）、硬件寄存器、文件描述符表。不需要：局部变量（栈上，每个执行路径独立）、per-CPU 变量（无跨 CPU 访问时）。但 per-CPU 变量在同 CPU 上仍需防中断/softirq。
+
+</details>
+
+**Q2.** per-CPU 变量为什么也需要同步？
+
+<details><summary>答案</summary>
+
+per-CPU 变量在不同 CPU 上是独立的（无 SMP 竞态），但同一 CPU 上：① 进程在写 per-CPU 变量 → 被中断 → 中断处理函数也写该变量 → 竞态。解决：`this_cpu_inc()`（原子 per-CPU 操作）或 `local_irq_save()` + `this_cpu_write()`。`get_cpu_var()` 自动禁抢占。
+
+</details>
+
+**Q3.** HFT 中如何设计无共享（share-nothing）架构避免同步？
+
+<details><summary>答案</summary>
+
+① 每个交易线程有独立的数据副本（per-thread 变量）。② 线程间通过无锁消息队列通信（SPSC）。③ 共享只读数据（行情快照）用 `mmap(MAP_SHARED)` + COW。④ 统计数据用 per-thread 计数器，定期聚合。⑤ 避免 `std::shared_ptr`（原子引用计数有开销），用 `unique_ptr` + 明确所有权。
+
+</details>
+
+</details>
+
 ---

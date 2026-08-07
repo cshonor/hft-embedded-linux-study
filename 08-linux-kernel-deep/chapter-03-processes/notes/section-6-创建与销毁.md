@@ -75,6 +75,43 @@ Ch 1 提到的 `init` 收养孤儿进程 — 避免僵尸泄漏。
 | fork/exit/wait 入口 | [Ch 10 系统调用](../../chapter-10-system-calls.md) 🔴 |
 | 退出信号 | [Ch 11 信号](../../chapter-11-signals.md) 🟡 |
 
+### 常见陷阱
+
+1. 以为 `fork()` 立即复制内存——COW 机制下只复制页表（PTE 设为只读），物理页延迟到第一次写时才复制
+2. 混淆 `exit()` 和 `_exit()`——`exit()` 是 glibc 包装（跑 atexit handler + flush stdio），`_exit()`/`sys_exit_group()` 是内核直接终止
+3. 以为僵尸进程是 bug——这是正常状态，父进程还没 `wait()` 回收子进程的退出状态
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** `fork()` 中 COW 的具体流程是什么？
+
+<details><summary>答案</summary>
+
+① `dup_mm()` 复制 `mm_struct` 和页表（PTE），所有 PTE 设为只读。② 物理页不复制，引用计数 +1。③ 子进程写某页 → page fault → `do_wp_page()` → 分配新物理页，复制内容，PTE 改为可写，旧页引用计数 -1。COW 省内存但首次写有 fault 开销。
+
+</details>
+
+**Q2.** 进程退出时内核做了哪些清理？
+
+<details><summary>答案</summary>
+
+① `do_exit()`：释放 `mm_struct`（如引用计数归零）、关闭 fd、释放信号队列、从 PID 哈希/任务链表移除。② 状态设为 `EXIT_ZOMBIE`，保留 `task_struct`（含退出码 `exit_code`）等待父进程 `wait()`。③ 父进程 `wait()` → `release_task()` 释放 `task_struct`。孤儿进程由 `init`（PID 1）自动回收。
+
+</details>
+
+**Q3.** HFT 中为什么要避免在热路径上 `fork()`/`exec()`？
+
+<details><summary>答案</summary>
+
+`fork()` 复制页表的开销与进程地址空间大小成正比（大程序可达毫秒级）。`exec()` 更昂贵：丢弃页表 + 加载 ELF + 重新初始化地址空间。HFT 进程应在启动时 `fork` + `exec` 所有 worker，之后不再创建新进程。用 `posix_spawn()` 或 `vfork()`（不复制页表）可减小 `fork` 开销。
+
+</details>
+
+</details>
+
 ---
 
 ← [5. 进程切换](./section-5-进程切换.md) · 下一章 [Ch 4 中断与异常](../../chapter-04-interrupts-and-exceptions.md)

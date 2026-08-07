@@ -61,4 +61,43 @@
 
 → [Ch 11.4 tick 处理](./section-11.4-定时器中断处理程序.md) · [Ch 11.5 xtime](./section-11.5-实际时间-墙上时间.md) · [07 TLPI 时间](../../../../04-linux-userspace-api/)
 
+### 常见陷阱
+
+1. 混淆「时钟源」（clocksource）和「时钟事件设备」（clock_event_device）——前者只读时间，后者可触发中断
+2. 以为 HPET 是最佳时钟源——TSC 比 HPET 快 100 倍（~20ns vs ~2us），HPET 是后备
+3. 忽略时钟源的稳定性——TSC 在老 CPU 上可能不稳定（频率变化/多核不同步）
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** clocksource 和 clock_event_device 的区别？
+
+<details><summary>答案</summary>
+
+clocksource：只读时钟（单调递增），用于读取当前时间。如 TSC、HPET、ACPI PM Timer。选择最快且稳定的。clock_event_device：可编程定时器，用于设置下一次中断。如 Local APIC Timer、HPET。一个 CPU 上有一个 clocksource（全局共享）和一个 clock_event_device（per-CPU）。
+
+</details>
+
+**Q2.** TSC vs HPET vs ACPI PM Timer 的性能对比？
+
+<details><summary>答案</summary>
+
+TSC（Time Stamp Counter）：~20ns 读取，不变 TSC（invariant TSC）在现代 CPU 上稳定。首选。HPET：~2us 读取，高精度但慢。后备（TSC 不稳定时使用）。ACPI PM Timer：~2us，最后备选。`cat /sys/devices/system/clocksource/clocksource0/current_clocksource` 查看当前使用。HFT 确保 `tsc` 而非 `hpet`。内核启动参数 `clocksource=tsc`。
+
+</details>
+
+**Q3.** HFT 如何确保 TSC 可靠？
+
+<details><summary>答案</summary>
+
+① `cat /proc/cpuinfo | grep constant_tsc`：确认 invariant TSC。② `dmesg | grep -i tsc`：检查内核是否标记 TSC 为 unstable。③ `tsc_reliable` 启动参数：强制标记 TSC 可靠。④ 多核 TSC 同步：现代 CPU 在启动时同步 TSC（`sync_tsc()`），但不同 socket 可能有偏差。⑤ HFT 绑核在同一 socket 上避免跨 socket TSC 偏差。⑥ `RDTSCP` 指令比 `RDTSC` 多一个序列化保证。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch6 §2 硬件时钟与定时器](../../../../08-linux-kernel-deep/chapter-06-timing/notes/section-2-硬件时钟与定时器.md)
 ---

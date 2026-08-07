@@ -76,4 +76,41 @@
 
 → [Ch 8.3](section-8.3-软中断.md) · [Ch 8.4](section-8.4-tasklet.md) · [Ch 8.5](section-8.5-工作队列.md) · [Ch 7](../../chapter-07-interrupts/) 上半部
 
+### 常见陷阱
+
+1. 在所有场景都用 workqueue——workqueue 有调度延迟，不适合对延迟敏感的场景
+2. 以为 softirq 总是最快的——softirq 在 IRQ 返回时执行，可能延迟用户线程恢复
+3. 忽略 threaded IRQ——threaded IRQ 是 modern 替代 tasklet 的好方案
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 给定场景如何选择下半部机制？
+
+<details><summary>答案</summary>
+
+需要睡眠/持 mutex/I/O → workqueue。需要低延迟 + 不睡眠 → softirq。需要低延迟 + 可睡眠 → threaded IRQ。定时回调 → hrtimer（not softirq TIMER_SOFTIRQ）。网络收发 → NAPI（基于 softirq 的轮询）。不要用 → tasklet（deprecated）。关键考量：延迟（softirq < threaded IRQ < workqueue）vs 灵活性（workqueue > threaded IRQ > softirq）。
+
+</details>
+
+**Q2.** threaded IRQ 相比 softirq/tasklet 有什么优势？
+
+<details><summary>答案</summary>
+
+① 可睡眠：thread_fn 在内核线程中运行，可 mutex_lock/kmalloc(GFP_KERNEL)。② RT 友好：threaded IRQ 线程有优先级，RT 内核中可设高优先级。③ 可调试：线程有 /proc/[pid]/ 可追踪。④ 简化锁：hard IRQ 只确认硬件（持 spinlock 短时间），thread_fn 可持 mutex（长时间）。缺点：唤醒+调度延迟（~1-5us）。
+
+</details>
+
+**Q3.** HFT 系统中下半部机制的最佳实践？
+
+<details><summary>答案</summary>
+
+① 热路径（收发行情/下单）：DPDK 用户态轮询，完全绕过 softirq/workqueue。② 非热路径（配置/监控）：workqueue 处理，不影响交易核。③ 内核模块中断：request_threaded_irq()，hard IRQ 只 ACK，thread_fn 做处理。④ 定时器：hrtimer 代替 TIMER_SOFTIRQ（精度更高）。⑤ 确保 ksoftirqd 不在交易核运行。
+
+</details>
+
+</details>
+
 ---

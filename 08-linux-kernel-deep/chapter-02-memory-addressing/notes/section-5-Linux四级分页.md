@@ -36,6 +36,43 @@
 
 → 进程页表布局 [section-6](./section-6-内存布局与TLB.md) · 分配物理页 [Ch 8](../../chapter-08-memory-management.md)
 
+### 常见陷阱
+
+1. 以为现代 x86-64 仍用四级页表——5.x 内核已支持五级页表（PGD→P4D→PUD→PMD→PTE），需 CONFIG_X86_5LEVEL=y
+2. 把 `pgd_offset()` 的参数搞反——`pgd_offset(mm, address)` 第一个参数是 `mm_struct`，不是 `task_struct`
+3. 以为 `pgd_none()` 返回 true 就代表这段地址没被映射——也可能是被 `PROT_NONE` 保护的页，需要看 `pmd_present()` 进一步判断
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Linux 四级页表和五级页表在代码层面有什么区别？
+
+<details><summary>答案</summary>
+
+五级页表多了一层 P4D。内核用 `pgtable-nopud.h`/`pgtable-nop4d.h` 等头文件在编译时折叠不存在的层级，使四级硬件在软件层面仍呈现五级接口。`CONFIG_X86_5LEVEL=y` 时 P4D 真实存在于硬件页表中。
+
+</details>
+
+**Q2.** `pgd_offset(mm, addr)` 返回什么？怎么进一步拿到 PTE？
+
+<details><summary>答案</summary>
+
+返回 `pgd_t*` 指针。链路：`pgd_offset(mm, addr)` → `p4d_offset(pgd, addr)` → `pud_offset(p4d, addr)` → `pmd_offset(pud, addr)` → `pte_offset_map(pmd, addr)`。每一步都要检查 `*_none()` 或 `*_present()`。
+
+</details>
+
+**Q3.** 为什么内核要把三级/四级/五级页表统一成五级软件接口？
+
+<details><summary>答案</summary>
+
+可移植性。不同架构页表级数不同（ARM64 可配 3/4/5 级，x86-64 可配 4/5 级）。统一成五级接口后，通用代码不用 `#ifdef` 区分级数——不存在的层会被折叠成「transparent」操作（直接传递指针）。
+
+</details>
+
+</details>
+
 ---
 
 ← [4. 硬件分页](./section-4-硬件分页.md) · 下一节 [6. 内存布局与 TLB](./section-6-内存布局与TLB.md)

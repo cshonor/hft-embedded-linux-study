@@ -53,4 +53,6 @@ mm_struct
 
 → [Ch 15.6 mmap 创建](./section-15.6-创建与删除地址区间.md) · [Ch 15.8 缺页](./section-15.8-从访问到缺页概念.md) · [06 Gorman VMA](../../../../09-linux-mm/chapter-04-process-address-space/notes/section-3-内存区域.md)
 
+
+> ↔ [ULK Ch9 §3 内存区VMA](../../../../08-linux-kernel-deep/chapter-09-process-address-space/notes/section-3-内存区VMA.md)
 ---

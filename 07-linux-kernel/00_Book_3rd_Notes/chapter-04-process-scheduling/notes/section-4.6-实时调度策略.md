@@ -63,4 +63,53 @@ RT 优先级 99 可运行？──是──► 跑它（压过一切更低 RT �
 
 → [07 TLPI Ch 34–37](../../../../04-linux-userspace-api/) · [4.7 syscall](./section-4.7-与调度相关的系统调用.md) · [17 HFT Practice](../../../../21-hft-engineering/)
 
+### 常见陷阱
+
+1. 混淆 SCHED_FIFO 和 SCHED_RR——FIFO 无时间片（跑到阻塞），RR 有时间片轮转
+2. 以为 RT 优先级 99 就是最高——SCHED_DEADLINE 优先级更高（EDF 算法）
+3. 忽略 RT throttling——RT 线程默认被限制在 95% CPU 时间，HFT 需要禁用
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** SCHED_FIFO 和 SCHED_RR 的核心区别？
+
+<details><summary>答案</summary>
+
+FIFO：同优先级内先到先服务，无时间片，跑到阻塞/被更高优先级抢占/yield。RR：同优先级内轮转，每个任务有时间片（默认 100ms），片耗尽后轮到同优先级的下一个。HFT 通常用 FIFO——只有一个 RT 线程独占核，不需要轮转。
+
+</details>
+
+**Q2.** RT throttling 机制是什么？HFT 怎么处理？
+
+<details><summary>答案</summary>
+
+`/proc/sys/kernel/sched_rt_period_us`（默认 1s）和 `sched_rt_runtime_us`（默认 0.95s）限制 RT 线程在每 period 内最多跑 runtime 时间。超出后 RT 被节流，CFS 接管。HFT 设 `sched_rt_runtime_us=-1` 禁用节流。注意：禁用后如果 RT 线程死循环会锁死 CPU，设 `RLIMIT_RTTIME` 做安全网。
+
+</details>
+
+**Q3.** HFT 使用 SCHED_FIFO 的完整配置步骤？
+
+<details><summary>答案</summary>
+
+```c
+// 1. 绑核
+cpu_set_t cs; CPU_ZERO(&cs); CPU_SET(2, &cs);
+sched_setaffinity(0, sizeof(cs), &cs);
+// 2. RT 优先级 99
+struct sched_param sp = { .sched_priority = 99 };
+sched_setscheduler(0, SCHED_FIFO, &sp);
+// 3. 锁内存
+mlockall(MCL_CURRENT | MCL_FUTURE);
+// 4. 内核启动参数: isolcpus=2 nohz_full=2 rcu_nocbs=2
+```
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../08-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
 ---

@@ -49,4 +49,53 @@ int x = atomic_read(&v);
 
 → [10.2 自旋锁](./section-10.2-自旋锁.md) · [10.10 屏障](./section-10.10-排序和屏障.md) · [01-CSAPP 并发](../../../../02-computer-systems/chapter-12-concurrent-programming/)
 
+### 常见陷阱
+
+1. 把原子操作当万能锁——原子操作只保证单操作原子性，多操作组合仍需锁
+2. 混淆 atomic_t 和 refcount_t——refcount_t 防溢出（0 不会变 -1），atomic_t 会
+3. 以为 atomic_read() 是原子操作——在 x86 上它只是普通读（volatile），不保证其他 CPU 的写入可见
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** atomic_t 和 refcount_t 的区别？
+
+<details><summary>答案</summary>
+
+atomic_t：纯原子计数器，`atomic_dec(&v)` 可以从 0 变成 -1（UAF 漏洞）。refcount_t：引用计数专用，`refcount_dec()` 在 0 时 WARN + 阻止下溢。6.x 内核中 task_struct 的 usage 已从 atomic_t 改为 refcount_t。安全代码应始终用 refcount_t 管理生命周期。
+
+</details>
+
+**Q2.** `atomic_inc(&v)` 在 x86-64 上实际生成什么指令？
+
+<details><summary>答案</summary>
+
+`lock incl (%rdi)`——LOCK 前缀 + incl 指令。LOCK 前缀锁 cache line（通过 MESI 协议的 Read-Modify-Write 周期），确保原子性。开销：~20-40 cycles（无争用时）。争用时 cache line bouncing，可达数百 cycles。ARM64 上生成 `ldaxr`/`stlxr`（独占加载/存储）循环。
+
+</details>
+
+**Q3.** HFT 用户态如何高效使用原子操作？
+
+<details><summary>答案</summary>
+
+```c
+// 无锁 SPSC 队列
+std::atomic<size_t> head{0}, tail{0};
+// 生产者
+head.store(head.load(std::memory_order_relaxed) + 1,
+           std::memory_order_release);
+// 消费者
+size_t h = head.load(std::memory_order_acquire);
+if (h > tail.load(std::memory_order_relaxed)) {
+    // 有数据
+}
+// 关键: release/acquire 配对, 避免 seq_cst 的全屏障开销
+```
+
+</details>
+
+</details>
+
 ---

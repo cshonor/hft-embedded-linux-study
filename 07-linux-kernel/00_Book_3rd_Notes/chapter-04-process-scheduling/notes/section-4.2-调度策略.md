@@ -527,4 +527,43 @@ fork → task_struct（内存里带着：policy、nice/权重、vruntime、RT pr
 
 → [07 TLPI](../../../../04-linux-userspace-api/) · [4.3 CFS](./section-4.3-Linux-调度算法.md) · [4.6 RT](./section-4.6-实时调度策略.md)
 
+### 常见陷阱
+
+1. 混淆 SCHED_OTHER 和 SCHED_FIFO——OTHER 是 CFS 管的普通分时，FIFO 是 RT 调度器管的实时
+2. 以为 nice 值 -20 到 19 对应优先级 -20 到 19——内部映射为 static_prio = 120 + nice，范围 [100, 139]
+3. 在 RT 策略下以为 nice 还有效——RT 策略看 rt_priority (1-99)，不看 nice
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 六个调度策略（SCHED_OTHER/BATCH/IDLE/FIFO/RR/DEADLINE）各自适用什么场景？
+
+<details><summary>答案</summary>
+
+OTHER：普通分时进程（默认）。BATCH：CPU 密集型批处理（低交互）。IDLE：极低优先级后台任务。FIFO：实时 FIFO，无时间片。RR：实时轮转，有时间片。DEADLINE：基于 EDF，需指定 runtime/deadline/period，优先级最高。HFT 用 FIFO。
+
+</details>
+
+**Q2.** nice 值到 CPU 权重的映射是怎么实现的？
+
+<details><summary>答案</summary>
+
+nice [-20,19] → static_prio = 120 + nice → 查 sched_prio_to_weight[] 表。nice 0 = weight 1024，nice +5 = 335，nice -5 = 3121。每差 1 级 nice，权重比约 1.25。两个进程 A(nice=0, weight=1024) B(nice=5, weight=335) 的 CPU 比例 ≈ 1024:335 ≈ 3:1。
+
+</details>
+
+**Q3.** `SCHED_FIFO` 的 `rt_priority` 怎么设置？范围是什么？
+
+<details><summary>答案</summary>
+
+通过 `sched_setscheduler(pid, SCHED_FIFO, &param)` 设置，`param.sched_priority` 范围 1-99（0 表示非 RT）。数字越大优先级越高。HFT 通常设 99（最高），配合 `isolcpus` 独占 CPU。注意需要 `CAP_SYS_NICE` 权限。`/proc/sys/kernel/sched_rt_runtime_us` 默认 950000 限制 RT 占用 95% CPU 时间，HFT 可设 -1 禁用。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../08-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
 ---

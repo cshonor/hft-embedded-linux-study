@@ -44,6 +44,43 @@ Ch 11 信号（syscall 返回路径检查 TIF_SIGPENDING）
 
 HFT：**syscall 开销、vDSO 绕过 syscall**（modern，ULK 2.6 讲 sysenter 前身）是延迟敏感路径的关注点。
 
+### 常见陷阱
+
+1. 把 ULK 讲的 `int $0x80` 当现代 syscall 入口——x86-64 用 `syscall` 指令，从 MSR_LSTAR 加载入口
+2. 以为 syscall 号全局唯一——syscall 号是 per-architecture 的，x86-64 和 ARM64 不同
+3. 混淆 syscall 和 libc 函数——`printf` 不是 syscall，`write` 才是；`malloc` 不是 syscall，`brk`/`mmap` 才是
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** ULK Ch10 讲的 syscall 入口在现代 x86-64 上有什么变化？
+
+<details><summary>答案</summary>
+
+① `int $0x80` 软中断被 `syscall` 指令取代（快 3-5 倍，不走 IDT 查表）。② 入口地址从 `MSR_LSTAR` 加载（`entry_SYSCALL_64`）。③ CS/SS 从 `MSR_STAR` 加载，不走 GDT 查表。④ 参数传递从栈改为寄存器（`rdi, rsi, rdx, r10, r8, r9`）。⑤ `sysret` 指令快速返回。⑥ vDSO/vvar 页让部分 syscall（`gettimeofday`/`clock_gettime`）完全在用户态完成。
+
+</details>
+
+**Q2.** vDSO（Virtual Dynamic Shared Object）是什么？为什么对 HFT 重要？
+
+<details><summary>答案</summary>
+
+vDSO 是内核映射到每个进程的共享库（`[vdso]` VMA），包含 `gettimeofday`/`clock_gettime`/`getcpu` 等函数。这些函数直接读内核映射的 `vvar` 页（内核定时更新），**不触发 syscall**。开销：~20ns（vs syscall 的 ~100-200ns）。HFT 必须用 vDSO 版的 `clock_gettime(CLOCK_MONOTONIC)`，避免 syscall 开销。`ldd` / `getauxval(AT_SYSINFO_EHDR)` 确认 vDSO 可用。
+
+</details>
+
+**Q3.** 如何减少 HFT 中的系统调用数量？
+
+<details><summary>答案</summary>
+
+① 批量化：`io_uring` 替代多次 `read`/`write`（一次 submit 批量 I/O）。② vDSO：`clock_gettime` 走 vDSO 不进内核。③ 预分配：`mlockall` + 内存池避免 `brk`/`mmap`。④ 轮询 vs 中断：DPDK 用户态轮询替代 `epoll_wait`。⑤ `seccomp` 过滤非法 syscall。测量：`strace -c -p [pid]` 统计 syscall 频率。
+
+</details>
+
+</details>
+
 ---
 
 ← [Ch 10 导读](../README.md) · 下一节 [2. POSIX API](./section-2-POSIX-API与系统调用.md)

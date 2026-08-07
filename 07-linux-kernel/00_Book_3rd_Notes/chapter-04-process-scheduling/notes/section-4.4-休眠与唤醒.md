@@ -50,4 +50,41 @@
 
 → [4.5 抢占与切换](./section-4.5-抢占与上下文切换.md) · [Ch 10 mutex/completion](../chapter-10-sync-methods/)
 
+### 常见陷阱
+
+1. 把「休眠」当浪费 CPU——休眠释放 CPU 给其他任务，是高效的资源利用
+2. 混淆 `TASK_INTERRUPTIBLE` 和 `TASK_UNINTERRUPTIBLE`——前者可被信号唤醒，后者不可
+3. 以为唤醒后立即运行——唤醒只是把进程放回运行队列，是否立即运行取决于调度器
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** `TASK_INTERRUPTIBLE` 和 `TASK_UNINTERRUPTIBLE` 的区别？
+
+<details><summary>答案</summary>
+
+INTERRUPTIBLE：可被信号唤醒（`kill -9` 有效），进程可响应异步事件。UNINTERRUPTIBLE：不可被信号唤醒（`kill -9` 无效），通常在等磁盘 I/O 等不可中断操作。`TASK_KILLABLE` 是 2.6.25+ 新增：可被致命信号唤醒但不被普通信号打断。HFT 避免在热路径上进入 UNINTERRUPTIBLE（D 状态，无法 kill）。
+
+</details>
+
+**Q2.** 唤醒抢占的阈值是什么？为什么需要？
+
+<details><summary>答案</summary>
+
+`sched_wakeup_granularity`（默认 1ms）。唤醒的进程 vruntime 比 current 小这个阈值时才抢占。太低（0）会导致频繁抢占（thrashing）；太高会导致交互延迟。HFT 用 SCHED_FIFO 不走 CFS，不受此影响。
+
+</details>
+
+**Q3.** HFT 如何避免热路径上的休眠/唤醒延迟？
+
+<details><summary>答案</summary>
+
+① 预分配所有资源（内存/连接/FD），避免运行时等资源。② 无锁队列代替 mutex（mutex 阻塞 = 休眠）。③ DPDK 用户态轮询代替 epoll_wait（epoll_wait 阻塞 = 休眠）。④ `SCHED_FIFO` 确保唤醒后立即运行（RT 优先级 > CFS）。
+
+</details>
+
+</details>
+
 ---

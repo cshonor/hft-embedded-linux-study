@@ -74,4 +74,6 @@ MMU walk:
 
 → [01 CSAPP Ch9 TLB/翻译](../../../../02-computer-systems/chapter-09-virtual-memory/notes/section-9.6-9.7-地址翻译与Linux案例.md) · [06 Gorman Ch3 页表](../../../../09-linux-mm/chapter-03-page-table-management/) · [06 THP note](../../../../09-linux-mm/chapter-03-page-table-management/notes/note-透明大页THP.md)
 
+
+> ↔ [ULK Ch9 §4 缺页异常](../../../../08-linux-kernel-deep/chapter-09-process-address-space/notes/section-4-缺页异常.md)
 ---

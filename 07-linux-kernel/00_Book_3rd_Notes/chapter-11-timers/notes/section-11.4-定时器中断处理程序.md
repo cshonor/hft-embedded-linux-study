@@ -64,4 +64,52 @@ NO_HZ： |-------- sleep --------|--tick--|  （仅到点唤醒）
 
 → [Ch 4 抢占与 tick](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [Ch 8 softirq](../../chapter-08-bottom-halves/) · [Ch 10 seqlock](../../chapter-10-kernel-synchronization/)
 
+### 常见陷阱
+
+1. 把 ULK 的定时器中断处理当现代版——6.x 用 hrtimer + NO_HZ + tickless 机制完全不同
+2. 混淆 scheduler_tick() 和 timer tick——scheduler_tick() 是 tick 中断的一部分，更新调度统计
+3. 以为定时器中断频率固定——NO_HZ 下可以动态调整或完全停止
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 现代内核的定时器中断处理和 ULK 时代有什么区别？
+
+<details><summary>答案</summary>
+
+ULK 时代：固定 HZ 频率的 tick → `do_timer_interrupt()` → 更新 jiffies + scheduler_tick() + 检查 timer list。现代：① hrtimer 框架取代 timer list（精度从 ms 提升到 ns）。② NO_HZ：idle 时停止 tick。③ nohz_full：single-task 时停止 tick。④ tickless：动态计算下一个需要的 tick 时间。⑤ `tick_nohz_idle_enter()` / `tick_nohz_idle_exit()`。
+
+</details>
+
+**Q2.** scheduler_tick() 做什么？对 HFT 有什么影响？
+
+<details><summary>答案</summary>
+
+① 更新当前进程的 vruntime / 时间统计。② 检查时间片是否耗尽 → 设 need_resched。③ 更新 CPU 负载统计。④ 触发 RT 负载均衡检查。影响：每次 tick 中断交易线程 ~1-5us。HFT 用 `nohz_full` 消除交易核的 tick → scheduler_tick() 不执行 → 交易线程不被中断。
+
+</details>
+
+**Q3.** HFT 如何配置 tickless 减少定时器中断？
+
+<details><summary>答案</summary>
+
+```bash
+# 内核启动参数
+isolcpus=2-3 nohz_full=2-3 rcu_nocbs=2-3
+# 确认
+cat /sys/devices/system/cpu/nohz_full
+# 应输出 2-3
+cat /proc/interrupts | grep LOC
+# 2-3 号 CPU 的 LOC（local timer）计数应几乎不变
+# 注意: nohz_full CPU 上只能跑一个任务(或 RT 线程组)
+```
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch6 §4 更新时间与统计](../../../../08-linux-kernel-deep/chapter-06-timing/notes/section-4-更新时间与统计.md)
 ---

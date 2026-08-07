@@ -103,4 +103,43 @@ static void my_work_func(struct work_struct *work)
 
 → **Ch 6** `kfifo` 中断入队 + workqueue 出队 · [Ch 7.5](../../chapter-07-interrupts/notes/section-7.5-中断上下文.md) 为何 ISR 不能睡眠 · [Ch 8.7](section-8.7-如何选择下半部机制.md) 选型
 
+### 常见陷阱
+
+1. 在 workqueue 中以为不能睡眠——workqueue 运行在 kworker 线程（进程上下文），可以睡眠
+2. 混淆 system workqueue 和自定义 workqueue——system workqueue 共享，自定义更可控
+3. 在热路径上用 workqueue——workqueue 有线程唤醒 + 调度延迟，不适合纳秒级热路径
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** workqueue 为什么可以睡眠？它的执行上下文是什么？
+
+<details><summary>答案</summary>
+
+workqueue 的 work 函数在 kworker 内核线程中执行（进程上下文）。kworker 有 task_struct、有进程栈、可调度。所以 work 函数可以 mutex_lock()、kmalloc(GFP_KERNEL)、甚至 msleep()。这是 workqueue 相比 softirq/tasklet 的最大优势。代价：唤醒 + 调度延迟（~1-5us）。
+
+</details>
+
+**Q2.** system workqueue（schedule_work）和自定义 workqueue（alloc_workqueue）的区别？
+
+<details><summary>答案</summary>
+
+system workqueue（`system_wq`）：全局共享，所有 `schedule_work()` 提交的 work 共享 kworker 池。优点：简单，无需管理。缺点：可能被其他模块的 work 阻塞。自定义 workqueue：`alloc_workqueue(name, flags, max_active)`，独立 kworker 池。flags: WQ_UNBOUND（不绑 CPU）、WQ_HIGHPRI（高优先级）。驱动推荐用自定义 workqueue。
+
+</details>
+
+**Q3.** HFT 什么时候该用 workqueue？什么时候不该？
+
+<details><summary>答案</summary>
+
+该用：驱动初始化（等硬件就绪）、配置变更（可睡眠）、错误处理（需 I/O）。不该用：热路径数据收发（延迟太大）、纳秒级操作（用 softirq 或直接在 hard IRQ 中处理）。HFT 设计原则：热路径 → 无锁 + 预分配 + 用户态轮询。非热路径 → workqueue 处理异步任务。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

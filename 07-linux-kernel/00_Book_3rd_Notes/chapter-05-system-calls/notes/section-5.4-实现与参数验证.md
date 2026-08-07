@@ -75,4 +75,6 @@ SYSCALL_DEFINE3(read, int, fd, char __user *, buf, size_t, count)
 
 → **Ch 9–10** 锁与并发 · **Ch 7** 中断上下文（不可睡眠）对比 · 下一节 [§5.5 上下文](./section-5.5-系统调用上下文.md)
 
+
+> ↔ [ULK Ch10 §6 参数验证与内核封装](../../../../08-linux-kernel-deep/chapter-10-system-calls/notes/section-6-参数验证与内核封装.md)
 ---

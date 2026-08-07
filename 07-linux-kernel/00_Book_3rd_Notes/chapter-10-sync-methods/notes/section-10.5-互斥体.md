@@ -55,4 +55,43 @@ if (mutex_lock_interruptible(&m) == 0) {
 
 → [10.2](./section-10.2-自旋锁.md) · [10.4](./section-10.4-信号量.md) · [10.11](./section-10.11-选型速查Ch-9--Ch-10.md)
 
+### 常见陷阱
+
+1. 在 mutex 和 semaphore 之间纠结——内核新代码始终优先 mutex
+2. 以为 mutex_lock() 一定睡眠——无争用时直接原子获取（fast path），不进内核
+3. 忽略优先级继承——mutex 默认不支持，需要 rt_mutex
+
+---
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** mutex 的 fast path / slow path 是什么？
+
+<details><summary>答案</summary>
+
+Fast path（无争用）：`mutex_lock()` → 原子 CAS 将 owner 从 NULL 设为 current → 成功返回。开销 ~20ns。Slow path（有争用）：CAS 失败 → `__mutex_lock_slowpath()` → 加入等待队列 → `schedule()` 睡眠 → 被唤醒后重试 CAS。开销 ~1-5us。大部分场景 fast path 命中，mutex 性能接近 spinlock。
+
+</details>
+
+**Q2.** mutex 和 rt_mutex 的区别？HFT 为什么要关心？
+
+<details><summary>答案</summary>
+
+mutex：无优先级继承。高优先级线程等低优先级线程持有的 mutex 时，低优先级线程不会被提升 → 优先级反转 → 高优先级线程延迟增大。rt_mutex：有优先级继承。高优先级等锁时，持有者的优先级被临时提升到等待者的级别。HFT 必须用 rt_mutex（或 `PTHREAD_PRIO_INHERIT`）防止优先级反转。
+
+</details>
+
+**Q3.** HFT 中 mutex 的使用最佳实践？
+
+<details><summary>答案</summary>
+
+① 热路径避免 mutex——用无锁设计。② 必须用 mutex 时：短临界区 + `try_lock` + 超时。③ `PTHREAD_PRIO_INHERIT` 属性防止优先级反转。④ `PTHREAD_MUTEX_ADAPTIVE_NP`：先 spin 再 sleep（glibc 扩展）。⑤ `perf lock` 分析持有时间。⑥ 避免 `std::mutex` 在 RT 线程中使用——用 `std::atomic` 或无锁队列。
+
+</details>
+
+</details>
+
+
+> ↔ [ULK Ch5 §6 信号量与完成变量](../../../../08-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-6-信号量与完成变量.md)
 ---
