@@ -1,4 +1,4 @@
-# LWN 文章摘要
+# LWN 文章摘要 — 内核子系统
 
 > 对标 ULK3 / LKD3 过时章节的 LWN.net 深度文章摘要。
 > 每篇文章按：原文链接 + 核心观点 + 与旧书差异 + 关键代码变更 整理。
@@ -17,16 +17,6 @@
 ### 中断
 - [ ] IRQ domain 框架: https://lwn.net/Articles/460160/
 - [ ] Threaded IRQ: https://lwn.net/Articles/302043/
-
-### 内存管理
-- [ ] SLUB 分配器: https://lwn.net/Articles/229096/
-- [ ] Folio API: https://lwn.net/Articles/849438/
-- [ ] Maple tree: https://lwn.net/Articles/845507/
-- [ ] MGLRU: https://lwn.net/Articles/856831/
-- [ ] memblock: https://lwn.net/Articles/449283/
-- [ ] 5 级页表: https://lwn.net/Articles/717293/
-- [ ] PSI: https://lwn.net/Articles/759781/
-- [ ] DAMON: https://lwn.net/Articles/812704/
 
 ### 块设备 / I/O
 - [ ] blk-mq 多队列: https://lwn.net/Articles/552904/
