@@ -119,7 +119,7 @@ ULK3 过时章节 → 笨叔对应章节 → LWN 文章 → 内核源码
 ## 文件结构
 
 ```
-05-Modern-Book/
+8.5-Modern-Book/
 ├── README.md                          ← 本文件（书目结构 + 映射表）
 ├── ref-modern-kernel-resources.md     ← ULK3 过时章节 → LWN/官方文档详细映射
 └── (笨叔书笔记将按章节添加)

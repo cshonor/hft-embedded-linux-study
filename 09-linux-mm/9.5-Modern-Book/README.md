@@ -120,7 +120,7 @@ Mel Gorman 过时章节 → 笨叔卷1 → LWN 文章 → 内核源码 mm/
 ## 文件结构
 
 ```
-05-Modern-Book/
+9.5-Modern-Book/
 ├── README.md    ← 本文件（过时评估 + 笨叔映射 + LWN 精选）
 └── (笨叔书笔记将按章节添加)
 ```
