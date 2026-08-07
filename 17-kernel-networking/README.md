@@ -4,6 +4,9 @@
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
+> ⚠️ 本书基于 Linux 3.x（2014）。**Netfilter→nftables、无XDP、无eBPF网络、无io_uring、无page_pool。**
+> 现代内核网络栈资料 → [17.5-modern-networking](../17.5-modern-networking/)
+
 ---
 
 ## 核心章节（14 章）
