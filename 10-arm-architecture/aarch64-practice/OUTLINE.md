@@ -5,6 +5,7 @@
 > **平台：** 原书树莓派 4B · **QEMU ARM64**；**实机按 Pi5 适配** — [PI5-ADAPT.md](./PI5-ADAPT.md) · Ch2 详记 [section-0](./chapter-02-raspberry-pi-lab/notes/section-0-Pi5适配与实验路线.md)  
 > **全书总结：** [BOOK-SUMMARY.md](./BOOK-SUMMARY.md) · **名词：** [AARCH64-NAMING.md](./AARCH64-NAMING.md)  
 > **代码：** [runninglinuxkernel/arm64_programming_practice](https://github.com/runninglinuxkernel/arm64_programming_practice)
+> **实验目录：** [EXPERIMENT-CATALOG.md](./EXPERIMENT-CATALOG.md) — 全书 56 个实验 + Pi4B→Pi5 适配清单
 
 | 标签 | 含义 |
 |------|------|

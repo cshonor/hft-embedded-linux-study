@@ -44,6 +44,7 @@
 
 ## 参考资源
 
+- [10-arm-architecture/aarch64-practice/EXPERIMENT-CATALOG.md](../../10-arm-architecture/aarch64-practice/EXPERIMENT-CATALOG.md) — 《ARM64体系结构编程与实践》全书 56 个实验目录 + Pi4B→Pi5 适配清单
 - [13-embedded-projects/RASPBERRY-PI5-LABS.md](../../13-embedded-projects/RASPBERRY-PI5-LABS.md) — Pi5 板卡动手清单（A→G 执行序）
 - [HFT-READING-ROADMAP §六](../../HFT-READING-ROADMAP.md) — 嵌入式支线详情
 - 边界：仅 ARM-A + 嵌入式 Linux；**不学** STM32/MCU 裸机/FreeRTOS/PCB
