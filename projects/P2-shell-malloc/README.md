@@ -28,6 +28,16 @@
 - [ ] 用 `sbrk`/`mmap` 向 OS 申请内存
 - [ ] 写压力测试：随机 alloc/free 序列，验证无碎片泄漏
 
+### Part C：C 语言特性练手（轻量）
+
+> 在 shell/malloc 代码上直接加，不单独建项目。练 01-c-language 书 02（指针）+ 书 04（GNU C）的技能点，为 [P2.5](../P2.5-c-toolkit/) 做铺垫。
+
+- [ ] **函数指针命令分发表** — 替换 if-else 链，`struct { char *name; void (*fn)(char**); }` 数组 + 查找循环
+- [ ] **调试分配器宏** — `#define MALLOC(sz) debug_malloc((sz), __FILE__, __LINE__)`，练 `#` 字符串化 + `__LINE__` 宏
+- [ ] **`union` 多态值类型** — shell 变量存 int/float/string，`enum` 做 tag，`switch` 分发
+- [ ] **`offsetof` 验证头块对齐** — `#include <stddef.h>`，打印 malloc 头块各成员偏移
+- [ ] **`likely`/`unlikely` 热路径标注** — GNU C 扩展，包裹 shell 解析器高频分支
+
 ## 覆盖模块
 
 | 模块 | 用到什么 |
