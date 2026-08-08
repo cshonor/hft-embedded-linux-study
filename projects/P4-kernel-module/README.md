@@ -1,10 +1,27 @@
 # P4 — 可加载内核模块
 
 > 写一个内核模块：字符设备 + kmalloc 追踪 + /proc 统计，把"内核不是黑盒"变成"我能往里加东西"。
+> **做法：项目驱动，[`07`](../../07-linux-kernel/) / [`08.5`](../../08.5-modern-kernel/) / [`08.6`](../../08.6-kernel-debugging/) / [`09`](../../09-linux-mm/) 笔记当字典——先上路，卡住再查。**
 
-## 项目目标
+---
 
-从用户态跨进内核态。亲手注册一个字符设备、用 kmalloc 分配内核内存、通过 /proc 暴露统计，并在出 bug 时用内核调试工具定位。这是进 `07`/`08.5`/`08.6`/`09` 的综合实操。
+## 核心理念
+
+从用户态跨进内核态。P2.5 练的 `container_of`/`list_head`/`__attribute__` 在这里直接用。
+不要先读完 LKD 全书——翻一眼模块和字符设备的标题，直接 `insmod hello.ko`。
+
+---
+
+## 实现指南
+
+| Part | 内容 | 建议时间 |
+|------|------|----------|
+| [Part A：Hello + 字符设备](./Part-A-hello-chardev.md) | hello world 模块 → 字符设备 open/read/write → 用户态测试 | 2-3 小时 |
+| [Part B：/proc + 调试](./Part-B-proc-debug.md) | kmalloc 追踪 → /proc 统计 → 故意写 bug 用 KASAN/Oops 定位 | 3-4 小时 |
+
+**建议顺序**：先完成 Part A（能 insmod + 读写设备），再做 Part B（加统计 + 调试）。
+
+---
 
 ## 交付物
 
@@ -39,15 +56,15 @@
 
 ## 里程碑
 
-1. **M1** hello world 模块干净 insmod/rmmod
-2. **M2** 字符设备 open/read/write 跑通
-3. **M3** kmalloc 缓冲 + 分配追踪
-4. **M4** /proc 统计 + ioctl 控制
-5. **M5** 故意写一个 bug（如越界写），用 KASAN/Oops 定位修复
+1. **M1** hello world 模块干净 insmod/rmmod → [Part A Phase 1](./Part-A-hello-chardev.md)
+2. **M2** 字符设备 open/read/write 跑通 → [Part A Phase 2-3](./Part-A-hello-chardev.md)
+3. **M3** kmalloc 缓冲 + 分配追踪 → [Part B Phase 1](./Part-B-proc-debug.md)
+4. **M4** /proc 统计 + ioctl 控制 → [Part B Phase 2](./Part-B-proc-debug.md)
+5. **M5** 故意写一个 bug（如越界写），用 KASAN/Oops 定位修复 → [Part B Phase 3](./Part-B-proc-debug.md)
 
 ## 参考模块
 
-- [07-linux-kernel/](../../07-linux-kernel/) — LKD Ch2（模块）、字符设备
+- [07-linux-kernel/](../../07-linux-kernel/) — LKD Ch17（模块+设备）
 - [08.5-modern-kernel/](../../08.5-modern-kernel/) — LWN/Bootlin 现代 API（6.x 内核模块接口变化）
 - [08.6-kernel-debugging/](../../08.6-kernel-debugging/) — Ch3 printk、Ch5 KASAN、Ch7 Oops、Ch9 Ftrace
 - [09-linux-mm/](../../09-linux-mm/) — Ch8 Slab/Slub（kmalloc 的底层）
@@ -57,3 +74,9 @@
 - 树莓派 5（AArch64, Linux 6.1）或 WSL2 自编译内核
 - 编译需内核头：`apt install linux-headers-$(uname -r)`
 - `make` → `sudo insmod mymod.ko` → `dmesg | tail`
+
+## 状态
+
+⬜ 未开始 → 建议先把 Part A Phase 1 的 hello.ko 加载成功（30 分钟）。
+
+← [projects 总览](../README.md) · [07 模块](../../07-linux-kernel/) · [08.6 模块](../../08.6-kernel-debugging/)

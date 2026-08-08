@@ -1,10 +1,28 @@
 # P3 — 并发 HTTP Server（C → C++ 重写）
 
 > 先用 C + epoll + 线程池写一个并发 HTTP server，再用 Modern C++ 重写一遍，亲手感受 RAII/模板/移动语义怎么让代码更安全又不损性能。
+> **做法：项目驱动，[`04`](../../04-linux-userspace-api/) / [`15`](../../15-network-sockets/) / [`06`](../../06-cpp/) 笔记当字典——先上路，卡住再查。**
 
-## 项目目标
+---
 
-把"用户态系统编程"和"C++ 工程化"两条线在一个项目里打通。同一个功能写两遍，对比点不是"哪个快"，而是**资源管理、错误处理、类型安全**的代际差异。
+## 核心理念
+
+跟 P2 一样——不要先读完 TLPI 全书再开做。翻一眼标题知道 epoll 是什么、socket 四件套是什么，直接写代码。
+
+同一个 server 写两遍，对比点不是"哪个快"，而是**资源管理、错误处理、类型安全**的代代差异。
+
+---
+
+## 实现指南
+
+| Part | 内容 | 建议时间 |
+|------|------|----------|
+| [Part A：C 版](./Part-A-c-server.md) | epoll echo → HTTP 解析 → 线程池 → 静态文件 + 压测 | 3-4 小时 |
+| [Part B：C++ 重写](./Part-B-cpp-rewrite.md) | RAII fd → 线程池模板 → string_view/optional → 代码对比 | 3-4 小时 |
+
+**建议顺序**：先完成 Part A 全部 4 个 Phase，再做 Part B。Part B 是在 A 的基础上重写，不是从头开始。
+
+---
 
 ## 交付物
 
@@ -14,7 +32,7 @@
 - [ ] `epoll` 多路复用（ET 模式 + 非阻塞 fd）
 - [ ] 线程池（固定 worker 数，任务队列 + 互斥锁/条件变量）
 - [ ] HTTP/1.1 请求解析（GET/POST、Header、Content-Length）
-- [ ] 静态文件服务（mime 类型、目录索引）
+- [ ] 静态文件服务（mime 类型、`sendfile` 零拷贝）
 - [ ] 连接超时关闭
 
 ### Version B：C++ 重写版
@@ -38,29 +56,29 @@
 
 [P2](../P2-shell-malloc/)（进程/内存模型过关）。
 
-## 学习目标
-
-- epoll LT vs ET 的语义差异与陷阱
-- 线程池的任务窃取/唤醒/优雅关闭
-- RAII 如何消灭一类资源泄漏 bug
-- 移动语义在热路径减少拷贝的真实场景
-- C 风格错误处理 vs C++ `optional`/异常的取舍
-
 ## 里程碑
 
-1. **M1** C 版单线程 epoll echo server
-2. **M2** C 版加线程池 + HTTP 解析
-3. **M3** C 版静态文件服务跑通（用 ab/wrk 压测）
-4. **M4** C++ 版 RAII fd + 线程池模板
-5. **M5** C++ 版功能对齐 C 版，对比代码量/安全性
+1. **M1** C 版单线程 epoll echo server → [Part A Phase 1](./Part-A-c-server.md)
+2. **M2** C 版加线程池 + HTTP 解析 → [Part A Phase 2-3](./Part-A-c-server.md)
+3. **M3** C 版静态文件服务跑通（用 ab/wrk 压测）→ [Part A Phase 4](./Part-A-c-server.md)
+4. **M4** C++ 版 RAII fd + 线程池模板 → [Part B Phase 1-2](./Part-B-cpp-rewrite.md)
+5. **M5** C++ 版功能对齐 C 版，对比代码量/安全性 → [Part B Phase 3-4](./Part-B-cpp-rewrite.md)
 
 ## 参考模块
 
-- [04-linux-userspace-api/](../../04-linux-userspace-api/) — TLPI Ch58-63（socket）、Ch63（epoll）、Ch29-30（线程）
-- [05-os-from-scratch/](../../05-os-from-scratch/) — mikanos/thirty-days-os：syscall 与中断的内核侧
+- [04-linux-userspace-api/](../../04-linux-userspace-api/) — TLPI Ch56（socket）、Ch63（epoll）、Ch29-30（线程）
+- [15-network-sockets/](../../15-network-sockets/) — UNP、PNP epoll 实战
 - [06-cpp/](../../06-cpp/) — Effective Modern C++、Cpp-Concurrency、Cpp-Object-Model
 
 ## 压测工具
 
-- `ab -n 10000 -c 100 http://localhost:8080/`
-- `wrk -t4 -c100 -d10s http://localhost:8080/`
+```bash
+ab -n 10000 -c 100 http://localhost:8080/
+wrk -t4 -c100 -d10s http://localhost:8080/
+```
+
+## 状态
+
+⬜ 未开始 → 建议先把 Part A Phase 1 的 echo server 跑起来（30 分钟）。
+
+← [projects 总览](../README.md) · [04 模块](../../04-linux-userspace-api/) · [06 模块](../../06-cpp/)
