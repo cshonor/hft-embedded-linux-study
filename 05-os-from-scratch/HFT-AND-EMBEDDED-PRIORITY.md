@@ -1,7 +1,7 @@
 # HFT / 嵌入式主线 · 学什么、先搁置什么
 
 > **结论（定死）：** **`01 CSAPP → 02 C → 03 Hennessy → 04–07 内核/TLPI → 08/01 MikanOS → … → 17 HFT`**  
-> [02 30 天 OS](./thirty-days-os/) **彻底后置**。详 [LEARNING-CHAIN](../../LEARNING-CHAIN.md)
+> [02 30 天 OS](./thirty-days-os/) **彻底后置**。详 [README](../../README.md)
 
 ---
 
@@ -66,4 +66,4 @@
 |------|------|
 | [01-c-language/](../../01-c-language/) | **C 主线索引** · 笔记 → [外部 11-C](https://github.com/cshonor/cpp-learning-notes/tree/main/11-Linux-Kernel-DPDK-Network-C) |
 | [08/mikanos/](./mikanos/) | MikanOS |
-| [LEARNING-CHAIN.md](../../LEARNING-CHAIN.md) | 全链 `00`–`18` |
+| [README.md](../../README.md) | 全链 `00`–`18` |

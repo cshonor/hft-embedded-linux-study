@@ -1,6 +1,6 @@
 # 09 · 系统底层动手（自制 OS）
 
-**文件夹 `09`** · [LEARNING-CHAIN](../LEARNING-CHAIN.md)
+**文件夹 `09`** · [README](../README.md)
 
 > **定位：** **知其所以然 → 动手造** — 用最小系统把进程、中断、内存映射、指令执行「摸一遍」。  
 > **HFT 主线：** **直接 [01 MikanOS](./mikanos/)**；[02 30 天](./thirty-days-os/) 后置可选 — 见 **[HFT-AND-EMBEDDED-PRIORITY.md](./HFT-AND-EMBEDDED-PRIORITY.md)**  

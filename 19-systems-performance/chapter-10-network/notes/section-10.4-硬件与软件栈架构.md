@@ -44,7 +44,7 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
 
 **HFT：** `kernel`/`softirq` % 高 → 查 **RSS、RPS、中断亲和性**、是否该 **DPDK 旁路**。
 
-→ [09 Rosen NAPI/softirq](../../../17-kernel-networking/) · [CROSS-MODULE-GUIDE §二](../../CROSS-MODULE-GUIDE.md#二内核网络栈-vs-用户态旁路)
+→ [09 Rosen NAPI/softirq](../../../17-kernel-networking/) · [README 跨模块对照](../../README.md)
 
 ### CPU 扩展与内核绕过
 

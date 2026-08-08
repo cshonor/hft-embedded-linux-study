@@ -24,7 +24,7 @@
 | 09 | [Linux Kernel Networking](../17-kernel-networking/) | 内核实现 | 内核怎么收发包？ |
 | **08** | **本文件夹** | **用户态旁路** | **如何绕过内核栈、轮询收包？** |
 
-两条路线对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md#二内核网络栈-vs-用户态旁路)
+两条路线对照 → [README.md](../README.md)
 
 📋 完整主题清单 → [OUTLINE.md](./OUTLINE.md)
 

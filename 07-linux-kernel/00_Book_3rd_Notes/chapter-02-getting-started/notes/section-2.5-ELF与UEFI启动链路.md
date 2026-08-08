@@ -167,4 +167,4 @@ file /boot/efi/EFI/*/grubx64.efi   # PE32+ executable
 | GRUB `.efi` | PE；之后由它加载内核文件 |
 | `fork`/`exec` | **只存在于 Linux 进程世界**，加载的是 ELF |
 
-→ [§2.2 源码树](./section-2.2-内核源码树.md) · [§2.1](./section-2.1-获取内核源码.md) · [LEARNING-PATH-LOCKED](../../../../LEARNING-PATH-LOCKED.md)
+→ [§2.2 源码树](./section-2.2-内核源码树.md) · [§2.1](./section-2.1-获取内核源码.md) · [README](../../../../README.md)

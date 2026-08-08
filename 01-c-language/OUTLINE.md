@@ -68,4 +68,4 @@
 
 在 [README.md](./README.md) 勾选；上游原文见 [README.external.md](./README.external.md)。
 
-← [README](./README.md) · [LEARNING-CHAIN](../LEARNING-CHAIN.md)
+← [README](./README.md) · [README](../README.md)

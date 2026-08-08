@@ -91,4 +91,4 @@ Ch 21    TCA / markout
 Ch 25–27 PFOF · 碎片化 · 电子化
 ```
 
-完整路线 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md) · [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
+完整路线 → [README.md](../README.md) · [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

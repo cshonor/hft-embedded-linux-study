@@ -67,7 +67,7 @@ arch/<arch>/  ·  drivers/  ← 架构细节 / 某硬件
 | 本仓库主树 | **linux-7.1.5**（Desktop，见 [§2.1](./section-2.1-获取内核源码.md)） |
 | 放置 | 用户目录；**勿** `/usr/src/linux` |
 
-**Phase：** 主用于 **Phase4 读 LKD**；Phase1–2 收藏即可。→ [LEARNING-PATH-LOCKED](../../../../LEARNING-PATH-LOCKED.md)
+**Phase：** 主用于 **Phase4 读 LKD**；Phase1–2 收藏即可。→ [README](../../../../README.md)
 
 镜像如何被 UEFI 加载 → [§2.5](./section-2.5-ELF与UEFI启动链路.md)
 

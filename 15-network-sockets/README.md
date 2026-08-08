@@ -1,6 +1,6 @@
 # 15 · 网络 Socket 编程
 
-**文件夹 15** · 编号即读序 · [锁定路线](../LEARNING-PATH-LOCKED.md)
+**文件夹 15** · 编号即读序 · [锁定路线](../README.md)
 
 > **定位：** 用户态网络 API 与并发模型 — 为内核网络 / DPDK / HFT 打底。  
 > **前置：** [04 用户态 API](../04-linux-userspace-api/) · [06 C++](../06-cpp/)  

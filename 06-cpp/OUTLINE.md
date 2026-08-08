@@ -101,4 +101,4 @@
 
 ---
 
-← [09 导读](./README.md) · [LEARNING-CHAIN](../LEARNING-CHAIN.md) · [02 C](../01-c-language/)
+← [09 导读](./README.md) · [README](../README.md) · [02 C](../01-c-language/)

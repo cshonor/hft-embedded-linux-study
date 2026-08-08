@@ -11,4 +11,4 @@
 - 实体书：[chapter-09-hardware-offload/](./chapter-09-hardware-offload/) · [chapter-06-pcie-packet-io/](./chapter-06-pcie-packet-io/)
 - 上一章：[chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
 - 下一章：[chapter-05-组播行情接入.md](./chapter-05-组播行情接入.md)
-- 跨模块：[CROSS-MODULE-GUIDE §二](../../../CROSS-MODULE-GUIDE.md#二内核网络栈-vs-用户态旁路)
+- 跨模块：[README 跨模块对照](../../../README.md)

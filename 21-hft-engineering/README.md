@@ -3,7 +3,7 @@
 **文件夹 15** · [返回总清单](../READING-LIST.md#与-15-hft-low-latency-practice-章节映射)
 
 > **前置：** `08` TLPI → `07` 自制 OS → `09`–`14` 网络栈  
-> 全链路 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md)
+> 全链路 → [README.md](../README.md)
 
 ## 与网络板块的分界
 

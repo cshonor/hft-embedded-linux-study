@@ -1,6 +1,6 @@
 # 02 · C 语言 · 系统级编程
 
-**文件夹 `02`** · [LEARNING-CHAIN](../LEARNING-CHAIN.md) · [OUTLINE](./OUTLINE.md)
+**文件夹 `02`** · [README](../README.md) · [OUTLINE](./OUTLINE.md)
 
 > **定位：** 面向 **底层 / Linux 内核** 的经典 C 书单（五书 + `code`）。  
 > 路线：**K&R（C89）→ 进阶标准 C → GNU C → 内核**。  

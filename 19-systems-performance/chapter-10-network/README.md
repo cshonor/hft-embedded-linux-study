@@ -102,6 +102,6 @@ Ch 10 网络（本章：栈、TCP、工具、sysctl）
 - DPDK 旁路：[18-dpdk](../../18-dpdk/)
 - XDP：[15-BPF note-XDP](../../20-bpf-observability/note-XDP与tc-BPF.md)
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
-- 跨模块对照：[CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)
+- 跨模块对照：[README.md](../README.md)
 - HFT 工程：[12-HFT ch06/ch10](../../21-hft-engineering/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

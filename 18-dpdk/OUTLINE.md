@@ -64,4 +64,4 @@
 
 > **何时开读：** `01`/`02` 打底 + perf 定位网络瓶颈。详见 [note-DPDK实体书递进](./01-Intro-Book/notes/note-DPDK实体书递进.md)。
 
-跨模块对照 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)
+跨模块对照 → [README.md](../README.md)

@@ -113,4 +113,4 @@
 - [01-Intro-Book](../README.md) · [02-Advanced-Book](../../02-Advanced-Book/)
 - [10 总目录](../../README.md) · [OUTLINE](../../OUTLINE.md)
 - [note-openonload-rdma对比](../../02-Advanced-Book/notes/note-openonload-rdma对比.md)
-- [CROSS-MODULE-GUIDE §二](../../../CROSS-MODULE-GUIDE.md#二内核网络栈-vs-用户态旁路)
+- [README 跨模块对照](../../../README.md)

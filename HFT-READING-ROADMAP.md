@@ -1,7 +1,7 @@
 # HFT 系统开发 · 完整阅读路线图
 
-> **执行顺序定稿：** [LEARNING-PATH-LOCKED.md](./LEARNING-PATH-LOCKED.md)（**编号 = 读序**）。  
-> 本文保留分章精读细节；与锁定 Phase 冲突时 **以锁定文档为准**。摘要 → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
+> **执行顺序定稿：** [README.md](./README.md)（**编号 = 读序**）。  
+> 本文保留分章精读细节；与锁定 Phase 冲突时 **以锁定文档为准**。摘要 → [README.md](./README.md)
 
 ### 核心段（文件夹编号 = 读序）
 
@@ -81,7 +81,7 @@
 > **C：** [01-c-language/](./01-c-language/) — Phase2 第一课。  
 > **C++：** [06-cpp/](./06-cpp/) — Phase3 穿插；进 `15` sockets 前至少 Modern C++。
 
-> **板块：** `00`–`23` 技术模块；跨模块对照 → [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+> **板块：** `00`–`23` 技术模块；跨模块对照 → [README.md](./README.md)
 
 ---
 
@@ -202,7 +202,7 @@
 | UDP 组播行情 | 🔴 | 交易所行情主路径 |
 | OpenOnload / RDMA 对比 | 🟡 | 方案选型 |
 
-> 与 `07`/`08`/`09` **并行互补**；详见 [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+> 与 `07`/`08`/`09` **并行互补**；详见 [README.md](./README.md)
 
 ### ⑤ Computer Architecture 6th
 
@@ -271,7 +271,7 @@
 - [ ] 读过 UDP/组播协议（TCP/IP 卷一）+ epoll/非阻塞（UNP）
 - [ ] 理解 LOB、限价单/市价单、撮合与 queue priority
 - [ ] 能读无锁结构并知道 memory order 硬件原因（Hennessy + CSAPP）
-- [ ] 会用 eBPF 查生产抖动；知道 DPDK 旁路与内核栈取舍（⑫ + CROSS-MODULE-GUIDE）
+- [ ] 会用 eBPF 查生产抖动；知道 DPDK 旁路与内核栈取舍（⑫ + README 跨模块对照）
 
 ---
 
@@ -285,7 +285,7 @@
 | [10–14 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线10–14) | 10–14 |
 | [15–18 网络](./15-network-sockets/) · [19–20 性能](./19-systems-performance/) · [21 HFT](./21-hft-engineering/) | 15–21 |
 
-→ [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) · [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md)
+→ [README.md](./README.md) · [README.md](./README.md)
 
 ---
 

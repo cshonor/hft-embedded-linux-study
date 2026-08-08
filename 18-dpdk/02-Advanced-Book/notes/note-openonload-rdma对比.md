@@ -32,4 +32,4 @@
 - [note-DPDK实体书递进](../../01-Intro-Book/notes/note-DPDK实体书递进.md) — ② 本书与 DPDK/RDMA/XDP 全书地图
 - 上一梯度：[01-Intro chapter-05](../../01-Intro-Book/notes/chapter-05-组播行情接入.md)
 - XDP 对照：[note-XDP与DPDK对照](./note-XDP与DPDK对照.md)
-- 跨模块：[CROSS-MODULE-GUIDE §六](../../../CROSS-MODULE-GUIDE.md#六openonload--rdma轻量化不建新文件夹)
+- 跨模块：[README 跨模块对照](../../../README.md)

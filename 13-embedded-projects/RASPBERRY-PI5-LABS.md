@@ -2,7 +2,7 @@
 
 > **板卡：** Raspberry Pi 5（BCM2712 + RP1）  
 > **定位：** 吃透原理、验证代码；极致低延迟生产环境后续上 x86。  
-> **主线：** 仍按 [LEARNING-PATH-LOCKED.md](../LEARNING-PATH-LOCKED.md) 推进；本文是 **动手清单**，不是另开一条书。  
+> **主线：** 仍按 [README.md](../README.md) 推进；本文是 **动手清单**，不是另开一条书。  
 > **硬件归类（Primer Ch3）：** BCM2712 是 **ARM SoC**，不是独立 CPU+南北桥 — [说明](../11-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-raspberry-pi-is-soc.md)。  
 > **官方镜像：** 评估板级开箱可用；自研 PCB 时 BSP 只是模板 — [BSP FAQ](../11-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-bsp-is-template-not-product.md)。
 
@@ -130,7 +130,7 @@
 | 当它是什么 | 不当它是什么 |
 |------------|--------------|
 | **项目式实践**：环境 → `.ko` → GPIO / 中断 → 板上可演示 | 替代 [01 C](../01-c-language/) / [04 TLPI](../04-linux-userspace-api/) / 官方内核文档 |
-| 把 C、命令行、内核模块串成闭环 | 与 [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md) 平行的第二大纲 |
+| 把 C、命令行、内核模块串成闭环 | 与 [README](../README.md) 平行的第二大纲 |
 | 产出：流程 + 可运行代码 + 本仓库笔记 | 只跟做、无验收勾选 |
 
 ### 和本表 Phase 的咬合

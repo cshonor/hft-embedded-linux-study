@@ -2,7 +2,7 @@
 
 **文件夹 14** · 全书 **18 章 + 附录 A–E**（4 Parts）· [返回总清单](../READING-LIST.md#8-bpf-performance-tools--brendan-gregg)
 
-> **文件夹 14** · 紧接 [14-Systems-Performance](../19-systems-performance/) · **同样后置**（见 [LEARNING-CHAIN](../LEARNING-CHAIN.md)）。  
+> **文件夹 14** · 紧接 [14-Systems-Performance](../19-systems-performance/) · **同样后置**（见 [README](../README.md)）。  
 > **建议时机：** 已有 Linux 内核/网络/DPDK 或 HFT 压测靶子后再开 — 用 BPF 验证真实系统。  
 > **后续：** [16-HFT](../21-hft-engineering/) / [17-Rust](../22-rust-quant/)
 
@@ -95,4 +95,4 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 - SysPerf bpftrace 附录 → [02 appendix-C](../19-systems-performance/appendix-C-bpftrace单行命令.md)
 - 后续内核/内存/网络 → [07-linux-kernel](../07-linux-kernel/) · [09-linux-mm](../09-linux-mm/) · [13-Rosen](../17-kernel-networking/)（读时可回头用 BPF 验证）
 - DPDK 对照 → [13-DPDK](../18-dpdk/)
-- 跨模块 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)
+- 跨模块 → [README.md](../README.md)

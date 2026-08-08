@@ -2,7 +2,7 @@
 
 本清单锁定 **9 本**英文原版（含 CSAPP、TLPI，已剔除 *Programming Rust*），以及 **外部仓库书目**（PNP、UNP、TCP/IP），按 HFT 低延迟学习先后排序。
 
-**总阅读顺序** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · **文件夹顺序** → [LEARNING-CHAIN.md](./LEARNING-CHAIN.md)
+**总阅读顺序** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · **文件夹顺序** → [README.md](./README.md)
 
 **按文件夹读：** `00`–`23` 技术模块 · **编号=读序** · 嵌入式 `10`–`14`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线10–14-文件夹)）
 
@@ -168,7 +168,7 @@
 
 **HFT 产出：** 理解内核栈 vs DPDK 旁路取舍；组播行情最小工程见 `01-Intro-Book/code/mcast-minimal/`。
 
-**交叉阅读：** [CROSS-MODULE-GUIDE.md](./CROSS-MODULE-GUIDE.md) · 对照 [10-UNP](./15-network-sockets/unix-network-api/) · [01-CSAPP Ch6/Ch11](./02-computer-systems/)
+**交叉阅读：** [README.md](./README.md) · 对照 [10-UNP](./15-network-sockets/unix-network-api/) · [01-CSAPP Ch6/Ch11](./02-computer-systems/)
 
 ---
 
@@ -356,7 +356,7 @@
 
 ## 阅读节奏总览
 
-> 与 [LEARNING-CHAIN.md](./LEARNING-CHAIN.md) 对齐。
+> 与 [README.md](./README.md) 对齐。
 
 ```
 L0  00 数字逻辑/CPU

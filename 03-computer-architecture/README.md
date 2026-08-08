@@ -58,4 +58,4 @@ Ch 2 → Ch 5 → Ch 1 → Ch 3
 
 - 程序员落地 → [02-computer-systems](../02-computer-systems/)
 - 虚拟内存 → [03-Gorman](../09-linux-mm/)
-- 跨模块 → [CROSS-MODULE-GUIDE.md](../CROSS-MODULE-GUIDE.md)
+- 跨模块 → [README.md](../README.md)

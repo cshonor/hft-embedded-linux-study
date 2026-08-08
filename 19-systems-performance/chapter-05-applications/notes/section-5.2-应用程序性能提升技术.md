@@ -43,7 +43,7 @@
 - 两个线程写**同一 cache line** 不同变量 → MESI 来回 invalidation，性能暴跌。
 - 对策：`alignas(64)` 填充、per-core 计数器、无锁结构分槽。
 
-→ [02-Hennessy Ch2](../../../03-computer-architecture/) MESI · [13-DPDK CROSS-MODULE](../../CROSS-MODULE-GUIDE.md#四内存与-cache-对照)
+→ [02-Hennessy Ch2](../../../03-computer-architecture/) MESI · [13-DPDK CROSS-MODULE](../../README.md)
 
 ### 其他技术
 

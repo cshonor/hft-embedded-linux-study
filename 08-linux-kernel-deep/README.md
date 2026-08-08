@@ -1,6 +1,6 @@
 # 16 · Understanding the Linux Kernel 3rd
 
-**ULK** · Daniel P. Bovet & Marco Cesati · [返回 LEARNING-CHAIN](../LEARNING-CHAIN.md)
+**ULK** · Daniel P. Bovet & Marco Cesati · [返回 README](../README.md)
 
 > **定位：** **LKD 与源码之间的桥梁** — LKD 讲子系统 **做什么**；ULK 拆 **数据结构、算法、关键路径源码**（基于 **Linux 2.6** 时代，概念仍适用，版本号需对照 modern kernel）。  
 > **深度 VM：** 仍由 [09-linux-mm](../09-linux-mm/) 负责；ULK Ch 8–9/17 作 **内核 MM 总览** 与 Gorman 衔接。

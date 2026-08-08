@@ -3,10 +3,10 @@
 **文件夹 13** · 全书 **16 章 + 附录 A–E** · [返回总清单](../READING-LIST.md#1-systems-performance-enterprise-and-the-cloud-2nd--brendan-gregg)
 
 > **文件夹 13** · 性能分析方法论。  
-> **执行顺序（HFT）：** 建议在 **06 TLPI + 07/01 MikanOS + 09–13 网络/DPDK** 之后、**16 HFT** 之前开读（见 [LEARNING-CHAIN](../LEARNING-CHAIN.md)）。  
+> **执行顺序（HFT）：** 建议在 **06 TLPI + 07/01 MikanOS + 09–13 网络/DPDK** 之后、**16 HFT** 之前开读（见 [README](../README.md)）。  
 > **前置：** [01-CSAPP](../02-computer-systems/) · [02-Hennessy](../03-computer-architecture/) · 最好已有 **03–06** 系统基础  
 > **下一本：** [15-BPF](../20-bpf-observability/)（紧接 13）  
-> 全链路 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md)
+> 全链路 → [README.md](../README.md)
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 

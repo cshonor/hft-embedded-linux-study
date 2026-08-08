@@ -43,7 +43,7 @@ Ch 11 定时器 / jiffies / tick
 Ch 3、12、15 选读补上下文
 ```
 
-> **笔记深度：** 上列精读章 + Ch12/15 小节笔记已按嵌入式驱动 / HFT 加厚（表格式 + ASCII + `**HFT:**` 桥）。执行 Phase 仍以仓库根 [LEARNING-PATH-LOCKED.md](../../LEARNING-PATH-LOCKED.md) 为准（LKD = Phase4）。  
+> **笔记深度：** 上列精读章 + Ch12/15 小节笔记已按嵌入式驱动 / HFT 加厚（表格式 + ASCII + `**HFT:**` 桥）。执行 Phase 仍以仓库根 [README.md](../../README.md) 为准（LKD = Phase4）。  
 > **源码导航：** [Ch2 §2.2 源码树](./chapter-02-getting-started/notes/section-2.2-内核源码树.md)（顶层目录 ↔ 章节对照）
 
 → [09-linux-mm](../../09-linux-mm/) 深读内存

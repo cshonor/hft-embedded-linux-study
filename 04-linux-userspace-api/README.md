@@ -2,7 +2,7 @@
 
 **标准简称：TLPI** · 中文常译：《Linux/UNIX 系统编程手册》
 
-**文件夹 `07`** · [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md) · [OUTLINE](./OUTLINE.md) · [CHAPTER-MAP](./CHAPTER-MAP.md) · [READING-LIST](../READING-LIST.md)
+**文件夹 `07`** · [README](../README.md) · [OUTLINE](./OUTLINE.md) · [CHAPTER-MAP](./CHAPTER-MAP.md) · [READING-LIST](../READING-LIST.md)
 
 > **章号：** `chapter-NN-*` 中 **NN = 书内章号**；**Ch1–64 各恰好一个目录**（见 [CHAPTER-MAP](./CHAPTER-MAP.md)）。书外内容在 `extras-*`。
 
@@ -19,7 +19,7 @@
 | 驱动 / 模块 | ❌ **不讲** | LKD 入门；驱动另开专项 |
 
 > **先 TLPI、后 LKD：** 还不会用 `mmap()`，就去啃内核 VM 源码，极易劝退。  
-> 锁定路线：**CSAPP → TLPI（+网络）→ 再精读 LKD / Gorman / ULK**（见 [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md) Phase3→4）。
+> 锁定路线：**CSAPP → TLPI（+网络）→ 再精读 LKD / Gorman / ULK**（见 [README](../README.md) Phase3→4）。
 
 ---
 

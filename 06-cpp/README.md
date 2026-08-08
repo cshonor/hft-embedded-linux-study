@@ -1,6 +1,6 @@
 # 09 · C++ 学习链
 
-**文件夹 `09`** · [OUTLINE](./OUTLINE.md) · [LEARNING-CHAIN](../LEARNING-CHAIN.md)
+**文件夹 `09`** · [OUTLINE](./OUTLINE.md) · [README](../README.md)
 
 > **定位：** 本仓库 **`10` PNP / muduo**、**`17` HFT** 的 C++ 前置。  
 > **笔记正文已在本目录：** 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制，按 M0–M4 五个模块组织（每个模块内部书从 01 开始编号）。  
@@ -70,4 +70,4 @@
 | [17 HFT](../21-hft-engineering/) | 前置 Modern + Concurrency + Object Model |
 | [02 C](../01-c-language/) | C 数据面；与 C++ **分工不重复** |
 
-← [LEARNING-CHAIN](../LEARNING-CHAIN.md) · [READING-LIST](../READING-LIST.md)
+← [README](../README.md) · [READING-LIST](../READING-LIST.md)

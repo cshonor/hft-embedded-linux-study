@@ -3,7 +3,7 @@
 > **Michael Kerrisk** · *The Linux Programming Interface*（2nd ed.）  
 > **定位：** 用户态系统 API — [README](./README.md)  
 > 标签：🔴 必读 · 🟡 选读 · ⚪ 跳过  
-> 锁定读序：Phase3 — [LEARNING-PATH-LOCKED](../LEARNING-PATH-LOCKED.md)  
+> 锁定读序：Phase3 — [README](../README.md)  
 > **一书一目录（Ch1–64）** — [CHAPTER-MAP.md](./CHAPTER-MAP.md)
 
 ## Part I · 基础（Ch1–5）

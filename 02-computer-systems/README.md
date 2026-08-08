@@ -5,7 +5,7 @@
 > **文件夹 01** · 知其所以然 — 程序如何在硬件上跑。  
 > **机器级默认架构：** **x86-64 + Linux System V + AT&T gas**（Ch3 起）；**HFT 只练 AT&T，不学 Intel 语法**。Ch4 **Y86-64** 仅为流水线教学子集。ARM 对照 → [19-ARM64](../10-arm-architecture/)。
 > **下一本：** [14-Systems-Performance](../19-systems-performance/) → [15-BPF](../20-bpf-observability/) → [16-HFT](../21-hft-engineering/) / [13-Rust](../22-rust-quant/)  
-> 全链路 → [LEARNING-CHAIN.md](../LEARNING-CHAIN.md)
+> 全链路 → [README.md](../README.md)
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 
