@@ -65,4 +65,38 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **22** | [rust-quant](./22-rust-quant/) — Rust 量化 |
 | **23** | [markets-microstructure](./23-markets-microstructure/) — 市场微观结构 |
 
+---
+
+## Project 驱动学习路线
+
+> 不是"先读完书再做项目"，而是**项目本身就是学习路径**——卡住了翻书查对应模块，做完就自然学会了。
+
+```
+P1 CPU 模拟器 → P2 Shell+malloc → P3 并发 HTTP Server → P4 内核模块
+ → P5 树莓派嵌入式（5 子项目）
+ → P6 网络协议分析器 → P7 DPDK 转发+延迟剖析
+ → P8 迷你撮合引擎（终极大作业）
+```
+
+| Project | 做什么 | 覆盖模块 | 前置 |
+|:-------:|--------|:--------:|:----:|
+| **P1** | Logisim/Verilog 搭 8-bit CPU（ALU+寄存器+FSM） | `00` | 无 |
+| **P2** | C 写 mini shell（fork/exec/pipe）+ 自制 malloc/free | `01` `02` | P1 |
+| **P3** | 并发 HTTP Server：C 版（epoll+线程池）→ C++ 重写版（RAII+模板） | `04` `05` `06` | P2 |
+| **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `07` `08.5` `09` | P3 |
+| **P5** | 树莓派嵌入式 Linux 全链路（5 子项目见下） | `10`–`14` | P4 |
+| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `15` `16` `17` `17.5` | P3 |
+| **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `18` `19` `20` | P6 |
+| **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `21` `22` `23` | P4+P5+P7 |
+
+### P5 子项目（树莓派嵌入式）
+
+| 子项目 | 交付 | 模块 |
+|:------:|------|:----:|
+| P5a | QEMU 裸机 UART Hello World | `10` |
+| P5b | U-Boot → kernel → rootfs 启动到 shell | `11` |
+| P5c | I2C/SPI 传感器驱动 + 设备树 | `12` |
+| P5d | 多线程传感器融合 + 延迟 p99 统计 | `13` |
+| P5e | PID 姿态控制（可选） | `14` |
+
 > **当前：** Phase1 `00` digital-logic-cpu。下一站 Phase2：`01` C → `02` computer-systems。
