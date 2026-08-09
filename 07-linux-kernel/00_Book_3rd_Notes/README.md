@@ -2,7 +2,7 @@
 
 **00_Book_3rd_Notes** · 全书 **20 章** · [返回 05 总目录](../README.md) · [返回总清单](../../READING-LIST.md#2-linux-kernel-development--robert-love)
 
-> **前置建议：** 建议先完成 [01 LFS](../01_Course_LFS/)，再通读本书。见 [LEARNING-PATH.md](../LEARNING-PATH.md)。
+> **前置建议：** 建议先做 [P3.5 BusyBox 极简 Linux](../../projects/P3.5-busybox-minimal-linux/)（编译内核+rootfs 实操），再通读本书。
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
 

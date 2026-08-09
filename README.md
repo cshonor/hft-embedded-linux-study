@@ -203,7 +203,8 @@ Phase6  拓展: 03 · 08 · 22 · 23 ·（兴趣）14
 > 项目脚手架 → [`projects/`](./projects/)
 
 ```
-P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Server → P4 内核模块
+P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Server → P3.5 BusyBox 极简 Linux
+ → P4 内核模块
  → P5 树莓派嵌入式（5 子项目）
  → P6 网络协议分析器 → P7 DPDK 转发+延迟剖析
  → P8 迷你撮合引擎（终极大作业）
@@ -215,7 +216,8 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 | **P2** | C 写 mini shell（fork/exec/pipe）+ 自制 malloc/free + C 特性练手 | `01` `02` | P1 | [projects/P2-shell-malloc](./projects/P2-shell-malloc/) |
 | **P2.5** | GNU C 工具箱：container_of + 侵入式链表 + 无锁 ring buffer + vtable | `01` | P2 | [projects/P2.5-c-toolkit](./projects/P2.5-c-toolkit/) |
 | **P3** | 并发 HTTP Server：C 版（epoll+线程池）→ C++ 重写版（RAII+模板） | `04` `05` `06` | P2 | [projects/P3-http-server](./projects/P3-http-server/) |
-| **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `07` `08.5` `08.6` `09` | P3+P2.5 | [projects/P4-kernel-module](./projects/P4-kernel-module/) |
+| **P3.5** | BusyBox 极简 Linux：内核编译 + rootfs + QEMU 启动到 shell | `07` `11` | P3 | [projects/P3.5-busybox-minimal-linux](./projects/P3.5-busybox-minimal-linux/) |
+| **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `07` `08.5` `08.6` `09` | P3+P3.5+P2.5 | [projects/P4-kernel-module](./projects/P4-kernel-module/) |
 | **P5** | 树莓派嵌入式 Linux 全链路（5 子项目见下） | `10`–`14` | P4 | [projects/P5-raspberry-pi-embedded](./projects/P5-raspberry-pi-embedded/) |
 | **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `15` `16` `17` `17.5` `20` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
 | **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `18` `19` `20` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |

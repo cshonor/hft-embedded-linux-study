@@ -1,19 +1,18 @@
 # Linux Kernel Development — 内核开发总目录
 
-**文件夹 02** · 书本主线 + LFS 前置 · [返回总清单](../READING-LIST.md#2-linux-kernel-development--robert-love)
+**文件夹 07** · LKD 第三版笔记 · [返回总清单](../READING-LIST.md#2-linux-kernel-development--robert-love)
 
-> **归类逻辑：** LFS 视频课是《Linux Kernel Development 第三版》的**前置预习**；书本是**主线核心**。全部归属「Linux 内核开发」大主题，检索与复习统一入口。
+> **书本是主线核心。** 体系化梳理内核机制，查漏补缺。  
+> 内核编译/rootfs 实操 → [P3.5 BusyBox 极简 Linux](../projects/P3.5-busybox-minimal-linux/)
 
 ---
 
 ## 子目录
 
-| 序号 | 文件夹 | 内容 | 与书本关系 |
-|------|--------|------|-----------|
-| 00 | [00_Book_3rd_Notes](./00_Book_3rd_Notes/) | Love · LKD 第三版 · 20 章 | **主线** — 体系化梳理、查漏补缺 |
-| 01 | [01_Course_LFS](./01_Course_LFS/) | LFS 从零构建系统 | 前置：编译上下文、用户态/内核态边界 |
+| 序号 | 文件夹 | 内容 |
+|------|--------|------|
+| 00 | [00_Book_3rd_Notes](./00_Book_3rd_Notes/) | Love · LKD 第三版 · 20 章 — **主线** |
 
-📋 LFS ↔ 书本阅读关系 → [LEARNING-PATH.md](./LEARNING-PATH.md)  
 🗺️ 源码顶层目录 ↔ LKD 章节 → [Ch2 §2.2](./00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.2-内核源码树.md)
 
 ---
@@ -21,12 +20,12 @@
 ## 推荐学习顺序
 
 ```
-01 LFS（整机构建、编译上下文）
+P3.5 BusyBox 极简 Linux（编译内核 + rootfs + 启动链实操）
   ↓
-00 LKD 第三版（通读 + 在 00_Book_3rd_Notes 补笔记）
+通读 LKD 第三版（在 00_Book_3rd_Notes 补笔记）
 ```
 
-**正确节奏：** LFS 建立感性认知 → 书本系统化串联 → 把书本内容补回 `00_Book_3rd_Notes`。
+**正确节奏：** P3.5 建立感性认知 → 书本系统化串联。
 
 ---
 

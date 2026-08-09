@@ -44,7 +44,7 @@
 
 ## 前置
 
-[P3](../P3-http-server/)（用户态系统编程 + C++ 过关）+ [P2.5](../P2.5-c-toolkit/)（GNU C 扩展 + container_of / 链表过关）。
+[P3](../P3-http-server/)（用户态系统编程 + C++ 过关）+ [P3.5](../P3.5-busybox-minimal-linux/)（内核编译 + rootfs + 启动链实操）+ [P2.5](../P2.5-c-toolkit/)（GNU C 扩展 + container_of / 链表过关）。
 
 ## 学习目标
 

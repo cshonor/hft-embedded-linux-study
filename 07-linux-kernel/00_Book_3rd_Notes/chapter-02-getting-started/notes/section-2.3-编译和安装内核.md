@@ -5,7 +5,7 @@
 > **对本机的硬提醒：**  
 > `C:\Users\12392\Desktop\linux-7.1.5` 适合 **阅读对照 LKD**。  
 > **不要在纯 Windows 里对这棵树执行 `make` 当启动内核用** — 需要 **Linux 本机 / WSL2 / 虚拟机 / 交叉编译到板子**。  
-> 学习 Phase：现在 Phase1–2 以读源码为主；**真编译** 建议放到 Phase4（LKD/LFS）或嵌入式 `11-embedded-boot-build` 时再上机。
+> 学习 Phase：现在 Phase1–2 以读源码为主；**真编译** 建议放到 Phase4（LKD）或嵌入式 `11-embedded-boot-build` 时再上机。
 
 ---
 
@@ -161,7 +161,7 @@ sudo make install          # 发行版支持时
 | 入口 | 用途 |
 |------|------|
 | [§2.1 获取源码](./section-2.1-获取内核源码.md) | 版本 7.1.5 / 2.6.34、下载验收 |
-| [01 LFS p11–p12](../../../01_Course_LFS/) | 从零构建语境下的编译课 |
+| [P3.5 BusyBox 极简 Linux](../../../../projects/P3.5-busybox-minimal-linux/) | 从零构建语境下的内核编译课 |
 | [11-embedded-boot-build](../../../../11-embedded-boot-build/) | 嵌入式构建、交叉编译 |
 | [§2.2 源码树](./section-2.2-内核源码树.md) | 编译前先认目录 |
 

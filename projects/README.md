@@ -15,6 +15,8 @@ P2.5 C 工具箱（GNU C 桥梁）
   ↓
 P3 并发 HTTP Server ──────────┐
   ↓                            │
+P3.5 BusyBox 极简 Linux         │
+  ↓                            │
 P4 内核模块                    │
   ↓                            │
 P5 树莓派嵌入式（P5a–P5e）      │
@@ -34,7 +36,8 @@ P5 树莓派嵌入式（P5a–P5e）      │
 | [P2](./P2-shell-malloc/) | mini shell + 自制 malloc/free + C 特性练手 | `01` `02` | P1 | ⬜ 未开始 |
 | [P2.5](./P2.5-c-toolkit/) | GNU C 工具箱：container_of + 侵入式链表 + ring buffer | `01` | P2 | ⬜ 未开始 |
 | [P3](./P3-http-server/) | 并发 HTTP Server（C → C++ 重写） | `04` `05` `06` | P2 | ⬜ 未开始 |
-| [P4](./P4-kernel-module/) | 可加载内核模块（字符设备+kmalloc+/proc） | `07` `08.5` `08.6` `09` | P3+P2.5 | ⬜ 未开始 |
+| [P3.5](./P3.5-busybox-minimal-linux/) | BusyBox 极简 Linux（内核编译+rootfs+启动链） | `07` `11` | P3 | ⬜ 未开始 |
+| [P4](./P4-kernel-module/) | 可加载内核模块（字符设备+kmalloc+/proc） | `07` `08.5` `08.6` `09` | P3+P3.5+P2.5 | ⬜ 未开始 |
 | [P5](./P5-raspberry-pi-embedded/) | 树莓派嵌入式全链路（5 子项目） | `10`–`14` | P4 | ⬜ 未开始 |
 | [P6](./P6-network-protocol-analyzer/) | 抓包+逐层解析+TCP 流重组+eBPF | `15` `16` `17` `17.5` `20` | P3 | ⬜ 未开始 |
 | [P7](./P7-dpdk-forwarder-profiling/) | DPDK forwarder+perf 火焰图+bpftrace | `18` `19` `20` | P6 | ⬜ 未开始 |
