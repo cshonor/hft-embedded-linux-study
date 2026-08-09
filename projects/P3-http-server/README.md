@@ -15,10 +15,10 @@
 
 ## 实现指南
 
-| Part | 内容 | 建议时间 |
-|------|------|----------|
-| [Part A：C 版](./Part-A-c-server.md) | epoll echo → HTTP 解析 → 线程池 → 静态文件 + 压测 | 3-4 小时 |
-| [Part B：C++ 重写](./Part-B-cpp-rewrite.md) | RAII fd → 线程池模板 → string_view/optional → 代码对比 | 3-4 小时 |
+| Part | 内容 | 建议时间 | 可运行工程 |
+|------|------|----------|------------|
+| [Part A：C 版](./Part-A-c-server.md) | epoll echo → HTTP 解析 → 线程池 → 静态文件 + 压测 | 3-4 小时 | [`part-a-c-server/`](./part-a-c-server/) `make` → `./echo_server` (:8080) |
+| [Part B：C++ 重写](./Part-B-cpp-rewrite.md) | RAII fd → 线程池模板 → string_view/optional → 代码对比 | 3-4 小时 | [`part-b-cpp-rewrite/`](./part-b-cpp-rewrite/) `make` → `./echo_server` (:8081) |
 
 **建议顺序**：先完成 Part A 全部 4 个 Phase，再做 Part B。Part B 是在 A 的基础上重写，不是从头开始。
 

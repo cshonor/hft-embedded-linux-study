@@ -14,10 +14,10 @@
 
 ## 实现指南
 
-| Part | 内容 | 建议时间 |
-|------|------|----------|
-| [Part A：Hello + 字符设备](./Part-A-hello-chardev.md) | hello world 模块 → 字符设备 open/read/write → 用户态测试 | 2-3 小时 |
-| [Part B：/proc + 调试](./Part-B-proc-debug.md) | kmalloc 追踪 → /proc 统计 → 故意写 bug 用 KASAN/Oops 定位 | 3-4 小时 |
+| Part | 内容 | 建议时间 | 可运行工程 |
+|------|------|----------|------------|
+| [Part A：Hello + 字符设备](./Part-A-hello-chardev.md) | hello world 模块 → 字符设备 open/read/write → 用户态测试 | 2-3 小时 | [`part-a-hello-chardev/`](./part-a-hello-chardev/)（需 Linux 内核头） |
+| [Part B：/proc + 调试](./Part-B-proc-debug.md) | kmalloc 追踪 → /proc 统计 → 故意写 bug 用 KASAN/Oops 定位 | 3-4 小时 | [`part-b-proc-debug/`](./part-b-proc-debug/) |
 
 **建议顺序**：先完成 Part A（能 insmod + 读写设备），再做 Part B（加统计 + 调试）。
 

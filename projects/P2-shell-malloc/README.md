@@ -2,13 +2,15 @@
 
 > C 写一个能跑管道的小 shell，再手写一套 malloc/free，把"程序=机器"从理论变肌肉记忆。
 
-## 三个部分
+## 三个部分（各自可 `make` 的工程）
 
-| Part | 做什么 | 详细指南 |
-|------|--------|----------|
-| **A** | mini shell：fork/exec/pipe/重定向/信号 | [Part-A-shell.md](./Part-A-shell.md) |
-| **B** | malloc/free：隐式链表 → 显式链表 → 分离适配 | [Part-B-malloc.md](./Part-B-malloc.md) |
-| **C** | C 语言特性练手（轻量，在 A/B 代码上加） | [Part-C-c-exercises.md](./Part-C-c-exercises.md) |
+| Part | 做什么 | 指南 | 可运行工程 |
+|------|--------|------|------------|
+| **A** | mini shell：fork/exec/pipe/重定向/信号 | [Part-A-shell.md](./Part-A-shell.md) | [`part-a-shell/`](./part-a-shell/) → `make && ./myshell` |
+| **B** | malloc/free：隐式链表 → 显式链表 → 分离适配 | [Part-B-malloc.md](./Part-B-malloc.md) | [`part-b-malloc/`](./part-b-malloc/) → `make test` |
+| **C** | C 语言特性练手 | [Part-C-c-exercises.md](./Part-C-c-exercises.md) | [`part-c-exercises/`](./part-c-exercises/) → `make run` |
+
+> 需要 Linux/WSL（fork/管道）。Windows 原生 MinGW 跑不了 Part A。
 
 **建议顺序：A → C(练习1-3) → B → C(练习4-5)**
 

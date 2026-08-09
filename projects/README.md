@@ -48,6 +48,15 @@ P5 树莓派嵌入式（P5a–P5e）      │
 
 ## 约定
 
-- 每个 Project 文件夹放 `README.md`（本脚手架）+ `src/`（代码）+ `notes/`（踩坑记录）+ `refs/`（资料链接）。
-- 代码可放本仓库或拆到独立仓库，本目录至少保留 README + 笔记索引。
-- Project 编号 `P1`–`P8` 与模块编号 `00`–`22` 是两套体系：**模块=知识，Project=产出**。
+- 有 **Part A/B/C** 的项目：每个 Part 是**独立可 `make` 的子工程**（如 `part-a-shell/`），不是空 `.gitkeep`。
+- 指南仍用 `Part-*.md`；代码进对应 `part-*` 目录。
+- 可选：`notes/`（踩坑）、`refs/`（资料）。
+- Project 编号与模块编号是两套体系：**模块=知识，Project=产出**。
+
+### 已拆成可运行子工程的例子
+
+| Project | 子工程 |
+|---------|--------|
+| P2 | `part-a-shell` · `part-b-malloc` · `part-c-exercises` |
+| P3 | `part-a-c-server` · `part-b-cpp-rewrite` |
+| P4 | `part-a-hello-chardev` · `part-b-proc-debug` |
