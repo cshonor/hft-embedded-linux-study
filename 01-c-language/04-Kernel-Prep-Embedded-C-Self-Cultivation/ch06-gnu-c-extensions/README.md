@@ -269,6 +269,87 @@ int board_init(void) {
 
 </details>
 
+
+### Q5: __attribute__((section)) 自定义段
+
+```c
+// 把函数放到自定义段
+void __attribute__((section(".init_array"))) early_init(void) {
+    // 早期初始化代码
+}
+
+// 内核 __init 宏
+#define __init __attribute__((section(".init.text")))
+void __init kernel_setup(void) { ... }
+```
+
+> 自定义段有什么用途？链接脚本如何配合？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 自定义段用途：
+1. **初始化函数表**——把多个初始化函数放到 `.init_array` 段，启动时遍历调用
+2. **内核 `__init`**——初始化代码放到 `.init.text`，启动完成后释放该段内存
+3. **驱动注册**——每个驱动的描述符放到 `.drv_list` 段，框架遍历注册
+
+**链接脚本配合：**
+```lds
+.init.text : {
+    _sinit = .;       /* 记录起始地址 */
+    *(.init.text)
+    _einit = .;       /* 记录结束地址 */
+}
+```
+运行时：`for (fn = _sinit; fn < _einit; fn++) (*fn)();`
+
+**对比 `#ifdef` 注册：** section 方式不需要修改框架代码——新增驱动只需在自己的 `.c` 文件中加 section 属性。
+
+**复习：** → [6.6.2 section](./6.6-section/6.6.2-section.md)
+
+</details>
+
+### Q6: __builtin_expect 分支提示
+
+```c
+#define likely(x)   __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
+void process_order(Order *order) {
+    if (unlikely(order == NULL))
+        return;  // 错误路径：不常见
+
+    if (likely(order->status == ACTIVE))
+        execute(order);  // 热路径：常见
+    else
+        reject(order);   // 冷路径
+}
+```
+
+> `likely`/`unlikely` 对性能有什么影响？编译器如何利用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `__builtin_expect` 告诉编译器分支的**概率**：
+- `likely(x)`：x 大概率为真
+- `unlikely(x)`：x 大概率为假
+
+**编译器利用方式：**
+1. **代码布局**：热路径（likely）放在 fall-through 位置（顺序执行），冷路径（unlikely）跳转到远处——减少 icache miss
+2. **优化侧重**：热路径内联展开，冷路径保持函数调用
+
+**HFT 用途：**
+- 错误检查 `if (unlikely(ptr == NULL))` ——错误路径不干扰热路径
+- 正常逻辑 `if (likely(order->valid))` ——优化正常路径
+
+**注意：** 过度使用可能适得其反——如果预测错误，性能更差。现代 CPU 有硬件分支预测器，`__builtin_expect` 主要是指导编译器代码布局。
+
+**复习：** → [6.11.6 likely/unlikely](./6.11-likely-unlikely/6.11.6-likely-unlikely.md)
+
+</details>
+
+
 ### Q4: 语句表达式宏
 
 ```c

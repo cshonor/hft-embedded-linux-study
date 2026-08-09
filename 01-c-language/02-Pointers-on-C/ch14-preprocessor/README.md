@@ -109,6 +109,80 @@ else                               // else 找不到 if → 语法错误
 
 </details>
 
+
+### Q3: 可变参宏 __VA_ARGS__
+
+```c
+#define LOG(fmt, ...) printf("[LOG] " fmt "\n", __VA_ARGS__)
+
+LOG("count=%d", 42);           // A
+LOG("hello");                  // B：没有额外参数
+LOG("a=%d b=%d", 1, 2);       // C
+```
+
+> B 能编译通过吗？如何修复让无额外参数也能工作？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** B **编译失败**（或产生 UB）——`__VA_ARGS__` 展开为空，变成 `printf("[LOG] hello\n",)`——末尾多了逗号。
+
+**修复（GNU 扩展）：** `##__VA_ARGS__`——当没有可变参数时自动删除前面的逗号：
+
+```c
+#define LOG(fmt, ...) printf("[LOG] " fmt "\n", ##__VA_ARGS__)
+```
+
+**C99+ 标准：** 使用 `__VA_OPT__`（C20）或在 GNU 扩展下用 `##`。
+
+**用途：** 调试日志宏——有参数时打印参数，无参数时只打印格式串。
+
+**复习：** → [14.2 宏定义](./14.2-宏定义.md) · [14.5 其他指令](./14.5-其他指令.md)
+
+</details>
+
+### Q4: 条件编译调试开关
+
+```c
+#define DEBUG_LEVEL 2
+
+#if DEBUG_LEVEL >= 2
+    #define DBG2(fmt, ...) fprintf(stderr, "[DBG2] " fmt "\n", ##__VA_ARGS__)
+#elif DEBUG_LEVEL >= 1
+    #define DBG2(fmt, ...)
+#else
+    #define DBG2(fmt, ...)
+#endif
+
+#if DEBUG_LEVEL >= 1
+    #define DBG1(fmt, ...) fprintf(stderr, "[DBG1] " fmt "\n", ##__VA_ARGS__)
+#else
+    #define DBG1(fmt, ...)
+#endif
+
+DBG1("starting");       // A
+DBG2("detail: x=%d", x); // B
+```
+
+> DEBUG_LEVEL=0 时 A 和 B 会生成代码吗？这种模式有什么好处？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** DEBUG_LEVEL=0 时，A 和 B 都展开为**空**——不生成任何代码，零运行时开销。
+
+**好处：**
+- 发布版 `DEBUG_LEVEL=0`，调试日志完全消失（不占代码空间、不影响性能）
+- 开发版 `DEBUG_LEVEL=2`，详细日志全开
+- 通过编译选项 `-DDEBUG_LEVEL=2` 控制，不需改源码
+
+**对比 `if (debug) printf(...)`：** 运行时判断有分支开销；条件编译在预处理阶段移除——HFT 热路径用条件编译。
+
+**复习：** → [14.3 条件编译](./14.3-条件编译.md)
+
+</details>
+
+
 ### Q2: ## 粘合与 LOG 宏
 
 ```c

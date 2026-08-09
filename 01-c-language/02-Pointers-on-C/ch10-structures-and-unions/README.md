@@ -121,3 +121,72 @@ m.payload.coords.x = 10;
 **复习：** → [10.6 Unions](./10.6-unions/10.6-unions.md)
 
 </details>
+
+
+### Q3: 位域布局与可移植性
+
+```c
+struct Flags {
+    unsigned a : 3;   // 3 bits
+    unsigned b : 4;   // 4 bits
+    unsigned c : 1;   // 1 bit
+};
+
+struct Flags f = {5, 10, 1};
+printf("%zu\n", sizeof(f));   // 输出多少？
+
+// 跨平台安全吗？
+f.a = 8;   // 3 bits 最大值是 7
+```
+
+> `sizeof(f)` 是多少？`f.a = 8` 会发生什么？位域布局跨平台一致吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `sizeof(f)` = **4**（一个 `unsigned int`，3+4+1=8 bits 恰好填满，但实现可能 padding 到 `unsigned int` 宽度）。
+
+`f.a = 8`：3 bits 最大存 7（`0b111`），`8 = 0b1000` 超出范围——值被截断为 `0`（实现定义行为）。
+
+**跨平台问题：** 位域的内存排列顺序（MSB vs LSB）、是否跨字节边界、`signed`/`unsigned` 默认——全部是实现定义。**不同编译器/架构布局不同**。
+
+**规则：** 协议头和硬件寄存器**不用位域**——用移位和掩码手动操作。位域只用于同一平台内的紧凑存储。
+
+**复习：** → [10.5 位段](./10.5-位段.md) · [10.1 结构声明](./10.1-结构声明.md)
+
+</details>
+
+### Q4: 结构体赋值是浅拷贝
+
+```c
+struct Person {
+    char *name;
+    int age;
+};
+
+struct Person p1 = {strdup("Alice"), 30};
+struct Person p2 = p1;     // 直接赋值
+
+free(p1.name);
+printf("%s\n", p2.name);   // 安全吗？
+```
+
+> `p2.name` 还能安全访问吗？如何实现深拷贝？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **不安全**——结构体直接赋值是**浅拷贝**：`p2.name` 和 `p1.name` 指向同一块 `strdup` 分配的内存。`free(p1.name)` 后 `p2.name` 变成**悬垂指针**（use-after-free）。
+
+**深拷贝：**
+```c
+p2.age = p1.age;
+p2.name = strdup(p1.name);  // 独立分配
+```
+
+**规则：** 含指针成员的结构体不能靠赋值拷贝——必须写专门的拷贝函数。C 没有拷贝构造函数。
+
+**复习：** → [10.4 作为函数参数的结构](./10.4-作为函数参数的结构.md)
+
+</details>
+

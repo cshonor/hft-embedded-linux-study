@@ -96,6 +96,85 @@ void remove_head_wrong(Node *head) {
 
 </details>
 
+
+### Q3: 链表反转
+
+```c
+struct Node {
+    int val;
+    struct Node *next;
+};
+
+// 反转单链表：1→2→3→NULL 变成 3→2→1→NULL
+struct Node *reverse(struct Node *head) {
+    struct Node *prev = NULL, *curr = head, *next;
+    while (curr) {
+        next = curr->next;    // A: 保存下一个
+        curr->next = prev;    // B: 反转指向
+        prev = curr;          // C: 前进
+        curr = next;          // D: 前进
+    }
+    return prev;
+}
+```
+
+> 如果删掉 A 行（`next = curr->next`），会发生什么？为什么需要临时变量 `next`？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 删掉 A 行后，B 行 `curr->next = prev` 把 `curr->next` 指向 `prev`——**丢失了原链表的后续节点**。D 行 `curr = next` 中 `next` 未赋值（或为旧值）——链表断裂，后续节点全部泄漏。
+
+**为什么需要 `next`：** 反转指针方向后，原来的 `curr->next` 被覆盖，需要事先保存才能继续遍历。这是**指针操作的核心**——修改指针前先保存它指向的下一个目标。
+
+**复习：** → [12.2 单链表](./12.2-singly-linked-lists/12.2-singly-linked-lists.md)
+
+</details>
+
+### Q4: 双链表删除
+
+```c
+struct DNode {
+    int val;
+    struct DNode *prev, *next;
+};
+
+void delete_node(struct DNode *node) {
+    node->prev->next = node->next;    // A
+    node->next->prev = node->prev;    // B
+    free(node);
+}
+
+// 如果 node 是头节点（prev=NULL）或尾节点（next=NULL）会怎样？
+```
+
+> 上面的代码处理了头/尾节点的情况吗？如何修复？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **没有处理**。如果 `node->prev == NULL`（头节点），A 行解引用 NULL → **崩溃**。如果 `node->next == NULL`（尾节点），B 行解引用 NULL → **崩溃**。
+
+**修复：**
+```c
+void delete_node(struct DNode **head, struct DNode *node) {
+    if (node->prev)
+        node->prev->next = node->next;
+    else
+        *head = node->next;          // 更新头指针
+    if (node->next)
+        node->next->prev = node->prev;
+    free(node);
+}
+```
+
+**规则：** 操作指针前**必须判空**。双链表删除需要处理四种情况：中间节点、头节点、尾节点、唯一节点。
+
+**复习：** → [12.3 双链表](./12.3-doubly-linked-lists/12.3-doubly-linked-lists.md)
+
+</details>
+
+
 ### Q2: 嵌套堆成员分层释放
 
 ```c

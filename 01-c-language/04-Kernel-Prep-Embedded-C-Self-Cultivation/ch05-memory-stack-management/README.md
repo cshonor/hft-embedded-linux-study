@@ -195,6 +195,88 @@ int main(void) { a(); }
 
 </details>
 
+
+### Q4: valgrind 检测内存泄漏
+
+```bash
+$ gcc -g leak.c -o leak
+$ valgrind --leak-check=full ./leak
+```
+
+```c
+// leak.c
+#include <stdlib.h>
+void leak(void) {
+    char *p = malloc(100);
+    // 忘记 free(p)
+}
+int main() {
+    leak();
+    return 0;
+}
+```
+
+> valgrind 会输出什么？`-g` 编译选项的作用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** valgrind 输出类似：
+```
+HEAP SUMMARY:
+    in use at exit: 100 bytes in 1 blocks
+LEAK SUMMARY:
+    definitely lost: 100 bytes in 1 blocks
+```
+并指出泄漏位置 `leak.c:4`（`malloc` 那一行）。
+
+**`-g` 的作用：** 在 ELF 中嵌入**调试信息**（DWARF）——源文件名、行号、变量映射。valgrind/GDB 用它把内存地址映射到源码行号。没有 `-g`，只能看到地址看不到行号。
+
+**局限：** valgrind 慢 10-50 倍——不适合 HFT 生产环境。开发/测试阶段使用。
+
+**替代：** AddressSanitizer (`-fsanitize=address`)——比 valgrind 快，编译时插入检查。
+
+**复习：** → [5.7 内存错误](./5.7-memory-errors/5.7-内存错误.md) · [5.7.5 内存检测神器 Valgrind](./5.7-memory-errors/5.7.5-内存检测神器-Valgrind.md)
+
+</details>
+
+### Q5: mmap MAP_PRIVATE vs MAP_SHARED
+
+```c
+// 方式 A：写时复制
+int fd = open("file.txt", O_RDWR);
+char *a = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
+a[0] = 'X';   // 修改是否会写回文件？
+
+// 方式 B：共享映射
+char *b = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+b[0] = 'Y';   // 修改是否会写回文件？
+
+// 方式 C：匿名映射
+char *c = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+// c 的用途是什么？
+```
+
+> A、B、C 三种映射方式的区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A（MAP_PRIVATE）：**写时复制（COW）**——`a[0]='X'` 修改的是私有副本，**不写回文件**。适合读取配置文件后修改。
+- B（MAP_SHARED）：**共享映射**——`b[0]='Y'` **写回文件**（或延迟写回）。多进程共享同一物理页，一个进程的修改对其他进程可见。适合 IPC。
+- C（MAP_ANONYMOUS | MAP_SHARED）：**匿名共享内存**——不关联文件，`fork` 后父子进程共享。这是**进程间共享内存 IPC** 的基础。
+
+**HFT 用途：**
+- MAP_PRIVATE：映射市场数据文件做只读分析
+- MAP_SHARED：多进程策略引擎共享行情数据
+- 匿名共享：父子进程共享订单状态
+
+**复习：** → [5.6 mmap](./5.6-mmap/5.6-mmap.md)
+
+</details>
+
+
 ### Q3: 内存错误四大类
 
 ```c

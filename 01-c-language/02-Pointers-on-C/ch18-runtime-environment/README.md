@@ -100,6 +100,99 @@ int main(void) {          // (4) main 代码在哪段？
 
 </details>
 
+
+### Q3: setjmp/longjmp 异常跳转
+
+```c
+#include <setjmp.h>
+
+jmp_buf env;
+
+void deep_function(void) {
+    printf("before jump\n");
+    longjmp(env, 42);   // 跳回 setjmp，返回值 42
+    printf("after jump\n");  // 不会执行
+}
+
+int main() {
+    int r = setjmp(env);    // A: 第一次返回 0
+    if (r == 0) {
+        printf("setjmp returned 0\n");
+        deep_function();
+    } else {
+        printf("longjmp returned %d\n", r);  // B: 返回 42
+    }
+    return 0;
+}
+```
+
+> 输出顺序是什么？`setjmp` 返回几次？longjmp 后局部变量可靠吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输出顺序：
+1. `setjmp returned 0`（A 处首次返回 0）
+2. `before jump`
+3. `longjmp returned 42`（B 处 longjmp 返回）
+
+`setjmp` 返回**两次**：第一次直接返回 0；第二次由 `longjmp` 触发返回非零值（42）。
+
+**局部变量陷阱：** `longjmp` 后，`setjmp` 所在函数的**非 `volatile` 局部变量**值不确定（可能被优化器存在寄存器中，longjmp 恢复寄存器但不恢复栈变量）。**跨 setjmp 使用的局部变量必须加 `volatile`。**
+
+**规则：** setjmp/longjmp 类似 `goto` 但可跨函数跳转——用于 C 的异常处理。HFT/内核中用于错误恢复。
+
+**复习：** → [18.3 运行时效率](./18.3-运行时效率.md)
+
+</details>
+
+### Q4: atexit 注册顺序
+
+```c
+void cleanup_a(void) { printf("A\n"); }
+void cleanup_b(void) { printf("B\n"); }
+void cleanup_c(void) { printf("C\n"); }
+
+int main() {
+    atexit(cleanup_a);   // 注册 A
+    atexit(cleanup_b);   // 注册 B
+    atexit(cleanup_c);   // 注册 C
+    printf("main exit\n");
+    return 0;
+    // exit() 自动调用 atexit 注册的函数
+}
+```
+
+> 输出顺序是什么？`exit()` 和 `_exit()` 的区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输出：
+```
+main exit
+C
+B
+A
+```
+
+`atexit` 注册的函数按**LIFO（后进先出）**顺序执行——最后注册的 C 最先调用。
+
+**exit() vs _exit()：**
+| | `exit()` | `_exit()` |
+|--|----------|-----------|
+| atexit | ✅ 调用 | ❌ 不调用 |
+| stdio flush | ✅ 刷新缓冲区 | ❌ 不刷新 |
+| 临时文件 | ✅ 删除 | ❌ 不删除 |
+| 用途 | 正常退出 | fork 子进程立即退出 |
+
+**HFT 关联：** fork 后子进程如果 exec 失败，用 `_exit()` 而非 `exit()`——避免刷新父进程的 stdio 缓冲区。
+
+**复习：** → [16.7 执行环境](./16.7-执行环境.md) · [18.3 运行时效率](./18.3-运行时效率.md)
+
+</details>
+
+
 ### Q2: 缓存行与伪共享
 
 ```c

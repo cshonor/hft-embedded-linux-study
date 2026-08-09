@@ -188,6 +188,93 @@ void uart_init(void) {            // 公开（在 .h 中声明）
 
 </details>
 
+
+### Q4: extern inline
+
+```c
+// header.h
+static inline int max(int a, int b) {
+    return a > b ? a : b;
+}
+
+// vs
+
+// header.h
+inline int max(int a, int b) {
+    return a > b ? a : b;
+}
+// .c 文件中提供 extern 版本
+extern inline int max(int a, int b);
+```
+
+> `static inline` 和 `extern inline` 有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- **`static inline`**：每个包含头文件的 `.c` 都有一份副本——可能有多个定义但不会冲突（`static` 内部链接）。编译器可以选择内联或不内联。简单、安全、最常用。
+- **`extern inline`**（C99）：头文件中的 `inline` 定义是"内联建议"，但**不提供外部定义**——需要某个 `.c` 文件中用 `extern inline` 声明，提供一份外部链接的函数体。如果编译器不内联，调用外部版本。
+
+**实际建议：**
+- 简单小函数：`static inline`（最安全，GCC/Clang 都支持）
+- 需要单一定义：C99 `inline` + `extern inline`（标准但复杂，很多项目不用）
+
+**内核惯用法：** `static inline` 在头文件中定义——简单高效。
+
+**复习：** → [9.2 模块封装](./9.2-module-encapsulation/9.2-模块封装.md) · [9.3 头文件纪律](./9.3-header-discipline/9.3-头文件纪律.md)
+
+</details>
+
+### Q5: 头文件循环依赖
+
+```c
+// a.h
+#include "b.h"
+struct A { struct B *b; };
+
+// b.h
+#include "a.h"
+struct B { struct A *a; };
+
+// main.c
+#include "a.h"   // 会怎样？
+```
+
+> 上面的代码能编译通过吗？如何修复循环依赖？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 如果有 include guard，**能编译通过**——`a.h` 包含 `b.h`，`b.h` 包含 `a.h` 时 guard 阻止重复包含。但 `struct A` 中引用 `struct B *` 时，`struct B` 可能还没定义——**前向声明**解决：
+
+**修复：** 用前向声明代替 `#include`：
+
+```c
+// a.h
+#ifndef A_H
+#define A_H
+struct B;  // 前向声明，不需要 #include "b.h"
+struct A { struct B *b; };
+#endif
+
+// b.h
+#ifndef B_H
+#define B_H
+struct A;  // 前向声明
+struct B { struct A *a; };
+#endif
+```
+
+**规则：** 头文件中只引用**指针**时用前向声明，不 `#include` 对方头文件。`.c` 文件中实际使用成员时才 `#include`。
+
+**内核实践：** `struct file` 的前向声明 `<fs.h>` 到处使用，避免循环依赖。
+
+**复习：** → [9.3 头文件纪律](./9.3-header-discipline/9.3-头文件纪律.md)
+
+</details>
+
+
 ### Q3: Makefile 多模块
 
 ```makefile

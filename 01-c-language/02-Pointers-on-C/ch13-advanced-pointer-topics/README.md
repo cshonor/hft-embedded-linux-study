@@ -99,6 +99,82 @@ int dispatch(int op, int val) {
 
 </details>
 
+
+### Q3: 返回函数指针
+
+```c
+typedef int (*MathOp)(int, int);
+
+int add(int a, int b) { return a + b; }
+int sub(int a, int b) { return a - b; }
+
+MathOp get_op(char op) {
+    switch (op) {
+        case '+': return add;
+        case '-': return sub;
+        default:  return NULL;
+    }
+}
+
+int main() {
+    MathOp fn = get_op('+');
+    printf("%d\n", fn(3, 4));     // 输出什么？
+    return 0;
+}
+```
+
+> `fn(3, 4)` 输出什么？`get_op` 返回的是什么？`fn` 如果是 NULL 会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `fn(3, 4)` = `add(3, 4)` = **7**。`get_op` 返回**函数指针** `MathOp`（指向 `add` 或 `sub` 函数的地址）。
+
+`fn` 如果是 NULL（如 `get_op('*')` 返回 NULL），`fn(3, 4)` 解引用 NULL → **SIGSEGV**。
+
+**防护：** 调用前判空：`if (fn) printf("%d\n", fn(3, 4));`
+
+**用途：** 策略模式、命令分发表、回调注册——C 语言用函数指针实现面向对象的多态。
+
+**复习：** → [13.3 函数指针](./13.3-function-pointers/13.3-function-pointers.md)
+
+</details>
+
+### Q4: argv 与字符串常量
+
+```c
+int main(int argc, char *argv[]) {
+    // argv[0] 是程序名
+    printf("Program: %s\n", argv[0]);
+
+    // 修改 argv[1] 的内容
+    argv[1][0] = 'X';     // A: 合法吗？
+
+    // 修改 argv 指针本身
+    argv[1] = "modified"; // B: 合法吗？
+
+    // argc < 2 时访问 argv[1] 会怎样？
+    return 0;
+}
+```
+
+> A 和 B 分别合法吗？argc=1 时访问 argv[1] 会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：**合法**（大多数实现）——`argv` 元素指向**可修改**的字符串（C11 §5.1.2.2.1）
+- B：**合法**——`argv` 是可修改的指针数组，`argv[1]` 可以重新指向其他字符串
+- `argc=1` 时 `argv[1]` 是 **NULL**（标准保证 `argv[argc]` == NULL）——解引用 NULL → 崩溃
+
+**规则：** 访问 `argv[i]` 前必须检查 `i < argc`。
+
+**复习：** → [13.4 命令行参数](./13.4-命令行参数.md)
+
+</details>
+
+
 ### Q2: 回调 + void* priv
 
 ```c

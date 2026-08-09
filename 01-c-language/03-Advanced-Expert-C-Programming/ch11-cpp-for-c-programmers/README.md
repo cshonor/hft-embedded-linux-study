@@ -164,3 +164,146 @@ ch11     C++ 桥梁            → 带着底层读 OOP，而非放弃底层
 - [11.19 它或许过于复杂，但却是唯一可行的方案](./11.19-它或许过于复杂-但却是唯一可行的方案.md)
 - [11.20 轻松一下——死亡计算机协会](./11.20-轻松一下死亡计算机协会.md)
 - [11.21 更多阅读材料](./11.21-更多阅读材料.md)
+
+## 章节自测
+
+> C++ 桥梁：extern "C"、new/delete、vtable、引用。看代码 → 想答案 → 点开验证。
+
+### Q1: extern "C" 与 name mangling
+
+```cpp
+// C++ 代码 (math.cpp)
+int add(int a, int b) { return a + b; }
+
+extern "C" int c_add(int a, int b) { return a + b; }
+```
+
+> 用 `nm` 查看，`add` 和 `c_add` 的符号名分别是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `add`：符号名类似 `_Z3addii`（name mangling — 编码了函数名和参数类型）
+- `c_add`：符号名就是 `c_add`（`extern "C"` 禁止 mangling，使用 C 链接规则）
+
+**用途：** C++ 要被 C 代码调用时，C++ 侧必须用 `extern "C"` 导出函数。否则 C 代码找不到 mangled 符号。
+
+**头文件惯用法：**
+```cpp
+#ifdef __cplusplus
+extern "C" {
+#endif
+int c_add(int a, int b);
+#ifdef __cplusplus
+}
+#endif
+```
+
+**复习：** → [11.10 重载](./11.10-重载作用于不同类型的同一操作具有相同的名字.md) · [11.17 C++ 的其他要点](./11.17-C的其他要点.md)
+
+</details>
+
+### Q2: malloc/free vs new/delete
+
+```cpp
+class Foo {
+public:
+    Foo()  { printf("ctor\n"); }
+    ~Foo() { printf("dtor\n"); }
+};
+
+// 版本 A
+Foo *a = (Foo*)malloc(sizeof(Foo));
+free(a);
+
+// 版本 B
+Foo *b = new Foo();
+delete b;
+
+// 版本 C
+Foo *c = new Foo();
+free(c);
+```
+
+> 三个版本中构造函数和析构函数是否被调用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：构造/析构**都不调用** — `malloc` 只分配内存，不调用构造函数；`free` 不调用析构函数
+- B：构造/析构**都调用** — `new` 分配内存 + 调用构造函数；`delete` 调用析构函数 + 释放内存
+- C：构造**调用**，析构**不调用** — `new` 调用构造函数，但 `free` 不调用析构函数 → **资源泄漏**
+
+**规则：** `new` 必须配 `delete`，`malloc` 必须配 `free`——**禁止混用**。
+
+**复习：** → [11.4 展示一些类](./11.4-展示一些类用户定义类型享有和预定义类型一样的权限.md) · [11.17 C++ 的其他要点](./11.17-C的其他要点.md)
+
+</details>
+
+### Q3: vptr 内存布局
+
+```cpp
+class Base {
+public:
+    int x;
+    virtual void foo() {}
+};
+
+class Derived : public Base {
+public:
+    int y;
+    void foo() override {}
+};
+
+printf("%zu %zu\n", sizeof(Base), sizeof(Derived));
+```
+
+> 两个 sizeof 分别是多少？（64 位，int=4）
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `Base` = **16**（8 字节 vptr + 4 字节 x + 4 字节 padding）；`Derived` = **16**（8 vptr + 4 x + 4 y）或 **24**（8 vptr + 4 x + 4 pad + 4 y + 4 pad，取决于 ABI）。
+
+**关键：** 含 `virtual` 函数的对象首部有 **vptr**（虚表指针，8 字节），指向 `.rodata` 中的 vtable。每个类一份 vtable，存储虚函数地址。
+
+**对比 C：** C 的 `file_operations` 是手动维护的 ops 表指针；C++ 的 vptr 是编译器自动注入的。
+
+**复习：** → [11.14 解释](./11.14-解释.md) · [11.16 新奇玩意——多态](./11.16-新奇玩意多态.md)
+
+</details>
+
+### Q4: 引用 vs 指针
+
+```cpp
+int x = 10;
+
+int &r = x;    // A：引用
+int *p = &x;   // B：指针
+
+r = 20;
+*p = 30;
+
+int &r2;        // C
+int *p2;        // D
+```
+
+> A 和 B 有什么本质区别？C 和 D 哪个合法？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- **引用**（A）：必须绑定到对象，**不能为空**，**不能重新绑定**，语法像别名（不需要解引用）
+- **指针**（B）：可以为 NULL，可以重新指向，需要 `*` 解引用
+
+- C：**不合法** — 引用必须在声明时初始化
+- D：**合法** — 指针可以不初始化（但未初始化指针危险）
+
+**C++ 出参惯用法：** 用引用替代指针出参——`void foo(int &out) { out = 42; }`，调用方 `foo(x)` 不需要 `&`。
+
+**复习：** → [11.6 声明](./11.6-声明.md) · [11.17 C++ 的其他要点](./11.17-C的其他要点.md)
+
+</details>

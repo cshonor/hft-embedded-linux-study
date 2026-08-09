@@ -168,6 +168,74 @@ sum += (data[i] > threshold) ? data[i] : 0;
 
 </details>
 
+
+### Q4: cache line 与伪共享
+
+```c
+// 两个线程各自操作不同变量
+struct {
+    int x;    // 线程 A 写
+    int y;    // 线程 B 写
+} data;
+
+// 线程 A: data.x++
+// 线程 B: data.y++
+```
+
+> 两个线程写不同变量，为什么性能可能很差？如何修复？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **伪共享（false sharing）**——`x` 和 `y` 在同一个 cache line（通常 64 字节）内。线程 A 写 `x` 使该 cache line 在 A 的核心缓存中变为 modified，线程 B 写 `y` 时需要从 A 的缓存拉取——两个核心**反复争夺 cache line 所有权**，性能急剧下降。
+
+**修复：** 用 `__attribute__((aligned(64)))` 强制不同变量到不同 cache line：
+
+```c
+struct {
+    int x __attribute__((aligned(64)));
+    int y __attribute__((aligned(64)));
+} data;
+```
+
+**HFT 关联：** 多线程交易策略中，每个线程的私有数据必须 cache line 对齐——否则伪共享导致延迟飙升。
+
+**复习：** → [2.5 Cache 与流水线](./2.5-cache-pipeline/2.5-Cache与流水线.md)
+
+</details>
+
+### Q5: volatile 与编译器优化
+
+```c
+volatile int *flag = (volatile int *)0x40000000;  // 硬件寄存器
+
+// 轮询等待硬件就绪
+while (*flag == 0) {
+    // busy wait
+}
+```
+
+> 如果去掉 `volatile`，编译器可能怎么优化？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 去掉 `volatile`，编译器看到 `while (*flag == 0)` 中 `*flag` 没有被循环体修改——可能**只读一次**寄存器，如果当时为 0，就**死循环**（编译器认为值永远不会变）。
+
+`volatile` 告诉编译器：**每次访问都从内存重新读取**，不要缓存到寄存器，不要优化掉重复访问。
+
+**用途：**
+- 硬件寄存器映射（MMIO）
+- 中断处理程序与主程序共享的标志变量
+- 信号处理函数中修改的全局变量
+
+**局限：** `volatile` 不保证原子性也不保证内存屏障——多线程同步用 `atomic` 或锁。
+
+**复习：** → [2.5 Cache 与流水线](./2.5-cache-pipeline/2.5-Cache与流水线.md) · [2.8 总线编址](./2.8-bus-addressing/2.8-总线编址.md)
+
+</details>
+
+
 ### Q3: 大小端检测
 
 ```c

@@ -174,6 +174,83 @@ int foo(int a, int b, int c, int d, int e) {
 
 </details>
 
+
+### Q4: ARM 条件执行
+
+```assembly
+    CMP     r0, #0
+    MOVEQ   r1, #1      ; if (r0 == 0) r1 = 1
+    MOVNE   r1, #0      ; if (r0 != 0) r1 = 0
+    MOVGT   r2, #10     ; if (r0 > 0) r2 = 10
+```
+
+> ARM 的条件执行与 x86 的 `JNE`/`JE` 跳转有什么区别？有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** ARM 几乎所有指令都可以加**条件后缀**（EQ/NE/GT/LT 等），根据 CPSR 标志位决定是否执行——**不需要分支跳转**。
+
+**x86 方式：** `CMP` 后用 `JE`/`JNE` 跳转——分支预测失败时流水线冲刷，性能损失。
+
+**ARM 优势：**
+- **无分支**——避免分支预测失败，流水线不断流
+- **代码紧凑**——一条指令替代多条跳转
+- **适合嵌入式**——指令少、功耗低
+
+**C 代码映射：** `if (a) x=1; else x=0;` → 编译器可能生成 `CMP; MOVNE` 而非 `CMP; BEQ; MOV; B; MOV`。
+
+**复习：** → [3.1 ARM 体系结构](./3.1-arm-arch/3.1-ARM体系结构.md)
+
+</details>
+
+### Q5: 栈帧布局
+
+```c
+int foo(int a, int b) {
+    int local_arr[4];
+    char *p;
+    local_arr[0] = a + b;
+    p = local_arr + 1;
+    return local_arr[0];
+}
+```
+
+> 在 ARM AAPCS 下，`a`、`b`、`local_arr`、`p` 分别在哪里？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 按 AAPCS：
+- `a`：**r0**（第一个参数寄存器）
+- `b`：**r1**（第二个参数寄存器）
+- `local_arr[4]`：**栈上**（16 字节，SP 减 16+ 对齐）
+- `p`：可能 **r4-r11** 中一个被调用者保存的寄存器（如果编译器优化），否则也在栈上
+
+**栈帧结构（典型）：**
+```
+高地址
+┌──────────┐
+│ 参数溢出区  │  (r0-r3 放不下的参数)
+├──────────┤
+│ 返回地址 lr │  (被调用者保存)
+├──────────┤
+│ 旧 fp      │
+├──────────┤
+│ local_arr │  ← SP 指向
+├──────────┤
+│ p         │
+└──────────┘
+低地址
+```
+
+**GDB 验证：** `disas foo` 查看汇编；`info locals` 查看局部变量；`bt` 查看调用栈。
+
+**复习：** → [3.6 C 语言和汇编语言混合编程](./3.6-mixed-programming/3.6-C语言和汇编语言混合编程.md)
+
+</details>
+
+
 ### Q3: C 与汇编混合编程
 
 ```c

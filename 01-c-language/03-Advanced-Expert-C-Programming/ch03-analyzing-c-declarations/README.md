@@ -125,3 +125,110 @@ make clean
 - [3.7 typedef struct foo{ ... foo; }的含义](./3.7-typedef-struct-foo-foo-的含义.md)
 - [3.8 理解所有分析过程的代码段](./3.8-理解所有分析过程的代码段.md)
 - [3.9 轻松一下——驱动物理实体的软件](./3.9-轻松一下驱动物理实体的软件.md)
+
+## 章节自测
+
+> C 声明读法：螺旋规则、指针数组 vs 数组指针、typedef 陷阱。看代码 → 想答案 → 点开验证。
+
+### Q1: 指针数组 vs 数组指针
+
+```c
+char *str[10];      // A
+char (*p)[10];      // B
+```
+
+> A 和 B 的类型分别是什么？用螺旋规则分析。
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：`str` 是**指针数组**——10 个元素，每个是 `char*`。
+  - 螺旋：`str` → `[10]`（数组 10 元素）→ `*`（每个元素是指针）→ `char`（指向 char）
+- B：`p` 是**数组指针**——指向含 10 个 `char` 的数组。
+  - 螺旋：`p` → `*`（指针）→ `[10]`（指向 10 元素数组）→ `char`（元素类型 char）
+
+**优先级：** `[]` 高于 `*`，所以 `char *str[10]` = `char *(str[10])`；括号改变顺序 `char (*p)[10]`。
+
+**复习：** → [3.3 优先级规则](./3.3-优先级规则.md) · [3.8 理解所有分析过程的代码段](./3.8-理解所有分析过程的代码段.md)
+
+</details>
+
+### Q2: typedef 与 #define
+
+```c
+typedef char *PSTR;
+#define DSTR char *
+
+PSTR a, b;    // A
+DSTR c, d;    // B
+```
+
+> A 和 B 中，`a`/`b`/`c`/`d` 的类型分别是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：`a` 和 `b` **都是 `char*`**（typedef 是真正的类型别名，对每个声明符都适用）
+- B：`c` 是 `char*`，`d` 是 `char`（`#define` 是纯文本替换，展开为 `char *c, d` — `*` 只修饰 `c`）
+
+**教训：** `typedef` 是类型层面的别名；`#define` 是文本替换，不理解 C 语法。多变量声明时差异致命。
+
+**复习：** → [3.5 typedef 可以成为你的朋友](./3.5-typedef可以成为你的朋友.md) · [3.6 typedef vs #define](./3.6-typedef-int-x-10-和define-x-int-10-的区别.md)
+
+</details>
+
+### Q3: signal 声明
+
+```c
+void (*signal(int sig, void (*handler)(int)))(int);
+```
+
+> 用螺旋规则分析：`signal` 是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `signal` 是一个**函数**：
+1. 找到 `signal` → 它是……
+2. `(int sig, void (*handler)(int))` → 接受两个参数：`int` 和一个函数指针 `void (*)(int)`
+3. 向左看 `*` → 返回值是一个**指针**
+4. 向右看 `(int)` → 指向接受 `int` 返回 `void` 的**函数**
+5. 即：**返回 `void (*)(int)` 类型的函数指针**（旧信号处理器的地址）
+
+**简化用 typedef：**
+```c
+typedef void (*SigHandler)(int);
+SigHandler signal(int sig, SigHandler handler);
+```
+
+**复习：** → [3.8 理解所有分析过程的代码段](./3.8-理解所有分析过程的代码段.md)
+
+</details>
+
+### Q4: const typedef 陷阱
+
+```c
+typedef char *Str;
+const Str s = "hello";    // A
+
+const char *t = "hello";  // B
+```
+
+> A 中 `s` 和 B 中 `t` 的 const 语义有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：`s` 是 `char * const`（**指针本身是常量**，但 `*s` 可修改）——`const` 修饰 `Str` 即 `char*` 整体
+- B：`t` 是 `const char *`（**指向的内容是常量**，但 `t` 可改指向）
+
+**A 等价于：** `char *const s = "hello";` → `s[0] = 'H'` 合法（但字符串字面量只读 → UB），`s = "world"` 不合法。
+
+**教训：** `typedef` 替换后 `const` 修饰的是整个 typedef 名，不是最左边的类型。
+
+**复习：** → [3.5 typedef 可以成为你的朋友](./3.5-typedef可以成为你的朋友.md)
+
+</details>

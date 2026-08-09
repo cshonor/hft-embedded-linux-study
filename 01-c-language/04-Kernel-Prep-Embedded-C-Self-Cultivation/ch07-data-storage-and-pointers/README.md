@@ -204,6 +204,77 @@ void add_arrays_r(int *restrict a, int *restrict b, int *restrict c, int n) {
 
 </details>
 
+
+### Q4: volatile 与编译器优化
+
+```c
+int *p = (int *)0x40000000;           // A
+volatile int *vp = (volatile int *)0x40000000;  // B
+
+// 轮询硬件就绪标志
+while (*p == 0) {}      // A 行
+while (*vp == 0) {}     // B 行
+```
+
+> A 行可能被编译器优化成什么？B 行为什么不会？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A 行（无 volatile）：编译器认为 `*p` 在循环中不变 → 优化为**只读一次**：`if (*p == 0) while(1) {}` → **死循环**
+- B 行（有 volatile）：编译器**每次循环都从内存重新读取** `*vp` → 硬件改变标志后正常退出
+
+**volatile 的三个保证：**
+1. 不缓存到寄存器——每次从内存读取
+2. 不优化掉重复访问
+3. 不重排到 volatile 访问之外（但非 volatile 访问可重排）
+
+**局限：** volatile 不保证原子性（64 位读在 32 位平台上可能撕裂）、不做内存屏障。多线程同步用 `stdatomic.h`（C11）或平台特定屏障。
+
+**复习：** → [7.5 const/volatile/restrict](./7.5-qualifiers/7.5-const-volatile-restrict.md)
+
+</details>
+
+### Q5: 指针别名与 restrict
+
+```c
+// 无 restrict：编译器保守假设 src 和 dst 可能重叠
+void copy_norestrict(int *dst, int *src, int n) {
+    for (int i = 0; i < n; i++)
+        dst[i] = src[i] + 1;
+}
+
+// 有 restrict：保证不重叠，编译器可激进优化
+void copy_restrict(int *restrict dst, const int *restrict src, int n) {
+    for (int i = 0; i < n; i++)
+        dst[i] = src[i] + 1;
+}
+```
+
+> `restrict` 有什么作用？如果违反 restrict 承诺会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `restrict` 告诉编译器：**这两个指针不会指向同一块内存**（无别名）。编译器可以：
+1. 把 `src[i]` 缓存到寄存器，减少内存读取
+2. 向量化（SIMD）——一次处理多个元素
+3. 重排指令提高流水线效率
+
+**违反 restrict：** 如果调用方传入重叠指针 → **UB**。编译器基于无别名的假设做了优化，结果不可预测。
+
+**用途：**
+- `memcpy` 的原型：`void *memcpy(void *restrict dst, const void *restrict src, size_t n)`
+- HFT 数值计算：信号处理函数声明 `restrict` 允许编译器向量化
+
+**验证：** `gcc -O3 -fopt-info-vec` 查看是否向量化成功。
+
+**复习：** → [7.5 const/volatile/restrict](./7.5-qualifiers/7.5-const-volatile-restrict.md)
+
+</details>
+
+
 ### Q3: 函数指针跳转表
 
 ```c

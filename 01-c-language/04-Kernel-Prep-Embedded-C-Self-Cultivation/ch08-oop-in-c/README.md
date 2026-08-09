@@ -182,6 +182,107 @@ struct Device *dev = (struct Device *)&uart;
 
 </details>
 
+
+### Q4: list_head 遍历容器
+
+```c
+// Linux 内核链表
+struct list_head {
+    struct list_head *next, *prev;
+};
+
+struct task {
+    int pid;
+    struct list_head node;  // 嵌入链表节点
+};
+
+// 遍历链表，获取包含 node 的 task
+struct list_head *pos;
+list_for_each(pos, &task_list) {
+    struct task *t = container_of(pos, struct task, node);
+    printf("pid=%d\n", t->pid);
+}
+```
+
+> `container_of` 如何工作？为什么嵌入式链表比传统链表更灵活？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `container_of` 通过**成员偏移量**反推父结构体地址：
+
+```c
+#define container_of(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+```
+
+`node` 在 `struct task` 中的偏移 = `offsetof(struct task, node)`。`pos` 指向 `node`，减去偏移就得到 `task` 的起始地址。
+
+**嵌入式链表优势：**
+1. **一个对象可挂多个链表**——嵌入多个 `list_head` 成员
+2. **链表代码与数据无关**——`list_for_each` 只操作 `list_head`，不需要知道外层类型
+3. **零分配**——节点嵌入对象内部，不需要单独 `malloc` 链表节点
+
+**对比传统链表：** 传统 `struct Node { void *data; struct Node *next; }` 需要额外分配节点，且 `data` 是 `void*` 丢失类型信息。
+
+**复习：** → [8.3 封装与私有指针](./8.3-encapsulation/8.3-封装与私有指针.md) · [8.5 Linux内核中的OOP思想：多态](./8.5-Linux内核中的OOP思想-多态.md)
+
+</details>
+
+### Q5: 回调与函数指针表
+
+```c
+typedef int (*handler_t)(int event, void *data);
+
+struct EventHandler {
+    int event_id;
+    handler_t fn;
+};
+
+struct EventHandler handlers[] = {
+    {1, handle_connect},
+    {2, handle_disconnect},
+    {3, handle_data},
+};
+
+void dispatch(int event, void *data) {
+    for (int i = 0; i < 3; i++) {
+        if (handlers[i].event_id == event) {
+            handlers[i].fn(event, data);
+            return;
+        }
+    }
+}
+```
+
+> 这种模式与 C++ 的虚函数表有什么异同？有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+
+| | C 函数指针表 | C++ vtable |
+|--|-------------|------------|
+| **构建** | 手动维护数组 | 编译器自动生成 |
+| **绑定** | 运行时查表 | vptr → vtable → 函数 |
+| **灵活性** | 可以动态增删 | 类固定后不可变 |
+| **类型安全** | 弱（`void*` data） | 强（`this` 指针） |
+| **内存** | 全局静态数组 | 每对象 vptr + 每类 vtable |
+
+**C 函数指针表优势：**
+- **无需继承**——任何函数只要签名匹配就能注册
+- **运行时动态修改**——可以热替换 handler
+- **零开销**——静态数组，无间接寻址（vptr → vtable → func）
+- **内核友好**——不需要 C++ 运行时
+
+**HFT 用途：** 事件驱动框架——行情事件、订单事件、风控事件分别注册不同 handler。
+
+**复习：** → [8.5 Linux内核中的OOP思想：多态](./8.5-Linux内核中的OOP思想-多态.md)
+
+</details>
+
+
 ### Q3: file_operations 多态
 
 ```c

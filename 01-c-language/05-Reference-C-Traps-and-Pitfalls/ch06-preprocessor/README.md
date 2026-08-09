@@ -63,3 +63,165 @@ make -C demo06_cond_compile debug=1
 3. `do-while(0)` 宏解决什么问题？
 4. `#` 与 `##` 各做什么？
 5. `#ifdef DEBUG` 与 `#if DEBUG` 区别？
+
+## 章节自测
+
+> 预处理器陷阱：纯文本替换，不理解类型和优先级。看代码 → 想答案 → 点开验证。
+
+### Q1: 宏括号缺失
+
+```c
+#define SQUARE(x) x*x
+
+int r1 = SQUARE(3);
+int r2 = SQUARE(3 + 1);
+int r3 = SQUARE(2 + 3);
+```
+
+> `r1`、`r2`、`r3` 分别是多少？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `r1 = 9`（`3*3`）
+- `r2 = 7`（`3+1*3+1` = 3+3+1 = 7，**不是 16**）
+- `r3 = 11`（`2+3*2+3` = 2+6+3 = 11，**不是 25**）
+
+**修正：** `#define SQUARE(x) ((x)*(x))` — 参数和整体都加括号。
+
+**复习：** → [6.1 宏参数括号](./6.1-宏参数括号.md)
+
+</details>
+
+### Q2: 副作用重复求值
+
+```c
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+int i = 3, j = 5;
+int m = MAX(i++, j++);
+printf("m=%d i=%d j=%d\n", m, i, j);
+```
+
+> `m`、`i`、`j` 分别是多少？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `m=6, i=4, j=7`（或类似值，具体取决于求值顺序）。
+
+展开：`((i++) > (j++) ? (i++) : (j++))`。`i++`=3 vs `j++`=5，3 < 5 为真，走 `j++` 分支 → `j` 被**自增两次**（6→7），`i` 自增一次（3→4）。`m` = 第二次 `j++` 的值 = 6。
+
+**UB 警告：** 三目运算符的 condition 和选中分支之间的求值顺序是 sequenced 的，但 `i++`/`j++` 各被执行了不确定次数——行为不可靠。
+
+**修正：** 用 `inline` 函数替代宏；或用 GNU 语句表达式 `({ typeof(a) _a=(a); ... })`。
+
+**复习：** → [6.2 宏副作用重复](./6.2-宏副作用重复.md)
+
+</details>
+
+### Q3: do-while(0) 宏
+
+```c
+#define SAFE_FREE(p) \
+    if (p) { free(p); p = NULL; }
+
+int main() {
+    char *a = malloc(10), *b = malloc(10);
+    if (1)
+        SAFE_FREE(a);
+    else
+        SAFE_FREE(b);    // 会被执行吗？
+    return 0;
+}
+```
+
+> `else` 分支的 `SAFE_FREE(b)` 会如预期执行吗？如何修复？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **不会**如预期。展开后：
+
+```c
+if (1)
+    if (a) { free(a); a = NULL; }
+else
+    if (b) { free(b); b = NULL; }
+```
+
+`else` 绑定内层 `if (a)`，而非外层 `if (1)`——**悬垂 else 问题**。
+
+**修复：** 用 `do { ... } while(0)` 包裹宏：
+
+```c
+#define SAFE_FREE(p) do { if (p) { free(p); p = NULL; } } while(0)
+```
+
+`do-while(0)` 保证宏体是一个语句，不受外层 `if-else` 影响。
+
+**复习：** → [6.3 多行宏与分号](./6.3-多行宏与分号.md)
+
+</details>
+
+### Q4: 字符串化 #
+
+```c
+#define STR(x) #x
+#define XSTR(x) STR(x)
+
+#define VERSION 42
+
+const char *a = STR(VERSION);
+const char *b = XSTR(VERSION);
+```
+
+> `a` 和 `b` 分别是什么字符串？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `a = "VERSION"`（`#` 在宏参数展开**之前**字符串化）；`b = "42"`（`XSTR` 的参数先展开 `VERSION` → `42`，再传给 `STR` 字符串化）。
+
+**用途：** 调试宏中打印表达式和值：`printf("%s = %d\n", STR(x), x);`
+
+**复习：** → [6.4 字符串化与连接](./6.4-字符串化与连接.md)
+
+</details>
+
+### Q5: #ifdef vs #if
+
+```c
+#define DEBUG 0
+#define RELEASE
+
+#ifdef DEBUG
+    int debug_mode = 1;    // A
+#endif
+
+#if DEBUG
+    int debug_verbose = 1; // B
+#endif
+
+#ifdef RELEASE
+    int release_mode = 1;  // C
+#endif
+```
+
+> A、B、C 三行哪些会被编译？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** A 和 C 编译，B **不编译**。
+
+- `#ifdef DEBUG`：检查 `DEBUG` **是否被定义**（不管值是多少）——`DEBUG` 定义为 0，仍然"已定义" → A 编译。
+- `#if DEBUG`：检查 `DEBUG` 的**值**是否非零——`DEBUG` = 0 → B 不编译。
+- `#ifdef RELEASE`：`RELEASE` 已定义（空宏）→ C 编译。
+
+**规则：** 想用 0/1 开关用 `#if`；只想检查是否定义用 `#ifdef`。
+
+**复习：** → [6.9 空宏与 defined](./6.9-空宏与defined.md)
+
+</details>

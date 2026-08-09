@@ -124,6 +124,71 @@ objdump -dS main.o
 
 </details>
 
+
+### Q4: gcc -E 查看宏展开
+
+```bash
+# 源码 debug.c
+#define MAX(a,b) ((a)>(b)?(a):(b))
+int x = MAX(1+2, 3+4);
+
+# 预处理命令
+gcc -E debug.c -o debug.i
+```
+
+> `debug.i` 中 `MAX(1+2, 3+4)` 展开为什么？为什么要用 `-E`？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 展开为 `int x = ((1+2)>(3+4)?(1+2):(3+4));`
+
+**`-E` 的用途：** 只运行预处理器，输出展开后的源码。用于：
+- 调试宏展开错误（宏优先级、副作用）
+- 查看头文件包含顺序
+- 理解条件编译结果
+- 验证 `#include` 是否正确展开
+
+**HFT/内核：** 调试复杂宏（如 `container_of`、`list_for_each`）时，`-E` 是必备工具。
+
+**复习：** → [1.1 GCC 工具链](./1.1-gcc/1.1-GCC工具链.md)
+
+</details>
+
+### Q5: ar 创建静态库
+
+```bash
+# 三个源文件
+gcc -c a.c -o a.o
+gcc -c b.c -o b.o
+gcc -c c.c -o c.o
+
+# 创建静态库
+ar rcs libmylib.a a.o b.o c.o
+
+# 使用
+gcc main.c -L. -lmylib -o app
+```
+
+> `ar` 的 `r`、`c`、`s` 三个选项分别做什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- **r**：replace（替换/添加）——把 `.o` 文件插入归档，已存在则替换
+- **c**：create——归档不存在时创建（不显示警告）
+- **s**：write index——创建符号索引（等价于 `ranlib`），让链接器快速查找符号
+
+**不加 `s`：** 链接时可能报 `archive has no index`，需要额外运行 `ranlib`。
+
+**静态库本质：** `.a` 文件是 `.o` 的归档（类似 tar），链接器从中抽取需要的 `.o`。
+
+**复习：** → [1.1 GCC 工具链](./1.1-gcc/1.1-GCC工具链.md)
+
+</details>
+
+
 ### Q3: make 基本规则
 
 ```makefile

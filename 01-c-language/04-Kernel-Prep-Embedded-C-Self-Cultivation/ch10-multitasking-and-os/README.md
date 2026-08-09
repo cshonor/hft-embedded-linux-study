@@ -238,6 +238,103 @@ write(fd, "hello", 5);
 
 </details>
 
+
+### Q5: 信号量——生产者消费者
+
+```c
+#include <semaphore.h>
+
+sem_t empty, full;
+int buffer[BUFFER_SIZE];
+
+void *producer(void *arg) {
+    int item = produce();
+    sem_wait(&empty);              // A: 等待空位
+    buffer[in] = item;
+    in = (in + 1) % BUFFER_SIZE;
+    sem_post(&full);               // B: 增加产品数
+    return NULL;
+}
+
+void *consumer(void *arg) {
+    sem_wait(&full);               // C: 等待产品
+    int item = buffer[out];
+    out = (out + 1) % BUFFER_SIZE;
+    sem_post(&empty);              // D: 增加空位
+    consume(item);
+    return NULL;
+}
+```
+
+> 如果 producer 中 A 和 B 顺序反了（先 post full 再 wait empty），会怎样？还需要互斥锁吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** A 和 B 反转后：producer 先 `sem_post(&full)` 再 `sem_wait(&empty)`——**信号量计数错误**。full 信号量增加但缓冲区可能没空位放入产品，consumer 可能在 producer 还没写入时就读取——**数据竞争**。
+
+**需要互斥锁吗？** 如果只有一个 producer 和一个 consumer：**不需要**（信号量已保证同步）。如果有多个 producer 或多个 consumer：**需要** mutex 保护 `buffer`/`in`/`out` 的访问。
+
+```c
+sem_wait(&empty);
+pthread_mutex_lock(&mutex);
+buffer[in] = item;
+in = (in + 1) % BUFFER_SIZE;
+pthread_mutex_unlock(&mutex);
+sem_post(&full);
+```
+
+**HFT 用途：** 行情数据生产者→策略消费者，用无锁队列替代信号量+互斥锁减少延迟。
+
+**复习：** → [10.2.4 临界区](../../../07-Linux-Kernel-DPDK-Network-C/01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch10-multitasking-and-os/README.md)
+
+</details>
+
+### Q6: mmap 共享内存 IPC
+
+```c
+#include <sys/mman.h>
+#include <fcntl.h>
+
+// 进程 A（创建共享内存）
+int fd = shm_open("/hft_shm", O_CREAT|O_RDWR, 0666);
+ftruncate(fd, sizeof(MarketData));
+MarketData *md = mmap(NULL, sizeof(MarketData),
+    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+md->price = 100.5;
+
+// 进程 B（打开共享内存）
+int fd = shm_open("/hft_shm", O_RDWR, 0666);
+MarketData *md = mmap(NULL, sizeof(MarketData),
+    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+printf("price=%f\n", md->price);  // 读取 100.5
+```
+
+> 共享内存 IPC 的优势是什么？有什么需要注意的？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 共享内存是**最快的 IPC**——数据直接在进程间共享物理内存页，**零拷贝**、无系统调用开销。
+
+**优势：**
+- 无内核参与数据传输（建立后纯内存读写）
+- 延迟最低——HFT 行情分发首选
+- 大数据量高效
+
+**注意事项：**
+1. **同步**——共享内存本身不提供同步机制，需要信号量/互斥锁/原子操作
+2. **生命周期**——`shm_open` 创建的对象在 `shm_unlink` 前一直存在，即使所有进程都退出
+3. **对齐**——共享结构体必须 `__attribute__((aligned(64)))` 避免 cache line 伪共享
+4. **权限**——`0666` 权限设置需考虑安全性
+
+**HFT 实践：** 行情进程 mmap 共享内存 → 策略进程 mmap 读取——亚微秒级行情分发。
+
+**复习：** → [10.4.4 Linux 系统调用](../../../07-Linux-Kernel-DPDK-Network-C/01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch10-multitasking-and-os/README.md)
+
+</details>
+
+
 ### Q4: MMU 地址转换
 
 ```

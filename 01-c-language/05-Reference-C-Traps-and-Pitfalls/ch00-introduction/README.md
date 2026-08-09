@@ -49,3 +49,126 @@
 1. 每章先看 **README 速查表**，再读各小节
 2. 运行 **ch01/demo/** 亲手复现
 3. 与 K&R、Expert C 交叉对照，同一陷阱多角度加固
+
+## 章节自测
+
+> C 陷阱全景：三类错误分级 + UB 概念。看代码 → 想答案 → 点开验证。
+
+### Q1: 三类错误分级
+
+```c
+int arr[5] = {1, 2, 3, 4, 5};
+int *p = arr;
+
+// 版本 A
+printf("%d\n", arr[10]);       // 越界访问
+
+// 版本 B
+int *q = NULL;
+*q = 42;                        // 空指针解引用
+
+// 版本 C
+int total = 0;
+for (int i = 0; i <= 5; i++)   // 多读一个元素
+    total += arr[i];
+printf("%d\n", total);
+```
+
+> 三个版本分别属于哪类错误？哪个最难排查？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：**运行崩溃**（段错误或读垃圾值，gdb 可定位）
+- B：**运行崩溃**（SIGSEGV，立即崩溃）
+- C：**静默错误**（程序「正常跑」但 total 多了一个越界值）——**最难排查**
+
+**关键：** 静默错误是 HFT/内核最高频最致命的类型——程序不崩溃，但结果错误。
+
+**复习：** → [ch00 导读 - 三类错误分级](./README.md)
+
+</details>
+
+### Q2: 静默逻辑错误
+
+```c
+// HFT 订单状态判断
+if (order.status = CANCELLED) {   // 注意：= 而非 ==
+    cancel_all_orders();
+}
+```
+
+> 这段代码会编译报错吗？运行时发生什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 编译器**可能不报错**（赋值表达式合法，值为 CANCELLED）。运行时：先把 `CANCELLED` 赋给 `status`，然后判断该值是否非零——如果 CANCELLED ≠ 0，则**永远进入 if 体**，所有订单被取消。
+
+**教训：** `=` 代替 `==` 是 C 最经典的静默错误。HFT 中可能导致全盘撤单。
+
+**防护：** Yoda 写法 `if (CANCELLED == order.status)` 或编译器 `-Wall -Wparentheses`。
+
+**复习：** → [ch00 导读 - 为什么 C 特别容易踩坑](./README.md) · [ch01 1.1 等号](../ch01-lexical-pitfalls/1.1-等号与相等判断.md)
+
+</details>
+
+### Q3: 未定义行为（UB）
+
+```c
+#include <stdio.h>
+int main() {
+    int x = INT_MAX;   // 假设 2147483647
+    int y = x + 1;
+    printf("%d\n", y);
+    return 0;
+}
+```
+
+> `y` 的值是多少？这是 UB 还是实现定义？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **未定义行为（UB）**。有符号整数溢出在 C 标准中是 UB——编译器可以假设它不发生，从而做出优化（如删除溢出检查）。结果可能是 `-2147483648`（回绕），也可能是任何值，甚至程序崩溃。
+
+**对比：** 无符号溢出是**明确定义的回绕**（mod 2^N），不是 UB。
+
+**HFT 关联：** 累加成交量时用 `int` 可能溢出 → 用 `int64_t` 或 `size_t`。
+
+**复习：** → [ch00 导读 - UB 概念](./README.md) · [ch03 3.4 整型溢出](../ch03-semantic-pitfalls/3.4-整型溢出.md)
+
+</details>
+
+### Q4: 全书陷阱链路
+
+```c
+/* 以下代码包含多少层陷阱？ */
+#define MAX(a, b) (a > b ? a : b)    // 层1
+
+int x = MAX(i++, j++);               // 层2
+
+int arr[3] = {1, 2, 3};
+int *p = arr;
+printf("%d\n", p[5]);                // 层3
+
+extern char *name;                   // 层4（定义处是 char name[]）
+```
+
+> 每层分别对应全书哪一章？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- 层1：**ch06 预处理器** — 宏参数缺括号 `(a)` `(b)`
+- 层2：**ch06/ch03** — 副作用重复求值（`i++`/`j++` 被求值两次），UB
+- 层3：**ch03 语义** — 数组越界，静默错误
+- 层4：**ch04 连接** — `extern char *` 与 `char[]` 类型不匹配，链接成功但运行崩溃
+
+**全书链路：** 词法(ch01) → 语法(ch02) → 语义(ch03) → 连接(ch04) → 库(ch05) → 预处理(ch06) → 可移植性(ch07)
+
+**复习：** → [ch00 导读 - 全书逻辑链路](./README.md)
+
+</details>

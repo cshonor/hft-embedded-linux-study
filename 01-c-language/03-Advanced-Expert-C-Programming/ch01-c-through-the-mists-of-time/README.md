@@ -103,3 +103,136 @@ make clean
 - [1.9 阅读ANSI C标准，寻找乐趣和裨益](./1.9-阅读ANSI-C标准-寻找乐趣和裨益.md)
 - [1.10 「安静的改变」究竟有多少安静](./1.10-安静的改变-究竟有多少安静.md)
 - [1.11 轻松一下——由编译器定义的Pragmas效果](./1.11-轻松一下由编译器定义的Pragmas效果.md)
+
+## 章节自测
+
+> C 历史与标准：K&R vs ANSI、UB 分类、hosted/freestanding。看代码 → 想答案 → 点开验证。
+
+### Q1: K&R 旧式声明
+
+```c
+/* K&R 风格 */
+int add(a, b)
+    int a, b;
+{
+    return a + b;
+}
+
+/* ANSI 风格 */
+int sub(int a, int b) {
+    return a - b;
+}
+
+int main() {
+    printf("%d\n", add(3, 4));      // A
+    printf("%d\n", add(3.0, 4.0));  // B：传 double
+    printf("%d\n", sub(3.0, 4.0));  // C：传 double
+    return 0;
+}
+```
+
+> B 和 C 哪个更危险？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **B 更危险**。K&R 旧式声明**不做参数类型检查**——`add(3.0, 4.0)` 传 `double`，但函数期望 `int`，编译器不警告。`double` 8 字节被当 `int` 4 字节读取 → 结果错误或 UB。
+
+ANSI 原型 `int sub(int, int)` 会让编译器**自动转换** `3.0` → `3`（截断），安全。
+
+**规则：** 始终用 ANSI 原型；`-Werror=implicit-function-declaration` 禁止旧式声明。
+
+**复习：** → [1.4 K&R C](./1.4-KR-C.md) · [1.5 今日之 ANSI C](./1.5-今日之ANSI-C.md)
+
+</details>
+
+### Q2: implementation-defined vs undefined
+
+```c
+int x = -1;
+int shifted = x >> 1;       // A
+
+int arr[5];
+printf("%d\n", arr[3]);     // B（未初始化）
+
+char c = 200;               // C（char 符号性实现定义）
+printf("%d\n", c);
+```
+
+> A、B、C 分别是 implementation-defined、unspecified 还是 undefined？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：**implementation-defined**（有符号右移——编译器文档说明是算术还是逻辑右移）
+- B：**unspecified/indeterminate value**（未初始化自动变量——值不确定，读它是 UB 如果是 trap representation）
+- C：**implementation-defined**（`char` 是否有符号由实现定义——`200` 可能是 200 或 -56）
+
+**区别：** implementation-defined = 编译器必须文档化选择；undefined = 标准不约束任何行为；unspecified = 标准提供多个选项但不要求文档化。
+
+**复习：** → [1.6 它很棒，但它符合标准吗](./1.6-它很棒-但它符合标准吗.md)
+
+</details>
+
+### Q3: hosted vs freestanding
+
+```c
+// hosted 环境（Linux 用户态）
+#include <stdio.h>
+int main(void) {
+    printf("hello\n");
+    return 0;
+}
+
+// freestanding 环境（内核/裸机）
+void kernel_main(void) {
+    // 没有 main()，没有 stdio.h
+    // 用自定义 UART 输出
+    uart_puts("hello\n");
+}
+```
+
+> 两种环境的主要区别是什么？Linux 内核属于哪类？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- **hosted**：有完整标准库（`stdio.h`、`stdlib.h` 等），入口是 `main()`，OS 提供运行时
+- **freestanding**：最小库集（`<stddef.h>`、`<stdint.h>` 等），入口自定义，无 OS 依赖
+
+Linux 内核近似 freestanding + GNU C 扩展——不使用 `stdio.h`/`stdlib.h`，入口是 `start_kernel()`，自己管理内存和中断。
+
+**HFT 关联：** DPDK 用户态驱动绕过内核，但仍在 hosted 环境；裸机 HFT 可能用 freestanding。
+
+**复习：** → [1.6 它很棒，但它符合标准吗](./1.6-它很棒-但它符合标准吗.md)
+
+</details>
+
+### Q4: 数组下标为什么从 0 开始
+
+```c
+int arr[5] = {10, 20, 30, 40, 50};
+int *p = arr;
+
+// C 语言中 arr[i] 等价于什么？
+printf("%d\n", arr[2]);
+printf("%d\n", *(p + 2));
+printf("%d\n", 2[arr]);     // 这个合法吗？
+```
+
+> 三行 printf 分别输出什么？为什么 C 数组从 0 开始？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 三行都输出 `30`。`arr[i]` 等价于 `*(arr + i)`，也等价于 `*(i + arr)` 即 `i[arr]`。
+
+**从 0 开始的原因：** C 的数组下标本质是**偏移量**——`arr[0]` = `*(arr + 0)` = 首元素。PDP-11 时代地址算术直接映射硬件指令，偏移 0 = 基地址本身，最自然。
+
+**规则：** `i[arr]` 合法但勿在生产代码使用——可读性差。
+
+**复习：** → [1.2 C 语言的早期体验](./1.2-C语言的早期体验.md)
+
+</details>

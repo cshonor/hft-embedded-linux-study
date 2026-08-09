@@ -176,6 +176,79 @@ gcc -shared -o libfoo_bad.so foo.c
 
 </details>
 
+
+### Q4: readelf 查看段信息
+
+```bash
+$ readelf -S a.out
+# 输出节头表（Section Header Table）
+
+$ readelf -l a.out
+# 输出程序头表（Program Header Table）
+
+$ readelf -s a.out | grep main
+# 查找 main 符号
+```
+
+> Section Header 和 Program Header 有什么区别？哪个对运行时重要？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- **Section Header（节头）**：描述 ELF 文件的**逻辑结构**——`.text`、`.data`、`.bss`、`.rodata` 等。给链接器和调试器用。
+- **Program Header（程序头）**：描述**运行时段（segment）**——哪些节加载到内存、加载地址、权限（R/W/X）。给 OS 加载器用。
+
+**关系：** 多个 section 可以合并到一个 segment。如 `.text` + `.rodata` → 一个 R-X segment；`.data` + `.bss` → 一个 RW segment。
+
+**裸机/内核：** 需要理解 Program Header 来配置链接脚本，确保代码加载到正确的内存地址。
+
+**复习：** → [4.3 ELF 文件格式](./4.3-elf/4.3-ELF文件格式.md)
+
+</details>
+
+### Q5: 弱符号与默认实现
+
+```c
+// 框架代码 framework.c
+int __attribute__((weak)) board_init(void) {
+    return 0;  // 默认空实现
+}
+
+// 板级代码 board.c（可选覆盖）
+int board_init(void) {
+    gpio_config();
+    return 0;
+}
+
+// main.c
+int main() {
+    board_init();  // 调用哪个版本？
+    return 0;
+}
+```
+
+> 如果 `board.c` 存在，链接哪个？如果不存在呢？这个模式在内核中有什么用途？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `board.c` 存在：链接**强符号**版本（board.c 的 `board_init`）
+- `board.c` 不存在：链接**弱符号**版本（framework.c 的空实现）
+
+**内核用途：**
+- BSP（板级支持包）——框架提供默认 `weak` 实现，各板子按需覆盖
+- Linux 内核 `arch/arm/mach-*` 大量使用
+- 驱动框架——默认 `weak` 回调，驱动注册时覆盖
+
+**对比 `#ifdef`：** 弱符号在**链接时**选择，不需要改源码；`#ifdef` 在**编译时**选择，需要条件编译。
+
+**复习：** → [4.7 动态链接](./4.7-dynamic-link/4.7-动态链接.md) · [4.14 链接脚本](./4.14-链接脚本.md)
+
+</details>
+
+
 ### Q3: 链接脚本——裸机 Flash/RAM 布局
 
 ```lds

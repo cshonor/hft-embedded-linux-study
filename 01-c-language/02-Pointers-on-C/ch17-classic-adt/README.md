@@ -124,3 +124,93 @@ struct Queue {               // 完整定义只在此
 **复习：** → [17.1 Stacks](./17.1-stacks.md) — ADT 封装
 
 </details>
+
+
+### Q3: 链表栈实现
+
+```c
+struct StackNode {
+    int val;
+    struct StackNode *next;
+};
+
+struct Stack { struct StackNode *top; };
+
+void push(struct Stack *s, int val) {
+    struct StackNode *n = malloc(sizeof(*n));
+    n->val = val;
+    n->next = s->top;    // A: 新节点指向前顶
+    s->top = n;           // B: 更新栈顶
+}
+
+int pop(struct Stack *s) {
+    if (!s->top) return -1;  // 空栈
+    struct StackNode *n = s->top;
+    int val = n->val;
+    s->top = n->next;     // C: 栈顶下移
+    free(n);               // D: 释放节点
+    return val;
+}
+```
+
+> 如果删掉 D 行（`free(n)`），会发生什么？push 时 `malloc` 失败怎么办？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 删掉 D 行 → **内存泄漏**——每次 pop 丢失一个节点，但内存不释放。长时间运行的 HFT 系统会耗尽内存。
+
+`malloc` 失败返回 NULL → `n->val = val` 解引用 NULL → **崩溃**。必须判空：
+
+```c
+struct StackNode *n = malloc(sizeof(*n));
+if (!n) { /* 处理错误 */ return; }
+```
+
+**规则：** 每次 `malloc` 都要判空；每次 `pop`/`delete` 都要 `free`。RAII 思想在 C 中需要手动实现。
+
+**复习：** → [17.1 Stacks](./17.1-stacks.md)
+
+</details>
+
+### Q4: 二叉搜索树查找
+
+```c
+struct TreeNode {
+    int val;
+    struct TreeNode *left, *right;
+};
+
+struct TreeNode *find(struct TreeNode *root, int target) {
+    while (root) {
+        if (target == root->val)
+            return root;
+        else if (target < root->val)
+            root = root->left;     // 往左找
+        else
+            root = root->right;    // 往右找
+    }
+    return NULL;  // 没找到
+}
+```
+
+> BST 查找的时间复杂度是多少？什么情况下退化为 O(n)？如何避免？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- 平衡 BST：**O(log n)**——每次排除一半
+- 退化为 O(n)：**链表形状**（按有序序列插入，如 1,2,3,4,5 → 每个节点只有右子）
+
+**避免方法：**
+- **AVL 树**/**红黑树**：插入/删除时自动旋转保持平衡
+- **跳表**：概率平衡的替代方案
+- Linux 内核用**红黑树**（`struct rb_node`）管理进程调度、内存管理
+
+**HFT 关联：** 订单簿（Order Book）常用红黑树或跳表——O(log n) 插入/删除/查找。
+
+**复习：** → [17.4 树](./17.4-trees/17.4-trees.md)
+
+</details>
+

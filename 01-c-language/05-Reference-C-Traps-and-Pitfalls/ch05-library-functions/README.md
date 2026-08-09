@@ -54,3 +54,141 @@ cd demo && make all
 3. `free(NULL)` 是否安全？双重 free 后果？
 4. 为何 `isprint((char)0xFF)` 可能 UB？
 5. `gets` 为何被标准移除？`fgets` 读一行后要注意什么？
+
+## 章节自测
+
+> 库函数陷阱：printf、字符串、堆、ctype、IO。看代码 → 想答案 → 点开验证。
+
+### Q1: printf 格式符不匹配
+
+```c
+long big = 1000000000L;
+printf("big = %d\n", big);       // A
+printf("big = %ld\n", big);     // B
+
+size_t sz = sizeof(int);
+printf("sz = %d\n", sz);         // C
+printf("sz = %zu\n", sz);       // D
+```
+
+> A 和 C 在 64 位系统上可能出什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A：`%d` 读 `int`（4 字节），但 `long` 在 LP64 上是 8 字节——读了一半，或者后续参数错位。**UB**，可能输出错误值。
+- B：`%ld` 正确匹配 `long`。
+- C：`size_t` 在 64 位上是 `unsigned long`（8 字节），`%d` 读 4 字节——**UB**。
+- D：`%zu` 正确匹配 `size_t`。
+
+**规则：** 格式符必须与类型严格对应。64 位系统用 `%ld`/`%lld`/`%zu`。
+
+**复习：** → [5.1 printf 与可变参数](./5.1-printf与可变参数.md)
+
+</details>
+
+### Q2: strncpy 的坑
+
+```c
+char buf[5];
+strncpy(buf, "hello world", 5);
+buf[5] = '\0';
+printf("%s\n", buf);
+```
+
+> 这段代码有什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 两个问题：
+1. **越界写：** `buf[5]` 越界（数组只有 0-4）。`strncpy` 在源串 ≥ n 时不追加 `\0`，需要手动加——但这里位置错了。
+2. **无终止符：** `strncpy(buf, "hello world", 5)` 只拷贝 5 字节 `hello`，**不追加 `\0`**。正确做法是 `buf[4] = '\0'` 或 `buf[sizeof(buf)-1] = '\0'`。
+
+**规则：** `strncpy` 后手动在最后一个位置加 `\0`——`buf[n-1] = '\0'`。
+
+**复习：** → [5.2 字符串函数](./5.2-字符串函数.md)
+
+</details>
+
+### Q3: malloc 与 free 陷阱
+
+```c
+char *p = malloc(0);
+if (p == NULL)
+    printf("NULL\n");
+else {
+    printf("non-NULL\n");
+    free(p);
+    free(p);   // 双重 free
+}
+```
+
+> `malloc(0)` 返回什么？双重 free 会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `malloc(0)`：**实现定义**——可能返回 NULL，也可能返回一个非空但不可解引用的指针。两种都合法。
+- 双重 free：**UB**——堆元数据已被破坏，可能导致堆崩溃或安全漏洞。`free(NULL)` 是安全的（什么也不做），但 `free(非空指针)` 两次是 UB。
+
+**规则：** free 后置 `p = NULL`；同一指针只 free 一次。
+
+**复习：** → [5.3 malloc 与 free](./5.3-malloc与free.md)
+
+</details>
+
+### Q4: ctype 入参陷阱
+
+```c
+char c = 0xFF;   // char signed 时 c = -1
+if (isprint(c))
+    printf("printable\n");
+else
+    printf("not printable\n");
+```
+
+> 在 `char` 为有符号的平台上，这段代码可能出什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **UB**。`isprint` 的参数要求是 `EOF`(-1) 或 `unsigned char` 范围（0-255）的值。当 `char` 有符号时，`c = 0xFF` 变成 `-1`，与 `EOF` 冲突——实现可能用 `-1` 作为查找表索引，导致**越界访问**。
+
+**修正：** `isprint((unsigned char)c)` — 强制转换为 `unsigned char` 再传给 ctype 函数。
+
+**复习：** → [5.4 ctype 字符分类](./5.4-ctype字符分类.md)
+
+</details>
+
+### Q5: fgets 换行处理
+
+```c
+char buf[16];
+FILE *f = fopen("data.txt", "r");
+if (f) {
+    fgets(buf, sizeof(buf), f);
+    // 文件第一行是 "hello\n"
+    printf("[%s]\n", buf);
+}
+```
+
+> 输出中是否包含换行符？如何去掉？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输出 `[hello\n]`（`fgets` **保留换行符**）。与 `gets`（已移除）不同，`fgets` 读到 `\n` 时把它存入缓冲区。
+
+**去掉换行：**
+```c
+buf[strcspn(buf, "\n")] = '\0';
+```
+
+**规则：** `fgets` 后必须处理换行符——`strcspn` 比 `strlen-1` 更安全（不假设最后一定是 `\n`）。
+
+**复习：** → [5.5 文件 IO](./5.5-文件IO.md)
+
+</details>

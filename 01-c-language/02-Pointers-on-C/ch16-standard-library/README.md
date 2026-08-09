@@ -112,6 +112,92 @@ return (va > vb) - (va < vb);
 
 </details>
 
+
+### Q3: atoi vs strtol 安全转换
+
+```c
+const char *s1 = "42abc";
+const char *s2 = "hello";
+const char *s3 = "999999999999999999999";  // 溢出
+
+int a = atoi(s1);     // A
+int b = atoi(s2);     // B
+int c = atoi(s3);     // C
+
+char *end;
+long d = strtol(s1, &end, 10);  // D
+```
+
+> A、B、C 分别返回什么？atoi 有什么缺陷？strtol 如何解决？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A = **42**（atoi 解析数字直到非数字字符）
+- B = **0**（atoi 解析失败返回 0——无法区分 "0" 和 "hello"）
+- C = **UB**（atoi 溢出是未定义行为）
+
+**atoi 缺陷：** 无法检测错误（0 既可能是合法值也可能是错误），溢出是 UB。
+
+**strtol 优势：**
+- 返回 `long`（范围更大）
+- `end` 指针指向未解析部分——可以检查是否全部解析
+- `errno = ERANGE` 检测溢出
+- 支持任意进制（base 参数）
+
+```c
+errno = 0;
+long val = strtol(s1, &end, 10);
+if (errno == ERANGE) /* 溢出 */;
+if (*end != '\0')    /* 有未解析字符 */;
+```
+
+**复习：** → [16.1 stdlib](./16.1-stdlib.md)
+
+</details>
+
+### Q4: 可变参数函数 va_list
+
+```c
+#include <stdarg.h>
+
+int sum_ints(int count, ...) {
+    va_list ap;
+    va_start(ap, count);
+    int total = 0;
+    for (int i = 0; i < count; i++)
+        total += va_arg(ap, int);
+    va_end(ap);
+    return total;
+}
+
+int r = sum_ints(3, 10, 20, 30);     // A: 60
+int r2 = sum_ints(3, 10, 20);         // B: 只传了 2 个
+int r3 = sum_ints(3, 10.0, 20, 30);   // C: 传了 double
+```
+
+> B 和 C 会发生什么？可变参数函数有什么安全隐患？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- B：**UB**——`va_arg` 读取第 3 个参数时访问栈上未初始化的内存，返回垃圾值
+- C：**UB**——`10.0` 是 `double`（8 字节），`va_arg(ap, int)` 按 `int`（4 字节）读取——栈布局错位，后续参数全部错误
+
+**安全隐患：**
+- 编译器**不检查参数类型和个数**——`printf` 格式符检查是编译器扩展，不是标准
+- 栈布局依赖 ABI——不同平台参数传递方式不同（寄存器 vs 栈）
+- 攻击者可通过格式串攻击读取栈数据
+
+**规则：** 可变参数函数必须约定参数类型和个数（如 `count` 参数）；C++ 用可变参数模板更安全。
+
+**复习：** → [16.6 打印可变参数列表](./16.6-打印可变参数列表.md)
+
+</details>
+
+
 ### Q2: exit vs _exit
 
 ```c

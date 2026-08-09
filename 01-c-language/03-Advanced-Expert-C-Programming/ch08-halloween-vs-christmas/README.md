@@ -150,3 +150,116 @@ cd demo04_short_circuit && make && ./demo04 && cd ..
 ## 速查附件
 
 - **[operator-precedence-cheatsheet.md](./operator-precedence-cheatsheet.md)** — 可打印优先级表 + 易混淆对照
+
+## 章节自测
+
+> 万圣节与圣诞节：运算符优先级、序列点、UB。看代码 → 想答案 → 点开验证。
+
+### Q1: 八进制双关
+
+```c
+int a = 031;
+int b = 25;
+
+if (a == b)
+    printf("Halloween == Christmas\n");
+```
+
+> 输出什么？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输出 `Halloween == Christmas`。八进制 `031` = 3×8 + 1 = **25** = 十进制 `25`。
+
+**双关：** Oct 31（万圣节）= Dec 25（圣诞节）——程序员笑话指的是**八进制 vs 十进制**，不是日历。
+
+**教训：** 不要用前导 0 写十进制数——编译器理解为八进制。
+
+**复习：** → [8.1 Portzebie 度量衡系统](./8.1-Portzebie度量衡系统.md)
+
+</details>
+
+### Q2: Christmas 问题 — UB
+
+```c
+int i = 1;
+i = i++ + ++i;
+printf("%d\n", i);
+```
+
+> `i` 的值是多少？这段代码安全吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **未定义行为（UB）**——`i` 在同一表达式中被修改两次（`i++` 和 `++i`），且没有 sequenced-before 关系保证顺序。结果可能是 3、4、5 或任何值——编译器甚至可以删除整个表达式。
+
+**规则：** 一行内一个变量最多修改一次。拆成多行：
+```c
+int tmp1 = i++;   // i=1, tmp1=1, i→2
+int tmp2 = ++i;   // i→3, tmp2=3
+i = tmp1 + tmp2;  // i = 1+3 = 4
+```
+
+**复习：** → [8.8 软件比硬件更困难](./8.8-软件比硬件更困难.md)
+
+</details>
+
+### Q3: 位测优先级陷阱
+
+```c
+int flags = 0x05;   // 0b101
+int mask = 0x01;    // 测第 0 位
+
+if (flags & mask == 1)
+    printf("bit 0 is set\n");
+else
+    printf("bit 0 is not set\n");
+```
+
+> 输出什么？如何修正？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输出 `bit 0 is not set`。`==` 优先级高于 `&`，表达式被解析为 `flags & (mask == 1)` = `flags & 1`（true）= `flags & 1`... 
+
+等一下，`mask == 1` 为真（值 1），所以 `flags & 1` = `0x05 & 0x01` = `1`（真）→ 应该输出 `bit 0 is set`。
+
+重新分析：`mask == 1` → `0x01 == 1` → true → 值为 `1`。`flags & 1` → `0x05 & 0x01` → `1` → 真。所以输出 `bit 0 is set`。
+
+但如果 mask 不是 1，比如 `mask = 0x04`（测第 2 位）：`mask == 1` → false → 值 0 → `flags & 0` = 0 → 假 → 输出 `bit 0 is not set`，即使第 2 位确实设置了！
+
+**修正：** `if ((flags & mask) == mask)` 或 `if (flags & mask)` — 位运算加括号。
+
+**复习：** → [8.2 根据位模式构筑图形](./8.2-根据位模式构筑图形.md) · [8.8 软件比硬件更困难](./8.8-软件比硬件更困难.md)
+
+</details>
+
+### Q4: 短路 vs 按位
+
+```c
+struct Node *p = NULL;
+
+// 版本 A
+if (p && p->next)
+    printf("has next\n");
+
+// 版本 B
+if (p & p->next)
+    printf("has next\n");
+```
+
+> 版本 B 会发生什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 版本 B **崩溃**（SIGSEGV）。`&&` 是**逻辑短路**——`p` 为 NULL 时不再求值 `p->next`。`&` 是**按位与**——**两边都求值**，`p->next` 在 `p=NULL` 时解引用空指针 → 崩溃。
+
+**规则：** 条件判断用 `&&`/`||`（短路）；位操作用 `&`/`|`。两者优先级也不同——`&&` 远低于 `&`。
+
+**复习：** → [8.8 软件比硬件更困难](./8.8-软件比硬件更困难.md)
+
+</details>

@@ -103,3 +103,129 @@ make clean
 - [2.4 少做之过](./2.4-少做之过.md)
 - [2.5 轻松一下——有些特性确实就是Bug](./2.5-轻松一下有些特性确实就是Bug.md)
 - [2.6 参考文献](./2.6-参考文献.md)
+
+## 章节自测
+
+> 语言特性 vs Bug：三类之过——多做、误做、少做。看代码 → 想答案 → 点开验证。
+
+### Q1: switch 贯穿
+
+```c
+int level = 2;
+int points = 0;
+
+switch (level) {
+    case 1:
+        points += 10;
+    case 2:
+        points += 20;
+    case 3:
+        points += 30;
+    default:
+        points += 5;
+}
+
+printf("points = %d\n", points);
+```
+
+> `points` 的值是多少？这是 Bug 还是语言特性？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `points = 55`（20+30+5）。`case 2` 匹配后没有 `break`，**贯穿**执行后续所有 case 直到 `break` 或结束。
+
+**这是语言特性**（fall-through），不是 Bug——但容易引发错误。`-Wimplicit-fallthrough` 可检测意外贯穿。
+
+**用途：** 有意贯穿可以简化代码（如 `case 1: case 2: ...` 共享逻辑）。
+
+**复习：** → [2.2 多做之过](./2.2-多做之过.md)
+
+</details>
+
+### Q2: signed vs unsigned 比较
+
+```c
+unsigned int remaining = 10;
+int requested = -1;
+
+if (requested <= remaining)
+    printf("OK: sending %d items\n", requested);
+else
+    printf("ERROR: too many\n");
+```
+
+> 输出什么？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输出 `ERROR: too many`。`requested = -1` 与 `unsigned` 比较时，`requested` 被隐式转换为 `unsigned`，变成 `4294967295`（UINT_MAX），远大于 10。
+
+**这是"少做之过"**——C 不阻止 signed/unsigned 混合比较，编译器通常只给 warning。
+
+**HFT 灾难：** 如果用 `int` 表示订单数量，`-1` 作为"无效"标记，与 `unsigned` 库存比较时永远"充足"。
+
+**复习：** → [2.4 少做之过](./2.4-少做之过.md)
+
+</details>
+
+### Q3: 宏优先级陷阱
+
+```c
+#define MULT(a, b) a * b
+
+int r1 = MULT(2, 3);        // A
+int r2 = MULT(1 + 2, 3);    // B
+int r3 = MULT(2, 1 + 2);    // C
+```
+
+> r1、r2、r3 分别是多少？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `r1 = 6`，`r2 = 5`（`1 + 2 * 3 = 7`？不对——展开是 `1 + 2 * 3` = 1+6 = 7），`r3 = 5`（`2 * 1 + 2` = 4？不对——展开是 `2 * 1 + 2` = 2+2 = 4）。
+
+重新计算：
+- r2 = `1 + 2 * 3` = 1 + 6 = **7**
+- r3 = `2 * 1 + 2` = 2 + 2 = **4**
+
+**修正：** `#define MULT(a, b) ((a) * (b))` — 每个参数和整体都加括号。
+
+**复习：** → [2.2 多做之过](./2.2-多做之过.md)
+
+</details>
+
+### Q4: static 双义
+
+```c
+// file scope（文件顶部）
+static int counter = 0;       // 含义 A
+
+void func(void) {
+    static int call_count = 0; // 含义 B
+    call_count++;
+    counter++;
+}
+
+// 另一个文件
+extern int counter;           // 能链接吗？
+```
+
+> 含义 A 和 B 分别是什么？extern 能访问 counter 吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A（文件作用域 `static`）：**内部链接**——只在本 `.c` 文件可见，`extern` 无法访问。
+- B（块作用域 `static`）：**静态存储期**——函数返回后值不丢失，但作用域仍限于函数内。只在首次调用时初始化。
+
+`extern int counter` **链接失败**——`static` 全局变量是内部链接。
+
+**这是"误做之过"**——`static` 一个关键字两种含义，容易混淆。
+
+**复习：** → [2.3 误做之过](./2.3-误做之过.md)
+
+</details>

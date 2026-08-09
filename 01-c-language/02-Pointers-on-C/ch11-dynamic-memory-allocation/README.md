@@ -116,6 +116,67 @@ if (tmp) buf = tmp;
 
 </details>
 
+
+### Q4: 内存对齐与 malloc
+
+```c
+struct Aligned {
+    double d;    // 8 bytes, 要求 8 字节对齐
+    int i;       // 4 bytes
+};
+
+struct Aligned *p = malloc(sizeof(struct Aligned));
+// malloc 返回的地址是否一定满足 8 字节对齐？
+
+char *buf = malloc(1);
+// *buf 后面紧跟的内存属于谁？
+```
+
+> `malloc` 返回的指针是否保证对齐？越界写 `buf[1]` 会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `malloc` 返回的指针保证对齐到 `max_align_t`（通常是 16 字节），满足任何标准类型的要求——`struct Aligned` 的 8 字节对齐没问题。
+
+`buf[1]` 越界写——属于**堆元数据或下一个分配的块**。可能不立即崩溃，但破坏堆管理结构，导致后续 `malloc`/`free` 崩溃。这是**堆溢出**（heap overflow），安全漏洞的常见来源。
+
+**规则：** 永远不越界访问 `malloc` 分配的内存；用 `valgrind` 或 ASan 检测。
+
+**复习：** → [11.5 常见错误](./11.5-常见错误.md) · [11.1 动态内存分配](./11.1-动态内存分配.md)
+
+</details>
+
+### Q5: use-after-free 检测
+
+```c
+char *p = malloc(100);
+strcpy(p, "hello");
+free(p);
+
+// 忘记 p = NULL;
+char *q = p;          // 悬垂指针
+printf("%s\n", q);    // 可能输出 "hello"，可能崩溃
+```
+
+> 为什么 `printf` 可能输出 "hello"？这段代码有什么隐患？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `free` 释放内存但**不清零内容**——原来的 `"hello"` 可能还在那块内存中。`printf` 读悬垂指针——如果该内存还没被重新分配，可能"正常"输出 `"hello"`；如果已被重新分配覆盖，输出垃圾或崩溃。
+
+**这是 use-after-free（UAF）**——最危险的内存错误之一：
+- **不可预测**：取决于堆分配器的内部状态
+- **安全漏洞**：攻击者可利用 UAF 读取敏感数据或控制执行流
+
+**防护：** `free(p); p = NULL;` — 释放后立即置空。访问 NULL 会立即崩溃（容易发现），比 UAF 静默错误好得多。
+
+**复习：** → [11.5 常见错误](./11.5-常见错误.md)
+
+</details>
+
+
 ### Q3: 四大内存故障
 
 ```c

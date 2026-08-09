@@ -157,3 +157,135 @@ cd demo04_ptr_arith_2d && make && ./demo04 && cd ..
 - [9.5 数组和指针可交换性的总结](./9.5-数组和指针可交换性的总结.md)
 - [9.6 C语言的多维数组](./9.6-C语言的多维数组.md)
 - [9.7 轻松一下——软件/硬件平衡](./9.7-轻松一下软件硬件平衡.md)
+
+## 章节自测
+
+> 再论数组：退化、二维传参、柔性数组。看代码 → 想答案 → 点开验证。
+
+### Q1: 二维数组传参
+
+```c
+int matrix[3][4] = {{1,2,3,4},{5,6,7,8},{9,10,11,12}};
+
+// 版本 A
+void show_a(int arr[][4], int rows) {
+    printf("%d\n", arr[1][2]);
+}
+
+// 版本 B
+void show_b(int **arr, int rows) {
+    printf("%d\n", arr[1][2]);
+}
+
+show_a(matrix, 3);   // 能编译运行吗？
+show_b(matrix, 3);   // 能编译运行吗？
+```
+
+> A 和 B 哪个能正确工作？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** A 正确，B **崩溃**。
+
+`int[3][4]` 在内存中是**连续**的 12 个 int。退化后类型是 `int (*)[4]`（指向 `int[4]` 的指针）。
+
+- A：`int arr[][4]` = `int (*arr)[4]` — 类型匹配 ✅
+- B：`int **arr` — 期望指针表（Iliffe 向量），但 `matrix` 是连续内存。`arr[1]` 读取 `matrix` 起始处 8 字节当指针 → 指向随机地址 → 解引用崩溃 ❌
+
+**规则：** 栈上 `int[M][N]` 传参必须用 `int arr[][N]` 或 `int (*arr)[N]`，不能用 `int **`。
+
+**复习：** → [9.3 为什么 C 语言把数组形参当作指针](./9.3-为什么C语言把数组形参当作指针.md) · [9.6 C 语言的多维数组](./9.6-C语言的多维数组.md)
+
+</details>
+
+### Q2: char 数组 vs 指针数组
+
+```c
+char names_a[3][8] = {"Alice", "Bob", "Carol"};
+char *names_b[3]   = {"Alice", "Bob", "Carol"};
+
+printf("%zu %zu\n", sizeof(names_a), sizeof(names_b));
+
+names_a[0][0] = 'a';   // A
+names_b[0][0] = 'a';   // B
+```
+
+> sizeof 分别是多少？A 和 B 哪个安全？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `sizeof(names_a) = 24`（3×8 字节内嵌数据）
+- `sizeof(names_b) = 24`（3×8 指针，64 位）— 或 12（32 位）
+
+- A：**安全** — `names_a` 是栈上数组副本，可修改
+- B：**不安全（UB）** — `names_b` 的元素指向字符串字面量（`.rodata` 只读），修改 → SIGSEGV
+
+**argv 是哪种？** `char *argv[]` — 指针数组，指向字符串字面量，不可修改。
+
+**复习：** → [9.5 数组和指针可交换性的总结](./9.5-数组和指针可交换性的总结.md)
+
+</details>
+
+### Q3: arr vs arr[0] vs &arr
+
+```c
+int arr[3][4];
+
+printf("arr+1   = %p\n", (void*)(arr + 1));
+printf("arr[0]+1 = %p\n", (void*)(arr[0] + 1));
+printf("&arr+1  = %p\n", (void*)(&arr + 1));
+```
+
+> 三个 `+1` 分别跳过多少字节？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `arr + 1`：`arr` 退化为 `int (*)[4]`，跳 **16 字节**（一行 4×4）
+- `arr[0] + 1`：`arr[0]` 退化为 `int*`，跳 **4 字节**（一个 int）
+- `&arr + 1`：`&arr` 类型 `int (*)[3][4]`，跳 **48 字节**（整个 3×4 数组）
+
+**关键：** 指针类型决定步长。`arr` 和 `&arr` 看似一样但类型不同。
+
+**复习：** → [9.6 C 语言的多维数组](./9.6-C语言的多维数组.md)
+
+</details>
+
+### Q4: 柔性数组成员
+
+```c
+#include <stdlib.h>
+struct Msg {
+    int len;
+    char data[];    // 柔性数组成员
+};
+
+struct Msg *m = malloc(sizeof(struct Msg) + 100);
+m->len = 100;
+m->data[0] = 'X';   // 合法吗？
+
+struct Msg stack_msg;     // 合法吗？
+printf("%zu\n", sizeof(stack_msg));  // 输出多少？
+```
+
+> 三个问题分别怎么回答？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+1. `m->data[0] = 'X'`：**合法** — `malloc` 分配了 `sizeof(struct Msg) + 100` 字节，`data` 可以用 100 字节
+2. `struct Msg stack_msg`：**合法但不实用** — `data` 大小为 0，栈上无法使用柔性数组
+3. `sizeof(stack_msg)` = `sizeof(int)` + padding = **8**（4 字节 int + 4 字节对齐填充；`data[]` 不计入 sizeof）
+
+**优势：** 一次 `malloc` 分配头+数据，连续内存，cache 友好。HFT 报文结构常用此模式。
+
+**对比：** `char *data` 需要两次 `malloc`（头和数据分离），局部性差。
+
+**复习：** → [9.5 数组和指针可交换性的总结](./9.5-数组和指针可交换性的总结.md)
+
+</details>
