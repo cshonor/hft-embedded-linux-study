@@ -75,3 +75,37 @@ C++20 建立在 C++17 之上：
 3. Concepts 在 C++20 中的基础地位？其他特性如何依赖它？
 4. HFT 对 C++20 四大件的采用节奏分别是什么？为什么 Modules 要等？
 5. C++20 建立在 C++17 之上的例子有哪些？
+
+## 代码自测
+
+### Q1: C++20 四大支柱
+```cpp
+// C++20 四大支柱
+// 1. Concepts — 模板约束
+template<std::integral T> T add(T a, T b) { return a + b; }
+
+// 2. Ranges — 管道式算法
+auto evens = v | std::views::filter([](int x) { return x % 2 == 0; });
+
+// 3. Coroutines — 协程
+generator<int> gen() { co_yield 1; co_yield 2; }
+
+// 4. Modules — 模块替代头文件
+import std;
+```
+> C++20 的四大支柱分别解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 支柱 | 解决的问题 |
+|------|-----------|
+| **Concepts** | SFINAE/enable_if 冗长、错误信息难读 → 约束语法清晰、错误信息友好 |
+| **Ranges** | 算法只能用迭代器、不能组合 → 管道式组合、惰性求值 |
+| **Coroutines** | 异步代码回调地狱 → 同步写法写异步逻辑 |
+| **Modules** | #include 编译慢、宏污染 → 模块化、编译缓存、无宏泄漏 |
+
+C++20 是继 C++11 后最大的变革版本，引入了范式级的新特性。
+
+**复习：** → [C++20 概览](./README.md)
+</details>

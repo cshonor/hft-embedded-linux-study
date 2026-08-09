@@ -120,3 +120,46 @@ std::future<int> async_work() {
 3. `stop_token` 的协作式中断和强制杀线程有什么区别？为什么不能强制杀？
 4. HFT 热路径为什么不用通用线程池？固定流水线有什么优势？
 5. C++20 协程的核心关键字是什么？为什么 HFT 纳秒级热路径仍倾向同步？
+
+## 代码自测
+
+### Q1: 线程池的任务窃取
+```cpp
+// 简化版 work-stealing 线程池
+class ThreadPool {
+    std::vector<std::thread> workers;
+    std::vector<WorkQueue> local_queues;  // 每线程一个
+public:
+    void worker_loop(int id) {
+        while (true) {
+            if (auto task = local_queues[id].try_pop()) {
+                (*task)();
+            } else {
+                // 本地空了，去偷别人的
+                for (int i = 0; i < local_queues.size(); ++i) {
+                    if (i != id && auto stolen = local_queues[i].try_steal()) {
+                        (*stolen)();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+};
+```
+> 为什么用每线程本地队列而不是一个全局队列？work-stealing 解决了什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**全局队列的问题**：所有线程竞争同一个队列锁/CAS，成为串行化点，核数越多竞争越激烈。
+
+**每线程本地队列 + work-stealing**：
+- **本地无竞争**：线程 push/pop 自己的队列，无锁或低竞争
+- **负载均衡**：空闲线程从其他线程队列尾部偷任务（偷方向与本地 pop 方向相反，减少冲突）
+- **cache 局部性**：任务倾向于在产生它的核上执行（cache 热数据仍在）
+
+**HFT**：HFT 线程池通常更极端——固定线程数、绑核、无动态任务分配（每个线程有固定职责），work-stealing 只用于非关键路径。
+
+**复习：** → [线程池设计](./README.md)
+</details>

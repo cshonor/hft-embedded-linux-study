@@ -124,3 +124,60 @@ SPSC 无竞争、无 CAS、无 ABA——只有 head/tail 的 acquire/release 同
 3. 解决 ABA 的四种方案分别是什么？SPSC 队列为什么天然无 ABA？
 4. SPSC 环形队列为什么比 Treiber 栈更适合 HFT 热路径？
 5. 为什么 SPSC 队列的 head 和 tail 要 `alignas(64)`？不隔离会怎样？
+
+## 代码自测
+
+### Q1: CAS 循环
+```cpp
+std::atomic<int> head{0};
+std::atomic<int> tail{0};
+
+bool enqueue(Node* node, Node* buffer[], int size) {
+    int t;
+    do {
+        t = tail.load(std::memory_order_acquire);
+        if (t - head.load(std::memory_order_acquire) >= size) return false; // 满
+    } while (!tail.compare_exchange_weak(t, t + 1, std::memory_order_relaxed));
+    buffer[t % size] = node;
+    return true;
+}
+```
+> `compare_exchange_weak` 的返回值是什么？为什么用循环（do-while）？weak 和 strong 的区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **返回值**：成功返回 `true` 并写入新值；失败返回 `false`，`t` 被更新为当前实际值。
+- **为什么循环**：CAS 可能因竞争失败（其他线程先修改了 tail），失败后重读 tail 重试——直到成功或队列满。
+- **weak vs strong**：`weak` 允许**虚假失败**（值实际相等但返回 false），但在循环中用 weak 更高效（某些 CPU 上少一条指令）。`strong` 不会虚假失败，适合不在循环中的单次 CAS。
+
+**HFT**：无锁环形缓冲区是 tick 队列的核心结构，CAS 循环 + relaxed/acquire 是标准模式。
+
+**复习：** → [CAS 与无锁队列](./README.md)
+</details>
+
+### Q2: ABA 问题
+```cpp
+std::atomic<Node*> top;
+// 线程 A: pop
+Node* old_top = top.load();
+Node* next = old_top->next;
+// --- 上下文切换 ---
+// 线程 B: pop A, pop B, push A (A 回到栈顶但 next 变了)
+// 线程 A 恢复:
+if (top.compare_exchange_weak(old_top, next)) { /* 成功，但 next 已失效 */ }
+```
+> 什么情况下 CAS 成功但结果是错误的？怎么解决？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**ABA 问题**：线程 A 读到 `top=A, next=B`。切换后线程 B 把 A 和 B 都弹出（A→free, B→free），又把 A 重新压入（但 A->next 现在指向别的内存）。线程 A 恢复后 CAS 比较 `top==A`（相等！），成功设置 `top=next(B)`——但 B 已被释放，**use-after-free**。
+
+**解决方案**：
+1. **标签指针（tagged pointer）**：原子指针 + 计数器，每次操作递增计数器，CAS 比较指针+计数器。
+2. **延迟回收（hazard pointer / epoch-based reclamation）**：确保正在使用的节点不被回收。
+3. **不用无锁栈**：HFT 实践中，单生产者-单消费者环形缓冲区天然无 ABA（头尾各一个写者）。
+
+**复习：** → [ABA 问题](./README.md)
+</details>

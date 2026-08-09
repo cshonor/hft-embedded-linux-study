@@ -62,3 +62,67 @@ void advance_impl(Iter& it, Dist n, random_access_iterator_tag) { it += n; }    
 3. `std::advance` 如何在编译期按迭代器分类选 O(1) 或 O(n) 实现？
 4. traits 技巧后来演化为 C++11 的什么机制？HFT 用它做什么编译期决策？
 5. 迭代器分类如何决定 STL 算法（如 `sort`/`copy`）的实现选型？
+
+## 代码自测
+
+### Q1: iterator_traits
+```cpp
+template<typename Iter>
+void advance_impl(Iter& it, int n, std::random_access_iterator_tag) {
+    it += n;  // 随机访问：一步到位
+}
+template<typename Iter>
+void advance_impl(Iter& it, int n, std::input_iterator_tag) {
+    while (n--) ++it;  // 只能逐步前进
+}
+
+template<typename Iter>
+void my_advance(Iter& it, int n) {
+    using category = typename std::iterator_traits<Iter>::iterator_category;
+    advance_impl(it, n, category{});
+}
+```
+> `iterator_traits` 解决了什么问题？为什么需要 category 分发？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`iterator_traits`** 提取迭代器的关联类型：
+- `iterator_category`：迭代器分类（input/forward/bidirectional/random_access）
+- `value_type`：迭代器指向的值类型
+- `difference_type`：距离类型
+- `pointer`/`reference`：指针/引用类型
+
+**为什么需要 category 分发**：不同迭代器支持的操作不同。`vector::iterator` 支持 `+=`（O(1)），`list::iterator` 不支持（只能 `++`，O(n)）。`advance` 函数根据 category 选择最优实现——编译期分发，零运行时开销。
+
+**traits 是泛型编程的核心技巧**：在编译期提取类型信息，选择最优策略。HFT 中的 `enable_if`/`concepts` 也是同一思想。
+
+**复习：** → [iterator_traits](./README.md)
+</details>
+
+### Q2: 原生指针作为迭代器
+```cpp
+int arr[] = {3, 1, 4, 1, 5};
+std::sort(arr, arr + 5);  // 原生指针当迭代器
+
+// iterator_traits 对原生指针的特化
+template<typename T>
+struct iterator_traits<T*> {
+    using iterator_category = std::random_access_iterator_tag;
+    using value_type = T;
+    // ...
+};
+```
+> 为什么原生指针能当随机访问迭代器用？traits 如何适配指针？
+
+<details>
+<summary>答案与复习指引</summary>
+
+原生指针 `T*` 天然满足随机访问迭代器的所有操作（`*p`、`p[n]`、`p+n`、`p-q`、`p < q`）。
+
+**`iterator_traits` 对 `T*` 的偏特化**：告诉算法"原生指针是 RandomAccessIterator，value_type 是 T"。没有这个特化，算法无法知道 `int*` 的 value_type 是什么（指针本身不携带类型信息给 traits 提取）。
+
+这就是 STL 的设计精髓：**算法只认迭代器接口，不关心底层是容器还是数组**。同一份 `sort` 代码既能排序 `vector` 也能排序 C 数组。
+
+**复习：** → [原生指针特化](./README.md)
+</details>

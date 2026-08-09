@@ -119,3 +119,53 @@ foo(3.14); // 选第一个
 3. 使用 Concept 的四种写法？哪种推荐？
 4. `requires` 子句和 `requires` 表达式的区别？
 5. HFT 策略接口如何用 Concept 约束？相比 SFINAE 的好处？
+
+## 代码自测
+
+### Q1: Concepts 基础
+```cpp
+// 定义 concept
+template<typename T>
+concept Numeric = std::integral<T> || std::floating_point<T>;
+
+// 使用 concept 约束模板
+template<Numeric T>
+T add(T a, T b) { return a + b; }
+
+// 简写语法（C++20）
+Numeric auto add2(Numeric auto a, Numeric auto b) { return a + b; }
+
+add(1, 2);        // OK
+add(1.0, 2.0);    // OK
+// add("a", "b"); // 编译错误：const char* 不满足 Numeric
+```
+> concept 相比 SFINAE/enable_if 有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**Concepts 优势**：
+1. **可读性**：`template<Numeric T>` 比 `enable_if_t<is_integral_v<T> || is_floating_point_v<T>, T>` 清晰得多
+2. **错误信息**：概念失败时直接说 "T does not satisfy Numeric"，而非一长串 SFINAE 替换失败
+3. **可组合**：`concept A = B && C;` 组合概念
+4. **简写语法**：`Numeric auto x = f();` 不需要写 template
+5. **重载分派**：不同 concept 约束的函数可以重载，编译器选最优
+
+**四种使用方式**：
+```cpp
+// 1. requires 子句
+template<typename T> requires Numeric<T> T add(T a, T b);
+
+// 2. 直接替换 typename
+template<Numeric T> T add(T a, T b);
+
+// 3. 简写
+Numeric auto add(Numeric auto a, Numeric auto b);
+
+// 4. requires 表达式
+template<typename T> requires requires(T x) { x.foo(); }
+void use(T x);
+```
+
+**复习：** → [Concepts 基础](./README.md)
+</details>

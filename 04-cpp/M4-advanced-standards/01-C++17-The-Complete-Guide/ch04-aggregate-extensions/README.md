@@ -64,3 +64,36 @@ static_assert(std::is_aggregate_v<Derived>);  // C++17
 3. 聚合类型不能有哪些东西？（4 条限制）
 4. `std::is_aggregate` 有什么用？
 5. HFT 为什么偏好把 tick/order 设计成聚合类型？
+
+## 代码自测
+
+### Q1: 聚合体扩展初始化
+```cpp
+struct Data {
+    int id;
+    std::string name;
+    std::vector<int> values;
+};
+
+// C++14
+Data d{1, "test", {1, 2, 3}};
+
+// 带基类的聚合（C++17）
+struct Base { int x; };
+struct Derived : Base { int y; };
+Derived d2{{1}, 2};  // C++17: 基类也用 {}
+```
+> C++17 放宽了聚合体的哪些限制？
+
+<details>
+<summary>答案与复习指引</summary>
+
+C++17 聚合体扩展：
+1. **基类**：有 public 基类的类也可以是聚合体，用嵌套 `{}` 初始化基类成员
+2. **`explicit` 构造函数**：有 user-provided 构造函数不再阻止聚合（但标准有细化）
+3. **去除 `explicit`** 的默认构造函数不影响聚合性
+
+**注意**：`Derived d2{{1}, 2}` — 外层 `{}` 是 Derived，内层 `{1}` 初始化 Base 的 x，`2` 初始化 y。
+
+**复习：** → [聚合体扩展](./README.md)
+</details>

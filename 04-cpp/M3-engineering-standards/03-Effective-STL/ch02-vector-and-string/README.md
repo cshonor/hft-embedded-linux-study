@@ -68,3 +68,50 @@ legacy_read(buf.data(), buf.size());   // 可写缓冲
 3. 把 `string` 数据传给 C API 用什么方法？传可写缓冲用 `vector` 的什么接口？
 4. 为什么二进制数据不该用 `string` 存？应该用什么？
 5. `sizeof(std::string)` 在不同实现下为什么不同？跨平台共享要注意什么？
+
+## 代码自测
+
+### Q1: vector 扩容代价
+```cpp
+std::vector<int> v;
+for (int i = 0; i < 1000; ++i)
+    v.push_back(i);  // A: 无 reserve
+
+std::vector<int> v2;
+v2.reserve(1000);
+for (int i = 0; i < 1000; ++i)
+    v2.push_back(i);  // B: 有 reserve
+```
+> A 方案发生了多少次内存分配？B 方案呢？capacity 增长策略是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **A**：约 **10 次**内存分配（典型增长策略 2x：1→2→4→8→...→1024，log₂(1000)≈10 次）。每次分配 = 新内存 + 拷贝/移动旧元素 + 释放旧内存。
+- **B**：**1 次**内存分配（reserve 一次性分配 1000）。后续 push_back 不扩容。
+
+**capacity 增长策略**：GCC libstdc++ 2x，MSVC 1.5x。倍率越大扩容次数越少但浪费越多。`reserve(n)` 是 HFT 必备——热路径零扩容。
+
+**复习：** → [vector capacity/reserve](./README.md)
+</details>
+
+### Q2: string 实现（SSO）
+```cpp
+std::string s1 = "hi";       // 2 字符
+std::string s2 = "hello world this is a long string";  // 38 字符
+
+std::cout << sizeof(s1) << ' ' << sizeof(s2);
+```
+> sizeof 通常相同吗？为什么？SSO 是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**通常相同**（如 GCC libstdc++ 中 `sizeof(string)` = 32）。
+
+**SSO（Small String Optimization）**：短字符串（通常 ≤15/22 字节，取决于实现）直接存在 string 对象内部（不堆分配）；长字符串在堆上分配，对象内存指针。两种模式共用同一块内存（union），所以 sizeof 相同。
+
+**意义**：短字符串无堆分配开销，提升性能。HFT 中短 symbol 名（如 "AAPL"）走 SSO 路径，零 malloc。
+
+**复习：** → [string 实现](./README.md)
+</details>

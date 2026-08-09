@@ -77,3 +77,32 @@ constexpr std::string_view name = "foo";   // 但 string_view 不能做 NTTP（C
 3. 外部链接变量方法有什么缺点？
 4. C++20 对字符串 NTTP 的支持有什么改进？
 5. HFT 用编译期策略名有什么好处？运行期相比有什么优势？
+
+## 代码自测
+
+### Q1: constexpr 字符串处理
+```cpp
+// C++17: constexpr 可以处理更多逻辑
+constexpr int str_length(const char* s) {
+    int n = 0;
+    while (*s++) ++n;
+    return n;
+}
+static_assert(str_length("hello") == 5);  // 编译期字符串长度
+```
+> C++17 的 constexpr 相比 C++14 放宽了哪些限制？
+
+<details>
+<summary>答案与复习指引</summary>
+
+C++17 constexpr 放宽：
+1. **循环**：允许 `for`/`while`（C++14 起允许）
+2. **变量声明**：允许在 constexpr 函数内声明局部变量（C++14 起允许非 const）
+3. **if/switch**：允许 if 和 switch 语句
+4. **constexpr if**（C++17 新增）：编译期条件分支
+5. **constexpr lambda**（C++17 新增）
+
+**C++17 仍不能**：动态内存分配（`new`/`delete`）、虚函数、`try`/`catch`（C++20 才放宽）。
+
+**复习：** → [constexpr 扩展](./README.md)
+</details>

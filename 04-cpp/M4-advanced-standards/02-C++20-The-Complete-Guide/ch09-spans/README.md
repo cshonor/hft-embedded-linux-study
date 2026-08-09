@@ -93,3 +93,44 @@ s.subspan(1, 3);  // 从位置 1 取 3 个
 3. `span` 能用于 `std::list` 吗？为什么？
 4. `span<const T>` 和 `span<T>` 的区别？
 5. HFT 行情缓冲处理为什么用 `span<const char>` 而非 `const char*` + `size_t`？
+
+## 代码自测
+
+### Q1: span 基本用法
+```cpp
+// span: 连续内存的非拥有视图
+void process(std::span<int> data) {  // 接受任何连续 int 容器
+    for (auto& x : data) x *= 2;
+    std::cout << data.size();  // 元素数
+}
+
+int arr[] = {1, 2, 3};
+std::vector<int> v = {4, 5, 6, 7};
+
+process(arr);  // OK
+process(v);    // OK
+// process({1, 2});  // 编译错误：initializer_list 不连续
+
+// 固定大小 span
+void process_fixed(std::span<int, 3> data);
+process_fixed(arr);  // OK，大小正好 3
+```
+> span 相比传指针+长度有什么优势？固定大小 span 有什么用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**span 优势**：
+1. **类型安全**：`span<int>` 比 `int*` + `size_t` 封装了大小信息，避免越界
+2. **统一接口**：接受 `array`/`vector`/C 数组/string，不需要多个重载
+3. **边界检查**：`at()` 方法有边界检查（`operator[]` 无检查但调试模式可检查）
+4. **零开销**：span 只是指针+长度（或指针+大小），无堆分配
+
+**固定大小 span `span<T, N>`**：编译期已知大小，编译器可优化（类似 `std::array<T,N>` 的视图版本）。
+
+**vs string_view**：`span<T>` 是任意类型的连续内存视图，`string_view` 是 `char` 的视图（有字符串操作）。
+
+**HFT**：热路径传数组/缓冲区用 `span` 替代裸指针，安全且零开销。
+
+**复习：** → [span](./README.md)
+</details>

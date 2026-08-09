@@ -89,3 +89,56 @@ public:
 3. `std::future` 析构会做什么？这与 `std::thread` 的析构行为有何不同？
 4. `std::atomic` 和 `volatile` 的本质区别是什么？为什么 `volatile` 不能用于线程同步？
 5. 单次事件同步用 `promise<void>` + `future` 相比 condition_variable + flag 有什么优势？
+
+
+
+## 代码自测
+
+### Q1: async 默认策略陷阱
+
+```cpp
+auto fut = std::async([]{ 
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    return 42; 
+});
+// fut.get() 是立即返回还是等待 1 秒？
+```
+
+> `fut.get()` 会阻塞吗？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**会等待约 1 秒。** `async` 默认策略是 `std::launch::async | std::launch::deferred`——运行时可以选择异步执行或延迟到 `get()` 才同步执行。如果选了 `deferred`，`get()` 会阻塞直到任务同步完成。
+
+**修复：** `std::async(std::launch::async, []{ ... });`——强制新线程/线程池执行，保证异步。
+
+**HFT 教训：** 以为异步实际同步阻塞，热路径意外卡住。务必显式指定 `launch::async`。
+
+**复习：** → [Item 36：明确指定启动策略](./item36-明确指定启动策略.md)
+</details>
+
+### Q2: volatile 不是 atomic
+
+```cpp
+volatile int flag = 0;
+// 线程 1: flag = 1;
+// 线程 2: while (flag == 0) ;
+```
+
+> 这段代码线程安全吗？`volatile` 能保证什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不是线程安全的——数据竞争 UB。**
+
+**`volatile` 保证：** 编译器不优化掉对该变量的读写（用于 MMIO/硬件寄存器）。
+**`volatile` 不保证：** ①原子性（读/写可能被撕裂）②跨线程可见性（无内存屏障）③指令重排限制。
+
+**正确做法：** `std::atomic<int> flag{0};`——保证原子性 + 可见性 + 重排限制。
+
+**这是 C++ 最普遍的误解之一：** `volatile` 在 C++ 里不是线程同步工具。
+
+**复习：** → [Item 40：std::atomic 用于并发，volatile 用于特殊内存](./item40-std-atomic用于并发volatile用于特殊内存别混用.md)
+</details>

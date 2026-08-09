@@ -86,3 +86,34 @@ struct Derived : [[deprecated]] Base { ... };
 3. `[[fallthrough]]` 为什么不是"不写 break"的同义词？它的正确位置在哪？
 4. C++17 允许属性写在哪些新位置？
 5. HFT 风控函数为什么加 `[[nodiscard]]`？
+
+## 代码自测
+
+### Q1: 常用属性
+```cpp
+[[nodiscard]] int compute() { return 42; }
+[[maybe_unused]] int debug_var = 0;
+[[fallthrough]] switch(int x) {
+    case 1: step1();
+    [[fallthrough]];
+    case 2: step2(); break;
+}
+
+auto r = compute();  // A: OK
+compute();           // B: 警告
+```
+> B 行为什么会有警告？三个属性分别解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 属性 | 作用 | 解决的问题 |
+|------|------|-----------|
+| `[[nodiscard]]` | 返回值不能忽略 | 忘记检查返回值（如错误码、分配结果） |
+| `[[maybe_unused]]` | 抑制"未使用"警告 | 条件编译中有时用有时不用的变量 |
+| `[[fallthrough]]` | 标记 switch 有意穿透 | 告诉编译器"我知道在穿透，不要警告" |
+
+**B 行警告**：`compute()` 标记了 `[[nodiscard]]`，丢弃返回值 → 编译器警告"返回值被丢弃"。
+
+**复习：** → [标准属性](./README.md)
+</details>

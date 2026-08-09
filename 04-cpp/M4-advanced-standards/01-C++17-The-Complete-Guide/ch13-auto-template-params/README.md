@@ -85,3 +85,44 @@ Caller<&some_function> c;
 3. C++17 的 NTTP 支持哪些类型？不支持哪些？
 4. 函数指针作模板参数有什么用？HFT 怎么用？
 5. C++20 对 NTTP 的扩展是什么（浮点）？
+
+## 代码自测
+
+### Q1: auto 模板参数
+```cpp
+// C++17: auto 作为非类型模板参数
+template<auto N>
+struct Constant {
+    static constexpr auto value = N;
+};
+
+Constant<42> c1;       // N = int 42
+Constant<'a'> c2;      // N = char 'a'
+Constant<3.14> c3;     // C++20 才支持 double，C++17 仅支持整型/指针/引用
+
+// 函数模板也支持
+template<auto... Vs>
+void print_all() { (std::cout << ... << Vs) << '\n'; }
+print_all<1, 'x', 3L>();  // 输出 1x3
+```
+> C++17 的 `auto` 模板参数相比之前的 `template<typename T, T N>` 有什么好处？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**好处**：不需要先写类型参数 `typename T` 再用 `T N`，`auto N` 一步到位，编译器自动推导类型。
+
+```cpp
+// C++14: 两步
+template<typename T, T N> struct Constant14 {};
+Constant14<int, 42> c;  // 需要显式写 int
+
+// C++17: 一步
+template<auto N> struct Constant17 {};
+Constant17<42> c;  // 自动推导 int
+```
+
+**限制**（C++17）：N 的类型必须是整型、枚举、指针、引用或 `nullptr_t`。浮点数/字符串/对象不能做 NTTP（C++20 部分放宽）。
+
+**复习：** → [auto 模板参数](./README.md)
+</details>

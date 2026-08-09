@@ -73,3 +73,58 @@ C++14 起几乎所有 `bind` 场景都该用 lambda 替代。`bind` 仅在极少
 3. 泛型 lambda 的 `auto&&` 参数如何配合 `std::forward` 实现完美转发？
 4. `std::bind` 相比 lambda 有哪些缺陷？为什么 C++14 起几乎都该用 lambda？
 5. 异步保存的闭包为什么不能用 `[&]`？该用什么替代？
+
+
+
+## 代码自测
+
+### Q1: [=] 捕获 this
+
+```cpp
+class Engine {
+    int data = 42;
+public:
+    auto get_cb() {
+        return [=]() { return data; };  // 捕获的是什么？
+    }
+};
+```
+
+> `[=]` 捕获的是 `data` 的副本吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不是。** `[=]` 在成员函数中捕获的是 `this` 指针（按值），不是 `data` 的副本。闭包通过 `this->data` 访问成员——如果 `Engine` 对象先于闭包销毁，`this` 悬垂，UB。
+
+**修复（C++17）：** `[*this]()` 按值捕获对象本身的副本。
+**修复（C++11/14）：** `auto d = data; return [d]() { return d; };`（先拷贝到局部变量再捕获）。
+
+**教训：** 避免用 `[=]` 默认捕获，显式列出要捕获的变量。
+
+**复习：** → [Item 31：避免默认捕获模式](./item31-避免默认捕获模式.md)
+</details>
+
+### Q2: 初始化捕获（C++14）
+
+```cpp
+auto pw = std::make_unique<Widget>();
+auto cb = [up = std::move(pw)]() {
+    up->doSomething();
+};
+// pw 现在是什么状态？
+```
+
+> `pw` 在 lambda 创建后是什么状态？这个模式叫什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`pw` = nullptr（空）。** `up = std::move(pw)` 把 `unique_ptr` 移入闭包。这叫"初始化捕获"（init capture），C++14 新特性。
+
+**解决的问题：** C++11 的 `[=]`/`[&]` 无法捕获移动语义——只能拷贝或引用。初始化捕获允许在捕获时执行任意表达式（包括 `move`），把结果存入闭包。
+
+**C++11 变通：** `std::bind` + `std::move`，但更绕。
+
+**复习：** → [Item 32：用初始化捕获将对象移入闭包](./item32-用初始化捕获将对象移入闭包（C++14）.md)
+</details>

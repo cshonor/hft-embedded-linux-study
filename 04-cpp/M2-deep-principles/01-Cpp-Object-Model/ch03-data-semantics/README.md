@@ -45,3 +45,52 @@ obj.*p = 10;
 3. 指向数据成员的指针本质是什么？
 4. 为什么 HFT 热路径数据结构避免虚继承？
 5. POD 与非 POD 在 `memcpy` 安全性上有什么区别？
+
+## 代码自测
+
+### Q1: 空基类优化（EBO）
+```cpp
+class Empty {};
+class A : public Empty { int x; };      // 继承空类
+class B { Empty e; int x; };             // 组合空类
+```
+> `sizeof(A)` 和 `sizeof(B)` 分别是多少？为什么不同？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `sizeof(A)` = **4**（空基类优化，Empty 不占空间）
+- `sizeof(B)` = **8**（Empty 作为成员需要 1 字节 + 对齐填充到 4）
+
+EBO（Empty Base Optimization）：空类作为基类时编译器可优化为 0 字节，但作为成员时 C++ 标准要求不同对象地址唯一，至少 1 字节。这就是 STL 用继承而非组合传递 `std::less<T>` 等空仿函数的原因。
+
+**复习：** → [空基类优化](./README.md)
+</details>
+
+### Q2: 对齐与布局
+```cpp
+struct BadLayout {
+    char c;     // 1
+    double d;   // 8
+    char c2;    // 1
+};
+struct GoodLayout {
+    double d;   // 8
+    char c;     // 1
+    char c2;    // 1
+};
+```
+> `sizeof(BadLayout)` 和 `sizeof(GoodLayout)` 分别是多少？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `sizeof(BadLayout)` = **24**（c=1 + 7填充 + d=8 + c2=1 + 7填充）
+- `sizeof(GoodLayout)` = **16**（d=8 + c=1 + c2=1 + 6填充）
+
+double 需 8 字节对齐，BadLayout 中 c 后需填充 7 字节才能放 d，c2 后也需填充到 8 的倍数。GoodLayout 把 double 放前面，两个 char 紧挨着，只末尾填充。
+
+**HFT 关联**：对象大小直接影响 cache 行利用率，布局优化减少 false sharing 和 cache miss。
+
+**复习：** → [对齐与布局](./README.md)
+</details>

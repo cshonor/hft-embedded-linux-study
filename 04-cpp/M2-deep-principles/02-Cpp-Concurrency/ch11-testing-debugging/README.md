@@ -89,3 +89,36 @@ if (p == nullptr) {
 3. 双重检查锁定（DCLP）的错误写法是什么？为什么 `p = new Obj()` 可能被重排？
 4. 怀疑无锁代码内存序写错时，怎么快速验证？
 5. HFT 生产环境出现延迟尖刺，排查的四个方向是什么？
+
+## 代码自测
+
+### Q1: 并发 bug 的特点
+```cpp
+int balance = 0;
+void deposit() { for(int i=0;i<10000;++i) balance += 100; }
+void withdraw() { for(int i=0;i<10000;++i) balance -= 100; }
+
+int main() {
+    std::thread t1(deposit);
+    std::thread t2(withdraw);
+    t1.join(); t2.join();
+    std::cout << balance;  // 期望 0
+}
+```
+> 输出一定是 0 吗？为什么？这类 bug 为什么难调试？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不一定是 0**。`balance += 100` 不是原子操作（load → add → store），两个线程的读-改-写可能交错：A 读到 100，B 读到 100，A 写 200，B 写 0 → 丢失更新。
+
+**难调试的原因**：
+1. **不确定性**：每次运行结果不同（取决于线程调度时序）
+2. **低概率**：万分之一概率的竞态在测试中可能不触发，生产中高负载时才出现
+3. **不可复现**：加 printf/log 改变时序，bug 消失（Heisenbug）
+4. **工具局限**：TSan 能检测但拖慢 10-50 倍，难以在真实负载下运行
+
+**修复**：`std::atomic<int> balance` 或 mutex 保护。
+
+**复习：** → [并发 bug 特点](./README.md)
+</details>

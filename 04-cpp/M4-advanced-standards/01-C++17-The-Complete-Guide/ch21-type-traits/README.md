@@ -87,3 +87,44 @@ std::is_integral_v<T>
 3. `invoke_result` 替代了什么？为什么旧的名字被弃用？
 4. `conjunction`/`disjunction`/`negation` 分别对应什么逻辑运算？
 5. C++17 的 `_v` 变量模板相比 `::value` 有什么好处？
+
+## 代码自测
+
+### Q1: 类型萃取
+```cpp
+template<typename T>
+void process(T& x) {
+    if constexpr (std::is_integral_v<T>) {
+        x += 1;  // 整数：加 1
+    } else if constexpr (std::is_floating_point_v<T>) {
+        x *= 1.1;  // 浮点：乘 1.1
+    } else {
+        static_assert(sizeof(T) == 0, "Unsupported type");
+    }
+}
+
+process(42);    // int → 43
+process(3.14);  // double → 3.454
+```
+> `_v` 后缀是什么？C++17 引入了哪些类型萃取便利？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`_v` 后缀**（C++17）：`is_integral_v<T>` 等价于 `is_integral<T>::value`。变量模板简化，避免写 `::value`。
+
+类似地，`_t` 后缀（C++14）简化类型别名：`remove_const_t<T>` = `remove_const<T>::type`。
+
+**C++17 新增 traits**：
+- `is_swappable`/`is_nothrow_swappable`
+- `has_unique_object_representations`
+- `is_aggregate`
+- `is_invocable`/`is_invocable_r`
+- `invoke_result`
+- `void_t`（正式标准化，C++17 前是惯用法）
+- `bool_constant`/`conjunction`/`disjunction`/`negation`
+
+**HFT 用途**：编译期选择最优实现（`is_trivially_copyable` → memcpy vs 逐元素拷贝），模板约束（`enable_if`/`concepts`）。
+
+**复习：** → [类型萃取](./README.md)
+</details>

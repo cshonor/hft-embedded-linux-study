@@ -92,3 +92,50 @@ public:
 3. `make_shared` 比 `shared_ptr<T>(new T)` 省在哪里？什么场景下反而要用 `new`？
 4. `weak_ptr` 如何安全访问对象？`lock()` 的原子性为什么重要？
 5. Pimpl 里为什么析构函数必须在 `.cpp` 而非头文件定义？`unique_ptr` 析构对类型完整性的要求是什么？
+
+
+
+## 代码自测
+
+### Q1: shared_ptr double free
+
+```cpp
+Widget *raw = new Widget();
+std::shared_ptr<Widget> p1(raw);
+std::shared_ptr<Widget> p2(raw);  // 会发生什么？
+```
+
+> 创建两个 `shared_ptr` 指向同一裸指针，会发生什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**double free / 崩溃。** 每个 `shared_ptr` 创建自己的控制块，引用计数各为 1。两个都析构时各自 `delete raw` → double free。
+
+**正确做法：** `auto p1 = std::make_shared<Widget>(); auto p2 = p1;`（拷贝共享同一控制块）。
+
+**或用 `enable_shared_from_this`：** 对象继承 `enable_shared_from_this<T>`，在成员函数中调 `shared_from_this()` 返回正确的 `shared_ptr`。
+
+**复习：** → [Item 19：用 shared_ptr 管理共享所有权](./item19-用std-shared_ptr管理共享所有权.md)
+</details>
+
+### Q2: unique_ptr 自定义删除器
+
+```cpp
+std::unique_ptr<FILE, decltype(&fclose)> fp(fopen("data.txt", "r"), &fclose);
+// fp 离开作用域后会发生什么？
+```
+
+> `fp` 离开作用域后如何处理 `FILE*`？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**自动调用 `fclose(fp.get())`。** `unique_ptr` 的第二个模板参数指定删除器类型，构造时传入删除器函数。RAII 保证即使异常路径也关闭文件。
+
+**和 C 的区别：** C 需要手动 `fclose(fp)` 或 `goto cleanup`，异常路径容易遗漏。`unique_ptr` 把资源管理编码进类型系统。
+
+**HFT 用途：** 管理自定义资源（`fd`/`mmap`/DPDK `mbuf`）——自定义删除器调 `close`/`munmap`/`rte_pktmbuf_free`。
+
+**复习：** → [Item 18：用 unique_ptr 管理独占资源](./item18-用std-unique_ptr管理独占资源.md)
+</details>

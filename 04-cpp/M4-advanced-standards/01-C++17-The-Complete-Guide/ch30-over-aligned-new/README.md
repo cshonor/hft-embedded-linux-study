@@ -72,3 +72,38 @@ void operator delete(void* p, std::size_t size, std::align_val_t align);
 3. `std::aligned_alloc` 的参数要求是什么？
 4. HFT 为什么需要 cache 行对齐的 `new`？
 5. 自定义 `operator new` 在 C++17 要加什么？
+
+## 代码自测
+
+### Q1: 对齐分配
+```cpp
+// C++17: new 自动处理过对齐类型
+struct alignas(64) CacheLine {  // 64 字节对齐
+    int data[16];
+};
+
+CacheLine* p = new CacheLine;  // C++17: 自动 64 字节对齐分配
+// C++14: 可能不保证 64 字节对齐（依赖实现）
+delete p;
+
+// 手动对齐分配
+auto* buf = static_cast<std::byte*>(
+    ::operator new(sizeof(int) * 100, std::align_val_t(64)));
+::operator delete(buf, std::align_val_t(64));
+```
+> C++17 的对齐 new 解决了什么问题？HFT 中为什么要关心对齐分配？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**解决的问题**：C++14 中 `new alignas(64) T` 不保证返回 64 字节对齐的内存——`operator new` 只保证 `alignof(max_align_t)`（通常 16 字节）。如果类型要求 64 字节对齐（cache line），旧标准无法保证。
+
+**C++17**：`operator new` 新增 `std::align_val_t` 参数，`new alignas(64) T` 自动调用带对齐的 `operator new(size, align_val_t(64))`，保证对齐。
+
+**HFT 为什么要关心**：
+1. **cache line 对齐**：避免 false sharing，`alignas(64)` 保证数据独占 cache line
+2. **SIMD 对齐**：AVX-512 要求 64 字节对齐，未对齐会 segfault 或性能下降
+3. **DMA 对齐**：网卡 DMA 要求缓冲区对齐（通常 64/128 字节）
+
+**复习：** → [过对齐 new](./README.md)
+</details>

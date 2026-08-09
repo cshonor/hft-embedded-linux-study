@@ -68,3 +68,30 @@ inline const int MAX = 1024;
 3. `constexpr` 变量需要写 `inline` 吗？为什么？
 4. `static inline` 类成员解决了什么麻烦？
 5. HFT 配置常量为什么用 `inline constexpr` 写在头文件？
+
+## 代码自测
+
+### Q1: 头文件全局变量
+```cpp
+// header.h
+// C++14: 需要一个 .cpp 定义
+// extern const int MAX = 100;  // 声明
+// const int MAX = 100;  // 多次包含 → 重复定义
+
+// C++17: inline 变量
+inline const int MAX = 100;  // 多个 TU 包含也 OK
+inline static std::string VERSION = "1.0";
+```
+> C++17 之前在头文件定义全局变量有什么问题？inline 变量如何解决？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**C++17 之前的问题**：头文件被多个翻译单元（TU）包含时，非 inline 全局变量会重复定义 → 链接错误（multiple definition）。旧方案：在 .cpp 中定义 + .h 中 extern 声明，或用 `static`/匿名命名空间（但每个 TU 一份拷贝，浪费内存）。
+
+**`inline` 变量**（C++17）：编译器允许多个 TU 定义同名 inline 变量，链接器合并为一份。和 inline 函数同理。
+
+**用途**：头文件中的常量、配置参数、静态类成员的类内初始化。
+
+**复习：** → [inline 变量](./README.md)
+</details>

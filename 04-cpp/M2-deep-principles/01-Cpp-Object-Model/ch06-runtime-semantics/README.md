@@ -40,3 +40,60 @@ RTTI 只对**多态类型**（有虚函数）有效——靠 vtable 里的 type_
 3. C++ 异常的"零开销模型"是什么意思？抛异常时代价如何？
 4. HFT 热路径为什么禁 `dynamic_cast`？用什么替代？
 5. `-fno-exceptions` 有什么利弊？
+
+## 代码自测
+
+### Q1: new/delete 的内部步骤
+```cpp
+class Widget {
+public:
+    int data[100];
+    Widget() { std::puts("ctor"); }
+    ~Widget() { std::puts("dtor"); }
+};
+
+Widget* p = new Widget;
+delete p;
+```
+> `new Widget` 和 `delete p` 各做了哪两步？如果析构函数是虚的，行为有区别吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`new Widget`** 两步：
+1. `operator new(sizeof(Widget))` 分配内存
+2. 在该内存上调用 `Widget()` 构造函数
+
+**`delete p`** 两步：
+1. 调用 `~Widget()` 析构函数
+2. `operator delete(p)` 释放内存
+
+**虚析构的区别**：如果 Widget 有派生类且通过 `Base*` 删除，虚析构确保先调 Derived::~Derived() 再调 Base::~Base()。非虚析构则只调 Base 析构 → Derived 资源泄漏。对于 Widget 本身（无继承）无区别。
+
+**复习：** → [new/delete 内部步骤](./README.md)
+</details>
+
+### Q2: RTTI 与 dynamic_cast
+```cpp
+class Base { public: virtual ~Base() = default; };
+class Derived : public Base { public: void special() {} };
+
+Base* p = new Derived;
+Derived* d = dynamic_cast<Derived*>(p);
+Base* b = new Base;
+Derived* d2 = dynamic_cast<Derived*>(b);
+```
+> `d` 和 `d2` 的值分别是什么？dynamic_cast 依赖什么机制？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `d` = 指向 Derived 对象的有效指针（转换成功）
+- `d2` = **nullptr**（转换失败，Base 不是 Derived）
+
+dynamic_cast 依赖 **RTTI**（运行时类型信息）。RTTI 信息存在 vtable 中（type_info 指针），所以 dynamic_cast 要求基类至少有一个虚函数（有 vtable）。运行时查 type_info 判断实际类型，返回指针或 nullptr（引用类型则抛 bad_cast）。
+
+**HFT 关联**：RTTI 有 vtable 查找开销，热路径避免 dynamic_cast，用 enum + switch 或 visitor 替代。
+
+**复习：** → [RTTI 与 dynamic_cast](./README.md)
+</details>

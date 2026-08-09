@@ -49,3 +49,63 @@ delete p;                  // 1. 析构函数析构  2. operator delete 释放
 3. `new Widget` 的两步是什么？`placement new` 省掉了哪一步？
 4. 构造函数抛异常时内存会泄漏吗？析构函数抛异常为什么危险？
 5. HFT 如何用 `placement new` + mempool 实现零 `malloc` 对象池？
+
+## 代码自测
+
+### Q1: 构造/析构顺序
+```cpp
+class A {
+public:
+    A() { std::puts("A ctor"); }
+    ~A() { std::puts("A dtor"); }
+};
+class B {
+public:
+    A a;  // 成员对象
+    B() { std::puts("B ctor"); }
+    ~B() { std::puts("B dtor"); }
+};
+
+int main() { B b; }
+```
+> 输出顺序是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+```
+A ctor    // 成员先构造
+B ctor    // 然后自身构造体执行
+B dtor    // 自身析构体先执行
+A dtor    // 成员后析构
+```
+
+**规则**：构造时先构造成员（按声明顺序），再执行自身构造函数体。析构时先执行自身析构函数体，再析构成员（按声明逆序）。基类→成员→自身的构造链，反序析构。
+
+**复习：** → [构造/析构顺序](./README.md)
+</details>
+
+### Q2: 拷贝构造与对象切片
+```cpp
+class Base { public: int b; Base(int v) : b(v) {} };
+class Derived : public Base {
+public:
+    int d;
+    Derived(int bv, int dv) : Base(bv), d(dv) {}
+};
+
+Derived src(1, 2);
+Base dst = src;  // 拷贝构造 Base
+```
+> `dst.b` 和 `dst.d` 分别是什么？发生了什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `dst.b` = **1**（Base 部分被拷贝）
+- `dst.d`：**不存在**——`dst` 是 Base 类型，没有 `d` 成员
+
+发生了**对象切片**：`Base dst = src` 调用 Base 的拷贝构造，只拷贝 Base 部分，Derived 特有部分丢失。这是 C++ 经典陷阱——多态对象必须用指针或引用，不要按值传递/拷贝。
+
+**复习：** → [拷贝构造与对象切片](./README.md)
+</details>

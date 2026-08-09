@@ -65,3 +65,56 @@ C++17 修复了 C++11/14 继承构造函数的一些缺陷（如拷贝省略、�
 3. 继承构造函数在 C++17 有什么改进？
 4. 函数对象组合如何用变长 using 实现？
 5. HFT 的 mixin 模式如何用变长 using 批量暴露方法？
+
+## 代码自测
+
+### Q1: using 声明扩展
+```cpp
+// C++17: using... 可变参数包
+template<typename... Args>
+struct VariantWrapper {
+    using... Types = Args;  // 不对，using... 不是这样写
+
+    // 正确：using 声明包展开
+    // 在继承中展开
+};
+
+template<typename... Mixins>
+class X : public Mixins... {
+    using Mixins::foo...;  // C++17: 展开所有基类的 foo
+};
+```
+> `using...` 解决了什么问题？C++17 之前怎么实现？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`using` 声明的包展开**（C++17）：在可变参数模板中展开多个基类的同名方法。
+
+```cpp
+struct A { void foo() {} };
+struct B { void foo(int) {} };
+
+template<typename... Ts>
+struct C : Ts... {
+    using Ts::foo...;  // 导入所有基类的 foo 重载
+};
+
+C<A, B> c;
+c.foo();     // A::foo
+c.foo(42);   // B::foo(int)
+```
+
+**C++17 之前**：需要递归展开，代码冗长：
+```cpp
+template<typename T>
+struct C14<T> : T { using T::foo; };
+template<typename T, typename... Rest>
+struct C14<T, Rest...> : T, C14<Rest...> {
+    using T::foo;
+    using C14<Rest...>::foo;
+};
+```
+
+**复习：** → [using 扩展](./README.md)
+</details>

@@ -103,3 +103,44 @@ assert(d == d2);   // 保证 round-trip
 3. `from_chars` 为什么不跳前导空白？这和 `strtol` 有什么区别？
 4. round-trip 保证是什么意思？为什么 `printf` 不保证？
 5. HFT FIX 协议解析如何用 `from_chars` 链式解析字段？
+
+## 代码自测
+
+### Q1: 零开销数值转换
+```cpp
+// to_chars: 整数转字符串
+char buf[20];
+auto [ptr, ec] = std::to_chars(buf, buf + 20, 1234567);
+*ptr = '\0';
+std::cout << buf;  // "1234567"
+
+// from_chars: 字符串转整数
+std::string s = "42abc";
+int val;
+auto [ptr2, ec2] = std::from_chars(s.data(), s.data() + s.size(), val);
+// val = 42, ptr2 指向 'a'
+```
+> to_chars/from_chars 相比 stoi/to_string 有哪些优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 特性 | `stoi`/`to_string` | `to_chars`/`from_chars` |
+|------|--------------------|-----------------------|
+| 内存分配 | `to_string` 返回 string（堆分配） | 写入预分配 buffer（无分配） |
+| 异常 | 可能抛 `std::out_of_range` | 不抛异常（返回 error_code） |
+| Locale | 依赖全局 locale | 不依赖 locale |
+| 性能 | 慢（分配 + 异常 + locale） | 最快（直译，无开销） |
+| 解析控制 | `stoi` 消耗前缀，返回剩余位置 | `from_chars` 返回解析停止位置 |
+
+**HFT**：解析行情/报文中的数字字段用 `from_chars`（零分配、零异常、最快）。序列化用 `to_chars`。
+
+```cpp
+// HFT 典型用法：解析 FIX 消息中的价格
+std::string_view msg = "price=100.5;qty=10";
+double price;
+auto [ptr, ec] = std::from_chars(msg.begin() + 6, msg.end(), price);
+```
+
+**复习：** → [to_chars/from_chars](./README.md)
+</details>

@@ -98,3 +98,44 @@ constexpr int g2 = std::gcd(12, 18);  // 编译期
 3. `exclusive_scan` 和 `inclusive_scan` 的区别？输出示例？
 4. `clamp(val, lo, hi)` 等价于什么？能带比较器吗？
 5. HFT 用 `transform_reduce` 算 PnL 的写法是什么？
+
+## 代码自测
+
+### Q1: 新算法
+```cpp
+std::vector<int> v = {1, 2, 3, 4, 5};
+
+// C++17 新增
+bool all_pos = std::all_of(v.begin(), v.end(), [](int x) { return x > 0; });
+// 上面 C++11 就有，C++17 新增的是：
+
+std::vector<int> v2;
+std::sample(v.begin(), v.end(), std::back_inserter(v2),
+            3, std::mt19937{});  // 随机采样 3 个
+
+// clamp
+int x = std::clamp(15, 0, 10);  // 10（限制在 [0,10]）
+
+// reduce（可并行）
+int sum = std::reduce(v.begin(), v.end(), 0);  // 类似 accumulate 但可并行
+```
+> `reduce` 和 `accumulate` 有什么区别？`clamp` 解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**reduce vs accumulate**：
+- `accumulate`：只能顺序执行，左折叠，不要求操作可交换
+- `reduce`：支持并行执行策略，允许任意顺序（可交换/可结合），初始值类型和元素类型可以不同
+
+**clamp**：
+```cpp
+int x = std::clamp(value, lo, hi);
+// 等价于 std::max(lo, std::min(value, hi))
+```
+解决手写 `max(lo, min(val, hi))` 的冗长和易错（参数顺序写反）。
+
+**C++17 其他新算法**：`for_each_n`、`exclusive_scan`/`inclusive_scan`、`transform_reduce`、`transform_exclusive_scan`/`transform_inclusive_scan`、`gcd`/`lcm`。
+
+**复习：** → [新算法](./README.md)
+</details>

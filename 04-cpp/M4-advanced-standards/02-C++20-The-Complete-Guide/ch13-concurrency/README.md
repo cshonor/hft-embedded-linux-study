@@ -128,3 +128,50 @@ C++20 的 atomic `wait`/`notify` 让原子变量本身能做条件等待，不�
 3. `atomic_ref` 解决什么问题？
 4. `atomic<shared_ptr>` 相比旧的 `atomic_load(&ptr)` 好在哪？
 5. HFT 配置热更新如何用 `atomic<shared_ptr<Config>>`？
+
+## 代码自测
+
+### Q1: 新同步原语
+```cpp
+// C++20: counting_semaphore
+std::counting_semaphore<3> sem(3);  // 最多 3 个线程同时进入
+sem.acquire();  // 计数 -1，如果为 0 则阻塞
+sem.release();  // 计数 +1，唤醒一个等待线程
+
+// binary_semaphore = counting_semaphore<1>
+std::binary_semaphore start(0);
+// 线程 A
+start.acquire();  // 阻塞直到线程 B release
+// 线程 B
+start.release();  // 释放信号
+
+// latch: 一次性同步点
+std::latch done(3);  // 等 3 个线程
+done.count_down();   // 计数 -1
+done.wait();         // 阻塞到计数归零
+
+// barrier: 可重复使用的同步点
+std::barrier sync(3, [] { /* 所有线程到达后执行 */ });
+sync.arrive_and_wait();  // 到达并等待
+```
+> semaphore/latch/barrier 分别解决什么同步问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 原语 | 用途 | 可复用 |
+|------|------|--------|
+| `counting_semaphore<N>` | 限制并发数（如连接池上限） | ✅ |
+| `binary_semaphore` | 互斥/信号传递（类似互斥锁） | ✅ |
+| `latch` | 一次性等待 N 个线程到达 | ❌（一次性） |
+| `barrier` | 多阶段并行——每阶段等所有线程 | ✅ |
+
+**场景**：
+- **semaphore**：限制同时访问资源的线程数（如最多 3 个线程读文件）
+- **latch**：初始化阶段——主线程等所有工作线程完成初始化
+- **barrier**：并行计算——每轮迭代等所有线程完成上一轮
+
+**HFT**：barrier 用于多核并行回测的同步点。热路径不用（阻塞开销大）。
+
+**复习：** → [新同步原语](./README.md)
+</details>

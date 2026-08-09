@@ -93,3 +93,51 @@ if (auto* p = std::get_if<Tick>(&m)) {
 3. `std::get<T>` 和 `std::get_if<T>` 的区别？热路径用哪个？
 4. variant 的存储大小怎么算？tag 是什么？
 5. HFT 消息体为什么用 `variant<Tick, Trade, OrderBook>` 而非 `Message*` 继承？
+
+## 代码自测
+
+### Q1: variant 类型安全联合
+```cpp
+std::variant<int, double, std::string> v;
+v = 42;                    // 当前是 int
+v = 3.14;                  // 当前是 double
+v = "hello";               // 当前是 string
+
+// 访问
+std::get<std::string>(v);  // "hello"
+std::get_if<int>(&v);      // nullptr（当前不是 int）
+
+// 访问者模式
+std::visit([](auto&& x) {
+    std::cout << x;
+}, v);
+```
+> variant 相比 union 有什么优势？std::visit 如何工作？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**variant vs union**：
+| 特性 | `union` | `variant` |
+|------|---------|-----------|
+| 类型安全 | ❌ 程序员记住当前类型 | ✅ 编译器跟踪当前类型 |
+| 非平凡类型 | ❌ 不能有 string/vector | ✅ 支持 |
+| 访问 | 裸 reinterpret | `get`/`get_if`/`visit` |
+| 大小 | 最小（共享内存） | 略大（+index 标签） |
+
+**`std::visit`**：传入一个可处理所有类型的 visitor（通常是泛型 lambda 或 overloaded 对象），编译器根据 variant 当前类型分派到对应重载。
+
+```cpp
+// overloaded 技巧
+struct Visitor {
+    void operator()(int x) { ... }
+    void operator()(double x) { ... }
+    void operator()(const std::string& x) { ... }
+};
+std::visit(Visitor{}, v);
+```
+
+**HFT**：variant 可替代继承+虚函数的多态，编译期分派、无 vptr、cache 友好。但类型集合固定（编译期已知）。
+
+**复习：** → [variant](./README.md)
+</details>

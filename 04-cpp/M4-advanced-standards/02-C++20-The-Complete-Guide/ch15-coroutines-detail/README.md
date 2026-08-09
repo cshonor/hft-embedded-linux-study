@@ -118,3 +118,49 @@ struct promise_type {
 3. `coroutine_handle` 的作用？为什么说它像裸指针？
 4. symmetric transfer 解决什么问题？不用会怎样？
 5. HFT 如何让协程帧从 mempool 分配？为什么热路径仍不用协程？
+
+## 代码自测
+
+### Q1: 协程机制
+```cpp
+// 协程返回类型必须包含 promise_type
+struct generator {
+    struct promise_type {
+        int current_value;
+        generator get_return_object() { return generator{handle::from_promise(*this)}; }
+        std::suspend_always initial_suspend() { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        std::suspend_always yield_value(int v) { current_value = v; return {}; }
+        void return_void() {}
+        void unhandled_exception() { std::terminate(); }
+    };
+    using handle = std::coroutine_handle<promise_type>;
+    handle h;
+    // iterator support...
+};
+```
+> promise_type 的作用是什么？coroutine_handle 是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`promise_type`**：协程的"控制接口"，由编译器调用，控制协程的行为：
+- `get_return_object()`：创建返回给调用者的对象
+- `initial_suspend()`：协程开始时是否立即挂起
+- `final_suspend()`：协程结束时是否挂起（通常挂起，避免协程帧销毁后访问）
+- `yield_value(v)`：`co_yield` 时调用，保存值并决定是否挂起
+- `return_void()`/`return_value(v)`：`co_return` 时调用
+- `unhandled_exception()`：协程内未捕获异常时调用
+
+**`coroutine_handle<P>`**：协程帧的句柄（类似函数指针），可以：
+- `resume()`：恢复挂起的协程
+- `destroy()`：销毁协程帧
+- `promise()`：访问 promise 对象
+- `from_promise(p)`：从 promise 获取 handle
+
+**协程帧**：堆上分配的结构，保存协程的局部变量、挂起点、promise。协程挂起时帧保留，恢复时从帧恢复状态。
+
+**HFT 注意**：协程帧的堆分配是性能开销。可以用自定义 `operator new` 走内存池，但复杂度高。
+
+**复习：** → [协程机制](./README.md)
+</details>

@@ -98,3 +98,43 @@ std::format("{:x}", 3.14);     // 编译错！x 格式不适用于浮点
 3. 如何为自定义类型 Tick 实现 `formatter` 特化？
 4. `format_to` 和 `format` 的区别？`format_to_n` 的用途？
 5. HFT 热路径日志如何用 `format_to_n` 避免堆分配？
+
+## 代码自测
+
+### Q1: std::format
+```cpp
+// C++20: std::format 替代 printf/snprintf
+std::string s = std::format("Price: {:.2f}, Qty: {}", 100.567, 42);
+// "Price: 100.57, Qty: 42"
+
+// 命名参数（Python 风格）
+std::format("{price:.2f} x {qty}", std::make_format_args(
+    std::pair{"price", 100.5}, std::pair{"qty", 42}));
+
+// 输出到迭代器
+char buf[100];
+auto [it, size] = std::format_to_n(buf, 100, "x={}", 42);
+```
+> std::format 相比 printf 和 iostream 有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 特性 | `printf` | `iostream` | `std::format` |
+|------|---------|-----------|--------------|
+| 类型安全 | ❌ | ✅ | ✅ |
+| 性能 | 快 | 慢 | 快 |
+| 可读性 | 中 | 差（<<链） | 好（{}占位符） |
+| 自定义类型 | ❌ | ✅ | ✅（formatter特化） |
+| 国际化 | 无 | 无 | ✅（支持 chrono） |
+
+**优势总结**：
+- 比 `printf` 安全（编译期检查格式串类型）
+- 比 `iostream` 快（无 iostream 层开销）且可读（不像 `<<` 链那样碎片化）
+- 支持自定义格式化器（特化 `std::formatter<T>`）
+- 原生支持 `chrono` 类型（日期时间格式化）
+
+**HFT**：日志/调试输出用 `format_to`（写入预分配 buffer，无堆分配）。热路径不格式化字符串。
+
+**复习：** → [std::format](./README.md)
+</details>

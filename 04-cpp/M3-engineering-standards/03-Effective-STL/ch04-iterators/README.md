@@ -60,3 +60,63 @@ v.erase(rit.base() - 1);  // 删除 target，注意 -1
 3. `istream_iterator` 和 `istreambuf_iterator` 的区别？哪个更快？
 4. 为什么 `list` 不能用 `std::sort`？该用什么？
 5. `cbegin()`/`cend()` 配合 `auto` 如何防止意外修改？
+
+## 代码自测
+
+### Q1: 迭代器失效
+```cpp
+std::vector<int> v = {1, 2, 3, 4, 5};
+
+auto it = v.begin() + 2;  // 指向 3
+v.push_back(6);            // 可能扩容
+
+std::cout << *it;  // 安全吗？
+```
+> `push_back` 后 `it` 还有效吗？哪些操作会让 vector 迭代器失效？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不安全**。`push_back` 如果触发扩容（capacity 不够），所有迭代器、指针、引用**全部失效**（旧内存被释放）。即使不扩容，`push_back` 也只保证 `end()` 失效，但实现可能不保证。
+
+**vector 迭代器失效规则**：
+
+| 操作 | 失效范围 |
+|------|---------|
+| `push_back` | 扩容→全部失效；不扩容→`end()` 失效 |
+| `insert(pos, val)` | pos 之后全部失效（扩容则全部） |
+| `erase(pos)` | pos 及之后失效 |
+| `reserve/clear` | 全部失效 |
+
+**HFT 实践**：热路径不动态增删 vector，启动时 reserve 固定大小，避免迭代器失效。
+
+**复习：** → [迭代器失效规则](./README.md)
+</details>
+
+### Q2: 迭代器分类
+```cpp
+std::vector<int> v = {3, 1, 4};
+std::list<int> l = {3, 1, 4};
+
+std::sort(v.begin(), v.end());     // A: OK
+// std::sort(l.begin(), l.end());  // B: 编译失败
+l.sort();                           // C: OK
+```
+> 为什么 B 编译失败？vector 和 list 的迭代器分别属于哪个分类？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**B 编译失败**：`std::sort` 要求**随机访问迭代器**（RandomAccessIterator）。`vector::iterator` 是随机访问（支持 `it + n`），`list::iterator` 只是**双向迭代器**（BidirectionalIterator，只支持 `++`/`--`，不支持 `+n`）。
+
+**五大迭代器分类**（从弱到强）：
+1. InputIterator — 只读，单遍（`istream_iterator`）
+2. OutputIterator — 只写，单遍（`back_inserter`）
+3. ForwardIterator — 读写，多遍（`forward_list`）
+4. BidirectionalIterator — 可前后（`list`、`map`）
+5. RandomAccessIterator — 随机访问（`vector`、`deque`、原生指针）
+
+`list::sort()` 是成员函数，利用链表特性（指针重连）实现归并排序，不需要随机访问。
+
+**复习：** → [迭代器分类](./README.md)
+</details>

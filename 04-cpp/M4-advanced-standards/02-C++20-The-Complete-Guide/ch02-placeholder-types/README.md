@@ -81,3 +81,37 @@ void func(auto x) { /* ... */ }           // C++20
 3. `Concept auto` 形式如何同时简写和约束？
 4. `auto` 参数函数有什么限制？（.cpp 编译、函数指针、虚函数）
 5. HFT 泛型工具函数如何用 `auto` 参数 + Concept？
+
+## 代码自测
+
+### Q1: auto 返回类型改进
+```cpp
+// C++14: auto 返回类型需要编译器推导
+auto f(int x) { return x * 2; }  // 推导为 int
+
+// C++20: auto 可用于函数签名（概念约束）
+auto g(int x) -> int { return x; }  // 尾置返回类型仍可用
+
+// C++20: decltype(auto) 保留引用
+decltype(auto) h(int& x) { return x; }  // 返回 int&（不是 int）
+```
+> `decltype(auto)` 和 `auto` 在返回类型上的区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `auto`：按值返回（退化引用、数组→指针）
+- `decltype(auto)`：保留表达式的精确类型（引用、const 修饰）
+
+```cpp
+int& ref = some_int;
+auto a = ref;              // a 是 int（拷贝）
+decltype(auto) b = ref;    // b 是 int&（引用）
+```
+
+**用途**：转发函数、完美转发包装器需要保留引用和 const。标准库的 `std::forward`、`std::move` 内部用 `decltype(auto)`。
+
+**注意**：`decltype(auto)` 不能用于 lambda 参数（C++20 concepts 可以），且每个 return 语句必须类型一致。
+
+**复习：** → [占位类型](./README.md)
+</details>

@@ -88,3 +88,57 @@ struct Foo {
 3. `char8_t` 在 C++20 的破坏性变化是什么？老代码怎么迁移？
 4. `[[no_unique_address]]` 的作用？HFT 如何利用？
 5. `is_pod` 为什么被弃用？用什么替代？
+
+## 代码自测
+
+### Q1: C++20 弃用和移除
+```cpp
+// C++20 移除
+// 1. auto_ptr（C++17 已移除）
+// 2. std::iterator 模板基类（C++17 弃用，C++20 移除）
+//    旧写法: class MyIter : public std::iterator<std::forward_iterator_tag, T>
+//    新写法: 直接定义 5 个 typedef
+
+// C++20 弃用
+// 1. 逗号运算符在 [] 中（索引）
+arr[1, 2];  // C++20 弃用（原意是 arr[(1,2)] = arr[2]，容易误以为多维）
+
+// 2. POSIX 函数名
+std::isalpha 等不再接受非 char 类型
+
+// 3. char8_t 相关的旧 API
+```
+> 为什么要移除 std::iterator 基类？影响什么代码？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**移除 `std::iterator` 的原因**：
+- 设计缺陷：基类提供的 typedef 让概念检查失效（派生类"免费"获得迭代器概念，但不一定真正满足）
+- C++20 concepts 要求迭代器显式满足概念，不应靠继承获得
+
+**受影响的代码**：
+```cpp
+// 旧写法（C++17 弃用，C++20 移除）
+class MyIterator : public std::iterator<std::forward_iterator_tag, int> {
+    // 自动获得 value_type/difference_type/pointer/reference/iterator_category
+};
+
+// 新写法（C++20）
+class MyIterator {
+public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = int;
+    using difference_type = std::ptrdiff_t;
+    using pointer = int*;
+    using reference = int&;
+    // ... 运算符重载
+};
+```
+
+**迁移**：把继承改为手动定义 5 个 typedef。简单但量大（STL 源码、自定义容器/迭代器）。
+
+**逗号运算符弃用**：`arr[1, 2]` 原本合法（逗号运算符返回最后一个值 = arr[2]），但极易误读为多维数组。C++20 弃用，C++23 移除。`operator[]` 后续可能支持多参数。
+
+**复习：** → [弃用和移除](./README.md)
+</details>

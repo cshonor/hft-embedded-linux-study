@@ -86,3 +86,36 @@ thread_local std::mt19937 rng;   // 每线程独立随机数发生器，无需�
 3. 阿姆达尔定律是什么？为什么 1% 的串行在 100 核上只能加速到 50 倍？
 4. 线程函数抛异常会怎样？正确的处理方式是什么？
 5. HFT 为什么倾向静态划分而非 work-stealing？确定性延迟如何保证？
+
+## 代码自测
+
+### Q1: false sharing
+```cpp
+struct Counters {
+    int a;  // 线程 A 写
+    int b;  // 线程 B 写
+};
+
+Counters c;
+std::thread t1([&] { for(int i=0;i<1000000;++i) ++c.a; });
+std::thread t2([&] { for(int i=0;i<1000000;++i) ++c.b; });
+```
+> 两个线程分别写不同变量，为什么性能很差？怎么修复？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**False sharing**：`a` 和 `b` 在同一个 cache line（64 字节）内。线程 A 写 `a` 使该 cache line 在 A 的核上变脏，线程 B 写 `b` 需要先 invalidate A 的 cache line → **cache line ping-pong**。虽然写不同变量，但硬件层面在同一个 cache line 上争抢。
+
+**修复**：用 `alignas(64)` 让每个变量独占一个 cache line：
+```cpp
+struct Counters {
+    alignas(64) int a;
+    alignas(64) int b;
+};
+```
+
+**HFT**：性能计数器、per-thread 状态必须避免 false sharing。
+
+**复习：** → [false sharing](./README.md)
+</details>

@@ -105,3 +105,42 @@ constexpr int v = sq(5);   // OK
 3. 无状态 lambda 在 C++20 有什么新能力？有什么用？
 4. C++20 修复了结构化绑定捕获的什么问题？
 5. HFT 用模板 lambda 约束数值容器怎么写？
+
+## 代码自测
+
+### Q1: 模板 lambda
+```cpp
+// C++20: lambda 可以有模板参数
+auto deref = []<typename T>(T* p) { return *p; };
+
+int x = 42;
+deref(&x);  // OK，T = int
+
+// 也可以约束
+auto add = []<std::integral T>(T a, T b) { return a + b; };
+add(1, 2);     // OK
+// add(1.0, 2.0);  // 编译错误：double 不满足 integral
+```
+> C++20 lambda 还有哪些扩展？
+
+<details>
+<summary>答案与复习指引</summary>
+
+C++20 lambda 扩展：
+1. **模板参数**：`[]<typename T>(T* p) { return *p; }`
+2. **concept 约束**：`[]<std::integral T>(T a, T b) { ... }`
+3. **可默认构造/可赋值**：无捕获的 lambda 可默认构造（C++20 前不能），可赋值
+4. **pack expansion in lambda**：`[](auto... args) { return (args + ...); }`（C++17 已有，C++20 完善）
+
+**模板 lambda 的价值**：
+```cpp
+// C++17: 需要 auto，但不能对指针特化
+auto deref17 = [](auto* p) { return *p; };
+
+// C++20: 可以写模板参数，更精确
+auto deref20 = []<typename T>(T* p) -> T& { return *p; };
+// 可以返回引用，auto 版本会丢失引用
+```
+
+**复习：** → [Lambda 扩展](./README.md)
+</details>

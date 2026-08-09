@@ -48,3 +48,56 @@ void (Shape::*fp)() = &Shape::draw;
 3. 指向成员函数的指针为什么比普通函数指针大？
 4. CRTP 如何实现零开销的多态？与虚函数相比有什么优势？
 5. 过度 inline 有什么代价？HFT 如何权衡？
+
+## 代码自测
+
+### Q1: 虚函数调用的间接性
+```cpp
+class Base { public: virtual void f() { std::puts("Base"); } };
+class Derived : public Base { public: void f() override { std::puts("Derived"); } };
+
+void callDirect(Base b) { b.f(); }    // 按值传递
+void callVirtual(Base& b) { b.f(); }  // 按引用传递
+```
+> `Derived d; callDirect(d);` 和 `callVirtual(d);` 分别输出什么？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `callDirect(d)` 输出 **"Base"**——对象切片：按值传递拷贝到 `Base b`，vptr 被切回 Base 的 vtable。
+- `callVirtual(d)` 输出 **"Derived"**——引用不拷贝对象，vptr 仍是 Derived 的，虚函数正确分派。
+
+**关键**：虚函数通过 vptr→vtable 间接调用，但按值传参会发生对象切片，vptr 被覆盖为基类的。多态必须用指针或引用。
+
+**复习：** → [虚函数调用机制](./README.md)
+</details>
+
+### Q2: 静态绑定 vs 动态绑定
+```cpp
+class Base {
+public:
+    void show() { std::puts("Base::show"); }         // 非虚
+    virtual void display() { std::puts("Base::display"); }  // 虚
+};
+class Derived : public Base {
+public:
+    void show() { std::puts("Derived::show"); }
+    void display() override { std::puts("Derived::display"); }
+};
+
+Base* p = new Derived;
+p->show();
+p->display();
+```
+> 两行分别输出什么？非虚函数和虚函数的绑定时机有何不同？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `p->show()` 输出 **"Base::show"**——非虚函数静态绑定，编译期根据指针类型（Base*）决定。
+- `p->display()` 输出 **"Derived::display"**——虚函数动态绑定，运行期通过 vptr→vtable 查找实际函数。
+
+**静态绑定**：编译期确定，直接 call（无间接，可内联）。**动态绑定**：运行期经 vptr 间接查找（有额外开销，不可内联）。
+
+**复习：** → [静态绑定 vs 动态绑定](./README.md)
+</details>

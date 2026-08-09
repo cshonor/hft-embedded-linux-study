@@ -103,3 +103,82 @@ C++11 的"大三律"扩展为"大五律"（拷贝构造、拷贝赋值、移动�
 3. 声明了移动构造后，拷贝构造还会自动生成吗？声明了析构呢（C++11）？
 4. STL 容器 `push_back` 扩容时如何决定用移动还是拷贝？`noexcept` 在其中起什么作用？
 5. `const` 成员函数为什么可能不是线程安全的？`mutable` 在其中扮演什么角色？
+
+
+
+## 代码自测
+
+### Q1: 花括号 vs 圆括号
+
+```cpp
+std::vector<int> v1(10, 20);   // A
+std::vector<int> v2{10, 20};   // B
+```
+
+> v1 和 v2 分别是什么？为什么不同？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- v1 = 10 个元素，每个值 20（`(count, value)` 构造）
+- v2 = 2 个元素 {10, 20}（花括号优先匹配 `initializer_list` 构造）
+
+**根因：** `{}` 会**优先**匹配 `initializer_list` 构造函数，即使有更精确匹配的 `(int, int)` 构造函数。
+
+**花括号还禁止窄化：** `int x{3.14};` 编译失败（double→int 窄化），`int x(3.14);` 合法（静默截断）。
+
+**复习：** → [Item 7：区别 () 和 {} 创建对象](./item07-区别和创建对象.md)
+</details>
+
+### Q2: noexcept 与 vector 扩容
+
+```cpp
+class Widget {
+public:
+    // 版本 A: 没标 noexcept
+    Widget(Widget&& o) { /* 移动 */ }
+    // 版本 B: 标了 noexcept
+    // Widget(Widget&& o) noexcept { /* 移动 */ }
+};
+std::vector<Widget> v;
+for (int i = 0; i < 100; ++i)
+    v.push_back(Widget(i));
+```
+
+> 版本 A 和 B 在扩容时分别用移动还是拷贝？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **版本 A（无 noexcept）：** STL 退回**拷贝**——因为移动构造可能抛异常，扩容中途异常会导致数据丢失。拷贝保证强异常安全。
+- **版本 B（有 noexcept）：** STL 用**移动**——O(1) 指针交接，扩容从 O(n) 降到 O(n) 但每个元素是 O(1) 移动而非 O(n) 拷贝。
+
+**这是 HFT 性能的隐形开关：** 移动构造必须标 `noexcept`，否则 `vector` 扩容退回拷贝。
+
+**复习：** → [Item 14：声明 noexcept 如果函数保证不抛](./item14-声明noexcept如果函数保证不抛.md)
+</details>
+
+### Q3: override 检查
+
+```cpp
+class Base {
+public:
+    virtual void f(int x) const {}
+};
+class Derived : public Base {
+public:
+    void f(int x) override {}  // 编译成功吗？
+};
+```
+
+> 这段代码编译成功吗？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**编译失败。** `Derived::f` 缺少 `const` 限定符——签名与 `Base::f` 不匹配。`override` 让编译器检查：签名必须完全匹配（const、参数类型、引用限定符）。没有 `override`，这会静默创建一个新虚函数而非重写。
+
+**教训：** 重写虚函数时始终加 `override`，让编译器帮你检查签名。
+
+**复习：** → [Item 12：把重写函数声明为 override](./item12-把重写函数声明为override.md)
+</details>

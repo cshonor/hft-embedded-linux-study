@@ -120,3 +120,42 @@ public:
 3. `stop_source`/`stop_token`/`stop_callback` 的角色分别是什么？
 4. HFT 策略热切换如何用 `jthread` + `stop_token` 实现？
 5. 为什么 HFT 热路径仍用裸 `thread` 而非 `jthread`？
+
+## 代码自测
+
+### Q1: jthread 自动 join
+```cpp
+// C++11: std::thread，忘记 join → terminate
+std::thread t([] { /* work */ });
+t.join();  // 必须显式 join
+
+// C++20: std::jthread，析构自动 join + 支持取消
+std::jthread jt([] { while (true) { /* work */ } });
+// jt 析构时自动 join（不会 terminate）
+// 支持协作取消：stop_token
+
+std::jthread jt2([](std::stop_token st) {
+    while (!st.stop_requested()) {
+        // work
+    }
+});
+jt2.request_stop();  // 请求停止
+```
+> jthread 比 thread 多了什么？stop_token 机制如何工作？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**jthread vs thread**：
+1. **析构自动 join**：jthread 析构时如果仍 joinable，自动 join（而非 terminate）。RAII 安全。
+2. **协作取消**：支持 `stop_token`，线程可以检查 `stop_requested()` 并优雅退出。
+
+**stop_token 机制**：
+- `request_stop()` 设置停止标志（原子操作，线程安全）
+- 线程内 `st.stop_requested()` 检查标志
+- 是**协作式**取消——线程自己决定何时/如何停止，不是强制 kill
+
+**HFT**：jthread 适合后台任务（日志线程、监控线程）。但热路径仍用固定线程池 + 绑核，不用 jthread（线程创建/销毁开销）。`stop_token` 机制可用于优雅关机。
+
+**复习：** → [jthread](./README.md)
+</details>

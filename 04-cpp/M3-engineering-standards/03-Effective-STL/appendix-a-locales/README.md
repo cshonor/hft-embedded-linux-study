@@ -35,3 +35,32 @@ HFT 协议解析（FIX tag）默认用 **C locale**——ASCII 字段不涉及�
 1. 为什么 `tolower(c)` 不能直接传 `char`？要传什么类型？
 2. locale 如何影响大小写不敏感比较？全局 `setlocale` 有什么线程安全问题？
 3. HFT 默认用哪个 locale？为什么？
+
+## 代码自测
+
+### Q1: locale 基础
+```cpp
+std::locale loc("en_US.UTF-8");
+auto& facet = std::use_facet<std::num_put<char>>(loc);
+
+std::string s = "1234567.89";
+// 在不同 locale 下格式化可能不同
+// en_US: 1,234,567.89
+// de_DE: 1.234.567,89
+```
+> locale 影响哪些 STL 行为？HFT 通常需要关心 locale 吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**locale 影响**：数字格式（千分位/小数点）、日期时间格式、字符串比较/排序（collate）、字符分类（isspace/isdigit 等）。
+
+**HFT 通常不关心**：
+1. 交易数据是结构化数值，不用 locale 格式化
+2. 日志用固定格式（ISO 8601 时间、纯 ASCII）
+3. **locale 是全局状态**，影响 `to_string`/`stoi` 等函数行为，多线程不安全
+
+**最佳实践**：HFT 启动时 `std::locale::global(std::locale::classic())`（设为 "C" locale），避免 locale 干扰。
+
+**复习：** → [locale 基础](./README.md)
+</details>

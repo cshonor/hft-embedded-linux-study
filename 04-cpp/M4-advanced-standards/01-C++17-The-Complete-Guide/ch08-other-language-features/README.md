@@ -87,3 +87,29 @@ C++17 对未使用的绑定变量仍不支持 `[[maybe_unused]]`（C++26 才支�
 3. C++17 让 `noexcept` 进入类型系统，对函数指针赋值有什么影响？
 4. 十六进制浮点 `0x1.8p1` 的值是多少？`p` 表示什么？
 5. HFT 热路径为什么关心 `noexcept` 成为类型的一部分？
+
+## 代码自测
+
+### Q1: 嵌套命名空间
+```cpp
+// C++14
+namespace A { namespace B { namespace C { void f() {} } } }
+
+// C++17
+namespace A::B::C { void f() {} }
+```
+> 还有哪些 C++17 小特性简化了日常写法？
+
+<details>
+<summary>答案与复习指引</summary>
+
+C++17 小特性：
+1. **嵌套命名空间**：`namespace A::B::C { ... }`
+2. **`static_assert` 无消息**：`static_assert(sizeof(int) == 4);`
+3. **`noexcept` 成为类型系统一部分**：`void(*)() noexcept` 和 `void(*)()` 是不同类型
+4. **`bool` 不能再 implicit narrowing**：`int x = true;` → 需显式转换（某些上下文）
+5. **十六进制浮点字面量**：`0x1.8p+1` = 3.0
+6. **UTF-8 字符字面量**：`u8'x'`（C++17 起，C++20 改为 char8_t）
+
+**复习：** → [其他语言特性](./README.md)
+</details>

@@ -111,3 +111,47 @@ std::ranges::copy(v | views::filter(f), std::back_inserter(result));
 3. `views::counted(ptr, n)` 的用途？
 4. `ranges::advance/next/prev` 相比旧 `std::advance` 的改进？
 5. C++20 把视图转容器的难点是什么？C++23 如何解决？
+
+## 代码自测
+
+### Q1: range 工具
+```cpp
+// iota: 生成无限序列
+for (int x : std::views::iota(1) | std::views::take(5)) {
+    std::cout << x << ' ';  // 1 2 3 4 5
+}
+
+// iota(a, b): [a, b)
+for (int x : std::views::iota(0, 5)) {
+    std::cout << x << ' ';  // 0 1 2 3 4
+}
+
+// iota with step (C++23, C++20 用 transform 模拟)
+// repeat
+for (int x : std::views::repeat(42) | std::views::take(3)) {
+    std::cout << x << ' ';  // 42 42 42
+}
+```
+> iota 生成的序列有什么特点？为什么可以生成"无限"序列？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`iota`**：生成从起始值开始递增的序列。
+
+**可以"无限"**：因为 views 是惰性的——`iota(1)` 只是一个递增生成器，不实际存储元素。必须用 `take(n)` 限制才能遍历（否则无限循环）。
+
+**C++20 range 工厂**：
+| 工厂 | 生成 |
+|------|------|
+| `iota(n)` | n, n+1, n+2, ...（无限） |
+| `iota(n, m)` | [n, m) |
+| `repeat(x)` | x, x, x, ...（无限） |
+| `empty<T>()` | 空序列 |
+| `single(x)` | 只含 x 的单元素序列 |
+| `iota` 配合 `transform` | 等差/等比序列 |
+
+**HFT 用途**：生成测试数据、索引序列 `iota(0, N)` 替代 `for(int i=0; i<N; ++i)`。
+
+**复习：** → [Range 工具](./README.md)
+</details>

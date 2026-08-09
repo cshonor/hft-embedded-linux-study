@@ -80,3 +80,51 @@ C++20 弃用了 `volatile` 的一些用法（如复合赋值 `v += 1`），因�
 3. C++20 对指针全序比较的修正是什么？之前为什么是问题？
 4. `consteval` 函数的调用有什么限制？
 5. C++20 弃用 volatile 的哪些用法？为什么？
+
+## 代码自测
+
+### Q1: 核心语言改进
+```cpp
+// 1. 指定初始化（C++20）
+struct Point { double x, y; };
+Point p{.x = 1.0, .y = 2.0};  // 指定成员名
+
+// 2. consteval：必须编译期求值
+consteval int square(int x) { return x * x; }
+constexpr int x = square(5);  // OK
+// int y = square(rand());    // 编译错误：必须编译期
+
+// 3. constinit：编译期初始化，但可运行时修改
+constinit int global = square(5);  // 编译期初始化，但可修改
+
+// 4. char8_t
+const char8_t* u8str = u8"hello";  // C++20: char8_t 类型
+```
+> consteval 和 constexpr 的区别？constinit 解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**consteval vs constexpr**：
+- `constexpr`：**可能**在编译期求值（也可以运行时调用）
+- `consteval`：**必须**在编译期求值（运行时调用是编译错误）
+
+| 关键字 | 编译期 | 运行时 | 用途 |
+|--------|--------|--------|------|
+| `constexpr` | ✅ 可 | ✅ 可 | 双用途函数 |
+| `consteval` | ✅ 必须 | ❌ | 纯编译期函数 |
+| `constinit` | ✅ 必须 | 可修改 | 防止静态初始化顺序问题 |
+
+**constinit 解决的问题**：
+```cpp
+// 全局变量：动态初始化（运行时）→ 静态初始化顺序问题
+int global = compute();  // compute() 在运行时调用，初始化顺序未定义
+
+// constinit：保证编译期初始化
+constinit int global = 42;  // 编译期初始化，无顺序问题
+```
+
+**指定初始化**（`.x = 1.0`）：C 风格，让代码更清晰。但 C++ 要求**按声明顺序**指定（C 允许乱序）。
+
+**复习：** → [核心改进](./README.md)
+</details>

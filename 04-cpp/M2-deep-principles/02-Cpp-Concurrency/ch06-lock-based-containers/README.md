@@ -103,3 +103,33 @@ N 个桶 N 把锁，不同桶的操作完全并行。N 越大并发度越高，�
 3. 锁分段哈希表为什么能提高并发度？分段数如何选择？
 4. 设计并发数据结构时，"整操作持锁"是什么意思？为什么不能拆成多个加锁小操作？
 5. HFT 热路径为什么可能不用 `shared_mutex` 而用单写多读的无锁快照？
+
+## 代码自测
+
+### Q1: 粗粒度锁的瓶颈
+```cpp
+template<typename T>
+class ThreadSafeQueue_Coarse {
+    std::queue<T> q;
+    std::mutex m;
+public:
+    void push(T v) { std::lock_guard<std::mutex> lk(m); q.push(std::move(v)); }
+    bool pop(T& v) { std::lock_guard<std::mutex> lk(m); if(q.empty()) return false; v=q.front(); q.pop(); return true; }
+};
+```
+> 这个队列在高并发下有什么性能问题？如何改进？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**粗粒度锁瓶颈**：一个 mutex 保护整个队列，所有 push/pop 操作互斥。高并发下线程排队等锁，吞吐量不随核数增长（串行化点）。
+
+**改进方向**：
+1. **细粒度锁**：分别锁 head 和 tail（`std::mutex head_m, tail_m`），push 只锁 tail，pop 只锁 head——允许同时 push 和 pop。
+2. **无锁队列**：用 `atomic` + CAS 实现（见 ch07）。
+3. **线程本地队列 + 批量迁移**：每个线程有本地队列（无锁），偶尔批量迁移（work stealing）。
+
+**HFT**：订单队列用无锁或细粒度锁，避免热路径等锁。
+
+**复习：** → [细粒度锁](./README.md)
+</details>

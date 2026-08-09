@@ -45,3 +45,43 @@ free-list 耗尽时，从内存池切一块（通常 20 个块的量）补给。
 3. 二级配置器如何减少 `malloc` 系统调用次数？
 4. `uninitialized_fill` 对 trivially constructible 类型如何特化？为什么能零开销？
 5. HFT 的 mempool 与 SGI free-list 的核心思想有何共性？
+
+## 代码自测
+
+### Q1: allocator 接口
+```cpp
+template<typename T>
+class MempoolAlloc {
+    MemoryPool<T>& pool;
+public:
+    using value_type = T;
+    T* allocate(size_t n) { return pool.malloc(n); }
+    void deallocate(T* p, size_t n) { pool.free(p, n); }
+};
+
+// 使用
+MemoryPool<int> mp;
+std::vector<int, MempoolAlloc<int>> v(MempoolAlloc<int>{mp});
+v.push_back(42);
+```
+> 自定义分配器必须提供哪些接口？allocator_traits 的作用是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**最小接口**（C++11 起）：
+- `value_type` 类型别名
+- `allocate(n)` → `T*`
+- `deallocate(p, n)`
+
+**`allocator_traits`** 提供默认实现：
+- `construct(alloc, p, args...)` → 默认调 `::new (p) T(args...)`
+- `destroy(alloc, p)` → 默认调 `p->~T()`
+- `max_size()` → 默认 `size_t(-1) / sizeof(T)`
+
+如果分配器没提供这些，traits 用默认实现。只需实现 `allocate`/`deallocate` 即可。
+
+**HFT**：自定义 mempool 分配器避免 `operator new` 的锁/碎片，高频小对象（订单节点）用 `list<T, MempoolAlloc<T>>`。
+
+**复习：** → [allocator 接口](./README.md)
+</details>

@@ -62,3 +62,51 @@ v.emplace_back(42);          // 直接在 v 的内存里构造 Widget
 3. `v.emplace_back(new Widget)` 在扩容抛异常时会发生什么？正确的写法是什么？
 4. 为什么 `emplace` 对"需要明确转换路径"的场景有风险？
 5. `push_back(make_unique<T>())` 为什么是 `unique_ptr` 容器插入的最安全写法？
+
+
+
+## 代码自测
+
+### Q1: emplace vs push_back
+
+```cpp
+std::vector<std::string> v;
+v.push_back(std::string("hello"));  // A: 几次构造/移动？
+v.emplace_back("hello");            // B: 几次构造/移动？
+```
+
+> A 和 B 分别触发几次构造/移动？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**A（push_back）：** 2 次——构造临时 `string("hello")` → 移动进 `v`（或 C++17 拷贝省略后只有 1 次构造）
+**B（emplace_back）：** 1 次——直接在 `v` 的内存里构造 `string`，参数 `"hello"` 传给 `string` 的构造函数
+
+**emplace 优势：** 无临时对象、无移动、可传任意构造参数。
+**emplace 限制：** 依赖 `value_type` 可从参数直接构造；资源管理顺序不同（异常安全敏感场景需注意）。
+
+**复习：** → [Item 42：优先 emplace 而非 insert](./item42-优先emplace而非insert.md)
+</details>
+
+### Q2: emplace 异常安全
+
+```cpp
+std::vector<std::unique_ptr<Widget>> v;
+// v.emplace_back(new Widget);     // A: 安全吗？
+v.emplace_back(std::make_unique<Widget>());  // B: 安全吗？
+```
+
+> A 行安全吗？如果 `emplace_back` 扩容抛异常会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**A 不安全。** `emplace_back(new Widget)` 先构造 `unique_ptr`（接管裸指针），如果此时 `vector` 扩容需要移动元素并抛 `bad_alloc`，裸指针已经被 `unique_ptr` 管理——实际上 `emplace_back` 内部可能先 `new` 再构造，中间异常导致裸指针泄漏。
+
+**B 安全。** `make_unique<Widget>()` 先构造好 `unique_ptr`，再传给 `emplace_back`。即使扩容异常，`unique_ptr` 的移动构造是 `noexcept`，不会泄漏。
+
+**规则：** 不传裸 `new` 结果给 `emplace`/`push_back`，先包成智能指针。
+
+**复习：** → [Item 42：优先 emplace 而非 insert](./item42-优先emplace而非insert.md)
+</details>

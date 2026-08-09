@@ -96,3 +96,35 @@ std::string_view safe() { return "hello"; }
 3. `string_view::substr` 和 `string::substr` 的区别？为什么前者零拷贝？
 4. `string_view` 为什么没有 `c_str()`？`data()` 的注意事项？
 5. HFT FIX 协议解析为什么用 `string_view` + `remove_prefix`？零拷贝体现在哪？
+
+## 代码自测
+
+### Q1: string_view 零拷贝
+```cpp
+// 不拷贝字符串，只是指针+长度
+std::string_view sv = "hello world";  // 指向字面量
+std::string s = "test";
+std::string_view sv2 = s;  // 指向 s 的数据
+
+// 传参：避免 string 拷贝
+void process(std::string_view sv);  // 接受 string、C 风格、字面量
+process("literal");  // 无拷贝
+process(s);           // 无拷贝
+process(sv);          // 无拷贝
+```
+> string_view 有什么陷阱？为什么不能存到容器里？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**陷阱**：
+1. **不拥有数据**：string_view 是指针+长度，不管理生命周期。源字符串销毁后 string_view 悬垂。
+2. **不保证 null 结尾**：`sv.data()` 可能不以 `\0` 结尾，传给 C API 要先拷贝到 `string`。
+3. **存容器**：`vector<string_view>` 如果源 string 被修改/销毁 → 全部悬垂。
+
+**正确用法**：函数参数（临时使用，不持久化）。错误用法：存为成员变量/返回值（可能比源字符串活得长）。
+
+**HFT**：热路径传字符串用 string_view 避免拷贝，但确保源数据生命周期覆盖使用期。
+
+**复习：** → [string_view](./README.md)
+</details>

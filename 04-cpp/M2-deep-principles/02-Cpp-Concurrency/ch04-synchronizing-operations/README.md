@@ -98,3 +98,76 @@ else
 3. `future::get()` 为什么只能调一次？多读者怎么办？
 4. `async` 返回的 future 析构时会发生什么？这对热路径有什么影响？
 5. C++20 的 `latch` 和 `barrier` 有什么区别？分别适合什么场景？
+
+## 代码自测
+
+### Q1: condition_variable 等待
+```cpp
+std::mutex m;
+std::condition_variable cv;
+bool ready = false;
+
+void worker() {
+    std::unique_lock<std::mutex> lk(m);
+    cv.wait(lk, [] { return ready; });  // 带谓词
+    std::puts("done");
+}
+void signaler() {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    {
+        std::lock_guard<std::mutex> lk(m);
+        ready = true;
+    }
+    cv.notify_one();
+}
+```
+> 为什么 `cv.wait` 要带谓词 `[] { return ready; }`？不带会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不带谓词的 `cv.wait(lk)`** 会遇到**虚假唤醒**（spurious wakeup）——操作系统可能在没有 notify 的情况下唤醒线程。如果不检查条件，线程会在 `ready` 还是 false 时继续执行。
+
+**带谓词的 `cv.wait(lk, pred)`** 等价于：
+```cpp
+while (!pred()) cv.wait(lk);
+```
+每次唤醒后都重新检查谓词，虚假唤醒时重新睡眠。这是 condition_variable 的正确用法。
+
+**复习：** → [condition_variable](./README.md)
+</details>
+
+### Q2: future/promise
+```cpp
+std::future<int> async_task() {
+    std::promise<int> p;
+    auto f = p.get_future();
+    std::thread t([](std::promise<int> p) {
+        p.set_value(42);
+    }, std::move(p));
+    t.detach();
+    return f;
+}
+
+int main() {
+    auto f = async_task();
+    std::cout << f.get();
+}
+```
+> `f.get()` 输出什么？如果线程中 `set_value` 前抛异常会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+`f.get()` 输出 **42**。`get()` 阻塞等待结果就绪。
+
+**异常情况**：如果线程中 `set_value` 前抛异常且未捕获，promise 析构时自动存入 `broken_promise` 异常。`f.get()` 会重新抛出该异常。
+
+**最佳实践**：用 `std::async` 替代手动 thread+promise：
+```cpp
+auto f = std::async(std::launch::async, [] { return 42; });
+```
+更简洁，异常自动传播，资源自动管理。
+
+**复习：** → [future/promise](./README.md)
+</details>

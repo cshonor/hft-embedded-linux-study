@@ -83,3 +83,53 @@ C++20 修复了一些 ADL（参数依赖查找）的边缘情况，让泛型调�
 3. `std::common_reference` 的用途？
 4. `std::type_identity` 如何阻止模板推导？
 5. HFT `Quantity` 类型如何用 `explicit(bool)` 防止意外隐式转换？
+
+## 代码自测
+
+### Q1: 泛型改进汇总
+```cpp
+// 1. 非类型模板参数用 class/typename
+template<typename T, typename auto N>  // C++17 auto
+// C++20: 也支持
+template<class T, T N> struct A;  // 传统写法仍支持
+
+// 2. 条件 explicit
+template<typename T>
+struct Wrapper {
+    // 只在 T 可隐式转换时才 explicit
+    template<typename U>
+    explicit(!std::is_convertible_v<U, T>)
+    Wrapper(U&& u) : val(std::forward<U>(u)) {}
+    T val;
+};
+
+// 3. 类模板参数推导改进
+std::vector v{1, 2, 3};  // vector<int>
+std::vector v2(v.begin(), v.end());  // C++20 前不推导，C++20 OK
+```
+> `explicit(!expr)` 是什么？条件 explicit 解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`explicit(expr)`**：当 `expr` 为 true 时是 `explicit` 构造，为 false 时非 explicit。
+
+**解决的问题**：包装器/转换构造函数需要条件性 explicit：
+```cpp
+struct String {
+    // 从 const char* 隐式转换 OK（常见用法）
+    // 从 bool 显式转换（避免意外 bool→String）
+    template<typename T>
+    explicit(!std::is_convertible_v<T, const char*>)
+    String(T&&);
+};
+
+String s1 = "hello";       // OK（const char* 可隐式转换）
+// String s2 = true;       // 编译错误（bool 需要显式）
+String s3(true);            // OK（显式构造）
+```
+
+C++17 前必须用 SFINAE 分两个构造函数（一个 explicit 一个不 explicit），C++20 用 `explicit(expr)` 一个函数搞定。
+
+**复习：** → [泛型改进](./README.md)
+</details>

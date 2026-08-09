@@ -107,3 +107,66 @@ assert(data == 42);   // 一定成立：release-acquire 建立了 happens-before
 3. `compare_exchange_weak` 和 `strong` 的区别是什么？为什么 weak 适合放在循环里？
 4. ABA 问题是什么？在无锁队列中如何发生？怎么解决？
 5. 为什么多线程下 `volatile` 不能替代 `atomic`？x86 的 TSO 对无锁编程有什么好处？
+
+## 代码自测
+
+### Q1: memory_order 选择
+```cpp
+std::atomic<int> x{0}, y{0};
+int r1, r2;
+
+// 线程 A
+x.store(1, std::memory_order_relaxed);
+r1 = y.load(std::memory_order_relaxed);
+
+// 线程 B
+y.store(1, std::memory_order_relaxed);
+r2 = x.load(std::memory_order_relaxed);
+```
+> 可能出现 `r1 == 0 && r2 == 0` 吗？为什么？换成 `memory_order_seq_cst` 呢？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`memory_order_relaxed`**：**可以**出现 `r1==0 && r2==0`。relaxed 不保证操作间的顺序，编译器/CPU 可以重排 load 和 store。
+
+**`memory_order_seq_cst`**（默认）：**不可能**同时为 0。seq_cst 提供全局一致顺序——所有线程看到相同的操作顺序，store 必须在 load 之前可见。
+
+| memory_order | 保证 | 适用场景 |
+|---|---|---|
+| relaxed | 原子性，无顺序 | 计数器、统计 |
+| acquire/release | 释放-获取同步 | 锁、生产者-消费者 |
+| seq_cst | 全局一致顺序 | 默认，最安全 |
+
+**HFT**：热路径用 relaxed（计数器），同步用 acquire/release（比 seq_cst 轻量，避免 fence 屏障）。
+
+**复习：** → [memory_order](./README.md)
+</details>
+
+### Q2: 原子操作 vs mutex
+```cpp
+// 方案 A: atomic
+std::atomic<int> counter{0};
+void inc_atomic() { for (int i=0;i<100000;++i) counter.fetch_add(1, std::memory_order_relaxed); }
+
+// 方案 B: mutex
+int counter2 = 0;
+std::mutex m;
+void inc_mutex() { for (int i=0;i<100000;++i) { std::lock_guard<std::mutex> lk(m); ++counter2; } }
+```
+> 两个方案都正确，但性能差异大吗？HFT 选哪个？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**atomic 快得多**。mutex 每次加锁/解锁涉及内核态切换（无竞争时也需原子 CAS + 可能的 futex 系统调用）。atomic `fetch_add` 编译为一条 `lock inc` 指令（x86），用户态完成。
+
+**但注意**：高竞争下 atomic 也会退化为总线锁（cache line ping-pong），性能急剧下降。mutex 在高竞争下反而更稳定（让线程睡眠而非自旋）。
+
+**HFT 选择**：
+- 低竞争计数 → `atomic + relaxed`
+- 复杂数据结构保护 → mutex（简单正确）
+- 无锁队列 → atomic + acquire/release（高级技巧，需极深理解内存模型）
+
+**复习：** → [原子操作 vs mutex](./README.md)
+</details>

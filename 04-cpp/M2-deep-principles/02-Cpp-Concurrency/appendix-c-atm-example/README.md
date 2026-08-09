@@ -145,3 +145,47 @@ public:
 3. 消息为什么要用 POD 结构？类型擦除是如何实现的？
 4. HFT 流水线和 ATM 的 actor 模型有什么对应关系？
 5. 为什么 HFT 把通用消息队列换成 SPSC 环形缓冲？actor 模型的无阻塞特性如何保证流水线不阻塞？
+
+## 代码自测
+
+### Q1: 并发设计的分层
+```cpp
+// 简化 ATM 状态机
+enum class State { IDLE, AUTHENTICATED, SELECTING, DISPENSING };
+
+class ATM {
+    messaging::Receiver incoming;
+    State state = State::IDLE;
+public:
+    void run() {
+        try {
+            while (true) {
+                switch (state) {
+                    case State::IDLE:
+                        wait_for_card(); break;
+                    case State::AUTHENTICATED:
+                        wait_for_selection(); break;
+                    // ...
+                }
+            }
+        } catch (messaging::close_button&) {}
+    }
+};
+```
+> 为什么用消息传递（message passing）而不是共享内存 + mutex？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**消息传递的优势**：
+1. **无共享状态**：每个状态机有自己的数据，不需要锁——无死锁、无竞态
+2. **可组合**：多个状态机通过消息队列连接，扩展容易
+3. **可测试**：状态机逻辑独立，可单线程测试（mock 消息队列）
+4. **确定性**：同一消息序列 → 同一行为，便于复现 bug
+
+**共享内存 + mutex 的问题**：锁的组合容易死锁、状态可见性复杂、调试困难。
+
+**HFT 关联**：交易系统常用 actor/message-passing 模型——各组件（风控、策略、执行）通过无锁消息队列通信，避免锁竞争。
+
+**复习：** → [ATM 示例设计](./README.md)
+</details>

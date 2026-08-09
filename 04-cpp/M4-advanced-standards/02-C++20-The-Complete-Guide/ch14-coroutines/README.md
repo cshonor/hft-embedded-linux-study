@@ -111,3 +111,43 @@ struct Generator {
 3. 协程的挂起/恢复机制是什么？协程帧的作用？
 4. C++20 协程为什么"只有机制没有库"？要怎么用？
 5. HFT 热路径为什么仍用同步？协程适合什么场景？
+
+## 代码自测
+
+### Q1: 协程基础
+```cpp
+// C++20 协程：co_await / co_yield / co_return
+generator<int> count_up_to(int n) {
+    for (int i = 0; i < n; ++i) {
+        co_yield i;  // 挂起，返回值给调用者
+    }
+}
+
+for (int x : count_up_to(5)) {
+    std::cout << x << ' ';  // 0 1 2 3 4
+}
+```
+> co_yield 和 co_return 有什么区别？协程是线程吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **`co_yield expr`**：挂起协程，返回 expr 给调用者。下次恢复时从挂起点继续。可以多次 yield。
+- **`co_return expr`**：结束协程，返回最终值。协程结束，不能恢复。
+- **`co_await expr`**：等待一个 awaitable 对象完成（异步操作），挂起协程直到 ready。
+
+**协程不是线程**：
+- 协程在**调用线程**上执行，不需要新线程
+- 挂起时协程状态保存在堆上（协程帧），线程可以去做别的
+- 恢复时在原线程（或指定线程）继续执行
+- 协程切换开销远小于线程切换（无内核参与）
+
+**C++20 协程特点**：
+- 语言层面支持（`co_await`/`co_yield`/`co_return`）
+- 但**不提供现成的 generator/task 类型**——需要自己实现或用库（如 cppcoro）
+- "无栈协程"——挂起时不在栈上保存上下文，而是编译器生成的状态机
+
+**HFT**：协程适合异步 I/O（如等待网络数据），不阻塞线程。热路径同步逻辑不用协程（状态机开销）。
+
+**复习：** → [协程基础](./README.md)
+</details>

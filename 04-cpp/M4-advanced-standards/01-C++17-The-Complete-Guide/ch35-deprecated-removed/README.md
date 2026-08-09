@@ -74,3 +74,41 @@ void old_func();
 3. `std::result_of` 为什么被弃用？用什么替代？
 4. `[[deprecated]]` 属性如何使用？能带消息吗？
 5. HFT 迁移 C++17 时要清理哪些老旧特性？
+
+## 代码自测
+
+### Q1: 被移除的特性
+```cpp
+// C++17 移除/弃用的特性
+// 1. auto_ptr → 用 unique_ptr
+// 2. register 关键字 → 移除
+// 3. trigraphs (??= 等) → 移除
+// 4. bool++ → 移除
+// 5. throw() 动态异常规范 → 用 noexcept
+
+// C++17 弃用（仍可用但警告）
+[[deprecated("use new_func instead")]]
+void old_func();
+
+// 三段式 for 循环中的迭代器检查
+// std::iterator 模板基类 → 弃用（C++17），移除（C++20）
+```
+> C++17 移除了哪些 C++11/14 已弃用的特性？为什么要移除？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**移除的特性**：
+1. `auto_ptr`（被 `unique_ptr` 替代，拷贝语义有隐患）
+2. `register` 关键字（编译器早已忽略，提示存储位置）
+3. trigraphs（`??=` → `#` 等，为非 ASCII 键盘设计，已过时）
+4. `bool` 的 `++` 操作（语义不明确）
+5. `throw(type_list)` 动态异常规范（运行时开销大，被 `noexcept` 替代）
+6. `std::iterator` 模板基类（设计有缺陷，直接定义 typedef 更好）
+
+**为什么移除**：C++ 标准每版会清理已弃用的特性，减少语言复杂度。弃用 → 移除的周期通常 2 个标准版本（~6 年），给迁移时间。
+
+**HFT 迁移**：检查代码中是否有 `auto_ptr`/`register`/`throw()`，替换为现代等价物。`-Wdeprecated-declarations` 警告可帮助发现。
+
+**复习：** → [移除的特性](./README.md)
+</details>

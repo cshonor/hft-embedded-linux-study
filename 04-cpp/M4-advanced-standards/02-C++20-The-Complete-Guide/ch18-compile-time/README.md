@@ -112,3 +112,51 @@ C++20 让 `std::vector`/`std::string` 的部分操作 `constexpr`——可在编
 3. `is_constant_evaluated` 的作用？为什么需要双路径？
 4. C++20 `constexpr` 函数能做哪些 C++17 不能的事？
 5. HFT 如何用 `is_constant_evaluated` 让同一函数编译期纯算法、运行期 SIMD？
+
+## 代码自测
+
+### Q1: constexpr 扩展
+```cpp
+// C++20: constexpr 可以用 try/catch、动态分配
+constexpr int compute(int n) {
+    int* arr = new int[n];  // C++20: constexpr new
+    for (int i = 0; i < n; ++i) arr[i] = i * i;
+    int sum = 0;
+    for (int i = 0; i < n; ++i) sum += arr[i];
+    delete[] arr;
+    return sum;
+}
+static_assert(compute(5) == 30);  // 0+1+4+9+16=30
+
+// constexpr std::vector (C++20)
+constexpr auto make_vector() {
+    std::vector<int> v;
+    v.push_back(1);
+    v.push_back(2);
+    return v;
+}
+```
+> C++20 的 constexpr 放宽到什么程度？还有什么不能做？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**C++20 constexpr 放宽**：
+1. **`try`/`catch`**：允许（但 constexpr 上下文中抛异常等于编译失败）
+2. **动态内存分配**：`new`/`delete` 在 constexpr 中可用（必须在同一次求值中释放）
+3. **`std::vector`/`std::string`**：constexpr 化（编译期可构造、使用、析构）
+4. **`std::sort`/`std::find` 等**：constexpr 化
+5. **union 的活跃成员切换**
+6. **`goto`**（但限制了某些跳转）
+7. **`asm`** 声明（空 asm 允许，有指令的 asm 不允许）
+
+**仍不能做**：
+- 虚函数调用（无 vtable）
+- I/O 操作（`printf`/`cin`）
+- 线程操作
+- 未定义行为（UB 在 constexpr 中是编译错误）
+
+**HFT 价值**：编译期计算替代模板元编程（TMP）——用普通 C++ 代码写编译期逻辑，不需要 TMP 技巧。
+
+**复习：** → [constexpr 扩展](./README.md)
+</details>

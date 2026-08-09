@@ -93,3 +93,42 @@ C++17 起 `vector`/`string`/`array` 的迭代器被定义为 **contiguous iterat
 3. `node_type` 能改 key 吗？map 和 set 的区别？
 4. `insert_or_assign` 和 `try_emplace` 的语义区别？
 5. HFT 订单簿重组如何用 `extract`/`merge` 零拷贝转移？
+
+## 代码自测
+
+### Q1: 容器新方法
+```cpp
+std::vector<int> v = {1, 2, 3};
+v.emplace_back(4);     // C++11
+
+// C++17: try_emplace（key 不存在才插入）
+std::map<std::string, int> m;
+m.try_emplace("a", 1);  // 插入 {a:1}
+m.try_emplace("a", 2);  // key 存在，不做任何事，a 仍为 1
+
+// C++17: insert_or_assign（存在则赋值）
+m.insert_or_assign("a", 2);  // a 变为 2
+
+// C++17: extract + merge（节点转移，零拷贝）
+std::map<std::string, int> m2;
+auto node = m.extract("a");  // 提取节点
+node.mapped() = 99;
+m2.insert(std::move(node));  // 插入到 m2，无拷贝
+```
+> try_emplace 和 insert_or_assign 的区别？extract 解决了什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**try_emplace vs insert_or_assign**：
+| 方法 | key 存在时 | key 不存在时 |
+|------|-----------|-------------|
+| `try_emplace(k, args...)` | 不修改 | 构造新值 |
+| `insert_or_assign(k, v)` | 赋值为 v | 插入 {k:v} |
+
+**extract**：从 map/set 中提取节点（不拷贝/移动），可以修改 key 后重新插入到另一个 map/set。解决"修改 map 的 key"问题（C++17 前只能 erase + insert，有拷贝/移动开销）。
+
+**HFT**：extract/merge 零拷贝转移节点，适合频繁重组容器的高频场景。
+
+**复习：** → [容器扩展](./README.md)
+</details>

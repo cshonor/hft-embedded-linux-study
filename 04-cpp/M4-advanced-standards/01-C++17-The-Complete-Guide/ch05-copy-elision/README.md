@@ -84,3 +84,38 @@ std::string make() {
 3. 强制省略只对 prvalue 生效，对 lvalue 返回呢？
 4. `foo(std::string("hi"))` 在 C++17 里发生几次构造？
 5. HFT 返回行情对象为什么用 `return Tick{...}` 而不是 `Tick t; ...; return t;`？
+
+## 代码自测
+
+### Q1: 保证的拷贝省略
+```cpp
+struct Widget {
+    Widget() { std::puts("default"); }
+    Widget(const Widget&) { std::puts("copy"); }
+    Widget(Widget&&) { std::puts("move"); }
+};
+
+Widget make() { return Widget(); }  // 返回临时对象
+
+Widget w = make();  // C++17 前后分别输出什么？
+```
+> C++17 的保证拷贝省略与 C++14 的 NRVO 有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**C++17**：输出 **"default"**（仅一次构造，无拷贝无移动）。保证的拷贝省略（guaranteed copy elision）是**语言规则**——编译器必须省略拷贝/移动，不是优化选项。
+
+**C++14**：通常也输出 "default"（NRVO/RVO 优化），但标准允许拷贝/移动。如果关闭优化或编译器不优化，可能输出 "default" + "move"。
+
+**区别**：
+- C++14 的 RVO 是**优化**（编译器可以选择做）
+- C++17 的保证省略是**语义**（编译器必须做，不可省略的对象直接在目标位置构造）
+
+**关键场景**：不可移动不可拷贝的类型（如 `std::mutex`、`std::atomic`）在 C++17 可以从函数返回：
+```cpp
+std::mutex make_mutex() { return std::mutex(); }  // C++17 OK
+```
+
+**复习：** → [保证的拷贝省略](./README.md)
+</details>

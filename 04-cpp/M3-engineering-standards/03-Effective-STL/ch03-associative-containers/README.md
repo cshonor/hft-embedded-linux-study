@@ -74,3 +74,61 @@ std::set<int*, PtrCmp> s;   // 按指针所指值排序
 3. `m[k]` 和 `m.find(k)` 在键不存在时行为有何不同？为什么热路径要避免 `[]` 误用？
 4. `unordered_map` 用相等还是等价？rehash 什么时候发生？怎么避免？
 5. 小整数键密集时，为什么 `vector` 比 `map` 更适合？
+
+## 代码自测
+
+### Q1: map vs unordered_map
+```cpp
+// 场景：symbol → price 映射，5000 个 symbol
+std::map<std::string, double> m;        // A: 红黑树
+std::unordered_map<std::string, double> um;  // B: 哈希表
+
+// 查找
+m.find("AAPL");     // O(log n)
+um.find("AAPL");    // O(1) 均摊
+```
+> 除了查找复杂度，两者还有哪些关键区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 特性 | `map` | `unordered_map` |
+|------|-------|----------------|
+| 底层结构 | 红黑树 | 哈希表（桶数组） |
+| 有序性 | ✅ 按 key 排序 | ❌ 无序 |
+| 最坏查找 | O(log n) | O(n)（哈希冲突） |
+| 迭代器失效 | 插入不失效，删除只失效被删元素 | rehash 时全部失效 |
+| 内存 | 每节点 3 指针 | 桶数组 + 链表节点 |
+| cache | ❌ 指针追逐 | 略好但仍非连续 |
+
+**HFT 选择**：如果不需要有序遍历，选 `unordered_map` + `reserve` 预分配避免 rehash。需要有序遍历（如按 symbol 排序输出）选 `map`。
+
+**复习：** → [关联容器选型](./README.md)
+</details>
+
+### Q2: operator[] 的副作用
+```cpp
+std::map<std::string, int> m;
+// 查找 "AAPL"，不存在时不要插入
+int price = m["AAPL"];  // A: 有问题
+auto it = m.find("AAPL");  // B: 正确
+```
+> A 行有什么副作用？为什么在 HFT 中要避免？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**A 行副作用**：`operator[]` 在 key 不存在时**自动插入**默认值（int → 0）。所以 `m["AAPL"]` 会创建一个 `{AAPL: 0}` 条目，即使你只想查找。
+
+**问题**：
+1. 意外修改容器（非 const 操作）
+2. 插入开销（红黑树再平衡）
+3. 语义不清晰（查找 vs 插入混淆）
+
+**正确做法**：`find` + 检查 `end()`，或 C++20 `contains`：
+```cpp
+if (m.contains("AAPL")) { ... }
+```
+
+**复习：** → [operator[] 副作用](./README.md)
+</details>

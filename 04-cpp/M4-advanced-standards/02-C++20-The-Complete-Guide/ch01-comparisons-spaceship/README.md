@@ -93,3 +93,40 @@ b == 42;    // OK
 3. C++20 的反向比较合成是什么？解决了什么问题？
 4. `==` 和 `<=>` 为什么在 C++20 分离？
 5. HFT 数据结构如何用 `<=>` default 减少样板代码？
+
+## 代码自测
+
+### Q1: 三向比较
+```cpp
+struct Point {
+    int x, y;
+    auto operator<=>(const Point&) const = default;  // 自动生成所有比较
+};
+
+Point a{1, 2}, b{1, 3};
+a < b;   // true（先比 x，相等再比 y）
+a == b;  // false
+a >= b;  // false
+```
+> `<=>` 返回什么？`= default` 生成了哪些运算符？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`<=>`（三向比较）** 返回比较结果类型：
+- `std::strong_ordering`：`less`/`equal`/`greater`（如 int）
+- `std::weak_ordering`：`less`/`equivalent`/`greater`（如大小写不敏感字符串）
+- `std::partial_ordering`：`less`/`equivalent`/`greater`/`unordered`（如浮点数 NaN）
+
+**`= default` 生成**：`<=>` 和 `==`，编译器自动从 `<=>` 推导 `<`/`>`/`<=`/`>=`，从 `==` 推导 `!=`。一行 `= default` 替代手写 6 个比较运算符。
+
+**返回值用法**：
+```cpp
+auto result = a <=> b;
+if (result < 0) { /* a < b */ }
+if (result == 0) { /* a == b */ }
+if (result > 0) { /* a > b */ }
+```
+
+**复习：** → [三向比较](./README.md)
+</details>

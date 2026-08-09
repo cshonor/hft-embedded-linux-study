@@ -117,3 +117,50 @@ C++20 把迭代器 Concept 标准化：
 3. `v | views::filter(f) | views::transform(g)` 的求值时机？
 4. Ranges 的迭代器 Concept 有哪些？算法如何利用？
 5. HFT 热路径为什么慎用复杂 Ranges 管道？什么场景适合？
+
+## 代码自测
+
+### Q1: 管道式 views
+```cpp
+std::vector<int> v = {1, 2, 3, 4, 5, 6};
+
+auto result = v
+    | std::views::filter([](int x) { return x % 2 == 0; })  // {2, 4, 6}
+    | std::views::transform([](int x) { return x * x; })     // {4, 16, 36}
+    | std::views::take(2);                                     // {4, 16}
+
+for (int x : result) std::cout << x << ' ';  // 4 16
+```
+> views 是惰性的吗？filter/transform/take 各做什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**是的**，views 是惰性的（lazy evaluation）：
+- 管道只是创建"视图适配器"，不立即计算
+- 迭代时才按需计算每个元素
+- 无中间容器分配（零拷贝）
+
+| View | 作用 |
+|------|------|
+| `filter(pred)` | 只保留满足谓词的元素 |
+| `transform(f)` | 对每个元素应用 f |
+| `take(n)` | 取前 n 个 |
+| `drop(n)` | 跳过前 n 个 |
+| `reverse()` | 反转 |
+| `take_while(pred)` | 取到第一个不满足的为止 |
+
+**vs 传统算法**：
+```cpp
+// 传统：需要临时容器
+std::vector<int> evens;
+std::copy_if(v.begin(), v.end(), std::back_inserter(evens), ...);
+std::vector<int> squares;
+std::transform(evens.begin(), evens.end(), std::back_inserter(squares), ...);
+
+// Ranges：无临时容器，惰性链式
+auto result = v | views::filter(...) | views::transform(...);
+```
+
+**复习：** → [Ranges Views](./README.md)
+</details>

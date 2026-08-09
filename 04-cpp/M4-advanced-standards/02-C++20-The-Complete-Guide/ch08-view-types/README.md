@@ -111,3 +111,46 @@ auto first10 = naturals | views::take(10);   // 安全：取前 10
 3. `join` 和 `split` 是什么关系？
 4. 视图为什么不缓存？多次遍历有什么后果？
 5. HFT 如何用 `split` 解析 FIX 消息？用 `slide` 做移动平均（C++23）？
+
+## 代码自测
+
+### Q1: 常用 view 类型
+```cpp
+std::vector<int> v = {1, 2, 3, 4, 5};
+std::map<int, std::string> m = {{1, "a"}, {2, "b"}};
+
+// keys/values 视图
+for (int k : m | std::views::keys) std::cout << k;  // 12
+for (auto& val : m | std::views::values) std::cout << val;  // ab
+
+// elements<N>：取 tuple/pair 的第 N 个
+for (int k : m | std::views::elements<0>) std::cout << k;  // 12
+
+// split/join
+std::string s = "a,b,c";
+for (auto part : s | std::views::split(',')) {
+    // "a", "b", "c"
+}
+
+// adjacent<N>：滑动窗口
+for (auto [a, b] : v | std::views::adjacent<2>) {
+    std::cout << a << b << ' ';  // 12 23 34 45
+}
+```
+> split 和 adjacent 分别做什么？views 是拥有数据还是引用数据？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **`split(delim)`**：按分隔符切分范围为子范围
+- **`adjacent<N>`**（C++23，C++20 用 `slide`）：滑动窗口，每窗口 N 个相邻元素
+
+**views 引用数据**：views 不拥有底层数据，只是"视图"——引用原容器的元素。如果原容器销毁/修改，view 失效（类似 `string_view`）。
+
+**安全规则**：
+- view 的生命周期不能超过底层数据
+- 通过 view 修改元素会改原数据（如果 view 不是 const）
+- `filter`/`transform` 创建新迭代器但仍引用原数据
+
+**复习：** → [View 类型](./README.md)
+</details>

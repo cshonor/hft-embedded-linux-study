@@ -88,3 +88,35 @@ std::exclusive_scan(ex::par, v.begin(), v.end(), out.begin(), 0, std::plus<>{});
 3. `transform_reduce` 相比 `transform` + `reduce` 有什么优势？
 4. `find(par)` 找到后是否立即停止？为什么？
 5. HFT 热路径为什么不用并行 STL？什么场景适用？
+
+## 代码自测
+
+### Q1: 执行策略
+```cpp
+std::vector<int> v(10'000'000);
+// ... fill ...
+
+std::sort(std::execution::seq, v.begin(), v.end());      // 串行
+std::sort(std::execution::par, v.begin(), v.end());      // 并行
+std::sort(std::execution::par_unseq, v.begin(), v.end()); // 并行+向量化
+```
+> 三种执行策略的区别？par_unseq 有什么额外要求？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 策略 | 含义 | 线程安全要求 |
+|------|------|-------------|
+| `seq` | 单线程顺序执行 | 无额外要求 |
+| `par` | 多线程并行，每元素由一个线程处理 | 函数对象必须线程安全（无共享可变状态） |
+| `par_unseq` | 并行 + 向量化（SIMD），可能同一线程同时处理多个元素 | 必须无数据依赖、可向量化、不能用 mutex（可能死锁） |
+
+**par_unseq 的额外要求**：
+- 不能使用 mutex/lock（向量化中无法获取/释放锁）
+- 不能有跨元素的数据依赖
+- 函数对象必须可重入且无副作用
+
+**HFT**：热路径不用 parallel STL（线程调度不可控）。离线回测/数据分析可用 `par` 加速大数据处理。
+
+**复习：** → [parallel STL](./README.md)
+</details>

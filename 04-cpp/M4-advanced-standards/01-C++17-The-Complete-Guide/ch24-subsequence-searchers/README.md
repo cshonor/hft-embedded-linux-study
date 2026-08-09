@@ -86,3 +86,40 @@ for (auto& doc : documents) {
 3. 搜索器为什么要"构造一次，搜索多次"？什么场景适用？
 4. `boyer_moore_horspool` 相比 `boyer_moore` 的优势是什么？
 5. HFT FIX 协议字段搜索为什么用 BMH 搜索器？短模式为什么不用？
+
+## 代码自测
+
+### Q1: 子串搜索
+```cpp
+std::string text = "The quick brown fox jumps";
+std::string pattern = "brown";
+
+// C++17: search 可用优化算法
+auto it = std::search(text.begin(), text.end(),
+    std::make_searcher(std::boyer_moore_searcher(pattern.begin(), pattern.end())));
+
+if (it != text.end()) {
+    std::cout << "Found at: " << (it - text.begin());
+}
+```
+> Boyer-Moore 搜索算法比朴素搜索快在哪里？什么场景适合用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**Boyer-Moore 算法**：
+- 预处理模式串构建"坏字符表"和"好后缀表"
+- 搜索时从模式末尾开始比较，不匹配时可以跳过多个字符
+- 平均 O(n/m)（比朴素 O(n*m) 快），最坏 O(n*m)
+
+**C++17 提供的搜索器**：
+| 搜索器 | 预处理 | 搜索 | 适用场景 |
+|--------|--------|------|---------|
+| `default_searcher` | 无 | O(n*m) | 短模式/简单场景 |
+| `boyer_moore_searcher` | O(m) | O(n/m) 平均 | 中等长度模式 |
+| `boyer_moore_horspool_searcher` | O(m) | O(n/m) 平均 | 实践中常更快（简化版） |
+
+**HFT**：协议解析中搜索定界符可用，但热路径通常用固定偏移/状态机，不搜索。
+
+**复习：** → [子串搜索](./README.md)
+</details>

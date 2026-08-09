@@ -101,3 +101,37 @@ void print_all(Args... args) {
 3. 未选中的分支完全不做任何检查吗？（提示：语法 vs 语义）
 4. `if constexpr` 的条件必须满足什么？
 5. HFT 用 `if constexpr` 做 POD 分派有什么好处？相比虚函数分派？
+
+## 代码自测
+
+### Q1: constexpr if 分支消除
+```cpp
+template<typename T>
+auto get_value(T& x) {
+    if constexpr (std::is_pointer_v<T>) {
+        return *x;       // T 是指针，解引用
+    } else {
+        return x;        // T 不是指针，直接返回
+    }
+}
+
+int a = 42;
+int* p = &a;
+get_value(a);  // 返回 42
+get_value(p);  // 返回 42
+```
+> `if constexpr` 和普通 `if` 有什么本质区别？为什么模板中特别有用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**本质区别**：
+- 普通 `if`：两个分支都**编译**，运行期选择。如果某个分支对某些类型无效 → **编译错误**。
+- `if constexpr`：只编译**条件为真的分支**，另一个分支被**丢弃**（discarded），不编译。运行期无分支开销。
+
+**模板中的价值**：可以根据模板参数类型选择不同的代码路径，且不执行的分支不需要合法（如对非指针类型写 `*x` 在 constexpr-if 中不会报错，因为被丢弃）。
+
+**C++17 前**：需要 `enable_if`/tag dispatch/SFINAE 实现同样效果，代码冗长。
+
+**复习：** → [constexpr if](./README.md)
+</details>

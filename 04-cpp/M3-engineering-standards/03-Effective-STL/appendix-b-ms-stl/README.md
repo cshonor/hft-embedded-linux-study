@@ -22,3 +22,33 @@ HFT 引擎通常 Linux + GCC/Clang，MSVC 仅在 Windows 回测工具链。跨�
 1. `_HAS_ITERATOR_DEBUGGING` 在什么阶段开启？发布为什么要关？
 2. 为什么不能跨 MSVC/GCC 的 DLL 边界传递 `std::vector`？怎么解决？
 3. 关闭异常后 `new` 失败的行为有何变化？
+
+## 代码自测
+
+### Q1: STL 实现差异
+```cpp
+// 同一段代码在不同实现下行为可能不同
+std::vector<int> v;
+v.push_back(1);
+std::cout << v.capacity();  // GCC: 1, MSVC: ?
+```
+> GCC libstdc++ 和 MSVC 的 vector 扩容策略有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 实现 | 扩容策略 | sizeof(string) | SSO 阈值 |
+|------|---------|----------------|---------|
+| GCC libstdc++ | 2x | 32 | 15 字符 |
+| MSVC STL | 1.5x | 32 | 15 字符 |
+| libc++ (Clang) | 2x | 24 | 22 字符 |
+
+**关键差异**：
+- 扩容倍率不同影响性能（2x 扩容次数少但浪费多）
+- SSO 阈值不同影响短字符串行为
+- `std::list::size()` 在 C++11 前在 GCC 中是 O(n)，MSVC 是 O(1)
+
+**HFT 注意**：不要依赖 capacity 的具体值，用 `reserve` 显式控制。跨平台代码要测试不同实现。
+
+**复习：** → [MSVC STL 特点](./README.md)
+</details>

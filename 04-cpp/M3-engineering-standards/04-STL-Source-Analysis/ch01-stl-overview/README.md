@@ -41,3 +41,39 @@ STL 把"数据结构"与"算法"解耦——算法不直接操作容器，而是
 1. STL 六大组件是什么？它们如何通过迭代器解耦容器与算法？
 2. 迭代器分类为什么能在编译期决定算法可用范围？
 3. 侯捷剖析的是哪个版本的 STL？它是哪个标准库的基础？
+
+## 代码自测
+
+### Q1: 六大组件协作
+```cpp
+// STL 六大组件协作示例
+template<typename T, typename Alloc = std::allocator<T>>
+class vector {  // 容器
+    Alloc alloc;  // 分配器
+public:
+    T* data;
+    void push_back(const T& val) {  // 用分配器分配内存
+        T* p = alloc.allocate(1);
+        std::allocator_traits<Alloc>::construct(alloc, p, val);
+    }
+};
+
+std::sort(v.begin(), v.end());  // 算法通过迭代器操作容器
+```
+> 容器如何使用分配器？算法如何与容器解耦？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**容器与分配器**：容器是模板参数 `Alloc`，默认 `std::allocator<T>`。容器内所有内存操作通过分配器（`allocate`/`deallocate`/`construct`/`destroy`），不直接调 `new`/`delete`。自定义分配器可接 mempool/hugepage。
+
+**算法与容器解耦**：算法只接收迭代器，不认识容器。`sort(begin, end)` 通过迭代器读写元素，不关心数据存在 vector 还是 array。迭代器是容器和算法之间的**桥梁**。
+
+```
+容器 → 迭代器 → 算法
+  ↑               ↑
+分配器          仿函数/适配器
+```
+
+**复习：** → [六大组件](./README.md)
+</details>

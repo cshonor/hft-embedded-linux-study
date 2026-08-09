@@ -95,3 +95,56 @@ C++20 标准库的模块化支持不完整（取决于编译器），C++23 的 `
 3. 头文件单元（`import <header>`）是什么？有什么过渡价值？
 4. 模块如何解决宏污染问题？
 5. HFT 项目迁移模块的难点是什么？过渡策略？
+
+## 代码自测
+
+### Q1: 模块基础
+```cpp
+// math.cppm (模块接口单元)
+export module math;
+export int add(int a, int b) { return a + b; }
+export int sub(int a, int b) { return a - b; }
+// 非导出：内部实现
+int internal_helper() { return 0; }
+
+// main.cpp
+import math;
+int main() {
+    return add(1, 2);  // 可用
+    // sub(1, 2);  // 可用
+    // internal_helper();  // 编译错误：未导出
+}
+```
+> 模块相比 #include 有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**模块优势**：
+1. **编译速度**：模块编译一次后缓存，不需要重复解析（#include 每次展开）
+2. **宏隔离**：模块不泄漏宏定义（#include 会传递所有宏）
+3. **依赖明确**：`import` 声明依赖，`#include` 是文本替换（隐式依赖）
+4. **编译顺序**：模块不需要头文件保护（`#pragma once`/`#ifndef`）
+5. **更好的封装**：只导出需要公开的接口
+
+**语法**：
+```cpp
+// 模块接口单元
+export module mymodule;
+export void foo();
+
+// 模块实现单元
+module mymodule;
+void foo() { /* impl */ }
+
+// 分区（partition）：模块内分文件
+export module mymodule:part1;
+
+// 导入分区
+import :part1;
+```
+
+**当前状态**（2026）：GCC/Clang/MSVC 都支持 modules，但构建系统（CMake/Make）支持仍在完善中。大型项目迁移成本高。
+
+**复习：** → [Modules](./README.md)
+</details>

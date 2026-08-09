@@ -84,3 +84,88 @@ for (auto it = src.begin(); it != src.end(); ++it) v.push_back(*it);  // 多次�
 3. 为什么区间成员函数 `insert(pos, first, last)` 比循环 `push_back` 高效？
 4. `vector<Widget*>` 析构会释放 Widget 吗？怎么安全删除指针容器？
 5. 指针容器为什么不能直接用 `remove` + `erase` 删除？正确做法是什么？
+
+## 代码自测
+
+### Q1: 容器选型
+```cpp
+// 场景：存储 10 万个订单 ID（int），需要：
+// 1. 快速查找某 ID 是否存在
+// 2. 按顺序遍历
+// 3. 偶尔删除
+
+// A
+std::vector<int> ids;
+// B
+std::set<int> ids;
+// C
+std::unordered_set<int> ids;
+```
+> 三个方案各有什么优劣？HFT 场景选哪个？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 方案 | 查找 | 顺序遍历 | 删除 | 内存 | cache |
+|------|------|---------|------|------|-------|
+| `vector` | O(n) 或排序后 O(log n) | ✅ 连续 | O(n) | 紧凑 | ✅ 友好 |
+| `set` | O(log n) | ✅ 有序 | O(log n) | 节点开销大 | ❌ 指针追逐 |
+| `unordered_set` | O(1) 均摊 | ❌ 无序 | O(1) | 桶开销 | ❌ 不友好 |
+
+**HFT 选 vector + sort + binary_search**：10 万 int 排序后 binary_search O(log n)，连续存储 cache 友好，遍历快。删除少可以标记删除（tombstone）+ 定期压缩。
+
+**复习：** → [Item 1：仔细选择容器](./README.md)
+</details>
+
+### Q2: 对象切片
+```cpp
+class Base { public: int b; virtual void print() { std::puts("Base"); } };
+class Derived : public Base { public: int d; void print() override { std::puts("Derived"); } };
+
+std::vector<Base> v;         // A
+v.push_back(Derived{1, 2});  // B
+
+std::vector<std::unique_ptr<Base>> v2;  // C
+v2.push_back(std::make_unique<Derived>());  // D
+```
+> B 行后 v[0].print() 输出什么？D 行后 v2[0]->print() 输出什么？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **B → "Base"**：对象切片。`vector<Base>` 按值存储，`push_back(Derived)` 调用 Base 的拷贝构造，Derived 特有部分丢失，vptr 切回 Base。
+- **D → "Derived"**：存指针，不拷贝对象，vptr 不变，正确多态。
+
+**规则**：多态对象必须存指针（`vector<unique_ptr<Base>>` 或 `vector<shared_ptr<Base>>`），不能按值存。
+
+**复习：** → [Item 3：使拷贝轻量且正确](./README.md)
+</details>
+
+### Q3: erase-remove 惯用法
+```cpp
+std::vector<int> v = {1, 2, 3, 2, 4, 2, 5};
+
+// A: 删除所有 2
+v.erase(std::remove(v.begin(), v.end(), 2), v.end());
+
+// B: 错误写法
+// v.erase(std::remove(v.begin(), v.end(), 2));  // 编译不过？行为如何？
+```
+> 为什么不能只调 `remove`？erase-remove 惯用法的原理是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`remove` 不删除元素**——它只是把不等于 2 的元素前移，返回新逻辑末尾迭代器。容器大小不变，末尾残留旧值。
+
+```
+remove 前: [1, 2, 3, 2, 4, 2, 5]
+remove 后: [1, 3, 4, 5, ?, ?, ?]  ← 返回指向第一个 ?
+```
+
+**`erase(new_end, v.end())`** 才真正删除末尾残留。
+
+**`erase` 只接一个参数**（C++20 前）需要 begin+end，不能只传 `remove` 的返回值。正确写法是 `v.erase(remove(...), v.end())`。C++20 引入 `std::erase(v, 2)` 简化。
+
+**复习：** → [Item 9：删除元素的正确方式](./README.md)
+</details>

@@ -93,3 +93,56 @@ C++20 的大部分类型约束用 Concepts 而非旧 traits——`is_integral` �
 3. `is_unbounded_array` 和 `is_bounded_array` 的区别？
 4. C++20 中 Concept 和 traits 各自适合什么场景？
 5. HFT 泛型代码如何用 `remove_cvref` 简化回调参数处理？
+
+## 代码自测
+
+### Q1: 新类型萃取
+```cpp
+// C++20 新增 type traits
+static_assert(std::is_unbounded_array_v<int[]>);     // true
+static_assert(std::is_bounded_array_v<int[5]>);      // true
+static_assert(!std::is_unbounded_array_v<int[5]>);   // true
+
+// remove_cvref
+static_assert(std::is_same_v<std::remove_cvref_t<const int&>, int>);  // true
+
+// is_constant_evaluated
+int compute(int n) {
+    if (std::is_constant_evaluated()) {
+        // 编译期路径：用简单算法
+        return n * 2;
+    } else {
+        // 运行期路径：可以用内联汇编/快速路径
+        return n << 1;
+    }
+}
+```
+> `is_constant_evaluated` 解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`std::is_constant_evaluated()`**：在编译期求值时返回 `true`，运行时返回 `false`。
+
+**解决的问题**：同一个函数既要能编译期求值（constexpr），又要在运行时用不同实现（如更快的汇编指令或 `std::sqrt` 等非 constexpr 函数）。
+
+```cpp
+constexpr double sqrt_approx(double x) {
+    if (std::is_constant_evaluated()) {
+        // 编译期：用牛顿迭代法（constexpr 安全）
+        double guess = x / 2;
+        for (int i = 0; i < 10; ++i) guess = (guess + x/guess) / 2;
+        return guess;
+    } else {
+        // 运行期：用硬件 sqrt 指令（更快）
+        return std::sqrt(x);  // 非 constexpr
+    }
+}
+```
+
+**注意**：`is_constant_evaluated()` 在非 constexpr 上下文中总是返回 false。不能用来"检测是否在 constexpr 上下文中"——只在 constexpr 函数内部有意义。
+
+**C++23 增强**：`if consteval {}` 替代 `if (std::is_constant_evaluated())`，更清晰。
+
+**复习：** → [新类型萃取](./README.md)
+</details>

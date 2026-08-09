@@ -101,3 +101,42 @@ std::pmr::vector<int> v(&pool);   // 用自定义 mempool
 3. `unsynchronized_pool_resource` 和 `synchronized_pool_resource` 的区别？HFT 用哪个？
 4. `null_memory_resource` 在 HFT 中有什么用途？
 5. 如何自定义 memory_resource 包装 DPDK mempool？
+
+## 代码自测
+
+### Q1: 多态内存资源
+```cpp
+// 传统：allocator 模板参数不同 = 不同类型
+std::vector<int, MempoolAlloc<int>> v1;
+std::vector<int, std::allocator<int>> v2;
+// v1 和 v2 类型不同，不能互相赋值
+
+// PMR：运行时多态分配器
+pmr::synchronized_pool_resource pool;
+pmr::vector<int> v3(&pool);  // 用 pool 分配
+pmr::vector<int> v4;         // 用默认（new）
+// v3 和 v4 类型相同（都是 pmr::vector<int>），可互相赋值
+```
+> PMR 解决了什么问题？pmr::vector 和 std::vector 有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**PMR 解决的问题**：传统 allocator 是模板参数，不同 allocator = 不同类型，容器不能互相赋值/传参。PMR 用**运行时多态**分配器（`pmr::polymorphic_allocator`），所有 `pmr::vector<T>` 类型相同，只是内存来源不同。
+
+**区别**：
+- `std::vector<T>` — 模板参数固定 allocator，编译期决定
+- `pmr::vector<T>` = `std::vector<T, pmr::polymorphic_allocator<T>>` — 运行时可切换内存资源
+
+**PMR 内存资源**：
+| 资源 | 特点 |
+|------|------|
+| `std::pmr::new_delete_resource` | 默认，走 operator new |
+| `std::pmr::monotonic_buffer_resource` | 单调分配（只进不退，极快），适合临时容器 |
+| `std::pmr::synchronized_pool_resource` | 线程安全的池分配 |
+| `std::pmr::unsynchronized_pool_resource` | 非线程安全的池分配（更快） |
+
+**HFT**：`monotonic_buffer_resource` 在栈/预分配 buffer 上分配，零 malloc、零碎片，适合每 tick 的临时容器。
+
+**复习：** → [PMR](./README.md)
+</details>

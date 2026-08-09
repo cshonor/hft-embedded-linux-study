@@ -116,3 +116,36 @@ target_compile_features(mylib PUBLIC cxx_std_17)
 3. `/permissive-` 对 MSVC 有什么作用？为什么重要？
 4. HFT 常用的编译选项组合是什么？`-fno-exceptions` 有什么影响？
 5. CMake 如何设置 C++17 标准？`CMAKE_CXX_EXTENSIONS OFF` 的作用？
+
+## 代码自测
+
+### Q1: 编译选项
+```bash
+# C++17 编译
+g++ -std=c++17 -O2 file.cpp
+# 或 c++1z（C++17 确定前的过渡名）
+
+# 常用搭配
+g++ -std=c++17 -O2 -Wall -Wextra -pedantic file.cpp
+```
+> C++17 编译需要什么版本的编译器？常用 C++17 特性需要哪些 flag？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**编译器版本要求**：
+| 编译器 | 最低版本 | 完整 C++17 |
+|--------|---------|-----------|
+| GCC | 7.1 | 8+ |
+| Clang | 5.0 | 6+ |
+| MSVC | 19.14 (VS 2017 15.7) | VS 2019 |
+
+**特殊 flag**：
+- `filesystem`：GCC 8 前需要 `-lstdc++fs`，GCC 9+ 自动链接
+- `parallel STL`：需要 `-ltbb`（Threading Building Blocks）
+- `pmr`：无需额外 flag
+
+**HFT 推荐**：`-std=c++17 -O2 -Wall -Wextra -pedantic -flto -march=native`。`-flto` 启用链接时优化（跨文件内联），`-march=native` 启用目标 CPU 的 SIMD 指令。
+
+**复习：** → [编译设置](./README.md)
+</details>

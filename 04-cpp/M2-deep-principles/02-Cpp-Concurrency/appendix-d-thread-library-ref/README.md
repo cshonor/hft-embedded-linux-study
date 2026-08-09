@@ -172,3 +172,34 @@ std::memory_order_seq_cst     // 全局总序（默认）
 3. C++20 的 `latch` 和 `barrier` 有什么区别？`counting_semaphore` 的 `acquire` 和 `release` 做什么？
 4. `std::async` 的三种启动策略分别什么含义？默认策略有什么坑？
 5. HFT 热路径无锁队列用哪些 `<atomic>` 接口？为什么用 acquire/release 而非 seq_cst？
+
+## 代码自测
+
+### Q1: thread API 速查
+```cpp
+std::thread t(func);
+// A: 获取线程 ID
+auto id = t.get_id();
+// B: 检查是否可 join
+bool b = t.joinable();
+// C: 获取硬件并发数
+unsigned n = std::thread::hardware_concurrency();
+// D: 当前线程让出 CPU
+std::this_thread::yield();
+// E: 当前线程睡眠
+std::this_thread::sleep_for(std::chrono::milliseconds(10));
+```
+> `hardware_concurrency()` 返回 0 意味着什么？`yield()` 和 `sleep_for(0)` 有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **`hardware_concurrency()` 返回 0**：实现无法检测硬件线程数。通常做 fallback：`unsigned n = std::thread::hardware_concurrency(); if (n == 0) n = 4;`
+- **`yield()` vs `sleep_for(0)`**：
+  - `yield()`：提示调度器"我暂时不需要 CPU，给别人用"。但不保证立即切换——调度器可能立即返回当前线程。
+  - `sleep_for(0)`：请求睡眠 0 时间，但实现通常仍调用调度器。行为类似 yield 但语义更明确。
+
+**HFT 实践**：热路径绝不用 yield/sleep（引入抖动）。只在非关键路径（如等待初始化完成）用。绑核线程忙等（spin）替代 yield。
+
+**复习：** → [线程库参考](./README.md)
+</details>

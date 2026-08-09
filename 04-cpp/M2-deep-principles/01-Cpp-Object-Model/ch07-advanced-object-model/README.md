@@ -30,3 +30,58 @@
 1. 模板实例化的时机是什么？代码膨胀代价是什么？
 2. table-based 异常处理如何做到正常路径零开销？
 3. 模板代码膨胀对 I-cache 有什么影响？`extern template` 如何缓解？
+
+## 代码自测
+
+### Q1: 模板实例化与代码膨胀
+```cpp
+template<typename T>
+T maxVal(T a, T b) { return a > b ? a : b; }
+
+// 使用
+maxVal<int>(1, 2);
+maxVal<double>(1.0, 2.0);
+maxVal<int>(3, 4);  // 已实例化过
+```
+> 编译器生成了几份 `maxVal` 的代码？模板实例化对二进制大小有什么影响？
+
+<details>
+<summary>答案与复习指引</summary>
+
+生成 **2 份**代码：`maxVal<int>` 和 `maxVal<double>`。第三次调用 `maxVal<int>(3,4)` 复用已实例化的版本。
+
+**代码膨胀**：模板对每种类型生成独立代码。如果对 10 种类型用 `vector<T>`，就生成 10 份 vector 代码。HFT 中大量模板使用会增加二进制大小和 icache 压力。
+
+**对策**：非泛型核心逻辑抽出为非模板函数（`vector<T>` 的核心操作通过 `void*` 实现），模板只做类型安全包装。
+
+**复习：** → [模板实例化](./README.md)
+</details>
+
+### Q2: 异常的运行时代价
+```cpp
+// 方案 A：异常
+int divide_ex(int a, int b) {
+    if (b == 0) throw std::runtime_error("div by zero");
+    return a / b;
+}
+
+// 方案 B：返回值
+std::optional<int> divide_opt(int a, int b) {
+    if (b == 0) return std::nullopt;
+    return a / b;
+}
+```
+> 即使不抛异常，方案 A 有运行时代价吗？HFT 通常如何选择？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**有代价**。异常机制即使在"不抛"路径上也有开销：
+- 编译器生成 **unwind table**（异常处理表），增加二进制大小
+- 部分编译器在正常路径上也有分支检查（取决于实现）
+- icache 压力增大
+
+但现代编译器（GCC -fno-exceptions）在"零抛出"假设下，正常路径开销可忽略。**HFT 实践**：通常用 `-fno-exceptions` 关闭异常，热路径用返回值/optional/expected 替代。理由是异常的 unwinding 路径不可预测、延迟尖峰。
+
+**复习：** → [异常的运行时代价](./README.md)
+</details>

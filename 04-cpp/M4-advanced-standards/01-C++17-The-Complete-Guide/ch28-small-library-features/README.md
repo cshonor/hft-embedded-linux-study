@@ -89,3 +89,44 @@ auto t = std::tuple_cat(std::make_tuple(1), std::make_tuple("hi"));
 3. `std::tuple_cat` 做什么？
 4. `std::hypot` 三参数版的用途？
 5. HFT 时间戳处理为什么用 `floor<nanoseconds>`？
+
+## 代码自测
+
+### Q1: 库小特性
+```cpp
+// scoped_lock（简化多锁）
+std::mutex m1, m2;
+std::scoped_lock lk(m1, m2);  // 一次锁两个，自动避免死锁
+
+// to_chars / from_chars（零分配转换）
+char buf[20];
+auto res = std::to_chars(buf, buf+20, 3.14);
+*res.ptr = '\0';
+
+// uninitialized_default_construct
+std::vector<Widget> v;
+v.resize(100);  // 调用 100 次默认构造
+
+// launder（解决 placement new 后的优化问题）
+alignas(int) unsigned char buf[sizeof(int)];
+new (buf) int(42);
+int* p = std::launder(reinterpret_cast<int*>(buf));
+```
+> scoped_lock 和 lock_guard 的区别？to_chars 比 to_string 好在哪？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**scoped_lock vs lock_guard**：
+- `lock_guard<Mutex>`：锁一个 mutex（C++11）
+- `scoped_lock<Mutexes...>`：可变参数，锁多个 mutex（C++17），内部用 `std::lock` 避免死锁
+
+单锁时 `scoped_lock` 和 `lock_guard` 等价。多锁时 `scoped_lock` 更安全简洁。
+
+**to_chars vs to_string**：
+- `to_string`：返回 `std::string`，有堆分配
+- `to_chars`：写入预分配 buffer，无分配、无异常、locale 无关
+- HFT 热路径数值转字符串用 `to_chars`（零分配、最快）
+
+**复习：** → [库小特性](./README.md)
+</details>

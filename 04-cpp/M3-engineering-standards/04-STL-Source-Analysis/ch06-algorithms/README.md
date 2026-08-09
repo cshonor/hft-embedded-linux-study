@@ -42,3 +42,38 @@ SGI `sort` 是快排 + 堆排 + 插入排序的混合：
 3. `copy` 在什么条件下特化为 `memmove`？traits 如何参与这个决策？
 4. `lower_bound` 和 `upper_bound` 的返回位置有何不同？
 5. `accumulate` 的初值类型如何影响结果类型？HFT 为什么要用 `0LL`？
+
+## 代码自测
+
+### Q1: sort 的内省排序
+```cpp
+// std::sort 的内部策略（简化）
+template<typename Iter>
+void sort(Iter first, Iter last) {
+    // 1. 快速排序（pivot = median-of-three）
+    // 2. 递归深度超过 2*log(n) → 切换到堆排序（防最坏 O(n²)）
+    // 3. 区间 < 16 → 切换到插入排序（小数据常数因子低）
+}
+```
+> 为什么要混合三种排序？各有什么优劣？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**内省排序（Introsort）** 的三阶段策略：
+
+| 排序 | 平均 | 最坏 | 优势 | 劣势 |
+|------|------|------|------|------|
+| 快排 | O(n log n) | O(n²) | 常数因子最小 | 恶化（已排序/特殊 pivot） |
+| 堆排 | O(n log n) | O(n log n) | 保证最坏复杂度 | 常数因子大、cache 不友好 |
+| 插入排序 | O(n²) | O(n²) | 小数据极快、几乎无开销 | 大数据退化 |
+
+**混合策略**：
+1. 先用快排（平均最快）
+2. 递归太深（可能恶化）→ 切堆排（保证 O(n log n)）
+3. 区间足够小 → 切插入排序（小数据常数因子低）
+
+**HFT**：了解 sort 内部机制有助于预测性能。热路径避免对已排序数据 sort（虽然内省排序防恶化但仍有开销），或用 `is_sorted` 先检查。
+
+**复习：** → [sort 内部机制](./README.md)
+</details>

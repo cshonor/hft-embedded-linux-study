@@ -102,3 +102,40 @@ constexpr bool all_integral = (std::is_integral_v<Ts> && ...);
 3. `(std::cout << ... << args)` 是什么折叠？初值是什么？
 4. `(f(args), ...)` 用了什么运算符？语义是什么？
 5. HFT 用折叠表达式做编译期类型校验的写法是什么？
+
+## 代码自测
+
+### Q1: 可变参数模板的简化
+```cpp
+// C++14: 递归展开
+template<typename T>
+auto sum14(T t) { return t; }
+template<typename T, typename... Args>
+auto sum14(T t, Args... args) { return t + sum14(args...); }
+
+// C++17: fold expression
+template<typename... Args>
+auto sum17(Args... args) { return (args + ...); }
+
+sum17(1, 2, 3, 4);  // 10
+```
+> `(args + ...)` 是什么语法？有哪些 fold 形式？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**fold expression** 语法：`(pack op ...)` 或 `(... op pack)` 或 `(pack op ... op init)`。
+
+| 形式 | 名称 | 展开 |
+|------|------|------|
+| `(args + ...)` | 一元右 fold | `((a1 + a2) + a3) + ...` |
+| `(... + args)` | 一元左 fold | `a1 + (a2 + (a3 + ...))` |
+| `(args + ... + 0)` | 二元右 fold | `((a1 + a2) + a3) + 0` |
+| `(0 + ... + args)` | 二元左 fold | `0 + (a1 + (a2 + ...))` |
+
+**二元 fold 的初始值**：用于空包（零参数）的 fallback。`(args + ... + 0)` 空包返回 0；一元 fold 空包是编译错误（`+` 无单位元）。
+
+**用途**`：打印所有参数 `(std::cout << ... << args)`，检查全部为 true `(args && ...)`。
+
+**复习：** → [fold expressions](./README.md)
+</details>

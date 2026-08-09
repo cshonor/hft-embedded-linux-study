@@ -57,3 +57,31 @@ const auto& [x, y] = p;  // 只读引用
 3. 哪些情况下不能用结构化绑定？
 4. `for (const auto& [k,v] : map)` 比传统迭代器写法好在哪里？
 5. HFT 解包 tick 字段为什么用结构化绑定而不是 `std::tie`？
+
+## 代码自测
+
+### Q1: 值语义 vs 引用语义
+```cpp
+struct Point { int x, y; };
+Point p{1, 2};
+
+auto [a, b] = p;      // A
+auto& [c, d] = p;     // B
+const auto& [e, f] = p; // C
+
+a = 10;  // p.x 变了吗？
+c = 10;  // p.x 变了吗？
+```
+> A/B/C 三种绑定中，修改绑定变量是否影响原对象 p？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **A：不影响**。`auto [a,b] = p` 创建匿名拷贝，a/b 是拷贝的成员。改 a 不改 p.x。
+- **B：影响**。`auto& [c,d] = p` 绑定引用，c/d 是 p 成员的别名。改 c 即改 p.x。
+- **C：不能改**。`const auto&` 是只读引用。
+
+底层原理：`auto [a,b] = p` 实际是 `auto e = p`（拷贝），a/b 是 `e.x`/`e.y` 的引用（编译器内部用 `get<N>` 提取）。
+
+**复习：** → [值语义细节](./README.md)
+</details>

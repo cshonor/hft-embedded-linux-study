@@ -79,3 +79,37 @@ const int* p = std::any_cast<int>(&a);   // 返回内部 int 的指针，类型�
 3. `any` 的 SBO（小对象优化）是什么？大小阈值是多少？
 4. 为什么 HFT 热路径用 variant 不用 any？
 5. 配置系统为什么适合用 `map<string, any>`？
+
+## 代码自测
+
+### Q1: any vs variant
+```cpp
+// any: 任意类型，运行时类型擦除
+std::any a = 42;
+a = "hello";  // 可以存任意类型
+int* p = std::any_cast<int>(&a);  // nullptr（当前不是 int）
+
+// variant: 固定类型集，编译期已知
+std::variant<int, std::string> v = 42;
+// v = 3.14;  // 编译错误：double 不在类型集中
+```
+> any 和 variant 的核心区别是什么？何时选哪个？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 特性 | `any` | `variant<T1,T2,...>` |
+|------|-------|---------------------|
+| 类型集 | 任意（运行时） | 固定（编译期） |
+| 类型安全 | 弱（any_cast 运行时检查） | 强（编译期检查） |
+| 性能 | 堆分配（小对象可能 SSO） | 无堆分配（栈上联合） |
+| 访问 | `any_cast<T>` | `get<T>`/`visit` |
+| 大小 | 固定 sizeof（通常 16-32B） | max(sizeof(Ts)) + index |
+
+**选择**：
+- 类型在编译期已知 → `variant`（安全、高效）
+- 类型在运行时才知道（如解析 JSON/配置）→ `any`
+- HFT：热路径用 variant，避免 any 的堆分配和运行时类型检查
+
+**复习：** → [any](./README.md)
+</details>

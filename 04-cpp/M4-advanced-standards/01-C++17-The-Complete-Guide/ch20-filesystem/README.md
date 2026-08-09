@@ -98,3 +98,37 @@ if (ec) { /* 处理错误 */ }
 3. filesystem 操作的两种错误处理方式是什么？热路径用哪种？
 4. 为什么 HFT 热路径不用 `<filesystem>`？它有什么开销？
 5. HFT 盘前加载历史行情如何用 `recursive_directory_iterator` 按日期筛选？
+
+## 代码自测
+
+### Q1: filesystem 基本操作
+```cpp
+namespace fs = std::filesystem;
+
+fs::path p = "/data/orders/2024";
+fs::create_directories(p);  // 递归创建
+
+for (const auto& entry : fs::directory_iterator(p)) {
+    if (entry.path().extension() == ".csv") {
+        std::cout << entry.path().filename() << '\n';
+    }
+}
+
+auto size = fs::file_size(p / "orders.csv");
+bool exists = fs::exists(p);
+```
+> std::filesystem 相比 POSIX API（mkdir/opendir/stat）有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**优势**：
+1. **跨平台**：Windows/POSIX 统一接口
+2. **类型安全**：`fs::path` 封装路径，自动处理分隔符（`/` vs `\`）
+3. **异常安全**：支持 error_code 重载（不抛异常）
+4. **高级操作**：`create_directories`（递归）、`directory_iterator`（遍历）、`file_size`/`last_write_time`
+
+**HFT 注意**：filesystem 操作有系统调用开销，不在热路径使用。启动时加载配置/数据文件可用。`directory_iterator` 可能有缓存问题（NFS 等网络文件系统延迟）。
+
+**复习：** → [filesystem](./README.md)
+</details>

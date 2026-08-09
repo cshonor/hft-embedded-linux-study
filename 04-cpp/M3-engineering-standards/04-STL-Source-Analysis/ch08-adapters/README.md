@@ -39,3 +39,43 @@
 2. `back_inserter(c)` 让 `*it = x` 变成什么操作？
 3. C++11 后什么取代了 `bind2nd`/`mem_fun` 这套函数适配器？
 4. `priority_queue` 为什么不支持随机删除？HFT 事件调度如何绕过？
+
+## 代码自测
+
+### Q1: 容器适配器
+```cpp
+// stack 底层默认用 deque
+std::stack<int> s;  // 等价于 std::stack<int, std::deque<int>>
+s.push(1); s.push(2); s.top(); s.pop();
+
+// 可以换成 vector
+std::stack<int, std::vector<int>> sv;
+sv.push(1);
+
+// queue 底层默认用 deque
+std::queue<int> q;
+// priority_queue 底层默认用 vector
+std::priority_queue<int> pq;
+```
+> stack 为什么叫"适配器"而非"容器"？它有哪些底层操作被隐藏了？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**适配器（Adapter）**：stack 不自己管理内存，它**包装**底层容器（deque/vector/list），只暴露 stack 接口（push/top/pop/empty/size）。
+
+**隐藏的操作**：
+- 底层容器的迭代器（stack 不暴露 begin/end，不能遍历）
+- 随机访问、中间插入删除
+- `deque` 的 `push_front` 被映射为 `push`（stack 只在一端操作）
+
+**设计模式**：适配器模式——修改接口（deque 的 push_back → stack 的 push），隐藏不需要的接口。
+
+| 适配器 | 默认底层 | 接口 |
+|--------|---------|------|
+| `stack` | `deque` | push/top/pop（LIFO） |
+| `queue` | `deque` | push/front/pop（FIFO） |
+| `priority_queue` | `vector` | push/top/pop（堆序） |
+
+**复习：** → [容器适配器](./README.md)
+</details>

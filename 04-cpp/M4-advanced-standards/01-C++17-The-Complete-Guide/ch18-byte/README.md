@@ -85,3 +85,34 @@ std::memcpy(buf.data(), &value, sizeof(value));
 3. `byte` 和整数如何互转？
 4. `std::cout << byte` 为什么不行？怎么打印？
 5. HFT 二进制协议缓冲为什么用 `vector<std::byte>` 而非 `vector<char>`？
+
+## 代码自测
+
+### Q1: std::byte
+```cpp
+// C++17 前：用 char/unsigned char 表示原始字节
+unsigned char buf[1024];
+
+// C++17: std::byte 语义明确
+std::byte buf2[1024];
+
+// 运算
+std::byte b{0xFF};
+b |= std::byte{0x0F};     // 位运算
+b <<= 1;                  // 移位
+int val = std::to_integer<int>(b);  // 转整数
+```
+> std::byte 相比 unsigned char 有什么好处？为什么不直接用 int？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**好处**：
+1. **语义明确**：`std::byte` 表示"原始字节，不是字符也不是数字"，避免误用算术运算
+2. **类型安全**：`std::byte` 只支持位运算（`&`/`|`/`^`/`<<`/`>>`），不支持 `+`/`-`/`*`，防止意外算术
+3. **意图清晰**：API 用 `std::byte*` 明确表示"处理原始内存"
+
+**为什么不用 int**：int 有符号、大小不固定（4 或 8 字节）、支持算术运算——处理二进制数据时不安全。
+
+**复习：** → [std::byte](./README.md)
+</details>

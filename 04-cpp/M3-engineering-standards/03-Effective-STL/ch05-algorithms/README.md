@@ -68,3 +68,60 @@ v.erase(std::remove(v.begin(), v.end(), 2), v.end());  // {1,3,4}
 3. `sort`/`stable_sort`/`partial_sort`/`nth_element` 各自的时间复杂度与适用场景？
 4. `accumulate(v.begin(), v.end(), 0)` 与 `accumulate(v.begin(), v.end(), 0LL)` 结果类型有何不同？为什么 HFT 要用后者？
 5. 为什么 `std::copy` 在连续内存容器间可能比手写循环快？
+
+## 代码自测
+
+### Q1: 算法复杂度
+```cpp
+std::vector<int> v = {5, 3, 8, 1, 9, 2};
+bool sorted = std::is_sorted(v.begin(), v.end());  // A
+auto [min_it, max_it] = std::minmax_element(v.begin(), v.end());  // B
+std::sort(v.begin(), v.end());  // C
+auto found = std::binary_search(v.begin(), v.end(), 8);  // D
+```
+> A、B、C、D 的复杂度分别是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 算法 | 复杂度 | 说明 |
+|------|--------|------|
+| `is_sorted` | O(n) | 线性扫描 |
+| `minmax_element` | O(n) | 一次遍历同时找 min/max |
+| `sort` | O(n log n) | 内省排序（快排+堆排序+插入排序） |
+| `binary_search` | O(log n) | **要求已排序**，二分查找 |
+
+**注意**：`binary_search` 只返回 bool。要获取位置用 `lower_bound`/`upper_bound`/`equal_range`。
+
+**HFT**：排序 O(n log n) 在百万 tick 数据上约 20M 比较，离线可以。热路径用 `nth_element`（O(n)）找中位数/分位数。
+
+**复习：** → [算法复杂度](./README.md)
+</details>
+
+### Q2: remove 不删除
+```cpp
+std::vector<int> v = {1, 2, 3, 2, 4};
+auto new_end = std::remove(v.begin(), v.end(), 2);
+// v 现在的逻辑内容是什么？物理内容是什么？
+std::cout << v.size();  // 输出多少？
+```
+> remove 后 v.size() 是多少？new_end 到 v.end() 之间是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `v.size()` = **5**（remove 不改变容器大小）
+- 物理内容：`[1, 3, 4, ?, ?]`（前 3 个是保留的元素，后 2 个是移除后的残留，值未指定）
+- `new_end` 指向第 4 个位置（逻辑末尾）
+
+```
+remove 前: [1, 2, 3, 2, 4]  size=5
+remove 后: [1, 3, 4, 2, 4]  size=5  ← new_end 指向 index 3
+            ^^^^^^^ ^^^^^
+            保留部分  残留
+```
+
+`remove` 是"搬移"不是"删除"——把不匹配的元素前移，返回新逻辑末尾。真正的删除要配合 `erase`。
+
+**复习：** → [erase-remove 惯用法](./README.md)
+</details>

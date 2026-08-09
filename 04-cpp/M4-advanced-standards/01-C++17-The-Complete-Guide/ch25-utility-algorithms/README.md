@@ -95,3 +95,40 @@ std::empty(v);     // v.empty()
 3. `std::sample` 用什么算法？复杂度？
 4. `std::size` 对数组和容器分别调用什么？
 5. HFT 配置构造如何用 `make_from_tuple`？
+
+## 代码自测
+
+### Q1: apply 和 invoke
+```cpp
+std::tuple t{1, 2.0, "hello"};
+
+// apply: 把 tuple 展开为函数参数
+std::apply([](int a, double b, const char* c) {
+    std::cout << a << ' ' << b << ' ' << c;
+}, t);  // 1 2.0 hello
+
+// invoke: 统一调用（成员函数指针、成员指针、普通可调用对象）
+struct Obj { int x; void show() { std::cout << x; } };
+Obj o{42};
+std::invoke(&Obj::show, o);     // 42
+std::cout << std::invoke(&Obj::x, o);  // 42
+```
+> `apply` 和 `invoke` 各解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- **`std::apply(f, tuple)`**：把 tuple 的元素展开为函数参数。解决"tuple → 函数调用"的桥接问题。常用于元编程、RPC 框架。
+- **`std::invoke(f, args...)`**：统一调用语法。无论 `f` 是普通函数、函数对象、成员函数指针还是成员指针，`invoke` 都能正确调用。解决"成员函数指针调用语法不一致"的问题。
+
+```cpp
+// 不用 invoke：
+(o.*&Obj::show)();      // 成员函数指针，语法复杂
+// 用 invoke：
+std::invoke(&Obj::show, o);  // 统一、清晰
+```
+
+**HFT**：`invoke` 在模板/泛型代码中统一调用接口，`apply` 在反序列化/消息分发中展开参数。
+
+**复习：** → [apply/invoke](./README.md)
+</details>

@@ -68,3 +68,41 @@ C++17 并行 STL 已在第 22 章详述，本章是 C++17 库视角的概览。
 3. `is_always_lock_free` 和 `is_lock_free()` 的区别？为什么需要编译期版本？
 4. HFT 订单簿跨多结构操作如何用 `scoped_lock`？
 5. 为什么 HFT 热路径仍可能不用 `shared_mutex`？
+
+## 代码自测
+
+### Q1: shared_mutex
+```cpp
+std::shared_mutex rw_mutex;
+
+// 读操作：多个线程可同时持有共享锁
+void read_data() {
+    std::shared_lock lk(rw_mutex);  // 共享锁
+    // 读数据...
+}
+
+// 写操作：独占锁
+void write_data() {
+    std::unique_lock lk(rw_mutex);  // 独占锁
+    // 写数据...
+}
+```
+> shared_mutex（读写锁）相比普通 mutex 有什么优势？什么场景适合？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**读写锁优势**：允许多个读线程并发，只有写线程独占。读多写少的场景吞吐量大幅提升。
+
+**适用场景**：
+- 配置表/查找表：读极频繁、偶尔更新 → 读读并发
+- 缓存：读多写少
+
+**不适用场景**：
+- 读写频率相近 → 读写锁的额外开销（原子操作 + 状态跟踪）抵消并发收益
+- 写操作多 → 写线程饥饿（读线程持续获取共享锁，写线程等不到独占锁）
+
+**HFT 注意**：shared_mutex 比 mutex 重（内部有原子计数 + 状态机），低竞争场景反而更慢。且共享锁的 cache line 争用（所有读者同一 cache line）可能成为瓶颈。
+
+**复习：** → [shared_mutex](./README.md)
+</details>

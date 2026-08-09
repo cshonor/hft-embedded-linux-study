@@ -81,3 +81,45 @@ placement new 后用 `launder` 返回指针，确保编译器不做错误假设�
 3. 普通 new/delete 需要 launder 吗？为什么？
 4. 哪些场景需要 launder？（mempool、optional、variant...）
 5. launder 有运行时开销吗？HFT 为什么可放心用？
+
+## 代码自测
+
+### Q1: placement new 与 launder
+```cpp
+struct Widget {
+    int x;
+    Widget(int v) : x(v) {}
+};
+
+alignas(Widget) unsigned char buf[sizeof(Widget)];
+new (buf) Widget(42);  // placement new
+
+// C++17 前：未定义行为（编译器可能缓存旧值）
+// Widget* p = reinterpret_cast<Widget*>(buf);
+// std::cout << p->x;  // 可能输出垃圾值
+
+// C++17: launder 告诉编译器"这个指针指向新对象"
+Widget* p = std::launder(reinterpret_cast<Widget*>(buf));
+std::cout << p->x;  // 42，保证正确
+```
+> 为什么 placement new 后不能直接用 reinterpret_cast？launder 解决了什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**问题**：C++ 对象模型规定，一个存储位置上只能有一个活跃对象。`placement new` 在 `buf` 上构造了新 Widget，但编译器可能不知道 `reinterpret_cast<Widget*>(buf)` 指向的是新对象——它可能假设 `buf` 还是 unsigned char 数组，做错误的优化（缓存旧值）。
+
+**`std::launder`**：告诉编译器"这个指针可能指向一个与之前不同的对象，不要做基于旧类型的假设"。相当于"清洗"指针，消除编译器的优化假设。
+
+**何时需要 launder**：
+- placement new 后访问新对象
+- 通过 unsigned char buffer 构造对象
+
+**何时不需要**：
+- 普通 `new` 返回的指针（编译器知道是新对象）
+- `std::vector` 的内存（vector 内部已处理）
+
+**HFT**：内存池/placement new 是常用技巧，launder 确保正确性。但大多数场景用 `std::aligned_storage` 或 `std::optional` 更安全。
+
+**复习：** → [launder](./README.md)
+</details>

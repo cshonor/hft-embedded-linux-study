@@ -71,3 +71,54 @@ auto b = static_cast<bool>(vb[0]);   // 强制转 bool，b 是真正的 bool
 3. 什么是"显式类型初始化习惯"？它如何规避代理类型陷阱？
 4. 为什么 lambda 的类型无法手写，只能用 `auto`？这对 HFT 回调注册意味着什么？
 5. `unsigned sz = vec.size();` 和 `auto sz = vec.size();` 在 `vec` 元素数超过 `UINT_MAX` 时行为有何不同？
+
+
+
+## 代码自测
+
+### Q1: vector<bool> 代理类型
+
+```cpp
+std::vector<bool> v = {true, false, true};
+auto b = v[0];    // b 的类型？
+bool c = v[0];    // c 的类型？
+```
+
+> `b` 和 `c` 分别是什么类型？`b` 有什么风险？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `b` = `std::vector<bool>::reference`（代理对象，不是 `bool`！）
+- `c` = `bool`（代理对象隐式转换为 `bool`）
+
+**`b` 的风险：** `vector<bool>` 用位压缩存储，`operator[]` 返回代理对象（指向内部字节的指针+位掩码）。如果 `v` 被销毁或扩容，`b` 成为悬垂代理——解引用是 UB。
+
+**修复：** `auto b = static_cast<bool>(v[0]);`（显式类型初始化习惯）
+
+**复习：** → [Item 6：当 auto 推导出非预期类型时](./item06-当auto推导出非预期类型时用显式类型初始化习惯.md)
+</details>
+
+### Q2: auto 防窄化
+
+```cpp
+unsigned sz1 = vec.size();  // A: 隐式窄化？
+auto sz2 = vec.size();      // B: 零风险
+double d = 3.14;
+int i1 = d;                 // C
+// auto i2 = d;             // D: 什么类型？
+```
+
+> A 行有什么风险？D 行 `i2` 是什么类型？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**A 行风险：** `vec.size()` 返回 `size_t`（64 位），赋给 `unsigned`（可能 32 位）时静默截断。容器元素数超过 `UINT_MAX` 时数据丢失。
+
+**D 行：** `i2` = `double`（`auto` 推导为 `d` 的类型，不窄化）。要得到 `int` 需 `auto i2 = static_cast<int>(d);`。
+
+**教训：** `auto` 天然防止隐式窄化，是比显式类型更安全的选择。
+
+**复习：** → [Item 5：优先用 auto 而非显式类型声明](./item05-优先用auto而非显式类型声明.md)
+</details>

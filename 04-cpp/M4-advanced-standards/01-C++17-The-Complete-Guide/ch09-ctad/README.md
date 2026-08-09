@@ -72,3 +72,43 @@ Container c(42);   // Container<long>，而非 Container<int>
 3. `std::lock_guard lg(m)` 推导出什么类型？
 4. CTAD 在 C++17 有什么限制？默认模板参数参与推导吗？
 5. HFT 用 CTAD 声明 `atomic` 计数器有什么好处？
+
+## 代码自测
+
+### Q1: CTAD（类模板参数推导）
+```cpp
+// C++14
+std::pair<int, double> p(1, 2.0);
+std::vector<int> v = {1, 2, 3};
+
+// C++17
+std::pair p(1, 2.0);     // 推导 pair<int, double>
+std::vector v = {1, 2, 3}; // 推导 vector<int>
+std::lock_guard lk(m);   // 推导 lock_guard<mutex>
+```
+> CTAD 何时工作？什么时候需要推导指引？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**CTAD 何时工作**：当构造对象时不写模板参数，编译器根据构造函数参数类型推导。
+
+**需要推导指引**：当默认推导规则不够时。例如：
+```cpp
+// std::pair 的推导指引（简化）
+template<typename T, typename U>
+pair(T, U) -> pair<T, U>;
+
+// 自定义推导指引
+template<typename T>
+struct Container {
+    Container(T* p, size_t n) {}
+};
+// 默认推导 Container<int*>，但可能想要 Container<int>
+Container(T* p, size_t n) -> Container<typename std::remove_pointer<T>::type>;
+```
+
+**注意**：CTAD 不适用于函数返回类型（需显式写 `std::pair<int,double> f()`）。
+
+**复习：** → [CTAD](./README.md)
+</details>

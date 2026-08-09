@@ -108,3 +108,48 @@ auto steady = clock_cast<steady_clock>(sys_now);
 3. 如何把 UTC 时间转成 Asia/Shanghai 时区？
 4. `chrono` 字面量 `100ns`/`5s`/`2h` 的类型是什么？
 5. HFT 为什么用 `steady_clock` 测延迟，`system_clock` 记日志时间？
+
+## 代码自测
+
+### Q1: 日历和时区
+```cpp
+using namespace std::chrono;
+
+// 日历日期
+year_month_day date = 2024y/January/15;
+auto date2 = January/15/2024;  // 月/日/年
+auto date3 = 2024y/1/15;       // 年/月/日
+
+// 时钟
+auto now = system_clock::now();
+auto today = floor<days>(now);
+year_month_day ymd{today};
+
+// 时长
+auto timeout = 500ms;  // 毫秒
+auto interval = 1s + 500ms;  // 1500ms
+
+// 时区（C++20）
+zoned_time zt{"Asia/Shanghai", now};
+std::cout << zt;  // 2024-01-15 19:30:00 CST
+```
+> C++20 chrono 相比 C++11/17 新增了什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**C++20 chrono 新增**：
+1. **日历类型**：`year`/`month`/`day`/`year_month_day` 等
+2. **时区支持**：`zoned_time`/`time_zone`，IANA 时区数据库
+3. **日历运算**：`January + 2 months = March`、`2024y/2/29 + 1 year = 2025y/2/28`（自动处理闰年）
+4. **格式化**：`std::format("{:%Y-%m-%d %H:%M:%S}", now)` 直接格式化时间
+
+**C++11/17 chrono** 只有 `duration`（时长）和 `time_point`（时间点），没有日历/时区概念。
+
+**HFT**：
+- 时间戳用 `system_clock::now()` → `to_time_t`/`to_from_chars` 序列化
+- 定时器用 `steady_clock`（单调时钟，不受系统时间调整影响）
+- 日历用于日志/报告，不用于热路径
+
+**复习：** → [chrono 日历](./README.md)
+</details>

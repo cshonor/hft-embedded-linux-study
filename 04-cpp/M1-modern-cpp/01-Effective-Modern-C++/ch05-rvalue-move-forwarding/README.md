@@ -104,3 +104,79 @@ public:
 3. 对万能引用形参用 `std::move` 为什么危险？应该用什么？
 4. 引用折叠的四条规则是什么？"有左值参与就折叠为左值"如何解释万能引用接左值时 `T` 变 `T&`？
 5. `std::vector<std::array<int, 1000>>` 的移动是 O(1) 还是 O(N)？为什么无脑 `move` 不总是有效？
+
+
+
+## 代码自测
+
+### Q1: std::move 不移动
+
+```cpp
+std::string s = "hello";
+auto len = std::move(s).length();
+// s 还能正常使用吗？
+```
+
+> `std::move(s).length()` 后 `s` 还有效吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`s` 仍然有效。** `std::move` 只是 `static_cast<string&&>(s)`——它不移动任何东西。`.length()` 是 const 方法不修改对象。`s` 的内容仍是 `"hello"`。
+
+**`std::move` 真正起作用的场景：** `string r = std::move(s);`——移动构造函数被调用，`s` 的内部指针转移给 `r`，`s` 变为空。
+
+**教训：** `std::move` 本身零开销零副作用，它只是"请求"移动；真正移动发生在移动构造/赋值函数里。
+
+**复习：** → [Item 23：理解 std::move 和 std::forward](./item23-理解std-move和std-forward.md)
+</details>
+
+### Q2: 万能引用 vs 右值引用
+
+```cpp
+void f(std::string&& s);               // A: 右值引用还是万能引用？
+template<typename T>
+void g(T&& x);                          // B: 右值引用还是万能引用？
+auto&& y = expr;                        // C: 右值引用还是万能引用？
+```
+
+> A、B、C 分别是右值引用还是万能引用？万能引用能接受左值吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- A: **右值引用**（无类型推导，只绑右值）
+- B: **万能引用**（有模板类型推导，能绑左值和右值）
+- C: **万能引用**（有 auto 推导）
+
+**万能引用接左值时：** `T` 推导为 `T&`（引用折叠 `T& &&` → `T&`），`x` 成为左值引用。接右值时 `T` 推导为 `T`，`x` 是右值引用。
+
+**关键判别：** `T&&` 在有类型推导的语境（模板/auto）里是万能引用；在无推导的语境（如 `void f(string&&)`）是纯右值引用。
+
+**复习：** → [Item 24：区分万能引用和右值引用](./item24-区分万能引用和右值引用.md)
+</details>
+
+### Q3: 对万能引用用 move 的灾难
+
+```cpp
+template<typename T>
+void set(T&& x) {
+    target(std::move(x));  // 危险！
+}
+std::string s = "hello";
+set(s);  // s 会被掏空吗？
+```
+
+> `set(s)` 后 `s` 会怎样？应该用什么替代？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`s` 被掏空（悬垂）。** `s` 是左值，`T` 推导为 `string&`，`x` 是 `string&`（左值引用）。但 `std::move(x)` 无条件转成右值——`target` 的移动构造被调用，`s` 的内容被搬走。
+
+**正确做法：** `target(std::forward<T>(x));`——`forward` 是有条件的右值转换：仅当原始实参是右值时才转右值，是左值则保持左值。
+
+**规则：** 对万能引用用 `forward`，对右值引用用 `move`。永不混用。
+
+**复习：** → [Item 25：对万能引用使用 std::forward](./item25-对万能引用使用std-forward对右值引用使用std-move.md)
+</details>

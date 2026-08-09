@@ -91,3 +91,34 @@ std::for_each(std::execution::par, v.begin(), v.end(), work);
 3. 哪些算法并行友好，哪些不友好？`find` 并行化有什么难点？
 4. HFT 热路径为什么一般不用并行 STL？什么场景适合用？
 5. 并行算法和手写分块多线程相比，优缺点是什么？
+
+## 代码自测
+
+### Q1: 并行 vs 串行算法选择
+```cpp
+std::vector<int> data(10'000'000);
+// ... fill data ...
+
+// A: 串行
+std::sort(data.begin(), data.end());
+
+// B: 并行
+std::sort(std::execution::par, data.begin(), data.end());
+```
+> B 一定比 A 快吗？什么情况下并行更慢？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不一定**。以下情况并行更慢：
+1. **数据量太小**：线程调度 + 数据分区开销超过并行收益
+2. **数据已基本有序**：串行 sort 的分支预测优化在已排序数据上极快
+3. **内存带宽瓶颈**：排序是 memory-bound 操作，核数再多也受限于内存带宽
+4. **cache 不友好**：并行分区的数据跨 cache line，false sharing
+
+**经验阈值**：通常 10 万元素以下串行更快。百万级以上并行有收益。
+
+**HFT**：热路径数据量通常不大（几万订单），用串行 + 预分配。离线回测排序百万 tick 时用 `execution::par`。
+
+**复习：** → [并行算法](./README.md)
+</details>

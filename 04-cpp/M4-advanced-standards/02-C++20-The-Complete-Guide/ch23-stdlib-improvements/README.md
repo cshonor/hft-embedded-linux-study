@@ -109,3 +109,56 @@ std::ranges::is_partitioned(v, pred);
 3. `std::numbers::pi` 相比 `#define PI 3.14159` 好在哪？
 4. `std::starts_with` 相比 C++17 的 `find` 写法有什么优势？
 5. `std::ssize` 解决什么问题？为什么 `size_t` 逆序循环会出错？
+
+## 代码自测
+
+### Q1: 标准库改进
+```cpp
+// 1. std::span（已讲，ch09）
+// 2. std::erase / std::erase_if（容器级 erase-remove）
+std::vector<int> v = {1, 2, 3, 2, 4};
+std::erase(v, 2);  // C++20: 一行删除所有 2
+// v = {1, 3, 4}
+
+std::erase_if(v, [](int x) { return x > 2; });
+// v = {1}
+
+// 3. contains
+std::map<int, int> m = {{1, 10}, {2, 20}};
+m.contains(1);  // true（替代 find != end）
+
+// 4. bit 操作
+std::popcount(0b1011);  // 3（1 的个数）
+std::countl_zero(0b0001'0000u);  // 3（前导零）
+std::countr_zero(0b1010'0000u);  // 5（尾部零）
+std::has_single_bit(0b1000);  // true（是否 2 的幂）
+std::bit_ceil(5);  // 8（≥5 的最小 2 的幂）
+```
+> std::erase 和 erase-remove 惯用法有什么区别？bit 操作解决什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`std::erase(container, value)`** vs erase-remove：
+```cpp
+// C++17: erase-remove 惯用法
+v.erase(std::remove(v.begin(), v.end(), 2), v.end());
+
+// C++20: 直接 erase
+std::erase(v, 2);
+```
+一行替代两行，且对 `list`/`forward_list` 等非连续容器也统一接口（内部调成员函数 `remove`）。
+
+**bit 操作**：提供标准化的位操作函数，替代手写或编译器内置（`__builtin_popcount` 等）：
+| 函数 | 作用 | 典型用途 |
+|------|------|---------|
+| `popcount(x)` | 1 的个数 | 位图统计 |
+| `countl_zero(x)` | 前导零 | 对数计算 |
+| `countr_zero(x)` | 尾部零 | 找最低 set bit |
+| `has_single_bit(x)` | 是否 2 的幂 | 对齐检查 |
+| `bit_ceil(x)` / `bit_floor(x)` | 向上/下取 2 的幂 | 内存对齐 |
+
+**HFT**：`popcount`/`countl_zero` 编译为单条 CPU 指令（`POPCNT`/`LZCNT`），比手写循环快几个数量级。
+
+**复习：** → [标准库改进](./README.md)
+</details>

@@ -102,3 +102,53 @@ void find_min(const std::vector<T>& v);
 3. 为什么 Concept 约束要"恰好满足算法需要"，不要过度约束？
 4. HFT 数值算法应该用哪个标准 Concept？策略回调呢？
 5. `totally_ordered` 和 `equality_comparable` 的区别？
+
+## 代码自测
+
+### Q1: 标准库概念
+```cpp
+#include <concepts>
+
+// 常用标准概念
+static_assert(std::integral<int>);           // true
+static_assert(std::floating_point<double>);  // true
+static_assert(std::same_as<int, int>);       // true
+
+// 关系概念
+static_assert(std::totally_ordered<int>);    // int 支持所有比较
+
+// 对象概念
+static_assert(std::movable<std::string>);    // string 可移动
+static_assert(std::copyable<std::string>);   // string 可拷贝
+static_assert(std::regular<int>);            // int 是 regular（可默认构造+拷贝+比较）
+
+// 可调用概念
+static_assert(std::invocable<decltype([](int){}), int>);  // lambda(int) 可调用
+```
+> `regular` 概念包含哪些要求？为什么重要？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**`regular`** = `semiregular` + `equality_comparable`：
+- `semiregular` = `copyable` + `default_constructible`（可拷贝、可默认构造）
+- `equality_comparable` = 支持 `==`/`!=`
+
+即：regular 类型可以默认构造、拷贝、赋值、比较相等——像 `int` 一样"普通"。
+
+**为什么重要**：
+- regular 类型可以存在容器中、可以作为值传递、可以比较——满足大部分通用算法的要求
+- STL 算法隐式假设元素是 regular 的
+- 值语义编程的核心：自定义类型尽量满足 `regular`
+
+**标准概念分类**：
+| 类别 | 示例 |
+|------|------|
+| 语言相关 | `integral`/`floating_point`/`signed_integral` |
+| 关系 | `same_as`/`derived_from`/`convertible_to`/`common_with` |
+| 对象 | `movable`/`copyable`/`semiregular`/`regular` |
+| 可调用 | `invocable`/`predicate`/`strict_weak_order` |
+| 范围 | `range`/`input_range`/`random_access_range` |
+
+**复习：** → [标准概念](./README.md)
+</details>

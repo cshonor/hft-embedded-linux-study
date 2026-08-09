@@ -52,3 +52,30 @@ Josuttis 的 C++ 系列三本：
 3. Josuttis 的 C++ 系列三本是什么？阅读顺序？
 4. 为什么 C++17 适合 HFT 作为实用基线？
 5. C++20 如何建立在 C++17 之上？举例（Concepts 约束 CTAD 等）。
+
+## 代码自测
+
+### Q1: C++17 定位
+```cpp
+// C++14
+auto x = 42;  // auto 推导
+// C++17 新增
+auto [a, b] = std::make_pair(1, 2.0);  // 结构化绑定
+if (auto it = m.find(k); it != m.end()) {}  // if-init
+std::optional<int> find(int key);  // optional
+```
+> C++17 相比 C++14 的核心改进方向是什么？为什么说它是"实用主义"版本？
+
+<details>
+<summary>答案与复习指引</summary>
+
+C++17 的核心方向：
+1. **简化语法**：结构化绑定、if-init、constexpr if、fold expressions
+2. **新类型**：optional、variant、any、string_view
+3. **标准库扩展**：filesystem、parallel STL、pmr
+4. **编译期增强**：constexpr if、CTAD、inline variables
+
+"实用主义"：没有颠覆性概念（如 C++11 的 lambda/move 或 C++20 的 concepts/ranges），而是填补日常痛点——让代码更简洁、更安全。很多特性是对 C++11/14 的"打磨"。
+
+**复习：** → [C++17 概览](./README.md)
+</details>

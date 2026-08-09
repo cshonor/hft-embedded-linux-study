@@ -74,3 +74,37 @@ if (auto opt = lookup(key); opt) {
 3. 用 if 带初始化写一个"加锁 + 检查队列非空"的例子。
 4. switch 带初始化有什么用？举例。
 5. 这个特性有运行时开销吗？
+
+## 代码自测
+
+### Q1: if-init 语法
+```cpp
+// C++14
+auto it = map.find(key);
+if (it != map.end()) { use(it->second); }
+
+// C++17
+if (auto it = map.find(key); it != map.end()) { use(it->second); }
+```
+> if-init 有什么好处？`it` 的作用域到哪里结束？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**好处**：
+1. **作用域限制**：`it` 只在 if/else 块内可见，不污染外部作用域
+2. **防误用**：避免 if 外面意外引用 `it`（它可能未初始化）
+3. **更简洁**：一行完成"获取+检查"
+
+**作用域**：`it` 在整个 if-else 语句（含 else 分支）内可见，if-else 结束后销毁。
+
+也适用于 switch：
+```cpp
+switch (auto x = compute(); x) {
+    case 1: ...; break;
+    case 2: ...; break;
+}
+```
+
+**复习：** → [if-init](./README.md)
+</details>

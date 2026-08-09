@@ -52,3 +52,55 @@ T* end_of_storage; // 容量终点(capacity)
 3. `deque` 如何实现"逻辑连续物理分段"的随机访问？为什么比 `vector` 慢？
 4. `stack`/`queue` 是独立容器吗？默认底层是什么？
 5. HFT 为什么热路径用 `vector` 而非 `list`？`list` 的什么特性仍让它在订单簿挂单中有价值？
+
+## 代码自测
+
+### Q1: vector 源码结构
+```cpp
+// 简化版 vector 内部
+template<typename T>
+class vector {
+    T* start;       // 已用空间头
+    T* finish;      // 已用空间尾
+    T* end_of_storage;  // 总空间尾
+public:
+    size_t size() const { return finish - start; }
+    size_t capacity() const { return end_of_storage - start; }
+    void push_back(const T& val) {
+        if (finish != end_of_storage) {
+            construct(finish, val);  // 原地构造
+            ++finish;
+        } else {
+            // 扩容：分配 2x → 拷贝/移动旧元素 → 释放旧内存
+        }
+    }
+};
+```
+> `push_back` 在 capacity 够和不够时分别做什么？三个指针的意义？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**三个指针**：
+- `start`：数据起始（分配的内存头）
+- `finish`：已用末尾（size 的位置）
+- `end_of_storage`：分配的内存末尾（capacity 的位置）
+
+```
+[start -------- finish -------- end_of_storage]
+ |--- size ---|--- 剩余 capacity ---|
+```
+
+**capacity 够**：`construct(finish, val)` 原地构造 + `++finish`，O(1)。
+
+**capacity 不够**：
+1. 分配新内存（通常 2x capacity）
+2. 移动/拷贝旧元素到新内存
+3. 构造新元素
+4. 析构旧元素 + 释放旧内存
+5. 更新三个指针
+
+**HFT**：热路径必须 `reserve` 避免 case 2 的开销。
+
+**复习：** → [vector 源码结构](./README.md)
+</details>

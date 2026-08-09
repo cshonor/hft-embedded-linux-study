@@ -50,3 +50,47 @@ SGI 的 `hash_set`/`hash_map` 是非标准扩展，C++11 标准化为 `unordered
 3. 哈希表开链法的负载因子是什么？超阈值发生什么？
 4. SGI 的 `hash_map` 在 C++11 标准化为什么？
 5. 订单簿价格档位为什么用红黑树/跳表而非哈希？纯键查找用什么？
+
+## 代码自测
+
+### Q1: 红黑树节点
+```cpp
+// 简化红黑树节点
+template<typename T>
+struct rb_tree_node {
+    rb_tree_node* parent;
+    rb_tree_node* left;
+    rb_tree_node* right;
+    color_type color;  // RED or BLACK
+    T value;
+};
+
+// map 底层就是红黑树
+template<typename Key, typename Value>
+class map {
+    rb_tree_node<std::pair<const Key, Value>>* header;  // 头节点
+    size_t node_count;
+};
+```
+> 红黑树为什么比 AVL 树更适合 map？`sizeof(rb_tree_node)` 有多大？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**红黑树 vs AVL 树**：
+- AVL 树严格平衡（高度差 ≤1），查找快但插入/删除旋转多
+- 红黑树弱平衡（黑节点等高），查找略慢但插入/删除旋转少
+
+STL 选红黑树因为 **map 的操作模式是频繁插入/删除**，红黑树的旋转次数更少（最多 3 次旋转 vs AVL 可能 O(log n) 次旋转）。
+
+**`sizeof(rb_tree_node<T>)`**（64 位）：
+- 3 个指针：24 字节
+- color：4 字节（通常 int）
+- value：sizeof(T)
+- 对齐填充
+- 例 `T = pair<const string, int>` → 24 + 4 + (32+4) + 4(填充) = **68 字节**
+
+**HFT**：每个 map 节点 60+ 字节 + 非连续内存（指针追逐），cache 不友好。热路径用 `vector<pair>` + sort + binary_search 替代 `map`。
+
+**复习：** → [红黑树节点](./README.md)
+</details>

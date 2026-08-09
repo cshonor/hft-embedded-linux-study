@@ -79,3 +79,67 @@ cppreference.com 是最权威的在线参考（含 C++17/20 更新）。读标�
 3. 为什么不要依赖 `std::sort` 的具体排序算法（快排/内省）？
 4. 解读 STL 模板错误信息时，应该从哪里开始找问题？
 5. `#include <String>` 在 Linux 上为什么可能编译失败？
+
+## 代码自测
+
+### Q1: equal_range 用法
+```cpp
+std::vector<int> v = {1, 2, 2, 2, 3, 4, 5};  // 已排序
+auto [lo, hi] = std::equal_range(v.begin(), v.end(), 2);
+std::cout << (hi - lo);  // 输出多少？
+```
+> `equal_range` 返回什么？`hi - lo` 代表什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+`hi - lo` = **3**（值为 2 的元素个数）。
+
+`equal_range` 返回一个迭代器对 `[lo, hi)`：
+- `lo` = `lower_bound`（第一个 ≥ 2 的位置）
+- `hi` = `upper_bound`（第一个 > 2 的位置）
+- `[lo, hi)` 区间内所有元素都等于 2
+
+```
+v: [1, 2, 2, 2, 3, 4, 5]
+       ^        ^
+       lo       hi
+```
+
+**用途**：在有序序列中找某值的所有出现。比 `find`（O(n)）高效（O(log n)）。
+
+**复习：** → [equal_range](./README.md)
+</details>
+
+### Q2: accumulate vs 普通循环
+```cpp
+std::vector<int> v = {1, 2, 3, 4, 5};
+
+// A: accumulate
+int sum1 = std::accumulate(v.begin(), v.end(), 0);
+
+// B: 手写循环
+int sum2 = 0;
+for (auto x : v) sum2 += x;
+```
+> 两者的结果相同吗？accumulate 的初始值 0 的类型为什么重要？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**结果相同**（都是 15）。但初始值类型很重要：
+
+```cpp
+std::vector<double> d = {1.5, 2.5, 3.5};
+// A: 初始值 0 (int)
+auto r1 = std::accumulate(d.begin(), d.end(), 0);      // 结果 6 (int!)，丢失小数
+// B: 初始值 0.0 (double)
+auto r2 = std::accumulate(d.begin(), d.end(), 0.0);    // 结果 7.5 (double)
+```
+
+**原因**：`accumulate` 的返回类型和累加类型由初始值决定。初始值是 `int` → 所有加法用 `int` 运算 → 截断小数。
+
+**教训**：STL 算法的类型推导由参数决定，注意初始值类型匹配。
+
+**复习：** → [accumulate](./README.md)
+</details>

@@ -80,3 +80,35 @@ int y = v.value();       // 有值取值，无值抛 bad_optional_access
 3. `optional<T>` 的存储布局是什么？会分配堆吗？
 4. `value_or(def)` 的语义是什么？
 5. HFT 为什么用 `optional<Tick>` 而非 `unique_ptr<Tick>`？
+
+## 代码自测
+
+### Q1: optional 基本用法
+```cpp
+std::optional<int> find(int key) {
+    if (key == 42) return 42;
+    return std::nullopt;
+}
+
+auto r = find(42);
+if (r) std::cout << *r;    // 42
+auto r2 = find(0);
+std::cout << r2.value_or(-1);  // -1
+```
+> optional 相比返回指针或特殊值（如 -1）有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**优势**：
+1. **语义明确**：`optional<int>` 明确表示"可能没有值"，不像 `int` 返回 -1 有歧义（-1 可能是合法值）
+2. **无指针开销**：optional 在栈上（值+bool标志），不涉及堆分配
+3. **类型安全**：`*r` 解引用前检查 `r.has_value()`，空 optional 解引用是 UB 但比裸指针更易检查
+4. **value_or**：提供默认值的便捷接口
+
+**HFT 场景**：查找订单返回 `optional<OrderRef>` 比 `OrderRef*` 更安全（不涉及所有权/生命周期），比返回空 OrderRef 更清晰。
+
+**注意**：`sizeof(optional<T>)` > `sizeof(T)`（多一个 bool + 对齐填充）。
+
+**复习：** → [optional](./README.md)
+</details>

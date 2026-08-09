@@ -103,3 +103,53 @@ struct Wrapper {
 3. subsumption（约束包含）是什么？为什么要求"相同原子约束"？
 4. `Concept auto x = ...` 的推导和检查如何工作？
 5. HFT 如何用 subsumption 做行情处理特化？
+
+## 代码自测
+
+### Q1: requires 表达式
+```cpp
+// requires 表达式：编译期检查表达式是否合法
+template<typename T>
+concept HasFoo = requires(T x) {
+    x.foo();           // 检查 x.foo() 合法
+    { x.foo() } -> std::same_as<int>;  // 检查返回类型
+};
+
+// 复合要求
+template<typename T>
+concept Iterable = requires(T t) {
+    t.begin();
+    t.end();
+    typename T::iterator;  // 检查嵌套类型
+    requires std::same_as<decltype(t.begin() != t.end()), bool>;
+};
+
+// 约束组合
+template<typename T>
+concept Sortable = Iterable<T> && requires(T t) {
+    std::sort(t.begin(), t.end());
+};
+```
+> requires 表达式有哪几种要求形式？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**四种 requires 表达式形式**：
+1. **简单要求**：`x.foo();` — 检查表达式合法
+2. **类型要求**：`typename T::iterator;` — 检查嵌套类型存在
+3. **复合要求**：`{ x.foo() } -> std::same_as<int>;` — 检查表达式合法 + 返回类型满足概念
+4. **嵌套要求**：`requires std::same_as<A, B>;` — 检查另一个概念/常量表达式
+
+**requires 子句 vs requires 表达式**：
+```cpp
+// requires 子句：约束模板
+template<typename T> requires HasFoo<T> void use(T);
+
+// requires 表达式：产生 bool 值
+template<typename T>
+concept HasFoo = requires(T x) { x.foo(); };
+```
+
+**复习：** → [Concepts 细节](./README.md)
+</details>

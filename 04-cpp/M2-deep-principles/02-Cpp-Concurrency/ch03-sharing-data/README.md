@@ -66,3 +66,67 @@ C++11 起 `static` 局部变量的初始化由编译器保证线程安全（`cal
 3. "接口级竞争"是什么？为什么 `if(!empty()) top(); pop();` 是错的？
 4. C++11 起 `static` 局部变量的线程安全性由谁保证？
 5. HFT 热路径为什么避免 mutex？用什么替代？
+
+## 代码自测
+
+### Q1: 死锁
+```cpp
+std::mutex m1, m2;
+
+void threadA() {
+    std::lock_guard<std::mutex> lk1(m1);
+    std::lock_guard<std::mutex> lk2(m2);
+    // do work
+}
+void threadB() {
+    std::lock_guard<std::mutex> lk1(m2);
+    std::lock_guard<std::mutex> lk2(m1);
+    // do work
+}
+```
+> 同时启动 threadA 和 threadB 会发生什么？怎么避免？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**死锁**：threadA 持 m1 等 m2，threadB 持 m2 等 m1，永久阻塞。
+
+**避免方法**：
+1. **`std::lock(m1, m2)`**：C++11 提供的原子多锁获取（内部用避免死锁算法），配合 `std::adopt_lock`：
+```cpp
+std::lock(m1, m2);
+std::lock_guard<std::mutex> lk1(m1, std::adopt_lock);
+std::lock_guard<std::mutex> lk2(m2, std::adopt_lock);
+```
+2. **C++17 `std::scoped_lock`**：一行搞定 `std::scoped_lock lk(m1, m2);`
+3. **固定锁顺序**：所有线程按相同顺序加锁。
+
+**复习：** → [死锁](./README.md)
+</details>
+
+### Q2: 接口层面的竞态
+```cpp
+std::stack<int> s;
+void consumer() {
+    if (!s.empty()) {      // 检查
+        int val = s.top(); // 取值
+        s.pop();           // 弹出
+        process(val);
+    }
+}
+```
+> 多个 consumer 线程同时运行时这段代码有什么问题？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**TOCTOU 竞态**（Time-of-Check to Time-of-Use）：`empty()` 检查和 `top()`/`pop()` 之间可能被其他线程插入。
+
+场景：两个 consumer 都看到 `!empty()`，都调 `top()`（拿到同一个值），都调 `pop()`——一个元素被处理两次，另一个元素被跳过。
+
+**根因**：`std::stack` 的接口设计为非线程安全——`empty()`、`top()`、`pop()` 是分离操作。标准容器不保证并发安全。
+
+**对策**：用外部 mutex 保护整个操作序列，或用线程安全队列（`pop()` 返回值，一步完成）。
+
+**复习：** → [接口层面的竞态](./README.md)
+</details>

@@ -73,3 +73,75 @@ decltype((x)) y;    // decltype((x)) → int&  ！加括号变成引用
 3. `decltype(x)` 和 `decltype((x))` 的区别是什么？这对 `decltype(auto)` 返回值有什么影响？
 4. 为什么 `typeid(x).name()` 对引用和顶层 const 会"撒谎"？想精确保留 cv 限定该用什么？
 5. 万能引用 `T&&` 接收左值时 `T` 推导成什么？这个机制为什么是完美转发的根基？
+
+
+
+## 代码自测
+
+### Q1: 模板推导——顶层 const 消失
+
+```cpp
+template<typename T>
+void f(T param) { T x = 0; }
+
+const int ci = 42;
+f(ci);  // T 推导成什么？
+```
+
+> `T` 是 `const int` 还是 `int`？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**T = `int`。** 按值传递时，模板推导**剥掉顶层 const**——`ci` 的 `const` 被忽略，`T` 推导为 `int`。`param` 是 `int` 类型的拷贝，可以修改。
+
+**对比**：如果 `ParamType` 是 `const T&`，则 `T` 推导为 `int`（const 由 ParamType 提供）；如果是 `T&`，`T` 推导为 `const int`（保留 const 以避免通过引用修改 const 对象）。
+
+**复习：** → [Item 1：理解模板类型推导](./item01-理解模板类型推导.md)
+</details>
+
+### Q2: auto 与 initializer_list
+
+```cpp
+auto x = {1, 2, 3};    // x 的类型？
+auto y{1};              // C++17: y 的类型？C++14 呢？
+```
+
+> `x` 和 `y` 分别是什么类型？C++17 改了什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `x` = `std::initializer_list<int>`（所有标准版本一致）
+- `y`：C++14 = `std::initializer_list<int>`；C++17 = `int`（C++17 规定单元素花括号初始化推导为元素类型）
+
+**这是 `auto` 和模板推导的唯一差别**：`auto` 能推导 `initializer_list`，模板不能。`template<class T> void f(T); f({1,2,3});` 编译失败。
+
+**复习：** → [Item 2：理解 auto 类型推导](./item02-理解auto类型推导.md)
+</details>
+
+### Q3: decltype 括号陷阱
+
+```cpp
+int x = 42;
+decltype(x) a;      // a 的类型？
+decltype((x)) b;    // b 的类型？
+```
+
+> `a` 和 `b` 分别是什么类型？多一层括号为什么改变了结果？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `a` = `int`
+- `b` = `int&`
+
+**原因：** `decltype(变量名)` 得到变量类型；`decltype((变量名))` 中括号使表达式变成 lvalue 表达式，`decltype` 对 lvalue 表达式返回引用类型。
+
+**对 `decltype(auto)` 的影响：**
+```cpp
+decltype(auto) f() { int x = 0; return (x); }  // 返回 int&——悬垂引用！
+```
+
+**复习：** → [Item 3：理解 decltype](./item03-理解decltype.md)
+</details>

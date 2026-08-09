@@ -55,3 +55,71 @@ C++ 的封装（`private`/`public`）**运行时零开销**——访问控制是
 3. 单继承、多继承、虚继承的对象布局分别有什么代价？
 4. C++ 的 `private`/`public` 访问控制有运行时开销吗？真正的封装代价来自哪里？
 5. HFT 热路径为什么避免虚函数？用什么替代？
+
+## 代码自测
+
+### Q1: sizeof 与成员布局
+```cpp
+class Point3D {
+    float x, y, z;     // 12 字节
+    static int count;  // 静态
+    void draw();       // 成员函数
+};
+
+class VPoint3D : public Point3D {
+    virtual void draw();  // 加虚函数
+};
+```
+> `sizeof(Point3D)` 和 `sizeof(VPoint3D)` 分别是多少（64 位）？多出来的字节是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `sizeof(Point3D)` = **12**（3 个 float，不含静态成员和函数）
+- `sizeof(VPoint3D)` = **24**（Point3D 的 12 字节 + vptr 8 字节，考虑对齐填充到 8 的倍数 → 24）
+
+多出来的是 **vptr**（虚表指针），指向 VPoint3D 的 vtable。vptr 放在对象开头，所以继承的 12 字节数据要在 vptr 之后，对齐填充使总大小为 8 的倍数。
+
+**复习：** → [虚函数与 vptr](./README.md)
+</details>
+
+### Q2: 多继承的 this 调整
+```cpp
+class A { public: int a; virtual void fa() {} };
+class B { public: int b; virtual void fb() {} };
+class C : public A, public B {
+public: int c; void fa() override {} void fb() override {}
+};
+
+C obj;
+A* pa = &obj;
+B* pb = &obj;
+```
+> `pa` 和 `pb` 指向的地址相同吗？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**不同**。`pa` 指向对象开头（A 子对象），`pb` 指向偏移 `sizeof(A)` 处（B 子对象）。多继承时每个基类子对象有独立起始地址，编译器在 `B* pb = &obj` 时自动调整 this 指针偏移。
+
+这就是多继承的 **this 调整代价**——每次基类指针转换需加/减偏移量。
+
+**复习：** → [继承布局](./README.md)
+</details>
+
+### Q3: 封装的运行时代价
+```cpp
+class Pub { public: int x, y; };
+class Priv { private: int x, y; public: int getX() { return x; } };
+```
+> `sizeof(Pub)` 和 `sizeof(Priv)` 谁大？`getX()` 有运行时开销吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**一样大**（都是 8 字节）。访问控制 `public`/`private` 是**编译期检查**，运行时零开销。`getX()` 通常被内联（inline），编译后和直接访问 `x` 等价。
+
+真正的封装代价来自虚函数的 vtable 间接、虚基类的 this 调整——与 `public`/`private` 无关。
+
+**复习：** → [封装的代价](./README.md)
+</details>

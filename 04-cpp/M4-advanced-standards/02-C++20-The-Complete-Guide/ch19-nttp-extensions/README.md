@@ -105,3 +105,53 @@ struct Strategy {
 3. 字面量类作 NTTP 的条件是什么？
 4. C++20 的 FixedString NTTP 比 C++17 的变通好在哪里？
 5. NTTP 编译期已知值如何帮助编译器优化？
+
+## 代码自测
+
+### Q1: 非类型模板参数扩展
+```cpp
+// C++17: NTTP 只能是整型/指针/引用
+template<int N> struct Buf1 { char data[N]; };
+
+// C++20: NTTP 可以是任何字面量类型（含结构体！）
+struct Config {
+    int size;
+    bool debug;
+    constexpr Config(int s, bool d) : size(s), debug(d) {}
+};
+
+template<Config C>
+struct Buffer {
+    char data[C.size];
+    static constexpr bool debug = C.debug;
+};
+
+Buffer<Config{256, true}> buf;  // 结构体做模板参数！
+```
+> C++20 NTTP 扩展了什么？有什么限制？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**C++20 NTTP 扩展**：非类型模板参数可以是任何满足 `structural` 的字面量类型（不仅仅是整型/指针）。
+
+**structural 类型要求**：
+1. 所有成员是 public
+2. 所有基类是 public
+3. 无用户定义的拷贝/赋值/析构
+4. 所有成员也是 structural（递归）
+5. 无指针成员（函数指针/数据成员指针 OK，普通指针不行）
+
+**限制**：
+- 浮点数 NTTP（C++20 允许但实际编译器支持较晚）
+- 字符串字面量不能直接做 NTTP（但 `fixed_string` 惯用法可以）
+
+**用途**：
+```cpp
+// 编译期配置
+template<Config Cfg> class Engine { /* 使用 Cfg.max_threads 等 */ };
+Engine<Config{.max_threads=4, .use numa=true}> engine;
+```
+
+**复习：** → [NTTP 扩展](./README.md)
+</details>

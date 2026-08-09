@@ -50,3 +50,58 @@ Widget make() { Widget w; ...; return w; }  // NRVO：w 直接在调用者栈构
 2. 按位拷贝和逐成员拷贝的区别？含指针的类按位拷贝有什么危险？
 3. 哪三种成员必须在初始化列表初始化？
 4. NRVO 如何消除返回值拷贝？为什么不要对局部变量 `std::move` 返回？
+
+## 代码自测
+
+### Q1: 编译器何时合成默认构造函数
+```cpp
+class Widget {
+public:
+    int id;
+    // 没有写任何构造函数
+};
+
+class Logger {
+public:
+    Logger() { log("created"); }  // 有用户定义构造
+};
+
+class Holder {
+public:
+    Widget w;
+    Logger lg;
+    // 没有写构造函数
+};
+```
+> `Widget w;` 会触发合成构造吗？`Holder h;` 呢？编译器在什么条件下合成默认构造？
+
+<details>
+<summary>答案与复习指引</summary>
+
+- `Widget w;`：**不会**合成。Widget 没有虚函数、没有基类、成员都是 trivial 类型，编译器认为不需要合成。
+- `Holder h;`：**会**合成。因为 Holder 有一个成员 `Logger lg`，Logger 有用户定义的默认构造——编译器必须合成 Holder 的默认构造来调用 Logger 的构造。
+
+**规则**：编译器只在需要时（成员有非 trivial 构造、基类有构造、有虚函数）才合成默认构造，且合成的构造只做编译器需要的初始化（调用成员/基类构造、设 vptr），不初始化 POD 成员。
+
+**复习：** → [编译器合成构造的条件](./README.md)
+</details>
+
+### Q2: 成员初始化顺序
+```cpp
+class Risk {
+public:
+    int price, qty, value;
+    Risk(int p, int q) : value(p * q), price(p), qty(q) {}
+};
+```
+> `Risk r(100, 5);` 后 `r.value` 是多少？初始化顺序由什么决定？
+
+<details>
+<summary>答案与复习指引</summary>
+
+`r.value` = **500**（100 * 5）。
+
+**初始化顺序由成员声明顺序决定，不是初始化列表顺序**。这里 price 先于 qty 先于 value 声明，所以按 price → qty → value 初始化。但注意：如果初始化列表写 `value(p * q)` 在 price/qty 之前，而 price/qty 此时还没初始化，就会得到未定义值。**好的习惯：初始化列表顺序与声明顺序一致。**
+
+**复习：** → [成员初始化顺序](./README.md)
+</details>

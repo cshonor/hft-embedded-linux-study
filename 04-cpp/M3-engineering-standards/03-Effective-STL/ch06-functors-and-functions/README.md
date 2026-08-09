@@ -49,3 +49,38 @@ C++11 起 `std::function` + lambda 几乎完全替代了这些适配器。新代
 3. C++11 后哪些函数适配器基本被 lambda 替代？
 4. 函数指针相比仿函数/lambda 在性能上有什么劣势？为什么？
 5. `for_each` 的返回值有什么用？有状态仿函数如何取最终状态？
+
+## 代码自测
+
+### Q1: 仿函数 vs 函数指针
+```cpp
+// A: 函数指针
+bool greater_than_5(int x) { return x > 5; }
+auto it1 = std::find_if(v.begin(), v.end(), greater_than_5);
+
+// B: 仿函数
+struct GreaterThan5 {
+    bool operator()(int x) const { return x > 5; }
+};
+auto it2 = std::find_if(v.begin(), v.end(), GreaterThan5{});
+
+// C: lambda
+auto it3 = std::find_if(v.begin(), v.end(), [](int x) { return x > 5; });
+```
+> 三种写法哪个性能最好？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**B 和 C 最好**（等价），**A 最差**。
+
+**原因**：
+- **函数指针**：编译器难以内联（通过指针间接调用），每次 `find_if` 比较需函数调用开销。
+- **仿函数/lambda**：类型是编译期已知的（`GreaterThan5` 或编译器生成的闭包类型），编译器可以**内联** `operator()`，零调用开销。
+
+lambda 本质就是编译器自动生成的仿函数（闭包类型），性能和手写仿函数等价。
+
+**HFT**：热路径排序/查找的谓词用 lambda，确保内联。
+
+**复习：** → [仿函数 vs 函数指针](./README.md)
+</details>

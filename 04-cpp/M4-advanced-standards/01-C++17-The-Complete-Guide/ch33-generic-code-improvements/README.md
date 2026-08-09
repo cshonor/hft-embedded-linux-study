@@ -116,3 +116,43 @@ auto visitor = [](auto&& x) {
 3. 折叠表达式如何做编译期批量类型约束？
 4. `std::invoke` 统一了什么？为什么比直接调用好？
 5. HFT variant 消息处理如何用泛型 lambda + `if constexpr`？
+
+## 代码自测
+
+### Q1: 泛型代码改进
+```cpp
+// C++17: noexcept 作为类型的一部分
+void (*fp1)() noexcept = []() noexcept {};  // OK
+// void (*fp2)() = fp1;  // C++17 前可以，C++17 后严格了
+
+// constexpr if 简化 SFINAE
+template<typename T>
+void process(T x) {
+    if constexpr (std::is_integral_v<T>) {
+        std::cout << "integer: " << x;
+    } else {
+        std::cout << "other: " << x;
+    }
+}
+
+// auto 非类型模板参数
+template<auto N> void print() { std::cout << N; }
+```
+> C++17 对泛型编程有哪些改进？
+
+<details>
+<summary>答案与复习指引</summary>
+
+C++17 泛型改进：
+1. **constexpr if**：替代 SFINAE/enable_if 做编译期分支
+2. **fold expressions**：简化可变参数模板展开
+3. **auto NTTP**：简化非类型模板参数
+4. **if-init in constexpr**：constexpr 函数中可用 if-init
+5. **`noexcept` 类型化**：函数指针的 noexcept 是类型的一部分
+6. **CTAD**：类模板参数自动推导
+7. **inline variables**：头文件中定义变量模板
+
+这些改进让泛型代码更简洁、更易读、更少模板元编程技巧。
+
+**复习：** → [泛型代码改进](./README.md)
+</details>
