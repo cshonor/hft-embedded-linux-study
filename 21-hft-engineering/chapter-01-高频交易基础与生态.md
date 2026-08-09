@@ -163,5 +163,5 @@ Exchange ──► Gateway IN ──► Book Builder ──► Strategy ──�
 |------|------|
 | [13-DPDK](../18-dpdk/) | 用户态网卡 · PMD · 零拷贝 |
 | [04-linux-userspace-api](../04-linux-userspace-api/) | `mmap` · 进程 · 定时 |
-| [05-os-from-scratch](../05-os-from-scratch/) | OS/内存/中断体感 |
+| [projects/P9-os-from-scratch](../projects/P9-os-from-scratch/) | OS/内存/中断体感 |
 | [23-markets-microstructure](../23-markets-microstructure/) | 微观结构 · 订单簿理论 |

@@ -58,7 +58,7 @@
 | 回收、swap | [Ch 17 页回收](../../chapter-17-page-reclaim.md) 🟡 |
 | VM 专著 | [07 Gorman](../../../09-linux-mm/) |
 | 用户态视角 | [01 CSAPP](../../../02-computer-systems/) Ch 9 · [08 TLPI](../../../04-linux-userspace-api/) |
-| 动手分页 | [09 MikanOS](../../../05-os-from-scratch/mikanos/) |
+| 动手分页 | [09 MikanOS](../../../projects/P9-os-from-scratch/mikanos/) |
 
 ### 常见陷阱
 

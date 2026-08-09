@@ -66,7 +66,7 @@ CFS 里两类常见触发（详见 [§4.3](./section-4.3-Linux-调度算法.md)�
 | 同核被无关任务打断 | **`isolcpus` / cpuset + affinity** |
 | 切换过多 | 无锁队列、忙等（慎用）、批处理 |
 
-→ **Ch 1** 宏内核+抢占 · [01 Day 16 多任务](../../../../05-os-from-scratch/thirty-days-os/day-16-multitask2/) · [4.6 RT](./section-4.6-实时调度策略.md)
+→ **Ch 1** 宏内核+抢占 · [01 Day 16 多任务](../../../../projects/P9-os-from-scratch/thirty-days-os/day-16-multitask2/) · [4.6 RT](./section-4.6-实时调度策略.md)
 
 ### 常见陷阱
 

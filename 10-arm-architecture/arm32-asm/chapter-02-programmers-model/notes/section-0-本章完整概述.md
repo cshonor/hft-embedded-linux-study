@@ -64,7 +64,7 @@ Ch3：在这些寄存器上跑第一个示例程序
 
 | 路径 | Ch2 呼应 |
 |------|----------|
-| [08 MikanOS](../../../../05-os-from-scratch/mikanos/) x86 | 同样区分 **用户/内核栈、中断向量、PC** |
+| [08 MikanOS](../../../../projects/P9-os-from-scratch/mikanos/) x86 | 同样区分 **用户/内核栈、中断向量、PC** |
 | [04 LKD](../../../../07-linux-kernel/) | 内核 `entry.S` 保存寄存器帧 ≈ M4 硬件压栈 + 软件扩展 |
 | [21 驱动](../../../../12-device-drivers-dt/) | 中断上下文 **不能睡眠** — 从 Handler mode 直觉理解 |
 | [20 构建](../../../../11-embedded-boot-build/) | U-Boot 启动时设 **SP、跳 Reset** — 同向量表第一项 |

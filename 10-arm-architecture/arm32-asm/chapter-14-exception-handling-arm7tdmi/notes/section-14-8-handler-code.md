@@ -27,7 +27,7 @@ Reset_Handler:
 **与嵌入式链：**
 
 - [20 U-Boot](../../11-embedded-boot-build/) **`start.S`** — 设栈、清 BSS、跳 C  
-- [08 MikanOS Loader](../../05-os-from-scratch/) — UEFI 入口同类 **分阶段 init**
+- [08 MikanOS Loader](../../projects/P9-os-from-scratch/) — UEFI 入口同类 **分阶段 init**
 
 ---
 

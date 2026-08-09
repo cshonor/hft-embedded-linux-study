@@ -84,7 +84,7 @@
 | [21 驱动+DT](../12-device-drivers-dt/) | Ch 3–4、11–12 驱动与设备树 |
 | [04 LKD](../07-linux-kernel/) | 内核机制 |
 | [07 TLPI](../04-linux-userspace-api/) | 进程/IPC/内存 |
-| [08 MikanOS 等](../05-os-from-scratch/) | 自底向上对照 |
+| [08 MikanOS 等](../projects/P9-os-from-scratch/) | 自底向上对照 |
 
 ---
 

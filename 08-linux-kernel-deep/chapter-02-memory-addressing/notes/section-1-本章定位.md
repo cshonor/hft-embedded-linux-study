@@ -35,7 +35,7 @@ Ch 17 页回收         — 内存不够怎么办
 07 Gorman            — VM 专著（在 Ch 8–9 之后）
 ```
 
-交叉：[01 CSAPP](../../../02-computer-systems/) Ch 9 · [09 MikanOS](../../../05-os-from-scratch/mikanos/) 分页实验
+交叉：[01 CSAPP](../../../02-computer-systems/) Ch 9 · [09 MikanOS](../../../projects/P9-os-from-scratch/mikanos/) 分页实验
 
 ### 常见陷阱
 

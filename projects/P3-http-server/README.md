@@ -49,7 +49,7 @@
 | 模块 | 用到什么 |
 |------|----------|
 | [`04` linux-userspace-api](../../04-linux-userspace-api/) | TLPI：socket、epoll、线程、信号、mmap |
-| [`05` os-from-scratch](../../05-os-from-scratch/) | 自制 OS 的 syscall/中断/调度直觉 |
+| [`05` os-from-scratch](../../projects/P9-os-from-scratch/) | 自制 OS 的 syscall/中断/调度直觉 |
 | [`06` cpp](../../06-cpp/) | Modern C++（M1）+ 并发（M2）+ 对象模型 |
 
 ## 前置

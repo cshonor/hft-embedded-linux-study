@@ -92,7 +92,7 @@ disable_irq() 使用场景（概念）：
 
 **HFT：** 错误地在热路径 **长时间 `local_irq_disable`** 会拖慢 **同一核** 上的 **网卡 IRQ** 与 **TSC 采样**。锁 IRQ 的临界区应 **数条指令级**；毫秒级工作放 **无锁 ring** 或 **per-CPU**。
 
-→ **Ch 9–10** 自旋锁 + `local_irq_save` 组合 · [Ch 8.8](../../chapter-08-bottom-halves/notes/section-8.8-锁定与禁用下半部.md) `local_bh_disable` · [01 Day 14 临界区](../../../../05-os-from-scratch/thirty-days-os/day-14-keyboard/)
+→ **Ch 9–10** 自旋锁 + `local_irq_save` 组合 · [Ch 8.8](../../chapter-08-bottom-halves/notes/section-8.8-锁定与禁用下半部.md) `local_bh_disable` · [01 Day 14 临界区](../../../../projects/P9-os-from-scratch/thirty-days-os/day-14-keyboard/)
 
 ### 常见陷阱
 

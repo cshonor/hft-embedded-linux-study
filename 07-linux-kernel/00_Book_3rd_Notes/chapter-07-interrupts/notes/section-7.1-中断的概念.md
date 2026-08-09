@@ -48,7 +48,7 @@
 
 → [Ch 1](../../chapter-01-intro/) syscall vs 中断 · [Ch 5](../../chapter-05-system-calls/) 进程上下文 · [Ch 8](../../chapter-08-bottom-halves/) 下半部
 
-→ 教学对照：[01 Day 5 GDT/IDT](../../../../05-os-from-scratch/thirty-days-os/day-05-gdt-idt/) · [Day 7 PIC](../../../../05-os-from-scratch/thirty-days-os/day-07-fifo-mouse/)
+→ 教学对照：[01 Day 5 GDT/IDT](../../../../projects/P9-os-from-scratch/thirty-days-os/day-05-gdt-idt/) · [Day 7 PIC](../../../../projects/P9-os-from-scratch/thirty-days-os/day-07-fifo-mouse/)
 
 ### 常见陷阱
 

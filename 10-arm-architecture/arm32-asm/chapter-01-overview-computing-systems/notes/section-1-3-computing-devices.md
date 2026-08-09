@@ -24,7 +24,7 @@
 | **内存** | 统一存放**程序（指令序列）**与**数据** — 「程序即数据」 |
 | **总线** | 地址线选单元、数据线传内容、控制线协调读写时序 |
 
-**与 MikanOS 对照：** [08 MikanOS](../../../../05-os-from-scratch/mikanos/) 里 UEFI 加载 `kernel.elf` 到内存再跳转 — 同样是「内存里先有比特，CPU 从某入口地址开始执行」。
+**与 MikanOS 对照：** [08 MikanOS](../../../../projects/P9-os-from-scratch/mikanos/) 里 UEFI 加载 `kernel.elf` 到内存再跳转 — 同样是「内存里先有比特，CPU 从某入口地址开始执行」。
 
 ---
 

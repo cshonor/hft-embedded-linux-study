@@ -27,7 +27,7 @@
 
 **内核开发者：** 写每一行访问共享数据时，问：**五种来源里谁会同时碰到这里？**
 
-→ [01 Day 14 临界区](../../../../05-os-from-scratch/thirty-days-os/day-14-keyboard/)
+→ [01 Day 14 临界区](../../../../projects/P9-os-from-scratch/thirty-days-os/day-14-keyboard/)
 
 ### 常见陷阱
 

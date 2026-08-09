@@ -22,6 +22,6 @@ struct file_operations {
 
 → [Ch 5](../../chapter-05-system-calls/) 替代 syscall：**字符设备** 也靠 **`file_operations`**
 
-→ 教学对照：[01 Day 18–19 FAT](../../../../05-os-from-scratch/thirty-days-os/day-18-dir/)（具体 FS 在 VFS 之下）
+→ 教学对照：[01 Day 18–19 FAT](../../../../projects/P9-os-from-scratch/thirty-days-os/day-18-dir/)（具体 FS 在 VFS 之下）
 
 ---

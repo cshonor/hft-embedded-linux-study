@@ -1,7 +1,7 @@
 ## 3.1 历史观点
 
 > **导读定位：** 本章讲 **指令、寄存器、栈、调用约定** — 看懂 `bootX64.efi`、`gcc -S`、MikanOS 汇编的理论根基。  
-> **实操线：** [MikanOS Ch1 UEFI](../../../05-os-from-scratch/mikanos/chapter-01-hello-world/) · **性能线：** [Ch4](../../chapter-04-processor-architecture/) → HFT 延迟优化。
+> **实操线：** [MikanOS Ch1 UEFI](../../../projects/P9-os-from-scratch/mikanos/chapter-01-hello-world/) · **性能线：** [Ch4](../../chapter-04-processor-architecture/) → HFT 延迟优化。
 
 > [章导读](../README.md) · 下节 [§3.2.1 编译链路](./section-3.2.1-机器级代码与编译链路.md)
 
@@ -19,7 +19,7 @@ x86-64 / AMD64（64 位长模式 — MikanOS · bootX64.efi · Linux 全是这�
 
 | 阶段 | 典型场景 | 与你学习路径 |
 |------|----------|--------------|
-| **8086 / 实模式** | 软盘 512B IPL @ `0x7C00` | [02 30days-os Day1](../../../05-os-from-scratch/thirty-days-os/day-01-boot-asm/) 启蒙 |
+| **8086 / 实模式** | 软盘 512B IPL @ `0x7C00` | [02 30days-os Day1](../../../projects/P9-os-from-scratch/thirty-days-os/day-01-boot-asm/) 启蒙 |
 | **IA-32** | 保护模式、32 位内核 | 30 天 OS 中后期 |
 | **x86-64 长模式** | **UEFI · bootX64.efi · 服务器 OS** | **MikanOS 主线 · HFT 共置机** |
 
@@ -42,7 +42,7 @@ x86-64 / AMD64（64 位长模式 — MikanOS · bootX64.efi · Linux 全是这�
 
 **结论：** 写 UEFI 引导、自制内核、HFT 服务器 — **核心 ISA 都是 x86-64**，不是 8086 实模式。
 
-→ MikanOS 启动链对照 [§1.四 BOOTX64 vs IPL](../../../05-os-from-scratch/mikanos/chapter-01-hello-world/notes/section-1-本章定位.md#四核心区分bootx64efi--软盘启动两条线)
+→ MikanOS 启动链对照 [§1.四 BOOTX64 vs IPL](../../../projects/P9-os-from-scratch/mikanos/chapter-01-hello-world/notes/section-1-本章定位.md#四核心区分bootx64efi--软盘启动两条线)
 
 ---
 

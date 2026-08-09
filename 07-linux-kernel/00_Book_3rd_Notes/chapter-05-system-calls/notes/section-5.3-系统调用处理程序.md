@@ -81,7 +81,7 @@ sysret ──► 回到用户态
 
 > **x86-64**：号在 **`rax`**，参数常用 **`rdi, rsi, rdx, r10, r8, r9`** — 思想相同：**寄存器传号与参**。
 
-→ 教学对照：[01 Day 20 INT 0x40 API](../../../../05-os-from-scratch/thirty-days-os/day-20-api/) · 下一节 [§5.4 参数验证](./section-5.4-实现与参数验证.md)
+→ 教学对照：[01 Day 20 INT 0x40 API](../../../../projects/P9-os-from-scratch/thirty-days-os/day-20-api/) · 下一节 [§5.4 参数验证](./section-5.4-实现与参数验证.md)
 
 
 > ↔ [ULK Ch10 §3 分派表与服务例程](../../../../08-linux-kernel-deep/chapter-10-system-calls/notes/section-3-分派表与服务例程.md)

@@ -31,7 +31,7 @@ ULK 基于 **2.6** — 读时 **概念优先**，结构体名字以你机器上�
 |------|-------------|
 | [P3.5 BusyBox](../projects/P3.5-busybox-minimal-linux/) | 附录 A 启动 |
 | [LKD Ch 7–8](../07-linux-kernel/00_Book_3rd_Notes/chapter-07-interrupts/) | Ch 4–5 中断/同步 |
-| [02 MikanOS](../05-os-from-scratch/mikanos/) Ch 19–20 | Ch 2/9/10 分页与 syscall |
+| [02 MikanOS](../projects/P9-os-from-scratch/mikanos/) Ch 19–20 | Ch 2/9/10 分页与 syscall |
 | [04 BPF](../20-bpf-observability/) | Ch 4/7 内核路径理解 |
 
 ---

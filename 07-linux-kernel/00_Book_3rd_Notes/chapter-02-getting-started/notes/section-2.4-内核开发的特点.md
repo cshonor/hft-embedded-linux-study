@@ -369,7 +369,7 @@ make V=1 kernel/sys.o 2>&1 | head -5
 | 内核栈常 **4KB 或 8KB** | **禁止** 栈上大数组/大结构体 |
 | 每进程独立内核栈 | 深度递归、大 `alloca` → **栈溢出** |
 
-→ 对照用户态：[01-CSAPP](../../../../02-computer-systems/) 栈与调用约定 · [01 Day 1 汇编栈帧](../../../../05-os-from-scratch/thirty-days-os/day-01-boot-asm/)
+→ 对照用户态：[01-CSAPP](../../../../02-computer-systems/) 栈与调用约定 · [01 Day 1 汇编栈帧](../../../../projects/P9-os-from-scratch/thirty-days-os/day-01-boot-asm/)
 
 ### 同步与并发
 

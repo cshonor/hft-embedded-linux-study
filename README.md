@@ -32,7 +32,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **02** | [computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 | 2 |
 | **03** | [computer-architecture](./03-computer-architecture/) | 体系结构加深（拓展） | 6 |
 | **04** | [linux-userspace-api](./04-linux-userspace-api/) | 用户态系统编程（TLPI） | 3 |
-| **05** | [os-from-scratch](./05-os-from-scratch/) | 自制 OS 动手 | 3 穿插 |
+| ~~05~~ | ~~os-from-scratch~~ | **已移至 [P9](./projects/P9-os-from-scratch/)**（Phase 6 拓展） | — |
 | **06** | [cpp](./06-cpp/) | C++（Modern / 并发 / 对象模型） | 3 穿插 |
 | **07** | [linux-kernel](./07-linux-kernel/) | 内核入门（LKD） | 4 |
 | **08.5** | [modern-kernel](./08.5-modern-kernel/) | 现代 5.x/6.x 内核**非 MM** 资料（补 ULK/LKD 2.6 过时） | 4 |
@@ -68,7 +68,7 @@ Phase1  00 数字逻辑/CPU（当前；未完成前不正式开下一 Phase）
    ↓
 Phase2  01 C → 02 计算机系统
    ↓
-Phase3  04 用户态 API（穿插 05 自制 OS / 06 C++）
+Phase3  04 用户态 API（穿插 06 C++）
    ↓
 Phase4  07 内核入门 → 08.5 现代内核 → 08.6 调试 → 09 MM → 09.5 现代 MM
         （08 ULK 深度可后补）
@@ -77,14 +77,14 @@ Phase5  分叉并行
         A 嵌入式: 10 → 11 → 12 → 13（14 兴趣）
         B HFT:    15 → 16 → 17 → 17.5 → 18 → 19 → 20 → 21
    ↓
-Phase6  拓展: 03 · 08 · 22 · 23 ·（兴趣）14
+Phase6  拓展: 03 · 08 · 22 · 23 · P9(OS from scratch) ·（兴趣）14
 ```
 
 | Phase | 内容 | 过关感 |
 |-------|------|--------|
 | **1** | `00` 数字逻辑/CPU（黑盒语义为主） | setup/hold、寄存器与 FIFO；不纠结门级 |
 | **2** | `01` C → `02` 计算机系统 | 指针/内存过关；流水线、Cache、VM、并发能讲通 |
-| **3** | `04` → 穿插 `05`/`06` | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
+| **3** | `04` → 穿插 `06` | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
 | **4** | `07` → `08.5` → `08.6` → `09` → `09.5` | 调度、内存、同步入门地图清晰；知道 6.x 现代实现 |
 | **5A** | `10`–`13` | 启动链、设备树、简单驱动、板级闭环 |
 | **5B** | `15`–`21`（含 `17.5`） | Socket → 协议 → 内核网 → 现代 Net → DPDK → 观测 → HFT |

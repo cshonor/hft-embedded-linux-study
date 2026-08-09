@@ -100,7 +100,7 @@ objdump -d ./test_debug ./test_hft | less        # 对比删了多少冗余、�
 **HFT 规范（简）：** 日常学/调 → `-O0` / **`-Og`**；交易核心 Release → **`-O3`**（+ 与生产一致的 `-march`/LTO/PGO）；**不要整仓盲目 O3**。  
 **`-O3` 是入场票，不是护城河** — 编译器天花板、负优化、毛刺排查 → [Ch5 §5.1](../../chapter-05-optimizing-performance/notes/section-5.1-优化编译器的能力和局限性.md)
 
-**MikanOS Ch1 补充：** UEFI 的 `.efi` 同样是 **C → 交叉编译 → .o → 链接成 PE**，只是工具链用 `clang -target x86_64-pc-win32-coff` + `lld-link`，不是宿主机 `gcc` 默认的 ELF 路径 → [MikanOS §2 交叉编译](../../../05-os-from-scratch/mikanos/chapter-01-hello-world/notes/section-2-二进制编辑器与BOOTX64.md)。
+**MikanOS Ch1 补充：** UEFI 的 `.efi` 同样是 **C → 交叉编译 → .o → 链接成 PE**，只是工具链用 `clang -target x86_64-pc-win32-coff` + `lld-link`，不是宿主机 `gcc` 默认的 ELF 路径 → [MikanOS §2 交叉编译](../../../projects/P9-os-from-scratch/mikanos/chapter-01-hello-world/notes/section-2-二进制编辑器与BOOTX64.md)。
 
 ### 学习顺序建议（先 MikanOS 实操，再啃 CSAPP）
 

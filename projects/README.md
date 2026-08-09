@@ -42,6 +42,7 @@ P5 树莓派嵌入式（P5a–P5e）      │
 | [P6](./P6-network-protocol-analyzer/) | 抓包+逐层解析+TCP 流重组+eBPF | `15` `16` `17` `17.5` `20` | P3 | ⬜ 未开始 |
 | [P7](./P7-dpdk-forwarder-profiling/) | DPDK forwarder+perf 火焰图+bpftrace | `18` `19` `20` | P6 | ⬜ 未开始 |
 | [P8](./P8-matching-engine/) | 限价订单簿撮合引擎+无锁+Rust 重写 | `21` `22` `23` | P4+P5+P7 | ⬜ 未开始 |
+| [P9](./P9-os-from-scratch/) | OS 从零造（MikanOS + 30 天精华） | ~~05~~ (拓展) | Phase4 完成 | ⬜ 拓展 |
 
 > 状态标记：⬜ 未开始 / 🔄 进行中 / ✅ 完成
 

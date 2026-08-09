@@ -65,7 +65,7 @@ Linux：同 MMIO → ioremap · 驱动 readl/writel
 | [Ch12 查表](../chapter-12-tables/) | DAC 正弦 **LUT + 缩放** |
 | [21 驱动](../../12-device-drivers-dt/) | **`readl`/`writel`** · **`platform_device`** |
 | [21 驱动/DT](../../12-device-drivers-dt/) | 寄存器基址进 **设备树** |
-| [08 MikanOS GOP](../../05-os-from-scratch/) | 帧缓冲也是 **MMIO 写像素** |
+| [08 MikanOS GOP](../../projects/P9-os-from-scratch/) | 帧缓冲也是 **MMIO 写像素** |
 | [20 U-Boot](../../11-embedded-boot-build/) | 板级 **early UART** 打印 |
 
 ---

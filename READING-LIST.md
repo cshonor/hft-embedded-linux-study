@@ -322,14 +322,14 @@
 
 ## 补充：自制系统动手（`09` 文件夹）
 
-> 笔记目录：[05-os-from-scratch/](./05-os-from-scratch/)
+> 笔记目录：[projects/P9-os-from-scratch/](./projects/P9-os-from-scratch/)
 
 > **插入位置：** `08` TLPI 之后、`10` PNP 之前。
 
 | 子模块 | 参考 | 标签 | HFT 关联 |
 |--------|------|------|----------|
-| [thirty-days-os](./05-os-from-scratch/thirty-days-os/) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
-| [mikanos](./05-os-from-scratch/mikanos/) | 《ゼロからの OS 自作入門》MikanOS | 🟡 选读 | UEFI/64位/分页/syscall — 现代 OS 互补 |
+| [thirty-days-os](./projects/P9-os-from-scratch/thirty-days-os/) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
+| [mikanos](./projects/P9-os-from-scratch/mikanos/) | 《ゼロからの OS 自作入門》MikanOS | 🟡 选读 | UEFI/64位/分页/syscall — 现代 OS 互补 |
 
 **HFT 产出：** 把「绑核、syscall、cache 类比」从读者变成作者；时间紧可后补，与 `05`/`06` 概念课并行。
 

@@ -57,4 +57,4 @@
 
 - [04-linux-userspace-api](../04-linux-userspace-api/) · [10-PNP](../15-network-sockets/muduo-sockets/)
 - [13-DPDK](../18-dpdk/) · [23-markets-microstructure](../23-markets-microstructure/)
-- [17-Rust](../22-rust-quant/) · [05-os-from-scratch](../05-os-from-scratch/)
+- [17-Rust](../22-rust-quant/) · [projects/P9-os-from-scratch](../projects/P9-os-from-scratch/)
