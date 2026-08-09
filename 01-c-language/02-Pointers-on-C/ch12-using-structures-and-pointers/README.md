@@ -202,3 +202,28 @@ free(m);
 **教训：** 嵌套堆分配按**逆序释放**（类似 `goto` 清理链）。
 
 **复习：** → [12.1 链表](./12.1-链表.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下链表删除节点的代码有什么问题？
+```c
+void delete(Node *head, int val) {
+    Node *cur = head;
+    while (cur->next && cur->next->val != val)
+        cur = cur->next;
+    if (cur->next) {
+        Node *tmp = cur->next;
+        cur->next = tmp->next;
+        // 没有 free(tmp)
+    }
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+内存泄漏——删除的节点 tmp 没有被 free。虽然从链表中移除了，但内存仍然占用。正确做法：free(tmp); 在 cur->next = tmp->next; 之后。此外，如果要删除的是头节点，这段代码无法处理（需要二级指针或返回新头）。
+
+</details>

@@ -138,171 +138,47 @@ make clean
 
 ---
 
-## 章节自测
+## 代码自测
 
-> 数据存储与指针是 C 的底层核心。看代码 → 想答案 → 点开验证。
-
-### Q1: 整数溢出 UB
-
+**题目 1：** 以下代码在大端和小端机器上输出分别是什么？如何判断当前机器的字节序？
 ```c
-int a = INT_MAX;  // 2147483647
-int b = 1;
-int c = a + b;    // 会怎样？
-
-unsigned int x = UINT_MAX;  // 4294967295
-unsigned int y = 1;
-unsigned int z = x + y;  // 会怎样？
+int main(void) {
+    unsigned int x = 0x12345678;
+    unsigned char *p = (unsigned char *)&x;
+    printf("%02x %02x %02x %02x\n", p[0], p[1], p[2], p[3]);
+    return 0;
+}
 ```
-
-> 有符号溢出和无符号溢出有什么区别？
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：**
-- 有符号 `a + b` → **UB**（编译器可假设不溢出做优化，结果不可预测）
-- 无符号 `x + y` → **环绕**（wrapping），`z = 0`（标准定义行为）
+小端机器（x86/ARM 默认）：78 56 34 12
+大端机器（PowerPC/网络字节序）：12 34 56 78
 
-**教训：** 做有符号运算前检查溢出：
-```c
-if (b > 0 && a > INT_MAX - b) // 会溢出
-```
-或用 `__builtin_add_overflow(a, b, &c)`。
+原因：
+- 小端（Little-Endian）：低字节存放在低地址。0x12345678 的最低字节 0x78 存放在 p[0]
+- 大端（Big-Endian）：高字节存放在低地址。0x12 存放在 p[0]
 
-**复习：** → [7.2 整数溢出](./7.2-overflow/7.2-整数溢出.md)
+判断当前机器字节序的代码：
+int x = 1;
+if (*(char *)&x == 1)
+    printf("Little-Endian\n");
+else
+    printf("Big-Endian\n");
+
+或者用联合体：
+union { int i; char c; } u; u.i = 1;
+字节序影响网络协议（网络字节序是大端）、文件格式（ELF 头是小端）、硬件寄存器布局。这是 ch07 数据存储与指针的核心知识。
 
 </details>
 
-### Q2: restrict 限定符
+## 代码自测
 
-```c
-// 不加 restrict
-void add_arrays(int *a, int *b, int *c, int n) {
-    for (int i = 0; i < n; i++)
-        c[i] = a[i] + b[i];
-}
-
-// 加 restrict
-void add_arrays_r(int *restrict a, int *restrict b, int *restrict c, int n) {
-    for (int i = 0; i < n; i++)
-        c[i] = a[i] + b[i];
-}
-```
-
-> `restrict` 做什么承诺？如果违反承诺会怎样？
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** `restrict` 承诺：通过该指针访问的内存，不会被其他指针修改。编译器据此可以激进优化（如向量化循环、省略 alias 检查）。
-
-如果违反承诺（`a` 和 `c` 实际指向同一块内存）→ **UB**。
-
-**HFT 用途：** 热路径数组运算加 `restrict` 可显著提升性能（编译器可生成 SIMD 指令）。
-
-**复习：** → [7.5 const/volatile/restrict](./7.5-qualifiers/7.5-const-volatile-restrict.md)
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
 </details>
-
-
-### Q4: volatile 与编译器优化
-
-```c
-int *p = (int *)0x40000000;           // A
-volatile int *vp = (volatile int *)0x40000000;  // B
-
-// 轮询硬件就绪标志
-while (*p == 0) {}      // A 行
-while (*vp == 0) {}     // B 行
-```
-
-> A 行可能被编译器优化成什么？B 行为什么不会？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- A 行（无 volatile）：编译器认为 `*p` 在循环中不变 → 优化为**只读一次**：`if (*p == 0) while(1) {}` → **死循环**
-- B 行（有 volatile）：编译器**每次循环都从内存重新读取** `*vp` → 硬件改变标志后正常退出
-
-**volatile 的三个保证：**
-1. 不缓存到寄存器——每次从内存读取
-2. 不优化掉重复访问
-3. 不重排到 volatile 访问之外（但非 volatile 访问可重排）
-
-**局限：** volatile 不保证原子性（64 位读在 32 位平台上可能撕裂）、不做内存屏障。多线程同步用 `stdatomic.h`（C11）或平台特定屏障。
-
-**复习：** → [7.5 const/volatile/restrict](./7.5-qualifiers/7.5-const-volatile-restrict.md)
-
-</details>
-
-### Q5: 指针别名与 restrict
-
-```c
-// 无 restrict：编译器保守假设 src 和 dst 可能重叠
-void copy_norestrict(int *dst, int *src, int n) {
-    for (int i = 0; i < n; i++)
-        dst[i] = src[i] + 1;
-}
-
-// 有 restrict：保证不重叠，编译器可激进优化
-void copy_restrict(int *restrict dst, const int *restrict src, int n) {
-    for (int i = 0; i < n; i++)
-        dst[i] = src[i] + 1;
-}
-```
-
-> `restrict` 有什么作用？如果违反 restrict 承诺会怎样？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** `restrict` 告诉编译器：**这两个指针不会指向同一块内存**（无别名）。编译器可以：
-1. 把 `src[i]` 缓存到寄存器，减少内存读取
-2. 向量化（SIMD）——一次处理多个元素
-3. 重排指令提高流水线效率
-
-**违反 restrict：** 如果调用方传入重叠指针 → **UB**。编译器基于无别名的假设做了优化，结果不可预测。
-
-**用途：**
-- `memcpy` 的原型：`void *memcpy(void *restrict dst, const void *restrict src, size_t n)`
-- HFT 数值计算：信号处理函数声明 `restrict` 允许编译器向量化
-
-**验证：** `gcc -O3 -fopt-info-vec` 查看是否向量化成功。
-
-**复习：** → [7.5 const/volatile/restrict](./7.5-qualifiers/7.5-const-volatile-restrict.md)
-
-</details>
-
-
-### Q3: 函数指针跳转表
-
-```c
-typedef void (*irq_handler_t)(int irq);
-
-// 中断向量表
-irq_handler_t vector_table[16] = {
-    [0] = timer_irq,
-    [3] = uart_irq,
-    [7] = gpio_irq,
-    // 其余默认 NULL
-};
-```
-
-> `[0] = timer_irq` 这种写法叫什么？如果 `vector_table[5]` 是 NULL 会怎样？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** `[0] = timer_irq` 是 **指定初始化**（designated initializer）——C99 语法，只初始化指定元素，其余自动清零。
-
-`vector_table[5]` = NULL → 调用 NULL 函数指针 → **UB**（通常段错误）。正确做法：初始化一个默认 handler 处理未注册的中断。
-
-```c
-void default_handler(int irq) { log("unhandled irq %d", irq); }
-// 填充默认值
-for (int i = 0; i < 16; i++)
-    if (!vector_table[i]) vector_table[i] = default_handler;
-```
-
-**复习：** → [7.12 函数指针](./7.12-函数指针.md)

@@ -207,3 +207,22 @@ free(p);
 **工具：** valgrind / AddressSanitizer (ASan) 可检测以上所有问题。
 
 **复习：** → [11.5 常见错误](./11.5-常见错误.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码有什么问题？
+```c
+int *p = malloc(10 * sizeof(int));
+if (p == NULL) exit(1);
+// 使用 p...
+// 没有 free(p)
+```
+
+<details>
+<summary>参考答案</summary>
+
+内存泄漏。malloc 分配的内存必须用 free 释放，否则程序运行期间这块内存不会被回收。虽然程序退出时操作系统会回收所有内存，但长时间运行的程序（如服务器）中泄漏会累积导致 OOM。正确做法：使用完后 free(p); p = NULL;。
+
+</details>

@@ -251,3 +251,23 @@ printf("%u\n", f.c);  // 输出什么？
 **教训：** 协议解析别用位域，用位操作（`shift + mask`）才可移植。
 
 **复习：** → [6.9 位字段](./6.9-位字段.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下结构体在 64 位系统上 sizeof 是多少？为什么？
+```c
+struct s {
+    char c;
+    int i;
+    char d;
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+通常是 12 字节。对齐规则：int 要求 4 字节对齐，所以 c(1) + padding(3) + i(4) + d(1) + padding(3) = 12。结构体总大小必须是最大成员对齐值（4）的倍数。如果改为 struct s { int i; char c; char d; }; 则 sizeof = 8。K&R 时代对齐问题不明显，现代编程必须考虑跨平台对齐。
+
+</details>

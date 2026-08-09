@@ -158,3 +158,20 @@ if (isalpha(c))          // 安全吗？
 **正确做法：** 强制转型：`isalpha((unsigned char)c)`。
 
 **复习：** → [9.8 字符操作](./9.8-字符操作.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码有什么问题？
+```c
+char *s = "hello";
+s[0] = 'H';
+```
+
+<details>
+<summary>参考答案</summary>
+
+未定义行为。字符串字面量 "hello" 存储在只读内存段（.rodata），修改它会导致 segfault（或某些系统上看似正常）。正确做法：用字符数组 char s[] = "hello"; 此时字符串存储在栈上，可修改。
+
+</details>

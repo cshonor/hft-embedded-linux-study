@@ -123,184 +123,57 @@ make clean
 
 ---
 
-## 章节自测
+## 代码自测
 
-> 模块化是工程质量的基石。看代码 → 想答案 → 点开验证。
-
-### Q1: include guard
-
+**题目 1：** 以下模块设计有什么问题？如何改进？
 ```c
-// uart.h — 写法 A
-#ifndef UART_H
-#define UART_H
-void uart_init(void);
-#endif
+// utils.h
+int counter = 0;  // 全局变量定义在头文件中
+void inc(void);
 
-// uart.h — 写法 B
-#pragma once
-void uart_init(void);
-```
+// utils.c
+#include "utils.h"
+void inc(void) { counter++; }
 
-> 两种写法有什么区别？哪个更好？
+// a.c
+#include "utils.h"
+void func_a(void) { inc(); }
 
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- 写法 A（`#ifndef` guard）：标准 C，可移植。缺点：宏名冲突风险、预处理开销。
-- 写法 B（`#pragma once`）：编译器保证每个文件只包含一次。缺点：非标准（但主流编译器都支持）、不能用于生成器输出的重复内容。
-
-**实践中：** 内核用 `#ifndef` guard。用户态项目可用 `#pragma once`（更简洁）。
-
-**复习：** → [9.3 头文件纪律](./9.3-header-discipline/9.3-头文件纪律.md)
-
-</details>
-
-### Q2: static 函数封装
-
-```c
-// uart.c
-static int calc_baud(int rate) {  // 文件内私有
-    return rate / 9600;
-}
-
-void uart_init(void) {            // 公开（在 .h 中声明）
-    int div = calc_baud(115200);
-    // ...
-}
-```
-
-> `static` 函数和公开函数有什么区别？`static` 函数能被其他 `.c` 调用吗？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** `static` 函数是文件内私有的——其他 `.c` 文件无法 `extern` 引用，链接器不导出其符号。
-
-**好处：**
-1. **封装** — 实现"私有方法"
-2. **内联优化** — 编译器能看到完整定义，可内联
-3. **避免符号污染** — 避免不同文件同名函数冲突
-
-**对应 C++ 的 `private` 方法。**
-
-**复习：** → [9.2 模块封装](./9.2-module-encapsulation/9.2-模块封装.md)
-
-</details>
-
-
-### Q4: extern inline
-
-```c
-// header.h
-static inline int max(int a, int b) {
-    return a > b ? a : b;
-}
-
-// vs
-
-// header.h
-inline int max(int a, int b) {
-    return a > b ? a : b;
-}
-// .c 文件中提供 extern 版本
-extern inline int max(int a, int b);
-```
-
-> `static inline` 和 `extern inline` 有什么区别？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- **`static inline`**：每个包含头文件的 `.c` 都有一份副本——可能有多个定义但不会冲突（`static` 内部链接）。编译器可以选择内联或不内联。简单、安全、最常用。
-- **`extern inline`**（C99）：头文件中的 `inline` 定义是"内联建议"，但**不提供外部定义**——需要某个 `.c` 文件中用 `extern inline` 声明，提供一份外部链接的函数体。如果编译器不内联，调用外部版本。
-
-**实际建议：**
-- 简单小函数：`static inline`（最安全，GCC/Clang 都支持）
-- 需要单一定义：C99 `inline` + `extern inline`（标准但复杂，很多项目不用）
-
-**内核惯用法：** `static inline` 在头文件中定义——简单高效。
-
-**复习：** → [9.2 模块封装](./9.2-module-encapsulation/9.2-模块封装.md) · [9.3 头文件纪律](./9.3-header-discipline/9.3-头文件纪律.md)
-
-</details>
-
-### Q5: 头文件循环依赖
-
-```c
-// a.h
-#include "b.h"
-struct A { struct B *b; };
-
-// b.h
-#include "a.h"
-struct B { struct A *a; };
+// b.c
+#include "utils.h"
+void func_b(void) { inc(); }
 
 // main.c
-#include "a.h"   // 会怎样？
+#include "utils.h"
+int main(void) { func_a(); func_b(); return counter; }
 ```
-
-> 上面的代码能编译通过吗？如何修复循环依赖？
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** 如果有 include guard，**能编译通过**——`a.h` 包含 `b.h`，`b.h` 包含 `a.h` 时 guard 阻止重复包含。但 `struct A` 中引用 `struct B *` 时，`struct B` 可能还没定义——**前向声明**解决：
+问题：int counter = 0; 定义在头文件中，被 a.c、b.c、main.c 三个文件包含后，产生多个 counter 定义，链接时报 multiple definition of counter 错误。
 
-**修复：** 用前向声明代替 `#include`：
+改进：
+1. 头文件中只声明，不定义：extern int counter;
+2. 在 utils.c 中定义：int counter = 0;
+3. 或者用 static 限制作用域（如果每个文件需要独立的 counter）
 
-```c
-// a.h
-#ifndef A_H
-#define A_H
-struct B;  // 前向声明，不需要 #include "b.h"
-struct A { struct B *b; };
-#endif
+正确的模块设计原则：
+1. 头文件只放声明（extern 变量、函数原型、类型定义、宏）
+2. .c 文件放定义（变量定义、函数实现）
+3. 使用 static 隐藏模块内部细节（信息封装）
+4. 头文件加 #ifndef 头文件守卫防止重复包含
 
-// b.h
-#ifndef B_H
-#define B_H
-struct A;  // 前向声明
-struct B { struct A *a; };
-#endif
-```
-
-**规则：** 头文件中只引用**指针**时用前向声明，不 `#include` 对方头文件。`.c` 文件中实际使用成员时才 `#include`。
-
-**内核实践：** `struct file` 的前向声明 `<fs.h>` 到处使用，避免循环依赖。
-
-**复习：** → [9.3 头文件纪律](./9.3-header-discipline/9.3-头文件纪律.md)
+这是 ch09 模块化编程的核心——头文件只声明，源文件才定义。
 
 </details>
 
+## 代码自测
 
-### Q3: Makefile 多模块
-
-```makefile
-SRC = main.c uart.c sensor.c
-OBJ = $(SRC:.c=.o)
-
-app: $(OBJ)
-	$(CC) -o $@ $(OBJ)
-
-%.o: %.c
-	$(CC) -c $< -o $@
-
-clean:
-	rm -f $(OBJ) app
-```
-
-> `$(SRC:.c=.o)` 做什么？`$@` 和 `$<` 分别是什么？
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：**
-- `$(SRC:.c=.o)` — **模式替换**：把 `SRC` 中所有 `.c` 后缀换成 `.o` → `main.o uart.o sensor.o`
-- `$@` — 目标名（如 `app` 或 `main.o`）
-- `$<` — 第一个依赖（如 `main.c`）
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
-`%.o: %.c` 是**模式规则**——任何 `.o` 文件依赖同名 `.c` 文件，用同一条规则编译。
-
-**复习：** → [9.5 Makefile 多模块](./9.5-makefile/9.5-Makefile多模块.md)
+</details>

@@ -182,3 +182,23 @@ fail:
 内核代码大量使用此模式（`out:` / `err_:` 标签），不是坏实践。
 
 **复习：** → [3.8 goto语句与标号](./3.8-goto语句与标号.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码中 if-else 的配对关系是怎样的？
+```c
+if (a > 0)
+    if (b > 0)
+        x = 1;
+else
+    x = 2;
+```
+
+<details>
+<summary>参考答案</summary>
+
+else 与最近的 if 配对（dangling else 问题）——else 属于 if (b > 0)，不是 if (a > 0)。当 a <= 0 时，x 不被赋值。如果想 else 属于外层 if，需要用花括号：if (a > 0) { if (b > 0) x = 1; } else x = 2;。K&R 建议始终用花括号避免歧义。
+
+</details>

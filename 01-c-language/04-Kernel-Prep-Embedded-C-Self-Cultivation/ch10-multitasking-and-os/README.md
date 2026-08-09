@@ -137,227 +137,58 @@ make clean
 
 ---
 
-## 章节自测
+## 代码自测
 
-> 多任务与 OS 是嵌入式进阶终点。看代码 → 想答案 → 点开验证。
-
-### Q1: 上下文切换
-
+**题目 1：** 以下代码在多任务环境下访问共享变量，有什么问题？给出两种解决方案。
 ```c
-// 简化的上下文切换（RTOS）
-void switch_to(TCB *next) {
-    // 1. 保存当前寄存器到当前 TCB 的栈
-    save_context(&current->stack_ptr);
-    // 2. 切换栈指针
-    current = next;
-    // 3. 从 next TCB 的栈恢复寄存器
-    restore_context(&current->stack_ptr);
-    // 4. PC 跳转（通过 ret/bx lr）
-}
-```
+volatile int shared_counter = 0;
 
-> 上下文切换保存哪些寄存器？为什么不能切换正在 `malloc` 的线程？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** 保存通用寄存器（`R0-R12`）、`SP`、`LR`（返回地址）、`PSR`（状态寄存器）。
-
-不能切换正在 `malloc` 的线程——`malloc` 持有**堆锁**，切走后其他线程调 `malloc` → **死锁**。
-
-**RTOS 解决方案：**
-- 关中断（`cpsid i`）后再切换 → 防止中断处理函数干扰
-- 使用无锁数据结构（DPDK ring）避免锁
-- 限制切换点（只在安全的地方 yield）
-
-**复习：** → [10.3 上下文切换](./10.3-context-switch/10.3-上下文切换.md)
-
-</details>
-
-### Q2: mutex vs semaphore
-
-```c
-// mutex — 互斥锁
-pthread_mutex_t lock;
-pthread_mutex_lock(&lock);
-shared_data++;
-pthread_mutex_unlock(&lock);
-
-// semaphore — 信号量
-sem_t sem;
-sem_wait(&sem);   // P 操作, count--
-// ... 访问资源 ...
-sem_post(&sem);   // V 操作, count++
-```
-
-> mutex 和 semaphore 有什么区别？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- **mutex** = 二值信号量（0 或 1），保护临界区。有**归属**：谁 lock 谁 unlock。可优先级继承。
-- **semaphore** = 计数信号量（N 个资源），用于**同步**（如生产者-消费者）。无归属：任何人都可以 post。
-
-**互斥**用 mutex，**同步**用 semaphore。混用容易死锁。
-
-**内核/DPDK：** `spinlock`（忙等）、`mutex`（可睡眠）、`semaphore`（计数同步）、`completion`（一次性同步）。
-
-**复习：** → [10.6 同步机制](./10.6-sync/10.6-同步机制.md)
-
-</details>
-
-### Q3: syscall 与用户/内核态
-
-```c
-// 用户态调用 write
-int fd = 1;
-write(fd, "hello", 5);
-
-// 硬件层面发生了什么？
-// 1. 用户态执行 syscall 指令
-// 2. ???
-// 3. 内核执行 sys_write
-// 4. ???
-// 5. 返回用户态
-```
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-1. 用户态执行 `syscall`（x86-64）/ `svc`（ARM）→ 触发**异常/陷阱**
-2. CPU 切到内核态（特权模式），跳到预定义的异常向量
-3. 内核保存用户态上下文（寄存器），查系统调用号 → 调 `sys_write`
-4. `sys_write` 执行实际 I/O（可能拷贝数据到内核缓冲 → 驱动 → 硬件）
-5. 内核恢复用户态上下文，`sysret`/`eret` 返回用户态
-
-**开销：** 一次 syscall 约 ~1-2μs（用户→内核切换 + TLB/Cache 影响）。HFT 尽量减少 syscall，用 `io_uring` 或共享内存。
-
-**复习：** → [10.9 Linux 系统调用](./10.9-syscall/10.9-Linux系统调用.md)
-
-</details>
-
-
-### Q5: 信号量——生产者消费者
-
-```c
-#include <semaphore.h>
-
-sem_t empty, full;
-int buffer[BUFFER_SIZE];
-
-void *producer(void *arg) {
-    int item = produce();
-    sem_wait(&empty);              // A: 等待空位
-    buffer[in] = item;
-    in = (in + 1) % BUFFER_SIZE;
-    sem_post(&full);               // B: 增加产品数
-    return NULL;
+// 任务1（高优先级，可能被中断打断）
+void task1(void) {
+    shared_counter++;
 }
 
-void *consumer(void *arg) {
-    sem_wait(&full);               // C: 等待产品
-    int item = buffer[out];
-    out = (out + 1) % BUFFER_SIZE;
-    sem_post(&empty);              // D: 增加空位
-    consume(item);
-    return NULL;
+// 中断服务程序
+void timer_isr(void) {
+    shared_counter++;
 }
 ```
-
-> 如果 producer 中 A 和 B 顺序反了（先 post full 再 wait empty），会怎样？还需要互斥锁吗？
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** A 和 B 反转后：producer 先 `sem_post(&full)` 再 `sem_wait(&empty)`——**信号量计数错误**。full 信号量增加但缓冲区可能没空位放入产品，consumer 可能在 producer 还没写入时就读取——**数据竞争**。
+问题：shared_counter++ 不是原子操作（读->改->写三步），如果 task1 正在执行 shared_counter++ 的读和写之间被 timer_isr 打断，ISR 中也修改 shared_counter，会导致一次更新丢失。
 
-**需要互斥锁吗？** 如果只有一个 producer 和一个 consumer：**不需要**（信号量已保证同步）。如果有多个 producer 或多个 consumer：**需要** mutex 保护 `buffer`/`in`/`out` 的访问。
+解决方案1：关中断（裸机/RTOS 常用）
+void task1(void) {
+    disable_irq();
+    shared_counter++;
+    enable_irq();
+}
 
-```c
-sem_wait(&empty);
-pthread_mutex_lock(&mutex);
-buffer[in] = item;
-in = (in + 1) % BUFFER_SIZE;
-pthread_mutex_unlock(&mutex);
-sem_post(&full);
-```
+解决方案2：原子操作（Linux 内核）
+#include <linux/atomic.h>
+atomic_t shared_counter = ATOMIC_INIT(0);
+void task1(void) {
+    atomic_inc(&shared_counter);
+}
 
-**HFT 用途：** 行情数据生产者→策略消费者，用无锁队列替代信号量+互斥锁减少延迟。
+关键概念：
+1. 临界区：访问共享资源的代码段，必须原子执行
+2. 互斥：确保同一时刻只有一个执行流进入临界区
+3. 裸机用关中断，Linux 用自旋锁/互斥锁/原子操作
+4. volatile 只保证不被优化，不保证原子性
 
-**复习：** → [10.2.4 临界区](../../../07-Linux-Kernel-DPDK-Network-C/01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch10-multitasking-and-os/README.md)
+这是 ch10 多任务与操作系统的核心——临界区保护与并发同步。
 
 </details>
 
-### Q6: mmap 共享内存 IPC
+## 代码自测
 
-```c
-#include <sys/mman.h>
-#include <fcntl.h>
-
-// 进程 A（创建共享内存）
-int fd = shm_open("/hft_shm", O_CREAT|O_RDWR, 0666);
-ftruncate(fd, sizeof(MarketData));
-MarketData *md = mmap(NULL, sizeof(MarketData),
-    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-md->price = 100.5;
-
-// 进程 B（打开共享内存）
-int fd = shm_open("/hft_shm", O_RDWR, 0666);
-MarketData *md = mmap(NULL, sizeof(MarketData),
-    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-printf("price=%f\n", md->price);  // 读取 100.5
-```
-
-> 共享内存 IPC 的优势是什么？有什么需要注意的？
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** 共享内存是**最快的 IPC**——数据直接在进程间共享物理内存页，**零拷贝**、无系统调用开销。
-
-**优势：**
-- 无内核参与数据传输（建立后纯内存读写）
-- 延迟最低——HFT 行情分发首选
-- 大数据量高效
-
-**注意事项：**
-1. **同步**——共享内存本身不提供同步机制，需要信号量/互斥锁/原子操作
-2. **生命周期**——`shm_open` 创建的对象在 `shm_unlink` 前一直存在，即使所有进程都退出
-3. **对齐**——共享结构体必须 `__attribute__((aligned(64)))` 避免 cache line 伪共享
-4. **权限**——`0666` 权限设置需考虑安全性
-
-**HFT 实践：** 行情进程 mmap 共享内存 → 策略进程 mmap 读取——亚微秒级行情分发。
-
-**复习：** → [10.4.4 Linux 系统调用](../../../07-Linux-Kernel-DPDK-Network-C/01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch10-multitasking-and-os/README.md)
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
 </details>
-
-
-### Q4: MMU 地址转换
-
-```
-// 虚拟地址 0x400000 → 物理地址 ?
-// 页表怎么查？
-
-VA = 0x0000000000400000
-Page dir → Page table → Page frame → Physical address
-```
-
-> MMU 怎么把虚拟地址翻译成物理地址？TLI 是什么？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** MMU 通过**页表**（多级）翻译虚拟地址：
-1. 虚拟地址拆分为页号 + 页内偏移
-2. 页号 → 查页目录 → 找到页表条目
-3. 页表条目包含物理页帧号 + 权限位
-4. 物理页帧号 + 页内偏移 = 物理地址
-
-**TLB**（Translation Lookaside Buffer）= 页表项的**硬件缓存**，避免每次访存都查多级页表。TLI miss → 走多级页表（慢）。
-
-**HFT 优化：** 用 `madvise`/hugepage 减少 TLB miss。大页（2MB/1GB）让一条 TLB 条目覆盖更多内存。
-
-**复习：** → [10.9 MMU 与地址转换](./10.9-syscall/10.9.4-Linux系统调用.md)

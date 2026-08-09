@@ -223,3 +223,21 @@ struct {
 ```
 
 **复习：** → [18.3 运行时效率](./18.3-运行时效率.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码探测运行时环境的什么信息？
+```c
+printf("sizeof(int) = %zu\n", sizeof(int));
+printf("sizeof(void*) = %zu\n", sizeof(void*));
+printf("sizeof(long) = %zu\n", sizeof(long));
+```
+
+<details>
+<summary>参考答案</summary>
+
+探测基本类型的大小。不同平台下 int/long/pointer 的大小可能不同：LP64 模型（64 位 Linux）中 long 和指针是 8 字节；LLP64 模型（64 位 Windows）中 long 是 4 字节，指针是 8 字节。了解这些差异是编写可移植代码的基础。用 <stdint.h> 的固定宽度类型可以避免这些问题。
+
+</details>

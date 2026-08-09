@@ -137,178 +137,48 @@ pmap -x $$
 
 ---
 
-## 章节自测
+## 代码自测
 
-> 内存管理是嵌入式/内核的核心。看代码 → 想答案 → 点开验证。
-
-### Q1: 进程五段与 mmap
-
+**题目 1：** 以下代码会导致什么问题？如何用 gdb 定位？
 ```c
-// mmap 可以映射什么？
-void *p1 = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-void *p2 = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-```
-
-> `MAP_PRIVATE` 和 `MAP_SHARED` 有什么区别？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- `MAP_PRIVATE` — 写时复制（COW）：修改不影响原文件，子进程 `fork` 后各自独立
-- `MAP_SHARED` — 共享：修改对其他映射者可见，可写回文件（`msync`）
-
-**用途：**
-- `MAP_ANONYMOUS|MAP_PRIVATE` — 分配内存（等价 `malloc` 大块）
-- `MAP_SHARED` + 文件 fd — 进程间共享内存（IPC、DPDK hugepage）
-- `MAP_SHARED` + `/dev/mem` — MMIO 寄存器映射
-
-**复习：** → [5.6 mmap](./5.6-mmap/5.6-mmap.md)
-
-</details>
-
-### Q2: 栈帧与 GDB bt
-
-```c
-void c(void) { *(int*)0 = 42; }  // 崩溃
-void b(void) { c(); }
-void a(void) { b(); }
-int main(void) { a(); }
-```
-
-> 程序崩溃后 `gdb` 里 `bt`（backtrace）显示什么？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** `bt` 显示调用栈（从崩溃点到 `main`）：
-```
-#0  c () at test.c:1
-#1  b () at test.c:2
-#2  a () at test.c:3
-#3  main () at test.c:4
-```
-
-**解析：** 栈帧链由保存的返回地址串联。`bt` 逐帧回溯 `RBP` 链读返回地址。如果栈被破坏（缓冲区溢出覆盖 RBP），`bt` 会显示混乱或中断。
-
-**复习：** → [5.2 栈帧](./5.2-stack-frame/5.2-栈帧.md)
-
-</details>
-
-
-### Q4: valgrind 检测内存泄漏
-
-```bash
-$ gcc -g leak.c -o leak
-$ valgrind --leak-check=full ./leak
-```
-
-```c
-// leak.c
-#include <stdlib.h>
-void leak(void) {
-    char *p = malloc(100);
-    // 忘记 free(p)
+void func(void) {
+    char buf[8];
+    strcpy(buf, "Hello, World! This is too long.");
 }
-int main() {
-    leak();
+
+int main(void) {
+    func();
     return 0;
 }
 ```
-
-> valgrind 会输出什么？`-g` 编译选项的作用？
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** valgrind 输出类似：
-```
-HEAP SUMMARY:
-    in use at exit: 100 bytes in 1 blocks
-LEAK SUMMARY:
-    definitely lost: 100 bytes in 1 blocks
-```
-并指出泄漏位置 `leak.c:4`（`malloc` 那一行）。
+会导致栈溢出（stack overflow / buffer overflow）：buf 只有 8 字节，strcpy 写入了 30+ 字节，覆盖了栈上 buf 之后的数据（包括返回地址）。
 
-**`-g` 的作用：** 在 ELF 中嵌入**调试信息**（DWARF）——源文件名、行号、变量映射。valgrind/GDB 用它把内存地址映射到源码行号。没有 `-g`，只能看到地址看不到行号。
+可能导致：
+1. 程序崩溃（Segmentation fault）——返回地址被覆盖后跳转到非法地址
+2. 安全漏洞——攻击者可构造特定字符串覆盖返回地址，执行任意代码
 
-**局限：** valgrind 慢 10-50 倍——不适合 HFT 生产环境。开发/测试阶段使用。
+用 gdb 定位：
+1. gcc -g -fno-stack-protector func.c -o app（编译时关闭栈保护以便复现）
+2. gdb ./app
+3. run —— 程序崩溃后 gdb 自动停在崩溃位置
+4. bt —— 查看回溯，如果返回地址被破坏，bt 会显示乱码
+5. x/20x $sp —— 查看栈内存，发现 buf 区域被字符串覆盖
+6. info registers —— 查看 PC/LR 是否指向非法地址
 
-**替代：** AddressSanitizer (`-fsanitize=address`)——比 valgrind 快，编译时插入检查。
-
-**复习：** → [5.7 内存错误](./5.7-memory-errors/5.7-内存错误.md) · [5.7.5 内存检测神器 Valgrind](./5.7-memory-errors/5.7.5-内存检测神器-Valgrind.md)
+这是 ch05 内存与栈管理的核心知识——理解栈帧结构和缓冲区溢出原理。
 
 </details>
 
-### Q5: mmap MAP_PRIVATE vs MAP_SHARED
+## 代码自测
 
-```c
-// 方式 A：写时复制
-int fd = open("file.txt", O_RDWR);
-char *a = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
-a[0] = 'X';   // 修改是否会写回文件？
-
-// 方式 B：共享映射
-char *b = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-b[0] = 'Y';   // 修改是否会写回文件？
-
-// 方式 C：匿名映射
-char *c = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-// c 的用途是什么？
-```
-
-> A、B、C 三种映射方式的区别？
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：**
-- A（MAP_PRIVATE）：**写时复制（COW）**——`a[0]='X'` 修改的是私有副本，**不写回文件**。适合读取配置文件后修改。
-- B（MAP_SHARED）：**共享映射**——`b[0]='Y'` **写回文件**（或延迟写回）。多进程共享同一物理页，一个进程的修改对其他进程可见。适合 IPC。
-- C（MAP_ANONYMOUS | MAP_SHARED）：**匿名共享内存**——不关联文件，`fork` 后父子进程共享。这是**进程间共享内存 IPC** 的基础。
-
-**HFT 用途：**
-- MAP_PRIVATE：映射市场数据文件做只读分析
-- MAP_SHARED：多进程策略引擎共享行情数据
-- 匿名共享：父子进程共享订单状态
-
-**复习：** → [5.6 mmap](./5.6-mmap/5.6-mmap.md)
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
 </details>
-
-
-### Q3: 内存错误四大类
-
-```c
-// (1)
-int *p = malloc(4);
-free(p);
-free(p);         // 什么错误？
-
-// (2)
-int *q = malloc(4);
-// 忘 free       // 什么错误？
-
-// (3)
-int *r = malloc(4);
-r[10] = 0;       // 什么错误？
-
-// (4)
-int *s = malloc(4);
-free(s);
-*s = 42;         // 什么错误？
-```
-
-<details>
-<summary>答案与复习指引</summary>
-
-| 编号 | 错误 | 后果 |
-|------|------|------|
-| (1) | double free | 堆元数据损坏 |
-| (2) | memory leak | 长期运行 OOM |
-| (3) | heap overflow | 覆盖相邻堆块 |
-| (4) | use-after-free | 读写已释放内存 |
-
-**工具：** Valgrind（`--tool=memcheck`）、ASan（`-fsanitize=address`）。ASan 更快，适合 CI；Valgrind 更详细，适合深度调试。
-
-**复习：** → [5.7 内存错误](./5.7-memory-errors/5.7-内存错误.md)

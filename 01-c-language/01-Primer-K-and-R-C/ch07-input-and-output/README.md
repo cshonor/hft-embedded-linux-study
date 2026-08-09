@@ -203,3 +203,20 @@ fprintf(stdout, "C\n");
 **教训：** 错误信息用 `fprintf(stderr, ...)`，确保立刻输出不被缓冲。调试时尤其重要。
 
 **复习：** → [7.6 错误处理stderr和exit](./7.6-错误处理stderr和exit.md) · [7.1 标准输入输出](./7.1-标准输入输出.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码中 printf 的格式串和参数不匹配，会发生什么？
+```c
+printf("%d\n", 3.14);
+```
+
+
+<details>
+<summary>参考答案</summary>
+
+未定义行为。%d 期望 int 参数，但传入 double。printf 是可变参数函数，不做类型检查——它按 %d 的方式读取栈上的 4 字节（int），但 3.14 是 8 字节 double。结果可能输出垃圾值。K&R 时代没有格式串检查，现代 GCC/Clang 可以用 -Wformat 检查这类错误。
+
+</details>

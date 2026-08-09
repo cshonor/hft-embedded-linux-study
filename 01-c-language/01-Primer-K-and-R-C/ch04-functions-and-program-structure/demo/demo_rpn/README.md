@@ -43,3 +43,23 @@ calc.exe
 | **增量编译** | `Makefile` 各 `.c` → `.o` 再链接 |
 
 详见 [4.8 程序块结构](../../4.8-程序块结构.md)。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下 RPN（逆波兰）计算器的栈操作体现了什么数据结构设计？
+```c
+#define MAXVAL 100
+int sp = 0;
+double val[MAXVAL];
+void push(double f) { val[sp++] = f; }
+double pop(void) { return val[--sp]; }
+```
+
+<details>
+<summary>参考答案</summary>
+
+用数组实现的栈。sp 是栈顶指针（指向下一个空位）。push 先写入 val[sp] 再 sp++，pop 先 sp-- 再读取 val[sp]。栈空：sp == 0。栈满：sp >= MAXVAL。这个实现缺少边界检查——push 不检查栈满，pop 不检查栈空。K&R 的代码简洁但不够健壮，教学中常用来展示核心逻辑。
+
+</details>

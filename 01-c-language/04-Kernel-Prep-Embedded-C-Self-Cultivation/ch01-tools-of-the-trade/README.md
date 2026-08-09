@@ -72,143 +72,45 @@ make clean
 
 ---
 
-## 章节自测
+## 代码自测
 
-> 工具链是嵌入式开发的武器。看代码 → 想答案 → 点开验证。
+**题目 1：** 以下 Makefile 有什么问题？如何修复？
+```c
+CC = gcc
+CFLAGS = -Wall -g
 
-### Q1: gcc 编译四阶段
+app: main.o
+	$(CC) -o app main.o
 
-```bash
-# 以下命令分别做什么？
-gcc -E main.c -o main.i    # (1)
-gcc -S main.c -o main.s    # (2)
-gcc -c main.c -o main.o    # (3)
-gcc main.o -o app          # (4)
+main.o: main.c utils.c utils.h
+	$(CC) $(CFLAGS) -c main.c
 
-# 如果只写 gcc main.c -o app 呢？
+# 问题：utils.c 被修改后，make 会重新编译吗？
 ```
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-1. `-E` 预处理：展开 `#include`/`#define` → `.i` 纯 C 源码
-2. `-S` 编译：C → 汇编 `.s`
-3. `-c` 汇编+编译：C → 目标文件 `.o`（一步到位）
-4. 链接：`.o` + 库 → 可执行文件
+不会重新编译 utils.c。问题在于 Makefile 中没有为 utils.o 定义规则。main.o 的依赖列出了 utils.c，但没有生成 utils.o 的规则。
 
-`gcc main.c -o app` 一步完成全部四阶段。
-
-**复习：** → [1.1 GCC 工具链](./1.1-gcc/1.1-GCC工具链.md)
-
-</details>
-
-### Q2: objdump 反汇编
-
-```bash
-# 这条命令做什么？
-objdump -dS main.o
-
-# -d 和 -S 分别是什么？
-```
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- `-d` 反汇编（disassemble）`.text` 段
-- `-S` 交替显示源码和汇编（需要 `-g` 编译）
-
-**用途：** 读编译器生成的汇编，理解 C 代码到指令的映射。内核调试、性能分析、HFT 热路径优化必备。
-
-**复习：** → [1.4 ELF 二进制分析工具](./1.4-elf-binary-tools/1.4-ELF二进制分析工具.md)
-
-</details>
-
-
-### Q4: gcc -E 查看宏展开
-
-```bash
-# 源码 debug.c
-#define MAX(a,b) ((a)>(b)?(a):(b))
-int x = MAX(1+2, 3+4);
-
-# 预处理命令
-gcc -E debug.c -o debug.i
-```
-
-> `debug.i` 中 `MAX(1+2, 3+4)` 展开为什么？为什么要用 `-E`？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** 展开为 `int x = ((1+2)>(3+4)?(1+2):(3+4));`
-
-**`-E` 的用途：** 只运行预处理器，输出展开后的源码。用于：
-- 调试宏展开错误（宏优先级、副作用）
-- 查看头文件包含顺序
-- 理解条件编译结果
-- 验证 `#include` 是否正确展开
-
-**HFT/内核：** 调试复杂宏（如 `container_of`、`list_for_each`）时，`-E` 是必备工具。
-
-**复习：** → [1.1 GCC 工具链](./1.1-gcc/1.1-GCC工具链.md)
-
-</details>
-
-### Q5: ar 创建静态库
-
-```bash
-# 三个源文件
-gcc -c a.c -o a.o
-gcc -c b.c -o b.o
-gcc -c c.c -o c.o
-
-# 创建静态库
-ar rcs libmylib.a a.o b.o c.o
-
-# 使用
-gcc main.c -L. -lmylib -o app
-```
-
-> `ar` 的 `r`、`c`、`s` 三个选项分别做什么？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：**
-- **r**：replace（替换/添加）——把 `.o` 文件插入归档，已存在则替换
-- **c**：create——归档不存在时创建（不显示警告）
-- **s**：write index——创建符号索引（等价于 `ranlib`），让链接器快速查找符号
-
-**不加 `s`：** 链接时可能报 `archive has no index`，需要额外运行 `ranlib`。
-
-**静态库本质：** `.a` 文件是 `.o` 的归档（类似 tar），链接器从中抽取需要的 `.o`。
-
-**复习：** → [1.1 GCC 工具链](./1.1-gcc/1.1-GCC工具链.md)
-
-</details>
-
-
-### Q3: make 基本规则
-
-```makefile
-app: main.o utils.o
-	gcc -o app main.o utils.o
-
-main.o: main.c utils.h
-	gcc -c main.c
-
+修复：添加 utils.o 的规则：
 utils.o: utils.c utils.h
-	gcc -c utils.c
-```
+	$(CC) $(CFLAGS) -c utils.c
 
-> 如果只改了 `utils.c`，执行 `make` 会重新编译哪些文件？为什么？
+并在 app 的依赖中加上 utils.o：
+app: main.o utils.o
+	$(CC) -o app main.o utils.o
+
+Makefile 的核心：目标:依赖+命令，make 比较时间戳决定是否重新编译。这是 ch01 工具链的核心知识。
+
+</details>
+
+## 代码自测
+
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** 只重新编译 `utils.o` 和重新链接 `app`。`main.o` 不重新编译（依赖 `main.c` 和 `utils.h` 没改）。
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
-`make` 比较目标文件和依赖文件的时间戳，只编译过时的目标。这是增量编译的基础。
-
-**复习：** → [1.3 Makefile](./1.3-makefile/1.3-Makefile.md)
+</details>

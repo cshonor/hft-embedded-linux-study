@@ -169,209 +169,47 @@ make clean
 
 ---
 
-## 章节自测
+## 代码自测
 
-> GNU C 扩展是标准 C 到内核的桥梁。看代码 → 想答案 → 点开验证。
-
-### Q1: typeof 与 container_of
-
+**题目 1：** 以下代码使用了哪些 GNU C 扩展？如果用 -std=c99 编译会怎样？
 ```c
-struct list_head {
-    struct list_head *next, *prev;
+#define container_of(ptr, type, member) ({ \
+    const typeof(((type *)0)->member) *__mptr = (ptr); \
+    (type *)((char *)__mptr - offsetof(type, member)); })
+
+struct node {
+    int data;
+    struct node *next;
 };
 
-struct task_struct {
-    int pid;
-    char name[16];
-    struct list_head tasks;  // 嵌入链表节点
-};
-
-// container_of 宏的原理
-#define container_of(ptr, type, member) \
-    ((type *)((char *)(ptr) - offsetof(type, member)))
-
-struct list_head *node = get_node();
-struct task_struct *task = container_of(node, struct task_struct, tasks);
+struct node *n = ...;
+struct node *head = container_of(&n->next, struct node, next);
 ```
-
-> `container_of` 做什么？为什么内核天天用？
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** `container_of` 从**嵌入的链表节点指针**反推出**包含它的父结构体指针**。
+使用的 GNU C 扩展：
+1. 语句表达式 ({ ... })：括号内的复合语句返回最后一个表达式的值。标准 C 不支持。
+2. typeof()：获取表达式的类型。标准 C 不支持（C23 才引入）。
+3. 零指针技巧 ((type *)0)：通过 NULL 强转访问成员获取类型，不实际解引用。
 
-**原理：** `offsetof(type, member)` = `tasks` 在 `task_struct` 中的偏移量。`node` 地址 - 偏移 = 父结构体起始地址。
+用 -std=c99 编译会报错：
+- error: ISO C forbids braced-groups within expressions（语句表达式）
+- error: expected identifier before typeof（typeof）
 
-**内核实例：** `list_for_each_entry` 遍历链表时，节点是 `list_head`，通过 `container_of` 拿到 `task_struct`。
+需要用 -std=gnu99 或 -std=gnu11 编译。
 
-**好处：** 链表实现与数据类型解耦——`list_head` 只管链接，不关心宿主类型。
-
-**复习：** → [6.4 typeof与container_of宏](./6.4-typeof-container-of/6.4-typeof与container_of宏.md)
+container_of 是 Linux 内核最常用的宏之一，遍历链表、从成员指针获取宿主结构体指针。理解它需要掌握 GNU C 扩展，这是 ch06 的核心——标准 C 到内核的桥梁。
 
 </details>
 
-### Q2: __attribute__((packed))
+## 代码自测
 
-```c
-struct __attribute__((packed)) UdpHeader {
-    uint16_t src;   // 2
-    uint16_t dst;   // 2
-    uint16_t len;   // 2
-    uint16_t chk;   // 2
-};
-
-printf("%zu\n", sizeof(struct UdpHeader));  // 多少？
-```
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** `sizeof = 8`（`packed` 移除所有 padding）。
-
-不加 `packed` → 也是 8（因为 `uint16_t` 对齐 2，恰好连续无 padding）。但如果加 `uint8_t` 类型则 `packed` 有区别。
-
-**packed 代价：** 未对齐访问。ARM 上未对齐的 `uint32_t` 访问可能触发 `SIGBUS`。x86 允许但性能下降。
-
-**协议头必须 `packed`**：网络字节序严格连续，padding 会破坏报文格式。
-
-**复习：** → [6.7 属性声明：aligned](./6.7-aligned/6.7-属性声明-aligned.md) · [6.7.4 packed](./6.7-aligned/6.7.4-属性声明-packed.md)
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
 </details>
-
-### Q3: weak 符号与板级覆盖
-
-```c
-// 默认实现（弱符号）
-int __attribute__((weak)) board_init(void) {
-    return 0;  // 默认什么都不做
-}
-
-// 板级代码覆盖（强符号）
-int board_init(void) {
-    // 具体硬件初始化
-    gpio_init();
-    clk_init();
-    return 0;
-}
-```
-
-> 链接时哪个 `board_init` 被选中？如果两个都定义了会报错吗？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** 链接器选**强符号**版本。不报错——`weak` 明确表示"可以被覆盖"。
-
-**用途：** BSP（板级支持包）——框架提供默认 `weak` 实现，各板子用强符号覆盖需要定制化的函数。Linux 内核 `arch/arm/` 下大量使用此模式。
-
-**复习：** → [6.9 属性声明：weak](./6.9-weak/6.9-属性声明-weak.md)
-
-</details>
-
-
-### Q5: __attribute__((section)) 自定义段
-
-```c
-// 把函数放到自定义段
-void __attribute__((section(".init_array"))) early_init(void) {
-    // 早期初始化代码
-}
-
-// 内核 __init 宏
-#define __init __attribute__((section(".init.text")))
-void __init kernel_setup(void) { ... }
-```
-
-> 自定义段有什么用途？链接脚本如何配合？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** 自定义段用途：
-1. **初始化函数表**——把多个初始化函数放到 `.init_array` 段，启动时遍历调用
-2. **内核 `__init`**——初始化代码放到 `.init.text`，启动完成后释放该段内存
-3. **驱动注册**——每个驱动的描述符放到 `.drv_list` 段，框架遍历注册
-
-**链接脚本配合：**
-```lds
-.init.text : {
-    _sinit = .;       /* 记录起始地址 */
-    *(.init.text)
-    _einit = .;       /* 记录结束地址 */
-}
-```
-运行时：`for (fn = _sinit; fn < _einit; fn++) (*fn)();`
-
-**对比 `#ifdef` 注册：** section 方式不需要修改框架代码——新增驱动只需在自己的 `.c` 文件中加 section 属性。
-
-**复习：** → [6.6.2 section](./6.6-section/6.6.2-section.md)
-
-</details>
-
-### Q6: __builtin_expect 分支提示
-
-```c
-#define likely(x)   __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
-
-void process_order(Order *order) {
-    if (unlikely(order == NULL))
-        return;  // 错误路径：不常见
-
-    if (likely(order->status == ACTIVE))
-        execute(order);  // 热路径：常见
-    else
-        reject(order);   // 冷路径
-}
-```
-
-> `likely`/`unlikely` 对性能有什么影响？编译器如何利用？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** `__builtin_expect` 告诉编译器分支的**概率**：
-- `likely(x)`：x 大概率为真
-- `unlikely(x)`：x 大概率为假
-
-**编译器利用方式：**
-1. **代码布局**：热路径（likely）放在 fall-through 位置（顺序执行），冷路径（unlikely）跳转到远处——减少 icache miss
-2. **优化侧重**：热路径内联展开，冷路径保持函数调用
-
-**HFT 用途：**
-- 错误检查 `if (unlikely(ptr == NULL))` ——错误路径不干扰热路径
-- 正常逻辑 `if (likely(order->valid))` ——优化正常路径
-
-**注意：** 过度使用可能适得其反——如果预测错误，性能更差。现代 CPU 有硬件分支预测器，`__builtin_expect` 主要是指导编译器代码布局。
-
-**复习：** → [6.11.6 likely/unlikely](./6.11-likely-unlikely/6.11.6-likely-unlikely.md)
-
-</details>
-
-
-### Q4: 语句表达式宏
-
-```c
-// 内核风格的 MAX 宏
-#define MAX(a, b) ({ \
-    typeof(a) _a = (a); \
-    typeof(b) _b = (b); \
-    _a > _b ? _a : _b; \
-})
-
-int x = MAX(foo(), bar());
-```
-
-> 为什么不直接写 `#define MAX(a,b) ((a) > (b) ? (a) : (b))`？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** 简单版本有**副作用问题**——`MAX(foo(), bar())` 展开后 `foo()` 被调用两次（如果 `a > b` 则 `a` 被求值两次）。如果 `foo()` 有副作用（如 `i++`），结果错误。
-
-语句表达式版本用临时变量 `_a`/`_b` 各只求值一次。`({ ... })` 是 GNU 扩展——代码块的最后一个表达式作为整个块的值。
-
-**C++ 的 `std::max` 用模板解决；C 用 `typeof` + 语句表达式。**
-
-**复习：** → [6.3 宏构造利器：语句表达式](./6.3-statement-expr/6.3-宏构造-利器-语句表达式.md)

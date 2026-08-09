@@ -266,3 +266,21 @@ close(fd);
 **教训：** syscall 比函数调用贵 3-4 个数量级。能用缓冲就用缓冲。
 
 **复习：** → [8.5 实例-fopen和getc函数的实现](./8.5-实例-fopen和getc函数的实现.md) · [8.2 低级IO-read和write](./8.2-低级IO-read和write.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码用 read/write 替代 printf/fgets，有什么区别？
+```c
+char buf[1024];
+int n = read(0, buf, sizeof(buf));  // 0 = stdin
+write(1, buf, n);                    // 1 = stdout
+```
+
+<details>
+<summary>参考答案</summary>
+
+read/write 是系统调用（POSIX），直接操作文件描述符——无缓冲、无格式化。printf/fgets 是标准库函数——有缓冲、类型安全。read 返回实际读取的字节数（可能小于请求），write 返回实际写入的字节数。系统调用比库函数开销大（用户态/内核态切换），但更底层。K&R ch08 是理解 Unix I/O 模型的基础。
+
+</details>

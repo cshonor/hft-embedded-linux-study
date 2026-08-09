@@ -43,3 +43,35 @@ Linux 内核、内核模块、DPDK 代码大量依赖 GNU-C 扩展；标准 C �
 - [x] 第 8 章 C 语言的面向对象编程思想
 - [x] 第 9 章 C 语言的模块化编程思想
 - [x] 第 10 章 C 语言的多任务编程思想和操作系统入门
+
+---
+
+## 代码自测
+
+**题目 1：** 嵌入式 C 自我修养这本书的核心定位是什么？它填补了标准 C 和内核开发之间的什么知识空白？
+```c
+// 以下内核代码用到了哪些本书讲解的知识点？
+#define list_entry(ptr, type, member) \
+    container_of(ptr, type, member)
+
+static inline void __list_add(struct list_head *new,
+                              struct list_head *prev,
+                              struct list_head *next) {
+    next->prev = new;
+    new->next = next;
+    new->prev = prev;
+    prev->next = new;
+}
+```
+<details>
+<summary>参考答案</summary>
+
+这段内核代码用到了本书讲解的多个知识点：
+1. container_of 宏（ch06 GNU C 扩展）：使用 typeof、语句表达式、零指针技巧，从链表节点指针获取宿主结构体指针
+2. 侵入式链表（ch08 OOP in C）：list_head 结构体嵌入到其他结构体中，实现通用链表
+3. static inline（ch09 模块化编程）：头文件中的内联函数，避免函数调用开销
+4. 指针运算（ch07 数据存储与指针）：container_of 内部用 char* 指针减法计算偏移
+
+本书的核心定位：标准 C 到内核开发的桥梁。内核代码大量使用 GNU C 扩展（__attribute__/typeof/section/weak）、OOP 模式（函数指针模拟虚函数）、模块化设计（头文件/源文件分离），这些标准 C 教材不讲，本书系统讲解。
+
+</details>

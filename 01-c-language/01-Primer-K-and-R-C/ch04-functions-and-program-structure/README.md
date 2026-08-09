@@ -223,3 +223,23 @@ int r2 = DBL(a + 1);      // (2)
 内核 `.config` 生成 `#define CONFIG_XXX`，编译时选择性地编译代码。没有条件编译，内核源码无法做到一份代码适配所有架构和配置。
 
 **复习：** → [4.11.3 条件包含](./4.11-c-preprocessor/4.11.3-条件包含.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码体现了 K&R 的什么编程风格？extern 的作用是什么？
+```c
+// file1.c
+int shared_var = 42;
+// file2.c
+extern int shared_var;
+int main() { return shared_var; }
+```
+
+<details>
+<summary>参考答案</summary>
+
+extern 声明 shared_var 在别处定义——它告诉编译器变量的类型和链接属性但不分配存储。file2.c 通过 extern 引用 file1.c 中的全局变量。K&R 风格中，共享变量通过 extern 在头文件中声明，在 .c 文件中定义。现代编程建议尽量减少全局变量，用函数参数传递数据。
+
+</details>

@@ -190,3 +190,22 @@ p2.name = strdup(p1.name);  // 独立分配
 
 </details>
 
+---
+
+## 代码自测
+
+**题目 1：** 以下结构体在 64 位系统上 sizeof 是多少？
+```c
+struct S {
+    char a;
+    int b;
+    char c;
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+通常是 12 字节。由于对齐要求，a 占 1 字节后填充 3 字节到 b（偏移 4），b 占 4 字节，c 占 1 字节后填充 3 字节使总大小是 4 的倍数。布局：a(1) + pad(3) + b(4) + c(1) + pad(3) = 12。如果改为 struct S { int b; char a; char c; }; 则 sizeof = 8。
+
+</details>

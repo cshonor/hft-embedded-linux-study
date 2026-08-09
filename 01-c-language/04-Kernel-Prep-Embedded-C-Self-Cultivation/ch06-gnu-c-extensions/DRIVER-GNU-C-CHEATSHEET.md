@@ -52,21 +52,25 @@ struct regmap {
 
 ## 代码自测
 
-**题目 1：** 以下 GNU C 扩展各有什么用途？
+**题目 1：** 以下 GNU C 扩展在内核中的典型用途是什么？
 ```c
-__attribute__((aligned(64))) int cache_line;
-__attribute__((packed)) struct S { char a; int b; };
-__attribute__((weak)) void handler(void) {}
-typedef typeof(int) my_int;
+container_of(ptr, type, member)   // ?
+__attribute__((section(".init")))    // ?
+__attribute__((aligned(64)))         // ?
+__attribute__((packed))              // ?
+__builtin_expect(exp, c)             // ?
+typeof(x)                            // ?
 ```
-
 <details>
 <summary>参考答案</summary>
 
-`aligned(64)`：指定缓存行对齐，避免 false sharing。
-`packed`：取消结构体填充，节省空间（但可能影响性能和可移植性）。
-`weak`：弱符号，允许被其他同名强符号覆盖——用于可选钩子。
-`typeof`：获取表达式类型，用于泛型宏（如 `container_of`）。
-这些扩展在 Linux 内核中大量使用。非标准 C，但 GCC/Clang 支持。
+- `container_of`：从结构体成员指针反推结构体指针，泛型链表核心
+- `section(".init")`：将函数放入 .init 段，启动后释放节省内存
+- `aligned(64)`：强制 Cache Line 对齐（64B），防止 false sharing
+- `packed`：取消结构体填充，映射网络协议头/硬件寄存器
+- `__builtin_expect`：分支预测提示，`likely()`/`unlikely()` 底层
+- `typeof`：类型推导，宏中声明与参数同类型的变量
+
+这些扩展是内核代码的"基础词汇"，不掌握无法读懂内核。
 
 </details>

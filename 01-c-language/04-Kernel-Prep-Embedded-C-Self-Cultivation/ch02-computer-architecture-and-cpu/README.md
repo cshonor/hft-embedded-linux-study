@@ -110,149 +110,40 @@ make clean
 
 ---
 
-## 章节自测
+## 代码自测
 
-> 理解 CPU 才能写出高性能 C。看代码 → 想答案 → 点开验证。
-
-### Q1: Cache 层次
-
-```
-// 一次内存访问的延迟：
-L1 cache: ~1ns
-L2 cache: ~4ns
-L3 cache: ~12ns
-DRAM:     ~100ns
-
-// HFT 为什么对 cache 疯狂？
-```
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** L1 和 DRAM 差 100 倍。HFT 每纳秒都关键——一个 cache miss = 100ns 延迟 = 在 100ns 内对手可能已完成交易。
-
-**HFT 优化：**
-- 数据紧凑（`packed` 减小 footprint）
-- 数据局部性（循环访问连续内存）
-- 预取（`__builtin_prefetch`）
-- 缓存行对齐（`aligned(64)`）
-- 避免伪共享
-
-**复习：** → [2.5 Cache 与流水线](./2.5-cache-pipeline/2.5-Cache与流水线.md)
-
-</details>
-
-### Q2: 流水线分支预测
-
+**题目 1：** 以下代码在 32 位 ARM 和 64 位 x86 上运行结果不同，为什么？
 ```c
-// 写法 A：分支
-if (data[i] > threshold)
-    sum += data[i];
-
-// 写法 B：无分支
-sum += (data[i] > threshold) ? data[i] : 0;
-```
-
-> 两种写法在数据随机时性能差多少？为什么？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** 数据随机时写法 A 可能慢 2-5 倍——CPU 分支预测失败后需**冲刷流水线**（~15-20 周期）。写法 B 无分支，用 `cmov` 或算术替代，无预测失败惩罚。
-
-**但：** 数据有规律时（如几乎都是 true），分支预测命中率高，写法 A 可能更快（条件赋值比无条件计算快）。
-
-**HFT 实践：** 热路径上数据随机时用无分支写法。`__builtin_expect` 给编译器提示分支倾向。
-
-**复习：** → [2.5 Cache 与流水线](./2.5-cache-pipeline/2.5-Cache与流水线.md)
-
-</details>
-
-
-### Q4: cache line 与伪共享
-
-```c
-// 两个线程各自操作不同变量
-struct {
-    int x;    // 线程 A 写
-    int y;    // 线程 B 写
-} data;
-
-// 线程 A: data.x++
-// 线程 B: data.y++
-```
-
-> 两个线程写不同变量，为什么性能可能很差？如何修复？
-
-<details>
-<summary>答案与复习指引</summary>
-
-**答案：** **伪共享（false sharing）**——`x` 和 `y` 在同一个 cache line（通常 64 字节）内。线程 A 写 `x` 使该 cache line 在 A 的核心缓存中变为 modified，线程 B 写 `y` 时需要从 A 的缓存拉取——两个核心**反复争夺 cache line 所有权**，性能急剧下降。
-
-**修复：** 用 `__attribute__((aligned(64)))` 强制不同变量到不同 cache line：
-
-```c
-struct {
-    int x __attribute__((aligned(64)));
-    int y __attribute__((aligned(64)));
-} data;
-```
-
-**HFT 关联：** 多线程交易策略中，每个线程的私有数据必须 cache line 对齐——否则伪共享导致延迟飙升。
-
-**复习：** → [2.5 Cache 与流水线](./2.5-cache-pipeline/2.5-Cache与流水线.md)
-
-</details>
-
-### Q5: volatile 与编译器优化
-
-```c
-volatile int *flag = (volatile int *)0x40000000;  // 硬件寄存器
-
-// 轮询等待硬件就绪
-while (*flag == 0) {
-    // busy wait
+#include <stdio.h>
+int main(void) {
+    int *p = 0;
+    printf("sizeof(p) = %zu\n", sizeof(p));
+    printf("sizeof(int) = %zu\n", sizeof(int));
+    // 在 32 位 ARM：sizeof(p)=4, sizeof(int)=4
+    // 在 64 位 x86：sizeof(p)=8, sizeof(int)=4
+    return 0;
 }
 ```
-
-> 如果去掉 `volatile`，编译器可能怎么优化？为什么？
-
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：** 去掉 `volatile`，编译器看到 `while (*flag == 0)` 中 `*flag` 没有被循环体修改——可能**只读一次**寄存器，如果当时为 0，就**死循环**（编译器认为值永远不会变）。
+指针大小取决于 CPU 架构和地址总线宽度：
+- 32 位 ARM：指针 4 字节（32 位地址空间）
+- 64 位 x86：指针 8 字节（64 位地址空间）
 
-`volatile` 告诉编译器：**每次访问都从内存重新读取**，不要缓存到寄存器，不要优化掉重复访问。
+int 大小通常固定为 4 字节（但标准只保证 sizeof(short) <= sizeof(int) <= sizeof(long)）。
 
-**用途：**
-- 硬件寄存器映射（MMIO）
-- 中断处理程序与主程序共享的标志变量
-- 信号处理函数中修改的全局变量
-
-**局限：** `volatile` 不保证原子性也不保证内存屏障——多线程同步用 `atomic` 或锁。
-
-**复习：** → [2.5 Cache 与流水线](./2.5-cache-pipeline/2.5-Cache与流水线.md) · [2.8 总线编址](./2.8-bus-addressing/2.8-总线编址.md)
+这体现了 CPU 架构对 C 程序的影响：数据类型大小、字节序（大端/小端）、内存对齐要求都依赖架构。跨平台代码应使用 stdint.h 中的固定宽度类型（uint32_t、int64_t）而不是 int/long。这是 ch02 计算机架构与 CPU 的核心知识点。
 
 </details>
 
+## 代码自测
 
-### Q3: 大小端检测
-
-```c
-int x = 0x12345678;
-char *p = (char*)&x;
-
-printf("%02x\n", p[0]);  // 输出什么？
-// 小端机和大端机分别输出什么？
-```
+**题目 1：** 嵌入式 C 自我修养这本书的学习路线是什么？为什么说它是标准 C 到内核的桥梁？
 
 <details>
-<summary>答案与复习指引</summary>
+<summary>参考答案</summary>
 
-**答案：**
-- 小端（x86/ARM 默认）：`p[0] = 0x78`（低字节存低地址）
-- 大端（网络字节序/PowerPC）：`p[0] = 0x12`（高字节存低地址）
+路线：标准 C → GNU C 扩展 → 嵌入式系统编程 → 操作系统基础。桥梁作用：内核代码大量使用 __attribute__/typeof/container_of/section/weak 等 GNU 扩展，这些标准 C 教材不讲。本书填补了标准 C 到内核驱动开发之间的知识空白。
 
-**网络协议**用大端（`htonl`/`ntohs` 转换）。x86/ARM 默认小端。跨平台传输二进制数据必须处理字节序。
-
-**复习：** → [2.8 总线编址](./2.8-bus-addressing/2.8-总线编址.md) — 大小端
+</details>

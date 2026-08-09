@@ -195,3 +195,22 @@ int main() {
 **复习：** → [1.10 外部变量与作用域](./1.10-外部变量与作用域.md)
 
 </details>
+
+---
+
+## 代码自测
+
+**题目 1：** 以下 K&R 风格的程序有什么 C89 不兼容的问题？
+```c
+main()
+{
+    printf("hello, world\n");
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+main() 没有返回类型声明——C89 隐式返回 int 可以编译，C99 起是错误。也没有 return 语句——C89 中 main 的返回值不确定，C99 起隐式 return 0。K&R 第二版（1989 ANSI C）已改为 int main(void) 形式。现代 C 应写：int main(void) { printf("hello, world\n"); return 0; }。
+
+</details>

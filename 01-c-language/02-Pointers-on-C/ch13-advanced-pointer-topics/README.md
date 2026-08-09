@@ -206,3 +206,22 @@ for_each(data, 3, print_sq, NULL);
 **教训：** 设计回调接口时永远预留 `void *priv` 参数，即使当前用不上。
 
 **复习：** → [13.3 Function Pointers](./13.3-function-pointers/13.3-function-pointers.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码有什么问题？
+```c
+char *get_msg(void) {
+    char msg[] = "hello";
+    return msg;
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+返回局部数组地址——未定义行为。msg 是局部数组，存储在栈上，函数返回后栈空间被回收。调用方得到的指针指向已失效的内存。正确做法：(1) 用 static char msg[]；(2) 动态分配 malloc；(3) 由调用方传入缓冲区。
+
+</details>

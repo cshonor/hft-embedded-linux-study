@@ -139,3 +139,22 @@ handle(CMD_RESET); // 会怎样？
 **复习：** → [4.8 switch 语句](./4.8-switch语句.md)
 
 </details>
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码在 C 语言中能编译吗？说明了 C 的什么特性？
+```c
+#include <stdio.h>
+int main() {
+    printf("hello\n");
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+能编译。C 是编译型语言——源代码经过预处理、编译、汇编、链接四个阶段生成可执行文件。这个程序体现了 C 的基本结构：包含头文件、main 函数入口、标准库函数调用。C 的设计哲学是"信任程序员"——它不会像 Java 那样强制检查很多东西。
+
+</details>
