@@ -155,6 +155,28 @@ file /boot/vmlinuz-*    # 常显示 Linux kernel；带 stub 时工具可能提�
 file /boot/efi/EFI/*/grubx64.efi   # PE32+ executable
 ```
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** UEFI 固件加载的是 PE32+ 格式还是 ELF？为什么内核却用 ELF？
+
+<details><summary>答案</summary>
+
+UEFI 固件规范要求 bootloader 是 PE32+ 格式（Windows 遗产）。Linux 内核通过 EFI stub 同时提供 PE 头让 UEFI 能加载它，加载后内核接管 CPU 就切换到 ELF 视角运行。EFI stub 让内核自身就是合法 EFI 应用，不需要 GRUB 中转。
+
+</details>
+
+**Q2.** 从按下电源到内核 start_kernel() 执行，经过了哪些阶段？
+
+<details><summary>答案</summary>
+
+1) UEFI 固件初始化硬件 → 2) UEFI 加载内核镜像（作为 PE32+ EFI 应用）→ 3) 内核 EFI stub 入口（arch/x86/boot/）→ 4) 解压内核（decompressor）→ 5) 进入保护模式/长模式 → 6) 跳转到 start_kernel()（init/main.c）。HFT 的 boot time 优化主要在减少固件 POST 和驱动初始化。
+
+</details>
+
+</details>
 ---
 
 ## 七、一页记忆卡

@@ -64,4 +64,26 @@ void inc_irq_count(void)
 
 → [Ch 8 softirq per-CPU](../../chapter-08-bottom-halves/) · [Ch 10 preempt_disable](../../chapter-10-kernel-synchronization/) · [06 Gorman Slab per-CPU cache](../../../../06-linux-mm/chapter-08-slab-allocator/notes/section-5-每-CPU-对象缓存.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** per-CPU 变量如何避免锁？有什么局限？
+
+<details><summary>答案</summary>
+
+per-CPU 变量给每个 CPU 一份独立副本，本核读写自己的副本无需锁。统计时累加所有 CPU 副本。局限：1) 抢占关闭期间才能安全访问本核副本（否则被迁移到其他核）；2) 累加需要遍历所有 CPU；3) 不能用于需要全局一致性的场景。网络收包计数器用 per-CPU，完美匹配单核收包模型。
+
+</details>
+
+**Q2.** 缓存行 bouncing 是什么？per-CPU 如何解决？
+
+<details><summary>答案</summary>
+
+多核频繁写同一全局变量（如计数器）→ 每个 CPU 的 L1 cache line 都要 invalidate → L2/L3 来回传递 cache line（bouncing）。per-CPU 给每个 CPU 独立计数器，本核写自己的 cache line 不影响其他核。只有读取总数时才汇总。这就是 `/proc/stat` 的实现原理。
+
+</details>
+
+</details>
 ---

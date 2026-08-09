@@ -143,4 +143,26 @@ CFS 任务运行中 `vruntime` **持续增长**，需要频繁改 key 重排 →
 
 → [§6.6](./section-6.6-选择合适的数据结构.md) · [§6.7 复杂度](./section-6.7-算法复杂度.md) · [Ch4 CFS](../../chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 红黑树为什么被 CFS 调度器选用？
+
+<details><summary>答案</summary>
+
+CFS 需要快速找到 vruntime 最小的进程（左下角节点）+ 快速插入/删除。红黑树：查找 O(log n)、插入 O(log n)、删除 O(log n)、找最小值 O(log n)。AVL 树更平衡但插入/删除旋转更多；B 树适合磁盘但内存中红黑树更简单。CFS 的 rbtree 缓存了最左节点，找最小值 O(1)。
+
+</details>
+
+**Q2.** rbtree 和 B+ 树在什么场景下各自更优？
+
+<details><summary>答案</summary>
+
+rbtree：内存中、少量数据（万级）、频繁插入/删除。B+ 树：磁盘上、大量数据（百万级）、顺序扫描多。内核 VFS 的目录项用 rbtree（内存）；数据库索引用 B+ 树（磁盘，减少 IO 次数）。HFT 的限价单簿在内存中，通常用 rbtree 或哈希表。
+
+</details>
+
+</details>
 ---

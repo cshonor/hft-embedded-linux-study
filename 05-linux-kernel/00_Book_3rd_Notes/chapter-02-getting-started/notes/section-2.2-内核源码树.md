@@ -71,4 +71,26 @@ arch/<arch>/  ·  drivers/  ← 架构细节 / 某硬件
 
 镜像如何被 UEFI 加载 → [§2.5](./section-2.5-ELF与UEFI启动链路.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 内核源码树中 kernel/、mm/、fs/、net/ 分别对应什么子系统？
+
+<details><summary>答案</summary>
+
+kernel/ = 进程调度/信号/时间/线程；mm/ = 内存管理（buddy/slab/page fault）；fs/ = VFS 和各文件系统（ext4/sysfs/proc）；net/ = 网络协议栈（socket/TCP/IP/netfilter）。HFT 工程师最常读 net/ 和 kernel/sched/。
+
+</details>
+
+**Q2.** arch/ 目录为什么有这么多子目录？它解决什么问题？
+
+<details><summary>答案</summary>
+
+Linux 支持几十种 CPU 架构（x86/arm64/riscv/...），arch/ 下每个子目录放架构相关代码：中断入口、TLB 刷新、原子操作、页表格式。可移植代码在顶层目录，通过 `#include <asm/xxx.h>` 间接调用 arch 实现。这就是 Linux 能跑在从手表到超算的原因。
+
+</details>
+
+</details>
 ---

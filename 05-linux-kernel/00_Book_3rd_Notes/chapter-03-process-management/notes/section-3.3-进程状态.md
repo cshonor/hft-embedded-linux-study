@@ -71,4 +71,26 @@ set_current_state(TASK_RUNNING);
 
 → [Ch 4 §4.4 休眠与唤醒](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md) · [Ch 4 §4.5 抢占](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [15 SysPerf §3.2 进程与调度](../../../../16-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [07 TLPI Ch29–33 线程与调度](../../../../03-linux-userspace-api/chapter-33-threads-further/notes.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** TASK_INTERRUPTIBLE 和 TASK_UNINTERRUPTIBLE 的区别？哪个对 HFT 更关键？
+
+<details><summary>答案</summary>
+
+TASK_INTERRUPTIBLE = 可被信号唤醒的睡眠（如 read 等数据）；TASK_UNINTERRUPTIBLE = 不可被信号唤醒的睡眠（如等待磁盘 IO，只能等 IO 完成）。HFT 关注 TASK_INTERRUPTIBLE：交易线程 poll 时如果被信号打断会丢数据，需要 SA_RESTART 或 busy-poll。
+
+</details>
+
+**Q2.** 进程处于 TASK_RUNNING 但没在 CPU 上运行是什么意思？
+
+<details><summary>答案</summary>
+
+TASK_RUNNING 表示「可运行」（在运行队列中等待调度），不一定是「正在运行」。可能多个进程都是 TASK_RUNNING 但只有一个在 CPU 上。CFS 调度器从运行队列中选 vruntime 最小的运行。HFT 绑核 + SCHED_FIFO 就是为了让交易线程永远在 CPU 上，不进运行队列等待。
+
+</details>
+
+</details>
 ---

@@ -85,4 +85,26 @@ sysret ──► 回到用户态
 
 
 > ↔ [ULK Ch10 §3 分派表与服务例程](../../../../20-linux-kernel-deep/chapter-10-system-calls/notes/section-3-分派表与服务例程.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** syscall 指令和 int 0x80 的区别？为什么现代 x86 用 syscall？
+
+<details><summary>答案</summary>
+
+int 0x80 是软件中断，需要查 IDT → 中断门 → 权限检查，开销约 200-400ns。syscall 是专门为快速系统调用设计的指令：不查 IDT、直接跳到 MSRs 指定的入口（LSTAR），开销约 50-100ns。现代内核默认用 syscall，int 0x80 仅保留兼容。
+
+</details>
+
+**Q2.** 系统调用处理程序为什么要检查 user_mode？
+
+<details><summary>答案</summary>
+
+内核需要验证请求来自用户态（而非内核态直接调用），防止内核代码绕过安全检查。`access_ok()` 验证用户态指针不会访问内核地址。如果内核代码能直接调 sys_read 传入内核指针，就绕过了所有安全检查。这是 Linux 安全模型的基础。
+
+</details>
+
+</details>
 ---

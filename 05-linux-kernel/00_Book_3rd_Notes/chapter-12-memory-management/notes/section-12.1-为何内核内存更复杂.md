@@ -43,4 +43,18 @@
 
 → [06 Gorman 物理内存描述](../../../../06-linux-mm/chapter-02-describing-physical-memory/) · [01 CSAPP Ch9 VM](../../../../02-computer-systems/chapter-09-virtual-memory/) · [Ch 2 内核 vs 用户 VA](../../chapter-02/getting-started-with-the-kernel/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 内核内存分配和用户态 malloc 的根本区别是什么？
+
+<details><summary>答案</summary>
+
+1) 内核不能用 malloc，用 kmalloc/vmalloc；2) 内核分配受 gfp_mask 约束（能否阻塞、能否等待 IO）；3) 内核分配失败不能返回 NULL 给用户（要正确处理 ENOMEM）；4) 内核分配在中断上下文中不能睡眠（GFP_ATOMIC）；5) 内核内存需要考虑 DMA 约束（物理连续、32 位地址限制）。
+
+</details>
+
+</details>
 ---

@@ -77,4 +77,26 @@ SYSCALL_DEFINE3(read, int, fd, char __user *, buf, size_t, count)
 
 
 > ↔ [ULK Ch10 §6 参数验证与内核封装](../../../../20-linux-kernel-deep/chapter-10-system-calls/notes/section-6-参数验证与内核封装.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** access_ok() 验证什么？为什么不能完全保证安全？
+
+<details><summary>答案</summary>
+
+access_ok(addr, size) 验证 [addr, addr+size) 区间在用户态地址范围内（< TASK_SIZE），防止用户态传入内核地址。但不能保证：1) 页面已映射（可能 page fault）；2) 指针指向的内存有效；3) 竞争条件（TOCTOU：验证后另一个线程 munmap）。完整安全需要 copy_from_user/copy_to_user 配合。
+
+</details>
+
+**Q2.** copy_from_user() 和 memcpy() 的区别？为什么内核不能用 memcpy 拷贝用户态数据？
+
+<details><summary>答案</summary>
+
+memcpy 直接拷贝不检查地址 → 如果用户态传入内核地址会破坏内核内存。copy_from_user 检查地址范围 + 处理 page fault + 返回未拷贝字节数。如果用户态页面被换出，copy_from_user 会安全地 page in，memcpy 会直接 oops。
+
+</details>
+
+</details>
 ---

@@ -73,4 +73,26 @@ kthread（无用户地址空间）
 
 → [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [Ch 4 §4.6 RT](../../chapter-04-process-scheduling/notes/section-4.6-实时调度策略.md) · [07 TLPI Ch29 线程](../../../../03-linux-userspace-api/chapter-29-threads-intro/notes.md) · [07 TLPI Ch30 线程同步](../../../../03-linux-userspace-api/chapter-30-thread-synchronization/notes.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Linux 线程和进程在内核层面有什么区别？clone() 的 flags 如何控制？
+
+<details><summary>答案</summary>
+
+Linux 内核没有「线程」概念，线程 = 共享资源的进程。clone(CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD) 创建线程：共享地址空间/文件表/信号处理/线程组。clone(不设这些 flag) 创建进程。`pthread_create` 底层调 clone，`fork` 底层也调 clone 但不设共享 flag。
+
+</details>
+
+**Q2.** NPTL 相比 LinuxThreads 改进了什么？为什么对 HFT 重要？
+
+<details><summary>答案</summary>
+
+LinuxThreads 用单独进程实现线程，每线程一个 PID，信号处理混乱。NPTL（Native POSIX Thread Library）：线程共享 PID（gettid 区分），信号符合 POSIX（per-thread 信号掩码），线程创建快 10x+。HFT 多线程依赖 NPTL 的 futex 快速锁和 per-thread 信号。
+
+</details>
+
+</details>
 ---

@@ -30,4 +30,18 @@ Unix/Linux 将设备分为几类（+ 扩展）：
 
 **HFT：** 行情路径走 **网卡 + socket/DPDK**；配置/调优常读 **`/sys/class/net/...`**。
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 字符设备、块设备、网络设备的区别？HFT 系统中各有什么？
+
+<details><summary>答案</summary>
+
+字符设备：按字节流访问，无缓冲（串口/传感器/GPU）。块设备：按块随机访问，有 page cache（磁盘/SSD/NVMe）。网络设备：无 /dev 节点，通过 socket 接口（网卡）。HFT：网卡=网络设备（行情/订单），NVMe=块设备（历史数据/日志），FPGA=字符设备（自定义加速）。网络设备是最特殊的——不走 VFS。
+
+</details>
+
+</details>
 ---

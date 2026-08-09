@@ -54,4 +54,18 @@ addr ──► mm_rb 查找
 
 → [Ch 15.8 缺页路径](./section-15.8-从访问到缺页概念.md) · [Ch 5 copy_from_user](../../chapter-05-system-calls/) · [06 Gorman 异常处理](../../../../06-linux-mm/chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** find_vma() 的工作原理？在什么场景下被调用？
+
+<details><summary>答案</summary>
+
+find_vma(mm, addr) 在红黑树中查找第一个 vma_end > addr 的 VMA。调用场景：1) 缺页处理（page fault handler 找 addr 所属 VMA → 判断是合法访问还是 SIGSEGV）；2) mmap/munmap 合并相邻 VMA；3) /proc/pid/maps 查找。如果 addr 不在任何 VMA 范围内 → 访问未映射地址 → SIGSEGV。
+
+</details>
+
+</details>
 ---

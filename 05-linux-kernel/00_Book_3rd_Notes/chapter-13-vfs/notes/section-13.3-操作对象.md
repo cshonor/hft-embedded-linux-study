@@ -24,4 +24,18 @@ struct file_operations {
 
 → 教学对照：[01 Day 18–19 FAT](../../../../projects/P9-os-from-scratch/thirty-days-os/day-18-dir/)（具体 FS 在 VFS 之下）
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** file_operations、inode_operations、super_operations 分别在什么时机被调用？
+
+<details><summary>答案</summary>
+
+file_operations：对已打开文件操作（read/write/mmap/ioctl/poll），每次 syscall 直接调用。inode_operations：文件系统元数据操作（create/lookup/link/unlink），路径解析和文件创建时调用。super_operations：文件系统级别操作（alloc_inode/evict_inode/write_inode），inode 生命周期管理时调用。HFT 驱动如果实现字符设备，只需提供 file_operations。
+
+</details>
+
+</details>
 ---

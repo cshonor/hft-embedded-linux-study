@@ -18,4 +18,18 @@
 
 **HFT：** 用户态也要 **按多核+弱序** 写无锁结构 — `memory_order`、对齐、false sharing。
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** CONFIG_PREEMPT 和 CONFIG_PREEMPT_NONE 对 HFT 有什么影响？
+
+<details><summary>答案</summary>
+
+PREEMPT_NONE：内核态不可抢占（syscall 执行完才调度）→ 延迟高但吞吐好。PREEMPT（ voluntary）：内核态可自愿抢占点 → 平衡。PREEMPT_RT（实时）：几乎所有内核代码可抢占 + 自旋锁转 mutex → 延迟最小但吞吐损失。HFT 通常用 PREEMPT_RT 补丁内核，保证交易线程的调度延迟 < 100μs。
+
+</details>
+
+</details>
 ---

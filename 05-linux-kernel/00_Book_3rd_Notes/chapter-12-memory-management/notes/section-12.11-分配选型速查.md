@@ -62,4 +62,18 @@
 
 → [Ch 12 各节](./section-12.1-为何内核内存更复杂.md) · [06 Gorman 全书索引](../../../../06-linux-mm/) · [Ch 15 用户 mmap](../../chapter-15-process-address-space/) · [17 HFT Practice](../../../../18-hft-engineering/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 总结：内核中需要分配 200 字节、4MB、100MB 分别用什么？
+
+<details><summary>答案</summary>
+
+200 字节 → kmalloc(200, GFP_KERNEL)，从 kmalloc-256 slab 分配，O(1)。4MB → alloc_pages(GFP_KERNEL, 10)（2^10=1024 页=4MB），从 buddy 系统分配，物理连续。100MB → vmalloc(100MB)，虚拟连续物理可不连续，需改页表。选型口诀：小用 kmalloc、大且连续用 alloc_pages、大且不连续用 vmalloc。
+
+</details>
+
+</details>
 ---

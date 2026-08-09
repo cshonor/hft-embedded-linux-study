@@ -66,4 +66,26 @@ if (p->state == TASK_RUNNING)
 
 → [§3.3 状态](./section-3.3-进程状态.md) · [Ch 4 调度](../../chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md) · [Ch 15 §15.2 mm_struct](../../chapter-15-process-address-space/notes/section-15.2-内存描述符.md) · [07 TLPI Ch6 进程环境](../../../../03-linux-userspace-api/chapter-06-processes/notes.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** task_struct 存放在哪里？为什么 x86_64 把它放在线程私有区域？
+
+<details><summary>答案</summary>
+
+task_struct 通过 `current` 宏访问。x86_64 把 task_struct 的地址存在 GS 段寄存器指向的 per-CPU 变量中，这样 `current` 只需读 GS:offset，无需遍历链表。这是为了性能：内核代码频繁访问 current（调度/信号/权限检查），O(1) 访问至关重要。
+
+</details>
+
+**Q2.** task_struct 中哪些字段对 HFT 调度优化最关键？
+
+<details><summary>答案</summary>
+
+state（进程状态，决定可否调度）、prio/normal_prio（动态优先级，CFS 用 vruntime 计算）、policy（SCHED_FIFO/SCHED_NORMAL，HFT 用 SCHED_FIFO 绑核）、cpus_allowed（CPU 亲和性，绑核避免 cache miss）、nr_cpus_allowed（可运行 CPU 数）。
+
+</details>
+
+</details>
 ---

@@ -28,4 +28,18 @@
 
 → **Ch 16** 页缓存挂在 address_space / inode 侧
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** VFS 的四大核心对象是什么？它们的关系？
+
+<details><summary>答案</summary>
+
+super_block（文件系统实例）、inode（文件元数据）、dentry（目录项/路径缓存）、file（打开的文件实例）。关系：super_block → 管理该 FS 的所有 inode；inode → 对应一个文件；dentry → 构成路径树，指向 inode；file → 进程打开文件后创建，指向 dentry。一个 inode 可被多个 dentry 引用（硬链接），一个 dentry 可被多个 file 引用（多次 open）。
+
+</details>
+
+</details>
 ---

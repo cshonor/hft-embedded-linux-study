@@ -65,4 +65,18 @@ int foo(int x)
 
 → **Documentation/process/coding-style.rst**（主线现行文档，比 3rd 书更全）
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Linux 内核代码风格的关键规则有哪些？为什么强制？
+
+<details><summary>答案</summary>
+
+1) 缩进用 Tab（8 字符宽）不是空格；2) 行宽 80 字符；3) 函数 < 50 行；4) 变量声明在块开头（C89 风格）；5) `goto` 集中错误处理。强制统一风格是因为内核有千万行代码、数千贡献者，统一风格降低 review 成本。`scripts/checkpatch.pl` 自动检查。HFT 团队代码也应建立类似规范。
+
+</details>
+
+</details>
 ---

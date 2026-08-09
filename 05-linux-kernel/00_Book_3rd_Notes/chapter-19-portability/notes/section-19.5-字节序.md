@@ -21,4 +21,18 @@ val = be32_to_cpu(hdr->magic);
 
 → 用户态：`htons`/`ntohl`（同一数学）
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 大端和小端的区别？网络字节序是什么？x86 和 ARM64 分别是什么？
+
+<details><summary>答案</summary>
+
+小端：最低地址存最低字节（0x1234 → [34][12]）。大端：最低地址存最高字节（0x1234 → [12][34]）。网络字节序 = 大端（BSD 遗产）。x86/x86_64 = 小端。ARM64 = 双端（默认小端，可配置大端）。HFT 协议解析必须处理字节序：`ntohl/htonl` 转换网络序。FPGA 可能用大端，与 CPU 交互时要注意转换。
+
+</details>
+
+</details>
 ---

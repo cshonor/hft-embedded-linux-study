@@ -27,4 +27,26 @@
 
 → **Ch 8** 下半部与工作队列
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** kfifo 为什么适合单生产者单消费者场景？
+
+<details><summary>答案</summary>
+
+kfifo 是环形缓冲区，单生产者单消费者时不需要锁：生产者只写 head 指针，消费者只读 tail 指针，两者通过 unsigned 溢出回绕天然同步。这就是 DPDK rte_ring 的原理。HFT 用 kfifo/ring buffer 在网卡收包线程和交易策略线程之间传递行情数据，零锁开销。
+
+</details>
+
+**Q2.** kfifo 的环形缓冲区大小为什么必须是 2 的幂？
+
+<details><summary>答案</summary>
+
+因为环形缓冲区回绕用 `index & (size - 1)` 而非 `index % size`。位与比取模快 10x+（取模需要除法指令）。且 size 为 2^n 时 size-1 的二进制全是 1，位与等价于取模。这是内核中常见的性能优化技巧。
+
+</details>
+
+</details>
 ---

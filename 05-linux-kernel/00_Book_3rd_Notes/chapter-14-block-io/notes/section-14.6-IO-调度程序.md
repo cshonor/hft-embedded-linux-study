@@ -42,4 +42,26 @@ HDD 时代思维：
 
 → [03 SysPerf Ch9 §9.4](../../../../16-systems-performance/chapter-09-disks/notes/section-9.4-硬件与软件架构.md) · [Ch15 bpf biolatency](../../../../16-systems-performance/chapter-15-bpf/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Deadline、CFQ、BFQ、none 调度器分别适合什么场景？
+
+<details><summary>答案</summary>
+
+Deadline：保证请求不饿死（每个请求有超时），适合数据库/服务器。CFQ（Completely Fair Queueing）：按进程公平分配 IO 带宽，适合桌面。BFQ：CFQ 改进版，更适合交互/低延迟。none/mq-none：不排序不合并，直接发送，适合 NVMe（无寻道开销）。HFT NVMe 用 none 调度器减少延迟。
+
+</details>
+
+**Q2.** 为什么 SSD 不需要 IO 调度器？
+
+<details><summary>答案</summary>
+
+机械盘需要排序是因为寻道（磁头移动）是毫秒级，排序减少寻道距离。SSD 随机访问延迟恒定（~100μs），排序无收益反而增加 CPU 开销。现代 NVMe 用 multi-queue（每 CPU 一个提交队列 + 每设备一个完成队列），完全绕过传统 IO 调度器。这就是 `nvme.io_queue` > 1 的意义。
+
+</details>
+
+</details>
 ---

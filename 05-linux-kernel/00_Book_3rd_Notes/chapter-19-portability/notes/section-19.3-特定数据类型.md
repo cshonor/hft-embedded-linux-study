@@ -25,4 +25,18 @@
 
 | 要求 | 用 **`signed char`** 或 **`unsigned char`** 明示 |
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 内核中的不透明类型有哪些？为什么不直接用底层类型？
+
+<details><summary>答案</summary>
+
+不透明类型：pid_t（进程ID）、gid_t（组ID）、uid_t（用户ID）、dev_t（设备号）。不直接用 int 是因为：不同架构/内核版本可能改变底层类型大小（pid_t 可能是 int 或 unsigned int）。用 typedef 隔离，代码不依赖具体类型大小。HFT 代码中传递这些值时也应该用对应类型而非 int。
+
+</details>
+
+</details>
 ---

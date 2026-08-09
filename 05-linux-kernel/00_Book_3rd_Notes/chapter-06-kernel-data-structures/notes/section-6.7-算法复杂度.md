@@ -19,4 +19,26 @@
 
 → [02-CSAPP 算法复杂度](../../../../02-computer-systems/) · [03 SysPerf 方法论](../../../../16-systems-performance/chapter-02-methodologies/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** O(1) 和 O(log n) 在内核中意味着什么？n=10000 时差异多大？
+
+<details><summary>答案</summary>
+
+O(1)：无论系统多少进程/文件，操作恒定时间。O(log n)：n=10000 时 log₂(10000)≈13，比 O(1) 多约 13 次操作。内核热路径（如 schedule()）必须 O(1)，因为每秒可能调用百万次。CFS 的 O(log n) 调度在选择下一个进程时可接受（有缓存优化）。
+
+</details>
+
+**Q2.** 为什么内核开发者对 O(n) 操作特别敏感？
+
+<details><summary>答案</summary>
+
+内核 O(n) 操作在 n 很大时会导致延迟尖峰。例如早期 Linux 的 O(n) 调度器遍历所有进程找最高优先级的，1000 个进程时每次调度遍历 1000 个 task_struct → cache miss 暴增 → 延迟不可预测。O(1) 调度器和 CFS 的出现就是为了消灭 O(n)。HFT 要求确定性延迟，O(n) 是禁忌。
+
+</details>
+
+</details>
 ---

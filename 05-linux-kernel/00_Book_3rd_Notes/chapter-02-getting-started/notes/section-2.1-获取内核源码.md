@@ -156,4 +156,26 @@ patch -p1 < ../some.patch
 → 顶层目录导航：[§2.2](./section-2.2-内核源码树.md)
 → 收官：[Ch 20](../../chapter-20-patches-community/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** `git clone --depth 1` 获取浅克隆有什么好处和局限？
+
+<details><summary>答案</summary>
+
+好处：只下载最新 commit 的文件树，跳过历史，下载量从 GB 级降到百 MB 级，速度快 10x+。局限：无法 `git log` 看历史、无法 `git blame`、无法 checkout 旧版本。内核开发需要完整历史时应去掉 --depth。
+
+</details>
+
+**Q2.** 如何验证下载的内核源码完整性？
+
+<details><summary>答案</summary>
+
+`git log --oneline -1` 确认最新 commit；对比 kernel.org 公布的 tag；对 tarball 用 GPG 验签（`gpg --verify linux-*.tar.sign`）。HFT 定制内核建议从 kernel.org LTS 分支拉取而非第三方 fork。
+
+</details>
+
+</details>
 ---

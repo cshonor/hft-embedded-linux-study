@@ -70,4 +70,26 @@ wait(NULL);
 
 → [§3.5 clone/线程](./section-3.5-Linux-的线程实现.md) · [Ch 15 地址空间](../../chapter-15-process-address-space/notes/section-15.1-地址空间.md) · [07 TLPI Ch24/27 fork/exec](../../../../03-linux-userspace-api/chapter-24-process-creation/notes.md) · [01 CSAPP Ch9 COW](../../../../02-computer-systems/chapter-09-virtual-memory/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 写时拷贝（COW）如何让 fork() 变快？什么情况下 COW 反而变慢？
+
+<details><summary>答案</summary>
+
+COW：fork 时只复制页表（不复制物理页），父子共享物理页标记只读。任一方写时触发 page fault → 内核分配新页 → 拷贝内容 → 改页表为可写。如果 fork 后立即 exec（典型 shell），COW 几乎零拷贝。如果 fork 后父子都大量写（如 Redis BGSAVE），COW 会频繁触发 page fault 反而慢。
+
+</details>
+
+**Q2.** vfork() 和 fork() 的区别？为什么 vfork 在现代代码中不推荐？
+
+<details><summary>答案</summary>
+
+vfork：父子共享页表（不是 COW），子进程挂起父进程直到 exec/exit。比 fork 快（零页表拷贝）但极危险：子进程不能修改任何变量（会破坏父进程）。现代 Linux 的 fork+COW 已足够快（仅复制页表 ~微秒级），vfork 的大多数用途已被 posix_spawn() 替代。
+
+</details>
+
+</details>
 ---

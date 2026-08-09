@@ -21,4 +21,18 @@
 
 → **Ch 14** request_queue · **NVMe 多队列** 时代思想仍相关
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** pdflush 和 flusher 线程的区别？为什么换？
+
+<details><summary>答案</summary>
+
+pdflush（2.6.6+）：全局线程池，多设备竞争同一池 → 锁竞争。flusher（2.6.32+）：每块设备一个线程（bdi_writeback），无跨设备竞争。NVMe 的 multi-queue 进一步：每 CPU 一个提交队列。演进方向：减少锁竞争、提高并行度。这就是为什么 NVMe + multi-queue 比 SATA 快——不仅是带宽，更是架构并行度。
+
+</details>
+
+</details>
 ---

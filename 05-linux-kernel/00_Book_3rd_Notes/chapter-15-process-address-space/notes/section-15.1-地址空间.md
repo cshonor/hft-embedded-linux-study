@@ -68,4 +68,18 @@ Linux 是 **虚拟内存 OS** — 每个进程看到 **独立的线性 VA 空间
 
 → [01 CSAPP Ch9 VM](../../../../02-computer-systems/chapter-09-virtual-memory/) · [06 Gorman Ch4 进程地址空间](../../../../06-linux-mm/chapter-04-process-address-space/) · [Ch 3 fork/COW](../../chapter-03-process-management/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 虚拟地址和物理地址的关系？为什么需要虚拟地址？
+
+<details><summary>答案</summary>
+
+虚拟地址(VA) → 页表 → 物理地址(PA)。需要 VA 因为：1) 进程隔离（每进程独立地址空间，互不干扰）；2) 内存超用（物理不够时换出到磁盘）；3) 简化链接/加载（统一地址空间布局）；4) 共享内存（多进程映射同一物理页）。HFT 关心 VA→PA 翻译延迟：TLB miss → page table walk → ~100ns。Huge Page 减少 TLB miss。
+
+</details>
+
+</details>
 ---

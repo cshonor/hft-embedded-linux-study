@@ -68,4 +68,26 @@ mlock(ring, size);
 
 → [Ch 5 syscall](../../chapter-05-system-calls/) · [Ch 16 页缓存](../../chapter-16-the-page-cache-and-page-writeback/) · [01 CSAPP mmap](../../../../02-computer-systems/chapter-09-virtual-memory/) · [17 HFT Practice](../../../../18-hft-engineering/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_SHARED, -1, 0) 做了什么？
+
+<details><summary>答案</summary>
+
+1) do_mmap 在 mm 中创建新 VMA（VM_READ|VM_WRITE|VM_SHARED|VM_ANONYMOUS）；2) 不分配物理页（延迟到首次访问）；3) 返回 VMA 起始地址。首次写 → page fault → 分配物理页 → 建 PTE。MAP_SHARED 的页在 fork 后父子共享（可用于 IPC）。HFT 用 MAP_SHARED|MAP_LOCKED 共享行情数据并锁在物理内存。
+
+</details>
+
+**Q2.** mlock() 对 HFT 有什么意义？
+
+<details><summary>答案</summary>
+
+mlock 锁定内存页在物理 RAM 中，禁止换出到 swap。HFT 交易数据如果被换出，访问时需要磁盘 IO → 毫秒级延迟 → 灾难。mlockall(MCL_CURRENT|MCL_FUTURE) 锁定当前和未来所有页。HFT 进程启动时 mlockall 防止任何页被换出。需要 CAP_IPC_LOCK 或 root 权限。
+
+</details>
+
+</details>
 ---

@@ -54,4 +54,18 @@ mm_struct
 
 → [Ch 6 内核数据结构](../../chapter-06-kernel-data-structures/) · [Ch 4 CFS rbtree](../../chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md) · [15.5 find_vma](./section-15.5-操作内存区域.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 为什么 VMA 同时用链表和红黑树两种结构？
+
+<details><summary>答案</summary>
+
+链表：按地址顺序遍历所有 VMA（如 /proc/maps 输出、munmap 合并检查）。红黑树：按起始地址查找特定 VMA（O(log n)，如缺页处理时找 addr 属于哪个 VMA）。两种结构各有优势：遍历用链表 O(n)，查找用红黑树 O(log n)。mmap/munmap 频繁操作 VMA，需要高效数据结构。
+
+</details>
+
+</details>
 ---

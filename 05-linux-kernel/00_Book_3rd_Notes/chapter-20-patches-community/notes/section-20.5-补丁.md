@@ -44,4 +44,18 @@ git format-patch origin/main # 相对主线的一系列补丁
 
 | HFT 团队 | 内部驱动/内核 fork 仍建议 **小步 commit + format-patch 风格说明** — 便于 audit 与回滚 |
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** git format-patch 生成的补丁格式是什么？
+
+<details><summary>答案</summary>
+
+补丁 = 邮件格式：Subject（[PATCH] 前缀）、From、Date、Message-Id、commit message、--- 分隔符、diffstat、diff 内容。`git format-patch -1 HEAD` 生成最近 1 个 commit 的补丁。`git send-email --to=maintainer --cc=linux-kernel@vger.kernel.org 0001-*.patch` 发送。多补丁系列用 [PATCH 1/5] ~ [PATCH 5/5] 编号。
+
+</details>
+
+</details>
 ---

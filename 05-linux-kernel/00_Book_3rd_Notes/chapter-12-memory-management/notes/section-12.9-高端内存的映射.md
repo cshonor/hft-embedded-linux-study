@@ -53,4 +53,26 @@ kunmap_atomic(vaddr);
 
 → [06 Gorman Ch9 高端内存](../../../../06-linux-mm/chapter-09-high-memory-management/) · [Ch 12.3 Zones](./section-12.3-区.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** kmap 和 kmap_atomic 的区别？哪个更高效？
+
+<details><summary>答案</summary>
+
+kmap：可睡眠、用全局锁保护 fixmap 槽、可能阻塞。kmap_atomic：不可睡眠、per-CPU fixmap 槽、无需锁、极快。高频场景用 kmap_atomic（如网络包处理中映射 HIGHMEM 页到内核地址）。x86_64 没有 HIGHMEM，这两个函数是空操作（直接返回 page_address）。
+
+</details>
+
+**Q2.** 为什么 x86_64 不需要高端内存？
+
+<details><summary>答案</summary>
+
+x86_64 有 48 位虚拟地址空间（256TB），而物理内存通常 < 256TB。内核直接映射区（PAGE_OFFSET 开始）可以覆盖所有物理内存，不需要临时映射。高端内存是 32 位系统的限制：32 位内核只有 896MB 直接映射区，超过部分需要 HIGHMEM 机制。
+
+</details>
+
+</details>
 ---

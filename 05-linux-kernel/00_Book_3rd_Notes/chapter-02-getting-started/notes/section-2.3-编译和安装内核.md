@@ -169,4 +169,26 @@ sudo make install          # 发行版支持时
 
 编译产物如何被 UEFI/GRUB 加载、为何用户态是 ELF → [§2.5](./section-2.5-ELF与UEFI启动链路.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** `make defconfig`、`make menuconfig`、`make localmodconfig` 有什么区别？
+
+<details><summary>答案</summary>
+
+defconfig = 架构默认配置（最通用但臃肿）；menuconfig = 交互式菜单逐项选择；localmodconfig = 根据当前系统已加载模块自动生成精简配置（最适合桌面/嵌入式）。HFT 定制内核推荐 localmodconfig 起步再手动裁剪。
+
+</details>
+
+**Q2.** `make -j$(nproc)` 为什么能大幅加速内核编译？内核有多少个源文件？
+
+<details><summary>答案</summary>
+
+内核有 ~3 万个 .c 文件，单线程编译需 30-60 分钟。make -j 并行编译独立目标文件，最后链接。`-j$(nproc)` 用满所有 CPU 核，编译时间可缩短到 5-10 分钟。但内存不足时并行度太高会导致 OOM。
+
+</details>
+
+</details>
 ---

@@ -21,4 +21,26 @@
 
 **HFT：** 日志/配置 **冷路径** 才关心 dcache；热路径 **已打开 fd** 或 **`mmap`** 绕过反复路径解析。
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** dentry cache 如何加速路径解析？
+
+<details><summary>答案</summary>
+
+解析 `/home/user/file.txt` 需要逐级查找：`/` → `home` → `user` → `file.txt`，每级需要读目录项（磁盘 IO）。dentry cache 缓存已解析的路径组件，下次访问同一路径直接从内存中查找，O(1)。热门路径（如 /proc/cpuinfo）几乎永远在 dcache 中。dcache 还通过 hash table 加速查找。
+
+</details>
+
+**Q2.** 为什么 dentry 不能直接释放？reference count 如何工作？
+
+<details><summary>答案</summary>
+
+dentry 有引用计数：每次路径解析经过 dentry 时 +1，结束时 -1。dentry 还有 dcache LRU：即使引用计数为 0 也不立即释放（保留在 LRU 中），下次访问直接命中。内存紧张时从 LRU 尾部回收。这就是为什么 `ls /` 第二次比第一次快。
+
+</details>
+
+</details>
 ---

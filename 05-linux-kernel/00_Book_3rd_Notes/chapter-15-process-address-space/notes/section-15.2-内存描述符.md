@@ -59,4 +59,18 @@ mm_users == 0 且 mm_count == 0 → 释放全部 VMA、页表、映射
 
 
 > ↔ [ULK Ch9 §2 内存描述符](../../../../20-linux-kernel-deep/chapter-09-process-address-space/notes/section-2-内存描述符.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** mm_struct 和 task_struct 的关系？线程间共享 mm 吗？
+
+<details><summary>答案</summary>
+
+task_struct 包含 mm 指针（指向 mm_struct）。同一进程的线程共享同一个 mm_struct（clone 时设 CLONE_VM）。不同进程的 mm_struct 不同。`current->mm` 访问当前进程地址空间。内核线程没有 mm_struct（mm=NULL），使用上一个用户进程的页表（lazy TLB）。HFT 多线程共享行情内存就是利用同 mm。
+
+</details>
+
+</details>
 ---

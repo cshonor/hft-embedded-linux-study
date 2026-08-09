@@ -70,4 +70,26 @@ kfree(ptr);
 
 
 > ↔ [ULK Ch8 §3 Slab分配器](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** kmalloc 和 vmalloc 的区别？什么时候用哪个？
+
+<details><summary>答案</summary>
+
+kmalloc：物理连续，适合 DMA、小分配（< 4MB = MAX_ORDER）、性能关键路径。vmalloc：虚拟连续物理可不连续，适合大块（> 4MB）、非 DMA、非性能关键。kmalloc 更快（buddy/slab 直接返回），vmalloc 需要改页表（TLB flush 开销）。HFT 网卡 DMA 描述符必须 kmalloc。
+
+</details>
+
+**Q2.** GFP_KERNEL、GFP_ATOMIC、GFP_NOIO 的区别？在什么上下文用？
+
+<details><summary>答案</summary>
+
+GFP_KERNEL：可睡眠（进程上下文，如 syscall 中分配）；GFP_ATOMIC：不可睡眠（中断上下文/持锁时，如 ISR 中分配，预留内存备用）；GFP_NOIO：可睡眠但禁止磁盘 IO（避免死锁，如文件系统代码中分配）。HFT 驱动在收包软中断中必须用 GFP_ATOMIC。
+
+</details>
+
+</details>
 ---

@@ -221,4 +221,26 @@ strace -e write,exit ./write_raw_syscall
 
 → [03 SysPerf §3.2](../../../../16-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [Ch 1](../../chapter-01-intro/) · 下一节 [§5.2](./section-5.2-系统调用基础.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 用户态调用 read(fd, buf, 4096) 时，CPU 经历了什么？
+
+<details><summary>答案</summary>
+
+1) 用户态将参数放入寄存器（rax=syscall号, rdi=fd, rsi=buf, rdx=4096）→ 2) 执行 syscall 指令 → 3) CPU 切换到内核态（CPL=0），跳到 entry_SYSCALL_64 → 4) 保存用户态寄存器到内核栈 → 5) 查 sys_call_table[rax] 调 sys_read → 6) 返回值放 rax → 7) 恢复用户态寄存器 → 8) sysret 返回用户态。
+
+</details>
+
+**Q2.** HFT 为什么尽量减少 syscall？一次 syscall 的开销是多少？
+
+<details><summary>答案</summary>
+
+x86_64 syscall 约 100-200ns（含寄存器保存/恢复 + 内核函数执行）。如果热路径每笔交易 10 次 syscall = 1-2μs 额外延迟。HFT 优化：mmap 替代 read（零 syscall）、io_uring 批量提交（ amortize syscall 开销）、SO_BUSY_POLL 避免 sleep/wakeup。
+
+</details>
+
+</details>
 ---

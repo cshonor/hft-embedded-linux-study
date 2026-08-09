@@ -39,4 +39,26 @@ task list（Ch 3）概念：
 
 → **Ch 3** 任务队列 · 等待队列（Ch 4/9）亦常用链表
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** list_head 和教科书链表有什么区别？container_of 宏怎么工作？
+
+<details><summary>答案</summary>
+
+教科书链表：node { void *data; node *next; }，数据在外部分配。内核 list_head：嵌入在数据结构内，通过 `container_of(ptr, type, member)` 计算宿主地址 = (char*)ptr - offsetof(type, member)。这样不需要额外分配节点，一个对象可同时挂在多个链表上。
+
+</details>
+
+**Q2.** list_for_each_safe 和 list_for_each 的区别？什么时候用 safe 版本？
+
+<details><summary>答案</summary>
+
+list_for_each 在遍历中删除当前节点会导致 use-after-free。list_for_each_safe 额外保存 next 指针，可以在遍历中安全删除当前节点。内核删除链表节点的正确模式：`list_for_each_safe(pos, n, head) { list_del(pos); kfree(...); }`。
+
+</details>
+
+</details>
 ---

@@ -14,4 +14,18 @@ write(path)
 
 | 绕过页缓存 | **`O_DIRECT`** — DB/自管缓冲 · HFT 大数据文件有时 mmap + mlock |
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** read() 命中 page cache 和 miss 的性能差异有多大？
+
+<details><summary>答案</summary>
+
+Hit：page cache → copy_to_user → ~1-5μs。Miss：page cache 未命中 → bio → IO 调度 → 磁盘 → DMA → page cache → copy_to_user → NVMe ~50-100μs，SATA ~1-10ms。HFT 启发：1) 预读（readahead/madvise WILLNEED）让数据提前进 cache；2) mmap 零拷贝跳过 copy_to_user；3) O_DIRECT 绕过 page cache（自管理 buffer）。
+
+</details>
+
+</details>
 ---

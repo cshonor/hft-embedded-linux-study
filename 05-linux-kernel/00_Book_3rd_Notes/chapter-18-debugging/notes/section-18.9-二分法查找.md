@@ -14,4 +14,18 @@ git bisect reset
 
 → **Ch 2** `git clone` 内核树 · **Ch 20** 补丁流程
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** git bisect 如何定位回归 bug？
+
+<details><summary>答案</summary>
+
+1) `git bisect start` → 2) `git bisect bad <当前commit>` 标记有 bug → 3) `git bisect good <旧commit>` 标记无 bug → 4) git 自动 checkout 中间 commit → 5) 编译测试 → 6) `git bisect good/bad` → 7) 重复直到定位到引入 bug 的 commit。O(log n) 次编译。内核回归 bug 通常能在 10-15 次 bisect 内定位。
+
+</details>
+
+</details>
 ---

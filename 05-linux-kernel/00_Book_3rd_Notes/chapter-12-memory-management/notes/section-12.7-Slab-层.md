@@ -68,4 +68,26 @@ kmem_cache_free(my_cache, o);
 
 
 > ↔ [ULK Ch8 §3 Slab分配器](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Slab 分配器的三级缓存是什么？为什么能加速对象分配？
+
+<details><summary>答案</summary>
+
+Slab > Slub（现代默认）> Slob（嵌入式）。以 Slub 为例：每个 CPU 有 per-CPU partial 页，分配时从当前 CPU 的 partial 页上取空闲对象，无需锁、无需 buddy 调用。释放时放回 per-CPU partial。只有 partial 耗尽才向 buddy 申请新页。这就是为什么内核频繁分配/释放 task_struct 不会变慢。
+
+</details>
+
+**Q2.** kmalloc-128 和 kmalloc-256 是什么？为什么有这么多 slab cache？
+
+<details><summary>答案</summary>
+
+内核为每个 2 的幂大小（8/16/32/64/128/256/512/1024/2048/4096/8192）预创建专用 slab cache。kmalloc(100) 会在 kmalloc-128 中分配（向上取整到 128）。这样不同大小的对象不会互相碎片化，且每个 cache 的对象大小一致、对齐一致，cache 友好。
+
+</details>
+
+</details>
 ---

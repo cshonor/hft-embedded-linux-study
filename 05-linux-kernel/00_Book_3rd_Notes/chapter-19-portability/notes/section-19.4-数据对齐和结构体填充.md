@@ -24,4 +24,26 @@ struct hdr {
 
 **HFT：** 交易所报文 **固定布局 + ntoh/hton** — 与内核 **`cpu_to_be32`** 同一纪律。
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 结构体对齐规则是什么？如何强制 packed？有什么代价？
+
+<details><summary>答案</summary>
+
+默认对齐：成员按自身大小对齐（int 4 字节对齐），结构体大小 = 最大成员对齐的倍数。`__attribute__((packed))` 取消填充，紧凑排列。代价：1) 非对齐访问在某些架构（ARM）触发异常或变慢（x86 自动处理但有性能损失）；2) 不能用 atomic 操作。HFT 网络协议解析用 packed 结构体映射报文头，性能关键路径用手动偏移。
+
+</details>
+
+**Q2.** 为什么 cache line 对齐对 HFT 至关重要？
+
+<details><summary>答案</summary>
+
+CPU cache line 64 字节。如果两个变量在同一 cache line 且分别被不同 CPU 核频繁写 → false sharing（缓存行 bouncing）。`__attribute__((aligned(64)))` 强制变量独占 cache line。HFT 交易线程和风控线程各自计数器必须 cache line 对齐，否则每秒万次写 → L1 cache 反复 invalidate → 性能下降 10x+。
+
+</details>
+
+</details>
 ---

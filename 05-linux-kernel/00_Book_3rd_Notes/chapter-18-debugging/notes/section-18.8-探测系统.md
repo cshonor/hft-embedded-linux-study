@@ -24,4 +24,18 @@ else
 
 → **Ch 7** ISR 要快 · **Ch 2** 不要用 `printf`
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 如何用条件 UID 在生产环境安全调试？
+
+<details><summary>答案</summary>
+
+技巧：代码中加 `if (current->uid == DEBUG_UID) printk(...)`。生产环境正常运行不打印，需要调试时用 `setuid DEBUG_UID` 运行测试程序 → 触发调试输出。这样不影响生产流量，且不需要重新编译内核。HFT 可用类似方法在特定测试账户的交易路径上启用 trace。
+
+</details>
+
+</details>
 ---

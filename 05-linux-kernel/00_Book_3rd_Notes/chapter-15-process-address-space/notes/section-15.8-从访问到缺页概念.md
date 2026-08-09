@@ -76,4 +76,26 @@
 
 
 > ↔ [ULK Ch9 §5 请求调页](../../../../20-linux-kernel-deep/chapter-09-process-address-space/notes/section-5-请求调页.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 缺页的三种类型是什么？HFT 如何避免热路径缺页？
+
+<details><summary>答案</summary>
+
+1) Minor fault：只需分配物理页/建 PTE（如匿名页首次访问、COW）→ 微秒级；2) Major fault：需要从磁盘读数据（文件页不在 page cache）→ 毫秒级；3) Invalid fault：访问非法地址 → SIGSEGV。HFT 避免：mlock 锁页、mmap 时 MAP_POPULATE 预建页表、Huge Page 减少 TLB miss、避免在热路径 malloc（预分配 + mlock）。
+
+</details>
+
+**Q2.** COW 缺页处理过程是怎样的？
+
+<details><summary>答案</summary>
+
+fork 时父子 PTE 都设为只读。子进程写 COW 页 → page fault → 内核检查 VMA 有 VM_WRITE 权限 → 分配新物理页 → 拷贝内容 → 修改子进程 PTE 为可写 → 恢复执行。如果父进程也写 → 同样触发 COW。第一次写的人拷贝，另一人继续共享原页（仍只读，下次写再 COW）。
+
+</details>
+
+</details>
 ---

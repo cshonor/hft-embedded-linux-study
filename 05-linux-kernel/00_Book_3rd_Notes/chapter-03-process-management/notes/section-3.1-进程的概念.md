@@ -64,4 +64,26 @@ waitpid(pid, &status, 0);
 
 → [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [§3.4 fork/COW](./section-3.4-进程创建与写时拷贝.md) · [07 TLPI Ch24 进程创建](../../../../03-linux-userspace-api/chapter-24-process-creation/notes.md) · [01 CSAPP Ch8 fork/exec](../../../../02-computer-systems/chapter-08-exceptional-control-flow/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 进程和程序的根本区别是什么？fork() 后父子进程共享什么？
+
+<details><summary>答案</summary>
+
+程序 = 磁盘上的静态可执行文件；进程 = 程序加载到内存后的动态执行实例 + 资源（页表/fd/信号/栈）。fork() 后父子共享：代码段（只读）、打开的文件描述符（共享 file 结构）、内存映射（COW 模式下页表项标记只读，写时才拷贝）。
+
+</details>
+
+**Q2.** HFT 交易系统为什么通常用多进程而非多线程？
+
+<details><summary>答案</summary>
+
+多进程：一个 crash 不影响另一个（进程隔离）；但 IPC 开销大。多线程：共享内存通信零拷贝；但一个线程 crash 整个进程挂。HFT 选择取决于：策略进程用多进程隔离（一个策略 crash 不影响风控），行情解码用多线程共享内存（零拷贝传递行情数据）。
+
+</details>
+
+</details>
 ---

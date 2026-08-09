@@ -16,4 +16,18 @@
 
 → [03 SysPerf Ch9 磁盘](../../../../16-systems-performance/chapter-09-disks/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 块设备和字符设备的根本区别？HFT 系统中哪些是哪种？
+
+<details><summary>答案</summary>
+
+块设备：随机访问、按块传输、有缓冲（磁盘/SSD/NVMe）。字符设备：顺序访问、按字节/字符传输、无缓冲（串口/网卡/网卡 DMA）。HFT 系统：NVMe SSD 是块设备（存历史数据），网卡是字符设备（收发行情），GPU 也是字符设备（/dev/nvidia0）。
+
+</details>
+
+</details>
 ---

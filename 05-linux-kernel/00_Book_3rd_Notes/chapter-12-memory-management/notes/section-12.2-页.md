@@ -51,4 +51,26 @@
 
 
 > ↔ [ULK Ch8 §2 页框管理](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-2-页框管理.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 物理页大小为什么是 4KB？Huge Page 对 HFT 有什么好处？
+
+<details><summary>答案</summary>
+
+4KB 是历史折中：太小→页表占内存大（4GB/4KB=1M 项）；太大→内部碎片。Huge Page（x86: 2MB/1GB）减少 TLB miss：4KB 页需要 1000+ TLB 项覆盖 4GB，2MB 页只需 2000 项覆盖 4TB。HFT 用 Huge Page 映射行情数据/订单簿，TLB miss 下降 90%+。
+
+</details>
+
+**Q2.** struct page 是什么？为什么每个物理页都有一个？
+
+<details><summary>答案</summary>
+
+struct page 是内核管理物理页的元数据（flags/引用计数/映射计数/所属zone）。每个物理页一个，4GB 内存 = 1M 页 × 64 字节/page = 64MB page 数组。这是内核固定开销。page 结构体不包含页内数据，数据在物理地址对应的空间。
+
+</details>
+
+</details>
 ---

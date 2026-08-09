@@ -55,4 +55,26 @@ mm_struct
 
 
 > ↔ [ULK Ch9 §3 内存区VMA](../../../../20-linux-kernel-deep/chapter-09-process-address-space/notes/section-3-内存区VMA.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** VMA 的作用是什么？text/data/heap/stack 各是什么 VMA？
+
+<details><summary>答案</summary>
+
+VMA（vm_area_struct）描述一段连续虚拟地址区间的属性（起止地址/权限/映射方式/后备存储）。text=只读可执行、data=读写、heap=读写可扩展（brk）、stack=读写向下扩展。mmap 创建新 VMA。`cat /proc/pid/maps` 可看到进程所有 VMA。HFT mmap 共享内存会在 maps 中显示为独立 VMA。
+
+</details>
+
+**Q2.** VMA 的权限如何影响内存访问？
+
+<details><summary>答案</summary>
+
+VMA 权限位 VM_READ/VM_WRITE/VM_EXEC 控制用户态访问权限。写只读 VMA → page fault → SIGSEGV。内核态不受 VMA 权限限制（可写任何物理页）。VMA 权限 + PTE 权限双重检查：VMA 是粗粒度（段级），PTE 是细粒度（页级，如 COW 页标为只读）。
+
+</details>
+
+</details>
 ---

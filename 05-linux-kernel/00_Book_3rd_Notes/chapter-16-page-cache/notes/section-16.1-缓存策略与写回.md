@@ -23,4 +23,18 @@ Linux 对 **可缓存的页数据** 采用 **写回（write-back）** — 非 no
 
 → [03 SysPerf Ch8 FS](../../../../16-systems-performance/chapter-08-file-systems/) · [Ch7 `vm.dirty_*`](../../../../16-systems-performance/chapter-07-memory/notes/section-7.6-调优指南.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** write-back 和 write-through 的区别？Linux 为什么选 write-back？
+
+<details><summary>答案</summary>
+
+write-through：写同时更新缓存和磁盘 → 数据安全但慢。write-back：只写缓存，标记脏页，后台异步写回磁盘 → 快但断电可能丢数据。Linux 选 write-back 因为：1) 多次写合并为一次 IO（减少磁盘操作）；2) 延迟写让 IO 调度器合并排序。HFT 交易日志不能丢数据 → 用 O_SYNC 或 fsync() 强制写回。
+
+</details>
+
+</details>
 ---

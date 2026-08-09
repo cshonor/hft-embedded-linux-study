@@ -48,4 +48,26 @@
 
 → [06 Gorman Ch2 内存区域](../../../../06-linux-mm/chapter-02-describing-physical-memory/notes/section-2-内存区域.md) · [Ch 12.9 HIGHMEM](./section-12.9-高端内存的映射.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** ZONE_DMA、ZONE_NORMAL、ZONE_HIGHMEM 分别是什么？x86_64 还有 HIGHMEM 吗？
+
+<details><summary>答案</summary>
+
+ZONE_DMA：< 16MB（ISA DMA 限制）；ZONE_NORMAL：16MB-896MB（直接映射）；ZONE_HIGHMEM：> 896MB（需 kmap 临时映射）。x86_64 没有 HIGHMEM——64 位地址空间足够直接映射所有物理内存。HIGHMEM 是 32 位内核的历史包袱。
+
+</details>
+
+**Q2.** 为什么 GFP_KERNEL 可能从 ZONE_NORMAL 分配而 GFP_DMA 从 ZONE_DMA？
+
+<details><summary>答案</summary>
+
+GFP_DMA 保证物理地址 < 16MB（ISA 设备只能寻址 24 位地址）。GFP_KERNEL 无地址限制，优先从 ZONE_NORMAL 分配（直接映射，速度快）。如果 ZONE_NORMAL 不足，buddy 系统会从 ZONE_DMA 挪页（fallback），但会保留 DMA 备用页防止饿死。
+
+</details>
+
+</details>
 ---

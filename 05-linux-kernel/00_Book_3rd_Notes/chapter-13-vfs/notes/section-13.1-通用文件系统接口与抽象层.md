@@ -25,4 +25,18 @@ sys_read() ──► VFS（统一语义）
 
 → [03 SysPerf Ch8 VFS 追踪](../../../../16-systems-performance/chapter-08-file-systems/notes/section-8.4-文件系统架构与特性.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** VFS 的作用是什么？为什么 HFT 工程师需要理解它？
+
+<details><summary>答案</summary>
+
+VFS 是系统调用（open/read/write）和具体文件系统（ext4/nfs/proc）之间的抽象层。HFT 需要 VFS 因为：1) 热路径 read/write 经过 VFS；2) /proc 和 /sys 是 VFS 文件系统，用于调优（CPU 亲和性/调度策略）；3) mmap 文件时 VFS 决定 page cache 行为。理解 VFS 能在排障时分清是 syscall 层、VFS 层还是文件系统层的问题。
+
+</details>
+
+</details>
 ---

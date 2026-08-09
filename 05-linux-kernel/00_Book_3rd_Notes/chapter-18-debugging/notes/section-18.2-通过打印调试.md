@@ -38,4 +38,26 @@ printk(KERN_INFO "device probed: %d\n", id);
 
 **HFT：** 生产内核 **少 printk 热路径** — 用 **tracepoint/BPF**（→ SysPerf Ch14/15）或 **动态 debug**。
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** printk 和 printf 的区别？printk 的日志级别有什么用？
+
+<details><summary>答案</summary>
+
+printk 输出到内核环形缓冲区（log_buf），dmesg 查看。printf 输出到 stdout。printk 有日志级别（KERN_EMERG~KERN_DEBUG），控制台只显示 > console_loglevel 的消息。printk 可在中断上下文调用（printf 不行）。但 printk 有锁，高频调用影响性能。HFT 调试用 trace_printk（写入 trace buffer，无锁更快）。
+
+</details>
+
+**Q2.** 为什么 printk 在高频场景下会拖慢系统？
+
+<details><summary>答案</summary>
+
+printk 持有 logbuf_lock 自旋锁 + console_lock。多核同时 printk → 锁竞争 + IPI flush console。每秒万次 printk 可导致系统卡顿。替代：trace_printk（per-CPU ring buffer 无锁）、ftrace（动态探针）、eBPF（可编程追踪）。HFT 调试网卡收包延迟用 trace_printk + ftrace。
+
+</details>
+
+</details>
 ---

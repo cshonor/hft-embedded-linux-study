@@ -394,4 +394,26 @@ Linux **高度可移植** — 代码应：
 | **不硬编码页大小** | 写死 4096 而不 `PAGE_SIZE` |
 | **`arch/` 隔离** | 在通用代码里写 x86 汇编 |
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 内核代码为什么不能直接用 printf 和 malloc？分别用什么替代？
+
+<details><summary>答案</summary>
+
+内核没有 libc，printf 用 `printk()` 替代（输出到内核日志环形缓冲区，dmesg 查看）。malloc 用 `kmalloc()`/`vmalloc()` 替代——kmalloc 物理连续适合 DMA，vmalloc 虚拟连续物理可不连续。HFT 网卡驱动用 kmalloc 分配 DMA 描述符环。
+
+</details>
+
+**Q2.** 内核代码中为什么不能随意使用浮点运算？
+
+<details><summary>答案</summary>
+
+内核切换到浮点运算需要保存/恢复 FPU 寄存器状态，这在内核态默认不做（为省 context switch 开销）。如果内核代码用浮点，必须手动 `kernel_fpu_begin()`/`kernel_fpu_end()` 包裹。否则会破坏用户态 FPU 状态，导致数据损坏。
+
+</details>
+
+</details>
 ---

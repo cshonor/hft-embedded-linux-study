@@ -27,4 +27,18 @@ USB 控制器 kobject
 
 → **Ch 6** 嵌入结构 · **Ch 12** kref 与内存释放
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** Linux 设备模型的核心是什么？kobject/kset 的作用？
+
+<details><summary>答案</summary>
+
+设备模型用 kobject（内核对象基类）+ kset（对象集合）构建设备拓扑树。device → kobject 嵌入；bus → kset 管理同总线设备；driver → 注册到 bus。sysfs 是设备模型在用户态的投影。这套设计让电源管理、热插拔、设备发现可以自动化。HFT 网卡驱动也注册到设备模型中，ethtool/ip 通过 sysfs/netlink 操作。
+
+</details>
+
+</details>
 ---

@@ -64,4 +64,26 @@ void good(void) {
 
 → [Ch 2 内核栈](../../chapter-02/getting-started-with-the-kernel/) · [Ch 7 中断栈](../../chapter-07-interrupts-and-interrupt-handlers/) · [Ch 12.5 kmalloc](./section-12.5-kmalloc-与-kfree.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 内核栈有多大？为什么不能递归调用？
+
+<details><summary>答案</summary>
+
+x86_64 内核栈通常 8KB（或 16KB with CONFIG_THREAD_INFO_IN_TASK）。8KB 栈意味着函数调用链不能太深、不能有大的局部数组。递归会迅速耗尽栈 → stack overflow → oops/panic。内核代码规则：避免递归、局部数组 < 1KB、大缓冲用 kmalloc。
+
+</details>
+
+**Q2.** 为什么内核栈不能自动增长？
+
+<details><summary>答案</summary>
+
+用户态栈可以自动扩展（page fault handler 检测到栈生长 → 分配新页）。内核态没有这个机制：page fault handler 本身也用内核栈，如果栈溢出时再触发 page fault 会无限递归。所以内核栈溢出直接 oops。8KB 是硬限制，开发者必须小心。
+
+</details>
+
+</details>
 ---

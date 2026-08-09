@@ -64,4 +64,26 @@ vmalloc 路径:
 
 
 > ↔ [ULK Ch8 §4 非连续内存与vmalloc](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-4-非连续内存与vmalloc.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** vmalloc 为什么比 kmalloc 慢？
+
+<details><summary>答案</summary>
+
+vmalloc 需要：1) 从 buddy 分配零散物理页；2) 修改页表把散页映射到连续虚拟地址；3) flush TLB（其他 CPU 上的 TLB 也要 IPI flush）。kmalloc 从 slab 直接返回已映射的连续物理内存。vmalloc 的 TLB flush 是主要开销，在多核系统上尤其昂贵。
+
+</details>
+
+**Q2.** vmalloc 分配的内存能用于 DMA 吗？为什么？
+
+<details><summary>答案</summary>
+
+不能直接用于 DMA。vmalloc 内存物理不连续，DMA 设备需要物理连续地址（或需要 scatter-gather 支持）。如果要用 vmalloc 内存做 DMA，需要逐页映射：`for each page: dma_map_page()`，性能差且复杂。DMA buffer 应该用 kmalloc 或 alloc_pages。
+
+</details>
+
+</details>
 ---

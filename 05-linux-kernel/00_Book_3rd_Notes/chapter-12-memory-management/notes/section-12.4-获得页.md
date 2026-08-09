@@ -58,4 +58,26 @@ __free_pages(pg, 3);
 
 → [06 Gorman Ch6 物理页分配](../../../../06-linux-mm/chapter-06-physical-page-allocation/) · [Ch 12.5 kmalloc](./section-12.5-kmalloc-与-kfree.md)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** alloc_pages(gfp, order) 中 order 是什么？最大能分配多少？
+
+<details><summary>答案</summary>
+
+order 是 2 的幂次方页数。alloc_pages(gfp, 0) = 1 页(4KB)，order=1 = 2 页(8KB)... MAX_ORDER 通常=10(或11) = 1024 页 = 4MB。超过 4MB 需用 vmalloc 或 CMA。HFT 内核驱动分配大块 DMA buffer 用 alloc_pages 而非 kmalloc（避免 slab 碎片）。
+
+</details>
+
+**Q2.** __get_free_pages 和 alloc_pages 的关系？
+
+<details><summary>答案</summary>
+
+__get_free_pages(gfp, order) = alloc_pages(gfp, order) + page_address()。即分配页并返回虚拟地址。但只能用于 ZONE_NORMAL/ZONE_DMA（有直接映射地址），HIGHMEM 页用 kmap 获取地址。现代内核推荐直接用 alloc_pages + page_address。
+
+</details>
+
+</details>
 ---

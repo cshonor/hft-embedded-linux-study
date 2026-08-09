@@ -79,4 +79,26 @@ else if (WIFSIGNALED(status))
 
 → [§3.1 进程概念](./section-3.1-进程的概念.md) · [§3.3 EXIT_ZOMBIE 状态](./section-3.3-进程状态.md) · [Ch 4 调度退出路径](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [07 TLPI Ch24/20 进程创建/信号](../../../../03-linux-userspace-api/chapter-24-process-creation/notes.md) · [01 CSAPP Ch8 僵尸/孤儿](../../../../02-computer-systems/chapter-08-exceptional-control-flow/)
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 僵尸进程（zombie）是怎么产生的？如何避免？
+
+<details><summary>答案</summary>
+
+子进程 exit() 后内核释放内存/fd 但保留 task_struct（含退出状态）等父进程 wait()。如果父进程不 wait，子进程就变 zombie。避免方法：1) 父进程及时 wait/waitpid；2) 父进程注册 SIGCHLD handler 调 wait；3) 设置 SIGCHLD 为 SIG_IGN（内核自动回收）；4) 父进程忽略后子进程被 init(PID 1) 收养。
+
+</details>
+
+**Q2.** exit() 和 _exit() 的区别？哪个在内核中执行？
+
+<details><summary>答案</summary>
+
+_exit()` 直接执行 sys_exit 系统调用（内核态：释放资源、设置退出码、通知父进程）。`exit()` 是 libc 包装：先执行 atexit 注册函数 + flush stdio buffer + 调 _exit()。HFT 进程退出时如果需要保证日志 flush，用 exit()；如果 crash 路径想立即终止不 flush，用 _exit()。
+
+</details>
+
+</details>
 ---

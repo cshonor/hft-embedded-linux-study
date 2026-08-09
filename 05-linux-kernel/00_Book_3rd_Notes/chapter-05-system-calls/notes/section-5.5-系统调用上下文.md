@@ -68,4 +68,26 @@ sys_read(fd, buf, len)
 
 → 下一节 [§5.6 替代方案](./section-5.6-添加系统调用与替代方案.md) · 对比 **Ch 7** 中断上下文
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 系统调用在什么上下文中执行？能睡眠吗？
+
+<details><summary>答案</summary>
+
+syscall 在「进程上下文」中执行（current 指向调用进程），可以睡眠（如 read 等待磁盘 IO）。对比：中断处理程序在「中断上下文」中执行，不能睡眠。syscall 中睡眠意味着进程被调度出去，醒来后继续执行。HFT 交易线程如果 syscall 睡眠会被调度器切走，所以要避免阻塞 IO。
+
+</details>
+
+**Q2.** current 在 syscall 执行期间会变吗？
+
+<details><summary>答案</summary>
+
+不会。syscall 在进程上下文执行，current 始终指向调用进程的 task_struct。即使 syscall 中间发生了抢占（preemption），调度回来后 current 仍是同一进程。只有在 schedule() 实际切换后 current 才变。syscall 中访问 current 是安全的。
+
+</details>
+
+</details>
 ---

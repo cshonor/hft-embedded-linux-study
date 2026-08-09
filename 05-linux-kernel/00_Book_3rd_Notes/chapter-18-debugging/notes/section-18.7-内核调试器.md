@@ -16,4 +16,18 @@
 
 → 日常开发更多 **printk + ftrace + BPF**（[SysPerf Ch14 ftrace](../../../../16-systems-performance/chapter-14-ftrace/)）
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** kgdb 和 kdb 的区别？HFT 用哪个？
+
+<details><summary>答案</summary>
+
+kgdb：通过串口/网络连接 GDB，支持源码级断点/单步/变量查看（需要两台机器）。kdb：内核内置调试器，在本地控制台操作，功能较弱（无源码级调试）。HFT 开发阶段用 kgdb 调试驱动（断点/变量查看），生产环境用 kdb（紧急排障，不需要第二台机器）。ftrace/eBPF 是更轻量的替代方案。
+
+</details>
+
+</details>
 ---

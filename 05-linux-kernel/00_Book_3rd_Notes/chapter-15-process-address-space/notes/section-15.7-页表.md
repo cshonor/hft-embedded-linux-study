@@ -76,4 +76,26 @@ MMU walk:
 
 
 > ↔ [ULK Ch9 §4 缺页异常](../../../../20-linux-kernel-deep/chapter-09-process-address-space/notes/section-4-缺页异常.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** x86_64 四级页表的翻译过程？TLB miss 的代价是多少？
+
+<details><summary>答案</summary>
+
+4 级页表：CR3 → PML4 → PDPT → PD → PT → 物理页。48 位 VA = 9+9+9+9+12。TLB miss 时 CPU 硬件遍历 4 级页表（4 次内存访问），约 100-300ns。TLB hit 约 1-2ns。Huge Page（2MB）只需 3 级页表，减少一级查找 + 大幅减少 TLB 条目数。HFT 用 Huge Page 将 TLB miss 率从 5% 降到 < 0.1%。
+
+</details>
+
+**Q2.** PTE 的 Dirty 位和 Accessed 位分别什么作用？
+
+<details><summary>答案</summary>
+
+Dirty 位：页被写过（写回磁盘时需要 flush）。Accessed 位：页被读过或写过（页面回收时优先换出未访问页）。这两个位由 CPU 硬件设置，内核清除。页面回收器扫描 Accessed 位判断页面活跃度。HFT 内存锁定后不参与回收，Accessed 位不重要。
+
+</details>
+
+</details>
 ---

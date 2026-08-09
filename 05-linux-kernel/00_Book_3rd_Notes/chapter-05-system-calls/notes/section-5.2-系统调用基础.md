@@ -75,4 +75,26 @@ asmlinkage long sys_read(unsigned int fd, char __user *buf, size_t count);
 
 
 > ↔ [ULK Ch10 §2 POSIX-API与系统调用](../../../../20-linux-kernel-deep/chapter-10-system-calls/notes/section-2-POSIX-API与系统调用.md)
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** 系统调用号存在哪里？为什么每个架构不同？
+
+<details><summary>答案</summary>
+
+syscall 号定义在 `arch/*/include/uapi/asm/unistd.h`。x86_64 的 read=0, write=1, open=2...。不同架构不同是因为历史原因（x86 用 int 0x80，ARM 用 SVC 指令）。用户态 libc 的 read() 内部根据架构填入正确的 syscall 号。这保证了源码可移植但二进制不可移植。
+
+</details>
+
+**Q2.** 为什么现代内核不鼓励新增系统调用？
+
+<details><summary>答案</summary>
+
+新增 syscall 是永久 ABI 承诺：一旦合入 mainline 就不能删除/改语义（会破坏用户态程序）。替代方案：1) io_uring（一个 syscall 搞定任意 IO 操作）；2) eBPF（用户态程序注入内核运行）；3) /proc 或 /sys 接口（不需要新 syscall 号）。
+
+</details>
+
+</details>
 ---

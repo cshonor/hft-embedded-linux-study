@@ -24,4 +24,26 @@ cat /sys/module/ixgbe/parameters/...
 
 **HFT：** 定制 **网卡驱动模块**、**内核参数** 与 **`/sys/module/.../parameters`** — 生产变更需可回滚。
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** insmod 和 modprobe 的区别？内核模块如何符号导出？
+
+<details><summary>答案</summary>
+
+insmod：直接加载单个 .ko 文件，不处理依赖。modprobe：自动解析依赖（读 modules.dep），按顺序加载依赖模块。模块用 `EXPORT_SYMBOL(symbol)` 导出符号到内核符号表，其他模块可调用。`EXPORT_SYMBOL_GPL` 仅 GPL 模块可用。HFT 定制驱动编译为 .ko，modprobe 加载，可运行时更新驱动不需重启。
+
+</details>
+
+**Q2.** 内核模块和用户态程序的区别？为什么内核模块 bug 更危险？
+
+<details><summary>答案</summary>
+
+内核模块运行在内核态（ring 0），有全部权限：可访问任何内存、任何硬件、任何系统调用。用户态程序运行在 ring 3，受限访问。内核模块 bug → oops/panic/安全漏洞 → 整个系统崩溃。用户态 bug → 仅该进程 crash。HFT 定制网卡驱动必须充分测试，一个空指针解引用就能让交易系统全挂。
+
+</details>
+
+</details>
 ---

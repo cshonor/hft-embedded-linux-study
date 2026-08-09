@@ -22,4 +22,18 @@ address_space
 
 → **Ch 15** VMA · **Ch 13** inode
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** address_space 和 page cache 的关系？
+
+<details><summary>答案</summary>
+
+address_space 是 page cache 的管理单位：每个 inode（文件）对应一个 address_space，其中包含该文件所有缓存页的基数树（radix tree / xarray）。查找文件 offset 对应的缓存页：address_space → xarray → page。mmap 文件时，VMA 的 vm_ops->fault 回调从 address_space 取页。
+
+</details>
+
+</details>
 ---

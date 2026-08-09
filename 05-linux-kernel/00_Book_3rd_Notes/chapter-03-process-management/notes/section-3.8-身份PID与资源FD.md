@@ -334,6 +334,28 @@ task_struct
     └── 磁盘 ELF（Program Header）← binfmt_elf
 ```
 
+
+
+<details>
+<summary>自测题（点击展开）</summary>
+
+**Q1.** PID、TGID、TID 的关系是什么？getpid() 返回哪个？
+
+<details><summary>答案</summary>
+
+PID = 内核中唯一的 task 标识（每线程唯一）；TGID = 线程组 ID（= 主线程的 PID，getpid() 返回 TGID）；TID = 线程 ID（= 该线程的 PID，gettid() 返回）。单线程进程：PID=TGID=TID。多线程：所有线程 TGID 相同，TID 各异。
+
+</details>
+
+**Q2.** fork() 后文件描述符表怎么继承？这对 HFT 共享 socket 有什么用？
+
+<details><summary>答案</summary>
+
+fork() 后子进程继承父进程的 fd 表副本（指向相同的 file 结构，共享 offset）。父子都能操作同一个 socket。但 HFT 通常不用 fork 共享 socket（多进程操作同一 socket 需要锁），而是 fork 前创建 socket 或用 SO_REUSEPORT 让多进程各自 bind 同一端口。
+
+</details>
+
+</details>
 ---
 
 ## 8. 延伸：`clone` / `posix_spawn`
