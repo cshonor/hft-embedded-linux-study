@@ -43,3 +43,163 @@
   - [7.8.5 存储管理函数](./7.8-other-functions/7.8.5-存储管理函数.md)
   - [7.8.6 数学函数](./7.8-other-functions/7.8.6-数学函数.md)
   - [7.8.7 随机数发生器函数](./7.8-other-functions/7.8.7-随机数发生器函数.md)
+
+---
+
+## 章节自测
+
+> I/O 是程序与外部交互的桥梁。看代码 → 想答案 → 点开验证。
+
+### Q1: printf 格式控制
+
+```c
+int x = 42;
+double pi = 3.14159;
+
+printf("[%5d]\n", x);     // (1)
+printf("[%-5d]\n", x);    // (2)
+printf("[%05d]\n", x);    // (3)
+printf("[%.2f]\n", pi);   // (4)
+printf("[%8.3f]\n", pi);  // (5)
+```
+
+> 五行各输出什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**输出：**
+```
+[   42]
+[42   ]
+[00042]
+[3.14]
+[   3.142]
+```
+
+**解析：**
+- `%5d` — 宽度 5，右对齐，空格填充
+- `%-5d` — 左对齐
+- `%05d` — 零填充
+- `%.2f` — 小数点后 2 位
+- `%8.3f` — 总宽 8，小数 3 位
+
+**注意：** 用 `snprintf` 替代 `sprintf` 防缓冲区溢出。
+
+**复习：** → [7.2 格式化输出printf函数](./7.2-格式化输出printf函数.md)
+
+</details>
+
+### Q2: scanf 返回值
+
+```c
+int a, b;
+int n = scanf("%d %d", &a, &b);
+printf("n=%d a=%d b=%d\n", n, a, b);
+
+// 输入：10 20
+// 输入：10 abc
+```
+
+> 两种输入下 `n` 分别是多少？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**输入 `10 20`：** `n=2 a=10 b=20`（成功匹配 2 项）
+
+**输入 `10 abc`：** `n=1 a=10 b=未初始化`（`%d` 匹配 `10` 成功，`abc` 不是数字匹配失败）
+
+**解析：** `scanf` 返回**成功匹配的项数**，不是读入的字符数。生产代码必须检查返回值，不要假设全部成功。`b` 未被赋值，值不确定（UB）。
+
+**教训：** 永远检查 `scanf` 返回值。更安全的做法是用 `fgets` + `sscanf`。
+
+**复习：** → [7.4 格式化输入scanf函数](./7.4-格式化输入scanf函数.md)
+
+</details>
+
+### Q3: fgets vs gets（安全）
+
+```c
+char buf1[10];
+char buf2[10];
+
+// gets(buf1);      // K&R 时代函数，现已废弃
+fgets(buf1, 10, stdin);  // 安全替代
+```
+
+> `gets` 为什么被废弃？`fgets` 怎么保证安全？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `gets` 不接受长度参数，无法限制输入长度 → **缓冲区溢出**漏洞（经典的 Morris 蠕虫就利用了 `gets`）。C11 标准已彻底删除 `gets`。
+
+`fgets(buf, 10, stdin)` 最多读 9 个字符（留 1 个给 `\0`），第 10 个字符及之后留在输入流。
+
+**区别：** `fgets` 会在缓冲区中**保留换行符** `\n`（如果一行能放下），`gets` 会丢弃。处理时需手动去掉 `\n`。
+
+**复习：** → [7.7 行输入和行输出](./7.7-行输入和行输出.md)
+
+</details>
+
+### Q4: 文本 vs 二进制模式
+
+```c
+struct Record { int id; char name[8]; };
+
+struct Record r = {42, "test"};
+
+FILE *ft = fopen("data.txt", "w");   // 文本
+FILE *fb = fopen("data.bin", "wb");  // 二进制
+
+fwrite(&r, sizeof(r), 1, ft);
+fwrite(&r, sizeof(r), 1, fb);
+
+fclose(ft);
+fclose(fb);
+```
+
+> 两个文件大小一定相同吗？struct 直接 `fwrite` 有什么跨平台风险？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 不一定相同。在 Linux 上文本和二进制模式几乎无差异；但在 Windows 上文本模式会对 `\n` 做 `\r\n` 转换，文件大小可能不同。
+
+**跨平台风险：**
+1. **padding**：`struct Record` 大小因对齐而异（可能 12 或 16 字节，取决于编译器）
+2. **字节序**：`int id = 42` 在小端机存 `2A 00 00 00`，大端机存 `00 00 00 2A`
+3. **类型宽度**：`int` 在不同平台可能 2/4/8 字节
+
+**教训：** struct 整块 `fwrite`/`fread` **不可移植**。跨平台需用定宽类型 + 手动序列化。
+
+**复习：** → [7.5 文件访问](./7.5-文件访问.md) — 文本 vs 二进制
+
+</details>
+
+### Q5: stderr 不缓冲
+
+```c
+fprintf(stdout, "A");    // stdout 默认行缓冲
+fprintf(stderr, "B");    // stderr 默认无缓冲
+fprintf(stdout, "C\n");
+
+// 如果输出重定向到文件：./a.out > log.txt
+// 文件里是 ABC 还是 BAC？
+```
+
+> 重定向到文件时，`log.txt` 里的顺序是 `ABC\n` 还是 `BAC\n`？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 重定向到文件时，`stdout` 变为**全缓冲**（非行缓冲），`stderr` 始终无缓冲。所以 `B` 先输出，`AC` 缓存在 stdout 缓冲区，遇到 `\n` 时 flush。输出顺序可能是 `BAC\n`。
+
+但实际结果取决于**程序退出时是否 flush**：
+- 如果正常 `return 0` → exit 刷所有缓冲 → 文件里可能看到 `BAC`
+- 如果异常退出（如 `abort()`）→ stdout 可能没刷 → 只有 `B`
+
+**教训：** 错误信息用 `fprintf(stderr, ...)`，确保立刻输出不被缓冲。调试时尤其重要。
+
+**复习：** → [7.6 错误处理stderr和exit](./7.6-错误处理stderr和exit.md) · [7.1 标准输入输出](./7.1-标准输入输出.md)
