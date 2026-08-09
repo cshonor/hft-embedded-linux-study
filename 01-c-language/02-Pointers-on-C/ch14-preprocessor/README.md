@@ -62,3 +62,72 @@
 - [14.3 条件编译](./14.3-条件编译.md)
 - [14.4 文件包含](./14.4-file-inclusion/14.4-文件包含.md)
 - [14.5 其他指令](./14.5-其他指令.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: 多语句宏 do-while(0)
+
+```c
+// 写法 A (危险)
+#define SWAP(a, b) \
+    int tmp = a; a = b; b = tmp
+
+// 写法 B (安全)
+#define SWAP2(a, b) \
+    do { int tmp = a; a = b; b = tmp; } while(0)
+
+if (cond)
+    SWAP(x, y);   // (1) 会怎样？
+else
+    other();
+```
+
+> 写法 A 的 `SWAP` 在 `if` 里展开后会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 写法 A 展开后：
+```c
+if (cond)
+    int tmp = x; x = y; b = tmp;  // 声明在 if 的作用域内，只有第一条语句被 if 控制
+;                                  // 分号是空语句
+else                               // else 找不到 if → 语法错误
+    other();
+```
+
+写法 B 用 `do { ... } while(0)` 把多条语句包成一个语句，`if` 正确控制整个块。
+
+**教训：** 多语句宏必须用 `do { ... } while(0)` 包裹。
+
+**复习：** → [14.2 Define](./14.2-宏定义.md)
+
+</details>
+
+### Q2: ## 粘合与 LOG 宏
+
+```c
+#define LOG(level, fmt, ...) \
+    printf("[ " level " ] " fmt "\n", ##__VA_ARGS__)
+
+LOG("INFO", "x=%d", x);     // (1)
+LOG("INFO", "startup");     // (2) 没有 ... 参数
+```
+
+> `##__VA_ARGS__` 的 `##` 做什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `##` 在 `__VA_ARGS__` 为空时**删除前面的逗号**。
+
+`(2)` 没有可变参数，`##` 让 `printf("[ INFO ] startup\n")`（去掉多余逗号）。不加 `##` → `printf("[ INFO ] startup\n",)` → 语法错误。
+
+**内核/DPDK 实例：** `pr_err`、`RTE_LOG` 都用类似模式。
+
+**复习：** → [14.2 Define](./14.2-宏定义.md) — 可变参数宏

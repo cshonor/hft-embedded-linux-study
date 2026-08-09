@@ -52,3 +52,104 @@
   - [2.2.4 标识符](./2.2-lexical-rules/2.2.4-标识符.md)
   - [2.2.5 程序的形式](./2.2-lexical-rules/2.2.5-程序的形式.md)
 - [2.3 程序风格](./2.3-程序风格.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: 声明 vs 定义
+
+```c
+// file1.c
+int counter;          // (1)
+
+// file2.c
+extern int counter;   // (2)
+```
+
+> `(1)` 和 `(2)` 哪个是定义？哪个是声明？如果 file1.c 也有 `int counter;` 会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `(1)` 是定义（分配内存），`(2)` 是声明（告诉编译器变量在别处）。
+
+两个 `.c` 都写 `int counter;` → 链接报错 `multiple definition of 'counter'`。
+
+**复习：** → [2.1 Identifiers](./2.1-identifiers/2.1-identifiers.md) — 声明 vs 定义
+
+</details>
+
+### Q2: 最长匹配词法
+
+```c
+int a = 1, b = 2;
+int c = a+++b;
+printf("a=%d b=%d c=%d\n", a, b, c);
+```
+
+> 输出什么？`a+++b` 怎么解析？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**输出：** `a=2 b=2 c=3`
+
+**解析：** C 词法分析器用**最长匹配**规则。`a+++b` 解析为 `(a++) + b` 而非 `a + (++b)`。先取 `a++`（后置自增，返回旧值 1），再加 `b` = 3。之后 `a` 变 2。
+
+**复习：** → [2.2 Lexical Rules](./2.2-lexical-rules/2.2-lexical-rules.md) — 最长匹配
+
+</details>
+
+### Q3: static 双义
+
+```c
+// file_a.c
+static int file_local = 42;      // (1) 文件内可见
+void f(void) {
+    static int call_count = 0;   // (2) 值保持
+    call_count++;
+}
+```
+
+> `(1)` 和 `(2)` 的 `static` 含义一样吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 不一样。
+- `(1)` 文件作用域 `static` → **限制链接性**（仅本文件可见，其他文件 `extern` 也找不到）
+- `(2)` 块作用域 `static` → **延长生命周期**（值在函数调用间保持，但作用域仍在块内）
+
+两者都存 `.data` 或 `.bss` 段，不是栈。
+
+**复习：** → [2.1 Identifiers](./2.1-identifiers/2.1-identifiers.md) — static / extern
+
+</details>
+
+### Q4: bss 清零 vs 栈脏数据
+
+```c
+int global_val;        // (1) bss 段
+int main(void) {
+    int local_val;     // (2) 栈上
+    printf("global=%d local=%d\n", global_val, local_val);
+    return 0;
+}
+```
+
+> `global_val` 和 `local_val` 的值分别是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `global_val = 0`（bss 段自动清零）。`local_val` 不确定（栈上未初始化的值是上次遗留的"脏数据"）。
+
+**教训：** 局部变量必须初始化。全局变量虽然自动清零，但显式初始化更清晰。
+
+**复习：** → [2.1 Identifiers](./2.1-identifiers/2.1-identifiers.md) — 存储类与段
+
+</details>

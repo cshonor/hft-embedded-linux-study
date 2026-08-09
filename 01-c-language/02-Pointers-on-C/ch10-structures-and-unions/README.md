@@ -59,3 +59,65 @@
 - [10.4 作为函数参数的结构](./10.4-作为函数参数的结构.md)
 - [10.5 位段](./10.5-位段.md)
 - [10.6 联合](./10.6-unions/10.6-unions.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: packed 结构体
+
+```c
+struct __attribute__((packed)) Header {
+    uint8_t  type;     // 1
+    uint32_t seq;      // 4
+    uint16_t len;      // 2
+};
+
+printf("%zu\n", sizeof(struct Header));  // 多少？
+// 不加 packed 呢？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 加 `packed` → `sizeof = 7`。不加 `packed` → `sizeof = 12`（对齐填充）。
+
+`packed` 移除所有 padding，成员紧密排列。协议头、报文结构必须 `packed`，否则网络上 / 内存映射的布局与预期不一致。
+
+**代价：** `packed` 结构体中 `uint32_t` 可能未对齐 → 某些架构（ARM）上访问未对齐地址 → **总线错误** 或性能下降。x86 允许未对齐访问但有性能损失。
+
+**复习：** → [10.1 Structure Declaration](./10.1-结构声明.md)
+
+</details>
+
+### Q2: union 变体记录
+
+```c
+struct Message {
+    int type;
+    union {
+        struct { int x, y; }   coords;
+        struct { char name[8]; } info;
+    } payload;
+};
+
+struct Message m;
+m.type = 1;
+m.payload.coords.x = 10;
+
+// 安全访问 m.payload.info.name 吗？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **不安全**——union 各成员共享内存，当前活跃的是 `coords`，读 `info.name` 得到的是 `coords` 的字节重新解释。安全做法是先判 `type` 再访问对应 union 成员。
+
+**教训：** union + type 字段 = C 语言的"变体类型"，但编译器不帮你检查，全靠程序员自律。
+
+**复习：** → [10.6 Unions](./10.6-unions/10.6-unions.md)
+
+</details>

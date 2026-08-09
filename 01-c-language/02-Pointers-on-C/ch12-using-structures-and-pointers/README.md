@@ -55,3 +55,71 @@
 - [12.1 链表](./12.1-链表.md)
 - [12.2 单链表](./12.2-singly-linked-lists/12.2-singly-linked-lists.md)
 - [12.3 双链表](./12.3-doubly-linked-lists/12.3-doubly-linked-lists.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: 二级指针删头节点
+
+```c
+// 为什么删链表头节点要用二级指针？
+void remove_head(Node **head) {
+    Node *old = *head;
+    if (old) {
+        *head = old->next;
+        free(old);
+    }
+}
+
+// 如果用一级指针会怎样？
+void remove_head_wrong(Node *head) {
+    Node *old = head;
+    head = head->next;  // 修改的是副本！
+    free(old);
+}
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `remove_head_wrong` 修改的是 `head` 的副本（传值），调用者的 `head` 指针不变 → 仍指向已释放的旧头节点 → **UAF**。
+
+`remove_head` 用二级指针 `Node**`，通过 `*head = old->next` 直接修改调用者的指针变量。
+
+**教训：** 要在函数内修改调用者的指针变量，必须传指针的地址（二级指针）。
+
+**复习：** → [12.2 Singly Linked Lists](./12.2-singly-linked-lists/12.2-singly-linked-lists.md)
+
+</details>
+
+### Q2: 嵌套堆成员分层释放
+
+```c
+struct Msg {
+    int type;
+    char *payload;   // 堆分配
+};
+
+struct Msg *m = malloc(sizeof(struct Msg));
+m->payload = malloc(1000);
+
+// 正确释放顺序？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**正确顺序：** 先 `free(m->payload)`（内层），再 `free(m)`（外层）。反过来 → 外层已释放，`m->payload` 变悬垂 → 读到垃圾值或崩溃。
+
+```c
+free(m->payload);
+free(m);
+```
+
+**教训：** 嵌套堆分配按**逆序释放**（类似 `goto` 清理链）。
+
+**复习：** → [12.1 链表](./12.1-链表.md)

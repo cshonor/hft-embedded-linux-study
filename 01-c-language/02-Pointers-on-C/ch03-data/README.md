@@ -64,3 +64,113 @@
 - [3.7 存储类型](./3.7-存储类型.md)
 - [3.8 static 关键字](./3.8-static关键字.md)
 - [3.9 作用域、存储类型示例](./3.9-作用域-存储类型示例.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: const 四式指针
+
+```c
+int val = 42;
+const int *p1 = &val;        // (1)
+int * const p2 = &val;       // (2)
+const int * const p3 = &val; // (3)
+int *p4 = &val;             // (4)
+
+// p1 = &other;   // OK? 通过 p1 改 val?
+// *p2 = 99;      // OK? p2 = &other?
+```
+
+> 四种 const 分别限制什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+| 声明 | 指针可变 | 指向的数据可变 |
+|------|---------|--------------|
+| `const int *p1` | ✅ | ❌ |
+| `int *const p2` | ❌ | ✅ |
+| `const int *const p3` | ❌ | ❌ |
+| `int *p4` | ✅ | ✅ |
+
+**口诀：** `const` 在 `*` 左边修饰数据，在 `*` 右边修饰指针。
+
+**复习：** → [3.3 Constants](./3.3-constants/3.3-constants.md) — const 指针
+
+</details>
+
+### Q2: volatile MMIO
+
+```c
+// 硬件寄存器映射
+volatile unsigned int *reg = (volatile unsigned int*)0x40021000;
+
+// 不加 volatile 会怎样？
+// unsigned int *reg = (unsigned int*)0x40021000;
+// while (*reg & READY_BIT) ;
+```
+
+> `volatile` 防止编译器做什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `volatile` 防止编译器将 `*reg` 的读取**缓存到寄存器**。不加 `volatile`，编译器看到 `while (*reg & READY_BIT)` 中循环体不修改 `*reg`，可能优化为只读一次 → 死循环或错过状态变化。
+
+`volatile` 强制每次访问都从内存重新读取。用于 MMIO（内存映射 I/O）、中断修改的变量、信号处理中的变量。
+
+**注意：** `volatile` 不保证原子性，也不加内存屏障。
+
+**复习：** → [3.3 Constants](./3.3-constants/3.3-constants.md) — volatile
+
+</details>
+
+### Q3: 整数提升与 unsigned 比较
+
+```c
+if (sizeof(int) > -1)
+    printf("yes\n");
+else
+    printf("no\n");
+```
+
+> 输出 yes 还是 no？为什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**输出：** `no`
+
+**解析：** `sizeof` 返回 `size_t`（无符号）。比较 `size_t > -1` 时，`-1` 被转为无符号 = `0xFFFFFFFFFFFFFFFF`（64 位），远大于 `4`。
+
+这是无符号与有符号混算的经典陷阱。
+
+**复习：** → [3.2 Basic Types](./3.2-basic-types/3.2-basic-types.md) — 整数提升与 unsigned 混合
+
+</details>
+
+### Q4: typedef 定宽
+
+```c
+typedef uint32_t u32;
+typedef int64_t  i64;
+
+u32 addr = 0xDEADBEEF;
+i64 timestamp = 1699000000;
+```
+
+> 为什么 HFT / 内核用 `uint32_t` 而不是 `int`？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `int` 宽度跨平台不固定（2/4/8 字节）。`uint32_t`（`<stdint.h>`）保证恰好 4 字节。协议字段、寄存器、ABI 接口需要精确宽度。
+
+**复习：** → [3.4 typedef](./3.4-typedef/3.4-typedef.md)
+
+</details>

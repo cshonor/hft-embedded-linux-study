@@ -63,3 +63,70 @@ ch01–ch17 语法、内存、IO、ADT → 本章映射到 **ELF、VMA、ABI、s
 - [18.1 判断运行时环境](./18.1-determining-runtime-environment/18.1-determining-runtime-environment.md)
 - [18.2 C 和汇编语言的接口](./18.2-C和汇编语言的接口.md)
 - [18.3 运行时效率](./18.3-运行时效率.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: 虚拟地址空间六段
+
+```c
+int global_init = 42;    // (1) 哪段？
+int global_zero;          // (2) 哪段？
+const char *str = "hi";   // (3) "hi" 在哪段？
+int main(void) {          // (4) main 代码在哪段？
+    int local = 1;        // (5) 哪段？
+    int *heap = malloc(4);// (6) 哪段？
+}
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+1. `.data`（已初始化全局变量）
+2. `.bss`（未初始化全局变量，自动清零）
+3. `.rodata`（字符串字面量，只读）
+4. `.text`（代码段）
+5. 栈（`stack`，局部变量）
+6. 堆（`heap`，`malloc` 分配）
+
+**布局：** `.text` / `.rodata` / `.data` / `.bss` 在低地址（固定），堆向上增长，栈从高地址向下增长。
+
+**复习：** → [18.1 Determining Runtime](./18.1-determining-runtime-environment/18.1-determining-runtime-environment.md)
+
+</details>
+
+### Q2: 缓存行与伪共享
+
+```c
+// 两个线程各操作一个计数器
+struct {
+    int counter_a;  // 线程 1 写
+    int counter_b;  // 线程 2 写
+} stats;
+
+// stats 的大小是多少？有什么性能问题？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `sizeof = 8`（两个 `int`）。两个计数器在同一**缓存行**（64 字节）内 → **伪共享（false sharing）**。线程 1 写 `counter_a` 使整条缓存行失效 → 线程 2 的 `counter_b` 也要重新从内存加载。
+
+**HFT 性能杀手：** 伪共享可使多线程性能下降 10 倍以上。
+
+**修复：** 用 `__attribute__((aligned(64)))` 或 padding 让每个计数器独占一个缓存行。
+
+```c
+struct {
+    int counter_a;
+    char pad[60];   // 填到 64 字节
+    int counter_b;
+} stats;
+```
+
+**复习：** → [18.3 运行时效率](./18.3-运行时效率.md)

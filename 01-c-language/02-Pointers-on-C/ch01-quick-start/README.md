@@ -48,3 +48,75 @@
   - [1.1.5 rearrange 函数](./1.1-introduction/1.1.5-rearrange函数.md)
 - [1.2 补充说明](./1.2-补充说明.md)
 - [1.3 编译](./1.3-编译.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: 编译四阶段
+
+```bash
+# 以下四条命令分别对应编译的哪个阶段？
+gcc -E hello.c -o hello.i    # (1)
+gcc -S hello.i -o hello.s    # (2)
+gcc -c hello.s -o hello.o     # (3)
+gcc hello.o -o hello          # (4)
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+1. `-E` 预处理（展开 `#include` / `#define`）
+2. `-S` 编译（C → 汇编）
+3. `-c` 汇编（汇编 → 目标文件 `.o`）
+4. 链接（`.o` + 库 → 可执行文件）
+
+**复习：** → [1.3 编译](./1.3-编译.md)
+
+</details>
+
+### Q2: scanf 与返回值
+
+```c
+int val;
+int ret = scanf("%d", &val);
+// 输入 "abc" 时 ret 是多少？输入 "42" 时呢？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 输入 `abc` → `ret = 0`（匹配失败）；输入 `42` → `ret = 1`（匹配 1 项）。
+
+**解析：** `scanf` 返回成功匹配的项数。生产代码必须检查返回值。`&val` 是取地址——C 只有传值，传指针是模拟传引用。
+
+**复习：** → [1.1 Introduction](./1.1-introduction/1.1-introduction.md) — scanf 与 `&`
+
+</details>
+
+### Q3: 栈上大数组
+
+```c
+int main(void) {
+    int big[1000000];  // 4MB on stack
+    big[0] = 42;
+    printf("%d\n", big[0]);
+    return 0;
+}
+// 会发生什么？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 段错误（stack overflow）。默认栈大小约 8MB（Linux），4MB 数组接近极限，加上其他栈帧可能溢出。
+
+**教训：** 大数组用 `malloc` 放堆上，或用 `static` / 全局变量。
+
+**复习：** → [1.2 补充说明](./1.2-补充说明.md)
+
+</details>

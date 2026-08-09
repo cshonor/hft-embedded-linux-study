@@ -58,3 +58,75 @@
 - [13.3 函数指针](./13.3-function-pointers/13.3-function-pointers.md)
 - [13.4 命令行参数](./13.4-命令行参数.md)
 - [13.5 字符串常量](./13.5-字符串常量.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: 函数指针数组分发
+
+```c
+typedef int (*handler_t)(int);
+
+int add(int x) { return x + 1; }
+int sub(int x) { return x - 1; }
+int mul(int x) { return x * 2; }
+
+handler_t table[3] = {add, sub, mul};
+
+int dispatch(int op, int val) {
+    if (op >= 0 && op < 3)
+        return table[op](val);
+    return -1;
+}
+```
+
+> 这种模式比 `if-else` / `switch` 有什么优势？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 函数指针数组 = **O(1) 分发**，直接用索引跳转。`switch` 需要 N 次比较（或跳转表优化后接近 O(1)），`if-else` 是 O(N)。
+
+**用途：** 内核 VFS `file_operations`、DPDK 驱动回调表、中断向量表、HFT 报文分发。
+
+**代价：** 间接调用（`call [rax]`）可能破坏分支预测，热路径上不如 `switch` 编译器跳转表。
+
+**复习：** → [13.3 Function Pointers](./13.3-function-pointers/13.3-function-pointers.md)
+
+</details>
+
+### Q2: 回调 + void* priv
+
+```c
+void for_each(int *arr, int n,
+              void (*cb)(int, void *), void *priv) {
+    for (int i = 0; i < n; i++)
+        cb(arr[i], priv);
+}
+
+void print_sq(int x, void *priv) {
+    printf("%d -> %d\n", x, x * x);
+}
+
+int data[] = {1, 2, 3};
+for_each(data, 3, print_sq, NULL);
+```
+
+> `void *priv` 参数做什么？为什么几乎所有回调都有它？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `priv` 是**上下文指针**，让回调函数能访问外部状态而不依赖全局变量。
+
+**例子：** `for_each` 遍历数组时，回调可能需要往某个 buffer 累加结果——`priv` 指向那个 buffer。
+
+**内核实例：** `file->private_data`、`timer_list->data`、`notifier_block` 回调都有 `void *data`。
+
+**教训：** 设计回调接口时永远预留 `void *priv` 参数，即使当前用不上。
+
+**复习：** → [13.3 Function Pointers](./13.3-function-pointers/13.3-function-pointers.md)

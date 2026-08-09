@@ -71,3 +71,57 @@
 - [15.14 流错误函数](./15.14-流错误函数.md)
 - [15.15 临时文件](./15.15-临时文件.md)
 - [15.16 文件操纵函数](./15.16-文件操纵函数.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: fflush 不能代替 fclose
+
+```c
+FILE *fp = fopen("data.txt", "w");
+fprintf(fp, "important data");
+// 程序崩溃了，没调用 fclose
+// 数据会丢吗？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 可能丢。`fprintf` 写到 stdio **用户态缓冲区**，`fclose` 才触发 `write` syscall 把缓冲刷到内核。如果程序崩溃（段错误/`abort`），用户态缓冲区丢失。
+
+**正确做法：** 关键日志写后 `fflush(fp)` 强制刷到内核（但仍在内核 page cache，`fsync(fd)` 才真正落盘）。
+
+**层次：** `fprintf` → 用户缓冲 → `fflush` → 内核 page cache → `fsync` → 磁盘
+
+**复习：** → [15.1 Stream I/O](./15.1-流IO.md) — 缓冲与 flush
+
+</details>
+
+### Q2: snprintf 防溢出
+
+```c
+char buf[8];
+
+// 写法 A (危险)
+sprintf(buf, "%s", "hello world!");
+
+// 写法 B (安全)
+snprintf(buf, sizeof(buf), "%s", "hello world!");
+```
+
+> 各会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- 写法 A → 缓冲区溢出（`"hello world!"` 12 字节 + `\0` = 13，超出 8）→ 栈损坏/安全漏洞
+- 写法 B → 安全截断为 `"hello w"`（7 字符 + `\0` = 8），返回需要写入的完整长度（12）→ 可判断是否被截断
+
+**教训：** 永远用 `snprintf`，不用 `sprintf`。用 `sizeof(buf)` 传缓冲区大小。
+
+**复习：** → [15.3 Formatted I/O](./15.3-格式化IO.md)

@@ -72,3 +72,68 @@ C 标准库工具集总览：**stdlib**、**string**、**ctype**、**math**、**
 - [16.6 打印可变参数列表](./16.6-打印可变参数列表.md)
 - [16.7 执行环境](./16.7-执行环境.md)
 - [16.8 locale](./16.8-locale.md)
+
+
+---
+
+## 章节自测
+
+> 看代码 → 想答案 → 点开验证。
+
+### Q1: qsort + 回调
+
+```c
+int cmp(const void *a, const void *b) {
+    return *(const int*)a - *(const int*)b;
+}
+
+int arr[] = {5, 2, 8, 1, 9, 3};
+qsort(arr, 6, sizeof(int), cmp);
+
+// arr 现在是什么？
+```
+
+> `qsort` 的四个参数各是什么？`cmp` 返回值有什么要求？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `arr` 变为 `{1, 2, 3, 5, 8, 9}`。
+
+**参数：** `qsort(基地址, 元素个数, 单元素大小, 比较函数指针)`
+
+**cmp 要求：** 返回 `< 0`（a 排前）、`0`（相等）、`> 0`（a 排后）。**不能直接 `return a - b`**——如果差值溢出（如 `INT_MIN - INT_MAX`）会导致错误比较结果。安全写法：
+```c
+int va = *(const int*)a, vb = *(const int*)b;
+return (va > vb) - (va < vb);
+```
+
+**复习：** → [16.1 stdlib](./16.1-stdlib.md)
+
+</details>
+
+### Q2: exit vs _exit
+
+```c
+#include <stdlib.h>
+#include <unistd.h>
+
+void cleanup(void) { printf("flushing...\n"); }
+
+int main(void) {
+    atexit(cleanup);
+    // _exit(1);   // (1) cleanup 会执行吗？
+    exit(1);        // (2) cleanup 会执行吗？
+}
+```
+
+> `exit(1)` 和 `_exit(1)` 哪个会执行 `atexit` 注册的函数？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `exit(1)` 会执行 `atexit` 注册的函数 + 刷 stdio 缓冲。`_exit(1)` 是系统调用，**直接终止进程**，不执行任何清理。
+
+**用途：** `fork` 后子进程如果 `exec` 失败应调 `_exit`（不是 `exit`），避免触发父进程的 `atexit` 清理函数（可能重复 flush 父的 stdio 缓冲）。
+
+**复习：** → [16.7 执行环境](./16.7-执行环境.md)
