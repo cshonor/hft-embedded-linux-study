@@ -138,3 +138,26 @@ void builtin_short_circuit(const char *p) {
 - **`,`**：重载 → 无法保证左先于右。
 - 操作符重载应增强可读性；这三个操作符重载只会**打破**程序员对语言的基本假设。
 - **明智做法：不要重载 `&&`、`||`、`,`。**
+
+---
+
+## 代码自测
+
+**题目 1：** 重载 `operator&&` 后，以下代码的行为有什么变化？
+```cpp
+class Bool {
+    bool val;
+public:
+    bool operator&&(const Bool& rhs) const { return val && rhs.val; }
+};
+Bool getFlag();  // 可能修改全局状态
+Bool a = getFlag();
+if (a && getFlag()) { ... }  // 还能短路求值吗？
+```
+
+<details>
+<summary>参考答案</summary>
+
+不能短路。重载 `operator&&` 后，`a && getFlag()` 变成函数调用 `a.operator&&(getFlag())`——函数调用前所有参数必须求值，`getFlag()` 一定会被调用，短路语义丢失。同理 `operator||` 和 `operator,` 都会丢失短路/顺序语义。规则：永远不要重载 `&&`、`||`、`,`。
+
+</details>

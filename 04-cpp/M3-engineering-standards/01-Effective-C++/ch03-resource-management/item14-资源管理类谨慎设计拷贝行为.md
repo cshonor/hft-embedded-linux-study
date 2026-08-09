@@ -186,3 +186,24 @@ auto p2 = std::move(p1);             // 所有权转移
 5. 与 [条款 15](./item15-资源管理类提供原始资源访问接口.md) 衔接：拷行为定好后，再暴露 `get()` 给 C API。
 
 ← [条款 13：RAII](./item13-以对象管理资源（RAII）.md) | [条款 15：原始资源访问 →](./item15-资源管理类提供原始资源访问接口.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 一个 MutexLock RAII 类应该如何设计拷贝行为？
+```cpp
+class MutexLock {
+    pthread_mutex_t* pm;
+public:
+    MutexLock(pthread_mutex_t* m) : pm(m) { lock(); }
+    ~MutexLock() { unlock(); }
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+锁的拷贝语义不明确——拷贝一个锁意味着什么？通常有三种选择：1) 禁止拷贝（`= delete`）；2) 转移所有权（像 unique_ptr）；3) 引用计数（像 shared_ptr）。最常见的是禁止拷贝，因为拷贝锁几乎没有合理语义。
+
+</details>

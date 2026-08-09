@@ -210,3 +210,35 @@ std::shared_ptr<Investment> createInvestment() {
 6. 完整「类型即契约」见 [条款 19](./item19-设计类等同于设计一种全新类型.md)。
 
 ← [条款 17：独立语句存 smart_ptr](../ch03-resource-management/item17-用独立语句把new出来的对象存入智能指针.md) | [条款 19：类即新类型 →](./item19-设计类等同于设计一种全新类型.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 如何设计一个接口让用户无法错误地传入负数月份？
+```cpp
+class Month {
+    // ???
+};
+void setMonth(Month m);
+```
+
+<details>
+<summary>参考答案</summary>
+
+用类型系统约束：
+```cpp
+class Month {
+public:
+    static Month Jan() { return Month(1); }
+    static Month Feb() { return Month(2); }
+    // ... Dec()
+private:
+    explicit Month(int m) : val(m) {}
+    int val;
+};
+setMonth(Month::Jan());  // 不可能传错
+```
+通过工厂函数 + private 构造函数，从类型层面杜绝非法值。
+
+</details>

@@ -162,3 +162,25 @@ void f(const Handle& h);  // ✅
 5. **小对象 ≠ 廉价拷贝**；类型实现会变——接口选 `const&` 更稳。
 
 ← [条款 19：类即新类型](./item19-设计类等同于设计一种全新类型.md) | [条款 21：按值返回对象 →](./item21-必须返回对象时，不要强行返回引用.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码会发生什么问题？
+```cpp
+class Base { public: virtual ~Base() {} };
+class Derived : public Base { int data[100]; };
+void print(Base b) {  // 传值
+    // ...
+}
+Derived d;
+print(d);  // 会发生什么？
+```
+
+<details>
+<summary>参考答案</summary>
+
+对象切片（slicing）：`print` 按值接收 `Base`，`Derived` 的派生部分被切掉——`data[100]` 丢失，虚函数也不再分派到 `Derived`。应改为 `void print(const Base& b)` 传 const 引用。
+
+</details>

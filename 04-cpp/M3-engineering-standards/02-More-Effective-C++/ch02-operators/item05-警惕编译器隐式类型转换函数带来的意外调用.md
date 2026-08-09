@@ -172,3 +172,28 @@ int main() {
 - **转换运算符**：优先显式成员函数（`asDouble`、`c_str`），避免 `operator T()`。
 - **单参数构造**：默认加 **`explicit`**；老编译器用代理类阻断链式隐式转换。
 - 除非你确实需要隐式转换，否则不要定义类型转换函数。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下隐式转换有什么隐患？
+```cpp
+class Rational {
+public:
+    Rational(int n = 0, int d = 1);
+    operator double() const { return (double)num/den; }
+private:
+    int num, den;
+};
+Rational r(1, 3);
+cout << r;      // 输出什么？
+cout << r + 1;  // 输出什么？
+```
+
+<details>
+<summary>参考答案</summary>
+
+`cout << r` 输出 `0.333333`（隐式转 double）而非 Rational 的字符串表示——这不是期望行为。`r + 1` 中 `r` 先转 double 再加 1，精度丢失。隐式转换函数 `operator double()` 可能在意想不到的地方触发。解法：用 `explicit` 关键字（C++11 起适用于转换运算符），要求显式写 `static_cast<double>(r)`。
+
+</details>

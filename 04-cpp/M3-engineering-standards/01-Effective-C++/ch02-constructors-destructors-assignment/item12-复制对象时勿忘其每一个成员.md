@@ -168,3 +168,34 @@ Derived& Derived::operator=(const Derived& rhs) {
 5. 编译器**不提醒**漏字段 —— 这是手写拷贝的代价；能 `= default` 则 default。
 
 ← [条款 11：自我赋值](./item11-赋值运算符处理自我赋值.md) | [第三章：条款 13 RAII →](../ch03-resource-management/item13-以对象管理资源（RAII）.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面 `Derived` 的拷贝赋值运算符遗漏了什么？
+```cpp
+class Base { int bx; };
+class Derived : public Base {
+    int dx;
+    Derived& operator=(const Derived& rhs) {
+        dx = rhs.dx;
+        return *this;
+    }
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+遗漏了基类成员 `bx` 的赋值。派生类的拷贝赋值必须显式调用基类的赋值：
+```cpp
+Derived& operator=(const Derived& rhs) {
+    Base::operator=(rhs);  // 不要忘记基类
+    dx = rhs.dx;
+    return *this;
+}
+```
+同理，拷贝构造函数也必须在初始化列表中调用 `Base(rhs)`。
+
+</details>

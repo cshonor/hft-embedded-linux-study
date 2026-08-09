@@ -150,3 +150,28 @@ private:
 5. 需要定制 → **向上传参**，不要向下 virtual。
 
 ← [条款 8：析构与异常](./item08-别让异常逃离析构函数.md) | [条款 10：operator= 返回 *this →](./item10-令operator=返回this引用.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码输出什么？为什么？
+```cpp
+class Base {
+public:
+    Base() { init(); }
+    virtual void init() { std::cout << "Base"; }
+};
+class Derived : public Base {
+public:
+    void init() override { std::cout << "Derived"; }
+};
+Derived d;  // 输出？
+```
+
+<details>
+<summary>参考答案</summary>
+
+输出 `Base`。在基类构造期间，虚函数机制不起作用——`init()` 被当作 `Base::init()` 调用，不会分派到 `Derived::init()`。因为此时 `Derived` 部分尚未构造完成，C++ 将对象视为 `Base` 类型。析构期间同理。
+
+</details>

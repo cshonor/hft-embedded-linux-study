@@ -148,3 +148,30 @@ class Derived : public Base {
 5. 写类前先问：**编译器会替我生成什么？够用吗？**
 
 ← [条款 4：初始化](../ch01-accustom-yourself/item04-确定对象被使用前已先被初始化.md) | [条款 6：明确禁用 →](./item06-不想用编译器自动生成的函数，就明确禁用.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码会生成哪些编译器自动函数？
+```cpp
+class Empty {};
+```
+
+<details>
+<summary>参考答案</summary>
+
+编译器会自动生成：默认构造函数、拷贝构造函数、拷贝赋值运算符、析构函数（C++11 起还会生成移动构造和移动赋值）。等价于：
+```cpp
+class Empty {
+    Empty();
+    Empty(const Empty&);
+    Empty& operator=(const Empty&);
+    ~Empty();
+    // C++11:
+    Empty(Empty&&);
+    Empty& operator=(Empty&&);
+};
+```
+
+</details>

@@ -183,3 +183,24 @@ private:
 5. 重载维护：**non-const 调 const**，绝不反过来。
 
 ← [条款 2：const 替换 #define](./item02-尽量以const、enum、inline替换#define.md) | [条款 4：初始化 →](./item04-确定对象被使用前已先被初始化.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码能否编译？为什么？
+```cpp
+class TextBlock {
+    char& operator[](std::size_t pos) const {
+        return text[pos];
+    }
+    std::string text;
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+能编译但有逻辑错误。`operator[]` 被声明为 `const` 成员函数，但它返回的是 `char&`（非 const 引用），这意味着在 const 对象上仍可修改内部数据——这违反了 const 语义。编译器只做 bitwise constness 检查，`text[pos]` 返回的引用被当作成员的 bit 处理所以能通过编译，但逻辑上 const 对象不应被修改。
+
+</details>

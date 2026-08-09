@@ -83,3 +83,25 @@ std::sort(levels.begin(), levels.end());
 2. **切换子语言 → 切换惯用法**（传参、错误处理、抽象程度都会变）。
 3. 传参速记：**内建类型 / STL 迭代器 → 常传值；自定义类型 / 模板参数 → 常 const 引用**（有例外，以 profiling 为准）。
 4. 全书后续条款都建立在这个划分上——读每条时想它主要约束哪一「子语言」。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下四段代码分别属于 C++ 的哪个「子语言」？写出判断依据。
+```cpp
+int x = 42;                                    // ?
+class Widget { void run(); };                   // ?
+template<class T> void f(const T&);             // ?
+std::sort(v.begin(), v.end());                  // ?
+```
+
+<details>
+<summary>参考答案</summary>
+
+1. C 子集（内建类型 int，按值使用）
+2. OOP C++（自定义 class，有成员函数）
+3. Template C++（模板参数 T 类型未知）
+4. STL（使用容器迭代器配合算法）
+
+</details>

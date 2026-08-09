@@ -178,3 +178,30 @@ void swap(Widget& a, Widget& b) {
 5. 多对象 API 也要考虑「可能是同一个实体」。
 
 ← [条款 10：返回 *this](./item10-令operator=返回this引用.md) | [条款 12：复制每一个成员 →](./item12-复制对象时勿忘其每一个成员.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下自我赋值检查有什么问题？
+```cpp
+Widget& operator=(const Widget& rhs) {
+    if (this == &rhs) return *this;  // 身份测试
+    delete ptr; ptr = new Foo(*rhs.ptr);
+    return *this;
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+如果 `new Foo(*rhs.ptr)` 抛异常，`ptr` 已被 delete，对象处于不一致状态——后续访问 `ptr` 会崩溃。更好的方法是 copy-and-swap：
+```cpp
+Widget& operator=(Widget rhs) {  // 按值传参，自动拷贝
+    std::swap(ptr, rhs.ptr);
+    return *this;
+}
+```
+Copy-and-swap 天然处理自我赋值且异常安全。
+
+</details>

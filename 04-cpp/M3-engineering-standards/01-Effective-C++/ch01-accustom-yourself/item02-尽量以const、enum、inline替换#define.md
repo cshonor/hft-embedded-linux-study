@@ -136,3 +136,26 @@ C++11 起也可用 **`constexpr` 函数** 处理编译期可算的「宏函数�
 4. 一句话：**让编译器看见名字和类型，别让预处理器在暗处替换成裸数字和文本块。**
 
 ← [条款 1：语言联邦](./item01-视C++为一个语言联邦.md) | [条款 3：尽可能使用 const →](./item03-尽可能使用const.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面两种定义常量的方式各有什么问题？
+```cpp
+// 方式A
+#define ASPECT_RATIO 1.653
+// 方式B
+class GamePlayer {
+    static const int NumTurns = 5;
+    int scores[NumTurns];
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+方式A：宏在预处理阶段替换，不进入符号表，调试看不到名字；没有作用域限制。
+方式B：`static const int` 在类内给出初值是合法的，但某些编译器要求类外提供定义式（`const int GamePlayer::NumTurns;`）才能取地址。更稳妥的做法是 enum hack：`enum { NumTurns = 5 };`
+
+</details>

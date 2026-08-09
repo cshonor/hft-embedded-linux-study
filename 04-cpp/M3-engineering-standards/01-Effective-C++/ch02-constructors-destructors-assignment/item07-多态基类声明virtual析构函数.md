@@ -147,3 +147,28 @@ public:
 5. **纯 virtual 析构** 可造抽象类，但**必须提供定义**。
 
 ← [条款 6：禁用拷贝](./item06-不想用编译器自动生成的函数，就明确禁用.md) | [条款 8：析构与异常 →](./item08-别让异常逃离析构函数.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码有什么内存泄漏风险？
+```cpp
+class Base {
+public:
+    ~Base() {}  // 非虚析构
+};
+class Derived : public Base {
+    int* data = new int[100];
+    ~Derived() { delete[] data; }
+};
+Base* p = new Derived;
+delete p;  // 会发生什么？
+```
+
+<details>
+<summary>参考答案</summary>
+
+`delete p` 时，因为 `Base` 的析构函数非虚，只调用 `Base::~Base()`，`Derived::~Derived()` 不会被调用——`data` 数组泄漏。规则：多态基类的析构函数必须声明为 `virtual`。
+
+</details>

@@ -142,3 +142,23 @@ int main() {
 - C 风格强转：意图模糊、难以检索，应优先改用四种 `*_cast`。
 - **`static_cast`**：普通编译期转换；**`const_cast`**：只动 const/volatile；**`dynamic_cast`**：安全向下转型；**`reinterpret_cast`**：底层重解释，慎用。
 - 新式转换故意「惹眼」，是为了让危险操作难以被忽略；转换越少越好。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下两种转型有什么区别？
+```cpp
+Base* pb = new Derived;
+// 方式A
+Derived* pd = (Derived*)pb;
+// 方式B
+Derived* pd2 = static_cast<Derived*>(pb);
+```
+
+<details>
+<summary>参考答案</summary>
+
+方式A（C 风格强转）可能执行 `const_cast` + `reinterpret_cast` 的组合，行为难以预测，且不区分转型类型。方式B（`static_cast`）语义明确：仅做相关类型间的转换，编译器会做基本检查。C++ 四种新式转型各有明确用途：`static_cast`（普通转换）、`dynamic_cast`（安全向下转型，带 RTTI 检查）、`const_cast`（去 const）、`reinterpret_cast`（位重新解释）。
+
+</details>

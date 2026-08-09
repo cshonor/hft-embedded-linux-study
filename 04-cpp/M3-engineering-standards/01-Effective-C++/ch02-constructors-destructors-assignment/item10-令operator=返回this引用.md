@@ -143,3 +143,27 @@ public:
 4. 与内建类型、STL **保持一致**；无充分理由不破坏惯例。
 
 ← [条款 9：构造/析构与虚函数](./item09-绝不在构造和析构过程调用虚函数.md) | [条款 11：自我赋值 →](./item11-赋值运算符处理自我赋值.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面 `operator=` 的返回类型有什么问题？
+```cpp
+class Widget {
+    void operator=(const Widget& rhs) { /* ... */ }
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+返回 `void` 导致无法链式赋值：`a = b = c` 无法工作（`b = c` 返回 void，无法再赋给 a）。`operator=` 应返回 `Widget&`（指向 `*this` 的引用）：
+```cpp
+Widget& operator=(const Widget& rhs) {
+    // ...
+    return *this;
+}
+```
+
+</details>

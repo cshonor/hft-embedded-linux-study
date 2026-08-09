@@ -152,3 +152,26 @@ void setup() {
 - 缺省构造合理时保留（数字语义、空容器）；**无外部数据则对象无意义时，不要提供**。
 - 无缺省构造的限制：对象数组、部分模板、虚基类传参——可用指针容器、`emplace_back` 等替代，而非引入「未确定」状态。
 - **构造保证有效** 优于 **默认构造 + 处处有效性检测**：更简单、更快、 invariant 更强。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码中 `obj` 的 `id` 值是什么？无默认构造函数有什么代价？
+```cpp
+class Widget {
+public:
+    Widget(int id) : id_(id) {}
+    int id() const { return id_; }
+private:
+    int id_;
+};
+std::vector<Widget> v(10);  // 编译错误？
+```
+
+<details>
+<summary>参考答案</summary>
+
+编译错误。`vector<Widget> v(10)` 需要 `Widget` 有默认构造函数。如果没有，必须提供初值：`std::vector<Widget> v(10, Widget(0));`。无默认构造函数的代价：1) 不能放入需要默认构造的容器（某些操作）；2) 数组无法声明 `Widget arr[10];`；3) 序列化/反序列化不便。如果合理，应提供默认构造。
+
+</details>

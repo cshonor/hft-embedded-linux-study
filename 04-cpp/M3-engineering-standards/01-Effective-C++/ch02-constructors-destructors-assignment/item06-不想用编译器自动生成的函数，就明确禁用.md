@@ -159,3 +159,31 @@ public:
 5. 独一无二、独占资源 → **禁拷贝**；值类型 → 实现或默认 member-wise。
 
 ← [条款 5：编译器生成什么](./item05-了解C++默默编写并调用哪些函数.md) | [条款 7：virtual 析构 →](./item07-多态基类声明virtual析构函数.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 以下两种禁止拷贝的方式有什么区别？
+```cpp
+// 方式A (C++03)
+class NonCopyable {
+private:
+    NonCopyable(const NonCopyable&);
+    NonCopyable& operator=(const NonCopyable&);
+};
+// 方式B (C++11)
+class NonCopyable {
+public:
+    NonCopyable(const NonCopyable&) = delete;
+    NonCopyable& operator=(const NonCopyable&) = delete;
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+方式A：将拷贝构造和赋值设为 private 且不实现，链接期才报错；友元/成员函数仍可尝试调用。
+方式B（推荐）：`= delete` 在编译期就报错，且可以设为 public（更清晰的错误信息），还可以 delete 任意函数（如 `void f(int) = delete;` 来禁止特定重载）。
+
+</details>

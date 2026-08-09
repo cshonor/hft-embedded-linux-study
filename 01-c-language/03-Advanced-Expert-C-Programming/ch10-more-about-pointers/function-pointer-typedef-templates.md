@@ -101,3 +101,25 @@ SigHandler signal(int sig, SigHandler handler); /* 简化 typedef 后 */
 ## Demo
 
 见 [demo/demo02_func_ptr](./demo/demo02_func_ptr/main.c)。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下多维数组传参方式哪些正确？
+```c
+int a[3][4];
+void f1(int **a);        // ?
+void f2(int (*a)[4]);    // ?
+void f3(int a[][4]);     // ?
+void f4(int a[3][4]);    // ?
+```
+
+<details>
+<summary>参考答案</summary>
+
+f1 错误——`int**` 不是 `int[3][4]` 的退化结果。
+f2/f3/f4 正确——都退化为 `int(*)[4]`（指向含 4 个 int 的数组的指针）。
+多维数组的「行数」退化丢失，但「列数」必须保留——编译器需要列数计算偏移：`a[i][j]` ≡ `*(*(a+i)+j)` ≡ `*(*a + i*4 + j)`。
+
+</details>

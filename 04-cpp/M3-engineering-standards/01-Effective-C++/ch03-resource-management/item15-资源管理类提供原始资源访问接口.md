@@ -158,3 +158,21 @@ FontHandle h = font;           // 隐式转换：h 是裸拷贝
 5. 使用裸资源时：**不延长生命周期、不重复 delete**。
 
 ← [条款 14：拷贝行为](./item14-资源管理类谨慎设计拷贝行为.md) | [条款 16：new/delete 成对 →](./item16-new和delete成对使用，形式保持一致.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 为什么智能指针类需要提供 `get()` 方法？
+```cpp
+void raw_api(int* p);  // 第三方 C API 需要 int*
+std::shared_ptr<int> sp = std::make_shared<int>(42);
+raw_api(???);  // 怎么传？
+```
+
+<details>
+<summary>参考答案</summary>
+
+使用 `sp.get()` 获取原始指针：`raw_api(sp.get());`。RAII 类需要提供对底层资源的访问接口，因为现实代码中总有需要原始指针的 API（尤其是 C 接口）。但要注意：不要 delete `get()` 返回的指针，也不要用它初始化另一个智能指针。
+
+</details>

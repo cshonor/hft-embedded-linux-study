@@ -99,3 +99,28 @@ class Derived : public Base {};
 - 数组索引 = 指针算术；多态下步长按**静态类型**（基类）算，与**实际对象大小**（派生类）不一致 → 寻址与析构皆错。
 - **永远不要**用基类指针遍历或 `delete[]` 派生类数组。
 - 多态集合优先用「指针/智能指针的容器」，架构上可用抽象非叶子类降低误用概率。
+
+---
+
+## 代码自测
+
+**题目 1：** 以下代码有什么致命问题？
+```cpp
+class Base { public: ~Base() {} };
+class Derived : public Base {
+    int* arr = new int[100];
+    ~Derived() { delete[] arr; }
+};
+void f(Base items[], int n) {
+    delete[] items;  // 数组多态
+}
+Derived* d = new Derived[10];
+f(d, 10);
+```
+
+<details>
+<summary>参考答案</summary>
+
+数组多态是经典大坑。`delete[] items` 中 `items` 的静态类型是 `Base*`，编译器按 `Base` 的大小计算偏移——`Base` 和 `Derived` 大小不同，析构调用错位，部分 `Derived` 析构不被调用，`arr` 泄漏。绝对不要对数组做多态处理。替代方案：用 `vector<unique_ptr<Base>>`。
+
+</details>

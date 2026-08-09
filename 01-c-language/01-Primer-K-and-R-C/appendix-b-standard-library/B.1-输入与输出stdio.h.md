@@ -130,3 +130,27 @@ int main(void)
 3. `getchar` 与 `fgets` 有何区别？为何不用 `gets`？
 4. stdio 缓冲与 `read(2)` 在低延迟场景如何选型？
 5. `FILE` 是关键字吗？能否 `int FILE;`？
+
+---
+
+## 代码自测
+
+**题目 1：** 以下 printf 调用各有什么问题？
+```c
+printf("%d\n", 3.14);        // ?
+printf("%f\n", 42);          // ?
+printf("%s\n", 'x');         // ?
+printf("%c\n", "hello");    // ?
+```
+
+<details>
+<summary>参考答案</summary>
+
+全部类型不匹配——printf 是变参函数，不做类型检查：
+`%d` + double → 读取 double 的字节当 int，垃圾值
+`%f` + int → 读取 int 的字节当 double，垃圾值
+`%s` + char → 把字符值当地址解引用，段错误
+`%c` + char* → 把指针值截断当字符输出
+建议：开启编译器警告（`-Wformat`），或用 C++ 的类型安全 I/O。
+
+</details>

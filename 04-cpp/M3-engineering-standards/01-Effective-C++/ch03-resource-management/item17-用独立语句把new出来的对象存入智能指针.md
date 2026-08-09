@@ -130,3 +130,29 @@ processWidget(std::shared_ptr<Widget>(new Widget),
 5. 这是 [条款 13](./item13-以对象管理资源（RAII）.md) 在**语法细节**上的必要补充：**RAII 生效时间点** 不能晚于、也不能被其它实参打断。
 
 ← [条款 16：new/delete 形式](./item16-new和delete成对使用，形式保持一致.md) | [第四章：条款 18 接口设计 →](../ch04-design-declaration/item18-接口设计要易用正确、难被误用.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码在异常安全方面有什么隐患？
+```cpp
+void process() {
+    widget pw(new Widget);  // 假设 widget 构造函数接受 Widget*
+    priority();             // 可能抛异常
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+C++ 参数求值顺序未指定。如果编译器先执行 `new Widget`，再执行 `priority()`，最后构造 `widget`——若 `priority()` 抛异常，`new Widget` 返回的指针丢失，资源泄漏。解法：把 `new` 拆到独立语句：
+```cpp
+void process() {
+    Widget* raw = new Widget;  // 独立语句
+    widget pw(raw);            // 再传给智能指针
+    priority();
+}
+```
+
+</details>

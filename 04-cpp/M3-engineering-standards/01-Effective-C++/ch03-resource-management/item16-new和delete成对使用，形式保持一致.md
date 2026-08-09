@@ -163,3 +163,20 @@ delete pal;                             // ❌ 看起来像 delete 单指针，�
 5. **避免数组 typedef**；优先 **`vector` / `string` / `array`**。
 
 ← [条款 15：裸资源访问](./item15-资源管理类提供原始资源访问接口.md) | [条款 17：new 与智能指针 →](./item17-用独立语句把new出来的对象存入智能指针.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码有什么问题？
+```cpp
+std::string* s = new std::string[10];
+delete s;  // 正确吗？
+```
+
+<details>
+<summary>参考答案</summary>
+
+错误。`new[]` 分配的数组必须用 `delete[]` 释放。`delete s` 只调用第一个元素的析构函数，其余 9 个元素未析构——内存泄漏且行为未定义。正确：`delete[] s;`。
+
+</details>

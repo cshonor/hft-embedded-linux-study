@@ -2,6 +2,7 @@
 
 > **理念：** 笔记是地图，项目是路——**先上路，卡住了再查模块笔记**；不是「读完 2000 篇再动手」。  
 > P1 已写成带「卡住翻哪篇」索引的实战指南 → [P1-cpu-simulator/README.md](./P1-cpu-simulator/README.md)  
+> **构建：** [CMake vs Makefile](./CMAKE-VS-MAKEFILE.md)（CMake 不是 make 的插件）  
 > 上层路线 → [../README.md](../README.md)
 
 ## 依赖链

@@ -166,3 +166,29 @@ std::unique_ptr<int[]> arr(new int[100]); // ✅ delete[]
 5. **动态数组** → `vector` / `string` / `unique_ptr<T[]>`，勿默认 deleter + `new[]`。
 
 ← [条款 12：拷贝全部成员](../ch02-constructors-destructors-assignment/item12-复制对象时勿忘其每一个成员.md) | [条款 14：资源管理类拷贝 →](./item14-资源管理类谨慎设计拷贝行为.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码有什么资源泄漏风险？
+```cpp
+void f() {
+    Investment* p = createInvestment();
+    // ... 若干行代码 ...
+    delete p;
+}
+```
+
+<details>
+<summary>参考答案</summary>
+
+如果 `createInvestment()` 和 `delete p` 之间的代码抛异常或提前 return，`p` 不会被 delete——资源泄漏。RAII 解法：用智能指针接管。
+```cpp
+void f() {
+    auto p = std::make_unique<Investment>(createInvestment());
+    // ... 即使抛异常，p 析构时自动 delete
+}
+```
+
+</details>

@@ -172,3 +172,22 @@ FileSystem& fs = tfs();
 4. 一句话：**能初始化就别赋值；能延迟到函数内 static 就别赌全局谁先谁后。**
 
 ← [条款 3：尽可能使用 const](./item03-尽可能使用const.md) | [第二章：条款 5 →](../ch02-constructors-destructors-assignment/item05-了解C++默默编写并调用哪些函数.md)
+
+---
+
+## 代码自测
+
+**题目 1：** 下面代码中 `x` 和 `y` 的初始化顺序是什么？
+```cpp
+class Widget {
+    int y = x + 1;
+    int x = 0;
+};
+```
+
+<details>
+<summary>参考答案</summary>
+
+`x` 先初始化，`y` 后初始化。成员初始化顺序由**声明顺序**决定，与初始化列表中的书写顺序无关。这里 `y` 在 `x` 之前声明，所以 `y` 先初始化——此时 `x` 尚未初始化（值未定义），`y = x + 1` 是未定义行为。应调整声明顺序，让 `x` 在 `y` 之前。
+
+</details>
