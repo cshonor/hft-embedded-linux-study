@@ -48,18 +48,9 @@ P5 树莓派嵌入式（P5a–P5e）      │
 
 ## 约定
 
-每个 Project **保留**脚手架目录（不要删）：
-
-| 目录 | 用途 |
-|------|------|
-| `src/` | 通用源码占位（`.gitkeep`） |
-| `notes/` | 踩坑笔记占位 |
-| `refs/` | 资料链接占位 |
-
-有 **Part A/B/C** 时，**另外**再建可 `make` 的子工程（如 `part-a-shell/`），指南仍用 `Part-*.md`。  
-`part-*` 与 `src/` / `notes/` / `refs/` **并存**，不是互相替代。
-
-Project 编号与模块编号是两套体系：**模块=知识，Project=产出**。
+- 有 Part 的项目：代码进可 `make` 的 `part-*` 子工程（如 `part-a-shell/`），指南用 `Part-*.md`。
+- **不要**再放空的 `src/` / `notes/` / `refs/` 占位目录。
+- Project 编号与模块编号是两套体系：**模块=知识，Project=产出**。
 ### 已拆成可运行子工程的例子
 
 | Project | 子工程 |
