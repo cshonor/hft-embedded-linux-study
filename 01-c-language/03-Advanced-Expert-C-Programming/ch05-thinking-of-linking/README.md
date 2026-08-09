@@ -154,3 +154,131 @@ ldd ./main
 - [5.4 警惕 Interpositioning](./5.4-警惕Interpositioning.md)
 - [5.5 产生链接器报告文件](./5.5-产生链接器报告文件.md)
 - [5.6 轻松一下——看看谁在说话：挑战 Turing 测验](./5.6-轻松一下看看谁在说话-挑战Turing测验.md)
+
+---
+
+## 章节自测
+
+> 链接是 C 到可执行文件的最后一关。看代码 → 想答案 → 点开验证。
+
+### Q1: 链接器不做类型检查
+
+```c
+// file_a.c
+int get_value(void) { return 42; }   // 返回 int
+
+// file_b.c
+double get_value(void);              // 声明为返回 double!
+int main(void) {
+    double v = get_value();
+    printf("%f\n", v);
+    return 0;
+}
+```
+
+> 链接器会报错吗？运行结果是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 链接器**不报错**——它只匹配符号名 `get_value`，不检查返回类型。
+
+运行结果：**UB**——`file_a.c` 返回 `int` 42（通过 `eax` 寄存器），`file_b.c` 以为返回 `double`（从 `xmm0` 或 FPU 寄存器读），读到垃圾值。
+
+**教训：** 头文件统一声明，让编译器在编译期发现不匹配。链接器只管符号名。
+
+**复习：** → [5.1 函数库、链接和载入](./5.1-函数库链接和载入.md)
+
+</details>
+
+### Q2: 静态库链接顺序
+
+```bash
+# 为什么这条命令报 "undefined reference to sqrt"？
+gcc main.c -lm -o app
+
+# 而这条能通过？
+gcc main.c -o app -lm
+
+# 还有这条也能？
+gcc -o app main.c -lm
+```
+
+> `-lm` 放哪里有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 静态库（`.a`）链接时**从左到右扫描**。`gcc` 先处理 `main.c`（找到未定义的 `sqrt`），再扫描 `-lm` 找到 `sqrt` 的定义 → 成功。
+
+如果 `-lm` 在 `main.c` 前面 → 链接器先扫描 `-lm`（此时没未定义符号需要它）→ 跳过 → 再编译 `main.c`（发现需要 `sqrt`）→ **已扫过的库不会再回头** → 报 `undefined reference`。
+
+**教训：** 库放在目标文件**后面**。依赖关系：`main.o → liba → libb` 则顺序为 `main.o -la -lb`。
+
+**复习：** → [5.3 函数库链接的5个特殊秘密](./5.3-函数库链接的5个特殊秘密.md)
+
+</details>
+
+### Q3: 强弱符号冲突
+
+```c
+// file_a.c
+int counter = 100;           // 强符号
+
+// file_b.c
+int counter = 200;           // 也是强符号！
+// 链接会怎样？
+```
+
+```c
+// file_a.c
+int counter = 100;           // 强符号
+
+// file_b.c
+int counter;                 // 弱符号（无初始化）
+// 链接会怎样？counter 最终是多少？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**第一组：** 两个强符号 → 链接报错 `multiple definition of 'counter'`。
+
+**第二组：** 一个强一个弱 → 链接器选择**强符号**（= 100），弱符号被忽略。不报错。
+
+**内核用途：** `weak` 属性定义默认实现，板级代码用强符号覆盖。链接器自动选择强版本。
+
+**复习：** → [5.1 函数库、链接和载入](./5.1-函数库链接和载入.md) — 强/弱符号规则
+
+</details>
+
+### Q4: LD_PRELOAD 拦截
+
+```c
+// mymalloc.c
+void *malloc(size_t sz) {
+    // 统计分配次数
+    static int count = 0;
+    count++;
+    return real_malloc(sz);  // 调真实 malloc
+}
+
+// 运行：LD_PRELOAD=./mymalloc.so ./myapp
+```
+
+> `LD_PRELOAD` 做什么？这个技术在 HFT/调试中有什么用？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `LD_PRELOAD` 让动态链接器**优先**加载指定库的符号，覆盖后续库中的同名符号（Interpositioning）。
+
+**用途：**
+1. **内存调试**：覆盖 `malloc`/`free` 统计泄漏
+2. **性能分析**：覆盖 `read`/`write` 记录 I/O
+3. **安全审计**：拦截 `open`/`connect` 检查访问
+4. **HFT**：覆盖 `pthread_mutex_lock` 检测锁竞争
+
+**风险：** 可能破坏程序假设，引发隐蔽 bug。
+
+**复习：** → [5.4 警惕 Interpositioning](./5.4-警惕Interpositioning.md)

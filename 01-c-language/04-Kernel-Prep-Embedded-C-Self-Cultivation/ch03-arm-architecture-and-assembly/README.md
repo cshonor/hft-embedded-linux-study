@@ -119,3 +119,89 @@ make clean
   - [3.7.7 汇编代码分析实战](./3.7-gnu-arm/3.7.7-汇编代码分析实战.md)
 - [3.8 AArch64拓展](./3.8-aarch64/3.8-AArch64拓展.md)
 - [3.9 异常与中断汇编](./3.9-exception/3.9-异常与中断汇编.md)
+
+---
+
+## 章节自测
+
+> ARM 汇编是内核启动和驱动的基础。看代码 → 想答案 → 点开验证。
+
+### Q1: ARM load-store 体系
+
+```asm
+// ARM 为什么不能直接做内存到内存的运算？
+// 以下哪条是合法的 ARM 指令？
+
+LDR R0, [R1]     ; (1)
+ADD R0, R0, #1   ; (2)
+STR R0, [R1]     ; (3)
+
+// ADD [R1], [R1], #1  ; (4) 合法吗？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `(1)(2)(3)` 合法。`(4)` **不合法**——ARM 是 **load-store 体系**（RISC），内存访问（`LDR`/`STR`）和运算（`ADD`/`SUB`）必须分开。不能直接对内存地址做运算。
+
+对比 x86（CISC）：`add [rax], 1` 一条指令搞定。
+
+**复习：** → [3.1 ARM体系结构](./3.1-arm-arch/3.1-ARM体系结构.md)
+
+</details>
+
+### Q2: AAPCS 调用约定
+
+```c
+// ARM AAPCS：前4个参数用什么传？返回值用什么？
+int foo(int a, int b, int c, int d, int e) {
+    return a + b + c + d + e;
+}
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** AAPCS（ARM Procedure Call Standard）：
+- 前 4 个参数：`R0`-`R3`（`a=R0, b=R1, c=R2, d=R3`）
+- 第 5 个参数 `e`：压栈（`SP`）
+- 返回值：`R0`
+- `LR`（`R14`）保存返回地址
+
+**x86-64 类似**：前 6 个参数用 `rdi/rsi/rdx/rcx/r8/r9`，多余压栈。
+
+**复习：** → [3.6.1 ATPCS规则](./3.6-mixed-programming/3.6.1-ATPCS规则.md)
+
+</details>
+
+### Q3: C 与汇编混合编程
+
+```c
+// 从 C 调用汇编函数
+extern int get_cpuid(void);  // 汇编实现
+
+int main(void) {
+    int id = get_cpuid();
+    printf("CPU ID: %d\n", id);
+    return 0;
+}
+```
+
+```asm
+; get_cpuid.s
+    .global get_cpuid
+get_cpuid:
+    mrc p15, 0, r0, c0, c0, 0   ; 读 CP15 主 ID 寄存器
+    bx lr                        ; 返回（结果在 R0）
+```
+
+> C 和汇编怎么传参？返回值怎么传？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 通过 AAPCS 调用约定——参数通过 `R0-R3`，返回值通过 `R0`。C 调用汇编函数和调用 C 函数完全一样，因为都遵循同一调用约定。
+
+**内核实例：** `read_cpuid`、`flush_cache` 等需要直接操作协处理器的函数用汇编实现，C 声明 `extern` 即可调用。
+
+**复习：** → [3.6 C语言和汇编语言混合编程](./3.6-mixed-programming/3.6-C语言和汇编语言混合编程.md) — C/汇编混合编程

@@ -108,3 +108,111 @@ make clean
   - [8.4.2 继承与抽象类](./8.4-inheritance/8.4.2-继承与抽象类.md)
   - [8.4.3 继承与接口](./8.4-inheritance/8.4.3-继承与接口.md)
 - [8.5 Linux内核中的OOP思想：多态](./8.5-Linux内核中的OOP思想-多态.md)
+
+
+---
+
+## 章节自测
+
+> C 没有 class 关键字，但内核到处是 OOP。看代码 → 想答案 → 点开验证。
+
+### Q1: 不透明类型封装
+
+```c
+// sensor.h
+typedef struct Sensor Sensor;  // 前向声明，不暴露内部
+Sensor *sensor_create(int type);
+int    sensor_read(Sensor *s);
+void   sensor_destroy(Sensor *s);
+
+// sensor.c
+struct Sensor {               // 完整定义只在此
+    int type;
+    int value;
+    void (*calibrate)(Sensor *);
+};
+```
+
+> 为什么 `.h` 不暴露 `struct Sensor` 的定义？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **不透明指针**模式——调用者只持有 `Sensor*`，不能直接访问 `type`/`value` 等成员。好处：
+1. **封装** — 强制走 API 函数，防止外部直接修改内部状态
+2. **ABI 稳定** — 改 `struct Sensor` 内部布局不影响使用者重新编译
+3. **隐藏实现** — 源码保护
+
+**内核实例：** `struct file`、`struct inode`、`struct task_struct` 等。
+
+**复习：** → [8.3 封装与私有指针](./8.3-encapsulation/8.3-封装与私有指针.md)
+
+</details>
+
+### Q2: 首成员嵌入实现继承
+
+```c
+struct Device {
+    char name[32];
+    int  status;
+};
+
+struct UartDevice {
+    struct Device base;   // 首成员嵌入 → "继承"
+    int baud_rate;
+    int port;
+};
+
+// 为什么可以这样做？
+struct UartDevice uart = {0};
+struct Device *dev = (struct Device *)&uart;
+// dev->name 合法吗？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 合法。C 标准保证结构体首成员的地址 = 结构体本身的地址。所以 `&uart` = `&uart.base`，`dev` 指向 `uart.base`，访问 `dev->name` 和 `dev->status` 是安全的。
+
+**内核实例：** `struct usb_device` 首成员是 `struct device`，可以安全转成 `struct device*` 交给通用设备框架。
+
+**这就是 C 的"继承"——首成员嵌入。** 但只能"单继承"（C 不支持多首成员）。
+
+**复习：** → [8.4 继承与私有指针](./8.4-inheritance/8.4.1-继承与私有指针.md)
+
+</details>
+
+### Q3: file_operations 多态
+
+```c
+struct file_operations {
+    int (*open)(struct file *);
+    ssize_t (*read)(struct file *, char __user *, size_t, loff_t *);
+    ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
+    int (*release)(struct file *);
+};
+
+// 不同驱动注册不同的 ops
+struct file_operations uart_fops = {
+    .open = uart_open,
+    .read = uart_read,
+    .write = uart_write,
+};
+struct file_operations net_fops = {
+    .open = net_open,
+    .read = net_read,
+};
+```
+
+> 这是什么设计模式？VFS 怎么知道调哪个驱动的函数？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **策略模式 / 多态**——通过函数指针表实现运行时多态。VFS 层的 `filp->f_op->read(filp, ...)` 根据 `file->f_op` 指向的不同 `file_operations` 表，调用不同驱动的 `read` 实现。
+
+**运行时绑定：** `open("/dev/uart0")` → 内核找到 `uart0` 对应的 `inode` → 取其 `file_operations` → 赋给 `file->f_op` → 后续 `read()` 调用 `f_op->read` = `uart_read`。
+
+**DPDK 类似：** `rte_eth_dev` 的 `dev_ops` 表。
+
+**复习：** → [8.5 Linux内核中的OOP思想：多态](./8.5-Linux内核中的OOP思想-多态.md)

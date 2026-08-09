@@ -117,3 +117,84 @@ make clean
 - [4.12 U-boot重定位分析](./4.12-U-boot重定位分析.md)
 - [4.13 常用的binutils工具集](./4.13-常用的binutils工具集.md)
 - [4.14 链接脚本](./4.14-链接脚本.md)
+
+
+---
+
+## 章节自测
+
+> 编译链接是从源码到可执行文件的完整链路。看代码 → 想答案 → 点开验证。
+
+### Q1: ELF 段与 nm
+
+```bash
+# 以下命令输出什么？
+nm app | grep ' [TDBt] '
+# T = .text (全局函数)
+# D = .data (已初始化全局)
+# B = .bss (未初始化全局)
+# t/d/b = 小写 = static (文件内可见)
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `nm` 列出符号表。大写字母 = 全局符号（外部链接），小写 = 文件内 `static` 符号。
+
+| 字母 | 段 | 含义 |
+|------|-----|------|
+| T/t | .text | 函数 |
+| D/d | .data | 已初始化全局变量 |
+| B/b | .bss | 未初始化全局变量 |
+| U | — | 未定义符号（需链接时解决） |
+| R/r | .rodata | 只读数据 |
+
+**用途：** 排查 `undefined reference` / `multiple definition`、查看二进制大小分布。
+
+**复习：** → [4.3 ELF 文件格式](./4.3-elf/4.3-ELF文件格式.md)
+
+</details>
+
+### Q2: 动态库 PIC 与 GOT/PLT
+
+```bash
+# 编译动态库为什么要加 -fPIC？
+gcc -shared -fPIC -o libfoo.so foo.c
+
+# 不加 -fPIC 会怎样？
+gcc -shared -o libfoo_bad.so foo.c
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `-fPIC`（Position Independent Code）生成位置无关代码——通过 **GOT**（Global Offset Table）和 **PLT**（Procedure Linkage Table）间接访问全局变量和函数。这样共享库可以加载到任意地址（每个进程映射不同位置）。
+
+不加 `-fPIC`：代码中有绝对地址引用 → 加载到不同地址时访问错误。x86-64 上可能侥幸工作（支持 RIP 相对寻址），但 32 位会崩溃。
+
+**复习：** → [4.7 动态链接](./4.7-dynamic-link/4.7-动态链接.md)
+
+</details>
+
+### Q3: 链接脚本——裸机 Flash/RAM 布局
+
+```lds
+/* 裸机链接脚本 */
+SECTIONS {
+    .text 0x08000000 : { *(.text*) }   /* Flash */
+    .data 0x20000000 : AT(0x08010000)  /* RAM 运行，Flash 存储 */
+    { *(.data*) }
+    .bss 0x20001000 : { *(.bss*) }     /* RAM */
+}
+```
+
+> `AT(0x08010000)` 做什么？为什么 `.data` 地址和 `AT` 地址不同？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `.data` 运行时在 `0x20000000`（RAM），但存储在 Flash `0x08010000`（`AT` 指定加载地址）。启动代码需把 `.data` 从 Flash 拷贝到 RAM（`LMA → VMA`）。
+
+**VMA**（Virtual Memory Address）= 运行地址；**LMA**（Load Memory Address）= 存储地址。裸机/内核中两者经常不同。
+
+**复习：** → [4.14 链接脚本](./4.14-链接脚本.md)

@@ -133,3 +133,134 @@ make clean
   - [10.10.3 线程池](./10.10-process-thread/10.10.3-线程池.md)
   - [10.10.4 协程](./10.10-process-thread/10.10.4-协程.md)
   - [10.10.5 小结](./10.10-process-thread/10.10.5-小结.md)
+
+
+---
+
+## 章节自测
+
+> 多任务与 OS 是嵌入式进阶终点。看代码 → 想答案 → 点开验证。
+
+### Q1: 上下文切换
+
+```c
+// 简化的上下文切换（RTOS）
+void switch_to(TCB *next) {
+    // 1. 保存当前寄存器到当前 TCB 的栈
+    save_context(&current->stack_ptr);
+    // 2. 切换栈指针
+    current = next;
+    // 3. 从 next TCB 的栈恢复寄存器
+    restore_context(&current->stack_ptr);
+    // 4. PC 跳转（通过 ret/bx lr）
+}
+```
+
+> 上下文切换保存哪些寄存器？为什么不能切换正在 `malloc` 的线程？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** 保存通用寄存器（`R0-R12`）、`SP`、`LR`（返回地址）、`PSR`（状态寄存器）。
+
+不能切换正在 `malloc` 的线程——`malloc` 持有**堆锁**，切走后其他线程调 `malloc` → **死锁**。
+
+**RTOS 解决方案：**
+- 关中断（`cpsid i`）后再切换 → 防止中断处理函数干扰
+- 使用无锁数据结构（DPDK ring）避免锁
+- 限制切换点（只在安全的地方 yield）
+
+**复习：** → [10.3 上下文切换](./10.3-context-switch/10.3-上下文切换.md)
+
+</details>
+
+### Q2: mutex vs semaphore
+
+```c
+// mutex — 互斥锁
+pthread_mutex_t lock;
+pthread_mutex_lock(&lock);
+shared_data++;
+pthread_mutex_unlock(&lock);
+
+// semaphore — 信号量
+sem_t sem;
+sem_wait(&sem);   // P 操作, count--
+// ... 访问资源 ...
+sem_post(&sem);   // V 操作, count++
+```
+
+> mutex 和 semaphore 有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- **mutex** = 二值信号量（0 或 1），保护临界区。有**归属**：谁 lock 谁 unlock。可优先级继承。
+- **semaphore** = 计数信号量（N 个资源），用于**同步**（如生产者-消费者）。无归属：任何人都可以 post。
+
+**互斥**用 mutex，**同步**用 semaphore。混用容易死锁。
+
+**内核/DPDK：** `spinlock`（忙等）、`mutex`（可睡眠）、`semaphore`（计数同步）、`completion`（一次性同步）。
+
+**复习：** → [10.6 同步机制](./10.6-sync/10.6-同步机制.md)
+
+</details>
+
+### Q3: syscall 与用户/内核态
+
+```c
+// 用户态调用 write
+int fd = 1;
+write(fd, "hello", 5);
+
+// 硬件层面发生了什么？
+// 1. 用户态执行 syscall 指令
+// 2. ???
+// 3. 内核执行 sys_write
+// 4. ???
+// 5. 返回用户态
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+1. 用户态执行 `syscall`（x86-64）/ `svc`（ARM）→ 触发**异常/陷阱**
+2. CPU 切到内核态（特权模式），跳到预定义的异常向量
+3. 内核保存用户态上下文（寄存器），查系统调用号 → 调 `sys_write`
+4. `sys_write` 执行实际 I/O（可能拷贝数据到内核缓冲 → 驱动 → 硬件）
+5. 内核恢复用户态上下文，`sysret`/`eret` 返回用户态
+
+**开销：** 一次 syscall 约 ~1-2μs（用户→内核切换 + TLB/Cache 影响）。HFT 尽量减少 syscall，用 `io_uring` 或共享内存。
+
+**复习：** → [10.9 Linux 系统调用](./10.9-syscall/10.9-Linux系统调用.md)
+
+</details>
+
+### Q4: MMU 地址转换
+
+```
+// 虚拟地址 0x400000 → 物理地址 ?
+// 页表怎么查？
+
+VA = 0x0000000000400000
+Page dir → Page table → Page frame → Physical address
+```
+
+> MMU 怎么把虚拟地址翻译成物理地址？TLI 是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** MMU 通过**页表**（多级）翻译虚拟地址：
+1. 虚拟地址拆分为页号 + 页内偏移
+2. 页号 → 查页目录 → 找到页表条目
+3. 页表条目包含物理页帧号 + 权限位
+4. 物理页帧号 + 页内偏移 = 物理地址
+
+**TLB**（Translation Lookaside Buffer）= 页表项的**硬件缓存**，避免每次访存都查多级页表。TLI miss → 走多级页表（慢）。
+
+**HFT 优化：** 用 `madvise`/hugepage 减少 TLB miss。大页（2MB/1GB）让一条 TLB 条目覆盖更多内存。
+
+**复习：** → [10.9 MMU 与地址转换](./10.9-syscall/10.9.4-Linux系统调用.md)

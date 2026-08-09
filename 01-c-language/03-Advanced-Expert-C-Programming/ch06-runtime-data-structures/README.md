@@ -190,3 +190,105 @@ pmap -x $$    # 当前 shell 映射
 - [6.11 有用的C语言工具](./6.11-有用的C语言工具.md)
 - [6.12 轻松一下——卡耐基-梅隆大学的编程难题](./6.12-轻松一下卡耐基-梅隆大学的编程难题.md)
 - [6.13 只适用于高级学员阅读的材料](./6.13-只适用于高级学员阅读的材料.md)
+
+
+---
+
+## 章节自测
+
+> 运行时数据结构 = 程序在内存中的真实布局。看代码 → 想答案 → 点开验证。
+
+### Q1: 五段内存布局
+
+```c
+int g_init = 42;         // (1)
+int g_zero;               // (2)
+const char *g_str = "hello"; // (3) "hello" 在哪段？
+void foo(void) {}         // (4) foo 代码在哪段？
+int main(void) {
+    int local = 7;         // (5)
+    int *heap = malloc(4); // (6)
+    return 0;
+}
+```
+
+> 六个变量各在进程的哪个段？
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 变量 | 段 | 原因 |
+|------|-----|------|
+| `g_init = 42` | `.data` | 已初始化全局变量 |
+| `g_zero` | `.bss` | 未初始化全局变量（自动清零） |
+| `"hello"` 字面量 | `.rodata` | 字符串常量只读 |
+| `g_str` 指针 | `.data` | 已初始化全局指针 |
+| `foo` 代码 | `.text` | 函数代码 |
+| `local` | 栈 | 局部变量 |
+| `heap` 指向的内存 | 堆 | `malloc` 分配 |
+
+**复习：** → [6.1 a.out 不是无中生有](./6.1-aout不是无中生有.md)
+
+</details>
+
+### Q2: 栈帧结构
+
+```c
+// 调用 foo(3, 4) 时的栈帧（x86-64 简化）
+void foo(int a, int b) {
+    int local = a + b;
+    // ...
+}
+```
+
+> 栈帧里有哪些东西？返回地址存在哪？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**栈帧内容（从高到低）：**
+1. **参数** `a=3, b=4`（x86-64 前几个参数用寄存器，多余的压栈）
+2. **返回地址**（`call` 指令自动压入，函数返回时 `ret` 弹出）
+3. **保存的 RBP**（上一帧的基址指针）
+4. **局部变量** `local`
+
+**安全风险：** 如果 `local` 是 `char buf[8]`，用户写入超过 8 字节 → 覆盖返回地址 → **缓冲区溢出攻击**（经典 stack smashing）。
+
+**复习：** → [6.4 栈帧](./6.4-栈帧.md) · [6.5 缓冲区溢出](./6.5-缓冲区溢出.md)
+
+</details>
+
+### Q3: setjmp/longjmp 栈帧失效
+
+```c
+jmp_buf env;
+
+void func_a(void) {
+    if (setjmp(env) == 0) {
+        printf("first call\n");
+        func_b();
+    } else {
+        printf("jumped back\n");
+    }
+}
+
+void func_b(void) {
+    int big_array[1000];
+    big_array[0] = 42;
+    longjmp(env, 1);  // 跳回 setjmp
+    // big_array 还在吗？
+}
+```
+
+> `longjmp` 跳回后 `func_b` 的 `big_array` 还有效吗？为什么不能返回栈局部？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `longjmp` 回滚栈指针到 `setjmp` 时的位置。`func_b` 的栈帧被丢弃，`big_array` 不再有效。后续函数调用会复用那块栈内存。
+
+**关键：** `longjmp` 不能跳回**已返回的函数**的栈帧——那块内存已被复用，跳过去读到的是垃圾数据。
+
+**用途：** 异常处理（C 没有异常机制）、协程、深层递归快速退出。
+
+**复习：** → [6.9 UNIX中的堆栈段](./6.9-UNIX中的堆栈段.md)

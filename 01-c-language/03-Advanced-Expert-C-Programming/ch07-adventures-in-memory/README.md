@@ -173,3 +173,136 @@ pmap -x $$
 - [7.6 内存泄漏](./7.6-内存泄漏.md)
 - [7.7 总线错误](./7.7-总线错误.md)
 - [7.8 轻松一下——「Thing King」和「页面游戏」](./7.8-轻松一下-Thing-King-和-页面游戏.md)
+
+---
+
+## 章节自测
+
+> 内存是 C 程序员的战场。看代码 → 想答案 → 点开验证。
+
+### Q1: 结构体填充手算
+
+```c
+struct Packed {
+    char  a;     // offset 0
+    // padding?
+    int   b;     // offset ?
+    char  c;     // offset ?
+    // tail padding?
+};
+
+printf("%zu\n", sizeof(struct Packed));  // 多少？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `sizeof = 12`
+
+**布局：**
+```
+offset: 0     1  2  3  4  5  6  7  8  9  10  11
+        [a]  [pad] [   b (4 bytes)   ] [c] [pad pad pad]
+```
+
+**规则：** 每个成员对齐到自身大小（`int` = 4）。`a` 在 0，`b` 需 4 对齐 → 跳到 4，`c` 在 8。总大小向上取整到最大成员对齐（4）→ 12。
+
+**优化：** 成员从大到小排列可减小 sizeof：
+```c
+struct Optimized { int b; char a; char c; };  // sizeof = 8
+```
+
+**复习：** → [7.2 Intel 80x86内存模型以及它的工作原理](./7.2-Intel-80x86内存模型以及它的工作原理.md)
+
+</details>
+
+### Q2: 64B 缓存行与伪共享
+
+```c
+struct Counters {
+    long a;     // thread 1: ++a
+    long b;     // thread 2: ++b
+};
+// sizeof = 16，两个 long 在同一 64B 缓存行
+```
+
+> 多线程高频写 `a` 和 `b` 有什么性能问题？怎么修？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **伪共享（false sharing）**——`a` 和 `b` 在同一缓存行（64 字节），线程 1 写 `a` 使整条缓存行在所有核的 cache 中失效，线程 2 必须从内存重新加载 → 缓存命中率暴跌。
+
+**修复：**
+```c
+struct Counters {
+    long a;
+    char pad[56];   // 56 = 64 - 8
+    long b;
+};  // sizeof = 64, 每个计数器独占一个缓存行
+```
+
+或用 `__attribute__((aligned(64)))`：
+```c
+struct Counters {
+    long a __attribute__((aligned(64)));
+    long b __attribute__((aligned(64)));
+};
+```
+
+**HFT 性能影响：** 伪共享可使延迟从 ~10ns 飙到 ~100ns+。
+
+**复习：** → [7.4 Cache存储器](./7.4-Cache存储器.md)
+
+</details>
+
+### Q3: SIGBUS vs SIGSEGV
+
+```c
+// 情况 A
+int *p = NULL;
+*p = 42;           // 什么信号？
+
+// 情况 B（ARM 对齐检查开启时）
+int *p = (int*)0x1001;  // 未对齐地址
+*p = 42;           // 什么信号？
+
+// 情况 C
+char *p = malloc(1);
+free(p);
+p[0] = 'x';        // 什么信号？（可能不报）
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- A → **SIGSEGV**（段错误：访问未映射的地址，NULL = 0 页未映射）
+- B → **SIGBUS**（总线错误：地址已映射但访问方式不对，如未对齐访问 / 写只读页）
+- C → **可能不报**（堆元数据可能未被立即破坏）或 **SIGABRT**（glibc 检测到堆损坏时 abort）
+
+**区分：** SIGSEGV = 地址问题（未映射/无权限）；SIGBUS = 对齐问题（地址映射了但访问方式不对）。
+
+**复习：** → [7.7 总线错误](./7.7-总线错误.md)
+
+</details>
+
+### Q4: const 指针转换
+
+```c
+const int data = 42;
+int *p = (int*)&data;   // 合法吗？
+*p = 99;                // 会怎样？
+printf("%d\n", data);   // 输出 42 还是 99？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** **UB**——通过 `const` 对象的非 const 指针修改值是未定义行为。
+
+**实际结果：** 如果 `data` 在 `.rodata`（只读段），`*p = 99` → **SIGSEGV**。如果编译器把 `const int` 优化成内联值，`printf("%d", data)` 可能输出 42（编译器直接替换为立即数）。
+
+**教训：** `const` 不只是建议——编译器可能据此做优化，强写 `const` 变量后果不可预测。
+
+**复习：** → [7.5 数据段和堆](./7.5-数据段和堆.md) — const 三种形式

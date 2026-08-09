@@ -119,3 +119,101 @@ make clean
   - [9.8.1 跨平台设计](./9.8-advanced/9.8.1-跨平台设计.md)
   - [9.8.2 框架](./9.8-advanced/9.8.2-框架.md)
 - [9.9 AIoT时代的模块化编程](./9.9-AIoT时代的模块化编程.md)
+
+
+---
+
+## 章节自测
+
+> 模块化是工程质量的基石。看代码 → 想答案 → 点开验证。
+
+### Q1: include guard
+
+```c
+// uart.h — 写法 A
+#ifndef UART_H
+#define UART_H
+void uart_init(void);
+#endif
+
+// uart.h — 写法 B
+#pragma once
+void uart_init(void);
+```
+
+> 两种写法有什么区别？哪个更好？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- 写法 A（`#ifndef` guard）：标准 C，可移植。缺点：宏名冲突风险、预处理开销。
+- 写法 B（`#pragma once`）：编译器保证每个文件只包含一次。缺点：非标准（但主流编译器都支持）、不能用于生成器输出的重复内容。
+
+**实践中：** 内核用 `#ifndef` guard。用户态项目可用 `#pragma once`（更简洁）。
+
+**复习：** → [9.3 头文件纪律](./9.3-header-discipline/9.3-头文件纪律.md)
+
+</details>
+
+### Q2: static 函数封装
+
+```c
+// uart.c
+static int calc_baud(int rate) {  // 文件内私有
+    return rate / 9600;
+}
+
+void uart_init(void) {            // 公开（在 .h 中声明）
+    int div = calc_baud(115200);
+    // ...
+}
+```
+
+> `static` 函数和公开函数有什么区别？`static` 函数能被其他 `.c` 调用吗？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `static` 函数是文件内私有的——其他 `.c` 文件无法 `extern` 引用，链接器不导出其符号。
+
+**好处：**
+1. **封装** — 实现"私有方法"
+2. **内联优化** — 编译器能看到完整定义，可内联
+3. **避免符号污染** — 避免不同文件同名函数冲突
+
+**对应 C++ 的 `private` 方法。**
+
+**复习：** → [9.2 模块封装](./9.2-module-encapsulation/9.2-模块封装.md)
+
+</details>
+
+### Q3: Makefile 多模块
+
+```makefile
+SRC = main.c uart.c sensor.c
+OBJ = $(SRC:.c=.o)
+
+app: $(OBJ)
+	$(CC) -o $@ $(OBJ)
+
+%.o: %.c
+	$(CC) -c $< -o $@
+
+clean:
+	rm -f $(OBJ) app
+```
+
+> `$(SRC:.c=.o)` 做什么？`$@` 和 `$<` 分别是什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `$(SRC:.c=.o)` — **模式替换**：把 `SRC` 中所有 `.c` 后缀换成 `.o` → `main.o uart.o sensor.o`
+- `$@` — 目标名（如 `app` 或 `main.o`）
+- `$<` — 第一个依赖（如 `main.c`）
+
+`%.o: %.c` 是**模式规则**——任何 `.o` 文件依赖同名 `.c` 文件，用同一条规则编译。
+
+**复习：** → [9.5 Makefile 多模块](./9.5-makefile/9.5-Makefile多模块.md)

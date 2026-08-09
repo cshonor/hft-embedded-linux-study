@@ -134,3 +134,104 @@ make clean
   - [7.11.3 二级指针和二维数组](./7.11-double-pointer/7.11.3-二级指针和二维数组.md)
 - [7.12 函数指针](./7.12-函数指针.md)
 - [7.13 重新认识void](./7.13-重新认识void.md)
+
+
+---
+
+## 章节自测
+
+> 数据存储与指针是 C 的底层核心。看代码 → 想答案 → 点开验证。
+
+### Q1: 整数溢出 UB
+
+```c
+int a = INT_MAX;  // 2147483647
+int b = 1;
+int c = a + b;    // 会怎样？
+
+unsigned int x = UINT_MAX;  // 4294967295
+unsigned int y = 1;
+unsigned int z = x + y;  // 会怎样？
+```
+
+> 有符号溢出和无符号溢出有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- 有符号 `a + b` → **UB**（编译器可假设不溢出做优化，结果不可预测）
+- 无符号 `x + y` → **环绕**（wrapping），`z = 0`（标准定义行为）
+
+**教训：** 做有符号运算前检查溢出：
+```c
+if (b > 0 && a > INT_MAX - b) // 会溢出
+```
+或用 `__builtin_add_overflow(a, b, &c)`。
+
+**复习：** → [7.2 整数溢出](./7.2-overflow/7.2-整数溢出.md)
+
+</details>
+
+### Q2: restrict 限定符
+
+```c
+// 不加 restrict
+void add_arrays(int *a, int *b, int *c, int n) {
+    for (int i = 0; i < n; i++)
+        c[i] = a[i] + b[i];
+}
+
+// 加 restrict
+void add_arrays_r(int *restrict a, int *restrict b, int *restrict c, int n) {
+    for (int i = 0; i < n; i++)
+        c[i] = a[i] + b[i];
+}
+```
+
+> `restrict` 做什么承诺？如果违反承诺会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `restrict` 承诺：通过该指针访问的内存，不会被其他指针修改。编译器据此可以激进优化（如向量化循环、省略 alias 检查）。
+
+如果违反承诺（`a` 和 `c` 实际指向同一块内存）→ **UB**。
+
+**HFT 用途：** 热路径数组运算加 `restrict` 可显著提升性能（编译器可生成 SIMD 指令）。
+
+**复习：** → [7.5 const/volatile/restrict](./7.5-qualifiers/7.5-const-volatile-restrict.md)
+
+</details>
+
+### Q3: 函数指针跳转表
+
+```c
+typedef void (*irq_handler_t)(int irq);
+
+// 中断向量表
+irq_handler_t vector_table[16] = {
+    [0] = timer_irq,
+    [3] = uart_irq,
+    [7] = gpio_irq,
+    // 其余默认 NULL
+};
+```
+
+> `[0] = timer_irq` 这种写法叫什么？如果 `vector_table[5]` 是 NULL 会怎样？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `[0] = timer_irq` 是 **指定初始化**（designated initializer）——C99 语法，只初始化指定元素，其余自动清零。
+
+`vector_table[5]` = NULL → 调用 NULL 函数指针 → **UB**（通常段错误）。正确做法：初始化一个默认 handler 处理未注册的中断。
+
+```c
+void default_handler(int irq) { log("unhandled irq %d", irq); }
+// 填充默认值
+for (int i = 0; i < 16; i++)
+    if (!vector_table[i]) vector_table[i] = default_handler;
+```
+
+**复习：** → [7.12 函数指针](./7.12-函数指针.md)

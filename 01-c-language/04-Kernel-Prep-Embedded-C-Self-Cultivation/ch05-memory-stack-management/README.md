@@ -133,3 +133,100 @@ pmap -x $$
   - [5.7.3 什么是内存踩踏](./5.7-memory-errors/5.7.3-什么是内存踩踏.md)
   - [5.7.4 内存踩踏监测：mprotect](./5.7-memory-errors/5.7.4-内存踩踏监测-mprotect.md)
   - [5.7.5 内存检测神器：Valgrind](./5.7-memory-errors/5.7.5-内存检测神器-Valgrind.md)
+
+
+---
+
+## 章节自测
+
+> 内存管理是嵌入式/内核的核心。看代码 → 想答案 → 点开验证。
+
+### Q1: 进程五段与 mmap
+
+```c
+// mmap 可以映射什么？
+void *p1 = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+void *p2 = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+```
+
+> `MAP_PRIVATE` 和 `MAP_SHARED` 有什么区别？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：**
+- `MAP_PRIVATE` — 写时复制（COW）：修改不影响原文件，子进程 `fork` 后各自独立
+- `MAP_SHARED` — 共享：修改对其他映射者可见，可写回文件（`msync`）
+
+**用途：**
+- `MAP_ANONYMOUS|MAP_PRIVATE` — 分配内存（等价 `malloc` 大块）
+- `MAP_SHARED` + 文件 fd — 进程间共享内存（IPC、DPDK hugepage）
+- `MAP_SHARED` + `/dev/mem` — MMIO 寄存器映射
+
+**复习：** → [5.6 mmap](./5.6-mmap/5.6-mmap.md)
+
+</details>
+
+### Q2: 栈帧与 GDB bt
+
+```c
+void c(void) { *(int*)0 = 42; }  // 崩溃
+void b(void) { c(); }
+void a(void) { b(); }
+int main(void) { a(); }
+```
+
+> 程序崩溃后 `gdb` 里 `bt`（backtrace）显示什么？
+
+<details>
+<summary>答案与复习指引</summary>
+
+**答案：** `bt` 显示调用栈（从崩溃点到 `main`）：
+```
+#0  c () at test.c:1
+#1  b () at test.c:2
+#2  a () at test.c:3
+#3  main () at test.c:4
+```
+
+**解析：** 栈帧链由保存的返回地址串联。`bt` 逐帧回溯 `RBP` 链读返回地址。如果栈被破坏（缓冲区溢出覆盖 RBP），`bt` 会显示混乱或中断。
+
+**复习：** → [5.2 栈帧](./5.2-stack-frame/5.2-栈帧.md)
+
+</details>
+
+### Q3: 内存错误四大类
+
+```c
+// (1)
+int *p = malloc(4);
+free(p);
+free(p);         // 什么错误？
+
+// (2)
+int *q = malloc(4);
+// 忘 free       // 什么错误？
+
+// (3)
+int *r = malloc(4);
+r[10] = 0;       // 什么错误？
+
+// (4)
+int *s = malloc(4);
+free(s);
+*s = 42;         // 什么错误？
+```
+
+<details>
+<summary>答案与复习指引</summary>
+
+| 编号 | 错误 | 后果 |
+|------|------|------|
+| (1) | double free | 堆元数据损坏 |
+| (2) | memory leak | 长期运行 OOM |
+| (3) | heap overflow | 覆盖相邻堆块 |
+| (4) | use-after-free | 读写已释放内存 |
+
+**工具：** Valgrind（`--tool=memcheck`）、ASan（`-fsanitize=address`）。ASan 更快，适合 CI；Valgrind 更详细，适合深度调试。
+
+**复习：** → [5.7 内存错误](./5.7-memory-errors/5.7-内存错误.md)
