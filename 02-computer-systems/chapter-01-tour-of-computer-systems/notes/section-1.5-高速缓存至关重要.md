@@ -166,6 +166,23 @@ Core3：[L1I+L1D] → 私有 L2 ──┘
 
 → 全书深入：[Ch 6 存储器层次结构](../../chapter-06-memory-hierarchy/)
 
+### 自测题
+
+<details>
+<summary>1. L1/L2/L3/LLC 的关系？为什么 HFT 文档偏好写 LLC？</summary>
+
+L1→L2→L3 是按层级编号，越往下容量越大、延迟越高。**LLC = Last Level Cache**，强调功能定位——片上最后一级缓存，再 miss 就下 DRAM。主流三级机中 L3 = LLC。HFT 文档偏好 LLC 因为它直接决定 cache miss 后是否要访问 DRAM（~100ns vs ~1ns）。
+
+</details>
+
+<details>
+<summary>2. cache miss 的延迟代价有多大？HFT 如何避免 tick 处理中的 cache miss？</summary>
+
+L1 hit ~1ns，L2/L3 hit 数 ns~十数 ns，**cache miss 访问 DRAM ~50-100+ ns**，跨 NUMA 更慢。HFT 避免 miss 的手段：数据预取（prefetch）、数据紧凑布局（struct padding 控制）、cache line 对齐（`__attribute__((aligned(64)))`）、热数据放 L1（减少工作集）、NUMA 绑定。缺页 on tick 是灾难，用 `mlock` 锁内存。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -41,6 +41,16 @@ call    foo
 
 1. **HFT/Linux 练哪种汇编语法？** — **只练 AT&T**（`movq %rax, %rbx` = 源→目标）
 
+### 自测题
+
+<details>
+<summary>1. AT&T 语法中 `movq %rax, %rbx` 是什么意思？q 后缀代表什么？</summary>
+
+AT&T 语法 `movq %rax, %rbx` = 把 RAX 的值复制到 RBX（**源在前，目的在后**）。`q` 后缀 = quadword（64 位/8 字节）。其他后缀：`b`=byte(8), `w`=word(16), `l`=long(32)。注意 `movl %eax, %ebx` 是 32 位操作。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§3.2.2 ←](./section-3.2.2-栈帧.md) · [§3.3 →](./section-3.3-数据格式.md)

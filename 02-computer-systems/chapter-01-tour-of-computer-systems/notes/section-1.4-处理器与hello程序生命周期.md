@@ -212,6 +212,23 @@ hello.c
 
 → 进程/syscall 细节：[Ch 8 异常控制流](../../chapter-08-exceptional-control-flow/)
 
+### 自测题
+
+<details>
+<summary>1. CPU 五级流水线的五个阶段是什么？PC 在哪个阶段更新？</summary>
+
+取指(fetch) → 译码(decode) → 执行(execute) → 访存(memory) → 写回(write back)。PC 在取指后更新——取完当前指令，PC 指向下一条指令地址（顺序执行 +4/+8，分支则跳转）。
+
+</details>
+
+<details>
+<summary>2. PC（程序计数器）里存的是什么？它是指向当前指令还是下一条？</summary>
+
+PC 存的是**下一条要执行的指令在内存中的地址**（x86-64 中叫 RIP）。取指阶段从 PC 指向的地址读取指令字节，然后 PC 更新指向下一条。分支/跳转指令会修改 PC 的值。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

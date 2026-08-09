@@ -66,6 +66,29 @@
 → 机器码、结构体对齐：[Ch 3](../../chapter-03-machine-level-programs/)  
 → socket 读入的字节如何当协议解析：[Ch 11](../../chapter-11-network-programming/)
 
+### 自测题
+
+<details>
+<summary>1. 同一串比特 `01000001`（0x41）在不同上下文下可以有哪些解读？</summary>
+
+比特本身无含义，**上下文决定解读规则**：
+- 编译器上下文 → 字符 `'A'`
+- CPU 取指上下文 → x86 指令操作码片段
+- 数据段 `int` 上下文 → 整数 65
+- 网络协议上下文 → 协议字段（如 version=65）
+
+**HFT 关联**：行情二进制协议（SBE/FIX）就是比特 + 协议 layout。解析错 offset 或 endianness 等于类型 punning 用错——编译器不报错，但实盘会错单。
+
+</details>
+
+<details>
+<summary>2. 什么是「上下文」？它和「调用栈上下文」有什么区别？</summary>
+
+CSAPP 1.1 的「上下文」指**谁在读这些比特、按什么格式读**——是解码规则环境，不是运行时调用栈。调用栈上下文是程序执行状态（寄存器/栈帧/PC），而 CSAPP 1.1 的上下文是**解释规则**（把同一段内存当指令、当 int、当 float、当协议字段）。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -49,6 +49,31 @@ void vuln() {
 - `alloca`、VLA、`clang` 动态栈分配 — 函数尾声才调整 `%rsp`
 - 与 **split stack / 大栈** 配置相关 — 深层框架服务少见，HFT 服务注意 **ulimit -s**
 
+### 自测题
+
+<details>
+<summary>1. 什么是缓冲区溢出攻击？C 语言为什么特别容易受影响？</summary>
+
+缓冲区溢出：写入数据超过缓冲区边界，覆盖相邻内存（如返回地址）。攻击者覆盖返回地址跳到恶意代码。C 语言容易受影响因为：1. **不检查数组边界**——`strcpy`/`gets` 无长度限制
+2. **指针算术自由**——可以任意读写内存
+3. **栈上放返回地址**——溢出栈缓冲区能覆盖返回地址
+
+防御：栈保护（canary/stack guard）、ASLR、NX bit、`-fstack-protector`、用 `strncpy`/`snprintf` 替代不安全函数。
+
+</details>
+
+<details>
+<summary>2. `-fstack-protector` 是怎么工作的？HFT 中开启它有什么代价？</summary>
+
+编译器在函数栈帧中放一个随机值（canary），函数返回前检查 canary 是否被改——如果改了说明发生溢出，调用 `__stack_chk_fail` 终止。**代价**：1. 每个函数额外一次随机数读取 + 一次比较
+2. 增加栈帧大小（存 canary）
+3. 阻止某些优化
+
+HFT 热路径可能关闭 `-fstack-protector` 以减少开销，但风险是溢出检测延迟。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

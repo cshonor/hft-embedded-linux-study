@@ -71,6 +71,30 @@ sigwait(&set, &sig); // 专用线程等信号 — HFT 更干净
 - **`SA_RESTART`** — 自动重启被中断的 syscall；或自己处理 EINTR
 - 生产：**SIGTERM** 停收新单、flush 日志、join 线程，再 exit
 
+### 自测题
+
+<details>
+<summary>1. 信号是同步的还是异步的？接收信号时会发生什么？</summary>
+
+信号是**异步**的——可以在进程执行的任何时刻到达。内核在从内核态返回用户态前检查 pending 信号，如果有就修改栈帧让返回后跳转到信号处理函数。处理完通过 `sigreturn` 恢复原始执行流。
+
+</details>
+
+<details>
+<summary>2. 信号处理函数中哪些函数是安全使用的？为什么不能在信号处理函数中调用 malloc？</summary>
+
+只有**异步信号安全（async-signal-safe）**的函数可用（如 `write`, `_exit`, `read`）。`malloc` 不安全因为它操作全局堆数据结构，如果信号打断主线程正在 malloc 的代码，会导致堆损坏。**HFT 实践**：信号处理函数只设 flag（`volatile sig_atomic_t`），主循环检查 flag 处理。
+
+</details>
+
+<details>
+<summary>3. HFT 系统中 SIGALRM 和 timer 有什么关系？</summary>
+
+SIGALRM 由 `alarm()`/`setitimer()` 定时触发，可用于心跳检测或超时控制。但 HFT 通常不用信号做定时（信号处理有延迟且不可预测），而是用 `clock_gettime(CLOCK_MONOTONIC)` 主动轮询时间，或用 `timerfd_create` 把定时器变成 fd 用 epoll 统一管理。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

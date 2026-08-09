@@ -41,6 +41,18 @@
 
 → 下一章 CPU 如何执行这些指令：[Ch 4](../../chapter-04-processor-architecture/)
 
+### 自测题
+
+<details>
+<summary>1. x86-64 中浮点运算用什么寄存器？SSE 和 AVX 的区别？</summary>
+
+x86-64 用 **XMM0-XMM15**（SSE，128 位/16 字节）做浮点运算。`float` 用 `movss`/`addss`（scalar single），`double` 用 `movsd`/`addsd`（scalar double）。
+
+AVX 扩展到 256 位（YMM0-YMM15），AVX-512 到 512 位（ZMM）。SIMD 指令可并行处理多个 float/double——HFT 用 SIMD 批量计算（如同时算 8 个 float 的 VWAP）。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

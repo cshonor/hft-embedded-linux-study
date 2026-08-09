@@ -67,6 +67,23 @@ float f = 3.1415926; /* 右边是 double 字面量 → 截断进 float：丢精�
 3. `float f = 3.1415926;` 有什么问题？  
 4. `-ffast-math` 对 HFT 回测有什么风险？
 
+### 自测题
+
+<details>
+<summary>1. float 和 double 的精度分别是多少位十进制有效数字？</summary>
+
+`float`（32 位）：约 **7 位**十进制有效数字（23 位尾数 + 1 隐含位 = 24 位二进制 → log10(2^24) ≈ 7.22）。`double`（64 位）：约 **15-16 位**（52 位尾数 + 1 = 53 位 → log10(2^53) ≈ 15.95）。HFT 行情价格如果需要 8+ 位精度，float 不够用，需要 double 或定点数。
+
+</details>
+
+<details>
+<summary>2. `float f = 0.1; if (f == 0.1)` 会怎样？为什么？</summary>
+
+可能为**假**。`0.1` 是 `double` 字面量，`f = 0.1` 先取 double 的 0.1 再截断为 float——精度损失。`f == 0.1` 中 f 被提升为 double 再比较，但 f 已经是截断后的值，和原始 double 0.1 不同。正确写法：`if (f == 0.1f)` 或用 epsilon 比较 `fabs(f - 0.1f) < 1e-6`。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§2.4.5 ←](./section-2.4.5-浮点运算.md) · [§2.5 →](./section-2.5-本章小结.md)

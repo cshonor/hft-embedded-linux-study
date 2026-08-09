@@ -38,6 +38,31 @@ uint32_t field = (word >> shift) & mask;
 2. 解码 16 位 header 里的 5-bit 字段，典型步骤是什么？（shift + mask）  
 3. 位运算和逻辑运算（`&&`/`||`）差在哪？→ [§2.1.8](./section-2.1.8-C逻辑操作.md)
 
+### 自测题
+
+<details>
+<summary>1. 如何用位运算设置、清除、翻转、测试第 n 位？</summary>
+
+假设 `mask = 1 << n`：
+- **设置**：`x |= mask`
+- **清除**：`x &= ~mask`
+- **翻转**：`x ^= mask`
+- **测试**：`(x & mask) != 0`
+
+HFT 场景：硬件寄存器控制（中断使能/状态标志位）、协议 flags 字段解析。注意位编号从 0 开始（LSB = bit 0）。
+
+</details>
+
+<details>
+<summary>2. `x & (x-1)` 的效果是什么？有什么用途？</summary>
+
+`x & (x-1)` 清除 x 的**最低有效 1 位**（lowest set bit）。例如 `12 & 11 = 1100 & 1011 = 1000`（清除了 bit 2）。用途：1. **判断 2 的幂**：`x & (x-1) == 0` 则 x 是 2 的幂
+2. **计算 popcount（1 的个数）**：循环 `count++; x &= x-1` 直到 x=0
+3. **找最低 set bit 位置**：`x & ~(x-1)` 提取最低 set bit
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§2.1.6 ←](./section-2.1.6-布尔代数简介.md) · [§2.1.8 →](./section-2.1.8-C逻辑操作.md)

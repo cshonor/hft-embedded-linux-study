@@ -37,6 +37,23 @@ Ch 1.8 概念（本节）
 
 → [Ch 11 网络编程](../../chapter-11-network-programming/) · [16-Systems-Performance Ch 10 网络](../../../16-systems-performance/chapter-10-network/)
 
+### 自测题
+
+<details>
+<summary>1. 网络通信在 CSAPP 中属于哪个层次？和后续章节什么关系？</summary>
+
+Ch1.8 是概览层介绍，将网络抽象为「另一台机器的进程通过 socket 通信」。详细在 Ch10（系统级 I/O：fd/read/write）和 Ch11（网络编程：socket API、客户端-服务器模型）。HFT 延伸 → DPDK/onload 绕过内核协议栈。
+
+</details>
+
+<details>
+<summary>2. 为什么 HFT 不直接用 CSAPP 的 socket 模型？</summary>
+
+CSAPP 的 socket + read/write 路径经过内核协议栈（syscall 开销、数据拷贝、上下文切换），延迟在微秒级。HFT 用 **DPDK/onload** 绕过内核——用户态网卡驱动 + 零拷贝 + 轮询模式，延迟降到亚微秒级。但 CSAPP 的模型是理解网络编程的基础。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

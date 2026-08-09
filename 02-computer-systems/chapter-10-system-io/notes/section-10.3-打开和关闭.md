@@ -27,6 +27,19 @@ int close(int fd);
 
 1. （待口述补）本节核心一句话？
 
+### 自测题
+
+<details>
+<summary>1. `open()` 的 flags 有哪些？O_RDONLY|O_WRONLY|O_RDWR 的关系？</summary>
+
+访问模式（三选一）：`O_RDONLY`(只读)、`O_WRONLY`(只写)、`O_RDWR`(读写)。
+创建/状态 flags（可叠加）：`O_CREAT`(不存在则创建)、`O_TRUNC`(截断为0)、`O_APPEND`(追加写)、`O_NONBLOCK`(非阻塞)。
+
+HFT：socket 用 `O_NONBLOCK` 实现非阻塞 I/O + epoll。`open` 返回最小可用 fd，`close` 释放 fd（fd 数量有限，默认 1024，可用 `ulimit -n` 调整）。
+
+</details>
+
+
 ---
 
 ← [§10.2 ←](./section-10.2-文件.md) · [本章导读](../README.md) · [§10.4 →](./section-10.4-读和写.md)

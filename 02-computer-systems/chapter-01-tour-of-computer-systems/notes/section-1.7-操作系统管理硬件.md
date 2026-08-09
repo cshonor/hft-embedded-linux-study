@@ -89,6 +89,23 @@ CPU 看 VA → MMU(+页表/TLB) → PA → L1/L2/LLC → DRAM（或再经 OS 从
 
 → OS 专章：[16-Systems-Performance Ch 3](../../../16-systems-performance/chapter-03-operating-systems/)
 
+### 自测题
+
+<details>
+<summary>1. 操作系统通过哪两个抽象来管理硬件？</summary>
+
+**虚拟机抽象**（进程 = CPU + 内存 + I/O 的虚拟视图）和**文件抽象**（I/O 设备、网络、磁盘统一为文件）。进程给程序一个独占 CPU/内存的幻觉；文件给程序一个统一的 I/O 接口（Unix 一切皆文件）。
+
+</details>
+
+<details>
+<summary>2. 进程的虚拟地址空间为什么要分段（代码段/数据段/堆/栈）？</summary>
+
+分段实现**隔离和保护**：代码段只读可执行（防止覆盖指令），数据段可读写，栈自动增长。不同段有不同的权限和生命周期管理。OS 通过页表把虚拟地址映射到物理页，段错误 = 访问了未映射或权限不对的虚拟地址。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

@@ -27,6 +27,30 @@
 
 → [Ch 1.7 进程/OS](../chapter-01-tour-of-computer-systems/notes/section-1.7-操作系统管理硬件.md)
 
+### 自测题
+
+<details>
+<summary>1. 异常的四种类别是什么？各自的返回行为？</summary>
+
+| 类 | 同步/异步 | 返回 |
+|---|---|---|
+| **中断** | 异步 | 下一条指令 |
+| **陷阱** | 同步 | 下一条指令 |
+| **故障** | 同步 | **可能重试**同一条 |
+| **终止** | 同步 | 不返回 |
+
+中断是异步的（外部硬件触发），其余三种是同步的（指令执行触发）。系统调用 = 陷阱，缺页 = 故障。
+
+</details>
+
+<details>
+<summary>2. HFT 场景中，缺页发生在 tick 处理时为什么是灾难？如何避免？</summary>
+
+缺页触发异常 → 内核介入 → 磁盘 I/O（如果页在 swap）或至少分配物理页 → **延迟数十微秒到毫秒级**，远超 HFT 的微秒级预算。避免手段：`mlockall(MCL_CURRENT|MCL_FUTURE)` 锁定所有页、预 fault（启动时 touch 所有热内存）、禁用 swap、大页（hugepage 减少 TLB miss）。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

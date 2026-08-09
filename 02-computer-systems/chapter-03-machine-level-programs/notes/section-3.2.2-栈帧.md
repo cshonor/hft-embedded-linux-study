@@ -116,6 +116,29 @@ sub  $N, %rsp      ; 在栈上开辟 N 字节（局部变量）
 4. **为何 Release 里常看不到 `%rbp`？** — **省略帧指针** 换性能；用 `%rsp` 相对寻址  
 5. **和 HFT 的关系？** — 嵌套调用叠帧拉延迟；`inline` 少帧；递归慎用  
 
+### 自测题
+
+<details>
+<summary>1. 什么是栈帧？它包含哪些内容？</summary>
+
+栈帧(stack frame)是函数调用时在栈上分配的一块区域，包含：1. **返回地址**（call 指令自动压栈）
+2. **旧的 RBP**（如果用帧指针）
+3. **局部变量**
+4. **保存的寄存器**（callee-saved: rbx, r12-r15）
+5. **参数**（超出寄存器传参的部分）
+
+x86-64 中 RSP 指向栈顶，RBP 指向帧底（可选，`-O2` 常省略帧指针）。
+
+</details>
+
+<details>
+<summary>2. x86-64 中函数返回时栈帧如何销毁？</summary>
+
+`leave; ret` 或 `mov rsp, rbp; pop rbp; ret`。`leave` 恢复 RSP 到 RBP（释放局部变量空间），然后弹出旧 RBP。`ret` 弹出返回地址到 RIP。如果省略帧指针（`-fomit-frame-pointer`），编译器直接 `add rsp, N; pop rXX; ret`。HFT 性能：栈帧大小影响 cache 局部性，过深的递归会 cache thrash。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§3.2.1 ←](./section-3.2.1-机器级代码与编译链路.md) · [§3.2.3 →](./section-3.2.3-AT&T汇编语法.md)

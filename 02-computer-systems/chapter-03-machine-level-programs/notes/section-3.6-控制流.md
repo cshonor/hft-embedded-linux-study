@@ -60,6 +60,35 @@ x = (a > b) ? a : b;
 
 **HFT：** 消息类型 dispatch 常用 **函数指针表 / switch** — 保证 case 值连续可生成跳转表。
 
+### 自测题
+
+<details>
+<summary>1. `cmp` 和 `test` 指令的区别？各自设置什么 flags？</summary>
+
+`cmp %a, %b` 计算 `b - a`（不存结果），设置 ZF/SF/CF/OF。用于比较大小。
+`test %a, %b` 计算 `b & a`（不存结果），设置 ZF/SF（CF/OF 清零）。常用于 `test %rax, %rax`（检查是否为零/负）。
+
+`test %rax, %rax` 比 `cmp $0, %rax` 更短（不需要立即数），编译器偏好 test。
+
+</details>
+
+<details>
+<summary>2. 条件跳转 `je`/`jne`/`jl`/`jg` 分别在什么 flag 条件下跳转？</summary>
+
+| 指令 | 跳转条件 | 含义 |
+|---|---|---|
+| je/jz | ZF=1 | 相等/为零 |
+| jne/jnz | ZF=0 | 不等/非零 |
+| jl/jnge | SF≠OF | 小于（有符号）|
+| jg/jnle | ZF=0 且 SF=OF | 大于（有符号）|
+| jb/jnae | CF=1 | 小于（无符号）|
+| ja/jnbe | CF=0 且 ZF=0 | 大于（无符号）|
+
+注意有符号(jl/jg)和无符号(jb/ja)用的 flag 不同——比较有符号和无符号混用是经典 bug。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

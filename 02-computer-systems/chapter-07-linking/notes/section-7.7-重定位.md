@@ -35,6 +35,19 @@ objdump -d prog      # 看重定位后的绝对/相对地址
 
 1. （待口述补）本节核心一句话？
 
+### 自测题
+
+<details>
+<summary>1. 重定位的两种类型是什么？PC 相对寻址和绝对寻址有什么区别？</summary>
+
+1. **PC 相对重定位(R_X86_64_PC32)**：`call func` → 地址 = 当前 PC + 偏移。位置无关，适合共享库。
+2. **绝对重定位(R_X86_64_ABS64)**：`mov $global_var, %rax` → 直接用绝对地址。需要重定位表修改。
+
+共享库必须用 PIC（Position Independent Code），全部用 PC 相对寻址 + GOT（Global Offset Table）访问全局变量。
+
+</details>
+
+
 ---
 
 ← [§7.6 ←](./section-7.6-符号解析与静态库.md) · [本章导读](../README.md) · [§7.8 →](./section-7.8-可执行目标文件.md)

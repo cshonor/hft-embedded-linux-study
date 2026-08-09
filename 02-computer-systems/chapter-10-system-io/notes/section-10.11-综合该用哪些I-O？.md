@@ -26,6 +26,24 @@ socket/管道/精细控制？ → Unix I/O + 自缓冲
 
 1. （待口述补）本节核心一句话？
 
+### 自测题
+
+<details>
+<summary>1. 什么场景用 Unix I/O，什么场景用 stdio？HFT 怎么选？</summary>
+
+| 场景 | 推荐 |
+|---|---|
+| 访问文件元数据(stat) | Unix I/O |
+| 网络 socket | Unix I/O + epoll |
+| 格式化输出(printf) | stdio |
+| 需要行缓冲/全缓冲控制 | stdio |
+| 超低延迟 | 都不用——DPDK/onload 零拷贝 |
+
+HFT 热路径：直接 Unix I/O + 非阻塞 + epoll（或 DPDK）。日志/配置：stdio（方便格式化）。Rio 包是 Unix I/O 上的薄封装，适合教学和中等性能需求。
+
+</details>
+
+
 ---
 
 ← [§10.10 ←](./section-10.10-标准I-O.md) · [本章导读](../README.md) · [§10.12 →](./section-10.12-小结.md)

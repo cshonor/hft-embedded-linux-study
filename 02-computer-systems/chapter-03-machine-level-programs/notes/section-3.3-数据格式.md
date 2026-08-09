@@ -119,6 +119,25 @@ movq (%rax), %rdi
 2. x86-64 **通用整数寄存器几个**？caller/callee-saved？XMM 几组？  
 3. `int` / 指针后缀？写 `%eax` 为何影响 `%rax` 高半？
 
+### 自测题
+
+<details>
+<summary>1. x86-64 中 C 基本类型的大小和对应的 mov 后缀？</summary>
+
+| C 类型 | 大小 | mov 后缀 | AT&T 示例 |
+|---|---|---|---|
+| char | 1B | b | movb |
+| short | 2B | w | movw |
+| int | 1B | l | movl |
+| long | 8B | q | movq |
+| float | 4B | s | movss |
+| double | 8B | l | movsd |
+
+注意 `l` 既表示 32 位整数又表示 double 的 SSE 指令，上下文区分。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§3.2.3 ←](./section-3.2.3-AT&T汇编语法.md) · [§3.4.1 →](./section-3.4.1-操作数指示符.md)

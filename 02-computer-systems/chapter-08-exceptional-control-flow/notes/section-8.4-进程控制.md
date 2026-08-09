@@ -59,6 +59,30 @@ waitpid(pid, NULL, 0);
 - 用于 **守护进程化、子进程跑脚本、隔离工具**；主引擎 **长期运行单进程**
 - 理解 `execve` → 与 [Ch 7 加载](../../chapter-07-linking/notes/section-7.9-加载可执行目标文件.md) 衔接
 
+### 自测题
+
+<details>
+<summary>1. fork() 之后父子进程的关系？哪些是共享的哪些是复制的？</summary>
+
+fork 后子进程获得父进程的**副本**（地址空间、文件描述符表、信号处理函数）。但用的是 **COW（Copy-On-Write）**——只复制页表不复制物理页，首次写才分配新页。文件描述符表是复制的（共享 offset），但引用计数 +1。父子进程各自返回——子进程返回 0，父进程返回子进程 PID。
+
+</details>
+
+<details>
+<summary>2. execve() 做了什么？它和 fork() 的关系？</summary>
+
+`execve` 在**当前进程**的上下文中加载并运行一个新程序——替换代码段、数据段、堆、栈，但保留 PID、打开的文件描述符（除非设了 FD_CLOEXEC）。典型模式：`fork()` 创建子进程 → `execve()` 替换为新程序。fork 负责复制，execve 负责替换，两者组合实现「启动新程序」。
+
+</details>
+
+<details>
+<summary>3. waitpid() 的作用是什么？为什么需要它？</summary>
+
+`waitpid` 让父进程等待子进程结束并回收其资源（避免僵尸进程）。子进程结束后如果父进程没调用 wait，子进程变成**僵尸进程（Z 状态）**——PCB 仍占用，直到父进程 wait 或父进程退出被 init 接管。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

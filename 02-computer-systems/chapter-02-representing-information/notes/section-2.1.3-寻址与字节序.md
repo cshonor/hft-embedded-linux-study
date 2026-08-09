@@ -221,6 +221,30 @@ wire 传 struct：**endian + padding + 类型宽度** 须一起约定 → [§3.9
 7. FIX 的 symbol 字段要不要 `htonl`？价格字段呢？  
 8. `htonl` / `ntohl` 解决的是哪一层问题？本机运算路径为何仍划算？
 
+### 自测题
+
+<details>
+<summary>1. 大端和小端的区别？0x0A0B0C0D 在两种模式下内存怎么排？</summary>
+
+| 地址 | 小端 | 大端 |
+|---|---|---|
+| 0x00 | 0D | 0A |
+| 0x01 | 0C | 0B |
+| 0x02 | 0B | 0C |
+| 0x03 | 0A | 0D |
+
+小端：最低有效字节在最低地址。大端：最高有效字节在最低地址。x86-64 是小端，网络字节序是大端。
+
+</details>
+
+<details>
+<summary>2. HFT 行情解析中字节序错误会导致什么？如何检测当前平台是大小端？</summary>
+
+字节序错误会导致价格/数量解析完全错误——不会崩溃但**静默错单**。检测方法：`int x = 1; if (*(char*)&x == 1) printf("little-endian");`。跨平台代码用 `htonl/ntohl` 转网络序，或用 `__BYTE_ORDER__` 宏。SBE 协议通常指定字节序，不依赖平台。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§2.1.2 ←](./section-2.1.2-数据大小与sizeof.md) · [§2.1.4 字符串 →](./section-2.1.4-字符串表示.md)

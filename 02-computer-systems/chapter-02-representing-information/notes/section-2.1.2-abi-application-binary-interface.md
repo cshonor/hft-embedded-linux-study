@@ -396,6 +396,29 @@ ARM32 汇编若 **私自用 `r4` 传第一个参数**、又不保存恢复 `r4`�
 10. 为何说「同一段机器码」读 `b`：LP64 用基址+8，另一 ABI 可能用+4，会错值甚至未对齐崩溃？  
 11. System V 与 Windows x64 整型传参寄存器差在哪？为何跨 ABI 调函数会拿错参崩溃？与第 2 项对齐如何配套？
 
+### 自测题
+
+<details>
+<summary>1. 什么是 ABI？它和 API 的区别？</summary>
+
+**ABI (Application Binary Interface)** 定义二进制层面的兼容：数据类型大小、调用约定（参数传寄存器还是栈）、系统调用号、字节序、对齐。**API** 是源码层面的接口（函数签名、头文件）。API 兼容不一定 ABI 兼容——同一 API 编译出的 .so 在不同 ABI 下不能混用。
+
+</details>
+
+<details>
+<summary>2. ILP32 和 LP64 的区别是什么？long 在各模型下是多少字节？</summary>
+
+| 模型 | int | long | ptr | 典型平台 |
+|---|---|---|---|---|
+| ILP32 | 4 | 4 | 4 | 32位 Linux |
+| LP64 | 4 | **8** | 8 | 64位 Linux |
+| LLP64 | 4 | 4 | 8 | 64位 Windows |
+
+`long` 在 LP64 是 8 字节，在 LLP64 是 4 字节——跨平台代码不能用 `long` 存指针或假设大小。用 `intptr_t`/`int64_t`。
+
+</details>
+
+
 ---
 
 ← [Ch2 导读](../README.md) · [§2.1.2 数据大小](./section-2.1.2-数据大小与sizeof.md) · [01 code](../../code/)

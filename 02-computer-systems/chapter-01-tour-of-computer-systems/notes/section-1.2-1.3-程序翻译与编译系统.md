@@ -283,6 +283,36 @@ gcc -g hello.c -o hello && gdb ./hello
 - **链接方式** — whole-archive 静态库 vs `dlopen` 插件 → 启动延迟与页 fault（→ [Ch 7](../../chapter-07-linking/)、[Ch 9](../../chapter-09-virtual-memory/)）
 - **行情解码** — 协议 `.h` 里 struct layout 要和 spec 逐字段对齐；改 spec = 改「协议上下文」，常要 **版本号分支**（回连 1.1）
 
+### 自测题
+
+<details>
+<summary>1. 从 hello.c 到可执行文件经过哪些阶段？每步的输入输出是什么？</summary>
+
+四个阶段：
+1. **预处理** `.c`→`.i`：展开 `#include`/`#define`，条件编译
+2. **编译** `.i`→`.s`：语法分析→AST→IR→生成汇编文本
+3. **汇编** `.s`→`.o`：汇编器翻译成机器码 + 符号表
+4. **链接** `.o`+库→可执行：符号决议 + 重定位
+
+`gcc -E/-S/-c` 分别停在预处理/编译/汇编后。
+
+</details>
+
+<details>
+<summary>2. 预处理器和编译器前端的区别？预处理器懂 C 语法吗？</summary>
+
+预处理器（`cpp`）**不懂 C 语法**，只做文本级替换/裁剪（`#include` 粘贴、`#define` 宏展开、`#ifdef` 条件编译）。编译器前端（`cc1` 内）才真正理解 C 语法：词法→语法→AST→语义分析→类型检查。预处理器在前端之前跑，输入 `.c` 输出 `.i`。
+
+</details>
+
+<details>
+<summary>3. HFT 生产环境为什么倾向静态链接？</summary>
+
+静态链接把 libc 等库直接嵌入可执行文件，减少运行时动态链接的不确定性（地址解析、PLT 跳转、symbol lookup），启动更快且依赖更可控。动态链接的优势是共享内存和升级方便，但 HFT 更看重**确定性和低延迟**。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

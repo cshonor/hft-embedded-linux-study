@@ -32,6 +32,22 @@ gcc main.o sum.o -o prog   # 驱动去调 ld（并补上 crt/libc 等）
 1. `as`/`ld` 是 gcc 内置的吗？各属于哪套软件？  
 2. `gcc test.c -o test` 背后大致调了哪几步？
 
+### 自测题
+
+<details>
+<summary>1. `gcc main.c` 这一条命令实际上调用了哪些工具？</summary>
+
+gcc 是**驱动程序**，依次调用：
+1. `cpp`（预处理器）→ `main.i`
+2. `cc1`（编译器）→ `main.s`
+3. `as`（汇编器）→ `main.o`
+4. `ld`（链接器）→ `a.out`
+
+`gcc -v` 可以看到完整的调用链。理解这条链对调试编译问题（如链接错误、符号未定义）至关重要。
+
+</details>
+
+
 ---
 
 ← — · [本章导读](../README.md) · [§7.2 →](./section-7.2-静态链接.md)

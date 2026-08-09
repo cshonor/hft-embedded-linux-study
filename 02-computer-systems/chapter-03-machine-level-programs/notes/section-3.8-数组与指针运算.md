@@ -60,6 +60,26 @@ p + i     // 地址增加 i * sizeof(int)，不是 i 字节
 
 → cache 与局部性：[Ch 6](../../chapter-06-memory-hierarchy/) · [Ch 1.5](../chapter-01-tour-of-computer-systems/notes/section-1.5-高速缓存至关重要.md)
 
+### 自测题
+
+<details>
+<summary>1. `a[i]` 和 `*(a+i)` 等价吗？多维数组 `a[i][j]` 的地址怎么算？</summary>
+
+是的，`a[i]` ≡ `*(a+i)`（C 标准定义）。多维数组 `int a[R][C]` 的 `a[i][j]` 地址 = `base + (i*C + j) * sizeof(int)`——C 多维数组是**行主序**连续存储，编译器用 `lea (%rax,%rcx,4), ...` 计算地址。注意：`a[i]` 和 `a+i` 的类型不同——前者是 `int*`，后者是 `int(*)[C]`（指向数组的指针）。
+
+</details>
+
+<details>
+<summary>2. 数组名和指针有什么区别？`sizeof(a)` 什么时候不等于 `sizeof(int*)`？</summary>
+
+数组名在大多数上下文中**退化为**指向首元素的指针（array decay），但在两个场合不退化：1. `sizeof(a)` —— 返回整个数组大小
+2. `&a` —— 返回指向数组的指针（类型 `int(*)[N]`）
+
+`int a[10]; sizeof(a)` = 40（10×4），不是 8（指针大小）。数组作为函数参数时退化为指针——`void f(int a[10])` 中 `sizeof(a)` = 8（指针大小）。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

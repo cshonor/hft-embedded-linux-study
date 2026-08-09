@@ -86,6 +86,28 @@ static inline int64_t spread(int64_t ask, int64_t bid) {
 
 → 链接与符号：[Ch 7](../../chapter-07-linking/)
 
+### 自测题
+
+<details>
+<summary>1. x86-64 调用约定中，前 6 个参数通过哪些寄存器传递？</summary>
+
+System V AMD64 ABI：参数 1-6 依次通过 **RDI, RSI, RDX, RCX, R8, R9** 传递。第 7 个及以后通过栈传递。浮点参数用 XMM0-XMM7。
+
+返回值在 RAX。函数必须保存 callee-saved 寄存器（RBX, RBP, R12-R15）如果修改了它们。caller-saved 寄存器（RAX, RCX, RDX, RSI, RDI, R8-R11）可以自由使用。
+
+</details>
+
+<details>
+<summary>2. callee-saved 和 caller-saved 寄存器的区别？为什么需要两种？</summary>
+
+**callee-saved**（RBX, RBP, R12-R15）：被调用方负责保存/恢复——如果函数要用，必须在开头 push、结尾 pop。调用方可以假设这些寄存器跨调用不变。
+**caller-saved**（RAX, RCX, RDX, RSI, RDI, R8-R11）：调用方负责保存——如果调用后还需要值，调用方必须自己保存。
+
+需要两种的原因：callee-saved 适合长期持有的值（减少保存次数），caller-saved 适合临时值（零开销传递）。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md)

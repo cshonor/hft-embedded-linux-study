@@ -82,6 +82,25 @@ q + 1;                      /* 地址 +4 — 指针运算 */
 3. `(uintptr_t)p + 1` 和 `p + 1` 对 `int *` 有何不同？
 4. `long *` 的步长为何不能写死？→ [ABI 笔记](../../chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
 
+### 自测题
+
+<details>
+<summary>1. `int *p; p + 3` 的地址增加了多少字节？为什么？</summary>
+
+增加 `3 * sizeof(int) = 12` 字节。C 指针运算自动乘以 `sizeof(指向类型)`——这叫**指针步长**。`char* +3` 增加 3，`int* +3` 增加 12，`double* +3` 增加 24。
+
+反汇编看 `leaq (%rax,%rcx,4), %rdx` 中的 `4` 就是 sizeof(int)——编译器自动插入的步长因子。
+
+</details>
+
+<details>
+<summary>2. `void*` 指针能做算术吗？为什么？</summary>
+
+**标准 C 不允许** `void*` 算术（`void* + 1` 是 UB），因为 void 没有大小。但 **GCC 扩展**把 `void*` 步长当作 1（类似 `char*`）。可移植代码应先转 `char*` 再做算术：`void *p; char *cp = p; cp += 3;`。HFT 代码通常避免 `void*` 算术以提高可移植性。
+
+</details>
+
+
 ---
 
 ← [Ch3 导读](../README.md) · [Ch2 §2.1.3 字节序](../../chapter-02-representing-information/notes/section-2.1.3-寻址与字节序.md)

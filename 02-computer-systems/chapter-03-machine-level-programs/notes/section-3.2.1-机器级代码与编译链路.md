@@ -123,6 +123,37 @@ objdump -d ./test_debug ./test_hft | less        # 对比删了多少冗余、�
 4. **普通业务为何多用 O2？** HFT 为何只热路径 O3？默认 O3 会破坏 IEEE 吗？  
 5. **`.efi` 和本章编译链关系？** — 同样 **C → .o → 链接**；UEFI 链出 **PE** 而非 ELF  
 
+### 自测题
+
+<details>
+<summary>1. 编译器（`gcc -O2`）生成机器码时做了哪些对程序员不可见的优化？</summary>
+
+1. 寄存器分配（变量不总是存内存）
+2. 常量折叠（`3+5` 编译时算出 8）
+3. 死代码消除（删除不影响结果的代码）
+4. 指令重排（提高流水线效率）
+5. 内联展开（小函数直接展开）
+6. 向量化（SIMD 指令并行处理）
+
+**HFT 注意**：编译器优化可能消除「无用」的内存读写（如 benchmark 中的空循环），需要用 `volatile` 或 `asm volatile("" ::: "memory")` 防止。
+
+</details>
+
+<details>
+<summary>2. AT&T 和 Intel 汇编语法的主要区别是什么？</summary>
+
+| | AT&T | Intel |
+|---|---|---|
+| 源/目的顺序 | `mov src, dst` | `mov dst, src` |
+| 寄存器前缀 | `%eax` | `eax` |
+| 立即数前缀 | `$4` | `4` |
+| 指令后缀 | `movl`（带大小） | `mov dword ptr` |
+
+CSAPP 用 AT&T 语法（Linux 工具链标准）。HFT 笔记只学 AT&T。
+
+</details>
+
+
 ---
 
 ← [本章导读](../README.md) · [§3.1 ←](./section-3.1-历史观点.md) · [§3.2.2 →](./section-3.2.2-栈帧.md)

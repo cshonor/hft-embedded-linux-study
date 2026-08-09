@@ -119,6 +119,23 @@ int32_t tick;   /* 不用 sizeof(long) 当协议字段宽度 */
 3. 为什么协议字段用 `int32_t` 而不是 `int`/`long`？  
 4. API 和 ABI 分别管什么？→ [ABI 笔记](./section-2.1.2-abi-application-binary-interface.md)
 
+### 自测题
+
+<details>
+<summary>1. sizeof(int) 在 32 位和 64 位 Linux 上分别是多少？sizeof(long) 呢？</summary>
+
+`sizeof(int)` = 4（32/64 位都是）。`sizeof(long)` = 4（32 位），**8**（64 位 LP64）。`sizeof(void*)` = 4（32 位），**8**（64 位）。指针大小随 ISA 变，int 保持 4 字节是历史兼容。
+
+</details>
+
+<details>
+<summary>2. 为什么 `sizeof` 是编译时常量但 `sizeof(VLA)` 不是？</summary>
+
+C99 变长数组（VLA）的大小在运行时确定，所以 `sizeof(VLA)` 是**运行时求值**，不是编译时常量。对于固定大小数组和基本类型，`sizeof` 在编译时就知道，是编译时常量表达式。HFT 应避免 VLA——栈大小运行时不确定，可能栈溢出。
+
+</details>
+
+
 ---
 
 → 下一节：[§2.1.3 寻址与字节序](./section-2.1.3-寻址与字节序.md) · ← [§2.1.1](./section-2.1.1-十六进制表示法.md) · [Ch2 导读](../README.md)
