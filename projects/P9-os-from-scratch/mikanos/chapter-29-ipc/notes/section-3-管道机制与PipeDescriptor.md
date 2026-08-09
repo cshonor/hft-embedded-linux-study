@@ -78,7 +78,7 @@ public:
 
 **非内核环形 buffer syscall pipe(2)** — **消息队列模拟** — 教学 **清晰**。
 
-→ [08 TLPI pipe](../../../../../04-linux-userspace-api/)
+→ [08 TLPI pipe](../../../../../03-linux-userspace-api/)
 
 ---
 

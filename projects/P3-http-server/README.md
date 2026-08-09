@@ -1,7 +1,7 @@
 # P3 — 并发 HTTP Server（C → C++ 重写）
 
 > 先用 C + epoll + 线程池写一个并发 HTTP server，再用 Modern C++ 重写一遍，亲手感受 RAII/模板/移动语义怎么让代码更安全又不损性能。
-> **做法：项目驱动，[`04`](../../04-linux-userspace-api/) / [`15`](../../15-network-sockets/) / [`06`](../../06-cpp/) 笔记当字典——先上路，卡住再查。**
+> **做法：项目驱动，[`03`](../../03-linux-userspace-api/) / [`12`](../../12-network-sockets/) / [`04`](../../04-cpp/) 笔记当字典——先上路，卡住再查。**
 
 ---
 
@@ -48,9 +48,9 @@
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`04` linux-userspace-api](../../04-linux-userspace-api/) | TLPI：socket、epoll、线程、信号、mmap |
-| [`05` os-from-scratch](../../projects/P9-os-from-scratch/) | 自制 OS 的 syscall/中断/调度直觉 |
-| [`06` cpp](../../06-cpp/) | Modern C++（M1）+ 并发（M2）+ 对象模型 |
+| [`03` linux-userspace-api](../../03-linux-userspace-api/) | TLPI：socket、epoll、线程、信号、mmap |
+| [`P9` os-from-scratch](../../projects/P9-os-from-scratch/) | 自制 OS 的 syscall/中断/调度直觉 |
+| [`04` cpp](../../04-cpp/) | Modern C++（M1）+ 并发（M2）+ 对象模型 |
 
 ## 前置
 
@@ -66,9 +66,9 @@
 
 ## 参考模块
 
-- [04-linux-userspace-api/](../../04-linux-userspace-api/) — TLPI Ch56（socket）、Ch63（epoll）、Ch29-30（线程）
-- [15-network-sockets/](../../15-network-sockets/) — UNP、PNP epoll 实战
-- [06-cpp/](../../06-cpp/) — Effective Modern C++、Cpp-Concurrency、Cpp-Object-Model
+- [03-linux-userspace-api/](../../03-linux-userspace-api/) — TLPI Ch56（socket）、Ch63（epoll）、Ch29-30（线程）
+- [12-network-sockets/](../../12-network-sockets/) — UNP、PNP epoll 实战
+- [04-cpp/](../../04-cpp/) — Effective Modern C++、Cpp-Concurrency、Cpp-Object-Model
 
 ## 压测工具
 
@@ -81,4 +81,4 @@ wrk -t4 -c100 -d10s http://localhost:8080/
 
 ⬜ 未开始 → 建议先把 Part A Phase 1 的 echo server 跑起来（30 分钟）。
 
-← [projects 总览](../README.md) · [04 模块](../../04-linux-userspace-api/) · [06 模块](../../06-cpp/)
+← [projects 总览](../README.md) · [03 模块](../../03-linux-userspace-api/) · [04 模块](../../04-cpp/)

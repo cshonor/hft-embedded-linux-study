@@ -73,7 +73,7 @@ int64_t SyscallDispatcher(uint64_t num, …) {
 
 **编号空间：** 本书用 **`0x80000000`** 等与 **Linux 号** 区分 — **避免混淆**。
 
-→ [08 TLPI 系统调用](../../../../../04-linux-userspace-api/) · [05 LKD syscall](../../../../../07-linux-kernel/)
+→ [08 TLPI 系统调用](../../../../../03-linux-userspace-api/) · [05 LKD syscall](../../../../../05-linux-kernel/)
 
 ---
 

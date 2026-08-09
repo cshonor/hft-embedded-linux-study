@@ -11,7 +11,7 @@
 |---|---|
 | **本章干什么** | **多 Terminal Task** · **每进程 PML4** · **KillApp** · 用户态异常处理。 |
 | **全书作用** | **多进程壳** — 从单应用分页到「多个用户程序同时活」；Ch25–29 文件/IPC 的并发场景。 |
-| **← 前置** | [Ch19–20 分页与 syscall](../chapter-19-paging/) + [Ch15 终端](../chapter-15-terminal/) |
+| **← 前置** | [Ch16–17 分页与 syscall](../chapter-19-paging/) + [Ch15 终端](../chapter-15-terminal/) |
 | **→ 后续** | [Ch25 应用读文件](../chapter-25-app-read-file/) |
 
 ---

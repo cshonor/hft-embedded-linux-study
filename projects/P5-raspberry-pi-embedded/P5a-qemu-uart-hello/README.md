@@ -1,7 +1,7 @@
 # P5a — QEMU 裸机 UART Hello World
 
 > 在 QEMU 模拟的 ARM 机器上，不依赖任何 OS，直接写汇编点亮 UART 打印 "Hello"。
-> **做法：项目驱动，[`10`](../../../10-arm-architecture/) 笔记当字典。**
+> **做法：项目驱动，[`07`](../../../07-arm-architecture/) 笔记当字典。**
 
 ---
 
@@ -9,10 +9,10 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [AArch64 基础](../../../10-arm-architecture/aarch64-practice/chapter-01-arm64-fundamentals/README.md) | ARM64 寄存器 x0-x30、SP、PC |
-| [Pi5 实验路线](../../../10-arm-architecture/aarch64-practice/chapter-02-raspberry-pi-lab/notes/section-0-Pi5适配与实验路线.md) | 树莓派启动地址 0x80000 |
-| [GNU 汇编器](../../../10-arm-architecture/aarch64-practice/chapter-08-gnu-assembler/README.md) | `.section` / `.global` / 指令语法 |
-| [链接脚本](../../../10-arm-architecture/aarch64-practice/chapter-09-linker-scripts/README.md) | `. = 0x80000` 控制加载地址 |
+| [AArch64 基础](../../../07-arm-architecture/aarch64-practice/chapter-01-arm64-fundamentals/README.md) | ARM64 寄存器 x0-x30、SP、PC |
+| [Pi5 实验路线](../../../07-arm-architecture/aarch64-practice/chapter-02-raspberry-pi-lab/notes/section-0-Pi5适配与实验路线.md) | 树莓派启动地址 0x80000 |
+| [GNU 汇编器](../../../07-arm-architecture/aarch64-practice/chapter-08-gnu-assembler/README.md) | `.section` / `.global` / 指令语法 |
+| [链接脚本](../../../07-arm-architecture/aarch64-practice/chapter-09-linker-scripts/README.md) | `. = 0x80000` 控制加载地址 |
 
 ---
 
@@ -66,8 +66,8 @@ hang:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| AArch64 指令语法 | [ch03 load/store](../../../10-arm-architecture/aarch64-practice/chapter-03-a64-load-store/) |
-| 汇编器语法 | [ch08 GNU assembler](../../../10-arm-architecture/aarch64-practice/chapter-08-gnu-assembler/) |
+| AArch64 指令语法 | [ch03 load/store](../../../07-arm-architecture/aarch64-practice/chapter-03-a64-load-store/) |
+| 汇编器语法 | [ch08 GNU assembler](../../../07-arm-architecture/aarch64-practice/chapter-08-gnu-assembler/) |
 
 ---
 
@@ -145,8 +145,8 @@ void main(void) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| AArch64 调用约定 | [ch01 fundamentals](../../../10-arm-architecture/aarch64-practice/chapter-01-arm64-fundamentals/) |
-| 异常等级 EL1/EL2 | [ch07 traps](../../../10-arm-architecture/aarch64-practice/chapter-07-a64-traps/) |
+| AArch64 调用约定 | [ch01 fundamentals](../../../07-arm-architecture/aarch64-practice/chapter-01-arm64-fundamentals/) |
+| 异常等级 EL1/EL2 | [ch07 traps](../../../07-arm-architecture/aarch64-practice/chapter-07-a64-traps/) |
 
 ---
 
@@ -207,8 +207,8 @@ SECTIONS {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 链接脚本语法 | [ch09 linker scripts](../../../10-arm-architecture/aarch64-practice/chapter-09-linker-scripts/) |
-| bss 段为什么要清零 | [ch09](../../../10-arm-architecture/aarch64-practice/chapter-09-linker-scripts/) |
+| 链接脚本语法 | [ch09 linker scripts](../../../07-arm-architecture/aarch64-practice/chapter-09-linker-scripts/) |
+| bss 段为什么要清零 | [ch09](../../../07-arm-architecture/aarch64-practice/chapter-09-linker-scripts/) |
 
 ---
 
@@ -230,4 +230,4 @@ qemu-system-aarch64 -M raspi3b -kernel kernel8.img -serial stdio -display none
 
 ⬜ 未开始 → 建议先装 `gcc-aarch64-linux-gnu` + `qemu-system-arm`，30 分钟跑出第一个字符。
 
-← [P5 索引](../README.md) · [10 模块](../../../10-arm-architecture/)
+← [P5 索引](../README.md) · [10 模块](../../../07-arm-architecture/)

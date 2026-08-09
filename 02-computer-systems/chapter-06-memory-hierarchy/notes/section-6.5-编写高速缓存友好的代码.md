@@ -1,6 +1,6 @@
 ## 6.5 编写高速缓存友好的代码
 
-> ↔ [Hennessy §2.3 缓存优化](../../../03-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.3-缓存性能十项高级优化.md)
+> ↔ [Hennessy §2.3 缓存优化](../../../19-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.3-缓存性能十项高级优化.md)
 
 
 > **Ch6 §6.5** · [章导读](../README.md) · 上节 [§6.4.7 ←](./section-6.4.7-Cache参数的性能影响.md) · 下节 [§6.6 →](./section-6.6-存储器山.md)

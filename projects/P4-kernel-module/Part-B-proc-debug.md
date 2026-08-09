@@ -1,7 +1,7 @@
 # P4 Part B — /proc 统计 + kmalloc 追踪 + 内核调试
 
 > 在 Part A 的字符设备上加 kmalloc 分配追踪和 /proc 统计，再故意写一个 bug 用 KASAN/Oops 定位。
-> **做法：项目驱动，[`08.6`](../../08.6-kernel-debugging/) / [`09`](../../09-linux-mm/) 笔记当字典。**
+> **做法：项目驱动，[`05.6`](../../05.6-kernel-debugging/) / [`06`](../../06-linux-mm/) 笔记当字典。**
 
 ---
 
@@ -9,11 +9,11 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [08.6 ch03 printk](../../08.6-kernel-debugging/chapter-03-printk/notes/) | printk 日志级别、rate limiting |
-| [08.6 ch05 KASAN](../../08.6-kernel-debugging/chapter-05-memory-debug-1/notes/) | 内存越界/释放后使用检测 |
-| [08.6 ch07 Oops](../../08.6-kernel-debugging/chapter-07-oops/notes/) | 内核崩溃日志怎么读 |
-| [08.6 ch09 Ftrace](../../08.6-kernel-debugging/chapter-09-ftrace/) | 函数级追踪 |
-| [09 Slab 分配器](../../09-linux-mm/chapter-08-slab-allocator/) | kmalloc 底层 = slab/slub |
+| [08.6 ch03 printk](../../05.6-kernel-debugging/chapter-03-printk/notes/) | printk 日志级别、rate limiting |
+| [08.6 ch05 KASAN](../../05.6-kernel-debugging/chapter-05-memory-debug-1/notes/) | 内存越界/释放后使用检测 |
+| [08.6 ch07 Oops](../../05.6-kernel-debugging/chapter-07-oops/notes/) | 内核崩溃日志怎么读 |
+| [08.6 ch09 Ftrace](../../05.6-kernel-debugging/chapter-09-ftrace/) | 函数级追踪 |
+| [09 Slab 分配器](../../06-linux-mm/chapter-08-slab-allocator/) | kmalloc 底层 = slab/slub |
 
 ---
 
@@ -106,8 +106,8 @@ static long my_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| kmalloc/slab 原理 | [09 ch08 Slab](../../09-linux-mm/chapter-08-slab-allocator/) |
-| GFP 标志 | [09 ch06 物理页分配](../../09-linux-mm/chapter-06-physical-page-allocation/) |
+| kmalloc/slab 原理 | [09 ch08 Slab](../../06-linux-mm/chapter-08-slab-allocator/) |
+| GFP 标志 | [09 ch06 物理页分配](../../06-linux-mm/chapter-06-physical-page-allocation/) |
 
 ---
 
@@ -185,8 +185,8 @@ remove_proc_entry("mydev_stats", NULL);
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| /proc / seq_file | [LKD 17.3 sysfs](../../07-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.3-sysfs-虚拟文件系统.md) |
-| 现代 proc API | [08.5 Bootlin](../../08.5-modern-kernel/bootlin-material/) |
+| /proc / seq_file | [LKD 17.3 sysfs](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.3-sysfs-虚拟文件系统.md) |
+| 现代 proc API | [08.5 Bootlin](../../05.5-modern-kernel/bootlin-material/) |
 
 ---
 
@@ -255,11 +255,11 @@ static void bug_null_ptr(void) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| printk 调试 | [08.6 ch03 printk](../../08.6-kernel-debugging/chapter-03-printk/notes/) |
-| KASAN 内存检测 | [08.6 ch05](../../08.6-kernel-debugging/chapter-05-memory-debug-1/notes/) |
-| Oops 日志分析 | [08.6 ch07 Oops](../../08.6-kernel-debugging/chapter-07-oops/notes/) |
-| Ftrace 函数追踪 | [08.6 ch09 Ftrace](../../08.6-kernel-debugging/chapter-09-ftrace/) |
-| Kprobes 动态追踪 | [08.6 ch04 Kprobes](../../08.6-kernel-debugging/chapter-04-kprobes/notes/) |
+| printk 调试 | [08.6 ch03 printk](../../05.6-kernel-debugging/chapter-03-printk/notes/) |
+| KASAN 内存检测 | [08.6 ch05](../../05.6-kernel-debugging/chapter-05-memory-debug-1/notes/) |
+| Oops 日志分析 | [08.6 ch07 Oops](../../05.6-kernel-debugging/chapter-07-oops/notes/) |
+| Ftrace 函数追踪 | [08.6 ch09 Ftrace](../../05.6-kernel-debugging/chapter-09-ftrace/) |
+| Kprobes 动态追踪 | [08.6 ch04 Kprobes](../../05.6-kernel-debugging/chapter-04-kprobes/notes/) |
 
 ---
 
@@ -293,4 +293,4 @@ sudo rmmod chardev
 sudo rm /dev/mydev
 ```
 
-← [P4 索引](./README.md) · [08.6 模块](../../08.6-kernel-debugging/) · [09 模块](../../09-linux-mm/)
+← [P4 索引](./README.md) · [08.6 模块](../../05.6-kernel-debugging/) · [09 模块](../../06-linux-mm/)

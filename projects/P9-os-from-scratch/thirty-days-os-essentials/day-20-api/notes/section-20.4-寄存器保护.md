@@ -24,6 +24,6 @@ api_handler:
 
 **HFT：** syscall **内核不能破坏用户寄存器**（除返回值约定）；**WRONG** → 极难查的 **heisenbug**。
 
-→ [01-CSAPP Ch3 调用约定](../../../../../02-computer-systems/chapter-03-machine-level-programs/)
+→ [02-CSAPP Ch3 调用约定](../../../../../02-computer-systems/chapter-03-machine-level-programs/)
 
 ---

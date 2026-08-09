@@ -1,7 +1,7 @@
 # P5c — I2C/SPI 传感器驱动 + 设备树
 
 > 给一个真实传感器写内核驱动，用设备树描述硬件，让用户态能读到温度/加速度。
-> **做法：项目驱动，[`12`](../../../12-device-drivers-dt/) 笔记当字典。**
+> **做法：项目驱动，[`09`](../../../09-device-drivers-dt/) 笔记当字典。**
 
 ---
 
@@ -9,8 +9,8 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [驱动理论 refs](../../../12-device-drivers-dt/refs/classic-driver-theory/) | LDD3：file_operations、probe/remove |
-| [现代驱动实践](../../../12-device-drivers-dt/refs/modern-driver-practice/) | 平台驱动、I2C/SPI 子系统 |
+| [驱动理论 refs](../../../09-device-drivers-dt/refs/classic-driver-theory/) | LDD3：file_operations、probe/remove |
+| [现代驱动实践](../../../09-device-drivers-dt/refs/modern-driver-practice/) | 平台驱动、I2C/SPI 子系统 |
 
 ---
 
@@ -57,8 +57,8 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 设备树语法 | [MELP ch11](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-11-device-drivers-interaction/) |
-| compatible 匹配 | [驱动理论 refs](../../../12-device-drivers-dt/refs/classic-driver-theory/) |
+| 设备树语法 | [MELP ch11](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-11-device-drivers-interaction/) |
+| compatible 匹配 | [驱动理论 refs](../../../09-device-drivers-dt/refs/classic-driver-theory/) |
 
 ---
 
@@ -168,9 +168,9 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 平台驱动模型 | [驱动理论 refs](../../../12-device-drivers-dt/refs/classic-driver-theory/) |
-| I2C 子系统 | [现代驱动实践](../../../12-device-drivers-dt/refs/modern-driver-practice/) |
-| probe/remove 生命周期 | [LKD 17.2 设备模型](../../../07-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.2-统一设备模型.md) |
+| 平台驱动模型 | [驱动理论 refs](../../../09-device-drivers-dt/refs/classic-driver-theory/) |
+| I2C 子系统 | [现代驱动实践](../../../09-device-drivers-dt/refs/modern-driver-practice/) |
+| probe/remove 生命周期 | [LKD 17.2 设备模型](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.2-统一设备模型.md) |
 
 ---
 
@@ -191,7 +191,7 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| iio 子系统 | [现代驱动实践](../../../12-device-drivers-dt/refs/modern-driver-practice/) |
+| iio 子系统 | [现代驱动实践](../../../09-device-drivers-dt/refs/modern-driver-practice/) |
 | 字符设备注册 | P4 Part A（你已经做过了！）|
 
 ---
@@ -228,8 +228,8 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 内核中断 | [ULK ch04 中断](../../../08-linux-kernel-deep/chapter-04-interrupts-and-exceptions/) |
-| threaded_irq | [现代驱动实践](../../../12-device-drivers-dt/refs/modern-driver-practice/) |
+| 内核中断 | [ULK ch04 中断](../../../20-linux-kernel-deep/chapter-04-interrupts-and-exceptions/) |
+| threaded_irq | [现代驱动实践](../../../09-device-drivers-dt/refs/modern-driver-practice/) |
 
 ---
 
@@ -252,4 +252,4 @@ ls /proc/device-tree/i2c1/mpu6050@68/
 
 ⬜ 未开始 → 建议先确认手上有传感器模块（MPU6050 或 BMP280），然后在设备树里加节点。
 
-← [P5 索引](../README.md) · [12 模块](../../../12-device-drivers-dt/)
+← [P5 索引](../README.md) · [12 模块](../../../09-device-drivers-dt/)

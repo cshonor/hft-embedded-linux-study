@@ -1,23 +1,23 @@
 # P7 — DPDK 转发 + 延迟剖析
 
 > 用 DPDK 写一个 packet forwarder，再用 perf 火焰图和 bpftrace 延迟探针把它剖析透——HFT 收发路径的"性能层"。
-> **做法：项目驱动，[`18`](../../18-dpdk/) / [`19`](../../19-systems-performance/) / [`20`](../../20-bpf-observability/) 笔记当字典。**
+> **做法：项目驱动，[`15`](../../15-dpdk/) / [`16`](../../16-systems-performance/) / [`17`](../../17-bpf-observability/) 笔记当字典。**
 
 ---
 
 ## 核心理念
 
-从内核栈跳到用户态旁路。实现一个最小 DPDK 转发器，测量单跳延迟，用性能工具找瓶颈。这是进入 `21` HFT 引擎前的最后一道网络性能关。
+从内核栈跳到用户态旁路。实现一个最小 DPDK 转发器，测量单跳延迟，用性能工具找瓶颈。这是进入 `18` HFT 引擎前的最后一道网络性能关。
 
 ## 最小预备
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [DPDK ch01 intro](../../18-dpdk/01-Intro-Book/chapter-01-dpdk-intro/) | DPDK 是什么、为什么旁路内核 |
-| [DPDK ch02 cache](../../18-dpdk/01-Intro-Book/chapter-02-cache-and-memory/) | 大页、NUMA、缓存行 |
-| [DPDK ch05 转发](../../18-dpdk/01-Intro-Book/chapter-05-packet-forwarding/) | PMD 轮询收发 |
-| [SysPerf ch02 方法论](../../19-systems-performance/chapter-02-methodologies/notes/) | USE 方法、火焰图 |
-| [SysPerf ch04 观测工具](../../19-systems-performance/chapter-04-observability-tools/notes/) | perf / bpftrace |
+| [DPDK ch01 intro](../../15-dpdk/01-Intro-Book/chapter-01-dpdk-intro/) | DPDK 是什么、为什么旁路内核 |
+| [DPDK ch02 cache](../../15-dpdk/01-Intro-Book/chapter-02-cache-and-memory/) | 大页、NUMA、缓存行 |
+| [DPDK ch05 转发](../../15-dpdk/01-Intro-Book/chapter-05-packet-forwarding/) | PMD 轮询收发 |
+| [SysPerf ch02 方法论](../../16-systems-performance/chapter-02-methodologies/notes/) | USE 方法、火焰图 |
+| [SysPerf ch04 观测工具](../../16-systems-performance/chapter-04-observability-tools/notes/) | perf / bpftrace |
 
 ---
 
@@ -69,9 +69,9 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 大页原理 | [DPDK ch02 cache](../../18-dpdk/01-Intro-Book/chapter-02-cache-and-memory/) |
-| EAL 初始化 | [DPDK ch01](../../18-dpdk/01-Intro-Book/chapter-01-dpdk-intro/) |
-| VFIO/UIO | [DPDK ch06 PCIe](../../18-dpdk/01-Intro-Book/chapter-06-pcie-packet-io/) |
+| 大页原理 | [DPDK ch02 cache](../../15-dpdk/01-Intro-Book/chapter-02-cache-and-memory/) |
+| EAL 初始化 | [DPDK ch01](../../15-dpdk/01-Intro-Book/chapter-01-dpdk-intro/) |
+| VFIO/UIO | [DPDK ch06 PCIe](../../15-dpdk/01-Intro-Book/chapter-06-pcie-packet-io/) |
 
 ---
 
@@ -171,9 +171,9 @@ int main(int argc, char **argv) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| mempool/mbuf | [DPDK ch02](../../18-dpdk/01-Intro-Book/chapter-02-cache-and-memory/) |
-| PMD 轮询 | [DPDK ch05](../../18-dpdk/01-Intro-Book/chapter-05-packet-forwarding/) |
-| NUMA 绑定 | [DPDK ch03](../../18-dpdk/01-Intro-Book/chapter-03-parallel-computing/) |
+| mempool/mbuf | [DPDK ch02](../../15-dpdk/01-Intro-Book/chapter-02-cache-and-memory/) |
+| PMD 轮询 | [DPDK ch05](../../15-dpdk/01-Intro-Book/chapter-05-packet-forwarding/) |
+| NUMA 绑定 | [DPDK ch03](../../15-dpdk/01-Intro-Book/chapter-03-parallel-computing/) |
 
 ---
 
@@ -215,7 +215,7 @@ if (++packet_count % 1000000 == 0)
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 延迟统计方法 | [SysPerf ch02](../../19-systems-performance/chapter-02-methodologies/notes/) |
+| 延迟统计方法 | [SysPerf ch02](../../16-systems-performance/chapter-02-methodologies/notes/) |
 
 ---
 
@@ -247,9 +247,9 @@ if (++packet_count % 1000000 == 0)
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| perf 采样 | [SysPerf ch04](../../19-systems-performance/chapter-04-observability-tools/notes/) |
-| 火焰图 | [SysPerf ch06](../../19-systems-performance/) (找 perf 章节) |
-| USE 方法 | [SysPerf ch02](../../19-systems-performance/chapter-02-methodologies/notes/) |
+| perf 采样 | [SysPerf ch04](../../16-systems-performance/chapter-04-observability-tools/notes/) |
+| 火焰图 | [SysPerf ch06](../../16-systems-performance/) (找 perf 章节) |
+| USE 方法 | [SysPerf ch02](../../16-systems-performance/chapter-02-methodologies/notes/) |
 
 ---
 
@@ -298,9 +298,9 @@ if (++packet_count % 1000000 == 0)
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| bpftrace 调度追踪 | [BPF ch03](../../20-bpf-observability/chapter-03-performance-analysis/notes/) |
-| off-CPU 分析 | [BPF](../../20-bpf-observability/) |
-| CPU 隔离 | [SysPerf](../../19-systems-performance/) |
+| bpftrace 调度追踪 | [BPF ch03](../../17-bpf-observability/chapter-03-performance-analysis/notes/) |
+| off-CPU 分析 | [BPF](../../17-bpf-observability/) |
+| CPU 隔离 | [SysPerf](../../16-systems-performance/) |
 
 ---
 
@@ -319,9 +319,9 @@ if (++packet_count % 1000000 == 0)
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`18` dpdk](../../18-dpdk/) | EAL、大页、NUMA、mbuf/mempool、PMD、零拷贝 |
-| [`19` systems-performance](../../19-systems-performance/) | perf 采样、火焰图、USE 方法、延迟分解 |
-| [`20` bpf-observability](../../20-bpf-observability/) | bpftrace 延迟探针、off-CPU、调度追踪 |
+| [`15` dpdk](../../15-dpdk/) | EAL、大页、NUMA、mbuf/mempool、PMD、零拷贝 |
+| [`16` systems-performance](../../16-systems-performance/) | perf 采样、火焰图、USE 方法、延迟分解 |
+| [`17` bpf-observability](../../17-bpf-observability/) | bpftrace 延迟探针、off-CPU、调度追踪 |
 
 ## 前置
 
@@ -331,4 +331,4 @@ if (++packet_count % 1000000 == 0)
 
 ⬜ 未开始 → 建议先装 DPDK + 配大页，跑通 testpmd。
 
-← [projects 总览](../README.md) · [18 模块](../../18-dpdk/) · [19 模块](../../19-systems-performance/)
+← [projects 总览](../README.md) · [18 模块](../../15-dpdk/) · [19 模块](../../16-systems-performance/)

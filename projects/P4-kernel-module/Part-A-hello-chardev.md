@@ -1,7 +1,7 @@
 # P4 Part A — Hello World 模块 + 字符设备
 
 > 从 `insmod hello.ko` 到注册一个能 `open/read/write` 的字符设备。
-> **做法：项目驱动，[`07`](../../07-linux-kernel/) / [`08.5`](../../08.5-modern-kernel/) 笔记当字典。**
+> **做法：项目驱动，[`05`](../../05-linux-kernel/) / [`05.5`](../../05.5-modern-kernel/) 笔记当字典。**
 
 ---
 
@@ -9,10 +9,10 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [LKD 17.5 内核模块](../../07-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.5-内核模块.md) | 模块 = 可加载的 .ko，init/exit 入口 |
-| [LKD 17.1 设备类型](../../07-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.1-设备类型.md) | 字符设备 = 流式访问，有 file_operations |
-| [ULK 附录 B 模块](../../08-linux-kernel-deep/appendix-B-modules.md) | 模块加载/卸载的内核机制 |
-| [09 Slab/kmalloc](../../09-linux-mm/chapter-08-slab-allocator/notes/section-4-尺寸缓存-与-kmalloc-kfree.md) | kmalloc = slab 分配器入口 |
+| [LKD 17.5 内核模块](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.5-内核模块.md) | 模块 = 可加载的 .ko，init/exit 入口 |
+| [LKD 17.1 设备类型](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.1-设备类型.md) | 字符设备 = 流式访问，有 file_operations |
+| [ULK 附录 B 模块](../../20-linux-kernel-deep/appendix-B-modules.md) | 模块加载/卸载的内核机制 |
+| [09 Slab/kmalloc](../../06-linux-mm/chapter-08-slab-allocator/notes/section-4-尺寸缓存-与-kmalloc-kfree.md) | kmalloc = slab 分配器入口 |
 
 ---
 
@@ -80,9 +80,9 @@ clean:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 模块加载机制 | [LKD 17.5](../../07-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.5-内核模块.md) |
-| 模块的内核侧 | [ULK 附录 B](../../08-linux-kernel-deep/appendix-B-modules.md) |
-| 现代 6.x 模块 API | [08.5 Bootlin](../../08.5-modern-kernel/bootlin-material/) |
+| 模块加载机制 | [LKD 17.5](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.5-内核模块.md) |
+| 模块的内核侧 | [ULK 附录 B](../../20-linux-kernel-deep/appendix-B-modules.md) |
+| 现代 6.x 模块 API | [08.5 Bootlin](../../05.5-modern-kernel/bootlin-material/) |
 
 ---
 
@@ -204,10 +204,10 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 字符设备 / file_operations | [LKD 17.1](../../07-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.1-设备类型.md) |
-| 内核内存分配 kmalloc | [09 Slab/kmalloc](../../09-linux-mm/chapter-08-slab-allocator/notes/section-4-尺寸缓存-与-kmalloc-kfree.md) |
-| copy_to_user 原理 | [ULK ch09 地址空间](../../08-linux-kernel-deep/chapter-09-process-address-space/) |
-| 现代 cdev API 变化 | [08.5 Bootlin](../../08.5-modern-kernel/bootlin-material/) |
+| 字符设备 / file_operations | [LKD 17.1](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.1-设备类型.md) |
+| 内核内存分配 kmalloc | [09 Slab/kmalloc](../../06-linux-mm/chapter-08-slab-allocator/notes/section-4-尺寸缓存-与-kmalloc-kfree.md) |
+| copy_to_user 原理 | [ULK ch09 地址空间](../../20-linux-kernel-deep/chapter-09-process-address-space/) |
+| 现代 cdev API 变化 | [08.5 Bootlin](../../05.5-modern-kernel/bootlin-material/) |
 
 ---
 
@@ -259,4 +259,4 @@ sudo rmmod chardev
 sudo rm /dev/mydev
 ```
 
-← [P4 索引](./README.md) · [07 模块](../../07-linux-kernel/)
+← [P4 索引](./README.md) · [07 模块](../../05-linux-kernel/)

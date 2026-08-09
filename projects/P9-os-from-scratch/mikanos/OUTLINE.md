@@ -70,10 +70,10 @@
 
 ---
 
-## Ch 19–20 要点速览
+## Ch 16–17 要点速览
 
 - **页表** · 用户/内核地址空间
-- **系统调用** — 对照 [01-CSAPP Ch9](../../../02-computer-systems/chapter-09-virtual-memory/) · [07-linux-kernel](../../../07-linux-kernel/) · [04-linux-userspace-api](../../../04-linux-userspace-api/)
+- **系统调用** — 对照 [02-CSAPP Ch9](../../../02-computer-systems/chapter-09-virtual-memory/) · [05-linux-kernel](../../../05-linux-kernel/) · [03-linux-userspace-api](../../../03-linux-userspace-api/)
 
 → 详读 [chapter-19-paging/](./chapter-19-paging/) · [chapter-20-syscall/](./chapter-20-syscall/)
 

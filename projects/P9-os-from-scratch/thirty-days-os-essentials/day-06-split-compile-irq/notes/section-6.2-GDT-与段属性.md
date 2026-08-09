@@ -24,6 +24,6 @@ Day 5 建了 GDT 表；Day 6 **补底层细节**。
          └──── 权限检查（GDT 描述符）──┘
 ```
 
-→ 对照 [07-linux-kernel](../../../../../07-linux-kernel/) · 用户态/内核态 · [04-linux-userspace-api](../../../../../04-linux-userspace-api/) syscall 边界
+→ 对照 [05-linux-kernel](../../../../../05-linux-kernel/) · 用户态/内核态 · [03-linux-userspace-api](../../../../../03-linux-userspace-api/) syscall 边界
 
 ---

@@ -64,7 +64,7 @@ void CallApp(Task* t) {
 
 **Newlib `read(0,…)` / `write(1,…)`** 自动 **路由** — 无需应用感知类型。
 
-→ [08 TLPI 标准 fd](../../../../../04-linux-userspace-api/)
+→ [08 TLPI 标准 fd](../../../../../03-linux-userspace-api/)
 
 ---
 

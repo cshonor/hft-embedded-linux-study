@@ -1,7 +1,7 @@
 # P4 — 可加载内核模块
 
 > 写一个内核模块：字符设备 + kmalloc 追踪 + /proc 统计，把"内核不是黑盒"变成"我能往里加东西"。
-> **做法：项目驱动，[`07`](../../07-linux-kernel/) / [`08.5`](../../08.5-modern-kernel/) / [`08.6`](../../08.6-kernel-debugging/) / [`09`](../../09-linux-mm/) 笔记当字典——先上路，卡住再查。**
+> **做法：项目驱动，[`05`](../../05-linux-kernel/) / [`05.5`](../../05.5-modern-kernel/) / [`05.6`](../../05.6-kernel-debugging/) / [`06`](../../06-linux-mm/) 笔记当字典——先上路，卡住再查。**
 
 ---
 
@@ -37,10 +37,10 @@
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`07` linux-kernel](../../07-linux-kernel/) | LKD：模块机制、字符设备、file_operations |
-| [`08.5` modern-kernel](../../08.5-modern-kernel/) | 现代 5.x/6.x 内核 API（不要照搬 2.6） |
-| [`08.6` kernel-debugging](../../08.6-kernel-debugging/) | printk、Kprobes、KASAN、Ftrace、Oops 分析 |
-| [`09` linux-mm](../../09-linux-mm/) | Gorman：kmalloc/slab/slub、物理内存分配 |
+| [`05` linux-kernel](../../05-linux-kernel/) | LKD：模块机制、字符设备、file_operations |
+| [`05.5` modern-kernel](../../05.5-modern-kernel/) | 现代 5.x/6.x 内核 API（不要照搬 2.6） |
+| [`05.6` kernel-debugging](../../05.6-kernel-debugging/) | printk、Kprobes、KASAN、Ftrace、Oops 分析 |
+| [`06` linux-mm](../../06-linux-mm/) | Gorman：kmalloc/slab/slub、物理内存分配 |
 
 ## 前置
 
@@ -64,10 +64,10 @@
 
 ## 参考模块
 
-- [07-linux-kernel/](../../07-linux-kernel/) — LKD Ch17（模块+设备）
-- [08.5-modern-kernel/](../../08.5-modern-kernel/) — LWN/Bootlin 现代 API（6.x 内核模块接口变化）
-- [08.6-kernel-debugging/](../../08.6-kernel-debugging/) — Ch3 printk、Ch5 KASAN、Ch7 Oops、Ch9 Ftrace
-- [09-linux-mm/](../../09-linux-mm/) — Ch8 Slab/Slub（kmalloc 的底层）
+- [05-linux-kernel/](../../05-linux-kernel/) — LKD Ch17（模块+设备）
+- [05.5-modern-kernel/](../../05.5-modern-kernel/) — LWN/Bootlin 现代 API（6.x 内核模块接口变化）
+- [05.6-kernel-debugging/](../../05.6-kernel-debugging/) — Ch3 printk、Ch5 KASAN、Ch7 Oops、Ch9 Ftrace
+- [06-linux-mm/](../../06-linux-mm/) — Ch8 Slab/Slub（kmalloc 的底层）
 
 ## 环境
 
@@ -79,4 +79,4 @@
 
 ⬜ 未开始 → 建议先把 Part A Phase 1 的 hello.ko 加载成功（30 分钟）。
 
-← [projects 总览](../README.md) · [07 模块](../../07-linux-kernel/) · [08.6 模块](../../08.6-kernel-debugging/)
+← [projects 总览](../README.md) · [07 模块](../../05-linux-kernel/) · [08.6 模块](../../05.6-kernel-debugging/)

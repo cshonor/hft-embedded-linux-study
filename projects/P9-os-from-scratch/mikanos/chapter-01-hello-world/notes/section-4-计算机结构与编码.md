@@ -22,7 +22,7 @@
 | **存储器** | 持久保存 — 本章 U 盘上的 **BOOTX64.EFI** |
 | **I/O** | 与外部世界交互 — Hello World 最终到 **显示设备** |
 
-→ 与 [02-Hennessy 体系结构](../../../../../03-computer-architecture/) · [CSAPP Ch6 存储器](../../../../../02-computer-systems/chapter-06-memory-hierarchy/) 同构
+→ 与 [19-Hennessy 体系结构](../../../../../19-computer-architecture/) · [CSAPP Ch6 存储器](../../../../../02-computer-systems/chapter-06-memory-hierarchy/) 同构
 
 ---
 
@@ -275,7 +275,7 @@ python3 -c "print('中'.encode('utf-8').hex())"       # e4b8ad
 | **手写 hex** | 多字节常数 **字节序写反** → 程序逻辑错误或崩溃 |
 | **跨平台** | 网络字节序（大端）vs 主机序 — UEFI/x64 主机为 **小端** |
 
-→ [CSAPP Ch3 数据格式](../../../../../02-computer-systems/chapter-03-machine-level-programs/) · [02 附录 A 指令集](../../../../../03-computer-architecture/appendix-A-指令集原理.md)
+→ [CSAPP Ch3 数据格式](../../../../../02-computer-systems/chapter-03-machine-level-programs/) · [02 附录 A 指令集](../../../../../19-computer-architecture/appendix-A-指令集原理.md)
 
 ---
 

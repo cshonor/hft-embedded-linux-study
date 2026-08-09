@@ -23,6 +23,6 @@ putstr(s, x, y, color);
 
 **在无调试器 OS 里，屏幕 print 变量 = 第一调试器。**
 
-→ 对照 [01-CSAPP](../../../../../02-computer-systems/) · 格式化 I/O 底层仍是 **写内存**；HFT 里类似 **日志 ring + 固定格式**。
+→ 对照 [02-CSAPP](../../../../../02-computer-systems/) · 格式化 I/O 底层仍是 **写内存**；HFT 里类似 **日志 ring + 固定格式**。
 
 ---

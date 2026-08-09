@@ -152,8 +152,8 @@ qemu-system-x86_64 \
 
 | 问题 | 翻哪篇 |
 |------|--------|
-| 内核编译流程 | `07-linux-kernel/00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.3-编译和安装内核.md` |
-| 启动链概念 | `11-embedded-boot-build/primer-system-overview/` |
+| 内核编译流程 | `05-linux-kernel/00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.3-编译和安装内核.md` |
+| 启动链概念 | `08-embedded-boot-build/primer-system-overview/` |
 | CSAPP 异常控制流 | `02-computer-systems/chapter-08-exceptional-control-flow/` |
 | initramfs 原理 | [内核文档 initramfs.txt](https://docs.kernel.org/admin-guide/initrd.html) |
 
@@ -332,9 +332,9 @@ qemu-system-aarch64 \
 
 | 问题 | 翻哪篇 |
 |------|--------|
-| 交叉编译工具链 | `10-arm-architecture/aarch64-practice/` |
-| QEMU ARM64 启动 | `11-embedded-boot-build/` |
-| ARM64 体系结构 | `10-arm-architecture/` |
+| 交叉编译工具链 | `07-arm-architecture/aarch64-practice/` |
+| QEMU ARM64 启动 | `08-embedded-boot-build/` |
+| ARM64 体系结构 | `07-arm-architecture/` |
 
 ---
 
@@ -351,8 +351,8 @@ qemu-system-aarch64 \
 | 模块 | 用到什么 |
 |------|---------|
 | `02` CSAPP | Ch8 异常控制流（启动链 = 异常/中断的宏观体现） |
-| `07` LKD | Ch2 内核入门（编译、menuconfig、源码树） |
-| `11` Embedded Boot | 启动链全景（bootloader → kernel → init） |
+| `05` LKD | Ch2 内核入门（编译、menuconfig、源码树） |
+| `08` Embedded Boot | 启动链全景（bootloader → kernel → init） |
 
 ## 交付物 Checklist
 

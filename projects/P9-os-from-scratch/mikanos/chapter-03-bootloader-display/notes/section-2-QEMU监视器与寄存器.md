@@ -35,7 +35,7 @@ RIP 指向哪里 → CPU 正在执行哪段代码
 RFLAGS → 上一条指令是否为零、是否开中断…
 ```
 
-→ [CSAPP Ch3 机器级程序](../../../../../02-computer-systems/chapter-03-machine-level-programs/) · [02 附录 A 指令集](../../../../../03-computer-architecture/appendix-A-指令集原理.md)
+→ [CSAPP Ch3 机器级程序](../../../../../02-computer-systems/chapter-03-machine-level-programs/) · [02 附录 A 指令集](../../../../../19-computer-architecture/appendix-A-指令集原理.md)
 
 ---
 

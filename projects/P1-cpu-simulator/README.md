@@ -83,7 +83,7 @@
 | 卡住了… | 翻这里 |
 |---------|--------|
 | 减法怎么做？补码？ | [5.2 算术电路](../../00-digital-logic-cpu/ch05_digital_blocks/5.2_算术电路.md) |
-| 标志位 Z / C / N / V | [5.2](../../00-digital-logic-cpu/ch05_digital_blocks/5.2_算术电路.md) ·（A64 对照可后看）[NZCV](../../10-arm-architecture/aarch64-practice/NZCV.md) |
+| 标志位 Z / C / N / V | [5.2](../../00-digital-logic-cpu/ch05_digital_blocks/5.2_算术电路.md) ·（A64 对照可后看）[NZCV](../../07-arm-architecture/aarch64-practice/NZCV.md) |
 | 用 MUX 选加/减/与/或 | [2.8.3 MUX](../../00-digital-logic-cpu/ch02_combinational/2.8.3_MUX.md) · [2.8 组合模块](../../00-digital-logic-cpu/ch02_combinational/2.8_组合逻辑模块.md) |
 | 加法器内部 | [2.8.5 加法器](../../00-digital-logic-cpu/ch02_combinational/2.8.5_加法器.md) |
 | 寄存器怎么写？WE？ | [5.4 时序电路模块](../../00-digital-logic-cpu/ch05_digital_blocks/5.4_时序电路模块.md) · [3.2 锁存/触发器](../../00-digital-logic-cpu/ch03_sequential/3.2_锁存器和触发器.md) |

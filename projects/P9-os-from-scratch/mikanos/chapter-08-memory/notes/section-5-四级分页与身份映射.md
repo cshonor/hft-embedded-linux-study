@@ -22,7 +22,7 @@
 
 **遍历：** CR3 → PML4 → PDP → PD → PT → **物理页帧 + offset**。
 
-→ [CSAPP Ch9 多级页表](../../../../../02-computer-systems/chapter-09-virtual-memory/) · [02-Hennessy 虚拟内存](../../../../../03-computer-architecture/)
+→ [CSAPP Ch9 多级页表](../../../../../02-computer-systems/chapter-09-virtual-memory/) · [19-Hennessy 虚拟内存](../../../../../19-computer-architecture/)
 
 ---
 

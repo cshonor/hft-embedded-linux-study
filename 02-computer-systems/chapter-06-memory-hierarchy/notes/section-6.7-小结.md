@@ -1,6 +1,6 @@
 ## 6.7 小结（原书）
 
-> ↔ [Hennessy §2.7 谬误与陷阱](../../../03-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.7-谬误与陷阱.md)
+> ↔ [Hennessy §2.7 谬误与陷阱](../../../19-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.7-谬误与陷阱.md)
 
 > **Ch6 §6.7** · [章导读](../README.md) · 上节 [§6.6 ←](./section-6.6-存储器山.md) · 下节 —
 

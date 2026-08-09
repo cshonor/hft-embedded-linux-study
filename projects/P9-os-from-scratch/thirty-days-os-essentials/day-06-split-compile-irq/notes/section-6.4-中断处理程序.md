@@ -43,7 +43,7 @@ _asm_inthandler21:          ; 汇编入口（IDT 指向这里）
          → IRETD
 ```
 
-→ [01-CSAPP Ch8 异常控制流](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/) · 中断与过程调用都深依赖栈
+→ [02-CSAPP Ch8 异常控制流](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/) · 中断与过程调用都深依赖栈
 
 #### Day 6 里程碑
 

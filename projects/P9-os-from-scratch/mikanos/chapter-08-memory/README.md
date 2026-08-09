@@ -45,7 +45,7 @@
 |------|------|
 | 本章做了什么？ | **OS 自持内存** — 身份映射 + **4KiB 页帧位图分配** |
 | 与 02 川合 OS 对照？ | 01 **Day 10–12 分页**；Mikan **Ch8 物理帧 + Ch19 进程页表** 拆分 |
-| 与 Linux / CSAPP 对照？ | 物理页分配 ≈ **buddy/位图** 极简版 — [CSAPP Ch9](../../../../02-computer-systems/chapter-09-virtual-memory/) · [07 Gorman](../../../../09-linux-mm/) |
+| 与 Linux / CSAPP 对照？ | 物理页分配 ≈ **buddy/位图** 极简版 — [CSAPP Ch9](../../../../02-computer-systems/chapter-09-virtual-memory/) · [07 Gorman](../../../../06-linux-mm/) |
 
 **本章目的：** 不再依赖 UEFI 分配 — **动态 `Allocate/Free`** 基础（Ch5 **Placement new** 后可演进为堆）。
 

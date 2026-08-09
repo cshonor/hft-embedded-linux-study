@@ -31,6 +31,6 @@ buf [·|已读|数据数据|空|·]
 
 **HFT：** **SPSC/MPSC ring buffer**（行情、订单、日志）— 本 OS 课是 **最简 8 位单生产者单消费者** 原型。
 
-→ [01-CSAPP Ch12 / 并发结构](../../../../../02-computer-systems/chapter-12-concurrent-programming/) · [16-HFT 无锁队列](../../../../../21-hft-engineering/)
+→ [02-CSAPP Ch12 / 并发结构](../../../../../02-computer-systems/chapter-12-concurrent-programming/) · [18-HFT 无锁队列](../../../../../18-hft-engineering/)
 
 ---

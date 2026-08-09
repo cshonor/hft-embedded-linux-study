@@ -46,7 +46,7 @@
 |------|------|
 | 本章做了什么？ | **文本输出** · 滚动 **Console** · 全局 **`printk()`** |
 | 与 02 川合 OS 对照？ | 01 **Day 8–9** 文本模式 VGA；Mikan 在 **GOP 像素** 上自绘字体 |
-| 与 Linux / CSAPP 对照？ | **`printk`** ≈ 内核早期 `printf` — 对照 [07-linux-kernel](../../../../07-linux-kernel/) |
+| 与 Linux / CSAPP 对照？ | **`printk`** ≈ 内核早期 `printf` — 对照 [05-linux-kernel](../../../../05-linux-kernel/) |
 
 **本章目的：** 启动信息与 **全内核调试窗口** — 为 Ch 7 中断、Ch 8 内存等提供可见日志。
 

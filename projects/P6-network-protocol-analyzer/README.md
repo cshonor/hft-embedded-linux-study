@@ -1,7 +1,7 @@
 # P6 — 网络协议分析器
 
 > 用 raw socket 抓包、逐层解析、TCP 流重组，再用 eBPF 追踪内核 NAPI 收包路径，把"报文从网卡到用户态"整条链看穿。
-> **做法：项目驱动，[`15`](../../15-network-sockets/) / [`16`](../../16-tcpip-protocols/) / [`17`](../../17-kernel-networking/) / [`20`](../../20-bpf-observability/) 笔记当字典。**
+> **做法：项目驱动，[`12`](../../12-network-sockets/) / [`13`](../../13-tcpip-protocols/) / [`14`](../../14-kernel-networking/) / [`17`](../../17-bpf-observability/) 笔记当字典。**
 
 ---
 
@@ -13,11 +13,11 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [UNP socket 基础](../../15-network-sockets/unix-network-api/1_BasicFoundation/) | socket/bind/recvfrom |
-| [TCP/IP ch03 链路层](../../16-tcpip-protocols/chapter03-link-layer/) | Ethernet 帧格式 |
-| [TCP/IP ch05 IP](../../16-tcpip-protocols/chapter05-ip-protocol/) | IP 首部字段 |
-| [Rosen ch01 引言](../../17-kernel-networking/chapter-01-introduction/) | sk_buff、收包路径概览 |
-| [BPF ch01 引言](../../20-bpf-observability/chapter-01-introduction/notes/) | eBPF 是什么 |
+| [UNP socket 基础](../../12-network-sockets/unix-network-api/1_BasicFoundation/) | socket/bind/recvfrom |
+| [TCP/IP ch03 链路层](../../13-tcpip-protocols/chapter03-link-layer/) | Ethernet 帧格式 |
+| [TCP/IP ch05 IP](../../13-tcpip-protocols/chapter05-ip-protocol/) | IP 首部字段 |
+| [Rosen ch01 引言](../../14-kernel-networking/chapter-01-introduction/) | sk_buff、收包路径概览 |
+| [BPF ch01 引言](../../17-bpf-observability/chapter-01-introduction/notes/) | eBPF 是什么 |
 
 ---
 
@@ -101,8 +101,8 @@ for (;;) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| raw socket API | [UNP 基础](../../15-network-sockets/unix-network-api/1_BasicFoundation/) |
-| Ethernet/IP/TCP 首部 | [TCP/IP ch03/05](../../16-tcpip-protocols/chapter03-link-layer/) |
+| raw socket API | [UNP 基础](../../12-network-sockets/unix-network-api/1_BasicFoundation/) |
+| Ethernet/IP/TCP 首部 | [TCP/IP ch03/05](../../13-tcpip-protocols/chapter03-link-layer/) |
 | 字节序 | [CSAPP ch02](../../02-computer-systems/chapter-02-representing-information/) |
 
 ---
@@ -175,8 +175,8 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| TCP 序列号/重传 | [TCP/IP ch09-11](../../16-tcpip-protocols/) (找 TCP 相关章) |
-| 内核 TCP 实现 | [Rosen](../../17-kernel-networking/) (找 TCP 章节) |
+| TCP 序列号/重传 | [TCP/IP ch09-11](../../13-tcpip-protocols/) (找 TCP 相关章) |
+| 内核 TCP 实现 | [Rosen](../../14-kernel-networking/) (找 TCP 章节) |
 
 ---
 
@@ -234,9 +234,9 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| bpftrace 语法 | [BPF ch04 bcc](../../20-bpf-observability/chapter-04-bcc/notes/) |
-| NAPI 收包路径 | [Rosen ch01](../../17-kernel-networking/chapter-01-introduction/) |
-| 现代 NAPI/XDP | [17.5 modern-net](../../17.5-modern-networking/lwn-articles-summary/) |
+| bpftrace 语法 | [BPF ch04 bcc](../../17-bpf-observability/chapter-04-bcc/notes/) |
+| NAPI 收包路径 | [Rosen ch01](../../14-kernel-networking/chapter-01-introduction/) |
+| 现代 NAPI/XDP | [14.5 modern-net](../../14.5-modern-networking/lwn-articles-summary/) |
 
 ---
 
@@ -288,11 +288,11 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`15` network-sockets](../../15-network-sockets/) | UNP：raw socket、socket 选项 |
-| [`16` tcpip-protocols](../../16-tcpip-protocols/) | Stevens 卷一：IP/TCP/UDP 首部与协议行为 |
-| [`17` kernel-networking](../../17-kernel-networking/) | Rosen：sk_buff、NAPI、收包路径 |
-| [`17.5` modern-networking](../../17.5-modern-networking/) | 现代 6.x：page_pool、XDP hook、eBPF 网络 |
-| [`20` bpf-observability](../../20-bpf-observability/) | bpftrace 追踪内核网络函数 |
+| [`12` network-sockets](../../12-network-sockets/) | UNP：raw socket、socket 选项 |
+| [`13` tcpip-protocols](../../13-tcpip-protocols/) | Stevens 卷一：IP/TCP/UDP 首部与协议行为 |
+| [`14` kernel-networking](../../14-kernel-networking/) | Rosen：sk_buff、NAPI、收包路径 |
+| [`14.5` modern-networking](../../14.5-modern-networking/) | 现代 6.x：page_pool、XDP hook、eBPF 网络 |
+| [`17` bpf-observability](../../17-bpf-observability/) | bpftrace 追踪内核网络函数 |
 
 ## 前置
 
@@ -310,4 +310,4 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 ⬜ 未开始 → 建议先用 `sudo tcpdump -i eth0` 看看抓包效果，然后写自己的 raw socket。
 
-← [projects 总览](../README.md) · [15 模块](../../15-network-sockets/) · [17 模块](../../17-kernel-networking/)
+← [projects 总览](../README.md) · [15 模块](../../12-network-sockets/) · [17 模块](../../14-kernel-networking/)

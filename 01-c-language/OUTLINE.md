@@ -1,6 +1,6 @@
 # C 语言 · HFT 主线裁剪 OUTLINE
 
-> **读序：** `01 CSAPP` → **02 C（本模块）** → `03 Hennessy` → `04–07` 内核/TLPI → `08/01` MikanOS  
+> **读序：** `01 CSAPP` → **02 C（本模块）** → `19 Hennessy` → `03`–`05` 内核/TLPI → P9 MikanOS  
 > **笔记正文：** 本目录 `01`–`05`（自 [上游 00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C) 复制）
 
 ---
@@ -21,7 +21,7 @@
 
 ---
 
-## 🔴 必做（开 03 Hennessy 前至少完成）
+## 🔴 必做（开 19 Hennessy 前至少完成）
 
 | 来源 | 内容 | HFT 为何读 |
 |------|------|------------|
@@ -37,19 +37,19 @@
 
 | 来源 | 何时 |
 |------|------|
-| **`03` C 专家编程** | 链接器、段、内存布局 — **只读 ch05–ch07**，04 LKD 前 |
-| **`04` 嵌入式 C 自我修养** | `__attribute__`、`typeof`、内嵌汇编、ELF — **04 LKD / 14 DPDK 前必读** |
+| **`03` C 专家编程** | 链接器、段、内存布局 — **只读 ch05–ch07**，05 LKD 前 |
+| **`04` 嵌入式 C 自我修养** | `__attribute__`、`typeof`、内嵌汇编、ELF — **05 LKD / 15 DPDK 前必读** |
 | **`05` C 陷阱与缺陷** | 宏、链接、库函数陷阱 — 工具书，遇坑再查 |
-| **K&R** Ch6–7 | 与 07 TLPI I/O 对照 |
+| **K&R** Ch6–7 | 与 03 TLPI I/O 对照 |
 
 ---
 
-## 🟢 同步实践（02 学 C · 03 学 Hennessy 时穿插）
+## 🟢 同步实践（02 学 C · 19 学 Hennessy 时穿插）
 
 | 练习 | 目的 |
 |------|------|
 | CSAPP 实验 | 01 [code/](../02-computer-systems/code/) · [ABI](../02-computer-systems/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) · [指针步长](../02-computer-systems/chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md) |
-| QEMU **ARM 裸机 hello + 异常**（可选） | CPU 模式/异常向量 — 预演 19 ARM64 |
+| QEMU **ARM 裸机 hello + 异常**（可选） | CPU 模式/异常向量 — 预演 07 ARM64 |
 | 结构体对齐 / cache line 微测 | 对接 Hennessy Ch2 · 后接 HFT 伪共享 |
 
 ---
@@ -57,9 +57,9 @@
 ## 阶段衔接
 
 ```text
-01 CSAPP → 02 C（本目录 01–02 必过；04 在 04 LKD 前）
-    → 03 Hennessy → 04–07 内核/TLPI
-    → 08/01 MikanOS → 09 C++ → … → 14 DPDK → 17 HFT
+01 CSAPP → 02 C（本目录 01–02 必过；04 在 05 LKD 前）
+    → 19 Hennessy → 03–05 内核/TLPI
+    → P9 MikanOS → 04 C++ → … → 15 DPDK → 18 HFT
 ```
 
 ---

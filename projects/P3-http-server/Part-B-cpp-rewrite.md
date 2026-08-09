@@ -8,9 +8,9 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [Effective Modern C++ ch01](../../06-cpp/M1-modern-cpp/01-Effective-Modern-C++) | auto/unique_ptr/move 语义 |
-| [Cpp Concurrency ch02-03](../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch02-managing-threads) | std::thread / mutex / lock_guard |
-| [Cpp Concurrency ch08](../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code) | 线程池设计 |
+| [Effective Modern C++ ch01](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | auto/unique_ptr/move 语义 |
+| [Cpp Concurrency ch02-03](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch02-managing-threads) | std::thread / mutex / lock_guard |
+| [Cpp Concurrency ch08](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code) | 线程池设计 |
 | [CSAPP 12.3 线程](../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.3-基于线程的并发编程.md) | 线程基础概念 |
 
 ---
@@ -83,9 +83,9 @@ private:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| RAII / 三五零法则 | [CSAPP 13 拷贝控制](../../06-cpp/M0-entry-syntax/01-C++Primer/ch13-copy-control/) (C++Primer ch13 笔记) |
-| move 语义 | [Effective Modern C++ item1-10](../../06-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
-| unique_ptr | [Effective Modern C++ item18](../../06-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
+| RAII / 三五零法则 | [CSAPP 13 拷贝控制](../../04-cpp/M0-entry-syntax/01-C++Primer/ch13-copy-control/) (C++Primer ch13 笔记) |
+| move 语义 | [Effective Modern C++ item1-10](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
+| unique_ptr | [Effective Modern C++ item18](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
 
 ---
 
@@ -182,10 +182,10 @@ private:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| std::thread 管理 | [Concurrency ch02](../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch02-managing-threads/) |
-| mutex/lock_guard | [Concurrency ch03](../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) |
-| condition_variable | [Concurrency ch04](../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch04-synchronizing-operations/) |
-| 线程池设计 | [Concurrency ch08](../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code/) |
+| std::thread 管理 | [Concurrency ch02](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch02-managing-threads/) |
+| mutex/lock_guard | [Concurrency ch03](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) |
+| condition_variable | [Concurrency ch04](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch04-synchronizing-operations/) |
+| 线程池设计 | [Concurrency ch08](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code/) |
 
 ---
 
@@ -263,9 +263,9 @@ std::string handle_request(const HttpRequest& req) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| string_view | [Effective Modern C++ item17](../../06-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
-| optional / variant | [C++Primer ch17](../../06-cpp/M0-entry-syntax/01-C++Primer/ch17-specialized-library/) |
-| 移动语义 | [C++Primer ch13](../../06-cpp/M0-entry-syntax/01-C++Primer/ch13-copy-control/) |
+| string_view | [Effective Modern C++ item17](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
+| optional / variant | [C++Primer ch17](../../04-cpp/M0-entry-syntax/01-C++Primer/ch17-specialized-library/) |
+| 移动语义 | [C++Primer ch13](../../04-cpp/M0-entry-syntax/01-C++Primer/ch13-copy-control/) |
 
 ---
 
@@ -296,4 +296,4 @@ ab -n 10000 -c 100 http://localhost:8080/
 # 对比 RPS 和 p99 延迟
 ```
 
-← [P3 索引](./README.md) · [06-cpp 模块](../../06-cpp/)
+← [P3 索引](./README.md) · [04-cpp 模块](../../04-cpp/)

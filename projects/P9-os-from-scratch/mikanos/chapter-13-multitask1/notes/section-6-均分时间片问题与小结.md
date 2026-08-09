@@ -46,7 +46,7 @@ Ch13 多任务引擎  ← 本章
     ↓
 Ch14 调度策略优化
     ↓
-Ch19–20 分页/syscall · 用户态应用
+Ch16–17 分页/syscall · 用户态应用
 ```
 
 ---
@@ -56,7 +56,7 @@ Ch19–20 分页/syscall · 用户态应用
 | Ch13 主题 | 继续读 |
 |----------|--------|
 | 休眠/优先级 | [chapter-14-multitask2](../chapter-14-multitask2/) 🔴 |
-| ULK 调度 | [chapter-07-process-scheduling](../../../../../08-linux-kernel-deep/chapter-07-process-scheduling.md) |
+| ULK 调度 | [chapter-07-process-scheduling](../../../../../20-linux-kernel-deep/chapter-07-process-scheduling.md) |
 | 01 多任务 | [01 Day 15–16](../../thirty-days-os-essentials/day-15-multitask1/) |
 | 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) |
 

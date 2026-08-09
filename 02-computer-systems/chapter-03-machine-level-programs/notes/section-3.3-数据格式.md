@@ -1,7 +1,7 @@
 ## 3.3 数据格式（x86-64）
 
 > **CSAPP 全书基准：** **x86-64 + Linux gas（AT&T）+ System V ABI**；**HFT 只练 AT&T**。  
-> 与 ARM32 对照 → [Smith §2.2](../../../10-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
+> 与 ARM32 对照 → [Smith §2.2](../../../07-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
 
 > [章导读](../README.md) · 上节 [§3.2.3](./section-3.2.3-AT&T汇编语法.md) · 下节 [§3.4.1 操作数](./section-3.4.1-操作数指示符.md)  
 > ↔ [Harris §6.8 x86体系结构](../../../00-digital-logic-cpu/ch06_architecture/6.8_另一个视角-x86体系结构.md)
@@ -58,7 +58,7 @@
 | 加上浮点编程 | 16 GPR + 16 XMM ≈ **32 个可编程槽** |
 | 含段/控制/系统 | 更多 — **日常不用背全表** |
 
-**vs ARM32：** 通用也是 **16**（`r0`–`r15`），**无** `al/ax` 拆分别名；浮点走 **VFP**。→ [Smith §2.2](../../../10-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
+**vs ARM32：** 通用也是 **16**（`r0`–`r15`），**无** `al/ax` 拆分别名；浮点走 **VFP**。→ [Smith §2.2](../../../07-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
 
 ---
 
@@ -94,7 +94,7 @@ movq (%rax), %rdi
 | `int` / 指针 | 4 | l | `ldr` · `str` |
 | `long long` | 8 | q | `ldrd` · `strd` |
 
-详表 → [Smith §2.2](../../../10-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
+详表 → [Smith §2.2](../../../07-arm-architecture/arm32-asm/chapter-02-programmers-model/notes/section-2-2-data-types.md)
 
 #### 「几位 CPU」判定
 

@@ -2,7 +2,7 @@
 
 > **Ch9 §9.3** · [章导读](../README.md) · 上节 [§9.2 ←](./section-9.2-地址空间.md) · 下节 [§9.4 →](./section-9.4-虚拟内存作为内存管理工具.md)
 > ↔ [Harris §8.4 虚拟存储器](../../../00-digital-logic-cpu/ch08_memory/8.4_虚拟存储器.md)
-> ↔ [Hennessy §2.4 虚拟内存](../../../03-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.4-虚拟内存与虚拟机.md)
+> ↔ [Hennessy §2.4 虚拟内存](../../../19-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.4-虚拟内存与虚拟机.md)
 
 ---
 

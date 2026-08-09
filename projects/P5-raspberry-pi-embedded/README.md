@@ -10,21 +10,21 @@
 
 | 子项目 | 交付 | 模块 | 脚手架 |
 |:------:|------|:----:|--------|
-| **P5a** | QEMU 裸机 UART Hello World | `10` | [P5a-qemu-uart-hello](./P5a-qemu-uart-hello/) |
-| **P5b** | U-Boot → kernel → rootfs 启动到 shell | `11` | [P5b-uboot-kernel-rootfs](./P5b-uboot-kernel-rootfs/) |
-| **P5c** | I2C/SPI 传感器驱动 + 设备树 | `12` | [P5c-i2c-spi-driver-dt](./P5c-i2c-spi-driver-dt/) |
-| **P5d** | 多线程传感器融合 + 延迟 p99 统计 | `13` | [P5d-sensor-fusion-latency](./P5d-sensor-fusion-latency/) |
-| **P5e** | PID 姿态控制（可选） | `14` | [P5e-pid-attitude-control](./P5e-pid-attitude-control/) |
+| **P5a** | QEMU 裸机 UART Hello World | `07` | [P5a-qemu-uart-hello](./P5a-qemu-uart-hello/) |
+| **P5b** | U-Boot → kernel → rootfs 启动到 shell | `08` | [P5b-uboot-kernel-rootfs](./P5b-uboot-kernel-rootfs/) |
+| **P5c** | I2C/SPI 传感器驱动 + 设备树 | `09` | [P5c-i2c-spi-driver-dt](./P5c-i2c-spi-driver-dt/) |
+| **P5d** | 多线程传感器融合 + 延迟 p99 统计 | `10` | [P5d-sensor-fusion-latency](./P5d-sensor-fusion-latency/) |
+| **P5e** | PID 姿态控制（可选） | `11` | [P5e-pid-attitude-control](./P5e-pid-attitude-control/) |
 
 ## 覆盖模块
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`10` arm-architecture](../../10-arm-architecture/) | AArch64 汇编、异常等级、MMU |
-| [`11` embedded-boot-build](../../11-embedded-boot-build/) | U-Boot、内核构建、rootfs、device tree blob |
-| [`12` device-drivers-dt](../../12-device-drivers-dt/) | 平台驱动、I2C/SPI 子系统、设备树 overlay |
-| [`13` embedded-projects](../../13-embedded-projects/) | 板级项目、多线程融合、延迟统计 |
-| [`14` motion-control](../../14-motion-control/) | PID、姿态/Kalman、Linux PWM 对接 |
+| [`07` arm-architecture](../../07-arm-architecture/) | AArch64 汇编、异常等级、MMU |
+| [`08` embedded-boot-build](../../08-embedded-boot-build/) | U-Boot、内核构建、rootfs、device tree blob |
+| [`09` device-drivers-dt](../../09-device-drivers-dt/) | 平台驱动、I2C/SPI 子系统、设备树 overlay |
+| [`10` embedded-projects](../../10-embedded-projects/) | 板级项目、多线程融合、延迟统计 |
+| [`11` motion-control](../../11-motion-control/) | PID、姿态/Kalman、Linux PWM 对接 |
 
 ## 前置
 
@@ -44,7 +44,7 @@
 
 ## 参考资源
 
-- [10-arm-architecture/aarch64-practice/EXPERIMENT-CATALOG.md](../../10-arm-architecture/aarch64-practice/EXPERIMENT-CATALOG.md) — 《ARM64体系结构编程与实践》全书 56 个实验目录 + Pi4B→Pi5 适配清单
-- [13-embedded-projects/RASPBERRY-PI5-LABS.md](../../13-embedded-projects/RASPBERRY-PI5-LABS.md) — Pi5 板卡动手清单（A→G 执行序）
+- [07-arm-architecture/aarch64-practice/EXPERIMENT-CATALOG.md](../../07-arm-architecture/aarch64-practice/EXPERIMENT-CATALOG.md) — 《ARM64体系结构编程与实践》全书 56 个实验目录 + Pi4B→Pi5 适配清单
+- [10-embedded-projects/RASPBERRY-PI5-LABS.md](../../10-embedded-projects/RASPBERRY-PI5-LABS.md) — Pi5 板卡动手清单（A→G 执行序）
 - [HFT-READING-ROADMAP §六](../../HFT-READING-ROADMAP.md) — 嵌入式支线详情
 - 边界：仅 ARM-A + 嵌入式 Linux；**不学** STM32/MCU 裸机/FreeRTOS/PCB

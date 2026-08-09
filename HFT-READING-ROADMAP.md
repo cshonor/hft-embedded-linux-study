@@ -8,29 +8,29 @@
 | 文件夹 | 内容 | 阶段 |
 |--------|------|------|
 | **00** | digital-logic-cpu | 硬件底层 |
-| **01** → **02**（**03** 可后） | C → computer-systems（→ architecture） | 语言 + 程序=机器 |
-| **04** → **06** | userspace-api · os-from-scratch · cpp | 用户态 + 动手 + C++ |
-| **07** · **09**（**08** 可后） | linux-kernel · linux-mm | 内核共同基础 |
-| **10**–**14** | ARM · 构建 · 驱动/DT · 实战 · 飞控 | 嵌入式支线 |
-| **15**–**18** | sockets · TCP/IP · 内核网 · DPDK | 网络纵深 |
-| **19**–**20** | systems-performance · BPF | 性能观测 |
-| **21**–**23** | hft-engineering · rust-quant · markets | HFT 上层 |
+| **01** → **02**（**19** 可后） | C → computer-systems（→ architecture） | 语言 + 程序=机器 |
+| **03** → **04** | userspace-api · cpp | 用户态 + C++ |
+| **05** · **06**（**20** 可后） | linux-kernel · linux-mm | 内核共同基础 |
+| **07**–**11** | ARM · 构建 · 驱动/DT · 实战 · 飞控 | 嵌入式支线 |
+| **12**–**15** | sockets · TCP/IP · 内核网 · DPDK | 网络纵深 |
+| **16**–**17** | systems-performance · BPF | 性能观测 |
+| **18**–**22** | hft-engineering · rust-quant · markets | HFT 上层 |
 
-### Gregg 双书 · 19 → 20（后置）
+### Gregg 双书 · 16 → 17（后置）
 
-| 19 systems-performance | 20 bpf-observability |
+| 16 systems-performance | 17 bpf-observability |
 |------------------------|----------------------|
 | USE/RED、延迟分解、perf/Ftrace | bpftrace/BCC 生产落地 |
 
-**执行顺序：** 先完成 **04–09** 与 **15–18 网络/DPDK**，再开 **19 → 20** — 有真实系统可 profile 后再读方法论。
+**执行顺序：** 先完成 **03–06** 与 **12–15 网络/DPDK**，再开 **16 → 17** — 有真实系统可 profile 后再读方法论。
 
-### 19/20 为何不在 02 之后立刻读
+### 16/17 为何不在 02 之后立刻读
 
 | 过早读 SysPerf/BPF | 更合适的时机 |
 |--------------------|--------------|
-| 还没有 Linux 进程/内核/网络概念 | **04 用户态 + 05 自制 OS** 之后 |
-| 火焰图看不懂在烧什么 | **18 DPDK** 或 **21 HFT** 压测有靶子 |
-| 与计算机系统理论堆叠 | **01 C + 02 systems 后进 04** 更顺 |
+| 还没有 Linux 进程/内核/网络概念 | **03 用户态 + P9 自制 OS** 之后 |
+| 火焰图看不懂在烧什么 | **15 DPDK** 或 **18 HFT** 压测有靶子 |
+| 与计算机系统理论堆叠 | **01 C + 02 systems 后进 03** 更顺 |
 
 | 标签 | HFT 含义 | 你要怎么做 |
 |------|----------|-----------|
@@ -49,39 +49,36 @@
 00  digital-logic-cpu（硬件底层）
 01  c-language
 02  computer-systems
-03  computer-architecture（可后读）
+03  linux-userspace-api
+04  cpp
 
-04  linux-userspace-api
-05  os-from-scratch（mikanos / thirty-days-os）
-06  cpp
-
-07  linux-kernel
-08  linux-kernel-deep（拓展）
-09  linux-mm
+05  linux-kernel
+06  linux-mm
+（20  linux-kernel-deep 拓展）
 
 ── 嵌入式支线 ──
-10–14  arm → boot-build → drivers-dt → projects → motion
+07–11  arm → boot-build → drivers-dt → projects → motion
 
 ── HFT 网络 / 性能 / 业务 ──
-15  network-sockets
-16  tcpip-protocols
-17  kernel-networking
-18  dpdk
-19  systems-performance
-20  bpf-observability
-21  hft-engineering
-22  rust-quant（拓展）
-23  markets-microstructure（业务）
+12  network-sockets
+13  tcpip-protocols
+14  kernel-networking
+14.5  modern-networking
+15  dpdk
+16  systems-performance
+17  bpf-observability
+18  hft-engineering
+21  rust-quant（拓展）
+22  markets-microstructure（业务）
 ```
 
-**主线执行序号：** `00 → 01 → 02 → 04 → 05/06 → 07 → 09 →（A: 10–13 ‖ B: 15–21）→ 拓展 03/08/22/23/14`
+**主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 →（A: 07–11 ‖ B: 12–18）→ 拓展 19/20/21/22/11`
 
-**嵌入式支线：** `10 → 11 → 12 → 13`（`14` 业余）· 建议 Phase4（`07`/`09`）后再开
+**嵌入式支线：** `07 → 08 → 09 → 10`（`11` 业余）· 建议 Phase4（`05`/`06`）后再开
 
 > **C：** [01-c-language/](./01-c-language/) — Phase2 第一课。  
-> **C++：** [06-cpp/](./06-cpp/) — Phase3 穿插；进 `15` sockets 前至少 Modern C++。
-
-> **板块：** `00`–`23` 技术模块；跨模块对照 → [README.md](./README.md)
+> **C++：** [04-cpp/](./04-cpp/) — Phase3 穿插；进 `12` sockets 前至少 Modern C++。
+> **板块：** `00`–`22` 技术模块；跨模块对照 → [README.md](./README.md)
 
 ---
 
@@ -93,7 +90,7 @@
 
 | 方案 | 说明 |
 |------|------|
-| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`16-tcpip-protocols/`](./16-tcpip-protocols/)、[`15-network-sockets/unix-network-api/`](./15-network-sockets/unix-network-api/) 做**索引 + HFT 裁剪清单** |
+| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`13-tcpip-protocols/`](./13-tcpip-protocols/)、[`12-network-sockets/unix-network-api/`](./12-network-sockets/unix-network-api/) 做**索引 + HFT 裁剪清单** |
 | ⚠️ 可选 | 只把「HFT 必读章节」的笔记摘要链过来，不要 duplicate 全书 |
 | ❌ 不推荐 | 整本迁移 — 与 Rosen / CSAPP Ch11 重叠，且双倍维护 |
 
@@ -124,7 +121,7 @@
 
 ### ② Linux Kernel Development
 
-> 子目录与课书关系 → [02/LEARNING-PATH.md](./07-linux-kernel/LEARNING-PATH.md)
+> 子目录与课书关系 → [05/LEARNING-PATH.md](./05-linux-kernel/LEARNING-PATH.md)
 
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|
@@ -202,7 +199,7 @@
 | UDP 组播行情 | 🔴 | 交易所行情主路径 |
 | OpenOnload / RDMA 对比 | 🟡 | 方案选型 |
 
-> 与 `07`/`08`/`09` **并行互补**；详见 [README.md](./README.md)
+> 与 `05`/`14`/`06` **并行互补**；详见 [README.md](./README.md)
 
 ### ⑤ Computer Architecture 6th
 
@@ -281,29 +278,28 @@
 |------|--------|
 | [00 数字逻辑/CPU](./00-digital-logic-cpu/) | 00 |
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
-| [04 用户态](./04-linux-userspace-api/) · [07 内核](./07-linux-kernel/) · [09 MM](./09-linux-mm/) | 04 · 07 · 09 |
-| [10–14 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线10–14) | 10–14 |
-| [15–18 网络](./15-network-sockets/) · [19–20 性能](./19-systems-performance/) · [21 HFT](./21-hft-engineering/) | 15–21 |
+| [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
+| [07–11 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11) | 07–11 |
+| [12–15 网络](./12-network-sockets/) · [16–17 性能](./16-systems-performance/) · [18 HFT](./18-hft-engineering/) | 12–18 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
 ---
 
-## 六、嵌入式 Linux 支线（`10`–`14`）
+## 六、嵌入式 Linux 支线（`07`–`11`）
 
 > **定位：** **第二职业退路** — 飞行器 / 网关 / 车载；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux**；**不学** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
-> **C 基础：** [01 C](./01-c-language/) 是支线 **硬前置**；Phase2–4 过关后开 `10`。  
+> **C 基础：** [01 C](./01-c-language/) 是支线 **硬前置**；Phase2–4 过关后开 `07`。  
 > **14 特别说明：** 只学 **PID / 姿态 / 电机算法 + Linux 对接**，硬件只做理论常识。
 
 ### 主次优先级（不可颠倒）
 
 | 优先级 | 内容 | 时间 |
 |--------|------|------|
-| **P0 · 主线** | HFT — C++ / Rust / DPDK / `21` 引擎 | **全职学习** |
-| **P1 · 支线** | 嵌入式 Linux `10`–`13` | 并行或 HFT 阶段完成后 |
-| **P2 · 飞控算法** | `14` PID / IMU / 飞控环 | **仅业余时间** |
-
+| **P0 · 主线** | HFT — C++ / Rust / DPDK / `18` 引擎 | **全职学习** |
+| **P1 · 支线** | 嵌入式 Linux `07`–`10` | 并行或 HFT 阶段完成后 |
+| **P2 · 飞控算法** | `11` PID / IMU / 飞控环 | **仅业余时间** |
 ### 为何必须学 14（运动控制）
 
 1. **无人机项目缺这一环就飞不起来** — WiFi/图传/视觉不能替代 PID + 姿态 + 电机。  
@@ -323,7 +319,7 @@
 
 | 条件 | 说明 |
 |------|------|
-| **建议前置** | [07 内核](./07-linux-kernel/) + [04 用户态](./04-linux-userspace-api/) |
+| **建议前置** | [05 内核](./05-linux-kernel/) + [03 用户态](./03-linux-userspace-api/) |
 | **14 前置** | 建议 **13 或至少 12（含 DT）** 后再开算法整合 |
 | **C 语言** | [01 C](./01-c-language/) |
 
@@ -331,15 +327,15 @@
 
 | 序 | 书目 | 定位 | 文件夹 |
 |----|------|------|--------|
-| **1a** | ***ARM Assembly Language*** — Smith | 汇编思维（可选） | [**10**/arm32-asm](./10-arm-architecture/arm32-asm/) |
-| **1b** | **《ARM64体系结构编程与实践》** | AArch64 主书 | [**10**/aarch64-practice](./10-arm-architecture/aarch64-practice/) |
-| **2** | ***Embedded Linux Primer*** | 启动与系统全貌 | [**11**/primer](./11-embedded-boot-build/primer-system-overview/) |
-| **3** | ***Mastering Embedded Linux Programming*, 3rd** | 构建实操 | [**11**/build](./11-embedded-boot-build/build-toolchain-yocto/) |
-| **4** | ***Linux Device Drivers Development*** — Madieu | 驱动实操 | [**12**](./12-device-drivers-dt/) |
-| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./12-device-drivers-dt/refs/) |
+| **1a** | ***ARM Assembly Language*** — Smith | 汇编思维（可选） | [**10**/arm32-asm](./07-arm-architecture/arm32-asm/) |
+| **1b** | **《ARM64体系结构编程与实践》** | AArch64 主书 | [**10**/aarch64-practice](./07-arm-architecture/aarch64-practice/) |
+| **2** | ***Embedded Linux Primer*** | 启动与系统全貌 | [**11**/primer](./08-embedded-boot-build/primer-system-overview/) |
+| **3** | ***Mastering Embedded Linux Programming*, 3rd** | 构建实操 | [**11**/build](./08-embedded-boot-build/build-toolchain-yocto/) |
+| **4** | ***Linux Device Drivers Development*** — Madieu | 驱动实操 | [**12**](./09-device-drivers-dt/) |
+| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./09-device-drivers-dt/refs/) |
 
-**13–14 延续：** [13 实战](./13-embedded-projects/) · [14 飞控](./14-motion-control/)  
-**设备树：** 并入 [12](./12-device-drivers-dt/)，不单开号。
+**13–14 延续：** [13 实战](./10-embedded-projects/) · [11 飞控](./11-motion-control/)  
+**设备树：** 并入 [12](./09-device-drivers-dt/)，不单开号。
 
 ### 严格顺序（文件夹级）
 
@@ -359,22 +355,22 @@
 
 | 文件夹 | 索引 |
 |--------|------|
-| **10** | [10-arm-architecture/](./10-arm-architecture/) |
-| **11** | [11-embedded-boot-build/](./11-embedded-boot-build/) |
-| **12** | [12-device-drivers-dt/](./12-device-drivers-dt/) |
-| **13** | [13-embedded-projects/](./13-embedded-projects/) |
-| **14** | [14-motion-control/](./14-motion-control/) |
+| **10** | [07-arm-architecture/](./07-arm-architecture/) |
+| **11** | [08-embedded-boot-build/](./08-embedded-boot-build/) |
+| **12** | [09-device-drivers-dt/](./09-device-drivers-dt/) |
+| **13** | [10-embedded-projects/](./10-embedded-projects/) |
+| **14** | [11-motion-control/](./11-motion-control/) |
 
-**14 子目录：** [Ch1 PID](./14-motion-control/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./14-motion-control/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./14-motion-control/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./14-motion-control/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./14-motion-control/chapter-05-flight-control-scheduling/)
+**14 子目录：** [Ch1 PID](./11-motion-control/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./11-motion-control/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./11-motion-control/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./11-motion-control/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./11-motion-control/chapter-05-flight-control-scheduling/)
 
 ### 可直接复用（HFT 链 · 不用重学）
 
 | 类别 | 来源模块 |
 |------|----------|
-| C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./04-linux-userspace-api/) |
-| 进程 / VM / 中断 / 同步 | [07](./07-linux-kernel/) · [09](./09-linux-mm/) |
-| 性能 / 绑核 / BPF | [19](./19-systems-performance/) · [20](./20-bpf-observability/) · [21](./21-hft-engineering/) |
-| 网络 / 零拷贝思想 | [15](./15-network-sockets/) · [17](./17-kernel-networking/) · [18](./18-dpdk/) |
+| C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
+| 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
+| 性能 / 绑核 / BPF | [19](./16-systems-performance/) · [20](./17-bpf-observability/) · [21](./18-hft-engineering/) |
+| 网络 / 零拷贝思想 | [15](./12-network-sockets/) · [17](./14-kernel-networking/) · [18](./15-dpdk/) |
 
 ### 岗位定位（支线完成后）
 

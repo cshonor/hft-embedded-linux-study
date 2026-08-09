@@ -1,10 +1,10 @@
 # Computer Systems: A Programmer's Perspective 3rd — Bryant & O'Neill
 
-**文件夹 01** · 全书 **12 章 + 附录 A** · [返回总清单](../READING-LIST.md#6-computer-systems-a-programmers-perspective-3rd--bryant--oneill)
+**文件夹 02** · 全书 **12 章 + 附录 A** · [返回总清单](../READING-LIST.md#6-computer-systems-a-programmers-perspective-3rd--bryant--oneill)
 
-> **文件夹 01** · 知其所以然 — 程序如何在硬件上跑。  
-> **机器级默认架构：** **x86-64 + Linux System V + AT&T gas**（Ch3 起）；**HFT 只练 AT&T，不学 Intel 语法**。Ch4 **Y86-64** 仅为流水线教学子集。ARM 对照 → [19-ARM64](../10-arm-architecture/)。
-> **下一本：** [14-Systems-Performance](../19-systems-performance/) → [15-BPF](../20-bpf-observability/) → [16-HFT](../21-hft-engineering/) / [13-Rust](../22-rust-quant/)  
+> **文件夹 02** · 知其所以然 — 程序如何在硬件上跑。  
+> **机器级默认架构：** **x86-64 + Linux System V + AT&T gas**（Ch3 起）；**HFT 只练 AT&T，不学 Intel 语法**。Ch4 **Y86-64** 仅为流水线教学子集。ARM 对照 → [07-ARM64](../07-arm-architecture/)。
+> **下一本：** [16-Systems-Performance](../16-systems-performance/) → [17-BPF](../17-bpf-observability/) → [18-HFT](../18-hft-engineering/) / [21-Rust](../21-rust-quant/)  
 > 全链路 → [README.md](../README.md)
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
@@ -70,4 +70,4 @@ Hennessy Ch2（理论）→ CSAPP Ch6（落地）
 Ch 10–11 网络 / epoll
 ```
 
-→ 读完地基再读 [14-Systems-Performance](../19-systems-performance/) · Hennessy 理论 → [03-computer-architecture](../03-computer-architecture/)
+→ 读完地基再读 [16-Systems-Performance](../16-systems-performance/) · Hennessy 理论 → [19-computer-architecture](../19-computer-architecture/)

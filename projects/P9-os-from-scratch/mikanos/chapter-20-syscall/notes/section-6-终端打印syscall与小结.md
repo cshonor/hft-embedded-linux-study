@@ -92,7 +92,7 @@ Ch29 IPC
 | GUI 应用 | [chapter-21-window-apps](../chapter-21-window-apps/) ⚪ |
 | IPC | [chapter-29-ipc](../chapter-29-ipc/) |
 | 分页 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
-| Linux syscall | [07-linux-kernel](../../../../../07-linux-kernel/) · [04-linux-userspace-api](../../../../../04-linux-userspace-api/) |
+| Linux syscall | [05-linux-kernel](../../../../../05-linux-kernel/) · [03-linux-userspace-api](../../../../../03-linux-userspace-api/) |
 
 ---
 

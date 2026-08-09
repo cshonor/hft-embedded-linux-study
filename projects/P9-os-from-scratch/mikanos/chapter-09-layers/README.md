@@ -45,7 +45,7 @@
 |------|------|
 | 本章做了什么？ | **多图层合成** + **阴影缓冲** · 解决 Ch6/7 **擦除破坏** 与 **全屏重绘慢** |
 | 与 02 川合 OS 对照？ | 01 较少 **GUI 图层**；Mikan 面向 **GOP 像素 GUI** |
-| 与 Linux / CSAPP 对照？ | 合成 ≈ **compositor 雏形**；优化 ≈ [03 SysPerf](../../../../19-systems-performance/) **度量驱动** |
+| 与 Linux / CSAPP 对照？ | 合成 ≈ **compositor 雏形**；优化 ≈ [03 SysPerf](../../../../16-systems-performance/) **度量驱动** |
 
 **本章目的：** 现代 GUI **图层模型** + **「先测量、后优化」** 性能方法论。
 

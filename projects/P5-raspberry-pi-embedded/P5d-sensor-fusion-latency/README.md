@@ -1,7 +1,7 @@
 # P5d — 多线程传感器融合 + 延迟 p99 统计
 
 > 多个传感器并发采样、线程融合数据，统计端到端延迟分布（p50/p99/p999），把嵌入式实时性量化。
-> **做法：项目驱动，[`13`](../../../13-embedded-projects/) / [`19`](../../../19-systems-performance/) 笔记当字典。**
+> **做法：项目驱动，[`10`](../../../10-embedded-projects/) / [`16`](../../../16-systems-performance/) 笔记当字典。**
 
 ---
 
@@ -9,9 +9,9 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [Pi5 Labs](../../../13-embedded-projects/RASPBERRY-PI5-LABS.md) | 板级动手清单 |
+| [Pi5 Labs](../../../10-embedded-projects/RASPBERRY-PI5-LABS.md) | 板级动手清单 |
 | [CSAPP 12.5 信号量与预线程化](../../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.5-信号量与预线程化.md) | 线程池同步基础 |
-| [C++ Concurrency ch03](../../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) | mutex/atomic |
+| [C++ Concurrency ch03](../../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) | mutex/atomic |
 
 ---
 
@@ -156,7 +156,7 @@ void *fuse_worker(void *arg) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 线程同步 | [TLPI ch30](../../../04-linux-userspace-api/chapter-30-thread-synchronization/) |
+| 线程同步 | [TLPI ch30](../../../03-linux-userspace-api/chapter-30-thread-synchronization/) |
 | 预线程化 | [CSAPP 12.5](../../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.5-信号量与预线程化.md) |
 
 ---
@@ -185,7 +185,7 @@ void *fuse_worker(void *arg) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 无锁队列原理 | [C++ Concurrency ch07](../../../06-cpp/M2-deep-principles/02-Cpp-Concurrency/ch07-lock-free-containers/) |
+| 无锁队列原理 | [C++ Concurrency ch07](../../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch07-lock-free-containers/) |
 | 你写的 ring buffer | P2.5 交付物 3（直接复用代码！）|
 
 ---
@@ -217,8 +217,8 @@ void *fuse_worker(void *arg) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 调度延迟 | [ULK ch07 调度](../../../08-linux-kernel-deep/chapter-07-process-scheduling/) |
-| 性能分析 | [19 SysPerf](../../../19-systems-performance/) |
+| 调度延迟 | [ULK ch07 调度](../../../20-linux-kernel-deep/chapter-07-process-scheduling/) |
+| 性能分析 | [16 SysPerf](../../../16-systems-performance/) |
 
 ---
 
@@ -263,4 +263,4 @@ void print_stats(void) {
 
 ⬜ 未开始 → 建议先跑 Phase 1 基线，建立"延迟是多少"的直觉。
 
-← [P5 索引](../README.md) · [13 模块](../../../13-embedded-projects/) · [19 模块](../../../19-systems-performance/)
+← [P5 索引](../README.md) · [13 模块](../../../10-embedded-projects/) · [19 模块](../../../16-systems-performance/)

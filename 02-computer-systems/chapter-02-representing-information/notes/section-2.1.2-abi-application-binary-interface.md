@@ -65,7 +65,7 @@ API 看起来一样，**ABI 不同 → 协议不兼容 → 二进制不能互换
 
 ### 两个熟悉的 ABI 例子
 
-**① ARM AAPCS**（ARM 架构过程调用标准 · → [Smith Ch13](../../../10-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)）
+**① ARM AAPCS**（ARM 架构过程调用标准 · → [Smith Ch13](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)）
 
 | 条款（直觉） | |
 |--------------|--|
@@ -238,7 +238,7 @@ struct Test {
 | 栈对齐 | **16B**（call 前） | 常 **8B** |
 | 结构体 / 段 / syscall | 都有明确条款 | 同样有，寄存器名不同 |
 
-→ [Smith §13.5](../../../10-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · 下文实战例 1–6
+→ [Smith §13.5](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · 下文实战例 1–6
 
 **一句话：** ABI = 全链路二进制协议；**不只是 `sizeof`。**
 
@@ -247,7 +247,7 @@ struct Test {
 ## 7. 遵守 ABI 的实战例子（ARM32 / AArch64 · C/汇编）
 
 > 嵌入式 + HFT：汇编与 C/Rust 互调、跨 .so、进内核，**全靠同一套二进制协议**。  
-> ARM32 详规 → [Smith Ch13 AAPCS](../../../10-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)（旧文献也称 **ATPCS**）。
+> ARM32 详规 → [Smith Ch13 AAPCS](../../../07-arm-architecture/arm32-asm/chapter-13-subroutines-stacks/notes/section-13-5-apcs.md)（旧文献也称 **ATPCS**）。
 
 ### 例 1 · ARM32 传参（AAPCS / ATPCS）
 

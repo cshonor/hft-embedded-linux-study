@@ -22,7 +22,7 @@
 | **目标读者** | 具备 **基础编程经验** 的开发者 — 鼓励 **亲手写代码** 理解 OS **运行原理** |
 | **语言栈** | **C++** + **EDK II**（与 [02 30 天](../thirty-days-os-essentials/) 的 32 位 BIOS/C 路线互补） |
 
-**读完能带走什么：** 现代 PC 上的 **UEFI 启动链、长模式、页表、APIC、系统调用** — 与 [01-CSAPP](../../../02-computer-systems/chapter-09-virtual-memory/) · [07-linux-kernel](../../../07-linux-kernel/) · [04-linux-userspace-api](../../../04-linux-userspace-api/) 对照时，不再只是「读源码」，而是知道 **这些机制从零怎么搭**。
+**读完能带走什么：** 现代 PC 上的 **UEFI 启动链、长模式、页表、APIC、系统调用** — 与 [02-CSAPP](../../../02-computer-systems/chapter-09-virtual-memory/) · [05-linux-kernel](../../../05-linux-kernel/) · [03-linux-userspace-api](../../../03-linux-userspace-api/) 对照时，不再只是「读源码」，而是知道 **这些机制从零怎么搭**。
 
 ---
 
@@ -36,7 +36,7 @@ C 扎实 + CSAPP 机器码/缓存
     ↓
 01 MikanOS（UEFI · 64 位 · 分页 · syscall）← 本书 · 直接开
     ↓
-05 LKD / 18 DPDK → 21 HFT
+05 LKD / 15 DPDK → 18 HFT
 
 【通用零基础】可选先读 02 30 天启蒙，再开本书
 ```
@@ -57,13 +57,13 @@ C 扎实 + CSAPP 机器码/缓存
 | 中断 | PIC · IDT | **APIC** · ACPI |
 | 价值 | 基础概念对照（**当字典翻**） | **现代 PC 启动链** + 规范分层内核（**拓展**） |
 
-**推荐：** 内核（07 LKD）学完后，挑 MikanOS 的 Ch1-2/7/13-14/19-20 阅读。30 天精华当字典对照。
+**推荐：** 内核（05 LKD）学完后，挑 MikanOS 的 Ch1-2/7/13-14/19-20 阅读。30 天精华当字典对照。
 
 ---
 
 ## 目录结构
 
-与 [02 30 天 OS 精华](../thirty-days-os-essentials/) · [14-Systems-Performance](../../../19-systems-performance/) 一致：每章独立目录，导读 + 分段笔记。
+与 [02 30 天 OS 精华](../thirty-days-os-essentials/) · [16-Systems-Performance](../../../16-systems-performance/) 一致：每章独立目录，导读 + 分段笔记。
 
 ```
 chapter-XX-slug/
@@ -134,7 +134,7 @@ chapter-XX-slug/
 |------|-----|------|----------|
 | **启动链** | 1–2 | UEFI · EDK II · 内存 map | 现代 PC 启动 |
 | **内核骨架** | 7–8, 11, 13–14 | 中断 · 内存 · 定时器 · 多任务 | 上下文切换直觉 |
-| **分页 syscall** | 19–20 | 页表 · 系统调用 | CSAPP / LKD / TLPI |
+| **分页 syscall** | 16–17 | 页表 · 系统调用 | CSAPP / LKD / TLPI |
 | **生态** | 17, 25–29 | FS · 文件 I/O · IPC | 用户态边界 |
 
 ---
@@ -185,7 +185,7 @@ chapter-XX-slug/
 - [ ] [Ch 1–2](./chapter-01-hello-world/) UEFI + 内存 map
 - [ ] [Ch 7–8](./chapter-07-interrupt-fifo/) 中断 + 内存管理
 - [ ] [Ch 13–14](./chapter-13-multitask1/) 多任务
-- [x] [Ch 19–20](./chapter-19-paging/) 分页 + 系统调用
+- [x] [Ch 16–17](./chapter-19-paging/) 分页 + 系统调用
 - [x] [Ch 29](./chapter-29-ipc/) 应用间通信
 
 ---
@@ -195,6 +195,6 @@ chapter-XX-slug/
 | 仓库 | 对照点 |
 |------|--------|
 | [02 30 天 OS 精华](../thirty-days-os-essentials/) | BIOS 实模式 → 保护模式（建议先读 Day 1–15） |
-| [01-CSAPP Ch9](../../../02-computer-systems/chapter-09-virtual-memory/) | 虚拟内存 |
-| [07-linux-kernel](../../../07-linux-kernel/) | 中断、调度、syscall 真实实现 |
-| [04-linux-userspace-api](../../../04-linux-userspace-api/) | 用户态 API 边界 |
+| [02-CSAPP Ch9](../../../02-computer-systems/chapter-09-virtual-memory/) | 虚拟内存 |
+| [05-linux-kernel](../../../05-linux-kernel/) | 中断、调度、syscall 真实实现 |
+| [03-linux-userspace-api](../../../03-linux-userspace-api/) | 用户态 API 边界 |

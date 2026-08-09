@@ -69,7 +69,7 @@ Ch13 抢占式多任务（时间片 / sleep）
 | 键盘 | [chapter-12-keyboard](../chapter-12-keyboard/) ⚪ |
 | 多任务 | [chapter-13-multitask1](../chapter-13-multitask1/) 🔴 |
 | 01 定时器 | [01 Day 12 timer](../../thirty-days-os-essentials/day-12-timer1/) |
-| ULK 定时 | [08-linux-kernel-deep chapter-06-timing](../../../../../08-linux-kernel-deep/chapter-06-timing/) |
+| ULK 定时 | [20-linux-kernel-deep chapter-06-timing](../../../../../20-linux-kernel-deep/chapter-06-timing/) |
 
 ---
 

@@ -58,7 +58,7 @@ Ch30 额外应用 · 书末
 | 额外应用 | [chapter-30-extra-apps](../chapter-30-extra-apps/) ⚪ |
 | 重定向 | [chapter-28-japanese-redirect](../chapter-28-japanese-redirect/) |
 | stdio | [chapter-26-app-write-file](../chapter-26-app-write-file/) |
-| TLPI | [04-linux-userspace-api pipe/shm](../../../../../04-linux-userspace-api/) |
+| TLPI | [03-linux-userspace-api pipe/shm](../../../../../03-linux-userspace-api/) |
 
 ---
 

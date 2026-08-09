@@ -18,9 +18,9 @@ S = \frac{1}{(1 - p) + \frac{p}{k}}
 | 优化只占 1% 时间的函数 10× | 整体几乎不变 |
 | 行情解析占 60%，优化 2× | 整体显著变快 — **先 profile 找 p** |
 
-**HFT：** 端到端延迟 = 收包 + 解码 + 策略 + 发单 + **排队/内核/网卡**。用 [12-HFT ch10](../../../21-hft-engineering/chapter-10-延迟测量与基准压测/) 或 span 分解找 **最大 p**，再动刀。
+**HFT：** 端到端延迟 = 收包 + 解码 + 策略 + 发单 + **排队/内核/网卡**。用 [18-HFT ch10](../../../18-hft-engineering/chapter-10-延迟测量与基准压测/) 或 span 分解找 **最大 p**，再动刀。
 
-→ 方法论：[14-Systems-Performance Ch 2 延迟分解](../../../19-systems-performance/chapter-02-methodologies/)
+→ 方法论：[16-Systems-Performance Ch 2 延迟分解](../../../16-systems-performance/chapter-02-methodologies/)
 
 ### 1.9.2 并发和并行 (Concurrency and Parallelism)
 

@@ -1,7 +1,7 @@
 # P5b — U-Boot → kernel → rootfs 启动到 shell
 
 > 让树莓派 5 从上电一路启动到能登录的 Linux shell，亲手走完 boot chain 每一环。
-> **做法：项目驱动，[`11`](../../../11-embedded-boot-build/) 笔记当字典。**
+> **做法：项目驱动，[`08`](../../../08-embedded-boot-build/) 笔记当字典。**
 
 ---
 
@@ -9,10 +9,10 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [MELP ch03 bootloader](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-03-bootloader/) | U-Boot 是什么、bootcmd 怎么写 |
-| [MELP ch04 kernel](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-04-configuring-building-kernel/) | 内核配置/编译流程 |
-| [MELP ch05 rootfs](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-05-building-root-filesystem/) | rootfs 最小组成 |
-| [MELP ch13 booting](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) | init 进程、启动序列 |
+| [MELP ch03 bootloader](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-03-bootloader/) | U-Boot 是什么、bootcmd 怎么写 |
+| [MELP ch04 kernel](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-04-configuring-building-kernel/) | 内核配置/编译流程 |
+| [MELP ch05 rootfs](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-05-building-root-filesystem/) | rootfs 最小组成 |
+| [MELP ch13 booting](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) | init 进程、启动序列 |
 
 ---
 
@@ -66,8 +66,8 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| U-Boot bootcmd | [MELP ch03](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-03-bootloader/) |
-| SD 卡布局 | [MELP ch09 storage](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-09-storage-strategy/) |
+| U-Boot bootcmd | [MELP ch03](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-03-bootloader/) |
+| SD 卡布局 | [MELP ch09 storage](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-09-storage-strategy/) |
 
 ---
 
@@ -122,9 +122,9 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 内核配置 | [MELP ch04](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-04-configuring-building-kernel/) |
-| 设备树 | [MELP ch11](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-11-device-drivers-interaction/) |
-| bootargs 参数 | [MELP ch13](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) |
+| 内核配置 | [MELP ch04](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-04-configuring-building-kernel/) |
+| 设备树 | [MELP ch11](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-11-device-drivers-interaction/) |
+| bootargs 参数 | [MELP ch13](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) |
 
 ---
 
@@ -175,9 +175,9 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| rootfs 组成 | [MELP ch05](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-05-building-root-filesystem/) |
-| init 流程 | [MELP ch13](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) |
-| 构建系统对比 | [MELP ch06](../../../11-embedded-boot-build/build-toolchain-yocto/chapter-06-choosing-build-system/) |
+| rootfs 组成 | [MELP ch05](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-05-building-root-filesystem/) |
+| init 流程 | [MELP ch13](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) |
+| 构建系统对比 | [MELP ch06](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-06-choosing-build-system/) |
 
 ---
 
@@ -202,4 +202,4 @@ uname -a      # 内核版本
 
 ⬜ 未开始 → 建议先装交叉工具链，确认 `aarch64-linux-gnu-gcc --version` 能跑。
 
-← [P5 索引](../README.md) · [11 模块](../../../11-embedded-boot-build/)
+← [P5 索引](../README.md) · [11 模块](../../../08-embedded-boot-build/)

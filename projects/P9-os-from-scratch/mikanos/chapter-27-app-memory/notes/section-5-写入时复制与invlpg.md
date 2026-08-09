@@ -39,7 +39,7 @@ HandleCoW(va):
 | **写 fault** | **复制帧** · **仅本任务 PTE 改可写** |
 | **其他任务** | 仍 **共享旧帧**（若未写） |
 
-→ [05 LKD 内存管理](../../../../../07-linux-kernel/) · [CSAPP Ch9](../../../../../02-computer-systems/chapter-09-virtual-memory/)
+→ [05 LKD 内存管理](../../../../../05-linux-kernel/) · [CSAPP Ch9](../../../../../02-computer-systems/chapter-09-virtual-memory/)
 
 ---
 

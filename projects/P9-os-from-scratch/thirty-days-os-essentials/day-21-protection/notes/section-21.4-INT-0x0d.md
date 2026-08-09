@@ -30,6 +30,6 @@ app (低权限, 1003/1004)
 
 **里程碑：** 「纸娃娃」→ **能扛 crack + bug** 的 **最小保护 OS**。
 
-→ [01-CSAPP Ch8 异常](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/) · [07-linux-kernel 缺页/GPF](../../../../../07-linux-kernel/)
+→ [02-CSAPP Ch8 异常](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/) · [05-linux-kernel 缺页/GPF](../../../../../05-linux-kernel/)
 
 ---

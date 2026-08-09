@@ -36,10 +36,10 @@
 
 | 主线模块 | 对应精华 |
 |----------|----------|
-| 07 LKD Ch7 (中断) | Day 5 (GDT/IDT) + Day 6 (PIC/ISR) |
+| 05 LKD Ch7 (中断) | Day 5 (GDT/IDT) + Day 6 (PIC/ISR) |
 | 02 CSAPP Ch8 (异常控制流) | Day 6 (中断处理) + Day 15 (上下文切换) |
 | P2.5 C Toolkit (SPSC ring) | Day 7 (FIFO 环形缓冲区) |
-| 09 Gorman (Linux MM) | Day 9 (内存管理) + Day 23 (malloc) |
-| 07 LKD Ch4 (调度) | Day 15 (多任务/TSS) |
-| 04 TLPI (syscall) | Day 20 (OS API) + Day 21 (内存保护) |
-| 07 LKD Ch2 (进程) | Day 21 (内存隔离) + Day 27 (LDT) |
+| 06 Gorman (Linux MM) | Day 9 (内存管理) + Day 23 (malloc) |
+| 05 LKD Ch4 (调度) | Day 15 (多任务/TSS) |
+| 03 TLPI (syscall) | Day 20 (OS API) + Day 21 (内存保护) |
+| 05 LKD Ch2 (进程) | Day 21 (内存隔离) + Day 27 (LDT) |

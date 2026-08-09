@@ -29,6 +29,6 @@
         任务 B 运行
 ```
 
-→ [01-CSAPP Ch8 上下文切换](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/) · [07-linux-kernel 进程切换](../../../../../07-linux-kernel/) · x86 TSS 在现代 OS 中 **部分字段仍用**，调度模型更复杂
+→ [02-CSAPP Ch8 上下文切换](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/) · [05-linux-kernel 进程切换](../../../../../05-linux-kernel/) · x86 TSS 在现代 OS 中 **部分字段仍用**，调度模型更复杂
 
 ---

@@ -38,7 +38,7 @@ HandlePageFault:
 | **与 Demand 结合** | **不预读全文件** — **按页 fault-in** |
 | **随机访问** | **O(1) touch** 经 **页对齐** 映射 |
 
-→ [08 TLPI mmap](../../../../../04-linux-userspace-api/) · [CSAPP Ch9 mmap](../../../../../02-computer-systems/chapter-09-virtual-memory/)
+→ [08 TLPI mmap](../../../../../03-linux-userspace-api/) · [CSAPP Ch9 mmap](../../../../../02-computer-systems/chapter-09-virtual-memory/)
 
 ---
 

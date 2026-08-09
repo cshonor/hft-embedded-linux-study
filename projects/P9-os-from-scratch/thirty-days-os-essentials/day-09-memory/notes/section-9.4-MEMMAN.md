@@ -34,6 +34,6 @@
  MEMMAN.free → 还回 + 与邻居合并
 ```
 
-→ 对照 [01-CSAPP Ch9 malloc 与碎片](../../../../../02-computer-systems/chapter-09-virtual-memory/) · Linux **buddy / slab** 是工业级进化 · HFT **对象池 / arena** 常 **预分配、少 free**
+→ 对照 [02-CSAPP Ch9 malloc 与碎片](../../../../../02-computer-systems/chapter-09-virtual-memory/) · Linux **buddy / slab** 是工业级进化 · HFT **对象池 / arena** 常 **预分配、少 free**
 
 ---

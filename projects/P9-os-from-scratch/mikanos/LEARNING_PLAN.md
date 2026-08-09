@@ -22,13 +22,13 @@
 
 **产出：** 能画 MikanOS 任务切换与 01 `switch_task` 对照表。
 
-### 阶段 C · 分页与 syscall（Ch 19–20）🔴
+### 阶段 C · 分页与 syscall（Ch 16–17）🔴
 
 **笔记：** [chapter-19-paging](./chapter-19-paging/) · [chapter-20-syscall](./chapter-20-syscall/)
 
 **目标：** **页表** · 用户/内核地址空间 · **系统调用门**。
 
-**交叉：** [01-CSAPP](../../../02-computer-systems/) Ch 9 · [07-linux-kernel](../../../07-linux-kernel/) Ch 5/10 · [08-linux-kernel-deep](../../../08-linux-kernel-deep/) Ch 2/9/10。
+**交叉：** [02-CSAPP](../../../02-computer-systems/) Ch 9 · [05-linux-kernel](../../../05-linux-kernel/) Ch 5/10 · [20-linux-kernel-deep](../../../20-linux-kernel-deep/) Ch 2/9/10。
 
 **产出：** 理解「TLPI 的 `mmap` 底下分页长什么样」的最小实现版。
 

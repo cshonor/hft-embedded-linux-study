@@ -1,7 +1,7 @@
 # P5e — PID 姿态控制（可选）
 
 > 在 Linux 用户态实现 PID 闭环姿态控制，让"控制算法"和"Linux 对接"都落地。
-> **做法：项目驱动，[`14`](../../../14-motion-control/) 笔记当字典。**
+> **做法：项目驱动，[`11`](../../../11-motion-control/) 笔记当字典。**
 
 ---
 
@@ -9,11 +9,11 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [ch01 PID 离散控制](../../../14-motion-control/chapter-01-pid-discrete-control/) | PID 离散化、抗积分饱和 |
-| [ch02 姿态 Kalman IMU](../../../14-motion-control/chapter-02-attitude-kalman-imu/) | 互补滤波、Kalman |
-| [ch03 电机 PWM ESC](../../../14-motion-control/chapter-03-motor-pwm-esc/) | PWM/ESC 协议 |
-| [ch04 Linux 对接](../../../14-motion-control/chapter-04-linux-drivers-integration/) | sysfs PWM、调度 |
-| [ch05 飞控调度](../../../14-motion-control/chapter-05-flight-control-scheduling/) | 控制环周期、抖动 |
+| [ch01 PID 离散控制](../../../11-motion-control/chapter-01-pid-discrete-control/) | PID 离散化、抗积分饱和 |
+| [ch02 姿态 Kalman IMU](../../../11-motion-control/chapter-02-attitude-kalman-imu/) | 互补滤波、Kalman |
+| [ch03 电机 PWM ESC](../../../11-motion-control/chapter-03-motor-pwm-esc/) | PWM/ESC 协议 |
+| [ch04 Linux 对接](../../../11-motion-control/chapter-04-linux-drivers-integration/) | sysfs PWM、调度 |
+| [ch05 飞控调度](../../../11-motion-control/chapter-05-flight-control-scheduling/) | 控制环周期、抖动 |
 
 ---
 
@@ -86,8 +86,8 @@ double pid_update(struct pid *p, double setpoint, double measured, double dt) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| PID 离散化原理 | [ch01 PID](../../../14-motion-control/chapter-01-pid-discrete-control/) |
-| 抗饱和方法 | [ch01 PID](../../../14-motion-control/chapter-01-pid-discrete-control/) |
+| PID 离散化原理 | [ch01 PID](../../../11-motion-control/chapter-01-pid-discrete-control/) |
+| 抗饱和方法 | [ch01 PID](../../../11-motion-control/chapter-01-pid-discrete-control/) |
 
 ---
 
@@ -143,9 +143,9 @@ void attitude_update(struct attitude *a, int16_t *accel, int16_t *gyro, uint64_t
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 互补滤波 | [ch02 姿态](../../../14-motion-control/chapter-02-attitude-kalman-imu/) |
-| Kalman | [ch02 姿态](../../../14-motion-control/chapter-02-attitude-kalman-imu/) |
-| 四元数 vs 欧拉角 | [ch02 姿态](../../../14-motion-control/chapter-02-attitude-kalman-imu/) |
+| 互补滤波 | [ch02 姿态](../../../11-motion-control/chapter-02-attitude-kalman-imu/) |
+| Kalman | [ch02 姿态](../../../11-motion-control/chapter-02-attitude-kalman-imu/) |
+| 四元数 vs 欧拉角 | [ch02 姿态](../../../11-motion-control/chapter-02-attitude-kalman-imu/) |
 
 ---
 
@@ -192,9 +192,9 @@ void attitude_update(struct attitude *a, int16_t *accel, int16_t *gyro, uint64_t
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| PWM/ESC 协议 | [ch03 电机](../../../14-motion-control/chapter-03-motor-pwm-esc/) |
-| Linux PWM 对接 | [ch04 Linux 对接](../../../14-motion-control/chapter-04-linux-drivers-integration/) |
-| 控制环调度 | [ch05 飞控调度](../../../14-motion-control/chapter-05-flight-control-scheduling/) |
+| PWM/ESC 协议 | [ch03 电机](../../../11-motion-control/chapter-03-motor-pwm-esc/) |
+| Linux PWM 对接 | [ch04 Linux 对接](../../../11-motion-control/chapter-04-linux-drivers-integration/) |
+| 控制环调度 | [ch05 飞控调度](../../../11-motion-control/chapter-05-flight-control-scheduling/) |
 
 ---
 
@@ -215,7 +215,7 @@ void attitude_update(struct attitude *a, int16_t *accel, int16_t *gyro, uint64_t
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 飞控调度 | [ch05 飞控调度](../../../14-motion-control/chapter-05-flight-control-scheduling/) |
+| 飞控调度 | [ch05 飞控调度](../../../11-motion-control/chapter-05-flight-control-scheduling/) |
 
 ---
 
@@ -223,4 +223,4 @@ void attitude_update(struct attitude *a, int16_t *accel, int16_t *gyro, uint64_t
 
 ⬜ 未开始 → 建议先在纯仿真里调通 PID（Phase 1），不要直接上硬件。
 
-← [P5 索引](../README.md) · [14 模块](../../../14-motion-control/)
+← [P5 索引](../README.md) · [14 模块](../../../11-motion-control/)

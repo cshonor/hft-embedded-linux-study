@@ -17,7 +17,7 @@ close(fd)
 | **换 FS 实现** | 应用 **不变**（理想） |
 | **多文件** | **fd 0,1,2** stdin/stdout/stderr · **≥3** 普通文件 |
 
-→ [08 TLPI 文件 I/O](../../../../../04-linux-userspace-api/)
+→ [08 TLPI 文件 I/O](../../../../../03-linux-userspace-api/)
 
 ---
 

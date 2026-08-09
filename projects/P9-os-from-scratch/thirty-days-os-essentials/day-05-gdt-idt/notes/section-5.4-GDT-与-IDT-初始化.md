@@ -31,7 +31,7 @@ CPU 通过 **段选择子 + GDT** 查 **谁能访问哪段内存** — **防重�
 **GDT** = **内存怎么分、谁准进**  
 **IDT** = **外部事件从哪段代码进内核**
 
-→ 对照 [07-linux-kernel](../../../../../07-linux-kernel/) · GDT/IDT 在 Linux 启动早期同样要设；[01-CSAPP Ch8 异常/中断](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/)
+→ 对照 [05-linux-kernel](../../../../../05-linux-kernel/) · GDT/IDT 在 Linux 启动早期同样要设；[02-CSAPP Ch8 异常/中断](../../../../../02-computer-systems/chapter-08-exceptional-control-flow/)
 
 **HFT：** 网卡 **MSI-X / 中断 coalescing**、**绑 IRQ 到核** — 都是 **IDT → 处理函数** 链路的工业版。
 

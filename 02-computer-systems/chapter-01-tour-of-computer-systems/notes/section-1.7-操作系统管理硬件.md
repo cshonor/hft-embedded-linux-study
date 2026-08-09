@@ -11,7 +11,7 @@ OS 在 **应用程序与硬件之间** 提供统一抽象，防止进程互相�
 **HFT：**
 
 - 热路径进程 **固定 CPU affinity**，减少迁移与 cache 冷启动
-- 与 housekeeping（日志、监控）**分进程/分核**（→ [12-HFT ch05](../../../21-hft-engineering/chapter-05-操作系统内核极致调优/)）
+- 与 housekeeping（日志、监控）**分进程/分核**（→ [18-HFT ch05](../../../18-hft-engineering/chapter-05-操作系统内核极致调优/)）
 
 ### 1.7.2 线程 (Threads)
 
@@ -75,7 +75,7 @@ CPU 看 VA → MMU(+页表/TLB) → PA → L1/L2/LLC → DRAM（或再经 OS 从
 **HFT：**
 
 - 热路径数据 **mlock / 大页 / 预 fault**，避免 tick 上 page fault  
-- **NUMA：** 分配与访问同节点（→ [Ch 9](../../chapter-09-virtual-memory/)、[09-linux-mm](../../../09-linux-mm/)）
+- **NUMA：** 分配与访问同节点（→ [Ch 9](../../chapter-09-virtual-memory/)、[06-linux-mm](../../../06-linux-mm/)）
 
 ### 1.7.4 文件 (Files)
 
@@ -84,10 +84,10 @@ CPU 看 VA → MMU(+页表/TLB) → PA → L1/L2/LLC → DRAM（或再经 OS 从
 
 **HFT：**
 
-- 行情/订单：**socket 也是文件描述符** — `epoll` 等多路复用（→ [Ch 10–11](../../chapter-10-system-io/)、[10-UNP](../../../15-network-sockets/unix-network-api/)）
+- 行情/订单：**socket 也是文件描述符** — `epoll` 等多路复用（→ [Ch 10–11](../../chapter-10-system-io/)、[12-UNP](../../../12-network-sockets/unix-network-api/)）
 - 配置文件：启动时读一次，不在热路径 `open`
 
-→ OS 专章：[14-Systems-Performance Ch 3](../../../19-systems-performance/chapter-03-operating-systems/)
+→ OS 专章：[16-Systems-Performance Ch 3](../../../16-systems-performance/chapter-03-operating-systems/)
 
 ---
 

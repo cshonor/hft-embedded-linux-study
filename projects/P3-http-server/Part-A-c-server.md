@@ -1,7 +1,7 @@
 # P3 Part A — C 版并发 HTTP Server
 
 > 用 C + epoll + 线程池从零写一个能压测的 HTTP server。
-> **做法：项目驱动，[`04`](../../04-linux-userspace-api/) / [`15`](../../15-network-sockets/) 笔记当字典。**
+> **做法：项目驱动，[`03`](../../03-linux-userspace-api/) / [`12`](../../12-network-sockets/) 笔记当字典。**
 
 ---
 
@@ -11,10 +11,10 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [TLPI ch63 epoll](../../04-linux-userspace-api/chapter-63-alternative-io/) | epoll = 替代 select/poll 的高性能 I/O 多路复用 |
-| [TLPI ch56 socket 入门](../../04-linux-userspace-api/chapter-56-sockets-intro/) | socket/bind/listen/accept 四件套 |
-| [TLPI ch29 线程](../../04-linux-userspace-api/chapter-29-threads-intro/) | pthread_create/join 基础 |
-| [PNP epoll 实战](../../15-network-sockets/muduo-sockets/code/07_IO_epoll/notes.md) | epoll LT vs ET 实际代码 |
+| [TLPI ch63 epoll](../../03-linux-userspace-api/chapter-63-alternative-io/) | epoll = 替代 select/poll 的高性能 I/O 多路复用 |
+| [TLPI ch56 socket 入门](../../03-linux-userspace-api/chapter-56-sockets-intro/) | socket/bind/listen/accept 四件套 |
+| [TLPI ch29 线程](../../03-linux-userspace-api/chapter-29-threads-intro/) | pthread_create/join 基础 |
+| [PNP epoll 实战](../../12-network-sockets/muduo-sockets/code/07_IO_epoll/notes.md) | epoll LT vs ET 实际代码 |
 | [CSAPP 12.2 I/O 多路复用](../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.2-基于I-O多路复用的并发编程.md) | 为什么要多路复用 |
 
 ---
@@ -114,10 +114,10 @@ int main(void) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| socket/bind/listen 流程 | [TLPI ch56](../../04-linux-userspace-api/chapter-56-sockets-intro/) |
-| epoll API | [TLPI ch63](../../04-linux-userspace-api/chapter-63-alternative-io/) · [PNP epoll](../../15-network-sockets/muduo-sockets/code/07_IO_epoll/notes.md) |
+| socket/bind/listen 流程 | [TLPI ch56](../../03-linux-userspace-api/chapter-56-sockets-intro/) |
+| epoll API | [TLPI ch63](../../03-linux-userspace-api/chapter-63-alternative-io/) · [PNP epoll](../../12-network-sockets/muduo-sockets/code/07_IO_epoll/notes.md) |
 | LT vs ET 区别 | [CSAPP 12.2](../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.2-基于I-O多路复用的并发编程.md) |
-| 非阻塞 I/O | [PNP NonBlockingIO](../../15-network-sockets/muduo-sockets/code/06_NonBlockingIO/notes.md) |
+| 非阻塞 I/O | [PNP NonBlockingIO](../../12-network-sockets/muduo-sockets/code/06_NonBlockingIO/notes.md) |
 
 ### 测试
 
@@ -260,8 +260,8 @@ void submit_task(struct threadpool *pool, int fd) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| pthread 基础 | [TLPI ch29](../../04-linux-userspace-api/chapter-29-threads-intro/) |
-| mutex/cond | [TLPI ch30](../../04-linux-userspace-api/chapter-30-thread-synchronization/) |
+| pthread 基础 | [TLPI ch29](../../03-linux-userspace-api/chapter-29-threads-intro/) |
+| mutex/cond | [TLPI ch30](../../03-linux-userspace-api/chapter-30-thread-synchronization/) |
 | 条件变量为什么用 while | [CSAPP 12.5](../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.5-信号量与预线程化.md) |
 
 ---
@@ -283,8 +283,8 @@ void submit_task(struct threadpool *pool, int fd) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| sendfile 零拷贝 | [TLPI ch61](../../04-linux-userspace-api/chapter-61-sockets-advanced/) |
-| 文件 I/O | [TLPI ch04](../../04-linux-userspace-api/chapter-04-file-io-universal/) |
+| sendfile 零拷贝 | [TLPI ch61](../../03-linux-userspace-api/chapter-61-sockets-advanced/) |
+| 文件 I/O | [TLPI ch04](../../03-linux-userspace-api/chapter-04-file-io-universal/) |
 
 ---
 
@@ -302,4 +302,4 @@ ab -n 10000 -c 100 http://localhost:8080/index.html
 wrk -t4 -c100 -d10s http://localhost:8080/
 ```
 
-← [P3 索引](./README.md) · [04 模块](../../04-linux-userspace-api/)
+← [P3 索引](./README.md) · [03 模块](../../03-linux-userspace-api/)

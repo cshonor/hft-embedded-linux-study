@@ -35,7 +35,7 @@ Ch 1.8 概念（本节）
   → 12-HFT ch06/ch10
 ```
 
-→ [Ch 11 网络编程](../../chapter-11-network-programming/) · [14-Systems-Performance Ch 10 网络](../../../19-systems-performance/chapter-10-network/)
+→ [Ch 11 网络编程](../../chapter-11-network-programming/) · [16-Systems-Performance Ch 10 网络](../../../16-systems-performance/chapter-10-network/)
 
 ---
 

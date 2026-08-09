@@ -69,19 +69,19 @@
 
 | 本项目概念 | 主线对照 |
 |------------|----------|
-| UEFI 启动链 | [P3.5 BusyBox](../P3.5-busybox-minimal-linux/) (Linux boot) · [11 嵌入式 boot](../../11-embedded-boot-build/) (U-Boot) |
-| GDT/IDT/中断 | [07 LKD Ch7](../../07-linux-kernel/) (Linux 中断) · [02 CSAPP Ch8](../../02-computer-systems/) (异常控制流) |
-| 分页 | [09 Gorman](../../09-linux-mm/) (Linux MM) · [02 CSAPP Ch9](../../02-computer-systems/) (VM) |
-| 多任务/调度 | [07 LKD Ch4](../../07-linux-kernel/) (Linux 调度) |
-| syscall | [04 TLPI](../../04-linux-userspace-api/) (用户态 API) |
-| FIFO ring buffer | [P2.5 C Toolkit](../P2.5-c-toolkit/) (SPSC ring) · [21 HFT](../../21-hft-engineering/) (无锁队列) |
+| UEFI 启动链 | [P3.5 BusyBox](../P3.5-busybox-minimal-linux/) (Linux boot) · [08 嵌入式 boot](../../08-embedded-boot-build/) (U-Boot) |
+| GDT/IDT/中断 | [05 LKD Ch7](../../05-linux-kernel/) (Linux 中断) · [02 CSAPP Ch8](../../02-computer-systems/) (异常控制流) |
+| 分页 | [06 Gorman](../../06-linux-mm/) (Linux MM) · [02 CSAPP Ch9](../../02-computer-systems/) (VM) |
+| 多任务/调度 | [05 LKD Ch4](../../05-linux-kernel/) (Linux 调度) |
+| syscall | [03 TLPI](../../03-linux-userspace-api/) (用户态 API) |
+| FIFO ring buffer | [P2.5 C Toolkit](../P2.5-c-toolkit/) (SPSC ring) · [18 HFT](../../18-hft-engineering/) (无锁队列) |
 | malloc | [P2-B](../P2-shell-malloc/Part-B-malloc.md) (malloc 实现) |
 
 ---
 
 ## 学习建议
 
-1. **不要现在做** — 等 Phase 4 内核（07 LKD）学完再来
+1. **不要现在做** — 等 Phase 4 内核（05 LKD）学完再来
 2. **挑着读** — Ch1-2 (启动) + Ch7 (中断) + Ch13-14 (多任务) + Ch19-20 (分页/syscall) 是核心
 3. **30 天精华当字典** — 遇到概念不懂时翻一下对照，不要逐天读
 4. **代码不编译也行** — 重点是理解概念，不是跑通玩具 OS
