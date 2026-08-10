@@ -84,6 +84,47 @@ VHE（Virtualization Host Extensions）让宿主 Linux 内核直接运行在 EL2
 
 ERET 是**原子操作**：同时恢复 PC（从 ELR）和 PSTATE（从 SPSR），包括 EL 切换。中间不会被中断打断。这保证了异常返回的安全性。
 
+### 典型应用场景与整机组合
+
+**各 EL 层级运行的典型软件：**
+
+| EL | Non-Secure 世界 | Secure 世界 |
+|----|-----------------|------------|
+| **EL0** | App / libc / 动态链接器（不能操作硬件） | TA (Trusted Application)：指纹解密、密钥运算、DRM |
+| **EL1** | Linux 内核 / RTOS（MMU、调度、中断、驱动） | OP-TEE 安全内核（管理 TA、安全内存、安全中断） |
+| **EL2** | KVM Hypervisor / VHE 宿主内核（可选） | 无 S-EL2（ARMv8.4 定义，极少使用） |
+| **EL3** | —（不区分世界） | TF-A BL31 Secure Monitor（世界切换、PSCI、FIQ 路由） |
+
+> NS 世界和 S 世界不能直接互相跳转，必须经 EL3 中转。普通 Linux (NS) 完全不能访问 S-EL1 的内存，由硬件隔离。
+
+**4 种典型整机运行组合：**
+
+| 案例 | EL3 | EL2 | EL1 | EL0 | 说明 |
+|------|-----|-----|-----|-----|------|
+| **手机 Android** | TF-A BL31 | (不用) | NS: Android Linux 内核<br>S: OP-TEE | NS: App<br>S: TA 指纹/密钥 | 有 TrustZone，无虚拟化；Linux 调安全服务走 SMC→EL3→OP-TEE |
+| **ARM 服务器 KVM+VHE** | TF-A BL31 | NS: 宿主 Linux 内核 (VHE) | NS: 客户机内核<br>S: OP-TEE | NS: 宿主/客户机用户进程 | VHE 让宿主内核直接跑 EL2，减少陷入开销 |
+| **裸机/RTOS** | (不用) | (不用) | NS: 裸机程序/FreeRTOS | (不用) | 无 TrustZone、无虚拟化；直接在 EL1 操作硬件 |
+| **客户机调用 TrustZone** | TF-A BL31 | NS: KVM Hypervisor | NS: 客户机内核 | NS: 客户机 App | 客户机 SMC 先被 EL2 拦截，再由 Hypervisor 代理转发到 EL3 |
+
+**客户机 SMC 代理路径（SMC Proxying）：**
+
+虚拟机内部的客户机 OS 不能直接执行 SMC 到 EL3——SMC 会被 EL2 拦截：
+
+```
+客户机 NS-EL1 执行 SMC
+  → 硬件 trap 到 NS-EL2（Hypervisor 拦截 SMC）
+  → Hypervisor 检查请求是否合法（安全策略网关）
+  → 合法 → Hypervisor 执行 SMC → trap 到 S-EL3
+  → BL31 处理后返回 Hypervisor → Hypervisor 返回客户机
+  → 不合法 → Hypervisor 直接拒绝，返回错误码
+```
+
+Hypervisor 在这里充当安全网关，可以拒绝、伪造或转发 SMC 请求。Linux KVM-ARM 通过 `KVM_CAP_ARM_SMCCC` 支持此机制。
+
+**PSCI 电源管理：**
+
+所有 ARM64 Linux 内核的 CPU hotplug、suspend、restart 最终都走 SMC → EL3 BL31。内核中的 `psci.c` 驱动封装这些 SMC 调用。EL3 是唯一能操作 CPU 复位/电源硬件的层级，Linux 内核不能直接控制。
+
 ## HFT 关联
 
 HFT 交易系统的 EL 切换开销是延迟优化的重点：
@@ -159,3 +200,33 @@ VHE（ARMv8.1）让宿主 Linux 内核直接运行在 EL2，而不需要通过 H
 
 **可以直接从 EL3 降到 EL1**，不需要经过 EL2。ERET 可以从任何高 EL 返回到任何低 EL（通过设置 SPSR_EL3.M[3:0]）。但如果该 SoC 实现了 EL2，启动代码通常先 EL3→EL2（初始化 Hypervisor 配置），再 EL2→EL1。无 EL2 的 SoC 直接 EL3→EL1 即可。参见 [§11.6 EL2→EL1 实验](06-el2-to-el1.md)。
 </details>
+
+7. **普通 Linux 内核可以直接访问 OP-TEE (S-EL1) 的内存吗？为什么？**
+
+<details>
+<summary>答案</summary>
+
+**不能。** 安全世界和非安全世界由硬件隔离——NS-EL1 的页表中安全世界的物理地址被标记为不可访问，MMU 硬件强制隔离。Linux 要使用安全服务必须通过 SMC 陷入 EL3，由 BL31 中转到 S-EL1 的 OP-TEE，OP-TEE 处理后原路返回。密钥等敏感数据永远不会暴露给 NS 世界。
+</details>
+
+8. **客户虚拟机内核执行 SMC 指令，会直接到达 EL3 吗？完整的路径是什么？**
+
+<details>
+<summary>答案</summary>
+
+**不会直接到达 EL3。** 完整路径（SMC Proxying）：
+
+1. 客户机 NS-EL1 执行 SMC → 硬件 trap 到 NS-EL2（Hypervisor 拦截）
+2. Hypervisor 检查请求是否合法
+3. 合法 → Hypervisor 执行 SMC → trap 到 S-EL3（BL31 处理）
+4. BL31 返回 Hypervisor → Hypervisor 返回客户机
+
+Hypervisor 充当安全网关，可以拒绝、伪造或转发 SMC 请求。这是虚拟化安全的重要机制——防止恶意客户机直接访问安全世界。
+</details>
+
+9. **Linux 内核要重启 CPU（如 `reboot` 系统调用），实际是怎么操作的？为什么不直接复位？**
+
+<details>
+<summary>答案</summary>
+
+Linux 内核不能直接操作 CPU 复位硬件——它通过 `psci.c` 驱动执行 SMC 调用，陷入 EL3，由 TF-A BL31 完成底层电源控制（PSCI `SYSTEM_RESET`）。EL3 是唯一能操作 CPU 复位/电源硬件的层级。这种设计保证了安全控制——即使内核被攻破，攻击者也无法绕过 EL3 固件直接控制硬件电源。
