@@ -84,4 +84,13 @@ sudo perf probe --del 'schedule'
 
 > perf probe 是 kprobe_events 的封装，提供更友好的命令行接口。它自动解析符号和行号（`perf probe --add 'schedule:15'` 可以在 schedule 函数第 15 行插入探针），支持 C 表达式（`perf probe --add 'kmalloc size'` 自动识别 size 参数）。底层仍使用 kprobe_events，但省去了手动计算偏移和参数位置的麻烦。
 
+
+**Q:** 通过 /sys/kernel/debug/kprobes/ 动态添加探针的步骤是什么？
+
+> echo "p my_probe symbol_name" > /sys/kernel/debug/kprobes/kprobe_events。然后 echo 1 > /sys/kernel/debug/tracing/events/kprobes/my_probe/enable 启用。结果在 trace 中查看。也可以添加参数：echo "p my_probe do_sys_open arg1=%di:u64" > kprobe_events。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 perf probe](chapter-04-kprobes/notes/section-4-5.md)

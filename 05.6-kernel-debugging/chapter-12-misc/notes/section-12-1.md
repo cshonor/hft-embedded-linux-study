@@ -39,4 +39,13 @@ CONFIG_KCOV=y
 
 > GCOV 追踪全局代码覆盖率（哪些代码被执行过），用于评估测试完整性。KCOV 追踪单个系统调用的覆盖率，用于模糊测试（syzkaller 用 KCOV 知道每个测试输入触发了哪些代码路径，指导后续生成）。
 
+
+**Q:** GCOV 和 KCOV 的区别是什么？
+
+> GCOV 是 GCC 的代码覆盖率工具，统计哪些代码行被执行过（用于测试覆盖率分析）。KCOV 是内核专用的覆盖率工具，专门为模糊测试设计——它记录每次 syscall 执行的代码覆盖率，syzkaller 用 KCOV 引导模糊测试探索新代码路径。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch12 syzkaller](chapter-12-misc/notes/section-12-3.md)

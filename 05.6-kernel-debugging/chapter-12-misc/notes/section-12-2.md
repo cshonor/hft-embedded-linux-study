@@ -55,4 +55,13 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- TARGETS=sched kselftest
 
 > KUnit 是**单元测试**框架——在内核中编写测试函数，测试内部函数的行为，不需要用户空间参与。kselftest 是**系统测试**框架——在用户空间运行测试程序，通过系统调用测试内核行为。KUnit 适合测试内部逻辑，kselftest 适合测试用户可见接口。
 
+
+**Q:** kselftest 和 KUnit 的区别？
+
+> kselftest：用户态测试框架，从用户空间发起 syscall 测试内核行为（如 fork/exit/mmap）。KUnit：内核内建单元测试框架，在内核中直接测试函数（不需要用户态参与）。kselftest 适合系统级测试，KUnit 适合函数级测试。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch12 syzkaller](chapter-12-misc/notes/section-12-3.md)

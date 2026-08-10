@@ -77,4 +77,17 @@ cat /proc/kallsyms | grep my_module
 
 > 模块卸载时其代码页被释放回 buddy 分配器，可能被分配给其他用途。如果 Oops 日志中只有地址没有函数名，且模块已卸载，用 addr2line 仍然可以解析（因为 .ko 文件保留了符号），但无法在运行系统中直接反汇编该内存区域。
 
+
+**Q:** 模块 Oops 中的地址如何解析？
+
+> 模块加载到动态地址（KASLR）。需要：(1) 从 /proc/modules 获取模块加载基址；(2) Oops 中的地址减去基址得到偏移；(3) 用 addr2line -e my_module.ko 解析偏移。或者用 `echo "0xffff..." | scripts/faddr2line my_module.ko` 自动处理。
+
+**Q:** 为什么模块符号在 /proc/kallsyms 中显示为 0x0000000000000000？
+
+> 非 root 用户看 /proc/kallsyms 时地址为 0（kptr_restrict=1）。需要 `echo 0 > /proc/sys/kernel/kptr_restrict` 或以 root 查看。这是安全措施——防止通过 /proc/kallsyms 获取内核地址绕过 KASLR。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch07 addr2line](chapter-07-oops/notes/section-7-4.md)

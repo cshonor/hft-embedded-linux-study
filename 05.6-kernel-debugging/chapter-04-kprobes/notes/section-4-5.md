@@ -65,4 +65,13 @@ perf probe 结合 perf record/report 提供 HFT 内核函数耗时分析的完�
 
 > perf probe 负责**注册/注销** kprobe 探针，perf record 负责**收集**探针触发的事件。工作流：1) `perf probe --add` 注册探针 → 2) `perf record -e probe:xxx` 收集事件 → 3) `perf report` 分析 → 4) `perf probe --del` 清理。
 
+
+**Q:** perf probe 和直接写 kprobe_events 相比有什么优势？
+
+> perf probe 自动解析行号和变量名（需要 DEBUG_INFO），不需要手动查寄存器映射。例如 `perf probe --add "vfs_write:642 size"` 自动找到 vfs_write 第642行并提取 size 变量。直接写 kprobe_events 需要手动指定偏移和寄存器。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 kprobes vs eBPF](chapter-04-kprobes/notes/section-4-6.md)

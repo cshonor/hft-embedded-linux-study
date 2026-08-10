@@ -93,4 +93,17 @@ void increment(void) { WRITE_ONCE(my_counter, READ_ONCE(my_counter) + 1); }
 
 > KCSAN 不会报告 `READ_ONCE()` 和 `WRITE_ONCE()` 之间的竞争——内核社区认为通过 `READ_ONCE` / `WRITE_ONCE` 标记的访问是有意为之的无锁读取。但这不保证原子性，只是告诉 KCSAN "我知道这里有竞争，这是设计如此"。
 
+
+**Q:** KCSAN 和 LOCKDEP 的检测侧重点有什么不同？
+
+> LOCKDEP 检测锁的**顺序**问题（死锁/上下文错误）。KCSAN 检测**数据竞争**——即使没有死锁，两个线程无同步地读写同一变量也是 bug。KCSAN 通过编译时插桩 + 运行时延迟观察竞争。
+
+**Q:** KCSAN 如何检测 "已经加了锁但仍有数据竞争" 的情况？
+
+> 如果加了锁但用了错误的锁（如读路径用 spinlock 保护但写路径忘了加锁），KCSAN 仍会报告。LOCKDEP 只看锁的顺序不看数据访问，无法发现这种"部分加锁"的 bug。两者互补。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/section-8-2.md)

@@ -78,4 +78,17 @@ HFT 内核模块应大量使用 `pr_debug()` 而非 `pr_err()`，通过 dynamic 
 
 > 不完全等价。`pr_debug()` 在未启用 `CONFIG_DYNAMIC_DEBUG` 时仅在 `DEBUG` 宏定义时编译生效。启用 `CONFIG_DYNAMIC_DEBUG` 后，`pr_debug()` 可通过 dyndbg 动态开关。`printk(KERN_DEBUG ...)` 始终编译生效，无法动态关闭。
 
+
+**Q:** printk 的日志级别 KERN_DEBUG 和 KERN_INFO 在生产内核中有什么区别？
+
+> KERN_DEBUG（7）默认不输出到控制台（console_loglevel 默认 < 7）。KERN_INFO（6）在大多数配置下输出。但两者都写入环形缓冲区（dmesg 可查），只是控制台输出行为不同。Dynamic Debug 可以运行时启用特定 KERN_DEBUG 消息。
+
+**Q:** printk 在中断上下文中调用有什么风险？
+
+> printk 获取 logbuf lock（spinlock），如果在中断上下文中调用且中断被持有 lock 的 CPU 触发，可能死锁。6.x 改为 lockless printk（printk-safe）缓解此问题。但在硬中断中仍应避免大量 printk，改用 printk_deferred() 或 trace_printk()。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch03 dynamic debug](chapter-03-printk/notes/section-3-3.md)

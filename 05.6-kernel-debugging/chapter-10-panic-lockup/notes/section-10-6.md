@@ -49,4 +49,13 @@ HFT 系统可在 panic handler 中：发送告警通知运维、保存交易状�
 
 > Panic 后系统状态不确定，handler 中不能：1) 分配内存（slab 可能已损坏）；2) 获取锁（可能死锁）；3) 依赖正常内核功能。只能做最简单的操作：写 I/O 端口、写 NVRAM、发送网络包（如果网络栈还可用）。建议 handler 极简，只做必要通知。
 
+
+**Q:** 如何自定义 panic handler？有什么注意事项？
+
+> 注册 panic_notifier_list 链表：`atomic_notifier_chain_register(&panic_notifier_list, &my_notifier)`。注意：(1) handler 在 panic 上下文运行，不能睡眠/分配内存；(2) 保持简短，不要做复杂操作；(3) 用于记录关键状态到 NVRAM 或发送告警。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 panic](chapter-10-panic-lockup/notes/section-10-1.md)

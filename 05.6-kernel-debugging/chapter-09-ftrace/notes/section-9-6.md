@@ -42,4 +42,13 @@ KernelShark 可视化展示调度切换和中断，帮助 HFT 开发者直观理
 
 > 可以但需要桌面环境（X11/Wayland）。树莓派 5 支持 GUI，但建议在 PC 上分析 .dat 文件（将树莓派上收集的 trace.dat 拷贝到 PC 上用 KernelShark 打开），因为 GUI 分析对 CPU/内存要求较高。
 
+
+**Q:** KernelShark 适合什么场景？命令行工具和它如何配合？
+
+> KernelShark 适合需要时间线可视化的场景——在 GUI 中看多个 CPU 上事件的时间分布、任务切换模式、延迟毛刺。典型工作流：trace-cmd record 采集 → trace-cmd report 初步检查 → KernelShark 深入可视化分析。命令行用于自动化和脚本，KernelShark 用于交互分析。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 trace-cmd](chapter-09-ftrace/notes/section-9-5.md)

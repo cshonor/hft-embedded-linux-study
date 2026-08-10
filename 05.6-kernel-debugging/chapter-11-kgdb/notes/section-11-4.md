@@ -68,4 +68,17 @@
 
 > 所有 CPU。KGDB 断点触发时发送 IPI (Inter-Processor Interrupt) 给所有 CPU，使其进入 KGDB 暂停状态。这是必要的——断点后内核状态可能不一致，不能让其他 CPU 继续运行。这也是 KGDB 不适合生产环境的原因（暂停整个系统）。
 
+
+**Q:** KGDB 中的硬件断点和软件断点有什么区别？
+
+> 硬件断点用 CPU 调试寄存器（ARM64: 4 个 watchpoint + 4 个 breakpoint），不修改代码，速度快但数量有限。软件断点替换指令为 BRK（ARM64），数量无限但修改代码可能被 icache 缓存问题影响。KGDB 优先用硬件断点，不够时用软件断点。
+
+**Q:** KGDB 条件断点如何工作？有什么限制？
+
+> KGDB 条件断点在断点命中后由 GDB 检查条件——每次命中都暂停内核进 KGDB 检查，开销极大。高频函数设条件断点会导致系统几乎停顿。替代方案：用 kprobe + filter（内核侧过滤，不需要暂停）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 kprobes](chapter-04-kprobes/notes/section-4-2.md)

@@ -51,4 +51,13 @@ aarch64-linux-gnu-gdb vmlinux
 
 > SysRq 是内核的"魔术键"机制，通过写入 /proc/sysrq-trigger 触发。`g` 对应 `sysrq_handle_dbg()`，调用 `kgdb_breakpoint()` 在当前位置插入断点指令。内核暂停并等待 GDB 连接（如果已配置 kgdboc）。
 
+
+**Q:** GDB 连接 KGDB 后，哪些操作是安全的？哪些可能导致系统不稳定？
+
+> 安全：查看变量/寄存器、单步执行、设置断点、查看调用栈。不安全：(1) 修改全局变量可能破坏一致性；(2) 长时间暂停导致硬件看门狗触发；(3) 在中断上下文设断点可能死锁。建议尽量只读分析。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch11 breakpoints](chapter-11-kgdb/notes/section-11-4.md)

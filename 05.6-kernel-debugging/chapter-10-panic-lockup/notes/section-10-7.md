@@ -75,4 +75,17 @@ crash> struct task_struct ffff000012345678  # 查看特定结构体
 
 > Kdump 预先加载一个 crash kernel（kexec）。Panic 时，生产内核调用 kexec 跳转到 crash kernel（在预留内存中启动）。Crash kernel 启动后，生产内核的内存仍保留，crash kernel 通过 /proc/vmcore 将其导出为 dump 文件。因为 crash kernel 是全新的内核，不受生产内核损坏状态影响。
 
+
+**Q:** kdump 的工作原理是什么？crash kernel 如何获取 panic 现场信息？
+
+> 正常内核运行时预加载 crash kernel 到保留内存。panic 发生时，kexec 跳转到 crash kernel（不经过 BIOS 重启）。crash kernel 以最小配置启动，通过 /proc/vmcore 暴露原内核的物理内存镜像。用 crash 工具分析 vmcore：`crash vmlinux /proc/vmcore`。
+
+**Q:** HFT 系统是否应该启用 kdump？
+
+> 应该启用。HFT 崩溃时需要分析 root cause，kdump 保存完整内存镜像。crash kernel 保留内存（通常 128MB-256MB）对 HFT 影响小。建议生产环境配置 kdump + 自动收集 vmcore + 自动重启。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 panic](chapter-10-panic-lockup/notes/section-10-1.md)

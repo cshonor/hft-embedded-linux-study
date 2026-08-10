@@ -78,4 +78,17 @@ kretprobe 是测量内核函数耗时的核心工具。例如测量 `schedule()`
 
 > 当并发调用函数的实例数超过 `maxactive` 时，新的调用无法分配 kretprobe_instance，被跳过（不触发返回回调），`nmissed` 递增。对于高频函数应设置较大的 `maxactive`（如 20-50）以减少 miss。
 
+
+**Q:** kretprobe 如何保存和恢复返回地址？
+
+> kretprobe 在函数入口替换返回地址为 trampoline 地址。当函数返回时跳到 trampoline，trampoline 调用 handler 处理返回值，然后恢复原始返回地址跳转。每个 kretprobe 实例用 kretprobe_instance 池避免每次分配。
+
+**Q:** kretprobe 的 maxactive 参数有什么作用？
+
+> maxactive 指定同时活跃的 kretprobe 实例数（默认 10）。如果一个函数在多个 CPU 上并发执行且尚未返回，需要多个 instance。maxactive 太小会导致丢失某些调用（missed），太大浪费内存。高频函数应设大（如 100）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 kprobe entry](chapter-04-kprobes/notes/section-4-2.md)

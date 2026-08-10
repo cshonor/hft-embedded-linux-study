@@ -50,4 +50,13 @@ function_graph 是 HFT 延迟分析的**核心工具**——一眼看出哪个�
 
 > `set_ftrace_filter` 限制 function tracer 只追踪指定函数（只显示函数名，不显示子调用）。`set_graph_function` 限制 function_graph tracer 只追踪指定函数及其**所有子调用**（显示完整调用树和耗时）。后者更适合分析单个函数的内部行为。
 
+
+**Q:** function_graph tracer 如何测量函数执行时间？
+
+> 在每个函数入口和出口分别记录时间戳。出口时间戳 - 入口时间戳 = 执行时间。function_graph 输出中用 `+` 后跟微秒数表示。例如 `schedule() {` ... `} 45.234 us` 表示 schedule 执行了 45μs。这对定位延迟瓶颈很有用。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 function tracer](chapter-09-ftrace/notes/section-9-2.md)

@@ -74,4 +74,17 @@ trace_printk 是 HFT 热路径调试的**首选**——不阻塞、不改变时�
 
 > trace_printk 输出在 `/sys/kernel/debug/tracing/trace`（或 `trace_pipe` 用于实时流式读取）。dmesg 只显示 printk 的输出。trace_printk 的输出包含时间戳、CPU 号、上下文（中断/进程），且可配合 function_graph tracer 嵌入函数调用链中，上下文更丰富。
 
+
+**Q:** trace_printk 相比 printk 的性能优势来自哪里？
+
+> printk 写入全局 logbuf 需要锁 + 控制台输出（可能 I/O）。trace_printk 写入 per-CPU trace buffer，无锁（per-CPU），不做 I/O。快路径仅需 ~100ns（写环形缓冲区 + 时间戳）。
+
+**Q:** trace_printk 的输出在哪里查看？
+
+> 在 trace buffer 中查看：`cat /sys/kernel/tracing/trace`。需要先启用 tracing（`echo 1 > tracing_on`）。trace_printk 消息出现在 trace 输出的 FUNCTION 列中，格式 "trace_printk: message"。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 ftrace](chapter-09-ftrace/notes/section-9-1.md)

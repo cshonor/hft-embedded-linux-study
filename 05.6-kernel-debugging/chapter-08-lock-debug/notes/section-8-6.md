@@ -72,4 +72,13 @@ dmesg | grep -i kasan
 
 > KASAN 影子内存占用 1/8 的物理内存。树莓派 5 (4GB) 需要约 512MB 影子内存，剩余可用内存约 3.5GB，足够运行。但如果同时启用 DEBUG_INFO，内核镜像会很大（数百 MB），需要足够的 SD 卡空间。建议使用 8GB 或更大的 SD 卡。
 
+
+**Q:** 在树莓派上做内核锁调试，硬件有什么限制？
+
+> (1) 树莓派 4 核够用但性能有限，LOCKDEP + KCSAN 同时开会很慢；(2) 树莓派 5 (4GB/8GB) 可以跑 KASAN + LOCKDEP；(3) 没有 JTAG，依赖 KGDB over UART；(4) SD 卡 I/O 慢，建议用 USB SSD 减少 I/O 等待。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch11 KGDB UART](chapter-11-kgdb/notes/section-11-2.md)

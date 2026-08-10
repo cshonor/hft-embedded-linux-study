@@ -65,4 +65,13 @@ cat /sys/module/my_module/sections/.bss
 
 > 模块在加载时被重定位到动态地址。GDB 只有模块的 .ko 文件（未重定位），不知道模块在内核中的实际加载位置。`add-symbol-file` 告诉 GDB 模块各段的实际地址，使 GDB 能正确映射符号到地址。
 
+
+**Q:** 用 KGDB 调试内核模块时，模块的符号如何加载到 GDB？
+
+> (1) 在目标机 `cat /proc/modules` 获取模块加载地址；(2) 在 GDB 中 `add-symbol-file my_module.ko 0xffff...`（指定 .text 节地址）；(3) 之后可以按源码设断点。注意 KASLR 下模块地址每次不同，需每次重新加载。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch07 module Oops](chapter-07-oops/notes/section-7-6.md)

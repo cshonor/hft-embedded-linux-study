@@ -53,4 +53,13 @@ echo 0 > /proc/sys/kernel/nmi_watchdog
 
 > Soft lockup: CPU 在内核态执行过久未调度，但中断仍能响应（hrtimer 还在更新时间戳）。Hard lockup: CPU 不响应中断（hrtimer 都无法执行），更严重。Soft lockup 可能升级为 hard lockup（如果禁用了中断）。
 
+
+**Q:** hard lockup 检测为什么需要 NMI？普通中断不行吗？
+
+> hard lockup 的定义就是 CPU 中断被禁用（local_irq_save）。普通中断无法触发。NMI（Non-Maskable Interrupt）不可被禁用，即使中断关闭也能触发。x86 用 PMU 的 NMI 输出，ARM64 用 ARM watchdog（SPMI/WDT）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 soft lockup](chapter-10-panic-lockup/notes/section-10-2.md)

@@ -85,4 +85,17 @@ CONFIG_LOCKDEP_SUPPORT=y
 
 > 每个 `spinlock_init()` / `mutex_init()` 创建一个新的锁分类。LOCKDEP 按分类而非实例追踪依赖——同一分类的多个实例共享同一依赖关系。这减少内存开销，但要求同类的锁确实有相同的获取顺序。用 `lockdep_set_class()` 可以为同一实例设置不同分类。
 
+
+**Q:** LOCKDEP 报告 "possible circular locking dependency" 但程序正常运行，这正常吗？
+
+> 正常。LOCKDEP 检测的是**潜在**死锁——两个线程执行了相反的锁序，即使它们没有同时执行。这是 LOCKDEP 的核心价值：在实际死锁发生前预警。
+
+**Q:** LOCKDEP 的 lock class 和 lock instance 的关系是什么？
+
+> 每个 `spinlock_init()`/`mutex_init()` 创建一个 lock class（基于调用位置）。同一 class 的多个实例共享依赖关系。例如 100 个相同类型的 spinlock 只需追踪 1 组依赖关系，大幅减少内存。用 `lockdep_set_class()` 可手动设置不同 class。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch08 deadlock detection](chapter-08-lock-debug/notes/section-8-3.md)

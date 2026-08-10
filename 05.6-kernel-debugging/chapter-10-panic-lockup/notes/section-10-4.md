@@ -70,4 +70,13 @@ HFT 隔离核上运行 SCHED_FIFO 线程，长时间不调度是正常行为。�
 
 > HFT 交易线程用 SCHED_FIFO 绑定在隔离核上，长时间不调度是设计行为（交易线程持续处理行情）。如果 watchdog 仍在该核检测，会误报 soft lockup。通过 `watchdog_cpumask` 排除隔离核，避免误报。
 
+
+**Q:** watchdog 线程在每个 CPU 上如何工作？
+
+> 每 CPU 有一个 watchdog/n 纠正线程（优先级最高 SCHED_FIFO）。它每 watchdog_thresh 秒被 hrtimer 唤醒，更新时间戳。如果发现时间戳超过 2×thresh 未更新，说明 CPU 被卡住（soft lockup）。hrtimer 本身由时钟中断驱动，如果连时钟中断都不响应则是 hard lockup。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 soft lockup](chapter-10-panic-lockup/notes/section-10-2.md)

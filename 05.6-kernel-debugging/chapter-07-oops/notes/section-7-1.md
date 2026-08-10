@@ -46,4 +46,17 @@ HFT 生产环境应设 `panic_on_oops=1` + `panic=5`——Oops 后 5 秒自动�
 
 > Oops 意味着内核数据结构可能已损坏（如链表断裂、引用计数错误）。继续运行可能导致级联崩溃、数据损坏或安全漏洞。生产环境建议设 `panic_on_oops=1` 让系统重启到已知良好状态。
 
+
+**Q:** Oops 和 panic 的区别？什么情况下 Oops 会变成 panic？
+
+> Oops 是内核遇到错误但尝试继续运行（kill 当前进程/线程）。panic 是内核放弃运行。Oops 变 panic 的情况：(1) `panic_on_oops=1` 内核参数；(2) Oops 发生在中断上下文（无法 kill 进程）；(3) Oops 发生在 critical section 持有锁。
+
+**Q:** Oops 中的 "Code:" 行有什么用？
+
+> 显示崩溃地址附近的机器码字节。用于确认反汇编结果是否正确，或在无 DEBUG_INFO 时通过机器码特征推断指令。格式：`Code: xx xx xx xx xx xx ...`，崩溃指令用 `(xx)` 标记。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 panic](chapter-10-panic-lockup/notes/section-10-1.md)

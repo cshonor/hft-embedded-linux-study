@@ -57,4 +57,17 @@ function tracer 可追踪交易线程调用的所有内核函数，定位延迟�
 
 > 每次函数调用额外约 100-300ns（保存寄存器 + 写环形缓冲区）。对于高频函数调用（如 schedule、kmalloc），总开销显著。建议先用 `set_ftrace_filter` 过滤到少量函数，或用 function_graph tracer 看调用链后再精确过滤。
 
+
+**Q:** function tracer 的 set_ftrace_filter 如何提高性能？
+
+> 不过滤时 ftrace 追踪所有函数（数十万次/秒），buffer 溢出快且开销大。set_ftrace_filter 限制只追踪特定函数（如 `schedule`），减少 buffer 写入和 tracer 开销。配合 set_ftrace_pid 限制进程，进一步减少噪音。
+
+**Q:** function tracer 和 function_graph tracer 的区别？
+
+> function tracer 记录每个函数调用事件（时间戳 + 函数名 + 调用者）。function_graph tracer 记录调用链（函数进入 + 退出 + 执行时间），用缩进显示嵌套。function_graph 更直观但开销更大（每对 entry/return 两条记录）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 function_graph](chapter-09-ftrace/notes/section-9-3.md)

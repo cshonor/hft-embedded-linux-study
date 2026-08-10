@@ -67,4 +67,13 @@ scripts/decode_stacktrace.sh vmlinux /path/to/source < oops.log
 
 > 用 `objdump -d vmlinux` 输出全部，然后 `grep -A N '<function>:'` 提取该函数。或用 `objdump --disassemble=function_name vmlinux` 只反汇编指定函数。模块用 `objdump -d module.ko`（文件小得多）。
 
+
+**Q:** objdump -d 和 objdump -D 的区别？内核调试用哪个？
+
+> -d 只反汇编代码段（.text），-D 反汇编所有段。内核调试用 -d（只看代码段）。常用 `aarch64-linux-gnu-objdump -d vmlinux --start-address=0xffff... --stop-address=0xffff...` 反汇编特定地址范围，配合 Oops 的 PC 地址定位。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch07 addr2line](chapter-07-oops/notes/section-7-4.md)

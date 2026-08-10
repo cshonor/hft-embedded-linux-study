@@ -93,4 +93,17 @@ HFT 内核模块长时间运行（7×24），内存泄漏会导致 OOM。kmemlea
 
 > 如果指针被修改（如 XOR 加密指针）、存储在 kmemleak 不扫描的区域（如设备寄存器映射的内存）、或通过非标准方式引用（如 base+offset 计算），kmemleak 会误判为泄漏。处理方法：在代码中调用 `kmemleak_not_leak(ptr)` 显式标记，或 `kmemleak_ignore(ptr)` 忽略。
 
+
+**Q:** kmemleak 如何检测内存泄漏？它的扫描机制是什么？
+
+> kmemleak 维护所有已分配内存的元数据（地址/大小/调用栈）。周期性扫描内存（包括栈、全局数据、页表），寻找指向已分配块的指针。如果没有任何指针引用某个分配块，判定为泄漏。类似 GC 的 mark-sweep 但只标记不回收。
+
+**Q:** kmemleak 的误报如何处理？
+
+> 误报发生在：指针被修改但数据仍在使用（如加密/混淆指针），或指针存储在 kmemleak 不扫描的区域。用 `echo scan=off > /sys/kernel/debug/kmemleak` 暂停扫描，或 `echo dump=0xffff0000 > ...` 手动检查特定地址。对已知安全泄漏点用 `kmemleak_not_leak(ptr)` 标记。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/section-6-1.md)

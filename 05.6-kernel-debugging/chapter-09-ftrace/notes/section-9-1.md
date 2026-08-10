@@ -57,4 +57,17 @@ cat trace_pipe        # 流式查看 (不停止)
 
 > `trace` 读取环形缓冲区的快照，读取后不清空，适合事后查看。`trace_pipe` 是流式读取，读取后数据被消费，适合实时监控（如 `cat trace_pipe` 持续输出）。调试时用 `trace`（保留数据），监控时用 `trace_pipe`。
 
+
+**Q:** tracefs 和 debugfs 中的 ftrace 接口有什么关系？
+
+> 4.x 之前 ftrace 在 /sys/kernel/debug/tracing/。5.x+ 迁移到 /sys/kernel/tracing/（tracefs），debugfs 路径保留为软链接。推荐使用 tracefs 路径。两者底层完全相同。
+
+**Q:** ftrace 的 ring buffer 是 per-CPU 的，为什么？
+
+> per-CPU ring buffer 避免了写入时的锁竞争——每个 CPU 写自己的 buffer 无需同步。读取时 ftrace 按时间戳合并各 CPU buffer。这种设计在高核数系统上扩展性好。HFT 场景中 per-CPU buffer 意味着 ftrace 不会引入跨核锁竞争。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 function tracer](chapter-09-ftrace/notes/section-9-2.md)

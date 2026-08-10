@@ -68,4 +68,17 @@ Kprobes 是 HFT 延迟溯源的核心——在生产环境动态测量内核函�
 
 > jprobe 通过修改寄存器来"伪装"成被探测函数，实现复杂且容易出错，在 ARM64 等架构上难以正确实现。6.x 移除 jprobe，推荐用 kprobe + 手动提取参数替代，或直接用 eBPF/bpftrace。
 
+
+**Q:** kprobes 在 ARM64 上如何实现断点？
+
+> ARM64 使用 BRK 指令（breakpoint）替代 x86 的 INT3。kprobe 在目标地址替换为 BRK #0x4，触发异常进入 kprobe handler。原始指令保存在单独页面（out-of-line execution）。ARM64 还需要 flush icache（指令缓存一致性）。
+
+**Q:** kprobes 为什么不能在某些函数上设置探针？
+
+> 内核标记 `__kprobes` 的函数本身是 kprobe 基础设施，在其上设探针会递归。另外 NMI/硬中断上下文中的某些路径（如 entry code）不允许 kprobe，因为 kprobe 处理需要进程上下文。用 `/sys/kernel/debug/kprobes/blacklist` 查看禁止列表。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 kretprobe](chapter-04-kprobes/notes/section-4-3.md)

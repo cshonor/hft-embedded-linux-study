@@ -55,4 +55,13 @@ smatch_scripts/check_kernel.sh /path/to/linux-source
 
 > `__user` 标注标记用户空间指针（来自用户空间的指针，不能直接解引用）。Sparse 检查是否在内核代码中直接解引用了 `__user` 指针（应用 `copy_from_user` / `copy_to_user`），以及是否将内核指针泄露给用户空间。
 
+
+**Q:** Sparse 和 Smatch 分别检测什么类型的问题？
+
+> Sparse：检测类型不匹配（__user/__iomem 指针混用）、RCU 注解违规、锁注解不平衡。基于 GCC 前端做静态分析。Smatch：检测空指针解引用、缓冲区溢出、未检查返回值等。Smatch 更深入做过程间分析但慢。两者互补，CI 中都应运行。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/section-5-2.md)

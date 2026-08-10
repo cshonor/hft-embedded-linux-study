@@ -70,4 +70,13 @@ lock_stat 帮助识别 HFT 内核模块中的锁瓶颈——高争用的锁可�
 
 > lock_stat 需要 LOCKDEP 支持，每次加锁/解锁额外 ~100-200ns 开销，整体 slowdown 约 2-5x。不适合生产环境。应在 staging 环境用压力测试模拟生产负载，收集锁统计后优化。
 
+
+**Q:** lock_stat 的 "hold time" 和 "wait time" 分别反映什么问题？
+
+> hold time（持有时间）长 → 锁内临界区太大，应缩短。wait time（等待时间）长 → 锁竞争激烈，应减少持锁频率或改用更细粒度的锁。HFT 关注 wait time——高 wait time 意味着交易线程可能在等锁。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/section-8-2.md)

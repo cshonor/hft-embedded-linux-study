@@ -33,4 +33,14 @@ HFT 自定义内核模块最容易遇到：AA 死锁（回调函数中重复获�
 
 > 两者都能被 LOCKDEP 检测。AA 死锁在第二次获取同一锁时立即报告（即使没有实际死锁）。AB-BA 死锁在 LOCKDEP 检测到锁序矛盾时报告（需要两个线程实际执行了相反顺序的获取操作）。AA 更快被发现，因为不需要等待实际并发。
 
+
+**Q:** 内核并发 bug 的两大类是什么？分别用什么工具检测？
+
+> (1) 死锁（deadlock）：AB-BA 锁序反序 → LOCKDEP。(2) 竞态（race）：缺乏同步的并发访问 → KCSAN。另外 LOCKDEP 也检测锁上下文错误（如 spinlock 中睡眠）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/section-8-2.md)
+- [05.6 ch08 KCSAN](chapter-08-lock-debug/notes/section-8-5.md)

@@ -54,4 +54,14 @@ HFT 自定义内核模块的内存错误 90% 是越界和 UAF，KASAN 能在开�
 
 > 释放的内存被 SLUB 回收并可能分配给其他模块。原模块继续访问该内存会读到/写入新模块的数据，导致数据损坏或安全漏洞（信息泄漏）。在内核中 UAF 可能导致权限提升（攻击者可以利用 UAF 覆盖函数指针）。
 
+
+**Q:** 内核内存错误的四种基本类型是什么？分别用什么工具检测？
+
+> (1) 越界访问（out-of-bounds）→ KASAN redzone；(2) Use-After-Free → KASAN quarantine + KFENCE；(3) 未初始化使用 → KMSAN（Memory Sanitizer）；(4) 双重释放 → SLUB debug poison。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/section-5-2.md)
+- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/section-6-1.md)

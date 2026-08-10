@@ -72,4 +72,17 @@ dmesg | grep -A 20 "KFENCE"
 
 > KFENCE 将采样对象放在一个页的末尾，相邻页标记为不可访问（guard page）。如果代码越界访问对象后的字节，会触达 guard page 导致 page fault。KFENCE 在 fault handler 中报告越界。对象释放后整个页标记为不可访问，后续访问触发 UAF 报告。
 
+
+**Q:** KFENCE 和 KASAN 的主要区别是什么？
+
+> KASAN 检查每次内存访问（通过影子内存），开销大（2-3x slowdown）但检测全面。KFENCE 只检查 slab 分配/释放，用 guard page 保护每个对象，开销极小（<1% CPU）但只检测越界和 UAF。KFENCE 适合生产环境持续运行，KASAN 适合开发环境全面检测。
+
+**Q:** KFENCE 的 guard page 如何工作？
+
+> KFENCE 为每个受保护的 slab 对象分配一个独立的页，前后各加 guard page（PROT_NONE）。任何越界访问触发 page fault，KFENCE handler 报告越界。由于每个对象占一整页，内存开销大，所以 KFENCE 采样保护（默认每 100 次分配保护 1 次）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/section-5-2.md)

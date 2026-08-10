@@ -55,4 +55,18 @@ syz-manager -config syz.cfg
 
 > 通过 KCOV。syzkaller 在每个测试进程中启用 KCOV，KCOV 记录该进程执行过的所有内核代码地址。syzkaller 收集这些地址，构建覆盖率图。基于覆盖率指导生成新的测试输入——优先探索未被覆盖的代码路径。
 
+
+**Q:** syzkaller 如何利用 KCOV 做覆盖率引导的模糊测试？
+
+> syzkaller 生成随机 syscall 序列（基于 syscall 描述模板），执行后通过 KCOV 获取覆盖率。如果新输入覆盖了之前未执行的代码路径，syzkaller 保留该输入并变异它（类似遗传算法）。这样逐步探索新代码路径，比纯随机高效得多。
+
+**Q:** syzkaller 发现的内核 bug 通常是什么类型？
+
+> 主要是：(1) KASAN 检测的内存 bug（UAF/OOB）；(2) LOCKDEP 检测的锁问题；(3) WARN/panic 触发的逻辑错误；(4) KMSAN 检测的未初始化使用。syzkaller 在 Linux 内核社区发现了数百个 bug，是最重要的自动化测试工具之一。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/section-5-2.md)
+- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/section-8-2.md)

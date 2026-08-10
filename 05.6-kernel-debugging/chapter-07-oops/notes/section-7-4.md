@@ -85,4 +85,17 @@ echo "my_driver_write+0x3c" | scripts/faddr2line my_module.ko
 
 > 内置函数直接用 vmlinux 作为输入文件。模块函数需要用模块的 .ko 文件作为输入，且模块加载到内核时有重定位偏移。addr2line 用函数名+偏移（如 `my_driver_write+0x3c`）时会自动解析符号表，不需要计算加载偏移。
 
+
+**Q:** addr2line 输出 "??" 或 "0" 是什么原因？
+
+> (1) vmlinux 没有编译 DEBUG_INFO；(2) 优化导致函数内联（addr2line 找到的是内联展开位置而非源码函数）；(3) 地址是模块地址但用了 vmlinux 作为输入；(4) 位置信息被 strip。解决：确保 CONFIG_DEBUG_INFO=y，模块用 .ko 文件，用 faddr2line 脚本替代直接 addr2line。
+
+**Q:** faddr2line 和 addr2line 的区别？
+
+> faddr2line 是内核源码中的脚本（scripts/faddr2line），接受 "function+offset" 格式（如 "vfs_write+0xf4"），内部调用 addr2line + objdump。优势：自动处理符号查找和偏移计算，支持内联函数展开。addr2line 需要手动计算绝对地址。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch07 objdump](chapter-07-oops/notes/section-7-5.md)

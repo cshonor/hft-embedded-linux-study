@@ -86,4 +86,17 @@ echo 1 > /sys/kernel/slab/kmalloc-128/trace
 
 > F (Redzone/Fault): 在对象前后插入红区检测越界。Z (Zero): 分配时将对象清零。P (Poison): 释放时将对象填充毒值检测 UAF。三者组合提供基础的内存错误检测。T (Trace) 还可以追踪每个对象的分配/释放栈。
 
+
+**Q:** SLUB debug 的 redzone 如何检测越界访问？
+
+> redzone 在每个 slab 对象前后填充特殊字节（0xCC）。如果代码越界写入，redzone 被破坏。下次 slab 操作（alloc/free）时检查 redzone 完整性，发现损坏报告越界。局限：只在 slab 操作时检测，不实时。KASAN 实时检测更可靠。
+
+**Q:** SLUB debug 和 KASAN 同时使用会冲突吗？
+
+> 会部分冲突。两者都在对象周围加 redzone，可能重复。推荐：KASAN 启用时不额外启用 SLUB debug redzone（CONFIG_SLUB_DEBUG 的 F flag）。但 SLUB debug 的 poisoning（Z flag）和 tracking（T flag）仍可与 KASAN 配合。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/section-5-2.md)

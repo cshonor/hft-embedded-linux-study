@@ -58,4 +58,17 @@ echo 1 > events/enable
 
 > tracepoints 是**静态**的——开发者在代码中预埋的追踪点（`trace_sched_switch()`），性能开销极低（未启用时几乎为零）。kprobes 是**动态**的——可在任意函数入口插入探针，无需修改源码。tracepoints 数量有限（内核预定义），kprobes 灵活性更高但开销更大。
 
+
+**Q:** trace event 和 function tracer 的区别？
+
+> function tracer 追踪所有函数调用（粗粒度）。trace event 追踪特定事件（如 sched_switch, irq_handler_entry），携带结构化参数（如 prev_pid, next_pid, prev_state）。trace event 更精确且开销可控（只启用需要的事件）。
+
+**Q:** 如何查看某个 trace event 携带哪些字段？
+
+> `cat /sys/kernel/tracing/events/sched/sched_switch/format`。输出显示事件 ID 和字段布局（如 prev_comm[16], prev_pid[4], prev_prio[4], prev_state[4]）。这些字段可以在 filter 和 trigger 中使用。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 trace-cmd](chapter-09-ftrace/notes/section-9-5.md)

@@ -72,4 +72,13 @@ printk 的控制台输出（尤其是串口）可能阻塞数十毫秒。HFT 系
 
 > 默认每 5 秒 10 条消息。可通过 `/proc/sys/kernel/printk_ratelimit`（间隔秒数）和 `/proc/sys/kernel/printk_ratelimit_burst`（条数）修改。HFT 系统可设为 `0 0` 完全禁用速率限制（确保不丢失错误信息），或设为较大值减少输出。
 
+
+**Q:** printk_ratelimited() 和 printk_once() 的使用场景分别是什么？
+
+> printk_ratelimited()：限制单位时间内的打印次数，适合循环中可能大量触发的警告。printk_once()：整个系统生命周期只打印一次，适合启动时的一次性信息。HFT 调试中，对高频路径用 ratelimited 避免日志风暴。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch03 trace_printk](chapter-03-printk/notes/section-3-5.md)

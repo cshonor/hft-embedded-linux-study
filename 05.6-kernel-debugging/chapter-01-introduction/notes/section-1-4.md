@@ -32,4 +32,13 @@ HFT 生产环境可以用 KFENCE 替代 KASAN（开销从 ~50% 降到 ~1%），�
 
 > KASAN 为每个内存分配添加红区 (redzone) 并在每次访问时检查，开销约 50-100%，不适合生产。KFENCE 采用概率采样（默认每 100KB 采样一次），只对被采样的分配做严格检查，开销约 1%。KFENCE 以概率方式发现内存错误，是开发和生产之间的折中。
 
+
+**Q:** 如何在不重启的情况下切换 debug 内核和生产内核？
+
+> 用 kexec：预先加载 debug 内核到内存，生产内核崩溃时 kexec 跳转到 debug 内核分析。或用 Ksplice/Kpatch 做热补丁切换调试逻辑。但最简单可靠的方法仍然是重启切换内核 + kdump 保留崩溃现场。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 kdump](chapter-10-panic-lockup/notes/section-10-7.md)

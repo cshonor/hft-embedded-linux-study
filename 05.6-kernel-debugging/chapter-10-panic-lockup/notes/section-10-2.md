@@ -58,4 +58,17 @@ echo 0 > /proc/sys/kernel/soft_watchdog  # 禁用
 
 > HFT 内核模块可能在高优先级线程中执行长循环（如批量处理行情数据），如果禁用了抢占或持有自旋锁，CPU 无法调度其他任务。内核 watchdog 检测到 CPU 长时间未更新时间戳就报告 soft lockup。解决：在循环中定期调用 `cond_resched()` 或将工作拆分到下半部。
 
+
+**Q:** soft lockup 和 hard lockup 的区别是什么？分别由什么机制检测？
+
+> soft lockup：CPU 在内核态运行超过 20 秒未让出（schedule），由 watchdog hrtimer 检测（每个 CPU 有一个定时器检查）。hard lockup：CPU 中断被屏蔽超过 10 秒（连 NMI 都不响应），由 NMI watchdog 检测（利用 PMU 硬件计数器）。
+
+**Q:** soft lockup 阈值如何调整？HFT 系统应该设多少？
+
+> `echo 30 > /proc/sys/kernel/watchdog_thresh`（默认 10 秒，soft lockup 阈值 = 2×watchdog_thresh = 20 秒）。HFT 系统建议保持默认甚至降低到 5 秒——如果交易线程卡在内核态超过 10 秒一定是 bug，需要立即告警。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 hard lockup](chapter-10-panic-lockup/notes/section-10-3.md)

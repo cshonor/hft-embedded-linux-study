@@ -43,4 +43,17 @@ minicom -D /dev/ttyUSB0 -b 115200
 
 > 可以但有问题。Console 的 printk 输出会干扰 GDB 的二进制协议。建议用独立串口，或使用 `kgdboc` 时关闭 console 输出。树莓派 5 有 PL011 (ttyAMA0) 和 mini UART (ttyS0) 两个串口，可以分别用于 console 和 KGDB。
 
+
+**Q:** kgdboc 的 "oc" 代表什么？如何配置？
+
+> oc = Over Console，kgdboc 复用控制台串口做 KGDB 通信。配置：`kgdboc=ttyAMA0,115200` 内核启动参数。要求串口同时做控制台和 KGDB——通过 SysRq+g 切换到 KGDB 模式，GDB 连接后控制台暂停。
+
+**Q:** KGDB over USB serial 和 over network 哪个更适合 HFT？
+
+> 串口更可靠但慢（115200 baud ≈ 14KB/s）。网络快但需要网络栈工作（如果网络栈崩溃无法用）。HFT 开发用网络（快），生产崩溃分析用串口（可靠）。也可以用 USB serial（快 + 可靠）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch11 GDB connection](chapter-11-kgdb/notes/section-11-3.md)

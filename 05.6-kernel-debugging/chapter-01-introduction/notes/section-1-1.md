@@ -31,4 +31,18 @@
 
 > 内核错误会导致整个系统崩溃（Oops/Panic），无法像用户空间那样用 GDB 附加到进程。内核运行在最高特权级，没有安全网。内核代码庞大复杂，并发竞争难以复现。需要特殊工具（KGDB、ftrace、kprobes）而非标准 GDB。
 
+
+**Q:** Linux 内核调试和用户态调试最大的区别是什么？
+
+> 内核调试没有 GDB 的断点/单步（除非用 KGDB），因为内核本身是调试器的宿主。内核调试主要依赖日志（printk）、跟踪（ftrace）、运行时检查（KASAN/LOCKDEP）和崩溃分析（Oops/kdump）。用户态可以直接 attach GDB。
+
+**Q:** 生产环境内核和开发环境内核在调试能力上有什么取舍？
+
+> 生产内核通常关闭 DEBUG_INFO、LOCKDEP、KASAN 等调试选项以减少开销（KASAN 2-3x slowdown）。但保留 panic_on_oops、kdump、kmsg 以便崩溃后分析。开发内核开启所有调试选项，以最大概率暴露 bug。
+
 </details>
+
+## 交叉引用
+
+- [05-linux-kernel LKD Ch18 调试](../05-linux-kernel/)
+- [05.6 ch03 printk](chapter-03-printk/notes/section-3-1.md)

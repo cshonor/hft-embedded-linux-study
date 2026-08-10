@@ -54,4 +54,13 @@ kdb> kgdb
 
 > KGDB 模式（GDB 连接中）按 Ctrl+C 中断 GDB 连接，自动切到 KDB。KDB 模式输入 `kgdb` 命令切回 KGDB，等待 GDB 重新连接。切换不需要重启内核。
 
+
+**Q:** KDB 的 "go" 命令和 "cpu" 命令分别做什么？
+
+> go：退出 KDB 恢复内核运行。cpu N：切换到 CPU N 的上下文（查看其栈和寄存器）。在多核系统中 KGDB/KDB 默认停在触发 CPU，用 cpu 命令可以检查其他 CPU 状态。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch11 KGDB](chapter-11-kgdb/notes/section-11-1.md)

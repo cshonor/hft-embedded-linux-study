@@ -50,4 +50,13 @@ done
 
 > 使用 KFENCE 做运行时采样检测（开销 ~1%），配合非交易时段的 kmemleak 定期扫描。通过 /proc/meminfo 和 /proc/slabinfo 趋势监控内存增长。不使用 KASAN 和 SLUB debug（开销过大）。
 
+
+**Q:** HFT 生产环境应该启用哪些内存调试工具？
+
+> 仅 KFENCE（开销 <1% CPU）。KASAN 太重（2-3x slowdown），LOCKDEP 也重（~200ns/lock op）。KFENCE 的采样模式（1/100）在生产中几乎无感知，但仍能捕获偶发的越界/UAF。如果发现问题，切换到 staging 环境启用 KASAN 深入排查。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/section-6-1.md)

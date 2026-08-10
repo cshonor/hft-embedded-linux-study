@@ -60,4 +60,13 @@ HFT 自定义 PCIe 设备驱动应统一使用 `dev_dbg()`，在日志中自动�
 
 > 是消息分类 (msglevel)。网络子系统支持按分类过滤消息：drv（驱动）、probe（探测）、link（链路）、ifdown（接口关闭）等。通过 `ethtool -s eth0 msglevel drv on` 动态控制。比 dyndbg 更细粒度但仅适用于网络设备。
 
+
+**Q:** dev_dbg() 在未启用 Dynamic Debug 时是否有开销？
+
+> 几乎无开销——编译为空语句（if 0 分支被编译器优化掉）。只有 CONFIG_DYNAMIC_DEBUG=y 时 dev_dbg 才实际执行。这是 dev_dbg 相比 printk(KERN_DEBUG) 的优势：零开销时完全消除。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch03 dynamic debug](chapter-03-printk/notes/section-3-3.md)

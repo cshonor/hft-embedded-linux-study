@@ -37,4 +37,13 @@ echo 1 > /sys/module/hangcheck_timer/parameters/hangcheck_reboot  # 挂死时重
 
 > Watchdog 依赖内核线程和 hrtimer，如果内核完全挂死（如死锁导致调度器停止），watchdog 线程无法运行。Hangcheck 使用硬件定时器（独立于内核调度），即使内核完全挂死也能触发中断，确保检测到挂死。
 
+
+**Q:** hangcheck timer 和 watchdog 的区别是什么？
+
+> watchdog 是内核内建机制，检测 CPU 卡住。hangcheck timer 是外部模块，用于检测系统整体无响应（包括 I/O 卡死等）。HFT 系统可两者都用——watchback 检测 CPU 卡死，hangcheck 检测 I/O 路径卡死。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 watchdog](chapter-10-panic-lockup/notes/section-10-4.md)

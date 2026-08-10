@@ -87,4 +87,13 @@ echo > /sys/kernel/debug/tracing/kprobe_events
 
 > 单次 kprobe 触发的开销约 1-5μs（断点异常 + 保存上下文 + 回调 + 单步执行 + 恢复）。对于高频函数（如 schedule、timer），可能显著影响性能。如果需要更低开销，考虑 ftrace function tracer（约 100-300ns）或 eBPF（约 50-100ns）。
 
+
+**Q:** kprobe 的 pre_handler 和 post_handler 分别在什么时候执行？
+
+> pre_handler：在原始指令执行**之前**调用，可以检查入参寄存器。post_handler：在原始指令执行**之后**调用，可以检查返回值寄存器。对于函数入口的 kprobe，pre_handler 拿到的是参数，post_handler 拿不到返回值（函数还没返回）。要拿返回值用 kretprobe。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 kretprobe](chapter-04-kprobes/notes/section-4-3.md)

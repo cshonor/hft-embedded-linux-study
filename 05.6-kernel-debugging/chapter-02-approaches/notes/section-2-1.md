@@ -27,4 +27,18 @@
 
 > Heisenbug 指添加调试代码后 bug 消失的现象（类比海森堡测不准原理）。内核中常见因为：1) 调试代码改变了时序，掩盖了竞争条件；2) printk 序列化输出改变并发行为；3) 编译器优化在调试模式下不同。应使用 ftrace 等无侵入工具减少副作用。
 
+
+**Q:** 内核调试中最难的问题类型是什么？为什么？
+
+> 竞态条件（race condition）最难——依赖特定时序，难以复现。其次是内存损坏（memory corruption）——症状出现在远离 root cause 的地方。应对：竞态用 LOCKDEP/KCSAN，内存损坏用 KASAN/KFENCE。
+
+**Q:** 为什么 "增加 printk 后 bug 消失" 是常见的调试困境？
+
+> printk 改变时序——额外的 I/O 操作延迟改变了竞态窗口。这本质是 Heisenbug。解决：用 trace_printk（写入 trace buffer 不做 I/O）或 ftrace function tracer（不修改源码）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch03 trace_printk](chapter-03-printk/notes/section-3-5.md)
+- [05.6 ch09 ftrace](chapter-09-ftrace/notes/section-9-2.md)

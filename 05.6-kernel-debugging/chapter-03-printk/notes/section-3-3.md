@@ -80,4 +80,17 @@ dyndbg 是 HFT 内核模块调试的**核心工具**——不需要重编译，�
 
 > 通过内核命令行参数：`my_module.dyndbg=+p` 或 `ddebug_query="file my_driver.c +p"`。也可以在 `/etc/modprobe.d/my_module.conf` 中设置 `options my_module dyndbg=+p`。
 
+
+**Q:** Dynamic Debug 的 +p 和 _p flag 有什么区别？
+
+> +p 启用打印，-p 禁用。_p 是"如果当前已启用则保持启用"，用于条件追加。例如 `echo "file:mm/slub.c +p" > control` 启用 slub.c 中所有 pr_debug。`echo "file:mm/slub.c _p" > control` 只在已启用的情况下保持。
+
+**Q:** dev_dbg() 和 pr_debug() 有什么区别？什么时候用哪个？
+
+> dev_dbg() 关联到 device 结构体，输出包含设备名（如 "my_device: message"）。pr_debug() 无设备关联。驱动代码中用 dev_dbg()，通用内核代码用 pr_debug()。两者都受 Dynamic Debug 控制。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch03 dev_dbg](chapter-03-printk/notes/section-3-4.md)

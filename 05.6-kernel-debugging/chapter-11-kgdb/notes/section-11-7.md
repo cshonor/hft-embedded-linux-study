@@ -62,4 +62,13 @@ QEMU + KGDB 适合开发期调试内核模块——不需要每次部署到树�
 
 > QEMU 通过 TCP 连接 GDB（无需物理串口线），可以从第一条内核指令开始调试（包括 head.S 汇编启动代码），支持快照回放（复现并发 bug），且在开发机上完成（无需切换设备）。缺点是性能不真实，无法测试真实硬件 I/O 延迟。
 
+
+**Q:** QEMU + KGDB 相比物理机 KGDB 有什么优势？
+
+> (1) 快照/回放：QEMU 可以保存和恢复 VM 状态，方便复现 bug；(2) GDB stub 内置：QEMU 自带 GDB remote stub，不需要 KGDB 内核支持；(3) 无需串口硬件；(4) 可以模拟 ARM64/x86/RISC-V 多种架构。劣势：无法测试真实硬件行为（DMA/中断时序）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch11 KGDB](chapter-11-kgdb/notes/section-11-1.md)

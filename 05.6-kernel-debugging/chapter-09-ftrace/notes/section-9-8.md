@@ -53,4 +53,17 @@ bpftrace -e 'tracepoint:sched:sched_switch { @[args->next_comm] = count(); }'
 
 > eBPF 提供更灵活的数据处理（map 聚合、直方图、条件逻辑）、更低的开销（JIT 编译）、更好的安全性（验证器）。Ftrace 的预定义 tracer 功能固定，无法自定义聚合逻辑。但 Ftrace 仍然是 eBPF 的底层基础——eBPF 的 kprobe/tracepoint 机制复用了 Ftrace 的基础设施。
 
+
+**Q:** ftrace 和 eBPF 在内核追踪中的定位分别是什么？
+
+> ftrace：内核内建，零依赖，适合快速函数追踪和事件记录。eBPF：可编程，适合复杂条件过滤、聚合统计、自定义分析。简单追踪用 ftrace（上手快），复杂分析用 eBPF（灵活强）。两者可以共存——eBPF 可以 attach 到 ftrace 的 tracepoint。
+
+**Q:** HFT 延迟分析应该用 ftrace 还是 eBPF？
+
+> 初步定位用 ftrace function_graph（快速看调用链和时间分布）。深入分析用 eBPF（如统计某函数的延迟直方图、过滤特定条件）。ftrace 的 function_graph 对 HFT 最重要的用途是找到交易路径上的调度延迟和锁等待。
+
 </details>
+
+## 交叉引用
+
+- [17-bpf-observability](../17-bpf-observability/)

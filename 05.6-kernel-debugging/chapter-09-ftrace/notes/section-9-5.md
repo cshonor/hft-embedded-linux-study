@@ -48,4 +48,13 @@ trace-cmd record -e sched_switch -f 'prev_pid == 1234' sleep 5
 
 > 用 `trace-cmd report trace.dat` 转为可读文本。也可以用 KernelShark（GUI 工具）打开 .dat 文件进行可视化分析。trace-cmd 的 .dat 格式是二进制的，包含完整的事件数据和元数据。
 
+
+**Q:** trace-cmd record 和直接操作 tracefs 相比有什么优势？
+
+> trace-cmd 封装了 tracefs 操作流程（选 tracer → 设 filter → 启动 → 停止 → 导出），一条命令完成。还支持多事件同时记录、自动保存元数据。结果用 trace-cmd report 查看，或用 KernelShark GUI 分析。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 KernelShark](chapter-09-ftrace/notes/section-9-6.md)

@@ -84,4 +84,17 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
 
 > 当 slab 对象被 kfree 释放时，KASAN 将其影子内存标记为 0xFB (freed)。如果后续代码访问该地址，KASAN 检查影子值发现是 0xFB，报告 use-after-free。KASAN 还会延迟 slab 对象的实际回收（quarantine 隔离区），确保 UAF 不会被新分配掩盖。
 
+
+**Q:** KASAN 的 quarantine（隔离区）是什么？为什么需要？
+
+> quarantine 延迟 slab 对象的实际回收。释放后对象标记为 0xFB 但不立即放回 slab freelist，先进入 quarantine 队列。这样如果 UAF 发生，KASAN 能检测到。没有 quarantine，释放的对象可能被立即重新分配，UAF 访问到新对象不会报错。
+
+**Q:** KASAN_INLINE 和 KASAN_OUTLINE 的区别？HFT 调试应该选哪个？
+
+> INLINE：检查代码内联到每次内存访问，快但镜像大。OUTLINE：检查代码是函数调用，小但慢。HFT 调试选 INLINE（更快，减少调试时的时序偏差）。生产环境不用 KASAN（开销太大）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 SLUB debug](chapter-05-memory-debug-1/notes/section-5-4.md)

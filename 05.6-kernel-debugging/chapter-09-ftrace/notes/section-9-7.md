@@ -44,4 +44,13 @@ cd perf-tools/bin
 
 > trace-cmd 是 tracefs 的完整封装，支持所有 ftrace 功能但接口较复杂。perf-tools 是高层封装，提供常用场景的一键脚本（如 funclatency 直接输出直方图），更易用但功能有限。快速分析用 perf-tools，深度分析用 trace-cmd。
 
+
+**Q:** perf-tools（Brendan Gregg）中的 perf-tools 对 ftrace 做了什么封装？
+
+> perf-tools 是一组 shell 脚本，封装了常用 ftrace 操作为易用工具。如 `funcgraph schedule` = 设置 function_graph + 过滤 schedule + 运行 + 停止 + 格式化输出。`kprobe -s 'tcp_sendmsg'` = 自动创建 kprobe + 提取参数 + 显示调用栈。降低了 ftrace 的使用门槛。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 ftrace vs eBPF](chapter-09-ftrace/notes/section-9-8.md)

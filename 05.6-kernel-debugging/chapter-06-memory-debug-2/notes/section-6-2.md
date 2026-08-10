@@ -55,4 +55,14 @@
 
 > kmemleak 扫描时需要遍历所有内存查找指针引用，扫描期间可能暂停内存分配（RCU 停顿），导致延迟毛刺。建议在非交易时段（如收盘后）手动触发扫描，而非默认的每 10 分钟自动扫描。
 
+
+**Q:** KASAN + KFENCE + SLUB debug 三者如何组合使用？
+
+> 开发环境：KASAN + SLUB debug（poison + tracking）+ KFENCE 全开，最大化检测覆盖。测试环境：KASAN + KFENCE（采样）。生产环境：仅 KFENCE（开销 <1%），不启用 KASAN。注意 KASAN 和 SLUB redzone 重叠时以 KASAN 为主。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/section-5-2.md)
+- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/section-6-1.md)

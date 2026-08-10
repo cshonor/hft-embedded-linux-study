@@ -76,4 +76,18 @@ sudo bpftrace -e 'kprobe:__kmalloc { @[comm] = count(); }'
 
 > eBPF 程序经 JIT 编译为原生指令，在 kprobe 回调中直接执行，无需保存/恢复完整寄存器上下文（验证器保证安全）。kprobes 内核模块需要完整的异常处理流程（保存所有寄存器 → 回调 → 单步执行原始指令 → 恢复）。eBPF 开销约 50-100ns vs kprobes 1-5μs。
 
+
+**Q:** kprobes 和 eBPF 在性能监控场景中如何选择？
+
+> kprobes 适合精确的函数级追踪（拿参数/返回值），但开销较大（~100-500ns/probe hit）。eBPF 适合聚合统计（如统计调用次数/延迟分布），运行时编译为原生码，开销更小（~50-100ns）。需要实时每条调用信息用 kprobes + ftrace，需要统计聚合用 eBPF + perf。
+
+**Q:** eBPF 能完全替代 kprobes 吗？
+
+> 不能完全替代。eBPF 的 kprobe/kretprobe attach 底层仍用 kprobes 机制。eBPF 在 kprobes 之上提供安全沙箱和聚合能力，但断点注入和 out-of-line execution 仍由 kprobes 提供。eBPF 还可以 attach 到 tracepoint、perf event、XDP 等更多 hook 点。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch09 ftrace vs eBPF](chapter-09-ftrace/notes/section-9-8.md)
+- [17-bpf-observability](../17-bpf-observability/)

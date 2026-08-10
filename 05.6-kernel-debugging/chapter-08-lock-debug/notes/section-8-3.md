@@ -76,4 +76,13 @@ void func2(void) {
 
 > 递归锁需要记录持有者（哪个线程持有）和递归计数，增加开销。自旋锁设计为极低开销（通常 1-2 条原子指令），递归锁的开销违背了这一目标。内核要求开发者通过正确的代码结构避免重入，而非依赖递归锁。
 
+
+**Q:** LOCKDEP 如何检测 "在 spinlock 中睡眠" 的 bug？
+
+> LOCKDEP 维护当前 CPU 持有的锁链表。当调用 `might_sleep()`（schedule/mutex_down 等会睡眠的函数内部调用）时，LOCKDEP 检查当前是否持有 spinlock，如果是则报告 "scheduling while atomic"。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/section-8-2.md)

@@ -29,4 +29,14 @@
 
 > ftrace 无侵入——不改变时序、不需重编译、可动态开关。printk 会序列化输出改变时序（可能掩盖竞争条件），且需要重新编译代码修改打印点。先用 ftrace 了解整体调用流程，再用 kprobes/printk 在精确定位后深入。
 
+
+**Q:** 插桩（instrumentation）和采样（sampling）调试有什么区别？
+
+> 插桩在代码中插入检查点（kprobes/ftrace），精确但开销大。采样周期性检查状态（perf stat/PMU），开销低但可能错过事件。内核调试中插桩用于精确追踪，采样用于性能分析。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch04 kprobes](chapter-04-kprobes/notes/section-4-1.md)
+- [05.6 ch09 ftrace](chapter-09-ftrace/notes/section-9-1.md)

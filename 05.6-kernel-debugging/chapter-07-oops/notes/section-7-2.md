@@ -67,4 +67,17 @@
 
 > pstate 是处理器状态寄存器。`N=1` (负标志), `z=0`, `c=0`, `v=0` (条件标志), `daif=0` (中断未禁用), `+PAN` (特权访问禁止), `-UAO` (用户访问覆盖关闭)。这些标志帮助判断崩溃时的 CPU 状态（如中断是否禁用）。
 
+
+**Q:** Oops 中的 Call Trace 为什么有时不完整（只有几行）？
+
+> 原因：(1) 栈被破坏（栈溢出/踩踏），无法回溯；(2) 编译优化省略帧指针（CONFIG_FRAME_POINTER=n），导致无法回溯；(3) 内联函数没有独立栈帧。解决：启用 CONFIG_FRAME_POINTER=y + CONFIG_UNWINDER_FRAME_POINTER=y。
+
+**Q:** Oops 中的 "PC is at function+0x3c/0x100" 如何解读？
+
+> PC（程序计数器）当前在 function 函数内，偏移 0x3c 字节，函数总大小 0x100 字节。用 addr2line 或 faddr2line 可以定位到具体源码行。偏移/总大小 也可以估算函数内位置（0x3c/0x100 ≈ 23% 处）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch07 addr2line](chapter-07-oops/notes/section-7-4.md)

@@ -60,4 +60,13 @@ HFT 生产环境: `panic_on_oops=1` + `panic=5` + `panic_print=1` — Oops 后 5
 
 > HFT 内核模块 Oops 后系统状态不确定（可能数据结构损坏）。如果不 panic 继续运行，可能产生错误交易。设为 1 确保系统重启到干净状态，配合 `panic=5` 快速恢复。
 
+
+**Q:** panic 后内核做了哪些事情？
+
+> (1) 设置 panic 进程名到 panic_msg；(2) 打印 panic 信息和调用栈；(3) 打印所有 CPU 的栈（SysRq+t 或 crash_kexec）；(4) 如果配置了 kdump，kexec 跳转到 crash kernel；(5) 否则进入 panic blink/ reboot（根据 panic_timeout）。
+
 </details>
+
+## 交叉引用
+
+- [05.6 ch10 kdump](chapter-10-panic-lockup/notes/section-10-7.md)
