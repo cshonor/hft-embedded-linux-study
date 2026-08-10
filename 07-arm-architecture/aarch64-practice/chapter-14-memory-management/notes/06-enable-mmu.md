@@ -4,60 +4,129 @@
 
 ## 本节讲什么
 
-开启 MMU 的完整步骤：设 MAIR → 设 TCR → 设 TTBR → clean cache → 设 SCTLR.M=1 → ISB。开 MMU 前必须有恒等映射（VA=PA）保证取指继续。
+开启 MMU 的完整步骤：设 MAIR → 设 TCR → 设 TTBR → clean cache → 设 SCTLR.M=1 → ISB。开 MMU 前必须有恒等映射（VA=PA）保证取指继续。这是裸金属系统从物理地址切换到虚拟地址的关键步骤。
 
 ## 核心要点
 
-### 开 MMU 代码
+### 开 MMU 完整代码
 
 ```asm
 setup_mmu:
-    // 1. 设置 MAIR_EL1
-    ldr x0, =mair_value
-    msr MAIR_EL1, x0
+    // 0. 确保已有恒等映射页表（VA=PA）
+    //    在链接脚本中预留页表区域
+    adrp x0, l0_table         // L0 页表基址
 
-    // 2. 设置 TCR_EL1（VA 宽度、walk 等）
-    ldr x0, =tcr_value
-    msr TCR_EL1, x0
+    // 1. 设置 MAIR_EL1（内存属性表）
+    ldr x1, =mair_value
+    msr MAIR_EL1, x1
+    // mair_value = (0x44 << 0) | (0xFF << 8) | (0x00 << 16)
+    //              Normal-NC  Normal-WB  Device-nGnRnE
+
+    // 2. 设置 TCR_EL1（VA 宽度、walk cache 属性）
+    ldr x1, =tcr_value
+    msr TCR_EL1, x1
+    // tcr_value: T0SZ=16 | T1SZ=16 | IRGN0=WB | ORGN0=WB | SH0=Inner
 
     // 3. 设置 TTBR0_EL1（页表基址）
+    //    恒等映射使用 TTBR0（低地址空间）
     adrp x0, l0_table
     msr TTBR0_EL1, x0
 
-    // 4. 刷新 cache（如果页表写在 cacheable 区域）
-    dc  civac, x0          // clean+invalidate
-    dsb sy
+    // 4. 刷新 cache（页表写在 cacheable 区域时）
+    //    确保页表已写回内存，MMU walker 能读到最新值
+    adrp x0, l0_table
+    dc  civac, x0              // clean + invalidate
+    dsb sy                     // 等待写回完成
 
-    // 5. 开 MMU（SCTLR.M=1）
+    // 5. 开 MMU（SCTLR_EL1.M=1）
     mrs x0, SCTLR_EL1
-    orr x0, x0, #1         // M bit
+    orr x0, x0, #1             // M bit = 1 (开 MMU)
     msr SCTLR_EL1, x0
-    isb                     // 必须跟 ISB
+    isb                         // 必须跟 ISB！冲刷流水线
 
     // 6. 此时 PC 还是物理地址
-    //    必须有恒等映射（VA=PA）保证取指继续
+    //    恒等映射保证取指继续
+    //    后续可以跳转到虚拟地址
+
+    // 7. （可选）开 D-Cache
+    mrs x0, SCTLR_EL1
+    orr x0, x0, #4             // C bit = 1 (开 D-Cache)
+    msr SCTLR_EL1, x0
+    isb
 ```
 
 ### 恒等映射（Identity Mapping）
 
 ```
 开 MMU 前：PC = 0x60000000（物理地址）
-开 MMU 后：MMU 翻译 0x60000000 → 需要页表映射 VA=0x60000000 → PA=0x60000000
+           CPU 直接用物理地址取指
+
+开 MMU 后：CPU 取指需要通过 MMU 翻译 VA → PA
+           页表中必须有 VA=0x60000000 → PA=0x60000000
+           否则第一条指令就 page fault → 死机
+
+恒等映射：VA = PA（同一地址值映射到自己）
+           开 MMU 后 PC 所在的页必须有恒等映射
 ```
 
-> 如果没有恒等映射，开 MMU 后第一条指令取指就 page fault。
-> Linux `head.S` 也是先建恒等映射再开 MMU。
+```
+链接脚本中的恒等映射区域：
+  . = 0x60000000;           // 代码加载在物理地址 0x60000000
+  .text : { *(.text) }      // 同时 VA=0x60000000（恒等映射）
+
+  页表区域：
+  . = ALIGN(4096);
+  l0_table : { *(.l0_table) }  // 4KB L0 页表
+```
+
+### SCTLR_EL1 关键位
+
+| 位 | 名称 | 说明 |
+|----|------|------|
+| M | MMU 使能 | 0=关 MMU（物理地址直接使用），1=开 MMU |
+| C | D-Cache 使能 | 0=关 D-Cache，1=开 D-Cache（必须 M=1 后才能开） |
+| I | I-Cache 使能 | 0=关 I-Cache，1=开 I-Cache（可独立于 M 开启） |
+| A | Alignment Check | 0=不对齐不检查，1=严格对齐检查 |
+| SA | SP Alignment Check | 0=不检查 SP 对齐 |
 
 ### 步骤总结
 
-| 步骤 | 寄存器 | 作用 | 必须性 |
-|------|--------|------|--------|
-| 1 | MAIR_EL1 | 内存属性表 | 必须 |
-| 2 | TCR_EL1 | VA 宽度/cache 属性 | 必须 |
-| 3 | TTBR0/1_EL1 | 页表基址 | 必须 |
-| 4 | dc civac | 清页表 cache | 如果页表在 cacheable 区域 |
-| 5 | SCTLR_EL1.M=1 | 开 MMU | 必须 |
-| 6 | ISB | 冲刷流水线 | **必须** |
+| 步骤 | 寄存器 | 作用 | 必须性 | 忘记的后果 |
+|------|--------|------|--------|----------|
+| 1 | MAIR_EL1 | 内存属性表 | 必须 | 所有内存属性错误 |
+| 2 | TCR_EL1 | VA 宽度/cache 属性 | 必须 | 页表 walk 异常 |
+| 3 | TTBR0/1_EL1 | 页表基址 | 必须 | MMU 找不到页表 |
+| 4 | dc civac | 清页表 cache | 如果页表在 cacheable 区域 | MMU 读旧页表 |
+| 5 | SCTLR_EL1.M=1 | 开 MMU | 必须 | — |
+| 6 | ISB | 冲刷流水线 | **必须** | 流水线行为不可预测 |
+
+### 开 MMU 前后的状态变化
+
+```
+开 MMU 前：
+  - 所有地址是物理地址
+  - CPU 直接访问物理内存
+  - 没有 cache 属性控制（全部不可缓存）
+  - 没有访问权限控制
+  - 没有 VA/PA 转换
+
+开 MMU 后：
+  - 所有地址通过 MMU 翻译
+  - CPU 使用虚拟地址
+  - 页表项的 AttrIndx 控制 cache 属性
+  - AP 控制访问权限
+  - TLB 缓存翻译结果
+```
+
+### Linux head.S 中的 MMU 开启流程
+
+Linux 内核启动时的 MMU 开启流程：
+1. 先在汇编中建立恒等映射 + 内核映射
+2. 设 MAIR_EL1, TCR_EL1, TTBR_EL1
+3. clean cache
+4. 设 SCTLR.M=1 + ISB
+5. 跳转到虚拟地址（_primary_entry 的虚拟地址）
+6. 后续可以删除恒等映射
 
 ## HFT 关联
 
@@ -87,6 +156,16 @@ ISB 冲刷流水线，确保后续指令在 MMU 开启后的新状态下**重新
 <summary>答案</summary>
 
 页表写在 cacheable 区域时，新写的页表项可能还在 D-cache 中，没有写回内存。MMU walker 从内存读页表 → 读到旧值 → 翻译错误。`dc civac` 强制写回 + 作废，确保内存中的页表是最新的。如果不 clean，MMU 可能用旧页表翻译，导致 page fault 或访问错误地址。
+</details>
+
+4. **为什么建议先开 MMU 再开 D-Cache？**
+
+<details>
+<summary>答案</summary>
+
+先开 MMU 确认页表正确，再开 D-Cache。如果先开 D-Cache：1) MMU 还没开，cache 属性由默认配置控制，可能不符合预期；2) 如果页表属性设置错误（如 MMIO 被标记为 cacheable），开 D-Cache 会导致 MMIO 读写被缓存 → 行为未定义。先开 MMU → 验证页表正确 → 再开 D-Cache → 安全。
+
+I-Cache 可以独立开启（SCTLR.I），因为它不受 MMU 控制，可以在开 MMU 前就开。
 </details>
 
 ## 参考与延伸
