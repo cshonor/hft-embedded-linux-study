@@ -50,25 +50,123 @@ prev 进程                     next 进程
    │   RET ──────────────────────→│ 恢复执行！
    │                              │
    │ (被挂起)                      │ 继续运行...
+   │                              │
+   │   ... 下次被调度 ...          │ 调用 schedule()
+   │ ←──────────────── RET ───────│ switch_to(next, prev)
+   │ 恢复执行！                    │ (被挂起)
 ```
 
 > **核心：** 切换 SP + callee-saved + LR。RET 后自然跳到 next 上次被切走时的位置。
 
-### 关键细节
+### 寄存器保存/恢复明细
 
-| 操作 | 寄存器 | PCB 偏移 |
-|------|--------|----------|
-| 保存 X19-X20 | STP | #0 |
-| 保存 X21-X22 | STP | #16 |
-| ... | ... | ... |
-| 保存 X27-X28 | STP | #64 |
-| 保存 FP (X29) | STR | #80 |
-| 保存 LR (X30) | STR | #88 |
-| 保存 SP | STR | #96 |
+| 操作 | 寄存器 | PCB 偏移 | 指令 | 周期 |
+|------|--------|----------|------|------|
+| 保存 X19-X20 | STP | #0 | stp x19,x20,[x0,#0] | 1-2 |
+| 保存 X21-X22 | STP | #16 | stp x21,x22,[x0,#16] | 1-2 |
+| 保存 X23-X24 | STP | #32 | stp x23,x24,[x0,#32] | 1-2 |
+| 保存 X25-X26 | STP | #48 | stp x25,x26,[x0,#48] | 1-2 |
+| 保存 X27-X28 | STP | #64 | stp x27,x28,[x0,#64] | 1-2 |
+| 保存 FP | STR | #80 | str x29,[x0,#80] | 1 |
+| 保存 LR | STR | #88 | str x30,[x0,#88] | 1 |
+| 保存 SP | STR | #96 | str x2,[x0,#96] | 1 |
+| 加载 X19-X28 | LDP×5 | #0-64 | ldp x19,x20,[x1,#0] | 1-2×5 |
+| 加载 FP | LDR | #80 | ldr x29,[x1,#80] | 1 |
+| 加载 LR | LDR | #88 | ldr x30,[x1,#88] | 1 |
+| 加载 SP | LDR+MOV | #96 | ldr x2; mov sp,x2 | 2 |
+| 跳转 | RET | — | ret | 2-3 |
+
+**总计：~26 条指令，~25-35 周期（直接开销）**
+
+### 直接开销 vs 间接开销
+
+| 类型 | 内容 | 开销 | 可优化？ |
+|------|------|------|---------|
+| **直接** | 保存/恢复寄存器 + RET | ~25-35ns | 不可减（寄存器必须保存） |
+| **直接** | TLB 切换（用户态进程） | ~100-200ns | ASID 减少刷新 |
+| **间接** | cache cold miss | 1-10μs | 预热、绑核 |
+| **间接** | TLB 重建 | 100-500ns | 大页减少 TLB 条目 |
+| **间接** | branch predictor 预热 | 50-200ns | 不可避免 |
+| **总计** | 典型上下文切换 | 2-5μs | — |
+
+> **关键洞察：** 间接开销是直接开销的 100-1000 倍。HFT 优化的重点是减少切换频率，而非加速切换本身。
+
+### 切换时机的完整分析
+
+```
+进程 A 运行中
+    │
+    ├── 1. 定时器中断 → 检查时间片 → 用完 → schedule()
+    │      (抢占式切换，最常见)
+    │
+    ├── 2. 主动调用 schedule() / yield()
+    │      (协作式切换，等IO/sleep)
+    │
+    ├── 3. 中断处理返回 → need_resched == true → schedule()
+    │      (高优先级进程就绪)
+    │
+    ├── 4. 等待信号量/mutex → sleep → schedule()
+    │      (阻塞式切换)
+    │
+    └── 5. 系统调用阻塞 (read/recv) → schedule()
+           (IO 等待)
+```
 
 ## HFT 关联
 
-上下文切换是 HFT 最大的延迟抖动来源之一。一次 `switch_to` 的直接开销约 1-3μs（保存/恢复寄存器 + cache 预热），但**间接开销**（cache/TLB 污染）可能高达 10-50μs。HFT 策略：(1) `SCHED_FIFO` 实时调度 + `isolcpus` 隔离核，减少被抢占；(2) `mlockall` 锁定内存，避免换页导致的上下文切换；(3) 绑核 + NOHZ_FULL 减少定时器中断。测量切换开销可用 `perf sched` 或自定义测量：在 schedule 前后读 `cntvct_el0` 计数器。
+上下文切换是 HFT 最大的延迟抖动来源之一。一次 `switch_to` 的直接开销约 1-3μs（保存/恢复寄存器 + cache 预热），但**间接开销**（cache/TLB 污染）可能高达 10-50μs。
+
+```c
+// HFT 减少上下文切换的完整策略
+void hft_setup_realtime(int cpu) {
+    // 1. 绑核（独占一个核）
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    sched_setaffinity(0, sizeof(cpuset), &cpuset);
+
+    // 2. 实时调度（最高优先级）
+    struct sched_param param = { .sched_priority = 99 };
+    sched_setscheduler(0, SCHED_FIFO, &param);
+
+    // 3. 锁定内存（禁止换页）
+    mlockall(MCL_CURRENT | MCL_FUTURE);
+
+    // 4. 设置栈预分配（避免缺页）
+    volatile char stack_guard[64 * 1024];
+    memset((void *)stack_guard, 0, sizeof(stack_guard));
+
+    // 5. 关闭内核干扰（需 root）
+    // cmdline: isolcpus=2 nohz_full=2 rcu_nocbs=2
+}
+
+// 测量上下文切换开销
+static inline uint64_t cntvct(void) {
+    uint64_t val;
+    asm volatile("mrs %0, cntvct_el0" : "=r"(val));
+    return val;
+}
+
+void measure_switch_overhead() {
+    uint64_t start, end;
+    start = cntvct();
+    sched_yield();  // 主动让出 → 触发切换
+    end = cntvct();
+    uint64_t cycles = end - start;
+    double ns = (double)cycles / 
+                (double)(cntfrq / 1000000);  // cntfrq = ticks/sec
+    printf("Context switch: %lu cycles = %.0f ns\n", cycles, ns);
+}
+```
+
+| HFT 优化手段 | 减少的开销 | 命令/API |
+|-------------|-----------|---------|
+| SCHED_FIFO | 抢占式切换 | sched_setscheduler |
+| isolcpus | 定时器中断开销 | 内核启动参数 |
+| nohz_full | 调度时钟中断 | 内核启动参数 |
+| mlockall | 换页导致的切换 | mlockall |
+| 绑核 | cache/TLB 污染 | sched_setaffinity |
+| 预分配栈 | 缺页中断 | memset 触摸页面 |
 
 ## 自测题
 

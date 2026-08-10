@@ -13,39 +13,177 @@ Ch23 的 SVE 实验在 QEMU+ARM64 Linux 上完成，包括 RGB 转换、矩阵�
 | 实验 | 内容 | 平台 | 关键知识点 |
 |------|------|------|-----------|
 | 23-1 | RGB24→BGR32（SVE 优化） | SVE | gather/scatter、谓词 |
-| 23-2 | 8×8 矩阵乘法运算 | SVE | FMLA 向量化、谓词尾部处理 |
+| 23-2 | 8×8 矩阵乘法运算 | SVE | FMLA 向量化、谓词尾部 |
 | 23-3 | 用 SVE 优化 strcpy() | SVE | 谓词检测 '\0'、批量操作 |
 
 ### 实验环境
 
-> SVE 实验可在 QEMU+ARM64 Linux 上完成。Pi5 的 Cortex-A76 支持 SVE2。
-
 ```bash
-# QEMU 启动 ARM64 Linux with SVE
+# 方法1: QEMU 模拟 SVE
 qemu-system-aarch64 -M virt -cpu max -smp 2 -m 2G \
     -kernel Image -append "root=/dev/vda" \
     -drive file=rootfs.img,format=raw
 
+# 方法2: QEMU 指定 SVE 向量长度
+qemu-system-aarch64 -M virt -cpu max,sve256=on \
+    -smp 2 -m 2G -kernel Image ...
+
+# 方法3: Pi5 原生 SVE2（Cortex-A76）
+# 直接在 Pi5 上编译运行
+
 # 检查 SVE 支持
-cat /proc/cpuinfo | grep Features | grep sve
+cat /proc/cpuinfo | grep Features | grep -o sve
+cat /proc/cpuinfo | grep Features | grep -o sve2
+
+# 检查 SVE 向量长度
+# 用户态通过 prctl(PR_SVE_GET_VL)
+python3 -c "import ctypes; ..."
+# 或直接运行 SVE 代码打印 svcntb()
 ```
 
-### 实验 23-1 要点
+### 实验 23-1：RGB→BGR（SVE 版本）
 
 对比 NEON LD3 和 SVE gather 的 RGB→BGR 转换：
-- NEON：LD3 交错加载 + ST3 交错存储
-- SVE：gather 加载 + 谓词控制 + scatter 存储
 
-### 实验 23-3 要点
+```c
+// SVE 版本 RGB→BGR
+#include <arm_sve.h>
+void rgb_to_bgr_sve(const uint8_t *src, uint8_t *dst, int64_t n) {
+    int64_t i = 0;
+    svbool_t pg = svwhilelt_b8_s64(i, n);
 
-SVE strcpy 优化思路与 strcmp 类似：
-- 一次加载一个向量的字节
-- 用谓词检测 '\0' 位置
-- 用 `svst1_scatter_u8index` 选择性存储
+    while (svptest_first(svptrue_b8(), pg)) {
+        // 加载 R 通道
+        svuint8_t r = svld1_gather_offset_u8(pg, src + i, 0);
+        // 加载 G 通道
+        svuint8_t g = svld1_gather_offset_u8(pg, src + i, 1);
+        // 加载 B 通道
+        svuint8_t b = svld1_gather_offset_u8(pg, src + i, 2);
+
+        // 交换 R 和 B，用 scatter 存回
+        svst1_scatter_offset_u8(pg, dst + i, 0, b);
+        svst1_scatter_offset_u8(pg, dst + i, 1, g);
+        svst1_scatter_offset_u8(pg, dst + i, 2, r);
+
+        i += svcntb() * 3;
+        pg = svwhilelt_b8_s64(i, n);
+    }
+}
+
+// NEON LD3 版本（对比）
+// LD3 自动解交织 + ST3 自动交织
+// 比 SVE gather/scatter 更高效（固定模式）
+```
+
+### 实验 23-2：8×8 矩阵乘法（SVE 版本）
+
+```c
+#include <arm_sve.h>
+// SVE 矩阵乘法（自动适配向量长度）
+void matmul_sve(const float *A, const float *B,
+                float *C, int n) {
+    for (int i = 0; i < n; i++) {
+        int64_t j = 0;
+        svbool_t pg = svwhilelt_b32_s64(j, n);
+
+        while (svptest_first(svptrue_b32(), pg)) {
+            // C[i][j:j+vl] = sum(A[i][k] * B[k][j:j+vl])
+            svfloat32_t acc = svdup_f32(0.0f);
+
+            for (int k = 0; k < n; k++) {
+                // 广播 A[i][k]
+                svfloat32_t a = svdup_f32(A[i * n + k]);
+                // 加载 B[k][j:j+vl]
+                svfloat32_t b = svld1_f32(pg, B + k * n + j);
+                // 乘加
+                acc = svmla_f32_x(pg, acc, a, b);
+            }
+            svst1_f32(pg, C + i * n + j, acc);
+
+            j += svcntw();
+            pg = svwhilelt_b32_s64(j, n);
+        }
+    }
+}
+```
+
+### 实验 23-3：SVE strcpy
+
+```c
+#include <arm_sve.h>
+// SVE strcpy：一次处理一个向量的字节
+char *strcpy_sve(char *dst, const char *src) {
+    char *orig_dst = dst;
+    svbool_t pg = svptrue_b8();
+
+    while (1) {
+        // 加载一个向量宽度的字节
+        svuint8_t v = svld1_u8(pg, (const uint8_t *)src);
+
+        // 检测 '\0' 位置
+        svbool_t null_pg = svcmpeq_n_u8(pg, v, 0);
+
+        if (svptest_first(svptrue_b8(), null_pg)) {
+            // 有 '\0' → 只存储到 '\0' 为止
+            // 用 BRK 指令生成前缀谓词
+            svbool_t store_pg = svbrkb_z(pg, null_pg);
+            // 存储 '\0' 本身
+            svst1_u8(store_pg, (uint8_t *)dst, v);
+            // 存 '\0'（null_pg 的第一个 true 通道）
+            // ...
+            break;
+        }
+
+        // 全部存储
+        svst1_u8(pg, (uint8_t *)dst, v);
+        src += svcntb();
+        dst += svcntb();
+    }
+    return orig_dst;
+}
+```
+
+### 实验结果预期
+
+| 实验 | 标量 | NEON | SVE (VQ=1) | SVE (VQ=2) |
+|------|------|------|-----------|-----------|
+| 23-1 RGB | 1× | 10-15× | 5-10× | 8-15× |
+| 23-2 矩阵 | 1× | 3-5× | 3-5× | 5-8× |
+| 23-3 strcpy | 1× | 8-10× | 10-20× | 15-30× |
+
+> 注意：SVE VQ=1 与 NEON 理论并行度相同，但谓词操作更高效。SVE gather/scatter 在固定模式（如 RGB 交错）可能比 NEON LD3 更慢。
 
 ## HFT 关联
 
-SVE 实验的价值在于学习谓词驱动的向量化思维。HFT 中类似模式：(1) 批量检查多个订单是否满足条件（谓词过滤）；(2) 批量更新价格表中的多个条目（gather/scatter + 谓词）。当前 HFT 以 NEON 为主，但理解 SVE 有助于在 ARM 服务器升级时快速迁移。QEMU 的 `-cpu max` 可以模拟 SVE，方便在没有 SVE 硬件时开发测试。
+SVE 实验的价值在于学习谓词驱动的向量化思维。HFT 中类似模式：(1) 批量检查多个订单是否满足条件（谓词过滤）；(2) 批量更新价格表中的多个条目（gather/scatter + 谓词）。
+
+```c
+// HFT SVE 实验评估清单
+void hft_sve_evaluation() {
+    // 1. 检查 SVE 可用性
+    int sve_ver = hft_check_sve();  // 0=无, 1=SVE, 2=SVE2
+    printf("SVE version: %d\n", sve_ver);
+
+    if (sve_ver == 0) {
+        printf("No SVE, using NEON\n");
+        return;
+    }
+
+    // 2. 查询向量长度
+    printf("Vector length: %lu bytes\n", svcntb());
+    printf("  int32 lanes: %lu\n", svcntw());
+    printf("  int64 lanes: %lu\n", svcntd());
+
+    // 3. Benchmark 对比
+    // NEON vs SVE 同一算法
+    // 测量: clock_gettime + cntvct_el0
+
+    // 4. 代码质量检查
+    // gcc -O3 -S -march=armv8.2-a+sve code.c
+    // objdump -d code.o | grep -c fmov
+    // 检查多余的 register move
+}
+```
 
 ## 自测题
 

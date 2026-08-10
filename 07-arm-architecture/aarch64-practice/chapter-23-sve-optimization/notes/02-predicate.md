@@ -11,41 +11,152 @@
 ### 谓词寄存器
 
 ```
-谓词 P: | 1 | 0 | 1 | 1 | 0 | 1 | 0 | 0 |
+谓词 P: | 1 | 0 | 1 | 1 | 0 | 1 | 0 | 0 |  (每通道 1 bit)
 向量 A: | a0| a1| a2| a3| a4| a5| a6| a7|
-ADD  : |a0+1| |a2+1|a3+1| |a5+1| | |  ← 只有 pg=1 的通道被修改
-结果:  | a0'|a1| a2'|a3'|a4| a5'|a6|a7|
+ADD #1: |a0+1|a1|a2+1|a3+1|a4|a5+1|a6|a7|  ← 只有 pg=1 的通道被修改
+                                      ↑ pg=0 的通道不变
 ```
 
 ### 谓词使用示例
 
 ```c
+#include <arm_sve.h>
+
 // SVE：用谓词控制哪些通道参与计算
-svbool_t pg = svcmpgt_n_s32(svptrue_b32(), va, 0);  // pg = (va > 0)
-svint32_t result = svadd_n_s32_x(pg, va, 1);        // 只对 pg=true 的通道 +1
+// 只对大于 0 的元素加 1，其余保持不变
+svint32_t conditional_add(svint32_t va) {
+    // 全 true 谓词
+    svbool_t all_true = svptrue_b32();
+    // 比较：va > 0 → 生成谓词
+    svbool_t pg = svcmpgt_n_s32(all_true, va, 0);
+    // 只对 pg=true 的通道 +1（_m = merge，inactive 保留旧值）
+    svint32_t result = svadd_n_s32_m(pg, va, 1);
+    return result;
+}
 ```
 
 ### 谓词生成指令
 
-| 指令 | 行为 | C intrinsic |
-|------|------|-------------|
-| `PTRUE` | 全 true | `svptrue_b32()` |
-| `WHILELT` | i < n 的前缀 | `svwhilelt_b32_u64(0, n)` |
-| `CMPGT` | 大于比较 | `svcmpgt_n_s32(pg, va, 0)` |
+| 指令 | 行为 | C intrinsic | 用途 |
+|------|------|-------------|------|
+| `PTRUE` | 全 true | `svptrue_b32()` | 全通道激活 |
+| `WHILELT` | i < n 前缀 | `svwhilelt_b32_s64(0, n)` | 循环控制 |
+| `CMPGT` | 大于比较 | `svcmpgt_n_s32(pg, va, 0)` | 条件过滤 |
+| `CMPEQ` | 等于比较 | `svcmpeq_n_u8(pg, va, 0)` | 查找匹配 |
+| `CMPNE` | 不等比较 | `svcmpne_u8(pg, va, vb)` | 查找不同 |
+| `BRK` | 谓词中断 | `svbrkb_z` | 找第一个 false |
+| `PTEST` | 测试谓词 | `svptest_first` | 检查结果 |
 
 ### 谓词后缀
 
-| 后缀 | 含义 | 行为 |
-|------|------|------|
-| `_x` | 不影响 inactive 通道 | inactive 通道保持原值 |
-| `_z` | inactive 清零 | inactive 通道 = 0 |
-| `_m` | inactive 保留旧值 | inactive 通道 = 原目标值 |
+| 后缀 | 含义 | inactive 通道行为 | 适用场景 |
+|------|------|------------------|---------|
+| `_x` | unspecified | 未定义（最快） | 只关心 active 结果 |
+| `_z` | zero | 清零 | 需要 inactive=0 |
+| `_m` | merge | 保留目标旧值 | 需要保留旧值 |
 
-> NEON 没有谓词，需要用 branch 或位掩码模拟条件执行，效率低且可能产生分支预测失败。
+```c
+// 三种后缀对比
+svbool_t pg = svcmpgt_n_s32(svptrue_b32(), va, 0);
+
+// _x: inactive 未定义（可能垃圾值）
+svint32_t r1 = svadd_n_s32_x(pg, va, 1);
+// pg=1: r1[i] = va[i]+1, pg=0: r1[i] = ???（不保证）
+
+// _z: inactive 清零
+svint32_t r2 = svadd_n_s32_z(pg, va, 1);
+// pg=1: r2[i] = va[i]+1, pg=0: r2[i] = 0
+
+// _m: inactive 保留旧值
+svint32_t r3 = svadd_n_s32_m(pg, va, 1);
+// pg=1: r3[i] = va[i]+1, pg=0: r3[i] = va[i]（原值）
+```
+
+### 谓词 vs NEON 位掩码对比
+
+```c
+// NEON 模拟条件执行（位掩码）
+float32x4_t va = vld1q_f32(data);
+// 比较生成掩码（全1或全0）
+uint32x4_t mask = vcgtq_f32(va, vdupq_n_f32(0.0f));
+// 位选择：mask=1 取 va+1, mask=0 取 va
+float32x4_t result = vbslq_f32(mask,
+                                vaddq_f32(va, vdupq_n_f32(1.0f)),
+                                va);
+// 3 条指令：VCMP + VADD + VBSL
+
+// SVE 谓词版本
+svfloat32_t sv = svld1_f32(svptrue_b32(), data);
+svbool_t pg = svcmpgt_n_f32(svptrue_b32(), sv, 0.0f);
+svfloat32_t sr = svadd_n_f32_m(pg, sv, 1.0f);
+// 2 条指令（谓词嵌入 ADD）：CMPGT + ADD
+```
+
+| 维度 | NEON 位掩码 | SVE 谓词 |
+|------|-----------|---------|
+| 指令数 | 3+（CMP+OP+BSL） | 1-2（谓词嵌入运算） |
+| 条件分支 | 可能需要 branch | 无 branch |
+| 分支预测 | 可能失败(~15周期) | 无失败风险 |
+| 精确控制 | 全 lane 或位运算 | 每 lane 独立控制 |
+| 学习曲线 | 低（标准 C 运算） | 中（新概念） |
 
 ## HFT 关联
 
-谓词驱动的条件计算对 HFT 有吸引力：(1) 订单簿过滤——"只对价格 > VWAP 的订单做操作"可以用谓词一次过滤整个向量，无 branch；(2) 风控规则批量检查——同时对多个持仓检查风控条件，谓词标记违规项。branch-free 代码避免了分支预测失败的流水线冲刷（~15 周期），对延迟敏感场景有价值。但 SVE 目前只在少数 ARM 服务器芯片上可用，HFT 实际部署仍以 NEON 为主。
+谓词驱动的条件计算对 HFT 有吸引力：(1) 订单簿过滤——"只对价格 > VWAP 的订单做操作"可以用谓词一次过滤整个向量，无 branch；(2) 风控规则批量检查——同时对多个持仓检查风控条件，谓词标记违规项。
+
+```c
+// HFT 订单簿谓词过滤（未来 SVE 版本）
+#include <arm_sve.h>
+
+// 过滤价格 > vwap 的订单，返回匹配数量
+int64_t hft_filter_orders_sve(
+    const float *prices, int64_t n, float vwap,
+    float *filtered) {
+
+    svfloat32_t vwap_v = svdup_f32(vwap);
+    int64_t i = 0, out_i = 0;
+
+    while (i < n) {
+        svbool_t pg = svwhilelt_b32_s64(i, n);
+        svfloat32_t pv = svld1_f32(pg, prices + i);
+
+        // 谓词过滤：价格 > vwap
+        svbool_t match = svcmpgt_f32(pg, pv, vwap_v);
+
+        // 压缩存储：只存 match=true 的
+        // svcompact 将 active 通道连续排列
+        svfloat32_t filtered_v = svcompact_f32(match, pv);
+
+        // 存储匹配的元素
+        int64_t match_cnt = svcntp_b32(match, svcntw());
+        svst1_f32(svptrue_b32(), filtered + out_i, filtered_v);
+        out_i += match_cnt;
+
+        i += svcntw();
+    }
+    return out_i;
+}
+
+// HFT 风控批量检查
+void hft_risk_check_sve(const float *positions,
+                          int64_t n, float limit) {
+    svfloat32_t lim = svdup_f32(limit);
+    int64_t i = 0;
+
+    while (i < n) {
+        svbool_t pg = svwhilelt_b32_s64(i, n);
+        svfloat32_t pos = svld1_f32(pg, positions + i);
+        // 检查 |position| > limit
+        svbool_t violation = svcmpgt_f32(pg,
+            svabs_f32_x(pg, pos), lim);
+        if (svptest_first(svptrue_b32(), violation)) {
+            // 有违规！发出警告
+            raise_alert();
+        }
+        i += svcntw();
+    }
+}
+```
 
 ## 自测题
 

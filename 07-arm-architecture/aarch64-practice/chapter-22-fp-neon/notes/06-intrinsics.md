@@ -25,18 +25,57 @@ vst1q_f32(ptr_c, c);                   // ST1 V2.4s, [ptr_c]
 ```c
 float32x4_t acc = vdupq_n_f32(0.0f);  // 清零（DUP V0.4s, #0）
 acc = vfmaq_f32(acc, a, b);           // FMLA V0.4s, V1.4s, V2.4s
+// acc[i] += a[i] * b[i]  (4 路并行)
+
+// by-element 版本（矩阵乘法用）
+acc = vfmaq_n_f32(acc, a, 3.14f);     // FMLA V0.4s, V1.4s, V2.s[0]
+// acc[i] += a[i] * 3.14f  (广播标量)
 ```
 
 ### intrinsics 命名规则
 
+```
+v [操作] [q] _ [类型]
+
+v     = NEON intrinsic 前缀
+操作  = add/mul/fmla/max/min/ld1/st1/...
+q     = quad (128位)，省略 = 64位
+类型  = f32/f64/u8/u16/u32/u64/s8/s16/s32/s64
+
+示例:
+vaddq_f32   → FADD V0.4s   (128位, 4×float32)
+vadd_f32    → FADD V0.2s   (64位, 2×float32)
+vaddq_u8    → ADD V0.16b   (128位, 16×uint8)
+vmlaq_s16   → MLA V0.8h    (128位, 8×int16)
+```
+
 | 前缀 | 含义 | 示例 |
 |------|------|------|
 | `v` | NEON intrinsic | `vaddq_f32` |
-| `add` | 操作 | 加法 |
 | `q` | 128位（quad） | `vaddq_f32` → ADD .4s |
 | (无q) | 64位 | `vadd_f32` → ADD .2s |
 | `_f32` | 32位浮点 | float32x4_t |
+| `_f64` | 64位浮点 | float64x2_t |
 | `_u8` | 8位无符号 | uint8x16_t |
+| `_s32` | 32位有符号 | int32x4_t |
+
+### 常用 intrinsics 速查
+
+| 操作 | intrinsic | 指令 | 说明 |
+|------|-----------|------|------|
+| 加载 | `vld1q_f32` | LD1 | 连续加载 4×float32 |
+| 存储 | `vst1q_f32` | ST1 | 连续存储 |
+| 加法 | `vaddq_f32` | FADD | 4 路加 |
+| 乘法 | `vmulq_f32` | FMUL | 4 路乘 |
+| 乘加 | `vfmaq_f32` | FMLA | 4 路 V0+=V1×V2 |
+| 广播 | `vdupq_n_f32` | DUP | 标量→4 lane |
+| 取 lane | `vgetq_lane_f32` | MOV | 取第 n lane |
+| 设 lane | `vsetq_lane_f32` | MOV | 设第 n lane |
+| 最大值 | `vmaxq_f32` | FMAX | 4 路取最大 |
+| 最小值 | `vminq_f32` | FMIN | 4 路取最小 |
+| 水平加 | `vaddvq_f32` | ADDV | 4 lane 求和 |
+| 交错加载 | `vld3q_u8` | LD3 | 3 路解交织 |
+| 交错存储 | `vst3q_u8` | ST3 | 3 路交织存储 |
 
 ### intrinsics vs 汇编
 
@@ -48,12 +87,83 @@ acc = vfmaq_f32(acc, a, b);           // FMLA V0.4s, V1.4s, V2.4s
 | 调试 | 有符号名 | 汇编级 |
 | 控制力 | 受编译器影响 | 完全控制 |
 | 性能 | 接近汇编（可能略差） | 最优 |
+| 指令调度 | 编译器决定 | 手动 |
 
-> **C++ NEON**：跨平台可用 `#ifdef __ARM_NEON` 条件编译，x86 平台 fallback 到 SSE/AVX。
+### 跨平台条件编译
+
+```c
+// 跨架构 SIMD 代码模板
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+  #include <arm_neon.h>
+  #define SIMD_ADD4(a, b) vaddq_f32(a, b)
+  #define SIMD_LOAD(p)    vld1q_f32(p)
+  #define SIMD_STORE(p,v) vst1q_f32(p, v)
+
+#elif defined(__SSE2__)
+  #include <emmintrin.h>
+  #define SIMD_ADD4(a, b) _mm_add_ps(a, b)
+  #define SIMD_LOAD(p)    _mm_load_ps(p)
+  #define SIMD_STORE(p,v) _mm_store_ps(p, v)
+
+#elif defined(__AVX2__)
+  #include <immintrin.h>
+  // AVX 支持 256 位（8×float32）
+
+#else
+  // 纯 C fallback
+  #define SIMD_ADD4(a, b) scalar_add4(a, b)
+#endif
+
+// 使用——统一接口
+void process(float *data, int n) {
+    for (int i = 0; i < n; i += 4) {
+        SIMD_VEC a = SIMD_LOAD(data + i);
+        SIMD_VEC b = SIMD_LOAD(data + i + 4);
+        SIMD_VEC c = SIMD_ADD4(a, b);
+        SIMD_STORE(data + i, c);
+    }
+}
+```
 
 ## HFT 关联
 
-HFT 代码中 NEON intrinsics 比 asm 更实用：(1) 编译器可以做内联和寄存器分配优化，减少数据搬运；(2) 可以和 C 代码混用，不需要单独的 .S 文件；(3) 跨平台——同一份代码在 Cortex-A72/A76/A78 上都能编译。但要注意：(1) 不同编译器（GCC/Clang）的 intrinsics 优化质量不同，需 benchmark；(2) intrinsics 可能产生比手写汇编更多的寄存器搬运指令（register move），热点代码可用 `objdump` 检查生成的指令。
+HFT 代码中 NEON intrinsics 比 asm 更实用：(1) 编译器可以做内联和寄存器分配优化；(2) 可以和 C 代码混用；(3) 跨平台。但要注意：(1) 不同编译器（GCC/Clang）的 intrinsics 优化质量不同；(2) intrinsics 可能产生比手写汇编更多的 register move 指令。
+
+```c
+// HFT NEON 优化验证流程
+// 1. 写 intrinsics 版本
+// 2. 编译: gcc -O3 -mfpu=neon -S
+// 3. 检查生成指令: objdump -d
+// 4. 确认无多余 register move
+// 5. benchmark 对比
+
+// HFT 订单簿 NEON 加速模板
+#include <arm_neon.h>
+
+// 批量更新订单价格（4 路并行）
+static inline void hft_update_4_prices(
+    float *prices, float32x4_t delta) {
+    float32x4_t p = vld1q_f32(prices);
+    p = vaddq_f32(p, delta);
+    vst1q_f32(prices, p);
+}
+
+// 批量比较找最优价（4 路并行）
+static inline float32x4_t hft_best_price(
+    const float *prices, int n) {
+    float32x4_t best = vld1q_f32(prices);
+    for (int i = 4; i < n; i += 4) {
+        float32x4_t cur = vld1q_f32(prices + i);
+        best = vmaxq_f32(best, cur);
+    }
+    return best;
+}
+
+// 编译选项检查
+#if !defined(__ARM_NEON)
+  #error "NEON not enabled! Use -mfpu=neon or -march=armv8-a"
+#endif
+```
 
 ## 自测题
 
@@ -70,7 +180,7 @@ HFT 代码中 NEON intrinsics 比 asm 更实用：(1) 编译器可以做内联�
 <details>
 <summary>答案</summary>
 
-**优势**：(1) 编译器做寄存器分配——不用手动管理 V0-V31；(2) 可内联到 C 代码中——无函数调用开销；(3) 编译器可跨 intrinsics 优化——如合并指令、消除冗余 move；(4) 调试信息更好——有符号名和类型信息。**劣势**：(1) 编译器可能生成多余的 register move（不如手写汇编精简）；(2) 对指令序列的控制力不如 asm（如无法强制指令调度）；(3) 某些特殊指令可能没有对应 intrinsic。HFT 热点通常用 intrinsics，用 `objdump` 验证生成代码质量。
+**优势**：(1) 编译器做寄存器分配——不用手动管理 V0-V31；(2) 可内联到 C 代码中——无函数调用开销；(3) 编译器可跨 intrinsics 优化——如合并指令、消除冗余 move；(4) 调试信息更好——有符号名和类型信息。**劣势**：(1) 编译器可能生成多余的 register move（不如手写汇编精简）；(2) 对指令序列的控制力不如 asm；(3) 某些特殊指令可能没有对应 intrinsic。HFT 热点通常用 intrinsics，用 `objdump` 验证生成代码质量。
 </details>
 
 3. **`#ifdef __ARM_NEON` 的作用是什么？HFT 代码为什么要用它？**

@@ -18,44 +18,170 @@ int strcmp_c(const char *a, const char *b) {
 }
 // 每个 byte：2 次加载 + 1 次比较 + 1 次分支 = ~4 条指令
 // 100 字节字符串 = ~400 条指令
+// 分支预测失败 ~15 周期/次
 ```
 
 ### SVE strcmp（简化概念）
 
 ```c
-svbool_t pg = svptrue_b8();
-while (1) {
-    svuint8_t va = svld1_u8(pg, ptr_a);     // 加载 a 的一个向量
-    svuint8_t vb = svld1_u8(pg, ptr_b);     // 加载 b 的一个向量
-    svbool_t eq = svcmpeq_u8(pg, va, vb);    // 比较相等
-    svbool_t za = svcmpeq_n_u8(pg, va, 0);   // a 是否有 '\0'
-    if (!svptest_first(pg, za)) {
-        // 有 '\0' 且全部相等 → 返回 0
-        return 0;
-    }
-    if (!svptest_first(za, eq)) {
-        // 不等 → 返回差值
+#include <arm_sve.h>
+
+int strcmp_sve(const char *a, const char *b) {
+    svbool_t pg = svptrue_b8();  // 全 true 谓词
+
+    while (1) {
+        // 一次加载一个向量宽度的字节（16-256 字节）
+        svuint8_t va = svld1_u8(pg, (const uint8_t *)a);
+        svuint8_t vb = svld1_u8(pg, (const uint8_t *)b);
+
+        // 批量比较相等
+        svbool_t eq = svcmpeq_u8(pg, va, vb);
+
+        // 检测 '\0' 位置（字符串结束）
+        svbool_t za = svcmpeq_n_u8(pg, va, 0);
+
+        // 检查是否在 '\0' 之前全部相等
+        svbool_t diff_before_null = svcmpne_u8(pg, va, vb);
+        // 取 '\0' 之前的部分
         // ...
+
+        if (!svptest_first(svptrue_b8(), za)) {
+            // 有 '\0' → 字符串结束
+            if (svptest_first(svptrue_b8(), eq)) {
+                return 0;  // 全相等（到 '\0' 为止）
+            }
+        }
+
+        if (!svptest_first(za, eq)) {
+            // 在 '\0' 之前有不等的字节
+            // 找到第一个不等位置，返回差值
+            // ...提取第一个不等 lane 的值
+        }
+
+        a += svcntb();
+        b += svcntb();
     }
-    ptr_a += svcntb();
-    ptr_b += svcntb();
 }
+```
+
+### strcmp 流程图
+
+```
+标量版本:
+┌──────────────────────────────────────────┐
+│ while (*a && *a == *b):                   │
+│   a++; b++;                              │  ← 每字节一个分支
+│ return *a - *b;                          │
+└──────────────────────────────────────────┘
+  100 字节 → ~100 次循环 → ~400 条指令
+
+SVE 版本 (VQ=1, 128bit):
+┌──────────────────────────────────────────┐
+│ 一次加载 16 字节 → 16 路并行比较          │
+│ 谓词检测 '\0' 和不等位置                  │
+│ 全相等 → 下一批 16 字节                   │
+│ 有不等 → 返回差值                         │
+└──────────────────────────────────────────┘
+  100 字节 → 7 次迭代 → ~30 条指令
 ```
 
 ### 性能对比
 
-| 方面 | 标量 | SVE |
-|------|------|-----|
-| 每次迭代 | 1 字节 | svcntb() 字节（16-256） |
-| 100 字节串 | ~400 条指令 | ~20-30 条指令 |
-| 分支 | 每 byte 1 个 branch | 每 16-256 byte 1 个 branch |
-| 加速比 | 1× | 10-20× |
+| 方面 | 标量 | NEON | SVE |
+|------|------|------|-----|
+| 每次迭代 | 1 字节 | 16 字节 | svcntb() 字节 |
+| 100 字节串 | ~400 条指令 | ~40 条 | ~20-30 条 |
+| 分支 | 每 byte 1 个 | 每 16 byte 1 个 | 每 16-256 byte 1 个 |
+| '\0' 检测 | 逐字节 | 需额外指令 | 谓词一条指令 |
+| 尾部处理 | 内置 | 手动 | 自动（谓词） |
+| 加速比 | 1× | ~10× | 10-20× |
 
-> SVE 一次比较整条向量，不用逐字节循环。谓词自动检测 '\0' 和不等位置。
+### NEON strcmp 对比
+
+```c
+// NEON 版本 strcmp（简化）
+#include <arm_neon.h>
+int strcmp_neon(const char *a, const char *b) {
+    while (1) {
+        uint8x16_t va = vld1q_u8((const uint8_t *)a);
+        uint8x16_t vb = vld1q_u8((const uint8_t *)b);
+
+        // 比较
+        uint8x16_t cmp = vceqq_u8(va, vb);
+        // 检测 '\0'
+        uint8x16_t zero = vdupq_n_u8(0);
+        uint8x16_t has_null = vceqq_u8(va, zero);
+
+        // 提取结果到标量
+        uint64_t cmp_bits = vget_lane_u64(
+            vreinterpret_u64_u8(vshrn_n_u16(
+                vreinterpretq_u16_u8(cmp), 4)), 0);
+        uint64_t null_bits = vget_lane_u64(
+            vreinterpret_u64_u8(vshrn_n_u16(
+                vreinterpretq_u16_u8(has_null), 4)), 0);
+
+        // 复杂的位操作找到第一个不等或 '\0'
+        // ...（比 SVE 谓词方法复杂得多）
+
+        a += 16;
+        b += 16;
+    }
+}
+// NEON 需要 5+ 条指令提取比较结果到标量
+// SVE 用 svptest_first 一条指令完成
+```
+
+### SVE strcmp 的关键优势
+
+| 技术点 | NEON 做法 | SVE 做法 | 优势 |
+|--------|----------|---------|------|
+| 批量比较 | VCEQ + 位提取 | svcmpeq + 谓词 | 少 3+ 条指令 |
+| '\0' 检测 | VCEQ(vs,0) + 位提取 | svcmpeq_n + 谓词 | 同上 |
+| 第一个不同 | CLZ/CTZ 位操作 | svptest_first | 直接返回 bool |
+| 尾部处理 | 手动标量 | svwhilelt 自动 | 无额外代码 |
+| 向量长度 | 固定 16 字节 | 可变 16-256 字节 | 未来自动加速 |
 
 ## HFT 关联
 
-strcmp 优化在 HFT 中的间接价值：(1) 交易网关中 symbol 匹配（如 "AAPL" vs "GOOGL"）可用 SVE 向量化；(2) 协议解析中的字符串字段比较（如 FIX 协议的 Tag=Value）；(3) 日志系统的关键字过滤。但这些场景通常用哈希表/字典代替 strcmp，SVE strcmp 的价值更多在于理解谓词驱动的向量化思路——将逐元素操作提升为批量操作。
+strcmp 优化在 HFT 中的间接价值：(1) 交易网关中 symbol 匹配（如 "AAPL" vs "GOOGL"）可用 SVE 向量化；(2) 协议解析中的字符串字段比较（如 FIX 协议的 Tag=Value）；(3) 日志系统的关键字过滤。
+
+```c
+// HFT symbol 匹配（SVE 未来版本）
+#include <arm_sve.h>
+
+// 查找匹配的 symbol，返回索引
+int64_t hft_find_symbol_sve(
+    const char *symbols, int64_t count,
+    const char *target) {
+    // symbols 是 count 个定长字符串（如 8 字节）
+    // target 是要查找的字符串
+
+    int64_t i = 0;
+    svbool_t pg = svwhilelt_b8_s64(i, count * 8);
+
+    while (svptest_first(svptrue_b8(), pg)) {
+        // 加载目标字符串
+        svuint8_t tv = svld1_u8(svptrue_b8(),
+                                 (const uint8_t *)target);
+
+        // 加载一批 symbol
+        // (简化：实际需要 gather 加载非连续地址)
+
+        // 比较并生成谓词
+        // svbool_t match = svcmpeq_u8(pg, sv, tv);
+        // if (svptest_first(svptrue_b8(), match))
+        //     return i / 8;  // 找到匹配
+
+        i += svcntb();
+        pg = svwhilelt_b8_s64(i, count * 8);
+    }
+    return -1;  // 未找到
+}
+
+// 注意：HFT 实际中通常用哈希表做 symbol 查找（O(1)）
+// SVE strcmp 的价值在于理解谓词向量化思路
+// 在协议解析、日志过滤等非关键路径可用
+```
 
 ## 自测题
 

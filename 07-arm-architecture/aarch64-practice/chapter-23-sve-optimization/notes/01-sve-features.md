@@ -10,50 +10,151 @@ SVE（Scalable Vector Extension）是 ARMv8.2-A 引入的可变长向量扩展�
 
 ### SVE 核心特性
 
-| 特性 | 说明 |
-|------|------|
-| **可变长向量** | 硬件决定向量长度（VQ），软件自适应 |
-| **谓词寄存器** | P0-P15，16 个谓词寄存器，控制每条通道是否执行 |
-| **聚集加载/分散存储** | 非连续内存一次性加载/存储（gather/scatter） |
-| **向量长度无关编程** | 同一代码在不同 VQ 上运行 |
+| 特性 | 说明 | NEON 对应 |
+|------|------|-----------|
+| **可变长向量** | 硬件决定向量长度（VQ），软件自适应 | 固定 128 位 |
+| **谓词寄存器** | P0-P15，每通道 1 bit 控制执行 | 无（用位掩码模拟） |
+| **聚集加载/分散存储** | 非连续内存一次性加载/存储 | 无 |
+| **向量长度无关编程** | 同一代码在不同 VQ 上运行 | 硬编码通道数 |
+| **寄存器** | Z0-Z31（可变长 128-2048 bit） | V0-V31（固定 128 bit） |
 
 ### VQ（Vector Quotient）
 
 ```
 VQ = 向量长度 / 128
 
-VQ=1  → 128 bit  (同 NEON)
-VQ=2  → 256 bit
-VQ=4  → 512 bit
-...
-VQ=16 → 2048 bit  (最大)
+VQ=1  → 128 bit  (同 NEON，Pi5 Cortex-A76)
+VQ=2  → 256 bit  (AWS Graviton3+)
+VQ=4  → 512 bit  (Fujitsu A64FX)
+VQ=8  → 1024 bit (未来)
+VQ=16 → 2048 bit (最大规格)
+
+每个 VQ 级别对应的通道数：
+VQ    .16b    .8h    .4s    .2d
+1     16      8      4      2       (= NEON)
+2     32      16     8      4
+4     64      32     16     8
 ```
 
 ### 查询向量长度
 
 ```c
 #include <arm_sve.h>
-uint64_t vl = svcntb();  // 向量中的字节数（128/8=16 ~ 2048/8=256）
-```
 
-> Pi5 Cortex-A76 支持 SVE2，VQ=1（128 位）。服务器芯片（如 AWS Graviton4）可能支持 VQ=2（256 位）。
+// 查询向量长度
+uint64_t vl_bytes = svcntb();   // 字节数 (16~256)
+uint64_t vl_words = svcntw();   // 32位数 (4~64)
+uint64_t vl_dbls  = svcntd();   // 64位数 (2~32)
+
+// 运行时适配
+printf("SVE vector length: %lu bytes = %lu lanes of int32\n",
+       vl_bytes, vl_words);
+// Pi5 输出: SVE vector length: 16 bytes = 4 lanes of int32
+```
 
 ### 向量长度无关编程
 
 ```c
 // SVE 代码不关心向量长度——while 循环自动适配
-svbool_t pg = svwhilelt_b32_u64(0, n);  // 生成 [0,n) 范围的谓词
-while (svptest_first(svptrue_b32(), pg)) {
-    svint32_t va = svld1_s32(pg, ptr);   // 加载 pg 为 true 的通道
-    svst1_s32(pg, ptr, svadd_n_s32_x(pg, va, 1));  // +1 并存储
-    ptr += svcntw();
-    pg = svwhilelt_b32_u64(ptr - base, n);
+void add_one_sve(int32_t *arr, int64_t n) {
+    int32_t *ptr = arr;
+    int64_t i = 0;
+
+    // svwhilelt 生成 [0, n) 范围的谓词
+    svbool_t pg = svwhilelt_b32_s64(i, n);
+
+    while (svptest_first(svptrue_b32(), pg)) {
+        // 加载 pg 为 true 的通道
+        svint32_t va = svld1_s32(pg, ptr);
+        // 只对 pg=true 的通道 +1
+        va = svadd_n_s32_x(pg, va, 1);
+        // 存储
+        svst1_s32(pg, ptr, va);
+
+        ptr += svcntw();  // 前进一个向量长度
+        i += svcntw();
+        pg = svwhilelt_b32_s64(i, n);  // 更新谓词
+    }
 }
+
+// 同一份代码：
+// - VQ=1 (128bit): 每次处理 4 个 int32
+// - VQ=2 (256bit): 每次处理 8 个 int32
+// - VQ=4 (512bit): 每次处理 16 个 int32
+// 无需重新编译！
 ```
+
+### SVE 寄存器架构
+
+```
+Z0-Z31: 32 个可变长向量寄存器（128-2048 bit）
+  ↓ 低 128 位别名
+  V0-V31 (NEON 兼容)
+
+P0-P15: 16 个谓词寄存器（每通道 1 bit）
+  ↓ 控制每条通道是否执行
+
+FFR: First Fault Register (gather 加载错误标记)
+
+Z 寄存器在 VQ=1 时退化为 NEON 的 V 寄存器
+Z 寄存器在 VQ=2 时扩展为 256 位
+```
+
+### SVE vs NEON vs x86 AVX
+
+| 特性 | NEON | SVE | x86 AVX2 | x86 AVX-512 |
+|------|------|-----|---------|-------------|
+| 向量长度 | 128 | 128-2048 | 256 | 512 |
+| 谓词 | 无 | P0-P15 | 无 | k0-k7 |
+| Gather/Scatter | 无 | 有 | 有 | 有 |
+| 长度无关 | 否 | 是 | 否 | 否 |
+| 可用性 | 所有 ARM | ARMv8.2+ | x86+ | Xeon Phi+ |
 
 ## HFT 关联
 
-SVE 的可变长向量对 HFT 意味着同一份代码在不同 ARM 服务器上自动获得最优性能——在 128 位芯片上跑 4 路并行，在 256 位芯片上自动跑 8 路。Gather/Scatter 指令对稀疏数据访问（如按索引查询订单簿中的特定价位）有潜力，但 gather 操作通常延迟较高（每通道独立访存）。当前 HFT 主要用 NEON（所有 ARM 核心都支持），SVE 作为未来升级路径。
+SVE 的可变长向量对 HFT 意味着同一份代码在不同 ARM 服务器上自动获得最优性能——在 128 位芯片上跑 4 路并行，在 256 位芯片上自动跑 8 路。
+
+```c
+// HFT SVE 未来路径：订单簿批量更新
+#include <arm_sve.h>
+
+// 在 VQ=1 上每次处理 4 个价格
+// 在 VQ=2 上自动每次处理 8 个价格
+void hft_update_prices_sve(float *prices, int64_t n, float delta) {
+    int64_t i = 0;
+    svbool_t pg = svwhilelt_b32_s64(i, n);
+    svfloat32_t dv = svdup_f32(delta);  // delta 广播到所有 lane
+
+    while (svptest_first(svptrue_b32(), pg)) {
+        svfloat32_t p = svld1_f32(pg, prices + i);
+        p = svadd_f32_x(pg, p, dv);   // 谓词控制 +1
+        svst1_f32(pg, prices + i, p);
+        i += svcntw();
+        pg = svwhilelt_b32_s64(i, n);
+    }
+}
+
+// 检查 SVE 可用性
+int hft_check_sve() {
+    // 用户态通过 HWCAP 检查
+    FILE *f = fopen("/proc/cpuinfo", "r");
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (strstr(line, "Features")) {
+            if (strstr(line, "sve")) return 1;
+            if (strstr(line, "sve2")) return 2;
+        }
+    }
+    return 0;  // 无 SVE，用 NEON
+}
+```
+
+| HFT SVE 评估维度 | 当前 | 未来 |
+|-----------------|------|------|
+| 部署芯片 | Cortex-A76 (NEON only) | Graviton4 (SVE 256bit) |
+| 并行度 | 4×float32 (NEON) | 8×float32 (SVE) |
+| Gather/Scatter | 不可用 | 可用（稀疏数据） |
+| 工具链 | NEON 成熟 | SVE intrinsics 较新 |
 
 ## 自测题
 
