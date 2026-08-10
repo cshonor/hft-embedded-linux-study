@@ -4,17 +4,28 @@
 
 ## 本节讲什么
 
-屏障使用的 5 个常见错误：屏障加错位置、屏障类型选错、忘加编译器屏障、过度使用 dmb sy、不读内核源码就写裸屏障。
+屏障使用的 6 个常见错误：屏障加错位置、屏障类型选错、忘加编译器屏障、过度使用 dmb sy、不读内核源码就写裸屏障、DMA 用 smp_mb 不够强。
 
 ## 核心要点
 
 | # | 易错点 | 后果 | 修复 |
 |---|--------|------|------|
 | 1 | 屏障加错位置 | 加在临界区外 vs 内，效果完全不同 | 仔细分析屏障应保护哪些访存 |
-| 2 | 屏障类型选错 | DMA 用了 smp_mb（不够强，不含 DMA 可见性） | DMA 用 mb()（dsb sy） |
+| 2 | 屏障类型选错 | DMA 用了 smp_mb（不够强） | DMA 用 mb()（dsb sy） |
 | 3 | 忘加编译器屏障 | 硬件屏障不阻止编译器重排 | barrier() 或 volatile |
-| 4 | 过度使用 dmb sy | 很多场景只需 ishst/ishld，全屏障性能损失大 | 选最弱的足够屏障 |
-| 5 | 不读内核源码就写裸屏障 | Linux 有完善的屏障 API，优先用 | 用 smp_mb()/mb() 等 API |
+| 4 | 过度使用 dmb sy | 很多场景只需 ishst/ishld | 选最弱的足够屏障 |
+| 5 | 不读内核源码就写裸屏障 | Linux 有完善的屏障 API | 用 smp_mb()/mb() 等 API |
+| 6 | DMA 用 smp_mb 不够强 | DMB 不含 DMA 可见性 | DMA 用 mb()（dsb sy） |
+
+### 常见代码错误对比
+
+| # | 错误代码 | 正确代码 | 问题 |
+|---|---------|---------|------|
+| 1 | `lock(); ...; unlock(); smp_mb()` | `lock(); smp_mb(); ...; smp_mb(); unlock()` | 屏障在临界区外 |
+| 2 | DMA: `smp_mb(); start_dma()` | DMA: `mb(); start_dma()` | smp_mb 不够强 |
+| 3 | `dmb ish; data=42` (无 volatile) | `smp_mb(); data=42` (含 barrier) | 缺编译器屏障 |
+| 4 | 消息传递: `dmb sy` | 消息传递: `dmb ishst` | 过度使用全屏障 |
+| 5 | 手写 `dmb ish` | 用 `smp_mb()` | 不用内核 API |
 
 ### 位置对比例子
 
@@ -33,9 +44,55 @@ smp_mb();  // ← 释放锁前
 unlock();
 ```
 
+### SPSC 队列屏障位置
+
+```cpp
+// 错误：release 加在 buffer 写之前
+write_idx.store(w + 1, std::memory_order_release);  // ← 先写 index
+buffer[w % N] = val;  // ← 后写 buffer！消费者看到新 index 但旧 buffer
+
+// 正确：release 加在 buffer 写之后
+buffer[w % N] = val;  // ← 先写 buffer
+write_idx.store(w + 1, std::memory_order_release);  // ← 后写 index（release 保证 buffer 先可见）
+```
+
+### 调试技巧
+
+| 症状 | 可能原因 | 检查方向 |
+|------|----------|---------|
+| 临界区数据被意外修改 | 屏障位置错误 | 屏障应在 lock 后/unlock 前 |
+| DMA 数据偶尔错误 | 用了 smp_mb 而非 mb | DMA 需 DSB 不是 DMB |
+| 屏障加了但没效果 | 缺编译器屏障 | 加 barrier() 或 volatile |
+| 性能异常低 | 过度使用 dmb sy | 改用 ishst/ishld |
+| SPSC 消费者读到旧值 | release 位置错误 | release 应在 buffer 写之后 |
+| x86 正确 ARM 失败 | 忘加屏障 | x86 TSO 比 ARM 强 |
+
 ## HFT 关联
 
-屏障位置错误是 HFT 无锁编程中第二常见的 bug（第一是忘加屏障）。在 SPSC 队列中，`release` 屏障必须加在 `buffer[w % N] = val` **之后**、`write_idx.store` **之前**——如果加反了（先 store index 再写 buffer），消费者看到新 index 但读到旧 buffer 值。HFT 建议用 C++ `std::atomic` 的内存序参数代替裸 DMB——编译器自动在正确位置生成 STLR/LDAR，避免手动位置错误。
+屏障位置错误是 HFT 无锁编程中第二常见的 bug（第一是忘加屏障）。在 SPSC 队列中，`release` 屏障必须加在 `buffer[w % N] = val` **之后**、`write_idx.store` **之前**——如果加反了（先 store index 再写 buffer），消费者看到新 index 但读到旧 buffer 值。
+
+### HFT 屏障审查规则
+
+```cpp
+// ✓ SPSC push 正确顺序
+void push(const T& val) {
+    size_t w = write_idx.load(relaxed);
+    buffer[w % N] = val;        // 1. 先写 buffer
+    write_idx.store(w+1, release); // 2. 后写 index（release 保证 buffer 先可见）
+}
+
+// ✗ SPSC push 错误顺序
+void push_bad(const T& val) {
+    size_t w = write_idx.load(relaxed);
+    write_idx.store(w+1, release); // 1. 先写 index！
+    buffer[w % N] = val;        // 2. 后写 buffer！消费者看到新 index 但旧 buffer
+}
+
+// ✓ 用 C++ atomic 避免手动位置错误
+// 编译器保证 store(release) 之前的访存在 store 之前可见
+```
+
+HFT 建议用 C++ `std::atomic` 的内存序参数代替裸 DMB——编译器自动在正确位置生成 STLR/LDAR，避免手动位置错误。
 
 ## 自测题
 
@@ -65,6 +122,14 @@ unlock();
 <summary>答案</summary>
 
 Linux 内核有完善的屏障 API（`smp_mb`/`mb`/`smp_wmb`/`wmb` 等），经过架构专家验证，正确处理了编译器屏障、作用域、DMB/DSB 选择等细节。手写裸 `dmb`/`dsb` 容易遗漏编译器屏障、选错作用域或强度。优先用内核 API，只有在用户态 HFT 中才需要手写（且应优先用 C++ `std::atomic`）。
+</details>
+
+4. **SPSC 队列中 release 屏障加反了（先 store index 再写 buffer），会怎样？**
+
+<details>
+<summary>答案</summary>
+
+消费者看到新的 `write_idx`（index 已更新），但读到旧 `buffer` 值（buffer 还没写）。因为 release 语义保证的是 release Store **之前**的访存对消费者可见——如果 release 在 buffer 写**之前**，buffer 不在 release 的保护范围内。正确顺序：先写 buffer，后 store(release) index。
 </details>
 
 ## 参考与延伸

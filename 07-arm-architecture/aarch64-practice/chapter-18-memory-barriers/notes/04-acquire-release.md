@@ -4,25 +4,26 @@
 
 ## 本节讲什么
 
-C++11 的 acquire/release 内存序对应 ARM 的 DMB 屏障。ARMv8 的 LDAR/STLR 指令自带 acquire/release 语义，比显式 DMB 更高效——CPU 知道语义意图可以更精确优化。
+C++11 的 acquire/release 内存序对应 ARM 的 DMB 屏障。ARMv8 的 LDAR/STLR 指令自带 acquire/release 语义，比显式 DMB 更高效——CPU 知道语义意图可以更精确优化。本节分析 C++ 内存序到 ARM 指令的映射、LDAR/STLR 的优势，以及 acquire/release 配对模式。
 
 ## 核心要点
 
 ### C++ 内存序 → ARM 映射
 
-| C++ 内存序 | ARM 实现 | 含义 |
-|-----------|----------|------|
-| `memory_order_relaxed` | 无屏障 | 只保证原子性，不保证顺序 |
-| `memory_order_acquire` | Load + `dmb ishld` | 后续读不能重排到此 Load 前 |
-| `memory_order_release` | `dmb ishst` + Store | 前面写不能重排到此 Store 后 |
-| `memory_order_seq_cst` | `dmb ish` + ... | 全序（最强） |
+| C++ 内存序 | ARM 实现 | 含义 | 典型延迟 |
+|-----------|----------|------|---------|
+| `memory_order_relaxed` | `LDR`/`STR` | 只保证原子性，不保证顺序 | ~1ns |
+| `memory_order_acquire` | `LDAR` | 后续访存不能重排到此 Load 前 | ~5ns |
+| `memory_order_release` | `STLR` | 前面访存不能重排到此 Store 后 | ~5ns |
+| `memory_order_acq_rel` | `LDAXR`/`STLXR` | 同时 acquire+release（RMW 操作） | ~10ns |
+| `memory_order_seq_cst` | `STLR` + `DMB ISH`（store） / `LDAR`（load） | 全序（最强） | ~10-15ns |
 
 ### LDAR / STLR（自带屏障）
 
-| 指令 | 语义 |
-|------|------|
-| `LDAR` | Load-Acquire：后续访存不能重排到此 Load 前 |
-| `STLR` | Store-Release：前面访存不能重排到此 Store 后 |
+| 指令 | 语义 | 约束 | 等价于 |
+|------|------|------|--------|
+| `LDAR` | Load-Acquire | 后续访存**不能重排到此 Load 前** | `LDR` + `dmb ishld`（但更高效） |
+| `STLR` | Store-Release | 前面访存**不能重排到此 Store 后** | `dmb ishst` + `STR`（但更高效） |
 
 ```c
 // 等价于 acquire load
@@ -30,15 +31,29 @@ C++11 的 acquire/release 内存序对应 ARM 的 DMB 屏障。ARMv8 的 LDAR/ST
 // int v = flag.load(std::memory_order_acquire);
 // ↓ 编译为
 ldar w0, [flag_addr]
+
+// 等价于 release store
+// flag.store(1, std::memory_order_release);
+// ↓ 编译为
+stlr w1, [flag_addr]
 ```
 
 > **LDAR/STLR 比显式 DMB 更高效**：CPU 知道语义意图，可以更精确地优化。
+
+### LDAR/STLR vs DMB 性能对比
+
+| 方式 | 指令数 | 延迟 | 说明 |
+|------|--------|------|------|
+| `LDR + dmb ishld` | 2 | ~8ns | 显式屏障 |
+| `LDAR` | 1 | ~5ns | 自带 acquire（快 ~3ns） |
+| `dmb ishst + STR` | 2 | ~8ns | 显式屏障 |
+| `STLR` | 1 | ~5ns | 自带 release（快 ~3ns） |
 
 ### Acquire/Release 配对
 
 ```
 生产者:
-  store data           // 普通写
+  store data           // 普通写（不需要屏障）
   stlr flag = 1        // Store-Release：data 写在 flag 之前可见
 
 消费者:
@@ -46,9 +61,100 @@ ldar w0, [flag_addr]
   load data            // 一定能看到生产者写的值
 ```
 
+### Acquire/Release 语义详解
+
+| 语义 | 约束 | 图示 |
+|------|------|------|
+| Acquire（Load） | 后面的访存不能提前到 Load 前 | `LDAR` → 后续访存被挡住 |
+| Release（Store） | 前面的访存不能延后到 Store 后 | 前面访存 → `STLR` 被挡住 |
+| Acq-Rel（RMW） | 同时 acquire+release | 前面访存 → `LDAXR/STLXR` → 后续访存 |
+
+```
+Acquire 语义:
+  [其他访存] → LDAR → [后续访存不能提前]
+                      ↑ 屏障在这里
+
+Release 语义:
+  [前面访存不能延后] → STLR → [其他访存]
+                       ↑ 屏障在这里
+```
+
+### C++ atomic 到 ARM 完整映射
+
+```cpp
+// C++ 代码 → ARM 汇编
+
+// 1. Relaxed（无屏障）
+val = a.load(std::memory_order_relaxed);
+// → ldr w0, [a]
+
+a.store(1, std::memory_order_relaxed);
+// → str w1, [a]
+
+// 2. Acquire（LDAR）
+val = a.load(std::memory_order_acquire);
+// → ldar w0, [a]
+
+// 3. Release（STLR）
+a.store(1, std::memory_order_release);
+// → stlr w1, [a]
+
+// 4. Seq_cst（最强）
+val = a.load(std::memory_order_seq_cst);
+// → ldar w0, [a]（ARMv8 LDAR 足够）
+
+a.store(1, std::memory_order_seq_cst);
+// → stlr w1, [a] + dmb ish（Store 后还需全屏障）
+```
+
+### LDAXR/STLXR（独占版 acquire/release）
+
+```asm
+// 原子操作的自带 acquire/release
+// LDAXR = Load-Acquire Exclusive
+// STLXR = Store-Release Exclusive
+
+// 原子加法（acq_rel 语义）
+1:  ldaxr w1, [x0]     ; Load-Acquire Exclusive
+    add  w1, w1, w2
+    stlxr w3, w1, [x0]  ; Store-Release Exclusive
+    cbnz w3, 1b
+    // 无需额外 DMB！
+```
+
 ## HFT 关联
 
-LDAR/STLR 是 HFT 无锁编程的首选——比显式 DMB 快 2-5ns（CPU 可以更精确地优化，不需要全屏障停顿）。SPSC 无锁队列用 `store(release)` + `load(acquire)` 配对，编译为 STLR + LDAR，在 A76 上延迟约 5-10ns。C++11 `std::atomic` 的 `memory_order_acquire`/`memory_order_release` 在 ARM 上自动编译为 LDAR/STLR，不需要手写汇编。HFT 代码应优先用 C++ atomic 而非裸汇编屏障，可读性和可维护性更好。
+LDAR/STLR 是 HFT 无锁编程的首选——比显式 DMB 快 2-5ns（CPU 可以更精确地优化，不需要全屏障停顿）。
+
+### HFT SPSC 队列最优实现
+
+```cpp
+// 用 C++ atomic（自动编译为 STLR/LDAR）
+template<typename T, size_t N>
+class SPSCQueue {
+    T buffer[N];
+    std::atomic<size_t> write_idx{0};
+    std::atomic<size_t> read_idx{0};
+    
+    void push(const T& val) {
+        size_t w = write_idx.load(std::memory_order_relaxed);
+        buffer[w % N] = val;
+        write_idx.store(w + 1, std::memory_order_release);  // → STLR
+    }
+    
+    bool pop(T& val) {
+        size_t r = read_idx.load(std::memory_order_relaxed);
+        if (r == write_idx.load(std::memory_order_acquire))  // → LDAR
+            return false;
+        val = buffer[r % N];
+        read_idx.store(r + 1, std::memory_order_relaxed);
+        return true;
+    }
+};
+// push + pop 总延迟：~10-20ns（A76）
+```
+
+SPSC 无锁队列用 `store(release)` + `load(acquire)` 配对，编译为 STLR + LDAR，在 A76 上延迟约 5-10ns。C++11 `std::atomic` 的 `memory_order_acquire`/`memory_order_release` 在 ARM 上自动编译为 LDAR/STLR，不需要手写汇编。HFT 代码应优先用 C++ atomic 而非裸汇编屏障，可读性和可维护性更好。
 
 ## 自测题
 
@@ -80,6 +186,17 @@ DMB 是**全屏障**——CPU 需要停住所有相关访存操作，保守地�
 `atomic.store(memory_order_release)` 编译为 **STLR**（Store-Release）。
 
 不需要额外的 DMB 指令——LDAR/STLR 自带屏障语义。这也是为什么 C++ atomic 在 ARM 上性能好——编译器选择最优的指令实现。
+</details>
+
+4. **`memory_order_seq_cst` 和 `memory_order_release` 在 ARM 上的区别？HFT 该选哪个？**
+
+<details>
+<summary>答案</summary>
+
+- `memory_order_release`：编译为 `STLR`（~5ns），只保证 release 语义
+- `memory_order_seq_cst`：编译为 `STLR + DMB ISH`（~10-15ns），保证全局全序
+
+HFT 应选 `memory_order_release`。SPSC 队列只需 release/acquire 配对，不需要全局全序。`seq_cst` 多一条 DMB 指令，延迟翻倍，不必要。
 </details>
 
 ## 参考与延伸

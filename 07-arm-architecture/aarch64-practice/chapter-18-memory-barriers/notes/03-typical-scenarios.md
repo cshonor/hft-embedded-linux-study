@@ -4,7 +4,7 @@
 
 ## 本节讲什么
 
-屏障指令的 4 个典型使用场景：消息传递（生产者→消费者）、自旋锁、DMA、TLB 维护。每个场景需要不同类型和位置的屏障。
+屏障指令的 4 个典型使用场景：消息传递（生产者→消费者）、自旋锁、DMA、TLB 维护。每个场景需要不同类型和位置的屏障。本节给出每个场景的代码和屏障选择依据。
 
 ## 核心要点
 
@@ -62,17 +62,63 @@ isb                  // 重新取指
 
 ### 屏障选择总结
 
-| 场景 | 屏障 | 原因 |
-|------|------|------|
-| 消息传递（写） | `dmb ishst` | 只需 Store-Store 有序 |
-| 消息传递（读） | `dmb ishld` | 只需 Load-Load 有序 |
-| 自旋锁 | `dmb ish` | 需要 Load+Store 全屏障 |
-| DMA | `dsb sy` | 需要完全停住 + 全系统可见 |
-| TLB | `dsb ish` + `isb` | 需要停住 + 重新取指 |
+| 场景 | 屏障 | 作用域 | 约束 | 原因 |
+|------|------|--------|------|------|
+| 消息传递（写） | `dmb ishst` | ish | 仅 Store | 只需 Store-Store 有序 |
+| 消息传递（读） | `dmb ishld` | ish | 仅 Load | 只需 Load-Load 有序 |
+| 自旋锁（获取后） | `dmb ish` | ish | 全部 | 临界区不重排到锁前 |
+| 自旋锁（释放前） | `dmb ish` | ish | 全部 | 临界区写在释放前可见 |
+| DMA（启动前） | `dsb sy` | sy | 完全停住 | 数据完全写入内存 |
+| DMA（完成后） | `dsb sy` | sy | 完全停住 | DMA 写入对 CPU 可见 |
+| TLB（刷新后） | `dsb ish` + `isb` | ish | 完全停住+取指 | 等 TLB 完成 + 重取指 |
+
+### 各场景屏障必要性分析
+
+| 场景 | 不加屏障后果 | 为什么选这个屏障 |
+|------|------------|----------------|
+| 消息传递（写） | 消费者看到 flag=1 但 data 是旧值 | Store-Store 重排 → 需 `ishst` |
+| 消息传递（读） | 读 flag=1 但读到 data 旧值 | Load-Load 重排 → 需 `ishld` |
+| 自旋锁（获取） | 临界区代码跑到锁外执行 | Load-Store/Store-Store 重排 → 需 `ish` |
+| 自旋锁（释放） | 释放先于临界区写可见 | Store-Store 重排 → 需 `ish` |
+| DMA（启动前） | DMA 读到不完整数据 | DMB 不够强（不停 CPU）→ 需 `dsb sy` |
+| TLB（刷新后） | 用旧 TLB 访问错误地址 | 异步刷新+流水线旧指令 → 需 `dsb` + `isb` |
+
+### 用 LDAR/STLR 优化
+
+```c
+// 消息传递 — 用 LDAR/STLR 替代显式 DMB
+// 生产者
+data = 42;
+STLR(flag, 1);       // Store-Release：data 写在 flag 之前可见
+
+// 消费者
+while (LDAR(flag) != 1) ;  // Load-Acquire：读 flag 后再读 data
+x = data;            // 一定能看到 42
+
+// 自旋锁 — 用 LDAXR/STLXR 替代 LDXR/STXR + DMB
+// 获取锁
+while (LDAXR_STLXR_lock(&lock)) ;  // 自带 acquire
+// 临界区
+shared_var = 42;
+// 释放锁
+STLR(lock, 0);       // 自带 release
+```
 
 ## HFT 关联
 
-这 4 个场景在 HFT 中都有直接应用。消息传递模式是 SPSC 无锁队列的核心——生产者写数据后写 index，需要 `dmb ishst` 或 `STLR`。自旋锁在 HFT 中应避免（会导致忙等浪费 CPU），但如果用自旋锁保护短临界区，必须正确加屏障。DMA 场景在网卡收发包中常见。TLB 维护在进程切换时发生，HFT 应避免频繁切换。理解每个场景的屏障选择可以避免过度使用屏障（性能损失）或不足使用屏障（正确性问题）。
+这 4 个场景在 HFT 中都有直接应用。
+
+### HFT 场景对应
+
+| HFT 场景 | 对应模式 | 屏障 | 优化 |
+|---------|---------|------|------|
+| SPSC 无锁队列 push | 消息传递（写） | `dmb ishst` 或 STLR | 用 STLR 最优 |
+| SPSC 无锁队列 pop | 消息传递（读） | `dmb ishld` 或 LDAR | 用 LDAR 最优 |
+| 多核订单簿更新 | 自旋锁或 CAS | `dmb ish` | 避免锁，用 SPSC |
+| 网卡 DMA 收发 | DMA | `dsb sy` | 用 coherent DMA 省屏障 |
+| 进程切换 | TLB 维护 | `dsb ish` + `isb` | 绑核避免切换 |
+
+消息传递模式是 SPSC 无锁队列的核心——生产者写数据后写 index，需要 `dmb ishst` 或 `STLR`。自旋锁在 HFT 中应避免（会导致忙等浪费 CPU），但如果用自旋锁保护短临界区，必须正确加屏障。DMA 场景在网卡收发包中常见。TLB 维护在进程切换时发生，HFT 应避免频繁切换。
 
 ## 自测题
 
@@ -104,6 +150,18 @@ DMB 只保证访存顺序但 CPU **不停**。如果用 DMB，`start_dma()` 可�
 - `isb`：冲刷本核**流水线**。流水线中可能有使用旧 TLB 映射的指令，ISB 确保后续指令用新 TLB 重新翻译。
 
 两者缺一不可：DSB 保证 TLB 刷新完成，ISB 保证流水线同步。
+</details>
+
+4. **自旋锁的屏障能否用 `dmb ishst` 替代 `dmb ish`？为什么？**
+
+<details>
+<summary>答案</summary>
+
+**不能**。自旋锁需要约束 Load+Store 两种操作：
+- 获取锁后：临界区可能有 Load 和 Store，都需要不重排到锁之前 → 需全屏障 `dmb ish`
+- 释放锁前：临界区的 Store 需要在释放前可见，但获取锁的 Load 也可能被重排 → 需全屏障
+
+`dmb ishst` 只约束 Store，不约束 Load。如果临界区有 Load 被重排到锁获取之前，可能读到其他核正在修改的数据。
 </details>
 
 ## 参考与延伸
