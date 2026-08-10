@@ -19,7 +19,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch11 完整总结 · 异常处理** |
+| [notes/01-exception-types.md](./notes/01-exception-types.md) | §11.1 异常类型 |
+| [notes/02-el-switch.md](./notes/02-el-switch.md) | §11.2 异常等级切换 |
+| [notes/03-vector-table.md](./notes/03-vector-table.md) | §11.3 异常向量表（VBAR） |
+| [notes/04-hw-sw-save.md](./notes/04-hw-sw-save.md) | §11.4 硬件保存 + 软件保存 |
+| [notes/05-esr.md](./notes/05-esr.md) | §11.5 异常综合征（ESR） |
+| [notes/06-el2-to-el1.md](./notes/06-el2-to-el1.md) | §11.6 EL2 → EL1 实验 |
+| [notes/07-lab.md](./notes/07-lab.md) | §11.7 实验要点 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | §11.8 易错点清单 |
 
 ---
 

@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch12 完整总结 · 中断处理** |
+| [notes/01-interrupt-flow.md](./notes/01-interrupt-flow.md) | §12.1 中断处理全流程 |
+| [notes/02-daif.md](./notes/02-daif.md) | §12.2 中断屏蔽（DAIF） |
+| [notes/03-timer-interrupt.md](./notes/03-timer-interrupt.md) | §12.3 通用定时器中断 |
+| [notes/04-context-save.md](./notes/04-context-save.md) | §12.4 中断现场保存/恢复 |
+| [notes/05-irq-controller.md](./notes/05-irq-controller.md) | §12.5 中断控制器演进 |
+| [notes/06-lab.md](./notes/06-lab.md) | §12.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | §12.7 易错点清单 |
 
 ---
 

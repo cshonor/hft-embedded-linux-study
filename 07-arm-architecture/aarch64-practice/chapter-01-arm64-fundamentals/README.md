@@ -20,7 +20,12 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（产品线 · EL · 寄存器 · PSTATE · 思考题） |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch1 完整总结 · ARM64 体系基础知识** |
+| [notes/01-arm-history-profiles.md](./notes/01-arm-history-profiles.md) | 1.1 ARM 架构历史与产品线 |
+| [notes/02-exception-levels.md](./notes/02-exception-levels.md) | 1.2 四个异常等级 EL |
+| [notes/03-registers.md](./notes/03-registers.md) | 1.3 AArch64 寄存器组 |
+| [notes/04-cortex-a72.md](./notes/04-cortex-a72.md) | 1.4 Cortex-A72 简述 |
+| [notes/05-chapter-summary.md](./notes/05-chapter-summary.md) | 1.5-1.6 必背小结与思考题 |
 
 ---
 

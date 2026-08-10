@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch20 完整总结 · 原子操作** |
+| [notes/01-exclusive-monitor.md](./notes/01-exclusive-monitor.md) | §20.1 独占监视器（Exclusive Monitor） |
+| [notes/02-atomic-patterns.md](./notes/02-atomic-patterns.md) | §20.2 原子操作实现模式 |
+| [notes/03-lse.md](./notes/03-lse.md) | §20.3 ARMv8.1 LSE（Large System Extensions） |
+| [notes/04-wfe-sev.md](./notes/04-wfe-sev.md) | §20.4 WFE / SEV —— 低功耗自旋锁 |
+| [notes/05-linux-atomic-api.md](./notes/05-linux-atomic-api.md) | §20.5 Linux 原子操作 API |
+| [notes/06-lab.md](./notes/06-lab.md) | §20.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | §20.7 易错点清单 |
 
 ---
 

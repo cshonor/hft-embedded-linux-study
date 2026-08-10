@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch10 完整总结 · GCC 内嵌汇编代码** |
+| [notes/01-basic-syntax.md](./notes/01-basic-syntax.md) | 10.1 基本语法 |
+| [notes/02-constraints.md](./notes/02-constraints.md) | 10.2 约束字符 |
+| [notes/03-examples.md](./notes/03-examples.md) | 10.3 常用实战示例 |
+| [notes/04-clobber.md](./notes/04-clobber.md) | 10.4 clobber 列表 |
+| [notes/05-goto.md](./notes/05-goto.md) | 10.5 goto 模板 |
+| [notes/06-lab.md](./notes/06-lab.md) | 10.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | 10.7 易错点清单 |
 
 ---
 

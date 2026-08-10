@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch15 完整总结 · 高速缓存基础知识** |
+| [notes/01-cache-mapping.md](./notes/01-cache-mapping.md) | §15.1 Cache 映射方式 |
+| [notes/02-pipt-vipt.md](./notes/02-pipt-vipt.md) | §15.2 PIPT vs VIPT |
+| [notes/03-cache-hierarchy.md](./notes/03-cache-hierarchy.md) | §15.3 ARMv8 Cache 层次 |
+| [notes/04-key-concepts.md](./notes/04-key-concepts.md) | §15.4 关键概念 |
+| [notes/05-dma-cache.md](./notes/05-dma-cache.md) | §15.5 DMA 与 Cache |
+| [notes/06-lab.md](./notes/06-lab.md) | §15.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | §15.7 易错点清单 |
 
 ---
 

@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch17 完整总结 · TLB 管理** |
+| [notes/01-tlb-basics.md](./notes/01-tlb-basics.md) | §17.1 TLB 基本概念 |
+| [notes/02-asid.md](./notes/02-asid.md) | §17.2 ASID（Address Space ID） |
+| [notes/03-tlb-flush.md](./notes/03-tlb-flush.md) | §17.3 TLB 刷新指令 |
+| [notes/04-bbm.md](./notes/04-bbm.md) | §17.4 BBM（Break-Before-Make） |
+| [notes/05-tlb-scenarios.md](./notes/05-tlb-scenarios.md) | §17.5 内核 TLB 维护场景 |
+| [notes/06-lab.md](./notes/06-lab.md) | §17.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | §17.7 易错点清单 |
 
 ---
 

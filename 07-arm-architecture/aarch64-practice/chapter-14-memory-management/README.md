@@ -19,7 +19,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch14 完整总结 · 页表与 MMU** |
+| [notes/01-va-space.md](./notes/01-va-space.md) | §14.1 虚拟地址空间 |
+| [notes/02-four-level-page-table.md](./notes/02-four-level-page-table.md) | §14.2 四级页表 |
+| [notes/03-descriptor-format.md](./notes/03-descriptor-format.md) | §14.3 页表项（Descriptor）格式 |
+| [notes/04-memory-attributes.md](./notes/04-memory-attributes.md) | §14.4 内存属性 |
+| [notes/05-access-permission.md](./notes/05-access-permission.md) | §14.5 访问权限（AP） |
+| [notes/06-enable-mmu.md](./notes/06-enable-mmu.md) | §14.6 开 MMU 流程 |
+| [notes/07-lab.md](./notes/07-lab.md) | §14.7 实验要点 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | §14.8 易错点清单 |
 
 ---
 

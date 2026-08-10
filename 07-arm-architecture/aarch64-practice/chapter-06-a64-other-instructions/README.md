@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch6 完整总结 · 其他重要指令** |
+| [notes/01-adr-adrp.md](./notes/01-adr-adrp.md) | 6.1 ADR / ADRP 内核重定位关键 |
+| [notes/02-svc.md](./notes/02-svc.md) | 6.2 SVC 系统调用 |
+| [notes/03-mrs-msr.md](./notes/03-mrs-msr.md) | 6.3 MRS / MSR 系统寄存器读写 |
+| [notes/04-ldxr-stxr-preview.md](./notes/04-ldxr-stxr-preview.md) | 6.4 LDXR / STXR 独占访问（预览） |
+| [notes/05-barrier-preview.md](./notes/05-barrier-preview.md) | 6.5 DMB / DSB / ISB 内存屏障（预览） |
+| [notes/06-lab.md](./notes/06-lab.md) | 6.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | 6.7 易错点清单 |
 
 ---
 

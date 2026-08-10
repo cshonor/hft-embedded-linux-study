@@ -19,7 +19,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch9 完整总结 · 链接器与链接脚本** |
+| [notes/01-linking-basics.md](./notes/01-linking-basics.md) | 9.1 链接基本概念 |
+| [notes/02-linker-script-syntax.md](./notes/02-linker-script-syntax.md) | 9.2 链接脚本语法 |
+| [notes/03-vma-lma.md](./notes/03-vma-lma.md) | 9.3 VMA vs LMA |
+| [notes/04-linker-options.md](./notes/04-linker-options.md) | 9.4 常用链接器选项 |
+| [notes/05-analyze-output.md](./notes/05-analyze-output.md) | 9.5 分析链接结果 |
+| [notes/06-kernel-link-script.md](./notes/06-kernel-link-script.md) | 9.6 Linux 内核链接脚本分析 |
+| [notes/07-lab.md](./notes/07-lab.md) | 9.7 实验要点 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | 9.8 易错点清单 |
 
 ---
 

@@ -19,7 +19,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch5 完整总结 · 比较指令与跳转指令** |
+| [notes/01-compare.md](./notes/01-compare.md) | 5.1 比较指令 |
+| [notes/02-csel.md](./notes/02-csel.md) | 5.2 条件选择指令 CSEL/CSET |
+| [notes/03-branch.md](./notes/03-branch.md) | 5.3 跳转指令全览 |
+| [notes/04-condition-suffix.md](./notes/04-condition-suffix.md) | 5.4 条件后缀速查 |
+| [notes/05-cbz-tbz.md](./notes/05-cbz-tbz.md) | 5.5 CBZ / CBNZ / TBZ / TBNZ |
+| [notes/06-patterns.md](./notes/06-patterns.md) | 5.6 典型代码模式 |
+| [notes/07-lab.md](./notes/07-lab.md) | 5.7 实验要点 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | 5.8 易错点清单 |
 
 ---
 

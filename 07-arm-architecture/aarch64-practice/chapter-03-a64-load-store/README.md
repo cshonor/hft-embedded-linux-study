@@ -20,9 +20,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（寻址 · LDP/STP · 伪 LDR · 思考题） |
-| [../SIGNED-UNSIGNED.md](../SIGNED-UNSIGNED.md) | 有符号/无符号：LDRB vs LDRSB、补码 |
-| [../S-SUFFIX.md](../S-SUFFIX.md) | LDRSB 的 S vs ADDS 的 S（勿混） |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch3 完整总结 · 加载与存储 LDR / STR** |
+| [notes/01-load-store-rules.md](./notes/01-load-store-rules.md) | 3.1 Load-Store 核心规则 |
+| [notes/02-register-width.md](./notes/02-register-width.md) | 3.2 寄存器宽度与访存宽度 |
+| [notes/03-addressing-modes.md](./notes/03-addressing-modes.md) | 3.3 五大寻址模式 |
+| [notes/04-stp-ldp.md](./notes/04-stp-ldp.md) | 3.4 LDP / STP 栈操作主力 |
+| [notes/05-ldr-pseudo.md](./notes/05-ldr-pseudo.md) | 3.5 LDR 伪指令 ldr =label |
+| [notes/06-special-load-store.md](./notes/06-special-load-store.md) | 3.6 特殊访存指令 |
+| [notes/07-typical-patterns.md](./notes/07-typical-patterns.md) | 3.7 典型实操模式 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | 3.8 易错点清单 |
 
 ---
 

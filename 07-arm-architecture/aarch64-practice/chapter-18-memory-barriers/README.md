@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch18 完整总结 · 内存屏障指令** |
+| [notes/01-weak-memory-model.md](./notes/01-weak-memory-model.md) | §18.1 弱序内存模型 |
+| [notes/02-three-barriers.md](./notes/02-three-barriers.md) | §18.2 三条屏障指令 |
+| [notes/03-typical-scenarios.md](./notes/03-typical-scenarios.md) | §18.3 典型场景 |
+| [notes/04-acquire-release.md](./notes/04-acquire-release.md) | §18.4 Acquire / Release 语义 |
+| [notes/05-linux-barrier-api.md](./notes/05-linux-barrier-api.md) | §18.5 Linux 内核屏障 API |
+| [notes/06-lab.md](./notes/06-lab.md) | §18.6 实验要点 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | §18.7 易错点清单 |
 
 ---
 

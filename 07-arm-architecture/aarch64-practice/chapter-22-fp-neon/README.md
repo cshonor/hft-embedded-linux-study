@@ -19,7 +19,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch22 完整总结 · 浮点运算与 NEON 指令** |
+| [notes/01-fp-registers.md](./notes/01-fp-registers.md) | §22.1 浮点寄存器 |
+| [notes/02-neon-vectors.md](./notes/02-neon-vectors.md) | §22.2 NEON 向量寄存器 |
+| [notes/03-neon-instructions.md](./notes/03-neon-instructions.md) | §22.3 常用 NEON 指令 |
+| [notes/04-rgb-bgr.md](./notes/04-rgb-bgr.md) | §22.4 RGB → BGR 转换示例 |
+| [notes/05-matrix-multiply.md](./notes/05-matrix-multiply.md) | §22.5 矩阵乘法加速 |
+| [notes/06-intrinsics.md](./notes/06-intrinsics.md) | §22.6 NEON 内建函数（Intrinsics） |
+| [notes/07-lab.md](./notes/07-lab.md) | §22.7 实验要点 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | §22.8 易错点清单 |
 
 ---
 

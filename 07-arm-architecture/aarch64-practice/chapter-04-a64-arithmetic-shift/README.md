@@ -20,10 +20,14 @@ ADD/ADDS、SUB/SUBS/CMP、NZCV、移位、AND/ORR/EOR/BIC、UBFX/SBFX/BFI；仍�
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结**（算术 · NZCV · 移位 · 位段 · 思考题） |
-| [../NZCV.md](../NZCV.md) | **NZCV 专篇**（N/Z/C/V · 条件后缀 · 例题） |
-| [../SIGNED-UNSIGNED.md](../SIGNED-UNSIGNED.md) | 有符号/无符号：补码 · C vs V · LSR/ASR |
-| [../S-SUFFIX.md](../S-SUFFIX.md) | **S ≠ 有符号**：Set flags vs LDRSB 的 Sign |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch4 完整总结 · 算术、移位与位操作** |
+| [notes/01-arithmetic.md](./notes/01-arithmetic.md) | 4.1 算术指令 |
+| [notes/02-nzcv.md](./notes/02-nzcv.md) | 4.2 NZCV 四个条件标志 |
+| [notes/03-shift.md](./notes/03-shift.md) | 4.3 移位指令 |
+| [notes/04-bit-ops.md](./notes/04-bit-ops.md) | 4.4 位操作指令 |
+| [notes/05-bit-field.md](./notes/05-bit-field.md) | 4.5 位段提取与插入 |
+| [notes/06-examples.md](./notes/06-examples.md) | 4.6 典型例子 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | 4.7 易错坑 |
 
 ---
 

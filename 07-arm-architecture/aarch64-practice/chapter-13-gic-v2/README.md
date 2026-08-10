@@ -19,7 +19,15 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch13 完整总结 · GIC-V2 中断控制器** |
+| [notes/01-gic-architecture.md](./notes/01-gic-architecture.md) | §13.1 GIC 分层架构 |
+| [notes/02-gic-registers.md](./notes/02-gic-registers.md) | §13.2 关键寄存器 |
+| [notes/03-gic-init.md](./notes/03-gic-init.md) | §13.3 GIC 初始化流程 |
+| [notes/04-irq-flow.md](./notes/04-irq-flow.md) | §13.4 中断处理流程 |
+| [notes/05-trigger-type.md](./notes/05-trigger-type.md) | §13.5 中断触发类型 |
+| [notes/06-gicv2-vs-gicv3.md](./notes/06-gicv2-vs-gicv3.md) | §13.6 GICv2 vs GICv3 对照 |
+| [notes/07-lab.md](./notes/07-lab.md) | §13.7 实验要点 |
+| [notes/08-pitfalls.md](./notes/08-pitfalls.md) | §13.8 易错点清单 |
 
 ---
 

@@ -19,7 +19,13 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch23 完整总结 · 可伸缩矢量计算与优化（SVE/SVE2）** |
+| [notes/01-sve-features.md](./notes/01-sve-features.md) | §23.1 SVE 核心特性 |
+| [notes/02-predicate.md](./notes/02-predicate.md) | §23.2 谓词（Predicate）⭐ |
+| [notes/03-sve-vs-neon.md](./notes/03-sve-vs-neon.md) | §23.3 SVE vs NEON |
+| [notes/04-strcmp-optimization.md](./notes/04-strcmp-optimization.md) | §23.4 实用示例：strcmp 优化 |
+| [notes/05-lab.md](./notes/05-lab.md) | §23.5 实验要点 |
+| [notes/06-minimal-knowledge.md](./notes/06-minimal-knowledge.md) | §23.6 精简要点（跳过级别的最小知识） |
 
 ---
 

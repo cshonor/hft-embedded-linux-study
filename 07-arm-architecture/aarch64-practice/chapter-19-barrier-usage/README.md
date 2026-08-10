@@ -19,7 +19,14 @@
 
 | 笔记 | 说明 |
 |------|------|
-| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **本章详细总结** |
+| [notes/section-0-本章完整概述.md](./notes/section-0-本章完整概述.md) | **Ch19 完整总结 · 合理使用内存屏障** |
+| [notes/01-spinlock.md](./notes/01-spinlock.md) | §19.1 案例一：自旋锁获取/释放 |
+| [notes/02-message-passing.md](./notes/02-message-passing.md) | §19.2 案例二：消息传递（邮箱） |
+| [notes/03-dma.md](./notes/03-dma.md) | §19.3 案例三：DMA 操作 |
+| [notes/04-tlb-maintenance.md](./notes/04-tlb-maintenance.md) | §19.4 案例四：TLB 维护 |
+| [notes/05-decision-tree.md](./notes/05-decision-tree.md) | §19.5 屏障选择决策树 |
+| [notes/06-hft-spsc.md](./notes/06-hft-spsc.md) | §19.6 HFT 中的屏障使用 |
+| [notes/07-pitfalls.md](./notes/07-pitfalls.md) | §19.7 易错点清单 |
 
 ---
 
