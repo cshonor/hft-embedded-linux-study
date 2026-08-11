@@ -1,10 +1,11 @@
-# 4.1 算术指令
+# 4.1 算术指令 — 加减法
 
-> 来源：§4.1 · 精读 · [章总览](section-0-本章完整概述.md) · [补码专篇](../../SIGNED-UNSIGNED.md)
+> 来源：§4.1 · 精读 · [章总览](section-0-本章完整概述.md) · [补码专篇](../../SIGNED-UNSIGNED.md) · [乘除法 →](01b-multiply-divide.md)
 
 ## 本节讲什么
 
-ADD/SUB/CMP/MUL/SDIV/UDIV 等全部整数算术指令，以及补码与运算的关系。
+ADD/SUB/CMP/CMN/ADC/SBC 等加减法指令，以及补码与加减运算的关系。
+乘法/除法见 [01b-multiply-divide.md](01b-multiply-divide.md)。
 
 ---
 
@@ -187,212 +188,6 @@ sbc  x1, x1, x3            ; 高 64 位减 - 借位
 
 ---
 
-## 乘法指令
-
-### 128 位乘积的概念
-
-AArch64 两个 64 位寄存器相乘 `Rn * Rm`，完整结果是 **128 位**。硬件把结果分成高低两半：
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    128 位完整乘积                             │
-├────────────────────────┬─────────────────────────────────────┤
-│    高 64 bit            │       低 64 bit                     │
-│  ← SMULH / UMULH       │  ← MUL                            │
-│  （有符号 / 无符号分开）│  （有符号无符号相同）               │
-└────────────────────────┴─────────────────────────────────────┘
-```
-
-| 指令 | 计算 | 拿到哪一部分 | 是否区分有符号 |
-|------|------|-------------|---------------|
-| `MUL` | `Rn × Rm` | 低 64 bit | ❌ 不需要 |
-| `MADD` | `Ra + Rn × Rm` | 低 64 bit | ❌ 不需要 |
-| `MSUB` | `Ra − Rn × Rm` | 低 64 bit | ❌ 不需要 |
-| `SMULH` | `Rn × Rm` | 高 64 bit | ✅ 有符号补码乘法 |
-| `UMULH` | `Rn × Rm` | 高 64 bit | ✅ 无符号乘法 |
-
-### 1. MUL — 取低 64 位
-
-```asm
-mul  x0, x1, x2          ; x0 = (x1 × x2) 的低 64 位
-```
-
-只取 128 位乘积的低一半（低 64 bit）。
-
-> **补码特性关键点**：不管把 Rn、Rm 当成有符号还是无符号数，**低 64 位结果完全相同**。丢掉高 64 位，相当于自动对 2^64 取模。
-
-```asm
-; 负数乘法示例
-mov  x0, #-2
-mov  x1, #3
-mul  x2, x0, x1          ; (-2)*3 = -6
-                          ; 128 位结果的低 64 位 = -6 的补码，存入 x2
-                          ; x2 = 0xFFFFFFFFFFFFFFFA
-```
-
-> `MUL` 等价于 `MADD Rd, Rn, Rm, XZR`（加数填零寄存器）。
-
-### 2. MADD — 乘加（Multiply-Add）⭐ HFT 高频
-
-```asm
-madd x0, x1, x2, x3      ; x0 = x3 + x1 * x2
-                           ;       Ra  + Rn  * Rm
-                           ; 先乘后加，只保留低 64 位
-```
-
-一条指令完成乘加。HFT 交易计算：`总价 = 手续费 + 单价 × 数量`，比 `MUL + ADD` 少一条指令，延迟更低。
-
-```asm
-; x0 = fee + price * quantity
-madd x0, x1, x2, x3      ; x0 = x3 + x1 * x2
-```
-
-```c
-// C 代码 → 编译器自动生成 MADD
-int64_t total = fee + (price * quantity);  // gcc -O2 → madd
-```
-
-### 3. MSUB — 乘减（Multiply-Subtract）
-
-```asm
-msub x0, x1, x2, x3      ; x0 = x3 - x1 * x2
-                           ;       Ra  − Rn  * Rm
-                           ; 先乘，再用 Ra 减去乘积，取低 64 位
-```
-
-### 4. SMULH / UMULH — 取高 64 位
-
-MUL 只拿低 64 位。如果需要完整 128 位乘积，高 64 位必须用这两条。
-
-> ⚠️ **高位有符号、无符号结果不一样，必须选对指令！**
-
-```asm
-; 完整 128 位有符号乘法
-; x1:x0 = x2 * x3  （x1=高 64 位，x0=低 64 位）
-mul    x0, x2, x3        ; 低 64 位
-smulh  x1, x2, x3        ; 有符号乘法的高 64 位
-
-; 完整 128 位无符号乘法
-mul    x0, x2, x3
-umulh  x1, x2, x3
-```
-
-### 关键考点（必记）
-
-1. **64 位 × 64 位 = 128 位结果**
-2. **低 64 位**：有符号、无符号结果完全相同，`MUL` 一条搞定
-3. **高 64 位必须区分**：`SMULH`（有符号）/ `UMULH`（无符号）
-4. `MADD` 可以替代 `MUL`：`mul x0, x1, x2` = `madd x0, x1, x2, xzr`
-
-### 思考题
-
-> 两个 64 位寄存器相乘，如果只用 MUL，高 64 位去哪里了？
-
-<details>
-<summary>答案</summary>
-
-直接被硬件丢弃，只保留低 64 位，等价模 2^64。如果业务需要完整高精度结果，必须搭配 `SMULH`（有符号）或 `UMULH`（无符号）。
-
-</details>
-
-### HFT 实战
-
-```c
-// MADD/MSUB 用于价格计算
-// 编译器自动将 a + b*c 优化为 MADD，a - b*c 优化为 MSUB
-int64_t total_cost(int64_t fee, int64_t price, int64_t qty) {
-    return fee + price * qty;   // → madd
-}
-
-int64_t net_cost(int64_t base, int64_t price, int64_t qty) {
-    return base - price * qty;  // → msub
-}
-```
-
-> **HFT 要点**：`MADD` 优先使用，单指令完成乘加。价格、手续费计算用这条指令。如果需要完整 128 位乘积（加密、大数运算），`MUL + SMULH` 或 `MUL + UMULH` 成对使用。
-
----
-
-## 除法指令
-
-| 指令 | 作用 | 有符号？ | 除零行为 |
-|------|------|---------|---------|
-| `SDIV` | `Rd = Rn / Rm` | ✅ 有符号 | 结果为 0 |
-| `UDIV` | `Rd = Rn / Rm` | ❌ 无符号 | 结果为 0 |
-
-> ⚠️ **除法是加减乘除中唯一必须区分有符号/无符号的指令。**
-
-### SDIV 向零截断
-
-```asm
-; 有符号除法
-mov  x0, #-7
-mov  x1, #2
-sdiv x2, x0, x1           ; x2 = -7 / 2 = -3（向零截断，不是 -4！）
-
-; 无符号除法
-mov  x0, #0xFFFFFFFFFFFFFFF9  ; = -7 的补码，但当作无符号 = 18446744073709551609
-mov  x1, #2
-udiv x2, x0, x1           ; x2 = 18446744073709551609 / 2 = 9223372036854775804
-```
-
-| 被除数 | 除数 | SDIV 结果 | 说明 |
-|--------|------|----------|------|
-| 7 | 2 | 3 | 3.5 → 截断 → 3 |
-| -7 | 2 | -3 | -3.5 → 向零截断 → -3（不是 -4） |
-| 7 | -2 | -3 | 3.5 → 截断 → -3 |
-| -7 | -2 | 3 | -3.5 → 向零截断 → 3 |
-
-> **向零截断**（truncation toward zero）= 丢掉小数部分，不四舍五入。
-
-### 除零不抛异常 ⚠️
-
-ARM64 除法**不产生异常**，除零时结果为 0（不 trap）：
-
-```asm
-mov  x0, #10
-mov  x1, #0
-udiv x2, x0, x1           ; x2 = 0（不 crash，不 trap）
-```
-
-> ⚠️ 这跟 x86 不同（x86 除零触发 #DE 异常）。软件必须自行检查除数是否为 0。
-
-```c
-// HFT 业务代码必须手动校验除数
-inline int64_t safe_div(int64_t a, int64_t b) {
-    if (b == 0) return 0;          // ARM64 除零返回 0，但业务上要明确处理
-    return a / b;                   // 编译器生成 sdiv
-}
-```
-
----
-
-## 取负指令
-
-```asm
-neg  x0, x1               ; x0 = -x1 ≡ sub x0, xzr, x1
-negs x0, x1               ; 同上 + 设置 NZCV
-ngc  x0, x1               ; x0 = -x1 - NOT(C)（带借位取负）
-```
-
-> `NEG` 是伪指令，汇编器展开为 `SUB XZR, ...`。
-
----
-
-## 补码运算总结表（必背）
-
-| 运算 | 有无符号是否共用指令 | 备注 |
-|------|---------------------|------|
-| **加法 ADD** | ✅ 共用 | 看 V 判断有符号溢出，C 判断无符号进位 |
-| **减法 SUB** | ✅ 共用 | 同上 |
-| **乘法（低64位）MUL** | ✅ 共用 | 补码数学性质决定 |
-| **乘法（高64位）** | ❌ 分开 | `SMULH`（有符号）/ `UMULH`（无符号） |
-| **除法** | ❌ 分开 | `SDIV`（向零截断）/ `UDIV`，除零不报错 |
-
-> **一句话**：加减乘（低位）不需要区分有符号无符号；除法必须选。
-
----
-
 ## HFT 实战视角
 
 ### 1. ADDS/SUBS 省掉 CMP（循环优化）
@@ -412,62 +207,7 @@ loop:
 
 > 减少一条指令 = 减少一个流水线周期。在 HFT 热路径中，循环计数器的优化累积效果显著。
 
-### 2. MADD 优先（价格计算）
-
-```asm
-; 总价 = 基础费 + 单价 × 数量
-; x1 = price, x2 = qty, x3 = base_fee
-madd x0, x1, x2, x3       ; x0 = base_fee + price * qty
-                           ; 一条指令完成，比 mul + add 少一条
-
-; 净额 = 总额 - 手续费率 × 数量
-; x1 = fee_rate, x2 = qty, x3 = total
-msub x0, x1, x2, x3       ; x0 = total - fee_rate * qty
-```
-
-```c
-// C 代码对应
-// 编译器会自动把 a + b * c 优化为 MADD
-int64_t total = base_fee + price * qty;  // → madd
-int64_t net   = total - fee_rate * qty;  // → msub
-```
-
-### 3. SDIV 精度陷阱（百分比计算）
-
-```c
-// HFT 价格变动百分比计算
-int64_t price_change = new_price - old_price;   // 可能为负
-int64_t result = price_change / old_price;       // SDIV 向零截断
-
-// ⚠️ 陷阱：-7 / 2 = -3，不是 -4
-// 做净值/百分比计算时，向零截断会带来系统性偏差
-// 如果需要向下取整，要用额外逻辑：
-int64_t floored_div(int64_t a, int64_t b) {
-    int64_t q = a / b;
-    int64_t r = a % b;
-    if ((r != 0) && ((r < 0) != (b < 0)))
-        q--;                    // 向下取整修正
-    return q;
-}
-```
-
-### 4. 除零安全检查
-
-```c
-// ARM64 除零不会 crash，但会静默返回 0
-// HFT 代码必须校验，否则会导致错误的交易决策
-
-inline int64_t safe_pct(int64_t num, int64_t denom) {
-    if (denom == 0) {
-        // 不能静默返回 0，要记录告警
-        // log_warn("division by zero: num=%ld", num);
-        return 0;
-    }
-    return num / denom;
-}
-```
-
-### 5. 移位替代乘除
+### 2. 移位替代乘除
 
 ```asm
 ; 乘除 2 的幂次用移位替代，零延迟（在 ALU 移位器中完成）
@@ -508,38 +248,7 @@ adc  x1, x1, x3    ; 高 64 位加 + 进位
 
 </details>
 
-4. `MUL` 取低 64 位时，有符号和无符号乘法结果相同吗？为什么？
-<details><summary>答案</summary>
-
-**相同**。这是补码的性质：两个 N 位补码数相乘，结果的低 N 位与无符号乘法的低 N 位完全一致。只有高位（第 N+1~2N 位）才因符号扩展而不同。
-
-</details>
-
-5. `SDIV` 和 `UDIV` 有什么区别？`-7 / 2` 分别得多少？
-<details><summary>答案</summary>
-
-- `SDIV`：有符号除法，向零截断。`-7 / 2 = -3`（不是 -4，向零截断丢小数）
-- `UDIV`：无符号除法。同样的比特流 `0xFFFF...FFF9 / 2` = 极大正数
-
-**除法是加减乘中唯一必须显式选择有符号/无符号的运算。**
-
-</details>
-
-6. ARM64 除零会产生异常吗？
-<details><summary>答案</summary>
-
-**不会**。ARM64 除零结果为 0，不产生异常也不 trap。软件必须自行检查除数是否为 0。这与 x86 不同（x86 除零触发 #DE 异常）。
-
-</details>
-
-7. `MADD x0, x1, x2, x3` 计算什么？如果不需要加数怎么写？
-<details><summary>答案</summary>
-
-`x0 = x3 + x1 * x2`（乘加）。如果不需要加数，用 `XZR` 代替：`mul x0, x1, x2` ≡ `madd x0, x1, x2, xzr`。
-
-</details>
-
-8. 补码 `-5` 在 64 位寄存器中的十六进制值是什么？
+4. 补码 `-5` 在 64 位寄存器中的十六进制值是什么？
 <details><summary>答案</summary>
 
 `0xFFFFFFFFFFFFFFFB`。计算过程：`~5 + 1 = ~0x0000000000000005 + 1 = 0xFFFFFFFFFFFFFFFA + 1 = 0xFFFFFFFFFFFFFFFB`。
@@ -555,12 +264,6 @@ adc  x1, x1, x3    ; 高 64 位加 + 进位
 | CMP x0,x1 等价 | `SUBS XZR, X0, X1` |
 | ADD vs ADDS | ADD 只算结果；ADDS 同时设置 NZCV |
 | 128 位加法 | `adds` 低 64 位 → `adc` 高 64 位带进位 |
-| MUL 低 64 位有/无符号 | 相同（补码数学性质） |
-| SDIV 截断方式 | 向零截断，-7/2=-3 |
-| UDIV 含义 | 把比特流当无符号大数做除法 |
-| ARM64 除零行为 | 不异常，返回 0 |
-| madd x0,x1,x2,x3 | x0 = x3 + x1 × x2 |
-| 64 位 -5 补码 | `0xFFFFFFFFFFFFFFFB` |
 | 两处 S 区别 | 算术 S = Set flags；加载 S = Sign 扩展 |
 
 ---
@@ -568,7 +271,7 @@ adc  x1, x1, x3    ; 高 64 位加 + 进位
 ## 参考与延伸
 
 - 原书 §4.1
+- [乘法/除法指令 →](01b-multiply-divide.md)
 - [4.2 NZCV 标志](02-nzcv.md)
 - [补码/有符号无符号专篇](../../SIGNED-UNSIGNED.md)
 - [S 后缀辨析](../../S-SUFFIX.md)
-- [5.2 条件选择指令](../../chapter-05-a64-compare-branch/notes/section-0-本章完整概述.md)
