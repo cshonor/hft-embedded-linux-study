@@ -107,6 +107,66 @@ EC=0x24 → 非法指令
 | 172 | getpid | 获取PID |
 | 221 | execve | 执行程序 |
 
+### ARM32 SWI → AArch64 SVC 设计演进
+
+```
+ARM32 系统调用（SWI / SVC）：
+  SWI #0x900000 + syscall_num
+  ; 24 位立即数空间，Linux 用高 8 位 0x90 标记
+  ; 内核从指令编码中提取 syscall number
+
+  问题：
+  1. 立即数只有 24 位，系统调用号受限于编码空间
+  2. 内核必须解码指令才能获取调用号 → 额外开销
+  3. 不同 OS 约定不同（Linux vs 其他）→ 不可移植
+
+AArch64 系统调用（SVC）：
+  MOV x8, #syscall_num
+  SVC #0
+  ; 调用号在 x8 寄存器中，不在指令里
+
+  改进：
+  1. x8 是 64 位寄存器 → 调用号空间无限
+  2. 内核直接读 x8 → 不需要解码指令
+  3. SVC #0 的立即数留给 OS 自由使用（Linux 不用，其他 OS 可标记服务类型）
+  4. 统一约定 → 内核只需查 sys_call_table[x8]
+```
+
+> 这体现了 AArch64 的设计理念：**让寄存器承担数据传递，指令只做控制**。寄存器比指令立即数灵活得多——可以动态计算、可以间接传递、不受编码位数限制。
+
+### SVC 异常处理时序
+
+```
+SVC #0 执行后的 CPU 硬件时序（不可中断的原子操作）：
+
+  Cycle 1: 硬件保存
+    ELR_EL1  ← PC（SVC 指令的下一条地址）
+    SPSR_EL1 ← PSTATE（当前 EL、标志位、中断屏蔽状态）
+    
+  Cycle 2: 状态切换
+    SP      ← SP_EL1（切换到 EL1 的栈指针）
+    PSTATE.EL ← 1（进入 EL1）
+    PSTATE.D ← 1（屏蔽 Debug 异常）
+    PSTATE.I ← 1（屏蔽 IRQ，防止内核入口被打断）
+    PSTATE.A ← 1（屏蔽 SError）
+    
+  Cycle 3: 跳转
+    PC ← VBAR_EL1 + 0x200（同步异常向量）
+    → 开始执行内核的 vector table 入口代码
+
+  软件阶段（内核异常处理）：
+    1. 保存 x0-x30 到内核栈（STP 批量存储）
+    2. MRS x0, ESR_EL1 → 读异常信息，EC=0x15 确认是 SVC
+    3. 读 x8 → syscall number
+    4. 查 sys_call_table[x8] → 获取内核函数指针
+    5. 调用内核函数（参数从 x0-x5 传递）
+    6. 返回值 → x0
+    7. 恢复 x0-x30（LDP 批量恢复）
+    8. ERET → 恢复 PC←ELR_EL1, PSTATE←SPSR_EL1（回到 EL0）
+```
+
+> **为什么 PSTATE.I 要在硬件阶段就置 1**：SVC 入口处内核还没保存寄存器，如果此时 IRQ 打断，中断处理程序会覆盖寄存器 → SVC 调用数据丢失。硬件自动屏蔽 IRQ 确保内核入口代码安全执行。
+
 ## 与 C 的对照
 
 ```c

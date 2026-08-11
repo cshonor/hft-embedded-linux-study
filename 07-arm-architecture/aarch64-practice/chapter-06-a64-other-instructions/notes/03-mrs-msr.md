@@ -139,6 +139,64 @@ ISB                    ; 关键：不加 ISB 后果不可预测
 
 > EL0 执行 MRS/MSR 访问 EL1 寄存器 → 触发同步异常（非法指令使用）。
 
+### 系统寄存器编码方案
+
+系统寄存器名称不是随意起的——每个名字对应一个唯一的编码：
+
+```
+MRS/MSR 指令用 op0/op1/CRn/CRm/op2 五个字段编码系统寄存器：
+
+  指令格式（32 位）：
+    [31:22]  操作码（MRS = 1101010100, MSR = 1101010100）
+    [21:20]  op0（00/10 → 2 或 3）
+    [19:16]  op1（0-7，对应 EL 或访问权限）
+    [15:12]  CRn（0-15，寄存器组编号）
+    [11:8]   CRm（0-15，寄存器子组）
+    [7:5]    op2（0-7，具体寄存器）
+    [4:0]    Rt（目标/源通用寄存器）
+
+名称映射规则：
+  SCTLR_EL1 → op0=3, op1=0, CRn=1, CRm=0, op2=0
+  TTBR0_EL1 → op0=3, op1=0, CRn=2, CRm=0, op2=0
+  VBAR_EL1  → op0=3, op1=0, CRn=12, CRm=0, op2=0
+  ESR_EL1   → op0=3, op1=0, CRn=5, CRm=2, op2=0
+  CNTVCT_EL0→ op0=3, op1=3, CRn=14, CRm=0, op2=2
+
+  op1 决定 EL 权限：
+    op1=0 → EL1 寄存器（SCTLR_EL1, TTBR_EL1...）
+    op1=4 → EL2 寄存器（SCTLR_EL2, TTBR_EL2...）
+    op1=3 → EL0 可访问（CNTVCT_EL0 等少数时间寄存器）
+```
+
+> 这就是为什么 `SCTLR_EL1` 和 `SCTLR_EL2` 是不同寄存器——它们 op1 不同，编码不同，硬件路由到不同的物理寄存器。汇编器自动把名称翻译成编码，程序员不需要记数字。
+
+### MRS/MSR 为什么慢——序列化效应
+
+```
+普通指令（ADD/MOV/LDR）：
+  流水线并行执行，后续指令可以提前取指/解码
+
+MRS/MSR 指令：
+  系统寄存器控制硬件状态（MMU/Cache/中断）
+  → CPU 必须确保前序指令全部完成后才执行 MRS/MSR
+  → MRS/MSR 之后的指令必须等 MRS/MSR 完成后才能执行
+  → 实质上是一个 pipeline fence
+
+  典型延迟：
+    MRS x0, CNTVCT_EL0  → ~10-20 cycles（读时间戳计数器）
+    MRS x0, SCTLR_EL1   → ~20-50 cycles（读控制寄存器）
+    MSR SCTLR_EL1, x0   → ~20-50 cycles + ISB 再加 ~10 cycles
+
+  对比：
+    ADD x0, x1, x2      → ~1 cycle
+    LDR x0, [x1]        → ~4 cycles（L1 hit）
+    MRS x0, CNTVCT_EL0  → ~10-20 cycles
+
+  这就是为什么 HFT 用 CNTVCT_EL0 计时时要减去 MRS 自身开销。
+```
+
+> **MSR 后必须加 ISB 的原因**：MSR 修改的是 CPU 配置（如开关 MMU），但流水线中已经取了后续指令——它们用的是旧配置。ISB 冲刷流水线，强制用新配置重新取指。不加 ISB → 旧指令用旧地址翻译 → 不可预测行为。
+
 ## 与 C 的对照
 
 ```c
