@@ -164,143 +164,11 @@ CPU 硬件读取 NZCV 四个 bit：
 不满足   → PC 正常 +4，继续执行下一条指令
 ```
 
-### 函数调用 BL / BLR
+---
 
-```asm
-; BL：调用标签地址的函数
-BL printf             ; 调用 printf，返回地址存入 X30
+> **函数调用 BL/BLR、函数返回 RET、异常返回 ERET、跳转范围、栈帧关系** 详见 [03b-bl-ret-eret.md](03b-bl-ret-eret.md)
 
-; BLR：调用寄存器中地址的函数（函数指针/虚函数）
-LDR x0, [callback_ptr]
-BLR x0                ; 通过函数指针调用
-
-; BL 的等价操作：
-; X30 = PC + 4        （保存返回地址）
-; PC = label           （跳转到目标）
-```
-
-### 函数返回 RET
-
-```asm
-; 默认用 X30(LR) 返回
-RET                    ; PC = X30
-
-; 指定其他寄存器（用于尾调用优化/协程）
-RET x1                 ; PC = x1
-
-; 叶子函数（不调用其他函数）可以省略栈帧
-leaf_func:
-    MOV x0, #42
-    RET                ; 直接用 X30 返回，无需保存
-
-; 非叶子函数必须保存 X30
-non_leaf_func:
-    STP x29, x30, [sp, #-16]!  ; 保存帧指针和返回地址
-    ; ... 调用其他函数 ...
-    LDP x29, x30, [sp], #16    ; 恢复
-    RET
-```
-
-### 异常返回 ERET
-
-```asm
-; ERET 从异常处理返回，恢复 PC 和 PSTATE
-; PC ← ELR_ELx（异常链接寄存器，保存被异常打断的地址）
-; PSTATE ← SPSR_ELx（保存的处理器状态）
-; 同时从当前异常等级返回到低一级
-
-ERET                   ; 只在 EL1 以上使用
-```
-
-### 跳转范围详解
-
-| 指令 | 偏移编码 | 范围 | 说明 |
-|------|----------|------|------|
-| B | 26 位 × 4 | ±128MB | 大多数函数内跳转足够 |
-| B.cond | 19 位 × 4 | ±1MB | 条件跳转范围较小 |
-| BL | 26 位 × 4 | ±128MB | 与 B 相同 |
-| CBZ/CBNZ | 19 位 × 4 | ±1MB | 与 B.cond 相同 |
-| TBZ/TBNZ | 14 位 × 4 | ±32KB | 范围最小 |
-
-```asm
-; 如果 B.cond 的目标超出 ±1MB 范围，需要中转
-B.LT far_label         ; 如果 far_label 超出范围 → 链接器报错
-
-; 解决方法：用无条件 B 中转
-B.LT near_trampoline
-B continue
-near_trampoline:
-B far_label            ; 无条件 B 范围 ±128MB
-continue:
-```
-
-## BL 与栈帧的关系
-
-```
-调用 func() 的完整栈帧流程：
-
-main:                      func:
-  ...                        STP x29, x30, [sp, #-16]!  ← 保存 LR
-  BL func  ──────────────→  ...                          ← 函数体
-  ...    ←────────────────  ...  BL helper ──→ helper:
-  RET                        LDP x29, x30, [sp], #16     ← 恢复 LR
-                             RET ──────────────────────→  ...
-                                                              RET
-
-关键：BL 把返回地址存入 X30。如果 func 内部又 BL helper，
-X30 会被覆盖。所以 func 必须在入口保存 X30。
-```
-
-## 与 C 的对照
-
-| C 代码 | AArch64 汇编 |
-|--------|-------------|
-| `goto label;` | `B label` |
-| `if (cond) goto label;` | `B.cond label` |
-| `func();` | `BL func` |
-| `func_ptr();` | `BLR x0` |
-| `return;` | `RET` |
-| 尾调用 `return func();` | `B func`（省去 RET） |
-
-## 常见错误
-
-1. **嵌套 BL 忘记保存 X30**：非叶子函数入口必须 `STP x29, x30, [sp, #-N]!`。
-2. **B.cond 超范围**：±1MB 可能不够，需用 B 中转。
-3. **混淆 BR 和 B**：B 是 PC 相对（编译期确定地址），BR 是寄存器间接（运行期确定地址）。
-4. **B.LT 比地址**：地址是无符号数，用 B.LT 会导致高位地址被当负数，比较结果错误。
-
-## HFT 关联
-
-跳转指令的延迟差异影响热路径：
-- B/BL 是 PC 相对跳转，可被分支预测器缓存 → 预测正确 ~0-1 cycle
-- BR/BLR 是间接跳转（寄存器目标），预测更难 → 可能 ~5+ cycles
-- 函数指针/虚函数调用用 BLR → 延迟不稳定
-- 尾调用优化用 B 替代 BL+RET → 省一层栈帧和返回开销
-- HFT 热路径应尽量减少间接调用（BLR），改用直接调用（BL）
-- 循环用 SUBS+B.NE 省掉 CMP → 每次迭代少 1 cycle
-
-```asm
-; HFT 反模式：函数指针导致间接跳转
-LDR x0, [=process_order_v1]   ; 运行期选择函数
-BLR x0                         ; 间接调用 → 难预测 → ~5+ cycles
-
-; HFT 正模式：编译期确定函数地址
-BL process_order               ; 直接调用 → 可预测 → ~1 cycle
-
-; HFT 循环优化：SUBS 省掉 CMP
-; ❌ 多一条 CMP
-loop_bad:
-    ; ... work ...
-    SUB x0, x0, #1
-    CMP x0, #0
-    B.NE loop_bad
-
-; ✅ SUBS 一步到位
-loop_good:
-    ; ... work ...
-    SUBS x0, x0, #1           ; 减 1 + 设标志
-    B.NE loop_good            ; 直接跳转
-```
+---
 
 ## 自测题
 
@@ -366,8 +234,7 @@ B.LO 根本不会被执行到，因为 B.LT 已经跳转了。
 ## 参考与延伸
 
 - 原书 §5.3
-- [3.4 STP/LDP 栈帧](../../chapter-03-a64-load-store/notes/section-0-本章完整概述.md)
-- [Ch11 ERET 异常返回](../../chapter-11-exception-handling/notes/section-0-本章完整概述.md)
+- [→ BL/BLR/RET/ERET 详解](03b-bl-ret-eret.md)
 - [5.4 条件后缀速查（完整 16 种）](04-condition-suffix.md)
 - [5.6 典型代码模式（循环/无分支等）](06-patterns.md)
 - [5.8 易错点清单](08-pitfalls.md)
