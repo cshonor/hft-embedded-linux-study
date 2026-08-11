@@ -71,3 +71,28 @@ Ch 10–11 网络 / epoll
 ```
 
 → 读完地基再读 [16-Systems-Performance](../16-systems-performance/) · Hennessy 理论 → [19-computer-architecture](../19-computer-architecture/)
+
+---
+
+## x86-64 汇编学习路径（与 ARM64 的关系）
+
+> **结论：不需要单独学 x86 汇编书。CSAPP Ch3 就是完整的 x86-64 汇编课。**
+
+```
+ARM64 汇编（07）         CSAPP Ch3（02）           HFT 平台深水区（15-19）
+━━━━━━━━━━━━━━         ━━━━━━━━━━━━━━            ━━━━━━━━━━━━━━━━━━
+先学 ARM64 打基础    →   自带 x86-64 汇编      →   Intel SDM / Optimization Manual
+概念全一样，换方言        Ch3 覆盖读写能力           cache / NUMA / RDTSC / pipeline
+```
+
+| 阶段 | 做什么 | 为什么 |
+|------|--------|--------|
+| **1. ARM64 先行**（[07](../07-arm-architecture/)） | 学透 AArch64 汇编 | 最干净的现代 ISA：定长编码、规整寄存器、无历史包袱，适合做第一门汇编 |
+| **2. CSAPP Ch3**（本模块） | x86-64 汇编读写 | 已有 ARM64 底子，概念全一样（寄存器/条件码/调用约定/栈帧），只是语法和编码不同 |
+| **3. HFT 平台特性**（[15](../15-dpdk/)–[19](../19-computer-architecture/)） | x86 平台性能优化 | 真正花时间的不是汇编语法，而是 cache 层次/TLB/NUMA/RDTSC/pipeline stall |
+
+**不单独学 x86 汇编书的理由：**
+
+- x86 是 CISC，变长编码 + 大量遗留指令，单独学习效率低
+- CSAPP Ch3 覆盖已足够"读得懂、写得对"
+- HFT 真正需要的是平台特性（cache/NUMA/pipeline），在 CSAPP Ch5-9 有基础覆盖，更深入看 Intel SDM（Software Developer's Manual）和 Intel Optimization Manual
