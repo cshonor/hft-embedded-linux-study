@@ -18,7 +18,7 @@ CSEL 系列条件选择指令，实现**无分支**的条件赋值——不跳�
 | CSINV Xd, Xn, Xm, cond | 选择+取反 | Xd = cond ? Xn : ~Xm | 条件假时按位取反 |
 | CNEG Xd, Xn, cond | 条件取反 | Xd = cond ? -Xn : Xn | 条件真时取负 |
 
-> **CSET 本质**：`CSET Xd, cond` ≡ `CSINC Xd, XZR, XZR, cond`（条件为真选 XZR=0... 不对，CSET 是条件为真时输出 1）。实际上 CSET 的编码是 `CSINC Xd, XZR, XZR, invert(cond)`，即条件为假时取 XZR+1=1，条件为真时取 XZR=0... 也不对。正确关系：`CSET Xd, cond` = `CSINC Xd, XZR, XZR, invert(cond)`，当 cond 成立时选 XZR=0？不。实际是：cond 成立 → Xd=1，cond 不成立 → Xd=0。编码上是 `CSINC Xd, XZR, XZR, !cond`：!cond 成立选 XZR=0，!cond 不成立选 XZR+1=1。所以 cond 成立时 Xd=1。
+> **CSET 本质**：`CSET Xd, cond` = `CSINC Xd, XZR, XZR, invert(cond)` 的别名。cond 成立 → Xd=1，不成立 → Xd=0。
 
 ### CSEL 详解
 
@@ -73,7 +73,7 @@ cneg x1, x0, mi       ; mi(负数) → x1 = -x0；否则 x1 = x0
 | CNEG Xd, Xn, cond | Xd = -Xn | Xd = Xn |
 | CSINV Xd, Xn, Xm, cond | Xd = Xn | Xd = ~Xm |
 
-CNEG 本质是 `CSINV Xd, Xn, Xn, invert(cond)` 的别名：cond 成立时输出 Xn，不成立时输出 ~Xn。而 -Xn = ~Xn + 1？不完全等价——实际上 CNEG 的编码是条件成立时做 SUB Xd, XZR, Xn（即 -Xn），条件不成立时直接传 Xn。
+CNEG 本质是 `CSINV Xd, Xn, Xn, invert(cond)` 的别名：cond 成立 → Xd = -Xn，不成立 → Xd = Xn。
 
 ### 条件列表
 
