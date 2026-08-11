@@ -1,0 +1,107 @@
+# TLPI 第 20 章 — Signals: Fundamental Concepts
+
+**优先级**：🔴（进程控制、daemon、可靠异步事件的理论地基）  
+**前置**：[Ch19 inotify](../chapter-19-monitoring-file-events/notes.md)（同属异步事件，机制不同）  
+**后置**：[Ch21 Signal Handlers](../chapter-21-signal-handlers/notes.md) · [Ch22 高级信号](../chapter-22-signals-advanced/notes.md)
+
+---
+
+## 小节目录
+
+- [20.1 概述](./notes/20.1-overview.md)
+- [20.2 编号与分类](./notes/20.2-numbering-classification.md)
+- [20.3 生命周期](./notes/20.3-lifecycle.md)
+- [20.4 信号掩码与未决集](./notes/20.4-signal-mask-pending.md)
+- [20.5 `signal()` 缺陷（警示）](./notes/20.5-signal.md)
+- [20.6 发送信号](./notes/20.6-signal-sending.md)
+- [20.7 进程组与终端（基础）](./notes/20.7-process-terminal-group.md)
+
+---
+
+## 章节目标
+
+
+建立信号模型与生命周期；区分标准信号 vs 实时信号；掌握信号集与掩码、未决集；理解递送时机；认清 `signal()` 缺陷与 `kill`/`raise` 语义。
+
+---
+
+
+---
+
+## 20.8 易错清单
+
+
+1. `SIGKILL`/`SIGSTOP` 不可捕/忽/阻  
+2. 标准信号不排队；实时信号可排队  
+3. 掩码是**线程**属性  
+4. 阻塞 ≠ 忽略（pending 待递送 vs 直接丢）  
+5. `kill(pid,0)` 探测存活  
+6. 标准信号 pending 看不出“来了几次”  
+7. handler 内只调异步信号安全函数（Ch21 展开）  
+
+---
+
+
+---
+
+## 速查：标准 vs 实时 · 阻塞 vs 忽略
+
+
+| | 阻塞 | 忽略 |
+|--|------|------|
+| 抵达后 | 进 pending | 丢弃 |
+| 解除后 | 会递送 | — |
+
+| 信号类 | 排队 | 数据 |
+|--------|------|------|
+| 标准 | 否 | 否 |
+| 实时 | 是 | 可 |
+
+---
+
+
+---
+
+## 练习
+
+
+1. `sigprocmask` 阻塞 `SIGINT`，Ctrl+C 暂无效  
+2. `sigpending` 再解除，观察递送  
+3. （选）对比 `signal()` 局限  
+4. `kill(pid,0)` 探测  
+
+---
+
+
+---
+
+## 背诵卡
+
+
+| # | 要点 |
+|---|------|
+| 1 | 产生 → 未决 → 递送；递送在返用户态前 |
+| 2 | KILL/STOP 三不能 |
+| 3 | 标准不排队；实时可排队 |
+| 4 | 掩码是线程的；`sigprocmask` how 三选一 |
+| 5 | 阻塞留 pending；忽略直接丢 |
+| 6 | 弃用 `signal()` → `sigaction` |
+
+---
+
+
+---
+
+## 参考
+
+
+- Kerrisk · TLPI Ch20  
+- `man 7 signal` · `man 2 sigprocmask` · `man 2 kill` · `man 2 sigpending`
+
+
+---
+
+## 参考
+
+- [OUTLINE](../OUTLINE.md)
+- 原始笔记：[notes.md.bak](./notes.md.bak)
