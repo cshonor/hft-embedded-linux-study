@@ -1,11 +1,11 @@
 # 4.1 算术指令 — 加减法
 
-> 来源：§4.1 · 精读 · [章总览](section-0-本章完整概述.md) · [补码专篇](../../SIGNED-UNSIGNED.md) · [乘除法 →](01b-multiply-divide.md)
+> 来源：§4.1 · 精读 · [章总览](section-0-本章完整概述.md) · [补码专篇](../../SIGNED-UNSIGNED.md) · [乘法 →](01b-multiply.md) · [除法 →](01c-divide.md)
 
 ## 本节讲什么
 
 ADD/SUB/CMP/CMN/ADC/SBC 等加减法指令，以及补码与加减运算的关系。
-乘法/除法见 [01b-multiply-divide.md](01b-multiply-divide.md)。
+乘法见 [01b-multiply.md](01b-multiply.md)，除法见 [01c-divide.md](01c-divide.md)。
 
 ---
 
@@ -333,7 +333,7 @@ adc  x1, x1, x3    ; 高 64 位加 + 进位
 ## 参考与延伸
 
 - 原书 §4.1
-- [乘法/除法指令 →](01b-multiply-divide.md)
+- [乘法指令 →](01b-multiply.md) · [除法指令 →](01c-divide.md)
 - [4.2 NZCV 标志](02-nzcv.md)
 - [补码/有符号无符号专篇](../../SIGNED-UNSIGNED.md)
 - [S 后缀辨析](../../S-SUFFIX.md)
