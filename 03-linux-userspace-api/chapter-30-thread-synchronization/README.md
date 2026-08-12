@@ -65,6 +65,61 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+
+/* Ch30 线程同步 — mutex/cond/rwlock。
+ * 演示互斥锁保护共享数据 + 条件变量通知。
+ * 编译: gcc -o ch30_demo ch30_demo.c -lpthread */
+
+static int counter = 0;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+static int ready = 0;
+
+void *producer(void *arg) {
+    for (int i = 0; i < 5; i++) {
+        pthread_mutex_lock(&lock);
+        counter++;
+        ready = 1;
+        printf("Producer: counter=%d, signaling\n", counter);
+        pthread_cond_signal(&cond);
+        pthread_mutex_unlock(&lock);
+        usleep(200000);
+    }
+    return NULL;
+}
+
+void *consumer(void *arg) {
+    for (int i = 0; i < 5; i++) {
+        pthread_mutex_lock(&lock);
+        while (!ready)
+            pthread_cond_wait(&cond, &lock);  /* 原子释放锁+等待 */
+        ready = 0;
+        printf("Consumer: consumed counter=%d\n", counter);
+        pthread_mutex_unlock(&lock);
+    }
+    return NULL;
+}
+
+int main(void) {
+    pthread_t pt, ct;
+    pthread_create(&pt, NULL, producer, NULL);
+    pthread_create(&ct, NULL, consumer, NULL);
+    pthread_join(pt, NULL);
+    pthread_join(ct, NULL);
+    printf("Done: counter=%d\n", counter);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

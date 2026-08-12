@@ -105,6 +105,39 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
+#include <string.h>
+
+/* Ch3 系统编程概念 — 演示用户态函数 vs 系统调用。
+ * getpwuid() 是 libc 用户态函数（内部可能调 open/read）；
+ * getuid() 是系统调用包装。
+ * 编译: gcc -o ch3_demo ch3_demo.c */
+
+int main(void) {
+    /* 系统调用: 获取当前用户 ID */
+    uid_t uid = getuid();
+    printf("uid = %u\n", uid);
+
+    /* libc 用户态函数: 将 uid 转为用户名 */
+    struct passwd *pw = getpwuid(uid);
+    if (pw) {
+        printf("username = %s\n", pw->pw_name);
+        printf("home = %s\n", pw->pw_dir);
+        printf("shell = %s\n", pw->pw_shell);
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

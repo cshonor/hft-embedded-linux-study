@@ -80,6 +80,58 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+/* Ch34 进程组与会话 — setsid/getpgrp/getsid。
+ * 演示创建新会话 + 进程组关系。
+ * 编译: gcc -o ch34_demo ch34_demo.c */
+
+int main(void) {
+    printf("Initial: pid=%d, ppid=%d, pgrp=%d, sid=%d\n",
+           (int)getpid(), (int)getppid(),
+           (int)getpgrp(), (int)getsid(0));
+
+    /* fork 后子进程调用 setsid 成为新会话首领 */
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); return 1; }
+
+    if (pid == 0) {
+        /* 子进程: 必须不是进程组首领才能调 setsid */
+        pid_t new_sid = setsid();
+        if (new_sid < 0) {
+            perror("setsid");
+            _exit(1);
+        }
+        printf("Child after setsid: pid=%d, pgrp=%d, sid=%d\n",
+               (int)getpid(), (int)getpgrp(), (int)getsid(0));
+        printf("Child is now session leader and has no controlling terminal\n");
+
+        /* 创建子进程组 */
+        pid_t grandchild = fork();
+        if (grandchild == 0) {
+            printf("Grandchild: pid=%d, pgrp=%d (same as child)\n",
+                   (int)getpid(), (int)getpgrp());
+            _exit(0);
+        }
+        waitpid(grandchild, NULL, 0);
+        _exit(0);
+    }
+
+    waitpid(pid, NULL, 0);
+    printf("Parent: pgrp=%d (unchanged)\n", (int)getpgrp());
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

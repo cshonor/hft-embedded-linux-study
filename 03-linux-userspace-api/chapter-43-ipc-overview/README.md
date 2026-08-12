@@ -82,6 +82,57 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch43 IPC 概述 — 用管道演示最简单的进程间通信。
+ * IPC 三大类: 数据传输(pipe/FIFO/msgq) / 共享内存 / 同步(信号量)。
+ * 编译: gcc -o ch43_demo ch43_demo.c */
+
+int main(void) {
+    int pipefd[2];
+    if (pipe(pipefd) < 0) { perror("pipe"); return 1; }
+
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); return 1; }
+
+    if (pid == 0) {
+        /* 子进程: 写端 */
+        close(pipefd[0]);  /* 关闭读端 */
+        const char *msg = "Hello from child via pipe!\n";
+        write(pipefd[1], msg, strlen(msg));
+        close(pipefd[1]);
+        _exit(0);
+    }
+
+    /* 父进程: 读端 */
+    close(pipefd[1]);  /* 关闭写端 */
+    char buf[256];
+    ssize_t n = read(pipefd[0], buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        printf("Parent received: %s", buf);
+    }
+    close(pipefd[0]);
+    waitpid(pid, NULL, 0);
+
+    printf("\nIPC options:\n");
+    printf("  pipe/FIFO: simple, parent-child or same-origin\n");
+    printf("  SysV IPC: msgq/sem/shm (key-based, kernel-persistent)\n");
+    printf("  POSIX IPC: mq_open/sem_open/shm_open (name-based)\n");
+    printf("  sockets: cross-machine, most flexible\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

@@ -84,6 +84,73 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <string.h>
+
+/* Ch28 进程创建与执行细节 — fork+exec 实现简易 shell。
+ * 演示 fd 在 fork/exec 间的继承 + FD_CLOEXEC。
+ * 编译: gcc -o ch28_demo ch28_demo.c */
+
+int run_command(char **args) {
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execvp(args[0], args);
+        perror("execvp");
+        _exit(127);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+int main(void) {
+    /* 演示 fd 继承: 打开一个文件描述符 */
+    int fd = open("/tmp/ch28_test.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    write(fd, "written by parent before fork\n", 30);
+
+    /* 子进程继承 fd */
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* fd 在子进程中仍然有效 */
+        write(fd, "written by child after fork\n", 28);
+
+        /* 设置 FD_CLOEXEC: exec 后自动关闭 */
+        int flags = fcntl(fd, F_GETFD);
+        fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+
+        char *args[] = {"ls", "-l", "/proc/self/fd", NULL};
+        printf("Child fd before exec:\n");
+        run_command(args);
+
+        /* exec 后 fd 应该被关闭（但这里已经 exec 了不会执行） */
+        _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+    write(fd, "written by parent after child exit\n", 35);
+    close(fd);
+
+    /* 简易 shell 循环 */
+    printf("\nMini shell demo:\n");
+    char *cmd1[] = {"echo", "hello", NULL};
+    char *cmd2[] = {"pwd", NULL};
+    char *cmd3[] = {"ls", "/tmp", NULL};
+    run_command(cmd1);
+    run_command(cmd2);
+    run_command(cmd3);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

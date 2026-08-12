@@ -120,6 +120,47 @@ Ch4 会用 fd 数字
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch5 深入文件 I/O — dup/dup2/fcntl/lseek/pread/pwrite。
+ * 演示 dup2 重定向 + lseek 随机访问。
+ * 编译: gcc -o ch5_demo ch5_demo.c */
+
+int main(void) {
+    int fd = open("/tmp/ch5_test.txt", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { perror("open"); return 1; }
+
+    /* 写入数据 */
+    const char *data = "ABCDEFGHIJ";
+    write(fd, data, 10);
+
+    /* lseek 到开头，用 pread 读特定位置（不影响文件偏移量） */
+    char buf[4];
+    pread(fd, buf, 3, 5);  /* 从偏移5读3字节 */
+    buf[3] = '\0';
+    printf("pread at offset 5: %s\n", buf);
+
+    /* dup2: 将 fd 复制到 STDOUT_FILENO，重定向输出 */
+    lseek(fd, 0, SEEK_SET);
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+
+    /* printf 现在写入文件而不是终端 */
+    printf("This goes to the file via dup2!\n");
+    fflush(stdout);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

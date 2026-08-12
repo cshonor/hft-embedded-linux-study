@@ -18,3 +18,18 @@ sudo chmod u+s seteuid_drop_restore setuid_permanent_drop
 | `print_credentials.c` | `getresuid`/`getresgid` + 补充组 |
 | `seteuid_drop_restore.c` | Saved-ID 临时降权 / 再提权 |
 | `setuid_permanent_drop.c` | `setuid(getuid())` 永久丢弃特权 |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+/* Ch9 demo: real/effective uid */
+int main(void) {
+    printf("real=%u effective=%u\n",
+           (unsigned)getuid(), (unsigned)geteuid());
+    return 0;
+}
+```
+
+---

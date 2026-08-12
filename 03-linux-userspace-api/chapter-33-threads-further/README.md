@@ -81,6 +81,64 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <string.h>
+#include <signal.h>
+
+/* Ch33 线程深入 — pthread_attr/线程栈/信号掩码。
+ * 演示自定义线程属性: 栈大小 + 分离状态 + 信号掩码。
+ * 编译: gcc -o ch33_demo ch33_demo.c -lpthread */
+
+void *worker(void *arg) {
+    int id = *(int *)arg;
+    printf("Thread %d: running (stack custom sized)\n", id);
+    /* 检查线程栈位置 */
+    int local;
+    printf("Thread %d: stack near %p\n", id, (void *)&local);
+    return NULL;
+}
+
+int main(void) {
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+
+    /* 设置分离状态: 线程结束自动回收，不需 join */
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    /* 设置栈大小: 默认 8MB，改为 2MB */
+    size_t stacksize;
+    pthread_attr_getstacksize(&attr, &stacksize);
+    printf("Default stack size: %zu bytes\n", stacksize);
+    pthread_attr_setstacksize(&attr, 2 * 1024 * 1024);
+
+    /* 设置线程不继承父进程的信号掩码 */
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    pthread_attr_setsigmask_np(&attr, &mask);
+
+    /* 创建线程 */
+    int id = 42;
+    pthread_t tid;
+    pthread_create(&tid, &attr, worker, &id);
+
+    pthread_attr_destroy(&attr);
+
+    /* 分离状态线程不能 join，用 sleep 等待 */
+    sleep(1);
+    printf("Main: detached thread finished\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

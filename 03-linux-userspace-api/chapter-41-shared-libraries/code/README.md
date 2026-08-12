@@ -25,3 +25,20 @@ LD_BIND_NOW=1 ./app
 |------|------|
 | `foo.h` / `foo.c` | 迷你共享库 |
 | `main.c` | 链接 `-lfoo` 的程序 |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <dlfcn.h>
+/* Ch41 demo: dlopen/dlsym (need -ldl) */
+int main(void) {
+    void *h = dlopen("libm.so.6", RTLD_LAZY);
+    double (*sq)(double) = dlsym(h, "sqrt");
+    printf("sqrt(2)=%f\n", sq(2.0));
+    dlclose(h);
+    return 0;
+}
+```
+
+---

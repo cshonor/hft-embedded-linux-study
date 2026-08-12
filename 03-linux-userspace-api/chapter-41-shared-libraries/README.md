@@ -82,6 +82,67 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Ch41 共享库 — dlopen/dlsym/dlclose 动态加载。
+ * 演示运行时加载 libm 并调用 sqrt。
+ * 编译: gcc -o ch41_demo ch41_demo.c -ldl */
+
+int main(void) {
+    /* 动态加载数学库 */
+    void *handle = dlopen("libm.so.6", RTLD_LAZY);
+    if (!handle) {
+        fprintf(stderr, "dlopen failed: %s\n", dlerror());
+        return 1;
+    }
+
+    /* 查找 sqrt 函数符号 */
+    dlerror();  /* 清除错误 */
+    double (*sqrt_fn)(double) = dlsym(handle, "sqrt");
+    const char *err = dlerror();
+    if (err) {
+        fprintf(stderr, "dlsym failed: %s\n", err);
+        dlclose(handle);
+        return 1;
+    }
+
+    /* 调用动态加载的函数 */
+    double val = 144.0;
+    double result = sqrt_fn(val);
+    printf("sqrt(%.0f) = %.4f\n", val, result);
+
+    /* 查找 pow 函数 */
+    double (*pow_fn)(double, double) = dlsym(handle, "pow");
+    if (pow_fn) {
+        printf("pow(2.0, 10.0) = %.4f\n", pow_fn(2.0, 10.0));
+    }
+
+    /* 列出链接的共享库 (通过 /proc/self/maps) */
+    printf("\nLinked libraries (see /proc/self/maps):\n");
+    FILE *fp = fopen("/proc/self/maps", "r");
+    if (fp) {
+        char line[512];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strstr(line, ".so") && !strstr(line, "["))
+                printf("  %s", line);
+        }
+        fclose(fp);
+    }
+
+    dlclose(handle);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

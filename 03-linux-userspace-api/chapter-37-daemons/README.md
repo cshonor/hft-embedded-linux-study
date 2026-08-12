@@ -82,6 +82,82 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <syslog.h>
+
+/* Ch37 守护进程 — 标准守护进程化步骤。
+ * 1. fork + setsid 脱离终端
+ * 2. 再次 fork 防止重新获取终端
+ * 3. chdir("/") 不占用挂载点
+ * 4. umask(0) 清除文件权限掩码
+ * 5. 关闭/重定向标准 fd
+ * 编译: gcc -o ch37_demo ch37_demo.c */
+
+void daemonize(void) {
+    /* Step 1: fork, 父进程退出 */
+    pid_t pid = fork();
+    if (pid < 0) exit(1);
+    if (pid > 0) exit(0);
+
+    /* Step 2: setsid — 成为新会话首领 */
+    if (setsid() < 0) exit(1);
+
+    /* Step 3: 再次 fork, 不再是会话首领 */
+    pid = fork();
+    if (pid < 0) exit(1);
+    if (pid > 0) exit(0);
+
+    /* Step 4: chdir + umask */
+    chdir("/");
+    umask(0);
+
+    /* Step 5: 关闭所有继承的 fd, 重定向 0/1/2 */
+    for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--)
+        close(fd);
+
+    int nullfd = open("/dev/null", O_RDWR);
+    if (nullfd >= 0) {
+        dup2(nullfd, STDIN_FILENO);
+        dup2(nullfd, STDOUT_FILENO);
+        dup2(nullfd, STDERR_FILENO);
+        if (nullfd > 2) close(nullfd);
+    }
+}
+
+int main(void) {
+    printf("Becoming a daemon...\n");
+    fflush(stdout);
+
+    daemonize();
+
+    /* 现在是守护进程，用 syslog 输出日志 */
+    openlog("ch37_demo", LOG_PID | LOG_CONS, LOG_DAEMON);
+    syslog(LOG_NOTICE, "Daemon started, pid=%d", (int)getpid());
+
+    /* 模拟工作: 每 5 秒写一次日志 */
+    for (int i = 0; i < 3; i++) {
+        sleep(5);
+        syslog(LOG_INFO, "Daemon working: iteration %d", i);
+    }
+
+    syslog(LOG_NOTICE, "Daemon exiting");
+    closelog();
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

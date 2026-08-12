@@ -67,6 +67,74 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+/* Ch47 SysV 信号量 — semget/semop/semctl。
+ * 信号量用于同步: P 操作(等待) / V 操作(释放)。
+ * 编译: gcc -o ch47_demo ch47_demo.c */
+
+/* SysV 信号量是集合, 操作比较复杂 */
+union semun {
+    int val;
+    struct semid_ds *buf;
+    unsigned short *array;
+};
+
+void sem_op(int semid, int op) {
+    struct sembuf sb = {
+        .sem_num = 0,
+        .sem_op = op,    /* -1 = P (wait), +1 = V (signal) */
+        .sem_flg = 0
+    };
+    semop(semid, &sb, 1);
+}
+
+int main(void) {
+    /* 创建包含 1 个信号量的集合 */
+    int semid = semget(IPC_PRIVATE, 1, IPC_CREAT | 0666);
+    if (semid < 0) { perror("semget"); return 1; }
+
+    /* 初始化信号量值为 1 (可用) */
+    union semun arg;
+    arg.val = 1;
+    semctl(semid, 0, SETVAL, arg);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: P 操作 (获取信号量) */
+        printf("Child: waiting for semaphore...\n");
+        sem_op(semid, -1);  /* P: value 1->0 */
+        printf("Child: got semaphore, working...\n");
+        sleep(2);
+        printf("Child: releasing semaphore\n");
+        sem_op(semid, +1);  /* V: value 0->1 */
+        _exit(0);
+    }
+
+    sleep(1);
+    /* 父进程: 也尝试 P 操作, 会被阻塞直到子进程 V */
+    printf("Parent: waiting for semaphore...\n");
+    sem_op(semid, -1);  /* 会阻塞 */
+    printf("Parent: got semaphore after child released\n");
+    sem_op(semid, +1);
+
+    waitpid(pid, NULL, 0);
+    semctl(semid, 0, IPC_RMID);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

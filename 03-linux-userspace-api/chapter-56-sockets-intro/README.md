@@ -84,6 +84,74 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch56 套接字入门 — socket/bind/listen/accept/connect。
+ * 演示 AF_UNIX 面向连接的服务器端基本流程。
+ * 编译: gcc -o ch56_demo ch56_demo.c */
+
+#define SOCK_PATH "/tmp/ch56_sock"
+
+int main(void) {
+    /* 创建套接字: AF_UNIX + SOCK_STREAM */
+    int sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sfd < 0) { perror("socket"); return 1; }
+
+    /* 绑定地址 */
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, SOCK_PATH, sizeof(addr.sun_path) - 1);
+
+    unlink(SOCK_PATH);  /* 确保路径不存在 */
+    if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind"); return 1;
+    }
+
+    /* 监听, backlog=5 */
+    if (listen(sfd, 5) < 0) { perror("listen"); return 1; }
+    printf("Server listening on %s\n", SOCK_PATH);
+
+    /* fork 子进程作为客户端 */
+    pid_t pid = fork();
+    if (pid == 0) {
+        int cfd = socket(AF_UNIX, SOCK_STREAM, 0);
+        connect(cfd, (struct sockaddr *)&addr, sizeof(addr));
+        write(cfd, "hello socket", 12);
+        char buf[64];
+        int n = read(cfd, buf, sizeof(buf));
+        if (n > 0) { buf[n] = '\0'; printf("Client: got '%s'\n", buf); }
+        close(cfd);
+        _exit(0);
+    }
+
+    /* 服务器: accept + 读写 */
+    int cfd = accept(sfd, NULL, NULL);
+    if (cfd >= 0) {
+        char buf[64];
+        int n = read(cfd, buf, sizeof(buf));
+        if (n > 0) { buf[n] = '\0'; printf("Server: got '%s'\n", buf); }
+        write(cfd, "reply from server", 17);
+        close(cfd);
+    }
+
+    waitpid(pid, NULL, 0);
+    close(sfd);
+    unlink(SOCK_PATH);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

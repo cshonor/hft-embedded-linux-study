@@ -92,6 +92,86 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/epoll.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+
+/* Ch63 替代 I/O 模型 — epoll (Linux 高性能 I/O 多路复用)。
+ * epoll vs select/poll: O(1) 就绪通知, 适合大量连接。
+ * 编译: gcc -o ch63_demo ch63_demo.c */
+
+int main(void) {
+    /* 创建 epoll 实例 */
+    int epfd = epoll_create1(0);
+    if (epfd < 0) { perror("epoll_create1"); return 1; }
+
+    /* 创建管道作为演示 */
+    int pipefd[2];
+    pipe(pipefd);
+
+    /* 将管道读端加入 epoll 监控 */
+    struct epoll_event ev;
+    ev.events = EPOLLIN;       /* 监控可读 */
+    ev.data.fd = pipefd[0];
+    epoll_ctl(epfd, EPOLL_CTL_ADD, pipefd[0], &ev);
+
+    /* 也监控 stdin */
+    ev.events = EPOLLIN;
+    ev.data.fd = STDIN_FILENO;
+    epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev);
+
+    printf("Epoll monitoring pipe + stdin. Type something or wait...\n");
+
+    /* 写管道 (模拟数据到达) */
+    write(pipefd[1], "pipe data", 9);
+
+    /* epoll_wait: 等待事件 */
+    struct epoll_event events[10];
+    int n = epoll_wait(epfd, events, 10, 5000);  /* 5秒超时 */
+
+    printf("epoll_wait returned %d events:\n", n);
+    for (int i = 0; i < n; i++) {
+        int fd = events[i].data.fd;
+        if (fd == pipefd[0]) {
+            char buf[64];
+            int len = read(fd, buf, sizeof(buf));
+            if (len > 0) {
+                buf[len] = '\0';
+                printf("  Pipe readable: '%s'\n", buf);
+            }
+        } else if (fd == STDIN_FILENO) {
+            char buf[64];
+            int len = read(fd, buf, sizeof(buf));
+            if (len > 0) {
+                buf[len] = '\0';
+                printf("  Stdin readable: '%s'", buf);
+            }
+        }
+    }
+
+    if (n == 0)
+        printf("Timeout, no events\n");
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+    close(epfd);
+
+    printf("\nepoll advantages:\n");
+    printf("  - O(1) ready notification (vs select O(n))\n");
+    printf("  - Kernel tracks interest list (no re-registration)\n");
+    printf("  - Supports edge-triggered (EPOLLET) and level-triggered\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

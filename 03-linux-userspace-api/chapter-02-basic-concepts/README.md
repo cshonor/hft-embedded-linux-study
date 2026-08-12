@@ -98,6 +98,45 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+/* Ch2 基本概念 — 演示 errno 错误处理 + 用户态/内核态切换。
+ * open() 失败时 errno 被设置；strerror 将 errno 转为可读字符串。
+ * 编译: gcc -o ch2_demo ch2_demo.c */
+
+int main(void) {
+    /* 故意打开不存在的文件，触发 errno */
+    int fd = open("/nonexistent/file", O_RDONLY);
+    if (fd < 0) {
+        printf("open failed: errno=%d (%s)\n", errno, strerror(errno));
+        perror("perror also works");
+    }
+
+    /* 演示: 同一系统调用成功时 errno 不被清零 */
+    fd = open("/etc/hostname", O_RDONLY);
+    if (fd >= 0) {
+        char buf[256];
+        ssize_t n = read(fd, buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            printf("hostname: %s", buf);
+        }
+        close(fd);
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

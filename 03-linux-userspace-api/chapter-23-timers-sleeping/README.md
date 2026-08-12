@@ -95,6 +95,67 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+#include <time.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch23 定时器与睡眠 — alarm/timer_create/nanosleep。
+ * 演示 alarm 定时 + nanosleep 精确睡眠。
+ * 编译: gcc -o ch23_demo ch23_demo.c */
+
+static volatile sig_atomic_t alarm_fired = 0;
+
+void alarm_handler(int sig) {
+    alarm_fired = 1;
+}
+
+void sigusr1_handler(int sig) {
+    alarm_fired++;
+}
+
+int main(void) {
+    /* alarm: 秒级定时器 */
+    signal(SIGALRM, alarm_handler);
+    alarm(2);
+    printf("alarm set for 2 seconds, waiting...\n");
+    pause();
+    printf("alarm fired!\n");
+
+    /* nanosleep: 纳秒级睡眠 */
+    struct timespec req = {1, 500 * 1000 * 1000};  /* 1.5 秒 */
+    struct timespec rem;
+    printf("nanosleep(1.5s)...\n");
+    nanosleep(&req, &rem);
+
+    /* timer_create: POSIX 定时器（更精确） */
+    timer_t timerid;
+    struct sigevent sev;
+    sev.sigev_notify = SIGEV_SIGNAL;
+    sev.sigev_signo = SIGUSR1;
+    signal(SIGUSR1, sigusr1_handler);
+
+    timer_create(CLOCK_MONOTONIC, &sev, &timerid);
+    struct itimerspec its = {
+        .it_interval = {0, 0},         /* 不重复 */
+        .it_value = {1, 0}             /* 1秒后触发 */
+    };
+    timer_settime(timerid, 0, &its, NULL);
+    printf("POSIX timer set for 1 second...\n");
+    pause();
+    printf("POSIX timer fired!\n");
+    timer_delete(timerid);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

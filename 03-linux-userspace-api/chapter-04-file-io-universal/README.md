@@ -103,6 +103,44 @@ cc -Wall -o copy code/copy.c
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch4 通用 I/O 模型 — open/read/write/close 四件套。
+ * 所有文件类型（普通文件/设备/proc）统一用这套接口。
+ * 编译: gcc -o ch4_demo ch4_demo.c */
+
+int main(void) {
+    int fd = open("/tmp/ch4_test.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { perror("open"); return 1; }
+
+    const char *msg = "Hello, Universal I/O!\n";
+    write(fd, msg, strlen(msg));
+    close(fd);
+
+    /* 重新打开读取 */
+    fd = open("/tmp/ch4_test.txt", O_RDONLY);
+    if (fd < 0) { perror("open read"); return 1; }
+
+    char buf[256];
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        printf("read back: %s", buf);
+    }
+    close(fd);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

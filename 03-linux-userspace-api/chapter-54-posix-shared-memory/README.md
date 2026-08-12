@@ -77,6 +77,66 @@ Pipe/FIFO → SysV 三件套 → mmap/VM → POSIX 三件套。
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch54 POSIX 共享内存 — shm_open/ftruncate/mmap/shm_unlink。
+ * 比 SysV shm 更简洁的 API。
+ * 编译: gcc -o ch54_demo ch54_demo.c -lrt */
+
+#define SHM_NAME "/ch54_demo"
+#define SHM_SIZE 4096
+
+int main(void) {
+    /* 创建/打开 POSIX 共享内存对象 */
+    int fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) { perror("shm_open"); return 1; }
+
+    /* 设置大小 */
+    ftruncate(fd, SHM_SIZE);
+
+    /* 映射 */
+    char *shm = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (shm == MAP_FAILED) { perror("mmap"); return 1; }
+    close(fd);  /* 映射后可以关闭 fd */
+
+    /* 写入数据 */
+    strcpy(shm, "Hello from parent via POSIX shm!");
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: 映射同一共享内存对象 */
+        int cfd = shm_open(SHM_NAME, O_RDWR, 0);
+        char *cshm = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, cfd, 0);
+        close(cfd);
+
+        printf("Child reads: %s\n", cshm);
+        strcpy(cshm, "Child modified the shared memory!");
+
+        munmap(cshm, SHM_SIZE);
+        _exit(0);
+    }
+
+    waitpid(pid, NULL, 0);
+    printf("Parent reads: %s\n", shm);
+
+    munmap(shm, SHM_SIZE);
+    shm_unlink(SHM_NAME);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

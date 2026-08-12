@@ -98,6 +98,69 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+/* Ch26 监控子进程 — wait/waitpid/WIFEXITED/WIFSIGNALED。
+ * 演示正常退出/信号终止/暂停状态获取。
+ * 编译: gcc -o ch26_demo ch26_demo.c */
+
+int main(void) {
+    /* 子进程1: 正常退出 */
+    pid_t p1 = fork();
+    if (p1 == 0) _exit(7);
+
+    /* 子进程2: 被信号杀死 */
+    pid_t p2 = fork();
+    if (p2 == 0) {
+        /* 给自己发 SIGKILL */
+        kill(getpid(), SIGKILL);
+        _exit(0);
+    }
+
+    /* 子进程3: 被信号暂停 */
+    pid_t p3 = fork();
+    if (p3 == 0) {
+        raise(SIGSTOP);  /* 暂停自己 */
+        _exit(0);
+    }
+
+    sleep(1);  /* 等子进程完成动作 */
+
+    /* 收割子进程1: 正常退出 */
+    int status;
+    waitpid(p1, &status, 0);
+    if (WIFEXITED(status))
+        printf("Child %d: exited normally, code=%d\n",
+               (int)p1, WEXITSTATUS(status));
+
+    /* 收割子进程2: 被信号杀死 */
+    waitpid(p2, &status, 0);
+    if (WIFSIGNALED(status))
+        printf("Child %d: killed by signal %d\n",
+               (int)p2, WTERMSIG(status));
+
+    /* 收割子进程3: 先暂停后继续 */
+    waitpid(p3, &status, WUNTRACED);
+    if (WIFSTOPPED(status))
+        printf("Child %d: stopped by signal %d, resuming...\n",
+               (int)p3, WSTOPSIG(status));
+
+    kill(p3, SIGCONT);  /* 让子进程3继续 */
+    waitpid(p3, &status, 0);
+    printf("Child %d: final status\n", (int)p3);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

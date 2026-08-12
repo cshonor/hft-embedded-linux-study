@@ -77,6 +77,56 @@ SUID/SGID 安全模型；`setuid` vs `seteuid`；临时/永久丢权；TOCTOU、
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+/* Ch38 安全与特权编程 — 降权 + 最小权限原则。
+ * 演示 setuid 程序如何临时/永久放弃特权。
+ * 编译: gcc -o ch38_demo ch38_demo.c */
+
+int main(void) {
+    uid_t ruid = getuid();    /* 实际 uid */
+    uid_t euid = geteuid();   /* 有效 uid */
+
+    printf("Before: real=%u, effective=%u\n", ruid, euid);
+
+    if (euid == 0) {
+        printf("Running as root (or setuid-root)\n");
+
+        /* 永久降权: 先设 effective，再设 saved-set */
+        /* 假设要降为 uid 1000 */
+        uid_t target = 1000;
+        gid_t target_gid = 1000;
+
+        /* 步骤1: 临时降 effective uid */
+        seteuid(target);
+        printf("After seteuid(%u): euid=%u\n", target, (unsigned)geteuid());
+
+        /* 步骤2: 需要特权时临时恢复 */
+        seteuid(0);
+        printf("Restored: euid=%u\n", (unsigned)geteuid());
+
+        /* 步骤3: 永久放弃 root (三连设) */
+        setgid(target_gid);
+        setuid(target);
+        printf("After permanent drop: real=%u, eff=%u\n",
+               (unsigned)getuid(), (unsigned)geteuid());
+        printf("Cannot regain root now\n");
+    } else {
+        printf("Running as normal user (uid=%u)\n", euid);
+        printf("Secure programming: validate all input, minimize privileges\n");
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

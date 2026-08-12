@@ -96,6 +96,46 @@ Ch6  地址空间（堆在哪）
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch7 内存分配 — malloc/free vs sbrk/brk。
+ * malloc 内部用 sbrk/mmap 向内核要内存；
+ * 程序员只管 malloc/free，不必直接调 sbrk。
+ * 编译: gcc -o ch7_demo ch7_demo.c */
+
+int main(void) {
+    /* 查看当前 program break */
+    void *brk1 = sbrk(0);
+    printf("initial brk = %p\n", brk1);
+
+    /* malloc 向 libc 要内存，libc 内部可能调 sbrk */
+    char *p = malloc(1024 * 1024);  /* 1 MB */
+    if (!p) { perror("malloc"); return 1; }
+    memset(p, 'A', 1024 * 1024);
+
+    void *brk2 = sbrk(0);
+    printf("after malloc(1MB): brk = %p (delta = %ld)\n",
+           brk2, (long)(brk2 - brk1));
+
+    /* realloc 调整大小 */
+    p = realloc(p, 2 * 1024 * 1024);
+    printf("realloc to 2MB: %s\n", p ? "OK" : "FAIL");
+
+    free(p);
+    printf("freed\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

@@ -17,3 +17,21 @@ ipcs -q
 | 文件 | 说明 |
 |------|------|
 | `sysv_key_demo.c` | `ftok` + `msgget(CREAT\|EXCL)` + `IPC_RMID` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+/* Ch45 demo: ftok + msgget */
+int main(void) {
+    key_t k = ftok("/tmp", 'A');
+    int id = msgget(k, IPC_CREAT|0666);
+    printf("key=0x%x id=%d\n", (unsigned)k, id);
+    msgctl(id, IPC_RMID, NULL);
+    return 0;
+}
+```
+
+---

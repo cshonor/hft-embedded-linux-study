@@ -17,3 +17,18 @@ ls -l /tmp/tlpi_acl_demo.txt    # note trailing '+' and group column = mask
 |------|------|
 | `print_acl.c` | 遍历 Access ACL，打印 ACE（简易 getfacl） |
 | `set_named_user_acl.c` | 写扩展 ACL：命名用户 + MASK |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/acl.h>
+/* Ch17 demo: acl_get_file (需要 -lacl) */
+int main(void) {
+    acl_t a = acl_get_file("/tmp", ACL_TYPE_ACCESS);
+    if (a) { char *t = acl_to_text(a, NULL); printf("%s\n", t); acl_free(t); acl_free(a); }
+    return 0;
+}
+```
+
+---

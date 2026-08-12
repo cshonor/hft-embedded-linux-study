@@ -67,6 +67,70 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+/* Ch46 SysV 消息队列 — msgget/msgsnd/msgrcv。
+ * 演示父子进程通过消息队列通信。
+ * 编译: gcc -o ch46_demo ch46_demo.c */
+
+typedef struct {
+    long mtype;           /* 消息类型 (必须 > 0) */
+    char mtext[64];       /* 消息数据 */
+} msgbuf_t;
+
+int main(void) {
+    int msqid = msgget(IPC_PRIVATE, IPC_CREAT | 0666);
+    if (msqid < 0) { perror("msgget"); return 1; }
+
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); return 1; }
+
+    if (pid == 0) {
+        /* 子进程: 发送消息 */
+        msgbuf_t msg;
+        msg.mtype = 1;  /* 类型 1 */
+        strcpy(msg.mtext, "Hello from child!");
+        msgsnd(msqid, &msg, strlen(msg.mtext) + 1, 0);
+        printf("Child: sent message\n");
+
+        msg.mtype = 2;  /* 类型 2 */
+        strcpy(msg.mtext, "Second message");
+        msgsnd(msqid, &msg, strlen(msg.mtext) + 1, 0);
+        printf("Child: sent second message\n");
+        _exit(0);
+    }
+
+    /* 父进程: 接收消息 */
+    sleep(1);
+
+    msgbuf_t msg;
+
+    /* 接收类型 1 的消息 */
+    msgrcv(msqid, &msg, sizeof(msg.mtext), 1, 0);
+    printf("Parent: received type %ld: %s\n", msg.mtype, msg.mtext);
+
+    /* 接收任意类型的消息 */
+    msgrcv(msqid, &msg, sizeof(msg.mtext), 0, 0);
+    printf("Parent: received type %ld: %s\n", msg.mtype, msg.mtext);
+
+    waitpid(pid, NULL, 0);
+    msgctl(msqid, IPC_RMID, NULL);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

@@ -78,6 +78,64 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <string.h>
+#include <unistd.h>
+
+/* Ch31 线程安全与线程特定数据 (TSD)。
+ * 演示 strerror_r 线程安全版 + pthread_key 线程局部存储。
+ * 编译: gcc -o ch31_demo ch31_demo.c -lpthread */
+
+static pthread_key_t tsd_key;
+
+/* 线程特定数据: 每个线程有独立的副本 */
+void tsd_destructor(void *value) {
+    printf("TSD destructor: freeing %s\n", (char *)value);
+    free(value);
+}
+
+void *worker(void *arg) {
+    int id = *(int *)arg;
+
+    /* 线程安全函数: strerror_r 而非 strerror */
+    char errbuf[256];
+    strerror_r(ENOENT, errbuf, sizeof(errbuf));
+    printf("Thread %d: strerror_r(ENOENT) = %s\n", id, errbuf);
+
+    /* 设置线程特定数据 */
+    char *msg = malloc(64);
+    snprintf(msg, 64, "TSD data for thread %d", id);
+    pthread_setspecific(tsd_key, msg);
+
+    /* 读取线程特定数据 */
+    char *my_data = pthread_getspecific(tsd_key);
+    printf("Thread %d: TSD = %s\n", id, my_data);
+
+    return NULL;
+}
+
+int main(void) {
+    pthread_key_create(&tsd_key, tsd_destructor);
+
+    pthread_t t1, t2;
+    int id1 = 1, id2 = 2;
+    pthread_create(&t1, NULL, worker, &id1);
+    pthread_create(&t2, NULL, worker, &id2);
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+
+    pthread_key_delete(tsd_key);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

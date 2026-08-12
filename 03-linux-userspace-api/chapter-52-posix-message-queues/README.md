@@ -86,6 +86,69 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <mqueue.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+/* Ch52 POSIX 消息队列 — mq_open/mq_send/mq_receive/mq_notify。
+ * 演示父子进程通过 POSIX 消息队列通信。
+ * 编译: gcc -o ch52_demo ch52_demo.c -lrt */
+
+#define MQ_NAME "/ch52_demo"
+#define MSG_SIZE 64
+
+int main(void) {
+    struct mq_attr attr = {
+        .mq_flags = 0,
+        .mq_maxmsg = 10,
+        .mq_msgsize = MSG_SIZE,
+        .mq_curmsgs = 0
+    };
+
+    mqd_t mqd = mq_open(MQ_NAME, O_CREAT | O_RDWR, 0644, &attr);
+    if (mqd < 0) { perror("mq_open"); return 1; }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: 发送消息 */
+        unsigned prio;
+        for (int i = 1; i <= 3; i++) {
+            char msg[MSG_SIZE];
+            snprintf(msg, MSG_SIZE, "Message %d", i);
+            mq_send(mqd, msg, strlen(msg) + 1, i);  /* 优先级 = i */
+            printf("Child: sent (prio=%d) %s\n", i, msg);
+        }
+        _exit(0);
+    }
+
+    sleep(1);
+
+    /* 父进程: 接收消息 (高优先级先出) */
+    for (int i = 0; i < 3; i++) {
+        char buf[MSG_SIZE];
+        unsigned prio;
+        ssize_t n = mq_receive(mqd, buf, MSG_SIZE, &prio);
+        if (n > 0)
+            printf("Parent: received (prio=%u) %s\n", prio, buf);
+    }
+
+    waitpid(pid, NULL, 0);
+    mq_close(mqd);
+    mq_unlink(MQ_NAME);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

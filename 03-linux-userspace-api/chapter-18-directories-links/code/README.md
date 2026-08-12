@@ -21,3 +21,20 @@ cc -Wall -Wextra -o unlink_open unlink_open.c
 | `links_demo.c` | 硬链 vs 软链，inode / nlink |
 | `rename_safe_write.c` | 写临时文件再 `rename` |
 | `unlink_open.c` | open 后 unlink，仍可读 fd |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <dirent.h>
+/* Ch18 demo: opendir/readdir */
+int main(void) {
+    DIR *d = opendir("/tmp");
+    struct dirent *e;
+    while ((e = readdir(d))) printf("%s\n", e->d_name);
+    closedir(d);
+    return 0;
+}
+```
+
+---

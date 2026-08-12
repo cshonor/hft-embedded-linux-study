@@ -110,6 +110,49 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/statfs.h>
+#include <sys/vfs.h>
+#include <dirent.h>
+#include <string.h>
+
+/* Ch14 文件系统 — statfs 获取文件系统信息 + 遍历目录。
+ * 编译: gcc -o ch14_demo ch14_demo.c */
+
+int main(void) {
+    /* statfs: 文件系统整体信息 */
+    struct statfs fs;
+    if (statfs("/", &fs) == 0) {
+        printf("Filesystem on /:\n");
+        printf("  type:        %x\n", (unsigned)fs.f_type);
+        printf("  block size:  %ld\n", (long)fs.f_bsize);
+        printf("  total:       %ld blocks\n", (long)fs.f_blocks);
+        printf("  free:        %ld blocks\n", (long)fs.f_bfree);
+        printf("  available:   %ld blocks\n", (long)fs.f_bavail);
+        printf("  max files:   %ld\n", (long)fs.f_files);
+    }
+
+    /* opendir/readdir: 遍历目录 */
+    DIR *dir = opendir("/tmp");
+    if (dir) {
+        struct dirent *ent;
+        printf("\nEntries in /tmp:\n");
+        while ((ent = readdir(dir)) != NULL) {
+            if (ent->d_name[0] != '.')
+                printf("  %s (type=%d)\n", ent->d_name, ent->d_type);
+        }
+        closedir(dir);
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

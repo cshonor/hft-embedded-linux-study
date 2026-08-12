@@ -101,6 +101,47 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+
+/* Ch13 文件 I/O 缓冲 — stdio 缓冲 vs 内核缓冲 vs 无缓冲。
+ * 演示 setvbuf 控制用户态缓冲 + O_DIRECT 绕过内核缓冲。
+ * 编译: gcc -o ch13_demo ch13_demo.c */
+
+int main(void) {
+    /* 行缓冲: 遇到 \n 才 flush */
+    char line_buf[1024];
+    setvbuf(stdout, line_buf, _IOLBF, sizeof(line_buf));
+
+    printf("This is line-buffered");  /* 无 \n，暂不输出 */
+    fflush(stdout);                    /* 手动 flush */
+    printf(" - now flushed\n");
+
+    /* 全缓冲 vs 无缓冲对比 */
+    FILE *fp = fopen("/tmp/ch13_test.txt", "w");
+    setvbuf(fp, NULL, _IOFBF, 8192);  /* 全缓冲 8KB */
+    fprintf(fp, "fully buffered\n");
+    fclose(fp);  /* close 时 flush */
+
+    /* 内核缓冲: write() 先进内核 page cache，不保证落盘 */
+    int fd = open("/tmp/ch13_test2.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    write(fd, "kernel buffered\n", 16);
+    fsync(fd);   /* 强制刷盘，绕过内核缓冲延迟 */
+    close(fd);
+
+    printf("stdio buffer -> kernel buffer -> disk (fsync)\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

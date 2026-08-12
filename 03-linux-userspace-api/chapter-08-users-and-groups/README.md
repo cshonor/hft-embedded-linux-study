@@ -108,6 +108,53 @@ Ch6  进程是谁在跑
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <grp.h>
+#include <pwd.h>
+
+/* Ch8 用户与组 — getuid/getgid/getgroups + getpwuid/getgrgid。
+ * 演示获取当前进程的用户/组信息。
+ * 编译: gcc -o ch8_demo ch8_demo.c */
+
+int main(void) {
+    uid_t uid = getuid();
+    gid_t gid = getgid();
+    printf("uid=%u, gid=%u\n", uid, gid);
+
+    /* 获取用户名 */
+    struct passwd *pw = getpwuid(uid);
+    if (pw)
+        printf("user: %s (%s)\n", pw->pw_name, pw->pw_gecos);
+
+    /* 获取组名 */
+    struct group *gr = getgrgid(gid);
+    if (gr)
+        printf("group: %s\n", gr->gr_name);
+
+    /* 获取所有附属组 */
+    int ngroups = getgroups(0, NULL);
+    if (ngroups > 0) {
+        gid_t groups[32];
+        getgroups(ngroups, groups);
+        printf("supplementary groups (%d):", ngroups);
+        for (int i = 0; i < ngroups; i++) {
+            struct group *g = getgrgid(groups[i]);
+            printf(" %s", g ? g->gr_name : "?");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

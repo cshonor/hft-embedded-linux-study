@@ -80,6 +80,59 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <linux/capability.h>
+#include <string.h>
+
+/* Ch39 Linux 能力 (Capabilities) — 细粒度权限替代全 root。
+ * 演示 capget/capset 获取和设置能力。
+ * 编译: gcc -o ch39_demo ch39_demo.c -lcap
+ * 需要安装: apt install libcap-dev */
+
+int main(void) {
+    /* 获取当前进程的能力 */
+    struct __user_cap_header_struct hdr = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0  /* 0 = 当前进程 */
+    };
+    struct __user_cap_data_struct data[2];
+
+    if (capget(&hdr, data) < 0) {
+        perror("capget (need libcap)");
+        return 1;
+    }
+
+    /* 打印有效能力集 */
+    printf("Effective capabilities: 0x%x 0x%x\n", data[0].effective, data[1].effective);
+    printf("Permitted capabilities: 0x%x 0x%x\n", data[0].permitted, data[1].permitted);
+    printf("Inheritable capabilities: 0x%x 0x%x\n", data[0].inheritable, data[1].inheritable);
+
+    /* 检查特定能力 */
+    if (data[0].effective & (1 << CAP_NET_BIND_SERVICE))
+        printf("Has CAP_NET_BIND_SERVICE (can bind < 1024)\n");
+    else
+        printf("No CAP_NET_BIND_SERVICE\n");
+
+    if (data[0].effective & (1 << CAP_SYS_ADMIN))
+        printf("Has CAP_SYS_ADMIN (very powerful)\n");
+    else
+        printf("No CAP_SYS_ADMIN\n");
+
+    /* 文件能力: getcap/setcap 命令行工具 */
+    printf("\nUse 'getcap <binary>' to check file capabilities\n");
+    printf("Use 'setcap cap_net_bind_service=ep <binary>' to grant\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

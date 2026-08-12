@@ -101,6 +101,53 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+
+/* Ch20 信号基础 — signal/kill/raise + 信号概念。
+ * 演示注册信号处理器 + 自发信号。
+ * 编译: gcc -o ch20_demo ch20_demo.c */
+
+static volatile sig_atomic_t got_signal = 0;
+
+void handler(int sig) {
+    got_signal = sig;
+}
+
+int main(void) {
+    /* 注册 SIGUSR1 处理器 */
+    signal(SIGUSR1, handler);
+
+    /* 给自己发信号 */
+    printf("Sending SIGUSR1 to self...\n");
+    raise(SIGUSR1);
+
+    /* 检查是否收到 */
+    if (got_signal == SIGUSR1)
+        printf("Caught SIGUSR1!\n");
+    else
+        printf("No signal caught\n");
+
+    /* kill() 也可以给自己发信号 */
+    printf("Sending SIGUSR1 via kill()...\n");
+    kill(getpid(), SIGUSR1);
+
+    if (got_signal == SIGUSR1)
+        printf("Caught again!\n");
+
+    /* SIGKILL (9) 和 SIGSTOP (19) 不能被捕获/忽略/阻塞 */
+    printf("\nSIGKILL and SIGSTOP cannot be caught or ignored\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

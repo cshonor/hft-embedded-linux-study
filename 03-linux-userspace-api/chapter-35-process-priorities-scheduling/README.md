@@ -68,6 +68,57 @@ nice；`SCHED_OTHER` vs FIFO/RR；`sched_*` API；权限与 `RLIMIT_RTPRIO`；CP
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sched.h>
+#include <unistd.h>
+
+/* Ch35 进程优先级与调度 — nice/getpriority/setpriority/sched。
+ * 演示 nice 值调整 + 实时调度策略。
+ * 编译: gcc -o ch35_demo ch35_demo.c */
+
+int main(void) {
+    /* nice 值: -20 (最高优先级) 到 +19 (最低优先级) */
+    int nice_val = nice(0);  /* 0 = 查询当前值 */
+    printf("Current nice value: %d\n", nice_val);
+
+    /* getpriority: PRIO_PROCESS = 进程级别 */
+    int prio = getpriority(PRIO_PROCESS, 0);
+    printf("getpriority(PRIO_PROCESS, 0) = %d\n", prio);
+
+    /* setpriority: 提高/降低优先级（普通用户只能降低） */
+    if (setpriority(PRIO_PROCESS, 0, 5) == 0)
+        printf("Nice set to 5 (lower priority)\n");
+    else
+        perror("setpriority (need root to increase)");
+
+    /* 调度策略: SCHED_OTHER (默认) / SCHED_FIFO / SCHED_RR */
+    int policy = sched_getscheduler(0);
+    printf("Scheduling policy: %d", policy);
+    if (policy == SCHED_OTHER) printf(" (SCHED_OTHER - normal)\n");
+    else if (policy == SCHED_FIFO) printf(" (SCHED_FIFO - realtime)\n");
+    else if (policy == SCHED_RR) printf(" (SCHED_RR - round robin)\n");
+
+    /* CPU 亲和性: 绑定到 CPU 0 */
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(0, &cpuset);
+    if (sched_setaffinity(0, sizeof(cpuset), &cpuset) == 0)
+        printf("Pinned to CPU 0\n");
+    else
+        perror("sched_setaffinity");
+
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

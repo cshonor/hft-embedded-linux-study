@@ -88,6 +88,74 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch49 内存映射 — mmap/munmap/msync/mremap。
+ * mmap 可以映射文件/匿名内存, 父子进程可共享。
+ * 编译: gcc -o ch49_demo ch49_demo.c */
+
+int main(void) {
+    /* === 匿名共享映射 (父子进程共享) === */
+    int *shared = mmap(NULL, sizeof(int),
+                       PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_ANONYMOUS,
+                       -1, 0);
+    if (shared == MAP_FAILED) { perror("mmap"); return 1; }
+
+    *shared = 0;
+    printf("Initial value: %d\n", *shared);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: 修改共享映射 */
+        for (int i = 0; i < 5; i++) {
+            (*shared)++;
+            printf("Child: value=%d\n", *shared);
+            usleep(100000);
+        }
+        _exit(0);
+    }
+
+    /* 父进程: 也能看到变化 */
+    for (int i = 0; i < 5; i++) {
+        usleep(100000);
+        printf("Parent sees: value=%d\n", *shared);
+    }
+    waitpid(pid, NULL, 0);
+
+    printf("Final value: %d\n", *shared);
+
+    /* === 文件映射 === */
+    int fd = open("/tmp/ch49_mmap.txt", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    write(fd, "Hello, mmap!", 12);
+
+    char *fmap = mmap(NULL, 12, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (fmap != MAP_FAILED) {
+        /* 通过内存修改文件内容 */
+        fmap[0] = 'J';  /* Hello -> Jello */
+        msync(fmap, 12, MS_SYNC);  /* 同步到文件 */
+        printf("File content after mmap modify: %.12s\n", fmap);
+        munmap(fmap, 12);
+    }
+    close(fd);
+    remove("/tmp/ch49_mmap.txt");
+
+    munmap(shared, sizeof(int));
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

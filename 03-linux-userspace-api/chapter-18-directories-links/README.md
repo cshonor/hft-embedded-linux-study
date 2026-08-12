@@ -84,6 +84,66 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <string.h>
+#include <fcntl.h>
+
+/* Ch18 目录与链接 — mkdir/symlink/readlink/rename/link。
+ * 演示硬链接/符号链接的区别。
+ * 编译: gcc -o ch18_demo ch18_demo.c */
+
+int main(void) {
+    /* 创建目录 */
+    mkdir("/tmp/ch18_dir", 0755);
+
+    /* 创建文件并硬链接 */
+    int fd = open("/tmp/ch18_dir/file.txt", O_CREAT | O_WRONLY, 0644);
+    write(fd, "hello\n", 6);
+    close(fd);
+
+    link("/tmp/ch18_dir/file.txt", "/tmp/ch18_dir/hardlink.txt");
+    printf("hard link created (same inode)\n");
+
+    /* 符号链接 */
+    symlink("/tmp/ch18_dir/file.txt", "/tmp/ch18_dir/softlink.txt");
+
+    /* readlink 读取符号链接目标 */
+    char buf[256];
+    ssize_t n = readlink("/tmp/ch18_dir/softlink.txt", buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        printf("symlink target: %s\n", buf);
+    }
+
+    /* stat vs lstat: lstat 不跟随符号链接 */
+    struct stat sb1, sb2;
+    stat("/tmp/ch18_dir/softlink.txt", &sb1);
+    lstat("/tmp/ch18_dir/softlink.txt", &sb2);
+    printf("stat inode:  %lu (target file)\n", (unsigned long)sb1.st_ino);
+    printf("lstat inode: %lu (link itself)\n", (unsigned long)sb2.st_ino);
+
+    /* rename */
+    rename("/tmp/ch18_dir/hardlink.txt", "/tmp/ch18_dir/renamed.txt");
+    printf("renamed hardlink\n");
+
+    /* 清理 */
+    remove("/tmp/ch18_dir/softlink.txt");
+    remove("/tmp/ch18_dir/renamed.txt");
+    remove("/tmp/ch18_dir/file.txt");
+    rmdir("/tmp/ch18_dir");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

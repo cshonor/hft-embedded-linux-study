@@ -81,6 +81,40 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch1 历史/标准章 — 用最小程序演示"POSIX C 接口"长什么样。
+ * write() 是 POSIX 标准系统调用（经 libc 包装）；
+ * printf() 是 C 标准库（ISO C），底层最终也调 write()。
+ * 编译: gcc -o ch1_demo ch1_demo.c */
+
+int main(void) {
+    /* POSIX 系统调用：直接经 libc 陷入内核 */
+    if (write(STDOUT_FILENO, "hello via write()\n", 18) < 0)
+        perror("write");
+
+    /* ISO C 标准库：用户态缓冲，flush 时才调 write() */
+    printf("hello via printf()\n");
+    fflush(stdout);
+
+    /* 检查 POSIX 标准是否定义了某些宏 */
+#ifdef _POSIX_VERSION
+    printf("_POSIX_VERSION = %ldL\n", (long)_POSIX_VERSION);
+#else
+    printf("POSIX not defined\n");
+#endif
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

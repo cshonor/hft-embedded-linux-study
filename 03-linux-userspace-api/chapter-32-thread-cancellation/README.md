@@ -81,6 +81,66 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch32 线程取消 — pthread_cancel/cleanup_push/cleanup_pop。
+ * 演示取消线程 + 清理函数执行。
+ * 编译: gcc -o ch32_demo ch32_demo.c -lpthread */
+
+static int fd = -1;
+
+void cleanup_handler(void *arg) {
+    printf("Cleanup: %s\n", (char *)arg);
+    if (fd >= 0) {
+        close(fd);
+        printf("Cleanup: fd closed\n");
+    }
+}
+
+void *worker(void *arg) {
+    /* 注册清理函数（LIFO 顺序执行） */
+    pthread_cleanup_push(cleanup_handler, "step 1");
+    pthread_cleanup_push(cleanup_handler, "step 2");
+
+    fd = open("/tmp/ch32_test.txt", O_WRONLY | O_CREAT, 0644);
+    printf("Worker: opened fd=%d, entering loop...\n", fd);
+
+    /* 默认延迟取消点: sleep 是取消点 */
+    while (1) {
+        printf("Worker: working...\n");
+        sleep(1);  /* 取消点: 如果被取消，在此触发 */
+    }
+
+    /* cleanup_push 和 cleanup_pop 必须配对 */
+    pthread_cleanup_pop(0);
+    pthread_cleanup_pop(0);
+    return NULL;
+}
+
+int main(void) {
+    pthread_t tid;
+    pthread_create(&tid, NULL, worker, NULL);
+
+    sleep(3);
+    printf("Main: cancelling worker thread...\n");
+    pthread_cancel(tid);
+    pthread_join(tid, NULL);
+    printf("Main: worker joined after cancellation\n");
+
+    if (fd >= 0) close(fd);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

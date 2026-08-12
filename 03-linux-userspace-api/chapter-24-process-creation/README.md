@@ -105,6 +105,62 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <string.h>
+
+/* Ch24 进程创建 — fork/COW/vfork。
+ * fork() 后子进程获得父进程数据的副本（写时复制）。
+ * 编译: gcc -o ch24_demo ch24_demo.c */
+
+static int global_var = 100;  /* 全局变量：fork 后各自独立 */
+
+int main(void) {
+    int local_var = 200;
+
+    printf("Before fork: global=%d, local=%d\n", global_var, local_var);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        /* 子进程: 修改变量，不影响父进程（COW） */
+        global_var = 999;
+        local_var = 888;
+        printf("Child (pid=%d): global=%d, local=%d\n",
+               (int)getpid(), global_var, local_var);
+        _exit(0);
+    } else {
+        /* 父进程 */
+        waitpid(pid, NULL, 0);
+        printf("Parent (pid=%d): global=%d, local=%d (unchanged by child)\n",
+               (int)getpid(), global_var, local_var);
+    }
+
+    /* vfork: 子进程共享父进程内存，不写时复制 */
+    printf("\nvfork demo:\n");
+    pid = vfork();
+    if (pid == 0) {
+        global_var = 555;  /* 直接修改父进程内存! */
+        _exit(0);          /* vfork 子进程必须 _exit，不能 return */
+    }
+    waitpid(pid, NULL, 0);
+    printf("After vfork: global=%d (modified by vfork child!)\n", global_var);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

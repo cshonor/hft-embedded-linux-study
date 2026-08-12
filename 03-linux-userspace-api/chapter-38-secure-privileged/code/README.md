@@ -19,3 +19,21 @@ cc -Wall -Wextra -o no_system_exec no_system_exec.c
 |------|------|
 | `open_fstat_safe.c` | `open` + `fstat`（反 TOCTOU 骨架） |
 | `no_system_exec.c` | 绝对路径 `execve`，不用 `system` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+/* Ch38 demo: drop privileges */
+int main(void) {
+    if (geteuid() == 0) {
+        setuid(1000); /* drop root */
+        printf("dropped to uid 1000\n");
+    }
+    printf("uid=%u euid=%u\n", (unsigned)getuid(), (unsigned)geteuid());
+    return 0;
+}
+```
+
+---

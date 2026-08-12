@@ -103,6 +103,70 @@ waitpid(pid, &st, 0);    /* 父 */
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* Ch27 程序执行 — execl/execlp/execv/execvp。
+ * exec 替换当前进程映像，pid 不变。
+ * 编译: gcc -o ch27_demo ch27_demo.c */
+
+int main(void) {
+    /* 方式1: execlp — 搜索 PATH，变长参数 */
+    pid_t pid = fork();
+    if (pid == 0) {
+        printf("Child: calling execlp(\"ls\")\n");
+        execlp("ls", "ls", "-l", "/tmp", NULL);
+        perror("execlp");  /* 只有失败才返回 */
+        _exit(1);
+    }
+    waitpid(pid, NULL, 0);
+
+    /* 方式2: execvp — 搜索 PATH，数组参数 */
+    pid = fork();
+    if (pid == 0) {
+        char *args[] = {"echo", "hello from execvp", NULL};
+        printf("Child: calling execvp(\"echo\")\n");
+        execvp("echo", args);
+        perror("execvp");
+        _exit(1);
+    }
+    waitpid(pid, NULL, 0);
+
+    /* 方式3: execv — 完整路径，数组参数 */
+    pid = fork();
+    if (pid == 0) {
+        char *args[] = {"/bin/date", NULL};
+        printf("Child: calling execv(\"/bin/date\")\n");
+        execv("/bin/date", args);
+        perror("execv");
+        _exit(1);
+    }
+    waitpid(pid, NULL, 0);
+
+    /* 传递环境变量给 exec */
+    pid = fork();
+    if (pid == 0) {
+        char *args[] = {"env", NULL};
+        char *envp[] = {"MY_VAR=hello_from_parent", NULL};
+        printf("Child: calling execve with custom env\n");
+        execve("/usr/bin/env", args, envp);
+        perror("execve");
+        _exit(1);
+    }
+    waitpid(pid, NULL, 0);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

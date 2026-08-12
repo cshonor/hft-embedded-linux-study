@@ -68,6 +68,74 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <termios.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+
+/* Ch62 终端 — termios API 控制终端属性。
+ * 演示关闭回显 (密码输入) + 设置原始模式。
+ * 编译: gcc -o ch62_demo ch62_demo.c */
+
+int main(void) {
+    /* 保存当前终端设置 */
+    struct termios old_term, new_term;
+    tcgetattr(STDIN_FILENO, &old_term);
+    new_term = old_term;
+
+    printf("=== Echo off demo (type something, it won't show) ===\n");
+
+    /* 关闭回显 */
+    new_term.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
+
+    char password[64];
+    printf("Enter password: ");
+    fflush(stdout);
+    if (fgets(password, sizeof(password), stdin)) {
+        printf("\nYou entered: %s", password);
+    }
+
+    /* 恢复回显 */
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
+
+    /* === 原始模式 (无缓冲, 无回显, 无特殊字符处理) === */
+    printf("\n\n=== Raw mode demo (press 'q' to quit) ===\n");
+
+    new_term.c_lflag &= ~(ICANON | ECHO);  /* 关闭规范模式 + 回显 */
+    new_term.c_cc[VMIN] = 1;               /* 至少读 1 字节 */
+    new_term.c_cc[VTIME] = 0;              /* 无超时 */
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
+
+    /* 在原始模式下逐字符读取 */
+    char c;
+    while (read(STDIN_FILENO, &c, 1) == 1) {
+        printf("Got char: 0x%02x ('%c')\n", (unsigned char)c,
+               (c >= 32 && c < 127) ? c : '.');
+        if (c == 'q') break;
+    }
+
+    /* 恢复原始终端设置 */
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
+    printf("\nTerminal restored.\n");
+
+    /* 获取终端窗口大小 */
+    struct winsize ws;
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0) {
+        printf("Terminal size: %d rows x %d cols\n",
+               ws.ws_row, ws.ws_col);
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

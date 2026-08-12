@@ -79,6 +79,65 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <mqueue.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <semaphore.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+/* Ch51 POSIX IPC 概述 — 命名规则 + mq/sem/shm 统一接口。
+ * POSIX IPC 用名字(类似文件路径)而非 key。
+ * 编译: gcc -o ch51_demo ch51_demo.c -lrt -lpthread */
+
+int main(void) {
+    /* POSIX IPC 命名规则:
+     * - 以 / 开头, 中间无其他 /
+     * - 如 /myqueue, /mysem, /myshm
+     * - 存储位置: /dev/shm/ (shared memory + semaphores)
+     */
+
+    /* POSIX 消息队列 */
+    struct mq_attr attr = { .mq_maxmsg = 10, .mq_msgsize = 64 };
+    mqd_t mqd = mq_open("/ch51_test", O_CREAT | O_RDWR, 0644, &attr);
+    if (mqd >= 0) {
+        printf("POSIX message queue created: /ch51_test\n");
+        mq_close(mqd);
+        mq_unlink("/ch51_test");
+    }
+
+    /* POSIX 信号量 */
+    sem_t *sem = sem_open("/ch51_test", O_CREAT, 0644, 1);
+    if (sem != SEM_FAILED) {
+        printf("POSIX semaphore created: /ch51_test\n");
+        sem_close(sem);
+        sem_unlink("/ch51_test");
+    }
+
+    /* POSIX 共享内存 */
+    int fd = shm_open("/ch51_test", O_CREAT | O_RDWR, 0644);
+    if (fd >= 0) {
+        ftruncate(fd, 4096);
+        printf("POSIX shared memory created: /ch51_test (size=4096)\n");
+        close(fd);
+        shm_unlink("/ch51_test");
+    }
+
+    printf("\nPOSIX IPC vs SysV IPC:\n");
+    printf("  Naming:   name-based vs key-based\n");
+    printf("  Cleanup:  _unlink vs IPC_RMID\n");
+    printf("  Listing:  ls /dev/shm vs ipcs\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

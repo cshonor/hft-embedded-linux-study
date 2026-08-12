@@ -69,6 +69,67 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/types.h>
+#include <sys/msg.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
+#include <fcntl.h>
+
+/* Ch45 SysV IPC 概述 — ftok 生成 key + ipcs/ipcrm 管理。
+ * SysV IPC 三件套: msgget/semget/shmget，用 key 标识。
+ * 编译: gcc -o ch45_demo ch45_demo.c */
+
+int main(void) {
+    /* ftok: 用文件路径 + 项目号生成 IPC key */
+    /* 需要一个存在的文件 */
+    int fd = open("/tmp/ch45_ftok_file", O_CREAT | O_RDWR, 0644);
+    close(fd);
+
+    key_t key = ftok("/tmp/ch45_ftok_file", 'A');
+    printf("ftok key = 0x%x\n", (unsigned)key);
+
+    /* 创建消息队列 (只是演示创建+删除) */
+    int msqid = msgget(key, IPC_CREAT | 0666);
+    if (msqid >= 0) {
+        printf("Message queue created: id=%d\n", msqid);
+        struct msqid_ds info;
+        msgctl(msqid, IPC_STAT, &info);
+        printf("  queue size: %lu bytes\n", (unsigned long)info.msg_cbytes);
+        printf("  messages:   %lu\n", (unsigned long)info.msg_qnum);
+        msgctl(msqid, IPC_RMID, NULL);  /* 删除 */
+        printf("  (deleted)\n");
+    }
+
+    /* 创建信号量集 */
+    int semid = semget(key, 1, IPC_CREAT | 0666);
+    if (semid >= 0) {
+        printf("Semaphore set created: id=%d\n", semid);
+        semctl(semid, 0, IPC_RMID);
+        printf("  (deleted)\n");
+    }
+
+    /* 创建共享内存 */
+    int shmid = shmget(key, 4096, IPC_CREAT | 0666);
+    if (shmid >= 0) {
+        printf("Shared memory created: id=%d, size=4096\n", shmid);
+        shmctl(shmid, IPC_RMID, NULL);
+        printf("  (deleted)\n");
+    }
+
+    remove("/tmp/ch45_ftok_file");
+    printf("\nUse 'ipcs' to list, 'ipcrm' to remove IPC objects\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

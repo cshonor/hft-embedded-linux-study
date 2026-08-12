@@ -128,6 +128,48 @@ Demo：[`code/simple_thread.c`](./code/simple_thread.c) · [`code/thread_exit_re
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch29 线程入门 — pthread_create/pthread_join。
+ * 线程共享地址空间，比 fork 轻量。
+ * 编译: gcc -o ch29_demo ch29_demo.c -lpthread */
+
+static int shared_counter = 0;  /* 线程间共享 */
+
+void *worker(void *arg) {
+    int id = *(int *)arg;
+    for (int i = 0; i < 5; i++) {
+        shared_counter++;
+        printf("Thread %d: counter=%d\n", id, shared_counter);
+        usleep(100000);  /* 100ms */
+    }
+    return NULL;
+}
+
+int main(void) {
+    pthread_t t1, t2;
+    int id1 = 1, id2 = 2;
+
+    pthread_create(&t1, NULL, worker, &id1);
+    pthread_create(&t2, NULL, worker, &id2);
+
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+
+    printf("Final counter: %d (expected 10)\n", shared_counter);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

@@ -16,3 +16,19 @@ ps -o pid,comm
 | `uname_demo.c` | POSIX `uname` + `gethostname` |
 | `proc_self_status.c` | `/proc/self/status` + `cmdline`（`\0`→空格） |
 | `mini_ps.c` | 遍历 `/proc/[pid]`，容忍进程消失 |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/utsname.h>
+/* Ch12 demo: uname */
+int main(void) {
+    struct utsname u;
+    uname(&u);
+    printf("%s %s %s\n", u.sysname, u.release, u.machine);
+    return 0;
+}
+```
+
+---

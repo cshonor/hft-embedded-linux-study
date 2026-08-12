@@ -23,3 +23,22 @@ cc -Wall -Wextra -o sigchld_reap sigchld_reap.c
 | `eintr_read.c` | 无 `SA_RESTART` 时 `read` → `EINTR` |
 | `siginfo_demo.c` | `SA_SIGINFO` 打印发送者 |
 | `sigchld_reap.c` | `SIGCHLD` 循环 `waitpid(WNOHANG)` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+/* Ch21 demo: sigaction */
+void h(int s, siginfo_t *i, void *c) { printf("got %d\n", s); }
+int main(void) {
+    struct sigaction sa = {0};
+    sa.sa_sigaction = h;
+    sa.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR1, &sa, NULL);
+    raise(SIGUSR1);
+    return 0;
+}
+```
+
+---

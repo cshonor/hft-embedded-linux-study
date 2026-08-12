@@ -96,6 +96,65 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+/* Ch48 SysV 共享内存 — shmget/shmat/shmdt。
+ * 共享内存是最快的 IPC: 进程直接读写同一物理内存。
+ * 编译: gcc -o ch48_demo ch48_demo.c */
+
+#define SHM_SIZE 4096
+
+int main(void) {
+    /* 创建共享内存段 */
+    int shmid = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    if (shmid < 0) { perror("shmget"); return 1; }
+
+    /* 父进程映射共享内存 */
+    char *shm = shmat(shmid, NULL, 0);
+    if (shm == (void *)-1) { perror("shmat"); return 1; }
+
+    /* 写入初始数据 */
+    strcpy(shm, "Hello from parent!");
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: 映射同一共享内存段 */
+        char *child_shm = shmat(shmid, NULL, 0);
+        if (child_shm == (void *)-1) { perror("shmat child"); _exit(1); }
+
+        printf("Child reads: %s\n", child_shm);
+
+        /* 修改共享内存 */
+        strcpy(child_shm, "Hello from child!");
+
+        shmdt(child_shm);
+        _exit(0);
+    }
+
+    waitpid(pid, NULL, 0);
+
+    /* 父进程看到子进程的修改 */
+    printf("Parent reads after child: %s\n", shm);
+
+    /* 清理 */
+    shmdt(shm);
+    shmctl(shmid, IPC_RMID, NULL);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

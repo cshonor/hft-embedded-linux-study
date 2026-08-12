@@ -72,6 +72,103 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <string.h>
+#include <poll.h>
+#include <signal.h>
+#include <sys/wait.h>
+
+/* Ch61 套接字高级 — select/poll/epoll 多路复用。
+ * 演示 poll 同时监控多个套接字。
+ * 编译: gcc -o ch61_demo ch61_demo.c */
+
+#define PORT 9997
+
+int main(void) {
+    int sfd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
+        .sin_port = htons(PORT)
+    };
+    bind(sfd, (struct sockaddr *)&addr, sizeof(addr));
+    listen(sfd, 5);
+
+    /* fork 2 个客户端 */
+    for (int i = 0; i < 2; i++) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            int cfd = socket(AF_INET, SOCK_STREAM, 0);
+            connect(cfd, (struct sockaddr *)&addr, sizeof(addr));
+            char msg[32];
+            snprintf(msg, sizeof(msg), "hello %d", i);
+            sleep(i + 1);  /* 错开发送时间 */
+            write(cfd, msg, strlen(msg) + 1);
+            char buf[64];
+            read(cfd, buf, sizeof(buf));
+            printf("Client %d: got '%s'\n", i, buf);
+            close(cfd);
+            _exit(0);
+        }
+    }
+
+    /* 服务器: 用 poll 监控监听套接字 + 已连接套接字 */
+    struct pollfd fds[16];
+    int nfds = 1;
+    fds[0].fd = sfd;
+    fds[0].events = POLLIN;
+
+    printf("Server: polling for connections...\n");
+
+    for (int served = 0; served < 2; ) {
+        poll(fds, nfds, 10000);  /* 10秒超时 */
+
+        for (int i = 0; i < nfds; i++) {
+            if (!(fds[i].revents & POLLIN))
+                continue;
+
+            if (i == 0) {
+                /* 监听套接字可读 -> 新连接 */
+                int cfd = accept(sfd, NULL, NULL);
+                fds[nfds].fd = cfd;
+                fds[nfds].events = POLLIN;
+                nfds++;
+                printf("Server: accepted new client (fd=%d)\n", cfd);
+            } else {
+                /* 已连接套接字可读 -> 数据到达 */
+                char buf[64];
+                int n = read(fds[i].fd, buf, sizeof(buf));
+                if (n > 0) {
+                    printf("Server: received '%s' from fd=%d\n",
+                           buf, fds[i].fd);
+                    write(fds[i].fd, "ok", 3);
+                    served++;
+                }
+                close(fds[i].fd);
+                fds[i].fd = -1;  /* poll 忽略 fd=-1 */
+            }
+        }
+    }
+
+    while (wait(NULL) > 0)
+        ;
+    close(sfd);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

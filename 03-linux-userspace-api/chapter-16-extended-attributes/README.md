@@ -104,6 +104,56 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/xattr.h>
+#include <string.h>
+
+/* Ch16 扩展属性 — getxattr/setxattr/listxattr。
+ * xattr 是文件 inode 上附带的 key-value 元数据。
+ * 编译: gcc -o ch16_demo ch16_demo.c
+ * 需要 attr 包: apt install attr */
+
+int main(void) {
+    const char *path = "/tmp/ch16_test.txt";
+    FILE *fp = fopen(path, "w");
+    if (!fp) { perror("fopen"); return 1; }
+    fprintf(fp, "test\n");
+    fclose(fp);
+
+    /* 设置扩展属性 */
+    if (setxattr(path, "user.comment", "hello xattr", 11, 0) < 0)
+        perror("setxattr (need user namespace + ext4/xfs)");
+
+    /* 列出所有扩展属性 */
+    char list[256];
+    ssize_t llen = listxattr(path, list, sizeof(list));
+    if (llen > 0) {
+        printf("xattr keys:\n");
+        for (ssize_t i = 0; i < llen; ) {
+            printf("  %s\n", list + i);
+            i += strlen(list + i) + 1;
+        }
+    }
+
+    /* 读取扩展属性值 */
+    char val[256];
+    ssize_t vlen = getxattr(path, "user.comment", val, sizeof(val) - 1);
+    if (vlen >= 0) {
+        val[vlen] = '\0';
+        printf("user.comment = %s\n", val);
+    }
+
+    remove(path);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

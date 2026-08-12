@@ -104,6 +104,48 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/utsname.h>
+#include <sys/sysinfo.h>
+#include <unistd.h>
+
+/* Ch12 系统与进程信息 — uname/sysinfo + /proc 文件系统。
+ * 编译: gcc -o ch12_demo ch12_demo.c */
+
+int main(void) {
+    /* uname: 内核/系统信息 */
+    struct utsname uts;
+    if (uname(&uts) == 0) {
+        printf("sysname:  %s\n", uts.sysname);
+        printf("nodename: %s\n", uts.nodename);
+        printf("release:  %s\n", uts.release);
+        printf("version:  %s\n", uts.version);
+        printf("machine:  %s\n", uts.machine);
+    }
+
+    /* sysinfo: 内存/uptime/负载 */
+    struct sysinfo info;
+    if (sysinfo(&info) == 0) {
+        printf("\nuptime:      %ld sec\n", info.uptime);
+        printf("total RAM:   %lu MB\n", info.totalram / 1024 / 1024);
+        printf("free RAM:    %lu MB\n", info.freeram / 1024 / 1024);
+        printf("load avg:    %.2f %.2f %.2f\n",
+               info.loads[0] / 65536.0,
+               info.loads[1] / 65536.0,
+               info.loads[2] / 65536.0);
+    }
+
+    printf("\n/proc/self/status shows per-process info (try: cat /proc/self/status)\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

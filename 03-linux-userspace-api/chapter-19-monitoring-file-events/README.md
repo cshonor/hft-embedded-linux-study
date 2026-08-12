@@ -104,6 +104,58 @@ int inotify_rm_watch(int fd, int wd);
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/inotify.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+
+/* Ch19 文件事件监控 — inotify_init/inotify_add_watch/read。
+ * 监控目录中文件的创建/修改/删除事件。
+ * 编译: gcc -o ch19_demo ch19_demo.c */
+
+#define EVENT_SIZE (sizeof(struct inotify_event))
+#define BUF_LEN (1024 * (EVENT_SIZE + 16))
+
+int main(void) {
+    int fd = inotify_init1(IN_NONBLOCK);
+    if (fd < 0) { perror("inotify_init"); return 1; }
+
+    int wd = inotify_add_watch(fd, "/tmp", IN_CREATE | IN_DELETE | IN_MODIFY);
+    if (wd < 0) { perror("inotify_add_watch"); return 1; }
+
+    printf("Watching /tmp for 3 seconds...\n");
+
+    /* 简化: 等3秒，读一次事件 */
+    sleep(3);
+
+    char buf[BUF_LEN];
+    ssize_t len = read(fd, buf, sizeof(buf));
+    if (len > 0) {
+        for (ssize_t i = 0; i < len; ) {
+            struct inotify_event *ev = (struct inotify_event *)&buf[i];
+            if (ev->len > 0) {
+                printf("event: mask=0x%x name=%s\n", ev->mask, ev->name);
+            }
+            i += EVENT_SIZE + ev->len;
+        }
+    } else {
+        printf("No events in 3 seconds\n");
+    }
+
+    inotify_rm_watch(fd, wd);
+    close(fd);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

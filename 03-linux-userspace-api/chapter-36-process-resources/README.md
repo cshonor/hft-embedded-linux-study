@@ -77,6 +77,57 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+/* Ch36 进程资源 — getrusage/setrlimit/getrlimit。
+ * 演示资源使用统计 + 资源限制设置。
+ * 编译: gcc -o ch36_demo ch36_demo.c */
+
+int main(void) {
+    /* getrusage: 获取资源使用情况 */
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) == 0) {
+        printf("Resource usage (self):\n");
+        printf("  user CPU time:   %ld.%06ld sec\n",
+               (long)usage.ru_utime.tv_sec, (long)usage.ru_utime.tv_usec);
+        printf("  system CPU time: %ld.%06ld sec\n",
+               (long)usage.ru_stime.tv_sec, (long)usage.ru_stime.tv_usec);
+        printf("  max RSS:         %ld KB\n", (long)usage.ru_maxrss);
+        printf("  minor faults:    %ld\n", (long)usage.ru_minflt);
+        printf("  major faults:    %ld\n", (long)usage.ru_majflt);
+        printf("  voluntary CS:    %ld\n", (long)usage.ru_nvcsw);
+        printf("  involuntary CS:  %ld\n", (long)usage.ru_nivcsw);
+    }
+
+    /* getrlimit/setrlimit: 资源限制 */
+    struct rlimit lim;
+    getrlimit(RLIMIT_NOFILE, &lim);
+    printf("\nRLIMIT_NOFILE: soft=%lu, hard=%lu\n",
+           (unsigned long)lim.rlim_cur, (unsigned long)lim.rlim_max);
+
+    getrlimit(RLIMIT_STACK, &lim);
+    printf("RLIMIT_STACK:   soft=%lu, hard=%lu\n",
+           (unsigned long)lim.rlim_cur, (unsigned long)lim.rlim_max);
+
+    /* 降低文件描述符上限 */
+    lim.rlim_cur = 256;
+    if (setrlimit(RLIMIT_NOFILE, &lim) == 0) {
+        getrlimit(RLIMIT_NOFILE, &lim);
+        printf("After setrlimit: soft=%lu\n", (unsigned long)lim.rlim_cur);
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

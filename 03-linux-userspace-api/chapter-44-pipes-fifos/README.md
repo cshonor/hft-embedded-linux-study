@@ -70,6 +70,70 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch44 管道与 FIFO — pipe + mkfifo 命名管道。
+ * 演示匿名管道(父子通信) + FIFO(无关进程通信)。
+ * 编译: gcc -o ch44_demo ch44_demo.c */
+
+#define FIFO_PATH "/tmp/ch44_fifo"
+
+int main(void) {
+    /* === 匿名管道 === */
+    int pipefd[2];
+    pipe(pipefd);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(pipefd[0]);
+        write(pipefd[1], "pipe msg", 8);
+        close(pipefd[1]);
+        _exit(0);
+    }
+    close(pipefd[1]);
+    char buf[64];
+    read(pipefd[0], buf, 8);
+    buf[8] = '\0';
+    printf("Pipe received: %s\n", buf);
+    waitpid(pid, NULL, 0);
+
+    /* === FIFO (命名管道) === */
+    mkfifo(FIFO_PATH, 0644);
+
+    pid = fork();
+    if (pid == 0) {
+        /* 子进程: 写 FIFO */
+        int fd = open(FIFO_PATH, O_WRONLY);
+        write(fd, "fifo msg", 8);
+        close(fd);
+        _exit(0);
+    }
+
+    /* 父进程: 读 FIFO */
+    int fd = open(FIFO_PATH, O_RDONLY);
+    read(fd, buf, 8);
+    buf[8] = '\0';
+    printf("FIFO received: %s\n", buf);
+    close(fd);
+    waitpid(pid, NULL, 0);
+
+    unlink(FIFO_PATH);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

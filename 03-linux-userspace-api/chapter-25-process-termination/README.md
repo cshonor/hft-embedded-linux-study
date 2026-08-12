@@ -96,6 +96,51 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+/* Ch25 进程终止 — exit/_exit/atexit/on_exit。
+ * exit() 调用 atexit 注册的函数 + flush stdio；
+ * _exit() 直接进入内核，不清理。
+ * 编译: gcc -o ch25_demo ch25_demo.c */
+
+static void cleanup1(void) {
+    printf("atexit handler 1 (called by exit, LIFO order)\n");
+}
+
+static void cleanup2(void) {
+    printf("atexit handler 2 (called first, LIFO)\n");
+}
+
+int main(void) {
+    /* atexit: 注册退出处理函数，LIFO 顺序调用 */
+    atexit(cleanup1);
+    atexit(cleanup2);
+
+    printf("Program running...\n");
+
+    /* fork 后子进程继承 atexit 注册 */
+    pid_t pid = fork();
+    if (pid == 0) {
+        printf("Child: calling _exit (skips atexit handlers)\n");
+        _exit(0);  /* 不调 atexit，不 flush stdio */
+    }
+
+    /* 父进程用 exit() */
+    printf("Parent: calling exit (runs atexit handlers + flush stdio)\n");
+    exit(0);
+    /* 以下不会执行 */
+    printf("This line never prints\n");
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

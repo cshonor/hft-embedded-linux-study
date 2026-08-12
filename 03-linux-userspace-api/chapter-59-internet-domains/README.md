@@ -84,6 +84,80 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch59 Internet 域套接字 — TCP 服务器 + 客户端。
+ * 演示 AF_INET + SOCK_STREAM 完整通信流程。
+ * 编译: gcc -o ch59_demo ch59_demo.c */
+
+#define PORT 9999
+
+int main(void) {
+    int sfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sfd < 0) { perror("socket"); return 1; }
+
+    /* 设置 SO_REUSEADDR, 避免重启时 "Address already in use" */
+    int opt = 1;
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);  /* 127.0.0.1 */
+    addr.sin_port = htons(PORT);
+
+    if (bind(sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind"); return 1;
+    }
+    listen(sfd, 5);
+    printf("TCP server listening on 127.0.0.1:%d\n", PORT);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: 客户端 */
+        int cfd = socket(AF_INET, SOCK_STREAM, 0);
+        struct sockaddr_in srv = addr;
+        if (connect(cfd, (struct sockaddr *)&srv, sizeof(srv)) < 0) {
+            perror("connect"); _exit(1);
+        }
+        write(cfd, "TCP hello", 9);
+        char buf[64];
+        int n = read(cfd, buf, sizeof(buf));
+        if (n > 0) { buf[n] = '\0'; printf("Client: reply='%s'\n", buf); }
+        close(cfd);
+        _exit(0);
+    }
+
+    /* 父进程: 服务器 */
+    struct sockaddr_in cli;
+    socklen_t cli_len = sizeof(cli);
+    int cfd = accept(sfd, (struct sockaddr *)&cli, &cli_len);
+    if (cfd >= 0) {
+        char buf[64];
+        int n = read(cfd, buf, sizeof(buf));
+        if (n > 0) { buf[n] = '\0'; printf("Server: received='%s'\n", buf); }
+        write(cfd, "TCP reply", 9);
+        close(cfd);
+    }
+
+    waitpid(pid, NULL, 0);
+    close(sfd);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

@@ -107,6 +107,51 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/stat.h>
+#include <time.h>
+
+/* Ch15 文件属性 — stat/fstat/lstat 获取 inode 信息。
+ * 演示文件类型判断 + 权限/大小/时间戳。
+ * 编译: gcc -o ch15_demo ch15_demo.c */
+
+int main(void) {
+    struct stat sb;
+    if (lstat("/etc/hostname", &sb) < 0) {
+        perror("lstat");
+        return 1;
+    }
+
+    /* 文件类型 */
+    if (S_ISREG(sb.st_mode))  printf("type: regular file\n");
+    else if (S_ISDIR(sb.st_mode)) printf("type: directory\n");
+    else if (S_ISLNK(sb.st_mode)) printf("type: symlink\n");
+    else if (S_ISCHR(sb.st_mode)) printf("type: char device\n");
+    else if (S_ISBLK(sb.st_mode)) printf("type: block device\n");
+
+    /* 权限 */
+    printf("mode: %04o\n", sb.st_mode & 07777);
+    printf("size: %ld bytes\n", (long)sb.st_size);
+    printf("links: %ld\n", (long)sb.st_nlink);
+    printf("uid: %u, gid: %u\n", sb.st_uid, sb.st_gid);
+
+    /* 时间戳 */
+    printf("mtime: %s", ctime(&sb.st_mtime));
+    printf("atime: %s", ctime(&sb.st_atime));
+    printf("ctime: %s", ctime(&sb.st_ctime));
+
+    /* inode 号 */
+    printf("inode: %lu\n", (unsigned long)sb.st_ino);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

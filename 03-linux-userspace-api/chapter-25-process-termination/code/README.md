@@ -18,3 +18,19 @@ cc -Wall -Wextra -o fork_atexit fork_atexit.c
 | `atexit_order.c` | 回调 LIFO |
 | `exit_vs_exit.c` | `exit` 刷缓冲 vs `_exit` 不刷 |
 | `fork_atexit.c` | fork 后 `exit`/`_exit` 与 atexit |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+/* Ch25 demo: exit vs _exit */
+static void cleanup(void) { printf("cleanup\n"); }
+int main(void) {
+    atexit(cleanup);
+    printf("exiting...\n");
+    exit(0); /* runs atexit handlers */
+}
+```
+
+---

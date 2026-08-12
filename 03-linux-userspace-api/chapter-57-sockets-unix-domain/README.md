@@ -78,6 +78,104 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch57 UNIX 域套接字 — socketpair + fd 传递 (SCM_RIGHTS)。
+ * UNIX 域套接字仅限本机, 但支持传递文件描述符。
+ * 编译: gcc -o ch57_demo ch57_demo.c */
+
+int main(void) {
+    /* socketpair: 创建一对已连接的套接字 */
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
+        perror("socketpair"); return 1;
+    }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        /* 子进程: 通过 sv[1] 接收 fd */
+        close(sv[0]);
+
+        /* 接收普通消息 */
+        char buf[64];
+        read(sv[1], buf, 12);
+        printf("Child: received message: %s\n", buf);
+
+        /* 接收文件描述符 (SCM_RIGHTS) */
+        struct msghdr msg = {0};
+        char mbuf[256];
+        struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = mbuf;
+        msg.msg_controllen = sizeof(mbuf);
+
+        recvmsg(sv[1], &msg, 0);
+
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+        if (cmsg && cmsg->cmsg_level == SOL_SOCKET &&
+            cmsg->cmsg_type == SCM_RIGHTS) {
+            int recv_fd;
+            memcpy(&recv_fd, CMSG_DATA(cmsg), sizeof(int));
+            printf("Child: received fd=%d\n", recv_fd);
+
+            /* 使用接收到的 fd 读文件 */
+            char fbuf[64];
+            int n = read(recv_fd, fbuf, sizeof(fbuf) - 1);
+            if (n > 0) { fbuf[n] = '\0'; printf("Child: fd content: %s\n", fbuf); }
+            close(recv_fd);
+        }
+        close(sv[1]);
+        _exit(0);
+    }
+
+    /* 父进程: 通过 sv[0] 发送消息 + fd */
+    close(sv[1]);
+
+    /* 发送普通消息 */
+    write(sv[0], "hello fd!", 12);
+
+    /* 打开一个文件, 通过套接字传递 fd */
+    int file_fd = open("/etc/hostname", O_RDONLY);
+
+    /* 构造带 ancillary data 的消息 */
+    struct msghdr msg = {0};
+    char buf[] = "fd coming";
+    struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    char cbuf[CMSG_SPACE(sizeof(int))];
+    msg.msg_control = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
+
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(cmsg), &file_fd, sizeof(int));
+
+    sendmsg(sv[0], &msg, 0);
+    printf("Parent: sent fd=%d\n", file_fd);
+
+    close(file_fd);
+    close(sv[0]);
+    waitpid(pid, NULL, 0);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

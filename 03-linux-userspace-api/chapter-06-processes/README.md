@@ -98,6 +98,46 @@ Ch5  fd / 打开描述（stdin/out/err 已在进程里）
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+/* Ch6 进程 — 演示 fork/wait/getpid 基本进程操作。
+ * fork() 创建子进程；wait() 等待子进程结束。
+ * 编译: gcc -o ch6_demo ch6_demo.c */
+
+int main(void) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        /* 子进程 */
+        printf("Child: pid=%d, parent pid=%d\n",
+               (int)getpid(), (int)getppid());
+        _exit(42);
+    } else {
+        /* 父进程 */
+        printf("Parent: pid=%d, child pid=%d\n",
+               (int)getpid(), (int)pid);
+        int status;
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status))
+            printf("Child exited with %d\n", WEXITSTATUS(status));
+    }
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

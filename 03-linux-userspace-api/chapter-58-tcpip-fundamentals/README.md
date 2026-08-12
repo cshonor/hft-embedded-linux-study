@@ -86,6 +86,68 @@ inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <string.h>
+#include <unistd.h>
+
+/* Ch58 TCP/IP 基础 — 地址转换 + DNS 解析。
+ * 演示 inet_pton/inet_ntop + getaddrinfo。
+ * 编译: gcc -o ch58_demo ch58_demo.c */
+
+int main(void) {
+    /* inet_pton: 文本 IP -> 二进制 */
+    struct in_addr addr;
+    if (inet_pton(AF_INET, "127.0.0.1", &addr) == 1)
+        printf("inet_pton: 127.0.0.1 -> 0x%x\n", ntohl(addr.s_addr));
+
+    /* inet_ntop: 二进制 -> 文本 IP */
+    char ip_str[INET_ADDRSTRLEN];
+    addr.s_addr = htonl(0x08080808);  /* 8.8.8.8 */
+    if (inet_ntop(AF_INET, &addr, ip_str, sizeof(ip_str)))
+        printf("inet_ntop: 0x08080808 -> %s\n", ip_str);
+
+    /* getaddrinfo: 现代 DNS 解析 (替代过时的 gethostbyname) */
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;       /* IPv4 或 IPv6 */
+    hints.ai_socktype = SOCK_STREAM;   /* TCP */
+
+    int err = getaddrinfo("localhost", "80", &hints, &res);
+    if (err != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
+        return 1;
+    }
+
+    printf("\ngetaddrinfo(\"localhost\", \"80\"):\n");
+    for (struct addrinfo *p = res; p; p = p->ai_next) {
+        char host[NI_MAXHOST], service[NI_MAXSERV];
+        getnameinfo(p->ai_addr, p->ai_addrlen,
+                    host, sizeof(host),
+                    service, sizeof(service),
+                    NI_NUMERICHOST | NI_NUMERICSERV);
+        int family = p->ai_family == AF_INET ? 4 : 6;
+        printf("  IPv%d: [%s]:%s\n", family, host, service);
+    }
+    freeaddrinfo(res);
+
+    /* 字节序转换 */
+    printf("\nByte order:\n");
+    printf("  htons(80) = %u\n", htons(80));
+    printf("  htonl(0x12345678) = 0x%x\n", htonl(0x12345678));
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

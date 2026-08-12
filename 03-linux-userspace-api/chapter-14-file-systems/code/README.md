@@ -26,3 +26,19 @@ sudo ./mount_bind_demo
 | `print_inode.c` | `stat` 打印 `st_ino` / `st_dev` / `st_nlink` |
 | `proc_mounts.c` | 读 `/proc/self/mounts` |
 | `mount_bind_demo.c` | `MS_BIND` 绑定挂载再 `umount`（需特权） |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/statfs.h>
+/* Ch14 demo: statfs */
+int main(void) {
+    struct statfs fs;
+    statfs("/", &fs);
+    printf("block size: %ld\n", (long)fs.f_bsize);
+    return 0;
+}
+```
+
+---

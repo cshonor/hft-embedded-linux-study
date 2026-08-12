@@ -14,3 +14,20 @@ cc -Wall -Wextra -o xattr_demo xattr_demo.c
 | 文件 | 说明 |
 |------|------|
 | `xattr_demo.c` | `user.*` 增删改查 + `listxattr` 枚举 |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/xattr.h>
+/* Ch16 demo: setxattr/getxattr */
+int main(void) {
+    setxattr("/tmp", "user.demo", "hello", 5, 0);
+    char buf[16];
+    getxattr("/tmp", "user.demo", buf, 16);
+    printf("xattr: %s\n", buf);
+    return 0;
+}
+```
+
+---

@@ -14,3 +14,21 @@ cc -Wall -Wextra -o posix_timer_thread posix_timer_thread.c -lrt
 |------|------|
 | `nanosleep_retry.c` | `nanosleep` + `EINTR` 安全重试 |
 | `posix_timer_thread.c` | `timer_create` + `CLOCK_MONOTONIC` + `SIGEV_THREAD` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+/* Ch23 demo: alarm */
+void h(int s) { printf("alarm!\n"); }
+int main(void) {
+    signal(SIGALRM, h);
+    alarm(1);
+    pause();
+    return 0;
+}
+```
+
+---

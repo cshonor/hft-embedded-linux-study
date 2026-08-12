@@ -105,6 +105,59 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/acl.h>
+#include <errno.h>
+
+/* Ch17 访问控制列表 (ACL) — acl_get_file/acl_set_file。
+ * ACL 比传统 rwx 更细粒度：可给特定用户/组单独授权。
+ * 编译: gcc -o ch17_demo ch17_demo.c -lacl
+ * 需要安装: apt install libacl1-dev */
+
+int main(void) {
+    const char *path = "/tmp/ch17_test.txt";
+    FILE *fp = fopen(path, "w");
+    if (!fp) { perror("fopen"); return 1; }
+    fprintf(fp, "test\n");
+    fclose(fp);
+
+    /* 获取文件 ACL */
+    acl_t acl = acl_get_file(path, ACL_TYPE_ACCESS);
+    if (acl == NULL) {
+        perror("acl_get_file (need libacl)");
+        remove(path);
+        return 1;
+    }
+
+    /* 打印 ACL 文本形式 */
+    char *text = acl_to_text(acl, NULL);
+    if (text) {
+        printf("Current ACL:\n%s\n", text);
+        acl_free(text);
+    }
+    acl_free(acl);
+
+    /* 创建新 ACL 条目: 给 uid 1000 读写权限 */
+    acl = acl_from_text("u::rw,g::r,o::r,u:1000:rw,m::rw");
+    if (acl) {
+        if (acl_set_file(path, ACL_TYPE_ACCESS, acl) == 0)
+            printf("ACL updated: uid 1000 gets rw\n");
+        else
+            perror("acl_set_file");
+        acl_free(acl);
+    }
+
+    remove(path);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

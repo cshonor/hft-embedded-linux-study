@@ -84,6 +84,54 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
+
+/* Ch21 信号处理器 — sigaction（替代可移植性差的 signal）。
+ * 演示 sigaction 注册 + 信号信息获取。
+ * 编译: gcc -o ch21_demo ch21_demo.c */
+
+static volatile sig_atomic_t count = 0;
+
+void handler(int sig, siginfo_t *info, void *ctx) {
+    count++;
+    /* 注意: printf 不是异步信号安全函数，这里仅做演示 */
+    const char *msg = "caught SIGINT\n";
+    write(STDOUT_FILENO, msg, strlen(msg));
+}
+
+int main(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+
+    /* sigaction 比 signal 更可移植、更强大 */
+    if (sigaction(SIGINT, &sa, NULL) < 0) {
+        perror("sigaction");
+        return 1;
+    }
+
+    printf("Press Ctrl+C to test (will catch 3 times then exit)\n");
+    printf("Or run: kill -INT %d\n", (int)getpid());
+
+    while (count < 3) {
+        pause();  /* 等待信号 */
+    }
+    printf("Caught %d signals, exiting.\n", count);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

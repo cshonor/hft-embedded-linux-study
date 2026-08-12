@@ -21,3 +21,19 @@ cc -Wall -Wextra -D_GNU_SOURCE -o statx_btime statx_btime.c
 | `umask_demo.c` | 不同 umask 下创建文件的最终 mode |
 | `futimens_demo.c` | 改 atime/mtime，观察 ctime 自动变 |
 | `statx_btime.c` | Linux `statx` 尝试打印 birth time |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/stat.h>
+/* Ch15 demo: stat */
+int main(void) {
+    struct stat sb;
+    stat("/etc/passwd", &sb);
+    printf("size=%ld mode=%o\n", (long)sb.st_size, sb.st_mode & 07777);
+    return 0;
+}
+```
+
+---

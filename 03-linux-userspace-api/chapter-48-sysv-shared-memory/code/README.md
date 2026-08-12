@@ -14,3 +14,22 @@ ipcs -m -s
 | 文件 | 说明 |
 |------|------|
 | `shm_sem_demo.c` | 父写子读；二元 sem 握手；`IPC_RMID` 后双方 `shmdt` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <sys/shm.h>
+#include <string.h>
+/* Ch48 demo: shmget + shmat */
+int main(void) {
+    int id = shmget(IPC_PRIVATE, 4096, IPC_CREAT|0666);
+    char *s = shmat(id, NULL, 0);
+    strcpy(s, "shared!");
+    printf("%s\n", s);
+    shmdt(s); shmctl(id, IPC_RMID, NULL);
+    return 0;
+}
+```
+
+---

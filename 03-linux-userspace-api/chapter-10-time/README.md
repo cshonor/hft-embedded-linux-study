@@ -78,6 +78,46 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <time.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+/* Ch10 时间 — time/gettimeofday/clock_gettime/nanosleep。
+ * 演示多种获取时间的方式 + 精度差异。
+ * 编译: gcc -o ch10_demo ch10_demo.c */
+
+int main(void) {
+    /* time(): 秒级精度 */
+    time_t t = time(NULL);
+    printf("time():       %ld (%s)", (long)t, ctime(&t));
+
+    /* gettimeofday(): 微秒精度 */
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    printf("gettimeofday: %ld.%06ld\n", (long)tv.tv_sec, (long)tv.tv_usec);
+
+    /* clock_gettime(CLOCK_MONOTONIC): 纳秒精度，不受系统时间调整影响 */
+    struct timespec ts1, ts2;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+
+    nanosleep(&(struct timespec){0, 100 * 1000 * 1000}, NULL);  /* 100ms */
+
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    long delta_ns = (ts2.tv_sec - ts1.tv_sec) * 1000000000L
+                  + (ts2.tv_nsec - ts1.tv_nsec);
+    printf("nanosleep(100ms) actual: %ld ns (%.2f ms)\n",
+           delta_ns, delta_ns / 1000000.0);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

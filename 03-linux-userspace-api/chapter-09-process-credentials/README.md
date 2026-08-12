@@ -96,6 +96,42 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+/* Ch9 进程凭证 — real/effective/saved-set uid/gid。
+ * getresuid/getresgid 同时获取三种 uid/gid。
+ * 编译: gcc -o ch9_demo ch9_demo.c */
+
+int main(void) {
+    uid_t ruid, euid, suid;
+    gid_t rgid, egid, sgid;
+
+    if (getresuid(&ruid, &euid, &suid) == 0)
+        printf("uid: real=%u, effective=%u, saved=%u\n",
+               ruid, euid, suid);
+
+    if (getresgid(&rgid, &egid, &sgid) == 0)
+        printf("gid: real=%u, effective=%u, saved=%u\n",
+               rgid, egid, sgid);
+
+    /* setuid 特殊语义：
+     * - 以 root 运行: 三者都设
+     * - 以普通用户运行: 只设 effective（且只能在 real/saved 范围内）
+     */
+    printf("\nIf running as root, all three uid become the target.\n");
+    printf("If running as normal user, only effective uid changes.\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

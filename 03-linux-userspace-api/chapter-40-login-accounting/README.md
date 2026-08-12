@@ -78,6 +78,57 @@ utmp/wtmp/btmp；`struct utmp` 与 `ut_type`；遍历 API；更新由谁做；sy
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <utmp.h>
+#include <utmpx.h>
+#include <string.h>
+#include <unistd.h>
+#include <time.h>
+
+/* Ch40 登录记账 — utmp/wtmp + last 命令原理。
+ * 演示读取 /var/run/utmp 获取当前登录用户。
+ * 编译: gcc -o ch40_demo ch40_demo.c */
+
+int main(void) {
+    /* utmpx: 读取当前登录记录 */
+    setutxent();  /* 打开/重置 utmp 文件 */
+
+    printf("Currently logged in users:\n");
+    printf("%-12s %-8s %-16s %-24s\n",
+           "USER", "TTY", "HOST", "LOGIN TIME");
+
+    struct utmpx *entry;
+    while ((entry = getutxent()) != NULL) {
+        /* 只显示用户进程登录记录 */
+        if (entry->ut_type == USER_PROCESS) {
+            char timebuf[32];
+            struct tm *tm = localtime(&entry->ut_tv.tv_sec);
+            strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", tm);
+
+            printf("%-12s %-8s %-16s %-24s\n",
+                   entry->ut_user,
+                   entry->ut_line,
+                   entry->ut_host,
+                   timebuf);
+        }
+    }
+
+    endutxent();
+
+    /* 写入 utmp 记录 (通常由 login 程序做) */
+    printf("\nNote: utmp is normally written by login(1) and login(1)\n");
+    printf("wtmp (/var/log/wtmp) keeps historical login records\n");
+    printf("Use 'last' command to read wtmp\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

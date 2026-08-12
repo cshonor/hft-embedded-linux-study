@@ -83,6 +83,38 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <limits.h>
+
+/* Ch11 系统限制 — sysconf/pathconf/confstr 获取运行时限制。
+ * 编译: gcc -o ch11_demo ch11_demo.c */
+
+int main(void) {
+    /* sysconf: 系统级限制 */
+    printf("_SC_OPEN_MAX (max fd per process): %ld\n", sysconf(_SC_OPEN_MAX));
+    printf("_SC_CLK_TCK (clock ticks/sec):     %ld\n", sysconf(_SC_CLK_TCK));
+    printf("_SC_PAGESIZE:                      %ld\n", sysconf(_SC_PAGESIZE));
+    printf("_SC_NPROCESSORS_ONLN:              %ld\n", sysconf(_SC_NPROCESSORS_ONLN));
+
+    /* pathconf: 文件/路径相关限制 */
+    printf("\n_PC_NAME_MAX (for /tmp):  %ld\n", pathconf("/tmp", _PC_NAME_MAX));
+    printf("_PC_PATH_MAX (for /tmp):  %ld\n", pathconf("/tmp", _PC_PATH_MAX));
+    printf("_PC_LINK_MAX (for /tmp):  %ld\n", pathconf("/tmp", _PC_LINK_MAX));
+
+    /* 编译期常量 */
+    printf("\nINT_MAX = %d\n", INT_MAX);
+    printf("LONG_MAX = %ld\n", LONG_MAX);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

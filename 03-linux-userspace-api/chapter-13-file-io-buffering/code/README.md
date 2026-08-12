@@ -19,3 +19,18 @@ cc -Wall -Wextra -D_GNU_SOURCE -o odirect_align odirect_align.c
 | `stdio_buffering.c` | TTY 行缓冲 vs 重定向全缓冲；`fflush` |
 | `mix_stdio_write.c` | `printf`+`write` 乱序；`fix` 先 fflush |
 | `odirect_align.c` | `O_DIRECT` 对齐失败 → `EINVAL`；成功后 `fsync` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+/* Ch13 demo: stdio buffering */
+int main(void) {
+    printf("Line buffered (no newline yet)");
+    fflush(stdout);
+    printf(" - flushed\n");
+    return 0;
+}
+```
+
+---

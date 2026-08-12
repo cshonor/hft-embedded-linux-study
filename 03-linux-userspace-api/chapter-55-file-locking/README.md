@@ -67,6 +67,93 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+
+/* Ch55 文件锁 — flock(BSD 整文件锁) vs fcntl(POSIX 记录锁)。
+ * 演示两种文件锁的使用。
+ * 编译: gcc -o ch55_demo ch55_demo.c */
+
+#define LOCK_FILE "/tmp/ch55_lock.txt"
+
+int main(void) {
+    /* 创建测试文件 */
+    int fd = open(LOCK_FILE, O_RDWR | O_CREAT, 0644);
+    write(fd, "test data\n", 10);
+
+    /* === flock: BSD 锁, 锁整个文件 === */
+    printf("=== flock (BSD whole-file lock) ===\n");
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
+        printf("Acquired exclusive flock\n");
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            int cfd = open(LOCK_FILE, O_RDWR);
+            /* 子进程尝试获取锁, 会失败 (非阻塞) */
+            if (flock(cfd, LOCK_EX | LOCK_NB) < 0)
+                printf("Child: flock failed (already locked)\n");
+            else
+                printf("Child: got flock (unexpected)\n");
+            close(cfd);
+            _exit(0);
+        }
+        waitpid(pid, NULL, 0);
+        flock(fd, LOCK_UN);  /* 释放 */
+    }
+    close(fd);
+
+    /* === fcntl: POSIX 记录锁, 可锁文件的一部分 === */
+    printf("\n=== fcntl (POSIX record lock) ===\n");
+    fd = open(LOCK_FILE, O_RDWR);
+
+    /* 锁定字节 0-9 */
+    struct flock fl;
+    fl.l_type = F_WRLCK;    /* 写锁 */
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 10;           /* 锁 10 字节 */
+
+    if (fcntl(fd, F_SETLK, &fl) == 0) {
+        printf("Locked bytes 0-9 (exclusive)\n");
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            int cfd = open(LOCK_FILE, O_RDWR);
+            struct flock cfl = fl;
+            /* 尝试锁同一区域 */
+            if (fcntl(cfd, F_GETLK, &cfl) == 0) {
+                if (cfl.l_type == F_UNLCK)
+                    printf("Child: region unlocked\n");
+                else
+                    printf("Child: region locked by pid %d\n",
+                           (int)cfl.l_pid);
+            }
+            close(cfd);
+            _exit(0);
+        }
+        waitpid(pid, NULL, 0);
+
+        /* 解锁 */
+        fl.l_type = F_UNLCK;
+        fcntl(fd, F_SETLK, &fl);
+        printf("Unlocked\n");
+    }
+
+    close(fd);
+    remove(LOCK_FILE);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

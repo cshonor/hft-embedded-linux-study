@@ -81,6 +81,71 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <link.h>
+
+/* Ch42 共享库高级 — dlopen 标志/符号版本/初始化/析构。
+ * 演示 RTLD_GLOBAL vs RTLD_LOCAL + 构造/析构函数。
+ * 编译: gcc -o ch42_demo ch42_demo.c -ldl */
+
+/* 共享库的构造和析构函数 */
+__attribute__((constructor))
+static void init_func(void) {
+    printf("[constructor] Library loaded\n");
+}
+
+__attribute__((destructor))
+static void fini_func(void) {
+    printf("[destructor] Library unloaded\n");
+}
+
+/* 遍历已加载的共享库 */
+static int callback(struct dl_phdr_info *info, size_t size, void *data) {
+    static int count = 0;
+    if (info->dlpi_name && info->dlpi_name[0])
+        printf("  [%d] %s\n", count++, info->dlpi_name);
+    return 0;
+}
+
+int main(void) {
+    /* RTLD_NOW: 立即解析所有符号 (vs RTLD_LAZY 延迟) */
+    void *h1 = dlopen("libm.so.6", RTLD_NOW | RTLD_LOCAL);
+    if (h1) {
+        printf("Loaded libm.so.6 with RTLD_NOW|RTLD_LOCAL\n");
+
+        /* 深绑定: RTLD_DEEPBIND 优先搜索自己 */
+        void *h2 = dlopen("libc.so.6", RTLD_NOW | RTLD_GLOBAL);
+        if (h2) {
+            printf("Loaded libc.so.6 with RTLD_GLOBAL (symbols available to later libs)\n");
+            dlclose(h2);
+        }
+        dlclose(h1);
+    }
+
+    /* 遍历已加载库 */
+    printf("\nLoaded shared objects:\n");
+    dl_iterate_phdr(callback, NULL);
+
+    /* RPATH/RUNPATH: 编译时指定搜索路径
+     * gcc -Wl,-rpath,/custom/lib -o demo demo.c
+     * ldd demo 查看依赖
+     * LD_LIBRARY_PATH 也可以设置运行时搜索路径
+     */
+    printf("\nRuntime search paths:\n");
+    printf("  LD_LIBRARY_PATH: %s\n", getenv("LD_LIBRARY_PATH") ?: "(not set)");
+    printf("  Use 'ldd <binary>' to see dependencies\n");
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

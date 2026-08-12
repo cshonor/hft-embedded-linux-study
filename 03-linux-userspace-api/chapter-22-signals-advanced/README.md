@@ -84,6 +84,58 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+#include <string.h>
+
+/* Ch22 高级信号 — sigprocmask/sigpending/sigsuspend。
+ * 演示信号阻塞 + 待决信号 + 可靠等待。
+ * 编译: gcc -o ch22_demo ch22_demo.c */
+
+void sigint_after_unblock(int sig) {
+    const char *m = "Caught SIGINT after unblock!\n";
+    write(STDOUT_FILENO, m, strlen(m));
+    _exit(0);
+}
+
+int main(void) {
+    sigset_t block_set, old_set;
+    sigemptyset(&block_set);
+    sigaddset(&block_set, SIGINT);
+    sigprocmask(SIG_BLOCK, &block_set, &old_set);
+    printf("SIGINT blocked for 5 seconds. Try Ctrl+C...\n");
+
+    /* 在阻塞期间，信号变为"待决"但不递送 */
+    sleep(5);
+
+    /* 检查待决信号 */
+    sigset_t pending;
+    sigpending(&pending);
+    if (sigismember(&pending, SIGINT))
+        printf("SIGINT is pending (was sent while blocked)\n");
+    else
+        printf("No SIGINT pending\n");
+
+    /* 解除阻塞: 待决的 SIGINT 立即递送 */
+    printf("Unblocking SIGINT...\n");
+    /* 先注册处理器，否则解除阻塞后默认终止 */
+    signal(SIGINT, sigint_after_unblock);
+
+    sigprocmask(SIG_SETMASK, &old_set, NULL);
+
+    /* 如果之前有待决 SIGINT，此处会立即被中断 */
+    pause();
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

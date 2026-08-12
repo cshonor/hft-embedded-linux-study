@@ -66,6 +66,91 @@
 
 ---
 
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <string.h>
+#include <termios.h>
+
+/* Ch64 伪终端 — openpty/forkpty/posix_openpt。
+ * 伪终端 (PTY) 让子进程以为自己在和真实终端交互。
+ * 常用于 ssh, xterm, script 等程序。
+ * 编译: gcc -o ch64_demo ch64_demo.c -lutil */
+
+int main(void) {
+    int master_fd, slave_fd;
+    char slave_name[256];
+
+    /* === openpty: 打开一对伪终端 === */
+    if (openpty(&master_fd, &slave_fd, slave_name, NULL, NULL) < 0) {
+        perror("openpty (need -lutil)");
+        return 1;
+    }
+
+    printf("PTY pair created:\n");
+    printf("  master fd: %d\n", master_fd);
+    printf("  slave fd:  %d\n", slave_fd);
+    printf("  slave name: %s\n", slave_name);
+
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); return 1; }
+
+    if (pid == 0) {
+        /* 子进程: 打开 slave 端, 作为自己的终端 */
+        close(master_fd);
+
+        /* 设置 slave 为控制终端 */
+        setsid();
+        ioctl(slave_fd, TIOCSCTTY, 0);
+
+        /* 重定向 stdin/stdout/stderr 到 slave */
+        dup2(slave_fd, STDIN_FILENO);
+        dup2(slave_fd, STDOUT_FILENO);
+        dup2(slave_fd, STDERR_FILENO);
+        if (slave_fd > 2) close(slave_fd);
+
+        /* 子进程以为自己在和真实终端交互 */
+        /* 运行 tty 命令查看终端名 */
+        execlp("tty", "tty", NULL);
+        _exit(1);
+    }
+
+    /* 父进程: 从 master 端读取子进程输出 */
+    close(slave_fd);
+
+    char buf[256];
+    ssize_t n = read(master_fd, buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        printf("Master received from PTY: %s", buf);
+    }
+
+    waitpid(pid, NULL, 0);
+
+    /* === posix_openpt: POSIX 标准方式 === */
+    printf("\n=== posix_openpt (POSIX standard) ===\n");
+    int pty_master = posix_openpt(O_RDWR | O_NOCTTY);
+    if (pty_master >= 0) {
+        if (grantpt(pty_master) == 0 && unlockpt(pty_master) == 0) {
+            char *name = ptsname(pty_master);
+            printf("POSIX PTY slave: %s\n", name ? name : "?");
+        }
+        close(pty_master);
+    }
+
+    close(master_fd);
+    return 0;
+}
+
+```
+
+---
+
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)

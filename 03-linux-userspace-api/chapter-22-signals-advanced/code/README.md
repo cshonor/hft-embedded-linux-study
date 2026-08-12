@@ -19,3 +19,23 @@ cc -Wall -Wextra -o sigqueue_rt sigqueue_rt.c
 | `sigsuspend_wait.c` | 阻塞 SIGINT + `sigsuspend` 安全等待 |
 | `sigwaitinfo_loop.c` | 同步取出 pending（无 handler） |
 | `sigqueue_rt.c` | `sigqueue` 传 int + `SA_SIGINFO` |
+
+## 代码示例
+
+```c
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+/* Ch22 demo: sigsuspend */
+void h(int s) { printf("caught %d\n", s); }
+int main(void) {
+    signal(SIGINT, h);
+    sigset_t m; sigemptyset(&m); sigaddset(&m, SIGINT);
+    sigprocmask(SIG_BLOCK, &m, NULL);
+    printf("blocked, waiting...\n");
+    sigsuspend(&m); /* 原子解除+等待 */
+    return 0;
+}
+```
+
+---
