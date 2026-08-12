@@ -206,7 +206,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
  → P4 内核模块
  → P5 树莓派嵌入式（5 子项目）
  → P6 网络协议分析器 → P7 DPDK 转发+延迟剖析
- → P8 迷你撮合引擎（终极大作业）
+ → P8 迷你撮合引擎 → P10 HFT 单机原型（终局项目）
 ```
 
 | Project | 做什么 | 覆盖模块 | 前置 | 脚手架 |
@@ -221,6 +221,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 | **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `12` `13` `14` `14.5` `17` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
 | **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `15` `16` `17` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |
 | **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `18` `21` `22` | P4+P5+P7 | [projects/P8-matching-engine](./projects/P8-matching-engine/) |
+| **P10** | HFT 单机原型：DPDK 行情 + 撮合引擎 + 策略 + 风控 + 回测完整链路 | `15` `18` `19` `22` | P7+P8 | [projects/P10-hft-prototype](./projects/P10-hft-prototype/) |
 
 ### P5 子项目（树莓派嵌入式）
 
