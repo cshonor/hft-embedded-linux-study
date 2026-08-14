@@ -25,4 +25,7 @@
 ### 系统调用
 - [x] [vDSO](10-vdso.md) — vvar page、零系统调用 gettimeofday/clock_gettime
 
+### 调试与观测
+- [x] [现代内核调试工具](11-modern-kernel-debugging.md) — eBPF/ftrace/drgn/crash，对标 LKD3 Ch18 过时内容
+
 > 完整映射表见 [../ref-modern-kernel-resources.md](../ref-modern-kernel-resources.md)
