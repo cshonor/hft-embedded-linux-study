@@ -24,7 +24,7 @@ TCP 给你的承诺（不丢、不乱、不重、流控、拥塞控制）UDP **�
 - 无连接：不用握手、不用 accept，发就走
 - 无 Nagle、无重传、无重排——**延迟抖动小且行为可预测**
 
-数据报长度陷阱：`recvfrom` 缓冲如果 **小于** 数据报长度，只返回前 N 字节，**剩余部分被丢弃**（不是"下次继续读"）——和 TCP 字节流语义根本不同。
+数据报长度陷阱：`recvfrom` 缓冲如果 **小于** 数据报长度，只返回前 N 字节，**剩余部分被丢弃**（不是"下次继续读"）——和 TCP 字节流语义根本不同。Linux 专属：`recvmsg` 带 `MSG_TRUNC` 标志时返回值是**完整数据报长度**（哪怕被截断），可用它探测"对面发了多大"来校准缓冲。
 
 ### 2. connect 一个 UDP socket（不是建立连接）
 
@@ -88,6 +88,7 @@ setsockopt(fd, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop));
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 
@@ -131,7 +132,7 @@ int main() {
 - 接收路径：`udp_rcv` → 按四元组（或组播组）查 UDP 哈希表（`udp_table`）→ `__udp_enqueue_schedule_skb`：**接收队列满时直接 `kfree_skb` 丢包**，仅计数（`UDP_MIB_RCVBUFERRORS`）——这就是"静默丢包"的现场
 - 每数据报一个 sk_buff，`recvfrom` 一次取走整块（保边界）；与 TCP 不同，**没有 prequeue/quickack 那套状态机**，路径更短、行为更可预测——HFT 喜欢它的根本原因
 - 组播接收：网卡按 MAC 组播过滤（ imperfect filtering，杂混模式兜底）→ IGMP snooping 让交换机只向成员端口转发。**VM/容器 bridge 默认开 IGMP snooping 但配置不当时整组丢包**——云上行情收不到，先查交换机端口
-- `SO_RCVBUF` 翻倍技巧：内核会把你设的值乘 2（记账含 sk_buff 结构开销），真要 4MB 得设 8MB？不——直接设，然后 `ss -unm` 看实际生效值（`sk_meminfo`）
+- `SO_RCVBUF` 记账规则：内核把你设的值**翻倍**作为队列上限（多出的部分算 sk_buff 结构开销）。所以设 4MB 实际生效约 8MB（可用 `ss -unm` 的 `sk_meminfo` 验证），设的时候按"业务想要的 2 倍"估即可，不用自己预先除以 2
 
 <a id="pnp-08-pitfalls"></a>
 

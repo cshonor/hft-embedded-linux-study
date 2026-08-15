@@ -57,7 +57,8 @@ Order decodeOrder(const char* p) {
     o.side  = *p;
     return o;
 }
-static_assert(kOrderWireSize == 13, "wire size frozen");   // 冻结线上尺寸
+constexpr size_t kOrderWireSize = 4 + 8 + 1;            // id + price + side
+static_assert(kOrderWireSize == 13, "wire size frozen"); // 冻结线上尺寸
 ```
 
 ### 3. protobuf：怎么编码的，怎么演化的
