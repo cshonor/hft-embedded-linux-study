@@ -1,7 +1,7 @@
 # P5d — 多线程传感器融合 + 延迟 p99 统计
 
 > 多个传感器并发采样、线程融合数据，统计端到端延迟分布（p50/p99/p999），把嵌入式实时性量化。
-> **做法：项目驱动，[`10`](../../../10-embedded-projects/) / [`16`](../../../15-systems-performance/) 笔记当字典。**
+> **做法：项目驱动，[P5 Labs](../RASPBERRY-PI5-LABS.md) / [`16`](../../../15-systems-performance/) 笔记当字典。**
 
 ---
 
@@ -9,7 +9,7 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [Pi5 Labs](../../../10-embedded-projects/RASPBERRY-PI5-LABS.md) | 板级动手清单 |
+| [Pi5 Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) | 板级动手清单 |
 | [CSAPP 12.5 信号量与预线程化](../../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.5-信号量与预线程化.md) | 线程池同步基础 |
 | [C++ Concurrency ch03](../../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) | mutex/atomic |
 
@@ -263,4 +263,4 @@ void print_stats(void) {
 
 ⬜ 未开始 → 建议先跑 Phase 1 基线，建立"延迟是多少"的直觉。
 
-← [P5 索引](../README.md) · [13 模块](../../../10-embedded-projects/) · [19 模块](../../../15-systems-performance/)
+← [P5 索引](../README.md) · [P5 Labs](../RASPBERRY-PI5-LABS.md) · [19 模块](../../../15-systems-performance/)

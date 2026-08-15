@@ -96,7 +96,7 @@ PWM / ESC 驱动 ◄────────────────────
 - [ ] Linux 下 **PWM + I2C IMU** 驱动与用户态闭环跑通  
 - [ ] **cyclictest / perf** 证明控制周期 p99 达标  
 
-**上一章：** [22 嵌入式实战](../10-embedded-projects/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)
+**上一章：** [P5 嵌入式实战](../projects/P5-raspberry-pi-embedded/) · **总路线：** [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)
 
 ---
 

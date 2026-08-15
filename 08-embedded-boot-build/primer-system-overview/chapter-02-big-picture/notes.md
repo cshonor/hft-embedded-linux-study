@@ -5,7 +5,7 @@
 > 大纲：[../OUTLINE.md](../OUTLINE.md) · **全章精读**（发行版节亦精读）
 
 **优先级**：2.1–2.3 **精读**；2.4 精读（商业 vs DIY）  
-**后置**：[Ch7 Bootloaders](../chapter-07-bootloaders/) · [Ch5 内核初始化](../chapter-05-kernel-initialization/) · [MELP](../../build-toolchain-yocto/) · [13 Pi Labs](../../../10-embedded-projects/RASPBERRY-PI5-LABS.md)
+**后置**：[Ch7 Bootloaders](../chapter-07-bootloaders/) · [Ch5 内核初始化](../chapter-05-kernel-initialization/) · [MELP](../../build-toolchain-yocto/) · [13 Pi Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)
 
 ---
 
@@ -53,7 +53,7 @@
 - SoC：32 位 RISC，集成 UART / USB / 以太 MAC 等  
 - 外设：NOR 或 NAND（固件）、SDRAM（运行）、RTC、无线模组、RS-232、网口  
 
-对照今日：Pi5 = 应用核 + **RP1** 外设；存储常是 **microSD**（见 [Project #1 卡笔记](../../../10-embedded-projects/project-01-pi-driver-course/02-microsd-card-reader.md)），Flash 分区思想仍适用。
+对照今日：Pi5 = 应用核 + **RP1** 外设；存储常是 **microSD**（见 [Project #1 卡笔记](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/02-microsd-card-reader.md)），Flash 分区思想仍适用。
 
 ### 2.2.2 交叉开发环境
 
@@ -90,7 +90,7 @@
 | 权限 | 可直访硬件与物理内存（在内核模型内） | 经系统调用；独立虚拟地址空间 |
 | 约束 | ISR **禁止睡眠** | 进程崩溃默认不毁内核/他进程 |
 
-与 [Project #1 三层图](../../../10-embedded-projects/project-01-pi-driver-course/01-userspace-kernel-hardware.md)、[Linux vs RTOS · MMU](../chapter-01-introduction/1.1-linux-vs-rtos.md) 同一条线。
+与 [Project #1 三层图](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/01-userspace-kernel-hardware.md)、[Linux vs RTOS · MMU](../chapter-01-introduction/1.1-linux-vs-rtos.md) 同一条线。
 
 ---
 
@@ -178,7 +178,7 @@
 | 四阶段启动 | Phase B；[Ch5](../chapter-05-kernel-initialization/) · [Ch6](../chapter-06-user-space-initialization/) · [Ch7](../chapter-07-bootloaders/) |
 | 处理器 / SoC 选型背景 | [Ch3](../chapter-03-processor-basics/notes.md)（ARM 精读） |
 | 交叉编译 | MELP · Labs D1 |
-| 内核 vs 用户 | [01 三层图](../../../10-embedded-projects/project-01-pi-driver-course/01-userspace-kernel-hardware.md) · [03 TLPI](../../../03-linux-userspace-api/) |
+| 内核 vs 用户 | [01 三层图](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/01-userspace-kernel-hardware.md) · [03 TLPI](../../../03-linux-userspace-api/) |
 | rootfs / BusyBox | [Ch11](../chapter-11-busybox/) · MELP rootfs 章 |
 
 **下一章：** [Ch3 Processor Basics](../chapter-03-processor-basics/notes.md)（ARM/SoC 选读精读）。

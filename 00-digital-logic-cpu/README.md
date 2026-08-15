@@ -2,7 +2,7 @@
 
 > **独立书仓：** `00-digital-logic-cpu/`（已从 CSAPP Ch4 notes 下提出）  
 > **结构：** 一章一个文件夹 · 一小节一个 md  
-> **联动：** [CSAPP Ch4](../02-computer-systems/chapter-04-processor-architecture/README.md) · [CSAPP 数字电路资料总表](../02-computer-systems/chapter-04-processor-architecture/notes/section-补充-数字电路学习资料.md) · [07 ARM](../07-arm-architecture/) · [13 实战](../10-embedded-projects/)
+> **联动：** [CSAPP Ch4](../02-computer-systems/chapter-04-processor-architecture/README.md) · [CSAPP 数字电路资料总表](../02-computer-systems/chapter-04-processor-architecture/notes/section-补充-数字电路学习资料.md) · [07 ARM](../07-arm-architecture/) · [P5 实战](../projects/P5-raspberry-pi-embedded/)
 
 ## 文件夹地图
 

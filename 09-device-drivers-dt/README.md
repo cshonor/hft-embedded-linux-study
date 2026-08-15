@@ -76,4 +76,4 @@ Madieu Ch6 大纲：[OUTLINE §Ch6](./modern-driver-practice/OUTLINE.md#ch6-the-
 - [ ] 树莓派上改过 **DTS** 并匹配 platform/I2C 驱动  
 - [ ] 读过 usage-model，能解释 DTB 从哪来、内核用来干什么  
 
-**上一章：** [20 构建](../08-embedded-boot-build/) · **下一章：** [13 实战](../10-embedded-projects/)
+**上一章：** [20 构建](../08-embedded-boot-build/) · **下一章：** [10 运动控制](../11-motion-control/)

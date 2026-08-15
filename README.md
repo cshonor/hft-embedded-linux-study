@@ -41,7 +41,6 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **07** | [arm-architecture](./07-arm-architecture/) | ARM / AArch64 | 5A |
 | **08** | [embedded-boot-build](./08-embedded-boot-build/) | U-Boot / 内核构建 / rootfs | 5A |
 | **09** | [device-drivers-dt](./09-device-drivers-dt/) | 驱动 + 设备树 | 5A |
-| **10** | [embedded-projects](./10-embedded-projects/) | 板级 / 无人机 / 网关实战 | 5A |
 | **11** | [motion-control](./11-motion-control/) | PID / 姿态 / 飞控（兴趣） | 5A/6 |
 | **12** | [tcpip-protocols](./12-tcpip-protocols/) | TCP/IP 协议（Stevens 卷一） | 5B |
 | **12.5** | [wireshark-packet-analysis](./12.5-wireshark-packet-analysis/) | 抓包分析实战 | 5B |
@@ -242,7 +241,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 - **正在：** Phase1 · `00-digital-logic-cpu`
 - **下一站：** Phase2 · `01-c-language` → `02-computer-systems`
 - **暂不新开：** `05`/`13`/`14`/`17` 等（除非做极小对照实验）
-- **板卡动手清单（Pi5）：** [10-embedded-projects/RASPBERRY-PI5-LABS.md](./10-embedded-projects/RASPBERRY-PI5-LABS.md)（A→G 执行序；官方文档当工具书）
+- **板卡动手清单（Pi5）：** [projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)（A→G 执行序；官方文档当工具书）
 
 ---
 

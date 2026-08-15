@@ -20,7 +20,7 @@ P3.5 BusyBox 极简 Linux         │
   ↓                            │
 P4 内核模块                    │
   ↓                            │
-P5 树莓派嵌入式（P5a–P5e）      │
+P5 树莓派嵌入式（P5a–P5f）      │
   │                            │
   │   P6 网络协议分析器 ←───────┘
   │     ↓
@@ -39,7 +39,7 @@ P5 树莓派嵌入式（P5a–P5e）      │
 | [P3](./P3-http-server/) | 并发 HTTP Server（C → C++ 重写） | `19` `05` `04` | P2 | ⬜ 未开始 |
 | [P3.5](./P3.5-busybox-minimal-linux/) | BusyBox 极简 Linux（内核编译+rootfs+启动链） | `05` `08` | P3 | ⬜ 未开始 |
 | [P4](./P4-kernel-module/) | 可加载内核模块（字符设备+kmalloc+/proc） | `05` `05.5` `05.6` `06` | P3+P3.5+P2.5 | ⬜ 未开始 |
-| [P5](./P5-raspberry-pi-embedded/) | 树莓派嵌入式全链路（5 子项目） | `07`–`11` | P4 | ⬜ 未开始 |
+| [P5](./P5-raspberry-pi-embedded/) | 树莓派嵌入式全链路（6 子项目） | `07`–`11` | P4 | ⬜ 未开始 |
 | [P6](./P6-network-protocol-analyzer/) | 抓包+逐层解析+TCP 流重组+eBPF | `12` `13` `14` `14.5` `17` | P3 | ⬜ 未开始 |
 | [P7](./P7-dpdk-forwarder-profiling/) | DPDK forwarder+perf 火焰图+bpftrace | `15` `16` `17` | P6 | ⬜ 未开始 |
 | [P8](./P8-matching-engine/) | 限价订单簿撮合引擎+无锁+Rust 重写 | `18` `21` `22` | P4+P5+P7 | ⬜ 未开始 |

@@ -334,7 +334,7 @@
 | **4** | ***Linux Device Drivers Development*** — Madieu | 驱动实操 | [**12**](./09-device-drivers-dt/) |
 | **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./09-device-drivers-dt/) |
 
-**13–14 延续：** [13 实战](./10-embedded-projects/) · [11 飞控](./11-motion-control/)  
+**13–14 延续：** [P5 板级实战](./projects/P5-raspberry-pi-embedded/) · [11 飞控](./11-motion-control/)  
 **设备树：** 并入 [12](./09-device-drivers-dt/)，不单开号。
 
 ### 严格顺序（文件夹级）
@@ -358,10 +358,9 @@
 | **10** | [07-arm-architecture/](./07-arm-architecture/) |
 | **11** | [08-embedded-boot-build/](./08-embedded-boot-build/) |
 | **12** | [09-device-drivers-dt/](./09-device-drivers-dt/) |
-| **13** | [10-embedded-projects/](./10-embedded-projects/) |
-| **14** | [11-motion-control/](./11-motion-control/) |
+| **13** | [11-motion-control/](./11-motion-control/) |
 
-**14 子目录：** [Ch1 PID](./11-motion-control/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./11-motion-control/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./11-motion-control/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./11-motion-control/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./11-motion-control/chapter-05-flight-control-scheduling/)
+**13 子目录：** [Ch1 PID](./11-motion-control/chapter-01-pid-discrete-control/) · [Ch2 姿态/Kalman](./11-motion-control/chapter-02-attitude-kalman-imu/) · [Ch3 电机/ESC](./11-motion-control/chapter-03-motor-pwm-esc/) · [Ch4 Linux 对接](./11-motion-control/chapter-04-linux-drivers-integration/) · [Ch5 飞控调度](./11-motion-control/chapter-05-flight-control-scheduling/)
 
 ### 可直接复用（HFT 链 · 不用重学）
 

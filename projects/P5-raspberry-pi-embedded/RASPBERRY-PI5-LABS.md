@@ -160,9 +160,9 @@
 
 未勾验收 = 只算「跟过课」，不算 Project #1 完成。
 
-**课内笔记（随视频追加）：** [project-01-pi-driver-course/](./project-01-pi-driver-course/)  
-- [01 · 用户态 / 内核 / 硬件三层图](./project-01-pi-driver-course/01-userspace-kernel-hardware.md)  
-- [02 · microSD + 读卡器（刷机准备）](./project-01-pi-driver-course/02-microsd-card-reader.md)  
+**课内笔记（随视频追加）：** [P5f-pi-driver-course/](./P5f-pi-driver-course/)  
+- [01 · 用户态 / 内核 / 硬件三层图](./P5f-pi-driver-course/01-userspace-kernel-hardware.md)  
+- [02 · microSD + 读卡器（刷机准备）](./P5f-pi-driver-course/02-microsd-card-reader.md)  
 - GPIO 概念（Primer）：[08](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.5-gpio-basics.md) · 排针↔DTS：[08](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.6-gpio-header-vs-dts.md)
 
 ---

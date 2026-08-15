@@ -78,7 +78,7 @@ qemu-system-aarch64 -M virt -cpu cortex-a76 -nographic -kernel benos.bin -s -S
 | **QEMU** | 裸机 BenOS：指令 / MMU / 异常 / 屏障 / OS 骨架 |
 | **Pi5 实物** | 适配后的裸机外设；**64 位 Raspberry Pi OS** 做 TLPI / 驱动课用户态·内核模块 |
 
-烧卡与 Imager 步骤可对照：[project-01 · microSD](../../../10-embedded-projects/project-01-pi-driver-course/02-microsd-card-reader.md)。
+烧卡与 Imager 步骤可对照：[project-01 · microSD](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/02-microsd-card-reader.md)。
 
 ---
 

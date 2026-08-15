@@ -380,7 +380,7 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 
 > **定位：** **第二职业退路**（飞行器 / 网关 / 车载）；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux** — **排除** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
-> **顺序：** `07 → 08 → 09 → 10`（`11` 业余）· 建议 Phase4 后再开。
+> **顺序：** `07 → 08 → 09`（`11` 业余；原 `10` 实战已并入 [P5](./projects/P5-raspberry-pi-embedded/)）· 建议 Phase4 后再开。
 
 | 文件夹 | 定位 | 索引 |
 |--------|------|------|
@@ -388,7 +388,6 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 | **07** ARM | Smith · 《ARM64体系结构编程与实践》 | [07-arm-architecture/](./07-arm-architecture/) |
 | **08** 构建 | Primer → MELP | [08-embedded-boot-build/](./08-embedded-boot-build/) |
 | **09** 驱动+DT | Madieu → LDD3（按需） | [09-device-drivers-dt/](./09-device-drivers-dt/) |
-| **10** 实战 | 板级项目 | [10-embedded-projects/](./10-embedded-projects/) |
 | **11** 运动控制 | PID / Kalman | [11-motion-control/](./11-motion-control/) |
 
 **可复用 HFT 链：** C · 用户态/内核 · 16–17 性能/BPF · 15 DPDK · 18 HFT 与 **PREEMPT_RT / 绑核**。
