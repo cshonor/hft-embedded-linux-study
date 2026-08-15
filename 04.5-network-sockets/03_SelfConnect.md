@@ -10,7 +10,7 @@
 
 ## UNP 对照
 
-- [1.5 listen 队列](../../UNP_Vol1/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md)
+- [1.5 listen 队列](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md)
 - Ch4 `accept` / `connect`
 
 <a id="pnp-03-pitfalls"></a>

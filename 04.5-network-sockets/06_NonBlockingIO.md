@@ -10,7 +10,7 @@
 
 ## UNP 对照
 
-- [1.4 特殊 errno](../../UNP_Vol1/1_BasicFoundation/Chapter01_Introduction/1.4_ErrorHandlingWrapper.md)
+- [1.4 特殊 errno](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.4_ErrorHandlingWrapper.md)
 - Ch16 Nonblocking I/O
 
 <a id="pnp-06-pitfalls"></a>
