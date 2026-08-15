@@ -2,8 +2,8 @@
 
 > 按书节速记：[5.1](5.1-introduction.md) · [5.2](5.2-ipv4-header.md) · [5.3](5.3-ipv6-extension-headers.md) · [5.4](5.4-ip-routing-basic.md) · [5.5](5.5-mobile-ip-basic.md) · [5.6](5.6-host-ip-processing.md) · [5.7](5.7-ip-attacks.md) · [5.8](5.8-summary.md) · [QUICKREF §5](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/03_network_layer/ch05_ip.md)）  
-> 地址结构：[ch02](../chapter02-ip-address-architecture/study.md) · L2 交付：[ch04 ARP](../chapter04-arp-protocol/study.md) · 自顶向下：[§4.3 IPv4/IPv6](../../top_down/04_network_layer_data_plane/study.md#ch4-3)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 地址结构：[ch02](../chapter02-ip-address-architecture/study.md) · L2 交付：[ch04 ARP](../chapter04-arp-protocol/study.md) · 自顶向下：§4.3 IPv4/IPv6
 
 在**沙漏模型**中，**IPv4/IPv6** 处于腰部：核心**极简**，可靠性/流控/拥塞推向**端系统（传输层）** — 与 [ch01 端到端](../chapter01-overview/study.md#ch01-e2e)、**命运共享**一致。
 
@@ -68,8 +68,8 @@ IPv4/IPv6 首部 · 扩展头链 · **LPM 转发** · Mobile IP · 主机处理�
 
 ### IPv6 改造
 
-- **砍掉**：首部校验和、路由器分片、主头分片字段  
-- **新增**：**Flow Label**（QoS/快速转发）  
+- **砍掉**：首部校验和、路由器分片、主头分片字段
+- **新增**：**Flow Label**（QoS/快速转发）
 - **迁移**：选项 → [5.3 扩展头链](5.3-ipv6-extension-headers.md#ch05-3-chain)
 
 ### 字段对照表
@@ -97,8 +97,8 @@ IPv4/IPv6 首部 · 扩展头链 · **LPM 转发** · Mobile IP · 主机处理�
 
 ### 背诵
 
-1. v4：可变头、头校验和、路由器可分片。  
-2. v6：40 B 固定、无头校验和、路由器不分片、流标签、扩展头。  
+1. v4：可变头、头校验和、路由器可分片。
+2. v6：40 B 固定、无头校验和、路由器不分片、流标签、扩展头。
 3. **分片=MTU/三层；分段=MSS/四层**。
 
 ### IPv4 首部（位图）
@@ -174,15 +174,15 @@ IPv4/IPv6 首部 · 扩展头链 · **LPM 转发** · Mobile IP · 主机处理�
 
 ### 术语
 
-- **FIB（转发表）**：由路由计算得到的快速检索表  
+- **FIB（转发表）**：由路由计算得到的快速检索表
 - **LPM（最长前缀匹配）**：多条匹配时选**掩码最长**者
 
 ### 三步
 
-1. 取**目的 IP**，查 FIB  
-2. **LPM** 选最优前缀  
-3. **交付**  
-   - **直接交付**：目的在本地链路 → **ARP/ND** → 发帧  
+1. 取**目的 IP**，查 FIB
+2. **LPM** 选最优前缀
+3. **交付**
+   - **直接交付**：目的在本地链路 → **ARP/ND** → 发帧
    - **间接交付**：发往 FIB 中的**下一跳**路由器
 
 ### 例题（本书 5.4.3 型）
@@ -199,7 +199,7 @@ IPv4/IPv6 首部 · 扩展头链 · **LPM 转发** · Mobile IP · 主机处理�
 | 128.32.2.10 | 仅 /16 | eth1 → 128.32.2.1 |
 | 1.1.1.1 | 默认路由 | eth1 → 128.32.2.1 |
 
-→ 自顶向下：[§4.2 路由器](../../top_down/04_network_layer_data_plane/study.md#ch4-2) · [ch04 直接/间接交付](../chapter04-arp-protocol/study.md#ch04-2)
+→ 自顶向下：§4.2 路由器 · [ch04 直接/间接交付](../chapter04-arp-protocol/study.md#ch04-2)
 
 ---
 
@@ -313,25 +313,25 @@ IP 设计于互信环境 → **源地址无内置认证**。
 
 ### 建议后续章节
 
-- [ch06 DHCP](../chapter06-dhcp-config/study.md) — 地址动态分配  
-- [ch08 ICMP](../chapter08-icmpv4-icmpv6/study.md) — TTL 超时、PMTUD、Packet Too Big  
-- [ch10 UDP](../chapter10-udp-ip-fragment/study.md) — 端到端分片与 MTU  
+- [ch06 DHCP](../chapter06-dhcp-config/study.md) — 地址动态分配
+- [ch08 ICMP](../chapter08-icmpv4-icmpv6/study.md) — TTL 超时、PMTUD、Packet Too Big
+- [ch10 UDP](../chapter10-udp-ip-fragment/study.md) — 端到端分片与 MTU
 - [ch07 NAT/防火墙](../chapter07-firewall-nat/study.md) — 地址转换与边界
 
 ---
 
 ## Top-Down
 
-- [04_network_layer_data_plane/study.md §4.1–4.3](../../top_down/04_network_layer_data_plane/study.md#ch4-3)
+- 04_network_layer_data_plane/study.md §4.1–4.3
 
 ## Lab
 
-- Wireshark：IPv4 **TTL** 逐跳递减；IPv6 **Hop Limit**  
-- `traceroute` 与 **ICMP Time Exceeded**  
+- Wireshark：IPv4 **TTL** 逐跳递减；IPv6 **Hop Limit**
+- `traceroute` 与 **ICMP Time Exceeded**
 - 对比 IPv4 **Identification/Fragment** 与 IPv6 **仅源分片**
 
 ## Go / Rust
 
-- **Go**：`net.IP` / `net.IPNet`；`ipv4`/`ipv6` 包设 **TTL**、`Don't Fragment`（PMTUD）  
-- **Rust**：`pnet` 解析首部；**强主机**排障时注意多网卡入站策略  
+- **Go**：`net.IP` / `net.IPNet`；`ipv4`/`ipv6` 包设 **TTL**、`Don't Fragment`（PMTUD）
+- **Rust**：`pnet` 解析首部；**强主机**排障时注意多网卡入站策略
 - **实践**：发送路径 `ip route get`；避免 UDP 触发 **IP 分片**（见 ch10）

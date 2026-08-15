@@ -2,8 +2,8 @@
 
 > 按书节速记：[6.1](6.1-introduction.md) · [6.2](6.2-dhcp-protocol.md) · [6.3](6.3-slaac-autoconfig.md) · [6.4](6.4-dhcp-dns-ddns.md) · [6.5](6.5-pppoe.md) · [6.6](6.6-dhcp-security.md) · [6.7](6.7-summary.md) · [6.8 实战](6.8-practical-dhcp-bridge-nat-vm.md) · [QUICKREF §6](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/03_network_layer/ch06_dhcp.md)）  
-> 前置：[ch05 IP](../chapter05-ip-protocol/study.md) · [ch04 ARP](../chapter04-arp-protocol/study.md) · 自顶向下：[§4.3 DHCP](../../top_down/04_network_layer_data_plane/study.md#ch4-3)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 前置：[ch05 IP](../chapter05-ip-protocol/study.md) · [ch04 ARP](../chapter04-arp-protocol/study.md) · 自顶向下：§4.3 DHCP
 
 本章聚焦协议栈 **自举（Bootstrapping）**：主机如何从无到有获得 **IP、掩码、网关、DNS** 等参数 — 不仅是地址分配，更是**资源发现与策略下发**的纽带。
 
@@ -53,8 +53,8 @@ L2 接通 → L3（DHCP / SLAAC+DHCPv6）→ DNS → 应用
 
 ### DHCP vs SLAAC
 
-- **DHCP**：集中管理、可审计  
-- **SLAAC**：零配置、高扩展、IPv6 标配  
+- **DHCP**：集中管理、可审计
+- **SLAAC**：零配置、高扩展、IPv6 标配
 
 ### 演进脉络
 
@@ -294,25 +294,25 @@ DHCP **无强认证**，默认信任**物理链路**。
 
 ### 下一章
 
-- [ch07 NAT/防火墙](../chapter07-firewall-nat/study.md)  
-- [ch08 ICMP](../chapter08-icmpv4-icmpv6/study.md) — RA/RS、ND  
+- [ch07 NAT/防火墙](../chapter07-firewall-nat/study.md)
+- [ch08 ICMP](../chapter08-icmpv4-icmpv6/study.md) — RA/RS、ND
 - [ch05 IP](../chapter05-ip-protocol/study.md)
 
 ---
 
 ## Top-Down
 
-- [04_network_layer_data_plane §4.3](../../top_down/04_network_layer_data_plane/study.md#ch4-3)  
-- [06_link_layer §6.7 Web 路径](../../top_down/06_link_layer_and_lan/study.md#ch6-7)（DHCP 获取地址）
+- 04_network_layer_data_plane §4.3
+- 06_link_layer §6.7 Web 路径（DHCP 获取地址）
 
 ## Lab
 
-- `dhclient -v` / Windows `ipconfig /all` 看租约、T1/T2  
-- Wireshark：`bootp` 过滤器，抓 **DORA**  
+- `dhclient -v` / Windows `ipconfig /all` 看租约、T1/T2
+- Wireshark：`bootp` 过滤器，抓 **DORA**
 - 容器/K8s：CNI 与 DHCP 关系（多数用静态/CNI 而非经典 DORA）
 
 ## Go / Rust
 
-- **Go**：`net.Interfaces()` 看重启后地址；云元数据（非 DHCP）替代场景  
-- **排障**：无地址时查 **169.254.x.x**；IPv6 `fe80::` + `ip -6 addr`  
+- **Go**：`net.Interfaces` 看重启后地址；云元数据（非 DHCP）替代场景
+- **排障**：无地址时查 **169.254.x.x**；IPv6 `fe80::` + `ip -6 addr`
 - **安全**：数据中心启用 **DHCP Snooping** + 固定 DNS

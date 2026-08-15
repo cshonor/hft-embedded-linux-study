@@ -2,8 +2,8 @@
 
 > 按书节速记：[9.1](9.1-broadcast-multicast-concept.md) · [9.2](9.2-ipv4-broadcast-address.md) · [9.3](9.3-multicast-mac-mapping.md) · [9.4](9.4-igmp-mld-snooping.md) · [9.5](9.5-igmp-mld-attacks.md) · [9.6](9.6-summary.md) · [9.7 实战](9.7-lan-switch-router-multicast.md) · [QUICKREF §9](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷 1 第 2 版（Stevens & Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/04_transport_layer/ch09_broadcast_multicast.md)）  
-> **交叉引用**：[ch02 地址与子网语义](../chapter02-ip-address-architecture/study.md#ch02-3) · [ch08 ICMP/MLD](../chapter08-icmpv4-icmpv6/study.md) · [ch10 UDP 与一对多套接字](../chapter10-udp-ip-fragment/study.md) · 自顶向下 [§3.3 UDP](../../top_down/03_transport_layer/study.md#ch3-3)
+> 《TCP/IP 详解》卷 1 第 2 版（Stevens & Fall, 2016）· 精细化学习笔记
+> **交叉引用**：[ch02 地址与子网语义](../chapter02-ip-address-architecture/study.md#ch02-3) · [ch08 ICMP/MLD](../chapter08-icmpv4-icmpv6/study.md) · [ch10 UDP 与一对多套接字](../chapter10-udp-ip-fragment/study.md) · 自顶向下 §3.3 UDP
 
 继 [ch02 单播与编址](../chapter02-ip-address-architecture/study.md) 之后，本章把「**一个发送者 → 多个接收者**」在**同一条链路/子网**上的两种核心机制讲透：**广播（broadcast）** 与 **本地组播（local multicast）**。前者由**二层洪泛 + 主机全体收包**驱动；后者用 **D 类 / IPv6 组播前缀** 表达**逻辑组**，并用 **IGMP / MLD** 在路由器上维护**按需转发的软状态**。
 
@@ -37,8 +37,8 @@
 
 ### 9.1.1 为什么需要「非单播」
 
-- **发现与配置**：部分旧协议用广播做「子网内喊一嗓子」（如某些引导、旧式名字解析）。  
-- **一对多效率（组播）**：同一视频/路由更新流不必对 *N* 个订阅者各发 *N* 份单播（广域部分由 **PIM 等**解决；本章聚焦**链路上的本地组管理**）。  
+- **发现与配置**：部分旧协议用广播做「子网内喊一嗓子」（如某些引导、旧式名字解析）。
+- **一对多效率（组播）**：同一视频/路由更新流不必对 *N* 个订阅者各发 *N* 份单播（广域部分由 **PIM 等**解决；本章聚焦**链路上的本地组管理**）。
 - **代价**：广播让**无关主机**也为每帧付出中断与协议栈成本；组播用过滤与信令把成本压到**订户**附近。
 
 ### 9.1.2 受限广播与定向（子网 directed）广播
@@ -58,29 +58,29 @@
 
 等价写法：`网络号 | 主机位全 1`。其中 `|` 为按位或，`~` 为掩码按位取反（仅主机位为 1）。
 
-**例**：`128.32.1.14/24`，`mask = 255.255.255.0`  
+**例**：`128.32.1.14/24`，`mask = 255.255.255.0`
 `~mask = 0.0.0.255` → `128.32.1.14 | 0.0.0.255` = **`128.32.1.255`**（该 /24 的定向广播）。
 
 **例**：`10.1.2.3/28`，掩码 `255.255.255.240`，`~mask = 0.0.0.15` → `10.1.2.3 | 0.0.0.15` = **`10.1.2.15`**。
 
 ### 9.1.4 以太网与栈内处理路径
 
-1. 上层（常见为 **UDP**）把目的设为广播地址 → **IPv4** 封装。  
-2. **链路层**：以太网广播目的 MAC 固定为 **`FF:FF:FF:FF:FF:FF`**（与是否 directed/limited 的 **IP** 语义独立）。  
+1. 上层（常见为 **UDP**）把目的设为广播地址 → **IPv4** 封装。
+2. **链路层**：以太网广播目的 MAC 固定为 **`FF:FF:FF:FF:FF:FF`**（与是否 directed/limited 的 **IP** 语义独立）。
 3. 子网内**所有网卡**至少会**收下帧** → 中断 → 驱动/stack 上行；往往要到 **L3/L4** 才能判断「是否投递给应用」。
 
 因此：**广播的 CPU 成本高在「每台机器都要碰一下」**，与组播多级过滤对照见 [§9.3](#ch09-3)。
 
 ### 9.1.5 IPv6：没有广播（no broadcast）
 
-- **IPv6 取消广播**。不再有「全子网二层洪泛语义」与 **IPv4 式定向广播**。  
-- 替代：**链路本地组播**（如 **`ff02::1` 全体节点**、**`ff02::2` 全体路由器**）与 **ND**（邻居发现，`NS/NA` 走 ICMPv6，常配合**被请求节点多播地址**而非全网广播）。  
+- **IPv6 取消广播**。不再有「全子网二层洪泛语义」与 **IPv4 式定向广播**。
+- 替代：**链路本地组播**（如 **`ff02::1` 全体节点**、**`ff02::2` 全体路由器**）与 **ND**（邻居发现，`NS/NA` 走 ICMPv6，常配合**被请求节点多播地址**而非全网广播）。
 - 纵深阅读：[ch02 IPv6 与多播前缀](../chapter02-ip-address-architecture/study.md#ch02-3) · [ch08 ND](../chapter08-icmpv4-icmpv6/study.md#ch08-5)
 
 ### 9.1.6 工程设计要点（与 ch08/ch07 联动）
 
-- **路由器/三层交换机**：常用 **`no ip directed-broadcast`** 一类配置**禁止定向广播穿透路由**（默认行为依实现而异，考试时以「**现代默认审慎**」为准）。  
-- **主机**：对入向广播 ICMP/UDP **限速与访问控制**。  
+- **路由器/三层交换机**：常用 **`no ip directed-broadcast`** 一类配置**禁止定向广播穿透路由**（默认行为依实现而异，考试时以「**现代默认审慎**」为准）。
+- **主机**：对入向广播 ICMP/UDP **限速与访问控制**。
 → 防火墙与边界策略：[ch07](../chapter07-firewall-nat/study.md#ch07-7)。
 
 ---
@@ -96,7 +96,7 @@
 | **受限广播** | **`255.255.255.255`** | **不跨路由** → DHCP/ARP |
 | **定向广播** | 主机位全 1（如 `192.168.1.255`） | **默认丢弃** → 防 Smurf |
 
-**IPv6 无广播** → **`FF02::1`**（所有节点）、**`FF02::1:FF…`**（替代 ARP）。  
+**IPv6 无广播** → **`FF02::1`**（所有节点）、**`FF02::1:FF…`**（替代 ARP）。
 广播危害：二层泛洪 → 全员处理 → **风暴**。
 
 → 定向广播公式、9.1 导读详述仍见 [§9.1.2–5](#ch09-1)
@@ -150,8 +150,8 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 9.3.3 为什么是 32:1 映射（同一 MAC：32 个 IP）
 
-- IPv4 **组地址中参与 MAC 计算的「自由选择位」**：**28 位**（D 类的组 ID 主体）减掉映射进 MAC 的 **23 位** → 剩余 **5 位**。  
-- **2⁵ = 32**：即 **至多 32 个不同 IPv4 组播地址**会映射到**同一个**以太网组播 MAC。  
+- IPv4 **组地址中参与 MAC 计算的「自由选择位」**：**28 位**（D 类的组 ID 主体）减掉映射进 MAC 的 **23 位** → 剩余 **5 位**。
+- **2⁵ = 32**：即 **至多 32 个不同 IPv4 组播地址**会映射到**同一个**以太网组播 MAC。
 - **工程后果**：单靠网卡/MC 哈希**无法区分**这 32 个组 → 必须在 **L3（IP）再做一次精确过滤**。
 
 ### 9.3.4 「三级过滤」减轻主机 CPU（必背）
@@ -168,8 +168,8 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 9.3.5 IPv6 组播（与 MLD）
 
-- IPv6 **组播前缀**：**`ff00::/8`**；链路范围常见 **`ff02::/16`**（如 **路由器/主机组**）。  
-- **无广播** → ND、DHCPv6 **都用 ICMPv6/UDP + 链路组播**。  
+- IPv6 **组播前缀**：**`ff00::/8`**；链路范围常见 **`ff02::/16`**（如 **路由器/主机组**）。
+- **无广播** → ND、DHCPv6 **都用 ICMPv6/UDP + 链路组播**。
 → MLD 报文装在 **ICMPv6**（Type 查询/监听报告类）——与 [ch08 §8.2](../chapter08-icmpv4-icmpv6/study.md#ch08-2) 同属 **ICMPv6 大家族**。
 
 ---
@@ -194,13 +194,13 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 9.4.1 为何要 IGMP / MLD
 
-- **路由器**需要知道：**这条链路上，是否还有人要某某组播 `(G)` 或 `(S,G)`**？  
+- **路由器**需要知道：**这条链路上，是否还有人要某某组播 `(G)` 或 `(S,G)`**？
 - 离开组时必须**滞后更新**太慢会浪费链路带宽；报告太猛会抖动控制面。**IGMP / MLD** 在「**稀疏成员**」「**交换机 snooping**」环境里尤其关键。
 
 ### 9.4.2 软状态（soft state）
 
-- 路由器（或 IGMP proxy）保存的 `(接口 → 感兴趣的组)` **不是永久性配置真理**，而是由 **周期性查询（Query）+ 主机报告（Report）** **不断刷新**。  
-- **超时**未听到某组的「还活着」的证明 → **删除状态**，停止向该接口转发对应组流量。  
+- 路由器（或 IGMP proxy）保存的 `(接口 → 感兴趣的组)` **不是永久性配置真理**，而是由 **周期性查询（Query）+ 主机报告（Report）** **不断刷新**。
+- **超时**未听到某组的「还活着」的证明 → **删除状态**，停止向该接口转发对应组流量。
 - **对比硬状态**：若只靠静态配置写入，移动与即插即用会极难运维；但软状态也意味着**可被伪造** → [§9.5](#ch09-5)。
 
 ### 9.4.3 IGMP 各版本对照表（精简必背）
@@ -217,13 +217,13 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 **记忆钩子**：
 
-- **v1**：慢离开；模型最简单。  
-- **v2**：**快速离组**，运营友好。  
+- **v1**：慢离开；模型最简单。
+- **v2**：**快速离组**，运营友好。
 - **v3**：**按源订阅** → **特定源组播 SSM**，与 **ASM（任意源 `*,G`）** 分流。
 
 ### 9.4.4 查询者选举（Querier）
 
-- 同一二层网段应有**唯一的 Active Querier**，由其**周期性**发送 Query（多台路由器连接同一广播域时）。  
+- 同一二层网段应有**唯一的 Active Querier**，由其**周期性**发送 Query（多台路由器连接同一广播域时）。
 - 常见选举规则：**IPv4 地址最小者胜出**（实现细节可查所用协议栈/quirks；考试记「**竞选出唯一查询者」**）。
 
 ### 9.4.5 MLD / MLDv2（IPv6）
@@ -247,8 +247,8 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 **机制概要**：
 
-1. 攻击者向**某子网的定向广播地址**发起大量 **ICMP Echo Request（ping）**。  
-2. **源 IPv4** 设为**受害者**。  
+1. 攻击者向**某子网的定向广播地址**发起大量 **ICMP Echo Request（ping）**。
+2. **源 IPv4** 设为**受害者**。
 3. 子网内**大量主机同时向伪造源回应 Echo Reply**，形成对受害者的 **N:1** 放大。
 
 ### 9.5.2 流氓成员报告（Rogue Membership Reports）
@@ -265,7 +265,7 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 9.5.3 伪造低地址抢 Querier（Querier 欺骗）
 
-- 若能投 **虚假的 Query**（源 IP **很小**以满足选举），可把 **Active Querier** 「顶掉」或打乱查询节奏。  
+- 若能投 **虚假的 Query**（源 IP **很小**以满足选举），可把 **Active Querier** 「顶掉」或打乱查询节奏。
 - 后果：**成员超时错误**、**状态振荡**或**可被利用的流量可见性操纵**。
 
 ### 9.5.4 纵深防御小结
@@ -329,32 +329,32 @@ IPv4  multicast: 1110xxxx  xxxxxxxxx  xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 推荐阅读顺序
 
-1. **编址与子网**：子网边界如何定义「本子网」「广播给谁」—— [ch02 特殊地址与编址](../chapter02-ip-address-architecture/study.md#ch02-3)。  
-2. **ICMP / MLD / 攻击面**：回声、ND、Smurf—— [ch08](../chapter08-icmpv4-icmpv6/study.md)。  
+1. **编址与子网**：子网边界如何定义「本子网」「广播给谁」—— [ch02 特殊地址与编址](../chapter02-ip-address-architecture/study.md#ch02-3)。
+2. **ICMP / MLD / 攻击面**：回声、ND、Smurf—— [ch08](../chapter08-icmpv4-icmpv6/study.md)。
 3. **套接字与 UDP 工程**：`IP_ADD_MEMBERSHIP`、`IP_MULTICAST_TTL`、[ch10](../chapter10-udp-ip-fragment/study.md)。
 
 ### 下一章
 
-- **[ch10 UDP](../chapter10-udp-ip-fragment/study.md)** — 组播 socket、跳数限制  
-- **[ch08 ICMP](../chapter08-icmpv4-icmpv6/study.md)** — MLD  
+- **[ch10 UDP](../chapter10-udp-ip-fragment/study.md)** — 组播 socket、跳数限制
+- **[ch08 ICMP](../chapter08-icmpv4-icmpv6/study.md)** — MLD
 - **[ch07 防火墙](../chapter07-firewall-nat/study.md#ch07-7)** — 过滤与阈值
 
 ---
 
 ## Top-Down
 
-- [§3.3 UDP](../../top_down/03_transport_layer/study.md#ch3-3) · [考点](../../top_down/03_transport_layer/study.md#ch3-3-exam)（广播域、组播能力与 socket API）  
-- [链路层与 LAN · VLAN/广播域](../../top_down/06_link_layer_and_lan/study.md#ch6-4)  
-- 组播路由（PIM 等）常归入控制面笔记本：[routing / control-plane](../../top_down/05_network_layer_control_plane/study.md)
+- §3.3 UDP · 考点（广播域、组播能力与 socket API）
+- 链路层与 LAN · VLAN/广播域
+- 组播路由（PIM 等）常归入控制面笔记本：routing / control-plane
 
 ## Lab
 
-- **IPv4 广播**：`ping 255.255.255.255`（受限）与子网 **`ping x.x.x.255`/定向广播`**（需在 OS 与安全策略允许时实验）。  
-- **抓包**：`tcpdump igmp`、`icmp and ip`；IPv6：`tcpdump icmp6 AND ip6`。  
+- **IPv4 广播**：`ping 255.255.255.255`（受限）与子网 **`ping x.x.x.255`/定向广播`**（需在 OS 与安全策略允许时实验）。
+- **抓包**：`tcpdump igmp`、`icmp and ip`；IPv6：`tcpdump icmp6 AND ip6`。
 - **本机**：`netstat -g` / **`ip maddr`** / `ip igmp`。
 
 ## Go / Rust
 
-- **Go**：`ipv4.PacketConn` / `syscall`：`JoinGroup`、`SetMulticastInterface`、`SetTTL`；注意 **监听地址为 `ANY` vs 显式组**。  
-- **Rust**：`socket2`/`tokio` 下 `setsockopt`、`IP_MULTICAST_IF`、`IP_ADD_MEMBERSHIP`；常与 **reuse** 语义一起考。  
+- **Go**：`ipv4.PacketConn` / `syscall`：`JoinGroup`、`SetMulticastInterface`、`SetTTL`；注意 **监听地址为 `ANY` vs 显式组**。
+- **Rust**：`socket2`/`tokio` 下 `setsockopt`、`IP_MULTICAST_IF`、`IP_ADD_MEMBERSHIP`；常与 **reuse** 语义一起考。
 - **排障清单**：交换机 **IGMP snooping** 是否误裁剪；宿主桥接/`vswitch`「未知组洪泛 vs 丢弃」；(S,G)/(,G) 是否搞反。

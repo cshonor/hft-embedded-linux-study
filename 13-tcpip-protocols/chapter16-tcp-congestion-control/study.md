@@ -2,8 +2,8 @@
 
 > 按书节速记：[16.1](16.1-introduction.md) · [16.2](16.2-classic-algorithms.md) · [16.3](16.3-algorithm-improvements.md) · [16.4](16.4-eifel-response.md) · [16.5](16.5-extended-example.md) · [16.6](16.6-shared-congestion-state.md) · [16.7](16.7-tcp-friendliness.md) · [16.8](16.8-high-speed-cubic.md) · [16.9](16.9-delay-based-cc.md) · [16.10](16.10-bufferbloat.md) · [16.11](16.11-aqm-ecn.md) · [16.12](16.12-congestion-attacks.md) · [16.13](16.13-summary.md) · [QUICKREF §16](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/04_transport_layer/ch16_tcp_congestion.md)）  
-> 流控：[ch15 rwnd](../chapter15-tcp-flow-window/study.md#ch15-5) · 重传：[ch14](../chapter14-tcp-timeout-retransmit/study.md) · 自顶向下：[§3.1 拥塞](../../top_down/03_transport_layer/study.md#ch3-1-tcp-cong)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 流控：[ch15 rwnd](../chapter15-tcp-flow-window/study.md#ch15-5) · 重传：[ch14](../chapter14-tcp-timeout-retransmit/study.md) · 自顶向下：§3.1 拥塞
 
 **流量控制** = 收发双方**私约**（不压垮接收缓冲）；**拥塞控制** = 维护**公共资源**的「最高法律」。TCP 在无路由器直接指令下，靠**端到端观测**推断路径容量。
 
@@ -28,7 +28,7 @@
 
 ### 易混
 
-- 拥塞控制**不是**路由器主动算速率的标准职责 → **端到端**；路由器**丢包/ECN** 参与反馈  
+- 拥塞控制**不是**路由器主动算速率的标准职责 → **端到端**；路由器**丢包/ECN** 参与反馈
 - 即使网络很快，**awnd 小**仍限制吞吐
 
 ---
@@ -39,13 +39,13 @@
 
 哲学：**AIMD** — 无拥塞时**加性增**，检测到拥塞时**乘性减**。
 
-→ 图示：[tcp_congestion_control.png](../../top_down/03_transport_layer/assets/tcp_congestion_control.png)
+→ 图示：tcp_congestion_control.png
 
 ### 16.2.1 慢启动（Slow Start）
 
-- 初值：**cwnd = 1×SMSS**  
-- **每收到一个 ACK → cwnd += 1** → 每个 RTT 约**翻倍**（指数）  
-- 直至 **cwnd ≥ ssthresh** 进入拥塞避免  
+- 初值：**cwnd = 1×SMSS**
+- **每收到一个 ACK → cwnd += 1** → 每个 RTT 约**翻倍**（指数）
+- 直至 **cwnd ≥ ssthresh** 进入拥塞避免
 
 「慢」是相对旧协议一次发满 awnd 而言。
 
@@ -57,7 +57,7 @@
 
 **RTO 超时**（严重拥塞信号）：
 
-- **ssthresh ← cwnd/2**（或基于在途量，实现相关）  
+- **ssthresh ← cwnd/2**（或基于在途量，实现相关）
 - **cwnd ← 1** → 重新**慢启动**
 
 ### 16.2.4 Tahoe / Reno / 快速恢复
@@ -87,7 +87,7 @@
 
 ### FACK / Rate Halving
 
-- **FACK**：用 SACK 更激进推断丢包  
+- **FACK**：用 SACK 更激进推断丢包
 - **Rate Halving**：拥塞后**每 2 ACK 发 1 新包**，平滑替代 Reno 瞬时 cwnd 跳变
 
 ### Limited Transmit
@@ -106,7 +106,7 @@
 
 无线等导致 **RTT 尖峰** → **伪超时** → cwnd 无谓减半。
 
-- 用 **时间戳（TSOPT）** 判断 ACK 对应**原传**还是重传  
+- 用 **时间戳（TSOPT）** 判断 ACK 对应**原传**还是重传
 - 若伪超时 → **撤销** ssthresh/cwnd 削减 → [ch14 §14.7](../chapter14-tcp-timeout-retransmit/study.md#ch14-7)
 
 ---
@@ -133,10 +133,10 @@
 
 ### BIC / CUBIC
 
-**CUBIC**（Linux 默认）：`W(t) = C(t-K)³ + W_max`  
-- 远离上次丢包点：**快增**  
-- 接近推测容量：**缓增**  
-- 再探测上限  
+**CUBIC**（Linux 默认）：`W(t) = C(t-K)³ + W_max`
+- 远离上次丢包点：**快增**
+- 接近推测容量：**缓增**
+- 再探测上限
 
 ### Vegas / FAST（基于延迟）
 
@@ -194,22 +194,22 @@
 
 ### 下一章
 
-- [ch17 Keepalive](../chapter17-tcp-keepalive/study.md)  
+- [ch17 Keepalive](../chapter17-tcp-keepalive/study.md)
 - [ch18 安全](../chapter18-network-security/study.md)
 
 ---
 
 ## Top-Down
 
-- [§3.1 拥塞](../../top_down/03_transport_layer/study.md#ch3-1-tcp-cong) · [§3.6–3.7](../../top_down/03_transport_layer/study.md#ch3-6)
+- §3.1 拥塞 · §3.6–3.7
 
 ## Lab
 
-- `ss -ti` 看 `cwnd`、`ssthresh`  
-- `sysctl net.ipv4.tcp_congestion_control`（cubic/bbr）  
+- `ss -ti` 看 `cwnd`、`ssthresh`
+- `sysctl net.ipv4.tcp_congestion_control`（cubic/bbr）
 - `tc qdisc` + RED/ECN 实验（进阶）
 
 ## Go / Rust
 
-- 高 BDP：调大 socket 缓冲、确保 **WSCALE**；理解默认 **cubic**  
+- 高 BDP：调大 socket 缓冲、确保 **WSCALE**；理解默认 **cubic**
 - 实时 UDP 流：自行 **AIMD** 或 GCC，避免饿死同路径 TCP

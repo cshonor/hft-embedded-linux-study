@@ -2,7 +2,7 @@
 
 > 按书节速记：[17.1](17.1-introduction.md) · [17.2](17.2-keepalive-description.md) · [17.3](17.3-keepalive-attacks.md) · [17.4](17.4-summary.md) · [QUICKREF §17](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/04_transport_layer/ch17_tcp_keepalive.md)）  
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
 > 半开连接：[ch13 §RST](../chapter13-tcp-connection-manage/study.md#ch13-6) · 零窗口探测：[ch15 Persist](../chapter15-tcp-flow-window/study.md#ch15-5) · NAT 超时：[ch07](../chapter07-firewall-nat/study.md)
 
 TCP 空闲时可**无限期静默** — 对端崩溃而本端仍 **ESTABLISHED** 会耗尽 **FD/TCB**。**Keepalive** 是可选补丁：空闲一段时间后发**探测段**，区分对端存活、崩溃、重启与路径故障。
@@ -32,9 +32,9 @@ TCP 空闲时可**无限期静默** — 对端崩溃而本端仍 **ESTABLISHED**
 
 ### 探测流程
 
-1. 发探测 → 期望 ACK  
-2. 收到 ACK → 重置保活定时器  
-3. 收到 **RST** → 对端已重启/无 TCB → **立即关闭**  
+1. 发探测 → 期望 ACK
+2. 收到 ACK → 重置保活定时器
+3. 收到 **RST** → 对端已重启/无 TCB → **立即关闭**
 4. 无响应 → **固定间隔重试**（如 75s × 9–10 次）→ 超时关闭
 
 ### 易混
@@ -53,7 +53,7 @@ TCP 空闲时可**无限期静默** — 对端崩溃而本端仍 **ESTABLISHED**
 
 ### 探测报文构造
 
-- 通常**无真实应用数据**（或 1 字节 **garbage** 兼容旧栈）  
+- 通常**无真实应用数据**（或 1 字节 **garbage** 兼容旧栈）
 - **SEQ = SND.NXT − 1**（“已确认过的旧序号”）→ 对端回 **ACK** 证明存活
 
 | 步骤 | 动作 | SEQ | ACK |
@@ -145,9 +145,9 @@ T+~2h11m   ETIMEDOUT / 连接销毁
 
 ### 复盘
 
-- 检测半开、加速对端重启后的 **RST**  
-- 三参数：**空闲时间 / 间隔 / 次数**  
-- 探测 **SEQ=NXT−1**；与 **Persist** 区分  
+- 检测半开、加速对端重启后的 **RST**
+- 三参数：**空闲时间 / 间隔 / 次数**
+- 探测 **SEQ=NXT−1**；与 **Persist** 区分
 
 ### 下一章
 
@@ -161,12 +161,12 @@ T+~2h11m   ETIMEDOUT / 连接销毁
 
 ## Lab
 
-- `ss -o` 看 `timer:(keepalive,...)`  
-- `sysctl -a | grep keepalive`  
+- `ss -o` 看 `timer:(keepalive,...)`
+- `sysctl -a | grep keepalive`
 - Wireshark：`tcp.analysis.keep_alive`
 
 ## Go / Rust
 
-- **Go**：`net.TCPConn.SetKeepAlive(true)`、`SetKeepAlivePeriod`  
-- **Rust**：`socket2` `set_keepalive`  
+- **Go**：`net.TCPConn.SetKeepAlive(true)`、`SetKeepAlivePeriod`
+- **Rust**：`socket2` `set_keepalive`
 - **实践**：K8s/gRPC 常 **应用 ping** + 较短 TCP keepalive 喂 LB

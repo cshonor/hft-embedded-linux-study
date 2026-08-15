@@ -2,8 +2,8 @@
 
 > 按书节速记：[11.1](11.1-introduction.md) · [11.2](11.2-domain-space-structure.md) · [11.3](11.3-dns-server-hierarchy.md) · [11.4](11.4-dns-cache.md) · [11.5](11.5-dns-packet-structure.md) · [11.6](11.6-dns-traffic-practices.md) · [11.7](11.7-opendns-dyndns.md) · [11.8](11.8-dns-extensibility.md) · [11.9](11.9-dns-ipv6-transition.md) · [11.10](11.10-local-mdns.md) · [11.11](11.11-ldap-overview.md) · [11.12](11.12-dns-security-threat.md) · [11.13](11.13-summary.md) · [QUICKREF §11](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/05_application_security/ch11_dns.md)）  
-> 传输载体：[ch10 UDP/53](../chapter10-udp-ip-fragment/study.md) · 地址：[ch02](../chapter02-ip-address-architecture/study.md) · 自顶向下：[§2.4 DNS](../../top_down/02_application_layer/study.md#ch2-4)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 传输载体：[ch10 UDP/53](../chapter10-udp-ip-fragment/study.md) · 地址：[ch02](../chapter02-ip-address-architecture/study.md) · 自顶向下：§2.4 DNS
 
 从静态 **hosts** 到分布式 **DNS**，是互联网**可扩展命名**的必然：无单点持有全球库；**解析器**与**名称服务器**协作，将人类可读名映射为 **IPv4/IPv6** 地址。
 
@@ -27,7 +27,7 @@
 
 ### 要点
 
-- **分布式**：无服务器持有全网数据；数据切为**区域（Zone）**  
+- **分布式**：无服务器持有全网数据；数据切为**区域（Zone）**
 - **C/S**：**Resolver（解析器）** 为客户端，**Name Server** 提供数据
 
 ---
@@ -49,7 +49,7 @@
 
 ### 11.2.1 命名语法
 
-- 单标签 ≤ **63 B**；FQDN（含点）≤ **255 B**  
+- 单标签 ≤ **63 B**；FQDN（含点）≤ **255 B**
 - 字符：经典 **L-D-H**；现代 **IDN** 国际化
 
 ### 易混
@@ -84,7 +84,7 @@
 
 ### 根服务器
 
-- 13 个根 **IP** 字母主机（a–m.root-servers.net）  
+- 13 个根 **IP** 字母主机（a–m.root-servers.net）
 - 广泛 **Anycast** → 每 IP 对应全球多物理节点，降延迟、抗 DDoS
 
 ### 权威 vs 递归
@@ -96,10 +96,10 @@
 
 ### 递归解析五步
 
-1. 客户端 → 递归器  
-2. 递归器 → **根**（得 TLD NS）  
-3. → **TLD**（得权威 NS）  
-4. → **权威**（得 A/AAAA 等）  
+1. 客户端 → 递归器
+2. 递归器 → **根**（得 TLD NS）
+3. → **TLD**（得权威 NS）
+4. → **权威**（得 A/AAAA 等）
 5. 结果返回客户端（可缓存）
 
 ---
@@ -155,8 +155,8 @@
 
 ### 11.5.3 UDP → TCP
 
-1. UDP 查询  
-2. 应答过大 → **TC=1** 截断  
+1. UDP 查询
+2. 应答过大 → **TC=1** 截断
 3. 客户端改 **TCP 53** 重查完整结果
 
 → [ch10 UDP](../chapter10-udp-ip-fragment/study.md)
@@ -176,8 +176,8 @@
 
 ### 11.5.7–8 动态更新与区传
 
-1. Secondary 查 Primary **SOA Serial**  
-2. Serial 更大 → **AXFR**（全量）或 **IXFR**（增量）  
+1. Secondary 查 Primary **SOA Serial**
+2. Serial 更大 → **AXFR**（全量）或 **IXFR**（增量）
 3. **TCP 53** 同步
 
 ---
@@ -202,8 +202,8 @@
 
 双栈时并发 **A + AAAA** 查询（RFC 6555 **Happy Eyeballs**）：
 
-1. 并行解析  
-2. IPv6 快且通 → 优先 v6  
+1. 并行解析
+2. IPv6 快且通 → 优先 v6
 3. v6 慢/失败 → 快速回退 **IPv4**
 
 → [ch07 NAT64/DNS64](../chapter07-firewall-nat/study.md#ch07-6)（仅 v6 客户端访问 v4 服务）
@@ -275,23 +275,23 @@ DNS = 最成功的**分布式数据库**：分层空间 + 缓存 + 紧凑二进�
 
 ### 下一章
 
-- [ch12 TCP](../chapter12-tcp-basic/study.md)  
+- [ch12 TCP](../chapter12-tcp-basic/study.md)
 - [ch18 安全](../chapter18-network-security/study.md) — DNSSEC、TLS
 
 ---
 
 ## Top-Down
 
-- [02_application_layer/study.md §2.4](../../top_down/02_application_layer/study.md#ch2-4)
+- 02_application_layer/study.md §2.4
 
 ## Lab
 
-- `dig +trace example.com` · `dig +dnssec`  
-- Wireshark：`dns` 过滤器，观察 QR/AA/TC、EDNS0  
+- `dig +trace example.com` · `dig +dnssec`
+- Wireshark：`dns` 过滤器，观察 QR/AA/TC、EDNS0
 - 迁移前调低 TTL 并观察 `dig` TTL 倒计时
 
 ## Go / Rust
 
-- **Go**：`net.Resolver`；`context` 超时；自定义 `Dial` 到可信递归  
-- **Rust**：`trust-dns-resolver` / `hickory-resolver`  
+- **Go**：`net.Resolver`；`context` 超时；自定义 `Dial` 到可信递归
+- **Rust**：`trust-dns-resolver` / `hickory-resolver`
 - **K8s**：`CoreDNS`；Service 名集群内 DNS；外网注意 **ndots** 与 search 域

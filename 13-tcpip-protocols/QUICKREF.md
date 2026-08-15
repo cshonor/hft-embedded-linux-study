@@ -1,6 +1,6 @@
 # 18 章一页速览 · 考点 + Go/Rust（Fall 第 2 版）
 
-> 配合 [OUTLINE.md](./OUTLINE.md) · 自顶向下精读 [03_transport_layer/study.md](../top_down/03_transport_layer/study.md)
+> 配合 [OUTLINE.md](./OUTLINE.md) · 自顶向下精读 03_transport_layer/study.md
 
 | 章 | 主题 | 核心考点 | Go / Rust 场景 |
 |----|------|----------|----------------|
@@ -13,10 +13,10 @@
 | 7 | NAT/防火墙 | NAPT、**EIM/ADF**、Hairpin、STUN/ICE、[考点](chapter07-firewall-nat/study.md#ch07-exam) | K8s SNAT、conntrack 满 → [ch07](chapter07-firewall-nat/study.md) |
 | 8 | ICMP | ND/DAD、**PTB/PMTUD**、差错不嵌套、[考点](chapter08-icmpv4-icmpv6/study.md#ch08-exam) | 勿拦 Type2；`ip neigh` → [ch08](chapter08-icmpv4-icmpv6/study.md) |
 | 9 | 广播/多播 | 32:1 MAC 映射、IGMPv3/SSM、[考点](chapter09-broadcast-multicast/study.md#ch09-exam) | IGMP Snooping、mDNS → [ch09 考点精读](chapter09-broadcast-multicast/study.md#ch09-exam) |
-| 10 | UDP | 消息边界、v6 强制校验和、**分片连锁丢包**、[考点](chapter10-udp-ip-fragment/study.md#ch10-exam) | 单包 ≤1400B；[ch10 考点精读](chapter10-udp-ip-fragment/study.md#ch10-exam)；[§3.3 UDP](../top_down/03_transport_layer/study.md#ch3-3) |
+| 10 | UDP | 消息边界、v6 强制校验和、**分片连锁丢包**、[考点](chapter10-udp-ip-fragment/study.md#ch10-exam) | 单包 ≤1400B；[ch10 考点精读](chapter10-udp-ip-fragment/study.md#ch10-exam)；§3.3 UDP |
 | 11 | DNS | 递归/权威、**TTL**、EDNS0/TC→TCP、[考点](chapter11-dns-domain-resolve/study.md#ch11-exam) | `dig +trace`、Happy Eyeballs → [ch11](chapter11-dns-domain-resolve/study.md) |
-| 12 | TCP 基础 | ARQ、**min(rwnd,cwnd)**、累积 ACK、[考点](chapter12-tcp-basic/study.md#ch12-exam) | [tcp_header.png](../top_down/03_transport_layer/assets/tcp_header.png) → [ch12](chapter12-tcp-basic/study.md) |
-| 13 | TCP 连接 | 1.5 RTT、SYN Cookie、PMTUD/MSS、[考点](chapter13-tcp-connection-manage/study.md#ch13-exam) | TIME_WAIT、backlog → [ch13](chapter13-tcp-connection-manage/study.md) · [§3.1](../top_down/03_transport_layer/study.md#ch3-1-tcp-conn) |
+| 12 | TCP 基础 | ARQ、**min(rwnd,cwnd)**、累积 ACK、[考点](chapter12-tcp-basic/study.md#ch12-exam) | tcp_header.png → [ch12](chapter12-tcp-basic/study.md) |
+| 13 | TCP 连接 | 1.5 RTT、SYN Cookie、PMTUD/MSS、[考点](chapter13-tcp-connection-manage/study.md#ch13-exam) | TIME_WAIT、backlog → [ch13](chapter13-tcp-connection-manage/study.md) · §3.1 |
 | 14 | 超时重传 | Jacobson RTO、**3 dup ACK**、SACK、伪超时/Eifel、[考点](chapter14-tcp-timeout-retransmit/study.md#ch14-exam) | `ss -ti`、勿过小 RTO → [ch14](chapter14-tcp-timeout-retransmit/study.md) |
 | 15 | 数据流/窗口 | **min(rwnd,cwnd)**、Nagle↔延迟ACK、Persist、SWS、[考点](chapter15-tcp-flow-window/study.md#ch15-exam) | `SetNoDelay(true)` → [ch15](chapter15-tcp-flow-window/study.md) |
 | 16 | 拥塞控制 | AIMD、Reno/NewReno、**CUBIC**、ECN、[考点](chapter16-tcp-congestion-control/study.md#ch16-exam) | `tcp_congestion_control` → [ch16](chapter16-tcp-congestion-control/study.md) |
@@ -25,12 +25,12 @@
 
 ## 五条易混（背）
 
-1. **rwnd**（接收方） vs **cwnd**（网络）→ 发送 `min(rwnd, cwnd)`  
-2. **TCP 分段**（MSS） vs **IP 分片**（MTU）→ UDP 大包怕后者  
-3. **UDP 分用**：目的端口；**TCP**：四元组  
-4. **TIME_WAIT**：主动关闭方、约 **2MSL**  
+1. **rwnd**（接收方） vs **cwnd**（网络）→ 发送 `min(rwnd, cwnd)`
+2. **TCP 分段**（MSS） vs **IP 分片**（MTU）→ UDP 大包怕后者
+3. **UDP 分用**：目的端口；**TCP**：四元组
+4. **TIME_WAIT**：主动关闭方、约 **2MSL**
 5. 第 2 版 **无** Telnet/FTP 章 → 应用协议看自顶向下第 2 章 + 工程实践
 
 ## 推荐学习顺序（后端）
 
-`1→2→10→13→14→15→16` → 并行 [03_transport_layer/study.md](../top_down/03_transport_layer/study.md) → `5→7→11→18`
+`1→2→10→13→14→15→16` → 并行 03_transport_layer/study.md → `5→7→11→18`

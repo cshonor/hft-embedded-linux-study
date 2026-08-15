@@ -2,10 +2,10 @@
 
 > 按书节速记：[2.1](2.1-introduction.md) · [2.2](2.2-ip-address-representation.md) · [2.3](2.3-basic-ip-structure.md) · [2.4](2.4-cidr-aggregation.md) · [2.5](2.5-special-address.md) · [2.6](2.6-address-allocation.md) · [2.7](2.7-unicast-allocation.md) · [2.8](2.8-address-security-threat.md) · [2.9](2.9-summary.md) · [QUICKREF §2](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 深度学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/01_architecture/ch02_internet_addresses.md)）  
-> 自顶向下对照：[04_network_layer §4.3](../../top_down/04_network_layer_data_plane/study.md#ch4-3)（IPv4/IPv6、CIDR、NAT）
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 深度学习笔记
+> 自顶向下对照：04_network_layer §4.3（IPv4/IPv6、CIDR、NAT）
 
-IP 地址是网络层**全局标识符**，支撑可扩展路由；演进主线：**分类寻址 → 子网/VLSM → CIDR/聚合**，并并行走向 **IPv6**。  
+IP 地址是网络层**全局标识符**，支撑可扩展路由；演进主线：**分类寻址 → 子网/VLSM → CIDR/聚合**，并并行走向 **IPv6**。
 → **编址演进 + 单播/广播/IID**：[2.3-basic-ip-structure.md](2.3-basic-ip-structure.md)（[单播 vs 广播](./2.3-basic-ip-structure.md#ch02-unicast-vs-broadcast)）
 
 ---
@@ -39,7 +39,7 @@ IP 地址是网络层**全局标识符**，支撑可扩展路由；演进主线�
 
 ### IPv4：点分四组（Dotted-decimal）
 
-32 bit → 4 字节，每字节十进制 **0–255**。  
+32 bit → 4 字节，每字节十进制 **0–255**。
 → 极简推导 + **3 道练习**：[2.2 §IPv4](./2.2-ip-address-representation.md#ch02-2-ipv4-dotted) · [练习](./2.2-ip-address-representation.md#ch02-2-ipv4-practice)
 
 | 点分四组 | 二进制（示意） |
@@ -52,7 +52,7 @@ IP 地址是网络层**全局标识符**，支撑可扩展路由；演进主线�
 
 ### IPv6：块/字段（Chunks）
 
-128 bit → **8 块 × 16 bit**，十六进制，冒号分隔。  
+128 bit → **8 块 × 16 bit**，十六进制，冒号分隔。
 → 极简 + **4 道练习**：[2.2 §IPv6](./2.2-ip-address-representation.md#ch02-2-ipv6-chunks) · [练习](./2.2-ip-address-representation.md#ch02-2-ipv6-practice)
 
 ### IPv6 规范化（RFC 5952）
@@ -157,8 +157,8 @@ IP 地址是网络层**全局标识符**，支撑可扩展路由；演进主线�
 
 **EUI-48 → EUI-64（从 MAC 生成 IID）**
 
-1. 48 bit MAC 拆为两个 24 bit 块  
-2. 中间插入 **FF:FE**  
+1. 48 bit MAC 拆为两个 24 bit 块
+2. 中间插入 **FF:FE**
 3. 第 1 字节 **第 7 位（u 位）取反**（全局/本地语义）
 
 ---
@@ -169,9 +169,9 @@ IP 地址是网络层**全局标识符**，支撑可扩展路由；演进主线�
 
 > **CIDR** = 前缀可灵活变长（`/24`、`/25`、`/26`）· **聚合** = 小网段打包成大网段，路由表只记 1 条
 
-**往下分**：/24→/25→/26，前缀数字**变大**，网段**变小**  
-**往上聚**：/26→/25→/24，前缀**变小**，网段**变大**，路由**变少**  
-**BGP**：AS 之间只交换**聚合后大前缀**（/24），不发一堆 /26、/25 → **CIDR 打包，BGP 对外发**  
+**往下分**：/24→/25→/26，前缀数字**变大**，网段**变小**
+**往上聚**：/26→/25→/24，前缀**变小**，网段**变大**，路由**变少**
+**BGP**：AS 之间只交换**聚合后大前缀**（/24），不发一堆 /26、/25 → **CIDR 打包，BGP 对外发**
 **例题**：`192.1.12–15.0/24` → **`192.1.12.0/22`** · 常考 `/32` `/31` `/0`
 
 → 城市类比：[2.4 §一](2.4-cidr-aggregation.md#ch02-4-plain) · [CIDR+BGP 链条](2.4-cidr-aggregation.md#ch02-4-bgp)
@@ -193,7 +193,7 @@ A) 随机分配（难聚合）              B) 拓扑敏感（易聚合）
                                           └─ .27.0/24
 ```
 
-→ 自顶向下：[CIDR 与子网划分示例](../../top_down/04_network_layer_data_plane/study.md#ch4-3)
+→ 自顶向下：CIDR 与子网划分示例
 
 ---
 
@@ -203,7 +203,7 @@ A) 随机分配（难聚合）              B) 拓扑敏感（易聚合）
 
 **口诀**：224 组播只喊小区 · **255 只喊本局域网（不上互联网）** · 127 本机 · 169.254 DHCP 救急 · 192.0.2 课本假 IP
 
-**五大块**：`224.0.0.1/2` 本网主机/路由器 · `255.255.255.255` 受限广播 · `127/8` 环回任意 · `169.254/16` APIPA · `192.0.2.0/24` 文档  
+**五大块**：`224.0.0.1/2` 本网主机/路由器 · `255.255.255.255` 受限广播 · `127/8` 环回任意 · `169.254/16` APIPA · `192.0.2.0/24` 文档
 **私有**：`10/8、172.16/12、192.168/16` · v6 `fd00::/8` · **组播 v6** `ff02::1` · **文档 v6** `2001:db8::/32`
 
 → [大白话+例子](2.5-special-address.md#ch02-5-plain) · [完整表](2.5-special-address.md#ch02-5-table)
@@ -242,14 +242,14 @@ A) 随机分配（难聚合）              B) 拓扑敏感（易聚合）
 
 **层级（必背）**：**IANA → RIR → ISP → 用户**（和 **DNS 根→TLD→权威** 结构一样，都是从上往下分）
 
-**访问时不一样**：**敲 IP** → 直接 **BGP**，不经 IANA/根 · **敲域名** → 先 **DNS**（根只指路）→ 得 IP → 再 BGP  
+**访问时不一样**：**敲 IP** → 直接 **BGP**，不经 IANA/根 · **敲域名** → 先 **DNS**（根只指路）→ 得 IP → 再 BGP
 **IANA**：只管**发号**，不管**传包** · 根不易崩：**镜像多 + 缓存 + 只指路**
 
-**WHOIS/RDAP vs BGP**：**查档案** vs **跑路线**（BGP **不广播**，点对点换路由）  
-**溯源三要素**：前缀归属 / abuse / 路由溯源（**全网 BGP + RDAP**，不只本地表）  
-**BGP 误区**：**无全球中心库**；AS **点对点**换路由；**各 AS 表不同**  
-**公开 BGP 库**（bgp.he.net 等）= **第三方收集**，溯源用，运营商不用  
-**AS‑PATH**：本地=**出去**；溯源=**RDAP + 公开 BGP 库**  
+**WHOIS/RDAP vs BGP**：**查档案** vs **跑路线**（BGP **不广播**，点对点换路由）
+**溯源三要素**：前缀归属 / abuse / 路由溯源（**全网 BGP + RDAP**，不只本地表）
+**BGP 误区**：**无全球中心库**；AS **点对点**换路由；**各 AS 表不同**
+**公开 BGP 库**（bgp.he.net 等）= **第三方收集**，溯源用，运营商不用
+**AS‑PATH**：本地=**出去**；溯源=**RDAP + 公开 BGP 库**
 **curl** 查 RDAP · **分得前缀 ≠ 全球可达** → 还要 **BGP 宣告**
 
 → [无中心库+公开BGP](2.6-address-allocation.md#ch02-6-bgp-global) · [AS‑PATH](2.6-address-allocation.md#ch02-6-aspath)
@@ -262,8 +262,8 @@ A) 随机分配（难聚合）              B) 拓扑敏感（易聚合）
 
 > **单播 = 正常能用的 IP** · 分配：**内网私有，外网 PA/PI**
 
-**通俗**：**PA** = 运营商给的公网 IP（换运营商常换 IP）· **PI** = 自己永久的公网 IP（换运营商可不改）· **边界宣告** = 告诉全网你的公网网段在哪 · **DHCP** = 内网自动分 IP  
-**内网**：192.168 / 10 等私有 + **VLAN** + **DHCP** · **外网**：PA（单 ISP）/ PI（多 ISP 备份）+ 边界宣告  
+**通俗**：**PA** = 运营商给的公网 IP（换运营商常换 IP）· **PI** = 自己永久的公网 IP（换运营商可不改）· **边界宣告** = 告诉全网你的公网网段在哪 · **DHCP** = 内网自动分 IP
+**内网**：192.168 / 10 等私有 + **VLAN** + **DHCP** · **外网**：PA（单 ISP）/ PI（多 ISP 备份）+ 边界宣告
 **IPv6 公网**：`2000::/3`（前 **3 bit**=`001`，不是 3 段）· **内网**：`fd00::/8` · **`/64`**=前 64 bit 网络 + 后 64 bit IID
 
 → 新人通俗版 + `/3` 示意图：[2.7-unicast-allocation.md](2.7-unicast-allocation.md#ch02-7-ipv6-prefix) · [大白话](2.7-unicast-allocation.md#ch02-7-plain)
@@ -280,8 +280,8 @@ A) 随机分配（难聚合）              B) 拓扑敏感（易聚合）
 
 ## 2.8 与 IP 地址相关的攻击
 
-**IP 欺骗根因**：网络层**不验源 IP**；UDP/ICMP 易伪造，TCP 仍有 SYN/RST 类攻击。  
-**危害**：ACL 绕过、**反射放大 DDoS**（伪造受害者为源）、RST 劫持、难溯源。  
+**IP 欺骗根因**：网络层**不验源 IP**；UDP/ICMP 易伪造，TCP 仍有 SYN/RST 类攻击。
+**危害**：ACL 绕过、**反射放大 DDoS**（伪造受害者为源）、RST 劫持、难溯源。
 **防护**：**BCP 38**（非本网段源入站丢弃）· **uRPF**（反向路径/入接口一致）· 应用层 **TLS/令牌，不信 IP**。
 
 → 展开 + 自测：[2.8-address-security-threat.md](2.8-address-security-threat.md)
@@ -321,9 +321,9 @@ A) 随机分配（难聚合）              B) 拓扑敏感（易聚合）
 
 ### 易混
 
-1. **MAC vs IP**：L2 vs L3，ARP 做映射（[ch04 ARP](../chapter04-arp-protocol/study.md)）  
-2. **定向广播 vs 255.255.255.255**  
-3. **IPv4 兼容 vs IPv4 映射**  
+1. **MAC vs IP**：L2 vs L3，ARP 做映射（[ch04 ARP](../chapter04-arp-protocol/study.md)）
+2. **定向广播 vs 255.255.255.255**
+3. **IPv4 兼容 vs IPv4 映射**
 4. **DNS 名 ≠ 1 个 IP**（负载均衡、CDN）
 
 ---

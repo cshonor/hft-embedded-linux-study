@@ -2,8 +2,8 @@
 
 > 按书节速记：[4.1](4.1-introduction.md) · [4.2](4.2-arp-basic-operation.md) · [4.3](4.3-arp-cache.md) · [4.4](4.4-arp-packet-format.md) · [4.5](4.5-arp-tcpdump-example.md) · [4.6](4.6-arp-cache-timeout.md) · [4.7](4.7-proxy-arp.md) · [4.8](4.8-gratuitous-arp.md) · [4.9](4.9-arp-cli-commands.md) · [4.10](4.10-embedded-arp-setup.md) · [4.11](4.11-arp-spoof-defense.md) · [4.12](4.12-summary.md) · [QUICKREF §4](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/03_network_layer/ch04_arp.md)）  
-> 链路层基础：[ch03 链路层](../chapter03-link-layer/study.md) · 自顶向下：[§6.4.1 ARP](../../top_down/06_link_layer_and_lan/study.md#ch6-4)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 链路层基础：[ch03 链路层](../chapter03-link-layer/study.md) · 自顶向下：§6.4.1 ARP
 
 **ARP** 是 **IPv4 ↔ 以太网 MAC** 的战略支点：IP 提供端到端逻辑标识，**L2 交付必须靠 48 位 MAC**；硬件不识别 IP 标签，同网段内不能直接“按 IP 发帧”。
 
@@ -39,8 +39,8 @@
 
 ### 路由表 + ARP 联动
 
-**路由表**：目标 IP → **下一跳 IP** + **出接口**（条目自带网口）  
-**ARP 表**：下一跳 IP → **下一跳 MAC**  
+**路由表**：目标 IP → **下一跳 IP** + **出接口**（条目自带网口）
+**ARP 表**：下一跳 IP → **下一跳 MAC**
 **封装**：IP 目的 = 最终接收方（不变）；帧 MAC 目的 = 直连下一跳（每跳重写）
 
 **路由器发 ARP**：路由表定 **出接口** → **只从该网口**发二层广播；广播**不过**其他接口 → [§零附 A](4.2-arp-basic-operation.md#ch04-2-router-arp-egress)
@@ -52,7 +52,7 @@
 | **直接交付** | 同一物理/广播域；掩码确认目标 IP 属本 subnet |
 | **间接交付** | 跨子网：IP 目的为远端主机，**以太网目的 MAC 常为默认网关** |
 
-→ 自顶向下必背：[§6.4.1](../../top_down/06_link_layer_and_lan/study.md#ch6-4)
+→ 自顶向下必背：§6.4.1
 
 ### ARP 请求/响应循环
 
@@ -277,8 +277,8 @@ ARP 缓存 = **软状态**（非永久；静态 `arp -s` 除外）→ 适配上�
 |------|------|
 | 单向/双向欺骗 → **MITM** | 窃听、篡改、会话劫持；可组合 **DHCP 劫持** |
 
-**缓解**：**DAI** + DHCP Snooping、**静态 ARP**、**802.1X**、**TLS/IPsec**。  
-**开发**：勿信任局域网；敏感通道强制 TLS。  
+**缓解**：**DAI** + DHCP Snooping、**静态 ARP**、**802.1X**、**TLS/IPsec**。
+**开发**：勿信任局域网；敏感通道强制 TLS。
 **家用**：静态 ARP + HTTPS；防火墙（L3）**拦不住** ARP（L2）。
 
 ---
@@ -306,8 +306,8 @@ ARP 缓存 = **软状态**（非永久；静态 `arp -s` 除外）→ 适配上�
 
 ### 技术本质（三条）
 
-1. **L3 → L2**：逻辑路由必须落实为**下一跳 MAC**；ARP 是 IPv4 以太网上的动态粘合剂。  
-2. **动态自适应**：设备上下线、IP 变更时无需手工维护全网 MAC 表。  
+1. **L3 → L2**：逻辑路由必须落实为**下一跳 MAC**；ARP 是 IPv4 以太网上的动态粘合剂。
+2. **动态自适应**：设备上下线、IP 变更时无需手工维护全网 MAC 表。
 3. **信任模型脆弱**：效率来自**局域网互信** → 也是**最主要 L2 安全风险**之一。
 
 ### 易混对照
@@ -322,24 +322,24 @@ ARP 缓存 = **软状态**（非永久；静态 `arp -s` 除外）→ 适配上�
 
 ### 下一章
 
-- [ch05 IP](../chapter05-ip-protocol/study.md) — 首部、分片、间接交付的完整路径  
+- [ch05 IP](../chapter05-ip-protocol/study.md) — 首部、分片、间接交付的完整路径
 - [ch03 §3.1 链路层职能](../chapter03-link-layer/study.md#ch03-1) — ARP 分用入口
 
 ---
 
 ## Top-Down
 
-- [06_link_layer_and_lan/study.md §6.4.1](../../top_down/06_link_layer_and_lan/study.md#ch6-4)  
-- [06 §6.7 Web 请求微观路径](../../top_down/06_link_layer_and_lan/study.md#ch6-7)（DNS 前常需 ARP 网关）
+- 06_link_layer_and_lan/study.md §6.4.1
+- 06 §6.7 Web 请求微观路径（DNS 前常需 ARP 网关）
 
 ## Lab
 
-- `arp -a` / `ip neigh` 对照本书缓存状态  
-- Wireshark：`arp` 过滤器，观察广播请求与单播应答  
+- `arp -a` / `ip neigh` 对照本书缓存状态
+- Wireshark：`arp` 过滤器，观察广播请求与单播应答
 - 同一子网 ping 首包延迟（首 ARP 解析）
 
 ## Go / Rust
 
-- **Go**：`net.Interface` 看本机 MAC；排障用 `exec` 调 `ip neigh` 或读 `/proc/net/arp`（Linux）  
-- **Rust**：`pnet` / 抓包库解析 ARP；容器网络注意**邻居表**与 **hairpin**  
+- **Go**：`net.Interface` 看本机 MAC；排障用 `exec` 调 `ip neigh` 或读 `/proc/net/arp`（Linux）
+- **Rust**：`pnet` / 抓包库解析 ARP；容器网络注意**邻居表**与 **hairpin**
 - **实践**：跨子网发包时区分 **dst IP（远端）** 与 **L2 dst MAC（网关）**

@@ -2,8 +2,8 @@
 
 > 按书节速记：[13.1](13.1-introduction.md) · [13.2](13.2-tcp-connection-setup.md) · [13.3](13.3-tcp-options.md) · [13.4](13.4-tcp-pmtud.md) · [13.5](13.5-tcp-state-time-wait.md) · [13.6](13.6-tcp-rst.md) · [13.7](13.8-listen-queue-backlog.md) · [13.8](13.8-tcp-connection-attacks.md) · [13.9](13.9-summary.md) · [QUICKREF §13](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/04_transport_layer/ch13_tcp_connection.md)）  
-> 前置：[ch12 TCP 初步](../chapter12-tcp-basic/study.md) · PMTUD：[ch08](../chapter08-icmpv4-icmpv6/study.md#ch08-3) · 自顶向下：[§3.1 连接/状态机](../../top_down/03_transport_layer/study.md#ch3-1-tcp-conn)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 前置：[ch12 TCP 初步](../chapter12-tcp-basic/study.md) · PMTUD：[ch08](../chapter08-icmpv4-icmpv6/study.md#ch08-3) · 自顶向下：§3.1 连接/状态机
 
 连接管理本质是**分布式状态一致性**：在不可靠 IP 上通过 **TCB** 维护有状态**虚拟电路**，支撑可靠重传、流控与拥塞控制。
 
@@ -47,7 +47,7 @@ Client                          Server
 | 严格时延 | 建连 **1.5 RTT**（SYN → SYN-ACK → ACK） |
 | 考试简化 | 有时记 **1 RTT**（数据可随第三次捎带） |
 
-→ 图示：[tcp_three_way_handshake.png](../../top_down/03_transport_layer/assets/tcp_three_way_handshake.png)
+→ 图示：tcp_three_way_handshake.png
 
 ### 四路挥手
 
@@ -60,13 +60,13 @@ Client                          Server
 
 **易混**：不必总是 4 个独立报文；被动方若同时关闭，可 **ACK+FIN 合并** → 类似 3 步。
 
-→ 图示：[tcp_four_way_handshake.png](../../top_down/03_transport_layer/assets/tcp_four_way_handshake.png)
+→ 图示：tcp_four_way_handshake.png
 
 ### 13.2.x 要点
 
 | 主题 | 要点 |
 |------|------|
-| **半关闭** | `shutdown()` 只关一端；`close()` 全关。rsh/传文件后仍要读服务器尾响应 |
+| **半关闭** | `shutdown` 只关一端；`close` 全关。rsh/传文件后仍要读服务器尾响应 |
 | **ISN (13.2.3)** | 非从 0/1 起；RFC 1948 等**时间+哈希**，防预测与旧报文干扰 |
 | **SYN 超时 (13.2.5)** | 丢 SYN → 指数退避重传（首约 1s）→ 影响 fail-fast 设计 |
 | **同时打开/关闭** | 竞态 → **SYN_RCVD**、**CLOSING** 等专门状态 |
@@ -89,8 +89,8 @@ Client                          Server
 
 ### 机制
 
-- **WSCALE**：突破 16 位窗口 **65535** → 高 BDP 吞吐关键  
-- **PAWS**：高速下 SEQ **回绕**；用时间戳拒绝**过旧延迟段**  
+- **WSCALE**：突破 16 位窗口 **65535** → 高 BDP 吞吐关键
+- **PAWS**：高速下 SEQ **回绕**；用时间戳拒绝**过旧延迟段**
 - **易混**：MSS、WSCALE **连接建立后不可改**
 
 ---
@@ -101,9 +101,9 @@ Client                          Server
 
 异构网中 **IP 分片**代价高（任一片丢 → 整报文废）。
 
-1. 发 **DF=1** 的 IP 报文  
-2. 中间 MTU 不足 → 丢弃 + **ICMPv4 Type3 Code4**（需要分片）  
-3. TCP 据此**缩小 MSS**，避免再触发分片  
+1. 发 **DF=1** 的 IP 报文
+2. 中间 MTU 不足 → 丢弃 + **ICMPv4 Type3 Code4**（需要分片）
+3. TCP 据此**缩小 MSS**，避免再触发分片
 
 **IPv6**：路由器**不分片** → **ICMPv6 Packet Too Big (Type 2)** → 必须调 MSS。
 
@@ -137,7 +137,7 @@ Client                          Server
 
 ### FIN_WAIT_2
 
-主动方等对端 FIN；对端应用不 `close()` → 卡死 → 内核 **tcp_fin_timeout**。
+主动方等对端 FIN；对端应用不 `close` → 卡死 → 内核 **tcp_fin_timeout**。
 
 ### 易混
 
@@ -170,7 +170,7 @@ Client                          Server
 | 队列 | 内容 |
 |------|------|
 | **半连接（SYN 队列）** | **SYN_RCVD** 的 TCB |
-| **全连接（Accept 队列）** | 握手完成、待 `accept()` |
+| **全连接（Accept 队列）** | 握手完成、待 `accept` |
 
 **backlog**（Linux）：主要限制 **Accept 队列**；满时常**丢弃 ACK 诱发重传**而非 RST，给缓冲余地。
 
@@ -208,24 +208,24 @@ Client                          Server
 
 ### 下一章
 
-- [ch14 超时与重传](../chapter14-tcp-timeout-retransmit/study.md)  
+- [ch14 超时与重传](../chapter14-tcp-timeout-retransmit/study.md)
 - [ch15 数据流与窗口](../chapter15-tcp-flow-window/study.md)
 
 ---
 
 ## Top-Down
 
-- [study.md §3.1 连接](../../top_down/03_transport_layer/study.md#ch3-1-tcp-conn)  
-- [SEQ/ACK 全表](../../top_down/03_transport_layer/study.md#ch3-1-tcp-seq-full)
+- study.md §3.1 连接
+- SEQ/ACK 全表
 
 ## Lab
 
-- Wireshark：`tcp.flags.syn==1`、`tcp.analysis.flags`  
-- `ss -tan state time-wait` / `CLOSE-WAIT` 计数  
+- Wireshark：`tcp.flags.syn==1`、`tcp.analysis.flags`
+- `ss -tan state time-wait` / `CLOSE-WAIT` 计数
 - `sysctl net.ipv4.tcp_tw_reuse`（理解后再改）
 
 ## Go / Rust
 
-- **Go**：`SetKeepAlive`、`SetLinger`；短连接风暴 → **连接池** + 复用  
-- **Rust**：`tokio::net::TcpStream`；服务端 `listen(backlog)`  
+- **Go**：`SetKeepAlive`、`SetLinger`；短连接风暴 → **连接池** + 复用
+- **Rust**：`tokio::net::TcpStream`；服务端 `listen(backlog)`
 - **排障**：大量 **TIME_WAIT** → 是否主动关闭方、是否可池化/长连接

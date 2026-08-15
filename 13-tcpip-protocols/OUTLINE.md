@@ -60,10 +60,10 @@ TCP-IP-Volume1-Protocols/
 
 | 本书（第 2 版） | 自顶向下仓库 |
 |----------------|--------------|
-| 1–3 | [01](../top_down/01_network_basics/) · [06 链路](../top_down/06_link_layer_and_lan/) |
-| 4–8 | [04 数据平面](../top_down/04_network_layer_data_plane/) · [05 控制](../top_down/05_network_layer_control_plane/) |
-| 9–17 | [03 运输层](../top_down/03_transport_layer/study.md) |
-| 11 | [02/2.4 DNS](../top_down/02_application_layer/2.4_dns_service/) |
-| 18 | [08 安全](../top_down/08_network_security/) |
+| 1–3 | 01 · 06 链路 |
+| 4–8 | 04 数据平面 · 05 控制 |
+| 9–17 | 03 运输层 |
+| 11 | 02/2.4 DNS |
+| 18 | 08 安全 |
 
 版本辨析 → [VERSIONS.md](./VERSIONS.md)

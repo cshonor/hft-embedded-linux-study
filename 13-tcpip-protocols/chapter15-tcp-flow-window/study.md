@@ -2,8 +2,8 @@
 
 > 按书节速记：[15.1](15.1-introduction.md) · [15.2](15.2-interactive-communication.md) · [15.3](15.3-delayed-ack.md) · [15.4](15.4-nagle-algorithm.md) · [15.5](15.5-flow-control-window.md) · [15.6](15.6-urgent-pointer.md) · [15.7](15.7-window-attacks.md) · [15.8](15.8-summary.md) · [QUICKREF §15](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/04_transport_layer/ch15_tcp_dataflow_window.md)）  
-> 前置：[ch12 滑动窗口](../chapter12-tcp-basic/study.md#ch12-1-2) · [ch13 WSCALE](../chapter13-tcp-connection-manage/study.md#ch13-3) · 自顶向下：[§3.1 流控](../../top_down/03_transport_layer/study.md#ch3-1-tcp-flow)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 前置：[ch12 滑动窗口](../chapter12-tcp-basic/study.md#ch12-1-2) · [ch13 WSCALE](../chapter13-tcp-connection-manage/study.md#ch13-3) · 自顶向下：§3.1 流控
 
 TCP 是**闭环反馈控制系统**：在交互式低延迟与成块高吞吐之间，用**窗口**、**Nagle**、**延迟 ACK** 等启发式算法找平衡。
 
@@ -30,15 +30,15 @@ TCP 是**闭环反馈控制系统**：在交互式低延迟与成块高吞吐之
 
 ### 模式与开销
 
-- **交互模式**：每键一字节 → 一包（Rlogin/SSH）  
+- **交互模式**：每键一字节 → 一包（Rlogin/SSH）
 - **有效载荷占比**：1B 数据 + ~40B 头（20 IP + 20 TCP）→ **PPS** 压力巨大
 
 ### Rlogin 回显四步（高 RTT 下卡顿）
 
-1. Client → Server：按键 1B  
-2. Server → Client：**ACK**  
-3. Server → Client：回显数据  
-4. Client → Server：**ACK**  
+1. Client → Server：按键 1B
+2. Server → Client：**ACK**
+3. Server → Client：回显数据
+4. Client → Server：**ACK**
 
 高 RTT 下每键可见延迟；10 键/s ≈ **40 报文/s**（未优化时）。
 
@@ -64,7 +64,7 @@ TCP 是**闭环反馈控制系统**：在交互式低延迟与成块高吞吐之
 
 ### 规则
 
-1. 收到数据后**不立即** ACK，短时等待本端响应数据  
+1. 收到数据后**不立即** ACK，短时等待本端响应数据
 2. **必须发 ACK**：计时器到点；或收到**第二个全尺寸（MSS）**段（促发送方滑动窗口）
 
 ### 易混
@@ -124,7 +124,7 @@ TCP 是**闭环反馈控制系统**：在交互式低延迟与成块高吞吐之
   ^左沿      ^SND.NXT          ^右沿
 ```
 
-→ 图示：[tcp_sliding_window.png](../../top_down/03_transport_layer/assets/tcp_sliding_window.png) · [ch12](../chapter12-tcp-basic/study.md#ch12-1-2)
+→ 图示：tcp_sliding_window.png · [ch12](../chapter12-tcp-basic/study.md#ch12-1-2)
 
 ### 15.5.2 零窗口与 Persist Timer
 
@@ -200,9 +200,9 @@ Linux 等 **Autotuning**：动态调 **SO_RCVBUF/SO_SNDBUF** 相关内核缓冲�
 
 ### 工程清单
 
-- 交互延迟：**NODELAY** + 考虑对端延迟 ACK  
-- 大文件：**勿** NODELAY；开 **WSCALE**、Autotuning  
-- 零窗口：查 Persist / 应用读太慢  
+- 交互延迟：**NODELAY** + 考虑对端延迟 ACK
+- 大文件：**勿** NODELAY；开 **WSCALE**、Autotuning
+- 零窗口：查 Persist / 应用读太慢
 
 ### 下一章
 
@@ -212,15 +212,15 @@ Linux 等 **Autotuning**：动态调 **SO_RCVBUF/SO_SNDBUF** 相关内核缓冲�
 
 ## Top-Down
 
-- [§3.1 流量控制](../../top_down/03_transport_layer/study.md#ch3-1-tcp-flow)
+- §3.1 流量控制
 
 ## Lab
 
-- `ss -ti` 看 `rcv_space`、`snd_wnd`  
+- `ss -ti` 看 `rcv_space`、`snd_wnd`
 - 对比 SSH `TCP_NODELAY` 开/关的报文间隔
 
 ## Go / Rust
 
-- **Go**：`tcpConn.SetNoDelay(true)`；`SetReadBuffer`/`SetWriteBuffer`  
-- **Rust**：`socket2` `set_nodelay(true)`  
+- **Go**：`tcpConn.SetNoDelay(true)`；`SetReadBuffer`/`SetWriteBuffer`
+- **Rust**：`socket2` `set_nodelay(true)`
 - **排障**：游戏/交易卡顿先查 **Nagle + 延迟 ACK** 组合

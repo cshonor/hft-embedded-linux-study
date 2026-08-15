@@ -2,7 +2,7 @@
 
 > 按书节速记：[8.1](8.1-introduction.md) · [8.2](8.2-icmp-packet-format.md) · [8.3](8.3-icmp-error-messages.md) · [8.4](8.4-icmp-query-ping.md) · [8.5](8.5-ipv6-ndp.md) · [8.6](8.6-icmpv4-v6-translation.md) · [8.7](8.7-icmp-attacks.md) · [8.8](8.8-summary.md) · [QUICKREF §8](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/03_network_layer/ch08_icmpv4_icmpv6.md)）  
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
 > 前置：[ch05 IP](../chapter05-ip-protocol/study.md) · [ch04 ARP](../chapter04-arp-protocol/study.md) · [ch06 SLAAC](../chapter06-dhcp-config/study.md#ch06-3) · [ch07 边界](../chapter07-firewall-nat/study.md)
 
 **ICMP** 是 IP 的**反馈环路与诊断中枢**：IP **尽力而为、无内置纠错** → ICMP 报告异常、探测路径、（v6）邻居发现与多播管理。无 ICMP，丢包与配置错误多为**黑盒**。
@@ -53,8 +53,8 @@ ICMP 作为 IP **载荷** 发送，依赖 IP 路由；生存受 **TTL/Hop Limit*
 
 ### 强制性处理准则
 
-1. **防止差错风暴**：**ICMP 差错不再触发 ICMP 差错**；差错报文损坏则**静默丢弃**  
-2. **源地址合法性**：原始 IP **源为单播**才发差错；对**多播/广播**源通常**不**回应，防放大 DoS  
+1. **防止差错风暴**：**ICMP 差错不再触发 ICMP 差错**；差错报文损坏则**静默丢弃**
+2. **源地址合法性**：原始 IP **源为单播**才发差错；对**多播/广播**源通常**不**回应，防放大 DoS
 3. **负载镜像**：差错须含**原 IP 首部 + 至少传输层前 8 字节**，便于定位 **Socket**
 
 ### ICMPv6 扩展
@@ -95,7 +95,7 @@ ICMP 作为 IP **载荷** 发送，依赖 IP 路由；生存受 **TTL/Hop Limit*
 
 ### 与 ch05 联动
 
-- TTL 减至 0 → **Time Exceeded**：[ch05 §5.2](../chapter05-ip-protocol/study.md#ch05-2)  
+- TTL 减至 0 → **Time Exceeded**：[ch05 §5.2](../chapter05-ip-protocol/study.md#ch05-2)
 - MTU 超限（v6）→ **Packet Too Big**：[ch03 MTU](../chapter03-link-layer/study.md#ch03-8)
 
 ---
@@ -151,9 +151,9 @@ v4：**Type 8/0**；v6：**Type 128/129**。
 
 ### DAD（重复地址检测）
 
-1. 新地址先为 **Tentative（暂定）**，不收单播  
-2. 发 **NS**，Target=暂定地址，源常为 **::**  
-3. 收到 **NA** → **冲突**，禁用  
+1. 新地址先为 **Tentative（暂定）**，不收单播
+2. 发 **NS**，Target=暂定地址，源常为 **::**
+3. 收到 **NA** → **冲突**，禁用
 4. 超时无响应 → **Preferred（优选）**
 
 ### NUD（邻居不可达检测）
@@ -206,9 +206,9 @@ v4：**Type 8/0**；v6：**Type 128/129**。
 
 **建议（差异化过滤）**：
 
-- **放行**：ICMPv6 **Type 2**、关键 **Type 1** 等（PMTUD 生命线）  
-- **限速**：入口 **Echo Request**  
-- **禁用**：**Redirect**（主机侧常 ignore）  
+- **放行**：ICMPv6 **Type 2**、关键 **Type 1** 等（PMTUD 生命线）
+- **限速**：入口 **Echo Request**
+- **禁用**：**Redirect**（主机侧常 ignore）
 - 结合 [ch07](../chapter07-firewall-nat/study.md#ch07-7) 状态表与 uRPF
 
 ---
@@ -241,25 +241,25 @@ ICMP 是协议栈的**神经系统**：在不可靠 IP 之上建立**自反馈**
 
 ### 下一章
 
-- [ch09 广播/多播](../chapter09-broadcast-multicast/study.md) — IGMP/MLD  
-- [ch10 UDP](../chapter10-udp-ip-fragment/study.md) — 端口不可达、PMTUD  
+- [ch09 广播/多播](../chapter09-broadcast-multicast/study.md) — IGMP/MLD
+- [ch10 UDP](../chapter10-udp-ip-fragment/study.md) — 端口不可达、PMTUD
 - [ch07 防火墙](../chapter07-firewall-nat/study.md) — ICMP 过滤策略
 
 ---
 
 ## Top-Down
 
-- [04_network_layer_data_plane/study.md](../../top_down/04_network_layer_data_plane/study.md)（PMTUD、NAT 与 MTU）  
-- [06_link_layer §6.7](../../top_down/06_link_layer_and_lan/study.md#ch6-7)（Traceroute 路径）
+- 04_network_layer_data_plane/study.md（PMTUD、NAT 与 MTU）
+- 06_link_layer §6.7（Traceroute 路径）
 
 ## Lab
 
-- `ping` / `ping6`；`traceroute` / `tracepath`（ICMP 超时）  
-- `ip neigh` 观察 NUD 状态  
+- `ping` / `ping6`；`traceroute` / `tracepath`（ICMP 超时）
+- `ip neigh` 观察 NUD 状态
 - 故意阻断 ICMPv6 Type 2，观察 TCP 大文件传输
 
 ## Go / Rust
 
-- **Go**：`net.ICMPConn`；`ipv4.PacketConn` 发 Echo；解析 **Destination Unreachable**  
-- **Rust**：`pnet` / `surge-ping`；容器网络 CNI 常要求允许 **Fragmentation Needed / PTB**  
+- **Go**：`net.ICMPConn`；`ipv4.PacketConn` 发 Echo；解析 **Destination Unreachable**
+- **Rust**：`pnet` / `surge-ping`；容器网络 CNI 常要求允许 **Fragmentation Needed / PTB**
 - **排障**：高延迟先 `mtr`；黑洞用 `tracepath` 看 MTU 标记

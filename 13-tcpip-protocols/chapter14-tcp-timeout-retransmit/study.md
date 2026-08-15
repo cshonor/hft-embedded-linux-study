@@ -2,8 +2,8 @@
 
 > 按书节速记：[14.1](14.1-introduction.md) · [14.2](14.2-simple-timeout-retransmit.md) · [14.3](14.3-rto-estimation.md) · [14.4](14.4-timer-based-retransmit.md) · [14.5](14.5-fast-retransmit.md) · [14.6](14.6-sack-retransmit.md) · [14.7](14.7-spurious-timeout.md) · [14.8](14.8-reorder-duplicate.md) · [14.9](14.9-destination-metrics.md) · [14.10](14.10-resegment-retransmit.md) · [14.11](14.11-retransmit-attacks.md) · [14.12](14.12-summary.md) · [QUICKREF §14](../QUICKREF.md)
 
-> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记（同步自 [tcpip_vol1_ed2_notes](../../tcpip_vol1_ed2_notes/04_transport_layer/ch14_tcp_timeout_retransmit.md)）  
-> 前置：[ch12](../chapter12-tcp-basic/study.md#ch12-1-4) · [ch13 选项/时间戳](../chapter13-tcp-connection-manage/study.md#ch13-3) · 自顶向下：[§3.1 可靠/快速重传](../../top_down/03_transport_layer/study.md#ch3-1-tcp-reliable)
+> 《TCP/IP 详解》卷1 第 2 版（Fall, 2016）· 精细化学习笔记
+> 前置：[ch12](../chapter12-tcp-basic/study.md#ch12-1-4) · [ch13 选项/时间戳](../chapter13-tcp-connection-manage/study.md#ch13-3) · 自顶向下：§3.1 可靠/快速重传
 
 **RTO** 是可靠性的**最后一道防线**：丢包、严重失序或延迟尖峰使**快速重传**失效时，靠计时器溢出强制恢复。RTT 估计、重传路径与**伪超时**修正，直接影响拥塞控制稳定性。
 
@@ -96,8 +96,8 @@ RTO  ← f(SRTT)
 
 ## 14.4 基于计时器的重传
 
-- 有**未确认在途数据** → 启动/维持重传计时器  
-- 收到**推进左边界**的新 ACK → **重启**计时器，超时 = 当前 **RTO**  
+- 有**未确认在途数据** → 启动/维持重传计时器
+- 收到**推进左边界**的新 ACK → **重启**计时器，超时 = 当前 **RTO**
 - 始终盯住**最老**未确认段
 
 ---
@@ -115,7 +115,7 @@ RTO  ← f(SRTT)
 
 进入**快速恢复**（ch16）：在途量减半等，**不像超时**那样粗暴重置 cwnd。
 
-→ [Top-Down §3.1](../../top_down/03_transport_layer/study.md#ch3-1-tcp-reliable)
+→ Top-Down §3.1
 
 ---
 
@@ -127,7 +127,7 @@ RTO  ← f(SRTT)
 
 ### SACK 选项
 
-- **Left Edge / Right Edge** 描述已收到的**不连续块**  
+- **Left Edge / Right Edge** 描述已收到的**不连续块**
 - TCP 选项区常限 **~40B**（与时间戳等共存）→ 每段约 **3–4** 个 SACK 块
 
 ### Scoreboard（发送端）
@@ -198,23 +198,23 @@ RTO 溢出但数据**未丢**（延迟尖峰、路径切换）→ **伪重传**�
 
 ### 下一章
 
-- [ch15 数据流与窗口](../chapter15-tcp-flow-window/study.md) — rwnd、Nagle  
+- [ch15 数据流与窗口](../chapter15-tcp-flow-window/study.md) — rwnd、Nagle
 - [ch16 拥塞控制](../chapter16-tcp-congestion-control/study.md) — 超时与 cwnd
 
 ---
 
 ## Top-Down
 
-- [§3.1 可靠传输](../../top_down/03_transport_layer/study.md#ch3-1-tcp-reliable)  
-- [§3.7 拥塞](../../top_down/03_transport_layer/study.md#ch3-1-tcp-cong)
+- §3.1 可靠传输
+- §3.7 拥塞
 
 ## Lab
 
-- Wireshark：`tcp.analysis.retransmission`、`tcp.analysis.duplicate_ack`  
+- Wireshark：`tcp.analysis.retransmission`、`tcp.analysis.duplicate_ack`
 - `ss -ti` 看 `rto`、`rtt`
 
 ## Go / Rust
 
-- **Go**：`TCPConn.SetKeepAlive`；`SetWriteDeadline`；注意 **TLS 下**仍走 TCP 重传语义  
-- **sysctl**：`net.ipv4.tcp_retries2`、`tcp_syn_retries`（与 ch13 SYN 区分）  
+- **Go**：`TCPConn.SetKeepAlive`；`SetWriteDeadline`；注意 **TLS 下**仍走 TCP 重传语义
+- **sysctl**：`net.ipv4.tcp_retries2`、`tcp_syn_retries`（与 ch13 SYN 区分）
 - **排障**：高 RTT 链路先看 **RTO 是否过小**、是否缺 **SACK/时间戳**

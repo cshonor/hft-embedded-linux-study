@@ -1,6 +1,6 @@
 # TCP/IP Illustrated, Vol.1 — 2nd Edition (Fall, 2016)
 
-> **《TCP/IP 详解 卷1：协议》第 2 版** · Kevin R. Fall 等 · **全书 18 章**。  
+> **《TCP/IP 详解 卷1：协议》第 2 版** · Kevin R. Fall 等 · **全书 18 章**。
 > 不是 Stevens 1994 的 30 章老版；**无 Telnet/FTP/SMTP/SNMP 独立章**。
 
 | 文档 | 用途 |
@@ -23,8 +23,8 @@
 
 完整映射见 [OUTLINE.md](./OUTLINE.md)。
 
-## 与源笔记目录
+## 相关模块
 
-精读正文由 [`tcpip_vol1_ed2_notes/`](../tcpip_vol1_ed2_notes/) 同步至本仓库各章 `study.md`；后续可在任一侧编辑后再次同步。
-
-与 **[自顶向下](../README.md)** 并行；TCP/UDP 精读见 [03_transport_layer/study.md](../top_down/03_transport_layer/study.md)。
+- **13.5-wireshark-packet-analysis** — 抓包实战，配合各章协议分析
+- **14-kernel-networking** — Linux 内核网络栈实现
+- **12-network-sockets** — Socket 编程（UDP/TCP API）
