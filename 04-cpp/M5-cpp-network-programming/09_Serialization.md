@@ -131,7 +131,7 @@ inline uint64_t load_be64(const void* p) {
 
 - **字节序根源在 CPU**：x86 `mov` 直接按小端解释寄存器；网络协议族历史选择大端（先传高位字节）。`htonl` 在 x86 上编译成 `bswap` 指令（~1 cycle）——字节序转换在 encode/decode 里根本不是性能问题，varint 的分支循环才是
 - **对齐根源在访存通路**：CPU 按对齐边界访问 cache line；未对齐访问 x86 靠硬件拆成两次（慢），部分架构直接异常。MMIO/网卡 DMA 描述符同样要求对齐——嵌入式背景（振鹏的老朋友）在 DMA ring buffer 上见过同一件事
-- **零拷贝链条**：`recvfrom MSG_DONTWAIT` 后不 memcpy 进业务对象，直接在收包缓冲上按偏移解出字段——配合 [14 DPDK](../../14-dpdk/) 用户态收包，"网卡到策略"全程零拷贝是 HFT 解码的终极形态
+- **零拷贝链条**：`recvfrom MSG_DONTWAIT` 后不 memcpy 进业务对象，直接在收包缓冲上按偏移解出字段——配合 [14 DPDK](../../13-dpdk/) 用户态收包，"网卡到策略"全程零拷贝是 HFT 解码的终极形态
 
 <a id="pnp-09-pitfalls"></a>
 
@@ -171,4 +171,4 @@ inline uint64_t load_be64(const void* p) {
 ## 交叉引用
 
 - 上一篇：[08 UDP/组播](./08_UDP_Multicast.md)
-- [02 粘包（帧协议）](./02_TCPByteStream.md) · [14 DPDK](../../14-dpdk/) · [17 HFT 工程](../../17-hft-engineering/) · [21 Rust 量化（序列化对比）](../../21-rust-quant/)
+- [02 粘包（帧协议）](./02_TCPByteStream.md) · [14 DPDK](../../13-dpdk/) · [17 HFT 工程](../../16-hft-engineering/) · [21 Rust 量化（序列化对比）](../../20-rust-quant/)

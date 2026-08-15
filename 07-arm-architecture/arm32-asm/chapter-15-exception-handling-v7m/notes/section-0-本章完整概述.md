@@ -88,7 +88,7 @@ Ch16 MMIO 配外设 · RTOS：PendSV 切换 PSP
 | [04 LKD](../../05-linux-kernel/) | 内核 irq 框架 · **HardFault ≈ 内核 panic 前兆** |
 | [21 驱动](../../09-device-drivers-dt/) | top half 短 ISR |
 | [奔跑吧 GIC](../aarch64-practice/chapter-13-gic-v2/) | 多核 GIC vs 单片机 NVIC |
-| [23 飞控](../../11-motion-control/) | **SysTick/PendSV** · RTOS 调度 |
+| [23 飞控](../../../../10-motion-control/) | **SysTick/PendSV** · RTOS 调度 |
 
 ---
 

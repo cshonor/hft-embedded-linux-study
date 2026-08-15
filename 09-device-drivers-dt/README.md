@@ -1,6 +1,6 @@
 # Linux 设备驱动 · 字符 / 平台驱动 · 设备树
 
-**文件夹 09** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)
+**文件夹 09** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10)
 
 > **定位：** **内核态模块** — 补齐 HFT 链里「只写用户态」的缺口。  
 > **范围：** 字符驱动 · platform 驱动 · **设备树（DTS/DTB）** · **非** MCU 裸机 HAL。  
@@ -37,8 +37,8 @@
 |----------|------------|
 | 用户态 `epoll`/`mmap` | 内核 **poll/wait_queue** · **remap_pfn_range**（LDD3 Ch6/15） |
 | 无锁 / spinlock 概念 | 内核 **spinlock_t** · 中断上下文（LDD3 Ch5） |
-| [13 内核网络](../13-kernel-networking/) | 网卡驱动（LDD3 Ch17 / Madieu Ch22） |
-| [14 DPDK](../14-dpdk/) | UIO/VFIO **旁路** vs 内核驱动 **标准路径** |
+| [13 内核网络](../12-kernel-networking/) | 网卡驱动（LDD3 Ch17 / Madieu Ch22） |
+| [14 DPDK](../13-dpdk/) | UIO/VFIO **旁路** vs 内核驱动 **标准路径** |
 
 **HFT 退路：** 工业网关 / 飞控 **传感器 SPI/I2C/UART** — Madieu 主线。
 
@@ -76,4 +76,4 @@ Madieu Ch6 大纲：[OUTLINE §Ch6](./modern-driver-practice/OUTLINE.md#ch6-the-
 - [ ] 树莓派上改过 **DTS** 并匹配 platform/I2C 驱动  
 - [ ] 读过 usage-model，能解释 DTB 从哪来、内核用来干什么  
 
-**上一章：** [20 构建](../08-embedded-boot-build/) · **下一章：** [10 运动控制](../11-motion-control/)
+**上一章：** [20 构建](../08-embedded-boot-build/) · **下一章：** [10 运动控制](../10-motion-control/)

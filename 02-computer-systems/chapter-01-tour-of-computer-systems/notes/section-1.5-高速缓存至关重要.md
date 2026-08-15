@@ -156,7 +156,7 @@ Core3：[L1I+L1D] → 私有 L2 ──┘
 - **Order book / ring buffer** 顺序访问 → 空间局部性好
 - **指针 chasing、链表跳来跳去** → miss 多，P99 抖
 - **伪共享 (false sharing)** — 两线程改同一 cache line 不同字段 → 行乒乓（→ [Ch 6](../../chapter-06-memory-hierarchy/)、[Ch 12](../../chapter-12-concurrent-programming/)）
-- **perf `cache-misses` / `perf c2c`** — 生产验证（→ [16-Systems-Performance Ch 13](../../../15-systems-performance/chapter-13-perf/)）
+- **perf `cache-misses` / `perf c2c`** — 生产验证（→ [16-Systems-Performance Ch 13](../../../14-systems-performance/chapter-13-perf/)）
 - **LLC miss** — 热路径上常比 L1/L2 miss 更贵；关注共享数据布局、避免无意义的跨核踩 LLC
 
 ### 缓存按行 (cache line) 管理

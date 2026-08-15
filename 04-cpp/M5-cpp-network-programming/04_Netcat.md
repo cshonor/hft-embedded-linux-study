@@ -138,7 +138,7 @@ cargo run -- 127.0.0.1 9000
 - 对端 `read` 返回 0 的判定：收到 FIN 只是标记 `sk_shutdown |= RCV_SHUTDOWN`，`tcp_recvmsg` 发现队列空且有该标记才返回 0
 - RST 的产生：收到 FIN 后仍向对端 `write` → 对端回 RST；`setsockopt(SO_LINGER{1,0})` + close → 直接 RST。**收到 RST 后本端再 read/write 直接报 `ECONNRESET`**
 
-状态机全程可用 `ss -tn` 观察各状态（`FIN_WAIT2`/`CLOSE_WAIT` 停留过长 = 应用层没做半关闭或没 close，见 [12 TCP/IP](../../12-tcpip-protocols/) 的连接管理章节）。
+状态机全程可用 `ss -tn` 观察各状态（`FIN_WAIT2`/`CLOSE_WAIT` 停留过长 = 应用层没做半关闭或没 close，见 [12 TCP/IP](../../11-tcpip-protocols/) 的连接管理章节）。
 
 <a id="pnp-04-pitfalls"></a>
 
@@ -158,7 +158,7 @@ cargo run -- 127.0.0.1 9000
 | 场景 | 关系 |
 |------|------|
 | 会话拆除 | 撮合网关要求 **先发注销/心跳停止，再 shutdown 写方向，读完剩余回报，最后 close**——次序错了会丢最后一批成交确认 |
-| `CLOSE_WAIT` 告警 | 网关连接数缓慢上涨的常见根因，运维信号（配合 [16 BPF 观测](../../16-bpf-observability/)） |
+| `CLOSE_WAIT` 告警 | 网关连接数缓慢上涨的常见根因，运维信号（配合 [16 BPF 观测](../../15-bpf-observability/)） |
 | 手工调试 | 用 nc 向行情网关发原始二进制帧复现问题，比写测试程序快 |
 | FIN/RST 延迟 | RST 语义粗暴且可能丢弃对端未读数据——交易链路永远走优雅关闭 |
 
@@ -177,4 +177,4 @@ cargo run -- 127.0.0.1 9000
 ## 交叉引用
 
 - 上一篇：[03 自连接](./03_SelfConnect.md) · 下一篇：[05 TTCP](./05_TTCP.md)
-- [06 非阻塞 I/O](./06_NonBlockingIO.md) · [07 epoll](./07_IO_epoll.md) · [12 TCP/IP 协议](../../12-tcpip-protocols/) · [12.5 Wireshark](../../12.5-wireshark-packet-analysis/)
+- [06 非阻塞 I/O](./06_NonBlockingIO.md) · [07 epoll](./07_IO_epoll.md) · [12 TCP/IP 协议](../../11-tcpip-protocols/) · [12.5 Wireshark](../../11.5-wireshark-packet-analysis/)

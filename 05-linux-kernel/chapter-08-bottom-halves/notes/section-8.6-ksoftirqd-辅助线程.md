@@ -76,7 +76,7 @@ irq_exit: __do_softirq()
 | **CPU isolation（isolcpus）** | 策略核不收 softirq |
 | **DPDK / 内核旁路** | 跳过 net_rx 路径 |
 
-→ [Ch 8.3](section-8.3-软中断.md) softirq · [§1.5 SysPerf IRQ/softirq 同核](../../../../15-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 4](../../chapter-04-process-scheduling/) 调度与 nice
+→ [Ch 8.3](section-8.3-软中断.md) softirq · [§1.5 SysPerf IRQ/softirq 同核](../../../14-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 4](../../chapter-04-process-scheduling/) 调度与 nice
 
 ### 常见陷阱
 

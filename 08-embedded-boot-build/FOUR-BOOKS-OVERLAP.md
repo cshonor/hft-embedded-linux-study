@@ -1,6 +1,6 @@
 # 四本书重合度与分工（剔除 ARM 汇编）
 
-> 对应路线：[HFT-READING-ROADMAP §嵌入式](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11) · 模块 [20 构建](./README.md) · [21 驱动](../09-device-drivers-dt/README.md)  
+> 对应路线：[HFT-READING-ROADMAP §嵌入式](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10) · 模块 [20 构建](./README.md) · [21 驱动](../09-device-drivers-dt/README.md)  
 > 板卡约定：树莓派等 **5.x+ 内核** — LDD3 代码勿照搬。
 
 ## 书单

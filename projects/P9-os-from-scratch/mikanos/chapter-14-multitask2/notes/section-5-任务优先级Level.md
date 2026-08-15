@@ -45,7 +45,7 @@ Schedule():
 | 唤醒 | 无 | **SendMessage + Wakeup** |
 | 公平 | 绝对公平 · **伤交互** | **交互优先** · 后台仍跑 |
 
-→ [ULK 进程调度](../../../../../19-linux-kernel-deep/chapter-07-process-scheduling.md)
+→ [ULK 进程调度](../../../../../18-linux-kernel-deep/chapter-07-process-scheduling.md)
 
 ---
 

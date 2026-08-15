@@ -228,7 +228,7 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 内核中断 | [ULK ch04 中断](../../../19-linux-kernel-deep/chapter-04-interrupts-and-exceptions/) |
+| 内核中断 | [ULK ch04 中断](../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/) |
 | threaded_irq | [现代驱动实践](../../../09-device-drivers-dt/modern-driver-practice/) |
 
 ---

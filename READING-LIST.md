@@ -4,7 +4,7 @@
 
 **总阅读顺序** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · **文件夹顺序** → [README.md](./README.md)
 
-**按文件夹读：** `00`–`22` 技术模块 · **编号=读序** · 嵌入式 `07`–`11`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线07–11-文件夹)）
+**按文件夹读：** `00`–`21` 技术模块 · **编号=读序** · 嵌入式 `07`–`10`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线07–11-文件夹)）
 
 | 标签 | 含义 |
 |------|------|
@@ -16,9 +16,9 @@
 
 ## 1. Systems Performance: Enterprise and the Cloud 2nd — Brendan Gregg
 
-> 笔记目录：[15-systems-performance/](./15-systems-performance/)
+> 笔记目录：[14-systems-performance/](./14-systems-performance/)
 
-> **建议前置：** [02-computer-systems](./02-computer-systems/) 地基篇（Ch4–6/8–9/12）+ [19-Hennessy](./18-computer-architecture/) Ch2。  
+> **建议前置：** [02-computer-systems](./02-computer-systems/) 地基篇（Ch4–6/8–9/12）+ [19-Hennessy](./17-computer-architecture/) Ch2。  
 > 性能调优总纲：perf、NUMA、软中断、网卡调优 — **在懂 cache/进程/锁之后再读，事半功倍**。
 
 | 章节 | 标签 | HFT 关联 |
@@ -64,7 +64,7 @@
 
 ## 2b. Understanding the Linux Kernel 3rd — Bovet & Cesati
 
-> 笔记目录：[19-linux-kernel-deep/](./19-linux-kernel-deep/)
+> 笔记目录：[18-linux-kernel-deep/](./18-linux-kernel-deep/)
 
 > **定位：** LKD **功能** ↔ 源码 **实现** 的桥梁（Linux 2.6 基线；概念对照 modern 5.x/6.x）。  
 > **顺序：** `05` LKD 后 **选章精读**；VM 深潜仍交给 `06` Gorman。
@@ -107,7 +107,7 @@
 
 > 笔记目录：[03-linux-userspace-api/](./03-linux-userspace-api/) · 章节裁剪 → [OUTLINE.md](./03-linux-userspace-api/OUTLINE.md)
 
-> **定位：** Linux **用户态** syscall 全书 — 衔接 `05` LKD（内核里怎么实现）与 `12` PNP / `12` UNP（网络实战）。  
+> **定位：** Linux **用户态** syscall 全书 — 衔接 `05` LKD（内核里怎么实现）与 [04/M5](./04-cpp/M5-cpp-network-programming/) PNP / `03.5` UNP（网络实战）。  
 > **推荐顺序：** `06` Gorman 之后 → **TLPI** → P9 自制系统 → 网络段。
 
 | 章节 | 标签 | HFT 关联 |
@@ -131,7 +131,7 @@
 
 ## 4. Linux Kernel Networking — Rami Rosen
 
-> 笔记目录：[13-kernel-networking/](./13-kernel-networking/)
+> 笔记目录：[12-kernel-networking/](./12-kernel-networking/)
 
 > 内核 TCP/UDP/IGMP/NAPI/RSS，交易所 UDP 组播内核实现，对接 UNP。
 
@@ -139,7 +139,7 @@
 |------|------|----------|
 | Ch 11 第 4 层协议（TCP/UDP/Socket/sk_buff） | **精读** | 对照 UNP 之下发生了什么 |
 | Ch 14 高级主题（NAPI/softirq/RSS/RPS/XPS） | **精读** | 收包延迟、多队列绑核 |
-| 组播 / IGMP | **精读** | 见 [note-组播IGMP.md](./13-kernel-networking/note-组播IGMP.md) |
+| 组播 / IGMP | **精读** | 见 [note-组播IGMP.md](./12-kernel-networking/note-组播IGMP.md) |
 | Ch 4–5 IPv4 / 路由 | **选读** | 托管/共置网络 |
 | Ch 3 ICMP / Ch 7 邻居子系统 | **选读** | 排查网络 |
 | Ch 13 InfiniBand | **选读** | RDMA/共置低延迟 |
@@ -152,7 +152,7 @@
 
 ## 12. DPDK — 用户态旁路网络（官方文档 + 本仓库笔记）
 
-> 笔记目录：[14-dpdk/](./14-dpdk/)
+> 笔记目录：[13-dpdk/](./13-dpdk/)
 
 > **网络栈闭环最后一环：** 内核协议原理（04）→ Socket API（05）→ 内核实现（06）→ **用户态旁路（12）**。与 UNP/TCP/IP **并行互补**，不是重复。
 
@@ -163,7 +163,7 @@
 | PMD、poll mode、rx/tx burst | **精读** | 轮询收包 vs NAPI |
 | 零拷贝、UIO/VFIO | **精读** | 旁路内核栈原理 |
 | UDP 组播行情接入 | **精读** | 交易所行情主路径 |
-| OpenOnload / RDMA 对比 | **选读** | 方案选型（见 [15-Advanced/note-openonload-rdma对比](./14-dpdk/02-Advanced-Book/notes/note-openonload-rdma对比.md)） |
+| OpenOnload / RDMA 对比 | **选读** | 方案选型（见 [15-Advanced/note-openonload-rdma对比](./13-dpdk/02-Advanced-Book/notes/note-openonload-rdma对比.md)） |
 | Crypto / Eventdev 等 | **跳过** | 非行情热路径 |
 
 **HFT 产出：** 理解内核栈 vs DPDK 旁路取舍；组播行情最小工程见 `01-Intro-Book/code/mcast-minimal/`。
@@ -174,7 +174,7 @@
 
 ## 5. Computer Architecture: A Quantitative Approach 6th — Hennessy & Patterson
 
-> 笔记目录：[18-computer-architecture/](./18-computer-architecture/)
+> 笔记目录：[17-computer-architecture/](./17-computer-architecture/)
 
 > CPU 缓存、MESI、NUMA 访存、流水线，无锁代码硬件优化依据。
 
@@ -218,8 +218,8 @@
 
 ## 7. Trading and Exchanges — Larry Harris
 
-> 笔记目录：[22-markets-microstructure/](./22-markets-microstructure/)  
-> **配套练手：** [22-practice-go-dex/](./22-markets-microstructure/00-practice-go-dex/)（Go LOB/DEX · 理论 `chapter-*.md` + 实践 `notes/`/`code/` 分离）
+> 笔记目录：[21-markets-microstructure/](./21-markets-microstructure/)  
+> **配套练手：** [22-practice-go-dex/](./21-markets-microstructure/00-practice-go-dex/)（Go LOB/DEX · 理论 `chapter-*.md` + 实践 `notes/`/`code/` 分离）
 
 > 市场微观、LOB、交易所撮合、机房托管，HFT 业务基石。
 
@@ -237,9 +237,9 @@
 
 ## 8. BPF Performance Tools — Brendan Gregg
 
-> 笔记目录：[16-bpf-observability/](./16-bpf-observability/)
+> 笔记目录：[15-bpf-observability/](./15-bpf-observability/)
 
-> eBPF、XDP 小包过滤、内核观测。**紧接 [16-Systems-Performance](../15-systems-performance/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
+> eBPF、XDP 小包过滤、内核观测。**紧接 [16-Systems-Performance](./14-systems-performance/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -247,7 +247,7 @@
 | Part I Ch 4–5 BCC / bpftrace | **精读** | 工具链快速上手 |
 | Part II Ch 6 CPU | **精读** | off-CPU、run queue、抖动定位 |
 | Part II Ch 10 网络 | **精读** | 套接字延迟、TCP/UDP 重传丢包 |
-| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./16-bpf-observability/note-XDP与tc-BPF.md)；vs DPDK |
+| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./15-bpf-observability/note-XDP与tc-BPF.md)；vs DPDK |
 | Part II Ch 7 内存 / Ch 13–14 应用·内核 | **选读** | alloc、fault、调度唤醒 |
 | Part I Ch 3 / Part III Ch 17–18 | **选读** | 方法论、排障技巧 |
 | 附录 A/B bpftrace 单行/备忘单 | **精读** | 现场速查 |
@@ -261,10 +261,10 @@
 
 | 外 | 书目 | 索引 | 插入顺序 |
 |----|------|------|----------|
-| 外C | C++ 学习链（01–10，笔记已入本仓） | [04-cpp/](./04-cpp/)（源自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)） | **`03` 之后、`04` C++ 之前**（Modern C++）；**`18` HFT 前**（并发 + 对象模型） |
+| 外C | C++ 学习链（01–10，笔记已入本仓） | [04-cpp/](./04-cpp/)（源自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)） | **`03` 之后、`04` C++ 之前**（Modern C++）；**`16` HFT 前**（并发 + 对象模型） |
 | 外P | 陈硕 PNP / muduo 实战 | [04-cpp/M5-cpp-network-programming/](./04-cpp/M5-cpp-network-programming/) · [PNP 笔记](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | **`04` C++ M1 之后** |
 | 外B | UNIX Network Programming Vol.1 — Stevens | [03.5-unix-network-api/](./03.5-unix-network-api/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | PNP **之后** |
-| 外A | TCP/IP Illustrated Vol.1 — Stevens | [12-tcpip-protocols/](./12-tcpip-protocols/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | UNP **之后**，Rosen **之前** |
+| 外A | TCP/IP Illustrated Vol.1 — Stevens | [11-tcpip-protocols/](./11-tcpip-protocols/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | UNP **之后**，Rosen **之前** |
 
 > **不要整本迁入本仓库。** 分工：**PNP** = 动手实验；**UNP** = API；**TCP/IP** = 协议；**Rosen** = 内核实现。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)。
 
@@ -274,7 +274,7 @@
 
 > 笔记正文：[04-cpp/](./04-cpp/)（自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制）· 里程碑：[OUTLINE.md](./04-cpp/OUTLINE.md)
 
-> **插入位置：** **`03` TLPI / P9 自制 OS 之后** → **`04` C++** → **`12` PNP** → … → **`18` HFT**
+> **插入位置：** **`03` TLPI / P9 自制 OS 之后** → **`04` C++** → **04/M5 PNP** → … → **`16` HFT**
 
 | 里程碑 | 本目录 | 标签 | 何时读 |
 |--------|--------|------|--------|
@@ -288,11 +288,11 @@
 
 ---
 
-## 补充：陈硕 PNP / muduo 实战（`12` 文件夹）
+## 补充：陈硕 PNP / muduo 实战（04/M5 模块）
 
 > 笔记目录：[04-cpp/M5-cpp-network-programming/](./04-cpp/M5-cpp-network-programming/) · 外部 [PNP/](https://github.com/cshonor/Computer-Networking/tree/main/PNP)
 
-> **插入位置：** **`04` C++（至少 M1）之后**、`12` UNP 之前
+> **插入位置：** **`04` C++（至少 M1）之后**、`03.5` UNP 之前
 
 | 主题 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -303,19 +303,19 @@
 
 ---
 
-## 补充：DPDK 官方文档 + 实体书（`15` 文件夹）
+## 补充：DPDK 官方文档 + 实体书（`13` 文件夹）
 
 | 资料 | 本仓库入口 | 用途 |
 |------|-----------|------|
-| **DPDK Programmer's Guide** | [14-dpdk/](./14-dpdk/) | 用户态轮询、PMD、mbuf、零拷贝旁路 |
-| **① 《深入浅出 DPDK》** | [15-Intro-Book/notes/](./14-dpdk/01-Intro-Book/notes/) · [note-DPDK实体书递进](./14-dpdk/01-Intro-Book/notes/note-DPDK实体书递进.md) | **先读** — 建立旁路认知（配 chapter-01–04） |
-| **② 《Linux 高性能网络详解》** | [15-Advanced-Book/notes/](./14-dpdk/02-Advanced-Book/notes/) | **后读** — DPDK/RDMA/XDP 深度与选型 |
-| **DPDK Sample Applications** | [15-Intro/code/mcast-minimal/](./14-dpdk/01-Intro-Book/code/mcast-minimal/) | 组播最小工程参考 |
-| **OpenOnload / RDMA** | [15-Advanced/note-openonload-rdma对比](./14-dpdk/02-Advanced-Book/notes/note-openonload-rdma对比.md) | 方案对比 |
+| **DPDK Programmer's Guide** | [13-dpdk/](./13-dpdk/) | 用户态轮询、PMD、mbuf、零拷贝旁路 |
+| **① 《深入浅出 DPDK》** | [15-Intro-Book/notes/](./13-dpdk/01-Intro-Book/notes/) · [note-DPDK实体书递进](./13-dpdk/01-Intro-Book/notes/note-DPDK实体书递进.md) | **先读** — 建立旁路认知（配 chapter-01–04） |
+| **② 《Linux 高性能网络详解》** | [15-Advanced-Book/notes/](./13-dpdk/02-Advanced-Book/notes/) | **后读** — DPDK/RDMA/XDP 深度与选型 |
+| **DPDK Sample Applications** | [15-Intro/code/mcast-minimal/](./13-dpdk/01-Intro-Book/code/mcast-minimal/) | 组播最小工程参考 |
+| **OpenOnload / RDMA** | [15-Advanced/note-openonload-rdma对比](./13-dpdk/02-Advanced-Book/notes/note-openonload-rdma对比.md) | 方案对比 |
 | **RDMA 规范** | https://www.infinibandta.org/ | RoCE 部署背景 |
 | **Linux RDMA 文档** | https://www.kernel.org/doc/html/latest/infiniband/ | ibverbs、rdma_cm |
 
-**建议顺序：** `14` Rosen → **① 深入浅出 DPDK** ∥ 官方 doc → **② Linux 高性能网络详解** ∥ RDMA/XDP 笔记。
+**建议顺序：** `12` Rosen → **① 深入浅出 DPDK** ∥ 官方 doc → **② Linux 高性能网络详解** ∥ RDMA/XDP 笔记。
 **触发条件：** `01`/`02` 打底 + perf 确认网络是瓶颈后再开实体书（见 note）。
 
 ---
@@ -324,7 +324,7 @@
 
 > 笔记目录：[projects/P9-os-from-scratch/](./projects/P9-os-from-scratch/)
 
-> **插入位置：** `03` TLPI 之后、`12` PNP 之前。
+> **插入位置：** `03` TLPI 之后、04/M5 PNP 之前。
 
 | 子模块 | 参考 | 标签 | HFT 关联 |
 |--------|------|------|----------|
@@ -335,7 +335,7 @@
 
 ---
 
-## 与 `17-hft-engineering` 章节映射
+## 与 `16-hft-engineering` 章节映射
 
 | 仓库章节 | 主要参考书 | 补充资料 |
 |----------|------------|----------|
@@ -367,12 +367,12 @@ L2  03 用户态 → P9 自制 OS / 04 C++
     ↓
 L3  05 内核 + 06 MM
     ↓
-L4a 07–10 嵌入式（可选） ‖ L4b 12–15 网络 → 16–17 性能 → 18 HFT
+L4a 07–09 嵌入式（可选） ‖ L4b 11–14 网络 → 14–15 性能 → 16 HFT
     ↓
 L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 ```
 
-→ 嵌入式支线详情：[HFT-READING-ROADMAP §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)
+→ 嵌入式支线详情：[HFT-READING-ROADMAP §六](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10)
 
 ---
 
@@ -388,6 +388,6 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 | **07** ARM | Smith · 《ARM64体系结构编程与实践》 | [07-arm-architecture/](./07-arm-architecture/) |
 | **08** 构建 | Primer → MELP | [08-embedded-boot-build/](./08-embedded-boot-build/) |
 | **09** 驱动+DT | Madieu → LDD3（按需） | [09-device-drivers-dt/](./09-device-drivers-dt/) |
-| **11** 运动控制 | PID / Kalman | [11-motion-control/](./11-motion-control/) |
+| **11** 运动控制 | PID / Kalman | [10-motion-control/](./10-motion-control/) |
 
 **可复用 HFT 链：** C · 用户态/内核 · 16–17 性能/BPF · 15 DPDK · 18 HFT 与 **PREEMPT_RT / 绑核**。

@@ -93,5 +93,5 @@ mutex：无优先级继承。高优先级线程等低优先级线程持有的 mu
 </details>
 
 
-> ↔ [ULK Ch5 §6 信号量与完成变量](../../../../19-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-6-信号量与完成变量.md)
+> ↔ [ULK Ch5 §6 信号量与完成变量](../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-6-信号量与完成变量.md)
 ---

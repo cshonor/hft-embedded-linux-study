@@ -36,11 +36,11 @@
 |------|------|
 | [**03.5 UNP**](../../03.5-unix-network-api/) | Stevens Socket API + **完整 unpv13e 源码树**（C） |
 | **M5 PNP（本模块）** | 动手实验笔记（muduo，C++） |
-| [**12 TCP/IP**](../../12-tcpip-protocols/) | 协议笔记（抓包/语义） |
+| [**12 TCP/IP**](../../11-tcpip-protocols/) | 协议笔记（抓包/语义） |
 
 ## 交叉阅读
 
-- [03.5-unix-network-api](../../03.5-unix-network-api/) · [12-tcpip-protocols](../../12-tcpip-protocols/) · [CSAPP Ch11](../../02-computer-systems/chapter-11-network-programming/)
+- [03.5-unix-network-api](../../03.5-unix-network-api/) · [11-tcpip-protocols](../../11-tcpip-protocols/) · [CSAPP Ch11](../../02-computer-systems/chapter-11-network-programming/)
 
 **上一模块：** [03.5 UNP（C 侧）](../../03.5-unix-network-api/) · 本模块属于 [04 C++](../README.md)  
-**下一阶段：** [05 Linux 内核](../../05-linux-kernel/) / [12 TCP/IP 协议](../../12-tcpip-protocols/)
+**下一阶段：** [05 Linux 内核](../../05-linux-kernel/) / [12 TCP/IP 协议](../../11-tcpip-protocols/)

@@ -88,5 +88,5 @@ do {
 </details>
 
 
-> ↔ [ULK Ch5 §5 顺序锁与RCU](../../../../19-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-5-顺序锁与RCU.md)
+> ↔ [ULK Ch5 §5 顺序锁与RCU](../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-5-顺序锁与RCU.md)
 ---

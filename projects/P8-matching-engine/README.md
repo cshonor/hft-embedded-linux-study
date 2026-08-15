@@ -1,7 +1,7 @@
 # P8 — 迷你撮合引擎（终极大作业）
 
 > 实现一个限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写。把前面所有模块的能力收口到一个 HFT 核心组件。
-> **做法：项目驱动，[`18`](../../17-hft-engineering/) / [`21`](../../21-rust-quant/) / [`22`](../../22-markets-microstructure/) 笔记当字典。**
+> **做法：项目驱动，[`18`](../../16-hft-engineering/) / [`21`](../../20-rust-quant/) / [`22`](../../21-markets-microstructure/) 笔记当字典。**
 
 ---
 
@@ -13,12 +13,12 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [HFT ch02 撮合原理](../../17-hft-engineering/chapter-02-交易所架构与撮合原理.md) | 价格优先 + 时间优先 |
-| [HFT ch03 订单簿](../../17-hft-engineering/chapter-03-订单簿深度与行情解析.md) | LOB = 买单簿 + 卖单簿 |
-| [HFT ch07 无锁数据结构](../../17-hft-engineering/chapter-07-无锁数据结构与内存布局.md) | SPSC ring buffer、缓存行对齐 |
-| [HFT ch08 核心引擎](../../17-hft-engineering/chapter-08-超低延迟核心引擎开发.md) | 绑核/大页/mlock |
-| [HFT ch10 延迟测量](../../17-hft-engineering/chapter-10-延迟测量与基准压测.md) | p50/p99/p999 |
-| [Harris 订单类型](../../22-markets-microstructure/) | 限价单/市价单/IOC/FOK |
+| [HFT ch02 撮合原理](../../16-hft-engineering/chapter-02-交易所架构与撮合原理.md) | 价格优先 + 时间优先 |
+| [HFT ch03 订单簿](../../16-hft-engineering/chapter-03-订单簿深度与行情解析.md) | LOB = 买单簿 + 卖单簿 |
+| [HFT ch07 无锁数据结构](../../16-hft-engineering/chapter-07-无锁数据结构与内存布局.md) | SPSC ring buffer、缓存行对齐 |
+| [HFT ch08 核心引擎](../../16-hft-engineering/chapter-08-超低延迟核心引擎开发.md) | 绑核/大页/mlock |
+| [HFT ch10 延迟测量](../../16-hft-engineering/chapter-10-延迟测量与基准压测.md) | p50/p99/p999 |
+| [Harris 订单类型](../../21-markets-microstructure/) | 限价单/市价单/IOC/FOK |
 
 ---
 
@@ -151,9 +151,9 @@ public:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 撮合规则 | [HFT ch02](../../17-hft-engineering/chapter-02-交易所架构与撮合原理.md) |
-| 订单簿结构 | [HFT ch03](../../17-hft-engineering/chapter-03-订单簿深度与行情解析.md) |
-| 订单类型 | [Harris](../../22-markets-microstructure/) |
+| 撮合规则 | [HFT ch02](../../16-hft-engineering/chapter-02-交易所架构与撮合原理.md) |
+| 订单簿结构 | [HFT ch03](../../16-hft-engineering/chapter-03-订单簿深度与行情解析.md) |
+| 订单类型 | [Harris](../../21-markets-microstructure/) |
 
 ---
 
@@ -206,7 +206,7 @@ std::vector<Trade> add_fok_order(Order order) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 订单类型定义 | [Harris](../../22-markets-microstructure/) |
+| 订单类型定义 | [Harris](../../21-markets-microstructure/) |
 
 ---
 
@@ -229,7 +229,7 @@ std::vector<Trade> add_fok_order(Order order) {
 | 卡住了… | 翻这里 |
 |---------|--------|
 | 无锁 ring buffer | P2.5 交付物 3（你写的代码！）|
-| 无锁原理 | [HFT ch07](../../17-hft-engineering/chapter-07-无锁数据结构与内存布局.md) |
+| 无锁原理 | [HFT ch07](../../16-hft-engineering/chapter-07-无锁数据结构与内存布局.md) |
 | memory order | [C++ Concurrency ch05](../../04-cpp/M2-deep-principles/02-Cpp-Concurrency/ch05-memory-model-atomics/) |
 
 ---
@@ -314,9 +314,9 @@ int main() {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 绑核/大页/mlock | [HFT ch05](../../17-hft-engineering/chapter-05-操作系统内核极致调优.md) |
-| 延迟测量 | [HFT ch10](../../17-hft-engineering/chapter-10-延迟测量与基准压测.md) |
-| 内存布局 | [HFT ch07](../../17-hft-engineering/chapter-07-无锁数据结构与内存布局.md) |
+| 绑核/大页/mlock | [HFT ch05](../../16-hft-engineering/chapter-05-操作系统内核极致调优.md) |
+| 延迟测量 | [HFT ch10](../../16-hft-engineering/chapter-10-延迟测量与基准压测.md) |
+| 内存布局 | [HFT ch07](../../16-hft-engineering/chapter-07-无锁数据结构与内存布局.md) |
 
 ---
 
@@ -358,7 +358,7 @@ int main() {
 |---------|--------|
 | perf/火焰图 | P7 Phase 4（你已经做过！）|
 | bpftrace 抖动 | P7 Phase 5（同上）|
-| HFT 调优 | [HFT ch05](../../17-hft-engineering/chapter-05-操作系统内核极致调优.md) |
+| HFT 调优 | [HFT ch05](../../16-hft-engineering/chapter-05-操作系统内核极致调优.md) |
 
 ---
 
@@ -447,9 +447,9 @@ mod ringbuf {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| Rust 基础 | [Rust ch02](../../21-rust-quant/chapter-02-Rust基础与交易工程搭建.md) |
-| Rust 交易引擎 | [Rust ch07](../../21-rust-quant/chapter-07-实盘交易引擎开发.md) |
-| unsafe 边界 | [Rust ch02](../../21-rust-quant/chapter-02-Rust基础与交易工程搭建.md) |
+| Rust 基础 | [Rust ch02](../../20-rust-quant/chapter-02-Rust基础与交易工程搭建.md) |
+| Rust 交易引擎 | [Rust ch07](../../20-rust-quant/chapter-07-实盘交易引擎开发.md) |
+| unsafe 边界 | [Rust ch02](../../20-rust-quant/chapter-02-Rust基础与交易工程搭建.md) |
 
 ---
 
@@ -474,9 +474,9 @@ mod ringbuf {
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`18` hft-engineering](../../17-hft-engineering/) | LOB、撮合、无锁、绑核、HFT 工程全链 |
-| [`21` rust-quant](../../21-rust-quant/) | Rust 所有权、零成本抽象、unsafe 边界 |
-| [`22` markets-microstructure](../../22-markets-microstructure/) | Harris：订单类型、撮合规则、queue priority |
+| [`18` hft-engineering](../../16-hft-engineering/) | LOB、撮合、无锁、绑核、HFT 工程全链 |
+| [`21` rust-quant](../../20-rust-quant/) | Rust 所有权、零成本抽象、unsafe 边界 |
+| [`22` markets-microstructure](../../21-markets-microstructure/) | Harris：订单类型、撮合规则、queue priority |
 
 ## 前置
 
@@ -509,4 +509,4 @@ mod ringbuf {
 
 ⬜ 未开始 → 这是终局项目，前面全部通关后再开始。先从 Phase 1 的 LOB 数据结构开始（纯逻辑，不需要任何特殊环境）。
 
-← [projects 总览](../README.md) · [21 模块](../../17-hft-engineering/) · [22 模块](../../21-rust-quant/)
+← [projects 总览](../README.md) · [21 模块](../../16-hft-engineering/) · [22 模块](../../20-rust-quant/)

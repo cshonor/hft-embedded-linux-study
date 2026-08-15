@@ -103,5 +103,5 @@ NO_HZ（tickless idle）：CPU idle 时停止周期性 tick，省电。nohz_full
 </details>
 
 
-> ↔ [ULK Ch6 §1 本章定位](../../../../19-linux-kernel-deep/chapter-06-timing/notes/section-1-本章定位.md)
+> ↔ [ULK Ch6 §1 本章定位](../../../18-linux-kernel-deep/chapter-06-timing/notes/section-1-本章定位.md)
 ---

@@ -77,5 +77,5 @@ mutex：① 有归属（owner 字段），只有持锁者能 unlock。② 支持
 </details>
 
 
-> ↔ [ULK Ch5 §6 信号量与完成变量](../../../../19-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-6-信号量与完成变量.md)
+> ↔ [ULK Ch5 §6 信号量与完成变量](../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-6-信号量与完成变量.md)
 ---

@@ -71,7 +71,7 @@
 |------|------|
 | **忽略标志** | 多数嵌入式 C 代码 — 默认 |
 | **周期读 FPSCR** | 调试/计量 |
-| **检查 NaN/Inf** | 控制环 **isnan/isinf** — [23 飞控](../../../11-motion-control/) |
+| **检查 NaN/Inf** | 控制环 **isnan/isinf** — [23 飞控](../../../../10-motion-control/) |
 | **启用 trap** | 少见 — 需 OS/ handler 支持 |
 
 ---

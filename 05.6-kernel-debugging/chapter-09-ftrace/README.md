@@ -23,4 +23,4 @@ Ftrace 体系：tracefs 接口、函数追踪 / 函数图追踪、事件追踪�
 
 ## HFT 关联
 
-精读。Ftrace 是 HFT 延迟分析的关键工具链。与 15-systems-performance Ch14 (Ftrace) 互补：本书侧重调试视角，19 侧重性能视角。
+精读。Ftrace 是 HFT 延迟分析的关键工具链。与 14-systems-performance Ch14 (Ftrace) 互补：本书侧重调试视角，19 侧重性能视角。

@@ -59,7 +59,7 @@ Ch8：B.cond / IT / 循环
 | 内核 64 bit `jiffies` | ADC 链 |
 | 驱动 bitfield | UBFX/BFI |
 | [21 驱动](../../../../09-device-drivers-dt/) `readl`+掩码 | 同 TST/BFI 语义 |
-| [23 PID/Kalman](../../../11-motion-control/) | Q 或 float |
+| [23 PID/Kalman](../../../../10-motion-control/) | Q 或 float |
 | HFT 定点 tick | Q 思想 |
 
 ---

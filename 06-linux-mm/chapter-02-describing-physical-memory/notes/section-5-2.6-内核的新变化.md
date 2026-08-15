@@ -28,7 +28,7 @@
 
 2.6 在 **`struct zone`** 中增加 **padding**，使 **`zone->lock`** 与 **`zone->lru_lock`** 等 **高频成对访问的锁** 落在 **不同 cache line** 上。
 
-→ **false sharing / 缓存一致性流量** — 与 [Hennessy Ch2](../18-computer-architecture/chapter-02-memory-hierarchy-design/) · HFT **订单簿/cache line 对齐** 同构。
+→ **false sharing / 缓存一致性流量** — 与 [Hennessy Ch2](../../../17-computer-architecture/chapter-02-memory-hierarchy-design/) · HFT **订单簿/cache line 对齐** 同构。
 
 ---
 

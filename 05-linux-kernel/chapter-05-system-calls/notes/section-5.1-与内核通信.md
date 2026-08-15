@@ -219,7 +219,7 @@ strace -e write,exit ./write_raw_syscall
 
 **HFT：** 热路径倾向 **批量 I/O、`mmap`、用户态轮询/DPDK** — 本质是在 **减少机制调用次数**（少进内核，而不是「少写几个 libc 函数名」）。
 
-→ [03 SysPerf §3.2](../../../../15-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [Ch 1](../../chapter-01-intro/) · 下一节 [§5.2](./section-5.2-系统调用基础.md)
+→ [03 SysPerf §3.2](../../../14-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [Ch 1](../../chapter-01-intro/) · 下一节 [§5.2](./section-5.2-系统调用基础.md)
 
 
 

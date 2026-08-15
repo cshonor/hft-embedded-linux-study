@@ -59,7 +59,7 @@ Ch2/3 → **Ch4 Verilog**（读 IP / FPGA）→ Ch5 模块 → Ch6 ARM(+x86) →
 1. **主力：** [00-Harris ARM](../../../00-digital-logic-cpu/README.md) — 精读 Ch2.8–2.9 / Ch3 / **Ch4 Verilog** / Ch5 / Ch6 / **Ch7.5** / Ch8  
 2. Logisim +（可选）iverilog/ModelSim 练仿真  
 3. 可选 *Code* / [MIT 6.004](https://computationstructures.org)  
-4. 拔高：[Hennessy](../../../18-computer-architecture/)  
+4. 拔高：[Hennessy](../../../17-computer-architecture/)  
 
 > **目录钉死：** Ch5=数字模块，Ch6=ARM 体系结构，Ch7=微结构(流水线)，Ch8=存储器，在线 Ch9=I/O。笔记仓：`00-digital-logic-cpu/`。Ch4 为 FPGA/读厂商 IP 必学（不再跳过）。
 
@@ -83,7 +83,7 @@ Ch2/3 → **Ch4 Verilog**（读 IP / FPGA）→ Ch5 模块 → Ch6 ARM(+x86) →
 |----|------|
 | **《Computer Organization and Design》** Patterson & Hennessy | 数字电路 → 真机流水线/缓存/指令延迟；支撑 HFT 调优直觉 |
 | **《Code》** Charles Petzold | 零公式故事书：开关 → CPU/汇编；硬啃 Harris 前的软铺垫 |
-| **Hennessy《Computer Architecture: A Quantitative Approach》** | 仓库已有笔记：[18-computer-architecture](../../../18-computer-architecture/) — 定量微架构 |
+| **Hennessy《Computer Architecture: A Quantitative Approach》** | 仓库已有笔记：[17-computer-architecture](../../../17-computer-architecture/) — 定量微架构 |
 
 ---
 
@@ -135,7 +135,7 @@ Ch2/3 → **Ch4 Verilog**（读 IP / FPGA）→ Ch5 模块 → Ch6 ARM(+x86) →
 1. 外文主力该啃哪本？ARM / RISC-V 版怎么选？  
 2. 阎石哪一章最对应 §4.2？ — **组合逻辑（MUX/全加器）**  
 3. 6.004 官网？和 CSAPP Ch4 什么关系？  
-4. 学完数字电路下一本体系结构接什么？ — COD → [Hennessy](../../../18-computer-architecture/)  
+4. 学完数字电路下一本体系结构接什么？ — COD → [Hennessy](../../../17-computer-architecture/)  
 
 ---
 

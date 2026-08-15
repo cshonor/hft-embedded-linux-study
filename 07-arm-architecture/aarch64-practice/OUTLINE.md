@@ -10,7 +10,7 @@
 | 标签 | 含义 |
 |------|------|
 | **精读** | 嵌入式 Linux / 飞控支线必看 |
-| **选读** | 与 [19 Hennessy](../../18-computer-architecture/) Ch2 重叠，可后补 |
+| **选读** | 与 [19 Hennessy](../../17-computer-architecture/) Ch2 重叠，可后补 |
 | **跳过** | 首遍可略（SVE 等） |
 
 ---
@@ -40,7 +40,7 @@
 | **19** | 合理使用内存屏障 | **精读** | [ch19](./chapter-19-barrier-usage/) | 驱动/飞控并发 |
 | **20** | 原子操作 | **精读** | [ch20](./chapter-20-atomic-operations/) | `ldxr`/`stxr` |
 | **21** | 操作系统相关话题 | **精读** | [ch21](./chapter-21-os-topics/) | 进 [20](../08-embedded-boot-build/) / [21 驱动](../../09-device-drivers-dt/) |
-| **22** | 浮点与NEON | 选读 | [ch22](./chapter-22-fp-neon/) | 姿态解算可后接 [23](../../11-motion-control/) |
+| **22** | 浮点与NEON | 选读 | [ch22](./chapter-22-fp-neon/) | 姿态解算可后接 [23](../../10-motion-control/) |
 | **23** | 可伸缩矢量计算与优化 | 跳过 | [ch23](./chapter-23-sve-optimization/) | 首遍可略 |
 
 ---

@@ -45,7 +45,7 @@
 |------|------|
 | 本章做了什么？ | **~1ms tick** · 多逻辑定时器 · **APIC 频率校准** · 解析 **RSDP** |
 | 与 02 川合 OS 对照？ | 01 **Day 12 PIT/定时器**；Mikan **APIC + ACPI PM** |
-| 与 Linux / CSAPP 对照？ | `jiffies`/hrtimer 雏形 — [05-linux-kernel](../../../../05-linux-kernel/) · [ULK 定时](../../../../19-linux-kernel-deep/) |
+| 与 Linux / CSAPP 对照？ | `jiffies`/hrtimer 雏形 — [05-linux-kernel](../../../../05-linux-kernel/) · [ULK 定时](../../../../18-linux-kernel-deep/) |
 
 **本章目的：** **时钟中断 + 超时调度** — 为 Ch 13 **抢占式多任务** 奠基。
 

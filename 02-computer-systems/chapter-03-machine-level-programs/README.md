@@ -85,6 +85,6 @@ C 源码
 - 上一章：[../chapter-02-representing-information/](../chapter-02-representing-information/)
 - 下一章：[../chapter-04-processor-architecture/](../chapter-04-processor-architecture/)
 - 优化：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
-- perf 读栈：[16-Systems-Performance Ch 13](../../15-systems-performance/chapter-13-perf/)
+- perf 读栈：[16-Systems-Performance Ch 13](../../14-systems-performance/chapter-13-perf/)
 - MikanOS 实操：[08 MikanOS Ch1 UEFI](../../../projects/P9-os-from-scratch/mikanos/chapter-01-hello-world/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

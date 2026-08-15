@@ -20,4 +20,4 @@
 ## 交叉引用
 
 - `06.5-modern-mm/chapter-07-page-reclaim-mglru/`：DAMON 与 MGLRU 协同
-- `16-bpf-observability/`：eBPF 也可做访问跟踪，DAMON 是内核原生方案
+- `15-bpf-observability/`：eBPF 也可做访问跟踪，DAMON 是内核原生方案

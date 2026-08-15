@@ -37,7 +37,7 @@ Cortex-M4 在 **整数 ALU** 上增加 **SIMD-ish / MAC** 类指令，加速：
 
 | 路径 | 建议 |
 |------|------|
-| **MCU 无 FPU** | Q 格式 + DSP 指令做 PID/滤波（→ §7.7 · [23](../../../11-motion-control/)） |
+| **MCU 无 FPU** | Q 格式 + DSP 指令做 PID/滤波（→ §7.7 · [23](../../../../10-motion-control/)） |
 | **Cortex-A + Linux** | **NEON** / 浮点 in C — 少手写 USADA8 |
 | **HFT** | 定点 rarely；但 **饱和/clamp** 思想同 **risk limit** |
 

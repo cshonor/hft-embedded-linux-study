@@ -9,7 +9,7 @@
 
 | | |
 |---|---|
-| **标签** | **跳过**（嵌入式 Linux / 奔跑吧主线）— **M4F / [23 飞控](../../11-motion-control/)** 路径 **选读** |
+| **标签** | **跳过**（嵌入式 Linux / 奔跑吧主线）— **M4F / [23 飞控](../../../10-motion-control/)** 路径 **选读** |
 | **内容** | **IEEE 754 单精度** · **s0–s31** · **CPACR/FPSCR** · **VLDR/VCVT** |
 | **前置** | [Ch3 §3.6–3.7 FPU 预览](../chapter-03-instruction-sets-v4t-v7m/notes/section-3-6-example-float.md) |
 

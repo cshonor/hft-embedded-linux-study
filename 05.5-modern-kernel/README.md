@@ -3,7 +3,7 @@
 > 定位：**现代Linux内核（5.x / 6.x）内核子系统参考资料**
 > 前置：`05-linux-kernel`（ULK/LKD 2.6时代，只用来建立内核概念框架）
 > 本目录存放现代内核**非内存管理**子系统的资料，弥补旧书过时实现；
-> 学习完本目录材料之后，再进入 `19-linux-kernel-deep` 做源码阅读与实操实验。
+> 学习完本目录材料之后，再进入 `18-linux-kernel-deep` 做源码阅读与实操实验。
 
 ## 资料来源
 
@@ -42,7 +42,7 @@ chapter-XX-topic/
 
 1. `05-linux-kernel`：理解内核需要解决什么问题，**不要照搬旧版代码实现**
 2. `05.5-modern-kernel`：学习5.x~6.x真正的现代内核实现（非MM部分）
-3. `19-linux-kernel-deep`：阅读树莓派内核源码、编写内核模块、调试实验
+3. `18-linux-kernel-deep`：阅读树莓派内核源码、编写内核模块、调试实验
 
 ### ⚠️ 关键警告
 
@@ -65,4 +65,4 @@ ULK、LKD3基于Linux2.6。**设计思想可以借鉴，但大量结构体、函
 | Ch5 系统调用 | [ch12 vDSO](./chapter-12-vdso-debugging/) — vDSO 加速 |
 | Ch18 调试 | [ch12 现代调试](./chapter-12-vdso-debugging/) — eBPF/ftrace/crash |
 
-> **学习路径：** 05 建立 2.6 时代概念框架 → 05.5 补齐 5.x/6.x 现代实现差异 → [19-linux-kernel-deep](../19-linux-kernel-deep/) 源码阅读与实操
+> **学习路径：** 05 建立 2.6 时代概念框架 → 05.5 补齐 5.x/6.x 现代实现差异 → [18-linux-kernel-deep](../18-linux-kernel-deep/) 源码阅读与实操

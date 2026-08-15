@@ -12,7 +12,7 @@
 |---|---|
 | **补什么** | **ARMv8/v9 · A64 64 位指令** · 异常/中断 · **GIC** · **内存管理** |
 | **与 arm32-asm 关系** | [Hohl/Hinds v4T/v7-M](../arm32-asm/) = 汇编思维入门（**讲 A、练 M**）；**本书 = AArch64 / A64 主战场**（Pi5） |
-| **飞控/无人机** | 异常 · GIC · MM · 屏障/原子 — 对接 [21 驱动](../../09-device-drivers-dt/) · [23 飞控](../../11-motion-control/) |
+| **飞控/无人机** | 异常 · GIC · MM · 屏障/原子 — 对接 [21 驱动](../../09-device-drivers-dt/) · [23 飞控](../../10-motion-control/) |
 | **下一步** | [20 U-Boot/构建](../../08-embedded-boot-build/) |
 
 📚 **全书总结** → [BOOK-SUMMARY.md](./BOOK-SUMMARY.md)  
@@ -34,7 +34,7 @@
 | 3–7 | [ch03](./chapter-03-a64-load-store/) … [ch07](./chapter-07-a64-traps/) | **A64 指令集** · 精读 |
 | 8–10 | [ch08](./chapter-08-gnu-assembler/) … [ch10](./chapter-10-gcc-inline-asm/) | 工具链 · 精读 |
 | 11–14 | [ch11](./chapter-11-exception-handling/) … [ch14](./chapter-14-memory-management/) | **异常/GIC/MM** · 精读 |
-| 15–17 | [ch15](./chapter-15-cache-basics/) … [ch17](./chapter-17-tlb-management/) | 缓存/TLB · 选读（可对照 [19 Hennessy](../../18-computer-architecture/)） |
+| 15–17 | [ch15](./chapter-15-cache-basics/) … [ch17](./chapter-17-tlb-management/) | 缓存/TLB · 选读（可对照 [19 Hennessy](../../17-computer-architecture/)） |
 | 18–20 | [ch18](./chapter-18-memory-barriers/) … [ch20](./chapter-20-atomic-operations/) | 屏障/原子 · 精读 |
 | 21 | [chapter-21-os-topics](./chapter-21-os-topics/) | OS 话题 · 精读 |
 | 22–23 | [ch22](./chapter-22-fp-neon/) · [ch23](./chapter-23-sve-optimization/) | NEON/SVE · 选读/跳过 |

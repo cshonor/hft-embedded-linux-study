@@ -53,7 +53,7 @@
 | **硬件** | 任意 M4 | M4F / Cortex-A |
 | **代码** | 手动 shift + SSAT | C `float` |
 | **本书** | §7.7 + §7.5 DSP | Ch9–11 浮点章（可跳过） |
-| **[23 飞控](../../../11-motion-control/)** | 极端 constrained MCU | 常见 **float/double** + Kalman |
+| **[23 飞控](../../../../10-motion-control/)** | 极端 constrained MCU | 常见 **float/double** + Kalman |
 
 **HFT 对照：** 价格 **fixed tick size**（1/10000）≈ 定点 — 与 float 性能权衡同源。
 

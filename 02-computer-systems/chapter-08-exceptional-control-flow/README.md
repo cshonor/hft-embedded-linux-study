@@ -69,5 +69,5 @@
 - 上一章：[../chapter-07-linking/](../chapter-07-linking/)
 - 下一章：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
 - 并发：[../chapter-12-concurrent-programming/](../chapter-12-concurrent-programming/)
-- OS 专章：[16-Systems-Performance Ch 3](../../15-systems-performance/chapter-03-operating-systems/)
+- OS 专章：[16-Systems-Performance Ch 3](../../14-systems-performance/chapter-03-operating-systems/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

@@ -53,4 +53,4 @@ VCVT s0, r0   →  数值 42 → 42.0f
 
 1. **数值转换用 VCVT**；**位模式用 VMOV**。  
 2. **float→int 截断** — 控制环取整时要注意 bias。  
-3. **#fbits 定点 VCVT** — ADC/DAC 与 [23 飞控](../../../11-motion-control/) 接口实用。
+3. **#fbits 定点 VCVT** — ADC/DAC 与 [23 飞控](../../../../10-motion-control/) 接口实用。

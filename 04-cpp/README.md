@@ -68,7 +68,7 @@
 | [02 CSAPP](../02-computer-systems/) Ch12 并发 | → [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) |
 | [02 CSAPP](../02-computer-systems/) Ch6 缓存 | → [2-Cpp-Object-Model](./M2-deep-principles/01-Cpp-Object-Model/) |
 | [M5 PNP / muduo](./M5-cpp-network-programming/) | 前置 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/)；C 侧对照 [03.5 UNP](../03.5-unix-network-api/) |
-| [17 HFT](../17-hft-engineering/) | 前置 Modern + Concurrency + Object Model |
+| [17 HFT](../16-hft-engineering/) | 前置 Modern + Concurrency + Object Model |
 | [01 C](../01-c-language/) | C 数据面；与 C++ **分工不重复** |
 
 ← [README](../README.md) · [READING-LIST](../READING-LIST.md)

@@ -51,7 +51,7 @@
 | 手写 `VADD.F` | 浮点多在 **C/NEON**；内核 `kernel_fpu_begin()` |
 | CPACR 使能 | 用户态 **硬件 FP lazy context** |
 
-飞控姿态：**[23 章](../../../11-motion-control/)** 用 C + libm/NEON 更常见；本程序建立「FPU 存在且需使能」直觉即可。
+飞控姿态：**[23 章](../../../../10-motion-control/)** 用 C + libm/NEON 更常见；本程序建立「FPU 存在且需使能」直觉即可。
 
 ---
 

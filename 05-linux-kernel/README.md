@@ -56,7 +56,7 @@ Ch 4 调度 → Ch 7–8 中断/下半部 → Ch 9–10 同步 → Ch 11 定时�
 ```
 
 选读补上下文：**Ch 3、12、15** · 内存深读 → [06-linux-mm](../06-linux-mm/)
-对照性能观测 → [15-systems-performance](../15-systems-performance/) Ch 3 / 6–10
+对照性能观测 → [14-systems-performance](../14-systems-performance/) Ch 3 / 6–10
 
 完整 HFT 路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
 

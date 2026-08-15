@@ -31,9 +31,9 @@
 |----------|------------|
 | **绑核 / isolcpus** | 飞控关键线程 **CPU 隔离** |
 | **无锁环 / 低延迟 IPC** | 传感器 → 融合 → 控制 **低 jitter 数据路径** |
-| [SysPerf](../../15-systems-performance/) | **量延迟** — 控制环周期 p99 |
-| [DPDK](../../14-dpdk/) 零拷贝思想 | **DMA / 共享内存** 传 IMU/图传 |
-| [HFT](../../17-hft-engineering/) 日志异步 | 黑匣子 / 遥测 **移出热路径** |
+| [SysPerf](../../14-systems-performance/) | **量延迟** — 控制环周期 p99 |
+| [DPDK](../../13-dpdk/) 零拷贝思想 | **DMA / 共享内存** 传 IMU/图传 |
+| [HFT](../../16-hft-engineering/) 日志异步 | 黑匣子 / 遥测 **移出热路径** |
 
 ## 建议实战里程碑
 
@@ -43,7 +43,7 @@
 | 2 | **字符驱动** 读 IMU · 用户态 poll |
 | 3 | **DT** 描述传感器 · 驱动 auto probe |
 | 4 | **多线程** 采集 + 融合 · 绑核 + 延迟统计 |
-| 5 | 按书目完成 **无人机子系统** — 控制环见 [运动控制](../../11-motion-control/) |
+| 5 | 按书目完成 **无人机子系统** — 控制环见 [运动控制](../../10-motion-control/) |
 
 ## 覆盖模块
 
@@ -53,7 +53,7 @@
 | [`08` embedded-boot-build](../../08-embedded-boot-build/) | U-Boot、内核构建、rootfs、device tree blob |
 | [`09` device-drivers-dt](../../09-device-drivers-dt/) | 平台驱动、I2C/SPI 子系统、设备树 overlay |
 | [P5 Labs + P5f](./RASPBERRY-PI5-LABS.md) | 板级动手清单（A→G）· 驱动视频课 · 多线程融合 · 延迟统计 |
-| [`11` motion-control](../../11-motion-control/) | PID、姿态/Kalman、Linux PWM 对接 |
+| [`11` motion-control](../../10-motion-control/) | PID、姿态/Kalman、Linux PWM 对接 |
 
 ## 前置
 

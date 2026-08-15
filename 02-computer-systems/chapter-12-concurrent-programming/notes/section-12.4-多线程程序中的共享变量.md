@@ -1,6 +1,6 @@
 ## 12.4 多线程程序中的共享变量
 
-> ↔ [Hennessy §5.3 伪共享](../../../18-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.3-性能分析与伪共享.md)
+> ↔ [Hennessy §5.3 伪共享](../../../17-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.3-性能分析与伪共享.md)
 
 
 > **Ch12 §12.4** · [章导读](../README.md) · 上节 [§12.3 ←](./section-12.3-基于线程的并发编程.md) · 下节 [§12.5 →](./section-12.5-信号量与预线程化.md)

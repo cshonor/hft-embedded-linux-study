@@ -121,5 +121,5 @@ ULK：全局 irq_desc[] 数组直接索引。现代：① per-CPU `vector_irq[]`
 </details>
 
 
-> ↔ [ULK Ch4 §3 IDT与门描述符](../../../../19-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-3-IDT与门描述符.md)
+> ↔ [ULK Ch4 §3 IDT与门描述符](../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-3-IDT与门描述符.md)
 ---

@@ -32,7 +32,7 @@
 
 - 热路径：**零磁盘**（内存 ring、预分配）
 - 冷路径：批量落盘、单独线程 + 专用核
-- 基准：区分 **memory-bound vs I/O-bound**（→ [16-Systems-Performance Ch 12 基准测试](../../../15-systems-performance/chapter-12-benchmarking/)）
+- 基准：区分 **memory-bound vs I/O-bound**（→ [16-Systems-Performance Ch 12 基准测试](../../../14-systems-performance/chapter-12-benchmarking/)）
 
 → [Ch 6](../../chapter-06-memory-hierarchy/) · [Ch 10 系统级 I/O](../../chapter-10-system-io/)
 

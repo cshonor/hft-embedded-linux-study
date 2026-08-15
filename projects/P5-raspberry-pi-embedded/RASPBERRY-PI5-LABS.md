@@ -91,9 +91,9 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| E1 | TCP 参数调优 + 抓包 | [13](../../12-tcpip-protocols/) · [12](../../04-cpp/M5-cpp-network-programming/) | 会改 sysctl、能讲清延迟来源 |
-| E2 | 用户态高性能收发 + **延迟统计**（p50/p99） | [12](../../04-cpp/M5-cpp-network-programming/) · [18](../../17-hft-engineering/) | 绑核前后对比一组数字 |
-| E3 | ARM 上 DPDK **能编过、跑通基础例程**（旁路思想） | [15](../../14-dpdk/) | 不要求生产级吞吐；知与内核栈分界 |
+| E1 | TCP 参数调优 + 抓包 | [13](../../11-tcpip-protocols/) · [12](../../04-cpp/M5-cpp-network-programming/) | 会改 sysctl、能讲清延迟来源 |
+| E2 | 用户态高性能收发 + **延迟统计**（p50/p99） | [12](../../04-cpp/M5-cpp-network-programming/) · [18](../../16-hft-engineering/) | 绑核前后对比一组数字 |
+| E3 | ARM 上 DPDK **能编过、跑通基础例程**（旁路思想） | [15](../../13-dpdk/) | 不要求生产级吞吐；知与内核栈分界 |
 
 - [ ] E1  
 - [ ] E2  
@@ -103,8 +103,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| F1 | `perf` / `bpftrace` 看热点与内核路径 | [16](../../15-systems-performance/) · [17](../../16-bpf-observability/) | 能解释一张火焰图 |
-| F2 | CPU 亲和 / 中断绑定 / 缓存友好访问 | [16](../../15-systems-performance/) · [18](../../17-hft-engineering/) | 有前后对比数据 |
+| F1 | `perf` / `bpftrace` 看热点与内核路径 | [16](../../14-systems-performance/) · [17](../../15-bpf-observability/) | 能解释一张火焰图 |
+| F2 | CPU 亲和 / 中断绑定 / 缓存友好访问 | [16](../../14-systems-performance/) · [18](../../16-hft-engineering/) | 有前后对比数据 |
 
 - [ ] F1  
 - [ ] F2  
@@ -113,8 +113,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| G1 | 精确时间 / 时间戳校准 | [18](../../17-hft-engineering/) | `clock_gettime` / TSC 类取舍说得清 |
-| G2 | 无锁结构 + 内存池，模拟报文收发 | [18](../../17-hft-engineering/) · [04](../../04-cpp/) | 单测 + 简单压测 |
+| G1 | 精确时间 / 时间戳校准 | [18](../../16-hft-engineering/) | `clock_gettime` / TSC 类取舍说得清 |
+| G2 | 无锁结构 + 内存池，模拟报文收发 | [18](../../16-hft-engineering/) · [04](../../04-cpp/) | 单测 + 简单压测 |
 
 - [ ] G1  
 - [ ] G2  
@@ -181,7 +181,7 @@ A 用户态板上实验
 12–15 网络后再 E；16–17 后 F；21 上 G
 ```
 
-嵌入式支线总览仍见 [HFT-READING-ROADMAP §六](../../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)。
+嵌入式支线总览仍见 [HFT-READING-ROADMAP §六](../../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10)。
 
 ---
 

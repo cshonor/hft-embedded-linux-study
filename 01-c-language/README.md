@@ -86,6 +86,6 @@
 
 | 上游 | 本模块 | 下游 |
 |------|--------|------|
-| [01 CSAPP](../02-computer-systems/) | **指针、内存、GNU-C** | [19 Hennessy](../18-computer-architecture/) → [04–07](../05-linux-kernel/) → [08 MikanOS](../projects/P9-os-from-scratch/mikanos/) |
+| [01 CSAPP](../02-computer-systems/) | **指针、内存、GNU-C** | [19 Hennessy](../17-computer-architecture/) → [04–07](../05-linux-kernel/) → [08 MikanOS](../projects/P9-os-from-scratch/mikanos/) |
 
 **下一步：** 打开 **[01-Primer-K-and-R-C](./01-Primer-K-and-R-C/)**；若已过标准 C，直奔 **[04 · ch06 GNU C](./04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/)** 再进 LKD。

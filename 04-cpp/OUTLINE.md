@@ -11,7 +11,7 @@
 |------|------|
 | **C 先于 C++** | [01 CSAPP](../02-computer-systems/) + [02 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
 | **Modern 先于 muduo** | [10 PNP](./M5-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
-| **并发先于 HFT 引擎** | [17 HFT](../17-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
+| **并发先于 HFT 引擎** | [17 HFT](../16-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
 ---

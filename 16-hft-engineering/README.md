@@ -1,0 +1,60 @@
+# HFT Low-Latency Practice — 交易系统工程实践
+
+**文件夹 16** · [返回总清单](../READING-LIST.md#与-16-hft-engineering-章节映射)
+
+> **前置：** `03` TLPI → `05` LKD → `12`–`15` 网络栈  
+> 全链路 → [README.md](../README.md)
+
+## 与网络板块的分界
+
+| | `12`–`15` 网络技术栈 | 本文件夹（`18`） |
+|---|--------------------------|-----------------|
+| 维度 | PNP、UNP、协议、内核、DPDK | 交易系统整机工程 |
+
+网络能力从 `12`→`15` 获取；本文件夹负责**整合落地**。
+
+---
+
+## 从零构建 HFT：路线图
+
+| 步骤 | 内容 | 章节 |
+|------|------|------|
+| 1 | **架构** Gateway / Book / Strategy / OMS | [Ch1](./chapter-01-高频交易基础与生态.md) · [Ch8](./chapter-08-超低延迟核心引擎开发.md) |
+| 2 | **硬件/OS** 绑核 · BIOS · Hugepage · Bypass | [Ch4 原理](./chapter-04-硬件选型与服务器配置.md) · [Ch5 实操](./chapter-05-操作系统内核极致调优.md) |
+| 3 | **IPC** 无锁 Ring · 内存池 | [Ch7 无锁/内存（原书 Ch6§2–3）](./chapter-07-无锁数据结构与内存布局.md) |
+| 4 | **语言** C++ / Java / Python 混合 | [Ch8](./chapter-08-超低延迟核心引擎开发.md) · [Ch9 Java](./chapter-09-java-jvm-低延迟系统.md) · [Ch14 Python（原书 Ch10）](./chapter-14-python-高性能混合架构.md) |
+| 5 | **网络** 交换机 · TCP/UDP · 包路径 · PTP | [Ch6 动态网络](./chapter-06-低延迟网络与协议优化.md) |
+| 6 | **FPGA / Crypto** ns 级 · 云端共址 | [Ch15（原书 Ch11）](./chapter-15-fpga-与加密货币高频.md) · [Ch4 §4](./chapter-04-硬件选型与服务器配置.md#4-硬件选型速查工程) |
+| 7 | **测量** T2T 分段 · 异步日志 · Bypass 总纲 | [Ch10 日志/测量（原书 Ch7）](./chapter-10-延迟测量与基准压测.md) |
+
+**入门实操：** [Ch1 实战启动建议](./chapter-01-高频交易基础与生态.md#实战启动建议)
+
+---
+
+## 章节（12 章）
+
+| 章 | 笔记 | 状态 |
+|----|------|------|
+| 1 | [chapter-01 基础与生态](./chapter-01-高频交易基础与生态.md) | ✅ 总览 |
+| 2 | [chapter-02 关键组件](./chapter-02-交易所架构与撮合原理.md) | ✅ 要点 |
+| 3 | [chapter-03 交易所动态与 LOB](./chapter-03-订单簿深度与行情解析.md) | ✅ 要点 |
+| 4 | [chapter-04 硬件到 OS](./chapter-04-硬件选型与服务器配置.md) | ✅ 要点 |
+| 5 | [chapter-05 OS 调优 · 上下文切换（原书 Ch6§1）](./chapter-05-操作系统内核极致调优.md) | ✅ 要点 |
+| 6 | [chapter-06 动态网络（原书 Ch5）](./chapter-06-低延迟网络与协议优化.md) | ✅ 要点 |
+| 7 | [chapter-07 无锁与内存池（原书 Ch6§2–3）](./chapter-07-无锁数据结构与内存布局.md) | ✅ 要点 |
+| 8 | [chapter-08 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发.md) | ✅ 要点 |
+| 9 | [chapter-09 Java/JVM 低延迟（原书 Ch9）](./chapter-09-java-jvm-低延迟系统.md) | ✅ 要点 |
+| 10 | [chapter-10 日志与 TTT 测量（原书 Ch7）](./chapter-10-延迟测量与基准压测.md) | ✅ 要点 |
+| 11 | [chapter-11 风控合规](./chapter-11-风控合规与滑点控制.md) | 待补充 |
+| 12 | [chapter-12 实盘运维](./chapter-12-实盘上线与运维进阶.md) | 待补充 |
+| 13 | [chapter-13 做市与套利（本仓库扩展）](./chapter-13-高频做市与套利策略.md) | 待补充 |
+| 14 | [chapter-14 Python 混合架构（原书 Ch10）](./chapter-14-python-高性能混合架构.md) | ✅ 要点 |
+| 15 | [chapter-15 FPGA 与 Crypto（原书 Ch11）](./chapter-15-fpga-与加密货币高频.md) | ✅ 要点 |
+
+---
+
+## 交叉阅读
+
+- [03-linux-userspace-api](../03-linux-userspace-api/) · [12-PNP](../04-cpp/M5-cpp-network-programming/)
+- [15-DPDK](../13-dpdk/) · [21-markets-microstructure](../21-markets-microstructure/)
+- [21-Rust](../20-rust-quant/) · [projects/P9-os-from-scratch](../projects/P9-os-from-scratch/)

@@ -135,5 +135,5 @@ schedule_work(&my_work);
 </details>
 
 
-> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../19-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---
