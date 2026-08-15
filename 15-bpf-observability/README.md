@@ -21,6 +21,7 @@
 ├── bpf-performance-tools/    ← 第二本（工具谱系）
 │   ├── OUTLINE.md               全书目录 + HFT 读/跳标注
 │   ├── BPF-PERFORMANCE-TOOLS-EVAL.md
+│   ├── BPF之巅-中文版.pdf       中文扫描版（858 页，75MB）
 │   ├── chapter-01~18/           章导读 + 分节笔记
 │   ├── appendix-A~E             bpftrace/BCC/指令附录
 │   └── note-XDP与tc-BPF.md      HFT 延伸

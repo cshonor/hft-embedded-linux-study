@@ -1,6 +1,7 @@
 # BPF Performance Tools — 全书目录（18 章 + 附录 A–E）
 
-> **BPF Performance Tools** · Brendan Gregg
+> **BPF Performance Tools** · Brendan Gregg  
+> **本地底本：** [BPF之巅-中文版.pdf](./BPF之巅-中文版.pdf)（孙宇聪等 译，858 页扫描版，75MB）
 
 | 标签 | HFT 读法 |
 |------|----------|
