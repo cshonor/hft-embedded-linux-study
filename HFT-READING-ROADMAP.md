@@ -332,7 +332,7 @@
 | **2** | ***Embedded Linux Primer*** | 启动与系统全貌 | [**11**/primer](./08-embedded-boot-build/primer-system-overview/) |
 | **3** | ***Mastering Embedded Linux Programming*, 3rd** | 构建实操 | [**11**/build](./08-embedded-boot-build/build-toolchain-yocto/) |
 | **4** | ***Linux Device Drivers Development*** — Madieu | 驱动实操 | [**12**](./09-device-drivers-dt/) |
-| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./09-device-drivers-dt/refs/) |
+| **5** | ***Linux Device Drivers*, 3rd** — LDD3 | 原理补课 | [**12**/refs](./09-device-drivers-dt/) |
 
 **13–14 延续：** [13 实战](./10-embedded-projects/) · [11 飞控](./11-motion-control/)  
 **设备树：** 并入 [12](./09-device-drivers-dt/)，不单开号。

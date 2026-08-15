@@ -1,4 +1,4 @@
-﻿# Linux 设备驱动 · 字符 / 平台驱动 · 设备树
+# Linux 设备驱动 · 字符 / 平台驱动 · 设备树
 
 **文件夹 09** · [返回嵌入式支线](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)
 
@@ -14,8 +14,8 @@
 
 | 序 | 书目 | 读什么 | 索引 |
 |----|------|--------|------|
-| **实操主书** | ***Linux Device Drivers Development*** — Madieu | 模块→字符→Platform→**DTS**→I2C/SPI/DMA（成书 4.x） | [OUTLINE](./refs/modern-driver-practice/OUTLINE.md) · [评测](./refs/MADIEU-EVAL.md) |
-| **原理补课** | ***Linux Device Drivers*, 3rd** — LDD3 | 锁/并发/中断/DMA/LDM/PCI·USB（2.6；**无 DTS**） | [OUTLINE](./refs/classic-driver-theory/OUTLINE.md) · [评测](./refs/LDD3-EVAL.md) |
+| **实操主书** | ***Linux Device Drivers Development*** — Madieu | 模块→字符→Platform→**DTS**→I2C/SPI/DMA（成书 4.x） | [OUTLINE](./modern-driver-practice/OUTLINE.md) · [评测](./MADIEU-EVAL.md) |
+| **原理补课** | ***Linux Device Drivers*, 3rd** — LDD3 | 锁/并发/中断/DMA/LDM/PCI·USB（2.6；**无 DTS**） | [OUTLINE](./classic-driver-theory/OUTLINE.md) · [评测](./LDD3-EVAL.md) |
 
 > **读序：** [Primer](../08-embedded-boot-build/primer-system-overview/) → **Madieu 动手** → 卡住锁/DMA/内存时 **回头 LDD3**。  
 > **概念：** 设备树 ≠ UEFI — [DT FAQ](../08-embedded-boot-build/primer-system-overview/chapter-07-bootloaders/7.0-device-tree-vs-uefi.md)；加硬件 DTS/驱动 — [8.0](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md)/[8.1](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.1-dts-driver-relationship.md)。  
@@ -24,9 +24,9 @@
 
 ```
 09-device-drivers-dt/
-├── README.md · refs/（EVAL + OUTLINE）
-├── refs/modern-driver-practice/   ← Madieu · 22 章
-└── refs/classic-driver-theory/           ← LDD3 · 18 章
+├── README.md · LDD3-EVAL.md · MADIEU-EVAL.md
+├── modern-driver-practice/   ← Madieu · 22 章
+└── classic-driver-theory/           ← LDD3 · 18 章
 ```
 
 ---
@@ -64,7 +64,7 @@
 | **3** | [Bindings 索引](https://docs.kernel.org/devicetree/bindings/index.html) | 查外设 `compatible` |
 | **选读** | [Overlay Notes](https://docs.kernel.org/devicetree/overlay-notes.html) | DT overlay |
 
-Madieu Ch6 大纲：[OUTLINE §Ch6](./refs/modern-driver-practice/OUTLINE.md#ch6-the-concept-of-a-device-tree)
+Madieu Ch6 大纲：[OUTLINE §Ch6](./modern-driver-practice/OUTLINE.md#ch6-the-concept-of-a-device-tree)
 
 ---
 

@@ -9,8 +9,8 @@
 |------|-----|------|
 | **A** | *Mastering Embedded Linux Programming*, 3rd（MELP / Simmonds） | [20](./build-toolchain-yocto/) |
 | **B** | *Embedded Linux Primer*, 2nd（Hallinan） | [20/primer-system-overview](./primer-system-overview/) · [OUTLINE](./primer-system-overview/OUTLINE.md) |
-| **C** | *Linux Device Drivers*, 3rd（**LDD3**，2.6） | [21 LDD3 OUTLINE](../09-device-drivers-dt/refs/classic-driver-theory/OUTLINE.md) · [评测](../09-device-drivers-dt/refs/LDD3-EVAL.md) |
-| **D** | *Linux Device Drivers Development*（Madieu，成书 4.x） | [21 OUTLINE](../09-device-drivers-dt/refs/modern-driver-practice/OUTLINE.md) · [评测](../09-device-drivers-dt/refs/MADIEU-EVAL.md) |
+| **C** | *Linux Device Drivers*, 3rd（**LDD3**，2.6） | [21 LDD3 OUTLINE](../09-device-drivers-dt/classic-driver-theory/OUTLINE.md) · [评测](../09-device-drivers-dt/LDD3-EVAL.md) |
+| **D** | *Linux Device Drivers Development*（Madieu，成书 4.x） | [21 OUTLINE](../09-device-drivers-dt/modern-driver-practice/OUTLINE.md) · [评测](../09-device-drivers-dt/MADIEU-EVAL.md) |
 
 ---
 
@@ -48,9 +48,9 @@
 | | |
 |--|--|
 | 定位 | 经典驱动**原理圣经**（scull / 锁 / DMA / LDM / PCI·USB） |
-| 覆盖 | 见 [LDD3 OUTLINE](../09-device-drivers-dt/refs/classic-driver-theory/OUTLINE.md) |
+| 覆盖 | 见 [LDD3 OUTLINE](../09-device-drivers-dt/classic-driver-theory/OUTLINE.md) |
 | 局限 | **无 DTS**、无 I2C/SPI；API 过时 — **思想精读，代码勿抄** |
-| 详评 | [LDD3-EVAL.md](../09-device-drivers-dt/refs/LDD3-EVAL.md) |
+| 详评 | [LDD3-EVAL.md](../09-device-drivers-dt/LDD3-EVAL.md) |
 
 ### D · Linux Device Drivers Development（Madieu · 成书 4.x）
 
@@ -60,7 +60,7 @@
 | 覆盖 | 模块→字符→Platform→**DTS**→I2C/SPI→DMA/锁/`devm`/IIO… |
 | 与 C | 框架思想类似，API 差异大 → **对照学**，不算内容重复 |
 | 与 B | **几乎不重叠**：Primer 搭系统，Madieu 写驱动 |
-| 详评 | [MADIEU-EVAL.md](../09-device-drivers-dt/refs/MADIEU-EVAL.md) |
+| 详评 | [MADIEU-EVAL.md](../09-device-drivers-dt/MADIEU-EVAL.md) |
 
 ---
 
