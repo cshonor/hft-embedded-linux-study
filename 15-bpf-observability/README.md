@@ -85,6 +85,13 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 
 本模块主书为《BPF Performance Tools》（Gregg）。另外两本 O'Reilly eBPF 书的对比与协同读法见 [EBPF-BOOKS-COMPARISON.md](./EBPF-BOOKS-COMPARISON.md)（Learning eBPF 现代入门首选 → 本模块工具谱系 → Linux Observability 观测案例补充）。
 
+### 书籍笔记
+
+| 书 | 笔记 | 定位 |
+|----|------|------|
+| BPF Performance Tools（本模块主书） | [BPF-PERFORMANCE-TOOLS-EVAL.md](./BPF-PERFORMANCE-TOOLS-EVAL.md) | 工具谱系百科，按 OUTLINE 🔴 精读 |
+| Learning eBPF（Liz Rice） | [LEARNING-EBPF-NOTES.md](./LEARNING-EBPF-NOTES.md) | 现代原理补充，libbpf/CO-RE/验证器/程序类型 |
+
 ## 19↔20 联动参考文档
 
 | 文档 | 用途 |
