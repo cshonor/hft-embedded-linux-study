@@ -236,7 +236,7 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 |---------|--------|
 | bpftrace 语法 | [BPF ch04 bcc](../../17-bpf-observability/chapter-04-bcc/notes/) |
 | NAPI 收包路径 | [Rosen ch01](../../14-kernel-networking/chapter-01-introduction/) |
-| 现代 NAPI/XDP | [14.5 modern-net](../../14.5-modern-networking/lwn-articles-summary/) |
+| 现代 NAPI/XDP | [14.5 ch02 NAPI](../../14.5-modern-networking/chapter-02-napi-rx-path/) |
 
 ---
 

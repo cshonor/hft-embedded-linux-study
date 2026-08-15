@@ -11,11 +11,20 @@
 2. LWN.net 深度专题文章，专门修正 Mel Gorman 书的过时算法、数据结构
 3. Bootlin 公开培训讲义（内存管理子系统）
 
-## 内部子目录
+## 章节索引
 
-- `book-ben-shu-notes/`  笨叔卷1读书笔记（内存分配 / 地址空间 / 页缓存 / 页回收）
-- `lwn-articles-summary/`  LWN文章摘要（SLUB / folio / maple tree / MGLRU / memblock / 5级页表 / PSI / DAMON）
-- `bootlin-material/`  Bootlin MM 训练讲义要点 + 实验操作清单
+| 章 | 主题 | 来源 | 目录 |
+|----|------|------|------|
+| 01 | 物理内存管理与 Memblock | Bootlin + LWN | [chapter-01](chapter-01-physical-memory-memblock/) |
+| 02 | SLAB/SLUB 分配器 | Bootlin + LWN | [chapter-02](chapter-02-slab-slub-allocator/) |
+| 03 | vmalloc 与内核内存分配 | Bootlin + 笨叔 | [chapter-03](chapter-03-vmalloc-kernel-alloc/) |
+| 04 | 页表与 TLB | Bootlin + LWN | [chapter-04](chapter-04-page-table-tlb/) |
+| 05 | 虚拟地址空间与 Maple Tree | 笨叔 + LWN | [chapter-05](chapter-05-vm-address-space-maple-tree/) |
+| 06 | 页缓存与 Folio | 笨叔 + Bootlin + LWN | [chapter-06](chapter-06-page-cache-folio/) |
+| 07 | 页回收与 LRU/MGLRU | 笨叔 + Bootlin + LWN | [chapter-07](chapter-07-page-reclaim-mglru/) |
+| 08 | OOM/PSI/zswap | Bootlin + LWN | [chapter-08](chapter-08-oom-psi-zswap/) |
+| 09 | Memory Cgroup 与监控 | Bootlin | [chapter-09](chapter-09-memcg-monitoring/) |
+| 10 | DAMON | Bootlin + LWN | [chapter-10](chapter-10-damon/) |
 
 ## 学习流转顺序
 
@@ -26,6 +35,21 @@
 ### ⚠️ 关键警告
 
 Mel Gorman 的书基于Linux2.4/2.6。**bootmem已删除→memblock、SLAB已移除→SLUB、highmem在ARM64不存在、LRU→MGLRU、page→folio。禁止直接对照源码查找旧API。本目录全部材料用来补齐时代差异。**
+
+### 与 06-linux-mm 的衔接映射
+
+| Mel Gorman 旧主题 | 本书旧章 | 现代 6.x 替代 | 本目录章节 |
+|-------------------|----------|--------------|-----------|
+| bootmem | Ch2 | memblock | ch01 |
+| SLAB | Ch3 | SLUB | ch02 |
+| 非连续内存 | Ch4 | vmalloc（不变） | ch03 |
+| 页表 | Ch4 | 5 级页表 | ch04 |
+| VMA 红黑树 | Ch4 | maple tree | ch05 |
+| page cache | Ch8 | folio | ch06 |
+| LRU 回收 | Ch9/10 | MGLRU | ch07 |
+| OOM | — | OOM + PSI | ch08 |
+| — | — | memcg + 监控 | ch09 |
+| — | — | DAMON | ch10 |
 
 ## 参考索引文件
 
