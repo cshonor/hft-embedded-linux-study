@@ -153,4 +153,4 @@ bpftrace -e '
 - [05.6 ch09 Ftrace 架构与 tracefs](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
 - [05.6 ch09 函数图追踪 function_graph](chapter-09-ftrace/notes/03-function-graph-tracer.md)
 - [05.6 ch09 perf-tools ftrace wrapper](chapter-09-ftrace/notes/07-perf-tools-ftrace.md)
-- [17-bpf-observability](../17-bpf-observability/)
+- [16-bpf-observability](../16-bpf-observability/)

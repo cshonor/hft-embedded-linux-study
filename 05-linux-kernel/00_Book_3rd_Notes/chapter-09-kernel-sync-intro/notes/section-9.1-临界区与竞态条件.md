@@ -62,7 +62,7 @@
 
 **HFT 对照：** 用户态 **无锁队列、原子计数** 与内核 **「临界区必须互斥」** 是同一问题的两层。Tail 延迟常来自 **锁争用** 或 **false sharing（伪共享）** — 两核改同一 cache line 的不同变量。
 
-→ [Ch 9.3](section-9.3-并发的原因.md) 五类并发源 · [Ch 9.2](section-9.2-加锁.md) 加锁 · [Ch 7](../../chapter-07-interrupts/) 中断并发 · [03 SysPerf §5.2 mutex/spin](../../../../16-systems-performance/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
+→ [Ch 9.3](section-9.3-并发的原因.md) 五类并发源 · [Ch 9.2](section-9.2-加锁.md) 加锁 · [Ch 7](../../chapter-07-interrupts/) 中断并发 · [03 SysPerf §5.2 mutex/spin](../../../../15-systems-performance/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
 
 ### 常见陷阱
 
@@ -102,5 +102,5 @@ UP 上没有多 CPU 并行，但有：① 抢占：进程在临界区中被抢�
 </details>
 
 
-> ↔ [ULK Ch5 §1 本章定位](../../../../20-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-1-本章定位.md)
+> ↔ [ULK Ch5 §1 本章定位](../../../../19-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-1-本章定位.md)
 ---

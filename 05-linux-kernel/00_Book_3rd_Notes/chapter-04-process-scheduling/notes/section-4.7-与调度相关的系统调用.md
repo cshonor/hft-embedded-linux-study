@@ -67,7 +67,7 @@ struct sched_param sp = { .sched_priority = 80 };
 sched_setscheduler(0, SCHED_FIFO, &sp);
 ```
 
-→ [07 TLPI](../../../../03-linux-userspace-api/) · [4.6 RT](./section-4.6-实时调度策略.md) · [15 SysPerf](../../../../16-systems-performance/)
+→ [07 TLPI](../../../../03-linux-userspace-api/) · [4.6 RT](./section-4.6-实时调度策略.md) · [15 SysPerf](../../../../15-systems-performance/)
 
 ### 常见陷阱
 
@@ -117,5 +117,5 @@ printf("CPU 2: %d\n", CPU_ISSET(2, &get));  // 1
 </details>
 
 
-> ↔ [ULK Ch7 §6 调度相关系统调用](../../../../20-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md)
+> ↔ [ULK Ch7 §6 调度相关系统调用](../../../../19-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md)
 ---

@@ -64,7 +64,7 @@ IRQ 到达
 
 **HFT：** 收包尖刺不只在 **硬 IRQ** — `mpstat` 看 **`%soft`** 是否飙高；`top` 里 **`ksoftirqd`** 忙说明 softirq 溢出到辅助线程。策略线程与 **IRQ + softirq 同核** 是经典 tail latency 来源。
 
-→ [03 SysPerf §3.2 下半部](../../../../16-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [§1.5 IRQ/softirq 同核](../../../../16-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 7](../../chapter-07-interrupts/) 上半部
+→ [03 SysPerf §3.2 下半部](../../../../15-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md) · [§1.5 IRQ/softirq 同核](../../../../15-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 7](../../chapter-07-interrupts/) 上半部
 
 ### 常见陷阱
 

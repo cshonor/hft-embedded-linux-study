@@ -90,7 +90,7 @@
 
 | 方案 | 说明 |
 |------|------|
-| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`13-tcpip-protocols/`](./13-tcpip-protocols/)、[`03.5-unix-network-api/`](./03.5-unix-network-api/) 做**索引 + HFT 裁剪清单** |
+| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`12-tcpip-protocols/`](./12-tcpip-protocols/)、[`03.5-unix-network-api/`](./03.5-unix-network-api/) 做**索引 + HFT 裁剪清单** |
 | ⚠️ 可选 | 只把「HFT 必读章节」的笔记摘要链过来，不要 duplicate 全书 |
 | ❌ 不推荐 | 整本迁移 — 与 Rosen / CSAPP Ch11 重叠，且双倍维护 |
 
@@ -280,7 +280,7 @@
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
 | [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
 | [07–11 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11) | 07–11 |
-| [12–15 网络](./12-network-sockets/) · [16–17 性能](./16-systems-performance/) · [18 HFT](./18-hft-engineering/) | 12–18 |
+| [12–15 网络](./04.5-network-sockets/) · [16–17 性能](./15-systems-performance/) · [18 HFT](./17-hft-engineering/) | 12–18 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
@@ -369,8 +369,8 @@
 |------|----------|
 | C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
 | 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
-| 性能 / 绑核 / BPF | [19](./16-systems-performance/) · [20](./17-bpf-observability/) · [21](./18-hft-engineering/) |
-| 网络 / 零拷贝思想 | [15](./12-network-sockets/) · [17](./14-kernel-networking/) · [18](./15-dpdk/) |
+| 性能 / 绑核 / BPF | [19](./15-systems-performance/) · [20](./16-bpf-observability/) · [21](./17-hft-engineering/) |
+| 网络 / 零拷贝思想 | [15](./04.5-network-sockets/) · [17](./13-kernel-networking/) · [18](./14-dpdk/) |
 
 ### 岗位定位（支线完成后）
 

@@ -103,5 +103,5 @@
 </details>
 
 
-> ↔ [ULK Ch5 §7 选型与实例](../../../../20-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
+> ↔ [ULK Ch5 §7 选型与实例](../../../../19-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
 ---

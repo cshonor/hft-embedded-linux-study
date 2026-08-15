@@ -106,5 +106,5 @@ CFS 里两类常见触发（详见 [§4.3](./section-4.3-Linux-调度算法.md)�
 </details>
 
 
-> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../20-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
+> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../19-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
 ---

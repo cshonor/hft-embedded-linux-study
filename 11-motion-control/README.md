@@ -83,9 +83,9 @@ PWM / ESC 驱动 ◄────────────────────
 | HFT | 飞控 |
 |-----|------|
 | [05 绑核 / SCHED_FIFO](../05-linux-kernel/) | 控制线程 **isolcpus** |
-| [03 p99 延迟](../16-systems-performance/) | 控制环 **周期 jitter** |
-| [15 无锁环 / 异步日志](../18-hft-engineering/) | 传感器 → 控制 **低延迟路径** |
-| [14 零拷贝思想](../15-dpdk/) | 共享内存传 IMU 批次 |
+| [03 p99 延迟](../15-systems-performance/) | 控制环 **周期 jitter** |
+| [15 无锁环 / 异步日志](../17-hft-engineering/) | 传感器 → 控制 **低延迟路径** |
+| [14 零拷贝思想](../14-dpdk/) | 共享内存传 IMU 批次 |
 
 ---
 

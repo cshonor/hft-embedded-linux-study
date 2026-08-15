@@ -16,7 +16,7 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 
 ## 验收
 
-能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [10 PNP](../../12-network-sockets/)。
+能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [10 PNP](../../04.5-network-sockets/)。
 
 ## 跨模块回读
 

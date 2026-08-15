@@ -565,5 +565,5 @@ nice [-20,19] → static_prio = 120 + nice → 查 sched_prio_to_weight[] 表。
 </details>
 
 
-> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../20-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
+> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../19-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
 ---

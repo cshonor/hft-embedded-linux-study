@@ -61,7 +61,7 @@ RT 优先级 99 可运行？──是──► 跑它（压过一切更低 RT �
 
 **慎用：** 滥用 FIFO = 整机「假死」、RCU 回调饿、磁盘/网络慢路径崩。
 
-→ [07 TLPI Ch 34–37](../../../../03-linux-userspace-api/) · [4.7 syscall](./section-4.7-与调度相关的系统调用.md) · [17 HFT Practice](../../../../18-hft-engineering/)
+→ [07 TLPI Ch 34–37](../../../../03-linux-userspace-api/) · [4.7 syscall](./section-4.7-与调度相关的系统调用.md) · [17 HFT Practice](../../../../17-hft-engineering/)
 
 ### 常见陷阱
 
@@ -111,5 +111,5 @@ mlockall(MCL_CURRENT | MCL_FUTURE);
 </details>
 
 
-> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../20-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
+> ↔ [ULK Ch7 §2 调度策略与抢占](../../../../19-linux-kernel-deep/chapter-07-process-scheduling/notes/section-2-调度策略与抢占.md)
 ---

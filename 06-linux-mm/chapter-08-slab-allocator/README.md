@@ -26,7 +26,7 @@ HFT 用户态 ──► DPDK mempool / 自研 order pool 是同构设计
 
 **HFT 为什么要精读：** 不是要写内核 slab，而是 **订单簿节点、Order 对象、fix message** — **固定大小 + 池化 + 每核缓存 + cache line 对齐**，与 slab 三大目标 **一一对应**。
 
-→ 交叉：[Hennessy Ch2 cache line](../19-computer-architecture/chapter-02-memory-hierarchy-design/) · [15-DPDK mempool](../15-dpdk/01-Intro-Book/notes/chapter-01-DPDK架构与EAL/)
+→ 交叉：[Hennessy Ch2 cache line](../18-computer-architecture/chapter-02-memory-hierarchy-design/) · [15-DPDK mempool](../14-dpdk/01-Intro-Book/notes/chapter-01-DPDK架构与EAL/)
 
 ---
 

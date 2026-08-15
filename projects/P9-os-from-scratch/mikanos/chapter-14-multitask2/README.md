@@ -45,7 +45,7 @@
 |------|------|
 | 本章做了什么？ | **优先级 + 事件驱动 Sleep/Wakeup** · 消除 Ch13 鼠标卡 |
 | 与 02 川合 OS 对照？ | 01 **Day 16** 休眠/优先级；Mikan **4 级队列 + Idle** |
-| 与 Linux / CSAPP 对照？ | runqueue / **SCHED** 雏形 — [ULK 调度](../../../../20-linux-kernel-deep/chapter-07-process-scheduling.md) |
+| 与 Linux / CSAPP 对照？ | runqueue / **SCHED** 雏形 — [ULK 调度](../../../../19-linux-kernel-deep/chapter-07-process-scheduling.md) |
 
 **模型：** **基于优先级的事件驱动多任务调度**
 

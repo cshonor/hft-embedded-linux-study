@@ -46,7 +46,7 @@
 |------|------|
 | 本章做了什么？ | **IDT + MSI** · ISR **入队** · 主循环 **出队绘图** |
 | 与 02 川合 OS 对照？ | 01 **Day 9–11 PIC/IDT**；Mikan 加 **MSI + FIFO 事件环** |
-| 与 Linux / CSAPP 对照？ | 顶半部/底半部雏形 — [05-linux-kernel 中断](../../../../05-linux-kernel/) · [ULK](../../../../20-linux-kernel-deep/) |
+| 与 Linux / CSAPP 对照？ | 顶半部/底半部雏形 — [05-linux-kernel 中断](../../../../05-linux-kernel/) · [ULK](../../../../19-linux-kernel-deep/) |
 
 **本章目的：** **被动唤醒 + 异步队列** — 为 Ch 11 **定时器**、Ch 13 **多任务** 打地基。
 

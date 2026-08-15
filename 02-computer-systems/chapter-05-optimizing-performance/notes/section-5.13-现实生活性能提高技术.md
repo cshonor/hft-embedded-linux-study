@@ -10,7 +10,7 @@
 | 源码 | 本章 5.4–5.12 |
 | 编译 | `-O3`、`-march=native`、PGO、LTO |
 | 并行 | 多线程、绑核、无锁（→ [Ch 12](../../chapter-12-concurrent-programming/)） |
-| 系统 | hugepage、NUMA、隔离核（→ [18-HFT](../../../18-hft-engineering/)） |
+| 系统 | hugepage、NUMA、隔离核（→ [18-HFT](../../../17-hft-engineering/)） |
 
 **顺序：** 先正确 + profile，再小步改；每次改 **测一遍**。
 

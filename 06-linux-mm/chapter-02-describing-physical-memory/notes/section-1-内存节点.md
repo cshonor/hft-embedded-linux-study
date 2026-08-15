@@ -24,6 +24,6 @@ VM 子系统把 **每个内存组** 称为一个 **节点 (Node)**。
 
 **节点是物理内存的顶层容器** — 其下再划 Zone，再落到 `struct page`。
 
-→ HFT：**`numactl --membind` / `mbind()`** 就是在 **指定 Node 上分配** — 跨 node 访问 = 额外延迟与带宽争用（→ [16-Systems-Performance Ch7](../16-systems-performance/chapter-07-memory/) · Hennessy 内存层次）。
+→ HFT：**`numactl --membind` / `mbind()`** 就是在 **指定 Node 上分配** — 跨 node 访问 = 额外延迟与带宽争用（→ [16-Systems-Performance Ch7](../15-systems-performance/chapter-07-memory/) · Hennessy 内存层次）。
 
 ---

@@ -98,5 +98,5 @@ Spinlock 假设等待者会忙等（spin）。如果持锁者睡眠（schedule()
 </details>
 
 
-> ↔ [ULK Ch5 §4 自旋锁](../../../../20-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-4-自旋锁.md)
+> ↔ [ULK Ch5 §4 自旋锁](../../../../19-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-4-自旋锁.md)
 ---

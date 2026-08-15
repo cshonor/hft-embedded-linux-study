@@ -40,7 +40,7 @@
 
 **书中实现：** 封装 `WritePciConfigAddress` / `ReadPciConfig*` — 内核 **汇编或内联** 访问。
 
-→ [CSAPP Ch3 控制](../../../../../02-computer-systems/chapter-03-machine-level-programs/) · [02 PCIe 章节](../../../../../19-computer-architecture/)
+→ [CSAPP Ch3 控制](../../../../../02-computer-systems/chapter-03-machine-level-programs/) · [02 PCIe 章节](../../../../../18-computer-architecture/)
 
 ---
 

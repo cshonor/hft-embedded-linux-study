@@ -73,4 +73,4 @@ Ch 1（选读 · 源码阅读路线）→ Ch 2 → Ch 3 (+ THP) → Ch 8 → Ch 
 
 - 内核概述 → [05-LKD](../05-linux-kernel/00_Book_3rd_Notes/)
 - 程序员落地 → [02-CSAPP Ch6/Ch9](../02-computer-systems/)
-- DPDK 大页 → [15-DPDK](../15-dpdk/)
+- DPDK 大页 → [15-DPDK](../14-dpdk/)

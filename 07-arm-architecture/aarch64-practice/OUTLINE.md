@@ -10,7 +10,7 @@
 | 标签 | 含义 |
 |------|------|
 | **精读** | 嵌入式 Linux / 飞控支线必看 |
-| **选读** | 与 [19 Hennessy](../../19-computer-architecture/) Ch2 重叠，可后补 |
+| **选读** | 与 [19 Hennessy](../../18-computer-architecture/) Ch2 重叠，可后补 |
 | **跳过** | 首遍可略（SVE 等） |
 
 ---

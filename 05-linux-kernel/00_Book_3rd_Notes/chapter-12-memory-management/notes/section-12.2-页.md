@@ -50,7 +50,7 @@
 → [06 Gorman Ch2 页框](../../../../06-linux-mm/chapter-02-describing-physical-memory/notes/section-3-物理页框.md) · [Ch 15 用户页表映射](../../chapter-15-process-address-space/)
 
 
-> ↔ [ULK Ch8 §2 页框管理](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-2-页框管理.md)
+> ↔ [ULK Ch8 §2 页框管理](../../../../19-linux-kernel-deep/chapter-08-memory-management/notes/section-2-页框管理.md)
 
 
 <details>

@@ -11,7 +11,7 @@ OS 在 **应用程序与硬件之间** 提供统一抽象，防止进程互相�
 **HFT：**
 
 - 热路径进程 **固定 CPU affinity**，减少迁移与 cache 冷启动
-- 与 housekeeping（日志、监控）**分进程/分核**（→ [18-HFT ch05](../../../18-hft-engineering/chapter-05-操作系统内核极致调优/)）
+- 与 housekeeping（日志、监控）**分进程/分核**（→ [18-HFT ch05](../../../17-hft-engineering/chapter-05-操作系统内核极致调优/)）
 
 ### 1.7.2 线程 (Threads)
 
@@ -87,7 +87,7 @@ CPU 看 VA → MMU(+页表/TLB) → PA → L1/L2/LLC → DRAM（或再经 OS 从
 - 行情/订单：**socket 也是文件描述符** — `epoll` 等多路复用（→ [Ch 10–11](../../chapter-10-system-io/)、[12-UNP](../../../03.5-unix-network-api/)）
 - 配置文件：启动时读一次，不在热路径 `open`
 
-→ OS 专章：[16-Systems-Performance Ch 3](../../../16-systems-performance/chapter-03-operating-systems/)
+→ OS 专章：[16-Systems-Performance Ch 3](../../../15-systems-performance/chapter-03-operating-systems/)
 
 ### 自测题
 

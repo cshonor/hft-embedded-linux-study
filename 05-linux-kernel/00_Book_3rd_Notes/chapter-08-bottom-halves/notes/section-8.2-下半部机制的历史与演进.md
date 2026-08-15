@@ -75,7 +75,7 @@ Linux 下半部机制经历 **多次重写** — 理解历史可避免在读旧�
 
 **HFT：** 现代网络栈 **几乎全在 softirq** — 调优文档里的「下半部」多半指 **NET_RX/TX softirq**，不是 tasklet。旧 BH 只需 **知道已死** 即可。
 
-→ [Ch 8.3](section-8.3-软中断.md) softirq · [Ch 8.4](section-8.4-tasklet.md) tasklet · [Ch 8.5](section-8.5-工作队列.md) workqueue · [12 Rosen Ch14 NAPI](../../14-kernel-networking/chapter-14-advanced-topics/)
+→ [Ch 8.3](section-8.3-软中断.md) softirq · [Ch 8.4](section-8.4-tasklet.md) tasklet · [Ch 8.5](section-8.5-工作队列.md) workqueue · [12 Rosen Ch14 NAPI](../../13-kernel-networking/chapter-14-advanced-topics/)
 
 ### 常见陷阱
 

@@ -20,7 +20,7 @@ chapter-XX-english-slug/
 
 每章 `README.md` 含 **小节笔记索引表**；正文在 `notes/section-*.md`。
 
-**全书 20 章笔记 ✓**（2025 迁移为与 [16-Systems-Performance](../../16-systems-performance/) 同构目录）
+**全书 20 章笔记 ✓**（2025 迁移为与 [16-Systems-Performance](../../15-systems-performance/) 同构目录）
 
 ---
 
@@ -59,4 +59,4 @@ Ch 4 → Ch 7–8 → Ch 9–10 → Ch 11
 
 选读补上下文：**Ch 3、12、15** · 内存深读 → [06-linux-mm](../../06-linux-mm/)
 
-对照性能观测 → [16-systems-performance](../../16-systems-performance/) Ch 3 / 6–10
+对照性能观测 → [15-systems-performance](../../15-systems-performance/) Ch 3 / 6–10

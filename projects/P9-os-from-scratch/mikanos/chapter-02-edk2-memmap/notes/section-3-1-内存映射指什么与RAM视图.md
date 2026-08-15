@@ -56,7 +56,7 @@
 | **字节寻址** | 最小可寻址单位 = **1 字节**（8 bit） |
 | **容量** | 由硬件安装条数决定 — OS 需 **探测** 实际布局 |
 
-→ [CSAPP Ch6 存储器层次](../../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [Hennessy Ch2 内存](../../../../../19-computer-architecture/chapter-02-memory-hierarchy-design/)
+→ [CSAPP Ch6 存储器层次](../../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [Hennessy Ch2 内存](../../../../../18-computer-architecture/chapter-02-memory-hierarchy-design/)
 
 ---
 

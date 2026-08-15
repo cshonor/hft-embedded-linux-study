@@ -37,8 +37,8 @@
 |----------|------------|
 | 用户态 `epoll`/`mmap` | 内核 **poll/wait_queue** · **remap_pfn_range**（LDD3 Ch6/15） |
 | 无锁 / spinlock 概念 | 内核 **spinlock_t** · 中断上下文（LDD3 Ch5） |
-| [13 内核网络](../14-kernel-networking/) | 网卡驱动（LDD3 Ch17 / Madieu Ch22） |
-| [14 DPDK](../15-dpdk/) | UIO/VFIO **旁路** vs 内核驱动 **标准路径** |
+| [13 内核网络](../13-kernel-networking/) | 网卡驱动（LDD3 Ch17 / Madieu Ch22） |
+| [14 DPDK](../14-dpdk/) | UIO/VFIO **旁路** vs 内核驱动 **标准路径** |
 
 **HFT 退路：** 工业网关 / 飞控 **传感器 SPI/I2C/UART** — Madieu 主线。
 

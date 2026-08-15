@@ -14,7 +14,7 @@
 | **isolcpus / taskset** | 飞控线程 **独占核** — [05 LKD](../../05-linux-kernel/) |
 | **SCHED_FIFO** | RT 调度策略 — 用户态飞控线程 |
 | **PREEMPT_RT 补丁** | 内核可抢占 — 降低内核延迟 |
-| **cyclictest / perf** | 验证 **周期 jitter p99** — [03 SysPerf](../../16-systems-performance/) |
+| **cyclictest / perf** | 验证 **周期 jitter p99** — [03 SysPerf](../../15-systems-performance/) |
 
 ## 与 HFT 对照
 
@@ -31,4 +31,4 @@
 - [ ] `cyclictest` 在目标板上给出可接受 **max latency**  
 - [ ] 飞控环 **overrun** 可日志 + 统计（异步，不阻塞控制）
 
-→ [22 无人机实战](../../10-embedded-projects/) · [16 HFT 测量](../../18-hft-engineering/chapter-10-延迟测量与基准压测.md)
+→ [22 无人机实战](../../10-embedded-projects/) · [16 HFT 测量](../../17-hft-engineering/chapter-10-延迟测量与基准压测.md)

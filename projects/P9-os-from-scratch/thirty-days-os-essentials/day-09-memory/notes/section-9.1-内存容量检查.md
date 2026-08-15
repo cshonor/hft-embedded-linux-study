@@ -25,7 +25,7 @@
 
 **做法：** 测前改 **`CR0`** 相关位 → **暂时禁用 CPU Cache**，测完再恢复。
 
-→ 对照 [02-CSAPP Ch6 存储层次](../../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Cache](../../19-computer-architecture/)
+→ 对照 [02-CSAPP Ch6 存储层次](../../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Cache](../../18-computer-architecture/)
 
 **HFT：** **mmap 大页、NUMA 本地内存、禁止 false sharing** — 都要知道 **CPU 看到的地址 ≠ 每次访问都落 DRAM**。
 

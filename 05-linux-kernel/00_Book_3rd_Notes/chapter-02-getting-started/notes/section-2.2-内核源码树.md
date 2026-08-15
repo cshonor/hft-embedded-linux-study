@@ -56,7 +56,7 @@ arch/<arch>/  ·  drivers/  ← 架构细节 / 某硬件
 | 块 I/O | **Ch 14** | [../chapter-14-block-io/](../chapter-14-block-io/) |
 | 页缓存 | **Ch 16** | [../chapter-16-page-cache/](../chapter-16-page-cache/) |
 | 设备/模块 | **Ch 17** | [../chapter-17-devices-modules/](../chapter-17-devices-modules/) |
-| **`net/`** | 书内浅 | → [13 Rosen](../../../../14-kernel-networking/) |
+| **`net/`** | 书内浅 | → [13 Rosen](../../../../13-kernel-networking/) |
 | **`mm/`** 深挖 | Gorman | → [06 Gorman](../../../../06-linux-mm/) |
 
 #### 源码版本与放置

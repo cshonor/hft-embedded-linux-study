@@ -23,7 +23,7 @@ sys_read() ──► VFS（统一语义）
 
 **HFT：** 热路径 **`read`/`write`/`mmap`/`send`** 都经 VFS 或并行子系统；排障可分层：**syscall → VFS → 具体 FS/协议栈**。
 
-→ [03 SysPerf Ch8 VFS 追踪](../../../../16-systems-performance/chapter-08-file-systems/notes/section-8.4-文件系统架构与特性.md)
+→ [03 SysPerf Ch8 VFS 追踪](../../../../15-systems-performance/chapter-08-file-systems/notes/section-8.4-文件系统架构与特性.md)
 
 
 

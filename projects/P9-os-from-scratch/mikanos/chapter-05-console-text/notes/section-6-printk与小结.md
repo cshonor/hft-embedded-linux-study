@@ -34,7 +34,7 @@ void printk(const char* fmt, ...) {
 
 **注意：** 内核早期 **非线程安全** — 单核调试期可接受；多任务后需锁（Ch 13+）。
 
-→ 对照 [05-linux-kernel 内核 printk 概念](../../../../../05-linux-kernel/) · [ULK 日志](../../../../../20-linux-kernel-deep/)
+→ 对照 [05-linux-kernel 内核 printk 概念](../../../../../05-linux-kernel/) · [ULK 日志](../../../../../19-linux-kernel-deep/)
 
 ---
 

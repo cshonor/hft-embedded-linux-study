@@ -10,8 +10,8 @@
 | 原则 | 说明 |
 |------|------|
 | **C 先于 C++** | [01 CSAPP](../02-computer-systems/) + [02 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
-| **Modern 先于 muduo** | [10 PNP](../12-network-sockets/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
-| **并发先于 HFT 引擎** | [17 HFT](../18-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
+| **Modern 先于 muduo** | [10 PNP](../04.5-network-sockets/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
+| **并发先于 HFT 引擎** | [17 HFT](../17-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
 ---
@@ -36,7 +36,7 @@
 
 **必会：** RAII、智能指针、`move`/完美转发、lambda、`=delete`/`=default`、`constexpr` 直觉。
 
-**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [10 PNP](../12-network-sockets/)。
+**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [10 PNP](../04.5-network-sockets/)。
 
 ---
 

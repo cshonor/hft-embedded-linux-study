@@ -106,5 +106,5 @@ hrtimer 回调在 hard IRQ 或 softirq 上下文执行，无 task_struct、不�
 </details>
 
 
-> ↔ [ULK Ch6 §5 软件定时器与延迟函数](../../../../20-linux-kernel-deep/chapter-06-timing/notes/section-5-软件定时器与延迟函数.md)
+> ↔ [ULK Ch6 §5 软件定时器与延迟函数](../../../../19-linux-kernel-deep/chapter-06-timing/notes/section-5-软件定时器与延迟函数.md)
 ---

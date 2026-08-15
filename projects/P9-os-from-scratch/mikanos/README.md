@@ -63,7 +63,7 @@ C 扎实 + CSAPP 机器码/缓存
 
 ## 目录结构
 
-与 [02 30 天 OS 精华](../thirty-days-os-essentials/) · [16-Systems-Performance](../../../16-systems-performance/) 一致：每章独立目录，导读 + 分段笔记。
+与 [02 30 天 OS 精华](../thirty-days-os-essentials/) · [16-Systems-Performance](../../../15-systems-performance/) 一致：每章独立目录，导读 + 分段笔记。
 
 ```
 chapter-XX-slug/

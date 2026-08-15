@@ -4,7 +4,7 @@
 
 > **文件夹 02** · 知其所以然 — 程序如何在硬件上跑。  
 > **机器级默认架构：** **x86-64 + Linux System V + AT&T gas**（Ch3 起）；**HFT 只练 AT&T，不学 Intel 语法**。Ch4 **Y86-64** 仅为流水线教学子集。ARM 对照 → [07-ARM64](../07-arm-architecture/)。
-> **下一本：** [16-Systems-Performance](../16-systems-performance/) → [17-BPF](../17-bpf-observability/) → [18-HFT](../18-hft-engineering/) / [21-Rust](../21-rust-quant/)  
+> **下一本：** [16-Systems-Performance](../15-systems-performance/) → [17-BPF](../16-bpf-observability/) → [18-HFT](../17-hft-engineering/) / [21-Rust](../21-rust-quant/)  
 > 全链路 → [README.md](../README.md)
 
 📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
@@ -70,7 +70,7 @@ Hennessy Ch2（理论）→ CSAPP Ch6（落地）
 Ch 10–11 网络 / epoll
 ```
 
-→ 读完地基再读 [16-Systems-Performance](../16-systems-performance/) · Hennessy 理论 → [19-computer-architecture](../19-computer-architecture/)
+→ 读完地基再读 [16-Systems-Performance](../15-systems-performance/) · Hennessy 理论 → [18-computer-architecture](../18-computer-architecture/)
 
 ---
 
@@ -89,7 +89,7 @@ ARM64 汇编（07）         CSAPP Ch3（02）           HFT 平台深水区（1
 |------|--------|--------|
 | **1. ARM64 先行**（[07](../07-arm-architecture/)） | 学透 AArch64 汇编 | 最干净的现代 ISA：定长编码、规整寄存器、无历史包袱，适合做第一门汇编 |
 | **2. CSAPP Ch3**（本模块） | x86-64 汇编读写 | 已有 ARM64 底子，概念全一样（寄存器/条件码/调用约定/栈帧），只是语法和编码不同 |
-| **3. HFT 平台特性**（[15](../15-dpdk/)–[19](../19-computer-architecture/)） | x86 平台性能优化 | 真正花时间的不是汇编语法，而是 cache 层次/TLB/NUMA/RDTSC/pipeline stall |
+| **3. HFT 平台特性**（[15](../14-dpdk/)–[19](../18-computer-architecture/)） | x86 平台性能优化 | 真正花时间的不是汇编语法，而是 cache 层次/TLB/NUMA/RDTSC/pipeline stall |
 
 **不单独学 x86 汇编书的理由：**
 

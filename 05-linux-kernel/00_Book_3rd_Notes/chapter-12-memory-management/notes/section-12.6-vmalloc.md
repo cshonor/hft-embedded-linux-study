@@ -63,7 +63,7 @@ vmalloc 路径:
 → [06 Gorman Ch7 非连续分配](../../../../06-linux-mm/chapter-07-noncontiguous-memory-allocation/) · [Ch 15 mmap 用户视角](../../chapter-15-process-address-space/) · [01 CSAPP Ch9](../../../../02-computer-systems/chapter-09-virtual-memory/)
 
 
-> ↔ [ULK Ch8 §4 非连续内存与vmalloc](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-4-非连续内存与vmalloc.md)
+> ↔ [ULK Ch8 §4 非连续内存与vmalloc](../../../../19-linux-kernel-deep/chapter-08-memory-management/notes/section-4-非连续内存与vmalloc.md)
 
 
 <details>

@@ -80,7 +80,7 @@ raise_softirq(NET_RX_SOFTIRQ);
 
 **HFT：** 行情 ** multicast / 逐笔 flood** 时，`perf top` 常见 **`net_rx_action`**。调优：**中断合并**、**NAPI weight**、**RPS Spread**、**XPS**、或 **内核旁路（DPDK/AFP）**。`mpstat` 的 **`%soft`** 与 **`%irq`** 分开看。
 
-→ [Ch 8.6](section-8.6-ksoftirqd-辅助线程.md) ksoftirqd · [Ch 8.4](section-8.4-tasklet.md) tasklet 对比 · [12 Rosen Ch14 NAPI/softirq](../../14-kernel-networking/chapter-14-advanced-topics/)
+→ [Ch 8.6](section-8.6-ksoftirqd-辅助线程.md) ksoftirqd · [Ch 8.4](section-8.4-tasklet.md) tasklet 对比 · [12 Rosen Ch14 NAPI/softirq](../../13-kernel-networking/chapter-14-advanced-topics/)
 
 ### 常见陷阱
 
@@ -120,5 +120,5 @@ HI_SOFTIRQ：高优先级 softirq（tasklet_hi 用）。TIMER_SOFTIRQ：定时�
 </details>
 
 
-> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../20-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../19-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

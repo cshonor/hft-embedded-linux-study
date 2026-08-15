@@ -60,7 +60,7 @@
 | 4 | **测失败路径** — `GFP_ATOMIC` 耗尽时 **丢包 vs 延迟尖刺** |
 | 5 | 用户态 **mlock + hugepage** 与内核 **CMA/reserve** 对称规划 |
 
-→ [Ch 12 各节](./section-12.1-为何内核内存更复杂.md) · [06 Gorman 全书索引](../../../../06-linux-mm/) · [Ch 15 用户 mmap](../../chapter-15-process-address-space/) · [17 HFT Practice](../../../../18-hft-engineering/)
+→ [Ch 12 各节](./section-12.1-为何内核内存更复杂.md) · [06 Gorman 全书索引](../../../../06-linux-mm/) · [Ch 15 用户 mmap](../../chapter-15-process-address-space/) · [17 HFT Practice](../../../../17-hft-engineering/)
 
 
 

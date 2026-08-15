@@ -6,18 +6,18 @@
 >
 > **前置：**
 > - [05-linux-kernel](../05-linux-kernel/)（LKD，内核概念框架）
-> - [20-linux-kernel-deep](../20-linux-kernel-deep/)（ULK3，内核深度原理）
+> - [19-linux-kernel-deep](../19-linux-kernel-deep/)（ULK3，内核深度原理）
 > - [05.5-modern-kernel](../05.5-modern-kernel/)（现代 5.x/6.x 内核资料，修正旧书过时内容）
 > - C 语言 + 内核模块开发基础
 >
 > **后续：**
 > - [06-linux-mm](../06-linux-mm/)（内存管理子系统，调试 MM 问题时回来查）
-> - [16-systems-performance](../16-systems-performance/)（性能分析，从"正确性"转向"性能"）
-> - [17-bpf-observability](../17-bpf-observability/)（eBPF 动态追踪，从"调试"转向"可观测"）
+> - [15-systems-performance](../15-systems-performance/)（性能分析，从"正确性"转向"性能"）
+> - [16-bpf-observability](../16-bpf-observability/)（eBPF 动态追踪，从"调试"转向"可观测"）
 
 ---
 
-## ⚠️ 与 16-systems-performance / 17-bpf-observability 的边界
+## ⚠️ 与 15-systems-performance / 16-bpf-observability 的边界
 
 | 维度 | 本书 (08.6) | 性能之巅 (19) | BPF之巅 (20) |
 |------|-------------|---------------|--------------|
@@ -95,7 +95,7 @@ chapter-XX-english-slug/
 └── notes/         ← 按原书小节拆分的笔记
 ```
 
-与 [05-linux-kernel](../05-linux-kernel/) · [20-linux-kernel-deep](../20-linux-kernel-deep/) · [16-systems-performance](../16-systems-performance/) · [17-bpf-observability](../17-bpf-observability/) 同一套约定。
+与 [05-linux-kernel](../05-linux-kernel/) · [19-linux-kernel-deep](../19-linux-kernel-deep/) · [15-systems-performance](../15-systems-performance/) · [16-bpf-observability](../16-bpf-observability/) 同一套约定。
 
 ---
 

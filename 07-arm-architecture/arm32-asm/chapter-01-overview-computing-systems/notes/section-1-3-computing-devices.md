@@ -33,7 +33,7 @@
 ```
 物理层     晶体管 → 逻辑门
            ↓
-微架构     流水线、缓存、分支预测（[19 Hennessy](../../../../19-computer-architecture/) Ch2）
+微架构     流水线、缓存、分支预测（[19 Hennessy](../../../../18-computer-architecture/) Ch2）
            ↓
 ISA        指令集架构 ← 【汇编程序员工作在这一层】
            ↓

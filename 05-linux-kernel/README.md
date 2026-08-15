@@ -35,7 +35,7 @@ P3.5 BusyBox 极简 Linux（编译内核 + rootfs + 启动链实操）
 Ch 4 调度 → Ch 7–8 中断/下半部 → Ch 9–10 同步 → Ch 11 定时器
 ```
 
-内存深读 → [06-Gorman](../06-linux-mm/) · 网络栈 → [14-Rosen](../14-kernel-networking/)
+内存深读 → [06-Gorman](../06-linux-mm/) · 网络栈 → [14-Rosen](../13-kernel-networking/)
 
 完整 HFT 路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
 

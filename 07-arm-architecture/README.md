@@ -85,7 +85,7 @@ Smith Ch2–8、13、16、18（可选/压缩，在 arm32-asm/）
 |------|------------|
 | **[02 C](../01-c-language/)** | 汇编与 C 互调、指针/MMIO |
 | [01 CSAPP](../02-computer-systems/) x86-64 | **对照学** cache、调用约定 |
-| [19 Hennessy](../19-computer-architecture/) Ch2 | MESI — ARM 同样适用 |
+| [19 Hennessy](../18-computer-architecture/) Ch2 | MESI — ARM 同样适用 |
 | [08 MikanOS](../projects/P9-os-from-scratch/mikanos/) | UEFI/x86 启动链 — 与 ARM **概念平行** |
 
 ---

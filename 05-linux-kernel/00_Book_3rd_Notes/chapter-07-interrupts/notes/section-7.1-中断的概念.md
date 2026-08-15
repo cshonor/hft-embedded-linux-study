@@ -88,5 +88,5 @@ Hard IRQ 运行在中断上下文：无 task_struct（不可调度）、无进�
 </details>
 
 
-> ↔ [ULK Ch4 §2 中断与异常分类](../../../../20-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-2-中断与异常分类.md)
+> ↔ [ULK Ch4 §2 中断与异常分类](../../../../19-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-2-中断与异常分类.md)
 ---

@@ -2,7 +2,7 @@
 
 > **CSAPP 3rd** · Bryant & O'Neill · **精读 🔴**（Part I）
 
-> 本章定位：**为什么 cache miss 比算慢** — 从 DRAM/SSD 到 L1/L3，靠 **局部性** 让层次结构有效；学会写 **cache-friendly** 代码与读 **存储器山**。HFT 地基篇核心，与 [19-Hennessy Ch2](../../19-computer-architecture/) 交叉。
+> 本章定位：**为什么 cache miss 比算慢** — 从 DRAM/SSD 到 L1/L3，靠 **局部性** 让层次结构有效；学会写 **cache-friendly** 代码与读 **存储器山**。HFT 地基篇核心，与 [19-Hennessy Ch2](../../18-computer-architecture/) 交叉。
 
 ---
 
@@ -73,6 +73,6 @@
 - 上一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 下一章：[../chapter-07-linking/](../chapter-07-linking/)
 - 虚拟内存：[../chapter-09-virtual-memory/](../chapter-09-virtual-memory/)
-- 理论：[19-Hennessy Ch2](../../19-computer-architecture/)
-- 观测：[16-Systems-Performance Ch 6 CPUs](../../16-systems-performance/chapter-06-cpus/)
+- 理论：[19-Hennessy Ch2](../../18-computer-architecture/)
+- 观测：[16-Systems-Performance Ch 6 CPUs](../../15-systems-performance/chapter-06-cpus/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

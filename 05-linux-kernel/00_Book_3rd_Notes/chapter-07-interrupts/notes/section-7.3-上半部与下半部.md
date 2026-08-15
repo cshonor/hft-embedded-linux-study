@@ -66,9 +66,9 @@
 | softirq / tasklet | **禁止** — 仍是原子上下文 |
 | workqueue worker | **允许** — 进程上下文（Ch 8.5） |
 
-**HFT：** 收包尖刺不只在 **硬 IRQ** — `mpstat` 里 **`%soft`** 高说明 **NET_RX softirq** 在抢 CPU；策略线程与 **IRQ 核 + softirq 核** 同核时，尾延迟叠加。见 [§1.5 SysPerf](../../../../16-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md)。
+**HFT：** 收包尖刺不只在 **硬 IRQ** — `mpstat` 里 **`%soft`** 高说明 **NET_RX softirq** 在抢 CPU；策略线程与 **IRQ 核 + softirq 核** 同核时，尾延迟叠加。见 [§1.5 SysPerf](../../../../15-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md)。
 
-→ **Ch 8** 下半部机制详解 · [Ch 7.5](section-7.5-中断上下文.md) 中断上下文 · [SysPerf §3.2 上下半部](../../../../16-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
+→ **Ch 8** 下半部机制详解 · [Ch 7.5](section-7.5-中断上下文.md) 中断上下文 · [SysPerf §3.2 上下半部](../../../../15-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
 
 ### 常见陷阱
 
@@ -108,5 +108,5 @@ NIC 收包走 NET_RX_SOFTIRQ，在 hard IRQ 返回或 ksoftirqd 中执行。如�
 </details>
 
 
-> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../20-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../../19-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

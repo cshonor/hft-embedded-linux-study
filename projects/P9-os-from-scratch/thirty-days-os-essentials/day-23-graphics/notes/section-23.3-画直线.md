@@ -14,6 +14,6 @@ dx, dy 放大 1024 倍累加
 
 **兼顾速度与可接受精度** — 经典 **fixed-point** 图形。
 
-→ [19-Hennessy 定点/浮点](../../19-computer-architecture/)
+→ [19-Hennessy 定点/浮点](../../18-computer-architecture/)
 
 ---

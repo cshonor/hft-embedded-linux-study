@@ -14,7 +14,7 @@
 
 **HFT：** 策略 **tick / 发单** 不应同步等块 I/O；**审计、replay、checkpoint** 走块层 — 用 **独立盘 + ionice** 隔离。
 
-→ [03 SysPerf Ch9 磁盘](../../../../16-systems-performance/chapter-09-disks/)
+→ [03 SysPerf Ch9 磁盘](../../../../15-systems-performance/chapter-09-disks/)
 
 
 

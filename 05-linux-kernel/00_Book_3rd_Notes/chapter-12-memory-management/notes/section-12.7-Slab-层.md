@@ -67,7 +67,7 @@ kmem_cache_free(my_cache, o);
 → [06 Gorman Ch8 Slab](../../../../06-linux-mm/chapter-08-slab-allocator/) · [Ch 3 task_struct Slab](../../chapter-03-process-management/) · [Ch 12.10 per-CPU](./section-12.10-每个-CPU-的分配.md)
 
 
-> ↔ [ULK Ch8 §3 Slab分配器](../../../../20-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)
+> ↔ [ULK Ch8 §3 Slab分配器](../../../../19-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)
 
 
 <details>
