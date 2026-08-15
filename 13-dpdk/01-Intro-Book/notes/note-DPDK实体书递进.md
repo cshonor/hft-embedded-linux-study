@@ -63,7 +63,7 @@
 | 技术 | 与 DPDK 关系 | HFT 典型场景 |
 |------|--------------|--------------|
 | **DPDK** | 用户态完全旁路 | UDP 组播行情、极致 tick 处理 |
-| **XDP / tc-BPF** | 内核最早点丢/改包 | 对比 DPDK 的「半旁路」；见 [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) · [17-BPF note-XDP](../../../15-bpf-observability/note-XDP与tc-BPF.md) |
+| **XDP / tc-BPF** | 内核最早点丢/改包 | 对比 DPDK 的「半旁路」；见 [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) · [17-BPF note-XDP](../../../15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md) |
 | **RDMA / RoCE** | 硬件 offload、远端内存 | 共置机房、极低延迟通道 |
 | **OpenOnload** | 保留 socket API 的内核旁路 | TCP 发单、迁移成本较低 |
 

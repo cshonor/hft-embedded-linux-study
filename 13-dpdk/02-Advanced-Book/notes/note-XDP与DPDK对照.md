@@ -12,7 +12,7 @@
 | 典型用途 | UDP 组播行情、极致 poll | 早期过滤、统计、部分 redirect |
 | 开发成本 | 高（无 socket 语义） | 中（仍在内核 eBPF 生态） |
 
-→ 深入 XDP 实现与工具：[17-BPF note-XDP与tc-BPF](../../../15-bpf-observability/note-XDP与tc-BPF.md)  
+→ 深入 XDP 实现与工具：[17-BPF note-XDP与tc-BPF](../../../15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)  
 → 方案总表：[note-openonload-rdma对比](./note-openonload-rdma对比.md)
 
 ## 相关章节

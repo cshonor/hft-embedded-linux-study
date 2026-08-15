@@ -45,7 +45,7 @@ NIC → L2
 
 出站：`LOCAL_OUT` → `POST_ROUTING`（SNAT、选出口）→ 驱动。
 
-> **HFT：** 共置机 **filter/nat 规则过多** 会增 **每包 CPU**；低延迟环境常 **精简 iptables**、**固定路由**，或用 **XDP 早 drop**（→ [17-BPF Ch10 XDP](../../../15-bpf-observability/chapter-10-networking/)）。
+> **HFT：** 共置机 **filter/nat 规则过多** 会增 **每包 CPU**；低延迟环境常 **精简 iptables**、**固定路由**，或用 **XDP 早 drop**（→ [17-BPF Ch10 XDP](../../../15-bpf-observability/bpf-performance-tools/chapter-10-networking/)）。
 
 ---
 

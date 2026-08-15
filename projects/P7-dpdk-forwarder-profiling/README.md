@@ -298,7 +298,7 @@ if (++packet_count % 1000000 == 0)
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| bpftrace 调度追踪 | [BPF ch03](../../15-bpf-observability/chapter-03-performance-analysis/notes/) |
+| bpftrace 调度追踪 | [BPF ch03](../../15-bpf-observability/bpf-performance-tools/chapter-03-performance-analysis/notes/) |
 | off-CPU 分析 | [BPF](../../15-bpf-observability/) |
 | CPU 隔离 | [SysPerf](../../14-systems-performance/) |
 

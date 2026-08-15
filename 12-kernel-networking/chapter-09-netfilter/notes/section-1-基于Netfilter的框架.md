@@ -49,7 +49,7 @@
 - **内建 set/map** — 替代大量 ipset+iptables 规则
 - 生产迁移：**iptables-nft** 兼容层常见
 
-**HFT：** 共置机 **规则数 ≈ 越少越好** — 每条 hook 回调 **增 CPU**；极致路径 **无 iptables** 或 **XDP early drop**（[17-BPF](../../../15-bpf-observability/chapter-10-networking/)）。
+**HFT：** 共置机 **规则数 ≈ 越少越好** — 每条 hook 回调 **增 CPU**；极致路径 **无 iptables** 或 **XDP early drop**（[17-BPF](../../../15-bpf-observability/bpf-performance-tools/chapter-10-networking/)）。
 
 ---
 

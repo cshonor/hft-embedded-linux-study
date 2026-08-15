@@ -100,7 +100,7 @@ Ch 10 网络（本章：栈、TCP、工具、sysctl）
 - Socket API：[03.5-unix-network-api](../../03.5-unix-network-api/)
 - 内核网络：[12-kernel-networking](../../12-kernel-networking/)
 - DPDK 旁路：[13-dpdk](../../13-dpdk/)
-- XDP：[17-BPF note-XDP](../../15-bpf-observability/note-XDP与tc-BPF.md)
+- XDP：[17-BPF note-XDP](../../15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
 - 跨模块对照：[README.md](../README.md)
 - HFT 工程：[18-HFT ch06/ch10](../../16-hft-engineering/)

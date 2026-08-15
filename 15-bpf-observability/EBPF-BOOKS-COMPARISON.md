@@ -1,6 +1,6 @@
 # eBPF O'Reilly 三书对比与阅读顺序
 
-> 本模块主书为 **BPF Performance Tools**（Brendan Gregg，详见 [OUTLINE](./OUTLINE.md)）。
+> 本模块主书为 **BPF Performance Tools**（Brendan Gregg，详见 [OUTLINE](./bpf-performance-tools/OUTLINE.md)）。
 > 本文对比另外两本 O'Reilly eBPF 动物书，并给出三条路线的协同读法。
 
 ---
@@ -30,7 +30,7 @@
 
 ## ③ BPF Performance Tools — 本模块主书
 
-- 18 章 + 附录 A–E 的工具谱系，HFT 读/跳标注见 [OUTLINE](./OUTLINE.md)
+- 18 章 + 附录 A–E 的工具谱系，HFT 读/跳标注见 [OUTLINE](./bpf-performance-tools/OUTLINE.md)
 - 与 ② 互补：② 讲"怎么写 eBPF 程序"，③ 讲"已有的 BPF 工具怎么用、看什么指标"
 
 ---
@@ -57,7 +57,7 @@
 - **必读**：eBPF 底层概念、libbpf、CO-RE、网络、可观测章节
 - **可跳**：纯安全策略章节（除非做安全方向）
 
-### ③ BPF Performance Tools（本模块，详见 [OUTLINE](./OUTLINE.md)）
+### ③ BPF Performance Tools（本模块，详见 [OUTLINE](./bpf-performance-tools/OUTLINE.md)）
 - **🔴 精读**：Ch1–2 背景、Ch4 BCC、Ch5 bpftrace、Ch6 CPU、Ch10 Networking
 - **🟡 选读**：Ch3 性能分析、Ch7 内存、Ch13 应用、Ch14 内核
 - **⚪ 跳过**：Ch8 文件系统、Ch9 磁盘 I/O、Ch11 安全、Ch12 语言、Ch15 容器、Ch16 虚拟机（HFT 关联弱）

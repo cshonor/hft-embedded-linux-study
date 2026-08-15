@@ -17,7 +17,7 @@
 | [TCP/IP ch03 链路层](../../11-tcpip-protocols/chapter03-link-layer/) | Ethernet 帧格式 |
 | [TCP/IP ch05 IP](../../11-tcpip-protocols/chapter05-ip-protocol/) | IP 首部字段 |
 | [Rosen ch01 引言](../../12-kernel-networking/chapter-01-introduction/) | sk_buff、收包路径概览 |
-| [BPF ch01 引言](../../15-bpf-observability/chapter-01-introduction/notes/) | eBPF 是什么 |
+| [BPF ch01 引言](../../15-bpf-observability/bpf-performance-tools/chapter-01-introduction/notes/) | eBPF 是什么 |
 
 ---
 
@@ -234,7 +234,7 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| bpftrace 语法 | [BPF ch04 bcc](../../15-bpf-observability/chapter-04-bcc/notes/) |
+| bpftrace 语法 | [BPF ch04 bcc](../../15-bpf-observability/bpf-performance-tools/chapter-04-bcc/notes/) |
 | NAPI 收包路径 | [Rosen ch01](../../12-kernel-networking/chapter-01-introduction/) |
 | 现代 NAPI/XDP | [14.5 ch02 NAPI](../../12.5-modern-networking/chapter-02-napi-rx-path/) |
 

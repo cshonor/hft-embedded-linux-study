@@ -247,7 +247,7 @@
 | Part I Ch 4–5 BCC / bpftrace | **精读** | 工具链快速上手 |
 | Part II Ch 6 CPU | **精读** | off-CPU、run queue、抖动定位 |
 | Part II Ch 10 网络 | **精读** | 套接字延迟、TCP/UDP 重传丢包 |
-| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./15-bpf-observability/note-XDP与tc-BPF.md)；vs DPDK |
+| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)；vs DPDK |
 | Part II Ch 7 内存 / Ch 13–14 应用·内核 | **选读** | alloc、fault、调度唤醒 |
 | Part I Ch 3 / Part III Ch 17–18 | **选读** | 方法论、排障技巧 |
 | 附录 A/B bpftrace 单行/备忘单 | **精读** | 现场速查 |
