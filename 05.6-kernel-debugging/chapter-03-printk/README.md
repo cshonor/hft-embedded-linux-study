@@ -10,11 +10,11 @@ printk 体系：日志级别、速率限制、dynamic debug 框架 (pr_debug / d
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 3.1 printk 基础与日志级别 | `notes/section-3-1.md` |
-| 3.2 速率限制与异步打印 | `notes/section-3-2.md` |
-| 3.3 dynamic debug 框架 | `notes/section-3-3.md` |
-| 3.4 dev_dbg 与设备相关调试 | `notes/section-3-4.md` |
-| 3.5 ftrace_printk (trace_marker 前身) | `notes/section-3-5.md` |
+| 3.1 printk 基础与日志级别 | `notes/01-printk-basics-loglevel.md` |
+| 3.2 速率限制与异步打印 | `notes/02-rate-limiting-async.md` |
+| 3.3 dynamic debug 框架 | `notes/03-dynamic-debug.md` |
+| 3.4 dev_dbg 与设备相关调试 | `notes/04-dev-dbg.md` |
+| 3.5 ftrace_printk (trace_marker 前身) | `notes/05-ftrace-printk.md` |
 
 ---
 

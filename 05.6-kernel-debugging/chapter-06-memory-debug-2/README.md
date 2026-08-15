@@ -10,9 +10,9 @@ KFENCE (Kernel Electric Fence) 等较新的内存调试特性，以及内存调�
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 6.1 KFENCE：轻量级内存错误检测 | `notes/section-6-1.md` |
-| 6.2 内存调试工具组合策略 | `notes/section-6-2.md` |
-| 6.3 生产环境内存监控 | `notes/section-6-3.md` |
+| 6.1 KFENCE：轻量级内存错误检测 | `notes/01-kfence.md` |
+| 6.2 内存调试工具组合策略 | `notes/02-memory-debug-strategy.md` |
+| 6.3 生产环境内存监控 | `notes/03-production-memory-monitoring.md` |
 
 ---
 

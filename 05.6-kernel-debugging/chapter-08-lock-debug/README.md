@@ -10,12 +10,12 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 8.1 并发 bug 的类型：死锁 / 活锁 / 数据竞争 | `notes/section-8-1.md` |
-| 8.2 LOCKDEP：锁依赖检测器 | `notes/section-8-2.md` |
-| 8.3 用 LOCKDEP 发现潜在死锁 | `notes/section-8-3.md` |
-| 8.4 lock_stat：锁竞争统计 | `notes/section-8-4.md` |
-| 8.5 KCSAN：数据竞争检测器 | `notes/section-8-5.md` |
-| 8.6 在树莓派上启用 LOCKDEP / KCSAN | `notes/section-8-6.md` |
+| 8.1 并发 bug 的类型：死锁 / 活锁 / 数据竞争 | `notes/01-concurrency-bug-types.md` |
+| 8.2 LOCKDEP：锁依赖检测器 | `notes/02-lockdep.md` |
+| 8.3 用 LOCKDEP 发现潜在死锁 | `notes/03-lockdep-deadlock-detection.md` |
+| 8.4 lock_stat：锁竞争统计 | `notes/04-lock-stat.md` |
+| 8.5 KCSAN：数据竞争检测器 | `notes/05-kcsan.md` |
+| 8.6 在树莓派上启用 LOCKDEP / KCSAN | `notes/06-rpi-lockdep-kcsan.md` |
 
 ---
 

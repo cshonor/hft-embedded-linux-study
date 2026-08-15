@@ -10,10 +10,10 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 12.1 GCOV / KCOV 代码覆盖率 | `notes/section-12-1.md` |
-| 12.2 内核测试框架 (kselftest / KUnit) | `notes/section-12-2.md` |
-| 12.3 syzkaller 模糊测试 | `notes/section-12-3.md` |
-| 12.4 静态分析工具 (Smatch / Sparse) | `notes/section-12-4.md` |
+| 12.1 GCOV / KCOV 代码覆盖率 | `notes/01-gcov-kcov-coverage.md` |
+| 12.2 内核测试框架 (kselftest / KUnit) | `notes/02-kselftest-kunit.md` |
+| 12.3 syzkaller 模糊测试 | `notes/03-syzkaller-fuzzing.md` |
+| 12.4 静态分析工具 (Smatch / Sparse) | `notes/04-static-analysis.md` |
 
 ---
 

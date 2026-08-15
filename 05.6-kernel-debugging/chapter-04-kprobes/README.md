@@ -10,12 +10,12 @@ Kprobes 框架：kprobe (入口探针) / kretprobe (返回探针) / jprobe (已�
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 4.1 Kprobes 原理与架构 | `notes/section-4-1.md` |
-| 4.2 kprobe：函数入口探针 | `notes/section-4-2.md` |
-| 4.3 kretprobe：函数返回探针 | `notes/section-4-3.md` |
-| 4.4 动态注册 Kprobes (通过 /sys) | `notes/section-4-4.md` |
-| 4.5 perf probe 与 Kprobes 的关系 | `notes/section-4-5.md` |
-| 4.6 Kprobes 与 eBPF 的关系 | `notes/section-4-6.md` |
+| 4.1 Kprobes 原理与架构 | `notes/01-kprobes-architecture.md` |
+| 4.2 kprobe：函数入口探针 | `notes/02-kprobe-entry-handler.md` |
+| 4.3 kretprobe：函数返回探针 | `notes/03-kretprobe-return-handler.md` |
+| 4.4 动态注册 Kprobes (通过 /sys) | `notes/04-dynamic-registration-sysfs.md` |
+| 4.5 perf probe 与 Kprobes 的关系 | `notes/05-perf-probe-relation.md` |
+| 4.6 Kprobes 与 eBPF 的关系 | `notes/06-kprobes-ebpf.md` |
 
 ---
 

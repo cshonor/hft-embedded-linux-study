@@ -10,10 +10,10 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 2.1 内核调试的挑战 | `notes/section-2-1.md` |
-| 2.2 仪表化方法概览 | `notes/section-2-2.md` |
-| 2.3 分析方法概览 | `notes/section-2-3.md` |
-| 2.4 工具选择决策树 | `notes/section-2-4.md` |
+| 2.1 内核调试的挑战 | `notes/01-kernel-debug-challenges.md` |
+| 2.2 仪表化方法概览 | `notes/02-instrumentation-overview.md` |
+| 2.3 分析方法概览 | `notes/03-analysis-overview.md` |
+| 2.4 工具选择决策树 | `notes/04-tool-selection-tree.md` |
 
 ---
 

@@ -10,11 +10,11 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 5.1 内核内存错误的类型 | `notes/section-5-1.md` |
-| 5.2 KASAN：地址消毒器 (越界 / use-after-free) | `notes/section-5-2.md` |
-| 5.3 UBSAN：未定义行为检测 | `notes/section-5-3.md` |
-| 5.4 SLUB debug：slab 分配器调试 | `notes/section-5-4.md` |
-| 5.5 kmemleak：内核内存泄漏检测 | `notes/section-5-5.md` |
+| 5.1 内核内存错误的类型 | `notes/01-memory-error-types.md` |
+| 5.2 KASAN：地址消毒器 (越界 / use-after-free) | `notes/02-kasan.md` |
+| 5.3 UBSAN：未定义行为检测 | `notes/03-ubsan.md` |
+| 5.4 SLUB debug：slab 分配器调试 | `notes/04-slub-debug.md` |
+| 5.5 kmemleak：内核内存泄漏检测 | `notes/05-kmemleak.md` |
 
 ---
 

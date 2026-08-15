@@ -10,13 +10,13 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 10.1 Kernel Panic 的触发与处理 | `notes/section-10-1.md` |
-| 10.2 Soft Lockup：CPU 长时间不调度 | `notes/section-10-2.md` |
-| 10.3 Hard Lockup：CPU 不响应中断 | `notes/section-10-3.md` |
-| 10.4 Watchdog 机制详解 | `notes/section-10-4.md` |
-| 10.5 Hangcheck Timer | `notes/section-10-5.md` |
-| 10.6 自定义 Panic Handler | `notes/section-10-6.md` |
-| 10.7 Kdump / Kexec 崩溃转储 | `notes/section-10-7.md` |
+| 10.1 Kernel Panic 的触发与处理 | `notes/01-panic-causes.md` |
+| 10.2 Soft Lockup：CPU 长时间不调度 | `notes/02-soft-lockup.md` |
+| 10.3 Hard Lockup：CPU 不响应中断 | `notes/03-hard-lockup.md` |
+| 10.4 Watchdog 机制详解 | `notes/04-watchdog-mechanism.md` |
+| 10.5 Hangcheck Timer | `notes/05-hangcheck-timer.md` |
+| 10.6 自定义 Panic Handler | `notes/06-custom-panic-handler.md` |
+| 10.7 Kdump / Kexec 崩溃转储 | `notes/07-kdump-kexec.md` |
 
 ---
 
