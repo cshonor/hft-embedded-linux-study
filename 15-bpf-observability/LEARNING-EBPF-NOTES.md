@@ -5,6 +5,7 @@
 > **出版：** 2023（O'Reilly）· **中文版：** 2023-04 中国电力出版社 ISBN 9787519889883  
 > **内核：** 5.15（Ubuntu 22.04 测试基准）  
 > **代码：** [github.com/lizrice/learning-ebpf](https://github.com/lizrice/learning-ebpf)（含 libbpf 子模块 + Lima VM 配置）  
+> **本地电子书：** [LEARNING-EBPF-BILINGUAL.pdf](./LEARNING-EBPF-BILINGUAL.pdf)（GPT 中英双语版，551 页，原文+译文逐段对照）  
 > **定位：** [15-bpf-observability/](./) 模块的**现代原理补充** — 补 [BPF Performance Tools](./BPF-PERFORMANCE-TOOLS-EVAL.md) 缺的 libbpf/CO-RE/验证器/程序类型  
 > **姊妹对比：** [EBPF-BOOKS-COMPARISON.md](./EBPF-BOOKS-COMPARISON.md)
 
