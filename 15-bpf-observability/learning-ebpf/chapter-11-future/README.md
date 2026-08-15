@@ -1,7 +1,7 @@
 # Learning eBPF · 第 11 章：eBPF 的未来演进
 
 > **原书：** Chapter 11: The Future Evolution of eBPF  
-> **HFT：** ⚪ · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** ⚪ · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 底本：LEARNING-EBPF-BILINGUAL.pdf（全书末章）。eBPF 远未定型：它有了跨厂商的中立基金会、正被移植进 Windows、Linux 侧每版内核都在扩展能力。核心论点：**eBPF 是平台，不是功能**——就像容器底层是 namespaces/cgroups 而多数用户无感，未来多数人将通过工具间接使用 eBPF。
 

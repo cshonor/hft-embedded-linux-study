@@ -1,7 +1,7 @@
 # Learning eBPF · 第 3 章：eBPF 程序解剖
 
 > **原书：** Chapter 3: Anatomy of an eBPF Program  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 抛弃 BCC 的黑盒，用纯 C + libbpf + bpftool 走完源码 → 字节码 → 机器码 → 加载 → 挂载全流程。
 

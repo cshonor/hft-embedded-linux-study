@@ -5,7 +5,7 @@
 > **出版：** 2019（Addison-Wesley / O'Reilly 系动物封面）  
 > **内核：** 4.x 时代（写作时主流 4.15–5.0）  
 > **模块：** [15-bpf-observability/](./) · **主书**  
-> **本地电子书：** [BPF之巅-中文版.pdf](./BPF之巅-中文版.pdf)（孙宇聪/吕宏利/刘晓舟 译，扫描版，858 页，75MB）  
+> **本地电子书：** 《BPF之巅》中文版（孙宇聪/吕宏利/刘晓舟 译，扫描版，858 页）— 版权原因不入库，存 `~/Desktop/hft-local-books/`  
 > **章节地图：** [OUTLINE.md](./OUTLINE.md)（18 章 + 附录 A–E，含 HFT 读/跳标注）  
 > **姊妹对比：** [EBPF-BOOKS-COMPARISON.md](.././EBPF-BOOKS-COMPARISON.md)
 

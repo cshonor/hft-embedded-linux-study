@@ -1,7 +1,7 @@
 # Learning eBPF · 第 9 章：eBPF 与安全
 
 > **原书：** Chapter 9: eBPF for Security  
-> **HFT：** 🟡 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🟡 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 可观测工具只报告事件，安全工具要**区分正常与恶意并采取行动**。本章主线是一条演进链：seccomp → syscall 追踪（Falco）→ BPF LSM → Tetragon 内核函数挂载 + 同步阻断，每一步都在解决上一步的漏洞。
 

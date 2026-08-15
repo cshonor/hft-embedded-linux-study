@@ -1,7 +1,7 @@
 # Learning eBPF · 第 10 章：eBPF 编程
 
 > **原书：** Chapter 10: eBPF Programming  
-> **HFT：** 🟡 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🟡 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 要自己写 eBPF，必须同时处理两半：内核侧 eBPF 程序 + 用户侧加载/附加/读数据的代码。本章是选型地图：bpftrace（一行搞定）→ BCC（Python 快速原型）→ libbpf / ebpf-go / libbpfgo / Aya（CO-RE 生产级）。
 

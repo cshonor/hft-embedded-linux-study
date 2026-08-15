@@ -1,7 +1,7 @@
 # Learning eBPF · 第 4 章：bpf() 系统调用
 
 > **原书：** Chapter 4: The bpf() System Call  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 用 strace 逐条解剖用户态到底发了哪些 syscall——这是全书最"内核视角"的一章，也是理解所有 eBPF 库（BCC/libbpf）本质的上限。
 

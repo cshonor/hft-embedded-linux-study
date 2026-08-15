@@ -1,7 +1,7 @@
 # Learning eBPF · 第 2 章：eBPF 的 "Hello World"
 
 > **原书：** Chapter 2: eBPF's "Hello World"  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 本章用 BCC Python 框架写三个渐进的 Hello World，引出 helper 函数、maps、perf/ring buffer、尾调用四大构件。
 

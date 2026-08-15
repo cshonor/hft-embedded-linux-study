@@ -1,7 +1,7 @@
 # Learning eBPF · 第 7 章：程序类型与附加类型
 
 > **原书：** Chapter 7: eBPF Program and Attachment Types  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 当前内核约 30 种程序类型、40+ 种附加类型。本章回答三个问题：程序类型决定什么？追踪类有哪些选型？网络类有哪些挂点？
 

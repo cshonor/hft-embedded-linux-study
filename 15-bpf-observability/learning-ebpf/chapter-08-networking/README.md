@@ -1,7 +1,7 @@
 # Learning eBPF · 第 8 章：eBPF 与网络
 
 > **原书：** Chapter 8: eBPF for Networking  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 网络是 eBPF 最出成绩的领域：XDP 在网卡驱动层丢包、TC 在流量控制层改包、uprobe 钩 SSL 看明文、Cilium 用 eBPF 重写整个 K8s 数据面。本章回答：eBPF 能挂在网络路径的哪些位置？每个位置能做什么、怎么做？
 

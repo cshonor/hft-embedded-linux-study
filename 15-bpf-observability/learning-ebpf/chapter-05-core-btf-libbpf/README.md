@@ -1,7 +1,7 @@
 # Learning eBPF · 第 5 章：CO-RE——一次编译，处处运行
 
 > **原书：** Chapter 5: CO-RE, BTF and Libbpf  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 全书最长的一章，讲清楚 eBPF 程序如何跨内核版本可移植：BTF 记录类型布局 → Clang 生成 CO-RE 重定位 → libbpf 加载时按目标内核改写指令。也是作者明确表态"BCC 不适合生产分发"的一章。
 

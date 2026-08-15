@@ -1,7 +1,7 @@
 # Learning eBPF · 第 1 章：什么是 eBPF，它为何重要
 
 > **原书：** Chapter 1: What Is eBPF and Why Is It Important?  
-> **HFT：** 🟡 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🟡 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 底本：LEARNING-EBPF-BILINGUAL.pdf（Liz Rice, O'Reilly 2023，GPT 双语版）
 > 本章是全书的地基章：讲清 eBPF 的来历、它与"改内核/写模块"两条老路的本质区别。

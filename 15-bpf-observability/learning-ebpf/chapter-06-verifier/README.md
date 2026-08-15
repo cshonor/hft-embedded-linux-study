@@ -1,7 +1,7 @@
 # Learning eBPF · 第 6 章：eBPF 验证器
 
 > **原书：** Chapter 6: The eBPF Verifier  
-> **HFT：** 🔴 · **底本：** [LEARNING-EBPF-BILINGUAL.pdf](../LEARNING-EBPF-BILINGUAL.pdf)（GPT 双语逐段对照）
+> **HFT：** 🔴 · **底本：** LEARNING-EBPF-BILINGUAL.pdf（GPT 双语逐段对照；PDF 存仓库外 `~/Desktop/hft-local-books/`，不入库）
 
 > 验证器是 eBPF 安全模型的基石：加载前穷举所有执行路径证明程序无害。本章大量篇幅是"故意写坏代码 → 看验证器怎么骂你"，是日后排查 `invalid mem access` 类报错的实操手册。
 
