@@ -8,17 +8,17 @@
 
 ---
 
-## 小节笔记
+## 原书真实小节 → 笔记映射
 
-| 节 | 笔记 |
+| 原书小节 | 笔记 |
 |----|------|
-| 1 从 CLI 到平台 | [notes/section-1-从CLI到平台.md](./notes/section-1-从CLI到平台.md) |
-| 2 Vector 与 Performance Co-Pilot  | [notes/section-2-Vector与PerformanceCo-Pilot.md](./notes/section-2-Vector与PerformanceCo-Pilot.md) |
-| 3 Grafana 与 PCP | [notes/section-3-Grafana与PCP.md](./notes/section-3-Grafana与PCP.md) |
-| 4 Cloudflare eBPF Prometheus 导出器 | [notes/section-4-CloudflareeBPFPrometheus导出器.md](./notes/section-4-CloudflareeBPFPrometheus导出器.md) |
-| 5 kubectl-trace | [notes/section-5-kubectl-trace.md](./notes/section-5-kubectl-trace.md) |
-| 6 其他知名 BPF 生态项目 | [notes/section-6-其他知名BPF生态项目.md](./notes/section-6-其他知名BPF生态项目.md) |
-| 7 架构选型速查 | [notes/section-7-架构选型速查.md](./notes/section-7-架构选型速查.md) |
+| 章首：从 CLI 到 GUI（云规模必须 GUI） | [notes/section-1-从CLI到平台.md](./notes/section-1-从CLI到平台.md) |
+| 17.1 Vector 和 Performance Co-Pilot（PCP）（17.1.1–17.1.10） | [notes/section-2-Vector与PerformanceCo-Pilot.md](./notes/section-2-Vector与PerformanceCo-Pilot.md) |
+| 17.2 Grafana 和 Performance Co-Pilot（17.2.1–17.2.4） | [notes/section-3-Grafana与PCP.md](./notes/section-3-Grafana与PCP.md) |
+| 17.3 Cloudflare eBPF Prometheus Exporter（17.3.1–17.3.4） | [notes/section-4-CloudflareeBPFPrometheus导出器.md](./notes/section-4-CloudflareeBPFPrometheus导出器.md) |
+| 17.4 kubectl-trace（17.4.1–17.4.3） | [notes/section-5-kubectl-trace.md](./notes/section-5-kubectl-trace.md) |
+| 17.5 其他工具（Cilium/Sysdig/Android eBPF/osquery/ply） | [notes/section-6-其他工具.md](./notes/section-6-其他工具.md) |
+| 17.6 小结 | [notes/section-7-小结.md](./notes/section-7-小结.md) |
 
 ---
 
