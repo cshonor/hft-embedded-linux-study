@@ -81,4 +81,4 @@ CFS（完全公平）：按权重瓜分 CPU，vruntime 记账，选 vruntime 最
 ---
 
 ← [Ch 7 导读](../README.md) · 下一节 [2. 调度策略与抢占](./section-2-调度策略与抢占.md)
-> ↔ [LKD Ch04 §4.1 多任务与调度器演进](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/notes/section-4.1-多任务与调度器演进.md)
+> ↔ [LKD Ch04 §4.1 多任务与调度器演进](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.1-多任务与调度器演进.md)

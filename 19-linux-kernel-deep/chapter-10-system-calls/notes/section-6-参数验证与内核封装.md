@@ -117,4 +117,4 @@ exit_work（调度/信号）→ 返回用户态
 ---
 
 ← [5. 参数传递](./section-5-参数传递.md) · 下一章 [Ch 11 信号](../chapter-11-signals/)
-> ↔ [LKD Ch05 §5.4 实现与参数验证](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-05-system-calls/notes/section-5.4-实现与参数验证.md)
+> ↔ [LKD Ch05 §5.4 实现与参数验证](../../../05-linux-kernel/chapter-05-system-calls/notes/section-5.4-实现与参数验证.md)

@@ -79,4 +79,4 @@ Fault：可恢复，CPU 恢复到触发指令重新执行（如 #PF 缺页、#GP
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. IDT 与门描述符](./section-3-IDT与门描述符.md)
-> ↔ [LKD Ch07 §7.1 中断的概念](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-07-interrupts/notes/section-7.1-中断的概念.md)
+> ↔ [LKD Ch07 §7.1 中断的概念](../../../05-linux-kernel/chapter-07-interrupts/notes/section-7.1-中断的概念.md)

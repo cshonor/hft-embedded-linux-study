@@ -85,4 +85,4 @@
 ---
 
 ← [3. 数据结构](./section-3-调度器数据结构.md) · 下一节 [5. SMP 平衡](./section-5-SMP运行队列平衡.md)
-> ↔ [LKD Ch04 §4.3 Linux-调度算法](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md)
+> ↔ [LKD Ch04 §4.3 Linux-调度算法](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.3-Linux-调度算法.md)

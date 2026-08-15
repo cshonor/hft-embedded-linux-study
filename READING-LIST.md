@@ -40,9 +40,9 @@
 
 ## 2. Linux Kernel Development 3rd — Robert Love
 
-> 笔记目录：[05-linux-kernel/](./05-linux-kernel/) · 书本 [00_Book_3rd_Notes](./05-linux-kernel/00_Book_3rd_Notes/)
+> 笔记目录：[05-linux-kernel/](./05-linux-kernel/) · 书本 [00_Book_3rd_Notes](./05-linux-kernel/)
 
-> **推荐顺序：** [P3.5 BusyBox 极简 Linux](./projects/P3.5-busybox-minimal-linux/)（内核编译+rootfs 实操） → **书本通读** [00_Book_3rd_Notes](./05-linux-kernel/00_Book_3rd_Notes/)。
+> **推荐顺序：** [P3.5 BusyBox 极简 Linux](./projects/P3.5-busybox-minimal-linux/)（内核编译+rootfs 实操） → **书本通读** [00_Book_3rd_Notes](./05-linux-kernel/)。
 
 > 内核调度、中断、CFS、CPU 隔离、绑核底层原理。
 

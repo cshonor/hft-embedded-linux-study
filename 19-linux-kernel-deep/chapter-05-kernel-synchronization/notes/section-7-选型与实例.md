@@ -86,4 +86,4 @@ Modern 内核：**BKL 已移除**，锁更细粒度；读 ULK 时理解 **设计
 ---
 
 ← [6. 信号量与完成变量](./section-6-信号量与完成变量.md) · 下一章 [Ch 6 计时](../chapter-06-timing.md)
-> ↔ [LKD Ch10 §10.11 选型速查Ch-9--Ch-10](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-10-sync-methods/notes/section-10.11-选型速查Ch-9--Ch-10.md)
+> ↔ [LKD Ch10 §10.11 选型速查Ch-9--Ch-10](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.11-选型速查Ch-9--Ch-10.md)

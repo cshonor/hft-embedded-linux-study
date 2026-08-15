@@ -4,7 +4,7 @@
 
 > **定位：** 面向 **底层 / Linux 内核** 的经典 C 书单（五书 + `code`）。  
 > 路线：**K&R（C89）→ 进阶标准 C → GNU C → 内核**。  
-> 上游 [01 CSAPP](../02-computer-systems/)；下游 [04 LKD](../05-linux-kernel/)（`-std=gnu11` / GNU C 见 [Ch2 §2.4](../05-linux-kernel/00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)）。  
+> 上游 [01 CSAPP](../02-computer-systems/)；下游 [04 LKD](../05-linux-kernel/)（`-std=gnu11` / GNU C 见 [Ch2 §2.4](../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)）。  
 > **09 C++** 是后续加 RAII，不是跳过 C。
 
 ---
@@ -54,7 +54,7 @@
 | **5** | **工具书** — 避坑手册，遇到问题再查，不必逐章通读 |
 
 **重点收尾是 04**：标准 C 教材不讲、`typeof` / 语句表达式 / `__attribute__` / 内嵌汇编等内核天天用的东西，主要在这里补齐。  
-对照清单也在 [LKD §2.4「K&R 有 / 内核缺」](../05-linux-kernel/00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)。
+对照清单也在 [LKD §2.4「K&R 有 / 内核缺」](../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)。
 
 完整裁剪与验收 → [OUTLINE.md](./OUTLINE.md)
 

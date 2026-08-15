@@ -81,4 +81,4 @@ Seqlock 适合：① 数据结构简单（几个计数器/时间戳）。② 写
 ---
 
 ← [4. 自旋锁](./section-4-自旋锁.md) · 下一节 [6. 信号量与完成变量](./section-6-信号量与完成变量.md)
-> ↔ [LKD Ch10 §10.8 顺序锁](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-10-sync-methods/notes/section-10.8-顺序锁.md)
+> ↔ [LKD Ch10 §10.8 顺序锁](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.8-顺序锁.md)

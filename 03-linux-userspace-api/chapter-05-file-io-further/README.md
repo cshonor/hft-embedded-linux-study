@@ -115,7 +115,7 @@ Ch4 会用 fd 数字
 
 
 - 《The Linux Programming Interface》**第 05 章** — File I/O: Further Details  
-- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [Ch13](../chapter-13-file-io-buffering/notes.md) · [LKD §3.8](../../05-linux-kernel/00_Book_3rd_Notes/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
+- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [Ch13](../chapter-13-file-io-buffering/notes.md) · [LKD §3.8](../../05-linux-kernel/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
 
 
 ---

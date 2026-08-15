@@ -84,4 +84,4 @@
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. 内存区 VMA](./section-3-内存区VMA.md)
-> ↔ [LKD Ch15 §15.2 内存描述符](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-15-process-address-space/notes/section-15.2-内存描述符.md)
+> ↔ [LKD Ch15 §15.2 内存描述符](../../../05-linux-kernel/chapter-15-process-address-space/notes/section-15.2-内存描述符.md)

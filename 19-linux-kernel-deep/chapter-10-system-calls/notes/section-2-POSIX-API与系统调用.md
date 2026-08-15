@@ -95,4 +95,4 @@ printf("getpid: %lu cycles (~%lu ns)\n", t2-t1, (t2-t1)/3000);  // 3GHz CPU
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. 分派表](./section-3-分派表与服务例程.md)
-> ↔ [LKD Ch05 §5.2 系统调用基础](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-05-system-calls/notes/section-5.2-系统调用基础.md)
+> ↔ [LKD Ch05 §5.2 系统调用基础](../../../05-linux-kernel/chapter-05-system-calls/notes/section-5.2-系统调用基础.md)

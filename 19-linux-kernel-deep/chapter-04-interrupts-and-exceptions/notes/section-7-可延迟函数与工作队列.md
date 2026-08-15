@@ -96,7 +96,7 @@ NIC 收包走 softirq（`NET_RX_SOFTIRQ`），在 `ksoftirqd` 或中断返回时
 ---
 
 ← [6. I/O 中断](./section-6-IO中断处理.md) · 下一节 [8. 中断返回](./section-8-中断返回.md)
-> ↔ [LKD Ch08 §8.5 工作队列](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-08-bottom-halves/notes/section-8.5-工作队列.md)
-> ↔ [LKD Ch08 §8.4 tasklet](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-08-bottom-halves/notes/section-8.4-tasklet.md)
-> ↔ [LKD Ch08 §8.3 软中断](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-08-bottom-halves/notes/section-8.3-软中断.md)
-> ↔ [LKD Ch07 §7.3 上半部与下半部](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-07-interrupts/notes/section-7.3-上半部与下半部.md)
+> ↔ [LKD Ch08 §8.5 工作队列](../../../05-linux-kernel/chapter-08-bottom-halves/notes/section-8.5-工作队列.md)
+> ↔ [LKD Ch08 §8.4 tasklet](../../../05-linux-kernel/chapter-08-bottom-halves/notes/section-8.4-tasklet.md)
+> ↔ [LKD Ch08 §8.3 软中断](../../../05-linux-kernel/chapter-08-bottom-halves/notes/section-8.3-软中断.md)
+> ↔ [LKD Ch07 §7.3 上半部与下半部](../../../05-linux-kernel/chapter-07-interrupts/notes/section-7.3-上半部与下半部.md)

@@ -20,7 +20,7 @@
 | **RUNNABLE** | 就绪，在 **运行队列** 等 CPU | `runqlat`、`runqlen`、`runqslower` |
 | **SLEEP** | 阻塞（I/O、锁、futex…） | `offcputime` |
 
-→ 内核实现对照：[05-linux-kernel Ch 4 调度](../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/)
+→ 内核实现对照：[05-linux-kernel Ch 4 调度](../05-linux-kernel/chapter-04-process-scheduling/)
 
 ### CPU 缓存与 TLB
 

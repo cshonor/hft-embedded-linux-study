@@ -95,4 +95,4 @@
 ---
 
 ← [3. Slab](./section-3-Slab分配器.md) · 下一章 [Ch 9 进程地址空间](../chapter-09-process-address-space/)
-> ↔ [LKD Ch12 §12.6 vmalloc](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-12-memory-management/notes/section-12.6-vmalloc.md)
+> ↔ [LKD Ch12 §12.6 vmalloc](../../../05-linux-kernel/chapter-12-memory-management/notes/section-12.6-vmalloc.md)

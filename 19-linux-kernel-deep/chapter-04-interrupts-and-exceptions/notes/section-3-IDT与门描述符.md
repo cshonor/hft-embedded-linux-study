@@ -68,4 +68,4 @@ Modern x86-64 多用 **`syscall/sysenter`** 指令，概念相同：**用户态 
 ---
 
 ← [2. 分类](./section-2-中断与异常分类.md) · 下一节 [4. 控制路径嵌套](./section-4-控制路径嵌套.md)
-> ↔ [LKD Ch07 §7.6 中断处理机制的实现](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-07-interrupts/notes/section-7.6-中断处理机制的实现.md)
+> ↔ [LKD Ch07 §7.6 中断处理机制的实现](../../../05-linux-kernel/chapter-07-interrupts/notes/section-7.6-中断处理机制的实现.md)

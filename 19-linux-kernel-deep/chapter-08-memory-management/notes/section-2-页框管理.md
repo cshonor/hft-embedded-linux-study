@@ -106,4 +106,4 @@ HFT 绑核 + **NUMA 本地内存** 分配 → 降低跨节点访问延迟。
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. Slab 分配器](./section-3-Slab分配器.md)
-> ↔ [LKD Ch12 §12.2 页](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-12-memory-management/notes/section-12.2-页.md)
+> ↔ [LKD Ch12 §12.2 页](../../../05-linux-kernel/chapter-12-memory-management/notes/section-12.2-页.md)

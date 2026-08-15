@@ -42,4 +42,4 @@ Modern：**hrtimer** 提供纳秒级；2.6 动态定时器是理解「内核如�
 ---
 
 ← [4. 更新统计](./section-4-更新时间与统计.md) · 下一节 [6. 系统调用](./section-6-定时相关系统调用.md)
-> ↔ [LKD Ch11 §11.6 动态定时器](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-11-timers/notes/section-11.6-动态定时器.md)
+> ↔ [LKD Ch11 §11.6 动态定时器](../../../05-linux-kernel/chapter-11-timers/notes/section-11.6-动态定时器.md)

@@ -104,4 +104,4 @@ void *p = mmap(NULL, size, PROT_READ|PROT_WRITE,
 ---
 
 ← [5. SMP 平衡](./section-5-SMP运行队列平衡.md) · 下一章 [Ch 8 内存管理](../chapter-08-memory-management.md)
-> ↔ [LKD Ch04 §4.7 与调度相关的系统调用](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/notes/section-4.7-与调度相关的系统调用.md)
+> ↔ [LKD Ch04 §4.7 与调度相关的系统调用](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.7-与调度相关的系统调用.md)

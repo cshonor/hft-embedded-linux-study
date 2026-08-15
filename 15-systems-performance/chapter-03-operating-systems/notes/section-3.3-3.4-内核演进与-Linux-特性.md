@@ -10,7 +10,7 @@
 
 **要点：** 今天 Linux 里的 VFS、slab、观测文化，很多来自这条演进线 — 不是「Linux 独有发明一切」。
 
-→ 设计脉络：[LKD Ch 1 简介](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-01-intro/)（Unix 基因与 Linux 对比）
+→ 设计脉络：[LKD Ch 1 简介](../../../05-linux-kernel/chapter-01-intro/)（Unix 基因与 Linux 对比）
 
 ---
 

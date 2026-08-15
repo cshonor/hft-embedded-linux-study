@@ -115,5 +115,5 @@ void* alloc(Pool* p) {
 ---
 
 ← [2. 页框管理](./section-2-页框管理.md) · 下一节 [4. vmalloc](./section-4-非连续内存与vmalloc.md)
-> ↔ [LKD Ch12 §12.7 Slab-层](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-12-memory-management/notes/section-12.7-Slab-层.md)
-> ↔ [LKD Ch12 §12.5 kmalloc-与-kfree](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-12-memory-management/notes/section-12.5-kmalloc-与-kfree.md)
+> ↔ [LKD Ch12 §12.7 Slab-层](../../../05-linux-kernel/chapter-12-memory-management/notes/section-12.7-Slab-层.md)
+> ↔ [LKD Ch12 §12.5 kmalloc-与-kfree](../../../05-linux-kernel/chapter-12-memory-management/notes/section-12.5-kmalloc-与-kfree.md)

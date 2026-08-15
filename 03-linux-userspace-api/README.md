@@ -90,7 +90,7 @@ Ch 2 → 3 → 4 → 5 → 20–21 → 23 → 29–30 → 35 → 49 → 56–61 
 | **mmap** | 共享内存、少拷贝 |
 | 高级 / 非阻塞 I/O | 热路径控制阻塞点 |
 | **epoll** | 多路行情接入 |
-| 进程 / 线程与调度策略 | 绑核、`SCHED_FIFO`、nice（对照 [04 LKD Ch4](../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/)） |
+| 进程 / 线程与调度策略 | 绑核、`SCHED_FIFO`、nice（对照 [04 LKD Ch4](../05-linux-kernel/chapter-04-process-scheduling/)） |
 | 时钟 / 高精度定时器 | 节奏与超时 |
 | **mlock** | 防换页；低延迟常用 |
 

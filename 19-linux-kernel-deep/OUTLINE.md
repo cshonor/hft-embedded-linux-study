@@ -38,4 +38,4 @@
 | A System Startup | [appendix-A-system-startup.md](./appendix-A-system-startup.md) | 🟡 |
 | B Modules | [appendix-B-modules.md](./appendix-B-modules.md) | 🟡 |
 
-> 各 `chapter-*.md` 随精读进度从占位扩写；结构对齐 [05-linux-kernel](../05-linux-kernel/00_Book_3rd_Notes/) 笔记风格。
+> 各 `chapter-*.md` 随精读进度从占位扩写；结构对齐 [05-linux-kernel](../05-linux-kernel/) 笔记风格。

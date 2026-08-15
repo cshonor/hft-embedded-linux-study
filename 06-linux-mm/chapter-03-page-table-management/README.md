@@ -30,7 +30,7 @@ Ch 10 / swap：改 PTE、rmap 解映射、换出
 
 **HFT 为什么要读：** 每次 **TLB miss** 可能触发 **页表 walk**（多级指针 chasing，cache miss 链）；**大页** 减少 TLB 覆盖范围；**mlock** 保证 **PTE present**；**绑核 + 进程迁移** 涉及 **TLB flush**（`flush_tlb_*`）。
 
-→ 交叉：[02-CSAPP Ch9 §9.6–9.7](../02-computer-systems/chapter-09-virtual-memory/) · [05-linux-kernel Ch15 §15.7 页表](../05-linux-kernel/00_Book_3rd_Notes/chapter-15-process-address-space/notes/section-15.7-页表.md)
+→ 交叉：[02-CSAPP Ch9 §9.6–9.7](../02-computer-systems/chapter-09-virtual-memory/) · [05-linux-kernel Ch15 §15.7 页表](../05-linux-kernel/chapter-15-process-address-space/notes/section-15.7-页表.md)
 
 ---
 

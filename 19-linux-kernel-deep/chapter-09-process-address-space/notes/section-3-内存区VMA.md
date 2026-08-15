@@ -90,4 +90,4 @@ VMA 创建时通常 **还不分配物理页** — 等缺页再调 Ch 8 路径。
 ---
 
 ← [2. 内存描述符](./section-2-内存描述符.md) · 下一节 [4. 缺页异常](./section-4-缺页异常.md)
-> ↔ [LKD Ch15 §15.3 虚拟内存区域](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-15-process-address-space/notes/section-15.3-虚拟内存区域.md)
+> ↔ [LKD Ch15 §15.3 虚拟内存区域](../../../05-linux-kernel/chapter-15-process-address-space/notes/section-15.3-虚拟内存区域.md)

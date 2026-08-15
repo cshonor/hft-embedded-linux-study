@@ -11,7 +11,7 @@
 
 → 工具：`wakeuptime`、`offwaketime`
 
-→ LKD 调度/等待：[05-linux-kernel Ch 4](../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/)
+→ LKD 调度/等待：[05-linux-kernel Ch 4](../05-linux-kernel/chapter-04-process-scheduling/)
 
 ### 内核内存分配
 

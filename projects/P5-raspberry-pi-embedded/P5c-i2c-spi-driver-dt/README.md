@@ -170,7 +170,7 @@ MODULE_LICENSE("GPL");
 |---------|--------|
 | 平台驱动模型 | [驱动理论 refs](../../../09-device-drivers-dt/refs/classic-driver-theory/) |
 | I2C 子系统 | [现代驱动实践](../../../09-device-drivers-dt/refs/modern-driver-practice/) |
-| probe/remove 生命周期 | [LKD 17.2 设备模型](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.2-统一设备模型.md) |
+| probe/remove 生命周期 | [LKD 17.2 设备模型](../../../05-linux-kernel/chapter-17-devices-modules/notes/section-17.2-统一设备模型.md) |
 
 ---
 

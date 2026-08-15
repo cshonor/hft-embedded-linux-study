@@ -74,5 +74,5 @@ mutex：① 有归属（`task_struct *owner`），只有持锁者能 `mutex_unlo
 ---
 
 ← [5. 顺序锁与 RCU](./section-5-顺序锁与RCU.md) · 下一节 [7. 选型与实例](./section-7-选型与实例.md)
-> ↔ [LKD Ch10 §10.5 互斥体](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-10-sync-methods/notes/section-10.5-互斥体.md)
-> ↔ [LKD Ch10 §10.4 信号量](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-10-sync-methods/notes/section-10.4-信号量.md)
+> ↔ [LKD Ch10 §10.5 互斥体](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.5-互斥体.md)
+> ↔ [LKD Ch10 §10.4 信号量](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.4-信号量.md)

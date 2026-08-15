@@ -103,5 +103,5 @@ Ch 8  文件系统（本章：逻辑/物理 I/O、VFS、cache、BPF 工具）
 - 应用 I/O：[../chapter-05-applications/](../chapter-05-applications/)
 - 基准测试：[../chapter-12-benchmarking/](../chapter-12-benchmarking/)
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
-- LKD 页缓存：[05-linux-kernel ch16](../../05-linux-kernel/00_Book_3rd_Notes/chapter-16-page-cache/)
+- LKD 页缓存：[05-linux-kernel ch16](../../05-linux-kernel/chapter-16-page-cache/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

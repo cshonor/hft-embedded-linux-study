@@ -39,4 +39,4 @@ SMP 系统中：
 ---
 
 ← [3. 计时架构](./section-3-Linux计时架构.md) · 下一节 [5. 软件定时器与延迟](./section-5-软件定时器与延迟函数.md)
-> ↔ [LKD Ch11 §11.4 定时器中断处理程序](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-11-timers/notes/section-11.4-定时器中断处理程序.md)
+> ↔ [LKD Ch11 §11.4 定时器中断处理程序](../../../05-linux-kernel/chapter-11-timers/notes/section-11.4-定时器中断处理程序.md)

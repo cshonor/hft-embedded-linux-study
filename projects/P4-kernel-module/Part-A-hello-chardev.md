@@ -9,8 +9,8 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [LKD 17.5 内核模块](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.5-内核模块.md) | 模块 = 可加载的 .ko，init/exit 入口 |
-| [LKD 17.1 设备类型](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.1-设备类型.md) | 字符设备 = 流式访问，有 file_operations |
+| [LKD 17.5 内核模块](../../05-linux-kernel/chapter-17-devices-modules/notes/section-17.5-内核模块.md) | 模块 = 可加载的 .ko，init/exit 入口 |
+| [LKD 17.1 设备类型](../../05-linux-kernel/chapter-17-devices-modules/notes/section-17.1-设备类型.md) | 字符设备 = 流式访问，有 file_operations |
 | [ULK 附录 B 模块](../../19-linux-kernel-deep/appendix-B-modules.md) | 模块加载/卸载的内核机制 |
 | [09 Slab/kmalloc](../../06-linux-mm/chapter-08-slab-allocator/notes/section-4-尺寸缓存-与-kmalloc-kfree.md) | kmalloc = slab 分配器入口 |
 
@@ -80,7 +80,7 @@ clean:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 模块加载机制 | [LKD 17.5](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.5-内核模块.md) |
+| 模块加载机制 | [LKD 17.5](../../05-linux-kernel/chapter-17-devices-modules/notes/section-17.5-内核模块.md) |
 | 模块的内核侧 | [ULK 附录 B](../../19-linux-kernel-deep/appendix-B-modules.md) |
 | 现代 6.x 模块 API | [05.5 设备驱动](../../05.5-modern-kernel/chapter-08-device-driver-dt/) |
 
@@ -204,7 +204,7 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 字符设备 / file_operations | [LKD 17.1](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.1-设备类型.md) |
+| 字符设备 / file_operations | [LKD 17.1](../../05-linux-kernel/chapter-17-devices-modules/notes/section-17.1-设备类型.md) |
 | 内核内存分配 kmalloc | [09 Slab/kmalloc](../../06-linux-mm/chapter-08-slab-allocator/notes/section-4-尺寸缓存-与-kmalloc-kfree.md) |
 | copy_to_user 原理 | [ULK ch09 地址空间](../../19-linux-kernel-deep/chapter-09-process-address-space/) |
 | 现代 cdev API 变化 | [05.5 设备驱动](../../05.5-modern-kernel/chapter-08-device-driver-dt/) |

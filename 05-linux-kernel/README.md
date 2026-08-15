@@ -1,41 +1,62 @@
-# Linux Kernel Development — 内核开发总目录
+# Linux Kernel Development 3rd — Robert Love
 
-**文件夹 05** · LKD 第三版笔记 · [返回总清单](../READING-LIST.md#2-linux-kernel-development--robert-love)
+**文件夹 05** · LKD 第三版 · 全书 **20 章** · [返回总清单](../READING-LIST.md#2-linux-kernel-development--robert-love)
 
-> **书本是主线核心。** 体系化梳理内核机制，查漏补缺。  
-> 内核编译/rootfs 实操 → [P3.5 BusyBox 极简 Linux](../projects/P3.5-busybox-minimal-linux/)
-
----
-
-## 子目录
-
-| 序号 | 文件夹 | 内容 |
-|------|--------|------|
-| 00 | [00_Book_3rd_Notes](./00_Book_3rd_Notes/) | Love · LKD 第三版 · 20 章 — **主线** |
-
-🗺️ 源码顶层目录 ↔ LKD 章节 → [Ch2 §2.2](./00_Book_3rd_Notes/chapter-02-getting-started/notes/section-2.2-内核源码树.md)
+> **前置建议：** 先做 [P3.5 BusyBox 极简 Linux](../projects/P3.5-busybox-minimal-linux/)（编译内核+rootfs 实操），再通读本书。
 
 ---
 
-## 推荐学习顺序
+## 目录结构
 
 ```
-P3.5 BusyBox 极简 Linux（编译内核 + rootfs + 启动链实操）
-  ↓
-通读 LKD 第三版（在 00_Book_3rd_Notes 补笔记）
+chapter-XX-english-slug/
+├── README.md      ← 章导读（本节结构、小结、Checklist、HFT 标签）
+└── notes/         ← 按原书小节拆分的笔记
 ```
 
-**正确节奏：** P3.5 建立感性认知 → 书本系统化串联。
+每章 `README.md` 含 **小节笔记索引表**；正文在 `notes/section-*.md`。
+
+🗺️ 源码顶层目录 ↔ LKD 章节 → [Ch2 §2.2](./chapter-02-getting-started/notes/section-2.2-内核源码树.md)
 
 ---
 
-## HFT 精读捷径（读书阶段）
+## 全书结构（20 章）
+
+| 章 | 导读 |
+|----|------|
+| 1 Linux 内核简介 | [chapter-01-intro](./chapter-01-intro/) |
+| 2 内核入门 | [chapter-02-getting-started](./chapter-02-getting-started/) |
+| 3 进程管理 | [chapter-03-process-management](./chapter-03-process-management/) |
+| 4 进程调度 | [chapter-04-process-scheduling](./chapter-04-process-scheduling/) |
+| 5 系统调用 | [chapter-05-system-calls](./chapter-05-system-calls/) |
+| 6 内核数据结构 | [chapter-06-kernel-data-structures](./chapter-06-kernel-data-structures/) |
+| 7 中断和中断处理程序 | [chapter-07-interrupts](./chapter-07-interrupts/) |
+| 8 下半部和推后执行的工作 | [chapter-08-bottom-halves](./chapter-08-bottom-halves/) |
+| 9 内核同步介绍 | [chapter-09-kernel-sync-intro](./chapter-09-kernel-sync-intro/) |
+| 10 内核同步方法 | [chapter-10-sync-methods](./chapter-10-sync-methods/) |
+| 11 定时器和时间管理 | [chapter-11-timers](./chapter-11-timers/) |
+| 12 内存管理 | [chapter-12-memory-management](./chapter-12-memory-management/) |
+| 13 虚拟文件系统 | [chapter-13-vfs](./chapter-13-vfs/) |
+| 14 块 I/O 层 | [chapter-14-block-io](./chapter-14-block-io/) |
+| 15 进程地址空间 | [chapter-15-process-address-space](./chapter-15-process-address-space/) |
+| 16 页高速缓存和页回写 | [chapter-16-page-cache](./chapter-16-page-cache/) |
+| 17 设备与模块 | [chapter-17-devices-modules](./chapter-17-devices-modules/) |
+| 18 调试 | [chapter-18-debugging](./chapter-18-debugging/) |
+| 19 可移植性 | [chapter-19-portability](./chapter-19-portability/) |
+| 20 补丁、开发和社区 | [chapter-20-patches-community](./chapter-20-patches-community/) |
+
+📋 **完整目录与 HFT 读/跳标注** → [OUTLINE.md](./OUTLINE.md)
+
+---
+
+## HFT 精读捷径
 
 ```
 Ch 4 调度 → Ch 7–8 中断/下半部 → Ch 9–10 同步 → Ch 11 定时器
 ```
 
-内存深读 → [06-Gorman](../06-linux-mm/) · 网络栈 → [14-Rosen](../13-kernel-networking/)
+选读补上下文：**Ch 3、12、15** · 内存深读 → [06-linux-mm](../06-linux-mm/)
+对照性能观测 → [15-systems-performance](../15-systems-performance/) Ch 3 / 6–10
 
 完整 HFT 路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)
 
@@ -56,4 +77,4 @@ Ch 4 调度 → Ch 7–8 中断/下半部 → Ch 9–10 同步 → Ch 11 定时�
 | Ch18 调试 | Pointers on C ch18.8 实战案例 | nm/readelf/objdump 排错工作流 |
 | Ch18 调试 | Pointers on C ch18.9 静态vs动态 | 静态分析(nm/readelf/objdump) vs 动态调试(gdb) |
 
-> **学习建议：** C 语言笔记（`00-Linux-Kernel-DPDK-Network-C` 仓库）是内核学习的前置基础。GDB 和 ELF 工具先在用户态掌握，内核侧只需要理解差异（kgdb/crash/ftrace/eBPF）。现代内核调试工具见 [05.5-modern-kernel](../05.5-modern-kernel/)。
+> **学习建议：** C 语言笔记是内核学习的前置基础。GDB 和 ELF 工具先在用户态掌握，内核侧只需要理解差异（kgdb/crash/ftrace/eBPF）。现代内核调试工具见 [05.5-modern-kernel](../05.5-modern-kernel/)。

@@ -76,4 +76,4 @@ Spinlock 假设等待者会忙等（spin），不释放 CPU。如果持锁者睡
 ---
 
 ← [3. 基础原语](./section-3-基础同步原语.md) · 下一节 [5. 顺序锁与 RCU](./section-5-顺序锁与RCU.md)
-> ↔ [LKD Ch10 §10.2 自旋锁](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-10-sync-methods/notes/section-10.2-自旋锁.md)
+> ↔ [LKD Ch10 §10.2 自旋锁](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.2-自旋锁.md)

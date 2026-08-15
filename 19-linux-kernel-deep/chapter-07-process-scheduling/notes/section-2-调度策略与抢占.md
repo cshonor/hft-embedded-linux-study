@@ -83,6 +83,6 @@ RT 线程（FIFO/RR）可以无限占用 CPU，导致系统无响应。`rt_runti
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. 调度器数据结构](./section-3-调度器数据结构.md)
-> ↔ [LKD Ch04 §4.6 实时调度策略](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/notes/section-4.6-实时调度策略.md)
-> ↔ [LKD Ch04 §4.5 抢占与上下文切换](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md)
-> ↔ [LKD Ch04 §4.2 调度策略](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-04-process-scheduling/notes/section-4.2-调度策略.md)
+> ↔ [LKD Ch04 §4.6 实时调度策略](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.6-实时调度策略.md)
+> ↔ [LKD Ch04 §4.5 抢占与上下文切换](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md)
+> ↔ [LKD Ch04 §4.2 调度策略](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.2-调度策略.md)

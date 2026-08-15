@@ -67,6 +67,6 @@ Ch 10 页框回收（避免运行时抖动）
 ```
 
 → 程序员落地 → [02-computer-systems Ch9](../02-computer-systems/chapter-09-virtual-memory/)  
-→ 内核概述 → [05-LKD Ch12](../05-linux-kernel/00_Book_3rd_Notes/chapter-12-memory-management/)
+→ 内核概述 → [05-LKD Ch12](../05-linux-kernel/chapter-12-memory-management/)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

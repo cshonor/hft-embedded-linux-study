@@ -80,4 +80,4 @@ UP 上没有真正的并行，但有**抢占**——内核代码可能被中断/
 ---
 
 ← [Ch 5 导读](../README.md) · 下一节 [2. 内核抢占](./section-2-内核抢占.md)
-> ↔ [LKD Ch09 §9.1 临界区与竞态条件](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-09-kernel-sync-intro/notes/section-9.1-临界区与竞态条件.md)
+> ↔ [LKD Ch09 §9.1 临界区与竞态条件](../../../05-linux-kernel/chapter-09-kernel-sync-intro/notes/section-9.1-临界区与竞态条件.md)

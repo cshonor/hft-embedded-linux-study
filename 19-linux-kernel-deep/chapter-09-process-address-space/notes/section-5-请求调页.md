@@ -94,4 +94,4 @@ mlockall(MCL_CURRENT | MCL_FUTURE);  // 锁定防 swap
 ---
 
 ← [4. 缺页异常](./section-4-缺页异常.md) · 下一节 [6. COW 与堆](./section-6-写时复制与堆.md)
-> ↔ [LKD Ch15 §15.8 从访问到缺页概念](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-15-process-address-space/notes/section-15.8-从访问到缺页概念.md)
+> ↔ [LKD Ch15 §15.8 从访问到缺页概念](../../../05-linux-kernel/chapter-15-process-address-space/notes/section-15.8-从访问到缺页概念.md)

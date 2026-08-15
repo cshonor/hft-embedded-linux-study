@@ -98,4 +98,4 @@ Minor fault：① demand paging（PTE 不存在但物理页在内存，如首次
 ---
 
 ← [3. 内存区 VMA](./section-3-内存区VMA.md) · 下一节 [5. 请求调页](./section-5-请求调页.md)
-> ↔ [LKD Ch15 §15.7 页表](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-15-process-address-space/notes/section-15.7-页表.md)
+> ↔ [LKD Ch15 §15.7 页表](../../../05-linux-kernel/chapter-15-process-address-space/notes/section-15.7-页表.md)

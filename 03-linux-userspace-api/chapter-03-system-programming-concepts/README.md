@@ -31,7 +31,7 @@
 | **Ch3** | System Programming Concepts | 理论：syscall 模型、`errno`、头文件、可移植性 |
 | **Ch4** | Universal I/O Model | 实战：`open/read/write/lseek`、fd |
 
-→ 对照：[LKD §5.1 libc≠syscall](../../05-linux-kernel/00_Book_3rd_Notes/chapter-05-system-calls/notes/section-5.1-与内核通信.md)
+→ 对照：[LKD §5.1 libc≠syscall](../../05-linux-kernel/chapter-05-system-calls/notes/section-5.1-与内核通信.md)
 
 ---
 

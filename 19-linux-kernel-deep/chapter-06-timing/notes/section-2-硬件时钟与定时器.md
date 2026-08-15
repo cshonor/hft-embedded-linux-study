@@ -39,4 +39,4 @@ jiffies++、系统时钟、调度 tick
 ---
 
 ← [1. 本章定位](./section-1-本章定位.md) · 下一节 [3. 计时架构](./section-3-Linux计时架构.md)
-> ↔ [LKD Ch11 §11.3 硬件时钟和定时器](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-11-timers/notes/section-11.3-硬件时钟和定时器.md)
+> ↔ [LKD Ch11 §11.3 硬件时钟和定时器](../../../05-linux-kernel/chapter-11-timers/notes/section-11.3-硬件时钟和定时器.md)

@@ -101,4 +101,4 @@ SYSCALL_DEFINE3(my_syscall, int, arg1, char __user *, arg2,
 ---
 
 ← [2. POSIX API](./section-2-POSIX-API与系统调用.md) · 下一节 [4. 进入与退出](./section-4-进入与退出.md)
-> ↔ [LKD Ch05 §5.3 系统调用处理程序](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-05-system-calls/notes/section-5.3-系统调用处理程序.md)
+> ↔ [LKD Ch05 §5.3 系统调用处理程序](../../../05-linux-kernel/chapter-05-system-calls/notes/section-5.3-系统调用处理程序.md)

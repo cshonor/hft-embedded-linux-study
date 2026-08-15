@@ -13,7 +13,7 @@
 
 **HFT：** 延迟分解里若出现「内核段」不明 — 先查是 **syscall**、**缺页**、**中断/softirq** 还是 **调度切换**。
 
-→ 用户/内核分界与 syscall 流程：[LKD Ch 5 系统调用](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-05-system-calls/)
+→ 用户/内核分界与 syscall 流程：[LKD Ch 5 系统调用](../../../05-linux-kernel/chapter-05-system-calls/)
 
 ---
 

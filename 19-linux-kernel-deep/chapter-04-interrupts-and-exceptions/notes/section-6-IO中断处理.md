@@ -76,4 +76,4 @@ ULK 时代 IRQ 号 = 硬件中断号，全局数组 `irq_desc[]` 直接索引。
 ---
 
 ← [5. 异常处理](./section-5-异常处理.md) · 下一节 [7. 可延迟函数与工作队列](./section-7-可延迟函数与工作队列.md)
-> ↔ [LKD Ch07 §7.2 中断处理程序](../../../05-linux-kernel/00_Book_3rd_Notes/chapter-07-interrupts/notes/section-7.2-中断处理程序.md)
+> ↔ [LKD Ch07 §7.2 中断处理程序](../../../05-linux-kernel/chapter-07-interrupts/notes/section-7.2-中断处理程序.md)
