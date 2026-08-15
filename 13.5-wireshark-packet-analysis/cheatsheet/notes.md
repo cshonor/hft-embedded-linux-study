@@ -131,6 +131,41 @@
 | 上不了网 | DNS 有无响应 → 有无查 DNS → SYN 后 RST 还是重传 |
 | 无线 | Monitor 模式 + 信道对齐 + RSSI/速率列 |
 
-## 个人常用组合
+## HFT 常用组合
 
-（待填）
+### 延迟快速诊断
+
+```bash
+# 一行命令：RTT P50/P95/P99 统计
+tshark -r trade.pcapng -Y "tcp.analysis.ack_rtt" -T fields -e tcp.analysis.ack_rtt | \
+  awk '{v[NR]=$1;s+=$1}END{printf "n=%d avg=%.0fus p50=%.0fus p95=%.0fus p99=%.0fus max=%.0fus\n",NR,s/NR*1e6,v[int(NR*.5)]*1e6,v[int(NR*.95)]*1e6,v[int(NR*.99)]*1e6,v[NR]*1e6}'
+
+# 重传统计
+tshark -r trade.pcapng -Y "tcp.analysis.retransmission" -c 20
+
+# 零窗口检查
+tshark -r trade.pcapng -Y "tcp.analysis.zero_window" -c 20
+
+# Nagle/Delayed ACK 检测（40ms 附近聚集 = 有问题）
+tshark -r trade.pcapng -Y "tcp.len>0" -T fields -e frame.time_delta_displayed | \
+  awk '{if($1>0.001)print $1*1000"ms"}' | sort -n | uniq -c | sort -rn | head
+```
+
+### 抓包前必做
+
+```bash
+# 关闭 GRO（影响 RX 分析）
+sudo ethtool -K eth0 gro off
+
+# 验证
+ethtool -k eth0 | grep generic-receive
+```
+
+### 生产环境高流量抓包
+
+```bash
+# 10Gbps+：先 BPF 过滤再落盘
+sudo tcpdump -nni eth0 -w trade.pcapng -s 0 \
+  'host 10.0.0.5 and tcp port 443' -C 100 -W 10
+# -C 100: 每 100MB 轮转，-W 10: 保留 10 个文件
+```
