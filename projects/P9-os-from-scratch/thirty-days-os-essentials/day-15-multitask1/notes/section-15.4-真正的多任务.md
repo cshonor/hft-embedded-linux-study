@@ -19,6 +19,6 @@ PIT IRQ → inthandler20 → … → mt_taskswitch() → far-JMP 下一任务
 
 **里程碑：** **纸娃娃 OS** 从 **单线程顺序** → **内核调度多任务** — 现代 OS **scheduler 在 interrupt/timer 里** 的原型。
 
-→ [Day 12 PIT](../day-12-timer1/) · [Day 6 ISR 要短](../day-06-split-compile-irq/) — 切换成本计入 **中断禁止时间**
+→ Day 12 PIT · [Day 6 ISR 要短](../../day-06-split-compile-irq/) — 切换成本计入 **中断禁止时间**
 
 ---

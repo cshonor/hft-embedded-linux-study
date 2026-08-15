@@ -31,7 +31,7 @@ DPDK **不直接支持 TCP** — SPDK 需集成 L4 实现。本书重点提及�
 | **mTCP** | 高性能用户态 TCP 研究/生产实现 |
 | **OpenFastPath（OFP）** | 另一用户态协议栈选项 |
 
-**设计共性：** per-core 连接/缓冲、轮询 RX/TX、避免内核锁 — 与 [Ch7 poll 模式](../chapter-07-nic-performance-optimization/) 一致。
+**设计共性：** per-core 连接/缓冲、轮询 RX/TX、避免内核锁 — 与 [Ch7 poll 模式](../../chapter-07-nic-performance-optimization/) 一致。
 
 ---
 
@@ -44,7 +44,7 @@ DPDK **不直接支持 TCP** — SPDK 需集成 L4 实现。本书重点提及�
 | **线程↔队列绑定** | DPDK lcore 与 NVMe **QP** 亲和 |
 | **性能** | 频繁读写下，**单核 IOPS** 远超内核 NVMe 驱动（书中测试结论） |
 
-→ NVMe 命令集走 **PCIe** — 与 [Ch6](../chapter-06-pcie-packet-io/) 网卡 PMD 同属 **用户态 PCIe 驱动** 范式
+→ NVMe 命令集走 **PCIe** — 与 [Ch6](../../chapter-06-pcie-packet-io/) 网卡 PMD 同属 **用户态 PCIe 驱动** 范式
 
 ---
 
@@ -70,7 +70,7 @@ SPDK 提供 **iSCSI Target** 参考实现 — 端到端路径：
 |------|------|
 | **最小改动现有 socket 应用** | Libuns 类 **socket 截获** 方案 |
 | **全新存储服务** | 直接链接 SPDK API / mTCP |
-| **多协议 NFV** | 可与 [Ch14 OVS](../chapter-14-ovs-dpdk-acceleration/) 分域 — OVS 管虚拟交换，SPDK 管存储面 |
+| **多协议 NFV** | 可与 [Ch14 OVS](../../chapter-14-ovs-dpdk-acceleration/) 分域 — OVS 管虚拟交换，SPDK 管存储面 |
 
 ---
 

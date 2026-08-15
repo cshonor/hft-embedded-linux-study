@@ -1,6 +1,6 @@
 # 第 20 章 · Hash Tables（哈希表） · 字符串驻留（String Interning）
 
-← [本章目录](./README.md) · 上一节：[02-hash-functions-and-load-factor.md](./02-hash-functions-and-load-factor.md) · 下一节：[04-ast.md](./04-ast.md)
+← [本章目录](./README.md) · 上一节：[02-hash-functions-and-load-factor.md](./02-hash-functions-and-load-factor.md) · 下一节：[04-ast.md](04-hash-tables-table-api.md)
 
 ---
 

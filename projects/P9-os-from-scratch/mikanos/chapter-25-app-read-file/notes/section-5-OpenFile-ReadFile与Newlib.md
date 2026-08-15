@@ -21,7 +21,7 @@ int64_t SyscallReadFile(int fd, void* buf, size_t len) {
 }
 ```
 
-→ [Ch20 syscall 表](../chapter-20-syscall/notes/section-5-syscall机制与SyscallEntry.md)
+→ [Ch20 syscall 表](../../chapter-20-syscall/notes/section-5-syscall机制与SyscallEntry.md)
 
 ---
 
@@ -48,7 +48,7 @@ void* sbrk(intptr_t increment) {
 | **open/read** | **fopen/fread/fgets** 最终落到此 |
 | **sbrk** | **malloc** 堆扩展 — **简化的用户堆**（内核 **brk  syscall** 或 **固定区**） |
 
-→ [Ch5 Newlib](../chapter-05-console-text/notes/section-5-Console与Newlib.md) · [Ch21 write→PutString](../chapter-21-window-apps/notes/section-3-PutString与printf适配.md)
+→ [Ch5 Newlib](../../chapter-05-console-text/notes/section-5-Console与Newlib.md) · [Ch21 write→PutString](../../chapter-21-window-apps/notes/section-3-PutString与printf适配.md)
 
 ---
 

@@ -188,4 +188,4 @@ Harris 加工商那种 **分月、分步** 套保，可以走 **普通单 + 人�
 
 ← [§3 超大宗抛售](./section-3-3-超大宗股票抛售.md) · [Ch 2 README](../README.md) · 下一节 [§5 期权](./section-5-5-期权市场交易.md)
 
-**go-dex：** [HARRIS-INDEX §4](../../00-practice-go-dex/code/HARRIS-INDEX.md) · [M2 撮合引擎](../../00-practice-go-dex/notes/milestone-02-撮合引擎/)
+**go-dex：** [HARRIS-INDEX §4](../../00-practice-go-dex/code/HARRIS-INDEX.md) · [M2 撮合引擎](../../00-practice-go-dex/notes/milestone-02-matching-engine)

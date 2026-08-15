@@ -140,6 +140,6 @@ grep -A5 "goto.*out\|goto.*err\|goto.*fail" drivers/my_hft/*.c
 
 ## 交叉引用
 
-- [05.6 ch07 Oops 分析](chapter-07-oops/notes/01-oops-vs-panic.md)
-- [05.6 ch12 静态分析](chapter-12-misc/notes/04-static-analysis-sparse-smatch.md)
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch07 Oops 分析](../../chapter-07-oops/notes/01-oops-vs-panic.md)
+- [05.6 ch12 静态分析](../../chapter-12-misc/notes/04-static-analysis.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)

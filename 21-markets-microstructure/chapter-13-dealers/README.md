@@ -4,7 +4,7 @@
 
 本章详细探讨 **做市商 (Dealers)** 在市场中扮演的角色，以及如何通过 **设定报价、管理库存、应对风险**（尤其 **信息不对称**）获取利润。
 
-> **HFT 核心章：** 电子 LOB 上 **挂限价单做市** = dealer 功能的 **去中介化**；与 [Ch 10 知情](../chapter-10-informed-traders-market-efficiency/)、[Ch 14 价差](../chapter-14-bid-ask-spreads/)、[Ch 12 虚张声势](../chapter-12-bluffers-market-manipulation/) 直接衔接；[00-practice-go-dex M3](./00-practice-go-dex/notes/milestone-03-价差与流动性/) 练手价差逻辑。
+> **HFT 核心章：** 电子 LOB 上 **挂限价单做市** = dealer 功能的 **去中介化**；与 [Ch 10 知情](../chapter-10-informed-traders-market-efficiency/)、[Ch 14 价差](../chapter-14-bid-ask-spreads/)、[Ch 12 虚张声势](../chapter-12-bluffers-market-manipulation/) 直接衔接；[00-practice-go-dex M3](../00-practice-go-dex/notes/milestone-03-spread-and-liquidity) 练手价差逻辑。
 
 ---
 

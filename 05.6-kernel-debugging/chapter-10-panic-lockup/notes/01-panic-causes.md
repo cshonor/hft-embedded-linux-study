@@ -159,6 +159,6 @@ kernel.panic_print = 1         # 打印所有 CPU 栈
 
 ## 交叉引用
 
-- [05.6 ch07 Oops vs Panic](chapter-07-oops/notes/01-oops-vs-panic.md)
-- [05.6 ch10 Soft Lockup](chapter-10-panic-lockup/notes/02-soft-lockup.md)
-- [05.6 ch10 Kdump/Kexec](chapter-10-panic-lockup/notes/07-kdump-kexec.md)
+- [05.6 ch07 Oops vs Panic](../../chapter-07-oops/notes/01-oops-vs-panic.md)
+- [05.6 ch10 Soft Lockup](../../chapter-10-panic-lockup/notes/02-soft-lockup.md)
+- [05.6 ch10 Kdump/Kexec](../../chapter-10-panic-lockup/notes/07-kdump-kexec.md)

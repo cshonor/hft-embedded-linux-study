@@ -37,7 +37,7 @@ if (CalculateChecksum(rsdp, rsdp->Length) != 0) panic();
 
 **通过后：** 读 **RsdtAddress / XsdtAddress** — 继续解析 **FADT**（下一章/后续可深）。
 
-→ [Ch1 EfiMain / SystemTable](../chapter-01-hello-world/notes/section-6-C语言过渡与文件格式.md)
+→ [Ch1 EfiMain / SystemTable](../../chapter-01-hello-world/notes/section-6-C语言过渡与文件格式.md)
 
 ---
 
@@ -66,11 +66,11 @@ Ch13 抢占式多任务（时间片 / sleep）
 
 | Ch11 主题 | 继续读 |
 |----------|--------|
-| 键盘 | [chapter-12-keyboard](../chapter-12-keyboard/) ⚪ |
-| 多任务 | [chapter-13-multitask1](../chapter-13-multitask1/) 🔴 |
-| 01 定时器 | [01 Day 12 timer](../../thirty-days-os-essentials/day-12-timer1/) |
+| 键盘 | [chapter-12-keyboard](../../chapter-12-keyboard/) ⚪ |
+| 多任务 | [chapter-13-multitask1](../../chapter-13-multitask1/) 🔴 |
+| 01 定时器 | 01 Day 12 timer |
 | ULK 定时 | [18-linux-kernel-deep chapter-06-timing](../../../../../18-linux-kernel-deep/chapter-06-timing/) |
 
 ---
 
-← [5. ACPI 校准](./section-5-ACPI-PM定时器校准.md) · [Ch 10](../chapter-10-window/) · [Ch 11 导读](../README.md)
+← [5. ACPI 校准](./section-5-ACPI-PM定时器校准.md) · [Ch 10](../../chapter-10-window/) · [Ch 11 导读](../README.md)

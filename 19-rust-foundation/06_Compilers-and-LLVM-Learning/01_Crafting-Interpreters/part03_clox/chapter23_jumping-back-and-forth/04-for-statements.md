@@ -1,6 +1,6 @@
 # 第 23 章 · Jumping Back and Forth（来回跳转） · §23.4 For 循环（For Statements）
 
-← [本章目录](./README.md) · 上一节：[03-while-statements.md](./03-while-statements.md) · 下一节：[05-ast.md](./05-ast.md)
+← [本章目录](./README.md) · 上一节：[03-while-statements.md](./03-while-statements.md) · 下一节：[05-ast.md](05-jumping-back-and-forth.md)
 
 ---
 

@@ -10,7 +10,7 @@ vhost-user 进程创建 **Unix socket server**，Qemu（或 VMM）为 **client**
 
 | 典型消息 | 作用 |
 |----------|------|
-| `VHOST_SET_FEATURES` | **特性协商** — 与 [Ch11](../chapter-11-virtio-paravirtualization/notes/section-2-Virtio规范与使用场景.md) 前端一致 |
+| `VHOST_SET_FEATURES` | **特性协商** — 与 [Ch11](../../chapter-11-virtio-paravirtualization/notes/section-2-Virtio规范与使用场景.md) 前端一致 |
 | `VHOST_SET_OWNER` | 所有权 |
 | `VHOST_SET_MEM_TABLE` | **Guest 内存布局** — GPA/文件偏移 |
 | `VHOST_SET_VRING_*` | 队列地址、kick/eventfd |
@@ -35,7 +35,7 @@ vhost-user 进程创建 **Unix socket server**，Qemu（或 VMM）为 **client**
 
 | 关键 | 说明 |
 |------|------|
-| **大页** | [Ch2](../chapter-02-cache-and-memory/notes/section-5-大页Hugepages.md) · [Ch10 EPT/IOTLB](../chapter-10-x86-io-virtualization/notes/section-4-透传下收发包流程.md) |
+| **大页** | [Ch2](../../chapter-02-cache-and-memory/notes/section-5-大页Hugepages.md) · [Ch10 EPT/IOTLB](../../chapter-10-x86-io-virtualization/notes/section-4-透传下收发包流程.md) |
 | **零拷贝** | vhost 读写的即是 Guest mbuf 缓冲 — 无 Qemu 中转 |
 | **安全** | 仅 vhost 与 Qemu 约定区域 — 需正确 **mem_table** |
 
@@ -50,7 +50,7 @@ Guest net_virtio TX → Available Ring
     （反向 RX 对称）
 ```
 
-与 [Ch11 Virtqueue §3](../chapter-11-virtio-paravirtualization/notes/section-3-虚拟队列机制.md) **同一套环**，后端在 **Host 用户态** 消费。
+与 [Ch11 Virtqueue §3](../../chapter-11-virtio-paravirtualization/notes/section-3-虚拟队列机制.md) **同一套环**，后端在 **Host 用户态** 消费。
 
 ---
 

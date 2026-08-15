@@ -48,7 +48,7 @@
 token:  kind=INTEGER,  image="54",  value=54
 ```
 
-→ [CI ch4 扫描](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) 手写 token；本书 ch4 用 **JavaCC** 描述扫描规则。
+→ [CI ch4 扫描](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) 手写 token；本书 ch4 用 **JavaCC** 描述扫描规则。
 
 ---
 

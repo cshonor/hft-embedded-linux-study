@@ -1,19 +1,19 @@
 # TLPI 第 33 章 — Threads: Further Details
 
 **优先级**：🔴（信号×线程、fork、NPTL 认知）  
-**前置**：[Ch29](../chapter-29-threads-intro/notes.md)–[Ch32](../chapter-32-thread-cancellation/notes.md) · [Ch22 sigwait](../chapter-22-signals-advanced/notes.md) · [Ch28 fork](../chapter-28-process-creation-exec-detail/notes.md)  
-**后置**：[Ch34 进程组/会话](../chapter-34-process-groups-sessions/notes.md)（线程模块收束；daemon 见 [Ch37](../chapter-37-daemons/notes.md)）
+**前置**：[Ch29](../chapter-29-threads-intro/README.md)–[Ch32](../chapter-32-thread-cancellation/README.md) · [Ch22 sigwait](../chapter-22-signals-advanced/README.md) · [Ch28 fork](../chapter-28-process-creation-exec-detail/README.md)  
+**后置**：[Ch34 进程组/会话](../chapter-34-process-groups-sessions/README.md)（线程模块收束；daemon 见 [Ch37](../chapter-37-daemons/README.md)）
 
 ---
 
 ## 小节目录
 
-- [33.1 线程栈](./notes/33.1-thread-stack.md)
-- [33.2 线程与信号（重难点）](./notes/33.2-thread-signal.md)
-- [33.3 进程控制](./notes/33.3-process.md)
-- [33.4 实现模型](./notes/33.4-model.md)
-- [33.5 LinuxThreads vs NPTL](./notes/33.5-linuxthreads-nptl.md)
-- [33.6 高级同步（简介）](./notes/33.6-sync.md)
+- [33.1 线程栈](notes/33.1-thread-stacks.md)
+- [33.2 线程与信号（重难点）](notes/33.1-thread-stacks.md)
+- [33.3 进程控制](notes/33.3-threads-and-process-control.md)
+- [33.4 实现模型](notes/33.4-thread-implementation-models.md)
+- [33.5 LinuxThreads vs NPTL](notes/33.5-linux-implementations-of-posix-threads.md)
+- [33.6 高级同步（简介）](notes/33.6-advanced-features-of-the-pthreads-api.md)
 
 ---
 
@@ -142,4 +142,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

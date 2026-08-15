@@ -11,7 +11,7 @@
 
 ### 1.2 寄生本质 (Parasitic Traders)
 
-[Ch 8](../chapter-08-why-people-trade/) 分类中的 **寄生型** 分支：
+[Ch 8](../../chapter-08-why-people-trade/) 分类中的 **寄生型** 分支：
 
 | 不做的事 | 做的事 |
 |----------|--------|

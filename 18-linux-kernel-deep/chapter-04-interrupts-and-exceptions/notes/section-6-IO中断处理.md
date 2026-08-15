@@ -26,7 +26,7 @@
 | **PIC** | 传统可编程中断控制器 |
 | **APIC / IOAPIC** | **多处理器** 系统中断分发 — SMP 标配 |
 
-→ SMP 与同步：[Ch 5](../chapter-05-kernel-synchronization.md) · [Ch 1](../chapter-01-introduction/notes/section-2-Linux与Unix比较.md) SMP 介绍
+→ SMP 与同步：[Ch 5](../../chapter-05-kernel-synchronization.md) · [Ch 1](../../chapter-01-introduction/notes/section-2-Linux与Unix比较.md) SMP 介绍
 
 ---
 
@@ -34,7 +34,7 @@
 
 ISR 里应 **尽量少干活** — 耗时工作延后到 softirq / tasklet / workqueue（[section-7](./section-7-可延迟函数与工作队列.md)）。
 
-→ 驱动模型：[Ch 13 I/O 架构](../chapter-13-io-architecture.md)
+→ 驱动模型：[Ch 13 I/O 架构](../../chapter-13-io-architecture.md)
 
 ### 常见陷阱
 

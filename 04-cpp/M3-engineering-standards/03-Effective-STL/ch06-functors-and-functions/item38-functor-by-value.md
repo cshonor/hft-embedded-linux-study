@@ -108,7 +108,7 @@ std::cout << result.count;  // 正确
 
 // 方式 2：lambda 引用捕获
 int count = 0;
-std::for_each(v.begin(), v.end(), [&count](int) { count++; });
+std::for_each(v.begin(), v.end(), &count { count++; });
 std::cout << count;  // 正确
 ```
 
@@ -199,7 +199,7 @@ struct Counter {
 或用 lambda 引用捕获（更推荐）：
 ```cpp
 int n = 0;
-std::for_each(v.begin(), v.end(), [&n](int) { n++; });
+std::for_each(v.begin(), v.end(), &n { n++; });
 ```
 </details>
 
@@ -254,4 +254,4 @@ threshold = 200;  // 之后改 threshold
 
 - 上一节：[ch05-algorithms](../ch05-algorithms/README.md)
 - 下一节：[Item 39 predicate 可配对](item39-predicate-adaptable.md)
-- [Effective Modern C++ Item 34：lambda vs bind](../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)
+- [Effective Modern C++ Item 34：lambda vs bind](../../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)

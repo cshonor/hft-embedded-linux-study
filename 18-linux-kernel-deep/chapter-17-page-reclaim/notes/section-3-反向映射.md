@@ -21,7 +21,7 @@
 - **`anon_vma`** 将映射 **同一页框** 的所有 **`vm_area_struct`** 链成 **双向循环链表**  
 - 回收时遍历链表 → 逐个 **清 PTE**  
 
-→ 匿名页：[Ch 9 section-5](../chapter-09-process-address-space/notes/section-5-请求调页.md)
+→ 匿名页：[Ch 9 section-5](../../chapter-09-process-address-space/notes/section-5-请求调页.md)
 
 ---
 
@@ -32,7 +32,7 @@
 - 每个 **`address_space`** / 相关结构维护 **PST**  
 - 内存区索引：**起始、结束、大小** — **O(log n)** 找到映射了 **指定文件页索引** 的所有 VMA  
 
-→ `address_space`：[Ch 15 section-2](../chapter-15-page-cache/notes/section-2-页缓存与address_space.md)
+→ `address_space`：[Ch 15 section-2](../../chapter-15-page-cache/notes/section-2-页缓存与address_space.md)
 
 > **深潜可选：** PST 节点排序键（radix + heap index）— ULK 2.6 `mm/rmap.c`。
 

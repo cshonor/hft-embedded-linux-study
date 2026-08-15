@@ -13,7 +13,7 @@
 
 **较低买价 (Bid) 买入 · 较高卖价 (Ask) 卖出** → 赚取 **买卖价差 (Bid-ask spread)**。
 
-→ 价差分解详见 [Ch 14](../chapter-14-bid-ask-spreads/)
+→ 价差分解详见 [Ch 14](../../chapter-14-bid-ask-spreads/)
 
 ### 1.3 被动交易者 (Passive Traders)
 

@@ -43,7 +43,7 @@ Ch9  图层 + 性能优化  ← 本章
 Ch10 窗口系统扩展
 ```
 
-→ [Ch6 遗留问题](../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
+→ [Ch6 遗留问题](../../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
 
 ---
 

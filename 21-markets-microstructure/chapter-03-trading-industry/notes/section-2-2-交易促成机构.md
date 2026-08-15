@@ -36,7 +36,7 @@
 | 特征 | 说明 |
 |------|------|
 | **公开透明** | 最优买卖价 (BBO)、（专业用户）Level II 深度 |
-| **规则驱动** | 撮合优先级、订单类型、涨跌停 — [Ch 4](../chapter-04-orders-and-order-types/) · [Ch 6](../chapter-06-order-driven-markets/) |
+| **规则驱动** | 撮合优先级、订单类型、涨跌停 — [Ch 4](../../chapter-04-orders-and-order-types/) · [Ch 6](../../chapter-06-order-driven-markets/) |
 | **历史形态** | NYSE **物理大厅 + 专家**；现代 **全电子**（SuperDot / SuperSOES → 今日 matching engine） |
 
 **Harris 故事入口：** [Ch 2 §1 散户 Jennifer](../../chapter-02-trading-stories/notes/section-1-1-散户股票交易.md) — 单进 **公开簿** 的典型路径。

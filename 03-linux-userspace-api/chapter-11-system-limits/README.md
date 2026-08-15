@@ -1,20 +1,20 @@
 # TLPI 第 11 章 — System Limits and Options
 
 **优先级**：🟡→🔴（可移植 / 路径 / 管道缓冲）  
-**前置**：[Ch10 Times and Dates](../chapter-10-time/notes.md)（`_SC_CLK_TCK` ↔ `times()`）  
-**后置**：[Ch12 System and Process Information](../chapter-12-system-process-info/notes.md) · [Ch15 文件属性](../chapter-15-file-attributes/notes.md) · [Ch44 管道](../chapter-44-pipes-fifos/notes.md) · [Ch36 资源限制](../chapter-36-process-resources/notes.md)
+**前置**：[Ch10 Times and Dates](../chapter-10-time/README.md)（`_SC_CLK_TCK` ↔ `times()`）  
+**后置**：[Ch12 System and Process Information](../chapter-12-system-process-info/README.md) · [Ch15 文件属性](../chapter-15-file-attributes/README.md) · [Ch44 管道](../chapter-44-pipes-fifos/README.md) · [Ch36 资源限制](../chapter-36-process-resources/README.md)
 
 ---
 
 ## 小节目录
 
-- [11.1 基础概念](./notes/11.1-concepts.md)
-- [11.2 三大查询 API](./notes/11.2-api.md)
-- [11.3 编译期：`<limits.h>` / `<unistd.h>`](./notes/11.3-limits-unistd.md)
-- [11.4 常用限制速览](./notes/11.4-limits.md)
-- [11.5 Indeterminate：工程策略](./notes/11.5-indeterminate.md)
-- [11.6 选项检测（Feature Options）](./notes/11.6-feature-options.md)
-- [11.7 高频易错](./notes/11.7-section-11-7.md)
+- [11.1 基础概念](notes/11.1-system-limits.md)
+- [11.2 三大查询 API](notes/11.2-runtime-limits.md)
+- [11.3 编译期：`<limits.h>` / `<unistd.h>`](notes/11.3-file-related-limits.md)
+- [11.4 常用限制速览](notes/11.4-indeterminate-limits.md)
+- [11.5 Indeterminate：工程策略](notes/11.4-indeterminate-limits.md)
+- [11.6 选项检测（Feature Options）](notes/11.5-system-options.md)
+- [11.7 高频易错](notes/11.7-exercises.md)
 
 ---
 
@@ -118,4 +118,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

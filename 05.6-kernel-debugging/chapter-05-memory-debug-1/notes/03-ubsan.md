@@ -162,5 +162,5 @@ CONFIG_UBSAN_BOUNDS=y           # 检测数组越界
 
 ## 交叉引用
 
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch05 内存错误类型](chapter-05-memory-debug-1/notes/01-memory-error-types.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch05 内存错误类型](../../chapter-05-memory-debug-1/notes/01-memory-error-types.md)

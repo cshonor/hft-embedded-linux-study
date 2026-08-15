@@ -48,7 +48,7 @@
 | **差分求导** | 小 Δt 放大噪声 |
 | **协方差更新** | 需稳定算法（Kalman 平方根形式等） |
 
-**无 FPU：** [Ch7 Q 格式](../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) 同样怕 **相近大数相减** — 先 **scale** 再算。
+**无 FPU：** [Ch7 Q 格式](../../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) 同样怕 **相近大数相减** — 先 **scale** 再算。
 
 ---
 

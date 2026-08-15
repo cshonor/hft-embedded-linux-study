@@ -64,9 +64,9 @@
 | 需求 | 读哪 |
 |------|------|
 | **ARM7 经典** | 本章 |
-| **Cortex-M4 裸机** | [Ch15 NVIC](../chapter-15-exception-handling-v7m/) |
-| **外设寄存器** | [Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) |
-| **Linux ARM64** | [奔跑吧 Ch11–13](../aarch64-practice/) · [04 LKD](../../05-linux-kernel/) |
+| **Cortex-M4 裸机** | [Ch15 NVIC](../../chapter-15-exception-handling-v7m/) |
+| **外设寄存器** | [Ch16 MMIO](../../chapter-16-memory-mapped-peripherals/) |
+| **Linux ARM64** | [奔跑吧 Ch11–13](../../../aarch64-practice/) · [04 LKD](../../../../05-linux-kernel/) |
 
 ---
 

@@ -37,7 +37,7 @@ delete arr;    // UB！不知道有几个元素，只析构第一个
 
 ```cpp
 Widget* arr = new Widget[10];
-// 1. operator new[](sizeof(Widget) * 10 + cookie_size)  // 分配内存 + cookie
+// 1. operator new * 10 + cookie_size)  // 分配内存 + cookie
 //    cookie_size 通常 = 8（存元素数）
 // 2. 逐个 placement new 构造：new(mem + i) Widget()
 // 内存布局：[count=10 (8B)] [Widget 0] [Widget 1] ... [Widget 9]
@@ -49,7 +49,7 @@ Widget* arr = new Widget[10];
 delete[] arr;
 // 1. 读 cookie 获取元素数（10）
 // 2. 从最后一个开始逐个析构：arr[9].~Widget(), arr[8].~Widget(), ...
-// 3. operator delete[](arr)  // 释放内存（含 cookie）
+// 3. operator delete  // 释放内存（含 cookie）
 ```
 
 ### new/delete vs new[]/delete[]

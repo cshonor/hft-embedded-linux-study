@@ -9,6 +9,6 @@
 | **权力转移** | 公共 LP → **交易商 / wholesaler** |
 | **监管** | 散户净成本 vs **CLOB / 价格发现** |
 
-> **HFT 读者 takeaway：** 你在 **lit 做市** = 往往吃 **被 wholesaler 筛过的 residual flow** — 须 **更宽 adverse selection 成分**，而非抱怨「散户太精」。理解 PFOF 后，**segment strategy**：服务 **internalized retail**（wholesale 侧）vs **toxic lit**（不同模型）。下一章 [Ch 26](../chapter-26-competition-within-among-markets/) — **碎片化** 的venue竞争全景。
+> **HFT 读者 takeaway：** 你在 **lit 做市** = 往往吃 **被 wholesaler 筛过的 residual flow** — 须 **更宽 adverse selection 成分**，而非抱怨「散户太精」。理解 PFOF 后，**segment strategy**：服务 **internalized retail**（wholesale 侧）vs **toxic lit**（不同模型）。下一章 [Ch 26](../../chapter-26-competition-within-among-markets/) — **碎片化** 的venue竞争全景。
 
 ---

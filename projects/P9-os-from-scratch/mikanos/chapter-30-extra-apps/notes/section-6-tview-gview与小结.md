@@ -25,7 +25,7 @@ while ((c = getopt(argc, argv, "w:h:t:")) != -1) {
 
 **依赖：** Ch22 **ReadEvent** · Ch21 **OpenWindow/WinWriteString** · Ch25 **读文件**。
 
-→ [Ch18 getopt 需 Newlib](../chapter-18-apps/notes/section-6-C++应用标准库与小结.md)
+→ [Ch18 getopt 需 Newlib](../../chapter-18-apps/notes/section-6-C++应用标准库与小结.md)
 
 ---
 
@@ -51,7 +51,7 @@ constexpr size_t kAppStackBytes = 64 * 1024;
 
 **与 FreeType 同类教训：** **第三方库 → 测栈**。
 
-→ [Ch28 栈 32KiB](../chapter-28-japanese-redirect/notes/section-4-栈扩容与FreeType-Bug.md)
+→ [Ch28 栈 32KiB](../../chapter-28-japanese-redirect/notes/section-4-栈扩容与FreeType-Bug.md)
 
 ---
 
@@ -73,10 +73,10 @@ constexpr size_t kAppStackBytes = 64 * 1024;
 
 | 主题 | 继续读 |
 |------|--------|
-| 今后展望 | [chapter-31-road-ahead](../chapter-31-road-ahead/) |
-| 附录/环境 | [appendix-A-dev-env](../appendix-A-dev-env/) |
-| 全书导读 | [../README.md](../README.md) · [../OUTLINE.md](../OUTLINE.md) |
+| 今后展望 | [chapter-31-road-ahead](../../chapter-31-road-ahead/) |
+| 附录/环境 | [appendix-A-dev-env](../../appendix-A-dev-env/) |
+| 全书导读 | [../README.md](../README.md) · [../OUTLINE.md](../../OUTLINE.md) |
 
 ---
 
-← [5. 关窗](./section-5-窗口关闭按钮.md) · [Ch 29](../chapter-29-ipc/) · [Ch 30 导读](../README.md)
+← [5. 关窗](./section-5-窗口关闭按钮.md) · [Ch 29](../../chapter-29-ipc/) · [Ch 30 导读](../README.md)

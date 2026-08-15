@@ -9,7 +9,7 @@
 | **最后交易者 (Trader of last resort)** | 无公众愿提供流动性时 → **自费** 报 **合理双向报价** |
 | **价格连续性 (Price continuity)** | 介入交易 **平滑** 波动，防 **剧烈跳空** |
 
-→ [Ch 19 弹性](../chapter-19-liquidity/) · [Ch 9 公共品](../chapter-09-good-markets/)
+→ [Ch 19 弹性](../../chapter-19-liquidity/) · [Ch 9 公共品](../../chapter-09-good-markets/)
 
 | HFT 视角 |
 |----------|
@@ -23,7 +23,7 @@
 | **价格优先** | 簿上有 **同价或更优** 公众限价单 → 专家 **让位**，公众 **先成交** |
 | **何时可做市** | 仅填补公众订单留下的 **流动性真空** |
 
-→ [Ch 6 公众指令优先 / time precedence](../chapter-06-order-driven-markets/)
+→ [Ch 6 公众指令优先 / time precedence](../../chapter-06-order-driven-markets/)
 
 | HFT 视角 |
 |----------|

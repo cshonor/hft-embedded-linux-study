@@ -62,7 +62,7 @@ void inc_irq_count(void)
 
 **HFT：** 用户态 **每核一条 SPSC ring**、**thread-local 订单簿缓存** = **per-CPU 同构**。避免 **`std::atomic` 全局 hot counter** — 用 **`cpu_local`** 聚合。与内核一样：**读总和慢路径做**，**写路径本核独占**。
 
-→ [Ch 8 softirq per-CPU](../../chapter-08-bottom-halves/) · [Ch 10 preempt_disable](../../chapter-10-kernel-synchronization/) · [06 Gorman Slab per-CPU cache](../../../../06-linux-mm/chapter-08-slab-allocator/notes/section-5-每-CPU-对象缓存.md)
+→ [Ch 8 softirq per-CPU](../../chapter-08-bottom-halves/) · [Ch 10 preempt_disable](../../chapter-06-kernel-data-structures) · [06 Gorman Slab per-CPU cache](../../../06-linux-mm/chapter-08-slab-allocator/notes/section-5-每-CPU-对象缓存.md)
 
 
 

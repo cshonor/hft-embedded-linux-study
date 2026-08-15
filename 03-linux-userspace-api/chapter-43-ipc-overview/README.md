@@ -1,18 +1,18 @@
 # TLPI 第 43 章 — Interprocess Communication Overview
 
 **优先级**：🟡（IPC 全书地图）  
-**前置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/notes.md)  
-**后置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/notes.md)
+**前置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/README.md)  
+**后置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/README.md)
 
 ---
 
 ## 小节目录
 
-- [43.1 三大类](./notes/43.1-section-43-1.md)
-- [43.2 命名与句柄（表 43-1 精简）](./notes/43.2-section-43-2.md)
-- [43.2 可访问范围 + 持久性（表 43-2 · 高频）](./notes/43.2-persistence-access-scope.md)
-- [43.3 SysV vs POSIX（铺垫）](./notes/43.3-sysv.md)
-- [43.4 –43.5 选型原则](./notes/43.4-selection.md)
+- [43.1 三大类](notes/43.1-a-taxonomy-of-ipc-facilities.md)
+- [43.2 命名与句柄（表 43-1 精简）](notes/43.2-communication-facilities.md)
+- 43.2 可访问范围 + 持久性（表 43-2 · 高频）
+- [43.3 SysV vs POSIX（铺垫）](notes/43.3-synchronization-facilities.md)
+- [43.4 –43.5 选型原则](notes/43.4-comparing-ipc-facilities.md)
 
 ---
 
@@ -31,9 +31,9 @@
 
 | 章 | 目录 |
 |----|------|
-| 44 | [pipes-fifos](../chapter-44-pipes-fifos/notes.md) |
+| 44 | [pipes-fifos](../chapter-44-pipes-fifos/README.md) |
 | 45–48 | SysV IPC 全套 |
-| 49–50 | [memory-mappings](../chapter-49-memory-mappings/notes.md) 等 |
+| 49–50 | [memory-mappings](../chapter-49-memory-mappings/README.md) 等 |
 | 51–54 | POSIX IPC |
 | 55 | 文件锁 |
 | 56+ | Socket |
@@ -136,4 +136,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

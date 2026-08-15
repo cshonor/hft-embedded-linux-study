@@ -28,7 +28,7 @@ mov dword ptr [rbx + rdi*4], esi
 
 **帧缓冲绘图 = 指针算术 + 批量 mov** — 无神秘「图形 API」，就是 **写 RAM**。
 
-→ [Ch2 指针基础](../chapter-02-edk2-memmap/notes/section-5-C指针基础.md) · [CSAPP Ch3](../../../../../02-computer-systems/chapter-03-machine-level-programs/)
+→ [Ch2 指针基础](../../chapter-02-edk2-memmap/notes/section-5-C指针基础.md) · [CSAPP Ch3](../../../../../02-computer-systems/chapter-03-machine-level-programs/)
 
 ---
 
@@ -57,12 +57,12 @@ Ch4+ 像素/make · Ch5 文本 · Ch10 窗口…
 
 | Ch3 主题 | 继续读 |
 |----------|--------|
-| 像素 / make | [chapter-04-pixel-make](../chapter-04-pixel-make/) ⚪ |
-| 控制台文本 | [chapter-05-console-text](../chapter-05-console-text/) ⚪ |
-| 内存管理 | [chapter-08-memory](../chapter-08-memory/) 🔴 |
-| 窗口 | [chapter-10-window](../chapter-10-window/) ⚪ |
-| Ch2 memmap | [chapter-02-edk2-memmap](../chapter-02-edk2-memmap/) |
+| 像素 / make | [chapter-04-pixel-make](../../chapter-04-pixel-make/) ⚪ |
+| 控制台文本 | [chapter-05-console-text](../../chapter-05-console-text/) ⚪ |
+| 内存管理 | [chapter-08-memory](../../chapter-08-memory/) 🔴 |
+| 窗口 | [chapter-10-window](../../chapter-10-window/) ⚪ |
+| Ch2 memmap | [chapter-02-edk2-memmap](../../chapter-02-edk2-memmap/) |
 
 ---
 
-← [5. KernelMain](./section-5-KernelMain与错误处理.md) · [Ch 2](../chapter-02-edk2-memmap/) · [Ch 3 导读](../README.md)
+← [5. KernelMain](./section-5-KernelMain与错误处理.md) · [Ch 2](../../chapter-02-edk2-memmap/) · [Ch 3 导读](../README.md)

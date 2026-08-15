@@ -11,7 +11,7 @@
 | **`time()`** | 秒级时间戳 |
 | **`stime()`** | 已废弃的设时接口 |
 
-→ 内核路径：[Ch 10](../chapter-10-system-calls.md) · 用户态：[08 TLPI](../../../03-linux-userspace-api/)
+→ 内核路径：[Ch 10](../../chapter-10-system-calls.md) · 用户态：[08 TLPI](../../../03-linux-userspace-api/)
 
 ---
 
@@ -22,7 +22,7 @@
 | **`setitimer()`** | 设置 **间隔定时器**，到期发信号（如 **`SIGALRM`**） |
 | **`alarm()`** | 简化版 — N 秒后 `SIGALRM` |
 
-→ 信号：[Ch 11](../chapter-11-signals.md)
+→ 信号：[Ch 11](../../chapter-11-signals.md)
 
 ---
 
@@ -41,12 +41,12 @@ Modern 用户态代码应优先 POSIX API，而非仅 `gettimeofday`。
 
 | Ch 6 主题 | 继续读 |
 |-----------|--------|
-| tick 驱动调度 | [Ch 7 进程调度](../chapter-07-process-scheduling.md) 🔴 |
-| 定时器中断 | [Ch 4 中断与异常](../chapter-04-interrupts-and-exceptions/) 🔴 |
-| syscall 实现 | [Ch 10 系统调用](../chapter-10-system-calls.md) 🔴 |
-| 信号 SIGALRM | [Ch 11 信号](../chapter-11-signals.md) 🟡 |
+| tick 驱动调度 | [Ch 7 进程调度](../../chapter-07-process-scheduling.md) 🔴 |
+| 定时器中断 | [Ch 4 中断与异常](../../chapter-04-interrupts-and-exceptions/) 🔴 |
+| syscall 实现 | [Ch 10 系统调用](../../chapter-10-system-calls.md) 🔴 |
+| 信号 SIGALRM | [Ch 11 信号](../../chapter-11-signals.md) 🟡 |
 | 用户态时间 API | [08 TLPI](../../../03-linux-userspace-api/) |
 
 ---
 
-← [5. 软件定时器](./section-5-软件定时器与延迟函数.md) · 下一章 [Ch 7 进程调度](../chapter-07-process-scheduling.md)
+← [5. 软件定时器](./section-5-软件定时器与延迟函数.md) · 下一章 [Ch 7 进程调度](../../chapter-07-process-scheduling.md)

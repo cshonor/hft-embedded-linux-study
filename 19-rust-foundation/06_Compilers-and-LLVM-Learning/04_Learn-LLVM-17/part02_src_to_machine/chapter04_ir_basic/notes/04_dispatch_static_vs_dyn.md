@@ -1,7 +1,7 @@
 # ch04 �?静态分�?vs 动态分发（IR 对照�?
 
 > 源码：`04_Compilers-and-LLVM-Learning/04_Learn-LLVM-17/src/lib.rs` · IR 归档：`ir_samples/optimize_compare/04_dispatch_O0.ll`（及 `O3`�? 
-> RFR 理论 �?[05 编译与分发](../../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md)
+> RFR 理论 �?[05 编译与分发](../../../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md)
 
 ## 复现
 

@@ -35,7 +35,7 @@ TOKEN : {
 
 **工程要点**：**保留字规则应放在标识符规则之前**（或与最长匹配配合），避免 `int` 被当成 ident 前缀。
 
-→ [CI ch4 关键字表](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) 手写等价逻辑。
+→ [CI ch4 关键字表](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) 手写等价逻辑。
 
 ---
 

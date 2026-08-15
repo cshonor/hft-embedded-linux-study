@@ -113,5 +113,5 @@ rt_mutex_lock(&my_rt_lock);
 
 ## 交叉引用
 
-- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/02-lockdep.md)
-- [05.6 ch08 KCSAN](chapter-08-lock-debug/notes/05-kcsan.md)
+- [05.6 ch08 LOCKDEP](../../chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch08 KCSAN](../../chapter-08-lock-debug/notes/05-kcsan.md)

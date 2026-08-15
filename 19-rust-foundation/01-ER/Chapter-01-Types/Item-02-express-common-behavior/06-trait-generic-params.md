@@ -149,4 +149,4 @@ impl FnOnce<(i32,)> for FuncObj2 {
 - **`'env` / Scope** → [08-scope-env-lifetime.md](./08-scope-env-lifetime.md)
 - 闭包 trait 概览 → [01-core-concepts.md](./01-core-concepts.md)
 - API 对比示例 → [04-examples.md](./04-examples.md)
-- 单态化 vs trait 对象 → [Item 12](../Chapter-02-Traits/Item-12-generics-vs-trait-objects/README.md)
+- 单态化 vs trait 对象 → [Item 12](../../Chapter-02-Traits/Item-12-generics-vs-trait-objects/README.md)

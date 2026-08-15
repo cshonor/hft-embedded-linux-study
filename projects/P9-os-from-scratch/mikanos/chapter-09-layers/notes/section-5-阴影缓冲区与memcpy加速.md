@@ -35,7 +35,7 @@ void Window::DrawTo(PixelWriter& screen, Vector2D pos) {
 }
 ```
 
-→ [Ch5 Console memcpy 滚动](../chapter-05-console-text/notes/section-5-Console与Newlib.md) — 同类 **块操作** 思想
+→ [Ch5 Console memcpy 滚动](../../chapter-05-console-text/notes/section-5-Console与Newlib.md) — 同类 **块操作** 思想
 
 ---
 

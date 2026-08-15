@@ -15,7 +15,7 @@
 | **VMA 集合** | 所有 `vm_area_struct`（链表 + 红黑树） |
 | **堆界** | `start_brk`、`brk`（见 [section-6](./section-6-写时复制与堆.md)） |
 
-→ 页表层次：[Ch 2 四级页表](../../chapter-02-memory-addressing/notes/section-4-四级页表.md)
+→ 页表层次：[Ch 2 四级页表](../../chapter-02-memory-addressing/notes/section-4-硬件分页.md)
 
 ---
 

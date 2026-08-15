@@ -1,6 +1,6 @@
 # 第 21 章 · Global Variables（全局变量） · 赋值的优先级（Assignment Precedence）
 
-← [本章目录](./README.md) · 上一节：[03-reading-and-assignment.md](./03-reading-and-assignment.md) · 下一节：[05-ast.md](./05-ast.md)
+← [本章目录](./README.md) · 上一节：[03-reading-and-assignment.md](./03-reading-and-assignment.md) · 下一节：[05-ast.md](05-global-variables.md)
 
 ---
 

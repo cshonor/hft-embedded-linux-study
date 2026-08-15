@@ -19,6 +19,6 @@ app **退出或死循环被强杀** → **窗口 sheet 残留** — 占 **内存
 
 **生命周期：** **task 消亡 → 其 GUI 资源一并回收** — 像 **进程 exit 关 fd**。
 
-→ [Day 22 Shift+F1](../day-22-c-apps/) · [Day 11 SHEET](../day-11-window/)
+→ Day 22 Shift+F1 · Day 11 SHEET
 
 ---

@@ -64,19 +64,19 @@ v = 512 × sin(θ) + 512     ; 映射到 [0, 1024)
 
 | 步骤 | 指令级 |
 |------|--------|
-| 取 sin | **`LDR`** 查表（[Ch12 §12.2](../chapter-12-tables/notes/section-12-2-int-lookup.md) 象限归约若只存 0–90°） |
+| 取 sin | **`LDR`** 查表（[Ch12 §12.2](../../chapter-12-tables/notes/section-12-2-int-lookup.md) 象限归约若只存 0–90°） |
 | 乘 512 | **`SMULL`/`MUL`** 或 **算术移位**（Q 格式下常 **>> 位数** 合并） |
 | 加 512 偏置 | **`ADD`** |
 | 限幅 | **`USAT`** 或比较（防溢出） |
 | 对齐到 [15:6] | **左移 6 bit** 再 **`STRH`** |
 
-**口述：** **查表负责角度→sin**；**乘加移位负责 sin→DAC 码** — [Ch7 Q](../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) 实战。
+**口述：** **查表负责角度→sin**；**乘加移位负责 sin→DAC 码** — [Ch7 Q](../../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) 实战。
 
 ---
 
 ### 采样率
 
-循环 **无延时** → 频率取决于 **CPU 循环速度**；生产用 **Timer 中断**（[Ch15 §15.7](../chapter-15-exception-handling-v7m/notes/section-15-7-nvic.md)）定 **固定 fs**。
+循环 **无延时** → 频率取决于 **CPU 循环速度**；生产用 **Timer 中断**（[Ch15 §15.7](../../chapter-15-exception-handling-v7m/notes/section-15-7-nvic.md)）定 **固定 fs**。
 
 ---
 

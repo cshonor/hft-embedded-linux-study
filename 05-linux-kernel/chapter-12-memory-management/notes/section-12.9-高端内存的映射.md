@@ -51,7 +51,7 @@ kunmap_atomic(vaddr);
 
 **HFT：** 现代 **x86-64 / arm64 交易服务器** 几乎 **碰不到 HIGHMEM** — 但 **`kmap_atomic` 思想** 同构于 **「短临界区访问临时缓冲」**。用户态等价：**mmap 大池 + 指针** 即可；内核 HIGHMEM 是 **VA 不够** 时的 **历史包袱**。
 
-→ [06 Gorman Ch9 高端内存](../../../../06-linux-mm/chapter-09-high-memory-management/) · [Ch 12.3 Zones](./section-12.3-区.md)
+→ [06 Gorman Ch9 高端内存](../../../06-linux-mm/chapter-09-high-memory-management/) · [Ch 12.3 Zones](./section-12.3-区.md)
 
 
 

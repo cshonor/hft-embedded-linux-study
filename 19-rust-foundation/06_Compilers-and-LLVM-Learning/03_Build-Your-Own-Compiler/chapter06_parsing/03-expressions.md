@@ -19,7 +19,7 @@ a + b * c
 
 **Parser 任务**：按优先级 **正确归约** — 不能 flat 成「expr 碰 token 列表」。
 
-→ [CI ch7 表达式解析](../../../01_Crafting-Interpreters/part02_jlox/chapter07_evaluating-expressions/) 递归下降同类问题。
+→ [CI ch7 表达式解析](../../01_Crafting-Interpreters/part02_jlox/chapter07_evaluating-expressions/) 递归下降同类问题。
 
 ---
 

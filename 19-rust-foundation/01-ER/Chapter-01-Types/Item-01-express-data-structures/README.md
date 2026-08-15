@@ -15,10 +15,10 @@
 
 | 主题 | 本仓库 |
 |------|--------|
-| 标量、数组、元组 | [3.2 数据类型](../../00-Book/03-common-concepts/3.2-数据类型.md) |
-| 结构体 | [5.1 结构体](../../00-Book/05-structs/5.1-定义并实例化结构体.md) |
-| 枚举、ADT、`Option` | [6.1 定义枚举](../../00-Book/06-enums-pattern-matching/6.1-定义枚举.md) |
-| `Result`、错误处理 | [9.2 Result](../../00-Book/09-error-handling/9.2-Result-与可恢复的错误.md) |
+| 标量、数组、元组 | [3.2 数据类型](../../../00-Book/03-common-concepts/3.2-数据类型.md) |
+| 结构体 | [5.1 结构体](../../../00-Book/05-structs/5.1-定义并实例化结构体.md) |
+| 枚举、ADT、`Option` | [6.1 定义枚举](../../../00-Book/06-enums-pattern-matching/6.1-定义枚举.md) |
+| `Result`、错误处理 | [9.2 Result](../../../00-Book/09-error-handling/9.2-Result-与可恢复的错误.md) |
 
 ---
 

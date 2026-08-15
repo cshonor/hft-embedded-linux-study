@@ -37,7 +37,7 @@
 全 Sleep → Idle hlt（兜底）
 ```
 
-→ [Ch13 均分片问题](../chapter-13-multitask1/notes/section-6-均分时间片问题与小结.md)
+→ [Ch13 均分片问题](../../chapter-13-multitask1/notes/section-6-均分时间片问题与小结.md)
 
 ---
 

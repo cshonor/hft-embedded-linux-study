@@ -96,7 +96,7 @@ bool c = v[0];    // c 的类型？
 
 **修复：** `auto b = static_cast<bool>(v[0]);`（显式类型初始化习惯）
 
-**复习：** → [Item 6：当 auto 推导出非预期类型时](./item06-当auto推导出非预期类型时用显式类型初始化习惯.md)
+**复习：** → [Item 6：当 auto 推导出非预期类型时](item06-explicitly-typed-initializer.md)
 </details>
 
 ### Q2: auto 防窄化
@@ -120,5 +120,5 @@ int i1 = d;                 // C
 
 **教训：** `auto` 天然防止隐式窄化，是比显式类型更安全的选择。
 
-**复习：** → [Item 5：优先用 auto 而非显式类型声明](./item05-优先用auto而非显式类型声明.md)
+**复习：** → [Item 5：优先用 auto 而非显式类型声明](item05-prefer-auto.md)
 </details>

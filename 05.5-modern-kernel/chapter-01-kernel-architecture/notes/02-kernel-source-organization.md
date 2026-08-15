@@ -169,5 +169,5 @@ ULK3 基于 2.6 源码，大量函数、结构体已被重命名或删除（如 
 ## 交叉引用
 
 - [01-kernel-space-vs-user-space.md](./01-kernel-space-vs-user-space.md) — 内核空间与子系统概览
-- [chapter-07-arm64-boot](../chapter-07-arm64-boot/) — ARM64 启动流程详解
-- [chapter-10-preempt-rt](../chapter-10-preempt-rt/) — PREEMPT_RT 编译与调优
+- [chapter-07-arm64-boot](../../chapter-07-arm64-boot/) — ARM64 启动流程详解
+- [chapter-10-preempt-rt](../../chapter-10-preempt-rt/) — PREEMPT_RT 编译与调优

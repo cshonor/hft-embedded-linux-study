@@ -42,7 +42,7 @@
    吊桥：  唯一 syscall 入口
 ```
 
-→ [Ch19 分页](../chapter-19-paging/)
+→ [Ch19 分页](../../chapter-19-paging/)
 
 ---
 

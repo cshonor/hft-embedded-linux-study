@@ -1,20 +1,20 @@
 # TLPI 第 16 章 — Extended Attributes
 
 **优先级**：🔴（ACL、capabilities、安全标签的底层载体）  
-**前置**：[Ch15 File Attributes](../chapter-15-file-attributes/notes.md)  
-**后置**：[Ch17 Access Control Lists](../chapter-17-access-control-lists/notes.md) · [Ch39 Capabilities](../chapter-39-capabilities/notes.md) · [Ch38 特权与安全](../chapter-38-secure-privileged/notes.md)
+**前置**：[Ch15 File Attributes](../chapter-15-file-attributes/README.md)  
+**后置**：[Ch17 Access Control Lists](../chapter-17-access-control-lists/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md) · [Ch38 特权与安全](../chapter-38-secure-privileged/README.md)
 
 ---
 
 ## 小节目录
 
-- [16.1 概念](./notes/16.1-concepts.md)
-- [16.2 系统调用组](./notes/16.2-syscall-group.md)
-- [16.3 `listxattr` 格式](./notes/16.3-listxattr.md)
-- [16.4 权限（Linux 要点）](./notes/16.4-permission.md)
-- [16.5 限制与踩坑](./notes/16.5-limits.md)
-- [16.6 命令行](./notes/16.6-section-16-6.md)
-- [16.7 典型用途](./notes/16.7-section-16-7.md)
+- [16.1 概念](notes/16.1-overview.md)
+- [16.2 系统调用组](notes/16.2-extended-attribute-implementation-detail.md)
+- [16.3 `listxattr` 格式](notes/16.3-system-calls-for-manipulating-extended-a.md)
+- [16.4 权限（Linux 要点）](notes/16.4-summary.md)
+- [16.5 限制与踩坑](notes/16.5-exercise.md)
+- 16.6 命令行
+- 16.7 典型用途
 
 ---
 
@@ -157,4 +157,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

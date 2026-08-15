@@ -97,7 +97,7 @@ f(ci);  // T 推导成什么？
 
 **对比**：如果 `ParamType` 是 `const T&`，则 `T` 推导为 `int`（const 由 ParamType 提供）；如果是 `T&`，`T` 推导为 `const int`（保留 const 以避免通过引用修改 const 对象）。
 
-**复习：** → [Item 1：理解模板类型推导](./item01-理解模板类型推导.md)
+**复习：** → [Item 1：理解模板类型推导](item01-template-type-deduction.md)
 </details>
 
 ### Q2: auto 与 initializer_list
@@ -117,7 +117,7 @@ auto y{1};              // C++17: y 的类型？C++14 呢？
 
 **这是 `auto` 和模板推导的唯一差别**：`auto` 能推导 `initializer_list`，模板不能。`template<class T> void f(T); f({1,2,3});` 编译失败。
 
-**复习：** → [Item 2：理解 auto 类型推导](./item02-理解auto类型推导.md)
+**复习：** → [Item 2：理解 auto 类型推导](item02-auto-type-deduction.md)
 </details>
 
 ### Q3: decltype 括号陷阱
@@ -143,5 +143,5 @@ decltype((x)) b;    // b 的类型？
 decltype(auto) f() { int x = 0; return (x); }  // 返回 int&——悬垂引用！
 ```
 
-**复习：** → [Item 3：理解 decltype](./item03-理解decltype.md)
+**复习：** → [Item 3：理解 decltype](item03-decltype.md)
 </details>

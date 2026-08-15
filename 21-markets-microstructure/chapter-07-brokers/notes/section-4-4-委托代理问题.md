@@ -32,7 +32,7 @@
 
 | HFT 视角 |
 |----------|
-| 与 [Ch 25 内部化](../chapter-25-internalization-preferencing-crossing/) 直接衔接 |
+| 与 [Ch 25 内部化](../../chapter-25-internalization-preferencing-crossing/) 直接衔接 |
 | **Internalization**、**payment for limit order flow** 是现代变体 |
 
 ---

@@ -56,7 +56,7 @@ Timer ISR / Tick 处理:
 Pop Message → case kTimerTimeout: 光标翻转 / 唤醒任务 / …
 ```
 
-→ [Ch7 FIFO + Message](../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
+→ [Ch7 FIFO + Message](../../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
 
 ---
 

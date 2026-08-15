@@ -11,7 +11,7 @@
 | 典型行为 | **trap / fault** | **默认结果 + FPSCR 标志** — **程序常继续** |
 | 目的 | 硬错误 | 可查询、可忽略、或可选 trap |
 
-**FPSCR** 累积 **DZC / IOC / OFC / UFC / IXC**（及 **IDC** 等）— [Ch9 §9.8](../chapter-09-floating-point-basics/notes/section-9-8-fpu-control.md)。
+**FPSCR** 累积 **DZC / IOC / OFC / UFC / IXC**（及 **IDC** 等）— [Ch9 §9.8](../../chapter-09-floating-point-basics/notes/section-9-8-fpu-control.md)。
 
 ---
 

@@ -44,7 +44,7 @@ WinRedraw(layer);
 | **每帧全 WinRedraw** | 边数少 · **可接受** |
 | **stars 式 NO_REDRAW** | 帧内多线段时可 **defer** |
 
-→ [Ch22 批量重绘](../chapter-22-graphics-events1/notes/section-4-性能测量与批量重绘.md)
+→ [Ch22 批量重绘](../../chapter-22-graphics-events1/notes/section-4-性能测量与批量重绘.md)
 
 ---
 

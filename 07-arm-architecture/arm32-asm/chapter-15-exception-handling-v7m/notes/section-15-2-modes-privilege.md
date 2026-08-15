@@ -64,7 +64,7 @@ PendSV Handler 切换 PSP → 换任务栈
 | 换模式 = 换 **banked SP/LR** | 换模式 + **硬件压栈** |
 | 特权 = 模式本身 | **Handler 特权 + Thread 可选 nPRIV** |
 
-**Linux 粗对照：** Thread 用户态 ≈ **EL0**；Handler 内核态处理 trap ≈ **EL1**（AArch64 见 [奔跑吧](../aarch64-practice/)）。
+**Linux 粗对照：** Thread 用户态 ≈ **EL0**；Handler 内核态处理 trap ≈ **EL1**（AArch64 见 [奔跑吧](../../../aarch64-practice/)）。
 
 ---
 

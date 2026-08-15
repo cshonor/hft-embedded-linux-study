@@ -15,7 +15,7 @@ if (a) if (b) x; else y;
 
 C 规定 **else 与最近未配对 if** — 文法需 **编码这一偏好**（见下 LOOKAHEAD）。
 
-→ [EaC ch3 二义性](../../../02_Compiler-Principles/chapter03_parsers/) · CI [ch6 解析策略](../../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-strategies/)
+→ [EaC ch3 二义性](../../02_Compiler-Principles/chapter03_parsers/) · CI [ch6 解析策略](../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions)
 
 ---
 

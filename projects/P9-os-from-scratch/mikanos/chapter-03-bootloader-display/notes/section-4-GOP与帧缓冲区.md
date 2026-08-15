@@ -97,7 +97,7 @@ Loader：GOP 探测 → 打包地址/格式/分辨率 → 交给 KernelMain
 Kernel：持久拥有「画布规格」→ 自己清屏、重绘 → Ch10+ 窗口系统的基础
 ```
 
-→ 下一章 [Ch4 像素与 make](../chapter-04-pixel-make/) 继续细化绘图
+→ 下一章 [Ch4 像素与 make](../../chapter-04-pixel-make/) 继续细化绘图
 
 ---
 

@@ -40,7 +40,7 @@ $(APPS_DIR)/%.elf: apps/%.cpp
 > noterm apps/cube
 ```
 
-→ [Ch24 noterm](../chapter-24-multi-terminal/notes/section-4-窗口层级Bug与noterm.md)
+→ [Ch24 noterm](../../chapter-24-multi-terminal/notes/section-4-窗口层级Bug与noterm.md)
 
 ---
 

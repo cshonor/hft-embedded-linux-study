@@ -9,7 +9,7 @@
 | **Unix I/O** (`read/write`) | 可控、配合 `epoll`/非阻塞 | 需自处理短计数 | **网络/管道主选** |
 | **Rio** | 健壮读写模板 | 教学包，非极致性能 | 学习/工具程序 |
 | **标准 I/O** | 格式化、方便 | 缓冲与 fd 混用坑 | **日志、配置** |
-| **mmap** | 大文件顺序访问、零拷贝感 | 缺页、同步 | **replay 文件**（→ [Ch 9](../chapter-09-virtual-memory/notes/section-9.8-内存映射mmap.md)） |
+| **mmap** | 大文件顺序访问、零拷贝感 | 缺页、同步 | **replay 文件**（→ [Ch 9](../../chapter-09-virtual-memory/notes/section-9.8-内存映射mmap.md)） |
 
 **决策树（简化）：**
 

@@ -251,6 +251,6 @@ static int hft_rx_packet(struct hft_dev *dev)
 
 ## 交叉引用
 
-- [05.6 ch03 printk 基础](chapter-03-printk/notes/01-printk-basics-loglevel.md)
-- [05.6 ch09 ftrace 架构](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
-- [05.6 ch09 function_graph](chapter-09-ftrace/notes/03-function-graph-tracer.md)
+- [05.6 ch03 printk 基础](../../chapter-03-printk/notes/01-printk-basics-loglevel.md)
+- [05.6 ch09 ftrace 架构](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch09 function_graph](../../chapter-09-ftrace/notes/03-function-graph-tracer.md)

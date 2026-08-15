@@ -12,7 +12,7 @@
 | **`fsync(fd)`** | **单个打开文件** | 该文件 **数据块 + inode 元数据** 均落盘 |
 | **`fdatasync(fd)`** | **单个打开文件** | 仅 **数据块** — **不** 强制 inode 块（除非 FS 需 inode 才能读数据） |
 
-→ syscall 路径：[Ch 10](../chapter-10-system-calls/) · TLPI
+→ syscall 路径：[Ch 10](../../chapter-10-system-calls/) · TLPI
 
 ---
 
@@ -43,12 +43,12 @@ writepage → bio → Ch 14 块层 → 磁盘
 
 | Ch 15 主题 | 继续读 |
 |------------|--------|
-| read/write 完整路径 | [Ch 16 文件访问](../chapter-16-file-access/) ⚪ |
-| 回收缓存页 | [Ch 17 页回收](../chapter-17-page-reclaim.md) 🟡 |
-| bio / 块层 | [Ch 14 块设备](../chapter-14-block-devices/) ⚪ |
-| inode / VFS | [Ch 12 VFS](../chapter-12-VFS/) ⚪ |
+| read/write 完整路径 | [Ch 16 文件访问](../../chapter-16-file-access/) ⚪ |
+| 回收缓存页 | [Ch 17 页回收](../../chapter-17-page-reclaim.md) 🟡 |
+| bio / 块层 | [Ch 14 块设备](../../chapter-14-block-devices/) ⚪ |
+| inode / VFS | [Ch 12 VFS](../../chapter-12-VFS/) ⚪ |
 | 07 Gorman | [页缓存 / 写回](../../../06-linux-mm/) |
 
 ---
 
-← [5. 脏页回写](./section-5-回写脏页与pdflush.md) · 下一章 [Ch 16 文件访问](../chapter-16-file-access/)
+← [5. 脏页回写](./section-5-回写脏页与pdflush.md) · 下一章 [Ch 16 文件访问](../../chapter-16-file-access/)

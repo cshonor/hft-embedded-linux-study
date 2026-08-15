@@ -1,19 +1,19 @@
 # TLPI 第 53 章 — POSIX Semaphores
 
 **优先级**：🔴（进程/线程同步）  
-**前置**：[Ch52 POSIX mq](../chapter-52-posix-message-queues/notes.md) · [Ch47 SysV sem](../chapter-47-sysv-semaphores/notes.md)  
-**后置**：[Ch54 POSIX 共享内存](../chapter-54-posix-shared-memory/notes.md)
+**前置**：[Ch52 POSIX mq](../chapter-52-posix-message-queues/README.md) · [Ch47 SysV sem](../chapter-47-sysv-semaphores/README.md)  
+**后置**：[Ch54 POSIX 共享内存](../chapter-54-posix-shared-memory/README.md)
 
 ---
 
 ## 小节目录
 
-- [53.1 概念](./notes/53.1-concepts.md)
-- [53.2 命名](./notes/53.2-section-53-2.md)
-- [53.3 操作（两形态共用）](./notes/53.3-operations.md)
-- [53.4 匿名](./notes/53.4-section-53-4.md)
-- [53.5 fork / exec](./notes/53.5-fork-exec.md)
-- [53.6 vs SysV · vs mutex](./notes/53.6-sysv-mutex.md)
+- [53.1 概念](notes/53.1-overview.md)
+- [53.2 命名](notes/53.2-named-semaphores.md)
+- [53.3 操作（两形态共用）](notes/53.3-semaphore-operations.md)
+- [53.4 匿名](notes/53.4-unnamed-semaphores.md)
+- [53.5 fork / exec](notes/53.5-comparisons-with-other-synchronization-t.md)
+- [53.6 vs SysV · vs mutex](notes/53.6-semaphore-limits.md)
 
 ---
 
@@ -131,4 +131,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

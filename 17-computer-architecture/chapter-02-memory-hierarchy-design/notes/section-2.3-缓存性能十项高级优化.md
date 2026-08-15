@@ -38,7 +38,7 @@
 
 | HFT 视角 |
 |----------|
-| 多线程同时打 L1/L2 — **false sharing** 会让「逻辑独立」的核争抢同一 cache line（→ [Ch5](../../../../chapter-05-thread-level-parallelism/)） |
+| 多线程同时打 L1/L2 — **false sharing** 会让「逻辑独立」的核争抢同一 cache line（→ [Ch5](../../chapter-05-thread-level-parallelism/)） |
 | 单线程热循环：miss 时 CPU 仍可能 **乱序执行不依赖该数据的指令** — 但依赖链会 stall |
 
 ---

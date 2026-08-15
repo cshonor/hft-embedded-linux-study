@@ -48,7 +48,7 @@
 
 - [9.1 字符串基础](./9.1-字符串基础.md)
 - [9.2 字符串长度](./9.2-字符串长度.md)
-- [9.3 不受限制的字符串函数](./9.3-unrestricted-string-functions/9.3-unrestricted-string-functions.md)
+- 9.3 不受限制的字符串函数
 - [9.4 长度受限的字符串函数](./9.4-长度受限的字符串函数.md)
 - [9.5 字符串查找](./9.5-字符串查找.md)
 - [9.6 高级字符串查找](./9.6-高级字符串查找.md)
@@ -90,7 +90,7 @@ printf("%zu\n", strlen(p));   // (4)
 
 **教训：** `sizeof` 是编译期计算，`strlen` 是运行时计算。
 
-**复习：** → [9.1 String Length](./9.1-字符串长度.md)
+**复习：** → [9.1 String Length](9.1-字符串基础.md)
 
 </details>
 
@@ -138,7 +138,7 @@ dst[sizeof(dst) - 1] = '\0';
 ```
 或用 `snprintf(dst, sizeof(dst), "%s", src)`。
 
-**复习：** → [9.3 Unbounded String Functions](./9.3-字符串拷贝.md) — strncpy 陷阱
+**复习：** → [9.3 Unbounded String Functions](9.3-unrestricted-string-functions) — strncpy 陷阱
 
 </details>
 

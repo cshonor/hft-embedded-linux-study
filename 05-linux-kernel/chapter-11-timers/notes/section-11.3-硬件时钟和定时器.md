@@ -59,7 +59,7 @@
 | ARM | **Generic Timer**（arch timer）→ **arch_timer** 驱动 → clockevents |
 | 旧板 | ** OMAP/平台 timer** 作 tick 源 |
 
-→ [Ch 11.4 tick 处理](./section-11.4-定时器中断处理程序.md) · [Ch 11.5 xtime](./section-11.5-实际时间-墙上时间.md) · [07 TLPI 时间](../../../../03-linux-userspace-api/)
+→ [Ch 11.4 tick 处理](./section-11.4-定时器中断处理程序.md) · [Ch 11.5 xtime](./section-11.5-实际时间-墙上时间.md) · [07 TLPI 时间](../../../03-linux-userspace-api/)
 
 ### 常见陷阱
 

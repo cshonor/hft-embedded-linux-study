@@ -125,5 +125,5 @@ VMAP_STACK 让内核栈通过 vmalloc 分配，在栈溢出时触发守卫页的
 ## 交叉引用
 
 - [02-kernel-source-organization.md](./02-kernel-source-organization.md) — 内核源码目录树与编译
-- [chapter-02-scheduler](../chapter-02-scheduler/) — EEVDF 调度器详解
-- [chapter-05-interrupt-management](../chapter-05-interrupt-management/) — 中断管理现代实现
+- [chapter-02-scheduler](../../chapter-02-scheduler/) — EEVDF 调度器详解
+- [chapter-05-interrupt-management](../../chapter-05-interrupt-management/) — 中断管理现代实现

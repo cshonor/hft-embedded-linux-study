@@ -55,7 +55,7 @@ void SendMessage(Task& dest, const Message& m) {
 | 主 Task **每 20ms 才被轮到** | **有事件即 Wakeup** — **事件驱动** |
 | 全局队列 | **per-Task 队列** — 消息 **归属清晰** |
 
-→ [Ch7 FIFO/Message](../chapter-07-interrupt-fifo/notes/section-5-FIFO与ArrayQueue.md)
+→ [Ch7 FIFO/Message](../../chapter-07-interrupt-fifo/notes/section-5-FIFO与ArrayQueue.md)
 
 ---
 

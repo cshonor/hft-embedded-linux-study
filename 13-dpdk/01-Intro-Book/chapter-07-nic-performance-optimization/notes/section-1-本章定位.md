@@ -15,7 +15,7 @@
 | **平台调优** | Extended Tag、NUMA 就近、`isolcpus`、测试流量 |
 | **队列参数** | RX 描述符环长度权衡 |
 
-**承上启下：** [Ch6 PCIe/I/O](../chapter-06-pcie-packet-io/) 讲 DMA 与 MMIO；本章讲 **PMD 收发包路径如何调优**；[Ch8 多队列](../chapter-08-flow-classification-multiqueue/) 讲 **RSS/硬件分流**。
+**承上启下：** [Ch6 PCIe/I/O](../../chapter-06-pcie-packet-io/) 讲 DMA 与 MMIO；本章讲 **PMD 收发包路径如何调优**；[Ch8 多队列](../../chapter-08-flow-classification-multiqueue/) 讲 **RSS/硬件分流**。
 
 ---
 

@@ -25,7 +25,7 @@
 
 例：注册后遇到 **Windows `.exe`** 可自动 **`wine`** 执行。
 
-→ VFS read/open：[Ch 16](../chapter-16-file-access/)
+→ VFS read/open：[Ch 16](../../chapter-16-file-access/)
 
 ---
 

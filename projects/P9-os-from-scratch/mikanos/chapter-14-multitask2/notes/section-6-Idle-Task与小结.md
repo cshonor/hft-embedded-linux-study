@@ -28,7 +28,7 @@ void IdleTaskEntry() {
 | 现代 OS 对照 | Linux **`idle`** 进程 · **`cpu_idle()`** |
 |--------------|-------------------------------------------|
 
-→ [Ch7 hlt](../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
+→ [Ch7 hlt](../../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
 
 ---
 
@@ -69,11 +69,11 @@ hlt → 中断（鼠标/定时器）→ Wakeup Main → Level 3 抢占
 
 | Ch14 主题 | 继续读 |
 |----------|--------|
-| 终端 | [chapter-15-terminal](../chapter-15-terminal/) ⚪ |
-| 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
-| 分页 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
-| Ch13 基础 | [chapter-13-multitask1](../chapter-13-multitask1/) |
+| 终端 | [chapter-15-terminal](../../chapter-15-terminal/) ⚪ |
+| 系统调用 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
+| 分页 | [chapter-19-paging](../../chapter-19-paging/) 🔴 |
+| Ch13 基础 | [chapter-13-multitask1](../../chapter-13-multitask1/) |
 
 ---
 
-← [5. 优先级](./section-5-任务优先级Level.md) · [Ch 13](../chapter-13-multitask1/) · [Ch 14 导读](../README.md)
+← [5. 优先级](./section-5-任务优先级Level.md) · [Ch 13](../../chapter-13-multitask1/) · [Ch 14 导读](../README.md)

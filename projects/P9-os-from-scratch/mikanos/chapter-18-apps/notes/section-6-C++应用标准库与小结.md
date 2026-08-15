@@ -61,11 +61,11 @@ Ch21+ GUI 应用生态
 
 | Ch18 主题 | 继续读 |
 |----------|--------|
-| 分页 / 隔离 | [chapter-19-paging](../chapter-19-paging/) |
-| 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
-| FAT 基础 | [chapter-17-filesystem](../chapter-17-filesystem/) |
-| ELF 引导 | [chapter-03-bootloader-display](../chapter-03-bootloader-display/) |
+| 分页 / 隔离 | [chapter-19-paging](../../chapter-19-paging/) |
+| 系统调用 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
+| FAT 基础 | [chapter-17-filesystem](../../chapter-17-filesystem/) |
+| ELF 引导 | [chapter-03-bootloader-display](../../chapter-03-bootloader-display/) |
 
 ---
 
-← [5. ELF/argv](./section-5-ELF格式与命令行参数.md) · [Ch 17](../chapter-17-filesystem/) · [Ch 18 导读](../README.md)
+← [5. ELF/argv](./section-5-ELF格式与命令行参数.md) · [Ch 17](../../chapter-17-filesystem/) · [Ch 18 导读](../README.md)

@@ -6,7 +6,7 @@
 
 ## 小节目录
 
-- [10.3 要点梳理](./notes/10.3-section-10-3.md)
+- [10.3 要点梳理](notes/10.3-timezones.md)
 
 ---
 
@@ -121,4 +121,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

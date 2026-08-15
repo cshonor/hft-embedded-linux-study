@@ -8,7 +8,7 @@
 |------|------|------|
 | **坏指针解引用** | segfault | 初始化、检查 NULL |
 | **读未初始化** | 随机行为 | `calloc`、值初始化 |
-| **栈缓冲区溢出** | 安全漏洞 | 边界检查、`fgets`（→ [Ch 3](../chapter-03-machine-level-programs/notes/section-3.10-指针调试与缓冲区溢出.md)） |
+| **栈缓冲区溢出** | 安全漏洞 | 边界检查、`fgets`（→ [Ch 3](../../chapter-03-machine-level-programs/notes/section-3.10-指针调试与缓冲区溢出.md)） |
 | **off-by-one** | 踩边界 | 循环 `< n`、分配 `n+1` |
 | **指针/对象混淆** | 逻辑错 | `sizeof(*p)` vs `sizeof(p)` |
 | **指针算术错** | 越界 | `p+i` 类型缩放 |

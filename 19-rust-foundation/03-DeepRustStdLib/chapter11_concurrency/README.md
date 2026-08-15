@@ -94,7 +94,7 @@
 |------|------------|
 | OS 线程基础 | [05-atomic Ch1](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/) |
 | RwLock 体系 | [RwLock 贯通笔记](../../05-Async-Concurrency-Network/01-atomic/RwLock与读写锁体系-贯通笔记.md) |
-| 异步 RUNTIME | [05-async](../../05-Async-Concurrency-Network/02-async/) · [RFR Ch10](../../02-RFR/Chapter-10-Asynchronous-Programming/README.md) |
+| 异步 RUNTIME | [05-async](../../05-Async-Concurrency-Network/02-async_tokio) · RFR Ch10 |
 | `Arc` | [第 8 章 §8.5](../chapter08_smart_pointers/README.md) |
 
 ---

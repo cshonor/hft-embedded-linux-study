@@ -28,7 +28,7 @@
 |------|------|
 | **DPDK PMD** | 轮询收包 — 无中断、无内核 netdevice |
 | **用户态 TCP/IP** | 绕过内核协议栈 — 无 syscall、**无栈内锁** |
-| **独立内存池 / 队列** | per-core 资源 — [Ch2 mempool](../chapter-02-cache-and-memory/) · [Ch4 ring](../chapter-04-synchronization/) |
+| **独立内存池 / 队列** | per-core 资源 — [Ch2 mempool](../../chapter-02-cache-and-memory/) · [Ch4 ring](../../chapter-04-synchronization/) |
 
 **DPDK 边界：** 原生 DPDK 处理 **OSI L2/L3** — **不含 TCP/UDP**；存储场景必须 **叠加 L4 用户态栈**（见 [4. SPDK](./section-4-SPDK架构与核心组件.md)）。
 
@@ -42,7 +42,7 @@
 | **摒弃中断与内核锁** | 与 PMD 同构 — **绑核 + 无锁 I/O 队列** |
 | **队列亲和** | DPDK 线程与 NVMe **I/O Queue Pair** 一一绑定 |
 
-→ [Ch6 PCIe 与 DMA](../chapter-06-pcie-packet-io/) — NVMe 同为 **PCIe 设备**
+→ [Ch6 PCIe 与 DMA](../../chapter-06-pcie-packet-io/) — NVMe 同为 **PCIe 设备**
 
 ---
 

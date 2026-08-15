@@ -60,7 +60,7 @@ vmalloc 路径:
 
 **HFT：** 用户态 **`mmap` 大块匿名区** 与 **`vmalloc` 思想类似 — **虚连续**。但 **策略 ring** 还要 **`mlock` + hugepage** 保证 **物理稳定 + TLB 友好** — 内核 **`vmalloc` 无 hugepage 语义**，热路径 **禁用**。
 
-→ [06 Gorman Ch7 非连续分配](../../../../06-linux-mm/chapter-07-noncontiguous-memory-allocation/) · [Ch 15 mmap 用户视角](../../chapter-15-process-address-space/) · [01 CSAPP Ch9](../../../../02-computer-systems/chapter-09-virtual-memory/)
+→ [06 Gorman Ch7 非连续分配](../../../06-linux-mm/chapter-07-noncontiguous-memory-allocation/) · [Ch 15 mmap 用户视角](../../chapter-15-process-address-space/) · [01 CSAPP Ch9](../../../02-computer-systems/chapter-09-virtual-memory/)
 
 
 > ↔ [ULK Ch8 §4 非连续内存与vmalloc](../../../18-linux-kernel-deep/chapter-08-memory-management/notes/section-4-非连续内存与vmalloc.md)

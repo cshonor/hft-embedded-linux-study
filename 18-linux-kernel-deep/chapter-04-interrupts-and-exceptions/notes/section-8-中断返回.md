@@ -23,7 +23,7 @@
 
 这就是为什么 **定时器中断** 能驱动调度 — tick 里可能置 `need_resched`，返回时切进程。
 
-→ 深潜：[Ch 7 进程调度](../chapter-07-process-scheduling.md) · [Ch 11 信号](../chapter-11-signals.md)
+→ 深潜：[Ch 7 进程调度](../../chapter-07-process-scheduling.md) · [Ch 11 信号](../../chapter-11-signals.md)
 
 ---
 
@@ -31,11 +31,11 @@
 
 | Ch 4 主题 | 继续读 |
 |-----------|--------|
-| 锁、临界区、SMP | [Ch 5 内核同步](../chapter-05-kernel-synchronization.md) 🔴 |
-| 调度、tick | [Ch 7 进程调度](../chapter-07-process-scheduling.md) 🔴 |
-| `int 0x80` / syscall | [Ch 10 系统调用](../chapter-10-system-calls.md) 🔴 |
-| 信号投递 | [Ch 11 信号](../chapter-11-signals.md) 🟡 |
-| 设备驱动、IRQ 注册 | [Ch 13 I/O 架构](../chapter-13-io-architecture.md) ⚪ |
+| 锁、临界区、SMP | [Ch 5 内核同步](../../chapter-05-kernel-synchronization.md) 🔴 |
+| 调度、tick | [Ch 7 进程调度](../../chapter-07-process-scheduling.md) 🔴 |
+| `int 0x80` / syscall | [Ch 10 系统调用](../../chapter-10-system-calls.md) 🔴 |
+| 信号投递 | [Ch 11 信号](../../chapter-11-signals.md) 🟡 |
+| 设备驱动、IRQ 注册 | [Ch 13 I/O 架构](../../chapter-13-io-architecture.md) ⚪ |
 | 内核路径 profiling | [04 BPF](../../../15-bpf-observability/) |
 | 用户态绕过中断 | [14 DPDK](../../../13-dpdk/) |
 
@@ -78,4 +78,4 @@
 
 ---
 
-← [7. 可延迟函数](./section-7-可延迟函数与工作队列.md) · 下一章 [Ch 5 内核同步](../chapter-05-kernel-synchronization.md)
+← [7. 可延迟函数](./section-7-可延迟函数与工作队列.md) · 下一章 [Ch 5 内核同步](../../chapter-05-kernel-synchronization.md)

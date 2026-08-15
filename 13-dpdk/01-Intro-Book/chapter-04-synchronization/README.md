@@ -21,5 +21,5 @@
 ## 相关
 
 - 上一章：[chapter-03-parallel-computing/](../chapter-03-parallel-computing/)
-- 下一章：[chapter-05-packet-forwarding/](../chapter-05-packet-forwarding/) · [chapter-02-mbuf](../chapter-02-mbuf与内存池.md)
+- 下一章：[chapter-05-packet-forwarding/](../chapter-05-packet-forwarding/) · [chapter-02-mbuf](../chapter-02-cache-and-memory)
 - 对照：[ULK Ch5 内核同步](../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/) · [Ch2 Cache 无锁预告](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)

@@ -6,7 +6,7 @@
 
 ### 一、与 Ch11 的配对
 
-| | [Ch11 Virtio 前端](../chapter-11-virtio-paravirtualization/) | **Ch12 vhost 后端（本章）** |
+| | [Ch11 Virtio 前端](../../chapter-11-virtio-paravirtualization/) | **Ch12 vhost 后端（本章）** |
 |---|--------------------------------------------------------------|----------------------------|
 | 位置 | **客户机** Guest 驱动 | **宿主机** 处理 virtqueue |
 | 对象 | `net_virtio` PMD | **vhost-user** / vhost lib / vhost PMD |

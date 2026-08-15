@@ -40,7 +40,7 @@
 
 ## 小节
 
-- [1.1 简介](./1.1-introduction/1.1-introduction.md)
+- [1.1 简介](1.1-introduction/1.1-简介.md)
   - [1.1.1 空白和注释](./1.1-introduction/1.1.1-空白和注释.md)
   - [1.1.2 预处理指令](./1.1-introduction/1.1.2-预处理指令.md)
   - [1.1.3 main 函数](./1.1-introduction/1.1.3-main函数.md)
@@ -94,7 +94,7 @@ int ret = scanf("%d", &val);
 
 **解析：** `scanf` 返回成功匹配的项数。生产代码必须检查返回值。`&val` 是取地址——C 只有传值，传指针是模拟传引用。
 
-**复习：** → [1.1 Introduction](./1.1-introduction/1.1-introduction.md) — scanf 与 `&`
+**复习：** → [1.1 Introduction](1.1-introduction/1.1-简介.md) — scanf 与 `&`
 
 </details>
 

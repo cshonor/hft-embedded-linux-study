@@ -38,7 +38,7 @@ public:
 | **主 Terminal** | **WaitFinish(right_task)** |
 | **多级管道** | 可 **链式等待** 最右端 |
 
-→ [Ch14 Wakeup](../chapter-14-multitask2/notes/section-3-Sleep与Wakeup.md)
+→ [Ch14 Wakeup](../../chapter-14-multitask2/notes/section-3-每任务消息队列与事件驱动.md)
 
 ---
 
@@ -58,7 +58,7 @@ CloseWindow (若曾开) · 从 TaskManager 移除 · 释放 Pipe
 
 **Ch12 键盘表扩展** — **Shift+\\** 等映射 **`|`** — 否则 **无法输入管道命令**。
 
-→ [Ch12 键盘](../chapter-12-keyboard/)
+→ [Ch12 键盘](../../chapter-12-keyboard/)
 
 ---
 

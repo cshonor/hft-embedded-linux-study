@@ -66,7 +66,7 @@ Linux 是 **虚拟内存 OS** — 每个进程看到 **独立的线性 VA 空间
 | **`MAP_HUGETLB` / `hugetlbfs`** | **2MB/1GB 大页** — **TLB miss ↓** |
 | **`MAP_POPULATE`** | 启动时 **fault 完** — 盘中 **无 demand paging** |
 
-→ [01 CSAPP Ch9 VM](../../../../02-computer-systems/chapter-09-virtual-memory/) · [06 Gorman Ch4 进程地址空间](../../../../06-linux-mm/chapter-04-process-address-space/) · [Ch 3 fork/COW](../../chapter-03-process-management/)
+→ [01 CSAPP Ch9 VM](../../../02-computer-systems/chapter-09-virtual-memory/) · [06 Gorman Ch4 进程地址空间](../../../06-linux-mm/chapter-04-process-address-space/) · [Ch 3 fork/COW](../../chapter-03-process-management/)
 
 
 

@@ -49,7 +49,7 @@
 | **STUN 类探测** | 检测 NAT 行为 |
 | **降级 UDP/TCP** | 生产常见 |
 
-与 [Ch 9 NAT](../chapter-09-netfilter/notes/section-5-网络地址转换-NAT.md) **conntrack helper** 问题 **同构** — **非常规 L4** 在 NAT 后 **易碎**。
+与 [Ch 9 NAT](../../chapter-09-netfilter/notes/section-5-网络地址转换-NAT.md) **conntrack helper** 问题 **同构** — **非常规 L4** 在 NAT 后 **易碎**。
 
 ---
 

@@ -7,14 +7,14 @@
 ## 小节目录
 
 - [2.1 内核（Kernel）](./notes/2.1-kernel.md)
-- [2.2 用户态 / 内核态 / 系统调用](./notes/2.2-syscall-user.md)
-- [2.3 进程（Process）](./notes/2.3-process.md)
-- [2.4 文件与文件描述符（FD）](./notes/2.4-fd.md)
-- [2.5 文件系统与 inode](./notes/2.5-inode.md)
-- [2.6 权限模型](./notes/2.6-model-permission.md)
-- [2.7 IPC（进程间通信）](./notes/2.7-ipc.md)
-- [2.8 信号（Signal）](./notes/2.8-signal.md)
-- [2.9 时间（两类时钟）](./notes/2.9-time-clock.md)
+- 2.2 用户态 / 内核态 / 系统调用
+- [2.3 进程（Process）](notes/2.13-process-groups.md)
+- [2.4 文件与文件描述符（FD）](notes/2.4-directory-hierarchy.md)
+- [2.5 文件系统与 inode](notes/2.5-file-io-model.md)
+- [2.6 权限模型](notes/2.5-file-io-model.md)
+- [2.7 IPC（进程间通信）](notes/2.10-ipc.md)
+- [2.8 信号（Signal）](notes/2.8-memory-mappings.md)
+- [2.9 时间（两类时钟）](notes/2.16-date-time.md)
 
 ---
 
@@ -140,4 +140,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

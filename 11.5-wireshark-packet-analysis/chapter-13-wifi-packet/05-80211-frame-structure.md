@@ -1,6 +1,6 @@
 # 13.5 802.11 数据包结构
 
-> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 深入：[TCP/IP 3.5](../../TCP-IP-Volume1-Protocols/chapter03-link-layer/3.5-wireless-80211.md)
+> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 深入：TCP/IP 3.5
 
 **核心主旨**：802.11 三层帧类型——管理、控制、数据；Beacon 宣告 BSS。
 

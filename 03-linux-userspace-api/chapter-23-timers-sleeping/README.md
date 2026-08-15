@@ -1,18 +1,18 @@
 # TLPI 第 23 章 — Timers and Sleeping
 
 **优先级**：🔴（超时、周期任务、与信号/EINTR 交互）  
-**前置**：[Ch22 信号高级](../chapter-22-signals-advanced/notes.md)  
-**后置**：[Ch24 Process Creation](../chapter-24-process-creation/notes.md) · [Ch63 多路 I/O](../chapter-63-alternative-io/notes.md)
+**前置**：[Ch22 信号高级](../chapter-22-signals-advanced/README.md)  
+**后置**：[Ch24 Process Creation](../chapter-24-process-creation/README.md) · Ch63 多路 I/O
 
 ---
 
 ## 小节目录
 
-- [23.1 休眠接口](./notes/23.1-section-23-1.md)
-- [23.2 `setitimer` / `alarm`](./notes/23.2-setitimer-alarm.md)
-- [23.3 POSIX 定时器 `timer_create`](./notes/23.3-timercreate.md)
-- [23.4 时钟类型](./notes/23.4-clock-types.md)
-- [23.5 休眠与 `EINTR`](./notes/23.5-eintr.md)
+- [23.1 休眠接口](notes/23.1-interval-timers.md)
+- [23.2 `setitimer` / `alarm`](notes/23.2-scheduling-and-accuracy-of-timers.md)
+- [23.3 POSIX 定时器 `timer_create`](notes/23.3-setting-timeouts-on-blocking-operations.md)
+- [23.4 时钟类型](notes/23.4-suspending-execution-for-a-fixed-interva.md)
+- [23.5 休眠与 `EINTR`](notes/23.5-posix-clocks.md)
 
 ---
 
@@ -159,4 +159,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

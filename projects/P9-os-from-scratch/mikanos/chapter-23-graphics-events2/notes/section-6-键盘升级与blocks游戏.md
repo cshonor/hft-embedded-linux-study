@@ -26,7 +26,7 @@ void OnKeyReport(const uint8_t* report) {
 | **USB HID 键码** | 非 ASCII **扫描码** |
 | **bitset 边沿** | 与 **鼠标 XOR** 同思路 |
 
-→ [Ch12 USB 键盘](../chapter-12-keyboard/)
+→ [Ch12 USB 键盘](../../chapter-12-keyboard/)
 
 ---
 
@@ -95,10 +95,10 @@ Ch29 IPC · 多应用协作
 
 | Ch23 主题 | 继续读 |
 |----------|--------|
-| 多终端 | [chapter-24-multi-terminal](../chapter-24-multi-terminal/) ⚪ |
-| 事件(1) | [chapter-22-graphics-events1](../chapter-22-graphics-events1/) |
-| IPC | [chapter-29-ipc](../chapter-29-ipc/) |
+| 多终端 | [chapter-24-multi-terminal](../../chapter-24-multi-terminal/) ⚪ |
+| 事件(1) | [chapter-22-graphics-events1](../../chapter-22-graphics-events1/) |
+| IPC | [chapter-29-ipc](../../chapter-29-ipc/) |
 
 ---
 
-← [5. cube](./section-5-cube旋转立方体动画.md) · [Ch 22](../chapter-22-graphics-events1/) · [Ch 23 导读](../README.md)
+← [5. cube](./section-5-cube旋转立方体动画.md) · [Ch 22](../../chapter-22-graphics-events1/) · [Ch 23 导读](../README.md)

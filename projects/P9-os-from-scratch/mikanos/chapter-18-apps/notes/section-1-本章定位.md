@@ -37,7 +37,7 @@ Ch18 加载应用  ← 本章
 Ch19 分页 · Ch20 syscall · 图形应用
 ```
 
-→ [Ch17 文件系统](../chapter-17-filesystem/)
+→ [Ch17 文件系统](../../chapter-17-filesystem/)
 
 ---
 

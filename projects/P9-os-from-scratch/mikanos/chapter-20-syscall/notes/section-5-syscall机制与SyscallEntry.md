@@ -67,7 +67,7 @@ SyscallFn syscall_table[] = {
 };
 
 int64_t SyscallDispatcher(uint64_t num, …) {
-    return syscall_table[num](…);
+    return syscall_tablenum;
 }
 ```
 

@@ -16,7 +16,7 @@
 5. SUBS pc, lr, #n  →  原子恢复 CPSR + 返回
 ```
 
-**原则：** handler **短小** — 耗时工作留 **底半部**（Linux **tasklet/workqueue** 思想，[21 驱动](../../09-device-drivers-dt/)）。
+**原则：** handler **短小** — 耗时工作留 **底半部**（Linux **tasklet/workqueue** 思想，[21 驱动](../../../../09-device-drivers-dt/)）。
 
 ---
 

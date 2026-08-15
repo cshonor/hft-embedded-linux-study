@@ -14,7 +14,7 @@
 | **M4 FPU 硬件** | **s0–s31** · **CPACR** · **FPSCR** |
 | **搬运与转换** | **VLDR/VSTR** · **VMOV** · **VCVT** · half |
 
-**前置：** [Ch3 FPU 预览](../chapter-03-instruction-sets-v4t-v7m/notes/section-3-6-example-float.md) · [Ch1 浮点直觉](../chapter-01-overview-computing-systems/notes/section-1-5-representation.md)
+**前置：** [Ch3 FPU 预览](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3-6-example-float.md) · [Ch1 浮点直觉](../../chapter-01-overview-computing-systems/notes/section-1-5-representation.md)
 
 ---
 
@@ -62,4 +62,4 @@ Ch10 舍入/异常 · Ch11 算术指令
 
 ### 五、下一章
 
-→ **[Ch10 舍入与异常](../chapter-10-floating-point-rounding-exceptions/)**（浮点路径 · 主线 **跳过**）
+→ **[Ch10 舍入与异常](../../chapter-10-floating-point-rounding-exceptions/)**（浮点路径 · 主线 **跳过**）

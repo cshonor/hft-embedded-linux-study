@@ -16,7 +16,7 @@ __asm int asm_strcpy(char *dst, const char *src);
 
 | 属性 | 说明 |
 |------|------|
-| **完整指令集** | **ARM + Thumb** 均可（同模块混用 — [Ch17](../chapter-17-arm-thumb-thumb2-instructions/)） |
+| **完整指令集** | **ARM + Thumb** 均可（同模块混用 — [Ch17](../../chapter-17-arm-thumb-thumb2-instructions/)） |
 | **不内联** | 生成 **独立符号** — 正常 **`BL` 调用开销** |
 | **C 原型** | 参数/返回值类型 — 链接器按 **AAPCS** 对接 |
 
@@ -44,7 +44,7 @@ __asm int asm_strcpy(char *dst, const char *src);
 | **AAPCS** | **r4–r11** 用了必压栈 · **r0–r3** 参返 · **SP 8 对齐** |
 | **合规检查** | **无** — 错帧 = 调用者寄存器损坏 |
 
-→ [Ch13 §13.3 序言/尾声](../chapter-13-subroutines-stacks/notes/section-13-3-subroutines.md)
+→ [Ch13 §13.3 序言/尾声](../../chapter-13-subroutines-stacks/notes/section-13-3-subroutines.md)
 
 **Embedded 函数模板：**
 

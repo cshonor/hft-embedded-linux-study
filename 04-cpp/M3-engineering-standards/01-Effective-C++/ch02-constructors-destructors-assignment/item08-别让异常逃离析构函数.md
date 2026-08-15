@@ -4,7 +4,7 @@
 
 **Prevent exceptions from leaving destructors.** C++ **不禁止**析构函数里抛异常，但**坚决阻止异常逃出析构函数**——若在销毁容器（如 `std::vector`）时，前一个元素的析构已抛异常，后续元素析构再抛 → **两个同时活跃的异常** → 程序 **`std::terminate`** 或未定义行为。
 
-← [条款 7：virtual 析构](./item07-多态基类声明virtual析构函数.md) · 资源释放设计见 [条款 13](../ch03-resource-management/item13-资源管理类在构造时获取资源在析构时释放资源.md)
+← [条款 7：virtual 析构](./item07-多态基类声明virtual析构函数.md) · 资源释放设计见 [条款 13](../ch03-resource-management/item13-以对象管理资源（RAII）.md)
 
 ---
 

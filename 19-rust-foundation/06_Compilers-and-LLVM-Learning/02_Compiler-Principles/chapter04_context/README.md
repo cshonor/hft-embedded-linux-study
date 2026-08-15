@@ -1,6 +1,6 @@
 # 第 4 章 · 上下文相关分析（Context-Sensitive Analysis）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part I 前端
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part I 前端
 
 ## 状态
 
@@ -31,10 +31,10 @@ ch2/ch3 只证明「**句子结构**合法」；**ch4 证明「含义**在上下
 
 | 本书 ch4 | 对照 |
 |----------|------|
-| 语义 / 作用域 | [CI jlox ch11 Resolver](../../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md) |
-| 类型（动态） | [CI jlox ch7 Evaluating](../../../01_Crafting-Interpreters/part02_jlox/chapter07_evaluating-expressions/README.md) |
-| AST | [CI jlox ch5 Representing Code](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md) |
-| Rust 静态类型 | RFR [第 2 章类型](../../02-RFR/Chapter-02-Types/) · `rustc` 借用检查 |
+| 语义 / 作用域 | [CI jlox ch11 Resolver](../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md) |
+| 类型（动态） | [CI jlox ch7 Evaluating](../../01_Crafting-Interpreters/part02_jlox/chapter07_evaluating-expressions/README.md) |
+| AST | [CI jlox ch5 Representing Code](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md) |
+| Rust 静态类型 | RFR [第 2 章类型](../../../02-RFR/Chapter-02-Types/) · `rustc` 借用检查 |
 | ch3 语法 | [ch3 语法分析](../chapter03_parsers/README.md) |
 
 ---
@@ -71,9 +71,9 @@ CFG 不够 → 语义分析 / 类型检查 → 属性文法（理论）→ 嵌�
 
 | 橡书 ch4 | 本仓库 |
 |----------|--------|
-| 语义 / 作用域 | [jlox ch11 Resolver](../../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md) |
-| AST | [jlox ch5](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md) |
-| 动态类型 | [jlox ch7](../../../01_Crafting-Interpreters/part02_jlox/chapter07_evaluating-expressions/README.md) |
+| 语义 / 作用域 | [jlox ch11 Resolver](../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md) |
+| AST | [jlox ch5](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md) |
+| 动态类型 | [jlox ch7](../../01_Crafting-Interpreters/part02_jlox/chapter07_evaluating-expressions/README.md) |
 | 静态类型 | **Rust / rustc** |
 
 ---

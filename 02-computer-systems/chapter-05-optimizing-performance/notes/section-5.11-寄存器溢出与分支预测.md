@@ -21,7 +21,7 @@
 | **查表 / 位掩码** | 替代分支 |
 | `__builtin_expect` / `[[likely]]` | 提示布局 |
 
-→ [Ch 3 cmov](../chapter-03-machine-level-programs/notes/section-3.6-控制流.md) · [Ch 4 预测](../chapter-04-processor-architecture/notes/section-4.5-PIPE流水线与冒险.md)
+→ [Ch 3 cmov](../../chapter-03-machine-level-programs/notes/section-3.6-控制流.md) · [Ch 4 预测](../../chapter-04-processor-architecture/notes/section-4.5-PIPE流水线与冒险.md)
 
 **HFT：** 消息类型 dispatch 用 **跳转表**；热路径避免 `if (unlikely_error)` 夹在大循环中间 — 错误处理拆到冷路径。
 

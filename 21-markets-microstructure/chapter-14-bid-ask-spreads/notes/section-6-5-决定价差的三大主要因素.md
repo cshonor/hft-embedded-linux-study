@@ -11,7 +11,7 @@ Spread ≈ f(信息不对称, 波动性, 效用型兴趣)
          宽 ←———|———→ 窄
 ```
 
-→ 波动性专章 [Ch 20](../chapter-20-volatility/) · 流动性 [Ch 19](../chapter-19-liquidity/)
+→ 波动性专章 [Ch 20](../../chapter-20-volatility/) · 流动性 [Ch 19](../../chapter-19-liquidity/)
 
 | HFT 视角 |
 |----------|

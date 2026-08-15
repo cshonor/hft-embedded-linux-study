@@ -51,4 +51,4 @@
 - 磁盘 I/O：[chapter-09-磁盘IO.md](../chapter-09-disk-io/)
 - 方法论：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
 - SysPerf 内存：[chapter-07-memory](../../14-systems-performance/chapter-07-memory/)
-- CSAPP 虚拟内存：[chapter-09-virtual-memory](../02-computer-systems/chapter-09-virtual-memory/)
+- CSAPP 虚拟内存：[chapter-09-virtual-memory](../../02-computer-systems/chapter-09-virtual-memory/)

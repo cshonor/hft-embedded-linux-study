@@ -1,18 +1,18 @@
 # TLPI 第 03 章 — System Programming Concepts
 
 **优先级**：🔴 必读  
-**前置**：[Ch2 Fundamental Concepts](../chapter-02-basic-concepts/notes.md)  
-**后置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/notes.md)（第一个实战 syscall 集）  
+**前置**：[Ch2 Fundamental Concepts](../chapter-02-basic-concepts/README.md)  
+**后置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md)（第一个实战 syscall 集）  
 
 ---
 
 ## 小节目录
 
 - [3.1 System Calls 系统调用](./notes/3.1-system-calls.md)
-- [3.2 Library Functions（glibc）](./notes/3.2-library-functions-glibc.md)
-- [3.3 错误处理（本章重中之重）](./notes/3.3-error-handling.md)
-- [3.4 可移植编程（SUSv3 / POSIX）](./notes/3.4-susv3.md)
-- [3.5 参数传递（概念）](./notes/3.5-concepts-parameter.md)
+- [3.2 Library Functions（glibc）](notes/3.2-library-functions.md)
+- [3.3 错误处理（本章重中之重）](notes/3.4-error-handling.md)
+- [3.4 可移植编程（SUSv3 / POSIX）](notes/3.4-error-handling.md)
+- [3.5 参数传递（概念）](notes/3.5-example-programs.md)
 
 ---
 
@@ -100,7 +100,7 @@
 
 
 - 《The Linux Programming Interface》第 03 章 — System Programming Concepts  
-- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/notes.md)
+- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/README.md)
 
 
 ---
@@ -141,4 +141,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

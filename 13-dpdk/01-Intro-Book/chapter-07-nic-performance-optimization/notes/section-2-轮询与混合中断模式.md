@@ -35,10 +35,10 @@
 
 ### 三、与 Ch6 的衔接
 
-- 轮询仍是对 **描述符环** 的批量检查 — [Ch6 §3 DMA 环](../chapter-06-pcie-packet-io/notes/section-3-DMA描述符环形队列.md)  
+- 轮询仍是对 **描述符环** 的批量检查 — [Ch6 §3 DMA 环](../../chapter-06-pcie-packet-io/notes/section-3-DMA描述符环形队列.md)  
 - 混合模式改变的是 **「何时 stop polling」**，不改变 burst 处理模型（→ §3）
 
-→ repo PMD 实验 stub：[chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md)
+→ repo PMD 实验 stub：[chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing)
 
 ---
 

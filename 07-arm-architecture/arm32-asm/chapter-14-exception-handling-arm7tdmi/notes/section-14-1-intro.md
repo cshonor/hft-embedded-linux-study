@@ -21,8 +21,8 @@
 | 核心 | 异常模型 |
 |------|----------|
 | **ARM7TDMI (v4T)** | **本章** — 七种模式、banked LR/SP、FIQ/IRQ 双线 |
-| **Cortex-M (v7-M)** | **[Ch15](../chapter-15-exception-handling-v7m/)** — NVIC、无 ARM 32-bit 状态 |
-| **Cortex-A / AArch64** | Linux 路径 — [奔跑吧 异常/GIC](../aarch64-practice/) |
+| **Cortex-M (v7-M)** | **[Ch15](../../chapter-15-exception-handling-v7m/)** — NVIC、无 ARM 32-bit 状态 |
+| **Cortex-A / AArch64** | Linux 路径 — [奔跑吧 异常/GIC](../../../aarch64-practice/) |
 
 **口述：** Smith 故意 **拆两章** — ARM7 经典模型懂 **CPSR/SPSR/向量**，再看 M 系 **硬件压栈帧** 不混淆。
 

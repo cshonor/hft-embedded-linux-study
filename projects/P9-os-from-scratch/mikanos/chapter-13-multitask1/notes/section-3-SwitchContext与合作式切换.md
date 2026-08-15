@@ -60,7 +60,7 @@ SwitchContext:
 
 **结论：** 必须升级 **抢占式**（§4）。
 
-→ [01 Day 15 多任务](../../thirty-days-os-essentials/day-15-multitask1/)
+→ [01 Day 15 多任务](../../../thirty-days-os-essentials/day-15-multitask1/)
 
 ---
 

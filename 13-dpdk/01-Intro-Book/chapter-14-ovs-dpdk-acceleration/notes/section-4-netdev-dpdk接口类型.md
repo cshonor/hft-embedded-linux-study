@@ -18,9 +18,9 @@
 
 | 本书章节 | 与 netdev-dpdk 关系 |
 |----------|---------------------|
-| [Ch10 SR-IOV / 透传](../chapter-10-x86-io-virtualization/) | PHY PMD 可配合 **VF 透传** — 极致性能 |
-| [Ch11 Virtio](../chapter-11-virtio-paravirtualization/) | vhost 接口对接 **Virtio-net 前端** |
-| [Ch12 vhost-user](../chapter-12-vhost-optimization/) | OVS **netdev-dpdk** 直接使用 vhost-user 后端 |
+| [Ch10 SR-IOV / 透传](../../chapter-10-x86-io-virtualization/) | PHY PMD 可配合 **VF 透传** — 极致性能 |
+| [Ch11 Virtio](../../chapter-11-virtio-paravirtualization/) | vhost 接口对接 **Virtio-net 前端** |
+| [Ch12 vhost-user](../../chapter-12-vhost-optimization/) | OVS **netdev-dpdk** 直接使用 vhost-user 后端 |
 | [Ch13 IVSHMEM](../../chapter-13-dpdk-nfv/notes/section-5-VNF深度优化设计.md) | **dpdkr** 即 IVSHMEM 路径在 OVS 中的封装 |
 
 ```

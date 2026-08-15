@@ -1,19 +1,19 @@
 # TLPI 第 62 章 — Terminals
 
 **优先级**：🔴（shell/作业控制/交互程序）  
-**前置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/notes.md)  
-**后置**：[Ch63 Alternative I/O](../chapter-63-alternative-io/notes.md) · [Ch64 PTY](../chapter-64-pseudoterminals/notes.md)
+**前置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/README.md)  
+**后置**：Ch63 Alternative I/O · [Ch64 PTY](../chapter-64-pseudoterminals/README.md)
 
 ---
 
 ## 小节目录
 
-- [62.1 类型](./notes/62.1-types.md)
-- [62.2 `termios`](./notes/62.2-termios.md)
-- [62.3 输入模式（高频）](./notes/62.3-mode.md)
-- [62.4 –62.6 标志 · 控制字符 · 行控制](./notes/62.4-flag.md)
-- [62.7 检测](./notes/62.7-detection.md)
-- [62.8 –62.9 会话 · 控制终端 · 信号](./notes/62.8-signal-terminal.md)
+- [62.1 类型](notes/62.1-overview.md)
+- [62.2 `termios`](notes/62.2-retrieving-and-modifying-terminal-attrib.md)
+- [62.3 输入模式（高频）](notes/62.3-the-stty-command.md)
+- [62.4 –62.6 标志 · 控制字符 · 行控制](notes/62.4-terminal-special-characters.md)
+- [62.7 检测](notes/62.7-terminal-line-speed-bit-rate.md)
+- [62.8 –62.9 会话 · 控制终端 · 信号](notes/62.8-terminal-line-control.md)
 
 ---
 
@@ -139,4 +139,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

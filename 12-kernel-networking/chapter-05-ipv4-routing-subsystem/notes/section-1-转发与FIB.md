@@ -28,7 +28,7 @@ L2 收包 → L3 查 FIB → 直接 L2 发出
 
 ## FIB 是什么
 
-**Forwarding Information Base** — 内核中 **「目的前缀 → 如何到达」** 的表项集合，与用户态 **`ip route show`** 对应（经 **rtnetlink** 配置，[Ch 2](../chapter-02-netlink-sockets/)）。
+**Forwarding Information Base** — 内核中 **「目的前缀 → 如何到达」** 的表项集合，与用户态 **`ip route show`** 对应（经 **rtnetlink** 配置，[Ch 2](../../chapter-02-netlink-sockets/)）。
 
 | 用户态 | 内核 |
 |--------|------|

@@ -2,13 +2,13 @@
 
 > **01-Intro-Book** · 官方 Programmer's Guide · **精读**
 
-> **实体书：** [chapter-06-PCIe与包处理IO](./chapter-06-pcie-packet-io/) §6 精讲 mbuf/mempool 布局与 Core Cache；先读 [chapter-02-Cache与内存](./chapter-02-cache-and-memory/)（大页、NUMA、Cache 对齐）。
+> **实体书：** [chapter-06-PCIe与包处理IO](../chapter-06-pcie-packet-io/) §6 精讲 mbuf/mempool 布局与 Core Cache；先读 [chapter-02-Cache与内存](../chapter-02-cache-and-memory/)（大页、NUMA、Cache 对齐）。
 
 <!-- 实验向笔记待补充：rte_mbuf 字段、mempool 创建参数、与 sk_buff 对照 -->
 
 ## 相关章节
 
-- 实体书：[chapter-06-pcie-packet-io/](./chapter-06-pcie-packet-io/) · [chapter-04-synchronization/](./chapter-04-synchronization/)（无锁 ring）
+- 实体书：[chapter-06-pcie-packet-io/](../chapter-06-pcie-packet-io/) · [chapter-04-synchronization/](../chapter-04-synchronization/)（无锁 ring）
 - 上一章：[chapter-02-Cache与内存.md](./chapter-02-Cache与内存.md) · [chapter-03-并行计算.md](./chapter-03-并行计算.md)
 - 下一章：[chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
 - 缓存对照：[02-CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/)

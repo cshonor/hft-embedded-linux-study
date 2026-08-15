@@ -40,7 +40,7 @@ FPU **内部更高精度** 运算 → 结果写入 **单精度 23 bit 尾数** �
 | **向 −∞** | **RM** (roundTowardNegative) | 相反 |
 | **向零 / 截断** | **RZ** (roundTowardZero) | **丢弃 G、S** — 永不因 G 进位；**float→int VCVT** 常用 |
 
-**配置：** **FPSCR RMode** 字段（→ [Ch9 §9.8](../chapter-09-floating-point-basics/notes/section-9-8-fpu-control.md)）。
+**配置：** **FPSCR RMode** 字段（→ [Ch9 §9.8](../../chapter-09-floating-point-basics/notes/section-9-8-fpu-control.md)）。
 
 ---
 

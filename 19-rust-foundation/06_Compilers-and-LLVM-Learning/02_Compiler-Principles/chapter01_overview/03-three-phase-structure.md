@@ -37,7 +37,7 @@ Source Code
 | **工作** | 分析 IR 并**改进**（更快、更小、更省电……） |
 | **输出** | **改进后的 IR** |
 
-**Rust**：LLVM 优化 Pass 链即工业级优化器层 → [04 Learn LLVM 17](../../../04_Learn-LLVM-17/README.md)
+**Rust**：LLVM 优化 Pass 链即工业级优化器层 → [04 Learn LLVM 17](../../04_Learn-LLVM-17/README.md)
 
 ---
 

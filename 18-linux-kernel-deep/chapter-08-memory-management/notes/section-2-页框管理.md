@@ -40,7 +40,7 @@ HFT 绑核 + **NUMA 本地内存** 分配 → 降低跨节点访问延迟。
 - **永久内核映射** — `kmap`  
 - **临时内核映射** — `kmap_atomic`（中断上下文等）
 
-→ 3G/1G 划分：[Ch 2](../chapter-02-memory-addressing/notes/section-6-内存布局与TLB.md)
+→ 3G/1G 划分：[Ch 2](../../chapter-02-memory-addressing/notes/section-6-内存布局与TLB.md)
 
 ---
 
@@ -64,7 +64,7 @@ HFT 绑核 + **NUMA 本地内存** 分配 → 降低跨节点访问延迟。
 - 每个 CPU 维护 **热 / 冷** 页框缓存  
 - **单页** 分配走本地缓存 → 减少 **全局 spinlock** 竞争  
 
-→ 与 [Ch 5](../chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md) per-CPU 变量思想一致。
+→ 与 [Ch 5](../../chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md) per-CPU 变量思想一致。
 
 ### 常见陷阱
 

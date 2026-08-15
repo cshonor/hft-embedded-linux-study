@@ -193,6 +193,6 @@ static int hft_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 ## 交叉引用
 
-- [05.6 ch03 速率限制](chapter-03-printk/notes/02-rate-limiting-async.md)
-- [05.6 ch03 dynamic debug](chapter-03-printk/notes/03-dynamic-debug.md)
-- [05.6 ch03 trace_printk](chapter-03-printk/notes/05-ftrace-printk.md)
+- [05.6 ch03 速率限制](../../chapter-03-printk/notes/02-rate-limiting-async.md)
+- [05.6 ch03 dynamic debug](../../chapter-03-printk/notes/03-dynamic-debug.md)
+- [05.6 ch03 trace_printk](../../chapter-03-printk/notes/05-ftrace-printk.md)

@@ -30,7 +30,7 @@ unsafe impl Sync for MyRawPtrWrapper {}
 |----|------|
 | **场景** | FFI 裸指针包装、自定义无锁结构、跨线程 OS 句柄 |
 | **含义** | 开发者向编译器担保线程安全；违反 → **UB** |
-| **为何 unsafe trait** | 错误 impl 时**安全代码**即可数据竞争 → [Ch09 §04 unsafe trait](../../Chapter-09-Unsafe-Code/04-unsafe-traits.md) |
+| **为何 unsafe trait** | 错误 impl 时**安全代码**即可数据竞争 → [Ch09 §04 unsafe trait](../Chapter-09-Unsafe-Code/04-unsafe-traits.md) |
 | **孤儿规则** | 仍须类型或 trait 至少一方本地 → [07.1](./07-1-orphan-rule.md) |
 
 `Copy`、`Sized` 几乎不手动 `unsafe impl` — 用 `#[derive(Copy, Clone)]` 或语言内置规则。
@@ -64,6 +64,6 @@ unsafe impl Sync for MyRawPtrWrapper {}
 - RFR → [第 10 章 并发](../Chapter-10-Concurrency-and-Parallelism/10-并发与并行-Concurrency-and-Parallelism-深度解析.md) · [第 8 章 Async](../Chapter-08-Asynchronous-Programming/README.md)
 - ER → [Item 10 标准 trait](../../01-ER/Chapter-02-Traits/Item-10-standard-traits/README.md)
 - Nomicon → [07 Concurrency](../../04-Rust-Nomicon/07_Concurrency_Atomic/README.md)
-- Ch09 → [04 unsafe trait 精读](../../Chapter-09-Unsafe-Code/04-unsafe-traits.md)
+- Ch09 → [04 unsafe trait 精读](../Chapter-09-Unsafe-Code/04-unsafe-traits.md)
 
 → 下一节：[10 存在类型](./10-existential-types.md)

@@ -187,6 +187,6 @@ kernel.nmi_watchdog = 1
 
 ## 交叉引用
 
-- [05.6 ch10 Soft Lockup](chapter-10-panic-lockup/notes/02-soft-lockup.md)
-- [05.6 ch10 Hard Lockup](chapter-10-panic-lockup/notes/03-hard-lockup.md)
-- [05.6 ch10 Hangcheck Timer](chapter-10-panic-lockup/notes/05-hangcheck-timer.md)
+- [05.6 ch10 Soft Lockup](../../chapter-10-panic-lockup/notes/02-soft-lockup.md)
+- [05.6 ch10 Hard Lockup](../../chapter-10-panic-lockup/notes/03-hard-lockup.md)
+- [05.6 ch10 Hangcheck Timer](../../chapter-10-panic-lockup/notes/05-hangcheck-timer.md)

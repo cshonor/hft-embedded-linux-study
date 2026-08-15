@@ -72,7 +72,7 @@
 
 **HFT：** 把 **缺页当作 bug**（热路径）— **启动阶段故意承担** 所有 fault + **mlock**，盘中 **profile 应 page-faults ≈ 0**。一次 **major fault** 在 **微秒策略** 里 = **灾难**。
 
-→ [Ch 3 COW](../../chapter-03-process-management/) · [Ch 12 页分配](../../chapter-12-memory-management/) · [06 Gorman 缺页异常](../../../../06-linux-mm/chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md) · [Ch 16 页缓存](../../chapter-16-the-page-cache-and-page-writeback/)
+→ [Ch 3 COW](../../chapter-03-process-management/) · [Ch 12 页分配](../../chapter-12-memory-management/) · [06 Gorman 缺页异常](../../../06-linux-mm/chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md) · [Ch 16 页缓存](../../chapter-16-page-cache)
 
 
 > ↔ [ULK Ch9 §5 请求调页](../../../18-linux-kernel-deep/chapter-09-process-address-space/notes/section-5-请求调页.md)

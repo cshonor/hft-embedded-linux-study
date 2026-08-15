@@ -20,6 +20,6 @@ for (每颗星) api_point(..., no_auto_refresh);
 api_refresh(win);   /* 一次更新屏幕 */
 ```
 
-→ [Day 10–11 局部 refresh / map](../day-10-layers/)
+→ Day 10–11 局部 refresh / map
 
 ---

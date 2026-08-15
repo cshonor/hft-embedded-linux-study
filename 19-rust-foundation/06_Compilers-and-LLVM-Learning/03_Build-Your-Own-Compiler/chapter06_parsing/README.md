@@ -1,6 +1,6 @@
 # 第 6 章 · 语法分析
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第1部分 · 代码分析
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第1部分 · 代码分析
 
 ## 状态
 
@@ -33,8 +33,8 @@
 |----------|------|
 | ch4～5 | [词法](../chapter04_lexical/) · [EBNF/LOOKAHEAD](../chapter05_javacc-parser/) |
 | ch7 下一部分 | JavaCC **action** 建 AST |
-| CI | [ch6～7 解析/表达式](../../../01_Crafting-Interpreters/part02_jlox/) |
-| EaC | [ch3 语法分析](../../../02_Compiler-Principles/chapter03_parsers/) |
+| CI | [ch6～7 解析/表达式](../../01_Crafting-Interpreters/part02_jlox/) |
+| EaC | [ch3 语法分析](../../02_Compiler-Principles/chapter03_parsers/) |
 
 ---
 

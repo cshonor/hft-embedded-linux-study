@@ -143,6 +143,6 @@ HFT 调试工具选择策略：
 
 ## 交叉引用
 
-- [05.6 ch03 dynamic debug](chapter-03-printk/notes/03-dynamic-debug.md)
-- [05.6 ch04 kprobes](chapter-04-kprobes/notes/01-kprobes-architecture.md)
-- [05.6 ch09 ftrace](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch03 dynamic debug](../../chapter-03-printk/notes/03-dynamic-debug.md)
+- [05.6 ch04 kprobes](../../chapter-04-kprobes/notes/01-kprobes-architecture.md)
+- [05.6 ch09 ftrace](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)

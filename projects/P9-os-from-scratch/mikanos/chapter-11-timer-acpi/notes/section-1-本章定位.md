@@ -41,7 +41,7 @@ Ch11 时钟中断 + 多定时器 + ACPI  ← 本章（🔴）
 Ch13 抢占式多任务
 ```
 
-→ [Ch9 APIC 测量](../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md)
+→ [Ch9 APIC 测量](../../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md)
 
 ---
 

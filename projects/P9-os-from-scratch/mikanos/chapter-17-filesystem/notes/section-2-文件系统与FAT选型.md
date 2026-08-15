@@ -22,7 +22,7 @@
 | **易于测试** | QEMU **虚拟 FAT 盘** · 真机 U 盘同格式 |
 | **实现量可控** | 本章只需 **读目录** — 不必先写完整 **分配表更新** |
 
-→ [Ch1 FAT U 盘](../chapter-01-hello-world/notes/section-2-二进制编辑器与BOOTX64.md)
+→ [Ch1 FAT U 盘](../../chapter-01-hello-world/notes/section-2-二进制编辑器与BOOTX64.md)
 
 ---
 
@@ -48,7 +48,7 @@
 
 **Ch17：** 内核 **自己解析 FAT 字节布局** — 不依赖 UEFI 运行时 — 为 **独立 OS** 铺路。
 
-→ [Ch2 Simple FS](../chapter-02-edk2-memmap/notes/section-4-GetMemoryMap与导出memmap.md)
+→ [Ch2 Simple FS](../../chapter-02-edk2-memmap/notes/section-4-GetMemoryMap与导出memmap.md)
 
 ---
 

@@ -1,17 +1,17 @@
 # TLPI 第 46 章 — System V Message Queues
 
 **优先级**：🔴（首个完整 SysV 实例；消息 vs 字节流）  
-**前置**：[Ch45 SysV IPC 导论](../chapter-45-sysv-ipc-intro/notes.md)  
-**后置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/notes.md)
+**前置**：[Ch45 SysV IPC 导论](../chapter-45-sysv-ipc-intro/README.md)  
+**后置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/README.md)
 
 ---
 
 ## 小节目录
 
-- [46.1 特性（相对 Pipe/FIFO）](./notes/46.1-pipe-fifo.md)
-- [46.2 API](./notes/46.2-api.md)
-- [46.3 –46.5 `msqid_ds` · 限额 · 运维](./notes/46.3-msqidds.md)
-- [46.6 –46.7 模型与缺陷](./notes/46.6-model-defects.md)
+- [46.1 特性（相对 Pipe/FIFO）](notes/46.1-creating-or-opening-a-message-queue.md)
+- [46.2 API](notes/46.2-exchanging-messages.md)
+- [46.3 –46.5 `msqid_ds` · 限额 · 运维](notes/46.3-message-queue-control-operations.md)
+- [46.6 –46.7 模型与缺陷](notes/46.6-displaying-all-message-queues-on-the-sys.md)
 
 ---
 
@@ -134,4 +134,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

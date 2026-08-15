@@ -33,7 +33,7 @@ Task B 运行 …
 
 **现代 OS：** 通常 **1–10ms** 量级 — 20ms 教学清晰、切换开销可感知。
 
-→ [Ch11 APIC Timer](../chapter-11-timer-acpi/notes/section-3-APIC定时器与TimerManager.md)
+→ [Ch11 APIC Timer](../../chapter-11-timer-acpi/notes/section-3-APIC定时器与TimerManager.md)
 
 ---
 
@@ -45,7 +45,7 @@ Task B 运行 …
 | **cli 期间** | 切换逻辑常与 **关中断** 配合 — 防嵌套竞态 |
 | **current_task 指针** | **volatile** / 原子 — ISR 与 idle 均访问 |
 
-→ [Ch7 cli/sti](../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
+→ [Ch7 cli/sti](../../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
 
 ---
 

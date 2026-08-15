@@ -42,7 +42,7 @@ Ltrue:  res = …;
 | **条件码（flags）** | x86 `cmp` + `jl` — 少生成显式布尔值 |
 | **谓词 / select** | IR `select` — SIMD / 无分支 |
 
-**clox**：比较 + `OP_JUMP_IF_FALSE` — 控制流形态 → [ch17](../../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/README.md)
+**clox**：比较 + `OP_JUMP_IF_FALSE` — 控制流形态 → [ch17](../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/README.md)
 
 ---
 

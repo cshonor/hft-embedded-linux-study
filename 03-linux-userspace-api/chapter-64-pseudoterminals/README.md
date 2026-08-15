@@ -1,18 +1,18 @@
 # TLPI 第 64 章 — Pseudoterminals
 
 **优先级**：🔴（ssh / 终端模拟器 / expect）  
-**前置**：[Ch62 Terminals](../chapter-62-terminals/notes.md) · [Ch63 Alternative I/O](../chapter-63-alternative-io/notes.md)  
+**前置**：[Ch62 Terminals](../chapter-62-terminals/README.md) · Ch63 Alternative I/O  
 **后置**：地图内 TLPI 主线结束；附录/其他模块另见仓库路线
 
 ---
 
 ## 小节目录
 
-- [64.1 –64.2 概念](./notes/64.1-concepts.md)
-- [64.3 vs 管道](./notes/64.3-pipe.md)
-- [64.4 –64.5 POSIX 打开 · 典型架构](./notes/64.4-architecture.md)
-- [64.6 –64.7 特性](./notes/64.6-section-64-6.md)
-- [64.9 BSD PTY](./notes/64.9-bsd-pty.md)
+- [64.1 –64.2 概念](notes/64.1-overview.md)
+- [64.3 vs 管道](notes/64.3-opening-a-master-ptymasteropen.md)
+- [64.4 –64.5 POSIX 打开 · 典型架构](notes/64.4-connecting-processes-with-a-pseudotermin.md)
+- [64.6 –64.7 特性](notes/64.6-implementing-script-1.md)
+- [64.9 BSD PTY](notes/64.8-bsd-pseudoterminals.md)
 
 ---
 
@@ -154,4 +154,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

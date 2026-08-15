@@ -50,7 +50,7 @@
 └─────────────────────────────────────┘
 ```
 
-→ 衔接 [Ch2 §2.3 MikanLoader](../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md) · 全链路 [§0 完整流程](./section-1-完整流程Miniload-GOP-kernel.md)
+→ 衔接 [Ch2 §2.3 MikanLoader](../../chapter-02-edk2-memmap/notes/section-2-3-MikanLoader是什么.md) · 全链路 [§0 完整流程](./section-1-完整流程Miniload-GOP-kernel.md)
 
 ---
 

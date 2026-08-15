@@ -24,8 +24,8 @@
 | 主题 | 去向 |
 |------|------|
 | `ManuallyDrop`、故意泄漏 | Nomicon · [第 9 章 Unsafe](../Chapter-09-Unsafe-Code/README.md) |
-| `Pin` 与位置不可移动 | [第 8 章 Async](../Chapter-08-Async/README.md) |
-| `async` 状态机里的 drop / cancel | [08 Async](../Chapter-08-Async/README.md) |
+| `Pin` 与位置不可移动 | 第 8 章 Async |
+| `async` 状态机里的 drop / cancel | 08 Async |
 | RAII 惯用法 | ER [Item 11 Drop/RAII](../../01-ER/Chapter-02-Traits/Item-11-drop-raii/README.md) |
 
 ---

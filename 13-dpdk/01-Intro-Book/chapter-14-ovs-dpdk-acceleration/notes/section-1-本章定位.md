@@ -35,9 +35,9 @@
 |------|------|
 | **共置 tick 直连** | **选读** — 通常不用 OVS；理解 **虚拟交换机开销** 有助于云化行情网关选型 |
 | **云 / NFV 行情分发** | OVS+DPDK 是 **多租户 VM 互联** 常见栈 — 与 [Ch13 VNF 调优](../../chapter-13-dpdk-nfv/notes/section-4-VNF评估与性能分析.md) 同构 |
-| **OpenFlow / SDN** | 慢路径流表学习 + 快路径转发 — 类比 **Match+Action** [Ch5](../chapter-05-packet-forwarding/) |
+| **OpenFlow / SDN** | 慢路径流表学习 + 快路径转发 — 类比 **Match+Action** [Ch5](../../chapter-05-packet-forwarding/) |
 
-→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../02-Advanced-Book/)
+→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../../02-Advanced-Book/)
 
 ---
 

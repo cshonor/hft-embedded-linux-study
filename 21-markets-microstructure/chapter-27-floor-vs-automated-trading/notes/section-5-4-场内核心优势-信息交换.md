@@ -9,7 +9,7 @@
 | **场内优势** | 观察 **其他经纪人行为**、建 **信任**、**试探** 隐藏意图 |
 | | 评估对手是否 **危险知情者** |
 
-→ [Ch 15 楼上 / latent demand](../chapter-15-block-traders/) · [Ch 18 隐蔽](../chapter-18-buy-side-traders/)
+→ [Ch 15 楼上 / latent demand](../../chapter-15-block-traders/) · [Ch 18 隐蔽](../../chapter-18-buy-side-traders/)
 
 ### 4.2 揭示真实规模
 

@@ -42,7 +42,7 @@ Ch11 定时器（又一中断源）
 Ch13 多任务（调度依赖中断）
 ```
 
-→ [Ch6 遗留问题](../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
+→ [Ch6 遗留问题](../../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
 
 ---
 

@@ -42,7 +42,7 @@ if (strcmp(cmd, "cat") == 0) {
 |------|--------------------------------------|
 | 示例 | `> cat README.TXT` |
 
-→ [Ch17 BPB · 目录项](../chapter-17-filesystem/notes/section-4-目录条目结构.md)
+→ [Ch17 BPB · 目录项](../../chapter-17-filesystem/notes/section-4-目录条目结构.md)
 
 ---
 

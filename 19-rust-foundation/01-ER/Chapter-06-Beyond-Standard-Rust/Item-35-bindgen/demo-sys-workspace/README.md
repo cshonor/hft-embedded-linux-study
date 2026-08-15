@@ -10,4 +10,4 @@ cd 01-ER/Chapter-06-Beyond-Standard-Rust/Item-35-bindgen/demo-sys-workspace
 cargo test --workspace
 ```
 
-对照 [item-35-bindgen](../item-35-bindgen/)（单 crate 内封装）与本模板（生产惯用拆分）。
+对照 [item-35-bindgen](../../item-35-bindgen/)（单 crate 内封装）与本模板（生产惯用拆分）。

@@ -30,25 +30,25 @@
 
 | 书（概念） | 本仓库 |
 |------------|--------|
-| DPDK 架构、EAL 入门 | [chapter-01-认识DPDK](./chapter-01-dpdk-intro/)（实体书 Ch1） |
-| Cache、大页、NUMA | [chapter-02-Cache与内存](./chapter-02-cache-and-memory/)（实体书 Ch2） |
-| 并行计算、SIMD | [chapter-03-并行计算](./chapter-03-parallel-computing/)（实体书 Ch3） |
-| 同步互斥、无锁 ring | [chapter-04-同步互斥机制](./chapter-04-synchronization/)（实体书 Ch4） |
-| 报文转发、RTC/Pipeline | [chapter-05-报文转发](./chapter-05-packet-forwarding/)（实体书 Ch5） |
-| PCIe、mbuf/mempool | [chapter-06-pcie-packet-io](./chapter-06-pcie-packet-io/)（实体书 Ch6） |
-| 网卡性能、burst/poll | [chapter-07-nic-performance-optimization](./chapter-07-nic-performance-optimization/)（实体书 Ch7） |
+| DPDK 架构、EAL 入门 | [chapter-01-认识DPDK](../chapter-01-dpdk-intro/)（实体书 Ch1） |
+| Cache、大页、NUMA | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/)（实体书 Ch2） |
+| 并行计算、SIMD | [chapter-03-并行计算](../chapter-03-parallel-computing/)（实体书 Ch3） |
+| 同步互斥、无锁 ring | [chapter-04-同步互斥机制](../chapter-04-synchronization/)（实体书 Ch4） |
+| 报文转发、RTC/Pipeline | [chapter-05-报文转发](../chapter-05-packet-forwarding/)（实体书 Ch5） |
+| PCIe、mbuf/mempool | [chapter-06-pcie-packet-io](../chapter-06-pcie-packet-io/)（实体书 Ch6） |
+| 网卡性能、burst/poll | [chapter-07-nic-performance-optimization](../chapter-07-nic-performance-optimization/)（实体书 Ch7） |
 | mbuf、mempool | [chapter-02-mbuf与内存池](./chapter-02-mbuf与内存池.md) |
 | PMD、poll mode | [chapter-03-PMD与轮询模式](./chapter-03-PMD与轮询模式.md) |
 | 旁路、零拷贝 | [chapter-04-零拷贝与用户态旁路](./chapter-04-零拷贝与用户态旁路.md) |
 | 组播行情 | [chapter-05-组播行情接入](./chapter-05-组播行情接入.md) |
-| 流分类、RSS、多队列 | [chapter-08-flow-classification-multiqueue](./chapter-08-flow-classification-multiqueue/)（实体书 Ch8） |
-| 硬件 offload、TSO/RSC | [chapter-09-hardware-offload](./chapter-09-hardware-offload/)（实体书 Ch9） |
-| X86 I/O 虚拟化、VT-d/SR-IOV | [chapter-10-x86-io-virtualization](./chapter-10-x86-io-virtualization/)（实体书 Ch10 · **虚拟化篇**） |
-| 半虚拟化 Virtio、virtqueue | [chapter-11-virtio-paravirtualization](./chapter-11-virtio-paravirtualization/)（实体书 Ch11） |
-| vhost-user、vhost PMD | [chapter-12-vhost-optimization](./chapter-12-vhost-optimization/)（实体书 Ch12） |
+| 流分类、RSS、多队列 | [chapter-08-flow-classification-multiqueue](../chapter-08-flow-classification-multiqueue/)（实体书 Ch8） |
+| 硬件 offload、TSO/RSC | [chapter-09-hardware-offload](../chapter-09-hardware-offload/)（实体书 Ch9） |
+| X86 I/O 虚拟化、VT-d/SR-IOV | [chapter-10-x86-io-virtualization](../chapter-10-x86-io-virtualization/)（实体书 Ch10 · **虚拟化篇**） |
+| 半虚拟化 Virtio、virtqueue | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/)（实体书 Ch11） |
+| vhost-user、vhost PMD | [chapter-12-vhost-optimization](../chapter-12-vhost-optimization/)（实体书 Ch12） |
 | NFV、VNF、OPNFV | [chapter-13-dpdk-nfv](../chapter-13-dpdk-nfv/)（实体书 Ch13 · **应用篇**） |
-| OVS、dpif-netdev、netdev-dpdk | [chapter-14-ovs-dpdk-acceleration](./chapter-14-ovs-dpdk-acceleration/)（实体书 Ch14） |
-| SPDK、用户态 NVMe、iSCSI | [chapter-15-dpdk-storage-optimization](./chapter-15-dpdk-storage-optimization/)（实体书 Ch15 · **应用篇压轴**） |
+| OVS、dpif-netdev、netdev-dpdk | [chapter-14-ovs-dpdk-acceleration](../chapter-14-ovs-dpdk-acceleration/)（实体书 Ch14） |
+| SPDK、用户态 NVMe、iSCSI | [chapter-15-dpdk-storage-optimization](../chapter-15-dpdk-storage-optimization/)（实体书 Ch15 · **应用篇压轴**） |
 
 ---
 

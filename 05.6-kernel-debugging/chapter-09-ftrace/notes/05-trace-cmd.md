@@ -151,6 +151,6 @@ grep 'us |' /tmp/hft_trace.txt | sort -rn | head -20
 
 ## 交叉引用
 
-- [05.6 ch09 Ftrace 架构与 tracefs](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
-- [05.6 ch09 KernelShark GUI 前端](chapter-09-ftrace/notes/06-kernelshark.md)
-- [05.6 ch09 perf-tools ftrace wrapper](chapter-09-ftrace/notes/07-perf-tools-ftrace.md)
+- [05.6 ch09 Ftrace 架构与 tracefs](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch09 KernelShark GUI 前端](../../chapter-09-ftrace/notes/06-kernelshark.md)
+- [05.6 ch09 perf-tools ftrace wrapper](../../chapter-09-ftrace/notes/07-perf-tools-ftrace.md)

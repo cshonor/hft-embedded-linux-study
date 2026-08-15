@@ -54,7 +54,7 @@ LLVM≠Runtime = 编译期翻译 vs 运行期调度（见 05-compile-time-llvm-v
 
 | 章 | 目录 | 内容 |
 |:--:|------|------|
-| **3** | [chapter03 · The Lox Language](../../chapter03_the-lox-language/) | **Lox 语言规格**——动手写 jlox 前必读 |
+| **3** | [chapter03 · The Lox Language](../chapter03_the-lox-language/) | **Lox 语言规格**——动手写 jlox 前必读 |
 | **4** | Part II · Scanning | 流水线第一站：Token |
 
 ---

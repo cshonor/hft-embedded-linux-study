@@ -173,8 +173,8 @@ HFT 内核模块调试的典型路径：
 
 ## 交叉引用
 
-- [05.6 ch07 Oops](chapter-07-oops/notes/01-oops-vs-panic.md)
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/02-lockdep.md)
-- [05.6 ch09 ftrace](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
-- [05.6 ch10 soft lockup](chapter-10-panic-lockup/notes/02-soft-lockup.md)
+- [05.6 ch07 Oops](../../chapter-07-oops/notes/01-oops-vs-panic.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch08 LOCKDEP](../../chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch09 ftrace](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch10 soft lockup](../../chapter-10-panic-lockup/notes/02-soft-lockup.md)

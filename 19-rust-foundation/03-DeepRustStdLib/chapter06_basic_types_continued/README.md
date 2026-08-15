@@ -40,7 +40,7 @@
 |------|------------|
 | 与第 4 章衔接 | [4.2 基本类型分析](../chapter04_primitive_types/README.md)（4.2.1 整数等） |
 | 布局 / 表示 | [RFR Ch02 Types](../../02-RFR/Chapter-02-Types/README.md) |
-| `str` / `String` | [Book 08 字符串](../../00-Book/08-common-collections/) |
+| `str` / `String` | [Book 08 字符串](../../00-Book/08-collections) |
 
 ---
 

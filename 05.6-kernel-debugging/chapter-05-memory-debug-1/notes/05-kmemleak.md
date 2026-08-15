@@ -172,6 +172,6 @@ cat /sys/kernel/debug/kmemleak
 
 ## 交叉引用
 
-- [05.6 ch05 内存错误类型](chapter-05-memory-debug-1/notes/01-memory-error-types.md)
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/01-kfence.md)
+- [05.6 ch05 内存错误类型](../../chapter-05-memory-debug-1/notes/01-memory-error-types.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch06 KFENCE](../../chapter-06-memory-debug-2/notes/01-kfence.md)

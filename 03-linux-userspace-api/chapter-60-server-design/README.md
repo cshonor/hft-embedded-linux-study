@@ -1,19 +1,19 @@
 # TLPI 第 60 章 — Sockets: Server Design
 
 **优先级**：🔴（TCP 服务架构选型）  
-**前置**：[Ch59 Internet Domains](../chapter-59-internet-domains/notes.md)  
-**后置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/notes.md)
+**前置**：Ch59 Internet Domains  
+**后置**：[Ch61 Socket Advanced](../chapter-61-sockets-advanced/README.md)
 
 ---
 
 ## 小节目录
 
-- [60.1 迭代服务器](./notes/60.1-server-iterate.md)
-- [60.2 –60.3 fork 并发](./notes/60.2-fork.md)
-- [60.4 多线程](./notes/60.4-thread.md)
-- [60.5 事件驱动（select/poll 入门）](./notes/60.5-select-poll.md)
-- [60.6 工程问题](./notes/60.6-section-60-6.md)
-- [60.7 对比](./notes/60.7-comparison.md)
+- [60.1 迭代服务器](notes/60.1-iterative-and-concurrent-servers.md)
+- [60.2 –60.3 fork 并发](notes/60.2-an-iterative-udp-echo-server.md)
+- [60.4 多线程](notes/60.4-other-concurrent-server-designs.md)
+- [60.5 事件驱动（select/poll 入门）](notes/60.5-the-inetd-internet-superserver-daemon.md)
+- [60.6 工程问题](notes/60.6-summary.md)
+- [60.7 对比](notes/60.7-exercises.md)
 
 ---
 
@@ -150,4 +150,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

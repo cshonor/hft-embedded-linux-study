@@ -1,20 +1,20 @@
 # TLPI 第 58 章 — Sockets: Fundamentals of TCP/IP Networks
 
 **优先级**：🟡（Ch59 实战地基）  
-**前置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/notes.md)  
-**后置**：[Ch59 Internet Domains](../chapter-59-internet-domains/notes.md)
+**前置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/README.md)  
+**后置**：Ch59 Internet Domains
 
 ---
 
 ## 小节目录
 
-- [58.1 INET vs UNIX](./notes/58.1-inet.md)
-- [58.2 –58.3 IPv4 · 端口](./notes/58.2-ipv4.md)
-- [58.4 `sockaddr_in`](./notes/58.4-sockaddrin.md)
-- [58.5 网络字节序（高频）](./notes/58.5-byte-order-network.md)
-- [58.6 地址转换](./notes/58.6-conversion.md)
-- [58.7 TCP vs UDP](./notes/58.7-tcp-udp.md)
-- [58.8 –58.9 `sockaddr_storage` · `INADDR_ANY`](./notes/58.8-sockaddrstorage-inaddrany.md)
+- [58.1 INET vs UNIX](notes/58.1-internets.md)
+- [58.2 –58.3 IPv4 · 端口](notes/58.2-networking-protocols-and-layers.md)
+- [58.4 `sockaddr_in`](notes/58.4-the-network-layer-ip.md)
+- 58.5 网络字节序（高频）
+- [58.6 地址转换](notes/58.6-the-transport-layer.md)
+- [58.7 TCP vs UDP](notes/58.7-requests-for-comments-rfcs.md)
+- [58.8 –58.9 `sockaddr_storage` · `INADDR_ANY`](notes/58.8-summary.md)
 
 ---
 
@@ -151,4 +151,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

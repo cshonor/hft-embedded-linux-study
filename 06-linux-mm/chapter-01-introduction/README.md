@@ -20,7 +20,7 @@
 | **Ch 2 起** | 物理内存、页表、地址空间、slab、回收等 **VM 本体** |
 | **附录 A–M** | 与正文对应的 **Code Commentary**（按子系统拆的源码导读） |
 
-> **HFT 读法：** 不必死记工具名；带走两样东西——**(1) 作者推荐的 `mm/` 阅读顺序**；(2) 补丁 / 邮件列表文化。技术细节从 [Ch 2](../../chapter-02-describing-physical-memory/) 精读。
+> **HFT 读法：** 不必死记工具名；带走两样东西——**(1) 作者推荐的 `mm/` 阅读顺序**；(2) 补丁 / 邮件列表文化。技术细节从 [Ch 2](../chapter-02-describing-physical-memory/) 精读。
 
 ---
 
@@ -39,5 +39,5 @@
 ## 相关章节
 
 - 下一章：[../chapter-02-describing-physical-memory/](../chapter-02-describing-physical-memory/)
-- 附录 A：[../../appendix-A-简介.md](../../appendix-A-简介.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 A：[../../appendix-A-简介.md](../appendix-A-简介.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

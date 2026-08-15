@@ -59,7 +59,7 @@ netlink 上送 → ovs-vswitchd 查表、决策
 
 **破局方向：** 将 **数据通路** 移至用户态，用 DPDK 旁路内核 — 见 [3. DPDK 加速通路](./section-3-DPDK加速数据通路.md)
 
-→ 与 [Ch1 旁路内核](../chapter-01-dpdk-intro/notes/section-2-DPDK核心思想.md) · [Ch13 NFVI](../../chapter-13-dpdk-nfv/notes/section-2-NFV起源与架构.md) 一致
+→ 与 [Ch1 旁路内核](../../chapter-01-dpdk-intro/notes/section-2-硬件平台与DPDK定位.md) · [Ch13 NFVI](../../chapter-13-dpdk-nfv/notes/section-2-NFV起源与架构.md) 一致
 
 ---
 

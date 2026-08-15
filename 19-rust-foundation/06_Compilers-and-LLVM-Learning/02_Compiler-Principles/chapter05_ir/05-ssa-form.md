@@ -6,7 +6,7 @@
 
 **SSA（Static Single-Assignment Form）** — 现代优化编译器**极重要**的高级 IR 形态。
 
-→ ch9～10 深度使用 · [04 LLVM IR（SSA）](../../../04_Learn-LLVM-17/README.md)
+→ ch9～10 深度使用 · [04 LLVM IR（SSA）](../../04_Learn-LLVM-17/README.md)
 
 ---
 

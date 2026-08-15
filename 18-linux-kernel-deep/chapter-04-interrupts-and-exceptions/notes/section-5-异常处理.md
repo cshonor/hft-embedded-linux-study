@@ -20,7 +20,7 @@
 | 无效内存访问 | `SIGSEGV` |
 | 非法指令 | `SIGILL` |
 
-→ 信号机制：[Ch 11 信号](../chapter-11-signals.md)
+→ 信号机制：[Ch 11 信号](../../chapter-11-signals.md)
 
 ---
 
@@ -39,7 +39,7 @@
 
 缺页是 **可纠正 Fault** 的成功案例 — 分配页、COW、swap 等，纠正后程序继续。
 
-→ [Ch 8 内存管理](../chapter-08-memory-management.md) · [Ch 9 地址空间](../chapter-09-process-address-space.md)
+→ [Ch 8 内存管理](../../chapter-08-memory-management.md) · [Ch 9 地址空间](../../chapter-09-process-address-space.md)
 
 ### 常见陷阱
 

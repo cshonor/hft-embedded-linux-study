@@ -66,7 +66,7 @@ kfree(ptr);
 
 **HFT：** 用户态 **对象池 / arena** 镜像 **`GFP_ATOMIC` 预分配** — ISR/NAPI 里 **`kmalloc(GFP_ATOMIC)`** 是 **尾延迟炸弹**。实盘驱动：**probe 阶段** `kmalloc` 建 ring，**runtime 零 alloc**。与用户 **`tcmalloc` 线程缓存** 同构：**热路径只 hit cache**。
 
-→ [01 CSAPP Ch9 malloc/池化](../../../../02-computer-systems/chapter-09-virtual-memory/) · [06 Gorman GFP](../../../../06-linux-mm/chapter-06-physical-page-allocation/notes/section-4-GFP-标志与进程标志.md) · [Ch 5 syscall 路径](../../chapter-05-system-calls/)
+→ [01 CSAPP Ch9 malloc/池化](../../../02-computer-systems/chapter-09-virtual-memory/) · [06 Gorman GFP](../../../06-linux-mm/chapter-06-physical-page-allocation/notes/section-4-GFP-标志与进程标志.md) · [Ch 5 syscall 路径](../../chapter-05-system-calls/)
 
 
 > ↔ [ULK Ch8 §3 Slab分配器](../../../18-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)

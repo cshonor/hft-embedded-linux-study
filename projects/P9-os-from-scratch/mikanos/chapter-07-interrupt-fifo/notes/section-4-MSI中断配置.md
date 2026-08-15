@@ -39,7 +39,7 @@
 
 **调试提示：** MSI 地址/向量配错 → **永不进 ISR** — 用 QEMU monitor 查 **IDT 项** 与 PCI MSI 寄存器。
 
-→ [Ch6 xHC 初始化](../chapter-06-mouse-pci/notes/section-5-BAR0与xHC初始化.md)
+→ [Ch6 xHC 初始化](../../chapter-06-mouse-pci/notes/section-5-BAR0与xHC初始化.md)
 
 ---
 

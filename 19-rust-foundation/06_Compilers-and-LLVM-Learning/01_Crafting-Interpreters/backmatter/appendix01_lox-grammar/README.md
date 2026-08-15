@@ -1,6 +1,6 @@
 # Appendix I: Lox Grammar
 
-> 所属：[backmatter](../backmatter/README.md) · [本书目录](../../本书目录.md)
+> 所属：[backmatter](../../backmatter/README.md) · [本书目录](../../本书目录.md)
 
 | 项目 | 说明 |
 |------|------|

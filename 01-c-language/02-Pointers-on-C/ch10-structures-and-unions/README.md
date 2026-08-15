@@ -53,12 +53,12 @@
 
 ## 小节
 
-- [10.1 结构基础知识](./10.1-structure-basics/10.1-structure-basics.md)
-- [10.2 结构的访问](./10.2-accessing-structures/10.2-accessing-structures.md)
+- [10.1 结构基础知识](10.1-structure-basics/10.1-结构基础知识.md)
+- [10.2 结构的访问](10.2-accessing-structures/10.2-结构的访问.md)
 - [10.3 结构的存储分配](./10.3-结构的存储分配.md)
 - [10.4 作为函数参数的结构](./10.4-作为函数参数的结构.md)
 - [10.5 位段](./10.5-位段.md)
-- [10.6 联合](./10.6-unions/10.6-unions.md)
+- [10.6 联合](10.6-unions/10.6-联合.md)
 
 
 ---
@@ -89,7 +89,7 @@ printf("%zu\n", sizeof(struct Header));  // 多少？
 
 **代价：** `packed` 结构体中 `uint32_t` 可能未对齐 → 某些架构（ARM）上访问未对齐地址 → **总线错误** 或性能下降。x86 允许未对齐访问但有性能损失。
 
-**复习：** → [10.1 Structure Declaration](./10.1-结构声明.md)
+**复习：** → [10.1 Structure Declaration](10.1-structure-basics)
 
 </details>
 
@@ -118,7 +118,7 @@ m.payload.coords.x = 10;
 
 **教训：** union + type 字段 = C 语言的"变体类型"，但编译器不帮你检查，全靠程序员自律。
 
-**复习：** → [10.6 Unions](./10.6-unions/10.6-unions.md)
+**复习：** → [10.6 Unions](10.6-unions/10.6-联合.md)
 
 </details>
 
@@ -152,7 +152,7 @@ f.a = 8;   // 3 bits 最大值是 7
 
 **规则：** 协议头和硬件寄存器**不用位域**——用移位和掩码手动操作。位域只用于同一平台内的紧凑存储。
 
-**复习：** → [10.5 位段](./10.5-位段.md) · [10.1 结构声明](./10.1-结构声明.md)
+**复习：** → [10.5 位段](./10.5-位段.md) · [10.1 结构声明](10.1-structure-basics)
 
 </details>
 

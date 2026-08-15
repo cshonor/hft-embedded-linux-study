@@ -24,6 +24,6 @@ A 想 MOV DS, B的段 → #GP
 
 **多任务安全闭环** — 配合 Day 21 **0x0d**、Day 25 **sel 映射**。
 
-→ [Day 5/6 GDT](../day-05-gdt-idt/) · [05-linux-kernel 内存保护](../../../../../05-linux-kernel/)
+→ [Day 5/6 GDT](../../day-05-gdt-idt/) · [05-linux-kernel 内存保护](../../../../../05-linux-kernel/)
 
 ---

@@ -26,8 +26,8 @@ Reset_Handler:
 
 **与嵌入式链：**
 
-- [20 U-Boot](../../08-embedded-boot-build/) **`start.S`** — 设栈、清 BSS、跳 C  
-- [08 MikanOS Loader](../../projects/P9-os-from-scratch/) — UEFI 入口同类 **分阶段 init**
+- [20 U-Boot](../../../../08-embedded-boot-build/) **`start.S`** — 设栈、清 BSS、跳 C  
+- [08 MikanOS Loader](../../../../projects/P9-os-from-scratch/) — UEFI 入口同类 **分阶段 init**
 
 ---
 
@@ -69,7 +69,7 @@ Reset_Handler:
 | 板级 **VIC IP** | 片上 **NVIC**（Ch15） |
 | 灵活但非标准 | **CMSIS** 统一 API |
 
-→ [Ch16](../chapter-16-memory-mapped-peripherals/) UART 中断清 **RI/TI** 位在 **专用 ISR** 末尾。
+→ [Ch16](../../chapter-16-memory-mapped-peripherals/) UART 中断清 **RI/TI** 位在 **专用 ISR** 末尾。
 
 ---
 
@@ -92,7 +92,7 @@ Reset_Handler:
 | **Prefetch Abort** | **#4** |
 | **Data Abort** | **#8** |
 
-Linux **用户态缺页** — 内核 fault handler 修页后 **返回用户继续** — 同 **重试** 思想（[04 LKD](../../05-linux-kernel/)）。
+Linux **用户态缺页** — 内核 fault handler 修页后 **返回用户继续** — 同 **重试** 思想（[04 LKD](../../../../05-linux-kernel/)）。
 
 ---
 

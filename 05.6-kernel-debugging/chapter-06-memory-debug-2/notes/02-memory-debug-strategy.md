@@ -180,6 +180,6 @@ KASAN 报告精确位置（文件:行号）
 
 ## 交叉引用
 
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/01-kfence.md)
-- [05.6 ch05 kmemleak](chapter-05-memory-debug-1/notes/05-kmemleak.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch06 KFENCE](../../chapter-06-memory-debug-2/notes/01-kfence.md)
+- [05.6 ch05 kmemleak](../../chapter-05-memory-debug-1/notes/05-kmemleak.md)

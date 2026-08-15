@@ -50,8 +50,8 @@
 
 | 章 | 目录 | 内容 |
 |:--:|------|------|
-| **2** | [chapter02 · A Map of the Territory](../../chapter02_map-of-the-territory/) | **编译之山**：扫描、解析、分析、IR、代码生成 |
-| **3** | [chapter03 · The Lox Language](../../chapter03_the-lox-language/) | Lox 完整规格（写 jlox 前必读） |
+| **2** | [chapter02 · A Map of the Territory](../chapter02_map-of-the-territory/) | **编译之山**：扫描、解析、分析、IR、代码生成 |
+| **3** | [chapter03 · The Lox Language](../chapter03_the-lox-language/) | Lox 完整规格（写 jlox 前必读） |
 | **4+** | Part II | 从 Scanning 动手 **jlox** |
 
 ---
@@ -63,7 +63,7 @@
 - [ ] 举一个你项目里的 **DSL**（配置、模板、宏展开……）。
 - [ ] 用自己的话解释：为何先 **jlox** 再 **clox**？
 - [ ] 读 Design Note *What's in a Name?*，各举 1 个「好命名 / 差命名」的语言特性。
-- [ ] 在 [`02-RFR/学习路径与章节对照.md`](../../../../../02-RFR/学习路径与章节对照.md) 标出：读 CI 时与 RFR 哪几章并行。
+- [ ] 在 [`02-RFR/学习路径与章节对照.md`](../../../../02-RFR/学习路径与章节对照.md) 标出：读 CI 时与 RFR 哪几章并行。
 
 ---
 

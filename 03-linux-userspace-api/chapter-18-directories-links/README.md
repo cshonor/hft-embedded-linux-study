@@ -1,19 +1,19 @@
 # TLPI 第 18 章 — Directories and Links
 
 **优先级**：🔴（路径树操作、临时文件、TOCTOU、可靠写入）  
-**前置**：[Ch17 ACL](../chapter-17-access-control-lists/notes.md) · [Ch14 FS/inode](../chapter-14-file-systems/notes.md) · [Ch15 stat/lstat](../chapter-15-file-attributes/notes.md)  
-**后置**：[Ch19 inotify](../chapter-19-monitoring-file-events/notes.md)
+**前置**：[Ch17 ACL](../chapter-17-access-control-lists/README.md) · [Ch14 FS/inode](../chapter-14-file-systems/README.md) · [Ch15 stat/lstat](../chapter-15-file-attributes/README.md)  
+**后置**：[Ch19 inotify](../chapter-19-monitoring-file-events/README.md)
 
 ---
 
 ## 小节目录
 
-- [18.1 目录基础](./notes/18.1-directory.md)
-- [18.2 读目录](./notes/18.2-directory.md)
-- [18.3 硬链接](./notes/18.3-link.md)
-- [18.4 符号链接](./notes/18.4-link-symbol.md)
-- [18.5 `rename`（同 FS 原子）](./notes/18.5-rename.md)
-- [18.6 路径与 TOCTOU](./notes/18.6-toctou.md)
+- [18.1 目录基础](notes/18.1-directories-and-hard-links.md)
+- [18.2 读目录](notes/18.10-the-current-working-directory-of-a-proce.md)
+- [18.3 硬链接](notes/18.3-creating-and-removing-hard-links-link-an.md)
+- [18.4 符号链接](notes/18.3-creating-and-removing-hard-links-link-an.md)
+- [18.5 `rename`（同 FS 原子）](notes/18.4-changing-the-name-of-a-file-rename.md)
+- [18.6 路径与 TOCTOU](notes/18.6-creating-and-removing-directories-mkdir-.md)
 
 ---
 
@@ -147,4 +147,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

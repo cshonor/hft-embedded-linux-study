@@ -68,7 +68,7 @@ wait(NULL);
 
 **HFT：** 不要在热路径 **频繁 fork**（即使用 COW，仍有页表、调度、`task_struct` 开销）。Prefork  worker 池（如部分 Web 服务器）是 **启动时** 摊销成本；低延迟系统更常见 **单进程 + 线程 +  hugepage 预分配**。
 
-→ [§3.5 clone/线程](./section-3.5-Linux-的线程实现.md) · [Ch 15 地址空间](../../chapter-15-process-address-space/notes/section-15.1-地址空间.md) · [07 TLPI Ch24/27 fork/exec](../../../../03-linux-userspace-api/chapter-24-process-creation/notes.md) · [01 CSAPP Ch9 COW](../../../../02-computer-systems/chapter-09-virtual-memory/)
+→ [§3.5 clone/线程](./section-3.5-Linux-的线程实现.md) · [Ch 15 地址空间](../../chapter-15-process-address-space/notes/section-15.1-地址空间.md) · [07 TLPI Ch24/27 fork/exec](../../../03-linux-userspace-api/chapter-24-process-creation/notes) · [01 CSAPP Ch9 COW](../../../02-computer-systems/chapter-09-virtual-memory/)
 
 
 

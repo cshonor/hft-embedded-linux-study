@@ -525,7 +525,7 @@ fork → task_struct（内存里带着：policy、nice/权重、vruntime、RT pr
 
 **HFT：** 行情/撮合热路径用 RT+绑核；日志、监控、非关键路径留 CFS。
 
-→ [07 TLPI](../../../../03-linux-userspace-api/) · [4.3 CFS](./section-4.3-Linux-调度算法.md) · [4.6 RT](./section-4.6-实时调度策略.md)
+→ [07 TLPI](../../../03-linux-userspace-api/) · [4.3 CFS](./section-4.3-Linux-调度算法.md) · [4.6 RT](./section-4.6-实时调度策略.md)
 
 ### 常见陷阱
 

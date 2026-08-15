@@ -17,7 +17,7 @@ printf("elapsed: %lu ticks\n", t1 - t0);
 |------|-------------------------------|
 | 用途 | **优化前后对比** — 科学而非体感 |
 
-→ [Ch11 定时器](../chapter-11-timer-acpi/)
+→ [Ch11 定时器](../../chapter-11-timer-acpi/)
 
 ---
 
@@ -64,7 +64,7 @@ WinRedraw(lid);   // 一次性 kLayer 消息 · Main 合成一次
 
 **显式 **「现在显示 shadow」** — 与 **NO_REDRAW 标志** 配对。
 
-→ [Ch9 Layer 消息](../chapter-09-layers/) · [Ch15 kLayer Redraw](../chapter-15-terminal/)
+→ [Ch9 Layer 消息](../../chapter-09-layers/) · [Ch15 kLayer Redraw](../../chapter-15-terminal/)
 
 ---
 

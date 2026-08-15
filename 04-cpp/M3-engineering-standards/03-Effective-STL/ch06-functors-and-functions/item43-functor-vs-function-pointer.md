@@ -273,4 +273,4 @@ std::cout << comparisons;
 
 - 上一节：[Item 40-42 函数适配器](item40-42-function-adapters.md)
 - 下一节：[ch07 使用 STL 编程](../ch07-programming-with-stl/README.md)
-- [Effective Modern C++ Item 34：lambda 优于 bind](../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)
+- [Effective Modern C++ Item 34：lambda 优于 bind](../../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)

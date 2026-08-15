@@ -209,6 +209,6 @@ static int hft_init_hw(struct hft_dev *dev)
 
 ## 交叉引用
 
-- [05.6 ch03 printk 基础](chapter-03-printk/notes/01-printk-basics-loglevel.md)
-- [05.6 ch03 dynamic debug](chapter-03-printk/notes/03-dynamic-debug.md)
-- [05.6 ch03 trace_printk](chapter-03-printk/notes/05-ftrace-printk.md)
+- [05.6 ch03 printk 基础](../../chapter-03-printk/notes/01-printk-basics-loglevel.md)
+- [05.6 ch03 dynamic debug](../../chapter-03-printk/notes/03-dynamic-debug.md)
+- [05.6 ch03 trace_printk](../../chapter-03-printk/notes/05-ftrace-printk.md)

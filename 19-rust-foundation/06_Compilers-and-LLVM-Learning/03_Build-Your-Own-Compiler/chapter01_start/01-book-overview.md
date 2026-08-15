@@ -62,8 +62,8 @@ Linux 下 **gcc 式** 完整构建，与 cbc **内部** 四阶段不同层次：
 
 | 本书 | 对照 |
 |------|------|
-| ELF / 加载 | RFR [03-2 OS 内存布局](../../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md) |
-| 全链 | [CI ch2 下山后端](../../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) |
+| ELF / 加载 | RFR [03-2 OS 内存布局](../../../02-RFR/Chapter-01-Foundations/03-2-os-memory-layout.md) |
+| 全链 | [CI ch2 下山后端](../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) |
 
 ---
 

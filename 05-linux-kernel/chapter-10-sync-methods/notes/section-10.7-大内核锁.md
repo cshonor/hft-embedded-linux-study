@@ -30,7 +30,7 @@
 
 **HFT / 驱动：** 不要怀念「一把大锁省事」— 大锁 = 尾延迟与多核浪费。正确粗细：数据怎么共享，锁就围着数据走。
 
-→ [Ch 9 争用与可扩展性](../chapter-09-kernel-sync-intro/notes/section-9.6-争用和可扩展性.md) · [10.11 选型](./section-10.11-选型速查Ch-9--Ch-10.md)
+→ [Ch 9 争用与可扩展性](../../chapter-09-kernel-sync-intro/notes/section-9.6-争用和可扩展性.md) · [10.11 选型](./section-10.11-选型速查Ch-9--Ch-10.md)
 
 ### 常见陷阱
 

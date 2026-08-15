@@ -26,6 +26,6 @@ Bluffer 获利条件：**买入时的价格冲击 ≠ 卖出时的价格冲击**
 | **Size-dependent skew** 若 **不对称** → 给 bluffer **套利空间** |
 | **Inventory skew** 应有 **规则边界** — 防被 **定向灌单** 利用 |
 
-→ 做市专章 [Ch 13](../chapter-13-dealers/) · 价差 [Ch 14](../chapter-14-bid-ask-spreads/)
+→ 做市专章 [Ch 13](../../chapter-13-dealers/) · 价差 [Ch 14](../../chapter-14-bid-ask-spreads/)
 
 ---

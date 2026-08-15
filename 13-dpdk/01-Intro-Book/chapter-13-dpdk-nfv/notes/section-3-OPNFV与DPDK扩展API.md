@@ -13,7 +13,7 @@
 | **OVS / OVS-DPDK** | 虚拟交换 — **依赖 DPDK 加速** |
 | **DPDK** | **数据面统一加速引擎** |
 
-大量 NFV 项目 **直接/间接** 依赖 DPDK — 与 [Ch12 vhost-user](../chapter-12-vhost-optimization/) 同生态。
+大量 NFV 项目 **直接/间接** 依赖 DPDK — 与 [Ch12 vhost-user](../../chapter-12-vhost-optimization/) 同生态。
 
 ---
 
@@ -29,7 +29,7 @@
 
 **意义：** VNF（防火墙、DPI、VPN）不必各自造轮子 — **走 DPDK 抽象**。
 
-→ [Ch3 SIMD](../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) · [Ch9 硬件 offload](../chapter-09-hardware-offload/notes/section-3-计算及更新功能卸载.md)
+→ [Ch3 SIMD](../../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) · [Ch9 硬件 offload](../../chapter-09-hardware-offload/notes/section-3-计算及更新功能卸载.md)
 
 ---
 

@@ -1,18 +1,18 @@
 # TLPI 第 49 章 — Memory Mappings
 
 **优先级**：🔴（文件 IO / 分配 / IPC 交汇）  
-**前置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/notes.md)  
-**后置**：[Ch50 虚拟内存操作](../chapter-50-virtual-memory/notes.md) · [Ch51 POSIX IPC](../chapter-51-posix-ipc-intro/notes.md)
+**前置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/README.md)  
+**后置**：[Ch50 虚拟内存操作](../chapter-50-virtual-memory/README.md) · [Ch51 POSIX IPC](../chapter-51-posix-ipc-intro/README.md)
 
 ---
 
 ## 小节目录
 
-- [49.1 四大组合](./notes/49.1-group.md)
-- [49.2 –49.3 `mmap` / `munmap`](./notes/49.2-mmap-munmap.md)
-- [49.4 文件映射](./notes/49.4-map.md)
-- [49.5 `msync`](./notes/49.5-msync.md)
-- [49.6 –49.8 Flags · `mremap`](./notes/49.6-mremap.md)
+- [49.1 四大组合](notes/49.1-overview.md)
+- [49.2 –49.3 `mmap` / `munmap`](notes/49.2-creating-a-mapping-mmap.md)
+- [49.4 文件映射](notes/49.10-the-map-fixed-flag.md)
+- [49.5 `msync`](notes/49.5-synchronizing-a-mapped-region-msync.md)
+- [49.6 –49.8 Flags · `mremap`](notes/49.6-additional-mmap-flags.md)
 
 ---
 
@@ -159,4 +159,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -42,7 +42,7 @@ void WriteAscii(PixelWriter* writer, int x, int y, char c, PixelColor fg) {
 | **调用 PixelWriter** | 复用 Ch4 **BGR/RGB** 抽象 |
 | **坐标** | `(x,y)` 为字符左上角 |
 
-→ [Ch4 像素格式](../chapter-04-pixel-make/notes/section-3-像素格式与WritePixel.md)
+→ [Ch4 像素格式](../../chapter-04-pixel-make/notes/section-3-像素格式与WritePixel.md)
 
 ---
 

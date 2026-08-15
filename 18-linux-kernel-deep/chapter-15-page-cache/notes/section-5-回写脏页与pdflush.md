@@ -12,7 +12,7 @@
 - 多次写同一页 → **一次** 物理更新  
 - 系统响应更快  
 
-脏页统计影响 **内存回收** 决策（→ [Ch 17](../chapter-17-page-reclaim.md)）。
+脏页统计影响 **内存回收** 决策（→ [Ch 17](../../chapter-17-page-reclaim.md)）。
 
 ---
 
@@ -27,7 +27,7 @@ ULK 2.6 用 **`pdflush`** — **2～8 个** 动态内核线程，后台 **刷新
 
 线程从 `address_space` / 全局脏页列表取页 → `writepage` → **bio** → 块层。
 
-→ 块 I/O：[Ch 14](../chapter-14-block-devices/)
+→ 块 I/O：[Ch 14](../../chapter-14-block-devices/)
 
 > **Modern 对照：** `pdflush` 已由 **per-backing-device `flush` 线程**（bdi_writeback）取代；机制仍为 **阈值 + 周期写回**。
 

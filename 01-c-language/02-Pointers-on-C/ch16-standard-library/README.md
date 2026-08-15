@@ -108,7 +108,7 @@ int va = *(const int*)a, vb = *(const int*)b;
 return (va > vb) - (va < vb);
 ```
 
-**复习：** → [16.1 stdlib](./16.1-stdlib.md)
+**复习：** → [16.1 stdlib](16.1-整型函数.md)
 
 </details>
 
@@ -153,7 +153,7 @@ if (errno == ERANGE) /* 溢出 */;
 if (*end != '\0')    /* 有未解析字符 */;
 ```
 
-**复习：** → [16.1 stdlib](./16.1-stdlib.md)
+**复习：** → [16.1 stdlib](16.1-整型函数.md)
 
 </details>
 

@@ -21,7 +21,7 @@
                       └── 不经过 openvswitch.ko 快路径
 ```
 
-→ [Ch7 PMD / burst](../chapter-07-nic-performance-optimization/) · [Ch2 大页](../chapter-02-cache-and-memory/notes/section-5-大页Hugepages.md)
+→ [Ch7 PMD / burst](../../chapter-07-nic-performance-optimization/) · [Ch2 大页](../../chapter-02-cache-and-memory/notes/section-5-大页Hugepages.md)
 
 ---
 
@@ -56,7 +56,7 @@ ovs-vswitchd
 | **慢路径** | netlink 上送 `ovs-vswitchd` | 仍在用户态 — **减少跨空间切换** |
 | **I/O** | 内核 netdevice | **DPDK PMD / vhost PMD** |
 
-→ [Ch4 无锁 ring](../chapter-04-synchronization/notes/section-5-无锁机制.md) — OVS 内部队列与 DPDK ring 思想相通
+→ [Ch4 无锁 ring](../../chapter-04-synchronization/notes/section-5-无锁机制.md) — OVS 内部队列与 DPDK ring 思想相通
 
 ---
 

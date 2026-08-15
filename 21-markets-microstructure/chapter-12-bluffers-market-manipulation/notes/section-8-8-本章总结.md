@@ -8,6 +8,6 @@
 | **LP 纪律** | **对称 impact** — 不给 bluffer **买卖冲击差** 套利 |
 | **监管** | 非法但 **难证意图** |
 
-> **HFT 读者 takeaway：** 做 **maker** — 保持 **impact 对称**、警惕 **illiquid + momentum flow**；做 **策略** — 自问是否在 Ch 9 **打击侧**（spoof/layer/wash）；做 **风控** — **penny / low float** 上 **value 空头缺席** = bluffer **天然温床**。Part III 寄生两章（11–12）收束后，Part IV 转向 **建设性 LP** — [Ch 13 做市商](../chapter-13-dealers/)。
+> **HFT 读者 takeaway：** 做 **maker** — 保持 **impact 对称**、警惕 **illiquid + momentum flow**；做 **策略** — 自问是否在 Ch 9 **打击侧**（spoof/layer/wash）；做 **风控** — **penny / low float** 上 **value 空头缺席** = bluffer **天然温床**。Part III 寄生两章（11–12）收束后，Part IV 转向 **建设性 LP** — [Ch 13 做市商](../../chapter-13-dealers/)。
 
 ---

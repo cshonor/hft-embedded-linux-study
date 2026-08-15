@@ -1,16 +1,16 @@
 # TLPI 第 29 章 — Threads: Introduction
 
 **优先级**：🔴（并发基础；下一章同步）  
-**前置**：[Ch28 fork/exec 深潜](../chapter-28-process-creation-exec-detail/notes.md)  
-**后置**：[Ch30 线程同步](../chapter-30-thread-synchronization/notes.md)
+**前置**：[Ch28 fork/exec 深潜](../chapter-28-process-creation-exec-detail/README.md)  
+**后置**：[Ch30 线程同步](../chapter-30-thread-synchronization/README.md)
 
 ---
 
 ## 小节目录
 
-- [29.1 概念](./notes/29.1-concepts.md)
-- [29.2 Pthreads 规范](./notes/29.2-pthreads.md)
-- [29.4 线程 vs 进程](./notes/29.4-process-thread.md)
+- [29.1 概念](notes/29.1-overview.md)
+- [29.2 Pthreads 规范](notes/29.2-background-details-of-the-pthreads-api.md)
+- [29.4 线程 vs 进程](notes/29.4-thread-termination.md)
 
 ---
 
@@ -173,4 +173,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

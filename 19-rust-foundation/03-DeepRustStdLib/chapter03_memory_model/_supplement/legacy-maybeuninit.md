@@ -1,6 +1,6 @@
 # 3.10 `MaybeUninit`
 
-> 章索引：[第 3 章](./README.md) · 前：[3.9 泄漏与循环引用](./3.9-leaks-and-cycles.md)
+> 章索引：[第 3 章](./README.md) · 前：[3.9 泄漏与循环引用](legacy-leaks-and-cycles.md)
 
 ---
 
@@ -63,7 +63,7 @@ let buf: &mut [MaybeUninit<Quote>] = ...;
 | **unsafe 边界** | 你必须保证：**read/assume_init 前必定 write**；释放时用 **`drop_in_place`** |
 | **与 3.1 对齐** | 池按缓存行 / 对齐分配，减少 false sharing |
 
-→ [Nomicon 05 Uninit Mem](../../04-Rust-Nomicon/05_Uninit_Mem/README.md) · [RFR Ch09 · 03 calling unsafe](../../02-RFR/Chapter-09-Unsafe-Code/03-calling-unsafe-functions.md) · [06 validity](../../02-RFR/Chapter-09-Unsafe-Code/06-validity.md)
+→ [Nomicon 05 Uninit Mem](../../../04-Rust-Nomicon/05_Uninit_Mem/README.md) · [RFR Ch09 · 03 calling unsafe](../../../02-RFR/Chapter-09-Unsafe-Code/03-calling-unsafe-functions.md) · [06 validity](../../../02-RFR/Chapter-09-Unsafe-Code/06-validity.md)
 
 ---
 
@@ -77,6 +77,6 @@ let buf: &mut [MaybeUninit<Quote>] = ...;
 
 ## 相关
 
-- [3.1 内存布局](./3.1-layout-and-alignment.md)
-- [3.3 UnsafeCell](./3.3-unsafecell.md) — 另一路径绕过 `&T` 不变性
+- [3.1 内存布局](legacy-layout-and-alignment.md)
+- [3.3 UnsafeCell](legacy-unsafecell.md) — 另一路径绕过 `&T` 不变性
 - [第 4 章 容器（规划）](../README.md#目录) — `Vec` 扩容实现对照

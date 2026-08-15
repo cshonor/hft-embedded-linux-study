@@ -44,18 +44,18 @@
 
 ## 小节
 
-- [3.1 基本数据类型](./3.1-basic-data-types/3.1-basic-data-types.md)
+- 3.1 基本数据类型
   - [3.1.1 整型家族](./3.1-basic-data-types/3.1.1-整型家族.md)
   - [3.1.2 浮点类型](./3.1-basic-data-types/3.1.2-浮点类型.md)
   - [3.1.3 指针](./3.1-basic-data-types/3.1.3-指针.md)
-- [3.2 基本声明](./3.2-basic-declarations/3.2-basic-declarations.md)
+- [3.2 基本声明](3.2-basic-declarations/3.2-基本声明.md)
   - [3.2.1 初始化](./3.2-basic-declarations/3.2.1-初始化.md)
   - [3.2.2 声明简单数组](./3.2-basic-declarations/3.2.2-声明简单数组.md)
   - [3.2.3 声明指针](./3.2-basic-declarations/3.2.3-声明指针.md)
   - [3.2.4 隐式声明](./3.2-basic-declarations/3.2.4-隐式声明.md)
 - [3.3 typedef](./3.3-typedef.md)
 - [3.4 常量](./3.4-常量.md)
-- [3.5 作用域](./3.5-scope/3.5-scope.md)
+- [3.5 作用域](3.5-scope/3.5-作用域.md)
   - [3.5.1 代码块](./3.5-scope/3.5.1-代码块.md)
   - [3.5.2 文件](./3.5-scope/3.5.2-文件.md)
   - [3.5.3 原型](./3.5-scope/3.5.3-原型.md)
@@ -100,7 +100,7 @@ int *p4 = &val;             // (4)
 
 **口诀：** `const` 在 `*` 左边修饰数据，在 `*` 右边修饰指针。
 
-**复习：** → [3.3 Constants](./3.3-constants/3.3-constants.md) — const 指针
+**复习：** → 3.3 Constants — const 指针
 
 </details>
 
@@ -126,7 +126,7 @@ volatile unsigned int *reg = (volatile unsigned int*)0x40021000;
 
 **注意：** `volatile` 不保证原子性，也不加内存屏障。
 
-**复习：** → [3.3 Constants](./3.3-constants/3.3-constants.md) — volatile
+**复习：** → 3.3 Constants — volatile
 
 </details>
 
@@ -150,7 +150,7 @@ else
 
 这是无符号与有符号混算的经典陷阱。
 
-**复习：** → [3.2 Basic Types](./3.2-basic-types/3.2-basic-types.md) — 整数提升与 unsigned 混合
+**复习：** → 3.2 Basic Types — 整数提升与 unsigned 混合
 
 </details>
 
@@ -171,7 +171,7 @@ i64 timestamp = 1699000000;
 
 **答案：** `int` 宽度跨平台不固定（2/4/8 字节）。`uint32_t`（`<stdint.h>`）保证恰好 4 字节。协议字段、寄存器、ABI 接口需要精确宽度。
 
-**复习：** → [3.4 typedef](./3.4-typedef/3.4-typedef.md)
+**复习：** → 3.4 typedef
 
 </details>
 

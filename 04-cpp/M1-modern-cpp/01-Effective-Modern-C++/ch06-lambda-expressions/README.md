@@ -102,7 +102,7 @@ public:
 
 **教训：** 避免用 `[=]` 默认捕获，显式列出要捕获的变量。
 
-**复习：** → [Item 31：避免默认捕获模式](./item31-避免默认捕获模式.md)
+**复习：** → [Item 31：避免默认捕获模式](item31-avoid-default-capture.md)
 </details>
 
 ### Q2: 初始化捕获（C++14）
@@ -126,5 +126,5 @@ auto cb = [up = std::move(pw)]() {
 
 **C++11 变通：** `std::bind` + `std::move`，但更绕。
 
-**复习：** → [Item 32：用初始化捕获将对象移入闭包](./item32-用初始化捕获将对象移入闭包（C++14）.md)
+**复习：** → [Item 32：用初始化捕获将对象移入闭包](item32-init-capture.md)
 </details>

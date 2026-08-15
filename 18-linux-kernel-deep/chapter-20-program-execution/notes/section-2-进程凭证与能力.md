@@ -17,7 +17,7 @@
 
 **`setuid` 程序：** 普通用户 exec 时 **effective UID** 临时变为 root（或文件属主）— 如 `passwd`。
 
-→ 进程模型：[Ch 3](../chapter-03-processes/)
+→ 进程模型：[Ch 3](../../chapter-03-processes/)
 
 ---
 

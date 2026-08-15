@@ -38,9 +38,9 @@
 
 ## 前置知识
 
-- [计算机网络 自顶向下](../top_down/)（如果仓库中有）
-- [TCP/IP 详解 卷一](../TCP-IP-Volume1-Protocols/)（如果仓库中有）
-- [HTTP 权威指南](../http-authoritative-guide/)（如果仓库中有）
+- 计算机网络 自顶向下（如果仓库中有）
+- TCP/IP 详解 卷一（如果仓库中有）
+- HTTP 权威指南（如果仓库中有）
 - HFT 仓库内：[11-tcpip-protocols](../11-tcpip-protocols/) · [04-cpp/M5-cpp-network-programming](../04-cpp/M5-cpp-network-programming/) · [14-systems-performance](../14-systems-performance/)
 
 ## 使用工具
@@ -74,7 +74,7 @@ Wireshark 在高频交易（HFT）场景中是**网络延迟分析**的核心工
 ## 其他
 
 - 实验 `.pcap` 可放在对应章文件夹或 `labs/` 目录（[.gitignore](./.gitignore) 已忽略）
-- 自顶向下实验：[99_practice_wireshark_lab](../top_down/99_practice_wireshark_lab/)（如果仓库中有）
+- 自顶向下实验：99_practice_wireshark_lab（如果仓库中有）
 
 ## 小节文件模板
 

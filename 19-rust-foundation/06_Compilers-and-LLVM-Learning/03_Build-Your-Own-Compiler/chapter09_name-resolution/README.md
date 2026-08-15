@@ -1,6 +1,6 @@
 # 第 9 章 · 语义分析（1）引用的消解
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第2部分 · 抽象语法树和中间代码
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第2部分 · 抽象语法树和中间代码
 
 ## 状态
 
@@ -32,7 +32,7 @@
 |----------|------|
 | ch8 AST | [chapter08_build-ast](../chapter08_build-ast/README.md) · `VariableNode` · `TypeRef` |
 | ch10 下一章 | 类型定义检查 · 表达式有效性 · **静态类型检查** |
-| EaC | [ch4 上下文分析](../../../02_Compiler-Principles/chapter04_context/) |
+| EaC | [ch4 上下文分析](../../02_Compiler-Principles/chapter04_context/) |
 | Rust | `rustc` **name resolution**（Hir）— 同类问题，更强规则 |
 
 ---

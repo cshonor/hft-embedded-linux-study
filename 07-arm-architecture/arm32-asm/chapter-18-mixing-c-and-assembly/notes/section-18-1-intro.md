@@ -13,7 +13,7 @@
 | **信号/语音 DSP** | 饱和运算、SIMD、手写循环 |
 | **硬件特性** | 读 **PSR/Q**、协处理器、**VCVT** |
 | **极致优化** | 编译器达不到的 **寄存器/流水线** 安排 |
-| **启动/Boot** | [Ch16](../chapter-16-memory-mapped-peripherals/) 级 MMIO + [Ch13](../chapter-13-subroutines-stacks/) 栈 |
+| **启动/Boot** | [Ch16](../../chapter-16-memory-mapped-peripherals/) 级 MMIO + [Ch13](../../chapter-13-subroutines-stacks/) 栈 |
 
 **现实：** 90% 用 **C**；热点与 **ABI 边界** 用 **asm 补丁**。
 
@@ -28,7 +28,7 @@
 独立 .s 模块（概念同 Embedded，链接器合并 — 本书侧重前两法）
 ```
 
-**共同底线：** [Ch13 §13.5 AAPCS](../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) — **互调必须遵守**。
+**共同底线：** [Ch13 §13.5 AAPCS](../../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) — **互调必须遵守**。
 
 ---
 
@@ -36,7 +36,7 @@
 
 | 场景 | 编译选项 |
 |------|----------|
-| **M4 全 Thumb-2** | **`-mthumb`** — [Ch17](../chapter-17-arm-thumb-thumb2-instructions/) |
+| **M4 全 Thumb-2** | **`-mthumb`** — [Ch17](../../chapter-17-arm-thumb-thumb2-instructions/) |
 | **ARM7 混编** | **`-minterwork`** + Veneer |
 | **Embedded 函数** | 可 **ARM 或 Thumb** — 书中允许同模块混用 |
 

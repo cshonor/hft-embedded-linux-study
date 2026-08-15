@@ -23,4 +23,4 @@
 - 上一章：[chapter-18-ext2-ext3/](../chapter-18-ext2-ext3/)
 - 下一章：[chapter-20-program-execution/](../chapter-20-program-execution/)
 - 衔接：[Ch 5 内核信号量](../chapter-05-kernel-synchronization/) · [Ch 11 信号](../chapter-11-signals/) · [08 TLPI IPC](../../03-linux-userspace-api/)
-- [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](./LEARNING_PLAN.md)
+- [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)

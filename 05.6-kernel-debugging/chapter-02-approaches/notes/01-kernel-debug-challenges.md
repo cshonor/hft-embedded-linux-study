@@ -136,7 +136,7 @@ HFT 内核模块调试的典型挑战：
 
 ## 交叉引用
 
-- [05.6 ch03 trace_printk](chapter-03-printk/notes/05-ftrace-printk.md)
-- [05.6 ch09 ftrace](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch08 KCSAN](chapter-08-lock-debug/notes/05-kcsan.md)
+- [05.6 ch03 trace_printk](../../chapter-03-printk/notes/05-ftrace-printk.md)
+- [05.6 ch09 ftrace](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch08 KCSAN](../../chapter-08-lock-debug/notes/05-kcsan.md)

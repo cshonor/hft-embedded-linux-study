@@ -7,7 +7,7 @@ Workspace 根 [`../Cargo.toml`](../Cargo.toml) 声明：
 rust-version = "1.70"
 ```
 
-CI 见 [er-study-ci.yml](../../../.github/workflows/er-study-ci.yml) 的 `msrv` job。
+CI 见 er-study-ci.yml 的 `msrv` job。
 
 本地验证：
 
@@ -56,8 +56,8 @@ cargo public-api
 
 ### Dependabot + `cargo deny`
 
-- [`.github/dependabot.yml`](../../../.github/dependabot.yml) — 每周更新 `01-ER/ER-demos` 等 lock
-- 根目录 [`deny.toml`](../../../deny.toml) — advisories / licenses / bans
+- `.github/dependabot.yml` — 每周更新 `01-ER/ER-demos` 等 lock
+- 根目录 [`deny.toml`](../../deny.toml) — advisories / licenses / bans
 - CI `cargo-deny` job：`cargo deny check all`
 
 本地：
@@ -77,7 +77,7 @@ cargo install cargo-semver-checks --locked
 cargo semver-checks --package dep-lib --baseline-rev main
 ```
 
-CI：`semver-checks` job（仅 `pull_request`），见 [item-24-re-export/README.md](./item-24-re-export/README.md)。
+CI：`semver-checks` job（仅 `pull_request`），见 item-24-re-export/README.md。
 
 ## Item 29：`clippy.toml`
 

@@ -27,9 +27,9 @@
 |--------|------|
 | **1. 硬件卸载** | 能用网卡/NIC feature 的 **尽量 offload** — 减 CPU、减访存 |
 | **2. 软件算法** | Hash / LPM / ACL **空间换时间**、SIMD 加速（→ §4） |
-| **3. 并行** | 多核 RTC 或 Pipeline + [Ch3 并行](../chapter-03-parallel-computing/) |
+| **3. 并行** | 多核 RTC 或 Pipeline + [Ch3 并行](../../chapter-03-parallel-computing/) |
 
-→ 网卡能力对照 [Ch8 offload](../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md) · 内核路径 [14-LKN](../../../../12-kernel-networking/)
+→ 网卡能力对照 [Ch8 offload](../../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md) · 内核路径 [14-LKN](../../../../12-kernel-networking/)
 
 ---
 
@@ -37,9 +37,9 @@
 
 | 模块 | DPDK 侧 |
 |------|---------|
-| 收发包 | **PMD** — [chapter-03-PMD](../chapter-03-PMD与轮询模式.md) |
-| 缓冲 | **mbuf / mempool** — [chapter-02-mbuf](../chapter-02-mbuf与内存池.md) |
-| 核间队列 | **rte_ring** — [Ch4 无锁](../chapter-04-synchronization/notes/section-5-无锁机制.md) |
+| 收发包 | **PMD** — [chapter-03-PMD](../../chapter-03-parallel-computing) |
+| 缓冲 | **mbuf / mempool** — [chapter-02-mbuf](../../chapter-02-cache-and-memory) |
+| 核间队列 | **rte_ring** — [Ch4 无锁](../../chapter-04-synchronization/notes/section-5-无锁机制.md) |
 | 查表 | **rte_hash / rte_lpm / rte_acl** — §4 |
 
 ---

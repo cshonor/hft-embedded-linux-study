@@ -53,11 +53,11 @@ Scroll():
 
 | Ch9 主题 | 继续读 |
 |----------|--------|
-| 窗口系统 | [chapter-10-window](../chapter-10-window/) ⚪ |
-| APIC/定时器 | [chapter-11-timer-acpi](../chapter-11-timer-acpi/) 🔴 |
-| 内存 | [chapter-08-memory](../chapter-08-memory/) |
+| 窗口系统 | [chapter-10-window](../../chapter-10-window/) ⚪ |
+| APIC/定时器 | [chapter-11-timer-acpi](../../chapter-11-timer-acpi/) 🔴 |
+| 内存 | [chapter-08-memory](../../chapter-08-memory/) |
 | SysPerf | [14-systems-performance](../../../../../14-systems-performance/) |
 
 ---
 
-← [5. Shadow Buffer](./section-5-阴影缓冲区与memcpy加速.md) · [Ch 8](../chapter-08-memory/) · [Ch 9 导读](../README.md)
+← [5. Shadow Buffer](./section-5-阴影缓冲区与memcpy加速.md) · [Ch 8](../../chapter-08-memory/) · [Ch 9 导读](../README.md)

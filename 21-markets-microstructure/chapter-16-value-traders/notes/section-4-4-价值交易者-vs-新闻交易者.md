@@ -1,6 +1,6 @@
 ## 4. 价值交易者 vs 新闻交易者
 
-两者皆为 **知情交易者**（[Ch 10](../chapter-10-informed-traders-market-efficiency/)），但 **盈利来源不同**：
+两者皆为 **知情交易者**（[Ch 10](../../chapter-10-informed-traders-market-efficiency/)），但 **盈利来源不同**：
 
 | | 价值交易者 | 新闻交易者 |
 |---|------------|------------|

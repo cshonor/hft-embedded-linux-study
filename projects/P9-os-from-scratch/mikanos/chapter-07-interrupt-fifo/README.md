@@ -67,4 +67,4 @@
 - 上一章：[../chapter-06-mouse-pci/](../chapter-06-mouse-pci/)
 - 下一章：[../chapter-08-memory/](../chapter-08-memory/) 🔴
 - 后续：[../chapter-11-timer-acpi/](../chapter-11-timer-acpi/) · [../chapter-13-multitask1/](../chapter-13-multitask1/)
-- 对照：[01 Day 9 IDT](../../thirty-days-os-essentials/day-09-idt/)
+- 对照：[01 Day 9 IDT](../../thirty-days-os-essentials/day-05-gdt-idt)

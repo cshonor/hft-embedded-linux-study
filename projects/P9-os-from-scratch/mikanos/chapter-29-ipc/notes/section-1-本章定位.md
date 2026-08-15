@@ -37,7 +37,7 @@ Ch29 IPC  ← 本章
 Ch30 额外应用 · 附录
 ```
 
-→ [Ch28 重定向](../chapter-28-japanese-redirect/)
+→ [Ch28 重定向](../../chapter-28-japanese-redirect/)
 
 ---
 

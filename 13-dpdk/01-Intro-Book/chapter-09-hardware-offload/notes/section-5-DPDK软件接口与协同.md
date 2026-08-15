@@ -18,7 +18,7 @@
 | `PKT_TX_IP_CKSUM` | 请硬件计算 **IP 校验和** |
 | `PKT_TX_TCP_CKSUM` / `UDP` | L4 checksum offload |
 
-→ mbuf 布局 [Ch6 §6](../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md)
+→ mbuf 布局 [Ch6 §6](../../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md)
 
 ---
 
@@ -48,7 +48,7 @@
 5. RX：读 ol_flags / ptype 决定软件是否还要校验
 ```
 
-→ 官方 [Programmer's Guide · Offload](https://doc.dpdk.org/guides/prog_guide/overview.html) · repo [chapter-03-PMD](../chapter-03-PMD与轮询模式.md)
+→ 官方 [Programmer's Guide · Offload](https://doc.dpdk.org/guides/prog_guide/overview.html) · repo [chapter-03-PMD](../../chapter-03-parallel-computing)
 
 ---
 

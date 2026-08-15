@@ -18,7 +18,7 @@
 
 ### 3.2 逆向选择风险 (Adverse Selection Risk) — 最致命
 
-**与知情交易者 (Informed traders) 交易的风险**（[Ch 10](../chapter-10-informed-traders-market-efficiency/)）。
+**与知情交易者 (Informed traders) 交易的风险**（[Ch 10](../../chapter-10-informed-traders-market-efficiency/)）。
 
 | 模式 | 知情者在 **将涨时买、将跌时卖** |
 |------|--------------------------------|

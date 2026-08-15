@@ -1,18 +1,18 @@
 # TLPI 第 31 章 — Thread Safety and Per-Thread Storage
 
 **优先级**：🔴（并发库函数、无锁线程私有上下文）  
-**前置**：[Ch30 同步](../chapter-30-thread-synchronization/notes.md)  
-**后置**：[Ch32 线程取消](../chapter-32-thread-cancellation/notes.md)
+**前置**：[Ch30 同步](../chapter-30-thread-synchronization/README.md)  
+**后置**：[Ch32 线程取消](../chapter-32-thread-cancellation/README.md)
 
 ---
 
 ## 小节目录
 
-- [31.1 线程安全与可重入](./notes/31.1-thread-security.md)
-- [31.2 `pthread_once`](./notes/31.2-pthreadonce.md)
-- [31.3 TSD：`pthread_key_*`（核心）](./notes/31.3-tsd-pthreadkey.md)
-- [31.4 静态 TLS：`__thread` / `_Thread_local`](./notes/31.4-thread-threadlocal.md)
-- [31.5 易错 / 原理](./notes/31.5-principle.md)
+- [31.1 线程安全与可重入](notes/31.1-thread-safety-and-reentrancy-revisited.md)
+- [31.2 `pthread_once`](notes/31.2-one-time-initialization.md)
+- [31.3 TSD：`pthread_key_*`（核心）](notes/31.3-thread-specific-data.md)
+- [31.4 静态 TLS：`__thread` / `_Thread_local`](notes/31.4-thread-local-storage.md)
+- [31.5 易错 / 原理](notes/31.5-summary.md)
 
 ---
 
@@ -139,4 +139,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

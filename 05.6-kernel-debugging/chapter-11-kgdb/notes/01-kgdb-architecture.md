@@ -121,7 +121,7 @@ KGDB 适合 HFT 内核模块的开发阶段调试：
 
 ## 交叉引用
 
-- [05.6 ch11 串口配置](chapter-11-kgdb/notes/02-uart-setup.md)
-- [05.6 ch11 GDB 连接内核](chapter-11-kgdb/notes/03-gdb-connection.md)
-- [05.6 ch11 KDB 内置调试器](chapter-11-kgdb/notes/06-kdb-builtin-debugger.md)
-- [05.6 ch11 QEMU + KGDB](chapter-11-kgdb/notes/07-qemu-kgdb.md)
+- [05.6 ch11 串口配置](../../chapter-11-kgdb/notes/02-uart-setup.md)
+- [05.6 ch11 GDB 连接内核](../../chapter-11-kgdb/notes/03-gdb-connection.md)
+- [05.6 ch11 KDB 内置调试器](../../chapter-11-kgdb/notes/06-kdb-builtin-debugger.md)
+- [05.6 ch11 QEMU + KGDB](../../chapter-11-kgdb/notes/07-qemu-kgdb.md)

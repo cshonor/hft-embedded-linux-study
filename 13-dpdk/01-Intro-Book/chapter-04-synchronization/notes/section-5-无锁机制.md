@@ -13,7 +13,7 @@
 | 单生产者 / 单消费者 | SP/SC |
 | 多生产者 / 多消费者 | **MP/MC** |
 
-→ mbuf 池、流水线 stage 间传递 → [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md)
+→ mbuf 池、流水线 stage 间传递 → [chapter-02-mbuf与内存池.md](../../chapter-02-cache-and-memory)
 
 ---
 
@@ -40,9 +40,9 @@
 
 | 章节 | 关联 |
 |------|------|
-| [Ch3 并行计算](../chapter-03-parallel-computing/) | 多核扩展 → 必须 **低争用** 队列 |
-| [Ch8 流分类与多队列](../chapter-08-flow-classification-multiqueue/) | RSS 分核后，**核间 rte_ring** 转发未命中流 |
-| [Ch2 Cache](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md) | 伪共享、Cache line 对齐 ring 控制块 |
+| [Ch3 并行计算](../../chapter-03-parallel-computing/) | 多核扩展 → 必须 **低争用** 队列 |
+| [Ch8 流分类与多队列](../../chapter-08-flow-classification-multiqueue/) | RSS 分核后，**核间 rte_ring** 转发未命中流 |
+| [Ch2 Cache](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md) | 伪共享、Cache line 对齐 ring 控制块 |
 
 ---
 
@@ -51,7 +51,7 @@
 - **预分配 ring 深度** — 避免运行时扩缩  
 - **单生产者单消费者** 能确定时 — 用 **SP/SC** 变体，**零 CAS 争用**  
 - **批量 enqueue/dequeue** — 摊薄 head/tail 更新开销  
-- tail latency：观察 **CAS 重试率** — 与 [Ch3 Amdahl](../chapter-03-parallel-computing/notes/section-2-多核性能与可扩展性.md) 串行段同源  
+- tail latency：观察 **CAS 重试率** — 与 [Ch3 Amdahl](../../chapter-03-parallel-computing/notes/section-2-多核性能与可扩展性.md) 串行段同源  
 
 ---
 

@@ -6,7 +6,7 @@
 
 > **Harris 全书最重要的一课（作者原话）：** **理解为什么不知情交易者总会亏损。**
 
-> **HFT 核心章：** spread 分解、**Glosten-Milgrom**、maker/taker 权衡、**flow toxicity**；与 [Ch 13](../chapter-13-dealers/)、[Ch 10](../chapter-10-informed-traders-market-efficiency/)、[Ch 4 订单类型](../chapter-04-orders-and-order-types/)、[00-practice-go-dex M3](./00-practice-go-dex/notes/milestone-03-价差与流动性/) 直接衔接。
+> **HFT 核心章：** spread 分解、**Glosten-Milgrom**、maker/taker 权衡、**flow toxicity**；与 [Ch 13](../chapter-13-dealers/)、[Ch 10](../chapter-10-informed-traders-market-efficiency/)、[Ch 4 订单类型](../chapter-04-orders-and-order-types/)、[00-practice-go-dex M3](../00-practice-go-dex/notes/milestone-03-spread-and-liquidity) 直接衔接。
 
 ---
 

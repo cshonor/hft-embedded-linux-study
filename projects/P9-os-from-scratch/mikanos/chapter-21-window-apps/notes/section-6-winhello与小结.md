@@ -50,10 +50,10 @@ Ch25–28 更多 GUI 应用
 
 | Ch21 主题 | 继续读 |
 |----------|--------|
-| 图形事件 | [chapter-22-graphics-events1](../chapter-22-graphics-events1/) ⚪ |
-| 图层/窗口内核 | [chapter-09-layers](../chapter-09-layers/) · [chapter-10-window](../chapter-10-window/) |
-| syscall 基础 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
+| 图形事件 | [chapter-22-graphics-events1](../../chapter-22-graphics-events1/) ⚪ |
+| 图层/窗口内核 | [chapter-09-layers](../../chapter-09-layers/) · [chapter-10-window](../../chapter-10-window/) |
+| syscall 基础 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
 
 ---
 
-← [5. 窗口 syscall](./section-5-syscall.h与窗口系统调用.md) · [Ch 20](../chapter-20-syscall/) · [Ch 21 导读](../README.md)
+← [5. 窗口 syscall](./section-5-syscall.h与窗口系统调用.md) · [Ch 20](../../chapter-20-syscall/) · [Ch 21 导读](../README.md)

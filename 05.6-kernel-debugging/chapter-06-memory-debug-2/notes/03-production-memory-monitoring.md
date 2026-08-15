@@ -197,6 +197,6 @@ HFT 生产环境内存监控策略：
 
 ## 交叉引用
 
-- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/01-kfence.md)
-- [05.6 ch06 内存调试策略](chapter-06-memory-debug-2/notes/02-memory-debug-strategy.md)
-- [05.6 ch05 kmemleak](chapter-05-memory-debug-1/notes/05-kmemleak.md)
+- [05.6 ch06 KFENCE](../../chapter-06-memory-debug-2/notes/01-kfence.md)
+- [05.6 ch06 内存调试策略](../../chapter-06-memory-debug-2/notes/02-memory-debug-strategy.md)
+- [05.6 ch05 kmemleak](../../chapter-05-memory-debug-1/notes/05-kmemleak.md)

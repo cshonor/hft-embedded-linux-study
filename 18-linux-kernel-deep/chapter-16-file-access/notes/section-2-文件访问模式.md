@@ -11,7 +11,7 @@
 | **`read()`** | 经 **页缓存**；阻塞直到拷贝到 **用户态** |
 | **`write()`** | 拷贝到页缓存 → 标 **脏** → **延迟写** 返回 |
 
-→ 页缓存：[Ch 15](../chapter-15-page-cache/) · syscall：[Ch 10](../chapter-10-system-calls/)
+→ 页缓存：[Ch 15](../../chapter-15-page-cache/) · syscall：[Ch 10](../../chapter-10-system-calls/)
 
 ---
 
@@ -35,7 +35,7 @@
 
 底层仍常经 **页缓存**（共享映射）— 见 [section-4](./section-4-内存映射.md)。
 
-→ VMA / mmap：[Ch 9](../chapter-09-process-address-space/notes/section-3-内存区VMA.md)
+→ VMA / mmap：[Ch 9](../../chapter-09-process-address-space/notes/section-3-内存区VMA.md)
 
 ---
 

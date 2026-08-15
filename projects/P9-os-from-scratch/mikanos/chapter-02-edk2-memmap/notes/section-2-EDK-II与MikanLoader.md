@@ -17,7 +17,7 @@
 
 **建议路径：** 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → [§3 内存映射 · 3.1](./section-3-1-内存映射指什么与RAM视图.md)
 
-**交叉：** [Ch1 §7 两阶段全链路](../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [appendix-C EDK II 文件](../../appendix-C-edk2-files/) · [SETUP.md](../../SETUP.md)
+**交叉：** [Ch1 §7 两阶段全链路](../../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [appendix-C EDK II 文件](../../appendix-C-edk2-files/) · [SETUP.md](../../SETUP.md)
 
 ---
 

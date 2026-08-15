@@ -16,7 +16,7 @@
 | **带宽量化** | 小包场景 PCIe **协议开销** |
 | **mbuf / mempool** | 元数据布局、无锁池、**Core Cache** |
 
-**承上启下：** [Ch5 报文转发](../chapter-05-packet-forwarding/) 讲 **软件框架**；本章讲 **I/O 如何搬包 + 缓冲如何组织**；[PMD 轮询](../chapter-03-PMD与轮询模式.md) 在驱动层 **消费** 描述符环。
+**承上启下：** [Ch5 报文转发](../../chapter-05-packet-forwarding/) 讲 **软件框架**；本章讲 **I/O 如何搬包 + 缓冲如何组织**；[PMD 轮询](../../chapter-03-parallel-computing) 在驱动层 **消费** 描述符环。
 
 ---
 

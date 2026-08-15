@@ -11,7 +11,7 @@
 | 硬件 | 连接 |
 |------|------|
 | **三色 LED** | **Port F**：**PF1 红 · PF2 绿 · PF3 蓝**（低电平点亮，查板卡原理图） |
-| **架构** | Cortex-M4 — [Ch15](../chapter-15-exception-handling-v7m/) 异常/NVIC 同族 |
+| **架构** | Cortex-M4 — [Ch15](../../chapter-15-exception-handling-v7m/) 异常/NVIC 同族 |
 
 ---
 
@@ -59,7 +59,7 @@
     STR     r0, [r1, #GPIO_DATA_off]
 ```
 
-**风险：** 中断/并发下 **读-改-写** 可能 **打丢其它位** — [Ch5 §5.6](../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) **位带** 是为解决此类问题。
+**风险：** 中断/并发下 **读-改-写** 可能 **打丢其它位** — [Ch5 §5.6](../../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) **位带** 是为解决此类问题。
 
 ---
 
@@ -95,7 +95,7 @@ Tiva **GPIO DATA** 映射：**基址 + 偏移** 的 **地址位 [9:2]** 作 **�
 
 ### 与 Ch15 联调
 
-LED **闪烁** 可用 **软件延时循环**；稳定周期用 **Timer0A IRQ**（[§15.7](../chapter-15-exception-handling-v7m/notes/section-15-7-nvic.md)）在 ISR 里 **切换掩码写**。
+LED **闪烁** 可用 **软件延时循环**；稳定周期用 **Timer0A IRQ**（[§15.7](../../chapter-15-exception-handling-v7m/notes/section-15-7-nvic.md)）在 ISR 里 **切换掩码写**。
 
 ---
 

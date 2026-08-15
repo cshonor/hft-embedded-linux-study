@@ -46,7 +46,7 @@ SoC 把 **Flash、SRAM、外设** 钉死在地址空间的固定区间 — 程�
 
 | MCU 本书 | 应用处理器 |
 |----------|------------|
-| 查 **数据手册 Memory Map** | **设备树 (DT)** 描述基址/中断（→ [21 驱动/DT](../../../09-device-drivers-dt/)） |
+| 查 **数据手册 Memory Map** | **设备树 (DT)** 描述基址/中断（→ [21 驱动/DT](../../../../09-device-drivers-dt/)） |
 | `EQU UART_BASE 0x4000xxxx` | `ioremap()` / `devm_ioremap_resource()` |
 | 4GB 平面地址 | 同上 — **Load/Store 或 MMIO 映射后读写** |
 

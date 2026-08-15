@@ -50,7 +50,7 @@ ReadFileClusterChain → load_buffer
 | **大小** | 按目录项 **file_size** 或簇链总长 |
 | **权限** | 本章 **flat 内存** — 应用与内核 **同特权**（Ch19 分页后改进） |
 
-→ [Ch8 内存布局](../chapter-08-memory/)
+→ [Ch8 内存布局](../../chapter-08-memory/)
 
 ---
 
@@ -66,7 +66,7 @@ TaskTerminal 收 Enter
 
 **尚无独立进程地址空间** — 本质是 **内核线程里调用外来代码** — Ch20 **syscall + 任务** 才 **进程化**。
 
-→ [chapter-20-syscall](../chapter-20-syscall/)
+→ [chapter-20-syscall](../../chapter-20-syscall/)
 
 ---
 

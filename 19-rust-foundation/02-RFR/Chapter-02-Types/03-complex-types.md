@@ -606,6 +606,6 @@ use std::mem::{align_of, offset_of, size_of};
 
 ## 对照阅读
 
-- Book → [5.1 结构体](../../00-Book/05-structs/5.1-定义结构体.md) · [6.1 枚举](../../00-Book/06-enums-pattern-matching/6.1-定义枚举.md)
+- Book → [5.1 结构体](../../00-Book/05-structs/5.1-structs-demo) · [6.1 枚举](../../00-Book/06-enums-pattern-matching/6.1-定义枚举.md)
 - 运行验证 → [`layout-demo`](./layout-demo/)
 - 下一节 → [04 DST 与宽指针](./04-dst-wide-pointers.md)

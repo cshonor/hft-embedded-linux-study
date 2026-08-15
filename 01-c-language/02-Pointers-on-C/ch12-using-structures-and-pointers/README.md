@@ -53,8 +53,8 @@
 ## 小节
 
 - [12.1 链表](./12.1-链表.md)
-- [12.2 单链表](./12.2-singly-linked-lists/12.2-singly-linked-lists.md)
-- [12.3 双链表](./12.3-doubly-linked-lists/12.3-doubly-linked-lists.md)
+- 12.2 单链表
+- 12.3 双链表
 
 
 ---
@@ -92,7 +92,7 @@ void remove_head_wrong(Node *head) {
 
 **教训：** 要在函数内修改调用者的指针变量，必须传指针的地址（二级指针）。
 
-**复习：** → [12.2 Singly Linked Lists](./12.2-singly-linked-lists/12.2-singly-linked-lists.md)
+**复习：** → 12.2 Singly Linked Lists
 
 </details>
 
@@ -127,7 +127,7 @@ struct Node *reverse(struct Node *head) {
 
 **为什么需要 `next`：** 反转指针方向后，原来的 `curr->next` 被覆盖，需要事先保存才能继续遍历。这是**指针操作的核心**——修改指针前先保存它指向的下一个目标。
 
-**复习：** → [12.2 单链表](./12.2-singly-linked-lists/12.2-singly-linked-lists.md)
+**复习：** → 12.2 单链表
 
 </details>
 
@@ -170,7 +170,7 @@ void delete_node(struct DNode **head, struct DNode *node) {
 
 **规则：** 操作指针前**必须判空**。双链表删除需要处理四种情况：中间节点、头节点、尾节点、唯一节点。
 
-**复习：** → [12.3 双链表](./12.3-doubly-linked-lists/12.3-doubly-linked-lists.md)
+**复习：** → 12.3 双链表
 
 </details>
 

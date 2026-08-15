@@ -7,7 +7,7 @@
 ## 状态
 
 - [x] 已读（笔记整理）
-- [x] [CI 示例](../../.github/workflows/er-study-ci.yml)
+- [x] CI 示例
 
 ---
 

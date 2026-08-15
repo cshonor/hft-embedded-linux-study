@@ -71,7 +71,7 @@ kthread（无用户地址空间）
 
 **HFT：** 行情解码、发单、风控通常在 **用户线程 + CPU 绑核（`pthread_setaffinity` / `sched_setaffinity`）**；延迟抖动也常来自 **内核线程** 与 **软中断** 争用同一 CPU — 见 **Ch 4、8**。线程数 ≈ 逻辑核数（或略多 IO 线程），避免 CFS 上大量 runnable 线程互相抢份额。
 
-→ [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [Ch 4 §4.6 RT](../../chapter-04-process-scheduling/notes/section-4.6-实时调度策略.md) · [07 TLPI Ch29 线程](../../../../03-linux-userspace-api/chapter-29-threads-intro/notes.md) · [07 TLPI Ch30 线程同步](../../../../03-linux-userspace-api/chapter-30-thread-synchronization/notes.md)
+→ [§3.2 task_struct](./section-3.2-进程描述符与任务结构.md) · [Ch 4 §4.6 RT](../../chapter-04-process-scheduling/notes/section-4.6-实时调度策略.md) · [07 TLPI Ch29 线程](../../../03-linux-userspace-api/chapter-29-threads-intro/notes) · [07 TLPI Ch30 线程同步](../../../03-linux-userspace-api/chapter-30-thread-synchronization/notes)
 
 
 

@@ -40,7 +40,7 @@ constexpr size_t kAppStackBytes  = 32 * 1024;
 
 **教训：** 引入 **第三方 C 库进内核** — **必须评估栈/堆** — 与 **Linux 内核 stack size 配置** 同理。
 
-→ [Ch21 IST/RSP0](../chapter-21-window-apps/notes/section-2-IST与定时器中断栈修复.md) · [Ch20 TSS](../chapter-20-syscall/notes/section-3-TSS与RSP0内核栈.md)
+→ [Ch21 IST/RSP0](../../chapter-21-window-apps/notes/section-2-IST与定时器中断栈修复.md) · [Ch20 TSS](../../chapter-20-syscall/notes/section-3-TSS与RSP0内核栈.md)
 
 ---
 

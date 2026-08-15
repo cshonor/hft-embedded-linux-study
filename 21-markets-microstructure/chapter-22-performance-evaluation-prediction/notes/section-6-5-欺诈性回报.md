@@ -17,6 +17,6 @@
 |----------|
 | **Mark-to-model** 非透明 fund — smoothing 风险 |
 | **Crypto yield** 类 — Ponzi 结构警惕 |
-| 与 [Ch 12](../chapter-12-bluffers-market-manipulation/) 操纵谱系不同但 **投资者后果类似** |
+| 与 [Ch 12](../../chapter-12-bluffers-market-manipulation/) 操纵谱系不同但 **投资者后果类似** |
 
 ---

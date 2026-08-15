@@ -1,17 +1,17 @@
 # TLPI 第 54 章 — POSIX Shared Memory
 
 **优先级**：🔴（POSIX IPC 终章；无关进程高速区）  
-**前置**：[Ch53 POSIX sem](../chapter-53-posix-semaphores/notes.md) · [Ch48 SysV shm](../chapter-48-sysv-shared-memory/notes.md) · [Ch49 mmap](../chapter-49-memory-mappings/notes.md)  
-**后置**：[Ch55 File Locking](../chapter-55-file-locking/notes.md)
+**前置**：[Ch53 POSIX sem](../chapter-53-posix-semaphores/README.md) · [Ch48 SysV shm](../chapter-48-sysv-shared-memory/README.md) · [Ch49 mmap](../chapter-49-memory-mappings/README.md)  
+**后置**：[Ch55 File Locking](../chapter-55-file-locking/README.md)
 
 ---
 
 ## 小节目录
 
-- [54.1 原理](./notes/54.1-principle.md)
-- [54.2 –54.4 标准流程](./notes/54.2-section-54-2.md)
-- [54.5 生命周期](./notes/54.5-lifecycle.md)
-- [54.6 vs System V shm](./notes/54.6-system-shm.md)
+- [54.1 原理](notes/54.1-overview.md)
+- [54.2 –54.4 标准流程](notes/54.2-creating-shared-memory-objects.md)
+- [54.5 生命周期](notes/54.5-comparisons-between-shared-memory-apis.md)
+- [54.6 vs System V shm](notes/54.6-summary.md)
 
 ---
 
@@ -140,4 +140,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

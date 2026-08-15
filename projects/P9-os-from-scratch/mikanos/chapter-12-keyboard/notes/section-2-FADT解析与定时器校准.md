@@ -23,7 +23,7 @@ PM Timer  I/O 端口 / 块地址
 
 **遍历 XSDT：** 匹配表签名 **`FACP`**（FADT 在 ACPI 中的签名）→ 映射/读取 FADT。
 
-→ [Ch11 RSDP](../chapter-11-timer-acpi/notes/section-6-RSDP解析与小结.md)
+→ [Ch11 RSDP](../../chapter-11-timer-acpi/notes/section-6-RSDP解析与小结.md)
 
 ---
 

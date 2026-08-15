@@ -1,17 +1,17 @@
 # TLPI 第 56 章 — Sockets: Introduction
 
 **优先级**：🔴（Socket API 总入口）  
-**前置**：[Ch55 文件锁](../chapter-55-file-locking/notes.md) · 本地 IPC  
-**后置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/notes.md) → [Ch58 TCP/IP](../chapter-58-tcpip-fundamentals/notes.md) → [Ch59 Internet](../chapter-59-internet-domains/notes.md)
+**前置**：[Ch55 文件锁](../chapter-55-file-locking/README.md) · 本地 IPC  
+**后置**：[Ch57 UNIX 域](../chapter-57-sockets-unix-domain/README.md) → [Ch58 TCP/IP](../chapter-58-tcpip-fundamentals/README.md) → Ch59 Internet
 
 ---
 
 ## 小节目录
 
-- [56.1 概念](./notes/56.1-concepts.md)
-- [56.2 –56.4 创建与地址](./notes/56.2-creation.md)
-- [56.5 面向连接 API](./notes/56.5-api.md)
-- [56.6 –56.8 I/O 与关闭](./notes/56.6-close.md)
+- [56.1 概念](notes/56.1-overview.md)
+- [56.2 –56.4 创建与地址](notes/56.2-creating-a-socket-socket.md)
+- [56.5 面向连接 API](notes/56.5-stream-sockets.md)
+- [56.6 –56.8 I/O 与关闭](notes/56.6-datagram-sockets.md)
 
 ---
 
@@ -155,4 +155,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

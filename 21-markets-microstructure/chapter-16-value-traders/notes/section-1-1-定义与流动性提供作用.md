@@ -4,7 +4,7 @@
 
 **价值交易者**：**知情投机者** — 利用 **所有可用信息** 评估 **基本面价值 (Fundamental value)**，在 **低估时买入、高估时卖出**。
 
-| 策略核心 | 价 < 估 V → 买；价 > 估 V → 卖（与 [Ch 10](../chapter-10-informed-traders-market-efficiency/) 一致） |
+| 策略核心 | 价 < 估 V → 买；价 > 估 V → 卖（与 [Ch 10](../../chapter-10-informed-traders-market-efficiency/) 一致） |
 |----------|----------------------------------------------------------------------------------------|
 | **速度** | Ch 10：**通常行动缓慢** — 研究驱动、多层审查 |
 
@@ -25,7 +25,7 @@
     → 间接或直接 **供给大量流动性**
 ```
 
-→ [Ch 15 大宗](../chapter-15-block-traders/) 价值交易者帮 **unload** · [Ch 13](../chapter-13-dealers/)
+→ [Ch 15 大宗](../../chapter-15-block-traders/) 价值交易者帮 **unload** · [Ch 13](../../chapter-13-dealers/)
 
 ### 1.3 市场弹性 (Market Resiliency)
 

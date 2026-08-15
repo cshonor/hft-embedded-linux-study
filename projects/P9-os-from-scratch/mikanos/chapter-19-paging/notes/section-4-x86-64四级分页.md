@@ -41,7 +41,7 @@ CR3 → PML4[idx4] → PDP[idx3] → PD[idx2] → PT[idx1] → PFN + offset → 
 | **PML4** | 通常 **单一内核表** | **+ 应用专用表** 或 **临时子树** |
 | **大页** | 可选 **2MiB** 简化内核 | 应用 **4KiB** 按段精细映射 |
 
-→ [Ch8 四级分页](../chapter-08-memory/notes/section-5-四级分页与身份映射.md) · [CSAPP Ch9 虚拟内存](../../../../../02-computer-systems/chapter-09-virtual-memory/)
+→ [Ch8 四级分页](../../chapter-08-memory/notes/section-5-四级分页与身份映射.md) · [CSAPP Ch9 虚拟内存](../../../../../02-computer-systems/chapter-09-virtual-memory/)
 
 ---
 

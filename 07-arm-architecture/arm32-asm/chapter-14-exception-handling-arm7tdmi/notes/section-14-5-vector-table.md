@@ -75,7 +75,7 @@ PC 直接跳到 **外设专用** handler — 不用公共 IRQ 里 **轮询** 是
 
 **Reset** 不返回 — 跳 **初始化代码**（设各模式 **SP**、时钟、内存），再 **`B main`**。
 
-→ [20 U-Boot](../../08-embedded-boot-build/) 启动链同类思想。
+→ [20 U-Boot](../../../../08-embedded-boot-build/) 启动链同类思想。
 
 ---
 

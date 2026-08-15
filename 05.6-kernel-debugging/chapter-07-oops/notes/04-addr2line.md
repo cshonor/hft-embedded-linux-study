@@ -145,7 +145,7 @@ done
 
 ## 交叉引用
 
-- [05.6 ch07 寄存器转储解读](chapter-07-oops/notes/02-register-dump.md)
-- [05.6 ch07 栈回溯分析](chapter-07-oops/notes/03-call-trace-analysis.md)
-- [05.6 ch07 objdump 反汇编](chapter-07-oops/notes/05-objdump-disassembly.md)
-- [05.6 ch07 模块 Oops 特殊处理](chapter-07-oops/notes/06-module-oops.md)
+- [05.6 ch07 寄存器转储解读](../../chapter-07-oops/notes/02-register-dump.md)
+- [05.6 ch07 栈回溯分析](../../chapter-07-oops/notes/03-call-trace-analysis.md)
+- [05.6 ch07 objdump 反汇编](../../chapter-07-oops/notes/05-objdump-disassembly.md)
+- [05.6 ch07 模块 Oops 特殊处理](../../chapter-07-oops/notes/06-module-oops.md)

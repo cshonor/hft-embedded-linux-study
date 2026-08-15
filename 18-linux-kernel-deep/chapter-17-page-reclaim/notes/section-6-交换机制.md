@@ -25,7 +25,7 @@
 
 页换出后，原 PTE 不再指向物理页，改为 **swapped-out 标识符**（swap 索引 + slot 索引）— 缺页时再 **swap in**。
 
-→ 缺页换入：[Ch 9 section-4](../chapter-09-process-address-space/notes/section-4-缺页异常.md)
+→ 缺页换入：[Ch 9 section-4](../../chapter-09-process-address-space/notes/section-4-缺页异常.md)
 
 ---
 
@@ -75,13 +75,13 @@ OOM Killer
 
 | Ch 17 主题 | 继续读 |
 |------------|--------|
-| 伙伴 / Slab | [Ch 8 内存管理](../chapter-08-memory-management/) 🔴 |
-| 缺页 / swap in | [Ch 9 进程地址空间](../chapter-09-process-address-space/) 🔴 |
-| 页缓存回收 | [Ch 15 页缓存](../chapter-15-page-cache/) ⚪ |
+| 伙伴 / Slab | [Ch 8 内存管理](../../chapter-08-memory-management/) 🔴 |
+| 缺页 / swap in | [Ch 9 进程地址空间](../../chapter-09-process-address-space/) 🔴 |
+| 页缓存回收 | [Ch 15 页缓存](../../chapter-15-page-cache/) ⚪ |
 | 07 Gorman | [页回收 / rmap](../../../06-linux-mm/) |
-| Ext2 文件系统 | [Ch 18 Ext2/Ext3](../chapter-18-ext2-ext3/) ⚪ |
+| Ext2 文件系统 | [Ch 18 Ext2/Ext3](../../chapter-18-ext2-ext3/) ⚪ |
 | HFT 内存 | [16 HFT 工程](../../../16-hft-engineering/) · [03 SysPerf Ch 7](../../../14-systems-performance/chapter-07-memory/) |
 
 ---
 
-← [5. OOM](./section-5-执行时机与OOM.md) · 下一章 [Ch 18 Ext2/Ext3](../chapter-18-ext2-ext3/)
+← [5. OOM](./section-5-执行时机与OOM.md) · 下一章 [Ch 18 Ext2/Ext3](../../chapter-18-ext2-ext3/)

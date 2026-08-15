@@ -123,8 +123,8 @@ cargo +nightly build
 
 | 文档 | 建议编译器 |
 |------|------------|
-| Nomicon（可上线 unsafe） | `+stable` → [`04-Rust-Nomicon/Stable/`](04-Rust-Nomicon/Stable/notes.md) |
-| Nomicon（前沿 / feature） | `+nightly` → [`04-Rust-Nomicon/Nightly/`](04-Rust-Nomicon/Nightly/notes.md) |
+| Nomicon（可上线 unsafe） | `+stable` → `04-Rust-Nomicon/Stable/` |
+| Nomicon（前沿 / feature） | `+nightly` → `04-Rust-Nomicon/Nightly/` |
 
 详解：[`00-Book/appendix/G.7-Nightly-Rust与发布渠道.md`](00-Book/appendix/G.7-Nightly-Rust与发布渠道.md) · ER CI/MSRV → [`01-ER/ER-demos/WORKSPACE.md`](01-ER/ER-demos/WORKSPACE.md)
 
@@ -134,7 +134,7 @@ cargo +nightly build
 
 - 章节目录英文命名，避免 Windows 终端乱码。
 - `target/` 已在 `.gitignore` 中忽略。
-- **VSCode + rust-analyzer**：[`docs/rust-analyzer-VSCode配置.md`](docs/rust-analyzer-VSCode配置.md) · 工作区 [`.vscode/settings.json`](.vscode/settings.json)
+- **VSCode + rust-analyzer**：[`docs/rust-analyzer-VSCode配置.md`](docs/rust-analyzer-VSCode配置.md) · 工作区 [`.vscode/settings.json`](../../../.vscode/argv.json)
 
 ---
 

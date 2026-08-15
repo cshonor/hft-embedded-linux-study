@@ -13,7 +13,7 @@
 
 **按键按下/释放** → xHCI 事件 → ISR **Push Message**（含 keycode）— 同 Ch7 架构。
 
-→ [Ch6 USB 分层](../chapter-06-mouse-pci/notes/section-3-USB分层与xHCI.md)
+→ [Ch6 USB 分层](../../chapter-06-mouse-pci/notes/section-3-USB分层与xHCI.md)
 
 ---
 
@@ -46,7 +46,7 @@ const char keycode_map[256] = {
 | 收到 keycode | 查表得 char |
 | 不可打印 | 忽略或特殊处理（Enter、Backspace — §5） |
 
-→ [appendix-F ASCII](../../appendix-F-ascii-table/) · [Ch5 WriteAscii](../chapter-05-console-text/notes/section-2-WriteAscii与位图字体.md)
+→ [appendix-F ASCII](../../appendix-F-ascii-table/) · [Ch5 WriteAscii](../../chapter-05-console-text/notes/section-2-WriteAscii与位图字体.md)
 
 ---
 

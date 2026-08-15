@@ -32,7 +32,7 @@ int x = (int)ptr;
 unsigned long x = (unsigned long)ptr;
 ```
 
-→ [02-CSAPP 数据表示](../../../../02-computer-systems/)
+→ [02-CSAPP 数据表示](../../../02-computer-systems/)
 
 
 

@@ -15,7 +15,7 @@
 | **对称压缩** | 正弦表只存 **0°–90°**，靠 **象限变换** 覆盖 360° |
 | **有序搜索** | **二分查找** — O(log N) vs 线性 O(N) |
 
-**前置：** [Ch5 Load/Store 寻址](../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch7 Q 定点](../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) · [Ch8 分支/循环](../chapter-08-branches-loops/notes/section-0-本章完整概述.md) · （浮点）Ch9–11 可选
+**前置：** [Ch5 Load/Store 寻址](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch7 Q 定点](../../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) · [Ch8 分支/循环](../../chapter-08-branches-loops/notes/section-0-本章完整概述.md) · （浮点）Ch9–11 可选
 
 ---
 
@@ -65,13 +65,13 @@ Ch13：查表/搜索常包在 BL 子程序里
 
 | 模块 | 关联 |
 |------|------|
-| [Ch5 寻址](../chapter-05-loads-stores-addressing/) | 缩放索引是本章硬件基础 |
-| [Ch11 泰勒 sin](../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | 同一函数：**算** vs **查** |
-| [20 构建](../../08-embedded-boot-build/) | 链接脚本把 `.rodata` 表放进 Flash |
+| [Ch5 寻址](../../chapter-05-loads-stores-addressing/) | 缩放索引是本章硬件基础 |
+| [Ch11 泰勒 sin](../../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | 同一函数：**算** vs **查** |
+| [20 构建](../../../../08-embedded-boot-build/) | 链接脚本把 `.rodata` 表放进 Flash |
 | [23 飞控](../../../../10-motion-control/) | 姿态常用 **C libm**；MCU 侧可查表 |
 
 ---
 
 ### 六、下一章（按 OUTLINE）
 
-→ **[Ch13 栈与子程序](../chapter-13-subroutines-stacks/)**（**精读** — 查表/搜索代码应封装为 `BL` 子程序）
+→ **[Ch13 栈与子程序](../../chapter-13-subroutines-stacks/)**（**精读** — 查表/搜索代码应封装为 `BL` 子程序）

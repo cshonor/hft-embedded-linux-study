@@ -74,10 +74,10 @@ Ch21+ GUI 应用独立地址空间
 
 | Ch19 主题 | 继续读 |
 |----------|--------|
-| 系统调用 / 用户态 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
-| 内核分页基础 | [chapter-08-memory](../chapter-08-memory/) 🔴 |
-| ELF 加载 | [chapter-18-apps](../chapter-18-apps/) |
+| 系统调用 / 用户态 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
+| 内核分页基础 | [chapter-08-memory](../../chapter-08-memory/) 🔴 |
+| ELF 加载 | [chapter-18-apps](../../chapter-18-apps/) |
 
 ---
 
-← [5. SetupPageMaps](./section-5-高半区链接与SetupPageMaps.md) · [Ch 18](../chapter-18-apps/) · [Ch 19 导读](../README.md)
+← [5. SetupPageMaps](./section-5-高半区链接与SetupPageMaps.md) · [Ch 18](../../chapter-18-apps/) · [Ch 19 导读](../README.md)

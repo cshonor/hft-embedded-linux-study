@@ -40,12 +40,12 @@
 | **jlox ch7** | 运行时类型检查（Lox 动态类型） |
 | **Rust** | **`rustc` 语义阶段** — 类型 + 借用 + 生命周期（比 Lox 严格得多） |
 
-→ [CI ch11 Resolving](../../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md)
+→ [CI ch11 Resolving](../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md)
 
 ---
 
 ## 在流水线中的位置
 
-[ch1 理解输入 · 语义](../chapter01_overview/04-translation-pipeline-example.md) · [CI 上山前端 · 语义分析](../../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md)
+[ch1 理解输入 · 语义](../chapter01_overview/04-translation-pipeline-example.md) · [CI 上山前端 · 语义分析](../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md)
 
 **输出**：带语义信息的 **AST**、**符号表**、类型标注 — 供 ch5 **IR**  lowering。

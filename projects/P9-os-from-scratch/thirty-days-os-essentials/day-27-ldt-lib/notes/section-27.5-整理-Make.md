@@ -21,6 +21,6 @@
 
 **从手工作坊 → 可维护工程** — HFT 里 **monorepo + 共享 static lib + 顶层 CMake** 同构。
 
-→ [Day 2 Makefile](../day-02-asm-makefile/) · [Day 6 模块拆分](../day-06-split-compile-irq/)
+→ Day 2 Makefile · [Day 6 模块拆分](../../day-06-split-compile-irq/)
 
 ---

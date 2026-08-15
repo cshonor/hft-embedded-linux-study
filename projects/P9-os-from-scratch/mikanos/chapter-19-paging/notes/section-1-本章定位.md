@@ -37,7 +37,7 @@ Ch19 应用独立页表 — 高半 VA 映射 LOAD 段
 Ch20 syscall — 用户态 + 持久页表
 ```
 
-→ [Ch8 四级分页](../chapter-08-memory/notes/section-5-四级分页与身份映射.md)
+→ [Ch8 四级分页](../../chapter-08-memory/notes/section-5-四级分页与身份映射.md)
 
 ---
 

@@ -34,7 +34,7 @@ on TimerTimeout(caret_timer_id):
 | **闪烁** | 业界标准 **text caret** UX |
 | **与 Ch11 衔接** | **priority_queue** 多定时器之一 |
 
-→ [Ch11 多定时器](../chapter-11-timer-acpi/notes/section-4-优先级队列与多定时器.md)
+→ [Ch11 多定时器](../../chapter-11-timer-acpi/notes/section-4-优先级队列与多定时器.md)
 
 ---
 
@@ -63,11 +63,11 @@ Ch13 多任务
 
 | Ch12 主题 | 继续读 |
 |----------|--------|
-| 多任务 | [chapter-13-multitask1](../chapter-13-multitask1/) 🔴 |
-| 终端/命令 | [chapter-15-terminal](../chapter-15-terminal/) · [chapter-16-commands](../chapter-16-commands/) |
-| 01 键盘 | [01 Day 14 keyboard](../../thirty-days-os-essentials/day-14-keyboard/) |
-| 图形事件 | [chapter-22-graphics-events1](../chapter-22-graphics-events1/) |
+| 多任务 | [chapter-13-multitask1](../../chapter-13-multitask1/) 🔴 |
+| 终端/命令 | [chapter-15-terminal](../../chapter-15-terminal/) · [chapter-16-commands](../../chapter-16-commands/) |
+| 01 键盘 | 01 Day 14 keyboard |
+| 图形事件 | [chapter-22-graphics-events1](../../chapter-22-graphics-events1/) |
 
 ---
 
-← [5. 文本框](./section-5-GUI文本框与退格.md) · [Ch 11](../chapter-11-timer-acpi/) · [Ch 12 导读](../README.md)
+← [5. 文本框](./section-5-GUI文本框与退格.md) · [Ch 11](../../chapter-11-timer-acpi/) · [Ch 12 导读](../README.md)

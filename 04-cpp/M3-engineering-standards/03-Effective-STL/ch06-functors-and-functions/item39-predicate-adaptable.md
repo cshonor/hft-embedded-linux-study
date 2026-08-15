@@ -239,4 +239,4 @@ auto it = std::find_if(v.begin(), v.end(), is_not_positive);
 
 - 上一节：[Item 38 按值传递](item38-functor-by-value.md)
 - 下一节：[Item 40-42 函数适配器](item40-42-function-adapters.md)
-- [Effective Modern C++ ch06 lambda](../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)
+- [Effective Modern C++ ch06 lambda](../../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)

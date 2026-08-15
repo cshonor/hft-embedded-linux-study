@@ -37,7 +37,7 @@ A 用完 up → 1，唤醒 D
 
 **HFT：** 用户态 `sem_wait` 同类；热路径 **避免** 睡眠锁 — 唤醒延迟直接进尾延迟。控制面、初始化、错误路径可以用。
 
-→ [10.5 mutex](./section-10.5-互斥体.md) · [4.4 休眠唤醒](../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md)
+→ [10.5 mutex](./section-10.5-互斥体.md) · [4.4 休眠唤醒](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md)
 
 ### 常见陷阱
 

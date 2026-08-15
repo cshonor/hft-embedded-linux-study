@@ -1,18 +1,18 @@
 # TLPI 第 32 章 — Threads: Thread Cancellation
 
 **优先级**：🟠（可取消工作线程；资源与锁安全）  
-**前置**：[Ch29](../chapter-29-threads-intro/notes.md) · [Ch30](../chapter-30-thread-synchronization/notes.md)  
-**后置**：[Ch33 线程更多细节](../chapter-33-threads-further/notes.md)
+**前置**：[Ch29](../chapter-29-threads-intro/README.md) · [Ch30](../chapter-30-thread-synchronization/README.md)  
+**后置**：[Ch33 线程更多细节](../chapter-33-threads-further/README.md)
 
 ---
 
 ## 小节目录
 
-- [32.1 –32.2 取消请求](./notes/32.1-section-32-1.md)
-- [32.3 状态与类型](./notes/32.3-state-types.md)
-- [32.4 取消点](./notes/32.4-section-32-4.md)
+- [32.1 –32.2 取消请求](notes/32.1-canceling-a-thread.md)
+- [32.3 状态与类型](notes/32.2-cancellation-state-and-type.md)
+- [32.4 取消点](notes/32.4-testing-for-thread-cancellation.md)
 - [32.5 Cleanup handlers](./notes/32.5-cleanup-handlers.md)
-- [32.6 生命周期（延迟）](./notes/32.6-lifecycle.md)
+- [32.6 生命周期（延迟）](notes/32.6-asynchronous-cancelability.md)
 
 ---
 
@@ -144,4 +144,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

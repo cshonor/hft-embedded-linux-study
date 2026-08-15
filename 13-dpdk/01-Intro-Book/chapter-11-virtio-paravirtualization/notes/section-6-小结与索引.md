@@ -29,15 +29,15 @@ repo 零拷贝 · 组播 · 02-Advanced
 
 | Ch11 主题 | 继续读 |
 |----------|--------|
-| vhost 后端 | [chapter-12-vhost-optimization](../chapter-12-vhost-optimization/) 🟡 |
-| I/O 透传对照 | [chapter-10-x86-io-virtualization](../chapter-10-x86-io-virtualization/) 🟡 |
-| VF / SR-IOV | [chapter-08 §4](../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 🔴 |
-| mbuf / 大页 | [chapter-06-pcie-packet-io](../chapter-06-pcie-packet-io/) · [Ch2 大页](../chapter-02-cache-and-memory/) 🔴 |
-| 轮询 / burst | [chapter-07-nic-performance-optimization](../chapter-07-nic-performance-optimization/) 🔴 |
-| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../chapter-04-零拷贝与用户态旁路.md) 🔴 |
-| XDP / 半旁路 | [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
+| vhost 后端 | [chapter-12-vhost-optimization](../../chapter-12-vhost-optimization/) 🟡 |
+| I/O 透传对照 | [chapter-10-x86-io-virtualization](../../chapter-10-x86-io-virtualization/) 🟡 |
+| VF / SR-IOV | [chapter-08 §4](../../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 🔴 |
+| mbuf / 大页 | [chapter-06-pcie-packet-io](../../chapter-06-pcie-packet-io/) · [Ch2 大页](../../chapter-02-cache-and-memory/) 🔴 |
+| 轮询 / burst | [chapter-07-nic-performance-optimization](../../chapter-07-nic-performance-optimization/) 🔴 |
+| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
+| XDP / 半旁路 | [02-Advanced note-XDP](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
 | HFT 部署 | [15 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. DPDK 优化](./section-5-DPDK深度优化.md) · [Ch10 透传](../chapter-10-x86-io-virtualization/) · [01-Intro README](../README.md)
+← [5. DPDK 优化](./section-5-DPDK深度优化.md) · [Ch10 透传](../../chapter-10-x86-io-virtualization/) · [01-Intro README](../README.md)

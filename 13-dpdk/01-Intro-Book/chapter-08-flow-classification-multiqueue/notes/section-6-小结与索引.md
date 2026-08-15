@@ -23,15 +23,15 @@ RMT：Match+Action 统一理解智能网卡
 
 | Ch8 主题 | 继续读 |
 |----------|--------|
-| 硬件 offload | [chapter-09-hardware-offload](../chapter-09-hardware-offload/) 🔴 |
-| PMD / burst | [chapter-03 PMD](../chapter-03-PMD与轮询模式.md) 🔴 |
-| Cache / NUMA / per-core | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/) 🔴 |
-| 组播行情落地 | [chapter-05 组播](../chapter-05-组播行情接入.md) 🔴 |
+| 硬件 offload | [chapter-09-hardware-offload](../../chapter-09-hardware-offload/) 🔴 |
+| PMD / burst | [chapter-03 PMD](../../chapter-03-parallel-computing) 🔴 |
+| Cache / NUMA / per-core | [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/) 🔴 |
+| 组播行情落地 | [chapter-05 组播](../../chapter-05-packet-forwarding) 🔴 |
 | 内核 RSS 对照 | [14-LKN Ch14](../../../../12-kernel-networking/chapter-14-advanced-topics/) |
-| L3fwd 软件转发 | [Ch1 L3fwd](../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) |
+| L3fwd 软件转发 | [Ch1 L3fwd](../../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) |
 | HFT 网络工程 | [15 ch06](../../../../16-hft-engineering/) |
-| XDP / 半旁路 | [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
+| XDP / 半旁路 | [02-Advanced note-XDP](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
 
 ---
 
-← [5. RMT](./section-5-RMT抽象模型.md) · 下一章 [chapter-09 硬件 offload](../chapter-09-hardware-offload/) · [01-Intro README](../README.md)
+← [5. RMT](./section-5-RMT抽象模型.md) · 下一章 [chapter-09 硬件 offload](../../chapter-09-hardware-offload/) · [01-Intro README](../README.md)

@@ -1,21 +1,21 @@
 # TLPI 第 44 章 — Pipes and FIFOs
 
 **优先级**：🔴（最老 IPC、shell `|` 原理）  
-**前置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/notes.md)  
-**后置**：[Ch45 System V IPC 导论](../chapter-45-sysv-ipc-intro/notes.md)
+**前置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/README.md)  
+**后置**：[Ch45 System V IPC 导论](../chapter-45-sysv-ipc-intro/README.md)
 
 ---
 
 ## 小节目录
 
-- [44.1 Pipe vs FIFO](./notes/44.1-pipe-fifo.md)
-- [44.2 `pipe()` 范式](./notes/44.2-pipe.md)
-- [44.3 阻塞读写规则](./notes/44.3-blocking.md)
-- [44.4 `PIPE_BUF` vs 容量](./notes/44.4-pipebuf.md)
-- [44.5 –44.6 `O_NONBLOCK` · `popen`](./notes/44.5-ononblock-popen.md)
-- [44.6 管道 + stdio](./notes/44.6-stdio.md)
-- [44.7 –44.8 FIFO](./notes/44.7-fifo.md)
-- [44.9 局限](./notes/44.9-limitations.md)
+- [44.1 Pipe vs FIFO](notes/44.1-overview.md)
+- [44.2 `pipe()` 范式](notes/44.2-creating-and-using-pipes.md)
+- [44.3 阻塞读写规则](notes/44.3-pipes-as-a-method-of-process-synchroniza.md)
+- [44.4 `PIPE_BUF` vs 容量](notes/44.4-using-pipes-to-connect-filters.md)
+- [44.5 –44.6 `O_NONBLOCK` · `popen`](notes/44.5-talking-to-a-shell-command-via-a-pipe-po.md)
+- [44.6 管道 + stdio](notes/44.6-pipes-and-stdio-buffering.md)
+- [44.7 –44.8 FIFO](notes/44.7-fifos.md)
+- [44.9 局限](notes/44.9-nonblocking-i-o.md)
 
 ---
 
@@ -137,4 +137,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

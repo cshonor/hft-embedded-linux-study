@@ -22,7 +22,7 @@ MemoryStat GetMemoryStat();
 | **allocated** | **内核+应用+页表+缓存** 已占 |
 | **free** | **剩余可分配** |
 
-→ [Ch8 位图分配](../chapter-08-memory/notes/section-6-位图分配器与小结.md)
+→ [Ch8 位图分配](../../chapter-08-memory/notes/section-6-位图管理器与首次适配.md)
 
 ---
 

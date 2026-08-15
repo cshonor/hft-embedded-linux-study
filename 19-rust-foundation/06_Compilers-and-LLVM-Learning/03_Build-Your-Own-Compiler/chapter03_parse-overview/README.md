@@ -1,6 +1,6 @@
 # 第 3 章 · 语法分析的概要
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第1部分 · 代码分析
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第1部分 · 代码分析
 
 ## 状态
 
@@ -32,8 +32,8 @@
 |----------|------|
 | ch2 cbc | [chapter02_cflat-cbc](../chapter02_cflat-cbc/README.md) · `parser` 包 |
 | ch4～6 | 词法 · JavaCC 规则 · 完整 parser |
-| CI 扫描/语法 | [CI ch4 扫描](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) · [ch5 文法](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/) |
-| EaC | [ch2 扫描](../../../02_Compiler-Principles/chapter02_scanners/) · [ch3 语法分析](../../../02_Compiler-Principles/chapter03_parsers/) |
+| CI 扫描/语法 | [CI ch4 扫描](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) · [ch5 文法](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/) |
+| EaC | [ch2 扫描](../../02_Compiler-Principles/chapter02_scanners/) · [ch3 语法分析](../../02_Compiler-Principles/chapter03_parsers/) |
 
 ---
 

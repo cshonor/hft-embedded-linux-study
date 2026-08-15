@@ -24,7 +24,7 @@
 | **IOTLB** | 缓存 DMA 地址转换 — 类比 CPU TLB |
 | **Domain** | **隔离** 不同 VM/设备的 DMA 权限 |
 
-→ 与 [Ch6 PCIe MRd/MWr](../chapter-06-pcie-packet-io/notes/section-2-PCIe事务与带宽.md) 同一 DMA 路径，多一层 remapping
+→ 与 [Ch6 PCIe MRd/MWr](../../chapter-06-pcie-packet-io/notes/section-2-PCIe事务与带宽.md) 同一 DMA 路径，多一层 remapping
 
 ---
 
@@ -43,7 +43,7 @@ PF (Physical Function) — 宿主机管理
 |------|------|
 | 每 **VF** 独立 | PCI 配置空间、队列、中断 |
 | 解决 **独占** | 多 VM **共享** 同一物理网卡 |
-| DPDK | 客户机绑定 **VF** 跑 PMD — [Ch8 VF](../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) |
+| DPDK | 客户机绑定 **VF** 跑 PMD — [Ch8 VF](../../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) |
 
 **HFT：** 托管环境常申请 **SR-IOV VF + CPU 亲和**；无 VF 则退回 virtio，**延迟不可比**。
 

@@ -41,7 +41,7 @@ expression → expression "+" term | term
 
 实际编译器常把分析树**简化为 AST**（去掉纯语法糖节点）。
 
-→ [CI jlox ch5 AST](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md)
+→ [CI jlox ch5 AST](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md)
 
 ---
 

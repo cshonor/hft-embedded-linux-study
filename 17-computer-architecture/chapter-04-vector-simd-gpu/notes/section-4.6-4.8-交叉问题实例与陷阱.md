@@ -46,6 +46,6 @@ Ch4 三条 DLP 路线：
          ↑ 编译器依赖分析 (4.5) 贯穿三者
 ```
 
-**HFT 默认：** Ch4 **⚪ 跳过**；触发读：**批量解码、离线回测、ML 研究**。实盘热路径回到 [Ch2](../chapter-02-memory-hierarchy-design/) + [Ch3](../chapter-03-instruction-level-parallelism/)。
+**HFT 默认：** Ch4 **⚪ 跳过**；触发读：**批量解码、离线回测、ML 研究**。实盘热路径回到 [Ch2](../../chapter-02-memory-hierarchy-design/) + [Ch3](../../chapter-03-instruction-level-parallelism/)。
 
 ---

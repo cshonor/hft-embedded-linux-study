@@ -38,7 +38,7 @@
 |---|------|
 | **前置** | [ch06 预处理器](../ch06-preprocessor/) |
 | **后置** | [ch08 建议与答案](../ch08-advice-and-answers/) |
-| **交叉** | [Expert C ch07 内存布局](../03-Advanced-Expert-C-Programming/ch07-the-shapes-that-memory-takes/) |
+| **交叉** | Expert C ch07 内存布局 |
 
 ## Demo
 

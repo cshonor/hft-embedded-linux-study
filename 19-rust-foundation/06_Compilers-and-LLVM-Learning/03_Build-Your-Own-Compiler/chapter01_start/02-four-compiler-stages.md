@@ -38,7 +38,7 @@
 - 关注：**文法结构**是否合法
 - 尚未深入：变量指向谁、类型是否匹配
 
-→ [CI ch5 上下文无关文法](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) · [EaC ch3](../../../02_Compiler-Principles/chapter03_parsers/README.md)
+→ [CI ch5 上下文无关文法](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) · [EaC ch3](../../02_Compiler-Principles/chapter03_parsers/README.md)
 
 ---
 
@@ -52,7 +52,7 @@
 | **类型检查** | `int*` 与 `int` 不可混用 |
 | **输出** | **抽象语法树 AST** — 丢弃纯语法噪音，保留语义节点 |
 
-→ [EaC ch4 上下文相关分析](../../../02_Compiler-Principles/chapter04_context/README.md)
+→ [EaC ch4 上下文相关分析](../../02_Compiler-Principles/chapter04_context/README.md)
 
 ---
 
@@ -66,7 +66,7 @@ AST → 编译器内部 **中间代码（IR）**。
 | **多后端** | 一种 IR 可发多种 CPU |
 | **优化** | 在 IR 上统一做变换 |
 
-本书 **cbc IR** 在 ch11 详述；若走 [04 LLVM](../../../04_Learn-LLVM-17/README.md) 路线，此处对应 **LLVM IR** 而非手写 x86。
+本书 **cbc IR** 在 ch11 详述；若走 [04 LLVM](../../04_Learn-LLVM-17/README.md) 路线，此处对应 **LLVM IR** 而非手写 x86。
 
 ---
 
@@ -75,7 +75,7 @@ AST → 编译器内部 **中间代码（IR）**。
 IR → **特定 CPU 的汇编** — 填补高级语言与机器指令的鸿沟。
 
 - 本书：**x86 汇编** + 栈帧 + 调用约定（第3部分）
-- [EaC ch11～13](../../../02_Compiler-Principles/本书目录.md)：指令筛选、调度、寄存器分配（通用理论）
+- [EaC ch11～13](../../02_Compiler-Principles/本书目录.md)：指令筛选、调度、寄存器分配（通用理论）
 
 ---
 
@@ -90,7 +90,7 @@ IR → **特定 CPU 的汇编** — 填补高级语言与机器指令的鸿沟�
 | 层次 | 本书 |
 |------|------|
 | IR / 汇编 peephole | ch17 优化的方法 |
-| 深度 SSA / 数据流 | [EaC ch8～10](../../../02_Compiler-Principles/本书目录.md) |
+| 深度 SSA / 数据流 | [EaC ch8～10](../../02_Compiler-Principles/本书目录.md) |
 
 ---
 

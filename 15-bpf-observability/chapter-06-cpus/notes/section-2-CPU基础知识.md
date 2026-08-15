@@ -20,7 +20,7 @@
 | **RUNNABLE** | 就绪，在 **运行队列** 等 CPU | `runqlat`、`runqlen`、`runqslower` |
 | **SLEEP** | 阻塞（I/O、锁、futex…） | `offcputime` |
 
-→ 内核实现对照：[05-linux-kernel Ch 4 调度](../05-linux-kernel/chapter-04-process-scheduling/)
+→ 内核实现对照：[05-linux-kernel Ch 4 调度](../../../05-linux-kernel/chapter-04-process-scheduling/)
 
 ### CPU 缓存与 TLB
 
@@ -32,7 +32,7 @@
 | **L3 (LLC)** | 末级缓存，多核共享 |
 | **TLB** | 虚拟地址 → 物理页表项缓存 |
 
-**工具：** `perf` PMC、`llcstat`（BPF + 硬件计数）看 LLC 命中/未命中 — 与 [CSAPP Ch6 存储层次](../02-computer-systems/chapter-06-memory-hierarchy/) 对照。
+**工具：** `perf` PMC、`llcstat`（BPF + 硬件计数）看 LLC 命中/未命中 — 与 [CSAPP Ch6 存储层次](../../../02-computer-systems/chapter-06-memory-hierarchy/) 对照。
 
 → SysPerf CPU 章：[chapter-06-cpus](../../../14-systems-performance/chapter-06-cpus/)
 

@@ -17,7 +17,7 @@ window->DrawCounter(counter);
 layer_manager.DrawAll();   // 初版：仍全屏合成
 ```
 
-→ 与 [Ch7 hlt 休眠](../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md) **权衡** — 动画要 **频率**，idle 要 **hlt**
+→ 与 [Ch7 hlt 休眠](../../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md) **权衡** — 动画要 **频率**，idle 要 **hlt**
 
 ---
 
@@ -45,7 +45,7 @@ layer_manager.DrawAll();   // 初版：仍全屏合成
 Back Buffer 合成后一次 blit      ← §5
 ```
 
-→ [Ch9 APIC 测量](../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md) — 可对比优化前后
+→ [Ch9 APIC 测量](../../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md) — 可对比优化前后
 
 ---
 

@@ -1,6 +1,6 @@
 ## 3. 网卡 I/O 性能深度优化
 
-> 收发包软件路径上的 **微架构级** 手段 — 与 [Ch3 ILP](../chapter-03-parallel-computing/notes/section-3-指令级并发.md)、[Ch6 MMIO 批量](../chapter-06-pcie-packet-io/notes/section-4-CPU与IO协奏优化.md) 一脉相承
+> 收发包软件路径上的 **微架构级** 手段 — 与 [Ch3 ILP](../../chapter-03-parallel-computing/notes/section-3-指令级并发.md)、[Ch6 MMIO 批量](../../chapter-06-pcie-packet-io/notes/section-4-CPU与IO协奏优化.md) 一脉相承
 
 ---
 
@@ -23,7 +23,7 @@
 - 将 **无数据依赖** 的多包处理 **铺开**（multi-packet pipeline）  
 - 当前包等内存时，CPU 执行 **下一包** 独立指令  
 
-→ [Ch3 Gustafson / 并行](../chapter-03-parallel-computing/) · PMD 内 **prefetch mbuf/描述符**
+→ [Ch3 Gustafson / 并行](../../chapter-03-parallel-computing/) · PMD 内 **prefetch mbuf/描述符**
 
 ---
 
@@ -37,14 +37,14 @@
 |------|------|
 | **批量分配** 新 mbuf / 描述符 | 少次 touch 控制行 |
 | **延迟更新 Tail** | 按 **Cache Line 整数倍** 移动尾指针 |
-| **对齐** | 环、控制块 [Ch2/Ch6 对齐](../chapter-06-pcie-packet-io/notes/section-4-CPU与IO协奏优化.md) |
+| **对齐** | 环、控制块 [Ch2/Ch6 对齐](../../chapter-06-pcie-packet-io/notes/section-4-CPU与IO协奏优化.md) |
 
 ---
 
 ### 四、SIMD 向量化描述符
 
 - **SSE Shuffle** 等 — **一次处理多个描述符** 字段转换  
-- 与 [Ch3 SIMD / rte_memcpy](../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) 同思路 — **拓宽每周期工作量**
+- 与 [Ch3 SIMD / rte_memcpy](../../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) 同思路 — **拓宽每周期工作量**
 
 ---
 

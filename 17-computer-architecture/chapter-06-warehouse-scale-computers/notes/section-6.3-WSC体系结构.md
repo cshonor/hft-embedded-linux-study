@@ -32,7 +32,7 @@
 |----------|
 | colo：**策略、行情、发单同机** — 避免跨机 TCP |
 | 多机部署时：**按品种/通道分片**，而非任意 RPC |
-| 与 [Ch5 NUMA](../chapter-05-thread-level-parallelism/notes/section-5.1-引言与多处理器挑战.md) 同构 — **「近」永远赢** |
+| 与 [Ch5 NUMA](../../chapter-05-thread-level-parallelism/notes/section-5.1-引言与多处理器挑战.md) 同构 — **「近」永远赢** |
 | 行情组播、**同 rack 订阅** — 网络拓扑即性能（→ [15-DPDK](../../../13-dpdk/)） |
 
 ---

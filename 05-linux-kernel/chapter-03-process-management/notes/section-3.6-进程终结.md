@@ -77,7 +77,7 @@ else if (WIFSIGNALED(status))
 
 **运维 / HFT：** 僵尸泛滥 → 父进程 bug（**未 wait** 或线程组设计错误）。长寿命交易 daemon 应在子进程退出路径 **`waitpid(..., WNOHANG)`** 或专用 sigchld 处理器回收；否则 PID 耗尽会导致 **无法 fork 新 worker**。`init` 会回收其收养子，但 **不能替代** 自己进程的回收责任。
 
-→ [§3.1 进程概念](./section-3.1-进程的概念.md) · [§3.3 EXIT_ZOMBIE 状态](./section-3.3-进程状态.md) · [Ch 4 调度退出路径](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [07 TLPI Ch24/20 进程创建/信号](../../../../03-linux-userspace-api/chapter-24-process-creation/notes.md) · [01 CSAPP Ch8 僵尸/孤儿](../../../../02-computer-systems/chapter-08-exceptional-control-flow/)
+→ [§3.1 进程概念](./section-3.1-进程的概念.md) · [§3.3 EXIT_ZOMBIE 状态](./section-3.3-进程状态.md) · [Ch 4 调度退出路径](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [07 TLPI Ch24/20 进程创建/信号](../../../03-linux-userspace-api/chapter-24-process-creation/notes) · [01 CSAPP Ch8 僵尸/孤儿](../../../02-computer-systems/chapter-08-exceptional-control-flow/)
 
 
 

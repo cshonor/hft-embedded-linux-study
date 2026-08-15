@@ -6,7 +6,7 @@
 
 ### 配置位置
 
-**FPSCR** 控制位（→ [Ch9 §9.8](../chapter-09-floating-point-basics/notes/section-9-8-fpu-control.md)）— **FZ (Flush-to-Zero)** · **DN (Default NaN)**。
+**FPSCR** 控制位（→ [Ch9 §9.8](../../chapter-09-floating-point-basics/notes/section-9-8-fpu-control.md)）— **FZ (Flush-to-Zero)** · **DN (Default NaN)**。
 
 ---
 

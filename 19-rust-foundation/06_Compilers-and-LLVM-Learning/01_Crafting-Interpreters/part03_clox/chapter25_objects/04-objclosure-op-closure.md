@@ -1,6 +1,6 @@
 # 第 25 章 · Closures（闭包） · ObjClosure 与 OP_CLOSURE
 
-← [本章目录](./README.md) · 上一节：[03-closing-upvalues.md](./03-closing-upvalues.md) · 下一节：[05-ast.md](./05-ast.md)
+← [本章目录](./README.md) · 上一节：[03-closing-upvalues.md](./03-closing-upvalues.md) · 下一节：[05-ast.md](05-closures.md)
 
 ---
 

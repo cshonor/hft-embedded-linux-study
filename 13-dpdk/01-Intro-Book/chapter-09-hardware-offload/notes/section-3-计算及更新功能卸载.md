@@ -9,7 +9,7 @@
 | 拷贝 + 手工剥/插 **802.1Q Tag** | RX：**过滤 + 剥离**；TX：**自动插入** |
 
 - 依赖网卡 **VLAN 过滤表** 配置  
-- 减 **内存拷贝** 与分支 — [Ch6 mbuf head room](../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) 仍可配合封装  
+- 减 **内存拷贝** 与分支 — [Ch6 mbuf head room](../../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) 仍可配合封装  
 
 ---
 
@@ -35,7 +35,7 @@ IP / TCP / UDP / SCTP 校验和：**逻辑简单、但要扫完整包** — CPU 
 | **RX** | 自动校验，错误包可标记丢弃 |
 | **TX** | 自动 **计算并写入** 校验和字段 |
 
-→ DPDK 通过 `ol_flags` 声明（§5）· 与 [Ch3 CRC SIMD](../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) 软件路径对照
+→ DPDK 通过 `ol_flags` 声明（§5）· 与 [Ch3 CRC SIMD](../../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) 软件路径对照
 
 ---
 
@@ -46,7 +46,7 @@ Overlay：**VxLAN、NVGRE** 等。
 - 基于 **内层 IP/MAC** 或 **VNI/TNI** 做 **重定向、过滤**  
 - 减 CPU 解析外层隧道头 — 与 **SDN / 数据中心** 场景更相关；HFT 共置 UDP 组播 **较少用**，但 **智能网卡** 能力谱系一环  
 
-→ [Ch8 ptype / 包类型](../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md)
+→ [Ch8 ptype / 包类型](../../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md)
 
 ---
 

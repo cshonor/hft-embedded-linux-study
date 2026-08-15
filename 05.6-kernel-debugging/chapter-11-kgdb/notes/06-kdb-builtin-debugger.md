@@ -133,6 +133,6 @@ kdb> md 0xffff000012345678
 
 ## 交叉引用
 
-- [05.6 ch11 KGDB 原理与架构](chapter-11-kgdb/notes/01-kgdb-architecture.md)
-- [05.6 ch11 GDB 连接内核](chapter-11-kgdb/notes/03-gdb-connection.md)
-- [05.6 ch10 Soft Lockup](chapter-10-panic-lockup/notes/02-soft-lockup.md)
+- [05.6 ch11 KGDB 原理与架构](../../chapter-11-kgdb/notes/01-kgdb-architecture.md)
+- [05.6 ch11 GDB 连接内核](../../chapter-11-kgdb/notes/03-gdb-connection.md)
+- [05.6 ch10 Soft Lockup](../../chapter-10-panic-lockup/notes/02-soft-lockup.md)

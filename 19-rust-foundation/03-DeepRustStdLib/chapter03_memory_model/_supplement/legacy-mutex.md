@@ -1,6 +1,6 @@
 # 3.6 `Mutex`
 
-> 章索引：[第 3 章](./README.md) · 前：[3.5 RefCell](./3.5-refcell.md) · 后：[3.7 RwLock](./3.7-rwlock.md)
+> 章索引：[第 3 章](./README.md) · 前：[3.5 RefCell](../3.2.5-maybeuninit-array.md) · 后：[3.7 RwLock](../3.7-heap-alloc.md)
 
 ---
 
@@ -37,7 +37,7 @@ std::thread::spawn(move || {
 - **Poison** — 持锁线程 panic 后，锁标记为 poisoned，`lock` 得 `Err`。
 - 底层 OS 原语因平台而异（pthread、Windows SRW 等）。
 
-→ [05-atomic Ch1 mutex](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.7-mutex-rwlock/1.7-mutex-rwlock.md) · [RFR Ch10](../../02-RFR/Chapter-10-Concurrency-and-Parallelism/README.md)
+→ [05-atomic Ch1 mutex](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.7-mutex-rwlock/1.7-mutex-rwlock.md) · [RFR Ch10](../../../02-RFR/Chapter-10-Concurrency-and-Parallelism/README.md)
 
 ---
 
@@ -49,5 +49,5 @@ std::thread::spawn(move || {
 
 ## 相关
 
-- [3.7 RwLock](./3.7-rwlock.md) — 多读单写
-- [3.5 RefCell](./3.5-refcell.md)
+- [3.7 RwLock](../3.7-heap-alloc.md) — 多读单写
+- [3.5 RefCell](../3.2.5-maybeuninit-array.md)

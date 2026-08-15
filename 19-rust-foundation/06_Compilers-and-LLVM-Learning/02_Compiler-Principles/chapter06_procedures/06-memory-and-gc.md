@@ -48,7 +48,7 @@
 | **拷贝回收（Copying / Cheney）** | 半空间复制；整理碎片 |
 
 **jlox**：借 **Java GC**  
-**clox**：**ch26 自实现 Mark-sweep** → [GC 笔记](../../../01_Crafting-Interpreters/part03_clox/chapter26_garbage-collection/README.md)
+**clox**：**ch26 自实现 Mark-sweep** → [GC 笔记](../../01_Crafting-Interpreters/part03_clox/chapter26_garbage-collection/README.md)
 
 ---
 

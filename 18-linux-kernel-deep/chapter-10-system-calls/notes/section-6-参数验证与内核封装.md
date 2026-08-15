@@ -70,9 +70,9 @@ exit_work（调度/信号）→ 返回用户态
 
 | Ch 10 主题 | 继续读 |
 |------------|--------|
-| 返回路径信号 | [Ch 11 信号](../chapter-11-signals/) 🟡 |
-| IDT / iret | [Ch 4 中断与异常](../chapter-04-interrupts-and-exceptions/) 🔴 |
-| fork/brk/mmap 实现 | [Ch 3](../chapter-03-processes/) · [Ch 9](../chapter-09-process-address-space/) 🔴 |
+| 返回路径信号 | [Ch 11 信号](../../chapter-11-signals/) 🟡 |
+| IDT / iret | [Ch 4 中断与异常](../../chapter-04-interrupts-and-exceptions/) 🔴 |
+| fork/brk/mmap 实现 | [Ch 3](../../chapter-03-processes/) · [Ch 9](../../chapter-09-process-address-space/) 🔴 |
 | 用户态编程 | [08 TLPI](../../../03-linux-userspace-api/) |
 | LKD 对照 | Linux Kernel Development Ch 5 |
 | vDSO / 无 syscall 计时 | [16 HFT 工程](../../../16-hft-engineering/) · modern kernel `vdso(7)` |
@@ -116,5 +116,5 @@ exit_work（调度/信号）→ 返回用户态
 
 ---
 
-← [5. 参数传递](./section-5-参数传递.md) · 下一章 [Ch 11 信号](../chapter-11-signals/)
+← [5. 参数传递](./section-5-参数传递.md) · 下一章 [Ch 11 信号](../../chapter-11-signals/)
 > ↔ [LKD Ch05 §5.4 实现与参数验证](../../../05-linux-kernel/chapter-05-system-calls/notes/section-5.4-实现与参数验证.md)

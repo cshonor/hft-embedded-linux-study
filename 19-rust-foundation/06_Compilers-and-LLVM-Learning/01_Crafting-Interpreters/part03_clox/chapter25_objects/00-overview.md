@@ -1,6 +1,6 @@
 # 第 25 章 · Closures（闭包） · 本章定位
 
-← [本章目录](./README.md) · 下一节：[01-calling-and-closures-upvalue.md](./01-calling-and-closures-upvalue.md)
+← [本章目录](./README.md) · 下一节：[01-calling-and-closures-upvalue.md](01-closures-upvalue.md)
 
 ---
 

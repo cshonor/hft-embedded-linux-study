@@ -22,7 +22,7 @@
 
 **额外加宽部分** = **逆向选择价差成分 (Adverse selection spread component)**。
 
-→ [Ch 14](../chapter-14-bid-ask-spreads/) 完整分解（inventory + adverse selection + monopoly 等）
+→ [Ch 14](../../chapter-14-bid-ask-spreads/) 完整分解（inventory + adverse selection + monopoly 等）
 
 | HFT 视角 |
 |----------|

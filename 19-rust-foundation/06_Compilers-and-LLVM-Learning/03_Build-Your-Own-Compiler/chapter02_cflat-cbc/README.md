@@ -1,6 +1,6 @@
 # 第 2 章 · C♭ 和 cbc
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 开篇
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 开篇
 
 ## 状态
 
@@ -33,7 +33,7 @@
 | ch1 四阶段 | [chapter01_start](../chapter01_start/README.md) |
 | 第1部分 | ch3～6 代码分析 — 从 `parser` 包深入 |
 | 模块 / use | `00-Book` 第 7 章 · Rust `mod`/`use` vs C♭ `import` |
-| 多文件编译 | [EaC ch6 过程](../../../02_Compiler-Principles/chapter06_procedures/README.md) |
+| 多文件编译 | [EaC ch6 过程](../../02_Compiler-Principles/chapter06_procedures/README.md) |
 
 ---
 

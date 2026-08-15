@@ -1,22 +1,22 @@
 # TLPI 第 12 章 — System and Process Information
 
 **优先级**：🔴（监控 / 调试 / 嵌入式与 HFT 观测常读 `/proc`）  
-**前置**：[Ch11 System Limits](../chapter-11-system-limits/notes.md)（`sysconf` 的补充来源）  
-**后置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/notes.md) · 读 `/proc` 依赖的 **open/read** 见 [Ch4](../chapter-04-file-io-universal/notes.md)  
+**前置**：[Ch11 System Limits](../chapter-11-system-limits/README.md)（`sysconf` 的补充来源）  
+**后置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md) · 读 `/proc` 依赖的 **open/read** 见 [Ch4](../chapter-04-file-io-universal/README.md)  
 
 ---
 
 ## 小节目录
 
-- [12.1 `uname()` — POSIX](./notes/12.1-uname.md)
-- [12.2 `/proc` — Linux 核心特色（非 POSIX）](./notes/12.2-proc.md)
-- [12.3 读 `/proc` 编程要点](./notes/12.3-proc.md)
-- [12.4 `sysctl()` 系统调用](./notes/12.4-sysctl.md)
-- [12.5 主机名 / 域名](./notes/12.5-section-12-5.md)
-- [12.6 `sysinfo()` — Linux](./notes/12.6-sysinfo.md)
-- [12.7 `get_nprocs()` — GNU](./notes/12.7-getnprocs-gnu.md)
-- [12.8 可移植 vs Linux](./notes/12.8-section-12-8.md)
-- [12.9 易错考点](./notes/12.9-section-12-9.md)
+- [12.1 `uname()` — POSIX](notes/12.1-proc-filesystem.md)
+- [12.2 `/proc` — Linux 核心特色（非 POSIX）](notes/12.1-proc-filesystem.md)
+- [12.3 读 `/proc` 编程要点](notes/12.1-proc-filesystem.md)
+- [12.4 `sysctl()` 系统调用](notes/12.4-exercises.md)
+- 12.5 主机名 / 域名
+- 12.6 `sysinfo()` — Linux
+- 12.7 `get_nprocs()` — GNU
+- 12.8 可移植 vs Linux
+- 12.9 易错考点
 
 ---
 
@@ -149,4 +149,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

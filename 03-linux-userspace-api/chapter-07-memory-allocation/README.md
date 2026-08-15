@@ -1,20 +1,20 @@
 # TLPI 第 07 章 — Memory Allocation
 
 **优先级**：🔴（堆 / 延迟分配 / 与 mmap 分界）  
-**前置**：[Ch6 Processes](../chapter-06-processes/notes.md)（堆 / BSS / 地址空间）  
-**后置**：[Ch8 用户与组](../chapter-08-users-and-groups/notes.md) · [Ch49 Memory Mappings](../chapter-49-memory-mappings/notes.md) · [Ch24 fork / COW](../chapter-24-process-creation/notes.md)  
+**前置**：[Ch6 Processes](../chapter-06-processes/README.md)（堆 / BSS / 地址空间）  
+**后置**：[Ch8 用户与组](../chapter-08-users-and-groups/README.md) · [Ch49 Memory Mappings](../chapter-49-memory-mappings/README.md) · [Ch24 fork / COW](../chapter-24-process-creation/README.md)  
 
 ---
 
 ## 小节目录
 
-- [7.1 Program Break（程序断点）](./notes/7.1-program-break.md)
-- [7.2 `brk` / `sbrk`](./notes/7.2-brk-sbrk.md)
-- [7.3 `malloc` / `free`](./notes/7.3-malloc-free.md)
-- [7.4 `calloc` / `realloc`](./notes/7.4-calloc-realloc.md)
-- [7.5 `malloc(0)`](./notes/7.5-malloc.md)
-- [7.6 glibc 双路径（拓展重点）](./notes/7.6-glibc.md)
-- [7.7 典型内存错误](./notes/7.7-memory.md)
+- [7.1 Program Break（程序断点）](notes/7.1-heap-allocation.md)
+- [7.2 `brk` / `sbrk`](notes/7.2-alloca.md)
+- [7.3 `malloc` / `free`](notes/7.3-summary.md)
+- [7.4 `calloc` / `realloc`](notes/7.4-exercises.md)
+- 7.5 `malloc(0)`
+- 7.6 glibc 双路径（拓展重点）
+- [7.7 典型内存错误](notes/7.1-heap-allocation.md)
 
 ---
 
@@ -91,7 +91,7 @@ Ch6  地址空间（堆在哪）
 
 
 - Kerrisk, *The Linux Programming Interface*, **Chapter 7 — Memory Allocation**  
-- [OUTLINE](../OUTLINE.md) · [Ch6](../chapter-06-processes/notes.md) · [Ch49](../chapter-49-memory-mappings/notes.md)
+- [OUTLINE](../OUTLINE.md) · [Ch6](../chapter-06-processes/README.md) · [Ch49](../chapter-49-memory-mappings/README.md)
 
 
 ---
@@ -139,4 +139,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

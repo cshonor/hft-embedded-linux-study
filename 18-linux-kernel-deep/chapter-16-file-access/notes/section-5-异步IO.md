@@ -47,7 +47,7 @@ ULK 2.6 AIO：
 
 **io_uring**（5.1+）提供 **统一、高性能** 异步接口 — HFT 新设计可优先评估 io_uring 而非 legacy AIO。
 
-→ syscall 层：[Ch 10](../chapter-10-system-calls/)
+→ syscall 层：[Ch 10](../../chapter-10-system-calls/)
 
 ---
 

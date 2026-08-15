@@ -34,7 +34,7 @@
 
 ---
 
-## 与 [Ch 9 NAT](../chapter-09-netfilter/notes/section-5-网络地址转换-NAT.md)
+## 与 [Ch 9 NAT](../../chapter-09-netfilter/notes/section-5-网络地址转换-NAT.md)
 
 | 组合 | 注意 |
 |------|------|

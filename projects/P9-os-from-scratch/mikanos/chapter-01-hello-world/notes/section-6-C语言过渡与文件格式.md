@@ -95,8 +95,8 @@ Ch 2：EDK II + MikanLoader + 内存 map            →  `<Uefi.h>` 工程化（
 
 | Ch1 主题 | 继续读 |
 |----------|--------|
-| EDK II · 内存 map | [chapter-02-edk2-memmap](../chapter-02-edk2-memmap/) 🔴 |
-| BIOS 软盘对照 | [01 Day 1](../../thirty-days-os-essentials/day-01-boot-asm/) |
+| EDK II · 内存 map | [chapter-02-edk2-memmap](../../chapter-02-edk2-memmap/) 🔴 |
+| BIOS 软盘对照 | 01 Day 1 |
 | ASCII | [appendix-F-ascii-table](../../appendix-F-ascii-table/) |
 | 开发环境 | [SETUP.md](../../SETUP.md) · [appendix-A-dev-env](../../appendix-A-dev-env/) |
 

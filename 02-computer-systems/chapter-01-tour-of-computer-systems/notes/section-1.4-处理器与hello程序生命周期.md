@@ -200,7 +200,7 @@ hello.c
 - **PC 里存的地址**、程序里 **指针的值**，在 Linux 用户态下几乎都是 **虚拟地址**
 - CPU 访存时 **硬件自动** VA → PA；缺页 / 无权限 → **page fault**（慢，HFT 热路径要避免）
 
-→ 深入：[1.7.3 虚拟内存](../section-1.7-操作系统管理硬件.md) · [Ch 9 虚拟内存](../../chapter-09-virtual-memory/)
+→ 深入：[1.7.3 虚拟内存](section-1.7-操作系统管理硬件.md) · [Ch 9 虚拟内存](../../chapter-09-virtual-memory/)
 
 **HFT 对照：**
 

@@ -13,7 +13,7 @@
 
 适合：**仅被异常/系统调用路径访问**、临界区可能较长、**可以睡眠** 的场景。
 
-→ 等待队列：[Ch 3](../chapter-03-processes/notes/section-4-组织与查找.md)
+→ 等待队列：[Ch 3](../../chapter-03-processes/notes/section-4-组织与查找.md)
 
 ---
 

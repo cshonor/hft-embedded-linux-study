@@ -9,7 +9,7 @@
 | 属性 | 说明 |
 |------|------|
 | **宽度** | 固定 **32 bit** |
-| **条件执行** | **`ADDEQ`/`SUBGT`** 等 — [Ch8 §8.4](../chapter-08-branches-loops/notes/section-8-4-conditional.md) |
+| **条件执行** | **`ADDEQ`/`SUBGT`** 等 — [Ch8 §8.4](../../chapter-08-branches-loops/notes/section-8-4-conditional.md) |
 | **寄存器** | **r0–r15**（PC 作操作数受限） |
 | **立即数** | **8 bit 旋转** 等较宽编码 |
 | **标志 S** | **`ADDS`** 才改标志；无 S 则不改 |

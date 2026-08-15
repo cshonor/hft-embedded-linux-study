@@ -24,7 +24,7 @@
         merge
 ```
 
-**clox**：`OP_JUMP` / `OP_JUMP_IF_FALSE` → [ch23](../../../01_Crafting-Interpreters/part03_clox/chapter23_jumping-back-and-forth/README.md)
+**clox**：`OP_JUMP` / `OP_JUMP_IF_FALSE` → [ch23](../../01_Crafting-Interpreters/part03_clox/chapter23_jumping-back-and-forth/README.md)
 
 ---
 

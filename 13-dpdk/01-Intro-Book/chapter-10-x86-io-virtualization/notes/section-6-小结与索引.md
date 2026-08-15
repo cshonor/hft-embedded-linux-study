@@ -30,16 +30,16 @@ repo：零拷贝 · 组播 · 02-Advanced
 
 | Ch10 主题 | 继续读 |
 |----------|--------|
-| 半虚拟化 Virtio | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/) 🟡 |
-| SR-IOV / VF 实战 | [chapter-08-flow-classification-multiqueue §4](../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 🔴 |
-| 大页 / NUMA | [chapter-02-cache-and-memory](../chapter-02-cache-and-memory/) 🔴 |
-| PCIe / DMA | [chapter-06-pcie-packet-io](../chapter-06-pcie-packet-io/) 🔴 |
-| PMD / VFIO | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
-| 硬件 offload | [chapter-09-hardware-offload](../chapter-09-hardware-offload/) 🔴 |
-| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../chapter-04-零拷贝与用户态旁路.md) 🔴 |
-| XDP / 半旁路 | [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
+| 半虚拟化 Virtio | [chapter-11-virtio-paravirtualization](../../chapter-11-virtio-paravirtualization/) 🟡 |
+| SR-IOV / VF 实战 | [chapter-08-flow-classification-multiqueue §4](../../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 🔴 |
+| 大页 / NUMA | [chapter-02-cache-and-memory](../../chapter-02-cache-and-memory/) 🔴 |
+| PCIe / DMA | [chapter-06-pcie-packet-io](../../chapter-06-pcie-packet-io/) 🔴 |
+| PMD / VFIO | [chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing) 🔴 |
+| 硬件 offload | [chapter-09-hardware-offload](../../chapter-09-hardware-offload/) 🔴 |
+| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
+| XDP / 半旁路 | [02-Advanced note-XDP](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
 | HFT 部署 | [15 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. 配置与陷阱](./section-5-透传配置与常见问题.md) · [Ch9 offload](../chapter-09-hardware-offload/) · [01-Intro README](../README.md)
+← [5. 配置与陷阱](./section-5-透传配置与常见问题.md) · [Ch9 offload](../../chapter-09-hardware-offload/) · [01-Intro README](../README.md)

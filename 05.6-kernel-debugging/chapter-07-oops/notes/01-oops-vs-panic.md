@@ -124,6 +124,6 @@ echo 5 > /proc/sys/kernel/panic
 
 ## 交叉引用
 
-- [05.6 ch07 寄存器转储解读](chapter-07-oops/notes/02-register-dump.md)
-- [05.6 ch07 addr2line 定位源码行](chapter-07-oops/notes/04-addr2line.md)
-- [05.6 ch10 panic/lockup 检测](chapter-10-panic-lockup/notes/01-panic-causes.md)
+- [05.6 ch07 寄存器转储解读](../../chapter-07-oops/notes/02-register-dump.md)
+- [05.6 ch07 addr2line 定位源码行](../../chapter-07-oops/notes/04-addr2line.md)
+- [05.6 ch10 panic/lockup 检测](../../chapter-10-panic-lockup/notes/01-panic-causes.md)

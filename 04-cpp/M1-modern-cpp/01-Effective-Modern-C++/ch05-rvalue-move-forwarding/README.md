@@ -128,7 +128,7 @@ auto len = std::move(s).length();
 
 **教训：** `std::move` 本身零开销零副作用，它只是"请求"移动；真正移动发生在移动构造/赋值函数里。
 
-**复习：** → [Item 23：理解 std::move 和 std::forward](./item23-理解std-move和std-forward.md)
+**复习：** → [Item 23：理解 std::move 和 std::forward](item23-move-and-forward.md)
 </details>
 
 ### Q2: 万能引用 vs 右值引用
@@ -153,7 +153,7 @@ auto&& y = expr;                        // C: 右值引用还是万能引用？
 
 **关键判别：** `T&&` 在有类型推导的语境（模板/auto）里是万能引用；在无推导的语境（如 `void f(string&&)`）是纯右值引用。
 
-**复习：** → [Item 24：区分万能引用和右值引用](./item24-区分万能引用和右值引用.md)
+**复习：** → [Item 24：区分万能引用和右值引用](item24-universal-vs-rvalue.md)
 </details>
 
 ### Q3: 对万能引用用 move 的灾难
@@ -178,5 +178,5 @@ set(s);  // s 会被掏空吗？
 
 **规则：** 对万能引用用 `forward`，对右值引用用 `move`。永不混用。
 
-**复习：** → [Item 25：对万能引用使用 std::forward](./item25-对万能引用使用std-forward对右值引用使用std-move.md)
+**复习：** → [Item 25：对万能引用使用 std::forward](item25-move-vs-forward-usage.md)
 </details>

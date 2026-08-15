@@ -4,7 +4,7 @@
 
 本章系统回答市场微观结构 **最核心概念之一**：**流动性到底是什么**、**包含哪些维度**、**谁在提供流动性**。
 
-> **HFT 读者：** 全书 **immediacy / spread / depth / resiliency** 的 **统一定义章**；与 [Ch 9 好市场](../chapter-09-good-markets/)、[Ch 13–18](../chapter-13-dealers/)、[00-practice-go-dex M3](./00-practice-go-dex/notes/milestone-03-价差与流动性/) · `orderbook.go` **深度与 BBO** 直接衔接。
+> **HFT 读者：** 全书 **immediacy / spread / depth / resiliency** 的 **统一定义章**；与 [Ch 9 好市场](../chapter-09-good-markets/)、[Ch 13–18](../chapter-13-dealers/)、[00-practice-go-dex M3](../00-practice-go-dex/notes/milestone-03-spread-and-liquidity) · `orderbook.go` **深度与 BBO** 直接衔接。
 
 ---
 

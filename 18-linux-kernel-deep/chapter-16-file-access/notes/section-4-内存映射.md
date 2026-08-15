@@ -8,7 +8,7 @@
 
 建立 **文件 offset ↔ 虚拟地址** 的 VMA — **不立即** 读盘、**不立即** 分配物理页。
 
-→ VMA：[Ch 9 section-3](../chapter-09-process-address-space/notes/section-3-内存区VMA.md)
+→ VMA：[Ch 9 section-3](../../chapter-09-process-address-space/notes/section-3-内存区VMA.md)
 
 ---
 
@@ -30,7 +30,7 @@ FS nopage（通常 filemap_nopage()）
 
 **与 read 共享页缓存** — 另一进程 `read` 同一偏移可 **命中** 已 mmap 进来的页。
 
-→ 缺页框架：[Ch 9 section-4](../chapter-09-process-address-space/notes/section-4-缺页异常.md)
+→ 缺页框架：[Ch 9 section-4](../../chapter-09-process-address-space/notes/section-4-缺页异常.md)
 
 ---
 

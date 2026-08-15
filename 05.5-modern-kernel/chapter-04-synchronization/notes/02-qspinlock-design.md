@@ -219,5 +219,5 @@ MCS 队列中每个等待者在**自己的 per-CPU mcs_node.locked 变量**上�
 ## 交叉引用
 
 - [01-ticket-spinlock-problem.md](./01-ticket-spinlock-problem.md) — Ticket spinlock 与缓存弹跳问题
-- [chapter-10-preempt-rt](../chapter-10-preempt-rt/) — PREEMPT_RT 将 spinlock 转为 rt_mutex
-- [chapter-05-interrupt-management](../chapter-05-interrupt-management/) — 中断处理中的锁使用
+- [chapter-10-preempt-rt](../../chapter-10-preempt-rt/) — PREEMPT_RT 将 spinlock 转为 rt_mutex
+- [chapter-05-interrupt-management](../../chapter-05-interrupt-management/) — 中断处理中的锁使用

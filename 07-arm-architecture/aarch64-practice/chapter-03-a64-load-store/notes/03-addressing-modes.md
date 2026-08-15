@@ -161,6 +161,6 @@ ldr w0, [x0, x1, lsl #2]   // lsl #2 对应 4 字节元素（32位）
 
 - 原书 §3.3
 - [3.4 LDP/STP 栈操作](04-stp-ldp.md) — STP/LDP 的栈帧管理细节
-- [§1.3 寄存器](../chapter-01-arm64-fundamentals/notes/03-registers.md) — X29(FP)/X30(LR) 在栈帧中的角色
+- [§1.3 寄存器](../../chapter-01-arm64-fundamentals/notes/03-registers.md) — X29(FP)/X30(LR) 在栈帧中的角色
 - ARM ARM §C3.2 — Load/Store 指令编码与寻址模式
-- [§6.1 ADR/ADRP](../chapter-06-a64-other-instructions/notes/01-adr-adrp.md) — PC 相对寻址详解
+- [§6.1 ADR/ADRP](../../chapter-06-a64-other-instructions/notes/01-adr-adrp.md) — PC 相对寻址详解

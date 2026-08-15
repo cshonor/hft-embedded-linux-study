@@ -38,7 +38,7 @@ call  obj->vptr[slot](obj, args…)
 
 **C++**：标准 vtable 布局（Itanium ABI 等）。  
 **Java**：interface 默认方法、invokedynamic 等变体。  
-**clox**：**方法 + 绑定接收者** → [ch28 Methods](../../../01_Crafting-Interpreters/part03_clox/chapter28_methods/README.md)
+**clox**：**方法 + 绑定接收者** → [ch28 Methods](../../01_Crafting-Interpreters/part03_clox/chapter28_methods/README.md)
 
 **Rust**：无继承；`dyn Trait` ≈ fat pointer (data, vtable) — 同类 dispatch 形态。
 

@@ -1,6 +1,6 @@
 # 第 10 章 · 标量优化（Scalar Optimization）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part III 优化
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part III 优化
 
 ## 状态
 
@@ -32,8 +32,8 @@
 |----------|------|
 | ch8 优化概述 | [ch8](../chapter08_intro-opt/README.md) — 冗余、作用域直觉 |
 | ch9 数据流 / SSA | [ch9](../chapter09_dataflow/README.md) — LIVE、建/拆 SSA |
-| LLVM Pass 管线 | [04 ch07 优化](../../../04_Learn-LLVM-17/part02_src_to_machine/chapter07_ir_optimize/) · `optimize_compare/` |
-| CI 局部优化 | [clox ch30](../../../01_Crafting-Interpreters/part03_clox/chapter30_optimization/README.md) |
+| LLVM Pass 管线 | [04 ch07 优化](../../04_Learn-LLVM-17/part02_src_to_machine/chapter07_ir_optimize/) · `optimize_compare/` |
+| CI 局部优化 | [clox ch30](../../01_Crafting-Interpreters/part03_clox/chapter30_optimization/README.md) |
 | ch11 指令筛选 | 下一章 — 机器相关后端 |
 
 ---

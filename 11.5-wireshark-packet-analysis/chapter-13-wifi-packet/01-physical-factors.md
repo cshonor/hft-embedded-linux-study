@@ -1,6 +1,6 @@
 # 13.1 物理因素
 
-> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 对照：[TCP/IP 3.5 无线](../../TCP-IP-Volume1-Protocols/chapter03-link-layer/3.5-wireless-80211.md)
+> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 对照：TCP/IP 3.5 无线
 
 **核心主旨**：无线是**共享频谱**，一次通常只嗅探**一个信道**；物理干扰需频谱仪，Wireshark 看 radiotap 间接指标。
 

@@ -154,7 +154,7 @@ aarch64-linux-gnu-gdb vmlinux
 
 ## 交叉引用
 
-- [05.6 ch11 KGDB 原理与架构](chapter-11-kgdb/notes/01-kgdb-architecture.md)
-- [05.6 ch11 串口配置](chapter-11-kgdb/notes/02-uart-setup.md)
-- [05.6 ch11 断点/单步/查看变量](chapter-11-kgdb/notes/04-breakpoints-variables.md)
-- [05.6 ch11 调试内核模块](chapter-11-kgdb/notes/05-module-debugging.md)
+- [05.6 ch11 KGDB 原理与架构](../../chapter-11-kgdb/notes/01-kgdb-architecture.md)
+- [05.6 ch11 串口配置](../../chapter-11-kgdb/notes/02-uart-setup.md)
+- [05.6 ch11 断点/单步/查看变量](../../chapter-11-kgdb/notes/04-breakpoints-variables.md)
+- [05.6 ch11 调试内核模块](../../chapter-11-kgdb/notes/05-module-debugging.md)

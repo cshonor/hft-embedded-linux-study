@@ -1,19 +1,19 @@
 # TLPI 第 57 章 — Sockets: UNIX Domain
 
 **优先级**：🔴（本机低延迟 IPC）  
-**前置**：[Ch56 Socket 导论](../chapter-56-sockets-intro/notes.md)  
-**后置**：[Ch58 TCP/IP 基础](../chapter-58-tcpip-fundamentals/notes.md)
+**前置**：[Ch56 Socket 导论](../chapter-56-sockets-intro/README.md)  
+**后置**：[Ch58 TCP/IP 基础](../chapter-58-tcpip-fundamentals/README.md)
 
 ---
 
 ## 小节目录
 
-- [57.1 `struct sockaddr_un`](./notes/57.1-struct-sockaddrun.md)
-- [57.2 STREAM](./notes/57.2-stream.md)
-- [57.3 DGRAM（高频）](./notes/57.3-dgram.md)
-- [57.4 权限](./notes/57.4-permission.md)
-- [57.5 `socketpair`](./notes/57.5-socketpair.md)
-- [57.6 抽象命名空间（Linux）](./notes/57.6-namespace-abstraction.md)
+- [57.1 `struct sockaddr_un`](notes/57.1-unix-domain-socket-addresses-struct-sock.md)
+- [57.2 STREAM](notes/57.2-stream-sockets-in-the-unix-domain.md)
+- [57.3 DGRAM（高频）](notes/57.3-datagram-sockets-in-the-unix-domain.md)
+- [57.4 权限](notes/57.4-unix-domain-socket-permissions.md)
+- [57.5 `socketpair`](notes/57.5-creating-a-connected-socket-pair-socketp.md)
+- [57.6 抽象命名空间（Linux）](notes/57.6-the-linux-abstract-socket-namespace.md)
 
 ---
 
@@ -179,4 +179,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

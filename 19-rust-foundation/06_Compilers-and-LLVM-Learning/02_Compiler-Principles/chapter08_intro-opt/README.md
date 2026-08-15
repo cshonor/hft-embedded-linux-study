@@ -1,6 +1,6 @@
 # 第 8 章 · 代码优化概述（Introduction to Code Optimization）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part III 优化
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part III 优化
 
 ## 状态
 
@@ -35,8 +35,8 @@
 | 基本块 / CFG | [ch5 §3 CFG](../chapter05_ir/03-graphical-ir.md) |
 | 代码形态 | [ch7](../chapter07_code-shape/README.md) — 形态决定可优化性 |
 | ch1 实用性 | [ch1 §2 实用性](../chapter01_overview/02-two-fundamental-principles.md) |
-| LLVM O0/O3 | [04 optimize_compare](../../../04_Learn-LLVM-17/ir_samples/optimize_compare/) |
-| CI 局部优化 | [clox ch30](../../../01_Crafting-Interpreters/part03_clox/chapter30_optimization/README.md) |
+| LLVM O0/O3 | [04 optimize_compare](../../04_Learn-LLVM-17/ir_samples/optimize_compare/) |
+| CI 局部优化 | [clox ch30](../../01_Crafting-Interpreters/part03_clox/chapter30_optimization/README.md) |
 
 ---
 

@@ -105,7 +105,7 @@ ls /sys/kernel/debug/tracing/events/syscalls/
 
 **收益：** 写 bpftrace 时知道 **`args->` 有什么** — 少猜 struct。
 
-→ [03-linux-userspace-api](../03-linux-userspace-api/) · [Ch 5 bpftrace](../../chapter-05-bpftrace/)
+→ [03-linux-userspace-api](../../../03-linux-userspace-api/) · [Ch 5 bpftrace](../../chapter-05-bpftrace/)
 
 ---
 

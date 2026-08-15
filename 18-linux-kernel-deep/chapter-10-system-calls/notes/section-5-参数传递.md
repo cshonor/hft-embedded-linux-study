@@ -44,7 +44,7 @@ Linux x86 约定：**寄存器传参**。
     ↓ int 0x80 / sysenter
 内核: SAVE_ALL → 内核栈上有 pt_regs
     ↓
-sys_call_table[nr](regs) 或从栈取参
+sys_call_tablenr 或从栈取参
 ```
 
 ### 常见陷阱

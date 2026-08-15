@@ -41,7 +41,7 @@
 lidt [idtr]    ; 正式注册给 CPU
 ```
 
-→ [01 Day 5 GDT/IDT](../../thirty-days-os-essentials/day-05-gdt-idt/notes/section-5.4-GDT-与-IDT-初始化.md)
+→ [01 Day 5 GDT/IDT](../../../thirty-days-os-essentials/day-05-gdt-idt/notes/section-5.4-GDT-与-IDT-初始化.md)
 
 ---
 

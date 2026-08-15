@@ -250,5 +250,5 @@ kgdb 仍然存在但不是主力了。现代内核调试以 ftrace/eBPF 动态�
 
 - [02-ftrace-modern.md](./02-ftrace-modern.md) — ftrace 追踪框架
 - [03-ebpf-observability.md](./03-ebpf-observability.md) — eBPF 可编程追踪
-- [05.6-kernel-debugging/chapter-07-oops](../../05.6-kernel-debugging/chapter-07-oops/) — Oops 分析
-- [05.6-kernel-debugging/chapter-10-panic-lockup](../../05.6-kernel-debugging/chapter-10-panic-lockup/) — Panic/kdump 详解
+- [05.6-kernel-debugging/chapter-07-oops](../../../05.6-kernel-debugging/chapter-07-oops/) — Oops 分析
+- [05.6-kernel-debugging/chapter-10-panic-lockup](../../../05.6-kernel-debugging/chapter-10-panic-lockup/) — Panic/kdump 详解

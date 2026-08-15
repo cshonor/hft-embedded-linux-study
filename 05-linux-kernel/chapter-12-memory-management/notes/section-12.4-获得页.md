@@ -56,7 +56,7 @@ __free_pages(pg, 3);
 
 **HFT：** 网卡驱动 **RX ring** 的 **descriptor + 包缓冲** 常用 **页分配或 dma_pool** — 启动时 **一次性** `alloc_pages`，运行期 **GFP_ATOMIC 零分配**。用户态 **hugepage 池** 同理：**启动预占**，盘中 **不再向内核要连续 2MB**。
 
-→ [06 Gorman Ch6 物理页分配](../../../../06-linux-mm/chapter-06-physical-page-allocation/) · [Ch 12.5 kmalloc](./section-12.5-kmalloc-与-kfree.md)
+→ [06 Gorman Ch6 物理页分配](../../../06-linux-mm/chapter-06-physical-page-allocation/) · [Ch 12.5 kmalloc](./section-12.5-kmalloc-与-kfree.md)
 
 
 

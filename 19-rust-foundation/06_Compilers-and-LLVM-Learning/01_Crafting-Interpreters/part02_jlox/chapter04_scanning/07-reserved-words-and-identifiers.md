@@ -1,6 +1,6 @@
 # 第 4 章 · Scanning（扫描 / 词法分析） · §4.7 保留字与标识符（Reserved Words and Identifiers）
 
-← [本章目录](./README.md) · 上一节：[06-longer-lexemes.md](./06-longer-lexemes.md) · 下一节：[08-scanning.md](./08-scanning.md)
+← [本章目录](./README.md) · 上一节：[06-longer-lexemes.md](./06-longer-lexemes.md) · 下一节：[08-scanning.md](08-pipeline.md)
 
 ---
 

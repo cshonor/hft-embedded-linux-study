@@ -55,7 +55,7 @@
 
 - [13.1 进一步探讨指向指针的指针](./13.1-进一步探讨指向指针的指针.md)
 - [13.2 高级声明](./13.2-高级声明.md)
-- [13.3 函数指针](./13.3-function-pointers/13.3-function-pointers.md)
+- [13.3 函数指针](13.3-function-pointers/13.3-函数指针.md)
 - [13.4 命令行参数](./13.4-命令行参数.md)
 - [13.5 字符串常量](./13.5-字符串常量.md)
 
@@ -79,7 +79,7 @@ handler_t table[3] = {add, sub, mul};
 
 int dispatch(int op, int val) {
     if (op >= 0 && op < 3)
-        return table[op](val);
+        return table[op](../../../../../kotlin 01 var  和   val .mp4);
     return -1;
 }
 ```
@@ -95,7 +95,7 @@ int dispatch(int op, int val) {
 
 **代价：** 间接调用（`call [rax]`）可能破坏分支预测，热路径上不如 `switch` 编译器跳转表。
 
-**复习：** → [13.3 Function Pointers](./13.3-function-pointers/13.3-function-pointers.md)
+**复习：** → [13.3 Function Pointers](13.3-function-pointers/13.3-函数指针.md)
 
 </details>
 
@@ -136,7 +136,7 @@ int main() {
 
 **用途：** 策略模式、命令分发表、回调注册——C 语言用函数指针实现面向对象的多态。
 
-**复习：** → [13.3 函数指针](./13.3-function-pointers/13.3-function-pointers.md)
+**复习：** → [13.3 函数指针](13.3-function-pointers/13.3-函数指针.md)
 
 </details>
 
@@ -205,7 +205,7 @@ for_each(data, 3, print_sq, NULL);
 
 **教训：** 设计回调接口时永远预留 `void *priv` 参数，即使当前用不上。
 
-**复习：** → [13.3 Function Pointers](./13.3-function-pointers/13.3-function-pointers.md)
+**复习：** → [13.3 Function Pointers](13.3-function-pointers/13.3-函数指针.md)
 
 ---
 

@@ -13,7 +13,7 @@
 | **BSS** | **未初始化** 全局/静态 — 通常零填充 |
 | **Stack** | 局部变量、调用链 |
 
-→ 寻址与页表：[Ch 2](../chapter-02-memory-addressing/) · VMA：[Ch 9](../chapter-09-process-address-space/)
+→ 寻址与页表：[Ch 2](../../chapter-02-memory-addressing/) · VMA：[Ch 9](../../chapter-09-process-address-space/)
 
 ---
 
@@ -40,7 +40,7 @@
 - **mmap 区** 放在 **靠近栈底的高地址**，向 **低地址** 生长  
 - **堆 (heap)** 获得 **更大连续扩展空间**  
 
-→ 堆/brk：[Ch 9 section-6](../chapter-09-process-address-space/notes/section-6-写时复制与堆.md)
+→ 堆/brk：[Ch 9 section-6](../../chapter-09-process-address-space/notes/section-6-写时复制与堆.md)
 
 > **Modern 对照：** ASLR 进一步随机化 mmap/stack 基址 — ULK 2.6 为布局 **灵活性** 奠基。
 

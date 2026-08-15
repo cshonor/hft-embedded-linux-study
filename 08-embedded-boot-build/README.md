@@ -80,7 +80,7 @@
 | 模块 | 关系 |
 |------|------|
 | [19 ARM64](../07-arm-architecture/) | U-Boot/内核/设备树与 AArch64 汇编 |
-| [21 Linux Device Drivers](../09-device-drivers-dts/) | Ch 11 驱动交互 |
+| [21 Linux Device Drivers](../09-device-drivers-dt) | Ch 11 驱动交互 |
 | [21 驱动+DT](../09-device-drivers-dt/) | Ch 3–4、11–09 驱动与设备树 |
 | [04 LKD](../05-linux-kernel/) | 内核机制 |
 | [07 TLPI](../03-linux-userspace-api/) | 进程/IPC/内存 |

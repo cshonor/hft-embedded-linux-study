@@ -15,6 +15,6 @@
 
 **死代码消除** 在 **链接期** — 与 **`-ffunction-sections --gc-sections`** 思想一致。
 
-→ [Day 20 `_api_*`](../day-20-api/)
+→ [Day 20 `_api_*`](../../day-20-api/)
 
 ---

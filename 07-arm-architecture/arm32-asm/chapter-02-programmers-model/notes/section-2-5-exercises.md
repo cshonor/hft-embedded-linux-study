@@ -140,7 +140,7 @@ LSB=1 → 标记 **Thumb**（M 仅 Thumb-2）；硬件取址时 **清 LSB** 得�
 **Q2.** RTOS 切任务口述（双栈视角）：
 
 1. 当前任务触发 **PendSV** → **Handler**，强制 **MSP**  
-2. 内核把任务现场保存到 **该任务的 PSP**（硬件已可能压过 8-word 帧；软件再存 R4–R11 等 → [Ch15](../../chapter-15-exception-handling-cortex-m4/)）  
+2. 内核把任务现场保存到 **该任务的 PSP**（硬件已可能压过 8-word 帧；软件再存 R4–R11 等 → [Ch15](../../chapter-15-exception-handling-v7m)）  
 3. OS 改 **PSP** 指向下一就绪任务栈  
 4. 异常返回 → **Thread**，新任务用自己的 **PSP** 跑  
 5. 内核 / 中断全程靠 **MSP**，任务栈彼此隔离  

@@ -25,7 +25,7 @@
 
 ### FPU 扩展帧（Cortex-M4F）
 
-若异常时 **浮点上下文活跃**，硬件可能额外压 **S0–S15 + FPSCR** 等 — **Lazy stacking** 可推迟直到 ISR 真用 FPU（[Ch9–11](../chapter-09-floating-point-basics/) 可选）。
+若异常时 **浮点上下文活跃**，硬件可能额外压 **S0–S15 + FPSCR** 等 — **Lazy stacking** 可推迟直到 ISR 真用 FPU（[Ch9–11](../../chapter-09-floating-point-basics/) 可选）。
 
 ---
 

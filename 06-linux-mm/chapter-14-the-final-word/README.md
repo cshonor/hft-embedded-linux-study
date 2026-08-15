@@ -27,4 +27,4 @@
 ## 相关章节
 
 - 上一章：[../chapter-13-out-of-memory-management/](../chapter-13-out-of-memory-management/)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

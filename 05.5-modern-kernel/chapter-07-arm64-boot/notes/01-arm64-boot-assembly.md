@@ -197,5 +197,5 @@ x86 启动需要从 16 位 real mode → 32 位保护模式 → 64 位长模式�
 ## 交叉引用
 
 - [02-start-kernel-init.md](./02-start-kernel-init.md) — start_kernel() C 代码初始化
-- [chapter-06-arm64-architecture](../chapter-06-arm64-architecture/) — ARM64 架构详解
-- [chapter-09-bootloader-build](../chapter-09-bootloader-build/) — U-Boot 与构建系统
+- [chapter-06-arm64-architecture](../../chapter-06-arm64-architecture/) — ARM64 架构详解
+- [chapter-09-bootloader-build](../../chapter-09-bootloader-build/) — U-Boot 与构建系统

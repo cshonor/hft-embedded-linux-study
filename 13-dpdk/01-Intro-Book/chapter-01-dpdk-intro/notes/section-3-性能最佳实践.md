@@ -10,7 +10,7 @@
 |------|------|
 | **网卡中断** → 上下文切换、softirq | **轮询** 收包 — **无中断开销** |
 
-→ 深潜：[chapter-03 PMD与轮询模式](../chapter-03-PMD与轮询模式.md) · [ULK Ch4 I/O 中断](../../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
+→ 深潜：[chapter-03 PMD与轮询模式](../../chapter-03-parallel-computing) · [ULK Ch4 I/O 中断](../../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
 
 **代价：** 占满 CPU 核 — 需 **绑核**、isolcpus，与 idle 友好性 trade-off。
 
@@ -45,7 +45,7 @@
 | **NUMA 感知** | 内存/网卡 **同节点** 分配 |
 | **Intel DDIO** 等 | 网卡 DMA 数据 **直达 Cache** — ↓ 内存带宽压力 |
 
-→ [ULK Ch8 ZONE/伙伴](../../../../18-linux-kernel-deep/chapter-08-memory-management/) · [CSAPP Ch6 缓存](../../../02-computer-systems/chapter-06-memory-hierarchy/)
+→ [ULK Ch8 ZONE/伙伴](../../../../18-linux-kernel-deep/chapter-08-memory-management/) · [CSAPP Ch6 缓存](../../../../02-computer-systems/chapter-06-memory-hierarchy/)
 
 ---
 

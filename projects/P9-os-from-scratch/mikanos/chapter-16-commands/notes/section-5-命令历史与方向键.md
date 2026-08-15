@@ -26,7 +26,7 @@ int history_index_;                // -1 = 新空行
 | **Enter 提交** | push_back · 超 8 则 pop_front |
 | **浏览** | index 增减 · 取 `history_[index]` |
 
-→ [Ch11 std::deque 引入](../chapter-11-timer-acpi/notes/section-2-源码重构.md)
+→ [Ch11 std::deque 引入](../../chapter-11-timer-acpi/notes/section-2-源码重构.md)
 
 ---
 

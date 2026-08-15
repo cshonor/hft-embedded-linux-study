@@ -52,12 +52,12 @@
 
 ---
 
-← [Day 6](./day-06-分割编译与中断处理.md) · [01 导读](../README.md) · [Day 8](./day-08-鼠标控制与32位模式切换.md)
+← [Day 6](../day-06-split-compile-irq) · [01 导读](../README.md) · Day 8
 
 ---
 
 ## 相关
 
 - 上一日：[../day-06-split-compile-irq/](../day-06-split-compile-irq/)
-- 下一日：[../day-08-mouse-32bit/](../day-08-mouse-32bit/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 下一日：[../day-08-mouse-32bit/](../day-07-fifo-mouse)
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

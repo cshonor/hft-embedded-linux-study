@@ -32,7 +32,7 @@ auto h = [=](int a) { return a; };        // 值捕获所有用到的
 auto i = [&](int a) { return a; };        // 引用捕获所有用到的
 ```
 
-- `[capture](params) -> ret { body }`。
+- `capture -> ret { body }`。
 - 值捕获在 lambda **创建时**拷贝，引用捕获共享原变量。
 - C++14 起支持**初始化捕获** `[p = std::move(ptr)]`，可以移动捕获。
 - C++14 起支持**泛型 lambda** `[](auto x){}`。

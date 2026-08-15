@@ -37,7 +37,7 @@
 └────────────────────────────────────────────┘
 ```
 
-→ [Ch4 PixelWriter](../chapter-04-pixel-make/notes/section-4-PixelWriter与vtable.md)
+→ [Ch4 PixelWriter](../../chapter-04-pixel-make/notes/section-4-PixelWriter与vtable.md)
 
 ---
 

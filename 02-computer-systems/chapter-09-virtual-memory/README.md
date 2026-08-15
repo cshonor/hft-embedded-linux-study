@@ -49,7 +49,7 @@ malloc：堆上 bump / 空闲链表管理
 **HFT 铁律：**
 
 1. **tick 路径零缺页** — `mlock`/`MAP_LOCKED`、启动时 touch 全工作集
-2. **大页 (hugepage/THP)** — 降 TLB miss（→ DPDK EAL、[06-linux-mm THP](../../../06-linux-mm/)）
+2. **大页 (hugepage/THP)** — 降 TLB miss（→ DPDK EAL、[06-linux-mm THP](../../06-linux-mm/)）
 3. **热路径零 malloc** — 池化、arena、Rust 栈上/预分配
 
 ---
@@ -83,5 +83,5 @@ malloc：堆上 bump / 空闲链表管理
 - 下一章：[../chapter-10-system-io/](../chapter-10-system-io/)
 - Cache：[../chapter-06-memory-hierarchy/](../chapter-06-memory-hierarchy/)
 - 链接加载：[../chapter-07-linking/](../chapter-07-linking/)
-- 内核 VM：[06-linux-mm](../../../06-linux-mm/)
+- 内核 VM：[06-linux-mm](../../06-linux-mm/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

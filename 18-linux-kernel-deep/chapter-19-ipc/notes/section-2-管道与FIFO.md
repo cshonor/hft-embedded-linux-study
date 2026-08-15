@@ -14,7 +14,7 @@
 
 **Linux 2.6.11 改进：** **16 个 pipe buffer** 的 **环形数组** — 大块写入性能显著提升。
 
-→ 特殊 FS pipefs：[Ch 12 section-5](../chapter-12-VFS/notes/section-5-挂载与路径查找.md) · syscall：[Ch 10](../chapter-10-system-calls/)
+→ 特殊 FS pipefs：[Ch 12 section-5](../../chapter-12-VFS/notes/section-5-挂载与路径查找.md) · syscall：[Ch 10](../../chapter-10-system-calls/)
 
 ---
 
@@ -36,7 +36,7 @@
 | 无文件名 | **`mknod()` / `mkfifo()`** 在 FS 中创建 **节点** |
 | 仅亲属进程 | **任意无关** 进程通过 **路径** open 通信 |
 
-使用与普通文件相同的 **`open` / `read` / `write`** — [Ch 16](../chapter-16-file-access/)。
+使用与普通文件相同的 **`open` / `read` / `write`** — [Ch 16](../../chapter-16-file-access/)。
 
 ---
 

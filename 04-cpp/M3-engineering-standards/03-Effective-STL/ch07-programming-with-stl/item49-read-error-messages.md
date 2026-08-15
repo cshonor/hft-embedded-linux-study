@@ -303,4 +303,4 @@ std::transform(v.begin(), v.end(), std::back_inserter(result),
 
 - 上一节：[Item 48 include 大小写](item48-include-case-sensitivity.md)
 - 下一节：[Item 50 参考资源](item50-reference-resources.md)
-- [Effective Modern C++ ch05 type traits](../../M1-modern-cpp/01-Effective-Modern-C++/ch05-rvalue-references-move-semantics/README.md)
+- Effective Modern C++ ch05 type traits

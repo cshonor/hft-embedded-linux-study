@@ -17,7 +17,7 @@
 
 **HFT 含义：** 共置 **Intel + 支持 DDIO 的网卡** 时，收包数据可能 **已在 LLC** — 与软件 prefetch 协同；无 DDIO 平台更依赖 **大页 + 预取 + 绑核**。
 
-→ [Ch1 最佳实践](../chapter-01-dpdk-intro/notes/section-3-性能最佳实践.md)
+→ [Ch1 最佳实践](../../chapter-01-dpdk-intro/notes/section-3-性能最佳实践.md)
 
 ---
 
@@ -70,14 +70,14 @@ mbuf/mempool 在正确内存上预分配
 
 | Ch2 主题 | 继续读 |
 |----------|--------|
-| mbuf / mempool | [chapter-02-mbuf](../chapter-02-mbuf与内存池.md) 🔴 |
-| 并行 / SIMD | [chapter-03-并行计算](../chapter-03-parallel-computing/) 🔴 |
-| PMD 收发包 | [chapter-03 PMD](../chapter-03-PMD与轮询模式.md) 🔴 |
-| 零拷贝旁路 | [chapter-04](../chapter-04-零拷贝与用户态旁路.md) |
-| CSAPP / Hennessy | [01 Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/) · [02 Ch2](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/) |
+| mbuf / mempool | [chapter-02-mbuf](../../chapter-02-cache-and-memory) 🔴 |
+| 并行 / SIMD | [chapter-03-并行计算](../../chapter-03-parallel-computing/) 🔴 |
+| PMD 收发包 | [chapter-03 PMD](../../chapter-03-parallel-computing) 🔴 |
+| 零拷贝旁路 | [chapter-04](../../chapter-04-synchronization) |
+| CSAPP / Hennessy | [01 Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [02 Ch2](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/) |
 | ULK 内存 | [06 Ch8/9/17](../../../../18-linux-kernel-deep/chapter-08-memory-management/) |
 | HFT 工程 | [15 ch04/ch07](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. 大页](./section-5-大页Hugepages.md) · 下一章 [mbuf 与内存池](../chapter-02-mbuf与内存池.md)
+← [5. 大页](./section-5-大页Hugepages.md) · 下一章 [mbuf 与内存池](../../chapter-02-cache-and-memory)

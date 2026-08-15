@@ -36,6 +36,6 @@
 | 可借鉴：**确定性执行模型**（少推测、少共享）对 **尾延迟** 的价值 — 实盘 CPU 也关 HT/省电扰动 |
 | INT8 量化推理 ≠ 交易价格精度；**风控模型** 若上生产需单独验证 |
 
-→ [Ch6 长尾](../chapter-06-warehouse-scale-computers/notes/section-6.2-编程模型与工作负载.md)
+→ [Ch6 长尾](../../chapter-06-warehouse-scale-computers/notes/section-6.2-编程模型与工作负载.md)
 
 ---

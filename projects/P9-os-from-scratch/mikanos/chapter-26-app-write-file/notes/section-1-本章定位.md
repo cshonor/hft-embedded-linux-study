@@ -37,7 +37,7 @@ Ch26 写文件 + stdio  ← 本章
 Ch27 应用内存 · Ch29 IPC
 ```
 
-→ [Ch25 读文件](../chapter-25-app-read-file/)
+→ [Ch25 读文件](../../chapter-25-app-read-file/)
 
 ---
 

@@ -38,7 +38,7 @@ Ch26 应用写文件
 Ch29 IPC
 ```
 
-→ [Ch17 文件系统](../chapter-17-filesystem/) · [Ch24 多任务 Task](../chapter-24-multi-terminal/)
+→ [Ch17 文件系统](../../chapter-17-filesystem/) · [Ch24 多任务 Task](../../chapter-24-multi-terminal/)
 
 ---
 

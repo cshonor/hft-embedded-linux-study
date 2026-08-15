@@ -10,7 +10,7 @@
 | **`getpriority()`** | 获取优先级 |
 | **`setpriority()`** | 设置进程/进程组优先级 |
 
-→ 实现路径：[Ch 10](../chapter-10-system-calls.md) · 用户态：[08 TLPI](../../../03-linux-userspace-api/)
+→ 实现路径：[Ch 10](../../chapter-10-system-calls.md) · 用户态：[08 TLPI](../../../03-linux-userspace-api/)
 
 ---
 
@@ -42,11 +42,11 @@ HFT 标配：**交易线程绑 isolated CPU**，与 housekeeping 核分离。
 
 | Ch 7 主题 | 继续读 |
 |-----------|--------|
-| 进程、切换 | [Ch 3 进程](../chapter-03-processes/) 🔴 |
-| tick、时间片 | [Ch 6 定时测量](../chapter-06-timing/) 🟡 |
-| 抢占、锁 | [Ch 5 内核同步](../chapter-05-kernel-synchronization/) 🔴 |
-| syscall 路径 | [Ch 10 系统调用](../chapter-10-system-calls.md) 🔴 |
-| 内存、COW | [Ch 8 内存管理](../chapter-08-memory-management.md) 🔴 |
+| 进程、切换 | [Ch 3 进程](../../chapter-03-processes/) 🔴 |
+| tick、时间片 | [Ch 6 定时测量](../../chapter-06-timing/) 🟡 |
+| 抢占、锁 | [Ch 5 内核同步](../../chapter-05-kernel-synchronization/) 🔴 |
+| syscall 路径 | [Ch 10 系统调用](../../chapter-10-system-calls.md) 🔴 |
+| 内存、COW | [Ch 8 内存管理](../../chapter-08-memory-management.md) 🔴 |
 | Modern CFS | [05 LKD Ch 4](../../../05-linux-kernel/) |
 | HFT 绑核/FIFO | [16 HFT 工程](../../../16-hft-engineering/) |
 
@@ -103,5 +103,5 @@ void *p = mmap(NULL, size, PROT_READ|PROT_WRITE,
 
 ---
 
-← [5. SMP 平衡](./section-5-SMP运行队列平衡.md) · 下一章 [Ch 8 内存管理](../chapter-08-memory-management.md)
+← [5. SMP 平衡](./section-5-SMP运行队列平衡.md) · 下一章 [Ch 8 内存管理](../../chapter-08-memory-management.md)
 > ↔ [LKD Ch04 §4.7 与调度相关的系统调用](../../../05-linux-kernel/chapter-04-process-scheduling/notes/section-4.7-与调度相关的系统调用.md)

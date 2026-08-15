@@ -27,7 +27,7 @@ NIC ──PMD──► OVS (用户态) ──PMD──► NIC
 | **相对传统 OVS** | **11.4×** 吞吐提升 |
 | **原因** | 全程用户态 PMD — 无内核转发、无 netdevice 栈 |
 
-→ 与 [Ch7 burst / 向量 PMD](../chapter-07-nic-performance-optimization/) 优化直接对应
+→ 与 [Ch7 burst / 向量 PMD](../../chapter-07-nic-performance-optimization/) 优化直接对应
 
 ---
 
@@ -45,7 +45,7 @@ NIC ──► OVS ──vhost──► VM (Virtio PMD) ──► OVS ──► N
 | 观察 | 含义 |
 |------|------|
 | 路径更复杂（含 VM 往返） | 绝对倍数低于 PHY-PHY，但仍 **数量级提升** |
-| **双核 > 单核** 且超过 PHY-PHY 单核倍数 | **多核并行扩展性** 良好 — 与 [Ch3 并行](../chapter-03-parallel-computing/) 设计一致 |
+| **双核 > 单核** 且超过 PHY-PHY 单核倍数 | **多核并行扩展性** 良好 — 与 [Ch3 并行](../../chapter-03-parallel-computing/) 设计一致 |
 
 ---
 

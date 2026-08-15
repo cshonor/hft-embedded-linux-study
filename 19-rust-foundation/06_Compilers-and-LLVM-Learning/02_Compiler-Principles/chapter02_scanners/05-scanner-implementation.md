@@ -46,4 +46,4 @@
 
 ## 与 CI 对照
 
-[jlox ch4](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/README.md) / [clox ch16](../../../01_Crafting-Interpreters/part03_clox/chapter16_scanning-on-demand/README.md) 的 `Scanner` ≈ **人脑设计的 direct-coded** 风格（`switch` on 字符 / 状态机逻辑），未走 flex 生成。
+[jlox ch4](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/README.md) / [clox ch16](../../01_Crafting-Interpreters/part03_clox/chapter16_scanning-on-demand/README.md) 的 `Scanner` ≈ **人脑设计的 direct-coded** 风格（`switch` on 字符 / 状态机逻辑），未走 flex 生成。

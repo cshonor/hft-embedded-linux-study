@@ -17,7 +17,7 @@
 
 **实现：** **ReadLine/ReadChunk from stdin** · **PrintToFD** 按 **行/屏高** 输出 · **ReadEvent 等键**。
 
-→ [Ch29 管道](../chapter-29-ipc/notes/section-3-管道机制与PipeDescriptor.md)
+→ [Ch29 管道](../../chapter-29-ipc/notes/section-3-管道机制与PipeDescriptor.md)
 
 ---
 
@@ -38,7 +38,7 @@ if (pipe_active) {
 | 原则 | **谁 Read(0) 谁收键** |
 |------|----------------------|
 
-→ [Ch23 键盘事件](../chapter-23-graphics-events2/notes/section-6-键盘升级与blocks游戏.md) · [Ch29 WaitFinish](../chapter-29-ipc/notes/section-4-WaitFinish与任务同步.md)
+→ [Ch23 键盘事件](../../chapter-23-graphics-events2/notes/section-6-键盘升级与blocks游戏.md) · [Ch29 WaitFinish](../../chapter-29-ipc/notes/section-4-WaitFinish与任务同步.md)
 
 ---
 

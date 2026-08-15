@@ -43,7 +43,7 @@
 | MCU 本书 | 应用处理器（树莓派 / 飞控 SoC） |
 |----------|----------------------------------|
 | `arm-none-eabi-gcc` 裸机 | **`aarch64-linux-gnu-gcc`** 用户态 / 内核模块 |
-| 链接脚本定 SRAM/Flash | U-Boot + **设备树** 定内存与外设（→ [21 驱动/DT](../../../09-device-drivers-dt/)） |
+| 链接脚本定 SRAM/Flash | U-Boot + **设备树** 定内存与外设（→ [21 驱动/DT](../../../../09-device-drivers-dt/)） |
 | 烧录 hex/bin | SD 卡分区 + **Bootloader 链**（→ [20](../../../../08-embedded-boot-build/)） |
 
 概念相同：**汇编/编译 → 链接 → 加载执行**；只是运行环境从「裸机」变成「Bootloader + Linux」。

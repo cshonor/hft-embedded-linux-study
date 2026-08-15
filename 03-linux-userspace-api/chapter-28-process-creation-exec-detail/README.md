@@ -1,21 +1,21 @@
 # TLPI 第 28 章 — Process Creation and Program Execution in More Detail
 
 **优先级**：🔴（多线程 fork、信号/fd 生命周期、clone 关系）  
-**前置**：[Ch24](../chapter-24-process-creation/notes.md) · [Ch25](../chapter-25-process-termination/notes.md) · [Ch26](../chapter-26-monitoring-child-processes/notes.md) · [Ch27](../chapter-27-program-execution/notes.md)  
-**后置**：[Ch29 线程导论](../chapter-29-threads-intro/notes.md)（同步见 [Ch30](../chapter-30-thread-synchronization/notes.md)）· 凭证见 [Ch9](../chapter-09-process-credentials/notes.md)
+**前置**：[Ch24](../chapter-24-process-creation/README.md) · [Ch25](../chapter-25-process-termination/README.md) · [Ch26](../chapter-26-monitoring-child-processes/README.md) · [Ch27](../chapter-27-program-execution/README.md)  
+**后置**：[Ch29 线程导论](../chapter-29-threads-intro/README.md)（同步见 [Ch30](../chapter-30-thread-synchronization/README.md)）· 凭证见 [Ch9](../chapter-09-process-credentials/README.md)
 
 ---
 
 ## 小节目录
 
-- [28.1 fork 再深入](./notes/28.1-fork.md)
-- [28.2 多线程 + fork](./notes/28.2-fork.md)
-- [28.3 `vfork`](./notes/28.3-vfork.md)
-- [28.4 `clone`（Linux）](./notes/28.4-clone.md)
-- [28.5 exec 资源细则（承 Ch27）](./notes/28.5-exec-ch27.md)
-- [28.6 `FD_CLOEXEC` / `O_CLOEXEC`](./notes/28.6-fdcloexec-ocloexec.md)
-- [28.7 fork + exec 规范](./notes/28.7-fork-exec.md)
-- [28.8 shebang](./notes/28.8-shebang.md)
+- [28.1 fork 再深入](notes/28.1-process-accounting.md)
+- [28.2 多线程 + fork](notes/28.2-the-clone-system-call.md)
+- [28.3 `vfork`](notes/28.3-speed-of-process-creation.md)
+- [28.4 `clone`（Linux）](notes/28.2-the-clone-system-call.md)
+- [28.5 exec 资源细则（承 Ch27）](notes/28.4-effect-of-exec-and-fork-on-process-attri.md)
+- [28.6 `FD_CLOEXEC` / `O_CLOEXEC`](notes/28.6-exercise.md)
+- [28.7 fork + exec 规范](notes/28.4-effect-of-exec-and-fork-on-process-attri.md)
+- 28.8 shebang
 
 ---
 
@@ -154,4 +154,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

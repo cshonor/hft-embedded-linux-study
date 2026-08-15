@@ -50,7 +50,7 @@
 
 1. Linux：`monitor` + `channel` + 验证 Beacon。
 2. 建 **Wireless** Profile（§13.8）。
-3. 联读 [TCP/IP 3.5](../../TCP-IP-Volume1-Protocols/chapter03-link-layer/3.5-wireless-80211.md) CSMA/CA、RTS/CTS。
+3. 联读 TCP/IP 3.5 CSMA/CA、RTS/CTS。
 
 ## 小节索引
 

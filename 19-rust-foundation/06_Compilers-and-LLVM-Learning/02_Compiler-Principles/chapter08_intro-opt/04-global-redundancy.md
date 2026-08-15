@@ -42,7 +42,7 @@ BB2:  t2 = a + b   →  若可用 → t2 := t1
 | **活跃变量（Live variables）** | DCE |
 | **SSA + GVN** | 现代编译器组合技 |
 
-**LLVM**：GVN、EarlyCSE、LICM 等 Pass → [04 optimize_compare](../../../04_Learn-LLVM-17/ir_samples/optimize_compare/)
+**LLVM**：GVN、EarlyCSE、LICM 等 Pass → [04 optimize_compare](../../04_Learn-LLVM-17/ir_samples/optimize_compare/)
 
 ---
 

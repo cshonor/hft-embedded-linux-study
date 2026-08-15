@@ -80,7 +80,7 @@ wait_tx:
 | **`STRB`** | 只写 **低 8 bit** 到 THR |
 | **`BL UART0_SendByte`** | 字符串 = 循环 `BL` |
 
-**升级路径：** [Ch15](../chapter-15-exception-handling-v7m/) — **UART RX/TX 中断** 代替死等 THRE。
+**升级路径：** [Ch15](../../chapter-15-exception-handling-v7m/) — **UART RX/TX 中断** 代替死等 THRE。
 
 ---
 
@@ -92,7 +92,7 @@ wait_tx:
 | **Linux 驱动** | **`8250/`** 核心 · **`writel(c, port+UART_TX)`** |
 | **调试** | 第一块 **「能打印」** 的硬件 |
 
-→ [20 构建](../../08-embedded-boot-build/) early console
+→ [20 构建](../../../../08-embedded-boot-build/) early console
 
 ---
 

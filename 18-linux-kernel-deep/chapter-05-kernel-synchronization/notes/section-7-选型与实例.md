@@ -16,7 +16,7 @@
 | **读多写少** | RW 锁、seqlock、**RCU** |
 | **每 CPU 私有** | **per-CPU 变量**，无锁 |
 
-还要区分访问来自：[Ch 4 异常 / 中断 / 可延迟函数](../chapter-04-interrupts-and-exceptions/)
+还要区分访问来自：[Ch 4 异常 / 中断 / 可延迟函数](../../chapter-04-interrupts-and-exceptions/)
 
 ---
 
@@ -39,11 +39,11 @@ Modern 内核：**BKL 已移除**，锁更细粒度；读 ULK 时理解 **设计
 
 | Ch 5 主题 | 继续读 |
 |-----------|--------|
-| 调度、抢占点 | [Ch 7 进程调度](../chapter-07-process-scheduling.md) 🔴 |
-| 控制路径、ISR | [Ch 4 中断与异常](../chapter-04-interrupts-and-exceptions/) 🔴 |
-| 睡眠、唤醒 | [Ch 3 等待队列](../chapter-03-processes/notes/section-4-组织与查找.md) |
-| Slab 分配 | [Ch 8 内存管理](../chapter-08-memory-management.md) 🔴 |
-| VFS inode | [Ch 12 VFS](../chapter-12-VFS.md) ⚪ |
+| 调度、抢占点 | [Ch 7 进程调度](../../chapter-07-process-scheduling.md) 🔴 |
+| 控制路径、ISR | [Ch 4 中断与异常](../../chapter-04-interrupts-and-exceptions/) 🔴 |
+| 睡眠、唤醒 | [Ch 3 等待队列](../../chapter-03-processes/notes/section-4-组织与查找.md) |
+| Slab 分配 | [Ch 8 内存管理](../../chapter-08-memory-management.md) 🔴 |
+| VFS inode | [Ch 12 VFS](../../chapter-12-VFS.md) ⚪ |
 | LKD 现代锁 API | [05 LKD Ch 9–10](../../../05-linux-kernel/) |
 
 ### 常见陷阱
@@ -85,5 +85,5 @@ Modern 内核：**BKL 已移除**，锁更细粒度；读 ULK 时理解 **设计
 
 ---
 
-← [6. 信号量与完成变量](./section-6-信号量与完成变量.md) · 下一章 [Ch 6 计时](../chapter-06-timing.md)
+← [6. 信号量与完成变量](./section-6-信号量与完成变量.md) · 下一章 [Ch 6 计时](../../chapter-06-timing.md)
 > ↔ [LKD Ch10 §10.11 选型速查Ch-9--Ch-10](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.11-选型速查Ch-9--Ch-10.md)

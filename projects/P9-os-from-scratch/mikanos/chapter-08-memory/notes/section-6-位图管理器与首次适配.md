@@ -78,11 +78,11 @@ OS 内存独立 — 不再依赖 UEFI AllocatePages
 
 | Ch8 主题 | 继续读 |
 |----------|--------|
-| 图层 | [chapter-09-layers](../chapter-09-layers/) ⚪ |
-| 进程分页 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
-| 应用堆 | [chapter-27-app-memory](../chapter-27-app-memory/) 🔴 |
-| Ch7 中断 | [chapter-07-interrupt-fifo](../chapter-07-interrupt-fifo/) |
+| 图层 | [chapter-09-layers](../../chapter-09-layers/) ⚪ |
+| 进程分页 | [chapter-19-paging](../../chapter-19-paging/) 🔴 |
+| 应用堆 | [chapter-27-app-memory](../../chapter-27-app-memory/) 🔴 |
+| Ch7 中断 | [chapter-07-interrupt-fifo](../../chapter-07-interrupt-fifo/) |
 
 ---
 
-← [5. 分页](./section-5-四级分页与身份映射.md) · [Ch 7](../chapter-07-interrupt-fifo/) · [Ch 8 导读](../README.md)
+← [5. 分页](./section-5-四级分页与身份映射.md) · [Ch 7](../../chapter-07-interrupt-fifo/) · [Ch 8 导读](../README.md)

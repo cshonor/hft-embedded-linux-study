@@ -62,7 +62,7 @@ void good(void) {
 
 **HFT：** 用户态 **策略栈** 也不放大数组 — **`thread_local` ring + mmap** 放堆/映射区。内核 **NAPI** 处理函数 **栈帧要浅** — 深调用链 + 局部变量 = **隐性 latency**（cache miss + 栈 touch）。
 
-→ [Ch 2 内核栈](../../chapter-02/getting-started-with-the-kernel/) · [Ch 7 中断栈](../../chapter-07-interrupts-and-interrupt-handlers/) · [Ch 12.5 kmalloc](./section-12.5-kmalloc-与-kfree.md)
+→ Ch 2 内核栈 · [Ch 7 中断栈](../../chapter-07-interrupts) · [Ch 12.5 kmalloc](./section-12.5-kmalloc-与-kfree.md)
 
 
 

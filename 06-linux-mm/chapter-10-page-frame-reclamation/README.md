@@ -12,7 +12,7 @@
 
 > **时代说明：** 原书函数名 **`shrink_cache()`、`refill_inactive()`、`swap_out()`** 等多属 **2.4/2.6**。现代主线为 **`shrink_page_list()` / `shrink_lruvec()`、`balance_pgdat()`** 等（[`mm/vmscan.c`](https://elixir.bootlin.com/linux/latest/source/mm/vmscan.c)）— **active/inactive LRU、kswapd、zone 局部 LRU** 思想不变。
 
-→ 缺页与 swap-in：[Ch 4](../../chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md#4-异常处理与缺页异常-page-faulting) · rmap 加速解映射：[Ch 3 §7](../../chapter-03-page-table-management/)
+→ 缺页与 swap-in：[Ch 4](../chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md#4-异常处理与缺页异常-page-faulting) · rmap 加速解映射：[Ch 3 §7](../chapter-03-page-table-management/)
 
 ---
 
@@ -49,5 +49,5 @@ Ch 11 swap：匿名页换出细节
 
 - 上一章：[../chapter-09-high-memory-management/](../chapter-09-high-memory-management/)
 - 下一章：[../chapter-11-swap-management/](../chapter-11-swap-management/)
-- 附录 J：[../../appendix-J-页框回收.md](../../appendix-J-页框回收.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 J：[../../appendix-J-页框回收.md](../appendix-J-页框回收.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

@@ -127,7 +127,7 @@ std::vector<int> v2{10, 20};   // B
 
 **花括号还禁止窄化：** `int x{3.14};` 编译失败（double→int 窄化），`int x(3.14);` 合法（静默截断）。
 
-**复习：** → [Item 7：区别 () 和 {} 创建对象](./item07-区别和创建对象.md)
+**复习：** → [Item 7：区别 () 和 {} 创建对象](item07-parens-vs-braces.md)
 </details>
 
 ### Q2: noexcept 与 vector 扩容
@@ -155,7 +155,7 @@ for (int i = 0; i < 100; ++i)
 
 **这是 HFT 性能的隐形开关：** 移动构造必须标 `noexcept`，否则 `vector` 扩容退回拷贝。
 
-**复习：** → [Item 14：声明 noexcept 如果函数保证不抛](./item14-声明noexcept如果函数保证不抛.md)
+**复习：** → [Item 14：声明 noexcept 如果函数保证不抛](item14-noexcept.md)
 </details>
 
 ### Q3: override 检查
@@ -180,5 +180,5 @@ public:
 
 **教训：** 重写虚函数时始终加 `override`，让编译器帮你检查签名。
 
-**复习：** → [Item 12：把重写函数声明为 override](./item12-把重写函数声明为override.md)
+**复习：** → [Item 12：把重写函数声明为 override](item12-override.md)
 </details>

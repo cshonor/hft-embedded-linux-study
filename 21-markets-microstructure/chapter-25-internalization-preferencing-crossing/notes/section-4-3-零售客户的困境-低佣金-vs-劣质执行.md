@@ -10,11 +10,11 @@
 
 ### 3.2 订单流的价值
 
-| 交易商渴望零售单 | 散户多为 **不知情交易者** [Ch 8](../chapter-08-why-people-trade/) |
+| 交易商渴望零售单 | 散户多为 **不知情交易者** [Ch 8](../../chapter-08-why-people-trade/) |
 |----------------|---------------------------------------------------------------------|
 | **原因** | 与零售成交 → **低逆向选择** → **丰厚 spread** |
 
-→ [Ch 14 不知情补贴](../chapter-14-bid-ask-spreads/) · [Ch 24 cream-skimming](../chapter-24-specialists/)
+→ [Ch 14 不知情补贴](../../chapter-14-bid-ask-spreads/) · [Ch 24 cream-skimming](../../chapter-24-specialists/)
 
 ### 3.3 竞争市场的结果
 

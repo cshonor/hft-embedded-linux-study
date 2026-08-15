@@ -66,7 +66,7 @@
 
 **HFT：** 行情 **order book** 若在内核与用户态共享 mmap 区，必须明确 **谁写谁读** — 单写多读可用 **seqlock** 或 **双缓冲**；多写必须 **细粒度锁** 或 **分片 per-symbol**。
 
-→ [Ch 9.3](section-9.3-并发的原因.md) 并发源 · [Ch 9.6](section-9.6-争用和可扩展性.md) 粒度 · **Ch 10** RCU/seqlock · [Ch 6](../chapter-06-kernel-data-structures/) 数据结构
+→ [Ch 9.3](section-9.3-并发的原因.md) 并发源 · [Ch 9.6](section-9.6-争用和可扩展性.md) 粒度 · **Ch 10** RCU/seqlock · [Ch 6](../../chapter-06-kernel-data-structures/) 数据结构
 
 ### 常见陷阱
 

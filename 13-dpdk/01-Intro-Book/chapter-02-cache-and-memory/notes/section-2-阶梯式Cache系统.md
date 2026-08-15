@@ -14,7 +14,7 @@
 
 包处理热路径：**命中 L1/L2** = 纳秒级；**落内存** = 数百 cycle。
 
-→ [02-CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Ch2](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/)
+→ [02-CSAPP Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Ch2](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/)
 
 ---
 

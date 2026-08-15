@@ -37,7 +37,7 @@ main.o: main.cpp
 | **下一行 Tab + 命令** | 链接生成 elf |
 | **模式可扩展** | `CXX`、`LDFLAGS` 变量 — 书中逐步完善 |
 
-→ 对照 [01 Day 3 Makefile](../../thirty-days-os-essentials/day-03-makefile/)（若已读 30 天 OS 精华）
+→ 对照 01 Day 3 Makefile（若已读 30 天 OS 精华）
 
 ---
 

@@ -28,7 +28,7 @@
 
 **备份：** 超级块与组描述符在 **其他块组有副本** — 防损坏；内核正常用 **块组 0 主副本**。
 
-→ VFS superblock/inode：[Ch 12 section-3](../chapter-12-VFS/notes/section-3-四大核心对象.md)
+→ VFS superblock/inode：[Ch 12 section-3](../../chapter-12-VFS/notes/section-3-四大核心对象.md)
 
 ---
 

@@ -1,8 +1,8 @@
 # TLPI 第 13 章 — File I/O Buffering
 
 **优先级**：🔴（日志 / 持久化 / 高性能 IO / DB）  
-**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/notes.md) · [Ch5 Further I/O](../chapter-05-file-io-further/notes.md) · [Ch12 `/proc`](../chapter-12-system-process-info/notes.md)  
-**后置**：[Ch14 File Systems](../chapter-14-file-systems/notes.md) · [Ch49 mmap](../chapter-49-memory-mappings/notes.md) · [Ch63 替代 I/O](../chapter-63-alternative-io/notes.md)
+**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md) · [Ch5 Further I/O](../chapter-05-file-io-further/README.md) · [Ch12 `/proc`](../chapter-12-system-process-info/README.md)  
+**后置**：[Ch14 File Systems](../chapter-14-file-systems/README.md) · [Ch49 mmap](../chapter-49-memory-mappings/README.md) · Ch63 替代 I/O
 
 ---
 
@@ -10,10 +10,10 @@
 
 - [13.1 内核缓冲（Buffer / Page Cache）](./notes/13.1-buffer-page-cache.md)
 - [13.2 stdio 用户态缓冲（`FILE*`）](./notes/13.2-stdio-file.md)
-- [13.3 【致命】混用 `FILE*` 与 `read`/`write`(fd)](./notes/13.3-read-write.md)
-- [13.4 `posix_fadvise` — 访问模式提示](./notes/13.4-posixfadvise.md)
-- [13.5 Direct I/O（`O_DIRECT`）](./notes/13.5-odirect.md)
-- [13.6 两层数据流](./notes/13.6-section-13-6.md)
+- [13.3 【致命】混用 `FILE*` 与 `read`/`write`(fd)](notes/13.3-controlling-kernel-buffering.md)
+- [13.4 `posix_fadvise` — 访问模式提示](notes/13.4-summary-buffering.md)
+- [13.5 Direct I/O（`O_DIRECT`）](notes/13.5-advising-kernel.md)
+- [13.6 两层数据流](notes/13.6-direct-io.md)
 
 ---
 
@@ -145,4 +145,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

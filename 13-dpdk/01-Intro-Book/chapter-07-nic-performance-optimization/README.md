@@ -21,5 +21,5 @@
 ## 相关
 
 - 上一章：[chapter-06-pcie-packet-io/](../chapter-06-pcie-packet-io/)
-- 下一章：[chapter-08-flow-classification-multiqueue/](../chapter-08-flow-classification-multiqueue/) · [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md)
+- 下一章：[chapter-08-flow-classification-multiqueue/](../chapter-08-flow-classification-multiqueue/) · [chapter-03-PMD与轮询模式.md](../chapter-03-parallel-computing)
 - 对照：[Ch3 并行/ILP](../chapter-03-parallel-computing/) · [Ch2 NUMA](../chapter-02-cache-and-memory/)

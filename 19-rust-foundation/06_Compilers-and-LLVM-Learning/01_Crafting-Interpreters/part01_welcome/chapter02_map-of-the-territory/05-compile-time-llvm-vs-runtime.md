@@ -167,7 +167,7 @@ clox 的 VM 相当于 **字节码路线的 runtime**；Rust 默认**没有**这�
 
 - 上山/下山流水线 → [04 Rust/HFT 编译流水线](./04-rust-hft-编译流水线对照.md)
 - LLVM IR / Pass → [04 Learn LLVM 17](../../../04_Learn-LLVM-17/README.md)
-- Rust 工具链 → [RFR 第 13 章](../../../../02-RFR/Chapter-13-Tooling/13-工具链-Tooling-深度解析.md)
+- Rust 工具链 → RFR 第 13 章
 - clox VM + GC runtime → [ch15 VM](../../part03_clox/chapter15_a-virtual-machine/) · [ch26 GC](../../part03_clox/chapter26_garbage-collection/)
 
 ---

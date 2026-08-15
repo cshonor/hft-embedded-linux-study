@@ -9,6 +9,6 @@ Day 26 **`ncst`** 启 GUI — **Shift+F1 / × 无反应** → app **关不掉**�
 
 **感知延迟 ↓** — 与 Day 24 **timer 清理**、Day 23 **sheet→task** 同一 **生命周期链**。
 
-→ [Day 26 ncst](../day-26-window-speed/)
+→ Day 26 ncst
 
 ---

@@ -39,7 +39,7 @@ LDFLAGS += --image-base 0    # 早期配置
 
 **思路：** 让 **链接基址 = 应用使用的 VA** — OS 建页表把 **VA 映到实际物理页**。
 
-→ [Ch18 ELF 加载](../chapter-18-apps/notes/section-5-ELF格式与命令行参数.md)
+→ [Ch18 ELF 加载](../../chapter-18-apps/notes/section-5-ELF格式与命令行参数.md)
 
 ---
 

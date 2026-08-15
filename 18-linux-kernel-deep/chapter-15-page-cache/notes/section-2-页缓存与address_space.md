@@ -10,7 +10,7 @@
 | **写文件** | 修改 **缓存页** — 不必立刻落盘 |
 | **共享** | 多进程映射同一文件 → **共享同一缓存页** |
 
-→ 缺页读入文件页：[Ch 9 section-5](../chapter-09-process-address-space/notes/section-5-请求调页.md)
+→ 缺页读入文件页：[Ch 9 section-5](../../chapter-09-process-address-space/notes/section-5-请求调页.md)
 
 ---
 
@@ -26,7 +26,7 @@
 | **`a_ops` 操作表** | `readpage`、`writepage`、`write_begin`/`write_end` … — **该拥有者** 的页 I/O 方法 |
 | **页索引结构** | 基数树（→ [section-3](./section-3-基数树与标签.md)） |
 
-→ inode 对象：[Ch 12 section-3](../chapter-12-VFS/notes/section-3-四大核心对象.md)
+→ inode 对象：[Ch 12 section-3](../../chapter-12-VFS/notes/section-3-四大核心对象.md)
 
 ---
 
@@ -39,7 +39,7 @@
 
 读路径：**查页缓存 → 命中返回 / 未命中 readpage → bio → 磁盘**。
 
-→ [Ch 14](../chapter-14-block-devices/)
+→ [Ch 14](../../chapter-14-block-devices/)
 
 ---
 

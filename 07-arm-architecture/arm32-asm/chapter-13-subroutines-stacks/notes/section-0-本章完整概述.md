@@ -15,7 +15,7 @@
 | **可重入** | 入口压栈 **LR + 将改写的寄存器**；出口 **`LDM … pc`** 一次返回 |
 | **传参** | 寄存器 · 指针 · 堆栈 — 与 **AAPCS** 对齐才能混 C |
 
-**前置：** [Ch8 BL/分支](../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch5 Load/Store](../chapter-05-loads-stores-addressing/) · （可选）[Ch12 查表](../chapter-12-tables/notes/section-0-本章完整概述.md)
+**前置：** [Ch8 BL/分支](../../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/) · （可选）[Ch12 查表](../../chapter-12-tables/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -79,16 +79,16 @@ Ch14 异常也改 SP/LR · Ch18 C↔Asm · 内核/UBoot .S
 
 | 模块 | 关联 |
 |------|------|
-| [02 C](../../01-c-language/) | 函数调用 = AAPCS |
-| [07 TLPI](../../03-linux-userspace-api/) | x86/ARM 调用约定对照 |
-| [Ch11 泰勒 sin](../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | `BL` 浮点子程序 |
-| [Ch14 异常](../chapter-14-exception-handling-arm7tdmi/) | 异常帧 = 硬件压栈 |
-| [Ch18 混合编程](../chapter-18-mixing-c-and-assembly/) | `extern "C"` + AAPCS |
-| [20 U-Boot](../../08-embedded-boot-build/) | 启动/板级 `.S` 大量 **SP 设置 + BL** |
+| [02 C](../../../../01-c-language/) | 函数调用 = AAPCS |
+| [07 TLPI](../../../../03-linux-userspace-api/) | x86/ARM 调用约定对照 |
+| [Ch11 泰勒 sin](../../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | `BL` 浮点子程序 |
+| [Ch14 异常](../../chapter-14-exception-handling-arm7tdmi/) | 异常帧 = 硬件压栈 |
+| [Ch18 混合编程](../../chapter-18-mixing-c-and-assembly/) | `extern "C"` + AAPCS |
+| [20 U-Boot](../../../../08-embedded-boot-build/) | 启动/板级 `.S` 大量 **SP 设置 + BL** |
 
 ---
 
 ### 七、下一章（按 OUTLINE）
 
-→ **[Ch14 异常处理 ARM7TDMI](../chapter-14-exception-handling-arm7tdmi/)**（选读 — 中断也会动 SP/LR）  
+→ **[Ch14 异常处理 ARM7TDMI](../../chapter-14-exception-handling-arm7tdmi/)**（选读 — 中断也会动 SP/LR）  
 → 精读链继续：**Ch16 MMIO** 或 **Ch18 C/Asm**

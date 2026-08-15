@@ -11,6 +11,6 @@
 |----------|
 | **短样本高 Sharpe** — 可能是 **regime luck** 或 **overfit** |
 | **Microstructure alpha** 衰减 — 去年有效的 queue 模型今年可能 **crowded out** |
-| 交易是 [Ch 8](../chapter-08-why-people-trade/) **零和** — 跑赢指数 ≠ 长期跑赢 **同类 HFT** |
+| 交易是 [Ch 8](../../chapter-08-why-people-trade/) **零和** — 跑赢指数 ≠ 长期跑赢 **同类 HFT** |
 
 ---

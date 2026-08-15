@@ -1,8 +1,8 @@
 # TLPI 第 06 章 — Processes
 
 **优先级**：🔴（后续 fork/信号/多进程的地基）  
-**前置**：[Ch3](../chapter-03-system-programming-concepts/notes.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [Ch5](../chapter-05-file-io-further/notes.md)  
-**后置**：[Ch7 内存分配](../chapter-07-memory-allocation/notes.md) · [Ch8 用户与组](../chapter-08-users-and-groups/notes.md) · [Ch24 fork](../chapter-24-process-creation/notes.md)  
+**前置**：[Ch3](../chapter-03-system-programming-concepts/README.md) · [Ch4](../chapter-04-file-io-universal/README.md) · [Ch5](../chapter-05-file-io-further/README.md)  
+**后置**：[Ch7 内存分配](../chapter-07-memory-allocation/README.md) · [Ch8 用户与组](../chapter-08-users-and-groups/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md)  
 
 ---
 
@@ -11,9 +11,9 @@
 - [6.1 进程基本概念](./notes/6.1-basic-concepts-process.md)
 - [6.2 PID 与 PPID](./notes/6.2-pid-ppid.md)
 - [6.3 进程虚拟地址空间（本章核心）](./notes/6.3-address-space-process.md)
-- [6.4 命令行参数 `argv`](./notes/6.4-argv.md)
-- [6.5 环境变量](./notes/6.5-environment.md)
-- [6.6 非局部跳转 `setjmp` / `longjmp`](./notes/6.6-setjmp-longjmp.md)
+- [6.4 命令行参数 `argv`](notes/6.4-virtual-memory.md)
+- [6.5 环境变量](notes/6.5-stack-frames.md)
+- [6.6 非局部跳转 `setjmp` / `longjmp`](notes/6.8-setjmp-longjmp.md)
 
 ---
 
@@ -93,7 +93,7 @@ Ch5  fd / 打开描述（stdin/out/err 已在进程里）
 
 
 - Kerrisk, *The Linux Programming Interface*, **Chapter 6 — Processes**  
-- [OUTLINE](../OUTLINE.md) · [Ch5](../chapter-05-file-io-further/notes.md) · [Ch7](../chapter-07-memory-allocation/notes.md) · [Ch24](../chapter-24-process-creation/notes.md)
+- [OUTLINE](../OUTLINE.md) · [Ch5](../chapter-05-file-io-further/README.md) · [Ch7](../chapter-07-memory-allocation/README.md) · [Ch24](../chapter-24-process-creation/README.md)
 
 
 ---
@@ -141,4 +141,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

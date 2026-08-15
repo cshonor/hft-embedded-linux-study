@@ -13,7 +13,7 @@
 
 **Rust `rustc`**、**CI jlox** 的 `ParseError` + 同步均属此类工程关注。
 
-→ [CI clox 语法错误恢复](../../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/04-handling-syntax-errors.md)
+→ [CI clox 语法错误恢复](../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/04-handling-syntax-errors.md)
 
 ---
 

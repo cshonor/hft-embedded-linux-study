@@ -58,7 +58,7 @@
 - [15.1 错误报告](./15.1-错误报告.md)
 - [15.2 终止执行](./15.2-终止执行.md)
 - [15.3 标准 I/O 函数库](./15.3-标准I-O函数库.md)
-- [15.4 ANSI I/O 概念](./15.4-ansi-i-o-concepts/15.4-ansi-i-o-concepts.md)
+- [15.4 ANSI I/O 概念](15.4-ansi-i-o-concepts/15.4-ANSI-I-O概念.md)
 - [15.5 流 I/O 总览](./15.5-流I-O总览.md)
 - [15.6 打开流](./15.6-打开流.md)
 - [15.7 关闭流](./15.7-关闭流.md)
@@ -97,7 +97,7 @@ fprintf(fp, "important data");
 
 **层次：** `fprintf` → 用户缓冲 → `fflush` → 内核 page cache → `fsync` → 磁盘
 
-**复习：** → [15.1 Stream I/O](./15.1-流IO.md) — 缓冲与 flush
+**复习：** → [15.1 Stream I/O](15.1-错误报告.md) — 缓冲与 flush
 
 </details>
 
@@ -134,7 +134,7 @@ stat("data.bin", &st);
 size = st.st_size;
 ```
 
-**复习：** → [15.1 流 IO](./15.1-流IO.md) · [15.16 文件操纵函数](./15.16-文件操纵函数.md)
+**复习：** → [15.1 流 IO](15.1-错误报告.md) · [15.16 文件操纵函数](./15.16-文件操纵函数.md)
 
 </details>
 
@@ -173,7 +173,7 @@ fclose(rf);
 
 **规则：** `fwrite`/`fread` 结构体**只在同一平台使用**。跨平台必须手动序列化。
 
-**复习：** → [15.1 流 IO](./15.1-流IO.md)
+**复习：** → [15.1 流 IO](15.1-错误报告.md)
 
 </details>
 
@@ -201,7 +201,7 @@ snprintf(buf, sizeof(buf), "%s", "hello world!");
 
 **教训：** 永远用 `snprintf`，不用 `sprintf`。用 `sizeof(buf)` 传缓冲区大小。
 
-**复习：** → [15.3 Formatted I/O](./15.3-格式化IO.md)
+**复习：** → [15.3 Formatted I/O](15.3-标准I-O函数库.md)
 
 ---
 

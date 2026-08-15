@@ -64,7 +64,7 @@ kmem_cache_free(my_cache, o);
 
 **HFT：** 用户态 **typed object pool**（订单对象、事件 struct）= **`kmem_cache_*` 用户版**。内核 **网络栈 `sk_buff`** 等有 **专用 cache** — **NAPI poll** 路径 **复用 skb** 而非每次 `alloc_pages`。实盘：**池化 + 复用** 减 **allocator 锁竞争** 与 **TLB 抖动**。
 
-→ [06 Gorman Ch8 Slab](../../../../06-linux-mm/chapter-08-slab-allocator/) · [Ch 3 task_struct Slab](../../chapter-03-process-management/) · [Ch 12.10 per-CPU](./section-12.10-每个-CPU-的分配.md)
+→ [06 Gorman Ch8 Slab](../../../06-linux-mm/chapter-08-slab-allocator/) · [Ch 3 task_struct Slab](../../chapter-03-process-management/) · [Ch 12.10 per-CPU](./section-12.10-每个-CPU-的分配.md)
 
 
 > ↔ [ULK Ch8 §3 Slab分配器](../../../18-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)

@@ -131,5 +131,5 @@ timeout 5 bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count() }'
 
 ## 相关章节
 
-- 上一章：[chapter-18-技巧与常见问题.md](./chapter-18-技巧与常见问题.md)
+- 上一章：[chapter-18-技巧与常见问题.md](chapter-18-tips-and-tricks)
 - 下一章：[appendix-B-bpftrace备忘单.md](./appendix-B-bpftrace备忘单.md)

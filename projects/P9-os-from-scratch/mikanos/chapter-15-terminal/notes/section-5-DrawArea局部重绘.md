@@ -13,7 +13,7 @@
 
 **与 Ch10 计数器闪烁** 同构 — 需 **脏矩形**。
 
-→ [Ch10 局部 Draw](../chapter-10-window/notes/section-4-局部重绘与矩形交集.md)
+→ [Ch10 局部 Draw](../../chapter-10-window/notes/section-4-局部重绘与矩形交集.md)
 
 ---
 
@@ -42,7 +42,7 @@ layer_manager.Draw(/* layer_id, */ Rectangle{ x, y, 7, 15 });
 
 **原则：** **最小 inval 区域** — GUI 性能 **基本功**。
 
-→ [Ch9 测量方法论](../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md)
+→ [Ch9 测量方法论](../../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md)
 
 ---
 

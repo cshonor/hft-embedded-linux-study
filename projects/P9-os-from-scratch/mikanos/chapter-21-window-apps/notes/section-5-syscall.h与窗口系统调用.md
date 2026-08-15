@@ -43,7 +43,7 @@ int64_t SyscallOpenWindow(int w, int h, const char* title) {
 | **w, h, title** | 创建 **ToplevelWindow** · 注册 **Layer** |
 | **返回值** | **图层 ID** — 应用后续 **绘制/事件** 句柄 |
 
-→ [Ch9 LayerManager](../chapter-09-layers/) · [Ch10 Window](../chapter-10-window/)
+→ [Ch9 LayerManager](../../chapter-09-layers/) · [Ch10 Window](../../chapter-10-window/)
 
 ---
 

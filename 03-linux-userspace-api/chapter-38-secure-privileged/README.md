@@ -1,16 +1,16 @@
 # TLPI 第 38 章 — Writing Secure Privileged Programs
 
 **优先级**：🔴（SUID、daemon 降权、攻击面）  
-**前置**：[Ch9 凭证](../chapter-09-process-credentials/notes.md) · [Ch37 Daemons](../chapter-37-daemons/notes.md)  
-**后置**：[Ch39 Capabilities](../chapter-39-capabilities/notes.md)
+**前置**：[Ch9 凭证](../chapter-09-process-credentials/README.md) · [Ch37 Daemons](../chapter-37-daemons/README.md)  
+**后置**：[Ch39 Capabilities](../chapter-39-capabilities/README.md)
 
 ---
 
 ## 小节目录
 
-- [38.1 两类特权程序](./notes/38.1-section-38-1.md)
-- [38.2 丢弃与恢复（核心）](./notes/38.2-section-38-2.md)
-- [38.3 安全准则（精要）](./notes/38.3-security.md)
+- [38.1 两类特权程序](notes/38.1-is-a-set-user-id-or-set-group-id-program.md)
+- [38.2 丢弃与恢复（核心）](notes/38.2-operate-with-least-privilege.md)
+- [38.3 安全准则（精要）](notes/38.3-be-careful-when-executing-a-program.md)
 
 ---
 
@@ -72,7 +72,7 @@ SUID/SGID 安全模型；`setuid` vs `seteuid`；临时/永久丢权；TOCTOU、
 
 
 - Kerrisk · TLPI Ch38  
-- [Ch9 notes](../chapter-09-process-credentials/notes.md) · `man 7 credentials` · `man 2 seteuid`
+- [Ch9 notes](../chapter-09-process-credentials/README.md) · `man 7 credentials` · `man 2 seteuid`
 
 
 ---
@@ -130,4 +130,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

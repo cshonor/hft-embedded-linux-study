@@ -36,7 +36,7 @@ USB 键按下 → HID 报告 → keycode → (Shift?) → ASCII
 Timer 0.5s → 切换 caret 可见性
 ```
 
-→ [Ch6 USB/xHCI](../chapter-06-mouse-pci/) · [Ch7 Message](../chapter-07-interrupt-fifo/)
+→ [Ch6 USB/xHCI](../../chapter-06-mouse-pci/) · [Ch7 Message](../../chapter-07-interrupt-fifo/)
 
 ---
 

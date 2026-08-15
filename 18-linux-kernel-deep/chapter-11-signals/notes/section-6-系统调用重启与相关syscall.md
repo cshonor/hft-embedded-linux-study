@@ -42,7 +42,7 @@
 | **`sigsuspend()`** | 原子地改掩码并挂起等待信号 |
 | **`rt_sig*()`** | 实时信号对应接口 |
 
-→ 用户态详述：[08 TLPI Ch 20–21](../../../03-linux-userspace-api/) · syscall 路径：[Ch 10](../chapter-10-system-calls/)
+→ 用户态详述：[08 TLPI Ch 20–21](../../../03-linux-userspace-api/) · syscall 路径：[Ch 10](../../chapter-10-system-calls/)
 
 ---
 
@@ -64,14 +64,14 @@ ERESTARTSYS → 重入 syscall
 
 | Ch 11 主题 | 继续读 |
 |------------|--------|
-| syscall 返回检查 | [Ch 10 进入与退出](../chapter-10-system-calls/notes/section-4-进入与退出.md) 🔴 |
-| 线程组 / task_struct | [Ch 3 进程](../chapter-03-processes/) 🔴 |
-| 异常 → SIGSEGV | [Ch 4 异常处理](../chapter-04-interrupts-and-exceptions/notes/section-5-异常处理.md) |
-| SIGALRM / 定时器 | [Ch 6 定时](../chapter-06-timing/) 🟡 |
-| 子进程 SIGCHLD | [Ch 3 创建与销毁](../chapter-03-processes/notes/section-6-创建与销毁.md) |
-| 其他 IPC | [Ch 19 进程通信](../chapter-19-ipc.md) ⚪ |
+| syscall 返回检查 | [Ch 10 进入与退出](../../chapter-10-system-calls/notes/section-4-进入与退出.md) 🔴 |
+| 线程组 / task_struct | [Ch 3 进程](../../chapter-03-processes/) 🔴 |
+| 异常 → SIGSEGV | [Ch 4 异常处理](../../chapter-04-interrupts-and-exceptions/notes/section-5-异常处理.md) |
+| SIGALRM / 定时器 | [Ch 6 定时](../../chapter-06-timing/) 🟡 |
+| 子进程 SIGCHLD | [Ch 3 创建与销毁](../../chapter-03-processes/notes/section-6-创建与销毁.md) |
+| 其他 IPC | [Ch 19 进程通信](../../chapter-19-ipc.md) ⚪ |
 | 用户态编程 | [08 TLPI Ch 20–21](../../../03-linux-userspace-api/) |
 
 ---
 
-← [5. 用户态 handler](./section-5-捕获与用户态处理.md) · 下一章 [Ch 12 VFS](../chapter-12-VFS/)
+← [5. 用户态 handler](./section-5-捕获与用户态处理.md) · 下一章 [Ch 12 VFS](../../chapter-12-VFS/)

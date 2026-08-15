@@ -24,7 +24,7 @@ DPDK Packet I/O **原生多队列** — 建立 **核 / 内存 / 网卡队列** �
 | **Run to Completion** | 一 lcore ↔ **专属 RX + TX 队列** — 只处理该队列报文 |
 | **收益** | 高 **Cache 命中**；**无** 多线程争用同一队列的 **锁** |
 
-→ [Ch2 per-core · NUMA](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md) · [Ch1 绑核](../chapter-01-dpdk-intro/notes/section-3-性能最佳实践.md)
+→ [Ch2 per-core · NUMA](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md) · [Ch1 绑核](../../chapter-01-dpdk-intro/notes/section-3-性能最佳实践.md)
 
 ---
 
@@ -34,7 +34,7 @@ DPDK Packet I/O **原生多队列** — 建立 **核 / 内存 / 网卡队列** �
 - **队列 i** 绑定 **lcore j** + **NUMA socket** 与大页一致  
 - **PMD** `rx_burst` / `tx_burst` ** per-queue 调用**
 
-→ [chapter-03 PMD](../chapter-03-PMD与轮询模式.md)
+→ [chapter-03 PMD](../../chapter-03-parallel-computing)
 
 ---
 

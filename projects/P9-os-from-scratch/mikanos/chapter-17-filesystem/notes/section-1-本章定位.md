@@ -38,7 +38,7 @@ Ch18 从磁盘加载并运行应用
 Ch20 syscall · 用户态 I/O
 ```
 
-→ [Ch16 命令](../chapter-16-commands/)
+→ [Ch16 命令](../../chapter-16-commands/)
 
 ---
 

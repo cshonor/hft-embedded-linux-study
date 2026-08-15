@@ -50,7 +50,7 @@ echo "100 100" > /proc/sys/net/ipv4/ping_group_range
 
 路径最终在 **`icmp_echo()` / icmp_reply`** 汇合，但 **权限模型** 分离。
 
-→ 用户态 socket API：[12-UNP](../../03.5-unix-network-api/) · 附录 A：[appendix-A-Linux-API.md](../../appendix-A-Linux-API.md)
+→ 用户态 socket API：[12-UNP](../../../03.5-unix-network-api/) · 附录 A：[appendix-A-Linux-API.md](../../appendix-A-Linux-API.md)
 
 ---
 

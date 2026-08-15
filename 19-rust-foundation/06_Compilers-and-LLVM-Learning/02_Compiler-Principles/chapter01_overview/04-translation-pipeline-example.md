@@ -39,7 +39,7 @@
 | **常量传播 / 折叠** | 编译期算掉已知常量 |
 | **死代码消除** | 删除不可达或无效果的 IR |
 
-→ [04 ir_samples/optimize_compare](../../../04_Learn-LLVM-17/ir_samples/optimize_compare/) · CI ch30
+→ [04 ir_samples/optimize_compare](../../04_Learn-LLVM-17/ir_samples/optimize_compare/) · CI ch30
 
 ---
 

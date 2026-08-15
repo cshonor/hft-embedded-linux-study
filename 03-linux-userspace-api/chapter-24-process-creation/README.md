@@ -1,20 +1,20 @@
 # TLPI 第 24 章 — Process Creation
 
 **优先级**：🔴（shell、服务、多进程模型地基）  
-**前置**：[Ch23 Timers](../chapter-23-timers-sleeping/notes.md) · [Ch20–22 信号](../chapter-20-signals-fundamentals/notes.md)  
-**后置**：[Ch25 进程终止](../chapter-25-process-termination/notes.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/notes.md) · [Ch27 exec](../chapter-27-program-execution/notes.md) · [Ch28 fork/exec 深潜](../chapter-28-process-creation-exec-detail/notes.md)
+**前置**：[Ch23 Timers](../chapter-23-timers-sleeping/README.md) · [Ch20–22 信号](../chapter-20-signals-fundamentals/README.md)  
+**后置**：[Ch25 进程终止](../chapter-25-process-termination/README.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/README.md) · [Ch27 exec](../chapter-27-program-execution/README.md) · [Ch28 fork/exec 深潜](../chapter-28-process-creation-exec-detail/README.md)
 
 ---
 
 ## 小节目录
 
-- [24.1 `fork()`](./notes/24.1-fork.md)
-- [24.2 Copy-On-Write（COW）](./notes/24.2-copy-on-write.md)
-- [24.4 文件描述符](./notes/24.4-file-descriptor.md)
-- [24.5 stdio 缓冲陷阱](./notes/24.5-stdio.md)
-- [24.6 多线程 + `fork`（重难点）](./notes/24.6-fork.md)
-- [24.7 典型范式](./notes/24.7-section-24-7.md)
-- [24.8 `vfork`（了解即可）](./notes/24.8-vfork.md)
+- [24.1 `fork()`](notes/24.1-overview-of-fork-exit-wait-and-execve.md)
+- 24.2 Copy-On-Write（COW）
+- [24.4 文件描述符](notes/24.4-race-conditions-after-fork.md)
+- [24.5 stdio 缓冲陷阱](notes/24.5-avoiding-race-conditions-by-synchronizin.md)
+- [24.6 多线程 + `fork`（重难点）](notes/24.1-overview-of-fork-exit-wait-and-execve.md)
+- [24.7 典型范式](notes/24.7-exercises.md)
+- [24.8 `vfork`（了解即可）](notes/24.3-the-vfork-system-call.md)
 
 ---
 
@@ -164,4 +164,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

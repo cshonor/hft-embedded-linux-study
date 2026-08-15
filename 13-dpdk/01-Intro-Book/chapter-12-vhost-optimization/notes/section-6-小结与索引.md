@@ -33,15 +33,15 @@ repo 零拷贝 · 组播 · 02-Advanced
 | Ch12 主题 | 继续读 |
 |----------|--------|
 | NFV / VNF 应用篇 | [chapter-13-dpdk-nfv](../../chapter-13-dpdk-nfv/) 🟡 |
-| Virtio 前端 | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/) 🟡 |
-| I/O 透传 | [chapter-10-x86-io-virtualization](../chapter-10-x86-io-virtualization/) 🟡 |
-| VMDQ / 多队列 | [chapter-08-flow-classification-multiqueue](../chapter-08-flow-classification-multiqueue/) 🔴 |
-| 大页 / mbuf | [chapter-02-cache-and-memory](../chapter-02-cache-and-memory/) · [Ch6](../chapter-06-pcie-packet-io/) 🔴 |
-| 零拷贝 | [chapter-04-零拷贝与用户态旁路.md](../chapter-04-零拷贝与用户态旁路.md) 🔴 |
-| 组播落地 | [chapter-05-组播行情接入.md](../chapter-05-组播行情接入.md) 🔴 |
-| OVS / XDP | [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
+| Virtio 前端 | [chapter-11-virtio-paravirtualization](../../chapter-11-virtio-paravirtualization/) 🟡 |
+| I/O 透传 | [chapter-10-x86-io-virtualization](../../chapter-10-x86-io-virtualization/) 🟡 |
+| VMDQ / 多队列 | [chapter-08-flow-classification-multiqueue](../../chapter-08-flow-classification-multiqueue/) 🔴 |
+| 大页 / mbuf | [chapter-02-cache-and-memory](../../chapter-02-cache-and-memory/) · [Ch6](../../chapter-06-pcie-packet-io/) 🔴 |
+| 零拷贝 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
+| 组播落地 | [chapter-05-组播行情接入.md](../../chapter-05-packet-forwarding) 🔴 |
+| OVS / XDP | [02-Advanced note-XDP](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
 | HFT | [15 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. vhost-switch](./section-5-vhost-switch与实战.md) · [Ch11 Virtio](../chapter-11-virtio-paravirtualization/) · [01-Intro README](../README.md)
+← [5. vhost-switch](./section-5-vhost-switch与实战.md) · [Ch11 Virtio](../../chapter-11-virtio-paravirtualization/) · [01-Intro README](../README.md)

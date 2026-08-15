@@ -23,15 +23,15 @@ Ch7 软件调优 → Ch8 硬件分流 → Ch9 offload → Ch10 I/O 虚拟化（�
 
 | Ch9 主题 | 继续读 |
 |----------|--------|
-| I/O 虚拟化 / SR-IOV | [chapter-10-x86-io-virtualization](../chapter-10-x86-io-virtualization/) 🟡 |
-| mbuf 字段 | [chapter-06-pcie-packet-io §6](../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) 🔴 |
-| RSS / ptype | [chapter-08-flow-classification-multiqueue](../chapter-08-flow-classification-multiqueue/) 🔴 |
-| PMD / dev配置 | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
-| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../chapter-04-零拷贝与用户态旁路.md) 🔴 |
-| 组播行情 | [chapter-05-组播行情接入.md](../chapter-05-组播行情接入.md) 🔴 |
+| I/O 虚拟化 / SR-IOV | [chapter-10-x86-io-virtualization](../../chapter-10-x86-io-virtualization/) 🟡 |
+| mbuf 字段 | [chapter-06-pcie-packet-io §6](../../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) 🔴 |
+| RSS / ptype | [chapter-08-flow-classification-multiqueue](../../chapter-08-flow-classification-multiqueue/) 🔴 |
+| PMD / dev配置 | [chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing) 🔴 |
+| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
+| 组播行情 | [chapter-05-组播行情接入.md](../../chapter-05-packet-forwarding) 🔴 |
 | 内核 offload | [14-LKN](../../../../12-kernel-networking/) |
 | HFT 网络 | [15 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. DPDK 协同](./section-5-DPDK软件接口与协同.md) · 下一章 [chapter-10 I/O 虚拟化](../chapter-10-x86-io-virtualization/) · [Ch8 流分类](../chapter-08-flow-classification-multiqueue/)
+← [5. DPDK 协同](./section-5-DPDK软件接口与协同.md) · 下一章 [chapter-10 I/O 虚拟化](../../chapter-10-x86-io-virtualization/) · [Ch8 流分类](../../chapter-08-flow-classification-multiqueue/)

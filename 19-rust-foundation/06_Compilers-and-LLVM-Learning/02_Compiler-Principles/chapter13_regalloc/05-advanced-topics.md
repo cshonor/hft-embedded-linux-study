@@ -50,7 +50,7 @@ ch13  Register Allocation     vreg → preg / stack
 | 优化 | 8～10 | ✓ |
 | **代码生成** | **11～13** | **✓** |
 
-→ 附录 A/B · 或 [04 LLVM](../../../04_Learn-LLVM-17/README.md) 实验深化。
+→ 附录 A/B · 或 [04 LLVM](../../04_Learn-LLVM-17/README.md) 实验深化。
 
 ---
 

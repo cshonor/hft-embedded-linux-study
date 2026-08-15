@@ -8,7 +8,7 @@
 - **`.bss`** 分配零页；**栈、堆** 随后增长
 - 运行时常见布局（高→低）：**栈 ↓ · 堆 ↑ · `.data`/`.bss` · `.rodata` · `.text`**
 - 分区与 HFT（禁热路径 malloc）→ [Ch3 · 五大内存分区](../../chapter-03-machine-level-programs/notes/section-补充-C程序五大内存分区.md)
-- 细节 → [Ch 9 虚拟内存](../chapter-09-virtual-memory/)
+- 细节 → [Ch 9 虚拟内存](../../chapter-09-virtual-memory/)
 
 ---
 

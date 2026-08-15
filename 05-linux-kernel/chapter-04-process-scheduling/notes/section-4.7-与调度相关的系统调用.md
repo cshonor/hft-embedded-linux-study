@@ -67,7 +67,7 @@ struct sched_param sp = { .sched_priority = 80 };
 sched_setscheduler(0, SCHED_FIFO, &sp);
 ```
 
-→ [07 TLPI](../../../../03-linux-userspace-api/) · [4.6 RT](./section-4.6-实时调度策略.md) · [15 SysPerf](../../../14-systems-performance/)
+→ [07 TLPI](../../../03-linux-userspace-api/) · [4.6 RT](./section-4.6-实时调度策略.md) · [15 SysPerf](../../../14-systems-performance/)
 
 ### 常见陷阱
 

@@ -189,4 +189,4 @@ UEFI 固件规范要求 bootloader 是 PE32+ 格式（Windows 遗产）。Linux 
 | GRUB `.efi` | PE；之后由它加载内核文件 |
 | `fork`/`exec` | **只存在于 Linux 进程世界**，加载的是 ELF |
 
-→ [§2.2 源码树](./section-2.2-内核源码树.md) · [§2.1](./section-2.1-获取内核源码.md) · [README](../../../../README.md)
+→ [§2.2 源码树](./section-2.2-内核源码树.md) · [§2.1](./section-2.1-获取内核源码.md) · [README](../../../README.md)

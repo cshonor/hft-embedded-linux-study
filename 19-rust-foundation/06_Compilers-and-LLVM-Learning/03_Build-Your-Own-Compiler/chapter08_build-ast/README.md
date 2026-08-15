@@ -1,6 +1,6 @@
 # 第 8 章 · 抽象语法树的生成
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第2部分 · 抽象语法树和中间代码
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第2部分 · 抽象语法树和中间代码
 
 ## 状态
 
@@ -34,7 +34,7 @@
 | ch6 文法 | [chapter06_parsing](../chapter06_parsing/README.md) |
 | ch7 action/Node | [chapter07_javacc-ast](../chapter07_javacc-ast/README.md) |
 | ch9 语义 | 引用消解 — 遍历本章产出的 AST |
-| CI | [表示代码 · AST](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/) |
+| CI | [表示代码 · AST](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/) |
 
 ---
 

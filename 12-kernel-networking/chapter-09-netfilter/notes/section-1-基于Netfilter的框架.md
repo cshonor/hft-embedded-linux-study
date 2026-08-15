@@ -39,7 +39,7 @@
 | **ebtables** | **以太网桥** |
 | **nft inet/inet6** | **统一处理 v4/v6**（现代推荐） |
 
-**用户态：** `iptables`/`nft` → **netlink nfnetlink** — [Ch 2 `NETLINK_NETFILTER`](../chapter-02-netlink-sockets/notes/section-1-Netlink基础与优势.md)
+**用户态：** `iptables`/`nft` → **netlink nfnetlink** — [Ch 2 `NETLINK_NETFILTER`](../../chapter-02-netlink-sockets/notes/section-1-Netlink基础与优势.md)
 
 ---
 

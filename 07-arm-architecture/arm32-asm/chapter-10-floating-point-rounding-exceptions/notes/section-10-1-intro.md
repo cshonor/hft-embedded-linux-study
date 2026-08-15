@@ -9,7 +9,7 @@
 | | |
 |---|---|
 | **标签** | **跳过**（Linux/奔跑吧主线）— **M4F / 科学 float** 路径 **选读** |
-| **承接** | [Ch9 格式/搬运/FPSCR](../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md) → **为何 float 结果「反直觉」** |
+| **承接** | [Ch9 格式/搬运/FPSCR](../../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md) → **为何 float 结果「反直觉」** |
 | **后续** | **Ch11** 浮点算术指令 · **Ch22** NEON |
 
 ---

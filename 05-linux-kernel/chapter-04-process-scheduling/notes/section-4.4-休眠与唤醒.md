@@ -48,7 +48,7 @@
 
 **HFT：** 用户态 `futex` / 条件变量 = 同一「等事件 → 唤醒」故事；热路径若频繁睡眠，尾延迟来自 **调度唤醒延迟**，不是算法本身。
 
-→ [4.5 抢占与切换](./section-4.5-抢占与上下文切换.md) · [Ch 10 mutex/completion](../chapter-10-sync-methods/)
+→ [4.5 抢占与切换](./section-4.5-抢占与上下文切换.md) · [Ch 10 mutex/completion](../../chapter-10-sync-methods/)
 
 ### 常见陷阱
 

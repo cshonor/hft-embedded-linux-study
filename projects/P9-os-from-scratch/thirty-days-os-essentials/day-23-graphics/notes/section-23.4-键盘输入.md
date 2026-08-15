@@ -14,6 +14,6 @@ loop:
 
 **里程碑：** **RPG / 小工具** 级交互 — 不再只是 **Console 打字**。
 
-→ [Day 17 键路由](../day-17-console/) · [Day 16 sleep/wake](../day-16-multitask2/)
+→ Day 17 键路由 · Day 16 sleep/wake
 
 ---

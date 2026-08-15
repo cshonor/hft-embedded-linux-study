@@ -28,7 +28,7 @@
 
 ---
 
-### 与 [Ch22 FP16/NEON](../../chapter-22-fp-neon/) 
+### 与 Ch22 FP16/NEON 
 
 应用处理器 **NEON FP16** 算力更强 — M4 以 **VCVT + 存储** 为主。
 

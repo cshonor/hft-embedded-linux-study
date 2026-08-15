@@ -32,7 +32,7 @@ cd Chapter-06-Beyond-Standard-Rust/Item-35-bindgen/demo-sys-workspace && cargo t
 | 26 | [Item-26/demo](../Chapter-04-Dependencies/Item-26-feature-creep/demo/) |
 | 29 | [clippy.toml](./clippy.toml) |
 | 30 | [Item-30/demo](../Chapter-05-Tooling/Item-30-beyond-unit-tests/demo/) + CI `matrix-demo` |
-| 32 | [er-study-ci.yml](../../.github/workflows/er-study-ci.yml) |
+| 32 | er-study-ci.yml |
 | 33 | [Item-33/demo](../Chapter-06-Beyond-Standard-Rust/Item-33-no-std/demo/) |
 | 34 | [Item-34/demo](../Chapter-06-Beyond-Standard-Rust/Item-34-ffi-boundaries/demo/) |
 | 35 | [demo-bindgen](../Chapter-06-Beyond-Standard-Rust/Item-35-bindgen/demo-bindgen/) · [demo-sys-workspace](../Chapter-06-Beyond-Standard-Rust/Item-35-bindgen/demo-sys-workspace/) |

@@ -27,7 +27,7 @@ int64_t SyscallCloseWindow(LayerId id) {
 | **背景重绘** | 露出 **下层桌面/窗口** |
 | **应用 exit 前调用** | **无残骸** |
 
-→ [Ch9 LayerManager](../chapter-09-layers/)
+→ [Ch9 LayerManager](../../chapter-09-layers/)
 
 ---
 
@@ -51,7 +51,7 @@ int64_t SyscallReadEvent(Event* out) {
 | **有事件** | **唤醒** · 拷贝到 **用户 Event 缓冲** |
 | **winhello 改造** | 循环 **ReadEvent** 直到 **kQuit (Ctrl+Q)** |
 
-→ [Ch14 Sleep/Wakeup](../chapter-14-multitask2/) · [Ch12 键盘](../chapter-12-keyboard/)
+→ [Ch14 Sleep/Wakeup](../../chapter-14-multitask2/) · [Ch12 键盘](../../chapter-12-keyboard/)
 
 ---
 
@@ -91,10 +91,10 @@ Ch29 IPC
 
 | Ch22 主题 | 继续读 |
 |----------|--------|
-| 事件(2) | [chapter-23-graphics-events2](../chapter-23-graphics-events2/) ⚪ |
-| 窗口 syscall | [chapter-21-window-apps](../chapter-21-window-apps/) |
-| 多任务等待 | [chapter-14-multitask2](../chapter-14-multitask2/) 🔴 |
+| 事件(2) | [chapter-23-graphics-events2](../../chapter-23-graphics-events2/) ⚪ |
+| 窗口 syscall | [chapter-21-window-apps](../../chapter-21-window-apps/) |
+| 多任务等待 | [chapter-14-multitask2](../../chapter-14-multitask2/) 🔴 |
 
 ---
 
-← [5. DrawLine](./section-5-WinDrawLine与lines命令.md) · [Ch 21](../chapter-21-window-apps/) · [Ch 22 导读](../README.md)
+← [5. DrawLine](./section-5-WinDrawLine与lines命令.md) · [Ch 21](../../chapter-21-window-apps/) · [Ch 22 导读](../README.md)

@@ -28,7 +28,7 @@ EFI_BLOCK_IO_PROTOCOL
 | **引导阶段可用** | Bootloader 仍链 **UEFI 服务** |
 | **与 Simple FS 不同** | **不** 走文件路径 API — 整卷或前 **N 扇区** .raw 读入 |
 
-→ [Ch2 UEFI 协议概览](../chapter-02-edk2-memmap/notes/section-4-GetMemoryMap与导出memmap.md)
+→ [Ch2 UEFI 协议概览](../../chapter-02-edk2-memmap/notes/section-4-GetMemoryMap与导出memmap.md)
 
 ---
 
@@ -55,7 +55,7 @@ Kernel:
 
 **kernel.elf 加载** 仍可在 bootloader 用 **Simple FS** 读单个文件；**整卷镜像** 为 **内核 FAT 库** 服务 — **两条路径并存**。
 
-→ [Ch3 ELF 加载](../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
+→ [Ch3 ELF 加载](../../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
 
 ---
 

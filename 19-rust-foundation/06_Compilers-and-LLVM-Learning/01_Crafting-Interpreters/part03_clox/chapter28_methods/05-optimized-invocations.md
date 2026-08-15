@@ -1,6 +1,6 @@
 # 第 28 章 · Methods and Initializers（方法与初始化器） · §28.5 优化的调用（Optimized Invocations · Superinstruction）
 
-← [本章目录](./README.md) · 上一节：[04-initializers.md](./04-initializers.md) · 下一节：[06-chunks-of-bytecode-chunk.md](./06-chunks-of-bytecode-chunk.md)
+← [本章目录](./README.md) · 上一节：[04-initializers.md](./04-initializers.md) · 下一节：[06-chunks-of-bytecode-chunk.md](../chapter14_chunks-of-bytecode)
 
 ---
 

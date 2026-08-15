@@ -153,6 +153,6 @@ aarch64-linux-gnu-gdb vmlinux
 
 ## 交叉引用
 
-- [05.6 ch11 断点/单步/查看变量](chapter-11-kgdb/notes/04-breakpoints-variables.md)
-- [05.6 ch07 模块 Oops 特殊处理](chapter-07-oops/notes/06-module-oops.md)
-- [05.6 ch11 KGDB 原理与架构](chapter-11-kgdb/notes/01-kgdb-architecture.md)
+- [05.6 ch11 断点/单步/查看变量](../../chapter-11-kgdb/notes/04-breakpoints-variables.md)
+- [05.6 ch07 模块 Oops 特殊处理](../../chapter-07-oops/notes/06-module-oops.md)
+- [05.6 ch11 KGDB 原理与架构](../../chapter-11-kgdb/notes/01-kgdb-architecture.md)

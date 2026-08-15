@@ -7,7 +7,7 @@
 | **场内口头拍卖** | 公平性依赖 **交易员技能与诚实** |
 | **压力情境** | 市场活跃 / 剧烈波动时 — 难跟踪最优价；**违规** 可能发生 |
 
-→ [Ch 6 open-outcry](../chapter-06-order-driven-markets/) · [Ch 11 front-run 肢体语言](../chapter-11-order-anticipators/)
+→ [Ch 6 open-outcry](../../chapter-06-order-driven-markets/) · [Ch 11 front-run 肢体语言](../../chapter-11-order-anticipators/)
 
 | HFT 视角 |
 |----------|

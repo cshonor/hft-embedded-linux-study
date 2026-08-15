@@ -153,5 +153,5 @@ x86: `pause` 指令（降低流水线功耗，避免流水线冲突）。ARM64: 
 ## 交叉引用
 
 - [02-qspinlock-design.md](./02-qspinlock-design.md) — qspinlock 如何解决缓存弹跳
-- [chapter-10-preempt-rt](../chapter-10-preempt-rt/) — PREEMPT_RT 中 spinlock 变为可睡眠
-- [05.6-kernel-debugging/chapter-08-lock-debug](../../05.6-kernel-debugging/chapter-08-lock-debug/) — 锁调试工具
+- [chapter-10-preempt-rt](../../chapter-10-preempt-rt/) — PREEMPT_RT 中 spinlock 变为可睡眠
+- [05.6-kernel-debugging/chapter-08-lock-debug](../../../05.6-kernel-debugging/chapter-08-lock-debug/) — 锁调试工具

@@ -49,7 +49,7 @@
 ## 与 Rust 类型系统
 
 - **trait / 泛型 / 生命周期** — 超出本章入门，但角色相同：上下文相关约束。
-- → RFR [Chapter 02 Types](../../02-RFR/Chapter-02-Types/)
+- → RFR [Chapter 02 Types](../../../02-RFR/Chapter-02-Types/)
 
 ---
 

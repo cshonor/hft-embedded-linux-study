@@ -1,6 +1,6 @@
 # 第 1 章 · 编译总览（Overview of Compilation）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md)
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md)
 
 ## 状态
 
@@ -33,8 +33,8 @@
 | 本书 ch1 | 对照 |
 |----------|------|
 | 三阶段 / IR | [CI ch2 · Rust/HFT 流水线](../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) |
-| 优化 / 寄存器分配 | [04 Learn LLVM 17](../../../04_Learn-LLVM-17/README.md) |
-| Rust 编译链 | RFR [05 编译与分发](../../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md) |
+| 优化 / 寄存器分配 | [04 Learn LLVM 17](../../04_Learn-LLVM-17/README.md) |
+| Rust 编译链 | RFR [05 编译与分发](../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md) |
 
 ---
 
@@ -71,7 +71,7 @@
 | 橡书 ch1 | 本仓库 |
 |----------|--------|
 | 三阶段 | [CI ch2 · 04-rust-hft-流水线](../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) |
-| 优化 / IR | [04 LLVM](../../../04_Learn-LLVM-17/README.md) |
+| 优化 / IR | [04 LLVM](../../04_Learn-LLVM-17/README.md) |
 | 寄存器 / 调度 | RFR 第 2 章 · HFT 延迟 |
 
 ---

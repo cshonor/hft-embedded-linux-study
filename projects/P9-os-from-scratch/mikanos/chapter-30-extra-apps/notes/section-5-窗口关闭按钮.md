@@ -34,7 +34,7 @@ if (region == kCloseButton && button_up) {
 |------|-----------------------------------|
 | **消息** | 应用 **ReadEvent** 收 **kQuit** · **CloseWindow · exit** |
 
-→ [Ch22 CloseWindow](../chapter-22-graphics-events1/notes/section-6-CloseWindow-ReadEvent与小结.md) · [Ch23 鼠标按键](../chapter-23-graphics-events2/notes/section-3-鼠标按键与paint绘图.md)
+→ [Ch22 CloseWindow](../../chapter-22-graphics-events1/notes/section-6-CloseWindow-ReadEvent与小结.md) · [Ch23 鼠标按键](../../chapter-23-graphics-events2/notes/section-3-鼠标按键与paint绘图.md)
 
 ---
 
@@ -50,7 +50,7 @@ if (region == kCloseButton && button_up) {
 
 **与 KillApp 对比：** **协作式退出** — **资源 **应用** 可释放**（atexit 等）。
 
-→ [Ch21 exit](../chapter-21-window-apps/notes/section-4-exit系统调用与CallApp栈恢复.md)
+→ [Ch21 exit](../../chapter-21-window-apps/notes/section-4-exit系统调用与CallApp栈恢复.md)
 
 ---
 

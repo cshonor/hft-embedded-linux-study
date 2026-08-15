@@ -7,7 +7,7 @@
 | **价格调整缓慢 (Slow price adjustment)** | **纪律执行者 (Disciplinarians)** — 共同因素变，部分价格 **滞后** → **强制纠正** 定价错误 |
 | **不知情流动性需求** | **流动性搬运工 (Porters of liquidity)** — 一市场价格 **被推偏** → 从 **另一市场搬流动性** 过来 |
 
-→ [Ch 14 不知情 flow](../chapter-14-bid-ask-spreads/) · [Ch 9 公共益处](../chapter-09-good-markets/)
+→ [Ch 14 不知情 flow](../../chapter-14-bid-ask-spreads/) · [Ch 9 公共益处](../../chapter-09-good-markets/)
 
 ### 4.2 与做市商的关系
 

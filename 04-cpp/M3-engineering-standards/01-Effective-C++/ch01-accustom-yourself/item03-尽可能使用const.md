@@ -4,7 +4,7 @@
 
 **只要可能就用 `const`。** 它声明一种语义约束——某对象或某视图**不应被修改**——并由编译器强制执行。对读代码的人，也是在说：「这个值保持不变。」
 
-与 [条款 2](./item02-尽量以const、enum、inline替换#define.md) 衔接：用 `const` 取代宏常量；本条把 `const` 用到指针、迭代器、参数、返回值和成员函数上。
+与 [条款 2](item02-尽量以const、enum、inline替换#define.md) 衔接：用 `const` 取代宏常量；本条把 `const` 用到指针、迭代器、参数、返回值和成员函数上。
 
 ---
 
@@ -182,7 +182,7 @@ private:
 4. 成员函数：**位 const** 由编译器保证；**逻辑 const** 用 **`mutable`**。
 5. 重载维护：**non-const 调 const**，绝不反过来。
 
-← [条款 2：const 替换 #define](./item02-尽量以const、enum、inline替换#define.md) | [条款 4：初始化 →](./item04-确定对象被使用前已先被初始化.md)
+← [条款 2：const 替换 #define](item02-尽量以const、enum、inline替换#define.md) | [条款 4：初始化 →](./item04-确定对象被使用前已先被初始化.md)
 
 ---
 

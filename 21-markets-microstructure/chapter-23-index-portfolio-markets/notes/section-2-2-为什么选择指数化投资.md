@@ -1,6 +1,6 @@
 ## 2. 为什么选择指数化投资？(The Argument for Indexation)
 
-用 [Ch 8](../chapter-08-why-people-trade/) **零和博弈** 解释被动投资的吸引力。
+用 [Ch 8](../../chapter-08-why-people-trade/) **零和博弈** 解释被动投资的吸引力。
 
 ### 2.1 主动管理的必然劣势
 
@@ -11,7 +11,7 @@
 | **管理费** | 通常 **1%–3%** |
 | **零和结论** | 扣除佣金与费用后，主动经理 **整体平均** 必然 **低于** 市场指数 |
 
-→ [Ch 22](../chapter-22-performance-evaluation-prediction/) · [Ch 21 交易成本](../chapter-21-transaction-cost-measurement/)
+→ [Ch 22](../../chapter-22-performance-evaluation-prediction/) · [Ch 21 交易成本](../../chapter-21-transaction-cost-measurement/)
 
 ### 2.2 被动管理的优势
 

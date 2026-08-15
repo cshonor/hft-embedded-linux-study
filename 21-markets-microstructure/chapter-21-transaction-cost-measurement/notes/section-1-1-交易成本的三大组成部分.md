@@ -24,10 +24,10 @@
 
 | 类型 | 说明 |
 |------|------|
-| **买卖价差** | 市价单交易者支付 — [Ch 14](../chapter-14-bid-ask-spreads/) |
+| **买卖价差** | 市价单交易者支付 — [Ch 14](../../chapter-14-bid-ask-spreads/) |
 | **市场冲击 (Market impact)** | 大买单 **推高**、大卖单 **压低** 价格 |
 
-→ [Ch 18 暴露冲击](../chapter-18-buy-side-traders/) · [Ch 15 大宗](../chapter-15-block-traders/)
+→ [Ch 18 暴露冲击](../../chapter-18-buy-side-traders/) · [Ch 15 大宗](../../chapter-15-block-traders/)
 
 ### 1.3 错失交易的机会成本 (Missed Trade Opportunity Costs)
 
@@ -37,7 +37,7 @@
 | **未完全成交** | 部分 fill |
 | **限价未成交** | 挂低价买单，价格 **一路上涨** → 错失利润 |
 
-→ [Ch 4 限价期权](../chapter-04-orders-and-order-types/)
+→ [Ch 4 限价期权](../../chapter-04-orders-and-order-types/)
 
 | HFT 视角 |
 |----------|

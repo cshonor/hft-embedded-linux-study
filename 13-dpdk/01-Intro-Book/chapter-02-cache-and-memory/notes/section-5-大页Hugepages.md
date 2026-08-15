@@ -32,7 +32,7 @@
 2. **`rte_eal_init()`** 申请并映射大页（EAL 内部 **`mmap`** hugetlbfs）  
 3. **mbuf / mempool / ring** 从大页堆分配  
 
-→ EAL：[Ch1 HelloWorld](../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) · mbuf：[chapter-02-mbuf](../chapter-02-mbuf与内存池.md)
+→ EAL：[Ch1 HelloWorld](../../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) · mbuf：[chapter-02-mbuf](../../chapter-02-cache-and-memory)
 
 **HFT 检查清单：** `grep Huge /proc/meminfo` · NUMA 节点上 **分别** 预留大页。
 

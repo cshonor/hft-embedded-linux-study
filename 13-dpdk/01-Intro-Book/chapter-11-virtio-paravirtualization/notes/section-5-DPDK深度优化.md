@@ -8,7 +8,7 @@
 
 频繁 **改写 Available Ring 表项**（指向不同 Descriptor）：
 
-- 前端核写、后端核读 → **Cache Line 在核间来回**（[Ch2 伪共享](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md) 同类问题）  
+- 前端核写、后端核读 → **Cache Line 在核间来回**（[Ch2 伪共享](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md) 同类问题）  
 - 额外 **描述符 分配/释放** 开销  
 
 ---
@@ -47,7 +47,7 @@ Main queue:  desc[k] → indirect table { hdr, data, … , data_n }
 | 链式 mbuf / 大包 | 间接表内展开 |
 | 需协商 | 初始化时开启 **INDIRECT_DESC** feature |
 
-→ 与 [Ch6 链式 mbuf](../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) 发送路径配合
+→ 与 [Ch6 链式 mbuf](../../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) 发送路径配合
 
 ---
 

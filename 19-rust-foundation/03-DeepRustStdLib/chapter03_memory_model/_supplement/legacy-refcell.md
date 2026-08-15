@@ -1,6 +1,6 @@
 # 3.5 `RefCell`
 
-> 章索引：[第 3 章](./README.md) · 前：[3.4 Cell](./3.4-cell.md) · 后：[3.6 Mutex](./3.6-mutex.md)
+> 章索引：[第 3 章](./README.md) · 前：[3.4 Cell](../3.1.4-raw-pointer-extra.md) · 后：[3.6 Mutex](../3.2.6-maybeuninit-cases.md)
 
 ---
 
@@ -35,19 +35,19 @@ let read = r.borrow(); // 多个 Ref 可并存
 
 - **`Rc<RefCell<T>>`** — 单线程共享可变图；
 - **`RefCell` 非 `Sync`** — 不能 `Arc<RefCell<_>>` 跨线程（用 **`Mutex`**）；
-- `into_inner` 拆包装 → [RFR into_inner](../../02-RFR/Chapter-03-Designing-Interfaces/01-2-1-into-inner.md)
+- `into_inner` 拆包装 → [RFR into_inner](../../../02-RFR/Chapter-03-Designing-Interfaces/01-2-1-into-inner.md)
 
 ---
 
 ## 与 3.9 循环引用
 
-`Rc<RefCell<_>>` 环 → **泄漏**（引用计数永不为 0）— 见 [3.9](./3.9-leaks-and-cycles.md)。
+`Rc<RefCell<_>>` 环 → **泄漏**（引用计数永不为 0）— 见 [3.9](legacy-leaks-and-cycles.md)。
 
-→ [Book 15 RefCell](../../00-Book/15-smart-pointers/) · [RFR 07 内部可变性](../../02-RFR/Chapter-01-Foundations/07-interior-mutability.md)
+→ [Book 15 RefCell](../../../00-Book/15-smart-pointers/) · [RFR 07 内部可变性](../../../02-RFR/Chapter-01-Foundations/07-interior-mutability.md)
 
 ---
 
 ## 相关
 
-- [3.4 Cell](./3.4-cell.md) — 无引用的轻量兄弟
-- [3.6 Mutex](./3.6-mutex.md) — 跨线程版「内部可变」
+- [3.4 Cell](../3.1.4-raw-pointer-extra.md) — 无引用的轻量兄弟
+- [3.6 Mutex](../3.2.6-maybeuninit-cases.md) — 跨线程版「内部可变」

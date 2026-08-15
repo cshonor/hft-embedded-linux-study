@@ -55,12 +55,12 @@
 
 ---
 
-← [Day 22](./day-22-用C语言编写应用程序.md) · [01 导读](../README.md) · [Day 24](./day-24-窗口操作.md)
+← Day 22 · [01 导读](../README.md) · Day 24
 
 ---
 
 ## 相关
 
-- 上一日：[../day-22-c-apps/](../day-22-c-apps/)
-- 下一日：[../day-24-window-ops/](../day-24-window-ops/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 上一日：../day-22-c-apps/
+- 下一日：../day-24-window-ops/
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

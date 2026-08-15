@@ -8,6 +8,6 @@
 | **共存** | **异质客户** — 不是二选一，是 **分段服务** |
 | **HFT 位置** | 自动段；理解 floor **为何在机构段仍有类比物** |
 
-> **HFT 读者 takeaway：** `orderbook.go` 代表 **自动段真理** — 公平、可 replay、可扩展。机构 **不把所有 size 打进去** 的原因在本章：**信息交换与信任** 电子 LOB 默认不提供。下一章 [Ch 28](../chapter-28-bubbles-crashes-circuit-breakers/) — 电子系统 **超载与极端波动** 时的 **制度应对**。
+> **HFT 读者 takeaway：** `orderbook.go` 代表 **自动段真理** — 公平、可 replay、可扩展。机构 **不把所有 size 打进去** 的原因在本章：**信息交换与信任** 电子 LOB 默认不提供。下一章 [Ch 28](../../chapter-28-bubbles-crashes-circuit-breakers/) — 电子系统 **超载与极端波动** 时的 **制度应对**。
 
 ---

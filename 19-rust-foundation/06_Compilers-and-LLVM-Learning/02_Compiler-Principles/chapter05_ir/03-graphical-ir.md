@@ -12,7 +12,7 @@
 | **去掉** | 无语义标点、多余非终结符 |
 | **保留** | 源程序**语法嵌套**关系 |
 
-→ [ch4 SDT 建 AST](../chapter04_context/04-syntax-directed-translation.md) · [CI jlox ch5](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md)
+→ [ch4 SDT 建 AST](../chapter04_context/04-syntax-directed-translation.md) · [CI jlox ch5](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md)
 
 **jlox** 以 AST 为「IR」直接解释执行。
 

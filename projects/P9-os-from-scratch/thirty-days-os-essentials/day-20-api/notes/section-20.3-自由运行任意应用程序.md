@@ -13,6 +13,6 @@ else
 
 **用户输入 `hello` → 运行 `hello.hrb`** — **Shell 即程序加载器**。
 
-→ [Day 18/19 FAT + loadfile](../day-18-dir/)
+→ Day 18/19 FAT + loadfile
 
 ---

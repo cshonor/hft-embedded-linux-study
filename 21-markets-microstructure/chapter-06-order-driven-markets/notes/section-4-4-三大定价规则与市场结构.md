@@ -29,7 +29,7 @@
 |----------|
 | **现代 equity HFT 主战场**：LOB + continuous discriminatory matching |
 | 做市 = 挂在簿上被动成交；吃单 = 按对手限价逐档成交 → **impact 路径可建模** |
-| M2 练手：[价格–时间优先撮合](./00-practice-go-dex/notes/milestone-02-撮合引擎/) |
+| M2 练手：[价格–时间优先撮合](../../00-practice-go-dex/notes/milestone-02-matching-engine) |
 
 ### 4.3 交叉网络 + 衍生定价 (Crossing Networks · Derivative Pricing)
 

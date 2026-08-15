@@ -121,7 +121,7 @@
 
 ### ② Linux Kernel Development
 
-> 子目录与课书关系 → [05/LEARNING-PATH.md](./05-linux-kernel/LEARNING-PATH.md)
+> 子目录与课书关系 → 05/LEARNING-PATH.md
 
 | 原书 | 标签 | HFT 为何读 |
 |------|------|-----------|

@@ -221,6 +221,6 @@ static int hft_process_packet(struct hft_dev *dev, struct sk_buff *skb)
 
 ## 交叉引用
 
-- [05.6 ch03 printk 基础](chapter-03-printk/notes/01-printk-basics-loglevel.md)
-- [05.6 ch03 dev_dbg](chapter-03-printk/notes/04-dev-dbg.md)
-- [05.6 ch03 trace_printk](chapter-03-printk/notes/05-ftrace-printk.md)
+- [05.6 ch03 printk 基础](../../chapter-03-printk/notes/01-printk-basics-loglevel.md)
+- [05.6 ch03 dev_dbg](../../chapter-03-printk/notes/04-dev-dbg.md)
+- [05.6 ch03 trace_printk](../../chapter-03-printk/notes/05-ftrace-printk.md)

@@ -11,7 +11,7 @@
 | **每个 CPU 一个** `runqueue` | 存放该 CPU 上所有 **可运行** 进程 |
 | 核心结构 | 2.6 调度器最重要的数据结构之一 |
 
-→ `task_struct` 与 CPU 字段：[Ch 3](../chapter-03-processes/notes/section-3-进程描述符.md)
+→ `task_struct` 与 CPU 字段：[Ch 3](../../chapter-03-processes/notes/section-3-进程描述符.md)
 
 ---
 
@@ -39,7 +39,7 @@
 
 防止恶意 **不断 fork** 无限占用 CPU。
 
-→ fork/COW：[Ch 3](../chapter-03-processes/notes/section-6-创建与销毁.md)
+→ fork/COW：[Ch 3](../../chapter-03-processes/notes/section-6-创建与销毁.md)
 
 ### 常见陷阱
 

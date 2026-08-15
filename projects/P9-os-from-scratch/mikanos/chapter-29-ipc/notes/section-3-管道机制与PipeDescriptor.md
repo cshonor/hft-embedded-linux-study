@@ -27,7 +27,7 @@ Left Task  write chunk → Pipe → Right Task read chunk
 (并行调度 · 任一侧阻塞则 Sleep)
 ```
 
-→ [Ch14 Sleep/Wakeup](../chapter-14-multitask2/)
+→ [Ch14 Sleep/Wakeup](../../chapter-14-multitask2/)
 
 ---
 
@@ -47,7 +47,7 @@ RunLeftCommand(left_line);           // 左端在当前终端或并行 Task
 |------|----------------------------------------|
 | **键盘 `\|`** | 驱动 **HID 映射** 补充 **\|** 键码 |
 
-→ [Ch24 noterm](../chapter-24-multi-terminal/notes/section-4-窗口层级Bug与noterm.md)
+→ [Ch24 noterm](../../chapter-24-multi-terminal/notes/section-4-窗口层级Bug与noterm.md)
 
 ---
 

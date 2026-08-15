@@ -154,6 +154,6 @@ void update_config(struct config *new) {
 
 ## 交叉引用
 
-- [05.6 ch08 并发 Bug 类型](chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
-- [05.6 ch08 LOCKDEP 锁依赖检测器](chapter-08-lock-debug/notes/02-lockdep.md)
-- [05.6 ch08 树莓派启用 LOCKDEP/KCSAN](chapter-08-lock-debug/notes/06-rpi-lockdep-kcsan.md)
+- [05.6 ch08 并发 Bug 类型](../../chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
+- [05.6 ch08 LOCKDEP 锁依赖检测器](../../chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch08 树莓派启用 LOCKDEP/KCSAN](../../chapter-08-lock-debug/notes/06-rpi-lockdep-kcsan.md)

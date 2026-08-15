@@ -21,7 +21,7 @@
 **调优流程：**
 
 1. 从 128 起压测，观察 **imissed / rx_nombuf**（驱动统计）  
-2. 有突发丢包 → **加大环深** 或 **加大 mempool**（[Ch6 mbuf](../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md)）  
+2. 有突发丢包 → **加大环深** 或 **加大 mempool**（[Ch6 mbuf](../../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md)）  
 3. 延迟敏感 → 避免 **过长环** 导致 **旧包排队**
 
 ---

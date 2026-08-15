@@ -99,7 +99,7 @@ if (a * b = c) { ... }   // ❌ 编译错误：不能给 const 对象赋值
 | 约定 | 例子 |
 |------|------|
 | 元素个数叫 `size()` | STL 容器统一；勿有的叫 `length()`、有的叫 `count()` 除非领域惯例明确 |
-| 赋值返回 `*this` | 与 `int` 链式赋值一致（[条款 10](../ch02-constructors-destructors-assignment/item10-令operator=返回引用指向this对象.md)） |
+| 赋值返回 `*this` | 与 `int` 链式赋值一致（[条款 10](../ch02-constructors-destructors-assignment/item10-令operator=返回this引用.md)） |
 | 拷贝/移动语义符合直觉 | 值类型深拷、资源句柄转移（[条款 14](../ch03-resource-management/item14-资源管理类谨慎设计拷贝行为.md)） |
 
 **一致性 = 少记一套规则 = 少出错。**

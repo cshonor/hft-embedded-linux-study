@@ -1,21 +1,21 @@
 # TLPI 第 25 章 — Process Termination
 
 **优先级**：🔴（fork 后退出选型、退出码、僵尸衔接）  
-**前置**：[Ch24 fork](../chapter-24-process-creation/notes.md)  
-**后置**：[Ch26 wait / 僵尸](../chapter-26-monitoring-child-processes/notes.md) · [Ch27 exec](../chapter-27-program-execution/notes.md)
+**前置**：[Ch24 fork](../chapter-24-process-creation/README.md)  
+**后置**：[Ch26 wait / 僵尸](../chapter-26-monitoring-child-processes/README.md) · [Ch27 exec](../chapter-27-program-execution/README.md)
 
 ---
 
 ## 小节目录
 
-- [25.1 终止分类](./notes/25.1-termination-classification.md)
-- [25.2 `exit` vs `_exit` / `_Exit`（核心）](./notes/25.2-exit-exit-exit.md)
-- [25.3 `main` return](./notes/25.3-main.md)
-- [25.4 退出状态](./notes/25.4-state.md)
-- [25.5 `atexit` / `on_exit`](./notes/25.5-atexit-onexit.md)
-- [25.6 内核销毁时做什么](./notes/25.6-section-25-6.md)
-- [25.7 僵尸（衔 Ch26）](./notes/25.7-ch26.md)
-- [25.8 `abort`](./notes/25.8-abort.md)
+- [25.1 终止分类](notes/25.1-terminating-a-process-exit-and-exit.md)
+- [25.2 `exit` vs `_exit` / `_Exit`（核心）](notes/25.1-terminating-a-process-exit-and-exit.md)
+- [25.3 `main` return](notes/25.3-exit-handlers.md)
+- [25.4 退出状态](notes/25.4-interactions-between-fork-stdio-buffers-.md)
+- [25.5 `atexit` / `on_exit`](notes/25.5-summary.md)
+- [25.6 内核销毁时做什么](notes/25.6-exercise.md)
+- 25.7 僵尸（衔 Ch26）
+- 25.8 `abort`
 
 ---
 
@@ -144,4 +144,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

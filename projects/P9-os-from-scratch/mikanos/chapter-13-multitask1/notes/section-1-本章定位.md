@@ -38,7 +38,7 @@ Ch13 抢占式 20ms 时间片
 Ch14 优先级 · 休眠（解决鼠标卡）
 ```
 
-→ [Ch7 事件环](../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
+→ [Ch7 事件环](../../chapter-07-interrupt-fifo/notes/section-6-事件循环与并发控制.md)
 
 ---
 

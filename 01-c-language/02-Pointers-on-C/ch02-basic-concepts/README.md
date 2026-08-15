@@ -42,10 +42,10 @@
 
 ## 小节
 
-- [2.1 环境](./2.1-the-environment/2.1-the-environment.md)
+- [2.1 环境](2.1-the-environment/2.1-环境.md)
   - [2.1.1 翻译](./2.1-the-environment/2.1.1-翻译.md)
   - [2.1.2 执行](./2.1-the-environment/2.1.2-执行.md)
-- [2.2 词法规则](./2.2-lexical-rules/2.2-lexical-rules.md)
+- 2.2 词法规则
   - [2.2.1 字符](./2.2-lexical-rules/2.2.1-字符.md)
   - [2.2.2 注释](./2.2-lexical-rules/2.2.2-注释.md)
   - [2.2.3 自由形式的源代码](./2.2-lexical-rules/2.2.3-自由形式的源代码.md)
@@ -79,7 +79,7 @@ extern int counter;   // (2)
 
 两个 `.c` 都写 `int counter;` → 链接报错 `multiple definition of 'counter'`。
 
-**复习：** → [2.1 Identifiers](./2.1-identifiers/2.1-identifiers.md) — 声明 vs 定义
+**复习：** → 2.1 Identifiers — 声明 vs 定义
 
 </details>
 
@@ -100,7 +100,7 @@ printf("a=%d b=%d c=%d\n", a, b, c);
 
 **解析：** C 词法分析器用**最长匹配**规则。`a+++b` 解析为 `(a++) + b` 而非 `a + (++b)`。先取 `a++`（后置自增，返回旧值 1），再加 `b` = 3。之后 `a` 变 2。
 
-**复习：** → [2.2 Lexical Rules](./2.2-lexical-rules/2.2-lexical-rules.md) — 最长匹配
+**复习：** → 2.2 Lexical Rules — 最长匹配
 
 </details>
 
@@ -126,7 +126,7 @@ void f(void) {
 
 两者都存 `.data` 或 `.bss` 段，不是栈。
 
-**复习：** → [2.1 Identifiers](./2.1-identifiers/2.1-identifiers.md) — static / extern
+**复习：** → 2.1 Identifiers — static / extern
 
 </details>
 
@@ -150,7 +150,7 @@ int main(void) {
 
 **教训：** 局部变量必须初始化。全局变量虽然自动清零，但显式初始化更清晰。
 
-**复习：** → [2.1 Identifiers](./2.1-identifiers/2.1-identifiers.md) — 存储类与段
+**复习：** → 2.1 Identifiers — 存储类与段
 
 </details>
 

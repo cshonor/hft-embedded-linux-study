@@ -16,7 +16,7 @@
 |------|------|
 | **Java 字节码** | JVM 栈机 |
 | **PostScript** | 栈式语言 |
-| **clox** | 值栈 + 字节码 → [CI ch14 Chunk](../../../01_Crafting-Interpreters/part03_clox/chapter14_chunks-of-bytecode/README.md) |
+| **clox** | 值栈 + 字节码 → [CI ch14 Chunk](../../01_Crafting-Interpreters/part03_clox/chapter14_chunks-of-bytecode/README.md) |
 
 ---
 

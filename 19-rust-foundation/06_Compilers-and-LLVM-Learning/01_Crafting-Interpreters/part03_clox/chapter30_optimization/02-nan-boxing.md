@@ -1,6 +1,6 @@
 # 第 30 章 · Optimization（优化） · §30.3 NaN 装箱（NaN Boxing）
 
-← [本章目录](./README.md) · 上一节：[01-hash-table-probe-optimization.md](./01-hash-table-probe-optimization.md) · 下一节：[03-a-map-of-the-territory.md](./03-a-map-of-the-territory.md)
+← [本章目录](./README.md) · 上一节：[01-hash-table-probe-optimization.md](./01-hash-table-probe-optimization.md) · 下一节：03-a-map-of-the-territory.md
 
 ---
 

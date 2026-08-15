@@ -11,7 +11,7 @@
 | 总线示例 | 典型设备 |
 |----------|----------|
 | **PCI / PCIe** | 网卡、显卡、NVMe |
-| **ISA**（遗留） | 老 DMA 限制（→ [Ch 8 ZONE_DMA](../chapter-08-memory-management/notes/section-2-页框管理.md)） |
+| **ISA**（遗留） | 老 DMA 限制（→ [Ch 8 ZONE_DMA](../../chapter-08-memory-management/notes/section-2-页框管理.md)） |
 | **USB** | 外设 |
 
 CPU 不直接「摸」设备芯片，经 **I/O 接口** 与 **设备控制器** 通信。

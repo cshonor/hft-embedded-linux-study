@@ -37,7 +37,7 @@
 |---|------|
 | **前置** | [ch02 语法](../ch02-syntactic-pitfalls/) |
 | **后置** | [ch04 连接](../ch04-linking/) — extern、静态符号 |
-| **交叉** | [Expert C ch04–ch07](../03-Advanced-Expert-C-Programming/) |
+| **交叉** | [Expert C ch04–ch07](../../03-Advanced-Expert-C-Programming/) |
 
 ## Demo
 

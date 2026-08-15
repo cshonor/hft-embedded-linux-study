@@ -9,7 +9,7 @@
 | 类型 | 访问模型 | 下一章 |
 |------|----------|--------|
 | **字符设备** | 顺序 **字节流** — 不可随机寻址（或能力有限） | 本章 |
-| **块设备** | **固定大小块**、可 seek、常带缓存 | [Ch 14 块设备](../chapter-14-block-devices/) |
+| **块设备** | **固定大小块**、可 seek、常带缓存 | [Ch 14 块设备](../../chapter-14-block-devices/) |
 
 例：键盘、串口、部分控制设备 → 字符；磁盘 → 块。
 
@@ -51,7 +51,7 @@ def_chr_fops（默认字符操作表）
 
 即 Ch 12 **VFS 多态** 在字符设备上的具体实例。
 
-→ `file_operations`：[Ch 12 section-3](../chapter-12-VFS/notes/section-3-四大核心对象.md)
+→ `file_operations`：[Ch 12 section-3](../../chapter-12-VFS/notes/section-3-四大核心对象.md)
 
 ---
 
@@ -73,13 +73,13 @@ VFS open/read/write
 
 | Ch 13 主题 | 继续读 |
 |------------|--------|
-| 块设备、I/O 调度 | [Ch 14 块设备驱动](../chapter-14-block-devices/) ⚪ |
-| VFS / 设备文件 | [Ch 12 VFS](../chapter-12-VFS/) ⚪ |
-| I/O 中断 | [Ch 4 section-6](../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) |
-| DMA 低端内存 | [Ch 8 页框 ZONE_DMA](../chapter-08-memory-management/notes/section-2-页框管理.md) |
-| 文件 read 路径 | [Ch 16 文件访问](../chapter-16-file-access.md) ⚪ |
+| 块设备、I/O 调度 | [Ch 14 块设备驱动](../../chapter-14-block-devices/) ⚪ |
+| VFS / 设备文件 | [Ch 12 VFS](../../chapter-12-VFS/) ⚪ |
+| I/O 中断 | [Ch 4 section-6](../../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) |
+| DMA 低端内存 | [Ch 8 页框 ZONE_DMA](../../chapter-08-memory-management/notes/section-2-页框管理.md) |
+| 文件 read 路径 | [Ch 16 文件访问](../../chapter-16-file-access.md) ⚪ |
 | LKD 对照 | Linux Kernel Development 设备驱动章节 |
 
 ---
 
-← [5. 通用特性](./section-5-驱动通用特性.md) · 下一章 [Ch 14 块设备](../chapter-14-block-devices/)
+← [5. 通用特性](./section-5-驱动通用特性.md) · 下一章 [Ch 14 块设备](../../chapter-14-block-devices/)

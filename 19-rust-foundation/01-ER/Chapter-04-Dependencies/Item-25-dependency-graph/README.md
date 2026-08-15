@@ -7,7 +7,7 @@
 ## 状态
 
 - [x] 已读（笔记整理）
-- [x] [WORKSPACE.md](../../ER-demos/WORKSPACE.md) · [Cargo.toml workspace.dependencies](../../../Cargo.toml)
+- [x] [WORKSPACE.md](../../ER-demos/WORKSPACE.md) · [Cargo.toml workspace.dependencies](../../Cargo.toml)
 
 ---
 

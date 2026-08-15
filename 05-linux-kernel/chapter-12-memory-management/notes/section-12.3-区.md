@@ -46,7 +46,7 @@
 
 **HFT：** 用户态 **DMA-BUF / RDMA** 注册内存时，驱动在内核 **`dma_alloc_coherent`** 从 **合适 zone** 拿 **物理连续 + 设备可见** 的页 — 懂 zone 才懂 **`swiotlb` bounce buffer**（物理页不在设备掩码内时 **拷贝**）。
 
-→ [06 Gorman Ch2 内存区域](../../../../06-linux-mm/chapter-02-describing-physical-memory/notes/section-2-内存区域.md) · [Ch 12.9 HIGHMEM](./section-12.9-高端内存的映射.md)
+→ [06 Gorman Ch2 内存区域](../../../06-linux-mm/chapter-02-describing-physical-memory/notes/section-2-内存区域.md) · [Ch 12.9 HIGHMEM](./section-12.9-高端内存的映射.md)
 
 
 

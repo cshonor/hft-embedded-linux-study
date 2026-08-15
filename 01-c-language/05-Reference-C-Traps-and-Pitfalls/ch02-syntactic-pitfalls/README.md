@@ -32,7 +32,7 @@
 |---|------|
 | **前置** | [ch01 词法](../ch01-lexical-pitfalls/) |
 | **后置** | [ch03 语义](../ch03-semantic-pitfalls/) — 类型、指针、UB |
-| **交叉** | [Expert C ch08 优先级表](../03-Advanced-Expert-C-Programming/ch08-halloween-vs-christmas/operator-precedence-cheatsheet.md) |
+| **交叉** | [Expert C ch08 优先级表](../../03-Advanced-Expert-C-Programming/ch08-halloween-vs-christmas/operator-precedence-cheatsheet.md) |
 
 ## Demo
 

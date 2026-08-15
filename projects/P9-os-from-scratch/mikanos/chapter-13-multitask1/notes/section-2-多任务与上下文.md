@@ -27,7 +27,7 @@
 
 **CPU 只认寄存器** — **换掉寄存器快照 = 换 Task**。
 
-→ [Ch3 RIP/RFLAGS](../chapter-03-bootloader-display/notes/section-2-QEMU监视器与寄存器.md)
+→ [Ch3 RIP/RFLAGS](../../chapter-03-bootloader-display/notes/section-2-QEMU监视器与寄存器.md)
 
 ---
 

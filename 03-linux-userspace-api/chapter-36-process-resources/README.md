@@ -1,15 +1,15 @@
 # TLPI 第 36 章 — Process Resources
 
 **优先级**：🔴（服务调 `NOFILE`、剖析 CPU/RSS、daemon 启动设限）  
-**前置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/notes.md)  
-**后置**：[Ch37 Daemons](../chapter-37-daemons/notes.md)
+**前置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/README.md)  
+**后置**：[Ch37 Daemons](../chapter-37-daemons/README.md)
 
 ---
 
 ## 小节目录
 
-- [36.1 `getrusage`](./notes/36.1-getrusage.md)
-- [36.2 `getrlimit` / `setrlimit`](./notes/36.2-getrlimit-setrlimit.md)
+- [36.1 `getrusage`](notes/36.1-process-resource-usage.md)
+- [36.2 `getrlimit` / `setrlimit`](notes/36.2-process-resource-limits.md)
 
 ---
 
@@ -131,4 +131,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

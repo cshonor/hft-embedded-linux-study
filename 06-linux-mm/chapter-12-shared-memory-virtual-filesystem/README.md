@@ -18,7 +18,7 @@
 
 内核解法：在 **RAM 里造一个虚拟文件系统** — 给匿名共享页 **伪装的 file backing**，让 **缺页、swap、LRU** 等 **按文件映射同一套逻辑** 处理。
 
-→ [Ch 4 mmap](../../chapter-04-process-address-space/) · [Ch 11 共享页 swap](../../chapter-11-swap-management/)
+→ [Ch 4 mmap](../chapter-04-process-address-space/) · [Ch 11 共享页 swap](../chapter-11-swap-management/)
 
 > **源码：** 现代主线 [`mm/shmem.c`](https://elixir.bootlin.com/linux/latest/source/mm/shmem.c)（tmpfs/shmem 合一）· 挂载点 **`/dev/shm`**、**`/tmp`**（tmpfs）。
 
@@ -40,5 +40,5 @@
 
 - 上一章：[../chapter-11-swap-management/](../chapter-11-swap-management/)
 - 下一章：[../chapter-13-out-of-memory-management/](../chapter-13-out-of-memory-management/)
-- 附录 L：[../../appendix-L-共享内存虚拟文件系统.md](../../appendix-L-共享内存虚拟文件系统.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 L：[../../appendix-L-共享内存虚拟文件系统.md](../appendix-L-共享内存虚拟文件系统.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

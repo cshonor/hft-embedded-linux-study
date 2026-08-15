@@ -47,7 +47,7 @@ class TerminalFileDescriptor : public FileDescriptor {
 | **fat::FileDescriptor** | **磁盘条目** |
 | **TerminalFileDescriptor** | **启动该应用的 TaskTerminal** |
 
-→ [Ch25 FileDescriptor](../chapter-25-app-read-file/notes/section-4-文件描述符与FileDescriptor.md)
+→ [Ch25 FileDescriptor](../../chapter-25-app-read-file/notes/section-4-文件描述符与FileDescriptor.md)
 
 ---
 

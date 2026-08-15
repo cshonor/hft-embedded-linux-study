@@ -13,7 +13,7 @@
 | **可同步 (Syncable)** | 文件映射页、**页缓存**、块缓冲 | 脏页 **写回** 后丢弃 |
 | **可丢弃 (Discardable)** | 未使用页、分配器 **缓存** | **直接** 回收 |
 
-→ 页缓存：[Ch 15](../chapter-15-page-cache/) · 匿名页：[Ch 9](../chapter-09-process-address-space/)
+→ 页缓存：[Ch 15](../../chapter-15-page-cache/) · 匿名页：[Ch 9](../../chapter-09-process-address-space/)
 
 ---
 
@@ -30,7 +30,7 @@
 
 分配失败 → PFRA **腾页** → 伙伴系统再分配。
 
-→ [Ch 8 伙伴系统](../chapter-08-memory-management/notes/section-2-页框管理.md)
+→ [Ch 8 伙伴系统](../../chapter-08-memory-management/notes/section-2-页框管理.md)
 
 ---
 

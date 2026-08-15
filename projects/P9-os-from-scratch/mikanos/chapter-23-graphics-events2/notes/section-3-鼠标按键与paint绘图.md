@@ -49,7 +49,7 @@ while (ReadEvent(&ev)) {
 | **按住左键拖动** | 连续 **线段** — 简易 **画图板** |
 | **NO_REDRAW 可选** | 拖曳时可 **defer** · 松开 **WinRedraw** |
 
-→ [Ch22 WinDrawLine](../chapter-22-graphics-events1/notes/section-5-WinDrawLine与lines命令.md)
+→ [Ch22 WinDrawLine](../../chapter-22-graphics-events1/notes/section-5-WinDrawLine与lines命令.md)
 
 ---
 

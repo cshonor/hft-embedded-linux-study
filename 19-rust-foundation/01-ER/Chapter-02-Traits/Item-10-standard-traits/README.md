@@ -20,7 +20,7 @@
 | `Default` | [3.1 变量和可变性](../../../00-Book/03-common-concepts/3.1-变量和可变性.md) |
 | `HashMap` 需要 `Hash + Eq` | [8.3 HashMap](../../../00-Book/08-collections/8.3-hashmap.md) |
 | 操作符 trait | [19.2 高级 trait](../../../00-Book/19-advanced-features/19.2-高级trait.md) |
-| 常用 trait 一览 | [Item 2](../Item-02-express-common-behavior/README.md) §标准 trait |
+| 常用 trait 一览 | Item 2 §标准 trait |
 
 ---
 

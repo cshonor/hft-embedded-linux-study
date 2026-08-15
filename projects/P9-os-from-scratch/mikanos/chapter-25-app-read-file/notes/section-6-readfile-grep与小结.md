@@ -78,11 +78,11 @@ Ch29 IPC
 
 | Ch25 主题 | 继续读 |
 |----------|--------|
-| 写文件 | [chapter-26-app-write-file](../chapter-26-app-write-file/) 🟡 |
-| FAT 基础 | [chapter-17-filesystem](../chapter-17-filesystem/) |
-| syscall | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
+| 写文件 | [chapter-26-app-write-file](../../chapter-26-app-write-file/) 🟡 |
+| FAT 基础 | [chapter-17-filesystem](../../chapter-17-filesystem/) |
+| syscall | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
 | TLPI | [03-linux-userspace-api](../../../../../03-linux-userspace-api/) |
 
 ---
 
-← [5. Newlib](./section-5-OpenFile-ReadFile与Newlib.md) · [Ch 24](../chapter-24-multi-terminal/) · [Ch 25 导读](../README.md)
+← [5. Newlib](./section-5-OpenFile-ReadFile与Newlib.md) · [Ch 24](../../chapter-24-multi-terminal/) · [Ch 25 导读](../README.md)

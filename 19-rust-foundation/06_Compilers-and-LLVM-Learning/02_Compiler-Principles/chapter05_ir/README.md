@@ -1,6 +1,6 @@
 # 第 5 章 · 中间表示（Intermediate Representation, IR）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part II 基础结构
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part II 基础结构
 
 ## 状态
 
@@ -34,9 +34,9 @@
 
 | 本书 ch5 | 对照 |
 |----------|------|
-| AST | [ch4 SDT](../chapter04_context/04-syntax-directed-translation.md) · [CI jlox ch5](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md) |
-| 栈机 / 字节码 | [CI clox Chunk](../../../01_Crafting-Interpreters/part03_clox/chapter14_chunks-of-bytecode/README.md) |
-| SSA / LLVM IR | [04 Learn LLVM 17](../../../04_Learn-LLVM-17/README.md) · ch8～10 优化 |
+| AST | [ch4 SDT](../chapter04_context/04-syntax-directed-translation.md) · [CI jlox ch5](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md) |
+| 栈机 / 字节码 | [CI clox Chunk](../../01_Crafting-Interpreters/part03_clox/chapter14_chunks-of-bytecode/README.md) |
+| SSA / LLVM IR | [04 Learn LLVM 17](../../04_Learn-LLVM-17/README.md) · ch8～10 优化 |
 | 符号表 | [ch4](../chapter04_context/README.md) · jlox ch11 Resolver |
 
 ---

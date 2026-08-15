@@ -87,7 +87,7 @@ Harris 术语：**市价单** = **执行价格不确定**；**限价单** = **�
 | 不立刻成交 | 留在 `Limit.Orders` 队列 |
 | 被市价单吃 | 对手 `OrderMarket` → `Match()` 扫到你 |
 
-→ [orderbook.go](../../00-practice-go-dex/code/orderbook.go) · [M1 笔记](../../00-practice-go-dex/notes/milestone-01-订单类型与LOB/)
+→ [orderbook.go](../../00-practice-go-dex/code/orderbook.go) · [M1 笔记](../../00-practice-go-dex/notes/milestone-01-order-and-lob)
 
 ---
 

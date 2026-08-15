@@ -64,11 +64,11 @@ Ch 8 物理页分配
 
 | Ch 9 主题 | 继续读 |
 |-----------|--------|
-| brk / mmap  syscall | [Ch 10 系统调用](../chapter-10-system-calls/) 🔴 |
-| fork / COW 创建路径 | [Ch 3 创建与销毁](../chapter-03-processes/notes/section-6-创建与销毁.md) 🔴 |
-| 页表 / TLB | [Ch 2 内存寻址](../chapter-02-memory-addressing/) 🔴 |
-| 物理页分配 | [Ch 8 内存管理](../chapter-08-memory-management/) 🔴 |
-| 页回收 / swap | [Ch 17 页回收](../chapter-17-page-reclaim.md) 🟡 |
+| brk / mmap  syscall | [Ch 10 系统调用](../../chapter-10-system-calls/) 🔴 |
+| fork / COW 创建路径 | [Ch 3 创建与销毁](../../chapter-03-processes/notes/section-6-创建与销毁.md) 🔴 |
+| 页表 / TLB | [Ch 2 内存寻址](../../chapter-02-memory-addressing/) 🔴 |
+| 物理页分配 | [Ch 8 内存管理](../../chapter-08-memory-management/) 🔴 |
+| 页回收 / swap | [Ch 17 页回收](../../chapter-17-page-reclaim.md) 🟡 |
 | VMA / 缺页专著 | [07 Gorman Ch 4](../../../06-linux-mm/) |
 | 大页 / mlock / NUMA | [16 HFT 工程](../../../16-hft-engineering/) · [03 SysPerf Ch 7](../../../14-systems-performance/chapter-07-memory/) |
 
@@ -111,4 +111,4 @@ Ch 8 物理页分配
 
 ---
 
-← [5. 请求调页](./section-5-请求调页.md) · 下一章 [Ch 10 系统调用](../chapter-10-system-calls/)
+← [5. 请求调页](./section-5-请求调页.md) · 下一章 [Ch 10 系统调用](../../chapter-10-system-calls/)

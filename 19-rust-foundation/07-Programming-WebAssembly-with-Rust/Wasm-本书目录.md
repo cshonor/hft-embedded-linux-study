@@ -32,7 +32,7 @@
 | **1.3** | Building a WebAssembly Application | 用跨平台工具链手写/编译首个模块 | [1.3-building-wasm-app.md](./chapter01_wasm_fundamentals/1.3-building-wasm-app.md) |
 | **1.4** | Wrapping Up | 本章小结 | [1.4-wrap-up.md](./chapter01_wasm_fundamentals/1.4-wrap-up.md) |
 
-↔ **Layer 1** · [Crafting Interpreters · VM](../../06_Compilers-and-LLVM-Learning/01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/01-7-virtual-machine.md)
+↔ **Layer 1** · [Crafting Interpreters · VM](../06_Compilers-and-LLVM-Learning/01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/01-7-virtual-machine.md)
 
 ### 第 2 章 · 构建 WebAssembly 跳棋 (Building WebAssembly Checkers)
 
@@ -125,7 +125,7 @@
 | **7.6** | Endless Possibilities | 扩展场景 | [7.6-endless-possibilities.md](./chapter07_iot/7.6-endless-possibilities.md) |
 | **7.7** | Wrapping Up | 本章小结 | [7.7-wrap-up.md](./chapter07_iot/7.7-wrap-up.md) |
 
-↔ **Layer 3** · 边缘节点 · [ER Item 33 no_std](../../01-ER/Chapter-06-Beyond-Standard-Rust/Item-33-no-std/README.md)
+↔ **Layer 3** · 边缘节点 · [ER Item 33 no_std](../01-ER/Chapter-06-Beyond-Standard-Rust/Item-33-no-std/README.md)
 
 ### 第 8 章 · 构建 WARoS——WebAssembly 机器人系统 (Building WARoS)
 

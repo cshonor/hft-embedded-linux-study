@@ -65,11 +65,11 @@ Ch10+ 窗口与事件
 
 | Ch6 主题 | 继续读 |
 |----------|--------|
-| 中断 / FIFO | [chapter-07-interrupt-fifo](../chapter-07-interrupt-fifo/) 🔴 |
-| 图层 | [chapter-09-layers](../chapter-09-layers/) ⚪ |
-| 窗口 | [chapter-10-window](../chapter-10-window/) ⚪ |
-| printk 调试 | [chapter-05-console-text](../chapter-05-console-text/) |
+| 中断 / FIFO | [chapter-07-interrupt-fifo](../../chapter-07-interrupt-fifo/) 🔴 |
+| 图层 | [chapter-09-layers](../../chapter-09-layers/) ⚪ |
+| 窗口 | [chapter-10-window](../../chapter-10-window/) ⚪ |
+| printk 调试 | [chapter-05-console-text](../../chapter-05-console-text/) |
 
 ---
 
-← [5. BAR0 / xHC](./section-5-BAR0与xHC初始化.md) · [Ch 5](../chapter-05-console-text/) · [Ch 6 导读](../README.md)
+← [5. BAR0 / xHC](./section-5-BAR0与xHC初始化.md) · [Ch 5](../../chapter-05-console-text/) · [Ch 6 导读](../README.md)

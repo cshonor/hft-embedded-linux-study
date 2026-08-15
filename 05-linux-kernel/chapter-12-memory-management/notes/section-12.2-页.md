@@ -47,7 +47,7 @@
 
 **HFT：** 用户态 **`mmap` + hugepage** 也按 **页框** 粒度映射 — **TLB 条目数** ∝ 覆盖 VA / page size。内核 **`__get_free_pages(order)`** 要 **物理连续** — 长时间运行 **碎片化** 后 **大块 order 失败** 类似用户态 **hugetlb 池耗尽**。
 
-→ [06 Gorman Ch2 页框](../../../../06-linux-mm/chapter-02-describing-physical-memory/notes/section-3-物理页框.md) · [Ch 15 用户页表映射](../../chapter-15-process-address-space/)
+→ [06 Gorman Ch2 页框](../../../06-linux-mm/chapter-02-describing-physical-memory/notes/section-3-物理页框.md) · [Ch 15 用户页表映射](../../chapter-15-process-address-space/)
 
 
 > ↔ [ULK Ch8 §2 页框管理](../../../18-linux-kernel-deep/chapter-08-memory-management/notes/section-2-页框管理.md)

@@ -167,6 +167,6 @@ void on_trade_signal(void) {
 
 ## 交叉引用
 
-- [05.6 ch10 Soft Lockup](chapter-10-panic-lockup/notes/02-soft-lockup.md)
-- [05.6 ch10 Watchdog 机制详解](chapter-10-panic-lockup/notes/04-watchdog-mechanism.md)
-- [05.6 ch08 并发 Bug 类型](chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
+- [05.6 ch10 Soft Lockup](../../chapter-10-panic-lockup/notes/02-soft-lockup.md)
+- [05.6 ch10 Watchdog 机制详解](../../chapter-10-panic-lockup/notes/04-watchdog-mechanism.md)
+- [05.6 ch08 并发 Bug 类型](../../chapter-08-lock-debug/notes/01-concurrency-bug-types.md)

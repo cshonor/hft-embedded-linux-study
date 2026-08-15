@@ -254,4 +254,4 @@ register_cb([state](int x) { /* ... */ });  // 只能 Callback3
 
 - 上一节：[Item 44 头文件](item44-include-correct-headers.md)
 - 下一节：[Item 46 成员函数 vs 算法](item46-member-vs-algorithm.md)
-- [Effective Modern C++ Item 9：using 优于 typedef](../../M1-modern-cpp/01-Effective-Modern-C++/ch03-moving-to-modern-cpp/README.md)
+- [Effective Modern C++ Item 9：using 优于 typedef](../../../M1-modern-cpp/01-Effective-Modern-C++/ch03-moving-to-modern-cpp/README.md)

@@ -83,7 +83,7 @@ int *b = calloc(100, sizeof(int));
 
 **教训：** 需要清零用 `calloc`，或 `malloc` 后 `memset(p, 0, n)`。调试模式（glibc）下 `malloc` 可能也返回清零内存，但**不能依赖**。
 
-**复习：** → [11.1 Memory Allocation](./11.1-动态内存分配.md)
+**复习：** → [11.1 Memory Allocation](11.1-为什么使用动态内存分配.md)
 
 </details>
 
@@ -112,7 +112,7 @@ if (tmp) buf = tmp;
 
 **教训：** `realloc` 永远用临时指针接收。
 
-**复习：** → [11.3 realloc](./11.3-realloc.md)
+**复习：** → [11.3 realloc](11.3-calloc和realloc.md)
 
 </details>
 
@@ -143,7 +143,7 @@ char *buf = malloc(1);
 
 **规则：** 永远不越界访问 `malloc` 分配的内存；用 `valgrind` 或 ASan 检测。
 
-**复习：** → [11.5 常见错误](./11.5-常见错误.md) · [11.1 动态内存分配](./11.1-动态内存分配.md)
+**复习：** → [11.5 常见错误](./11.5-常见错误.md) · [11.1 动态内存分配](11.1-为什么使用动态内存分配.md)
 
 </details>
 

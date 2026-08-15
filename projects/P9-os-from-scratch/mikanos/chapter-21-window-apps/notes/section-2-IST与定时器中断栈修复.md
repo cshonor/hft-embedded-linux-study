@@ -13,7 +13,7 @@
 
 **根因：** 仅 **TSS.RSP0** 在 **syscall 路径** 上可能仍关联 **用户上下文栈** — 与 **Ch20 TSS.RSP0** 修复 **互补但不足**。
 
-→ [Ch20 TSS.RSP0](../chapter-20-syscall/notes/section-3-TSS与RSP0内核栈.md)
+→ [Ch20 TSS.RSP0](../../chapter-20-syscall/notes/section-3-TSS与RSP0内核栈.md)
 
 ---
 
@@ -45,7 +45,7 @@ IDT[timer_vector].ist = 1   // 使用 IST1，忽略 RSP0
 | 3 | **SetIDTEntry(timer, handler, ist=1)** |
 | 4 | **LoadTR** 刷新 TSS |
 
-→ [Ch7 IDT](../chapter-07-interrupt-fifo/) · [Ch11 APIC 定时器](../chapter-11-timer-acpi/)
+→ [Ch7 IDT](../../chapter-07-interrupt-fifo/) · [Ch11 APIC 定时器](../../chapter-11-timer-acpi/)
 
 ---
 

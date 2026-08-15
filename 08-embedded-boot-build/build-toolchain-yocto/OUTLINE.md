@@ -61,7 +61,7 @@
 | 17 | [chapter-17-processes-threads](./chapter-17-processes-threads/) | Processes and Threads | IPC、多线程、ZeroMQ、调度策略 | 精读 |
 | 18 | [chapter-18-managing-memory](./chapter-18-managing-memory/) | Managing Memory | 虚拟内存、地址空间、泄漏检测 | 精读 |
 
-**交叉链接：** Ch 17–18 ↔ [07 TLPI](../03-linux-userspace-api/) · [04 LKD](../05-linux-kernel/)
+**交叉链接：** Ch 17–18 ↔ [07 TLPI](../../03-linux-userspace-api/) · [04 LKD](../../05-linux-kernel/)
 
 ---
 
@@ -73,7 +73,7 @@
 | 20 | [chapter-20-profiling-tracing](./chapter-20-profiling-tracing/) | Profiling and Tracing | perf、ftrace、LTTng、BPF、Valgrind | 选读 |
 | 21 | [chapter-21-real-time-programming](./chapter-21-real-time-programming/) | Real-time Programming | PREEMPT_RT、cyclictest、调度延迟 | 精读 |
 
-**交叉链接：** Ch 21 ↔ [24 飞控实时](../24-Flight-Control-Real-Time/)（若存在）
+**交叉链接：** Ch 21 ↔ 24 飞控实时（若存在）
 
 ---
 

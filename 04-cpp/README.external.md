@@ -17,7 +17,7 @@
 
 | 入口 | 说明 |
 |------|------|
-| **[00-Linux-Kernel-DPDK-Network-C](./00-Linux-Kernel-DPDK-Network-C/)** | 5 本 C（内部分 `01–05`），HFT 数据面核心 |
+| **00-Linux-Kernel-DPDK-Network-C** | 5 本 C（内部分 `01–05`），HFT 数据面核心 |
 | [根目录 HFT 路线说明](#hft--低延迟推荐顺序) | 阶段 A/B/C 总览 |
 
 ```text
@@ -35,7 +35,7 @@
 
 | 优先级 | 目录 | 说明 |
 |--------|------|------|
-| **必学** | [00-Linux-Kernel-DPDK-Network-C](./00-Linux-Kernel-DPDK-Network-C/) | C 数据面核心 |
+| **必学** | 00-Linux-Kernel-DPDK-Network-C | C 数据面核心 |
 | 高 | [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | 多线程、锁、内存序 |
 | 中 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
 | 按需 | `13-Modern-C++-Performance-Engineering` | 低延迟、无锁、CPU 亲和（见下方可选拓展） |
@@ -59,7 +59,7 @@
 
 ## C 语言学习顺序
 
-见 **[00-Linux-Kernel-DPDK-Network-C](./00-Linux-Kernel-DPDK-Network-C/)**：阶段 1（01–04）→ 阶段 2（05 GNU-C）→ 内核 / DPDK / 网络源码。
+见 **00-Linux-Kernel-DPDK-Network-C**：阶段 1（01–04）→ 阶段 2（05 GNU-C）→ 内核 / DPDK / 网络源码。
 
 ## C++ 学习顺序
 

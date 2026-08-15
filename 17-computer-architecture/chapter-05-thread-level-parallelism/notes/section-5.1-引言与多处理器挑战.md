@@ -28,7 +28,7 @@
 
 | 障碍 | 说明 |
 |------|------|
-| **有限并行性** | [Amdahl 定律](../chapter-01-quantitative-design-fundamentals/notes/section-1.9-计算机设计的量化原则.md) — 串行段封顶加速比 |
+| **有限并行性** | [Amdahl 定律](../../chapter-01-quantitative-design-fundamentals/notes/section-1.9-计算机设计的量化原则.md) — 串行段封顶加速比 |
 | **通信与访存代价** | 远程内存、一致性流量、锁竞争 |
 
 | HFT 视角 |

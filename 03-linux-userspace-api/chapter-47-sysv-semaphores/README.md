@@ -1,19 +1,19 @@
 # TLPI 第 47 章 — System V Semaphores
 
 **优先级**：🔴（同步原语；配共享内存）  
-**前置**：[Ch45 导论](../chapter-45-sysv-ipc-intro/notes.md) · [Ch46 消息队列](../chapter-46-sysv-message-queues/notes.md)  
-**后置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/notes.md)
+**前置**：[Ch45 导论](../chapter-45-sysv-ipc-intro/README.md) · [Ch46 消息队列](../chapter-46-sysv-message-queues/README.md)  
+**后置**：[Ch48 SysV 共享内存](../chapter-48-sysv-shared-memory/README.md)
 
 ---
 
 ## 小节目录
 
-- [47.1 概念](./notes/47.1-concepts.md)
-- [47.2 –47.4 API](./notes/47.2-api.md)
-- [47.5 初始化竞态（经典坑）](./notes/47.5-initialization.md)
-- [47.8 `SEM_UNDO`](./notes/47.8-semundo.md)
-- [47.9 二元信号量 ≈ 互斥](./notes/47.9-semaphore-mutex.md)
-- [47.10 –47.11 限额 · 缺陷](./notes/47.10-defects-quotas.md)
+- [47.1 概念](notes/47.1-overview.md)
+- [47.2 –47.4 API](notes/47.2-creating-or-opening-a-semaphore-set.md)
+- [47.5 初始化竞态（经典坑）](notes/47.5-semaphore-initialization.md)
+- [47.8 `SEM_UNDO`](notes/47.8-semaphore-undo-values.md)
+- [47.9 二元信号量 ≈ 互斥](notes/47.10-semaphore-limits.md)
+- [47.10 –47.11 限额 · 缺陷](notes/47.10-semaphore-limits.md)
 
 ---
 
@@ -138,4 +138,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

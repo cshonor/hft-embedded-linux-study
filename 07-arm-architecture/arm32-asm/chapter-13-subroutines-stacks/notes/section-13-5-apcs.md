@@ -41,7 +41,7 @@
 | **s0–s15** | 参数 + 返回值 + 临时 — **调用者保存** |
 | **s16–s31** | **被调用者保存** — 浮点子程序若用须 **VPUSH/VPOP** 或等价 |
 
-与 [Ch9–11](../chapter-09-floating-point-basics/) 浮点例程一致：**`sin` 在 s0 进、出**。
+与 [Ch9–11](../../chapter-09-floating-point-basics/) 浮点例程一致：**`sin` 在 s0 进、出**。
 
 ---
 
@@ -84,7 +84,7 @@ add:
     BL      printf          ; 按 AAPCS 传参；可能破坏 r0-r3,r12
 ```
 
-完整 **extern、.global、`.type`** → [Ch18 混合编程](../chapter-18-mixing-c-and-assembly/)。
+完整 **extern、.global、`.type`** → [Ch18 混合编程](../../chapter-18-mixing-c-and-assembly/)。
 
 ---
 
@@ -96,7 +96,7 @@ add:
 | **U-Boot** | 板级 **`.S`** 设 **SP**，**`bl board_init_f`** |
 | **AArch64 内核** | **x0–x5** 参数；**x19–x28** callee-save |
 
-→ [20 构建](../../08-embedded-boot-build/) · [04 LKD](../../05-linux-kernel/)
+→ [20 构建](../../../../08-embedded-boot-build/) · [04 LKD](../../../../05-linux-kernel/)
 
 ---
 

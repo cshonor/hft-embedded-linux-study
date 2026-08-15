@@ -311,10 +311,10 @@
 
 | 已学（HFT 链） | 本书对应 |
 |----------------|----------|
-| [01 CSAPP](../02-computer-systems/) Ch3 机器级 | 另一 ISA 的同一层思维 |
-| [08 MikanOS](../projects/P9-os-from-scratch/mikanos/) x86 UEFI | **Ch16 MMIO** ≈ GOP 写帧缓冲 · **Ch13/18** ≈ Loader 调内核 |
-| [04 LKD](../05-linux-kernel/) 中断 | **Ch14–15** 异常概念 → [奔跑吧 Ch11–13](../aarch64-practice/chapter-11-exception-handling/) |
+| [01 CSAPP](../../02-computer-systems/) Ch3 机器级 | 另一 ISA 的同一层思维 |
+| [08 MikanOS](../../projects/P9-os-from-scratch/mikanos/) x86 UEFI | **Ch16 MMIO** ≈ GOP 写帧缓冲 · **Ch13/18** ≈ Loader 调内核 |
+| [04 LKD](../../05-linux-kernel/) 中断 | **Ch14–15** 异常概念 → [奔跑吧 Ch11–13](../aarch64-practice/chapter-11-exception-handling/) |
 
 ---
 
-← [19 README](../README.md) · [奔跑吧 ARM64 OUTLINE](../aarch64-practice/OUTLINE.md) · 下一模块 [20 构建](../08-embedded-boot-build/)
+← [19 README](../README.md) · [奔跑吧 ARM64 OUTLINE](../aarch64-practice/OUTLINE.md) · 下一模块 [20 构建](../../08-embedded-boot-build/)

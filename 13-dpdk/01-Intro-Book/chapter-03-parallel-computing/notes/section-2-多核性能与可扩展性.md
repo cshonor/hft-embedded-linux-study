@@ -11,7 +11,7 @@
 
 DPDK 目标：**吞吐随核数线性增长** — 靠 **资源局部化、少跨核共享、小临界区**。
 
-→ [Ch1 水平扩展](../chapter-01-dpdk-intro/notes/section-4-底层方法论.md)
+→ [Ch1 水平扩展](../../chapter-01-dpdk-intro/notes/section-4-底层方法论.md)
 
 ---
 
@@ -19,7 +19,7 @@ DPDK 目标：**吞吐随核数线性增长** — 靠 **资源局部化、少跨
 
 现代 MP 多为 **NUMA** — **跨节点** 访存/PCIe **极贵**。
 
-DPDK 调优：**网卡、lcore、大页、mempool 同 Node** — 详见 [Ch2](../chapter-02-cache-and-memory/notes/section-6-DDIO与NUMA.md)。
+DPDK 调优：**网卡、lcore、大页、mempool 同 Node** — 详见 [Ch2](../../chapter-02-cache-and-memory/notes/section-6-DDIO与NUMA.md)。
 
 ---
 

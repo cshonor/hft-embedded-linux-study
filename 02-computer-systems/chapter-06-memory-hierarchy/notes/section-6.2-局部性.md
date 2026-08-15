@@ -26,7 +26,7 @@
 | 固定大小 ring array | 每包 `new` 小对象 |
 | 热 struct 字段紧凑 |  giant object 跨多条 cache line |
 
-→ 优化循环：[Ch 5](../chapter-05-optimizing-performance/)
+→ 优化循环：[Ch 5](../../chapter-05-optimizing-performance/)
 
 ---
 

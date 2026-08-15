@@ -54,12 +54,12 @@
 
 ---
 
-← [Day 4](./day-04-C语言与画面显示练习.md) · [01 导读](../README.md) · [Day 6](./day-06-分割编译与中断处理.md)
+← Day 4 · [01 导读](../README.md) · [Day 6](../day-06-split-compile-irq)
 
 ---
 
 ## 相关
 
-- 上一日：[../day-04-c-graphics/](../day-04-c-graphics/)
+- 上一日：[../day-04-c-graphics/](../day-23-graphics)
 - 下一日：[../day-06-split-compile-irq/](../day-06-split-compile-irq/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

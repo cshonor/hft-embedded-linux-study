@@ -147,6 +147,6 @@ echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals' > \
 
 ## 交叉引用
 
-- [05.6 ch04 kprobe 入口探针](chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
-- [05.6 ch04 kretprobe](chapter-04-kprobes/notes/03-kretprobe-return-handler.md)
-- [05.6 ch09 ftrace](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch04 kprobe 入口探针](../../chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
+- [05.6 ch04 kretprobe](../../chapter-04-kprobes/notes/03-kretprobe-return-handler.md)
+- [05.6 ch09 ftrace](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)

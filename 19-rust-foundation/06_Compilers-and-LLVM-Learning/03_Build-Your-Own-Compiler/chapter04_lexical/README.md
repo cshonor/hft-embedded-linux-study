@@ -1,6 +1,6 @@
 # 第 4 章 · 词法分析
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第1部分 · 代码分析
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第1部分 · 代码分析
 
 ## 状态
 
@@ -33,8 +33,8 @@
 |----------|------|
 | ch3 概念 | [chapter03_parse-overview](../chapter03_parse-overview/README.md) · token · JavaCC |
 | ch5 下一章 | 解析器 `.jj` 产生式 |
-| CI 手写扫描 | [CI ch4 扫描](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) |
-| EaC 正则/FA | [EaC ch2 扫描](../../../02_Compiler-Principles/chapter02_scanners/) |
+| CI 手写扫描 | [CI ch4 扫描](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) |
+| EaC 正则/FA | [EaC ch2 扫描](../../02_Compiler-Principles/chapter02_scanners/) |
 
 ---
 

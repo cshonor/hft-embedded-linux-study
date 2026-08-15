@@ -40,7 +40,7 @@ FindCommand("grep") → "apps/grep"
 | 类比 | Linux **`PATH=/apps`**（本书 **硬编码 apps/**） |
 |------|--------------------------------------------------|
 
-→ [Ch25 APPS_DIR](../chapter-25-app-read-file/notes/section-3-apps目录与APPS_DIR.md) · [Ch18 fallback 执行](../chapter-18-apps/notes/section-3-无头二进制与磁盘执行.md)
+→ [Ch25 APPS_DIR](../../chapter-25-app-read-file/notes/section-3-apps目录与APPS_DIR.md) · [Ch18 fallback 执行](../../chapter-18-apps/notes/section-3-无头二进制与磁盘执行.md)
 
 ---
 

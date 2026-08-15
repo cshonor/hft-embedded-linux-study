@@ -6,7 +6,7 @@
 
 ### 本章解决什么问题
 
-[Ch14](../chapter-14-exception-handling-arm7tdmi/) 讲 **ARM7TDMI** — 七种模式、向量存 **`B`**、软件 **`SUBS pc,lr,#n`**。
+[Ch14](../../chapter-14-exception-handling-arm7tdmi/) 讲 **ARM7TDMI** — 七种模式、向量存 **`B`**、软件 **`SUBS pc,lr,#n`**。
 
 **Cortex-M3/M4 (v7-M)** 为 **微控制器** 重设计异常模型：
 

@@ -37,7 +37,7 @@ Ch24 多终端 + 进程隔离
 Ch25 应用读文件 · Ch29 IPC
 ```
 
-→ [Ch23 图形事件(2)](../chapter-23-graphics-events2/)
+→ [Ch23 图形事件(2)](../../chapter-23-graphics-events2/)
 
 ---
 

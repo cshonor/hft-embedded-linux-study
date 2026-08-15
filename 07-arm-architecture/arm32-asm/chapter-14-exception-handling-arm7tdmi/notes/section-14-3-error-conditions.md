@@ -26,7 +26,7 @@
 Undefined handler 解码指令 → 用整数库仿真 → 返回
 ```
 
-**口述：** **Undefined** 不一定是 bug — 可以是 **刻意陷阱** 做 **指令仿真**（与 [Ch9–11](../chapter-09-floating-point-basics/) 浮点硬件对照）。
+**口述：** **Undefined** 不一定是 bug — 可以是 **刻意陷阱** 做 **指令仿真**（与 [Ch9–11](../../chapter-09-floating-point-basics/) 浮点硬件对照）。
 
 ---
 
@@ -38,7 +38,7 @@ Undefined handler 解码指令 → 用整数库仿真 → 返回
 | LR 修正 | 返回时 often **`#4`** | often **`#8`**（ARM 流水线） |
 | MMU | 指令页 fault | 数据页 fault / 权限 |
 
-有 **MMU** 的 ARM7 系统（部分应用处理器）：handler 可 **修复页表** 后 **重试** 同一条指令 — 与 Linux **page fault** 同源（[04 LKD](../../05-linux-kernel/)）。
+有 **MMU** 的 ARM7 系统（部分应用处理器）：handler 可 **修复页表** 后 **重试** 同一条指令 — 与 Linux **page fault** 同源（[04 LKD](../../../../05-linux-kernel/)）。
 
 ---
 

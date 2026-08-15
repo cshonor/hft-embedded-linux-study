@@ -1,19 +1,19 @@
 # TLPI 第 52 章 — POSIX Message Queues
 
 **优先级**：🔴（epoll、优先级、notify）  
-**前置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/notes.md)  
-**后置**：[Ch53 POSIX 信号量](../chapter-53-posix-semaphores/notes.md)
+**前置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)  
+**后置**：[Ch53 POSIX 信号量](../chapter-53-posix-semaphores/README.md)
 
 ---
 
 ## 小节目录
 
-- [52.1 特性](./notes/52.1-section-52-1.md)
-- [52.2 API 要点](./notes/52.2-api.md)
-- [52.3 fork / exec](./notes/52.3-fork-exec.md)
-- [52.7 `mq_notify`（难点）](./notes/52.7-mqnotify.md)
-- [52.8 epoll（Linux）](./notes/52.8-epoll.md)
-- [52.9 限额](./notes/52.9-quotas.md)
+- [52.1 特性](notes/52.1-overview.md)
+- [52.2 API 要点](notes/52.2-opening-closing-and-unlinking-a-message-.md)
+- [52.3 fork / exec](notes/52.3-relationship-between-descriptors-and-mes.md)
+- [52.7 `mq_notify`（难点）](notes/52.7-linux-specific-features.md)
+- [52.8 epoll（Linux）](notes/52.8-message-queue-limits.md)
+- [52.9 限额](notes/52.9-comparison-of-posix-and-system-v-message.md)
 
 ---
 
@@ -152,4 +152,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

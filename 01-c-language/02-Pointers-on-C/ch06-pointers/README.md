@@ -58,7 +58,7 @@
 - [6.10 指针的指针](./6.10-指针的指针.md)
 - [6.11 指针表达式](./6.11-指针表达式.md)
 - [6.12 实例](./6.12-实例.md)
-- [6.13 指针运算](./6.13-pointer-arithmetic/6.13-pointer-arithmetic.md)
+- [6.13 指针运算](6.13-pointer-arithmetic/6.13-指针运算.md)
   - [6.13.1 指针的算术运算](./6.13-pointer-arithmetic/6.13.1-指针的算术运算.md)
   - [6.13.2 指针的关系运算](./6.13-pointer-arithmetic/6.13.2-指针的关系运算.md)
 
@@ -90,7 +90,7 @@ b = 20;
 
 **教训：** 一行声明一个变量，避免混淆。
 
-**复习：** → [6.1 Pointer Variables](./6.1-pointer-variables/6.1-pointer-variables.md)
+**复习：** → 6.1 Pointer Variables
 
 </details>
 
@@ -124,7 +124,7 @@ void func(int a[]) {
 
 **教训：** 函数内 `sizeof(参数[])` 得到的是指针大小，不是数组大小。传参时必须额外传长度。
 
-**复习：** → [6.4 Pointers to Arrays](./6.4-pointers-to-arrays/6.4-pointers-to-arrays.md) — 退化
+**复习：** → 6.4 Pointers to Arrays — 退化
 
 </details>
 
@@ -154,7 +154,7 @@ p = NULL;
 
 **教训：** `free` 后立即 `p = NULL`，防止悬垂指针和双重 free。
 
-**复习：** → [6.9 Pointers to Pointers](./6.9-pointers-to-pointers/6.9-pointers-to-pointers.md) — 悬垂指针
+**复习：** → 6.9 Pointers to Pointers — 悬垂指针
 
 </details>
 
@@ -183,7 +183,7 @@ cp++;                   // (5) 合法吗？
 
 **教训：** `void*` 用于通用接口（`malloc`、`qsort` 回调），使用前必须 cast 到具体类型。
 
-**复习：** → [6.7 Pointers to void](./6.7-pointers-to-void/6.7-pointers-to-void.md)
+**复习：** → 6.7 Pointers to void
 
 </details>
 

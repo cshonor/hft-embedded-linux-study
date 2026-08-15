@@ -15,7 +15,7 @@ DPDK 极力 **资源局部化**，减少跨核共享 — 但 **核间通信、�
 | **自旋锁** | **短临界区**、不可睡眠、可中断上下文 |
 | **无锁 (rte_ring)** | 高速 **多生产者/多消费者** 队列 |
 
-**承上启下：** [Ch3 并行计算](../chapter-03-parallel-computing/) 指出多核 **同步代价**；本章给出 **四种原语**；[mbuf/ring 实战](../chapter-02-mbuf与内存池.md) 与 [Ch8 多队列](../chapter-08-flow-classification-multiqueue/) 落地。
+**承上启下：** [Ch3 并行计算](../../chapter-03-parallel-computing/) 指出多核 **同步代价**；本章给出 **四种原语**；[mbuf/ring 实战](../../chapter-02-cache-and-memory) 与 [Ch8 多队列](../../chapter-08-flow-classification-multiqueue/) 落地。
 
 ---
 

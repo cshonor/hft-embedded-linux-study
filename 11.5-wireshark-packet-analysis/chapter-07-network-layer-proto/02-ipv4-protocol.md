@@ -1,6 +1,6 @@
 ﻿# 7.2.1 互联网协议第 4 版（IPv4）
 
-> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 对照：[TCP/IP 第2章 地址](../../TCP-IP-Volume1-Protocols/chapter02-ip-address-architecture/chapter-summary.md)
+> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 对照：TCP/IP 第2章 地址
 
 **核心主旨**：IPv4 寻址/掩码、头部关键字段、MTU 分片——读包与排障基础。
 
@@ -35,7 +35,7 @@
 
 **Wireshark 提示**：`ip.flags.mf==1` 找分片；`ip.frag_offset > 0` 找后续片；专家信息可能标 **Fragmented**。
 
-> 路径 MTU 发现（PMTUD）可减少中间分片；见 TCP/IP [MTU/PMTUD](../../TCP-IP-Volume1-Protocols/chapter03-link-layer/3.8-mtu.md)。
+> 路径 MTU 发现（PMTUD）可减少中间分片；见 TCP/IP MTU/PMTUD。
 
 ## 抓包/实操记录
 

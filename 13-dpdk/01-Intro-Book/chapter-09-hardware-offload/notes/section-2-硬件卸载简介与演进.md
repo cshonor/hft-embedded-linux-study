@@ -38,7 +38,7 @@ Ch8 RSS / Flow Director         ← 硬件分流
 Ch9 硬件 offload（本章）        ← 单包机械运算下放 NIC
 ```
 
-→ [Ch5 模块划分 · 硬件加速](../chapter-05-packet-forwarding/notes/section-2-网络处理模块划分.md)
+→ [Ch5 模块划分 · 硬件加速](../../chapter-05-packet-forwarding/notes/section-2-网络处理模块划分.md)
 
 ---
 

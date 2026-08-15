@@ -41,7 +41,7 @@ font.o: font.cpp font.hpp
 | 只改 `font.cpp` | 重编 **font.o** + 链接 |
 | 头文件作依赖 | 改 `.hpp` 会触发包含它的 `.o` 重编 |
 
-→ [Ch4 Makefile 入门](../chapter-04-pixel-make/notes/section-2-make与Makefile.md)
+→ [Ch4 Makefile 入门](../../chapter-04-pixel-make/notes/section-2-make与Makefile.md)
 
 ---
 

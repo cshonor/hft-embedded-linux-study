@@ -41,7 +41,7 @@ Ch19 进程虚拟地址空间（分页深化）
 Ch27 应用堆管理
 ```
 
-→ [Ch2 GetMemoryMap](../chapter-02-edk2-memmap/notes/section-4-GetMemoryMap与导出memmap.md)
+→ [Ch2 GetMemoryMap](../../chapter-02-edk2-memmap/notes/section-4-GetMemoryMap与导出memmap.md)
 
 ---
 

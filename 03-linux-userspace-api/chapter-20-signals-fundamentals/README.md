@@ -1,20 +1,20 @@
 # TLPI 第 20 章 — Signals: Fundamental Concepts
 
 **优先级**：🔴（进程控制、daemon、可靠异步事件的理论地基）  
-**前置**：[Ch19 inotify](../chapter-19-monitoring-file-events/notes.md)（同属异步事件，机制不同）  
-**后置**：[Ch21 Signal Handlers](../chapter-21-signal-handlers/notes.md) · [Ch22 高级信号](../chapter-22-signals-advanced/notes.md)
+**前置**：[Ch19 inotify](../chapter-19-monitoring-file-events/README.md)（同属异步事件，机制不同）  
+**后置**：[Ch21 Signal Handlers](../chapter-21-signal-handlers/README.md) · [Ch22 高级信号](../chapter-22-signals-advanced/README.md)
 
 ---
 
 ## 小节目录
 
-- [20.1 概述](./notes/20.1-overview.md)
-- [20.2 编号与分类](./notes/20.2-numbering-classification.md)
-- [20.3 生命周期](./notes/20.3-lifecycle.md)
-- [20.4 信号掩码与未决集](./notes/20.4-signal-mask-pending.md)
-- [20.5 `signal()` 缺陷（警示）](./notes/20.5-signal.md)
-- [20.6 发送信号](./notes/20.6-signal-sending.md)
-- [20.7 进程组与终端（基础）](./notes/20.7-process-terminal-group.md)
+- [20.1 概述](notes/20.1-concepts-and-overview.md)
+- [20.2 编号与分类](notes/20.2-signal-types-and-default-actions.md)
+- [20.3 生命周期](notes/20.3-changing-signal-dispositions-signal.md)
+- [20.4 信号掩码与未决集](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
+- [20.5 `signal()` 缺陷（警示）](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
+- [20.6 发送信号](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
+- 20.7 进程组与终端（基础）
 
 ---
 
@@ -151,4 +151,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

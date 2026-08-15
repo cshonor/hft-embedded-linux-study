@@ -20,7 +20,7 @@
 
 | HFT 视角 |
 |----------|
-| **LOB = HFT 核心数据结构**；详见 [Ch 6 指令驱动市场](../chapter-06-order-driven-markets/) |
+| **LOB = HFT 核心数据结构**；详见 [Ch 6 指令驱动市场](../../chapter-06-order-driven-markets/) |
 | 多 venue → **多个 order book** 需聚合 (SIP vs direct feed) |
 
 ### 4.3 交易代码 (Ticker symbols)

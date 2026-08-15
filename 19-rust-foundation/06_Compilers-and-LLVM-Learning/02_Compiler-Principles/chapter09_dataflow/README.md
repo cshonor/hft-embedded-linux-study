@@ -1,6 +1,6 @@
 # 第 9 章 · 数据流分析（Data-Flow Analysis）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part III 优化
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part III 优化
 
 ## 状态
 
@@ -33,7 +33,7 @@
 |----------|------|
 | ch8 可用表达式 | [ch8 §4](../chapter08_intro-opt/04-global-redundancy.md) — 同类数据流 |
 | ch5 SSA 概念 | [ch5 §5](../chapter05_ir/05-ssa-form.md) — 本章讲**怎么建/拆** |
-| LLVM SSA | [04 LLVM IR](../../../04_Learn-LLVM-17/README.md) |
+| LLVM SSA | [04 LLVM IR](../../04_Learn-LLVM-17/README.md) |
 | ch10 标量优化 | 下一章 — 在 SSA 上跑 Pass |
 
 ---

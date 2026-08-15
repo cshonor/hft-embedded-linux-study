@@ -13,7 +13,7 @@
 | **类比** | 电话网络 — **用户越多价值越高** |
 | **后果** | 主导市场 **巨大优势**；新市场 **极难抗衡** → **赢家通吃 (Winner-take-all)** |
 
-→ [Ch 19 流动性](../chapter-19-liquidity/) · [Ch 9 好市场](../chapter-09-good-markets/)
+→ [Ch 19 流动性](../../chapter-19-liquidity/) · [Ch 9 好市场](../../chapter-09-good-markets/)
 
 | HFT 视角 |
 |----------|

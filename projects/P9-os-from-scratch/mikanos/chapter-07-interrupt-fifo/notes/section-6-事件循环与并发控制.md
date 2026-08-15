@@ -40,7 +40,7 @@ for (;;) {
 | **Main** | 消费者 — **Pop + 重绘** |
 | **`hlt`** | 无消息时 **不占 CPU** — 中断唤醒 |
 
-→ [Ch3 hlt](../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
+→ [Ch3 hlt](../../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
 
 ---
 
@@ -69,7 +69,7 @@ void PushSafe(const Message& m) {
 | **临界区要短** | 关中断过久 → **丢事件/增加延迟** |
 | **单核模型** | 本章 **无多核并发** — cli 足够；多核需锁（远后） |
 
-→ 对照 [01 Day 12 缩短关中断时间](../../thirty-days-os-essentials/day-12-timer1/)
+→ 对照 01 Day 12 缩短关中断时间
 
 ---
 
@@ -93,11 +93,11 @@ void PushSafe(const Message& m) {
 
 | Ch7 主题 | 继续读 |
 |----------|--------|
-| 内存管理 | [chapter-08-memory](../chapter-08-memory/) 🔴 |
-| 图层（Ch6 擦除问题） | [chapter-09-layers](../chapter-09-layers/) ⚪ |
-| 定时器 | [chapter-11-timer-acpi](../chapter-11-timer-acpi/) 🔴 |
-| 多任务 | [chapter-13-multitask1](../chapter-13-multitask1/) 🔴 |
+| 内存管理 | [chapter-08-memory](../../chapter-08-memory/) 🔴 |
+| 图层（Ch6 擦除问题） | [chapter-09-layers](../../chapter-09-layers/) ⚪ |
+| 定时器 | [chapter-11-timer-acpi](../../chapter-11-timer-acpi/) 🔴 |
+| 多任务 | [chapter-13-multitask1](../../chapter-13-multitask1/) 🔴 |
 
 ---
 
-← [5. FIFO](./section-5-FIFO与ArrayQueue.md) · [Ch 6](../chapter-06-mouse-pci/) · [Ch 7 导读](../README.md)
+← [5. FIFO](./section-5-FIFO与ArrayQueue.md) · [Ch 6](../../chapter-06-mouse-pci/) · [Ch 7 导读](../README.md)

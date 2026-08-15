@@ -18,6 +18,6 @@ API 读字符串:
 
 **教训：** **跨特权传指针** 必须 **显式指定目标地址空间** — Linux **copy_from_user** 同源。
 
-→ [Day 5 GDT/段](../day-05-gdt-idt/) · [Day 20 INT 0x40](../day-20-api/)
+→ [Day 5 GDT/段](../../day-05-gdt-idt/) · [Day 20 INT 0x40](../../day-20-api/)
 
 ---

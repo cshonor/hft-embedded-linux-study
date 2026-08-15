@@ -10,7 +10,7 @@
 
 ## 为什么需要 vmalloc
 
-[Ch 6 Buddy](../../chapter-06-physical-page-allocation/) 分配 **物理连续** 的 **2^n 页** — 快、缓存友好。但 **外部碎片** 积累后，可能 **凑不出大块连续物理内存**，尽管 **总空闲页足够**。
+[Ch 6 Buddy](../chapter-06-physical-page-allocation/) 分配 **物理连续** 的 **2^n 页** — 快、缓存友好。但 **外部碎片** 积累后，可能 **凑不出大块连续物理内存**，尽管 **总空闲页足够**。
 
 **`vmalloc()` 的取舍：**
 
@@ -55,5 +55,5 @@ Ch 4 fault：vmalloc 区访问时同步页表项
 
 - 上一章：[../chapter-06-physical-page-allocation/](../chapter-06-physical-page-allocation/)
 - 下一章：[../chapter-08-slab-allocator/](../chapter-08-slab-allocator/)
-- 附录 G：[../../appendix-G-非连续内存分配.md](../../appendix-G-非连续内存分配.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 G：[../../appendix-G-非连续内存分配.md](../appendix-G-非连续内存分配.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

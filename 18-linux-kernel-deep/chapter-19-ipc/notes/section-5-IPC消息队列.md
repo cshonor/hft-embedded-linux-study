@@ -24,7 +24,7 @@
 
 **超长消息：** 超过 **一页** 时 — 分配 **额外页**，用 **`msg_msgseg`** **链式** 串联。
 
-→ 页框：[Ch 8](../chapter-08-memory-management/notes/section-2-页框管理.md)
+→ 页框：[Ch 8](../../chapter-08-memory-management/notes/section-2-页框管理.md)
 
 ---
 

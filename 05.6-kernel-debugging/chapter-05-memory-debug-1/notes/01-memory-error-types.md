@@ -124,6 +124,6 @@ KASAN 能在开发期捕获大部分内存错误。生产环境用 KFENCE 做低
 
 ## 交叉引用
 
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch05 SLUB debug](chapter-05-memory-debug-1/notes/04-slub-debug.md)
-- [05.6 ch06 KFENCE](chapter-06-memory-debug-2/notes/01-kfence.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch05 SLUB debug](../../chapter-05-memory-debug-1/notes/04-slub-debug.md)
+- [05.6 ch06 KFENCE](../../chapter-06-memory-debug-2/notes/01-kfence.md)

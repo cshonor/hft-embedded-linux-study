@@ -32,7 +32,7 @@ Virtio **三张表** — 「无障碍」提交与回收：
 
 ### 三、与 DPDK 描述符环对照
 
-| | Virtio Virtqueue | [Ch6 NIC DMA 环](../chapter-06-pcie-packet-io/notes/section-3-DMA描述符环形队列.md) |
+| | Virtio Virtqueue | [Ch6 NIC DMA 环](../../chapter-06-pcie-packet-io/notes/section-3-DMA描述符环形队列.md) |
 |---|------------------|-------------------------------------------------------------------------------------|
 | 位置 | Guest 内存，后端 **共享访问** | 设备 DMA 环 |
 | 同步 | Available/Used **分离** | Head/Tail + DD 位 |
@@ -43,7 +43,7 @@ Virtio **三张表** — 「无障碍」提交与回收：
 ### 四、Kick / Notify
 
 - 前端更新 Available 后 **notify** 后端（或依赖 **轮询** 减中断）  
-- DPDK virtio PMD 倾向 **poll** — 与 [Ch7 轮询模式](../chapter-07-nic-performance-optimization/notes/section-2-轮询与混合中断模式.md) 一致
+- DPDK virtio PMD 倾向 **poll** — 与 [Ch7 轮询模式](../../chapter-07-nic-performance-optimization/notes/section-2-轮询与混合中断模式.md) 一致
 
 ---
 

@@ -21,7 +21,7 @@ if (argc < 2) {
 | **管道上游** | `grep x file \| cat` |
 | **纯转储** | 配合 **stdin** 读键盘 |
 
-→ [Ch29 cat ReadDelim](../chapter-29-ipc/notes/section-5-sort-cat优化与终端修复.md)
+→ [Ch29 cat ReadDelim](../../chapter-29-ipc/notes/section-5-sort-cat优化与终端修复.md)
 
 ---
 
@@ -47,7 +47,7 @@ world
 
 **调试效率：** 无需 **外部编辑器** — **终端草稿文件**。
 
-→ [Ch28 重定向](../chapter-28-japanese-redirect/notes/section-5-标准输出重定向.md) · [Ch26 stdin](../chapter-26-app-write-file/notes/section-3-stdin回显与Ctrl+D.md)
+→ [Ch28 重定向](../../chapter-28-japanese-redirect/notes/section-5-标准输出重定向.md) · [Ch26 stdin](../../chapter-26-app-write-file/notes/section-3-stdin回显与Ctrl+D.md)
 
 ---
 

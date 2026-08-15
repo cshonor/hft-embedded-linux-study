@@ -32,7 +32,7 @@ int SyscallOpenFile(const char* path, int flags) {
 
 **目录簇满：** **ExtendCluster()** — 给 **目录本身** 加 **FAT 链上新簇**。
 
-→ [Ch17 目录项](../chapter-17-filesystem/notes/section-4-目录条目结构.md)
+→ [Ch17 目录项](../../chapter-17-filesystem/notes/section-4-目录条目结构.md)
 
 ---
 

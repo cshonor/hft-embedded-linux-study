@@ -148,7 +148,7 @@ kernel.panic = 5
 
 ## 交叉引用
 
-- [05.6 ch08 LOCKDEP 锁依赖检测器](chapter-08-lock-debug/notes/02-lockdep.md)
-- [05.6 ch08 KCSAN 数据竞争检测器](chapter-08-lock-debug/notes/05-kcsan.md)
-- [05.6 ch05 KASAN 内存检测](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch11 KGDB UART 调试](chapter-11-kgdb/notes/01-kgdb-setup.md)
+- [05.6 ch08 LOCKDEP 锁依赖检测器](../../chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch08 KCSAN 数据竞争检测器](../../chapter-08-lock-debug/notes/05-kcsan.md)
+- [05.6 ch05 KASAN 内存检测](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch11 KGDB UART 调试](../../chapter-11-kgdb/notes/01-kgdb-architecture.md)

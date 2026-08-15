@@ -46,7 +46,7 @@ expr : expr '+' term  { $$ = makeAdd($1, $3); }
 | **保留语义节点** | 表达式、语句、声明 |
 | **紧凑结构** | 供 ch5 **IR lowering** 与 ch8+ **优化** |
 
-→ [CI jlox ch5 AST](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md)
+→ [CI jlox ch5 AST](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/README.md)
 
 ---
 
@@ -80,4 +80,4 @@ expr : expr '+' term  { $$ = makeAdd($1, $3); }
 ch2 Token → ch3 结构 → ch4 语义(AST/类型) → ch5 IR …
 ```
 
-→ [本书目录 ch5+](../../本书目录.md)
+→ [本书目录 ch5+](../本书目录.md)

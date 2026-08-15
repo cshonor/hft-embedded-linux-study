@@ -25,7 +25,7 @@ shrink_slab()     — Slab 可回收对象
 out_of_memory() → OOM Killer
 ```
 
-→ Slab：[Ch 8 section-3](../chapter-08-memory-management/notes/section-3-Slab分配器.md)
+→ Slab：[Ch 8 section-3](../../chapter-08-memory-management/notes/section-3-Slab分配器.md)
 
 ---
 
@@ -36,7 +36,7 @@ out_of_memory() → OOM Killer
 - 监控 **空闲页框** vs **min/low/high 水位**  
 - 低于阈值 → **唤醒** kswapd **后台** 回收 — **避免** 突然耗尽  
 
-与 **pdflush** 写回脏页协同 — [Ch 15](../chapter-15-page-cache/notes/section-5-回写脏页与pdflush.md)。
+与 **pdflush** 写回脏页协同 — [Ch 15](../../chapter-15-page-cache/notes/section-5-回写脏页与pdflush.md)。
 
 ---
 

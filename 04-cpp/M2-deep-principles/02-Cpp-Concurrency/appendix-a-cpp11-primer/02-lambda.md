@@ -13,7 +13,7 @@ lambda 是 C++11 最重要的特性之一——匿名函数，可以捕获上下
 ### lambda 语法
 
 ```cpp
-auto f = [capture](params) mutable -> return_type { body };
+auto f = capture mutable -> return_type { body };
 //       ^捕获    ^参数   ^可改写 ^返回类型      ^函数体
 ```
 

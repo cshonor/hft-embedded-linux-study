@@ -35,7 +35,7 @@ ctx.rip = &TaskEntryTrampoline
 
 **摆脱硬编码两个 Task** — **动态数量**。
 
-→ [Ch9 sbrk/new + STL](../chapter-09-layers/notes/section-2-sbrk与new运算符.md)
+→ [Ch9 sbrk/new + STL](../../chapter-09-layers/notes/section-2-sbrk与new运算符.md)
 
 ---
 

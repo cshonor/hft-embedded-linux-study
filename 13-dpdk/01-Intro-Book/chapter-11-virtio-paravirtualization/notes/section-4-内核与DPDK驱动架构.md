@@ -16,19 +16,19 @@
 
 **目标：** 与 **通用 Linux 网络栈** 无缝集成 — sk_buff、NAPI、iptables 等。
 
-→ [14-LKN](../../../../12-kernel-networking/) · 对照 DPDK **旁路** [Ch4 stub](../chapter-04-零拷贝与用户态旁路.md)
+→ [14-LKN](../../../../12-kernel-networking/) · 对照 DPDK **旁路** [Ch4 stub](../../chapter-04-synchronization)
 
 ---
 
 ### 二、DPDK 用户态驱动
 
-**目标：** **极致包处理** — 绕过内核栈，接 [Ch6 mbuf](../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) / burst API。
+**目标：** **极致包处理** — 绕过内核栈，接 [Ch6 mbuf](../../chapter-06-pcie-packet-io/notes/section-6-Mbuf与Mempool.md) / burst API。
 
 | 共用手段 | 说明 |
 |----------|------|
-| **大页** | 减 TLB/EPT 压力 — [Ch2](../chapter-02-cache-and-memory/notes/section-5-大页Hugepages.md) |
-| **轮询** | 减 virtqueue notify / 中断 — [Ch7](../chapter-07-nic-performance-optimization/) |
-| **SIMD** | 描述符/ mbuf 批量处理 — [Ch3](../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) |
+| **大页** | 减 TLB/EPT 压力 — [Ch2](../../chapter-02-cache-and-memory/notes/section-5-大页Hugepages.md) |
+| **轮询** | 减 virtqueue notify / 中断 — [Ch7](../../chapter-07-nic-performance-optimization/) |
+| **SIMD** | 描述符/ mbuf 批量处理 — [Ch3](../../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) |
 
 **PMD：** `net_virtio` — 在 Guest 内仍走 Virtqueue，但 **数据面不进内核**。
 

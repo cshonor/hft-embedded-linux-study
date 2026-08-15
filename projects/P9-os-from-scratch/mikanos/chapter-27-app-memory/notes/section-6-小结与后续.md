@@ -41,11 +41,11 @@ Ch27 Demand · MapFile · CoW  ← 本章
 
 | Ch27 主题 | 继续读 |
 |----------|--------|
-| 日文/重定向 | [chapter-28-japanese-redirect](../chapter-28-japanese-redirect/) ⚪ |
-| IPC | [chapter-29-ipc](../chapter-29-ipc/) |
-| 分页基础 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
+| 日文/重定向 | [chapter-28-japanese-redirect](../../chapter-28-japanese-redirect/) ⚪ |
+| IPC | [chapter-29-ipc](../../chapter-29-ipc/) |
+| 分页基础 | [chapter-19-paging](../../chapter-19-paging/) 🔴 |
 | CSAPP VM | [02-computer-systems Ch9](../../../../../02-computer-systems/chapter-09-virtual-memory/) |
 
 ---
 
-← [5. CoW](./section-5-写入时复制与invlpg.md) · [Ch 26](../chapter-26-app-write-file/) · [Ch 27 导读](../README.md)
+← [5. CoW](./section-5-写入时复制与invlpg.md) · [Ch 26](../../chapter-26-app-write-file/) · [Ch 27 导读](../README.md)

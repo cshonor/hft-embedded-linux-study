@@ -25,6 +25,6 @@
 |----------|
 | **Matching engine + LOB** = 搜索 **基础设施** |
 | **Co-lo、direct feed** = 降低 **搜索延迟**（发现对手的速度） |
-| **Dark pool / upstairs** = **另类搜索渠道** — [Ch 15](../chapter-15-block-traders/) · [Ch 18](../chapter-18-buy-side-traders/) |
+| **Dark pool / upstairs** = **另类搜索渠道** — [Ch 15](../../chapter-15-block-traders/) · [Ch 18](../../chapter-18-buy-side-traders/) |
 
 ---

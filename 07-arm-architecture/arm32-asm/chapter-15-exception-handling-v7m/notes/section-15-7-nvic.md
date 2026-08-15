@@ -46,7 +46,7 @@
 | **NVIC** | 查手册 **TIMER0A_IRQn** 编号 → **优先级** → **ISER 位置位** |
 | **Handler** | 读 **RIS/MIS** 确认 · 写 **ICR** 清标志 · 应用逻辑（翻转 LED 等） |
 
-**与 [Ch16](../chapter-16-memory-mapped-peripherals/) 关系：** §15.7 偏 **中断链路**；Ch16 偏 **寄存器/MMIO 读写** — 合起来完成 **裸机定时器**。
+**与 [Ch16](../../chapter-16-memory-mapped-peripherals/) 关系：** §15.7 偏 **中断链路**；Ch16 偏 **寄存器/MMIO 读写** — 合起来完成 **裸机定时器**。
 
 ---
 

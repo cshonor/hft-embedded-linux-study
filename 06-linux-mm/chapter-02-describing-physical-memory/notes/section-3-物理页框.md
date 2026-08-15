@@ -25,6 +25,6 @@
 
 LRU、dirty、locked 等标志与 **Ch 10 页框回收**、**swap** 直接相连 — 回收器决定 **踢哪一页**，就是看 **哪个 zone 的哪条 LRU、什么 flags**。
 
-→ 用户态 `mmap` 的文件页、匿名页，最终都落实为 **`struct page` + 引用计数 + flags**（→ [03-linux-userspace-api](../03-linux-userspace-api/) · [05-linux-kernel Ch12](../05-linux-kernel/chapter-12-memory-management/)）。
+→ 用户态 `mmap` 的文件页、匿名页，最终都落实为 **`struct page` + 引用计数 + flags**（→ [03-linux-userspace-api](../../../03-linux-userspace-api/) · [05-linux-kernel Ch12](../../../05-linux-kernel/chapter-12-memory-management/)）。
 
 ---

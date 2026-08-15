@@ -22,7 +22,7 @@
 
 还检查进程是否 **超出 CPU 时间限制** → 发送 **`SIGXCPU`** / **`SIGKILL`**。
 
-→ `task_struct`：[Ch 3](../chapter-03-processes/notes/section-3-进程描述符.md) · 信号：[Ch 11](../chapter-11-signals.md)
+→ `task_struct`：[Ch 3](../../chapter-03-processes/notes/section-3-进程描述符.md) · 信号：[Ch 11](../../chapter-11-signals.md)
 
 ---
 

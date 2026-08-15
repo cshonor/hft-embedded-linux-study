@@ -1,8 +1,8 @@
 # TLPI 第 14 章 — File Systems
 
 **优先级**：🔴（路径解析、挂载、硬链接、持久化与 fsck/日志理解）  
-**前置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/notes.md)  
-**后置**：[Ch15 File Attributes](../chapter-15-file-attributes/notes.md) · [Ch18 目录与链接](../chapter-18-directories-links/notes.md) · [Ch19 inotify](../chapter-19-monitoring-file-events/notes.md)
+**前置**：[Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md)  
+**后置**：[Ch15 File Attributes](../chapter-15-file-attributes/README.md) · [Ch18 目录与链接](../chapter-18-directories-links/README.md) · [Ch19 inotify](../chapter-19-monitoring-file-events/README.md)
 
 ---
 
@@ -156,4 +156,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

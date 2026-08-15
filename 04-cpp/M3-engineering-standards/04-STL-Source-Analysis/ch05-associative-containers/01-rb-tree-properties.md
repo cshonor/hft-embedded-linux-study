@@ -206,7 +206,7 @@ if (it != orders.end()) {
 }
 ```
 
-**复习：** → [成员函数 vs 算法](../ch07-programming-with-stl/item46-member-vs-algorithm.md)（Effective STL Item 46）
+**复习：** → 成员函数 vs 算法（Effective STL Item 46）
 </details>
 
 ### Q4: 删除黑节点会发生什么？

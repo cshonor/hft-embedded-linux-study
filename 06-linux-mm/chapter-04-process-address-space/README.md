@@ -24,7 +24,7 @@
 
 **HFT 结论：** 热路径上 **第一次 touch 某页** = 可能 **page fault + 分配 + 清零/读盘** — 延迟尖刺。所以常用 **`mmap` + 预 touch**、**`MAP_POPULATE`**、**`mlock`**、**大页** 把 fault 挡在 **启动/预热阶段**。
 
-→ 用户态 API：[03-linux-userspace-api](../03-linux-userspace-api/) · 概念：[02-CSAPP Ch9](../02-computer-systems/chapter-09-virtual-memory/) · 内核对照：[05-linux-kernel Ch15](../05-linux-kernel/chapter-15-process-address-space/)
+→ 用户态 API：[03-linux-userspace-api](../../03-linux-userspace-api/) · 概念：[02-CSAPP Ch9](../../02-computer-systems/chapter-09-virtual-memory/) · 内核对照：[05-linux-kernel Ch15](../../05-linux-kernel/chapter-15-process-address-space/)
 
 ---
 
@@ -45,5 +45,5 @@
 
 - 上一章：[../chapter-03-page-table-management/](../chapter-03-page-table-management/)
 - 下一章：[../chapter-05-boot-memory-allocator/](../chapter-05-boot-memory-allocator/)
-- 附录 D：[../../appendix-D-进程地址空间.md](../../appendix-D-进程地址空间.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 D：[../../appendix-D-进程地址空间.md](../appendix-D-进程地址空间.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

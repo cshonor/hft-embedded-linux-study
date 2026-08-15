@@ -11,7 +11,7 @@
 
 应用 **不知道** 文件在磁盘上的物理布局 — 只与 VFS 对象交互。
 
-→ syscall 入口：[Ch 10](../chapter-10-system-calls/) · 用户态：[08 TLPI](../../../03-linux-userspace-api/)
+→ syscall 入口：[Ch 10](../../chapter-10-system-calls/) · 用户态：[08 TLPI](../../../03-linux-userspace-api/)
 
 ---
 

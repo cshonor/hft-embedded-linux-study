@@ -17,7 +17,7 @@
 | **Inode Cache** | inode 元数据、权限 | 中等 |
 | **dcache** | 路径名 → inode 映射 | 加速路径查找 |
 
-→ 内核实现：[05-linux-kernel VFS](../05-linux-kernel/chapter-13-vfs/) · [18-linux-kernel-deep](../../../18-linux-kernel-deep/) · [thirty-days-os Day 18–19 FAT](../projects/P9-os-from-scratch/thirty-days-os/day-18-dir/)
+→ 内核实现：[05-linux-kernel VFS](../../../05-linux-kernel/chapter-13-vfs/) · [18-linux-kernel-deep](../../../18-linux-kernel-deep/) · thirty-days-os Day 18–19 FAT
 
 ### 预读与写回
 

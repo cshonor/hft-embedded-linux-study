@@ -52,12 +52,12 @@
 
 ---
 
-← [Day 14](./day-14-高分辨率及键盘输入.md) · [01 导读](../README.md) · [Day 16](./day-16-多任务2.md)
+← Day 14 · [01 导读](../README.md) · Day 16
 
 ---
 
 ## 相关
 
-- 上一日：[../day-14-keyboard/](../day-14-keyboard/)
-- 下一日：[../day-16-multitask2/](../day-16-multitask2/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 上一日：../day-14-keyboard/
+- 下一日：../day-16-multitask2/
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

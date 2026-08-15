@@ -36,7 +36,7 @@ Ch7 **`ArrayQueue`** 定长 FIFO — 本章部分场景改用 **`std::deque`**�
 
 **前提：** Ch9 **`sbrk`/`new`** 已通 — STL 容器 **可分配**。
 
-→ [Ch7 ArrayQueue](../chapter-07-interrupt-fifo/notes/section-5-FIFO与ArrayQueue.md) · [Ch9 sbrk](../chapter-09-layers/notes/section-2-sbrk与new运算符.md)
+→ [Ch7 ArrayQueue](../../chapter-07-interrupt-fifo/notes/section-5-FIFO与ArrayQueue.md) · [Ch9 sbrk](../../chapter-09-layers/notes/section-2-sbrk与new运算符.md)
 
 ---
 

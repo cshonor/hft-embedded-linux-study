@@ -116,7 +116,7 @@ std::shared_ptr<Widget> p2(raw);  // 会发生什么？
 
 **或用 `enable_shared_from_this`：** 对象继承 `enable_shared_from_this<T>`，在成员函数中调 `shared_from_this()` 返回正确的 `shared_ptr`。
 
-**复习：** → [Item 19：用 shared_ptr 管理共享所有权](./item19-用std-shared_ptr管理共享所有权.md)
+**复习：** → [Item 19：用 shared_ptr 管理共享所有权](item19-shared-ptr.md)
 </details>
 
 ### Q2: unique_ptr 自定义删除器
@@ -137,5 +137,5 @@ std::unique_ptr<FILE, decltype(&fclose)> fp(fopen("data.txt", "r"), &fclose);
 
 **HFT 用途：** 管理自定义资源（`fd`/`mmap`/DPDK `mbuf`）——自定义删除器调 `close`/`munmap`/`rte_pktmbuf_free`。
 
-**复习：** → [Item 18：用 unique_ptr 管理独占资源](./item18-用std-unique_ptr管理独占资源.md)
+**复习：** → [Item 18：用 unique_ptr 管理独占资源](item18-unique-ptr.md)
 </details>

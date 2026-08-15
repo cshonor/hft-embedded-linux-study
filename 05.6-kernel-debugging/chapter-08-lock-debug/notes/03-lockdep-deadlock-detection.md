@@ -165,6 +165,6 @@ void on_ioctl(void) {
 
 ## 交叉引用
 
-- [05.6 ch08 并发 Bug 类型](chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
-- [05.6 ch08 LOCKDEP 锁依赖检测器](chapter-08-lock-debug/notes/02-lockdep.md)
-- [05.6 ch08 lock_stat 锁竞争统计](chapter-08-lock-debug/notes/04-lock-stat.md)
+- [05.6 ch08 并发 Bug 类型](../../chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
+- [05.6 ch08 LOCKDEP 锁依赖检测器](../../chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch08 lock_stat 锁竞争统计](../../chapter-08-lock-debug/notes/04-lock-stat.md)

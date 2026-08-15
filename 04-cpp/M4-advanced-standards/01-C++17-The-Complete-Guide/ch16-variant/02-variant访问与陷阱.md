@@ -139,8 +139,8 @@ std::variant<int, double, std::string> v;
 
 // 漏掉 string 的处理
 std::visit(Overloaded{
-    [](int) { },
-    [](double) { }
+     { },
+     { }
     // 漏了 string！
 }, v);
 // 编译错误！visit 要求处理所有类型

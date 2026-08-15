@@ -1,20 +1,20 @@
 # TLPI 第 21 章 — Signals: Signal Handlers
 
 **优先级**：🔴（崩溃/死锁/EINTR/僵尸回收）  
-**前置**：[Ch20 信号基础](../chapter-20-signals-fundamentals/notes.md)  
-**后置**：[Ch22 pause / sigsuspend](../chapter-22-signals-advanced/notes.md) · [Ch24 进程创建 / wait](../chapter-24-process-creation/notes.md)
+**前置**：[Ch20 信号基础](../chapter-20-signals-fundamentals/README.md)  
+**后置**：[Ch22 pause / sigsuspend](../chapter-22-signals-advanced/README.md) · [Ch24 进程创建 / wait](../chapter-24-process-creation/README.md)
 
 ---
 
 ## 小节目录
 
-- [21.1 `sigaction()`](./notes/21.1-sigaction.md)
-- [21.2 `sa_mask`（临时叠加）](./notes/21.2-samask.md)
-- [21.3 常用 `sa_flags`](./notes/21.3-saflags.md)
-- [21.4 `EINTR` 与 `SA_RESTART`](./notes/21.4-eintr-sarestart.md)
-- [21.5 Async-Signal-Safe（最重要）](./notes/21.5-async-signal-safe.md)
-- [21.6 `SIGCHLD`](./notes/21.6-sigchld.md)
-- [21.7 `signal()` vs `sigaction()`](./notes/21.7-signal-sigaction.md)
+- [21.1 `sigaction()`](notes/21.1-designing-signal-handlers.md)
+- [21.2 `sa_mask`（临时叠加）](notes/21.2-other-methods-of-terminating-a-signal-ha.md)
+- [21.3 常用 `sa_flags`](notes/21.3-handling-a-signal-on-an-alternate-stack-.md)
+- [21.4 `EINTR` 与 `SA_RESTART`](notes/21.4-the-sa-siginfo-flag.md)
+- 21.5 Async-Signal-Safe（最重要）
+- [21.6 `SIGCHLD`](notes/21.6-summary.md)
+- [21.7 `signal()` vs `sigaction()`](notes/21.1-designing-signal-handlers.md)
 
 ---
 
@@ -135,4 +135,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

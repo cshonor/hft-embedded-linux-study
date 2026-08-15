@@ -36,7 +36,7 @@ void ExceptionHandler(InterruptFrame* frame) {
 | **3** | **用户态** 应用出事 |
 | **0** | **内核** 出事 — **不可恢复路径** |
 
-→ [Ch20 Ring3](../chapter-20-syscall/notes/section-2-Ring3与页表User位.md) · [Ch20 异常 dump](../chapter-20-syscall/notes/section-4-异常处理与调试.md)
+→ [Ch20 Ring3](../../chapter-20-syscall/notes/section-2-Ring3与页表User位.md) · [Ch20 异常 dump](../../chapter-20-syscall/notes/section-4-异常处理与调试.md)
 
 ---
 

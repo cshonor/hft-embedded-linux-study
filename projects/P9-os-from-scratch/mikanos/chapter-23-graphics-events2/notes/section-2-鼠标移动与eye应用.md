@@ -23,7 +23,7 @@ MouseHandler(delta_x, delta_y, buttons):
 | **窗口内坐标** | 绘制 **eye 瞳孔位置** |
 | **delta** | 可选 **相对移动** 逻辑 |
 
-→ [Ch6 鼠标](../chapter-06-mouse-pci/) · [Ch15 ActiveLayer](../chapter-15-terminal/)
+→ [Ch6 鼠标](../../chapter-06-mouse-pci/) · [Ch15 ActiveLayer](../../chapter-15-terminal/)
 
 ---
 

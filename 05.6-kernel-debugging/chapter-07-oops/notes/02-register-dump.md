@@ -137,6 +137,6 @@ static ssize_t my_write(struct file *f, const char __user *buf,
 
 ## 交叉引用
 
-- [05.6 ch07 Oops vs Panic](chapter-07-oops/notes/01-oops-vs-panic.md)
-- [05.6 ch07 栈回溯分析](chapter-07-oops/notes/03-call-trace-analysis.md)
-- [05.6 ch07 addr2line](chapter-07-oops/notes/04-addr2line.md)
+- [05.6 ch07 Oops vs Panic](../../chapter-07-oops/notes/01-oops-vs-panic.md)
+- [05.6 ch07 栈回溯分析](../../chapter-07-oops/notes/03-call-trace-analysis.md)
+- [05.6 ch07 addr2line](../../chapter-07-oops/notes/04-addr2line.md)

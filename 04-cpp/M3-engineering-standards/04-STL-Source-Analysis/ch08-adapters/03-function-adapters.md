@@ -40,10 +40,10 @@ C++11 后 `std::bind` + lambda 全面取代了这套机制。理解函数适配�
 ```cpp
 // bind2nd: 固定第二个参数
 std::bind2nd(std::less<int>(), 5)
-// → [x](x) { return x < 5; }
+// → [x](../../../../../HBuilder X.lnk) { return x < 5; }
 
 std::bind1st(std::less<int>(), 5)
-// → [x](x) { return 5 < x; }  即 x > 5
+// → [x](../../../../../HBuilder X.lnk) { return 5 < x; }  即 x > 5
 
 // 用法
 std::vector<int> v = {1, 3, 5, 7, 9};

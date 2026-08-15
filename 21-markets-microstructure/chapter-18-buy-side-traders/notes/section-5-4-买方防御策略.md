@@ -26,7 +26,7 @@
 
 | HFT 视角 |
 |----------|
-| 与 [Ch 12 虚张声势](../chapter-12-bluffers-market-manipulation/) **边界模糊** — buy-side **合法迷惑** vs **操纵** |
+| 与 [Ch 12 虚张声势](../../chapter-12-bluffers-market-manipulation/) **边界模糊** — buy-side **合法迷惑** vs **操纵** |
 | **Decoy orders** — 监管敏感 |
 
 ### 4.3 进攻 / 反击 (Offensive Strategies)

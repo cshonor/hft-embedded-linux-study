@@ -144,10 +144,10 @@ State current = Idle{};
 // 状态转换
 current = Connecting{};
 std::visit(Overloaded{
-    [](Idle&) { /* 初始状态 */ },
-    [](Connecting&) { /* 连接中 */ },
-    [](Connected&) { /* 已连接 */ },
-    [](Error&) { /* 错误 */ }
+     { /* 初始状态 */ },
+     { /* 连接中 */ },
+     { /* 已连接 */ },
+     { /* 错误 */ }
 }, current);
 ```
 

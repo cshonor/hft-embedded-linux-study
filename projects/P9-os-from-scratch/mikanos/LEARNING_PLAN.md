@@ -8,7 +8,7 @@
 
 **目标：** UEFI → EDK II → **内存 map** → 第一个 C++ 内核输出。
 
-**前置：** [01 Day 1](../thirty-days-os-essentials/day-01-boot-asm/) 完成（理解 boot sector / `hello, world` 体感）。
+**前置：** 01 Day 1 完成（理解 boot sector / `hello, world` 体感）。
 
 **产出：** 能解释 **UEFI 与 BIOS 软盘引导** 差异；能读 `EFI_MEMORY_DESCRIPTOR`。
 

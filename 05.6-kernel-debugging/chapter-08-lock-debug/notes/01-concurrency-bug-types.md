@@ -207,6 +207,6 @@ void update_order_book(void) {
 
 ## 交叉引用
 
-- [05.6 ch08 LOCKDEP 锁依赖检测器](chapter-08-lock-debug/notes/02-lockdep.md)
-- [05.6 ch08 LOCKDEP 死锁检测实践](chapter-08-lock-debug/notes/03-lockdep-deadlock-detection.md)
-- [05.6 ch08 KCSAN 数据竞争检测器](chapter-08-lock-debug/notes/05-kcsan.md)
+- [05.6 ch08 LOCKDEP 锁依赖检测器](../../chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch08 LOCKDEP 死锁检测实践](../../chapter-08-lock-debug/notes/03-lockdep-deadlock-detection.md)
+- [05.6 ch08 KCSAN 数据竞争检测器](../../chapter-08-lock-debug/notes/05-kcsan.md)

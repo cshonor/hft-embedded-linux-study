@@ -21,13 +21,13 @@
 | **大宗交易做市商 (Block Dealers)** | **自有资金** 吃下客户大单 → 提供 **深度**；承担 **库存**；再 **慢慢平仓 (Lay off)** |
 | **大宗交易经纪人 (Block Brokers)** | **大宗拼装者 (Block assemblers)** — 靠 **关系网 + 声誉** 寻找、撮合 **潜在需求** LP |
 
-→ [Ch 7 经纪人](../chapter-07-brokers/) · [Ch 5 经纪人市场](../chapter-05-market-structures/)
+→ [Ch 7 经纪人](../../chapter-07-brokers/) · [Ch 5 经纪人市场](../../chapter-05-market-structures/)
 
 | HFT 视角 |
 |----------|
 | **Principal risk desk** vs **agency block desk** |
 | **Capital commitment** — dealer 吃单后 **hedge/algo unwind** 是 HFT **impact 来源** |
-| **Crossing networks**（[Ch 6](../chapter-06-order-driven-markets/)、[Ch 25](../chapter-25-internalization-preferencing-crossing/)）— 电子化楼上 |
+| **Crossing networks**（[Ch 6](../../chapter-06-order-driven-markets/)、[Ch 25](../../chapter-25-internalization-preferencing-crossing/)）— 电子化楼上 |
 
 ### 3.3 交易动机审计 (Trading Motive Audit)
 

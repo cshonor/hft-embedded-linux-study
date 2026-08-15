@@ -18,4 +18,4 @@
 - `# Examples` 展示**推荐用法**（含错误处理）。
 - `# Panics` / `# Errors` / `# Safety` 章节与 std 风格对齐。
 
-ER → [Item 27 文档公开 API](../../01-ER/Chapter-05-Tooling/Item-27-document-public-api/README.md) · Book → [14.1 发布 crate](../../00-Book/14-cargo-crates/14.1-发布到-crates-io.md)
+ER → [Item 27 文档公开 API](../../01-ER/Chapter-05-Tooling/Item-27-document-public-api/README.md) · Book → [14.1 发布 crate](../../00-Book/14-cargo-crates/14.2-crates-io-publish-demo)

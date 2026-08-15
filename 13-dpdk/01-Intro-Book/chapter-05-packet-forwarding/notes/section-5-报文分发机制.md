@@ -28,7 +28,7 @@
 | **有状态逻辑** | 会话表无需跨核同步 |
 | **重排序** | 处理完后可配合 **排序库** 恢复全局顺序（若需要） |
 
-与 **RSS 对称哈希**（[Ch8](../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md)）对比：
+与 **RSS 对称哈希**（[Ch8](../../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md)）对比：
 
 | | **硬件 RSS** | **软件 Distributor** |
 |---|-------------|------------------------|
@@ -42,7 +42,7 @@
 
 - **低 PPS、强保序：** 单核 RTC 或 RSS **单队列** — 不用 Distributor  
 - **高 PPS、多 Worker：** RSS 优先；需 **自定义流键** 时用 Distributor + tag  
-- **tail latency：** Distributor 成为 **单点** — 需 **批量分发**、Worker 数与核数匹配 [Ch3 Gustafson](../chapter-03-parallel-computing/notes/section-2-多核性能与可扩展性.md)
+- **tail latency：** Distributor 成为 **单点** — 需 **批量分发**、Worker 数与核数匹配 [Ch3 Gustafson](../../chapter-03-parallel-computing/notes/section-2-多核性能与可扩展性.md)
 
 ---
 

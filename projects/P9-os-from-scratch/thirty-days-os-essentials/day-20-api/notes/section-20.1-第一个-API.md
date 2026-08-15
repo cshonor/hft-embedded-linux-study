@@ -27,6 +27,6 @@ Console → far-CALL app段:入口
               RETF → 继续 Shell 读命令
 ```
 
-→ [Day 19 farjmp](../day-19-apps/) · [Day 6 IRETD/栈](../day-06-split-compile-irq/)
+→ Day 19 farjmp · [Day 6 IRETD/栈](../../day-06-split-compile-irq/)
 
 ---

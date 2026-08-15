@@ -66,7 +66,7 @@ run_timer_softirq(): 逐个 call function()
 
 **HFT：** 内核 **动态 timer** 多用于 **驱动/网络栈 housekeeping**（如 ARP 老化）。**亚毫秒** 策略逻辑在 **用户态** — `timerfd` + **`CLOCK_MONOTONIC`** 或 **busy spin**。勿在 **IRQ 上下文** 指望 `mod_timer` 替代 **`hrtimer`** 做 **微秒级** 唤醒。
 
-→ [Ch 8 softirq / tasklet](../../chapter-08-bottom-halves/) · [Ch 11.7 延迟执行](./section-11.7-延迟执行.md) · [07 TLPI 定时器](../../../../03-linux-userspace-api/)
+→ [Ch 8 softirq / tasklet](../../chapter-08-bottom-halves/) · [Ch 11.7 延迟执行](./section-11.7-延迟执行.md) · [07 TLPI 定时器](../../../03-linux-userspace-api/)
 
 ### 常见陷阱
 

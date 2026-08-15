@@ -35,7 +35,7 @@ C / Java / Rust 等：**内层可遮蔽外层同名**。
 
 **jlox Resolver**（ch11）在 AST 上标注**解析深度 / 槽位** — 符号表思想的变体。
 
-→ [CI ch11 Resolver](../../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md)
+→ [CI ch11 Resolver](../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md)
 
 ---
 

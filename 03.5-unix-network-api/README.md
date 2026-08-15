@@ -10,8 +10,8 @@
 
 | 路径 | 来源 | 内容 |
 |------|------|------|
-| [`code/unpv13e/`](./code/unpv13e/) | [unpbook/unpv13e](https://github.com/unpbook/unpv13e) | **完整官方源码树**（编译用这个） |
-| [`notes-from-Computer-Networking/`](./notes-from-Computer-Networking/) | `Desktop\Computer Networking\UNP_Vol1` | 你整理的章节笔记 + 少量 intro 示例 `.c` |
+| `code/unpv13e/` | [unpbook/unpv13e](https://github.com/unpbook/unpv13e) | **完整官方源码树**（编译用这个） |
+| [`notes-from-Computer-Networking/`](../../Computer Networking) | `Desktop\Computer Networking\UNP_Vol1` | 你整理的章节笔记 + 少量 intro 示例 `.c` |
 
 构建（WSL/Linux）：
 

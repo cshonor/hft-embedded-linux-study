@@ -28,15 +28,15 @@
 1. **历史包袱**：K&R 时代规则少，为兼容保留大量「看起来能写」的构造
 2. **信任程序员**：数组无界、指针可算术、宏纯文本替换
 3. **静默失败**：`=` 与 `==`、`unsigned` 回绕、未初始化变量——编译器常不警告
-4. **实现定义/未定义**：同一源码不同编译器/优化等级结果不同（与 [Expert C ch08](../03-Advanced-Expert-C-Programming/ch08-halloween-vs-christmas/) 序列点问题呼应）
+4. **实现定义/未定义**：同一源码不同编译器/优化等级结果不同（与 [Expert C ch08](../../03-Advanced-Expert-C-Programming/ch08-halloween-vs-christmas/) 序列点问题呼应）
 
 ## 与后续章节关系
 
 | 方向 | 章节 | 说明 |
 |------|------|------|
 | **后置** | [ch01 词法陷阱](../ch01-lexical-pitfalls/) | 从字符/token 歧义开始 |
-| **配套** | [01-Primer-K-and-R-C](../01-Primer-K-and-R-C/) | 语法基础 |
-| **深化** | [03-Advanced-Expert-C-Programming](../03-Advanced-Expert-C-Programming/) | 链接、指针、表达式 UB |
+| **配套** | [01-Primer-K-and-R-C](../../01-Primer-K-and-R-C/) | 语法基础 |
+| **深化** | [03-Advanced-Expert-C-Programming](../../03-Advanced-Expert-C-Programming/) | 链接、指针、表达式 UB |
 
 ## 底层开发适用场景
 

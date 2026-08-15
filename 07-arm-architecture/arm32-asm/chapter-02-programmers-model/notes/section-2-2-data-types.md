@@ -219,7 +219,7 @@ Smith / 嵌入式资料常用 **`s` = signed、`u` = unsigned** 前缀 + **bit �
 
 **口述：** ARM 按 **访问宽度** 定对齐，不是「每个 char 变量都必须占 4 byte」；**`LDRB` 让字节能密排，`LDR` 让字能一次读满** — 正是你说的 **权衡**。
 
-**Smith 后续：** [Ch5 §5.1](../chapter-05-loads-stores-addressing/) 用 **`LDRB/H/`STR`** 在 **连续地址** 上操作；[Ch16](../chapter-16-memory-mapped-peripherals/) DAC 用 **`STRH`** 写 16 bit 寄存器域 — 宽度与对齐跟硬件手册一致。
+**Smith 后续：** [Ch5 §5.1](../../chapter-05-loads-stores-addressing/) 用 **`LDRB/H/`STR`** 在 **连续地址** 上操作；[Ch16](../../chapter-16-memory-mapped-peripherals/) DAC 用 **`STRH`** 写 16 bit 寄存器域 — 宽度与对齐跟硬件手册一致。
 
 ---
 

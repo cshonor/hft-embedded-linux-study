@@ -34,7 +34,7 @@
 | 内存/ syscall 主线 | **日文/FreeType** 细节 **可跳过** |
 | **重定向思想** | 与 **管道(Ch29)** 一并理解即可 |
 
-→ [Ch29 IPC](../chapter-29-ipc/)
+→ [Ch29 IPC](../../chapter-29-ipc/)
 
 ---
 

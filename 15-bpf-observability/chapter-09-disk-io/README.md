@@ -36,7 +36,7 @@
 
 - [ ] **热路径零块 I/O**— 若 `biotop`/`biostacks` 在交易时段有策略 PID，即严重 red flag。
 - [ ] **`biolatency` 是 Ch 3 清单成员**— 比 `iostat await` 更看 **长尾**；incident 10–30s 短采即可。
-- [ ] **`biostacks` + swap 栈**— 延迟尖刺且 CPU/网正常时，查 **swap 是否误开**（[Ch 7 `swapin`](./chapter-07-内存.md)）。
+- [ ] **`biostacks` + swap 栈**— 延迟尖刺且 CPU/网正常时，查 **swap 是否误开**（[Ch 7 `swapin`](../chapter-07-memory)）。
 - [ ] **共置机日志盘**— `biotop` 找进程 → `biostacks` 找 `journal`/`writeback` 栈。
 - [ ] **NVMe 机器**用 `nvmelatency` 分离设备 vs OS；HDD 场景才重点 `seeksize`。
 
@@ -49,4 +49,4 @@
 - 内存/swap：[chapter-07-内存.md](../chapter-07-memory/)
 - 检查清单：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
 - SysPerf 磁盘：[chapter-09-disks](../../14-systems-performance/chapter-09-disks/)
-- CSAPP I/O：[chapter-10-system-io](../02-computer-systems/chapter-10-system-io/)
+- CSAPP I/O：[chapter-10-system-io](../../02-computer-systems/chapter-10-system-io/)

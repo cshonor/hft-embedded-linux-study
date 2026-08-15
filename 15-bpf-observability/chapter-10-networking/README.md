@@ -3,7 +3,7 @@
 > **BPF Performance Tools** · Brendan Gregg · **精读 🔴**
 
 > 本章定位：**全书 Part II 最厚的一章** — Linux 网络栈全路径 + **海量 BPF 工具**。eBPF 源于包过滤；相对 `tcpdump`，BPF 能把 **包/连接事件 ↔ PID ↔ 调用栈** 绑在一起。  
-> **HFT：** 共置机 **内核网络栈** 仍是行情/风控/日志的主战场之一（未全量 DPDK 时）；**`tcpretrans`、`tcpconnect`、`tcplife`、`gethostlatency`** 是 Ch 3 runbook 核心。旁路路径见 [note-XDP与tc-BPF](./note-XDP与tc-BPF.md) · [15-DPDK](../../13-dpdk/)。  
+> **HFT：** 共置机 **内核网络栈** 仍是行情/风控/日志的主战场之一（未全量 DPDK 时）；**`tcpretrans`、`tcpconnect`、`tcplife`、`gethostlatency`** 是 Ch 3 runbook 核心。旁路路径见 [note-XDP与tc-BPF](../note-XDP与tc-BPF.md) · [15-DPDK](../../13-dpdk/)。  
 > **上一章：** [chapter-09-磁盘IO.md](../chapter-09-disk-io/) · **下一章：** [chapter-11-安全.md](../chapter-11-security/)
 
 ---
@@ -49,8 +49,8 @@
 
 - 上一章：[chapter-09-磁盘IO.md](../chapter-09-disk-io/)
 - 下一章：[chapter-11-安全.md](../chapter-11-security/)
-- XDP 延伸：[note-XDP与tc-BPF.md](./note-XDP与tc-BPF.md)
+- XDP 延伸：[note-XDP与tc-BPF.md](../note-XDP与tc-BPF.md)
 - 检查清单：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
 - SysPerf 网络：[chapter-10-network](../../14-systems-performance/chapter-10-network/)
 - DPDK：[13-dpdk](../../13-dpdk/)
-- CSAPP 网络：[chapter-11-network-programming](../02-computer-systems/chapter-11-network-programming/)
+- CSAPP 网络：[chapter-11-network-programming](../../02-computer-systems/chapter-11-network-programming/)

@@ -12,7 +12,7 @@
 | 接口 | `down` / `up` | **`semop()`** |
 | 位置 | 内核数据结构 | 独立 IPC 对象 |
 
-→ [Ch 5 section-7](../chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
+→ [Ch 5 section-7](../../chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
 
 ---
 
@@ -40,7 +40,7 @@
 | **`SEM_UNDO`** | 内核用 **`sem_undo`** 跟踪该进程对信号量的 **所有修改** |
 | 进程 **异常退出** | 内核 **自动回滚** — 如同未操作 |
 
-→ 进程退出：[Ch 3 section-6](../chapter-03-processes/notes/section-6-创建与销毁.md)
+→ 进程退出：[Ch 3 section-6](../../chapter-03-processes/notes/section-6-创建与销毁.md)
 
 > **深潜可选：** `sem_undo` 挂在 `task_struct` 上，随进程生命周期分配/合并。
 

@@ -1,22 +1,22 @@
 # TLPI 第 05 章 — File I/O: Further Details
 
 **优先级**：🟡→🔴（HFT：非阻塞、`pread`/`pwrite`、偏移共享）  
-**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/notes.md)  
-**后置**：[Ch6 Processes](../chapter-06-processes/notes.md) · [Ch13 File I/O Buffering](../chapter-13-file-io-buffering/notes.md)  
+**前置**：[Ch4 Universal I/O](../chapter-04-file-io-universal/README.md)  
+**后置**：[Ch6 Processes](../chapter-06-processes/README.md) · [Ch13 File I/O Buffering](../chapter-13-file-io-buffering/README.md)  
 
 ---
 
 ## 小节目录
 
-- [5.1 内核三层结构（本章核心 · 必考）](./notes/5.1-structure.md)
-- [5.2 `dup` / `dup2` / `dup3`](./notes/5.2-dup-dup2-dup3.md)
-- [5.3 `pread` / `pwrite`](./notes/5.3-pread-pwrite.md)
-- [5.4 原子操作](./notes/5.4-atomic-operations.md)
-- [5.5 `fcntl` — 文件控制](./notes/5.5-fcntl.md)
-- [5.6 打开标志补充（扩展 Ch4）](./notes/5.6-ch4.md)
-- [5.7 非阻塞 `O_NONBLOCK`](./notes/5.7-ononblock.md)
-- [5.8 大文件 LFS](./notes/5.8-lfs.md)
-- [5.9 `/dev/fd`（Linux）](./notes/5.9-dev-fd.md)
+- [5.1 内核三层结构（本章核心 · 必考）](notes/5.1-atomicity-race-conditions.md)
+- 5.2 `dup` / `dup2` / `dup3`
+- [5.3 `pread` / `pwrite`](notes/5.6-pread-pwrite.md)
+- [5.4 原子操作](notes/5.4-fd-and-open-files.md)
+- [5.5 `fcntl` — 文件控制](notes/5.2-fcntl.md)
+- [5.6 打开标志补充（扩展 Ch4）](notes/5.6-pread-pwrite.md)
+- [5.7 非阻塞 `O_NONBLOCK`](notes/5.7-readv-writev.md)
+- [5.8 大文件 LFS](notes/5.8-truncate-ftruncate.md)
+- [5.9 `/dev/fd`（Linux）](notes/5.11-dev-fd.md)
 
 ---
 
@@ -115,7 +115,7 @@ Ch4 会用 fd 数字
 
 
 - 《The Linux Programming Interface》**第 05 章** — File I/O: Further Details  
-- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/notes.md) · [Ch13](../chapter-13-file-io-buffering/notes.md) · [LKD §3.8](../../05-linux-kernel/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
+- [OUTLINE](../OUTLINE.md) · [Ch4](../chapter-04-file-io-universal/README.md) · [Ch13](../chapter-13-file-io-buffering/README.md) · [LKD §3.8](../../05-linux-kernel/chapter-03-process-management/notes/section-3.8-身份PID与资源FD.md)
 
 
 ---
@@ -164,4 +164,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

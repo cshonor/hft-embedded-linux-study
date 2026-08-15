@@ -135,5 +135,5 @@ genhtml hft.info --output-directory hft_coverage
 
 ## 交叉引用
 
-- [05.6 ch12 syzkaller 模糊测试](chapter-12-misc/notes/03-syzkaller-fuzzing.md)
-- [05.6 ch12 内核测试框架](chapter-12-misc/notes/02-kselftest-kunit.md)
+- [05.6 ch12 syzkaller 模糊测试](../../chapter-12-misc/notes/03-syzkaller-fuzzing.md)
+- [05.6 ch12 内核测试框架](../../chapter-12-misc/notes/02-kselftest-kunit.md)

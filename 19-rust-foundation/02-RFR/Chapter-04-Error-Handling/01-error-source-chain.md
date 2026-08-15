@@ -1,7 +1,7 @@
 # 1.1 错误链：`Error::source()` 与 `thiserror` / `anyhow`
 
 > 所属：**Representing Errors** · 父节：[01 枚举式错误](./01-enumeration.md) · [← 章索引](./README.md)  
-> **↔ 双向索引**：**`Result` 包装层**（本文）↔ **线程 panic 容器层** → [1.1.2.3 `Box<dyn Any>`](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md#err-类型三层拆解boxdyn-any--send--static) · 传播小节 → [04 传播错误](./04-propagating-errors.md) · ER 详解 → [Item 04 source()](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types/01-core-concepts.md)
+> **↔ 双向索引**：**`Result` 包装层**（本文）↔ **线程 panic 容器层** → [1.1.2.3 `Box<dyn Any>`](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md#err-类型三层拆解boxdyn-any--send--static) · 传播小节 → [04 传播错误](./04-propagating-errors.md) · ER 详解 → [Item 04 source()](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types/01-core-concepts.md)
 
 ---
 
@@ -569,12 +569,12 @@ Demo：[Item 04 demo](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types
 | 路径 | 容器 | 如何「挖原因」 |
 |------|------|----------------|
 | **`Result` + `?`（业务可恢复）** | `anyhow::Error` / `thiserror` enum | **`source()`** 或 **`anyhow::Error::chain()`** |
-| **子线程 panic → `join` Err** | `Box<dyn Any + Send + 'static>` | **`downcast_ref`**（类型擦除，非 `source` 链）→ [1.1.2.3](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md) · [1.1.2.4 downcast](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.4-panic-capture-downcast.md) |
+| **子线程 panic → `join` Err** | `Box<dyn Any + Send + 'static>` | **`downcast_ref`**（类型擦除，非 `source` 链）→ [1.1.2.3](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md) · [1.1.2.4 downcast](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.4-panic-capture-downcast.md) |
 
 **统一处理策略**（量化主流程常见写法）：
 
 1. **可恢复** — 数据源 / 计算 / 配置 → **`anyhow::Result` + `?`**，日志里 **`{err:?}`** 或 **`chain()`** 自动带栈式 context。
-2. **不可恢复（worker panic）** — `join_or_anyhow` 把 panic 载荷 **转成 `anyhow::Error`** 再 `?`，与①同型 → [1.1.2.3 §anyhow](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md#与-anyhow把-join-的-err-并进-result---主流程)。
+2. **不可恢复（worker panic）** — `join_or_anyhow` 把 panic 载荷 **转成 `anyhow::Error`** 再 `?`，与①同型 → [1.1.2.3 §anyhow](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md#与-anyhow把-join-的-err-并进-result---主流程)。
 3. **库边界** — 对外仍 **`thiserror` enum**；应用层 `?` 进 **`anyhow`** 时再 losing 具体变体，换组合性。
 
 ```text
@@ -606,7 +606,7 @@ join panic → downcast → anyhow     （panic 路径，见 1.1.2.3）
 
 - [01 枚举式错误](./01-enumeration.md) · [02 不透明错误](./02-opaque-errors.md)
 - [04 传播错误](./04-propagating-errors.md) — 含 **↔ 线程 panic 容器** 索引
-- **线程 `join` / panic**（容器层，非 `source` 链）→ [1.1.2.3 `Box<dyn Any>`](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md) · [1.1.2.4 downcast](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.4-panic-capture-downcast.md)
+- **线程 `join` / panic**（容器层，非 `source` 链）→ [1.1.2.3 `Box<dyn Any>`](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md) · [1.1.2.4 downcast](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.4-panic-capture-downcast.md)
 - [ER Item 04](../../01-ER/Chapter-01-Types/Item-04-idiomatic-error-types/README.md)
 
 §4 索引：[README.md](./README.md)

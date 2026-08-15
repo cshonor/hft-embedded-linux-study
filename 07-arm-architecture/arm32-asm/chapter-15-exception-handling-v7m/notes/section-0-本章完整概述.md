@@ -17,8 +17,8 @@
 | **EXC_RETURN** | **LR** 中的 magic 值 — **`BX lr`** 触发硬件出栈 |
 | **NVIC** | 片上 **中断使能/优先级/嵌套** — 替代板级 VIC |
 
-**前置：** [Ch2 Cortex-M4](../chapter-02-programmers-model/notes/section-2-4-cortex-m4.md) · [Ch13 堆栈/AAPCS](../chapter-13-subroutines-stacks/)  
-**对照：** [Ch14 ARM7](../chapter-14-exception-handling-arm7tdmi/notes/section-0-本章完整概述.md)
+**前置：** [Ch2 Cortex-M4](../../chapter-02-programmers-model/notes/section-2-4-cortex-m4.md) · [Ch13 堆栈/AAPCS](../../chapter-13-subroutines-stacks/)  
+**对照：** [Ch14 ARM7](../../chapter-14-exception-handling-arm7tdmi/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -84,10 +84,10 @@ Ch16 MMIO 配外设 · RTOS：PendSV 切换 PSP
 
 | 模块 | 关联 |
 |------|------|
-| [Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) | Timer/GPIO **中断使能** 接 NVIC |
-| [04 LKD](../../05-linux-kernel/) | 内核 irq 框架 · **HardFault ≈ 内核 panic 前兆** |
-| [21 驱动](../../09-device-drivers-dt/) | top half 短 ISR |
-| [奔跑吧 GIC](../aarch64-practice/chapter-13-gic-v2/) | 多核 GIC vs 单片机 NVIC |
+| [Ch16 MMIO](../../chapter-16-memory-mapped-peripherals/) | Timer/GPIO **中断使能** 接 NVIC |
+| [04 LKD](../../../../05-linux-kernel/) | 内核 irq 框架 · **HardFault ≈ 内核 panic 前兆** |
+| [21 驱动](../../../../09-device-drivers-dt/) | top half 短 ISR |
+| [奔跑吧 GIC](../../../aarch64-practice/chapter-13-gic-v2/) | 多核 GIC vs 单片机 NVIC |
 | [23 飞控](../../../../10-motion-control/) | **SysTick/PendSV** · RTOS 调度 |
 
 ---
@@ -100,4 +100,4 @@ Ch16 MMIO 配外设 · RTOS：PendSV 切换 PSP
 
 ### 八、下一章
 
-→ **[Ch16 内存映射外设](../chapter-16-memory-mapped-peripherals/)**（**精读** — UART/GPIO 与中断联调）
+→ **[Ch16 内存映射外设](../../chapter-16-memory-mapped-peripherals/)**（**精读** — UART/GPIO 与中断联调）

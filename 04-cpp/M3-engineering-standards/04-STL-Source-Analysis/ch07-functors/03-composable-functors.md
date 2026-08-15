@@ -50,11 +50,11 @@ x < 5        +  not1(_)         →  !(x < 5) = x >= 5（否定谓词）
 ```cpp
 // bind2nd: 固定第二个参数
 std::bind2nd(std::less<int>(), 5)
-// 生成: [x](x) { return x < 5; }
+// 生成: [x](../../../../../HBuilder X.lnk) { return x < 5; }
 
 // bind1st: 固定第一个参数
 std::bind1st(std::less<int>(), 5)
-// 生成: [x](x) { return 5 < x; }  即 x > 5
+// 生成: [x](../../../../../HBuilder X.lnk) { return 5 < x; }  即 x > 5
 ```
 
 源码实现（简化）：

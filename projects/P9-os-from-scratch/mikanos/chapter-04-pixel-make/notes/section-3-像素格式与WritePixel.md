@@ -59,7 +59,7 @@ offset = y * pitch + x * bytes_per_pixel
 
 GOP `Mode->Info` 提供 **PixelsPerScanLine** — 可能 **≥ width**（对齐填充）。
 
-→ 衔接 [Ch3 GOP](../chapter-03-bootloader-display/notes/section-4-GOP与帧缓冲区.md)
+→ 衔接 [Ch3 GOP](../../chapter-03-bootloader-display/notes/section-4-GOP与帧缓冲区.md)
 
 ---
 

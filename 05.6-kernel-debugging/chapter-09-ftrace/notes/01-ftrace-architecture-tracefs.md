@@ -182,7 +182,7 @@ cat trace > /tmp/trade_trace.log
 
 ## 交叉引用
 
-- [05.6 ch09 函数追踪 function tracer](chapter-09-ftrace/notes/02-function-tracer.md)
-- [05.6 ch09 函数图追踪 function_graph](chapter-09-ftrace/notes/03-function-graph-tracer.md)
-- [05.6 ch09 事件追踪 trace events](chapter-09-ftrace/notes/04-trace-events.md)
-- [05.6 ch09 Ftrace 与 eBPF 的关系](chapter-09-ftrace/notes/08-ftrace-ebpf-relation.md)
+- [05.6 ch09 函数追踪 function tracer](../../chapter-09-ftrace/notes/02-function-tracer.md)
+- [05.6 ch09 函数图追踪 function_graph](../../chapter-09-ftrace/notes/03-function-graph-tracer.md)
+- [05.6 ch09 事件追踪 trace events](../../chapter-09-ftrace/notes/04-trace-events.md)
+- [05.6 ch09 Ftrace 与 eBPF 的关系](../../chapter-09-ftrace/notes/08-ftrace-ebpf-relation.md)

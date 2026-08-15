@@ -236,6 +236,6 @@ static void hft_handle_error(struct hft_dev *dev, u32 status)
 
 ## 交叉引用
 
-- [05.6 ch03 printk 基础](chapter-03-printk/notes/01-printk-basics-loglevel.md)
-- [05.6 ch03 trace_printk](chapter-03-printk/notes/05-ftrace-printk.md)
-- [05.6 ch09 ftrace](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch03 printk 基础](../../chapter-03-printk/notes/01-printk-basics-loglevel.md)
+- [05.6 ch03 trace_printk](../../chapter-03-printk/notes/05-ftrace-printk.md)
+- [05.6 ch09 ftrace](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)

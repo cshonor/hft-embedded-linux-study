@@ -27,7 +27,7 @@ Keyboard ──► Active ToplevelWindow ──► TaskTerminal
 | 终端 **显示** + **焦点** | **命令解析 · 执行** |
 | 键盘进 **活动 Terminal** | **shell 内建命令** |
 
-→ [chapter-16-commands](../chapter-16-commands/)
+→ [chapter-16-commands](../../chapter-16-commands/)
 
 ---
 
@@ -35,11 +35,11 @@ Keyboard ──► Active ToplevelWindow ──► TaskTerminal
 
 | Ch15 主题 | 继续读 |
 |----------|--------|
-| 命令 shell | [chapter-16-commands](../chapter-16-commands/) ⚪ |
-| 多终端 | [chapter-24-multi-terminal](../chapter-24-multi-terminal/) ⚪ |
-| 图层基础 | [chapter-09-layers](../chapter-09-layers/) |
-| 调度/消息 | [chapter-14-multitask2](../chapter-14-multitask2/) |
+| 命令 shell | [chapter-16-commands](../../chapter-16-commands/) ⚪ |
+| 多终端 | [chapter-24-multi-terminal](../../chapter-24-multi-terminal/) ⚪ |
+| 图层基础 | [chapter-09-layers](../../chapter-09-layers/) |
+| 调度/消息 | [chapter-14-multitask2](../../chapter-14-multitask2/) |
 
 ---
 
-← [5. DrawArea](./section-5-DrawArea局部重绘.md) · [Ch 14](../chapter-14-multitask2/) · [Ch 15 导读](../README.md)
+← [5. DrawArea](./section-5-DrawArea局部重绘.md) · [Ch 14](../../chapter-14-multitask2/) · [Ch 15 导读](../README.md)

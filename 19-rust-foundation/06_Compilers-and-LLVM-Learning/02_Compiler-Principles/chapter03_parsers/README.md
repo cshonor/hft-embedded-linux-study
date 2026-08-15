@@ -1,6 +1,6 @@
 # 第 3 章 · 语法分析（Parsers）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part I 前端
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part I 前端
 
 ## 状态
 
@@ -32,9 +32,9 @@ ch2 识别**单词（Token）**；**ch3 识别句子** — 验证 Token 排列�
 
 | 本书 ch3 | 对照 |
 |----------|------|
-| 递归下降 + AST | [CI jlox ch5～6](../../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions/README.md) |
-| Pratt 解析 | [CI clox ch17 Pratt parser](../../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/02-a-pratt-parser.md) |
-| CFG 入门 | [CI jlox ch5 CFG](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) |
+| 递归下降 + AST | [CI jlox ch5～6](../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions/README.md) |
+| Pratt 解析 | [CI clox ch17 Pratt parser](../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/02-a-pratt-parser.md) |
+| CFG 入门 | [CI jlox ch5 CFG](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) |
 | ch2 Token 输入 | [ch2 扫描](../chapter02_scanners/README.md) |
 
 ---
@@ -71,9 +71,9 @@ CFG 描述语法 → 消歧/改造文法 → 自顶向下 **或** 自底向上 �
 
 | 橡书 ch3 | CI |
 |----------|-----|
-| CFG / 歧义 | [jlox ch5 CFG](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) |
-| 递归下降 | [jlox ch6](../../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions/README.md) |
-| 运算符解析 | [clox Pratt ch17](../../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/02-a-pratt-parser.md) |
+| CFG / 歧义 | [jlox ch5 CFG](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) |
+| 递归下降 | [jlox ch6](../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions/README.md) |
+| 运算符解析 | [clox Pratt ch17](../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/02-a-pratt-parser.md) |
 
 ---
 

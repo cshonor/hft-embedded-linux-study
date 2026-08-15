@@ -26,7 +26,7 @@
 
 Modern x86-64 多用 **`syscall/sysenter`** 指令，概念相同：**用户态 → 内核态入口**。
 
-→ 深潜：[Ch 10 系统调用](../chapter-10-system-calls.md) · [08 TLPI](../../../03-linux-userspace-api/)
+→ 深潜：[Ch 10 系统调用](../../chapter-10-system-calls.md) · [08 TLPI](../../../03-linux-userspace-api/)
 
 ### 常见陷阱
 

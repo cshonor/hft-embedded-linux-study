@@ -42,7 +42,7 @@ Ch 2 起：内存 map · 引导加载器 · 内核骨架…
 | CPU 模式 | 实模式 → 后期保护模式 | **x86-64 长模式**（UEFI 已建立） |
 | 语言过渡 | 二进制 → **NASM 汇编** | **C + Makefile** → Ch2 **EDK II** |
 
-→ [02 30天 Day 1 先动手操作](../../thirty-days-os-essentials/day-01-boot-asm/notes/section-1.1-先动手操作.md)
+→ 02 30天 Day 1 先动手操作
 
 ---
 
@@ -81,7 +81,7 @@ Ch 2 起：内存 map · 引导加载器 · 内核骨架…
 
 → 规范 vs 实现（UEFI ≈ HTTP · EDK II 角色）：[Ch2 §2.1 通顺版逻辑链](../../chapter-02-edk2-memmap/notes/section-2-1-EDK-II是什么与行业定位.md#规范-vs-实现-vs-你的程序通顺版逻辑链)
 
-**MikanOS 为何选后者：** 绕开「实模式 → 保护模式 → 长模式」那套 **BIOS 软盘启蒙流程**，第一天就在 **现代 64 位 UEFI 环境** 里写可维护的 C/C++ — 与 [02 30 天 OS 精华](../../thirty-days-os-essentials/) **互补**（理解历史 IPL），但 **不必前置** 才能学 MikanOS。
+**MikanOS 为何选后者：** 绕开「实模式 → 保护模式 → 长模式」那套 **BIOS 软盘启蒙流程**，第一天就在 **现代 64 位 UEFI 环境** 里写可维护的 C/C++ — 与 [02 30 天 OS 精华](../../../thirty-days-os-essentials/) **互补**（理解历史 IPL），但 **不必前置** 才能学 MikanOS。
 
 → **UEFI 七步 · BIOS 四区别 · 名词表** [§5 索引](./section-5-UEFI启动流程.md) · 七步详读 [5.1](./section-5-1-UEFI七步启动流程.md)
 

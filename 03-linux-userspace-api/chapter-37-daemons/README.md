@@ -1,18 +1,18 @@
 # TLPI 第 37 章 — Daemons
 
 **优先级**：🔴（后台服务、嵌入式常驻进程）  
-**前置**：[Ch34 会话/`setsid`](../chapter-34-process-groups-sessions/notes.md) · [Ch36 rlimit](../chapter-36-process-resources/notes.md)  
-**后置**：[Ch38 特权程序安全](../chapter-38-secure-privileged/notes.md)
+**前置**：[Ch34 会话/`setsid`](../chapter-34-process-groups-sessions/README.md) · [Ch36 rlimit](../chapter-36-process-resources/README.md)  
+**后置**：[Ch38 特权程序安全](../chapter-38-secure-privileged/README.md)
 
 ---
 
 ## 小节目录
 
-- [37.1 特征](./notes/37.1-characteristics.md)
-- [37.2 标准 7 步（及原因）](./notes/37.2-section-37-2.md)
-- [37.3 编写规范](./notes/37.3-standard.md)
-- [37.4 `SIGHUP` 热重载](./notes/37.4-sighup.md)
-- [37.5 syslog](./notes/37.5-syslog.md)
+- [37.1 特征](notes/37.1-overview.md)
+- [37.2 标准 7 步（及原因）](notes/37.2-creating-a-daemon.md)
+- [37.3 编写规范](notes/37.3-guidelines-for-writing-daemons.md)
+- [37.4 `SIGHUP` 热重载](notes/37.4-using-sighup-to-reinitialize-a-daemon.md)
+- [37.5 syslog](notes/37.5-logging-messages-and-errors-using-syslog.md)
 
 ---
 
@@ -161,4 +161,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

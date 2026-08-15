@@ -1,6 +1,6 @@
 # 第 5 章 · 基于 JavaCC 的解析器的描述
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第1部分 · 代码分析
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第1部分 · 代码分析
 
 ## 状态
 
@@ -31,8 +31,8 @@
 |----------|------|
 | ch4 词法 | [chapter04_lexical](../chapter04_lexical/README.md) · TOKEN 即终端符 |
 | ch6 下一章 | 完整 C♭ 定义/语句/表达式文法 |
-| CI | [ch5 上下文无关文法](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) |
-| EaC | [ch3 语法分析](../../../02_Compiler-Principles/chapter03_parsers/) |
+| CI | [ch5 上下文无关文法](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) |
+| EaC | [ch3 语法分析](../../02_Compiler-Principles/chapter03_parsers/) |
 
 ---
 

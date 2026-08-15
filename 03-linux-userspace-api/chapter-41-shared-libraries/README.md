@@ -1,19 +1,19 @@
 # TLPI 第 41 章 — Fundamentals of Shared Libraries
 
 **优先级**：🔴（部署、插件铺垫、ABI 版本）  
-**前置**：[Ch40 登录记账](../chapter-40-login-accounting/notes.md)  
-**后置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/notes.md)
+**前置**：[Ch40 登录记账](../chapter-40-login-accounting/README.md)  
+**后置**：[Ch42 共享库高级 / dlopen](../chapter-42-shared-libraries-advanced/README.md)
 
 ---
 
 ## 小节目录
 
-- [41.1 –41.3 静态 vs 共享](./notes/41.1-static.md)
-- [41.4 构建](./notes/41.4-section-41-4.md)
-- [41.5 工具](./notes/41.5-tools.md)
-- [41.6 –41.9 版本与安装](./notes/41.6-section-41-6.md)
-- [41.10 –41.11 RPATH / RUNPATH · 搜索顺序](./notes/41.10-rpath-runpath.md)
-- [41.12 符号解析 · Interposition](./notes/41.12-interposition.md)
+- [41.1 –41.3 静态 vs 共享](notes/41.1-object-libraries.md)
+- [41.4 构建](notes/41.4-creating-and-using-shared-libraries-a-fi.md)
+- [41.5 工具](notes/41.5-useful-tools-for-working-with-shared-lib.md)
+- [41.6 –41.9 版本与安装](notes/41.6-shared-library-versions-and-naming-conve.md)
+- [41.10 –41.11 RPATH / RUNPATH · 搜索顺序](notes/41.10-specifying-library-search-directories-in.md)
+- [41.12 符号解析 · Interposition](notes/41.12-run-time-symbol-resolution.md)
 
 ---
 
@@ -146,4 +146,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

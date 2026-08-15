@@ -35,7 +35,7 @@ lgdt [gdt_register]   ; 加载 GDTR（基址+限长）
 
 **与迁移配合：** **`lgdt` 必须指向已迁移、identity 映射可访问的新 GDT**。
 
-→ [01 Day 5 GDT](../../thirty-days-os-essentials/day-05-gdt-idt/notes/section-5.4-GDT-与-IDT-初始化.md)
+→ [01 Day 5 GDT](../../../thirty-days-os-essentials/day-05-gdt-idt/notes/section-5.4-GDT-与-IDT-初始化.md)
 
 ---
 

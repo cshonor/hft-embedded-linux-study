@@ -11,7 +11,7 @@
 | **`shmget()`** | 创建/获取共享区 |
 | **`shmat()`** | 附加到进程 **虚拟地址空间** |
 
-→ mmap / VMA：[Ch 9](../chapter-09-process-address-space/)
+→ mmap / VMA：[Ch 9](../../chapter-09-process-address-space/)
 
 ---
 
@@ -27,7 +27,7 @@ shmat 建立 VMA — 不立刻分配物理页
 分配页框 → 挂入 **页高速缓存**（shmem/tmpfs 类 backing）
 ```
 
-→ 请求调页：[Ch 9 section-5](../chapter-09-process-address-space/notes/section-5-请求调页.md) · 页缓存：[Ch 15](../chapter-15-page-cache/)
+→ 请求调页：[Ch 9 section-5](../../chapter-09-process-address-space/notes/section-5-请求调页.md) · 页缓存：[Ch 15](../../chapter-15-page-cache/)
 
 ---
 
@@ -39,7 +39,7 @@ shmat 建立 VMA — 不立刻分配物理页
 | **无真实磁盘文件** | 不能靠 **写回文件** 回收 |
 | **内存紧张** | 页须进 **Swap Cache** → **换出到 swap** |
 
-→ [Ch 17 section-6](../chapter-17-page-reclaim/notes/section-6-交换机制.md)
+→ [Ch 17 section-6](../../chapter-17-page-reclaim/notes/section-6-交换机制.md)
 
 HFT：**POSIX shm / mmap 大页** 常用于 **ring buffer、订单簿快照**；注意 **NUMA 本地** 与 **mlock**。
 
@@ -56,7 +56,7 @@ HFT：**POSIX shm / mmap 大页** 常用于 **ring buffer、订单簿快照**；
 | **异步通知** | 消息到达 → **信号** 或 **新线程** 回调 |
 | **Timeout** | 阻塞操作可设 **时间限制** |
 
-→ 信号通知：[Ch 11](../chapter-11-signals/) · VFS 特殊 FS：[Ch 12](../chapter-12-VFS/)
+→ 信号通知：[Ch 11](../../chapter-11-signals/) · VFS 特殊 FS：[Ch 12](../../chapter-12-VFS/)
 
 ---
 
@@ -75,12 +75,12 @@ HFT：**POSIX shm / mmap 大页** 常用于 **ring buffer、订单簿快照**；
 
 | Ch 19 主题 | 继续读 |
 |------------|--------|
-| 程序加载执行 | [Ch 20 程序执行](../chapter-20-program-execution/) 🟡 |
-| mmap / 缺页 | [Ch 9](../chapter-09-process-address-space/) 🔴 |
+| 程序加载执行 | [Ch 20 程序执行](../../chapter-20-program-execution/) 🟡 |
+| mmap / 缺页 | [Ch 9](../../chapter-09-process-address-space/) 🔴 |
 | 用户态 IPC | [08 TLPI IPC](../../../03-linux-userspace-api/) |
-| 信号 | [Ch 11](../chapter-11-signals/) 🟡 |
-| swap / shmem | [Ch 17](../chapter-17-page-reclaim/) 🟡 |
+| 信号 | [Ch 11](../../chapter-11-signals/) 🟡 |
+| swap / shmem | [Ch 17](../../chapter-17-page-reclaim/) 🟡 |
 
 ---
 
-← [5. 消息队列](./section-5-IPC消息队列.md) · 下一章 [Ch 20 程序执行](../chapter-20-program-execution/)
+← [5. 消息队列](./section-5-IPC消息队列.md) · 下一章 [Ch 20 程序执行](../../chapter-20-program-execution/)

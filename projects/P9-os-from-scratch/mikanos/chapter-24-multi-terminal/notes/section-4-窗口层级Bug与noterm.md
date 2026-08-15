@@ -20,7 +20,7 @@ void Activate(Layer* layer) {
 |--------|------|
 | 直接置顶 **高度计算错** | **先 h=0** 再 **BringToTop** — **Z 序正确** |
 
-→ [Ch9 Layer 高度](../chapter-09-layers/) · [Ch15 ActiveLayer](../chapter-15-terminal/)
+→ [Ch9 Layer 高度](../../chapter-09-layers/) · [Ch15 ActiveLayer](../../chapter-15-terminal/)
 
 ---
 

@@ -135,6 +135,6 @@
 
 ## 交叉引用
 
-- [05.6 ch11 GDB 连接内核](chapter-11-kgdb/notes/03-gdb-connection.md)
-- [05.6 ch11 调试内核模块](chapter-11-kgdb/notes/05-module-debugging.md)
-- [05.6 ch04 kprobes](chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
+- [05.6 ch11 GDB 连接内核](../../chapter-11-kgdb/notes/03-gdb-connection.md)
+- [05.6 ch11 调试内核模块](../../chapter-11-kgdb/notes/05-module-debugging.md)
+- [05.6 ch04 kprobes](../../chapter-04-kprobes/notes/02-kprobe-entry-handler.md)

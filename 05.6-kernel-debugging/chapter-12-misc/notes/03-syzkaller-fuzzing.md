@@ -140,7 +140,7 @@ http://127.0.0.1:56741
 
 ## 交叉引用
 
-- [05.6 ch12 GCOV/KCOV 代码覆盖率](chapter-12-misc/notes/01-gcov-kcov-coverage.md)
-- [05.6 ch12 内核测试框架](chapter-12-misc/notes/02-kselftest-kunit.md)
-- [05.6 ch05 KASAN](chapter-05-memory-debug-1/notes/02-kasan.md)
-- [05.6 ch08 LOCKDEP](chapter-08-lock-debug/notes/02-lockdep.md)
+- [05.6 ch12 GCOV/KCOV 代码覆盖率](../../chapter-12-misc/notes/01-gcov-kcov-coverage.md)
+- [05.6 ch12 内核测试框架](../../chapter-12-misc/notes/02-kselftest-kunit.md)
+- [05.6 ch05 KASAN](../../chapter-05-memory-debug-1/notes/02-kasan.md)
+- [05.6 ch08 LOCKDEP](../../chapter-08-lock-debug/notes/02-lockdep.md)

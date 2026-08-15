@@ -6,7 +6,7 @@
 |------|-----------------------------------|
 | **常见模式** | 信息透露 **同谋**（亲友、商业伙伴）**代交易** |
 
-→ [Ch 7 front running](../chapter-07-brokers/) · [Ch 11](../chapter-11-order-anticipators/)
+→ [Ch 7 front running](../../chapter-07-brokers/) · [Ch 11](../../chapter-11-order-anticipators/)
 
 ### 2.2 如何发现线索
 
@@ -29,6 +29,6 @@
 |------|--------------------------------------------------------|
 | **激励举报** | 美国 SEC **赏金 (Bounty)** — 民事罚款最高 **10%** 给线索提供者 |
 
-→ [Ch 22 技能 vs 运气](../chapter-22-performance-evaluation-prediction/) — 法庭亦难区分
+→ [Ch 22 技能 vs 运气](../../chapter-22-performance-evaluation-prediction/) — 法庭亦难区分
 
 ---

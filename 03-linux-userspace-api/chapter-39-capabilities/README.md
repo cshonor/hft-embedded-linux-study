@@ -1,18 +1,18 @@
 # TLPI 第 39 章 — Capabilities
 
 **优先级**：🔴（最小特权、容器、替代 SUID）  
-**前置**：[Ch9 凭证](../chapter-09-process-credentials/notes.md) · [Ch38 特权安全](../chapter-38-secure-privileged/notes.md) · [Ch16 xattr](../chapter-16-extended-attributes/notes.md)  
-**后置**：[Ch40 登录记账](../chapter-40-login-accounting/notes.md)
+**前置**：[Ch9 凭证](../chapter-09-process-credentials/README.md) · [Ch38 特权安全](../chapter-38-secure-privileged/README.md) · [Ch16 xattr](../chapter-16-extended-attributes/README.md)  
+**后置**：[Ch40 登录记账](../chapter-40-login-accounting/README.md)
 
 ---
 
 ## 小节目录
 
-- [39.1 动机](./notes/39.1-section-39-1.md)
-- [39.3 进程能力集（**每线程**一份）](./notes/39.3-process-thread-capabilities.md)
-- [39.5 exec 转换（简化）](./notes/39.5-exec.md)
-- [39.6 UID 与能力](./notes/39.6-uid.md)
-- [39.7 API](./notes/39.7-api.md)
+- [39.1 动机](notes/39.1-rationale-for-capabilities.md)
+- [39.3 进程能力集（**每线程**一份）](notes/39.3-process-and-file-capabilities.md)
+- [39.5 exec 转换（简化）](notes/39.5-transformation-of-process-capabilities-d.md)
+- [39.6 UID 与能力](notes/39.6-effect-on-process-capabilities-of-changi.md)
+- [39.7 API](notes/39.7-changing-process-capabilities-programmat.md)
 
 ---
 
@@ -136,4 +136,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

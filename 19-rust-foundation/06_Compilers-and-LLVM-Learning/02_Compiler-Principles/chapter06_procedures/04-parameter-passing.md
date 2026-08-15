@@ -39,7 +39,7 @@
 - **参数与局部共享栈窗口** — 零拷贝传递槽位。
 - 返回值在 **栈顶** — VM 约定。
 
-→ [ch24 Function calls](../../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/README.md)
+→ [ch24 Function calls](../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/README.md)
 
 ---
 

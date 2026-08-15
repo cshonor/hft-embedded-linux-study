@@ -33,7 +33,7 @@
 
 **HFT：** 用户态 `promise/future`、一次性 latch 同类；热路径少用「等完成」睡眠，用无锁标志 + 忙等/轮询仅限微秒级且可证明正确。
 
-→ [4.4 休眠唤醒](../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md) · [10.5 mutex](./section-10.5-互斥体.md)
+→ [4.4 休眠唤醒](../../chapter-04-process-scheduling/notes/section-4.4-休眠与唤醒.md) · [10.5 mutex](./section-10.5-互斥体.md)
 
 ### 常见陷阱
 

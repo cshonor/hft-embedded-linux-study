@@ -44,7 +44,7 @@ CPU 需切到 Ring 0 执行 ISR
 
 **未正确设置 TSS：** ISR 在 **用户栈** 上跑 → **覆盖应用/内核数据** · **随机 #PF/GP**。
 
-→ [Ch8 GDT/TSS 预告](../chapter-08-memory/notes/section-4-GDT与分段.md) · [Ch7 IDT](../chapter-07-interrupt-fifo/)
+→ [Ch8 GDT/TSS 预告](../../chapter-08-memory/notes/section-4-GDT与分段.md) · [Ch7 IDT](../../chapter-07-interrupt-fifo/)
 
 ---
 

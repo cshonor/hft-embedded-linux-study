@@ -1,6 +1,6 @@
 # 附录 C · EDK II 文件说明
 
-> **定位：** `.inf` / `.dec` / `.dsc` 模板与构建链 — 配合 [Ch1 §7 两阶段全链路](../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [Ch2 §2](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)。
+> **定位：** `.inf` / `.dec` / `.dsc` 模板与构建链 — 配合 [Ch1 §7 两阶段全链路](../../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [Ch2 §2](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)。
 
 ---
 
@@ -90,7 +90,7 @@ build
 # → Build/MyPkg/DEBUG_GCC5/X64/BareDemo.efi
 ```
 
-**LLVM 工具链：** `TOOL_CHAIN_TAG = CLANGPDB` → [Ch2 §2.5 CLANGPDB](../chapter-02-edk2-memmap/notes/section-2-5-CLANGPDB与自检.md)
+**LLVM 工具链：** `TOOL_CHAIN_TAG = CLANGPDB` → [Ch2 §2.5 CLANGPDB](../../chapter-02-edk2-memmap/notes/section-2-5-CLANGPDB与自检.md)
 
 ---
 
@@ -101,8 +101,8 @@ build
 | `MyPkg` | **MikanLoaderPkg** |
 | `BareDemo.efi` | **Loader.efi** / MikanLoader |
 
-→ [mikanos-build](https://github.com/uchan-nos/mikanos-build) · [SETUP.md](../SETUP.md)
+→ [mikanos-build](https://github.com/uchan-nos/mikanos-build) · [SETUP.md](../../SETUP.md)
 
 ---
 
-← [Ch1 §7 全链路](../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [Ch2 §2](../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)
+← [Ch1 §7 全链路](../../chapter-01-hello-world/notes/section-7-Ch1裸C与Ch2-EDKII全链路.md) · [Ch2 §2](../../chapter-02-edk2-memmap/notes/section-2-EDK-II与MikanLoader.md)

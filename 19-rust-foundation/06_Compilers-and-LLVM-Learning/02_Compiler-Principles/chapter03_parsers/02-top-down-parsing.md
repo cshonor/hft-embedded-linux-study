@@ -32,9 +32,9 @@ parseExpression()  →  parseTerm()  →  parseFactor()
          ↑ 调用链即分析树自顶向下展开
 ```
 
-**CI jlox** 即此路线 → [ch6 Parsing Expressions](../../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions/README.md)
+**CI jlox** 即此路线 → [ch6 Parsing Expressions](../../01_Crafting-Interpreters/part02_jlox/chapter06_parsing-expressions/README.md)
 
-**clox Pratt** — 自顶向下的运算符优先级解析变体 → [ch17 § Pratt](../../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/02-a-pratt-parser.md)
+**clox Pratt** — 自顶向下的运算符优先级解析变体 → [ch17 § Pratt](../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/02-a-pratt-parser.md)
 
 ---
 

@@ -1,20 +1,20 @@
 # TLPI 第 35 章 — Process Priorities and Scheduling
 
 **优先级**：🔴（嵌入式 / HFT 调度与亲和）  
-**前置**：[Ch34 进程组/会话](../chapter-34-process-groups-sessions/notes.md)  
-**后置**：[Ch36 进程资源](../chapter-36-process-resources/notes.md) · [Ch37 Daemons](../chapter-37-daemons/notes.md)
+**前置**：[Ch34 进程组/会话](../chapter-34-process-groups-sessions/README.md)  
+**后置**：[Ch36 进程资源](../chapter-36-process-resources/README.md) · [Ch37 Daemons](../chapter-37-daemons/README.md)
 
 ---
 
 ## 小节目录
 
-- [35.1 –35.2 Nice（`SCHED_OTHER`）](./notes/35.1-schedother.md)
-- [35.3 三大策略](./notes/35.3-strategy.md)
-- [35.4 调度 API](./notes/35.4-api.md)
-- [35.5 CPU 亲和（Linux）](./notes/35.5-cpu.md)
-- [35.6 权限与限制](./notes/35.6-permission-limits.md)
-- [35.7 fork / exec](./notes/35.7-fork-exec.md)
-- [35.8 实践陷阱（HFT / 嵌入式）](./notes/35.8-hft.md)
+- [35.1 –35.2 Nice（`SCHED_OTHER`）](notes/35.1-process-priorities-nice-values.md)
+- [35.3 三大策略](notes/35.3-realtime-process-scheduling-api.md)
+- [35.4 调度 API](notes/35.3-realtime-process-scheduling-api.md)
+- [35.5 CPU 亲和（Linux）](notes/35.4-cpu-affinity.md)
+- [35.6 权限与限制](notes/35.6-exercises.md)
+- 35.7 fork / exec
+- 35.8 实践陷阱（HFT / 嵌入式）
 
 ---
 
@@ -122,4 +122,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

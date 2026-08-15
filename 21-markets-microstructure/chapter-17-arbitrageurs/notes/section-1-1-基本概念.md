@@ -13,7 +13,7 @@
 | vs 价值交易者 | Value 估 **绝对 V**；Arb 估 **相对关系** |
 |---------------|----------------------------------------|
 
-→ [Ch 10 §2.1](../chapter-10-informed-traders-market-efficiency/) · [Ch 16](../chapter-16-value-traders/)
+→ [Ch 10 §2.1](../../chapter-10-informed-traders-market-efficiency/) · [Ch 16](../../chapter-16-value-traders/)
 
 ### 1.2 对冲投资组合 (Hedge Portfolios)
 

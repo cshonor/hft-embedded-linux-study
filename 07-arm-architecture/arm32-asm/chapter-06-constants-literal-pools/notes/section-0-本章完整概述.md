@@ -14,7 +14,7 @@
 | **伪指令本质** | **`LDR =`** / **`ADR`** 由汇编器展开 — 读 listing 必备 |
 | **实战** | MMIO 基址、掩码、表地址 — 与 **Ch5 Load/Store** 衔接 |
 
-**前置：** [Ch5 Load/Store](../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch4 LTORG](../chapter-04-assembler-rules-directives/notes/section-4-4-directives.md)
+**前置：** [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch4 LTORG](../../chapter-04-assembler-rules-directives/notes/section-4-4-directives.md)
 
 ---
 

@@ -69,11 +69,11 @@ Ch29 IPC · 管道
 
 | Ch26 主题 | 继续读 |
 |----------|--------|
-| 应用内存 | [chapter-27-app-memory](../chapter-27-app-memory/) ⚪ |
-| 读文件 | [chapter-25-app-read-file](../chapter-25-app-read-file/) 🟡 |
-| IPC | [chapter-29-ipc](../chapter-29-ipc/) |
+| 应用内存 | [chapter-27-app-memory](../../chapter-27-app-memory/) ⚪ |
+| 读文件 | [chapter-25-app-read-file](../../chapter-25-app-read-file/) 🟡 |
+| IPC | [chapter-29-ipc](../../chapter-29-ipc/) |
 | TLPI | [03-linux-userspace-api](../../../../../03-linux-userspace-api/) |
 
 ---
 
-← [5. Write](./section-5-Write与标准输出.md) · [Ch 25](../chapter-25-app-read-file/) · [Ch 26 导读](../README.md)
+← [5. Write](./section-5-Write与标准输出.md) · [Ch 25](../../chapter-25-app-read-file/) · [Ch 26 导读](../README.md)

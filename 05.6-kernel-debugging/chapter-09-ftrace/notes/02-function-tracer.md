@@ -160,7 +160,7 @@ void on_trade_signal(struct signal *sig) {
 
 ## 交叉引用
 
-- [05.6 ch09 Ftrace 架构与 tracefs](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
-- [05.6 ch09 函数图追踪 function_graph](chapter-09-ftrace/notes/03-function-graph-tracer.md)
-- [05.6 ch09 事件追踪 trace events](chapter-09-ftrace/notes/04-trace-events.md)
-- [05.6 ch03 ftrace_printk](chapter-03-printk/notes/05-ftrace-printk.md)
+- [05.6 ch09 Ftrace 架构与 tracefs](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch09 函数图追踪 function_graph](../../chapter-09-ftrace/notes/03-function-graph-tracer.md)
+- [05.6 ch09 事件追踪 trace events](../../chapter-09-ftrace/notes/04-trace-events.md)
+- [05.6 ch03 ftrace_printk](../../chapter-03-printk/notes/05-ftrace-printk.md)

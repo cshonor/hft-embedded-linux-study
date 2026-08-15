@@ -38,7 +38,7 @@ cargo public-api diff  # 需已有 baseline 或对比 git tag
 cargo public-api          # 列出当前 public API（需 nightly + RUSTUP_TOOLCHAIN）
 ```
 
-CI 可选步骤见 [er-study-ci.yml](../../../.github/workflows/er-study-ci.yml) `public-api` job（文档性 dump）。
+CI 可选步骤见 er-study-ci.yml `public-api` job（文档性 dump）。
 
 ## `cargo-semver-checks`（Item 21）
 

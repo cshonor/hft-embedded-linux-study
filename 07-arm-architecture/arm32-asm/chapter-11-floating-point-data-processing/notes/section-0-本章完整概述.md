@@ -15,7 +15,7 @@
 | **MAC 精度** | **VMLA（双舍入）vs VFMA（融合）** |
 | **综合** | 二分法 + 泰勒 sin |
 
-**前置：** [Ch9](../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md) · [Ch10](../chapter-10-floating-point-rounding-exceptions/notes/section-0-本章完整概述.md)
+**前置：** [Ch9](../../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md) · [Ch10](../../chapter-10-floating-point-rounding-exceptions/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -59,10 +59,10 @@ Ch12 表 / Ch13 正式 APCS
 | **10** | 舍入 · 五异常 · 结合律 |
 | **11** | **算与比** |
 
-**主线跳过三章** → [Ch13](../chapter-13-subroutines-stacks/) / [Ch16](../chapter-16-memory-mapped-peripherals/)
+**主线跳过三章** → [Ch13](../../chapter-13-subroutines-stacks/) / [Ch16](../../chapter-16-memory-mapped-peripherals/)
 
 ---
 
 ### 五、下一章
 
-→ **[Ch12 表](../chapter-12-tables/)**（选读）
+→ **[Ch12 表](../../chapter-12-tables/)**（选读）

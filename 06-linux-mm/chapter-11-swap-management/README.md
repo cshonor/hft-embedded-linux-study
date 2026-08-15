@@ -19,7 +19,7 @@
 
 **HFT：** 延迟敏感进程 **不应依赖 swap 扩容量** — swap I/O = **不可接受的 tail latency**。
 
-→ 回收触发 swap：[Ch 10 §5](../../chapter-10-page-frame-reclamation/notes/section-5-换出进程页面.md#5-换出进程页面-swapping-out-process-pages) · swap-in fault：[Ch 4 §4.2](../../chapter-04-process-address-space/)
+→ 回收触发 swap：[Ch 10 §5](../chapter-10-page-frame-reclamation/notes/section-5-换出进程页面.md#5-换出进程页面-swapping-out-process-pages) · swap-in fault：[Ch 4 §4.2](../chapter-04-process-address-space/)
 
 > **时代说明：** 原书 **`swap_info_struct`、`rw_swap_page()`** 等属 2.4/2.6 语境；现代主线 [`mm/swap*.c`](https://elixir.bootlin.com/linux/latest/source/mm/swap_state.c) · [`mm/page_io.c`](https://elixir.bootlin.com/linux/latest/source/mm/page_io.c) 等 — **PTE 存 swap entry、swap cache、cluster 分配** 思想不变。
 
@@ -55,5 +55,5 @@ Ch 11 分配 swap slot → 写盘 → PTE 改为 swap entry（not present）
 
 - 上一章：[../chapter-10-page-frame-reclamation/](../chapter-10-page-frame-reclamation/)
 - 下一章：[../chapter-12-shared-memory-virtual-filesystem/](../chapter-12-shared-memory-virtual-filesystem/)
-- 附录 K：[../../appendix-K-交换管理.md](../../appendix-K-交换管理.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 K：[../../appendix-K-交换管理.md](../appendix-K-交换管理.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

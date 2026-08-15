@@ -1,6 +1,6 @@
 # 第 1 章 · 开始制作编译器
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 开篇
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 开篇
 
 ## 状态
 
@@ -30,10 +30,10 @@
 
 | 本书 ch1 | 对照 |
 |----------|------|
-| 三阶段 / 流水线 | [CI ch2 编译之山](../../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) |
-| 编译总览 | [EaC ch1](../../../02_Compiler-Principles/chapter01_overview/README.md) |
+| 三阶段 / 流水线 | [CI ch2 编译之山](../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) |
+| 编译总览 | [EaC ch1](../../02_Compiler-Principles/chapter01_overview/README.md) |
 | ch2 下一章 | [chapter02_cflat-cbc/](../chapter02_cflat-cbc/README.md) · C♭ 语法与 cbc 结构 |
-| Rust 编译链 | RFR [05 编译与分发](../../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md) |
+| Rust 编译链 | RFR [05 编译与分发](../../../02-RFR/Chapter-02-Types/05-compilation-dispatch.md) |
 
 ---
 

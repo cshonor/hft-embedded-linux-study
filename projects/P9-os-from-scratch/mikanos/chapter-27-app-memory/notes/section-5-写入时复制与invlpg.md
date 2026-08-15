@@ -57,7 +57,7 @@ invlpg [va]    ; 使该页 TLB 项失效
 
 **书中强调：** **CoW 正确性** 依赖 **页表 + TLB 一致**。
 
-→ [Ch19 TLB 提及](../chapter-19-paging/notes/section-4-x86-64四级分页.md)
+→ [Ch19 TLB 提及](../../chapter-19-paging/notes/section-4-x86-64四级分页.md)
 
 ---
 

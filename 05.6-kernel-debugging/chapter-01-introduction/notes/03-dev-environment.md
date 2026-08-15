@@ -137,5 +137,5 @@ HFT 开发推荐双环境策略：
 
 ## 交叉引用
 
-- [05.6 ch07 addr2line](chapter-07-oops/notes/04-addr2line.md)
-- [05.6 ch11 KGDB](chapter-11-kgdb/notes/01-kgdb-architecture.md)
+- [05.6 ch07 addr2line](../../chapter-07-oops/notes/04-addr2line.md)
+- [05.6 ch11 KGDB](../../chapter-11-kgdb/notes/01-kgdb-architecture.md)

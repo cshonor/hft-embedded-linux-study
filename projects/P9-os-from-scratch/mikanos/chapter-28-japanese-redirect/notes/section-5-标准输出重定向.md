@@ -40,7 +40,7 @@ void ParseRedirect(Task* t, char* line) {
 | **覆盖写** | **O_TRUNC**（若实现）— 清空再写 |
 | **stderr** | **`2>`** 可扩展 — 本书 **错误仍 fd=2 终端** |
 
-→ [Ch26 O_CREAT](../chapter-26-app-write-file/notes/section-4-O_CREAT与FAT写扩展.md) · [Ch16 分词](../chapter-16-commands/notes/section-3-echo与clear命令.md)
+→ [Ch26 O_CREAT](../../chapter-26-app-write-file/notes/section-4-O_CREAT与FAT写扩展.md) · [Ch16 分词](../../chapter-16-commands/notes/section-3-echo与clear命令.md)
 
 ---
 

@@ -16,7 +16,7 @@
 
 ## 下一章
 
-→ [第 8 章 Async](../Chapter-08-Async/README.md)
+→ 第 8 章 Async
 
 ## 本章笔记索引
 

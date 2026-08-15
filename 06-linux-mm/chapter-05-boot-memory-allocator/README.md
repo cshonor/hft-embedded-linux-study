@@ -56,5 +56,5 @@ Ch 4 运行时 fault / mmap          ← 进程用的已是 Buddy + slab 世界
 
 - 上一章：[../chapter-04-process-address-space/](../chapter-04-process-address-space/)
 - 下一章：[../chapter-06-physical-page-allocation/](../chapter-06-physical-page-allocation/)
-- 附录 E：[../../appendix-E-启动内存分配器.md](../../appendix-E-启动内存分配器.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 E：[../../appendix-E-启动内存分配器.md](../appendix-E-启动内存分配器.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

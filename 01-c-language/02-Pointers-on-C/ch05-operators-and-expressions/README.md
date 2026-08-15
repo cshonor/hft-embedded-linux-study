@@ -47,7 +47,7 @@ C **全部运算符**、**优先级/结合性**、**短路求值**、**位运算
 - [5.1 操作符](./5.1-操作符.md)
 - [5.2 布尔值](./5.2-布尔值.md)
 - [5.3 左值和右值](./5.3-左值和右值.md)
-- [5.4 表达式求值](./5.4-expression-evaluation/5.4-expression-evaluation.md)
+- [5.4 表达式求值](5.4-expression-evaluation/5.4-表达式求值.md)
   - [5.4.1 隐式类型转换](./5.4-expression-evaluation/5.4.1-隐式类型转换.md)
   - [5.4.2 算术转换](./5.4-expression-evaluation/5.4.2-算术转换.md)
   - [5.4.3 优先级和求值顺序](./5.4-expression-evaluation/5.4.3-优先级和求值顺序.md)
@@ -81,7 +81,7 @@ if (p != NULL || *p > 0)  // (2) 安全吗？
 
 **教训：** 先判空再解引用，用 `&&`：`if (p && *p > 0)`。`||` 中判空放后面才有保护作用。
 
-**复习：** → [5.4 Expression Evaluation](./5.4-expression-evaluation/5.4-expression-evaluation.md) — 短路求值
+**复习：** → [5.4 Expression Evaluation](5.4-expression-evaluation/5.4-表达式求值.md) — 短路求值
 
 </details>
 
@@ -133,7 +133,7 @@ s->arr[s->idx++] = s->arr[s->idx++] + 5;
 
 **教训：** 有副作用的表达式用复合赋值 `+=`/`-=`/`*=` 而非展开写法。
 
-**复习：** → [5.2 Arithmetic Operators](./5.2-arithmetic-operators/5.2-arithmetic-operators.md) — 复合赋值
+**复习：** → 5.2 Arithmetic Operators — 复合赋值
 
 </details>
 

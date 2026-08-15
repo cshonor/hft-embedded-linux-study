@@ -195,7 +195,7 @@ FAT 格式卷（U 盘或 QEMU fat:rw: 目录）
 | 产出 | 手写 hex → `.efi` | `hello.c` → 工具链 → `.efi` |
 | 是否必做 | **可选** — 时间紧可跳过 | **推荐** — 与本章 [code/01-clang-minimal/](../code/01-clang-minimal/) 对齐 |
 
-→ 十六进制读法可参考 [02 HELLOOS_HEX_REFERENCE](../../thirty-days-os-essentials/HELLOOS_HEX_REFERENCE.md)（软盘 IPL 不同，读 hex 方法相同）
+→ 十六进制读法可参考 02 HELLOOS_HEX_REFERENCE（软盘 IPL 不同，读 hex 方法相同）
 
 ---
 

@@ -1,6 +1,6 @@
 # 第 13 章 · 寄存器分配（Register Allocation）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part IV 代码生成
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part IV 代码生成
 
 ## 状态
 

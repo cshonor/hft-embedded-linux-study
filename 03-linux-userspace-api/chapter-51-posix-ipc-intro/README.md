@@ -1,17 +1,17 @@
 # TLPI 第 51 章 — Introduction to POSIX IPC
 
 **优先级**：🟡（POSIX 三件套地图；对标 SysV）  
-**前置**：[Ch45–48 SysV](../chapter-45-sysv-ipc-intro/notes.md) · [Ch49–50 mmap/VM](../chapter-49-memory-mappings/notes.md)  
-**后置**：[Ch52 mq](../chapter-52-posix-message-queues/notes.md) → [Ch53 sem](../chapter-53-posix-semaphores/notes.md) → [Ch54 shm](../chapter-54-posix-shared-memory/notes.md)
+**前置**：[Ch45–48 SysV](../chapter-45-sysv-ipc-intro/README.md) · [Ch49–50 mmap/VM](../chapter-49-memory-mappings/README.md)  
+**后置**：[Ch52 mq](../chapter-52-posix-message-queues/README.md) → [Ch53 sem](../chapter-53-posix-semaphores/README.md) → [Ch54 shm](../chapter-54-posix-shared-memory/README.md)
 
 ---
 
 ## 小节目录
 
-- [51.1 三类机制](./notes/51.1-mechanism.md)
-- [51.2 统一模型](./notes/51.2-model.md)
-- [51.3 POSIX vs System V（核心表）](./notes/51.3-system.md)
-- [51.4 三件预览](./notes/51.4-section-51-4.md)
+- [51.1 三类机制](notes/51.1-api-overview.md)
+- [51.2 统一模型](notes/51.2-comparison-of-system-v-ipc-and-posix-ipc.md)
+- [51.3 POSIX vs System V（核心表）](notes/51.2-comparison-of-system-v-ipc-and-posix-ipc.md)
+- 51.4 三件预览
 
 ---
 
@@ -141,4 +141,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -1,6 +1,6 @@
 ## 4. GetMemoryMap 与导出 memmap
 
-> **§4 子笔记** · [§3 内存类型](./section-3-4-地址清单与UEFI内存类型.md) · [Boot vs Runtime](../section-2-4-Boot与Runtime服务.md)
+> **§4 子笔记** · [§3 内存类型](./section-3-4-地址清单与UEFI内存类型.md) · [Boot vs Runtime](section-2-4-Boot与Runtime服务.md)
 
 ---
 

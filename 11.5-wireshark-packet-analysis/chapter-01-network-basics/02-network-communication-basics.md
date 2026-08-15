@@ -1,6 +1,6 @@
 ﻿# 1.2 网络通信原理
 
-> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 对照：[自顶向下 §1.5 协议分层](../../top_down/01_network_basics/1.5_protocol_layer_architecture/study.md)
+> 本章：[chapter-summary.md](./chapter-summary.md) · 全书：[../README.md](../README.md) · 对照：自顶向下 §1.5 协议分层
 
 **核心主旨**：阐述协议与协议栈、OSI 七层、封装/解封装及 Hub/交换机/路由器分工，为后续逐层读包打基础。
 

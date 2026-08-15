@@ -53,12 +53,12 @@
 
 ---
 
-← [Day 20](./day-20-API.md) · [01 导读](../README.md) · [Day 22](./day-22-用C语言编写应用程序.md)
+← [Day 20](../day-20-api) · [01 导读](../README.md) · Day 22
 
 ---
 
 ## 相关
 
 - 上一日：[../day-20-api/](../day-20-api/)
-- 下一日：[../day-22-c-apps/](../day-22-c-apps/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 下一日：../day-22-c-apps/
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

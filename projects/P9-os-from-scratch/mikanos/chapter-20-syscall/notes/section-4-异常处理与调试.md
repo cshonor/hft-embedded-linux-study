@@ -31,7 +31,7 @@ ExceptionHandler(vector, error_code, frame):
 | **通用寄存器** | 定位 **哪条 syscall** 传错参 |
 | **RIP** | 对应 **应用 .text 偏移** |
 
-→ [Ch7 中断框架](../chapter-07-interrupt-fifo/)
+→ [Ch7 中断框架](../../chapter-07-interrupt-fifo/)
 
 ---
 

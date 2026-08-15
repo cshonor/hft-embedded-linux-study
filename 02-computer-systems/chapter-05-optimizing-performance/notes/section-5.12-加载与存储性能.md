@@ -20,7 +20,7 @@
 **HFT：**
 
 - **SoA** 批量写行情字段 vs **AoS** 单条更新 — 按访问模式选
-- **false sharing** — 多线程写相邻字段 → 同一 cache line（→ Ch3 [3.9](../chapter-03-machine-level-programs/notes/section-3.9-结构体联合与对齐.md)）
+- **false sharing** — 多线程写相邻字段 → 同一 cache line（→ Ch3 [3.9](../../chapter-03-machine-level-programs/notes/section-3.9-结构体联合与对齐.md)）
 - `perf`：`mem-loads`、`L1-dcache-load-misses`、`cache-misses`
 
 ---

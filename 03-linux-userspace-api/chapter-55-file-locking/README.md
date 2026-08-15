@@ -1,18 +1,18 @@
 # TLPI 第 55 章 — File Locking
 
 **优先级**：🔴（文件同步；单实例 pid 文件）  
-**前置**：[Ch54 POSIX shm](../chapter-54-posix-shared-memory/notes.md) · 文件 I/O  
-**后置**：[Ch56 Sockets 导论](../chapter-56-sockets-intro/notes.md)
+**前置**：[Ch54 POSIX shm](../chapter-54-posix-shared-memory/README.md) · 文件 I/O  
+**后置**：[Ch56 Sockets 导论](../chapter-56-sockets-intro/README.md)
 
 ---
 
 ## 小节目录
 
-- [55.1 模型](./notes/55.1-model.md)
-- [55.2 `flock`](./notes/55.2-flock.md)
-- [55.3 –55.4 `fcntl` 记录锁](./notes/55.3-fcntl.md)
-- [55.5 劝告 vs 强制（Linux）](./notes/55.5-section-55-5.md)
-- [55.6 –55.9 对比 · 运维 · 场景](./notes/55.6-comparison-ops.md)
+- [55.1 模型](notes/55.1-overview.md)
+- [55.2 `flock`](notes/55.2-file-locking-with-flock.md)
+- [55.3 –55.4 `fcntl` 记录锁](notes/55.3-record-locking-with-fcntl.md)
+- [55.5 劝告 vs 强制（Linux）](notes/55.5-the-proc-locks-file.md)
+- [55.6 –55.9 对比 · 运维 · 场景](notes/55.6-running-just-one-instance-of-a-program.md)
 
 ---
 
@@ -157,4 +157,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -14,7 +14,7 @@
 
 ### BX — Branch and Exchange
 
-[Ch8 §8.2](../chapter-08-branches-loops/notes/section-8-2-branches.md) 已引入：
+[Ch8 §8.2](../../chapter-08-branches-loops/notes/section-8-2-branches.md) 已引入：
 
 ```asm
     BX      r0          ; PC ← r0 & ~1 ；T ← r0[0]
@@ -43,7 +43,7 @@
 
 ### 与异常的关系（ARM7）
 
-[Ch14](../chapter-14-exception-handling-arm7tdmi/)：**异常入口** 硬件 **清 T** → handler 以 **ARM** 运行；返回 **`SUBS pc,lr,#n`** 恢复 **SPSR 含 T 位** → 可回到 **Thumb 应用**。
+[Ch14](../../chapter-14-exception-handling-arm7tdmi/)：**异常入口** 硬件 **清 T** → handler 以 **ARM** 运行；返回 **`SUBS pc,lr,#n`** 恢复 **SPSR 含 T 位** → 可回到 **Thumb 应用**。
 
 ---
 
@@ -61,7 +61,7 @@ void (*fp)(void) = (void (*)(void))((uint32_t)ThumbFunc | 1);
 
 ### Cortex-M 上的 BX
 
-M4 **始终 Thumb** — **`BX lr`** 仍用于 **异常返回（EXC_RETURN）** 等特殊 LR 值（[Ch15](../chapter-15-exception-handling-v7m/notes/section-15-5-stack-frames.md)），**不是** ARM/Thumb 切换。
+M4 **始终 Thumb** — **`BX lr`** 仍用于 **异常返回（EXC_RETURN）** 等特殊 LR 值（[Ch15](../../chapter-15-exception-handling-v7m/notes/section-15-5-stack-frames.md)），**不是** ARM/Thumb 切换。
 
 ---
 

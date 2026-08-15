@@ -1,16 +1,16 @@
 # TLPI 第 30 章 — Threads: Thread Synchronization
 
 **优先级**：🔴（多线程正确性核心）  
-**前置**：[Ch29 线程导论](../chapter-29-threads-intro/notes.md)  
-**后置**：[Ch31 线程安全 / TLS](../chapter-31-thread-safety-tsd/notes.md)
+**前置**：[Ch29 线程导论](../chapter-29-threads-intro/README.md)  
+**后置**：[Ch31 线程安全 / TLS](../chapter-31-thread-safety-tsd/README.md)
 
 ---
 
 ## 小节目录
 
-- [30.1 互斥量 `pthread_mutex_t`](./notes/30.1-pthreadmutext.md)
-- [30.2 条件变量 `pthread_cond_t`](./notes/30.2-pthreadcondt.md)
-- [30.3 职责与易错](./notes/30.3-section-30-3.md)
+- [30.1 互斥量 `pthread_mutex_t`](notes/30.1-protecting-accesses-to-shared-variables-.md)
+- [30.2 条件变量 `pthread_cond_t`](notes/30.2-signaling-changes-of-state-condition-var.md)
+- [30.3 职责与易错](notes/30.3-summary.md)
 
 ---
 
@@ -123,4 +123,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

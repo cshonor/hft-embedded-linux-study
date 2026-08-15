@@ -241,4 +241,4 @@ std::find_if(v.begin(), v.end(), pred2);
 
 - 上一节：[Item 39 谓词可配对](item39-predicate-adaptable.md)
 - 下一节：[Item 43 仿函数优于函数指针](item43-functor-vs-function-pointer.md)
-- [Effective Modern C++ Item 34：lambda 优于 bind](../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)
+- [Effective Modern C++ Item 34：lambda 优于 bind](../../../M1-modern-cpp/01-Effective-Modern-C++/ch06-lambda-expressions/README.md)

@@ -16,7 +16,7 @@ cargo hack check --feature-powerset
 cargo hack test --feature-powerset
 ```
 
-CI 片段见 [Item 32](../../../Chapter-05-Tooling/Item-32-ci/README.md) 与 [er-study-ci.yml](../../../../.github/workflows/er-study-ci.yml)。
+CI 片段见 [Item 32](../../../Chapter-05-Tooling/Item-32-ci/README.md) 与 er-study-ci.yml。
 
 ## docs.rs
 

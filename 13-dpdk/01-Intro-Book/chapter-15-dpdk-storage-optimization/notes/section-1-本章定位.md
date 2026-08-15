@@ -33,10 +33,10 @@
 | 场景 | 读法 |
 |------|------|
 | **tick / 发单热路径** | **选读** — 与行情网络无直接关系 |
-| **持久化 / 日志 / 回放** | 理解 **NVMe 用户态 I/O** 与 **零拷贝** 思路 — 与 [Ch6 PCIe](../chapter-06-pcie-packet-io/) 延伸 |
+| **持久化 / 日志 / 回放** | 理解 **NVMe 用户态 I/O** 与 **零拷贝** 思路 — 与 [Ch6 PCIe](../../chapter-06-pcie-packet-io/) 延伸 |
 | **云化基础设施** | SPDK 代表 DPDK 理念 **跨域复用** — 方法论与 [Ch13 闭环调优](../../chapter-13-dpdk-nfv/notes/section-4-VNF评估与性能分析.md) 同构 |
 
-→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../02-Advanced-Book/)
+→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../../02-Advanced-Book/)
 
 ---
 

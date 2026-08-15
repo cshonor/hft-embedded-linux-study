@@ -1,21 +1,21 @@
 # TLPI 第 15 章 — File Attributes
 
 **优先级**：🔴（权限 / 安全 / 目录与链接编程基础）  
-**前置**：[Ch14 File Systems](../chapter-14-file-systems/notes.md)（inode 模型）  
-**后置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/notes.md) · [Ch18 目录与链接](../chapter-18-directories-links/notes.md) · [Ch38 特权与安全](../chapter-38-secure-privileged/notes.md)
+**前置**：[Ch14 File Systems](../chapter-14-file-systems/README.md)（inode 模型）  
+**后置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/README.md) · [Ch18 目录与链接](../chapter-18-directories-links/README.md) · [Ch38 特权与安全](../chapter-38-secure-privileged/README.md)
 
 ---
 
 ## 小节目录
 
-- [15.1 `stat` / `lstat` / `fstat`](./notes/15.1-stat-lstat-fstat.md)
-- [15.2 `st_mode`：类型与权限](./notes/15.2-stmode.md)
-- [15.3 `chmod` / `fchmod`](./notes/15.3-chmod-fchmod.md)
-- [15.4 `chown` / `fchown` / `lchown`](./notes/15.4-chown-fchown-lchown.md)
-- [15.5 atime / mtime / ctime](./notes/15.5-atime-mtime-ctime.md)
-- [15.6 `umask`](./notes/15.6-umask.md)
-- [15.7 `access()` — 尽量别用](./notes/15.7-access.md)
-- [15.9 `statx`（Linux）](./notes/15.9-statx.md)
+- [15.1 `stat` / `lstat` / `fstat`](notes/15.1-retrieving-file-information-stat.md)
+- [15.2 `st_mode`：类型与权限](notes/15.2-file-timestamps.md)
+- [15.3 `chmod` / `fchmod`](notes/15.3-file-ownership.md)
+- 15.4 `chown` / `fchown` / `lchown`
+- 15.5 atime / mtime / ctime
+- [15.6 `umask`](notes/15.6-summary.md)
+- [15.7 `access()` — 尽量别用](notes/15.7-exercises.md)
+- 15.9 `statx`（Linux）
 
 ---
 
@@ -155,4 +155,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -56,7 +56,7 @@ __foo_from_arm_veneer:
 | **`-minterwork`** | 允许 **ARM↔Thumb 互调** — 生成 **Veneer 需求** 的 reloc |
 | **`-mno-interwork`** | 假定 **单一状态** — M4 常用 |
 
-→ [Ch18 §18.4](../chapter-18-mixing-c-and-assembly/notes/section-18-4-c-asm-calls.md) **C/Asm 互调**
+→ [Ch18 §18.4](../../chapter-18-mixing-c-and-assembly/notes/section-18-4-c-asm-calls.md) **C/Asm 互调**
 
 ---
 

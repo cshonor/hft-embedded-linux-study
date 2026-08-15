@@ -181,6 +181,6 @@ kernel.panic = 5  # 5 秒后重启
 
 ## 交叉引用
 
-- [05.6 ch10 Panic 触发与处理](chapter-10-panic-lockup/notes/01-panic-causes.md)
-- [05.6 ch10 自定义 Panic Handler](chapter-10-panic-lockup/notes/06-custom-panic-handler.md)
-- [05.6 ch07 Oops vs Panic](chapter-07-oops/notes/01-oops-vs-panic.md)
+- [05.6 ch10 Panic 触发与处理](../../chapter-10-panic-lockup/notes/01-panic-causes.md)
+- [05.6 ch10 自定义 Panic Handler](../../chapter-10-panic-lockup/notes/06-custom-panic-handler.md)
+- [05.6 ch07 Oops vs Panic](../../chapter-07-oops/notes/01-oops-vs-panic.md)

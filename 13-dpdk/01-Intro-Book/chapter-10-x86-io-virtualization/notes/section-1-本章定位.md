@@ -33,7 +33,7 @@
 |------|------|
 | **共置裸金属** | 本章 **选读** — 直接 Ch1–9 物理机路径 |
 | **托管 / 云 VM 收行情** | **必读** — 无 SR-IOV 透传则 **难达 HFT 延迟** |
-| **SR-IOV VF** | 与 [Ch8 虚拟化实战](../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 衔接 |
+| **SR-IOV VF** | 与 [Ch8 虚拟化实战](../../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md) 衔接 |
 
 → [16 HFT 部署形态](../../../../16-hft-engineering/)
 

@@ -1,6 +1,6 @@
 # 第 10 章 · 语义分析（2）静态类型检查
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第2部分 · 抽象语法树和中间代码
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第2部分 · 抽象语法树和中间代码
 
 ## 状态
 
@@ -32,7 +32,7 @@
 |----------|------|
 | ch9 消解 | [chapter09_name-resolution](../chapter09_name-resolution/README.md) · 阶段 1～2 |
 | ch11 IR | 语义正确 AST → 中间代码 |
-| EaC ch4 | [上下文/类型系统](../../../02_Compiler-Principles/chapter04_context/) |
+| EaC ch4 | [上下文/类型系统](../../02_Compiler-Principles/chapter04_context/) |
 | Rust | 类型检查 + **无隐式整型提升** — 对照 C 规则 |
 
 ---

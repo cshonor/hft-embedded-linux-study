@@ -19,7 +19,7 @@
 | **降低调度延迟 (Dispatch Latency)** | 交互式、**实时**任务更快得到 CPU |
 | 更公平 | 长内核路径不能饿死高优先级任务 |
 
-→ 与 [Ch 7 调度](../chapter-07-process-scheduling.md) 紧密相关
+→ 与 [Ch 7 调度](../../chapter-07-process-scheduling.md) 紧密相关
 
 ---
 
@@ -33,7 +33,7 @@
 
 持 **自旋锁** 期间通常也禁止抢占 — 否则另一 CPU/路径可能死锁。
 
-→ 中断上下文规则：[Ch 4](../chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
+→ 中断上下文规则：[Ch 4](../../chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 
 ---
 

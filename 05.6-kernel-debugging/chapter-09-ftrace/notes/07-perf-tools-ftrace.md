@@ -132,6 +132,6 @@ cd perf-tools/bin
 
 ## 交叉引用
 
-- [05.6 ch09 Ftrace 架构与 tracefs](chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
-- [05.6 ch09 trace-cmd 命令行前端](chapter-09-ftrace/notes/05-trace-cmd.md)
-- [05.6 ch09 Ftrace 与 eBPF 的关系](chapter-09-ftrace/notes/08-ftrace-ebpf-relation.md)
+- [05.6 ch09 Ftrace 架构与 tracefs](../../chapter-09-ftrace/notes/01-ftrace-architecture-tracefs.md)
+- [05.6 ch09 trace-cmd 命令行前端](../../chapter-09-ftrace/notes/05-trace-cmd.md)
+- [05.6 ch09 Ftrace 与 eBPF 的关系](../../chapter-09-ftrace/notes/08-ftrace-ebpf-relation.md)

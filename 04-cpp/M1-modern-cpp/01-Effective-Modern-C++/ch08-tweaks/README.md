@@ -86,7 +86,7 @@ v.emplace_back("hello");            // B: 几次构造/移动？
 **emplace 优势：** 无临时对象、无移动、可传任意构造参数。
 **emplace 限制：** 依赖 `value_type` 可从参数直接构造；资源管理顺序不同（异常安全敏感场景需注意）。
 
-**复习：** → [Item 42：优先 emplace 而非 insert](./item42-优先emplace而非insert.md)
+**复习：** → [Item 42：优先 emplace 而非 insert](item42-emplace-vs-insert.md)
 </details>
 
 ### Q2: emplace 异常安全
@@ -108,5 +108,5 @@ v.emplace_back(std::make_unique<Widget>());  // B: 安全吗？
 
 **规则：** 不传裸 `new` 结果给 `emplace`/`push_back`，先包成智能指针。
 
-**复习：** → [Item 42：优先 emplace 而非 insert](./item42-优先emplace而非insert.md)
+**复习：** → [Item 42：优先 emplace 而非 insert](item42-emplace-vs-insert.md)
 </details>

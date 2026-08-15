@@ -46,5 +46,5 @@
 - 下一章：[chapter-13-应用程序.md](../chapter-13-applications/)
 - 栈与 USDT：[chapter-02-技术背景.md](../chapter-02-technology-background/)
 - CPU profile：[chapter-06-CPU.md](../chapter-06-cpus/)
-- CSAPP 编译：[chapter-05-optimizing-performance](../02-computer-systems/chapter-05-optimizing-performance/)
+- CSAPP 编译：[chapter-05-optimizing-performance](../../02-computer-systems/chapter-05-optimizing-performance/)
 - Rust 工程：[20-rust-quant](../../20-rust-quant/)

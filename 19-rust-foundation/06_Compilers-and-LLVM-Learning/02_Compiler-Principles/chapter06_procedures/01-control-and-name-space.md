@@ -17,7 +17,7 @@
 
 → 所有有函数的语言（C / Rust / Lox / Java）的共同底座。
 
-**CI clox**：`OP_CALL` + **CallFrame** → [ch24](../../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/README.md)
+**CI clox**：`OP_CALL` + **CallFrame** → [ch24](../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/README.md)
 
 ---
 
@@ -29,7 +29,7 @@
 |------|------|------|
 | **词法作用域（Lexical / Static）** | C、Pascal、Rust、Lox | 嵌套块可**遮蔽**同名；编译期用**静态坐标**定位 |
 
-→ [ch5 符号表](../chapter05_ir/07-symbol-tables.md) · [jlox ch11 Resolver](../../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md)
+→ [ch5 符号表](../chapter05_ir/07-symbol-tables.md) · [jlox ch11 Resolver](../../01_Crafting-Interpreters/part02_jlox/chapter11_resolving-and-binding/README.md)
 
 ---
 

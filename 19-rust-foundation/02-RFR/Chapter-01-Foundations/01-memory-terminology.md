@@ -135,4 +135,4 @@ unsafe {
 
 日常业务用 **`Box` / `String` / `Vec` / 借用**；HFT / 驱动 / 共享内存 / FFI 才在 **`unsafe` 里用 `*mut T`**，并自己承担 C 级内存责任。
 
-→ [第 9 章 · 裸指针](../Chapter-09-Unsafe-Code/02-raw-pointers.md) · ER [Item 08 引用与指针](../../01-ER/Chapter-01-Types/Item-08-references-pointers/README.md) · Book [15.1 Box](../../00-Book/15-smart-pointers/15.1-Box<T>在堆上分配值.md)
+→ [第 9 章 · 裸指针](../Chapter-09-Unsafe-Code/02-raw-pointers.md) · ER [Item 08 引用与指针](../../01-ER/Chapter-01-Types/Item-08-references-pointers/README.md) · Book [15.1 Box](../../00-Book/15-smart-pointers/15.1-box-demo)

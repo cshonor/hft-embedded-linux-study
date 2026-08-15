@@ -1,19 +1,19 @@
 # TLPI 第 34 章 — Process Groups, Sessions, and Job Control
 
 **优先级**：🔴（Shell 作业控制、`setsid`、SIGHUP、daemon 地基）  
-**前置**：[Ch33 线程收束](../chapter-33-threads-further/notes.md) · [Ch20–22 信号](../chapter-20-signals-fundamentals/notes.md)  
-**后置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/notes.md) · [Ch37 Daemons](../chapter-37-daemons/notes.md)
+**前置**：[Ch33 线程收束](../chapter-33-threads-further/README.md) · [Ch20–22 信号](../chapter-20-signals-fundamentals/README.md)  
+**后置**：[Ch35 调度](../chapter-35-process-priorities-scheduling/README.md) · [Ch37 Daemons](../chapter-37-daemons/README.md)
 
 ---
 
 ## 小节目录
 
-- [34.1 –34.2 进程组](./notes/34.1-process-group.md)
-- [34.3 会话](./notes/34.3-section-34-3.md)
-- [34.4 控制终端](./notes/34.4-terminal.md)
-- [34.5 前台 / 后台](./notes/34.5-section-34-5.md)
-- [34.6 `SIGHUP`](./notes/34.6-sighup.md)
-- [34.7 作业控制](./notes/34.7-section-34-7.md)
+- [34.1 –34.2 进程组](notes/34.1-overview.md)
+- [34.3 会话](notes/34.3-sessions.md)
+- [34.4 控制终端](notes/34.4-controlling-terminals-and-controlling-pr.md)
+- [34.5 前台 / 后台](notes/34.5-foreground-and-background-process-groups.md)
+- [34.6 `SIGHUP`](notes/34.6-the-sighup-signal.md)
+- [34.7 作业控制](notes/34.7-job-control.md)
 
 ---
 
@@ -135,4 +135,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

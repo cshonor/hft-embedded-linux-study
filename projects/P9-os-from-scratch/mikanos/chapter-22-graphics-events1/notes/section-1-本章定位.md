@@ -38,7 +38,7 @@ Ch23 图形和事件(2) — 鼠标等
 Ch24+ 更复杂交互
 ```
 
-→ [Ch21 窗口应用](../chapter-21-window-apps/)
+→ [Ch21 窗口应用](../../chapter-21-window-apps/)
 
 ---
 

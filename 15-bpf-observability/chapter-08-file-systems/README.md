@@ -37,7 +37,7 @@
 - [ ] **默认 ⚪ 跳过**— 低延迟交易不应在热路径同步读盘；若 `opensnoop` 在 tick 路径上频繁出现，即 **架构 red flag**。
 - [ ] **incident 三板斧：**`filetop`（谁在写）→ `fileslower`（是否同步慢 I/O）→ `cachestat`（是否内存/cache 问题）。
 - [ ] **日志与配置**是 HFT 机上最常见的 FS 噪声 — `opensnoop` 查意外路径，`filelife` 查临时文件。
-- [ ] **`mmap` 行情/历史数据**用 `mmapfiles`/`fmapfault` + [Ch 7 `faults`](./chapter-07-内存.md) — 冷启动 vs 稳态分开看。
+- [ ] **`mmap` 行情/历史数据**用 `mmapfiles`/`fmapfault` + [Ch 7 `faults`](../chapter-07-memory) — 冷启动 vs 稳态分开看。
 - [ ] **`strace` 勿上生产热路径**— 用 BCC 聚合工具替代。
 
 ---
@@ -46,6 +46,6 @@
 
 - 上一章：[chapter-07-内存.md](../chapter-07-memory/)
 - 下一章：[chapter-09-磁盘IO.md](../chapter-09-disk-io/)
-- VFS 教学 OS：[thirty-days-os day-18-dir](../projects/P9-os-from-scratch/thirty-days-os/day-18-dir/)
+- VFS 教学 OS：thirty-days-os day-18-dir
 - SysPerf 文件系统：[chapter-08-file-systems](../../14-systems-performance/chapter-08-file-systems/)（若存在）
 - 方法论：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)

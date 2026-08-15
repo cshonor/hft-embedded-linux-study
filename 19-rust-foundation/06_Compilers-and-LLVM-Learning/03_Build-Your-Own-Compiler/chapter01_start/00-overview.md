@@ -12,7 +12,7 @@ ch2  C♭ 语言 + cbc 源码结构
 第1部分 ch3～6  代码分析（动手写 parser）
 ```
 
-| 对比 | 本书 ch1 | [EaC ch1](../../../02_Compiler-Principles/chapter01_overview/README.md) | [CI ch1](../../../01_Crafting-Interpreters/part01_welcome/chapter01_introduction/README.md) |
+| 对比 | 本书 ch1 | [EaC ch1](../../02_Compiler-Principles/chapter01_overview/README.md) | [CI ch1](../../01_Crafting-Interpreters/part01_welcome/chapter01_introduction/README.md) |
 |------|----------|---------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | 侧重 | **真 ELF 编译器**路线 + 一次 demo | 工程原则与三阶段 | 为何学 · 书怎么读 |
 

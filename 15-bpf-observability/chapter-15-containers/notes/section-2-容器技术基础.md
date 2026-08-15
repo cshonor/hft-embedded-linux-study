@@ -27,6 +27,6 @@
 
 **软限制：** 硬件 **未饱和** 时应用已慢 — 传统 **host 级 iostat** 可能 **一切正常**。
 
-→ [05-linux-kernel cgroups](../05-linux-kernel/) · [03-linux-userspace-api cgroups](../03-linux-userspace-api/)
+→ [05-linux-kernel cgroups](../../../05-linux-kernel/) · [03-linux-userspace-api cgroups](../../../03-linux-userspace-api/)
 
 ---

@@ -8,7 +8,7 @@
 
 > **Understanding the Linux Virtual Memory Manager** · Mel Gorman · **精读**（HFT：**对象池 / per-CPU 本地缓存 / cache line 对齐** 的用户态设计，直接对照本章）
 
-[Ch 6 Buddy](../../chapter-06-physical-page-allocation/) 按 **整页（2^n）** 分配 — 快，但对 **小于一页** 的请求造成 **内部碎片**。**Slab 分配器** 在 **Buddy 之上** 做 **对象级缓存**：把 **物理页切成固定大小对象**，并 **复用已释放实例**。
+[Ch 6 Buddy](../chapter-06-physical-page-allocation/) 按 **整页（2^n）** 分配 — 快，但对 **小于一页** 的请求造成 **内部碎片**。**Slab 分配器** 在 **Buddy 之上** 做 **对象级缓存**：把 **物理页切成固定大小对象**，并 **复用已释放实例**。
 
 > **时代说明：** 原书描述 **经典 SLAB**（`kmem_cache_t`、`slab_t`、`kmem_bufctl`）。**现代主线** 默认多为 **SLUB**（`mm/slub.c`）— API 仍是 **`kmem_cache_*` / `kmalloc`**，内部实现更简；**思想一致**：cache → slab(full/partial/free) → per-CPU 本地池。读源码以当前树为准（[`mm/slub.c`](https://elixir.bootlin.com/linux/latest/source/mm/slub.c) 或 `CONFIG_SLAB` 时 [`mm/slab.c`](https://elixir.bootlin.com/linux/latest/source/mm/slab.c)）。
 
@@ -47,5 +47,5 @@ HFT 用户态 ──► DPDK mempool / 自研 order pool 是同构设计
 
 - 上一章：[../chapter-07-noncontiguous-memory-allocation/](../chapter-07-noncontiguous-memory-allocation/)
 - 下一章：[../chapter-09-high-memory-management/](../chapter-09-high-memory-management/)
-- 附录 H：[../../appendix-H-Slab分配器.md](../../appendix-H-Slab分配器.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 H：[../../appendix-H-Slab分配器.md](../appendix-H-Slab分配器.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

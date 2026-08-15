@@ -48,5 +48,5 @@ Ch 6 page_alloc / Ch 10 回收：在这些 Zone 上分配与回收
 
 - 上一章：[../chapter-01-introduction/](../chapter-01-introduction/)
 - 下一章：[../chapter-03-page-table-management/](../chapter-03-page-table-management/)
-- 附录 B：[../../appendix-B-描述物理内存.md](../../appendix-B-描述物理内存.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 B：[../../appendix-B-描述物理内存.md](../appendix-B-描述物理内存.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

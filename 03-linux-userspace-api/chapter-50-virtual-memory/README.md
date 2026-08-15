@@ -1,18 +1,18 @@
 # TLPI 第 50 章 — Virtual Memory Operations
 
 **优先级**：🔴（低延迟 / JIT / 大映射调优）  
-**前置**：[Ch49 mmap](../chapter-49-memory-mappings/notes.md)  
-**后置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/notes.md)
+**前置**：[Ch49 mmap](../chapter-49-memory-mappings/README.md)  
+**后置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)
 
 ---
 
 ## 小节目录
 
-- [50.1 总览](./notes/50.1-section-50-1.md)
-- [50.2 `mprotect`](./notes/50.2-mprotect.md)
-- [50.3 `mlock` / `mlockall`](./notes/50.3-mlock-mlockall.md)
-- [50.4 `mincore`](./notes/50.4-mincore.md)
-- [50.5 `madvise`](./notes/50.5-madvise.md)
+- [50.1 总览](notes/50.1-changing-memory-protection-mprotect.md)
+- [50.2 `mprotect`](notes/50.1-changing-memory-protection-mprotect.md)
+- [50.3 `mlock` / `mlockall`](notes/50.2-memory-locking-mlock-and-mlockall.md)
+- [50.4 `mincore`](notes/50.3-determining-memory-residence-mincore.md)
+- [50.5 `madvise`](notes/50.5-summary.md)
 
 ---
 
@@ -144,4 +144,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

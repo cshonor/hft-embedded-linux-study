@@ -8,7 +8,7 @@
 
 **`sysfs`**（挂载于 `/sys`）将 **硬件拓扑与设备状态** 映射为 **目录树** — 用户态可直接读写在驱动模型中注册的对象属性。
 
-→ VFS 特殊 FS：[Ch 12 section-5](../chapter-12-VFS/notes/section-5-挂载与路径查找.md)
+→ VFS 特殊 FS：[Ch 12 section-5](../../chapter-12-VFS/notes/section-5-挂载与路径查找.md)
 
 ---
 

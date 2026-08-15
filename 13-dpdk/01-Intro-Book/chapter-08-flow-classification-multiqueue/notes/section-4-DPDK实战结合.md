@@ -35,7 +35,7 @@ VM 内 **DPDK VF PMD** 轮询 — **绕过 vSwitch** 软件路径 → **VM 内�
 
 ### 三、与 L3fwd 的关系
 
-[L3fwd](../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) 在 **软件** 做 Exact Match / LPM — 本章在 **硬件** 做 **队列级** 分流。
+[L3fwd](../../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) 在 **软件** 做 Exact Match / LPM — 本章在 **硬件** 做 **队列级** 分流。
 
 **分层：**
 

@@ -115,7 +115,7 @@ auto fut = std::async([]{
 
 **HFT 教训：** 以为异步实际同步阻塞，热路径意外卡住。务必显式指定 `launch::async`。
 
-**复习：** → [Item 36：明确指定启动策略](./item36-明确指定启动策略.md)
+**复习：** → [Item 36：明确指定启动策略](item36-launch-policy.md)
 </details>
 
 ### Q2: volatile 不是 atomic
@@ -140,5 +140,5 @@ volatile int flag = 0;
 
 **这是 C++ 最普遍的误解之一：** `volatile` 在 C++ 里不是线程同步工具。
 
-**复习：** → [Item 40：std::atomic 用于并发，volatile 用于特殊内存](./item40-std-atomic用于并发volatile用于特殊内存别混用.md)
+**复习：** → Item 40：std::atomic 用于并发，volatile 用于特殊内存
 </details>

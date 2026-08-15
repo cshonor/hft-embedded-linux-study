@@ -14,7 +14,7 @@
 | **异常** | **五标志** + 默认 ∞/NaN/ subnormal |
 | **数值稳定** | 结合律失效 · **抵消** |
 
-**前置：** [Ch9 格式/FPSCR](../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md)
+**前置：** [Ch9 格式/FPSCR](../../chapter-09-floating-point-basics/notes/section-0-本章完整概述.md)
 
 ---
 
@@ -58,4 +58,4 @@ Ch11：VADD/VMUL 与 FPSCR 标志
 
 ### 五、下一章
 
-→ **[Ch11 浮点数据处理](../chapter-11-floating-point-data-processing/)**（跳过 / FPU 续）
+→ **[Ch11 浮点数据处理](../../chapter-11-floating-point-data-processing/)**（跳过 / FPU 续）

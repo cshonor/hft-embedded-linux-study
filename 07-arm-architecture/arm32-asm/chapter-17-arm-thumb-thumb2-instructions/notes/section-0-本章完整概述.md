@@ -16,7 +16,7 @@
 | **Interworking** | **`BL` 不能切状态** → 链接器 **Veneer** |
 | **M4 现实** | **仅 Thumb-2** — 无 ARM 状态、无 Veneer |
 
-**前置：** [Ch3 指令集概览](../chapter-03-instruction-sets-v4t-v7m/) · [Ch8 分支/BX](../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch8 §8.4 IT](../chapter-08-branches-loops/notes/section-8-4-conditional.md)
+**前置：** [Ch3 指令集概览](../../chapter-03-instruction-sets-v4t-v7m/) · [Ch8 分支/BX](../../chapter-08-branches-loops/notes/section-8-2-branches.md) · [Ch8 §8.4 IT](../../chapter-08-branches-loops/notes/section-8-4-conditional.md)
 
 ---
 
@@ -63,11 +63,11 @@ AArch64 A64（另起炉灶 — 奔跑吧主书）
 
 | 模块 | 关联 |
 |------|------|
-| [Ch14 异常](../chapter-14-exception-handling-arm7tdmi/) | ARM7 异常入口 **强制 ARM 态** |
-| [Ch15 v7-M](../chapter-15-exception-handling-v7m/) | **永远 Thumb-2** |
-| [Ch18 C/Asm](../chapter-18-mixing-c-and-assembly/) | 编译选项 **`-mthumb`** · interwork |
-| [04 LKD / 内核](../../05-linux-kernel/) | 早期 ARM32 内核 **ARM/Thumb 混链** |
-| [奔跑吧 A64](../aarch64-practice/) | **无 Thumb** — 另一套固定 32-bit |
+| [Ch14 异常](../../chapter-14-exception-handling-arm7tdmi/) | ARM7 异常入口 **强制 ARM 态** |
+| [Ch15 v7-M](../../chapter-15-exception-handling-v7m/) | **永远 Thumb-2** |
+| [Ch18 C/Asm](../../chapter-18-mixing-c-and-assembly/) | 编译选项 **`-mthumb`** · interwork |
+| [04 LKD / 内核](../../../../05-linux-kernel/) | 早期 ARM32 内核 **ARM/Thumb 混链** |
+| [奔跑吧 A64](../../../aarch64-practice/) | **无 Thumb** — 另一套固定 32-bit |
 
 ---
 
@@ -79,4 +79,4 @@ AArch64 A64（另起炉灶 — 奔跑吧主书）
 
 ### 七、下一章
 
-→ **[Ch18 C 与汇编混合编程](../chapter-18-mixing-c-and-assembly/)**（**精读**）
+→ **[Ch18 C 与汇编混合编程](../../chapter-18-mixing-c-and-assembly/)**（**精读**）

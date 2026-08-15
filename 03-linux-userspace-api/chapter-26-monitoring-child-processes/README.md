@@ -1,20 +1,20 @@
 # TLPI 第 26 章 — Monitoring Child Processes
 
 **优先级**：🔴（多进程服务、防僵尸耗尽 PID）  
-**前置**：[Ch25 进程终止](../chapter-25-process-termination/notes.md) · [Ch24 fork](../chapter-24-process-creation/notes.md) · [Ch21 SIGCHLD](../chapter-21-signal-handlers/notes.md)  
-**后置**：[Ch27 exec](../chapter-27-program-execution/notes.md) · [Ch37 守护进程](../chapter-37-daemons/notes.md)
+**前置**：[Ch25 进程终止](../chapter-25-process-termination/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md) · [Ch21 SIGCHLD](../chapter-21-signal-handlers/README.md)  
+**后置**：[Ch27 exec](../chapter-27-program-execution/README.md) · [Ch37 守护进程](../chapter-37-daemons/README.md)
 
 ---
 
 ## 小节目录
 
-- [26.1 僵尸](./notes/26.1-section-26-1.md)
-- [26.2 `wait`](./notes/26.2-wait.md)
-- [26.3 `waitpid`（核心）](./notes/26.3-waitpid.md)
-- [26.4 `wstatus` 宏（必用宏，勿裸打数值）](./notes/26.4-wstatus.md)
-- [26.5 `SIGCHLD` 循环收割（经典）](./notes/26.5-sigchld.md)
-- [26.6 `waitid`（了解）](./notes/26.6-waitid.md)
-- [26.7 规则要点](./notes/26.7-section-26-7.md)
+- [26.1 僵尸](notes/26.1-waiting-on-a-child-process.md)
+- [26.2 `wait`](notes/26.2-orphans-and-zombies.md)
+- [26.3 `waitpid`（核心）](notes/26.3-the-sigchld-signal.md)
+- [26.4 `wstatus` 宏（必用宏，勿裸打数值）](notes/26.4-summary.md)
+- [26.5 `SIGCHLD` 循环收割（经典）](notes/26.3-the-sigchld-signal.md)
+- 26.6 `waitid`（了解）
+- 26.7 规则要点
 
 ---
 
@@ -164,4 +164,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -12,12 +12,12 @@
 
 | 子类 | 英文 | 行为 |
 |------|------|------|
-| **价值交易者** | Value traders | 用 **全部公开信息** 评估 **绝对价值** → [Ch 16](../chapter-16-value-traders/) |
+| **价值交易者** | Value traders | 用 **全部公开信息** 评估 **绝对价值** → [Ch 16](../../chapter-16-value-traders/) |
 | **新闻交易者** | News traders | 利用 **最新消息** |
 | **信息导向技术交易者** | Information-oriented technicians | 识别 **系统性定价错误** |
-| **套利者** | Arbitrageurs | 比较 **相关工具相对价值** → [Ch 17](../chapter-17-arbitrageurs/) |
+| **套利者** | Arbitrageurs | 比较 **相关工具相对价值** → [Ch 17](../../chapter-17-arbitrageurs/) |
 
-> **知情交易推动价格向基本面靠拢 → 提高价格信息效率** → [Ch 10](../chapter-10-informed-traders-market-efficiency/)
+> **知情交易推动价格向基本面靠拢 → 提高价格信息效率** → [Ch 10](../../chapter-10-informed-traders-market-efficiency/)
 
 #### B. 寄生型交易者 (Parasitic Traders)
 
@@ -25,8 +25,8 @@
 
 | 子类 | 英文 | 行为 |
 |------|------|------|
-| **指令预期者** | Order anticipators | 抢先交易者、挤空者等 → [Ch 11](../chapter-11-order-anticipators/) |
-| **虚张声势者** | Bluffers | 造谣、价格操纵 → [Ch 12](../chapter-12-bluffers-market-manipulation/) |
+| **指令预期者** | Order anticipators | 抢先交易者、挤空者等 → [Ch 11](../../chapter-11-order-anticipators/) |
+| **虚张声势者** | Bluffers | 造谣、价格操纵 → [Ch 12](../../chapter-12-bluffers-market-manipulation/) |
 
 | HFT 视角 |
 |----------|
@@ -36,7 +36,7 @@
 
 ### 2.2 做市商/交易商 (Dealers)
 
-向 **急于交易** 的人 **提供流动性（即时性）**，赚 **买卖价差 (Bid-ask spread)** → **被动流动性提供者** → [Ch 13](../chapter-13-dealers/) · [Ch 14](../chapter-14-bid-ask-spreads/)
+向 **急于交易** 的人 **提供流动性（即时性）**，赚 **买卖价差 (Bid-ask spread)** → **被动流动性提供者** → [Ch 13](../../chapter-13-dealers/) · [Ch 14](../../chapter-14-bid-ask-spreads/)
 
 | HFT 视角 |
 |----------|

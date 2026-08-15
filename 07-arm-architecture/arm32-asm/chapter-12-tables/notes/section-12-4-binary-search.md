@@ -59,7 +59,7 @@ not found
 - **不要用** `LSR` 若 lo/hi 为有符号且可能为负（表中索引通常非负，**ASR** 仍与 C 语义一致）。  
 - 取 **table[mid]**：`LDR r3, [base, r2, LSL #2]`（key 为字）。
 
-**循环骨架：** [Ch8](../chapter-08-branches-loops/notes/section-8-3-loops.md) — `CMP` + `BLT/BGT` + `B` 回环，或 `SUBS` 计数上限。
+**循环骨架：** [Ch8](../../chapter-08-branches-loops/notes/section-8-3-loops.md) — `CMP` + `BLT/BGT` + `B` 回环，或 `SUBS` 计数上限。
 
 ---
 

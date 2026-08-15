@@ -1,20 +1,20 @@
 # TLPI 第 09 章 — Process Credentials
 
 **优先级**：🔴（权限检查 / setuid / 安全铺垫）  
-**前置**：[Ch8 Users and Groups](../chapter-08-users-and-groups/notes.md) · [Ch24 fork](../chapter-24-process-creation/notes.md) · [Ch27 exec](../chapter-27-program-execution/notes.md)  
-**后置**：[Ch10 Times and Dates](../chapter-10-time/notes.md) · [Ch38 特权程序](../chapter-38-secure-privileged/notes.md) · [Ch39 Capabilities](../chapter-39-capabilities/notes.md)
+**前置**：[Ch8 Users and Groups](../chapter-08-users-and-groups/README.md) · [Ch24 fork](../chapter-24-process-creation/README.md) · [Ch27 exec](../chapter-27-program-execution/README.md)  
+**后置**：[Ch10 Times and Dates](../chapter-10-time/README.md) · [Ch38 特权程序](../chapter-38-secure-privileged/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md)
 
 ---
 
 ## 小节目录
 
-- [9.1 五类凭证](./notes/9.1-credentials.md)
-- [9.2 –9.3 Set-User-ID / Set-Group-ID](./notes/9.2-set-user-id.md)
+- [9.1 五类凭证](notes/9.1-real-uid-gid.md)
+- [9.2 –9.3 Set-User-ID / Set-Group-ID](notes/9.3-set-user-id.md)
 - [9.4 Saved-ID 升降权流程](./notes/9.4-saved-id.md)
-- [9.5 获取凭证 API](./notes/9.5-api.md)
-- [9.6 –9.7 修改凭证（重难点）](./notes/9.6-credentials.md)
-- [9.8 fork / exec 对凭证（必考）](./notes/9.8-fork-exec.md)
-- [9.9 易混考点](./notes/9.9-section-9-9.md)
+- [9.5 获取凭证 API](notes/9.5-fs-uid-gid.md)
+- [9.6 –9.7 修改凭证（重难点）](notes/9.6-supplementary-groups.md)
+- [9.8 fork / exec 对凭证（必考）](notes/9.8-summary.md)
+- [9.9 易混考点](notes/9.1-real-uid-gid.md)
 
 ---
 
@@ -135,4 +135,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

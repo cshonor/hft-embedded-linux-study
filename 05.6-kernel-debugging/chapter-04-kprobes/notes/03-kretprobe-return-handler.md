@@ -177,6 +177,6 @@ HFT 场景中 kretprobe 的应用：
 
 ## 交叉引用
 
-- [05.6 ch04 kprobe 入口探针](chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
-- [05.6 ch04 动态注册](chapter-04-kprobes/notes/04-dynamic-registration-sysfs.md)
-- [05.6 ch04 perf probe](chapter-04-kprobes/notes/05-perf-probe-relation.md)
+- [05.6 ch04 kprobe 入口探针](../../chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
+- [05.6 ch04 动态注册](../../chapter-04-kprobes/notes/04-dynamic-registration-sysfs.md)
+- [05.6 ch04 perf probe](../../chapter-04-kprobes/notes/05-perf-probe-relation.md)

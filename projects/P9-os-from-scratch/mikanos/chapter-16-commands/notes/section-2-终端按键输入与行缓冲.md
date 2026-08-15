@@ -26,7 +26,7 @@ class Terminal {
 | **Enter** | 解析 **linebuf_** 为命令 · 清空 · 新 **`>`** |
 | **`\b` Backspace** | 删末字符 · 背景色覆盖像素 |
 
-→ [Ch12 退格](../chapter-12-keyboard/notes/section-5-GUI文本框与退格.md)
+→ [Ch12 退格](../../chapter-12-keyboard/notes/section-5-GUI文本框与退格.md)
 
 ---
 

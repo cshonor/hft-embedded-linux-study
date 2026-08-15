@@ -107,6 +107,6 @@ fn main() {
 
 - Book → [10.1 泛型](../../00-Book/10-generics-traits-lifetimes/10.1-泛型数据类型.md) · [10.2 trait](../../00-Book/10-generics-traits-lifetimes/10.2-trait.md) · [10.2.3 impl Trait](../../00-Book/10-generics-traits-lifetimes/10.2.3-impl-Trait全解.md)
 - RFR → [Ch01 · 08 生命周期](../Chapter-01-Foundations/08-lifetimes.md)
-- ER → [Item 02 闭包与 trait bound](../../01-ER/Chapter-01-Types/Item-02-express-common-behavior/README.md) · [Item 12 泛型 vs trait 对象](../../01-ER/Chapter-01-Types/Item-12-generics-vs-trait-objects/README.md)
+- ER → [Item 02 闭包与 trait bound](../../01-ER/Chapter-01-Types/Item-02-express-common-behavior/README.md) · Item 12 泛型 vs trait 对象
 
 → 下一节：[09 标记 Trait](./09-marker-traits.md)

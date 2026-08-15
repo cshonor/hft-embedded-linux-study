@@ -23,7 +23,7 @@
 | 需 **虚拟机动态迁移** | **SR-IOV VF** 可分配 |
 | **标准化** 运维、多租户 | tick 延迟 **敏感** |
 
-→ [Ch10 三种 I/O 模型](../chapter-10-x86-io-virtualization/notes/section-2-X86虚拟化概述.md)
+→ [Ch10 三种 I/O 模型](../../chapter-10-x86-io-virtualization/notes/section-2-X86虚拟化概述.md)
 
 ---
 

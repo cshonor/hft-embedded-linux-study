@@ -36,7 +36,7 @@ Ch17 文件系统
 Ch18+ 应用 · syscall
 ```
 
-→ [Ch15 Terminal](../chapter-15-terminal/)
+→ [Ch15 Terminal](../../chapter-15-terminal/)
 
 ---
 

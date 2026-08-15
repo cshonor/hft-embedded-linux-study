@@ -54,4 +54,4 @@
 - 语言/符号：[chapter-02-技术背景.md](../chapter-02-technology-background/)
 - SysPerf 应用：[chapter-05-applications](../../14-systems-performance/chapter-05-applications/)
 - HFT 无锁：[chapter-07-无锁数据结构与内存布局](../../16-hft-engineering/chapter-07-无锁数据结构与内存布局.md)
-- CSAPP 并发：[chapter-12-concurrent-programming](../02-computer-systems/chapter-12-concurrent-programming/)
+- CSAPP 并发：[chapter-12-concurrent-programming](../../02-computer-systems/chapter-12-concurrent-programming/)

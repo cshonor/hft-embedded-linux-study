@@ -219,7 +219,7 @@ Match()：从 BestAsk（买单）或 BestBid（卖单）开始
 
 1. **市价单** 在引擎里 = **`OrderType == OrderMarket`** → **只走 match 分支，不 insert 进簿**  
 2. **成本** 不在 `Match()` 里算 —— 引擎 **诚实执行**「能吃什么价就什么价」；**贵不贵** 是 **策略 / 风控** 的事  
-3. 练手顺序：[M1 结构体](../../00-practice-go-dex/notes/milestone-01-订单类型与LOB/) → [M2 撮合](../../00-practice-go-dex/notes/milestone-02-撮合引擎/)
+3. 练手顺序：[M1 结构体](../../00-practice-go-dex/notes/milestone-01-order-and-lob) → [M2 撮合](../../00-practice-go-dex/notes/milestone-02-matching-engine)
 
 ---
 

@@ -279,10 +279,10 @@
 | 里程碑 | 本目录 | 标签 | 何时读 |
 |--------|--------|------|--------|
 | M0 语法扫盲 | [04-C++Primer](./04-cpp/M0-entry-syntax/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
-| M1 Modern C++ | [04-Effective-Modern-C++](./04-cpp/M1-modern-cpp/04-Effective-Modern-C++/) | 🔴 必读 | **12 PNP 之前** |
-| M2 并发 + 对象模型 | [04-Cpp-Concurrency](./04-cpp/M2-deep-principles/08-Cpp-Concurrency/) · [04-Cpp-Object-Model](./04-cpp/M2-deep-principles/07-Cpp-Object-Model/) | 🔴 必读 | **18 HFT 之前** |
+| M1 Modern C++ | [04-Effective-Modern-C++](04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | 🔴 必读 | **12 PNP 之前** |
+| M2 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M2-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M2-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **18 HFT 之前** |
 | M3 STL / Effective | [02–06](./04-cpp/M3-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
-| M4 C++17/20 | [04-C++17](./04-cpp/M4-advanced-standards/09-C++17-The-Complete-Guide/) · [04-C++20](./04-cpp/M4-advanced-standards/10-C++20-The-Complete-Guide/) | 🟡 选读 | **18 之后** |
+| M4 C++17/20 | [04-C++17](04-cpp/M4-advanced-standards/01-C++17-The-Complete-Guide) · [04-C++20](04-cpp/M4-advanced-standards/02-C++20-The-Complete-Guide) | 🟡 选读 | **18 之后** |
 
 **HFT 产出：** 能读 muduo / HFT 引擎源码；RAII、移动语义、线程同步不再卡脖子。
 
@@ -328,7 +328,7 @@
 
 | 子模块 | 参考 | 标签 | HFT 关联 |
 |--------|------|------|----------|
-| [thirty-days-os](./projects/P9-os-from-scratch/thirty-days-os/) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
+| [thirty-days-os](projects/P9-os-from-scratch/thirty-days-os-essentials) | 《30 天自制操作系统》 | 🟡 选读 | BIOS/实模式启蒙 — 对照 LKD |
 | [mikanos](./projects/P9-os-from-scratch/mikanos/) | 《ゼロからの OS 自作入門》MikanOS | 🟡 选读 | UEFI/64位/分页/syscall — 现代 OS 互补 |
 
 **HFT 产出：** 把「绑核、syscall、cache 类比」从读者变成作者；时间紧可后补，与 `05`/`06` 概念课并行。

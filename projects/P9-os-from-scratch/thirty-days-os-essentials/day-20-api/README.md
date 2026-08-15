@@ -57,12 +57,12 @@
 
 ---
 
-← [Day 19](./day-19-应用程序.md) · [01 导读](../README.md) · [Day 21](./day-21-保护操作系统.md)
+← Day 19 · [01 导读](../README.md) · [Day 21](../day-21-protection)
 
 ---
 
 ## 相关
 
-- 上一日：[../day-19-apps/](../day-19-apps/)
+- 上一日：../day-19-apps/
 - 下一日：[../day-21-protection/](../day-21-protection/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

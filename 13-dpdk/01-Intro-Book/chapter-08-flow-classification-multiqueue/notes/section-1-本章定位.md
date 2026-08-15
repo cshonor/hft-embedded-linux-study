@@ -37,7 +37,7 @@
 | **行情 + 控制通道** | RSS 负载均衡数据面；**Flow Director** 精准导向 **会话/控制** 队列 |
 | **对称哈希** | 双向流同核 — 若做 **有状态** 过滤/会话表 |
 
-→ [chapter-05 组播](../chapter-05-组播行情接入.md) · [16 HFT ch06](../../../../16-hft-engineering/)
+→ [chapter-05 组播](../../chapter-05-packet-forwarding) · [16 HFT ch06](../../../../16-hft-engineering/)
 
 ---
 

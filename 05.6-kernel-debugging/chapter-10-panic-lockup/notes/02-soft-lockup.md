@@ -155,6 +155,6 @@ watchdog_thresh = 60 (更宽松)
 
 ## 交叉引用
 
-- [05.6 ch10 Hard Lockup](chapter-10-panic-lockup/notes/03-hard-lockup.md)
-- [05.6 ch10 Watchdog 机制详解](chapter-10-panic-lockup/notes/04-watchdog-mechanism.md)
-- [05.6 ch10 Panic 触发与处理](chapter-10-panic-lockup/notes/01-panic-causes.md)
+- [05.6 ch10 Hard Lockup](../../chapter-10-panic-lockup/notes/03-hard-lockup.md)
+- [05.6 ch10 Watchdog 机制详解](../../chapter-10-panic-lockup/notes/04-watchdog-mechanism.md)
+- [05.6 ch10 Panic 触发与处理](../../chapter-10-panic-lockup/notes/01-panic-causes.md)

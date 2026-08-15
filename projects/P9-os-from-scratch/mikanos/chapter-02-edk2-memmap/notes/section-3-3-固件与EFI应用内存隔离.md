@@ -53,7 +53,7 @@
 **例子（Ch1 就用了）：**  
 `SystemTable->ConOut->OutputString(L"...")` = 走固件 **ConOut 协议** 打印 —— **不是** 自己往显存 MMIO 地址乱写。这就是 Boot Services 下的正确姿势。
 
-→ Boot / Runtime 概念：[§2.4 Boot vs Runtime 服务](../section-2-4-Boot与Runtime服务.md)
+→ Boot / Runtime 概念：[§2.4 Boot vs Runtime 服务](section-2-4-Boot与Runtime服务.md)
 
 ---
 

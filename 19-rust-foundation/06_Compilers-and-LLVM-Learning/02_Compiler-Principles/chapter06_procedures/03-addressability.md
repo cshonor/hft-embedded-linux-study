@@ -38,7 +38,7 @@ local_y  @  [FP + 16]
 inner 读 outer 的 x:  沿 static link 或 display[outer_depth] + offset
 ```
 
-**C / Rust / Lox**：无 Pascal 式嵌套函数（Rust 有闭包但用 **捕获环境 / upvalue**）→ [clox ch25 upvalue](../../../01_Crafting-Interpreters/part03_clox/chapter25_objects/README.md)
+**C / Rust / Lox**：无 Pascal 式嵌套函数（Rust 有闭包但用 **捕获环境 / upvalue**）→ [clox ch25 upvalue](../../01_Crafting-Interpreters/part03_clox/chapter25_objects/README.md)
 
 ---
 

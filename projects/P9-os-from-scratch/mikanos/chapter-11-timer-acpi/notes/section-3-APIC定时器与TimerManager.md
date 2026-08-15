@@ -20,7 +20,7 @@
 
 **CPU 不再：** `hlt` + 循环查计数 — **ISR 推 tick**。
 
-→ [Ch7 IDT/ISR](../chapter-07-interrupt-fifo/notes/section-2-中断处理程序与EOI.md)
+→ [Ch7 IDT/ISR](../../chapter-07-interrupt-fifo/notes/section-2-中断处理程序与EOI.md)
 
 ---
 

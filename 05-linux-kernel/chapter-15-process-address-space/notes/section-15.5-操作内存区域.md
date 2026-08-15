@@ -52,7 +52,7 @@ addr ──► mm_rb 查找
 
 **HFT：** **`/proc/self/maps` 解析** 等价用户态 **audit** — 确认 **ring VMA 起止、 huge、 locked**。内核 **`find_vma` 成本** 在 **缺页路径** — **`MAP_POPULATE` + `mlock`** 让 **热路径无 fault** → **少碰 mm_rb**。
 
-→ [Ch 15.8 缺页路径](./section-15.8-从访问到缺页概念.md) · [Ch 5 copy_from_user](../../chapter-05-system-calls/) · [06 Gorman 异常处理](../../../../06-linux-mm/chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md)
+→ [Ch 15.8 缺页路径](./section-15.8-从访问到缺页概念.md) · [Ch 5 copy_from_user](../../chapter-05-system-calls/) · [06 Gorman 异常处理](../../../06-linux-mm/chapter-04-process-address-space/notes/section-4-异常处理与缺页异常.md)
 
 
 

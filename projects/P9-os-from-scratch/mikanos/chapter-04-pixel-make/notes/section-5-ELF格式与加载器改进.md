@@ -68,7 +68,7 @@ p_filesz < p_memsz  →  .bss 段 — 文件后补零
 | **按段拷贝** | **.text / .data / .bss** 各就各位 |
 | **正确 e_entry** | RIP 指向真实 `_start` / `KernelMain` 链 |
 
-→ [Ch1 PE/ELF/COFF](../chapter-01-hello-world/notes/section-6-C语言过渡与文件格式.md) · [Ch3 加载概览](../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
+→ [Ch1 PE/ELF/COFF](../../chapter-01-hello-world/notes/section-6-C语言过渡与文件格式.md) · [Ch3 加载概览](../../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
 
 ---
 

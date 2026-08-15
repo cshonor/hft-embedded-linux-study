@@ -263,5 +263,5 @@ mlockall 锁定进程所有内存页，防止 page fault。page fault 时内核�
 ## 交叉引用
 
 - [01-preempt-rt-principles.md](./01-preempt-rt-principles.md) — PREEMPT_RT 核心原理
-- [chapter-12-vdso-debugging](../chapter-12-vdso-debugging/) — ftrace/eBPF 延迟排查
-- [chapter-02-scheduler](../chapter-02-scheduler/) — EEVDF 与 SCHED_FIFO
+- [chapter-12-vdso-debugging](../../chapter-12-vdso-debugging/) — ftrace/eBPF 延迟排查
+- [chapter-02-scheduler](../../chapter-02-scheduler/) — EEVDF 与 SCHED_FIFO

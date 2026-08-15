@@ -13,7 +13,7 @@ Linux 2.6 为每个 **`address_space`** 维护一棵 **基数树 (Radix Tree)**�
 - **键**：页在文件内的 **索引**（偏移 / 页号）  
 - **值**：对应 **`struct page *`**
 
-→ `struct page`：[Ch 8](../chapter-08-memory-management/notes/section-2-页框管理.md)
+→ `struct page`：[Ch 8](../../chapter-08-memory-management/notes/section-2-页框管理.md)
 
 > **Modern 对照：** 新内核多用 **XArray** 替代 Radix Tree；ULK 概念仍为「索引 → 页」。
 

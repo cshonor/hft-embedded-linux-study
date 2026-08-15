@@ -18,7 +18,7 @@
 | **TaskB 计数速度** | Main 休眠后 **约 1.4×** 提升 |
 | **含义** | 原先 Main **浪费的片** 转移给 **后台 Task** |
 
-**方法论：** 与 [Ch9 APIC 计时](../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md) · [Ch11 tick](../chapter-11-timer-acpi/) 一致 — **先量化**。
+**方法论：** 与 [Ch9 APIC 计时](../../chapter-09-layers/notes/section-4-Local-APIC定时器测量.md) · [Ch11 tick](../../chapter-11-timer-acpi/) 一致 — **先量化**。
 
 ---
 

@@ -20,6 +20,6 @@ DS, SS → 1004（数据/栈）
 
 **app 指针、栈、取指** 均 **落在这两块** — **碰不到内核段**（在 GDT 界限正确前提下）。
 
-→ [Day 6 Ring0/3](../day-06-split-compile-irq/)
+→ [Day 6 Ring0/3](../../day-06-split-compile-irq/)
 
 ---

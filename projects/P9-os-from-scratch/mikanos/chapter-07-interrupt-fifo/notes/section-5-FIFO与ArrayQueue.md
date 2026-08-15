@@ -52,7 +52,7 @@ public:
 
 01 **Day 7–8** 同样用 **FIFO** 解耦中断与主循环 — MikanOS 在 **64 位 + MSI + USB** 语境下 **复现同一架构模式**。
 
-→ [01 Day 7 FIFO](../../thirty-days-os-essentials/day-07-fifo/)
+→ [01 Day 7 FIFO](../../../thirty-days-os-essentials/day-07-fifo-mouse)
 
 ---
 

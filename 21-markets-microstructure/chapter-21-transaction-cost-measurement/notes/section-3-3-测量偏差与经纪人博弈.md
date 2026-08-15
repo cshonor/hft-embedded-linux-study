@@ -22,7 +22,7 @@
 |------|----------------|
 | **滞后基准**（收盘、VWAP） | **低估** 知情者 **真实** 成本 |
 
-→ [Ch 10](../chapter-10-informed-traders-market-efficiency/)
+→ [Ch 10](../../chapter-10-informed-traders-market-efficiency/)
 
 ### 3.4 经纪人博弈 (Gaming)
 
@@ -33,7 +33,7 @@
 | **Effective spread** | 只挂限价、不 **主动取流动性** — 即使价格 **飞速逃离** |
 | **VWAP** | 故意 **全天缓慢拆单** — 错过 **早盘最佳时机** |
 
-→ [Ch 7 委托代理](../chapter-07-brokers/) · **多指标 TCA + IS**
+→ [Ch 7 委托代理](../../chapter-07-brokers/) · **多指标 TCA + IS**
 
 | HFT 视角 |
 |----------|

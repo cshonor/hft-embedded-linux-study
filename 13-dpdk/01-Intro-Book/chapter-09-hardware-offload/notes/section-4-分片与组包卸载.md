@@ -35,7 +35,7 @@
 
 ### 三、与 MTU / 线速
 
-- TSO/RSC 与 [Ch7 队列深度](../chapter-07-nic-performance-optimization/notes/section-5-队列长度及阈值设置.md)、[Ch6 PCIe 带宽](../chapter-06-pcie-packet-io/notes/section-5-PCIe净荷带宽计算.md) 联动  
+- TSO/RSC 与 [Ch7 队列深度](../../chapter-07-nic-performance-optimization/notes/section-5-队列长度及阈值设置.md)、[Ch6 PCIe 带宽](../../chapter-06-pcie-packet-io/notes/section-5-PCIe净荷带宽计算.md) 联动  
 - 开启前确认 **PMD + 网卡能力**（`dev_info` / `rx/tx_offload_capa`）
 
 ---

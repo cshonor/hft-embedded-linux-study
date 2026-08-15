@@ -13,7 +13,7 @@
 
 **不** 为全零区间分配磁盘块 — 节省空间。
 
-→ 缓冲页 / 块不连续：[Ch 15 section-4](../chapter-15-page-cache/notes/section-4-缓冲页与buffer_head.md) · [Ch 16 mmap](../chapter-16-file-access/notes/section-4-内存映射.md)
+→ 缓冲页 / 块不连续：[Ch 15 section-4](../../chapter-15-page-cache/notes/section-4-缓冲页与buffer_head.md) · [Ch 16 mmap](../../chapter-16-file-access/notes/section-4-内存映射.md)
 
 ---
 
@@ -33,7 +33,7 @@ Ext2 分配数据块时：
 
 ### 三、与 Ch 14 块层的关系
 
-分配得到 **逻辑块号** → 经块层 **`bio`** 读写 — [Ch 14](../chapter-14-block-devices/)。
+分配得到 **逻辑块号** → 经块层 **`bio`** 读写 — [Ch 14](../../chapter-14-block-devices/)。
 
 ---
 

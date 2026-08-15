@@ -33,16 +33,16 @@ Ch8 多队列 — RSS / 硬件分流
 
 | Ch6 主题 | 继续读 |
 |----------|--------|
-| 网卡性能 / poll / burst | [chapter-07-nic-performance-optimization](../chapter-07-nic-performance-optimization/) 🔴 |
-| PMD / burst | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
-| mbuf 实验 stub | [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) 🔴 |
-| Cache / 大页 / DDIO | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/) 🔴 |
-| 无锁 ring / CAS | [chapter-04-同步互斥机制](../chapter-04-synchronization/) 🔴 |
-| 多队列 / RSS | [chapter-08-流分类与多队列](../chapter-08-flow-classification-multiqueue/) 🔴 |
-| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../chapter-04-零拷贝与用户态旁路.md) 🔴 |
+| 网卡性能 / poll / burst | [chapter-07-nic-performance-optimization](../../chapter-07-nic-performance-optimization/) 🔴 |
+| PMD / burst | [chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing) 🔴 |
+| mbuf 实验 stub | [chapter-02-mbuf与内存池.md](../../chapter-02-cache-and-memory) 🔴 |
+| Cache / 大页 / DDIO | [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/) 🔴 |
+| 无锁 ring / CAS | [chapter-04-同步互斥机制](../../chapter-04-synchronization/) 🔴 |
+| 多队列 / RSS | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
+| 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
 | 内核 sk_buff | [14-LKN](../../../../12-kernel-networking/) |
 | HFT 网络 | [15 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [6. Mbuf 与 Mempool](./section-6-Mbuf与Mempool.md) · 下一章 [chapter-07 网卡优化](../chapter-07-nic-performance-optimization/) · [Ch5 转发](../chapter-05-packet-forwarding/)
+← [6. Mbuf 与 Mempool](./section-6-Mbuf与Mempool.md) · 下一章 [chapter-07 网卡优化](../../chapter-07-nic-performance-optimization/) · [Ch5 转发](../../chapter-05-packet-forwarding/)

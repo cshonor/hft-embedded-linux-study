@@ -23,7 +23,7 @@
 | **中断可打断中断** | 正在跑的 ISR 可被 **更高优先级硬件中断** 打断 |
 | **异常不能抢占 ISR** | 异常处理程序 **永远不能** 抢占中断处理程序 |
 
-→ 临界区与锁：[Ch 5 内核同步](../chapter-05-kernel-synchronization.md)
+→ 临界区与锁：[Ch 5 内核同步](../../chapter-05-kernel-synchronization.md)
 
 ---
 

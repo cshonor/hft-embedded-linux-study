@@ -1,6 +1,6 @@
 # 第 22 章 · Local Variables（局部变量） · §22.5 另一个作用域边缘情况（Another Scope Edge Case）
 
-← [本章目录](./README.md) · 上一节：[03-using-locals.md](./03-using-locals.md) · 下一节：[05-ast.md](./05-ast.md)
+← [本章目录](./README.md) · 上一节：[03-using-locals.md](./03-using-locals.md) · 下一节：[05-ast.md](05-local-variables-vs.md)
 
 ---
 

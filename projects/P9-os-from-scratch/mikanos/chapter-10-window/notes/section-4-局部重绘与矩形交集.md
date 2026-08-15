@@ -48,7 +48,7 @@ memcpy(dest + intersection.origin, src + ..., intersection.size);
 
 局部 Draw 仍可在 **Window shadow** 上更新 — 合成阶段 **只 blit 交集** 到 Back Buffer 或 FB。
 
-→ [Ch9 Shadow](../chapter-09-layers/notes/section-5-阴影缓冲区与memcpy加速.md)
+→ [Ch9 Shadow](../../chapter-09-layers/notes/section-5-阴影缓冲区与memcpy加速.md)
 
 ---
 

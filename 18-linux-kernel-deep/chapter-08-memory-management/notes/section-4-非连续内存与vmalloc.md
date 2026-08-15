@@ -48,9 +48,9 @@
 
 | Ch 8 主题 | 继续读 |
 |-----------|--------|
-| 进程地址空间、缺页 | [Ch 9 进程地址空间](../chapter-09-process-address-space/) 🔴 |
-| 页回收、swap | [Ch 17 页回收](../chapter-17-page-reclaim.md) 🟡 |
-| 页表、高端内存 | [Ch 2 内存寻址](../chapter-02-memory-addressing/) 🔴 |
+| 进程地址空间、缺页 | [Ch 9 进程地址空间](../../chapter-09-process-address-space/) 🔴 |
+| 页回收、swap | [Ch 17 页回收](../../chapter-17-page-reclaim.md) 🟡 |
+| 页表、高端内存 | [Ch 2 内存寻址](../../chapter-02-memory-addressing/) 🔴 |
 | VM 专著 | [07 Gorman](../../../06-linux-mm/) |
 | Slab 深潜 | [07 Gorman Ch 8 Slab](../../../06-linux-mm/chapter-08-slab-allocator/) |
 | 大页 / NUMA | [16 HFT 工程](../../../16-hft-engineering/) · [03 SysPerf Ch 7](../../../14-systems-performance/chapter-07-memory/) |
@@ -94,5 +94,5 @@
 
 ---
 
-← [3. Slab](./section-3-Slab分配器.md) · 下一章 [Ch 9 进程地址空间](../chapter-09-process-address-space/)
+← [3. Slab](./section-3-Slab分配器.md) · 下一章 [Ch 9 进程地址空间](../../chapter-09-process-address-space/)
 > ↔ [LKD Ch12 §12.6 vmalloc](../../../05-linux-kernel/chapter-12-memory-management/notes/section-12.6-vmalloc.md)

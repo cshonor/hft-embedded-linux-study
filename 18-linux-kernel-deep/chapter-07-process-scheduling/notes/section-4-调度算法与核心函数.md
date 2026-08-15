@@ -4,7 +4,7 @@
 
 ### 一、`scheduler_tick()` — 时钟 tick 入口
 
-在 **时钟中断** 路径中（[Ch 6](../chapter-06-timing/)）：
+在 **时钟中断** 路径中（[Ch 6](../../chapter-06-timing/)）：
 
 1. **递减** 当前进程时间片  
 2. 若耗尽 → 移出 **活动队列**  
@@ -27,7 +27,7 @@
 1. 状态 → **`TASK_RUNNING`**  
 2. 插入目标 CPU 的 **`runqueue`**
 
-→ 等待队列：[Ch 3](../chapter-03-processes/notes/section-4-组织与查找.md)
+→ 等待队列：[Ch 3](../../chapter-03-processes/notes/section-4-组织与查找.md)
 
 ---
 
@@ -43,7 +43,7 @@
 1. 在本地 `runqueue` 的 **活动数组** 中选 **最高优先级** 进程  
 2. **`context_switch()`** — 切换地址空间 + 硬件上下文  
 
-→ 切换细节：[Ch 3](../chapter-03-processes/notes/section-5-进程切换.md) · TLB：[Ch 2](../chapter-02-memory-addressing/notes/section-6-内存布局与TLB.md)
+→ 切换细节：[Ch 3](../../chapter-03-processes/notes/section-5-进程切换.md) · TLB：[Ch 2](../../chapter-02-memory-addressing/notes/section-6-内存布局与TLB.md)
 
 ### 常见陷阱
 

@@ -4,7 +4,7 @@
 
 ## 目标
 
-- 对照 [05 UNP](../../../03.5-unix-network-api/) socket 组播版本，理解旁路差异
+- 对照 [05 UNP](../../../../03.5-unix-network-api/) socket 组播版本，理解旁路差异
 - 对照 [06 note-组播IGMP](../../../../12-kernel-networking/note-组播IGMP.md) 内核路径
 
 ## 计划结构

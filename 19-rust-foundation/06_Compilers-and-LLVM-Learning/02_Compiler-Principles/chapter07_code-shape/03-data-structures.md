@@ -34,7 +34,7 @@ addr = base + (i * col_count + j) * sizeof(T)
 
 **Rust `&str` / `String`**：fat pointer vs owned — 编译器生成不同 copy/alloc 序列。
 
-**clox**：**interned** 字符串 → [ch19 Strings](../../../01_Crafting-Interpreters/part03_clox/chapter19_strings/README.md)
+**clox**：**interned** 字符串 → [ch19 Strings](../../01_Crafting-Interpreters/part03_clox/chapter19_strings/README.md)
 
 ---
 

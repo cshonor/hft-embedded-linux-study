@@ -39,7 +39,7 @@ Bootloader ReadBlocks(0, 32MiB, buffer)
 | **字体 + apps + kernel 镜像** | 16MiB **不够** |
 | **仍内存 FS** | 真机 **Boot Services 退出前** 读完 |
 
-→ [Ch17 Block I/O 预读](../chapter-17-filesystem/notes/section-5-UEFI-Block-IO与卷镜像.md)
+→ [Ch17 Block I/O 预读](../../chapter-17-filesystem/notes/section-5-UEFI-Block-IO与卷镜像.md)
 
 ---
 
@@ -49,7 +49,7 @@ Bootloader ReadBlocks(0, 32MiB, buffer)
 
 **体积/栈：** 复杂库 — 引发 §4 **栈扩容**。
 
-→ [Ch5 外部字体对比](../chapter-05-console-text/notes/section-4-外部字体嵌入.md)
+→ [Ch5 外部字体对比](../../chapter-05-console-text/notes/section-4-外部字体嵌入.md)
 
 ---
 

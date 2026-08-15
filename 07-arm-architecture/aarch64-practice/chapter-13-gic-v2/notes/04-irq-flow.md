@@ -128,7 +128,7 @@ static irq_handler_t irq_handlers[1024] = {
 void gic_handle_irq_fast(void) {
     uint32_t irq = GICC->IAR;
     if (irq < 1024 && irq_handlers[irq]) {
-        irq_handlers[irq](irq);
+        irq_handlers[irq](04-irq-flow.md);
     }
     GICC->EOIR = irq;
 }

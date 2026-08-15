@@ -77,7 +77,7 @@ AssignNode → 检查可赋值 + 可能 Cast 右值
 
 ## 与 ch11
 
-语义正确的 AST（含 **CastNode**、每 Expr **结果 Type**）→ **`IRGenerator`** [ch11](../chapter11_ir/)（待建）。
+语义正确的 AST（含 **CastNode**、每 Expr **结果 Type**）→ **`IRGenerator`** ch11（待建）。
 
 ---
 

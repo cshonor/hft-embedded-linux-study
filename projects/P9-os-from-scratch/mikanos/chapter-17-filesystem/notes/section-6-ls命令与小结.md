@@ -63,11 +63,11 @@ Ch20 syscall 抽象文件 I/O
 
 | Ch17 主题 | 继续读 |
 |----------|--------|
-| 加载应用 | [chapter-18-apps](../chapter-18-apps/) ⚪ |
-| 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
-| UEFI 引导 | [chapter-01-hello-world](../chapter-01-hello-world/) |
-| CLI 框架 | [chapter-16-commands](../chapter-16-commands/) |
+| 加载应用 | [chapter-18-apps](../../chapter-18-apps/) ⚪ |
+| 系统调用 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
+| UEFI 引导 | [chapter-01-hello-world](../../chapter-01-hello-world/) |
+| CLI 框架 | [chapter-16-commands](../../chapter-16-commands/) |
 
 ---
 
-← [5. Block I/O](./section-5-UEFI-Block-IO与卷镜像.md) · [Ch 16](../chapter-16-commands/) · [Ch 17 导读](../README.md)
+← [5. Block I/O](./section-5-UEFI-Block-IO与卷镜像.md) · [Ch 16](../../chapter-16-commands/) · [Ch 17 导读](../README.md)

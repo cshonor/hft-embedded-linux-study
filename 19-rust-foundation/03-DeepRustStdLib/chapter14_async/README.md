@@ -64,8 +64,8 @@
 | `std` RUNTIME | [11.11 RUNTIME](../chapter11_concurrency/11.11-runtime.md) |
 | 阻塞 I/O | [第 13 章](../chapter13_io/README.md) |
 | **Pin** | [7.4 Pin/Unpin](../chapter07_interior_mutability/7.4-pin-unpin.md) |
-| RFR 异步 | [RFR Ch10](../../02-RFR/Chapter-10-Asynchronous-Programming/README.md) |
-| `tokio` 实战 | [05-async](../../05-Async-Concurrency-Network/02-async/) |
+| RFR 异步 | RFR Ch10 |
+| `tokio` 实战 | [05-async](../../05-Async-Concurrency-Network/02-async_tokio) |
 
 ---
 

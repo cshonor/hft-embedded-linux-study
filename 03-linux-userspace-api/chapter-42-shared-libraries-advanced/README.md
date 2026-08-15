@@ -1,18 +1,18 @@
 # TLPI 第 42 章 — Advanced Features of Shared Libraries
 
 **优先级**：🔴（插件架构、符号可见性）  
-**前置**：[Ch41 共享库基础](../chapter-41-shared-libraries/notes.md)  
-**后置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/notes.md)  
+**前置**：[Ch41 共享库基础](../chapter-41-shared-libraries/README.md)  
+**后置**：[Ch43 IPC 综述](../chapter-43-ipc-overview/README.md)  
 
 ---
 
 ## 小节目录
 
-- [42.1 –42.4 dlopen 家族（`<dlfcn.h>`，`-ldl`）](./notes/42.1-dlopen-dlfcn-ldl.md)
-- [42.5 dladdr](./notes/42.5-dladdr.md)
-- [42.6 初始化 / 终止](./notes/42.6-initialization-termination.md)
-- [42.7 符号可见性](./notes/42.7-symbol.md)
-- [42.8 –42.9 命名空间与环境变量](./notes/42.8-environment-namespace.md)
+- 42.1 –42.4 dlopen 家族（`<dlfcn.h>`，`-ldl`）
+- [42.5 dladdr](notes/42.5-preloading-shared-libraries.md)
+- [42.6 初始化 / 终止](notes/42.4-initialization-and-finalization-function.md)
+- [42.7 符号可见性](notes/42.2-controlling-symbol-visibility.md)
+- [42.8 –42.9 命名空间与环境变量](notes/42.8-exercises.md)
 
 ---
 
@@ -149,4 +149,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

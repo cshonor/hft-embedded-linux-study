@@ -47,7 +47,7 @@ int x = atomic_read(&v);
 
 **HFT 对照：** 用户态 `std::atomic` / `__atomic_*` 与内核 `atomic_t` 同一层；热路径 **计数、序号、就绪标志** 优先原子。记得 **内存序**（见 10.10）— 原子读写默认语义随 API/架构而变。
 
-→ [10.2 自旋锁](./section-10.2-自旋锁.md) · [10.10 屏障](./section-10.10-排序和屏障.md) · [02-CSAPP 并发](../../../../02-computer-systems/chapter-12-concurrent-programming/)
+→ [10.2 自旋锁](./section-10.2-自旋锁.md) · [10.10 屏障](./section-10.10-排序和屏障.md) · [02-CSAPP 并发](../../../02-computer-systems/chapter-12-concurrent-programming/)
 
 ### 常见陷阱
 

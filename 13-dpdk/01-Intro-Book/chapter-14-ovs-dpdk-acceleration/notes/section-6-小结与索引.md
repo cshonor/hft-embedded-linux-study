@@ -31,7 +31,7 @@ Ch13 NFV 架构 / VNF 方法论
     ↓
 Ch14 OVS-DPDK（虚拟交换机数据面）
     ↓
-Ch15 SPDK 网络存储（应用篇压轴）← 见 [chapter-15](../chapter-15-dpdk-storage-optimization/)
+Ch15 SPDK 网络存储（应用篇压轴）← 见 [chapter-15](../../chapter-15-dpdk-storage-optimization/)
     ↓
 02-Advanced / HFT 落地
 ```
@@ -42,12 +42,12 @@ Ch15 SPDK 网络存储（应用篇压轴）← 见 [chapter-15](../chapter-15-dp
 
 | Ch14 主题 | 继续读 |
 |----------|--------|
-| SPDK 存储 | [chapter-15-dpdk-storage-optimization](../chapter-15-dpdk-storage-optimization/) 🟡 |
+| SPDK 存储 | [chapter-15-dpdk-storage-optimization](../../chapter-15-dpdk-storage-optimization/) 🟡 |
 | NFV / NFVI | [chapter-13-dpdk-nfv](../../chapter-13-dpdk-nfv/) 🟡 |
-| vhost-user | [chapter-12-vhost-optimization](../chapter-12-vhost-optimization/) 🟡 |
-| Virtio 前端 | [chapter-11-virtio-paravirtualization](../chapter-11-virtio-paravirtualization/) 🟡 |
-| Match+Action / Pipeline | [chapter-05-packet-forwarding](../chapter-05-packet-forwarding/) 🔴 |
-| 进阶网络（XDP 等） | [02-Advanced-Book](../../02-Advanced-Book/) 🟡 |
+| vhost-user | [chapter-12-vhost-optimization](../../chapter-12-vhost-optimization/) 🟡 |
+| Virtio 前端 | [chapter-11-virtio-paravirtualization](../../chapter-11-virtio-paravirtualization/) 🟡 |
+| Match+Action / Pipeline | [chapter-05-packet-forwarding](../../chapter-05-packet-forwarding/) 🔴 |
+| 进阶网络（XDP 等） | [02-Advanced-Book](../../../02-Advanced-Book/) 🟡 |
 | HFT | [15 工程](../../../../16-hft-engineering/) |
 
 ---

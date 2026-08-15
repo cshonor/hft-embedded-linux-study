@@ -72,7 +72,7 @@ MMU walk:
 
 **HFT：** **TLB miss 是隐形杀手** — **`perf stat -e dTLB-load-misses`** 对比 **4KB vs 2MB**。绑核减 **跨核 TLB shootdown**；**1GB 页** 适合 **巨型 **只读** 参考数据**（慎用 **分裂成本**）。
 
-→ [01 CSAPP Ch9 TLB/翻译](../../../../02-computer-systems/chapter-09-virtual-memory/notes/section-9.6-9.7-地址翻译与Linux案例.md) · [06 Gorman Ch3 页表](../../../../06-linux-mm/chapter-03-page-table-management/) · [06 THP note](../../../../06-linux-mm/chapter-03-page-table-management/notes/note-透明大页THP.md)
+→ [01 CSAPP Ch9 TLB/翻译](../../../02-computer-systems/chapter-09-virtual-memory/notes/section-9.6-地址翻译.md) · [06 Gorman Ch3 页表](../../../06-linux-mm/chapter-03-page-table-management/) · [06 THP note](../../../06-linux-mm/chapter-03-page-table-management/notes/note-透明大页THP.md)
 
 
 > ↔ [ULK Ch9 §4 缺页异常](../../../18-linux-kernel-deep/chapter-09-process-address-space/notes/section-4-缺页异常.md)

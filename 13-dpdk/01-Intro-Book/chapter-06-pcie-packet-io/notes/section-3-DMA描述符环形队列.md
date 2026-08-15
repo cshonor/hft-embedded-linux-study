@@ -43,9 +43,9 @@ DMA 控制器通过 **环形队列** 与 CPU 协作：
 ### 四、与 DPDK PMD 的关系
 
 - PMD **poll mode** 批量检查 DD、批量 refill — 减少 per-packet 寄存器访问（→ §4）  
-- 描述符环深度、Prefetch 与 [Ch2 Cache 预取](../chapter-02-cache-and-memory/notes/section-3-Cache预取.md) 影响 miss 率  
+- 描述符环深度、Prefetch 与 [Ch2 Cache 预取](../../chapter-02-cache-and-memory/notes/section-3-Cache预取.md) 影响 miss 率  
 
-→ 内核 NAPI 环对照 [14-LKN](../../../../12-kernel-networking/) · PMD 深潜 [chapter-03-PMD](../chapter-03-PMD与轮询模式.md)
+→ 内核 NAPI 环对照 [14-LKN](../../../../12-kernel-networking/) · PMD 深潜 [chapter-03-PMD](../../chapter-03-parallel-computing)
 
 ---
 

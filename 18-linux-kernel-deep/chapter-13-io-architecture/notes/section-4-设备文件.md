@@ -14,7 +14,7 @@ open("/dev/sda1") → read / write / ioctl …
 
 VFS **file 对象** 最终通过 **`file_operations`** 进入 **字符或块驱动**（见 [section-6](./section-6-字符设备驱动.md)）。
 
-→ VFS 四大对象：[Ch 12 section-3](../chapter-12-VFS/notes/section-3-四大核心对象.md)
+→ VFS 四大对象：[Ch 12 section-3](../../chapter-12-VFS/notes/section-3-四大核心对象.md)
 
 ---
 

@@ -32,7 +32,7 @@ DPDK 基于 **通用 IA 多核**，用 **软件** 演绎数据面：
 | **内核栈** | 中断 → NAPI → sk_buff → socket |
 | **DPDK** | 用户态 **PMD 轮询** → mbuf — **绕过** 上述路径 |
 
-→ 对照：[14-LKN](../../../../12-kernel-networking/) · [chapter-04 零拷贝](../chapter-04-零拷贝与用户态旁路.md)
+→ 对照：[14-LKN](../../../../12-kernel-networking/) · [chapter-04 零拷贝](../../chapter-04-synchronization)
 
 ---
 

@@ -13,7 +13,7 @@
 | **转发算法** | 精确匹配 Hash、**LPM**、**ACL** |
 | **多核分发** | **Packet Distributor** — 同流同 Worker、保序 |
 
-**承上启下：** [Ch4 同步互斥](../chapter-04-synchronization/) 提供 ring/LPM/ACL 的 **锁与无锁** 原语；本章讲 **如何用这些组件搭转发路径**；[Ch8 流分类](../chapter-08-flow-classification-multiqueue/) 讲 **硬件侧** 如何把流分给多核。
+**承上启下：** [Ch4 同步互斥](../../chapter-04-synchronization/) 提供 ring/LPM/ACL 的 **锁与无锁** 原语；本章讲 **如何用这些组件搭转发路径**；[Ch8 流分类](../../chapter-08-flow-classification-multiqueue/) 讲 **硬件侧** 如何把流分给多核。
 
 ---
 

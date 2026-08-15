@@ -6,7 +6,7 @@
 | **优先分配** | Preferencing | 将客户 **市价单** **定向路由** 给特定交易商，换取 **金钱或非金钱补偿** → **订单流支付 (PFOF)** |
 | **内部交叉撮合** | Internal order crossing | 经纪人或 **ECN** 在 **自有系统内** 将客户 **买 vs 卖** **直接匹配** |
 
-→ [Ch 7 §3 PFOF](../chapter-07-brokers/) · [Ch 6 衍生定价交叉网](../chapter-06-order-driven-markets/)
+→ [Ch 7 §3 PFOF](../../chapter-07-brokers/) · [Ch 6 衍生定价交叉网](../../chapter-06-order-driven-markets/)
 
 | HFT 视角 |
 |----------|

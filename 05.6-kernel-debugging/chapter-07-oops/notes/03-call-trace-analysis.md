@@ -131,6 +131,6 @@ CONFIG_UNWINDER_ORC=y
 
 ## 交叉引用
 
-- [05.6 ch07 寄存器转储解读](chapter-07-oops/notes/02-register-dump.md)
-- [05.6 ch07 addr2line](chapter-07-oops/notes/04-addr2line.md)
-- [05.6 ch07 objdump 反汇编](chapter-07-oops/notes/05-objdump-disassembly.md)
+- [05.6 ch07 寄存器转储解读](../../chapter-07-oops/notes/02-register-dump.md)
+- [05.6 ch07 addr2line](../../chapter-07-oops/notes/04-addr2line.md)
+- [05.6 ch07 objdump 反汇编](../../chapter-07-oops/notes/05-objdump-disassembly.md)

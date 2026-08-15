@@ -52,7 +52,7 @@ public:
 | **函数** | 构造函数 | `operator=` |
 | **典型** | `Widget w(arg);` | `w = other;` |
 
-**绝不能混为一谈**——未初始化成员就赋值 vs 先析构再拷贝，语义与实现都不同（[条款 10](../ch02-constructors-destructors-assignment/item10-令operator=返回引用指向this对象.md)、[条款 11](../ch02-constructors-destructors-assignment/item11-在operator=中处理对象自我赋值.md)）。
+**绝不能混为一谈**——未初始化成员就赋值 vs 先析构再拷贝，语义与实现都不同（[条款 10](../ch02-constructors-destructors-assignment/item10-令operator=返回this引用.md)、[条款 11](../ch02-constructors-destructors-assignment/item11-赋值运算符处理自我赋值.md)）。
 
 ---
 
@@ -87,10 +87,10 @@ void f(Widget w);   // 调用 copy/move ctor 构造 w 的副本
 | 角色 | 须考虑 |
 |------|--------|
 | **作为派生类** | 基类接口约束；哪些函数 `virtual` / `non-virtual` 不可随意改语义 |
-| **作为基类** | 是否被多态删除？→ **虚析构**（[条款 7](../ch02-constructors-destructors-assignment/item07-为多态基类声明virtual析构函数.md)） |
+| **作为基类** | 是否被多态删除？→ **虚析构**（[条款 7](../ch02-constructors-destructors-assignment/item07-多态基类声明virtual析构函数.md)） |
 | **是否应继承** | 有时 **组合优于继承**；不要为了复用而 public 继承 |
 
-构造/析构中调虚函数的限制见 [条款 9](../ch02-constructors-destructors-assignment/item09-绝不在构造和析构过程中调用virtual函数.md)。
+构造/析构中调虚函数的限制见 [条款 9](../ch02-constructors-destructors-assignment/item09-绝不在构造和析构过程调用虚函数.md)。
 
 ---
 

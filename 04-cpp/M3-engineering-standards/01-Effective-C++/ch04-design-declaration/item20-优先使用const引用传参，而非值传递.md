@@ -72,7 +72,7 @@ study(st);   // 传值 → 函数里 p 只是 Person，多态丢失
 ```
 
 传值进「接受基类」的形参时，**派生部分被切掉**；即便有 `virtual`，对象已是**纯基类子对象**。  
-**多态形参几乎总是 `const Base&` 或 `Base&`（或指针）**（见 [条款 7](../ch02-constructors-destructors-assignment/item07-为多态基类声明virtual析构函数.md)）。
+**多态形参几乎总是 `const Base&` 或 `Base&`（或指针）**（见 [条款 7](../ch02-constructors-destructors-assignment/item07-多态基类声明virtual析构函数.md)）。
 
 ```
 Student 对象 ──传值──→ [Person 子对象副本]  ← 派生部分丢弃

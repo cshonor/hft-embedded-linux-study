@@ -38,7 +38,7 @@
 
 **HFT 工程：** 生产 rarely 改内核 syscall；调优多用 **已有接口**（`epoll`、`mmap`、`setsockopt`、netlink）或 **内核模块 / 驱动**。
 
-→ 收官：[Ch 20 补丁与社区](../../chapter-20-patches-community/) · [P3.5 BusyBox 实操](../../../../projects/P3.5-busybox-minimal-linux/) · 回 [§5.1](./section-5.1-与内核通信.md)
+→ 收官：[Ch 20 补丁与社区](../../chapter-20-patches-community/) · [P3.5 BusyBox 实操](../../../projects/P3.5-busybox-minimal-linux/) · 回 [§5.1](./section-5.1-与内核通信.md)
 
 
 

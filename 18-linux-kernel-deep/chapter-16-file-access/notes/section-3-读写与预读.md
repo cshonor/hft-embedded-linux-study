@@ -16,7 +16,7 @@ generic_file_read()
     └─ 未命中 → 分配页框 → 块层读盘 → 填入页缓存 → 拷贝
 ```
 
-→ 页缓存：[Ch 15 section-2](../chapter-15-page-cache/notes/section-2-页缓存与address_space.md) · 块层：[Ch 14](../chapter-14-block-devices/)
+→ 页缓存：[Ch 15 section-2](../../chapter-15-page-cache/notes/section-2-页缓存与address_space.md) · 块层：[Ch 14](../../chapter-14-block-devices/)
 
 ---
 
@@ -54,7 +54,7 @@ generic_file_write()
 pdflush / 阈值 / fsync → 写回磁盘
 ```
 
-脏页过多 → **强制回写** — [Ch 15 section-5](../chapter-15-page-cache/notes/section-5-回写脏页与pdflush.md)。
+脏页过多 → **强制回写** — [Ch 15 section-5](../../chapter-15-page-cache/notes/section-5-回写脏页与pdflush.md)。
 
 ---
 

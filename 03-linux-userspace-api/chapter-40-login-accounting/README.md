@@ -1,18 +1,18 @@
 # TLPI 第 40 章 — Login Accounting
 
 **优先级**：🟠（审计、who/last、会话可见性）  
-**前置**：[Ch39 Capabilities](../chapter-39-capabilities/notes.md) · [Ch34 会话](../chapter-34-process-groups-sessions/notes.md)  
-**后置**：[Ch41 共享库](../chapter-41-shared-libraries/notes.md)
+**前置**：[Ch39 Capabilities](../chapter-39-capabilities/README.md) · [Ch34 会话](../chapter-34-process-groups-sessions/README.md)  
+**后置**：[Ch41 共享库](../chapter-41-shared-libraries/README.md)
 
 ---
 
 ## 小节目录
 
-- [40.1 –40.2 文件](./notes/40.1-section-40-1.md)
-- [40.3 `struct utmp`](./notes/40.3-struct-utmp.md)
-- [40.4 读取](./notes/40.4-read-op.md)
-- [40.5 更新](./notes/40.5-update.md)
-- [40.6 现代注意](./notes/40.6-section-40-6.md)
+- [40.1 –40.2 文件](notes/40.1-overview-of-the-utmp-and-wtmp-files.md)
+- [40.3 `struct utmp`](notes/40.1-overview-of-the-utmp-and-wtmp-files.md)
+- [40.4 读取](notes/40.4-retrieving-information-from-the-utmp-and.md)
+- [40.5 更新](notes/40.5-retrieving-the-login-name-getlogin.md)
+- [40.6 现代注意](notes/40.6-updating-the-utmp-and-wtmp-files-for-a-l.md)
 
 ---
 
@@ -132,4 +132,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -1,19 +1,19 @@
 # TLPI 第 08 章 — Users and Groups
 
 **优先级**：🟡→🔴（嵌入式权限 / 安全铺垫）  
-**前置**：[Ch6 Processes](../chapter-06-processes/notes.md)  
-**后置**：[Ch9 进程凭证](../chapter-09-process-credentials/notes.md) · [Ch15 文件属性/权限](../chapter-15-file-attributes/notes.md)
+**前置**：[Ch6 Processes](../chapter-06-processes/README.md)  
+**后置**：[Ch9 进程凭证](../chapter-09-process-credentials/README.md) · [Ch15 文件属性/权限](../chapter-15-file-attributes/README.md)
 
 ---
 
 ## 小节目录
 
-- [8.1 UID & GID](./notes/8.1-uid-gid.md)
-- [8.2 `/etc/passwd`（全局可读）](./notes/8.2-etc-passwd.md)
-- [8.3 `/etc/group`（全局可读）](./notes/8.3-etc-group.md)
-- [8.4 `/etc/shadow`（仅 root 可读）](./notes/8.4-etc-shadow-root.md)
-- [8.5 `crypt()` — 密码加密](./notes/8.5-crypt.md)
-- [8.6 附属组 Supplementary Groups](./notes/8.6-supplementary-groups.md)
+- [8.1 UID & GID](notes/8.1-passwd-file.md)
+- [8.2 `/etc/passwd`（全局可读）](notes/8.1-passwd-file.md)
+- [8.3 `/etc/group`（全局可读）](notes/8.3-group-file.md)
+- 8.4 `/etc/shadow`（仅 root 可读）
+- [8.5 `crypt()` — 密码加密](notes/8.5-password-encryption.md)
+- [8.6 附属组 Supplementary Groups](notes/8.6-summary.md)
 
 ---
 
@@ -103,7 +103,7 @@ Ch6  进程是谁在跑
 
 
 - Kerrisk, *The Linux Programming Interface*, **Chapter 8 — Users and Groups**  
-- [OUTLINE](../OUTLINE.md) · [Ch9](../chapter-09-process-credentials/notes.md) · [Ch15](../chapter-15-file-attributes/notes.md)
+- [OUTLINE](../OUTLINE.md) · [Ch9](../chapter-09-process-credentials/README.md) · [Ch15](../chapter-15-file-attributes/README.md)
 
 
 ---
@@ -158,4 +158,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

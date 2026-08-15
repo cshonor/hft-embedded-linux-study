@@ -32,7 +32,7 @@
 
 Lox 扫描器通常：**先读字母开头的 lexeme**，再 **switch / map 查 reserved word** — 与橡书策略一致。
 
-→ [CI jlox ch4 Scanning](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/README.md)
+→ [CI jlox ch4 Scanning](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/README.md)
 
 ---
 

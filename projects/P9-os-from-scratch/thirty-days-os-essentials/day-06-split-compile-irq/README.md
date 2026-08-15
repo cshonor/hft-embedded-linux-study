@@ -54,7 +54,7 @@
 
 ---
 
-← [Day 5](./day-05-结构体文字显示与GDT-IDT.md) · [01 导读](../README.md) · [Day 7](./day-07-FIFO与鼠标控制.md)
+← [Day 5](../day-05-gdt-idt) · [01 导读](../README.md) · [Day 7](../day-07-fifo-mouse)
 
 ---
 
@@ -62,4 +62,4 @@
 
 - 上一日：[../day-05-gdt-idt/](../day-05-gdt-idt/)
 - 下一日：[../day-07-fifo-mouse/](../day-07-fifo-mouse/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

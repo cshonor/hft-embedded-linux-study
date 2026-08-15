@@ -39,7 +39,7 @@
 
 **用法：** 在处理 **当前包** 时，prefetch **下一包** 的描述符 / mbuf / 数据头 — **与计算重叠** 访存延迟。
 
-→ PMD 热路径：[chapter-03 PMD](../chapter-03-PMD与轮询模式.md)
+→ PMD 热路径：[chapter-03 PMD](../../chapter-03-parallel-computing)
 
 > **深潜：** `rte_prefetch0()` 包装 — 在 rx burst 循环中常见「prefetch N+1 while handling N」。
 

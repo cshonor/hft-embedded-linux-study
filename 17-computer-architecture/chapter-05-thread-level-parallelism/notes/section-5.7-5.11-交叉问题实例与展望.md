@@ -28,7 +28,7 @@
 
 | HFT 视角 |
 |----------|
-| 与 [Ch3 SMT](../chapter-03-instruction-level-parallelism/notes/section-3.11-多线程技术.md) 一致：**关键路径关 HT、独占物理核** |
+| 与 [Ch3 SMT](../../chapter-03-instruction-level-parallelism/notes/section-3.11-多线程技术.md) 一致：**关键路径关 HT、独占物理核** |
 | 选型看 **L3 容量、内存通道、NUMA 拓扑** — 不止核数 |
 
 ---

@@ -43,7 +43,7 @@ for each descriptor:
 2. 排除 **内核自身、GDT、页表、栈、位图本身** 占用的页
 3. 对其余 **4KiB 页帧** 建位图 — 初始 **0 = 空闲**
 
-→ [Ch6 BAR0 MMIO](../chapter-06-mouse-pci/notes/section-5-BAR0与xHC初始化.md) — MMIO 区 **不得** 进入分配池
+→ [Ch6 BAR0 MMIO](../../chapter-06-mouse-pci/notes/section-5-BAR0与xHC初始化.md) — MMIO 区 **不得** 进入分配池
 
 ---
 

@@ -18,7 +18,7 @@
   └─ 不匹配 → 硬件直接丢弃，数据不进系统
 ```
 
-→ 网卡四功能中的 [MAC 硬件过滤](../../top_down/06_link_layer_and_lan/6.1_link_layer_service/nic-core-functions.md#3-mac-地址过滤硬件级)
+→ 网卡四功能中的 MAC 硬件过滤
 
 #### 2. 混杂模式（Promiscuous Mode）
 

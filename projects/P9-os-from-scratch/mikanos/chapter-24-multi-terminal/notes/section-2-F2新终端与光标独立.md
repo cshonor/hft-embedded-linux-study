@@ -17,7 +17,7 @@ KeyDown(F2):
 | **多个 `>` 提示符** | 各终端 **独立 linebuf / 历史** |
 | **各跑各的应用** | **CallApp** 在 **对应 TaskTerminal** 内 |
 
-→ [Ch15 TaskTerminal](../chapter-15-terminal/) · [Ch13 TaskManager](../chapter-13-multitask1/)
+→ [Ch15 TaskTerminal](../../chapter-15-terminal/) · [Ch13 TaskManager](../../chapter-13-multitask1/)
 
 ---
 
@@ -42,7 +42,7 @@ void TaskTerminal::Run() {
 | **仅活动终端闪** | 收 **kWindowActive(true)** 才 **EnableCursorBlink** |
 | **失活** | **kWindowActive(false)** — **隐藏光标** · 停 tick |
 
-→ [Ch15 活动窗](../chapter-15-terminal/notes/section-3-ActiveLayer与活动窗口.md)
+→ [Ch15 活动窗](../../chapter-15-terminal/notes/section-3-ActiveLayer与ToplevelWindow.md)
 
 ---
 

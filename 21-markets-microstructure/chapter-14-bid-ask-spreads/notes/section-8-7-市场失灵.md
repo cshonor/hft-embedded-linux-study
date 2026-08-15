@@ -12,6 +12,6 @@
 |----------|
 | **Penny stocks、部分 crypto pairs** — **流动性蒸发** |
 | **Circuit breaker / halt** — 临时 **失灵** |
-| 与 [Ch 9 好市场](../chapter-09-good-markets/) — 无 utility flow → 市场 **不存在** |
+| 与 [Ch 9 好市场](../../chapter-09-good-markets/) — 无 utility flow → 市场 **不存在** |
 
 ---

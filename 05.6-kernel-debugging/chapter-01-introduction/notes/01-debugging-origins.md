@@ -100,6 +100,6 @@
 
 ## 交叉引用
 
-- [05.6 ch02 内核调试挑战](chapter-02-approaches/notes/01-kernel-debug-challenges.md)
-- [05.6 ch03 printk 基础](chapter-03-printk/notes/01-printk-basics-loglevel.md)
-- [05-linux-kernel LKD Ch18 调试](../05-linux-kernel/)
+- [05.6 ch02 内核调试挑战](../../chapter-02-approaches/notes/01-kernel-debug-challenges.md)
+- [05.6 ch03 printk 基础](../../chapter-03-printk/notes/01-printk-basics-loglevel.md)
+- [05-linux-kernel LKD Ch18 调试](../../../05-linux-kernel/)

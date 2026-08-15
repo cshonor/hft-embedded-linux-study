@@ -31,7 +31,7 @@ CAS 语义：若内存值 == 期望值，则原子写入新值并返回成功；
 | `rte_wmb()` | 写屏障 — 发布数据前先写完 |
 | `rte_rmb()` | 读屏障 — 消费数据前先读完 |
 
-底层常映射 `__sync_synchronize()` → x86 **`MFENCE`** 等 — 对抗 **指令乱序** 与 **内存弱序**（与 [Ch3 ILP](../chapter-03-parallel-computing/notes/section-3-指令级并发.md) 对照）。
+底层常映射 `__sync_synchronize()` → x86 **`MFENCE`** 等 — 对抗 **指令乱序** 与 **内存弱序**（与 [Ch3 ILP](../../chapter-03-parallel-computing/notes/section-3-指令级并发.md) 对照）。
 
 **2. 原子操作 API**
 
@@ -49,7 +49,7 @@ CAS 语义：若内存值 == 期望值，则原子写入新值并返回成功；
 ### 五、对照
 
 - 内核侧同类原语 → [ULK Ch5 §3 基础同步原语](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md)  
-- 内存序 / 屏障 → [02-CSAPP](../../../02-computer-systems/) · [Ch2 Cache 一致性](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
+- 内存序 / 屏障 → [02-CSAPP](../../../../02-computer-systems/) · [Ch2 Cache 一致性](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
 
 ---
 

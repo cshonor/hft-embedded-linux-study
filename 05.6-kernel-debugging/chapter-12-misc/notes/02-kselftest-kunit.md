@@ -155,5 +155,5 @@ static void test_order_matching(struct kunit *test) {
 
 ## 交叉引用
 
-- [05.6 ch12 GCOV/KCOV 代码覆盖率](chapter-12-misc/notes/01-gcov-kcov-coverage.md)
-- [05.6 ch12 syzkaller 模糊测试](chapter-12-misc/notes/03-syzkaller-fuzzing.md)
+- [05.6 ch12 GCOV/KCOV 代码覆盖率](../../chapter-12-misc/notes/01-gcov-kcov-coverage.md)
+- [05.6 ch12 syzkaller 模糊测试](../../chapter-12-misc/notes/03-syzkaller-fuzzing.md)

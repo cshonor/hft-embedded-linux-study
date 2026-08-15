@@ -34,9 +34,9 @@
 |------|------|
 | **交易所共置 tick** | **选读** — 架构不同，但 **VNF 分型 / 闭环调优** 与 [03 SysPerf](../../../../14-systems-performance/) 同构 |
 | **云化行情/网关** | 理解 **Virtio vs VF**、**LLC 争用** — 与 tail latency 相关 |
-| **安全 VNF（IPSec）** | **CryptoDev / QAT** — 与 [Ch9 offload](../chapter-09-hardware-offload/) 延伸 |
+| **安全 VNF（IPSec）** | **CryptoDev / QAT** — 与 [Ch9 offload](../../chapter-09-hardware-offload/) 延伸 |
 
-→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../02-Advanced-Book/)
+→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../../02-Advanced-Book/)
 
 ---
 

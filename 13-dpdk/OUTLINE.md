@@ -46,7 +46,7 @@
 | OpenOnload / RDMA / RoCE | [note-openonload-rdma对比](./02-Advanced-Book/notes/note-openonload-rdma对比.md) | 🟡 |
 | XDP / tc-BPF 对照 | [note-XDP与DPDK对照](./02-Advanced-Book/notes/note-XDP与DPDK对照.md) | 🟡 |
 
-**code：** [02-Advanced-Book/code/](./02-Advanced-Book/code/)（待补充）
+**code：** 02-Advanced-Book/code/（待补充）
 
 ---
 

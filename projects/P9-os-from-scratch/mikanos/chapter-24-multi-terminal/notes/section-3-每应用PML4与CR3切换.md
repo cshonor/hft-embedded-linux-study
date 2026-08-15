@@ -29,7 +29,7 @@ Kernel: CR3_k →  identity / 内核高半 (共享)
 | **相同 VA 不同 PA** | **链接基址不必改** — **MMU 隔离** |
 | **任务切换** | **SwitchContext** 时 **`mov cr3, app_cr3`** |
 
-→ [Ch19 SetupPageMaps](../chapter-19-paging/notes/section-5-高半区链接与SetupPageMaps.md)
+→ [Ch19 SetupPageMaps](../../chapter-19-paging/notes/section-5-高半区链接与SetupPageMaps.md)
 
 ---
 

@@ -70,7 +70,7 @@
 | 本章 | 本仓库延伸 |
 |------|------------|
 | 内部可变性总览 | [RFR 07 内部可变性](../../02-RFR/Chapter-01-Foundations/07-interior-mutability.md) |
-| `Pin` | [RFR Ch10 异步](../../02-RFR/Chapter-10-Asynchronous-Programming/README.md) · [05-async Pin](../../05-Async-Concurrency-Network/) |
+| `Pin` | RFR Ch10 异步 · [05-async Pin](../../05-Async-Concurrency-Network/) |
 | `Mutex` / `RwLock` | 非本章 — 见补充轨道 `chapter03_std_sync_supplement/`（规划） |
 
 ---

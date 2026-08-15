@@ -37,7 +37,7 @@
 | **VNF** | 基于 DPDK 的 vRouter、vFW、vBRAS 等 |
 | **MANO** | 编排 **不直接** 跑 DPDK — 决定 VNF 部署拓扑 |
 
-→ 与 [Ch1 认识 DPDK](../chapter-01-dpdk-intro/) 定位一致：**数据面基石**
+→ 与 [Ch1 认识 DPDK](../../chapter-01-dpdk-intro/) 定位一致：**数据面基石**
 
 ---
 
@@ -47,7 +47,7 @@
 - **NFV** — 网元 **软件化、虚拟化**  
 - 常 **结合**：SDN 编排 + NFV VNF + **DPDK 转发**
 
-→ [Ch5 Pipeline / Match+Action](../chapter-05-packet-forwarding/notes/section-3-转发框架模型.md) · [Ch8 RMT](../chapter-08-flow-classification-multiqueue/notes/section-5-RMT抽象模型.md)
+→ [Ch5 Pipeline / Match+Action](../../chapter-05-packet-forwarding/notes/section-3-转发框架模型.md) · [Ch8 RMT](../../chapter-08-flow-classification-multiqueue/notes/section-5-RMT抽象模型.md)
 
 ---
 

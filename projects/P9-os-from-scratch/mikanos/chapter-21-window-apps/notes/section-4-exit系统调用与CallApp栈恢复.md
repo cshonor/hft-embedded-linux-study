@@ -56,7 +56,7 @@ void CallApp(ELFApp& app) {
 
 **关键：** 应用 **用户栈/页表** 在 **CallApp 外层** 统一 **CleanPageMaps**（Ch19）。
 
-→ [Ch19 CleanPageMaps](../chapter-19-paging/notes/section-6-CleanPageMaps与小结.md)
+→ [Ch19 CleanPageMaps](../../chapter-19-paging/notes/section-6-CleanPageMaps与小结.md)
 
 ---
 

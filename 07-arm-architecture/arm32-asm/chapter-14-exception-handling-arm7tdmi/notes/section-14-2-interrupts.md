@@ -38,7 +38,7 @@ ARM7TDMI 提供 **两条硬件中断线**：
 
 ### 与轮询 (Polling) 对比
 
-[Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) 可先 **读状态寄存器轮询**；中断适合：
+[Ch16 MMIO](../../chapter-16-memory-mapped-peripherals/) 可先 **读状态寄存器轮询**；中断适合：
 
 - 事件 **稀疏**、CPU 不应空转  
 - **多外设** — 配合 **VIC**（§14.8）直接跳进对应 ISR  

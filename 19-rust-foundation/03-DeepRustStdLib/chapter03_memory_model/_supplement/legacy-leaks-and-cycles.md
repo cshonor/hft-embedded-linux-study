@@ -1,6 +1,6 @@
 # 3.9 内存泄漏与循环引用
 
-> 章索引：[第 3 章](./README.md) · 前：[3.8 PhantomData](./3.8-phantomdata.md) · 后：[3.10 MaybeUninit](./3.10-maybeuninit.md)
+> 章索引：[第 3 章](./README.md) · 前：[3.8 PhantomData](../3.8-static-memory.md) · 后：[3.10 MaybeUninit](../3.10-ownership-lifetimes-borrow.md)
 
 ---
 
@@ -34,7 +34,7 @@ Rc<A> ──► Rc<B>
 | **重新设计所有权** | 父 owns 子，子不 own 父 |
 | **`Arc` + Mutex** | 仍可能环 — 须显式拆环 |
 
-与 [3.5 RefCell](./3.5-refcell.md)、[3.6 Mutex](./3.6-mutex.md) 组合：`Rc<RefCell<_>>`、`Arc<Mutex<_>>` 是环的常见载体。
+与 [3.5 RefCell](../3.2.5-maybeuninit-array.md)、[3.6 Mutex](../3.2.6-maybeuninit-cases.md) 组合：`Rc<RefCell<_>>`、`Arc<Mutex<_>>` 是环的常见载体。
 
 ---
 
@@ -44,11 +44,11 @@ Rc<A> ──► Rc<B>
 - **`Rc::strong_count` / `weak_count`** — 调试环。
 - **`Drop`** — 正常路径 RAII 释放。
 
-→ [Book 15 智能指针](../../00-Book/15-smart-pointers/) · [Nomicon 06 OBRM](../../04-Rust-Nomicon/06_OBRM_RAII/README.md)
+→ [Book 15 智能指针](../../../00-Book/15-smart-pointers/) · [Nomicon 06 OBRM](../../../04-Rust-Nomicon/06_OBRM_RAII/README.md)
 
 ---
 
 ## 相关
 
 - [第 4 章 智能指针（规划）](../README.md#目录)
-- [3.10 MaybeUninit](./3.10-maybeuninit.md) — 池回收 vs 真泄漏
+- [3.10 MaybeUninit](../3.10-ownership-lifetimes-borrow.md) — 池回收 vs 真泄漏

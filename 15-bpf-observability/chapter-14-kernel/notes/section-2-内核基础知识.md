@@ -11,7 +11,7 @@
 
 → 工具：`wakeuptime`、`offwaketime`
 
-→ LKD 调度/等待：[05-linux-kernel Ch 4](../05-linux-kernel/chapter-04-process-scheduling/)
+→ LKD 调度/等待：[05-linux-kernel Ch 4](../../../05-linux-kernel/chapter-04-process-scheduling/)
 
 ### 内核内存分配
 
@@ -25,7 +25,7 @@
 | `malloc` | `kmalloc` / Slab |
 | `mmap` 大块 | 页分配器 |
 
-→ [06-linux-mm](../06-linux-mm/) · [Ch 7 用户态内存](../../chapter-07-memory/)
+→ [06-linux-mm](../../../06-linux-mm/) · [Ch 7 用户态内存](../../chapter-07-memory/)
 
 ### 内核锁
 
@@ -47,6 +47,6 @@
 
 → 工具：**`workq`** 测 work handler 延迟
 
-→ LKD 中断/下半部：[05-linux-kernel Ch 7–8](../05-linux-kernel/)
+→ LKD 中断/下半部：[05-linux-kernel Ch 7–8](../../../05-linux-kernel/)
 
 ---

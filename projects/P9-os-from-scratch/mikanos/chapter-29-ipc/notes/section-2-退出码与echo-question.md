@@ -23,7 +23,7 @@ public:
 
 **CallApp / exit syscall / KillApp** 路径均 **更新 last_exit_code_**。
 
-→ [Ch21 exit](../chapter-21-window-apps/notes/section-4-exit系统调用与CallApp栈恢复.md)
+→ [Ch21 exit](../../chapter-21-window-apps/notes/section-4-exit系统调用与CallApp栈恢复.md)
 
 ---
 

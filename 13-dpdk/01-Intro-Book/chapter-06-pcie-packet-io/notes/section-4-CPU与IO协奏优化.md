@@ -25,7 +25,7 @@ DPDK 策略：
 - **合并多个描述符操作**，使单次 TLP 净荷尽量接近 **整 Cache Line**（通常 64B）  
 - 提高 **带宽利用率**，减少 TLP 头部占比  
 
-→ 与 [Ch3 SIMD/memcpy](../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) 同属「凑满总线宽度」思路。
+→ 与 [Ch3 SIMD/memcpy](../../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) 同属「凑满总线宽度」思路。
 
 ---
 
@@ -36,7 +36,7 @@ DPDK 策略：
 DPDK 对策：
 
 - Buffer / mbuf 数据区 **严格 Cache Line 对齐**  
-- 描述符环、控制结构 **对齐填充** — 衔接 [Ch2 Cache 对齐](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
+- 描述符环、控制结构 **对齐填充** — 衔接 [Ch2 Cache 对齐](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
 
 ---
 

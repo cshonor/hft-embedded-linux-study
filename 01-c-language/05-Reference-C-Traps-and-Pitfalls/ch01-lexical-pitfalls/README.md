@@ -47,7 +47,7 @@
 |---|------|
 | **前置** | [ch00 导读](../ch00-introduction/) |
 | **后置** | [ch02 语法陷阱](../ch02-syntactic-pitfalls/) — token 组合成语法树 |
-| **交叉** | [Expert C ch08](../03-Advanced-Expert-C-Programming/ch08-halloween-vs-christmas/) 优先级/序列点 |
+| **交叉** | [Expert C ch08](../../03-Advanced-Expert-C-Programming/ch08-halloween-vs-christmas/) 优先级/序列点 |
 
 ## 底层开发适用
 

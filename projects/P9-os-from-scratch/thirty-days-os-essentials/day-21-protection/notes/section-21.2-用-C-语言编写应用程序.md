@@ -23,6 +23,6 @@ _api_putchar:    ; C 调用名
 
 **开发者写 C + 链一小段 asm** — 不必手写整 app。
 
-→ [Day 19 RETF](../day-19-apps/) · [Day 20 PUSHAD](../day-20-api/)
+→ Day 19 RETF · [Day 20 PUSHAD](../../day-20-api/)
 
 ---

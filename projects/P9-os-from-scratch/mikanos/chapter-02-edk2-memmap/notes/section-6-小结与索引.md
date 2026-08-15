@@ -32,11 +32,11 @@ MikanLoader
 
 | 主题 | 路径 |
 |------|------|
-| Ch 1 Hello / PE | [chapter-01-hello-world](../chapter-01-hello-world/) |
+| Ch 1 Hello / PE | [chapter-01-hello-world](../../chapter-01-hello-world/) |
 | EDK II 文件 | [appendix-C-edk2-files](../../appendix-C-edk2-files/) |
-| 01 内存相关 | [01 Day 12+ 分页](../../thirty-days-os-essentials/)（更晚才分页） |
+| 01 内存相关 | [01 Day 12+ 分页](../../../thirty-days-os-essentials/)（更晚才分页） |
 | CSAPP 虚拟内存 | [CSAPP Ch9](../../../../../02-computer-systems/chapter-09-virtual-memory/) |
-| Ch 8 内存管理 | [chapter-08-memory](../chapter-08-memory/) 🔴 |
+| Ch 8 内存管理 | [chapter-08-memory](../../chapter-08-memory/) 🔴 |
 
 ---
 
@@ -44,10 +44,10 @@ MikanLoader
 
 | Ch2 主题 | 继续读 |
 |----------|--------|
-| 显示 / Loader | [chapter-03-bootloader-display](../chapter-03-bootloader-display/) 🟡 |
-| 物理内存管理 | [chapter-08-memory](../chapter-08-memory/) 🔴 |
-| 分页 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
+| 显示 / Loader | [chapter-03-bootloader-display](../../chapter-03-bootloader-display/) 🟡 |
+| 物理内存管理 | [chapter-08-memory](../../chapter-08-memory/) 🔴 |
+| 分页 | [chapter-19-paging](../../chapter-19-paging/) 🔴 |
 
 ---
 
-← [5. 指针基础](./section-5-C指针基础.md) · [Ch 1](../chapter-01-hello-world/) · [Ch 2 导读](../README.md)
+← [5. 指针基础](./section-5-C指针基础.md) · [Ch 1](../../chapter-01-hello-world/) · [Ch 2 导读](../README.md)

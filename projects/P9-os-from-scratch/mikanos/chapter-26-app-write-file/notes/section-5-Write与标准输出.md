@@ -26,7 +26,7 @@ size_t fat::FileDescriptor::Write(const void* buf, size_t len) {
 | **更新 directory entry size** | **ls** 可见 **新长度** |
 | **跨簇** | 与 Ch25 **Read 对称** |
 
-→ [Ch18 簇链读](../chapter-18-apps/notes/section-2-FAT簇链与cat命令.md)
+→ [Ch18 簇链读](../../chapter-18-apps/notes/section-2-FAT簇链与cat命令.md)
 
 ---
 
@@ -50,7 +50,7 @@ SyscallWrite(fd, buf, len) {
 
 **printf → write(1,…)** — Ch21 **PutString** 能力 **纳入 fd 体系**。
 
-→ [Ch21 PutString](../chapter-21-window-apps/notes/section-3-PutString与printf适配.md)
+→ [Ch21 PutString](../../chapter-21-window-apps/notes/section-3-PutString与printf适配.md)
 
 ---
 

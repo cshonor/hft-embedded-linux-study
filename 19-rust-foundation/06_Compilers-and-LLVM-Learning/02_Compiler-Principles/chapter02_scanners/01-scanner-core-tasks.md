@@ -36,7 +36,7 @@ let x: u64 = 10;
 
 - 扫描器 = 编译器的**「眼睛」**。
 - 在 [ch1 翻译流程](../chapter01_overview/04-translation-pipeline-example.md) 中属于 **「理解输入 · 词法」** 层。
-- 在 [CI 流水线](../../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) 中 = **Scanning / Lexing → Tokens**。
+- 在 [CI 流水线](../../01_Crafting-Interpreters/part01_welcome/chapter02_map-of-the-territory/04-rust-hft-编译流水线对照.md) 中 = **Scanning / Lexing → Tokens**。
 
 ---
 

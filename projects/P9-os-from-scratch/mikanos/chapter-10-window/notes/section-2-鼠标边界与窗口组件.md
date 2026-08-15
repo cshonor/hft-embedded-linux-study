@@ -18,7 +18,7 @@ cursor_y = ElementMax(0, ElementMin(cursor_y, screen_size.y - 1));
 | 贴边停止 | 符合 **物理显示器** 直觉 |
 | 拖窗时 | 光标与 **hit test** 坐标一致 |
 
-→ [Ch6 鼠标位移](../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
+→ [Ch6 鼠标位移](../../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
 
 ---
 
@@ -49,7 +49,7 @@ cursor_y = ElementMax(0, ElementMin(cursor_y, screen_size.y - 1));
 
 主窗口作为 **Layer** 入栈 — 位于桌面之上、鼠标层之下（或按书 Z 序）。
 
-→ [Ch9 LayerManager](../chapter-09-layers/notes/section-3-Window与LayerManager.md)
+→ [Ch9 LayerManager](../../chapter-09-layers/notes/section-3-Window与LayerManager.md)
 
 ---
 

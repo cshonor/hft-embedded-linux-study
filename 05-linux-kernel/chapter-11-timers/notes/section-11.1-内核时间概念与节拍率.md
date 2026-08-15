@@ -63,7 +63,7 @@
 | **定时器（本章）** | 检查 `timer_list` / hrtimer 到期 |
 | **统计** | 进程/系统 CPU 时间、load average |
 
-→ [Ch 4 `scheduler_tick`](../../chapter-04-process-scheduling/) · [Ch 10 seqlock](../../chapter-10-kernel-synchronization/) · [07 TLPI 时间章](../../../../03-linux-userspace-api/)
+→ [Ch 4 `scheduler_tick`](../../chapter-04-process-scheduling/) · [Ch 10 seqlock](../../chapter-06-kernel-data-structures) · [07 TLPI 时间章](../../../03-linux-userspace-api/)
 
 ### 常见陷阱
 

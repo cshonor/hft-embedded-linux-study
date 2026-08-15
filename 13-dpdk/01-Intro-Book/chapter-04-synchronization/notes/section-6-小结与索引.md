@@ -29,15 +29,15 @@ Ch8 流分类与多队列 — 硬件 RSS + 软件分核
 
 | Ch4 主题 | 继续读 |
 |----------|--------|
-| 报文转发 / RTC | [chapter-05-报文转发](../chapter-05-packet-forwarding/) 🔴 |
-| rte_ring / mbuf | [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) 🔴 |
-| 多队列 / 核间分发 | [chapter-08-流分类与多队列](../chapter-08-flow-classification-multiqueue/) 🔴 |
-| PMD 轮询 | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
-| Cache / 伪共享 | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/) 🔴 |
+| 报文转发 / RTC | [chapter-05-报文转发](../../chapter-05-packet-forwarding/) 🔴 |
+| rte_ring / mbuf | [chapter-02-mbuf与内存池.md](../../chapter-02-cache-and-memory) 🔴 |
+| 多队列 / 核间分发 | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
+| PMD 轮询 | [chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing) 🔴 |
+| Cache / 伪共享 | [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/) 🔴 |
 | 内核同步对照 | [ULK Ch5 内核同步](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/) |
-| 并行 / Amdahl | [chapter-03-并行计算](../chapter-03-parallel-computing/) 🔴 |
+| 并行 / Amdahl | [chapter-03-并行计算](../../chapter-03-parallel-computing/) 🔴 |
 | HFT 锁与队列 | [16 HFT 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. 无锁机制](./section-5-无锁机制.md) · 下一章 [chapter-05-报文转发](../chapter-05-packet-forwarding/) · [Ch3 并行](../chapter-03-parallel-computing/)
+← [5. 无锁机制](./section-5-无锁机制.md) · 下一章 [chapter-05-报文转发](../../chapter-05-packet-forwarding/) · [Ch3 并行](../../chapter-03-parallel-computing/)

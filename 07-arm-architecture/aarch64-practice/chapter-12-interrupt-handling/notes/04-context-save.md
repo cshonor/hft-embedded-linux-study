@@ -132,7 +132,7 @@ void do_irq(struct pt_regs *regs) {
 
     // 根据中断号调用 handler
     if (irq < NR_IRQS && irq_handlers[irq])
-        irq_handlers[irq](regs);
+        irq_handlersirq;
 
     // 写 GIC EOIR
     gic_write_eoir(irq);

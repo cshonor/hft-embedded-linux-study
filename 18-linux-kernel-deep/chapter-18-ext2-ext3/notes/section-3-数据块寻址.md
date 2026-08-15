@@ -38,7 +38,7 @@
 块层 / 页缓存读数据块
 ```
 
-→ 页缓存：[Ch 15](../chapter-15-page-cache/) · read：[Ch 16](../chapter-16-file-access/)
+→ 页缓存：[Ch 15](../../chapter-15-page-cache/) · read：[Ch 16](../../chapter-16-file-access/)
 
 ---
 

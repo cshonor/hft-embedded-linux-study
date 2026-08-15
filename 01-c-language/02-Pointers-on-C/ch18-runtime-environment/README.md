@@ -60,7 +60,7 @@ ch01–ch17 语法、内存、IO、ADT → 本章映射到 **ELF、VMA、ABI、s
 
 ## 小节
 
-- [18.1 判断运行时环境](./18.1-determining-runtime-environment/18.1-determining-runtime-environment.md)
+- 18.1 判断运行时环境
 - [18.2 C 和汇编语言的接口](./18.2-C和汇编语言的接口.md)
 - [18.3 运行时效率](./18.3-运行时效率.md)
 - [18.4 ELF 文件回顾：sections vs segments](./18.4-ELF文件回顾.md)

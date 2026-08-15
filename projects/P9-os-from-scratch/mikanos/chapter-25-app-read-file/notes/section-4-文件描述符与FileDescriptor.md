@@ -39,7 +39,7 @@ public:
 | **fd 索引** | 通常 **0,1,2 预置** · **3+** 动态分配 |
 | **进程退出/KillApp** | **关闭并清空 files_** |
 
-→ [Ch24 Task](../chapter-24-multi-terminal/notes/section-3-每应用PML4与CR3切换.md)
+→ [Ch24 Task](../../chapter-24-multi-terminal/notes/section-3-每应用PML4与CR3切换.md)
 
 ---
 

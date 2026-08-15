@@ -55,4 +55,4 @@
 
 ## 与 CI ch30
 
-clox **教学向**局部优化（如 NaN boxing、指令特化）— 非工业全局数据流，但体现「不改语义改形态」→ [ch30](../../../01_Crafting-Interpreters/part03_clox/chapter30_optimization/README.md)
+clox **教学向**局部优化（如 NaN boxing、指令特化）— 非工业全局数据流，但体现「不改语义改形态」→ [ch30](../../01_Crafting-Interpreters/part03_clox/chapter30_optimization/README.md)

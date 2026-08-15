@@ -32,7 +32,7 @@ TaskTerminal loop:
 | **缓冲** | 行/列文本状态 |
 | **光标** | 竖线 **caret** |
 
-→ 复用 [Ch5 Console/WriteAscii](../chapter-05-console-text/) · [Ch12 退格/光标](../chapter-12-keyboard/)
+→ 复用 [Ch5 Console/WriteAscii](../../chapter-05-console-text/) · [Ch12 退格/光标](../../chapter-12-keyboard/)
 
 ---
 

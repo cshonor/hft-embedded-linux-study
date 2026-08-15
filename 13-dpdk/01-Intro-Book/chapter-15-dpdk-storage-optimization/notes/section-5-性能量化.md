@@ -26,7 +26,7 @@
 | **CPU 利用率** | 同等吞吐下 **低于** 传统内核方案 |
 | **时延** | **显著降低** — 轮询路径无中断/sched 抖动 |
 
-→ 与 [Ch3 并行扩展](../chapter-03-parallel-computing/) · [Ch13 闭环调优](../../chapter-13-dpdk-nfv/notes/section-4-VNF评估与性能分析.md) 方法论一致：**绑核 → 测 baseline → 找瓶颈 → 迭代**
+→ 与 [Ch3 并行扩展](../../chapter-03-parallel-computing/) · [Ch13 闭环调优](../../chapter-13-dpdk-nfv/notes/section-4-VNF评估与性能分析.md) 方法论一致：**绑核 → 测 baseline → 找瓶颈 → 迭代**
 
 ---
 

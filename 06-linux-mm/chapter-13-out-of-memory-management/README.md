@@ -18,7 +18,7 @@
 
 > **现代扩展：** **cgroup v1/v2 memory** 的 **memcg OOM**、**`oom_score_adj`**、**pid 1 保护** 等 — 原书 **`badness()`** 思路仍在，细节以当前树为准。
 
-→ 回收失败背景：[Ch 10](../../chapter-10-page-frame-reclamation/) · **`PF_MEMDIE`**：[Ch 6](../../chapter-06-physical-page-allocation/notes/section-4-GFP-标志与进程标志.md#4-gfp-标志与进程标志-gfp--process-flags) · **`VM_ACCOUNT`**：[Ch 12](../../chapter-12-shared-memory-virtual-filesystem/notes/section-5-2.6-内核的新变化.md#5-26-内核的新变化)
+→ 回收失败背景：[Ch 10](../chapter-10-page-frame-reclamation/) · **`PF_MEMDIE`**：[Ch 6](../chapter-06-physical-page-allocation/notes/section-4-GFP-标志与进程标志.md#4-gfp-标志与进程标志-gfp--process-flags) · **`VM_ACCOUNT`**：[Ch 12](../chapter-12-shared-memory-virtual-filesystem/notes/section-5-2.6-内核的新变化.md#5-26-内核的新变化)
 
 ---
 
@@ -52,5 +52,5 @@ Ch 13 out_of_memory() → select → kill
 
 - 上一章：[../chapter-12-shared-memory-virtual-filesystem/](../chapter-12-shared-memory-virtual-filesystem/)
 - 下一章：[../chapter-14-the-final-word/](../chapter-14-the-final-word/)
-- 附录 M：[../../appendix-M-内存耗尽管理.md](../../appendix-M-内存耗尽管理.md)
-- 全书目录：[OUTLINE.md](../../OUTLINE.md)
+- 附录 M：[../../appendix-M-内存耗尽管理.md](../appendix-M-内存耗尽管理.md)
+- 全书目录：[OUTLINE.md](../OUTLINE.md)

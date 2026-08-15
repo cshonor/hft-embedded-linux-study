@@ -71,7 +71,7 @@ Ch 1 的五维不是抽象指标——**就是高频交易系统要逐层实现�
                          ↑ go-dex 正在写的这一层
 ```
 
-→ 代码索引：[HARRIS-INDEX.md](../../00-practice-go-dex/code/HARRIS-INDEX.md) · M1–M2 笔记：[milestone-01](../../00-practice-go-dex/notes/milestone-01-订单类型与LOB/)
+→ 代码索引：[HARRIS-INDEX.md](../../00-practice-go-dex/code/HARRIS-INDEX.md) · M1–M2 笔记：[milestone-01](../../00-practice-go-dex/notes/milestone-01-order-and-lob)
 
 #### 摸得着的例子：流动性 = Bids/Asks 够不够厚
 

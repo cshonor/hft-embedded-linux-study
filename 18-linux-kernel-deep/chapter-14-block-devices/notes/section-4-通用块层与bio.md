@@ -32,7 +32,7 @@
 
 ### 三、与设备文件的关系
 
-→ 主次设备号：[Ch 13 section-4](../chapter-13-io-architecture/notes/section-4-设备文件.md)
+→ 主次设备号：[Ch 13 section-4](../../chapter-13-io-architecture/notes/section-4-设备文件.md)
 
 块设备 inode 走 **块设备专用** 路径，而非 `def_chr_fops`。
 

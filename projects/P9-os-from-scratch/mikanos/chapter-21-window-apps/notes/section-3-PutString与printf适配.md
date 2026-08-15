@@ -20,7 +20,7 @@ int64_t SyscallPutString(const char* s) {
 | **每应用独立 Terminal 任务** | Ch15 **TaskTerminal** 启动应用 |
 | **任务 ID 映射** | 输出到 **正确终端窗** — 非全局单一 console |
 
-→ [Ch15 TaskTerminal](../chapter-15-terminal/) · [Ch20 PutString 雏形](../chapter-20-syscall/notes/section-6-终端打印syscall与小结.md)
+→ [Ch15 TaskTerminal](../../chapter-15-terminal/) · [Ch20 PutString 雏形](../../chapter-20-syscall/notes/section-6-终端打印syscall与小结.md)
 
 ---
 
@@ -49,7 +49,7 @@ ssize_t write(int fd, const void* buf, size_t len) {
 | **stub** | **`write`** — 薄封装 |
 | **内核** | **PutString** — 真正 **Draw/Print** |
 
-→ [Ch5 Console 与 Newlib](../chapter-05-console-text/notes/section-5-Console与Newlib.md)
+→ [Ch5 Console 与 Newlib](../../chapter-05-console-text/notes/section-5-Console与Newlib.md)
 
 ---
 

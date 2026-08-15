@@ -33,7 +33,7 @@ DPDK 大量实现优化 **围绕 Cache**：
 - 数据结构 **紧凑、顺序访问**  
 - 避免 false sharing（cache line 争用）
 
-→ [CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/) · [chapter-02-Cache与内存](../chapter-02-cache-and-memory/)
+→ [CSAPP Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/)
 
 ---
 

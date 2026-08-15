@@ -146,4 +146,4 @@ irqsoff tracer 在记录 max latency 时会保存当时的 trace，包含关中�
 
 - [01-vdso.md](./01-vdso.md) — vDSO 与系统调用加速
 - [03-ebpf-observability.md](./03-ebpf-observability.md) — eBPF 可编程追踪
-- [05.6-kernel-debugging/chapter-09-ftrace](../../05.6-kernel-debugging/chapter-09-ftrace/) — ftrace 完整教程
+- [05.6-kernel-debugging/chapter-09-ftrace](../../../05.6-kernel-debugging/chapter-09-ftrace/) — ftrace 完整教程

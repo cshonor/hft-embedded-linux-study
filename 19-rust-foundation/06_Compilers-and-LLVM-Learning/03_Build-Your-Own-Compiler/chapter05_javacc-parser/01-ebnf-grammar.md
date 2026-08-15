@@ -60,7 +60,7 @@ argList(): { expr() ( "," expr() )* }
 // 等价：连接 + * 重复
 ```
 
-与 [CI ch5 CFG/EBNF](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) 同一套符号；JavaCC 生成 **LL 递归下降** 代码。
+与 [CI ch5 CFG/EBNF](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md) 同一套符号；JavaCC 生成 **LL 递归下降** 代码。
 
 ---
 

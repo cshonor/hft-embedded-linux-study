@@ -19,7 +19,7 @@ Pop keyboard Message → char c = Translate(keycode, shift)
     → textbox.Insert(c) → 局部重绘 TextBox Layer
 ```
 
-→ [Ch10 局部 Draw](../chapter-10-window/notes/section-4-局部重绘与矩形交集.md)
+→ [Ch10 局部 Draw](../../chapter-10-window/notes/section-4-局部重绘与矩形交集.md)
 
 ---
 

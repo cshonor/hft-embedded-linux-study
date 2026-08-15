@@ -1,6 +1,6 @@
 # 第 7 章 · 代码形态（Code Shape）
 
-> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../../本书目录.md) · Part II 基础结构
+> **Engineering a Compiler 3e** · [02 编译器工程](../../README.md) · [本书目录](../本书目录.md) · Part II 基础结构
 
 ## 状态
 
@@ -32,11 +32,11 @@
 
 | 本书 ch7 | 对照 |
 |----------|------|
-| 控制流 lowering | [CI clox ch17 发字节码](../../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/README.md) · ch23 jumps |
+| 控制流 lowering | [CI clox ch17 发字节码](../../01_Crafting-Interpreters/part03_clox/chapter17_compiling-expressions/README.md) · ch23 jumps |
 | 数组/结构 layout | RFR [第 2 章 layout](../../../02-RFR/Chapter-02-Types/02-layout.md) |
 | 别名/歧义 | RFR 第 10 章 · LLVM `noalias` |
 | 调用形态 | [ch6 §5 链接约定](../chapter06_procedures/05-call-linkages.md) |
-| 虚方法 | [CI clox ch28 Methods](../../../01_Crafting-Interpreters/part03_clox/chapter28_methods/README.md) |
+| 虚方法 | [CI clox ch28 Methods](../../01_Crafting-Interpreters/part03_clox/chapter28_methods/README.md) |
 
 ---
 

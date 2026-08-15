@@ -7,7 +7,7 @@
 | **拍卖人 (Auctioneer)** | 主持 **开盘单一价格拍卖** — 供需得出 **市场出清价** |
 | **交易所官员** | 确保交易 **遵规**；订单 **公平展示与执行** |
 
-→ [Ch 7 经纪人](../chapter-07-brokers/) · [Ch 6 uniform pricing / call](../chapter-06-order-driven-markets/)
+→ [Ch 7 经纪人](../../chapter-07-brokers/) · [Ch 6 uniform pricing / call](../../chapter-06-order-driven-markets/)
 
 | HFT 视角 |
 |----------|

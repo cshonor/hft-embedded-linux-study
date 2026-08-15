@@ -11,7 +11,7 @@
 | **轮询 (Polling)** | 循环读 **状态寄存器** 直到完成 | 极快设备、或可接受占 CPU |
 | **中断 (Interrupts)** | 设备完成后发 **IRQ** — CPU 做别的事，中断时再处理 | **主流** — 更高效 |
 
-→ IRQ 框架：[Ch 4 section-6](../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) · [Ch 4 section-8 返回路径](../chapter-04-interrupts-and-exceptions/notes/section-8-中断返回.md)
+→ IRQ 框架：[Ch 4 section-6](../../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) · [Ch 4 section-8 返回路径](../../chapter-04-interrupts-and-exceptions/notes/section-8-中断返回.md)
 
 HFT：高 PPS 网卡常 **NAPI / 批量 poll** — 在中断与纯轮询之间折中（modern，ULK 2.6 已有中断主导模型）。
 
@@ -28,7 +28,7 @@ HFT：高 PPS 网卡常 **NAPI / 批量 poll** — 在中断与纯轮询之间�
 | **一致性 DMA (Coherent)** | CPU 与设备 **共享** 同一份内存视图 — 适合小控制结构；处理 **缓存一致性** |
 | **流式 DMA (Streaming)** | 单次传输 **映射/解除** — 适合 **scatter-gather** 大数据流；方向明确（to/from device） |
 
-→ ZONE_DMA 低端内存：[Ch 8](../chapter-08-memory-management/notes/section-2-页框管理.md) — 部分老设备 DMA 只能寻址低 16MB。
+→ ZONE_DMA 低端内存：[Ch 8](../../chapter-08-memory-management/notes/section-2-页框管理.md) — 部分老设备 DMA 只能寻址低 16MB。
 
 > **深潜可选：** `dma_alloc_coherent` vs `dma_map_single` — 总线是否 I/O coherent 决定是否需要 bounce buffer。
 

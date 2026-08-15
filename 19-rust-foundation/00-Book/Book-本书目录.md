@@ -50,7 +50,7 @@
 |----|------|------|
 | 1.1 安装 | [1.1-安装.md](./01-getting-started/1.1-安装.md) | — |
 | 1.2 Hello, World! | [1.2-Hello-World.md](./01-getting-started/1.2-Hello-World.md) | [hello_world](./01-getting-started/hello_world/) |
-| 1.3 Hello, Cargo! | [1.3-Hello-Cargo.md](./01-getting-started/1.3-Hello-Cargo.md) | [hello cargo](./01-getting-started/hello%20cargo/) |
+| 1.3 Hello, Cargo! | [1.3-Hello-Cargo.md](./01-getting-started/1.3-Hello-Cargo.md) | hello cargo |
 
 ---
 
@@ -231,7 +231,7 @@
 | 12.1 命令行参数 | [12.1](./12-cli-project/12.1-接受命令行参数.md) | [12.1-minigrep-args-demo](./12-cli-project/12.1-minigrep-args-demo/) |
 | 12.2 读取文件 | [12.2](./12-cli-project/12.2-读取文件.md) | [12.2-minigrep-readfile-demo](./12-cli-project/12.2-minigrep-readfile-demo/) |
 | 12.3 重构 | [12.3](./12-cli-project/12.3-重构改进模块性和错误处理.md) | [12.3-minigrep-refactor-demo](./12-cli-project/12.3-minigrep-refactor-demo/) |
-| 12.4 TDD | [12.4](./12-cli-project/12.4-采用测试驱动开发完善库的功能.md) | [12.4-minigrep-tdd-demo](./12-cli-project/12.4-minigrep-tdd-demo/) · [search](./12-cli-project/12.4-minigrep-search-demo/) |
+| 12.4 TDD | [12.4](./12-cli-project/12.4-采用测试驱动开发完善库的功能.md) | [12.4-minigrep-tdd-demo](12-cli-project/12.4-minigrep-search-demo) · [search](./12-cli-project/12.4-minigrep-search-demo/) |
 | 12.5 环境变量 | [12.5](./12-cli-project/12.5-处理环境变量.md) | [12.5-minigrep-env-demo](./12-cli-project/12.5-minigrep-env-demo/) |
 | 12.6 stderr | [12.6](./12-cli-project/12.6-将错误信息输出到标准错误而不是标准输出.md) | [12.6-minigrep-stderr-demo](./12-cli-project/12.6-minigrep-stderr-demo/) |
 

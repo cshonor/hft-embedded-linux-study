@@ -13,7 +13,7 @@
 
 **同时写底层缓冲/合成状态** → **数据竞争** — 与 Ch7 队列竞态 **同构**，在 **图形层** 暴露。
 
-→ [Ch14 主任务 Level 3](../chapter-14-multitask2/notes/section-5-任务优先级Level.md)
+→ [Ch14 主任务 Level 3](../../chapter-14-multitask2/notes/section-5-任务优先级Level.md)
 
 ---
 

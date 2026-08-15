@@ -9,9 +9,9 @@
 
 | 政策工具 | 目标 |
 |----------|------|
-| **Tick size、time priority、transparency** | 降 transitory — [Ch 6](../chapter-06-order-driven-markets/) · [Ch 11](../chapter-11-order-anticipators/) |
+| **Tick size、time priority、transparency** | 降 transitory — [Ch 6](../../chapter-06-order-driven-markets/) · [Ch 11](../../chapter-11-order-anticipators/) |
 | **Circuit breakers、halts** | 防 **系统超载** — 非消除 fundamental |
-| **Maker obligation、fee schedule** | 吸引 LP — [Ch 19](../chapter-19-liquidity/) |
+| **Maker obligation、fee schedule** | 吸引 LP — [Ch 19](../../chapter-19-liquidity/) |
 
 | HFT 视角 |
 |----------|

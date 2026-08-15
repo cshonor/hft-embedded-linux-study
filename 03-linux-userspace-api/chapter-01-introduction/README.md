@@ -6,12 +6,12 @@
 
 ## 小节目录
 
-- [01.1 UNIX 的两层定义](./notes/01.1-definition.md)
-- [01.2 UNIX & C 极简时间线](./notes/01.2-time.md)
-- [01.3 Linux = 内核 + GNU 工具链（必分清）](./notes/01.3-gnu.md)
-- [01.4 标准化：POSIX / SUS / LSB](./notes/01.4-lsb.md)
-- [01.5 贯穿全书：POSIX vs Linux 扩展](./notes/01.5-section-01-5.md)
-- [01.6 术语清单（极简）](./notes/01.6-section-01-6.md)
+- 01.1 UNIX 的两层定义
+- 01.2 UNIX & C 极简时间线
+- 01.3 Linux = 内核 + GNU 工具链（必分清）
+- 01.4 标准化：POSIX / SUS / LSB
+- 01.5 贯穿全书：POSIX vs Linux 扩展
+- 01.6 术语清单（极简）
 
 ---
 
@@ -118,4 +118,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

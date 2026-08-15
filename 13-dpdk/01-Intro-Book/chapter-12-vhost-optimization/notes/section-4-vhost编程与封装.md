@@ -29,7 +29,7 @@ rte_eth_tx_burst(vhost_port, ...);
 
 | 特点 | 说明 |
 |------|------|
-| 与 **物理 PMD 同 API** | 复用 [Ch7 burst](../chapter-07-nic-performance-optimization/notes/section-3-IO性能深度优化.md) 习惯 |
+| 与 **物理 PMD 同 API** | 复用 [Ch7 burst](../../chapter-07-nic-performance-optimization/notes/section-3-IO性能深度优化.md) 习惯 |
 | 屏蔽 socket/mem 细节 | 初始化阶段配置即可 |
 | 多 VM | 多 **vhost-user socket** → 多 port |
 
@@ -46,7 +46,7 @@ rte_eth_tx_burst(vhost_port, ...);
 | 开发成本 | 高 | 低 |
 | 典型 | vhost-switch、OVS 集成 | 实验、简单网关 |
 
-→ repo [chapter-03-PMD](../chapter-03-PMD与轮询模式.md) · [chapter-04 零拷贝](../chapter-04-零拷贝与用户态旁路.md)
+→ repo [chapter-03-PMD](../../chapter-03-parallel-computing) · [chapter-04 零拷贝](../../chapter-04-synchronization)
 
 ---
 

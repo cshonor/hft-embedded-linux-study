@@ -38,7 +38,7 @@ mlock(p, size);  // 避免换出
 - **DPDK** — `hugetlbfs` + `mmap` 大页（→ [15-DPDK](../../../13-dpdk/)）
 - **注意：** `MAP_POPULATE`（若可用）启动时预 fault
 
-→ [Ch 10 I/O](../chapter-10-system-io/)
+→ [Ch 10 I/O](../../chapter-10-system-io/)
 
 ### 常见陷阱
 

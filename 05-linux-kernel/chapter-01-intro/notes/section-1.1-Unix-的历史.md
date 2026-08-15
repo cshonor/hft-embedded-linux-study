@@ -15,7 +15,7 @@
 
 **HFT 对照：** 网关仍活在 **「少 syscall、少拷贝、快 fork/线程」** 的 Unix 遗产里 — 热路径 **`read`/`send`/`mmap`** 皆是「一切皆文件」后代。
 
-→ [03-linux-userspace-api](../../../../03-linux-userspace-api/) · [02-CSAPP Ch8](../../../../02-computer-systems/chapter-08-exceptional-control-flow/)
+→ [03-linux-userspace-api](../../../03-linux-userspace-api/) · [02-CSAPP Ch8](../../../02-computer-systems/chapter-08-exceptional-control-flow/)
 
 
 

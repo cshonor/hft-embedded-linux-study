@@ -51,7 +51,7 @@ mm_struct
 
 **HFT：** 每个 **策略缓冲** 应对应 **独立 VMA** — 便于 **`/proc/maps` 审计** 与 **`mlock` 精确范围**。`MAP_SHARED` **行情 ring** 与 **私有 stack/heap** 分离 — **权限最小化**（ring **RW- 无 X**）。
 
-→ [Ch 15.6 mmap 创建](./section-15.6-创建与删除地址区间.md) · [Ch 15.8 缺页](./section-15.8-从访问到缺页概念.md) · [06 Gorman VMA](../../../../06-linux-mm/chapter-04-process-address-space/notes/section-3-内存区域.md)
+→ [Ch 15.6 mmap 创建](./section-15.6-创建与删除地址区间.md) · [Ch 15.8 缺页](./section-15.8-从访问到缺页概念.md) · [06 Gorman VMA](../../../06-linux-mm/chapter-04-process-address-space/notes/section-3-内存区域.md)
 
 
 > ↔ [ULK Ch9 §3 内存区VMA](../../../18-linux-kernel-deep/chapter-09-process-address-space/notes/section-3-内存区VMA.md)

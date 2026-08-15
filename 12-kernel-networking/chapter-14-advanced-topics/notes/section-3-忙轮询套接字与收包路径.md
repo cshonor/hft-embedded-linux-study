@@ -82,7 +82,7 @@ ethtool -X eth0 equal 4   # RSS 队列
 | **中断 + NAPI** | 低 | 通用 |
 | **SO_BUSY_POLL** | 高 | 内核栈 **极致 latency** |
 | **DPDK poll mode** | 高 | **旁路内核** |
-| **RDMA poll CQ** | 高 | [Ch 13](../chapter-13-infiniband/) |
+| **RDMA poll CQ** | 高 | [Ch 13](../../chapter-13-infiniband/) |
 
 ---
 

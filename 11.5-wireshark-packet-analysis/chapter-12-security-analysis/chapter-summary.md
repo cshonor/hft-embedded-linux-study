@@ -1,6 +1,6 @@
 ﻿# 第12章 安全领域的数据包分析
 
-> 全书：[../README.md](../README.md) · 上一章：[第11章 让网络不再卡](../chapter-11-network-slow-fix/chapter-summary.md) · 对照：[分层攻击速查](../../top_down/08_network_security/layer-attacks-cheatsheet.md)
+> 全书：[../README.md](../README.md) · 上一章：[第11章 让网络不再卡](../chapter-11-network-slow-fix/chapter-summary.md) · 对照：分层攻击速查
 
 ## 整体框架
 

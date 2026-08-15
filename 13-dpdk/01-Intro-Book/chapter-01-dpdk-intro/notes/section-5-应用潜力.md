@@ -20,9 +20,9 @@ HFT：**共置机房** 内仍多见 **裸金属 DPDK** 而非 NFV，但 **转发
 - 应对 **极高并发连接 / 极高 PPS**  
 - **用户态协议栈**（DPDK 加速）支撑计算节点上的网络服务  
 
-HFT：**UDP 组播行情**、自研 **tick 网关** — [chapter-05 组播](../chapter-05-组播行情接入.md)
+HFT：**UDP 组播行情**、自研 **tick 网关** — [chapter-05 组播](../../chapter-05-packet-forwarding)
 
-对照内核 C10K 路径：[11 UNP epoll](../../../03.5-unix-network-api/) · [14-LKN L4](../../../../12-kernel-networking/chapter-11-layer-4-protocols/)
+对照内核 C10K 路径：[11 UNP epoll](../../../../03.5-unix-network-api/) · [14-LKN L4](../../../../12-kernel-networking/chapter-11-layer-4-protocols/)
 
 ---
 

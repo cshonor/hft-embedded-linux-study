@@ -9,7 +9,7 @@
 | **价差较宽** | 做 **maker（限价）** 更有吸引力 |
 | **价差较窄** | 做 **taker（市价）** 更有吸引力 |
 
-→ [Ch 4](../chapter-04-orders-and-order-types/) · [Ch 14](../chapter-14-bid-ask-spreads/)
+→ [Ch 4](../../chapter-04-orders-and-order-types/) · [Ch 14](../../chapter-14-bid-ask-spreads/)
 
 ### 1.2 指令未成交的代价
 

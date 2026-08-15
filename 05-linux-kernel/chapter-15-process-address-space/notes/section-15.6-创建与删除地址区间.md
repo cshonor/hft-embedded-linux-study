@@ -66,7 +66,7 @@ mlock(ring, size);
 
 **HFT：** **启动脚本清单**：`sysctl vm.nr_hugepages` → **`mmap MAP_HUGETLB`** → **`mlock`** → **`madvise(MADV_DONTFORK)`** 防 **fork COW**。盘中 **零 munmap** — **VMA 树只读路径**。
 
-→ [Ch 5 syscall](../../chapter-05-system-calls/) · [Ch 16 页缓存](../../chapter-16-the-page-cache-and-page-writeback/) · [01 CSAPP mmap](../../../../02-computer-systems/chapter-09-virtual-memory/) · [17 HFT Practice](../../../16-hft-engineering/)
+→ [Ch 5 syscall](../../chapter-05-system-calls/) · [Ch 16 页缓存](../../chapter-16-page-cache) · [01 CSAPP mmap](../../../02-computer-systems/chapter-09-virtual-memory/) · [17 HFT Practice](../../../16-hft-engineering/)
 
 
 

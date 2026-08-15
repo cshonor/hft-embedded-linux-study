@@ -11,7 +11,7 @@
 | 并发未完成请求 | ~32 | **~256** |
 | 影响 | 高带宽端口易 **流水线饥饿** | **40G+** 端口收益明显 |
 
-**操作：** BIOS + OS 侧确认 PCIe 特性开启 — 与 [Ch6 TLP 带宽](../chapter-06-pcie-packet-io/notes/section-2-PCIe事务与带宽.md) 联调。
+**操作：** BIOS + OS 侧确认 PCIe 特性开启 — 与 [Ch6 TLP 带宽](../../chapter-06-pcie-packet-io/notes/section-2-PCIe事务与带宽.md) 联调。
 
 ---
 
@@ -27,7 +27,7 @@
 
 **跨 Node / 跨 QPI/UPI** 访存 — tail latency 与吞吐 **双杀**。
 
-→ [Ch2 DDIO 与 NUMA](../chapter-02-cache-and-memory/notes/section-6-DDIO与NUMA.md)
+→ [Ch2 DDIO 与 NUMA](../../chapter-02-cache-and-memory/notes/section-6-DDIO与NUMA.md)
 
 ---
 
@@ -55,7 +55,7 @@ isolcpus=2-7   # 专用 DPDK 核，不参与 CFS 负载均衡
 - 配置 **足够多随机流**（如 **随机源 IP**）  
 - 避免 **单流单队列** 导致部分核 **空闲、部分核饱和** — 测不出真实扩展性  
 
-→ [Ch8 RSS / 多队列](../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md)
+→ [Ch8 RSS / 多队列](../../chapter-08-flow-classification-multiqueue/notes/section-3-硬件流分类.md)
 
 ---
 

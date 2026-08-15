@@ -1,6 +1,6 @@
 # 第 7 章 · JavaCC 的 action 和抽象语法树
 
-> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../../本书目录.md) · 第2部分 · 抽象语法树和中间代码
+> **《自制编译器》** · [03 Build Your Own Compiler](../../README.md) · [本书目录](../本书目录.md) · 第2部分 · 抽象语法树和中间代码
 
 ## 状态
 
@@ -32,7 +32,7 @@
 | 第1部分 ch6 | [完整文法](../chapter06_parsing/README.md) — 本章 **填 action** |
 | ch8 下一章 | 各类 AST 节点实现细节 |
 | ch2 `ast` 包 | [cbc 包结构](../chapter02_cflat-cbc/02-cbc-packages.md) |
-| CI / EaC | [CI 表示代码](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/) · [EaC ch5 IR](../../../02_Compiler-Principles/chapter05_ir/) |
+| CI / EaC | [CI 表示代码](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/) · [EaC ch5 IR](../../02_Compiler-Principles/chapter05_ir/) |
 
 ---
 

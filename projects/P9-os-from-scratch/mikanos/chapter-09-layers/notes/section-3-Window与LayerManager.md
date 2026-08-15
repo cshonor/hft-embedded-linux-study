@@ -51,7 +51,7 @@ DrawAll():
 2. **重新合成** 全屏（初版慢 — §4/§5 优化）
 3. **不再** 用「背景色擦除」破坏任务栏 — 底层像素保存在 **各自 Window**
 
-→ 解决 [Ch6 擦除破坏](../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
+→ 解决 [Ch6 擦除破坏](../../chapter-06-mouse-pci/notes/section-6-轮询输入与遗留问题.md)
 
 ---
 
@@ -59,7 +59,7 @@ DrawAll():
 
 **Ch9** 建立 **Layer + 合成** 模型 — **Ch10** 扩展为 **完整窗口系统**（移动、标题栏等）。
 
-→ [chapter-10-window](../chapter-10-window/)
+→ [chapter-10-window](../../chapter-10-window/)
 
 ---
 

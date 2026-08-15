@@ -56,7 +56,7 @@ PCIe 分层（自顶向下）：
 
 每个包的 **描述符读写 + 帧数据 DMA** 均产生多条 TLP — 评估 **PPS 天花板** 必须算 **PCIe 总事务量**，不能只看 64B 帧长。
 
-→ [Ch2 DDIO/NUMA](../chapter-02-cache-and-memory/notes/section-6-DDIO与NUMA.md) · [19-Hennessy I/O](../../../../17-computer-architecture/)
+→ [Ch2 DDIO/NUMA](../../chapter-02-cache-and-memory/notes/section-6-DDIO与NUMA.md) · [19-Hennessy I/O](../../../../17-computer-architecture/)
 
 ---
 

@@ -27,13 +27,13 @@ Ch8 流分类与多队列 — 硬件+软件分核
 
 | Ch3 主题 | 继续读 |
 |----------|--------|
-| Cache / NUMA / per-core | [chapter-02-Cache与内存](../chapter-02-cache-and-memory/) 🔴 |
-| 多队列 / RSS | [chapter-08-流分类与多队列](../chapter-08-flow-classification-multiqueue/) 🔴 |
-| mbuf / ring | [chapter-02-mbuf](../chapter-02-mbuf与内存池.md) 🔴 |
-| 无锁 / 同步 | [chapter-04-同步互斥机制](../chapter-04-synchronization/) 🔴 · [ULK Ch5 RCU](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/) |
-| 体系结构 | [19-Hennessy](../../../../17-computer-architecture/) · [02-CSAPP Ch5](../../../02-computer-systems/chapter-05-optimization/) |
+| Cache / NUMA / per-core | [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/) 🔴 |
+| 多队列 / RSS | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
+| mbuf / ring | [chapter-02-mbuf](../../chapter-02-cache-and-memory) 🔴 |
+| 无锁 / 同步 | [chapter-04-同步互斥机制](../../chapter-04-synchronization/) 🔴 · [ULK Ch5 RCU](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/) |
+| 体系结构 | [19-Hennessy](../../../../17-computer-architecture/) · [02-CSAPP Ch5](../../../../02-computer-systems/chapter-05-optimizing-performance) |
 | HFT 绑核 / 扩展 | [16 HFT 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [4. SIMD](./section-4-数据并行与SIMD.md) · 下一章 [chapter-04-同步互斥](../chapter-04-synchronization/) · [Ch2 Cache](../chapter-02-cache-and-memory/)
+← [4. SIMD](./section-4-数据并行与SIMD.md) · 下一章 [chapter-04-同步互斥](../../chapter-04-synchronization/) · [Ch2 Cache](../../chapter-02-cache-and-memory/)

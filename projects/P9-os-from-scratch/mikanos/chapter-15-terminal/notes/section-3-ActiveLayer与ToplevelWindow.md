@@ -34,7 +34,7 @@ mousedown on ToplevelWindow → SendMessage(kLayer, Activate, layer_id)
 Main → ActiveLayer::Activate → 重绘标题栏
 ```
 
-→ [Ch10 draggable / hit test](../chapter-10-window/notes/section-6-窗口拖动与draggable.md)
+→ [Ch10 draggable / hit test](../../chapter-10-window/notes/section-6-窗口拖动与draggable.md)
 
 ---
 
@@ -56,7 +56,7 @@ Key Message → 若 active_ 是 ToplevelWindow
 而非固定全局 TextBox（Ch12）
 ```
 
-→ [Ch12 键盘](../chapter-12-keyboard/notes/section-5-GUI文本框与退格.md)
+→ [Ch12 键盘](../../chapter-12-keyboard/notes/section-5-GUI文本框与退格.md)
 
 ---
 

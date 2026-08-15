@@ -36,7 +36,7 @@ Page Fault 不是仅致命错误
     → 也可以是 OS 的「分配/加载/复制」触发器
 ```
 
-→ [Ch24 KillApp vs PF](../chapter-24-multi-terminal/notes/section-5-用户态异常与KillApp.md) · [Ch20 #PF](../chapter-20-syscall/notes/section-4-异常处理与调试.md)
+→ [Ch24 KillApp vs PF](../../chapter-24-multi-terminal/notes/section-5-用户态异常与KillApp.md) · [Ch20 #PF](../../chapter-20-syscall/notes/section-4-异常处理与调试.md)
 
 ---
 

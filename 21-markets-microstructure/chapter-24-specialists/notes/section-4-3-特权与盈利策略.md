@@ -7,7 +7,7 @@
 | 特权 | 见 **全系统未执行限价簿** — **订单流底牌** |
 |------|------------------------------------------|
 | **能力** | 比他人更准确 **预测短期价格** |
-| **策略** | 买单堆积、卖单稀少 → **提前买入**（[Ch 11 报价匹配](../chapter-11-order-anticipators/)）→ 涨价获利 |
+| **策略** | 买单堆积、卖单稀少 → **提前买入**（[Ch 11 报价匹配](../../chapter-11-order-anticipators/)）→ 涨价获利 |
 
 | HFT 视角 |
 |----------|
@@ -21,7 +21,7 @@
 | **策略** | 区分 **不知情零售** vs **知情机构** |
 | **行为** | 自己接 **安全零售**（cream）；把 **危险知情单** 留给 **公众限价单** 承受 adverse selection |
 
-→ [Ch 14 不知情补贴知情](../chapter-14-bid-ask-spreads/) · [Ch 25 internalization](../chapter-25-internalization-preferencing-crossing/)
+→ [Ch 14 不知情补贴知情](../../chapter-14-bid-ask-spreads/) · [Ch 25 internalization](../../chapter-25-internalization-preferencing-crossing/)
 
 | HFT 视角 |
 |----------|
@@ -36,7 +36,7 @@
 | **有利** | 用自己账户与客户成交 |
 | **不利** | **丢给** 簿上其他公众交易者 |
 
-→ [Ch 4 限价单免费期权](../chapter-04-orders-and-order-types/) · [Ch 11](../chapter-11-order-anticipators/)
+→ [Ch 4 限价单免费期权](../../chapter-04-orders-and-order-types/) · [Ch 11](../../chapter-11-order-anticipators/)
 
 | HFT 视角 |
 |----------|
@@ -50,7 +50,7 @@
 | **专家** | 作 **弱势方** 最后流动性提供者介入 |
 | **结果** | 常以 **极优出清价**（如跳空低开时买入）成交 → **随后反转** 获利 |
 
-→ [Ch 6 单一价格拍卖](../chapter-06-order-driven-markets/) · [Ch 23 program](../chapter-23-index-portfolio-markets/)
+→ [Ch 6 单一价格拍卖](../../chapter-06-order-driven-markets/) · [Ch 23 program](../../chapter-23-index-portfolio-markets/)
 
 | HFT 视角 |
 |----------|

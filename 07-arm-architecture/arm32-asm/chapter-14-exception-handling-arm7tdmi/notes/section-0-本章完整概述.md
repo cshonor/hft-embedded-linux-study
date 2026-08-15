@@ -16,8 +16,8 @@
 | **软件 handler** | 压栈 r0–r12 · 处理 · **`SUBS pc, lr, #n`** 原子返回 |
 | **VIC** | 多外设中断 **硬件向量** — 替代轮询 |
 
-**前置：** [Ch2 七种模式/CPSR](../chapter-02-programmers-model/notes/section-2-3-arm7tdmi.md) · [Ch13 堆栈](../chapter-13-subroutines-stacks/notes/section-0-本章完整概述.md)  
-**对照：** **Cortex-M** → [Ch15](../chapter-15-exception-handling-v7m/) · **AArch64** → [奔跑吧 Ch11–13](../aarch64-practice/)
+**前置：** [Ch2 七种模式/CPSR](../../chapter-02-programmers-model/notes/section-2-3-arm7tdmi.md) · [Ch13 堆栈](../../chapter-13-subroutines-stacks/notes/section-0-本章完整概述.md)  
+**对照：** **Cortex-M** → [Ch15](../../chapter-15-exception-handling-v7m/) · **AArch64** → [奔跑吧 Ch11–13](../../../aarch64-practice/)
 
 ---
 
@@ -78,11 +78,11 @@ Ch15 NVIC/MSP · 04 LKD 中断 · 21 驱动 top half
 
 | 模块 | 关联 |
 |------|------|
-| [04 LKD](../../05-linux-kernel/) | 内核 **trap/irq** 框架 |
-| [Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) | 外设 **置位清中断** 在 handler 里 |
-| [21 驱动](../../09-device-drivers-dt/) | **top/bottom half** |
-| [20 U-Boot](../../08-embedded-boot-build/) | **Reset vector** 链 |
-| [奔跑吧 GIC](../aarch64-practice/chapter-13-gic-v2/) | 多核中断分发（概念升级） |
+| [04 LKD](../../../../05-linux-kernel/) | 内核 **trap/irq** 框架 |
+| [Ch16 MMIO](../../chapter-16-memory-mapped-peripherals/) | 外设 **置位清中断** 在 handler 里 |
+| [21 驱动](../../../../09-device-drivers-dt/) | **top/bottom half** |
+| [20 U-Boot](../../../../08-embedded-boot-build/) | **Reset vector** 链 |
+| [奔跑吧 GIC](../../../aarch64-practice/chapter-13-gic-v2/) | 多核中断分发（概念升级） |
 
 ---
 
@@ -94,4 +94,4 @@ Ch15 NVIC/MSP · 04 LKD 中断 · 21 驱动 top half
 
 ### 八、下一章
 
-→ **[Ch15 异常处理 v7-M](../chapter-15-exception-handling-v7m/)**（Cortex-M / NVIC — 更贴近常见 MCU）
+→ **[Ch15 异常处理 v7-M](../../chapter-15-exception-handling-v7m/)**（Cortex-M / NVIC — 更贴近常见 MCU）

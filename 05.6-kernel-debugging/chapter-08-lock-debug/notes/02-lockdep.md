@@ -159,7 +159,7 @@ void update_order_book_locked(struct order_book *ob) {
 
 ## 交叉引用
 
-- [05.6 ch08 并发 Bug 类型](chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
-- [05.6 ch08 LOCKDEP 死锁检测实践](chapter-08-lock-debug/notes/03-lockdep-deadlock-detection.md)
-- [05.6 ch08 lock_stat 锁竞争统计](chapter-08-lock-debug/notes/04-lock-stat.md)
-- [05.6 ch08 树莓派启用 LOCKDEP/KCSAN](chapter-08-lock-debug/notes/06-rpi-lockdep-kcsan.md)
+- [05.6 ch08 并发 Bug 类型](../../chapter-08-lock-debug/notes/01-concurrency-bug-types.md)
+- [05.6 ch08 LOCKDEP 死锁检测实践](../../chapter-08-lock-debug/notes/03-lockdep-deadlock-detection.md)
+- [05.6 ch08 lock_stat 锁竞争统计](../../chapter-08-lock-debug/notes/04-lock-stat.md)
+- [05.6 ch08 树莓派启用 LOCKDEP/KCSAN](../../chapter-08-lock-debug/notes/06-rpi-lockdep-kcsan.md)

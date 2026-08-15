@@ -15,7 +15,7 @@
 | **内嵌汇编** | C 模块内 **完整 asm 函数** — 全指令集、**须自写返回** |
 | **互调** | **AAPCS** — **r0–r3** 参返 · callee-save · **C↔asm `BL`** |
 
-**前置：** [Ch13 AAPCS](../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · [Ch17 Interwork](../chapter-17-arm-thumb-thumb2-instructions/notes/section-17-5-interworking.md)
+**前置：** [Ch13 AAPCS](../../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) · [Ch17 Interwork](../../chapter-17-arm-thumb-thumb2-instructions/notes/section-17-5-interworking.md)
 
 ---
 
@@ -42,7 +42,7 @@
 | AAPCS | 编译器多帮忙 | **程序员全责** |
 | 适用 | 读 Q 标志、单条饱和指令 | **strcpy**、**VCVT 库** |
 
-**Linux/GCC 路线：** 另见 [奔跑吧 Ch10 GCC inline asm](../aarch64-practice/chapter-10-gcc-inline-asm/) · 独立 **`.S` + `.global`**
+**Linux/GCC 路线：** 另见 [奔跑吧 Ch10 GCC inline asm](../../../aarch64-practice/chapter-10-gcc-inline-asm/) · 独立 **`.S` + `.global`**
 
 ---
 
@@ -65,12 +65,12 @@ C 主程序
 
 | 模块 | 关联 |
 |------|------|
-| [02 C](../../01-c-language/) | 调用约定 · `volatile` |
-| [Ch7 饱和/Q](../chapter-07-integer-logic-arithmetic/) | inline 读 **Q 标志** |
-| [Ch9–11 浮点](../chapter-09-floating-point-basics/) | **VCVT** 封装给 C |
-| [Ch16 MMIO](../chapter-16-memory-mapped-peripherals/) | **`volatile uint32_t *REG`** |
-| [21 驱动](../../09-device-drivers-dt/) | **`readl/writel`** · 极少手写 asm |
-| [04 LKD](../../05-linux-kernel/) | **`arch/arm/lib`** · **`asm/`** 宏 |
+| [02 C](../../../../01-c-language/) | 调用约定 · `volatile` |
+| [Ch7 饱和/Q](../../chapter-07-integer-logic-arithmetic/) | inline 读 **Q 标志** |
+| [Ch9–11 浮点](../../chapter-09-floating-point-basics/) | **VCVT** 封装给 C |
+| [Ch16 MMIO](../../chapter-16-memory-mapped-peripherals/) | **`volatile uint32_t *REG`** |
+| [21 驱动](../../../../09-device-drivers-dt/) | **`readl/writel`** · 极少手写 asm |
+| [04 LKD](../../../../05-linux-kernel/) | **`arch/arm/lib`** · **`asm/`** 宏 |
 
 ---
 

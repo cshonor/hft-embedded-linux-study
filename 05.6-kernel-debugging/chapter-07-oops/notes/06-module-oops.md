@@ -154,6 +154,6 @@ echo "Oops 信息已收集到 $DIR"
 
 ## 交叉引用
 
-- [05.6 ch07 addr2line](chapter-07-oops/notes/04-addr2line.md)
-- [05.6 ch07 objdump 反汇编](chapter-07-oops/notes/05-objdump-disassembly.md)
-- [05.6 ch11 KGDB 调试模块](chapter-11-kgdb/notes/01-kgdb-setup.md)
+- [05.6 ch07 addr2line](../../chapter-07-oops/notes/04-addr2line.md)
+- [05.6 ch07 objdump 反汇编](../../chapter-07-oops/notes/05-objdump-disassembly.md)
+- [05.6 ch11 KGDB 调试模块](../../chapter-11-kgdb/notes/01-kgdb-architecture.md)

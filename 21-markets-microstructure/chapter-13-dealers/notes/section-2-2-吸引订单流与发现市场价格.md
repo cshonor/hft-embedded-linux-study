@@ -9,7 +9,7 @@
 | **更有竞争力的价格** | 更窄 spread、更优 BBO |
 | **更大展示规模** | 深度、可见 size |
 | **客户服务** | 执行质量、研究（全服务 broker-dealer） |
-| **购买订单流** | 向 broker **付钱** — [Ch 7 PFOF](../chapter-07-brokers/)、[Ch 25 内部化](../chapter-25-internalization-preferencing-crossing/) |
+| **购买订单流** | 向 broker **付钱** — [Ch 7 PFOF](../../chapter-07-brokers/)、[Ch 25 内部化](../../chapter-25-internalization-preferencing-crossing/) |
 
 ### 2.2 寻找均衡：双向订单流
 

@@ -11,7 +11,7 @@
 |----------|------|------|
 | **速度** | 高 | 低 |
 | **Market impact** | 高 | 低 |
-| **被 front-run 风险** | 信息窗口竞争 | 被 [Ch 11 指令预期者](../chapter-11-order-anticipators/) 嗅探 |
+| **被 front-run 风险** | 信息窗口竞争 | 被 [Ch 11 指令预期者](../../chapter-11-order-anticipators/) 嗅探 |
 | **工具** | Market / marketable limit | Iceberg、VWAP/TWAP、dark pool |
 
 | HFT 视角 |

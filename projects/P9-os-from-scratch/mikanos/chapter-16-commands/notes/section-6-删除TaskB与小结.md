@@ -13,7 +13,7 @@
 
 **删除 TaskB 后：** CPU 使用率 **降至个位数 %** — **Idle + hlt** 主导。
 
-→ [Ch14 Idle Task](../chapter-14-multitask2/notes/section-6-Idle-Task与小结.md)
+→ [Ch14 Idle Task](../../chapter-14-multitask2/notes/section-6-Idle-Task与小结.md)
 
 ---
 
@@ -40,11 +40,11 @@ Ch17 文件系统 · Ch20 syscall · 用户程序
 
 | Ch16 主题 | 继续读 |
 |----------|--------|
-| 文件系统 | [chapter-17-filesystem](../chapter-17-filesystem/) 🟡 |
-| 应用 | [chapter-18-apps](../chapter-18-apps/) ⚪ |
-| 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
-| PCI 基础 | [chapter-06-mouse-pci](../chapter-06-mouse-pci/) |
+| 文件系统 | [chapter-17-filesystem](../../chapter-17-filesystem/) 🟡 |
+| 应用 | [chapter-18-apps](../../chapter-18-apps/) ⚪ |
+| 系统调用 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
+| PCI 基础 | [chapter-06-mouse-pci](../../chapter-06-mouse-pci/) |
 
 ---
 
-← [5. 历史](./section-5-命令历史与方向键.md) · [Ch 15](../chapter-15-terminal/) · [Ch 16 导读](../README.md)
+← [5. 历史](./section-5-命令历史与方向键.md) · [Ch 15](../../chapter-15-terminal/) · [Ch 16 导读](../README.md)

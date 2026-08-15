@@ -59,7 +59,7 @@ Object          — 实际分配单元（已用 / 空闲）
 
 用于必须成功的内核路径（如某些 I/O 提交）。
 
-→ Ch 5 信号量实例：Slab 链表保护 [section-7](../chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
+→ Ch 5 信号量实例：Slab 链表保护 [section-7](../../chapter-05-kernel-synchronization/notes/section-7-选型与实例.md)
 
 ### 常见陷阱
 

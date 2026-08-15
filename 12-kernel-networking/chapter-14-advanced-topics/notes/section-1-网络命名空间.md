@@ -22,7 +22,7 @@
 容器/veth: 新 netns + veth pair 一端迁入 → 独立 ip route/iptables
 ```
 
-与 [Ch 9 netfilter](../chapter-09-netfilter/)、[Ch 10 XFRM](../chapter-10-ipsec/) **每 netns 隔离** 同构。
+与 [Ch 9 netfilter](../../chapter-09-netfilter/)、[Ch 10 XFRM](../../chapter-10-ipsec/) **每 netns 隔离** 同构。
 
 ---
 

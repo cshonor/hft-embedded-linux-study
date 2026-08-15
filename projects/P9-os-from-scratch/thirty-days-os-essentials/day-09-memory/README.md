@@ -54,12 +54,12 @@
 
 ---
 
-← [Day 8](./day-08-鼠标控制与32位模式切换.md) · [01 导读](../README.md) · [Day 10](./day-10-叠加处理.md)
+← Day 8 · [01 导读](../README.md) · Day 10
 
 ---
 
 ## 相关
 
-- 上一日：[../day-08-mouse-32bit/](../day-08-mouse-32bit/)
-- 下一日：[../day-10-layers/](../day-10-layers/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 上一日：[../day-08-mouse-32bit/](../day-07-fifo-mouse)
+- 下一日：../day-10-layers/
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

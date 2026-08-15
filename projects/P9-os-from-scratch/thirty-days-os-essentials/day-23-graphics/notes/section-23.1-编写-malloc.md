@@ -15,6 +15,6 @@ app 里 **静态大数组**（如 **7500B** 图像缓冲）→ 链接进 **`.hrb
 
 **HFT：** **对象池 / arena 预分配** 常相反 — 这里教 **「大缓冲别静态链接进二进制」**；策略 **so 体积** 与 **mmap 堆** 同理。
 
-→ [Day 9 MEMMAN](../day-09-memory/) · [Day 20 EDX 路由](../day-20-api/)
+→ [Day 9 MEMMAN](../../day-09-memory/) · [Day 20 EDX 路由](../../day-20-api/)
 
 ---

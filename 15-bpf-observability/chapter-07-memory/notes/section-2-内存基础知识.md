@@ -9,7 +9,7 @@
 | **堆 (Heap)** | `malloc`/`free` — libc 等 **用户态分配器** |
 | **mmap** | 映射文件、匿名大块、共享区 |
 
-→ 用户态 API：[03-linux-userspace-api](../03-linux-userspace-api/) · 内核实现：[06-linux-mm](../06-linux-mm/) · [18-linux-kernel-deep](../../../18-linux-kernel-deep/)
+→ 用户态 API：[03-linux-userspace-api](../../../03-linux-userspace-api/) · 内核实现：[06-linux-mm](../../../06-linux-mm/) · [18-linux-kernel-deep](../../../18-linux-kernel-deep/)
 
 ### 缺页异常 (Page Faults)
 

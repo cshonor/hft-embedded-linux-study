@@ -87,7 +87,7 @@ perf -p <pid> · ss -s          →  CPU 耗在哪、有无重传      （Resour
 | **P3** | 短窗口系统采样 | 生产低频 `perf` — **在 Workload 已锁定嫌疑进程之后** |
 
 → tick 速率两路验证（埋点为主、`tcpdump` 交叉）：[2.5 分层埋点](./section-2.5-性能分析方法论.md#第一步每秒多少-tick两路交叉验证)  
-→ 延迟怎么读：[Ch1.6](../chapter-01-intro/notes/section-1.6-延迟指标与读法.md) · 观测四层：[Ch1.7](../chapter-01-intro/notes/section-1.7-观测工具四层递进.md)
+→ 延迟怎么读：[Ch1.6](../../chapter-01-intro/notes/section-1.6-延迟指标与读法.md) · 观测四层：[Ch1.7](../../chapter-01-intro/notes/section-1.7-观测工具四层递进.md)
 
 ---
 

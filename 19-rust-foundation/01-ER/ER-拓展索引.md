@@ -135,7 +135,7 @@
 
 ## Item 25 {#item-25}
 
-- [x] **Dependabot + `cargo deny check`**：[dependabot.yml](../.github/dependabot.yml) + [deny.toml](../deny.toml) + CI `cargo-deny`
+- [x] **Dependabot + `cargo deny check`**：dependabot.yml + [deny.toml](../deny.toml) + CI `cargo-deny`
 - [x] **`[workspace.dependencies]`**：[Cargo.toml](./Cargo.toml) + [WORKSPACE.md](./ER-demos/WORKSPACE.md)
 
 ## Item 26 {#item-26}
@@ -158,7 +158,7 @@
 ## Item 29 {#item-29}
 
 - [x] **`clippy.toml`**：[ER-demos/clippy.toml](./ER-demos/clippy.toml)
-- [x] **CI `-Dwarnings`** → [`.github/workflows/er-study-ci.yml`](../.github/workflows/er-study-ci.yml)
+- [x] **CI `-Dwarnings`** → `.github/workflows/er-study-ci.yml`
 
 ## Item 30 {#item-30}
 
@@ -173,7 +173,7 @@
 
 ## Item 32 {#item-32}
 
-- [x] **CI 示例**：[`.github/workflows/er-study-ci.yml`](../.github/workflows/er-study-ci.yml)
+- [x] **CI 示例**：`.github/workflows/er-study-ci.yml`
 - [x] **rust-toolchain.toml**（可选）钉 toolchain
 
 ## Item 33 {#item-33}

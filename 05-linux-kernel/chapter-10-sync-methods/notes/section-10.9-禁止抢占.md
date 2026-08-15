@@ -36,7 +36,7 @@ CPU0 上任务 A 操作 per_cpu(var, 0)
 
 **HFT：** 用户态「绑核 + 不主动阻塞」近似减少迁移；内核驱动里统计计数用 `this_cpu_*` / per-CPU + 禁抢占是常规手法。乱禁抢占 = 调度延迟 ↑。
 
-→ [Ch 4.5 抢占](../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [12.10 per-CPU 分配](../chapter-12-memory-management/notes/section-12.10-每个-CPU-的分配.md)
+→ [Ch 4.5 抢占](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [12.10 per-CPU 分配](../../chapter-12-memory-management/notes/section-12.10-每个-CPU-的分配.md)
 
 ### 常见陷阱
 

@@ -1,19 +1,19 @@
 # TLPI 第 17 章 — Access Control Lists
 
 **优先级**：🔴（多用户共享目录、备份丢 ACL、chmod↔MASK 陷阱）  
-**前置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/notes.md)  
-**后置**：[Ch18 Directories and Links](../chapter-18-directories-links/notes.md) · [Ch38](../chapter-38-secure-privileged/notes.md) · [Ch39 Capabilities](../chapter-39-capabilities/notes.md)
+**前置**：[Ch16 Extended Attributes](../chapter-16-extended-attributes/README.md)  
+**后置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md) · [Ch38](../chapter-38-secure-privileged/README.md) · [Ch39 Capabilities](../chapter-39-capabilities/README.md)
 
 ---
 
 ## 小节目录
 
-- [17.1 基础概念](./notes/17.1-concepts.md)
-- [17.2 `ACL_MASK`（核心坑）](./notes/17.2-aclmask.md)
-- [17.3 内核判定顺序（示意）](./notes/17.3-section-17-3.md)
-- [17.4 Default ACL 继承](./notes/17.4-default-acl.md)
-- [17.5 libacl API（链接 `-lacl`）](./notes/17.5-libacl-api-lacl.md)
-- [17.6 命令行](./notes/17.6-section-17-6.md)
+- [17.1 基础概念](notes/17.1-overview.md)
+- [17.2 `ACL_MASK`（核心坑）](notes/17.2-acl-permission-checking-algorithm.md)
+- [17.3 内核判定顺序（示意）](notes/17.3-long-and-short-text-forms-for-acls.md)
+- [17.4 Default ACL 继承](notes/17.4-the-acl-mask-entry-and-the-acl-group-cla.md)
+- 17.5 libacl API（链接 `-lacl`）
+- [17.6 命令行](notes/17.6-default-acls-and-file-creation.md)
 
 ---
 
@@ -161,4 +161,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

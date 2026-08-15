@@ -30,7 +30,7 @@ Modern 内核演进为 **clocksource** + **clockevents** 框架；ULK 2.6 概念
 | **全局定时器中断** | PIT / HPET 等 | 与 **特定 CPU 无关** 的全局活动 — 更新 **系统时间** |
 | **局部定时器中断** | **CPU 本地 APIC** | **本 CPU** 资源统计、本地 tick |
 
-SMP 下既要全局 wall clock，又要 per-CPU 统计 — 与 [Ch 4 APIC](../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) 衔接。
+SMP 下既要全局 wall clock，又要 per-CPU 统计 — 与 [Ch 4 APIC](../../chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md) 衔接。
 
 ---
 

@@ -29,7 +29,7 @@
 
 **HFT：** `perf` 看 **stalled-cycles-frontend/backend**；IPC 低不一定是分支，可能是 **长依赖链** 或 **等待 load**。
 
-→ 流水线基础：[Ch 4](../chapter-04-processor-architecture/)
+→ 流水线基础：[Ch 4](../../chapter-04-processor-architecture/)
 
 ---
 

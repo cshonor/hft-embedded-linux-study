@@ -8,7 +8,7 @@
 
 | 场景 | 例子 |
 |------|------|
-| **饱和数学** | **`SSAT`/`USAT`** — [Ch7](../chapter-07-integer-logic-arithmetic/) |
+| **饱和数学** | **`SSAT`/`USAT`** — [Ch7](../../chapter-07-integer-logic-arithmetic/) |
 | **PSR / Q 标志** | 读 **APSR** 饱和位 **Q** — DSP 溢出跟踪 |
 | **协处理器** | 编译器不生成的 **CP 指令** |
 | **内存屏障** | 早期 **`__dmb`** 类（现代 C11 **`atomic_thread_fence`**） |
@@ -57,7 +57,7 @@ __inline int read_q_flag(void) {
 | 语法 | **`__asm { }`** | **`__asm__ volatile(...)`** |
 | 约束 | 寄存器即变量 | **`: "=r"(out)` 操作数** |
 | Thumb/M | 书中限制 Thumb | **`-mthumb` 常用** |
-| 学习路径 | Smith 本章 | [奔跑吧 Ch10](../aarch64-practice/chapter-10-gcc-inline-asm/) |
+| 学习路径 | Smith 本章 | [奔跑吧 Ch10](../../../aarch64-practice/chapter-10-gcc-inline-asm/) |
 
 ---
 

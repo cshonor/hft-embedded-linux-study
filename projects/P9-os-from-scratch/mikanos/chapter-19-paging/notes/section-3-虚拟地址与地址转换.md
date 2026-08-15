@@ -54,7 +54,7 @@ RAM:   读物理 0x0034_5000
 
 **切换 CR3** 必须在 **内核映射仍有效** 的上下文中 — 通常 **内核高半/identity** 与 **应用表** 并存于 **不同 PML4 项**。
 
-→ [Ch8 CR3](../chapter-08-memory/notes/section-5-四级分页与身份映射.md)
+→ [Ch8 CR3](../../chapter-08-memory/notes/section-5-四级分页与身份映射.md)
 
 ---
 

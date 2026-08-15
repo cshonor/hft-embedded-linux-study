@@ -21,7 +21,7 @@ LocalResolver → TypeResolver → … → TypeChecker
 
 **不能乱序** — 例如未消解变量就不能可靠做类型检查。
 
-→ [ch1 语义分析阶段](../chapter01_start/02-four-compiler-stages.md) · [EaC ch4](../../../02_Compiler-Principles/chapter04_context/README.md)
+→ [ch1 语义分析阶段](../chapter01_start/02-four-compiler-stages.md) · [EaC ch4](../../02_Compiler-Principles/chapter04_context/README.md)
 
 ---
 

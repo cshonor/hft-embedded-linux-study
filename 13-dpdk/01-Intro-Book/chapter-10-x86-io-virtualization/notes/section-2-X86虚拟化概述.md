@@ -36,7 +36,7 @@ GVA (客户机虚拟) → GPA (客户机物理) → HPA (宿主机物理)
 
 **EPT（扩展页表）**：硬件 **直接完成 GPA→HPA**，减软件影子页表开销。
 
-- 结果缓存在 **CPU TLB / Cache** — 与 [Ch2 TLB](../chapter-02-cache-and-memory/notes/section-2-阶梯式Cache系统.md) 同构
+- 结果缓存在 **CPU TLB / Cache** — 与 [Ch2 TLB](../../chapter-02-cache-and-memory/notes/section-2-阶梯式Cache系统.md) 同构
 
 ---
 
@@ -50,7 +50,7 @@ GVA (客户机虚拟) → GPA (客户机物理) → HPA (宿主机物理)
 
 **DPDK 选型：** 数据面追求线速/低延迟 → **透传（+ SR-IOV VF）**；控制面可用 virtio。
 
-→ 半旁路对照 [02-Advanced XDP note](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md)
+→ 半旁路对照 [02-Advanced XDP note](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md)
 
 ---
 

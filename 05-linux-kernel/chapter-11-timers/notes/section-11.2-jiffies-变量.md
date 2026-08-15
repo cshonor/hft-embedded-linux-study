@@ -66,7 +66,7 @@ while (!done) {
 
 **HFT：** 内核模块里用 `jiffies` 做 **秒级 watchdog** 可以；**亚毫秒 SLA** 请用 **`ktime_get()` / hrtimer**。用户态对应 **`CLOCK_MONOTONIC`**，不要用 `jiffies` 思维去量 **纳秒级** 行情延迟。
 
-→ [Ch 10 seqlock](../../chapter-10-kernel-synchronization/) · [Gorman Ch3 时间](../../../../06-linux-mm/chapter-03-page-table-management/)（页表章亦涉及时序）
+→ [Ch 10 seqlock](../../chapter-06-kernel-data-structures) · [Gorman Ch3 时间](../../../06-linux-mm/chapter-03-page-table-management/)（页表章亦涉及时序）
 
 ### 常见陷阱
 

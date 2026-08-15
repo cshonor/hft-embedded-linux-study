@@ -30,6 +30,6 @@
 | VM **尾延迟** 与 **CPU steal** — 与 WSC 长尾同源（→ 6.2） |
 | 云行情数据服务 = WSC 产品；**本地 FPGA/NIC 行情** = 反 WSC 思路 |
 
-→ [Ch2 虚拟机](../chapter-02-memory-hierarchy-design/notes/section-2.4-虚拟内存与虚拟机.md)
+→ [Ch2 虚拟机](../../chapter-02-memory-hierarchy-design/notes/section-2.4-虚拟内存与虚拟机.md)
 
 ---

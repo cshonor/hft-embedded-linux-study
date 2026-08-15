@@ -6,7 +6,7 @@
 
 ### 为何单独成章
 
-[Ch3](../chapter-03-instruction-sets-v4t-v7m/) 已区分 **v4T** 与 **v7-M**；本书多数例程混用 **ARM7（双态）** 与 **M4（Thumb-2 only）**。本章 **系统梳理** 三种指令宽度/语义，避免：
+[Ch3](../../chapter-03-instruction-sets-v4t-v7m/) 已区分 **v4T** 与 **v7-M**；本书多数例程混用 **ARM7（双态）** 与 **M4（Thumb-2 only）**。本章 **系统梳理** 三种指令宽度/语义，避免：
 
 - 写 M4 时找 **ARM 32-bit `{cond}`** 后缀  
 - 读 ARM7 文献时不懂 **BX bit0**  
@@ -28,8 +28,8 @@ Thumb-2        — 16+32 超集、UAL、现代 MCU
 
 ### 与 CPSR / 流水线
 
-ARM7 **CPSR 的 T 位** = 当前 **Thumb 态**（[Ch2](../chapter-02-programmers-model/)）。  
-异常时硬件常 **清 T** → 进 **ARM 态** handler（[Ch14](../chapter-14-exception-handling-arm7tdmi/)）。
+ARM7 **CPSR 的 T 位** = 当前 **Thumb 态**（[Ch2](../../chapter-02-programmers-model/)）。  
+异常时硬件常 **清 T** → 进 **ARM 态** handler（[Ch14](../../chapter-14-exception-handling-arm7tdmi/)）。
 
 M4 **无 T 位切换概念** — 始终 Thumb。
 

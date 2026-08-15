@@ -10,7 +10,7 @@
 
 | 规则 | 内容 |
 |------|------|
-| **AAPCS** | [Ch13 §13.5](../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) |
+| **AAPCS** | [Ch13 §13.5](../../chapter-13-subroutines-stacks/notes/section-13-5-apcs.md) |
 | **参数** | **r0–r3** 前四个；更多 **栈**（降序、8 对齐） |
 | **返回值** | **r0**（64-bit **`r0+r1`**） |
 | **浮点** | **s0–s15** 参/返；**s16–s31** callee-save |
@@ -46,7 +46,7 @@ asm_wrapper
     LDMFD   sp!, {r4, pc}
 ```
 
-**第 5 个参数起：** 调用者 **`PUSH`** → **`BL`** → C 用 **`[sp, #offset]`** 读 — [Ch13 §13.4](../chapter-13-subroutines-stacks/notes/section-13-4-parameters.md)。
+**第 5 个参数起：** 调用者 **`PUSH`** → **`BL`** → C 用 **`[sp, #offset]`** 读 — [Ch13 §13.4](../../chapter-13-subroutines-stacks/notes/section-13-4-parameters.md)。
 
 ---
 
@@ -82,7 +82,7 @@ loop
 
 ### 例 3：硬件指令封装 — VCVT 库
 
-[Ch9–11](../chapter-09-floating-point-basics/) **定点 ↔ 浮点**：
+[Ch9–11](../../chapter-09-floating-point-basics/) **定点 ↔ 浮点**：
 
 ```asm
 ; float fixed_to_float(int32_t q31)  — 参数 r0
@@ -102,7 +102,7 @@ float y = fixed_to_float(x);   /* 像调普通库 */
 
 ### Interworking 提醒
 
-ARM7 **ARM 调 Thumb asm**（或反之）→ [Ch17 Veneer](../chapter-17-arm-thumb-thumb2-instructions/notes/section-17-5-interworking.md)。  
+ARM7 **ARM 调 Thumb asm**（或反之）→ [Ch17 Veneer](../../chapter-17-arm-thumb-thumb2-instructions/notes/section-17-5-interworking.md)。  
 **M4 全 Thumb** — **`BL asm_strcpy`** 即可。
 
 ---
@@ -115,7 +115,7 @@ ARM7 **ARM 调 Thumb asm**（或反之）→ [Ch17 Veneer](../chapter-17-arm-thu
 | **Linux** | **`head.S`** → **`start_kernel`** |
 | **驱动** | 几乎全 **C** + **`readl`**；asm 在 **arch/** 库 |
 
-→ [20 构建](../../08-embedded-boot-build/) · [21 驱动](../../09-device-drivers-dt/)
+→ [20 构建](../../../../08-embedded-boot-build/) · [21 驱动](../../../../09-device-drivers-dt/)
 
 ---
 

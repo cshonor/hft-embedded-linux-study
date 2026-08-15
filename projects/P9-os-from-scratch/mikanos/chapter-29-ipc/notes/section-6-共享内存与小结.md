@@ -28,7 +28,7 @@ Task B PML4: VA 0x…2000 → PFN P  (Writable|User)
 |------|-------------------------------|
 | 风险 | **Data Race** — 需 **锁/原子**（本书 **提醒** · 未必全实现） |
 
-→ [Ch27 MapFile/CoW](../chapter-27-app-memory/) · [CSAPP Ch12 IPC](../../../../../02-computer-systems/)
+→ [Ch27 MapFile/CoW](../../chapter-27-app-memory/) · [CSAPP Ch12 IPC](../../../../../02-computer-systems/)
 
 ---
 
@@ -55,11 +55,11 @@ Ch30 额外应用 · 书末
 
 | Ch29 主题 | 继续读 |
 |----------|--------|
-| 额外应用 | [chapter-30-extra-apps](../chapter-30-extra-apps/) ⚪ |
-| 重定向 | [chapter-28-japanese-redirect](../chapter-28-japanese-redirect/) |
-| stdio | [chapter-26-app-write-file](../chapter-26-app-write-file/) |
+| 额外应用 | [chapter-30-extra-apps](../../chapter-30-extra-apps/) ⚪ |
+| 重定向 | [chapter-28-japanese-redirect](../../chapter-28-japanese-redirect/) |
+| stdio | [chapter-26-app-write-file](../../chapter-26-app-write-file/) |
 | TLPI | [03-linux-userspace-api pipe/shm](../../../../../03-linux-userspace-api/) |
 
 ---
 
-← [5. sort/cat](./section-5-sort-cat优化与终端修复.md) · [Ch 28](../chapter-28-japanese-redirect/) · [Ch 29 导读](../README.md)
+← [5. sort/cat](./section-5-sort-cat优化与终端修复.md) · [Ch 28](../../chapter-28-japanese-redirect/) · [Ch 29 导读](../README.md)

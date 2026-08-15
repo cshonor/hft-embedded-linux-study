@@ -11,7 +11,7 @@
 |---|---|
 | **本章干什么** | 用 **裸 C + Makefile** 编出第一个 **`BOOTX64.EFI`**，在 UEFI 里打印 Hello World；建立 **C → PE → FAT → EfiMain** 的现代启动链直觉。 |
 | **全书作用** | **全书起点** — 破除 OS 神秘感；证明「没有 OS 也能跑你的代码」；为 Ch2 的 EDK II / MikanLoader 打工具链地基。 |
-| **← 前置** | 无（MikanOS 主线起点）；可选对照 [02 30 天 Day1](../../thirty-days-os-essentials/day-01-boot-asm/) 的 BIOS 512B 启蒙 |
+| **← 前置** | 无（MikanOS 主线起点）；可选对照 02 30 天 Day1 的 BIOS 512B 启蒙 |
 | **→ 后续** | [Ch2 EDK II / 内存 map](../chapter-02-edk2-memmap/) — 从裸 C 升级到规范 Loader，并 **摸底物理 RAM** |
 
 ---
@@ -78,5 +78,5 @@ make run    # 需 clang · ld.lld · qemu-system-x86_64 · ovmf
 ## 相关
 
 - 下一章：[../chapter-02-edk2-memmap/](../chapter-02-edk2-memmap/)
-- 对照：[01 Day 1 引导](../../thirty-days-os-essentials/day-01-boot-asm/) · [附录 F ASCII](../appendix-F-ascii-table/) · [SETUP](../SETUP.md)
+- 对照：01 Day 1 引导 · [附录 F ASCII](../appendix-F-ascii-table/) · [SETUP](../SETUP.md)
 - 模块导读：[../README.md](../README.md) · [../OUTLINE.md](../OUTLINE.md)

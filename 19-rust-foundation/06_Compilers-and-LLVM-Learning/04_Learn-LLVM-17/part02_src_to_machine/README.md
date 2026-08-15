@@ -6,4 +6,4 @@
 | `chapter05_ir_advanced_type` | 第 5 章 复合类型 | **精读** |
 | `chapter07_ir_optimize` | 第 7 章 优化 | **精读** |
 
-从 [05-Async-Concurrency-Network/](../../05-Async-Concurrency-Network/README.md) 抄最小复现进 `src/lib.rs`，`.ll` 复制到 `ir_samples/`。
+从 [05-Async-Concurrency-Network/](../../../05-Async-Concurrency-Network/README.md) 抄最小复现进 `src/lib.rs`，`.ll` 复制到 `ir_samples/`。

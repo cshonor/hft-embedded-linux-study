@@ -62,7 +62,7 @@ mutex（本 CPU 持锁且睡眠）：
 
 **HFT：** 热路径 **mutex** 在争用下会 **睡眠唤醒** — P99 杀手。短临界区用 **spinlock**；读多写少考虑 **RCU**（Ch 10）。用户态等价物：`std::mutex` vs `spinlock` vs `atomic`。
 
-→ **Ch 10** spinlock、mutex 详解 · [Ch 9.5](section-9.5-死锁.md) 死锁 · [Ch 8.8](../chapter-08-bottom-halves/notes/section-8.8-锁定与禁用下半部.md) `spin_lock_bh`
+→ **Ch 10** spinlock、mutex 详解 · [Ch 9.5](section-9.5-死锁.md) 死锁 · [Ch 8.8](../../chapter-08-bottom-halves/notes/section-8.8-锁定与禁用下半部.md) `spin_lock_bh`
 
 ### 常见陷阱
 

@@ -6,7 +6,7 @@
 
 ### 表在内存中的布局
 
-连续元素用 **基址 + 索引×元素大小** 访问（[Ch5 缩放寻址](../chapter-05-loads-stores-addressing/)）：
+连续元素用 **基址 + 索引×元素大小** 访问（[Ch5 缩放寻址](../../chapter-05-loads-stores-addressing/)）：
 
 | 元素类型 | 字节偏移 | 典型指令 |
 |----------|----------|----------|
@@ -59,7 +59,7 @@ SinTable
 | **III** | θ − 180° | −sin |
 | **IV** | 360° − θ | −sin |
 
-**Q31 定点：** [Ch7 §7.7](../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) — 值 ∈ [−1, 1) 映射到 32 位整数；**无 FPU** 的 Cortex-M0 也能跑。
+**Q31 定点：** [Ch7 §7.7](../../chapter-07-integer-logic-arithmetic/notes/section-7-7-fractional.md) — 值 ∈ [−1, 1) 映射到 32 位整数；**无 FPU** 的 Cortex-M0 也能跑。
 
 ---
 

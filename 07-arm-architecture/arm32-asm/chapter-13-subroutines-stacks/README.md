@@ -37,7 +37,7 @@
 - [ ] 写可重入子程序：**`STMDB sp!, {r4-r7, lr}`** + **`LDMIA sp!, {r4-r7, pc}`**
 - [ ] 对比三种传参：**寄存器 / 指针 / 堆栈**
 - [ ] 背 **AAPCS**：**r0–r3**、**r4–r11** callee-save、**s16–s31**、**8 字节栈对齐**
-- [ ] 能对照 [02 C](../../01-c-language/) 说明 `int foo(int a,int b)` 的寄存器布局
+- [ ] 能对照 [02 C](../../../01-c-language/) 说明 `int foo(int a,int b)` 的寄存器布局
 
 ---
 

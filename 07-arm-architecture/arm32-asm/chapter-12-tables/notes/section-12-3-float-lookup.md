@@ -6,7 +6,7 @@
 
 ### 浮点表的加载方式
 
-与整数表相同：**基址 + 偏移**；元素为 **32/64 bit 浮点** 时用 **VLDR**（[Ch9](../chapter-09-floating-point-basics/)）：
+与整数表相同：**基址 + 偏移**；元素为 **32/64 bit 浮点** 时用 **VLDR**（[Ch9](../../chapter-09-floating-point-basics/)）：
 
 ```asm
     VLDR.F  s5, [r0]              ; 绝对寻址

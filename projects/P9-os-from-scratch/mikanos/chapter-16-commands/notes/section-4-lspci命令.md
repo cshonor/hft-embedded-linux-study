@@ -32,7 +32,7 @@ for (auto& d : pci::devices) {
 | **bus / dev / func** | 配置空间枚举 |
 | **Vendor / Class** | Ch6 **CONFIG_ADDRESS** 读取 |
 
-→ [Ch6 PCI 枚举](../chapter-06-mouse-pci/notes/section-4-PCI配置空间与枚举.md)
+→ [Ch6 PCI 枚举](../../chapter-06-mouse-pci/notes/section-4-PCI配置空间与枚举.md)
 
 ---
 
@@ -45,7 +45,7 @@ for (auto& d : pci::devices) {
 
 **尚无 syscall** — 命令 **编译进内核**；Ch20 后 **用户态应用** 需 **接口**。
 
-→ [chapter-20-syscall](../chapter-20-syscall/)
+→ [chapter-20-syscall](../../chapter-20-syscall/)
 
 ---
 

@@ -22,4 +22,4 @@
 
 - 下一章：[chapter-02-cache-and-memory/](../chapter-02-cache-and-memory/)
 - 内核栈对照：[12-kernel-networking](../../../12-kernel-networking/)
-- [note-DPDK实体书递进](../note-DPDK实体书递进.md) · [13-DPDK 总目录](../../README.md)
+- note-DPDK实体书递进 · [13-DPDK 总目录](../../README.md)

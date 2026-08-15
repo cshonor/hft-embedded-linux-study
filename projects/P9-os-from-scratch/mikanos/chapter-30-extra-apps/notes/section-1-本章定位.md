@@ -37,7 +37,7 @@ Ch30 额外应用  ← 本章（主体末章）
 Ch31 今后 · 附录
 ```
 
-→ [Ch29 管道](../chapter-29-ipc/) · [Ch31 今后](../chapter-31-road-ahead/)
+→ [Ch29 管道](../../chapter-29-ipc/) · [Ch31 今后](../../chapter-31-road-ahead/)
 
 ---
 

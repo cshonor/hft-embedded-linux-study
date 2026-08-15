@@ -29,7 +29,7 @@ SetDataSegment(user_ds, 3);
 | **CPL=3 运行应用** | `sysret` / **iretq** 返回用户 |
 | **CPL=0 内核** | 中断 · **syscall** 入口 |
 
-→ [Ch8 GDT](../chapter-08-memory/notes/section-4-GDT与分段.md)
+→ [Ch8 GDT](../../chapter-08-memory/notes/section-4-GDT与分段.md)
 
 ---
 
@@ -46,7 +46,7 @@ SetDataSegment(user_ds, 3);
 
 **效果：** 即使用 **错误指针** 也 **读不到内核物理页**。
 
-→ [Ch19 U/S 铺垫](../chapter-19-paging/notes/section-3-虚拟地址与地址转换.md)
+→ [Ch19 U/S 铺垫](../../chapter-19-paging/notes/section-3-虚拟地址与地址转换.md)
 
 ---
 

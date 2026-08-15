@@ -17,7 +17,7 @@
 | **policy 哈希表** | **SPD** — 哪些流 **需要** IPsec |
 | **state 哈希表** | **SAD** — **如何** 加解密 |
 
-容器 **各自 IPsec 策略** — 与 [Ch 9](../chapter-09-netfilter/) netns 隔离 **同构**。
+容器 **各自 IPsec 策略** — 与 [Ch 9](../../chapter-09-netfilter/) netns 隔离 **同构**。
 
 ---
 

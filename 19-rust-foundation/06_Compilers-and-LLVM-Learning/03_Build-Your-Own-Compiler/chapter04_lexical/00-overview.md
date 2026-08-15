@@ -12,7 +12,7 @@ ch4  .jj 里写扫描规则  ← 本章
 ch5  .jj 里写语法产生式
 ```
 
-| 对比 | [CI ch4](../../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) | 本章 |
+| 对比 | [CI ch4](../../01_Crafting-Interpreters/part02_jlox/chapter04_scanning/) | 本章 |
 |------|-------------------------------------------------------------------------------|------|
 | 实现 | 手写 `Scanner` | **声明式正则** + JavaCC 生成 |
 

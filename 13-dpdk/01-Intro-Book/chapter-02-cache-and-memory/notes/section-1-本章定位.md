@@ -43,7 +43,7 @@ mbuf / mempool（在正确内存上预分配对象）
 PMD 收发包
 ```
 
-→ [Ch1](../chapter-01-dpdk-intro/) · [chapter-02 mbuf](../chapter-02-mbuf与内存池.md)
+→ [Ch1](../../chapter-01-dpdk-intro/) · [chapter-02 mbuf](../../chapter-02-cache-and-memory)
 
 ---
 

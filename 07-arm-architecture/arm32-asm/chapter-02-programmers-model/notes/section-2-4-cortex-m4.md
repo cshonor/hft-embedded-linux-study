@@ -1,7 +1,7 @@
 ## §2.4 Cortex-M4 — 处理器模式 · 寄存器 · 向量表
 
 > **Ch 2 · 程序员模型** · [章导读](../README.md) · [本章概述](./section-0-本章完整概述.md)  
-> **英文：** Cortex-M4 Programmer's Model · → [Ch15 异常详解](../../chapter-15-exception-handling-cortex-m4/)
+> **英文：** Cortex-M4 Programmer's Model · → [Ch15 异常详解](../../chapter-15-exception-handling-v7m)
 
 ---
 
@@ -41,7 +41,7 @@ Thread Mode   →  Privileged 或 Unprivileged（由 CONTROL 决定）
 ### 3. CONTROL 寄存器（位图 + 栈指针选择）
 
 > 图源：《ARM Cortex-M3 与 Cortex-M4 权威指南》图 4.9 / 4.10。  
-> Smith 本书展开 → **[Ch15 异常处理 · Cortex-M4](../../chapter-15-exception-handling-cortex-m4/)**（CONTROL · 8-word 栈帧 · EXC_RETURN · RTOS 切换）。
+> Smith 本书展开 → **[Ch15 异常处理 · Cortex-M4](../../chapter-15-exception-handling-v7m)**（CONTROL · 8-word 栈帧 · EXC_RETURN · RTOS 切换）。
 
 #### 1）位定义（仅低 3 位有效）
 
@@ -179,7 +179,7 @@ IRQ/SysTick/SVC…    →  Handler（永远 Privileged）
 
 | 寄存器 | 功能 |
 |--------|------|
-| **R0–R12** | 通用；传参惯例 → [Ch13](../../chapter-13-subroutines-and-stacks/)（APCS / AAPCS） |
+| **R0–R12** | 通用；传参惯例 → [Ch13](../../chapter-13-subroutines-stacks)（APCS / AAPCS） |
 | **R13 (SP)** | **双堆栈**：**MSP**（主栈）· **PSP**（进程/任务栈） |
 | **R14 (LR)** | 普通调用 = 返回地址；**异常上下文 = EXC_RETURN** 特殊码（非普通 PC） |
 | **R15 (PC)** | 程序计数器；**仅 Thumb-2** |
@@ -304,7 +304,7 @@ M4：硬件 **直接取地址跳转** — 少一层 `B`，Flash 更省、延迟�
 **CONTROL 三比特：** `nPRIV` | `SPSEL` | `FPCA(M4F)`  
 **组合：** Handler=永特权+MSP · Thread+Priv · Thread+User  
 
-→ 细节 **[Ch15](../../chapter-15-exception-handling-cortex-m4/)**
+→ 细节 **[Ch15](../../chapter-15-exception-handling-v7m)**
 
 ---
 

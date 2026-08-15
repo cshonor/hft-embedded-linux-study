@@ -59,7 +59,7 @@
 | **Strategy → Logger** | **移出热点** — 异步落盘/统计 |
 | **OMS → 审计** | 非关键路径 |
 
-→ [chapter-29 PipeDescriptor 对照](./chapter-29-ipc/notes/section-3-管道机制与PipeDescriptor.md) — 生产可用 **共享内存环** 替代消息队列
+→ chapter-29 PipeDescriptor 对照 — 生产可用 **共享内存环** 替代消息队列
 
 ---
 

@@ -4,7 +4,7 @@
 
 > 本章定位：**CPU 怎么执行指令** — 用教学用 **Y86-64** 从单周期 SEQ 走到五段流水线 PIPE，理解 **流水线、冒险、分支预测**。真芯片比 Y86 复杂百倍，但 **stall、bubble、branch-miss** 的直觉来自本章。  
 > **提醒：** 书中 **Ch3 真机汇编** 是 **x86-64**；Y86 是仿其风格的 **简化 ISA**，不是 Linux 上另一套生产标准。→ [Ch3 §3.3](../chapter-03-machine-level-programs/notes/section-3.3-数据格式.md)  
-> **不是 Verilog：** 本章用 **HCL** 描述控制；Verilog 在 Harris Ch4（嵌入式 Linux 路线可跳）。路线对照 → [学习路线_CSAPP与Harris](../../../00-digital-logic-cpu/学习路线_CSAPP与Harris_Linux驱动.md)
+> **不是 Verilog：** 本章用 **HCL** 描述控制；Verilog 在 Harris Ch4（嵌入式 Linux 路线可跳）。路线对照 → [学习路线_CSAPP与Harris](../../00-digital-logic-cpu/学习路线_CSAPP与Harris_Linux驱动.md)
 
 ---
 
@@ -21,7 +21,7 @@
 | **4.5** PIPE 与冒险 | [section-4.5-PIPE流水线与冒险.md](./notes/section-4.5-PIPE流水线与冒险.md) | **全书 CPU 硬件核心 / HFT 根基**：三类冒险 + 转发/stall/flush；软件如何少停顿 |
 | 4.6 小结与模拟器 | 见 [§4.5 文末](./notes/section-4.5-PIPE流水线与冒险.md#46-小结与模拟器) | `ssim` / `psim` 等（选做） |
 | **补充** 数字电路学习资料 | [section-补充-数字电路学习资料.md](./notes/section-补充-数字电路学习资料.md) | 总表 |
-| **Harris ARM（独立书仓）** | [../../../00-digital-logic-cpu/](../../../00-digital-logic-cpu/README.md) | 已从本 notes 提出：一章一夹、一小节一文件 |
+| **Harris ARM（独立书仓）** | [../../../00-digital-logic-cpu/](../../00-digital-logic-cpu/README.md) | 已从本 notes 提出：一章一夹、一小节一文件 |
 
 **学习顺序（严格从上到下，不能跳）：**
 
@@ -101,5 +101,5 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
 - 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
 - 真实微架构：[19-Hennessy](../../17-computer-architecture/)
-- **数字电路补课：** [资料总表](./notes/section-补充-数字电路学习资料.md) · **[00-Harris ARM 独立书仓](../../../00-digital-logic-cpu/README.md)**
+- **数字电路补课：** [资料总表](./notes/section-补充-数字电路学习资料.md) · **[00-Harris ARM 独立书仓](../../00-digital-logic-cpu/README.md)**
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

@@ -14,7 +14,7 @@
 | **少分支** | **条件后缀 / IT** · **向下计数** · **展开** |
 | **流水线意识** | 分支 = flush — 与性能优化同源 |
 
-**前置：** [Ch7 标志与 CMP](../chapter-07-integer-logic-arithmetic/notes/section-0-本章完整概述.md) · [Ch3 阶乘 IT](../chapter-03-instruction-sets-v4t-v7m/notes/section-3-4-example-factorial.md)
+**前置：** [Ch7 标志与 CMP](../../chapter-07-integer-logic-arithmetic/notes/section-0-本章完整概述.md) · [Ch3 阶乘 IT](../../chapter-03-instruction-sets-v4t-v7m/notes/section-3-4-example-factorial.md)
 
 ---
 

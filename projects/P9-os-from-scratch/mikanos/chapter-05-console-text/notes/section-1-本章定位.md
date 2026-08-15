@@ -38,7 +38,7 @@ Ch5 WriteAscii → Console → printk
 Ch7+ 中断/内存调试输出
 ```
 
-→ [Ch4 PixelWriter](../chapter-04-pixel-make/notes/section-4-PixelWriter与vtable.md)
+→ [Ch4 PixelWriter](../../chapter-04-pixel-make/notes/section-4-PixelWriter与vtable.md)
 
 ---
 

@@ -22,6 +22,6 @@
 |----------|
 | **Maker rebate 够吗？** 覆盖 **affirmative obligation** 成本？ |
 | **Tick size、MM incentive** — 同一 **公共品融资** 问题 |
-| [Ch 9](../chapter-09-good-markets/) 目标 3 — **建设性 LP** vs **剥削** |
+| [Ch 9](../../chapter-09-good-markets/) 目标 3 — **建设性 LP** vs **剥削** |
 
 ---

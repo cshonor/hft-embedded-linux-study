@@ -53,7 +53,7 @@
 | **硬中断** | 只做最短工作 + 调度 softirq/tasklet/work；锁用 irqsave |
 | **观测** | `perf lock`、锁持有时间直方图、`%soft` |
 
-→ [Ch 9](../chapter-09-kernel-sync-intro/) · [Ch 7–8](../chapter-07-interrupts/) · 本章 README 小结表
+→ [Ch 9](../../chapter-09-kernel-sync-intro/) · [Ch 7–8](../../chapter-07-interrupts/) · 本章 README 小结表
 
 ### 常见陷阱
 

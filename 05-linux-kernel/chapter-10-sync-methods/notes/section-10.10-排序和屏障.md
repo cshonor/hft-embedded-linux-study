@@ -41,7 +41,7 @@
 
 **HFT：** 用户态 `memory_order_acquire/release`、环形缓冲区的 head/tail 发布，与内核屏障 **同一类问题**。无锁队列 bug = 偶现脏数据、极难复现。
 
-→ [02-CSAPP 并发与内存](../../../../02-computer-systems/chapter-12-concurrent-programming/) · [10.1 原子](./section-10.1-原子操作.md) · [10.8 seqlock](./section-10.8-顺序锁.md)
+→ [02-CSAPP 并发与内存](../../../02-computer-systems/chapter-12-concurrent-programming/) · [10.1 原子](./section-10.1-原子操作.md) · [10.8 seqlock](./section-10.8-顺序锁.md)
 
 ### 常见陷阱
 

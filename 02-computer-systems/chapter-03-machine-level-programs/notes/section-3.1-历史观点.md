@@ -19,7 +19,7 @@ x86-64 / AMD64（64 位长模式 — MikanOS · bootX64.efi · Linux 全是这�
 
 | 阶段 | 典型场景 | 与你学习路径 |
 |------|----------|--------------|
-| **8086 / 实模式** | 软盘 512B IPL @ `0x7C00` | [02 30days-os Day1](../../../projects/P9-os-from-scratch/thirty-days-os/day-01-boot-asm/) 启蒙 |
+| **8086 / 实模式** | 软盘 512B IPL @ `0x7C00` | 02 30days-os Day1 启蒙 |
 | **IA-32** | 保护模式、32 位内核 | 30 天 OS 中后期 |
 | **x86-64 长模式** | **UEFI · bootX64.efi · 服务器 OS** | **MikanOS 主线 · HFT 共置机** |
 

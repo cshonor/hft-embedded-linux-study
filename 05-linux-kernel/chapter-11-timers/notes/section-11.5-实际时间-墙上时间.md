@@ -58,7 +58,7 @@ tick / NTP  ──► 持续微调 xtime
 
 **HFT：** 内核 `xtime` 让你懂 **系统时间从哪来**；实盘代码 **几乎总在用户态** 调 `clock_gettime`。驱动/内核模块若打 **UTC 日志**，要知道 **NTP step** 可能发生 — 关键路径用 **单调时钟** 做 **timeout**。
 
-→ [Ch 10 seqlock](../../chapter-10-kernel-synchronization/) · [07 TLPI 时间章](../../../../03-linux-userspace-api/) · [01 CSAPP 无时钟章但见并发](../../../../02-computer-systems/)
+→ [Ch 10 seqlock](../../chapter-06-kernel-data-structures) · [07 TLPI 时间章](../../../03-linux-userspace-api/) · [01 CSAPP 无时钟章但见并发](../../../02-computer-systems/)
 
 ### 常见陷阱
 

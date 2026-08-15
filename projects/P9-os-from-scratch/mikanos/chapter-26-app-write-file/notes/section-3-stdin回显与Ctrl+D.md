@@ -16,7 +16,7 @@ Read()  dequeue → 若 echo: Write() 同字符到 stdout (fd=1)
 | **开** | 键入 **立即可见** — 与 Ch16 **linebuf** 协同 |
 | **关** | 密码输入场景（本书可选） |
 
-→ [Ch16 终端输入](../chapter-16-commands/notes/section-2-终端按键输入与行缓冲.md)
+→ [Ch16 终端输入](../../chapter-16-commands/notes/section-2-终端按键输入与行缓冲.md)
 
 ---
 

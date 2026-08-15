@@ -26,7 +26,7 @@
 jiffies++、系统时钟、调度 tick
 ```
 
-→ 中断处理：[Ch 4](../chapter-04-interrupts-and-exceptions/) · SMP APIC 局部 tick [section-3](./section-3-Linux计时架构.md)
+→ 中断处理：[Ch 4](../../chapter-04-interrupts-and-exceptions/) · SMP APIC 局部 tick [section-3](./section-3-Linux计时架构.md)
 
 ---
 

@@ -105,7 +105,7 @@ t.join();
 
 // POSIX
 pthread_t t;
-pthread_create(&t, nullptr, [](void*) -> void* { /* work */ return nullptr; }, nullptr);
+pthread_create(&t, nullptr,  -> void* { /* work */ return nullptr; }, nullptr);
 pthread_join(t, nullptr);
 ```
 > std::thread 相比 pthread 有哪些优势？

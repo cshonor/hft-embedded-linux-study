@@ -28,7 +28,7 @@ intel_iommu=on
 | VM 启动报 **找不到 IOMMU** | 未加 `intel_iommu=on` 或 BIOS 未开 VT-d |
 | VFIO 绑定失败 | IOMMU 组、权限、内核驱动占用 |
 
-→ DPDK 常用 **VFIO** 替代旧 UIO — [Ch7 混合中断 UIO/VFIO](../chapter-07-nic-performance-optimization/notes/section-2-轮询与混合中断模式.md)
+→ DPDK 常用 **VFIO** 替代旧 UIO — [Ch7 混合中断 UIO/VFIO](../../chapter-07-nic-performance-optimization/notes/section-2-轮询与混合中断模式.md)
 
 ---
 
@@ -37,7 +37,7 @@ intel_iommu=on
 - [ ] `dmesg | grep -i iommu` 确认激活  
 - [ ] `lspci` 见 PF/VF；`virsh nodedev-list` / 云厂商 **VF 配额**  
 - [ ] 宿主机 **不把 PF 驱动** 与 VF 争用（常见：PF 绑 igb/i40e，VF 直通 VM）  
-- [ ] 客户机内 **Hugepages + isolcpus** 与裸金属同规范 [Ch7](../chapter-07-nic-performance-optimization/notes/section-4-平台优化与配置调优.md)  
+- [ ] 客户机内 **Hugepages + isolcpus** 与裸金属同规范 [Ch7](../../chapter-07-nic-performance-optimization/notes/section-4-平台优化与配置调优.md)  
 - [ ] 确认 **live migration** 需求 — 透传 VF **通常不可** 热迁  
 
 ---

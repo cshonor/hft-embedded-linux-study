@@ -57,7 +57,7 @@ def v2 … ; use v2              → v2 急需寄存器
 
 ## 与 clox / VM
 
-[CI clox](../../../01_Crafting-Interpreters/part03_clox/) 栈机无通用 regalloc — 对比可见 **寄存器机后端** 多这一整章。
+[CI clox](../../01_Crafting-Interpreters/part03_clox/) 栈机无通用 regalloc — 对比可见 **寄存器机后端** 多这一整章。
 
 ---
 

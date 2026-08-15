@@ -22,7 +22,7 @@
 | **大小** | 扇区的 **整数倍**；须能放进 **一个物理页框**（如 1KB、4KB） |
 | **关系** | FS 按 **块** 组织；块层再映射到 **扇区** |
 
-→ 页框：[Ch 8](../chapter-08-memory-management/notes/section-2-页框管理.md)
+→ 页框：[Ch 8](../../chapter-08-memory-management/notes/section-2-页框管理.md)
 
 ---
 
@@ -34,7 +34,7 @@
 |------|--------------------------------------------------------|
 | 目的 | 一次 DMA 传 **多段** 不连续物理页 — 减少 CPU 拷贝 |
 
-→ DMA 概念：[Ch 13 section-5](../chapter-13-io-architecture/notes/section-5-驱动通用特性.md)
+→ DMA 概念：[Ch 13 section-5](../../chapter-13-io-architecture/notes/section-5-驱动通用特性.md)
 
 ---
 

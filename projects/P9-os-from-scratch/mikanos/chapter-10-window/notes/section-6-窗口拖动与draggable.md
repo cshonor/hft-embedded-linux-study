@@ -11,7 +11,7 @@
 | 驱动 / ISR → **Message** | 携带 **buttons** 状态 |
 | 主循环 | 根据 **左键按下** 进入拖窗模式 |
 
-→ [Ch7 Message + FIFO](../chapter-07-interrupt-fifo/notes/section-5-FIFO与ArrayQueue.md)
+→ [Ch7 Message + FIFO](../../chapter-07-interrupt-fifo/notes/section-5-FIFO与ArrayQueue.md)
 
 ---
 
@@ -82,11 +82,11 @@ Ch11+ 定时器 · 多任务 · 窗口应用…
 
 | Ch10 主题 | 继续读 |
 |----------|--------|
-| 定时器 / ACPI | [chapter-11-timer-acpi](../chapter-11-timer-acpi/) 🔴 |
-| 图形事件 | [chapter-22-graphics-events1](../chapter-22-graphics-events1/) ⚪ |
-| 窗口应用 | [chapter-21-window-apps](../chapter-21-window-apps/) ⚪ |
-| 图层基础 | [chapter-09-layers](../chapter-09-layers/) |
+| 定时器 / ACPI | [chapter-11-timer-acpi](../../chapter-11-timer-acpi/) 🔴 |
+| 图形事件 | [chapter-22-graphics-events1](../../chapter-22-graphics-events1/) ⚪ |
+| 窗口应用 | [chapter-21-window-apps](../../chapter-21-window-apps/) ⚪ |
+| 图层基础 | [chapter-09-layers](../../chapter-09-layers/) |
 
 ---
 
-← [5. Back Buffer](./section-5-后置缓冲区.md) · [Ch 9](../chapter-09-layers/) · [Ch 10 导读](../README.md)
+← [5. Back Buffer](./section-5-后置缓冲区.md) · [Ch 9](../../chapter-09-layers/) · [Ch 10 导读](../README.md)

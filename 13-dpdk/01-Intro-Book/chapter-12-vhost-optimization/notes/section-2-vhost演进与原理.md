@@ -64,7 +64,7 @@ Guest virtqueue
 | vhost-net | 内核 vhost | 中 |
 | **vhost-user + DPDK** | **用户态 DPDK** | **高**（仍 < SR-IOV 透传） |
 
-→ [Ch10 透传](../chapter-10-x86-io-virtualization/) · [Ch11 前端](../chapter-11-virtio-paravirtualization/)
+→ [Ch10 透传](../../chapter-10-x86-io-virtualization/) · [Ch11 前端](../../chapter-11-virtio-paravirtualization/)
 
 ---
 

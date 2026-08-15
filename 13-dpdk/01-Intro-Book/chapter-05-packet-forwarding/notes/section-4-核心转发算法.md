@@ -10,7 +10,7 @@
 |------|------|
 | **冲突处理** | 融合 **分离链表** 与 **开放寻址** 优点 |
 | **硬件加速** | IA **SSE4.2** `CRC32` 指令（如 `CRC32Q`）一次性算 key |
-| **multi-buffer** | 批量算多个 key，**降低指令依赖**、提高 IPC → [Ch3 SIMD](../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) |
+| **multi-buffer** | 批量算多个 key，**降低指令依赖**、提高 IPC → [Ch3 SIMD](../../chapter-03-parallel-computing/notes/section-4-数据并行与SIMD.md) |
 
 **场景：** 流表、MAC/VLAN 精确表、会话表。
 
@@ -30,7 +30,7 @@ tbl8 ：多张 2^8 条目（第二级，按需挂接）
 | **≤ 24 位**（绝大多数路由） | **1 次** — 仅查 tbl24 |
 | **> 24 位** | **2 次** — tbl24 → tbl8 |
 
-→ 极大提升 **路由查找** 性能；表创建/查找受 [Ch4 rwlock](../chapter-04-synchronization/notes/section-3-读写锁.md) 保护（读多写少）。
+→ 极大提升 **路由查找** 性能；表创建/查找受 [Ch4 rwlock](../../chapter-04-synchronization/notes/section-3-读写锁.md) 保护（读多写少）。
 
 ---
 
@@ -54,7 +54,7 @@ tbl8 ：多张 2^8 条目（第二级，按需挂接）
 
 **HFT：** 行情网关若只做 **固定组播订阅**，可能 **无需 LPM**；跨 VLAN/多源过滤可用 **Hash 会话表** 或 **ACL**。
 
-→ [19-Hennessy 存储器/并行](../../../../17-computer-architecture/) · [02-CSAPP 哈希/缓存](../../../02-computer-systems/)
+→ [19-Hennessy 存储器/并行](../../../../17-computer-architecture/) · [02-CSAPP 哈希/缓存](../../../../02-computer-systems/)
 
 ---
 

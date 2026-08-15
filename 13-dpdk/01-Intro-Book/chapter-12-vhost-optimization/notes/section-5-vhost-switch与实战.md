@@ -10,7 +10,7 @@ DPDK 官方 **`vhost-switch`**：用户态 **以太网交换机**
 |------|------|
 | **vhost-user 端口** | 连接 **多个 VM**（多 virtio 前端） |
 | **物理 NIC 端口** | 上联网络 |
-| **交换逻辑** | MAC/端口转发 — 类 [Ch5 转发](../chapter-05-packet-forwarding/) |
+| **交换逻辑** | MAC/端口转发 — 类 [Ch5 转发](../../chapter-05-packet-forwarding/) |
 
 **目标：** 宿主机上 **VM ↔ VM / VM ↔ Wire** 高速转发。
 
@@ -21,20 +21,20 @@ DPDK 官方 **`vhost-switch`**：用户态 **以太网交换机**
 结合 **VMDQ（Virtual Machine Device Queue）**：
 
 - **网卡硬件** 按 MAC/VLAN 等 **分类** 到不同队列  
-- 与 [Ch8 多队列/RSS](../chapter-08-flow-classification-multiqueue/notes/section-2-网卡多队列.md) 同族  
+- 与 [Ch8 多队列/RSS](../../chapter-08-flow-classification-multiqueue/notes/section-2-网卡多队列.md) 同族  
 
 ```
 Wire 入向 → NIC VMDQ 分队列 → 不同 lcore
 VM 入向  → vhost-user → 交换 → NIC / 其他 VM
 ```
 
-**控制面 / 数据面分核：** 管理 socket、CLI 与 **poll 转发** 分离 — [Ch5 RTC/Pipeline](../chapter-05-packet-forwarding/notes/section-3-转发框架模型.md) · [Ch7 isolcpus](../chapter-07-nic-performance-optimization/notes/section-4-平台优化与配置调优.md)
+**控制面 / 数据面分核：** 管理 socket、CLI 与 **poll 转发** 分离 — [Ch5 RTC/Pipeline](../../chapter-05-packet-forwarding/notes/section-3-转发框架模型.md) · [Ch7 isolcpus](../../chapter-07-nic-performance-optimization/notes/section-4-平台优化与配置调优.md)
 
 ---
 
 ### 三、前后端协同清单
 
-| 前端 [Ch11](../chapter-11-virtio-paravirtualization/) | 后端（本章） |
+| 前端 [Ch11](../../chapter-11-virtio-paravirtualization/) | 后端（本章） |
 |------------------------------------------------------|--------------|
 | Indirect desc、固定 Available | mem_table **mmap**、大页对齐 |
 | Guest poll / 少 notify | Host **vhost poll** |

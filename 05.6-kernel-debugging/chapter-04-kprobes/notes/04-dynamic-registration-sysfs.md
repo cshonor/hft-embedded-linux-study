@@ -185,6 +185,6 @@ echo > $TRACE/kprobe_events
 
 ## 交叉引用
 
-- [05.6 ch04 kprobe 入口探针](chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
-- [05.6 ch04 perf probe](chapter-04-kprobes/notes/05-perf-probe-relation.md)
-- [05.6 ch09 ftrace 事件](chapter-09-ftrace/notes/04-trace-events.md)
+- [05.6 ch04 kprobe 入口探针](../../chapter-04-kprobes/notes/02-kprobe-entry-handler.md)
+- [05.6 ch04 perf probe](../../chapter-04-kprobes/notes/05-perf-probe-relation.md)
+- [05.6 ch09 ftrace 事件](../../chapter-09-ftrace/notes/04-trace-events.md)

@@ -222,5 +222,5 @@ PID 0 是 idle 线程（每个 CPU 一个），在 rest_init() 中通过 cpu_sta
 ## 交叉引用
 
 - [01-arm64-boot-assembly.md](./01-arm64-boot-assembly.md) — 汇编阶段 head.S
-- [chapter-01-kernel-architecture](../chapter-01-kernel-architecture/) — 内核子系统概览
-- [chapter-10-preempt-rt](../chapter-10-preempt-rt/) — PREEMPT_RT 启动参数
+- [chapter-01-kernel-architecture](../../chapter-01-kernel-architecture/) — 内核子系统概览
+- [chapter-10-preempt-rt](../../chapter-10-preempt-rt/) — PREEMPT_RT 启动参数

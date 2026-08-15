@@ -123,6 +123,6 @@ fn run<'s, F: FnOnce((&'s str,))>(f: F) {
 ## 相关
 
 - `FnOnce<()>` 入门 → [06-trait-generic-params.md](./06-trait-generic-params.md)
-- 生命周期专题 → [Item 14 生命周期](../Chapter-03-Concepts/Item-14-lifetimes/README.md)
-- 借用检查 → [Item 15 借用检查器](../Chapter-03-Concepts/Item-15-borrow-checker/README.md)
+- 生命周期专题 → [Item 14 生命周期](../../Chapter-03-Concepts/Item-14-lifetimes/README.md)
+- 借用检查 → [Item 15 借用检查器](../../Chapter-03-Concepts/Item-15-borrow-checker/README.md)
 - `'env` 与 `Scope` → [08-scope-env-lifetime.md](./08-scope-env-lifetime.md)

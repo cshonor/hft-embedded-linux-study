@@ -35,4 +35,4 @@
 - 上一章：[chapter-16-file-access/](../chapter-16-file-access/)
 - 下一章：[chapter-18-ext2-ext3/](../chapter-18-ext2-ext3/)
 - 深潜：[07 Gorman Ch 10](../../06-linux-mm/) · [Ch 8 伙伴系统](../chapter-08-memory-management/) · [Ch 15 页缓存](../chapter-15-page-cache/)
-- [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](./LEARNING_PLAN.md)
+- [OUTLINE.md](../OUTLINE.md) · [LEARNING_PLAN.md](../LEARNING_PLAN.md)

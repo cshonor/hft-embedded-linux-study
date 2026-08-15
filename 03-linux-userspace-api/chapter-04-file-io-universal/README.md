@@ -8,11 +8,11 @@
 
 ## 小节目录
 
-- [4.2 通用 I/O 模型（核心思想）](./notes/4.2-universal-model.md)
-- [4.3 文件描述符 FD](./notes/4.3-fd.md)
-- [4.4 `open()`](./notes/4.4-open.md)
-- [4.5 `read()`](./notes/4.5-read.md)
-- [4.6 `write()`](./notes/4.6-write.md)
+- [4.2 通用 I/O 模型（核心思想）](notes/4.2-universality.md)
+- [4.3 文件描述符 FD](notes/4.3-open.md)
+- [4.4 `open()`](notes/4.3-open.md)
+- [4.5 `read()`](notes/4.4-read.md)
+- [4.6 `write()`](notes/4.5-write.md)
 - [4.7 `lseek()`](./notes/4.7-lseek.md)
 - [4.8 `ioctl()`](./notes/4.8-ioctl.md)
 
@@ -144,4 +144,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

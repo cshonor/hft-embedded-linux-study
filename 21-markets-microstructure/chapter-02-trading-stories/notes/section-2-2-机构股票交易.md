@@ -49,10 +49,10 @@ Bob 卖出 10,000 股 **价差极大、流动性极差** 的股票：
 
 | 能力 | 干什么 | Harris / 行业 |
 |------|--------|---------------|
-| **暗池 (Dark pool)** | 大单 **保密撮合**，不进公开 Level II — **防抢跑、抹平信息差** | 本节 Bob → **POSIT**；[§3 抢跑 vs 藏单](./section-3-3-超大宗股票抛售.md#公开挂单的信息泄露抢跑--砸盘--再接货) · Ch [25](../chapter-25-internalization-preferencing-crossing/) |
+| **暗池 (Dark pool)** | 大单 **保密撮合**，不进公开 Level II — **防抢跑、抹平信息差** | 本节 Bob → **POSIT**；[§3 抢跑 vs 藏单](./section-3-3-超大宗股票抛售.md#公开挂单的信息泄露抢跑--砸盘--再接货) · Ch [25](../../chapter-25-internalization-preferencing-crossing/) |
 | **OTC / Upstairs** | **场外** 找对手；卖 **折扣** / 买 **溢价** | [§3](./section-3-3-超大宗股票抛售.md#otc-流动性补偿卖单-折扣-vs-买单-溢价) — 流动性补偿双向 |
-| **冰山单 (Iceberg)** | 簿上只显示 **tip size**，其余 **隐藏** | Ch [4](../chapter-04-orders-and-order-types/) 隐藏/披露规则 |
-| **低延迟网关** | 不走零售 REST，走 **FIX / 专线 / 共置** | Ch [27](../chapter-27-floor-vs-automated-trading/) 电子化交易 |
+| **冰山单 (Iceberg)** | 簿上只显示 **tip size**，其余 **隐藏** | Ch [4](../../chapter-04-orders-and-order-types/) 隐藏/披露规则 |
+| **低延迟网关** | 不走零售 REST，走 **FIX / 专线 / 共置** | Ch [27](../../chapter-27-floor-vs-automated-trading/) 电子化交易 |
 | **算法拆单** | 母单 (parent) → 引擎多次收到 **子单 (child)** | 降低 impact；与 HFT **拆单极小、极快** 形成对比（见上） |
 | **实时风控** | 下单前校验 **持仓、限额、敞口**（机构合规） | 叠在撮合 **外层**，不替代 `Match()` |
 

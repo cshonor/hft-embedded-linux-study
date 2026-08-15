@@ -19,7 +19,7 @@ int64_t SyscallPutString(const char* s, …) {
 | **指针来自 Ring3** | 内核 **必须验证 VA** — 防 **伪造内核地址** |
 | **复用 Ch5/Ch16** | **printk / Terminal** 输出链 |
 
-→ [Ch16 终端](../chapter-16-commands/) · [Ch5 Console](../chapter-05-console-text/)
+→ [Ch16 终端](../../chapter-16-commands/) · [Ch5 Console](../../chapter-05-console-text/)
 
 ---
 
@@ -62,7 +62,7 @@ void puts(const char* s) { SyscallInvoke(SYS_PUT_STRING, s); }
 
 **与 Newlib `_write` 对接** — Ch21+ 可 **printf 到终端**。
 
-→ [Ch5 Newlib 铺垫](../chapter-05-console-text/notes/section-5-Console与Newlib.md)
+→ [Ch5 Newlib 铺垫](../../chapter-05-console-text/notes/section-5-Console与Newlib.md)
 
 ---
 
@@ -89,11 +89,11 @@ Ch29 IPC
 
 | Ch20 主题 | 继续读 |
 |----------|--------|
-| GUI 应用 | [chapter-21-window-apps](../chapter-21-window-apps/) ⚪ |
-| IPC | [chapter-29-ipc](../chapter-29-ipc/) |
-| 分页 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
+| GUI 应用 | [chapter-21-window-apps](../../chapter-21-window-apps/) ⚪ |
+| IPC | [chapter-29-ipc](../../chapter-29-ipc/) |
+| 分页 | [chapter-19-paging](../../chapter-19-paging/) 🔴 |
 | Linux syscall | [05-linux-kernel](../../../../../05-linux-kernel/) · [03-linux-userspace-api](../../../../../03-linux-userspace-api/) |
 
 ---
 
-← [5. syscall 机制](./section-5-syscall机制与SyscallEntry.md) · [Ch 19](../chapter-19-paging/) · [Ch 20 导读](../README.md)
+← [5. syscall 机制](./section-5-syscall机制与SyscallEntry.md) · [Ch 19](../../chapter-19-paging/) · [Ch 20 导读](../README.md)

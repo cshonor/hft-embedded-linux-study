@@ -82,10 +82,10 @@ Ch29 IPC · 管道
 
 | Ch28 主题 | 继续读 |
 |----------|--------|
-| IPC/管道 | [chapter-29-ipc](../chapter-29-ipc/) |
-| stdio/fd | [chapter-26-app-write-file](../chapter-26-app-write-file/) |
-| 终端 | [chapter-16-commands](../chapter-16-commands/) |
+| IPC/管道 | [chapter-29-ipc](../../chapter-29-ipc/) |
+| stdio/fd | [chapter-26-app-write-file](../../chapter-26-app-write-file/) |
+| 终端 | [chapter-16-commands](../../chapter-16-commands/) |
 
 ---
 
-← [5. 重定向](./section-5-标准输出重定向.md) · [Ch 27](../chapter-27-app-memory/) · [Ch 28 导读](../README.md)
+← [5. 重定向](./section-5-标准输出重定向.md) · [Ch 27](../../chapter-27-app-memory/) · [Ch 28 导读](../README.md)

@@ -41,7 +41,7 @@
 
 **HFT：** 用户态 **预分配 ring buffer / object pool** 对应内核 **Slab + GFP_ATOMIC 预建池** — 热路径 **零分配**。懂本章可读懂 **驱动 probe 失败**（`kmalloc` OOM）、**NUMA 绑内存**（`mbind` 用户态镜像）。
 
-→ [06 Gorman 物理内存描述](../../../../06-linux-mm/chapter-02-describing-physical-memory/) · [01 CSAPP Ch9 VM](../../../../02-computer-systems/chapter-09-virtual-memory/) · [Ch 2 内核 vs 用户 VA](../../chapter-02/getting-started-with-the-kernel/)
+→ [06 Gorman 物理内存描述](../../../06-linux-mm/chapter-02-describing-physical-memory/) · [01 CSAPP Ch9 VM](../../../02-computer-systems/chapter-09-virtual-memory/) · Ch 2 内核 vs 用户 VA
 
 
 

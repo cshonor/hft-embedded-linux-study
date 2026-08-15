@@ -1,18 +1,18 @@
 # TLPI 第 48 章 — System V Shared Memory
 
 **优先级**：🔴（无拷贝；配信号量）  
-**前置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/notes.md)  
-**后置**：[Ch49 mmap](../chapter-49-memory-mappings/notes.md) · [Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/notes.md)
+**前置**：[Ch47 SysV 信号量](../chapter-47-sysv-semaphores/README.md)  
+**后置**：[Ch49 mmap](../chapter-49-memory-mappings/README.md) · [Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)
 
 ---
 
 ## 小节目录
 
-- [48.1 原理](./notes/48.1-principle.md)
-- [48.2 –48.3 · 48.7 API](./notes/48.2-api.md)
-- [48.6 陷阱：段内勿存指针](./notes/48.6-pointer-pitfalls-segment.md)
-- [48.4 工程模型](./notes/48.4-model.md)
-- [48.9 限额 · 运维](./notes/48.9-quotas-ops.md)
+- [48.1 原理](notes/48.1-overview.md)
+- [48.2 –48.3 · 48.7 API](notes/48.2-creating-or-opening-a-shared-memory-segm.md)
+- 48.6 陷阱：段内勿存指针
+- [48.4 工程模型](notes/48.4-example-transferring-data-via-shared-mem.md)
+- [48.9 限额 · 运维](notes/48.9-shared-memory-limits.md)
 
 ---
 
@@ -158,4 +158,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

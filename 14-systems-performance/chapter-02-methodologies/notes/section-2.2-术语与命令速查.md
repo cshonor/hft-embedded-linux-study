@@ -13,7 +13,7 @@
 | | 磁盘吞吐 | `dd` / `fio` | 冷路径或回放盘；`dd` 粗测 |
 | | 应用层 | 自建 counter | ticks/s、orders/s — **最贴近业务** |
 | **Latency / 响应时间** | 系统调用耗时 | `perf trace -s` | 跟踪 syscall 时间线 |
-| | 函数级延迟 | **bpftrace** / eBPF | 热路径、单笔 tail（→ [Ch1.7](../chapter-01-intro/notes/section-1.7-观测工具四层递进.md)） |
+| | 函数级延迟 | **bpftrace** / eBPF | 热路径、单笔 tail（→ [Ch1.7](../../chapter-01-intro/notes/section-1.7-观测工具四层递进.md)） |
 | | 端到端 P99/Max | 应用 histogram + 硬件打点 | 比纯 `perf` 更贴 tick→trade |
 | **Utilization** | CPU 各核占比 | `mpstat -P ALL 1` | **%usr / %sys / %soft / %idle** |
 | | 网卡带宽占用 | `ethtool -S eth0` | 结合 `sar -n DEV` 看是否打满链路 |
@@ -39,7 +39,7 @@
 ### HFT 注意
 
 - 热路径：**mpstat、ethtool、perf** 优先；`iostat`/`dd` 除非怀疑日志/回放盘
-- 实盘 `perf`：**采样别太重** — 与 [Ch1 观测 vs 实验](../chapter-01-intro/notes/section-1.8-实验与微观宏观基准.md) 一致
+- 实盘 `perf`：**采样别太重** — 与 [Ch1 观测 vs 实验](../../chapter-01-intro/notes/section-1.8-实验与微观宏观基准.md) 一致
 - P99/Max：**应用内分位数** + trace 抓 spike，不单靠 `perf top` 平均值
 
 → 工具详解：[Ch 4](../../chapter-04-observability-tools/) · [Ch 13 perf](../../chapter-13-perf/) · [Ch 15 BPF](../../chapter-15-bpf/)

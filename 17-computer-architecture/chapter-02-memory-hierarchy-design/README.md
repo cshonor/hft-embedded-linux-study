@@ -26,7 +26,7 @@
 | 2.4 虚拟内存与虚拟机 | [notes/section-2.4-虚拟内存与虚拟机.md](./notes/section-2.4-虚拟内存与虚拟机.md) |
 | 2.5 交叉领域问题 | [notes/section-2.5-交叉领域问题.md](./notes/section-2.5-交叉领域问题.md) |
 | 2.6 实例：Cortex-A53 与 Core i7 | [notes/section-2.6-实例分析-Cortex-A53与Core-i7.md](./notes/section-2.6-实例分析-Cortex-A53与Core-i7.md) |
-| 2.7 谬误与陷阱 | [notes/section-2.7-谬误与陷阱.md](./notes/section-2.7-谬误陷阱.md) |
+| 2.7 谬误与陷阱 | [notes/section-2.7-谬误与陷阱.md](notes/section-2.7-谬误与陷阱.md) |
 
 ---
 

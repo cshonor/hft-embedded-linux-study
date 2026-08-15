@@ -14,7 +14,7 @@
 | **三大类** | **计算/更新**、**分片 (TSO)**、**组包 (RSC)** |
 | **DPDK 协同** | `rte_mbuf`、`ol_flags`、`l2_len` / `l3_len` |
 
-**承上启下：** [Ch7 网卡调优](../chapter-07-nic-performance-optimization/) 讲 **软件路径**；[Ch8 流分类](../chapter-08-flow-classification-multiqueue/) 讲 **RSS/FD 分流**；本章讲 **Checksum/VLAN/TSO 等 NIC feature**。
+**承上启下：** [Ch7 网卡调优](../../chapter-07-nic-performance-optimization/) 讲 **软件路径**；[Ch8 流分类](../../chapter-08-flow-classification-multiqueue/) 讲 **RSS/FD 分流**；本章讲 **Checksum/VLAN/TSO 等 NIC feature**。
 
 ---
 

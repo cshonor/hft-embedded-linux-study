@@ -1,21 +1,21 @@
 # TLPI 第 22 章 — Signals: Advanced Features
 
 **优先级**：🔴（可靠等待、实时信号、崩溃栈、服务进程信号模型）  
-**前置**：[Ch21 Signal Handlers](../chapter-21-signal-handlers/notes.md)  
-**后置**：[Ch23 Timers and Sleeping](../chapter-23-timers-sleeping/notes.md) · [Ch29+ 线程](../chapter-29-threads-intro/notes.md) · [Ch63 多路 I/O](../chapter-63-alternative-io/notes.md)
+**前置**：[Ch21 Signal Handlers](../chapter-21-signal-handlers/README.md)  
+**后置**：[Ch23 Timers and Sleeping](../chapter-23-timers-sleeping/README.md) · [Ch29+ 线程](../chapter-29-threads-intro/README.md) · Ch63 多路 I/O
 
 ---
 
 ## 小节目录
 
-- [22.1 `pause()`](./notes/22.1-pause.md)
-- [22.2 `sigsuspend()`（核心）](./notes/22.2-sigsuspend.md)
-- [22.3 同步等待：`sigwait` 族](./notes/22.3-sigwait.md)
-- [22.4 实时信号与 `sigqueue`](./notes/22.4-sigqueue.md)
-- [22.5 备用信号栈](./notes/22.5-signal-stack.md)
-- [22.6 `prctl`（Linux）](./notes/22.6-prctl.md)
-- [22.7 `EINTR` 再强调](./notes/22.7-eintr.md)
-- [22.8 三大等待对比](./notes/22.8-wait-comparison.md)
+- [22.1 `pause()`](notes/22.1-core-dump-files.md)
+- [22.2 `sigsuspend()`（核心）](notes/22.2-special-cases-for-delivery-disposition-a.md)
+- [22.3 同步等待：`sigwait` 族](notes/22.3-interruptible-and-uninterruptible-proces.md)
+- [22.4 实时信号与 `sigqueue`](notes/22.4-hardware-generated-signals.md)
+- [22.5 备用信号栈](notes/22.5-synchronous-and-asynchronous-signal-gene.md)
+- [22.6 `prctl`（Linux）](notes/22.6-timing-and-order-of-signal-delivery.md)
+- [22.7 `EINTR` 再强调](notes/22.7-implementation-and-portability-of-signal.md)
+- [22.8 三大等待对比](notes/22.8-realtime-signals.md)
 
 ---
 
@@ -139,4 +139,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

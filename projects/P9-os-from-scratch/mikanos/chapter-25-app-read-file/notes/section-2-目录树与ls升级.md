@@ -41,7 +41,7 @@ std::optional<DirectoryEntry> FindFile(std::string_view path) {
 | **多级路径** | `ls apps` · `cat apps/readme.txt` |
 | **Walk 簇链** | 子目录 **大目录** 跨簇 |
 
-→ [Ch17 目录项](../chapter-17-filesystem/notes/section-4-目录条目结构.md) · [Ch18 簇链](../chapter-18-apps/notes/section-2-FAT簇链与cat命令.md)
+→ [Ch17 目录项](../../chapter-17-filesystem/notes/section-4-目录条目结构.md) · [Ch18 簇链](../../chapter-18-apps/notes/section-2-FAT簇链与cat命令.md)
 
 ---
 

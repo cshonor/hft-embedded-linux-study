@@ -54,10 +54,10 @@
 ## 小节
 
 - [17.1 内存分配](./17.1-内存分配.md)
-- [17.2 堆栈](./17.2-stacks/17.2-stacks.md)
-- [17.3 队列](./17.3-queues/17.3-queues.md)
-- [17.4 树](./17.4-trees/17.4-trees.md)
-- [17.5 实现的改进](./17.5-implementation-improvements/17.5-implementation-improvements.md)
+- [17.2 堆栈](17.2-stacks/17.2-堆栈.md)
+- [17.3 队列](17.3-queues/17.3-队列.md)
+- [17.4 树](17.4-trees/17.4-树.md)
+- [17.5 实现的改进](17.5-implementation-improvements/17.5-实现的改进.md)
 
 
 ---
@@ -89,7 +89,7 @@ void enqueue(int val) {
 
 **DPDK `rte_ring`** 原型就是这个模式，用无锁 CAS 实现多生产者/多消费者。
 
-**复习：** → [17.3 Queues](./17.3-queues/17.3-queues.md)
+**复习：** → [17.3 Queues](17.3-queues/17.3-队列.md)
 
 </details>
 
@@ -121,7 +121,7 @@ struct Queue {               // 完整定义只在此
 
 **DPDK/内核大量使用：** `struct rte_mempool`、`struct file` 等。
 
-**复习：** → [17.1 Stacks](./17.1-stacks.md) — ADT 封装
+**复习：** → [17.1 Stacks](17.1-内存分配.md) — ADT 封装
 
 </details>
 
@@ -169,7 +169,7 @@ if (!n) { /* 处理错误 */ return; }
 
 **规则：** 每次 `malloc` 都要判空；每次 `pop`/`delete` 都要 `free`。RAII 思想在 C 中需要手动实现。
 
-**复习：** → [17.1 Stacks](./17.1-stacks.md)
+**复习：** → [17.1 Stacks](17.1-内存分配.md)
 
 </details>
 
@@ -210,7 +210,7 @@ struct TreeNode *find(struct TreeNode *root, int target) {
 
 **HFT 关联：** 订单簿（Order Book）常用红黑树或跳表——O(log n) 插入/删除/查找。
 
-**复习：** → [17.4 树](./17.4-trees/17.4-trees.md)
+**复习：** → [17.4 树](17.4-trees/17.4-树.md)
 
 </details>
 

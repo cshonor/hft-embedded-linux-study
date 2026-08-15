@@ -25,7 +25,7 @@
 | **优先级调度** | 鼠标/输入 **更高优先级** — 更短有效等待 |
 | **（可选）时间片差异化** | 主任务更长片或 **多级反馈** |
 
-→ [chapter-14-multitask2](../chapter-14-multitask2/) 🔴
+→ [chapter-14-multitask2](../../chapter-14-multitask2/) 🔴
 
 ---
 
@@ -55,11 +55,11 @@ Ch16–17 分页/syscall · 用户态应用
 
 | Ch13 主题 | 继续读 |
 |----------|--------|
-| 休眠/优先级 | [chapter-14-multitask2](../chapter-14-multitask2/) 🔴 |
+| 休眠/优先级 | [chapter-14-multitask2](../../chapter-14-multitask2/) 🔴 |
 | ULK 调度 | [chapter-07-process-scheduling](../../../../../18-linux-kernel-deep/chapter-07-process-scheduling.md) |
-| 01 多任务 | [01 Day 15–16](../../thirty-days-os-essentials/day-15-multitask1/) |
-| 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) |
+| 01 多任务 | [01 Day 15–16](../../../thirty-days-os-essentials/day-15-multitask1/) |
+| 系统调用 | [chapter-20-syscall](../../chapter-20-syscall/) |
 
 ---
 
-← [5. TaskManager](./section-5-Task与TaskManager.md) · [Ch 12](../chapter-12-keyboard/) · [Ch 13 导读](../README.md)
+← [5. TaskManager](./section-5-Task与TaskManager.md) · [Ch 12](../../chapter-12-keyboard/) · [Ch 13 导读](../README.md)

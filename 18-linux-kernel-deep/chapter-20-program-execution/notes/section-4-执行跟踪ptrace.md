@@ -14,7 +14,7 @@
 | 读写内存/寄存器 | 检查状态 |
 | 继续 / 单步 | 控制执行流 |
 
-→ syscall：[Ch 10](../chapter-10-system-calls/) · 信号 SIGCHLD：[Ch 11](../chapter-11-signals/)
+→ syscall：[Ch 10](../../chapter-10-system-calls/) · 信号 SIGCHLD：[Ch 11](../../chapter-11-signals/)
 
 ---
 
@@ -28,7 +28,7 @@ x86 实现：
 
 调试器在信号处理中检查子进程状态。
 
-→ Debug 异常：[Ch 4](../chapter-04-interrupts-and-exceptions/)
+→ Debug 异常：[Ch 4](../../chapter-04-interrupts-and-exceptions/)
 
 ---
 

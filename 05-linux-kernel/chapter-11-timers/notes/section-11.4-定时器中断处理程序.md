@@ -62,7 +62,7 @@ NO_HZ： |-------- sleep --------|--tick--|  （仅到点唤醒）
 2. 隔离核 **`nohz_full=...`** 减少 **无关 tick**
 3. 用 **`/proc/interrupts`**、**`perf`** 看 **LOC timer** 频率是否仍过高
 
-→ [Ch 4 抢占与 tick](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [Ch 8 softirq](../../chapter-08-bottom-halves/) · [Ch 10 seqlock](../../chapter-10-kernel-synchronization/)
+→ [Ch 4 抢占与 tick](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [Ch 8 softirq](../../chapter-08-bottom-halves/) · [Ch 10 seqlock](../../chapter-06-kernel-data-structures)
 
 ### 常见陷阱
 

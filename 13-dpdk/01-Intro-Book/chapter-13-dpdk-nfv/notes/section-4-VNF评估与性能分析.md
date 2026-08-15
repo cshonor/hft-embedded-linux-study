@@ -12,7 +12,7 @@
 
 **错误选型：** 用 I/O 指标评 **控制面** VNF — 或反之。
 
-→ [Ch5 模块划分](../chapter-05-packet-forwarding/notes/section-2-网络处理模块划分.md)
+→ [Ch5 模块划分](../../chapter-05-packet-forwarding/notes/section-2-网络处理模块划分.md)
 
 ---
 

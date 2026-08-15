@@ -101,5 +101,5 @@ fn demo() {
 ## 相关
 
 - 尖括号里 `'env` 与 `F` 的分工 → [07-lifetime-vs-type-in-angle-brackets.md](./07-lifetime-vs-type-in-angle-brackets.md)
-- 借用检查 / 线程 → [Item 15 借用检查器](../Chapter-03-Concepts/Item-15-borrow-checker/README.md)、[Item 17 共享状态](../Chapter-03-Concepts/Item-17-shared-state-parallelism/README.md)
+- 借用检查 / 线程 → [Item 15 借用检查器](../../Chapter-03-Concepts/Item-15-borrow-checker/README.md)、[Item 17 共享状态](../../Chapter-03-Concepts/Item-17-shared-state-parallelism/README.md)
 - Book → [16 无畏并发](../../../00-Book/16-fearless-concurrency/)

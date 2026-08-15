@@ -1,7 +1,7 @@
 # 2. Propagating Errors（传播错误）
 
 > [← 章索引](./README.md)  
-> **↔ 线程错误容器**（特殊场景，非 `source()` 链）：子线程 panic → `join` 的 **`Box<dyn Any + Send + 'static>`** 与 downcast → [1.1.2.3 panic 载荷](../../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md#err-类型三层拆解boxdyn-any--send--static) · 与 **`Result` + `?`** 路径对照 → [01 错误链 § panic/join](./01-error-source-chain.md#与线程-join--panic-路径的对照)
+> **↔ 线程错误容器**（特殊场景，非 `source()` 链）：子线程 panic → `join` 的 **`Box<dyn Any + Send + 'static>`** 与 downcast → [1.1.2.3 panic 载荷](../../05-Async-Concurrency-Network/01-atomic/Chapter-01-Rust-Concurrency-Basics/1.1-threads-in-rust/1.1.2.3-panic-box-dyn-any.md#err-类型三层拆解boxdyn-any--send--static) · 与 **`Result` + `?`** 路径对照 → [01 错误链 § panic/join](./01-error-source-chain.md#与线程-join--panic-路径的对照)
 
 ## `?` 与 `From`
 

@@ -1,18 +1,18 @@
 # TLPI 第 19 章 — Monitoring File Events
 
 **优先级**：🔴（热重载、配置监视、构建工具、日志跟随）  
-**前置**：[Ch18 Directories and Links](../chapter-18-directories-links/notes.md)  
-**后置**：[Ch20 Signals](../chapter-20-signals-fundamentals/notes.md) · [Ch63 多路 I/O](../chapter-63-alternative-io/notes.md)
+**前置**：[Ch18 Directories and Links](../chapter-18-directories-links/README.md)  
+**后置**：[Ch20 Signals](../chapter-20-signals-fundamentals/README.md) · Ch63 多路 I/O
 
 ---
 
 ## 小节目录
 
-- [19.1 技术演进](./notes/19.1-section-19-1.md)
-- [19.3 `struct inotify_event`](./notes/19.3-struct-inotifyevent.md)
-- [19.4 常用 mask](./notes/19.4-mask.md)
-- [19.5 关键行为](./notes/19.5-section-19-5.md)
-- [19.6 典型流程](./notes/19.6-section-19-6.md)
+- [19.1 技术演进](notes/19.1-overview.md)
+- [19.3 `struct inotify_event`](notes/19.3-inotify-events.md)
+- [19.4 常用 mask](notes/19.4-reading-inotify-events.md)
+- [19.5 关键行为](notes/19.5-queue-limits-and-proc-files.md)
+- [19.6 典型流程](notes/19.6-an-older-system-for-monitoring-file-even.md)
 
 ---
 
@@ -159,4 +159,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

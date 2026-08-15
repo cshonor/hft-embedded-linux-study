@@ -1,6 +1,6 @@
 # 第 25 章 · Closures（闭包） · 扁平化 Upvalues（Flattening Upvalues）
 
-← [本章目录](./README.md) · 上一节：[01-calling-and-closures-upvalue.md](./01-calling-and-closures-upvalue.md) · 下一节：[03-closing-upvalues.md](./03-closing-upvalues.md)
+← [本章目录](./README.md) · 上一节：[01-calling-and-closures-upvalue.md](01-closures-upvalue.md) · 下一节：[03-closing-upvalues.md](./03-closing-upvalues.md)
 
 ---
 

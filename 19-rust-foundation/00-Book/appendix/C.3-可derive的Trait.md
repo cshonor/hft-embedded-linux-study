@@ -45,7 +45,7 @@ struct Point { x: i32, y: i32 }
 |------|-------|
 | [5.1 结构体](../05-structs/) | `Debug` |
 | [5.3 结构体方法](../05-structs/) | `Debug` |
-| [10.2 Trait](../10-generics-traits-lifetimes/10.2-定义与实现Trait.md) | 默认方法 vs derive |
+| [10.2 Trait](../10-generics-traits-lifetimes/10.2-trait.md) | 默认方法 vs derive |
 | [ER Item 06 newtype](../../01-ER/Chapter-01-Types/Item-06-newtype-pattern/README.md) | derive + 手写转发 |
 
 ---

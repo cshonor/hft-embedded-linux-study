@@ -44,16 +44,16 @@
 ## 小节
 
 - [7.1 函数定义](./7.1-函数定义.md)
-- [7.2 函数声明](./7.2-function-declarations/7.2-function-declarations.md)
+- [7.2 函数声明](7.2-function-declarations/7.2-函数声明.md)
   - [7.2.1 原型](./7.2-function-declarations/7.2.1-原型.md)
   - [7.2.2 函数的缺省认定](./7.2-function-declarations/7.2.2-函数的缺省认定.md)
 - [7.3 函数的参数](./7.3-函数的参数.md)
   - [7.3.1 值拷贝无例外](./7.3.1-值拷贝无例外.md) ← int/指针/struct/数组 · 思考题
 - [7.4 ADT 和黑盒](./7.4-ADT和黑盒.md)
-- [7.5 递归](./7.5-recursion/7.5-recursion.md)
+- [7.5 递归](7.5-recursion/7.5-递归.md)
   - [7.5.1 追踪递归函数](./7.5-recursion/7.5.1-追踪递归函数.md)
   - [7.5.2 递归与迭代](./7.5-recursion/7.5.2-递归与迭代.md)
-- [7.6 可变参数列表](./7.6-variable-argument-lists/7.6-variable-argument-lists.md)
+- 7.6 可变参数列表
   - [7.6.1 stdarg 宏](./7.6-variable-argument-lists/7.6.1-stdarg宏.md)
   - [7.6.2 可变参数的限制](./7.6-variable-argument-lists/7.6.2-可变参数的限制.md)
 
@@ -85,7 +85,7 @@ int bar();
 
 **教训：** 无参函数写 `void`，别留空括号。
 
-**复习：** → [7.1 Function Definition](./7.1-function-definition/7.1-function-definition.md)
+**复习：** → 7.1 Function Definition
 
 </details>
 
@@ -113,7 +113,7 @@ int main(void) {
 
 **正确做法：** 用 `malloc` 分配堆内存返回，或通过参数指针输出，或用 `static` 变量。
 
-**复习：** → [7.3 Function Arguments](./7.3-function-arguments/7.3-function-arguments.md)
+**复习：** → 7.3 Function Arguments
 
 </details>
 
@@ -136,7 +136,7 @@ static inline int max(int a, int b) {
 
 **权衡：** 多份副本增加代码体积，但 `inline` 展开后没有函数调用开销。内核大量使用 `static inline` 在头文件中定义小函数。
 
-**复习：** → [7.4 Recursion](./7.4-recursion/7.4-recursion.md) — static inline
+**复习：** → 7.4 Recursion — static inline
 
 </details>
 
@@ -169,6 +169,6 @@ sum(3, 1, 2.0, 3);    // (3) 会怎样？
 
 **教训：** 可变参数没有类型检查。用 `format` 属性让编译器帮忙（`__attribute__((format(printf, ...)))`）。
 
-**复习：** → [7.6 Variable Argument Lists](./7.6-variable-argument-lists/7.6-variable-argument-lists.md)
+**复习：** → 7.6 Variable Argument Lists
 
 </details>

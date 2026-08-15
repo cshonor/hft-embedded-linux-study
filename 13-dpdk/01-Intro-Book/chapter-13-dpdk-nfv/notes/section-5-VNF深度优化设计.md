@@ -15,10 +15,10 @@ NFVI 提供给 VNF 的 **四种** 典型接口：
 
 **权衡：**
 
-- 追求 **线速 / 低抖动** → **VF / PF** [Ch10](../chapter-10-x86-io-virtualization/)  
-- 追求 **弹性、多租户** → **Virtio + vhost** [Ch11–12](../chapter-12-vhost-optimization/)  
+- 追求 **线速 / 低抖动** → **VF / PF** [Ch10](../../chapter-10-x86-io-virtualization/)  
+- 追求 **弹性、多租户** → **Virtio + vhost** [Ch11–12](../../chapter-12-vhost-optimization/)  
 
-→ [Ch8 VF 实战](../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md)
+→ [Ch8 VF 实战](../../chapter-08-flow-classification-multiqueue/notes/section-4-DPDK实战结合.md)
 
 ---
 
@@ -40,14 +40,14 @@ NFVI 提供给 VNF 的 **四种** 典型接口：
 
 **效果：** 降低 **应用间干扰** 与 **时延抖动** — 共置 HFT 与 noisy neighbor 问题同族。
 
-→ [Ch2 伪共享 / per-core](../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
+→ [Ch2 伪共享 / per-core](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
 
 ---
 
 ### 三、设计检查清单
 
 - [ ] VNF 分型与 **接口** 匹配场景  
-- [ ] 数据面 **Pipeline + ring** 减跨核共享 [Ch5](../chapter-05-packet-forwarding/)  
+- [ ] 数据面 **Pipeline + ring** 减跨核共享 [Ch5](../../chapter-05-packet-forwarding/)  
 - [ ] **CAT/绑核** 隔离关键 VNF  
 - [ ] Crypto / DPI 走 **CryptoDev / Hyperscan** 而非纯 CPU 扫包  
 

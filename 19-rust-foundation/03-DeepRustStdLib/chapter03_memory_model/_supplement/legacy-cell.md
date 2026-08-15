@@ -1,6 +1,6 @@
 # 3.4 `Cell`
 
-> 章索引：[第 3 章](./README.md) · 前：[3.3 UnsafeCell](./3.3-unsafecell.md) · 后：[3.5 RefCell](./3.5-refcell.md)
+> 章索引：[第 3 章](./README.md) · 前：[3.3 UnsafeCell](legacy-unsafecell.md) · 后：[3.5 RefCell](../3.2.5-maybeuninit-array.md)
 
 ---
 
@@ -33,7 +33,7 @@ c.set(c.get() + 1);
 - `std::cell::Cell` — 单线程；
 - 常与 **`Rc<Cell<_>>`** 组合（仍非 `Sync`，不能跨线程）。
 
-→ [RFR 07-3 Cell vs RefCell](../../02-RFR/Chapter-01-Foundations/07-3-cell-vs-refcell.md)
+→ [RFR 07-3 Cell vs RefCell](../../../02-RFR/Chapter-01-Foundations/07-3-cell-vs-refcell.md)
 
 ---
 
@@ -45,5 +45,5 @@ c.set(c.get() + 1);
 
 ## 相关
 
-- [3.5 RefCell](./3.5-refcell.md)
-- [3.3 UnsafeCell](./3.3-unsafecell.md)
+- [3.5 RefCell](../3.2.5-maybeuninit-array.md)
+- [3.3 UnsafeCell](legacy-unsafecell.md)

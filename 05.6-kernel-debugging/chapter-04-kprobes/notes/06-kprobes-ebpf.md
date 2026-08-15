@@ -193,5 +193,5 @@ eBPF 不能完全替代 kprobes——eBPF 的 kprobe attach 底层仍用 kprobes
 
 ## 交叉引用
 
-- [05.6 ch04 kprobes 架构](chapter-04-kprobes/notes/01-kprobes-architecture.md)
-- [05.6 ch09 ftrace vs eBPF](chapter-09-ftrace/notes/08-ftrace-ebpf-relation.md)
+- [05.6 ch04 kprobes 架构](../../chapter-04-kprobes/notes/01-kprobes-architecture.md)
+- [05.6 ch09 ftrace vs eBPF](../../chapter-09-ftrace/notes/08-ftrace-ebpf-relation.md)

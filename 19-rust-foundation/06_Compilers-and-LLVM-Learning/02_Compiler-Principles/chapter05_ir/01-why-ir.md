@@ -34,7 +34,7 @@ Lang C ──┘          ├──► ARM
 | **SSA** | 数据流分析、常量传播、DCE |
 | **三地址码** | 寄存器分配、指令选择 |
 
-→ ch8～10 · [04 LLVM optimize](../../../04_Learn-LLVM-17/part02_src_to_machine/chapter07_ir_optimize/)
+→ ch8～10 · [04 LLVM optimize](../../04_Learn-LLVM-17/part02_src_to_machine/chapter07_ir_optimize/)
 
 ---
 

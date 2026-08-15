@@ -77,7 +77,7 @@ static void init_vector(void)
 static void run_isr(int irq)
 {
     if (irq >= 0 && irq < 32 && vector[irq])
-        vector[irq](irq);
+        vectorirq;
 }
 ```
 

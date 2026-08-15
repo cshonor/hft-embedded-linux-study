@@ -48,7 +48,7 @@ Scroll1 / 行尾 wrap 按 **列宽** 非 **字节数**
 | **true** | 1 |
 | **false** | 2（CJK 全角） |
 
-→ [Ch16 终端行缓冲](../chapter-16-commands/notes/section-2-终端按键输入与行缓冲.md)
+→ [Ch16 终端行缓冲](../../chapter-16-commands/notes/section-2-终端按键输入与行缓冲.md)
 
 ---
 

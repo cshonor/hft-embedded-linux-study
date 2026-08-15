@@ -30,7 +30,7 @@ if (buf[0]==0x7f && buf[1]=='E' && buf[2]=='L' && buf[3]=='F') {
 | **e_entry** | 跳 **main 前 crt 或 main 本身**（视链接脚本） |
 | **Program Header** | **PT_LOAD** — 拷贝 **可加载段** 到内存 |
 
-→ [Ch3 内核 ELF](../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
+→ [Ch3 内核 ELF](../../chapter-03-bootloader-display/notes/section-3-第一个内核与ELF加载.md)
 
 ---
 

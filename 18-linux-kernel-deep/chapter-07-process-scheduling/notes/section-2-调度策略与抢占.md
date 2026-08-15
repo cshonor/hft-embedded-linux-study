@@ -12,7 +12,7 @@ Linux 进程 **可抢占（Preemptable）**。以下情况触发重新调度：
 | 时间片耗尽 | **Time quantum** 用完 |
 | 标志位 | 内核设置 **`TIF_NEED_RESCHED`**，在适当时机调用 `schedule()` |
 
-→ 内核抢占：[Ch 5](../chapter-05-kernel-synchronization/notes/section-2-内核抢占.md) · 中断返回检查：[Ch 4](../chapter-04-interrupts-and-exceptions/notes/section-8-中断返回.md)
+→ 内核抢占：[Ch 5](../../chapter-05-kernel-synchronization/notes/section-2-内核抢占.md) · 中断返回检查：[Ch 4](../../chapter-04-interrupts-and-exceptions/notes/section-8-中断返回.md)
 
 ---
 

@@ -42,7 +42,7 @@ Coherence 不规定：`A` 写完立刻能否看到 `B` 的写 — 那是 Consist
 | **无锁结构** 必须显式序：SPSC ring buffer 的 **publish 顺序**（写数据 → release store 索引） |
 | **错误用 `relaxed` 读标志** → 看到半初始化对象 — 极难复现 bug |
 | x86 对程序员较「友好」(TSO)，**ARM 更弱** — 跨平台代码不能假设 TSO |
-| Store buffer 导致 **写后读仍见旧值** — 理解 [Ch3 ROB](../chapter-03-instruction-level-parallelism/notes/section-3.6-硬件推测与ROB.md) 与 **内存序** 的硬件根因 |
+| Store buffer 导致 **写后读仍见旧值** — 理解 [Ch3 ROB](../../chapter-03-instruction-level-parallelism/notes/section-3.6-硬件推测与ROB.md) 与 **内存序** 的硬件根因 |
 
 → [02-CSAPP Ch12 §12.7](../../../02-computer-systems/chapter-12-concurrent-programming/)
 

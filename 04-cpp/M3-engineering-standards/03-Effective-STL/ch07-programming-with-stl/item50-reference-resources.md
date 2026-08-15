@@ -244,6 +244,6 @@ struct Widget {
 ## 参考与延伸
 
 - 上一节：[Item 49 解读错误信息](item49-read-error-messages.md)
-- [M0 C++Primer 全书索引](../../M0-fundamentals/01-C++Primer/README.md)
-- [M1 Effective Modern C++](../../M1-modern-cpp/01-Effective-Modern-C++/README.md)
+- M0 C++Primer 全书索引
+- [M1 Effective Modern C++](../../../M1-modern-cpp/01-Effective-Modern-C++/README.md)
 - 在线参考：[cppreference.com](https://en.cppreference.com/)

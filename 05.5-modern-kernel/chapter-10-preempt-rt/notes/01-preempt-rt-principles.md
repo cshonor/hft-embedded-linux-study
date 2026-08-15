@@ -205,5 +205,5 @@ RT 将 spinlock 转为 rt_mutex（实时互斥锁）。持有 rt_mutex 的线程
 ## 交叉引用
 
 - [02-preempt-rt-hft-tuning.md](./02-preempt-rt-hft-tuning.md) — RT 调优参数与 HFT 实践
-- [chapter-02-scheduler](../chapter-02-scheduler/) — EEVDF 调度器
-- [chapter-04-synchronization](../chapter-04-synchronization/) — qspinlock 与 rt_mutex
+- [chapter-02-scheduler](../../chapter-02-scheduler/) — EEVDF 调度器
+- [chapter-04-synchronization](../../chapter-04-synchronization/) — qspinlock 与 rt_mutex

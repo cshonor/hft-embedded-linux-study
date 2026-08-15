@@ -81,8 +81,8 @@ A:      恢复 LR，返回 main
 
 | 示例 | 结构 |
 |------|------|
-| [Ch12 查表 sin](../chapter-12-tables/notes/section-12-2-int-lookup.md) | `BL LookupSin` — 象限逻辑在子程序内 |
-| [Ch11 泰勒 sin](../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | 浮点 **`BL`** + 参数在 **s0** |
+| [Ch12 查表 sin](../../chapter-12-tables/notes/section-12-2-int-lookup.md) | `BL LookupSin` — 象限逻辑在子程序内 |
+| [Ch11 泰勒 sin](../../chapter-11-floating-point-data-processing/notes/section-11-8-examples.md) | 浮点 **`BL`** + 参数在 **s0** |
 
 ---
 

@@ -50,7 +50,7 @@
 - [ ] 能说出 **syscall** 与 **中断** 各解决哪方向通信
 - [ ] 区分 **宏内核** 与 **微内核** · Linux 折中在哪
 - [ ] 知道 **GPL 2.0** 与 Linux 分发方式
-- [ ] 与 [02 30天 OS](../../projects/P9-os-from-scratch/thirty-days-os/) 的 **Ring0/INT 0x40** 对照看一眼
+- [ ] 与 [02 30天 OS](../../projects/P9-os-from-scratch/thirty-days-os-essentials) 的 **Ring0/INT 0x40** 对照看一眼
 
 ---
 

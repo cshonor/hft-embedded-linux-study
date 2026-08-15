@@ -40,7 +40,7 @@
 |---|------|
 | **前置** | [ch03 语义](../ch03-semantic-pitfalls/) |
 | **后置** | [ch05 库函数](../ch05-library-functions/) |
-| **交叉** | [Expert C ch05 链接](../03-Advanced-Expert-C-Programming/ch05-thinking-of-linking/) |
+| **交叉** | [Expert C ch05 链接](../../03-Advanced-Expert-C-Programming/ch05-thinking-of-linking/) |
 
 ## Demo
 

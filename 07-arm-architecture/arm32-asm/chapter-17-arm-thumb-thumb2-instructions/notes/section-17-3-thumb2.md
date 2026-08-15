@@ -10,7 +10,7 @@
 |-------------------|--------------|
 | 寄存器/立即数 **太窄** | **32-bit Thumb** 指令恢复能力 |
 | ARM↔Thumb **频繁 BX** | M 系 **不再切 ARM** — 单 ISA 内混合宽度 |
-| 中断路径 **状态切换开销** | Cortex-M **纯 Thumb-2** — [Ch15](../chapter-15-exception-handling-v7m/) |
+| 中断路径 **状态切换开销** | Cortex-M **纯 Thumb-2** — [Ch15](../../chapter-15-exception-handling-v7m/) |
 
 **Thumb-2 = 超集：** **保留 16-bit Thumb** + **新增 32-bit Thumb** — 同一代码流 **可变长**。
 
@@ -49,7 +49,7 @@ Thumb-2 推出 **统一汇编语法** — ARM 与 Thumb **同一套助记符规�
 |------|------|
 | **更新标志** | 必须 **显式 `S` 后缀** — **`ADDS`** |
 | **不更新标志** | **无 S** — 汇编器可能选 **较长 32-bit** 编码实现 |
-| **条件** | 16-bit 无 `{cond}` → 用 **IT 块**（[Ch8 §8.4](../chapter-08-branches-loops/notes/section-8-4-conditional.md)） |
+| **条件** | 16-bit 无 `{cond}` → 用 **IT 块**（[Ch8 §8.4](../../chapter-08-branches-loops/notes/section-8-4-conditional.md)） |
 
 **口述：** UAL 下 **Thumb-2 标志语义对齐 ARM** — **要改标志才加 S**；与 **老 16-bit Thumb「默认改标志」** 不同，写 M4 以 **UAL 为准**。
 

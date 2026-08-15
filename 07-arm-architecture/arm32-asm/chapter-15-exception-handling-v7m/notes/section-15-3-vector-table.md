@@ -19,7 +19,7 @@
 2. 从 0x4 加载值 → 写入 PC（开始执行 Reset_Handler）
 ```
 
-→ [20 U-Boot](../../08-embedded-boot-build/) / 启动代码 **`__Vectors`** 数组同结构（CMSIS）。
+→ [20 U-Boot](../../../../08-embedded-boot-build/) / 启动代码 **`__Vectors`** 数组同结构（CMSIS）。
 
 ---
 

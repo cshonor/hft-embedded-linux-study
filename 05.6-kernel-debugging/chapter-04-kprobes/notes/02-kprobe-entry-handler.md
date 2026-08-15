@@ -211,6 +211,6 @@ echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals:asc' > \
 
 ## 交叉引用
 
-- [05.6 ch04 kprobes 架构](chapter-04-kprobes/notes/01-kprobes-architecture.md)
-- [05.6 ch04 kretprobe](chapter-04-kprobes/notes/03-kretprobe-return-handler.md)
-- [05.6 ch04 动态注册](chapter-04-kprobes/notes/04-dynamic-registration-sysfs.md)
+- [05.6 ch04 kprobes 架构](../../chapter-04-kprobes/notes/01-kprobes-architecture.md)
+- [05.6 ch04 kretprobe](../../chapter-04-kprobes/notes/03-kretprobe-return-handler.md)
+- [05.6 ch04 动态注册](../../chapter-04-kprobes/notes/04-dynamic-registration-sysfs.md)

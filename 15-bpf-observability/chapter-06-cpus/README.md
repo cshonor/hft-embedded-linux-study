@@ -52,4 +52,4 @@
 - BCC 工具箱：[chapter-04-BCC.md](../chapter-04-bcc/)
 - SysPerf CPU：[chapter-06-cpus](../../14-systems-performance/chapter-06-cpus/)
 - SysPerf BPF 总览：[chapter-15-bpf](../../14-systems-performance/chapter-15-bpf/)
-- 体系结构/cache：[19-Hennessy](../../17-computer-architecture/) · [02-CSAPP Ch6](../02-computer-systems/chapter-06-memory-hierarchy/)
+- 体系结构/cache：[19-Hennessy](../../17-computer-architecture/) · [02-CSAPP Ch6](../../02-computer-systems/chapter-06-memory-hierarchy/)

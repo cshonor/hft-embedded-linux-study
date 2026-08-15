@@ -38,7 +38,7 @@ Ch22+ 图形事件 · 鼠标键盘到应用
 Ch29 IPC
 ```
 
-→ [Ch20 系统调用](../chapter-20-syscall/)
+→ [Ch20 系统调用](../../chapter-20-syscall/)
 
 ---
 

@@ -37,11 +37,11 @@ Ch29 IPC
 
 | Ch24 主题 | 继续读 |
 |----------|--------|
-| 应用读文件 | [chapter-25-app-read-file](../chapter-25-app-read-file/) ⚪ |
-| IPC | [chapter-29-ipc](../chapter-29-ipc/) |
-| 分页基础 | [chapter-19-paging](../chapter-19-paging/) 🔴 |
-| 系统调用 | [chapter-20-syscall](../chapter-20-syscall/) 🔴 |
+| 应用读文件 | [chapter-25-app-read-file](../../chapter-25-app-read-file/) ⚪ |
+| IPC | [chapter-29-ipc](../../chapter-29-ipc/) |
+| 分页基础 | [chapter-19-paging](../../chapter-19-paging/) 🔴 |
+| 系统调用 | [chapter-20-syscall](../../chapter-20-syscall/) 🔴 |
 
 ---
 
-← [5. KillApp](./section-5-用户态异常与KillApp.md) · [Ch 23](../chapter-23-graphics-events2/) · [Ch 24 导读](../README.md)
+← [5. KillApp](./section-5-用户态异常与KillApp.md) · [Ch 23](../../chapter-23-graphics-events2/) · [Ch 24 导读](../README.md)

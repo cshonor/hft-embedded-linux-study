@@ -54,12 +54,12 @@
 
 ---
 
-← [Day 26](./day-26-为窗口移动提速.md) · [01 导读](../README.md) · [Day 28](./day-28-文件操作与文字显示.md)
+← Day 26 · [01 导读](../README.md) · Day 28
 
 ---
 
 ## 相关
 
-- 上一日：[../day-26-window-speed/](../day-26-window-speed/)
-- 下一日：[../day-28-files/](../day-28-files/)
-- 模块导读：[../../README.md](../../README.md) · [../../OUTLINE.md](../../OUTLINE.md)
+- 上一日：../day-26-window-speed/
+- 下一日：../day-28-files/
+- 模块导读：[../../README.md](../../README.md) · ../../OUTLINE.md

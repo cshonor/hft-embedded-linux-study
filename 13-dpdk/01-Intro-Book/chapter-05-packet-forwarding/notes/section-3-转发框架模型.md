@@ -15,7 +15,7 @@
 
 **HFT 常见：** 行情 tick 路径 **单核 RTC** — 最小跨核、最小队列。
 
-→ [Ch8 Run-to-Completion 结合](../chapter-08-flow-classification-multiqueue/notes/section-2-网卡多队列.md)
+→ [Ch8 Run-to-Completion 结合](../../chapter-08-flow-classification-multiqueue/notes/section-2-网卡多队列.md)
 
 ---
 
@@ -32,7 +32,7 @@
 | **Action（处理逻辑）** | 命中后的修改、转发、丢弃 |
 
 - 可用 **脚本化配置** 快速搭 **自定义网络产品**（交换机、防火墙逻辑等）
-- Stage 间通常经 **rte_ring** — [Ch4 无锁 ring](../chapter-04-synchronization/notes/section-5-无锁机制.md)
+- Stage 间通常经 **rte_ring** — [Ch4 无锁 ring](../../chapter-04-synchronization/notes/section-5-无锁机制.md)
 
 ---
 

@@ -26,8 +26,8 @@
 | **异常终止 (Aborts)** | 严重错误，只能**强制终止** | 硬件严重故障 |
 | **编程异常** | 程序员主动触发 | `int $0x80` → **系统调用**（软件中断） |
 
-→ 缺页与 COW：[Ch 2](../chapter-02-memory-addressing/) · [Ch 9](../chapter-09-process-address-space.md)  
-→ syscall：[Ch 10](../chapter-10-system-calls.md)
+→ 缺页与 COW：[Ch 2](../../chapter-02-memory-addressing/) · [Ch 9](../../chapter-09-process-address-space.md)  
+→ syscall：[Ch 10](../../chapter-10-system-calls.md)
 
 ---
 

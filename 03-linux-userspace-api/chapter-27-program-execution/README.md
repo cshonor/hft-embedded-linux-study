@@ -1,19 +1,19 @@
 # TLPI 第 27 章 — Program Execution
 
 **优先级**：🔴（shell、服务拉起外部程序、fork+exec 标准模型）  
-**前置**：[Ch24 fork](../chapter-24-process-creation/notes.md) · [Ch25 终止](../chapter-25-process-termination/notes.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/notes.md)  
-**后置**：[Ch28 fork/exec 细节](../chapter-28-process-creation-exec-detail/notes.md) · [Ch9 凭证 / SUID](../chapter-09-process-credentials/notes.md)（SUID 在 exec 时生效）
+**前置**：[Ch24 fork](../chapter-24-process-creation/README.md) · [Ch25 终止](../chapter-25-process-termination/README.md) · [Ch26 wait](../chapter-26-monitoring-child-processes/README.md)  
+**后置**：[Ch28 fork/exec 细节](../chapter-28-process-creation-exec-detail/README.md) · [Ch9 凭证 / SUID](../chapter-09-process-credentials/README.md)（SUID 在 exec 时生效）
 
 ---
 
 ## 小节目录
 
-- [27.1 六兄弟](./notes/27.1-section-27-1.md)
-- [27.2 保留 vs 销毁](./notes/27.2-section-27-2.md)
-- [27.3 `FD_CLOEXEC` / `O_CLOEXEC`](./notes/27.3-fdcloexec-ocloexec.md)
-- [27.4 PATH（`*p`）](./notes/27.4-path.md)
-- [27.5 shebang `#!`](./notes/27.5-shebang.md)
-- [27.7 环境变量](./notes/27.7-environment.md)
+- [27.1 六兄弟](notes/27.1-executing-a-new-program-execve.md)
+- [27.2 保留 vs 销毁](notes/27.2-the-exec-library-functions.md)
+- [27.3 `FD_CLOEXEC` / `O_CLOEXEC`](notes/27.3-interpreter-scripts.md)
+- [27.4 PATH（`*p`）](notes/27.4-file-descriptors-and-exec.md)
+- [27.5 shebang `#!`](notes/27.5-signals-and-exec.md)
+- [27.7 环境变量](notes/27.7-implementing-system.md)
 
 ---
 
@@ -170,4 +170,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

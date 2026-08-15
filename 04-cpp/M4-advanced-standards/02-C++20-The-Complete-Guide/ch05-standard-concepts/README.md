@@ -123,7 +123,7 @@ static_assert(std::copyable<std::string>);   // string 可拷贝
 static_assert(std::regular<int>);            // int 是 regular（可默认构造+拷贝+比较）
 
 // 可调用概念
-static_assert(std::invocable<decltype([](int){}), int>);  // lambda(int) 可调用
+static_assert(std::invocable<decltype({}), int>);  // lambda(int) 可调用
 ```
 > `regular` 概念包含哪些要求？为什么重要？
 

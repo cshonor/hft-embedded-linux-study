@@ -107,4 +107,4 @@
 - 每个 `Item-NN-slug/` 目录含 `README.md`（笔记正文）及可选 `demo/`（代码）；详见 [目录结构.md](./目录结构.md)。
 - **§6 拓展**展开见 [ER-拓展索引.md](./ER-拓展索引.md)。
 - **Workspace 配置**：[ER-demos/](./ER-demos/README.md)、[WORKSPACE.md](./ER-demos/WORKSPACE.md)（MSRV、`workspace.dependencies`、`clippy.toml`）。
-- 示例 CI：[`.github/workflows/er-study-ci.yml`](../.github/workflows/er-study-ci.yml)（Item 32）。
+- 示例 CI：`.github/workflows/er-study-ci.yml`（Item 32）。

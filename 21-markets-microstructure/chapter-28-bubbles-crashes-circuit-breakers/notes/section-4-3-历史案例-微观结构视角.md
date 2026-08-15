@@ -8,7 +8,7 @@
 | **预期效应** | 人人知大卖将在跌时出现 → 买家 **撤退** → **流动性真空** |
 | **基础设施** | 订单 **打印机瘫痪** — 不知是否成交 → **信息盲区** → 恐慌加剧 |
 
-→ [Ch 27 系统容量](../chapter-27-floor-vs-automated-trading/) · **feedback trading** 现代版：杠杆 ETF、vol target
+→ [Ch 27 系统容量](../../chapter-27-floor-vs-automated-trading/) · **feedback trading** 现代版：杠杆 ETF、vol target
 
 | HFT 视角 |
 |----------|

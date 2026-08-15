@@ -24,7 +24,7 @@
 | **存储后端** | 用户态 → 内核存储驱动 → 设备：** again 拷贝** |
 | **合计** | 一次写请求经历 **多次内存拷贝** |
 
-→ 与 [Ch1 旁路动机](../chapter-01-dpdk-intro/notes/section-2-DPDK核心思想.md) · [零拷贝 stub](../notes/chapter-04-零拷贝与用户态旁路.md) 对照
+→ 与 [Ch1 旁路动机](../../chapter-01-dpdk-intro/notes/section-2-硬件平台与DPDK定位.md) · [零拷贝 stub](../../notes/chapter-04-零拷贝与用户态旁路.md) 对照
 
 ---
 
@@ -48,7 +48,7 @@
 | **L3** | IP 层、路由表 |
 | **多核并发** | 锁争用 → **扩展性急剧下降** |
 
-→ [Ch4 同步互斥](../chapter-04-synchronization/) — DPDK/SPDK 用 **per-core 无锁** 设计规避
+→ [Ch4 同步互斥](../../chapter-04-synchronization/) — DPDK/SPDK 用 **per-core 无锁** 设计规避
 
 ---
 

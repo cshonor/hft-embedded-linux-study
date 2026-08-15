@@ -1,20 +1,20 @@
 # TLPI 第 45 章 — Introduction to System V IPC
 
 **优先级**：🟡（SysV 三机制共用模型）  
-**前置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/notes.md)  
-**后置**：[Ch46 SysV 消息队列](../chapter-46-sysv-message-queues/notes.md) → [Ch47 信号量](../chapter-47-sysv-semaphores/notes.md) → [Ch48 共享内存](../chapter-48-sysv-shared-memory/notes.md)
+**前置**：[Ch44 管道与 FIFO](../chapter-44-pipes-fifos/README.md)  
+**后置**：[Ch46 SysV 消息队列](../chapter-46-sysv-message-queues/README.md) → [Ch47 信号量](../chapter-47-sysv-semaphores/README.md) → [Ch48 共享内存](../chapter-48-sysv-shared-memory/README.md)
 
 ---
 
 ## 小节目录
 
-- [45.1 三类对象 · 统一 API](./notes/45.1-api.md)
-- [45.2 Key（`key_t`）](./notes/45.2-keyt.md)
-- [45.3 –45.4 标识符 · `ipc_perm`](./notes/45.3-ipcperm.md)
-- [45.5 `get()` 算法（高频）](./notes/45.5-get.md)
-- [45.6 内核持久 · 运维](./notes/45.6-ops.md)
-- [45.7 –45.8 缺陷与限额](./notes/45.7-defects-quotas.md)
-- [45.9 `IPC_RMID` 差异](./notes/45.9-ipcrmid.md)
+- [45.1 三类对象 · 统一 API](notes/45.1-api-overview.md)
+- [45.2 Key（`key_t`）](notes/45.2-ipc-keys.md)
+- [45.3 –45.4 标识符 · `ipc_perm`](notes/45.3-associated-data-structure-and-object-per.md)
+- [45.5 `get()` 算法（高频）](notes/45.5-algorithm-employed-by-system-v-ipc-get-c.md)
+- [45.6 内核持久 · 运维](notes/45.6-the-ipcs-and-ipcrm-commands.md)
+- [45.7 –45.8 缺陷与限额](notes/45.7-obtaining-a-list-of-all-ipc-objects.md)
+- [45.9 `IPC_RMID` 差异](notes/45.9-summary.md)
 
 ---
 
@@ -133,4 +133,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

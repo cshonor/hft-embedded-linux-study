@@ -1,6 +1,6 @@
 # 3.1 内存布局与对齐
 
-> 章索引：[第 3 章](./README.md) · 后：[3.2 生命周期与借用检查](./3.2-lifetimes-and-borrow-check.md)
+> 章索引：[第 3 章](./README.md) · 后：[3.2 生命周期与借用检查](legacy-lifetimes-and-borrow-check.md)
 
 ---
 
@@ -28,18 +28,18 @@
 - **`Arc` 内部**：控制块 + 数据，引用计数与控制块对齐。
 - **原子类型**：布局须满足平台原子指令；见 `core::sync::atomic`。
 
-→ [RFR Ch02 · 02 layout](../../02-RFR/Chapter-02-Types/02-layout.md) · [01 alignment](../../02-RFR/Chapter-02-Types/01-alignment.md) · [Nomicon 02 Data Layout](../../04-Rust-Nomicon/02_Data_Layout/README.md)
+→ [RFR Ch02 · 02 layout](../../../02-RFR/Chapter-02-Types/02-layout.md) · [01 alignment](../../../02-RFR/Chapter-02-Types/01-alignment.md) · [Nomicon 02 Data Layout](../../../04-Rust-Nomicon/02_Data_Layout/README.md)
 
 ---
 
 ## HFT 提示
 
 - 热路径结构体考虑 **`#[repr(C)]`**（FFI）或 **`#[repr(align(64))]`**（缓存行对齐，慎用 padding）。
-- 读 IR 对照布局 → [06 Learn LLVM 17 ch05](../../06_Compilers-and-LLVM-Learning/04_Learn-LLVM-17/part02_src_to_machine/chapter05_ir_advanced_type/README.md)
+- 读 IR 对照布局 → [06 Learn LLVM 17 ch05](../../../06_Compilers-and-LLVM-Learning/04_Learn-LLVM-17/part02_src_to_machine/chapter05_ir_advanced_type/README.md)
 
 ---
 
 ## 相关
 
-- [3.8 PhantomData](./3.8-phantomdata.md)（零大小标记）
-- [3.10 MaybeUninit](./3.10-maybeuninit.md)（未初始化字节块）
+- [3.8 PhantomData](../3.8-static-memory.md)（零大小标记）
+- [3.10 MaybeUninit](../3.10-ownership-lifetimes-borrow.md)（未初始化字节块）

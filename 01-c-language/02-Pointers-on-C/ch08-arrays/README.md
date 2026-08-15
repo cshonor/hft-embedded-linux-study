@@ -42,8 +42,8 @@
 
 ## 小节
 
-- [8.1 一维数组](./8.1-one-dimensional-arrays/8.1-one-dimensional-arrays.md)（8.1.1–8.1.11）
-- [8.2 多维数组](./8.2-multidimensional-arrays/8.2-multidimensional-arrays.md)（8.2.1–8.2.7）
+- 8.1 一维数组（8.1.1–8.1.11）
+- [8.2 多维数组](8.2-multidimensional-arrays/8.2-多维数组.md)（8.2.1–8.2.7）
 - [8.3 指针数组](./8.3-指针数组.md)
 
 
@@ -72,7 +72,7 @@ void func_d(int **arr);          // (4)
 
 **解析：** 二维数组 `int[3][4]` 退化为 `int(*)[4]`（指向含 4 个 int 的数组的指针）。`int**` 是指向指针的指针，内存布局完全不同。传 `int**` 给 `int(*)[4]` 的函数 → 类型不匹配 → UB。
 
-**复习：** → [8.2 Multidimensional Arrays](./8.2-multidimensional-arrays/8.2-multidimensional-arrays.md)
+**复习：** → [8.2 Multidimensional Arrays](8.2-multidimensional-arrays/8.2-多维数组.md)
 
 </details>
 
@@ -118,7 +118,7 @@ int arr[n];  // VLA, C99
 
 **替代方案：** 用 `malloc`（堆）或固定大小数组 + 长度参数。
 
-**复习：** → [8.1 One-Dimensional Arrays](./8.1-one-dimensional-arrays/8.1-one-dimensional-arrays.md) — VLA
+**复习：** → 8.1 One-Dimensional Arrays — VLA
 
 </details>
 

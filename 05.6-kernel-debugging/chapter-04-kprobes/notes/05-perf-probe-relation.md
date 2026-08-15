@@ -181,6 +181,6 @@ perf report  # 统计分析
 
 ## 交叉引用
 
-- [05.6 ch04 kprobes 架构](chapter-04-kprobes/notes/01-kprobes-architecture.md)
-- [05.6 ch04 动态注册](chapter-04-kprobes/notes/04-dynamic-registration-sysfs.md)
-- [05.6 ch04 kprobes vs eBPF](chapter-04-kprobes/notes/06-kprobes-ebpf.md)
+- [05.6 ch04 kprobes 架构](../../chapter-04-kprobes/notes/01-kprobes-architecture.md)
+- [05.6 ch04 动态注册](../../chapter-04-kprobes/notes/04-dynamic-registration-sysfs.md)
+- [05.6 ch04 kprobes vs eBPF](../../chapter-04-kprobes/notes/06-kprobes-ebpf.md)

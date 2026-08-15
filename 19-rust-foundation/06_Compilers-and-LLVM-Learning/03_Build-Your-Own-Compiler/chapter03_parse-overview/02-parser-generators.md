@@ -24,7 +24,7 @@
   Scanner + Parser 类
 ```
 
-与 [EaC ch2 有限自动机→扫描器生成](../../../02_Compiler-Principles/chapter02_scanners/) 同族思想。
+与 [EaC ch2 有限自动机→扫描器生成](../../02_Compiler-Principles/chapter02_scanners/) 同族思想。
 
 ---
 
@@ -56,7 +56,7 @@
 | **成熟** | 社区与文档可用 |
 | **可读生成码** | 便于教学 **对照 .jj 与输出** |
 
-**对比 CI**：jlox **手写** scanner/parser — 更透明；cbc **JavaCC** — 更省重复劳动。见 [CI ch5 JavaCC 对照](../../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md)。
+**对比 CI**：jlox **手写** scanner/parser — 更透明；cbc **JavaCC** — 更省重复劳动。见 [CI ch5 JavaCC 对照](../../01_Crafting-Interpreters/part02_jlox/chapter05_representing-code/01-context-free-grammars.md)。
 
 **Rust 生态**：`lalrpop`（LALR）、`logos`+手写 parse 等 — 思想相同，工具不同。
 

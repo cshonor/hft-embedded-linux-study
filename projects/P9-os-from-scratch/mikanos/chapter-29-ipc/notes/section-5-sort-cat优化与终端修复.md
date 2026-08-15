@@ -21,7 +21,7 @@ for (auto& l : lines) write(stdout, l);
 | 展示 | **小工具组合 = 复杂处理** |
 |------|---------------------------|
 
-→ [Ch25 grep](../chapter-25-app-read-file/notes/section-6-readfile-grep与小结.md)
+→ [Ch25 grep](../../chapter-25-app-read-file/notes/section-6-readfile-grep与小结.md)
 
 ---
 
@@ -53,7 +53,7 @@ Terminal::Redraw();   // 强制 shadow → Layer 合成
 | 根因 | 管道 **高频小块输出** 未 **触发 kLayer** |
 |------|------------------------------------------|
 
-→ [Ch22 NO_REDRAW](../chapter-22-graphics-events1/notes/section-4-性能测量与批量重绘.md) · [Ch15 DrawArea](../chapter-15-terminal/)
+→ [Ch22 NO_REDRAW](../../chapter-22-graphics-events1/notes/section-4-性能测量与批量重绘.md) · [Ch15 DrawArea](../../chapter-15-terminal/)
 
 ---
 

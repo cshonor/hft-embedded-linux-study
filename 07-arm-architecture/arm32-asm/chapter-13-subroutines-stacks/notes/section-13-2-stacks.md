@@ -6,7 +6,7 @@
 
 ### SP 与 LIFO
 
-- **r13** 固定作 **堆栈指针 (SP)**（[Ch2 程序员模型](../chapter-02-programmers-model/)）。  
+- **r13** 固定作 **堆栈指针 (SP)**（[Ch2 程序员模型](../../chapter-02-programmers-model/)）。  
 - 概念：**后进先出** — 最后 `PUSH` 的项，第一个 `POP` 弹出。  
 - 物理：SP 指向 RAM 中一段连续区域；**满递减** 时向 **低地址** 生长（C 默认）。
 

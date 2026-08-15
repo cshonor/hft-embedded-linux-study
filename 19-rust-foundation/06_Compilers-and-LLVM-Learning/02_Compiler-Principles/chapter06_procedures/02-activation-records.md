@@ -49,6 +49,6 @@
 
 clox **CallFrame** = 简化 AR：指向 **Chunk**、**IP**、**栈槽窗口**（locals + args 共享）。
 
-→ [ch24 Call Frames](../../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/03-call-frames.md)
+→ [ch24 Call Frames](../../01_Crafting-Interpreters/part03_clox/chapter24_calling-and-closures/03-call-frames.md)
 
 **HFT**：热路径函数调用成本 = prologue/epilogue + 参数传递 + **ICache** — 见 [§5](./05-call-linkages.md)。

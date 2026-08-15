@@ -31,7 +31,7 @@
 "0" ["x""X"] … →  十六进制前缀等（ch2 §2 详述）
 ```
 
-与 [EaC ch2 正则→NFA/DFA](../../../02_Compiler-Principles/chapter02_scanners/) 同源 — JavaCC 在生成阶段替你 **编译正则** 为扫描代码。
+与 [EaC ch2 正则→NFA/DFA](../../02_Compiler-Principles/chapter02_scanners/) 同源 — JavaCC 在生成阶段替你 **编译正则** 为扫描代码。
 
 ---
 

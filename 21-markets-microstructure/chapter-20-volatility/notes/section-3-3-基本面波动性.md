@@ -8,7 +8,7 @@
 
 有效市场中价格已含 **已知信息** → 纯粹的 **基本面价格变化不可预测** — **随机游走 (Random walk)**。
 
-→ [Ch 10](../chapter-10-informed-traders-market-efficiency/) · [Ch 9 信息效率](../chapter-09-good-markets/)
+→ [Ch 10](../../chapter-10-informed-traders-market-efficiency/) · [Ch 9 信息效率](../../chapter-09-good-markets/)
 
 ### 3.2 加剧基本面波动性的因素
 

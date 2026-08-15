@@ -4,9 +4,9 @@
 
 **急躁的不知情交易者** 的流动性需求 → 价格 **偏离基本面** → **暂时性波动**。
 
-**「暂时」**：[Ch 16 价值交易者](../chapter-16-value-traders/)、[Ch 17 套利者](../chapter-17-arbitrageurs/) 介入后，价格 **回归 (Revert)** 基本面。
+**「暂时」**：[Ch 16 价值交易者](../../chapter-16-value-traders/)、[Ch 17 套利者](../../chapter-17-arbitrageurs/) 介入后，价格 **回归 (Revert)** 基本面。
 
-→ [Ch 19 弹性 (Resiliency)](../chapter-19-liquidity/)
+→ [Ch 19 弹性 (Resiliency)](../../chapter-19-liquidity/)
 
 ### 4.2 买卖价差跳动 (Bid/ask Bounce)
 
@@ -19,7 +19,7 @@
 价格在 bid/ask 间来回跳动 — 无基本面变化
 ```
 
-→ [Ch 14 暂时性价差成分](../chapter-14-bid-ask-spreads/)
+→ [Ch 14 暂时性价差成分](../../chapter-14-bid-ask-spreads/)
 
 ### 4.3 与交易成本的关系
 

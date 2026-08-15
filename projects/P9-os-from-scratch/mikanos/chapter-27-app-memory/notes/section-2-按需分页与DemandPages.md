@@ -41,7 +41,7 @@ void HandlePageFault(uint64_t cr2, PageFaultError code) {
 | **MapFile 区** | 见 §3 |
 | **CoW** | 见 §5 |
 
-→ [Ch24 CPL=3 PF](../chapter-24-multi-terminal/notes/section-5-用户态异常与KillApp.md)
+→ [Ch24 CPL=3 PF](../../chapter-24-multi-terminal/notes/section-5-用户态异常与KillApp.md)
 
 ---
 
@@ -68,7 +68,7 @@ void* sbrk(intptr_t inc) {
 | **malloc 大块** | **VA 增长** · **物理帧按需** |
 | **省 RAM** | 未 touch 的页 **不占帧** |
 
-→ [Ch25 sbrk 初版](../chapter-25-app-read-file/notes/section-5-OpenFile-ReadFile与Newlib.md)
+→ [Ch25 sbrk 初版](../../chapter-25-app-read-file/notes/section-5-OpenFile-ReadFile与Newlib.md)
 
 ---
 

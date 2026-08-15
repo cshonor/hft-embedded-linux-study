@@ -5,7 +5,7 @@
 本章深入 **用特定交易规则安排成交** 的市场：口头拍卖、单一价格拍卖、连续电子拍卖、交叉网络等。  
 Ch 5 已区分 quote-driven / order-driven；本章把 **order-driven 内部的规则差异** 讲透——**谁在规则下获利、该提供还是索取流动性**。
 
-> **与工程对接：** LOB + 撮合规则 = matching engine 的「产品规格」；与 [00-practice-go-dex M2](./00-practice-go-dex/notes/milestone-02-撮合引擎/) · `16-hft-engineering` 直接相关。
+> **与工程对接：** LOB + 撮合规则 = matching engine 的「产品规格」；与 [00-practice-go-dex M2](../00-practice-go-dex/notes/milestone-02-matching-engine) · `16-hft-engineering` 直接相关。
 
 ---
 

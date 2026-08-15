@@ -14,7 +14,7 @@
 | **标志位** | **N Z C V**（+ **Q**）— **Ch8 条件执行** 的直接输入 |
 | **M4 增值** | **UDIV/SDIV** · 位域指令 · DSP — 按路线选读 |
 
-**前置：** [Ch5–6](../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch1 补码](../../chapter-01-overview-computing-systems/notes/section-1-5-representation.md)
+**前置：** [Ch5–6](../../chapter-05-loads-stores-addressing/notes/section-0-本章完整概述.md) · [Ch1 补码](../../chapter-01-overview-computing-systems/notes/section-1-5-representation.md)
 
 ---
 

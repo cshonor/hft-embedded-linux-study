@@ -58,7 +58,7 @@ netlink_kernel_create(net, NETLINK_ROUTE, cfg)
 | 地址 | `struct sockaddr_nl` | 目标 `portid` / 多播组 |
 | 解析 | libnl 或自解析 `nlmsghdr` | `nlmsg_parse()` 等 |
 
-→ 用户态 socket 总论：[12-UNP](../../03.5-unix-network-api/) · 附录 A：[appendix-A-Linux-API.md](../../appendix-A-Linux-API.md)
+→ 用户态 socket 总论：[12-UNP](../../../03.5-unix-network-api/) · 附录 A：[appendix-A-Linux-API.md](../../appendix-A-Linux-API.md)
 
 ---
 

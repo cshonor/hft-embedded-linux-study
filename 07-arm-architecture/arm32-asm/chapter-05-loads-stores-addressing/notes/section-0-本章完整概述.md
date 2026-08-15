@@ -14,7 +14,7 @@
 | **寻址** | Pre/Post 变址 · 寄存器移位偏移 — 数组/MMIO 基础 |
 | **系统观** | Memory Map · Endian · 链接脚本放置 |
 
-**前置：** [Ch4 伪指令](../chapter-04-assembler-rules-directives/notes/section-0-本章完整概述.md) · [Ch2 对齐](../chapter-02-programmers-model/notes/section-2-2-data-types.md)
+**前置：** [Ch4 伪指令](../../chapter-04-assembler-rules-directives/notes/section-0-本章完整概述.md) · [Ch2 对齐](../../chapter-02-programmers-model/notes/section-2-2-data-types.md)
 
 ---
 
@@ -56,7 +56,7 @@ Ch7 ALU · Ch16 MMIO 实战
 | CSAPP 内存/指针 | 同一 Load/Store，不同助记符 |
 | MikanOS MMIO | `LDR`/`STR` 写帧缓冲/端口 |
 | [21 驱动](../../../../09-device-drivers-dt/) | `readl`/`writel` = 宽度正确的 MMIO |
-| [21 驱动/DT](../../../09-device-drivers-dt/) | 基址不再硬编码 `EQU` |
+| [21 驱动/DT](../../../../09-device-drivers-dt/) | 基址不再硬编码 `EQU` |
 
 ---
 

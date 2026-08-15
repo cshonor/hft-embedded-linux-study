@@ -15,7 +15,7 @@
 | **三平台三外设** | LPC2104 **UART** · LPC2132 **DAC+sin表** · Tiva **GPIO+时钟** |
 | **综合前章** | Ch5 寻址 · Ch7 Q · Ch12 查表 · Ch13 BL/AAPCS · Ch15 NVIC（Timer 可接） |
 
-**前置：** [Ch5 Load/Store](../chapter-05-loads-stores-addressing/) · [Ch13 子程序](../chapter-13-subroutines-stacks/) · [Ch15 异常/NVIC](../chapter-15-exception-handling-v7m/)
+**前置：** [Ch5 Load/Store](../../chapter-05-loads-stores-addressing/) · [Ch13 子程序](../../chapter-13-subroutines-stacks/) · [Ch15 异常/NVIC](../../chapter-15-exception-handling-v7m/)
 
 ---
 
@@ -61,18 +61,18 @@ Linux：同 MMIO → ioremap · 驱动 readl/writel
 
 | 模块 | 关联 |
 |------|------|
-| [Ch5 §5.6 位带](../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) | Tiva **地址掩码** 同类「单 bit 安全写」 |
-| [Ch12 查表](../chapter-12-tables/) | DAC 正弦 **LUT + 缩放** |
-| [21 驱动](../../09-device-drivers-dt/) | **`readl`/`writel`** · **`platform_device`** |
-| [21 驱动/DT](../../09-device-drivers-dt/) | 寄存器基址进 **设备树** |
-| [08 MikanOS GOP](../../projects/P9-os-from-scratch/) | 帧缓冲也是 **MMIO 写像素** |
-| [20 U-Boot](../../08-embedded-boot-build/) | 板级 **early UART** 打印 |
+| [Ch5 §5.6 位带](../../chapter-05-loads-stores-addressing/notes/section-5-6-bit-banded.md) | Tiva **地址掩码** 同类「单 bit 安全写」 |
+| [Ch12 查表](../../chapter-12-tables/) | DAC 正弦 **LUT + 缩放** |
+| [21 驱动](../../../../09-device-drivers-dt/) | **`readl`/`writel`** · **`platform_device`** |
+| [21 驱动/DT](../../../../09-device-drivers-dt/) | 寄存器基址进 **设备树** |
+| [08 MikanOS GOP](../../../../projects/P9-os-from-scratch/) | 帧缓冲也是 **MMIO 写像素** |
+| [20 U-Boot](../../../../08-embedded-boot-build/) | 板级 **early UART** 打印 |
 
 ---
 
 ### 六、下一章
 
-→ **[Ch17 ARM/Thumb/Thumb-2](../chapter-17-arm-thumb-thumb2-instructions/)**（选读）或继续精读链 **[Ch18 C/Asm](../chapter-18-mixing-c-and-assembly/)**
+→ **[Ch17 ARM/Thumb/Thumb-2](../../chapter-17-arm-thumb-thumb2-instructions/)**（选读）或继续精读链 **[Ch18 C/Asm](../../chapter-18-mixing-c-and-assembly/)**
 
 ---
 

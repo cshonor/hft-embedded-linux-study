@@ -35,7 +35,7 @@ void* sbrk(intptr_t increment) {
 | **`new Window(...)`** | C++ **动态创建 Layer/Window** |
 | **对齐 Ch8** | 所有堆内存仍是 **4KiB 页帧** 粒度（底层） |
 
-→ [Ch8 BitmapMemoryManager](../chapter-08-memory/notes/section-6-位图管理器与首次适配.md) · [Ch5 Newlib](../chapter-05-console-text/notes/section-5-Console与Newlib.md)
+→ [Ch8 BitmapMemoryManager](../../chapter-08-memory/notes/section-6-位图管理器与首次适配.md) · [Ch5 Newlib](../../chapter-05-console-text/notes/section-5-Console与Newlib.md)
 
 ---
 

@@ -35,7 +35,7 @@ Realized spread = 2 × (Trade price − Mid at T+Δ)   [Δ = 5/10/60 min 等]
 Effective spread  ≈  Realized spread  +  Adverse selection (price move against LP)
 ```
 
-→ [Ch 13 逆向选择](../chapter-13-dealers/) · [Ch 14 永久/暂时成分](../chapter-14-bid-ask-spreads/)
+→ [Ch 13 逆向选择](../../chapter-13-dealers/) · [Ch 14 永久/暂时成分](../../chapter-14-bid-ask-spreads/)
 
 | HFT 视角 |
 |----------|
@@ -56,7 +56,7 @@ IS = Value(virtual portfolio at decision mid) − Value(actual portfolio)
 
 | 基准 | **交易决定那一刻** 的报价中点 — **不受拆单抬价影响** |
 
-→ [Ch 18](../chapter-18-buy-side-traders/)
+→ [Ch 18](../../chapter-18-buy-side-traders/)
 
 | HFT 视角 |
 |----------|

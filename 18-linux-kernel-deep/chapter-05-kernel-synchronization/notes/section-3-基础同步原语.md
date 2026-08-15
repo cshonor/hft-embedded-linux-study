@@ -41,7 +41,7 @@ SMP 下锁实现、无锁算法都依赖屏障语义。
 | 仅 spinlock | 其他 CPU / 内核路径 |
 | spinlock + local_irq_disable | 再加 **本核 ISR** |
 
-→ 中断嵌套：[Ch 4](../chapter-04-interrupts-and-exceptions/)
+→ 中断嵌套：[Ch 4](../../chapter-04-interrupts-and-exceptions/)
 
 ### 常见陷阱
 

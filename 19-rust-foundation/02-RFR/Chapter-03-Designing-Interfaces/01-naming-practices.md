@@ -4,7 +4,7 @@
 
 ← [章索引](./README.md) · 下一节 [02 通用 Trait](./02-common-traits-for-types.md)
 
-Book → [7.2 引用项命名](../../00-Book/07-packages-modules/7.2-引用项命名.md)
+Book → [7.2 引用项命名](../../00-Book/07-packages-modules/7.1.2-main调用分文件模块.md)
 
 ---
 

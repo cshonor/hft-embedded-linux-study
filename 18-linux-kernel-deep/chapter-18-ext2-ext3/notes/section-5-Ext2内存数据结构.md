@@ -22,7 +22,7 @@
 - 磁盘 inode → 填入 **`ext2_inode_info` + 通用 inode**  
 - 超级块信息 → **`ext2_sb_info`** — 块组位图指针、挂载选项等  
 
-→ inode 缓存：[Ch 12 section-4](../chapter-12-VFS/notes/section-4-高速缓存.md)
+→ inode 缓存：[Ch 12 section-4](../../chapter-12-VFS/notes/section-4-高速缓存.md)
 
 ---
 
@@ -30,7 +30,7 @@
 
 VFS **`address_space`** 挂在 inode 上 — 文件 **页** 在页缓存；**元数据** 在 ext2 inode 内存副本。
 
-→ [Ch 16 generic_file_read](../chapter-16-file-access/notes/section-3-读写与预读.md)
+→ [Ch 16 generic_file_read](../../chapter-16-file-access/notes/section-3-读写与预读.md)
 
 ---
 

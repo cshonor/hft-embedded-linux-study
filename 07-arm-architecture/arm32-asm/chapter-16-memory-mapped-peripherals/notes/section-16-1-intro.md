@@ -31,7 +31,7 @@ LDR  读状态/数据
 STR  写控制/数据
 ```
 
-**链接脚本 / 数据手册** 给出 **`0xE000C000`** 这类 **物理/总线地址** — 与 [Ch4 伪指令](../chapter-04-assembler-rules-directives/) **`= label`** 常量同源。
+**链接脚本 / 数据手册** 给出 **`0xE000C000`** 这类 **物理/总线地址** — 与 [Ch4 伪指令](../../chapter-04-assembler-rules-directives/) **`= label`** 常量同源。
 
 ---
 

@@ -16,7 +16,7 @@ WinFillRectangle(layer_id, x, y, w, h, color);
 | **layer_id** | Ch21 **OpenWindow** 返回 |
 | **x,y,w,h,color** | 写 **Layer 阴影缓冲** · 触发重绘（可 defer） |
 
-→ [Ch10 窗口客户区](../chapter-10-window/) · [Ch9 阴影缓冲](../chapter-09-layers/)
+→ [Ch10 窗口客户区](../../chapter-10-window/) · [Ch9 阴影缓冲](../../chapter-09-layers/)
 
 ---
 

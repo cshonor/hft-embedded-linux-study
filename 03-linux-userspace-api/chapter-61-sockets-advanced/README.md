@@ -1,21 +1,21 @@
 # TLPI 第 61 章 — Sockets: Advanced Topics
 
 **优先级**：🔴（选项、msghdr、UDP connect、短读写）  
-**前置**：[Ch60 Server Design](../chapter-60-server-design/notes.md)  
-**后置**：[Ch62 Terminals](../chapter-62-terminals/notes.md)
+**前置**：[Ch60 Server Design](../chapter-60-server-design/README.md)  
+**后置**：[Ch62 Terminals](../chapter-62-terminals/README.md)
 
 ---
 
 ## 小节目录
 
-- [61.1 API](./notes/61.1-api.md)
-- [61.2 SOL_SOCKET（必考）](./notes/61.2-solsocket.md)
-- [61.3 TCP 选项](./notes/61.3-tcp.md)
-- [61.4 OOB](./notes/61.4-oob.md)
-- [61.5 `sendmsg` / `recvmsg`](./notes/61.5-sendmsg-recvmsg.md)
-- [61.6 短读写](./notes/61.6-section-61-6.md)
-- [61.7 –61.9 地址 · UDP connect · IPv6](./notes/61.7-udp-connect-ipv6.md)
-- [61.10 `ioctl`](./notes/61.10-ioctl.md)
+- [61.1 API](notes/61.1-partial-reads-and-writes-on-stream-socke.md)
+- [61.2 SOL_SOCKET（必考）](notes/61.2-the-shutdown-system-call.md)
+- [61.3 TCP 选项](notes/61.12-tcp-versus-udp.md)
+- [61.4 OOB](notes/61.4-the-sendfile-system-call.md)
+- [61.5 `sendmsg` / `recvmsg`](notes/61.5-retrieving-socket-addresses.md)
+- [61.6 短读写](notes/61.6-a-closer-look-at-tcp.md)
+- 61.7 –61.9 地址 · UDP connect · IPv6
+- [61.10 `ioctl`](notes/61.10-the-so-reuseaddr-socket-option.md)
 
 ---
 
@@ -172,4 +172,4 @@ int main(void) {
 ## 参考
 
 - [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](./notes.md.bak)
+- 原始笔记：[notes.md.bak](notes)

@@ -1,7 +1,7 @@
 ## 2.8.2 · 五种图与监控栈
 
 > **路径：** [2.5 埋点](./section-2.5-性能分析方法论.md) → **Prometheus + Grafana 盯盘** → **perf / FlameScope 抓 tail 根因**。  
-> ← [2.8.1 统计陷阱](./section-2.8.1-统计陷阱.md) · [Ch1.7 观测四层](../chapter-01-intro/notes/section-1.7-观测工具四层递进.md)
+> ← [2.8.1 统计陷阱](./section-2.8.1-统计陷阱.md) · [Ch1.7 观测四层](../../chapter-01-intro/notes/section-1.7-观测工具四层递进.md)
 
 | 图 | 回答什么 | 场景 |
 |----|----------|------|

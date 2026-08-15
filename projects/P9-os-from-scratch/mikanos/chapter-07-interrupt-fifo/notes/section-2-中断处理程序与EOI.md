@@ -48,7 +48,7 @@ void IntHandler(/* frame */) {
 
 **原则：** ISR 末尾 **必定 EOI**（除非规范要求特殊 EOImode）。
 
-→ 对照 [01 Day 6 中断处理](../../thirty-days-os-essentials/day-06-分割编译与中断处理/)
+→ 对照 [01 Day 6 中断处理](../../../thirty-days-os-essentials/day-06-split-compile-irq)
 
 ---
 

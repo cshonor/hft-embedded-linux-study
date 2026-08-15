@@ -30,7 +30,7 @@ cli 状态下执行 hlt
 | **Ch13 多任务** | 无 tick → **无法切换** |
 | **hlt** | 需 **IF=1** 才有意义 |
 
-→ [Ch7 中断](../chapter-07-interrupt-fifo/) · [Ch13 抢占](../chapter-13-multitask1/)
+→ [Ch7 中断](../../chapter-07-interrupt-fifo/) · [Ch13 抢占](../../chapter-13-multitask1/)
 
 ---
 

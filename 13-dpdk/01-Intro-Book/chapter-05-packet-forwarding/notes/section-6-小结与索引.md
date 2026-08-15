@@ -32,16 +32,16 @@ PMD — burst 收发包
 
 | Ch5 主题 | 继续读 |
 |----------|--------|
-| PCIe / DMA / mbuf | [chapter-06-PCIe与包处理IO](../chapter-06-pcie-packet-io/) 🔴 |
-| 硬件分核 / RSS | [chapter-08-流分类与多队列](../chapter-08-flow-classification-multiqueue/) 🔴 |
-| mbuf / ring | [chapter-02-mbuf与内存池.md](../chapter-02-mbuf与内存池.md) 🔴 |
-| PMD 轮询 | [chapter-03-PMD与轮询模式.md](../chapter-03-PMD与轮询模式.md) 🔴 |
-| LPM / ACL 锁 | [chapter-04-同步互斥机制](../chapter-04-synchronization/) 🔴 |
-| SIMD / CRC | [chapter-03-并行计算](../chapter-03-parallel-computing/) 🔴 |
-| 组播落地 | [chapter-05-组播行情接入.md](../chapter-05-组播行情接入.md) 🔴 |
+| PCIe / DMA / mbuf | [chapter-06-PCIe与包处理IO](../../chapter-06-pcie-packet-io/) 🔴 |
+| 硬件分核 / RSS | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
+| mbuf / ring | [chapter-02-mbuf与内存池.md](../../chapter-02-cache-and-memory) 🔴 |
+| PMD 轮询 | [chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing) 🔴 |
+| LPM / ACL 锁 | [chapter-04-同步互斥机制](../../chapter-04-synchronization/) 🔴 |
+| SIMD / CRC | [chapter-03-并行计算](../../chapter-03-parallel-computing/) 🔴 |
+| 组播落地 | [chapter-05-组播行情接入.md](../../chapter-05-packet-forwarding) 🔴 |
 | 内核转发对照 | [14-LKN](../../../../12-kernel-networking/) |
 | HFT 网络架构 | [16 HFT 工程](../../../../16-hft-engineering/) |
 
 ---
 
-← [5. 报文分发](./section-5-报文分发机制.md) · 下一章 [chapter-06-PCIe与I/O](../chapter-06-pcie-packet-io/) · [Ch4 同步](../chapter-04-synchronization/)
+← [5. 报文分发](./section-5-报文分发机制.md) · 下一章 [chapter-06-PCIe与I/O](../../chapter-06-pcie-packet-io/) · [Ch4 同步](../../chapter-04-synchronization/)

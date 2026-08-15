@@ -32,7 +32,7 @@ void OnTimerFire(TimerRequest& req) {
 | **target_task** | 超时 **直达设定者** |
 | **与 Ch14 Sleep** 统一 | **WaitUntil** 可复用 **同一队列** |
 
-→ [Ch11 APIC 定时器](../chapter-11-timer-acpi/) · [Ch14 Sleep/Wakeup](../chapter-14-multitask2/)
+→ [Ch11 APIC 定时器](../../chapter-11-timer-acpi/) · [Ch14 Sleep/Wakeup](../../chapter-14-multitask2/)
 
 ---
 

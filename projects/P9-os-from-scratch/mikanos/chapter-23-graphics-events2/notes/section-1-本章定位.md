@@ -36,7 +36,7 @@ Ch23 全事件 + 游戏  ← 本章
 Ch24 多终端 · Ch29 IPC
 ```
 
-→ [Ch22 图形和事件(1)](../chapter-22-graphics-events1/)
+→ [Ch22 图形和事件(1)](../../chapter-22-graphics-events1/)
 
 ---
 

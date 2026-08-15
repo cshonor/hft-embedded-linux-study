@@ -1,6 +1,6 @@
 # 第 17 章 · Compiling Expressions（编译表达式） · 语法错误处理（Handling Syntax Errors）
 
-← [本章目录](./README.md) · 上一节：[03-emitting-bytecode.md](./03-emitting-bytecode.md) · 下一节：[05-ast.md](./05-ast.md)
+← [本章目录](./README.md) · 上一节：[03-emitting-bytecode.md](./03-emitting-bytecode.md) · 下一节：[05-ast.md](05-compiling-expressions.md)
 
 ---
 

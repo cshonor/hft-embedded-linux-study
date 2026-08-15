@@ -61,11 +61,11 @@ void printk(const char* fmt, ...) {
 
 | Ch5 主题 | 继续读 |
 |----------|--------|
-| 鼠标 / PCI | [chapter-06-mouse-pci](../chapter-06-mouse-pci/) 🟡 |
-| 中断 | [chapter-07-interrupt-fifo](../chapter-07-interrupt-fifo/) 🔴 |
-| 文件系统 | [chapter-17-filesystem](../chapter-17-filesystem/) 🟡 |
+| 鼠标 / PCI | [chapter-06-mouse-pci](../../chapter-06-mouse-pci/) 🟡 |
+| 中断 | [chapter-07-interrupt-fifo](../../chapter-07-interrupt-fifo/) 🔴 |
+| 文件系统 | [chapter-17-filesystem](../../chapter-17-filesystem/) 🟡 |
 | ASCII | [appendix-F-ascii-table](../../appendix-F-ascii-table/) |
 
 ---
 
-← [5. Console](./section-5-Console与Newlib.md) · [Ch 4](../chapter-04-pixel-make/) · [Ch 5 导读](../README.md)
+← [5. Console](./section-5-Console与Newlib.md) · [Ch 4](../../chapter-04-pixel-make/) · [Ch 5 导读](../README.md)

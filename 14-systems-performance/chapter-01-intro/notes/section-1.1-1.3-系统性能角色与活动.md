@@ -63,10 +63,10 @@
 
 | 段 | 看啥 | 工具 / 章节 |
 |----|------|-------------|
-| **网卡 → 内核** | softirq、丢包、`rx_missed_errors` | `ethtool -S` · [Ch 10 网络](../chapter-10-network/) |
+| **网卡 → 内核** | softirq、丢包、`rx_missed_errors` | `ethtool -S` · [Ch 10 网络](../../chapter-10-network/) |
 | **内核栈** | 协议栈延迟、锁、cross-NUMA | `perf`、`ftrace` · [15-DPDK bypass](../../../13-dpdk/) |
-| **CPU** | IPC、frontend/backend stall、绑核是否生效 | `perf stat` · [Ch 6 CPU](../chapter-06-cpus/) |
-| **内存** | cache miss、page fault、false sharing | `perf mem` · [Ch 7 内存](../chapter-07-memory/) · [CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/) |
+| **CPU** | IPC、frontend/backend stall、绑核是否生效 | `perf stat` · [Ch 6 CPU](../../chapter-06-cpus/) |
+| **内存** | cache miss、page fault、false sharing | `perf mem` · [Ch 7 内存](../../chapter-07-memory/) · [CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/) |
 | **磁盘** | 热路径是否误触日志/sync | 热路径 **不应** 有 disk I/O；NVMe 仅冷路径 |
 | **端到端** | P50/P99/P999、抖动 tail | 硬件 timestamp / [HFT ch10 延迟测量](../../../16-hft-engineering/chapter-10-延迟测量与基准压测.md) |
 
@@ -116,7 +116,7 @@
 4. 只优化测量到的瓶颈（阿姆达尔；→ CSAPP 1.9）
 ```
 
-→ 方法论：[Ch 2](../chapter-02-methodologies/) · 工具：[Ch 4](../chapter-04-observability-tools/) · [Ch 13 perf](../chapter-13-perf/)
+→ 方法论：[Ch 2](../../chapter-02-methodologies/) · 工具：[Ch 4](../../chapter-04-observability-tools/) · [Ch 13 perf](../../chapter-13-perf/)
 
 
 ### 常见陷阱
