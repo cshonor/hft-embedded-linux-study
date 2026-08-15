@@ -204,7 +204,7 @@ wire 传 struct：**endian + padding + 类型宽度** 须一起约定 → [§3.9
 3. **禁止** `write(fd, &m, sizeof m)` 裸发本地 struct  
 4. 同机 mmap：须同 endian、同 ABI、同 padding  
 
-→ [Ch 11 网络编程](../../chapter-11-network-programming/) · [11 UNP](../../../12-network-sockets/01-unix-network-api/)
+→ [Ch 11 网络编程](../../chapter-11-network-programming/) · [11 UNP](../../../03.5-unix-network-api/)
 
 **极简：** 网络层大端 ≈「流入字节顺序」；本机 x86 小端解析，**中间必须转换**。
 

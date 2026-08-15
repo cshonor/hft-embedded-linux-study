@@ -55,6 +55,6 @@ Ch 11 → Ch 14 → note-组播IGMP
 ## 交叉阅读
 
 - 协议层 → [13-tcpip-protocols](../13-tcpip-protocols/)
-- API 层 → [12-network-sockets/01-unix-network-api](../12-network-sockets/01-unix-network-api/)
+- API 层 → [03.5-unix-network-api](../03.5-unix-network-api/)
 - 用户态旁路 → [15-dpdk](../15-dpdk/)
 - 跨模块对照 → [README.md](../README.md)

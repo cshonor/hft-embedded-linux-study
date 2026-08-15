@@ -97,7 +97,7 @@ Ch 10 网络（本章：栈、TCP、工具、sysctl）
 - 上一章：[../chapter-09-disks/](../chapter-09-disks/)
 - 下一章：[../chapter-11-cloud-computing/](../chapter-11-cloud-computing/)
 - 协议：[13-tcpip-protocols](../../13-tcpip-protocols/)
-- Socket API：[12-network-sockets/01-unix-network-api](../../12-network-sockets/01-unix-network-api/)
+- Socket API：[03.5-unix-network-api](../../03.5-unix-network-api/)
 - 内核网络：[14-kernel-networking](../../14-kernel-networking/)
 - DPDK 旁路：[15-dpdk](../../15-dpdk/)
 - XDP：[17-BPF note-XDP](../../17-bpf-observability/note-XDP与tc-BPF.md)

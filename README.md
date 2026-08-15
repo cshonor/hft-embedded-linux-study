@@ -13,7 +13,7 @@
 |------|------|----------|
 | **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** | 本仓：读序、OUTLINE、章节 scaffold | `00`–`22` |
 | **[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)** | C / C++ 详细笔记与代码 | [01 C](./01-c-language/) · [04 C++](./04-cpp/) |
-| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [12 network-sockets](./12-network-sockets/) |
+| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [03.5 UNP](./03.5-unix-network-api/) · [12 network-sockets](./12-network-sockets/) |
 
 ```bash
 git clone https://github.com/cshonor/hft-embedded-linux-study.git
@@ -31,6 +31,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **01** | [c-language](./01-c-language/) | C / 指针 / GNU-C | 2 |
 | **02** | [computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 | 2 |
 | **03** | [linux-userspace-api](./03-linux-userspace-api/) | 用户态系统编程（TLPI） | 3 |
+| **03.5** | [unix-network-api](./03.5-unix-network-api/) | Socket API 精读（UNP — Stevens） | 3 |
 | **04** | [cpp](./04-cpp/) | C++（Modern / 并发 / 对象模型） | 3 穿插 |
 | **05** | [linux-kernel](./05-linux-kernel/) | 内核入门（LKD） | 4 |
 | **05.5** | [modern-kernel](./05.5-modern-kernel/) | 现代 5.x/6.x 内核**非 MM** 资料（补 ULK/LKD 2.6 过时） | 4 |
@@ -42,7 +43,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **09** | [device-drivers-dt](./09-device-drivers-dt/) | 驱动 + 设备树 | 5A |
 | **10** | [embedded-projects](./10-embedded-projects/) | 板级 / 无人机 / 网关实战 | 5A |
 | **11** | [motion-control](./11-motion-control/) | PID / 姿态 / 飞控（兴趣） | 5A/6 |
-| **12** | [network-sockets](./12-network-sockets/) | Socket 编程（UNP / PNP） | 5B |
+| **12** | [network-sockets](./12-network-sockets/) | C++ 网络编程（muduo / PNP） | 5B |
 | **13** | [tcpip-protocols](./13-tcpip-protocols/) | TCP/IP 协议（Stevens 卷一） | 5B |
 | **14** | [kernel-networking](./14-kernel-networking/) | 内核网络栈（Rosen） | 5B |
 | **14.5** | [modern-networking](./14.5-modern-networking/) | 现代 5.x/6.x **网络** 资料（补 Rosen 3.x 过时） | 5B |

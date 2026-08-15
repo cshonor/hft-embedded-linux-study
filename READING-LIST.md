@@ -168,7 +168,7 @@
 
 **HFT 产出：** 理解内核栈 vs DPDK 旁路取舍；组播行情最小工程见 `01-Intro-Book/code/mcast-minimal/`。
 
-**交叉阅读：** [README.md](./README.md) · 对照 [12-UNP](./12-network-sockets/01-unix-network-api/) · [02-CSAPP Ch6/Ch11](./02-computer-systems/)
+**交叉阅读：** [README.md](./README.md) · 对照 [12-UNP](./03.5-unix-network-api/) · [02-CSAPP Ch6/Ch11](./02-computer-systems/)
 
 ---
 
@@ -262,8 +262,8 @@
 | 外 | 书目 | 索引 | 插入顺序 |
 |----|------|------|----------|
 | 外C | C++ 学习链（01–10，笔记已入本仓） | [04-cpp/](./04-cpp/)（源自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)） | **`03` 之后、`04` C++ 之前**（Modern C++）；**`18` HFT 前**（并发 + 对象模型） |
-| 外P | 陈硕 PNP / muduo 实战 | [12-network-sockets/02-muduo-sockets/](./12-network-sockets/02-muduo-sockets/) · [PNP 笔记](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | **`04` C++ M1 之后** |
-| 外B | UNIX Network Programming Vol.1 — Stevens | [12-network-sockets/01-unix-network-api/](./12-network-sockets/01-unix-network-api/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | PNP **之后** |
+| 外P | 陈硕 PNP / muduo 实战 | [12-network-sockets/muduo-sockets/](./12-network-sockets/muduo-sockets/) · [PNP 笔记](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | **`04` C++ M1 之后** |
+| 外B | UNIX Network Programming Vol.1 — Stevens | [03.5-unix-network-api/](./03.5-unix-network-api/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | PNP **之后** |
 | 外A | TCP/IP Illustrated Vol.1 — Stevens | [13-tcpip-protocols/](./13-tcpip-protocols/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | UNP **之后**，Rosen **之前** |
 
 > **不要整本迁入本仓库。** 分工：**PNP** = 动手实验；**UNP** = API；**TCP/IP** = 协议；**Rosen** = 内核实现。详见 [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md)。
@@ -290,7 +290,7 @@
 
 ## 补充：陈硕 PNP / muduo 实战（`12` 文件夹）
 
-> 笔记目录：[12-network-sockets/02-muduo-sockets/](./12-network-sockets/02-muduo-sockets/) · 外部 [PNP/](https://github.com/cshonor/Computer-Networking/tree/main/PNP)
+> 笔记目录：[12-network-sockets/muduo-sockets/](./12-network-sockets/muduo-sockets/) · 外部 [PNP/](https://github.com/cshonor/Computer-Networking/tree/main/PNP)
 
 > **插入位置：** **`04` C++（至少 M1）之后**、`12` UNP 之前
 
@@ -344,7 +344,7 @@
 | ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
 | ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen + **15 DPDK** | [12 PNP](./12-network-sockets/02-muduo-sockets/)、CSAPP Ch11、**17 BPF Ch10** |
+| ch06 低延迟网络与协议优化 | Rosen + **15 DPDK** | [12 PNP](./12-network-sockets/muduo-sockets/)、CSAPP Ch11、**17 BPF Ch10** |
 | ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12、CSAPP Ch4 |
 | ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**15 DPDK** |
 | ch09 高频做市与套利策略 | Harris | — |

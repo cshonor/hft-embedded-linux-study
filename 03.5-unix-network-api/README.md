@@ -1,6 +1,10 @@
 # UNP Vol.1 — Unix Network Programming
 
-**定位：** 用户态 Socket API（Stevens）。
+**文件夹 03.5** · 编号即读序 · [锁定路线](../README.md)
+
+> **定位：** 用户态 Socket API（Stevens）— 03 用户态 API 的网络纵深。  
+> **前置：** [03 Linux 用户态 API](../03-linux-userspace-api/)  
+> **书目：** W. Richard Stevens *Unix Network Programming* Vol.1（PNP 之后）
 
 ## 本地两套内容
 
@@ -22,5 +26,6 @@ cd code/unpv13e
 
 ## 交叉阅读
 
-- 实战：[12-network-sockets/02-muduo-sockets](../../12-network-sockets/02-muduo-sockets/)
-- 协议：[13-tcpip-protocols](../../13-tcpip-protocols/)
+- 实战（C++）：[12-network-sockets/muduo-sockets](../12-network-sockets/muduo-sockets/)
+- 协议：[13-tcpip-protocols](../13-tcpip-protocols/)
+- 抓包：[13.5-wireshark-packet-analysis](../13.5-wireshark-packet-analysis/)

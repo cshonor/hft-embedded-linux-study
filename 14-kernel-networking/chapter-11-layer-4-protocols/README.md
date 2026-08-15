@@ -12,7 +12,7 @@
 |---|------|
 | **本章** | Socket · UDP · TCP · SCTP · DCCP |
 | **前置** | [Ch 4 IPv4](../chapter-04-ipv4/) · [Ch 1 §4 包流转](../chapter-01-introduction/notes/section-4-数据包的收发与流转.md) |
-| **HFT 读法** | **§1–§3 必精读**；SCTP/DCCP 知即可；对照 [UNP](../../12-network-sockets/01-unix-network-api/) · [DPDK 旁路 UDP/TCP](../../15-dpdk/) |
+| **HFT 读法** | **§1–§3 必精读**；SCTP/DCCP 知即可；对照 [UNP](../../03.5-unix-network-api/) · [DPDK 旁路 UDP/TCP](../../15-dpdk/) |
 
 ---
 

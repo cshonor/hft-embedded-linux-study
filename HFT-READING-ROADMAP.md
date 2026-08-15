@@ -90,7 +90,7 @@
 
 | 方案 | 说明 |
 |------|------|
-| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`13-tcpip-protocols/`](./13-tcpip-protocols/)、[`12-network-sockets/01-unix-network-api/`](./12-network-sockets/01-unix-network-api/) 做**索引 + HFT 裁剪清单** |
+| ✅ **推荐** | 笔记留在 [Computer-Networking](https://github.com/cshonor/Computer-Networking)；本仓库 [`13-tcpip-protocols/`](./13-tcpip-protocols/)、[`03.5-unix-network-api/`](./03.5-unix-network-api/) 做**索引 + HFT 裁剪清单** |
 | ⚠️ 可选 | 只把「HFT 必读章节」的笔记摘要链过来，不要 duplicate 全书 |
 | ❌ 不推荐 | 整本迁移 — 与 Rosen / CSAPP Ch11 重叠，且双倍维护 |
 
