@@ -8,15 +8,15 @@
 
 ---
 
-## 小节笔记
+## 原书真实小节 → 笔记映射
 
-| 节 | 笔记 |
+| 原书小节 | 笔记 |
 |----|------|
-| 1 本章在全书中的位置 | [notes/section-1-本章在全书中的位置.md](./notes/section-1-本章在全书中的位置.md) |
-| 第一部分：提示与技巧 (Tips and Tricks) | [notes/section-part1-第一部分提示与技巧.md](./notes/section-part1-第一部分提示与技巧.md) |
-| 第二部分：常见问题与修复 (Common Problems) | [notes/section-part2-第二部分常见问题与修复.md](./notes/section-part2-第二部分常见问题与修复.md) |
-| 3 问题速查表 | [notes/section-3-问题速查表.md](./notes/section-3-问题速查表.md) |
-| 4 全书回顾与 HFT 最小 runbook | [notes/section-4-全书回顾与HFT最小runbook.md](./notes/section-4-全书回顾与HFT最小runbook.md) |
+| 18.1 典型事件的频率和额外开销（表 18-1 / 表 18-2） | [notes/section-1-事件频率与开销.md](./notes/section-1-事件频率与开销.md) |
+| 18.2 以 49Hz 或 99Hz 为采样频率 / 18.3 黄猪和灰鼠 / 18.4 开发目标软件 / 18.5 学习系统调用 / 18.6 保持简单 | [notes/section-2-建议与技巧.md](./notes/section-2-建议与技巧.md) |
+| 18.7 事件缺失 / 18.8 调用栈缺失（18.8.1 修复损坏的调用栈） | [notes/section-3-事件缺失与调用栈缺失.md](./notes/section-3-事件缺失与调用栈缺失.md) |
+| 18.9 打印时符号缺失（JIT / ELF）/ 18.10 跟踪时函数缺失（内联/TCO/链接） | [notes/section-4-符号缺失与函数缺失.md](./notes/section-4-符号缺失与函数缺失.md) |
+| 18.11 反馈回路 / 18.12 被丢掉的事件 | [notes/section-5-反馈回路与被丢事件.md](./notes/section-5-反馈回路与被丢事件.md) |
 
 ---
 
