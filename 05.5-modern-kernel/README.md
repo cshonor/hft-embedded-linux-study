@@ -7,15 +7,36 @@
 
 ## 资料来源
 
-1. 笨叔《奔跑吧 Linux 内核》系列（入门篇 Ch7-11 + 卷2 Ch1-2，调度/同步/中断/系统调用）
-2. LWN.net 深度专题文章，专门修正 ULK3 / LKD3 的过时算法、数据结构
-3. Bootlin 公开培训讲义，跟随LTS内核迭代更新，附带动手实验指引
+本模块整合三个来源，按主题合并到 12 个章节中：
 
-## 内部子目录
+1. **笨叔《奔跑吧 Linux 内核》** — 中文深入讲解（调度/RCU/ARM64）
+2. **LWN.net 深度专题** — 英文文章，修正 ULK3/LKD3 过时算法和数据结构
+3. **Bootlin 公开培训讲义** — 跟随 LTS 内核迭代更新，附带动手实验
 
-- `book-ben-shu-notes/`  笨叔书籍读书笔记（调度 / RCU / ARM64）
-- `lwn-articles-summary/`  LWN文章摘要，对标ULK过时章节（中断/同步/调度/系统调用/块设备）
-- `bootlin-material/`  Bootlin讲义要点 + 实验操作清单
+## 目录结构
+
+```
+chapter-XX-topic/
+├── README.md      ← 章导读（来源、HFT关联、小节索引）
+└── notes/         ← 按知识点拆分的笔记
+```
+
+## 全书章节（12 章）
+
+| 章 | 主题 | 来源 | 目录 |
+|----|------|------|------|
+| 1 | 内核架构概述 | Bootlin | [chapter-01-kernel-architecture](./chapter-01-kernel-architecture/) |
+| 2 | 调度器 (CFS→EEVDF) | 笨叔+LWN+Bootlin | [chapter-02-scheduler](./chapter-02-scheduler/) |
+| 3 | RCU 现代实现 | 笨叔+LWN | [chapter-03-rcu](./chapter-03-rcu/) |
+| 4 | 同步原语 (qspinlock) | LWN | [chapter-04-synchronization](./chapter-04-synchronization/) |
+| 5 | 中断管理 | LWN+Bootlin | [chapter-05-interrupt-management](./chapter-05-interrupt-management/) |
+| 6 | ARM64 架构 | 笨叔+Bootlin | [chapter-06-arm64-architecture](./chapter-06-arm64-architecture/) |
+| 7 | ARM64 启动流程 | Bootlin | [chapter-07-arm64-boot](./chapter-07-arm64-boot/) |
+| 8 | 设备驱动与设备树 | Bootlin | [chapter-08-device-driver-dt](./chapter-08-device-driver-dt/) |
+| 9 | Bootloader 与构建系统 | Bootlin | [chapter-09-bootloader-build](./chapter-09-bootloader-build/) |
+| 10 | PREEMPT_RT 实时内核 | Bootlin | [chapter-10-preempt-rt](./chapter-10-preempt-rt/) |
+| 11 | 块 I/O 与异步 I/O | LWN | [chapter-11-block-io-async](./chapter-11-block-io-async/) |
+| 12 | vDSO 与现代调试 | LWN | [chapter-12-vdso-debugging](./chapter-12-vdso-debugging/) |
 
 ## 学习流转顺序
 
@@ -37,11 +58,11 @@ ULK、LKD3基于Linux2.6。**设计思想可以借鉴，但大量结构体、函
 
 | 05 (LKD3) 章节 | 05.5 对应补充 |
 |----------------|--------------|
-| Ch4 调度 (CFS) | [lwn/01 EEVDF](./lwn-articles-summary/01-eevdf-scheduler.md) + [lwn/02 CFS 历史](./lwn-articles-summary/02-cfs-history.md) |
-| Ch9-10 同步 | [lwn/03 RCU 基础](./lwn-articles-summary/03-rcu-basics.md) + [lwn/04 RCU 进阶](./lwn-articles-summary/04-rcu-advanced.md) + [lwn/05 qspinlock](./lwn-articles-summary/05-queued-spinlock.md) |
-| Ch7-8 中断 | [lwn/06 IRQ domain](./lwn-articles-summary/06-irq-domain.md) + [lwn/07 Threaded IRQ](./lwn-articles-summary/07-threaded-irq.md) |
-| Ch14 块 I/O | [lwn/08 blk-mq](./lwn-articles-summary/08-blk-mq.md) + [lwn/09 io_uring](./lwn-articles-summary/09-io-uring.md) |
-| Ch5 系统调用 | [lwn/10 vDSO](./lwn-articles-summary/10-vdso.md) |
-| Ch18 调试 | [lwn/11 现代调试工具](./lwn-articles-summary/11-modern-kernel-debugging.md) — eBPF/ftrace/drgn/crash |
+| Ch4 调度 (CFS) | [ch2 调度器](./chapter-02-scheduler/) — EEVDF + CFS 历史 |
+| Ch5-6 同步 | [ch3 RCU](./chapter-03-rcu/) + [ch4 qspinlock](./chapter-04-synchronization/) |
+| Ch7-8 中断 | [ch5 中断管理](./chapter-05-interrupt-management/) — IRQ domain + threaded IRQ |
+| Ch14 块 I/O | [ch11 块I/O](./chapter-11-block-io-async/) — blk-mq + io_uring |
+| Ch5 系统调用 | [ch12 vDSO](./chapter-12-vdso-debugging/) — vDSO 加速 |
+| Ch18 调试 | [ch12 现代调试](./chapter-12-vdso-debugging/) — eBPF/ftrace/crash |
 
 > **学习路径：** 05 建立 2.6 时代概念框架 → 05.5 补齐 5.x/6.x 现代实现差异 → [20-linux-kernel-deep](../20-linux-kernel-deep/) 源码阅读与实操

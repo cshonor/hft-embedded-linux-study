@@ -186,7 +186,7 @@ remove_proc_entry("mydev_stats", NULL);
 | 卡住了… | 翻这里 |
 |---------|--------|
 | /proc / seq_file | [LKD 17.3 sysfs](../../05-linux-kernel/00_Book_3rd_Notes/chapter-17-devices-modules/notes/section-17.3-sysfs-虚拟文件系统.md) |
-| 现代 proc API | [08.5 Bootlin](../../05.5-modern-kernel/bootlin-material/) |
+| 现代 proc API | [05.5 设备驱动](../../05.5-modern-kernel/chapter-08-device-driver-dt/) |
 
 ---
 
