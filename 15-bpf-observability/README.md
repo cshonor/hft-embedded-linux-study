@@ -81,6 +81,10 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 
 **HFT 产出：** 生产 eBPF 观测；与 DPDK 配合做内核栈 vs 用户态旁路对比。
 
+## 📚 eBPF O'Reilly 三书对比
+
+本模块主书为《BPF Performance Tools》（Gregg）。另外两本 O'Reilly eBPF 书的对比与协同读法见 [EBPF-BOOKS-COMPARISON.md](./EBPF-BOOKS-COMPARISON.md)（Learning eBPF 现代入门首选 → 本模块工具谱系 → Linux Observability 观测案例补充）。
+
 ## 19↔20 联动参考文档
 
 | 文档 | 用途 |
