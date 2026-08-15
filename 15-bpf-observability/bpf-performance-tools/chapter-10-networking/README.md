@@ -1,47 +1,40 @@
 # Ch 10 网络 · Networking
 
-> **BPF Performance Tools** · Brendan Gregg · **精读 🔴**
+> **BPF Performance Tools** · Brendan Gregg · **精读 🔴** · 印刷 p411–530
 
-> 本章定位：**全书 Part II 最厚的一章** — Linux 网络栈全路径 + **海量 BPF 工具**。eBPF 源于包过滤；相对 `tcpdump`，BPF 能把 **包/连接事件 ↔ PID ↔ 调用栈** 绑在一起。  
-> **HFT：** 共置机 **内核网络栈** 仍是行情/风控/日志的主战场之一（未全量 DPDK 时）；**`tcpretrans`、`tcpconnect`、`tcplife`、`gethostlatency`** 是 Ch 3 runbook 核心。旁路路径见 [note-XDP与tc-BPF](../note-XDP与tc-BPF.md) · [15-DPDK](../../../13-dpdk/)。  
+> 本章定位：**全书 Part II 最厚的一章** — Linux 网络栈全路径 + **31 个 BPF 工具**（表 10-3）。eBPF 源于包过滤；相对 `tcpdump`，BPF 能把 **包/连接事件 ↔ PID ↔ 调用栈** 绑在一起。
+> **HFT：** 共置机 **内核网络栈** 仍是行情/风控/日志的主战场之一（未全量 DPDK 时）；**`tcpretrans`、`tcpconnect`、`tcplife`、`gethostlatency`** 是 Ch 3 runbook 核心。旁路路径见 [note-XDP与tc-BPF](../note-XDP与tc-BPF.md) · [15-DPDK](../../../13-dpdk/)。
 > **上一章：** [chapter-09-磁盘IO.md](../chapter-09-disk-io/) · **下一章：** [chapter-11-安全.md](../chapter-11-security/)
 
 ---
 
-## 小节笔记
+## 小节笔记（按原书真实小节）
 
-| 节 | 笔记 |
-|----|------|
-| 1 本章要回答的问题 | [notes/section-1-本章要回答的问题.md](./notes/section-1-本章要回答的问题.md) |
-| 2 网络基础知识 (Background) | [notes/section-2-网络基础知识.md](./notes/section-2-网络基础知识.md) |
-| 3 传统网络分析工具 | [notes/section-3-传统网络分析工具.md](./notes/section-3-传统网络分析工具.md) |
-| 4 套接字层 (Socket API) 工具 | [notes/section-4-套接字层工具.md](./notes/section-4-套接字层工具.md) |
-| 5 TCP 协议层工具 | [notes/section-5-TCP协议层工具.md](./notes/section-5-TCP协议层工具.md) |
-| 6 UDP、DNS 与其他 | [notes/section-6-UDPDNS与其他.md](./notes/section-6-UDPDNS与其他.md) |
-| 7 底层：qdisc / skb / 驱动 | [notes/section-7-底层qdiscskb驱动.md](./notes/section-7-底层qdiscskb驱动.md) |
-| 8 工具选型速查（HFT 优先） | [notes/section-8-工具选型速查HFT优先.md](./notes/section-8-工具选型速查HFT优先.md) |
-| 9 与 DPDK / XDP 的分工 | [notes/section-9-与DPDKXDP的分工.md](./notes/section-9-与DPDKXDP的分工.md) |
-| 10 BPF / bpftrace One-Liners（示意） | [notes/section-10-BPFbpftraceOne-Liners示意.md](./notes/section-10-BPFbpftraceOne-Liners示意.md) |
-
----
-
-## 大白话
-
-> 全书 Part II 最厚的一章
-
-下面按原书小节展开；细节见 **小节笔记** 表。
+| 原书小节 | 笔记 | 内容 |
+|----|------|------|
+| 10.1 背景 | [section-1-背景知识](./notes/section-1-背景知识.md) | 图 10-1 网络栈 · DPDK vs XDP · sk_buff/sock/proto · RSS/RPS/RFS/XPS/SO_REUSEPORT · SYN 双队列 · RTO/SACK · GSO/TSO/GRO · 拥塞算法 · Nagle/BQL/TSQ/EDT · 延迟七指标 · 十步策略 · 三大跟踪陷阱 |
+| 10.2 传统工具 | [section-2-传统工具](./notes/section-2-传统工具.md) | ss -tiepm · ip -s link · nstat 重置陷阱 · netstat · sar -n 组合 · nicstat %util · ethtool -S/-i/-k/-K · tcpdump 四盲区 · /proc |
+| 10.3.1–8 套接字层 | [section-3-BPF工具-套接字层](./notes/section-3-BPF工具-套接字层.md) | sockstat · sofamily · soprotocol · soconnect · soaccept · socketio · socksize · sormem |
+| 10.3.9–13 连接与生命周期 | [section-4-BPF工具-TCP连接与生命周期](./notes/section-4-BPF工具-TCP连接与生命周期.md) | soconnlat · solstbyte · tcpconnect(-tp) · tcpaccept(-tp) · tcplife |
+| 10.3.14–19 流量与重传 | [section-5-BPF工具-TCP流量与重传](./notes/section-5-BPF工具-TCP流量与重传.md) | tcptop · tcpsnoop · tcpretrans · tcpsynbl · tcpwin · tcpnagle |
+| 10.3.20–23, 31 UDP/DNS/特殊 | [section-6-BPF工具-UDP-DNS与特殊协议](./notes/section-6-BPF工具-UDP-DNS与特殊协议.md) | udpconnect · gethostlatency · ipecn · superping · solisten/tcpstates/tcpdrop/sofdsnoop 等 |
+| 10.3.24–25 qdisc | [section-7-BPF工具-qdisc队列](./notes/section-7-BPF工具-qdisc队列.md) | qdisc-fq · qdisc-cbq/cbs/codel/fq_codel/red/tbf（Qdisc_ops 模板法） |
+| 10.3.26–30 设备层与 skb | [section-8-BPF工具-设备层与skb](./notes/section-8-BPF工具-设备层与skb.md) | netsize · nettxlat · skbdrop · skblife · ieee80211scan |
+| 10.4 单行 | [section-9-BPF单行程序](./notes/section-9-BPF单行程序.md) | connect 失败/ustack · 字节直方图 · net_dev_xmit 全路径 kstack · 驱动跟踪点 |
+| 10.5 练习 | [section-10-可选练习](./notes/section-10-可选练习.md) | 13 题（9–13 进阶未解决） |
+| 10.6 小结 | [section-11-小结](./notes/section-11-小结.md) | 事件式跟踪原则 · 三板斧 · 章间衔接 |
 
 ---
 
 ## 本章 Checklist
 
 - [ ] **Ch 10 是共置机网络 incident 主章**— 与 Ch 6 CPU 并列精读。
-- [ ] **`tcpretrans` + `ss -ti`**— 重传是否发生、cwnd/RTT 是否异常；先 30s 短采。
-- [ ] **`tcpdump` 不能替代 BPF**— 无 PID/栈；高 pps 下抓包本身可能 **改变** 行为。
-- [ ] **`tcplife`**低开销看清 **谁和谁谈了多久、传了多少** — 适合长跑监控（仍须限流）。
-- [ ] **`gethostlatency`**— 「偶发慢」先查 DNS，再 blame 网络。
-- [ ] **热路径已 DPDK 化**— 本章工具看 **管理面/辅助 TCP**；数据面用 14-DPDK + 应用指标。
-- [ ] **Nagle/offload**— `tcpnagle`、`ethtool -k` 与 socket 选项一并核对。
+- [ ] **网络三板斧：tcpretrans / tcpconnect -t / tcplife**— 低开销常驻候选（仍须限流）。
+- [ ] **延迟七指标对号入座**— DNS(gethostlatency) / 建连(soconnlat) / TTFB(solstbyte) / RTT(tcpwin) / 时长(tcplife) / 丢包(tcpdrop+skbdrop)。
+- [ ] **`tcpdump` 不能替代 BPF**— 无 PID/栈/内核状态；高 pps 下抓包本身可能改变行为。
+- [ ] **nstat 默认重置**— 前后对比必须 `-S`。
+- [ ] **Nagle/offload 核对**— `tcpnagle` 先测再关；`ethtool -k` 看 TSO/GSO/GRO。
+- [ ] **热路径已 DPDK 化的部分本章工具失效**— 数据面用 14-DPDK + 应用指标；XDP 仍可观测。
 
 ---
 
