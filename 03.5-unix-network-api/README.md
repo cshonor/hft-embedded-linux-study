@@ -26,6 +26,6 @@ cd code/unpv13e
 
 ## 交叉阅读
 
-- 实战（C++）：[04.5-network-sockets](../04.5-network-sockets/)
+- 实战（C++）：[04-cpp/M5-cpp-network-programming](../04-cpp/M5-cpp-network-programming/)
 - 协议：[12-tcpip-protocols](../12-tcpip-protocols/)
 - 抓包：[12.5-wireshark-packet-analysis](../12.5-wireshark-packet-analysis/)

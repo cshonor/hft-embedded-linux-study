@@ -1,7 +1,7 @@
 # P3 — 并发 HTTP Server（C → C++ 重写）
 
 > 先用 C + epoll + 线程池写一个并发 HTTP server，再用 Modern C++ 重写一遍，亲手感受 RAII/模板/移动语义怎么让代码更安全又不损性能。
-> **做法：项目驱动，[`03`](../../03-linux-userspace-api/) / [`12`](../../04.5-network-sockets/) / [`04`](../../04-cpp/) 笔记当字典——先上路，卡住再查。**
+> **做法：项目驱动，[`03`](../../03-linux-userspace-api/) / [`12`](../../04-cpp/M5-cpp-network-programming/) / [`04`](../../04-cpp/) 笔记当字典——先上路，卡住再查。**
 
 ---
 
@@ -67,7 +67,7 @@
 ## 参考模块
 
 - [03-linux-userspace-api/](../../03-linux-userspace-api/) — TLPI Ch56（socket）、Ch63（epoll）、Ch29-30（线程）
-- [04.5-network-sockets/](../../04.5-network-sockets/) — UNP、PNP epoll 实战
+- [04-cpp/M5-cpp-network-programming/](../../04-cpp/M5-cpp-network-programming/) — UNP、PNP epoll 实战
 - [04-cpp/](../../04-cpp/) — Effective Modern C++、Cpp-Concurrency、Cpp-Object-Model
 
 ## 压测工具

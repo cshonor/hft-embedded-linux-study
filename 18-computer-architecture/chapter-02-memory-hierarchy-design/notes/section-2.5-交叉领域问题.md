@@ -27,7 +27,7 @@
 
 | HFT 视角 |
 |----------|
-| 网卡 **DMA 写 descriptor ring** — 与 CPU 读同一区域的 **内存序 + cache 一致性** 要用 barrier（→ [10 PNP](../../../04.5-network-sockets/)） |
+| 网卡 **DMA 写 descriptor ring** — 与 CPU 读同一区域的 **内存序 + cache 一致性** 要用 barrier（→ [10 PNP](../../../04-cpp/M5-cpp-network-programming/)） |
 | DPDK **mmap UIO/vfio** — 用户态轮询也要理解 **何时看到设备写入** |
 
 ---

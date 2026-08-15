@@ -1,9 +1,9 @@
-# 04.5 · C++ 网络 Socket 编程（muduo / PNP）
+# M5 · C++ 网络编程（muduo / PNP）
 
-**文件夹 04.5** · 编号即读序 · [锁定路线](../README.md)
+**模块 `04-cpp/M5`** · 编号即读序 · [返回 C++ 总览](../README.md) · [锁定路线](../../README.md)
 
-> **定位：** C++/C 网络服务实验骨架（粘包、epoll、组播等）— 为内核网络 / DPDK / HFT 打底。  
-> **前置：** [04 C++](../04-cpp/) · [03.5 UNP](../03.5-unix-network-api/)  
+> **定位：** C++ 网络服务实验骨架（粘包、epoll、组播等）— 为内核网络 / DPDK / HFT 打底。  
+> **前置：** [04 C++（至少 M1 Modern）](../README.md) · [03.5 UNP（C 侧 socket）](../../03.5-unix-network-api/)  
 > **书目：** 陈硕 *Linux 多线程服务端编程*
 
 **本地权威仓库：** `C:\Users\12392\Desktop\Computer Networking\PNP`  
@@ -34,13 +34,13 @@
 
 | 模块 | 作用 |
 |------|------|
-| [**03.5 UNP**](../03.5-unix-network-api/) | Stevens Socket API + **完整 unpv13e 源码树**（C） |
-| **04.5 PNP** | 动手实验笔记（muduo，C++） |
-| [**12 TCP/IP**](../12-tcpip-protocols/) | 协议笔记（抓包/语义） |
+| [**03.5 UNP**](../../03.5-unix-network-api/) | Stevens Socket API + **完整 unpv13e 源码树**（C） |
+| **M5 PNP（本模块）** | 动手实验笔记（muduo，C++） |
+| [**12 TCP/IP**](../../12-tcpip-protocols/) | 协议笔记（抓包/语义） |
 
 ## 交叉阅读
 
-- [03.5-unix-network-api](../03.5-unix-network-api/) · [12-tcpip-protocols](../12-tcpip-protocols/) · [CSAPP Ch11](../02-computer-systems/chapter-11-network-programming/)
+- [03.5-unix-network-api](../../03.5-unix-network-api/) · [12-tcpip-protocols](../../12-tcpip-protocols/) · [CSAPP Ch11](../../02-computer-systems/chapter-11-network-programming/)
 
-**上一章：** [04 C++](../04-cpp/)  
-**下一章：** [05 Linux 内核](../05-linux-kernel/)
+**上一模块：** [03.5 UNP（C 侧）](../../03.5-unix-network-api/) · 本模块属于 [04 C++](../README.md)  
+**下一阶段：** [05 Linux 内核](../../05-linux-kernel/) / [12 TCP/IP 协议](../../12-tcpip-protocols/)

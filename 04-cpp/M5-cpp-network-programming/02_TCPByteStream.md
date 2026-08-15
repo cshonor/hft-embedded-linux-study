@@ -10,7 +10,7 @@
 
 ## UNP 对照
 
-- [1.2 API·read](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_Appendix_API精读.md)
+- [1.2 API·read](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_Appendix_API精读.md)
 - Ch3 `readn` / `writen`（本仓库 Ch3 节笔记）
 
 <a id="pnp-02-concepts"></a>
@@ -141,7 +141,7 @@ void onMessage(Buffer* buf) {
 
 - 每个连接有 **发送缓冲（`sk_sndbuf`）和接收缓冲（`sk_rcvbuf`）**，`ss -tm` 可看到实时占用。`write` 只是拷进发送缓冲 + 唤醒内核发送任务，**返回 ≠ 离开主机**
 - 接收路径：网卡 → 软中断 → `tcp_v4_rcv` 按 **四元组** 找到 `tcp_sock` → 数据挂到 `sk_receive_queue`（`sk_buff` 链）→ 唤醒等在 `sk_wq` 上的进程。`read` 就是把 sk_buff 里的数据拷给用户——它看到的当然是 **连续字节**，分段信息（MSS 边界）在这一层早已抹掉
-- **Nagle**：小包（小于 MSS）未确认时先攒着，攒到 MSS 或收到 ACK 才发。交互式/低延迟协议必须 `TCP_NODELAY`（muduo 默认开启）——它同时是"粘"的制造者和延迟杀手，见 [05 TTCP](./05_TTCP.md) 和 [12 TCP/IP](../12-tcpip-protocols/)
+- **Nagle**：小包（小于 MSS）未确认时先攒着，攒到 MSS 或收到 ACK 才发。交互式/低延迟协议必须 `TCP_NODELAY`（muduo 默认开启）——它同时是"粘"的制造者和延迟杀手，见 [05 TTCP](./05_TTCP.md) 和 [12 TCP/IP](../../12-tcpip-protocols/)
 
 <a id="pnp-02-pitfalls"></a>
 
@@ -164,7 +164,7 @@ void onMessage(Buffer* buf) {
 | 行情/订单帧 | 交易所协议基本全是 **定长二进制帧**（长度前缀的特例：固定布局，见 [09 序列化](./09_Serialization.md)），解码零拷贝 |
 | `TCP_NODELAY` | 撮合回报等小消息，Nagle 引入最多 40ms 级延迟——必关 |
 | Buffer 扩容 | 峰值行情突发时解码缓冲反复 realloc 会引入抖动，muduo 式预留 + 上限校验是标准做法 |
-| 抓包验证 | "为什么一次 send 被拆成两个包/两个 send 合成一个包"——[12.5 Wireshark](../12.5-wireshark-packet-analysis/) 实验之一 |
+| 抓包验证 | "为什么一次 send 被拆成两个包/两个 send 合成一个包"——[12.5 Wireshark](../../12.5-wireshark-packet-analysis/) 实验之一 |
 
 <a id="pnp-02-quiz"></a>
 
@@ -181,4 +181,4 @@ void onMessage(Buffer* buf) {
 ## 交叉引用
 
 - 上一篇：[01 Socket 基础](./01_SocketBasics.md) · 下一篇：[03 自连接](./03_SelfConnect.md)
-- [03.5 UNP Ch3 readn/writen](../03.5-unix-network-api/) · [12 TCP/IP 协议](../12-tcpip-protocols/) · [13 内核网络](../13-kernel-networking/)
+- [03.5 UNP Ch3 readn/writen](../../03.5-unix-network-api/) · [12 TCP/IP 协议](../../12-tcpip-protocols/) · [13 内核网络](../../13-kernel-networking/)

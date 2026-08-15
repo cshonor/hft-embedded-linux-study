@@ -4,7 +4,7 @@
 
 ## 实验勾选
 
-- [ ] 01 Socket 基础（→ [UNP 1.2/1.5](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/study.md)）
+- [ ] 01 Socket 基础（→ [UNP 1.2/1.5](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/study.md)）
 - [ ] 02 TCP 粘包
 - [ ] 03 自连接
 - [ ] 04 Netcat（Rust：[04_Netcat](./04_Netcat.md)）

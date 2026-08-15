@@ -12,10 +12,10 @@
 
 | 内容 | 链接 |
 |------|------|
-| 客户端 | [UNP 1.2](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_SimpleTimeClient.md) |
-| 服务器 | [UNP 1.5](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_SimpleTimeServer.md) |
-| C/S 联合 | [1.12 附录](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.12_Appendix_DaytimeCS联合流程.md) |
-| Rust 已有 | [Ch1 code](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/code/README.md) |
+| 客户端 | [UNP 1.2](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_SimpleTimeClient.md) |
+| 服务器 | [UNP 1.5](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_SimpleTimeServer.md) |
+| C/S 联合 | [1.12 附录](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.12_Appendix_DaytimeCS联合流程.md) |
+| Rust 已有 | [Ch1 code](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/code/README.md) |
 
 <a id="pnp-01-concepts"></a>
 
@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
 
 ## 内核视角
 
-- **fd 三层结构**：`fd`（进程 fd 表索引）→ `struct file`（VFS 通用层）→ `struct socket` → `struct tcp_sock`。`write()` 走 VFS `file_operations` 分发到 `sock_write_iter`，最终进 TCP 发送队列（`sk_write_queue`，元素是 `sk_buff`）。这条链路在 [05-linux-kernel](../05-linux-kernel/) 和 [13-kernel-networking](../13-kernel-networking/) 里逐层展开。
+- **fd 三层结构**：`fd`（进程 fd 表索引）→ `struct file`（VFS 通用层）→ `struct socket` → `struct tcp_sock`。`write()` 走 VFS `file_operations` 分发到 `sock_write_iter`，最终进 TCP 发送队列（`sk_write_queue`，元素是 `sk_buff`）。这条链路在 [05-linux-kernel](../../05-linux-kernel/) 和 [13-kernel-networking](../../13-kernel-networking/) 里逐层展开。
 - **backlog 语义（Linux 2.2+）**：`listen(fd, backlog)` 只控制 accept 队列；半连接（SYN 收到未握手完成）队列由 `tcp_max_syn_backlog` 控制，且受 SYN cookie 影响。accept 队列满了，内核会对新完成的握手 **丢弃 ACK 或拒绝**（`tcp_abort_on_overflow=1` 时直接 RST）——客户端看到"连接成功又立刻被断"的经典谜题。
 - **队列上限**：`backlog` 实际取 `min(backlog, net.core.somaxconn)`，默认 somaxconn=128（旧内核），调优时要两边一起改。
 
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
 | 连接预热 | 交易会话在开盘前建立（避开关键路径上的三次握手 RTT），空闲时发心跳保活 |
 | 建连延迟 | `connect` 阻塞一个 RTT；低延迟场景研究 `TCP_FASTOPEN`（0-RTT 数据）或干脆 UDP/组播 |
 | fd 上限 | HFT 网关维护数百条行情/订单连接，`ulimit -n` 与 `somaxconn` 是上线 checklist 项 |
-| 抓包验证 | 建连阶段是 [12.5 Wireshark](../12.5-wireshark-packet-analysis/) 的第一个实验对象 |
+| 抓包验证 | 建连阶段是 [12.5 Wireshark](../../12.5-wireshark-packet-analysis/) 的第一个实验对象 |
 
 <a id="pnp-01-quiz"></a>
 
@@ -181,4 +181,4 @@ int main(int argc, char** argv) {
 ## 交叉引用
 
 - 下一篇：[02 TCP 字节流与粘包](./02_TCPByteStream.md)
-- [03.5 UNP Ch1](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/study.md) · [03 Linux 用户态 API](../03-linux-userspace-api/) · [12 TCP/IP 协议](../12-tcpip-protocols/) · [13 内核网络](../13-kernel-networking/)
+- [03.5 UNP Ch1](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/study.md) · [03 Linux 用户态 API](../../03-linux-userspace-api/) · [12 TCP/IP 协议](../../12-tcpip-protocols/) · [13 内核网络](../../13-kernel-networking/)

@@ -46,7 +46,7 @@
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
 | A1 | POSIX：多进程 / 多线程 / 信号 / `shm` / fd | [03](../03-linux-userspace-api/) · [01](../01-c-language/) | 自写小 Demo，不用脚本玩具 |
-| A2 | 简易高性能 TCP：阻塞 → 非阻塞 → **epoll** | [12](../04.5-network-sockets/) · [03](../03-linux-userspace-api/) | 能压测、会看 `ss`/`tcpdump` |
+| A2 | 简易高性能 TCP：阻塞 → 非阻塞 → **epoll** | [12](../04-cpp/M5-cpp-network-programming/) · [03](../03-linux-userspace-api/) | 能压测、会看 `ss`/`tcpdump` |
 
 - [ ] A1  
 - [ ] A2  
@@ -91,8 +91,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| E1 | TCP 参数调优 + 抓包 | [13](../12-tcpip-protocols/) · [12](../04.5-network-sockets/) | 会改 sysctl、能讲清延迟来源 |
-| E2 | 用户态高性能收发 + **延迟统计**（p50/p99） | [12](../04.5-network-sockets/) · [18](../17-hft-engineering/) | 绑核前后对比一组数字 |
+| E1 | TCP 参数调优 + 抓包 | [13](../12-tcpip-protocols/) · [12](../04-cpp/M5-cpp-network-programming/) | 会改 sysctl、能讲清延迟来源 |
+| E2 | 用户态高性能收发 + **延迟统计**（p50/p99） | [12](../04-cpp/M5-cpp-network-programming/) · [18](../17-hft-engineering/) | 绑核前后对比一组数字 |
 | E3 | ARM 上 DPDK **能编过、跑通基础例程**（旁路思想） | [15](../14-dpdk/) | 不要求生产级吞吐；知与内核栈分界 |
 
 - [ ] E1  

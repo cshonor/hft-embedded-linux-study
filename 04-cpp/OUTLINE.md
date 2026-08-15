@@ -1,7 +1,7 @@
 # C++ 学习链 · 里程碑与 HFT 插入顺序
 
-> **笔记正文：** 本目录 M0–M4 五个模块（自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制）  
-> **HFT 读序 ≠ 模块编号 M0→M4** — 实际顺序 M0→M1→M3（穿插）→M2→M4，以本表里程碑为准。
+> **笔记正文：** 本目录 M0–M5 六个模块（M0–M4 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制；M5 = C++ 网络编程 muduo/PNP）  
+> **HFT 读序 ≠ 模块编号 M0→M5** — 实际顺序 M0→M1→M3（穿插）→M2→M5，M4 可选，以本表里程碑为准。
 
 ---
 
@@ -10,7 +10,7 @@
 | 原则 | 说明 |
 |------|------|
 | **C 先于 C++** | [01 CSAPP](../02-computer-systems/) + [02 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
-| **Modern 先于 muduo** | [10 PNP](../04.5-network-sockets/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
+| **Modern 先于 muduo** | [10 PNP](./M5-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
 | **并发先于 HFT 引擎** | [17 HFT](../17-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
@@ -36,7 +36,7 @@
 
 **必会：** RAII、智能指针、`move`/完美转发、lambda、`=delete`/`=default`、`constexpr` 直觉。
 
-**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [10 PNP](../04.5-network-sockets/)。
+**验收：** 能读 muduo 里 `shared_ptr` / 回调 / 移动语义不懵 → 再开 [10 PNP](./M5-cpp-network-programming/)。
 
 ---
 

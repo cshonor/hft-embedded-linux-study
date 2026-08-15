@@ -27,4 +27,4 @@
 
 - **12.5-wireshark-packet-analysis** — 抓包实战，配合各章协议分析
 - **13-kernel-networking** — Linux 内核网络栈实现
-- **04.5-network-sockets** — Socket 编程（UDP/TCP API）
+- **04-cpp/M5-cpp-network-programming** — Socket 编程（UDP/TCP API）

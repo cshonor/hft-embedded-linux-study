@@ -187,9 +187,9 @@ int main() {
 | 场景 | 关系 |
 |------|------|
 | 行情网关 | 多路行情源 + 订单网关 + 管理端口，单线程 epoll 收敛所有连接（muduo 式）已是基线架构 |
-| 延迟预算 | `epoll_wait` 唤醒 + 调度 ≈ 微秒级——热路径依旧嫌慢 → [06](./06_NonBlockingIO.md) 的 busy poll → [14 DPDK](../14-dpdk/) 内核旁路 |
+| 延迟预算 | `epoll_wait` 唤醒 + 调度 ≈ 微秒级——热路径依旧嫌慢 → [06](./06_NonBlockingIO.md) 的 busy poll → [14 DPDK](../../14-dpdk/) 内核旁路 |
 | `SO_REUSEPORT` | 多核各自持独立 epoll，连接按哈希分片到核，消除锁与惊群——低延迟网关标配 |
-| 观测 | 每秒事件数、事件循环延迟分布用 [16 BPF](../16-bpf-observability/) 直接量 |
+| 观测 | 每秒事件数、事件循环延迟分布用 [16 BPF](../../16-bpf-observability/) 直接量 |
 
 <a id="pnp-07-quiz"></a>
 
@@ -206,4 +206,4 @@ int main() {
 ## 交叉引用
 
 - 上一篇：[06 非阻塞 I/O](./06_NonBlockingIO.md) · 下一篇：[08 UDP/组播](./08_UDP_Multicast.md)
-- [04 Netcat（select 版）](./04_Netcat.md) · [13 内核网络](../13-kernel-networking/) · [13.5 现代网络](../13.5-modern-networking/) · [14 DPDK](../14-dpdk/)
+- [04 Netcat（select 版）](./04_Netcat.md) · [13 内核网络](../../13-kernel-networking/) · [13.5 现代网络](../../13.5-modern-networking/) · [14 DPDK](../../14-dpdk/)

@@ -10,7 +10,7 @@
 
 ## UNP 对照
 
-- [1.5 listen 队列](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md)
+- [1.5 listen 队列](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md)
 - Ch4 `accept` / `connect`
 
 <a id="pnp-03-concepts"></a>
@@ -134,7 +134,7 @@ int main() {
 | 场景 | 关系 |
 |------|------|
 | 会话身份 | 行情/订单会话管理以四元组为主键；自连接、端口重用会破坏"源端口=会话"的假设 |
-| 压测纪律 | 延迟压测与被测服务 **分机部署**，否则自连接 + 回环带宽失真（回环不经过真实网卡栈，数据见 [13-kernel-networking](../13-kernel-networking/)） |
+| 压测纪律 | 延迟压测与被测服务 **分机部署**，否则自连接 + 回环带宽失真（回环不经过真实网卡栈，数据见 [13-kernel-networking](../../13-kernel-networking/)） |
 | 断线重连风暴 | 重连风暴下临时端口耗尽 → `connect` 返回 `EADDRNOTAVAIL`，退避策略必须考虑端口资源 |
 
 <a id="pnp-03-quiz"></a>
@@ -152,4 +152,4 @@ int main() {
 ## 交叉引用
 
 - 上一篇：[02 粘包](./02_TCPByteStream.md) · 下一篇：[04 Netcat](./04_Netcat.md)
-- [03.5 UNP Ch1.5 listen 队列](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md) · [12 TCP/IP 协议](../12-tcpip-protocols/)
+- [03.5 UNP Ch1.5 listen 队列](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md) · [12 TCP/IP 协议](../../12-tcpip-protocols/)

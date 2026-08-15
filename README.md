@@ -3,7 +3,7 @@
 > **GitHub：** [github.com/cshonor/hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)  
 > **HFT 低延迟 Linux 底层** + **嵌入式 Linux 无人机飞控** 双线笔记与路线仓库。
 
-**技术板块 `00`–`22`（含 `.5` 模块 `03.5` / `04.5` / `05.5` / `05.6` / `06.5` / `12.5` / `13.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5` / `.6` = 现代补充资料或语言衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
+**技术板块 `00`–`22`（含 `.5` 模块 `03.5` / `05.5` / `05.6` / `06.5` / `12.5` / `13.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5` / `.6` = 现代补充资料或语言衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|----------|
 | **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** | 本仓：读序、OUTLINE、章节 scaffold | `00`–`22` |
 | **[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)** | C / C++ 详细笔记与代码 | [01 C](./01-c-language/) · [04 C++](./04-cpp/) |
-| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [03.5 UNP](./03.5-unix-network-api/) · [04.5 network-sockets](./04.5-network-sockets/) |
+| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [03.5 UNP](./03.5-unix-network-api/) · [04/M5 C++ 网络编程](./04-cpp/M5-cpp-network-programming/) |
 
 ```bash
 git clone https://github.com/cshonor/hft-embedded-linux-study.git
@@ -32,8 +32,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **02** | [computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 | 2 |
 | **03** | [linux-userspace-api](./03-linux-userspace-api/) | 用户态系统编程（TLPI） | 3 |
 | **03.5** | [unix-network-api](./03.5-unix-network-api/) | Socket API 精读（UNP — Stevens） | 3 |
-| **04** | [cpp](./04-cpp/) | C++（Modern / 并发 / 对象模型） | 3 穿插 |
-| **04.5** | [network-sockets](./04.5-network-sockets/) | C++ 网络编程（muduo / PNP） | 3 穿插 |
+| **04** | [cpp](./04-cpp/) | C++（Modern / 并发 / 对象模型；M5 = **C++ 网络编程** muduo·PNP） | 3 穿插 |
 | **05** | [linux-kernel](./05-linux-kernel/) | 内核入门（LKD） | 4 |
 | **05.5** | [modern-kernel](./05.5-modern-kernel/) | 现代 5.x/6.x 内核**非 MM** 资料（补 ULK/LKD 2.6 过时） | 4 |
 | **05.6** | [kernel-debugging](./05.6-kernel-debugging/) | 内核正确性调试（KASAN/KGDB/Ftrace） | 4 |
@@ -70,7 +69,7 @@ Phase1  00 数字逻辑/CPU（当前；未完成前不正式开下一 Phase）
    ↓
 Phase2  01 C → 02 计算机系统
    ↓
-Phase3  03 用户态 API → 03.5 UNP socket → 04 C++ → 04.5 muduo 网络编程
+Phase3  03 用户态 API → 03.5 UNP socket → 04 C++ → M5 muduo 网络编程（04 内）
    ↓
 Phase4  05 内核入门 → 05.5 现代内核 → 05.6 调试 → 06 MM → 06.5 现代 MM
         （20 ULK 深度可后补）
@@ -86,7 +85,7 @@ Phase6  拓展: 18 · 19 · 20 · 21 · 22 · P9(OS from scratch) ·（兴趣）
 |-------|------|--------|
 | **1** | `00` 数字逻辑/CPU（黑盒语义为主） | setup/hold、寄存器与 FIFO；不纠结门级 |
 | **2** | `01` C → `02` 计算机系统 | 指针/内存过关；流水线、Cache、VM、并发能讲通 |
-| **3** | `03` → `03.5` → 穿插 `04` → `04.5` | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
+| **3** | `03` → `03.5` → 穿插 `04`（含 M5 muduo） | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
 | **4** | `05` → `05.5` → `05.6` → `06` → `06.5` | 调度、内存、同步入门地图清晰；知道 6.x 现代实现 |
 | **5A** | `07`–`10` | 启动链、设备树、简单驱动、板级闭环 |
 | **5B** | `12`–`17`（含 `12.5` 和 `13.5`） | Socket → 协议 → 内核网 → 现代 Net → DPDK → 观测 → HFT |
@@ -138,7 +137,7 @@ Phase6  拓展: 18 · 19 · 20 · 21 · 22 · P9(OS from scratch) ·（兴趣）
 ```
 00 数字逻辑 → 01 C → 02 计算机系统
     ↓
-03 用户态 API → 03.5 UNP socket → 04 C++ → 04.5 muduo 网络编程
+03 用户态 API → 03.5 UNP socket → 04 C++ → M5 muduo 网络编程（04 内）
     ↓
 05 内核 + 06 MM（+ 05.5 / 06.5 现代补充）
     ↓
@@ -191,7 +190,7 @@ Phase6  拓展: 18 · 19 · 20 · 21 · 22 · P9(OS from scratch) ·（兴趣）
 | — | The Linux Programming Interface — Kerrisk | `03` | epoll、mmap、mlock、RT 调度 |
 | — | Linux Kernel Debugging — Billimoria | `05.6` | KASAN/KGDB/Ftrace 内核正确性调试 |
 | 外C | C++ 学习链（Primer→Effective→Concurrency） | `04` | M1 Modern C++ / M2 并发+对象模型 |
-| 外P | 陈硕 PNP / muduo | `04.5` | epoll 多路复用实验骨架 |
+| 外P | 陈硕 PNP / muduo | `04/M5` | epoll 多路复用实验骨架 |
 | 外B | UNP Vol.1 — Stevens | `03.5` | Socket API、TCP_NODELAY、非阻塞 |
 | 外A | TCP/IP Illustrated Vol.1 — Stevens | `12` | UDP/组播、IP 分片、TCP |
 
@@ -221,7 +220,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 | **P3.5** | BusyBox 极简 Linux：内核编译 + rootfs + QEMU 启动到 shell | `05` `08` | P3 | [projects/P3.5-busybox-minimal-linux](./projects/P3.5-busybox-minimal-linux/) |
 | **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `05` `05.5` `05.6` `06` | P3+P3.5+P2.5 | [projects/P4-kernel-module](./projects/P4-kernel-module/) |
 | **P5** | 树莓派嵌入式 Linux 全链路（5 子项目见下） | `07`–`11` | P4 | [projects/P5-raspberry-pi-embedded](./projects/P5-raspberry-pi-embedded/) |
-| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04.5` `12` `13` `13.5` `16` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
+| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04/M5` `12` `13` `13.5` `16` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
 | **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `14` `15` `16` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |
 | **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `17` `21` `22` | P4+P5+P7 | [projects/P8-matching-engine](./projects/P8-matching-engine/) |
 | **P10** | HFT 单机原型：DPDK 行情 + 撮合引擎 + 策略 + 风控 + 回测完整链路 | `14` `17` `18` `22` | P7+P8 | [projects/P10-hft-prototype](./projects/P10-hft-prototype/) |

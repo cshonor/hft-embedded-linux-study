@@ -149,8 +149,8 @@ int main(int argc, char** argv) {
 |------|------|
 | 风控/清算链路 | 非关键路径走大批量 TCP（成交回报归集），TTCP 方法论直接适用 |
 | 测量纪律 | 指标定义（吞吐 vs 延迟 vs P99）、时钟源、预热、多次取样——HFT 基准测试的全部常识从这里起步 |
-| 延迟测试 | 小块 + `TCP_NODELAY` + P99/P99.9 分位数统计；进一步见 [15 系统性能](../15-systems-performance/) |
-| 硬件上限 | 万兆网卡线速 1.25GB/s，内核 TCP 大约能到 60-80%，再往上就是 [14 DPDK](../14-dpdk/) 的领地 |
+| 延迟测试 | 小块 + `TCP_NODELAY` + P99/P99.9 分位数统计；进一步见 [15 系统性能](../../15-systems-performance/) |
+| 硬件上限 | 万兆网卡线速 1.25GB/s，内核 TCP 大约能到 60-80%，再往上就是 [14 DPDK](../../14-dpdk/) 的领地 |
 
 <a id="pnp-05-quiz"></a>
 
@@ -167,4 +167,4 @@ int main(int argc, char** argv) {
 ## 交叉引用
 
 - 上一篇：[04 Netcat](./04_Netcat.md) · 下一篇：[06 非阻塞 I/O](./06_NonBlockingIO.md)
-- [02 粘包](./02_TCPByteStream.md)（readn/writen） · [12 TCP/IP 拥塞控制](../12-tcpip-protocols/) · [15 系统性能](../15-systems-performance/)
+- [02 粘包](./02_TCPByteStream.md)（readn/writen） · [12 TCP/IP 拥塞控制](../../12-tcpip-protocols/) · [15 系统性能](../../15-systems-performance/)

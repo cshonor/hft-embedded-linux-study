@@ -1,6 +1,6 @@
 # PNP — 陈硕《实用网络编程》实验目录
 
-> **Practical Network Programming** · 实战踩坑，与 [UNP 卷 1](../03.5-unix-network-api/README.md) **对照学习**（非 UNP 配套课）  
+> **Practical Network Programming** · 实战踩坑，与 [UNP 卷 1](../../03.5-unix-network-api/README.md) **对照学习**（非 UNP 配套课）  
 > 关系说明：PNP / UNP / C++ 三者关系（上游文件，未随迁移）
 
 ## 目录层级
@@ -26,7 +26,7 @@ PNP/
 | **UNP_Vol1/** | Stevens 原书 API、系统化节笔记 |
 | **PNP/** | 粘包、自连接、Netcat、TTCP、epoll 等 **实验 + 坑点笔记** |
 
-Daytime 等 UNP Ch1 示例仍在 [UNP Ch1 code](../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/code/README.md)；PNP 从 **工程向实验** 起步。
+Daytime 等 UNP Ch1 示例仍在 [UNP Ch1 code](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/code/README.md)；PNP 从 **工程向实验** 起步。
 
 ## 推荐顺序
 
