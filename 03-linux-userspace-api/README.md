@@ -120,7 +120,7 @@ Ch 2 → 3 → 4 → 5 → 20–21 → 23 → 29–30 → 35 → 49 → 56–61 
 | [05-LKD](../05-linux-kernel/) | 同一批 syscall **在内核里**怎么实现 |
 | [20-ULK](../20-linux-kernel-deep/) | LKD 之后的内核深度 |
 | [06-Gorman](../06-linux-mm/) | `mmap` 背后的 VM |
-| [12-PNP](../12-network-sockets/muduo-sockets/) · [12-UNP](../03.5-unix-network-api/) | 网络实验与 API 纵深 |
+| [12-PNP](../12-network-sockets/) · [12-UNP](../03.5-unix-network-api/) | 网络实验与 API 纵深 |
 | [16-SysPerf](../16-systems-performance/) | 量 epoll / off-CPU |
 | [18-HFT](../18-hft-engineering/) | 工程落地 |
 

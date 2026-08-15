@@ -66,7 +66,7 @@
 |--------|--------|
 | [01 CSAPP](../02-computer-systems/) Ch12 并发 | → [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) |
 | [01 CSAPP](../02-computer-systems/) Ch6 缓存 | → [2-Cpp-Object-Model](./M2-deep-principles/01-Cpp-Object-Model/) |
-| [10 PNP / muduo](../12-network-sockets/muduo-sockets/) | 前置 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) |
+| [10 PNP / muduo](../12-network-sockets/) | 前置 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) |
 | [17 HFT](../18-hft-engineering/) | 前置 Modern + Concurrency + Object Model |
 | [02 C](../01-c-language/) | C 数据面；与 C++ **分工不重复** |
 
