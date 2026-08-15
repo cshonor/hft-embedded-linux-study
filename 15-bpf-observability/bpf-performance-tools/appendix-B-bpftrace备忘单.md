@@ -1,142 +1,110 @@
-# 附录 B bpftrace备忘单 · bpftrace Cheat Sheet
+# 附录 B bpftrace 备忘单
 
-> **BPF Performance Tools** · Brendan Gregg · **精读**
+> 底本：《BPF之巅》附录 B（印刷 p776–777）
 
-## 探针类型速查
-
-| 探针 | 语法 | 说明 |
-|------|------|------|
-| 内核函数入口 | `kprobe:func` | 动态插桩，无 ABI 保证 |
-| 内核函数返回 | `kretprobe:func` | 获取返回值 `retval` |
-| 用户函数入口 | `uprobe:lib:func` | 动态插桩用户态 |
-| 用户函数返回 | `uretprobe:lib:func` | 获取返回值 |
-| 内核 tracepoint | `tracepoint:subsys:event` | 稳定 ABI，有 format 文件 |
-| USDT | `usdt:bin:probe` | 用户态静态探针，零未挂载开销 |
-| 定时采样 | `profile:hz:99` | CPU 采样（99Hz） |
-| 固定间隔 | `interval:s:5` | 每 5 秒触发 |
-| 脚本启动 | `BEGIN` | 初始化 |
-| 脚本退出 | `END` | 收尾打印 |
-
-## 变量速查
-
-| 类型 | 前缀 | 作用域 | 示例 |
-|------|------|--------|------|
-| 内置变量 | 无 | 只读上下文 | `pid`, `tid`, `comm`, `nsecs`, `cpu`, `arg0`-`arg5`, `retval` |
-| 临时变量 | `$` | 当前 probe 块 | `$start = nsecs;` |
-| Map 变量 | `@` | 跨事件持久 | `@[comm] = count();` |
-
-## 聚合函数速查
-
-| 函数 | 用途 | 示例 |
-|------|------|------|
-| `count()` | 计数 | `@[comm] = count();` |
-| `sum(x)` | 求和 | `@[comm] = sum(arg2);` |
-| `avg(x)` | 平均值 | `@avg = avg($lat);` |
-| `min(x)` / `max(x)` | 极值 | `@max = max($lat);` |
-| `hist(x)` | 2 的幂直方图 | `@lat = hist(nsecs - @s[tid]);` |
-| `lhist(x,lo,hi,step)` | 线性直方图 | `@lat = lhist($us, 0, 100, 10);` |
-
-## 内置函数速查
-
-| 函数 | 用途 |
-|------|------|
-| `str(ptr)` | 指针转字符串 |
-| `ntop(ip)` | IP 地址转字符串 |
-| `kstack` / `ustack` | 内核/用户调用栈 |
-| `printf(fmt, ...)` | 格式化打印（低频用） |
-| `join(ptr)` | 打印字符串数组 |
-| `time(fmt)` | 打印时间戳 |
-| `system(cmd)` | 执行系统命令 |
-| `exit()` | 退出脚本 |
-
-## 语法结构
-
-```bash
-# 基本形式
-probe /filter/ { actions; }
-
-# 多探针
-probe1 { @a = count(); }
-probe2 /pid == 1234/ { @b = sum(arg0); }
-END { print(@a); print(@b); }
+```
+bpftrace -e 'probe /filter/ { action; }'
 ```
 
-## HFT 常用模式
+## 探针
 
-### 延迟直方图模板
+| 探针 | 含义 |
+|---|---|
+| `BEGIN`, `END` | 程序开始和结束 |
+| `tracepoint:syscalls:sys_enter_execve` | execve(2) 系统调用 |
+| `tracepoint:syscalls:sys_enter_open` | open(2) 系统调用（也可跟踪 openat(2)） |
+| `tracepoint:syscalls:sys_exit_read` | 跟踪 read(2) 的返回（变体） |
+| `tracepoint:raw_syscalls:sys_enter` | 所有系统调用 |
+| `block:block_rq_insert` | 队列块 I/O 请求 |
+| `block:block_rq_issue` | 向存储设备发出块 I/O |
+| `block:block_rq_complete` | 块 I/O 的完成 |
+| `sock:inet_sock_set_state` | 套接字状态改变 |
+| `sched:sched_process_exec` | 进程执行 |
+| `sched:sched_switch` | 上下文切换 |
+| `sched:sched_wakeup` | 线程唤醒事件 |
+| `software:faults:1` | 缺页错误 |
+| `hardware:cache-misses:1000000` | 百万分之一的 LLC 缓存未命中 |
+| `kprobe:vfs_read` | 跟踪内核函数 vfs_read() |
+| `kretprobe:vfs_read` | 跟踪内核函数 vfs_read() 的返回 |
+| `uprobe:/bin/bash:readline` | 从 /bin/bash 跟踪 readline() |
+| `uretprobe:/bin/bash:readline` | readline() 的返回 |
+| `usdt:path:probe` | 从指定路径跟踪 USDT 探针 |
+| `profile:hz:99` | 以 99Hz 在所有 CPU 上采样 |
+| `interval:s:1` | 在一个 CPU 上每秒运行一次 |
 
-```bash
-bpftrace -e '
-kprobe:TARGET_FUNC { @start[tid] = nsecs; }
-kretprobe:TARGET_FUNC /@start[tid]/ {
-    @latency = hist(nsecs - @start[tid]);
-    delete(@start[tid]);
-}
-'
-```
+**探针别名**：kprobe/k、kretprobe/kr、tracepoint/t、usdt、profile、hardware、software、uprobe/u、uretprobe/ur、interval。
 
-### 按进程过滤 + 聚合
+## 变量（内置）
 
-```bash
-bpftrace -e '
-tracepoint:syscalls:sys_enter_sendto
-/comm == "myapp"/
-{
-    @[comm, args->fd] = count();
-}
-'
-```
+| 变量 | 含义 |
+|---|---|
+| `comm` | On-CPU 进程名 |
+| `username` | 用户名字符串 |
+| `tid` | On-CPU PID，**线程 ID** |
+| `pid` | 进程 ID（tgid） |
+| `uid` | 用户 ID |
+| `kstack` / `ustack` | 内核 / 用户调用栈 |
+| `nsecs` | 时间，纳秒 |
+| `elapsed` | 从进程开始算起的时间，纳秒 |
+| `cpu` | CPUID |
+| `probe` | 当前探针全名 |
+| `func` | 当前函数全名 |
+| `curtask` | 指向当前 task 结构体的指针 |
+| `cgroup` | 当前 cgroup ID |
+| `arg0..N` | [uk]probe 参数 |
+| `args->` | 跟踪点参数 |
+| `retval` | [uk]retprobe 返回值 |
+| `$1..$N` | CLI 参数，整数类型 |
+| `str($1)..` | CLI 参数，字符串类型 |
 
-### 滚动窗口输出
+## 动作（同步）
 
-```bash
-bpftrace -e '
-interval:s:5 {
-    print(@count);
-    clear(@count);
-}
-tracepoint:syscalls:sys_enter_read {
-    @[comm] = count();
-}
-'
-```
+| 动作 | 含义 |
+|---|---|
+| `@map[key] = count()` | 统计频率 |
+| `@map[key,...] = sum(var)` | 对变量求和 |
+| `@map[key,...] = hist(var)` | 以 2 为幂的直方图 |
+| `@map[key,...] = lhist(var, min, max, step)` | 线性直方图 |
+| `@map[key,...] = stats(var)` | 统计：个数、均值和总数 |
+| `min(var)`, `max(var)`, `avg(var)` | 最小/最大/平均值 |
+| `printf("format", var0..varN)` | 打印变量（聚合用 print()） |
+| `kstack(num)`, `ustack(num)` | 打印内核/用户堆栈（限定行数） |
+| `ksym(ip)`, `usym(ip)` | 指令指针的内核/用户符号字符串 |
+| `kaddr("name")`, `uaddr("name")` | 符号名称的内核/用户态地址 |
+| `str(str[, len])` | 来自地址的字符串 |
+| `ntop([af], addr)` | IP 地址到字符串 |
 
-### 常见陷阱
+## 动作（异步）
 
-1. **filter 中用 `=` 代替 `==`** — `pid = 1234` 是赋值不是比较，可能不报错但 filter 恒真导致全量输出；始终用 `==` 做比较
-2. **临时变量跨 probe 使用** — `$var` 只在当前 probe 块有效，跨事件需用 `@var`；用 `$` 做 Map key 不会持久化
-3. **忽视 Map 自动打印导致输出混乱** — 脚本退出时所有 `@` Map 自动打印；如需控制输出，在 `END` 中用 `print(@map)` 或 `clear(@map)`
+| 动作 | 含义 |
+|---|---|
+| `printf("format", var0..varN)` | 打印变量（聚合用 print()） |
+| `system("format", var0..varN)` | 运行一个命令行命令 |
+| `time("format")` | 打印格式化过的时间 |
+| `clear(@map)` | 清空映射表：删除所有键 |
+| `print(@map)` | 打印映射表 |
+| `exit()` | 退出 |
+
+## 开关
+
+| 开关 | 含义 |
+|---|---|
+| `-e 'program'` | 跟踪这个探针描述 |
+| `-l 'search'` | 打印探针，而不是跟踪 |
+| `-p PID` | PID |
+| `-usdt-pid PID`（`-p` 对 USDT） | 对 PID 启用 USDT 探针 |
+| `-c 'command'` | 运行这个命令 |
+| `-v` | 详细和调试输出模式 |
+
+## HFT 关联
+
+与第 5 章 notes（表 5-2/5-5/5-6/5-7）互补：那一章讲原理，本页是可贴墙速查。写排障脚本时先对照"动作"表选**内核态聚合**（count/hist/sum）而不是逐事件 printf——开销差 4 倍以上（表 18-2）。
 
 <details>
-<summary>📝 自测题（点击展开）</summary>
+<summary>自测题</summary>
 
-1. **kprobe 和 tracepoint 在选型上的优先级是什么？为什么？**
-
-   <details>
-   <summary>参考答案</summary>
-
-   优先级：tracepoint > kprobe。Tracepoint 是内核开发者维护的稳定接口，有 format 文件描述字段，跨内核版本兼容；kprobe 依赖内部函数名和参数布局，内核升级后可能改名或改签名导致脚本失效。只有当 tracepoint 不存在时才用 kprobe。
-   </details>
-
-2. **`hist()` 和 `lhist()` 有什么区别？何时用哪个？**
-
-   <details>
-   <summary>参考答案</summary>
-
-   `hist(x)` 自动按 2 的幂分桶（1, 2, 4, 8, 16...），适合看整体分布形态和量级。`lhist(x, lo, hi, step)` 指定线性区间和步长——如 `lhist($lat, 0, 1000, 10)` 看延迟 0-1000ns 每 10ns 的分布。选择：先 `hist()` 看整体形态定位问题区间，再 `lhist()` 对异常区间做精细分析。HFT 延迟分析两者结合使用。
-   </details>
-
-3. **如何实现「每 5 秒输出一次统计结果然后清空」的滚动窗口模式？**
-
-   <details>
-   <summary>参考答案</summary>
-
-   用 `interval:s:5` 探针配合 `print()` 和 `clear()`：`interval:s:5 { print(@count); clear(@count); }`。interval 每 5 秒触发一次，打印当前 Map 内容后清空，实现滚动窗口统计。相比脚本退出时一次性输出，滚动窗口能看实时趋势变化。
-   </details>
+1. `t:`、`k:`、`kr:`、`u:`、`ur:` 各是什么别名？
+2. tid 与 pid 的区别？双探针计时为什么用 tid 做键？
+3. 同步 printf 与异步 printf 的区别？
 
 </details>
-
-## 相关章节
-
-- 上一章：[appendix-A-bpftrace单行命令.md](./appendix-A-bpftrace单行命令.md)
-- 下一章：[appendix-C-BCC工具开发.md](./appendix-C-BCC工具开发.md)

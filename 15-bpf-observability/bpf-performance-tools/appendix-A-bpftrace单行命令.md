@@ -1,135 +1,184 @@
-# 附录 A bpftrace单行命令 · bpftrace One-Liners
+# 附录 A bpftrace 单行程序
 
-> **BPF Performance Tools** · Brendan Gregg · **精读**
-
-## 按资源域分类的常用 One-Liners
-
-### CPU
+> 底本：《BPF之巅》附录 A（印刷 p770–774），选取书中各章用到的单行程序
 
 ```bash
-# 统计内核函数调用次数
-bpftrace -e 'kprobe:do_sys_open { @++ }'
-
-# CPU 采样火焰图数据
-bpftrace -e 'profile:hz:99 { @[kstack] = count() }'
-
-# 调度延迟直方图（runqueue latency）
-bpftrace -e 'tracepoint:sched:sched_wakeup { @s[tid]=nsecs } tracepoint:sched:sched_switch /@s[args->next_pid]/ { @runqlat=hist(nsecs-@s[args->next_pid]); delete(@s[args->next_pid]) }'
-
-# off-CPU 时间按进程统计
-bpftrace -e 'tracepoint:sched:sched_switch { @off[args->prev_comm] = count() }'
-
-# 上下文切换频率
-bpftrace -e 'tracepoint:sched:sched_switch { @++ }'
+# 语法骨架：bpftrace -e 'probe /filter/ { action; }'
 ```
 
-### 内存
+## 第 6 章 CPU
 
 ```bash
-# malloc 大小分布
-bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:malloc { @size = hist(arg0); }'
+# 跟踪新进程，包括进程参数
+bpftrace -e 'tracepoint:syscalls:sys_enter_execve { join(args->argv); }'
 
-# 缺页异常按进程统计
-bpftrace -e 'tracepoint:exceptions:page_fault_user { @[comm] = count(); }'
+# 以 99Hz 的频率采样正在运行的进程名
+bpftrace -e 'profile:hz:99 { @[comm] = count(); }'
 
-# kmalloc 调用频率
-bpftrace -e 'kprobe:kmalloc { @[comm] = count(); }'
+# 以 49Hz 的频率采样进程 ID 为 189 的用户态调用栈信息
+bpftrace -e 'profile:hz:49 /pid == 189/ { @[ustack] = count(); }'
+
+# 跟踪通过 pthread_create() 创建的新线程
+bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread-2.27.so:pthread_create
+    { printf("%s by %s (%d)\n", probe, comm, pid); }'
 ```
 
-### 文件 I/O
+## 第 7 章 内存
 
 ```bash
-# 文件打开按进程统计
-bpftrace -e 'tracepoint:syscalls:sys_enter_openat { @[comm] = count(); }'
+# 根据用户态调用栈统计进程堆内存扩展（brk()）
+bpftrace -e 'tracepoint:syscalls:sys_enter_brk { @[ustack, comm] = count(); }'
 
-# read() 返回值分布
-bpftrace -e 'tracepoint:syscalls:sys_exit_read { @bytes = hist(args->ret); }'
+# 按进程统计缺页错误 / 按用户态调用栈统计缺页错误
+bpftrace -e 'software:faults:1 { @[comm] = count(); }'
+bpftrace -e 'software:faults:1 { @[ustack, comm] = count(); }'
 
-# VFS 延迟直方图
-bpftrace -e 'kprobe:vfs_read { @s[tid]=nsecs } kretprobe:vfs_read /@s[tid]/ { @lat=hist(nsecs-@s[tid]); delete(@s[tid]) }'
+# 通过跟踪点统计 vmscan 操作
+bpftrace -e 'tracepoint:vmscan:* { @[probe]++; }'
 ```
 
-### 网络
+## 第 8 章 文件系统
 
 ```bash
-# TCP 重传统计
-bpftrace -e 'tracepoint:tcp:tcp_retransmit_skb { @[ntop(args->saddr),ntop(args->daddr)] = count() }'
+# 按进程名统计通过 open(2) 打开的文件
+bpftrace -e 't:syscalls:sys_enter_open { printf("%s %s\n", comm, str(args->filename)); }'
 
-# 连接建立延迟
-bpftrace -e 'kprobe:tcp_v4_connect { @s[tid]=nsecs } kretprobe:tcp_v4_connect /@s[tid]/ { @lat=hist(nsecs-@s[tid]) }'
+# 展示 read() 请求大小分布
+bpftrace -e 'tracepoint:syscalls:sys_enter_read { @ = hist(args->count); }'
 
-# sendto 字节数按进程
-bpftrace -e 'tracepoint:syscalls:sys_enter_sendto { @[comm] = sum(args->len); }'
+# 展示 read() 实际读取字节数（以及错误，负值）
+bpftrace -e 'tracepoint:syscalls:sys_exit_read { @ = hist(args->ret); }'
 
-# 网卡发送延迟（qdisc → driver）
-bpftrace -e 'kprobe:dev_queue_xmit { @s[tid]=nsecs } kprobe:dev_hard_start_xmit /@s[tid]/ { @drv=hist(nsecs-@s[tid]); delete(@s[tid]) }'
+# 统计 VFS 调用
+bpftrace -e 'kprobe:vfs_* { @[probe] = count(); }'
+
+# 统计 ext4 跟踪点
+bpftrace -e 't:ext4:* { @[probe] = count(); }'
 ```
 
-### 锁
+## 第 9 章 磁盘 I/O
 
 ```bash
-# 互斥锁等待时间直方图
-bpftrace -e 'kprobe:mutex_lock { @s[tid]=nsecs } kretprobe:mutex_lock /@s[tid]/ { @lock=hist(nsecs-@s[tid]); delete(@s[tid]) }'
+# 统计块 I/O 跟踪点
+bpftrace -e 't:block:* { @[probe] = count(); }'
 
-# 按函数统计锁争用
-bpftrace -e 'kprobe:__mutex_lock_slowpath { @[kstack] = count(); }'
+# 以直方图统计块 I/O 尺寸
+bpftrace -e 't:block:block_rq_issue { @ = hist(args->bytes); }'
+
+# 统计块 I/O 请求的用户态调用栈
+bpftrace -e 't:block:block_rq_issue { @[ustack] = count(); }'
+
+# 统计块 I/O 的类型标记（rwbs）
+bpftrace -e 't:block:block_rq_issue { @[args->rwbs] = count(); }'
+
+# 按设备和 I/O 类型跟踪块 I/O 错误
+bpftrace -e 't:block:block_rq_complete /args->error/
+    { printf("dev %d type %s error %d\n", args->dev, args->rwbs, args->error); }'
+
+# 统计 SCSI opcode / 结果代码 / 驱动函数
+bpftrace -e 't:scsi:scsi_dispatch_cmd_start { @[args->opcode] = count(); }'
+bpftrace -e 't:scsi:scsi_dispatch_cmd_done { @[args->result] = count(); }'
+bpftrace -e 'kprobe:scsi_* { @[func] = count(); }'
 ```
 
-## HFT 60 秒快速排障清单
+## 第 10 章 网络
 
 ```bash
-# 1. 调度延迟（3 秒采样）
-timeout 3 bpftrace -e 'tracepoint:sched:sched_wakeup { @s[tid]=nsecs } tracepoint:sched:sched_switch /@s[args->next_pid]/ { @rl=hist(nsecs-@s[args->next_pid]); delete(@s[args->next_pid]) }'
+# 按 PID 和进程名统计套接字 accept(2) / connect(2) 调用
+bpftrace -e 't:syscalls:sys_enter_accept { @[pid, comm] = count(); }'
+bpftrace -e 't:syscalls:sys_enter_connect { @[pid, comm] = count(); }'
 
-# 2. TCP 重传（10 秒采样）
-timeout 10 bpftrace -e 'tracepoint:tcp:tcp_retransmit_skb { printf("%s %s:%d > %s:%d\n", strftime("%H:%M:%S"), ntop(args->saddr), args->sport, ntop(args->daddr), args->dport); @++ }'
+# 按在 CPU 上运行的 PID/进程名统计套接字发送和接收的字节数
+bpftrace -e 'kprobe:sock_sendmsg, kretprobe:sock_recvmsg
+    { @[pid, comm, retval] = sum(retval); }'
 
-# 3. on-CPU 热点（5 秒采样 → 火焰图）
-timeout 5 bpftrace -e 'profile:hz:99 { @[kstack] = count() }'
+# 统计 TCP 的发送和接收次数 / 字节数直方图
+bpftrace -e 'k:tcp_sendmsg { @send = count(); } kretprobe:tcp_recvmsg { @recv = count(); }'
+bpftrace -e 'k:tcp_sendmsg { @send_bytes = hist(arg2); }'
+bpftrace -e 'kretprobe:tcp_recvmsg { @recv_bytes = hist(retval); }'
 
-# 4. 短命进程（持续监控）
-bpftrace -e 'tracepoint:sched:sched_process_exec { printf("%s %s\n", strftime("%H:%M:%S"), comm) }'
+# 按类型与远程主机（仅 IPv4）统计 TCP 重传
+bpftrace -e 't:tcp:tcp_retransmit_* { @[probe, ntop(2, args->saddr)] = count(); }'
 
-# 5. 系统调用频率（5 秒采样）
-timeout 5 bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count() }'
+# 以直方图统计 UDP 发送的字节数
+bpftrace -e 'k:udp_sendmsg { @send_bytes = hist(arg2); }'
+
+# 统计发送数据包时的内核态调用栈
+bpftrace -e 't:inet:net_dev_xmit { @[kstack] = count(); }'
 ```
 
-### 常见陷阱
+## 第 11 章 安全
 
-1. **直接复制 one-liner 不修改参数** — one-liner 中的函数名、PID、端口是示例值，需替换为目标环境实际值；不改参数可能匹配不到任何事件
-2. **在高频事件上用 printf 逐行打印** — printf 每次调用都走 ring buffer 到用户态，高频 probe 上会导致输出爆炸+系统减速；应改用 Map 聚合（count/sum/hist）
-3. **忽视 one-liner 的运行时长控制** — 某些 one-liner（如全系统 syscall 追踪）数据量巨大；生产环境应加 `timeout N` 或按进程过滤 `/comm == "myapp"/`
+```bash
+# 为 PID 1234 的进程统计安全审计事件数
+bpftrace -e '/pid == 1234/ { @[probe] = count(); }'
+
+# 跟踪 PAM 会话开始
+bpftrace -e 'u:/lib/x86_64-linux-gnu/libpam.so.0:pam_start
+    { printf("%s: %s\n", str(arg0), str(arg1)); }'
+
+# 跟踪内核模块加载
+bpftrace -e 't:module:module_load { printf("load: %s\n", str(args->name)); }'
+```
+
+## 第 13 章 应用程序
+
+```bash
+# 按用户态调用栈计算 malloc() 请求字节总数（高开销！）
+bpftrace -e 'u:libc:malloc { @[ustack] = sum(arg0); }'
+
+# 跟踪 kill() 信号：发送进程名、目标 PID、信号号码
+bpftrace -e 't:syscalls:sys_enter_kill
+    { printf("%s PID %d signal %d\n", comm, args->pid, args->sig); }'
+
+# 对 libpthread 互斥锁方法计数 1 秒
+bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread.so.0:pthread_mutex*lock
+    { @[probe] = count(); } interval:s:1 { exit(); }'
+
+# 对 libpthread 条件变量函数计数 1 秒
+bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread.so.0:pthread_cond*
+    { @[probe] = count(); } interval:s:1 { exit(); }'
+```
+
+## 第 14 章 内核
+
+```bash
+# 按系统调用函数对系统调用计数
+bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[ksym(*(kaddr("sys_call_table")
+    + args->id * 8))] = count(); }'
+
+# 对以 "attach" 开始的内核函数计数
+bpftrace -e 'kprobe:attach* { @[probe] = count(); }'
+
+# 为内核函数 vfs_read() 计时并总结为直方图（双探针计时模板）
+bpftrace -e 'k:vfs_read { @ts[tid] = nsecs; }
+    kr:vfs_read /@ts[tid]/ { @ = hist(nsecs - @ts[tid]); delete(@ts[tid]); }'
+
+# 对内核函数 "func1" 第一个整数参数的出现频率计数
+bpftrace -e 'kprobe:func1 { @[arg0] = count(); }'
+
+# 对内核函数 "func1" 返回值的出现频率计数
+bpftrace -e 'kretprobe:func1 { @[retval] = count(); }'
+
+# 以 99Hz 采样内核态调用栈，不包含 idle
+bpftrace -e 'profile:hz:99 /pid != 0/ { @[kstack] = count(); }'
+
+# 对上下文切换调用栈计数
+bpftrace -e 'tracepoint:sched:sched_switch { @[kstack] = count(); }'
+
+# 按内核函数对工作队列请求计数
+bpftrace -e 't:workqueue:workqueue_execute_start { @[ksym(args->function)] = count(); }'
+```
+
+## HFT 关联
+
+这一页可打印贴墙：行情机排障 90% 的场景（进程创建、网络收发、TCP 重传、大 read、锁风暴）都有对应单行。注意书中的库路径是 glibc 2.27 时代的，用前先 `ldd` 确认本机 libc/libpthread 版本。
 
 <details>
-<summary>📝 自测题（点击展开）</summary>
+<summary>自测题</summary>
 
-1. **为什么 one-liner 中用 `@[kstack] = count()` 而非 `printf("%s", kstack)` 做火焰图数据？**
-
-   <details>
-   <summary>参考答案</summary>
-
-   printf 每次命中都把完整栈字符串送到用户态，高频采样下 ring buffer 溢出+开销大。`@[kstack] = count()` 在内核 Map 中用栈 ID 聚合，只存栈哈希+计数，退出时一次性输出。开销低几个数量级，适合 99Hz 采样。
-   </details>
-
-2. **如何用 one-liner 快速判断 HFT 延迟尖刺是调度问题还是网络问题？**
-
-   <details>
-   <summary>参考答案</summary>
-
-   两条 one-liner 并行短跑：(1) runqlat 直方图——如果尾部有毫秒级异常，说明调度抖动；(2) tcpretrans 计数——如果有重传事件，说明网络丢包。两者都正常则检查 offcputime（锁/IO 等待）和 irq 频率（中断干扰）。
-   </details>
-
-3. **malloc 大小分布的 one-liner `uprobe:libc:malloc { @size = hist(arg0); }` 在 HFT 上有什么风险？**
-
-   <details>
-   <summary>参考答案</summary>
-
-   malloc 是极高频函数（每秒可能数万次），uprobe 每次 hit 都执行 BPF 程序+栈获取，per-hit 开销在微秒级。在 HFT 策略循环中 attach 此 probe 会显著放大延迟。应：(1) 短跑 1-2 秒采样；(2) 按进程过滤 `/comm == "myapp"/`；(3) 用 Map 聚合而非逐事件打印；(4) 绝不在生产交易时段运行。
-   </details>
+1. 双探针计时模板为什么用 `tid` 做键、kretprobe 里为什么带 `/@ts[tid]/` 过滤？
+2. `sys_exit_read` 的 hist(args->ret) 为什么能看到"错误"？
+3. 哪个单行被原书标注"高开销"？为什么？
 
 </details>
-
-## 相关章节
-
-- 上一章：[chapter-18-技巧与常见问题.md](chapter-18-tips-and-tricks)
-- 下一章：[appendix-B-bpftrace备忘单.md](./appendix-B-bpftrace备忘单.md)
