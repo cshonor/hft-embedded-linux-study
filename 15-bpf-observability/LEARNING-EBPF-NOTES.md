@@ -1,4 +1,4 @@
-# 《eBPF 学习手册》读书笔记
+# 《eBPF 学习手册》读书笔记（导读索引）
 
 > **英文：** *Learning eBPF*  
 > **作者：** Liz Rice（eBPF 基金会核心人物，Isovalent/Netlify CTO）  
@@ -8,6 +8,26 @@
 > **本地电子书：** [LEARNING-EBPF-BILINGUAL.pdf](./LEARNING-EBPF-BILINGUAL.pdf)（GPT 中英双语版，551 页，原文+译文逐段对照）  
 > **定位：** [15-bpf-observability/](./) 模块的**现代原理补充** — 补 [BPF Performance Tools](./BPF-PERFORMANCE-TOOLS-EVAL.md) 缺的 libbpf/CO-RE/验证器/程序类型  
 > **姊妹对比：** [EBPF-BOOKS-COMPARISON.md](./EBPF-BOOKS-COMPARISON.md)
+
+---
+
+## 章节笔记（已全部完成，基于 GPT 双语 PDF 逐章精读）
+
+全部 11 章笔记位于 [learning-ebpf/](./learning-ebpf/)，每份结构统一：**本章目标 → 概念详解（含关键代码）→ 坑点清单 → HFT 关联 → 自测题 → 交叉引用**。
+
+| 章 | 笔记 | 核心内容 | HFT | 读法 |
+|----|------|------|-----|------|
+| 1 | [01-什么是eBPF.md](./learning-ebpf/01-什么是eBPF.md) | eBPF 起源（BPF→eBPF）、内核模块对比、动态加载、云原生演进 | 🟡 | 选读 — 概念入门，已懂可跳 |
+| 2 | [02-HelloWorld.md](./learning-ebpf/02-HelloWorld.md) | BCC 框架 Hello World、BPF map（hash/perf/ringbuf）、尾调用 | 🔴 | 精读 — map 是所有观测数据传递的基础 |
+| 3 | [03-eBPF程序解析.md](./learning-ebpf/03-eBPF程序解析.md) | eBPF 虚拟机/寄存器/指令、XDP 示例、字节码→机器码、BPF-to-BPF 调用 | 🔴 | 精读 — 理解程序在内核里怎么跑 |
+| 4 | [04-bpf系统调用.md](./learning-ebpf/04-bpf系统调用.md) | bpf syscall 全貌、加载程序/创建 map/操作 map、用户态↔内核态交互 | 🔴 | 精读 — 理解加载与数据通路 |
+| 5 | [05-CO-RE一次编译处处运行.md](./learning-ebpf/05-CO-RE一次编译处处运行.md) | BCC 五痛点、CO-RE 五要素、BTF/vmlinux.h、重定位、libbpf 骨架 | 🔴 | 精读 — **现代开发栈核心，BPF 之巅缺的就在这** |
+| 6 | [06-验证器.md](./learning-ebpf/06-验证器.md) | 验证算法（寄存器状态/剪枝）、六类典型拒绝、循环演进、bpf_loop | 🔴 | 精读 — 写程序必过的一关 |
+| 7 | [07-程序类型.md](./learning-ebpf/07-程序类型.md) | 决定链、五种 execve 挂法、fentry/fexit、uprobe、LSM、约 30 种程序类型 | 🔴 | 精读 — 选对附加点是观测设计的关键 |
+| 8 | [08-eBPF网络.md](./learning-ebpf/08-eBPF网络.md) | XDP 五返回码/包解析/负载均衡、TC、uprobe 钩 SSL 明文、Cilium/K8s | 🔴 | 精读 — HFT 网络延迟观测核心 |
+| 9 | [09-eBPF安全.md](./learning-ebpf/09-eBPF安全.md) | seccomp、TOCTOU、BPF LSM、Tetragon、bpf_send_signal 同步阻断 | 🟡 | 选读 — 交易机加固方向值得看 |
+| 10 | [10-eBPF编程.md](./learning-ebpf/10-eBPF编程.md) | bpftrace、BCC、libbpf、cilium/ebpf(bpf2go)、libbpfgo、Aya/Rust 选型 | 🟡 | 选读 — Rust eBPF 可对接 [20-rust-quant](../20-rust-quant/) |
+| 11 | [11-eBPF的未来.md](./learning-ebpf/11-eBPF的未来.md) | eBPF 基金会、Windows 版架构、签名/指针/内存分配在研方向 | ⚪ | 跳过 — 了解即可 |
 
 ---
 
@@ -39,24 +59,6 @@
 - **程序/附加类型** — kprobe/uprobe/tracepoint/xdp/tc/perf_event 等完整谱系
 
 本书 Ch5–Ch7 正好补这四块。
-
----
-
-## 11 章笔记框架 + HFT 读法
-
-| 章 | 标题 | 要点 | HFT | 读法 |
-|----|------|------|-----|------|
-| 1 | What Is eBPF and Why Is It Important? | eBPF 起源（BPF→eBPF）、内核模块对比、动态加载、云原生演进 | 🟡 | 选读 — 概念入门，已懂可跳 |
-| 2 | eBPF's "Hello World" | BCC 框架 Hello World、BPF map（hash/perf/ringbuf）、尾调用 | 🔴 | 精读 — map 是所有观测数据传递的基础 |
-| 3 | Anatomy of an eBPF Program | eBPF 虚拟机/寄存器/指令、XDP 示例、字节码→机器码、BPF-to-BPF 调用 | 🔴 | 精读 — 理解程序在内核里怎么跑 |
-| 4 | The bpf() System Call | bpf syscall 全貌、加载程序/创建 map/操作 map、用户态↔内核态交互 | 🔴 | 精读 — 理解加载与数据通路 |
-| 5 | CO-RE, BTF and Libbpf | CO-RE 原理、BTF、libbpf C 开发框架 | 🔴 | 精读 — **现代开发栈核心，BPF 之巅缺的就在这** |
-| 6 | The eBPF Verifier | 验证器检查、常见拒绝原因、怎么写合规代码 | 🔴 | 精读 — 写程序必过的一关 |
-| 7 | eBPF Program and Attachment Types | kprobe/uprobe/tracepoint/xdp/tc/perf_event 等完整谱系 | 🔴 | 精读 — 选对附加点是观测设计的关键 |
-| 8 | eBPF for Networking | 网络栈各附加点、拦截 ping/curl、负载均衡示例 | 🔴 | 精读 — HFT 网络延迟观测核心 |
-| 9 | eBPF for Security | 安全观测与策略 | 🟡 | 选读 — 除非做安全方向 |
-| 10 | eBPF Programming | 各种 eBPF 库与框架（Aya/Rust 等） | 🟡 | 选读 — Rust eBPF 可对接 [20-rust-quant](../20-rust-quant/) |
-| 11 | The Future Evolution of eBPF | eBPF 未来演进 | ⚪ | 跳过 — 了解即可 |
 
 ---
 

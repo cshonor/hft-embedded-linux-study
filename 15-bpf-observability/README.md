@@ -90,7 +90,7 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ XDP note) → 附录 A/B
 | 书 | 笔记 | 定位 |
 |----|------|------|
 | BPF Performance Tools（本模块主书） | [BPF-PERFORMANCE-TOOLS-EVAL.md](./BPF-PERFORMANCE-TOOLS-EVAL.md) | 工具谱系百科，按 OUTLINE 🔴 精读 |
-| Learning eBPF（Liz Rice） | [LEARNING-EBPF-NOTES.md](./LEARNING-EBPF-NOTES.md)（[双语 PDF](./LEARNING-EBPF-BILINGUAL.pdf)） | 现代原理补充，libbpf/CO-RE/验证器/程序类型 |
+| Learning eBPF（Liz Rice） | [LEARNING-EBPF-NOTES.md](./LEARNING-EBPF-NOTES.md)（导读索引）→ [learning-ebpf/](./learning-ebpf/)（[双语 PDF](./LEARNING-EBPF-BILINGUAL.pdf) 逐章精读 11 份笔记） | 现代原理补充，libbpf/CO-RE/验证器/程序类型 |
 
 ## 19↔20 联动参考文档
 
