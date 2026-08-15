@@ -14,7 +14,9 @@
 15-bpf-observability/
 ├── learning-ebpf/            ← 第一本（原理入门）
 │   ├── LEARNING-EBPF-NOTES.md   导读索引
-│   ├── 01~11-*.md               11 章精读笔记
+│   ├── chapter-01~11-*/         每章一文件夹
+│   │   ├── README.md            章导读（目标/小节索引/交叉引用）
+│   │   └── notes/               按节拆分的笔记
 │   └── LEARNING-EBPF-BILINGUAL.pdf
 ├── bpf-performance-tools/    ← 第二本（工具谱系）
 │   ├── OUTLINE.md               全书目录 + HFT 读/跳标注
@@ -26,6 +28,8 @@
 ├── ref-*.md                  ← 模块级参考（bpftrace 脚本/排查决策树/评审清单）
 └── README.md
 ```
+
+两本书同一套目录约定（与 [02-CSAPP](../02-computer-systems/) · [14-Systems-Performance](../14-systems-performance/) 一致）：`chapter-XX-english-slug/README.md`（章导读）+ `notes/`（按节拆分的笔记）。
 
 ---
 

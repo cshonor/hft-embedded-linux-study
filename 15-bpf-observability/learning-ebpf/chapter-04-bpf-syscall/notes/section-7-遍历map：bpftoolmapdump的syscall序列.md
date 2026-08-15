@@ -1,0 +1,19 @@
+# 遍历 map：bpftool map dump 的 syscall 序列
+
+找 map（对每个已加载 map 重复三连）：
+
+```
+bpf(BPF_MAP_GET_NEXT_ID, {start_id=N})     # 下一个 map id
+bpf(BPF_MAP_GET_FD_BY_ID, {map_id})        # 换 fd
+bpf(BPF_OBJ_GET_INFO_BY_FD, {...})         # 拿名字比对；无更多 map 时 GET_NEXT_ID 返回 ENOENT
+```
+
+读元素（迭代键值对）：
+
+```
+bpf(BPF_MAP_GET_NEXT_KEY, {key=NULL, next_key=...})   # key=NULL → 第一个有效键
+bpf(BPF_MAP_LOOKUP_ELEM, {map_fd, key, value})        # 取值
+... 循环直到 GET_NEXT_KEY 返回 ENOENT
+```
+
+配套还有 `BPF_MAP_DELETE_ELEM`（删除）。
