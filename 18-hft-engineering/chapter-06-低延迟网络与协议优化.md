@@ -13,7 +13,7 @@
 
 本章追踪数据包：**交易所 → 交换机 → NIC → OS/用户态 → Strategy**，并说明为何必须 **直通交换机、二进制协议、UDP 组播、Kernel Bypass、PTP**。
 
-→ 深化：[15-DPDK](../15-dpdk/) · [12-PNP](../12-network-sockets/muduo-sockets/)
+→ 深化：[15-DPDK](../15-dpdk/) · [12-PNP](../12-network-sockets/02-muduo-sockets/)
 
 ---
 

@@ -55,6 +55,6 @@
 
 ## 交叉阅读
 
-- [03-linux-userspace-api](../03-linux-userspace-api/) · [12-PNP](../12-network-sockets/muduo-sockets/)
+- [03-linux-userspace-api](../03-linux-userspace-api/) · [12-PNP](../12-network-sockets/02-muduo-sockets/)
 - [15-DPDK](../15-dpdk/) · [22-markets-microstructure](../22-markets-microstructure/)
 - [21-Rust](../21-rust-quant/) · [projects/P9-os-from-scratch](../projects/P9-os-from-scratch/)

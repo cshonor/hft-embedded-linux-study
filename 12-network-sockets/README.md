@@ -8,10 +8,10 @@
 
 ## 子模块
 
-| 目录 | 内容 |
-|------|------|
-| [muduo-sockets/](./muduo-sockets/) | 多线程 / 事件驱动 / 实践向 |
-| [unix-network-api/](./unix-network-api/) | Socket API 精读（UNP） |
+| 目录 | 内容 | 语言 |
+|------|------|------|
+| [01-unix-network-api/](./01-unix-network-api/) | Socket API 精读（UNP — Stevens） | C |
+| [02-muduo-sockets/](./02-muduo-sockets/) | 多线程 / 事件驱动 / 实践向（陈硕） | C++ |
 
 **上一章：** [11 运动控制](../11-motion-control/)（嵌入式支线）或从 [04 C++](../04-cpp/) 进网络  
 **下一章：** [13 TCP/IP 协议](../13-tcpip-protocols/)

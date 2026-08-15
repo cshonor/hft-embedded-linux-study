@@ -79,7 +79,7 @@
 | `read/write` | **`sock_recvmsg` → tcp_recvmsg / udp_recvmsg** |
 | `setsockopt` | **`tcp_setsockopt`** — `TCP_NODELAY`、`SO_RCVBUF`… |
 
-→ API 书：[12-network-sockets/unix-network-api](../../../12-network-sockets/unix-network-api/) · [02-CSAPP Ch11](../../../02-computer-systems/chapter-11-network-programming/)
+→ API 书：[12-network-sockets/01-unix-network-api](../../../12-network-sockets/01-unix-network-api/) · [02-CSAPP Ch11](../../../02-computer-systems/chapter-11-network-programming/)
 
 ---
 

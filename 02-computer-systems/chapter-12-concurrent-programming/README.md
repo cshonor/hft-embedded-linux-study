@@ -37,7 +37,7 @@ accept 新连接
 
 **HFT 三件事：**
 
-1. **I/O 密集** — reactor（`epoll`）+ 非阻塞 fd；少 `fork`（→ [12-UNP](../../12-network-sockets/unix-network-api/)）
+1. **I/O 密集** — reactor（`epoll`）+ 非阻塞 fd；少 `fork`（→ [12-UNP](../../12-network-sockets/01-unix-network-api/)）
 2. **共享状态** — 订单簿、持仓：锁粒度、无锁队列、**false sharing**（→ [Ch 6](../chapter-06-memory-hierarchy/)）
 3. **正确性 > 吞吐** — 死锁、可重入、`errno` 线程局部；热路径用 **SPSC 无共享** 设计
 

@@ -54,9 +54,9 @@ TLPI 全书代码用 C 编写，开始前需具备 C 基础。**必读两本即�
 | IPC | 管道、FIFO、共享内存、消息队列、信号量 |
 | 定时 / 休眠 | 定时器、`nanosleep` 等 |
 | 权限 / 资源 | UID、rlimit |
-| Socket 基础 | 进 [UNP](../12-network-sockets/unix-network-api/) 前的 Linux 语义 |
+| Socket 基础 | 进 [UNP](../12-network-sockets/01-unix-network-api/) 前的 Linux 语义 |
 
-深度网络协议 → [UNP](../12-network-sockets/unix-network-api/) · [TCP/IP Vol.1](../13-tcpip-protocols/)
+深度网络协议 → [UNP](../12-network-sockets/01-unix-network-api/) · [TCP/IP Vol.1](../13-tcpip-protocols/)
 
 ---
 
@@ -120,7 +120,7 @@ Ch 2 → 3 → 4 → 5 → 20–21 → 23 → 29–30 → 35 → 49 → 56–61 
 | [05-LKD](../05-linux-kernel/) | 同一批 syscall **在内核里**怎么实现 |
 | [20-ULK](../20-linux-kernel-deep/) | LKD 之后的内核深度 |
 | [06-Gorman](../06-linux-mm/) | `mmap` 背后的 VM |
-| [12-PNP](../12-network-sockets/muduo-sockets/) · [12-UNP](../12-network-sockets/unix-network-api/) | 网络实验与 API 纵深 |
+| [12-PNP](../12-network-sockets/02-muduo-sockets/) · [12-UNP](../12-network-sockets/01-unix-network-api/) | 网络实验与 API 纵深 |
 | [16-SysPerf](../16-systems-performance/) | 量 epoll / off-CPU |
 | [18-HFT](../18-hft-engineering/) | 工程落地 |
 

@@ -35,4 +35,4 @@
 Ch2 → Ch3 → Ch4 → Ch5 → Ch20–21 → Ch23 → Ch29–30 → Ch35 → Ch49 → Ch56–61 → Ch63
 ```
 
-→ 实验放各章 `code/` · 网络纵深 → [12-UNP](../12-network-sockets/unix-network-api/)
+→ 实验放各章 `code/` · 网络纵深 → [12-UNP](../12-network-sockets/01-unix-network-api/)

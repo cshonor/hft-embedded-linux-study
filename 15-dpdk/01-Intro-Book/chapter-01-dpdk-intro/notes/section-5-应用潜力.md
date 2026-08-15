@@ -22,7 +22,7 @@ HFT：**共置机房** 内仍多见 **裸金属 DPDK** 而非 NFV，但 **转发
 
 HFT：**UDP 组播行情**、自研 **tick 网关** — [chapter-05 组播](../chapter-05-组播行情接入.md)
 
-对照内核 C10K 路径：[11 UNP epoll](../../../12-network-sockets/unix-network-api/) · [14-LKN L4](../../../14-kernel-networking/chapter-11-layer-4-protocols/)
+对照内核 C10K 路径：[11 UNP epoll](../../../12-network-sockets/01-unix-network-api/) · [14-LKN L4](../../../14-kernel-networking/chapter-11-layer-4-protocols/)
 
 ---
 

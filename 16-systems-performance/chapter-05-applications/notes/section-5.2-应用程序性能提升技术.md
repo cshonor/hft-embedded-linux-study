@@ -25,7 +25,7 @@
 **HFT 选型：**
 
 - 组播行情极致延迟 → **DPDK 轮询** 或 **busy-poll**（内核栈）
-- 多交易所 TCP 订单通道 → **epoll + 非阻塞**（→ [12-UNP](../../../12-network-sockets/unix-network-api/)）
+- 多交易所 TCP 订单通道 → **epoll + 非阻塞**（→ [12-UNP](../../../12-network-sockets/01-unix-network-api/)）
 
 ### 并发与锁
 

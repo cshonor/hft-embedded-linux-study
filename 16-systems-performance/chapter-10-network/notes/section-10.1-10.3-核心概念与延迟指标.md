@@ -10,7 +10,7 @@
 | **MTU** | 最大传输单元（以太网常 1500） | 分片增延迟 — 路径 MTU _discovery |
 | **Jumbo Frames** | MTU ~9000 | 共置 LAN 常用；跨 WAN 慎用 |
 
-→ [13-TCP/IP](../../../13-tcpip-protocols/) · [12-UNP](../../../12-network-sockets/unix-network-api/)
+→ [13-TCP/IP](../../../13-tcpip-protocols/) · [12-UNP](../../../12-network-sockets/01-unix-network-api/)
 
 ### 多维度网络延迟
 

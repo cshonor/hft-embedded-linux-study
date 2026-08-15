@@ -57,7 +57,7 @@ skb->data                  // 当前「有效数据」起点（随 push/pull 变
 | **skb 共享** | **转发/NAT** 路径 clone — 理解 **引用计数** 防 UAF |
 | **头部 room** | 恶意/异常包若 room 不足会 **drop** — 抓包工具需知 |
 
-→ Slab 背景：[06-linux-mm Ch 8](../../06-linux-mm/chapter-08-slab-allocator/) · 用户态 API：[12-UNP](../../12-network-sockets/unix-network-api/)
+→ Slab 背景：[06-linux-mm Ch 8](../../06-linux-mm/chapter-08-slab-allocator/) · 用户态 API：[12-UNP](../../12-network-sockets/01-unix-network-api/)
 
 ---
 

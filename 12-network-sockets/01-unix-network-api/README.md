@@ -22,5 +22,5 @@ cd code/unpv13e
 
 ## 交叉阅读
 
-- 实战：[12-network-sockets/muduo-sockets](../../12-network-sockets/muduo-sockets/)
+- 实战：[12-network-sockets/02-muduo-sockets](../../12-network-sockets/02-muduo-sockets/)
 - 协议：[13-tcpip-protocols](../../13-tcpip-protocols/)

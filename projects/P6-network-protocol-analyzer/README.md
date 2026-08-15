@@ -13,7 +13,7 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [UNP socket 基础](../../12-network-sockets/unix-network-api/1_BasicFoundation/) | socket/bind/recvfrom |
+| [UNP socket 基础](../../12-network-sockets/01-unix-network-api/1_BasicFoundation/) | socket/bind/recvfrom |
 | [TCP/IP ch03 链路层](../../13-tcpip-protocols/chapter03-link-layer/) | Ethernet 帧格式 |
 | [TCP/IP ch05 IP](../../13-tcpip-protocols/chapter05-ip-protocol/) | IP 首部字段 |
 | [Rosen ch01 引言](../../14-kernel-networking/chapter-01-introduction/) | sk_buff、收包路径概览 |
@@ -101,7 +101,7 @@ for (;;) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| raw socket API | [UNP 基础](../../12-network-sockets/unix-network-api/1_BasicFoundation/) |
+| raw socket API | [UNP 基础](../../12-network-sockets/01-unix-network-api/1_BasicFoundation/) |
 | Ethernet/IP/TCP 首部 | [TCP/IP ch03/05](../../13-tcpip-protocols/chapter03-link-layer/) |
 | 字节序 | [CSAPP ch02](../../02-computer-systems/chapter-02-representing-information/) |
 
