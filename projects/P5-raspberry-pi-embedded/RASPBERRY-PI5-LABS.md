@@ -2,9 +2,9 @@
 
 > **板卡：** Raspberry Pi 5（BCM2712 + RP1）  
 > **定位：** 吃透原理、验证代码；极致低延迟生产环境后续上 x86。  
-> **主线：** 仍按 [README.md](../README.md) 推进；本文是 **动手清单**，不是另开一条书。  
-> **硬件归类（Primer Ch3）：** BCM2712 是 **ARM SoC**，不是独立 CPU+南北桥 — [说明](../08-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-raspberry-pi-is-soc.md)。  
-> **官方镜像：** 评估板级开箱可用；自研 PCB 时 BSP 只是模板 — [BSP FAQ](../08-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-bsp-is-template-not-product.md)。
+> **主线：** 仍按 [README.md](../../README.md) 推进；本文是 **动手清单**，不是另开一条书。  
+> **硬件归类（Primer Ch3）：** BCM2712 是 **ARM SoC**，不是独立 CPU+南北桥 — [说明](../../08-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-raspberry-pi-is-soc.md)。  
+> **官方镜像：** 评估板级开箱可用；自研 PCB 时 BSP 只是模板 — [BSP FAQ](../../08-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.2-bsp-is-template-not-product.md)。
 
 ---
 
@@ -32,7 +32,7 @@
 | 5 | **内核 DT 源码（Pi5）** | `bcm2712-rpi-5-b.dts` / RP1 节点对照 | [bcm2712-rpi-5-b.dts](https://github.com/raspberrypi/linux/blob/rpi-6.12.y/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts)（分支随内核版本调整） |
 | 6 | **PCIe（进阶）** | RP1 挂在 PCIe；日后 ARM 侧旁路/网卡实验的官方线索 | 见 RP1 文档 PCIe 段 + 内核 `Documentation/devicetree` / 驱动树 |
 
-通用内核 DT（与板级无关）：[Device Tree Usage](https://docs.kernel.org/devicetree/usage-model.html)（已收进 [09 驱动](../09-device-drivers-dt/)）。
+通用内核 DT（与板级无关）：[Device Tree Usage](https://docs.kernel.org/devicetree/usage-model.html)（已收进 [09 驱动](../../09-device-drivers-dt/)）。
 
 ---
 
@@ -45,8 +45,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| A1 | POSIX：多进程 / 多线程 / 信号 / `shm` / fd | [03](../03-linux-userspace-api/) · [01](../01-c-language/) | 自写小 Demo，不用脚本玩具 |
-| A2 | 简易高性能 TCP：阻塞 → 非阻塞 → **epoll** | [12](../04-cpp/M5-cpp-network-programming/) · [03](../03-linux-userspace-api/) | 能压测、会看 `ss`/`tcpdump` |
+| A1 | POSIX：多进程 / 多线程 / 信号 / `shm` / fd | [03](../../03-linux-userspace-api/) · [01](../../01-c-language/) | 自写小 Demo，不用脚本玩具 |
+| A2 | 简易高性能 TCP：阻塞 → 非阻塞 → **epoll** | [12](../../04-cpp/M5-cpp-network-programming/) · [03](../../03-linux-userspace-api/) | 能压测、会看 `ss`/`tcpdump` |
 
 - [ ] A1  
 - [ ] A2  
@@ -55,9 +55,9 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| B1 | 拉 Pi 内核树，`bcm2712_defconfig` 级配置 / 裁剪 / 交叉编译 / **替换运行内核** | [08](../08-embedded-boot-build/) · [05](../05-linux-kernel/) | 自编内核能启动；对照官方 Build 文档 |
-| B2 | 最小 rootfs（BusyBox / Buildroot 任选） | [08](../08-embedded-boot-build/) | 串口进 shell，理解 init |
-| B3 | U-Boot（或固件启动参数）+ `config.txt` / cmdline | [08](../08-embedded-boot-build/) · [07](../07-arm-architecture/) | 能改启动参数并解释 DTB 如何传入内核 |
+| B1 | 拉 Pi 内核树，`bcm2712_defconfig` 级配置 / 裁剪 / 交叉编译 / **替换运行内核** | [08](../../08-embedded-boot-build/) · [05](../../05-linux-kernel/) | 自编内核能启动；对照官方 Build 文档 |
+| B2 | 最小 rootfs（BusyBox / Buildroot 任选） | [08](../../08-embedded-boot-build/) | 串口进 shell，理解 init |
+| B3 | U-Boot（或固件启动参数）+ `config.txt` / cmdline | [08](../../08-embedded-boot-build/) · [07](../../07-arm-architecture/) | 能改启动参数并解释 DTB 如何传入内核 |
 
 - [ ] B1  
 - [ ] B2  
@@ -67,9 +67,9 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| C1 | GPIO **字符设备** + DTS + **DT overlay** 动态加载 | [09](../09-device-drivers-dt/) | userspace 能 `open/read/ioctl`；overlay 可开关 |
-| C2 | I2C 或 SPI **从设备驱动**（外接传感器） | [09](../09-device-drivers-dt/) | `compatible` 匹配、`reg`/`interrupts` 从 DT 来 |
-| C3 | **platform** + `probe`：资源全部从 DT 解析 | [09](../09-device-drivers-dt/) | 无硬编码基址；对照 RP1 / 板级 dts |
+| C1 | GPIO **字符设备** + DTS + **DT overlay** 动态加载 | [09](../../09-device-drivers-dt/) | userspace 能 `open/read/ioctl`；overlay 可开关 |
+| C2 | I2C 或 SPI **从设备驱动**（外接传感器） | [09](../../09-device-drivers-dt/) | `compatible` 匹配、`reg`/`interrupts` 从 DT 来 |
+| C3 | **platform** + `probe`：资源全部从 DT 解析 | [09](../../09-device-drivers-dt/) | 无硬编码基址；对照 RP1 / 板级 dts |
 
 - [ ] C1  
 - [ ] C2  
@@ -79,9 +79,9 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| D1 | 交叉编译 C/C++ 部署到板 | [08](../08-embedded-boot-build/) · [04](../04-cpp/) | 工具链与板子 ABI 一致 |
+| D1 | 交叉编译 C/C++ 部署到板 | [08](../../08-embedded-boot-build/) · [04](../../04-cpp/) | 工具链与板子 ABI 一致 |
 | D2 | systemd 服务 + 开机自启 | [10](./) | unit 能启停、journal 可读 |
-| D3 | cgroup / nice / 实时调度基础（SCHED_FIFO 等） | [10](./) · [05](../05-linux-kernel/) | 会限制 CPU/内存；知 PREEMPT_RT 边界 |
+| D3 | cgroup / nice / 实时调度基础（SCHED_FIFO 等） | [10](./) · [05](../../05-linux-kernel/) | 会限制 CPU/内存；知 PREEMPT_RT 边界 |
 
 - [ ] D1  
 - [ ] D2  
@@ -91,9 +91,9 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| E1 | TCP 参数调优 + 抓包 | [13](../12-tcpip-protocols/) · [12](../04-cpp/M5-cpp-network-programming/) | 会改 sysctl、能讲清延迟来源 |
-| E2 | 用户态高性能收发 + **延迟统计**（p50/p99） | [12](../04-cpp/M5-cpp-network-programming/) · [18](../17-hft-engineering/) | 绑核前后对比一组数字 |
-| E3 | ARM 上 DPDK **能编过、跑通基础例程**（旁路思想） | [15](../14-dpdk/) | 不要求生产级吞吐；知与内核栈分界 |
+| E1 | TCP 参数调优 + 抓包 | [13](../../12-tcpip-protocols/) · [12](../../04-cpp/M5-cpp-network-programming/) | 会改 sysctl、能讲清延迟来源 |
+| E2 | 用户态高性能收发 + **延迟统计**（p50/p99） | [12](../../04-cpp/M5-cpp-network-programming/) · [18](../../17-hft-engineering/) | 绑核前后对比一组数字 |
+| E3 | ARM 上 DPDK **能编过、跑通基础例程**（旁路思想） | [15](../../14-dpdk/) | 不要求生产级吞吐；知与内核栈分界 |
 
 - [ ] E1  
 - [ ] E2  
@@ -103,8 +103,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| F1 | `perf` / `bpftrace` 看热点与内核路径 | [16](../15-systems-performance/) · [17](../16-bpf-observability/) | 能解释一张火焰图 |
-| F2 | CPU 亲和 / 中断绑定 / 缓存友好访问 | [16](../15-systems-performance/) · [18](../17-hft-engineering/) | 有前后对比数据 |
+| F1 | `perf` / `bpftrace` 看热点与内核路径 | [16](../../15-systems-performance/) · [17](../../16-bpf-observability/) | 能解释一张火焰图 |
+| F2 | CPU 亲和 / 中断绑定 / 缓存友好访问 | [16](../../15-systems-performance/) · [18](../../17-hft-engineering/) | 有前后对比数据 |
 
 - [ ] F1  
 - [ ] F2  
@@ -113,8 +113,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| G1 | 精确时间 / 时间戳校准 | [18](../17-hft-engineering/) | `clock_gettime` / TSC 类取舍说得清 |
-| G2 | 无锁结构 + 内存池，模拟报文收发 | [18](../17-hft-engineering/) · [04](../04-cpp/) | 单测 + 简单压测 |
+| G1 | 精确时间 / 时间戳校准 | [18](../../17-hft-engineering/) | `clock_gettime` / TSC 类取舍说得清 |
+| G2 | 无锁结构 + 内存池，模拟报文收发 | [18](../../17-hft-engineering/) · [04](../../04-cpp/) | 单测 + 简单压测 |
 
 - [ ] G1  
 - [ ] G2  
@@ -129,8 +129,8 @@
 
 | 当它是什么 | 不当它是什么 |
 |------------|--------------|
-| **项目式实践**：环境 → `.ko` → GPIO / 中断 → 板上可演示 | 替代 [01 C](../01-c-language/) / [03 TLPI](../03-linux-userspace-api/) / 官方内核文档 |
-| 把 C、命令行、内核模块串成闭环 | 与 [README](../README.md) 平行的第二大纲 |
+| **项目式实践**：环境 → `.ko` → GPIO / 中断 → 板上可演示 | 替代 [01 C](../../01-c-language/) / [03 TLPI](../../03-linux-userspace-api/) / 官方内核文档 |
+| 把 C、命令行、内核模块串成闭环 | 与 [README](../../README.md) 平行的第二大纲 |
 | 产出：流程 + 可运行代码 + 本仓库笔记 | 只跟做、无验收勾选 |
 
 ### 和本表 Phase 的咬合
@@ -155,7 +155,7 @@
 - [ ] 交叉编译 / SSH 远程开发流程能复述并能独立重做  
 - [ ] 自写最小 `.ko`：能 `insmod` / `rmmod`，`dmesg` 有输出  
 - [ ] GPIO（或课中等价外设）用户态可观测；中断路径能讲清「谁注册、谁唤醒」  
-- [ ] 笔记落入 [09-device-drivers-dt](../09-device-drivers-dt/) 或本目录子文件夹，含命令与踩坑  
+- [ ] 笔记落入 [09-device-drivers-dt](../../09-device-drivers-dt/) 或本目录子文件夹，含命令与踩坑  
 - [ ] 至少对照一次官方 GPIO / 内核编译文档，标出课与 Pi5 的差异点  
 
 未勾验收 = 只算「跟过课」，不算 Project #1 完成。
@@ -163,7 +163,7 @@
 **课内笔记（随视频追加）：** [P5f-pi-driver-course/](./P5f-pi-driver-course/)  
 - [01 · 用户态 / 内核 / 硬件三层图](./P5f-pi-driver-course/01-userspace-kernel-hardware.md)  
 - [02 · microSD + 读卡器（刷机准备）](./P5f-pi-driver-course/02-microsd-card-reader.md)  
-- GPIO 概念（Primer）：[08](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.5-gpio-basics.md) · 排针↔DTS：[08](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.6-gpio-header-vs-dts.md)
+- GPIO 概念（Primer）：[08](../../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.5-gpio-basics.md) · 排针↔DTS：[08](../../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.6-gpio-header-vs-dts.md)
 
 ---
 
@@ -181,7 +181,7 @@ A 用户态板上实验
 12–15 网络后再 E；16–17 后 F；21 上 G
 ```
 
-嵌入式支线总览仍见 [HFT-READING-ROADMAP §六](../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)。
+嵌入式支线总览仍见 [HFT-READING-ROADMAP §六](../../HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–11)。
 
 ---
 

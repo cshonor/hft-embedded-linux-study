@@ -17,9 +17,9 @@
 
 | 层 | 图中例子 | 你现在学什么 |
 |----|----------|--------------|
-| **User Space** | 桌面、C/Python、Shell | [01 C](../../01-c-language/) · [03 TLPI](../../03-linux-userspace-api/) · Labs **Phase A** |
-| **Kernel** | 进程/内存管理、**设备驱动**、FS、网络栈；中断处理也在这里 | [05 内核](../../05-linux-kernel/) · [09 驱动](../../09-device-drivers-dt/) · Labs **Phase C** |
-| **Hardware** | CPU、RAM、GPIO、I2C、SPI、存储 | [00 硬件词汇](../../00-computer-architecture/) · Pi5 上还有 **RP1** 管外设 |
+| **User Space** | 桌面、C/Python、Shell | [01 C](../../../01-c-language/) · [03 TLPI](../../../03-linux-userspace-api/) · Labs **Phase A** |
+| **Kernel** | 进程/内存管理、**设备驱动**、FS、网络栈；中断处理也在这里 | [05 内核](../../../05-linux-kernel/) · [09 驱动](../../../09-device-drivers-dt/) · Labs **Phase C** |
+| **Hardware** | CPU、RAM、GPIO、I2C、SPI、存储 | [00 硬件词汇](../../../18-computer-architecture/) · Pi5 上还有 **RP1** 管外设 |
 
 普通应用**不能**直接摸寄存器；要碰硬件，代码通常落在 **Kernel**（驱动 / 中断），用户态只通过系统调用或 `/dev` 间接访问。
 
@@ -60,5 +60,5 @@
 - [ ] 能口述：为何用户态不能直接写 GPIO 寄存器  
 - [ ] 能指出：字符驱动的 `open/read` 回调跑在哪一层  
 - [ ] 能说出两条虚线各防止什么（乱碰内核内存 / 乱碰硬件细节）  
-- [ ] 能区分：DT 不是驱动；`.ko` / built-in 都是内核代码 — [Primer 8.2](../../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.2-why-drivers-in-kernel.md)  
-- [ ] 能复述：驱动管初始化 + 读写 + **中断** + 释放 — [Primer 8.3](../../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.3-driver-lifecycle-and-irq.md)
+- [ ] 能区分：DT 不是驱动；`.ko` / built-in 都是内核代码 — [Primer 8.2](../../../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.2-why-drivers-in-kernel.md)  
+- [ ] 能复述：驱动管初始化 + 读写 + **中断** + 释放 — [Primer 8.3](../../../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.3-driver-lifecycle-and-irq.md)

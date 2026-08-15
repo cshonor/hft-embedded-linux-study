@@ -264,7 +264,7 @@ std::string handle_request(const HttpRequest& req) {
 | 卡住了… | 翻这里 |
 |---------|--------|
 | string_view | [Effective Modern C++ item17](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C++/) |
-| optional / variant | [C++Primer ch17](../../04-cpp/M0-entry-syntax/01-C++Primer/ch17-specialized-library/) |
+| optional / variant | [C++Primer ch17](../../04-cpp/M0-entry-syntax/01-C++Primer/ch17-special-library-facilities/) |
 | 移动语义 | [C++Primer ch13](../../04-cpp/M0-entry-syntax/01-C++Primer/ch13-copy-control/) |
 
 ---

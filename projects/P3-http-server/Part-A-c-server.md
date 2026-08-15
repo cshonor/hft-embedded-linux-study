@@ -11,7 +11,7 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [TLPI ch63 epoll](../../03-linux-userspace-api/chapter-63-alternative-io/) | epoll = 替代 select/poll 的高性能 I/O 多路复用 |
+| [TLPI ch63 epoll](../../03-linux-userspace-api/chapter-63-alternative-i-o-models/) | epoll = 替代 select/poll 的高性能 I/O 多路复用 |
 | [TLPI ch56 socket 入门](../../03-linux-userspace-api/chapter-56-sockets-intro/) | socket/bind/listen/accept 四件套 |
 | [TLPI ch29 线程](../../03-linux-userspace-api/chapter-29-threads-intro/) | pthread_create/join 基础 |
 | [PNP epoll 实战](../../04-cpp/M5-cpp-network-programming/07_IO_epoll.md) | epoll LT vs ET 实际代码 |
@@ -115,7 +115,7 @@ int main(void) {
 | 卡住了… | 翻这里 |
 |---------|--------|
 | socket/bind/listen 流程 | [TLPI ch56](../../03-linux-userspace-api/chapter-56-sockets-intro/) |
-| epoll API | [TLPI ch63](../../03-linux-userspace-api/chapter-63-alternative-io/) · [PNP epoll](../../04-cpp/M5-cpp-network-programming/07_IO_epoll.md) |
+| epoll API | [TLPI ch63](../../03-linux-userspace-api/chapter-63-alternative-i-o-models/) · [PNP epoll](../../04-cpp/M5-cpp-network-programming/07_IO_epoll.md) |
 | LT vs ET 区别 | [CSAPP 12.2](../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.2-基于I-O多路复用的并发编程.md) |
 | 非阻塞 I/O | [PNP NonBlockingIO](../../04-cpp/M5-cpp-network-programming/06_NonBlockingIO.md) |
 
