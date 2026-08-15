@@ -2,54 +2,67 @@
 
 > **BPF Performance Tools** · Brendan Gregg · **精读 🔴**
 
-> 本章定位：**ad hoc 排障与短脚本的入口** — 若 [Ch 4 BCC](../chapter-04-bcc/) 是写复杂工具、守护进程的 **重型武器**，bpftrace 则适合 **临时验证假设、单行命令 (one-liners)、几十行短脚本**。语法类似 **awk + C**，大幅降低 eBPF 门槛。  
-> **HFT：** BCC runbook 定方向后，用 bpftrace **几分钟内** 验证「是不是这个 syscall / 这个 PID / 这条栈」— 比起完整 BCC Python 项目快一个数量级；仍须遵守 **内核聚合、短窗口** 原则。  
-> **上一章：** [chapter-04-BCC.md](../chapter-04-bcc/) · **下一章：** [chapter-06-CPU.md](../chapter-06-cpus/)
+> 本章定位：**ad hoc 排障与短脚本的入口** — 若 [Ch 4 BCC](../chapter-04-bcc/) 是写复杂工具、守护进程的**重型武器**，bpftrace 则适合**临时验证假设、单行命令（one-liners）、几十行短脚本**。语法类似 **awk + C**，大幅降低 eBPF 门槛。
+> **HFT：** 排障假设的快速验证器（一行验证一个猜想）；交易机最小依赖部署的观测利器。
+> **上一章：** [chapter-04-BCC](../chapter-04-bcc/) · **下一章：** [chapter-06-CPU](../chapter-06-cpus/)
 
 ---
 
-## 小节笔记
+## 小节笔记（按原书 5.1–5.18 真实目录）
 
-| 节 | 笔记 |
-|----|------|
-| 1 bpftrace 是什么 | [notes/section-1-bpftrace是什么.md](./notes/section-1-bpftrace是什么.md) |
-| 2 核心架构与编译流程 | [notes/section-2-核心架构与编译流程.md](./notes/section-2-核心架构与编译流程.md) |
-| 3 全栈事件源 (Probes) | [notes/section-3-全栈事件源.md](./notes/section-3-全栈事件源.md) |
-| 4 编程语法结构 | [notes/section-4-编程语法结构.md](./notes/section-4-编程语法结构.md) |
-| 5 三大变量类型 | [notes/section-5-三大变量类型.md](./notes/section-5-三大变量类型.md) |
-| 6 Map 聚合函数 | [notes/section-6-Map聚合函数.md](./notes/section-6-Map聚合函数.md) |
-| 7 常用内置函数 | [notes/section-7-常用内置函数.md](./notes/section-7-常用内置函数.md) |
-| 8 控制流限制 | [notes/section-8-控制流限制.md](./notes/section-8-控制流限制.md) |
-| 9 调试与排障 | [notes/section-9-调试与排障.md](./notes/section-9-调试与排障.md) |
-| 10 经典 One-Liners 速览 | [notes/section-10-经典One-Liners速览.md](./notes/section-10-经典One-Liners速览.md) |
-| 11 Part II 预告（Ch 6+） | [notes/section-11-PartII预告Ch6.md](./notes/section-11-PartII预告Ch6.md) |
+| 节 | 原书小节 | 笔记 |
+|----|----------|------|
+| 5.1 | bpftrace 的组件 | [section-1-bpftrace的组件.md](./notes/section-1-bpftrace的组件.md) |
+| 5.2 | bpftrace 的特性 | [section-2-bpftrace的特性.md](./notes/section-2-bpftrace的特性.md) |
+| 5.3 | bpftrace 的安装 | [section-3-bpftrace的安装.md](./notes/section-3-bpftrace的安装.md) |
+| 5.4 | bpftrace 工具 | [section-4-bpftrace工具.md](./notes/section-4-bpftrace工具.md) |
+| 5.5 | bpftrace 单行程序 | [section-5-bpftrace单行程序.md](./notes/section-5-bpftrace单行程序.md) |
+| 5.6 | bpftrace 的文档 | [section-6-bpftrace的文档.md](./notes/section-6-bpftrace的文档.md) |
+| 5.7 | bpftrace 编程 | [section-7-bpftrace编程.md](./notes/section-7-bpftrace编程.md) |
+| 5.8 | bpftrace 的帮助信息 | [section-8-bpftrace的帮助信息.md](./notes/section-8-bpftrace的帮助信息.md) |
+| 5.9 | bpftrace 的探针类型 | [section-9-bpftrace的探针类型.md](./notes/section-9-bpftrace的探针类型.md) |
+| 5.10 | bpftrace 的控制流 | [section-10-bpftrace的控制流.md](./notes/section-10-bpftrace的控制流.md) |
+| 5.11 | bpftrace 的运算符 | [section-11-bpftrace的运算符.md](./notes/section-11-bpftrace的运算符.md) |
+| 5.12 | bpftrace 的变量 | [section-12-bpftrace的变量.md](./notes/section-12-bpftrace的变量.md) |
+| 5.13 | bpftrace 的函数 | [section-13-bpftrace的函数.md](./notes/section-13-bpftrace的函数.md) |
+| 5.14 | bpftrace 映射表的操作函数 | [section-14-bpftrace映射表的操作函数.md](./notes/section-14-bpftrace映射表的操作函数.md) |
+| 5.15 | bpftrace 的下一步工作 | [section-15-bpftrace的下一步工作.md](./notes/section-15-bpftrace的下一步工作.md) |
+| 5.16 | bpftrace 的内部运作 | [section-16-bpftrace的内部运作.md](./notes/section-16-bpftrace的内部运作.md) |
+| 5.17 | bpftrace 的调试 | [section-17-bpftrace的调试.md](./notes/section-17-bpftrace的调试.md) |
+| 5.18 | 小结 | [section-18-小结.md](./notes/section-18-小结.md) |
 
 ---
 
-## 大白话
+## 双探针计时模板（本章精华）
 
-> ad hoc 排障与短脚本的入口
+```awk
+kprobe:fn  { @start[tid] = nsecs; }
+kretprobe:fn /@start[tid]/
+{
+    @us = hist((nsecs - @start[tid]) / 1000);
+    delete(@start[tid]);
+}
+```
 
-下面按原书小节展开；细节见 **小节笔记** 表。
+三个要点：`tid` 为键防多线程覆盖；`/@start[tid]/` 过滤防"入口未记录"假离群点；映射表名带单位。
 
----
+## 本章 Checklist（HFT 视角）
 
-## 本章 Checklist
-
-- [ ] **bpftrace = 假设验证加速器**— BCC runbook 之后、改代码之前的 **5 分钟层**。
-- [ ] **语法核心：**`probe /filter/ { @map = agg(); }` — 内置变量 + `$` 临时 + `@` 聚合。
-- [ ] **高频事件只用 Map 函数**（`count`、`hist`）— `printf` 仅低频或调试。
-- [ ] **`kstack`/`ustack` + `profile`**与 BCC `stackcount`/`profile` 同族 — 火焰图仍见 [Ch 2](../chapter-02-technology-background/)。
-- [ ] **无无限循环**— 用多探针 + map 表达状态；`unroll(N)` 有界展开。
+- [ ] **通配符先 `-l` 预览**——BPFTRACE_MAXPROBES 默认 512，超限被拒。
+- [ ] **计时必加 `/@start[tid]/`**——离群点九成来自入口未记录。
+- [ ] **sum() 前滤负值**——read 等负返回是 -errno；先存纳秒、print 时用 div 除，避免整数截断。
+- [ ] **自动化脚本三要素**——`interval+exit()` 限时长、`/过滤/` 写内核态、映射表名带单位。
+- [ ] **str() 默认 64B**——长路径调 BPFTRACE_STRLEN（老版 200B 硬上限）。
+- [ ] **system() 需 --unsafe 且高频探针下是性能炸弹**。
+- [ ] **pid=tgid、tid=内核 pid**——多线程统计口径别搞反。
+- [ ] **探针优先级**——生产用 tracepoint（稳定 ABI）> kprobe（随内核版本变）。
 
 ---
 
 ## 相关章节
 
-- 上一章：[chapter-04-BCC.md](../chapter-04-bcc/)
-- 下一章：[chapter-06-CPU.md](../chapter-06-cpus/)
-- 技术地基：[chapter-02-技术背景.md](../chapter-02-technology-background/)
-- 方法论与清单：[chapter-03-性能分析.md](../chapter-03-performance-analysis/)
-- 附录 A 单行命令：[appendix-A-bpftrace单行命令.md](../appendix-A-bpftrace单行命令.md)
-- 附录 B 备忘单：[appendix-B-bpftrace备忘单.md](../appendix-B-bpftrace备忘单.md)
-- SysPerf bpftrace：[appendix-C-bpftrace单行命令](../../../14-systems-performance/appendix-C-bpftrace单行命令.md)
+- 上一章：[chapter-04-BCC](../chapter-04-bcc/)
+- 下一章：[chapter-06-CPU](../chapter-06-cpus/)
+- 技术地基：[chapter-02-技术背景](../chapter-02-technology-background/)
+- 单行宝典：[appendix-A-bpftrace单行命令](../appendix-A-bpftrace单行命令.md)
+- 备忘单：[appendix-B-bpftrace备忘单](../appendix-B-bpftrace备忘单.md)
