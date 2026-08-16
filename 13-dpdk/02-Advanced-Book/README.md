@@ -1,6 +1,6 @@
 # 02-Advanced-Book · 《Linux 高性能网络详解》
 
-> **15-DPDK** 二级目录 · **梯度 ②** — DPDK 深度、RDMA、XDP 与方案选型  
+> **13-DPDK** 二级目录 · **梯度 ②** — DPDK 深度、RDMA、XDP 与方案选型  
 > **前置：** [01-Intro-Book](../01-Intro-Book/) + `02` CSAPP + `16` SysPerf + perf 已定位网络瓶颈。
 
 ---
@@ -22,7 +22,7 @@
 | OpenOnload / RDMA / RoCE 与 DPDK 取舍 | [note-openonload-rdma对比](./notes/note-openonload-rdma对比.md) | 🟡 |
 | XDP / tc-BPF 与 DPDK 对照 | [note-XDP与DPDK对照](./notes/note-XDP与DPDK对照.md) | 🟡 |
 
-→ 全书 BPF/XDP 深入：[17-BPF note-XDP](../../15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)
+→ 全书 BPF/XDP 深入：[06.7-BPF note-XDP](../../06.7-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)
 
 ---
 

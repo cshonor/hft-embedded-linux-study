@@ -70,7 +70,7 @@ static irqreturn_t my_interrupt(int irq, void *dev_id)
 
 **HFT：** 网卡 **每包一次 IRQ**（或未开合并中断）时，ISR + 上半部过长 → **P99 尾延迟**、L1/L2 cache 被冲刷。生产环境常见：**IRQ affinity 绑专用核**、**中断合并**、**NAPI 在 softirq 批量收包**。
 
-→ [03 SysPerf §1.5 IRQ 与策略同核](../../../14-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 8](../../chapter-08-bottom-halves/) 下半部 · [Ch 7.4](section-7.4-注册与编写中断处理程序.md) `request_irq`
+→ [06.6 SysPerf §1.5 IRQ 与策略同核](../../../06.6-systems-performance/chapter-01-intro/notes/section-1.5-排障案例与性能挑战.md) · [Ch 8](../../chapter-08-bottom-halves/) 下半部 · [Ch 7.4](section-7.4-注册与编写中断处理程序.md) `request_irq`
 
 ### 常见陷阱
 

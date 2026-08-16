@@ -16,7 +16,7 @@
 
 ## 1. Systems Performance: Enterprise and the Cloud 2nd — Brendan Gregg
 
-> 笔记目录：[14-systems-performance/](./14-systems-performance/)
+> 笔记目录：[06.6-systems-performance/](./06.6-systems-performance/)
 
 > **建议前置：** [02-computer-systems](./02-computer-systems/) 地基篇（Ch4–6/8–9/12）+ [19-Hennessy](./17-computer-architecture/) Ch2。  
 > 性能调优总纲：perf、NUMA、软中断、网卡调优 — **在懂 cache/进程/锁之后再读，事半功倍**。
@@ -237,9 +237,9 @@
 
 ## 8. BPF Performance Tools — Brendan Gregg
 
-> 笔记目录：[15-bpf-observability/](./15-bpf-observability/)
+> 笔记目录：[06.7-bpf-observability/](./06.7-bpf-observability/)
 
-> eBPF、XDP 小包过滤、内核观测。**紧接 [16-Systems-Performance](./14-systems-performance/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
+> eBPF、XDP 小包过滤、内核观测。**紧接 [06.6-Systems-Performance](./06.6-systems-performance/) 阅读**（Gregg 性能双书第二本；不必等内核/网络全书）。
 
 | 章节 | 标签 | HFT 关联 |
 |------|------|----------|
@@ -247,7 +247,7 @@
 | Part I Ch 4–5 BCC / bpftrace | **精读** | 工具链快速上手 |
 | Part II Ch 6 CPU | **精读** | off-CPU、run queue、抖动定位 |
 | Part II Ch 10 网络 | **精读** | 套接字延迟、TCP/UDP 重传丢包 |
-| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)；vs DPDK |
+| XDP / tc-BPF | **精读** | 见 [note-XDP与tc-BPF.md](./06.7-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)；vs DPDK |
 | Part II Ch 7 内存 / Ch 13–14 应用·内核 | **选读** | alloc、fault、调度唤醒 |
 | Part I Ch 3 / Part III Ch 17–18 | **选读** | 方法论、排障技巧 |
 | 附录 A/B bpftrace 单行/备忘单 | **精读** | 现场速查 |
@@ -280,7 +280,7 @@
 |--------|--------|------|--------|
 | M0 语法扫盲 | [04-C++Primer](./04-cpp/M0-entry-syntax/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
 | M1 Modern C++ | [04-Effective-Modern-C++](04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | 🔴 必读 | **12 PNP 之前** |
-| M2 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M2-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M2-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **18 HFT 之前** |
+| M2 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M2-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M2-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **16 HFT 之前** |
 | M3 STL / Effective | [02–06](./04-cpp/M3-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
 | M4 C++17/20 | [04-C++17](04-cpp/M4-advanced-standards/01-C++17-The-Complete-Guide) · [04-C++20](04-cpp/M4-advanced-standards/02-C++20-The-Complete-Guide) | 🟡 选读 | **18 之后** |
 
@@ -344,13 +344,13 @@
 | ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
 | ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen + **15 DPDK** | [12 PNP](./04-cpp/M5-cpp-network-programming/)、CSAPP Ch11、**17 BPF Ch10** |
+| ch06 低延迟网络与协议优化 | Rosen + **13 DPDK** | [12 PNP](./04-cpp/M5-cpp-network-programming/)、CSAPP Ch11、**06.7 BPF Ch10** |
 | ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12、CSAPP Ch4 |
-| ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**15 DPDK** |
+| ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**13 DPDK** |
 | ch09 高频做市与套利策略 | Harris | — |
-| ch10 延迟测量与基准压测 | Gregg SysPerf + **17 BPF** | **15 DPDK** testpmd |
+| ch10 延迟测量与基准压测 | Gregg SysPerf + **06.7 BPF** | **13 DPDK** testpmd |
 | ch11 风控合规与滑点控制 | Harris（监管/规则） | — |
-| ch12 实盘上线与运维进阶 | Gregg BPF | **15 DPDK** / OpenOnload / RDMA 对比笔记 |
+| ch12 实盘上线与运维进阶 | Gregg BPF | **13 DPDK** / OpenOnload / RDMA 对比笔记 |
 
 ---
 
@@ -390,4 +390,4 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 | **09** 驱动+DT | Madieu → LDD3（按需） | [09-device-drivers-dt/](./09-device-drivers-dt/) |
 | **11** 运动控制 | PID / Kalman | [10-motion-control/](./10-motion-control/) |
 
-**可复用 HFT 链：** C · 用户态/内核 · 16–17 性能/BPF · 15 DPDK · 18 HFT 与 **PREEMPT_RT / 绑核**。
+**可复用 HFT 链：** C · 用户态/内核 · 06.6–06.7 性能/BPF · 13 DPDK · 16 HFT 与 **PREEMPT_RT / 绑核**。

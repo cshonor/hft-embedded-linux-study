@@ -193,4 +193,4 @@ sudo tcpdump -nni eth0 -w mirrored.pcap
 - [HFT 场景 03：内核旁路](./03-kernel-bypass-limitations.md)
 - [HFT 场景 05：eBPF 对比](./05-ebpf-vs-wireshark.md)
 - [HFT 模块：内核网络](../../12-kernel-networking/)
-- [HFT 模块：BPF 可观测性](../../15-bpf-observability/)
+- [HFT 模块：BPF 可观测性](../../06.7-bpf-observability/)

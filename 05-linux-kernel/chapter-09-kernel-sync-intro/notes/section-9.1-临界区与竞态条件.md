@@ -62,7 +62,7 @@
 
 **HFT 对照：** 用户态 **无锁队列、原子计数** 与内核 **「临界区必须互斥」** 是同一问题的两层。Tail 延迟常来自 **锁争用** 或 **false sharing（伪共享）** — 两核改同一 cache line 的不同变量。
 
-→ [Ch 9.3](section-9.3-并发的原因.md) 五类并发源 · [Ch 9.2](section-9.2-加锁.md) 加锁 · [Ch 7](../../chapter-07-interrupts/) 中断并发 · [03 SysPerf §5.2 mutex/spin](../../../14-systems-performance/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
+→ [Ch 9.3](section-9.3-并发的原因.md) 五类并发源 · [Ch 9.2](section-9.2-加锁.md) 加锁 · [Ch 7](../../chapter-07-interrupts/) 中断并发 · [06.6 SysPerf §5.2 mutex/spin](../../../06.6-systems-performance/chapter-05-applications/notes/section-5.2-应用程序性能提升技术.md)
 
 ### 常见陷阱
 

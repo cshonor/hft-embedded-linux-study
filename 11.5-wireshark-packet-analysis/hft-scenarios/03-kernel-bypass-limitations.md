@@ -147,4 +147,4 @@ export EF_PACKET_CAPTURE=1
 - [HFT 场景 05：eBPF 对比](./05-ebpf-vs-wireshark.md)
 - [HFT 模块：DPDK](../../13-dpdk/)
 - [HFT 模块：内核网络](../../12-kernel-networking/)
-- [HFT 模块：BPF 可观测性](../../15-bpf-observability/)
+- [HFT 模块：BPF 可观测性](../../06.7-bpf-observability/)

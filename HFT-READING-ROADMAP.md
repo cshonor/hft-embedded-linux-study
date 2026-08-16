@@ -29,7 +29,7 @@
 | 过早读 SysPerf/BPF | 更合适的时机 |
 |--------------------|--------------|
 | 还没有 Linux 进程/内核/网络概念 | **03 用户态 + P9 自制 OS** 之后 |
-| 火焰图看不懂在烧什么 | **15 DPDK** 或 **18 HFT** 压测有靶子 |
+| 火焰图看不懂在烧什么 | **13 DPDK** 或 **16 HFT** 压测有靶子 |
 | 与计算机系统理论堆叠 | **01 C + 02 systems 后进 03** 更顺 |
 
 | 标签 | HFT 含义 | 你要怎么做 |
@@ -280,7 +280,7 @@
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
 | [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
 | [07–10 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10) | 07–10 |
-| [12–14 网络](./04-cpp/M5-cpp-network-programming/) · [16–17 性能](./14-systems-performance/) · [18 HFT](./16-hft-engineering/) | 12–18 |
+| [12–14 网络](./04-cpp/M5-cpp-network-programming/) · [16–17 性能](./06.6-systems-performance/) · [16 HFT](./16-hft-engineering/) | 12–18 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
@@ -368,7 +368,7 @@
 |------|----------|
 | C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
 | 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
-| 性能 / 绑核 / BPF | [19](./14-systems-performance/) · [20](./15-bpf-observability/) · [21](./16-hft-engineering/) |
+| 性能 / 绑核 / BPF | [19](./06.6-systems-performance/) · [20](./06.7-bpf-observability/) · [21](./16-hft-engineering/) |
 | 网络 / 零拷贝思想 | [04/M5](./04-cpp/M5-cpp-network-programming/) · [17](./12-kernel-networking/) · [18](./13-dpdk/) |
 
 ### 岗位定位（支线完成后）

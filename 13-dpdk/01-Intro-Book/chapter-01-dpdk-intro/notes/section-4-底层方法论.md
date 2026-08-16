@@ -45,7 +45,7 @@ DPDK 大量实现优化 **围绕 Cache**：
 分析 → 推测 → 原型 → 跑数据 → 再分析 → …
 ```
 
-与 [03 SysPerf](../../../../14-systems-performance/) 方法论一致 — **用 perf/BPF 验证** 而非凭直觉。
+与 [06.6 SysPerf](../../../../06.6-systems-performance/) 方法论一致 — **用 perf/BPF 验证** 而非凭直觉。
 
 ---
 

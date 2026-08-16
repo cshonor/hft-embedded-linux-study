@@ -80,7 +80,7 @@ OOM Killer
 | 页缓存回收 | [Ch 15 页缓存](../../chapter-15-page-cache/) ⚪ |
 | 07 Gorman | [页回收 / rmap](../../../06-linux-mm/) |
 | Ext2 文件系统 | [Ch 18 Ext2/Ext3](../../chapter-18-ext2-ext3/) ⚪ |
-| HFT 内存 | [16 HFT 工程](../../../16-hft-engineering/) · [03 SysPerf Ch 7](../../../14-systems-performance/chapter-07-memory/) |
+| HFT 内存 | [16 HFT 工程](../../../16-hft-engineering/) · [06.6 SysPerf Ch 7](../../../06.6-systems-performance/chapter-07-memory/) |
 
 ---
 

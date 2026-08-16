@@ -65,7 +65,7 @@ git clone linux.git
 
 - 下一章：[Ch 2 Netlink](../../chapter-02-netlink-sockets/) — 用户态配置网络栈的 **rtnetlink** 通道
 - HFT 精读：[Ch 11 L4](../../chapter-11-layer-4-protocols/) · [Ch 14 高级主题](../../chapter-14-advanced-topics/)
-- 旁路对照：[15-DPDK](../../../13-dpdk/)
+- 旁路对照：[13-DPDK](../../../13-dpdk/)
 
 ---
 

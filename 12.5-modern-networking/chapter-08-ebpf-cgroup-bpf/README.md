@@ -23,4 +23,4 @@
 
 - `12.5-modern-networking/chapter-05-xdp-architecture/`：XDP hook 是 eBPF 的 attach 点
 - `12.5-modern-networking/chapter-09-tc-bpf/`：TC BPF 流量分类
-- `15-bpf-observability/`：eBPF 可观测性体系
+- `06.7-bpf-observability/`：eBPF 可观测性体系

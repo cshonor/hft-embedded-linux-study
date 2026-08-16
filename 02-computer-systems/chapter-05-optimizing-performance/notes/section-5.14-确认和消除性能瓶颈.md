@@ -22,7 +22,7 @@ perf annotate -s hot_function
 #### 5.14.2 用剖析指导优化
 
 1. **找占时间 >5–10% 的函数** — 阿姆达尔
-2. **区分** CPU bound vs memory bound vs I/O wait（→ [16-Systems-Performance](../../../14-systems-performance/)）
+2. **区分** CPU bound vs memory bound vs I/O wait（→ [06.6-Systems-Performance](../../../06.6-systems-performance/)）
 3. 改完对比 **同一 workload、同一硬件、同一编译 flags**
 4. 避免 **微观基准误导** — 微基准只验证 CPE，端到端用 replay
 

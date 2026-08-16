@@ -104,7 +104,7 @@ while (1) {
 | **`SO_BUSY_POLL`** | 低延迟 busy poll（慎用 CPU） |
 | **UDP multicast** | 交易所组播行情 |
 
-→ [12-UNP](../../../03.5-unix-network-api/) · [16-Systems-Performance Ch10](../../../14-systems-performance/chapter-10-network/) · [18-HFT ch06](../../../16-hft-engineering/)
+→ [12-UNP](../../../03.5-unix-network-api/) · [06.6-Systems-Performance Ch10](../../../06.6-systems-performance/chapter-10-network/) · [16-HFT ch06](../../../16-hft-engineering/)
 
 ### 常见陷阱
 1. **socket 返回 fd 但尚未连接** — 还需要 connect（客户端）或 bind+listen+accept（服务器）

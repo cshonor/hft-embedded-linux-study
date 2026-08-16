@@ -61,7 +61,7 @@ Part 3  Ch13–15 应用篇
 | **进阶网络全家桶** | [02-Advanced-Book](../../../02-Advanced-Book/) — RDMA、XDP、选型 |
 | **HFT 落地** | [16-hft-engineering](../../../../16-hft-engineering/) |
 | **repo 主题 stub** | [mbuf](../../notes/chapter-02-mbuf与内存池.md) · [PMD](../../notes/chapter-03-PMD与轮询模式.md) · [零拷贝](../../notes/chapter-04-零拷贝与用户态旁路.md) · [组播](../../notes/chapter-05-组播行情接入.md) |
-| **性能方法论** | [03 SysPerf](../../../../14-systems-performance/) |
+| **性能方法论** | [06.6 SysPerf](../../../../06.6-systems-performance/) |
 | **递进说明** | [note-DPDK实体书递进](../../notes/note-DPDK实体书递进.md) |
 
 **结语：** 云存储与 NFV 同属 **通用 X86 + 用户态 I/O** 范式 — DPDK/SPDK 提供 **可复用的性能工程语言**（绑核、轮询、预分配、无锁），而非单一产品。

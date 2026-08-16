@@ -53,7 +53,7 @@
 | 页表、高端内存 | [Ch 2 内存寻址](../../chapter-02-memory-addressing/) 🔴 |
 | VM 专著 | [07 Gorman](../../../06-linux-mm/) |
 | Slab 深潜 | [07 Gorman Ch 8 Slab](../../../06-linux-mm/chapter-08-slab-allocator/) |
-| 大页 / NUMA | [16 HFT 工程](../../../16-hft-engineering/) · [03 SysPerf Ch 7](../../../14-systems-performance/chapter-07-memory/) |
+| 大页 / NUMA | [16 HFT 工程](../../../16-hft-engineering/) · [06.6 SysPerf Ch 7](../../../06.6-systems-performance/chapter-07-memory/) |
 
 ### 常见陷阱
 

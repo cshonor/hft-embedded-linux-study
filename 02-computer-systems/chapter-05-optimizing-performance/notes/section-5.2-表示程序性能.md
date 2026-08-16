@@ -30,7 +30,7 @@
 - **频率变化** — turbo boost / 节能模式会改变时钟频率，用周期数比用纳秒更稳
 - **测量方法** — `perf stat` / `rdtsc` / `clock_gettime(CLOCK_MONOTONIC)`
 
-→ 观测工具 → [Ch16 Systems Performance](../../../14-systems-performance/)
+→ 观测工具 → [Ch16 Systems Performance](../../../06.6-systems-performance/)
 
 ---
 

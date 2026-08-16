@@ -45,5 +45,5 @@
 - 内核栈对照 → [12-kernel-networking](../12-kernel-networking/)
 - Socket 模型 → [03.5-unix-network-api](../03.5-unix-network-api/)、[02-computer-systems Ch11](../02-computer-systems/chapter-11-network-programming/)
 - 缓存 / 内存 → [02-computer-systems Ch6](../02-computer-systems/chapter-06-memory-hierarchy/)、[17-computer-architecture](../17-computer-architecture/)
-- 生产观测 → [15-bpf-observability](../15-bpf-observability/)
+- 生产观测 → [06.7-bpf-observability](../06.7-bpf-observability/)
 - 工程落地 → [16-hft-engineering](../16-hft-engineering/)

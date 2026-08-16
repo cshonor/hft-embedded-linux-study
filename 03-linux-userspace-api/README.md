@@ -121,8 +121,8 @@ Ch 2 → 3 → 4 → 5 → 20–21 → 23 → 29–30 → 35 → 49 → 56–61 
 | [20-ULK](../18-linux-kernel-deep/) | LKD 之后的内核深度 |
 | [06-Gorman](../06-linux-mm/) | `mmap` 背后的 VM |
 | [12-PNP](../04-cpp/M5-cpp-network-programming/) · [12-UNP](../03.5-unix-network-api/) | 网络实验与 API 纵深 |
-| [16-SysPerf](../14-systems-performance/) | 量 epoll / off-CPU |
-| [18-HFT](../16-hft-engineering/) | 工程落地 |
+| [06.6-SysPerf](../06.6-systems-performance/) | 量 epoll / off-CPU |
+| [16-HFT](../16-hft-engineering/) | 工程落地 |
 
 ## 版本
 

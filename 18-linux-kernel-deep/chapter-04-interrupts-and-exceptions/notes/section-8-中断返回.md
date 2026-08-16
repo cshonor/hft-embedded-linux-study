@@ -36,8 +36,8 @@
 | `int 0x80` / syscall | [Ch 10 系统调用](../../chapter-10-system-calls.md) 🔴 |
 | 信号投递 | [Ch 11 信号](../../chapter-11-signals.md) 🟡 |
 | 设备驱动、IRQ 注册 | [Ch 13 I/O 架构](../../chapter-13-io-architecture.md) ⚪ |
-| 内核路径 profiling | [04 BPF](../../../15-bpf-observability/) |
-| 用户态绕过中断 | [14 DPDK](../../../13-dpdk/) |
+| 内核路径 profiling | [04 BPF](../../../06.7-bpf-observability/) |
+| 用户态绕过中断 | [13 DPDK](../../../13-dpdk/) |
 
 ### 常见陷阱
 

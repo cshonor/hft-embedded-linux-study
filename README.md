@@ -3,7 +3,7 @@
 > **GitHub：** [github.com/cshonor/hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)  
 > **HFT 低延迟 Linux 底层** + **嵌入式 Linux 无人机飞控** 双线笔记与路线仓库。
 
-**技术板块 `00`–`21`（含 `.5` 模块 `03.5` / `05.5` / `05.6` / `06.5` / `11.5` / `12.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5` / `.6` = 现代补充资料或语言衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
+**技术板块 `00`–`21`（含 `.5` / `.6` / `.7` 模块 `03.5` / `05.5` / `05.6` / `06.5` / `06.6` / `06.7` / `11.5` / `12.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5`–`.7` = 现代补充资料或性能/可观测衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
 
 ---
 
@@ -47,8 +47,8 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **12** | [kernel-networking](./12-kernel-networking/) | 内核网络栈（Rosen） | 5B |
 | **12.5** | [modern-networking](./12.5-modern-networking/) | 现代 5.x/6.x **网络** 资料（补 Rosen 3.x 过时） | 5B |
 | **13** | [dpdk](./13-dpdk/) | 用户态高速网络（DPDK） | 5B |
-| **14** | [systems-performance](./14-systems-performance/) | 系统性能方法论（Gregg） | 5B |
-| **15** | [bpf-observability](./15-bpf-observability/) | BPF / 可观测（Gregg） | 5B |
+| **06.6** | [systems-performance](./06.6-systems-performance/) | 系统性能方法论（Gregg） | 5B |
+| **06.7** | [bpf-observability](./06.7-bpf-observability/) | BPF / 可观测（Gregg） | 5B |
 | **16** | [hft-engineering](./16-hft-engineering/) | HFT 工程实践 | 5B |
 | **17** | [computer-architecture](./17-computer-architecture/) | 体系结构加深（拓展） | 6 |
 | **18** | [linux-kernel-deep](./18-linux-kernel-deep/) | 内核深度 ULK3（拓展） | 6 |
@@ -75,7 +75,7 @@ Phase4  05 内核入门 → 05.5 现代内核 → 05.6 调试 → 06 MM → 06.5
    ↓
 Phase5  分叉并行
         A 嵌入式: 07 → 08 → 09 → P5 板级实战（10 兴趣）
-        B HFT:    11 → 11.5 → 12 → 12.5 → 13 → 14 → 15 → 16
+        B HFT:    11 → 11.5 → 12 → 12.5 → 13 → 06.6 → 06.7 → 16
    ↓
 Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）10
 ```
@@ -111,7 +111,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 | 模块 | 补谁的过时 | 资料来源 | 学完做什么 |
 |------|-----------|----------|-----------|
 | **05.5** modern-kernel | ULK3/LKD3（2.6 非 MM 部分） | 笨叔(调度/RCU/ARM64) + LWN + Bootlin | 进 `18` ULK 源码阅读前先建立 6.x 认知 |
-| **05.6** kernel-debugging | —（Kaiwan《Linux Kernel Debugging》2022, 5.x） | printk/Kprobes/KASAN/KGDB/Ftrace/Lockdep | 内核模块**正确性**调试；与 15/16 形成"正确性→性能→可观测" |
+| **05.6** kernel-debugging | —（Kaiwan《Linux Kernel Debugging》2022, 5.x） | printk/Kprobes/KASAN/KGDB/Ftrace/Lockdep | 内核模块**正确性**调试；与 06.6/06.7 形成"正确性→性能→可观测" |
 | **06.5** modern-mm | Gorman（2.4/2.6 MM） | 笨叔卷1(MM) + LWN(SLUB/folio/MGLRU/5级页表) + Bootlin | 进 `06` 源码阅读前先建立 6.x MM 认知 |
 | **12.5** modern-networking | Rosen（3.x 网络） | LWN(XDP/eBPF/io_uring/NAPI) + 内核文档 + Bootlin | 进 `13` DPDK 前先建立 6.x 网络栈认知 |
 
@@ -142,7 +142,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
     ↓
 11 TCP/IP → 11.5 抓包 → 12 内核网络 → 12.5 现代网络 → 13 DPDK
     ↓
-14 SysPerf → 15 BPF → 16 HFT
+06.6 SysPerf → 06.7 BPF → 16 HFT
 ```
 
 ### 内核网络栈 vs 用户态旁路
@@ -158,10 +158,10 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 | 模块 | 核心问题 | 工具层级 |
 |------|----------|----------|
 | **05.6** kernel-debugging | 内核为什么**坏了** | KASAN/KGDB/Kprobes（需重编译） |
-| **14** systems-performance | 系统为什么**慢了** | perf/top/Ftrace（低侵入） |
-| **15** bpf-observability | 内核**正在做什么** | bpftrace/BCC（运行时注入） |
+| **06.6** systems-performance | 系统为什么**慢了** | perf/top/Ftrace（低侵入） |
+| **06.7** bpf-observability | 内核**正在做什么** | bpftrace/BCC（运行时注入） |
 
-> 完整链路：先保证正确性（05.6）→ 再优化性能（14）→ 最后持续观测（15）。
+> 完整链路：先保证正确性（05.6）→ 再优化性能（06.6）→ 最后持续观测（06.7）。
 
 ### 嵌入式支线（`07`–`10`）
 
@@ -176,7 +176,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 
 | # | 书 | 模块 | HFT 关联 |
 |---|-----|------|----------|
-| 1 | Systems Performance 2nd — Gregg | `14` | 延迟分解、perf、NUMA、网卡调优总纲 |
+| 1 | Systems Performance 2nd — Gregg | `06.6` | 延迟分解、perf、NUMA、网卡调优总纲 |
 | 2 | Linux Kernel Development 3rd — Love | `05` | 调度、中断、CFS、绑核底层 |
 | 2b | Understanding the Linux Kernel 3rd — Bovet | `18` | LKD 功能 ↔ 源码实现的桥梁 |
 | 3 | Understanding the Linux VM Manager — Gorman | `06` | slab、THP、NUMA、伪共享 |
@@ -184,7 +184,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 | 5 | Computer Architecture 6th — Hennessy | `17` | Cache line、MESI、memory order |
 | 6 | CSAPP 3rd — Bryant | `02` | 缓存/VM/并发/网络编程程序员落地 |
 | 7 | Trading and Exchanges — Harris | `21` | LOB、撮合、市场微观结构 |
-| 8 | BPF Performance Tools — Gregg | `15` | eBPF、XDP、生产观测 |
+| 8 | BPF Performance Tools — Gregg | `06.7` | eBPF、XDP、生产观测 |
 | 12 | DPDK（官方文档 + 深入浅出 DPDK） | `13` | PMD、mbuf、零拷贝旁路 |
 | — | The Linux Programming Interface — Kerrisk | `03` | epoll、mmap、mlock、RT 调度 |
 | — | Linux Kernel Debugging — Billimoria | `05.6` | KASAN/KGDB/Ftrace 内核正确性调试 |
@@ -219,8 +219,8 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 | **P3.5** | BusyBox 极简 Linux：内核编译 + rootfs + QEMU 启动到 shell | `05` `08` | P3 | [projects/P3.5-busybox-minimal-linux](./projects/P3.5-busybox-minimal-linux/) |
 | **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `05` `05.5` `05.6` `06` | P3+P3.5+P2.5 | [projects/P4-kernel-module](./projects/P4-kernel-module/) |
 | **P5** | 树莓派嵌入式 Linux 全链路（6 子项目见下） | `07`–`10` + P5 Labs | P4 | [projects/P5-raspberry-pi-embedded](./projects/P5-raspberry-pi-embedded/) |
-| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04/M5` `11` `12` `12.5` `15` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
-| **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `13` `14` `15` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |
+| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04/M5` `11` `12` `12.5` `06.7` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
+| **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `13` `06.6` `06.7` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |
 | **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `16` `20` `21` | P4+P5+P7 | [projects/P8-matching-engine](./projects/P8-matching-engine/) |
 | **P10** | HFT 单机原型：DPDK 行情 + 撮合引擎 + 策略 + 风控 + 回测完整链路 | `13` `16` `17` `21` | P7+P8 | [projects/P10-hft-prototype](./projects/P10-hft-prototype/) |
 

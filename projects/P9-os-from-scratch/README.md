@@ -74,7 +74,7 @@
 | 分页 | [06 Gorman](../../06-linux-mm/) (Linux MM) · [02 CSAPP Ch9](../../02-computer-systems/) (VM) |
 | 多任务/调度 | [05 LKD Ch4](../../05-linux-kernel/) (Linux 调度) |
 | syscall | [03 TLPI](../../03-linux-userspace-api/) (用户态 API) |
-| FIFO ring buffer | [P2.5 C Toolkit](../P2.5-c-toolkit/) (SPSC ring) · [18 HFT](../../16-hft-engineering/) (无锁队列) |
+| FIFO ring buffer | [P2.5 C Toolkit](../P2.5-c-toolkit/) (SPSC ring) · [16 HFT](../../16-hft-engineering/) (无锁队列) |
 | malloc | [P2-B](../P2-shell-malloc/Part-B-malloc.md) (malloc 实现) |
 
 ---

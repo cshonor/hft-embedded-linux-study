@@ -31,7 +31,7 @@
 |----------|------------|
 | **绑核 / isolcpus** | 飞控关键线程 **CPU 隔离** |
 | **无锁环 / 低延迟 IPC** | 传感器 → 融合 → 控制 **低 jitter 数据路径** |
-| [SysPerf](../../14-systems-performance/) | **量延迟** — 控制环周期 p99 |
+| [SysPerf](../../06.6-systems-performance/) | **量延迟** — 控制环周期 p99 |
 | [DPDK](../../13-dpdk/) 零拷贝思想 | **DMA / 共享内存** 传 IMU/图传 |
 | [HFT](../../16-hft-engineering/) 日志异步 | 黑匣子 / 遥测 **移出热路径** |
 

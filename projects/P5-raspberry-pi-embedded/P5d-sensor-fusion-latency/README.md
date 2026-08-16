@@ -1,7 +1,7 @@
 # P5d — 多线程传感器融合 + 延迟 p99 统计
 
 > 多个传感器并发采样、线程融合数据，统计端到端延迟分布（p50/p99/p999），把嵌入式实时性量化。
-> **做法：项目驱动，[P5 Labs](../RASPBERRY-PI5-LABS.md) / [`16`](../../../14-systems-performance/) 笔记当字典。**
+> **做法：项目驱动，[P5 Labs](../RASPBERRY-PI5-LABS.md) / [`16`](../../../06.6-systems-performance/) 笔记当字典。**
 
 ---
 
@@ -218,7 +218,7 @@ void *fuse_worker(void *arg) {
 | 卡住了… | 翻这里 |
 |---------|--------|
 | 调度延迟 | [ULK ch07 调度](../../../18-linux-kernel-deep/chapter-07-process-scheduling/) |
-| 性能分析 | [16 SysPerf](../../../14-systems-performance/) |
+| 性能分析 | [16 SysPerf](../../../06.6-systems-performance/) |
 
 ---
 
@@ -263,4 +263,4 @@ void print_stats(void) {
 
 ⬜ 未开始 → 建议先跑 Phase 1 基线，建立"延迟是多少"的直觉。
 
-← [P5 索引](../README.md) · [P5 Labs](../RASPBERRY-PI5-LABS.md) · [19 模块](../../../14-systems-performance/)
+← [P5 索引](../README.md) · [P5 Labs](../RASPBERRY-PI5-LABS.md) · [19 模块](../../../06.6-systems-performance/)

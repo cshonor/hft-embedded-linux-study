@@ -154,7 +154,7 @@ int main() {
 |------|------|
 | **行情分发** | 交易所主流量行情是 UDP 组播（如 NASDAQ ITCH 5.0 over 组播）；A/B 双馈消除单点丢包——同一份数据两个组播组，取先到者，缺号互相补 |
 | 序列号 + gap | 行情帧带 sequence number，接收端检测缺号 → 请求重传通道（通常 TCP）——UDP 可靠性的应用层实现 |
-| 内核丢包恐惧 | 行情峰值速率高时内核缓冲丢包是主要事故源 → 加大 RCVBUF、绑核、中断亲和对齐，再往下 [14 DPDK](../../13-dpdk/) 用户态直接收组播 |
+| 内核丢包恐惧 | 行情峰值速率高时内核缓冲丢包是主要事故源 → 加大 RCVBUF、绑核、中断亲和对齐，再往下 [13 DPDK](../../13-dpdk/) 用户态直接收组播 |
 | 硬件时间戳 | `SO_TIMESTAMPING` 取网卡级时间戳，收包延迟测量（进阶见 [13.5 现代网络](../../12.5-modern-networking/)） |
 
 <a id="pnp-08-quiz"></a>
@@ -172,4 +172,4 @@ int main() {
 ## 交叉引用
 
 - 上一篇：[07 epoll](./07_IO_epoll.md) · 下一篇：[09 序列化](./09_Serialization.md)
-- [12 TCP/IP 协议（UDP 章）](../../11-tcpip-protocols/) · [12.5 Wireshark](../../11.5-wireshark-packet-analysis/) · [14 DPDK](../../13-dpdk/) · [17 HFT 工程](../../16-hft-engineering/)
+- [12 TCP/IP 协议（UDP 章）](../../11-tcpip-protocols/) · [12.5 Wireshark](../../11.5-wireshark-packet-analysis/) · [13 DPDK](../../13-dpdk/) · [17 HFT 工程](../../16-hft-engineering/)

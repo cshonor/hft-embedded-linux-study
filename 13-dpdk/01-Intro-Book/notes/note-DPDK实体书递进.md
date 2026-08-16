@@ -63,7 +63,7 @@
 | 技术 | 与 DPDK 关系 | HFT 典型场景 |
 |------|--------------|--------------|
 | **DPDK** | 用户态完全旁路 | UDP 组播行情、极致 tick 处理 |
-| **XDP / tc-BPF** | 内核最早点丢/改包 | 对比 DPDK 的「半旁路」；见 [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) · [17-BPF note-XDP](../../../15-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md) |
+| **XDP / tc-BPF** | 内核最早点丢/改包 | 对比 DPDK 的「半旁路」；见 [02-Advanced note-XDP](../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) · [06.7-BPF note-XDP](../../../06.7-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md) |
 | **RDMA / RoCE** | 硬件 offload、远端内存 | 共置机房、极低延迟通道 |
 | **OpenOnload** | 保留 socket API 的内核旁路 | TCP 发单、迁移成本较低 |
 
@@ -75,7 +75,7 @@
 
 ```
 ✅ 01 CSAPP 地基（尤其 Ch6 缓存、Ch10–11 网络）
-✅ 03 SysPerf 方法论 — 会用 perf/BPF 做延迟分解
+✅ 06.6 SysPerf 方法论 — 会用 perf/BPF 做延迟分解
 ✅ 08 → 09 → 10 走完 — 知道内核栈收发包路径（对照「绕过了什么」）
 ✅ perf 已能定位：网络收发是瓶颈（或 softirq / 网卡队列饱和）
 ```
@@ -88,7 +88,7 @@
 **读完 ① ② 之后：**
 
 - 回到 [16-hft-engineering](../../../16-hft-engineering/) ch06/ch08 — 把技术落到量化系统
-- 用 [17-BPF](../../../15-bpf-observability/) + `16` SysPerf Ch10 在生产上**验证**旁路收益
+- 用 [06.7-BPF](../../../06.7-bpf-observability/) + `16` SysPerf Ch10 在生产上**验证**旁路收益
 
 ---
 

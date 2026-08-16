@@ -35,7 +35,7 @@
 |----------|
 | **绑核 + NUMA 本地分配** — `numactl --membind`、`libnuma`；行情 buffer 与处理线程 **同节点** |
 | 策略并行度受 **串行段**（单订单簿、单连接排序）限制 — 先 profile 再找 p |
-| 多 socket 机：**跨 NUMA 访问** 可吃掉微优化收益 → [16-Systems-Performance Ch6](../../../14-systems-performance/chapter-06-cpus/) |
+| 多 socket 机：**跨 NUMA 访问** 可吃掉微优化收益 → [06.6-Systems-Performance Ch6](../../../06.6-systems-performance/chapter-06-cpus/) |
 
 
 ### 常见陷阱

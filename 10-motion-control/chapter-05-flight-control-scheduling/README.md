@@ -14,7 +14,7 @@
 | **isolcpus / taskset** | 飞控线程 **独占核** — [05 LKD](../../05-linux-kernel/) |
 | **SCHED_FIFO** | RT 调度策略 — 用户态飞控线程 |
 | **PREEMPT_RT 补丁** | 内核可抢占 — 降低内核延迟 |
-| **cyclictest / perf** | 验证 **周期 jitter p99** — [03 SysPerf](../../14-systems-performance/) |
+| **cyclictest / perf** | 验证 **周期 jitter p99** — [06.6 SysPerf](../../06.6-systems-performance/) |
 
 ## 与 HFT 对照
 

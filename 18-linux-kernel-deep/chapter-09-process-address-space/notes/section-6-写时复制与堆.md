@@ -70,7 +70,7 @@ Ch 8 物理页分配
 | 物理页分配 | [Ch 8 内存管理](../../chapter-08-memory-management/) 🔴 |
 | 页回收 / swap | [Ch 17 页回收](../../chapter-17-page-reclaim.md) 🟡 |
 | VMA / 缺页专著 | [07 Gorman Ch 4](../../../06-linux-mm/) |
-| 大页 / mlock / NUMA | [16 HFT 工程](../../../16-hft-engineering/) · [03 SysPerf Ch 7](../../../14-systems-performance/chapter-07-memory/) |
+| 大页 / mlock / NUMA | [16 HFT 工程](../../../16-hft-engineering/) · [06.6 SysPerf Ch 7](../../../06.6-systems-performance/chapter-07-memory/) |
 
 ### 常见陷阱
 

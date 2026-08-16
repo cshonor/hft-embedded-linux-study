@@ -46,7 +46,7 @@ x = (a > b) ? a : b;
 | **不可预测** | 很慢 | **常更稳** |
 | 副作用 | 两侧可不同 | 两侧 **都会算** |
 
-**HFT：** 热路径少分支；`likely/unlikely`、查表、位掩码；profile 看 **branch-misses**（→ [16-Systems-Performance Ch 6](../../../14-systems-performance/chapter-06-cpus/)）
+**HFT：** 热路径少分支；`likely/unlikely`、查表、位掩码；profile 看 **branch-misses**（→ [06.6-Systems-Performance Ch 6](../../../06.6-systems-performance/chapter-06-cpus/)）
 
 ### 3.6.7 循环
 

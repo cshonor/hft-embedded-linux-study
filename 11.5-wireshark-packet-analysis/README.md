@@ -41,7 +41,7 @@
 - 计算机网络 自顶向下（如果仓库中有）
 - TCP/IP 详解 卷一（如果仓库中有）
 - HTTP 权威指南（如果仓库中有）
-- HFT 仓库内：[11-tcpip-protocols](../11-tcpip-protocols/) · [04-cpp/M5-cpp-network-programming](../04-cpp/M5-cpp-network-programming/) · [14-systems-performance](../14-systems-performance/)
+- HFT 仓库内：[11-tcpip-protocols](../11-tcpip-protocols/) · [04-cpp/M5-cpp-network-programming](../04-cpp/M5-cpp-network-programming/) · [06.6-systems-performance](../06.6-systems-performance/)
 
 ## 使用工具
 
@@ -67,8 +67,8 @@ Wireshark 在高频交易（HFT）场景中是**网络延迟分析**的核心工
 | TCP/IP 协议细节 | ch07-ch09 | [11-tcpip-protocols](../11-tcpip-protocols/) |
 | Socket 编程 | ch08 | [04-cpp/M5-cpp-network-programming](../04-cpp/M5-cpp-network-programming/) |
 | 内核网络栈 | ch06 | [12-kernel-networking](../12-kernel-networking/) · [12.5-modern-networking](../12.5-modern-networking/) |
-| 系统性能 | ch11 | [14-systems-performance](../14-systems-performance/) |
-| eBPF 可观测性 | hft-05 | [15-bpf-observability](../15-bpf-observability/) |
+| 系统性能 | ch11 | [06.6-systems-performance](../06.6-systems-performance/) |
+| eBPF 可观测性 | hft-05 | [06.7-bpf-observability](../06.7-bpf-observability/) |
 | DPDK 内核旁路 | hft-03 | [13-dpdk](../13-dpdk/) |
 
 ## 其他

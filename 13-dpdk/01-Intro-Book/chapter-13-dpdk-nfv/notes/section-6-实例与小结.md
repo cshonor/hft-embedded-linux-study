@@ -63,7 +63,7 @@ MANO + 商业交付（vRouter、vBRAS…）
 | Pipeline / ring | [chapter-05-packet-forwarding](../../chapter-05-packet-forwarding/) 🔴 |
 | 组播 / HFT 落地 | [chapter-05-组播行情接入.md](../../chapter-05-packet-forwarding) 🔴 |
 | 进阶网络 | [02-Advanced-Book](../../../02-Advanced-Book/) 🟡 |
-| 性能方法论 | [03 SysPerf](../../../../14-systems-performance/) |
+| 性能方法论 | [06.6 SysPerf](../../../../06.6-systems-performance/) |
 | HFT | [15 工程](../../../../16-hft-engineering/) |
 
 ---

@@ -49,7 +49,7 @@ Exchange ──► Gateway IN ──► Book Builder ──► Strategy ──�
 | **Memory Pool** | 热点路径**禁止** `malloc`/`new` |
 | **Huge Pages** | 减少 **TLB miss** |
 
-→ 深化：[chapter-04 硬件](./chapter-04-硬件选型与服务器配置.md) · [chapter-05 OS 调优](./chapter-05-操作系统内核极致调优.md) · [15-DPDK](../13-dpdk/)
+→ 深化：[chapter-04 硬件](./chapter-04-硬件选型与服务器配置.md) · [chapter-05 OS 调优](./chapter-05-操作系统内核极致调优.md) · [13-DPDK](../13-dpdk/)
 
 ---
 
@@ -161,7 +161,7 @@ Exchange ──► Gateway IN ──► Book Builder ──► Strategy ──�
 
 | 仓库 | 对照 |
 |------|------|
-| [15-DPDK](../13-dpdk/) | 用户态网卡 · PMD · 零拷贝 |
+| [13-DPDK](../13-dpdk/) | 用户态网卡 · PMD · 零拷贝 |
 | [03-linux-userspace-api](../03-linux-userspace-api/) | `mmap` · 进程 · 定时 |
 | [projects/P9-os-from-scratch](../projects/P9-os-from-scratch/) | OS/内存/中断体感 |
 | [21-markets-microstructure](../21-markets-microstructure/) | 微观结构 · 订单簿理论 |

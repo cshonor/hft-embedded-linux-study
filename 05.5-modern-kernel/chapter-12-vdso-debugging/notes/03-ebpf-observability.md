@@ -224,4 +224,4 @@ BTF (BPF Type Format) 是内核结构体的类型描述信息，存储在 /sys/k
 
 - [02-ftrace-modern.md](./02-ftrace-modern.md) — ftrace 内置追踪框架
 - [04-crash-drgn-analysis.md](./04-crash-drgn-analysis.md) — crash/drgn 事后分析
-- [15-bpf-observability](../../../15-bpf-observability/) — eBPF 完整教程
+- [06.7-bpf-observability](../../../06.7-bpf-observability/) — eBPF 完整教程

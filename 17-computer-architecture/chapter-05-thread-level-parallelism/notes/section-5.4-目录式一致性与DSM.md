@@ -25,7 +25,7 @@
 | 设计：**per-socket 工作集**、减少跨 socket 写共享；行情核与发单核 **同 socket** |
 | 与 Linux **NUMA balancing** 的拉扯 — 实盘常 **关闭自动迁移**（`kernel.numa_balancing=0`）换确定性 |
 
-→ [16-Systems-Performance Ch6 NUMA](../../../14-systems-performance/chapter-06-cpus/)
+→ [06.6-Systems-Performance Ch6 NUMA](../../../06.6-systems-performance/chapter-06-cpus/)
 
 
 ### 常见陷阱

@@ -1,7 +1,7 @@
 # P6 — 网络协议分析器
 
 > 用 raw socket 抓包、逐层解析、TCP 流重组，再用 eBPF 追踪内核 NAPI 收包路径，把"报文从网卡到用户态"整条链看穿。
-> **做法：项目驱动，[`12`](../../04-cpp/M5-cpp-network-programming/) / [`13`](../../11-tcpip-protocols/) / [`14`](../../12-kernel-networking/) / [`17`](../../15-bpf-observability/) 笔记当字典。**
+> **做法：项目驱动，[`12`](../../04-cpp/M5-cpp-network-programming/) / [`13`](../../11-tcpip-protocols/) / [`14`](../../12-kernel-networking/) / [`17`](../../06.7-bpf-observability/) 笔记当字典。**
 
 ---
 
@@ -17,7 +17,7 @@
 | [TCP/IP ch03 链路层](../../11-tcpip-protocols/chapter03-link-layer/) | Ethernet 帧格式 |
 | [TCP/IP ch05 IP](../../11-tcpip-protocols/chapter05-ip-protocol/) | IP 首部字段 |
 | [Rosen ch01 引言](../../12-kernel-networking/chapter-01-introduction/) | sk_buff、收包路径概览 |
-| [BPF ch01 引言](../../15-bpf-observability/bpf-performance-tools/chapter-01-introduction/notes/) | eBPF 是什么 |
+| [BPF ch01 引言](../../06.7-bpf-observability/bpf-performance-tools/chapter-01-introduction/notes/) | eBPF 是什么 |
 
 ---
 
@@ -234,7 +234,7 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| bpftrace 语法 | [BPF ch04 bcc](../../15-bpf-observability/bpf-performance-tools/chapter-04-bcc/notes/) |
+| bpftrace 语法 | [BPF ch04 bcc](../../06.7-bpf-observability/bpf-performance-tools/chapter-04-bcc/notes/) |
 | NAPI 收包路径 | [Rosen ch01](../../12-kernel-networking/chapter-01-introduction/) |
 | 现代 NAPI/XDP | [14.5 ch02 NAPI](../../12.5-modern-networking/chapter-02-napi-rx-path/) |
 
@@ -292,7 +292,7 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 | [`13` tcpip-protocols](../../11-tcpip-protocols/) | Stevens 卷一：IP/TCP/UDP 首部与协议行为 |
 | [`14` kernel-networking](../../12-kernel-networking/) | Rosen：sk_buff、NAPI、收包路径 |
 | [`14.5` modern-networking](../../12.5-modern-networking/) | 现代 6.x：page_pool、XDP hook、eBPF 网络 |
-| [`17` bpf-observability](../../15-bpf-observability/) | bpftrace 追踪内核网络函数 |
+| [`17` bpf-observability](../../06.7-bpf-observability/) | bpftrace 追踪内核网络函数 |
 
 ## 前置
 

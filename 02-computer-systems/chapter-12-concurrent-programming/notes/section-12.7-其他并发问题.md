@@ -52,7 +52,7 @@
 绝不：持锁跨 I/O、嵌套锁顺序不一致
 ```
 
-→ C++ `std::atomic` / `memory_order` · [18-HFT](../../../16-hft-engineering/)
+→ C++ `std::atomic` / `memory_order` · [16-HFT](../../../16-hft-engineering/)
 
 ---
 

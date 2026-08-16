@@ -28,7 +28,7 @@
 5. 重复直至逼近硬件极限
 ```
 
-与 [03 SysPerf](../../../../14-systems-performance/) **USE 法、实验迭代** 同构。
+与 [06.6 SysPerf](../../../../06.6-systems-performance/) **USE 法、实验迭代** 同构。
 
 ---
 

@@ -105,7 +105,7 @@ OS 暂停线程 A、运行 B 时：
 | **中断驱动** | 低负载友好 · **高 PPS 时 IRQ 风暴** |
 | **NAPI / 轮询（DPDK/OpenOnload）** | 用户态 **poll** — 热点 **可预测** |
 
-→ [chapter-06 网络](./chapter-06-低延迟网络与协议优化.md) · [15-DPDK](../13-dpdk/)
+→ [chapter-06 网络](./chapter-06-低延迟网络与协议优化.md) · [13-DPDK](../13-dpdk/)
 
 ---
 

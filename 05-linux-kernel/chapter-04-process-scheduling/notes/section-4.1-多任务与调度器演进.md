@@ -115,7 +115,7 @@ CFS（2.6.23+，Completely Fair Scheduler）
 **HFT：** 不要指望「调一下 nice」解决微秒级抖动；热路径通常是 **隔离核 + RT/FIFO + 中断亲和**，CFS 负责「其余世界别饿死」。
 
 → 下一节：[4.2 策略](./section-4.2-调度策略.md) · [4.3 CFS](./section-4.3-Linux-调度算法.md) · [4.5 抢占与切换](./section-4.5-抢占与上下文切换.md)  
-→ [15 SysPerf §3.2 O(1)→CFS](../../../14-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
+→ [15 SysPerf §3.2 O(1)→CFS](../../../06.6-systems-performance/chapter-03-operating-systems/notes/section-3.2-内核基础与核心概念.md)
 
 ### 常见陷阱
 

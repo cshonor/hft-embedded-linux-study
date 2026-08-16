@@ -189,7 +189,7 @@ A(nice=0, weight=**1024**)、B(nice=5, weight=**335**，表值；勿写成 312) 
 
 **HFT：** 热路径若进 RT，抖动源常变成中断/softirq/同核争用/锁，而不是 nice。
 
-→ **Ch 6** 红黑树 · [4.5 抢占](./section-4.5-抢占与上下文切换.md) · [15 SysPerf](../../../14-systems-performance/)
+→ **Ch 6** 红黑树 · [4.5 抢占](./section-4.5-抢占与上下文切换.md) · [15 SysPerf](../../../06.6-systems-performance/)
 
 ### 常见陷阱
 

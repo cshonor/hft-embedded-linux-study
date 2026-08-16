@@ -117,7 +117,7 @@ void handleWrite(int fd, Buffer* pending) {
 
 - `O_NONBLOCK` 存在 `struct file->f_flags`。`tcp_recvmsg` 检查：接收队列为空时，阻塞 → 把进程挂到 `sk_wq` 等待队列并 `schedule()`；非阻塞 → 直接 `-EAGAIN` 返回，**全程零睡眠零切换**
 - `tcp_sendmsg`：发送缓冲剩余空间不足以容纳全部数据时——阻塞模式等空间（可能部分写后睡）；非阻塞模式 **一点空间都没有才 EAGAIN，有一点就部分写**——所以非阻塞 write 返回正数 n < 请求值是常态
-- 唤醒延迟的物理成本：数据到达 → 硬中断/软中断 → 唤醒进程 → **调度器安排它上 CPU**（µs 级，还要看负载）。这是内核阻塞/唤醒路径的固有开销，也是 HFT 后来发明 **busy polling**（`SO_BUSY_POLL`，进程自旋问内核"有了吗"）和 **内核旁路**（[14 DPDK](../../13-dpdk/)，用户态驱动直接收包）的动机
+- 唤醒延迟的物理成本：数据到达 → 硬中断/软中断 → 唤醒进程 → **调度器安排它上 CPU**（µs 级，还要看负载）。这是内核阻塞/唤醒路径的固有开销，也是 HFT 后来发明 **busy polling**（`SO_BUSY_POLL`，进程自旋问内核"有了吗"）和 **内核旁路**（[13 DPDK](../../13-dpdk/)，用户态驱动直接收包）的动机
 - `accept` 的 `EMFILE`：fd 用尽时 accept 会 **持续返回 EMFILE**，非阻塞事件循环若不处理（如先 reserve 一个 idle fd 应急 close），listenfd 一直可读 → busy loop 拒绝服务
 
 <a id="pnp-06-pitfalls"></a>
@@ -158,4 +158,4 @@ void handleWrite(int fd, Buffer* pending) {
 ## 交叉引用
 
 - 上一篇：[05 TTCP](./05_TTCP.md) · 下一篇：[07 epoll](./07_IO_epoll.md)
-- [03.5 UNP Ch16](../../03.5-unix-network-api/) · [13 内核网络](../../12-kernel-networking/) · [14 DPDK](../../13-dpdk/)
+- [03.5 UNP Ch16](../../03.5-unix-network-api/) · [13 内核网络](../../12-kernel-networking/) · [13 DPDK](../../13-dpdk/)

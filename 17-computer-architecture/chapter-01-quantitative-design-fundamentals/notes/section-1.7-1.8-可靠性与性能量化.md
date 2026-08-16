@@ -46,6 +46,6 @@
 | 自有 benchmark：**端到端 tick-to-trade**、**replay 回放** — 不用 SPEC 代替 |
 | 对比两台机器：固定 **相同输入 trace、相同内核/网卡配置** |
 | 报告 **中位数 + P99 + max**；几何平均可用于 **多场景 replay 套件** 汇总 |
-| → 压测方法：[18-HFT ch10](../../../16-hft-engineering/chapter-10-延迟测量与基准压测.md) · [16-Systems-Performance Ch12 基准测试](../../../14-systems-performance/chapter-12-benchmarking/) |
+| → 压测方法：[16-HFT ch10](../../../16-hft-engineering/chapter-10-延迟测量与基准压测.md) · [06.6-Systems-Performance Ch12 基准测试](../../../06.6-systems-performance/chapter-12-benchmarking/) |
 
 ---

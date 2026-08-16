@@ -53,6 +53,6 @@ Ch 4–5 IPv4 / 路由（托管网络时补读）
 Ch 13  InfiniBand（共置/RDMA 场景）
 ```
 
-→ 协议层 → [13-TCP-IP](../11-tcpip-protocols/) · API → [12-UNP](../03.5-unix-network-api/) · 旁路 → [15-DPDK](../13-dpdk/)
+→ 协议层 → [13-TCP-IP](../11-tcpip-protocols/) · API → [12-UNP](../03.5-unix-network-api/) · 旁路 → [13-DPDK](../13-dpdk/)
 
 完整路线 → [HFT-READING-ROADMAP.md](../HFT-READING-ROADMAP.md)

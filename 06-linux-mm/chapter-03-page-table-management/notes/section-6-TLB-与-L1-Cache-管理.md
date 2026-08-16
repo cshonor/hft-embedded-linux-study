@@ -26,6 +26,6 @@ Linux 在 **改映射、切换 mm、换页** 等路径插入 **架构相关 hook
 | **2MiB / 1GiB 大页、THP** | **更少 PTE、更少 TLB miss** — HFT 常 **显式 hugepage** 或 **关 THP 防 latency 抖动**（见 THP 笔记） |
 | **进程迁移到其他 CPU** | 可能 **remote TLB invalidation** |
 
-→ [Hennessy Ch2 TLB](../../../17-computer-architecture/chapter-02-memory-hierarchy-design/) · [15-DPDK EAL 大页](../../../13-dpdk/01-Intro-Book/notes/chapter-01-DPDK架构与EAL.md)
+→ [Hennessy Ch2 TLB](../../../17-computer-architecture/chapter-02-memory-hierarchy-design/) · [13-DPDK EAL 大页](../../../13-dpdk/01-Intro-Book/notes/chapter-01-DPDK架构与EAL.md)
 
 ---

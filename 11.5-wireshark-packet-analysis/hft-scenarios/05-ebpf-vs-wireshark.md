@@ -1,6 +1,6 @@
 # HFT 场景 05：eBPF 对比 Wireshark
 
-> [总览](./00-overview.md) · [HFT 模块：BPF 可观测性](../../15-bpf-observability/) · [HFT 场景 03：内核旁路](./03-kernel-bypass-limitations.md)
+> [总览](./00-overview.md) · [HFT 模块：BPF 可观测性](../../06.7-bpf-observability/) · [HFT 场景 03：内核旁路](./03-kernel-bypass-limitations.md)
 
 **核心问题**：Wireshark 在用户态处理包，高流量场景下会丢包或增加延迟。eBPF 在内核态过滤和处理，开销更低，但能力不同。两者不是替代关系，而是互补。
 
@@ -159,7 +159,7 @@ sudo tcpdump -nni eth0 -c 10000
 - [HFT 场景 01：TCP 延迟](./01-tcp-latency-analysis.md)
 - [HFT 场景 03：内核旁路](./03-kernel-bypass-limitations.md)
 - [HFT 场景 04：容器/云抓包](./04-container-cloud-capture.md)
-- [HFT 模块：BPF 可观测性](../../15-bpf-observability/)
+- [HFT 模块：BPF 可观测性](../../06.7-bpf-observability/)
 - [HFT 模块：内核网络](../../12-kernel-networking/)
 - [HFT 模块：现代网络](../../12.5-modern-networking/)
-- [HFT 模块：系统性能](../../14-systems-performance/)
+- [HFT 模块：系统性能](../../06.6-systems-performance/)

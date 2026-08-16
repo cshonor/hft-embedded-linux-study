@@ -44,7 +44,7 @@
 
 **效果（书中量级）：** UDP/TCP 读写 **1.5–10 μs → 0.5–2 μs**。
 
-→ 实操 [chapter-05 §3](./chapter-05-操作系统内核极致调优.md#3-减少阻塞kernel-bypass) · [15-DPDK](../13-dpdk/)
+→ 实操 [chapter-05 §3](./chapter-05-操作系统内核极致调优.md#3-减少阻塞kernel-bypass) · [13-DPDK](../13-dpdk/)
 
 ---
 
@@ -171,7 +171,7 @@ T2T = t7 - t1
 | **Replay 压测** | 生产 pcap **离线** — [chapter-01 实战](./chapter-01-高频交易基础与生态.md#实战启动建议) |
 | **探针开销** | 测量工具 **本身** 要 **inline / 采样** |
 
-→ [16-Systems-Performance](../14-systems-performance/)
+→ [06.6-Systems-Performance](../06.6-systems-performance/)
 
 ---
 

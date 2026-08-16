@@ -70,7 +70,7 @@ Core 3: Gateway OUT
 
 | 效果（原书 Ch7） | **1.5–10 μs → 0.5–2 μs** |
 
-→ [chapter-06 §5](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [chapter-10 §1](./chapter-10-延迟测量与基准压测.md#1-内核旁路-kernel-bypass) · [15-DPDK](../13-dpdk/)
+→ [chapter-06 §5](./chapter-06-低延迟网络与协议优化.md#5-数据包生命周期kernel-路径) · [chapter-10 §1](./chapter-10-延迟测量与基准压测.md#1-内核旁路-kernel-bypass) · [13-DPDK](../13-dpdk/)
 
 ---
 

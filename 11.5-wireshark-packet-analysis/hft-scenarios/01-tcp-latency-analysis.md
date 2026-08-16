@@ -118,5 +118,5 @@ tshark -r trade.pcapng -Y "tcp.window_size_value < 1000" \
 - [基础：TCP 重传](../chapter-11-network-slow-fix/01-tcp-retransmission.md)
 - [基础：TCP 流控](../chapter-11-network-slow-fix/02-tcp-flow-control.md)
 - [HFT 场景 02：NIC offload](./02-nic-offload-impact.md)
-- [HFT 模块：系统性能](../../14-systems-performance/)
+- [HFT 模块：系统性能](../../06.6-systems-performance/)
 - [HFT 模块：TCP/IP 协议](../../11-tcpip-protocols/)

@@ -13,7 +13,7 @@
 | **本章干什么** | 总结 MikanOS 已覆盖模块；讨论 **网络 / SMP / 安全启动 / 其他架构** 等延伸方向。 |
 | **全书作用** | **全书收尾与路线图**（🟡）— 从「跟完书」到「自己选方向深入」；对接 Linux 内核 / DPDK / 虚拟化等 HFT 后续模块。 |
 | **← 前置** | [Ch30 额外应用](../chapter-30-extra-apps/) — 功能闭环 |
-| **→ 后续** | 无（主线结束）；可转 [04 LKD](../../../../05-linux-kernel/) · [07 TLPI](../../../../03-linux-userspace-api/) · [14 DPDK](../../../../14-systems-performance/) |
+| **→ 后续** | 无（主线结束）；可转 [04 LKD](../../../../05-linux-kernel/) · [07 TLPI](../../../../03-linux-userspace-api/) · [13 DPDK](../../../../06.6-systems-performance/) |
 
 ---
 ## 小节笔记

@@ -103,8 +103,8 @@
 
 | 序 | 项目 | 对应模块 | 验收 |
 |----|------|----------|------|
-| F1 | `perf` / `bpftrace` 看热点与内核路径 | [16](../../14-systems-performance/) · [17](../../15-bpf-observability/) | 能解释一张火焰图 |
-| F2 | CPU 亲和 / 中断绑定 / 缓存友好访问 | [16](../../14-systems-performance/) · [18](../../16-hft-engineering/) | 有前后对比数据 |
+| F1 | `perf` / `bpftrace` 看热点与内核路径 | [16](../../06.6-systems-performance/) · [17](../../06.7-bpf-observability/) | 能解释一张火焰图 |
+| F2 | CPU 亲和 / 中断绑定 / 缓存友好访问 | [16](../../06.6-systems-performance/) · [18](../../16-hft-engineering/) | 有前后对比数据 |
 
 - [ ] F1  
 - [ ] F2  

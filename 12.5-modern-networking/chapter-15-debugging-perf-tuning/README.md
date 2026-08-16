@@ -22,5 +22,5 @@
 
 ## 交叉引用
 
-- `14-systems-performance/`：系统级性能调优
+- `06.6-systems-performance/`：系统级性能调优
 - `05.6-kernel-debugging/`：内核调试工具体系

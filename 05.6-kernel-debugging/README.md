@@ -12,12 +12,12 @@
 >
 > **后续：**
 > - [06-linux-mm](../06-linux-mm/)（内存管理子系统，调试 MM 问题时回来查）
-> - [14-systems-performance](../14-systems-performance/)（性能分析，从"正确性"转向"性能"）
-> - [15-bpf-observability](../15-bpf-observability/)（eBPF 动态追踪，从"调试"转向"可观测"）
+> - [06.6-systems-performance](../06.6-systems-performance/)（性能分析，从"正确性"转向"性能"）
+> - [06.7-bpf-observability](../06.7-bpf-observability/)（eBPF 动态追踪，从"调试"转向"可观测"）
 
 ---
 
-## ⚠️ 与 14-systems-performance / 15-bpf-observability 的边界
+## ⚠️ 与 06.6-systems-performance / 06.7-bpf-observability 的边界
 
 | 维度 | 本书 (08.6) | 性能之巅 (19) | BPF之巅 (20) |
 |------|-------------|---------------|--------------|
@@ -95,7 +95,7 @@ chapter-XX-english-slug/
 └── notes/         ← 按原书小节拆分的笔记
 ```
 
-与 [05-linux-kernel](../05-linux-kernel/) · [18-linux-kernel-deep](../18-linux-kernel-deep/) · [14-systems-performance](../14-systems-performance/) · [15-bpf-observability](../15-bpf-observability/) 同一套约定。
+与 [05-linux-kernel](../05-linux-kernel/) · [18-linux-kernel-deep](../18-linux-kernel-deep/) · [06.6-systems-performance](../06.6-systems-performance/) · [06.7-bpf-observability](../06.7-bpf-observability/) 同一套约定。
 
 ---
 
