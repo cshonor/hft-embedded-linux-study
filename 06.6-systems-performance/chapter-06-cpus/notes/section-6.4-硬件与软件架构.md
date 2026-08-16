@@ -15,7 +15,7 @@ cpufreq governor = performance
 turbo 按需：要稳定延迟 vs 要峰值算力 — 与团队策略一致
 ```
 
-→ [16-HFT ch05](../../../16-hft-engineering/chapter-05-操作系统内核极致调优.md)
+→ [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优.md)
 
 ### Cache、MMU、TLB、互连
 

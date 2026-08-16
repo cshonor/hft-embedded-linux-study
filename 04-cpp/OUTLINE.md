@@ -11,7 +11,7 @@
 |------|------|
 | **C 先于 C++** | [01 CSAPP](../02-computer-systems/) + [02 C](../01-c-language/) — C++ 是「带 RAII 的 C++」 |
 | **Modern 先于 muduo** | [10 PNP](./M5-cpp-network-programming/) 是 C++ 工程；**`01-Effective-Modern-C++` 是硬门槛** |
-| **并发先于 HFT 引擎** | [17 HFT](../16-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
+| **并发先于 HFT 引擎** | [14 HFT](../14-hft-engineering/)；**`02-Cpp-Concurrency` 必过** |
 | **原理 > 语法版本** | Effective + Modern C++11/14 打底，再 17/20 |
 
 ---
@@ -44,7 +44,7 @@
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 | **07–11 网络栈进行中或之后、17 HFT 之前** |
+| [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 | **07–11 网络栈进行中或之后、14 HFT 之前** |
 | [2-Cpp-Object-Model](./M2-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
 
 **验收：** 能写 mutex/condition_variable、理解 data race；能解释类大小、对齐、继承布局。
@@ -67,7 +67,7 @@
 | 目录 | 书目 | 何时 |
 |------|------|------|
 | [4-C++17-The-Complete-Guide](./M4-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 | HFT 主线进行中可穿插 |
-| [4-C++20-The-Complete-Guide](./M4-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 | **17 HFT 主线跑通后**；Concepts / Coroutines / Modules |
+| [4-C++20-The-Complete-Guide](./M4-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 | **14 HFT 主线跑通后**；Concepts / Coroutines / Modules |
 
 ---
 
@@ -84,7 +84,7 @@
                 ↓
            【09 · M2 并发 + 对象模型】
                 ↓
-           17 HFT（C++ 引擎）
+           14 HFT（C++ 引擎）
                 ↓
            18 Rust + 【09 · M4 C++17/20 可选】
 ```
@@ -97,7 +97,7 @@
 2. **`02-Cpp-Concurrency`**（线程 + 同步 + 内存模型章）
 3. **`01-Cpp-Object-Model`**（选章：对象布局、继承、虚函数）
 
-其余 Effective / STL / C++17/20 **边做 17 HFT 边补**。
+其余 Effective / STL / C++17/20 **边做 14 HFT 边补**。
 
 ---
 

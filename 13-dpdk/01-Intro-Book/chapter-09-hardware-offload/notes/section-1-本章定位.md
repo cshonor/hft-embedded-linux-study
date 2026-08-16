@@ -39,7 +39,7 @@
 | **IEEE1588 PTP** | **交易所级时间戳** — 硬件戳 near-PHY |
 | **TSO/RSC** | **TCP 发单** 更有用；纯 UDP tick 常 **不开** |
 
-→ [16 HFT 低延迟工程](../../../../16-hft-engineering/)
+→ [14 HFT 低延迟工程](../../../../14-hft-engineering/)
 
 ---
 

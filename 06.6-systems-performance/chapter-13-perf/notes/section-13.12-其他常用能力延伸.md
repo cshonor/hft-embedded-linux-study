@@ -13,7 +13,7 @@ perf sched record -p $(pidof strategy) -- sleep 10
 perf sched latency
 ```
 
-**HFT 锁/伪共享：** `perf c2c record` 或 Ch 6 PMC + [19-Hennessy](../../../17-computer-architecture/) — 争用严重时再开。
+**HFT 锁/伪共享：** `perf c2c record` 或 Ch 6 PMC + [19-Hennessy](../../../15-computer-architecture/) — 争用严重时再开。
 
 ---
 

@@ -141,5 +141,5 @@ system workqueue（`system_wq`）：全局共享，所有 `schedule_work()` 提�
 </details>
 
 
-> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

@@ -32,7 +32,7 @@
 
 ## HFT 关联
 
-交易公司监控数十个行情/策略/风控节点时，命令行逐台 SSH 不可扩展；runqlat/biolatency 直方图以**热图**形式集中呈现是尾延迟治理的基础看板（对应本仓库 16-hft-engineering 的可观测性需求）。
+交易公司监控数十个行情/策略/风控节点时，命令行逐台 SSH 不可扩展；runqlat/biolatency 直方图以**热图**形式集中呈现是尾延迟治理的基础看板（对应本仓库 14-hft-engineering 的可观测性需求）。
 
 <details>
 <summary>自测题</summary>

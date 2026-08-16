@@ -1,6 +1,6 @@
 ## 6.1 存储技术（6.1.1–6.1.4）
 
-> ↔ [Hennessy §2.2 存储器技术](../../../17-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.2-存储器技术与优化.md)
+> ↔ [Hennessy §2.2 存储器技术](../../../15-computer-architecture/chapter-02-memory-hierarchy-design/notes/section-2.2-存储器技术与优化.md)
 
 
 ### 6.1.1 随机访问存储器 (RAM)
@@ -32,7 +32,7 @@
 **HFT：**
 
 - 热路径数据 **驻留 DRAM + L3**；日志/回放 **顺序写 NVMe**
-- 共置机器 **足够 DRAM** 装 working set；swap 禁用（→ [16-HFT](../../../16-hft-engineering/)）
+- 共置机器 **足够 DRAM** 装 working set；swap 禁用（→ [14-HFT](../../../14-hft-engineering/)）
 - DPDK **mbuf 池** 预分配 — 避免 tick 上 malloc（→ [13-DPDK](../../../13-dpdk/)）
 
 ---

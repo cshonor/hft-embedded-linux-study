@@ -217,7 +217,7 @@ void *fuse_worker(void *arg) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 调度延迟 | [ULK ch07 调度](../../../18-linux-kernel-deep/chapter-07-process-scheduling/) |
+| 调度延迟 | [ULK ch07 调度](../../../16-linux-kernel-deep/chapter-07-process-scheduling/) |
 | 性能分析 | [16 SysPerf](../../../06.6-systems-performance/) |
 
 ---

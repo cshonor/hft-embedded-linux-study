@@ -110,5 +110,5 @@ IRQ_HANDLED：中断被本驱动处理。IRQ_NONE：中断不属于本驱动（�
 </details>
 
 
-> ↔ [ULK Ch4 §6 IO中断处理](../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
+> ↔ [ULK Ch4 §6 IO中断处理](../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
 ---

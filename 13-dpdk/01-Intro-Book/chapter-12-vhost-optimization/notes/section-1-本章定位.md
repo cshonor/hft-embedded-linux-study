@@ -33,7 +33,7 @@
 - **HFT 裸金属 / SR-IOV** — **选读**；理解 vhost 有助于对比 **为何 VF 更快**  
 - OVS-DPDK、vhost-user 容器网络 — 与本章同族
 
-→ [16 HFT 部署](../../../../16-hft-engineering/)
+→ [14 HFT 部署](../../../../14-hft-engineering/)
 
 ---
 

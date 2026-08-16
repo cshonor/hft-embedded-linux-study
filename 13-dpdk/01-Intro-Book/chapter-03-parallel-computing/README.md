@@ -21,4 +21,4 @@
 
 - 上一章：[chapter-02-cache-and-memory/](../chapter-02-cache-and-memory/)
 - 下一章：[chapter-04-synchronization/](../chapter-04-synchronization/) · [chapter-02-mbuf](../chapter-02-cache-and-memory)
-- 对照：[19-Hennessy 并行](../../../17-computer-architecture/chapter-04-vector-simd-gpu/) · [Ch1 方法论](../chapter-01-dpdk-intro/notes/section-4-底层方法论.md)
+- 对照：[19-Hennessy 并行](../../../15-computer-architecture/chapter-04-vector-simd-gpu/) · [Ch1 方法论](../chapter-01-dpdk-intro/notes/section-4-底层方法论.md)

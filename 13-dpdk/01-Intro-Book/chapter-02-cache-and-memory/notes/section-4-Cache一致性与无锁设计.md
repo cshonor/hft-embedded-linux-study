@@ -17,7 +17,7 @@
 
 **跨核写同一 Cache Line** → 总线 **invalidate / 同步** — **极慢**。
 
-→ [19-Hennessy 一致性](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/)
+→ [19-Hennessy 一致性](../../../../15-computer-architecture/chapter-02-memory-hierarchy-design/)
 
 ---
 
@@ -38,7 +38,7 @@
 | **Per-core 资源** | 每 lcore **独立** 统计、队列、 mempool 消费 — **避免跨核写同一变量** |
 | **专属 RX/TX 队列** | 网卡 **多队列** — 一核一队，减少锁与一致性流量 |
 
-→ [Ch1 方法论 · 水平扩展](../../chapter-01-dpdk-intro/notes/section-4-底层方法论.md) · [16 HFT 无锁环](../../../../16-hft-engineering/)
+→ [Ch1 方法论 · 水平扩展](../../chapter-01-dpdk-intro/notes/section-4-底层方法论.md) · [14 HFT 无锁环](../../../../14-hft-engineering/)
 
 **原则：** 不是「少锁」，而是 **从设计上不共享可写 cache line**。
 

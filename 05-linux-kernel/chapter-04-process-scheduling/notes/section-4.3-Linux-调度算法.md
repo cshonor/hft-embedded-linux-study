@@ -229,5 +229,5 @@ O(log n)。红黑树按 vruntime 排序，最左节点 = vruntime 最小 = 下�
 </details>
 
 
-> ↔ [ULK Ch7 §4 调度算法与核心函数](../../../18-linux-kernel-deep/chapter-07-process-scheduling/notes/section-4-调度算法与核心函数.md)
+> ↔ [ULK Ch7 §4 调度算法与核心函数](../../../16-linux-kernel-deep/chapter-07-process-scheduling/notes/section-4-调度算法与核心函数.md)
 ---

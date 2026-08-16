@@ -3,7 +3,7 @@
 > **GitHub：** [github.com/cshonor/hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)  
 > **HFT 低延迟 Linux 底层** + **嵌入式 Linux 无人机飞控** 双线笔记与路线仓库。
 
-**技术板块 `00`–`21`（含 `.5` / `.6` / `.7` 模块 `03.5` / `05.5` / `05.6` / `06.5` / `06.6` / `06.7` / `11.5` / `12.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5`–`.7` = 现代补充资料或性能/可观测衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
+**技术板块 `00`–`19`（含 `.5` / `.6` / `.7` 模块 `03.5` / `05.5` / `05.6` / `06.5` / `06.6` / `06.7` / `11.5` / `12.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5`–`.7` = 现代补充资料或性能/可观测衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
 
 ---
 
@@ -11,7 +11,7 @@
 
 | 仓库 | 用途 | 本仓对应 |
 |------|------|----------|
-| **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** | 本仓：读序、OUTLINE、章节 scaffold | `00`–`21` |
+| **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** | 本仓：读序、OUTLINE、章节 scaffold | `00`–`19` |
 | **[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)** | C / C++ 详细笔记与代码 | [01 C](./01-c-language/) · [04 C++](./04-cpp/) |
 | [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [03.5 UNP](./03.5-unix-network-api/) · [04/M5 C++ 网络编程](./04-cpp/M5-cpp-network-programming/) |
 
@@ -49,19 +49,19 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **13** | [dpdk](./13-dpdk/) | 用户态高速网络（DPDK） | 5B |
 | **06.6** | [systems-performance](./06.6-systems-performance/) | 系统性能方法论（Gregg） | 5B |
 | **06.7** | [bpf-observability](./06.7-bpf-observability/) | BPF / 可观测（Gregg） | 5B |
-| **16** | [hft-engineering](./16-hft-engineering/) | HFT 工程实践 | 5B |
-| **17** | [computer-architecture](./17-computer-architecture/) | 体系结构加深（拓展） | 6 |
-| **18** | [linux-kernel-deep](./18-linux-kernel-deep/) | 内核深度 ULK3（拓展） | 6 |
-| **19** | [rust-foundation](./19-rust-foundation/) | Rust 基础（拓展） | 6 |
-| **20** | [rust-quant](./20-rust-quant/) | Rust 量化（拓展） | 6 |
-| **21** | [markets-microstructure](./21-markets-microstructure/) | 交易 / 微观结构（业务） | 6 |
+| **14** | [hft-engineering](./14-hft-engineering/) | HFT 工程实践 | 5B |
+| **15** | [computer-architecture](./15-computer-architecture/) | 体系结构加深（拓展） | 6 |
+| **16** | [linux-kernel-deep](./16-linux-kernel-deep/) | 内核深度 ULK3（拓展） | 6 |
+| **17** | [rust-foundation](./17-rust-foundation/) | Rust 基础（拓展） | 6 |
+| **18** | [rust-quant](./18-rust-quant/) | Rust 量化（拓展） | 6 |
+| **19** | [markets-microstructure](./19-markets-microstructure/) | 交易 / 微观结构（业务） | 6 |
 
 ---
 
 ## 学习路线（Phase 顺序 · 锁定）
 
 > **结论：** 书单深度够、广度闭环；**不要再扩书**。成败在于 **自底向上顺序** + **动手 Demo**。  
-> **重要：** **文件夹编号 = 学习顺序**（`00` → `21`）。书名只出现在各模块 README / `refs/`。
+> **重要：** **文件夹编号 = 学习顺序**（`00` → `19`）。书名只出现在各模块 README / `refs/`。
 
 ```
 Phase1  00 数字逻辑/CPU（当前；未完成前不正式开下一 Phase）
@@ -71,13 +71,13 @@ Phase2  01 C → 02 计算机系统
 Phase3  03 用户态 API → 03.5 UNP socket → 04 C++ → M5 muduo 网络编程（04 内）
    ↓
 Phase4  05 内核入门 → 05.5 现代内核 → 05.6 调试 → 06 MM → 06.5 现代 MM
-        （18 ULK 深度可后补）
+        （16 ULK 深度可后补）
    ↓
 Phase5  分叉并行
         A 嵌入式: 07 → 08 → 09 → P5 板级实战（10 兴趣）
-        B HFT:    11 → 11.5 → 12 → 12.5 → 13 → 06.6 → 06.7 → 16
+        B HFT:    11 → 11.5 → 12 → 12.5 → 13 → 06.6 → 06.7 → 14
    ↓
-Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）10
+Phase6  拓展: 15 · 16 · 17 · 18 · 19 · P9(OS from scratch) ·（兴趣）10
 ```
 
 | Phase | 内容 | 过关感 |
@@ -87,7 +87,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 | **3** | `03` → `03.5` → 穿插 `04`（含 M5 muduo） | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
 | **4** | `05` → `05.5` → `05.6` → `06` → `06.5` | 调度、内存、同步入门地图清晰；知道 6.x 现代实现 |
 | **5A** | `07`–`09` + P5 | 启动链、设备树、简单驱动、板级闭环 |
-| **5B** | `11`–`16`（含 `11.5` 和 `12.5`） | Socket → 协议 → 内核网 → 现代 Net → DPDK → 观测 → HFT |
+| **5B** | `11`–`14`（含 `11.5` 和 `12.5`） | Socket → 协议 → 内核网 → 现代 Net → DPDK → 观测 → HFT |
 | **6** | 拓展书/业务 | 主线闭环后再加 |
 
 ### 深度约束（已定）
@@ -110,7 +110,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 
 | 模块 | 补谁的过时 | 资料来源 | 学完做什么 |
 |------|-----------|----------|-----------|
-| **05.5** modern-kernel | ULK3/LKD3（2.6 非 MM 部分） | 笨叔(调度/RCU/ARM64) + LWN + Bootlin | 进 `18` ULK 源码阅读前先建立 6.x 认知 |
+| **05.5** modern-kernel | ULK3/LKD3（2.6 非 MM 部分） | 笨叔(调度/RCU/ARM64) + LWN + Bootlin | 进 `16` ULK 源码阅读前先建立 6.x 认知 |
 | **05.6** kernel-debugging | —（Kaiwan《Linux Kernel Debugging》2022, 5.x） | printk/Kprobes/KASAN/KGDB/Ftrace/Lockdep | 内核模块**正确性**调试；与 06.6/06.7 形成"正确性→性能→可观测" |
 | **06.5** modern-mm | Gorman（2.4/2.6 MM） | 笨叔卷1(MM) + LWN(SLUB/folio/MGLRU/5级页表) + Bootlin | 进 `06` 源码阅读前先建立 6.x MM 认知 |
 | **12.5** modern-networking | Rosen（3.x 网络） | LWN(XDP/eBPF/io_uring/NAPI) + 内核文档 + Bootlin | 进 `13` DPDK 前先建立 6.x 网络栈认知 |
@@ -124,7 +124,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
    ↓
 05.5 现代内核（5.x/6.x 真实实现，非 MM）
    ↓
-19 ULK3（源码深度阅读 + 模块实验）↔ 05.6 调试（出 bug 怎么修）
+16 ULK3（源码深度阅读 + 模块实验）↔ 05.6 调试（出 bug 怎么修）
 ```
 
 ---
@@ -142,7 +142,7 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
     ↓
 11 TCP/IP → 11.5 抓包 → 12 内核网络 → 12.5 现代网络 → 13 DPDK
     ↓
-06.6 SysPerf → 06.7 BPF → 16 HFT
+06.6 SysPerf → 06.7 BPF → 14 HFT
 ```
 
 ### 内核网络栈 vs 用户态旁路
@@ -178,12 +178,12 @@ Phase6  拓展: 17 · 18 · 19 · 20 · 21 · P9(OS from scratch) ·（兴趣）
 |---|-----|------|----------|
 | 1 | Systems Performance 2nd — Gregg | `06.6` | 延迟分解、perf、NUMA、网卡调优总纲 |
 | 2 | Linux Kernel Development 3rd — Love | `05` | 调度、中断、CFS、绑核底层 |
-| 2b | Understanding the Linux Kernel 3rd — Bovet | `18` | LKD 功能 ↔ 源码实现的桥梁 |
+| 2b | Understanding the Linux Kernel 3rd — Bovet | `16` | LKD 功能 ↔ 源码实现的桥梁 |
 | 3 | Understanding the Linux VM Manager — Gorman | `06` | slab、THP、NUMA、伪共享 |
 | 4 | Linux Kernel Networking — Rosen | `12` | sk_buff、NAPI、组播内核路径 |
-| 5 | Computer Architecture 6th — Hennessy | `17` | Cache line、MESI、memory order |
+| 5 | Computer Architecture 6th — Hennessy | `15` | Cache line、MESI、memory order |
 | 6 | CSAPP 3rd — Bryant | `02` | 缓存/VM/并发/网络编程程序员落地 |
-| 7 | Trading and Exchanges — Harris | `21` | LOB、撮合、市场微观结构 |
+| 7 | Trading and Exchanges — Harris | `19` | LOB、撮合、市场微观结构 |
 | 8 | BPF Performance Tools — Gregg | `06.7` | eBPF、XDP、生产观测 |
 | 12 | DPDK（官方文档 + 深入浅出 DPDK） | `13` | PMD、mbuf、零拷贝旁路 |
 | — | The Linux Programming Interface — Kerrisk | `03` | epoll、mmap、mlock、RT 调度 |
@@ -221,8 +221,8 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 | **P5** | 树莓派嵌入式 Linux 全链路（6 子项目见下） | `07`–`10` + P5 Labs | P4 | [projects/P5-raspberry-pi-embedded](./projects/P5-raspberry-pi-embedded/) |
 | **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04/M5` `11` `12` `12.5` `06.7` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
 | **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `13` `06.6` `06.7` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |
-| **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `16` `20` `21` | P4+P5+P7 | [projects/P8-matching-engine](./projects/P8-matching-engine/) |
-| **P10** | HFT 单机原型：DPDK 行情 + 撮合引擎 + 策略 + 风控 + 回测完整链路 | `13` `16` `17` `21` | P7+P8 | [projects/P10-hft-prototype](./projects/P10-hft-prototype/) |
+| **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `14` `18` `19` | P4+P5+P7 | [projects/P8-matching-engine](./projects/P8-matching-engine/) |
+| **P10** | HFT 单机原型：DPDK 行情 + 撮合引擎 + 策略 + 风控 + 回测完整链路 | `13` `14` `15` `19` | P7+P8 | [projects/P10-hft-prototype](./projects/P10-hft-prototype/) |
 
 ### P5 子项目（树莓派嵌入式）
 
@@ -240,7 +240,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 
 - **正在：** Phase1 · `00-digital-logic-cpu`
 - **下一站：** Phase2 · `01-c-language` → `02-computer-systems`
-- **暂不新开：** `05`/`12`/`13`/`16` 等（除非做极小对照实验）
+- **暂不新开：** `05`/`12`/`13`/`14` 等（除非做极小对照实验）
 - **板卡动手清单（Pi5）：** [projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)（A→G 执行序；官方文档当工具书）
 
 ---

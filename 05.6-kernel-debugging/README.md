@@ -6,7 +6,7 @@
 >
 > **前置：**
 > - [05-linux-kernel](../05-linux-kernel/)（LKD，内核概念框架）
-> - [18-linux-kernel-deep](../18-linux-kernel-deep/)（ULK3，内核深度原理）
+> - [16-linux-kernel-deep](../16-linux-kernel-deep/)（ULK3，内核深度原理）
 > - [05.5-modern-kernel](../05.5-modern-kernel/)（现代 5.x/6.x 内核资料，修正旧书过时内容）
 > - C 语言 + 内核模块开发基础
 >
@@ -95,7 +95,7 @@ chapter-XX-english-slug/
 └── notes/         ← 按原书小节拆分的笔记
 ```
 
-与 [05-linux-kernel](../05-linux-kernel/) · [18-linux-kernel-deep](../18-linux-kernel-deep/) · [06.6-systems-performance](../06.6-systems-performance/) · [06.7-bpf-observability](../06.7-bpf-observability/) 同一套约定。
+与 [05-linux-kernel](../05-linux-kernel/) · [16-linux-kernel-deep](../16-linux-kernel-deep/) · [06.6-systems-performance](../06.6-systems-performance/) · [06.7-bpf-observability](../06.7-bpf-observability/) 同一套约定。
 
 ---
 

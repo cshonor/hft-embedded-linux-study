@@ -99,5 +99,5 @@ TSC（Time Stamp Counter）：~20ns 读取，不变 TSC（invariant TSC）在现
 </details>
 
 
-> ↔ [ULK Ch6 §2 硬件时钟与定时器](../../../18-linux-kernel-deep/chapter-06-timing/notes/section-2-硬件时钟与定时器.md)
+> ↔ [ULK Ch6 §2 硬件时钟与定时器](../../../16-linux-kernel-deep/chapter-06-timing/notes/section-2-硬件时钟与定时器.md)
 ---

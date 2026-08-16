@@ -120,5 +120,5 @@ HI_SOFTIRQ：高优先级 softirq（tasklet_hi 用）。TIMER_SOFTIRQ：定时�
 </details>
 
 
-> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
+> ↔ [ULK Ch4 §7 可延迟函数与工作队列](../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-7-可延迟函数与工作队列.md)
 ---

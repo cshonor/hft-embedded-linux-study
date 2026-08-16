@@ -39,10 +39,10 @@ DPDK（**Data Plane Development Kit**）用 **软件** 在 **通用 IA 多核** 
     ↓
 chapter-02 mbuf · chapter-03 PMD · chapter-05 组播
     ↓
-16 HFT ch06 低延迟网络
+14 HFT ch06 低延迟网络
 ```
 
-**前置：** 理解内核 **中断/NAPI/syscall** 路径 — [14-LKN](../../../../12-kernel-networking/) · [ULK Ch4 中断](../../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/)
+**前置：** 理解内核 **中断/NAPI/syscall** 路径 — [14-LKN](../../../../12-kernel-networking/) · [ULK Ch4 中断](../../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/)
 
 ---
 

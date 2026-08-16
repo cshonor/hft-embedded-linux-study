@@ -39,7 +39,7 @@
 - **mbuf 预分配 + per-core cache** — 热路径 **零 malloc**  
 - **NUMA + 大页**（Ch2）与 **mempool 通道对齐** 叠加 — 同 Node 收发包  
 
-→ [16 HFT 低延迟工程](../../../../16-hft-engineering/)
+→ [14 HFT 低延迟工程](../../../../14-hft-engineering/)
 
 ---
 

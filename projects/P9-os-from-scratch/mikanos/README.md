@@ -36,7 +36,7 @@ C 扎实 + CSAPP 机器码/缓存
     ↓
 01 MikanOS（UEFI · 64 位 · 分页 · syscall）← 本书 · 直接开
     ↓
-05 LKD / 13 DPDK → 16 HFT
+05 LKD / 13 DPDK → 14 HFT
 
 【通用零基础】可选先读 02 30 天启蒙，再开本书
 ```

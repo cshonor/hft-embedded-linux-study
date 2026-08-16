@@ -14,7 +14,7 @@
 
 即使 **单条指令** 不再拆分并发，仍可通过 **数据并行** 提高 **有效吞吐**。
 
-→ [19-Hennessy Ch4 SIMD/GPU](../../../../17-computer-architecture/chapter-04-vector-simd-gpu/) · [Ch1 SIMD 提及](../../chapter-01-dpdk-intro/notes/section-3-性能最佳实践.md)
+→ [19-Hennessy Ch4 SIMD/GPU](../../../../15-computer-architecture/chapter-04-vector-simd-gpu/) · [Ch1 SIMD 提及](../../chapter-01-dpdk-intro/notes/section-3-性能最佳实践.md)
 
 ---
 

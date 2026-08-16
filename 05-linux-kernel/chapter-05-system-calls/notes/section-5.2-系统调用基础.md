@@ -74,7 +74,7 @@ asmlinkage long sys_read(unsigned int fd, char __user *buf, size_t count);
 → 用户态查号：`unistd.h` / `asm/unistd.h` · `strace` 可见实际号 · 下一节 [§5.3 入口处理](./section-5.3-系统调用处理程序.md)
 
 
-> ↔ [ULK Ch10 §2 POSIX-API与系统调用](../../../18-linux-kernel-deep/chapter-10-system-calls/notes/section-2-POSIX-API与系统调用.md)
+> ↔ [ULK Ch10 §2 POSIX-API与系统调用](../../../16-linux-kernel-deep/chapter-10-system-calls/notes/section-2-POSIX-API与系统调用.md)
 
 
 <details>

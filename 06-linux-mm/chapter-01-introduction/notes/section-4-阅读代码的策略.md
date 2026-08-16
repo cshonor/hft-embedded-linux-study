@@ -43,6 +43,6 @@ Ch 2 → Ch 3 (+ THP) → Ch 8 → Ch 4 → Ch 10
 
 两条路 **不矛盾**：可按 HFT 捷径读 **章节**；读 **源码** 时按上表四个 FILE 切入。
 
-→ 用户态 API：[03-linux-userspace-api](../../../03-linux-userspace-api/) · 内核总览：[05-linux-kernel](../../../05-linux-kernel/) · [18-linux-kernel-deep](../../../18-linux-kernel-deep/) Ch 8–9
+→ 用户态 API：[03-linux-userspace-api](../../../03-linux-userspace-api/) · 内核总览：[05-linux-kernel](../../../05-linux-kernel/) · [16-linux-kernel-deep](../../../16-linux-kernel-deep/) Ch 8–9
 
 ---

@@ -41,7 +41,7 @@ Ch8 多队列 — RSS / 硬件分流
 | 多队列 / RSS | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
 | 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
 | 内核 sk_buff | [14-LKN](../../../../12-kernel-networking/) |
-| HFT 网络 | [15 工程](../../../../16-hft-engineering/) |
+| HFT 网络 | [15 工程](../../../../14-hft-engineering/) |
 
 ---
 

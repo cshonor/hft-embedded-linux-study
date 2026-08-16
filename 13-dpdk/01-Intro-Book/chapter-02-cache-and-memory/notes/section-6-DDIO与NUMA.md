@@ -31,7 +31,7 @@
 | **本地访问** | 低延迟 |
 | **远程访问** | 跨 **QPI/UPI** — **高延迟、占带宽** |
 
-→ [ULK Ch8 ZONE / 节点](../../../../18-linux-kernel-deep/chapter-08-memory-management/notes/section-2-页框管理.md)
+→ [ULK Ch8 ZONE / 节点](../../../../16-linux-kernel-deep/chapter-08-memory-management/notes/section-2-页框管理.md)
 
 ---
 
@@ -74,9 +74,9 @@ mbuf/mempool 在正确内存上预分配
 | 并行 / SIMD | [chapter-03-并行计算](../../chapter-03-parallel-computing/) 🔴 |
 | PMD 收发包 | [chapter-03 PMD](../../chapter-03-parallel-computing) 🔴 |
 | 零拷贝旁路 | [chapter-04](../../chapter-04-synchronization) |
-| CSAPP / Hennessy | [01 Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [02 Ch2](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/) |
-| ULK 内存 | [06 Ch8/9/17](../../../../18-linux-kernel-deep/chapter-08-memory-management/) |
-| HFT 工程 | [15 ch04/ch07](../../../../16-hft-engineering/) |
+| CSAPP / Hennessy | [01 Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [02 Ch2](../../../../15-computer-architecture/chapter-02-memory-hierarchy-design/) |
+| ULK 内存 | [06 Ch8/9/17](../../../../16-linux-kernel-deep/chapter-08-memory-management/) |
+| HFT 工程 | [15 ch04/ch07](../../../../14-hft-engineering/) |
 
 ---
 

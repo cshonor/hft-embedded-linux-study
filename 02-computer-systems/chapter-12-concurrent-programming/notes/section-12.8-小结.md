@@ -1,6 +1,6 @@
 ## 12.8 小结（原书）
 
-> ↔ [Hennessy §5.7 交叉问题](../../../17-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.7-5.11-交叉问题实例与展望.md)
+> ↔ [Hennessy §5.7 交叉问题](../../../15-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.7-5.11-交叉问题实例与展望.md)
 
 
 > **Ch12 §12.8** · [章导读](../README.md) · 上节 [§12.7 ←](./section-12.7-其他并发问题.md) · 下节 —

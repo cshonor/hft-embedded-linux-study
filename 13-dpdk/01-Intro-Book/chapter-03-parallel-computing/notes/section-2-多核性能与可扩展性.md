@@ -41,7 +41,7 @@ DPDK 调优：**网卡、lcore、大页、mempool 同 Node** — 详见 [Ch2](..
 
 生产共置：DPDK 核 **cpuset 隔离** + cgroup **防 noisy neighbor**。
 
-→ [ULK Ch7 调度](../../../../18-linux-kernel-deep/chapter-07-process-scheduling/)
+→ [ULK Ch7 调度](../../../../16-linux-kernel-deep/chapter-07-process-scheduling/)
 
 ---
 

@@ -32,7 +32,7 @@ chapter-XX-english-slug/
 | 7 | [chapter-07-program-attachment-types](./chapter-07-program-attachment-types/) | 决定链、五种 execve 挂法、fentry/fexit、uprobe、LSM、约 30 种程序类型 | 🔴 | 精读 — 选对附加点是观测设计的关键 |
 | 8 | [chapter-08-networking](./chapter-08-networking/) | XDP 五返回码/包解析/负载均衡、TC、uprobe 钩 SSL 明文、Cilium/K8s | 🔴 | 精读 — HFT 网络延迟观测核心 |
 | 9 | [chapter-09-security](./chapter-09-security/) | seccomp、TOCTOU、BPF LSM、Tetragon、bpf_send_signal 同步阻断 | 🟡 | 选读 — 交易机加固方向值得看 |
-| 10 | [chapter-10-programming](./chapter-10-programming/) | bpftrace、BCC、libbpf、cilium/ebpf(bpf2go)、libbpfgo、Aya/Rust 选型 | 🟡 | 选读 — Rust eBPF 可对接 [20-rust-quant](../../20-rust-quant/) |
+| 10 | [chapter-10-programming](./chapter-10-programming/) | bpftrace、BCC、libbpf、cilium/ebpf(bpf2go)、libbpfgo、Aya/Rust 选型 | 🟡 | 选读 — Rust eBPF 可对接 [18-rust-quant](../../18-rust-quant/) |
 | 11 | [chapter-11-future](./chapter-11-future/) | eBPF 基金会、Windows 版架构、签名/指针/内存分配在研方向 | ⚪ | 跳过 — 了解即可 |
 
 ---

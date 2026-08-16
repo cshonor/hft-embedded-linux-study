@@ -40,7 +40,7 @@ API 模式：`rte_spinlock_lock` / `rte_spinlock_unlock` — 与 Linux 内核 sp
 
 **HFT：** 热路径 **尽量避免 spinlock**；若必须用 — 临界区仅几条指令，且 **per-lcore 数据** 优先。
 
-→ [ULK Ch5 §4 自旋锁](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-4-自旋锁.md)
+→ [ULK Ch5 §4 自旋锁](../../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-4-自旋锁.md)
 
 ---
 

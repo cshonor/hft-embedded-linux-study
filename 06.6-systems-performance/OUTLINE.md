@@ -45,7 +45,7 @@
 
 ## HFT 精读顺序
 
-> **全书前置（阶段 1）：** [02-CSAPP](../02-computer-systems/) 地基 + [19-Hennessy](../17-computer-architecture/) Ch2 — 再读本目录。
+> **全书前置（阶段 1）：** [02-CSAPP](../02-computer-systems/) 地基 + [19-Hennessy](../15-computer-architecture/) Ch2 — 再读本目录。
 
 ```
 Ch 1–2  方法论（USE/RED）

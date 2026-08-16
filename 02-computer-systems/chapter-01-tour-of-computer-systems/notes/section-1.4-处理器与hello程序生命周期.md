@@ -138,7 +138,7 @@ if (price > threshold)   // 编译后：cmp + 条件跳转
 | I/O 设备 | 磁盘/网卡/… | 行情网卡、NVMe 日志 |
 | 总线 | 互联 | 带宽与争用 → 延迟抖动 |
 
-→ 理论深化：[19-Hennessy Ch1–2](../../../17-computer-architecture/)
+→ 理论深化：[19-Hennessy Ch1–2](../../../15-computer-architecture/)
 
 ### 1.4.2 运行 hello 程序
 

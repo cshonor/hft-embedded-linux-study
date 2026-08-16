@@ -58,7 +58,7 @@ mm_users == 0 且 mm_count == 0 → 释放全部 VMA、页表、映射
 → [Ch 4 context_switch](../../chapter-04-process-scheduling/notes/section-4.5-抢占与上下文切换.md) · [Ch 3 线程共享 mm](../../chapter-03-process-management/) · [06 Gorman mm_struct](../../../06-linux-mm/chapter-04-process-address-space/)
 
 
-> ↔ [ULK Ch9 §2 内存描述符](../../../18-linux-kernel-deep/chapter-09-process-address-space/notes/section-2-内存描述符.md)
+> ↔ [ULK Ch9 §2 内存描述符](../../../16-linux-kernel-deep/chapter-09-process-address-space/notes/section-2-内存描述符.md)
 
 
 <details>

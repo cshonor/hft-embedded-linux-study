@@ -59,7 +59,7 @@
 ```text
 01 CSAPP → 02 C（本目录 01–02 必过；04 在 05 LKD 前）
     → 19 Hennessy → 03–05 内核/TLPI
-    → P9 MikanOS → 04 C++ → … → 13 DPDK → 16 HFT
+    → P9 MikanOS → 04 C++ → … → 13 DPDK → 14 HFT
 ```
 
 ---

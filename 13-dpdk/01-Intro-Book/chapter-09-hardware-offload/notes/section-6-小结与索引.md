@@ -30,7 +30,7 @@ Ch7 软件调优 → Ch8 硬件分流 → Ch9 offload → Ch10 I/O 虚拟化（�
 | 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
 | 组播行情 | [chapter-05-组播行情接入.md](../../chapter-05-packet-forwarding) 🔴 |
 | 内核 offload | [14-LKN](../../../../12-kernel-networking/) |
-| HFT 网络 | [15 工程](../../../../16-hft-engineering/) |
+| HFT 网络 | [15 工程](../../../../14-hft-engineering/) |
 
 ---
 

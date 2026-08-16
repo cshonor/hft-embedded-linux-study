@@ -103,5 +103,5 @@ Ch 10 网络（本章：栈、TCP、工具、sysctl）
 - XDP：[06.7-BPF note-XDP](../../06.7-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
 - 跨模块对照：[README.md](../README.md)
-- HFT 工程：[16-HFT ch06/ch10](../../16-hft-engineering/)
+- HFT 工程：[14-HFT ch06/ch10](../../14-hft-engineering/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

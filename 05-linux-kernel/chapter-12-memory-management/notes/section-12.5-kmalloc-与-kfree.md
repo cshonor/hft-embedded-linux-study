@@ -69,7 +69,7 @@ kfree(ptr);
 → [01 CSAPP Ch9 malloc/池化](../../../02-computer-systems/chapter-09-virtual-memory/) · [06 Gorman GFP](../../../06-linux-mm/chapter-06-physical-page-allocation/notes/section-4-GFP-标志与进程标志.md) · [Ch 5 syscall 路径](../../chapter-05-system-calls/)
 
 
-> ↔ [ULK Ch8 §3 Slab分配器](../../../18-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)
+> ↔ [ULK Ch8 §3 Slab分配器](../../../16-linux-kernel-deep/chapter-08-memory-management/notes/section-3-Slab分配器.md)
 
 
 <details>

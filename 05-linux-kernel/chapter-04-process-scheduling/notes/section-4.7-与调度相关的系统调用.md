@@ -117,5 +117,5 @@ printf("CPU 2: %d\n", CPU_ISSET(2, &get));  // 1
 </details>
 
 
-> ↔ [ULK Ch7 §6 调度相关系统调用](../../../18-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md)
+> ↔ [ULK Ch7 §6 调度相关系统调用](../../../16-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md)
 ---

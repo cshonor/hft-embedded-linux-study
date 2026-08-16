@@ -10,7 +10,7 @@
 | 开销 | **上下文切换**、中断延迟 | CPU **100% 占用**（该核） |
 | 适用 | 通用 OS、低负载 | **高 PPS、低延迟** 数据面 |
 
-→ 内核 NAPI 对照 [14-LKN](../../../../12-kernel-networking/) · [ULK Ch4 中断](../../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/)
+→ 内核 NAPI 对照 [14-LKN](../../../../12-kernel-networking/) · [ULK Ch4 中断](../../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/)
 
 ---
 

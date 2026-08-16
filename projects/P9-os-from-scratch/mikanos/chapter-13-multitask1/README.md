@@ -45,7 +45,7 @@
 |------|------|
 | 本章做了什么？ | **合作式 → 抢占式** · **TaskContext** · **20ms 切片** |
 | 与 02 川合 OS 对照？ | 01 **Day 15–16 多任务**；Mikan **长模式 + APIC 抢占** |
-| 与 Linux / CSAPP 对照？ | `context_switch` / `schedule` 雏形 — [05-linux-kernel](../../../../05-linux-kernel/) · [ULK Ch7 调度](../../../../18-linux-kernel-deep/chapter-07-process-scheduling.md) |
+| 与 Linux / CSAPP 对照？ | `context_switch` / `schedule` 雏形 — [05-linux-kernel](../../../../05-linux-kernel/) · [ULK Ch7 调度](../../../../16-linux-kernel-deep/chapter-07-process-scheduling.md) |
 
 **遗留问题：** 任务 **死板均分 20ms** → 鼠标 **卡顿** → **Ch14 优先级/休眠**
 

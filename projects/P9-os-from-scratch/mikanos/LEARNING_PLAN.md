@@ -28,7 +28,7 @@
 
 **目标：** **页表** · 用户/内核地址空间 · **系统调用门**。
 
-**交叉：** [02-CSAPP](../../../02-computer-systems/) Ch 9 · [05-linux-kernel](../../../05-linux-kernel/) Ch 5/10 · [18-linux-kernel-deep](../../../18-linux-kernel-deep/) Ch 2/9/10。
+**交叉：** [02-CSAPP](../../../02-computer-systems/) Ch 9 · [05-linux-kernel](../../../05-linux-kernel/) Ch 5/10 · [16-linux-kernel-deep](../../../16-linux-kernel-deep/) Ch 2/9/10。
 
 **产出：** 理解「TLPI 的 `mmap` 底下分页长什么样」的最小实现版。
 

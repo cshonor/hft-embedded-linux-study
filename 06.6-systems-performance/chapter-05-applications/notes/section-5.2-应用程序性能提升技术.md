@@ -43,7 +43,7 @@
 - 两个线程写**同一 cache line** 不同变量 → MESI 来回 invalidation，性能暴跌。
 - 对策：`alignas(64)` 填充、per-core 计数器、无锁结构分槽。
 
-→ [19-Hennessy Ch2](../../../17-computer-architecture/) MESI · [13-DPDK CROSS-MODULE](../../README.md)
+→ [19-Hennessy Ch2](../../../15-computer-architecture/) MESI · [13-DPDK CROSS-MODULE](../../README.md)
 
 ### 其他技术
 
@@ -53,7 +53,7 @@
 | **CPU 亲和性（affinity）** | 线程 / IRQ / 网卡队列同 NUMA、同核，提升 cache 命中 |
 | **Huge pages** | 减 TLB miss（DPDK、大堆 Java 都相关） |
 
-→ [05-linux-kernel](../../../05-linux-kernel/) 调度与绑核 · [16-HFT ch05](../../../16-hft-engineering/chapter-05-操作系统内核极致调优.md)
+→ [05-linux-kernel](../../../05-linux-kernel/) 调度与绑核 · [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优.md)
 
 ---
 

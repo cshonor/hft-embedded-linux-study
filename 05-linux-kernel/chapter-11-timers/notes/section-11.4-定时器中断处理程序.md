@@ -111,5 +111,5 @@ cat /proc/interrupts | grep LOC
 </details>
 
 
-> ↔ [ULK Ch6 §4 更新时间与统计](../../../18-linux-kernel-deep/chapter-06-timing/notes/section-4-更新时间与统计.md)
+> ↔ [ULK Ch6 §4 更新时间与统计](../../../16-linux-kernel-deep/chapter-06-timing/notes/section-4-更新时间与统计.md)
 ---

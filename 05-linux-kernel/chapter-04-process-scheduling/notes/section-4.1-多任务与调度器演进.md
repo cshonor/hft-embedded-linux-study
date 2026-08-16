@@ -155,5 +155,5 @@ CFS 面向通用公平性，不保证延迟上限。HFT 用 `SCHED_FIFO`（RT �
 </details>
 
 
-> ↔ [ULK Ch7 §1 本章定位](../../../18-linux-kernel-deep/chapter-07-process-scheduling/notes/section-1-本章定位.md)
+> ↔ [ULK Ch7 §1 本章定位](../../../16-linux-kernel-deep/chapter-07-process-scheduling/notes/section-1-本章定位.md)
 ---

@@ -44,7 +44,7 @@ isolcpus=2-7   # 专用 DPDK 核，不参与 CFS 负载均衡
 | 无 **内核线程** 抢同一逻辑核 | 包处理 **抖动↓** |
 | 配合 **taskset / EAL -l** | 控制面与数据面分离 |
 
-→ [ULK Ch7 调度](../../../../18-linux-kernel-deep/chapter-07-process-scheduling/) · [16 HFT 绑核](../../../../16-hft-engineering/)
+→ [ULK Ch7 调度](../../../../16-linux-kernel-deep/chapter-07-process-scheduling/) · [14 HFT 绑核](../../../../14-hft-engineering/)
 
 ---
 

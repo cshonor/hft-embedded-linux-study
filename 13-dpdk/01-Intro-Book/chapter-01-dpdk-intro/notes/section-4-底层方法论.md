@@ -19,7 +19,7 @@
 | 吞吐随 **核数线性增长** | 多 lcore **并行** 收发包 |
 | 少跨核共享 | **每核独立** 队列、mempool — 减锁与 false sharing |
 
-→ 无锁环、per-core 队列 — [16 HFT ch07](../../../../16-hft-engineering/)
+→ 无锁环、per-core 队列 — [14 HFT ch07](../../../../14-hft-engineering/)
 
 ---
 

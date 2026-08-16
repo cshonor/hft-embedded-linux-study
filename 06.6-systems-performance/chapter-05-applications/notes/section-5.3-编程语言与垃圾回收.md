@@ -17,7 +17,7 @@
 
 **HFT：** 策略核心多为 **C++ / Rust**；研究层 Python 可以，但**不能把解释型路径放上 tick 热路径**。
 
-→ [21-Rust Guide](../../../20-rust-quant/) 零成本抽象 vs GC 语言
+→ [18-Rust Guide](../../../18-rust-quant/) 零成本抽象 vs GC 语言
 
 ### 垃圾回收（GC）
 

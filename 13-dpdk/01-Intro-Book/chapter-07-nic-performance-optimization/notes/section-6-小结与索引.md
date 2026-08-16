@@ -38,7 +38,7 @@ PMD stub / 组播落地
 | NUMA / 大页 | [chapter-02-cache-and-memory](../../chapter-02-cache-and-memory/) 🔴 |
 | ILP / SIMD | [chapter-03-parallel-computing](../../chapter-03-parallel-computing/) 🔴 |
 | 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
-| HFT 网络 | [15 工程](../../../../16-hft-engineering/) |
+| HFT 网络 | [15 工程](../../../../14-hft-engineering/) |
 
 ---
 

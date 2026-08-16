@@ -37,7 +37,7 @@
 | **行情解析 + 多 stage 过滤** | **Pipeline** — parse / 查表 / action 分核，stage 间 **rte_ring** |
 | **会话保序** | Distributor 或 **RSS 对称哈希**（Ch8）— 同流同核 |
 
-→ [16 HFT 低延迟工程](../../../../16-hft-engineering/)
+→ [14 HFT 低延迟工程](../../../../14-hft-engineering/)
 
 ---
 

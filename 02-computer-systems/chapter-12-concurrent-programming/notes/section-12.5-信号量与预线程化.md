@@ -1,6 +1,6 @@
 ## 12.5 用信号量同步线程
 
-> ↔ [Hennessy §5.5 同步基础](../../../17-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.5-同步基础.md)
+> ↔ [Hennessy §5.5 同步基础](../../../15-computer-architecture/chapter-05-thread-level-parallelism/notes/section-5.5-同步基础.md)
 
 
 ### 12.5.1 进度图 (Progress Graphs)
@@ -56,7 +56,7 @@ sem_post(&sem_full);
 
 **HFT：** 网关常用 **固定大小线程池** 或 **每核一个 reactor**；任务队列用 **无锁 ring buffer** 替代 `sem`+全局锁（延迟敏感路径）。
 
-→ [16-HFT](../../../16-hft-engineering/) · [06.6-Systems-Performance Ch6 CPU](../../../06.6-systems-performance/chapter-06-cpus/)
+→ [14-HFT](../../../14-hft-engineering/) · [06.6-Systems-Performance Ch6 CPU](../../../06.6-systems-performance/chapter-06-cpus/)
 
 ### 常见陷阱
 1. **sem_wait/sem_post 顺序不能反** — 生产者先 wait(empty) 再 wait(mutex)，反了会死锁（持有 mutex 等 empty）

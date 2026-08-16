@@ -14,7 +14,7 @@
 
 包处理热路径：**命中 L1/L2** = 纳秒级；**落内存** = 数百 cycle。
 
-→ [02-CSAPP Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Ch2](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/)
+→ [02-CSAPP Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Ch2](../../../../15-computer-architecture/chapter-02-memory-hierarchy-design/)
 
 ---
 
@@ -33,7 +33,7 @@
 |------|----------------------------------------|
 | **TLB miss** | CPU 需 **遍历多级页表** 访存 — 极贵 |
 
-→ [ULK Ch2 页表](../../../../18-linux-kernel-deep/chapter-02-memory-addressing/) · 大页缓解：[section-5](./section-5-大页Hugepages.md)
+→ [ULK Ch2 页表](../../../../16-linux-kernel-deep/chapter-02-memory-addressing/) · 大页缓解：[section-5](./section-5-大页Hugepages.md)
 
 ---
 

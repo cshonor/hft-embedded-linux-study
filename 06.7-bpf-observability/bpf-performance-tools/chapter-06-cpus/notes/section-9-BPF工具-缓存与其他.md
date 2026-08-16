@@ -31,7 +31,7 @@ cpuunclaimed 值得展开：它度量的是"**理论上能并行却没并行**"�
 
 ## HFT 关联
 
-- llcstat 验证策略热数据的缓存驻留：HIT% 从 99% 掉到 95% 意味着关键路径多了数百 ns 的内存访问 — 数据结构尺寸逼近 LLC 边界的信号（配合 17-computer-architecture 的缓存理论）
+- llcstat 验证策略热数据的缓存驻留：HIT% 从 99% 掉到 95% 意味着关键路径多了数百 ns 的内存访问 — 数据结构尺寸逼近 LLC 边界的信号（配合 15-computer-architecture 的缓存理论）
 - cpuunclaimed 与绑核矛盾场景：策略核排队 + 闲核并存 = 亲和设置把负载圈死了，要么扩容绑定集要么调整线程数
 - 云主机注意：PMC 不透传时 llcstat 不可用（同 perf stat PMC 全 0）
 

@@ -100,6 +100,6 @@ Y86/HCL/SEQ 细节：作业或第一遍扫读；复习抓 PIPE 冒险表
 
 - 上一章：[../chapter-03-machine-level-programs/](../chapter-03-machine-level-programs/)
 - 下一章：[../chapter-05-optimizing-performance/](../chapter-05-optimizing-performance/)
-- 真实微架构：[19-Hennessy](../../17-computer-architecture/)
+- 真实微架构：[19-Hennessy](../../15-computer-architecture/)
 - **数字电路补课：** [资料总表](./notes/section-补充-数字电路学习资料.md) · **[00-Harris ARM 独立书仓](../../00-digital-logic-cpu/README.md)**
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

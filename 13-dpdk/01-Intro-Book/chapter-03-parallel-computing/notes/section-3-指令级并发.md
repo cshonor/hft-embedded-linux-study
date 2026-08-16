@@ -25,7 +25,7 @@
 
 **热路径：** 帮助 CPU **填满流水线** — 与 [section-4 SIMD](./section-4-数据并行与SIMD.md) `rte_memcpy` 双 Load 策略一致。
 
-→ [19-Hennessy 流水线](../../../../17-computer-architecture/chapter-02-memory-hierarchy-design/)
+→ [19-Hennessy 流水线](../../../../15-computer-architecture/chapter-02-memory-hierarchy-design/)
 
 ---
 

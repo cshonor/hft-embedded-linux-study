@@ -30,9 +30,9 @@ Ch8 流分类与多队列 — 硬件+软件分核
 | Cache / NUMA / per-core | [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/) 🔴 |
 | 多队列 / RSS | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
 | mbuf / ring | [chapter-02-mbuf](../../chapter-02-cache-and-memory) 🔴 |
-| 无锁 / 同步 | [chapter-04-同步互斥机制](../../chapter-04-synchronization/) 🔴 · [ULK Ch5 RCU](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/) |
-| 体系结构 | [19-Hennessy](../../../../17-computer-architecture/) · [02-CSAPP Ch5](../../../../02-computer-systems/chapter-05-optimizing-performance) |
-| HFT 绑核 / 扩展 | [16 HFT 工程](../../../../16-hft-engineering/) |
+| 无锁 / 同步 | [chapter-04-同步互斥机制](../../chapter-04-synchronization/) 🔴 · [ULK Ch5 RCU](../../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/) |
+| 体系结构 | [19-Hennessy](../../../../15-computer-architecture/) · [02-CSAPP Ch5](../../../../02-computer-systems/chapter-05-optimizing-performance) |
+| HFT 绑核 / 扩展 | [14 HFT 工程](../../../../14-hft-engineering/) |
 
 ---
 

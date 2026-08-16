@@ -87,7 +87,7 @@
 
 **读完 ① ② 之后：**
 
-- 回到 [16-hft-engineering](../../../16-hft-engineering/) ch06/ch08 — 把技术落到量化系统
+- 回到 [14-hft-engineering](../../../14-hft-engineering/) ch06/ch08 — 把技术落到量化系统
 - 用 [06.7-BPF](../../../06.7-bpf-observability/) + `16` SysPerf Ch10 在生产上**验证**旁路收益
 
 ---

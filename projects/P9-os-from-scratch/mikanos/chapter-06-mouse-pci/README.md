@@ -45,7 +45,7 @@
 |------|------|
 | 本章做了什么？ | **PCI 找 xHC** → **MMIO 初始化** → **轮询** USB 鼠标 · 光标跟随 |
 | 与 02 川合 OS 对照？ | 01 多用 **PS/2**；Mikan 直接 **xHCI + PCI** — 更贴近现代 PC |
-| 与 Linux / CSAPP 对照？ | PCI/USB 驱动栈极简版 — 对照 [05-linux-kernel PCI](../../../../05-linux-kernel/) · [ULK 设备驱动](../../../../18-linux-kernel-deep/) |
+| 与 Linux / CSAPP 对照？ | PCI/USB 驱动栈极简版 — 对照 [05-linux-kernel PCI](../../../../05-linux-kernel/) · [ULK 设备驱动](../../../../16-linux-kernel-deep/) |
 
 **遗留问题（本章自指）：** 轮询 **费 CPU** · 擦除光标 **破坏底图** → Ch 7 **中断** · Ch 9 **图层**
 

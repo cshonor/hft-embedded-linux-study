@@ -66,7 +66,7 @@ Linux 为降低延迟影响，常把处理拆成：
 **HFT 实践：**
 
 - **绑核（pinning）**：行情解析、策略、发单分池，避免与 OS/中断线程抢核
-- **isolcpus / 专用核**： housekeeping 与 hot path 分离 → [16-HFT ch05](../../../16-hft-engineering/chapter-05-操作系统内核极致调优.md)
+- **isolcpus / 专用核**： housekeeping 与 hot path 分离 → [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优.md)
 - Linux 里程碑：**O(1) 调度器** → **CFS**（完全公平调度，默认策略）
 
 → 深入进程/调度：[LKD 3rd Ch 3](../../../05-linux-kernel/chapter-03-process-management/) · [Ch 4 调度](../../../05-linux-kernel/chapter-04-process-scheduling/)

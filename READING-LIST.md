@@ -4,7 +4,7 @@
 
 **总阅读顺序** → [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) · **文件夹顺序** → [README.md](./README.md)
 
-**按文件夹读：** `00`–`21` 技术模块 · **编号=读序** · 嵌入式 `07`–`10`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线07–11-文件夹)）
+**按文件夹读：** `00`–`19` 技术模块 · **编号=读序** · 嵌入式 `07`–`10`（[§嵌入式](./READING-LIST.md#补充嵌入式-linux-支线07–11-文件夹)）
 
 | 标签 | 含义 |
 |------|------|
@@ -18,7 +18,7 @@
 
 > 笔记目录：[06.6-systems-performance/](./06.6-systems-performance/)
 
-> **建议前置：** [02-computer-systems](./02-computer-systems/) 地基篇（Ch4–6/8–9/12）+ [19-Hennessy](./17-computer-architecture/) Ch2。  
+> **建议前置：** [02-computer-systems](./02-computer-systems/) 地基篇（Ch4–6/8–9/12）+ [19-Hennessy](./15-computer-architecture/) Ch2。  
 > 性能调优总纲：perf、NUMA、软中断、网卡调优 — **在懂 cache/进程/锁之后再读，事半功倍**。
 
 | 章节 | 标签 | HFT 关联 |
@@ -64,7 +64,7 @@
 
 ## 2b. Understanding the Linux Kernel 3rd — Bovet & Cesati
 
-> 笔记目录：[18-linux-kernel-deep/](./18-linux-kernel-deep/)
+> 笔记目录：[16-linux-kernel-deep/](./16-linux-kernel-deep/)
 
 > **定位：** LKD **功能** ↔ 源码 **实现** 的桥梁（Linux 2.6 基线；概念对照 modern 5.x/6.x）。  
 > **顺序：** `05` LKD 后 **选章精读**；VM 深潜仍交给 `06` Gorman。
@@ -174,7 +174,7 @@
 
 ## 5. Computer Architecture: A Quantitative Approach 6th — Hennessy & Patterson
 
-> 笔记目录：[17-computer-architecture/](./17-computer-architecture/)
+> 笔记目录：[15-computer-architecture/](./15-computer-architecture/)
 
 > CPU 缓存、MESI、NUMA 访存、流水线，无锁代码硬件优化依据。
 
@@ -218,8 +218,8 @@
 
 ## 7. Trading and Exchanges — Larry Harris
 
-> 笔记目录：[21-markets-microstructure/](./21-markets-microstructure/)  
-> **配套练手：** [22-practice-go-dex/](./21-markets-microstructure/00-practice-go-dex/)（Go LOB/DEX · 理论 `chapter-*.md` + 实践 `notes/`/`code/` 分离）
+> 笔记目录：[19-markets-microstructure/](./19-markets-microstructure/)  
+> **配套练手：** [22-practice-go-dex/](./19-markets-microstructure/00-practice-go-dex/)（Go LOB/DEX · 理论 `chapter-*.md` + 实践 `notes/`/`code/` 分离）
 
 > 市场微观、LOB、交易所撮合、机房托管，HFT 业务基石。
 
@@ -261,7 +261,7 @@
 
 | 外 | 书目 | 索引 | 插入顺序 |
 |----|------|------|----------|
-| 外C | C++ 学习链（01–10，笔记已入本仓） | [04-cpp/](./04-cpp/)（源自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)） | **`03` 之后、`04` C++ 之前**（Modern C++）；**`16` HFT 前**（并发 + 对象模型） |
+| 外C | C++ 学习链（01–10，笔记已入本仓） | [04-cpp/](./04-cpp/)（源自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)） | **`03` 之后、`04` C++ 之前**（Modern C++）；**`14` HFT 前**（并发 + 对象模型） |
 | 外P | 陈硕 PNP / muduo 实战 | [04-cpp/M5-cpp-network-programming/](./04-cpp/M5-cpp-network-programming/) · [PNP 笔记](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | **`04` C++ M1 之后** |
 | 外B | UNIX Network Programming Vol.1 — Stevens | [03.5-unix-network-api/](./03.5-unix-network-api/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | PNP **之后** |
 | 外A | TCP/IP Illustrated Vol.1 — Stevens | [11-tcpip-protocols/](./11-tcpip-protocols/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | UNP **之后**，Rosen **之前** |
@@ -274,13 +274,13 @@
 
 > 笔记正文：[04-cpp/](./04-cpp/)（自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制）· 里程碑：[OUTLINE.md](./04-cpp/OUTLINE.md)
 
-> **插入位置：** **`03` TLPI / P9 自制 OS 之后** → **`04` C++** → **04/M5 PNP** → … → **`16` HFT**
+> **插入位置：** **`03` TLPI / P9 自制 OS 之后** → **`04` C++** → **04/M5 PNP** → … → **`14` HFT**
 
 | 里程碑 | 本目录 | 标签 | 何时读 |
 |--------|--------|------|--------|
 | M0 语法扫盲 | [04-C++Primer](./04-cpp/M0-entry-syntax/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
 | M1 Modern C++ | [04-Effective-Modern-C++](04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | 🔴 必读 | **12 PNP 之前** |
-| M2 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M2-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M2-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **16 HFT 之前** |
+| M2 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M2-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M2-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **14 HFT 之前** |
 | M3 STL / Effective | [02–06](./04-cpp/M3-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
 | M4 C++17/20 | [04-C++17](04-cpp/M4-advanced-standards/01-C++17-The-Complete-Guide) · [04-C++20](04-cpp/M4-advanced-standards/02-C++20-The-Complete-Guide) | 🟡 选读 | **18 之后** |
 
@@ -335,7 +335,7 @@
 
 ---
 
-## 与 `16-hft-engineering` 章节映射
+## 与 `14-hft-engineering` 章节映射
 
 | 仓库章节 | 主要参考书 | 补充资料 |
 |----------|------------|----------|
@@ -367,7 +367,7 @@ L2  03 用户态 → P9 自制 OS / 04 C++
     ↓
 L3  05 内核 + 06 MM
     ↓
-L4a 07–09 嵌入式（可选） ‖ L4b 11–14 网络 → 14–15 性能 → 16 HFT
+L4a 07–09 嵌入式（可选） ‖ L4b 11–14 网络 → 14–15 性能 → 14 HFT
     ↓
 L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 ```
@@ -390,4 +390,4 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 | **09** 驱动+DT | Madieu → LDD3（按需） | [09-device-drivers-dt/](./09-device-drivers-dt/) |
 | **11** 运动控制 | PID / Kalman | [10-motion-control/](./10-motion-control/) |
 
-**可复用 HFT 链：** C · 用户态/内核 · 06.6–06.7 性能/BPF · 13 DPDK · 16 HFT 与 **PREEMPT_RT / 绑核**。
+**可复用 HFT 链：** C · 用户态/内核 · 06.6–06.7 性能/BPF · 13 DPDK · 14 HFT 与 **PREEMPT_RT / 绑核**。

@@ -29,7 +29,7 @@ RMT：Match+Action 统一理解智能网卡
 | 组播行情落地 | [chapter-05 组播](../../chapter-05-packet-forwarding) 🔴 |
 | 内核 RSS 对照 | [14-LKN Ch14](../../../../12-kernel-networking/chapter-14-advanced-topics/) |
 | L3fwd 软件转发 | [Ch1 L3fwd](../../chapter-01-dpdk-intro/notes/section-6-编程实例入门.md) |
-| HFT 网络工程 | [15 ch06](../../../../16-hft-engineering/) |
+| HFT 网络工程 | [15 ch06](../../../../14-hft-engineering/) |
 | XDP / 半旁路 | [02-Advanced note-XDP](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
 
 ---

@@ -32,7 +32,7 @@ tc qdisc add dev eth0 root netem delay 2ms loss 0.1%
 - 共置 **低延迟** 与云 **高吞吐** 参数集 **不同** — 勿盲抄 Netflix 全表。
 - 与 **12-HFT ch05/ch06** 合并成 **单一 sysctl runbook**，变更可回滚。
 
-→ [16-HFT ch06](../../../16-hft-engineering/chapter-06-低延迟网络与协议优化.md)
+→ [14-HFT ch06](../../../14-hft-engineering/chapter-06-低延迟网络与协议优化.md)
 
 ### 套接字选项（应用层）
 

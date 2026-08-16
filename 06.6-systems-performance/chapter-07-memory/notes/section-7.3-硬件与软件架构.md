@@ -19,7 +19,7 @@ numastat                    # 本地 vs 远程分配
 numactl --cpunodebind=0 --membind=0 ./strategy
 ```
 
-→ Ch 6 [绑核与 NUMA](../../chapter-06-cpus/) · [19-Hennessy](../../../17-computer-architecture/)
+→ Ch 6 [绑核与 NUMA](../../chapter-06-cpus/) · [19-Hennessy](../../../15-computer-architecture/)
 
 ### Linux 释放内存机制（由轻到重）
 

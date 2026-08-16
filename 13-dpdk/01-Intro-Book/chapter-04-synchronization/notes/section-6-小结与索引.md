@@ -34,9 +34,9 @@ Ch8 流分类与多队列 — 硬件 RSS + 软件分核
 | 多队列 / 核间分发 | [chapter-08-流分类与多队列](../../chapter-08-flow-classification-multiqueue/) 🔴 |
 | PMD 轮询 | [chapter-03-PMD与轮询模式.md](../../chapter-03-parallel-computing) 🔴 |
 | Cache / 伪共享 | [chapter-02-Cache与内存](../../chapter-02-cache-and-memory/) 🔴 |
-| 内核同步对照 | [ULK Ch5 内核同步](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/) |
+| 内核同步对照 | [ULK Ch5 内核同步](../../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/) |
 | 并行 / Amdahl | [chapter-03-并行计算](../../chapter-03-parallel-computing/) 🔴 |
-| HFT 锁与队列 | [16 HFT 工程](../../../../16-hft-engineering/) |
+| HFT 锁与队列 | [14 HFT 工程](../../../../14-hft-engineering/) |
 
 ---
 

@@ -105,7 +105,7 @@ Y86 教学模型里常弱化；真机常用 **I-cache / D-cache 分离**、多�
 
 ### 4.5.10 未完成的工作
 
-超标量、乱序、向量、多核 — → [Hennessy](../../../17-computer-architecture/) / 真芯片文档。
+超标量、乱序、向量、多核 — → [Hennessy](../../../15-computer-architecture/) / 真芯片文档。
 
 ---
 
@@ -139,7 +139,7 @@ Y86 教学模型里常弱化；真机常用 **I-cache / D-cache 分离**、多�
 - 配套（课程常用）：**`csim`**（cache）、**`ssim`**（SEQ）、**`psim`**（PIPE）— 可选  
 
 → 软件侧压榨 CPU：[Ch 5](../../chapter-05-optimizing-performance/)  
-→ 真实流水线 / 乱序：[19-Hennessy](../../../17-computer-architecture/)
+→ 真实流水线 / 乱序：[19-Hennessy](../../../15-computer-architecture/)
 
 ---
 

@@ -39,4 +39,4 @@
 - 栈与 USDT：[chapter-02-technology-background/](../chapter-02-technology-background/)
 - CPU profile：[chapter-06-cpus/](../chapter-06-cpus/)
 - CSAPP 编译：[chapter-05-optimizing-performance](../../../02-computer-systems/chapter-05-optimizing-performance/)
-- Rust 工程：[20-rust-quant](../../../20-rust-quant/)
+- Rust 工程：[18-rust-quant](../../../18-rust-quant/)

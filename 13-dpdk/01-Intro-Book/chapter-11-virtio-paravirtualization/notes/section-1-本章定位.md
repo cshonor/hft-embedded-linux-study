@@ -32,7 +32,7 @@
 - **必须在 VM + virtio-net 收行情** → 本章 **必读** — 理解性能天花板与 vhost-user 等变体  
 - DPDK `net_virtio` PMD 的优化对 **云 NFV** 更有代表性，对 **极致 tick** 通常 **非首选**
 
-→ [16 HFT 部署](../../../../16-hft-engineering/)
+→ [14 HFT 部署](../../../../14-hft-engineering/)
 
 ---
 

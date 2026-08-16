@@ -29,7 +29,7 @@
 | 过早读 SysPerf/BPF | 更合适的时机 |
 |--------------------|--------------|
 | 还没有 Linux 进程/内核/网络概念 | **03 用户态 + P9 自制 OS** 之后 |
-| 火焰图看不懂在烧什么 | **13 DPDK** 或 **16 HFT** 压测有靶子 |
+| 火焰图看不懂在烧什么 | **13 DPDK** 或 **14 HFT** 压测有靶子 |
 | 与计算机系统理论堆叠 | **01 C + 02 systems 后进 03** 更顺 |
 
 | 标签 | HFT 含义 | 你要怎么做 |
@@ -65,20 +65,20 @@
 12  kernel-networking
 12.5  modern-networking
 13  dpdk
-14  systems-performance
-15  bpf-observability
-16  hft-engineering
-20  rust-quant（拓展）
-21  markets-microstructure（业务）
+06.6  systems-performance
+06.7  bpf-observability
+14  hft-engineering
+18  rust-quant（拓展）
+19  markets-microstructure（业务）
 ```
 
-**主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 →（A: 07–10 ‖ B: 11–16）→ 拓展 17/18/19/20/21/10`
+**主线执行序号：** `00 → 01 → 02 → 03 → 04 → 05 → 06 →（A: 07–10 ‖ B: 11–14）→ 拓展 15/16/17/18/19/10`
 
 **嵌入式支线：** `07 → 08 → 09`（`10` 业余；板级实战 = [P5](./projects/P5-raspberry-pi-embedded/)）· 建议 Phase4（`05`/`06`）后再开
 
 > **C：** [01-c-language/](./01-c-language/) — Phase2 第一课。  
 > **C++：** [04-cpp/](./04-cpp/) — Phase3 穿插；进 [04/M5](./04-cpp/M5-cpp-network-programming/) sockets 前至少 Modern C++。
-> **板块：** `00`–`21` 技术模块；跨模块对照 → [README.md](./README.md)
+> **板块：** `00`–`19` 技术模块；跨模块对照 → [README.md](./README.md)
 
 ---
 
@@ -280,7 +280,7 @@
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
 | [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
 | [07–10 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10) | 07–10 |
-| [12–14 网络](./04-cpp/M5-cpp-network-programming/) · [16–17 性能](./06.6-systems-performance/) · [16 HFT](./16-hft-engineering/) | 12–18 |
+| [12–14 网络](./04-cpp/M5-cpp-network-programming/) · [16–17 性能](./06.6-systems-performance/) · [14 HFT](./14-hft-engineering/) | 12–18 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
@@ -297,7 +297,7 @@
 
 | 优先级 | 内容 | 时间 |
 |--------|------|------|
-| **P0 · 主线** | HFT — C++ / Rust / DPDK / `16` 引擎 | **全职学习** |
+| **P0 · 主线** | HFT — C++ / Rust / DPDK / `14` 引擎 | **全职学习** |
 | **P1 · 支线** | 嵌入式 Linux `07`–`10` | 并行或 HFT 阶段完成后 |
 | **P2 · 飞控算法** | `11` PID / IMU / 飞控环 | **仅业余时间** |
 ### 为何必须学 14（运动控制）
@@ -368,8 +368,8 @@
 |------|----------|
 | C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
 | 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
-| 性能 / 绑核 / BPF | [19](./06.6-systems-performance/) · [20](./06.7-bpf-observability/) · [21](./16-hft-engineering/) |
-| 网络 / 零拷贝思想 | [04/M5](./04-cpp/M5-cpp-network-programming/) · [17](./12-kernel-networking/) · [18](./13-dpdk/) |
+| 性能 / 绑核 / BPF | [06.6](./06.6-systems-performance/) · [06.7](./06.7-bpf-observability/) · [14](./14-hft-engineering/) |
+| 网络 / 零拷贝思想 | [04/M5](./04-cpp/M5-cpp-network-programming/) · [12](./12-kernel-networking/) · [13](./13-dpdk/) |
 
 ### 岗位定位（支线完成后）
 

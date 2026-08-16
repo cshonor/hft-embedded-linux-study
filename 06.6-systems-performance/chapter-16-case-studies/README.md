@@ -72,7 +72,7 @@
 |------|------|
 | **新手** | **先 Ch 16 预览** → Ch 1–2 → Ch 4 → 资源章 → Ch 13–15 → **再读 Ch 16** |
 | **HFT 已有基础** | Ch 1–15 按 OUTLINE → **Ch 16 作总复盘** → 附录 A/C |
-| **之后** | [06.7-BPF 专书](../../06.7-bpf-observability/) · [16-HFT 工程](../../16-hft-engineering/) |
+| **之后** | [06.7-BPF 专书](../../06.7-bpf-observability/) · [14-HFT 工程](../../14-hft-engineering/) |
 
 ---
 
@@ -102,5 +102,5 @@
 - 资源专章：Ch [6](../chapter-06-cpus/)–[11](../chapter-11-cloud-computing/)
 - 工具专章：Ch [13](../chapter-13-perf/)–[15](../chapter-15-bpf/)
 - BPF 专书：[06.7-bpf-observability](../../06.7-bpf-observability/)
-- HFT 压测：[16-HFT ch10](../../16-hft-engineering/chapter-10-延迟测量与基准压测.md)
+- HFT 压测：[14-HFT ch10](../../14-hft-engineering/chapter-10-延迟测量与基准压测.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

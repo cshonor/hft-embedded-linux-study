@@ -10,7 +10,7 @@
 |------|------|
 | **网卡中断** → 上下文切换、softirq | **轮询** 收包 — **无中断开销** |
 
-→ 深潜：[chapter-03 PMD与轮询模式](../../chapter-03-parallel-computing) · [ULK Ch4 I/O 中断](../../../../18-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
+→ 深潜：[chapter-03 PMD与轮询模式](../../chapter-03-parallel-computing) · [ULK Ch4 I/O 中断](../../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/notes/section-6-IO中断处理.md)
 
 **代价：** 占满 CPU 核 — 需 **绑核**、isolcpus，与 idle 友好性 trade-off。
 
@@ -33,7 +33,7 @@
 | **CPU 亲和性绑定** | 线程固定逻辑核 |
 | **独占 lcore** | 避免跨核迁移 → **Cache miss** ↓ |
 
-→ [ULK Ch7 调度与 affinity](../../../../18-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md) · [16 HFT 绑核](../../../../16-hft-engineering/)
+→ [ULK Ch7 调度与 affinity](../../../../16-linux-kernel-deep/chapter-07-process-scheduling/notes/section-6-调度相关系统调用.md) · [14 HFT 绑核](../../../../14-hft-engineering/)
 
 ---
 
@@ -45,7 +45,7 @@
 | **NUMA 感知** | 内存/网卡 **同节点** 分配 |
 | **Intel DDIO** 等 | 网卡 DMA 数据 **直达 Cache** — ↓ 内存带宽压力 |
 
-→ [ULK Ch8 ZONE/伙伴](../../../../18-linux-kernel-deep/chapter-08-memory-management/) · [CSAPP Ch6 缓存](../../../../02-computer-systems/chapter-06-memory-hierarchy/)
+→ [ULK Ch8 ZONE/伙伴](../../../../16-linux-kernel-deep/chapter-08-memory-management/) · [CSAPP Ch6 缓存](../../../../02-computer-systems/chapter-06-memory-hierarchy/)
 
 ---
 
@@ -54,7 +54,7 @@
 - **SIMD** — 单指令多数据，批量处理包头/字段  
 - **超标量** — 指令级并行  
 
-在 **数据面** 做深度向量化 — 与 [Hennessy SIMD/GPU](../../../../17-computer-architecture/chapter-04-vector-simd-gpu/) 概念呼应。
+在 **数据面** 做深度向量化 — 与 [Hennessy SIMD/GPU](../../../../15-computer-architecture/chapter-04-vector-simd-gpu/) 概念呼应。
 
 ---
 

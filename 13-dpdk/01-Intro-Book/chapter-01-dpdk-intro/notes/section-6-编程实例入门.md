@@ -55,7 +55,7 @@ DPDK **最流行** 示例之一 — **三层转发**：
 | 组播行情 | [chapter-05](../../chapter-05-packet-forwarding) 🔴 |
 | 内核栈对照 | [14-LKN](../../../../12-kernel-networking/) |
 | XDP / RDMA 选型 | [02-Advanced-Book](../../../02-Advanced-Book/) |
-| 工程落地 | [16 HFT ch06](../../../../16-hft-engineering/) |
+| 工程落地 | [14 HFT ch06](../../../../14-hft-engineering/) |
 
 ---
 

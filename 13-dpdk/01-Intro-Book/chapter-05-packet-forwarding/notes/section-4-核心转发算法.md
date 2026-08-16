@@ -54,7 +54,7 @@ tbl8 ：多张 2^8 条目（第二级，按需挂接）
 
 **HFT：** 行情网关若只做 **固定组播订阅**，可能 **无需 LPM**；跨 VLAN/多源过滤可用 **Hash 会话表** 或 **ACL**。
 
-→ [19-Hennessy 存储器/并行](../../../../17-computer-architecture/) · [02-CSAPP 哈希/缓存](../../../../02-computer-systems/)
+→ [19-Hennessy 存储器/并行](../../../../15-computer-architecture/) · [02-CSAPP 哈希/缓存](../../../../02-computer-systems/)
 
 ---
 

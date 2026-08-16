@@ -11,7 +11,7 @@
 - 需要 **海量 PTE**  
 - **TLB 装不下** → 频繁 miss → 遍历 **多级页表**  
 
-→ TLB：[section-2](./section-2-阶梯式Cache系统.md) · [ULK Ch2](../../../../18-linux-kernel-deep/chapter-02-memory-addressing/)
+→ TLB：[section-2](./section-2-阶梯式Cache系统.md) · [ULK Ch2](../../../../16-linux-kernel-deep/chapter-02-memory-addressing/)
 
 ---
 

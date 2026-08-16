@@ -102,5 +102,5 @@ UP 上没有多 CPU 并行，但有：① 抢占：进程在临界区中被抢�
 </details>
 
 
-> ↔ [ULK Ch5 §1 本章定位](../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-1-本章定位.md)
+> ↔ [ULK Ch5 §1 本章定位](../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-1-本章定位.md)
 ---

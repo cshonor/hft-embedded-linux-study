@@ -19,7 +19,7 @@
 |----|----------|--------------|
 | **User Space** | 桌面、C/Python、Shell | [01 C](../../../01-c-language/) · [03 TLPI](../../../03-linux-userspace-api/) · Labs **Phase A** |
 | **Kernel** | 进程/内存管理、**设备驱动**、FS、网络栈；中断处理也在这里 | [05 内核](../../../05-linux-kernel/) · [09 驱动](../../../09-device-drivers-dt/) · Labs **Phase C** |
-| **Hardware** | CPU、RAM、GPIO、I2C、SPI、存储 | [00 硬件词汇](../../../17-computer-architecture/) · Pi5 上还有 **RP1** 管外设 |
+| **Hardware** | CPU、RAM、GPIO、I2C、SPI、存储 | [00 硬件词汇](../../../15-computer-architecture/) · Pi5 上还有 **RP1** 管外设 |
 
 普通应用**不能**直接摸寄存器；要碰硬件，代码通常落在 **Kernel**（驱动 / 中断），用户态只通过系统调用或 `/dev` 间接访问。
 

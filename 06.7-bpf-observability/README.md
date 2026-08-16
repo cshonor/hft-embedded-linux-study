@@ -4,7 +4,7 @@
 
 > **前置：** [14-Systems-Performance](../06.6-systems-performance/)  
 > **建议时机：** 已有 Linux 内核/网络/DPDK 或 HFT 压测靶子后再开 — 用 eBPF 验证真实系统  
-> **后续：** [16-HFT](../16-hft-engineering/) / [20-Rust](../20-rust-quant/)
+> **后续：** [14-HFT](../14-hft-engineering/) / [18-Rust](../18-rust-quant/)
 
 ---
 
@@ -76,5 +76,5 @@ Ch 1–2 → Ch 4–5 → Ch 6 → Ch 10 (+ note-XDP) → 附录 A/B
 - **上一本（必读前置）** → [06.6-systems-performance](../06.6-systems-performance/) — 读完立刻读本目录
 - 后续内核/内存/网络 → [05-linux-kernel](../05-linux-kernel/) · [06-linux-mm](../06-linux-mm/) · [12-kernel-networking](../12-kernel-networking/)（读时可回头用 eBPF 验证）
 - DPDK 对照 → [13-dpdk](../13-dpdk/)（XDP early drop vs 用户态旁路）
-- Rust eBPF → [20-rust-quant](../20-rust-quant/)（Aya/bpf2go）
+- Rust eBPF → [18-rust-quant](../18-rust-quant/)（Aya/bpf2go）
 - 跨模块 → [README.md](../README.md)

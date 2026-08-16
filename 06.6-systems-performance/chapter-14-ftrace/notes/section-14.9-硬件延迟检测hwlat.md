@@ -25,7 +25,7 @@ cat $TR/trace
 - CPU **非 idle 但 forward progress 停住**
 - 裸机低延迟验收 — **hwlat baseline**
 
-**对策：** 更新 BIOS、关 C-State/SMI 相关选项、换主板 — 与 [16-HFT ch05](../../../16-hft-engineering/chapter-05-操作系统内核极致调优.md) 联动。
+**对策：** 更新 BIOS、关 C-State/SMI 相关选项、换主板 — 与 [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优.md) 联动。
 
 ---
 

@@ -17,7 +17,7 @@ Socket (Processor)
 | **Hardware thread** | 逻辑 CPU（SMT） | 与同核另一线程争资源 — 热路径避免共享 |
 | **Run Queue** | 就绪等 CPU 的线程队列 | 长度 > 0 持续 = **调度饱和度** |
 
-→ [19-Hennessy](../../../17-computer-architecture/) 流水线与 cache · [02-CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/)
+→ [19-Hennessy](../../../15-computer-architecture/) 流水线与 cache · [02-CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/)
 
 ### 时钟、流水线、IPC / CPI
 

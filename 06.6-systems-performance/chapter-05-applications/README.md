@@ -100,5 +100,5 @@ Ch 5  应用程序（本章：优化主战场 + 剖应用方法论）
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
 - BPF 专书：[06.7-bpf-observability](../../06.7-bpf-observability/)
 - CSAPP 算法/机器级：[02-computer-systems](../../02-computer-systems/)
-- HFT 工程：[16-hft-engineering](../../16-hft-engineering/)
+- HFT 工程：[14-hft-engineering](../../14-hft-engineering/)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

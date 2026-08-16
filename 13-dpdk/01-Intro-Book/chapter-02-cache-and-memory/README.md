@@ -22,4 +22,4 @@
 
 - 上一章：[chapter-01-dpdk-intro/](../chapter-01-dpdk-intro/)
 - 下一章：[chapter-03-parallel-computing/](../chapter-03-parallel-computing/) · [chapter-02-mbuf与内存池.md](../chapter-02-cache-and-memory) · [chapter-03-PMD与轮询模式.md](../chapter-03-parallel-computing)
-- 对照：[02-CSAPP Ch6 内存层次](../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Ch2](../../../17-computer-architecture/chapter-02-memory-hierarchy-design/)
+- 对照：[02-CSAPP Ch6 内存层次](../../../02-computer-systems/chapter-06-memory-hierarchy/) · [19-Hennessy Ch2](../../../15-computer-architecture/chapter-02-memory-hierarchy-design/)

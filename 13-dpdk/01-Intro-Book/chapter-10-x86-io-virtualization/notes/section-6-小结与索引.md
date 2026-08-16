@@ -38,7 +38,7 @@ repo：零拷贝 · 组播 · 02-Advanced
 | 硬件 offload | [chapter-09-hardware-offload](../../chapter-09-hardware-offload/) 🔴 |
 | 零拷贝旁路 | [chapter-04-零拷贝与用户态旁路.md](../../chapter-04-synchronization) 🔴 |
 | XDP / 半旁路 | [02-Advanced note-XDP](../../../02-Advanced-Book/notes/note-XDP与DPDK对照.md) |
-| HFT 部署 | [15 工程](../../../../16-hft-engineering/) |
+| HFT 部署 | [15 工程](../../../../14-hft-engineering/) |
 
 ---
 

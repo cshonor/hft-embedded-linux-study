@@ -39,7 +39,7 @@
 
 **HFT 注意：** 写锁持有期间 **所有读者阻塞** — 表项 **批量更新** 宜离线或双缓冲，避免 tick 路径撞写锁。
 
-→ 内核侧读多写少 → [ULK Ch5 §5 顺序锁与 RCU](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-5-顺序锁与RCU.md)
+→ 内核侧读多写少 → [ULK Ch5 §5 顺序锁与 RCU](../../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-5-顺序锁与RCU.md)
 
 ---
 

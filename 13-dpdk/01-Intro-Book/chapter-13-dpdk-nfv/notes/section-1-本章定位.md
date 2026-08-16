@@ -36,7 +36,7 @@
 | **云化行情/网关** | 理解 **Virtio vs VF**、**LLC 争用** — 与 tail latency 相关 |
 | **安全 VNF（IPSec）** | **CryptoDev / QAT** — 与 [Ch9 offload](../../chapter-09-hardware-offload/) 延伸 |
 
-→ [16 HFT 工程](../../../../16-hft-engineering/) · [02-Advanced-Book](../../../02-Advanced-Book/)
+→ [14 HFT 工程](../../../../14-hft-engineering/) · [02-Advanced-Book](../../../02-Advanced-Book/)
 
 ---
 

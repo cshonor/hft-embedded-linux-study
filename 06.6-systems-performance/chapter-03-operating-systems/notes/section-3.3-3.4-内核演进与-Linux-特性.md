@@ -38,7 +38,7 @@
 
 - **内核页表隔离**：修复 CPU 侧信道漏洞，增加 **syscall / 上下文切换** 时的页表与 **TLB 刷新** 开销。
 - 影响：**约 0.1%–6%**（ workload 依赖）；syscall 密集或切换频繁时更明显。
-- HFT：评估是否可用 **PCID**、内核版本、mitigations 开关（与安全合规权衡）→ 与 [16-HFT ch05](../../../16-hft-engineering/chapter-05-操作系统内核极致调优.md) 对照。
+- HFT：评估是否可用 **PCID**、内核版本、mitigations 开关（与安全合规权衡）→ 与 [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优.md) 对照。
 
 #### 3. Extended BPF（eBPF）
 

@@ -48,7 +48,7 @@ CAS 语义：若内存值 == 期望值，则原子写入新值并返回成功；
 
 ### 五、对照
 
-- 内核侧同类原语 → [ULK Ch5 §3 基础同步原语](../../../../18-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md)  
+- 内核侧同类原语 → [ULK Ch5 §3 基础同步原语](../../../../16-linux-kernel-deep/chapter-05-kernel-synchronization/notes/section-3-基础同步原语.md)  
 - 内存序 / 屏障 → [02-CSAPP](../../../../02-computer-systems/) · [Ch2 Cache 一致性](../../chapter-02-cache-and-memory/notes/section-4-Cache一致性与无锁设计.md)
 
 ---

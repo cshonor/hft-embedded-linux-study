@@ -49,7 +49,7 @@ sysbench --num-threads=8 --test=cpu --cpu-max-prime=100000 run
 
 **操作建议：** 跑实验时 **始终开 `mpstat -P ALL 1`** — 确认 CPU 使用率和并行度符合预期。
 
- [Ch1.8 微观 vs 宏观](../../chapter-01-intro/notes/section-1.8-实验与微观宏观基准.md) · [Ch12](../../chapter-12-benchmarking/) · [HFT ch10 延迟测量](../../../16-hft-engineering/chapter-10-延迟测量与基准压测.md)
+ [Ch1.8 微观 vs 宏观](../../chapter-01-intro/notes/section-1.8-实验与微观宏观基准.md) · [Ch12](../../chapter-12-benchmarking/) · [HFT ch10 延迟测量](../../../14-hft-engineering/chapter-10-延迟测量与基准压测.md)
 
 
 ---
