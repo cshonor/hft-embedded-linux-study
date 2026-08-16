@@ -160,7 +160,7 @@ pmap -x $$
 |------|------|
 | 前置 | **[ch06](../ch06-runtime-data-structures/)** 运行时布局、栈、堆；**[ch05](../ch05-thinking-of-linking/)** ELF、**kernel.lds** |
 | 后置 | **[ch08](../ch08-halloween-vs-christmas/)** 类型、**求值顺序**、副作用 |
-| 关联 | **[Embedded C](../../04-Kernel-Prep-Embedded-C-Self-Cultivation/)** 裸机对齐、链接脚本 |
+| 关联 | **[Embedded C](../../05-Kernel-Prep-Embedded-C-Self-Cultivation/)** 裸机对齐、链接脚本 |
 | 全书 | **ch04** 数组存储；**ch09** 数组再论 |
 
 ## 小节

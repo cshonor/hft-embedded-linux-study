@@ -137,7 +137,7 @@ make clean
 |------|------|
 | 前置 | **[Expert C ch03](../ch03-analyzing-c-declarations/)** 声明分析；**ch02** 符号过载 |
 | 后置 | **[ch05](../ch05-thinking-of-linking/)** 链接与符号；**[ch09](../ch09-more-about-arrays/)** 数组再论、形参设计 |
-| 关联 | **[Embedded C ch07](../../04-Kernel-Prep-Embedded-C-Self-Cultivation/ch07-data-storage-and-pointers/)** 数据存储、数组名、指针（**7.8**, **7.9**） |
+| 关联 | **[Embedded C ch07](../../05-Kernel-Prep-Embedded-C-Self-Cultivation/ch07-data-storage-and-pointers/)** 数据存储、数组名、指针（**7.8**, **7.9**） |
 | 全书 | **ch07** 内存布局；**ch08** 类型转换 |
 
 ## 小节

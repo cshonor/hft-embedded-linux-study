@@ -11,7 +11,7 @@
 
 > **不是 C99，不是 C11。** 原版 C89 **没有** `//` 单行注释（只有 `/* */`）；书中或笔记若出现 `//`，是现代编译器习惯。
 
-与内核串联：[LKD Ch2 §2.4](../../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md) — 旧内核 `gnu89` = C89+GCC 扩展；现代内核 `gnu11`。读完 K&R 还需补 C99 习惯 + [05 GNU-C](../04-Kernel-Prep-Embedded-C-Self-Cultivation/)。
+与内核串联：[LKD Ch2 §2.4](../../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md) — 旧内核 `gnu89` = C89+GCC 扩展；现代内核 `gnu11`。读完 K&R 还需补 C99 习惯 + [05 GNU-C](../05-Kernel-Prep-Embedded-C-Self-Cultivation/)。
 
 ## 定位
 

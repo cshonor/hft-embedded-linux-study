@@ -111,7 +111,7 @@ make clean
 |------|------|
 | 前置 | **[Expert C ch02](../ch02-its-not-a-bug-its-a-language-feature/)** 符号过载与宏；**K&R** 基本语法 |
 | 后置 | **[ch04](../ch04-arrays-are-not-pointers/)** 数组 ≠ 指针；**[ch08](../ch08-halloween-vs-christmas/)** 类型转换 |
-| 关联 | **[Embedded C ch07](../../04-Kernel-Prep-Embedded-C-Self-Cultivation/ch07-data-storage-and-pointers/)** 指针、存储、MMIO |
+| 关联 | **[Embedded C ch07](../../05-Kernel-Prep-Embedded-C-Self-Cultivation/ch07-data-storage-and-pointers/)** 指针、存储、MMIO |
 | 全书 | **ch05** 链接；**ch07** 内存；函数指针在系统 API 中无处不在 |
 
 ## 小节

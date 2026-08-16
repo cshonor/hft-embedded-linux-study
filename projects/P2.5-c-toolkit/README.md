@@ -12,10 +12,10 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [6.4.3 container_of 宏](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.4-typeof-container-of/6.4.3-Linux内核中的container_of宏.md) | 从成员指针反推宿主结构体指针 |
-| [6.3 语句表达式](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.3-statement-expr/6.3.2-语句表达式.md) | `({ ... })` 让宏里能写多行语句 |
-| [6.7.1 aligned](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.1-地址对齐-aligned.md) | `__attribute__((aligned(64)))` 控制对齐 |
-| [6.9 weak 符号](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.9-weak/6.9-属性声明-weak.md) | 弱符号 = 可被覆盖的默认实现 |
+| [6.4.3 container_of 宏](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.4-typeof-container-of/6.4.3-Linux内核中的container_of宏.md) | 从成员指针反推宿主结构体指针 |
+| [6.3 语句表达式](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.3-statement-expr/6.3.2-语句表达式.md) | `({ ... })` 让宏里能写多行语句 |
+| [6.7.1 aligned](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.1-地址对齐-aligned.md) | `__attribute__((aligned(64)))` 控制对齐 |
+| [6.9 weak 符号](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.9-weak/6.9-属性声明-weak.md) | 弱符号 = 可被覆盖的默认实现 |
 
 ---
 
@@ -91,9 +91,9 @@ echo 'int main() { int x = ({ int y = 5; y + 1; }); return x - 6; }' | gcc -std=
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| offsetof 怎么算的 | [6.4.4 container_of 实现分析](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.4-typeof-container-of/6.4.4-container_of宏实现分析.md) |
-| typeof 语法 | [6.4.1 typeof 关键字](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.4-typeof-container-of/6.4.1-typeof关键字.md) |
-| `({ })` 语句表达式 | [6.3.2 语句表达式](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.3-statement-expr/6.3.2-语句表达式.md) |
+| offsetof 怎么算的 | [6.4.4 container_of 实现分析](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.4-typeof-container-of/6.4.4-container_of宏实现分析.md) |
+| typeof 语法 | [6.4.1 typeof 关键字](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.4-typeof-container-of/6.4.1-typeof关键字.md) |
+| `({ })` 语句表达式 | [6.3.2 语句表达式](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.3-statement-expr/6.3.2-语句表达式.md) |
 
 ---
 
@@ -270,8 +270,8 @@ static inline int ringbuf_pop(struct ringbuf *rb, void *data) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| aligned 属性 | [6.7.1 地址对齐 aligned](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.1-地址对齐-aligned.md) |
-| __attribute__ 基础 | [6.6.1 __attribute__](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) |
+| aligned 属性 | [6.7.1 地址对齐 aligned](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.1-地址对齐-aligned.md) |
+| __attribute__ 基础 | [6.6.1 __attribute__](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) |
 
 ---
 
@@ -322,9 +322,9 @@ static inline int ringbuf_pop(struct ringbuf *rb, void *data) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| __builtin_ 内建函数 | [6.11.2 常用内建函数](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.11-builtin/6.11.2-常用的内建函数.md) |
-| __builtin_constant_p | [6.11.4 __builtin_constant_p](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.11-builtin/6.11.4-内建函数-__builtin_constant_p-n.md) |
-| likely/unlikely | [6.11.6 likely 和 unlikely](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.11-builtin/6.11.6-Linux内核中的likely和unlikely.md) |
+| __builtin_ 内建函数 | [6.11.2 常用内建函数](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.11-builtin/6.11.2-常用的内建函数.md) |
+| __builtin_constant_p | [6.11.4 __builtin_constant_p](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.11-builtin/6.11.4-内建函数-__builtin_constant_p-n.md) |
+| likely/unlikely | [6.11.6 likely 和 unlikely](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.11-builtin/6.11.6-Linux内核中的likely和unlikely.md) |
 
 ---
 
@@ -410,7 +410,7 @@ int __attribute__((weak)) default_open(void *ctx, const char *path) {
 | 卡住了… | 翻这里 |
 |---------|--------|
 | 函数指针/转移表 | [13.3.2 转移表](../../01-c-language/02-Pointers-on-C/ch13-advanced-pointer-topics/13.3-function-pointers/13.3.2-转移表.md) |
-| weak 符号 | [6.9 weak](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.9-weak/6.9-属性声明-weak.md) |
+| weak 符号 | [6.9 weak](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.9-weak/6.9-属性声明-weak.md) |
 
 ---
 
@@ -490,9 +490,9 @@ int main(void) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| packed/aligned | [6.7.4 packed](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.4-属性声明-packed.md) |
-| 内核中的 aligned+packed | [6.7.5 内核中的声明](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.5-内核中的aligned-packed声明.md) |
-| section 属性 | [6.6.2 section](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.6-section/6.6.2-属性声明-section.md) |
+| packed/aligned | [6.7.4 packed](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.4-属性声明-packed.md) |
+| 内核中的 aligned+packed | [6.7.5 内核中的声明](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.7-aligned/6.7.5-内核中的aligned-packed声明.md) |
+| section 属性 | [6.6.2 section](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.6-section/6.6.2-属性声明-section.md) |
 
 ---
 
@@ -613,7 +613,7 @@ static inline uint64_t cntvct(void) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| __attribute__ 基础 | [6.6.1 __attribute__](../../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) |
+| __attribute__ 基础 | [6.6.1 __attribute__](../../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) |
 
 ---
 

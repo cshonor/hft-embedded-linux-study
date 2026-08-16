@@ -22,9 +22,9 @@
 |------|------|------|------|
 | 1 | [01-Primer-K-and-R-C](./01-Primer-K-and-R-C/) | 《C 程序设计语言（K&R 第2版）》 | 标准 C、`malloc`/指针/结构体 |
 | 1 | [02-Pointers-on-C](./02-Pointers-on-C/) | 《C 和指针》 | 内存布局、联合体、ABI（读内核结构体基础） |
-| 1 | [05-Reference-C-Traps-and-Pitfalls](./05-Reference-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷（第2版）》 | 宏、链接、库函数等常见陷阱 |
+| 1 | [06-Reference-C-Traps-and-Pitfalls](./06-Reference-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷（第2版）》 | 宏、链接、库函数等常见陷阱 |
 | 1 | [03-Advanced-Expert-C-Programming](./03-Advanced-Expert-C-Programming/) | 《C 专家编程》 | 链接器、深层指针规则、C 设计内幕 |
-| 2 | [04-Kernel-Prep-Embedded-C-Self-Cultivation](./04-Kernel-Prep-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》 | GNU-C 扩展（`__attribute__`、零长数组等），内核/DPDK 必读 |
+| 2 | [05-Kernel-Prep-Embedded-C-Self-Cultivation](./05-Kernel-Prep-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》 | GNU-C 扩展（`__attribute__`、零长数组等），内核/DPDK 必读 |
 
 ## 学习顺序
 

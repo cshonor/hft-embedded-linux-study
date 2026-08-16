@@ -172,7 +172,7 @@ pmap -x $$    # 当前 shell 映射
 |------|------|
 | 前置 | **[Expert C ch05](../ch05-thinking-of-linking/)** ELF 段与链接；**ch02** **static**；**ch04** 存储 |
 | 后置 | **[ch07](../ch07-adventures-in-memory/)** 虚拟内存、Cache、泄漏、总线错误 |
-| 关联 | **[Embedded C](../../04-Kernel-Prep-Embedded-C-Self-Cultivation/)** 启动代码、链接脚本、裸机栈 |
+| 关联 | **[Embedded C](../../05-Kernel-Prep-Embedded-C-Self-Cultivation/)** 启动代码、链接脚本、裸机栈 |
 | 全书 | **ch08** 类型；**ch09** 数组再论 |
 
 ## 小节

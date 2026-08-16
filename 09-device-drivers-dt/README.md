@@ -19,7 +19,7 @@
 
 > **读序：** [Primer](../08-embedded-boot-build/primer-system-overview/) → **Madieu 动手** → 卡住锁/DMA/内存时 **回头 LDD3**。  
 > **概念：** 设备树 ≠ UEFI — [DT FAQ](../08-embedded-boot-build/primer-system-overview/chapter-07-bootloaders/7.0-device-tree-vs-uefi.md)；加硬件 DTS/驱动 — [8.0](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md)/[8.1](../08-embedded-boot-build/primer-system-overview/chapter-08-device-driver-basics/8.1-dts-driver-relationship.md)。  
-> **读驱动源码：** 标准 C + 少量 GNU 扩展 — [GNU 速查](../01-c-language/04-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/DRIVER-GNU-C-CHEATSHEET.md)。  
+> **读驱动源码：** 标准 C + 少量 GNU 扩展 — [GNU 速查](../01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/ch06-gnu-c-extensions/DRIVER-GNU-C-CHEATSHEET.md)。  
 > **禁止**把 LDD3 样例当 5.x 模板硬抄。四书分工：[FOUR-BOOKS-OVERLAP](../08-embedded-boot-build/FOUR-BOOKS-OVERLAP.md)。
 
 ```

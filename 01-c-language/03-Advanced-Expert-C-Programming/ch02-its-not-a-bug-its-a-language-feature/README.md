@@ -92,7 +92,7 @@ make clean
 |------|------|
 | 前置 | **[Expert C ch01](../ch01-c-through-the-mists-of-time/)** 标准观与宏；**K&R** 基础语法 |
 | 后置 | **[ch03](../ch03-analyzing-c-declarations/)** C 声明读法；**[ch04](../ch04-arrays-are-not-pointers/)** 数组非指针 |
-| 关联 | **[Embedded C](../../04-Kernel-Prep-Embedded-C-Self-Cultivation/)** ch04 链接、ch06 GNU 扩展、ch07 指针 |
+| 关联 | **[Embedded C](../../05-Kernel-Prep-Embedded-C-Self-Cultivation/)** ch04 链接、ch06 GNU 扩展、ch07 指针 |
 | 全书 | **ch05** 链接；**ch07** 内存；**ch08** 类型转换 |
 
 ## 小节

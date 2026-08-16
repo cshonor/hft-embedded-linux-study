@@ -95,7 +95,7 @@ int main(void)
 | `EOF` | **不推荐**（宏） | `eof_flag` 允许 |
 | `stdin` 等 | **禁止宏劫持**（见 [1.4](../ch01-introduction/1.4-符号常量.md)） | — |
 
-`FILE`、`EOF` 是 **类型名 / 宏名**，不是关键字；**不要** `#define printf my_printf` 或 `#define FILE int`（[C 陷阱 6.5](../../05-Reference-C-Traps-and-Pitfalls/ch06-preprocessor/6.5-宏名冲突.md)）。
+`FILE`、`EOF` 是 **类型名 / 宏名**，不是关键字；**不要** `#define printf my_printf` 或 `#define FILE int`（[C 陷阱 6.5](../../06-Reference-C-Traps-and-Pitfalls/ch06-preprocessor/6.5-宏名冲突.md)）。
 
 ## 五、stdio vs 系统调用（HFT / 内核视角）
 

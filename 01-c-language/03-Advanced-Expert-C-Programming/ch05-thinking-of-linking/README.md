@@ -143,7 +143,7 @@ ldd ./main
 |------|------|
 | 前置 | **[Expert C ch04](../ch04-arrays-are-not-pointers/)** 声明/定义匹配；**ch03** 声明分析 |
 | 后置 | **[ch06](../ch06-runtime-data-structures)** POKEYOULicense；**ch07** 内存布局 |
-| 关联 | **[Embedded C](../../04-Kernel-Prep-Embedded-C-Self-Cultivation/)** 启动代码、链接脚本、裸机 |
+| 关联 | **[Embedded C](../../05-Kernel-Prep-Embedded-C-Self-Cultivation/)** 启动代码、链接脚本、裸机 |
 | 全书 | **ch08** 类型与转换；**ch09** 数组再论 |
 
 ## 小节
