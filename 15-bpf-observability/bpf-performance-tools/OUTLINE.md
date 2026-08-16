@@ -59,6 +59,8 @@
 | E | BPF Instructions | [appendix-E](./appendix-E-BPF指令.md) | ⚪ |
 
 > 前言 / 词汇表 / 参考文献 / 索引：不单独建笔记文件。
+>
+> **网络补充：** [SUPPLEMENT-web-resources.md](./SUPPLEMENT-web-resources.md) — 2019 年后 BPF 生态演进（libbpf CO-RE、bpftrace 0.20→0.25、BCC 迁移、sched_ext、PREEMPT_RT）+ HFT 场景应用 + 勘误修正
 
 ---
 
