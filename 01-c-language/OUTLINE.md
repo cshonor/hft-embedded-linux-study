@@ -14,10 +14,11 @@
 | 🟡 **04 LKD 前** | [03-Advanced-Expert-C-Programming](./03-Advanced-Expert-C-Programming/) | *C 专家编程*（只读 ch05–ch07） |
 | 🔴 **04 LKD 前** | [04-Kernel-Prep-Embedded-C-Self-Cultivation](./04-Kernel-Prep-Embedded-C-Self-Cultivation/) | 《嵌入式 C 自我修养》 |
 | 🟡 工具书 | [05-Reference-C-Traps-and-Pitfalls](./05-Reference-C-Traps-and-Pitfalls/) | *C 陷阱与缺陷*（遇坑再查） |
+| 🔴 **13 DPDK 前** | [06-Modern-C](./06-Modern-C/) | *Modern C* 3rd（挑读 Ch12/13/16，DPDK 前 Ch20/21） |
 
-建议顺序（内核向）：**01 → 02 → 03**（标准 C）→ **04**（GNU-C，打通内核）→ **05**（工具书，遇坑再查）→ 再开 LKD / 内核网 / DPDK。
+建议顺序（内核向）：**01 → 02 → 03**（标准 C）→ **04**（GNU-C，打通内核）→ **06**（Modern C 挑读）→ **05**（工具书，遇坑再查）→ 再开 LKD / 内核网；**开 DPDK 前回补 06 Ch20 线程 + Ch21 原子/内存序**。
 
-> **01–03 ≈ 标准 C；04 = GNU C 补齐；05 = 工具书。** 详见 [README](./README.md)。
+> **01–03 ≈ 标准 C；04 = GNU C 补齐；05 = 工具书；06 = C99–C23 增量 + 原子并发（DPDK 前理论收官）。** 详见 [README](./README.md)。
 
 ---
 
