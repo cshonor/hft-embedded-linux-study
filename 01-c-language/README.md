@@ -26,6 +26,7 @@
 | [03-Advanced-Expert-C-Programming](./03-Advanced-Expert-C-Programming/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
 | [04-Kernel-Prep-Embedded-C-Self-Cultivation](./04-Kernel-Prep-Embedded-C-Self-Cultivation/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
 | [05-Reference-C-Traps-and-Pitfalls](./05-Reference-C-Traps-and-Pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |
+| [06-Supplement-Modern-C](./06-Supplement-Modern-C-C89-to-C23.md) | Modern C 差异速查（自制） | C89→C23 增量 + 五本书"过时清单" + K&R 跳过点 |
 | [code](./code/) | 配套示例 | 练习与索引 |
 
 > **纠正常见书名混淆：** `02-Pointers-on-C` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
@@ -71,6 +72,8 @@
 | 05 C 陷阱与缺陷 | 🟡 略读 / 工具书 | 薄，快速翻记避坑清单（优先级、数组退化、链接、UB），或遇到再查。**不必逐章** |
 
 > **关键提醒**：别在 01–03 上磨太久。K&R + Reek 够你读懂指针和结构体，03 专家编程只读 ch05–ch07 即可。真正的分水岭是 **04（GNU C）** —— 标准书不讲、内核天天用的东西主要在这里补齐。03 的 ch05–ch07 与 04 的 ch06/ch08/ch10 已补"常见陷阱 + 自测题"段落，精读时可用。05 是工具书，遇到坑再翻。
+
+> **"五本书过时了吗"**（2026-08 讨论确定）：没有。内核主体仍是 GNU C89/C99，五本书教的是标准无关的思维（指针/内存模型/声明解析/陷阱）。真正过时的只是 K&R 个别 C89 写法（隐式 int、old-style 声明、`gets()`），逐条跳过清单和 C99–C23 增量（`_Atomic`/`_Alignas`/`_Static_assert` 等 DPDK 常用特性）见 [06-Supplement-Modern-C](./06-Supplement-Modern-C-C89-to-C23.md)。
 
 ### 学习进度
 
