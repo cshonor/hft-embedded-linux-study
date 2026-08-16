@@ -14,6 +14,7 @@
 | 3.2 内核基础与核心概念 | [notes/section-3.2-内核基础与核心概念.md](./notes/section-3.2-内核基础与核心概念.md) |
 | 3.3–3.4 内核演进与 Linux 特性 | [notes/section-3.3-3.4-内核演进与-Linux-特性.md](./notes/section-3.3-3.4-内核演进与-Linux-特性.md) |
 | 3.5 其他系统模型 | [notes/section-3.5-其他系统模型.md](./notes/section-3.5-其他系统模型.md) |
+| 3.6 内核比较 | [notes/section-3.6-内核比较.md](./notes/section-3.6-内核比较.md) |
 
 ---
 

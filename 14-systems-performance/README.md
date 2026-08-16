@@ -57,6 +57,12 @@ chapter-XX-english-slug/
 
 ---
 
+## 网络搜索补充
+
+2020 年后系统性能生态演进（内核特性、perf/ftrace/BPF 工具更新、HFT 性能资源）→ [SUPPLEMENT-web-resources.md](./SUPPLEMENT-web-resources.md)
+
+---
+
 ## HFT 精读捷径
 
 ```

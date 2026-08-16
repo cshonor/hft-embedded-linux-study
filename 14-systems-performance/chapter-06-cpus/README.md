@@ -14,6 +14,7 @@
 | 6.4 硬件与软件架构 | [notes/section-6.4-硬件与软件架构.md](./notes/section-6.4-硬件与软件架构.md) |
 | 6.5 性能分析方法论 | [notes/section-6.5-性能分析方法论.md](./notes/section-6.5-性能分析方法论.md) |
 | 6.6–6.7 观测工具与可视化 | [notes/section-6.6-6.7-观测工具与可视化.md](./notes/section-6.6-6.7-观测工具与可视化.md) |
+| 6.8 实验工具 | [notes/section-6.8-实验工具.md](./notes/section-6.8-实验工具.md) |
 | 6.9 CPU 调优 | [notes/section-6.9-CPU-调优.md](./notes/section-6.9-CPU-调优.md) |
 
 ---

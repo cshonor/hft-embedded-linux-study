@@ -11,10 +11,10 @@
 
 | 节 | 笔记 |
 |----|------|
-| BPF 背景与架构（15.1–15.2 基础） | [notes/section-BPF-背景与架构15.1-15.2-基础.md](./notes/section-BPF-背景与架构15.1-15.2-基础.md) |
+| 15.0 BPF 背景与架构 | [notes/section-15.0-BPF背景与架构.md](./notes/section-15.0-BPF背景与架构.md) |
 | 15.1 BCC (BPF Compiler Collection) | [notes/section-15.1-BCC-BPF-Compiler-Collection.md](./notes/section-15.1-BCC-BPF-Compiler-Collection.md) |
-| 15.2 bpftrace | [notes/section-15.2-bpftrace.md](./notes/section-15.2-bpftrace.md) |
 | 15.1.7 BCC vs bpftrace | [notes/section-15.1.7-BCC-vs-bpftrace.md](./notes/section-15.1.7-BCC-vs-bpftrace.md) |
+| 15.2 bpftrace | [notes/section-15.2-bpftrace.md](./notes/section-15.2-bpftrace.md) |
 
 ---
 

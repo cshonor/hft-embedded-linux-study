@@ -16,6 +16,7 @@
 | 11.3 操作系统虚拟化 / 容器 | [notes/section-11.3-操作系统虚拟化-容器.md](./notes/section-11.3-操作系统虚拟化-容器.md) |
 | 11.4 轻量级硬件虚拟化（MicroVM） | [notes/section-11.4-轻量级硬件虚拟化MicroVM.md](./notes/section-11.4-轻量级硬件虚拟化MicroVM.md) |
 | 11.5 其他云技术 | [notes/section-11.5-其他云技术.md](./notes/section-11.5-其他云技术.md) |
+| 11.6 虚拟化技术比较 | [notes/section-11.6-虚拟化比较.md](./notes/section-11.6-虚拟化比较.md) |
 
 ---
 
