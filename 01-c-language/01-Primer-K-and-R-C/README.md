@@ -2,6 +2,8 @@
 
 **The C Programming Language, 2nd Edition**
 
+> **第 1 本书** · C89 奠基
+
 ## 语言基准（先钉死）
 
 | 书 | 对应标准 |

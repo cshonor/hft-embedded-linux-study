@@ -2,6 +2,8 @@
 
 **Expert C Programming: Deep C Secrets** — Peter van der Linden
 
+> **第 3 本书** · 链接器 / 段 / 内存布局（只读 ch05–ch07）
+
 ## 定位
 
 阶段 1 · C 语言进阶。链接器行为、数组/指针深层规则、C 与 C++ 差异、历史包袱与「为什么 C 长这样」。

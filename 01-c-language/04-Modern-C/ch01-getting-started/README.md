@@ -1,6 +1,6 @@
 # Ch1 · Getting started（入门）
 
-> **Level 0 · 邂逅** · 策略：**⏭️ 跳过**（五本书已覆盖）
+> **Level 0 · 邂逅** · 策略：**⏭️ 跳过**（前三本书已覆盖）
 > 《Modern C》第三版（C23 版）· Jens Gustedt · 免费版：gustedt.gitlabpages.inria.fr/modern-c/
 
 ## 本章讲什么
@@ -58,7 +58,7 @@ gcc -std=c2x -Wall -Wextra -Wpedantic -O2 -o hello hello.c
 
 ## HFT / DPDK 关联
 
-五本书 + CSAPP 已覆盖入门内容。回来查的场景：
+前三本书 + CSAPP 已覆盖入门内容。回来查的场景：
 - 确认某个 C23 特性需要哪个 gcc 版本（gcc 14+ 基本完整支持 C23）
 - meson 构建参数（`-Dc_args='-std=c11'`）
 - 编译期特性检测（`__STDC_VERSION__` 宏）
