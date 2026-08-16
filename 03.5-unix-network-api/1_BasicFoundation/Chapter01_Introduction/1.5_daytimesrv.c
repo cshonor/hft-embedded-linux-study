@@ -4,7 +4,7 @@
  *
  * 依赖：unp.h / libunp（Socket Bind Listen Accept Write Close）
  * 配对客户端：1.2 daytimetcpcli
- * 端口：标准 13（RFC865 Daytime）；非 root 可改为 10013，见 1.2_Appendix_Daytime端口13.md
+ * 端口：标准 13（RFC865 Daytime）；非 root 可改为 10013，见 1.2_SimpleTimeClient.md#daytime-port
  */
 #include "unp.h"
 #include <time.h>

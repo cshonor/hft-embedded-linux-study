@@ -11,6 +11,8 @@
  *   daytimetcpcli6.c  — 写死只用 IPv6
  *   daytimetcpcligai.c — 不写死协议，用 getaddrinfo 自动选 v4/v6
  *
+ * 【端口 13】RFC865 Daytime 标准端口；非 root 自测服务端可改 10013（见 1.2_SimpleTimeClient.md#daytime-port）
+ *
  * 【头文件 unp.h】
  *   原书 Stevens 提供的公共头，里面声明了 socket、err_quit、MAXLINE 等，还要链接 libunp。
  */
