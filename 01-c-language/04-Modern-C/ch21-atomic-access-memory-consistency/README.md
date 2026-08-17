@@ -1,6 +1,6 @@
-# Ch21 · Atomic access and memory consistency（原子访问与内存一致性）
+# Ch21 · Atomic access and memory consistency（原子访问与内存一致性） ⑥🔴
 
-> **Level 3 · 深入** · 策略：**🔴 精读**（全书压轴、DPDK rte_ring 的理论基础）
+> **Level 3 · 深入** · 策略：**🔴 精读**（全书压轴、DPDK rte_ring 的理论基础）· 阅读顺序 ⑥
 > 《Modern C》第三版（C23 版）· Jens Gustedt · 免费版：gustedt.gitlabpages.inria.fr/modern-c/
 
 > **第 4 本书 · Ch21** · 读懂本章才能读懂 DPDK `rte_ring` 无锁队列源码。

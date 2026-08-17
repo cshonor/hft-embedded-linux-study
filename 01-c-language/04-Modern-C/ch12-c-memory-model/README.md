@@ -1,6 +1,6 @@
-# Ch12 · The C memory model（C 内存模型）
+# Ch12 · The C memory model（C 内存模型） ②🔴
 
-> **Level 2 · 相知** · 策略：**🔴 精读**
+> **Level 2 · 相知** · 策略：**🔴 精读** · 阅读顺序 ②
 > 《Modern C》第三版（C23 版）· Jens Gustedt · 免费版：gustedt.gitlabpages.inria.fr/modern-c/
 
 > **第 4 本书 · Ch12** · 本章是全书对 HFT 最关键的两章之一（另一章是 Ch21 原子）。

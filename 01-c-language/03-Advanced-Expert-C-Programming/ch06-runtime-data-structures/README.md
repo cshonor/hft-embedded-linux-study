@@ -1,6 +1,7 @@
-# 第 6 章 运动的诗章：运行时数据结构
+# 第 6 章 运动的诗章：运行时数据结构 🔴精读
 
 **Runtime Data Structures** — Peter van der Linden, *Expert C Programming*
+> **策略：🔴 精读**（03 书只读 ch05–ch07）
 
 ## 本章目标
 

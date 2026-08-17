@@ -1,6 +1,6 @@
-# Ch20 · Threads（线程）
+# Ch20 · Threads（线程） ⑤🔴
 
-> **Level 3 · 深入** · 策略：**🔴 精读**（进 DPDK 前必读）
+> **Level 3 · 深入** · 策略：**🔴 精读**（进 DPDK 前必读）· 阅读顺序 ⑤
 > 《Modern C》第三版（C23 版）· Jens Gustedt · 免费版：gustedt.gitlabpages.inria.fr/modern-c/
 
 > **第 4 本书 · Ch20** · DPDK 每 lcore 一线程模型 = `_Thread_local` + 绑核，虽然生产用 pthread，

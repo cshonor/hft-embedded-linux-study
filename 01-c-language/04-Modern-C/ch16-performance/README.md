@@ -1,6 +1,6 @@
-# Ch16 · Performance（性能）
+# Ch16 · Performance（性能） ④🔴
 
-> **Level 3 · 深入** · 策略：**🔴 精读**
+> **Level 3 · 深入** · 策略：**🔴 精读** · 阅读顺序 ④
 > 《Modern C》第三版（C23 版）· Jens Gustedt · 免费版：gustedt.gitlabpages.inria.fr/modern-c/
 
 > **第 4 本书 · Ch16** · 全书对 HFT 最实用的一章——`restrict` 是零成本优化提示，memcpy/热路径函数必用。

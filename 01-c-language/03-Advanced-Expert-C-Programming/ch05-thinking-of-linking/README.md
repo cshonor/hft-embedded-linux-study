@@ -1,6 +1,7 @@
-# 第 5 章 对链接的思考
+# 第 5 章 对链接的思考 🔴精读
 
 **Thinking of Linking** — Peter van der Linden, *Expert C Programming*
+> **策略：🔴 精读**（03 书只读 ch05–ch07）
 
 ## 本章目标
 

@@ -1,6 +1,7 @@
-# 第 7 章 对内存的思考
+# 第 7 章 对内存的思考 🔴精读
 
 **Adventures in Memory** — Peter van der Linden, *Expert C Programming*
+> **策略：🔴 精读**（03 书只读 ch05–ch07）
 
 ## 本章目标
 

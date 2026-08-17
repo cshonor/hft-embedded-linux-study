@@ -1,6 +1,6 @@
-# Ch13 · Storage（存储）
+# Ch13 · Storage（存储） ③🔴
 
-> **Level 2 · 相知** · 策略：**🔴 精读**
+> **Level 2 · 相知** · 策略：**🔴 精读** · 阅读顺序 ③
 > 《Modern C》第三版（C23 版）· Jens Gustedt · 免费版：gustedt.gitlabpages.inria.fr/modern-c/
 
 > **第 4 本书 · Ch13** · HFT 热路径不用 `malloc`——启动时一次性分配 + 自管理内存池，理解四种存储期是设计内存池的基础。
