@@ -14,8 +14,7 @@
 |------|------|
 | 客户端 | [UNP 1.2](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_SimpleTimeClient.md) |
 | 服务器 | [UNP 1.5](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_SimpleTimeServer.md) |
-| C/S 联合 | [1.12 附录](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.12_Appendix_DaytimeCS联合流程.md) |
-| Rust 已有 | [Ch1 code](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/code/README.md) |
+| C/S 联合 | [1.12 小结](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.12_Summary.md) |
 
 <a id="pnp-01-concepts"></a>
 

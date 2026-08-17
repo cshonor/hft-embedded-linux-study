@@ -10,7 +10,7 @@
 
 ## UNP 对照
 
-- [1.2 API·read](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_Appendix_API精读.md)
+- [1.2 客户端示例](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.2_SimpleTimeClient.md)
 - Ch3 `readn` / `writen`（本仓库 Ch3 节笔记）
 
 <a id="pnp-02-concepts"></a>

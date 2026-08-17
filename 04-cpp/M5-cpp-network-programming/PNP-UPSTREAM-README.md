@@ -26,7 +26,7 @@ PNP/
 | **UNP_Vol1/** | Stevens 原书 API、系统化节笔记 |
 | **PNP/** | 粘包、自连接、Netcat、TTCP、epoll 等 **实验 + 坑点笔记** |
 
-Daytime 等 UNP Ch1 示例仍在 [UNP Ch1 code](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/code/README.md)；PNP 从 **工程向实验** 起步。
+Daytime 等 UNP Ch1 示例见 [UNP Ch1 学习索引](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/study.md)；PNP 从 **工程向实验** 起步。
 
 ## 推荐顺序
 

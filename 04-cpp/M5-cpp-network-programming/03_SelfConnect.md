@@ -10,7 +10,7 @@
 
 ## UNP 对照
 
-- [1.5 listen 队列](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md)
+- [1.5 服务器示例](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_SimpleTimeServer.md)
 - Ch4 `accept` / `connect`
 
 <a id="pnp-03-concepts"></a>
@@ -152,4 +152,4 @@ int main() {
 ## 交叉引用
 
 - 上一篇：[02 粘包](./02_TCPByteStream.md) · 下一篇：[04 Netcat](./04_Netcat.md)
-- [03.5 UNP Ch1.5 listen 队列](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_Appendix_listen队列.md) · [12 TCP/IP 协议](../../11-tcpip-protocols/)
+- [03.5 UNP Ch1.5 服务器示例](../../03.5-unix-network-api/1_BasicFoundation/Chapter01_Introduction/1.5_SimpleTimeServer.md) · [12 TCP/IP 协议](../../11-tcpip-protocols/)
