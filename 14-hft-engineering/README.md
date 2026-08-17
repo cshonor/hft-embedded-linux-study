@@ -45,9 +45,9 @@
 | 8 | [chapter-08 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发.md) | ✅ 要点 |
 | 9 | [chapter-09 Java/JVM 低延迟（原书 Ch9）](./chapter-09-java-jvm-低延迟系统.md) | ✅ 要点 |
 | 10 | [chapter-10 日志与 TTT 测量（原书 Ch7）](./chapter-10-延迟测量与基准压测.md) | ✅ 要点 |
-| 11 | [chapter-11 风控合规](./chapter-11-风控合规与滑点控制.md) | 待补充 |
-| 12 | [chapter-12 实盘运维](./chapter-12-实盘上线与运维进阶.md) | 待补充 |
-| 13 | [chapter-13 做市与套利（本仓库扩展）](./chapter-13-高频做市与套利策略.md) | 待补充 |
+| 11 | [chapter-11 风控合规](./chapter-11-风控合规与滑点控制.md) | ✅ 要点 |
+| 12 | [chapter-12 实盘运维](./chapter-12-实盘上线与运维进阶.md) | ✅ 要点 |
+| 13 | [chapter-13 做市与套利（本仓库扩展）](./chapter-13-高频做市与套利策略.md) | ✅ 要点 |
 | 14 | [chapter-14 Python 混合架构（原书 Ch10）](./chapter-14-python-高性能混合架构.md) | ✅ 要点 |
 | 15 | [chapter-15 FPGA 与 Crypto（原书 Ch11）](./chapter-15-fpga-与加密货币高频.md) | ✅ 要点 |
 
