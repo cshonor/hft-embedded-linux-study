@@ -118,5 +118,5 @@ Ch 15  BPF — 生产追踪主力
 - 工具地图：[../chapter-04-observability-tools/](../chapter-04-observability-tools/)
 - 内核网络：[12-kernel-networking](../../12-kernel-networking/)
 - BPF 专书：[06.7-bpf-observability](../../06.7-bpf-observability/)
-- HFT 调优：[14-HFT ch05](../../14-hft-engineering/chapter-05-操作系统内核极致调优.md)
+- HFT 调优：[14-HFT ch05](../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

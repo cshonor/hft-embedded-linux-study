@@ -11,7 +11,7 @@ OS 在 **应用程序与硬件之间** 提供统一抽象，防止进程互相�
 **HFT：**
 
 - 热路径进程 **固定 CPU affinity**，减少迁移与 cache 冷启动
-- 与 housekeeping（日志、监控）**分进程/分核**（→ [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优.md)）
+- 与 housekeeping（日志、监控）**分进程/分核**（→ [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)）
 
 ### 1.7.2 线程 (Threads)
 

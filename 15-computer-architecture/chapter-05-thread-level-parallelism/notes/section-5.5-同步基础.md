@@ -27,7 +27,7 @@
 | HFT 视角 |
 |----------|
 | 热路径：**极短自旋** + `pause`（x86）可接受；长临界区用 **futex/mutex** 但避免进热路径 |
-| **无锁队列**（SPSC/MPSC）— 用 CAS/LL-SC，避免锁；见 [14-HFT ch7](../../../14-hft-engineering/chapter-07-无锁数据结构与内存布局.md) |
+| **无锁队列**（SPSC/MPSC）— 用 CAS/LL-SC，避免锁；见 [14-HFT ch7](../../../14-hft-engineering/chapter-07-无锁数据结构与内存布局/README.md) |
 | 自旋锁 **错误实现**（全局总线写）曾导致整机变慢 — 实现要 **test-test-and-set** 或 **queued lock** |
 
 → [02-CSAPP Ch12](../../../02-computer-systems/chapter-12-concurrent-programming/)

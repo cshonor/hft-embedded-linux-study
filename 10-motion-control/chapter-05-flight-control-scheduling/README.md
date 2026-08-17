@@ -31,4 +31,4 @@
 - [ ] `cyclictest` 在目标板上给出可接受 **max latency**  
 - [ ] 飞控环 **overrun** 可日志 + 统计（异步，不阻塞控制）
 
-→ [P5 无人机实战](../../projects/P5-raspberry-pi-embedded/) · [14 HFT 测量](../../14-hft-engineering/chapter-10-延迟测量与基准压测.md)
+→ [P5 无人机实战](../../projects/P5-raspberry-pi-embedded/) · [14 HFT 测量](../../14-hft-engineering/chapter-10-延迟测量与基准压测/README.md)
