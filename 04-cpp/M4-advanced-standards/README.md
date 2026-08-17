@@ -39,7 +39,7 @@
 | Coroutines | ch14–15 | `co_await`/`co_yield`/`promise_type` |
 | Modules | ch16 | 替代 `#include`，预编译 BMI |
 
-## 09 → 10 依赖
+## C++17 → C++20 依赖
 
 C++20 很多特性在 C++17 基础上完善：先吃透 17 再读 20 更顺。
 

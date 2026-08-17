@@ -1,7 +1,7 @@
 # M1 · Modern C++（现代 C++ 门槛）
 
 > **里程碑定位：** 🔴 硬门槛 · 全书精读
-> **学习顺序：** M0 之后（07 TLPI 之后、10 PNP 之前）
+> **学习顺序：** M0 之后（03 TLPI 之后、M5 PNP 之前）
 > **难度：** ⭐⭐⭐⭐
 
 ## 包含的书
@@ -16,7 +16,7 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 
 ## 验收
 
-能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [10 PNP](../M5-cpp-network-programming/)。
+能读 muduo 里 `shared_ptr`/回调/移动语义不懵 → 再开 [M5 PNP](../M5-cpp-network-programming/)。
 
 ## 跨模块回读
 
