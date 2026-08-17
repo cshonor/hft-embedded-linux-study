@@ -12,7 +12,7 @@
 | 6 BPF | `runqlat`、`offcputime`、行情路径 syscall |
 | 7 结论 | 写入 **release note** — 可复现的 win 还是环境 noise |
 
-→ [14-HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md)
+→ [14-HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md)
 
 ---
 

@@ -18,7 +18,7 @@ S = \frac{1}{(1 - p) + \frac{p}{k}}
 | 优化只占 1% 时间的函数 10× | 整体几乎不变 |
 | 行情解析占 60%，优化 2× | 整体显著变快 — **先 profile 找 p** |
 
-**HFT：** 端到端延迟 = 收包 + 解码 + 策略 + 发单 + **排队/内核/网卡**。用 [14-HFT ch10](../../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md) 或 span 分解找 **最大 p**，再动刀。
+**HFT：** 端到端延迟 = 收包 + 解码 + 策略 + 发单 + **排队/内核/网卡**。用 [14-HFT ch10](../../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md) 或 span 分解找 **最大 p**，再动刀。
 
 → 方法论：[06.6-Systems-Performance Ch 2 延迟分解](../../../06.6-systems-performance/chapter-02-methodologies/)
 

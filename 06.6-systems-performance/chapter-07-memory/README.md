@@ -97,5 +97,5 @@ Ch 7  内存（本章：VM、Swap、NUMA、TLB、分配器）
 - USE：[appendix-A-USE方法Linux.md](../appendix-A-USE方法Linux.md)
 - 内核 VM 专书：[06-linux-mm](../../06-linux-mm/)
 - CSAPP：[02-computer-systems Ch9](../../02-computer-systems/chapter-09-virtual-memory/)
-- HFT 调优：[14-HFT ch05](../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
+- HFT 调优：[14-HFT ch05](../../14-hft-engineering/chapter-05-os-kernel-tuning/README.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

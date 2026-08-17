@@ -50,7 +50,7 @@
 | **不要轻信微基准** | 「内核 X syscall 快 2x」对 HFT 无意义 — 要看 **端到端 tick-to-trade** |
 | **版本选择** | LTS + 低延迟补丁（PREEMPT_RT）或云厂商优化内核（AWS Nitro 等） |
 
- [Ch12 基准测试](../../chapter-12-benchmarking/) · [Ch15 BPF](../../chapter-15-bpf/) · [HFT ch05 内核调优](../../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
+ [Ch12 基准测试](../../chapter-12-benchmarking/) · [Ch15 BPF](../../chapter-15-bpf/) · [HFT ch05 内核调优](../../../14-hft-engineering/chapter-05-os-kernel-tuning/README.md)
 
 
 ---

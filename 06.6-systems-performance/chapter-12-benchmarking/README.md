@@ -3,7 +3,7 @@
 > **Systems Performance 2nd** · Brendan Gregg · **选读**
 
 > 本章定位：**基准测试「出人意料地棘手」** — 跑分高 ≠ 生产快。Gregg 不罗列工具了事，而是教 **如何设计实验、控制变量、结合观测、拷问报告**。Ch 8/9/10 各章的 fio/iperf 微基准，必须在本章方法论框架下解读。  
-> **HFT：** 微观基准（fio、iperf）只做 **capacity baseline**；策略与端到端延迟靠 **生产级 replay + 应用 span**（→ [14-HFT ch10](../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md)）。
+> **HFT：** 微观基准（fio、iperf）只做 **capacity baseline**；策略与端到端延迟靠 **生产级 replay + 应用 span**（→ [14-HFT ch10](../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md)）。
 
 ---
 
@@ -100,5 +100,5 @@ Ch 12  基准方法论（本章：如何测、如何信）
 - fio / FS：[../chapter-08-file-systems/](../chapter-08-file-systems/)
 - fio / 磁盘：[../chapter-09-disks/](../chapter-09-disks/)
 - iperf / 网络：[../chapter-10-network/](../chapter-10-network/)
-- HFT 压测：[14-HFT ch10](../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md)
+- HFT 压测：[14-HFT ch10](../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

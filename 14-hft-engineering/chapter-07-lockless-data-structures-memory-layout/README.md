@@ -1,0 +1,47 @@
+# 第7章 无锁数据结构与内存布局（索引）
+
+> **原书第 6 章 §2–§3 · Lock-free · Memory Pool · Cache-friendly**
+
+← 上下文切换：[chapter-05](../chapter-05-os-kernel-tuning/README.md) · 总览：[chapter-01 §4 无锁与 IPC](../chapter-01-hft-fundamentals-ecosystem/1.4-无锁数据结构与IPC.md)
+
+---
+
+## 本章定位
+
+原书 **Ch6** 后两支柱：
+
+1. **无锁数据结构** — 进程/线程间 **零阻塞** 传数据
+2. **内存预取与预分配** — **缓存友好** · **禁热点 malloc**
+
+**软件层压榨 μs/ns 的核心秘诀。**
+
+## 小节索引
+
+| 节 | 主题 | 一句话 |
+|----|------|--------|
+| [7.1](./7.1-传统锁的致命弱点.md) | 传统锁的致命弱点 | 争用/死锁/优先级反转/护航 — 关键路径不用 mutex |
+| [7.2](./7.2-无锁FIFO队列.md) | 无锁 FIFO 队列 🔴 | SPSC/MPMC 预分配环 — Gateway→Strategy 主干道 |
+| [7.3](./7.3-内存预分配与缓存友好.md) | 内存预分配与缓存友好 🔴 | L1 0.5ns vs RAM 60ns · 池化 · alignas(64) |
+| [7.4](./7.4-共享内存IPC.md) | 共享内存 IPC | mmap + 无锁环 = 跨进程零拷贝 |
+| [7.5](./7.5-CPP内存序.md) | C++ 内存序 | release/acquire 配对发布 — 无锁正确性基础 |
+| [7.6](./7.6-LMAX-Disruptor.md) | LMAX Disruptor | 参考架构 — 单写者原则的标杆 |
+
+## 本章小结
+
+| 支柱 | 手段 |
+|------|------|
+| **无锁** | SPSC/MPMC 环 · 原子序 · 日志 **移出热点** |
+| **内存** | Pool · vector · 无虚函数 · 无热点 new |
+| **+ Ch5** | 绑核 · Bypass · 少切换 |
+
+**三合一（原书 Ch6）：** 绑核 **+** 无锁 **+** 内存池 = **软件延迟压榨极限**。
+
+**下一步：** [chapter-08 C++ 微秒征途（原书 Ch8）](../chapter-08-ultra-low-latency-engine-dev/README.md) · [chapter-09 测量](../chapter-09-latency-measurement-benchmarking/README.md)
+
+## 原书章节对照
+
+| 原书 | 本仓库 |
+|------|--------|
+| Ch6 §1 上下文切换 | **Ch5** |
+| Ch6 §2–3 无锁/内存 | **本章 Ch7** |
+| Ch7 日志/性能/网络 | **Ch9** · Ch5/6/7 分节 |

@@ -24,7 +24,7 @@
 swapoff -a    # 临时；/etc/fstab 去掉 swap 分区持久化
 ```
 
-→ [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
+→ [14-HFT ch05](../../../14-hft-engineering/chapter-05-os-kernel-tuning/README.md)
 
 ### 大页（Huge Pages）
 

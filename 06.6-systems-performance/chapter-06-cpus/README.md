@@ -102,5 +102,5 @@ Ch 6  CPU（本章：硬件 + 调度 + PMC + 工具）
 - BPF：[../chapter-15-bpf/](../chapter-15-bpf/)
 - OS 调度：[../chapter-03-operating-systems/](../chapter-03-operating-systems/)
 - 架构：[15-computer-architecture](../../15-computer-architecture/)
-- HFT 绑核调优：[14-HFT ch05](../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
+- HFT 绑核调优：[14-HFT ch05](../../14-hft-engineering/chapter-05-os-kernel-tuning/README.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

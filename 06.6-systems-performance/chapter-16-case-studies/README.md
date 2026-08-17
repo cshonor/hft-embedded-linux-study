@@ -102,5 +102,5 @@
 - 资源专章：Ch [6](../chapter-06-cpus/)–[11](../chapter-11-cloud-computing/)
 - 工具专章：Ch [13](../chapter-13-perf/)–[15](../chapter-15-bpf/)
 - BPF 专书：[06.7-bpf-observability](../../06.7-bpf-observability/)
-- HFT 压测：[14-HFT ch10](../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md)
+- HFT 压测：[14-HFT ch10](../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md)
 - 全书目录：[OUTLINE.md](../OUTLINE.md)

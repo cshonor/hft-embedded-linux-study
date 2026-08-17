@@ -53,7 +53,7 @@
 | **CPU 亲和性（affinity）** | 线程 / IRQ / 网卡队列同 NUMA、同核，提升 cache 命中 |
 | **Huge pages** | 减 TLB miss（DPDK、大堆 Java 都相关） |
 
-→ [05-linux-kernel](../../../05-linux-kernel/) 调度与绑核 · [14-HFT ch05](../../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
+→ [05-linux-kernel](../../../05-linux-kernel/) 调度与绑核 · [14-HFT ch05](../../../14-hft-engineering/chapter-05-os-kernel-tuning/README.md)
 
 ---
 

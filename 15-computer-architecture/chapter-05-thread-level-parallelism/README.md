@@ -37,7 +37,7 @@ SMP/UMA vs DSM/NUMA → 监听(MESI) vs 目录一致性
 | 5.5–5.6 | **LL/SC、memory_order** — 无锁结构正确性 |
 | 5.7–5.11 | 多核扩展极限 → 绑核、专用核、DSA |
 
-→ [Ch2 false sharing](../chapter-02-memory-hierarchy-design/notes/section-2.3-缓存性能十项高级优化.md) · [02-CSAPP Ch12](../../02-computer-systems/chapter-12-concurrent-programming/) · [14-HFT ch7 无锁](../../14-hft-engineering/chapter-07-无锁数据结构与内存布局/README.md)
+→ [Ch2 false sharing](../chapter-02-memory-hierarchy-design/notes/section-2.3-缓存性能十项高级优化.md) · [02-CSAPP Ch12](../../02-computer-systems/chapter-12-concurrent-programming/) · [14-HFT ch7 无锁](../../14-hft-engineering/chapter-07-lockless-data-structures-memory-layout/README.md)
 
 ---
 

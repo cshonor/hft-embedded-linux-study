@@ -29,7 +29,7 @@
 
 - **上线前** 就要有延迟/抖动 SLO（目标），不是上线后才量
 - **生产调优** 与 **事故回顾** 对应 tail latency、P99 尖刺排查
-- 与 [14-HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md) 衔接
+- 与 [14-HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md) 衔接
 
 ---
 
@@ -68,7 +68,7 @@
 | **CPU** | IPC、frontend/backend stall、绑核是否生效 | `perf stat` · [Ch 6 CPU](../../chapter-06-cpus/) |
 | **内存** | cache miss、page fault、false sharing | `perf mem` · [Ch 7 内存](../../chapter-07-memory/) · [CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/) |
 | **磁盘** | 热路径是否误触日志/sync | 热路径 **不应** 有 disk I/O；NVMe 仅冷路径 |
-| **端到端** | P50/P99/P999、抖动 tail | 硬件 timestamp / [HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md) |
+| **端到端** | P50/P99/P999、抖动 tail | 硬件 timestamp / [HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md) |
 
 #### C. 自检清单（上线 / 排障时逐项过）
 
