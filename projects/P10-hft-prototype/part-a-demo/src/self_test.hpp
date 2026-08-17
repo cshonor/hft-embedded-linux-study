@@ -6,6 +6,12 @@
 
 #include <cstdio>
 
+/*
+ * 不跑回放，只拿固定订单验证撮合/风控有没有写错。
+ * 价格写成 10300 表示 103.00 元（×100 tick）。
+ * 对照笔记 Ch3.2 三种场景 + Ch3.3 FIFO + Ch10.1 风控。
+ */
+
 inline int fail(const char* name, const char* why) {
     std::printf("FAIL  %s: %s\n", name, why);
     return 1;

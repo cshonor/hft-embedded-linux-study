@@ -4,6 +4,8 @@
 
 ALU 来自 [part-a](../part-a-alu-host/)。这里把零件收成 **取指 → 译码 → 执行 → 写回** 的 Moore 风格控制器。不是单周期一拍走完，故意拆拍，才能按周期讲信号。
 
+源码里有给新手的中文注释：先看 `cpu.h` 里 `Cpu` 每个字段，再看 `cpu.c` 的 `cpu_clock`（一拍只做一件事），指令怎么编码看 `isa.h` 顶部那张位图。
+
 ```bash
 make test
 ./cpu_sim --trace sum

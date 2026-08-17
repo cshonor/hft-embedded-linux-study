@@ -5,11 +5,11 @@
 
 enum class RiskReason : std::uint8_t {
     Ok = 0,
-    KillSwitch,
-    QtyCap,
-    PriceBand,
-    PositionCap,
-    RateLimit,
+    KillSwitch,  // 人工/异常总开关，全部拒
+    QtyCap,      // 单笔太大
+    PriceBand,   // 离中间价太远（防乌龙指）
+    PositionCap, // 仓位已经顶满，还想往同方向加
+    RateLimit,   // 这一拍下单太勤
 };
 
 inline const char* risk_str(RiskReason r) {
@@ -25,13 +25,17 @@ inline const char* risk_str(RiskReason r) {
 }
 
 struct RiskConfig {
-    Price band_ticks          = 80;   // 相对 mid 的最大偏离
+    Price band_ticks          = 80;  // 报价不能偏离 mid 超过这么多 tick
     Qty   max_order_qty       = 50;
     Qty   max_position        = 150;
     int   max_orders_per_tick = 4;
 };
 
-// 热路径风控：几次比较，不分配、不调系统调用。对应 Ch10.1。
+/*
+ * 本地风控：策略再怎么 bug，单子也先过这一关才进撮合。
+ * 对应笔记 Ch10.1——「违规单不出门」，不等交易所拒绝。
+ * 热路径只做几次 if，不 new、不加锁、不调系统调用。
+ */
 class RiskGate {
 public:
     RiskConfig cfg;
@@ -74,7 +78,7 @@ public:
         }
         const Qty abs_next = next >= 0 ? next : -next;
         const Qty abs_now  = inventory >= 0 ? inventory : -inventory;
-        // 允许减仓；禁止把绝对仓位越撑越大
+        // 已经超限时，只许减仓（绝对仓位变小），不许再加。
         if (abs_next > cfg.max_position && abs_next > abs_now) {
             ++rejects;
             return RiskReason::PositionCap;

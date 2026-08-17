@@ -3,6 +3,13 @@
 #include <stdio.h>
 #include <string.h>
 
+/*
+ * 把三个小程序跑一遍，检查寄存器/内存是不是预期值。
+ *
+ *   ./cpu_sim              跑全部
+ *   ./cpu_sim --trace sum  只跑累加，并每拍打印 FETCH/DECODE/EXECUTE/WB
+ */
+
 static int fails;
 
 static int expect(const char *name, int cond)

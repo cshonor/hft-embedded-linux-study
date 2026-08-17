@@ -10,6 +10,18 @@
 #include <cstdio>
 #include <thread>
 
+/*
+ * 引擎线程：从 SPSC 弹出事件，更新订单簿，必要时跑策略+风控+我们的报价。
+ *
+ * 一个 tick 的顺序（和实盘「先看行情再下单」一样）：
+ *   别人的撤/挂/市价冲击  →  可能打到我们的旧单
+ *   然后撤我们旧报价、按新 BBO 挂新买卖
+ *   风控不过的单直接扔掉，不进撮合
+ *
+ * 两个延迟：
+ *   queue_wait = 事件在环里排队（本机 WSL 往往是毫秒）
+ *   latency    = 弹出之后纯计算（报价+风控+下单，通常几百纳秒）
+ */
 struct DemoStats {
     int ticks        = 0;
     int events       = 0;
@@ -29,7 +41,7 @@ public:
     RiskGate     risk;
     LatencyHist  latency;      // 策略+风控+下单 纯计算
     LatencyHist  queue_wait;   // 事件在 SPSC 里排队
-    std::uint64_t next_id_ = 1'000'000'000ull;
+    std::uint64_t next_id_ = 1'000'000'000ull; // 和回放的 id（从 1 起）错开，避免撞号
     int events = 0;
     int ticks  = 0;
 
@@ -48,7 +60,7 @@ public:
         }
 
         if (!e.run_strategy) {
-            return;
+            return; // 这一笔只是市场更新，还没到我们决策的点
         }
 
         ++ticks;
@@ -58,6 +70,7 @@ public:
             queue_wait.add(t_compute0 - e.t0_ns);
         }
 
+        // 每拍先撤旧报价再挂新的（教学用 cancel-replace）。
         if (mm.live_bid_id) {
             book.cancel(mm.live_bid_id);
             mm.live_bid_id = 0;
@@ -91,6 +104,7 @@ public:
         Event e;
         for (;;) {
             while (!ring.try_pop(e)) {
+                // 空转等待。HFT 热路径宁愿空转，也不把核让给别人。
             }
             if (e.kind == EventKind::Shutdown) {
                 break;
@@ -166,6 +180,7 @@ inline DemoStats run_demo(const ReplayConfig& cfg) {
     Engine engine;
     Replay replay(cfg);
 
+    // 生产者：回放线程往环里塞事件。消费者：本线程弹出并处理。
     std::thread producer([&]() { replay.run(ring); });
     engine.consume(ring);
     producer.join();

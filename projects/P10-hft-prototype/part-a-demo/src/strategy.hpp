@@ -8,34 +8,45 @@
 
 struct StrategyConfig {
     Qty   quote_size   = 10;
-    Price half_spread  = 2;     // 基础半价差（tick）
-    Price skew_per_pos = 1;     // 每 10 张库存偏斜 1 tick
+    Price half_spread  = 2;  // 中间价上下各挂 2 tick，这就是我们想赚的价差
+    Price skew_per_pos = 1;  // 每囤 10 张，报价整体挪 1 tick
     Qty   skew_unit    = 10;
-    Price max_half     = 12;
+    Price max_half     = 12; // 波动再大也不把价差拉得无限宽
 };
 
-// 双边做市：价差收入 − 库存偏斜 − 波动加宽。对应 Ch12.1。
+/*
+ * 做市：同时挂买和卖，别人来成交我们就赚买卖价差。
+ *
+ *   PnL ≈ 成交量 × 价差  − 逆向选择  − 库存风险     （笔记 Ch12.1）
+ *
+ * 库存偏斜：手里货多了 → 买价/卖价一起下移，让市场更容易从我们这儿买走，
+ * 从而把库存降下来。货空了则反过来。
+ *
+ * 注意：每 tick 撤旧挂新，在 FIFO 市场会丢掉队列位置。这是教学简化。
+ */
 class MarketMaker {
 public:
     StrategyConfig cfg;
-    Qty inventory = 0;
-    std::int64_t cash_ticks = 0; // 以 tick·股 计的现金
+    Qty inventory = 0;           // >0 多头（买多了），<0 空头
+    std::int64_t cash_ticks = 0; // 现金，单位 tick×数量
 
-    std::uint64_t live_bid_id = 0;
+    std::uint64_t live_bid_id = 0; // 当前挂着的买/卖单号，下一拍要撤
     std::uint64_t live_ask_id = 0;
 
     int fills = 0;
     Qty filled_qty = 0;
     Price last_mid = kInvalidPrice;
-    double vol_ema = 0.0;
+    double vol_ema = 0.0; // 中间价变动的平滑值，用来把价差加宽
 
     void on_fill(const Trade& t) {
         const bool we_taker = t.taker_owner == kOwnerUs;
         const bool we_maker = t.maker_owner == kOwnerUs;
         if (!we_taker && !we_maker) {
-            return;
+            return; // 别人跟别人成交，与我们无关
         }
 
+        // 我们是 taker：方向就是 taker_side。
+        // 我们是 maker：对方买则我们在卖，对方卖则我们在买。
         Side our_side;
         if (we_taker) {
             our_side = t.taker_side;
@@ -45,16 +56,16 @@ public:
 
         if (our_side == Side::Buy) {
             inventory += t.qty;
-            cash_ticks -= t.price * t.qty;
+            cash_ticks -= t.price * t.qty; // 花钱拿货
         } else {
             inventory -= t.qty;
-            cash_ticks += t.price * t.qty;
+            cash_ticks += t.price * t.qty; // 出货收钱
         }
         ++fills;
         filled_qty += t.qty;
     }
 
-    // 标记 PnL = 现金 + 库存 * mid
+    // 把库存按现在的中间价标成现金：账面盈亏。
     std::int64_t mtm_pnl(Price mid) const {
         if (mid == kInvalidPrice) {
             return cash_ticks;
@@ -88,14 +99,14 @@ public:
             skew = (inventory / cfg.skew_unit) * cfg.skew_per_pos;
         }
 
-        // 库存多 → 买价下移、卖价下移（更想卖）
+        // 库存多 → 两边报价下移（更想卖掉）；库存空 → 上移（更想买回）。
         Price bid_px = mid_now - half - skew;
         Price ask_px = mid_now + half - skew;
         if (bid_px < 1) {
             bid_px = 1;
         }
         if (ask_px <= bid_px) {
-            ask_px = bid_px + 1;
+            ask_px = bid_px + 1; // 买价不能超过卖价，否则自己跟自己成交
         }
 
         Order bid;

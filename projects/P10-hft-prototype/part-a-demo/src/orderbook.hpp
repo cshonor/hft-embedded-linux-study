@@ -8,18 +8,34 @@
 #include <unordered_map>
 #include <vector>
 
+/*
+ * 限价订单簿（LOB）= 买单簿 + 卖单簿。
+ *
+ *   买单 bids：价格从高到低（std::greater）——最优买 = begin()
+ *   卖单 asks：价格从低到高（std::less）  ——最优卖 = begin()
+ *
+ * 同一价格上多张单用 list 排队：先到先成交（FIFO，笔记 Ch3.3）。
+ *
+ * 撮合三种结果（Ch3.2）：
+ *   Best Price   买单先吃最便宜的卖
+ *   Partial Fill 只吃到一部分，限价剩余再挂上
+ *   No Match     价格碰不上，整单挂上
+ *
+ * 成交价 = 被吃那张挂单的价格（价格改善归主动方）。
+ */
 struct PriceLevel {
     std::list<Order> orders;
-    Qty total = 0;
+    Qty total = 0; // 这一档所有订单数量之和，避免每次遍历 list
 };
+
+// 撤单时：用订单 id 反查它在买还是卖、什么价格。
 
 struct BookLoc {
     Side  side;
     Price price;
 };
 
-// 限价订单簿：买单降序、卖单升序；同价 FIFO。
-// 语义对齐 14-hft-engineering Ch3.2 / Ch3.3 与 P8 Phase 1。
+// 限价订单簿。demo 用 std::map，正确性优先；生产会换成数组网格做到 O(1) 摸 BBO。
 class OrderBook {
 public:
     using BidMap = std::map<Price, PriceLevel, std::greater<Price>>;
@@ -57,10 +73,12 @@ public:
             return {};
         }
 
+        // 市价单不看价格：买单当成「无限高」，卖单当成 0，好走同一套 crosses()。
         if (order.type == OrderType::Market) {
             order.price = (order.side == Side::Buy) ? kMaxPrice : 0;
         }
 
+        // FOK：先问「对手盘够不够」，不够整单作废，连一股都不成交。
         if (order.type == OrderType::FOK) {
             if (available_to_fill(order) < order.qty) {
                 return {};
@@ -71,6 +89,7 @@ public:
         std::vector<Trade> trades;
         match(order, trades);
 
+        // Limit 才挂剩余；Market / IOC 吃完就停，不排队。
         const bool rest = (order.type == OrderType::Limit) && order.qty > 0;
         if (rest) {
             rest_order(order);
@@ -132,6 +151,7 @@ private:
     }
 
     static bool crosses(const Order& o, Price opp) {
+        // 买单能吃到这档卖：买价 >= 卖价；卖单对称。
         if (o.side == Side::Buy) {
             return o.price >= opp;
         }
@@ -152,17 +172,17 @@ private:
 
     template <typename Map>
     void match_against(Order& incoming, Map& opp, std::vector<Trade>& trades) {
-        auto it = opp.begin();
+        auto it = opp.begin(); // 对手盘最优价
         while (incoming.qty > 0 && it != opp.end()) {
             const Price px = it->first;
             if (!crosses(incoming, px)) {
-                break;
+                break; // 价格碰不上，后面更差，不用看了
             }
             PriceLevel& lvl = it->second;
-            auto oit = lvl.orders.begin();
+            auto oit = lvl.orders.begin(); // FIFO：队头先成交
             while (incoming.qty > 0 && oit != lvl.orders.end()) {
                 if (incoming.owner != kOwnerMarket && oit->owner == incoming.owner) {
-                    ++oit; // STP：只跳过我方自成交
+                    ++oit; // 自成交保护：跳过自己的挂单，继续找别人
                     continue;
                 }
                 const Qty q = std::min(incoming.qty, oit->qty);
@@ -186,6 +206,7 @@ private:
     }
 
     void match(Order& incoming, std::vector<Trade>& trades) {
+        // 买单去吃卖盘；卖单去吃买盘。
         if (incoming.side == Side::Buy) {
             match_against(incoming, asks, trades);
         } else {
@@ -194,6 +215,7 @@ private:
     }
 
     void rest_order(const Order& o) {
+        // push_back = 排到该价位队尾，保证时间优先。
         if (o.side == Side::Buy) {
             PriceLevel& lvl = bids[o.price];
             lvl.orders.push_back(o);

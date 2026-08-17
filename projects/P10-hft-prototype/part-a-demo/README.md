@@ -58,3 +58,16 @@ cmake --build build
 | `src/main.cpp` | 入口 |
 
 卡住翻哪篇 → [docs/design.md §2](../docs/design.md)
+
+## 新手怎么读源码
+
+注释讲「为什么」，不是翻译每一行。建议顺序：
+
+1. `types.hpp` — tick 价格、谁是我们 / 谁是市场
+2. `orderbook.hpp` — 买单簿+卖单簿、FIFO、三种成交
+3. `spsc_ring.hpp` — 为什么不用锁
+4. `strategy.hpp` — 价差怎么赚、库存为什么要偏斜
+5. `risk.hpp` — 策略 bug 也出不了门
+6. `engine.hpp` — 两线程怎么串起来
+
+看报告时：`compute` 是策略计算；`queue` 是事件在环里排队，WSL 上会大很多，这是正常的。

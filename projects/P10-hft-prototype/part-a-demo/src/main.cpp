@@ -5,6 +5,15 @@
 #include <cstring>
 #include <string>
 
+/*
+ *   ./hft_demo --self-test     先确认撮合规则
+ *   ./hft_demo                 默认 2 万 tick 做市回放
+ *   ./hft_demo --jump 0        关掉跳价，对比 PnL（逆向选择）
+ *
+ * 源码阅读顺序：types.hpp → orderbook.hpp → spsc_ring.hpp
+ *              → strategy.hpp → risk.hpp → engine.hpp
+ */
+
 static void usage() {
     std::printf("usage:\n");
     std::printf("  hft_demo --self-test\n");
