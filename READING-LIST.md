@@ -280,8 +280,8 @@
 |--------|--------|------|--------|
 | M0 语法扫盲 | [04-C++Primer](./04-cpp/M0-entry-syntax/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
 | M1 Modern C++ | [04-Effective-Modern-C++](04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | 🔴 必读 | **12 PNP 之前** |
-| M4 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M4-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M4-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **14 HFT 之前** |
-| M3 STL / Effective | [02–06](./04-cpp/M3-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
+| M3 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M3-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M3-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **14 HFT 之前** |
+| M4 STL / Effective | [02–06](./04-cpp/M4-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
 | M5 C++17/20 | [04-C++17](04-cpp/M5-advanced-standards/01-C++17-The-Complete-Guide) · [04-C++20](04-cpp/M5-advanced-standards/02-C++20-The-Complete-Guide) | 🟡 选读 | **18 之后** |
 
 **HFT 产出：** 能读 muduo / HFT 引擎源码；RAII、移动语义、线程同步不再卡脖子。

@@ -1,4 +1,4 @@
-# M3 · Engineering Standards（工程规范穿插）
+# M4 · Engineering Standards（工程规范穿插）
 
 > **里程碑定位：** 🟡 按需查 · 不顺序读
 > **学习顺序：** M1 之后穿插（M2 PNP 写容器/缓冲区时查）
@@ -35,4 +35,4 @@
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M1](../M1-modern-cpp/) · [下一站 M4 硬门槛](../M4-deep-principles/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M1](../M1-modern-cpp/) · [下一站 M3 硬门槛](../M3-deep-principles/)

@@ -50,7 +50,7 @@
 |------|----------|
 | [`03` linux-userspace-api](../../03-linux-userspace-api/) | TLPI：socket、epoll、线程、信号、mmap |
 | [`P9` os-from-scratch](../../projects/P9-os-from-scratch/) | 自制 OS 的 syscall/中断/调度直觉 |
-| [`04` cpp](../../04-cpp/) | Modern C++（M1）+ 并发（M4）+ 对象模型 |
+| [`04` cpp](../../04-cpp/) | Modern C++（M1）+ 并发（M3）+ 对象模型 |
 
 ## 前置
 

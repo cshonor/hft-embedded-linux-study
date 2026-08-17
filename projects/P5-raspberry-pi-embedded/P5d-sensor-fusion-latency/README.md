@@ -11,7 +11,7 @@
 |--------|-------------|
 | [Pi5 Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) | 板级动手清单 |
 | [CSAPP 12.5 信号量与预线程化](../../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.5-信号量与预线程化.md) | 线程池同步基础 |
-| [C++ Concurrency ch03](../../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) | mutex/atomic |
+| [C++ Concurrency ch03](../../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) | mutex/atomic |
 
 ---
 
@@ -185,7 +185,7 @@ void *fuse_worker(void *arg) {
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 无锁队列原理 | [C++ Concurrency ch07](../../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch07-lock-free-containers/) |
+| 无锁队列原理 | [C++ Concurrency ch07](../../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch07-lock-free-containers/) |
 | 你写的 ring buffer | P2.5 交付物 3（直接复用代码！）|
 
 ---

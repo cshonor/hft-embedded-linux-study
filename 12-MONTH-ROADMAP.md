@@ -39,7 +39,7 @@ M11-M12 Phase 5B+   HFT 工程实践 + 撮合引擎原型
 | W1-W2 | `01` C 和指针 ch12-18 + 自测题 | P2 Shell + malloc（fork/exec/pipe + 自制 malloc） |
 | W3-W4 | `04` C++ M0 Primer 快速过（C 转 C++） | RAII / 引用 / 模板 / STL 基础 |
 | W5-W6 | `04` M1 Effective Modern C++ | auto / move / smart ptr / constexpr |
-| W7-W8 | `04` M4 并发 + 对象模型 | std::thread / mutex / vtable / 内存模型 |
+| W7-W8 | `04` M3 并发 + 对象模型 | std::thread / mutex / vtable / 内存模型 |
 
 **过关标准：** C → C++ 切换完成，能写 RAII 风格的并发 HTTP Server。
 

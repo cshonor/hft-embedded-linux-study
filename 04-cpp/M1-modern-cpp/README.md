@@ -55,4 +55,4 @@ C++11/14 是分水岭，老 C++ 和现代 C++ 是两种写法。这 42 条不过
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M0](../M0-entry-syntax/) · [下一站 M3 穿插](../M3-engineering-standards/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M0](../M0-entry-syntax/) · [下一站 M4 穿插](../M4-engineering-standards/)

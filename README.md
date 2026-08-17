@@ -188,7 +188,7 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19 · P9(OS from scratch) ·（兴趣）
 | 12 | DPDK（官方文档 + 深入浅出 DPDK） | `13` | PMD、mbuf、零拷贝旁路 |
 | — | The Linux Programming Interface — Kerrisk | `03` | epoll、mmap、mlock、RT 调度 |
 | — | Linux Kernel Debugging — Billimoria | `05.6` | KASAN/KGDB/Ftrace 内核正确性调试 |
-| 外C | C++ 学习链（Primer→Effective→Concurrency） | `04` | M1 Modern C++ / M4 并发+对象模型 |
+| 外C | C++ 学习链（Primer→Effective→Concurrency） | `04` | M1 Modern C++ / M3 并发+对象模型 |
 | 外P | 陈硕 PNP / muduo | `04/M2` | epoll 多路复用实验骨架 |
 | 外B | UNP Vol.1 — Stevens | `03.5` | Socket API、TCP_NODELAY、非阻塞 |
 | 外A | TCP/IP Illustrated Vol.1 — Stevens | `11` | UDP/组播、IP 分片、TCP |

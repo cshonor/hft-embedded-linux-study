@@ -1,7 +1,7 @@
 # C++ 学习链 · 里程碑与 HFT 插入顺序
 
 > **笔记正文：** 本目录 M0–M5 六个模块（M0、M1、M3–M5 自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制；M2 = C++ 网络编程 muduo/PNP）  
-> **HFT 读序 = 模块编号 M0→M5** — 实际顺序 M0→M1→M2→M3（穿插）→M4，M5 可选，以本表里程碑为准。
+> **HFT 读序 = 模块编号 M0→M5** — 实际顺序 M0→M1→M2→M3→M4（穿插），M5 可选，以本表里程碑为准。
 
 ---
 
@@ -40,25 +40,25 @@
 
 ---
 
-### M4 · 开 HFT 引擎前 🔴
+### M3 · 开 HFT 引擎前 🔴
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [2-Cpp-Concurrency](./M4-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 | **03.5–12 网络栈进行中或之后、14 HFT 之前** |
-| [2-Cpp-Object-Model](./M4-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
+| [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 | **03.5–12 网络栈进行中或之后、14 HFT 之前** |
+| [2-Cpp-Object-Model](./M3-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 | 与 Concurrency **并行或略前** |
 
 **验收：** 能写 mutex/condition_variable、理解 data race；能解释类大小、对齐、继承布局。
 
 ---
 
-### M3 · STL 与规范（PNP 期间穿插）🟡
+### M4 · STL 与规范（PNP 期间穿插）🟡
 
 | 目录 | 书目 | 何时 |
 |------|------|------|
-| [3-Effective-C++](./M3-engineering-standards/01-Effective-C++/) | Effective C++ | M1 之后按需 |
-| [3-More-Effective-C++](./M3-engineering-standards/02-More-Effective-C++/) | More Effective C++ | 同上 |
-| [3-Effective-STL](./M3-engineering-standards/03-Effective-STL/) | Effective STL | **M2 PNP** 写缓冲区 / 容器时 |
-| [3-STL-Source-Analysis](./M3-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
+| [3-Effective-C++](./M4-engineering-standards/01-Effective-C++/) | Effective C++ | M1 之后按需 |
+| [3-More-Effective-C++](./M4-engineering-standards/02-More-Effective-C++/) | More Effective C++ | 同上 |
+| [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | Effective STL | **M2 PNP** 写缓冲区 / 容器时 |
+| [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 | 时间紧可后补 |
 
 ---
 
@@ -82,7 +82,7 @@
                 ↓
            M2 PNP → 11 TCP/IP → 12 内核网络 → 13 DPDK → 14 HFT
                 ↓
-           【04 · M4 并发 + 对象模型】
+           【04 · M3 并发 + 对象模型】
                 ↓
            14 HFT（C++ 引擎）
                 ↓

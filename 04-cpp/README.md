@@ -16,12 +16,12 @@
 |------|------|------|
 | M0 入门语法 | [0-C++Primer](./M0-entry-syntax/01-C++Primer/) | C++ Primer 5e |
 | M1 现代 C++ 🔴 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | Effective Modern C++ |
-| M4 深入原理 🔴 | [2-Cpp-Object-Model](./M4-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 |
-|  | [2-Cpp-Concurrency](./M4-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 |
-| M3 工程规范 🟡 | [3-Effective-C++](./M3-engineering-standards/01-Effective-C++/) | Effective C++ |
-|  | [3-More-Effective-C++](./M3-engineering-standards/02-More-Effective-C++/) | More Effective C++ |
-|  | [3-Effective-STL](./M3-engineering-standards/03-Effective-STL/) | Effective STL |
-|  | [3-STL-Source-Analysis](./M3-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 |
+| M3 深入原理 🔴 | [2-Cpp-Object-Model](./M3-deep-principles/01-Cpp-Object-Model/) | 深度探索 C++ 对象模型 |
+|  | [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) | C++ 并发编程实战 |
+| M4 工程规范 🟡 | [3-Effective-C++](./M4-engineering-standards/01-Effective-C++/) | Effective C++ |
+|  | [3-More-Effective-C++](./M4-engineering-standards/02-More-Effective-C++/) | More Effective C++ |
+|  | [3-Effective-STL](./M4-engineering-standards/03-Effective-STL/) | Effective STL |
+|  | [3-STL-Source-Analysis](./M4-engineering-standards/04-STL-Source-Analysis/) | STL 源码剖析 |
 | M5 进阶标准 ⚪ | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | C++17 Complete Guide |
 |  | [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | C++20 Complete Guide |
 | **M2 C++ 网络编程** 🔴 | [M2-cpp-network-programming](./M2-cpp-network-programming/) | 陈硕《Linux 多线程服务端编程》（muduo / PNP 实验笔记 ×9） |
@@ -42,7 +42,7 @@
 |------|------------|----------------|
 | 打底 | **02 CSAPP** | 可选：[0-C++Primer](./M0-entry-syntax/01-C++Primer/) Part I |
 | **开写 C++ 网络前** | → **M2 PNP**（本目录） | 🔴 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) |
-| **开 HFT 引擎前** | → **14 HFT** | 🔴 [2-Cpp-Concurrency](./M4-deep-principles/02-Cpp-Concurrency/) + 🟡 [2-Cpp-Object-Model](./M4-deep-principles/01-Cpp-Object-Model/) |
+| **开 HFT 引擎前** | → **14 HFT** | 🔴 [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) + 🟡 [2-Cpp-Object-Model](./M3-deep-principles/01-Cpp-Object-Model/) |
 | 进阶 | 17 之后 / 与 Rust 对照 | [4-C++17](./M5-advanced-standards/01-C++17-The-Complete-Guide/) · [4-C++20](./M5-advanced-standards/02-C++20-The-Complete-Guide/) |
 
 完整里程碑 → [OUTLINE.md](./OUTLINE.md)
@@ -65,8 +65,8 @@
 
 | 本仓库 | 本目录 |
 |--------|--------|
-| [02 CSAPP](../02-computer-systems/) Ch12 并发 | → [2-Cpp-Concurrency](./M4-deep-principles/02-Cpp-Concurrency/) |
-| [02 CSAPP](../02-computer-systems/) Ch6 缓存 | → [2-Cpp-Object-Model](./M4-deep-principles/01-Cpp-Object-Model/) |
+| [02 CSAPP](../02-computer-systems/) Ch12 并发 | → [2-Cpp-Concurrency](./M3-deep-principles/02-Cpp-Concurrency/) |
+| [02 CSAPP](../02-computer-systems/) Ch6 缓存 | → [2-Cpp-Object-Model](./M3-deep-principles/01-Cpp-Object-Model/) |
 | [M2 PNP / muduo](./M2-cpp-network-programming/) | 前置 [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/)；C 侧对照 [03.5 UNP](../03.5-unix-network-api/) |
 | [14 HFT](../14-hft-engineering/) | 前置 Modern + Concurrency + Object Model |
 | [01 C](../01-c-language/) | C 数据面；与 C++ **分工不重复** |

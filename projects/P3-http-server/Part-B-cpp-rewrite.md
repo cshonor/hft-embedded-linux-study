@@ -9,8 +9,8 @@
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
 | [Effective Modern C++ ch01](../../04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | auto/unique_ptr/move 语义 |
-| [Cpp Concurrency ch02-03](../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch02-managing-threads) | std::thread / mutex / lock_guard |
-| [Cpp Concurrency ch08](../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code) | 线程池设计 |
+| [Cpp Concurrency ch02-03](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch02-managing-threads) | std::thread / mutex / lock_guard |
+| [Cpp Concurrency ch08](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code) | 线程池设计 |
 | [CSAPP 12.3 线程](../../02-computer-systems/chapter-12-concurrent-programming/notes/section-12.3-基于线程的并发编程.md) | 线程基础概念 |
 
 ---
@@ -182,10 +182,10 @@ private:
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| std::thread 管理 | [Concurrency ch02](../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch02-managing-threads/) |
-| mutex/lock_guard | [Concurrency ch03](../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) |
-| condition_variable | [Concurrency ch04](../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch04-synchronizing-operations/) |
-| 线程池设计 | [Concurrency ch08](../../04-cpp/M4-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code/) |
+| std::thread 管理 | [Concurrency ch02](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch02-managing-threads/) |
+| mutex/lock_guard | [Concurrency ch03](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch03-sharing-data/) |
+| condition_variable | [Concurrency ch04](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch04-synchronizing-operations/) |
+| 线程池设计 | [Concurrency ch08](../../04-cpp/M3-deep-principles/02-Cpp-Concurrency/ch08-designing-concurrent-code/) |
 
 ---
 

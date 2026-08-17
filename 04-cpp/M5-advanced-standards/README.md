@@ -1,7 +1,7 @@
 # M5 · Advanced Standards（进阶标准）
 
 > **里程碑定位：** ⚪ 可选 · 用到再查
-> **学习顺序：** M4 之后（14 HFT 主线跑通后）
+> **学习顺序：** M3 之后（14 HFT 主线跑通后）
 > **难度：** ⭐⭐⭐⭐
 
 ## 包含的书
@@ -49,8 +49,8 @@ C++20 很多特性在 C++17 基础上完善：先吃透 17 再读 20 更顺。
 
 ## 跨模块参考
 
-- **04 STL 源码剖析** 物理上在 [M3](../M3-engineering-standards/04-STL-Source-Analysis/)（和 03 Effective STL 一起作工具书）。LEARNING-PATH 提到"如 M3 未读可放 M4"——指的是阅读时机可后移到 M4 阶段，书的物理位置不动。
+- **04 STL 源码剖析** 物理上在 [M3](../M4-engineering-standards/04-STL-Source-Analysis/)（和 03 Effective STL 一起作工具书）。LEARNING-PATH 提到"如 M4 未读可放 M3"——指的是阅读时机可后移到 M3 阶段，书的物理位置不动。
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M4](../M4-deep-principles/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M3](../M3-deep-principles/)

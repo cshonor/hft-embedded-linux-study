@@ -1,7 +1,7 @@
-# M4 · Deep Principles（深入原理）
+# M3 · Deep Principles（深入原理）
 
 > **里程碑定位：** 🔴 硬门槛 · 开 HFT 前必过
-> **学习顺序：** M1 之后、M3 穿插之后（03.5–12 网络栈进行中或之后、14 HFT 之前）
+> **学习顺序：** M1 之后、M4 穿插之后（03.5–12 网络栈进行中或之后、14 HFT 之前）
 > **难度：** ⭐⭐⭐⭐⭐
 
 ## 包含的书
@@ -35,4 +35,4 @@
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M3 穿插](../M3-engineering-standards/) · [下一站 M5 进阶](../M5-advanced-standards/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M4 穿插](../M4-engineering-standards/) · [下一站 M5 进阶](../M5-advanced-standards/)
