@@ -31,7 +31,7 @@ signal_ts → encode → send() → 内核 TCP → NIC → wire RTT → 交易�
            TTFB 本地    Connection/队列      RTT（共置仍非零）
 ```
 
-→ Ch 2 [延迟分解](../../chapter-02-methodologies/) · [14-HFT ch10](../../../14-hft-engineering/chapter-10-延迟测量与基准压测/README.md)
+→ Ch 2 [延迟分解](../../chapter-02-methodologies/) · [14-HFT ch10](../../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md)
 
 ### 缓冲与积压（Buffering & Backlog）
 

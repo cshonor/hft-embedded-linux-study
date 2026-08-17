@@ -3,7 +3,7 @@
 > **原书第 8 章 · C++ – The Quest for Microsecond Latency**
 > **内存模型 · 静态多态 · 内存池 · 模板 · 静态分析 · FX 实战**
 
-← [chapter-07 无锁环](../chapter-07-无锁数据结构与内存布局/README.md) · [chapter-10 测量](../chapter-10-延迟测量与基准压测/README.md)
+← [chapter-07 无锁环](../chapter-07-无锁数据结构与内存布局/README.md) · [chapter-09 测量](../chapter-09-延迟测量与基准压测/README.md)
 
 ---
 
@@ -43,7 +43,7 @@
 | **静态分析** | Klocwork / Cppcheck / Clang SA |
 | **FX 实战** | 多进程绑核 · mmap 环 · OpenOnload · Hugepage · 预热 |
 
-**C++ 性能圣经落地后** → 策略：[chapter-13](../chapter-13-高频做市与套利策略/README.md) · 风控：[chapter-11](../chapter-11-风控合规与滑点控制/README.md)
+**C++ 性能圣经落地后** → 策略：[chapter-12](../chapter-12-高频做市与套利策略/README.md) · 风控：[chapter-10](../chapter-10-风控合规与滑点控制/README.md)
 
 ## 原书章节对照
 

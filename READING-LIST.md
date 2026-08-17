@@ -347,10 +347,10 @@
 | ch06 低延迟网络与协议优化 | Rosen + **13 DPDK** | [12 PNP](./04-cpp/M5-cpp-network-programming/)、CSAPP Ch11、**06.7 BPF Ch10** |
 | ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12、CSAPP Ch4 |
 | ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**13 DPDK** |
-| ch09 高频做市与套利策略 | Harris | — |
-| ch10 延迟测量与基准压测 | Gregg SysPerf + **06.7 BPF** | **13 DPDK** testpmd |
-| ch11 风控合规与滑点控制 | Harris（监管/规则） | — |
-| ch12 实盘上线与运维进阶 | Gregg BPF | **13 DPDK** / OpenOnload / RDMA 对比笔记 |
+| ch09 延迟测量与基准压测 | Gregg SysPerf + **06.7 BPF** | **13 DPDK** testpmd |
+| ch10 风控合规与滑点控制 | Harris（监管/规则） | — |
+| ch11 实盘上线与运维进阶 | Gregg BPF | **13 DPDK** / OpenOnload / RDMA 对比笔记 |
+| ch12 高频做市与套利策略 | Harris | — |
 
 ---
 

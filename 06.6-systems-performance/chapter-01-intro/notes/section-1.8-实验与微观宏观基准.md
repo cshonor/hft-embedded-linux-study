@@ -65,7 +65,7 @@ taskset -c 2 ./hash_microbench
 
 → NUMA/绑核：[Ch 6 CPU](../../chapter-06-cpus/) · 大页：[Ch 7 内存](../../chapter-07-memory/) · [HFT ch05 内核调优](../../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md)
 
-→ [Ch 12 基准测试](../../chapter-12-benchmarking/) · [HFT ch10 延迟测量](../../../14-hft-engineering/chapter-10-延迟测量与基准压测/README.md)
+→ [Ch 12 基准测试](../../chapter-12-benchmarking/) · [HFT ch10 延迟测量](../../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md)
 
 ### 观测 vs 实验 — 「不干预」vs「控变量加压」
 

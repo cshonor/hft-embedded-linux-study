@@ -17,7 +17,7 @@
 | [HFT ch03 订单簿](../../14-hft-engineering/chapter-03-订单簿深度与行情解析/README.md) | LOB = 买单簿 + 卖单簿 |
 | [HFT ch07 无锁数据结构](../../14-hft-engineering/chapter-07-无锁数据结构与内存布局/README.md) | SPSC ring buffer、缓存行对齐 |
 | [HFT ch08 核心引擎](../../14-hft-engineering/chapter-08-超低延迟核心引擎开发/README.md) | 绑核/大页/mlock |
-| [HFT ch10 延迟测量](../../14-hft-engineering/chapter-10-延迟测量与基准压测/README.md) | p50/p99/p999 |
+| [HFT ch09 延迟测量](../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md) | p50/p99/p999 |
 | [Harris 订单类型](../../19-markets-microstructure/) | 限价单/市价单/IOC/FOK |
 
 ---
@@ -315,7 +315,7 @@ int main() {
 | 卡住了… | 翻这里 |
 |---------|--------|
 | 绑核/大页/mlock | [HFT ch05](../../14-hft-engineering/chapter-05-操作系统内核极致调优/README.md) |
-| 延迟测量 | [HFT ch10](../../14-hft-engineering/chapter-10-延迟测量与基准压测/README.md) |
+| 延迟测量 | [HFT ch09](../../14-hft-engineering/chapter-09-延迟测量与基准压测/README.md) |
 | 内存布局 | [HFT ch07](../../14-hft-engineering/chapter-07-无锁数据结构与内存布局/README.md) |
 
 ---

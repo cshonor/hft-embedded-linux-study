@@ -24,8 +24,8 @@
 | 3 | **IPC** 无锁 Ring · 内存池 | [Ch7 无锁/内存（原书 Ch6§2–3）](./chapter-07-无锁数据结构与内存布局/README.md) |
 | 4 | **语言** C++ 关键路径 | [Ch8（原书 Ch8）](./chapter-08-超低延迟核心引擎开发/README.md) · [Ch1 §5 语言选择](./chapter-01-高频交易基础与生态/1.5-编程语言选择.md) |
 | 5 | **网络** 交换机 · TCP/UDP · 包路径 · PTP | [Ch6 动态网络](./chapter-06-低延迟网络与协议优化/README.md) |
-| 6 | **FPGA / Crypto** ns 级 · 云端共址 | [Ch15（原书 Ch11）](./chapter-15-fpga-与加密货币高频/README.md) · [Ch4 §4 硬件选型速查](./chapter-04-硬件选型与服务器配置/4.4-硬件选型速查.md) |
-| 7 | **测量** T2T 分段 · 异步日志 · Bypass 总纲 | [Ch10 日志/测量（原书 Ch7）](./chapter-10-延迟测量与基准压测/README.md) |
+| 6 | **FPGA / Crypto** ns 级 · 云端共址 | [Ch13（原书 Ch11）](./chapter-13-fpga-与加密货币高频/README.md) · [Ch4 §4 硬件选型速查](./chapter-04-硬件选型与服务器配置/4.4-硬件选型速查.md) |
+| 7 | **测量** T2T 分段 · 异步日志 · Bypass 总纲 | [Ch9 日志/测量（原书 Ch7）](./chapter-09-延迟测量与基准压测/README.md) |
 
 **入门实操：** [Ch1 实战启动建议](./chapter-01-高频交易基础与生态/1.8-实战启动建议.md)
 
@@ -43,11 +43,11 @@
 | 6 | [chapter-06 动态网络（原书 Ch5）](./chapter-06-低延迟网络与协议优化/README.md) | ✅ 要点 |
 | 7 | [chapter-07 无锁与内存池（原书 Ch6§2–3）](./chapter-07-无锁数据结构与内存布局/README.md) | ✅ 要点 |
 | 8 | [chapter-08 C++ 微秒征途（原书 Ch8）](./chapter-08-超低延迟核心引擎开发/README.md) | ✅ 要点 |
-| 10 | [chapter-10 日志与 TTT 测量（原书 Ch7）](./chapter-10-延迟测量与基准压测/README.md) | ✅ 要点 |
-| 11 | [chapter-11 风控合规](./chapter-11-风控合规与滑点控制/README.md) | ✅ 要点 |
-| 12 | [chapter-12 实盘运维](./chapter-12-实盘上线与运维进阶/README.md) | ✅ 要点 |
-| 13 | [chapter-13 做市与套利（本仓库扩展）](./chapter-13-高频做市与套利策略/README.md) | ✅ 要点 |
-| 15 | [chapter-15 FPGA 与 Crypto（原书 Ch11）](./chapter-15-fpga-与加密货币高频/README.md) | ✅ 要点 |
+| 9 | [chapter-09 日志与 TTT 测量（原书 Ch7）](./chapter-09-延迟测量与基准压测/README.md) | ✅ 要点 |
+| 10 | [chapter-10 风控合规](./chapter-10-风控合规与滑点控制/README.md) | ✅ 要点 |
+| 11 | [chapter-11 实盘运维](./chapter-11-实盘上线与运维进阶/README.md) | ✅ 要点 |
+| 12 | [chapter-12 做市与套利（本仓库扩展）](./chapter-12-高频做市与套利策略/README.md) | ✅ 要点 |
+| 13 | [chapter-13 FPGA 与 Crypto（原书 Ch11）](./chapter-13-fpga-与加密货币高频/README.md) | ✅ 要点 |
 
 ---
 
