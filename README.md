@@ -13,7 +13,7 @@
 |------|------|----------|
 | **[hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)** | 本仓：读序、OUTLINE、章节 scaffold | `00`–`19` |
 | **[cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)** | C / C++ 详细笔记与代码 | [01 C](./01-c-language/) · [04 C++](./04-cpp/) |
-| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [03.5 UNP](./03.5-unix-network-api/) · [04/M5 C++ 网络编程](./04-cpp/M5-cpp-network-programming/) |
+| [Computer-Networking](https://github.com/cshonor/Computer-Networking) | Socket / UNP / TCP/IP 实战代码 | [03.5 UNP](./03.5-unix-network-api/) · [04/M2 C++ 网络编程](./04-cpp/M2-cpp-network-programming/) |
 
 ```bash
 git clone https://github.com/cshonor/hft-embedded-linux-study.git
@@ -188,8 +188,8 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19 · P9(OS from scratch) ·（兴趣）
 | 12 | DPDK（官方文档 + 深入浅出 DPDK） | `13` | PMD、mbuf、零拷贝旁路 |
 | — | The Linux Programming Interface — Kerrisk | `03` | epoll、mmap、mlock、RT 调度 |
 | — | Linux Kernel Debugging — Billimoria | `05.6` | KASAN/KGDB/Ftrace 内核正确性调试 |
-| 外C | C++ 学习链（Primer→Effective→Concurrency） | `04` | M1 Modern C++ / M2 并发+对象模型 |
-| 外P | 陈硕 PNP / muduo | `04/M5` | epoll 多路复用实验骨架 |
+| 外C | C++ 学习链（Primer→Effective→Concurrency） | `04` | M1 Modern C++ / M4 并发+对象模型 |
+| 外P | 陈硕 PNP / muduo | `04/M2` | epoll 多路复用实验骨架 |
 | 外B | UNP Vol.1 — Stevens | `03.5` | Socket API、TCP_NODELAY、非阻塞 |
 | 外A | TCP/IP Illustrated Vol.1 — Stevens | `11` | UDP/组播、IP 分片、TCP |
 
@@ -219,7 +219,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 | **P3.5** | BusyBox 极简 Linux：内核编译 + rootfs + QEMU 启动到 shell | `05` `08` | P3 | [projects/P3.5-busybox-minimal-linux](./projects/P3.5-busybox-minimal-linux/) |
 | **P4** | 可加载内核模块：字符设备 + kmalloc 追踪 + /proc 统计 | `05` `05.5` `05.6` `06` | P3+P3.5+P2.5 | [projects/P4-kernel-module](./projects/P4-kernel-module/) |
 | **P5** | 树莓派嵌入式 Linux 全链路（6 子项目见下） | `07`–`10` + P5 Labs | P4 | [projects/P5-raspberry-pi-embedded](./projects/P5-raspberry-pi-embedded/) |
-| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04/M5` `11` `12` `12.5` `06.7` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
+| **P6** | raw socket 抓包 + 逐层解析 + TCP 流重组 + eBPF 追踪 NAPI | `04/M2` `11` `12` `12.5` `06.7` | P3 | [projects/P6-network-protocol-analyzer](./projects/P6-network-protocol-analyzer/) |
 | **P7** | DPDK packet forwarder + perf 火焰图 + bpftrace 延迟探针 | `13` `06.6` `06.7` | P6 | [projects/P7-dpdk-forwarder-profiling](./projects/P7-dpdk-forwarder-profiling/) |
 | **P8** | 限价订单簿撮合引擎：无锁 ring buffer + 绑核/Hugepage + Rust 重写 | `14` `18` `19` | P4+P5+P7 | [projects/P8-matching-engine](./projects/P8-matching-engine/) |
 | **P10** | HFT 单机原型：DPDK 行情 + 撮合引擎 + 策略 + 风控 + 回测完整链路 | `13` `14` `15` `19` | P7+P8 | [projects/P10-hft-prototype](./projects/P10-hft-prototype/) |

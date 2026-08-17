@@ -1,7 +1,7 @@
 # P6 — 网络协议分析器
 
 > 用 raw socket 抓包、逐层解析、TCP 流重组，再用 eBPF 追踪内核 NAPI 收包路径，把"报文从网卡到用户态"整条链看穿。
-> **做法：项目驱动，[`12`](../../04-cpp/M5-cpp-network-programming/) / [`13`](../../11-tcpip-protocols/) / [`14`](../../12-kernel-networking/) / [`17`](../../06.7-bpf-observability/) 笔记当字典。**
+> **做法：项目驱动，[`12`](../../04-cpp/M2-cpp-network-programming/) / [`13`](../../11-tcpip-protocols/) / [`14`](../../12-kernel-networking/) / [`17`](../../06.7-bpf-observability/) 笔记当字典。**
 
 ---
 
@@ -288,7 +288,7 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 | 模块 | 用到什么 |
 |------|----------|
-| [`12` network-sockets](../../04-cpp/M5-cpp-network-programming/) | UNP：raw socket、socket 选项 |
+| [`12` network-sockets](../../04-cpp/M2-cpp-network-programming/) | UNP：raw socket、socket 选项 |
 | [`13` tcpip-protocols](../../11-tcpip-protocols/) | Stevens 卷一：IP/TCP/UDP 首部与协议行为 |
 | [`14` kernel-networking](../../12-kernel-networking/) | Rosen：sk_buff、NAPI、收包路径 |
 | [`14.5` modern-networking](../../12.5-modern-networking/) | 现代 6.x：page_pool、XDP hook、eBPF 网络 |
@@ -310,4 +310,4 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 ⬜ 未开始 → 建议先用 `sudo tcpdump -i eth0` 看看抓包效果，然后写自己的 raw socket。
 
-← [projects 总览](../README.md) · [15 模块](../../04-cpp/M5-cpp-network-programming/) · [17 模块](../../12-kernel-networking/)
+← [projects 总览](../README.md) · [15 模块](../../04-cpp/M2-cpp-network-programming/) · [17 模块](../../12-kernel-networking/)

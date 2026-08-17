@@ -3,7 +3,7 @@
 > 来源：[cshonor/cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)  
 > 本仓入口以 [README.md](./README.md) 为准；下方为上游原文备份（路径按上游根目录）。
 >
-> **编号说明：** 上游原文用全局 `01`–`07` 编号；本仓已重组为 M0–M4 模块，每个模块内部书从 `01` 起重新编号。下方正文保留上游原貌，链接已指向本仓新位置。
+> **编号说明：** 上游原文用全局 `01`–`07` 编号；本仓已重组为 M0–M5 模块，每个模块内部书从 `01` 起重新编号。下方正文保留上游原貌，链接已指向本仓新位置。
 
 ---
 
@@ -36,7 +36,7 @@
 | 优先级 | 目录 | 说明 |
 |--------|------|------|
 | **必学** | 00-Linux-Kernel-DPDK-Network-C | C 数据面核心 |
-| 高 | [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | 多线程、锁、内存序 |
+| 高 | [2-Cpp-Concurrency](./M4-deep-principles/02-Cpp-Concurrency/) | 多线程、锁、内存序 |
 | 中 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 现代 C++，写策略/业务时补 |
 | 按需 | `13-Modern-C++-Performance-Engineering` | 低延迟、无锁、CPU 亲和（见下方可选拓展） |
 
@@ -52,10 +52,10 @@
 | 4 | [1-Effective-Modern-C++](./M1-modern-cpp/01-Effective-Modern-C++/) | 《Effective Modern C++》 | 移动语义、lambda、类型推导等现代特性 |
 | 5 | [3-Effective-STL](./M3-engineering-standards/03-Effective-STL/) | 《Effective STL》 | STL 最佳实践 |
 | 6 | [3-STL-Source-Analysis](./M3-engineering-standards/04-STL-Source-Analysis/) | 《STL源码剖析》 | STL 底层原理 |
-| 7 | [2-Cpp-Object-Model](./M2-deep-principles/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
-| 8 | [2-Cpp-Concurrency](./M2-deep-principles/02-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
-| 9 | [4-C++17-The-Complete-Guide](./M4-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
-| 10 | [4-C++20-The-Complete-Guide](./M4-advanced-standards/02-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
+| 7 | [2-Cpp-Object-Model](./M4-deep-principles/01-Cpp-Object-Model/) | 《深度探索C++对象模型》 | 对象内存布局、多态底层 |
+| 8 | [2-Cpp-Concurrency](./M4-deep-principles/02-Cpp-Concurrency/) | 《C++并发编程实战》 | 线程、同步、内存模型 |
+| 9 | [4-C++17-The-Complete-Guide](./M5-advanced-standards/01-C++17-The-Complete-Guide/) | 《C++17 - The Complete Guide》（Josuttis） | 结构化绑定、折叠表达式、并行 STL、`string_view` 等 C++17 过渡特性 |
+| 10 | [4-C++20-The-Complete-Guide](./M5-advanced-standards/02-C++20-The-Complete-Guide/) | 《C++20 - The Complete Guide》（Josuttis） | Concepts、Modules、Coroutines、Ranges 等 C++20 标准 |
 
 ## C 语言学习顺序
 

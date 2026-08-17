@@ -4,7 +4,7 @@
 
 ## 本章讲什么
 
-C++20 的 `std::jthread`（joining thread）是 `std::thread` 的升级版——析构自动 join（不会 terminate）+ 内置协作式中断（`stop_token`）。（并发基础见 [08 第 9 章](../../../M2-deep-principles/02-Cpp-Concurrency/ch09-advanced-thread-management/)。）
+C++20 的 `std::jthread`（joining thread）是 `std::thread` 的升级版——析构自动 join（不会 terminate）+ 内置协作式中断（`stop_token`）。（并发基础见 [08 第 9 章](../../../M4-deep-principles/02-Cpp-Concurrency/ch09-advanced-thread-management/)。）
 
 ## 要点
 

@@ -1,7 +1,7 @@
-# M4 · Advanced Standards（进阶标准）
+# M5 · Advanced Standards（进阶标准）
 
 > **里程碑定位：** ⚪ 可选 · 用到再查
-> **学习顺序：** M2 之后（14 HFT 主线跑通后）
+> **学习顺序：** M4 之后（14 HFT 主线跑通后）
 > **难度：** ⭐⭐⭐⭐
 
 ## 包含的书
@@ -53,4 +53,4 @@ C++20 很多特性在 C++17 基础上完善：先吃透 17 再读 20 更顺。
 
 ---
 
-← [学习路线](../LEARNING-PATH.md) · [上一站 M2](../M2-deep-principles/)
+← [学习路线](../LEARNING-PATH.md) · [上一站 M4](../M4-deep-principles/)

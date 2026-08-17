@@ -107,7 +107,7 @@
 
 > 笔记目录：[03-linux-userspace-api/](./03-linux-userspace-api/) · 章节裁剪 → [OUTLINE.md](./03-linux-userspace-api/OUTLINE.md)
 
-> **定位：** Linux **用户态** syscall 全书 — 衔接 `05` LKD（内核里怎么实现）与 [04/M5](./04-cpp/M5-cpp-network-programming/) PNP / `03.5` UNP（网络实战）。  
+> **定位：** Linux **用户态** syscall 全书 — 衔接 `05` LKD（内核里怎么实现）与 [04/M2](./04-cpp/M2-cpp-network-programming/) PNP / `03.5` UNP（网络实战）。  
 > **推荐顺序：** `06` Gorman 之后 → **TLPI** → P9 自制系统 → 网络段。
 
 | 章节 | 标签 | HFT 关联 |
@@ -262,7 +262,7 @@
 | 外 | 书目 | 索引 | 插入顺序 |
 |----|------|------|----------|
 | 外C | C++ 学习链（01–10，笔记已入本仓） | [04-cpp/](./04-cpp/)（源自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes)） | **`03` 之后、`04` C++ 之前**（Modern C++）；**`14` HFT 前**（并发 + 对象模型） |
-| 外P | 陈硕 PNP / muduo 实战 | [04-cpp/M5-cpp-network-programming/](./04-cpp/M5-cpp-network-programming/) · [PNP 笔记](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | **`04` C++ M1 之后** |
+| 外P | 陈硕 PNP / muduo 实战 | [04-cpp/M2-cpp-network-programming/](./04-cpp/M2-cpp-network-programming/) · [PNP 笔记](https://github.com/cshonor/Computer-Networking/tree/main/PNP) | **`04` C++ M1 之后** |
 | 外B | UNIX Network Programming Vol.1 — Stevens | [03.5-unix-network-api/](./03.5-unix-network-api/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/UNP_Vol1) | PNP **之后** |
 | 外A | TCP/IP Illustrated Vol.1 — Stevens | [11-tcpip-protocols/](./11-tcpip-protocols/) · [笔记](https://github.com/cshonor/Computer-Networking/tree/main/TCP-IP-Volume1-Protocols) | UNP **之后**，Rosen **之前** |
 
@@ -274,23 +274,23 @@
 
 > 笔记正文：[04-cpp/](./04-cpp/)（自 [cpp-learning-notes](https://github.com/cshonor/cpp-learning-notes) 复制）· 里程碑：[OUTLINE.md](./04-cpp/OUTLINE.md)
 
-> **插入位置：** **`03` TLPI / P9 自制 OS 之后** → **`04` C++** → **04/M5 PNP** → … → **`14` HFT**
+> **插入位置：** **`03` TLPI / P9 自制 OS 之后** → **`04` C++** → **04/M2 PNP** → … → **`14` HFT**
 
 | 里程碑 | 本目录 | 标签 | 何时读 |
 |--------|--------|------|--------|
 | M0 语法扫盲 | [04-C++Primer](./04-cpp/M0-entry-syntax/01-C++Primer/) | 🟡 选读 | 与 **01 CSAPP** Ch3–5 并行 |
 | M1 Modern C++ | [04-Effective-Modern-C++](04-cpp/M1-modern-cpp/01-Effective-Modern-C++) | 🔴 必读 | **12 PNP 之前** |
-| M2 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M2-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M2-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **14 HFT 之前** |
+| M4 并发 + 对象模型 | [04-Cpp-Concurrency](04-cpp/M4-deep-principles/02-Cpp-Concurrency) · [04-Cpp-Object-Model](04-cpp/M4-deep-principles/01-Cpp-Object-Model) | 🔴 必读 | **14 HFT 之前** |
 | M3 STL / Effective | [02–06](./04-cpp/M3-engineering-standards/) | 🟡 选读 | PNP / HFT 期间穿插 |
-| M4 C++17/20 | [04-C++17](04-cpp/M4-advanced-standards/01-C++17-The-Complete-Guide) · [04-C++20](04-cpp/M4-advanced-standards/02-C++20-The-Complete-Guide) | 🟡 选读 | **18 之后** |
+| M5 C++17/20 | [04-C++17](04-cpp/M5-advanced-standards/01-C++17-The-Complete-Guide) · [04-C++20](04-cpp/M5-advanced-standards/02-C++20-The-Complete-Guide) | 🟡 选读 | **18 之后** |
 
 **HFT 产出：** 能读 muduo / HFT 引擎源码；RAII、移动语义、线程同步不再卡脖子。
 
 ---
 
-## 补充：陈硕 PNP / muduo 实战（04/M5 模块）
+## 补充：陈硕 PNP / muduo 实战（04/M2 模块）
 
-> 笔记目录：[04-cpp/M5-cpp-network-programming/](./04-cpp/M5-cpp-network-programming/) · 外部 [PNP/](https://github.com/cshonor/Computer-Networking/tree/main/PNP)
+> 笔记目录：[04-cpp/M2-cpp-network-programming/](./04-cpp/M2-cpp-network-programming/) · 外部 [PNP/](https://github.com/cshonor/Computer-Networking/tree/main/PNP)
 
 > **插入位置：** **`04` C++（至少 M1）之后**、`03.5` UNP 之前
 
@@ -324,7 +324,7 @@
 
 > 笔记目录：[projects/P9-os-from-scratch/](./projects/P9-os-from-scratch/)
 
-> **插入位置：** `03` TLPI 之后、04/M5 PNP 之前。
+> **插入位置：** `03` TLPI 之后、04/M2 PNP 之前。
 
 | 子模块 | 参考 | 标签 | HFT 关联 |
 |--------|------|------|----------|
@@ -344,7 +344,7 @@
 | ch03 订单簿深度与行情解析 | Harris | Gorman、CSAPP Ch6 |
 | ch04 硬件选型与服务器配置 | Hennessy Ch2/Ch5 | Gregg SysPerf Ch6、CSAPP Ch4/Ch6 |
 | ch05 操作系统内核极致调优 | Love Ch4/7–10 | Gregg SysPerf Ch6–7 |
-| ch06 低延迟网络与协议优化 | Rosen + **13 DPDK** | [12 PNP](./04-cpp/M5-cpp-network-programming/)、CSAPP Ch11、**06.7 BPF Ch10** |
+| ch06 低延迟网络与协议优化 | Rosen + **13 DPDK** | [12 PNP](./04-cpp/M2-cpp-network-programming/)、CSAPP Ch11、**06.7 BPF Ch10** |
 | ch07 无锁数据结构与内存布局 | Hennessy Ch2/Ch5 | Gorman、CSAPP Ch6/Ch12、CSAPP Ch4 |
 | ch08 超低延迟核心引擎开发 | Love + Gorman + Hennessy | CSAPP Ch5/Ch12、**13 DPDK** |
 | ch09 延迟测量与基准压测 | Gregg SysPerf + **06.7 BPF** | **13 DPDK** testpmd |

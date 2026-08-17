@@ -23,5 +23,5 @@
 
 ## 交叉引用
 
-- `04-cpp/M5-cpp-network-programming/`：epoll/socket 基础
+- `04-cpp/M2-cpp-network-programming/`：epoll/socket 基础
 - `12.5-modern-networking/chapter-13-zerocopy-highperf/`：io_uring + 零拷贝组合

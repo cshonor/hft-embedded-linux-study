@@ -1,6 +1,6 @@
-# M5 · C++ 网络编程（muduo / PNP）
+# M2 · C++ 网络编程（muduo / PNP）
 
-**模块 `04-cpp/M5`** · 编号即读序 · [返回 C++ 总览](../README.md) · [锁定路线](../../README.md)
+**模块 `04-cpp/M2`** · 编号即读序 · [返回 C++ 总览](../README.md) · [锁定路线](../../README.md)
 
 > **定位：** C++ 网络服务实验骨架（粘包、epoll、组播等）— 为内核网络 / DPDK / HFT 打底。  
 > **前置：** [04 C++（至少 M1 Modern）](../README.md) · [03.5 UNP（C 侧 socket）](../../03.5-unix-network-api/)  
@@ -35,7 +35,7 @@
 | 模块 | 作用 |
 |------|------|
 | [**03.5 UNP**](../../03.5-unix-network-api/) | Stevens Socket API + **完整 unpv13e 源码树**（C） |
-| **M5 PNP（本模块）** | 动手实验笔记（muduo，C++） |
+| **M2 PNP（本模块）** | 动手实验笔记（muduo，C++） |
 | [**12 TCP/IP**](../../11-tcpip-protocols/) | 协议笔记（抓包/语义） |
 
 ## 交叉阅读

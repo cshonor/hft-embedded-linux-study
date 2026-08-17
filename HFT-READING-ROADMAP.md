@@ -77,7 +77,7 @@
 **嵌入式支线：** `07 → 08 → 09`（`10` 业余；板级实战 = [P5](./projects/P5-raspberry-pi-embedded/)）· 建议 Phase4（`05`/`06`）后再开
 
 > **C：** [01-c-language/](./01-c-language/) — Phase2 第一课。  
-> **C++：** [04-cpp/](./04-cpp/) — Phase3 穿插；进 [04/M5](./04-cpp/M5-cpp-network-programming/) sockets 前至少 Modern C++。
+> **C++：** [04-cpp/](./04-cpp/) — Phase3 穿插；进 [04/M2](./04-cpp/M2-cpp-network-programming/) sockets 前至少 Modern C++。
 > **板块：** `00`–`19` 技术模块；跨模块对照 → [README.md](./README.md)
 
 ---
@@ -280,7 +280,7 @@
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
 | [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
 | [07–10 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10) | 07–10 |
-| [12–14 网络](./04-cpp/M5-cpp-network-programming/) · [16–17 性能](./06.6-systems-performance/) · [14 HFT](./14-hft-engineering/) | 12–18 |
+| [12–14 网络](./04-cpp/M2-cpp-network-programming/) · [16–17 性能](./06.6-systems-performance/) · [14 HFT](./14-hft-engineering/) | 12–18 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
@@ -369,7 +369,7 @@
 | C / 指针 / 结构体 | [01](./01-c-language/) · [02](./02-computer-systems/) · [04](./03-linux-userspace-api/) |
 | 进程 / VM / 中断 / 同步 | [07](./05-linux-kernel/) · [09](./06-linux-mm/) |
 | 性能 / 绑核 / BPF | [06.6](./06.6-systems-performance/) · [06.7](./06.7-bpf-observability/) · [14](./14-hft-engineering/) |
-| 网络 / 零拷贝思想 | [04/M5](./04-cpp/M5-cpp-network-programming/) · [12](./12-kernel-networking/) · [13](./13-dpdk/) |
+| 网络 / 零拷贝思想 | [04/M2](./04-cpp/M2-cpp-network-programming/) · [12](./12-kernel-networking/) · [13](./13-dpdk/) |
 
 ### 岗位定位（支线完成后）
 
