@@ -6,6 +6,25 @@
 
 ---
 
+## 当前可跑：Demo 全链路
+
+终局四阶段还没上 DPDK。先落地一条 **demo 级工程**，把关键路径跑通：
+
+| | 路径 |
+|--|------|
+| 设计一文 | [docs/design.md](./docs/design.md) |
+| 可运行工程 | [part-a-demo/](./part-a-demo/) |
+
+```bash
+cd projects/P10-hft-prototype/part-a-demo
+make && ./hft_demo --self-test && ./hft_demo
+```
+
+覆盖：整数 tick 订单簿、FIFO 撮合、SPSC 无锁环、库存偏斜做市、本地风控、PnL、延迟分位。  
+不做：DPDK、绑核、大页、真实协议。那些仍按下面 M9–M12。
+
+---
+
 ## 系统架构
 
 ```
@@ -130,7 +149,7 @@ P10-hft-prototype/
     └── run_backtest.sh
 ```
 
-> 目录结构是规划，代码在 M9 开始写。现在只有 README。
+> 终局目录仍按上表演进。**现在能跑的是 `part-a-demo/`**（demo 级全链路，见 [docs/design.md](./docs/design.md)）。
 
 ---
 

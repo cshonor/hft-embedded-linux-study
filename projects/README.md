@@ -27,6 +27,8 @@ P5 树莓派嵌入式（P5a–P5f）      │
   │   P7 DPDK 转发 + 延迟剖析
   │     │
   └─────┴──→ P8 迷你撮合引擎（终极大作业）
+               ↓
+             P10 HFT 单机原型（part-a demo 已可跑）
 ```
 
 ## 项目清单
@@ -44,6 +46,7 @@ P5 树莓派嵌入式（P5a–P5f）      │
 | [P7](./P7-dpdk-forwarder-profiling/) | DPDK forwarder+perf 火焰图+bpftrace | `15` `16` `17` | P6 | ⬜ 未开始 |
 | [P8](./P8-matching-engine/) | 限价订单簿撮合引擎+无锁+Rust 重写 | `18` `21` `22` | P4+P5+P7 | ⬜ 未开始 |
 | [P9](./P9-os-from-scratch/) | OS 从零造（MikanOS + 30 天精华） | ~~05~~ (拓展) | Phase4 完成 | ⬜ 拓展 |
+| [P10](./P10-hft-prototype/) | HFT 单机原型：demo 全链路（一文 + part-a） | `14` `19` | P8 规划 | 🔄 part-a demo |
 
 > 状态标记：⬜ 未开始 / 🔄 进行中 / ✅ 完成
 
@@ -59,3 +62,4 @@ P5 树莓派嵌入式（P5a–P5f）      │
 | P2 | `part-a-shell` · `part-b-malloc` · `part-c-exercises` |
 | P3 | `part-a-c-server` · `part-b-cpp-rewrite` |
 | P4 | `part-a-hello-chardev` · `part-b-proc-debug` |
+| P10 | `part-a-demo`（CMake 也可） |
