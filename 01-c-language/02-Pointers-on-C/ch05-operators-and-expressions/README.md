@@ -51,6 +51,7 @@ C **全部运算符**、**优先级/结合性**、**短路求值**、**位运算
   - [5.4.1 隐式类型转换](./5.4-expression-evaluation/5.4.1-隐式类型转换.md)
   - [5.4.2 算术转换](./5.4-expression-evaluation/5.4.2-算术转换.md)
   - [5.4.3 优先级和求值顺序](./5.4-expression-evaluation/5.4.3-优先级和求值顺序.md)
+  - [5.4.4 词法贪心 max-munch](./5.4-expression-evaluation/5.4.4-词法贪心max-munch.md) — 补充：A+++B 怎么切 token
 
 
 ---
