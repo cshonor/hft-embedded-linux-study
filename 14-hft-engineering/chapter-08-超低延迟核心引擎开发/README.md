@@ -31,7 +31,6 @@
 | [8.5](./8.5-静态分析.md) | 静态分析 | Klocwork/Cppcheck/Clang SA 抓并发 bug |
 | [8.6](./8.6-FX实战架构清单.md) | FX 实战架构清单 🔴 | 绑核 + mmap 环 + Onload + Hugepage + 预热 |
 | [8.7](./8.7-关键路径组件.md) | 关键路径组件 | Gateway/Book/Strategy/OMS 各自要点 |
-| [8.8](./8.8-Java与Python边界.md) | Java / Python 边界 | 三语言分工总览 |
 
 ## 本章小结
 
@@ -44,7 +43,7 @@
 | **静态分析** | Klocwork / Cppcheck / Clang SA |
 | **FX 实战** | 多进程绑核 · mmap 环 · OpenOnload · Hugepage · 预热 |
 
-**C++ 性能圣经落地后** → [chapter-09 Java/JVM](../chapter-09-java-jvm-低延迟系统/README.md) · [chapter-14 Python 混合](../chapter-14-python-高性能混合架构/README.md) · 策略：[chapter-13](../chapter-13-高频做市与套利策略/README.md)
+**C++ 性能圣经落地后** → 策略：[chapter-13](../chapter-13-高频做市与套利策略/README.md) · 风控：[chapter-11](../chapter-11-风控合规与滑点控制/README.md)
 
 ## 原书章节对照
 
@@ -56,8 +55,6 @@
 | Ch8 §4 模板 | **本章 8.4** |
 | Ch8 §5 静态分析 | **本章 8.5** |
 | Ch8 §6 FX 实战 | **本章 8.6–8.7** |
-| Ch9 Java/JVM | **Ch9** |
-| Ch10 Python | **Ch14** |
 
 ## C++ 热点速查（Do / Don't）
 

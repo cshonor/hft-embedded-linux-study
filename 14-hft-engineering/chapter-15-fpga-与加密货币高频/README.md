@@ -3,7 +3,7 @@
 > **原书第 11 章 · High-Frequency FPGA and Crypto**
 > **纳秒级硬件加速 · 加密市场微观结构 · 云端共址**
 
-← [chapter-14 Python 混合](../chapter-14-python-高性能混合架构/README.md) · [chapter-04 硬件基础](../chapter-04-硬件选型与服务器配置/README.md) · [chapter-03 共址](../chapter-03-订单簿深度与行情解析/3.4-共址与市场数据.md)
+← [chapter-13 策略](../chapter-13-高频做市与套利策略/README.md) · [chapter-04 硬件基础](../chapter-04-硬件选型与服务器配置/README.md) · [chapter-03 共址](../chapter-03-订单簿深度与行情解析/3.4-共址与市场数据.md)
 
 ---
 

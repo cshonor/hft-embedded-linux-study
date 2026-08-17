@@ -1,7 +1,6 @@
 # 第13章 高频做市与套利策略（索引）
 
 > **本仓库扩展 · Signal / Execution · 延迟套利 · 做市逻辑**
-> （原书 Ch9 = Java/JVM → [chapter-09](../chapter-09-java-jvm-低延迟系统/README.md)）
 
 ← 架构：[chapter-08 §7 Strategy](../chapter-08-超低延迟核心引擎开发/8.7-关键路径组件.md) · 总览：[chapter-01](../chapter-01-高频交易基础与生态/README.md)
 

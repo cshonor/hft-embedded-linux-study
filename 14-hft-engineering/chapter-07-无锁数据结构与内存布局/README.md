@@ -24,7 +24,7 @@
 | [7.3](./7.3-内存预分配与缓存友好.md) | 内存预分配与缓存友好 🔴 | L1 0.5ns vs RAM 60ns · 池化 · alignas(64) |
 | [7.4](./7.4-共享内存IPC.md) | 共享内存 IPC | mmap + 无锁环 = 跨进程零拷贝 |
 | [7.5](./7.5-CPP内存序.md) | C++ 内存序 | release/acquire 配对发布 — 无锁正确性基础 |
-| [7.6](./7.6-LMAX-Disruptor.md) | LMAX Disruptor | 参考架构 — Java 实现 → chapter-09 |
+| [7.6](./7.6-LMAX-Disruptor.md) | LMAX Disruptor | 参考架构 — 单写者原则的标杆 |
 
 ## 本章小结
 
@@ -36,7 +36,7 @@
 
 **三合一（原书 Ch6）：** 绑核 **+** 无锁 **+** 内存池 = **软件延迟压榨极限**。
 
-**下一步：** [chapter-08 C++ 微秒征途（原书 Ch8）](../chapter-08-超低延迟核心引擎开发/README.md) · [chapter-09 Java/JVM](../chapter-09-java-jvm-低延迟系统/README.md) · [chapter-10 测量](../chapter-10-延迟测量与基准压测/README.md)
+**下一步：** [chapter-08 C++ 微秒征途（原书 Ch8）](../chapter-08-超低延迟核心引擎开发/README.md) · [chapter-10 测量](../chapter-10-延迟测量与基准压测/README.md)
 
 ## 原书章节对照
 
