@@ -238,7 +238,7 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 
 ## 当前状态
 
-- **正在：** Phase1 · `00-digital-logic-cpu`
+- **正在：** Phase1 · `00-digital-logic-cpu` + [P1 多周期 8-bit CPU](./projects/P1-cpu-simulator/)（WSL `make test`）
 - **下一站：** Phase2 · `01-c-language` → `02-computer-systems`
 - **暂不新开：** `05`/`12`/`13`/`14` 等（除非做极小对照实验）
 - **板卡动手清单（Pi5）：** [projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)（A→G 执行序；官方文档当工具书）

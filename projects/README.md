@@ -35,7 +35,7 @@ P5 树莓派嵌入式（P5a–P5f）      │
 
 | Project | 做什么 | 覆盖模块 | 前置 | 状态 |
 |:-------:|--------|:--------:|:----:|:----:|
-| [P1](./P1-cpu-simulator/) | 8-bit CPU（ALU+寄存器+FSM） | `00` | 无 | ⬜ 未开始 |
+| [P1](./P1-cpu-simulator/) | 8-bit CPU（ALU+寄存器+FSM） | `00` | 无 | 🔄 part-a/b 可跑 |
 | [P2](./P2-shell-malloc/) | mini shell + 自制 malloc/free + C 特性练手 | `01` `02` | P1 | ⬜ 未开始 |
 | [P2.5](./P2.5-c-toolkit/) | GNU C 工具箱：container_of + 侵入式链表 + ring buffer | `01` | P2 | ⬜ 未开始 |
 | [P3](./P3-http-server/) | 并发 HTTP Server（C → C++ 重写） | `19` `05` `04` | P2 | ⬜ 未开始 |
@@ -59,6 +59,7 @@ P5 树莓派嵌入式（P5a–P5f）      │
 
 | Project | 子工程 |
 |---------|--------|
+| P1 | `part-a-alu-host` · `part-b-multicycle` |
 | P2 | `part-a-shell` · `part-b-malloc` · `part-c-exercises` |
 | P3 | `part-a-c-server` · `part-b-cpp-rewrite` |
 | P4 | `part-a-hello-chardev` · `part-b-proc-debug` |

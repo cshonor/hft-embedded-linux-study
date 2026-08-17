@@ -1,16 +1,18 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -g
-TARGET = alu_stub
+CC      ?= gcc
+CFLAGS  ?= -Wall -Wextra -std=c11 -g
+TARGET   = alu_test
 
-.PHONY: all clean run
+.PHONY: all test run clean
 
 all: $(TARGET)
 
-$(TARGET): alu_stub.c
-	$(CC) $(CFLAGS) -o $@ $<
+$(TARGET): alu.c alu_test.c alu.h
+	$(CC) $(CFLAGS) -o $@ alu.c alu_test.c
 
-run: $(TARGET)
+test: $(TARGET)
 	./$(TARGET)
+
+run: test
 
 clean:
 	rm -f $(TARGET)

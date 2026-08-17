@@ -45,12 +45,12 @@
 
 ## 交付物
 
-- [ ] ALU（加减与/或/移位 + 标志位 Z/C/N/V）
-- [ ] 寄存器堆（≥4 个通用寄存器 + PC + IR）
-- [ ] 指令译码器（自定义指令集，含 R/I/J 三类）
-- [ ] FSM 控制器（取指→译码→执行→写回，多周期）
-- [ ] 内存接口（指令 + 数据存储）
-- [ ] 至少 3 个汇编程序跑通：加法累加、斐波那契、内存拷贝
+- [x] ALU（加减与/或/移位 + 标志位 Z/C/N/V）→ [part-a-alu-host](./part-a-alu-host/)
+- [x] 寄存器堆（4 个通用寄存器 + PC + IR）
+- [x] 指令译码器（自定义 16-bit 指令集，R/I/J）
+- [x] FSM 控制器（取指→译码→执行→写回，多周期）
+- [x] 内存接口（IMem 16-bit + DMem 256×8）
+- [x] 三个程序：加法累加、斐波那契、内存拷贝 → [part-b-multicycle](./part-b-multicycle/)
 
 ## 覆盖模块
 
@@ -75,7 +75,15 @@
 
 ### 今天就可以开的第一步
 
-打开 Logisim → 拖一个加法器 → 接两个输入 → 看输出对不对。  
+本机没有 Logisim 也能动手——WSL 里：
+
+```bash
+cd projects/P1-cpu-simulator/part-a-alu-host && make test
+cd ../part-b-multicycle && make test
+./cpu_sim --trace sum    # 按拍看 FETCH/DECODE/EXECUTE/WB
+```
+
+想看见门：打开 Logisim → 拖一个加法器 → 接两个输入 → 对照 part-a 的 C 标志位。  
 从这一步开始，**不用「准备好」**。
 
 ### M1 — ALU + 寄存器堆（手动单步能算）
@@ -139,16 +147,16 @@
 
 ```
 P1-cpu-simulator/
-  README.md     ← 本指南
-  src/          ← 电路 / Verilog / 测试程序（动手时建）
-  notes/        ← 你的踩坑（自己写，不是 AI 代写）
-  refs/         ← 外链
+  README.md              ← 本指南
+  part-a-alu-host/       ← 8-bit ALU + Z/C/N/V（可 make test）
+  part-b-multicycle/     ← 多周期 CPU + 三个程序（可 make test）
 ```
 
-踩坑请写进 `notes/`——**那才是你的知识**；`00` 里的长文继续当字典查。
+踩坑请自己写——**那才是你的知识**；`00` 里的长文继续当字典查。  
+不要空的 `src/` / `notes/` / `refs/` 占位。
 
 ## 状态
 
-⬜ 未开始 → 建议今天把状态改成 🔄，并完成「加法器两个输入看输出」。
+🔄 进行中 — part-a ALU 与 part-b 多周期 CPU 已可在 WSL `make test`。Logisim 电路仍可选。
 
 ← [projects 总览](../README.md) · [00 模块](../../00-digital-logic-cpu/)
