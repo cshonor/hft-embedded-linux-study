@@ -77,7 +77,7 @@ extern int counter;   // (2)
 
 **答案：** `(1)` 是定义（分配内存），`(2)` 是声明（告诉编译器变量在别处）。
 
-两个 `.c` 都写 `int counter;` → 链接报错 `multiple definition of 'counter'`。
+两个 `.c` 都写 `int counter;` → 两个**暂定定义**。gcc 10+（默认 `-fno-common`）报错 `multiple definition of 'counter'`；gcc 9 及以前默认 `-fcommon` 会合并成一个符号**不报错**（历史兼容，标准层面仍是 UB）。→ 详见 2.1.1 暂定定义
 
 **复习：** → 2.1 Identifiers — 声明 vs 定义
 
