@@ -48,6 +48,7 @@
   - [3.1.1 整型家族](./3.1-basic-data-types/3.1.1-整型家族.md)
   - [3.1.2 浮点类型](./3.1-basic-data-types/3.1.2-浮点类型.md)
   - [3.1.3 指针](./3.1-basic-data-types/3.1.3-指针.md)
+  - [3.1.4 cast 运算符与指针进阶](./3.1-basic-data-types/3.1.4-cast运算符.md)
 - [3.2 基本声明](3.2-basic-declarations/3.2-基本声明.md)
   - [3.2.1 初始化](./3.2-basic-declarations/3.2.1-初始化.md)
   - [3.2.2 声明简单数组](./3.2-basic-declarations/3.2.2-声明简单数组.md)
