@@ -49,6 +49,8 @@
   - [3.1.2 浮点类型](./3.1-basic-data-types/3.1.2-浮点类型.md)
   - [3.1.3 指针](./3.1-basic-data-types/3.1.3-指针.md)
   - [3.1.4 cast 运算符与指针进阶](./3.1-basic-data-types/3.1.4-cast运算符.md)
+  - [3.1.5 字符的符号性陷阱](./3.1-basic-data-types/3.1.5-字符的符号性陷阱.md)
+  - [3.1.6 字符常量的类型陷阱](./3.1-basic-data-types/3.1.6-字符常量的类型陷阱.md)
 - [3.2 基本声明](3.2-basic-declarations/3.2-基本声明.md)
   - [3.2.1 初始化](./3.2-basic-declarations/3.2.1-初始化.md)
   - [3.2.2 声明简单数组](./3.2-basic-declarations/3.2.2-声明简单数组.md)
@@ -73,8 +75,8 @@
 - [3.8 static 关键字](./3.8-static/3.8-static关键字.md)
 - [3.9 作用域、存储类型示例](./3.9-作用域-存储类型示例.md)
 - 3.10 左值（lvalue） → 已合并至 [ch05 §5.3 左值和右值](../ch05-operators-and-expressions/5.3-左值和右值.md)（lvalue/rvalue 唯一定义处）
-- [3.11 char 的符号性陷阱](./3.11-char的符号性陷阱.md) — 补充：x86 vs ARM 符号差异、符号扩展、跨平台 bug
-- [3.12 字符常量的类型陷阱](./3.12-字符常量的类型陷阱.md) — 补充：`'A'` 在 C 是 int、C++ 是 char、多字符常量、C/C++ 混编陷阱
+- 3.11 char 的符号性陷阱 → 已移至 [3.1.5](./3.1-basic-data-types/3.1.5-字符的符号性陷阱.md)
+- 3.12 字符常量的类型陷阱 → 已移至 [3.1.6](./3.1-basic-data-types/3.1.6-字符常量的类型陷阱.md)
 
 
 ---
