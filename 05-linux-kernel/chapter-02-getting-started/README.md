@@ -30,6 +30,7 @@
 | 编译和安装内核 | [notes/section-2.3-编译和安装内核.md](./notes/section-2.3-编译和安装内核.md) |
 | 内核开发的特点 | [notes/section-2.4-内核开发的特点.md](./notes/section-2.4-内核开发的特点.md) |
 | ELF 与 UEFI 启动链路（拓展） | [notes/section-2.5-ELF与UEFI启动链路.md](./notes/section-2.5-ELF与UEFI启动链路.md) |
+| 第一个内核模块 Hello LKM（书外补充） | [notes/section-2.x-hello-lkm-第一个内核模块.md](./notes/section-2.x-hello-lkm-第一个内核模块.md) |
 
 ---
 
@@ -49,6 +50,8 @@
 | K&R 第2版是？ | **C89**；不是 C99/C11；读完还要补 C99 习惯 + GNU C |
 
 GNU C 小实验：[`code/gnu_c_extension_demo.c`](./code/gnu_c_extension_demo.c)
+
+第一个内核模块：[`code/hello/`](./code/hello/) · [notes/section-2.x-hello-lkm-第一个内核模块.md](./notes/section-2.x-hello-lkm-第一个内核模块.md)
 
 ---
 
