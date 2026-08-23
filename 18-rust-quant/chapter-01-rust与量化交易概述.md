@@ -17,33 +17,53 @@
 | 代价 | 正确性靠人肉 | 所有权要过编译器；热路径要少用智能指针 |
 | 本仓库角色 | 已能跑的 demo | 同一语义的安全对照 + 回测 / 冷路径 |
 
-P8 规划「C++ 版沉淀、Rust 版验证内存安全」——本文件夹就是那份地图。可运行的最小对照 → [`demo/`](./demo/)。
+P8 规划「C++ 版沉淀、Rust 版验证内存安全」——本文件夹就是那份地图。可运行的对照：
+
+```bash
+cd 18-rust-quant/demo
+cargo test
+cargo run --release
+cargo run --release -- --jump 0    # 关掉跳价，对比逆向选择
+```
 
 ---
 
 ## 三个速度档，不要混
 
-| 档 | 延迟量级 | Rust 常见用法 |
-|----|----------|----------------|
-| 研究 / 日频 | 秒～分钟 | CSV 回测，随便 `clone` |
-| 低延迟交易 | 百微秒～毫秒 | 同步引擎 + 有界队列；少分配 |
-| HFT 热路径 | 亚微秒 | 预分配、无锁、禁止 `dyn` / `async` / `unwrap` |
+| 档 | 延迟量级 | Rust 常见用法 | 本模块哪几章 |
+|----|----------|----------------|--------------|
+| 研究 / 日频 | 秒～分钟 | CSV 回测，随便 `clone` | Ch3–6 的慢路径 |
+| 低延迟交易 | 百微秒～毫秒 | 同步引擎 + 有界队列；少分配 | Ch7–9 + demo |
+| HFT 热路径 | 亚微秒 | 预分配、无锁、禁止 `dyn` / `async` / `unwrap` | 原则在这；硬件仍看 14 |
 
-本模块 **Ch3–6** 偏研究与回测，**Ch7–10** 偏引擎。HFT 的网卡旁路、绑核仍看 [14](../14-hft-engineering/)，不在 Rust 章节里重写一遍。
+把研究代码的习惯（`unwrap`、`clone` 满天飞、每个 tick `async`）直接搬进引擎，编译能过、实盘会抖。三档用同一套 Book 语义，但 **分配和并发模型不能混**。
 
 ---
 
 ## 和 P10 的一张图
 
 ```
-P10 C++ demo                          本模块对应章
-行情模拟  --SPSC-->  订单簿              Ch3 / Ch7 / demo
-                 -->  做市策略            Ch5
-                 -->  本地风控            Ch9
-                 -->  模拟撮合 / PnL     Ch6 / Ch11
+P10 C++                               本模块
+replay.hpp  --SPSC-->  engine.hpp     replay.rs  （单线程 Vec<Event>）
+                 →  orderbook.hpp          →  book.rs
+                 →  strategy.hpp           →  strategy.rs
+                 →  risk.hpp               →  risk.rs
+                 →  PnL / p50·p99          →  engine.rs 报表
 ```
 
-读完第1章，应用 `17` 把所有权过一遍，再进第2章。不要从本模块学 `let`。
+P10 用两线程 + 无锁环，是为了让你看见 `queue_wait`。Rust demo **故意单线程**：先把撮合/做市/风控语义写对，不把 `unsafe` 塞进第一课。要无锁环时抄 [14 §7.2](../14-hft-engineering/chapter-07-lockless-data-structures-memory-layout/7.2-无锁FIFO队列.md)，只把 `unsafe` 包在 queue 内部。
+
+---
+
+## 本模块怎么读（新手）
+
+1. 本章建立分工：语法回 17，硬件回 14，这里只谈「落到交易链上」。  
+2. 打开 [`demo/src/types.rs`](./demo/src/types.rs)，记住 **tick 是整数**。  
+3. `cargo test`，对着失败回 `book.rs` 注释。  
+4. `cargo run --release`，再跑一次 `--jump 0`，看 PnL 差在逆向选择，不是「策略更聪明」。  
+5. 再读第 2、5、7、9 章；3、4、6、8、10 按需。
+
+不要从本模块学 `let` / 所有权。那是 [17 Book Ch4](../17-rust-foundation/00-Book/04-ownership/) 的事。
 
 ---
 
@@ -54,3 +74,4 @@ P10 C++ demo                          本模块对应章
 | 所有权 / 借用 | [17 Book Ch4](../17-rust-foundation/00-Book/04-ownership/) |
 | T2T 关键路径 | [14 §1.1](../14-hft-engineering/chapter-01-hft-fundamentals-ecosystem/1.1-系统核心架构.md) |
 | 语言怎么选 | [14 §1.5](../14-hft-engineering/chapter-01-hft-fundamentals-ecosystem/1.5-编程语言选择.md) |
+| FIFO / 价差业务语言 | [19](../19-markets-microstructure/) |

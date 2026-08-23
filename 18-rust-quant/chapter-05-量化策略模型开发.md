@@ -13,7 +13,7 @@ on_book(bbo, inventory) → 一小组意图（新单 / 撤单）
 on_fill(trade)          → 改库存和现金
 ```
 
-P10 的 `MarketMaker::quote` 就是这个。不要在 `on_book` 里读文件、分配大 `String`、调 HTTP。
+P10 的 `MarketMaker::quote` / demo [`strategy.rs`](./demo/src/strategy.rs) 就是这个。不要在 `on_book` 里读文件、分配大 `String`、调 HTTP。
 
 做市核心等式（[14 §12.1](../14-hft-engineering/chapter-12-market-making-arbitrage/12.1-做市核心等式与逆向选择.md)）：
 
@@ -21,7 +21,17 @@ P10 的 `MarketMaker::quote` 就是这个。不要在 `on_book` 里读文件、�
 PnL = 成交量 × 价差 − 逆向选择 − 库存风险
 ```
 
-库存多 → 报价整体下移，让市场帮你卖掉。P10 / 本模块 demo 都是这个偏斜。
+库存多 → 报价整体下移，让市场帮你卖掉。P10 / demo 都是：
+
+```
+skew = (inventory / skew_unit) * skew_per_pos
+bid  = mid - half - skew
+ask  = mid + half - skew
+```
+
+默认 `half=2`、市场别人 `half=4`，所以我们挂在里面；别人来吃才赚价差。跳价打到旧报价时，你赚到的是「已经过时的价」——这就是逆向选择。`--jump 0` 对比的就是这一项。
+
+注意：每 tick 撤旧挂新，在 FIFO 市场会丢掉队列位置。教学简化，实盘要算「丢队首值不值」（第 8 章）。
 
 ---
 
@@ -41,7 +51,10 @@ PnL = 成交量 × 价差 − 逆向选择 − 库存风险
 
 - 用泛型 `fn run<S: Strategy>(…)` 而不是 `Box<dyn Strategy>` 打在每个 tick 上。  
 - 意图用小型 struct / enum，不要 `HashMap<String, Order>`。  
-- 策略 **不算** 最终能否下单——那是 Ch9 风控的独立代码路径。
+- 策略 **不算** 最终能否下单——那是 Ch9 风控的独立代码路径。  
+- `on_fill` 必须能区分 taker / maker：我们是挂单被吃，还是我们去吃别人。demo `MarketMaker::on_fill` 按 `owner` 判断。
+
+`vol_ema` 用了 `f64`：它只加宽价差，**绝不拿去撮合**。撮合路径仍然全是 `i64`。
 
 ---
 

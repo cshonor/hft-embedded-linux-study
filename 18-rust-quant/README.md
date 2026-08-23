@@ -26,7 +26,14 @@
 | 10 | [监控调优](./chapter-10-系统监控与性能调优.md) | p50/p99；日志离开热路径 |
 | 11 | [部署总结](./chapter-11-生产部署与全链路总结.md) | 全图收口；demo 怎么跑；明确不做 |
 
-动手：[`demo/`](./demo/)（订单簿 + 做市 + 风控，`cargo test`）。
+动手：[`demo/`](./demo/)
+
+```bash
+cd 18-rust-quant/demo
+cargo test                 # 规则测试（FIFO / STP / 风控 / 短回放）
+cargo run --release        # 2 万 tick 做市回放
+cargo run --release -- --jump 0
+```
 
 ---
 

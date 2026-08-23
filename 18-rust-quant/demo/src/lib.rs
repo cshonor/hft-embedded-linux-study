@@ -5,11 +5,15 @@
 //! 本 crate **不是实盘**。
 
 pub mod book;
+pub mod engine;
+pub mod replay;
 pub mod risk;
 pub mod strategy;
 pub mod types;
 
 pub use book::OrderBook;
+pub use engine::{run_demo, DemoStats, Engine};
+pub use replay::ReplayConfig;
 pub use risk::{RiskGate, RiskReason};
 pub use strategy::MarketMaker;
 pub use types::{Order, OrderType, Side, Trade, INVALID_PRICE, OWNER_MARKET, OWNER_US};
@@ -258,5 +262,15 @@ mod tests {
         }
         assert_eq!(mm.inventory, -10);
         assert_eq!(mm.fills, 1);
+    }
+
+    #[test]
+    fn replay_pipeline_runs() {
+        let mut cfg = ReplayConfig::default();
+        cfg.ticks = 300;
+        let stats = run_demo(cfg, false);
+        assert_eq!(stats.ticks, 300);
+        assert!(stats.events > 300);
+        assert!(stats.last_mid != INVALID_PRICE);
     }
 }

@@ -60,6 +60,58 @@ impl Order {
     }
 }
 
+impl Default for Order {
+    fn default() -> Self {
+        Self::new(0, OWNER_MARKET, Side::Buy, OrderType::Limit, 0, 0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventKind {
+    Order,
+    Cancel,
+    Shutdown,
+}
+
+/// 回放 / 行情线程 → 引擎的消息。
+/// `run_strategy=true` 表示「这一拍市场动作结束了，该让我们报价了」。
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub kind: EventKind,
+    pub order: Order,
+    pub cancel_id: u64,
+    pub run_strategy: bool,
+}
+
+impl Event {
+    pub fn order(order: Order, run_strategy: bool) -> Self {
+        Self {
+            kind: EventKind::Order,
+            order,
+            cancel_id: 0,
+            run_strategy,
+        }
+    }
+
+    pub fn cancel(id: u64) -> Self {
+        Self {
+            kind: EventKind::Cancel,
+            order: Order::default(),
+            cancel_id: id,
+            run_strategy: false,
+        }
+    }
+
+    pub fn shutdown() -> Self {
+        Self {
+            kind: EventKind::Shutdown,
+            order: Order::default(),
+            cancel_id: 0,
+            run_strategy: false,
+        }
+    }
+}
+
 /// 一笔成交。taker = 主动来吃的单（刚 submit 的）；
 /// maker = 已经挂在簿上被吃掉的单。
 /// 成交价用 maker 的挂单价（价格改善归 taker）。

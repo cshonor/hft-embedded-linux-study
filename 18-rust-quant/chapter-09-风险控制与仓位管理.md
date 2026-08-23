@@ -8,36 +8,38 @@
 
 ## 本地拒单链（热路径）
 
-和 [14 §10.1](../14-hft-engineering/chapter-10-risk-compliance-slippage/10.1-本地拒单链.md)、P10 `RiskGate` 同一张表：
+和 [14 §10.1](../14-hft-engineering/chapter-10-risk-compliance-slippage/10.1-本地拒单链.md)、P10 / demo `RiskGate` 同一张表：
 
-| 检查 | 防什么 |
-|------|--------|
-| 价格带 vs mid | 乌龙指打穿盘口 |
-| 单笔数量上限 | 巨量单 |
-| 持仓上限 | 库存滚雪球；**减仓单仍放行** |
-| 每拍下单次数 | 流速 / 交易所断开 |
-| kill switch | 总闸 |
+| 检查 | 防什么 | demo 默认 |
+|------|--------|-----------|
+| 价格带 vs mid | 乌龙指打穿盘口 | 80 tick |
+| 单笔数量上限 | 巨量单 | 50 |
+| 持仓上限 | 库存滚雪球；**减仓单仍放行** | 150 |
+| 每拍下单次数 | 流速 / 交易所断开 | 4 |
+| kill switch | 总闸 | 关 |
 
-全部检查无分配、无锁、无系统调用。参数由冷线程更新（原子换指针 / 拷一份小 struct）。
+全部检查无分配、无锁、无系统调用。参数由冷线程更新（原子换指针 / 拷一份小 struct）。demo 是单线程，参数就在 `RiskConfig` 里，启动时设好。
+
+顺序有意如此：先 kill / 数量 / 流速，再算价格带（要 mid），最后仓位。mid 不存在时价格带跳过——簿还没成，不能用 mid 挡单，否则永远挂不出第一笔。
 
 ---
 
 ## 仓位
 
 `inventory`：买加卖减。标记 PnL = `cash + inventory * mid`。  
-风控看的是「这张单成交后绝对仓位会不会更大」——所以已经超限时只许反向单。
+风控看的是「这张单成交后绝对仓位会不会更大」——所以已经超限时只许反向单。`cargo test` 里 `risk_pos_add_rejected_reduce_ok` 就是这条。
 
-自成交（STP）：同一 `owner` 的挂单互不成交。P10 / demo 都做了；监管视角这是底线。
+自成交（STP）：同一 `owner` 的挂单互不成交。市场侧 `OWNER_MARKET=0` 表示「许多人」，彼此可以成交；只对我们的策略单做 STP。P10 / demo 都做了；监管视角这是底线。
 
 ---
 
 ## Rust 落点
 
 ```rust
-fn check(o: &Order, book: &Book, inv: Qty) -> Result<(), Reject>;
+fn check(o: &Order, book: &Book, inv: Qty) -> RiskReason;
 ```
 
-`Err` 只在引擎里变成计数器 + 异步日志，不要 `unwrap`。测试要覆盖：加仓拒绝、减仓通过（P10 `risk-pos-*`）。
+demo 用 enum 而不是 `Result`，避免热路径问「要不要 `?`」。`Ok` 以外在引擎里只加计数器，不 `unwrap`。测试要覆盖：加仓拒绝、减仓通过、价格带。
 
 ---
 
@@ -47,4 +49,4 @@ fn check(o: &Order, book: &Book, inv: Qty) -> Result<(), Reject>;
 |---------|--------|
 | P10 实现 | [risk.hpp](../projects/P10-hft-prototype/part-a-demo/src/risk.hpp) |
 | 降级 / 快市 | [14 §10.4](../14-hft-engineering/chapter-10-risk-compliance-slippage/10.4-风控降级.md) |
-| 本模块代码 | [`demo/`](./demo/) `RiskGate` |
+| 本模块代码 | [`demo/src/risk.rs`](./demo/src/risk.rs) |
