@@ -15,6 +15,7 @@ EEVDF 调度器原理、CFS 历史缺陷、latency-nice 机制。
 | 2.2 CFS 历史与缺陷 (LWN) | `notes/02-cfs-history.md` |
 | 2.3 调度器笔记 (笨叔) | `notes/03-scheduler-ben-shu.md` |
 | 2.4 进程调度讲义 (Bootlin) | `notes/04-process-scheduling-bootlin.md` |
+| 2.5 任务列表 vs 运行队列 (LKD3 Ch3) | `notes/05-task-list-vs-runqueue.md` |
 
 ---
 
