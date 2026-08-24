@@ -77,6 +77,6 @@
 
 ## 状态
 
-⬜ 未开始 → 建议先把 Part A Phase 1 的 hello.ko 加载成功（30 分钟）。
+🔄 `hello.c` 可 `make modules`（需内核头）。WSL 默认：`make test` 只编用户态探测程序。
 
 ← [projects 总览](../README.md) · [07 模块](../../05-linux-kernel/) · [08.6 模块](../../05.6-kernel-debugging/)

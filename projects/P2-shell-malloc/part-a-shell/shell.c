@@ -8,7 +8,7 @@
 int main(void)
 {
     char line[MAX_LINE];
-    char *argv[MAX_TOKENS];
+    struct cmd cmds[MAX_CMDS];
 
     for (;;) {
         fputs("mysh> ", stdout);
@@ -21,14 +21,14 @@ int main(void)
         if (line[0] == '\n')
             continue;
 
-        int argc = parse_line(line, argv, MAX_TOKENS);
-        if (argc == 0)
+        int n = parse_pipeline(line, cmds, MAX_CMDS);
+        if (n <= 0)
             continue;
 
-        if (try_builtin(argv, argc))
+        if (n == 1 && try_builtin(cmds[0].argv, cmds[0].argc))
             continue;
 
-        run_external(argv);
+        run_pipeline(cmds, n);
     }
     return 0;
 }

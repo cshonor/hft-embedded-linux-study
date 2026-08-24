@@ -1,17 +1,16 @@
-# Part A — hello chardev (kernel module stub)
+# Part A — hello 字符设备
 
-Builds only on Linux with kernel headers installed.
+默认 `make` / `make test` 只编用户态探测程序（WSL 常常没有可用 `KDIR`）。
+
+有内核头时：
 
 ```bash
-make
+make modules
 # sudo insmod hello.ko
 # sudo rmmod hello
 # dmesg | tail
 ```
 
-Userspace smoke (no module needed to compile):
-
 ```bash
-make -C userspace
-./userspace/hello_user
+make test
 ```

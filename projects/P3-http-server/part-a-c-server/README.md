@@ -1,9 +1,8 @@
-# Part A — C HTTP / echo server (runnable stub)
+# Part A — C echo / 最小 HTTP
 
-TCP echo on port 8080. Expand per [../Part-A-c-server.md](../Part-A-c-server.md).
+loopback echo，以及极简 GET → HTTP 200。`epoll` / 线程池 / 静态文件还没做，见 [../Part-A-c-server.md](../Part-A-c-server.md)。
 
 ```bash
-make
+make test
 ./echo_server
-# another terminal: nc 127.0.0.1 8080
 ```

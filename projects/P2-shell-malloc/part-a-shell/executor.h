@@ -1,7 +1,8 @@
 #ifndef EXECUTOR_H
 #define EXECUTOR_H
 
-/* Run external command (fork + execvp + waitpid). */
-void run_external(char **argv);
+#include "parser.h"
+
+void run_pipeline(struct cmd *cmds, int n);
 
 #endif

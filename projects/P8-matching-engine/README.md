@@ -507,6 +507,6 @@ mod ringbuf {
 
 ## 状态
 
-⬜ 未开始 → 这是终局项目，前面全部通关后再开始。先从 Phase 1 的 LOB 数据结构开始（纯逻辑，不需要任何特殊环境）。
+🔄 [`part-a-lob`](./part-a-lob/)：`make test`（价格优先 + FIFO）。全链路回放见 [P10](../P10-hft-prototype/part-a-demo/) 与 [18-rust-quant/demo](../../18-rust-quant/demo/)。无锁/绑核未做。
 
 ← [projects 总览](../README.md) · [21 模块](../../14-hft-engineering/) · [22 模块](../../18-rust-quant/)

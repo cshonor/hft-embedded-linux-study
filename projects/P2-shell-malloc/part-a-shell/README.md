@@ -1,11 +1,8 @@
-# Part A — mini shell (runnable stub)
+# Part A — mini shell
 
-Minimal fork/exec shell. Expand per [../Part-A-shell.md](../Part-A-shell.md).  
-本脚手架用手写 **Makefile**；和 CMake 的关系见 [CMAKE-VS-MAKEFILE](../../CMAKE-VS-MAKEFILE.md)。
+`fork`/`exec`、内建 `cd`/`pwd`/`exit`、管道 `|`、重定向 `<` `>`。后台 `&` 和信号还没做，见 [../Part-A-shell.md](../Part-A-shell.md)。
 
 ```bash
-make
+make test
 ./myshell
-# try: ls
-# then: exit
 ```

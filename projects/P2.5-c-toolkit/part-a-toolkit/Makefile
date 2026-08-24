@@ -1,16 +1,23 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -std=gnu11 -g
-TARGET = layout_demo
+CC      ?= gcc
+CFLAGS  ?= -Wall -Wextra -std=gnu11 -g
+TARGET   = test_toolkit
+DEMO     = layout_demo
 
-.PHONY: all clean run
+.PHONY: all test run clean
 
-all: $(TARGET)
+all: $(TARGET) $(DEMO)
 
-$(TARGET): layout_demo.c container_of.h
+$(TARGET): test_toolkit.c container_of.h list.h ringbuf.h compile_macros.h
+	$(CC) $(CFLAGS) -o $@ test_toolkit.c
+
+$(DEMO): layout_demo.c container_of.h
 	$(CC) $(CFLAGS) -o $@ layout_demo.c
 
-run: $(TARGET)
+test: $(TARGET)
 	./$(TARGET)
 
+run: test $(DEMO)
+	./$(DEMO)
+
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(DEMO)

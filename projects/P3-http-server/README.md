@@ -79,6 +79,6 @@ wrk -t4 -c100 -d10s http://localhost:8080/
 
 ## 状态
 
-⬜ 未开始 → 建议先把 Part A Phase 1 的 echo server 跑起来（30 分钟）。
+🔄 echo + `--self-test` 已可 `make test`。epoll / 线程池 / 静态文件仍按上面清单往后加。
 
 ← [projects 总览](../README.md) · [03 模块](../../03-linux-userspace-api/) · [04 模块](../../04-cpp/)

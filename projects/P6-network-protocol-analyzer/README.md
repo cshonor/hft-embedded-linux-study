@@ -308,6 +308,6 @@ void process_tcp_segment(struct tcp_flow *flow, uint32_t seq,
 
 ## 状态
 
-⬜ 未开始 → 建议先用 `sudo tcpdump -i eth0` 看看抓包效果，然后写自己的 raw socket。
+🔄 `part-a-parser`：合成帧 Ethernet/IPv4/TCP + 写 pcap，`make test`。raw socket / 流重组 / eBPF 仍按 Phase 往后做。
 
 ← [projects 总览](../README.md) · [15 模块](../../04-cpp/M2-cpp-network-programming/) · [17 模块](../../12-kernel-networking/)

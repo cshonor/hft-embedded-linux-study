@@ -1,8 +1,8 @@
-# Part B — C++ rewrite stub
+# Part B — C++ RAII echo
 
-Minimal TCP echo in C++. Expand per [../Part-B-cpp-rewrite.md](../Part-B-cpp-rewrite.md).
+`Fd` 析构关 fd。线程池模板还没做，见 [../Part-B-cpp-rewrite.md](../Part-B-cpp-rewrite.md)。
 
 ```bash
-make
+make test
 ./echo_server
 ```

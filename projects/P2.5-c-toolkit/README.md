@@ -672,6 +672,6 @@ P2.5-c-toolkit/
 
 ## 状态
 
-⬜ 未开始 → 建议先把交付物 1 的 `container_of_simple` 写出来，5 分钟就能验证。
+✅ `part-a-toolkit`：`make test`（container_of / list / ringbuf / ARRAY_SIZE）。布局实验：`make run`。
 
 ← [projects 总览](../README.md) · [01-c-language](../../01-c-language/)

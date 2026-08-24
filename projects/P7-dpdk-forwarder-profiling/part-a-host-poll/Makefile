@@ -1,12 +1,12 @@
 CC      ?= gcc
 CFLAGS  ?= -Wall -Wextra -std=c11 -g
-TARGET   = hello_user
+TARGET   = poll_fwd
 
 .PHONY: all test clean
 
 all: $(TARGET)
 
-$(TARGET): hello_user.c
+$(TARGET): poll_fwd.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 test: $(TARGET)

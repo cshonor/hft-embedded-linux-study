@@ -1,18 +1,15 @@
 CXX      ?= g++
 CXXFLAGS ?= -Wall -Wextra -std=c++17 -g
-TARGET    = echo_server
+TARGET    = lob_test
 
-.PHONY: all test run clean
+.PHONY: all test clean
 
 all: $(TARGET)
 
-$(TARGET): echo_server.cpp
+$(TARGET): lob_test.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 test: $(TARGET)
-	./$(TARGET) --self-test
-
-run: $(TARGET)
 	./$(TARGET)
 
 clean:

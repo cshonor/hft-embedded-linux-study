@@ -28,25 +28,25 @@
 
 ### Part A：mini shell（→ [详细指南](./Part-A-shell.md)）
 
-- [ ] Phase 1：能跑 `ls`（fork + execvp + waitpid）
-- [ ] Phase 2：内置命令 cd / exit / pwd
-- [ ] Phase 3：I/O 重定向 `>` `<`（dup2）
-- [ ] Phase 4：多级管道 `a | b | c`（pipe + fd 管理）
+- [x] Phase 1：能跑 `ls`（fork + execvp + waitpid）
+- [x] Phase 2：内置命令 cd / exit / pwd
+- [x] Phase 3：I/O 重定向 `>` `<`（dup2）
+- [x] Phase 4：多级管道 `a | b | c`（pipe + fd 管理）
 - [ ] Phase 5：后台 `&` + 信号 Ctrl-C（SIGINT/SIGCHLD）
 
 ### Part B：malloc/free（→ [详细指南](./Part-B-malloc.md)）
 
-- [ ] Phase 1：隐式空闲链表 + 合并 + 分裂
+- [x] Phase 1：隐式空闲链表 + 合并 + 分裂
 - [ ] Phase 2：显式空闲链表（next/prev 指针）
 - [ ] Phase 3：分离适配（按大小类分链表）
 - [ ] Phase 4：压力测试 + 吞吐量测试
-- [ ] `myrealloc` / `mycalloc` 实现
+- [x] `myrealloc` / `mycalloc` 实现
 
 ### Part C：C 语言特性练手（→ [详细指南](./Part-C-c-exercises.md)）
 
-- [ ] 练习 1：函数指针命令分发表（shell 内置命令）
-- [ ] 练习 2：调试分配器宏（`#` 字符串化 + `__LINE__`）
-- [ ] 练习 3：union 多态值类型（shell 变量 int/float/string）
+- [x] 练习 1：函数指针命令分发表（standalone `ex01_fnptr`）
+- [x] 练习 2：调试分配器宏（`#` 字符串化 + `__LINE__`）
+- [x] 练习 3：union 多态值类型（standalone `ex03_union`）
 - [ ] 练习 4：offsetof 验证 malloc 头块对齐
 - [ ] 练习 5：likely/unlikely 热路径标注（shell 解析器）
 
@@ -91,5 +91,10 @@
 ## 环境
 
 - WSL Ubuntu 24.04（gcc 13.3 + make）
-- 编译 shell：`gcc -Wall -Wextra -g shell.c parser.c executor.c builtin.c -o shell`
-- 编译 malloc：`gcc -Wall -Wextra -g mm.c memlib.c -o mmtest`
+- `cd part-a-shell && make test`
+- `cd part-b-malloc && make test`
+- `cd part-c-exercises && make test`
+
+## 状态
+
+✅ Part A Phase 1–4（管道/重定向）· Part B 隐式链表 malloc · Part C 练习 1–3。后台 `&` / 分离适配未做。

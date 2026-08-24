@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -g
 TARGETS = ex01_fnptr ex02_macro ex03_union
 
-.PHONY: all clean run
+.PHONY: all clean run test
 
 all: $(TARGETS)
 
@@ -19,6 +19,8 @@ run: all
 	./ex01_fnptr
 	./ex02_macro
 	./ex03_union
+
+test: run
 
 clean:
 	rm -f $(TARGETS)

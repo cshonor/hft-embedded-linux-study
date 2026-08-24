@@ -329,6 +329,6 @@ if (++packet_count % 1000000 == 0)
 
 ## 状态
 
-⬜ 未开始 → 建议先装 DPDK + 配大页，跑通 testpmd。
+🔄 [`part-a-host-poll`](./part-a-host-poll/)：`make test` 模拟 busy-poll 转发。真 DPDK/testpmd 仍需大页+网卡。
 
 ← [projects 总览](../README.md) · [18 模块](../../13-dpdk/) · [19 模块](../../06.6-systems-performance/)
