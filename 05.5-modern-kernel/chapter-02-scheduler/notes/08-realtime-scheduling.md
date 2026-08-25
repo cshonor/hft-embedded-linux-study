@@ -39,8 +39,12 @@
 | `stop_sched_class` | （无，内核内部：migration/热插拔） | — |
 | `dl_sched_class` | `SCHED_DEADLINE` | 红黑树，按绝对 deadline 排（EDF） |
 | `rt_sched_class` | `SCHED_FIFO`、`SCHED_RR` | **优先级位图 + 每优先级一条链表**（`find_first_bit()` O(1) 找最高优先级，这是"高优先级瞬间抢占"的结构基础） |
-| `fair_sched_class` | `SCHED_OTHER`、**`SCHED_IDLE`** | vruntime 红黑树 |
+| `fair_sched_class` | `SCHED_OTHER`、`SCHED_BATCH`、**`SCHED_IDLE`** | vruntime 红黑树 |
 | `idle_sched_class` | （无，pid 0 / swapper，用户选不到） | — |
+
+> fair 类有三个策略：`SCHED_OTHER`（普通）、`SCHED_BATCH`（批处理——不做交互性补偿的唤醒抢占，适合编译器这类纯吞吐任务）、`SCHED_IDLE`（权重压到底）。**一个策略只属于一个类，但一个类可以有多个策略**——rt 有 2 个，fair 有 3 个。
+
+**包厢模型（通俗但准）：** 4 个用户可达包厢（dl > rt > fair > idle），选任务先看最高包厢有没有人就绪，有就拿它、下面全部跳过；同一包厢内再按自己的策略挑。**但有一个例外戳破包厢比喻——RT throttling**：高包厢（RT 类）每 1s 必须歇 50ms（`sched_rt_runtime_us` 默认 950000/1000000），强留时间给低包厢。这是内核防"包厢锁死"的安全阀，也是"高类有就绪任务低类完全没机会"这句话的唯一例外。
 
 **三个命名/归类陷阱：**
 
