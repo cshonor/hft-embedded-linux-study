@@ -18,6 +18,7 @@ EEVDF 调度器原理、CFS 历史缺陷、latency-nice 机制。
 | 2.5 任务列表 vs 运行队列 (LKD3 Ch3) | `notes/05-task-list-vs-runqueue.md` |
 | 2.6 CFS 运行时机制链 (tick→vruntime→pick→抢占) | `notes/06-cfs-runtime-mechanics.md` |
 | 2.7 红黑树原理 (CFS 容器前置) | `notes/07-red-black-tree.md` |
+| 2.8 实时调度类 (FIFO/RR/DEADLINE 与 CFS 边界) | `notes/08-realtime-scheduling.md` |
 
 ---
 
