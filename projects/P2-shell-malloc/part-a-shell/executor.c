@@ -1,6 +1,8 @@
 #include "executor.h"
 
+#include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -30,13 +32,15 @@ static void apply_redir(const struct cmd *c)
 
 static void exec_one(const struct cmd *c)
 {
+    /* 子进程要能被 Ctrl-C 杀掉；shell 自己在 main 里把 SIGINT 忽略了。 */
+    signal(SIGINT, SIG_DFL);
     apply_redir(c);
     execvp(c->argv[0], c->argv);
     perror(c->argv[0]);
     _exit(127);
 }
 
-void run_pipeline(struct cmd *cmds, int n)
+void run_pipeline(struct cmd *cmds, int n, int background)
 {
     if (n <= 0)
         return;
@@ -78,8 +82,11 @@ void run_pipeline(struct cmd *cmds, int n)
         prev_read = pipefd[0];
     }
 
+    if (background)
+        return;
+
     for (int i = 0; i < n; i++) {
-        if (waitpid(pids[i], NULL, 0) < 0)
+        if (waitpid(pids[i], NULL, 0) < 0 && errno != ECHILD)
             perror("waitpid");
     }
 }

@@ -61,6 +61,8 @@ static void test_macros(void)
     BUILD_BUG_ON(sizeof(char) != 1);
     int x = 1;
     assert(__same_type(x, arr[0]));
+    assert(likely(x == 1));
+    assert(!unlikely(x == 0));
 }
 
 int main(void)

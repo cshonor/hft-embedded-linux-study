@@ -36,15 +36,15 @@ P5 树莓派嵌入式（P5a–P5f）      │
 | Project | 做什么 | 覆盖模块 | 前置 | 状态 |
 |:-------:|--------|:--------:|:----:|:----:|
 | [P1](./P1-cpu-simulator/) | 8-bit CPU（ALU+寄存器+FSM） | `00` | 无 | ✅ `make test` |
-| [P2](./P2-shell-malloc/) | mini shell + 自制 malloc/free + C 特性练手 | `01` `02` | P1 | ✅ 管道/重定向 + 隐式链表 malloc |
+| [P2](./P2-shell-malloc/) | mini shell + 自制 malloc/free + C 特性练手 | `01` `02` | P1 | ✅ 管道/后台/`&` + 显式链表 malloc |
 | [P2.5](./P2.5-c-toolkit/) | GNU C 工具箱：container_of + 侵入式链表 + ring buffer | `01` | P2 | ✅ `part-a-toolkit make test` |
-| [P3](./P3-http-server/) | 并发 HTTP Server（C → C++ 重写） | `19` `05` `04` | P2 | 🔄 echo + `--self-test`（epoll/线程池未做） |
+| [P3](./P3-http-server/) | 并发 HTTP Server（C → C++ 重写） | `19` `05` `04` | P2 | 🔄 GET 200/404 + echo（epoll/线程池未做） |
 | [P3.5](./P3.5-busybox-minimal-linux/) | BusyBox 极简 Linux（内核编译+rootfs+启动链） | `05` `08` | P3 | ⬜ 指南在；需本机 QEMU 编内核 |
 | [P4](./P4-kernel-module/) | 可加载内核模块（字符设备+kmalloc+/proc） | `05` `05.5` `05.6` `06` | P3+P3.5+P2.5 | 🔄 hello 源码有；WSL `make test` 只跑用户态 |
 | [P5](./P5-raspberry-pi-embedded/) | 树莓派嵌入式全链路（6 子项目） | `07`–`11` | P4 | ⬜ 需树莓派/QEMU，本机不假装完成 |
 | [P6](./P6-network-protocol-analyzer/) | 抓包+逐层解析+TCP 流重组+eBPF | `12` `13` `14` `14.5` `17` | P3 | 🔄 合成帧解析+pcap；raw socket/eBPF 未做 |
 | [P7](./P7-dpdk-forwarder-profiling/) | DPDK forwarder+perf 火焰图+bpftrace | `15` `16` `17` | P6 | 🔄 `part-a-host-poll` 模拟 PMD 循环；真 DPDK 需网卡 |
-| [P8](./P8-matching-engine/) | 限价订单簿撮合引擎+无锁+Rust 重写 | `18` `21` `22` | P4+P5+P7 | 🔄 `part-a-lob` 正确性；全链路见 P10 / 18-rust-quant |
+| [P8](./P8-matching-engine/) | 限价订单簿撮合引擎+无锁+Rust 重写 | `18` `21` `22` | P4+P5+P7 | 🔄 `part-a-lob` 正确性（撤单/部分成交）；全链路见 P10 / 18-rust-quant |
 | [P9](./P9-os-from-scratch/) | OS 从零造（MikanOS + 30 天精华） | ~~05~~ (拓展) | Phase4 完成 | ⬜ 笔记为主 |
 | [P10](./P10-hft-prototype/) | HFT 单机原型：demo 全链路（一文 + part-a） | `14` `19` | P8 规划 | ✅ part-a demo |
 

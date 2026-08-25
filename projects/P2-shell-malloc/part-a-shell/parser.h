@@ -12,7 +12,9 @@ struct cmd {
     char *out_file; /* `> file` */
 };
 
-/* 把一行拆成管道级命令。会改写 line。返回命令个数，失败返回 -1。 */
-int parse_pipeline(char *line, struct cmd *cmds, int max_cmds);
+/* 把一行拆成管道级命令。会改写 line。
+ * 行尾独立的 `&` 表示后台：*background=1。
+ * 返回命令个数，失败返回 -1。 */
+int parse_pipeline(char *line, struct cmd *cmds, int max_cmds, int *background);
 
 #endif

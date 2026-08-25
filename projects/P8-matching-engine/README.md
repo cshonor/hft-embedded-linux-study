@@ -507,6 +507,6 @@ mod ringbuf {
 
 ## 状态
 
-🔄 [`part-a-lob`](./part-a-lob/)：`make test`（价格优先 + FIFO）。全链路回放见 [P10](../P10-hft-prototype/part-a-demo/) 与 [18-rust-quant/demo](../../18-rust-quant/demo/)。无锁/绑核未做。
+🔄 [`part-a-lob`](./part-a-lob/)：`make test`（价格优先 + FIFO + 部分成交 + 撤单）。全链路回放见 [P10](../P10-hft-prototype/part-a-demo/) 与 [18-rust-quant/demo](../../18-rust-quant/demo/)。无锁/绑核未做。
 
 ← [projects 总览](../README.md) · [21 模块](../../14-hft-engineering/) · [22 模块](../../18-rust-quant/)

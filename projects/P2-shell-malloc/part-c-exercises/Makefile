@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -g
-TARGETS = ex01_fnptr ex02_macro ex03_union
+TARGETS = ex01_fnptr ex02_macro ex03_union ex04_offsetof ex05_likely
 
 .PHONY: all clean run test
 
@@ -15,10 +15,18 @@ ex02_macro: ex02_macro.c
 ex03_union: ex03_union.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+ex04_offsetof: ex04_offsetof.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+ex05_likely: ex05_likely.c
+	$(CC) $(CFLAGS) -o $@ $<
+
 run: all
 	./ex01_fnptr
 	./ex02_macro
 	./ex03_union
+	./ex04_offsetof
+	./ex05_likely
 
 test: run
 

@@ -22,6 +22,7 @@ test: $(TARGET)
 	@printf 'echo redir-ok > /tmp/p2_redir_out.txt\n' | ./$(TARGET) >/dev/null
 	@grep -q redir-ok /tmp/p2_redir_out.txt && echo "PASS  redir"
 	@rm -f /tmp/p2_redir_out.txt
+	@printf 'sleep 2 &\necho bg-fast\n' | timeout 1 ./$(TARGET) | grep -q bg-fast && echo "PASS  bg"
 	@echo "part-a-shell: OK"
 
 run: $(TARGET)

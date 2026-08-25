@@ -92,6 +92,26 @@ private:
         if (q.empty())
             bids.erase(it);
     }
+
+public:
+    bool cancel(uint64_t id)
+    {
+        auto drop = [id](std::map<int64_t, Level> &m) {
+            for (auto it = m.begin(); it != m.end(); ++it) {
+                auto &q = it->second.q;
+                for (auto o = q.begin(); o != q.end(); ++o) {
+                    if (o->id != id)
+                        continue;
+                    q.erase(o);
+                    if (q.empty())
+                        m.erase(it);
+                    return true;
+                }
+            }
+            return false;
+        };
+        return drop(bids) || drop(asks);
+    }
 };
 
 static int fail(const char *n)
@@ -132,6 +152,29 @@ int main()
             fails += fail("no-match");
         else
             std::cout << "PASS  no-match\n";
+    }
+    {
+        Book b;
+        b.submit(Order{1, Side::Sell, 10000, 50});
+        auto t = b.submit(Order{2, Side::Buy, 10000, 20});
+        if (t.size() != 1 || t[0].qty != 20 || b.best_ask() != 10000)
+            fails += fail("partial");
+        else
+            std::cout << "PASS  partial\n";
+    }
+    {
+        Book b;
+        b.submit(Order{1, Side::Sell, 10000, 10});
+        b.submit(Order{2, Side::Sell, 10000, 10});
+        if (!b.cancel(1))
+            fails += fail("cancel");
+        else {
+            auto t = b.submit(Order{3, Side::Buy, 10000, 10});
+            if (t.size() != 1 || t[0].maker_id != 2)
+                fails += fail("cancel");
+            else
+                std::cout << "PASS  cancel\n";
+        }
     }
     std::cout << (fails ? "P8 LOB FAILED\n" : "part-a-lob: OK\n");
     return fails;

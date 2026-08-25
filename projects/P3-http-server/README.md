@@ -28,21 +28,21 @@
 
 ### Version A：C 版
 
-- [ ] 基于 `socket` + `listen` + `accept` 的 TCP server
+- [x] 基于 `socket` + `listen` + `accept` 的 TCP server
 - [ ] `epoll` 多路复用（ET 模式 + 非阻塞 fd）
 - [ ] 线程池（固定 worker 数，任务队列 + 互斥锁/条件变量）
-- [ ] HTTP/1.1 请求解析（GET/POST、Header、Content-Length）
+- [x] HTTP/1.1 请求行 GET 路径解析（200/404；POST/Header 未做）
 - [ ] 静态文件服务（mime 类型、`sendfile` 零拷贝）
 - [ ] 连接超时关闭
 
 ### Version B：C++ 重写版
 
-- [ ] RAII 封装 fd（析构即 `close`，杜绝泄漏）
+- [x] RAII 封装 fd（析构即 `close`，杜绝泄漏）
 - [ ] `std::unique_ptr` / `std::shared_ptr` 管理连接对象
 - [ ] 模板化线程池（任意可调用任务）
 - [ ] 移动语义传递请求对象，零拷贝意图
-- [ ] `std::string_view` 解析请求行
-- [ ] `std::optional` / 错误码替代裸指针返回
+- [x] `std::string_view` 解析请求行
+- [x] `std::optional` 解析 GET 路径（非 GET 则 echo）
 
 ## 覆盖模块
 
@@ -79,6 +79,6 @@ wrk -t4 -c100 -d10s http://localhost:8080/
 
 ## 状态
 
-🔄 echo + `--self-test` 已可 `make test`。epoll / 线程池 / 静态文件仍按上面清单往后加。
+🔄 GET 200/404 + echo 已可 `make test`。epoll / 线程池 / 静态文件仍按上面清单往后加。
 
 ← [projects 总览](../README.md) · [03 模块](../../03-linux-userspace-api/) · [04 模块](../../04-cpp/)

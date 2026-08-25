@@ -9,7 +9,7 @@
 
 #define PORT 8080
 #define BACKLOG 16
-#define BUFSZ 1024
+#define BUFSZ 2048
 
 static int make_listener(uint16_t port)
 {
@@ -39,6 +39,81 @@ static uint16_t bound_port(int fd)
     return ntohs(addr.sin_port);
 }
 
+/* 只认请求行 `GET /path HTTP/1.x`。路径复制到 out，最多 outsz-1。 */
+static int parse_get_path(const char *req, char *out, size_t outsz)
+{
+    if (strncmp(req, "GET ", 4) != 0)
+        return -1;
+    const char *p = req + 4;
+    while (*p == ' ')
+        p++;
+    const char *e = p;
+    while (*e && *e != ' ' && *e != '\r' && *e != '\n')
+        e++;
+    size_t n = (size_t)(e - p);
+    if (n == 0 || n >= outsz)
+        return -1;
+    memcpy(out, p, n);
+    out[n] = '\0';
+    return 0;
+}
+
+static void send_http(int fd, int code, const char *body)
+{
+    char hdr[128];
+    int blen = (int)strlen(body);
+    const char *reason = (code == 200) ? "OK" : "Not Found";
+    int hlen = snprintf(hdr, sizeof hdr,
+                        "HTTP/1.1 %d %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+                        code, reason, blen);
+    write(fd, hdr, (size_t)hlen);
+    write(fd, body, (size_t)blen);
+}
+
+static void handle_conn(int conn)
+{
+    char buf[BUFSZ];
+    ssize_t n = read(conn, buf, sizeof buf - 1);
+    if (n <= 0)
+        return;
+    buf[n] = '\0';
+
+    char path[256];
+    if (parse_get_path(buf, path, sizeof path) == 0) {
+        if (strcmp(path, "/") == 0 || strcmp(path, "/hello.txt") == 0)
+            send_http(conn, 200, "p3-hello\n");
+        else
+            send_http(conn, 404, "missing\n");
+        return;
+    }
+
+    /* 非 HTTP：原样 echo，方便 nc 调试。 */
+    write(conn, buf, (size_t)n);
+    while ((n = read(conn, buf, sizeof buf)) > 0)
+        write(conn, buf, (size_t)n);
+}
+
+static int client_expect(uint16_t port, const char *req, const char *needle)
+{
+    int c = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = htons(port);
+    if (connect(c, (struct sockaddr *)&a, sizeof a) < 0)
+        return 2;
+    write(c, req, strlen(req));
+    shutdown(c, SHUT_WR);
+    char buf[512];
+    ssize_t n = read(c, buf, sizeof buf - 1);
+    close(c);
+    if (n <= 0)
+        return 3;
+    buf[n] = '\0';
+    return strstr(buf, needle) ? 0 : 4;
+}
+
 static int self_test(void)
 {
     int listen_fd = make_listener(0);
@@ -47,36 +122,28 @@ static int self_test(void)
         return 1;
     }
     uint16_t port = bound_port(listen_fd);
+
     pid_t pid = fork();
     if (pid == 0) {
         close(listen_fd);
-        int c = socket(AF_INET, SOCK_STREAM, 0);
-        struct sockaddr_in a;
-        memset(&a, 0, sizeof a);
-        a.sin_family = AF_INET;
-        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        a.sin_port = htons(port);
-        if (connect(c, (struct sockaddr *)&a, sizeof a) < 0)
-            _exit(2);
-        const char *msg = "ping-p3";
-        write(c, msg, strlen(msg));
-        shutdown(c, SHUT_WR);
-        char buf[64];
-        ssize_t n = read(c, buf, sizeof buf);
-        close(c);
-        _exit(n == (ssize_t)strlen(msg) && memcmp(buf, msg, (size_t)n) == 0 ? 0 : 3);
+        int e1 = client_expect(port, "GET /hello.txt HTTP/1.1\r\n\r\n", "p3-hello");
+        int e2 = client_expect(port, "GET /nope HTTP/1.1\r\n\r\n", "HTTP/1.1 404");
+        int e3 = client_expect(port, "ping-p3", "ping-p3");
+        _exit(e1 || e2 || e3);
     }
-    int conn = accept(listen_fd, NULL, NULL);
-    char buf[BUFSZ];
-    ssize_t n;
-    while ((n = read(conn, buf, sizeof buf)) > 0)
-        write(conn, buf, (size_t)n);
-    close(conn);
+
+    for (int i = 0; i < 3; i++) {
+        int conn = accept(listen_fd, NULL, NULL);
+        if (conn < 0)
+            continue;
+        handle_conn(conn);
+        close(conn);
+    }
     close(listen_fd);
     int st = 0;
     waitpid(pid, &st, 0);
     if (WIFEXITED(st) && WEXITSTATUS(st) == 0) {
-        puts("part-a-c-server: echo self-test OK");
+        puts("part-a-c-server: GET 200/404 + echo self-test OK");
         return 0;
     }
     fprintf(stderr, "self-test failed status=%d\n", st);
@@ -90,18 +157,7 @@ static void serve_forever(int listen_fd)
         int conn = accept(listen_fd, NULL, NULL);
         if (conn < 0)
             continue;
-        char buf[BUFSZ];
-        ssize_t n;
-        while ((n = read(conn, buf, sizeof buf)) > 0) {
-            /* 最小 HTTP：看见 GET 就回一行，方便 wrk/ab 以后再加。 */
-            if (n >= 3 && memcmp(buf, "GET", 3) == 0) {
-                const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
-                write(conn, resp, strlen(resp));
-                break;
-            }
-            if (write(conn, buf, (size_t)n) < 0)
-                break;
-        }
+        handle_conn(conn);
         close(conn);
     }
 }

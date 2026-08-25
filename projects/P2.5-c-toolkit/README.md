@@ -672,6 +672,6 @@ P2.5-c-toolkit/
 
 ## 状态
 
-✅ `part-a-toolkit`：`make test`（container_of / list / ringbuf / ARRAY_SIZE）。布局实验：`make run`。
+✅ `part-a-toolkit`：`make test`（container_of / list / ringbuf / ARRAY_SIZE / likely）。布局实验：`make run`。
 
 ← [projects 总览](../README.md) · [01-c-language](../../01-c-language/)

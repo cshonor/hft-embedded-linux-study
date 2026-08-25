@@ -1,10 +1,7 @@
-# Part C — C feature exercises (standalone runnable stubs)
+# Part C — C feature exercises
 
-Small programs for each drill. Later fold into Part A/B per [../Part-C-c-exercises.md](../Part-C-c-exercises.md).
+Standalone programs for each drill（函数指针 / 宏 / union / offsetof / likely）。
 
 ```bash
-make
-./ex01_fnptr
-./ex02_macro
-./ex03_union
+make test
 ```

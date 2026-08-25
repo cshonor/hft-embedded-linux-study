@@ -21,7 +21,6 @@ int main(void)
     p = myrealloc(p, 64);
     assert(p != NULL);
 
-    /* 连续分配再全部释放：测合并，避免隐式链表只涨不缩。 */
     void *blocks[32];
     for (int i = 0; i < 32; i++) {
         blocks[i] = mymalloc(24 + (size_t)i);
@@ -35,9 +34,29 @@ int main(void)
     assert(again != NULL);
     myfree(again);
 
+    /* 隔一个释放：空闲链上有洞，下一次同尺寸 malloc 应复用，而不是只往堆顶涨。 */
+    void *slot[16];
+    for (int i = 0; i < 16; i++) {
+        slot[i] = mymalloc(48);
+        assert(slot[i] != NULL);
+    }
+    for (int i = 0; i < 16; i += 2)
+        myfree(slot[i]);
+    void *reuse = mymalloc(48);
+    assert(reuse != NULL);
+    int hit = 0;
+    for (int i = 0; i < 16; i += 2) {
+        if (reuse == slot[i])
+            hit = 1;
+    }
+    assert(hit);
+    myfree(reuse);
+    for (int i = 1; i < 16; i += 2)
+        myfree(slot[i]);
+
     myfree(p);
     myfree(q);
 
-    puts("part-b-malloc: implicit free-list OK");
+    puts("part-b-malloc: explicit free-list OK");
     return 0;
 }

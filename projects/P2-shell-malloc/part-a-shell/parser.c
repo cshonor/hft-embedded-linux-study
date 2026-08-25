@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+/* 热路径：空格/成功读 token 几乎每次都有。EOF、行太长极少。 */
+#define likely(x)   __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
 static char *skip_ws(char *s)
 {
     while (*s == ' ' || *s == '\t' || *s == '\n')
@@ -13,11 +17,11 @@ static int parse_stage(char *stage, struct cmd *c)
 {
     memset(c, 0, sizeof *c);
     char *s = skip_ws(stage);
-    while (*s != '\0') {
+    while (likely(*s != '\0')) {
         if (*s == '<' || *s == '>') {
             int is_in = (*s == '<');
             s = skip_ws(s + 1);
-            if (*s == '\0')
+            if (unlikely(*s == '\0'))
                 return -1;
             char *start = s;
             while (*s && *s != ' ' && *s != '\t' && *s != '\n' && *s != '<' && *s != '>')
@@ -31,7 +35,7 @@ static int parse_stage(char *stage, struct cmd *c)
             s = skip_ws(s);
             continue;
         }
-        if (c->argc >= MAX_TOKENS - 1)
+        if (unlikely(c->argc >= MAX_TOKENS - 1))
             return -1;
         c->argv[c->argc++] = s;
         while (*s && *s != ' ' && *s != '\t' && *s != '\n' && *s != '<' && *s != '>')
@@ -46,8 +50,22 @@ static int parse_stage(char *stage, struct cmd *c)
     return 0;
 }
 
-int parse_pipeline(char *line, struct cmd *cmds, int max_cmds)
+int parse_pipeline(char *line, struct cmd *cmds, int max_cmds, int *background)
 {
+    if (background)
+        *background = 0;
+
+    size_t nch = strlen(line);
+    while (nch > 0 && (line[nch - 1] == ' ' || line[nch - 1] == '\t' || line[nch - 1] == '\n'))
+        line[--nch] = '\0';
+    if (nch > 0 && line[nch - 1] == '&' && (nch == 1 || line[nch - 2] == ' ' || line[nch - 2] == '\t')) {
+        if (background)
+            *background = 1;
+        line[--nch] = '\0';
+        while (nch > 0 && (line[nch - 1] == ' ' || line[nch - 1] == '\t'))
+            line[--nch] = '\0';
+    }
+
     int n = 0;
     char *start = line;
     for (char *p = line;; p++) {

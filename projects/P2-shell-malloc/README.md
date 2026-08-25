@@ -32,12 +32,12 @@
 - [x] Phase 2：内置命令 cd / exit / pwd
 - [x] Phase 3：I/O 重定向 `>` `<`（dup2）
 - [x] Phase 4：多级管道 `a | b | c`（pipe + fd 管理）
-- [ ] Phase 5：后台 `&` + 信号 Ctrl-C（SIGINT/SIGCHLD）
+- [x] Phase 5：后台 `&` + 信号 Ctrl-C（SIGINT/SIGCHLD）
 
 ### Part B：malloc/free（→ [详细指南](./Part-B-malloc.md)）
 
 - [x] Phase 1：隐式空闲链表 + 合并 + 分裂
-- [ ] Phase 2：显式空闲链表（next/prev 指针）
+- [x] Phase 2：显式空闲链表（next/prev 指针）
 - [ ] Phase 3：分离适配（按大小类分链表）
 - [ ] Phase 4：压力测试 + 吞吐量测试
 - [x] `myrealloc` / `mycalloc` 实现
@@ -47,8 +47,8 @@
 - [x] 练习 1：函数指针命令分发表（standalone `ex01_fnptr`）
 - [x] 练习 2：调试分配器宏（`#` 字符串化 + `__LINE__`）
 - [x] 练习 3：union 多态值类型（standalone `ex03_union`）
-- [ ] 练习 4：offsetof 验证 malloc 头块对齐
-- [ ] 练习 5：likely/unlikely 热路径标注（shell 解析器）
+- [x] 练习 4：offsetof 验证 malloc 头块对齐
+- [x] 练习 5：likely/unlikely 热路径标注（shell 解析器）
 
 ## 覆盖模块
 
@@ -97,4 +97,4 @@
 
 ## 状态
 
-✅ Part A Phase 1–4（管道/重定向）· Part B 隐式链表 malloc · Part C 练习 1–3。后台 `&` / 分离适配未做。
+✅ Part A Phase 1–5（管道/重定向/后台 `&`/SIGINT）· Part B 显式空闲链表 malloc · Part C 练习 1–5。分离适配未做。
