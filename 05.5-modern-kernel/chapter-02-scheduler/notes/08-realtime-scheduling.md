@@ -28,6 +28,26 @@
 
 三者关系：**策略决定你进哪个类，类决定用什么算法，框架决定先问哪个类。** 一个类可以对应多个策略（rt_sched_class 同时服务 FIFO 和 RR），反过来一个策略只属于一个类。
 
+类比：**框架是主板**（定插槽规范，自己不做图形计算）；**调度类是显卡**（一张卡支持多种输出模式）；**策略是显卡的设置档位**（高性能/省电，硬件还是同一张）。
+
+**框架"不做算法"的准确边界：** 框架不做**类内**算法（vruntime 怎么算、FIFO 怎么排是类的事），但**类间**规则是框架定的——按什么顺序问各类、何时触发抢占检查、负载均衡钩子。一句话：**框架定规则，类填算法。**
+
+### 类 ↔ 策略 ↔ 数据结构 速览（含命名陷阱）
+
+| 调度类 | 包含的策略 | 底层数据结构 |
+|--------|-----------|--------------|
+| `stop_sched_class` | （无，内核内部：migration/热插拔） | — |
+| `dl_sched_class` | `SCHED_DEADLINE` | 红黑树，按绝对 deadline 排（EDF） |
+| `rt_sched_class` | `SCHED_FIFO`、`SCHED_RR` | **优先级位图 + 每优先级一条链表**（`find_first_bit()` O(1) 找最高优先级，这是"高优先级瞬间抢占"的结构基础） |
+| `fair_sched_class` | `SCHED_OTHER`、**`SCHED_IDLE`** | vruntime 红黑树 |
+| `idle_sched_class` | （无，pid 0 / swapper，用户选不到） | — |
+
+**三个命名/归类陷阱：**
+
+1. **`SCHED_IDLE` ≠ `idle_sched_class`**（最大的坑）。`SCHED_IDLE` 是 **fair 类**里的策略——权重压到最低的 CFS 进程（比 nice 19 还低），用户态可用；而 `idle_sched_class` 跑的是每 CPU 的 idle 任务（swapper，pid 0），用户**根本选不到**。名字撞车，完全是两回事。
+2. 类名是**后缀式**：`fair_sched_class` 不叫 `sched_cfs_class`——注意叫 fair 不叫 cfs（6.6 起 CFS 实现换成了 EEVDF，类名不用改，这正是"类是插件、算法可换"的体现）。
+3. 框架选任务是按**类**的优先级顺序调 `pick_next_task`，不是按策略——策略只在类内生效。
+
 ---
 
 ## 二、三种实时策略
@@ -137,4 +157,17 @@ chrt -p <pid>        # 查询某进程的调度策略
 而 `pick_next_task()` 是**跨类选择，先于一切类内比较**：stop → dl → rt → fair 逐层询问，FIFO(50) 只要就绪，**根本轮不到 fair_sched_class 被问到**，nice 是 -20 还是 +19 一个字都没被读到。
 
 一句话：**nice 调的是类内座位，跨类靠的是出生。** 想赢过实时进程，只有把自己变成实时进程，或让 FIFO 睡觉/退出。
+</details>
+
+**Q: 把进程改成 `SCHED_RR`，算更换调度类吗？**
+
+<details>
+<summary>答案（点开）</summary>
+
+**看从哪改过来——可能换类，也可能不换：**
+
+- 从 `SCHED_OTHER` 改成 `SCHED_RR`：**是换类**。进程从 fair 类红黑树摘出，挂进 rt 类优先级队列，从此 `pick_next_task()` 在更早的层级就被看到
+- 从 `SCHED_FIFO` 改成 `SCHED_RR`：**不是换类**。还是 rt_sched_class、同一条实时队列、同一优先级，变的只是类内规则（"跑到让出" → "时间片轮转"）
+
+一句话：**策略是类内旋钮，拧旋钮 ≠ 换插槽。**
 </details>
