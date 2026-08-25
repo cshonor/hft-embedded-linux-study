@@ -5,14 +5,28 @@
 
 ---
 
-## 一、两套调度体系
+## 一、不是一个框架里的"两套调度器"，是多个调度类插件
 
-| 体系 | 管谁 | 机制 |
+内核里只有**一个调度框架**（scheduler framework），框架下注册了**多个调度类**（sched_class），每个类自带一整套数据结构和操作函数，内核按优先级从高到低依次挑选任务。
+
+| 调度类 | 管谁 | 机制 |
 |------|------|------|
-| **CFS / EEVDF**（fair_sched_class） | 普通非实时任务 | vruntime 公平分片，nice 调权重 |
-| **实时调度类**（dl / rt_sched_class） | 紧急任务 | 优先级抢占，独立队列 |
+| **dl_sched_class** | SCHED_DEADLINE | EDF 红黑树（按 deadline 排） |
+| **rt_sched_class** | SCHED_FIFO / SCHED_RR | 优先级位图数组 |
+| **fair_sched_class** | SCHED_OTHER（普通进程，绝大多数程序） | vruntime 红黑树公平分片 |
+| **idle_sched_class** | 每 CPU 的 idle 任务 | 系统空闲才跑 |
 
-`struct rq` 里就能看出来——`cfs_rq cfs` 和 `rt_rq rt`、`dl_rq dl` 是并列的独立队列，各有各的数据结构（CFS 用红黑树，RT 用优先级位图数组，DL 用红黑树按 deadline 排）。
+`struct rq` 里就能看出来——`cfs_rq cfs`、`rt_rq rt`、`dl_rq dl` 是**并列的独立队列**，各有各的数据结构。实时任务**不在** CFS 的红黑树里。
+
+### 调度框架 / 调度类 / 调度策略 三层区分（易混）
+
+| 层 | 是什么 | 例子 |
+|----|--------|------|
+| **调度框架** | 内核选进程的统一入口和骨架，定义"按类优先级逐层挑选"的规则 | `kernel/sched/core.c` 的 `pick_next_task()` / `__schedule()` |
+| **调度类** | 框架下注册的"插件"，每个类一套数据结构 + 入队/出队/挑任务的函数（`sched_class` 结构体里的函数指针） | `fair_sched_class`、`rt_sched_class`、`dl_sched_class`、`idle_sched_class` |
+| **调度策略** | 用户态通过 `sched_setscheduler()` 选的**参数**，决定进程进哪个类、类内怎么排队 | `SCHED_OTHER`、`SCHED_FIFO`、`SCHED_RR`、`SCHED_DEADLINE` |
+
+三者关系：**策略决定你进哪个类，类决定用什么算法，框架决定先问哪个类。** 一个类可以对应多个策略（rt_sched_class 同时服务 FIFO 和 RR），反过来一个策略只属于一个类。
 
 ---
 
@@ -91,6 +105,7 @@ chrt -p <pid>        # 查询某进程的调度策略
 
 | 混淆 | 澄清 |
 |------|------|
+| Linux 是"两套独立调度器程序"？ | 不是。**一个调度框架 + 多个调度类插件**，框架按类优先级逐层挑选 |
 | 实时任务走 CFS 红黑树？ | 不走。CFS 只管 fair 类，RT 用优先级位图，DL 按 deadline 排树 |
 | FIFO/RR 被废弃了？ | 没有，POSIX 标准策略一直保留；DEADLINE 是新增第三套 |
 | nice 调高能赢实时进程？ | 不能。nice 只在 CFS 类内折算 vruntime 权重，**跨调度类根本不比较** |
