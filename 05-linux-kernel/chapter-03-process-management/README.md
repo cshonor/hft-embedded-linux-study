@@ -19,6 +19,7 @@
 | **⑥ 终结** | `exit` · 僵尸 · 孤儿 | **`wait` · reparent → init** |
 | **⑦ ELF/exec**（拓展） | ET_* · Program Header | 静态 ELF → 进程映像 |
 | **⑧ PID/FD**（拓展） | 身份 vs 资源钥匙 · **fork 共享 `struct file`/offset** | fork 新 PID；exec 换程序 |
+| **⑨ idle 进程**（拓展） | `init_task` · per-CPU idle · `idle_sched_class` | 最低优先级 · `do_idle` · C-states |
 
 ---
 
@@ -35,6 +36,7 @@
 | ELF 体系与 exec 加载（拓展） | [notes/section-3.7-ELF体系与exec加载.md](./notes/section-3.7-ELF体系与exec加载.md) |
 | 身份 PID 与资源 FD（拓展） | [notes/section-3.8-身份PID与资源FD.md](./notes/section-3.8-身份PID与资源FD.md) |
 | 全局任务链表与线程组（拓展） | [notes/section-3.9-全局任务链表与线程组.md](./notes/section-3.9-全局任务链表与线程组.md) |
+| idle 进程与 swapper（拓展） | [notes/section-3.10-idle进程与swapper.md](./notes/section-3.10-idle进程与swapper.md) |
 
 ---
 
