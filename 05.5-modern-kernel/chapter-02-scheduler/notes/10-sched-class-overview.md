@@ -54,6 +54,54 @@ static void enqueue_task(struct rq *rq, struct task_struct *p)
 
 **同一个通用调度框架，依靠不同的 `sched_class` 函数指针，执行完全不同的调度算法。** 这就是内核里面向对象的实现方式：C 语言没有 class，用函数指针模拟多态（和 VFS 的 `file_operations`、`inode_operations`、`vm_operations_struct` 是同一套思路）。
 
+### 关键设计：没有 ID，靠指针地址识别
+
+内核**没有** `int sched_class_id` 这种数字字段来标记"是哪一类调度"。识别调度类就靠**比较指针地址**：
+
+```c
+/* 内核里确实有这种直接比较指针的代码 */
+if (p->sched_class == &idle_sched_class) {
+    /* 当前任务是 idle 线程 */
+}
+```
+
+指针等于 `&fair_sched_class` 就是 CFS，等于 `&rt_sched_class` 就是实时——不需要 enum、不需要 ID 号。
+
+> **内存效率**：`task_struct` 只存**一个指针**，不携带一整套函数表。成千上万个 task 共享同一组全局 `sched_class` 实例——4 个实例（+ `dl` 共 5 个）编译期固定，全局只读，所有 task 指过去就行。如果每个 task 各存一份函数表，那才是浪费。
+
+### 全局实例的声明
+
+```c
+/* 内核全局，只读，编译期固定 */
+extern const struct sched_class stop_sched_class;
+extern const struct sched_class dl_sched_class;      /* ⚠️ 原笔记漏了这行 */
+extern const struct sched_class rt_sched_class;
+extern const struct sched_class fair_sched_class;
+extern const struct sched_class idle_sched_class;
+```
+
+> ⚠️勘误：原笔记只列 4 个 `extern`，漏了 `dl_sched_class`。完整 5 个，见第 2 节。
+
+### 简图
+
+```
+全局只读实例（编译就存在）
+├─ stop_sched_class  { enqueue(), pick_next(), ... }   最高
+├─ dl_sched_class    { enqueue(), pick_next(), ... }
+├─ rt_sched_class    { enqueue(), pick_next(), ... }
+├─ fair_sched_class  { enqueue(), pick_next(), ... }
+└─ idle_sched_class  { enqueue(), pick_next(), ... }   最低
+
+task_struct(进程A，普通)
+    sched_class = &fair_sched_class  ── 指向上面 fair 实例
+
+task_struct(进程B，实时)
+    sched_class = &rt_sched_class    ── 指向上面 rt 实例
+
+调度器执行 p->sched_class->enqueue_task(rq, p);
+顺着指针，调用对应那一套函数。
+```
+
 ---
 
 ## 2、5 个调度类（优先级从高到低）
@@ -155,7 +203,13 @@ struct task_struct *pick_next_task(struct rq *rq, ...)
 6. ❌误区：选下一个任务看当前任务的调度类
    ✅：`pick_next_task` 从高到低遍历所有 sched_class，第一个返回非 NULL 的就是下一个任务。当前任务的调度类只影响它自己的入队/出队行为。
 
-7. 区分记忆：
+7. ❌误区：内核用数字 ID 标记是什么调度类
+   ✅：**直接比较指针地址识别调度类，没有额外 ID 字段**。`p->sched_class == &fair_sched_class` 就是 CFS，不需要 `int sched_class_id`。
+
+8. ❌误区：每个 `task_struct` 存一整套 enqueue/pick_next 函数
+   ✅：task 只存**一个指针**，指向全局已写好的函数表。成千上万个 task 共享同一组 `sched_class` 实例，不各自复制。
+
+9. 区分记忆：
    - **调度策略**（`sched_setscheduler` 传的参数）：用户态可见，`SCHED_OTHER/FIFO/RR/IDLE/BATCH/DEADLINE`
    - **调度类 `sched_class`**：内核内部实现调度算法，用户不可见，5 个实例
 
@@ -177,6 +231,9 @@ A：`SCHED_DEADLINE` 先跑。`dl_sched_class` 优先级高于 `rt_sched_class`�
 
 **Q5：为什么 `pick_next_task` 有个 fast path 检查 `rq->nr_running == rq->cfs.nr_running`？**
 A：性能优化。大多数机器绝大多数 CPU 都只跑 CFS 任务，跳过 stop/dl/rt 的遍历能省周期。一旦有 RT/DL 任务被唤醒，`rq->nr_running` 会大于 `rq->cfs.nr_running`，自动走 slow path。
+
+**Q6：如果强行把 `task_struct` 的 `sched_class` 指针改成 NULL，内核会怎样？**
+A：内核调用 `p->sched_class->enqueue_task` 时对 NULL 指针解引用 → **内核 Oops 崩溃**。所以这个指针绝对不能乱改，全部由内核内部代码维护，用户态无法直接访问 `task_struct`。
 
 ---
 
