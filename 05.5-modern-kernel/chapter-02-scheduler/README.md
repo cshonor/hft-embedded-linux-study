@@ -20,6 +20,7 @@ EEVDF 调度器原理、CFS 历史缺陷、latency-nice 机制。
 | 2.7 红黑树原理 (CFS 容器前置) | `notes/07-red-black-tree.md` |
 | 2.8 实时调度类 (FIFO/RR/DEADLINE 与 CFS 边界) | `notes/08-realtime-scheduling.md` |
 | 2.9 调度类与"一切皆文件" (sched_class/kernfs/VFS) | `notes/09-sched-class-and-vfs.md` |
+| 2.10 调度类 sched_class 总览 (5档优先级/pick_next_task遍历/sched_setscheduler切换) | `notes/10-sched-class-overview.md` |
 
 ---
 
