@@ -136,6 +136,48 @@ task_struct(进程B，实时)
 
 > ⚠️勘误："SCHED_IDLE 只是降低 nice 权重"会误导。`SCHED_IDLE` 是**独立的 policy**（不是 nice 值），它把进程留在 `fair_sched_class`，但权重固定为 `sched_prio_to_weight[0]` 的最小值（约 15），vruntime 增速最快。和 nice 19 是两套机制——nice 19 仍属于 `SCHED_OTHER`，权重比 `SCHED_IDLE` 高得多。实际效果上 `SCHED_IDLE` 比 nice 19 还弱（详见 §3.10 对比表）。
 
+### 两层分发机制：指针分大门，policy 分小隔间
+
+上面的映射表揭示一个关键设计——**6 个用户策略只映射到 3 个调度类**（不算 stop/idle）：
+
+| 用户态策略（数字） | 归属哪个内核调度类 |
+|---|---|
+| `SCHED_FIFO` | `rt_sched_class` |
+| `SCHED_RR` | `rt_sched_class`（**和 FIFO 共用同一个**） |
+| `SCHED_OTHER` | `fair_sched_class` |
+| `SCHED_IDLE` | `fair_sched_class`（**和 OTHER 共用同一个**） |
+| `SCHED_BATCH` | `fair_sched_class`（同上） |
+| `SCHED_DEADLINE` | `dl_sched_class` |
+
+`SCHED_RR` 和 `SCHED_FIFO` 不是两个独立调度类——只是 `rt_sched_class` **内部的两种行为模式**。同理 `OTHER`/`IDLE`/`BATCH` 是 `fair_sched_class` 内部的三种模式。
+
+> ⚠️勘误：很多资料说"内核 4 个调度类，用户 5 个策略"——两处都错。正确是：**5 个调度类，6 个策略**（漏了 `dl_sched_class` 和 `SCHED_DEADLINE`）。
+
+调度器运行时分两层判断：
+
+```
+第一层（大门）：看 p->sched_class 指针，决定进入哪一套函数
+第二层（门内）：进入对应调度类函数后，读 p->policy 数字，区分小模式
+```
+
+rt 调度类内部伪代码：
+
+```c
+/* 属于 rt_sched_class 的函数内部 */
+task = 从实时优先级队列取出任务;
+if (task->policy == SCHED_FIFO) {
+    // FIFO：不消耗时间片，拿到 CPU 一直跑到主动让出
+} else if (task->policy == SCHED_RR) {
+    // RR：时间片递减，耗尽后放回队列尾部，同优先级轮转
+}
+```
+
+fair 调度类内部同理，读 `policy` 区分 `SCHED_OTHER`/`SCHED_BATCH`/`SCHED_IDLE` 的权重计算路径。
+
+> **为什么不用 policy 做第一层判断？** 内核设计思想：面向对象，函数指针解耦。第一层不写巨大的 `if (policy == FIFO || policy == RR || ...)`，直接靠指针跳转到整组函数。新增调度算法只要新增一个 `sched_class` 全局实例，不用到处改 if-else。policy 只在调度类内部做细分，不影响外层分发。
+
+> 大白话：**调度类指针负责"进哪个大门"（rt/fair/dl），policy 数字负责"大门里坐哪个小隔间"（FIFO/RR，OTHER/IDLE/BATCH）**。
+
 ---
 
 ## 4、运行队列 rq 和 `pick_next_task` 遍历机制
@@ -209,7 +251,13 @@ struct task_struct *pick_next_task(struct rq *rq, ...)
 8. ❌误区：每个 `task_struct` 存一整套 enqueue/pick_next 函数
    ✅：task 只存**一个指针**，指向全局已写好的函数表。成千上万个 task 共享同一组 `sched_class` 实例，不各自复制。
 
-9. 区分记忆：
+9. ❌误区：`SCHED_RR` 和 `SCHED_FIFO` 是两个独立调度类
+   ✅：两者共用同一个 `rt_sched_class`，只是 rt 调度类内部读 `task->policy` 区分行为。同理 `SCHED_OTHER`/`SCHED_IDLE`/`SCHED_BATCH` 共用 `fair_sched_class`。
+
+10. ❌误区：调度器第一层用 policy 数字做分支判断
+   ✅：第一层看 `p->sched_class` 指针，直接跳转到对应函数组。policy 只在调度类**内部**被读取做细分。这是 OOP 解耦设计——新增调度算法加一个 `sched_class` 实例即可，不用到处改 if-else。
+
+11. 区分记忆：
    - **调度策略**（`sched_setscheduler` 传的参数）：用户态可见，`SCHED_OTHER/FIFO/RR/IDLE/BATCH/DEADLINE`
    - **调度类 `sched_class`**：内核内部实现调度算法，用户不可见，5 个实例
 
@@ -234,6 +282,12 @@ A：性能优化。大多数机器绝大多数 CPU 都只跑 CFS 任务，跳过
 
 **Q6：如果强行把 `task_struct` 的 `sched_class` 指针改成 NULL，内核会怎样？**
 A：内核调用 `p->sched_class->enqueue_task` 时对 NULL 指针解引用 → **内核 Oops 崩溃**。所以这个指针绝对不能乱改，全部由内核内部代码维护，用户态无法直接访问 `task_struct`。
+
+**Q7：一个任务设置为 `SCHED_RR`，它的 `sched_class` 指针指向谁？是 policy 决定调用 `enqueue` 吗？**
+A：指向 `&rt_sched_class`。policy 不在调度器外层做判断——进入 rt 调度类的函数内部后，才会读 `task->policy` 区分 RR/FIFO。`SCHED_RR` 和 `SCHED_FIFO` 共用同一个 `rt_sched_class`，只是内部行为不同（RR 有时间片轮转，FIFO 没有）。
+
+**Q8：有人说"内核 4 个调度类、用户 5 个策略"，对吗？**
+A：不对。正确是**5 个调度类、6 个策略**。漏了 `dl_sched_class` 和 `SCHED_DEADLINE`。`stop > dl > rt > fair > idle` 共 5 档，用户可见策略 6 个（`OTHER/FIFO/RR/IDLE/BATCH/DEADLINE`）。
 
 ---
 
