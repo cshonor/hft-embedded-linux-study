@@ -34,6 +34,7 @@
 | 进程终结 | [notes/section-3.6-进程终结.md](./notes/section-3.6-进程终结.md) |
 | ELF 体系与 exec 加载（拓展） | [notes/section-3.7-ELF体系与exec加载.md](./notes/section-3.7-ELF体系与exec加载.md) |
 | 身份 PID 与资源 FD（拓展） | [notes/section-3.8-身份PID与资源FD.md](./notes/section-3.8-身份PID与资源FD.md) |
+| 全局任务链表与线程组（拓展） | [notes/section-3.9-全局任务链表与线程组.md](./notes/section-3.9-全局任务链表与线程组.md) |
 
 ---
 
