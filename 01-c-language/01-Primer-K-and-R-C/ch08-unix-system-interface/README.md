@@ -267,6 +267,8 @@ close(fd);
 
 **复习：** → [8.5 实例-fopen和getc函数的实现](./8.5-实例-fopen和getc函数的实现.md) · [8.2 低级IO-read和write](./8.2-低级IO-read和write.md)
 
+</details>
+
 ---
 
 ## 代码自测

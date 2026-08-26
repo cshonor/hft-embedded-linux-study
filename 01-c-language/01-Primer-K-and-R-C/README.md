@@ -23,6 +23,20 @@
 
 有 C++ 基础可快速过，不必逐行死磕例题；重点是改掉面向对象的写法习惯。
 
+## HTML 阅读版
+
+全书笔记已生成单文件 HTML 阅读版（暗色主题 · 侧边栏目录 · 章内锚点跳转 · 自测折叠答案）：[进入封面页](./html/index.html)，或直达各章：
+
+| 章 | HTML | 章 | HTML |
+|----|------|----|------|
+| 第 1 章 | [ch01.html](./html/ch01.html) | 第 6 章 | [ch06.html](./html/ch06.html) |
+| 第 2 章 | [ch02.html](./html/ch02.html) | 第 7 章 | [ch07.html](./html/ch07.html) |
+| 第 3 章 | [ch03.html](./html/ch03.html) | 第 8 章 | [ch08.html](./html/ch08.html) |
+| 第 4 章 | [ch04.html](./html/ch04.html) | 附录 A | [appendix-a.html](./html/appendix-a.html) |
+| 第 5 章 | [ch05.html](./html/ch05.html) | 附录 B/C | [appendix-b.html](./html/appendix-b.html) · [appendix-c.html](./html/appendix-c.html) |
+
+> 由 `md → HTML` 转换脚本生成，源笔记更新后可重新生成。
+
 ## 章节索引
 
 全书 8 章 + 3 附录。各章目录下已按小节划分占位笔记；路径均为 ASCII，中文标题在文件内。
