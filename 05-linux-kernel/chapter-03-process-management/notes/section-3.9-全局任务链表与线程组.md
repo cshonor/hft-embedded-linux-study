@@ -38,6 +38,20 @@ struct task_struct {
 - `init_task.tasks` 上只多 **1 条**：主线程（组长）
 - 组长的 `thread_group` 链串联全部 **4 条** task_struct
 
+### pid vs tgid
+
+| 字段 | 含义 |
+|------|------|
+| `pid` | 每个 task_struct（每个线程）的唯一 ID |
+| `tgid` | 线程组 ID，等于组长的 `pid` |
+
+- 组长：`pid == tgid`
+- 子线程：`pid != tgid`，`tgid` 等于组长 `pid`
+
+> 判断一个 task 是否线程组组长：`(p->pid == p->tgid)`。`fork()` 出来的进程 `tgid = pid`（自己是组长）；`clone(CLONE_THREAD)` 出来的子线程 `tgid` 继承组长 `pid`。
+
+> 用户态看到的"PID"实际是内核的 `tgid`（`getpid()` 返回 tgid），`gettid()` 才返回真正的 pid。
+
 ---
 
 ## 三、遍历：三个现成宏
@@ -161,3 +175,9 @@ graph LR
 
 > Q：`init_task.tasks` 链表上有几个 pid=0 的 task？
 > A：CPU 数个。`init_task` 是 0 号 CPU 的 idle（静态）；其余 CPU 的 idle 由 `fork_idle(cpu)` 动态创建并挂同一链，`for_each_process` 会遍历到它们。
+
+> Q：调用 `clone(CLONE_THREAD)` 创建子线程，子线程的 `tasks` 链表节点处于什么状态？
+> A：该 `list_head` 变量存在于 task_struct 内存里，**但不插入任何链表，处于游离未挂载状态**，不参与全局 tasks 遍历。只有 `thread_group` 节点被挂到组长的链上。
+
+> Q：用户态 `getpid()` 和 `gettid()` 返回的分别是什么？
+> A：`getpid()` 返回 `tgid`（线程组 ID，即组长 pid）；`gettid()` 返回真正的 `pid`（每个线程唯一）。所以主线程里 `getpid() == gettid()`，子线程里 `getpid() != gettid()`。
