@@ -22,8 +22,37 @@ Linux **没有** 单独的「线程」内核对象类型：
 | **`CLONE_THREAD`** | 同 **线程组**（`tgid`） | `pthread_create` 必设；线程退出**不发 SIGCHLD** → 不能 `wait`，要用 `pthread_join` |
 | **`CLONE_FS`** | `fs_struct`（cwd、root、umask） | 共享；一线程 `chdir` 全组生效 |
 | **`CLONE_SETTLS`** | 线程局部存储区 | `pthread` TLS，实现 `__thread` 变量 |
+| **`CLONE_SYSVSEM`** | System V 信号量 undo 列表（`sem_adj`） | 共享；NPTL 实际也传这个 flag |
 | **`CLONE_PARENT_SETTID`** | 内核把新线程 TID 写回父进程用户态地址 | `pthread_create` 返回的 TID 来源 |
 | **`CLONE_CHILD_CLEARTID`** | 线程退出时清空指定地址并触发 futex 唤醒 | `pthread_join` 阻塞等待的底层机制 |
+
+#### flags 的结构：低 8 位是退出信号，高位才是开关
+
+`flags` 就是一个**比特掩码整数**：每个 `CLONE_*` 宏只有单独一位置 1；用户态用**按位或 `|`** 把多个开关叠加进同一个参数，内核用**按位与 `&`** 逐个检测：
+
+```c
+/* 用户态组合 */
+flags = CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | SIGCHLD;
+/* 内核检测（copy_process 路径） */
+if (flags & CLONE_VM)
+        p->mm = current->mm;      /* 共享地址空间 */
+else
+        p->mm = dup_mm(current);  /* 复制 + COW */
+```
+
+```
+flags 整数
+├─ 低 8 bit（1 字节）：子任务死亡时发给父进程的信号（fork 填 SIGCHLD；
+│                     NPTL 线程因 CLONE_THREAD 路径填 0，不发信号）
+└─ 其余高位比特：各 CLONE_* 开关（fork 全 0 → 全部资源复制）
+```
+
+⚠️ **不能乱拼——内核有依赖校验**（`copy_process` 中检查，违反直接 `-EINVAL`）：
+
+- 开 `CLONE_SIGHAND` **必须**同时开 `CLONE_VM`（共享信号处理表的前提是共享地址空间）
+- 开 `CLONE_THREAD` **必须**同时开 `CLONE_SIGHAND`（进而必须 `CLONE_VM`）
+
+> 所以 NPTL 传的是一整套成体系的 flag 组合，不是随便开一两个。依赖链条：`CLONE_THREAD → CLONE_SIGHAND → CLONE_VM`。
 
 > `CLONE_CHILD_CLEARTID` 是 `pthread_join` 的核心：join 方在用户态 futex 等待该地址，线程退出时内核清地址 + futex wake，join 方即被唤醒。避免了「线程退出通知」走信号路径——这也解释了为什么 `CLONE_THREAD` 路径下终止信号传 **0**（不发 SIGCHLD）。
 
@@ -128,7 +157,7 @@ kthread（无用户地址空间）
 
 | 维度 | `fork()` | `vfork()` | `pthread_create()`（NPTL） |
 |------|----------|-----------|------------------------------|
-| **底层 clone flags** | 仅 `SIGCHLD`（无任何 CLONE_* 共享） | `CLONE_VM \| CLONE_VFORK \| SIGCHLD` | `CLONE_VM \| CLONE_FILES \| CLONE_SIGHAND \| CLONE_THREAD \| CLONE_FS \| CLONE_SETTLS \| CLONE_PARENT_SETTID \| CLONE_CHILD_CLEARTID`，终止信号 **0** |
+| **底层 clone flags** | 仅 `SIGCHLD`（无任何 CLONE_* 共享） | `CLONE_VM \| CLONE_VFORK \| SIGCHLD` | `CLONE_VM \| CLONE_FILES \| CLONE_SIGHAND \| CLONE_THREAD \| CLONE_FS \| CLONE_SETTLS \| CLONE_SYSVSEM \| CLONE_PARENT_SETTID \| CLONE_CHILD_CLEARTID`，终止信号 **0** |
 | **地址空间 mm** | 独立（COW 写时复制） | **共享**（不 COW，父挂起） | 共享 |
 | **fd 表 files** | 复制（引用计数 +1） | 复制 | 共享 |
 | **信号处理表 sighand** | 复制 | 复制 | 共享（但**信号掩码 per-task 独立**） |
