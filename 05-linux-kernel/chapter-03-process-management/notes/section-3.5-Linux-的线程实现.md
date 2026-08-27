@@ -41,8 +41,8 @@ Linux **没有** 单独的「线程」内核对象类型：
 ┌─────────────────────────────────────┐
 │  共享：mm · files · sighand（可选）    │
 ├──────────┬──────────┬───────────────┤
-│ task pid │ task pid │ task pid      │
-│   100    │   101    │   102         │  ← 各有一个 task_struct
+│ pid=100  │ pid=101  │ pid=102       │  ← 各有一个 task_struct（pid 字段=TID）
+│(组长=主) │ (TID)    │ (TID)         │     tgid 全部 = 100
 └──────────┴──────────┴───────────────┘
 ```
 
@@ -59,10 +59,22 @@ LWP（Light-Weight Process）在内核里是**一份完整独立的 `task_struct
 | | **信号掩码**（`task_struct->blocked`） |
 | | **TLS**（`CLONE_SETTLS` 设置各自线程局部存储） |
 
-> 观察命令：**`ps -aL`** —— 同一个 PID（=TGID）下面列出多条不同 LWP-ID（=TID）的任务。
+> 观察命令：**`ps -aL`** —— 同一个 PID（=TGID）下面列出多条不同 LWP-ID（=TID）的任务；**LWP 列打印的就是 `gettid()` 的值**。
 > `getpid()` 返回 **TGID**（同组全一样），`gettid()` 返回 **TID**（每条不同）。
 
-⚠️ **`CLONE_THREAD` 是"是线程"的判定标志，不是 `CLONE_VM`**：不开 `CLONE_THREAD`、只开 `CLONE_VM`，产物**不是 POSIX 线程**——它有自己独立的 TGID（新进程），不归属任何线程组，父进程要 `wait` 回收它。它只是一个「共享地址空间的独立进程」。用户态看是两个进程共享内存，内核看是两条无关 task_struct 恰好指向同一个 `mm`。
+##### 字段名陷阱：`task_struct->pid` 存的其实是 TID
+
+| 内核字段 | 实际语义 | 用户态取值 |
+|----------|----------|-----------|
+| `task_struct->pid` | **TID**（任务唯一 ID，调度器真正识别的 ID） | `gettid()` |
+| `task_struct->tgid` | 线程组 ID（= 用户说的"进程号"） | `getpid()` |
+
+- **fork 普通进程**：`pid == tgid`（自己是组长，组里只有自己）
+- **同进程多条 LWP**：`tgid` 全部相同，`pid`（LWP 号）各自不同
+- **主线程也是 LWP**：`pid == tgid`，它是**线程组组长**（`group_leader`）
+- ⚠️ 术语边界：**LWP 特指开了 `CLONE_VM` 共享地址空间的任务**（用户态说的"线程"）；fork 出的普通进程一般**不算** LWP。LWP 是口语/教科书称呼，不是内核结构体名——内核里统一叫 task（`task_struct`）。
+
+⚠️ **`CLONE_THREAD` 是"是线程"的判定标志，不是 `CLONE_VM`**：不开 `CLONE_THREAD`、只开 `CLONE_VM`，产物**不是 POSIX 线程**——它有自己独立的 TGID（新进程），不归属任何线程组，父进程要 `wait` 回收它。它只是一个「共享地址空间的独立进程」（广义上算轻量级进程，但 NPTL 不这么干，平时几乎碰不到）。用户态看是两个进程共享内存，内核看是两条无关 task_struct 恰好指向同一个 `mm`。
 
 > 通俗比喻：`clone` 是万能工厂，flags 是一排开关——**全关（fork）→ 普通进程；把一排共享开关全开（pthread_create）→ LWP**。内核本身分不清"进程/线程"，眼里只有 task_struct；**进程和线程只是用户层的抽象概念**，边界由开关组合决定。
 
@@ -186,7 +198,7 @@ goroutine 是 M:N 混合模型：G 是用户态调度单元，由 Go runtime 调
 
 <details><summary>答案</summary>
 
-只是**共享地址空间的独立进程**：有自己的 TGID，不属于任何线程组，父进程须 `wait` 回收——不是 POSIX 线程。「是不是线程」由 `CLONE_THREAD` 判定，不是 `CLONE_VM`。多线程进程里 `getpid()` 返回 TGID（所有线程相同），`gettid()` 返回各线程自己的 TID（每条不同）。
+只是**共享地址空间的独立进程**：有自己的 TGID，不属于任何线程组，父进程须 `wait` 回收——不是 POSIX 线程。「是不是线程」由 `CLONE_THREAD` 判定，不是 `CLONE_VM`。多线程进程里 `getpid()` 返回 TGID（所有线程相同），`gettid()` 返回各线程自己的 TID（每条不同）。补充：主线程也是 LWP，`pid == tgid`，是线程组组长。
 
 </details>
 
