@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-oom-psi</a>
+          <a href="#s-02"><span class="n">02</span>02-psi-pressure</a>
+          <a href="#s-03"><span class="n">03</span>03-zswap</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +303,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 08: OOM/PSI/zswap</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 8</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 8</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +323,360 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06.5-modern-mm/chapter-07-page-reclaim-mglru/</code>：回收触发 PSI 压力</li>
 <li><code class="c">06.6-systems-performance/</code>：系统级性能监控</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Bootlin: OOM killer 与 PSI</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — Memory Management</a>
+<strong>主题:</strong> OOM killer、PSI 压力监控
+<strong>对标旧书:</strong> 无 (ULK3/LKD3 未涉及 PSI)</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>OOM Killer 流程</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/oom_kill.c
+
+// 1. 内存耗尽, 触发 OOM
+// out_of_memory() → oom_kill_process()
+
+// 2. 选择受害者 (oom_badness)
+// 分数 = RSS + 页表 + swap 占用
+// oom_score_adj 调整 (-1000 ~ 1000)
+
+// 3. 发送 SIGKILL
+// 4. 回收受害者内存
+
+int oom_badness(struct task_struct *p, unsigned long totalpages)
+{
+    long points;
+    points = get_mm_rss(p-&gt;mm) + get_mm_counter(p-&gt;mm, MM_SWAPENTS) +
+             mm_pgtables_bytes(p-&gt;mm) / PAGE_SIZE;
+    // oom_score_adj 调整
+    return points;
+}
+</code></pre>
+<h3>PSI (Pressure Stall Information)</h3>
+<pre class="code" data-label="shell"><code class="c"># /proc/pressure/{cpu,memory,io}
+cat /proc/pressure/memory
+# some avg10=1.50 avg60=0.85 avg300=0.50 total=12345678
+# full avg10=0.80 avg60=0.40 avg300=0.20 total=6789012
+
+# some: 至少一个任务在等待
+# full: 所有任务都在等待
+# avg10/60/300: 10秒/60秒/300秒平均
+# total: 累计微秒
+</code></pre>
+<h3>PSI 阈值监控</h3>
+<pre class="code" data-label="C"><code class="c">// 用户态可以通过 poll() 监控 PSI 超阈值
+#include &lt;poll.h&gt;
+
+int fd = open(&quot;/proc/pressure/memory&quot;, O_RDWR);
+char trigger[] = &quot;some 50000 1000000&quot;;  // 50% some 压力, 10 秒窗口
+write(fd, trigger, sizeof(trigger));
+
+struct pollfd pfd = { .fd = fd, .events = POLLPRI };
+poll(&amp;pfd, 1, -1);  // 阻塞直到超阈值
+// 触发后可以: 扩容、kill 进程、告警
+</code></pre>
+<h3>cgroup v2 内存 OOM</h3>
+<pre class="code" data-label="shell"><code class="c"># cgroup v2 内存限制 + OOM 控制
+mkdir /sys/fs/cgroup/myapp
+echo 1073741824 &gt; /sys/fs/cgroup/myapp/memory.max  # 1GB 限制
+
+# cgroup OOM 时不杀进程, 只通知
+echo 1 &gt; /sys/fs/cgroup/myapp/memory.oom.group  # 组内全部杀
+
+# 或使用 memory.oom.event (poll 通知)
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看 PSI
+watch -n 1 cat /proc/pressure/{cpu,memory,io}
+
+# 2. 模拟内存压力
+stress-ng --vm 2 --vm-bytes 4G --timeout 30s
+
+# 3. 观察 OOM
+dmesg -w | grep -i oom
+
+# 4. 查看进程 OOM 分数
+for pid in $(ps -e -o pid=); do
+    score=$(cat /proc/$pid/oom_score 2&gt;/dev/null)
+    name=$(cat /proc/$pid/comm 2&gt;/dev/null)
+    echo &quot;$score $pid $name&quot;
+done | sort -rn | head -10
+
+# 5. PSI 触发器测试
+echo &quot;some 10000 1000000&quot; &gt; /proc/pressure/memory
+# 然后制造内存压力观察触发
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 PSI</td>
+<td>PSI (4.20+) 精细压力监控</td>
+</tr>
+<tr>
+<td><code class="c">badness()</code></td>
+<td><code class="c">oom_badness()</code> + oom_score_adj</td>
+</tr>
+<tr>
+<td>无 cgroup OOM</td>
+<td>cgroup v2 memory.oom 控制</td>
+</tr>
+<tr>
+<td>全局 OOM</td>
+<td>per-cgroup OOM 隔离</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> HFT 交易进程如何配置 OOM 保护？</p>
+<blockquote>
+<p><code class="c">echo -1000 &gt; /proc/&lt;pid&gt;/oom_score_adj</code> 使该进程永不被 OOM killer 选中。oom_score_adj=-1000 会让 oom_badness 返回 0，OOM killer 跳过此进程。但注意：如果系统所有进程都被保护，OOM killer 可能 panic。HFT 系统应确保有足够的非关键进程可被 OOM，或预留足够内存避免 OOM 触发。</p>
+</blockquote>
+<p><strong>Q2:</strong> PSI 的 poll() 触发器如何用于 HFT 运维？</p>
+<blockquote>
+<p>设置 memory PSI 阈值（如 some 10% over 10s），当内存压力超阈值时 poll() 返回。运维系统收到通知后可以：(1) 检查是否有进程内存泄漏；(2) 扩容或迁移交易进程；(3) 清理非关键进程释放内存。注意：触发器应在独立的监控进程中运行，不在交易线程中。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>PSI (Pressure Stall Information)</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/759781/">PSI: Pressure stall information</a> (LWN, 2018)
+<strong>作者:</strong> Johannes Weiner (Facebook/Meta)
+<strong>内核版本:</strong> 4.20+
+<strong>对标旧书:</strong> 无 (ULK3/LKD3 未涉及)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>PSI 是 Facebook 开发的资源压力监控框架，提供 CPU/内存/I/O 的精细压力指标。</p>
+<h3>PSI 指标</h3>
+<pre class="code" data-label="code"><code class="c">/proc/pressure/cpu    — CPU 压力
+/proc/pressure/memory — 内存压力
+/proc/pressure/io     — I/O 压力
+
+输出格式:
+  some avg10=1.50 avg60=0.85 avg300=0.50 total=12345678
+  full avg10=0.80 avg60=0.40 avg300=0.20 total=6789012
+
+  some: 至少一个任务因资源不足而等待
+  full: 所有任务都在等待 (CPU 不可用)
+  avg10/60/300: 10秒/60秒/300秒滑动平均
+  total: 累计微秒数
+</code></pre>
+<h3>压力定义</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>资源</th>
+<th>some</th>
+<th>full</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>有任务等待 CPU 但没在运行</td>
+<td>所有非 idle 任务都在等待 CPU</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>有任务在等待内存回收</td>
+<td>所有任务都在等待内存回收</td>
+</tr>
+<tr>
+<td>I/O</td>
+<td>有任务在等待 I/O</td>
+<td>所有任务都在等待 I/O</td>
+</tr>
+</tbody>
+</table></div>
+<h3>PSI 监控 API</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: kernel/sched/psi.c
+// 用户态可通过 poll() 监控 PSI 阈值
+
+// 示例: 当内存压力 10 秒内超过 50% 时告警
+struct pollfd pfd;
+pfd.fd = open(&quot;/proc/pressure/memory&quot;, O_RDWR);
+write(pfd.fd, &quot;some 50000 1000000&quot;, 20);  // 50% 压力, 10 秒窗口
+poll(&amp;pfd, 1, -1);  // 阻塞直到超阈值
+</code></pre>
+<h3>使用场景</h3>
+<pre class="code" data-label="shell"><code class="c"># 监控内存压力
+watch -n 1 cat /proc/pressure/memory
+
+# 设置 PSI 触发器
+echo &quot;some 50000 1000000&quot; &gt; /proc/pressure/memory  # 50% some, 10s 窗口
+# 当触发时, poll() 返回
+
+# systemd 使用 PSI 做资源保护
+# Kubernetes 使用 PSI 做 QoS 保障
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 PSI</td>
+<td>PSI (4.20+) 提供精细压力指标</td>
+</tr>
+<tr>
+<td>只有 loadavg</td>
+<td>PSI per-resource 压力 + 阈值触发</td>
+</tr>
+<tr>
+<td>无用户态监控</td>
+<td>poll() API 支持事件驱动监控</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>PSI 可用于 HFT 系统监控：(1) 监控 memory pressure 检测是否接近 OOM；(2) 监控 CPU pressure 检测调度延迟；(3) 设置阈值告警在压力升高时自动通知。但 HFT 不应在交易线程中使用 PSI（poll 是阻塞操作）。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> PSI 的 "some" 和 "full" 有什么区别？哪个对 HFT 更有意义？</p>
+<blockquote>
+<p>"some" = 至少一个任务在等待资源，"full" = 所有任务都在等待。对 HFT 更有意义的是 "some"——即使只有一个交易线程在等待 CPU（被调度延迟），也会影响交易延迟。"full" 意味着系统完全卡死，对 HFT 来说是灾难性事件。</p>
+</blockquote>
+<p><strong>Q2:</strong> PSI 如何实现低开销？</p>
+<blockquote>
+<p>PSI 在调度器和内存回收路径中已有的统计点（如 task 队列变化）增量更新压力计数器。开销约 1% CPU。通过 per-CPU 计数器 + 周期性聚合减少锁竞争。相比 loadavg 的全局计算，PSI per-CPU 聚合更高效。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>zswap</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/537422/">zswap: Compressed swap cache</a> (LWN, 2013)
+<strong>内核版本:</strong> 3.11+
+<strong>对标旧书:</strong> 无 (ULK3/LKD3 未涉及)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>zswap 是内核内建的压缩 swap 缓存，在内存中压缩匿名页，避免直接写入磁盘 swap 设备。</p>
+<h3>工作原理</h3>
+<pre class="code" data-label="code"><code class="c">传统 swap 路径:
+  anon page → 写入磁盘 swap 分区 → 磁盘 I/O (毫秒级)
+
+zswap 路径:
+  anon page → 压缩 (zstd/lz4) → 存在内存的 zswap pool → 命中时解压
+  如果 zswap pool 满了 → LRU 淘汰 → 写入磁盘 swap (fallback)
+</code></pre>
+<h3>配置</h3>
+<pre class="code" data-label="shell"><code class="c"># 启用 zswap
+echo 1 &gt; /sys/module/zswap/parameters/enabled
+
+# 压缩算法
+echo zstd &gt; /sys/module/zswap/parameters/compressor
+# 可选: zstd (默认, 压缩比高), lz4 (速度快), deflate
+
+# zswap 池最大占内存百分比
+echo 20 &gt; /sys/module/zswap/parameters/max_pool_percent  # 20%
+
+# zpool 类型
+echo zbud &gt; /sys/module/zswap/parameters/zpool
+# zbud: 最多 2 个压缩页/page, 碎片低但压缩比低
+# z3fold: 最多 3 个/page, 平衡
+# zsmalloc: 高密度, 碎片高但压缩比高
+</code></pre>
+<h3>zswap vs zram vs 传统 swap</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>zswap</th>
+<th>zram</th>
+<th>传统 swap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型</td>
+<td>内存中压缩缓存</td>
+<td>压缩 RAM 块设备</td>
+<td>磁盘分区/文件</td>
+</tr>
+<tr>
+<td>需要后端</td>
+<td>是 (磁盘 swap)</td>
+<td>否</td>
+<td>-</td>
+</tr>
+<tr>
+<td>压缩</td>
+<td>内存中</td>
+<td>内存中</td>
+<td>无</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>微秒级 (命中)</td>
+<td>微秒级</td>
+<td>毫秒级 (I/O)</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>通用服务器</td>
+<td>嵌入式/移动</td>
+<td>所有系统</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只有传统 swap</td>
+<td>zswap (3.11+), zram</td>
+</tr>
+<tr>
+<td>swap = 磁盘 I/O</td>
+<td>zswap 在内存中压缩, 减少磁盘 I/O</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>zswap <strong>不适合 HFT</strong>：(1) 压缩/解压缩引入微秒级延迟（zstd ~3μs/4KB）；(2) HFT 直接禁 swap + mlockall，不需要任何 swap 机制；(3) zswap 占用 CPU 进行压缩，影响交易线程。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> zswap 和 zram 的主要区别是什么？</p>
+<blockquote>
+<p>zswap 是磁盘 swap 的前置压缩缓存——需要磁盘 swap 作为后端，压缩页先在内存中，满了才写磁盘。zram 是一个独立的压缩 RAM 块设备——不需要磁盘后端，所有 swap 都在内存中完成。zswap 适合有磁盘 swap 的服务器，zram 适合无磁盘的嵌入式/移动设备。</p>
+</blockquote>
+<p><strong>Q2:</strong> 为什么 zswap 不适合 HFT？</p>
+<blockquote>
+<p>(1) 压缩延迟：zstd 压缩 4KB 约 3μs，解压 1μs，对纳秒级延迟要求的 HFT 不可接受；(2) CPU 占用：压缩消耗 CPU 周期，可能影响交易线程；(3) 不确定性：压缩时间取决于数据内容，引入尾延迟。HFT 应禁 swap + mlockall，确保所有页在物理内存中。</p>
+</blockquote>
+</details>
       </section>
 
 

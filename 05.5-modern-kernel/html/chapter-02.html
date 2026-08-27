@@ -276,6 +276,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-eevdf-scheduler</a>
+          <a href="#s-02"><span class="n">02</span>02-cfs-history</a>
+          <a href="#s-03"><span class="n">03</span>03-scheduler-ben-shu</a>
+          <a href="#s-04"><span class="n">04</span>04-process-scheduling-bootlin</a>
+          <a href="#s-05"><span class="n">05</span>05-task-list-vs-runqueue</a>
+          <a href="#s-06"><span class="n">06</span>06-cfs-runtime-mechanics</a>
+          <a href="#s-07"><span class="n">07</span>07-red-black-tree</a>
+          <a href="#s-08"><span class="n">08</span>08-realtime-scheduling</a>
+          <a href="#s-09"><span class="n">09</span>09-sched-class-and-vfs</a>
+          <a href="#s-10"><span class="n">2.10</span>调度类 `struct sched_class` 总览</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +309,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch2 调度器 (CFS → EEVDF)</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>11</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +322,2083 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>EEVDF 的 deadline 机制让交互式任务更快被调度。HFT 交易线程用 SCHED_FIFO 不受 EEVDF 影响，但辅助线程的延迟毛刺会减少。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>EEVDF 调度器 — Linux 6.6+ CFS 替代方案</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/925371/">The earliest eligible virtual deadline first scheduler</a> (LWN, 2023)
+<strong>作者:</strong> Peter Zijlstra (补丁) · Jonathan Corbet (文章)
+<strong>内核版本:</strong> 6.6+ (2023 年合入)
+<strong>对标旧书:</strong> ULK3 Ch7 / LKD3 Ch4 的 O(1) 调度器和 CFS 章节</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>EEVDF (Earliest Eligible Virtual Deadline First) 是 2023 年合入 Linux 6.6 的全新调度器，<strong>完全替代了自 2007 年起使用的 CFS (Completely Fair Scheduler)</strong>。</p>
+<h3>CFS 的缺陷</h3>
+<p>CFS 的核心理念是<strong>公平性</strong>——通过 vruntime 追踪每个进程已获 CPU 时间，优先调度 vruntime 最小的进程。但 CFS 无法让进程表达<strong>延迟需求</strong>：</p>
+<ul>
+<li>nice 值只调整 CPU 时间分配比例，不等于延迟保障</li>
+<li>实时调度类 (SCHED_FIFO/RR) 可用于延迟敏感任务，但属于特权操作</li>
+<li>CFS 内部大量"脆弱的启发式规则"(heuristics) 来处理延迟问题，维护困难</li>
+</ul>
+<h3>EEVDF 的三个核心概念</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>含义</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Lag</strong></td>
+<td>进程应得时间 - 实际获得时间</td>
+<td>正 lag = 未获公平份额，应优先调度；负 lag = 已超额</td>
+</tr>
+<tr>
+<td><strong>Eligible Time</strong></td>
+<td>lag ≥ 0 的时刻</td>
+<td>只有 eligible 的进程才能被调度运行</td>
+</tr>
+<tr>
+<td><strong>Virtual Deadline</strong></td>
+<td>time_slice + eligible_time</td>
+<td>调度器选择 virtual deadline 最早的进程运行</td>
+</tr>
+</tbody>
+</table></div>
+<h3>如何解决延迟问题</h3>
+<p>EEVDF 引入 <strong>latency-nice</strong> 值：</p>
+<ul>
+<li>低 latency-nice（严格延迟要求）→ 更短时间片 → 更近的 virtual deadline → 更快被调度</li>
+<li>高 latency-nice（无延迟要求）→ 更长时间片 → 更远 deadline → 但获得相同总量 CPU</li>
+<li><strong>关键：两个相同 nice 值的进程获得相同总量 CPU 时间</strong>，只是分片方式不同</li>
+</ul>
+<p>这比 CFS 的启发式规则<strong>更一致、更可预测</strong>。</p>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 讲的</th>
+<th>6.x 现代实现</th>
+<th>差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O(1) 调度器（优先级数组 + 时间片）</td>
+<td>已删除，2.6.23 起 CFS 取代</td>
+<td>ULK3 Ch7 完全过时</td>
+</tr>
+<tr>
+<td>CFS: vruntime + 红黑树</td>
+<td>6.6 起 EEVDF 取代 CFS</td>
+<td>LKD3 Ch4 的 CFS 描述也已过时</td>
+</tr>
+<tr>
+<td><code class="c">recalc_task_prio()</code></td>
+<td>已删除</td>
+<td>不要在源码中查找</td>
+</tr>
+<tr>
+<td><code class="c">runqueue</code> 结构</td>
+<td>改为 <code class="c">cfs_rq</code> → <code class="c">eevdf_rq</code></td>
+<td>结构体重命名</td>
+</tr>
+<tr>
+<td>nice 值 = CPU 份额</td>
+<td>nice = 份额 + latency-nice = 延迟需求</td>
+<td>新增延迟维度</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键代码变更</h3>
+<pre class="code" data-label="code"><code class="c">// CFS 时代 (2.6.23 ~ 6.5)
+struct cfs_rq {
+    struct rb_root_cached tasks_timeline;  // 红黑树
+    struct sched_entity *curr;
+    u64 min_vruntime;
+    // ...
+};
+
+// EEVDF 时代 (6.6+)
+struct cfs_rq {  // 结构体名暂未改，但内部已重构
+    // 红黑树保留用于按 deadline 排序
+    // 新增 lag 计算、eligible 判断、deadline 计算
+    s64 avg_vruntime;
+    u64 avg_load;
+    u64 min_vruntime;
+    // ...
+};
+</code></pre>
+<p>EEVDF 仍使用虚拟时间和红黑树，但<strong>选择逻辑从"最小 vruntime"变为"最早 eligible virtual deadline"</strong>。</p>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>EEVDF 影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SCHED_FIFO 交易线程</strong></td>
+<td>不受影响——EEVDF 只管 CFS 调度类 (SCHED_NORMAL)，实时类仍用 RT 调度器</td>
+</tr>
+<tr>
+<td><strong>非关键线程延迟</strong></td>
+<td>latency-nice 可让日志/监控线程不抢占交易线程的时间片</td>
+</tr>
+<tr>
+<td><strong>延迟一致性</strong></td>
+<td>EEVDF 比 CFS 调度更一致，减少尾延迟毛刺</td>
+</tr>
+<tr>
+<td><strong>核绑定 + isolation</strong></td>
+<td>仍需 <code class="c">isolcpus</code> + <code class="c">irq affinity</code> 隔离，EEVDF 不改变这一层</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实盘：</strong> 交易线程用 SCHED_FIFO + CPU isolation，EEVDF 不影响。但辅助线程的延迟毛刺会减少，系统整体更稳定。</p>
+</blockquote>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> EEVDF 的 lag 值为负意味着什么？该进程还能被调度吗？</p>
+<blockquote>
+<p>lag &lt; 0 意味着进程已获得超过公平份额的 CPU 时间。此时进程<strong>不合格</strong> (ineligible)，不能被调度。直到虚拟时间推进使其 lag 回到 ≥ 0 时才重新变为合格。</p>
+</blockquote>
+<p><strong>Q2:</strong> latency-nice 和 nice 的区别是什么？</p>
+<blockquote>
+<p>nice 控制 CPU 时间<strong>份额</strong>（总量），latency-nice 控制时间片<strong>长度</strong>（分片粒度）。两个相同 nice 的进程获得相同总量 CPU，但不同 latency-nice 导致不同分片频率。低 latency-nice = 短时间片 = 更频繁被调度。</p>
+</blockquote>
+<p><strong>Q3:</strong> 为什么说 EEVDF 比 CFS "更一致"？</p>
+<blockquote>
+<p>CFS 用大量启发式规则处理延迟敏感场景（如 wakeup preemption、idle balance），这些规则在不同负载下表现不一致。EEVDF 通过 lag + deadline 将公平性和延迟统一在一个数学框架内，消除了大部分启发式规则，调度决策更可预测。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>CFS 调度器原理与历史 — 从 O(1) 到 EEVDF</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/230501/">CFS scheduling</a> (LWN, 2007)
+<strong>作者:</strong> Ingo Molnar (补丁) · Jonathan Corbet (文章)
+<strong>内核版本:</strong> 2.6.23 (2007 合入) ~ 6.5 (2023 被 EEVDF 替代)
+<strong>对标旧书:</strong> ULK3 Ch7 / LKD3 Ch4</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>CFS (Completely Fair Scheduler) 于 2007 年合入 Linux 2.6.23，替代了之前的 O(1) 调度器。CFS 的设计哲学是<strong>精确的公平性</strong>：每个进程按其权重获得精确比例的 CPU 时间。</p>
+<h3>O(1) 调度器的问题</h3>
+<p>O(1) 调度器（2.6 ~ 2.6.22）使用优先级数组 + 时间片：</p>
+<ul>
+<li>每个优先级一个队列，查找下一个进程 O(1)</li>
+<li>但时间片分配基于启发式规则，"公平性"是近似的</li>
+<li>进程交互性判断 (sleep_avg) 复杂且不可预测</li>
+<li>跨 CPU 负载均衡困难</li>
+</ul>
+<h3>CFS 的核心设计</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>vruntime</strong></td>
+<td>每个进程的虚拟运行时间，按实际运行时间 × (NICE_0_LOAD / 进程权重) 计算</td>
+</tr>
+<tr>
+<td><strong>红黑树</strong></td>
+<td>按 vruntime 排序，最左节点 = vruntime 最小 = 下一个运行</td>
+</tr>
+<tr>
+<td><strong>min_vruntime</strong></td>
+<td>追踪运行队列中最小的 vruntime，用于新进程初始化</td>
+</tr>
+<tr>
+<td><strong>sched_entity</strong></td>
+<td>调度实体，支持进程、组调度 (cgroup)</td>
+</tr>
+</tbody>
+</table></div>
+<h3>CFS 调度决策</h3>
+<ol>
+<li><strong>选下一个进程</strong>：取红黑树最左节点（最小 vruntime）</li>
+<li><strong>时间片计算</strong>：<code class="c">time_slice = (sched_period × 进程权重) / 总权重</code></li>
+<li><strong>时钟中断</strong>：更新当前进程 vruntime，若超出时间片则重新调度</li>
+<li><strong>新进程加入</strong>：vruntime 初始化为 <code class="c">max(min_vruntime, 当前进程 vruntime)</code></li>
+</ol>
+<h3>CFS 的 nice 值</h3>
+<ul>
+<li>nice 值 -20 ~ 19，映射到权重 88761 ~ 15</li>
+<li>nice 值每差 1，CPU 份额比约差 10%</li>
+<li>nice 0 的权重 = 1024 (NICE_0_LOAD)</li>
+</ul>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 (2.6) 讲的</th>
+<th>CFS 实际实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O(1) 调度器优先级数组</td>
+<td>红黑树按 vruntime 排序</td>
+<td>ULK3 Ch7 完全过时</td>
+</tr>
+<tr>
+<td><code class="c">recalc_task_prio()</code></td>
+<td>已删除</td>
+<td>CFS 不需要重新计算优先级</td>
+</tr>
+<tr>
+<td>交互式进程启发式</td>
+<td>CFS 用 vruntime 自然处理</td>
+<td>不再需要 sleep_avg</td>
+</tr>
+<tr>
+<td><code class="c">array_expired</code> / <code class="c">array_active</code></td>
+<td>单一红黑树</td>
+<td>双数组设计已废弃</td>
+</tr>
+<tr>
+<td>时间片 = 基于优先级查表</td>
+<td>时间片 = 按权重比例计算</td>
+<td>计算方式完全不同</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意:</strong> LKD3 (2010) 已覆盖 CFS，但其描述基于 2.6.34，后续版本有大量更新（如 group scheduling、bandwidth control）。</p>
+</blockquote>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>CFS 的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SCHED_FIFO 交易线程</strong></td>
+<td>不受 CFS 管辖，但 CFS 线程的负载均衡可能抢占 RT 线程的 CPU</td>
+</tr>
+<tr>
+<td><strong>wakeup 延迟</strong></td>
+<td>CFS 的 wakeup preemption 可能让低优先级线程抢占交易线程</td>
+</tr>
+<tr>
+<td><strong>解决方案</strong></td>
+<td><code class="c">isolcpus</code> + <code class="c">IRQ affinity</code> + <code class="c">SCHED_FIFO</code> 完全隔离</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> CFS 为什么用红黑树而不是堆来维护 vruntime 排序？</p>
+<blockquote>
+<p>红黑树支持高效的插入 (O(log n))、删除 (O(log n)) 和查找最左节点 (O(log n))，同时支持遍历和范围查询。堆虽然找最小值 O(1)，但删除任意节点和遍历不如红黑树方便。此外红黑树在内核中已有广泛应用 (CFS、VMA、定时器)。</p>
+</blockquote>
+<p><strong>Q2:</strong> 新创建的进程 vruntime 如何初始化？为什么不是 0？</p>
+<blockquote>
+<p>初始化为 <code class="c">max(min_vruntime, 当前进程 vruntime)</code>。如果是 0，新进程会独占 CPU 直到 vruntime 追上其他进程。用 min_vruntime 确保新进程不会"欠债"太多，也不会立即抢走 CPU。</p>
+</blockquote>
+<p><strong>Q3:</strong> O(1) 调度器的"O(1)"指的是什么？CFS 是 O(1) 吗？</p>
+<blockquote>
+<p>O(1) 指选择下一个进程的时间复杂度恒定（优先级数组按优先级遍历，找到第一个非空队列即可）。CFS 选择最左节点是 O(log n)（红黑树），但实际上由于缓存的帮助和进程数通常不大，性能差异可忽略。CFS 的优势在公平性而非渐近复杂度。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>调度器 (CFS → EEVDF)</h2></div>
+<blockquote>
+<p>笨叔《奔跑吧 Linux 内核》读书笔记
+对应旧书: ULK3 / LKD3 (Linux 2.6)
+对应现代内核: Linux 5.x / 6.x</p>
+</blockquote>
+<hr />
+<h2>本节要点</h2>
+<p>Linux 6.6 开始用 <strong>EEVDF（Earliest Eligible Virtual Deadline First）</strong> 替代 CFS（Completely Fair Scheduler）。EEVDF 由 Peter Zijlstra 提出，解决 CFS 的几个长期问题：</p>
+<ul>
+<li><strong>公平性更精确</strong>：CFS 用 vruntime 做近似公平，EEVDF 用 eligible time + virtual deadline 做精确公平</li>
+<li><strong>延迟改善</strong>：EEVDF 引入 deadline 概念，交互式任务（如 HFT 交易线程）能更快被调度</li>
+<li><strong>权重计算简化</strong>：CFS 的权重 → vruntime 转换有精度损失，EEVDF 用 lag（累计欠债）直接量化公平性</li>
+<li><strong>淘汰 latency-nice 的 hack</strong>：CFS 用 nice 值粗粒度控制延迟，EEVDF 有独立的 latency 优先级</li>
+</ul>
+<p>CFS 的核心问题：vruntime 是单调递增的，长时间运行的任务 vruntime 远大于新创建任务，导致新任务被优先调度（"fork 优先"问题）。EEVDF 用 lag 归零机制解决。</p>
+<hr />
+<h2>与旧书对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 (2.6)</th>
+<th>笨叔 (5.x/6.x)</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O(1) 调度器（2.6 早期）</td>
+<td>EEVDF（6.6+）</td>
+<td>CFS 的 vruntime 近似公平有精度问题</td>
+</tr>
+<tr>
+<td>CFS 红黑树（2.6.23+）</td>
+<td>EEVDF 红黑树 + RB tree by deadline</td>
+<td>增加 deadline 排序维度</td>
+</tr>
+<tr>
+<td>nice 值 = 静态优先级</td>
+<td>nice + latency-nice</td>
+<td>延迟和 CPU 占比解耦</td>
+</tr>
+<tr>
+<td>sched_entity-&gt;vruntime</td>
+<td>sched_entity-&gt;lag + deadline</td>
+<td>lag 更精确表达公平性</td>
+</tr>
+<tr>
+<td><code class="c">sched_min_granularity_ns</code></td>
+<td><code class="c">EEVDF_MIN_QUANTUM</code></td>
+<td>最小时间片概念保留但语义变化</td>
+</tr>
+<tr>
+<td>load_weight 直接乘除</td>
+<td>avg/runtime 计算 weight</td>
+<td>精度提升，避免 64 位溢出</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>关键数据结构 / 函数</h2>
+<pre class="code" data-label="code"><code class="c">// 源码路径: kernel/sched/fair.c (CFS/EEVDF 都在此文件)
+//          kernel/sched/sched.h
+
+struct sched_entity {
+    struct load_weight      load;       // 权重
+    struct rb_node          run_node;   // 红黑树节点
+    struct list_head        group_node;
+    unsigned int            on_rq;      // 是否在运行队列
+
+    u64                     exec_start;  // 上次开始执行时间
+    u64                     sum_exec_runtime;  // 累计执行时间
+    u64                     vruntime;    // CFS: 虚拟运行时间
+    u64                     prev_sum_exec_runtime;
+
+    // EEVDF 新增字段 (6.6+):
+    u64                     deadline;    // 虚拟截止时间
+    u64                     min_deadline; // 子树最小 deadline
+    s64                     lag;         // 公平性偏差（正=欠 CPU，负=多用）
+    bool                    rel_deadline; // 是否有相对 deadline
+};
+
+// EEVDF 核心调度函数
+static struct sched_entity *
+pick_eevdf(struct cfs_rq *cfs_rq);  // 选最早 eligible + 最早 deadline
+
+// CFS 核心调度函数 (旧)
+static struct sched_entity *
+pick_next_entity(struct cfs_rq *cfs_rq);  // 选最小 vruntime
+
+// 权重转换
+static unsigned long
+sched_weight(unsigned long weight);  // EEVDF: avg → weight 映射
+</code></pre>
+<p><strong>关键变化</strong>：<code class="c">pick_eevdf()</code> 先过滤 eligible 的 sched_entity（lag ≤ 0），再在 eligible 集合中选 deadline 最小的。比 CFS 的「选最小 vruntime」更精确。</p>
+<hr />
+<h2>HFT 关联</h2>
+<p>HFT 对调度器的核心需求是<strong>确定性延迟</strong>：</p>
+<ol>
+<li><strong>SCHED_FIFO 仍可用</strong>：EEVDF 只影响 CFS（SCHED_NORMAL/SCHED_BATCH），实时策略（SCHED_FIFO/SCHED_RR）走 RT 调度器，不受 EEVDF 影响</li>
+<li><strong>减少干扰</strong>：EEVDF 的 deadline 机制让交互式任务更快被调度，交易线程（即使 SCHED_NORMAL）的唤醒延迟可能改善</li>
+<li><strong>PREEMPT_RT 兼容</strong>：EEVDF 已在 PREEMPT_RT 内核中验证，实时补丁从 6.6 开始原生支持</li>
+<li><strong>调优变化</strong>：CFS 时代的 <code class="c">sched_min_granularity_ns</code> / <code class="c">sched_wakeup_granularity_ns</code> 在 EEVDF 中语义变化，HFT 调优参数需要重新评估</li>
+<li><strong>退避策略</strong>：HFT 如果用 SCHED_NORMAL 跑交易线程，EEVDF 的 lag 机制确保即使被唤醒后也不会过度占用 CPU（lag 归零）</li>
+</ol>
+<p><strong>建议</strong>：HFT 生产环境仍推荐 SCHED_FIFO + 绑核 + CPU 隔离（isolcpus/nohz_full），不依赖 CFS/EEVDF 的公平性保证。</p>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1: EEVDF 相比 CFS 解决了什么核心问题？</summary>
+<p>CFS 用 vruntime（虚拟运行时间）做近似公平调度，但 vruntime 单调递增导致新创建/唤醒的任务 vruntime 较小被优先调度（"fork 优先"问题）。EEVDF 引入 lag（累计公平性偏差）+ virtual deadline：lag ≤ 0 的任务才 eligible（可调度），在 eligible 集合中选 deadline 最早的。lag 在任务入队时归零，消除了 fork 优先问题。同时 deadline 机制让交互式任务获得更低延迟。</p>
+</details>
+<details>
+<summary>Q2: HFT 交易线程用 SCHED_FIFO，EEVDF 的变化有影响吗？</summary>
+<p>没有直接影响。EEVDF 只管理 SCHED_NORMAL/SCHED_BATCH 策略的任务，走 CFS 调度类（fair_sched_class）。SCHED_FIFO/SCHED_RR 走 RT 调度类（rt_sched_class），优先级高于 CFS，EEVDF 的任何变化都不影响 RT 任务。HFT 交易线程用 SCHED_FIFO + 绑核 + CPU 隔离是最佳实践，不依赖 CFS/EEVDF 的行为。但如果交易线程用 SCHED_NORMAL（某些场景需要），EEVDF 的 deadline 机制可能改善唤醒延迟。</p>
+</details>
+<details>
+<summary>Q3: EEVDF 的 lag 是什么？它如何保证公平性？</summary>
+<p>lag = 任务应得的 CPU 时间 - 实际获得的 CPU 时间。lag &gt; 0 表示任务被欠了 CPU 时间（应该优先调度）；lag ≤ 0 表示任务已用够或超额（不 eligible）。任务从运行队列移除时 lag 归零（不累积历史偏差）。这比 CFS 的 vruntime 更精确：vruntime 只反映相对公平性，lag 直接量化欠债。新 fork 的任务 lag = 0（不优先也不落后），解决了 CFS 的 fork 优先问题。</p>
+</details>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>Bootlin: 进程管理与调度</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training</a>
+<strong>主题:</strong> 进程管理与调度器
+<strong>对标旧书:</strong> ULK3 Ch3+Ch7 / LKD3 Ch3+Ch4</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>进程 / 线程 / 任务</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>内核表示</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程</td>
+<td><code class="c">task_struct</code> + 独立 <code class="c">mm_struct</code></td>
+<td>独立地址空间</td>
+</tr>
+<tr>
+<td>线程</td>
+<td><code class="c">task_struct</code> + 共享 <code class="c">mm_struct</code></td>
+<td>共享地址空间，<code class="c">clone(CLONE_VM)</code> 创建</td>
+</tr>
+<tr>
+<td>内核线程</td>
+<td><code class="c">task_struct</code> + <code class="c">mm = NULL</code></td>
+<td>无用户空间地址</td>
+</tr>
+</tbody>
+</table></div>
+<h3>调度类 (6.x)</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调度类</th>
+<th>优先级范围</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stop</td>
+<td>最高</td>
+<td>内核内部使用（migration 线程）</td>
+</tr>
+<tr>
+<td>DL (Deadline)</td>
+<td>-1 ~ 98</td>
+<td>SCHED_DEADLINE，基于期限的实时调度</td>
+</tr>
+<tr>
+<td>RT (Real-time)</td>
+<td>1 ~ 99</td>
+<td>SCHED_FIFO / SCHED_RR</td>
+</tr>
+<tr>
+<td>CFS/EEVDF</td>
+<td>100 ~ 139</td>
+<td>SCHED_NORMAL / SCHED_BATCH / SCHED_IDLE</td>
+</tr>
+<tr>
+<td>Idle</td>
+<td>最低</td>
+<td>空闲调度类</td>
+</tr>
+</tbody>
+</table></div>
+<h3>CFS → EEVDF 演进 (6.6+)</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>CFS (2.6.23 ~ 6.5)</th>
+<th>EEVDF (6.6+)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>核心指标</td>
+<td>vruntime</td>
+<td>lag + virtual deadline</td>
+</tr>
+<tr>
+<td>延迟控制</td>
+<td>启发式 (wakeup preemption)</td>
+<td>latency-nice</td>
+</tr>
+<tr>
+<td>时间片</td>
+<td>基于 sched_latency_ns</td>
+<td>基于 latency-nice + 权重</td>
+</tr>
+<tr>
+<td>一致性</td>
+<td>一般（启发式导致不可预测）</td>
+<td>更一致（数学框架统一）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>调度策略 API</h3>
+<pre class="code" data-label="C"><code class="c">// 设置调度策略
+struct sched_param param = { .sched_priority = 80 };
+sched_setscheduler(0, SCHED_FIFO, &amp;param);  // RT FIFO, 优先级 80
+
+// 绑核
+cpu_set_t cpuset;
+CPU_ZERO(&amp;cpuset);
+CPU_SET(2, &amp;cpuset);  // 绑定到 CPU 2
+sched_setaffinity(0, sizeof(cpuset), &amp;cpuset);
+
+// 查看调度信息
+cat /proc/&lt;pid&gt;/sched
+chrt -p &lt;pid&gt;         # 查看调度策略和优先级
+</code></pre>
+<h3>cgroup v2 CPU 控制</h3>
+<pre class="code" data-label="shell"><code class="c"># 创建 cgroup 限制 CPU
+mkdir /sys/fs/cgroup/myapp
+echo &quot;100000 1000000&quot; &gt; /sys/fs/cgroup/myapp/cpu.max  # 10% CPU (100ms/1000ms)
+echo &lt;pid&gt; &gt; /sys/fs/cgroup/myapp/cgroup.procs
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看所有进程的调度策略
+ps -eo pid,comm,policy,rtprio,ni,cls --sort=-rtprio | head -20
+
+# 2. 设置进程为 RT FIFO
+sudo chrt -f -p 80 &lt;pid&gt;      # SCHED_FIFO 优先级 80
+
+# 3. 测量调度延迟
+# 使用 cyclictest (rt-tests 包)
+sudo cyclictest -t 1 -p 80 -i 1000 -a 2 -n
+# -t 1: 1 线程, -p 80: FIFO 80, -i 1000: 1ms 间隔, -a 2: CPU 2
+
+# 4. EEVDF 相关 (6.6+)
+cat /proc/sys/kernel/sched_features  # 查看调度器特性开关
+# latency-nice 通过 sched_setattr() 设置
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O(1) 调度器</td>
+<td>CFS → EEVDF</td>
+</tr>
+<tr>
+<td><code class="c">runqueue</code> 全局结构</td>
+<td><code class="c">cfs_rq</code> per-CPU + per-group</td>
+</tr>
+<tr>
+<td>无 cgroup 调度</td>
+<td>cgroup v2 CPU 控制是标准实践</td>
+</tr>
+<tr>
+<td>无 latency-nice</td>
+<td>latency-nice 是 EEVDF 的延迟控制</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> SCHED_FIFO 和 SCHED_RR 的区别？哪个适合 HFT？</p>
+<blockquote>
+<p>SCHED_FIFO：同优先级 FIFO，不主动让出则一直运行。SCHED_RR：同优先级轮转，时间片用完后轮到下一个。HFT 交易线程用 SCHED_FIFO（绑定到隔离核，不与其他线程竞争，不需要时间片轮转）。</p>
+</blockquote>
+<p><strong>Q2:</strong> cgroup v2 的 <code class="c">cpu.max</code> 如何限制 CPU？</p>
+<blockquote>
+<p>格式 <code class="c">"$MAX $PERIOD"</code>：在 PERIOD 微秒内最多用 MAX 微秒。如 <code class="c">100000 1000000</code> = 1 秒周期内最多用 0.1 秒 = 10% CPU。这是 CFS bandwidth control，按 cgroup 限制总 CPU 时间。</p>
+</blockquote>
+<p><strong>Q3:</strong> EEVDF 的 latency-nice 值如何影响调度？</p>
+<blockquote>
+<p>低 latency-nice → 更短时间片 → 更近的 virtual deadline → 更频繁被调度。高 latency-nice → 更长时间片 → 更远 deadline → 更少被调度。但相同 nice 值的进程获得相同总量 CPU，只是分片粒度不同。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>任务列表 vs 运行队列 — 花名册不等于排队队伍</h2></div>
+<blockquote>
+<p><strong>对标旧书:</strong> LKD3 Ch3 §3.1（进程描述符与任务结构）
+<strong>内核版本:</strong> 任务列表机制 2.0 至今未变；调度侧 CFS (2.6.23) → EEVDF (6.6)
+<strong>关联笔记:</strong> <a href="chapter-12.html#s-02">02-cfs-history.md</a> · <a href="chapter-12.html#s-01">01-eevdf-scheduler.md</a></p>
+</blockquote>
+<hr />
+<h2>核心概念</h2>
+<p>内核里<strong>任务列表（task list）</strong>就是双向循环链表，串联全系统的任务；链表头是 <code class="c">init_task</code>。<strong>现代内核只挂线程组组长</strong>（<code class="c">copy_process()</code> 里 <code class="c">list_add_tail_rcu(&amp;p-&gt;tasks, &amp;init_task.tasks)</code> 仅在 <code class="c">thread_group_leader(p)</code> 为真时执行），线程挂 <code class="c">signal-&gt;thread_head</code>，不进这条链。</p>
+<pre class="code" data-label="C"><code class="c">struct task_struct {
+    // ...
+    struct list_head tasks;   // 挂入全局任务链表的链表节点
+    // ...
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>链表头</td>
+<td><strong><code class="c">init_task</code></strong> — 0 号进程（pid=0，静态分配）</td>
+</tr>
+<tr>
+<td>串联方式</td>
+<td>所有组长进程通过 <code class="c">tasks</code> 串成双向循环链表</td>
+</tr>
+<tr>
+<td>经典遍历</td>
+<td><code class="c">for_each_process(p)</code> — 本质就是遍历这条链（迭代组长）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">struct task_struct *p;
+for_each_process(p) {
+    // p 就是每一个进程 task_struct
+}
+</code></pre>
+<blockquote>
+<p>现代内核（5.x/6.x）已经<strong>不再靠遍历全局任务链表做常规调度</strong>，但链表依然存在，主要用于遍历全部进程：<code class="c">ps</code>、<code class="c">top</code>、信号批量处理（<code class="c">kill -9 -1</code>）、OOM 扫描选 victim。</p>
+</blockquote>
+<hr />
+<h2>重要误区：调度器不扫描任务列表 ❌</h2>
+<p><strong>CFS/EEVDF 调度器用的是红黑树（<code class="c">rq-&gt;cfs_rq</code>），不是任务链表。</strong></p>
+<ul>
+<li>调度选下一个运行任务，<strong>不会</strong>去遍历整条链表——O(N) 性能很差</li>
+<li>任务链表只是拿来：<code class="c">ps</code>、<code class="c">top</code>、遍历所有进程、信号批量处理</li>
+</ul>
+<h2>两个概念区分</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><strong>任务列表 (task list)</strong></th>
+<th><strong>运行队列 (runqueue)</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结构</td>
+<td>双向循环链表</td>
+<td>红黑树（CFS）/ EEVDF（6.6+）</td>
+</tr>
+<tr>
+<td>内容</td>
+<td><strong>全部</strong>进程（组长级，含休眠的）</td>
+<td>只放<strong>可被调度运行</strong>的任务（线程级）</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>遍历、<code class="c">ps</code>、批量信号</td>
+<td>选下一个上 CPU 的任务</td>
+</tr>
+<tr>
+<td>休眠进程</td>
+<td><strong>还在</strong>任务链表</td>
+<td><strong>已退出</strong> runqueue</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>休眠的进程依然在全局任务链表（<code class="c">tasks</code> 节点只有 <code class="c">exit</code> 时才摘除），但已通过 <code class="c">dequeue_task()</code> 退出运行队列。所以 <code class="c">for_each_process</code> 能看到休眠进程，调度器运行队列里没有它。唤醒（<code class="c">try_to_wake_up</code>）时再 <code class="c">enqueue_task()</code> 放回。</p>
+</blockquote>
+<p><strong>一句话总结：</strong> 任务列表 = 全系统进程花名册；调度运行队列 = 准备上 CPU 干活的排队队伍。"内核用任务列表"这句话是对的，但不能理解成调度靠它。</p>
+<hr />
+<h2>延伸一：父子关系不靠任务链表</h2>
+<p>任务链表是"花名册"，<strong>不承担</strong>父子关系。父子关系由 <code class="c">task_struct</code> 内的专用字段维护：</p>
+<pre class="code" data-label="C"><code class="c">struct task_struct {
+    // ...
+    struct task_struct __rcu *real_parent;  /* 创建者 */
+    struct task_struct __rcu *parent;       /* ptrace 的 tracer */
+    struct list_head children;              /* 我的孩子链表头 */
+    struct list_head sibling;               /* 我挂在父亲 children 链上的节点 */
+    // ...
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>实现</th>
+<th>复杂度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>子找父</td>
+<td><code class="c">p-&gt;real_parent</code> 一次指针解引用（<code class="c">getppid()</code> 即 <code class="c">current-&gt;real_parent-&gt;pid</code>）</td>
+<td>O(1)</td>
+</tr>
+<tr>
+<td>父找子</td>
+<td><code class="c">list_for_each_entry(child, &amp;parent-&gt;children, sibling)</code>；<code class="c">wait()/waitpid()</code> 回收僵尸就靠它</td>
+<td>O(孩子数)</td>
+</tr>
+<tr>
+<td>fork 建立</td>
+<td><code class="c">copy_process()</code>: <code class="c">p-&gt;real_parent = current</code> + <code class="c">list_add_tail(&amp;p-&gt;sibling, &amp;p-&gt;real_parent-&gt;children)</code></td>
+<td>O(1)</td>
+</tr>
+<tr>
+<td>父先退出</td>
+<td><code class="c">forget_original_parent()</code> → <code class="c">find_new_reaper()</code> 托孤给 init/subreaper，<code class="c">sibling</code> 摘链重挂</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心设计——侵入式链表：</strong> 一个 <code class="c">task_struct</code> 内嵌多个 <code class="c">list_head</code>，同时挂在多条互不干扰的链上：</p>
+<pre class="code" data-label="code"><code class="c">tasks        ──► init_task 全局任务链（花名册，只有组长）
+sibling      ──► 父亲的 children 链（我是谁的孩子）
+children     ──► 自己的孩子链（我的孩子）
+thread_node  ──► 组长 signal-&gt;thread_head（我是哪个进程的线程）
+sched_entity ──► runqueue 红黑树（rb_node，可调度时才在）
+</code></pre>
+<h2>延伸二：task ≠ process</h2>
+<p><strong>task = 线程级（一个 task_struct）；process = 线程组（共享 tgid 的一组 task）。</strong></p>
+<ul>
+<li>无线程程序：1 task = 1 进程，重合——日常混用没毛病</li>
+<li><code class="c">pthread_create</code> 之后：一个进程 = N 个 task，调度器<strong>只认 task</strong>，红黑树里挂的是线程不是进程</li>
+<li><code class="c">for_each_process</code> 名字是历史遗留：现代内核任务链表只挂组长（= 用户视角的进程），摸线程用 <code class="c">for_each_thread(p, t)</code>，组合宏 <code class="c">for_each_process_thread(p, t)</code></li>
+<li><code class="c">/proc/&lt;pid&gt;/task/</code> 下每个编号 = 一个 task 的 pid（组长的 pid == tgid）</li>
+</ul>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>LKD3 (2010) 讲的</th>
+<th>现代内核实际</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局任务链表描述</td>
+<td>机制本身未变</td>
+<td><code class="c">tasks</code> + <code class="c">init_task</code> + <code class="c">for_each_process</code> 沿用至今</td>
+</tr>
+<tr>
+<td>任务链表挂所有 task</td>
+<td><strong>只挂线程组组长</strong></td>
+<td>线程走 <code class="c">signal-&gt;thread_head</code>；<code class="c">for_each_process</code> 实际迭代"进程"</td>
+</tr>
+<tr>
+<td>调度依赖数据结构</td>
+<td>CFS 红黑树 → EEVDF</td>
+<td>任务链表与调度器从来就是两套数据结构</td>
+</tr>
+<tr>
+<td><code class="c">for_each_process</code> 定义位置</td>
+<td><code class="c">include/linux/sched/signal.h</code></td>
+<td>从 <code class="c">sched.h</code> 拆分出去的</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>排查线程延迟毛刺</strong></td>
+<td><code class="c">ps</code>/<code class="c">top</code> 看到的是任务链表视图（全部任务）；<code class="c">perf sched</code>/<code class="c">runqlat</code> (BCC) 看到的是运行队列视图（排队延迟）——两套视图要分清</td>
+</tr>
+<tr>
+<td><strong>runqlat 监控</strong></td>
+<td>HFT 低延迟标配：<code class="c">runqlat</code> 直方图监控运行队列深度，队列长 = 调度延迟大</td>
+</tr>
+<tr>
+<td><strong>热路径不碰全局链表</strong></td>
+<td>遍历 <code class="c">for_each_process</code> 要拿全局读锁，系统进程多时是慢操作——交易热路径上永远不该出现</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 如果一个进程 sleep 休眠，它还在全局任务链表吗？还在 CFS 红黑树里吗？</p>
+<blockquote>
+<p>还在任务链表，不在红黑树。sleep 时 <code class="c">task_struct-&gt;state</code> 置为 <code class="c">TASK_INTERRUPTIBLE</code>/<code class="c">TASK_UNINTERRUPTIBLE</code>，<code class="c">dequeue_task()</code> 把调度实体从红黑树摘出；但 <code class="c">tasks</code> 链表节点不动，只有 <code class="c">exit</code> 时才摘除。所以 <code class="c">ps</code> 能看到 sleeping 进程，调度器找不到它。</p>
+</blockquote>
+<p><strong>Q2:</strong> 为什么调度器不能用 <code class="c">for_each_process</code> 遍历选任务？</p>
+<blockquote>
+<p>O(N)：现代系统动辄上千任务，每次调度都遍历全链表开销不可接受。红黑树按 vruntime 排序，取最左节点 O(log n)；EEVDF 进一步用就近的 deadline 语义。数据结构必须匹配调度决策"找最值"的访问模式。</p>
+</blockquote>
+<p><strong>Q3:</strong> <code class="c">for_each_process</code> 能遍历到线程吗？如果要遍历某个进程的所有线程怎么办？</p>
+<blockquote>
+<p>现代内核不能——任务链表只挂线程组组长（<code class="c">copy_process()</code> 里 <code class="c">list_add_tail_rcu(&amp;p-&gt;tasks, &amp;init_task.tasks)</code> 仅在 <code class="c">thread_group_leader(p)</code> 为真时执行）。<code class="c">for_each_process</code> 迭代的是"进程"（组长）。要遍历某进程的线程用 <code class="c">for_each_thread(p, t)</code>，走 <code class="c">signal-&gt;thread_head</code>（<code class="c">thread_node</code> 挂入）；两者组合的宏是 <code class="c">for_each_process_thread(p, t)</code>。老内核（NPTL 初期）确实把所有线程挂全局链，后来为减小遍历开销改为只挂组长。</p>
+</blockquote>
+<p><strong>Q4:</strong> 父进程怎么找到子进程？子进程怎么找到父进程？</p>
+<blockquote>
+<p>子找父：<code class="c">p-&gt;real_parent</code> 一次指针解引用，O(1)。父找子：遍历自己的 <code class="c">children</code> 链（<code class="c">list_for_each_entry(child, &amp;parent-&gt;children, sibling)</code>），<code class="c">wait()</code> 回收僵尸就是这条路。fork 时 <code class="c">copy_process()</code> 同时建立两边：设 <code class="c">real_parent</code> 指针 + 把 <code class="c">sibling</code> 挂入父亲的 <code class="c">children</code>。这是侵入式链表设计的典型应用——<code class="c">task_struct</code> 内嵌多个 <code class="c">list_head</code>，同时挂在全局任务链、父亲的 children 链、线程组链上，互不干扰。</p>
+</blockquote>
+<p><strong>Q5:</strong> 内核语境里"任务"就是"进程"吗？</p>
+<blockquote>
+<p>不是。task = 一个 task_struct = 一个调度实体 = 用户视角的一个线程。process = 线程组 = 共享 tgid 的一组 task（组长 pid == tgid）。无线程程序两者重合所以日常混用没问题；一旦创建线程，一个进程就是 N 个 task，调度器只认 task。<code class="c">for_each_process</code> 遍历的其实是组长（进程），这个名字是历史遗留。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-06">
+        <div class="sec-head"><div class="sec-no">06</div><h2>CFS 运行时机制 — 一次调度的完整链条</h2></div>
+<blockquote>
+<p><strong>定位:</strong> <code class="c">02-cfs-history.md</code> 讲设计与历史，本篇讲<strong>运行时怎么转</strong>：tick → vruntime → 选任务 → 抢占判定。
+<strong>对标旧书:</strong> LKD3 Ch4 描述基于 2.6.34，机制主体沿用至今（6.6 被 EEVDF 替代）。</p>
+</blockquote>
+<hr />
+<h2>数据结构定位</h2>
+<pre class="code" data-label="C"><code class="c">struct rq {              // 每 CPU 一个
+    struct cfs_rq cfs;   // CFS 运行队列（另有 .rt 给实时类）
+};
+struct cfs_rq {
+    struct rb_root_cached tasks_timeline;  // 红黑树 + 最左节点缓存
+    struct sched_entity *curr;             // 当前在 CPU 上跑的实体
+    u64 min_vruntime;                      // 单调递增基准线
+};
+</code></pre>
+<p>树上挂的是 <strong><code class="c">sched_entity</code>（调度实体）不是 <code class="c">task_struct</code></strong>——组调度（cgroup）时一个实体代表一整组任务。</p>
+<blockquote>
+<p><strong>修正（对照 02 笔记 Q3）:</strong> 取最左节点是 <strong>O(1)</strong> 不是 O(log n)——<code class="c">rb_root_cached</code> 把 <code class="c">rb_leftmost</code> 指针单独缓存，pick 只读一个指针。插入/删除才是 O(log n)。</p>
+</blockquote>
+<hr />
+<h2>① 时钟 tick → <code class="c">update_curr()</code></h2>
+<pre class="code" data-label="C"><code class="c">delta_exec = now - curr-&gt;exec_start;                      /* 这次上 CPU 跑了多久（真实 ns） */
+curr-&gt;vruntime += delta_exec * NICE_0_LOAD / se-&gt;weight;  /* 折算成虚拟时间 */
+cfs_rq-&gt;min_vruntime = max(cfs_rq-&gt;min_vruntime, curr-&gt;vruntime); /* 基准线只涨不降 */
+</code></pre>
+<p><strong>权重决定折算率：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>进程</th>
+<th>权重</th>
+<th>跑 1ms 后 vruntime 涨</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nice 0</td>
+<td>1024</td>
+<td>1ms</td>
+</tr>
+<tr>
+<td>nice -10</td>
+<td>8192</td>
+<td>0.125ms</td>
+</tr>
+<tr>
+<td>nice +10</td>
+<td>110</td>
+<td>~9.3ms</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>CFS 最核心一句：公平不是把时间片分得匀，是让所有任务的 vruntime 涨得一样快。</strong>
+高权重任务涨得慢 → 在树里"落后"更久 → 占更多真实 CPU。</p>
+</blockquote>
+<hr />
+<h2>② 选下一个任务</h2>
+<pre class="code" data-label="code"><code class="c">schedule() → pick_next_task_fair() → 读 rb_leftmost 指针（O(1)）
+           → prev 从树上摘下/插回，next 设为 curr
+</code></pre>
+<ul>
+<li>最左节点 = vruntime 最小 = <strong>最"久没跑"的任务</strong></li>
+<li>不遍历树、更不碰全局任务链表（对照 <a href="#s-05">2.5 任务列表 vs 运行队列</a>）</li>
+</ul>
+<hr />
+<h2>③ 抢占判定 → <code class="c">check_preempt_tick()</code></h2>
+<p>两个条件任一成立 → 置 <code class="c">TIF_NEED_RESCHED</code>，等内核返回用户态/中断返回时 <code class="c">schedule()</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>公式</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>配额用完</strong></td>
+<td><code class="c">delta_exec &gt; ideal_runtime</code></td>
+<td><code class="c">ideal_runtime = sched_period × 自身权重 / 总权重</code></td>
+</tr>
+<tr>
+<td><strong>有人追上</strong></td>
+<td>最左节点 vruntime 领先 curr 超过粒度阈值</td>
+<td>新唤醒者已明显"更饿"</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>sched_period 是动态的：</strong></p>
+<ul>
+<li>runnable ≤ 8：周期 = sched_latency（默认 6ms），每任务保 <code class="c">min_granularity</code>（0.75ms）</li>
+<li>runnable &gt; 8：周期按 <code class="c">nr_running</code> 扩展——进程再多也不把切换切得太碎</li>
+</ul>
+<hr />
+<h2>休眠唤醒：<code class="c">place_entity()</code> 与 min_vruntime 锚定</h2>
+<p>休眠进程不在树上，vruntime 冻结在睡前的值。醒来直接插树会有问题：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>若唤醒时</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vruntime 严重落后（长期睡眠）</td>
+<td>醒来独占 CPU"还债"，别的任务全部停摆</td>
+</tr>
+<tr>
+<td>无任何补偿</td>
+<td>频繁短睡的任务（如等待网络）被系统性惩罚</td>
+</tr>
+</tbody>
+</table></div>
+<p>解法：唤醒时把 vruntime <strong>拉到 <code class="c">cfs_rq-&gt;min_vruntime</code> 附近</strong>（<code class="c">place_entity()</code>，sleep 奖励默认只给一半——GENTLE_FAIR_SLEEPERS）。<code class="c">min_vruntime</code> 只增不减，是整个队列的"当前公平时刻"锚点，新进程/唤醒进程/负载均衡迁移都用它对表。</p>
+<blockquote>
+<p>sleep 奖励的尺度争议（奖励多少才不鼓励"睡一下骗补偿"）是 CFS 后期无解的难题之一，也是 EEVDF 用 deadline 显式建模延迟的动机。</p>
+</blockquote>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>LKD3 (2.6.34)</th>
+<th>现代内核</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rb_root</code> + <code class="c">__pick_next_entity</code> 沿左链下走</td>
+<td><code class="c">rb_root_cached</code> 缓存最左，pick O(1)</td>
+</tr>
+<tr>
+<td>sched_latency / min_granularity 是固定 sysctl</td>
+<td>动态周期；6.6 后随 EEVDF 重构</td>
+</tr>
+<tr>
+<td>place_entity 的 sleeper bonus 讲得较细</td>
+<td>机制仍在，参数语义多次调整</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>点</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>wakeup preemption 粒度</strong></td>
+<td>决定 SCHED_OTHER 辅助线程被唤醒后多久真正上 CPU——唤醒到运行的毛刺来源</td>
+</tr>
+<tr>
+<td><strong>SCHED_FIFO 不进这条链</strong></td>
+<td>交易线程在 <code class="c">rq-&gt;rt</code>，CFS 的 vruntime/tick 与它无关</td>
+</tr>
+<tr>
+<td><strong>同核 CFS 抖动</strong></td>
+<td>CFS 线程的 wakeup 抢占会污染 RT 线程的 cache/TLB → isolcpus + IRQ affinity 隔离的机制根源</td>
+</tr>
+<tr>
+<td><strong>tick 频率</strong></td>
+<td>调度判定的最小粒度受 HZ / tickless（NO_HZ_full）影响——隔离核常配 nohz_full 减少无用 tick</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 两个任务权重 1024 和 2048，CFS 下它们实际获得的 CPU 时间比是多少？为什么？</p>
+<blockquote>
+<p>1:2。vruntime 涨速 = NICE_0_LOAD/weight，权重 2048 的涨速是一半；要让两者 vruntime 同步增长，真实时间必须按权重反比分配。</p>
+</blockquote>
+<p><strong>Q2:</strong> CFS 取下一个任务的真实复杂度是多少？为什么不是 O(log n)？</p>
+<blockquote>
+<p>O(1)。<code class="c">rb_root_cached</code> 缓存了最左节点指针，pick 直接读缓存。O(log n) 的是插入和删除（红黑树再平衡）。</p>
+</blockquote>
+<p><strong>Q3:</strong> 一个任务睡了 10 秒后唤醒，它的 vruntime 远落后于 min_vruntime，会发生什么？如果没有 place_entity 会怎样？</p>
+<blockquote>
+<p>place_entity 把它的 vruntime 拉到 min_vruntime 附近（给一半 sleep 奖励），插入红黑树。若没有这个锚定，它 vruntime 最小成为最左节点，会连续霸占 CPU 直到 vruntime 追上其他任务——"还债"期间其他任务全部停摆。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么 sched_period 要随 runnable 数量动态扩展而不是固定 6ms？</p>
+<blockquote>
+<p>固定 6ms 在任务多时每任务只能分到极小的时间片，上下文切换开销占比失控。扩展周期保证每任务至少有 min_granularity（0.75ms）的连续运行时间。</p>
+</blockquote>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-07">
+        <div class="sec-head"><div class="sec-no">07</div><h2>红黑树 — CFS 的排序容器</h2></div>
+<blockquote>
+<p><strong>定位:</strong> 06 笔记里 <code class="c">rb_root_cached</code> 的前置知识。为什么调度器选红黑树而不是 AVL 或堆。
+<strong>对标:</strong> 数据结构基础 + <code class="c">include/linux/rbtree.h</code> / <code class="c">rbtree_augmented.h</code></p>
+</blockquote>
+<hr />
+<h2>解决什么问题</h2>
+<p>二叉搜索树（BST）：左 &lt; 根 &lt; 右，查找 O(树高)。缺陷：<strong>形状取决于插入顺序</strong>——顺序插 1..5 直接退化成链表，查找变 O(n)。</p>
+<p>红黑树 = BST + 5 条染色规则，强制"歪不到哪去"。</p>
+<hr />
+<h2>五条性质</h2>
+<ol>
+<li>每个节点非红即黑</li>
+<li>根节点黑</li>
+<li>叶子（NIL 空节点）黑</li>
+<li><strong>红节点的孩子必黑</strong>——禁止红红相连</li>
+<li><strong>任一节点到每个叶子的路径，黑节点数量相同</strong>（黑高一致）</li>
+</ol>
+<h2>为什么这就平衡了</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>推理</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>最短可能路径</td>
+<td>全黑</td>
+</tr>
+<tr>
+<td>最长可能路径</td>
+<td>红黑交替（规则 4 禁止连续红）</td>
+</tr>
+<tr>
+<td>规则 5：两边黑节点数相同</td>
+<td><strong>最长 ≤ 2 × 最短</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>→ 树高 ≤ 2·log₂(n+1)。10 亿节点高最多 ~60。查/插/删稳定 O(log n)，<strong>无退化情况</strong>。</p>
+<hr />
+<h2>红与黑到底是什么</h2>
+<p><strong>物理层面：只是一个 bit。</strong> 颜色没有任何独立语义，是给修复算法看的记账位。Linux 内核连这 1 位都不单独存——塞进父指针的低位：</p>
+<pre class="code" data-label="C"><code class="c">struct rb_node {
+    unsigned long __rb_parent_color;  // 父指针 + 颜色打包：对齐保证低 2-3 位恒 0，bit0 放颜色
+    struct rb_node *rb_right;
+    struct rb_node *rb_left;
+};
+/* rb_is_red(n) 就是 !(__rb_parent_color &amp; 1) —— 零额外内存 */
+</code></pre>
+<blockquote>
+<p>指针低 bits 藏标志是内核通用技巧：buddy allocator 的 page flags、slab freelist 都这么白嫖对齐填充。</p>
+</blockquote>
+<p><strong>直觉层面：颜色是"到父节点的边"的颜色。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>边</th>
+<th>几何含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>黑边</td>
+<td>向下走一层（真下一层）</td>
+</tr>
+<tr>
+<td>红边</td>
+<td>横向（还停在这一层）</td>
+</tr>
+</tbody>
+</table></div>
+<p>规则 5 翻译过来就是 <strong>所有叶子同深度</strong>——一棵真平衡树藏在红黑树里，红节点是同层挤不下、暂挂黑节点边上的成员。把红节点与黑父亲"粘"成超级节点，红黑树即 <strong>2-3-4 B 树</strong>，黑高 = B 树高；全部旋转/变色规则对应 B 树的节点分裂/合并。</p>
+<p><strong>一句话：红黑不是内容，是坐标——标记"这算不算一层"。</strong></p>
+<hr />
+<h2>坏了规矩怎么修：变色 + 旋转</h2>
+<p>插入默认染红（不动黑高），可能造出"红红相连"；删除可能让某路径少一个黑节点。修复只有两招：</p>
+<ul>
+<li><strong>变色</strong>：调整红黑分布，平衡两边的黑节点计数</li>
+<li><strong>旋转</strong>：父子上位换位 + 中间子树过继。左旋/右旋 = <strong>O(1) 的几次指针改写</strong>，中序顺序不变（BST 性质保持）</li>
+</ul>
+<p>策略：看叔叔节点——红叔叔 → 变色上移递归；黑叔叔 → 旋转 1-2 次收尾。
+<strong>插入最多 2 次旋转，删除最多 3 次</strong>，其余靠变色。</p>
+<hr />
+<h2>为什么内核选红黑树而不是 AVL</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>AVL</th>
+<th>红黑树</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平衡严格度</td>
+<td>高（高度差 ≤1），树更矮</td>
+<td>松（最长 ≤2×最短）</td>
+</tr>
+<tr>
+<td>查找</td>
+<td>更快</td>
+<td>略慢（树稍高）</td>
+</tr>
+<tr>
+<td>插入/删除</td>
+<td>旋转可能一路传到根</td>
+<td>最多 2/3 次旋转</td>
+</tr>
+</tbody>
+</table></div>
+<p>内核容器是<strong>写密集</strong>的：CFS 每次 tick / 唤醒 / 休眠都插树删树。红黑树用"松一点的平衡"换"更低的修改成本"。工程取舍，不是谁绝对更好。</p>
+<hr />
+<h2>落回 CFS</h2>
+<pre class="code" data-label="C"><code class="c">struct rb_root_cached {
+    struct rb_root rb_root;        // 按 vruntime 排序的红黑树
+    struct rb_node *rb_leftmost;   // 最左节点缓存 → pick_next O(1)
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>key = vruntime</strong></td>
+<td>中序遍历 = vruntime 升序；最左 = 最"饿"的任务</td>
+</tr>
+<tr>
+<td><strong>侵入式</strong></td>
+<td><code class="c">rb_node</code> 内嵌在 <code class="c">sched_entity</code> 里（同 <code class="c">list_head</code> 设计），一个结构体可同时挂多个容器，零额外分配</td>
+</tr>
+<tr>
+<td><strong>增删时机</strong></td>
+<td><code class="c">enqueue_task</code> 插树、<code class="c">dequeue_task</code> 摘树、<code class="c">update_curr</code> 改 key 后 reposition</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>内核其他红黑树用户：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用户</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VMA 查找（<code class="c">find_vma</code>）</td>
+<td>每次 page fault / mmap 都走——6.1 起 maple tree 接班（cache locality 更好）</td>
+</tr>
+<tr>
+<td>ext4 extent tree</td>
+<td>文件物理块区间</td>
+</tr>
+<tr>
+<td>CFQ I/O 调度器</td>
+<td>请求按扇区排序</td>
+</tr>
+<tr>
+<td><code class="c">rbtree_augmented</code></td>
+<td>带子树聚合信息的增强版</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li>红黑树节点散布在堆上，<strong>cache locality 一般</strong>——这是 VMA 换 maple tree 的动机之一，也是 CFS 热路径上 <code class="c">sched_entity</code> 尽量 per-CPU 级联缓存的原因</li>
+<li>自研撮合/订单簿绝不用红黑树遍历——但理解内核为什么用它，是判断"自己场景该用什么容器"的参照系</li>
+</ul>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 红黑树最长路径为什么最多是最短路径的 2 倍？</p>
+<blockquote>
+<p>最短路径全黑；最长路径红黑交替（红红相连被规则 4 禁止）；规则 5 保证两条路径黑节点数相同，所以最长路径的黑节点数 = 最短路径总数，翻倍是上限。</p>
+</blockquote>
+<p><strong>Q2:</strong> 插入新节点为什么默认染红而不是黑？</p>
+<blockquote>
+<p>染黑必然破坏规则 5（该路径黑高 +1，其他路径没变），需要修复；染红不碰黑高，只有规则 4（红红相连）可能被破坏，修复面更小。</p>
+</blockquote>
+<p><strong>Q3:</strong> 旋转改变 BST 的中序遍历结果吗？为什么内核修复红黑树优先变色？</p>
+<blockquote>
+<p>不改变——旋转只重排父子关系并过继中间子树，中序顺序恒定，BST 语义不变。变色不碰任何指针（纯写节点颜色），比旋转更便宜；策略上能变色解决就不旋转。</p>
+</blockquote>
+<p><strong>Q4:</strong> CFS 用堆（找最小 O(1)）替代红黑树行不行？</p>
+<blockquote>
+<p>摘除任意中间节点（任务休眠 dequeue）在堆里是 O(n) 定位 + O(log n) 下沉，红黑树持有节点指针可 O(1) 定位、O(log n) 摘除。调度场景频繁摘任意节点，堆不合适。</p>
+</blockquote>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-08">
+        <div class="sec-head"><div class="sec-no">08</div><h2>实时调度类 — FIFO / RR / DEADLINE 与 CFS 的边界</h2></div>
+<blockquote>
+<p><strong>定位:</strong> <code class="c">06-cfs-runtime-mechanics.md</code> 讲 CFS 内部怎么转，本篇讲<strong>CFS 之外</strong>的实时调度类：FIFO / RR / DEADLINE，以及实时类和 CFS 的优先级关系。
+<strong>关键结论:</strong> 实时调度不是 CFS 的一部分，是<strong>完全独立的调度类</strong>，不走 CFS 的红黑树。</p>
+</blockquote>
+<hr />
+<h2>一、不是一个框架里的"两套调度器"，是多个调度类插件</h2>
+<p>内核里只有<strong>一个调度框架</strong>（scheduler framework），框架下注册了<strong>多个调度类</strong>（sched_class），每个类自带一整套数据结构和操作函数，内核按优先级从高到低依次挑选任务。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调度类</th>
+<th>管谁</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>dl_sched_class</strong></td>
+<td>SCHED_DEADLINE</td>
+<td>EDF 红黑树（按 deadline 排）</td>
+</tr>
+<tr>
+<td><strong>rt_sched_class</strong></td>
+<td>SCHED_FIFO / SCHED_RR</td>
+<td>优先级位图数组</td>
+</tr>
+<tr>
+<td><strong>fair_sched_class</strong></td>
+<td>SCHED_OTHER（普通进程，绝大多数程序）</td>
+<td>vruntime 红黑树公平分片</td>
+</tr>
+<tr>
+<td><strong>idle_sched_class</strong></td>
+<td>每 CPU 的 idle 任务</td>
+<td>系统空闲才跑</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">struct rq</code> 里就能看出来——<code class="c">cfs_rq cfs</code>、<code class="c">rt_rq rt</code>、<code class="c">dl_rq dl</code> 是<strong>并列的独立队列</strong>，各有各的数据结构。实时任务<strong>不在</strong> CFS 的红黑树里。</p>
+<h3>调度框架 / 调度类 / 调度策略 三层区分（易混）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>是什么</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>调度框架</strong></td>
+<td>内核选进程的统一入口和骨架，定义"按类优先级逐层挑选"的规则</td>
+<td><code class="c">kernel/sched/core.c</code> 的 <code class="c">pick_next_task()</code> / <code class="c">__schedule()</code></td>
+</tr>
+<tr>
+<td><strong>调度类</strong></td>
+<td>框架下注册的"插件"，每个类一套数据结构 + 入队/出队/挑任务的函数（<code class="c">sched_class</code> 结构体里的函数指针）</td>
+<td><code class="c">fair_sched_class</code>、<code class="c">rt_sched_class</code>、<code class="c">dl_sched_class</code>、<code class="c">idle_sched_class</code></td>
+</tr>
+<tr>
+<td><strong>调度策略</strong></td>
+<td>用户态通过 <code class="c">sched_setscheduler()</code> 选的<strong>参数</strong>，决定进程进哪个类、类内怎么排队</td>
+<td><code class="c">SCHED_OTHER</code>、<code class="c">SCHED_FIFO</code>、<code class="c">SCHED_RR</code>、<code class="c">SCHED_DEADLINE</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>三者关系：<strong>策略决定你进哪个类，类决定用什么算法，框架决定先问哪个类。</strong> 一个类可以对应多个策略（rt_sched_class 同时服务 FIFO 和 RR），反过来一个策略只属于一个类。</p>
+<p>类比：<strong>框架是主板</strong>（定插槽规范，自己不做图形计算）；<strong>调度类是显卡</strong>（一张卡支持多种输出模式）；<strong>策略是显卡的设置档位</strong>（高性能/省电，硬件还是同一张）。</p>
+<p><strong>框架"不做算法"的准确边界：</strong> 框架不做<strong>类内</strong>算法（vruntime 怎么算、FIFO 怎么排是类的事），但<strong>类间</strong>规则是框架定的——按什么顺序问各类、何时触发抢占检查、负载均衡钩子。一句话：<strong>框架定规则，类填算法。</strong></p>
+<h3>类 ↔ 策略 ↔ 数据结构 速览（含命名陷阱）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调度类</th>
+<th>包含的策略</th>
+<th>底层数据结构</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">stop_sched_class</code></td>
+<td>（无，内核内部：migration/热插拔）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">dl_sched_class</code></td>
+<td><code class="c">SCHED_DEADLINE</code></td>
+<td>红黑树，按绝对 deadline 排（EDF）</td>
+</tr>
+<tr>
+<td><code class="c">rt_sched_class</code></td>
+<td><code class="c">SCHED_FIFO</code>、<code class="c">SCHED_RR</code></td>
+<td><strong>优先级位图 + 每优先级一条链表</strong>（<code class="c">find_first_bit()</code> O(1) 找最高优先级，这是"高优先级瞬间抢占"的结构基础）</td>
+</tr>
+<tr>
+<td><code class="c">fair_sched_class</code></td>
+<td><code class="c">SCHED_OTHER</code>、<code class="c">SCHED_BATCH</code>、<strong><code class="c">SCHED_IDLE</code></strong></td>
+<td>vruntime 红黑树</td>
+</tr>
+<tr>
+<td><code class="c">idle_sched_class</code></td>
+<td>（无，pid 0 / swapper，用户选不到）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>fair 类有三个策略：<code class="c">SCHED_OTHER</code>（普通）、<code class="c">SCHED_BATCH</code>（批处理——不做交互性补偿的唤醒抢占，适合编译器这类纯吞吐任务）、<code class="c">SCHED_IDLE</code>（权重压到底）。<strong>一个策略只属于一个类，但一个类可以有多个策略</strong>——rt 有 2 个，fair 有 3 个。</p>
+</blockquote>
+<p><strong>包厢模型（通俗但准）：</strong> 4 个用户可达包厢（dl &gt; rt &gt; fair &gt; idle），选任务先看最高包厢有没有人就绪，有就拿它、下面全部跳过；同一包厢内再按自己的策略挑。<strong>但有一个例外戳破包厢比喻——RT throttling</strong>：高包厢（RT 类）每 1s 必须歇 50ms（<code class="c">sched_rt_runtime_us</code> 默认 950000/1000000），强留时间给低包厢。这是内核防"包厢锁死"的安全阀，也是"高类有就绪任务低类完全没机会"这句话的唯一例外。</p>
+<p><strong>三个命名/归类陷阱：</strong></p>
+<ol>
+<li><strong><code class="c">SCHED_IDLE</code> ≠ <code class="c">idle_sched_class</code></strong>（最大的坑）。<code class="c">SCHED_IDLE</code> 是 <strong>fair 类</strong>里的策略——权重压到最低的 CFS 进程（比 nice 19 还低），用户态可用；而 <code class="c">idle_sched_class</code> 跑的是每 CPU 的 idle 任务（swapper，pid 0），用户<strong>根本选不到</strong>。名字撞车，完全是两回事。</li>
+<li>类名是<strong>后缀式</strong>：<code class="c">fair_sched_class</code> 不叫 <code class="c">sched_cfs_class</code>——注意叫 fair 不叫 cfs（6.6 起 CFS 实现换成了 EEVDF，类名不用改，这正是"类是插件、算法可换"的体现）。</li>
+<li>框架选任务是按<strong>类</strong>的优先级顺序调 <code class="c">pick_next_task</code>，不是按策略——策略只在类内生效。</li>
+</ol>
+<hr />
+<h2>二、三种实时策略</h2>
+<h3>1. SCHED_FIFO（POSIX 传统，2.6 至今）</h3>
+<ul>
+<li><strong>无时间片</strong>。高优先级实时进程一旦就绪，直接抢占 CPU</li>
+<li>只要它不主动让出（sleep / 阻塞），就一直跑；同优先级排队<strong>先进先出</strong></li>
+<li>优先级范围 <strong>1-99</strong>（数字越大越高）</li>
+</ul>
+<p><strong>风险与修正:</strong> "FIFO 死循环会把 CPU 占死"——现代内核不成立，有 <strong>RT throttling</strong> 兜底：</p>
+<pre class="code" data-label="shell"><code class="c">cat /proc/sys/kernel/sched_rt_runtime_us   # 默认 950000
+cat /proc/sys/kernel/sched_rt_period_us    # 默认 1000000
+</code></pre>
+<p>每个 1s 周期内实时任务<strong>最多跑 950ms</strong>，留 50ms 给 CFS 和内核线程——FIFO 死循环时 shell 还能敲命令救火。只有手动 <code class="c">echo -1 &gt; sched_rt_runtime_us</code> 才会真锁死机器。排查实时系统时这两个文件是第一眼要看的。</p>
+<blockquote>
+<p>注意：这个限额限的是<strong>整个 RT 类的总量</strong>，同时保护了 DL 任务不被 FIFO 饿死。</p>
+</blockquote>
+<h3>2. SCHED_RR（POSIX 传统）</h3>
+<ul>
+<li>同样是实时优先级，会抢占 CFS</li>
+<li><strong>同优先级</strong>之间轮转，时间片默认 100ms（<code class="c">RR_TIMESLICE</code>）；耗尽排到同优先级队尾</li>
+<li><strong>不同优先级</strong>：高优先级依旧直接抢占低优先级</li>
+</ul>
+<h3>3. SCHED_DEADLINE（Linux 3.14 引入，现代实时）</h3>
+<p>工业、低延迟项目（含 DPDK 场景）大量使用。<strong>是新增，不是替代</strong>——FIFO/RR 仍在用。</p>
+<p><strong>三参数模型（修正：不只 runtime/period 两个）：</strong></p>
+<pre class="code" data-label="code"><code class="c">runtime / deadline / period
+</code></pre>
+<p>例：<code class="c">runtime=2ms, deadline=4ms, period=10ms</code> = 每 10ms 一个周期，必须在周期开始后 4ms 内拿到并跑完 2ms。</p>
+<ul>
+<li>内核实现 = <strong>EDF（最早截止时间优先）</strong>+ <strong>CBS（恒定带宽服务器）</strong></li>
+<li>"内核会限流"的准确机制：<strong>admission control</strong>——<code class="c">sched_setattr()</code> 时就拒绝带宽超标的申请（总带宽 Σ runtime/period ≤ 1），而不是事后限流</li>
+<li>比 FIFO/RR 安全：带宽被 CBS 硬性框住，不会饿死系统</li>
+</ul>
+<hr />
+<h2>三、调度类优先级关系（完整五层）</h2>
+<pre class="code" data-label="text"><code class="c">stop_sched_class   ← 内核内部（migration/热插拔），用户拿不到
+dl_sched_class     ← SCHED_DEADLINE (EDF)
+rt_sched_class     ← FIFO / RR，优先级 1-99
+fair_sched_class   ← CFS / EEVDF
+idle_sched_class   ← 每 CPU 的 idle 任务
+</code></pre>
+<p><code class="c">kernel/sched/core.c</code> 的 <code class="c">pick_next_task()</code> <strong>按这个顺序逐层问"你有活吗"</strong>——只要有实时类任务就绪，CFS 根本轮不到被询问。</p>
+<hr />
+<h2>四、权限</h2>
+<ul>
+<li>普通用户默认只能跑 CFS</li>
+<li>root（<code class="c">CAP_SYS_NICE</code>）可用 FIFO/RR/DEADLINE</li>
+<li>非 root 有 <code class="c">RLIMIT_RTPRIO</code> 限额时也可申请有限实时优先级</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c">chrt -f 50 ./task    # SCHED_FIFO 优先级 50
+chrt -r 30 ./task    # SCHED_RR
+chrt -p &lt;pid&gt;        # 查询某进程的调度策略
+</code></pre>
+<hr />
+<h2>五、容易混淆点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>混淆</th>
+<th>澄清</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux 是"两套独立调度器程序"？</td>
+<td>不是。<strong>一个调度框架 + 多个调度类插件</strong>，框架按类优先级逐层挑选</td>
+</tr>
+<tr>
+<td>实时任务走 CFS 红黑树？</td>
+<td>不走。CFS 只管 fair 类，RT 用优先级位图，DL 按 deadline 排树</td>
+</tr>
+<tr>
+<td>FIFO/RR 被废弃了？</td>
+<td>没有，POSIX 标准策略一直保留；DEADLINE 是新增第三套</td>
+</tr>
+<tr>
+<td>nice 调高能赢实时进程？</td>
+<td>不能。nice 只在 CFS 类内折算 vruntime 权重，<strong>跨调度类根本不比较</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>六、对比表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>特点</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SCHED_OTHER (CFS)</td>
+<td>公平分片，nice 调权重</td>
+<td>绝大多数普通应用、shell、编译器</td>
+</tr>
+<tr>
+<td>SCHED_FIFO</td>
+<td>实时，无时间片，抢到就跑到让出</td>
+<td>对延迟极高、自己可控不会死循环</td>
+</tr>
+<tr>
+<td>SCHED_RR</td>
+<td>实时，同优先级轮转时间片</td>
+<td>同优先级多个同等紧急的实时进程</td>
+</tr>
+<tr>
+<td>SCHED_DEADLINE</td>
+<td>截止时间模型，CBS 带宽限制</td>
+<td>工业、音视频、低延迟业务，更安全的实时</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>七、时间片真相：策略决定，不是调度类决定</h2>
+<p><strong>核心结论：调度类本身不决定有没有时间片——是调度策略决定的。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>有无时间片</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SCHED_FIFO</code></td>
+<td><strong>无</strong></td>
+<td>拿到 CPU 一直跑到阻塞/让出；"FIFO 卡死"由 RT throttling 兜底（见二.1）</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_RR</code></td>
+<td><strong>有</strong>（默认 100ms）</td>
+<td>只管<strong>同优先级</strong>轮转；更高优先级到来直接抢占，不管你还剩多少</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_DEADLINE</code></td>
+<td><strong>不是时间片，是带宽</strong></td>
+<td><code class="c">runtime/period</code> 限制"最多跑多久"，CBS 到配额会强制 throttle——像时间片的地方是"到点掐断"，但语义是保带宽供给+防超卖，不是同组排队轮转</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_OTHER</code></td>
+<td><strong>无固定时间片</strong></td>
+<td>CFS 按 vruntime 权重分 CPU <strong>比例</strong>，时间片是动态算出来的；固定时间片是老 O(1) 调度器的东西</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_IDLE</code></td>
+<td>同 OTHER</td>
+<td>是 fair 类正常成员，<strong>不是"系统闲才跑"</strong>——机器上只有它一个 fair 任务时照样跑满，只是权重最低（3），有人抢就只剩一口汤</td>
+</tr>
+</tbody>
+</table></div>
+<h3>抢占 vs 时间片（关键分野）</h3>
+<ul>
+<li><strong>抢占</strong>：地位不平等时的规则。跨调度类/不同优先级之间，高者就绪立刻抢，不看时间片</li>
+<li><strong>时间片</strong>：地位平等时的规则。只作用于<strong>同优先级、同策略</strong>的任务之间轮流</li>
+</ul>
+<p>通俗：<strong>时间片 = "大家地位平等时，轮流分时间"；地位不平等，直接抢，不看时间片。</strong></p>
+<blockquote>
+<p>精确化一句："高优先级就绪<strong>立刻</strong>抢占"在 RT/DL 层面成立；CFS <strong>内部</strong>的唤醒抢占有粒度阈值（<code class="c">check_preempt_wakeup</code> 比较 vruntime 差距，差距不够大就忍住不抢，防抖动）——<strong>地位悬殊立刻抢，地位接近看差距</strong>。</p>
+</blockquote>
+<h3>四概念极简对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>属于哪层</th>
+<th>回答的问题</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>抢占</td>
+<td>框架（类间）/ 优先级（类内）</td>
+<td>谁能抢走 CPU</td>
+<td>地位不平等，立刻抢，不看时间</td>
+</tr>
+<tr>
+<td>时间片</td>
+<td>策略（RR 的传统语义）</td>
+<td>同优先级怎么轮流</td>
+<td>地位平等，轮流分时间</td>
+</tr>
+<tr>
+<td>vruntime</td>
+<td>fair 类内算法</td>
+<td>按权重分 CPU 比例</td>
+<td>不是时间段，是记账本</td>
+</tr>
+<tr>
+<td>runtime/period</td>
+<td>dl 类内模型</td>
+<td>带宽配额</td>
+<td>限"最多跑多久"，不是"到点换人"</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>Quiz</h2>
+<p><strong>Q: 系统同时存在 SCHED_FIFO(优先级 50) 实时进程和 CFS 进程，CFS 的 nice 调到 -20（普通进程最高），能抢过 FIFO 吗？</strong></p>
+<details>
+<summary>答案（点开）</summary>
+<p><strong>抢不过，差得远。</strong></p>
+<p><code class="c">nice</code> 是 CFS <strong>类内部</strong>的权重参数——只影响 vruntime 折算率（<code class="c">NICE_0_LOAD / weight</code>），决定"CFS 这群人里谁多分点 CPU"。</p>
+<p>而 <code class="c">pick_next_task()</code> 是<strong>跨类选择，先于一切类内比较</strong>：stop → dl → rt → fair 逐层询问，FIFO(50) 只要就绪，<strong>根本轮不到 fair_sched_class 被问到</strong>，nice 是 -20 还是 +19 一个字都没被读到。</p>
+<p>一句话：<strong>nice 调的是类内座位，跨类靠的是出生。</strong> 想赢过实时进程，只有把自己变成实时进程，或让 FIFO 睡觉/退出。</p>
+</details>
+<p><strong>Q: 把进程改成 <code class="c">SCHED_RR</code>，算更换调度类吗？</strong></p>
+<details>
+<summary>答案（点开）</summary>
+<p><strong>看从哪改过来——可能换类，也可能不换：</strong></p>
+<ul>
+<li>从 <code class="c">SCHED_OTHER</code> 改成 <code class="c">SCHED_RR</code>：<strong>是换类</strong>。进程从 fair 类红黑树摘出，挂进 rt 类优先级队列，从此 <code class="c">pick_next_task()</code> 在更早的层级就被看到</li>
+<li>从 <code class="c">SCHED_FIFO</code> 改成 <code class="c">SCHED_RR</code>：<strong>不是换类</strong>。还是 rt_sched_class、同一条实时队列、同一优先级，变的只是类内规则（"跑到让出" → "时间片轮转"）</li>
+</ul>
+<p>一句话：<strong>策略是类内旋钮，拧旋钮 ≠ 换插槽。</strong></p>
+</details>
+<p><strong>Q: SCHED_FIFO 任务 A、B 相同实时优先级，A 在 CPU 上跑，B 就绪，会发生切换吗？换成 SCHED_RR 呢？</strong></p>
+<details>
+<summary>答案（点开）</summary>
+<ul>
+<li><strong>FIFO：不会切。</strong> FIFO 没有时间片，A 不阻塞、不 sleep、不让出就一直占着，B 只能等</li>
+<li><strong>RR：会切。</strong> A 时间片（默认 100ms）耗尽就排到同优先级队尾，B 上——但注意只限同优先级之间；更高优先级任务到来时不管时间片剩多少直接抢</li>
+</ul>
+</details>
+      </section>
+      <section class="section" id="s-09">
+        <div class="sec-head"><div class="sec-no">09</div><h2>Linux&quot;一切皆文件&quot;，调度类算不算文件？ — 修正版</h2></div>
+<blockquote>
+<p>结论先行：<strong>调度类本身不是文件，是内核内存里的纯虚函数表；但调度器的可调参数（全局变量）通过 sysfs/kernfs 伪文件暴露成文件接口。</strong>
+注意一个关键区分：<code class="c">sched_class</code> 定义<strong>行为</strong>（怎么调度），全局变量定义<strong>参数</strong>（调度多重）。</p>
+</blockquote>
+<hr />
+<h3>一、先分清两个概念</h3>
+<p><strong>1. 调度类（sched_class）</strong></p>
+<p>内核 C 代码里的结构体对象，驻留内核虚拟内存。看它的定义（<code class="c">kernel/sched/sched.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct sched_class {
+    void (*enqueue_task)(...);
+    void (*dequeue_task)(...);
+    struct task_struct *(*pick_next_task)(...);
+    void (*task_tick)(...);
+    void (*switched_to)(...);
+    ...
+};
+</code></pre>
+<p>它是个<strong>纯虚函数表（vtable）</strong>——字段几乎全是函数指针，<strong>不存放任何可调参数</strong>。四个实例：</p>
+<ul>
+<li><code class="c">stop_sched_class</code>（stop 任务，最高优先级，迁移用）</li>
+<li><code class="c">dl_sched_class</code>（Deadline，EDF）</li>
+<li><code class="c">rt_sched_class</code>（实时，FIFO/RR）</li>
+<li><code class="c">fair_sched_class</code>（CFS/EEVDF）</li>
+</ul>
+<blockquote>
+<p>内核运行时数据结构，不是磁盘文件，不是 inode，不能直接 open/read/write。
+→ <strong>它本身不算文件。</strong></p>
+</blockquote>
+<p><strong>2. 可调参数是全局变量，不在 sched_class 里</strong></p>
+<p>CFS 的参数是 <code class="c">kernel/sched/fair.c</code> 里的<strong>静态全局变量</strong>：</p>
+<pre class="code" data-label="C"><code class="c">unsigned int sysctl_sched_latency = 6000000;          /* 6ms */
+unsigned int sysctl_sched_min_granularity;
+static unsigned int sysctl_sched_cfs_bandwidth_slice = 5000;  /* 5ms */
+</code></pre>
+<p>写 <code class="c">/sys/kernel/sched/latency_ns</code> 改的就是这些全局变量——跟 <code class="c">sched_class</code> 结构体没有关系。</p>
+<p><strong>3. sysfs（/sys）伪文件</strong></p>
+<p>"一切皆文件" ≠ 所有内核内部数据结构本身就是磁盘文件。真正含义：<strong>很多内核对象对外包装成文件接口，用 read/write 系统调用交互</strong>。</p>
+<p>调度相关接口：</p>
+<ul>
+<li><code class="c">/sys/kernel/sched/latency_ns</code>、<code class="c">cfs_bandwidth_slice_ns</code> 等 —— CFS 参数（<strong>6.6+ 内核才有</strong>；老内核在 <code class="c">/proc/sys/kernel/sched_*</code>，sysctl 接口）</li>
+<li><code class="c">/sys/kernel/sched/features</code> —— 运行时开关 CFS 特性</li>
+<li><code class="c">/sys/devices/system/cpu/</code> —— CPU 拓扑/热迁移</li>
+<li>cgroup v2 的 <code class="c">cpu.max</code> / <code class="c">cpu.weight</code> —— cgroupfs 伪文件</li>
+</ul>
+<p>这些是伪文件：open 时内核通过 show 回调从内存现场取值；write 走 store 回调直接改内核内存里的运行参数。</p>
+<hr />
+<h3>二、VFS 是怎么把 sysfs 伪文件和调度参数挂钩的</h3>
+<p>以 write <code class="c">/sys/kernel/sched/latency_ns</code> 为例，完整调用链：</p>
+<pre class="code" data-label="code"><code class="c">write(2)
+ → ksys_write → vfs_write → call_write_iter
+   → kernfs_fop_write_iter          /* sysfs 的 file_operations */
+     → sysfs_kf_write
+       → attr-&gt;store()              /* 注册时给的回调 */
+         → 直接给 sysctl_sched_latency 赋值，完事
+</code></pre>
+<p>注册侧，内核用 <code class="c">struct kobj_attribute</code> 把变量和 show/store 回调绑在一起：</p>
+<pre class="code" data-label="C"><code class="c">static ssize_t latency_ns_store(struct kobject *kobj,
+        struct kobj_attribute *attr, const char *buf, size_t count)
+{
+    unsigned long val;
+    /* sscanf → 写 sysctl_sched_latency */
+}
+
+static struct kobj_attribute latency_ns_attr =
+    __ATTR(latency_ns, 0644, latency_ns_show, latency_ns_store);
+</code></pre>
+<p>底层是 <strong>kernfs</strong>（3.14 从 sysfs 拆出来的通用层）：<code class="c">/sys/kernel/sched/</code> 下每个文件对应一个 <code class="c">kernfs_node</code>；open 时才按需分配内存中的 inode/dentry，<code class="c">stat</code> 看到的 inode 号是临时的。read 每次 show 现场从全局变量取值，write 走 store 直接改内存——<strong>断电即失，重启恢复默认</strong>。</p>
+<hr />
+<h3>三、HFT/低延迟真正相关的"调度类文件接口"</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>作用</th>
+<th>HFT 用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">/sys/kernel/sched/features</code></td>
+<td>运行时开关 CFS 特性（NOHZ_IDLE、TTWU_QUEUE 等）</td>
+<td>排查调度抖动：<code class="c">grep -v NOHZ /sys/kernel/sched/features</code></td>
+</tr>
+<tr>
+<td>cgroup v2 <code class="c">cpu.max</code></td>
+<td>写入直接改 <code class="c">cfs_bandwidth</code> 的 quota/period</td>
+<td>交易进程资源隔离</td>
+</tr>
+<tr>
+<td>cgroup v2 <code class="c">cpu.weight</code></td>
+<td>改 <code class="c">task_group</code> 权重</td>
+<td>关键进程抢占保障</td>
+</tr>
+<tr>
+<td><code class="c">/proc/sys/kernel/sched_rt_runtime_us</code></td>
+<td>RT 带宽，默认 950000/1000000</td>
+<td><strong>SCHED_FIFO 也会被节流 5%</strong>，低延迟场景常写 -1 关掉</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意：<strong>给任务设置调度类本身不是文件接口</strong>，走 <code class="c">sched_setscheduler(2)</code> 系统调用（<code class="c">chrt</code> 命令的底层）。"文件化"只覆盖参数调优，不覆盖策略指定。</p>
+<hr />
+<h3>四、对比表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>本身是不是文件</th>
+<th>是否提供文件接口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct sched_class</code></td>
+<td>❌ 纯 vtable，内核内存</td>
+<td>⚠️ 类本身没有；<strong>参数</strong>（全局变量）经 sysfs 可改</td>
+</tr>
+<tr>
+<td>调度参数全局变量</td>
+<td>❌ 静态全局变量</td>
+<td>✅ sysfs/sysctl 伪文件</td>
+</tr>
+<tr>
+<td>进程 task_struct</td>
+<td>❌ 内存结构体</td>
+<td>✅ <code class="c">/proc/[pid]/*</code></td>
+</tr>
+<tr>
+<td>磁盘普通文件</td>
+<td>✅ 真正磁盘文件</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>socket</td>
+<td>❌ socket 内核对象</td>
+<td>✅ fd 指向 <code class="c">struct file</code>，<code class="c">f_op</code> 是 <code class="c">socket_file_ops</code>。<strong>无路径无磁盘 inode</strong>（AF_UNIX bind 到路径才有）；连"伪文件"都算不上，只借了 fd 这层接口</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>五、一句话理解"一切皆文件"的真正边界</h3>
+<blockquote>
+<p>凡能挂上 <code class="c">struct file</code> + <code class="c">file_operations</code>、拿到 fd 的东西，对外就表现成文件。
+内核内部的结构体、算法、调度类、进程、socket、信号量：本身不是文件。
+proc、sysfs、cgroupfs 全是内存文件系统，断电消失，只是把内核内存的数据伪装成文件给用户态。</p>
+</blockquote>
+<p><strong>常见误区：</strong>
+- ❌ 内核里每样东西，硬盘上都有对应文件存着。
+- ✅ 很多内核资源<strong>抽象成文件系统接口</strong>统一访问，不一定落磁盘。</p>
+<hr />
+<h3>小 quiz</h3>
+<p><strong>问：修改 <code class="c">/sys/kernel/sched/*</code>，写进去数值，是写到硬盘吗？</strong></p>
+<p>答：不是。write(2) 经 VFS → kernfs → <code class="c">attr-&gt;store()</code> 回调，直接修改 <code class="c">kernel/sched/fair.c</code> 里的全局变量（如 <code class="c">sysctl_sched_latency</code>）；重启全部恢复默认，不会持久化。</p>
+<p><strong>问：<code class="c">/sys/kernel/sched/latency_ns</code> 写的值最终落在 <code class="c">sched_class</code> 结构体的哪个成员里？</strong></p>
+<p>答：哪个都不落。<code class="c">sched_class</code> 是纯函数表，没有参数成员；写的是独立的静态全局变量 <code class="c">sysctl_sched_latency</code>。</p>
+      </section>
+      <section class="section" id="s-10">
+        <div class="sec-head"><div class="sec-no">2.10</div><h2>调度类 `struct sched_class` 总览</h2></div>
+<blockquote>
+<p>接 §2.9（sched_class 与"一切皆文件"）、§3.10（idle 进程与 idle_sched_class）。本节是<strong>调度类层级总览</strong>——5 档优先级、用户/内核边界、<code class="c">pick_next_task</code> 遍历机制、<code class="c">sched_setscheduler</code> 切换动作。</p>
+<p>核心一句话：
+<strong><code class="c">struct sched_class</code> 是一组函数指针集合（vtable）；每个线程 <code class="c">task_struct</code> 里存一个指针 <code class="c">sched_class</code>，指向某一组函数。这是内核内部使用，用户空间完全看不见，用户程序不能直接改写这个结构体</strong>。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">struct task_struct {
+    // ...
+    const struct sched_class *sched_class;
+    // ...
+};
+</code></pre>
+<p>每个任务会绑定某一个调度类实例：
+- 普通进程 → <code class="c">&amp;fair_sched_class</code>（CFS）
+- 实时 FIFO/RR → <code class="c">&amp;rt_sched_class</code>
+- 截止时间 → <code class="c">&amp;dl_sched_class</code>
+- idle 线程 → <code class="c">&amp;idle_sched_class</code>
+- stop 线程 → <code class="c">&amp;stop_sched_class</code></p>
+<hr />
+<h2>1、调度类给谁用？给谁调用？</h2>
+<p><strong>只给内核调度子系统内部调用，用户态完全不接触。</strong></p>
+<p>用户空间做的，只是调用系统调用：</p>
+<pre class="code" data-label="C"><code class="c">sched_setscheduler(pid, SCHED_FIFO, &amp;param);
+</code></pre>
+<p>用户态系统调用，<strong>仅仅是告诉内核：把这个 task 的 <code class="c">sched_class</code> 换成 <code class="c">rt_sched_class</code></strong>。真正的调度逻辑、入队、出队、选下一个任务，全部内核内部通过函数指针调用调度类的成员函数。</p>
+<p>内核调度器通用代码不会写死 CFS / RT 逻辑，全部通过函数指针回调。伪代码示意：</p>
+<pre class="code" data-label="C"><code class="c">// 内核要把一个任务放进运行队列 rq
+static void enqueue_task(struct rq *rq, struct task_struct *p)
+{
+    // 不写死 if 判断 CFS/RT/idle
+    // 直接调用这个任务自己绑定调度类的 enqueue_task 函数
+    p-&gt;sched_class-&gt;enqueue_task(rq, p, flags);
+}
+</code></pre>
+<blockquote>
+<p>如果 p 是 CFS 任务，就执行 <code class="c">fair_sched_class.enqueue_task</code>（插入 CFS 红黑树）；
+如果 p 是实时任务，执行 <code class="c">rt_sched_class.enqueue_task</code>（插入 rt 优先级数组）；
+idle 任务不走常规 enqueue。</p>
+<p>⚠️勘误：选下一个任务<strong>不是</strong> <code class="c">rq-&gt;curr-&gt;sched_class-&gt;pick_next_task(rq)</code>（只看当前任务的调度类）——而是<strong>从高到低遍历所有 sched_class</strong>，见第 4 节。</p>
+</blockquote>
+<p><strong>同一个通用调度框架，依靠不同的 <code class="c">sched_class</code> 函数指针，执行完全不同的调度算法。</strong> 这就是内核里面向对象的实现方式：C 语言没有 class，用函数指针模拟多态（和 VFS 的 <code class="c">file_operations</code>、<code class="c">inode_operations</code>、<code class="c">vm_operations_struct</code> 是同一套思路）。</p>
+<h3>关键设计：没有 ID，靠指针地址识别</h3>
+<p>内核<strong>没有</strong> <code class="c">int sched_class_id</code> 这种数字字段来标记"是哪一类调度"。识别调度类就靠<strong>比较指针地址</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 内核里确实有这种直接比较指针的代码 */
+if (p-&gt;sched_class == &amp;idle_sched_class) {
+    /* 当前任务是 idle 线程 */
+}
+</code></pre>
+<p>指针等于 <code class="c">&amp;fair_sched_class</code> 就是 CFS，等于 <code class="c">&amp;rt_sched_class</code> 就是实时——不需要 enum、不需要 ID 号。</p>
+<blockquote>
+<p><strong>内存效率</strong>：<code class="c">task_struct</code> 只存<strong>一个指针</strong>，不携带一整套函数表。成千上万个 task 共享同一组全局 <code class="c">sched_class</code> 实例——4 个实例（+ <code class="c">dl</code> 共 5 个）编译期固定，全局只读，所有 task 指过去就行。如果每个 task 各存一份函数表，那才是浪费。</p>
+</blockquote>
+<h3>全局实例的声明</h3>
+<pre class="code" data-label="C"><code class="c">/* 内核全局，只读，编译期固定 */
+extern const struct sched_class stop_sched_class;
+extern const struct sched_class dl_sched_class;      /* ⚠️ 原笔记漏了这行 */
+extern const struct sched_class rt_sched_class;
+extern const struct sched_class fair_sched_class;
+extern const struct sched_class idle_sched_class;
+</code></pre>
+<blockquote>
+<p>⚠️勘误：原笔记只列 4 个 <code class="c">extern</code>，漏了 <code class="c">dl_sched_class</code>。完整 5 个，见第 2 节。</p>
+</blockquote>
+<h3>简图</h3>
+<pre class="code" data-label="code"><code class="c">全局只读实例（编译就存在）
+├─ stop_sched_class  { enqueue(), pick_next(), ... }   最高
+├─ dl_sched_class    { enqueue(), pick_next(), ... }
+├─ rt_sched_class    { enqueue(), pick_next(), ... }
+├─ fair_sched_class  { enqueue(), pick_next(), ... }
+└─ idle_sched_class  { enqueue(), pick_next(), ... }   最低
+
+task_struct(进程A，普通)
+    sched_class = &amp;fair_sched_class  ── 指向上面 fair 实例
+
+task_struct(进程B，实时)
+    sched_class = &amp;rt_sched_class    ── 指向上面 rt 实例
+
+调度器执行 p-&gt;sched_class-&gt;enqueue_task(rq, p);
+顺着指针，调用对应那一套函数。
+</code></pre>
+<hr />
+<h2>2、5 个调度类（优先级从高到低）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调度类</th>
+<th>适用对象</th>
+<th>用户能否设置</th>
+<th>入队数据结构</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">stop_sched_class</code></td>
+<td>migration 线程（<code class="c">migration/N</code>）、<code class="c">stop_machine</code>、CPU hotplug、rt throttle 等内核内部机制</td>
+<td>❌ 纯内核内部</td>
+<td>不入队，<code class="c">rq-&gt;stop</code> 直接持有</td>
+</tr>
+<tr>
+<td><code class="c">dl_sched_class</code></td>
+<td>SCHED_DEADLINE 截止时间调度（EDF 算法，2.6.23 后引入）</td>
+<td>✅ <code class="c">sched_setscheduler(SCHED_DEADLINE)</code></td>
+<td>专用 dl 红黑树（按 deadline）</td>
+</tr>
+<tr>
+<td><code class="c">rt_sched_class</code></td>
+<td>SCHED_FIFO / SCHED_RR 实时进程</td>
+<td>✅ <code class="c">sched_setscheduler(SCHED_FIFO/RR)</code></td>
+<td>rt 优先级数组（位图+队列）</td>
+</tr>
+<tr>
+<td><code class="c">fair_sched_class</code></td>
+<td>SCHED_OTHER / SCHED_BATCH / <strong>SCHED_IDLE</strong> 普通分时进程</td>
+<td>✅ 默认或显式设置</td>
+<td>CFS 红黑树（按 vruntime）</td>
+</tr>
+<tr>
+<td><code class="c">idle_sched_class</code></td>
+<td>per-CPU idle 线程（pid=0）</td>
+<td>❌ 内核创建，用户不能设置</td>
+<td>不入队，<code class="c">rq-&gt;idle</code> 直接持有</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️勘误：网上常见只列 4 档（漏 <code class="c">dl_sched_class</code>）。完整 5 档，<code class="c">dl</code> 在 <code class="c">rt</code> 之上——SCHED_DEADLINE 任务优先级比 SCHED_FIFO 还高。</p>
+<p>⚠️勘误：写"SCHED_RT"不规范。实时策略只有 <code class="c">SCHED_FIFO</code> 和 <code class="c">SCHED_RR</code> 两个取值，没有"SCHED_RT"这个常量。</p>
+</blockquote>
+<hr />
+<h2>3、用户态系统调用和内核调度类之间关系</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用户态调用</th>
+<th>效果（内核内部发生）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认 fork 出来</td>
+<td>继承父进程 policy；默认 SCHED_OTHER → <code class="c">sched_class = &amp;fair_sched_class</code></td>
+</tr>
+<tr>
+<td><code class="c">sched_setscheduler(..., SCHED_FIFO)</code></td>
+<td><code class="c">sched_class = &amp;rt_sched_class</code>，从旧队列 dequeue 后按 rt 入队</td>
+</tr>
+<tr>
+<td><code class="c">sched_setscheduler(..., SCHED_RR)</code></td>
+<td>同上，<code class="c">rt_sched_class</code>，但同优先级有时间片轮转</td>
+</tr>
+<tr>
+<td><code class="c">sched_setscheduler(..., SCHED_DEADLINE)</code></td>
+<td><code class="c">sched_class = &amp;dl_sched_class</code>，需指定 runtime/deadline/period</td>
+</tr>
+<tr>
+<td><code class="c">sched_setscheduler(..., SCHED_IDLE)</code></td>
+<td><strong><code class="c">sched_class</code> 仍然是 <code class="c">&amp;fair_sched_class</code></strong>，只是权重固定为最小值</td>
+</tr>
+<tr>
+<td><code class="c">sched_setscheduler(..., SCHED_BATCH)</code></td>
+<td>仍然是 <code class="c">&amp;fair_sched_class</code>，批处理风格（CPU 评估型，不抢占）</td>
+</tr>
+<tr>
+<td>CPU 的 idle 线程</td>
+<td><code class="c">sched_class = &amp;idle_sched_class</code>；用户不能修改</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>用户空间不能直接操作 <code class="c">sched_class</code> 指针。全部由内核根据调度策略间接赋值。</strong></p>
+<blockquote>
+<p>⚠️勘误："SCHED_IDLE 只是降低 nice 权重"会误导。<code class="c">SCHED_IDLE</code> 是<strong>独立的 policy</strong>（不是 nice 值），它把进程留在 <code class="c">fair_sched_class</code>，但权重固定为 <code class="c">sched_prio_to_weight[0]</code> 的最小值（约 15），vruntime 增速最快。和 nice 19 是两套机制——nice 19 仍属于 <code class="c">SCHED_OTHER</code>，权重比 <code class="c">SCHED_IDLE</code> 高得多。实际效果上 <code class="c">SCHED_IDLE</code> 比 nice 19 还弱（详见 §3.10 对比表）。</p>
+</blockquote>
+<h3>两层分发机制：指针分大门，policy 分小隔间</h3>
+<p>上面的映射表揭示一个关键设计——<strong>6 个用户策略只映射到 3 个调度类</strong>（不算 stop/idle）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用户态策略（数字）</th>
+<th>归属哪个内核调度类</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SCHED_FIFO</code></td>
+<td><code class="c">rt_sched_class</code></td>
+</tr>
+<tr>
+<td><code class="c">SCHED_RR</code></td>
+<td><code class="c">rt_sched_class</code>（<strong>和 FIFO 共用同一个</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_OTHER</code></td>
+<td><code class="c">fair_sched_class</code></td>
+</tr>
+<tr>
+<td><code class="c">SCHED_IDLE</code></td>
+<td><code class="c">fair_sched_class</code>（<strong>和 OTHER 共用同一个</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_BATCH</code></td>
+<td><code class="c">fair_sched_class</code>（同上）</td>
+</tr>
+<tr>
+<td><code class="c">SCHED_DEADLINE</code></td>
+<td><code class="c">dl_sched_class</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">SCHED_RR</code> 和 <code class="c">SCHED_FIFO</code> 不是两个独立调度类——只是 <code class="c">rt_sched_class</code> <strong>内部的两种行为模式</strong>。同理 <code class="c">OTHER</code>/<code class="c">IDLE</code>/<code class="c">BATCH</code> 是 <code class="c">fair_sched_class</code> 内部的三种模式。</p>
+<blockquote>
+<p>⚠️勘误：很多资料说"内核 4 个调度类，用户 5 个策略"——两处都错。正确是：<strong>5 个调度类，6 个策略</strong>（漏了 <code class="c">dl_sched_class</code> 和 <code class="c">SCHED_DEADLINE</code>）。</p>
+</blockquote>
+<p>调度器运行时分两层判断：</p>
+<pre class="code" data-label="code"><code class="c">第一层（大门）：看 p-&gt;sched_class 指针，决定进入哪一套函数
+第二层（门内）：进入对应调度类函数后，读 p-&gt;policy 数字，区分小模式
+</code></pre>
+<p>rt 调度类内部伪代码：</p>
+<pre class="code" data-label="C"><code class="c">/* 属于 rt_sched_class 的函数内部 */
+task = 从实时优先级队列取出任务;
+if (task-&gt;policy == SCHED_FIFO) {
+    // FIFO：不消耗时间片，拿到 CPU 一直跑到主动让出
+} else if (task-&gt;policy == SCHED_RR) {
+    // RR：时间片递减，耗尽后放回队列尾部，同优先级轮转
+}
+</code></pre>
+<p>fair 调度类内部同理，读 <code class="c">policy</code> 区分 <code class="c">SCHED_OTHER</code>/<code class="c">SCHED_BATCH</code>/<code class="c">SCHED_IDLE</code> 的权重计算路径。</p>
+<blockquote>
+<p><strong>为什么不用 policy 做第一层判断？</strong> 内核设计思想：面向对象，函数指针解耦。第一层不写巨大的 <code class="c">if (policy == FIFO || policy == RR || ...)</code>，直接靠指针跳转到整组函数。新增调度算法只要新增一个 <code class="c">sched_class</code> 全局实例，不用到处改 if-else。policy 只在调度类内部做细分，不影响外层分发。</p>
+<p>大白话：<strong>调度类指针负责"进哪个大门"（rt/fair/dl），policy 数字负责"大门里坐哪个小隔间"（FIFO/RR，OTHER/IDLE/BATCH）</strong>。</p>
+</blockquote>
+<hr />
+<h2>4、运行队列 rq 和 <code class="c">pick_next_task</code> 遍历机制</h2>
+<p>每个 CPU 有一个 <code class="c">struct rq</code> 运行队列。<code class="c">rq</code> 内部包含各个调度类对应的子队列（<code class="c">rq-&gt;cfs</code>、<code class="c">rq-&gt;rt</code>、<code class="c">rq-&gt;dl</code>），以及 <code class="c">rq-&gt;idle</code>、<code class="c">rq-&gt;stop</code> 两个直接指针。</p>
+<p>调度器选下一个任务用 <code class="c">pick_next_task</code>，<strong>从高到低遍历 sched_class</strong>（现代内核用 <code class="c">for_each_class</code> 宏，按 linker section 地址顺序遍历）：</p>
+<pre class="code" data-label="C"><code class="c">struct task_struct *pick_next_task(struct rq *rq, ...)
+{
+    /* fast path：如果运行队列里全是 CFS 任务，跳过 stop/dl/rt 直接走 CFS */
+    if (likely(rq-&gt;nr_running == rq-&gt;cfs.nr_running))
+        return pick_next_task_fair(rq, ...);
+
+    for_each_class(class) {            // stop → dl → rt → fair → idle
+        p = class-&gt;pick_next_task(rq, ...);
+        if (p) return p;
+    }
+    /* 全部 class 都没拿到任务，返回 rq-&gt;idle */
+}
+</code></pre>
+<blockquote>
+<p>关键点：<strong>不是看当前任务的调度类选下一个，而是遍历所有调度类</strong>。<code class="c">pick_next_task_idle</code>（最低档）只在 stop/dl/rt/fair 全部返回 NULL 时才被调用，无条件返回 <code class="c">rq-&gt;idle</code>。</p>
+<p>fast path 是性能优化：大多数机器绝大多数 CPU 都只跑 CFS 任务，跳过 stop/dl/rt 的检查能省不少周期。这个优化在 HFT 场景下也值得知道——它意味着一个 RT 任务被唤醒会强制走 slow path。</p>
+</blockquote>
+<hr />
+<h2>5、<code class="c">sched_setscheduler</code> 切换调度类的完整动作</h2>
+<p>切换不只是改指针，<strong>必须重新入队</strong>——因为不同调度类的队列数据结构完全不同（CFS 红黑树 vs rt 位图 vs dl 红黑树），不重新入队就会丢失。<code class="c">__setscheduler</code> 做三步：</p>
+<pre class="code" data-label="C"><code class="c">1. dequeue_task(rq, p, DEQUEUE_HEAD);   // 从旧调度类的队列里取出
+2. p-&gt;sched_class = &amp;new_class;          // 改指针
+3. enqueue_task(rq, p, ENQUEUE_HEAD);    // 按新调度类的规则重新入队
+</code></pre>
+<p>切换后还会 <code class="c">check_preempt_curr</code> 看是否需要立即抢占当前任务。</p>
+<blockquote>
+<p>fork 时走 <code class="c">sched_fork</code> → <code class="c">__sched_fork</code>，根据父进程 policy 初始化 <code class="c">sched_class</code>。如果父进程是 <code class="c">SCHED_FIFO</code>，子进程默认也是 <code class="c">SCHED_FIFO</code>（除非显式 <code class="c">sched_setscheduler</code> 改）。</p>
+<p>同调度类内切换（如 SCHED_OTHER → SCHED_IDLE，都属 <code class="c">fair_sched_class</code>）<strong>不需要重新入队</strong>，只改 policy 字段和权重计算路径。</p>
+</blockquote>
+<hr />
+<h2>6、面试易错点总结</h2>
+<ol>
+<li>
+<p>❌误区：用户程序可以直接修改 <code class="c">task_struct-&gt;sched_class</code>
+   ✅：用户态拿不到 <code class="c">task_struct</code>，只能通过 <code class="c">sched_setscheduler</code> 系统调用让内核间接变更，且内核会重新入队。</p>
+</li>
+<li>
+<p>❌误区：<code class="c">SCHED_IDLE</code> 用户策略等价 <code class="c">idle_sched_class</code>
+   ✅：<code class="c">SCHED_IDLE</code> 属于 CFS（<code class="c">fair_sched_class</code>），只是权重最小；<code class="c">idle_sched_class</code> 只属于 pid=0 idle 内核线程。两者完全两码事。<code class="c">SCHED_IDLE</code> 进程仍会抢占 idle 线程。</p>
+</li>
+<li>
+<p>❌误区：调度类是给用户态使用
+   ✅：调度类结构体全部内核态，函数指针全部内核调用，是内核实现"不同调度算法"的多态机制。</p>
+</li>
+<li>
+<p>❌误区：<code class="c">SCHED_IDLE</code> 就是 nice 19
+   ✅：<code class="c">SCHED_IDLE</code> 是独立 policy，权重固定为最小值；nice 19 是 <code class="c">SCHED_OTHER</code> + nice 调整，权重比 <code class="c">SCHED_IDLE</code> 高。实际效果上 <code class="c">SCHED_IDLE</code> 比 nice 19 还弱。</p>
+</li>
+<li>
+<p>❌误区：调度类只有 4 档
+   ✅：完整 5 档——<code class="c">stop &gt; dl &gt; rt &gt; fair &gt; idle</code>，别漏 <code class="c">dl_sched_class</code>（SCHED_DEADLINE）。</p>
+</li>
+<li>
+<p>❌误区：选下一个任务看当前任务的调度类
+   ✅：<code class="c">pick_next_task</code> 从高到低遍历所有 sched_class，第一个返回非 NULL 的就是下一个任务。当前任务的调度类只影响它自己的入队/出队行为。</p>
+</li>
+<li>
+<p>❌误区：内核用数字 ID 标记是什么调度类
+   ✅：<strong>直接比较指针地址识别调度类，没有额外 ID 字段</strong>。<code class="c">p-&gt;sched_class == &amp;fair_sched_class</code> 就是 CFS，不需要 <code class="c">int sched_class_id</code>。</p>
+</li>
+<li>
+<p>❌误区：每个 <code class="c">task_struct</code> 存一整套 enqueue/pick_next 函数
+   ✅：task 只存<strong>一个指针</strong>，指向全局已写好的函数表。成千上万个 task 共享同一组 <code class="c">sched_class</code> 实例，不各自复制。</p>
+</li>
+<li>
+<p>❌误区：<code class="c">SCHED_RR</code> 和 <code class="c">SCHED_FIFO</code> 是两个独立调度类
+   ✅：两者共用同一个 <code class="c">rt_sched_class</code>，只是 rt 调度类内部读 <code class="c">task-&gt;policy</code> 区分行为。同理 <code class="c">SCHED_OTHER</code>/<code class="c">SCHED_IDLE</code>/<code class="c">SCHED_BATCH</code> 共用 <code class="c">fair_sched_class</code>。</p>
+</li>
+<li>
+<p>❌误区：调度器第一层用 policy 数字做分支判断
+   ✅：第一层看 <code class="c">p-&gt;sched_class</code> 指针，直接跳转到对应函数组。policy 只在调度类<strong>内部</strong>被读取做细分。这是 OOP 解耦设计——新增调度算法加一个 <code class="c">sched_class</code> 实例即可，不用到处改 if-else。</p>
+</li>
+<li>
+<p>区分记忆：
+   - <strong>调度策略</strong>（<code class="c">sched_setscheduler</code> 传的参数）：用户态可见，<code class="c">SCHED_OTHER/FIFO/RR/IDLE/BATCH/DEADLINE</code>
+   - <strong>调度类 <code class="c">sched_class</code></strong>：内核内部实现调度算法，用户不可见，5 个实例</p>
+</li>
+</ol>
+<hr />
+<h2>Quiz</h2>
+<p><strong>Q1：一个 SCHED_FIFO 实时线程，<code class="c">task_struct</code> 里 <code class="c">sched_class</code> 会指向哪一个？用户直接读写这个指针吗？</strong>
+A：指向 <code class="c">&amp;rt_sched_class</code>；用户态不能直接读写指针，通过 <code class="c">sched_setscheduler(SCHED_FIFO)</code> 让内核帮它设置，内核会 dequeue→改指针→enqueue→check_preempt。</p>
+<p><strong>Q2：把一个进程从 <code class="c">SCHED_OTHER</code> 改成 <code class="c">SCHED_IDLE</code>，<code class="c">sched_class</code> 指针变不变？需要重新入队吗？</strong>
+A：指针不变，不需要重新入队。两者都属于 <code class="c">fair_sched_class</code>，<code class="c">sched_class</code> 一直指向 <code class="c">&amp;fair_sched_class</code>，变的只是 policy 字段和权重计算路径。</p>
+<p><strong>Q3：<code class="c">pick_next_task</code> 是看当前任务的调度类选下一个吗？</strong>
+A：不是。是从高到低遍历所有 5 个 sched_class，每个 class 自己看有没有就绪任务，第一个返回非 NULL 的就是下一个任务。当前任务的调度类只影响当前任务自己的入队/出队行为，不影响选下一个任务的遍历顺序。</p>
+<p><strong>Q4：一个 <code class="c">SCHED_DEADLINE</code> 任务和一个 <code class="c">SCHED_FIFO</code> 任务同时就绪，谁先跑？</strong>
+A：<code class="c">SCHED_DEADLINE</code> 先跑。<code class="c">dl_sched_class</code> 优先级高于 <code class="c">rt_sched_class</code>。</p>
+<p><strong>Q5：为什么 <code class="c">pick_next_task</code> 有个 fast path 检查 <code class="c">rq-&gt;nr_running == rq-&gt;cfs.nr_running</code>？</strong>
+A：性能优化。大多数机器绝大多数 CPU 都只跑 CFS 任务，跳过 stop/dl/rt 的遍历能省周期。一旦有 RT/DL 任务被唤醒，<code class="c">rq-&gt;nr_running</code> 会大于 <code class="c">rq-&gt;cfs.nr_running</code>，自动走 slow path。</p>
+<p><strong>Q6：如果强行把 <code class="c">task_struct</code> 的 <code class="c">sched_class</code> 指针改成 NULL，内核会怎样？</strong>
+A：内核调用 <code class="c">p-&gt;sched_class-&gt;enqueue_task</code> 时对 NULL 指针解引用 → <strong>内核 Oops 崩溃</strong>。所以这个指针绝对不能乱改，全部由内核内部代码维护，用户态无法直接访问 <code class="c">task_struct</code>。</p>
+<p><strong>Q7：一个任务设置为 <code class="c">SCHED_RR</code>，它的 <code class="c">sched_class</code> 指针指向谁？是 policy 决定调用 <code class="c">enqueue</code> 吗？</strong>
+A：指向 <code class="c">&amp;rt_sched_class</code>。policy 不在调度器外层做判断——进入 rt 调度类的函数内部后，才会读 <code class="c">task-&gt;policy</code> 区分 RR/FIFO。<code class="c">SCHED_RR</code> 和 <code class="c">SCHED_FIFO</code> 共用同一个 <code class="c">rt_sched_class</code>，只是内部行为不同（RR 有时间片轮转，FIFO 没有）。</p>
+<p><strong>Q8：有人说"内核 4 个调度类、用户 5 个策略"，对吗？</strong>
+A：不对。正确是<strong>5 个调度类、6 个策略</strong>。漏了 <code class="c">dl_sched_class</code> 和 <code class="c">SCHED_DEADLINE</code>。<code class="c">stop &gt; dl &gt; rt &gt; fair &gt; idle</code> 共 5 档，用户可见策略 6 个（<code class="c">OTHER/FIFO/RR/IDLE/BATCH/DEADLINE</code>）。</p>
+<hr />
+<h2>关联记忆</h2>
+<ul>
+<li>§2.9：<code class="c">sched_class</code> 是纯 vtable（函数指针），可调参数在 <code class="c">fair.c</code> 全局变量，经 kernfs 暴露为 sysfs 伪文件。</li>
+<li>§3.10：<code class="c">idle_sched_class</code>（最低档）只给 per-CPU idle 线程用，不进 CFS 红黑树；<code class="c">SCHED_IDLE</code> 策略 ≠ <code class="c">idle_sched_class</code>。</li>
+<li>§3.9：<code class="c">init_task.tasks</code> 全局链表管"能被遍历到"，<code class="c">sched_class</code> 管"什么时候跑"，两套机制独立。</li>
+<li>调度类层级：<code class="c">stop &gt; dl &gt; rt &gt; fair &gt; idle</code>，5 档，别漏 <code class="c">dl</code>。</li>
+</ul>
       </section>
 
 

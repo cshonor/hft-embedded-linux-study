@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">6.1</span>KFENCE：轻量级内存错误检测</a>
+          <a href="#s-02"><span class="n">6.2</span>内存调试工具组合策略</a>
+          <a href="#s-03"><span class="n">6.3</span>生产环境内存监控</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +302,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch6 Debugging Kernel Memory Issues - Part 2</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +315,757 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>按需查阅。KFENCE 是 5.x 引入的低开销内存检测器，可在生产环境长期开启。需要时再回来读。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">6.1</div><h2>KFENCE：轻量级内存错误检测</h2></div>
+<blockquote>
+<p>⬜ 跳读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>KFENCE (Kernel Electric Fence) 是 5.x 引入的<strong>低开销</strong>内存错误检测器，通过<strong>采样分配</strong> + <strong>页级保护</strong>检测越界和 UAF。适合生产环境长期运行。</p>
+<h2>与 KASAN 的区别</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>KASAN</th>
+<th>KFENCE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>检测方式</td>
+<td>影子内存，每次访问检查</td>
+<td>页保护，访问时触发 page fault</td>
+</tr>
+<tr>
+<td>覆盖率</td>
+<td>100% (所有分配)</td>
+<td>~1% (采样)</td>
+</tr>
+<tr>
+<td>性能开销</td>
+<td>2-3x slowdown</td>
+<td>~1%</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>1/8 用于影子</td>
+<td>每个采样对象独占页 (~4KB)</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>开发</td>
+<td>生产</td>
+</tr>
+<tr>
+<td>检测类型</td>
+<td>OOB/UAF/wild/stack/global</td>
+<td>OOB/UAF/double-free</td>
+</tr>
+<tr>
+<td>实时性</td>
+<td>即时</td>
+<td>即时（仅采样对象）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>工作原理</h2>
+<pre class="code" data-label="code"><code class="c">KFENCE 为采样的分配单独分配一个页:
+┌─────────────────────────────────┐
+│  Guard Page (不可访问)           │  ← 检测下越界
+├─────────────────────────────────┤
+│  Object Page                    │
+│  ┌──────────┬──────────────┐   │
+│  │ unused   │ allocated obj│   │  ← 对象放在页末尾
+│  └──────────┴──────────────┘   │
+├─────────────────────────────────┤
+│  Guard Page (不可访问)           │  ← 检测上越界/UAF
+└─────────────────────────────────┘
+
+越界访问 → 触发 page fault → KFENCE 报告
+UAF → 释放后页标记为不可访问 → 访问触发 fault
+</code></pre>
+<h3>对象放置策略</h3>
+<pre class="code" data-label="code"><code class="c">对象放在页末尾的优势:
+┌──────────────────────────┐
+│  Page                    │
+│  ┌─────────┬─────────┐   │
+│  │ padding │  obj    │   │
+│  └─────────┴─────────┘   │
+│  ↑          ↑            │
+│  下越界     上越界        │
+│  → guard   → guard page  │
+│  page (下)  (上)         │
+└──────────────────────────┘
+
+如果对象放在页开头:
+  - 下越界 → guard page (下) ✅
+  - 上越界 → 同一页的 padding，不触发 fault ❌
+
+所以对象放在页末尾:
+  - 下越界 → padding → guard page (下) ✅
+  - 上越界 → guard page (上) ✅
+</code></pre>
+<h2>使用方法</h2>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_KFENCE=y
+
+# boot 参数
+# kfence.sample_interval=100   — 每 100ms 采样一次 (默认)
+# kfence.sample_interval=0     — 禁用
+# kfence.sample_interval=10    — 更频繁采样 (更多检测，更多开销)
+
+# 运行时调整
+echo 100 &gt; /sys/module/kfence/parameters/sample_interval  # 100ms
+echo 0 &gt; /sys/module/kfence/parameters/sample_interval    # 禁用
+
+# 查看报告
+cat /sys/kernel/debug/kfence/stats
+# enabled: 1
+# currently allocated: 3
+# total allocations: 1234
+# bugs detected: 2
+
+# 查看详细错误
+dmesg | grep -A 20 &quot;KFENCE&quot;
+</code></pre>
+<h2>KFENCE 报告示例</h2>
+<pre class="code" data-label="code"><code class="c">[   12.345678] ==================================================================
+[   12.345680] BUG: KFENCE: out-of-bounds write in my_driver_write+0x3c/0x100
+[   12.345682] Out-of-bounds write at 0xffff000012345678 (1 byte right of kfence-#42):
+[   12.345690]  my_driver_write+0x3c/0x100
+[   12.345695]  vfs_write+0xf4/0x2b0
+[   12.345700]  ksys_write+0x74/0x100
+
+[   12.345710] kfence-#42: 0xffff000012345677-0xffff000012345696, size=32, cache=kmalloc-32
+[   12.345715] allocated by task 1234 on cpu 2 at 12.345000s:
+[   12.345720]  kmalloc_trace+0x28/0x40
+[   12.345725]  my_driver_init+0x48/0x200
+</code></pre>
+<h2>KFENCE 检测的错误类型</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+<th>检测原理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>out-of-bounds write</td>
+<td>越界写</td>
+<td>写 guard page 触发 fault</td>
+</tr>
+<tr>
+<td>out-of-bounds read</td>
+<td>越界读</td>
+<td>读 guard page 触发 fault</td>
+</tr>
+<tr>
+<td>use-after-free</td>
+<td>释放后访问</td>
+<td>释放后页标记为不可访问</td>
+</tr>
+<tr>
+<td>use-after-free read</td>
+<td>释放后读取</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>double free</td>
+<td>重复释放</td>
+<td>检测到已释放的对象再次释放</td>
+</tr>
+<tr>
+<td>invalid free</td>
+<td>无效释放</td>
+<td>释放非 KFENCE 保护的地址</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>KFENCE 是 HFT 生产环境的"保险丝"——以 ~1% 的开销换取对内存错误的检测能力：</p>
+<ol>
+<li><strong>生产可开</strong>：1% 开销对 HFT 可接受</li>
+<li><strong>采样检测</strong>：概率性发现，不是 100% 覆盖</li>
+<li><strong>配合 kdump</strong>：检测到错误后自动 panic + kdump</li>
+<li><strong>配合 KASAN</strong>：开发用 KASAN，生产用 KFENCE</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境 KFENCE 配置
+# 内核命令行: kfence.sample_interval=1000  # 1秒采样一次（更低开销）
+# 或运行时调整:
+echo 1000 &gt; /sys/module/kfence/parameters/sample_interval
+
+# 监控 KFENCE 告警
+while true; do
+    bugs=$(grep &quot;bugs detected&quot; /sys/kernel/debug/kfence/stats | awk '{print $3}')
+    if [ &quot;$bugs&quot; -gt 0 ]; then
+        echo &quot;ALERT: KFENCE detected $bugs bugs&quot;
+        dmesg | grep -A 20 &quot;KFENCE&quot;
+    fi
+    sleep 300
+done
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> KFENCE 为什么开销只有 ~1%？</p>
+<blockquote>
+<p>KFENCE 只对采样的分配（默认约每 100ms 一个）做页级保护，其余分配走正常 SLUB 路径。采样的分配每个独占一个 4KB 页（有 guard page），但采样率低所以总开销约 1%。KASAN 对所有分配做影子内存检查，所以开销大。</p>
+</blockquote>
+<p><strong>Q2:</strong> KFENCE 检测越界的原理是什么？</p>
+<blockquote>
+<p>KFENCE 将采样对象放在一个页的末尾，相邻页标记为不可访问（guard page）。如果代码越界访问对象后的字节，会触达 guard page 导致 page fault。KFENCE 在 fault handler 中报告越界。对象释放后整个页标记为不可访问，后续访问触发 UAF 报告。</p>
+</blockquote>
+<p><strong>Q3:</strong> KFENCE 和 KASAN 的主要区别是什么？</p>
+<blockquote>
+<p>KASAN 检查每次内存访问（通过影子内存），开销大（2-3x slowdown）但检测全面。KFENCE 只检查 slab 分配/释放，用 guard page 保护每个对象，开销极小（&lt;1% CPU）但只检测越界和 UAF。KFENCE 适合生产环境持续运行，KASAN 适合开发环境全面检测。</p>
+</blockquote>
+<p><strong>Q4:</strong> KFENCE 的 guard page 如何工作？</p>
+<blockquote>
+<p>KFENCE 为每个受保护的 slab 对象分配一个独立的页，前后各加 guard page（PROT_NONE）。任何越界访问触发 page fault，KFENCE handler 报告越界。由于每个对象占一整页，内存开销大，所以 KFENCE 采样保护（默认每 100ms 采样一次）。</p>
+</blockquote>
+<p><strong>Q5:</strong> KFENCE 的 sample_interval 如何影响检测能力？</p>
+<blockquote>
+<p>sample_interval 越小（采样越频繁），检测到内存错误的概率越高，但开销也越大。默认 100ms 适中。HFT 生产环境可以设为 1000ms（1秒）降低开销，开发环境设为 10ms 提高检测率。设为 0 禁用 KFENCE。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch05 内存错误类型</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch06 内存调试策略</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">6.2</div><h2>内存调试工具组合策略</h2></div>
+<blockquote>
+<p>⬜ 跳读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>不同工具各有优劣，需要根据阶段（开发/测试/生产）组合使用，最大化检测覆盖同时控制开销。</p>
+<h2>工具组合矩阵</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>KASAN</th>
+<th>KFENCE</th>
+<th>SLUB debug</th>
+<th>kmemleak</th>
+<th>UBSAN</th>
+<th>LOCKDEP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>开发</strong></td>
+<td>✅</td>
+<td>❌</td>
+<td>✅(FZP)</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>测试</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>选</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>预生产</strong></td>
+<td>❌</td>
+<td>✅</td>
+<td>❌</td>
+<td>周期</td>
+<td>❌</td>
+<td>⚠️</td>
+</tr>
+<tr>
+<td><strong>生产</strong></td>
+<td>❌</td>
+<td>✅(低频)</td>
+<td>❌</td>
+<td>离线</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>HFT 生产</strong></td>
+<td>❌</td>
+<td>✅(1s)</td>
+<td>❌</td>
+<td>非交易时段</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<h2>推荐工作流</h2>
+<h3>开发阶段</h3>
+<pre class="code" data-label="shell"><code class="c"># 开发内核配置
+CONFIG_KASAN=y
+CONFIG_KASAN_INLINE=y
+CONFIG_UBSAN=y
+CONFIG_UBSAN_SIGNED_OVERFLOW=y
+CONFIG_SLUB_DEBUG=y
+CONFIG_DEBUG_KMEMLEAK=y
+CONFIG_LOCKDEP=y
+CONFIG_KCSAN=y
+
+# Boot 参数
+# slub_debug=FZP
+# kmemleak=on
+
+# 工作流:
+# 1. 编译 KASAN 内核
+# 2. 运行所有测试用例
+# 3. 修复所有 KASAN/UBSAN/lockdep 报告
+# 4. kmemleak 扫描确认无泄漏
+# 5. KCSAN 检查数据竞争
+</code></pre>
+<h3>测试阶段</h3>
+<pre class="code" data-label="shell"><code class="c"># 测试内核配置
+CONFIG_KASAN=y
+CONFIG_KFENCE=y
+CONFIG_UBSAN=y
+CONFIG_LOCKDEP=y
+
+# KFENCE 采样频率调高
+# kfence.sample_interval=10  # 10ms（更频繁）
+
+# 工作流:
+# 1. 同开发环境 + KFENCE
+# 2. 压力测试 + 模糊测试 (syzkaller)
+# 3. 验证 KFENCE 在低开销下是否发现新问题
+# 4. 长跑测试 (24h+) + 定期 kmemleak 扫描
+</code></pre>
+<h3>生产阶段</h3>
+<pre class="code" data-label="shell"><code class="c"># 生产内核配置
+CONFIG_KFENCE=y
+CONFIG_HARDENED_USERCOPY=y
+CONFIG_STACKPROTECTOR_STRONG=y
+CONFIG_RANDOMIZE_BASE=y
+CONFIG_DEBUG_LIST=y
+CONFIG_DEBUG_SG=y
+
+# KFENCE 低频采样
+# kfence.sample_interval=1000  # 1秒
+
+# 工作流:
+# 1. KFENCE 持续监控
+# 2. 非交易时段 kmemleak 扫描
+# 3. /proc/meminfo 趋势监控
+# 4. 出问题时切换到 staging 环境 + KASAN
+</code></pre>
+<h2>HFT 特殊考虑</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>HFT 适用性</th>
+<th>原因</th>
+<th>替代方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KASAN</td>
+<td>❌ 生产</td>
+<td>2-3x slowdown 破坏实时性</td>
+<td>KFENCE</td>
+</tr>
+<tr>
+<td>KFENCE</td>
+<td>✅ 生产(低频)</td>
+<td>~1% 开销可接受</td>
+<td>-</td>
+</tr>
+<tr>
+<td>SLUB debug</td>
+<td>❌ 生产</td>
+<td>增加分配延迟</td>
+<td>-</td>
+</tr>
+<tr>
+<td>kmemleak</td>
+<td>⚠️ 离线</td>
+<td>扫描时暂停分配</td>
+<td>非交易时段扫描</td>
+</tr>
+<tr>
+<td>LOCKDEP</td>
+<td>❌ 生产</td>
+<td>每次加锁额外检查</td>
+<td>Staging 环境启用</td>
+</tr>
+<tr>
+<td>KCSAN</td>
+<td>❌ 生产</td>
+<td>插桩开销</td>
+<td>Staging 环境启用</td>
+</tr>
+<tr>
+<td>UBSAN</td>
+<td>❌ 生产</td>
+<td>2-5% 开销</td>
+<td>开发环境启用</td>
+</tr>
+</tbody>
+</table></div>
+<h2>开销详细对比</h2>
+<pre class="code" data-label="code"><code class="c">工具开销排序（从低到高）:
+1. /proc/meminfo          0%
+2. KFENCE (1s interval)   &lt;0.1%
+3. KFENCE (100ms)         ~1%
+4. DEBUG_LIST/DEBUG_SG    &lt;1%
+5. UBSAN                  2-5%
+6. LOCKDEP                5-10%
+7. KCSAN                  10-20%
+8. SLUB debug (FZP)       10-20%
+9. KASAN (INLINE)         200-300%
+</code></pre>
+<h2>HFT 生产环境推荐配置</h2>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产内核配置（安全 + 低开销）
+CONFIG_KFENCE=y
+CONFIG_HARDENED_USERCOPY=y
+CONFIG_STACKPROTECTOR_STRONG=y
+CONFIG_RANDOMIZE_BASE=y
+CONFIG_DEBUG_LIST=y
+CONFIG_DEBUG_SG=y
+CONFIG_REFCOUNT_FULL=y
+CONFIG_PANIC_ON_OOPS=y
+CONFIG_CRASH_DUMP=y
+CONFIG_KEXEC=y
+
+# Boot 参数
+# kfence.sample_interval=1000
+# panic_on_oops=1
+# kdump 配置好
+</code></pre>
+<h2>问题定位工作流</h2>
+<pre class="code" data-label="code"><code class="c">生产环境 KFENCE 报告内存错误:
+  ↓
+切换到 staging 环境
+  ↓
+启用 KASAN 复现
+  ↓
+KASAN 报告精确位置（文件:行号）
+  ↓
+修复代码
+  ↓
+开发环境验证（KASAN + UBSAN + kmemleak）
+  ↓
+测试环境验证（压力测试 + KFENCE）
+  ↓
+部署到生产环境
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么 KASAN 不适合 HFT 生产环境？</p>
+<blockquote>
+<p>KASAN 对每次内存访问插入影子内存检查（INLINE 模式 3-5 条额外指令），整体性能下降 2-3 倍。HFT 对纳秒级延迟敏感，2-3x slowdown 不可接受。KFENCE ~1% 开销是可接受的折中。</p>
+</blockquote>
+<p><strong>Q2:</strong> 为什么 kmemleak 不适合 HFT 运行时使用？</p>
+<blockquote>
+<p>kmemleak 扫描时需要遍历所有内存查找指针引用，扫描期间可能暂停内存分配（RCU 停顿），导致延迟毛刺。建议在非交易时段（如收盘后）手动触发扫描，而非默认的每 10 分钟自动扫描。</p>
+</blockquote>
+<p><strong>Q3:</strong> KASAN + KFENCE + SLUB debug 三者如何组合使用？</p>
+<blockquote>
+<p>开发环境：KASAN + SLUB debug（poison + tracking）+ KFENCE 全开，最大化检测覆盖。测试环境：KASAN + KFENCE（采样）。生产环境：仅 KFENCE（开销 &lt;1%），不启用 KASAN。注意 KASAN 和 SLUB redzone 重叠时以 KASAN 为主。</p>
+</blockquote>
+<p><strong>Q4:</strong> HFT 生产环境发现 KFENCE 报告后如何处理？</p>
+<blockquote>
+<p>(1) 记录 KFENCE 报告（dmesg + kdump）；(2) 切换到 staging 环境；(3) 启用 KASAN 复现问题（精确到文件:行号）；(4) 修复代码；(5) 开发环境验证（KASAN + UBSAN + kmemleak）；(6) 测试环境压力测试；(7) 部署修复到生产。</p>
+</blockquote>
+<p><strong>Q5:</strong> LOCKDEP 在 HFT 生产环境是否可以开启？</p>
+<blockquote>
+<p>通常不建议。LOCKDEP 开销约 5-10%，对 HFT 热路径有影响。建议：初次部署时在 staging 环境启用 LOCKDEP 跑一段时间，确认无锁问题后生产环境关闭。或只在特定调试期间临时开启。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch06 KFENCE</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch05 kmemleak</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">6.3</div><h2>生产环境内存监控</h2></div>
+<blockquote>
+<p>⬜ 跳读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>生产环境需要在低开销下持续监控内存状态，及时发现泄漏和异常。</p>
+<h2>生产环境可用工具</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>开销</th>
+<th>检测内容</th>
+<th>实时性</th>
+<th>HFT 可用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KFENCE</td>
+<td>~1%</td>
+<td>越界/UAF (采样)</td>
+<td>即时</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>/proc/meminfo</td>
+<td>0</td>
+<td>内存使用统计</td>
+<td>即时</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>/proc/slabinfo</td>
+<td>0</td>
+<td>slab 使用统计</td>
+<td>即时</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>/sys/kernel/slab/*</td>
+<td>0</td>
+<td>详细 slab 信息</td>
+<td>即时</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>vmstat</td>
+<td>0</td>
+<td>系统内存压力</td>
+<td>即时</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>perf stat -e 'kmem:*'</td>
+<td>极低</td>
+<td>内存分配事件计数</td>
+<td>采样</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>kmemleak</td>
+<td>扫描时高</td>
+<td>泄漏检测</td>
+<td>非实时</td>
+<td>⚠️ 离线</td>
+</tr>
+</tbody>
+</table></div>
+<h2>监控脚本</h2>
+<h3>1. 内存使用趋势监控</h3>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# mem_trend.sh: 监控内存增长趋势
+
+LOG=/var/log/mem_monitor.log
+
+while true; do
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    mem_avail=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+    slab=$(grep Slab /proc/meminfo | awk '{print $2}')
+    slabs=$(grep SReclaimable /proc/meminfo | awk '{print $2}')
+
+    echo &quot;$timestamp MemAvailable=${mem_avail}kB Slab=${slab}kB SReclaimable=${slabs}kB&quot; &gt;&gt; $LOG
+
+    sleep 60
+done
+
+# 分析趋势
+# awk '{print $1, $2}' /var/log/mem_monitor.log | tail -100
+# 如果 MemAvailable 持续下降 → 可能泄漏
+</code></pre>
+<h3>2. Slab 使用监控</h3>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# slab_monitor.sh: 监控 slab 分配器使用情况
+
+echo &quot;=== Top 10 slab caches by active objects ===&quot;
+cat /proc/slabinfo | tail -n +2 | sort -k3 -rn | head -10
+
+echo &quot;=== Slab cache growth (kmalloc-128) ===&quot;
+prev=0
+while true; do
+    curr=$(grep kmalloc-128 /proc/slabinfo | awk '{print $3}')
+    diff=$((curr - prev))
+    if [ $prev -ne 0 ] &amp;&amp; [ $diff -gt 0 ]; then
+        echo &quot;$(date): kmalloc-128 active objects: $curr (+$diff)&quot;
+    fi
+    prev=$curr
+    sleep 60
+done
+</code></pre>
+<h3>3. KFENCE 告警监控</h3>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# kfence_monitor.sh: 监控 KFENCE 告警
+
+while true; do
+    bugs=$(cat /sys/kernel/debug/kfence/stats 2&gt;/dev/null | \
+           grep &quot;bugs detected&quot; | awk '{print $3}')
+
+    if [ &quot;$bugs&quot; -gt 0 ]; then
+        echo &quot;$(date) ALERT: KFENCE detected $bugs bugs&quot;
+        dmesg | grep -A 20 &quot;KFENCE&quot; | tail -30
+        # 发送告警
+        # send_alert &quot;KFENCE: $bugs bugs detected&quot;
+    fi
+    sleep 300
+done
+</code></pre>
+<h3>4. 定期 kmemleak 扫描</h3>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# kmemleak_scan.sh: 非交易时段扫描内存泄漏
+
+# crontab: 每天凌晨 3 点扫描
+# 0 3 * * * /opt/hft/scripts/kmemleak_scan.sh
+
+echo &quot;scan&quot; &gt; /sys/kernel/debug/kmemleak
+sleep 10  # 等待扫描完成
+
+REPORT=$(cat /sys/kernel/debug/kmemleak)
+if [ -n &quot;$REPORT&quot; ]; then
+    echo &quot;$REPORT&quot; &gt;&gt; /var/log/kmemleak_$(date +%Y%m%d).log
+    # 发送告警
+    # send_alert &quot;kmemleak: potential memory leak detected&quot;
+    echo &quot;$(date) ALERT: kmemleak found potential leaks&quot;
+else
+    echo &quot;$(date) OK: no memory leaks detected&quot;
+fi
+</code></pre>
+<h3>5. 综合监控 Dashboard</h3>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# mem_dashboard.sh: 综合内存状态报告
+
+echo &quot;==========================================&quot;
+echo &quot;HFT Memory Status: $(date)&quot;
+echo &quot;==========================================&quot;
+
+echo &quot;--- Memory Overview ---&quot;
+grep -E &quot;MemTotal|MemFree|MemAvailable|Slab|SUnreclaim|SReclaimable&quot; /proc/meminfo
+
+echo &quot;--- Top 5 Slab Caches ---&quot;
+cat /proc/slabinfo | tail -n +2 | sort -k3 -rn | head -5
+
+echo &quot;--- KFENCE Status ---&quot;
+cat /sys/kernel/debug/kfence/stats 2&gt;/dev/null
+
+echo &quot;--- Kmemleak (last scan) ---&quot;
+cat /sys/kernel/debug/kmemleak 2&gt;/dev/null | head -5
+
+echo &quot;--- Page Allocation Failures ---&quot;
+grep -c &quot;page allocation failure&quot; /var/log/kern.log 2&gt;/dev/null || echo &quot;0&quot;
+
+echo &quot;--- OOM Kill Count ---&quot;
+dmesg | grep -c &quot;Out of memory&quot; 2&gt;/dev/null || echo &quot;0&quot;
+</code></pre>
+<h2>阈值告警</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>正常</th>
+<th>警告</th>
+<th>严重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MemAvailable</td>
+<td>&gt;50%</td>
+<td>20-50%</td>
+<td>&lt;20%</td>
+</tr>
+<tr>
+<td>Slab 增长率</td>
+<td>&lt;1%/小时</td>
+<td>1-5%/小时</td>
+<td>&gt;5%/小时</td>
+</tr>
+<tr>
+<td>KFENCE bugs</td>
+<td>0</td>
+<td>1-5</td>
+<td>&gt;5</td>
+</tr>
+<tr>
+<td>kmemleak 报告</td>
+<td>0</td>
+<td>1-3</td>
+<td>&gt;3</td>
+</tr>
+<tr>
+<td>page alloc failure</td>
+<td>0</td>
+<td>1-10</td>
+<td>&gt;10</td>
+</tr>
+<tr>
+<td>OOM kill</td>
+<td>0</td>
+<td>0</td>
+<td>&gt;0</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>HFT 生产环境内存监控策略：</p>
+<ol>
+<li><strong>实时监控</strong>：/proc/meminfo + /proc/slabinfo 趋势（0 开销）</li>
+<li><strong>采样检测</strong>：KFENCE 低频运行（~1% 开销）</li>
+<li><strong>离线扫描</strong>：非交易时段 kmemleak 扫描</li>
+<li><strong>告警机制</strong>：内存增长超阈值时告警</li>
+<li><strong>应急方案</strong>：内存不足时 kdump + 重启</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境推荐监控配置
+# 1. 实时: mem_trend.sh 持续运行
+# 2. 采样: kfence.sample_interval=1000 (1s)
+# 3. 离线: crontab 每天 3:00 kmemleak 扫描
+# 4. 告警: 阈值检查脚本每 5 分钟运行
+# 5. 应急: panic_on_oops=1 + kdump 配置
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 生产环境中如何在不影响实时性的前提下监控内存泄漏？</p>
+<blockquote>
+<p>使用 KFENCE 做运行时采样检测（开销 ~1%），配合非交易时段的 kmemleak 定期扫描。通过 /proc/meminfo 和 /proc/slabinfo 趋势监控内存增长。不使用 KASAN 和 SLUB debug（开销过大）。</p>
+</blockquote>
+<p><strong>Q2:</strong> HFT 生产环境应该启用哪些内存调试工具？</p>
+<blockquote>
+<p>仅 KFENCE（开销 &lt;1% CPU）。KASAN 太重（2-3x slowdown），LOCKDEP 也重（~200ns/lock op）。KFENCE 的采样模式（1/100）在生产中几乎无感知，但仍能捕获偶发的越界/UAF。如果发现问题，切换到 staging 环境启用 KASAN 深入排查。</p>
+</blockquote>
+<p><strong>Q3:</strong> 如何通过 /proc/slabinfo 判断内存泄漏？</p>
+<blockquote>
+<p>观察 slab cache 的活跃对象数（第三列）是否持续增长。如果某个 cache 的活跃对象数随时间单调增加且不回收，可能是泄漏。对比不同时间点的 slabinfo 快照可以快速定位泄漏的 cache。</p>
+</blockquote>
+<p><strong>Q4:</strong> kmemleak 扫描在 HFT 环境中应该怎么安排？</p>
+<blockquote>
+<p>在非交易时段（如收盘后凌晨 3 点）通过 crontab 手动触发扫描。扫描期间可能暂停内存分配（RCU 停顿），影响延迟。不应在交易时段自动扫描。默认的每 10 分钟自动扫描应关闭（<code class="c">kmemleak=off</code> 启动，手动 <code class="c">echo scan &gt; ...</code> 触发）。</p>
+</blockquote>
+<p><strong>Q5:</strong> KFENCE 的 sample_interval 在 HFT 生产环境应该设为多少？</p>
+<blockquote>
+<p>建议 1000ms（1秒）。默认 100ms 开销约 1%，设为 1000ms 开销降到 ~0.1%。HFT 对延迟敏感，应尽量降低开销。如果发现问题或需要更密集的检测，临时调小到 100ms。开发环境可以设为 10ms 提高检测率。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch06 KFENCE</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch06 内存调试策略</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch05 kmemleak</a></li>
+</ul>
       </section>
 
 

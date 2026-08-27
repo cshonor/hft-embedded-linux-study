@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-damon-lab</a>
+          <a href="#s-02"><span class="n">02</span>02-damon</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 10: DAMON</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 10</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 10</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +322,261 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06.5-modern-mm/chapter-07-page-reclaim-mglru/</code>：DAMON 与 MGLRU 协同</li>
 <li><code class="c">06.7-bpf-observability/</code>：eBPF 也可做访问跟踪，DAMON 是内核原生方案</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Bootlin: DAMON 与 cgroup 实验</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — Advanced Topics</a>
+<strong>主题:</strong> DAMON 数据访问监控实验 + cgroup v2 内存限制实验
+<strong>对标旧书:</strong> 无</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>DAMON 实验：监控进程内存访问模式</h3>
+<pre class="code" data-label="shell"><code class="c"># 前提: 内核 CONFIG_DAMON=y (5.15+)
+
+# 1. 设置监控目标
+echo &lt;pid&gt; &gt; /sys/kernel/debug/damon/target_ids
+
+# 2. 设置监控参数
+# 采样间隔 5ms, 聚合间隔 100ms, 更新间隔 1000ms
+# 最小区域 10, 最大区域 1000
+echo &quot;5 100 1000 10 1000&quot; &gt; /sys/kernel/debug/damon/attrs
+
+# 3. 启动监控
+echo on &gt; /sys/kernel/debug/damon/monitor_on
+
+# 4. 读取结果
+# DAMON 将结果写入 internal buffer, 通过 dbgfs 暴露
+cat /sys/kernel/debug/damon/target_ids
+
+# 5. 使用 DAMOS (自动操作)
+# 对 100ms 未访问的页执行 pageout
+echo &quot;10 1 0 0 3&quot; &gt; /sys/kernel/debug/damon/schemes
+# format: min_sz max_sz min_nr_accesses max_nr_accesses action
+# action: 0=willneed, 1=cold, 2=pageout, 3=stat
+</code></pre>
+<h3>cgroup v2 内存限制实验</h3>
+<pre class="code" data-label="shell"><code class="c"># 实验: 限制进程内存并观察行为
+
+# 1. 创建 cgroup
+mkdir /sys/fs/cgroup/memtest
+
+# 2. 设置 256MB 硬限制
+echo 268435456 &gt; /sys/fs/cgroup/memtest/memory.max
+
+# 3. 设置 200MB 软限制 (超过则积极回收)
+echo 209715200 &gt; /sys/fs/cgroup/memtest/memory.high
+
+# 4. 将当前 shell 加入 cgroup
+echo $$ &gt; /sys/fs/cgroup/memtest/cgroup.procs
+
+# 5. 运行内存测试
+python3 &lt;&lt; 'EOF'
+import gc, time
+data = []
+for i in range(100):
+    data.append(bytearray(10 * 1024 * 1024))  # 10MB 每次
+    print(f&quot;allocated {(i+1)*10}MB, cgroup current: &quot;, end=&quot;&quot;)
+    with open(&quot;/sys/fs/cgroup/memtest/memory.current&quot;) as f:
+        print(f.read().strip())
+    time.sleep(0.1)
+EOF
+
+# 6. 查看事件
+cat /sys/fs/cgroup/memtest/memory.events
+# high 5       — 超过 memory.high 5 次
+# max 1        — 达到 memory.max 1 次
+# oom 1        — OOM 1 次
+# oom_kill 1   — 杀死 1 个进程
+
+# 7. 清理
+rmdir /sys/fs/cgroup/memtest
+</code></pre>
+<h3>PSI + cgroup 联合实验</h3>
+<pre class="code" data-label="shell"><code class="c"># 实验: 在 cgroup 内制造内存压力, 观察 PSI
+
+# 1. 创建低内存 cgroup
+mkdir /sys/fs/cgroup/pressure
+echo 134217728 &gt; /sys/fs/cgroup/pressure/memory.max  # 128MB
+echo $$ &gt; /sys/fs/cgroup/pressure/cgroup.procs
+
+# 2. 设置 PSI 触发器
+echo &quot;some 30000 1000000&quot; &gt; /proc/pressure/memory  # 30% some, 10s
+
+# 3. 制造压力
+stress-ng --vm 2 --vm-bytes 256M --timeout 30s
+
+# 4. 观察 PSI 变化
+cat /proc/pressure/memory
+# some avg10=45.23 avg60=12.34 avg300=4.56 total=78901234
+# full avg10=23.45 avg60=6.78 avg300=2.34 total=34567890
+
+# 5. 清理
+rmdir /sys/fs/cgroup/pressure
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>Bootlin 实验</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 DAMON</td>
+<td>DAMON 低开销监控</td>
+</tr>
+<tr>
+<td>无 cgroup</td>
+<td>cgroup v2 内存隔离</td>
+</tr>
+<tr>
+<td>无 PSI</td>
+<td>PSI 压力量化</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> DAMON 的 DAMOS pageout 和传统 kswapd 回收有什么区别？</p>
+<blockquote>
+<p>kswapd 回收基于 LRU/MGLRU 代的粗粒度判断（整个链表扫描）。DAMOS pageout 基于 DAMON 的细粒度访问模式（知道哪些区域真正未被访问）。DAMOS 可以针对特定进程/地址空间区域回收，而不是全局扫描。但 DAMOS 需要额外开销（~1% CPU），适合有明确冷热分离的场景。</p>
+</blockquote>
+<p><strong>Q2:</strong> cgroup v2 的 memory.high 如何减少 OOM？对 HFT 运维有什么启示？</p>
+<blockquote>
+<p>memory.high 在达到硬限制 (memory.max) 之前就开始积极回收，给进程"减速"而非直接杀死。这减少了 OOM 的突然性。对 HFT 运维：为非交易进程（日志、监控）设 memory.high 限制其内存增长，防止它们消耗系统内存导致交易进程 OOM。交易进程自身不用 memory.high（软回收引入延迟），直接用 memory.max 设明确上限。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>DAMON (Data Access MONitor)</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/812704/">DAMON: Data access monitoring</a> (LWN, 2019)
+<strong>作者:</strong> SeongJae Park
+<strong>内核版本:</strong> 5.15+
+<strong>对标旧书:</strong> 无 (ULK3/LKD3 未涉及)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>DAMON 是内核内建的数据访问监控框架，以低开销跟踪内存访问模式。</p>
+<h3>传统监控的问题</h3>
+<ul>
+<li><code class="c">/proc/pid/smaps</code>：精确但开销极大（遍历所有 VMA + 页表）</li>
+<li><code class="c">perf mem</code>：采样精确但需要硬件支持 + 高开销</li>
+<li><code class="c">mincore()</code>：只告诉你页是否在内存，不告诉你是否被访问</li>
+</ul>
+<h3>DAMON 设计</h3>
+<pre class="code" data-label="code"><code class="c">DAMON 架构:
+  ┌──────────┐     ┌──────────────┐     ┌───────────┐
+  │ Target   │────→│ Monitoring   │────→│ Results   │
+  │ (进程/   │     │ Attributes   │     │ (访问模式) │
+  │  地址空间)│     │ (采样间隔等)  │     │           │
+  └──────────┘     └──────────────┘     └───────────┘
+                         │
+                    ┌────┴────┐
+                    │ Regions │  (自适应划分地址空间)
+                    └─────────┘
+</code></pre>
+<p><strong>核心思想：</strong> 不监控每一个页（开销大），而是将地址空间划分为少量"区域"（region），对每个区域采样少量页，推断整个区域的访问模式。区域边界自适应调整（类似 adaptive sampling）。</p>
+<h3>DAMON API</h3>
+<pre class="code" data-label="shell"><code class="c"># 启用 DAMON (5.15+)
+# 需要编译 CONFIG_DAMON=y
+
+# 通过 debugfs 控制
+echo &lt;pid&gt; &gt; /sys/kernel/debug/damon/target_ids
+echo &quot;5 100 1000 10 1000&quot; &gt; /sys/kernel/debug/damon/attrs
+# 5: 采样间隔 (ms)
+# 100: 聚合间隔 (ms)
+# 1000: 更新间隔 (ms)
+# 10: 最小区域数
+# 1000: 最大区域数
+
+# 启动监控
+echo on &gt; /sys/kernel/debug/damon/monitor_on
+
+# 查看结果
+cat /sys/kernel/debug/damon/target_ids  # 查看目标
+# 结果通过 DAMON DAMOS (action) 或 tracepoint 获取
+</code></pre>
+<h3>DAMOS (DAMon Operation Scheme)</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/damon/dbgfs.c
+// DAMOS: 基于 DAMON 监控结果自动执行操作
+
+// 示例: 对 100ms 未访问的页执行 reclaim
+struct damos scheme = {
+    .min_sz_region = PAGE_SIZE,      // 最小区域大小
+    .max_sz_region = ULONG_MAX,
+    .min_access_rate = 0,            // 访问率 0%
+    .max_access_rate = 0,            // = 未访问
+    .action = DAMOS_PAGEOUT,         // 回收
+};
+</code></pre>
+<h3>性能开销</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 区域, 5ms 采样</td>
+<td>&lt;1% CPU</td>
+</tr>
+<tr>
+<td>100 区域, 1ms 采样</td>
+<td>~3% CPU</td>
+</tr>
+<tr>
+<td>全精度 (mincore 对比)</td>
+<td>&gt;50% CPU</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无数据访问监控</td>
+<td>DAMON (5.15+)</td>
+</tr>
+<tr>
+<td><code class="c">/proc/pid/smaps</code> 高开销</td>
+<td>DAMON 低开销采样</td>
+</tr>
+<tr>
+<td>无自动操作</td>
+<td>DAMOS 可自动回收/proactive compaction</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>DAMON 可用于 HFT 系统运维：(1) 监控交易进程的内存访问模式，识别冷热区域；(2) 配合大页管理，将热数据集中到大页；(3) 但 HFT 不应启用 DAMOS 自动回收（可能误回收交易页）。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> DAMON 如何实现低开销？</p>
+<blockquote>
+<p>DAMON 不监控每个页，而是将地址空间划分为少量区域（默认 10 个），每个区域只采样少量页。区域边界根据访问模式自适应调整——频繁访问的区域被细分，统一访问模式的区域被合并。总采样页数远少于全部页数，开销 &lt;1% CPU。</p>
+</blockquote>
+<p><strong>Q2:</strong> DAMON 的 "region" 概念和 VMA 有什么区别？</p>
+<blockquote>
+<p>VMA 是进程虚拟地址空间的逻辑分区（按 mmap/munmap 划分）。DAMON region 是监控用的采样分组，可以跨 VMA 或在 VMA 内部进一步细分。DAMON 根据 region 内页的访问模式自适应调整边界，与 VMA 无关。一个 VMA 可能包含多个 DAMON region。</p>
+</blockquote>
+</details>
       </section>
 
 

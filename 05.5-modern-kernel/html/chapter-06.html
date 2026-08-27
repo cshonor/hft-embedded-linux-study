@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-aarch64-special</a>
+          <a href="#s-02"><span class="n">02</span>02-arm64-architecture-bootlin</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +301,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch6 ARM64 架构</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +314,386 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>树莓派 5 (Cortex-A76) 的 AArch64 架构是 HFT 嵌入式平台的基础。理解 EL0-EL3 特权级和系统寄存器对调试至关重要。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>ARM64 专题</h2></div>
+<blockquote>
+<p>笨叔《奔跑吧 Linux 内核》读书笔记
+对应旧书: ULK3 / LKD3 (Linux 2.6)
+对应现代内核: Linux 5.x / 6.x</p>
+</blockquote>
+<hr />
+<h2>本节要点</h2>
+<p>ARM64（AArch64）在 HFT 和嵌入式领域的重要性持续增长。现代内核对 ARM64 的支持已与 x86_64 平起平坐，但架构差异带来独特的内核行为：</p>
+<ul>
+<li><strong>ARM64 是弱排序架构</strong>：load/store 可能被 CPU 重排，内核代码需要正确的内存屏障（<code class="c">dmb</code>/<code class="c">dsb</code>/<code class="c">isb</code>），而 x86 的 TSO 模型更宽松</li>
+<li><strong>TLB 管理不同</strong>：ARM64 用 TLBI 指令失效 TLB 项，x86 用 INVLPG。ARM64 的 TLB 失效更昂贵（需要 DSB 同步）</li>
+<li><strong>页表格式</strong>：ARM64 支持 4K/16K/64K 页大小 + 3 级或 4 级页表，x86_64 固定 4K + 4 级</li>
+<li><strong>GIC（Generic Interrupt Controller）</strong>：ARM64 中断控制器与 x86 的 APIC 完全不同，影响中断延迟和亲和性设置</li>
+<li><strong>virtual timer vs physical timer</strong>：ARM64 有独立的虚拟定时器（EL1），减少 hypervisor 介入</li>
+<li><strong>SVE/Scalable Vector Extension</strong>：ARM64 独有，HFT 可用于向量化风控计算</li>
+</ul>
+<hr />
+<h2>与旧书对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 (2.6)</th>
+<th>笨叔 (5.x/6.x)</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主要 x86 视角</td>
+<td>ARM64 一等公民支持</td>
+<td>服务器/HFT 采用 ARM64</td>
+</tr>
+<tr>
+<td>x86 TSO 内存模型</td>
+<td>ARM64 弱排序 + dmb/dsb</td>
+<td>架构差异</td>
+</tr>
+<tr>
+<td>APIC 中断控制器</td>
+<td>GIC v3/v4（ITS）</td>
+<td>ARM 中断架构</td>
+</tr>
+<tr>
+<td>INVLPG 单页 TLB 失效</td>
+<td>TLBI + DSB（更昂贵）</td>
+<td>ARM TLB 硬件设计</td>
+</tr>
+<tr>
+<td>固定 4K 页</td>
+<td>4K/16K/64K 可配置</td>
+<td>ARM64 页大小灵活</td>
+</tr>
+<tr>
+<td>x86 rdtsc 计时</td>
+<td>ARM64 cntvct_el0</td>
+<td>不同硬件计数器</td>
+</tr>
+<tr>
+<td>x86 IPI（APIC IPI）</td>
+<td>ARM64 SGI（GIC 软中断）</td>
+<td>IPI 机制不同</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>关键数据结构 / 函数</h2>
+<pre class="code" data-label="code"><code class="c">// 源码路径: arch/arm64/include/asm/
+//          arch/arm64/kernel/
+//          arch/arm64/mm/
+
+// 页表项（PTE）格式
+typedef struct { pteval_t pte; } pte_t;
+// ARM64 PTE 位: 
+//   bit[1]  - Page table/bit（block vs page）
+//   bit[6]  - AP[1]（access permission: user access）
+//   bit[7]  - AP[2]（read-only）
+//   bit[10] - AF（access flag, 类似 x86 Accessed bit）
+//   bit[11] - nG（non-global, 类似 x86 PCID）
+
+// 内存屏障
+#define dmb(opt)  asm volatile(&quot;dmb &quot; #opt ::: &quot;memory&quot;)  // 数据内存屏障
+#define dsb(opt)  asm volatile(&quot;dsb &quot; #opt ::: &quot;memory&quot;)  // 数据同步屏障（更强）
+#define isb()     asm volatile(&quot;isb&quot; ::: &quot;memory&quot;)        // 指令同步屏障
+
+// 中断控制器
+struct gic_chip_data {
+    struct irq_chip chip;
+    void __iomem *dist_base;     // GIC Distributor
+    void __iomem *cpu_base;      // GIC CPU interface
+    // GICv3 用 ITS（Interrupt Translation Service）
+};
+
+// 定时器
+// ARM64 虚拟定时器寄存器
+//   CNTV_CTL_EL0  - 控制寄存器（enable/mask）
+//   CNTV_CVAL_EL0 - 比较值（64 位）
+//   CNTVCT_EL0    - 当前计数（类似 x86 TSC）
+
+// 系统寄存器访问
+#define read_sysreg(reg) ({
+    u64 val;
+    asm volatile(&quot;mrs %0, &quot; #reg : &quot;=r&quot;(val));
+    val;
+})
+#define write_sysreg(val, reg) ({
+    u64 __val = (val);
+    asm volatile(&quot;msr &quot; #reg &quot;, %0&quot; :: &quot;r&quot;(__val));
+})
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<p>ARM64 在 HFT 领域的应用（如 AWS Graviton、Ampere Altra）需要特别注意：</p>
+<ol>
+<li><strong>内存屏障开销</strong>：ARM64 的 <code class="c">dmb ish</code>（inner shareable）比 x86 的 <code class="c">mfence</code> 更常被需要——因为弱排序模型下无锁代码需要显式屏障。<code class="c">smp_store_release</code> / <code class="c">smp_load_acquire</code>（ARM64 用 <code class="c">stlr</code> / <code class="c">ldar</code> 指令）是比手动 <code class="c">dmb</code> 更高效的替代</li>
+<li><strong>TLB 失效更昂贵</strong>：ARM64 TLBI 需要 DSB 同步，多核 TLB shootdown 比 x86 慢。HFT 用 Huge Page 减少 TLB miss，同时避免 mmap/munmap 在热路径（触发 TLB shootdown）</li>
+<li><strong>中断延迟</strong>：GIC v3 的 ITS 支持中断直通（LPI → 设备 → CPU），减少中断分发延迟。HFT 配置 <code class="c">irq affinity</code> 绑定网卡中断到交易核</li>
+<li><strong>页大小选择</strong>：16K 或 64K 页减少 TLB miss，但可能增加内部碎片。HFT 建议用 2MB Huge Page（4K 基页）或 64K 基页</li>
+<li><strong>CPU 计时</strong>：<code class="c">cntvct_el0</code> 读取虚拟定时器计数，精度与 TSC 类似但需要 <code class="c">isb</code> 序列化。HFT 计时用 <code class="c">clock_gettime(CLOCK_MONOTONIC_RAW)</code> 或直接读 <code class="c">cntvct_el0</code></li>
+</ol>
+<p><strong>建议</strong>：HFT 移植 x86 → ARM64 时重点检查：1) 无锁代码的内存屏障；2) TLB shootdown 频率；3) 中断延迟测量；4) rdtsc → cntvct 替换。</p>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1: ARM64 的弱排序内存模型对 HFT 无锁代码有什么影响？</summary>
+<p>ARM64 CPU 可以重排 load/store 指令以提高流水线效率。例如 store A=1; store B=2; 另一个 CPU 可能先看到 B=2 再看到 A=1。HFT 无锁代码（如 ring buffer 的 producer/consumer）必须用内存屏障保证可见性顺序。<code class="c">smp_store_release(&amp;ready, 1)</code> 确保 ready=1 之前的所有 store 对其他 CPU 可见后才设置 ready；<code class="c">smp_load_acquire(&amp;ready)</code> 确保 ready 读取后的所有 load 在 ready 之后的地址执行。ARM64 上 release/acquire 编译为 <code class="c">stlr</code>/<code class="c">ldar</code> 指令，比 <code class="c">dmb ish</code> 更轻量。x86 的 TSO 模型天然保证 store-store 和 load-load 不重排，所以 x86 上 <code class="c">smp_store_release</code> 几乎无开销——跨架构移植时不能假设 x86 行为。</p>
+</details>
+<details>
+<summary>Q2: ARM64 的 TLB 失效为什么比 x86 更昂贵？对 HFT 有什么影响？</summary>
+<p>x86 用 <code class="c">INVLPG addr</code> 单步失效一个 TLB 项，硬件自动处理。ARM64 用 <code class="c">TLBI VAALE1IS, addr</code> 失效 TLB 项，但需要 <code class="c">DSB ISH</code>（Data Synchronization Barrier, Inner Shareable）等待所有 CPU 确认失效完成——这个同步开销在多核系统上显著。多核 TLB shootdown（如 munmap 触发）在 ARM64 上比 x86 慢 2-5 倍。HFT 影响：热路径避免 mmap/munmap（触发 TLB shootdown）；用 Huge Page 减少 TLB 条目数（2MB 页覆盖 512 个 4K 页，TLB 条目减少 512 倍）；mlock 锁定页面防止被回收（回收也涉及 TLB 失效）。</p>
+</details>
+<details>
+<summary>Q3: HFT 系统从 x86 迁移到 ARM64 需要检查哪些关键点？</summary>
+<p>1) <strong>内存屏障</strong>：所有无锁代码（ring buffer/SPSC 队列/序列锁）必须用 <code class="c">smp_store_release</code>/<code class="c">smp_load_acquire</code>，不能用 x86 的 bare <code class="c">WRITE_ONCE</code>/<code class="c">READ_ONCE</code>（x86 TSO 下可以，ARM64 弱排序下会出 bug）；2) <strong>TLB 行为</strong>：减少 mmap/munmap 频率，评估 Huge Page 配置；3) <strong>中断延迟</strong>：GIC v3 ITS 中断分发路径与 APIC 不同，需重新测量网卡中断→用户态的延迟；4) <strong>计时器</strong>：<code class="c">rdtsc</code> → <code class="c">cntvct_el0</code>，注意虚拟化环境下虚拟定时器可能被 hypervisor 截获；5) <strong>cache line 大小</strong>：ARM64 通常 64 字节（同 x86），但 Ampere Altra 等可能有差异，false sharing 防护需验证；6) <strong>NUMA 拓扑</strong>：ARM64 服务器 NUMA 行为与 x86 不同，网卡亲和性需重新配置。</p>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Bootlin: ARM64 架构基础</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/arm/">Bootlin ARM64 Training</a>
+<strong>主题:</strong> AArch64 架构与内核适配
+<strong>对标旧书:</strong> ULK3 (x86 only) / 03-arm-architecture 模块</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>ARM64 (AArch64) vs x86-64</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>x86-64</th>
+<th>ARM64 (AArch64)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>指令集</strong></td>
+<td>CISC, 变长指令</td>
+<td>RISC, 定长 4 字节</td>
+</tr>
+<tr>
+<td><strong>寄存器</strong></td>
+<td>16 GPR (rax-r15)</td>
+<td>31 GPR (x0-x30)</td>
+</tr>
+<tr>
+<td><strong>调用约定</strong></td>
+<td>rdi,rsi,rdx,rcx,r8,r9</td>
+<td>x0-x7</td>
+</tr>
+<tr>
+<td><strong>栈指针</strong></td>
+<td>rsp</td>
+<td>sp (x31)</td>
+</tr>
+<tr>
+<td><strong>链接寄存器</strong></td>
+<td>无（压栈保存返回地址）</td>
+<td>x30 (lr)</td>
+</tr>
+<tr>
+<td><strong>程序计数器</strong></td>
+<td>rip</td>
+<td>pc</td>
+</tr>
+<tr>
+<td><strong>页表</strong></td>
+<td>4 级 (或 5 级)</td>
+<td>3-4 级 (可配置)</td>
+</tr>
+<tr>
+<td><strong>内存模型</strong></td>
+<td>TSO (Total Store Order)</td>
+<td>Weak (弱排序)</td>
+</tr>
+<tr>
+<td><strong>原子指令</strong></td>
+<td>lock 前缀</td>
+<td>LDXR/STXR (LL/SC)</td>
+</tr>
+</tbody>
+</table></div>
+<h3>ARM64 异常等级</h3>
+<pre class="code" data-label="code"><code class="c">EL0 — 用户空间 (User)
+EL1 — 内核空间 (Kernel) ← Linux 内核运行在此
+EL2 — Hypervisor (KVM)
+EL3 — Secure Monitor (TrustZone)
+</code></pre>
+<h3>ARM64 内存模型 (弱排序)</h3>
+<p>ARM64 是<strong>弱排序内存模型</strong>——CPU 可以乱序执行和重排内存访问，需要内存屏障指令保证顺序：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>屏障指令</th>
+<th>作用</th>
+<th>x86 对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">DMB ISH</code></td>
+<td>数据内存屏障 (inner shareable)</td>
+<td><code class="c">mfence</code></td>
+</tr>
+<tr>
+<td><code class="c">DSB ISH</code></td>
+<td>数据同步屏障 (更严格)</td>
+<td><code class="c">mfence</code> (更强)</td>
+</tr>
+<tr>
+<td><code class="c">ISB</code></td>
+<td>指令同步屏障 (刷新流水线)</td>
+<td>无直接对应</td>
+</tr>
+<tr>
+<td><code class="c">LDAR</code></td>
+<td>获取读 (load-acquire)</td>
+<td>无 (x86 天然 acquire)</td>
+</tr>
+<tr>
+<td><code class="c">STLR</code></td>
+<td>释放写 (store-release)</td>
+<td>无</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 关键:</strong> ARM64 弱排序意味着无屏障的共享变量读取可能看到旧值。内核的 <code class="c">READ_ONCE()</code> / <code class="c">WRITE_ONCE()</code> 和 <code class="c">smp_rmb()</code> / <code class="c">smp_wmb()</code> 在 ARM64 上生成实际屏障指令，在 x86 上可能是空操作。</p>
+</blockquote>
+<h3>ARM64 原子操作 (LL/SC)</h3>
+<pre class="code" data-label="asm"><code class="c">// ARM64 原子加法 (LDXR/STXR 实现)
+atomic_add:
+1:  ldxr    w1, [x0]        // 独占加载
+    add     w1, w1, #1       // 加 1
+    stxr    w2, w1, [x0]     // 独占存储
+    cbnz    w2, 1b           // 如果失败则重试
+    ret
+
+// 6.x 内核也支持 LSE (Large System Extension) 原子指令
+// STADD w1, [x0]  — 单条原子加法指令（如果硬件支持）
+</code></pre>
+<h3>ARM64 页表 (4K/64K 页)</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>页大小</th>
+<th>页表级数</th>
+<th>虚拟地址空间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4K 页</td>
+<td>4KB</td>
+<td>4 级 (48-bit VA)</td>
+<td>256TB</td>
+</tr>
+<tr>
+<td>4K 页 + 52-bit VA</td>
+<td>4KB</td>
+<td>5 级</td>
+<td>4PB</td>
+</tr>
+<tr>
+<td>64K 页</td>
+<td>64KB</td>
+<td>3 级 (42-bit VA)</td>
+<td>4TB</td>
+</tr>
+<tr>
+<td>64K 页 + 52-bit VA</td>
+<td>64KB</td>
+<td>3 级</td>
+<td>4PB</td>
+</tr>
+</tbody>
+</table></div>
+<p>树莓派 5 (Cortex-A76) 默认使用 4KB 页 + 4 级页表 (39-bit 或 48-bit VA)。</p>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看 ARM64 CPU 信息
+cat /proc/cpuinfo
+# processor : 0-3
+# model name : Cortex-A76
+# BogoMIPS : 108.00
+# Features : fp asimd evtstrm aes pmull sha1 sha2 crc32 ...
+
+# 2. 查看页大小和内存布局
+getconf PAGE_SIZE       # 4096
+cat /proc/self/maps     # 查看进程地址空间布局
+
+# 3. 查看内核支持的 ARM64 特性
+dmesg | grep -i &quot;features\|alternatives&quot;
+# [    0.000000] CPU features: detected: Spectre-v2
+# [    0.000000] CPU features: detected: ARM64_HW_AF_DBM
+
+# 4. 反汇编内核函数 (ARM64)
+# 需要 vmlinux (未压缩内核)
+aarch64-linux-gnu-objdump -d vmlinux | grep -A 20 &quot;&lt;schedule&gt;&quot;
+
+# 5. 检查 LSE 原子指令支持
+cat /proc/cpuinfo | grep Features
+# 有 &quot;atomics&quot; 表示支持 LSE
+
+# 6. 内存屏障开销测试
+# ARM64 的 DMB 比 x86 的 MFENCE 开销大
+# 用 perf 测量
+perf stat -e armv8_pmuv3/bus_access ./membench
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 (x86)</th>
+<th>Bootlin ARM64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64 only</td>
+<td>ARM64 对口树莓派 5</td>
+</tr>
+<tr>
+<td>TSO 内存模型</td>
+<td>弱排序，需显式屏障</td>
+</tr>
+<tr>
+<td>lock 前缀原子</td>
+<td>LL/SC (LDXR/STXR)</td>
+</tr>
+<tr>
+<td>4 级页表固定</td>
+<td>可配置页大小和级数</td>
+</tr>
+<tr>
+<td><code class="c">cr3</code> 页表基址</td>
+<td><code class="c">TTBR0_EL1</code> / <code class="c">TTBR1_EL1</code> (用户/内核分离)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> ARM64 弱排序内存模型对内核开发有什么影响？</p>
+<blockquote>
+<p>x86 (TSO) 保证 store-store 和 load-load 有序，内核代码中的许多共享变量访问不需要显式屏障。ARM64 (弱排序) 下，所有无屏障的共享变量访问都可能被重排。内核的 <code class="c">READ_ONCE()</code> / <code class="c">WRITE_ONCE()</code> / <code class="c">smp_mb()</code> / <code class="c">smp_rmb()</code> 在 ARM64 上生成实际屏障指令，在 x86 上可能是编译器屏障 (空操作)。在 ARM64 上忘记加屏障会导致难以复现的并发 bug。</p>
+</blockquote>
+<p><strong>Q2:</strong> ARM64 的 <code class="c">LDAR</code> / <code class="c">STLR</code> (acquire/release) 与 <code class="c">DMB</code> 屏障有什么区别？</p>
+<blockquote>
+<p><code class="c">DMB</code> 是显式屏障指令，阻止屏障前后的内存操作重排。<code class="c">LDAR</code> / <code class="c">STLR</code> 是带 acquire/release 语义的加载/存储指令，只影响该指令与其他内存操作的顺序。acquire/release 通常比 DMB 开销小，且语义更精确。6.x 内核在 ARM64 上优先使用 <code class="c">LDAR</code> / <code class="c">STLR</code>。</p>
+</blockquote>
+<p><strong>Q3:</strong> 树莓派 5 (Cortex-A76) 用 4KB 页还是 64KB 页？有什么影响？</p>
+<blockquote>
+<p>默认用 4KB 页 + 4 级页表。4KB 页的 TLB 覆盖范围较小，对大内存应用 TLB miss 率高。64KB 页 TLB 覆盖范围大，但内部碎片更多。HFT 场景下页表遍历 (page table walk) 延迟显著，64KB 页可减少 TLB miss，但需要重新编译内核 (<code class="c">CONFIG_ARM64_64K_PAGES=y</code>)。</p>
+</blockquote>
+</details>
       </section>
 
 

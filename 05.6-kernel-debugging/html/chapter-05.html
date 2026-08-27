@@ -276,6 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">5.1</span>内核内存错误的类型</a>
+          <a href="#s-02"><span class="n">5.2</span>KASAN：地址消毒器</a>
+          <a href="#s-03"><span class="n">5.3</span>UBSAN：未定义行为检测</a>
+          <a href="#s-04"><span class="n">5.4</span>SLUB debug：slab 分配器调试</a>
+          <a href="#s-05"><span class="n">5.5</span>kmemleak：内核内存泄漏检测</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +304,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch5 Debugging Kernel Memory Issues - Part 1</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>6</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +317,1026 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>精读。写自定义内核模块时，KASAN 能在开发期捕获 90% 的内存错误。树莓派 5 ARM64 完整支持 KASAN，需 CONFIG_KASAN=y 重编译内核。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">5.1</div><h2>内核内存错误的类型</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>内核内存错误是 HFT 系统最危险的 bug 类型——可能导致数据损坏、崩溃、安全漏洞。</p>
+<h2>内核内存错误分类</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>错误类型</th>
+<th>说明</th>
+<th>检测工具</th>
+<th>危害</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>越界访问</strong> (OOB)</td>
+<td>读写超出分配范围</td>
+<td>KASAN, KFENCE</td>
+<td>数据损坏</td>
+</tr>
+<tr>
+<td><strong>Use-After-Free</strong> (UAF)</td>
+<td>释放后继续使用</td>
+<td>KASAN, KFENCE</td>
+<td>数据损坏/安全漏洞</td>
+</tr>
+<tr>
+<td><strong>Double Free</strong></td>
+<td>同一指针释放两次</td>
+<td>SLUB debug</td>
+<td>内存损坏</td>
+</tr>
+<tr>
+<td><strong>内存泄漏</strong></td>
+<td>分配不释放</td>
+<td>kmemleak</td>
+<td>OOM</td>
+</tr>
+<tr>
+<td><strong>未初始化使用</strong></td>
+<td>使用未初始化的变量</td>
+<td>KMSAN</td>
+<td>信息泄露</td>
+</tr>
+<tr>
+<td><strong>无效释放</strong></td>
+<td>释放非分配地址</td>
+<td>SLUB debug</td>
+<td>崩溃</td>
+</tr>
+<tr>
+<td><strong>踩踏</strong> (Overwrite)</td>
+<td>覆盖相邻内存</td>
+<td>KASAN, SLUB debug</td>
+<td>数据损坏</td>
+</tr>
+</tbody>
+</table></div>
+<h2>内核内存分配器层次</h2>
+<pre class="code" data-label="code"><code class="c">kmalloc / vmalloc / alloc_pages
+         ↓
+    SLUB 分配器 (slab)
+    ├── kmalloc-32 / 64 / 128 / 256 ... (通用 cache)
+    └── 专用 cache (如 task_struct, inode_cache)
+         ↓
+    Buddy 分配器 (page)
+         ↓
+    物理页帧 (page frame)
+</code></pre>
+<h2>SLUB 分配器 (6.x)</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>SLAB (ULK3 时代)</th>
+<th>SLUB (6.x 默认)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设计</td>
+<td>复杂的 per-CPU 缓存</td>
+<td>简化的 per-CPU partial</td>
+</tr>
+<tr>
+<td>结构体</td>
+<td><code class="c">struct kmem_cache</code> + <code class="c">struct slab</code></td>
+<td>简化</td>
+</tr>
+<tr>
+<td>调试</td>
+<td>内建 redzone/poison</td>
+<td>需 CONFIG_SLUB_DEBUG</td>
+</tr>
+<tr>
+<td>对象元数据</td>
+<td>内嵌</td>
+<td>可选外置</td>
+</tr>
+<tr>
+<td>per-CPU</td>
+<td>array_cache</td>
+<td>单 freelist + partial</td>
+</tr>
+<tr>
+<td>多核扩展性</td>
+<td>差（锁竞争）</td>
+<td>好（简化锁）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>内存错误示例</h2>
+<pre class="code" data-label="C"><code class="c">// 1. 越界访问 (OOB)
+char *buf = kmalloc(64, GFP_KERNEL);
+buf[64] = 'x';  // 越界写 1 字节
+// KASAN: slab-out-of-bounds
+
+// 2. Use-After-Free
+char *ptr = kmalloc(128, GFP_KERNEL);
+kfree(ptr);
+ptr[0] = 'y';  // 释放后访问
+// KASAN: use-after-free
+
+// 3. Double Free
+char *p = kmalloc(32, GFP_KERNEL);
+kfree(p);
+kfree(p);  // 重复释放
+// SLUB debug: double free detected
+
+// 4. 内存泄漏
+char *leak = kmalloc(1024, GFP_KERNEL);
+// 忘记 kfree(leak)
+// kmemleak: unreferenced object
+
+// 5. 未初始化使用
+int *val = kmalloc(sizeof(int), GFP_KERNEL);
+if (*val == 42)  // 未初始化读取
+// KMSAN: use of uninitialized value
+</code></pre>
+<h2>错误检测工具对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>检测类型</th>
+<th>机制</th>
+<th>开销</th>
+<th>实时性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KASAN</td>
+<td>OOB/UAF/wild</td>
+<td>影子内存</td>
+<td>2-3x</td>
+<td>即时</td>
+</tr>
+<tr>
+<td>KFENCE</td>
+<td>OOB/UAF</td>
+<td>页保护</td>
+<td>~1%</td>
+<td>即时（采样）</td>
+</tr>
+<tr>
+<td>SLUB debug</td>
+<td>OOB/double free</td>
+<td>redzone/poison</td>
+<td>低</td>
+<td>延迟（alloc/free时）</td>
+</tr>
+<tr>
+<td>kmemleak</td>
+<td>泄漏</td>
+<td>扫描引用</td>
+<td>扫描时高</td>
+<td>非实时</td>
+</tr>
+<tr>
+<td>KMSAN</td>
+<td>未初始化</td>
+<td>影子内存</td>
+<td>2-3x</td>
+<td>即时</td>
+</tr>
+<tr>
+<td>UBSAN</td>
+<td>整数溢出</td>
+<td>编译器插桩</td>
+<td>2-5%</td>
+<td>即时</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>HFT 自定义内核模块的内存错误 90% 是越界和 UAF：</p>
+<ol>
+<li><strong>DMA buffer 越界</strong>：网卡 DMA 写入超出分配的 buffer</li>
+<li><strong>UAF</strong>：释放 skb 后继续访问</li>
+<li><strong>并发踩踏</strong>：多核同时写共享数据结构</li>
+</ol>
+<p>KASAN 能在开发期捕获大部分内存错误。生产环境用 KFENCE 做低开销采样检测。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> SLUB 为什么取代了 SLAB？</p>
+<blockquote>
+<p>SLAB 的 per-CPU 缓存设计复杂（array_cache + shared array_cache），在多核系统上锁争用严重且内存开销大。SLUB 简化了 per-CPU 缓存（只用一个 freelist + partial 链表），减少了元数据开销，在大规模多核系统上扩展性更好。</p>
+</blockquote>
+<p><strong>Q2:</strong> Use-After-Free 错误为什么在内核中特别危险？</p>
+<blockquote>
+<p>释放的内存被 SLUB 回收并可能分配给其他模块。原模块继续访问该内存会读到/写入新模块的数据，导致数据损坏或安全漏洞（信息泄漏）。在内核中 UAF 可能导致权限提升（攻击者可以利用 UAF 覆盖函数指针）。</p>
+</blockquote>
+<p><strong>Q3:</strong> 内核内存错误的四种基本类型是什么？分别用什么工具检测？</p>
+<blockquote>
+<p>(1) 越界访问（out-of-bounds）→ KASAN redzone；(2) Use-After-Free → KASAN quarantine + KFENCE；(3) 未初始化使用 → KMSAN（Memory Sanitizer）；(4) 双重释放 → SLUB debug poison。</p>
+</blockquote>
+<p><strong>Q4:</strong> KASAN 和 SLUB debug 都能检测越界，有什么区别？</p>
+<blockquote>
+<p>SLUB debug 在对象周围插入 redzone 字节，只能在分配/释放时检查——是延迟检测。KASAN 通过影子内存实时检查每次访问——是即时检测。KASAN 更精确但开销更大。SLUB debug 开销较小但检测能力有限。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 驱动中 DMA buffer 越界是什么场景？如何检测？</p>
+<blockquote>
+<p>网卡 DMA 写入数据超出分配的 buffer 大小（如分配 1500 字节但收到 1600 字节的包）。KASAN 不直接检测 DMA（DMA 绕过 CPU 内存访问）。需要：(1) 确保 DMA buffer 大小足够；(2) 用 KASAN 检测驱动代码中对 buffer 的越界访问；(3) 用 KFENCE 检测 slab 对象的越界。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch05 SLUB debug</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch06 KFENCE</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">5.2</div><h2>KASAN：地址消毒器</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>KASAN (Kernel Address SANitizer) 为每个内存字节维护<strong>影子内存</strong>，在每次内存访问时检查是否安全。是开发期最强大的内存错误检测工具。</p>
+<h2>工作原理</h2>
+<pre class="code" data-label="code"><code class="c">每 8 字节内存 → 1 字节影子内存
+影子值:
+  0x00  — 全部 8 字节可访问
+  0x01-0x07 — 前 N 字节可访问
+  0xFE  — redzone (越界检测)
+  0xFB  — 已释放 (UAF 检测)
+  0xFA  — 未分配
+  0xFC  — stack redzone
+  0xF9  — kmalloc redzone
+
+内存布局:
+┌─────────────────────────────────────────────┐
+│  实际内存:  [obj1][redzone][obj2][redzone]  │
+│  影子内存:  [00..][FE FE..][00..][FE FE..]  │
+└─────────────────────────────────────────────┘
+</code></pre>
+<h2>启用 KASAN</h2>
+<pre class="code" data-label="shell"><code class="c"># 内核配置 (ARM64)
+CONFIG_KASAN=y
+CONFIG_KASAN_GENERIC=y     # 通用模式（软件实现）
+# 或
+CONFIG_KASAN_INLINE=y       # 内联检查 (更快但更大镜像)
+# 或
+CONFIG_KASAN_OUTLINE=y      # 函数调用检查 (更小但更慢)
+
+# 编译
+make ARCH=arm64 kasan.config
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
+
+# 树莓派 5 注意事项:
+# KASAN 需要 1GB+ 内存，树莓派 5 (4GB/8GB) 可以
+# 性能开销约 2-3x slowdown + ~1/8 内存用于影子
+</code></pre>
+<h2>KASAN 检测的错误类型</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>影子值</th>
+<th>说明</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">slab-out-of-bounds</code></td>
+<td>0xFE</td>
+<td>越界访问 slab 对象</td>
+<td>buf[64] = 'x' (buf 只有 64 字节)</td>
+</tr>
+<tr>
+<td><code class="c">use-after-free</code></td>
+<td>0xFB</td>
+<td>访问已释放的 slab 对象</td>
+<td>kfree(ptr); ptr[0] = 'y'</td>
+</tr>
+<tr>
+<td><code class="c">wild-memory-access</code></td>
+<td>0xFA</td>
+<td>访问未分配的内存</td>
+<td><em>(int </em>)0x12345678 = 42</td>
+</tr>
+<tr>
+<td><code class="c">null-ptr-deref</code></td>
+<td>-</td>
+<td>空指针解引用</td>
+<td>*NULL = 42</td>
+</tr>
+<tr>
+<td><code class="c">stack-out-of-bounds</code></td>
+<td>0xFC</td>
+<td>栈缓冲区越界</td>
+<td>char buf[8]; buf[16] = 'x'</td>
+</tr>
+<tr>
+<td><code class="c">global-out-of-bounds</code></td>
+<td>0xF9</td>
+<td>全局变量越界</td>
+<td>全局数组越界访问</td>
+</tr>
+</tbody>
+</table></div>
+<h2>KASAN 报告示例</h2>
+<pre class="code" data-label="code"><code class="c">[   12.345678] ==================================================================
+[   12.345680] BUG: KASAN: slab-out-of-bounds in my_driver_write+0x3c/0x100
+[   12.345682] Write of size 4 at addr ffff000012345678 by task my_app/1234
+
+[   12.345690] CPU: 2 PID: 1234 Comm: my_app Not tainted 6.1.63
+[   12.345695] Call trace:
+[   12.345700]  my_driver_write+0x3c/0x100
+[   12.345705]  vfs_write+0xf4/0x2b0
+[   12.345710]  ksys_write+0x74/0x100
+
+[   12.345720] Allocated by task 1234:
+[   12.345725]  kasan_save_stack+0x28/0x50
+[   12.345730]  __kmalloc+0xc0/0x1d0
+[   12.345735]  my_driver_init+0x48/0x200
+
+[   12.345740] The buggy address belongs to the object at ffff000012345600
+[   12.345745]  which belongs to the cache kmalloc-128 of size 128
+[   12.345750] The buggy address is located 120 bytes inside of
+[   12.345755]  128-byte region [ffff000012345600, ffff000012345680)
+</code></pre>
+<h3>报告解读</h3>
+<pre class="code" data-label="code"><code class="c">关键信息:
+1. 错误类型: slab-out-of-bounds (越界)
+2. 访问操作: Write of size 4 (写 4 字节)
+3. 访问地址: ffff000012345678
+4. 访问者: my_app/1234
+5. 调用栈: my_driver_write → vfs_write → ksys_write
+6. 分配栈: __kmalloc → my_driver_init
+7. 对象信息: kmalloc-128, 128字节, 偏移 120 (越界 8 字节)
+</code></pre>
+<h2>KASAN quarantine（隔离区）</h2>
+<pre class="code" data-label="code"><code class="c">kfree(ptr) 后的流程:
+
+普通 SLUB:
+  kfree(ptr) → 对象回到 freelist → 立即可以被重新分配
+
+KASAN 启用时:
+  kfree(ptr) → 影子标记 0xFB → 进入 quarantine 队列
+  → 延迟一段时间后才回到 freelist
+  → 期间如果 UAF，KASAN 检测到 0xFB 影子值
+
+quarantine 大小:
+  CONFIG_KASAN_QUARANTINE_SIZE (默认 1MB)
+  太小: UAF 被新分配掩盖
+  太大: 内存浪费
+</code></pre>
+<h2>KASAN_INLINE vs KASAN_OUTLINE</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>检查方式</th>
+<th>性能</th>
+<th>镜像大小</th>
+<th>推荐</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>INLINE</td>
+<td>每次访问内联 3-5 条检查指令</td>
+<td>快</td>
+<td>大 (~2x)</td>
+<td>✅ 调试</td>
+</tr>
+<tr>
+<td>OUTLINE</td>
+<td>每次访问调用 __asan_check 函数</td>
+<td>慢</td>
+<td>小</td>
+<td>空间受限</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>KASAN 在 HFT 开发中的作用：</p>
+<ol>
+<li><strong>开发期必开</strong>：每次代码变更后用 KASAN 跑测试</li>
+<li><strong>DMA buffer 检测</strong>：KASAN 不直接检测 DMA，但检测驱动对 buffer 的越界访问</li>
+<li><strong>UAF 检测</strong>：quarantine 确保释放后的对象不会被立即重用</li>
+<li><strong>生产不可用</strong>：2-3x slowdown 破坏实时性，生产用 KFENCE 替代</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 开发工作流
+# 1. 编译 KASAN 内核
+make ARCH=arm64 kasan.config -j$(nproc)
+
+# 2. 运行测试
+./run_hft_tests.sh
+
+# 3. 检查 KASAN 报告
+dmesg | grep -A 30 &quot;BUG: KASAN&quot;
+
+# 4. 修复所有 KASAN 报告后切换到普通内核
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> KASAN 的影子内存开销是多少？</p>
+<blockquote>
+<p>每 8 字节内存需要 1 字节影子内存，开销为 1/8 (12.5%)。对于 4GB 内存的系统，影子内存约 512MB。此外还有性能开销：KASAN_INLINE 模式下每次内存访问额外 3-5 条指令检查影子内存，整体 slowdown 约 2-3 倍。</p>
+</blockquote>
+<p><strong>Q2:</strong> KASAN 如何检测 Use-After-Free？</p>
+<blockquote>
+<p>当 slab 对象被 kfree 释放时，KASAN 将其影子内存标记为 0xFB (freed)，并将对象放入 quarantine 隔离区延迟回收。如果后续代码访问该地址，KASAN 检查影子值发现是 0xFB，报告 use-after-free。quarantine 确保 UAF 不会被新分配掩盖。</p>
+</blockquote>
+<p><strong>Q3:</strong> KASAN 的 quarantine（隔离区）是什么？为什么需要？</p>
+<blockquote>
+<p>quarantine 延迟 slab 对象的实际回收。释放后对象标记为 0xFB 但不立即放回 slab freelist，先进入 quarantine 队列。这样如果 UAF 发生，KASAN 能检测到。没有 quarantine，释放的对象可能被立即重新分配，UAF 访问到新对象不会报错。</p>
+</blockquote>
+<p><strong>Q4:</strong> KASAN_INLINE 和 KASAN_OUTLINE 的区别？HFT 调试应该选哪个？</p>
+<blockquote>
+<p>INLINE：检查代码内联到每次内存访问，快但镜像大。OUTLINE：检查代码是函数调用，小但慢。HFT 调试选 INLINE（更快，减少调试时的时序偏差）。生产环境不用 KASAN（开销太大）。</p>
+</blockquote>
+<p><strong>Q5:</strong> KASAN 报告中 "Allocated by task" 有什么作用？</p>
+<blockquote>
+<p>显示分配这个内存块的调用栈。配合 "BUG in" 的访问栈，可以对比分配和访问的上下文，判断是哪个分配出了问题。例如 UAF 中，分配栈显示在哪里分配的，访问栈显示在哪里释放后访问的，两者配合定位 bug。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch05 内存错误类型</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch05 SLUB debug</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch06 KFENCE</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">5.3</div><h2>UBSAN：未定义行为检测</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>UBSAN (Undefined Behavior SANitizer) 检测 C 语言的<strong>未定义行为</strong> (UB)，如整数溢出、移位越界、除零等。</p>
+<h2>启用 UBSAN</h2>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_UBSAN=y
+# 可选子选项:
+CONFIG_UBSAN_BOUNDS=y          # 数组越界
+CONFIG_UBSAN_SHIFT=y           # 移位溢出
+CONFIG_UBSAN_DIV_ZERO=y        # 除零
+CONFIG_UBSAN_SIGNED_OVERFLOW=y # 有符号整数溢出
+CONFIG_UBSAN_BOOL=y            # 布尔值非法
+CONFIG_UBSAN_ENUM=y            # 枚举值非法
+CONFIG_UBSAN_ALIGNMENT=y       # 对齐违规
+</code></pre>
+<h2>UBSAN 检测的常见问题</h2>
+<pre class="code" data-label="C"><code class="c">// 1. 有符号整数溢出 (UBSAN_SIGNED_OVERFLOW)
+int a = INT_MAX;
+int b = a + 1;  // UBSAN: signed integer overflow: 2147483647 + 1
+// HFT 场景: 价格计算溢出 → 价格变负数 → 错误订单
+
+// 2. 数组越界 (UBSAN_BOUNDS)
+int arr[10];
+arr[15] = 0;  // UBSAN: array index out of bounds
+
+// 3. 移位溢出 (UBSAN_SHIFT)
+int x = 1 &lt;&lt; 32;  // UBSAN: shift exponent 32 is too large for 32-bit type
+int y = 1 &lt;&lt; 31;  // UBSAN: shift of 1 by 31 places cannot be represented in int
+
+// 4. 除零 (UBSAN_DIV_ZERO)
+int z = 100 / 0;  // UBSAN: division by zero
+
+// 5. 布尔值非法
+bool b = 42;  // UBSAN: load of value 42 is not a valid boolean
+
+// 6. 对齐违规 (UBSAN_ALIGNMENT)
+int *p = (int *)((char *)malloc(1) + 1);
+*p = 42;  // UBSAN: misaligned access
+
+// 7. 枚举值非法
+enum color { RED, GREEN, BLUE };
+enum color c = 42;  // UBSAN: load of value 42 is not a valid enum color
+</code></pre>
+<h2>UBSAN 报告示例</h2>
+<pre class="code" data-label="code"><code class="c">[   12.345678] ==================================================================
+[   12.345680] UBSAN: signed-integer-overflow in calculate_checksum+0x48/0x80
+[   12.345682] overflow of 2147483647 + 1 cannot be represented in type 'int'
+[   12.345690] CPU: 2 PID: 1234 Comm: my_app
+[   12.345695] Call trace:
+[   12.345700]  calculate_checksum+0x48/0x80
+[   12.345705]  my_handler+0x3c/0x100
+[   12.345710]  __handle_irq_event_percpu+0x58/0x2a0
+</code></pre>
+<h2>有符号溢出为什么是 UB</h2>
+<pre class="code" data-label="C"><code class="c">// C 标准规定有符号整数溢出是未定义行为
+// 编译器据此优化:
+
+// 危险的&quot;优化&quot;:
+int check_overflow(int a, int b) {
+    if (a + b &lt; a)  // 编译器假设不溢出 → 优化为 false
+        return -1;  // 这个分支被删除！
+    return a + b;
+}
+
+// 正确的做法:
+int check_overflow_safe(int a, int b) {
+    if (b &gt; 0 &amp;&amp; a &gt; INT_MAX - b)
+        return -1;
+    return a + b;
+}
+
+// 或使用无符号运算检查:
+int check_overflow_unsigned(int a, int b) {
+    int sum = (int)((unsigned)a + (unsigned)b);
+    if ((b &gt; 0 &amp;&amp; sum &lt; a) || (b &lt; 0 &amp;&amp; sum &gt; a))
+        return -1;
+    return sum;
+}
+</code></pre>
+<h2>UBSAN vs KASAN</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>KASAN</th>
+<th>UBSAN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>检测类型</td>
+<td>内存安全（越界/UAF）</td>
+<td>语言语义（溢出/除零）</td>
+</tr>
+<tr>
+<td>机制</td>
+<td>影子内存</td>
+<td>编译器插桩</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>2-3x</td>
+<td>2-5%</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>1/8</td>
+<td>极少</td>
+</tr>
+<tr>
+<td>互补</td>
+<td>✅ 可同时启用</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>HFT 内核模块处理价格/数量数据时，整数溢出可能导致灾难性错误：</p>
+<pre class="code" data-label="C"><code class="c">// HFT 价格计算中的溢出风险
+struct order {
+    int32_t price;      // 价格（以 0.0001 为单位）
+    int32_t quantity;   // 数量
+    int64_t notional;   // 名义价值 = price * quantity
+};
+
+// 危险: price * quantity 可能溢出 int32
+notional = (int64_t)price * quantity;  // 正确: 先转 int64
+
+// UBSAN 可以检测到:
+// int32_t temp = price * quantity;  // 溢出！
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># HFT 开发环境推荐配置
+CONFIG_UBSAN=y
+CONFIG_UBSAN_SIGNED_OVERFLOW=y  # 检测价格计算溢出
+CONFIG_UBSAN_SHIFT=y            # 检测位移越界
+CONFIG_UBSAN_DIV_ZERO=y         # 检测除零
+CONFIG_UBSAN_BOUNDS=y           # 检测数组越界
+# CONFIG_UBSAN_ALIGNMENT=y      # 对齐检查（可能误报，按需）
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 有符号整数溢出为什么是未定义行为？编译器如何处理？</p>
+<blockquote>
+<p>C 标准规定有符号整数溢出是 UB，允许编译器假设不会溢出并据此优化。例如 <code class="c">if (a + 100 &lt; a)</code> 编译器可能直接优化为 <code class="c">false</code>（假设不溢出）。这导致安全检查被优化掉。UBSAN 在运行时检测实际溢出并报告。</p>
+</blockquote>
+<p><strong>Q2:</strong> UBSAN 和 KASAN 有什么区别？</p>
+<blockquote>
+<p>KASAN 检测<strong>内存安全</strong>问题（越界、UAF、无效访问），通过影子内存实现。UBSAN 检测<strong>语言语义</strong>问题（整数溢出、移位越界、除零等），通过编译器插桩实现。两者互补：KASAN 管"访问的地址对不对"，UBSAN 管"计算的值对不对"。可以同时启用。</p>
+</blockquote>
+<p><strong>Q3:</strong> UBSAN 检测哪些类型的未定义行为？</p>
+<blockquote>
+<p>整数溢出（signed）、数组越界、空指针访问、对齐违规、位运算未定义（如 shift &gt; width）、bool 值非 0/1、枚举值越界。内核 CONFIG_UBSAN=y 启用，可按子选项选择检测类型。HFT 代码中的定点运算需注意整数溢出——UBSAN 可以帮发现。</p>
+</blockquote>
+<p><strong>Q4:</strong> UBSAN 的开销为什么比 KASAN 小？</p>
+<blockquote>
+<p>UBSAN 只在特定操作（算术运算、移位、除法）处插桩，不需要影子内存，内存开销极少。KASAN 对每次内存访问都检查影子内存，开销大。UBSAN 开销约 2-5%，KASAN 约 2-3x。</p>
+</blockquote>
+<p><strong>Q5:</strong> 为什么 <code class="c">1 &lt;&lt; 31</code> 在 int 类型上是 UB？</p>
+<blockquote>
+<p><code class="c">1</code> 是 int 类型（32位有符号），<code class="c">1 &lt;&lt; 31</code> 的结果 <code class="c">0x80000000</code> 超过了 int 的正数范围（INT_MAX = 0x7FFFFFFF），是符号溢出。正确做法：<code class="c">(unsigned int)1 &lt;&lt; 31</code> 或 <code class="c">1U &lt;&lt; 31</code>。UBSAN_SHIFT 可以检测这类问题。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch05 内存错误类型</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">5.4</div><h2>SLUB debug：slab 分配器调试</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>SLUB debug 在 slab 对象周围插入 <strong>redzone</strong>（红区）和填充 <strong>poison</strong>（毒值），检测越界访问和 double free。</p>
+<h2>启用 SLUB debug</h2>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_SLUB_DEBUG=y
+
+# 运行时控制 (boot 参数)
+# slub_debug=FZP  — 全局启用所有调试
+# F=Redzone, Z=Zero, P=Poison, T=Trace, A=Sanity
+
+# 只对特定 cache 启用
+# slub_debug=FZP,kmalloc-128
+# slub_debug=FZP,kmalloc-256,dma-kmalloc-64
+
+# 查看当前状态
+cat /sys/kernel/slab/*/*/trace 2&gt;/dev/null | head
+cat /proc/slabinfo | head -20
+</code></pre>
+<h2>SLUB debug 标志</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>名称</th>
+<th>功能</th>
+<th>开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F</td>
+<td>Redzone/Fault</td>
+<td>对象前后插入红区检测越界</td>
+<td>低</td>
+</tr>
+<tr>
+<td>Z</td>
+<td>Zero</td>
+<td>分配时对象清零</td>
+<td>极低</td>
+</tr>
+<tr>
+<td>P</td>
+<td>Poison</td>
+<td>释放时填充毒值检测 UAF</td>
+<td>低</td>
+</tr>
+<tr>
+<td>T</td>
+<td>Trace</td>
+<td>追踪每个对象的分配/释放栈</td>
+<td>中</td>
+</tr>
+<tr>
+<td>A</td>
+<td>Sanity</td>
+<td>完整性检查（元数据校验）</td>
+<td>中</td>
+</tr>
+</tbody>
+</table></div>
+<h2>检测机制</h2>
+<pre class="code" data-label="code"><code class="c">SLUB debug 布局 (kmalloc-128 为例):
+┌─────────────────────────────────────────────────┐
+│ Redzone (8B) │ Object Data (128B) │ Redzone (8B) │
+│ 0x4F 0x4F... │  用户数据...        │ 0x4F 0x4F... │
+└─────────────────────────────────────────────────┘
+
+分配时:
+  - Redzone 填充 0x4F (POISON_INUSE)
+  - 对象数据区域清零 (如果 Z 选项)
+
+释放时:
+  - 对象数据填充 0x6B (POISON_FREE)
+  - Redzone 检查是否被破坏
+
+检查时机:
+  - 分配时检查 Redzone → 检测前一次使用的越界
+  - 释放时检查 Redzone → 检测当前使用的越界
+  - 分配时检查数据区是否仍为 0x6B → 检测 UAF
+</code></pre>
+<h2>Poison 值含义</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>值</th>
+<th>宏</th>
+<th>含义</th>
+<th>检测时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x4F</td>
+<td>POISON_INUSE</td>
+<td>对象正在使用，redzone 标记</td>
+<td>分配时填充</td>
+</tr>
+<tr>
+<td>0x6B</td>
+<td>POISON_FREE</td>
+<td>对象已释放，数据区填充</td>
+<td>释放时填充</td>
+</tr>
+<tr>
+<td>0x5A</td>
+<td>POISON_END</td>
+<td>最后一个对象的标记</td>
+<td>初始化时</td>
+</tr>
+<tr>
+<td>0xCC</td>
+<td>POISON_FREE (alt)</td>
+<td>某些架构使用</td>
+<td>释放时填充</td>
+</tr>
+</tbody>
+</table></div>
+<h2>查看和验证</h2>
+<pre class="code" data-label="shell"><code class="c"># 查看 slab 统计
+cat /sys/kernel/slab/kmalloc-128/objs_per_slab
+cat /sys/kernel/slab/kmalloc-128/slab_size
+cat /sys/kernel/slab/kmalloc-128/alloc_calls
+cat /sys/kernel/slab/kmalloc-128/free_calls
+
+# 触发完整性检查
+echo 1 &gt; /sys/kernel/slab/kmalloc-128/validate
+# 如果有错误，dmesg 会报告
+
+# 追踪分配/释放
+echo 1 &gt; /sys/kernel/slab/kmalloc-128/trace
+# 之后所有 kmalloc-128 的分配/释放都会在 dmesg 记录
+
+# 查看所有 slab cache
+cat /proc/slabinfo | sort -k3 -rn | head -20
+# 按活跃对象数排序
+</code></pre>
+<h2>SLUB debug 报告示例</h2>
+<pre class="code" data-label="code"><code class="c"># 越界检测报告
+[   12.345678] =============================================================================
+[   12.345680] BUG kmalloc-128: Redzone overwritten
+[   12.345682] INFO: 0xffff000012345688-0xffff00001234568f. First byte 0x61 instead of 0x4f
+[   12.345690] INFO: Slab 0xfffffd0001234000 objects=24 used=12 fp=0xffff000012345600 flags=0x2000000000102000
+[   12.345695] INFO: Object 0xffff000012345600 @offset=0 fp=0x0
+[   12.345700] Object 0xffff000012345600: 6b 6b 6b 6b 6b 6b 6b 6b ...
+</code></pre>
+<h2>SLUB debug vs KASAN</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>SLUB debug</th>
+<th>KASAN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>检测时机</td>
+<td>分配/释放时</td>
+<td>每次访问</td>
+</tr>
+<tr>
+<td>实时性</td>
+<td>延迟（下次操作时发现）</td>
+<td>即时</td>
+</tr>
+<tr>
+<td>精度</td>
+<td>redzone 粒度</td>
+<td>字节级</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>低</td>
+<td>高 (2-3x)</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>对象+redzone</td>
+<td>1/8 影子</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>轻量调试</td>
+<td>全面调试</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>HFT 开发环境 SLUB debug 使用策略：</p>
+<ol>
+<li><strong>开发期</strong>：<code class="c">slub_debug=FZP</code> 全局启用，配合 KASAN</li>
+<li><strong>注意冲突</strong>：KASAN 启用时不额外启用 SLUB redzone（F flag），但 Z（清零）和 T（追踪）仍可用</li>
+<li><strong>特定 cache</strong>：只对问题相关的 cache 启用，减少开销</li>
+<li><strong>生产不用</strong>：增加分配延迟，影响实时性</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 开发环境启动参数
+# slub_debug=FZP,kmalloc-128,kmalloc-256,kmalloc-512
+# 只对常用大小的 kmalloc cache 启用调试
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> SLUB debug 和 KASAN 都能检测越界，有什么区别？</p>
+<blockquote>
+<p>SLUB debug 在对象周围插入 redzone 字节，只能在分配/释放时检查 redzone 是否被破坏——是<strong>延迟检测</strong>（下次操作时发现）。KASAN 通过影子内存实时检查每次访问——是<strong>即时检测</strong>。KASAN 更精确但开销更大。SLUB debug 开销较小但检测能力有限。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">slub_debug=FZP</code> 中的 F/Z/P 分别有什么作用？</p>
+<blockquote>
+<p>F (Redzone/Fault): 在对象前后插入红区检测越界。Z (Zero): 分配时将对象清零。P (Poison): 释放时将对象填充毒值检测 UAF。三者组合提供基础的内存错误检测。T (Trace) 还可以追踪每个对象的分配/释放栈。</p>
+</blockquote>
+<p><strong>Q3:</strong> SLUB debug 的 redzone 如何检测越界访问？</p>
+<blockquote>
+<p>redzone 在每个 slab 对象前后填充特殊字节（如 0x4F）。如果代码越界写入，redzone 被破坏。下次 slab 操作（alloc/free）时检查 redzone 完整性，发现损坏报告越界。局限：只在 slab 操作时检测，不实时。KASAN 实时检测更可靠。</p>
+</blockquote>
+<p><strong>Q4:</strong> SLUB debug 和 KASAN 同时使用会冲突吗？</p>
+<blockquote>
+<p>会部分冲突。两者都在对象周围加 redzone，可能重复。推荐：KASAN 启用时不额外启用 SLUB debug redzone（CONFIG_SLUB_DEBUG 的 F flag）。但 SLUB debug 的 poisoning（Z flag）和 tracking（T flag）仍可与 KASAN 配合。</p>
+</blockquote>
+<p><strong>Q5:</strong> 如何只对特定 slab cache 启用 SLUB debug？</p>
+<blockquote>
+<p>使用 boot 参数 <code class="c">slub_debug=FZP,kmalloc-128</code>，只对 kmalloc-128 cache 启用调试。或运行时通过 sysfs：<code class="c">echo 1 &gt; /sys/kernel/slab/kmalloc-128/store_user</code>。这样可以减少非关键 cache 的调试开销。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch05 内存错误类型</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch05 kmemleak</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">5.5</div><h2>kmemleak：内核内存泄漏检测</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>kmemleak 类似用户空间的 valgrind——跟踪所有内核内存分配，定期扫描内存查找<strong>没有任何指针指向的已分配块</strong>（潜在的泄漏）。</p>
+<h2>启用 kmemleak</h2>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_DEBUG_KMEMLEAK=y
+
+# boot 参数控制扫描间隔
+# kmemleak=off      — 启动时关闭
+# kmemleak=on       — 启动时开启
+# 默认每 10 分钟扫描一次
+
+# 查看状态
+cat /sys/kernel/debug/kmemleak
+</code></pre>
+<h2>使用方法</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 手动触发扫描
+echo scan &gt; /sys/kernel/debug/kmemleak
+# 等待几秒让扫描完成
+
+# 2. 查看泄漏报告
+cat /sys/kernel/debug/kmemleak
+# 输出示例:
+# unreferenced object 0xffff000012345678 (size 128):
+#   comm &quot;my_module&quot;, pid 1234, jiffies 4294937000 (age 3600.000s)
+#   hex dump (first 32 bytes):
+#     00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+#   backtrace:
+#     [&lt;ffff800012345000&gt;] kmalloc_trace+0x28/0x40
+#     [&lt;ffff800012346000&gt;] my_init+0x48/0x200 [my_module]
+#     [&lt;ffff800012347000&gt;] do_one_initcall+0x60/0x2e0
+
+# 3. 清除已确认的泄漏（从报告中移除，不释放内存）
+echo clear &gt; /sys/kernel/debug/kmemleak
+
+# 4. 再次扫描确认是否真的泄漏
+echo scan &gt; /sys/kernel/debug/kmemleak
+sleep 5
+cat /sys/kernel/debug/kmemleak
+# 如果再次出现 → 真实泄漏（持续分配不释放）
+# 如果不再出现 → 一次性分配（不是泄漏）
+</code></pre>
+<h2>kmemleak 原理</h2>
+<pre class="code" data-label="code"><code class="c">1. 跟踪所有 kmalloc/vmalloc/alloc_pages 调用
+   - 记录地址、大小、分配栈
+   - 维护已分配内存的元数据列表
+
+2. 定期扫描内存
+   - 扫描所有全局变量、栈、寄存器中的指针值
+   - 如果某个已分配块的地址在扫描中被引用 → 不是泄漏
+   - 如果没有任何指针指向它 → 潜在泄漏
+
+3. 扫描范围
+   - 全局数据段 (.data, .bss)
+   - 所有任务的内核栈
+   - 所有 CPU 的寄存器（通过 IPI）
+   - 已分配的内存块内部（指针可能指向其他块）
+
+4. 误报处理
+   - 指针可能被混淆（如 XOR 加密）
+   - 指针可能存在但 kmemleak 未扫描到
+   - 用 kmemleak_not_leak() 手动标记非泄漏
+   - 用 kmemleak_ignore() 忽略特定地址
+</code></pre>
+<h2>API</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/kmemleak.h&gt;
+
+// 标记为非泄漏（误报）
+kmemleak_not_leak(ptr);
+
+// 忽略该地址（不追踪）
+kmemleak_ignore(ptr);
+
+// 手动注册分配（非标准分配器）
+kmemleak_alloc(ptr, size, min_count, gfp);
+
+// 手动注销释放
+kmemleak_free(ptr);
+
+// 标记为非泄漏，但继续追踪
+kmemleak_annotate(ptr);
+
+// 告诉 kmemleak 扫描这个区域内的指针
+kmemleak_scan_area(ptr, size, gfp);
+</code></pre>
+<h2>常见误报场景</h2>
+<pre class="code" data-label="C"><code class="c">// 1. 指针被修改/加密
+ptr = xor_encrypt(real_ptr, key);
+// kmemleak 扫描不到原始指针 → 误报
+
+// 2. 指针存储在设备寄存器映射的内存中
+ioremap_ptr = ioremap(PCI_BAR, size);
+// ioremap 的内存不在 kmemleak 扫描范围
+
+// 3. 通过 base + offset 计算访问
+char *base = kmalloc(1024, GFP_KERNEL);
+// 只存储 base+offset 的差值，不存储 base 本身
+u32 offset = some_value;
+base[offset] = 'x';
+// kmemleak 扫描不到 base 指针
+
+// 处理方法:
+kmemleak_not_leak(base);  // 标记为非泄漏
+</code></pre>
+<h2>HFT 关联</h2>
+<p>HFT 内核模块长时间运行（7×24），内存泄漏会导致 OOM：</p>
+<ol>
+<li><strong>开发期</strong>：定期 kmemleak 扫描，确保无泄漏</li>
+<li><strong>测试期</strong>：压力测试后扫描，检查长跑稳定性</li>
+<li><strong>生产期</strong>：非交易时段定时扫描（不实时，扫描时影响延迟）</li>
+<li><strong>误报处理</strong>：对已知的非泄漏调用 <code class="c">kmemleak_not_leak()</code></li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境 kmemleak 定时扫描
+# crontab: 每天凌晨 3 点扫描（非交易时段）
+0 3 * * * echo scan &gt; /sys/kernel/debug/kmemleak &amp;&amp; sleep 10 &amp;&amp; \
+    cat /sys/kernel/debug/kmemleak &gt;&gt; /var/log/kmemleak_$(date +\%Y\%m\%d).log
+
+# 开发期手动扫描
+echo scan &gt; /sys/kernel/debug/kmemleak
+sleep 5
+cat /sys/kernel/debug/kmemleak
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> kmemleak 如何判断内存是泄漏的？</p>
+<blockquote>
+<p>kmemleak 维护所有分配的列表。扫描时遍历所有可达内存（全局变量、栈、寄存器），收集所有看起来像指针的值。如果某分配块的地址未被任何指针引用，则判定为泄漏。原理类似垃圾回收的可达性分析。</p>
+</blockquote>
+<p><strong>Q2:</strong> kmemleak 的误报为什么常见？如何处理？</p>
+<blockquote>
+<p>如果指针被修改（如 XOR 加密指针）、存储在 kmemleak 不扫描的区域（如设备寄存器映射的内存）、或通过非标准方式引用（如 base+offset 计算），kmemleak 会误判为泄漏。处理方法：在代码中调用 <code class="c">kmemleak_not_leak(ptr)</code> 显式标记，或 <code class="c">kmemleak_ignore(ptr)</code> 忽略。</p>
+</blockquote>
+<p><strong>Q3:</strong> kmemleak 的扫描机制是什么？</p>
+<blockquote>
+<p>kmemleak 维护所有已分配内存的元数据（地址/大小/调用栈）。周期性扫描内存（包括栈、全局数据、页表），寻找指向已分配块的指针。如果没有任何指针引用某个分配块，判定为泄漏。类似 GC 的 mark-sweep 但只标记不回收。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么 kmemleak 不适合 HFT 运行时使用？</p>
+<blockquote>
+<p>kmemleak 扫描时需要遍历所有内存查找指针引用，扫描期间可能暂停内存分配（RCU 停顿），导致延迟毛刺。建议在非交易时段（如收盘后）手动触发扫描，而非默认的每 10 分钟自动扫描。</p>
+</blockquote>
+<p><strong>Q5:</strong> <code class="c">echo clear</code> 和 <code class="c">kmemleak_free()</code> 有什么区别？</p>
+<blockquote>
+<p><code class="c">echo clear</code> 是用户空间命令，从 kmemleak 报告中移除当前所有泄漏记录（但不释放内存）。用于清除已确认的"已知分配"，之后再次扫描只显示新增的泄漏。<code class="c">kmemleak_free()</code> 是代码中的 API，告诉 kmemleak 某块内存已被释放，应停止追踪。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch05 内存错误类型</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch06 KFENCE</a></li>
+</ul>
       </section>
 
 

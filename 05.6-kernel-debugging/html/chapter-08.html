@@ -276,6 +276,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-concurrency-bug-types</a>
+          <a href="#s-02"><span class="n">02</span>02-lockdep</a>
+          <a href="#s-03"><span class="n">03</span>03-lockdep-deadlock-detection</a>
+          <a href="#s-04"><span class="n">04</span>04-lock-stat</a>
+          <a href="#s-05"><span class="n">05</span>05-kcsan</a>
+          <a href="#s-06"><span class="n">06</span>06-rpi-lockdep-kcsan</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +305,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch8 Lock Debugging</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 8</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 8</b></span><span>sections <b>7</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +318,1232 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>精读。并发 bug 是内核中最难调的。LOCKDEP 在开发期能发现锁序问题，KCSAN 能检测无锁变量的数据竞争。HFT 自定义内核模块必须用 LOCKDEP 验证。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>并发 Bug 的类型</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 3: Diagnostics &amp; Advanced Tools</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>并发 Bug 分类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>描述</th>
+<th>后果</th>
+<th>检测工具</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>死锁</strong> (Deadlock)</td>
+<td>线程互相等待锁</td>
+<td>系统挂死</td>
+<td>LOCKDEP</td>
+<td>AB-BA 锁序反序</td>
+</tr>
+<tr>
+<td><strong>活锁</strong> (Livelock)</td>
+<td>线程不断重试但无法前进</td>
+<td>CPU 100% 但无进展</td>
+<td>观察</td>
+<td>退避算法冲突</td>
+</tr>
+<tr>
+<td><strong>数据竞争</strong> (Race)</td>
+<td>无同步的并发访问</td>
+<td>数据损坏</td>
+<td>KCSAN</td>
+<td>忘记加锁</td>
+</tr>
+<tr>
+<td><strong>优先级反转</strong></td>
+<td>低优先级持锁阻塞高优先级</td>
+<td>延迟飙升</td>
+<td>观察</td>
+<td>实时系统</td>
+</tr>
+</tbody>
+</table></div>
+<h3>死锁的四种类型</h3>
+<h4>1. AA 死锁（递归锁）</h4>
+<pre class="code" data-label="C"><code class="c">static DEFINE_SPINLOCK(my_lock);
+
+void func_a(void) {
+    spin_lock(&amp;my_lock);
+    func_b();        // func_b 也获取 my_lock
+    spin_unlock(&amp;my_lock);
+}
+
+void func_b(void) {
+    spin_lock(&amp;my_lock);  // AA 死锁! 同一线程再次获取
+    spin_unlock(&amp;my_lock);
+}
+// LOCKDEP 报告: possible recursive locking detected
+</code></pre>
+<h4>2. AB-BA 死锁（经典死锁）</h4>
+<pre class="code" data-label="C"><code class="c">static DEFINE_SPINLOCK(lock_a);
+static DEFINE_SPINLOCK(lock_b);
+
+// CPU0                    CPU1
+void thread1(void) {       void thread2(void) {
+    spin_lock(&amp;lock_a);        spin_lock(&amp;lock_b);
+    spin_lock(&amp;lock_b);  ←     spin_lock(&amp;lock_a);  ← 死锁!
+}                            }
+// LOCKDEP 报告: possible circular locking dependency detected
+</code></pre>
+<h4>3. AB-CA 死锁（环形死锁）</h4>
+<pre class="code" data-label="code"><code class="c">线程1: A → B
+线程2: B → C
+线程3: C → A   ← 形成环 A→B→C→A
+</code></pre>
+<h4>4. 中断-进程死锁</h4>
+<pre class="code" data-label="C"><code class="c">static DEFINE_SPINLOCK(my_lock);
+
+void my_function(void) {
+    spin_lock(&amp;my_lock);     // 进程上下文获取锁
+    // ... 此时中断发生 ...
+    // 中断处理函数也尝试获取 my_lock → 死锁!
+    spin_unlock(&amp;my_lock);
+}
+
+irqreturn_t my_irq_handler(int irq, void *dev) {
+    spin_lock(&amp;my_lock);     // 中断上下文也需要获取 → 死锁!
+    spin_unlock(&amp;my_lock);
+    return IRQ_HANDLED;
+}
+
+// 修复: 进程上下文用 spin_lock_irqsave() 禁用中断
+void my_function(void) {
+    unsigned long flags;
+    spin_lock_irqsave(&amp;my_lock, flags);  // 获取锁 + 禁用中断
+    spin_unlock_irqrestore(&amp;my_lock, flags);
+}
+</code></pre>
+<h3>活锁 (Livelock)</h3>
+<pre class="code" data-label="C"><code class="c">// 活锁: 两个线程不断退避但无法前进
+void thread1(void) {
+    while (!try_lock(&amp;lock_a)) {
+        backoff();
+        continue;
+    }
+    // 永远获取不到 lock_a
+}
+// 区别: 死锁时线程睡眠，活锁时线程运行（CPU 100%）
+</code></pre>
+<h3>数据竞争 (Race Condition)</h3>
+<pre class="code" data-label="C"><code class="c">// 数据竞争示例
+static int shared_counter = 0;
+
+void increment(void) { shared_counter++; }     // 非原子操作
+void decrement(void) { shared_counter--; }      // 并发执行 → 数据竞争
+
+// 修复 1: 原子操作
+static atomic_t shared_counter = ATOMIC_INIT(0);
+void increment(void) { atomic_inc(&amp;shared_counter); }
+
+// 修复 2: 自旋锁
+static DEFINE_SPINLOCK(counter_lock);
+void increment(void) {
+    spin_lock(&amp;counter_lock);
+    shared_counter++;
+    spin_unlock(&amp;counter_lock);
+}
+
+// 修复 3: READ_ONCE/WRITE_ONCE (接受非原子但消除编译器优化)
+int read_counter(void) { return READ_ONCE(shared_counter); }
+</code></pre>
+<h3>优先级反转 (Priority Inversion)</h3>
+<pre class="code" data-label="code"><code class="c">场景:
+  高优先级线程 H 需要锁 L
+  低优先级线程 L 持有锁 L
+  中优先级线程 M 抢占 L
+
+结果: H 等 L → L 被 M 抢占 → M 运行 → L 无法运行 → H 一直等
+
+解决: 优先级继承 (Priority Inheritance)
+  当 H 等待 L 的锁时，临时提升 L 的优先级到 H 的级别
+</code></pre>
+<h3>检测工具对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>检测类型</th>
+<th>原理</th>
+<th>开销</th>
+<th>生产可用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LOCKDEP</td>
+<td>死锁（锁序错误）</td>
+<td>构建锁依赖图，检测环</td>
+<td>~100-200ns/锁操作</td>
+<td>否</td>
+</tr>
+<tr>
+<td>lock_stat</td>
+<td>锁竞争</td>
+<td>统计等待/持有时间</td>
+<td>同 LOCKDEP</td>
+<td>否</td>
+</tr>
+<tr>
+<td>KCSAN</td>
+<td>数据竞争</td>
+<td>watchpoint + 延迟观察</td>
+<td>编译时插桩</td>
+<td>否</td>
+</tr>
+<tr>
+<td>DEBUG_ATOMIC_SLEEP</td>
+<td>原子上下文睡眠</td>
+<td>might_sleep() 检查</td>
+<td>极小</td>
+<td>可用</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<p>HFT 自定义内核模块最容易遇到的并发问题：</p>
+<ol>
+<li><strong>AA 死锁</strong>：回调函数中重复获取同一锁</li>
+<li><strong>中断-进程死锁</strong>：中断处理和进程上下文共用锁</li>
+<li><strong>数据竞争</strong>：统计计数器忘记用原子操作</li>
+<li><strong>锁竞争</strong>：高频率路径的 spinlock 争用导致延迟毛刺</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">// HFT 常见错误: 回调中重复加锁
+static DEFINE_SPINLOCK(trade_lock);
+
+void on_market_data(void) {
+    spin_lock(&amp;trade_lock);
+    update_order_book();   // 此函数内部又获取 trade_lock → AA 死锁
+    spin_unlock(&amp;trade_lock);
+}
+
+void update_order_book(void) {
+    spin_lock(&amp;trade_lock);  // AA 死锁!
+    spin_unlock(&amp;trade_lock);
+}
+
+// 修复: 拆分为 locked/unlocked 版本
+void update_order_book_locked(void) {
+    // 调用者已持锁
+}
+void update_order_book(void) {
+    spin_lock(&amp;trade_lock);
+    update_order_book_locked();
+    spin_unlock(&amp;trade_lock);
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> AA 死锁和 AB-BA 死锁哪个更容易被 LOCKDEP 检测？</p>
+<blockquote>
+<p>两者都能被 LOCKDEP 检测。AA 死锁在第二次获取同一锁时立即报告。AB-BA 死锁在 LOCKDEP 检测到锁序矛盾时报告。AA 更快被发现，因为不需要等待实际并发。</p>
+</blockquote>
+<p><strong>Q2:</strong> 内核并发 bug 的两大类是什么？分别用什么工具检测？</p>
+<blockquote>
+<p>(1) 死锁（deadlock）：AB-BA 锁序反序 → LOCKDEP。(2) 竞态（race）：缺乏同步的并发访问 → KCSAN。</p>
+</blockquote>
+<p><strong>Q3:</strong> 优先级反转和死锁有什么区别？</p>
+<blockquote>
+<p>死锁是线程互相等待锁，无法前进。优先级反转是低优先级线程持有高优先级线程需要的锁，中间优先级线程抢占低优先级线程，导致高优先级线程间接被阻塞。内核通过优先级继承（rt_mutex）解决。</p>
+</blockquote>
+<p><strong>Q4:</strong> 活锁和死锁有什么区别？</p>
+<blockquote>
+<p>死锁时线程阻塞睡眠（不消耗 CPU）。活锁时线程不断运行（CPU 100%）但无法前进——如两个线程不断退避重试但总是同时重试。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 模块中为什么 AA 死锁特别常见？</p>
+<blockquote>
+<p>HFT 模块常有回调机制（定时器回调、中断回调、网络数据回调）。如果回调函数调用的辅助函数也获取同一锁，就形成 AA 死锁。解决：拆分 <code class="c">_locked</code> 和 <code class="c">_unlocked</code> 版本的函数。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP 锁依赖检测器</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch08 LOCKDEP 死锁检测实践</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch08 KCSAN 数据竞争检测器</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>LOCKDEP：锁依赖检测器</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>LOCKDEP 是什么</h3>
+<p>LOCKDEP (Lock Dependency Detector) 是内核的运行时锁依赖分析器。它在每次锁获取/释放时记录锁的依赖关系，构建<strong>锁依赖图</strong>。如果图中出现环，说明存在潜在死锁。</p>
+<h3>工作原理</h3>
+<pre class="code" data-label="code"><code class="c">每次 lock_acquire() 时:
+  1. 记录当前 CPU 持有的锁链表
+  2. 对每个已持有的锁 A 和新获取的锁 B，添加依赖 A → B
+  3. 检查是否形成环: B → ... → A
+  4. 如果形成环 → 报告 &quot;possible circular locking dependency&quot;
+
+锁依赖图示例:
+  A → B  (持有 A 时获取 B)
+  B → C  (持有 B 时获取 C)
+  C → A  (持有 C 时获取 A)  ← 环! 报告死锁
+</code></pre>
+<h3>锁分类 (Lock Class)</h3>
+<p>LOCKDEP 按<strong>分类</strong>而非实例追踪依赖：</p>
+<pre class="code" data-label="C"><code class="c">// 每个 spinlock_init() / mutex_init() 创建新的 lock class
+// class 基于初始化代码的调用位置 (__LINE__)
+
+static DEFINE_SPINLOCK(lock1);  // class A
+static DEFINE_SPINLOCK(lock2);  // class B
+
+void init(void) {
+    spinlock_t lock3, lock4;
+    spin_lock_init(&amp;lock3);  // class C
+    spin_lock_init(&amp;lock4);  // class C (同一行 → 同一 class)
+    // lock3 和 lock4 共享同一 class C 的依赖关系
+}
+
+// 手动设置不同 class
+lockdep_set_class(&amp;lock4, &amp;my_key);
+</code></pre>
+<h3>启用 LOCKDEP</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_LOCKDEP=y
+CONFIG_LOCKDEP_SUPPORT=y
+CONFIG_PROVE_LOCKING=y     # 启用锁依赖检测
+CONFIG_LOCK_STAT=y         # 启用锁竞争统计
+
+# boot 参数
+# lockdep  — 启用
+# nolockdep — 禁用
+
+# 运行时控制
+echo 1 &gt; /proc/sys/kernel/lock_stat  # 启用统计
+echo 0 &gt; /proc/sys/kernel/lock_stat  # 禁用统计
+
+# 性能开销: 每次加锁额外 ~100-200ns，整体 slowdown ~2-5x
+</code></pre>
+<h3>LOCKDEP 报告示例</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] =====================================================
+[  123.456790] WARNING: possible circular locking dependency detected
+[  123.456795] -----------------------------------------------------
+[  123.456800] my_app/1234 is trying to acquire lock:
+[  123.456805]  ffff000012345678 (&amp;my_lock_b){+.+.}-{2:2}, at: func_b+0x1c/0x40
+[  123.456810]
+[  123.456815] but task is already holding lock:
+[  123.456820]  ffff000012345000 (&amp;my_lock_a){+.+.}-{2:2}, at: func_a+0x20/0x50
+[  123.456825]
+[  123.456830] which lock already depends on the new lock.
+[  123.456835]
+[  123.456840] the existing dependency chain (in reverse order) is:
+[  123.456845] -&gt; #1 (&amp;my_lock_a){+.+.}-{2:2}:
+[  123.456850]        lock_acquire+0x68/0xa0
+[  123.456855]        func_a+0x20/0x50
+[  123.456860] -&gt; #0 (&amp;my_lock_b){+.+.}-{2:2}:
+[  123.456865]        lock_acquire+0x68/0xa0
+[  123.456870]        func_b+0x1c/0x40
+[  123.456875]
+[  123.456880]  Possible unsafe locking scenario:
+[  123.456885]        CPU0                    CPU1
+[  123.456890]        ----                    ----
+[  123.456895]   lock(&amp;my_lock_a);
+[  123.456900]                                lock(&amp;my_lock_b);
+[  123.456905]                                lock(&amp;my_lock_a);
+[  123.456910]   lock(&amp;my_lock_b);  ← DEADLOCK!
+</code></pre>
+<h3>LOCKDEP 检测的问题类型</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>说明</th>
+<th>报告关键词</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Circular dependency</strong></td>
+<td>AB-BA 死锁</td>
+<td><code class="c">possible circular locking dependency</code></td>
+</tr>
+<tr>
+<td><strong>Reacquire</strong></td>
+<td>AA 死锁</td>
+<td><code class="c">possible recursive locking detected</code></td>
+</tr>
+<tr>
+<td><strong>IRQ lock inversion</strong></td>
+<td>进程和中断上下文锁序冲突</td>
+<td><code class="c">inconsistent lock state</code></td>
+</tr>
+<tr>
+<td><strong>Lock used after free</strong></td>
+<td>释放后继续使用锁</td>
+<td><code class="c">lock used after free</code></td>
+</tr>
+<tr>
+<td><strong>Scheduling while atomic</strong></td>
+<td>spinlock 中睡眠</td>
+<td><code class="c">scheduling while atomic</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>锁状态标志</h3>
+<pre class="code" data-label="code"><code class="c">(&amp;my_lock_b){+.+.}-{2:2}
+         || ||
+         || |+-- softirq context
+         || +--- hardirq context
+         |+---- reclaim context
+         +----- process context
+
++ = 曾在此上下文中获取
+- = 未在此上下文中获取
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="C"><code class="c">// HFT 模块中用 lockdep_assert 验证锁状态
+void update_order_book_locked(struct order_book *ob) {
+    lockdep_assert_held(&amp;ob-&gt;lock);  // 运行时断言
+    // 如果调用时未持有锁 → LOCKDEP 报告
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> LOCKDEP 能检测尚未实际发生的死锁吗？</p>
+<blockquote>
+<p>能。LOCKDEP 构建全局锁依赖图，只要两个线程执行了相反的锁顺序（即使没有同时执行），LOCKDEP 就会报告。这比等死锁实际发生再检测更安全。</p>
+</blockquote>
+<p><strong>Q2:</strong> LOCKDEP 的锁分类 (lock class) 是什么概念？</p>
+<blockquote>
+<p>每个 <code class="c">spinlock_init()</code> / <code class="c">mutex_init()</code> 创建一个新的锁分类。LOCKDEP 按分类而非实例追踪依赖——同一分类的多个实例共享同一依赖关系。用 <code class="c">lockdep_set_class()</code> 可以为同一实例设置不同分类。</p>
+</blockquote>
+<p><strong>Q3:</strong> LOCKDEP 报告 "possible circular locking dependency" 但程序正常运行，这正常吗？</p>
+<blockquote>
+<p>正常。LOCKDEP 检测的是<strong>潜在</strong>死锁——两个线程执行了相反的锁序，即使它们没有同时执行。应该立即修复，不要等到生产环境死锁。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">lockdep_assert_held()</code> 有什么用？</p>
+<blockquote>
+<p>运行时断言当前线程持有指定锁。如果调用时未持有锁，LOCKDEP 报告错误。用于在代码中明确函数的锁前提条件。零开销（CONFIG_LOCKDEP=n 时编译为空）。</p>
+</blockquote>
+<p><strong>Q5:</strong> LOCKDEP 的 lock class 基于什么创建？</p>
+<blockquote>
+<p>基于初始化代码的调用位置（<code class="c">__LINE__</code>）。同一行代码初始化的多个锁实例共享同一 class。静态定义的锁（<code class="c">DEFINE_SPINLOCK</code>）各自有独立的 class。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch08 并发 Bug 类型</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch08 LOCKDEP 死锁检测实践</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch08 lock_stat 锁竞争统计</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch08 树莓派启用 LOCKDEP/KCSAN</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>用 LOCKDEP 发现潜在死锁</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>案例一：中断上下文死锁</h3>
+<pre class="code" data-label="C"><code class="c">static DEFINE_SPINLOCK(my_lock);
+
+void my_function(void) {
+    spin_lock(&amp;my_lock);    // 进程上下文获取
+    // ... 此时中断发生 ...
+    spin_unlock(&amp;my_lock);
+}
+
+irqreturn_t my_irq_handler(int irq, void *dev) {
+    spin_lock(&amp;my_lock);    // 中断上下文也需要获取 → 死锁!
+    spin_unlock(&amp;my_lock);
+    return IRQ_HANDLED;
+}
+// LOCKDEP 报告: inconsistent lock state
+</code></pre>
+<p>修复：</p>
+<pre class="code" data-label="C"><code class="c">void my_function(void) {
+    unsigned long flags;
+    spin_lock_irqsave(&amp;my_lock, flags);  // 获取锁 + 禁用中断
+    spin_unlock_irqrestore(&amp;my_lock, flags);
+}
+</code></pre>
+<h3>案例二：锁序矛盾</h3>
+<pre class="code" data-label="C"><code class="c">static DEFINE_SPINLOCK(lock_a);
+static DEFINE_SPINLOCK(lock_b);
+
+void func1(void) {
+    spin_lock(&amp;lock_a);
+    spin_lock(&amp;lock_b);  // A → B
+    spin_unlock(&amp;lock_b);
+    spin_unlock(&amp;lock_a);
+}
+
+void func2(void) {
+    spin_lock(&amp;lock_b);
+    spin_lock(&amp;lock_a);  // B → A  ← 与 A → B 矛盾!
+    spin_unlock(&amp;lock_a);
+    spin_unlock(&amp;lock_b);
+}
+// LOCKDEP 报告: possible circular locking dependency
+</code></pre>
+<p>修复：全局统一锁序，所有地方都先 A 后 B。</p>
+<h3>案例三：spinlock 中睡眠</h3>
+<pre class="code" data-label="C"><code class="c">void bad_function(void) {
+    spin_lock(&amp;my_lock);
+    kmem_cache_alloc(cache, GFP_KERNEL);  // 可能睡眠!
+    copy_from_user(...);                    // 可能睡眠!
+    msleep(1);                              // 必然睡眠!
+    spin_unlock(&amp;my_lock);
+}
+// LOCKDEP 报告: scheduling while atomic
+</code></pre>
+<p>修复：</p>
+<pre class="code" data-label="C"><code class="c">// 修复 1: 改用 mutex
+static DEFINE_MUTEX(my_mutex);
+void good_function(void) {
+    mutex_lock(&amp;my_mutex);
+    kmem_cache_alloc(cache, GFP_KERNEL);  // 安全
+    mutex_unlock(&amp;my_mutex);
+}
+
+// 修复 2: spinlock 中使用 GFP_ATOMIC
+void good_function2(void) {
+    spin_lock(&amp;my_lock);
+    ptr = kmem_cache_alloc(cache, GFP_ATOMIC);  // 不睡眠
+    spin_unlock(&amp;my_lock);
+}
+</code></pre>
+<h3>修复模式总结</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>修复</th>
+<th>代码示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断-进程死锁</td>
+<td><code class="c">spin_lock_irqsave()</code></td>
+<td><code class="c">spin_lock_irqsave(&amp;lock, flags)</code></td>
+</tr>
+<tr>
+<td>锁序矛盾</td>
+<td>全局统一锁获取顺序</td>
+<td>所有路径都 A→B</td>
+</tr>
+<tr>
+<td>AA 死锁</td>
+<td>拆分 locked/unlocked 函数</td>
+<td><code class="c">_locked()</code> 版本不加锁</td>
+</tr>
+<tr>
+<td>spinlock 中睡眠</td>
+<td>改用 mutex 或 GFP_ATOMIC</td>
+<td><code class="c">mutex_lock()</code> 或 <code class="c">GFP_ATOMIC</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>spin_lock 变体选择指南</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>中断</th>
+<th>软中断</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spin_lock()</code></td>
+<td>不禁</td>
+<td>不禁</td>
+<td>锁不用于中断/软中断</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock_bh()</code></td>
+<td>不禁</td>
+<td>禁</td>
+<td>锁用于软中断</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock_irq()</code></td>
+<td>禁</td>
+<td>禁(间接)</td>
+<td>锁用于硬中断</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock_irqsave()</code></td>
+<td>禁+保存</td>
+<td>禁(间接)</td>
+<td><strong>推荐</strong>：不确定时用</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="C"><code class="c">// HFT 模块中典型的锁序冲突
+// 数据路径: 网卡IRQ → trade_engine → order_book
+// 控制路径: ioctl → trade_engine → order_book
+
+static DEFINE_SPINLOCK(trade_lock);
+static DEFINE_SPINLOCK(control_lock);
+
+// 数据路径: trade_lock → control_lock
+void on_market_data(void) {
+    spin_lock(&amp;trade_lock);
+    spin_lock(&amp;control_lock);  // trade → control
+    spin_unlock(&amp;control_lock);
+    spin_unlock(&amp;trade_lock);
+}
+
+// 控制路径: 反序!
+void on_ioctl(void) {
+    spin_lock(&amp;control_lock);
+    spin_lock(&amp;trade_lock);    // control → trade ← 死锁!
+}
+
+// 修复: 统一为 trade → control 顺序
+void on_ioctl(void) {
+    spin_lock(&amp;trade_lock);     // 改为先 trade
+    spin_lock(&amp;control_lock);   // 后 control
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> <code class="c">spin_lock_irqsave()</code> 如何避免中断-进程死锁？</p>
+<blockquote>
+<p><code class="c">spin_lock_irqsave()</code> 在获取自旋锁的同时禁用当前 CPU 的中断（保存中断状态到 flags）。这样在持有锁期间不会发生中断，中断处理函数不会尝试获取同一锁。</p>
+</blockquote>
+<p><strong>Q2:</strong> 为什么内核不提供递归自旋锁来解决 AA 死锁？</p>
+<blockquote>
+<p>递归锁需要记录持有者和递归计数，增加开销。自旋锁设计为极低开销（通常 1-2 条原子指令），递归锁的开销违背了这一目标。内核要求开发者通过正确的代码结构避免重入。</p>
+</blockquote>
+<p><strong>Q3:</strong> LOCKDEP 如何检测 "在 spinlock 中睡眠" 的 bug？</p>
+<blockquote>
+<p>LOCKDEP 维护当前 CPU 持有的锁链表。当调用 <code class="c">might_sleep()</code> 时，LOCKDEP 检查当前是否持有 spinlock，如果是则报告 "scheduling while atomic"。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">spin_lock_bh()</code> 和 <code class="c">spin_lock_irqsave()</code> 什么时候分别使用？</p>
+<blockquote>
+<p><code class="c">spin_lock_bh()</code> 禁用软中断，适合锁只在进程上下文和软中断中使用。<code class="c">spin_lock_irqsave()</code> 禁用硬中断，适合锁在硬中断中也使用。不确定时用 <code class="c">spin_lock_irqsave()</code>。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 模块中如何避免锁序冲突？</p>
+<blockquote>
+<p>(1) 定义全局锁获取顺序；(2) 用 <code class="c">lockdep_assert_held()</code> 验证锁状态；(3) staging 环境启用 LOCKDEP 做压力测试；(4) 尽量减少锁嵌套，用无锁数据结构（如 RCU）替代。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch08 并发 Bug 类型</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP 锁依赖检测器</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch08 lock_stat 锁竞争统计</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>lock_stat：锁竞争统计</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>lock_stat 功能</h3>
+<p>LOCKDEP 除了检测死锁，还能统计锁的<strong>竞争情况</strong>：等待时间、持有时间、争用次数。这些数据帮助开发者识别锁瓶颈。</p>
+<h3>启用 lock_stat</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_LOCK_STAT=y
+
+# 运行时控制
+echo 1 &gt; /proc/sys/kernel/lock_stat   # 启用
+echo 0 &gt; /proc/sys/kernel/lock_stat   # 禁用/重置
+</code></pre>
+<h3>查看锁统计</h3>
+<pre class="code" data-label="shell"><code class="c">cat /proc/lock_stat
+#                               class name    con-bounces  contentions  waittime-min  waittime-max  waittime-total  acq-bounces  acquisitions  holdtime-min  holdtime-max  holdtime-total
+#                               &amp;my_lock_b             15           12          0.12         15.34          123.45           45          234           0.10          5.67           89.12
+</code></pre>
+<h3>关键指标详解</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>含义</th>
+<th>优化目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">contentions</code></td>
+<td>争用次数（获取时被阻塞）</td>
+<td>越低越好</td>
+</tr>
+<tr>
+<td><code class="c">waittime-min</code></td>
+<td>最小等待时间</td>
+<td>参考值</td>
+</tr>
+<tr>
+<td><code class="c">waittime-max</code></td>
+<td>最大单次等待时间</td>
+<td>越低越好</td>
+</tr>
+<tr>
+<td><code class="c">waittime-total</code></td>
+<td>总等待时间</td>
+<td>越低越好</td>
+</tr>
+<tr>
+<td><code class="c">holdtime-min</code></td>
+<td>最小持有时间</td>
+<td>参考值</td>
+</tr>
+<tr>
+<td><code class="c">holdtime-max</code></td>
+<td>最大持有时间</td>
+<td>越低越好</td>
+</tr>
+<tr>
+<td><code class="c">holdtime-total</code></td>
+<td>总持有时间</td>
+<td>越低越好</td>
+</tr>
+<tr>
+<td><code class="c">acquisitions</code></td>
+<td>总获取次数</td>
+<td>参考值</td>
+</tr>
+<tr>
+<td><code class="c">con-bounces</code></td>
+<td>争用跳转次数（CPU间迁移）</td>
+<td>越低越好</td>
+</tr>
+</tbody>
+</table></div>
+<h3>wait time vs hold time</h3>
+<pre class="code" data-label="code"><code class="c">wait time: 线程试图获取锁到实际获取锁的时间
+  → 高 wait time = 锁竞争激烈
+
+hold time: 线程获取锁到释放锁的时间
+  → 高 hold time = 临界区太大
+
+优化策略:
+  wait time 高 → 减少锁获取频率或改用细粒度锁
+  hold time 高 → 缩小临界区
+</code></pre>
+<h3>识别问题锁</h3>
+<pre class="code" data-label="shell"><code class="c"># 找出争用最严重的锁
+cat /proc/lock_stat | sort -k4 -rn | head -10
+
+# 找出等待时间最长的锁
+cat /proc/lock_stat | sort -k6 -rn | head -10
+
+# 找出单次等待最长的锁
+cat /proc/lock_stat | sort -k5 -rn | head -10
+</code></pre>
+<h3>优化策略</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>症状</th>
+<th>优化方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高争用</td>
+<td>contentions 高</td>
+<td>缩短临界区 / per-CPU 数据 / RCU</td>
+</tr>
+<tr>
+<td>高等待</td>
+<td>waittime-max 高</td>
+<td>减少持锁频率 / 改用读写锁</td>
+</tr>
+<tr>
+<td>高持有</td>
+<td>holdtime-max 高</td>
+<td>缩小临界区 / 延迟非关键操作</td>
+</tr>
+<tr>
+<td>高跳转</td>
+<td>con-bounces 高</td>
+<td>per-CPU 锁 / 减少跨 CPU 共享</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">// 优化前: 全局 spinlock，高争用
+static DEFINE_SPINLOCK(counter_lock);
+void inc_counter(int cpu) {
+    spin_lock(&amp;counter_lock);      // 所有 CPU 争用同一锁
+    counters[cpu]++;
+    spin_unlock(&amp;counter_lock);
+}
+
+// 优化 1: per-CPU 数据（无锁）
+static DEFINE_PER_CPU(int, counter);
+void inc_counter(void) {
+    this_cpu_inc(counter);  // 无锁，原子操作
+}
+
+// 优化 2: 读写锁（读多写少）
+static DEFINE_RWLOCK(counter_rwlock);
+void read_counters(void) {
+    read_lock(&amp;counter_rwlock);   // 多个读者可并发
+    read_unlock(&amp;counter_rwlock);
+}
+
+// 优化 3: RCU（读多写极少）
+static struct counters __rcu *counters_ptr;
+void read_counters(void) {
+    rcu_read_lock();
+    ptr = rcu_dereference(counters_ptr);  // 无锁读
+    rcu_read_unlock();
+}
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT staging 环境收集锁统计
+echo 1 &gt; /proc/sys/kernel/lock_stat
+./run_trading_benchmark --duration 60
+cat /proc/lock_stat &gt; /tmp/lock_stat_after_benchmark.txt
+
+# 找出 waittime-max &gt; 1.0 (1微秒) 的锁
+awk 'NR&gt;2 &amp;&amp; $5 &gt; 1.0 {print $1, &quot;waittime-max:&quot;, $5}' /tmp/lock_stat_after_benchmark.txt
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 如何从 lock_stat 输出中判断一个锁是否需要优化？</p>
+<blockquote>
+<p>看 contentions 和 waittime-max。如果 contentions 高且 waittime-max 超过可接受阈值（如 HFT 中 &gt; 1μs），需要优化：缩短临界区、改用 RCU、改用 per-CPU 数据。</p>
+</blockquote>
+<p><strong>Q2:</strong> lock_stat 的开销有多大？能用于生产环境吗？</p>
+<blockquote>
+<p>需要 LOCKDEP 支持，每次加锁/解锁额外 ~100-200ns 开销，整体 slowdown 约 3-8x。不适合生产环境。应在 staging 环境用压力测试模拟生产负载。</p>
+</blockquote>
+<p><strong>Q3:</strong> "hold time" 和 "wait time" 分别反映什么问题？</p>
+<blockquote>
+<p>hold time 长 → 锁内临界区太大，应缩小。wait time 长 → 锁竞争激烈，应减少持锁频率或改用更细粒度的锁。HFT 关注 wait time——高 wait time 意味着交易线程可能在等锁。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">con-bounces</code> 指标反映了什么问题？</p>
+<blockquote>
+<p>表示锁在不同 CPU 间迁移的次数。高 con-bounces 意味着锁在多个 CPU 间频繁弹跳，导致 cache line 失效。解决：用 per-CPU 数据结构避免跨 CPU 共享。</p>
+</blockquote>
+<p><strong>Q5:</strong> per-CPU 计数器为什么比全局原子操作更快？</p>
+<blockquote>
+<p>per-CPU 变量每个 CPU 有独立副本，写入只操作本地 CPU 的 cache line，不会导致跨 CPU 的 cache line 弹跳。全局原子操作每次写都使其他 CPU 的 cache line 失效。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP 锁依赖检测器</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch08 并发 Bug 类型</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch08 树莓派启用 LOCKDEP/KCSAN</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>KCSAN：数据竞争检测器</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>KCSAN 是什么</h3>
+<p>KCSAN (Kernel Concurrency SANitizer) 检测<strong>无锁的数据竞争</strong>——两个线程并发访问同一变量且至少一个是写操作，没有同步机制保护。与 LOCKDEP 互补。</p>
+<h3>工作原理</h3>
+<pre class="code" data-label="code"><code class="c">KCSAN 使用 watchpoint 机制:
+1. 在变量访问前设置 watchpoint（记录地址和当前值）
+2. 延迟一小段时间（让其他 CPU 有机会并发访问）
+3. 重新检查变量值
+4. 如果值变了且没有同步 → 数据竞争!
+
+延迟时间: udelay_task=80μs, udelay_irq=80μs
+</code></pre>
+<h3>KCSAN vs KASAN</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>KCSAN</th>
+<th>KASAN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>检测目标</td>
+<td>数据竞争（并发访问）</td>
+<td>内存错误（越界/use-after-free）</td>
+</tr>
+<tr>
+<td>需要并发</td>
+<td>是（需要多线程触发）</td>
+<td>否（单线程即可）</td>
+</tr>
+<tr>
+<td>插桩方式</td>
+<td>编译时插桩</td>
+<td>编译时插桩</td>
+</tr>
+</tbody>
+</table></div>
+<h3>启用 KCSAN</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_KCSAN=y
+CONFIG_KCSAN_STRICT=y              # 严格模式
+CONFIG_KCSAN_REPORT_ONCE_PER_MS=1000  # 每秒最多报告1次同类
+
+# boot 参数
+# kcsan.udelay_task=80     — 任务上下文延迟 (微秒)
+# kcsan.udelay_irq=80      — 中断上下文延迟
+# kcsan.skip_watch=4000    — 每 N 次访问检查一次
+</code></pre>
+<h3>KCSAN 报告示例</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] ==================================================================
+[  123.456790] BUG: KCSAN: data-race in my_counter_increment / my_counter_read
+[  123.456800] write to 0xffff000012345678 of 4 bytes by task 1234 on cpu 0:
+[  123.456805]  my_counter_increment+0x1c/0x30
+[  123.456810]  my_timer_callback+0x28/0x50
+[  123.456825] read to 0xffff000012345678 of 4 bytes by task 5678 on cpu 2:
+[  123.456830]  my_counter_read+0x10/0x20
+[  123.456835]  my_ioctl+0x48/0x100
+</code></pre>
+<h3>修复数据竞争</h3>
+<pre class="code" data-label="C"><code class="c">// 错误: 无同步的共享变量
+static int my_counter;
+void increment(void) { my_counter++; }      // 数据竞争!
+
+// 修复 1: 原子操作 (推荐)
+static atomic_t my_counter = ATOMIC_INIT(0);
+void increment(void) { atomic_inc(&amp;my_counter); }
+int read_counter(void) { return atomic_read(&amp;my_counter); }
+
+// 修复 2: 自旋锁
+static DEFINE_SPINLOCK(counter_lock);
+void increment(void) {
+    spin_lock(&amp;counter_lock);
+    my_counter++;
+    spin_unlock(&amp;counter_lock);
+}
+
+// 修复 3: READ_ONCE / WRITE_ONCE (接受非原子性)
+int read_counter(void) { return READ_ONCE(my_counter); }
+void increment(void) {
+    WRITE_ONCE(my_counter, READ_ONCE(my_counter) + 1);
+}
+// KCSAN 不会报告 READ_ONCE/WRITE_ONCE 对之间的竞争
+</code></pre>
+<h3>READ_ONCE / WRITE_ONCE 详解</h3>
+<pre class="code" data-label="C"><code class="c">// 作用:
+// 1. 防止编译器优化（合并多次读/写、推测性读）
+// 2. 告诉 KCSAN &quot;我知道这里有竞争，这是设计如此&quot;
+// 3. 不保证原子性（仍可能读到中间值）
+
+// 适用: 轮询标志位、统计计数器、RCU 保护的数据读取
+// 不适用: 需要精确计数、多字段一致性
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="C"><code class="c">// HFT 模块中常见的数据竞争场景
+
+// 场景 1: 统计计数器（用 per-CPU）
+static DEFINE_PER_CPU(u64, packets_received);
+void on_packet(void) {
+    this_cpu_inc(packets_received);  // 无竞争
+}
+
+// 场景 2: 序列号（用 atomic）
+static atomic64_t seq_num = ATOMIC64_INIT(0);
+u64 get_seq(void) { return atomic64_inc_return(&amp;seq_num); }
+
+// 场景 3: 配置标志（用 READ_ONCE/WRITE_ONCE）
+static bool reload_flag = false;
+void trigger_reload(void) { WRITE_ONCE(reload_flag, true); }
+bool check_reload(void) { return READ_ONCE(reload_flag); }
+
+// 场景 4: 共享数据结构（用 RCU 或锁）
+static struct config __rcu *current_config;
+void update_config(struct config *new) {
+    old = rcu_dereference_protected(current_config, ...);
+    rcu_assign_pointer(current_config, new);
+    synchronize_rcu();
+    kfree(old);
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> KCSAN 和 LOCKDEP 检测的并发问题有什么区别？</p>
+<blockquote>
+<p>LOCKDEP 检测<strong>有锁但锁序错误</strong>的问题（死锁）。KCSAN 检测<strong>完全无锁</strong>的数据竞争。LOCKDEP 需要开发者使用了锁，KCSAN 能发现开发者忘记加锁的地方。两者互补。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">READ_ONCE()</code> / <code class="c">WRITE_ONCE()</code> 如何消除 KCSAN 报告？</p>
+<blockquote>
+<p>KCSAN 不会报告 <code class="c">READ_ONCE()</code> 和 <code class="c">WRITE_ONCE()</code> 之间的竞争——内核社区认为通过标记的访问是有意为之的无锁读取。但不保证原子性。</p>
+</blockquote>
+<p><strong>Q3:</strong> KCSAN 如何检测 "已经加了锁但仍有数据竞争" 的情况？</p>
+<blockquote>
+<p>如果加了锁但用了错误的锁（如读路径用 spinlock 保护但写路径忘了加锁），KCSAN 仍会报告。LOCKDEP 只看锁的顺序不看数据访问，无法发现这种"部分加锁"的 bug。</p>
+</blockquote>
+<p><strong>Q4:</strong> HFT 模块中什么时候用 atomic_t vs READ_ONCE/WRITE_ONCE vs spinlock？</p>
+<blockquote>
+<p>(1) <code class="c">atomic_t</code>：需要精确计数（如序号、引用计数）。(2) <code class="c">READ_ONCE/WRITE_ONCE</code>：偶尔丢更新可接受（如统计计数器）。(3) <code class="c">spinlock</code>：需要保护多个相关变量。(4) <code class="c">RCU</code>：读多写少的数据结构。</p>
+</blockquote>
+<p><strong>Q5:</strong> KCSAN 的工作原理是什么？</p>
+<blockquote>
+<p>使用 watchpoint 机制：(1) 在变量访问前设置 watchpoint 记录地址和当前值；(2) 延迟一小段时间让其他 CPU 有机会并发访问；(3) 重新检查变量值；(4) 如果值变了且没有同步机制 → 报告数据竞争。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch08 并发 Bug 类型</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP 锁依赖检测器</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch08 树莓派启用 LOCKDEP/KCSAN</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-06">
+        <div class="sec-head"><div class="sec-no">06</div><h2>在树莓派上启用 LOCKDEP / KCSAN</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>树莓派 5 内核配置</h3>
+<pre class="code" data-label="shell"><code class="c"># 获取树莓派内核源码
+git clone https://github.com/raspberrypi/linux.git
+cd linux
+git checkout rpi-6.1.y
+
+# 基础配置
+make ARCH=arm64 bcm2712_defconfig
+
+# 启用调试选项
+./scripts/config --enable DEBUG_INFO
+./scripts/config --enable DEBUG_INFO_DWARF5
+./scripts/config --enable LOCKDEP
+./scripts/config --enable LOCK_STAT
+./scripts/config --enable KASAN
+./scripts/config --enable KCSAN
+./scripts/config --enable SLUB_DEBUG
+./scripts/config --enable DEBUG_LIST
+./scripts/config --enable DEBUG_SG
+./scripts/config --enable PROVE_LOCKING
+./scripts/config --enable DEBUG_ATOMIC_SLEEP
+
+make ARCH=arm64 olddefconfig
+
+# 编译
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image dtbs modules
+</code></pre>
+<h3>验证调试选项</h3>
+<pre class="code" data-label="shell"><code class="c">zcat /proc/config.gz | grep -E &quot;LOCKDEP|KASAN|KCSAN|SLUB_DEBUG&quot;
+# CONFIG_LOCKDEP=y
+# CONFIG_KASAN=y
+# CONFIG_KCSAN=y
+# CONFIG_SLUB_DEBUG=y
+
+cat /proc/lock_stat  # 如果存在则 LOCKDEP 启用
+dmesg | grep -i kasan  # KernelAddressSanitizer initialized
+dmesg | grep -i kcsan  # KCSAN: initialized
+</code></pre>
+<h3>各工具的内存和性能开销</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>内存开销</th>
+<th>性能开销</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LOCKDEP</td>
+<td>~10-50MB</td>
+<td>~2-5x slowdown</td>
+<td>锁序检测</td>
+</tr>
+<tr>
+<td>lock_stat</td>
+<td>同 LOCKDEP</td>
+<td>~3-8x slowdown</td>
+<td>锁竞争分析</td>
+</tr>
+<tr>
+<td>KASAN</td>
+<td>~1/8 物理内存</td>
+<td>~2-3x slowdown</td>
+<td>内存错误检测</td>
+</tr>
+<tr>
+<td>KCSAN</td>
+<td>~10-20MB</td>
+<td>~1.5-2x slowdown</td>
+<td>数据竞争检测</td>
+</tr>
+<tr>
+<td>全部启用</td>
+<td>~512MB+</td>
+<td>~5-10x slowdown</td>
+<td>完整调试</td>
+</tr>
+</tbody>
+</table></div>
+<h3>树莓派 5 资源评估</h3>
+<pre class="code" data-label="shell"><code class="c"># 树莓派 5 (4GB)
+物理内存: 4GB
+  - KASAN 影子内存: ~512MB (1/8)
+  - 内核镜像 + 模块: ~200-300MB (带 DEBUG_INFO)
+  - 用户空间可用: ~3.2GB
+  → 足够运行调试内核 + 测试程序
+
+# 树莓派 5 (8GB) 更宽裕
+</code></pre>
+<h3>调试选项组合推荐</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>启用选项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开发阶段</td>
+<td>LOCKDEP + KASAN + KCSAN</td>
+<td>全面检测</td>
+</tr>
+<tr>
+<td>锁调试</td>
+<td>LOCKDEP + lock_stat + PROVE_LOCKING</td>
+<td>专注锁问题</td>
+</tr>
+<tr>
+<td>内存调试</td>
+<td>KASAN + SLUB_DEBUG + kmemleak</td>
+<td>专注内存问题</td>
+</tr>
+<tr>
+<td>HFT staging</td>
+<td>LOCKDEP + KCSAN</td>
+<td>检测并发问题</td>
+</tr>
+<tr>
+<td>生产环境</td>
+<td>无调试选项</td>
+<td>性能优先</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Boot 参数调试</h3>
+<pre class="code" data-label="shell"><code class="c"># /boot/cmdline.txt
+console=serial0,115200 console=tty1 lockdep nokaslr panic_on_oops=1 panic=5
+</code></pre>
+<h3>注意事项</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>说明</th>
+<th>解决方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存需求</td>
+<td>KASAN 需要 ~512MB 影子内存</td>
+<td>树莓派 5 (4GB+) 可以</td>
+</tr>
+<tr>
+<td>性能影响</td>
+<td>全部启用 slowdown ~5-10x</td>
+<td>仅开发/staging 使用</td>
+</tr>
+<tr>
+<td>编译时间</td>
+<td>DEBUG_INFO 增加编译时间</td>
+<td>首次约 30-60 分钟</td>
+</tr>
+<tr>
+<td>镜像大小</td>
+<td>DEBUG_INFO 使 Image 增大约 10 倍</td>
+<td>保留 vmlinux 在编译机</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT staging 环境的树莓派调试配置
+# /boot/cmdline.txt
+console=serial0,115200 lockdep nokaslr panic_on_oops=1 panic=5
+
+# /etc/sysctl.d/99-hft-debug.conf
+kernel.lock_stat = 1
+kernel.panic_on_oops = 1
+kernel.panic = 5
+</code></pre>
+<h3>树莓派 vs QEMU 调试</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方面</th>
+<th>树莓派 5</th>
+<th>QEMU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>硬件精度</td>
+<td>真实硬件</td>
+<td>模拟</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>真实（慢但可信）</td>
+<td>快但可能不精确</td>
+</tr>
+<tr>
+<td>GDB 调试</td>
+<td>KGDB over UART</td>
+<td>QEMU 内置 GDB</td>
+</tr>
+<tr>
+<td>推荐</td>
+<td>最终验证</td>
+<td>快速迭代</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> KASAN 和 LOCKDEP 能同时启用吗？有什么影响？</p>
+<blockquote>
+<p>可以同时启用，且推荐在开发阶段同时启用。检测维度不同，同时启用的 slowdown 是叠加的（~5-10x），不适合生产环境。</p>
+</blockquote>
+<p><strong>Q2:</strong> 树莓派 5 启用 KASAN 需要注意什么？</p>
+<blockquote>
+<p>KASAN 影子内存占用 1/8 的物理内存。树莓派 5 (4GB) 需要约 512MB 影子内存。建议使用 8GB+ SD 卡。</p>
+</blockquote>
+<p><strong>Q3:</strong> 在树莓派上做内核锁调试，硬件有什么限制？</p>
+<blockquote>
+<p>(1) 4 核够用但性能有限；(2) 没有 JTAG，依赖 KGDB over UART；(3) SD 卡 I/O 慢，建议用 USB SSD。</p>
+</blockquote>
+<p><strong>Q4:</strong> 树莓派调试内核为什么建议禁用 KASLR？</p>
+<blockquote>
+<p>KASLR 使内核加载到随机地址，分析 Oops 时需要计算偏移。调试时禁用 KASLR (<code class="c">nokaslr</code>) 简化地址解析。生产环境应启用 KASLR。</p>
+</blockquote>
+<p><strong>Q5:</strong> 树莓派和 QEMU 在内核调试中各自的优劣势？</p>
+<blockquote>
+<p>树莓派：真实硬件，外设精确，适合最终验证；但编译慢、部署繁琐。QEMU：快速迭代、内置 GDB；但硬件模拟可能不精确。推荐：QEMU 快速迭代 → 树莓派最终验证。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP 锁依赖检测器</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch08 KCSAN 数据竞争检测器</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN 内存检测</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch11 KGDB UART 调试</a></li>
+</ul>
       </section>
 
 

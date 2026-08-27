@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-page-table-tlb</a>
+          <a href="#s-02"><span class="n">5</span>级页表</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 04: 页表与 TLB</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +322,215 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06.5-modern-mm/chapter-03-vmalloc-kernel-alloc/</code>：vmalloc 的页表映射</li>
 <li><code class="c">07-arm-architecture/</code>：ARM64 页表格式（PGD/PUD/PMD/PTE）</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Bootlin: 页表与 TLB 管理</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — Memory Management</a>
+<strong>主题:</strong> 多级页表、TLB 管理、huge page
+<strong>对标旧书:</strong> ULK3 Ch3 / LKD3 Ch3</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>页表层级</h3>
+<pre class="code" data-label="code"><code class="c">ARM64 (4KB 页, 4 级):
+  虚拟地址 [63:48] 保留 [47:39] PGD [38:30] PUD [29:21] PMD [20:12] PTE [11:0] offset
+                                    512     512     512     512
+  每级 9 bit 索引, 512 个条目 (9b × 4 = 36b + 12b offset = 48b)
+
+ARM64 (64KB 页, 3 级):
+  虚拟地址 [63:42] 保留 [41:29] PGD [28:16] PUD [15:3] PTE [2:0] offset
+  每级 13 bit 索引, 8192 个条目 (页表页 = 64KB)
+</code></pre>
+<h3>页表项 (PTE) 格式</h3>
+<pre class="code" data-label="code"><code class="c">ARM64 PTE (4KB 页):
+  bit 0:    valid (0=invalid, 1=valid)
+  bit 1:    large page (PMD level)
+  bit 6:    accessed (young)
+  bit 7:    dirty
+  bit 51-12: physical address [51:12] (40 bit, 1TB 物理地址)
+  bit 53:   DBM (dirty bit modifier)
+  bit 54:   contiguous
+  bit 55:   PXN (privileged execute-never)
+  bit 56:   UXN (user execute-never)
+  bit 58-61: software bits
+  bit 10-11: AP (access permission)
+</code></pre>
+<h3>TLB 管理</h3>
+<pre class="code" data-label="C"><code class="c">// ARM64 TLB 指令
+// TLB IPAS2E1IS, Xn  — 无效化 IPA (Stage 2, inner shareable)
+// TLB VAE1IS, Xn      — 无效化虚拟地址 (Stage 1, inner shareable)
+// TLB ASIDE1IS, Xn    — 无效化 ASID (inner shareable)
+// TLB ALLE1IS         — 无效化所有 (Stage 1, inner shareable)
+
+// 内核 API:
+// 源码路径: arch/arm64/include/asm/tlbflush.h
+void flush_tlb_mm(struct mm_struct *mm);
+void flush_tlb_range(struct vm_area_struct *vma, unsigned long start, unsigned long end);
+void flush_tlb_page(struct vm_area_struct *vma, unsigned long addr);
+</code></pre>
+<h3>大页 (Huge Pages)</h3>
+<pre class="code" data-label="shell"><code class="c"># 2MB 大页 (ARM64 4KB 页, order 9)
+echo 1024 &gt; /proc/sys/vm/nr_hugepages  # 预留 1024 个 2MB 大页 = 2GB
+
+# 透明大页 (THP)
+cat /sys/kernel/mm/transparent_hugepage/enabled
+# [always] madvise never
+
+# 1GB 大页 (ARM64 4KB 页, order 18)
+# 需要 CPU 支持和内核配置 CONFIG_HUGETLBFS
+</code></pre>
+<h3>TLB shootdown</h3>
+<pre class="code" data-label="code"><code class="c">CPU 0 修改页表 (无效化 PTE)
+  → CPU 0 本地 TLB flush (单核操作)
+  → 发送 IPI 给 CPU 1,2,3 (TLB shootdown)
+  → CPU 1,2,3 收到 IPI, flush 本地 TLB
+  → CPU 0 等待所有 CPU 确认 (barrier)
+
+开销: 每次 shootdown ~1-5μs (IPI + 等待 + barrier)
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看 TLB 信息
+cat /proc/cpuinfo | grep -i tlb
+
+# 2. 查看大页信息
+cat /proc/meminfo | grep -i huge
+
+# 3. 使用大页
+# 方法 A: mmap(MAP_HUGETLB)
+# 方法 B: mount hugetlbfs
+mount -t hugetlbfs none /mnt/huge
+# 方法 C: 透明大页
+echo always &gt; /sys/kernel/mm/transparent_hugepage/enabled
+
+# 4. 查看 THP 状态
+cat /sys/kernel/mm/transparent_hugepage/defrag
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3 级页表 (32-bit)</td>
+<td>4 级 (48-bit) / 5 级 (57-bit)</td>
+</tr>
+<tr>
+<td>无 ASID</td>
+<td>ARM64 ASID 减少 TLB flush</td>
+</tr>
+<tr>
+<td>无 THP</td>
+<td>透明大页 (2.6.38+)</td>
+</tr>
+<tr>
+<td>TLB flush 全量</td>
+<td>精细化 flush (by ASID/VA)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> ARM64 的 ASID 如何减少 TLB flush？</p>
+<blockquote>
+<p>ASID (Address Space ID) 是 8/16 位标识符，每个进程一个 ASID。TLB 条目包含 ASID，查找时只匹配当前 ASID 的条目。进程切换时不需要 flush TLB——新进程的虚拟地址映射不同 ASID，不会冲突。只有 ASID 耗尽（16 位 = 65536 个）时才需要全局 flush。这比 x86 的 PCID 更高效（x86 PCID 也有类似机制）。</p>
+</blockquote>
+<p><strong>Q2:</strong> TLB shootdown 对 HFT 有什么影响？如何避免？</p>
+<blockquote>
+<p>TLB shootdown 通过 IPI 让其他 CPU flush TLB，延迟 1-5μs。HFT 交易线程如果在 shootdown 期间运行，会被 IPI 中断打断。避免方法：(1) 减少 <code class="c">mprotect</code>/<code class="c">munmap</code> 操作（触发 shootdown）；(2) 用大页减少 PTE 数量；(3) 绑核隔离交易线程，减少其他进程的 shootdown IPI 到达交易核。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">5</div><h2>级页表</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/717293/">Five-level page tables</a> (LWN, 2017)
+<strong>内核版本:</strong> 4.14+ (x86), 5.x+ (ARM64)
+<strong>对标旧书:</strong> ULK3 Ch2 / LKD3 Ch3 (4 级页表)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>5 级页表将虚拟地址空间从 48 位 (256TB) 扩展到 57 位 (128PB)，适应大内存服务器需求。</p>
+<h3>页表层级对比</h3>
+<pre class="code" data-label="code"><code class="c">4 级页表 (48-bit VA, 256TB):
+  PGD (9b) → PUD (9b) → PMD (9b) → PTE (9b) → offset (12b)
+  每级 512 个条目, 页大小 4KB
+
+5 级页表 (57-bit VA, 128PB):
+  PGD (9b) → P4D (9b) → PUD (9b) → PMD (9b) → PTE (9b) → offset (12b)
+  新增 P4D 层, 每级 512 个条目, 页大小 4KB
+</code></pre>
+<h3>虚拟地址空间布局</h3>
+<pre class="code" data-label="code"><code class="c">4 级 (48-bit):
+  用户空间: 0x0000_0000_0000_0000 ~ 0x0000_7FFF_FFFF_FFFF (128TB)
+  内核空间: 0xFFFF_8000_0000_0000 ~ 0xFFFF_FFFF_FFFF_FFFF (128TB)
+
+5 级 (57-bit):
+  用户空间: 0x0000_0000_0000_0000 ~ 0x00FF_FFFF_FFFF_FFFF (64PB)
+  内核空间: 0xFF00_0000_0000_0000 ~ 0xFFFF_FFFF_FFFF_FFFF (64PB)
+</code></pre>
+<h3>启用条件</h3>
+<pre class="code" data-label="shell"><code class="c"># x86: 需要 CPU 支持 LA57 (Intel Ice Lake+)
+# 启动参数: no5lvl (禁用) / 默认自动启用
+
+# ARM64: 需要 CPU 支持 ARMv8.2 LVA (Large Virtual Addressing)
+# 内核配置: CONFIG_ARM64_64K_PAGES=y (64KB 页 + 3 级 = 42-bit, 不需要 5 级)
+# 或 CONFIG_PGTABLE_LEVELS=5
+
+# 检查当前页表层级
+grep page_table_levels /proc/cpuinfo  # x86
+cat /proc/vmstat | grep page_table     # 间接判断
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4 级页表 (48-bit)</td>
+<td>5 级页表 (57-bit, 可选)</td>
+</tr>
+<tr>
+<td>无 P4D 层</td>
+<td>新增 P4D 层</td>
+</tr>
+<tr>
+<td>256TB 虚拟空间</td>
+<td>128PB 虚拟空间 (5 级)</td>
+</tr>
+<tr>
+<td><code class="c">pgd_offset()</code> → <code class="c">pud_offset()</code></td>
+<td><code class="c">pgd_offset()</code> → <code class="c">p4d_offset()</code> → <code class="c">pud_offset()</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>5 级页表对 HFT 通常不利：(1) 多一级页表意味着 TLB miss 时多一次内存访问（~100ns）；(2) HFT 虚拟地址空间不大，不需要 128PB。建议 HFT 系统使用 <code class="c">no5lvl</code> 禁用 5 级页表，保持 4 级。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 5 级页表对 TLB miss 代价有什么影响？</p>
+<blockquote>
+<p>4 级页表 TLB miss 需要 4 次内存访问（PGD→PUD→PMD→PTE）。5 级增加为 5 次（PGD→P4D→PUD→PMD→PTE），多一次 ~100ns。对于 TLB miss 率高的应用（大工作集），总延迟增加显著。HFT 通常工作集小 + 大页，TLB miss 率低，影响有限但仍建议禁用。</p>
+</blockquote>
+<p><strong>Q2:</strong> 内核如何兼容 4 级和 5 级页表？</p>
+<blockquote>
+<p>通过 <code class="c">CONFIG_PGTABLE_LEVELS</code> 编译时选择 + <code class="c">pgtable_fold</code> 运行时折叠。当配置为 5 级但 CPU 不支持 LA57 时，P4D 层被"折叠"（pgd 等于 p4d，p4d_offset 直接返回 pgd）。这样代码统一写 5 级路径，折叠后实际走 4 级，无需 <code class="c">#ifdef</code>。</p>
+</blockquote>
+</details>
       </section>
 
 

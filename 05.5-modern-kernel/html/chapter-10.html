@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-preempt-rt-principles</a>
+          <a href="#s-02"><span class="n">02</span>02-preempt-rt-hft-tuning</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +301,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch10 PREEMPT_RT 实时内核</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 10</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 10</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +314,636 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>PREEMPT_RT 是 HFT 交易系统的内核底座。SCHED_FIFO + isolcpus + nohz_full + mlockall = 确定性微秒级延迟。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>PREEMPT_RT 核心原理：可睡眠自旋锁与中断线程化</h2></div>
+<blockquote>
+<p>来源: Bootlin Real-Time Training
+对标旧书: ULK3 无覆盖 / LKD3 简略</p>
+</blockquote>
+<hr />
+<h2>PREEMPT_RT 是什么</h2>
+<p>PREEMPT_RT (Real-Time patch) 是 Linux 内核的实时补丁，目标：<strong>提供确定性的最大调度延迟</strong>（通常 &lt; 100μs）。</p>
+<h3>延迟保证</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>典型最大延迟</th>
+<th>最坏情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通内核 (PREEMPT_NONE)</td>
+<td>1-5 ms</td>
+<td>50+ ms</td>
+</tr>
+<tr>
+<td>PREEMPT_VOLUNTARY</td>
+<td>100-500 μs</td>
+<td>10+ ms</td>
+</tr>
+<tr>
+<td>PREEMPT_FULL</td>
+<td>100-500 μs</td>
+<td>5+ ms</td>
+</tr>
+<tr>
+<td><strong>PREEMPT_RT</strong></td>
+<td><strong>50-100 μs</strong></td>
+<td><strong>&lt; 200 μs</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 测量最大调度延迟
+sudo cyclictest -t 1 -p 80 -i 1000 -a 2 -n -d 0 -h 400
+# 普通内核: max latency ~500-5000 μs
+# PREEMPT_RT: max latency ~50-100 μs (树莓派 5)
+</code></pre>
+<hr />
+<h2>核心改动</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>改动</th>
+<th>普通内核</th>
+<th>PREEMPT_RT</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>自旋锁</strong></td>
+<td>禁用抢占</td>
+<td>转为 rt_mutex（可睡眠）</td>
+<td>消除不可抢占区段</td>
+</tr>
+<tr>
+<td><strong>硬中断</strong></td>
+<td>hardirq 上下文</td>
+<td>线程化为 RT 线程</td>
+<td>中断可被抢占</td>
+</tr>
+<tr>
+<td><strong>线程化中断</strong></td>
+<td>可选</td>
+<td>强制所有中断线程化</td>
+<td>确保中断不干扰 RT 线程</td>
+</tr>
+<tr>
+<td><strong>抢占模型</strong></td>
+<td>Voluntary (默认)</td>
+<td>Full preemption</td>
+<td>任意位置可抢占</td>
+</tr>
+<tr>
+<td><strong>高精度定时器</strong></td>
+<td>可选</td>
+<td>强制启用</td>
+<td>精确时间控制</td>
+</tr>
+<tr>
+<td><strong>rcu_read_lock</strong></td>
+<td>禁用抢占</td>
+<td>不禁用抢占</td>
+<td>RCU 临界区可被抢占</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>可睡眠自旋锁 (rt_mutex)</h2>
+<h3>普通内核: spinlock 禁用抢占</h3>
+<pre class="code" data-label="C"><code class="c">// 普通内核中 spin_lock 禁用抢占
+spin_lock(&amp;my_lock);
+// 抢占被禁用! 这段代码不可被抢占
+// 即使有更高优先级的 RT 线程就绪, 也必须等 spin_unlock
+spin_unlock(&amp;my_lock);
+// 抢占重新启用
+</code></pre>
+<p><strong>问题:</strong> 如果 spin_lock 保护的临界区很长（或被中断打断），高优先级线程必须等待，产生<strong>优先级反转</strong>。</p>
+<h3>PREEMPT_RT: spinlock → rt_mutex</h3>
+<pre class="code" data-label="C"><code class="c">// PREEMPT_RT 中 spin_lock 实际使用 rt_mutex
+// rt_mutex 持有时可以被抢占/睡眠!
+spin_lock(&amp;my_lock);
+// 抢占未被禁用! 高优先级 RT 线程可以抢占我
+// 如果我被换出, rt_mutex 保证我尽快回来释放锁
+spin_unlock(&amp;my_lock);
+
+// rt_mutex 的优先级继承:
+// 如果线程 A 持有锁, 线程 B (更高优先级) 等待锁
+// → A 临时继承 B 的优先级, 被快速调度执行, 释放锁
+// → B 获得锁, 高优先级运行
+</code></pre>
+<h3>优先级继承</h3>
+<pre class="code" data-label="code"><code class="c">场景: 优先级反转
+  CPU 上: 线程 C (低优先级, 持有锁)
+          线程 B (中优先级, 运行中, 阻止 C 执行)
+          线程 A (高优先级, 等待 C 的锁)
+
+没有优先级继承:
+  B 运行 → C 无法执行 → A 等锁 → A 被中优先级 B &quot;阻塞&quot;
+
+有优先级继承 (rt_mutex):
+  A 等锁 → C 继承 A 的优先级 (高于 B)
+  → C 抢占 B 执行 → C 释放锁 → A 获得锁, 运行
+</code></pre>
+<hr />
+<h2>中断线程化</h2>
+<h3>普通内核: 中断不可抢占</h3>
+<pre class="code" data-label="code"><code class="c">网卡中断到达 → CPU 跳到中断处理函数 (hardirq)
+  → 中断处理执行完毕前, 同级或低级中断被屏蔽
+  → 即使有高优先级 RT 线程就绪, 也要等中断处理完成
+  → 如果中断处理耗时 200μs, RT 线程延迟 200μs
+</code></pre>
+<h3>PREEMPT_RT: 中断变线程</h3>
+<pre class="code" data-label="code"><code class="c">网卡中断到达 → 唤醒 irq/32-eth0 线程 (SCHED_FIFO, 优先级 50)
+  → 中断线程与普通线程一样参与调度
+  → 如果交易线程优先级 80 &gt; 中断线程 50
+  → 交易线程可以抢占中断线程!
+
+# PREEMPT_RT 下所有中断变为线程
+$ ps -eo pid,comm,policy,rtprio | grep irq/
+  42 irq/29-brcmv7   FIFO   50
+  43 irq/31-mmc1     FIFO   50
+  44 irq/32-eth0     FIFO   50
+
+# 调整中断线程优先级
+chrt -f -p 40 44    # 降低网卡中断优先级
+# 交易线程 SCHED_FIFO 80 &gt; 网卡中断 50 → 交易线程可抢占网卡中断
+</code></pre>
+<h3>强制线程化 vs 可选线程化</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>普通内核 (threadirqs)</th>
+<th>PREEMPT_RT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断线程化</td>
+<td>可选 (bootargs: threadirqs)</td>
+<td>强制</td>
+</tr>
+<tr>
+<td>线程优先级</td>
+<td>默认 50</td>
+<td>默认 50, 可调整</td>
+</tr>
+<tr>
+<td>非线程化中断</td>
+<td>大部分 hardirq</td>
+<td>仅极少数 (timer, IPI)</td>
+</tr>
+<tr>
+<td>延迟确定性</td>
+<td>中等</td>
+<td>最高</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>抢占模型对比</h2>
+<pre class="code" data-label="code"><code class="c">PREEMPT_NONE:     只有显式 cond_resched() 点可抢占 (服务器)
+PREEMPT_VOLUNTARY: 在 cond_resched() 点 + 某些位置可抢占 (桌面)
+PREEMPT_FULL:     除 spin_lock 临界区外都可抢占 (嵌入式)
+PREEMPT_RT:       几乎任意位置都可抢占 (实时系统)
+                  spin_lock 变为 rt_mutex, 中断变线程
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模型</th>
+<th>配置</th>
+<th>延迟</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PREEMPT_NONE</td>
+<td>无抢占</td>
+<td>高</td>
+<td>服务器（吞吐优先）</td>
+</tr>
+<tr>
+<td>PREEMPT_VOLUNTARY</td>
+<td>自愿抢占</td>
+<td>中</td>
+<td>桌面</td>
+</tr>
+<tr>
+<td>PREEMPT_FULL</td>
+<td>完全抢占</td>
+<td>低</td>
+<td>嵌入式</td>
+</tr>
+<tr>
+<td>PREEMPT_RT</td>
+<td>RT 补丁</td>
+<td>最低（确定性）</td>
+<td>实时系统</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>PREEMPT_RT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 PREEMPT_RT</td>
+<td>RT 补丁是实时系统核心</td>
+</tr>
+<tr>
+<td>spinlock 禁用抢占</td>
+<td>RT 中 spinlock 可睡眠 (rt_mutex)</td>
+</tr>
+<tr>
+<td>中断不可抢占</td>
+<td>RT 中中断线程化，可被高优先级线程抢占</td>
+</tr>
+<tr>
+<td>无延迟保证</td>
+<td>RT 保证 &lt; 100μs 最大调度延迟</td>
+</tr>
+<tr>
+<td>无优先级继承</td>
+<td>rt_mutex 有优先级继承</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>PREEMPT_RT 特性</th>
+<th>HFT 价值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>确定性延迟</td>
+<td>交易线程的调度延迟可预测</td>
+</tr>
+<tr>
+<td>中断线程化</td>
+<td>交易线程可抢占网卡中断</td>
+</tr>
+<tr>
+<td>优先级继承</td>
+<td>避免优先级反转导致延迟</td>
+</tr>
+<tr>
+<td>可睡眠锁</td>
+<td>不会因为辅助线程持锁而阻塞交易线程</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实盘：</strong> PREEMPT_RT + SCHED_FIFO 80 + isolcpus + nohz_full = HFT 交易线程的最佳调度配置。交易线程可以抢占几乎所有其他线程和中断，获得确定性的微秒级延迟。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: PREEMPT_RT 中 spinlock 为什么可以睡眠？不会死锁吗？</summary>
+<p>RT 将 spinlock 转为 rt_mutex（实时互斥锁）。持有 rt_mutex 的线程可以被抢占/睡眠，等待者不会自旋而是睡眠排队。不会死锁，因为 rt_mutex 有优先级继承——等待者将自己的优先级传给持有者，确保持有者尽快释放锁。代价是 spinlock 的开销增大（从原子操作变为完整的锁实现）。</p>
+</details>
+<details>
+<summary>Q2: 什么是优先级反转？rt_mutex 如何解决？</summary>
+<p>优先级反转: 低优先级线程持有锁，高优先级线程等待锁，中间优先级线程抢占了低优先级线程的 CPU 时间，导致高优先级线程间接被中优先级线程"阻塞"。rt_mutex 通过优先级继承解决: 等待者将优先级传给持有者，持有者临时以高优先级运行，快速释放锁。释放后恢复原优先级。</p>
+</details>
+<details>
+<summary>Q3: PREEMPT_RT 为什么要强制所有中断线程化？</summary>
+<p>普通内核中中断在 hardirq 上下文执行，不可被抢占。如果网卡中断处理耗时 200μs，即使有更高优先级的 RT 线程就绪也必须等待。PREEMPT_RT 将中断变为线程（SCHED_FIFO, 优先级 50），如果 RT 线程优先级 &gt; 50，可以抢占中断线程。极少数中断（如 timer, IPI）不线程化，因为它们是调度器本身需要的。</p>
+</details>
+<details>
+<summary>Q4: PREEMPT_RT 的延迟保证是"最大 100μs"还是"平均 100μs"？</summary>
+<p>是<strong>最大</strong>延迟（worst-case）。cyclictest 测量的就是最坏情况。PREEMPT_RT 的设计目标是确定性的最坏情况延迟 &lt; 100-200μs，而不是平均值。普通内核平均延迟可能也很好，但最坏情况可能达到 50ms（中断风暴、大量不可抢占区段）。HFT 需要的是确定性（最坏情况可控），不是平均值。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">02-preempt-rt-hft-tuning.md</a> — RT 调优参数与 HFT 实践</li>
+<li><a href="chapter-02.html#ch-2">chapter-02-scheduler</a> — EEVDF 调度器</li>
+<li><a href="chapter-04.html#ch-4">chapter-04-synchronization</a> — qspinlock 与 rt_mutex</li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>PREEMPT_RT 调优与 HFT 实践</h2></div>
+<blockquote>
+<p>来源: Bootlin Real-Time Training
+前置: <a href="chapter-12.html#s-01">01-preempt-rt-principles.md</a></p>
+</blockquote>
+<hr />
+<h2>HFT RT 调优清单</h2>
+<h3>1. 内核编译选项</h3>
+<pre class="code" data-label="shell"><code class="c"># .config 中必须开启的选项
+CONFIG_PREEMPT_RT=y           # 实时抢占
+CONFIG_HIGH_RES_TIMERS=y      # 高精度定时器 (RT 强制)
+CONFIG_HZ_1000=y              # 1000 Hz 时钟
+CONFIG_NO_HZ_FULL=y           # 无滴带支持
+CONFIG_CPU_ISOLATION=y        # CPU 隔离
+
+# 开发期 (生产关闭)
+CONFIG_KASAN=n                # RT 下 KASAN 不可用
+CONFIG_KFENCE=y               # 轻量内存检测
+CONFIG_DEBUG_INFO=y           # 调试符号
+</code></pre>
+<h3>2. 内核启动参数</h3>
+<pre class="code" data-label="shell"><code class="c"># /boot/cmdline.txt (树莓派) 或 GRUB
+isolcpus=2-3              # 隔离 CPU 2-3
+nohz_full=2-3             # CPU 2-3 进入无滴带模式
+rcu_nocbs=2-3             # RCU 回调卸载到其他核
+irqaffinity=0-1           # IRQ 默认绑到 CPU 0-1
+threadirqs                # 强制中断线程化 (RT 已默认)
+</code></pre>
+<h3>3. 运行时配置</h3>
+<pre class="code" data-label="shell"><code class="c"># === CPU 频率 ===
+echo performance &gt; /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# === IRQ 绑定 ===
+systemctl stop irqbalance
+# 网卡中断绑到 CPU 0-1 (非隔离核)
+echo 03 &gt; /proc/irq/32/smp_affinity   # 二进制 11 = CPU 0+1
+
+# === 中断线程优先级 ===
+chrt -f -p 40 $(pgrep irq/32-eth0)    # 网卡中断降到 40
+
+# === 交易线程 ===
+chrt -f 80 ./trading_engine           # SCHED_FIFO 优先级 80
+</code></pre>
+<hr />
+<h2>CPU 隔离详解</h2>
+<h3>isolcpus + nohz_full + rcu_nocbs 三件套</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>作用</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">isolcpus=2-3</code></td>
+<td>CPU 2-3 不参与负载均衡</td>
+<td>普通进程不会调度到 CPU 2-3</td>
+</tr>
+<tr>
+<td><code class="c">nohz_full=2-3</code></td>
+<td>CPU 2-3 进入无滴带模式</td>
+<td>减少定时器中断 (从 1000Hz 降到接近 0)</td>
+</tr>
+<tr>
+<td><code class="c">rcu_nocbs=2-3</code></td>
+<td>RCU 回调卸载</td>
+<td>RCU grace period 的回调不在 CPU 2-3 执行</td>
+</tr>
+</tbody>
+</table></div>
+<h3>验证隔离效果</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 确认 CPU 隔离
+cat /sys/devices/system/cpu/isolated
+# 2-3
+
+# 2. 确认 nohz_full
+cat /sys/devices/system/cpu/nohz_full
+# 2-3
+
+# 3. 确认 RCU 卸载
+cat /sys/devices/system/cpu/rcu_nocbs
+# 2-3
+
+# 4. 测量隔离核上的中断频率
+perf stat -C 2 -e irq:irq_handler_entry sleep 5
+# 如果 nohz_full 生效, 中断次数应该极少
+
+# 5. 检查定时器
+cat /proc/timer_list | grep &quot;CPU 2&quot;
+# hrtimer 数量应该极少
+</code></pre>
+<hr />
+<h2>cyclictest 延迟测试</h2>
+<pre class="code" data-label="shell"><code class="c"># 安装 RT 测试工具
+sudo apt install rt-tests
+
+# === 基准延迟测试 ===
+sudo cyclictest -t 1 -p 80 -i 1000 -l 1000000 -a 2 -n
+# -t 1: 1 线程
+# -p 80: SCHED_FIFO 优先级 80
+# -i 1000: 1ms 间隔
+# -l 1000000: 100 万次
+# -a 2: 绑定 CPU 2 (隔离核)
+# -n: 使用 clock_nanosleep
+
+# 典型输出:
+# T: 1 ( 1234) P:80 I:1000 C: 1000000 Min: 12 Act: 15 Avg: 18 Max: 87
+# Max = 87μs → 在 100μs 以内, 合格
+
+# === 压力下延迟测试 ===
+# 终端 1: cyclictest
+sudo cyclictest -t 1 -p 80 -i 1000 -a 2 -n &amp;
+# 终端 2: CPU 压力
+stress-ng --cpu 4 --io 2 --vm 2 --vm-bytes 256M --timeout 60s &amp;
+# 终端 3: I/O 压力
+stress-ng --hdd 2 --timeout 60s &amp;
+# 观察 cyclictest 的 Max 值变化
+
+# === hackbench 压力 ===
+hackbench -l 10000 &amp;
+sudo cyclictest -t 1 -p 80 -i 1000 -a 2 -n
+# Max 应该仍然 &lt; 200μs (PREEMPT_RT 保证)
+</code></pre>
+<h3>延迟分布直方图</h3>
+<pre class="code" data-label="shell"><code class="c"># 生成延迟直方图
+sudo cyclictest -t 1 -p 80 -i 1000 -a 2 -n -h 400 &gt; latency_hist.txt
+# -h 400: 直方图, 0-400μs
+# 查看分布:
+#  00-09μs: ##########
+#  10-19μs: ####################
+#  20-29μs: ########
+#  30-39μs: ##
+#  40-49μs: #
+#  50+μs:   (应该极少)
+</code></pre>
+<hr />
+<h2>交易线程完整配置脚本</h2>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# hft_setup.sh — HFT 交易线程运行环境配置
+
+# 1. CPU 频率
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance &gt; &quot;$cpu&quot;
+done
+
+# 2. 禁用 irqbalance
+systemctl stop irqbalance 2&gt;/dev/null
+
+# 3. 网卡中断绑到 CPU 0-1
+for irq in $(grep -l eth0 /proc/irq/*/name 2&gt;/dev/null | sed 's|/proc/irq/||;s|/name||'); do
+    echo 03 &gt; &quot;/proc/irq/$irq/smp_affinity&quot;
+    chrt -f -p 40 &quot;$(pgrep &quot;irq/$irq&quot; 2&gt;/dev/null)&quot; 2&gt;/dev/null
+done
+
+# 4. 锁定内存页
+# (在程序中调用 mlockall(MCL_CURRENT | MCL_FUTURE))
+
+# 5. 启动交易引擎
+chrt -f 80 taskset -c 2 ./trading_engine
+</code></pre>
+<pre class="code" data-label="C"><code class="c">// 交易引擎中的 RT 配置
+#include &lt;sched.h&gt;
+#include &lt;sys/mman.h&gt;
+
+void setup_rt(void) {
+    // 1. 锁定内存 (防止 page fault)
+    mlockall(MCL_CURRENT | MCL_FUTURE);
+
+    // 2. 设置 SCHED_FIFO
+    struct sched_param param = { .sched_priority = 80 };
+    sched_setscheduler(0, SCHED_FIFO, &amp;param);
+
+    // 3. 绑定 CPU 2
+    cpu_set_t cpuset;
+    CPU_ZERO(&amp;cpuset);
+    CPU_SET(2, &amp;cpuset);
+    sched_setaffinity(0, sizeof(cpuset), &amp;cpuset);
+}
+</code></pre>
+<hr />
+<h2>常见延迟问题排查</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>可能原因</th>
+<th>排查工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Max latency &gt; 200μs</td>
+<td>SMI 干扰</td>
+<td><code class="c">hwlat</code> tracer</td>
+</tr>
+<tr>
+<td>偶发性尖峰</td>
+<td>页错误</td>
+<td><code class="c">perf stat -e page-faults</code></td>
+</tr>
+<tr>
+<td>持续高延迟</td>
+<td>CPU 频率缩放</td>
+<td><code class="c">cpufreq</code> governor 检查</td>
+</tr>
+<tr>
+<td>中断相关延迟</td>
+<td>IRQ 绑定错误</td>
+<td><code class="c">cat /proc/interrupts</code></td>
+</tr>
+<tr>
+<td>调度延迟</td>
+<td>优先级设置错误</td>
+<td><code class="c">chrt -p &lt;pid&gt;</code> 确认</td>
+</tr>
+<tr>
+<td>RCU 回调干扰</td>
+<td>rcu_nocbs 未设置</td>
+<td><code class="c">grep rcu /sys/devices/system/cpu/</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 使用 ftrace 诊断延迟
+echo wakeup_rt &gt; /sys/kernel/tracing/current_tracer
+echo 1 &gt; /sys/kernel/tracing/tracing_on
+# ... 运行交易引擎 ...
+cat /sys/kernel/tracing/tracing_max_latency
+# 如果 &gt; 100μs, 查看 trace 看延迟发生在哪里
+
+echo irqsoff &gt; /sys/kernel/tracing/current_tracer
+cat /sys/kernel/tracing/tracing_max_latency
+# 如果 &gt; 100μs, 有关中断被关闭太久
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调优项</th>
+<th>HFT 价值</th>
+<th>不做的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SCHED_FIFO 80</td>
+<td>交易线程最高优先级</td>
+<td>被其他线程抢占</td>
+</tr>
+<tr>
+<td>isolcpus</td>
+<td>独占 CPU</td>
+<td>其他进程干扰</td>
+</tr>
+<tr>
+<td>nohz_full</td>
+<td>减少定时器中断</td>
+<td>1000Hz 中断干扰</td>
+</tr>
+<tr>
+<td>mlockall</td>
+<td>防止 page fault</td>
+<td>偶发 100μs+ 延迟</td>
+</tr>
+<tr>
+<td>IRQ 绑定</td>
+<td>网卡中断不干扰交易核</td>
+<td>中断打断交易线程</td>
+</tr>
+<tr>
+<td>performance governor</td>
+<td>CPU 频率不变</td>
+<td>频率切换导致延迟变化</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 黄金法则：</strong> SCHED_FIFO + isolcpus + nohz_full + mlockall + performance governor。五者缺一不可。PREEMPT_RT 是底座，提供可抢占的内核环境。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: isolcpus=2 nohz_full=2 rcu_nocbs=2 三个参数各自的作用？</summary>
+<p><code class="c">isolcpus=2</code>：CPU 2 不参与负载均衡，不自动调度普通进程。<code class="c">nohz_full=2</code>：CPU 2 进入无滴带模式，减少定时器中断（从每秒 1000 次降到接近 0）。<code class="c">rcu_nocbs=2</code>：CPU 2 的 RCU 回调卸载到其他核。三者配合将 CPU 2 完全隔离给 RT 线程，最大化确定性。</p>
+</details>
+<details>
+<summary>Q2: 为什么要把网卡中断线程的优先级设低于交易线程？</summary>
+<p>PREEMPT_RT 下中断是线程。如果网卡中断优先级（默认 50）高于交易线程（80），网卡中断会抢占交易线程，增加延迟。设交易线程优先级 &gt; 中断线程优先级，交易线程可以抢占中断处理，确保行情处理不被中断干扰。网卡中断在 CPU 0-1 上处理（非隔离核），交易线程在 CPU 2 上运行，两者不直接争用 CPU。</p>
+</details>
+<details>
+<summary>Q3: cyclictest 测量 Max latency = 150μs，正常吗？</summary>
+<p>取决于硬件和配置。树莓派 5 上 PREEMPT_RT 的典型 Max latency 在 50-100μs。如果测到 150μs，可能原因：① SMI (System Management Interrupt) 干扰——用 hwlat tracer 确认；② CPU 频率缩放未关闭——检查 scaling_governor；③ nohz_full 未生效——检查 /sys/devices/system/cpu/nohz_full；④ 内存未锁定——确认 cyclictest 用了 mlockall。在 x86 服务器上 150μs 可能是正常的（SMI 开销大）。</p>
+</details>
+<details>
+<summary>Q4: mlockall 为什么对 HFT 至关重要？</summary>
+<p>mlockall 锁定进程所有内存页，防止 page fault。page fault 时内核需要从磁盘换入页面，延迟可达 100μs-10ms，完全破坏 RT 保证。即使系统内存充足，内核也可能因为预读、COW（写时复制）等机制触发 page fault。mlockall(MCL_CURRENT | MCL_FUTURE) 锁定当前和未来分配的所有页面，是 HFT 的必备配置。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">01-preempt-rt-principles.md</a> — PREEMPT_RT 核心原理</li>
+<li><a href="chapter-12.html#ch-12">chapter-12-vdso-debugging</a> — ftrace/eBPF 延迟排查</li>
+<li><a href="chapter-02.html#ch-2">chapter-02-scheduler</a> — EEVDF 与 SCHED_FIFO</li>
+</ul>
       </section>
 
 

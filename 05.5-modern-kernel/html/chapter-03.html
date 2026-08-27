@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-rcu-basics</a>
+          <a href="#s-02"><span class="n">02</span>02-rcu-advanced</a>
+          <a href="#s-03"><span class="n">03</span>03-rcu-ben-shu</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +302,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch3 RCU 现代实现</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +315,506 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>RCU 是内核中最重要的无锁读取机制。HFT 交易线程读取内核数据（如路由表）走 RCU 路径，不受写者干扰。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>RCU 基础 — Read-Copy-Update 机制</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/262464/">What is RCU?</a> (LWN, Paul McKenney)
+<strong>内核版本:</strong> 2.6 (基础版) → 6.x (Tree RCU + 多种变体)
+<strong>对标旧书:</strong> ULK3 Ch5 (RCU 基础版) / LKD3 Ch9 (RCU 概述)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>RCU (Read-Copy-Update) 是 Linux 内核中最重要的<strong>读多写少</strong>同步机制。它实现了<strong>无锁读</strong> + <strong>延迟回收写</strong>，在读取路径上零开销。</p>
+<h3>RCU 的三个基本组件</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Reader (读端)</strong></td>
+<td>用 <code class="c">rcu_read_lock()</code> / <code class="c">rcu_read_unlock()</code> 包裹临界区，<strong>不加锁</strong></td>
+</tr>
+<tr>
+<td><strong>Writer (写端)</strong></td>
+<td>创建新副本，用 <code class="c">rcu_assign_pointer()</code> 原子替换指针</td>
+</tr>
+<tr>
+<td><strong>Reclaimer (回收端)</strong></td>
+<td>等待所有现有 reader 退出后，用 <code class="c">synchronize_rcu()</code> 回收旧数据</td>
+</tr>
+</tbody>
+</table></div>
+<h3>RCU 的核心原则</h3>
+<ol>
+<li><strong>读取无锁</strong>：reader 不获取任何锁，不阻塞 writer</li>
+<li><strong>写入复制</strong>：writer 先创建新副本，再原子替换指针</li>
+<li><strong>延迟回收</strong>：旧数据在所有"宽限期" (grace period) 前的 reader 都退出后才释放</li>
+</ol>
+<h3>宽限期 (Grace Period)</h3>
+<pre class="code" data-label="code"><code class="c">时间线:
+  reader A: --rcu_read_lock()--- rcu_read_unlock()--
+  reader B: ----rcu_read_lock()------ rcu_read_unlock()--
+  writer:   ---------rcu_assign_pointer()---------synchronize_rc()----kfree(old)--
+                                        |&lt;--- grace period ---&gt;|
+</code></pre>
+<p>宽限期 = 从 writer 替换指针后，等到所有在替换前已进入 RCU 读临界区的 reader 都退出。</p>
+<h3>关键 API</h3>
+<pre class="code" data-label="C"><code class="c">// 读端
+rcu_read_lock();
+p = rcu_dereference(global_ptr);  // 读端获取指针
+// 使用 p...
+rcu_read_unlock();
+
+// 写端
+new = kmalloc(sizeof(*new), GFP_KERNEL);
+*new = *old;
+new-&gt;field = new_value;
+rcu_assign_pointer(global_ptr, new);  // 原子替换
+synchronize_rcu();                     // 等待宽限期
+kfree(old);                            // 安全释放
+</code></pre>
+<h3>内核中的 RCU 应用场景</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>链表遍历</strong></td>
+<td><code class="c">list_for_each_entry_rcu()</code> 无锁遍历</td>
+</tr>
+<tr>
+<td><strong>链表修改</strong></td>
+<td><code class="c">list_add_rcu()</code> / <code class="c">list_del_rcu()</code> + <code class="c">synchronize_rcu()</code></td>
+</tr>
+<tr>
+<td><strong>VFS dentry cache</strong></td>
+<td>无锁查找目录项</td>
+</tr>
+<tr>
+<td><strong>网络路由表</strong></td>
+<td>无锁路由查找</td>
+</tr>
+<tr>
+<td><strong>模块卸载</strong></td>
+<td><code class="c">synchronize_rcu()</code> 确保安全卸载</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>6.x 现代实现</th>
+<th>差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基础 RCU (单一宽限期)</td>
+<td>Tree RCU (层级化宽限期)</td>
+<td>大规模系统扩展性改进</td>
+</tr>
+<tr>
+<td><code class="c">synchronize_rcu()</code> 简单实现</td>
+<td>Tree RCU + expedited RCU</td>
+<td>expedited 模式更快但更耗 CPU</td>
+</tr>
+<tr>
+<td>无 SRCU</td>
+<td>Sleepable RCU (SRCU)</td>
+<td>允许在 RCU 读临界区睡眠</td>
+</tr>
+<tr>
+<td>无 Tasks RCU</td>
+<td>Tasks RCU / Tasks Trace RCU</td>
+<td>用于 voluntary RCU</td>
+</tr>
+<tr>
+<td><code class="c">call_rcu()</code> 简单</td>
+<td><code class="c">call_rcu()</code> + lazy RCU</td>
+<td>6.x 引入延迟批量回收</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>RCU 的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>行情数据热路径</strong></td>
+<td>无锁读取共享行情数据，writer 更新行情时用 RCU 替换</td>
+</tr>
+<tr>
+<td><strong>减少尾延迟</strong></td>
+<td>RCU 读路径零开销，不会因锁竞争导致延迟毛刺</td>
+</tr>
+<tr>
+<td><strong>注意</strong></td>
+<td><code class="c">synchronize_rcu()</code> 可能等待数十毫秒，<strong>绝不能在交易热路径调用</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">// HFT 行情数据 RCU 模式示例
+struct market_data {
+    struct rcu_head rcu;
+    int symbol_id;
+    double bid[N_LEVELS];
+    double ask[N_LEVELS];
+};
+
+// 读端（交易线程，无锁）
+rcu_read_lock();
+md = rcu_dereference(g_market_data);
+// 使用 md-&gt;bid / md-&gt;ask...
+rcu_read_unlock();
+
+// 写端（行情线程，非热路径）
+new_md = kmalloc(sizeof(*new_md), GFP_KERNEL);
+memcpy(new_md, old_md, sizeof(*new_md));
+new_md-&gt;bid[0] = new_bid;
+rcu_assign_pointer(g_market_data, new_md);
+call_rcu(&amp;old_md-&gt;rcu, market_data_free);  // 异步回收，不阻塞
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> RCU 读取路径为什么可以不加锁？writer 替换指针时 reader 正在使用旧数据怎么办？</p>
+<blockquote>
+<p>reader 通过 <code class="c">rcu_dereference()</code> 获取指针，然后使用数据。writer 通过 <code class="c">rcu_assign_pointer()</code> 原子替换指针，但<strong>不立即释放旧数据</strong>。旧数据在所有在替换前进入读临界区的 reader 都退出后（宽限期结束后）才被释放。因此 reader 始终操作的是有效数据，无需加锁。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">synchronize_rcu()</code> 和 <code class="c">call_rcu()</code> 的区别？什么时候用哪个？</p>
+<blockquote>
+<p><code class="c">synchronize_rcu()</code> 是同步等待宽限期结束，调用者会阻塞。<code class="c">call_rcu()</code> 是注册回调，宽限期结束后异步调用回调释放数据。热路径或不能阻塞的场景用 <code class="c">call_rcu()</code>；初始化/清理路径可用 <code class="c">synchronize_rcu()</code>。</p>
+</blockquote>
+<p><strong>Q3:</strong> 在 RCU 读临界区内能睡眠吗？能调用 <code class="c">kmalloc(GFP_KERNEL)</code> 吗？</p>
+<blockquote>
+<p>经典 RCU (<code class="c">rcu_read_lock()</code>) <strong>不能睡眠</strong>——它依赖禁用抢占来保证读临界区不会跨宽限期。在 RCU 读临界区内调用 <code class="c">kmalloc(GFP_KERNEL)</code> 可能睡眠，是 BUG。如果需要睡眠，用 SRCU (<code class="c">srcu_read_lock()</code>)。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>RCU 进阶 — Tree RCU / SRCU / lazy RCU</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/305782/">Tree RCU</a> + <a href="https://lwn.net/Articles/683487/">RCU进阶</a> (LWN)
+<strong>内核版本:</strong> Tree RCU (2.6.30+) / SRCU (2.6.18+) / lazy RCU (6.2+)
+<strong>对标旧书:</strong> ULK3 Ch5 (仅基础 RCU)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>ULK3 时代的 RCU 是单一全局宽限期设计，在现代多核系统 (64+ CPU) 上扩展性差。6.x 内核引入了多种 RCU 变体应对不同场景。</p>
+<h3>Tree RCU (层次化 RCU)</h3>
+<p><strong>问题：</strong> 全局 <code class="c">synchronize_rcu()</code> 需要检查所有 CPU 是否经过静止状态 (quiescent state)，64+ 核系统上单次宽限期可能数秒。</p>
+<p><strong>解决：</strong> 将 CPU 组织成树形结构 (rcu_node tree)，每个节点汇总子节点的静止状态报告：</p>
+<pre class="code" data-label="code"><code class="c">            root rcu_node
+           /      |      \
+       node      node     node       ← Level 1 (每组 16 CPU)
+      /  |  \    / | \    / | \
+    CPU CPU CPU CPU CPU CPU CPU CPU  ← Leaf (每 CPU 一个 rcu_data)
+</code></pre>
+<ul>
+<li>每个 CPU 只向上一级报告静止状态</li>
+<li>宽限期完成只需 O(log N) 次传播，而非 O(N)</li>
+<li>支持多个并发宽限期 (gp_kthread)</li>
+</ul>
+<h3>SRCU (Sleepable RCU)</h3>
+<p>经典 RCU 读临界区<strong>不能睡眠</strong>。SRCU 允许在读临界区内睡眠：</p>
+<pre class="code" data-label="C"><code class="c">// SRCU 读端（可睡眠）
+int idx = srcu_read_lock(&amp;sp);
+p = srcu_dereference(gptr, &amp;sp);
+// 可以睡眠、可以调用 kmalloc(GFP_KERNEL)
+srcu_read_unlock(&amp;sp, idx);
+
+// SRCU 写端
+synchronize_srcu(&amp;sp);  // 比 synchronize_rcu() 慢得多
+</code></pre>
+<p><strong>代价：</strong> SRCU 的 <code class="c">srcu_read_lock()</code> 返回一个索引，需要传给 <code class="c">srcu_read_unlock()</code>。宽限期比经典 RCU 慢（需要两次遍历所有 reader）。</p>
+<h3>expedited RCU (加速 RCU)</h3>
+<p>普通宽限期等待调度器自然推进（可能数百毫秒），expedited 模式主动向所有 CPU 发 IPI 强制静止状态：</p>
+<pre class="code" data-label="C"><code class="c">synchronize_rcu_expedited();  // 快但耗 CPU（IPI 风暴）
+</code></pre>
+<h3>lazy RCU (6.2+)</h3>
+<p>延迟批量回收：<code class="c">call_rcu()</code> 的回调不立即执行，而是积攒一段时间后批量执行，减少 wake-up 次数和功耗。</p>
+<h3>RCU 变体选型表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变体</th>
+<th>读端能否睡眠</th>
+<th>宽限期速度</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>RCU</strong> (<code class="c">rcu_read_lock</code>)</td>
+<td>❌</td>
+<td>普通</td>
+<td>内核大部分读多写少场景</td>
+</tr>
+<tr>
+<td><strong>RCU expedited</strong></td>
+<td>❌</td>
+<td>快 (IPI)</td>
+<td>模块卸载等需要快速回收</td>
+</tr>
+<tr>
+<td><strong>SRCU</strong> (<code class="c">srcu_read_lock</code>)</td>
+<td>✅</td>
+<td>慢</td>
+<td>需要在读临界区睡眠</td>
+</tr>
+<tr>
+<td><strong>Tasks RCU</strong></td>
+<td>✅ (voluntary)</td>
+<td>很慢</td>
+<td>voluntary context 场景</td>
+</tr>
+<tr>
+<td><strong>Tasks Trace RCU</strong></td>
+<td>✅</td>
+<td>中等</td>
+<td>tracing 场景</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>6.x 现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单一全局 RCU</td>
+<td>Tree RCU 层次化</td>
+</tr>
+<tr>
+<td>无 SRCU</td>
+<td>SRCU 广泛使用 (VFS、内存管理)</td>
+</tr>
+<tr>
+<td><code class="c">synchronize_rcu()</code> 简单</td>
+<td>expedited / lazy 多种模式</td>
+</tr>
+<tr>
+<td><code class="c">rcu_ctrlblk</code> 全局结构</td>
+<td><code class="c">rcu_state</code> + <code class="c">rcu_node</code> 树</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键代码变更</h3>
+<pre class="code" data-label="C"><code class="c">// ULK3 时代 (2.6)
+struct rcu_ctrlblk {
+    long cur;       // 当前宽限期编号
+    long completed; // 已完成的宽限期编号
+    // ... 全局结构
+};
+
+// 6.x Tree RCU
+struct rcu_state {
+    struct rcu_node node[NUM_RCU_NODES];  // 树形节点
+    unsigned long gp_seq;                  // 宽限期序列号
+    unsigned long gp_max;                  // 最长宽限期
+    // ... 每个 rcu_state 一棵树
+};
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>RCU 变体选择</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>行情数据读取</strong></td>
+<td>经典 RCU (<code class="c">rcu_read_lock</code>) — 读取路径不能阻塞但零开销</td>
+</tr>
+<tr>
+<td><strong>需要分配内存的读取</strong></td>
+<td>SRCU — 读取路径可能需要 <code class="c">kmalloc</code></td>
+</tr>
+<tr>
+<td><strong>模块卸载</strong></td>
+<td><code class="c">synchronize_rcu_expedited()</code> — 快速回收，不长时间阻塞</td>
+</tr>
+<tr>
+<td><strong>避免尾延迟</strong></td>
+<td>不用 expedited — IPI 风暴会干扰交易线程</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实盘：</strong> 交易线程用经典 RCU 读取行情数据。<strong>绝不在交易线程调用 <code class="c">synchronize_rcu()</code> 或 <code class="c">synchronize_rcu_expedited()</code></strong> ——前者阻塞数十毫秒，后者 IPI 干扰所有核。</p>
+</blockquote>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Tree RCU 为什么能扩展到 4096+ CPU？</p>
+<blockquote>
+<p>Tree RCU 将 CPU 组织成树形结构，每个 CPU 只向父节点报告静止状态，宽限期完成只需 O(log N) 次传播。全局 RCU 需要检查每个 CPU (O(N))，4096 核时差异巨大。</p>
+</blockquote>
+<p><strong>Q2:</strong> SRCU 的 <code class="c">srcu_read_lock()</code> 为什么要返回索引？经典 RCU 不需要。</p>
+<blockquote>
+<p>SRCU 使用双计数器：reader 进入时锁当前索引，writer 需要等两个索引的 reader 都退出。索引告诉 <code class="c">srcu_read_unlock()</code> 释放哪个计数器。经典 RCU 依赖禁用抢占，不需要区分。</p>
+</blockquote>
+<p><strong>Q3:</strong> expedited RCU 适合在 HFT 系统中使用吗？</p>
+<blockquote>
+<p><strong>不适合在运行时使用。</strong> expedited RCU 通过 IPI 强制所有 CPU 进入静止状态，IPI 中断会干扰交易线程的延迟。仅适合在系统初始化或模块加载/卸载时使用，绝不在交易时段调用。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>RCU 现代实现</h2></div>
+<blockquote>
+<p>笨叔《奔跑吧 Linux 内核》读书笔记
+对应旧书: ULK3 / LKD3 (Linux 2.6)
+对应现代内核: Linux 5.x / 6.x</p>
+</blockquote>
+<hr />
+<h2>本节要点</h2>
+<p>RCU（Read-Copy-Update）是内核中最重要的无锁读机制。现代内核相比 LKD3 时代有重大演进：</p>
+<ul>
+<li><strong>Tree RCU（层级 RCU）</strong>：2.6 时代的大核 RCU 在千核系统上扩展性差，Tree RCU 按 NUMA 拓扑组织 rcu_node 树，每层 fanout 限制锁竞争</li>
+<li><strong>SRCU（Sleepable RCU）</strong>：允许读者在 RCU 临界区内睡眠（标准 RCU 不允许），代价是 <code class="c">synchronize_srcu()</code> 更慢</li>
+<li><strong>Tasks RCU（Tasks Trace）</strong>：5.x 引入，追踪特定任务而非全 CPU quiescent state，用于保护 per-task 数据</li>
+<li><strong>Poll RCU / lazy RCU</strong>：6.x 引入 <code class="c">call_rcu_lazy()</code>，延迟批量回收，减少 cache 抖动</li>
+<li><strong>RCU stall detector 增强</strong>：<code class="c">rcu_cpu_stall_timeout</code> 可配置多级超时 + 自动打印栈</li>
+</ul>
+<p>核心思想不变：<strong>读者无锁</strong>（<code class="c">rcu_read_lock</code> 仅禁止抢占），<strong>写者拷贝更新 + 延迟释放</strong>（等所有读者退出后 <code class="c">synchronize_rcu</code> / <code class="c">call_rcu</code> 回收旧数据）。</p>
+<hr />
+<h2>与旧书对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 (2.6)</th>
+<th>笨叔 (5.x/6.x)</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>经典 RCU（flat）</td>
+<td>Tree RCU（hierarchical）</td>
+<td>千核系统扩展性</td>
+</tr>
+<tr>
+<td><code class="c">synchronize_rcu()</code> 阻塞</td>
+<td><code class="c">call_rcu()</code> + kfree_rcu() 异步</td>
+<td>避免写者阻塞</td>
+</tr>
+<tr>
+<td><code class="c">rcu_read_lock</code> = preempt_disable</td>
+<td>同上（但 PREEMPT_RT 下用 rwlock）</td>
+<td>RT 内核需要可抢占</td>
+</tr>
+<tr>
+<td>无 SRCU</td>
+<td><code class="c">srcu_read_lock</code> / <code class="c">synchronize_srcu</code></td>
+<td>需要在 RCU 临界区睡眠</td>
+</tr>
+<tr>
+<td>stall 超时固定 60s</td>
+<td>可配置 + 多级 + 自动 dump</td>
+<td>大系统调试需要</td>
+</tr>
+<tr>
+<td><code class="c">kfree</code> 在回调中</td>
+<td><code class="c">kfree_rcu(ptr, offset)</code> 宏自动</td>
+<td>减少回调函数样板代码</td>
+</tr>
+<tr>
+<td>无 lazy RCU</td>
+<td><code class="c">call_rcu_lazy()</code> 6.x+</td>
+<td>减少 cache line bouncing</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>关键数据结构 / 函数</h2>
+<pre class="code" data-label="code"><code class="c">// 源码路径: kernel/rcu/tree.c (Tree RCU)
+//          kernel/rcu/srcutree.c (SRCU)
+//          include/linux/rcupdate.h
+
+// Tree RCU 的层级节点
+struct rcu_node {
+    raw_spinlock_t lock;        // 保护本节点
+    unsigned long gp_seq;       // 宽限期序号
+    unsigned long qsmask;       // 待报告 quiescent state 的 CPU 位图
+    struct rcu_node *parent;    // 父节点
+    // ...
+};
+
+struct rcu_state {
+    struct rcu_node node[RCU_NUM_LVLS];  // 层级树根
+    unsigned long gp_seq;      // 当前宽限期序号
+    // ...
+};
+
+// 读者 API（无开销）
+static __always_inline void rcu_read_lock(void);    // preempt_disable()
+static __always_inline void rcu_read_unlock(void);  // preempt_enable()
+
+// 写者 API
+void synchronize_rcu(void);     // 等待所有读者退出（阻塞）
+void call_rcu(struct rcu_head *head, rcu_callback_t func);  // 异步回调
+
+// 现代 API
+void kfree_rcu(ptr, rhf);       // 异步 kfree（6.x 用 offset 而非字段名）
+void call_rcu_lazy(head, func); // 延迟批量回收（6.x+）
+
+// SRCU（可睡眠 RCU）
+int srcu_read_lock(struct srcu_struct *ssp);
+void srcu_read_unlock(struct srcu_struct *ssp, int idx);
+void synchronize_srcu(struct srcu_struct *ssp);
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<p>RCU 对 HFT 的核心价值是<strong>读者零开销</strong>：</p>
+<ol>
+<li><strong>行情数据热路径</strong>：行情分发用 RCU 保护读者链表——交易策略线程 <code class="c">rcu_read_lock()</code> 读取行情快照（仅 preempt_disable，无锁无原子操作），行情更新线程 <code class="c">synchronize_rcu()</code> 后释放旧快照</li>
+<li><strong>路由表/配置热更新</strong>：HFT 路由表用 RCU 保护——查表无锁，更新时拷贝新表 + <code class="c">call_rcu</code> 释放旧表</li>
+<li><strong>PREEMPT_RT 注意</strong>：RT 内核中 <code class="c">rcu_read_lock</code> 在某些路径下用 rwlock（可抢占），性能略降但仍是 O(1) 读</li>
+<li><strong>SRCU 场景</strong>：如果读者需要睡眠（如 RCU 临界区内调 <code class="c">kmalloc(GFP_KERNEL)</code>），用 SRCU 替代标准 RCU</li>
+<li><strong>stall 风险</strong>：HFT 线程 SCHED_FIFO 长时间不退出 RCU 临界区 → RCU stall → 内核告警。确保 RCU 临界区极短（微秒级）</li>
+</ol>
+<p><strong>建议</strong>：HFT 热路径用标准 RCU（reader 零开销），避免 SRCU（reader 有原子操作）。RCU 临界区不要包含 IO/睡眠/长时间计算。</p>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1: RCU 读者为什么不需要锁？写者如何保证读者看到一致的数据？</summary>
+<p>RCU 读者通过 <code class="c">rcu_read_lock()</code>（= preempt_disable()）保护——禁止抢占保证读者不会被迁移，但不需要任何锁或原子操作。写者不修改现有数据，而是创建新副本（copy），然后通过 <code class="c">rcu_assign_pointer()</code> 原子地切换指针。旧数据通过 <code class="c">synchronize_rcu()</code> 或 <code class="c">call_rcu()</code> 延迟释放——等到所有在指针切换前进入 RCU 临界区的读者都退出后（宽限期 grace period），才释放旧数据。新读者看到新副本，旧读者看到旧副本，两者都一致。</p>
+</details>
+<details>
+<summary>Q2: Tree RCU 相比经典 RCU 解决了什么问题？</summary>
+<p>经典 RCU（flat）用一个全局位图追踪所有 CPU 的 quiescent state（静止状态）。千核系统上每个 CPU 完成宽限期报告都要写同一个位图 → cache line bouncing 严重。Tree RCU 按 NUMA 拓扑构建 rcu_node 树：叶子节点管理少量 CPU（如 16 个），中间节点合并子节点状态，根节点最终确认。每层只在本层锁上竞争，fanout 限制了竞争范围。千核系统宽限期从秒级降到毫秒级。</p>
+</details>
+<details>
+<summary>Q3: HFT 中使用 RCU 有什么风险？如何避免 RCU stall？</summary>
+<p>风险1：RCU stall——如果读者在 RCU 临界区内长时间不退出（如 SCHED_FIFO 线程被绑核后不被抢占），写者的 <code class="c">synchronize_rcu()</code> 会等待超过 stall 超时（默认 60s），触发内核告警甚至 panic。避免：RCU 临界区保持极短（微秒级），不包含 IO/睡眠/长时间循环。风险2：PREEMPT_RT 下 <code class="c">rcu_read_lock</code> 可能用 rwlock（可抢占），reader 不再完全零开销。避免：在 RT 内核上测量 RCU 临界区延迟，必要时改用 SRCU。风险3：<code class="c">synchronize_rcu()</code> 阻塞写者线程。避免：用 <code class="c">call_rcu()</code> 异步回调代替。</p>
+</details>
       </section>
 
 

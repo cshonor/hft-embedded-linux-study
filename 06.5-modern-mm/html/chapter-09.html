@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-memory-cgroup</a>
+          <a href="#s-02"><span class="n">02</span>02-monitoring-tools</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 09: Memory Cgroup 与监控</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 9</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 9</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +322,271 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06.5-modern-mm/chapter-08-oom-psi-zswap/</code>：memcg 触发 OOM 的流程</li>
 <li><code class="c">06.6-systems-performance/</code>：性能监控工具体系</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Bootlin: 内存 cgroup</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — cgroup v2</a>
+<strong>主题:</strong> 内存 cgroup v2
+<strong>对标旧书:</strong> 无 (ULK3/LKD3 未涉及 cgroup)</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>cgroup v2 内存控制</h3>
+<pre class="code" data-label="shell"><code class="c"># 创建 cgroup
+mkdir /sys/fs/cgroup/myapp
+
+# 设置内存限制
+echo 1073741824 &gt; /sys/fs/cgroup/myapp/memory.max  # 1GB 硬限制
+echo 536870912 &gt; /sys/fs/cgroup/myapp/memory.high   # 512MB 软限制 (超过则回收)
+
+# 将进程加入 cgroup
+echo &lt;pid&gt; &gt; /sys/fs/cgroup/myapp/cgroup.procs
+
+# 查看内存使用
+cat /sys/fs/cgroup/myapp/memory.current   # 当前用量
+cat /sys/fs/cgroup/myapp/memory.peak      # 历史峰值
+cat /sys/fs/cgroup/myapp/memory.events    # 事件计数
+</code></pre>
+<h3>memory.max vs memory.high</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>控制</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">memory.max</code></td>
+<td>硬限制，超过则 OOM killer 或拒绝分配</td>
+</tr>
+<tr>
+<td><code class="c">memory.high</code></td>
+<td>软限制，超过则积极回收该 cgroup 的页</td>
+</tr>
+<tr>
+<td><code class="c">memory.min</code></td>
+<td>最低保障，保护这些内存不被回收</td>
+</tr>
+<tr>
+<td><code class="c">memory.low</code></td>
+<td>最佳努力保护，低于此值时尽量不回收</td>
+</tr>
+</tbody>
+</table></div>
+<h3>memory.events</h3>
+<pre class="code" data-label="shell"><code class="c">cat /sys/fs/cgroup/myapp/memory.events
+# low 0          — 低于 memory.low 被回收的次数
+# high 123       — 超过 memory.high 的次数
+# max 5          — 达到 memory.max 的次数
+# oom 1          — OOM 触发次数
+# oom_kill 1     — OOM 杀死进程的次数
+</code></pre>
+<h3>cgroup v2 LRU</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/memcontrol.c
+// 每个 cgroup 有自己的 LRU 链表 (或 MGLRU 代)
+
+struct mem_cgroup {
+    struct lruvec lruvec;  // per-node per-cgroup LRU
+    unsigned long memory_current;
+    unsigned long memory_high;
+    unsigned long memory_max;
+    // ...
+};
+
+// 页回收时优先回收超限 cgroup 的页
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 创建受限 cgroup
+mkdir /sys/fs/cgroup/test_mem
+echo 268435456 &gt; /sys/fs/cgroup/test_mem/memory.max  # 256MB
+echo $$ &gt; /sys/fs/cgroup/test_mem/cgroup.procs
+
+# 2. 分配内存触发 OOM
+python3 -c &quot;x = ['x' * 1024 * 1024] * 512&quot;  # 尝试分配 512MB
+
+# 3. 查看 cgroup 内存统计
+cat /sys/fs/cgroup/test_mem/memory.current
+cat /sys/fs/cgroup/test_mem/memory.stat
+# cache 12345678    — 页缓存
+# rss 23456789      — RSS
+# slab 3456789      — slab
+# pgfault 12345     — page fault 次数
+
+# 4. 清理
+rmdir /sys/fs/cgroup/test_mem
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 cgroup</td>
+<td>cgroup v2 内存控制</td>
+</tr>
+<tr>
+<td>全局 LRU</td>
+<td>per-cgroup LRU</td>
+</tr>
+<tr>
+<td>全局 OOM</td>
+<td>per-cgroup OOM 隔离</td>
+</tr>
+<tr>
+<td>无 memory.high</td>
+<td>软限制回收</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> memory.high 和 memory.max 的区别？哪个对 HFT 更有用？</p>
+<blockquote>
+<p>memory.max 是硬限制，超过触发 OOM killer。memory.high 是软限制，超过后内核积极回收该 cgroup 的页但不杀进程。对 HFT 更有用的是 memory.max——交易进程设明确的内存上限，超过则 OOM（说明有 bug/泄漏），不应用 memory.high（软回收可能引入延迟毛刺）。</p>
+</blockquote>
+<p><strong>Q2:</strong> cgroup v2 的 per-cgroup LRU 如何提高回收效率？</p>
+<blockquote>
+<p>传统全局 LRU 回收时扫描所有页，可能误回收其他 cgroup 的工作集页。per-cgroup LRU 让回收算法只扫描超限 cgroup 的页，精准回收。这减少了不必要的页扫描，也避免了 cgroup 间干扰。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Bootlin: 内存监控工具</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — Memory Management</a>
+<strong>主题:</strong> /proc/meminfo, buddyinfo, slabinfo, vmstat, DAMON
+<strong>对标旧书:</strong> ULK3 Appendix (部分 proc 接口)</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>/proc/meminfo</h3>
+<pre class="code" data-label="shell"><code class="c">cat /proc/meminfo
+# MemTotal:       16384000 kB    — 总物理内存
+# MemFree:          123456 kB    — 空闲内存
+# MemAvailable:    8123456 kB    — 可用内存 (含可回收缓存)
+# Buffers:          234567 kB    — buffer cache
+# Cached:          5678901 kB    — page cache
+# SwapCached:          123 kB    — swap 中缓存的页
+# Active:          4567890 kB    — active LRU
+# Inactive:        3456789 kB    — inactive LRU
+# Slab:             567890 kB    — slab 分配器
+# SReclaimable:     234567 kB    — 可回收 slab
+# SUnreclaim:       333323 kB    — 不可回收 slab
+# AnonPages:       2345678 kB    — 匿名页
+# Mapped:           123456 kB    — 映射到页表
+# Shmem:             56789 kB    — 共享内存
+# KReclaimable:     234567 kB    — 内核可回收
+# HugePages_Total:    1024       — 大页总数
+# HugePages_Free:      512       — 空闲大页
+# Hugepagesize:      2048 kB     — 大页大小 (2MB)
+</code></pre>
+<h3>/proc/buddyinfo</h3>
+<pre class="code" data-label="shell"><code class="c">cat /proc/buddyinfo
+# Node 0, Zone Normal, type    Unmovable  movable  reclaimable
+#   free 3985 234 56 12 3 1 0 0 0 0 0
+#   ↑    ↑   ↑  ↑  ↑  ↑ ↑ ↑ ↑ ↑ ↑ ↑
+#   node zone    迁移类型    order 0-10 空闲块数
+#   order 0 = 4KB, order 1 = 8KB, ..., order 10 = 4MB
+</code></pre>
+<h3>/proc/slabinfo / slabtop</h3>
+<pre class="code" data-label="shell"><code class="c"># slab 统计
+cat /proc/slabinfo | head -5
+# name     &lt;active_objs&gt; &lt;num_objs&gt; &lt;objsize&gt; &lt;objperslab&gt; &lt;pagesperslab&gt;
+# inflight_0       0        0          16         255             1
+# kmalloc-8     12345   13056           8         512             1
+
+# slabtop (按用量排序)
+slabtop -o -s c | head -15
+</code></pre>
+<h3>vmstat / sar</h3>
+<pre class="code" data-label="shell"><code class="c"># 页回收统计
+cat /proc/vmstat | grep -E &quot;pgscan|pgsteal|pgalloc&quot;
+# pgalloc_dma 0
+# pgalloc_normal 12345678
+# pgalloc_movable 0
+# pgscan_anon 123456          — 扫描的 anon 页
+# pgscan_file 234567          — 扫描的 file 页
+# pgsteal_anon 12345          — 回收的 anon 页
+# pgsteal_file 234567         — 回收的 file 页
+
+# sar 页回收监控
+sar -B 1 5  # 每秒, 共5次
+# pgpgin/s pgpgout/s fault/s majflt/s pgfree/s pgscank/s pgscand/s pgsteal/s
+</code></pre>
+<h3>DAMON</h3>
+<pre class="code" data-label="shell"><code class="c"># 5.15+ 启用 DAMON
+echo &lt;pid&gt; &gt; /sys/kernel/debug/damon/target_ids
+echo &quot;5 100 1000 10 1000&quot; &gt; /sys/kernel/debug/damon/attrs
+echo on &gt; /sys/kernel/debug/damon/monitor_on
+# 查看结果需要 CONFIG_DAMON_VADDR_KUNIT_TEST 或 debugfs
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 全面内存诊断
+echo &quot;=== meminfo ===&quot; &amp;&amp; head -20 /proc/meminfo
+echo &quot;=== buddyinfo ===&quot; &amp;&amp; cat /proc/buddyinfo
+echo &quot;=== slabtop ===&quot; &amp;&amp; slabtop -o -s c | head -10
+echo &quot;=== vmstat ===&quot; &amp;&amp; cat /proc/vmstat | grep -E &quot;pgscan|pgsteal&quot;
+echo &quot;=== hugepages ===&quot; &amp;&amp; cat /proc/meminfo | grep -i huge
+
+# 2. 进程级内存
+cat /proc/&lt;pid&gt;/status | grep -i vm
+# VmPeak: 123456 kB    — 峰值虚拟内存
+# VmSize:  98765 kB    — 当前虚拟内存
+# VmRSS:   45678 kB    — 物理内存
+# VmHWM:   56789 kB    — 峰值物理内存
+
+# 3. 进程 smaps
+cat /proc/&lt;pid&gt;/smaps_rollup
+# Rss:    45678 kB
+# Pss:    41234 kB    — Proportional Set Size (按共享比例分摊)
+# Uss:    34567 kB    — Unique Set Size (独占)
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>部分 /proc 接口</td>
+<td>丰富 + DAMON (5.15+)</td>
+</tr>
+<tr>
+<td>无 Pss/Uss</td>
+<td>smaps_rollup 提供</td>
+</tr>
+<tr>
+<td>无 PSI</td>
+<td>/proc/pressure/</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> MemAvailable 和 MemFree 的区别？为什么 HFT 监控应该看 MemAvailable？</p>
+<blockquote>
+<p>MemFree 是完全空闲的物理内存。MemAvailable = MemFree + 可回收缓存（clean page cache + SReclaimable slab）- 共享内存。MemAvailable 更准确反映"实际可用"内存。HFT 应监控 MemAvailable——如果 MemFree 很低但 MemAvailable 充足，说明缓存占用正常，系统不会触发回收。如果 MemAvailable 也低，才需要担心。</p>
+</blockquote>
+<p><strong>Q2:</strong> buddyinfo 中 order 9 (2MB) 空闲块为 0 意味着什么？对 HFT 有什么影响？</p>
+<blockquote>
+<p>order 9 空闲块为 0 意味着没有连续的 2MB 物理页可供分配。HFT 需要大页（2MB）减少 TLB miss，如果运行时申请大页失败会退化到 4KB 页，TLB miss 增加。解决：(1) 启动时预留 <code class="c">echo 1024 &gt; /proc/sys/vm/nr_hugepages</code>；(2) 禁用 THP（避免 khugepaged 零散消耗）；(3) 用 <code class="c">mmap(MAP_HUGETLB)</code> 预分配。</p>
+</blockquote>
+</details>
       </section>
 
 

@@ -276,6 +276,13 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-panic-causes</a>
+          <a href="#s-02"><span class="n">02</span>02-soft-lockup</a>
+          <a href="#s-03"><span class="n">03</span>03-hard-lockup</a>
+          <a href="#s-04"><span class="n">04</span>04-watchdog-mechanism</a>
+          <a href="#s-05"><span class="n">05</span>05-hangcheck-timer</a>
+          <a href="#s-06"><span class="n">06</span>06-custom-panic-handler</a>
+          <a href="#s-07"><span class="n">07</span>07-kdump-kexec</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +306,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch10 Kernel Panic, Lockups, and Hangs</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 10</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 10</b></span><span>sections <b>8</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +319,1376 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>精读。HFT 系统挂死时的第一诊断手段。soft lockup 通常意味着内核模块中有死循环或自旋锁持有过久。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Kernel Panic 的触发与处理</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 3: Diagnostics &amp; Advanced Tools</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Panic 是什么</h3>
+<p>Panic 是内核遇到致命错误时彻底放弃运行。系统停止所有处理，打印 panic 信息后挂起或重启。</p>
+<h3>Panic 触发路径</h3>
+<pre class="code" data-label="C"><code class="c">// 主动触发
+panic(&quot;fatal error: %d\n&quot;, err);
+
+// 被动触发
+// 1. Oops + panic_on_oops=1
+// 2. BUG_ON() + panic_on_bug (某些配置)
+// 3. stack protector 检测到栈溢出
+// 4. RCU stall (超过阈值未完成宽限期)
+// 5. soft lockup (超过阈值不调度)
+// 6. hard lockup (超过阈值不响应中断)
+</code></pre>
+<h3>Panic 处理流程</h3>
+<pre class="code" data-label="code"><code class="c">panic() 调用
+  → 打印崩溃信息
+  → 调用 panic_notifier_list 回调
+  → 如果配置 kdump: kexec 到 crash kernel
+  → 否则: 打印 &quot;Kernel panic - not syncing&quot;
+  → 如果 panic_timeout &gt; 0: 延迟后重启
+  → 否则: 永久挂起
+</code></pre>
+<h3>Panic 触发原因分类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原因</th>
+<th>说明</th>
+<th>检测机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主动调用</td>
+<td><code class="c">panic()</code> 函数</td>
+<td>开发者代码</td>
+</tr>
+<tr>
+<td>Oops 升级</td>
+<td><code class="c">panic_on_oops=1</code></td>
+<td>Oops 处理路径</td>
+</tr>
+<tr>
+<td>栈溢出</td>
+<td>stack protector</td>
+<td>编译器插入检查</td>
+</tr>
+<tr>
+<td>RCU stall</td>
+<td>宽限期超时</td>
+<td>RCU stall detector</td>
+</tr>
+<tr>
+<td>Soft lockup</td>
+<td>CPU 长时间不调度</td>
+<td>watchdog hrtimer</td>
+</tr>
+<tr>
+<td>Hard lockup</td>
+<td>CPU 不响应中断</td>
+<td>NMI watchdog</td>
+</tr>
+<tr>
+<td>OOM</td>
+<td>内存耗尽无法恢复</td>
+<td>OOM killer</td>
+</tr>
+<tr>
+<td>断言失败</td>
+<td>BUG_ON()</td>
+<td>编译时插入</td>
+</tr>
+</tbody>
+</table></div>
+<h3>配置参数</h3>
+<pre class="code" data-label="shell"><code class="c"># 自动重启延迟
+cat /proc/sys/kernel/panic     # 0=不重启
+echo 5 &gt; /proc/sys/kernel/panic # 5秒后重启
+
+# Oops 是否升级为 panic
+cat /proc/sys/kernel/panic_on_oops  # 0=不升级
+echo 1 &gt; /proc/sys/kernel/panic_on_oops
+
+# panic 时打印所有 CPU 栈
+echo 1 &gt; /proc/sys/kernel/panic_print
+# 位掩码:
+#   1 = 打印所有 CPU 栈
+#   2 = 打印所有 CPU 寄存器
+#   4 = 打印所有 CPU TLB
+#   8 = 打印 panic 原因
+#  组合: echo 15 &gt; /proc/sys/kernel/panic_print (全部)
+
+# panic 时是否打印 ftrace 缓冲区
+echo 1 &gt; /proc/sys/kernel/traceoff_on_warning
+</code></pre>
+<h3>panic_notifier_list</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/panic_notifier.h&gt;
+
+// Panic 时内核会依次调用注册的回调
+// 可用于: 发送告警、保存状态到 NVRAM、关闭设备
+
+static int my_panic_handler(struct notifier_block *nb,
+                            unsigned long action, void *data) {
+    // data 是 panic 的格式字符串
+    pr_emerg(&quot;HFT system going down\n&quot;);
+    return NOTIFY_DONE;
+}
+</code></pre>
+<h3>panic_print 位掩码详解</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>值</th>
+<th>含义</th>
+<th>输出内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>无额外输出</td>
+<td>仅 panic 信息</td>
+</tr>
+<tr>
+<td>1</td>
+<td>所有 CPU 栈</td>
+<td>每个 CPU 的调用栈</td>
+</tr>
+<tr>
+<td>2</td>
+<td>所有 CPU 寄存器</td>
+<td>每个 CPU 的寄存器转储</td>
+</tr>
+<tr>
+<td>4</td>
+<td>所有 CPU TLB</td>
+<td>TLB 内容</td>
+</tr>
+<tr>
+<td>8</td>
+<td>panic 原因</td>
+<td>详细的 panic 原因</td>
+</tr>
+<tr>
+<td>15</td>
+<td>全部</td>
+<td>以上全部</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<p>HFT 生产环境配置：</p>
+<pre class="code" data-label="shell"><code class="c"># /etc/sysctl.d/99-hft.conf
+kernel.panic_on_oops = 1       # Oops 升级为 panic
+kernel.panic = 5               # 5 秒后自动重启
+kernel.panic_print = 1         # 打印所有 CPU 栈
+
+# 理由:
+# 1. Oops 后状态不确定，不能继续交易
+# 2. 5 秒延迟足够 kdump 保存 vmcore
+# 3. 打印所有 CPU 栈帮助分析崩溃时的全局状态
+</code></pre>
+<h3>Panic 日志示例</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] Kernel panic - not syncing: Fatal exception in interrupt
+[  123.456790] CPU: 2 PID: 0 Comm: swapper/2 Tainted: G      W    6.1.63 #1
+[  123.456795] Hardware name: Raspberry Pi 5 Model B (DT)
+[  123.456800] Call trace:
+[  123.456805]  my_irq_handler+0x3c/0x100 [my_module]
+[  123.456810]  __handle_irq_event_percpu+0x48/0x100
+[  123.456815]  handle_irq_event_percpu+0x1c/0x60
+[  123.456820]  ...
+[  123.456825] Kernel Offset: disabled
+[  123.456830] ---[ end Kernel panic - not syncing: Fatal exception in interrupt ]---
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> <code class="c">panic_on_oops=1</code> 在 HFT 中为什么重要？</p>
+<blockquote>
+<p>HFT 内核模块 Oops 后系统状态不确定（可能数据结构损坏）。如果不 panic 继续运行，可能产生错误交易。设为 1 确保系统重启到干净状态，配合 <code class="c">panic=5</code> 快速恢复。</p>
+</blockquote>
+<p><strong>Q2:</strong> panic 后内核做了哪些事情？</p>
+<blockquote>
+<p>(1) 设置 panic 信息；(2) 打印 panic 信息和调用栈；(3) 打印所有 CPU 的栈（如果 panic_print 配置）；(4) 如果配置了 kdump，kexec 跳转到 crash kernel；(5) 否则根据 panic_timeout 决定重启或挂起。</p>
+</blockquote>
+<p><strong>Q3:</strong> <code class="c">panic_print=1</code> 和 <code class="c">panic_print=15</code> 的区别？</p>
+<blockquote>
+<p><code class="c">1</code> 只打印所有 CPU 的栈。<code class="c">15</code> = 1+2+4+8，打印所有 CPU 栈 + 寄存器 + TLB + panic 原因。调试时建议用 15 获取最多信息，但输出量大可能淹没串口缓冲区。</p>
+</blockquote>
+<p><strong>Q4:</strong> RCU stall 导致的 panic 和 Oops 导致的 panic 有什么区别？</p>
+<blockquote>
+<p>RCU stall 是 RCU 宽限期超时（某个 CPU 长时间不让 RCU 完成），内核主动调用 panic。Oops 导致的 panic 是代码错误（如 NULL deref）触发 Oops，然后因 panic_on_oops=1 升级。两者 root cause 不同：RCU stall 通常是 CPU 卡住，Oops 通常是代码 bug。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 生产环境为什么不设 <code class="c">panic=0</code>（不重启）？</p>
+<blockquote>
+<p><code class="c">panic=0</code> 表示系统挂死等待人工干预。HFT 要求快速恢复——交易中断每分钟损失大。设 <code class="c">panic=5</code> 确保 5 秒后自动重启，比人工干预快得多。5 秒足够 kdump 保存 vmcore（如果配置了）。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch07 Oops vs Panic</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch10 Soft Lockup</a></li>
+<li><a href="chapter-11.html#s-07">05.6 ch10 Kdump/Kexec</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Soft Lockup：CPU 长时间不调度</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Soft Lockup 是什么</h3>
+<p>Soft lockup = CPU 在内核态执行超过阈值（默认 20 秒）未调度。内核 watchdog 检测到后报告警告。</p>
+<h3>Watchdog 检测机制</h3>
+<pre class="code" data-label="code"><code class="c">watchdog 机制:
+  每 CPU 有一个 hrtimer (高精度定时器)
+  每 4 秒触发一次，更新 watchdog 时间戳
+
+  另有一个内核线程 (watchdog/N) 检查时间戳
+  如果当前 CPU 的时间戳超过 20 秒未更新
+  → soft lockup 警告
+
+两层检测:
+  hrtimer (时钟中断驱动) → 更新时间戳
+  watchdog/N 线程 → 检查时间戳是否过期
+</code></pre>
+<h3>报告示例</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] watchdog: BUG: soft lockup - CPU#2 stuck for 22s! [my_app:1234]
+[  123.456795] CPU: 2 PID: 1234 Comm: my_app
+[  123.456800] Call trace:
+[  123.456805]  my_busy_loop+0x100/0x200
+[  123.456810]  my_ioctl+0x48/0x100
+</code></pre>
+<h3>常见原因</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原因</th>
+<th>说明</th>
+<th>典型代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>死循环</td>
+<td>while(1) 或条件永不满足</td>
+<td><code class="c">while (!done);</code></td>
+</tr>
+<tr>
+<td>自旋锁持有过久</td>
+<td>临界区太长</td>
+<td><code class="c">spin_lock(); for(...) {...} spin_unlock();</code></td>
+</tr>
+<tr>
+<td>长时间禁用抢占</td>
+<td>preempt_disable 后耗时操作</td>
+<td><code class="c">preempt_disable(); heavy_work(); preempt_enable();</code></td>
+</tr>
+<tr>
+<td>大量忙等待</td>
+<td>无 yield 的轮询</td>
+<td><code class="c">while (!ready) { /* nothing */ }</code></td>
+</tr>
+<tr>
+<td>递归过深</td>
+<td>栈溢出导致死循环</td>
+<td>递归函数无终止条件</td>
+</tr>
+</tbody>
+</table></div>
+<h3>配置</h3>
+<pre class="code" data-label="shell"><code class="c"># 检测阈值
+cat /proc/sys/kernel/watchdog_thresh  # 默认 10 (soft lockup = 2*10 = 20秒)
+echo 5 &gt; /proc/sys/kernel/watchdog_thresh  # 更快检测 (10秒)
+
+# 启用/禁用 soft lockup 检测
+echo 1 &gt; /proc/sys/kernel/soft_watchdog  # 启用
+echo 0 &gt; /proc/sys/kernel/soft_watchdog  # 禁用
+
+# 设置检测 CPU 范围
+echo &quot;0-3&quot; &gt; /proc/sys/kernel/watchdog_cpumask  # 只在 CPU 0-3 上检测
+</code></pre>
+<h3>修复方法</h3>
+<pre class="code" data-label="C"><code class="c">// 错误: 内核态长时间循环
+void process_all_data(void) {
+    while (has_more_data()) {
+        process_one();  // 可能执行很久
+    }
+    // → soft lockup!
+}
+
+// 修复 1: 在循环中定期让出 CPU
+void process_all_data(void) {
+    while (has_more_data()) {
+        process_one();
+        cond_resched();  // 检查是否需要调度
+    }
+}
+
+// 修复 2: 将工作拆分到 workqueue
+void process_all_data(void) {
+    schedule_work(&amp;process_work);  // 异步处理
+}
+
+// 修复 3: 限制每次处理的数量
+void process_batch(int max_count) {
+    int count = 0;
+    while (has_more_data() &amp;&amp; count &lt; max_count) {
+        process_one();
+        count++;
+    }
+    // 剩余的下次再处理
+}
+</code></pre>
+<h3>HFT 关联应用</h3>
+<p>HFT 内核模块可能在高优先级线程中执行长循环（如批量处理行情数据），如果禁用了抢占或持有自旋锁，CPU 无法调度其他任务。</p>
+<pre class="code" data-label="C"><code class="c">// HFT 常见场景: 批量处理行情数据
+void on_market_data_batch(struct market_data *data, int count) {
+    spin_lock(&amp;data_lock);
+    for (int i = 0; i &lt; count; i++) {
+        process_one(&amp;data[i]);  // 可能耗时
+        if (i % 100 == 0)
+            cond_resched();  // 每 100 条让出一次 CPU
+    }
+    spin_unlock(&amp;data_lock);
+}
+</code></pre>
+<h3>watchdog_thresh 与检测时间的关系</h3>
+<pre class="code" data-label="code"><code class="c">watchdog_thresh = 10 (默认)
+  → hrtimer 每 4 秒触发一次
+  → watchdog/N 线程每 10 秒检查一次
+  → 如果时间戳 &gt; 2 * 10 = 20 秒未更新 → soft lockup
+
+watchdog_thresh = 5 (更敏感)
+  → 如果时间戳 &gt; 10 秒未更新 → soft lockup
+
+watchdog_thresh = 60 (更宽松)
+  → 如果时间戳 &gt; 120 秒未更新 → soft lockup
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> soft lockup 为什么在 HFT 内核模块中常见？</p>
+<blockquote>
+<p>HFT 内核模块可能在高优先级线程中执行长循环（如批量处理行情数据），如果禁用了抢占或持有自旋锁，CPU 无法调度其他任务。解决：在循环中定期调用 <code class="c">cond_resched()</code> 或将工作拆分到下半部。</p>
+</blockquote>
+<p><strong>Q2:</strong> soft lockup 和 hard lockup 的区别？</p>
+<blockquote>
+<p>soft lockup：CPU 在内核态运行超过 20 秒未让出（schedule），但中断仍能响应。hard lockup：CPU 中断被屏蔽超过阈值，连 NMI 都不响应，更严重。</p>
+</blockquote>
+<p><strong>Q3:</strong> soft lockup 阈值如何调整？HFT 系统应该设多少？</p>
+<blockquote>
+<p><code class="c">echo 5 &gt; /proc/sys/kernel/watchdog_thresh</code>（默认 10，soft lockup 阈值 = 2×thresh）。HFT 系统建议保持默认甚至降低到 5——如果交易线程卡在内核态超过 10 秒一定是 bug。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">cond_resched()</code> 如何避免 soft lockup？</p>
+<blockquote>
+<p><code class="c">cond_resched()</code> 检查当前是否有更高优先级的任务需要调度。如果有，主动让出 CPU。在长时间循环中定期调用可以避免 soft lockup。注意：在持自旋锁时不能调用 <code class="c">cond_resched()</code>（会调度 while atomic）。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 隔离核上为什么可能需要禁用 soft lockup 检测？</p>
+<blockquote>
+<p>HFT 交易线程用 SCHED_FIFO 绑定在隔离核上，长时间不调度是设计行为。如果 watchdog 仍在该核检测，会误报 soft lockup。通过 <code class="c">watchdog_cpumask</code> 排除隔离核。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-03">05.6 ch10 Hard Lockup</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch10 Watchdog 机制详解</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch10 Panic 触发与处理</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>Hard Lockup：CPU 不响应中断</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Hard Lockup 是什么</h3>
+<p>Hard lockup = CPU 不响应中断超过阈值。比 soft lockup 更严重——CPU 完全卡死，连时钟中断都无法处理。</p>
+<h3>检测机制</h3>
+<pre class="code" data-label="code"><code class="c">Hard lockup 检测:
+  NMI (Non-Maskable Interrupt) 定期触发
+  检查 hrtimer 是否在预期时间内执行
+  如果 hrtimer 没执行 → CPU 不响应中断 → hard lockup
+
+检测层次:
+  NMI watchdog → 检查 hrtimer 是否运行
+    → hrtimer 检查 watchdog 时间戳 → 检测 soft lockup
+      → watchdog/N 线程 → 检查时间戳
+
+如果 hrtimer 都不运行 → NMI 检测到 hard lockup
+</code></pre>
+<h3>报告示例</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] Watchdog detected hard LOCKUP on cpu 2
+[  123.456795] CPU: 2 PID: 0 Comm: swapper/2
+[  123.456800] Call trace:
+[  123.456805]  my_spin_lock_loop+0x200/0x300
+[  123.456810]  __handle_irq_event_percpu+0x48/0x100
+</code></pre>
+<h3>常见原因</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原因</th>
+<th>说明</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断禁用过久</td>
+<td><code class="c">local_irq_disable()</code> 后执行耗时操作</td>
+<td>长临界区</td>
+</tr>
+<tr>
+<td>NMI 处理函数死循环</td>
+<td>NMI 处理函数中不应有循环</td>
+<td>NMI handler bug</td>
+</tr>
+<tr>
+<td>硬件问题</td>
+<td>CPU 卡死、总线挂死</td>
+<td>硬件故障</td>
+</tr>
+<tr>
+<td>自旋锁 + 中断禁用</td>
+<td><code class="c">spin_lock_irq()</code> 临界区过长</td>
+<td>锁内大量计算</td>
+</tr>
+<tr>
+<td>PMU 配置错误</td>
+<td>NMI 源配置不当</td>
+<td>watchdog 误报</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Soft Lockup vs Hard Lockup</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>Soft Lockup</th>
+<th>Hard Lockup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>定义</td>
+<td>CPU 未调度超过阈值</td>
+<td>CPU 不响应中断超过阈值</td>
+</tr>
+<tr>
+<td>中断响应</td>
+<td>仍能响应</td>
+<td>不响应</td>
+</tr>
+<tr>
+<td>检测器</td>
+<td>watchdog 线程</td>
+<td>NMI watchdog</td>
+</tr>
+<tr>
+<td>严重程度</td>
+<td>警告</td>
+<td>严重</td>
+</tr>
+<tr>
+<td>可能升级</td>
+<td>可能升级为 hard lockup</td>
+<td>可能直接 panic</td>
+</tr>
+<tr>
+<td>常见原因</td>
+<td>死循环/锁持有过久</td>
+<td>中断禁用过久</td>
+</tr>
+</tbody>
+</table></div>
+<h3>配置</h3>
+<pre class="code" data-label="shell"><code class="c"># hard lockup 检测阈值 (与 soft lockup 共用)
+cat /proc/sys/kernel/watchdog_thresh
+echo 10 &gt; /proc/sys/kernel/watchdog_thresh  # 阈值
+
+# 禁用 hard lockup 检测 (不推荐)
+echo 0 &gt; /proc/sys/kernel/nmi_watchdog
+
+# 启用
+echo 1 &gt; /proc/sys/kernel/nmi_watchdog
+</code></pre>
+<h3>ARM64 上的 Hard Lockup 检测</h3>
+<pre class="code" data-label="code"><code class="c">x86:
+  NMI 不可屏蔽中断 → PMU 硬件计数器溢出产生 NMI
+  NMI handler 检查 hrtimer 是否执行
+
+ARM64:
+  使用 ARM watchdog (SPMI/WDT)
+  或 PMU 中断 (性能计数器溢出)
+  CONFIG_ARM_SDE_INTERFACE=y (SDEI watchdog)
+  CONFIG_ARM64_ERRATUM_1024128=y (特定 CPU 修正)
+</code></pre>
+<h3>修复方法</h3>
+<pre class="code" data-label="C"><code class="c">// 错误: 禁用中断后执行耗时操作
+void bad_function(void) {
+    unsigned long flags;
+    local_irq_save(flags);
+    // 以下操作耗时过长 → hard lockup
+    for (int i = 0; i &lt; 1000000; i++) {
+        slow_operation();
+    }
+    local_irq_restore(flags);
+}
+
+// 修复 1: 缩短中断禁用时间
+void good_function(void) {
+    unsigned long flags;
+    // 将不需要中断保护的操作移到外面
+    for (int i = 0; i &lt; 1000000; i++) {
+        slow_operation();  // 不需要中断禁用
+    }
+    // 只在必要时禁用中断
+    local_irq_save(flags);
+    quick_critical_section();
+    local_irq_restore(flags);
+}
+
+// 修复 2: 用 spin_lock_irqsave 替代手动 IRQ 禁用
+void good_function2(void) {
+    unsigned long flags;
+    spin_lock_irqsave(&amp;my_lock, flags);
+    // 临界区保持简短
+    quick_operation();
+    spin_unlock_irqrestore(&amp;my_lock, flags);
+}
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="C"><code class="c">// HFT 模块中可能触发 hard lockup 的场景
+void on_trade_signal(void) {
+    unsigned long flags;
+    spin_lock_irqsave(&amp;trade_lock, flags);
+
+    // 错误: 在锁内执行网络 I/O
+    send_trade_order();  // 可能耗时 → hard lockup
+
+    // 正确: 只在锁内更新状态，I/O 移到锁外
+    prepare_order(&amp;order);
+    spin_unlock_irqrestore(&amp;trade_lock, flags);
+    send_trade_order();  // 锁外执行
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> hard lockup 和 soft lockup 的区别是什么？</p>
+<blockquote>
+<p>Soft lockup: CPU 在内核态执行过久未调度，但中断仍能响应。Hard lockup: CPU 不响应中断（连时钟中断都无法执行），更严重。Soft lockup 可能升级为 hard lockup（如果禁用了中断）。</p>
+</blockquote>
+<p><strong>Q2:</strong> hard lockup 检测为什么需要 NMI？</p>
+<blockquote>
+<p>hard lockup 的定义就是 CPU 中断被禁用。普通中断无法触发。NMI（Non-Maskable Interrupt）不可被禁用，即使中断关闭也能触发。x86 用 PMU 的 NMI 输出，ARM64 用 ARM watchdog。</p>
+</blockquote>
+<p><strong>Q3:</strong> <code class="c">spin_lock_irq()</code> 临界区过长为什么会导致 hard lockup？</p>
+<blockquote>
+<p><code class="c">spin_lock_irq()</code> 在获取锁的同时禁用中断。如果临界区执行时间超过 watchdog 阈值，CPU 在此期间不响应任何中断（包括时钟中断），触发 hard lockup。解决：缩短临界区，将耗时操作移到锁外。</p>
+</blockquote>
+<p><strong>Q4:</strong> ARM64 上 hard lockup 检测和 x86 有什么不同？</p>
+<blockquote>
+<p>x86 使用 PMU 硬件计数器溢出产生 NMI。ARM64 没有 x86 意义上的 NMI，使用 ARM watchdog（硬件看门狗）或 SDEI（Software Delegated Exception Interface）。CONFIG_ARM_SDE_INTERFACE 提供 SDEI based watchdog。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 模块如何避免 hard lockup？</p>
+<blockquote>
+<p>(1) 缩短 <code class="c">spin_lock_irqsave</code> 临界区；(2) 将网络 I/O、内存分配等耗时操作移到锁外；(3) 使用 workqueue 延迟执行非关键操作；(4) 避免在中断处理函数中执行耗时操作；(5) staging 环境启用 watchdog 检测。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch10 Soft Lockup</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch10 Watchdog 机制详解</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch08 并发 Bug 类型</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>Watchdog 机制详解</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Watchdog 架构</h3>
+<pre class="code" data-label="code"><code class="c">每 CPU:
+  ┌─────────────────────────────────┐
+  │  hrtimer (高精度定时器)          │ ← 每 4 秒触发, 更新 ts
+  │  → 更新 watchdog_touch_ts       │
+  ├─────────────────────────────────┤
+  │  watchdog/N 内核线程            │ ← 检查 ts 是否过期
+  │  → 检查 soft lockup             │
+  ├─────────────────────────────────┤
+  │  NMI handler                    │ ← 检查 hrtimer 是否执行
+  │  → 检查 hard lockup             │
+  └─────────────────────────────────┘
+
+三层检测:
+  1. NMI → 检查 hrtimer 是否运行 → hard lockup
+  2. hrtimer → 更新时间戳
+  3. watchdog/N 线程 → 检查时间戳 → soft lockup
+</code></pre>
+<h3>时间线</h3>
+<pre class="code" data-label="code"><code class="c">正常:
+  CPU2: [hrtimer]---4s---[hrtimer]---4s---[hrtimer]---4s---
+  watchdog/2: check---OK---check---OK---check---OK---
+
+Soft lockup (CPU 在内核态循环, 但中断仍响应):
+  CPU2: [hrtimer]---4s---[hrtimer]---4s---[hrtimer]---4s---
+        (中断还在执行, 但不调度)
+  watchdog/2: check---OK---check---OK---check---EXPIRED!
+  (CPU 上的线程未让出, 20秒后 soft lockup)
+
+Hard lockup (CPU 完全不响应):
+  CPU2: [hrtimer]---X---X---X---  (中断不执行!)
+  NMI: check---OK---check---EXPIRED!
+  (NMI 不可屏蔽, 仍能触发检测)
+</code></pre>
+<h3>Watchdog 配置参数</h3>
+<pre class="code" data-label="shell"><code class="c"># 所有 watchdog 参数
+ls /proc/sys/kernel/ | grep watchdog
+# nmi_watchdog         — hard lockup 检测开关
+# soft_watchdog        — soft lockup 检测开关
+# watchdog_cpumask     — 检测 CPU 范围
+# watchdog_thresh      — 检测阈值
+
+# 设置检测阈值
+echo 10 &gt; /proc/sys/kernel/watchdog_thresh  # 默认 10 (soft=20s, hard=10s)
+
+# 启用/禁用
+echo 1 &gt; /proc/sys/kernel/nmi_watchdog     # hard lockup 检测
+echo 1 &gt; /proc/sys/kernel/soft_watchdog    # soft lockup 检测
+
+# 设置检测 CPU 范围
+echo &quot;0-3&quot; &gt; /proc/sys/kernel/watchdog_cpumask  # 只在 CPU 0-3 上检测
+</code></pre>
+<h3>watchdog_thresh 详解</h3>
+<pre class="code" data-label="code"><code class="c">watchdog_thresh = 10 (默认):
+  hrtimer 间隔 = watchdog_thresh / 2 = 5 秒 (实际 ~4 秒)
+  soft lockup 阈值 = 2 * watchdog_thresh = 20 秒
+  hard lockup 阈值 = watchdog_thresh = 10 秒
+
+watchdog_thresh = 5 (更敏感):
+  hrtimer 间隔 = 2.5 秒
+  soft lockup 阈值 = 10 秒
+  hard lockup 阈值 = 5 秒
+
+watchdog_thresh = 0:
+  完全禁用 watchdog
+</code></pre>
+<h3>watchdog_cpumask</h3>
+<pre class="code" data-label="shell"><code class="c"># 设置哪些 CPU 参与 watchdog 检测
+# 默认: 所有 CPU
+cat /proc/sys/kernel/watchdog_cpumask
+# 0-63
+
+# HFT 场景: 排除隔离核
+# (隔离核上运行 SCHED_FIFO 线程，长时间不调度是正常的)
+echo &quot;0-1&quot; &gt; /proc/sys/kernel/watchdog_cpumask
+# 只有 CPU 0-1 参与 watchdog 检测
+# CPU 2-3 (隔离核) 不检测
+</code></pre>
+<h3>watchdog 内核线程</h3>
+<pre class="code" data-label="shell"><code class="c"># 查看 watchdog 线程
+ps aux | grep watchdog
+# root  10  0  0  ...  [watchdog/0]
+# root  11  0  0  ...  [watchdog/1]
+# root  12  0  0  ...  [watchdog/2]
+# root  13  0  0  ...  [watchdog/3]
+
+# 每个线程绑定到一个 CPU
+# 优先级: SCHED_FIFO (最高优先级)
+# 作用: 定期检查时间戳是否过期
+</code></pre>
+<h3>HFT 关联应用</h3>
+<p>HFT 隔离核上运行 SCHED_FIFO 线程，长时间不调度是正常行为。应将隔离核从 watchdog 检测范围中排除。</p>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境 watchdog 配置
+# /etc/sysctl.d/99-hft.conf
+
+# 保持默认阈值
+kernel.watchdog_thresh = 10
+
+# 排除隔离核（CPU 2-3 用于交易）
+kernel.watchdog_cpumask = &quot;0-1&quot;
+
+# 确保 hard lockup 检测启用（检测硬件故障）
+kernel.nmi_watchdog = 1
+</code></pre>
+<h3>Watchdog 检测流程图</h3>
+<pre class="code" data-label="code"><code class="c">                    ┌─────────────┐
+                    │  NMI 触发    │
+                    └──────┬──────┘
+                           ↓
+                 ┌─────────────────┐
+                 │ hrtimer 是否执行?│
+                 └──────┬──────┬───┘
+                   否   │    是│
+                        ↓      ↓
+              ┌──────────┐  ┌──────────────┐
+              │ HARD     │  │ 更新时间戳    │
+              │ LOCKUP!  │  └──────┬───────┘
+              └──────────┘         ↓
+                          ┌─────────────────┐
+                          │ watchdog/N 检查  │
+                          │ 时间戳是否过期?   │
+                          └──────┬──────┬───┘
+                            是   │    否│
+                                 ↓      ↓
+                           ┌──────────┐  ┌────────┐
+                           │ SOFT     │  │ 正常   │
+                           │ LOCKUP!  │  └────────┘
+                           └──────────┘
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> HFT 隔离核上为什么应该排除 watchdog 检测？</p>
+<blockquote>
+<p>HFT 交易线程用 SCHED_FIFO 绑定在隔离核上，长时间不调度是设计行为（交易线程持续处理行情）。如果 watchdog 仍在该核检测，会误报 soft lockup。通过 <code class="c">watchdog_cpumask</code> 排除隔离核，避免误报。</p>
+</blockquote>
+<p><strong>Q2:</strong> watchdog 线程在每个 CPU 上如何工作？</p>
+<blockquote>
+<p>每 CPU 有一个 watchdog/n 线程（优先级最高 SCHED_FIFO）。它定期被 hrtimer 唤醒，检查时间戳。如果发现时间戳超过 2×thresh 未更新，说明 CPU 被卡住（soft lockup）。hrtimer 本身由时钟中断驱动，如果连时钟中断都不响应则是 hard lockup。</p>
+</blockquote>
+<p><strong>Q3:</strong> watchdog_thresh = 0 会发生什么？</p>
+<blockquote>
+<p>完全禁用 watchdog——既不检测 soft lockup 也不检测 hard lockup。不推荐，因为失去了 CPU 卡死检测能力。HFT 生产环境不应设为 0。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么 watchdog 线程用 SCHED_FIFO 最高优先级？</p>
+<blockquote>
+<p>确保 watchdog 线程能被调度运行——如果 CPU 被低优先级线程占用，watchdog 仍能被唤醒检查时间戳。如果 watchdog 都无法运行，说明 CPU 严重卡死（可能是 hard lockup）。</p>
+</blockquote>
+<p><strong>Q5:</strong> <code class="c">watchdog_cpumask</code> 设置为 "0-1" 后，CPU 2-3 上发生 hard lockup 会怎样？</p>
+<blockquote>
+<p>不会检测到。<code class="c">watchdog_cpumask</code> 同时控制 soft lockup 和 hard lockup 的检测范围。如果隔离核上发生真正的 hard lockup（如硬件故障），watchdog 不会报告。因此隔离核上仍需要硬件看门狗（如外部 WDT）作为最后保障。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch10 Soft Lockup</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch10 Hard Lockup</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch10 Hangcheck Timer</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>Hangcheck Timer</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Hangcheck 是什么</h3>
+<p>Hangcheck 是独立于 watchdog 的挂死检测机制，使用硬件定时器确保即使内核完全挂死也能触发检测。</p>
+<h3>工作原理</h3>
+<pre class="code" data-label="code"><code class="c">Hangcheck Timer:
+  使用硬件定时器 (独立于内核调度)
+  定期检查系统时间是否前进
+  如果系统时间停止前进超过阈值 → 触发重启
+
+参数:
+  hangcheck_tick    — 检查间隔 (默认 30 秒)
+  hangcheck_margin  — 容差时间 (默认 60 秒)
+  hangcheck_reboot  — 挂死时是否重启 (1=重启)
+
+  实际超时 = hangcheck_tick + hangcheck_margin
+           = 30 + 60 = 90 秒
+</code></pre>
+<h3>配置</h3>
+<pre class="code" data-label="shell"><code class="c"># 加载模块
+modprobe hangcheck-timer
+
+# 参数
+echo 60 &gt; /sys/module/hangcheck_timer/parameters/hangcheck_margin  # 容差(秒)
+echo 30 &gt; /sys/module/hangcheck_timer/parameters/hangcheck_tick   # 检查间隔(秒)
+echo 1 &gt; /sys/module/hangcheck_timer/parameters/hangcheck_reboot  # 挂死时重启
+</code></pre>
+<h3>与 Watchdog 的区别</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>Watchdog</th>
+<th>Hangcheck</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发方式</td>
+<td>内核线程 + hrtimer</td>
+<td>硬件定时器</td>
+</tr>
+<tr>
+<td>内核挂死时</td>
+<td>可能失效</td>
+<td>仍能触发</td>
+</tr>
+<tr>
+<td>检测对象</td>
+<td>CPU 不调度</td>
+<td>系统时间不前进</td>
+</tr>
+<tr>
+<td>软件依赖</td>
+<td>依赖调度器</td>
+<td>独立于调度器</td>
+</tr>
+<tr>
+<td>6.x 状态</td>
+<td>主流</td>
+<td>较少使用</td>
+</tr>
+<tr>
+<td>检测精度</td>
+<td>较高（4秒粒度）</td>
+<td>较低（30秒粒度）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>使用场景</h3>
+<pre class="code" data-label="shell"><code class="c"># 场景 1: 补充 watchdog 的盲区
+# watchdog 可能因为调度器停止而失效
+# hangcheck 用硬件定时器，不受调度器影响
+
+# 场景 2: 检测 I/O 路径挂死
+# 某些 I/O 挂死不会导致 CPU 卡住
+# 但系统时间会停止前进
+
+# 场景 3: 双重保障
+# HFT 生产环境同时使用 watchdog 和 hangcheck
+# watchdog 检测 CPU 卡死 (快速, 20秒)
+# hangcheck 检测整体挂死 (慢速, 90秒)
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境配置
+# watchdog (快速检测) + hangcheck (兜底保障)
+
+# /etc/modules-load.d/hangcheck.conf
+hangcheck-timer
+
+# /etc/modprobe.d/hangcheck.conf
+options hangcheck-timer hangcheck_tick=30 hangcheck_margin=60 hangcheck_reboot=1
+
+# 检测时间线:
+# 0-20s:   watchdog 检测 CPU soft lockup
+# 0-10s:   watchdog 检测 CPU hard lockup
+# 0-90s:   hangcheck 检测系统整体挂死
+# 如果 watchdog 失效, hangcheck 90 秒后重启
+</code></pre>
+<h3>硬件看门狗 vs 软件看门狗</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>代表</th>
+<th>可靠性</th>
+<th>响应速度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>硬件 WDT</td>
+<td>外部看门狗芯片</td>
+<td>最高</td>
+<td>可调（亚秒级）</td>
+</tr>
+<tr>
+<td>NMI watchdog</td>
+<td>PMU/ARM WDT</td>
+<td>高</td>
+<td>10 秒级</td>
+</tr>
+<tr>
+<td>Soft watchdog</td>
+<td>hrtimer + 线程</td>
+<td>中</td>
+<td>20 秒级</td>
+</tr>
+<tr>
+<td>Hangcheck</td>
+<td>硬件定时器</td>
+<td>高</td>
+<td>90 秒级</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Hangcheck 为什么比 watchdog 更可靠？</p>
+<blockquote>
+<p>Watchdog 依赖内核线程和 hrtimer，如果内核完全挂死（如死锁导致调度器停止），watchdog 线程无法运行。Hangcheck 使用硬件定时器（独立于内核调度），即使内核完全挂死也能触发中断。</p>
+</blockquote>
+<p><strong>Q2:</strong> hangcheck timer 和 watchdog 的区别是什么？</p>
+<blockquote>
+<p>watchdog 是内核内建机制，检测 CPU 卡住。hangcheck timer 是外部模块，用于检测系统整体无响应（包括 I/O 卡死等）。HFT 系统可两者都用——watchdog 检测 CPU 卡死，hangcheck 检测 I/O 路径卡死。</p>
+</blockquote>
+<p><strong>Q3:</strong> hangcheck 的实际超时时间如何计算？</p>
+<blockquote>
+<p>实际超时 = hangcheck_tick + hangcheck_margin。默认 30 + 60 = 90 秒。tick 是检查间隔，margin 是允许的延迟（系统忙时时间戳可能延迟更新）。如果 90 秒内系统时间没有前进，判定为挂死。</p>
+</blockquote>
+<p><strong>Q4:</strong> HFT 系统应该用 hangcheck 还是外部硬件看门狗？</p>
+<blockquote>
+<p>理想情况下两者都用。hangcheck 是内核模块，不需要额外硬件，但依赖硬件定时器（可能受硬件故障影响）。外部硬件看门狗最可靠（独立于 CPU 和内核），但需要额外硬件。HFT 生产环境建议：watchdog + hangcheck + 外部 WDT 三重保障。</p>
+</blockquote>
+<p><strong>Q5:</strong> 为什么 6.x 内核中 hangcheck 较少使用？</p>
+<blockquote>
+<p>6.x 内核的 watchdog 机制已经比较完善（NMI watchdog + soft watchdog），覆盖了大部分场景。hangcheck 的功能部分被 hw watchdog 子系统取代。但在某些特殊场景（如 I/O 挂死检测）hangcheck 仍有价值。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-04">05.6 ch10 Watchdog 机制详解</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch10 Soft Lockup</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch10 Panic 触发与处理</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-06">
+        <div class="sec-head"><div class="sec-no">06</div><h2>自定义 Panic Handler</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>panic_notifier_list</h3>
+<p>内核 panic 时会依次调用 <code class="c">panic_notifier_list</code> 中注册的回调函数，允许自定义 panic 处理逻辑。</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/panic_notifier.h&gt;
+
+static int my_panic_handler(struct notifier_block *nb,
+                            unsigned long action, void *data) {
+    // data 是 panic 的格式字符串
+    pr_emerg(&quot;My panic handler: system going down\n&quot;);
+
+    // 可以在此:
+    // 1. 发送告警通知
+    // 2. 保存崩溃信息到 NVRAM
+    // 3. 关闭硬件设备
+
+    return NOTIFY_DONE;
+}
+
+static struct notifier_block my_panic_nb = {
+    .notifier_call = my_panic_handler,
+    .priority = 1,  // 优先级 (越高越先调用)
+};
+
+static int __init my_init(void) {
+    atomic_notifier_chain_register(&amp;panic_notifier_list, &amp;my_panic_nb);
+    return 0;
+}
+static void __exit my_exit(void) {
+    atomic_notifier_chain_unregister(&amp;panic_notifier_list, &amp;my_panic_nb);
+}
+</code></pre>
+<h3>Panic Handler 中的限制</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>能否执行</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写 I/O 端口</td>
+<td>✅</td>
+<td>直接硬件操作</td>
+</tr>
+<tr>
+<td>写 NVRAM</td>
+<td>✅</td>
+<td>直接硬件操作</td>
+</tr>
+<tr>
+<td>发送网络包</td>
+<td>⚠️</td>
+<td>网络栈可能已损坏</td>
+</tr>
+<tr>
+<td>分配内存</td>
+<td>❌</td>
+<td>slab 可能已损坏</td>
+</tr>
+<tr>
+<td>获取锁</td>
+<td>❌</td>
+<td>可能死锁</td>
+</tr>
+<tr>
+<td>睡眠/调度</td>
+<td>❌</td>
+<td>系统已停止</td>
+</tr>
+<tr>
+<td>printk</td>
+<td>✅</td>
+<td>可用但可能丢失</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Priority 顺序</h3>
+<pre class="code" data-label="C"><code class="c">// priority 越高越先调用
+// 内核定义的优先级常量:
+#define PANIC_PRIORITY_LOW      0
+#define PANIC_PRIORITY_NORMAL   100
+#define PANIC_PRIORITY_HIGH     200
+#define PANIC_PRIORITY_HIGHEST  300
+
+// HFT 模块建议用高优先级
+// (在系统完全停止前执行)
+static struct notifier_block my_panic_nb = {
+    .notifier_call = my_panic_handler,
+    .priority = PANIC_PRIORITY_HIGH,
+};
+</code></pre>
+<h3>HFT 关联应用</h3>
+<p>HFT 系统可在 panic handler 中：</p>
+<ol>
+<li><strong>发送告警通知运维</strong>：通过简单网络包或 GPIO 信号</li>
+<li><strong>保存交易状态</strong>：写入 NVRAM 或持久存储</li>
+<li><strong>关闭网卡</strong>：避免错误交易继续发送</li>
+<li><strong>记录时间戳</strong>：帮助分析崩溃时间</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">// HFT panic handler 示例
+static int hft_panic_handler(struct notifier_block *nb,
+                             unsigned long action, void *data) {
+    // 1. 关闭交易网卡 (直接 I/O 端口操作)
+    writel(0, net_base + NET_CTRL_REG);
+
+    // 2. 保存最后交易状态到 NVRAM
+    void __iomem *nvram = ioremap(NVRAM_BASE, 256);
+    if (nvram) {
+        writel(0xDEAD, nvram + 0);      // panic 标记
+        writel(jiffies, nvram + 4);     // 时间戳
+        memcpy_toio(nvram + 8, &amp;last_order, sizeof(last_order));
+        iounmap(nvram);
+    }
+
+    // 3. 点亮错误 LED
+    gpio_set_value(ERROR_LED_GPIO, 1);
+
+    // 注意: 不能分配内存、获取锁、睡眠
+    return NOTIFY_DONE;
+}
+</code></pre>
+<h3>Panic Handler 最佳实践</h3>
+<pre class="code" data-label="C"><code class="c">// 1. 保持简短 — handler 执行时间影响重启延迟
+// 2. 不依赖内核子系统 — 它们可能已损坏
+// 3. 只做必要的紧急操作
+// 4. 使用直接 I/O 操作而非内核 API
+// 5. 测试 handler 在各种 panic 场景下的行为
+
+// 测试 panic handler
+// echo c &gt; /proc/sysrq-trigger  — 触发 panic
+</code></pre>
+<h3>panic_notifier vs die_notifier</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>panic_notifier</th>
+<th>die_notifier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发时机</td>
+<td>panic() 时</td>
+<td>Oops 时</td>
+</tr>
+<tr>
+<td>系统状态</td>
+<td>即将停止</td>
+<td>可能继续运行</td>
+</tr>
+<tr>
+<td>可用操作</td>
+<td>极有限</td>
+<td>较多</td>
+</tr>
+<tr>
+<td>注册函数</td>
+<td>atomic_notifier_chain_register(&amp;panic_notifier_list)</td>
+<td>register_die_notifier()</td>
+</tr>
+<tr>
+<td>HFT 用途</td>
+<td>关闭设备、保存状态</td>
+<td>记录错误信息</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> panic handler 中有哪些限制？</p>
+<blockquote>
+<p>Panic 后系统状态不确定，handler 中不能：分配内存（slab 可能已损坏）、获取锁（可能死锁）、依赖正常内核功能。只能做最简单的操作：写 I/O 端口、写 NVRAM、发送网络包（如果网络栈还可用）。建议 handler 极简。</p>
+</blockquote>
+<p><strong>Q2:</strong> 如何自定义 panic handler？</p>
+<blockquote>
+<p>注册 panic_notifier_list 链表：<code class="c">atomic_notifier_chain_register(&amp;panic_notifier_list, &amp;my_notifier)</code>。注意：(1) handler 在 panic 上下文运行，不能睡眠/分配内存；(2) 保持简短；(3) 用于记录关键状态到 NVRAM 或发送告警。</p>
+</blockquote>
+<p><strong>Q3:</strong> panic handler 的 priority 有什么作用？</p>
+<blockquote>
+<p>priority 决定 handler 的调用顺序——越高越先调用。在系统完全停止前，高优先级的 handler 先执行。HFT 模块建议用高优先级，确保在系统完全不可用前完成紧急操作。</p>
+</blockquote>
+<p><strong>Q4:</strong> HFT panic handler 为什么要关闭网卡？</p>
+<blockquote>
+<p>Panic 后系统状态不确定，如果网卡继续发送可能产生错误交易（如重复下单、错误价格）。在 panic handler 中通过直接 I/O 端口操作关闭网卡，确保不会继续发送交易。</p>
+</blockquote>
+<p><strong>Q5:</strong> <code class="c">die_notifier</code> 和 <code class="c">panic_notifier</code> 的区别？</p>
+<blockquote>
+<p><code class="c">die_notifier</code> 在 Oops 时触发（系统可能继续运行），可以记录错误信息。<code class="c">panic_notifier</code> 在 panic 时触发（系统即将停止），只能做紧急操作。HFT 模块可以同时注册两者：Oops 时记录详细信息，panic 时关闭设备。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch10 Panic 触发与处理</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch07 Oops vs Panic</a></li>
+<li><a href="chapter-11.html#s-07">05.6 ch10 Kdump/Kexec</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-07">
+        <div class="sec-head"><div class="sec-no">07</div><h2>Kdump / Kexec 崩溃转储</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Kdump 原理</h3>
+<pre class="code" data-label="code"><code class="c">正常系统:
+  ┌───────────────────────────┐
+  │  Production Kernel        │
+  │  (运行中)                  │
+  │  预留: crashkernel=128M    │
+  └───────────────────────────┘
+
+Panic 时:
+  ┌───────────────────────────┐
+  │  Production Kernel (死)    │
+  │  ┌─────────────────────┐  │
+  │  │ Crash Kernel (kexec)│  │ ← 在预留内存中启动
+  │  │ 收集生产内核的内存   │  │
+  │  │ 生成 vmcore dump    │  │
+  │  └─────────────────────┘  │
+  └───────────────────────────┘
+
+关键: crash kernel 是全新的内核，不受生产内核损坏状态影响
+</code></pre>
+<h3>Kexec 工作原理</h3>
+<pre class="code" data-label="code"><code class="c">1. 正常运行时: kexec 加载 crash kernel 到预留内存
+   kexec -p /boot/vmlinux --append=&quot;root=... irqpoll maxcpus=1&quot;
+
+2. Panic 时: 生产内核调用 kexec 跳转
+   → 不经过 BIOS 重启
+   → 直接跳转到 crash kernel 入口
+   → 生产内核的内存内容保留
+
+3. Crash kernel 启动:
+   → 以最小配置启动 (1 CPU, 无中断)
+   → 通过 /proc/vmcore 暴露生产内核内存
+   → 收集并保存 vmcore dump
+   → 完成后重启
+</code></pre>
+<h3>配置 Kdump</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 内核配置
+CONFIG_KEXEC=y
+CONFIG_CRASH_DUMP=y
+CONFIG_PROC_VMCORE=y
+
+# 2. 预留内存 (boot 参数)
+# crashkernel=128M  — 预留 128MB 给 crash kernel
+# crashkernel=256M  — 更多内存 (大型系统)
+# crashkernel=128M@512M  — 指定位置
+
+# 3. 安装 kdump 工具
+sudo apt install kdump-tools
+
+# 4. 配置
+sudo dpkg-reconfigure kdump-tools
+# 选择 &quot;use kdump&quot;
+
+# 5. 验证
+cat /proc/sys/kernel/crashkernel_addr  # crash kernel 加载地址
+kexec -p /boot/vmlinux --append=&quot;root=... irqpoll maxcpus=1&quot;
+
+# 6. 测试触发
+echo c &gt; /proc/sysrq-trigger  # 手动触发 panic (测试用!)
+</code></pre>
+<h3>分析 vmcore</h3>
+<pre class="code" data-label="shell"><code class="c"># crash 工具分析 vmcore
+crash /usr/lib/debug/vmlinux /var/crash/20260810120000/vmcore
+
+# 常用 crash 命令
+crash&gt; bt                # 崩溃线程的栈回溯
+crash&gt; ps                # 所有进程
+crash&gt; log               # dmesg 日志
+crash&gt; kmem -s           # slab 信息
+crash&gt; struct task_struct ffff000012345678  # 查看特定结构体
+crash&gt; foreach bt        # 所有进程的栈
+crash&gt; sym schedule      # 查看函数地址
+crash&gt; mod               # 已加载模块
+crash&gt; dev               # 设备信息
+</code></pre>
+<h3>crash 工具常用命令</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>功能</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">bt</code></td>
+<td>栈回溯</td>
+<td>查看崩溃线程的调用链</td>
+</tr>
+<tr>
+<td><code class="c">ps</code></td>
+<td>进程列表</td>
+<td>查看所有进程状态</td>
+</tr>
+<tr>
+<td><code class="c">log</code></td>
+<td>内核日志</td>
+<td>查看 dmesg 输出</td>
+</tr>
+<tr>
+<td><code class="c">kmem -s</code></td>
+<td>slab 信息</td>
+<td>检查内存分配状态</td>
+</tr>
+<tr>
+<td><code class="c">kmem -p</code></td>
+<td>页表</td>
+<td>查看物理内存映射</td>
+</tr>
+<tr>
+<td><code class="c">foreach bt</code></td>
+<td>所有栈</td>
+<td>查看所有进程的栈</td>
+</tr>
+<tr>
+<td><code class="c">struct</code></td>
+<td>结构体</td>
+<td>查看特定数据结构</td>
+</tr>
+<tr>
+<td><code class="c">sym</code></td>
+<td>符号查找</td>
+<td>地址↔符号映射</td>
+</tr>
+<tr>
+<td><code class="c">mod</code></td>
+<td>模块</td>
+<td>已加载模块列表</td>
+</tr>
+<tr>
+<td><code class="c">dev</code></td>
+<td>设备</td>
+<td>设备信息</td>
+</tr>
+<tr>
+<td><code class="c">search</code></td>
+<td>内存搜索</td>
+<td>搜索特定值</td>
+</tr>
+</tbody>
+</table></div>
+<h3>树莓派上的 Kdump</h3>
+<pre class="code" data-label="shell"><code class="c"># 树莓派 5 Kdump 配置
+# /boot/cmdline.txt
+console=serial0,115200 crashkernel=128M
+
+# 树莓派 5 (4GB) 可以预留 128MB 给 crash kernel
+# 剩余 ~3.8GB 可用
+
+# 注意: 树莓派需要编译 crash kernel
+# 通常是同一个内核镜像，以不同参数启动
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境 Kdump 配置
+# /etc/sysctl.d/99-hft.conf
+kernel.panic_on_oops = 1
+kernel.panic = 5  # 5 秒后重启
+
+# Kdump 配置
+# crashkernel=256M  # 预留 256MB
+# kdump-tools 自动收集 vmcore 并重启
+
+# 自动收集流程:
+# 1. Panic 发生
+# 2. Kexec 跳转到 crash kernel
+# 3. Crash kernel 收集 vmcore 到 /var/crash/
+# 4. 收集完成后自动重启
+# 5. 重启后 kdump-tools 自动通知运维
+
+# HFT 价值: 崩溃后自动重启 + 保留完整内存镜像供分析
+</code></pre>
+<h3>Kdump 的内存开销</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>预留内存</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">crashkernel=64M</code></td>
+<td>64MB</td>
+<td>小型系统（树莓派 3）</td>
+</tr>
+<tr>
+<td><code class="c">crashkernel=128M</code></td>
+<td>128MB</td>
+<td>标准系统（树莓派 5）</td>
+</tr>
+<tr>
+<td><code class="c">crashkernel=256M</code></td>
+<td>256MB</td>
+<td>大型系统（服务器）</td>
+</tr>
+<tr>
+<td><code class="c">crashkernel=512M</code></td>
+<td>512MB</td>
+<td>超大内存系统</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Kdump 如何在 panic 后收集崩溃信息？</p>
+<blockquote>
+<p>Kdump 预先加载一个 crash kernel（kexec）。Panic 时，生产内核调用 kexec 跳转到 crash kernel（在预留内存中启动）。Crash kernel 启动后，生产内核的内存仍保留，crash kernel 通过 /proc/vmcore 将其导出为 dump 文件。</p>
+</blockquote>
+<p><strong>Q2:</strong> kdump 的工作原理是什么？</p>
+<blockquote>
+<p>正常内核运行时预加载 crash kernel 到保留内存。panic 发生时，kexec 跳转到 crash kernel（不经过 BIOS 重启）。crash kernel 以最小配置启动，通过 /proc/vmcore 暴露原内核的物理内存镜像。用 crash 工具分析 vmcore。</p>
+</blockquote>
+<p><strong>Q3:</strong> HFT 系统是否应该启用 kdump？</p>
+<blockquote>
+<p>应该启用。HFT 崩溃时需要分析 root cause，kdump 保存完整内存镜像。crash kernel 保留内存（通常 128MB-256MB）对 HFT 影响小。建议生产环境配置 kdump + 自动收集 vmcore + 自动重启。</p>
+</blockquote>
+<p><strong>Q4:</strong> crash 工具的 <code class="c">bt</code> 和 <code class="c">foreach bt</code> 有什么区别？</p>
+<blockquote>
+<p><code class="c">bt</code> 只显示当前崩溃线程的栈回溯。<code class="c">foreach bt</code> 显示所有进程/线程的栈回溯。后者帮助分析崩溃时全局状态——如哪些线程在等锁、哪些在中断处理中。</p>
+</blockquote>
+<p><strong>Q5:</strong> 为什么 crash kernel 用 <code class="c">maxcpus=1</code> 参数？</p>
+<blockquote>
+<p>限制 crash kernel 只使用 1 个 CPU。原因：(1) 多 CPU 需要更多内存；(2) 多 CPU 可能导致竞态条件（生产内核停止时的状态不一致）；(3) 单 CPU 足够收集 vmcore。<code class="c">maxcpus=1</code> 确保 crash kernel 简单可靠地启动。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch10 Panic 触发与处理</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch10 自定义 Panic Handler</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch07 Oops vs Panic</a></li>
+</ul>
       </section>
 
 

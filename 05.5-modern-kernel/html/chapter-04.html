@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-ticket-spinlock-problem</a>
+          <a href="#s-02"><span class="n">02</span>02-qspinlock-design</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +301,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch4 同步原语 (qspinlock)</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +314,439 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>qspinlock 减少高争用场景下的缓存行弹跳，间接降低交易线程的缓存干扰。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Ticket Spinlock 的问题与缓存行弹跳</h2></div>
+<blockquote>
+<p>原文: LWN Queued Spinlocks (2014)
+对标旧书: ULK3 Ch5 (ticket spinlock) / LKD3 Ch9</p>
+</blockquote>
+<hr />
+<h2>Ticket Spinlock 原理</h2>
+<p>Ticket spinlock 是 ULK3/LKD3 时代 Linux 内核的自旋锁实现，灵感来自面包店排队（取号等待）。</p>
+<pre class="code" data-label="C"><code class="c">// 传统 ticket spinlock (ULK3 时代)
+typedef struct {
+    union {
+        struct {
+            volatile unsigned int owner;    // 当前服务的号
+            volatile unsigned int next;     // 下一个可取的号
+        };
+        volatile unsigned int lock;          // 32位打包
+    };
+} arch_spinlock_t;
+
+// 获取锁 — 取号 + 等待叫号
+static inline void arch_spin_lock(arch_spinlock_t *lock) {
+    // 原子递增 next，获取自己的号
+    int my_ticket = fetch_and_add(&amp;lock-&gt;next, 1);
+
+    // 等待 owner 追上自己的号
+    while (lock-&gt;owner != my_ticket)
+        cpu_relax();   // x86: pause; ARM64: yield
+}
+
+// 释放锁 — 叫下一个号
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+    lock-&gt;owner++;   // 通知下一个等待者
+}
+</code></pre>
+<h3>公平性</h3>
+<p>Ticket spinlock 保证 FIFO 公平——先取号先服务。没有"饥饿"问题（早期 BSL 自旋锁有饥饿问题）。</p>
+<hr />
+<h2>核心问题：缓存行弹跳 (Cache Line Bouncing)</h2>
+<h3>问题描述</h3>
+<pre class="code" data-label="code"><code class="c">假设 4 个 CPU 争用同一把锁:
+
+CPU 0 (持锁)  CPU 1 (等)    CPU 2 (等)    CPU 3 (等)
+     |             |             |             |
+     |  owner=0    |  owner=0    |  owner=0    |  owner=0
+     |  next=4     |  next=4     |  next=4     |  next=4
+     |             |             |             |
+  释放锁: owner++ → owner=1
+     |             |             |             |
+  所有 CPU 都读到 owner 变化! (缓存行失效)
+     |          cache miss    cache miss    cache miss
+     |          重新读取       重新读取       重新读取
+     |
+  CPU 1 获得锁 (owner==1==my_ticket)
+</code></pre>
+<p><strong>关键问题：</strong> <code class="c">owner++</code> 修改了共享变量，导致所有 N 个等待者的缓存行都失效。每个等待者都要重新从内存读取 owner 值，产生 N 次缓存行弹跳。</p>
+<h3>性能影响</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>CPU 数量</th>
+<th>每次释放的缓存失效次数</th>
+<th>延迟影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2</td>
+<td>1</td>
+<td>小</td>
+</tr>
+<tr>
+<td>4</td>
+<td>3</td>
+<td>中</td>
+</tr>
+<tr>
+<td>8</td>
+<td>7</td>
+<td>大</td>
+</tr>
+<tr>
+<td>16+</td>
+<td>15+</td>
+<td>严重</td>
+</tr>
+</tbody>
+</table></div>
+<p>在高争用场景下（如网络包队列锁），缓存行弹跳成为主要瓶颈。</p>
+<hr />
+<h2>缓存一致性协议 (MESI) 视角</h2>
+<pre class="code" data-label="code"><code class="c">MESI 状态: Modified, Exclusive, Shared, Invalid
+
+1. CPU 0 持有锁 (owner 变量在 CPU 0 的 L1 中为 Modified)
+2. CPU 1,2,3 都在轮询 owner (各自 L1 中为 Shared)
+3. CPU 0 执行 owner++:
+   - CPU 0: Modified → 发送 Invalidate 消息
+   - CPU 1,2,3: Shared → Invalid (缓存行失效!)
+4. CPU 1,2,3 发现缓存失效，发送 Read 请求
+5. CPU 0 响应 Read (Modified → Shared)，数据通过总线传输
+6. 总共: 3 次 Invalidate + 3 次 Read = 6 次总线事务
+</code></pre>
+<h3>NUMA 影响</h3>
+<pre class="code" data-label="code"><code class="c">在 NUMA 系统上（多 socket）:
+- 同 socket 内缓存弹跳: ~50ns
+- 跨 socket 缓存弹跳: ~200-400ns
+
+8 核 2 socket 系统中，一把高争用锁的释放:
+- 4 次同 socket 弹跳: 4 × 50ns = 200ns
+- 3 次跨 socket 弹跳: 3 × 300ns = 900ns
+- 总计: ~1100ns (仅缓存开销，不含锁等待时间)
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>Ticket Spinlock 的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>网卡收包队列锁</td>
+<td>高频争用，缓存弹跳严重</td>
+</tr>
+<tr>
+<td>内核统计计数器</td>
+<td>争用较低，影响小</td>
+</tr>
+<tr>
+<td>交易线程在隔离核</td>
+<td>无争用，不受影响</td>
+</tr>
+<tr>
+<td>辅助线程共享数据</td>
+<td>中等争用，尾延迟受影响</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 视角：</strong> 交易线程在 isolcpus 隔离核上运行，不与其他线程争用锁。但辅助线程（日志、统计、行情解析）之间的锁争用会产生缓存噪音，间接干扰交易线程的 L1/L2 缓存。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: Ticket spinlock 的 FIFO 公平性是如何实现的？</summary>
+<p>通过 owner/next 两个计数器。获取锁时原子递增 next 获取自己的号（ticket），然后等待 owner 等于自己的号。释放锁时递增 owner。因为号是严格递增的，等待者按号的大小顺序获得锁，保证 FIFO。这解决了早期 BSL (Backoff Spinlock) 的饥饿问题。</p>
+</details>
+<details>
+<summary>Q2: 为什么说"释放锁比获取锁更昂贵"在 ticket spinlock 中成立？</summary>
+<p>获取锁时只有取号者修改 next（1 次缓存行写），其他等待者不修改共享变量。释放锁时 owner++ 会导致所有等待者的缓存行失效，产生 N 次缓存弹跳。获取锁的开销是 O(1)，释放锁的开销是 O(N)（N = 等待者数量）。</p>
+</details>
+<details>
+<summary>Q3: cpu_relax() 在不同架构上的指令是什么？为什么需要它？</summary>
+<p>x86: <code class="c">pause</code> 指令（降低流水线功耗，避免流水线冲突）。ARM64: <code class="c">yield</code> 指令（提示虚拟化环境下让出 CPU）。需要 cpu_relax() 是因为紧凑的 while 循环会让 CPU 流水线满负荷运行，浪费功耗且干扰其他核的缓存访问。pause/yield 给内存控制器喘息空间。</p>
+</details>
+<details>
+<summary>Q4: 在 NUMA 系统上，ticket spinlock 的缓存弹跳开销为什么更严重？</summary>
+<p>跨 socket 的缓存一致性消息延迟远高于同 socket。同 socket 内 L1/L2 缓存弹跳约 50ns，跨 socket 约 200-400ns。在高争用场景下，每次释放锁都触发所有等待者的缓存失效，跨 socket 等待者贡献了大部分延迟。这也是 qspinlock 设计的动机之一。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">02-qspinlock-design.md</a> — qspinlock 如何解决缓存弹跳</li>
+<li><a href="chapter-10.html#ch-10">chapter-10-preempt-rt</a> — PREEMPT_RT 中 spinlock 变为可睡眠</li>
+<li><a href="../../05.6-kernel-debugging/html/chapter-08.html#ch-8">05.6-kernel-debugging/chapter-08-lock-debug</a> — 锁调试工具</li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>qspinlock 设计：MCS 队列与三级优化</h2></div>
+<blockquote>
+<p>原文: LWN Queued Spinlocks (2014)
+内核版本: 4.x+ (x86), 5.x+ (ARM64)
+对标旧书: ULK3 Ch5 (ticket spinlock 已过时)</p>
+</blockquote>
+<hr />
+<h2>qspinlock 核心思想</h2>
+<p>qspinlock (Queued Spinlock) 通过 MCS 锁队列设计，让每个等待者在<strong>自己的 per-CPU 变量</strong>上自旋，而非在共享锁变量上自旋，将缓存弹跳从 O(N) 降到 O(1)。</p>
+<h3>原子变量编码</h3>
+<pre class="code" data-label="C"><code class="c">// qspinlock 用一个 32-bit 原子变量编码三层状态
+typedef struct qspinlock {
+    union {
+        atomic_t val;       // 整体原子操作
+        struct {
+            u8 locked;      // bits [0-7]:  0=空闲, 1=已锁
+            u8 pending;     // bits [8-15]: pending 等待者
+            u16 tail;       // bits [16-31]: MCS 队列尾索引
+        };
+    };
+} arch_spinlock_t;
+</code></pre>
+<pre class="code" data-label="code"><code class="c">原子变量 (32-bit):
+  bits [0-7]:   locked 位 (0=空闲, 1=已锁)
+  bits [8-15]:  pending 位 (1 个 pending 等待者)
+  bits [16-31]: queue tail (MCS 节点索引: CPU号 + 上下文)
+</code></pre>
+<hr />
+<h2>三级优化路径</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>条件</th>
+<th>策略</th>
+<th>缓存弹跳</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast path</td>
+<td>锁空闲</td>
+<td>原子 CAS: 0→1</td>
+<td>0 次</td>
+</tr>
+<tr>
+<td>Pending</td>
+<td>1 个等待者</td>
+<td>在 locked 位上自旋</td>
+<td>1 次</td>
+</tr>
+<tr>
+<td>Queue</td>
+<td>2+ 等待者</td>
+<td>MCS 队列，各自在 per-CPU 变量自旋</td>
+<td>1 次</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Fast Path (无争用)</h3>
+<pre class="code" data-label="C"><code class="c">static __always_inline void queued_spin_lock(arch_spinlock_t *lock) {
+    // 期望 locked=0, 设为 1
+    if (likely(atomic_try_cmpxchg_acquire(&amp;lock-&gt;val, &amp;0, 1)))
+        return;  // 获取成功，无缓存弹跳
+    // 进入慢速路径
+    queued_spin_lock_slowpath(lock, 1);
+}
+</code></pre>
+<h3>Pending Path (1 个等待者)</h3>
+<pre class="code" data-label="code"><code class="c">CPU 0 持锁 (locked=1)
+CPU 1 想获取锁:
+  1. CAS 尝试设 pending=1 → 成功
+  2. CPU 1 在 locked 位上自旋 (等 CPU 0 释放)
+
+此时: locked=1, pending=1, tail=0
+只有 1 个缓存行弹跳点 (locked)
+</code></pre>
+<h3>Queue Path (2+ 等待者)</h3>
+<pre class="code" data-label="code"><code class="c">CPU 0 持锁 → CPU 1 pending → CPU 2 入队 → CPU 3 入队
+
+MCS 队列:
+  CPU 0 (持锁) → CPU 1 (pending, 自旋在 locked) 
+                → CPU 2 (自旋在 mcs_node[2].locked) 
+                → CPU 3 (自旋在 mcs_node[3].locked, 等 CPU 2 通知)
+
+释放流程:
+  CPU 0 释放 → locked=0 → CPU 1 看到 locked=0, 获取锁
+  CPU 1 释放 → 写 mcs_node[2].locked=0 → CPU 2 被通知
+  CPU 2 释放 → 写 mcs_node[3].locked=0 → CPU 3 被通知
+
+每次释放只通知 1 个等待者 → O(1) 缓存弹跳!
+</code></pre>
+<hr />
+<h2>MCS 锁节点</h2>
+<pre class="code" data-label="C"><code class="c">// 每个 CPU 有 4 个 MCS 节点 (对应 4 种上下文)
+// kernel/locking/qspinlock.c
+struct mcs_spinlock {
+    struct mcs_spinlock *next;   // 队列中下一个节点
+    volatile u8 locked;          // 0=需要等待, 1=轮到我了
+    // ...
+};
+
+// per-CPU 变量
+static DEFINE_PER_CPU_ALIGNED(struct mcs_spinlock, mcs_nodes[4]);
+
+// 入队: 将自己的 mcs_node 链接到队列尾部
+// 修改 tail 索引指向自己 → 1 次缓存弹跳
+// 然后在前一个节点的 next 上自旋 → 等前驱通知
+</code></pre>
+<h3>为什么用 per-CPU 变量？</h3>
+<ol>
+<li>每个 CPU 在自己的 mcs_node 上自旋 → 不干扰其他 CPU 的缓存</li>
+<li>不需要动态分配内存 → 无分配失败风险</li>
+<li>4 个节点对应 4 种上下文 (task, softirq, hardirq, nmi) → 不会嵌套死锁</li>
+</ol>
+<hr />
+<h2>关键代码对比</h2>
+<pre class="code" data-label="C"><code class="c">// ===== ULK3 时代 — ticket spinlock =====
+static inline void arch_spin_lock(arch_spinlock_t *lock) {
+    int ticket = fetch_and_add(&amp;lock-&gt;tickets.next, 1);
+    while (lock-&gt;tickets.owner != ticket)
+        cpu_relax();
+    // 释放: lock-&gt;tickets.owner++
+    // 问题: 释放时所有 N 个等待者的缓存行都失效
+}
+
+// ===== 6.x — queued spinlock =====
+// Fast path
+static __always_inline void queued_spin_lock(arch_spinlock_t *lock) {
+    if (likely(atomic_try_cmpxchg_acquire(&amp;lock-&gt;val, &amp;0, _Q_LOCKED_VAL)))
+        return;
+    queued_spin_lock_slowpath(lock, val);  // pending/queue 路径
+}
+
+// Slow path (简化)
+void queued_spin_lock_slowpath(arch_spinlock_t *lock, u32 val) {
+    // 1. 尝试设 pending 位
+    if (val == _Q_LOCKED_VAL) {
+        if (try_set_pending(lock))
+            return;  // pending 路径，在 locked 上自旋
+    }
+
+    // 2. 进入 MCS 队列
+    node = this_cpu_ptr(&amp;mcs_nodes[idx]);
+    prev = xchg_tail(lock, node);  // 将自己链接到队列尾
+
+    // 3. 在前驱节点的 locked 上自旋
+    if (prev) {
+        WRITE_ONCE(prev-&gt;next, node);
+        while (!smp_load_acquire(&amp;node-&gt;locked))
+            cpu_relax();  // 自旋在自己的 per-CPU 变量上!
+    }
+
+    // 4. 轮到自己，获取锁
+    // 等待 pending/locked 清零
+    smp_cond_load_acquire(&amp;lock-&gt;val, !(VAL &amp; _Q_LOCKED_PENDING_MASK));
+}
+</code></pre>
+<hr />
+<h2>性能对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>Ticket Spinlock</th>
+<th>qspinlock</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无争用延迟</td>
+<td>~15ns</td>
+<td>~15ns (相同)</td>
+</tr>
+<tr>
+<td>高争用缓存弹跳</td>
+<td>O(N)</td>
+<td>O(1)</td>
+</tr>
+<tr>
+<td>4 CPU 争用延迟</td>
+<td>~500ns</td>
+<td>~80ns</td>
+</tr>
+<tr>
+<td>16 CPU 争用延迟</td>
+<td>~3000ns</td>
+<td>~120ns</td>
+</tr>
+<tr>
+<td>公平性</td>
+<td>FIFO</td>
+<td>FIFO (pending 有微小不公平)</td>
+</tr>
+<tr>
+<td>内存占用</td>
+<td>4 字节</td>
+<td>4 字节</td>
+</tr>
+<tr>
+<td>代码复杂度</td>
+<td>简单</td>
+<td>复杂 (slowpath)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>qspinlock 影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>低争用锁 (大多数)</td>
+<td>与 ticket 锁性能相当</td>
+</tr>
+<tr>
+<td>高争用锁 (网络包队列)</td>
+<td>显著减少缓存弹跳，延迟更稳定</td>
+</tr>
+<tr>
+<td>SCHED_FIFO + isolcpus</td>
+<td>隔离核上无争用，锁类型不重要</td>
+</tr>
+<tr>
+<td>辅助线程共享数据</td>
+<td>qspinlock 减少辅助线程锁等待尾延迟</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实盘：</strong> 交易线程在隔离核上运行，不与辅助线程争用锁。qspinlock 的优势体现在辅助线程之间的锁争用（如日志队列、统计计数器），间接减少对交易线程的缓存干扰。如果交易线程必须用锁（如与内核共享数据），考虑 per-CPU 队列或无锁设计（如 DPDK ring buffer）。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: qspinlock 的 pending 位是什么？为什么不直接进队列？</summary>
+<p>pending 位是 fast-path（无争用 CAS）到 queue（MCS 队列）之间的过渡层。第二个等待者先在 pending 位上自旋，第三个才进 MCS 队列。这样在 2 个争用者时不需分配 MCS 节点，减少开销。大多数锁争用只有 1-2 个等待者，pending 优化覆盖了常见情况。</p>
+</details>
+<details>
+<summary>Q2: MCS 队列如何将缓存弹跳从 O(N) 降到 O(1)？</summary>
+<p>MCS 队列中每个等待者在<strong>自己的 per-CPU mcs_node.locked 变量</strong>上自旋，而非在共享的 lock 变量上自旋。释放锁时只写前驱节点的 next 指向的 mcs_node.locked=1，通知 1 个等待者。其他等待者不受影响（它们自旋在自己的变量上）。所以每次释放只有 1 次缓存弹跳，与等待者数量无关。</p>
+</details>
+<details>
+<summary>Q3: 为什么 MCS 节点是 per-CPU 而不是动态分配？</summary>
+<p>三个原因: ① 自旋在 per-CPU 变量上不会污染其他 CPU 的缓存；② 动态分配在锁争用时可能失败（内存不足），导致死锁；③ 每个 CPU 有 4 个节点对应 4 种上下文（task/softirq/hardirq/nmi），保证同一种上下文不会嵌套获取同一把锁。per-CPU 分配在编译时就确定了，零运行时开销。</p>
+</details>
+<details>
+<summary>Q4: qspinlock 在低争用场景下和 ticket spinlock 性能一样吗？为什么？</summary>
+<p>是的，几乎完全一样。低争用时走 fast path——一次原子 CAS 获取锁，不进 pending/queue 路径。fast path 的代码与 ticket spinlock 的获取逻辑本质相同（原子操作 + 判断），开销都是 ~15ns。qspinlock 的优势只在高争用（3+ 等待者）时才体现。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">01-ticket-spinlock-problem.md</a> — Ticket spinlock 与缓存弹跳问题</li>
+<li><a href="chapter-10.html#ch-10">chapter-10-preempt-rt</a> — PREEMPT_RT 将 spinlock 转为 rt_mutex</li>
+<li><a href="chapter-05.html#ch-5">chapter-05-interrupt-management</a> — 中断处理中的锁使用</li>
+</ul>
       </section>
 
 

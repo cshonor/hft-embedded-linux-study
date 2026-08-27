@@ -276,6 +276,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-oops-vs-panic</a>
+          <a href="#s-02"><span class="n">02</span>02-register-dump</a>
+          <a href="#s-03"><span class="n">03</span>03-call-trace-analysis</a>
+          <a href="#s-04"><span class="n">04</span>04-addr2line</a>
+          <a href="#s-05"><span class="n">05</span>05-objdump-disassembly</a>
+          <a href="#s-06"><span class="n">06</span>06-module-oops</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +305,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch7 Oops! Interpreting the Kernel Bug Diagnostic</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>7</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +318,1184 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>精读。内核模块崩溃时的第一现场就是 Oops 日志。能快速解读 Call Trace 并用 addr2line 定位到源码行，是内核开发者的核心技能。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Oops 与 Panic：内核错误的两种结局</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 3: Diagnostics &amp; Advanced Tools</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Oops 是什么</h3>
+<p>Oops 是内核遇到非致命错误时打印的诊断信息。它记录了崩溃时的 CPU 状态（寄存器、栈、调用链），然后杀死当前进程，内核继续运行。Oops 不意味着系统立即不可用，但内核状态可能已损坏——继续运行是不安全的。</p>
+<h3>Panic 是什么</h3>
+<p>Panic 是内核遇到致命错误时彻底放弃运行。系统停止所有处理，打印 panic 信息后挂起或重启。Panic 发生在 Oops 无法恢复的场景（如中断上下文中 Oops）或开发者主动调用 <code class="c">panic()</code>。</p>
+<h3>Oops 触发条件</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>触发条件</th>
+<th>典型原因</th>
+<th>错误码示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NULL 指针解引用</td>
+<td>指针未初始化/已释放</td>
+<td><code class="c">Unable to handle kernel NULL pointer dereference</code></td>
+</tr>
+<tr>
+<td>非法内存访问</td>
+<td>访问未映射地址</td>
+<td><code class="c">Unable to handle kernel paging request</code></td>
+</tr>
+<tr>
+<td>非法指令</td>
+<td>代码损坏/跳转到错误地址</td>
+<td><code class="c">Internal error: Oops: 96000004</code></td>
+</tr>
+<tr>
+<td>断言失败</td>
+<td><code class="c">BUG_ON()</code> / <code class="c">WARN_ON()</code></td>
+<td><code class="c">kernel BUG at xxx</code></td>
+</tr>
+<tr>
+<td>栈溢出</td>
+<td>递归过深/局部变量过大</td>
+<td><code class="c">stack-protector: Kernel stack is corrupted</code></td>
+</tr>
+<tr>
+<td>对齐错误</td>
+<td>ARM64 严格对齐检查</td>
+<td><code class="c">Alignment fault</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>Oops vs Panic 对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>Oops</th>
+<th>Panic</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发</td>
+<td>非致命错误（NULL deref, 越界等）</td>
+<td>致命错误 / <code class="c">panic()</code> 主动调用</td>
+</tr>
+<tr>
+<td>系统状态</td>
+<td>继续运行（杀死当前进程）</td>
+<td>系统完全停止</td>
+</tr>
+<tr>
+<td>后续操作</td>
+<td>可继续操作（但不安全）</td>
+<td>必须重启</td>
+</tr>
+<tr>
+<td>输出信息</td>
+<td>寄存器转储 + Call Trace</td>
+<td>Oops 信息 + panic 调用栈</td>
+</tr>
+<tr>
+<td>配置控制</td>
+<td><code class="c">CONFIG_BUG=y</code></td>
+<td><code class="c">panic_on_oops=1</code> 可升级 Oops 为 panic</td>
+</tr>
+<tr>
+<td>中断上下文</td>
+<td>Oops → 自动升级为 panic</td>
+<td>直接 panic（无法 kill 进程）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>控制 Oops 行为</h3>
+<pre class="code" data-label="shell"><code class="c"># Oops 后是否 panic
+cat /proc/sys/kernel/panic_on_oops    # 0=继续, 1=panic
+echo 1 &gt; /proc/sys/kernel/panic_on_oops  # 生产环境常设 1
+
+# Panic 后自动重启延迟（秒）
+cat /proc/sys/kernel/panic    # 0=不重启, &gt;0=延迟秒数
+echo 10 &gt; /proc/sys/kernel/panic  # 10 秒后自动重启
+</code></pre>
+<h3>Oops 日志的基本结构</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] Internal error: Oops: 96000004 [#1] PREEMPT SMP
+[  123.456790] Modules linked in: my_module nfnetlink
+[  123.456795] CPU: 2 PID: 1234 Comm: my_app Tainted: G  W  6.1.63 #1
+[  123.456800] Hardware name: Raspberry Pi 5 Model B (DT)
+[  123.456805] pstate: 80400005 (Nzcv daif +PAN -UAO)
+[  123.456810] pc : my_driver_write+0x3c/0x100 [my_module]
+[  123.456815] lr : vfs_write+0xf4/0x2b0
+[  123.456820] sp : ffff80000a3c3d80
+...
+[  123.457000] Code: xxxx xxxx (xxxx) xxxx xxxx
+[  123.457005] ---[ end trace 0000000000000000 ]---
+</code></pre>
+<p>关键字段：
+- <code class="c">[#1]</code>：第 1 次 Oops（多次表示级联崩溃）
+- <code class="c">Tainted: G W</code>：内核污染标志
+- <code class="c">pc</code>：崩溃指令地址
+- <code class="c">Code:</code> 行：崩溃地址附近的机器码</p>
+<h3>Oops 的 "Code:" 行</h3>
+<p><code class="c">Code:</code> 行显示崩溃地址附近的机器码字节，崩溃指令用 <code class="c">(xx)</code> 标记：</p>
+<pre class="code" data-label="code"><code class="c">Code: a9bf7bfd 910003fd f9000fe0 b9400000 (b9400000) 110007e0
+                                                    ^ 崩溃指令
+</code></pre>
+<p>用途：
+- 在无 DEBUG_INFO 时通过机器码特征推断指令
+- 确认反汇编结果是否正确
+- 快速判断指令类型（如 <code class="c">b9</code> 开头 = ARM64 LDR 指令）</p>
+<h3>HFT 关联应用</h3>
+<p>HFT 生产环境应设 <code class="c">panic_on_oops=1</code> + <code class="c">panic=5</code>——Oops 后 5 秒自动重启，避免在不确定状态下继续交易。</p>
+<pre class="code" data-label="shell"><code class="c"># HFT 生产环境推荐配置
+echo 1 &gt; /proc/sys/kernel/panic_on_oops
+echo 5 &gt; /proc/sys/kernel/panic
+# 或写入 /etc/sysctl.d/99-hft.conf
+</code></pre>
+<p>在 staging 环境保持 <code class="c">panic_on_oops=0</code>，以便收集 Oops 信息后继续调试。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Oops 后系统继续运行为什么不安全？</p>
+<blockquote>
+<p>Oops 意味着内核数据结构可能已损坏（如链表断裂、引用计数错误）。继续运行可能导致级联崩溃、数据损坏或安全漏洞。生产环境建议设 <code class="c">panic_on_oops=1</code> 让系统重启到已知良好状态。</p>
+</blockquote>
+<p><strong>Q2:</strong> 什么情况下 Oops 会自动变成 panic？</p>
+<blockquote>
+<p>三种情况：(1) <code class="c">panic_on_oops=1</code> 内核参数；(2) Oops 发生在中断上下文（无法 kill 进程，必须 panic）；(3) Oops 发生在持有关键锁的临界区。</p>
+</blockquote>
+<p><strong>Q3:</strong> Oops 中的 "Code:" 行有什么用？</p>
+<blockquote>
+<p>显示崩溃地址附近的机器码字节。用于确认反汇编结果是否正确，或在无 DEBUG_INFO 时通过机器码特征推断指令。格式：<code class="c">Code: xx xx xx xx xx xx ...</code>，崩溃指令用 <code class="c">(xx)</code> 标记。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">[#1]</code> 和 <code class="c">[#3]</code> 在 Oops 日志中代表什么？</p>
+<blockquote>
+<p><code class="c">[#1]</code> 表示这是第 1 次 Oops。<code class="c">[#3]</code> 表示第 3 次——多次 Oops 通常意味着第一次 Oops 损坏了数据结构，导致后续级联崩溃。应该分析第一个 Oops（编号最小的），而非最后一个。</p>
+</blockquote>
+<p><strong>Q5:</strong> HFT 生产环境为什么要设 <code class="c">panic=5</code> 而不是 <code class="c">panic=0</code>？</p>
+<blockquote>
+<p><code class="c">panic=5</code> 表示 panic 后 5 秒自动重启。<code class="c">panic=0</code> 表示不重启，系统挂死等待人工干预。HFT 要求快速恢复，5 秒延迟足够保存 panic 信息到 kdump（如果配置了），又能快速恢复服务。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch07 寄存器转储解读</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch07 addr2line 定位源码行</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch10 panic/lockup 检测</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>寄存器转储解读</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Oops 日志中的寄存器信息</h3>
+<p>Oops 日志的核心是寄存器转储——它记录了崩溃瞬间 CPU 的完整状态。通过分析寄存器值，可以快速判断错误类型和原因。</p>
+<h3>ARM64 寄存器一览</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>寄存器</th>
+<th>用途</th>
+<th>在 Oops 中的意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pc</code></td>
+<td>程序计数器</td>
+<td>崩溃指令地址</td>
+</tr>
+<tr>
+<td><code class="c">lr</code> (x30)</td>
+<td>链接寄存器</td>
+<td>调用者地址（函数返回地址）</td>
+</tr>
+<tr>
+<td><code class="c">sp</code></td>
+<td>栈指针</td>
+<td>当前栈顶</td>
+</tr>
+<tr>
+<td><code class="c">x29</code> (fp)</td>
+<td>帧指针</td>
+<td>当前栈帧基址</td>
+</tr>
+<tr>
+<td><code class="c">x0-x8</code></td>
+<td>参数/返回寄存器</td>
+<td>函数参数和返回值</td>
+</tr>
+<tr>
+<td><code class="c">x9-x28</code></td>
+<td>临时寄存器</td>
+<td>编译器自由使用</td>
+</tr>
+<tr>
+<td><code class="c">pstate</code></td>
+<td>处理器状态</td>
+<td>NZCV 标志 + 中断状态</td>
+</tr>
+</tbody>
+</table></div>
+<h3>完整 Oops 日志结构</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456789] Internal error: Oops: 96000004 [#1] PREEMPT SMP
+[  123.456790] Modules linked in: my_module nfnetlink
+[  123.456795] CPU: 2 PID: 1234 Comm: my_app Tainted: G  W  6.1.63 #1
+[  123.456800] Hardware name: Raspberry Pi 5 Model B (DT)
+[  123.456805] pstate: 80400005 (Nzcv daif +PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+[  123.456810] pc : my_driver_write+0x3c/0x100 [my_module]
+[  123.456815] lr : vfs_write+0xf4/0x2b0
+[  123.456820] sp : ffff80000a3c3d80
+[  123.456825] x29: ffff80000a3c3d80 x28: 0000000000000000
+...
+[  123.456895] x1 : ffff000056789abc x0 : 0000000000000000  ← NULL!
+</code></pre>
+<h3>关键字段详细解读</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>分析要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pc</code></td>
+<td>程序计数器</td>
+<td>崩溃指令地址，用 addr2line 定位源码行</td>
+</tr>
+<tr>
+<td><code class="c">lr</code></td>
+<td>链接寄存器</td>
+<td>调用者地址，帮助重建调用链</td>
+</tr>
+<tr>
+<td><code class="c">sp</code></td>
+<td>栈指针</td>
+<td>检查栈是否溢出（接近栈底则溢出）</td>
+</tr>
+<tr>
+<td><code class="c">x0</code></td>
+<td>第1个参数</td>
+<td>常见 NULL 指针解引用的元凶</td>
+</tr>
+<tr>
+<td><code class="c">pstate</code></td>
+<td>处理器状态</td>
+<td>判断中断是否禁用、条件标志</td>
+</tr>
+<tr>
+<td><code class="c">[#1]</code></td>
+<td>Oops 编号</td>
+<td>第 1 次（多次表示级联）</td>
+</tr>
+<tr>
+<td><code class="c">Tainted</code></td>
+<td>污染标志</td>
+<td>判断内核状态是否纯净</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT SMP</code></td>
+<td>内核特性</td>
+<td>抢占式多核内核</td>
+</tr>
+</tbody>
+</table></div>
+<h3>pstate 字段详解</h3>
+<pre class="code" data-label="code"><code class="c">pstate: 80400005 (Nzcv daif +PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>含义</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N</td>
+<td>负标志</td>
+<td>1 (上次运算结果为负)</td>
+</tr>
+<tr>
+<td>z</td>
+<td>零标志</td>
+<td>0</td>
+</tr>
+<tr>
+<td>c</td>
+<td>进位标志</td>
+<td>0</td>
+</tr>
+<tr>
+<td>v</td>
+<td>溢出标志</td>
+<td>0</td>
+</tr>
+<tr>
+<td>daif</td>
+<td>中断屏蔽</td>
+<td>0 (中断未禁用)</td>
+</tr>
+<tr>
+<td>+PAN</td>
+<td>特权访问禁止</td>
+<td>启用</td>
+</tr>
+<tr>
+<td>-UAO</td>
+<td>用户访问覆盖</td>
+<td>关闭</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Tainted 标志详解</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字母</th>
+<th>含义</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>G</td>
+<td>非 GPL 模块</td>
+<td>加载了非 GPL 许可的模块</td>
+</tr>
+<tr>
+<td>P</td>
+<td>已应用补丁</td>
+<td>内核打了非主线补丁</td>
+</tr>
+<tr>
+<td>O</td>
+<td>树外模块</td>
+<td>加载了树外编译的模块</td>
+</tr>
+<tr>
+<td>E</td>
+<td>未签名模块</td>
+<td>模块未签名</td>
+</tr>
+<tr>
+<td>W</td>
+<td>之前有警告</td>
+<td>内核发出过警告</td>
+</tr>
+<tr>
+<td>B</td>
+<td>页面已污染</td>
+<td>之前发生过坏页</td>
+</tr>
+<tr>
+<td>C</td>
+<td>staging 驱动</td>
+<td>加载了 staging 驱动</td>
+</tr>
+<tr>
+<td>L</td>
+<td>软锁定</td>
+<td>之前发生过软死锁</td>
+</tr>
+</tbody>
+</table></div>
+<h3>常见寄存器模式与错误对应</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>寄存器值</th>
+<th>可能的错误类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">x0 = 0</code></td>
+<td>NULL 指针解引用（x0 常为第一个参数）</td>
+</tr>
+<tr>
+<td><code class="c">x0 = 0xdead...</code></td>
+<td>Use-after-free（已释放标记）</td>
+</tr>
+<tr>
+<td><code class="c">sp</code> 接近栈底</td>
+<td>栈溢出</td>
+</tr>
+<tr>
+<td><code class="c">pc</code> 在模块地址段</td>
+<td>模块代码崩溃</td>
+</tr>
+<tr>
+<td><code class="c">pc = 0</code></td>
+<td>函数指针未初始化</td>
+</tr>
+<tr>
+<td>多个寄存器为 <code class="c">0x6b6b6b6b</code></td>
+<td>SLUB debug 已释放内存模式</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<p>在 HFT 内核模块调试中，快速分析寄存器转储可以：</p>
+<ol>
+<li><strong>立即定位错误类型</strong>：x0=0 → NULL deref，sp 异常 → 栈溢出</li>
+<li><strong>推断调用参数</strong>：x0-x7 是函数参数，帮助理解崩溃时的上下文</li>
+<li><strong>判断中断状态</strong>：pstate 的 daif 位判断崩溃时中断是否禁用</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">// HFT 模块中常见的 NULL deref 模式
+static ssize_t my_write(struct file *f, const char __user *buf,
+                        size_t len, loff_t *off)
+{
+    struct my_ctx *ctx = f-&gt;private_data;
+    // 如果 ctx 未初始化或已释放 → x0(ctx) = 0 → Oops
+    return copy_from_user(ctx-&gt;buffer, buf, len);  // x0 = ctx = NULL!
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Oops 日志中 <code class="c">pc : my_driver_write+0x3c/0x100</code> 的各部分含义？</p>
+<blockquote>
+<p><code class="c">my_driver_write</code> = 函数名，<code class="c">+0x3c</code> = 崩溃点在函数内偏移 0x3c 字节处，<code class="c">/0x100</code> = 函数总大小 0x100 字节。用 <code class="c">addr2line</code> 或 <code class="c">objdump -d</code> 可以定位到具体源码行。</p>
+</blockquote>
+<p><strong>Q2:</strong> ARM64 的 <code class="c">pstate: 80400005</code> 中的标志位代表什么？</p>
+<blockquote>
+<p>pstate 是处理器状态寄存器。<code class="c">N=1</code> (负标志), <code class="c">z=0</code>, <code class="c">c=0</code>, <code class="c">v=0</code> (条件标志), <code class="c">daif=0</code> (中断未禁用), <code class="c">+PAN</code> (特权访问禁止), <code class="c">-UAO</code> (用户访问覆盖关闭)。这些标志帮助判断崩溃时的 CPU 状态（如中断是否禁用）。</p>
+</blockquote>
+<p><strong>Q3:</strong> 寄存器值为 <code class="c">0x6b6b6b6b</code> 意味着什么？</p>
+<blockquote>
+<p>SLUB debug 在释放内存时将内容填充为 <code class="c">0x6b</code>。如果寄存器指向已释放的内存，读取的值会是 <code class="c">0x6b6b6b6b</code>，表示 use-after-free。类似地，<code class="c">0xab</code> 表示未初始化内存。</p>
+</blockquote>
+<p><strong>Q4:</strong> Tainted 标志 <code class="c">G W</code> 对调试有什么影响？</p>
+<blockquote>
+<p><code class="c">G</code> 表示加载了非 GPL 模块，<code class="c">W</code> 表示之前有警告。社区开发者可能拒绝处理带 Tainted 标志的 Oops 报告。HFT 自定义模块应使用 GPL 许可避免此问题。</p>
+</blockquote>
+<p><strong>Q5:</strong> 如何判断 Oops 时中断是否被禁用？</p>
+<blockquote>
+<p>看 pstate 中的 <code class="c">daif</code> 字段。<code class="c">daif=0</code> 表示中断未禁用。如果 <code class="c">i=1</code>（IRQ 屏蔽），说明 Oops 发生在禁用中断的临界区中。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch07 Oops vs Panic</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch07 栈回溯分析</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch07 addr2line</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>栈回溯 (Call Trace) 分析</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Call Trace 是什么</h3>
+<p>Call Trace（调用栈回溯）是 Oops 日志中最关键的信息之一。它记录了从崩溃点到系统入口的完整调用链，帮助开发者理解"代码是怎么执行到崩溃点的"。</p>
+<h3>ARM64 栈回溯原理</h3>
+<p>ARM64 使用 <code class="c">x29</code>（帧指针 FP）和 <code class="c">x30</code>（链接寄存器 LR）进行栈回溯：</p>
+<pre class="code" data-label="code"><code class="c">栈帧结构 (每个函数调用创建一个栈帧):
+  ┌──────────────────┐ ← 高地址
+  │   上一个 FP       │ ← x29 指向这里
+  │   返回地址 (LR)    │
+  │   局部变量         │
+  └──────────────────┘ ← 低地址 (下一个栈帧的 FP)
+</code></pre>
+<p>回溯过程：从当前 FP 开始，逐帧读取上一帧的 FP 和 LR，直到栈底。</p>
+<h3>Call Trace 示例</h3>
+<pre class="code" data-label="code"><code class="c">[  123.456900] Call trace:
+[  123.456905]  my_driver_write+0x3c/0x100 [my_module]
+[  123.456910]  vfs_write+0xf4/0x2b0
+[  123.456915]  ksys_write+0x74/0x100
+[  123.456920]  __arm64_sys_write+0x20/0x30
+[  123.456925]  invoke_syscall+0x4c/0x110
+[  123.456930]  el0_svc_common+0x88/0x110
+[  123.456935]  do_el0_svc+0x24/0x80
+[  123.456940]  el0_svc+0x30/0x80
+[  123.456945]  el0t_64_sync+0x84/0x88
+</code></pre>
+<h3>阅读方法</h3>
+<p><strong>从下往上读</strong>（从入口到崩溃点）：</p>
+<ol>
+<li><code class="c">el0t_64_sync</code> — ARM64 异常向量入口（用户态 → 内核态）</li>
+<li><code class="c">el0_svc</code> — SVC（系统调用）处理</li>
+<li><code class="c">do_el0_svc</code> → <code class="c">el0_svc_common</code> → <code class="c">invoke_syscall</code> — 系统调用分发</li>
+<li><code class="c">__arm64_sys_write</code> — write() 系统调用入口</li>
+<li><code class="c">ksys_write</code> → <code class="c">vfs_write</code> — VFS 写路径</li>
+<li><code class="c">my_driver_write</code> — <strong>崩溃点</strong>（驱动 write 回调）</li>
+</ol>
+<h3>分析流程</h3>
+<pre class="code" data-label="code"><code class="c">步骤 1: 确定崩溃函数 → my_driver_write+0x3c (Call Trace 顶部)
+步骤 2: 用 addr2line 定位源码行
+步骤 3: 确定调用路径: write syscall → vfs_write → my_driver_write
+步骤 4: 检查寄存器值 → x0 = 0 (NULL pointer dereference)
+步骤 5: 检查模块标记 → [my_module] 表示该函数来自内核模块
+</code></pre>
+<h3>不完整的 Call Trace</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>解决方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">(null)</code> 或无意义地址</td>
+<td>栈被破坏（缓冲区溢出覆盖返回地址）</td>
+<td>用 KASAN 检测原始越界操作</td>
+</tr>
+<tr>
+<td>只有几行就断了</td>
+<td>帧指针未启用（CONFIG_FRAME_POINTER=n）</td>
+<td>启用 CONFIG_FRAME_POINTER=y</td>
+</tr>
+<tr>
+<td><code class="c">?</code> 前缀的帧</td>
+<td>栈上的值碰巧像返回地址但不可靠</td>
+<td>忽略带 <code class="c">?</code> 的帧</td>
+</tr>
+<tr>
+<td><code class="c">0x0</code> 地址</td>
+<td>函数指针未初始化被调用</td>
+<td>检查函数指针初始化</td>
+</tr>
+</tbody>
+</table></div>
+<h3>帧指针与编译优化</h3>
+<pre class="code" data-label="shell"><code class="c"># 确保帧指针启用（内核编译时）
+CONFIG_FRAME_POINTER=y
+CONFIG_UNWINDER_FRAME_POINTER=y
+
+# 或使用 ORC unwinder（x86，更可靠）
+CONFIG_UNWINDER_ORC=y
+</code></pre>
+<h3>Call Trace 中的特殊标记</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标记</th>
+<th>含义</th>
+<th>可靠性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无标记</td>
+<td>通过帧指针验证</td>
+<td>可靠</td>
+</tr>
+<tr>
+<td><code class="c">?</code> 前缀</td>
+<td>栈上值看起来像返回地址</td>
+<td>不可靠</td>
+</tr>
+<tr>
+<td><code class="c">&lt;0&gt;</code></td>
+<td>无效地址</td>
+<td>忽略</td>
+</tr>
+<tr>
+<td><code class="c">[my_module]</code></td>
+<td>来自内核模块</td>
+<td>需要用 .ko 解析</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<p>在 HFT 内核模块中，Call Trace 帮助定位延迟来源和崩溃原因：</p>
+<pre class="code" data-label="shell"><code class="c"># 分析交易线程的调用路径
+# Call Trace: my_trade_handler → kernel_sendmsg → tcp_sendmsg
+# 说明交易数据通过 TCP 发送，可优化网络栈
+
+# 分析崩溃原因
+# Call Trace: my_strategy_update → spin_lock → schedule
+# 说明在 spinlock 中调用了 schedule → scheduling while atomic
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Call Trace 从上到下还是从下往上读？</p>
+<blockquote>
+<p>从下往上读。最底部是入口点（如 <code class="c">el0_svc</code> = 系统调用入口），最顶部是崩溃点（如 <code class="c">my_driver_write</code>）。但某些配置下顺序可能不同，看 <code class="c">pc</code> 值确认崩溃函数。</p>
+</blockquote>
+<p><strong>Q2:</strong> Call Trace 出现 <code class="c">(null)</code> 或无意义地址是什么原因？</p>
+<blockquote>
+<p>栈被破坏。常见原因：(1) 缓冲区溢出覆盖了栈上的返回地址；(2) use-after-free；(3) 栈溢出（递归过深）。需要用 KASAN 或 SLUB debug 检测原始的越界操作。</p>
+</blockquote>
+<p><strong>Q3:</strong> Call Trace 中 <code class="c">?</code> 前缀的帧是什么意思？</p>
+<blockquote>
+<p><code class="c">?</code> 标记的帧是不可靠的——栈上的值碰巧看起来像返回地址，但可能不是真正的调用链。unwinder 标记这些帧让开发者知道哪些是可信的。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么启用了 CONFIG_FRAME_POINTER 后栈回溯更可靠？</p>
+<blockquote>
+<p>帧指针在每个函数的栈帧中保存了上一个帧指针和返回地址。unwinder 通过帧指针链逐帧回溯，结果可靠。没有帧指针时，unwinder 只能猜测。</p>
+</blockquote>
+<p><strong>Q5:</strong> 内联函数在 Call Trace 中如何表现？</p>
+<blockquote>
+<p>内联函数没有独立的栈帧，不会在 Call Trace 中单独出现。addr2line 可能报告内联展开的位置（通过 DWARF 信息），但 Call Trace 只显示调用栈层级。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch07 寄存器转储解读</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch07 addr2line</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch07 objdump 反汇编</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>addr2line 定位源码行</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>addr2line 是什么</h3>
+<p><code class="c">addr2line</code> 是 GNU Binutils 工具，将机器地址映射到源码文件和行号。它依赖 DWARF 调试信息（<code class="c">CONFIG_DEBUG_INFO=y</code> 编译时生成），是分析 Oops 日志的核心工具。</p>
+<h3>工作原理</h3>
+<pre class="code" data-label="code"><code class="c">Oops 地址 (如 vfs_write+0xf4)
+    ↓
+addr2line 查询 ELF 文件的 DWARF 信息
+    ↓
+DWARF .debug_line 段记录了 &quot;地址 ↔ 源码行&quot; 映射
+    ↓
+输出: /path/to/fs/read_write.c:623
+</code></pre>
+<h3>基本用法</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 对于内核内置函数 (使用 vmlinux)
+aarch64-linux-gnu-addr2line -e vmlinux -f vfs_write+0xf4
+# 输出: vfs_write  /path/to/fs/read_write.c:623
+
+# 2. 对于模块函数 (使用 .ko 文件)
+aarch64-linux-gnu-addr2line -e my_module.ko -f my_driver_write+0x3c
+# 输出: my_driver_write  /path/to/my_driver.c:45
+
+# 3. 使用绝对地址 (需要从 /proc/modules 计算偏移)
+cat /proc/modules | grep my_module
+# my_module 16384 1 - Live 0xffff800000100000
+# 偏移 = Oops绝对地址 - 加载基址
+aarch64-linux-gnu-addr2line -e my_module.ko -f 0x3c
+
+# 4. -i 选项显示内联函数
+aarch64-linux-gnu-addr2line -e vmlinux -f -i vfs_write+0xf4
+# 可能输出多层内联展开
+</code></pre>
+<h3>addr2line 常用选项</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>含义</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-e FILE</code></td>
+<td>指定 ELF 文件</td>
+<td>vmlinux 或 .ko</td>
+</tr>
+<tr>
+<td><code class="c">-f</code></td>
+<td>显示函数名</td>
+<td>确认地址所在函数</td>
+</tr>
+<tr>
+<td><code class="c">-i</code></td>
+<td>展开内联函数</td>
+<td>查看内联调用链</td>
+</tr>
+<tr>
+<td><code class="c">-p</code></td>
+<td>pretty-print</td>
+<td>输出更易读</td>
+</tr>
+<tr>
+<td><code class="c">-a</code></td>
+<td>显示地址</td>
+<td>调试用途</td>
+</tr>
+</tbody>
+</table></div>
+<h3>使用 faddr2line 脚本</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核源码中的工具脚本 (推荐)
+cd /path/to/linux-source
+echo &quot;vfs_write+0xf4&quot; | scripts/faddr2line vmlinux
+# 输出更详细，自动展开内联
+
+# 模块也支持
+echo &quot;my_driver_write+0x3c&quot; | scripts/faddr2line my_module.ko
+</code></pre>
+<h3>faddr2line vs addr2line</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>addr2line</th>
+<th>faddr2line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入格式</td>
+<td>绝对地址或符号+偏移</td>
+<td>函数名+偏移（Oops 格式）</td>
+</tr>
+<tr>
+<td>内联展开</td>
+<td>需要 <code class="c">-i</code> 选项</td>
+<td>自动展开</td>
+</tr>
+<tr>
+<td>函数大小</td>
+<td>不显示</td>
+<td>显示 <code class="c">/总大小</code></td>
+</tr>
+<tr>
+<td>符号查找</td>
+<td>手动</td>
+<td>自动</td>
+</tr>
+<tr>
+<td>推荐度</td>
+<td>基础工具</td>
+<td><strong>首选</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>实际操作流程</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 保存 Oops 日志
+dmesg &gt; oops.log
+
+# 2. 确认内核版本和编译路径
+uname -r  # 6.1.63-v8+
+
+# 3. 获取带调试符号的 vmlinux (CONFIG_DEBUG_INFO=y)
+ls vmlinux  # 在内核源码根目录
+
+# 4. 对每个 Call Trace 地址运行 addr2line
+aarch64-linux-gnu-addr2line -e vmlinux -f -i vfs_write+0xf4
+aarch64-linux-gnu-addr2line -e my_module.ko -f -i my_driver_write+0x3c
+
+# 5. 查看源码
+less -N /path/to/my_driver.c  # 跳到对应行
+</code></pre>
+<h3>addr2line 输出 "??" 的原因</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原因</th>
+<th>解决方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vmlinux 没有编译 DEBUG_INFO</td>
+<td>重新编译 <code class="c">CONFIG_DEBUG_INFO=y</code></td>
+</tr>
+<tr>
+<td>优化导致函数内联</td>
+<td>用 <code class="c">-i</code> 选项展开内联</td>
+</tr>
+<tr>
+<td>地址是模块地址但用了 vmlinux</td>
+<td>改用 .ko 文件</td>
+</tr>
+<tr>
+<td>位置信息被 strip</td>
+<td>使用未 strip 的 vmlinux</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT 模块崩溃快速定位脚本
+#!/bin/bash
+OOPS_LOG=$1
+VMLINUX=/path/to/vmlinux
+grep -oP '\w+\+0x\w+/\w+' &quot;$OOPS_LOG&quot; | while read addr; do
+    echo &quot;=== $addr ===&quot;
+    echo &quot;$addr&quot; | scripts/faddr2line &quot;$VMLINUX&quot; 2&gt;/dev/null
+done
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> addr2line 为什么需要带调试符号的 vmlinux？</p>
+<blockquote>
+<p>addr2line 依赖 DWARF 调试信息将机器地址映射到源码行号。调试信息在 <code class="c">CONFIG_DEBUG_INFO=y</code> 时生成，存储在 vmlinux 中。没有调试符号的 vmlinux 无法做地址到行号的映射。</p>
+</blockquote>
+<p><strong>Q2:</strong> 模块函数的 addr2line 和内置函数有什么不同？</p>
+<blockquote>
+<p>内置函数直接用 vmlinux 作为输入文件。模块函数需要用模块的 .ko 文件作为输入，且模块加载到内核时有重定位偏移。addr2line 用函数名+偏移时会自动解析符号表。</p>
+</blockquote>
+<p><strong>Q3:</strong> addr2line 输出 "??" 或 "0" 是什么原因？</p>
+<blockquote>
+<p>(1) vmlinux 没有编译 DEBUG_INFO；(2) 优化导致函数内联；(3) 地址是模块地址但用了 vmlinux 作为输入；(4) 位置信息被 strip。解决：确保 CONFIG_DEBUG_INFO=y，模块用 .ko 文件，用 faddr2line 脚本。</p>
+</blockquote>
+<p><strong>Q4:</strong> faddr2line 和 addr2line 的区别？</p>
+<blockquote>
+<p>faddr2line 是内核源码中的脚本（scripts/faddr2line），接受 "function+offset" 格式，内部调用 addr2line + objdump。优势：自动处理符号查找和偏移计算，支持内联函数展开。</p>
+</blockquote>
+<p><strong>Q5:</strong> <code class="c">-i</code> 选项的作用是什么？</p>
+<blockquote>
+<p><code class="c">-i</code> 选项展开内联函数。编译器可能将小函数内联到调用者中，addr2line 不加 <code class="c">-i</code> 只显示外层函数的行号。加 <code class="c">-i</code> 后会显示完整的内联调用链。faddr2line 默认启用内联展开。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch07 寄存器转储解读</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch07 栈回溯分析</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch07 objdump 反汇编</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch07 模块 Oops 特殊处理</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>objdump 反汇编辅助分析</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>为什么需要 objdump</h3>
+<p>addr2line 能定位源码行，但在以下场景不够用：</p>
+<ol>
+<li><strong>编译优化导致行号不准</strong>：-O2 重排代码，addr2line 可能报告错误的行</li>
+<li><strong>需要理解具体指令</strong>：确认是哪条指令导致崩溃（如 <code class="c">ldr</code> 解引用 NULL）</li>
+<li><strong>无 DEBUG_INFO 时</strong>：只有符号表没有 DWARF 信息</li>
+<li><strong>分析内联函数</strong>：查看内联展开后的实际机器码</li>
+</ol>
+<h3>objdump 常用命令</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 反汇编特定函数
+aarch64-linux-gnu-objdump -d vmlinux | grep -A 50 '&lt;vfs_write&gt;:'
+
+# 2. 反汇编模块（文件小，推荐）
+aarch64-linux-gnu-objdump -d my_module.ko | grep -A 30 '&lt;my_driver_write&gt;:'
+
+# 3. 带源码混合反汇编（需 DEBUG_INFO）
+aarch64-linux-gnu-objdump -S my_module.ko | grep -A 30 'my_driver_write'
+
+# 4. 只反汇编指定函数
+aarch64-linux-gnu-objdump --disassemble=my_driver_write my_module.ko
+
+# 5. 反汇编特定地址范围
+aarch64-linux-gnu-objdump -d vmlinux \
+    --start-address=0xffff800010001000 \
+    --stop-address=0xffff800010001100
+</code></pre>
+<h3>objdump 选项对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>含义</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-d</code></td>
+<td>反汇编代码段 (.text)</td>
+<td><strong>内核调试首选</strong></td>
+</tr>
+<tr>
+<td><code class="c">-D</code></td>
+<td>反汇编所有段</td>
+<td>特殊分析</td>
+</tr>
+<tr>
+<td><code class="c">-S</code></td>
+<td>源码+汇编混合输出</td>
+<td>需要 DEBUG_INFO</td>
+</tr>
+<tr>
+<td><code class="c">--disassemble=FUNC</code></td>
+<td>只反汇编指定函数</td>
+<td>精确定位</td>
+</tr>
+<tr>
+<td><code class="c">--start-address=ADDR</code></td>
+<td>起始地址</td>
+<td>地址范围反汇编</td>
+</tr>
+</tbody>
+</table></div>
+<h3>分析崩溃指令</h3>
+<pre class="code" data-label="code"><code class="c"># Oops 信息: pc = my_driver_write+0x3c, x0 = 0 (NULL)
+# 反汇编结果:
+0000000000000000 &lt;my_driver_write&gt;:
+       0:  a9bf7bfd    stp     x29, x30, [sp, #-16]!     ; 保存帧指针
+       4:  910003fd    mov     x29, sp                    ; 设置帧指针
+       8:  f9000fe0    str     x0, [sp, #8]               ; 保存 arg
+       c:  b9400000    ldr     w0, [x0]                   ; 读 *x0
+      ...
+      3c:  b9400000    ldr     w0, [x0]                   ; ← 崩溃! x0=0, 解引用 NULL
+</code></pre>
+<h3>源码混合反汇编 (-S)</h3>
+<pre class="code" data-label="shell"><code class="c">aarch64-linux-gnu-objdump -S my_module.ko
+
+# 输出示例:
+# 42    static ssize_t my_driver_write(struct file *f, ...) {
+# 43        struct my_ctx *ctx = f-&gt;private_data;
+       0:   a9bf7bfd    stp  x29, x30, [sp, #-16]!
+       4:   910003fd    mov  x29, sp
+       8:   f9400a00    ldr  x0, [x0, #16]    ; ctx = f-&gt;private_data
+# 44        return copy_from_user(ctx-&gt;buffer, buf, len);
+       c:   b9400000    ldr  w1, [x0]          ; 访问 ctx-&gt;buffer ← 崩溃!
+</code></pre>
+<h3>decode_stacktrace.sh</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核提供的 Oops 解码脚本
+scripts/decode_stacktrace.sh vmlinux /path/to/source &lt; oops.log
+# 自动将地址转换为源码行号
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># 检查 HFT 关键路径是否被过度优化
+aarch64-linux-gnu-objdump -S my_hft_module.ko | grep -A 10 'my_busy_loop'
+
+# 确认内存屏障指令是否正确生成
+aarch64-linux-gnu-objdump -d my_hft_module.ko | grep -E 'dmb|dsb|isb'
+# 应该看到 dmb ishst 等屏障指令
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么 addr2line 有时定位的行号不准确？</p>
+<blockquote>
+<p>编译器优化（如 -O2）会重排代码、内联函数、合并基本块，导致多个源码行对应同一段机器码。这种情况下用 <code class="c">objdump -S</code>（源码+汇编混合）更准确。</p>
+</blockquote>
+<p><strong>Q2:</strong> 如何反汇编只看某个函数？</p>
+<blockquote>
+<p>用 <code class="c">objdump -d vmlinux</code> 输出全部，然后 <code class="c">grep -A N '&lt;function&gt;:'</code> 提取。或用 <code class="c">objdump --disassemble=function_name vmlinux</code> 只反汇编指定函数。</p>
+</blockquote>
+<p><strong>Q3:</strong> objdump -d 和 objdump -D 的区别？</p>
+<blockquote>
+<p>-d 只反汇编代码段（.text），-D 反汇编所有段。内核调试用 -d。常用 <code class="c">--start-address</code> 和 <code class="c">--stop-address</code> 反汇编特定地址范围。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">objdump -S</code> 和 <code class="c">objdump -d</code> 哪个更适合调试？</p>
+<blockquote>
+<p>调试首选 <code class="c">-S</code>（源码混合），直接显示哪行 C 代码对应哪条指令。但 <code class="c">-S</code> 需要 DEBUG_INFO。HFT 模块建议始终带 DEBUG_INFO 编译。</p>
+</blockquote>
+<p><strong>Q5:</strong> 如何确认编译器是否将关键的忙等待循环优化掉了？</p>
+<blockquote>
+<p>用 <code class="c">objdump -S my_module.ko</code> 查看该函数的汇编。如果循环体只剩几条指令且没有预期的内存访问，可能被优化掉了。解决：用 <code class="c">barrier()</code> 或 <code class="c">READ_ONCE()</code> 阻止编译器优化。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-04">05.6 ch07 addr2line</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch07 寄存器转储解读</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch07 模块 Oops 特殊处理</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-06">
+        <div class="sec-head"><div class="sec-no">06</div><h2>模块 Oops 的特殊处理</h2></div>
+<blockquote>
+<p>🔴 精读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>模块 Oops 的挑战</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>说明</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地址重定位</td>
+<td>模块加载到动态地址，KASLR 使地址每次不同</td>
+<td>Oops 地址需要减去加载基址</td>
+</tr>
+<tr>
+<td>符号解析</td>
+<td>模块符号不在 vmlinux 中</td>
+<td>addr2line 需要用 .ko 文件</td>
+</tr>
+<tr>
+<td>代码可能已卸载</td>
+<td>Oops 发生后模块可能被卸载</td>
+<td>符号信息丢失，无法分析</td>
+</tr>
+<tr>
+<td>页可能已回收</td>
+<td>模块代码页被释放后无法反汇编</td>
+<td>无法在线反汇编</td>
+</tr>
+</tbody>
+</table></div>
+<h3>模块地址解析</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 获取模块加载地址（关键步骤！）
+cat /proc/modules | grep my_module
+# my_module 16384 1 - Live 0xffff800000100000 (O)
+
+# 2. Oops 中的地址: pc = ffff80000010003c [my_module]
+# 偏移 = 0xffff80000010003c - 0xffff800000100000 = 0x3c
+
+# 3. 用偏移在 .ko 文件中定位
+aarch64-linux-gnu-addr2line -e my_module.ko 0x3c
+# 或直接用符号+偏移
+aarch64-linux-gnu-addr2line -e my_module.ko my_driver_write+0x3c
+
+# 4. 用 faddr2line（更方便）
+echo &quot;my_driver_write+0x3c&quot; | scripts/faddr2line my_module.ko
+</code></pre>
+<h3>/proc/modules 输出解读</h3>
+<pre class="code" data-label="code"><code class="c">my_module 16384 1 - Live 0xffff800000100000 (O)
+|         |     | |  |    |                  |
+模块名     大小  引用 - 状态  加载地址           标志(O=树外)
+</code></pre>
+<h3>/proc/kallsyms 中的模块符号</h3>
+<pre class="code" data-label="shell"><code class="c"># 查看已加载模块的符号
+cat /proc/kallsyms | grep my_module
+# ffff800000100000 t my_driver_write  [my_module]
+# ffff800000100100 t my_driver_read   [my_module]
+
+# 非 root 用户看到地址为 0 (kptr_restrict=1)
+# 解决: 以 root 运行或降低 kptr_restrict
+echo 0 &gt; /proc/sys/kernel/kptr_restrict
+</code></pre>
+<h3>kptr_restrict 安全机制</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>值</th>
+<th>行为</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>显示真实地址</td>
+<td>调试环境</td>
+</tr>
+<tr>
+<td>1</td>
+<td>非 root 看到 0</td>
+<td>生产环境（默认）</td>
+</tr>
+<tr>
+<td>2</td>
+<td>所有人看到 0</td>
+<td>高安全环境</td>
+</tr>
+</tbody>
+</table></div>
+<h3>模块 Oops 收集最佳实践</h3>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# 模块 Oops 信息收集脚本（Oops 发生后立即运行！）
+
+# 1. 立即保存 /proc/modules（卸载后信息丢失）
+cp /proc/modules /tmp/modules_at_crash.txt
+
+# 2. 保存 Oops 日志
+dmesg &gt; /tmp/oops.log
+
+# 3. 保存模块文件
+cp /lib/modules/$(uname -r)/my_module.ko /tmp/
+
+# 4. 保存内核版本和配置
+uname -a &gt; /tmp/uname.txt
+zcat /proc/config.gz &gt; /tmp/kernel_config
+
+# 5. 保存 kallsyms
+cat /proc/kallsyms &gt; /tmp/kallsyms_at_crash.txt
+
+# 6. 使用 decode_stacktrace 解码
+scripts/decode_stacktrace.sh vmlinux . &lt; /tmp/oops.log &gt; /tmp/oops_decoded.txt
+</code></pre>
+<h3>模块编译注意事项</h3>
+<pre class="code" data-label="make"><code class="c"># Makefile 中确保调试信息
+obj-m += my_module.o
+ccflags-y += -g -O0    # -O0 禁用优化，便于调试
+# 或 -Og (GCC 4.8+，优化但不影响调试)
+</code></pre>
+<h3>模块 vs 内置代码 Oops 分析对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方面</th>
+<th>内置代码</th>
+<th>模块</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>addr2line 输入</td>
+<td>vmlinux</td>
+<td>.ko 文件</td>
+</tr>
+<tr>
+<td>KASLR 影响</td>
+<td>需要修正偏移</td>
+<td>符号+偏移不受影响</td>
+</tr>
+<tr>
+<td>符号可见性</td>
+<td>始终可见</td>
+<td>卸载后消失</td>
+</tr>
+<tr>
+<td>Call Trace 标记</td>
+<td>无特殊标记</td>
+<td><code class="c">[module_name]</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT 模块崩溃后的一键收集脚本
+#!/bin/bash
+MODULE=my_hft_module
+DATE=$(date +%Y%m%d_%H%M%S)
+DIR=/tmp/oops_${MODULE}_${DATE}
+mkdir -p &quot;$DIR&quot;
+
+cp /proc/modules &quot;$DIR/&quot;
+dmesg &gt; &quot;$DIR/dmesg.log&quot;
+cat /proc/kallsyms &gt; &quot;$DIR/kallsyms.txt&quot;
+cp /lib/modules/$(uname -r)/${MODULE}.ko &quot;$DIR/&quot; 2&gt;/dev/null
+uname -a &gt; &quot;$DIR/uname.txt&quot;
+zcat /proc/config.gz &gt; &quot;$DIR/kernel_config&quot; 2&gt;/dev/null
+
+echo &quot;Oops 信息已收集到 $DIR&quot;
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 模块 Oops 后为什么要立即保存 /proc/modules？</p>
+<blockquote>
+<p>Oops 后系统可能 panic 或模块被卸载。一旦模块卸载，/proc/modules 中不再有该模块的加载地址，无法将 Oops 中的绝对地址转换为模块内偏移。</p>
+</blockquote>
+<p><strong>Q2:</strong> 模块代码页可能被回收是什么意思？</p>
+<blockquote>
+<p>模块卸载时其代码页被释放回 buddy 分配器。如果 Oops 日志中只有地址没有函数名，且模块已卸载，用 addr2line 仍然可以解析（因为 .ko 文件保留了符号），但无法在运行系统中直接反汇编。</p>
+</blockquote>
+<p><strong>Q3:</strong> 模块 Oops 中的地址如何解析？</p>
+<blockquote>
+<p>模块加载到动态地址（KASLR）。需要：(1) 从 /proc/modules 获取模块加载基址；(2) Oops 地址减去基址得到偏移；(3) 用 addr2line -e my_module.ko 解析偏移。或直接用符号+偏移。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么模块符号在 /proc/kallsyms 中显示为 0x0000000000000000？</p>
+<blockquote>
+<p>非 root 用户看 /proc/kallsyms 时地址为 0（kptr_restrict=1）。需要 <code class="c">echo 0 &gt; /proc/sys/kernel/kptr_restrict</code> 或以 root 查看。这是安全措施——防止绕过 KASLR。</p>
+</blockquote>
+<p><strong>Q5:</strong> 模块 Oops 后模块已被卸载，还能分析吗？</p>
+<blockquote>
+<p>可以，前提是保存了 .ko 文件和 /proc/modules 快照。用 .ko 文件做 addr2line/objdump，用 /proc/modules 的加载地址计算偏移。但如果没保存 /proc/modules，就不知道加载基址。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-04">05.6 ch07 addr2line</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch07 objdump 反汇编</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch11 KGDB 调试模块</a></li>
+</ul>
       </section>
 
 

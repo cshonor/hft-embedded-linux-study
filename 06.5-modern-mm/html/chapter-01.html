@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-physical-memory-management</a>
+          <a href="#s-02"><span class="n">02</span>02-memblock</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 01: 物理内存管理与 Memblock</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -319,6 +321,243 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06-linux-mm/</code>：Mel Gorman 书中 bootmem 章节（已过时，本目录为现代替代）</li>
 <li><code class="c">05.5-modern-kernel/chapter-01-kernel-architecture/</code>：内核启动流程中的内存初始化</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>Bootlin: 物理内存管理 (zone / buddy / pcp)</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — Memory Management</a>
+<strong>主题:</strong> 物理内存管理：zone、buddy 系统、per-CPU 页缓存
+<strong>对标旧书:</strong> ULK3 Ch8 / LKD3 Ch12 / Mel Gorman《Understanding the Linux VM Manager》</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>内存 zone</h3>
+<pre class="code" data-label="code"><code class="c">物理内存按用途划分为 zone:
+  ZONE_DMA    — DMA 可用区域 (x86: &lt;16MB, ARM64: 通常无此 zone)
+  ZONE_DMA32  — 32-bit DMA 可用 (x86: &lt;4GB)
+  ZONE_NORMAL — 正常地址区域 (直接映射)
+  ZONE_HIGHMEM— 高端内存 (32-bit 系统, 64-bit 无此 zone)
+  ZONE_MOVABLE— 可移动页 (大页预留/内存热插拔)
+</code></pre>
+<h3>伙伴系统</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/page_alloc.c
+struct zone {
+    struct free_area free_area[MAX_ORDER + 1];  // order 0-10
+    // ...
+};
+
+struct free_area {
+    struct list_head free_list[MIGRATE_TYPES];  // 按迁移类型分组
+    unsigned long nr_free;
+};
+
+// 分配: alloc_pages(gfp, order)
+// 1. 查 free_area[order]，有空闲则取
+// 2. 无空闲，查 free_area[order+1]，分裂
+// 3. 直到 free_area[MAX_ORDER]，OOM
+
+// 释放: __free_pages(page, order)
+// 1. 检查 buddy 是否空闲
+// 2. 合并为 order+1 块
+// 3. 递归直到无法合并
+</code></pre>
+<h3>Per-CPU 页缓存 (pcp)</h3>
+<pre class="code" data-label="C"><code class="c">// 快速分配路径: 不需要 zone-&gt;lock
+struct per_cpu_pageset {
+    struct per_cpu_pages pcp;  // per-CPU 页缓存
+};
+
+struct per_cpu_pages {
+    struct list_head lists[MIGRATE_PCPTYPES];  // 3 种迁移类型
+    int count;      // 当前缓存页数
+    int high;       // 高水位 (超过则归还 zone)
+    int batch;      // 批量操作大小
+};
+
+// alloc_pages 快路径:
+// 1. 从 pcp 取页 (无锁)
+// 2. pcp 空则从 zone 批量补充 batch 页到 pcp
+// 3. 补充需要 zone-&gt;lock
+</code></pre>
+<h3>迁移类型 (Migrate Types)</h3>
+<pre class="code" data-label="C"><code class="c">enum migratetype {
+    MIGRATE_UNMOVABLE,   // 不可移动 (内核分配)
+    MIGRATE_MOVABLE,     // 可移动 (用户页, 页缓存)
+    MIGRATE_RECLAIMABLE, // 可回收 (slab)
+    MIGRATE_PCPTYPES,    // pcp 类型数
+    MIGRATE_HIGHATOMIC,  // 高阶原子分配
+    MIGRATE_CMA,         // CMA 连续内存分配
+    MIGRATE_ISOLATE,     // 隔离 (内存热插拔)
+};
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看 zone 信息
+cat /proc/zoneinfo | head -50
+
+# 2. 查看 buddy 信息
+cat /proc/buddyinfo
+# Node 0, Zone Normal, type    Unmovable  movable  reclaimable
+#   free 3985 234 56 12 3 1 0 0 0 0 0  # order 0-11 的空闲块数
+
+# 3. 查看内存布局
+dmesg | grep -i &quot;zone\|memory&quot;
+# 或
+numactl --hardware
+
+# 4. 观察 alloc_pages 失败
+echo 1 &gt; /proc/sys/vm/panic_on_oom
+# (危险! 仅在测试环境)
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Mel Gorman / ULK3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 per-CPU pcp 细节</td>
+<td>pcp 是快路径关键</td>
+</tr>
+<tr>
+<td>无迁移类型</td>
+<td>迁移类型用于反碎片</td>
+</tr>
+<tr>
+<td>ZONE_HIGHMEM 重点</td>
+<td>64-bit 无 HIGHMEM</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> per-CPU 页缓存 (pcp) 如何减少锁竞争？</p>
+<blockquote>
+<p>伙伴系统的 <code class="c">zone-&gt;lock</code> 是全局锁。pcp 让每个 CPU 维护一个小页池（默认 batch=63 页），分配时优先从 pcp 取（无锁）。只有 pcp 空时才获取 <code class="c">zone-&gt;lock</code> 批量补充。多核系统上 pcp 减少 95%+ 的 zone lock 获取次数。</p>
+</blockquote>
+<p><strong>Q2:</strong> 伙伴系统的 MAX_ORDER 是多少？为什么有上限？</p>
+<blockquote>
+<p>MAX_ORDER 通常为 10（即 2^10 = 4MB 连续页）。上限原因：(1) 更大的连续物理块极难找到（碎片化）；(2) 分裂/合并递归深度限制；(3) 历史原因。需要更大连续内存用 <code class="c">alloc_contig_range()</code> 或大页（2MB=order 9, 1GB=order 18 via hugetlb）。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>memblock (取代 bootmem)</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/449283/">memblock: The early boot memory allocator</a> (LWN, 2011)
+<strong>内核版本:</strong> 3.9+ (bootmem 被移除)
+<strong>对标旧书:</strong> ULK3 Appendix E (bootmem 分配器)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>memblock 取代了旧的 bootmem 分配器，成为内核启动早期的内存管理器。</p>
+<h3>bootmem 的问题</h3>
+<p>bootmem 使用位图管理物理内存，每个物理页对应 1 bit：
+- 大内存系统位图很大（128GB = 4MB 位图）
+- 位图本身需要分配内存（鸡生蛋问题）
+- 只支持 first-fit 分配，碎片严重</p>
+<h3>memblock 设计</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: include/linux/memblock.h
+struct memblock {
+    bool bottom_up;              // 分配方向
+    bool current_limit;
+    struct memblock_type memory;  // 可用内存区域
+    struct memblock_type reserved; // 已保留区域
+};
+
+struct memblock_type {
+    unsigned long cnt;            // 区域数量
+    unsigned long max;            // 最大区域数
+    struct memblock_region *regions;
+};
+
+struct memblock_region {
+    phys_addr_t base;            // 起始物理地址
+    phys_addr_t size;            // 大小
+    int nid;                     // NUMA 节点
+    unsigned long flags;         // MEMBLOCK_NOMAP 等
+};
+</code></pre>
+<h3>memblock 分配流程</h3>
+<pre class="code" data-label="C"><code class="c">// 早期启动阶段 (buddy 系统未初始化)
+// 源码路径: mm/memblock.c
+
+// 1. 从固件 (DT/ACPI) 获取可用内存区域
+memblock_add(base, size);      // 添加可用内存
+memblock_reserve(base, size);   // 保留区域 (内核镜像等)
+
+// 2. 早期分配
+phys_addr_t memblock_phys_alloc(size, align);
+void *memblock_alloc(size, align);  // 返回虚拟地址
+
+// 3. buddy 系统初始化后，memblock 内存移交给 buddy
+// memblock_free_all() → __free_pages() 逐页释放给 buddy
+</code></pre>
+<h3>ARM64 启动序列</h3>
+<pre class="code" data-label="C"><code class="c">// arch/arm64/kernel/setup.c
+void __init arm64_memblock_init(void)
+{
+    // 1. 从 DT 获取内存布局
+    memblock_enforce_memory_limit();
+
+    // 2. 保留内核镜像
+    memblock_reserve(__pa(_text), _end - _text);
+
+    // 3. 保留 initrd
+    memblock_reserve(initrd_start, initrd_end - initrd_start);
+
+    // 4. 保留 DTB
+    memblock_reserve(__pa(initial_boot_params), fdt_totalsize(...));
+}
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bootmem 位图分配器</td>
+<td>memblock 区域数组 (3.9+)</td>
+</tr>
+<tr>
+<td><code class="c">alloc_bootmem()</code></td>
+<td><code class="c">memblock_alloc()</code></td>
+</tr>
+<tr>
+<td><code class="c">free_bootmem()</code></td>
+<td><code class="c">memblock_free()</code></td>
+</tr>
+<tr>
+<td><code class="c">bootmem_data_t</code></td>
+<td><code class="c">struct memblock</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>memblock 在启动早期使用，HFT 系统启动后不再涉及。但理解 memblock 有助于调试启动阶段内存布局问题（如大页预留、initrd 位置）。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> memblock 为什么比 bootmem 更适合大内存系统？</p>
+<blockquote>
+<p>bootmem 用位图，128GB 内存需要 4MB 位图，且位图本身需要 bootmem 分配（鸡生蛋）。memblock 用区域数组，128GB 内存可能只有几个区域条目，元数据极小。memblock 还支持 bottom-up 分配（从高地址向低地址分配），避免与内核镜像冲突。</p>
+</blockquote>
+<p><strong>Q2:</strong> memblock 什么时候把内存移交给 buddy 系统？</p>
+<blockquote>
+<p>在 <code class="c">mm_init()</code> → <code class="c">memblock_free_all()</code> 中，memblock 遍历所有可用内存区域，将每个页通过 <code class="c">__free_pages()</code> 释放给 buddy 系统。之后 memblock 不再用于分配，但保留的 <code class="c">reserved</code> 区域信息仍然有效（用于查询保留区域）。</p>
+</blockquote>
+</details>
       </section>
 
 

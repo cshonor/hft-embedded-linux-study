@@ -276,6 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-page-cache-folio-ben-shu</a>
+          <a href="#s-02"><span class="n">02</span>02-page-cache-folio-api</a>
+          <a href="#s-03"><span class="n">03</span>03-folio-proposal</a>
+          <a href="#s-04"><span class="n">04</span>04-folio-deep-dive</a>
+          <a href="#s-05"><span class="n">05</span>05-folio-merge-status</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 06: 页缓存与 Folio</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>6</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +325,576 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06.5-modern-mm/chapter-07-page-reclaim-mglru/</code>：folio 在 LRU 上的管理</li>
 <li><code class="c">06-linux-mm/</code>：Mel Gorman page cache 实现（已过时）</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>页缓存与 folio API (page → folio)</h2></div>
+<blockquote>
+<p>笨叔《奔跑吧 Linux 内核》读书笔记
+对应旧书: ULK3 / LKD3 (Linux 2.6)
+对应现代内核: Linux 5.x / 6.x</p>
+</blockquote>
+<hr />
+<h2>本节要点</h2>
+<h3>页缓存 (Page Cache) 基本原理</h3>
+<p>页缓存是内核将磁盘文件数据缓存在物理内存中的机制。读写文件时优先访问页缓存，避免直接 I/O。</p>
+<pre class="code" data-label="C"><code class="c">// 读写路径 (简化)
+// read() → vfs_read() → file_read() → page_cache_sync_readahead()
+//                                         → 从磁盘读入 page cache
+// write() → vfs_write() → file_write() → 写入 page cache (标记 dirty)
+//                                          → writeback 线程异步刷盘
+</code></pre>
+<h3>page → folio 迁移</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>旧 API (page)</th>
+<th>新 API (folio)</th>
+<th>优势</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>获取大小</td>
+<td><code class="c">PAGE_SIZE &lt;&lt; compound_order(page)</code></td>
+<td><code class="c">folio_size(folio)</code></td>
+<td>直接返回，不需判断 compound</td>
+</tr>
+<tr>
+<td>获取物理地址</td>
+<td><code class="c">page_to_phys(page)</code> (需判断 head)</td>
+<td><code class="c">folio_phys(folio)</code></td>
+<td>自动处理 compound</td>
+</tr>
+<tr>
+<td>获取映射</td>
+<td><code class="c">page-&gt;mapping</code> (有 compound 歧义)</td>
+<td><code class="c">folio_mapping(folio)</code></td>
+<td>类型安全</td>
+</tr>
+<tr>
+<td>dirty 标记</td>
+<td><code class="c">SetPageDirty(page)</code></td>
+<td><code class="c">folio_mark_dirty(folio)</code></td>
+<td>明确操作级别</td>
+</tr>
+<tr>
+<td>锁定</td>
+<td><code class="c">lock_page(page)</code></td>
+<td><code class="c">folio_lock(folio)</code></td>
+<td>锁的是整个 folio</td>
+</tr>
+</tbody>
+</table></div>
+<h3>folio 在页缓存中的使用</h3>
+<pre class="code" data-label="C"><code class="c">// 旧: address_space-&gt;page_tree (radix tree of pages)
+struct address_space {
+    struct radix_tree_root page_tree;  // XArray (5.x+)
+    // ...
+};
+
+// 新: address_space-&gt;i_pages (XArray of folios)
+struct address_space {
+    struct xarray i_pages;  // 存储 folio 指针 (6.x)
+    // ...
+};
+
+// 查找页缓存
+struct folio *folio = filemap_get_folio(mapping, index);
+// 旧: struct page *page = find_get_page(mapping, index);
+</code></pre>
+<h3>大页 folio (Large Folio)</h3>
+<p>6.x 支持页缓存使用大页 folio（如 2MB），减少 TLB miss 和 page fault 次数：</p>
+<pre class="code" data-label="shell"><code class="c"># 启用大页 folio (需要内核支持)
+echo always &gt; /sys/kernel/mm/transparent_hugepage/enabled
+# 或
+echo advise &gt; /sys/kernel/mm/transparent_hugepage/enabled  # madvise 控制
+
+# 文件系统层面 (XFS/ext4 支持)
+mount -o huge=always /dev/sda1 /mnt/data
+</code></pre>
+<h3>readahead 策略</h3>
+<pre class="code" data-label="shell"><code class="c"># 查看当前 readahead 策略
+cat /sys/block/sda/queue/read_ahead_kb  # 默认 128KB
+
+# 调整 (HFT 数据文件可增大)
+echo 4096 &gt; /sys/block/sda/queue/read_ahead_kb  # 4MB readahead
+</code></pre>
+<hr />
+<h2>与旧书对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 (2.6)</th>
+<th>笨叔 (5.x/6.x)</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct page</code> 操作页缓存</td>
+<td><code class="c">struct folio</code> 操作页缓存</td>
+<td>消除 compound page 歧义</td>
+</tr>
+<tr>
+<td>radix_tree 管理页缓存</td>
+<td>XArray (5.x+) → folio (6.x)</td>
+<td>XArray API 更简洁，RCU-safe</td>
+</tr>
+<tr>
+<td>不支持大页页缓存</td>
+<td>支持 large folio 页缓存 (6.x)</td>
+<td>减少 TLB miss，提高大文件 I/O 效率</td>
+</tr>
+<tr>
+<td><code class="c">find_get_page()</code></td>
+<td><code class="c">filemap_get_folio()</code></td>
+<td>类型安全</td>
+</tr>
+<tr>
+<td><code class="c">read_cache_page()</code></td>
+<td><code class="c">read_cache_folio()</code></td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>关键数据结构 / 函数</h2>
+<pre class="code" data-label="C"><code class="c">// 源码路径: include/linux/fs.h
+struct address_space {
+    struct xarray i_pages;           // folio 存储 (XArray)
+    struct inode *host;              // 关联的 inode
+    struct xa_flags flags;
+    // ...
+};
+
+// 源码路径: include/linux/page_cache.h
+struct folio *filemap_get_folio(struct address_space *mapping, pgoff_t index);
+struct folio *filemap_grab_folio(struct address_space *mapping, pgoff_t index);
+int filemap_add_folio(struct address_space *mapping, struct folio *folio,
+                      pgoff_t index, gfp_t gfp);
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>页缓存预热</strong>：HFT 启动时将行情数据文件 <code class="c">mmap</code> + 全部 read，填满页缓存，运行时零磁盘 I/O</li>
+<li><strong>大页 folio</strong>：6.x 的大页页缓存减少 TLB miss，对大文件随机读性能提升明显</li>
+<li><strong>避免 dirty writeback</strong>：HFT 不写文件（或写日志用 O_DIRECT 绕过页缓存），避免 writeback 线程抢占 CPU</li>
+<li><strong>O_DIRECT</strong>：HFT 行情回放用 <code class="c">O_DIRECT</code> 绕过页缓存，减少 copy_to_user 一次内存拷贝</li>
+</ul>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1: 为什么 folio API 比 page API 更安全？举一个具体 bug 例子。</summary>
+<p>旧 API 中 <code class="c">page-&gt;mapping</code> 对 compound page 的尾页返回 NULL（只有头页有 mapping），开发者容易忘记检查 <code class="c">PageCompound(page)</code>，导致 NULL 指针解引用。folio API 中 <code class="c">folio_mapping(folio)</code> 对任何 folio 都返回正确的 mapping，编译器类型检查也能防止 folio 和 page 混用。</p>
+</details>
+<details>
+<summary>Q2: 大页 folio (large folio) 对 HFT 有什么实际好处？</summary>
+<p>(1) 减少 TLB miss：一个 2MB folio 只需 1 个 TLB 条目，而 512 个 4KB 页需要 512 个；(2) 减少 page fault：2MB folio 一次 fault 代替 512 次；(3) 减少 page cache 查找：XArray 中一个 folio 条目代替 512 个 page 条目。但注意：大页 folio 可能导致内存碎片（需要连续 2MB 物理页），HFT 系统应预留大页。</p>
+</details>
+<details>
+<summary>Q3: HFT 为什么用 O_DIRECT 绕过页缓存？有什么代价？</summary>
+<p>原因：(1) 减少一次 copy：O_DIRECT 绕过页缓存，DMA 直接到用户空间；(2) 避免页缓存占用内存，挤压交易数据缓存；(3) 避免 writeback 线程抢占 CPU。代价：(1) I/O 必须 512B/4KB 对齐；(2) 失去页缓存的预读优化；(3) 同一文件被多进程访问时无缓存共享。HFT 行情回放用 O_DIRECT + 预加载到自定义内存池，不依赖页缓存。</p>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Bootlin: 页缓存与 folio API</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — File Systems</a>
+<strong>主题:</strong> 页缓存、folio API、readahead
+<strong>对标旧书:</strong> ULK3 Ch15 / LKD3 Ch16</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>页缓存架构</h3>
+<pre class="code" data-label="code"><code class="c">应用 read():
+  → vfs_read() → generic_file_read()
+  → filemap_get_folio(mapping, index)  — 查页缓存
+    → 命中: 从 folio 拷贝到用户空间
+    → 未命中: page_cache_sync_readahead() → 从磁盘读
+  → 返回数据
+
+应用 write():
+  → vfs_write() → generic_file_write()
+  → filemap_get_folio() 或 filemap_grab_folio() — 查/建页缓存
+  → 从用户空间拷贝到 folio
+  → folio_mark_dirty(folio)
+  → 异步: writeback 线程将 dirty folio 刷盘
+</code></pre>
+<h3>folio 在页缓存中的操作</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/filemap.c
+struct folio *filemap_get_folio(struct address_space *mapping, pgoff_t index);
+// 查找页缓存, 不存在返回 NULL
+
+struct folio *filemap_grab_folio(struct address_space *mapping, pgoff_t index);
+// 查找, 不存在则分配新 folio 并加入页缓存
+
+int filemap_add_folio(struct address_space *mapping, struct folio *folio,
+                      pgoff_t index, gfp_t gfp);
+// 将新分配的 folio 加入页缓存
+
+// readahead
+void page_cache_sync_readahead(struct address_space *mapping,
+                               struct file_ra_state *ra,
+                               struct file *file, pgoff_t index,
+                               unsigned long req_count);
+</code></pre>
+<h3>大页 folio (Large Folio) 在页缓存</h3>
+<pre class="code" data-label="C"><code class="c">// 6.x: 文件系统可以使用大页 folio 做页缓存
+// 例如 XFS 的 large folio 支持
+struct folio *filemap_alloc_folio(gfp_t gfp, unsigned int order);
+// order=0: 4KB, order=9: 2MB (如果支持)
+</code></pre>
+<h3>writeback</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/page-writeback.c
+// dirty folio 被标记后, writeback 线程异步刷盘
+
+// writeback 触发:
+// 1. 定时: dirty_writeback_interval (默认 5 秒)
+// 2. 比例: dirty pages &gt; dirty_background_ratio (默认 10%)
+// 3. 同步: fsync() / sync()
+
+// HFT 应避免 writeback: 用 O_DIRECT 或只读文件
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看页缓存统计
+cat /proc/meminfo | grep -E &quot;Cached|Buffers|SwapCached&quot;
+
+# 2. 查看文件的页缓存
+# fincore 工具 (需要安装)
+fincore /path/to/file
+# 或用 vmtouch
+vmtouch /path/to/file
+
+# 3. 预热页缓存
+cat /path/to/big_file &gt; /dev/null  # 读一遍, 填充页缓存
+
+# 4. 清空页缓存 (危险!)
+echo 1 &gt; /proc/sys/vm/drop_caches  # 释放页缓存
+echo 3 &gt; /proc/sys/vm/drop_caches  # 释放页缓存 + inode/dentry
+
+# 5. 查看大页 folio
+mount -o huge=always /dev/sda1 /mnt/data  # XFS 大页 folio
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>page API</td>
+<td>folio API (6.x)</td>
+</tr>
+<tr>
+<td>radix_tree</td>
+<td>XArray + folio</td>
+</tr>
+<tr>
+<td>无 large folio</td>
+<td>支持 large folio 页缓存</td>
+</tr>
+<tr>
+<td><code class="c">read_cache_page()</code></td>
+<td><code class="c">read_cache_folio()</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> folio 的 <code class="c">folio_mark_dirty()</code> 和旧 API <code class="c">SetPageDirty()</code> 有什么区别？</p>
+<blockquote>
+<p><code class="c">SetPageDirty(page)</code> 在传入 tail page 时只设置 tail page 的标志，head page 的 dirty 标志未设置，导致 writeback 线程可能遗漏。<code class="c">folio_mark_dirty(folio)</code> 内部找到 head page 并设置，保证整个 folio 的 dirty 状态正确。</p>
+</blockquote>
+<p><strong>Q2:</strong> readahead 如何提高文件读取性能？</p>
+<blockquote>
+<p>readahead 在应用请求一个页时，预读后续多个页到页缓存。原理：文件访问通常顺序，预读命中率 &gt;90%。现代内核的 readahead 算法自适应：检测顺序访问模式后增大预读窗口（从 128KB 到 1MB+）。对 HFT 行情回放（大文件顺序读），readahead 减少了 90%+ 的磁盘 I/O 等待。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>Folio 提案</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/849438/">Folios for filesystems</a> (LWN, 2021)
+<strong>作者:</strong> Matthew Wilcox
+<strong>内核版本:</strong> 5.16+ (初始合入)
+<strong>对标旧书:</strong> ULK3 Ch15 / LKD3 Ch19 (page cache, page API)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>Matthew Wilcox 提出 <code class="c">folio</code> 类型来解决 <code class="c">page</code> 结构体的根本歧义问题。</p>
+<h3>page 的问题</h3>
+<p>Linux 的 <code class="c">page</code> 结构体有双重身份：
+1. <strong>base page</strong>：一个 4KB 物理页
+2. <strong>compound page</strong>：多个连续页组成的大页（head page + tail pages）</p>
+<p>大量 API 假设 <code class="c">page</code> 是 base page，但实际可能收到 compound page 的 tail page，导致 bug：</p>
+<pre class="code" data-label="C"><code class="c">// 危险代码: 可能收到 tail page
+struct page *page = ...;
+void *addr = page_address(page);  // tail page 返回错误地址!
+size_t size = PAGE_SIZE;          // 应该是 compound_size(page)!
+struct address_space *mapping = page-&gt;mapping;  // tail page 的 mapping 是 NULL!
+</code></pre>
+<h3>folio 解决方案</h3>
+<pre class="code" data-label="C"><code class="c">// folio 明确表示一个完整的内存对象
+struct folio {
+    struct page page;  // 包装 head page
+};
+
+// folio API 保证操作的是整个 folio
+void *folio_address(struct folio *folio);     // 正确地址
+size_t folio_size(struct folio *folio);        // 正确大小 (4KB 或 2MB)
+struct address_space *folio_mapping(struct folio *folio);  // 正确 mapping
+</code></pre>
+<h3>迁移路径</h3>
+<pre class="code" data-label="code"><code class="c">page API → folio API:
+  find_get_page()        → filemap_get_folio()
+  page_address(page)     → folio_address(folio)
+  PAGE_SIZE              → folio_size(folio)
+  lock_page(page)        → folio_lock(folio)
+  SetPageDirty(page)     → folio_mark_dirty(folio)
+  get_page(page)         → folio_get(folio)
+  put_page(page)         → folio_put(folio)
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct page</code> 操作页缓存</td>
+<td><code class="c">struct folio</code> 操作页缓存</td>
+</tr>
+<tr>
+<td><code class="c">page-&gt;mapping</code> 直接访问</td>
+<td><code class="c">folio_mapping(folio)</code> 函数访问</td>
+</tr>
+<tr>
+<td>无 compound page 安全检查</td>
+<td>folio API 编译时类型检查</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>folio API 本身对 HFT 无直接影响（HFT 不做文件系统开发），但 folio 支持的 large folio（大页页缓存）对 HFT 回放行情数据有帮助。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么不直接修改 page 结构体，而要引入新的 folio 类型？</p>
+<blockquote>
+<p>page 结构体遍布内核各处（数十万处引用），直接修改风险极高。folio 作为 page 的包装类型，可以渐进式迁移：先在页缓存中引入 folio API，再逐步扩展到其他子系统。编译器类型检查可以在编译期发现 folio/page 混用错误。</p>
+</blockquote>
+<p><strong>Q2:</strong> folio 和 compound page 的关系是什么？</p>
+<blockquote>
+<p>folio 包装的是 compound page 的 head page（或 base page）。一个 order-0 folio 对应一个 4KB base page。一个 order-9 folio 对应一个 2MB compound page (512 个 page)。folio API 隐藏了 compound page 的复杂性，开发者不需要关心 head/tail。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>Folio 深入</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/862108/">The folio API</a> (LWN, 2021)
+<strong>作者:</strong> Matthew Wilcox
+<strong>对标旧书:</strong> ULK3 Ch15 (page cache 实现细节)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>本文深入介绍 folio API 的设计细节和使用模式。</p>
+<h3>folio 的层次结构</h3>
+<pre class="code" data-label="code"><code class="c">folio (逻辑层)
+  ├── head page (物理层: compound head)
+  │     ├── tail page 0
+  │     ├── tail page 1
+  │     └── ... (2^order - 1 个 tail pages)
+  └── folio 元数据 (内嵌在 head page 的 struct page 中)
+</code></pre>
+<h3>关键 folio 操作</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: include/linux/page_ext.h, mm/folio-compat.c
+
+// 获取 folio
+struct folio *page_folio(struct page *page);  // page → folio
+struct folio *filemap_get_folio(struct address_space *mapping, pgoff_t index);
+
+// folio 属性
+size_t folio_size(struct folio *folio);           // 大小 (4KB/2MB/...)
+unsigned int folio_order(struct folio *folio);     // order (0/9/...)
+pgoff_t folio_index(struct folio *folio);          // 页缓存索引
+struct address_space *folio_mapping(struct folio *folio);
+
+// folio 状态
+bool folio_test_uptodate(struct folio *folio);
+bool folio_test_dirty(struct folio *folio);
+bool folio_test_writeback(struct folio *folio);
+
+// folio 操作
+void folio_mark_dirty(struct folio *folio);
+void folio_clear_dirty(struct folio *folio);
+void folio_lock(struct folio *folio);        // 锁定整个 folio
+void folio_unlock(struct folio *folio);
+void folio_get(struct folio *folio);          // 引用计数 +1
+void folio_put(struct folio *folio);          // 引用计数 -1
+</code></pre>
+<h3>大页 folio (Large Folio) 支持</h3>
+<pre class="code" data-label="C"><code class="c">// 6.x: 文件系统可以使用大页 folio
+struct folio *filemap_alloc_folio(gfp_t gfp, unsigned int order);
+// order=0: 4KB, order=9: 2MB (需要 CONFIG_TRANSPARENT_HUGEPAGE)
+
+// 检查是否是大页 folio
+bool folio_test_large(struct folio *folio);
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">page_cache</code> 用 radix_tree 存 page</td>
+<td>用 XArray 存 folio</td>
+</tr>
+<tr>
+<td><code class="c">add_to_page_cache()</code></td>
+<td><code class="c">filemap_add_folio()</code></td>
+</tr>
+<tr>
+<td>无大页页缓存</td>
+<td>支持 large folio 页缓存</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>large folio 减少 TLB miss。HFT 行情回放用大文件，large folio 页缓存可以减少 512 倍 TLB 条目占用。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> <code class="c">folio_lock()</code> 锁定的是什么？和 <code class="c">lock_page()</code> 有什么区别？</p>
+<blockquote>
+<p><code class="c">folio_lock()</code> 锁定整个 folio（可能是 4KB 或 2MB），设置 head page 的 PG_locked 标志。<code class="c">lock_page()</code> 在传入 tail page 时行为不正确（可能只锁 tail page 的标志位）。<code class="c">folio_lock()</code> 内部正确找到 head page 并锁定。</p>
+</blockquote>
+<p><strong>Q2:</strong> 大页 folio 在页缓存中的优势是什么？什么条件下启用？</p>
+<blockquote>
+<p>优势：(1) 1 个 TLB 条目覆盖 2MB 而非 512 个 4KB 条目；(2) page fault 次数减少 512 倍；(3) XArray 中 1 个条目代替 512 个。启用条件：(1) CONFIG_TRANSPARENT_HUGEPAGE=y；(2) 文件系统支持 (XFS/ext4)；(3) mount -o huge=always 或 madvise。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>Folio 合入状态</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/893852/">The status of folios</a> (LWN, 2022)
+<strong>内核版本:</strong> 5.16 ~ 6.x (渐进式合入)
+<strong>对标旧书:</strong> ULK3 Ch15 (page cache 完全重写)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>folio API 从 5.16 开始合入，分多个内核版本渐进式迁移整个页缓存子系统。</p>
+<h3>合入时间线</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>合入内容</th>
+<th>覆盖范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.16</td>
+<td>folio 基础类型 + 页缓存核心 API</td>
+<td>mm/filemap.c</td>
+</tr>
+<tr>
+<td>5.17</td>
+<td>folio 在 readahead 路径</td>
+<td>mm/readahead.c</td>
+</tr>
+<tr>
+<td>5.18</td>
+<td>folio 在 writeback 路径</td>
+<td>mm/page-writeback.c</td>
+</tr>
+<tr>
+<td>5.19</td>
+<td>folio 在 truncate 路径</td>
+<td>mm/truncate.c</td>
+</tr>
+<tr>
+<td>6.0</td>
+<td>folio 在 migrate 路径</td>
+<td>mm/migrate.c</td>
+</tr>
+<tr>
+<td>6.1</td>
+<td>large folio 支持</td>
+<td>mm/huge_memory.c</td>
+</tr>
+<tr>
+<td>6.3+</td>
+<td>文件系统 folio 迁移 (XFS/ext4)</td>
+<td>fs/</td>
+</tr>
+</tbody>
+</table></div>
+<h3>迁移统计</h3>
+<pre class="code" data-label="code"><code class="c">5.16: ~2000 行代码改为 folio API
+6.0:  ~8000 行代码改为 folio API
+6.3+: 几乎所有页缓存路径使用 folio
+</code></pre>
+<h3>仍保留的 page API</h3>
+<p>部分子系统仍用 page API（暂未迁移）：
+- 网络栈 (<code class="c">sk_buff</code> 仍用 page)
+- DMA 层 (DMA 映射用 page 物理地址)
+- 部分 arch 代码 (TLB flush 用 page)</p>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全部 page API</td>
+<td>页缓存用 folio，网络/DMA 仍用 page</td>
+</tr>
+<tr>
+<td><code class="c">find_get_page()</code></td>
+<td><code class="c">filemap_get_folio()</code> (页缓存)</td>
+</tr>
+<tr>
+<td><code class="c">add_to_page_cache_lru()</code></td>
+<td><code class="c">filemap_add_folio()</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>folio 合入改善了页缓存效率，间接有利于 HFT 的文件 I/O 路径。但 HFT 主要走自定义内存池或 O_DIRECT，页缓存路径影响较小。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么 folio 迁移要分多个内核版本而不是一次性合入？</p>
+<blockquote>
+<p>页缓存代码涉及 mm/ 子系统的大半，一次性修改风险极高（编译错误、性能回归、隐蔽 bug）。分版本合入允许每个阶段充分测试和稳定后再进入下一阶段。这也是 Linux 内核开发的惯例——大重构分步进行。</p>
+</blockquote>
+</details>
       </section>
 
 

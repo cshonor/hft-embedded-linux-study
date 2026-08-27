@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-arm64-boot-assembly</a>
+          <a href="#s-02"><span class="n">02</span>02-start-kernel-init</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +301,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch7 ARM64 启动流程</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +314,452 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>理解启动流程有助于在 bootargs 中正确设置 isolcpus/nohz_full 等 HFT 参数。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>ARM64 启动汇编阶段：U-Boot → head.S → MMU</h2></div>
+<blockquote>
+<p>来源: Bootlin ARM64 Training
+对标旧书: ULK3 Ch2 (x86 启动, 已过时)</p>
+</blockquote>
+<hr />
+<h2>ARM64 内核启动全景</h2>
+<pre class="code" data-label="code"><code class="c">┌──────────────────────────────────────────────────────┐
+│ 1. ROM Bootloader / U-Boot                            │
+│    加载 kernel Image + dtb 到内存，跳转               │
+├──────────────────────────────────────────────────────┤
+│ 2. arch/arm64/kernel/head.S (汇编头)  ← 本文件       │
+│    设置初始页表、开启 MMU、跳转 C 代码                │
+├──────────────────────────────────────────────────────┤
+│ 3. start_kernel() (init/main.c)      → 下一文件       │
+│    初始化所有子系统、调度器、中断、驱动               │
+├──────────────────────────────────────────────────────┤
+│ 4. rest_init() → kernel_init()       → 下一文件       │
+│    挂载 rootfs、执行 /sbin/init                       │
+└──────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>阶段 1: U-Boot → 内核入口</h2>
+<pre class="code" data-label="code"><code class="c">U-Boot 将内核加载到内存后跳转:
+  x0 = dtb 地址 (设备树在内存中的位置)
+  x1-x3 = 0
+  x4 = 0 (或预留)
+  PC = 内核入口地址 (Image 头中的跳转指令)
+
+# ARM64 Image 头 (arch/arm64/kernel/head.S)
+# 前 8 字节: &quot;ARM\x64&quot; magic
+# 接下来: 跳转指令 + Image 头信息 (text_offset, image_size)
+</code></pre>
+<h3>ARM64 Image vs x86 bzImage</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>x86 bzImage</th>
+<th>ARM64 Image</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>格式</td>
+<td>压缩内核 (gzip)</td>
+<td>未压缩 (或 Image.gz)</td>
+</tr>
+<tr>
+<td>入口</td>
+<td>setup.S → head.S</td>
+<td>head.S 直接执行</td>
+</tr>
+<tr>
+<td>引导协议</td>
+<td>real mode → protected mode</td>
+<td>直接在 EL1/EL2 执行</td>
+</tr>
+<tr>
+<td>设备描述</td>
+<td>ACPI</td>
+<td>Device Tree (DTB)</td>
+</tr>
+<tr>
+<td>内存映射</td>
+<td>e820</td>
+<td>DTB /memory 节点</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>阶段 2: head.S 汇编初始化</h2>
+<pre class="code" data-label="asm"><code class="c">// arch/arm64/kernel/head.S
+__primary_entry:
+    bl      preserve_boot_args      // 保存 x0-x3 (dtb 地址等) 到 __boot_args
+    bl      el2_setup               // 检查异常等级，降级到 EL1
+    bl      set_cpu_boot_mode_flag  // 记录启动模式 (EL2/EL1)
+    bl      __create_page_tables    // 创建初始页表 (恒等映射 + 内核映射)
+    bl      __cpu_setup             // 配置 SCTLR_EL1 (MMU/cache 控制寄存器)
+    bl      __primary_switch        // 开启 MMU，跳转到 C 代码
+
+__primary_switch:
+    bl      __enable_mmu            // 设置 TTBR0/TTBR1，开启 MMU (SCTLR_EL1.M=1)
+    ldr     x8, =__primary_switched
+    br      x8                      // 跳转到 C 代码 (__primary_switched)
+</code></pre>
+<h3>EL2 → EL1 降级</h3>
+<pre class="code" data-label="asm"><code class="c">// el2_setup (简化)
+el2_setup:
+    mrs     x0, CurrentEL           // 读取当前异常等级
+    cmp     x0, #PSR_MODE_EL2t      // 是否在 EL2?
+    b.ne    1f                      // 不在 EL2, 跳过
+
+    // 在 EL2: 配置虚拟化扩展
+    // 设置 HCR_EL2 (Hypervisor 配置寄存器)
+    // 配置 VTCR_EL2 (Stage-2 页表控制)
+    // 如果需要 KVM, 保存 EL2 状态
+
+    // 降级到 EL1
+    mov     x0, #PSR_MODE_EL1h      // SP_EL1 + EL1h
+    msr     spsr_el2, x0            // 设置返回后的 PSTATE
+    msr     elr_el2, lr             // 设置返回地址
+    eret                            // 异常返回 → 降到 EL1
+1:
+    ret
+</code></pre>
+<p><strong>为什么需要降级？</strong> Linux 内核运行在 EL1。如果在 EL2 启动（Hypervisor 模式），需要先降级。如果需要 KVM 虚拟化，EL2 的状态会被保存供 Hypervisor 使用。</p>
+<h3>创建初始页表</h3>
+<pre class="code" data-label="asm"><code class="c">// __create_page_tables (简化)
+// 创建两个映射:
+// 1. 恒等映射 (identity mapping): 物理地址 = 虚拟地址
+//    用于 MMU 开启瞬间, PC 指向的代码继续可执行
+// 2. 内核映射: 物理地址 → 内核虚拟地址 (PAGE_OFFSET + 物理地址)
+
+// ARM64 页表层级:
+// PGD (Level 0) → PUD (Level 1) → PMD (Level 2) → PTE (Level 3)
+// 4KB 页: 39-bit 或 48-bit 虚拟地址
+// 64KB 页: 42-bit 虚拟地址
+</code></pre>
+<h3>开启 MMU</h3>
+<pre class="code" data-label="asm"><code class="c">// __enable_mmu
+__enable_mmu:
+    // 设置页表基址寄存器
+    msr     ttbr0_el1, x0           // 用户空间页表基址 (恒等映射用)
+    msr     ttbr1_el1, x1           // 内核空间页表基址
+
+    // 配置 TCR_EL1 (Translation Control Register)
+    // 设置 TLB 缓存策略、ASID 宽度、页大小等
+
+    // 开启 MMU + cache
+    mrs     x0, sctlr_el1
+    orr     x0, x0, #SCTLR_ELx_M    // M=1: 开启 MMU
+    orr     x0, x0, #SCTLR_ELx_C    // C=1: 开启 D-cache
+    msr     sctlr_el1, x0
+    isb                             // 指令同步屏障
+    br      __primary_switched       // 跳转到 C 代码
+</code></pre>
+<hr />
+<h2>恒等映射的必要性</h2>
+<pre class="code" data-label="code"><code class="c">MMU 开启前: PC = 物理地址 0x80000 (内核加载位置)
+              ↓
+MMU 开启瞬间: 虚拟地址 = 物理地址 (页表翻译生效)
+              ↓
+如果没有恒等映射: PC 指向的虚拟地址没有页表项 → Page Fault → 崩溃
+              ↓
+恒等映射保证: 物理地址 0x80000 → 虚拟地址 0x80000 (同一地址)
+              ↓
+MMU 开启后: 代码继续执行, 之后跳转到内核虚拟地址 (PAGE_OFFSET + 0x80000)
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 (x86 启动)</th>
+<th>ARM64 启动</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>16 位 real mode → 32 位保护模式</td>
+<td>EL2 → EL1 直接降级</td>
+</tr>
+<tr>
+<td>BIOS → bootloader → setup.S → head.S</td>
+<td>U-Boot → head.S (无 real mode)</td>
+</tr>
+<tr>
+<td><code class="c">cr3</code> 页表基址</td>
+<td><code class="c">TTBR0_EL1</code> / <code class="c">TTBR1_EL1</code></td>
+</tr>
+<tr>
+<td><code class="c">e820</code> 内存映射</td>
+<td>DTB 中的 <code class="c">/memory</code> 节点</td>
+</tr>
+<tr>
+<td>ACPI 硬件描述</td>
+<td>Device Tree</td>
+</tr>
+<tr>
+<td>GDT/IDT 设置</td>
+<td>VBAR_EL1 向量表设置</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>启动阶段</th>
+<th>HFT 关注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>U-Boot bootargs</td>
+<td>isolcpus, nohz_full 等参数在此传递</td>
+</tr>
+<tr>
+<td>EL2 → EL1</td>
+<td>KVM 虚拟化对 HFT 通常是开销，不用</td>
+</tr>
+<tr>
+<td>页表设置</td>
+<td>大页 (2MB/1GB) 减少 TLB miss</td>
+</tr>
+<tr>
+<td>MMU 开启</td>
+<td>启动早期延迟不影响交易，但理解流程有助于调试</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: ARM64 内核启动时为什么要先从 EL2 降级到 EL1？</summary>
+<p>Linux 内核运行在 EL1 (内核态)。如果系统在 EL2 启动（Hypervisor 模式），el2_setup() 会配置虚拟化扩展并降级到 EL1。如果不降级直接运行在 EL2，某些系统寄存器的访问权限不同（如 CNTV_CTL_EL0 只有在 EL1 配置 HCR_EL2 后才可用），会导致内核行为异常。如果需要 KVM，EL2 状态会被保存供 Hypervisor 使用。</p>
+</details>
+<details>
+<summary>Q2: head.S 中创建的"恒等映射"是什么？为什么需要？</summary>
+<p>恒等映射 (identity mapping) 是物理地址 = 虚拟地址的映射。开启 MMU 的瞬间，PC 指向的物理地址必须同时有虚拟地址映射，否则 CPU 取下一条指令时会页错误。恒等映射确保 MMU 开启后当前执行的代码继续可用，直到跳转到内核虚拟地址空间的代码（PAGE_OFFSET + 物理地址）。</p>
+</details>
+<details>
+<summary>Q3: ARM64 和 x86 在启动阶段的最大区别是什么？</summary>
+<p>x86 启动需要从 16 位 real mode → 32 位保护模式 → 64 位长模式，经过多次模式切换。ARM64 直接在 EL1 或 EL2 启动，已经是 64 位模式，只需 EL2→EL1 降级（如果在 EL2 启动）。ARM64 没有 BIOS，用 U-Boot 和 Device Tree 替代 x86 的 BIOS 和 ACPI。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">02-start-kernel-init.md</a> — start_kernel() C 代码初始化</li>
+<li><a href="chapter-06.html#ch-6">chapter-06-arm64-architecture</a> — ARM64 架构详解</li>
+<li><a href="chapter-09.html#ch-9">chapter-09-bootloader-build</a> — U-Boot 与构建系统</li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>start_kernel() C 代码初始化与用户空间启动</h2></div>
+<blockquote>
+<p>来源: Bootlin ARM64 Training
+对标旧书: ULK3 Ch2 (init/main.c 已大幅变化)</p>
+</blockquote>
+<hr />
+<h2>阶段 3: start_kernel()</h2>
+<pre class="code" data-label="C"><code class="c">// init/main.c
+asmlinkage __visible void __init start_kernel(void) {
+    // === 架构初始化 ===
+    setup_arch(&amp;command_line);         // 解析 dtb, 内存布局, bootargs
+    parse_args(&quot;early&quot;, command_line, ...);  // 早期参数解析
+
+    // === 内存管理 ===
+    mm_init();                         // buddy + slab/slub + vmalloc
+    mem_init();                        // 内存 zone 初始化
+    kmem_cache_init();                 // SLUB 分配器初始化
+
+    // === 调度器 ===
+    sched_init();                      // 调度器初始化 (runqueue, idle thread)
+
+    // === 中断与时钟 ===
+    early_irq_init();                  // 中断描述符表初始化
+    init_IRQ();                        // 平台中断初始化 (GIC)
+    tick_init();                       // clockevents 框架
+    time_init();                       // hrtimer, clocksource
+
+    // === 控制台 ===
+    console_init();                    // printk 可用 (之前只有 earlycon)
+
+    // === 其他子系统 ===
+    vfs_caches_init();                 // VFS 缓存 (dentry, inode)
+    buffer_init();                     // buffer head 缓存
+    signals_init();                    // 信号处理
+    page_writeback_init();             // 页回写
+    proc_root_init();                  // /proc 文件系统
+    cgroup_init();                     // cgroup v2
+
+    // === 最后阶段 ===
+    rest_init();                       // 创建 init 线程 (PID 1)
+}
+</code></pre>
+<h3>关键初始化顺序</h3>
+<pre class="code" data-label="code"><code class="c">start_kernel()
+├── setup_arch()          ← 解析 DTB, 内存布局
+├── mm_init()             ← buddy/slab 可用
+├── sched_init()          ← 调度器可用
+├── early_irq_init()      ← 中断可用
+├── time_init()           ← 时钟可用
+├── console_init()        ← printk 全功能可用
+├── ...大量子系统...
+└── rest_init()
+    ├── kernel_thread(kernel_init)  ← PID 1 (init)
+    └── cpu_startup_entry()          ← PID 0 (idle)
+</code></pre>
+<hr />
+<h2>阶段 4: rest_init() → init 线程</h2>
+<pre class="code" data-label="C"><code class="c">static noinline void __init_refok rest_init(void) {
+    // 创建 init 线程 (PID 1)
+    struct task_struct *tsk;
+    tsk = kernel_thread(kernel_init, NULL, CLONE_FS);
+
+    // 当前 CPU 进入 idle 循环 (PID 0)
+    cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
+}
+
+static int __ref kernel_init(void *unused) {
+    kernel_init_freeable();  // 做更多初始化 (驱动加载等)
+
+    // 尝试挂载 rootfs
+    if (ramdisk_execute_command) {
+        if (!run_init_process(ramdisk_execute_command))
+            return 0;
+    }
+
+    // 查找并执行 init 程序
+    if (!try_to_run_init_process(&quot;/sbin/init&quot;) ||
+        !try_to_run_init_process(&quot;/etc/init&quot;) ||
+        !try_to_run_init_process(&quot;/bin/init&quot;) ||
+        !try_to_run_init_process(&quot;/bin/sh&quot;))
+        panic(&quot;No init found.  Try passing init= option to kernel.&quot;);
+}
+</code></pre>
+<h3>驱动加载: do_initcalls()</h3>
+<pre class="code" data-label="C"><code class="c">// kernel_init_freeable() 中调用 do_initcalls()
+// 按级别顺序执行 initcall 函数
+
+static void __init do_initcalls(void) {
+    // level 0: pure_initcall (最早, 不依赖任何子系统)
+    // level 1: core_initcall (核心子系统)
+    // level 2: postcore_initcall
+    // level 3: arch_initcall (架构特定驱动)
+    // level 4: subsys_initcall (子系统)
+    // level 5: fs_initcall (文件系统)
+    // level 6: device_initcall (常规驱动, 大多数)
+    // level 7: late_initcall (最晚)
+}
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 查看驱动加载顺序和耗时
+dmesg | grep &quot;initcall&quot;
+# [    0.123456] initcall bcm2835_gpio_init+0x0/0x10 returned 0 after 120 usecs
+# [    0.123789] initcall gic_init+0x0/0x20 returned 0 after 350 usecs
+</code></pre>
+<hr />
+<h2>启动参数传递</h2>
+<pre class="code" data-label="code"><code class="c">U-Boot → 内核:
+  x0 = dtb 物理地址
+  bootargs (在 dtb 的 /chosen 节点中)
+
+内核解析 bootargs:
+  console=serial0,115200    → 控制台设备
+  root=/dev/mmcblk0p2       → rootfs 设备
+  rootwait                  → 等待 rootfs 设备就绪
+  rw                        → rootfs 可读写
+  init=/sbin/init           → init 程序路径
+  isolcpus=2-3              → 隔离 CPU 2-3 (HFT)
+  nohz_full=2-3             → 无滴带 (HFT)
+  rcu_nocbs=2-3             → RCU 回调卸载 (HFT)
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 查看当前启动参数
+cat /proc/cmdline
+
+# 在 U-Boot 中设置 bootargs
+# U-Boot&gt; setenv bootargs &quot;console=serial0,115200 root=/dev/mmcblk0p2 rootwait isolcpus=2-3 nohz_full=2-3&quot;
+# U-Boot&gt; saveenv
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看内核启动日志
+dmesg | head -50
+# [    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd0b1]
+# [    0.000000] Linux version 6.1.63-v8+ ...
+# [    0.000000] Machine model: Raspberry Pi 5 Model B Rev 1.0
+# [    0.000000] Memory: 3865392K/4194304K available
+
+# 2. 查看启动耗时分析
+systemd-analyze
+systemd-analyze blame | head -20
+systemd-analyze critical-chain
+
+# 3. 查看 initcall 耗时
+dmesg | grep &quot;initcall&quot; | sort -t' ' -k2
+
+# 4. 使用 ftrace 追踪启动过程
+# 在内核 cmdline 中添加: trace_event=initcall:* ftrace=function
+# 启动后:
+cat /sys/kernel/debug/tracing/trace | grep initcall | head -30
+
+# 5. 查看 init 进程
+ps -p 1 -o pid,comm,args
+#   1 ?   Ss   0:05 /sbin/init  (或 /lib/systemd/systemd)
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>启动阶段</th>
+<th>HFT 关注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bootargs</td>
+<td>isolcpus/nohz_full/rcu_nocbs 参数</td>
+</tr>
+<tr>
+<td>initcall 顺序</td>
+<td>网卡驱动加载时机 (影响网络就绪时间)</td>
+</tr>
+<tr>
+<td>启动耗时</td>
+<td>交易系统冷启动时间</td>
+</tr>
+<tr>
+<td>console_init</td>
+<td>日志输出时机 (earlycon vs console)</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实践：</strong> 交易系统冷启动需要最小化启动时间。通过 <code class="c">systemd-analyze blame</code> 找到耗时服务，禁用不必要的 initcall。isolcpus 参数在 bootargs 中设置，确保交易线程绑定的 CPU 从启动起就不被普通进程调度。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: start_kernel() 中为什么 sched_init() 在 init_IRQ() 之前？</summary>
+<p>调度器需要先初始化 runqueue 和 idle thread，因为中断处理可能触发调度（如时钟中断触发时间片切换）。如果中断先初始化而调度器没准备好，中断处理中调用 schedule() 会崩溃。但时钟初始化（time_init）需要在中断之后，因为 clockevent 设备注册需要中断子系统。</p>
+</details>
+<details>
+<summary>Q2: 内核如何知道 rootfs 在哪个设备上？</summary>
+<p>通过 bootargs 中的 <code class="c">root=</code> 参数。U-Boot 将 bootargs 放在设备树的 <code class="c">/chosen</code> 节点中，内核解析设备树时提取 bootargs，在 kernel_init() 中挂载 rootfs。如果指定了 <code class="c">rootwait</code>，内核会等待 rootfs 设备就绪（SD 卡初始化完成）后再挂载。</p>
+</details>
+<details>
+<summary>Q3: isolcpus=2-3 参数在启动流程的哪个阶段生效？</summary>
+<p>在 setup_arch() → smp_init() 阶段解析。内核构建 CPU 调度域时，将 isolcpus 指定的 CPU 从默认调度域中排除，不参与普通进程的负载均衡。但这些 CPU 仍然在线（online），可以通过 sched_setaffinity 显式绑定进程到这些 CPU。HFT 交易线程在用户空间用 sched_setaffinity 绑定到隔离核。</p>
+</details>
+<details>
+<summary>Q4: PID 0 和 PID 1 分别是什么？为什么 PID 0 不退出？</summary>
+<p>PID 0 是 idle 线程（每个 CPU 一个），在 rest_init() 中通过 cpu_startup_entry() 进入 idle 循环。当没有可运行的进程时，CPU 执行 idle 线程（WFI 指令让 CPU 进入低功耗）。PID 0 永远不退出——它是调度器的"最后手段"。PID 1 是 init/systemd 进程，负责启动所有用户空间服务，孤儿进程的父进程。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">01-arm64-boot-assembly.md</a> — 汇编阶段 head.S</li>
+<li><a href="chapter-01.html#ch-1">chapter-01-kernel-architecture</a> — 内核子系统概览</li>
+<li><a href="chapter-10.html#ch-10">chapter-10-preempt-rt</a> — PREEMPT_RT 启动参数</li>
+</ul>
       </section>
 
 

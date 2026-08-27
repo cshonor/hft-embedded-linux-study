@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-vm-address-space</a>
+          <a href="#s-02"><span class="n">02</span>02-maple-tree</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +302,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 05: 虚拟地址空间与 Maple Tree</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +322,304 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">05.5-modern-kernel/chapter-03-rcu/</code>：RCU 基础，maple tree 的读路径</li>
 <li><code class="c">06-linux-mm/</code>：Mel Gorman 红黑树 VMA 管理（已过时）</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>虚拟内存与地址空间 (VMA红黑树 → maple tree)</h2></div>
+<blockquote>
+<p>笨叔《奔跑吧 Linux 内核》读书笔记
+对应旧书: ULK3 / LKD3 (Linux 2.6)
+对应现代内核: Linux 5.x / 6.x</p>
+</blockquote>
+<hr />
+<h2>本节要点</h2>
+<h3>进程地址空间管理演进</h3>
+<p>Linux 用 VMA (Virtual Memory Area) 描述进程的虚拟地址区间。VMA 的组织结构经历了重大变化：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时期</th>
+<th>数据结构</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6 ~ 5.x</td>
+<td>红黑树 + 链表</td>
+<td>大量 VMA 时查找 O(log N)，但锁竞争严重</td>
+</tr>
+<tr>
+<td>6.1+</td>
+<td><strong>Maple Tree</strong></td>
+<td>RCU-safe 读取，无需 mmap_sem 读取锁</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Maple Tree（6.1+）</h3>
+<p>Maple Tree 是一种 B-tree 变体，专门为 VMA 管理设计：</p>
+<pre class="code" data-label="C"><code class="c">// 旧 API (需要 mmap_sem 读锁)
+struct vm_area_struct *vma = find_vma(mm, addr);
+// 需要 down_read(&amp;mm-&gt;mmap_sem) 保护
+
+// 新 API (RCU-safe, 6.1+)
+struct vm_area_struct *vma = find_vma(mm, addr);
+// 内部使用 maple tree, RCU 读取无需锁
+</code></pre>
+<p><strong>Maple Tree 的关键优势：</strong>
+- <strong>RCU-safe 读取</strong>：查找 VMA 不需要 <code class="c">mmap_lock</code>（原 <code class="c">mmap_sem</code>），多线程并发读取无竞争
+- <strong>更好的缓存局部性</strong>：节点内部连续存储，减少 cache miss
+- <strong>并发性</strong>：写操作仍然需要锁，但读操作可以与写操作并发</p>
+<h3>mmap_lock（原 mmap_sem）</h3>
+<pre class="code" data-label="C"><code class="c">// 5.x: struct rw_semaphore mmap_sem
+down_read(&amp;mm-&gt;mmap_sem);    // 读锁
+// ... find_vma, page fault handling ...
+up_read(&amp;mm-&gt;mmap_sem);
+
+// 6.x: struct rw_semaphore mmap_lock (改名)
+mmap_read_lock(mm);          // 读锁 (maple tree 查找仍建议加锁)
+mmap_read_unlock(mm);
+
+mmap_write_lock(mm);         // 写锁 (mmap, munmap, brk 等)
+mmap_write_unlock(mm);
+</code></pre>
+<h3>页表结构</h3>
+<pre class="code" data-label="code"><code class="c">虚拟地址 (64-bit)
+┌──────────┬──────────┬──────────┬──────────┐
+│ PGD (9b) │ PUD (9b) │ PMD (9b) │ PTE (9b) │ 页内偏移 (12b)
+└──────────┴──────────┴──────────┴──────────┘
+     │          │          │          │
+  pgd_offset  pud_offset  pmd_offset  pte_offset
+     │          │          │          │
+  4KB       4KB         4KB        4KB = 物理页
+
+5 级页表 (57-bit VA, CONFIG_PGTABLE_LEVELS=5):
+PGD → P4D → PUD → PMD → PTE
+</code></pre>
+<h3>关键 VMA 操作</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/mmap.c
+// 创建 VMA
+unsigned long mmap(struct file *file, unsigned long addr,
+                   unsigned long len, int prot, int flags,
+                   unsigned long offset);
+
+// 6.x 内部实现使用 maple tree
+// mm/mmap.c: do_mmap() → maple_tree_insert()
+</code></pre>
+<hr />
+<h2>与旧书对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 (2.6)</th>
+<th>笨叔 (5.x/6.x)</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VMA 红黑树 + 链表</td>
+<td>Maple Tree (6.1+)</td>
+<td>读操作 RCU-safe，减少 mmap_lock 竞争</td>
+</tr>
+<tr>
+<td><code class="c">mmap_sem</code></td>
+<td><code class="c">mmap_lock</code> (5.8 改名)</td>
+<td>语义更清晰</td>
+</tr>
+<tr>
+<td>4 级页表 (48-bit VA)</td>
+<td>5 级页表 (57-bit VA, 可选)</td>
+<td>大内存服务器需要 &gt;128TB</td>
+</tr>
+<tr>
+<td><code class="c">find_vma()</code> 需要锁</td>
+<td><code class="c">find_vma()</code> RCU-safe</td>
+<td>Maple Tree 支持无锁读</td>
+</tr>
+<tr>
+<td><code class="c">vm_area_struct</code> 有 <code class="c">vm_rb</code></td>
+<td><code class="c">vm_rb</code> 字段删除</td>
+<td>不再用红黑树</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>关键数据结构 / 函数</h2>
+<pre class="code" data-label="C"><code class="c">// 源码路径: include/linux/mm_types.h
+struct vm_area_struct {
+    unsigned long vm_start;      // 起始虚拟地址
+    unsigned long vm_end;        // 结束虚拟地址
+    struct mm_struct *vm_mm;     // 所属 mm
+    pgprot_t vm_page_prot;       // 访问权限
+    unsigned long vm_flags;      // VM_READ/WRITE/EXEC/SHARED
+    struct file *vm_file;        // 映射的文件 (如有)
+    // 6.1+: 不再有 struct rb_node vm_rb;
+    // 改为 maple tree 管理
+};
+
+// 源码路径: include/linux/maple_tree.h
+struct maple_tree {
+    void *ma_root;               // 根节点
+    unsigned int ma_flags;
+    spinlock_t ma_lock;
+};
+
+// 源码路径: include/linux/mm_types.h
+struct mm_struct {
+    struct maple_tree mm_mt;     // VMA maple tree (6.1+, 替代 rb_root)
+    // struct rb_root mm_rb;     // 已删除
+    struct rw_semaphore mmap_lock;  // 5.8+ 改名 (原 mmap_sem)
+};
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>mmap_lock 竞争</strong>：多线程交易进程频繁 page fault 时，<code class="c">mmap_sem</code> 读锁竞争导致尾延迟毛刺。Maple Tree 的 RCU-safe 读取直接解决这个问题</li>
+<li><strong>大页 mmap</strong>：HFT 用 <code class="c">mmap(MAP_HUGETLB)</code> 预分配大页，减少 page fault 次数和 TLB miss</li>
+<li><strong>NUMA 页表本地化</strong>：页表本身也占用内存，跨 NUMA 节点访问页表增加延迟。<code class="c">numactl --cpunodebind</code> 确保页表在本地节点</li>
+<li><strong>mlockall</strong>：HFT 启动后调 <code class="c">mlockall(MCL_CURRENT|MCL_FUTURE)</code> 锁定所有页，防止 swap 导致微秒级停顿</li>
+</ul>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1: Maple Tree 相比红黑树在 VMA 管理上的核心优势是什么？</summary>
+<p>核心优势是 <strong>RCU-safe 读取</strong>。红黑树查找 VMA 需要 <code class="c">mmap_lock</code> 读锁，多线程并发访问时锁竞争导致性能下降。Maple Tree 支持 RCU 无锁读取，查找 VMA 时不需要获取 <code class="c">mmap_lock</code>，显著减少多线程进程的锁竞争。这对多线程应用（如 HFT 交易引擎多线程共享地址空间）尤为重要。</p>
+</details>
+<details>
+<summary>Q2: 5 级页表什么时候启用？对 HFT 有什么影响？</summary>
+<p>5 级页表在 <code class="c">CONFIG_PGTABLE_LEVELS=5</code> 且 CPU 支持 LA57（57 位虚拟地址）时启用，支持 128PB 虚拟地址空间。对 HFT 的影响：(1) 多一级页表意味着多一次内存访问（页表 walk），TLB miss 代价更高；(2) 但 HFT 通常虚拟地址空间不大，TLB 命中率高；(3) 实际 HFT 系统 通常不启用 5 级页表，4 级 (48-bit) 足够。</p>
+</details>
+<details>
+<summary>Q3: 为什么 HFT 要调用 mlockall？它和 MAP_HUGETLB 有什么配合关系？</summary>
+<p><code class="c">mlockall(MCL_CURRENT|MCL_FUTURE)</code> 锁定当前和未来所有页在物理内存中，禁止 swap。HFT 延迟敏感，swap 会导致毫秒级停顿。配合 <code class="c">MAP_HUGETLB</code>：(1) 大页减少 page fault 次数（2MB 大页 = 512 个 4KB 页合一）；(2) 大页减少 TLB miss；(3) <code class="c">mlockall</code> 确保大页不被回收。典型流程：启动时 <code class="c">mmap(MAP_HUGETLB|MAP_LOCKED)</code> 预分配大页内存池 → <code class="c">mlockall</code> 锁定。</p>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Maple Tree (6.1+)</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/845507/">The maple tree data structure</a> (LWN, 2021)
+<strong>作者:</strong> Liam Howlett
+<strong>内核版本:</strong> 6.1+ (替换 VMA 红黑树)
+<strong>对标旧书:</strong> ULK3 Ch9 / LKD3 Ch15 (VMA 红黑树管理)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>Maple Tree 是为 VMA 管理设计的 B-tree 变体，替换了 Linux 使用 20 年的红黑树。</p>
+<h3>红黑树的问题</h3>
+<pre class="code" data-label="C"><code class="c">// 旧: VMA 用红黑树组织
+struct mm_struct {
+    struct rb_root mm_rb;           // 红黑树根
+    struct vm_area_struct *mmap;    // 链表
+};
+
+// find_vma() 需要锁保护
+struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
+{
+    struct rb_node *rb_node;
+    // 需要 down_read(&amp;mm-&gt;mmap_sem) — 多线程竞争!
+    rb_node = mm-&gt;mm_rb.rb_node;
+    while (rb_node) {
+        vma = rb_entry(rb_node, struct vm_area_struct, vm_rb);
+        if (addr &lt; vma-&gt;vm_end)
+            rb_node = rb_node-&gt;rb_left;
+        else if (addr &gt;= vma-&gt;vm_end)
+            rb_node = rb_node-&gt;rb_right;
+        else
+            return vma;
+    }
+    return NULL;
+}
+</code></pre>
+<p>问题：(1) 多线程同时 <code class="c">find_vma()</code> 需要 <code class="c">mmap_sem</code> 读锁竞争；(2) 红黑树节点分散在内存中，cache miss 多。</p>
+<h3>Maple Tree 设计</h3>
+<pre class="code" data-label="code"><code class="c">Maple Tree (B-tree 变体):
+  根节点 (最多 16 个 pivot)
+  ├── [0, 0x4000): 指向 VMA A
+  ├── [0x4000, 0x8000): 指向 VMA B
+  ├── [0x8000, 0xC000): 指向子节点
+  │     ├── [0x8000, 0xA000): VMA C
+  │     └── [0xA000, 0xC000): VMA D
+  └── ...
+</code></pre>
+<p><strong>关键优势：</strong>
+- <strong>RCU-safe 读取</strong>：<code class="c">find_vma()</code> 无需 <code class="c">mmap_lock</code> 读锁
+- <strong>缓存友好</strong>：节点内部连续存储 pivot + pointer，一次 cache line 读取多个 VMA
+- <strong>并发性</strong>：读写可并发（写操作用 spinlock，读操作用 RCU）</p>
+<h3>性能对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>红黑树</th>
+<th>Maple Tree</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>find_vma (读)</td>
+<td>O(log N), 需锁</td>
+<td>O(log N), RCU 无锁</td>
+</tr>
+<tr>
+<td>mmap (写)</td>
+<td>O(log N)</td>
+<td>O(log N)</td>
+</tr>
+<tr>
+<td>遍历 VMA</td>
+<td>O(N) 链表</td>
+<td>O(N) 树遍历</td>
+</tr>
+<tr>
+<td>多线程竞争</td>
+<td>锁竞争严重</td>
+<td>读无竞争</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VMA 红黑树 (<code class="c">mm_rb</code>)</td>
+<td>Maple Tree (<code class="c">mm_mt</code>)</td>
+</tr>
+<tr>
+<td><code class="c">find_vma()</code> 需 <code class="c">mmap_sem</code></td>
+<td><code class="c">find_vma()</code> RCU-safe</td>
+</tr>
+<tr>
+<td><code class="c">vm_area_struct.vm_rb</code></td>
+<td>字段删除</td>
+</tr>
+<tr>
+<td><code class="c">mmap_sem</code></td>
+<td><code class="c">mmap_lock</code> (5.8 改名)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>多线程交易进程（多线程共享 mm_struct）频繁 <code class="c">find_vma()</code> 时，红黑树的 <code class="c">mmap_sem</code> 读锁竞争导致尾延迟毛刺。Maple Tree 的 RCU 无锁读取直接消除这个问题。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Maple Tree 为什么能实现 RCU-safe 读取而红黑树不能？</p>
+<blockquote>
+<p>红黑树的旋转操作会改变节点间父子关系，读取者可能看到中间状态（如节点被旋转但父指针未更新），导致访问已释放节点。Maple Tree 的写操作是 copy-on-write：修改时复制节点，更新指针（原子写），旧节点通过 RCU 延迟释放。读取者要么看到旧节点要么看到新节点，不会看到中间状态。</p>
+</blockquote>
+<p><strong>Q2:</strong> Maple Tree 的 pivot 是什么概念？</p>
+<blockquote>
+<p>pivot 是区间端点。每个节点存储多个 pivot 值，将地址空间划分为区间。例如节点有 pivot [0x4000, 0x8000, 0xC000]，表示四个区间：[0, 0x4000)、[0x4000, 0x8000)、[0x8000, 0xC000)、[0xC000, MAX)。每个区间对应一个子指针或 VMA 指针。这种设计让一个节点覆盖多个 VMA，减少树高度和 cache miss。</p>
+</blockquote>
+</details>
       </section>
 
 

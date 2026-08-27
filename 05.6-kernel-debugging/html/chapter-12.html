@@ -276,6 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-gcov-kcov-coverage</a>
+          <a href="#s-02"><span class="n">02</span>02-kselftest-kunit</a>
+          <a href="#s-03"><span class="n">03</span>03-syzkaller-fuzzing</a>
+          <a href="#s-04"><span class="n">04</span>04-static-analysis</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +303,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch12 A Few More Kernel Debugging Approaches</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 12</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 12</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +316,750 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>按需查阅。做内核模块测试时回来参考。KUnit 适合单元测试自写模块。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>GCOV / KCOV 代码覆盖率</h2></div>
+<blockquote>
+<p>⬜ 跳读 · Part 3: Diagnostics &amp; Advanced Tools</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>GCOV (代码覆盖率)</h3>
+<p>GCOV 是 GCC 的代码覆盖率工具，统计哪些代码行被执行过，用于评估测试完整性。</p>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_GCOV_KERNEL=y
+
+# 启用特定目录的覆盖率
+echo 1 &gt; /sys/kernel/debug/gcov/path/to/module
+
+# 覆盖率数据在 /sys/kernel/debug/gcov/
+ls /sys/kernel/debug/gcov/
+# kernel/  mm/  fs/  drivers/  ...
+
+# 收集数据
+cp -r /sys/kernel/debug/gcov/ /tmp/gcov_data/
+lcov --capture --directory /tmp/gcov_data --output-file kernel.info
+genhtml kernel.info --output-directory coverage_report
+
+# 在浏览器中查看
+# firefox coverage_report/index.html
+</code></pre>
+<h3>KCOV (内核代码覆盖率)</h3>
+<p>KCOV 是内核专用的覆盖率工具，专门为模糊测试设计——记录每次 syscall 执行的代码覆盖率。</p>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_KCOV=y
+
+# KCOV 主要用于 syzkaller 模糊测试
+# 追踪单个系统调用的代码覆盖率
+</code></pre>
+<h3>GCOV vs KCOV</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>GCOV</th>
+<th>KCOV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标</td>
+<td>全局代码覆盖率</td>
+<td>单次调用覆盖率</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>评估测试完整性</td>
+<td>模糊测试引导</td>
+</tr>
+<tr>
+<td>粒度</td>
+<td>代码行/分支</td>
+<td>代码地址</td>
+</tr>
+<tr>
+<td>收集方式</td>
+<td>全局统计</td>
+<td>per-thread</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>中等</td>
+<td>较低</td>
+</tr>
+<tr>
+<td>主要用户</td>
+<td>测试工程师</td>
+<td>syzkaller</td>
+</tr>
+</tbody>
+</table></div>
+<h3>GCOV 覆盖率报告</h3>
+<pre class="code" data-label="code"><code class="c">GCOV 报告示例:
+  1:   10: void my_function(int x) {
+  2:   10:     if (x &gt; 0) {
+  3:    8:         do_positive();
+  4:    8:     } else {
+  5:    2:         do_negative();
+  6:   10:     }
+  7:   10: }
+
+说明:
+  1:    执行次数
+  10:   代码行号
+  → 第3行执行了8次，第5行执行了2次
+  → 两条路径都被覆盖
+</code></pre>
+<h3>KCOV 工作原理</h3>
+<pre class="code" data-label="code"><code class="c">KCOV 使用 __sanitizer_cov_trace_pc 插桩:
+  每个基本块入口插入 coverage 收集点
+  KCOV 在 per-thread buffer 中记录执行过的 PC 地址
+  syzkaller 读取 buffer 获取覆盖率信息
+
+流程:
+  1. syzkaller 在测试进程中启用 KCOV
+  2. 进程执行 syscall
+  3. KCOV 记录执行过的内核代码地址
+  4. syzkaller 收集覆盖率，指导后续测试生成
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT 模块测试覆盖率分析
+# 1. 编译内核模块时启用 GCOV
+make C=1 GCOV=1 modules
+
+# 2. 在树莓派上运行测试
+./run_hft_tests.sh
+
+# 3. 收集覆盖率数据
+cp -r /sys/kernel/debug/gcov/drivers/my_hft/ /tmp/gcov/
+lcov --capture --directory /tmp/gcov/ --output-file hft.info
+genhtml hft.info --output-directory hft_coverage
+
+# 4. 分析覆盖率
+# - 哪些代码路径被测试覆盖?
+# - 哪些错误处理路径未覆盖?
+# - 是否需要添加更多测试?
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> GCOV 和 KCOV 的区别？</p>
+<blockquote>
+<p>GCOV 追踪全局代码覆盖率（哪些代码被执行过），用于评估测试完整性。KCOV 追踪单个系统调用的覆盖率，用于模糊测试——syzkaller 用 KCOV 知道每个测试输入触发了哪些代码路径，指导后续生成。</p>
+</blockquote>
+<p><strong>Q2:</strong> KCOV 如何为 syzkaller 提供覆盖率引导？</p>
+<blockquote>
+<p>KCOV 在每个基本块入口插桩，记录执行过的 PC 地址到 per-thread buffer。syzkaller 读取 buffer 获取覆盖率信息，如果新输入覆盖了之前未执行的代码路径，保留并变异该输入，逐步探索新代码路径。</p>
+</blockquote>
+<p><strong>Q3:</strong> GCOV 报告中的数字代表什么？</p>
+<blockquote>
+<p>左侧数字是该行代码被执行的次数。0 表示未执行（未覆盖）。通过覆盖率报告可以找出未测试的代码路径，特别是错误处理路径（通常难以触发）。</p>
+</blockquote>
+<p><strong>Q4:</strong> HFT 模块为什么要做覆盖率分析？</p>
+<blockquote>
+<p>确保测试覆盖所有关键代码路径——特别是错误处理路径（如网络断开、内存不足、数据格式错误）。未覆盖的路径可能在生产环境中出问题。覆盖率分析帮助识别测试盲区。</p>
+</blockquote>
+<p><strong>Q5:</strong> GCOV 的性能开销如何？能用于生产环境吗？</p>
+<blockquote>
+<p>GCOV 有中等性能开销（每次基本块执行额外记录一次）。不适合生产环境。应在测试/staging 环境中运行测试用例并收集覆盖率数据。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-03">05.6 ch12 syzkaller 模糊测试</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch12 内核测试框架</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>内核测试框架 (kselftest / KUnit)</h2></div>
+<blockquote>
+<p>⬜ 跳读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>KUnit (内核单元测试)</h3>
+<p>KUnit 是内核内建的单元测试框架，在内核中直接编写测试函数，不需要用户空间参与。</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;kunit/test.h&gt;
+
+static void test_my_function(struct kunit *test) {
+    KUNIT_EXPECT_EQ(test, my_function(2), 4);
+    KUNIT_EXPECT_NOT_NULL(test, my_ptr);
+    KUNIT_EXPECT_TRUE(test, is_valid(my_data));
+}
+
+static void test_edge_case(struct kunit *test) {
+    KUNIT_EXPECT_EQ(test, my_function(0), 0);
+    KUNIT_EXPECT_EQ(test, my_function(-1), -1);
+}
+
+static struct kunit_case my_test_cases[] = {
+    KUNIT_CASE(test_my_function),
+    KUNIT_CASE(test_edge_case),
+    {},
+};
+
+static struct kunit_suite my_suite = {
+    .name = &quot;my_module_tests&quot;,
+    .test_cases = my_test_cases,
+};
+
+kunit_test_suite(my_suite);
+</code></pre>
+<h3>KUnit 断言宏</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">KUNIT_EXPECT_EQ(test, actual, expected)</code></td>
+<td>期望相等</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_EXPECT_NE(test, actual, expected)</code></td>
+<td>期望不等</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_EXPECT_TRUE(test, condition)</code></td>
+<td>期望为真</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_EXPECT_FALSE(test, condition)</code></td>
+<td>期望为假</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_EXPECT_NOT_NULL(test, ptr)</code></td>
+<td>期望非 NULL</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_EXPECT_NULL(test, ptr)</code></td>
+<td>期望 NULL</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_FAIL(test, message)</code></td>
+<td>直接失败</td>
+</tr>
+<tr>
+<td><code class="c">KUNIT_ASSERT_*</code></td>
+<td>断言版（失败则停止当前测试）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>KUnit 运行</h3>
+<pre class="code" data-label="shell"><code class="c"># 编译时运行 (QEMU)
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kunit
+
+# 指定测试套件
+make ARCH=arm64 kunit CONFIG_KUNIT_MY_MODULE_TEST=y
+
+# 在运行时运行
+echo &quot;my_module_tests&quot; &gt; /sys/kernel/debug/kunit/run
+cat /sys/kernel/debug/kunit/results
+</code></pre>
+<h3>kselftest (内核自测)</h3>
+<p>kselftest 是用户空间测试框架，通过系统调用测试内核行为。</p>
+<pre class="code" data-label="shell"><code class="c"># 编译 kselftest
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kselftest
+
+# 运行特定测试
+make ARCH=arm64 TARGETS=sched kselftest
+make ARCH=arm64 TARGETS=memory-hotplug kselftest
+
+# 运行所有测试
+make ARCH=arm64 kselftest
+</code></pre>
+<h3>KUnit vs kselftest</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>KUnit</th>
+<th>kselftest</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>测试位置</td>
+<td>内核空间</td>
+<td>用户空间</td>
+</tr>
+<tr>
+<td>测试方式</td>
+<td>直接调用内核函数</td>
+<td>通过系统调用</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>内部逻辑测试</td>
+<td>用户接口测试</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>仅内核</td>
+<td>用户空间工具</td>
+</tr>
+<tr>
+<td>速度</td>
+<td>快</td>
+<td>较慢</td>
+</tr>
+<tr>
+<td>真实性</td>
+<td>单元级</td>
+<td>系统级</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="C"><code class="c">// HFT 模块的 KUnit 测试示例
+#include &lt;kunit/test.h&gt;
+
+static void test_order_book_insert(struct kunit *test) {
+    struct order_book *book = create_order_book();
+
+    // 测试插入买单
+    insert_order(book, &amp;(struct order){.price=100, .qty=10, .side=BID});
+    KUNIT_EXPECT_EQ(test, book-&gt;bid_count, 1);
+    KUNIT_EXPECT_EQ(test, best_bid(book), 100);
+
+    // 测试插入更高的买单
+    insert_order(book, &amp;(struct order){.price=101, .qty=5, .side=BID});
+    KUNIT_EXPECT_EQ(test, book-&gt;bid_count, 2);
+    KUNIT_EXPECT_EQ(test, best_bid(book), 101);  // 最高价在前
+
+    free_order_book(book);
+}
+
+static void test_order_matching(struct kunit *test) {
+    struct order_book *book = create_order_book();
+
+    insert_order(book, &amp;(struct order){.price=100, .qty=10, .side=BID});
+    insert_order(book, &amp;(struct order){.price=100, .qty=5, .side=ASK});
+
+    // 100 价位的买单和卖单应该匹配
+    KUNIT_EXPECT_EQ(test, check_match(book), 1);
+    KUNIT_EXPECT_EQ(test, book-&gt;bid_count, 0);  // 匹配后清除
+
+    free_order_book(book);
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> KUnit 和 kselftest 的区别？</p>
+<blockquote>
+<p>KUnit 是<strong>单元测试</strong>框架——在内核中编写测试函数，测试内部函数的行为，不需要用户空间参与。kselftest 是<strong>系统测试</strong>框架——在用户空间运行测试程序，通过系统调用测试内核行为。KUnit 适合测试内部逻辑，kselftest 适合测试用户可见接口。</p>
+</blockquote>
+<p><strong>Q2:</strong> KUnit 的 EXPECT 和 ASSERT 有什么区别？</p>
+<blockquote>
+<p><code class="c">KUNIT_EXPECT_*</code> 失败后继续执行当前测试函数（记录失败但继续检查其他断言）。<code class="c">KUNIT_ASSERT_*</code> 失败后立即停止当前测试函数（后续代码不再执行）。EXPECT 适合多个独立检查，ASSERT 适合前置条件检查。</p>
+</blockquote>
+<p><strong>Q3:</strong> HFT 模块为什么应该写 KUnit 测试？</p>
+<blockquote>
+<p>(1) 确保核心逻辑正确（如订单匹配、价格计算）；(2) 回归测试——修改代码后快速验证未破坏功能；(3) 边界条件测试（如空订单簿、最大数量）；(4) CI 中自动运行，防止引入 bug。</p>
+</blockquote>
+<p><strong>Q4:</strong> kselftest 适合测试什么类型的内核功能？</p>
+<blockquote>
+<p>适合测试用户可见的接口——如系统调用行为、/proc 文件内容、设备 ioctl 等。kselftest 从用户空间发起操作，验证内核的响应是否正确。不适合测试内核内部函数（用 KUnit）。</p>
+</blockquote>
+<p><strong>Q5:</strong> KUnit 测试可以在生产环境运行吗？</p>
+<blockquote>
+<p>可以。KUnit 测试编译为模块，可以按需加载/卸载。测试在内核空间运行，开销可控。但建议在 staging 环境运行，避免测试代码影响生产性能。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch12 GCOV/KCOV 代码覆盖率</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch12 syzkaller 模糊测试</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>syzkaller 模糊测试</h2></div>
+<blockquote>
+<p>⬜ 跳读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>syzkaller 概述</h3>
+<p>syzkaller 是 Google 开发的内核模糊测试工具，自动生成随机系统调用序列，发现内核崩溃。它利用 KCOV 做覆盖率引导，比纯随机测试高效得多。</p>
+<h3>工作流程</h3>
+<pre class="code" data-label="code"><code class="c">syzkaller 工作流程:
+  1. 生成随机 syscall 序列（基于 syscall 描述模板）
+  2. 在 QEMU 中执行
+  3. KCOV 收集覆盖率
+  4. 如果崩溃: 保存日志 + 最小化复现
+  5. 基于覆盖率指导生成新序列
+  6. 优先探索未覆盖的代码路径
+  7. 循环
+
+覆盖率引导:
+  - 新输入覆盖了新代码路径 → 保留并变异
+  - 新输入未覆盖新代码路径 → 丢弃
+  - 类似遗传算法: 保留&quot;好的&quot;输入，变异生成新输入
+</code></pre>
+<h3>基本配置</h3>
+<pre class="code" data-label="shell"><code class="c"># 安装
+go install github.com/google/syzkaller/cmd/syz-manager@latest
+
+# 配置文件 syz.cfg
+{
+    &quot;target&quot;: &quot;linux/arm64&quot;,
+    &quot;http&quot;: &quot;127.0.0.1:56741&quot;,
+    &quot;workdir&quot;: &quot;/syzkaller/workdir&quot;,
+    &quot;syzkaller&quot;: &quot;/syzkaller&quot;,
+    &quot;image&quot;: &quot;/qemu/disk.img&quot;,
+    &quot;kernel_obj&quot;: &quot;/linux-source&quot;,
+    &quot;type&quot;: &quot;qemu&quot;,
+    &quot;vm&quot;: {
+        &quot;count&quot;: 4,       // 4 个 QEMU 实例并行
+        &quot;cpu&quot;: 2,          // 每个 VM 2 个 CPU
+        &quot;mem&quot;: 2048,       // 每个 VM 2GB 内存
+    }
+}
+
+# 运行
+syz-manager -config syz.cfg
+# 浏览器访问 http://127.0.0.1:56741 查看进度
+</code></pre>
+<h3>syzkaller 发现的 bug 类型</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>bug 类型</th>
+<th>检测工具</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存越界</td>
+<td>KASAN</td>
+<td>UAF/OOB/双重释放</td>
+</tr>
+<tr>
+<td>数据竞争</td>
+<td>KCSAN</td>
+<td>无锁并发访问</td>
+</tr>
+<tr>
+<td>锁问题</td>
+<td>LOCKDEP</td>
+<td>死锁/锁序错误</td>
+</tr>
+<tr>
+<td>逻辑错误</td>
+<td>WARN/panic</td>
+<td>BUG_ON 断言失败</td>
+</tr>
+<tr>
+<td>未初始化使用</td>
+<td>KMSAN</td>
+<td>使用未初始化变量</td>
+</tr>
+</tbody>
+</table></div>
+<h3>syzkaller 的 syscall 描述</h3>
+<pre class="code" data-label="go"><code class="c">// syzkaller 用自定义 DSL 描述 syscall 接口
+// 示例: 描述 open() 系统调用
+open(filename ptr[in, filename], flags flags[open_flags], mode flags[open_mode]) fd
+
+// 描述 ioctl() 接口
+ioctl(fd fd, cmd const[MY_IOCTL], arg ptr[in, my_struct])
+
+// 描述自定义设备接口
+syz_open_dev(dev ptr[in, string[&quot;/dev/my_device&quot;]], flags flags[open_flags], mode flags[open_mode]) fd
+</code></pre>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="shell"><code class="c"># HFT 模块的 syzkaller 模糊测试
+# 1. 编写 syscall 描述
+#    描述 HFT 模块的 ioctl 接口
+
+# 2. 编译带 KCOV + KASAN + LOCKDEP 的内核
+#    CONFIG_KCOV=y
+#    CONFIG_KASAN=y
+#    CONFIG_LOCKDEP=y
+
+# 3. 在 QEMU 中运行 syzkaller
+#    syz-manager -config hft_syz.cfg
+
+# 4. 分析发现的 bug
+#    syzkaller 自动保存崩溃日志和复现脚本
+#    crash-log.txt + repro.c
+
+# 5. 修复并验证
+</code></pre>
+<h3>syzkaller Web 界面</h3>
+<pre class="code" data-label="code"><code class="c">http://127.0.0.1:56741
+  Dashboard:
+    - 覆盖率统计
+    - 发现的 bug 列表
+    - 当前执行的测试
+    - 每个 VM 的状态
+    - 崩溃复现脚本
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> syzkaller 如何知道哪些代码路径已被覆盖？</p>
+<blockquote>
+<p>通过 KCOV。syzkaller 在每个测试进程中启用 KCOV，KCOV 记录该进程执行过的所有内核代码地址。syzkaller 收集这些地址，构建覆盖率图。基于覆盖率指导生成新的测试输入——优先探索未被覆盖的代码路径。</p>
+</blockquote>
+<p><strong>Q2:</strong> syzkaller 如何利用 KCOV 做覆盖率引导的模糊测试？</p>
+<blockquote>
+<p>syzkaller 生成随机 syscall 序列，执行后通过 KCOV 获取覆盖率。如果新输入覆盖了之前未执行的代码路径，syzkaller 保留该输入并变异它。这样逐步探索新代码路径，比纯随机高效得多。</p>
+</blockquote>
+<p><strong>Q3:</strong> syzkaller 发现的内核 bug 通常是什么类型？</p>
+<blockquote>
+<p>主要是：(1) KASAN 检测的内存 bug（UAF/OOB）；(2) LOCKDEP 检测的锁问题；(3) WARN/panic 触发的逻辑错误；(4) KMSAN 检测的未初始化使用。syzkaller 在 Linux 内核社区发现了数百个 bug。</p>
+</blockquote>
+<p><strong>Q4:</strong> HFT 模块如何用 syzkaller 做模糊测试？</p>
+<blockquote>
+<p>(1) 编写 HFT 模块 ioctl 接口的 syscall 描述；(2) 编译带 KCOV+KASAN+LOCKDEP 的内核；(3) 在 QEMU 中运行 syzkaller；(4) 分析发现的 bug 并修复。模糊测试能发现手工测试难以覆盖的边界条件。</p>
+</blockquote>
+<p><strong>Q5:</strong> syzkaller 为什么需要多个 QEMU 实例？</p>
+<blockquote>
+<p>并行测试提高效率——每个 VM 独立运行不同的测试输入。多 VM 可以同时探索不同的代码路径，加快覆盖率增长。syz-manager 管理所有 VM 的协调和结果收集。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch12 GCOV/KCOV 代码覆盖率</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch12 内核测试框架</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>静态分析工具 (Smatch / Sparse)</h2></div>
+<blockquote>
+<p>⬜ 跳读</p>
+</blockquote>
+<h2>概念详解</h2>
+<h3>Sparse (C 语法检查器)</h3>
+<p>Sparse 是内核专用的 C 语法检查器，检测类型标注相关的问题。</p>
+<pre class="code" data-label="shell"><code class="c"># 安装
+sudo apt install sparse
+
+# 使用
+make C=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
+# C=1: 只检查修改的文件
+# C=2: 检查所有文件
+
+# 常见检测:
+# - __user 指针检查
+# - __rcu 标注检查
+# - 位域可移植性
+# - 锁平衡检查
+# - __iomem 指针检查
+</code></pre>
+<h3>Sparse 检测的问题</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>检测项</th>
+<th>说明</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__user</code> 指针</td>
+<td>用户空间指针不能直接解引用</td>
+<td><code class="c">*user_ptr</code> → 应该用 <code class="c">copy_from_user</code></td>
+</tr>
+<tr>
+<td><code class="c">__rcu</code> 标注</td>
+<td>RCU 保护的数据需要正确标注</td>
+<td><code class="c">rcu_dereference()</code></td>
+</tr>
+<tr>
+<td><code class="c">__iomem</code> 指针</td>
+<td>I/O 内存不能直接解引用</td>
+<td><code class="c">*iomem_ptr</code> → 应该用 <code class="c">readl/writel</code></td>
+</tr>
+<tr>
+<td>锁平衡</td>
+<td>函数内锁获取/释放是否配对</td>
+<td><code class="c">spin_lock</code> 无 <code class="c">spin_unlock</code></td>
+</tr>
+<tr>
+<td>位域</td>
+<td>位域的可移植性问题</td>
+<td>跨平台位域布局</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Smatch (语义分析)</h3>
+<p>Smatch 做更深层次的语义分析，检测逻辑错误。</p>
+<pre class="code" data-label="shell"><code class="c"># 安装
+git clone https://github.com/error27/smatch.git
+cd smatch
+make
+
+# 使用
+smatch_scripts/build_kernel.sh
+smatch_scripts/check_kernel.sh /path/to/linux-source
+
+# 或单独检查文件
+smatch_scripts/kchecker drivers/my_driver.c
+</code></pre>
+<h3>Smatch 检测的问题</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>检测项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>空指针解引用</td>
+<td>可能 NULL 的指针被解引用</td>
+</tr>
+<tr>
+<td>未初始化变量</td>
+<td>使用前未赋值</td>
+</tr>
+<tr>
+<td>缓冲区溢出</td>
+<td>数组越界访问</td>
+</tr>
+<tr>
+<td>锁不平衡</td>
+<td>锁获取/释放不配对</td>
+</tr>
+<tr>
+<td>返回值未检查</td>
+<td>函数返回值被忽略</td>
+</tr>
+<tr>
+<td>内存泄漏</td>
+<td>分配后未释放</td>
+</tr>
+<tr>
+<td>整数溢出</td>
+<td>算术运算可能溢出</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Sparse vs Smatch</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>Sparse</th>
+<th>Smatch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>检测类型</td>
+<td>类型标注</td>
+<td>语义分析</td>
+</tr>
+<tr>
+<td>速度</td>
+<td>快</td>
+<td>慢</td>
+</tr>
+<tr>
+<td>误报率</td>
+<td>低</td>
+<td>较高</td>
+</tr>
+<tr>
+<td>深度</td>
+<td>浅（语法级）</td>
+<td>深（过程间分析）</td>
+</tr>
+<tr>
+<td>内核集成</td>
+<td><code class="c">make C=1</code></td>
+<td>独立工具</td>
+</tr>
+<tr>
+<td>检测内容</td>
+<td>__user/__rcu/__iomem</td>
+<td>空指针/溢出/泄漏</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT 关联应用</h3>
+<pre class="code" data-label="make"><code class="c"># HFT 模块的 Makefile 中加入静态分析
+check:
+    make C=2 M=$(PWD) modules
+    smatch_scripts/kchecker my_hft_module.c
+
+# CI 中自动运行
+ci-check:
+    sparse my_hft_module.c
+    smatch my_hft_module.c
+    # 如果有 warning/failure → 阻止合并
+</code></pre>
+<h3>__user 标注示例</h3>
+<pre class="code" data-label="C"><code class="c">// 正确: 使用 __user 标注 + copy_from_user
+static ssize_t my_write(struct file *f, const char __user *buf,
+                        size_t len, loff_t *off) {
+    char kbuf[256];
+    if (copy_from_user(kbuf, buf, len))  // 正确: 通过 copy_from_user
+        return -EFAULT;
+    return len;
+}
+
+// 错误: 直接解引用 __user 指针
+static ssize_t bad_write(struct file *f, const char __user *buf,
+                         size_t len, loff_t *off) {
+    char c = *buf;  // Sparse 报警! 不能直接解引用 __user 指针
+    return len;
+}
+</code></pre>
+<h3>__rcu 标注示例</h3>
+<pre class="code" data-label="C"><code class="c">// 正确: 使用 __rcu 标注 + rcu_dereference
+static struct data __rcu *global_data;
+
+void read_data(void) {
+    rcu_read_lock();
+    struct data *p = rcu_dereference(global_data);  // 正确
+    use(p);
+    rcu_read_unlock();
+}
+
+// 错误: 直接访问 __rcu 指针
+void bad_read(void) {
+    struct data *p = global_data;  // Sparse 报警! 需要 rcu_dereference
+    use(p);
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> <code class="c">__user</code> 标注的作用是什么？Sparse 如何检查？</p>
+<blockquote>
+<p><code class="c">__user</code> 标注标记用户空间指针（来自用户空间的指针，不能直接解引用）。Sparse 检查是否在内核代码中直接解引用了 <code class="c">__user</code> 指针（应使用 <code class="c">copy_from_user</code> / <code class="c">copy_to_user</code>），以及是否将内核指针泄露给用户空间。</p>
+</blockquote>
+<p><strong>Q2:</strong> Sparse 和 Smatch 分别检测什么类型的问题？</p>
+<blockquote>
+<p>Sparse：检测类型不匹配（__user/__iomem 指针混用）、RCU 注解违规、锁注解不平衡。基于 GCC 前端做静态分析。Smatch：检测空指针解引用、缓冲区溢出、未检查返回值等。Smatch 更深入做过程间分析但慢。两者互补。</p>
+</blockquote>
+<p><strong>Q3:</strong> HFT 模块的 CI 中为什么要加入静态分析？</p>
+<blockquote>
+<p>静态分析在编译时发现潜在问题，无需运行代码。可以检测出 __user 指针误用、RCU 标注错误、空指针解引用等问题，在开发早期消灭 bug。HFT 模块对正确性要求高，CI 中应运行 Sparse + Smatch。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">__rcu</code> 标注为什么重要？</p>
+<blockquote>
+<p><code class="c">__rcu</code> 标注告诉编译器和 Sparse 该指针受 RCU 保护，必须通过 <code class="c">rcu_dereference()</code> 访问。直接访问可能读到中间值（指针更新不是原子的）或触发 RCU 读写同步问题。Sparse 检查是否正确使用了 RCU API。</p>
+</blockquote>
+<p><strong>Q5:</strong> <code class="c">make C=1</code> 和 <code class="c">make C=2</code> 的区别？</p>
+<blockquote>
+<p><code class="c">C=1</code> 只检查重新编译的文件（修改过的文件），速度快。<code class="c">C=2</code> 检查所有文件，覆盖全面但慢。开发时用 <code class="c">C=1</code>（快速反馈），CI 中用 <code class="c">C=2</code>（全面检查）。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch05 KASAN</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch08 LOCKDEP</a></li>
+<li><a href="chapter-12.html#s-02">05.6 ch12 内核测试框架</a></li>
+</ul>
       </section>
 
 

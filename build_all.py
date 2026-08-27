@@ -13,25 +13,157 @@ WORKSPACE = SCRIPT.parent  # build_all.py 所在目录（hft-reclone/）
 REPO_GH = "https://github.com/cshonor/hft-embedded-linux-study/blob/main"
 STYLE = (WORKSPACE / "cfs-style.css").read_text(encoding="utf-8")
 
-# 每本书：root 相对仓库根，out_dir 相对仓库根，title_zh、sub_zh 用于封面
-BOOKS = [
-    dict(root="05-linux-kernel", out="05-linux-kernel/html",
-         title_zh="Linux Kernel Development", sub_zh="Robert Love · LKD 3e 中文笔记"),
-    dict(root="05.5-modern-kernel", out="05.5-modern-kernel/html",
-         title_zh="现代内核特性", sub_zh="scheduler / RCU / arm64 / PREEMPT_RT · 笔记"),
-    dict(root="05.6-kernel-debugging", out="05.6-kernel-debugging/html",
-         title_zh="内核调试", sub_zh="printk / kprobes / ftrace / kgdb · 笔记"),
-    dict(root="06-linux-mm", out="06-linux-mm/html",
-         title_zh="Linux 虚拟内存管理", sub_zh="Mel Gorman ULVM + 附录 A–M 源码导读"),
-    dict(root="06.5-modern-mm", out="06.5-modern-mm/html",
-         title_zh="现代内存管理", sub_zh="memblock / slub / maple tree / mglru / DAMON"),
-    dict(root="06.6-systems-performance", out="06.6-systems-performance/html",
-         title_zh="Systems Performance", sub_zh="Brendan Gregg · 企业版中文笔记"),
-    dict(root="06.7-bpf-observability/bpf-performance-tools", out="06.7-bpf-observability/bpf-performance-tools/html",
-         title_zh="BPF Performance Tools", sub_zh="Brendan Gregg · 上下册笔记"),
-    dict(root="06.7-bpf-observability/learning-ebpf", out="06.7-bpf-observability/learning-ebpf/html",
-         title_zh="Learning eBPF", sub_zh="O'Reilly · 入门到 verifier"),
+# 每本书：root 相对仓库根，out_dir 相对仓库根，title_zh、sub_zh 用于封面，group 用于顶层分组
+GROUP_ORDER = [
+    ("c-lang",  "C 语言"),
+    ("digital", "数字逻辑 · 体系结构"),
+    ("kernel",  "Linux 内核"),
+    ("memory",  "内存管理"),
+    ("sysprog", "系统编程 · 网络 API"),
+    ("network", "网络协议 · 内核网络"),
+    ("perf",    "性能分析 · eBPF"),
+    ("hft",     "HFT · 量化 · 运动控制"),
+    ("cpp",     "C++"),
+    ("rust",    "Rust"),
+    ("embed",   "嵌入式 · 驱动"),
 ]
+
+def _b(root, title, sub, group):
+    return dict(root=root, out=root + "/html", title_zh=title, sub_zh=sub, group=group)
+
+BOOKS = [
+    # ---- C 语言 ----
+    _b("01-c-language/01-Primer-K-and-R-C", "The C Programming Language", "K&R · 8 章 + 3 附录精读", "c-lang"),
+    _b("01-c-language/02-Pointers-on-C", "Pointers on C", "Kenneth Reek · 指针与 C 精读", "c-lang"),
+    _b("01-c-language/03-Advanced-Expert-C-Programming", "Expert C Programming", "van der Linden · 深 C 语言", "c-lang"),
+    _b("01-c-language/04-Modern-C", "Modern C", "Jens Gustedt · 现代 C 精读", "c-lang"),
+    _b("01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation", "嵌入式 C 语言自我修养", "从编译链接到内核素养", "c-lang"),
+    _b("01-c-language/06-Reference-C-Traps-and-Pitfalls", "C Traps and Pitfalls", "Koenig · C 陷阱与缺陷", "c-lang"),
+    # ---- 数字逻辑 · 体系结构 ----
+    _b("00-digital-logic-cpu", "数字逻辑与 CPU", "Digital Design 实践笔记 · RPi", "digital"),
+    _b("02-computer-systems", "Computer Systems", "CSAPP · 深入理解计算机系统", "digital"),
+    _b("15-computer-architecture", "Computer Architecture", "量化研究方法 · QCA 笔记", "digital"),
+    _b("07-arm-architecture/aarch64-practice", "AArch64 实践", "ARM64 体系结构与汇编实践", "digital"),
+    _b("07-arm-architecture/arm32-asm", "ARM32 汇编", "ARM 汇编语言与体系结构", "digital"),
+    # ---- Linux 内核 ----
+    _b("05-linux-kernel", "Linux Kernel Development", "Robert Love · LKD 3e 中文笔记", "kernel"),
+    _b("05.5-modern-kernel", "现代内核特性", "scheduler / RCU / arm64 / PREEMPT_RT", "kernel"),
+    _b("05.6-kernel-debugging", "内核调试", "printk / kprobes / ftrace / kgdb", "kernel"),
+    _b("16-linux-kernel-deep", "Linux 内核深度", "Understanding the Linux Kernel · 深入解析", "kernel"),
+    # ---- 内存管理 ----
+    _b("06-linux-mm", "Linux 虚拟内存管理", "Mel Gorman ULVM + 附录 A–M 源码导读", "memory"),
+    _b("06.5-modern-mm", "现代内存管理", "memblock / slub / maple tree / mglru / DAMON", "memory"),
+    # ---- 系统编程 · 网络 API ----
+    _b("03-linux-userspace-api", "Linux 用户态 API", "TLPI · Linux 系统编程接口", "sysprog"),
+    _b("03.5-unix-network-api/1_BasicFoundation", "UNP · 卷1 基础篇", "Unix 网络编程 · 基本套接字", "sysprog"),
+    _b("03.5-unix-network-api/2_AdvancedSkill", "UNP · 卷1 进阶篇", "Unix 网络编程 · 高级 IO 与线程", "sysprog"),
+    _b("03.5-unix-network-api/3_DeepMaster", "UNP · 卷1 深化篇", "Unix 网络编程 · 原始套接字与广播", "sysprog"),
+    _b("03.5-unix-network-api/4_ArchitectureDesign", "UNP · 卷1 设计篇", "Unix 网络编程 · SCTP 与架构设计", "sysprog"),
+    # ---- 网络协议 · 内核网络 ----
+    _b("11-tcpip-protocols", "TCP/IP 详解", "卷一 协议 · 中文笔记", "network"),
+    _b("11.5-wireshark-packet-analysis", "Wireshark 抓包分析", "包分析实践 · 全 13 章", "network"),
+    _b("11.5-wireshark-packet-analysis/hft-scenarios", "抓包 · HFT 场景", "低延迟 TCP 延迟 / 卸载 / bypass 实战", "network"),
+    _b("11.5-wireshark-packet-analysis/cheatsheet", "抓包 · 速查表", "安装验证与常用命令笔记", "network"),
+    _b("12-kernel-networking", "Linux 内核网络", "深入理解 Linux 网络技术内幕", "network"),
+    _b("12.5-modern-networking", "现代内核网络", "NAPI / XDP / eBPF / io_uring", "network"),
+    _b("13-dpdk/01-Intro-Book", "DPDK 入门", "DPDK 应用基础 · 初阶", "network"),
+    _b("13-dpdk/02-Advanced-Book", "DPDK 进阶", "DPDK 深入与性能调优", "network"),
+    # ---- 性能分析 · eBPF ----
+    _b("06.6-systems-performance", "Systems Performance", "Brendan Gregg · 企业版中文笔记", "perf"),
+    _b("06.7-bpf-observability/bpf-performance-tools", "BPF Performance Tools", "Brendan Gregg · 上下册笔记", "perf"),
+    _b("06.7-bpf-observability/learning-ebpf", "Learning eBPF", "O'Reilly · 入门到 verifier", "perf"),
+    # ---- HFT · 量化 · 运动控制 ----
+    _b("14-hft-engineering", "HFT 工程", "高频交易全栈工程笔记", "hft"),
+    _b("19-markets-microstructure", "市场微观结构", "Harris · Trading and Exchanges", "hft"),
+    _b("10-motion-control", "运动控制", "PID / IMU / 电机 / 飞控调度", "hft"),
+    # ---- C++ ----
+    _b("04-cpp/M0-entry-syntax/01-C++Primer", "C++ Primer", "C++ Primer · 入门语法精读", "cpp"),
+    _b("04-cpp/M1-modern-cpp/01-Effective-Modern-C++", "Effective Modern C++", "Scott Meyers · 现代 C++ 42 条款", "cpp"),
+    _b("04-cpp/M2-cpp-network-programming", "C++ 网络编程", "套接字 / epoll / 序列化实践", "cpp"),
+    _b("04-cpp/M3-deep-principles/01-Cpp-Object-Model", "C++ 对象模型", "Inside the C++ Object Model", "cpp"),
+    _b("04-cpp/M3-deep-principles/02-Cpp-Concurrency", "C++ 并发", "C++ Concurrency in Action", "cpp"),
+    _b("04-cpp/M4-engineering-standards/01-Effective-C++", "Effective C++", "Meyers · 55 条款", "cpp"),
+    _b("04-cpp/M4-engineering-standards/02-More-Effective-C++", "More Effective C++", "Meyers · 35 条款", "cpp"),
+    _b("04-cpp/M4-engineering-standards/03-Effective-STL", "Effective STL", "Meyers · 50 条款", "cpp"),
+    _b("04-cpp/M4-engineering-standards/04-STL-Source-Analysis", "STL 源码剖析", "侯捷 · 容器与算法源码", "cpp"),
+    _b("04-cpp/M5-advanced-standards/01-C++17-The-Complete-Guide", "C++17 完全指南", "C++17 the Complete Guide", "cpp"),
+    _b("04-cpp/M5-advanced-standards/02-C++20-The-Complete-Guide", "C++20 完全指南", "C++20 the Complete Guide", "cpp"),
+    # ---- Rust ----
+    _b("17-rust-foundation/00-Book", "Rust · The Book", "The Rust Programming Language", "rust"),
+    _b("17-rust-foundation/01-ER", "Rust · 扩展阅读", "Rust 生态与扩展索引", "rust"),
+    _b("17-rust-foundation/02-RFR", "Rust · 引用与生命周期", "Rust for Rustaceans 方向", "rust"),
+    _b("17-rust-foundation/03-DeepRustStdLib", "Rust · 标准库深入", "core / alloc / std 剖析", "rust"),
+    _b("17-rust-foundation/04-Rust-Nomicon", "Rust · Nomicon", "不安全的 Rust 圣经", "rust"),
+    _b("17-rust-foundation/05-Async-Concurrency-Network", "Rust · 异步与并发", "Async / Atomics / 网络", "rust"),
+    _b("17-rust-foundation/06_Compilers-and-LLVM-Learning", "Rust · 编译器与 LLVM", "编译原理与 LLVM 学习", "rust"),
+    _b("17-rust-foundation/07-Programming-WebAssembly-with-Rust", "Rust · WebAssembly", "Programming WebAssembly with Rust", "rust"),
+    # ---- 嵌入式 · 驱动 ----
+    _b("08-embedded-boot-build/primer-system-overview", "嵌入式系统入门", "系统启动与内核构建概览", "embed"),
+    _b("08-embedded-boot-build/build-toolchain-yocto", "工具链与 Yocto", "交叉工具链与 Yocto 构建", "embed"),
+    _b("09-device-drivers-dt/classic-driver-theory", "Linux 设备驱动 · 经典", "LDD3 · 字符设备与并发", "embed"),
+    _b("09-device-drivers-dt/modern-driver-practice", "Linux 设备驱动 · 现代", "platform / DT / i2c / regmap / IIO", "embed"),
+]
+
+# ---------- 通用结构识别 ----------
+CH_NO_RE = re.compile(r"^(?:chapter|ch|Chapter)[-_]?(\d+)")
+NUM_CH_RE = re.compile(r"^(\d+)[-_]")
+def chapter_no(name):
+    """章节目录/文件 → 章节号；非章节 → None。排除 00- 开头的非章节目录。"""
+    m = CH_NO_RE.match(name)
+    if m:
+        return int(m.group(1))
+    m = NUM_CH_RE.match(name)
+    if m:
+        n = int(m.group(1))
+        return n if n > 0 else None
+    return None
+
+SEC_NO_RE = re.compile(r"^(?:section[-_])?(\d+)(?:\.(\d+|[xX]+))?[-_](.+)$")
+def section_no(stem):
+    """小节文件名(stem) → (anchor, label, sortkey)；非小节 → (None, None, None)。"""
+    m = SEC_NO_RE.match(stem)
+    if not m:
+        return None, None, None
+    major = m.group(1)
+    minor = m.group(2)
+    anchor = "s-" + major + (f"-{minor.lower()}" if minor else "")
+    label = major + (f".{minor}" if minor else "")
+    key = (int(major), int(minor) if minor and minor.isdigit() else 0)
+    return anchor, label, key
+
+def collect_sections(chapter_dir):
+    """收集章节下的所有小节：优先 notes/，兼顾目录直接平铺的 md。返回 [(anchor, label, md_path)]。"""
+    found = []
+    notes_dir = chapter_dir / "notes"
+    if notes_dir.is_dir():
+        for f in sorted(notes_dir.glob("*.md")):
+            anchor, label, key = section_no(f.stem)
+            if anchor:
+                found.append((anchor, label, key, f))
+    for f in sorted(chapter_dir.glob("*.md")):
+        if f.name.upper() == "README.MD":
+            continue
+        anchor, label, key = section_no(f.stem)
+        if anchor:
+            found.append((anchor, label, key, f))
+    seen, uniq = set(), []
+    for anchor, label, key, f in sorted(found, key=lambda x: x[2]):
+        if anchor in seen:
+            continue
+        seen.add(anchor)
+        uniq.append((anchor, label, f))
+    return uniq
+
+def collect_appendices(root):
+    """收集附录（文件或目录）。返回 [(letter, path)]。"""
+    apps = []
+    for entry in sorted(root.iterdir(), key=lambda x: x.name):
+        if entry.name.upper() in ("README.MD", "BOOK-SUMMARY.MD", "BOOK-TOC.MD"):
+            continue
+        m = re.match(r"^appendix[-_]?([A-Za-z])", entry.name)
+        if m and (entry.is_file() or entry.is_dir()):
+            apps.append((m.group(1).upper(), entry))
+    return apps
 
 # ---------- 工具 ----------
 def numkey(name):
@@ -40,48 +172,40 @@ def numkey(name):
         return (9, 9, 9)
     return tuple(int(x) for x in m.group(2).split("."))
 
-def letterkey(name):
-    m = re.match(r"^appendix-([A-Z])", name, re.I)
-    return m.group(1).upper() if m else "Z"
-
-def parse_section_no(stem):
-    """section-X.Y-... → ('X.Y', 's-X-Y') ; 6.6-systems-performance 也兼容 2.10 等"""
-    m = re.match(r"^section-(\d+(?:\.\d+)*)", stem, re.I)
-    if not m:
-        return None, None
-    no = m.group(1)
-    anchor = "s-" + no.replace(".", "-")
-    return no, anchor
-
 # ---------- 全局锚点索引（按书分桶，避免同号 section 冲突）----------
 # book_root -> { anchor: html_filename_relative_to_book_html_dir }
 BOOK_ANCHORS = {}
 BOOK_ROOTS = sorted([b["root"] for b in BOOKS], key=lambda r: -len(r))  # 长前缀优先匹配
 
 def register_book_anchors(book):
-    """扫描一本书的所有 section 与 appendix，登记到该书的桶。返回该书的章节清单。"""
+    """扫描一本书的章节/附录/小节，登记到该书的锚点桶。返回章节与附录清单。"""
     root = WORKSPACE / book["root"]
     chapters, appendices = [], []
     book_map = {}
-    for d in sorted([d for d in root.iterdir() if d.is_dir() and d.name.startswith("chapter-")], key=lambda x: numkey(x.name)):
-        m = re.match(r"^chapter-(\d+)", d.name)
-        chno = int(m.group(1))
-        notes_dir = d / "notes"
-        secs = []
-        if notes_dir.is_dir():
-            for f in sorted(notes_dir.glob("section-*.md"), key=lambda x: numkey(x.name)):
-                _, anchor = parse_section_no(f.stem)
-                if anchor:
-                    secs.append((f, anchor))
-                    book_map[anchor] = f"chapter-{chno:02d}.html"
+
+    # 章节目录（支持 chapter-NN / chapterNN / chNN / ChapterNN_ / NN- 数字前缀）
+    ch_dirs = []
+    for d in root.iterdir():
+        if d.is_dir():
+            no = chapter_no(d.name)
+            if no is not None:
+                ch_dirs.append((no, d))
+    ch_dirs.sort(key=lambda x: x[0])
+    if not ch_dirs:
+        # 单章书：整本书作为一个章节
+        ch_dirs = [(1, root)]
+
+    for chno, d in ch_dirs:
+        secs = collect_sections(d)
         book_map[f"ch-{chno}"] = f"chapter-{chno:02d}.html"
+        for anchor, _label, _f in secs:
+            book_map[anchor] = f"chapter-{chno:02d}.html"
         chapters.append((chno, d, secs))
-    for f in sorted([f for f in root.iterdir() if f.is_file() and f.name.lower().startswith("appendix-")], key=lambda x: letterkey(x.name)):
-        m = re.match(r"^appendix-([A-Z])", f.name, re.I)
-        letter = m.group(1).upper() if m else "X"
-        anchor = f"app-{letter}"
-        book_map[anchor] = f"appendix-{letter}.html"
-        appendices.append((letter, f))
+
+    for letter, p in collect_appendices(root):
+        book_map[f"app-{letter}"] = f"appendix-{letter}.html"
+        appendices.append((letter, p))
+
     BOOK_ANCHORS[book["root"]] = book_map
     return chapters, appendices
 
@@ -144,16 +268,22 @@ def rewrite_links(body, cur_html_rel):
         return cur_book_root, repo_rel
 
     def anchor_from_tail(tail, anchors_map):
-        """在 tail 里找 section/chapter 锚点"""
-        m_sec = re.search(r"notes/section-(\d+(?:\.\d+)*)", tail)
+        """在 tail 里找 section/chapter/appendix 锚点（支持 notes/ 与平铺命名）。"""
+        m_sec = re.search(r"(?:notes/)?(?:section[-_])?(\d+)(?:\.(\d+|[xX]+))?[-_][^/]*$", tail)
         if m_sec:
-            return "s-" + m_sec.group(1).replace(".", "-")
-        m_ch = re.match(r"chapter-(\d+)", tail)
+            a = "s-" + m_sec.group(1) + (f"-{m_sec.group(2).lower()}" if m_sec.group(2) else "")
+            if a in anchors_map:
+                return a
+        m_ch = re.search(r"(?:chapter|ch|Chapter)[-_]?(\d+)", tail, re.I)
         if m_ch:
-            return f"ch-{int(m_ch.group(1))}"
-        m_app = re.match(r"appendix-([A-Z])", tail, re.I)
+            a = f"ch-{int(m_ch.group(1))}"
+            if a in anchors_map:
+                return a
+        m_app = re.search(r"appendix[-_]?([A-Za-z])", tail)
         if m_app:
-            return f"app-{m_app.group(1).upper()}"
+            a = f"app-{m_app.group(1).upper()}"
+            if a in anchors_map:
+                return a
         return None
 
     def repl(m):
@@ -169,16 +299,26 @@ def rewrite_links(body, cur_html_rel):
         norm = re.sub(r"^\./", "", path_part).replace("\\", "/")
         repo_rel = re.sub(r"^(\.\./)+", "", norm)
 
-        # 1) 章内裸 section 引用（无 chapter- 前缀，且指向当前章）
-        m_sec_bare = re.match(r"section-(\d+(?:\.\d+)*)", repo_rel)
+        # 1) 章内裸 section 引用（无 chapter 前缀，且指向当前章）
+        m_sec_bare = re.match(r"(?:section[-_])?(\d+(?:\.\d+|[xX]+)?)[-_]", repo_rel)
         if m_sec_bare and cur_chno is not None:
-            anchor = "s-" + m_sec_bare.group(1).replace(".", "-")
+            anchor = "s-" + m_sec_bare.group(1).replace(".", "-").lower()
             if anchor in intra_sections:
                 return f'<a href="#{anchor}">{label}</a>'
 
-        # 2) README.md 引用
-        if repo_rel.endswith("README.md") and cur_chno is not None and "/" not in repo_rel:
-            return f'<a href="#intro">{label}</a>'
+        # 2) README.md 引用 → 目标章 #intro
+        if repo_rel.endswith("README.md"):
+            m_ch = re.search(r"(?:chapter|ch|Chapter)[-_]?(\d+)", repo_rel, re.I)
+            tgt_book, _ = resolve_target(repo_rel)
+            if m_ch:
+                a = f"ch-{int(m_ch.group(1))}"
+                if a in BOOK_ANCHORS.get(tgt_book, {}):
+                    if tgt_book == cur_book_root and int(m_ch.group(1)) == cur_chno:
+                        return f'<a href="#intro">{label}</a>'
+                    repo_html_path = f"{tgt_book}/html/{BOOK_ANCHORS[tgt_book][a]}"
+                    return f'<a href="{rel_from_cur(repo_html_path)}#intro">{label}</a>'
+            elif cur_chno is not None and tgt_book == cur_book_root:
+                return f'<a href="#intro">{label}</a>'
 
         # 3) 解析目标书 + 锚点
         target_book, tail = resolve_target(repo_rel)
@@ -190,11 +330,10 @@ def rewrite_links(body, cur_html_rel):
             href = rel_from_cur(repo_html_path) + f"#{anchor}"
             return f'<a href="{href}">{label}</a>'
 
-        # 4) 顶层 book 目录（无具体锚点，但有 html/）：跳到该书封面
-        if re.match(r"^\d+(?:\.\d+)?-", repo_rel.split("/")[0]):
-            book_rel = repo_rel.split("/")[0]
-            idx = f"{book_rel}/html/index.html"
-            if (WORKSPACE / book_rel / "html" / "index.html").exists():
+        # 4) 已知书 root（无 tail 或 README）→ 该书封面
+        if target_book in BOOK_ANCHORS and (not tail or tail == "README.md"):
+            idx = f"{target_book}/html/index.html"
+            if (WORKSPACE / target_book / "html" / "index.html").exists():
                 return f'<a href="{rel_from_cur(idx)}">{label}</a>'
             return f'<a href="{REPO_GH}/{repo_rel}">{label}</a>'
 
@@ -219,13 +358,13 @@ def convert_body(md_text, cur_html_rel):
     return body
 
 # ---------- 单个 section 渲染 ----------
-def render_section(sec_path, anchor, cur_html_rel):
+def render_section(sec_path, anchor, sec_label="", cur_html_rel=""):
     text = sec_path.read_text(encoding="utf-8")
     lines = text.split("\n")
     title_m = re.match(r"^#\s+(.*)$", lines[0])
     title = title_m.group(1).strip() if title_m else sec_path.stem
-    mm = re.match(r"^(\d+(?:\.\d+)*)\s*(.*)$", title)
-    sec_no, sec_title = (mm.group(1), mm.group(2)) if mm else ("", title)
+    mm = re.match(r"^(\d+(?:\.\d+|\.x)?)\s*[-_:：]?\s*(.*)$", title)
+    sec_no, sec_title = (mm.group(1), mm.group(2).strip()) if mm else (sec_label, title)
     rest = "\n".join(lines[1:])
     body = convert_body(rest, cur_html_rel)
     body = re.sub(r"^<h3([^>]*)>", r'<h3 class="sub"\1>', body)
@@ -411,15 +550,15 @@ def build_chapter(book, chno, chapter_dir, secs, book_nav, all_books_nav):
     html_file = f"{book['out']}/chapter-{chno:02d}.html"
     cur_rel = html_file
     nav_items, sections_html = [], []
-    for sec_path, anchor in secs:
-        sections_html.append(render_section(sec_path, anchor, cur_rel))
+    for anchor, label, sec_path in secs:
+        sections_html.append(render_section(sec_path, anchor, label, cur_rel))
         text = sec_path.read_text(encoding="utf-8")
         first = text.split("\n", 1)[0]
         mm = re.match(r"^#\s+(\d+(?:\.\d+)*)\s*(.*)$", first)
         if mm:
             no, t = mm.group(1), mm.group(2).strip()
         else:
-            no, t = "", sec_path.stem
+            no, t = label or "", sec_path.stem
         nav_items.append((anchor, no, t))
     title, _, intro_html, quiz_html = render_readme(chapter_dir, cur_rel)
     if not title:
@@ -440,25 +579,48 @@ def build_chapter(book, chno, chapter_dir, secs, book_nav, all_books_nav):
 def build_appendix(book, letter, app_path, book_nav):
     html_file = f"{book['out']}/appendix-{letter}.html"
     cur_rel = html_file
-    text = app_path.read_text(encoding="utf-8")
-    title = ""
-    for ln in text.split("\n")[:6]:
-        m = re.match(r"^#\s+(.*)$", ln)
-        if m:
-            title = m.group(1).strip()
-            break
-    if not title:
-        title = f"Appendix {letter} · {app_path.stem}"
-    body = convert_body("\n".join(text.split("\n")[1:]), cur_rel)
-    body = re.sub(r"^<h3([^>]*)>", r'<h3 class="sub"\1>', body)
-    sections_html = f'      <section class="section" id="app-{letter.lower()}">\n        <div class="sec-head"><div class="sec-no">{letter}</div><h2>{html_mod.escape(title)}</h2></div>\n{body}\n      </section>'
-    nav_items = [("app-"+letter.lower(), letter, title)]
+    if app_path.is_file():
+        files = [app_path]
+    else:
+        files = sorted(app_path.glob("*.md"))
+    if not files:
+        return None
+    # 整页标题：README 或第一个文件标题或目录名
+    title = f"Appendix {letter} · {app_path.stem}"
+    for probe in (app_path / "README.md", files[0]) if app_path.is_dir() else (files[0],):
+        if probe.is_file():
+            for ln in probe.read_text(encoding="utf-8").split("\n")[:6]:
+                m = re.match(r"^#\s+(.*)$", ln)
+                if m:
+                    title = m.group(1).strip()
+                    break
+            if title != f"Appendix {letter} · {app_path.stem}":
+                break
+    sections_html, nav_items = [], []
+    for i, f in enumerate(files, 1):
+        text = f.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        t = f.stem
+        for ln in lines[:6]:
+            m = re.match(r"^#\s+(.*)$", ln)
+            if m:
+                t = m.group(1).strip()
+                break
+        body = convert_body("\n".join(lines[1:]), cur_rel)
+        body = re.sub(r"^<h3([^>]*)>", r'<h3 class="sub"\1>', body)
+        anchor = f"app-{letter.lower()}" if len(files) == 1 else f"app-{letter.lower()}-{i}"
+        sections_html.append(
+            f'      <section class="section" id="{anchor}">\n'
+            f'        <div class="sec-head"><div class="sec-no">{letter}{"" if len(files)==1 else f".{i}"}</div><h2>{html_mod.escape(t)}</h2></div>\n'
+            f'{body}\n      </section>'
+        )
+        nav_items.append((anchor, letter if len(files) == 1 else f"{letter}.{i}", t))
     stats = {"book": " · ".join(book["root"].split("/")[-2:]),
              "no": f"App {letter}",
-             "secs": 1,
+             "secs": len(nav_items),
              "quiz": "—",
-             "from": app_path.relative_to(WORKSPACE).as_posix()}
-    return page(title, book["sub_zh"], sections_html, "", nav_items, book_nav, stats)
+             "from": str(app_path.relative_to(WORKSPACE))}
+    return page(title, book["sub_zh"], "\n".join(sections_html), "", nav_items, book_nav, stats)
 
 def build_book(book, chapters, appendices):
     """生成一本书的所有页 + 封面 index.html。返回页数。"""
@@ -482,34 +644,55 @@ def build_book(book, chapters, appendices):
         n += 1
     for letter, app_path in appendices:
         html = build_appendix(book, letter, app_path, book_nav)
+        if html is None:
+            continue
         (out_dir / f"appendix-{letter}.html").write_text(html, encoding="utf-8")
         n += 1
     return n, all_pages
 
-# ---------- 顶层封面（跨全部 8 本） ----------
-def build_top_index():
-    """生成 hft-reclone/html/index.html —— 8 本书封面。"""
-    rows = []
+# ---------- 顶层封面（跨全部书，按领域分组） ----------
+def build_top_index(book_meta):
+    """生成 hft-reclone/html/index.html —— 全部书封面，按领域分组。"""
     top_idx_dir = WORKSPACE / "html"
+    # book_meta: (book, chapters, appendices) 与 BOOKS 顺序一致
+    per_book = {}
+    total_pages = 0
+    chapters_total = 0
+    for book, chapters, appendices in book_meta:
+        per_book[book["root"]] = (len(chapters), len(appendices))
+        chapters_total += len(chapters)
+    by_group = {}
+    idx = 0
     for book in BOOKS:
+        nch, napp = per_book.get(book["root"], (0, 0))
+        total_pages += nch + napp
         root = WORKSPACE / book["root"]
-        nch = sum(1 for d in root.iterdir() if d.is_dir() and d.name.startswith("chapter-"))
-        napp = sum(1 for f in root.iterdir() if f.is_file() and f.name.lower().startswith("appendix-"))
         meta = f"{nch} 章" + (f" + {napp} 附录" if napp else "")
-        # 封面页位于 html/index.html，书封面位于 <root>/html/index.html，需计算相对路径
         href = os.path.relpath(root / "html" / "index.html", top_idx_dir).replace("\\", "/")
-        rows.append(
-            f'      <a class="book-card" href="{href}">'
-            f'<div class="sec-no">{len(rows)+1:02d}</div>'
-            f'<h2>{html_mod.escape(book["title_zh"])}</h2>'
-            f'<p class="lead">{html_mod.escape(book["sub_zh"])} · {meta}</p>'
-            f'<code class="c">{book["root"]}</code>'
-            f'</a>'
+        idx += 1
+        card = (f'      <a class="book-card" href="{href}">'
+                f'<div class="sec-no">{idx:02d}</div>'
+                f'<h2>{html_mod.escape(book["title_zh"])}</h2>'
+                f'<p class="lead">{html_mod.escape(book["sub_zh"])} · {meta}</p>'
+                f'<code class="c">{book["root"]}</code>'
+                f'</a>')
+        by_group.setdefault(book["group"], []).append(card)
+    sections = []
+    for gkey, gname in GROUP_ORDER:
+        cards = by_group.get(gkey)
+        if not cards:
+            continue
+        sections.append(
+            f'<div class="grp"><h2 class="grp-title"><span class="gdot"></span>{gname}</h2>\n'
+            + "\n".join(cards) + "\n</div>"
         )
-    grid = "\n".join(rows)
+    grid = "\n".join(sections)
     out = WORKSPACE / "html" / "index.html"
     out.parent.mkdir(exist_ok=True)
     css_extra = """
+.grp{margin:34px 0 6px}
+.grp-title{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:.08em;color:var(--red);text-transform:uppercase;display:flex;align-items:center;gap:10px;margin:0 0 6px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.grp-title .gdot{width:9px;height:9px;border-radius:50%;background:var(--red);flex:0 0 auto}
 .book-card{display:block;padding:24px 28px;border:1px solid var(--line);border-radius:12px;background:var(--ink-2);text-decoration:none;color:var(--paper);transition:all .15s;margin:10px 0}
 .book-card:hover{border-color:var(--red);background:var(--ink-3);transform:translateX(4px)}
 .book-card h2{font-family:var(--font-display);font-size:22px;font-weight:600;margin:8px 0 4px;color:var(--paper)}
@@ -540,7 +723,8 @@ def build_top_index():
           <p class="sub">HFT / 嵌入式 Linux / C / 内核 / 内存 / 性能 / eBPF — 全套逐章精读笔记，每章一单文件 HTML。</p>
           <div class="meta">
             <span>books <b>{len(BOOKS)}</b></span>
-            <span>chapters <b>{sum(sum(1 for d in (WORKSPACE/b['root']).iterdir() if d.is_dir() and d.name.startswith('chapter-')) for b in BOOKS)}</b></span>
+            <span>chapters <b>{chapters_total}</b></span>
+            <span>pages <b>{total_pages}</b></span>
             <span class="hft">github.com/cshonor</span>
           </div>
         </div>
@@ -549,7 +733,6 @@ def build_top_index():
     <div class="content">
 {grid}
     </div>
-    <footer class="footer"><div class="content"><p>K&amp;R 笔记在 <a href="../01-c-language/01-Primer-K-and-R-C/html/index.html"><code class="c">01-c-language/01-Primer-K-and-R-C/html/</code></a> 单独维护。</p></div></footer>
   </main>
 </div>
 </body></html>"""
@@ -624,11 +807,18 @@ def build_chapter_titles(book):
     """从 README 头一行解析章节标题，作为封面卡片的副标题。"""
     titles = {}
     root = WORKSPACE / book["root"]
-    for d in sorted([d for d in root.iterdir() if d.is_dir() and d.name.startswith("chapter-")], key=lambda x: numkey(x.name)):
-        m = re.match(r"^chapter-(\d+)", d.name)
-        chno = int(m.group(1))
+    ch_dirs = []
+    for d in root.iterdir():
+        if d.is_dir():
+            no = chapter_no(d.name)
+            if no is not None:
+                ch_dirs.append((no, d))
+    ch_dirs.sort(key=lambda x: x[0])
+    if not ch_dirs:
+        ch_dirs = [(1, root)]
+    for chno, d in ch_dirs:
         rd = d / "README.md"
-        title = d.name
+        title = d.name if d != root else book["title_zh"]
         if rd.exists():
             for ln in rd.read_text(encoding="utf-8").split("\n")[:6]:
                 mm = re.match(r"^#\s+(.*)$", ln)
@@ -638,16 +828,16 @@ def build_chapter_titles(book):
                     title = re.sub(r"^(Ch\s*\d+\s*[·\-:：]\s*|第\s*\d+\s*章\s*[·\-:：]?\s*)", "", title)
                     break
         titles[chno] = title
-    for f in sorted([f for f in root.iterdir() if f.is_file() and f.name.lower().startswith("appendix-")], key=lambda x: letterkey(x.name)):
-        m = re.match(r"^appendix-([A-Z])", f.name, re.I)
-        letter = m.group(1).upper()
-        title = f.stem
-        for ln in f.read_text(encoding="utf-8").split("\n")[:6]:
-            mm = re.match(r"^#\s+(.*)$", ln)
-            if mm:
-                title = mm.group(1).strip()
-                title = re.sub(r"^附录\s*[A-Z]\s*[·\-:：]?\s*", "", title)
-                break
+    for letter, p in collect_appendices(root):
+        title = p.name
+        src = p if p.is_file() else (p / "README.md" if (p / "README.md").exists() else None)
+        if src is not None and src.is_file():
+            for ln in src.read_text(encoding="utf-8").split("\n")[:6]:
+                mm = re.match(r"^#\s+(.*)$", ln)
+                if mm:
+                    title = mm.group(1).strip()
+                    title = re.sub(r"^附录\s*[A-Z]\s*[·\-:：]?\s*", "", title)
+                    break
         titles[letter] = title
     return titles
 
@@ -668,7 +858,7 @@ def main():
         build_book_index(book, n, all_pages)
         total += n
         print(f"[{book['root']}] {n} 页")
-    nb = build_top_index()
+    nb = build_top_index(book_meta)
     print(f"\n总计 {total} 章/附录页 + {nb} 本书封面 + 1 顶层封面")
 
 if __name__ == "__main__":

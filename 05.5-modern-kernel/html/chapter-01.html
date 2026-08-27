@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-kernel-space-vs-user-space</a>
+          <a href="#s-02"><span class="n">02</span>02-kernel-source-organization</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +301,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch1 内核架构概述</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +314,458 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>理解内核子系统全景是 HFT 调优的基础。6.x 的 maple tree、folio、blk-mq 等变化直接影响内核性能特征。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>内核空间 vs 用户空间与子系统概览</h2></div>
+<blockquote>
+<p>来源: Bootlin Kernel Training
+对标旧书: ULK3 Ch1 / LKD3 Ch1-2</p>
+</blockquote>
+<hr />
+<h2>特权级与隔离</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>内核空间</th>
+<th>用户空间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>特权级</td>
+<td>Ring 0 (x86) / EL1 (ARM64)</td>
+<td>Ring 3 / EL0</td>
+</tr>
+<tr>
+<td>内存访问</td>
+<td>可访问全部地址空间</td>
+<td>只能访问自己的地址空间</td>
+</tr>
+<tr>
+<td>系统调用</td>
+<td>可直接调用内核函数</td>
+<td>通过 syscall 指令陷入内核</td>
+</tr>
+<tr>
+<td>错误影响</td>
+<td>整个系统崩溃</td>
+<td>仅当前进程崩溃</td>
+</tr>
+<tr>
+<td>浮点运算</td>
+<td>禁止（保存/恢复开销大）</td>
+<td>允许</td>
+</tr>
+<tr>
+<td>页表</td>
+<td>内核映射 + 用户映射</td>
+<td>仅用户映射</td>
+</tr>
+</tbody>
+</table></div>
+<h3>系统调用陷入流程</h3>
+<pre class="code" data-label="C"><code class="c">// x86-64: syscall 指令
+// 用户空间 → syscall → Ring 3→Ring 0 → entry_SYSCALL_64 → sys_xxx()
+
+// ARM64: svc #0 指令
+// 用户空间 → svc #0 → EL0→EL1 → vector table → el0_sync → sys_xxx()
+
+// 系统调用号通过寄存器传递 (x8 on ARM64, rax on x86-64)
+// 参数通过 x0-x5 / rdi,rsi,rdx,r10,r8,r9 传递
+</code></pre>
+<h3>内核栈 vs 用户栈</h3>
+<pre class="code" data-label="C"><code class="c">// 每个线程有两个栈:
+// 1. 用户栈 — 在用户空间地址空间
+// 2. 内核栈 — THREAD_SIZE (ARM64: 16KB or 32KB with VMAP_STACK)
+
+// 线程信息保存在内核栈底部 (旧) 或 task_struct 中 (新)
+struct task_struct {
+    struct thread_info thread_info;  // 6.x: 已移入 task_struct
+    void *stack;                     // 指向内核栈
+    // ...
+};
+
+// 6.x 变化: thread_info 不再放栈底，直接嵌入 task_struct
+// CONFIG_VMAP_STACK=y: 内核栈用 vmalloc 分配，带守卫页
+</code></pre>
+<hr />
+<h2>内核子系统概览 (6.x)</h2>
+<pre class="code" data-label="code"><code class="c">┌────────────────────────────────────────────┐
+│              系统调用接口                    │
+├────────┬────────┬────────┬────────┬────────┤
+│ 进程管理 │ 内存管理 │ 文件系统 │ 网络栈  │ 设备驱动 │
+│ (sched) │  (mm)  │  (VFS) │ (net)  │ (drv)  │
+├────────┴────────┴────────┴────────┴────────┤
+│              块 I/O 层 (block)               │
+├────────────────────────────────────────────┤
+│              中断 / 定时器 / 同步             │
+├────────────────────────────────────────────┤
+│              硬件抽象层 (HAL)                │
+└────────────────────────────────────────────┘
+</code></pre>
+<h3>6.x 相比 ULK3/LKD3 时代的变化</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>子系统</th>
+<th>2.6 时代</th>
+<th>6.x 现代</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调度器</td>
+<td>O(1) → CFS</td>
+<td>EEVDF (6.6+)</td>
+<td>CFS vruntime 精度问题</td>
+</tr>
+<tr>
+<td>内存管理</td>
+<td>SLAB</td>
+<td>SLUB + folio</td>
+<td>SLUB 更省内存，folio 替代 page</td>
+</tr>
+<tr>
+<td>VMA 查找</td>
+<td>红黑树</td>
+<td>maple tree (6.1+)</td>
+<td>红黑树并发性能差</td>
+</tr>
+<tr>
+<td>页缓存</td>
+<td>page + radix tree</td>
+<td>folio + maple tree</td>
+<td>减少 page 结构体数量</td>
+</tr>
+<tr>
+<td>块 I/O</td>
+<td>单队列</td>
+<td>blk-mq 多队列</td>
+<td>NVMe 多队列需求</td>
+</tr>
+<tr>
+<td>中断</td>
+<td>hardirq + tasklet</td>
+<td>threaded IRQ</td>
+<td>tasklet 废弃中</td>
+</tr>
+<tr>
+<td>同步</td>
+<td>ticket spinlock</td>
+<td>qspinlock</td>
+<td>减少 cache bouncing</td>
+</tr>
+<tr>
+<td>异步 I/O</td>
+<td>AIO</td>
+<td>io_uring (5.1+)</td>
+<td>AIO 接口复杂且限制多</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>HFT 应用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户/内核隔离</td>
+<td>交易线程在用户空间，通过 syscall 与内核交互（减少 syscall = 减少延迟）</td>
+</tr>
+<tr>
+<td>内核栈大小</td>
+<td>16KB 内核栈足够，但深递归会溢出（驱动开发注意）</td>
+</tr>
+<tr>
+<td>VMAP_STACK</td>
+<td>守卫页检测栈溢出，HFT 自定义驱动开发期必开</td>
+</tr>
+<tr>
+<td>子系统变化</td>
+<td>EEVDF/qspinlock/blk-mq 都在减少锁争用和调度延迟</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 原则：</strong> 交易热路径尽量不陷入内核（用户态网卡 DPDK/AF_XDP），减少 syscall 次数。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: 用户空间程序触发系统调用时，CPU 状态发生什么变化？</summary>
+<p>x86-64: 执行 <code class="c">syscall</code> 指令 → CPU 从 Ring 3 切到 Ring 0，切换到内核栈，执行 entry_SYSCALL_64 → 调用 sys_xxx()。ARM64: 执行 <code class="c">svc #0</code> 指令 → CPU 从 EL0 切到 EL1，跳到向量表入口 el0_sync。两种架构都会保存用户态 PC 和 PSTATE，切换到内核栈。</p>
+</details>
+<details>
+<summary>Q2: 内核中为什么禁止使用浮点运算？</summary>
+<p>内核切换到内核态时不保存浮点寄存器（FPU 上下文），如果内核使用浮点运算会破坏用户空间的 FPU 状态。内核中需要浮点时必须显式 <code class="c">kernel_fpu_begin()</code> / <code class="c">kernel_fpu_end()</code>，开销很大（保存/恢复大量寄存器）。HFT 自定义驱动中如果需要浮点计算（如统计计算），应考虑用整数定点替代。</p>
+</details>
+<details>
+<summary>Q3: 6.x 内核用 maple tree 替代红黑树管理 VMA，原因是什么？</summary>
+<p>红黑树在多线程并发访问时需要锁保护，成为多核扩展瓶颈。maple tree 是 B-tree 变体，支持 RCU 并发读取，写入时使用细粒度锁。在多核服务器上 VMA 查找性能显著提升。HFT 进程通常 VMA 数量不多，感知不明显，但内核整体性能改善。</p>
+</details>
+<details>
+<summary>Q4: CONFIG_VMAP_STACK 是什么？为什么 HFT 驱动开发需要它？</summary>
+<p>VMAP_STACK 让内核栈通过 vmalloc 分配，在栈溢出时触发守卫页的 page fault 而不是静默破坏内存。HFT 自定义内核驱动如果存在栈溢出 bug，VMAP_STACK 能立即报错而非产生难以追踪的内存损坏。开发期必开，生产期可关闭以省一点内存。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">02-kernel-source-organization.md</a> — 内核源码目录树与编译</li>
+<li><a href="chapter-02.html#ch-2">chapter-02-scheduler</a> — EEVDF 调度器详解</li>
+<li><a href="chapter-05.html#ch-5">chapter-05-interrupt-management</a> — 中断管理现代实现</li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>内核源码组织与编译</h2></div>
+<blockquote>
+<p>来源: Bootlin Kernel Training
+对标旧书: ULK3 Ch1 (源码组织已过时)</p>
+</blockquote>
+<hr />
+<h2>内核源码目录树 (6.x)</h2>
+<pre class="code" data-label="code"><code class="c">linux-6.x/
+├── arch/           # 架构相关 (arm64/, x86/, riscv/)
+│   └── arm64/
+│       ├── kernel/     # head.S, entry.S, 调度, 信号
+│       ├── mm/         # 页表, TLB, cache flush
+│       └── include/    # 架构特定头文件
+├── kernel/         # 核心子系统 (sched/, fork.c, exit.c)
+├── mm/             # 内存管理 (buddy, slab, page cache)
+├── fs/             # 文件系统 (VFS + 具体文件系统)
+├── block/          # 块 I/O 层 (blk-mq)
+├── net/            # 网络栈 (socket, TCP/IP, netfilter)
+├── drivers/        # 设备驱动 (数千个子目录)
+├── include/        # 内核头文件 (linux/, asm-generic/)
+├── Documentation/  # 内核文档 (RST 格式)
+├── tools/          # 用户空间工具 (perf, bpftool, virtio)
+├── scripts/        # 编译脚本 (Kconfig, Makefile)
+├── init/           # 启动代码 (main.c: start_kernel)
+├── lib/            # 内核通用库 (string, bitmap, rbtree)
+├── security/       # 安全框架 (SELinux, AppArmor)
+└── sound/          # 音频子系统
+</code></pre>
+<h3>关键目录说明</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目录</th>
+<th>作用</th>
+<th>HFT 关注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kernel/sched/</code></td>
+<td>调度器 (fair.c = EEVDF)</td>
+<td>EEVDF 调度策略</td>
+</tr>
+<tr>
+<td><code class="c">mm/</code></td>
+<td>内存管理</td>
+<td>SLUB 分配器, page cache</td>
+</tr>
+<tr>
+<td><code class="c">net/core/</code></td>
+<td>网络核心</td>
+<td>socket buffer (sk_buff)</td>
+</tr>
+<tr>
+<td><code class="c">drivers/net/ethernet/</code></td>
+<td>网卡驱动</td>
+<td>ixgbe, mlx5, ena</td>
+</tr>
+<tr>
+<td><code class="c">block/blk-mq.c</code></td>
+<td>多队列块 I/O</td>
+<td>磁盘 I/O 延迟</td>
+</tr>
+<tr>
+<td><code class="c">arch/arm64/kernel/head.S</code></td>
+<td>ARM64 启动入口</td>
+<td>启动流程</td>
+</tr>
+<tr>
+<td><code class="c">include/linux/sched.h</code></td>
+<td>task_struct 定义</td>
+<td>进程结构体</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>编译内核 (树莓派 5 / ARM64)</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 获取树莓派 5 内核源码
+git clone --depth 1 https://github.com/raspberrypi/linux.git
+cd linux
+git checkout rpi-6.1.y
+
+# 2. 生成编译配置
+make ARCH=arm64 defconfig      # 默认配置
+make ARCH=arm64 menuconfig     # 自定义配置
+
+# 3. HFT 相关编译选项
+# Kernel hacking → Memory debugging:
+#   CONFIG_KASAN=y          (开发期, 生产关闭)
+#   CONFIG_KFENCE=y         (轻量, 可生产)
+#   CONFIG_DEBUG_INFO=y     (调试符号)
+# General setup:
+#   CONFIG_PREEMPT_RT=y     (实时内核)
+#   CONFIG_HZ_1000=y        (高精度时钟)
+
+# 4. 交叉编译 (在 x86 主机上编译 ARM64)
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image dtbs modules
+
+# 5. 安装到树莓派 SD 卡
+sudo make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+    INSTALL_MOD_PATH=/mnt/sdcard modules_install
+sudo cp arch/arm64/boot/Image /mnt/sdcard/boot/kernel8.img
+sudo cp arch/arm64/boot/dts/broadcom/*.dtb /mnt/sdcard/boot/
+</code></pre>
+<h3>编译产物</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">arch/arm64/boot/Image</code></td>
+<td>内核镜像（未压缩）</td>
+</tr>
+<tr>
+<td><code class="c">arch/arm64/boot/Image.gz</code></td>
+<td>压缩内核镜像</td>
+</tr>
+<tr>
+<td><code class="c">*.dtb</code></td>
+<td>设备树二进制</td>
+</tr>
+<tr>
+<td><code class="c">modules/*.ko</code></td>
+<td>可加载内核模块</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>源码浏览工具</h2>
+<h3>Elixir 交叉索引</h3>
+<pre class="code" data-label="shell"><code class="c"># 在线浏览: https://elixir.bootlin.com/linux/v6.1.63/source
+# 支持符号跳转: 函数定义 → 调用者 → 被调用者
+
+# 本地部署 Elixir
+# 或使用 cscope/ctags
+make ARCH=arm64 cscope    # 生成 cscope 索引
+make ARCH=arm64 tags      # 生成 ctags 索引
+</code></pre>
+<h3>grep + git log 快速定位</h3>
+<pre class="code" data-label="shell"><code class="c"># 查找函数定义
+grep -rn &quot;int schedule(void)&quot; kernel/sched/
+
+# 查找结构体定义
+grep -rn &quot;struct sched_entity {&quot; include/linux/sched.h
+
+# 查看某文件的修改历史
+git log --oneline --follow kernel/sched/fair.c | head -20
+
+# 查看某行的最后修改
+git blame kernel/sched/fair.c -L 1000,1010
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>Bootlin 讲义 / 6.x</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基于 2.6 源码树</td>
+<td>跟随最新 LTS (6.1/6.6)</td>
+</tr>
+<tr>
+<td>手动浏览源码</td>
+<td>用 Elixir 交叉索引工具</td>
+</tr>
+<tr>
+<td>无设备树概念</td>
+<td>设备树是嵌入式核心</td>
+</tr>
+<tr>
+<td>无 BPF</td>
+<td>eBPF 是现代观测核心</td>
+</tr>
+<tr>
+<td>无 io_uring</td>
+<td>io_uring 替代 AIO</td>
+</tr>
+<tr>
+<td>SLAB 分配器</td>
+<td>SLUB + folio</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>HFT 用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>编译自定义内核</td>
+<td>启用 PREEMPT_RT, KASAN, KFENCE</td>
+</tr>
+<tr>
+<td>源码浏览</td>
+<td>理解网卡驱动发包路径 (ixgbe_xmit_frame)</td>
+</tr>
+<tr>
+<td>git blame</td>
+<td>追踪调度器/网络栈变更原因</td>
+</tr>
+<tr>
+<td>menuconfig</td>
+<td>精确控制编译选项</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实践：</strong> 生产环境用 <code class="c">make defconfig</code> + 手动关闭不需要的子系统（减少内核体积和攻击面），开发环境用 KASAN/KFENCE 发现内存 bug。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: ULK3 的源码浏览方法在现代内核上有什么问题？</summary>
+<p>ULK3 基于 2.6 源码，大量函数、结构体已被重命名或删除（如 O(1) 调度器、SLAB 分配器、ticket spinlock）。直接对照 ULK3 在 6.x 源码中查找会找不到。应使用 Elixir (elixir.bootlin.com) 在线交叉索引，或本地 cscope/ctags + git blame 追踪变更历史。</p>
+</details>
+<details>
+<summary>Q2: 树莓派 5 编译内核时 ARCH 和 CROSS_COMPILE 参数的作用？</summary>
+<p><code class="c">ARCH=arm64</code> 告诉 Makefile 使用 <code class="c">arch/arm64/</code> 目录的架构相关代码。<code class="c">CROSS_COMPILE=aarch64-linux-gnu-</code> 指定交叉编译工具链前缀（在 x86 主机上编译 ARM64 二进制）。如果不指定 CROSS_COMPILE，会尝试用本机 gcc 编译（在 x86 上会生成 x86 代码）。</p>
+</details>
+<details>
+<summary>Q3: HFT 场景下，编译内核时哪些 CONFIG 选项是必须的？</summary>
+<p>必须: <code class="c">CONFIG_PREEMPT_RT=y</code>（实时抢占）、<code class="c">CONFIG_HZ_1000=y</code>（高精度时钟）。开发期: <code class="c">CONFIG_KASAN=y</code>（内存消毒器）、<code class="c">CONFIG_DEBUG_INFO=y</code>（调试符号）、<code class="c">CONFIG_KFENCE=y</code>（轻量内存检测）。生产期可关闭 KASAN/DEBUG_INFO 以提升性能，保留 KFENCE。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">01-kernel-space-vs-user-space.md</a> — 内核空间与子系统概览</li>
+<li><a href="chapter-07.html#ch-7">chapter-07-arm64-boot</a> — ARM64 启动流程详解</li>
+<li><a href="chapter-10.html#ch-10">chapter-10-preempt-rt</a> — PREEMPT_RT 编译与调优</li>
+</ul>
       </section>
 
 

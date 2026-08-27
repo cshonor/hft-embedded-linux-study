@@ -276,6 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-vdso</a>
+          <a href="#s-02"><span class="n">02</span>02-ftrace-modern</a>
+          <a href="#s-03"><span class="n">03</span>03-ebpf-observability</a>
+          <a href="#s-04"><span class="n">04</span>04-crash-drgn-analysis</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +303,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch12 vDSO 与现代调试</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 12</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 12</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +316,1065 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>ftrace wakeup_rt + irqsoff 是交易系统延迟排查的两大法宝。eBPF/BCC 工具集用于生产环境在线观测。crash/drgn 用于内核 panic 后的 vmcore 分析。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>vDSO — 虚拟动态共享对象</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/627232/">vDSO and system calls</a> (LWN)
+<strong>内核版本:</strong> 2.6+ (vdso), 6.x (持续优化)
+<strong>对标旧书:</strong> ULK3 Ch10 (系统调用)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>vDSO (Virtual Dynamic Shared Object) 是内核映射到用户空间的一小段代码，让部分系统调用<strong>在用户态完成</strong>，避免系统调用开销。</p>
+<h3>为什么需要 vDSO</h3>
+<p>某些"系统调用"实际上不需要进入内核：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>为什么不需要内核</th>
+<th>频率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">gettimeofday()</code></td>
+<td>只读内核维护的时间（vvar）</td>
+<td>极高（每秒数千次）</td>
+</tr>
+<tr>
+<td><code class="c">clock_gettime()</code></td>
+<td>同上</td>
+<td>极高</td>
+</tr>
+<tr>
+<td><code class="c">time()</code></td>
+<td>同上</td>
+<td>高</td>
+</tr>
+<tr>
+<td><code class="c">getcpu()</code></td>
+<td>只读 CPU 拓构信息</td>
+<td>中</td>
+</tr>
+</tbody>
+</table></div>
+<h3>vDSO 工作原理</h3>
+<pre class="code" data-label="code"><code class="c">用户空间                          内核空间
+┌─────────────┐                  ┌─────────────────┐
+│ 应用程序     │                  │ 时钟中断更新      │
+│ ↓            │                  │ vvar 页中的时间值 │
+│ vDSO 代码页  │ ←── mmap ──→     │ (vvar)           │
+│ (vdso.so)    │                  │                  │
+│ ↓            │                  │                  │
+│ 读取 vvar 页 │ ←── mmap ──→     │ vvar 页 (只读)    │
+│ 计算当前时间  │                  │ (gtod_data 等)    │
+│ 返回结果      │                  │                  │
+└─────────────┘                  └─────────────────┘
+    ↑ 无系统调用！
+</code></pre>
+<ol>
+<li>内核在进程启动时将 vDSO 代码页和 vvar 数据页映射到用户空间</li>
+<li>用户调用 <code class="c">gettimeofday()</code> → 动态链接器跳转到 vDSO 中的实现</li>
+<li>vDSO 代码读取 vvar 页中的时间数据，计算结果，返回用户</li>
+<li><strong>整个过程在用户态完成，无系统调用</strong></li>
+</ol>
+<h3>vvar 页内容</h3>
+<pre class="code" data-label="C"><code class="c">// 内核维护的 vvar 数据 (只读映射到用户空间)
+struct vdso_data {
+    u32 seq;              // 序列号 (奇数=正在更新)
+    u32 clock_mode;       // 时钟源类型
+    u64 cycle_last;       // 上次时钟读数
+    u64 mask;             // 时钟掩码
+    u32 mult;             // 乘法因子
+    u32 shift;            // 移位因子
+    u64 basetime[CS_BASES]; // 基准时间
+    // ...
+};
+</code></pre>
+<h3>x86-64 vs ARM64</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>vDSO 实现路径</th>
+<th>时钟源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64</td>
+<td>vDSO 中直接读 TSC (rdtsc)</td>
+<td>TSC</td>
+</tr>
+<tr>
+<td>ARM64</td>
+<td>vDSO 中读 CNTVCT_EL0</td>
+<td>Generic Timer</td>
+</tr>
+<tr>
+<td>旧 x86 (32)</td>
+<td>通过 int 0x80 回退</td>
+<td>多种</td>
+</tr>
+</tbody>
+</table></div>
+<p>ARM64 的 <code class="c">CNTVCT_EL0</code> 读取和 TSC 一样是无开销的硬件计数器，vDSO 在用户态直接读取并计算纳秒时间戳。</p>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>6.x 现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sys_call_table</code> + <code class="c">int 0x80</code></td>
+<td><code class="c">syscall</code> 指令 + vDSO</td>
+</tr>
+<tr>
+<td><code class="c">0x80</code> 软中断</td>
+<td>已废弃</td>
+</tr>
+<tr>
+<td><code class="c">gettimeofday()</code> 必须进内核</td>
+<td>vDSO 在用户态完成</td>
+</tr>
+<tr>
+<td>无 vDSO 概念</td>
+<td>vDSO 是 6.x 系统调用优化的核心</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键代码变更</h3>
+<pre class="code" data-label="C"><code class="c">// ULK3 时代 — 系统调用入口
+// x86: int 0x80 → system_call() → sys_call_table[nr]
+
+// 6.x — 系统调用入口
+// x86-64: syscall 指令 → entry_SYSCALL_64 → sys_call_table[nr]
+// 但 gettimeofday / clock_gettime 不走此路径！
+
+// 6.x — vDSO 路径 (无系统调用)
+// glibc: gettimeofday() → __vdso_gettimeofday() → vDSO 代码
+// vDSO: 读取 vvar 页 → 计算 → 返回
+</code></pre>
+<h3>验证 vDSO</h3>
+<pre class="code" data-label="shell"><code class="c"># 查看 vDSO 映射
+$ ldd /bin/ls | grep vdso
+linux-vdso.so.1 (0x00007ffe12345678)
+
+# strace 确认 gettimeofday 不产生系统调用
+$ strace -e trace=gettimeofday ./myapp
+# (无输出 — vDSO 处理了，没有实际系统调用)
+
+# 对比 — 强制不用 vDSO
+$ LD_PRELOAD=/lib/libc.so.6 strace -e trace=gettimeofday ./myapp
+gettimeofday({tv_sec=...}, NULL) = 0  # 产生了系统调用
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>vDSO 影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>时间戳获取</strong></td>
+<td><code class="c">clock_gettime(CLOCK_MONOTONIC)</code> 通过 vDSO <strong>零系统调用</strong>，~20ns</td>
+</tr>
+<tr>
+<td><strong>每笔交易打时间戳</strong></td>
+<td>vDSO 使得每笔交易记录纳秒时间戳的开销可忽略</td>
+</tr>
+<tr>
+<td><strong>延迟测量</strong></td>
+<td>vDSO 让用户态精确测量代码段耗时</td>
+</tr>
+<tr>
+<td><strong>对比系统调用开销</strong></td>
+<td>vDSO ~20ns vs syscall ~200-500ns，差 10-25 倍</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实盘：</strong> 交易系统每个关键路径用 <code class="c">clock_gettime(CLOCK_MONOTONIC)</code> 打时间戳。vDSO 使其在用户态完成，开销约 20ns（主要是 rdtsc/CNTVCT_EL0 指令 + 数学计算）。如果走系统调用，每次 200-500ns，数千次打戳累计显著。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">// HFT 时间戳最佳实践
+static inline uint64_t rdtsc_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &amp;ts);  // vDSO，无系统调用
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
+// 或直接读 TSC (x86) / CNTVCT_EL0 (ARM64) 更快，但需校准
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> vDSO 为什么不需要系统调用就能获取精确时间？</p>
+<blockquote>
+<p>内核在时钟中断中更新 vvar 页中的时间数据（基准时间、时钟计数器值、换算因子）。vDSO 代码在用户态读取 vvar 页的只读数据，结合当前 TSC/CNTVCT_EL0 计数器值，计算出当前时间。整个过程是用户态内存读取 + 数学运算，不需要切换到内核态。</p>
+</blockquote>
+<p><strong>Q2:</strong> vDSO 的 vvar 页如何保证读取的一致性（不被内核更新打断）？</p>
+<blockquote>
+<p>vvar 页使用序列号 (seq) 机制。内核更新前将 seq 设为奇数（表示正在更新），更新完设为偶数。vDSO 代码读取前检查 seq 为偶数，读取后再检查 seq 未变。如果变了则重试。这类似 seqlock，无锁但保证一致性。</p>
+</blockquote>
+<p><strong>Q3:</strong> 在 ARM64 树莓派 5 上 <code class="c">clock_gettime(CLOCK_MONOTONIC)</code> 大约多快？</p>
+<blockquote>
+<p>通过 vDSO 读取 <code class="c">CNTVCT_EL0</code> 寄存器 + 数学计算，约 20-40ns。如果走系统调用 (syscall 指令 + 内核处理 + 返回)，约 300-500ns。vDSO 快 10-15 倍。对于每秒调用数千次的 HFT 时间戳，差异显著。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>ftrace 现代增强：6.x 追踪框架</h2></div>
+<blockquote>
+<p>对标旧书: LKD3 Ch18 (ftrace 刚出现)
+6.x 变化: tracer 种类大增, per-instance, hist trigger, BPF 集成</p>
+</blockquote>
+<hr />
+<h2>ftrace 在 6.x 的增强</h2>
+<p>ftrace (Function Tracer) 是内核内置的追踪框架，通过 <code class="c">/sys/kernel/tracing/</code> 接口操作，不需要安装任何用户态工具。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>2.6 (LKD3 时代)</th>
+<th>6.x</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tracer 种类</td>
+<td>function, sched_switch</td>
+<td>function, function_graph, wakeup, hwlat, irqsoff, preemptoff, wakeup_rt</td>
+</tr>
+<tr>
+<td>事件追踪</td>
+<td>少量 tracepoint</td>
+<td>数百个 tracepoint (sched/irq/net/block/syscalls)</td>
+</tr>
+<tr>
+<td>过滤</td>
+<td>基本函数过滤</td>
+<td>per-event filter、触发器 (trigger)</td>
+</tr>
+<tr>
+<td>实例</td>
+<td>全局唯一</td>
+<td>per-instance (<code class="c">trace_instances</code>)</td>
+</tr>
+<tr>
+<td>BPF 集成</td>
+<td>无</td>
+<td>ftrace event 可被 BPF 程序消费</td>
+</tr>
+<tr>
+<td>histogram</td>
+<td>无</td>
+<td><code class="c">hist</code> trigger（直方图统计）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>常用操作</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看可用 tracer
+cat /sys/kernel/tracing/available_tracers
+# hwlat blk function_graph wakeup_rt wakeup function nocount ...
+
+# 2. 追踪特定函数的调用者
+echo function &gt; /sys/kernel/tracing/current_tracer
+echo ixgbe_xmit_frame &gt; /sys/kernel/tracing/set_ftrace_filter
+echo 1 &gt; /sys/kernel/tracing/tracing_on
+cat /sys/kernel/tracing/trace
+
+# 3. 函数调用图（含子函数+执行时间）
+echo function_graph &gt; /sys/kernel/tracing/current_tracer
+echo ixgbe_xmit_frame &gt; /sys/kernel/tracing/set_graph_function
+cat /sys/kernel/tracing/trace
+# 输出示例:
+# 1) ! 283.412 us  |  ixgbe_xmit_frame() {
+# 2)   2.130 us    |    netdev_tx_sent_queue();
+# 3) ! 285.631 us  |  }
+
+# 4. 追踪调度切换事件
+echo sched:sched_switch &gt; /sys/kernel/tracing/set_event
+echo 1 &gt; /sys/kernel/tracing/tracing_on
+cat /sys/kernel/tracing/trace_pipe
+
+# 5. 中断关闭延迟（HFT 关键指标）
+echo irqsoff &gt; /sys/kernel/tracing/current_tracer
+cat /sys/kernel/tracing/tracing_max_latency
+# 如果 &gt; 100μs 说明有中断被关闭太久
+
+# 6. 直方图统计（6.x 新增）
+echo 'hist:keys=common_pid:vals=hitcount' &gt; /sys/kernel/tracing/events/sched/sched_switch/trigger
+cat /sys/kernel/tracing/events/sched/sched_switch/hist
+</code></pre>
+<h3>per-instance (trace_instances)</h3>
+<pre class="code" data-label="shell"><code class="c"># 6.x: 创建独立追踪实例, 互不干扰
+mkdir /sys/kernel/tracing/instances/hft_trace
+# 现在可以在 hft_trace 目录下独立设置 tracer
+echo function &gt; /sys/kernel/tracing/instances/hft_trace/current_tracer
+echo 1 &gt; /sys/kernel/tracing/instances/hft_trace/tracing_on
+
+# 另一个实例同时用不同 tracer
+mkdir /sys/kernel/tracing/instances/irq_trace
+echo irqsoff &gt; /sys/kernel/tracing/instances/irq_trace/current_tracer
+</code></pre>
+<hr />
+<h2>HFT 关键 tracer</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Tracer</th>
+<th>追踪什么</th>
+<th>HFT 用途</th>
+<th>阈值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">wakeup</code></td>
+<td>进程唤醒到被调度的延迟</td>
+<td>交易线程被唤醒后多久开始跑</td>
+<td>&lt; 50μs</td>
+</tr>
+<tr>
+<td><code class="c">wakeup_rt</code></td>
+<td>实时线程唤醒延迟</td>
+<td>SCHED_FIFO 交易线程的调度延迟</td>
+<td>&lt; 50μs</td>
+</tr>
+<tr>
+<td><code class="c">irqsoff</code></td>
+<td>中断关闭时长</td>
+<td>关中断太久导致丢包/延迟</td>
+<td>&lt; 100μs</td>
+</tr>
+<tr>
+<td><code class="c">preemptoff</code></td>
+<td>抢占关闭时长</td>
+<td>不可抢占区段导致调度延迟</td>
+<td>&lt; 100μs</td>
+</tr>
+<tr>
+<td><code class="c">function_graph</code></td>
+<td>函数调用链+耗时</td>
+<td>驱动/内核热路径耗时分析</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">hwlat</code></td>
+<td>硬件延迟（SMI 干扰）</td>
+<td>BIOS/SMI 偷走 CPU 时间</td>
+<td>&lt; 50μs</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># HFT 延迟排查: wakeup_rt
+echo wakeup_rt &gt; /sys/kernel/tracing/current_tracer
+echo 1 &gt; /sys/kernel/tracing/tracing_on
+# 运行交易引擎...
+cat /sys/kernel/tracing/tracing_max_latency
+# 查看 trace 内容, 定位延迟发生在哪个函数
+
+# HFT 延迟排查: irqsoff
+echo irqsoff &gt; /sys/kernel/tracing/current_tracer
+echo 1 &gt; /sys/kernel/tracing/tracing_on
+# 运行交易引擎...
+cat /sys/kernel/tracing/tracing_max_latency
+# 如果 &gt; 100μs, trace 会显示关中断的代码路径
+</code></pre>
+<blockquote>
+<p><strong>HFT 生产必备：</strong> <code class="c">wakeup_rt</code> + <code class="c">irqsoff</code> 是交易系统延迟排查的两大法宝。<code class="c">wakeup_rt &gt; 50μs</code> 说明调度器有问题；<code class="c">irqsoff &gt; 100μs</code> 说明关中断太久。</p>
+</blockquote>
+<hr />
+<h2>与 trace-cmd / KernelShark 的关系</h2>
+<pre class="code" data-label="shell"><code class="c"># trace-cmd 是 ftrace 的命令行前端 (封装 tracefs 操作)
+trace-cmd record -e sched:sched_switch -e sched:sched_wakeup sleep 10
+trace-cmd report &gt; trace.txt
+
+# KernelShark 是 GUI 前端
+trace-cmd record -e sched:* sleep 10
+kernelshark trace.dat
+
+# 对比 05.6-kernel-debugging/chapter-09-ftrace 的 trace-cmd 章节
+</code></pre>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: ftrace 的 wakeup_rt tracer 和 wakeup tracer 有什么区别？</summary>
+<p><code class="c">wakeup</code> 追踪普通进程（SCHED_NORMAL）的唤醒延迟。<code class="c">wakeup_rt</code> 只追踪实时进程（SCHED_FIFO/SCHED_RR）的唤醒延迟。HFT 交易线程用 SCHED_FIFO，所以用 <code class="c">wakeup_rt</code>。两者使用相同的机制（记录唤醒时间戳 → 等到被调度 → 计算差值），只是过滤的调度策略不同。</p>
+</details>
+<details>
+<summary>Q2: trace_instances 有什么用？为什么 HFT 需要它？</summary>
+<p>trace_instances 允许创建多个独立的追踪实例，每个实例有自己的 tracer 设置、事件过滤和 trace buffer。HFT 场景中可以同时运行多个 tracer：一个实例用 wakeup_rt 追踪调度延迟，另一个用 function_graph 追踪网卡驱动耗时。互不干扰，各自有独立的 buffer。</p>
+</details>
+<details>
+<summary>Q3: irqsoff tracer 显示 max latency = 350μs，如何定位是哪段代码？</summary>
+<p>irqsoff tracer 在记录 max latency 时会保存当时的 trace，包含关中断和开中断的函数调用栈。<code class="c">cat /sys/kernel/tracing/trace</code> 可以看到延迟发生在哪个函数。常见的关中断过长的原因：spin_lock_irqsave 临界区过长、IRQ handler 执行太多工作、softirq 处理链过长。PREEMPT_RT 通过中断线程化解决此问题。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="#s-01">01-vdso.md</a> — vDSO 与系统调用加速</li>
+<li><a href="#s-03">03-ebpf-observability.md</a> — eBPF 可编程追踪</li>
+<li><a href="../../05.6-kernel-debugging/html/chapter-09.html#ch-9">05.6-kernel-debugging/chapter-09-ftrace</a> — ftrace 完整教程</li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>eBPF：可编程动态追踪</h2></div>
+<blockquote>
+<p>6.x 变化: BTF 默认开启, CO-RE 成熟, bpf_timer, ringbuf
+对标旧书: LKD3 无 eBPF 概念</p>
+</blockquote>
+<hr />
+<h2>eBPF 核心概念</h2>
+<p>eBPF (extended Berkeley Packet Filter) 可以写 C 代码（受限），编译成 BPF 字节码注入内核执行。不需要重新编译内核，运行时动态启用/禁用。</p>
+<h3>6.x 相比 4.x 的增强</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>4.x</th>
+<th>6.x</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BTF (BPF Type Format)</td>
+<td>实验性</td>
+<td>默认开启 (CONFIG_DEBUG_INFO_BTF=y)</td>
+</tr>
+<tr>
+<td>bpf_loop()</td>
+<td>无</td>
+<td>有（循环不用宏展开）</td>
+</tr>
+<tr>
+<td>kfunc</td>
+<td>无</td>
+<td>有（内核函数调用）</td>
+</tr>
+<tr>
+<td>bpf_timer</td>
+<td>无</td>
+<td>有（定时器）</td>
+</tr>
+<tr>
+<td>ringbuf</td>
+<td>无</td>
+<td>有（替代 perfbuf，性能更好）</td>
+</tr>
+<tr>
+<td>CO-RE</td>
+<td>实验性</td>
+<td>成熟（libbpf 支持跨内核版本）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>工具生态</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>工具</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>底层</strong></td>
+<td>libbpf</td>
+<td>C 库，写 BPF 程序</td>
+</tr>
+<tr>
+<td><strong>高级语言</strong></td>
+<td>bpftrace</td>
+<td>一行命令/脚本追踪</td>
+</tr>
+<tr>
+<td><strong>工具集</strong></td>
+<td>BCC (BPF Compiler Collection)</td>
+<td>100+ 现成工具</td>
+</tr>
+<tr>
+<td><strong>可视化</strong></td>
+<td>perfetto / Grafana</td>
+<td>追踪数据可视化</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>bpftrace 快速上手</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 统计 write() 调用次数（按进程分组）
+bpftrace -e 'tracepoint:syscalls:sys_enter_write { @[comm] = count(); }'
+
+# 2. 追踪 TCP 接收延迟
+bpftrace -e 'kprobe:tcp_recvmsg { @start[tid] = nsecs; }
+             kretprobe:tcp_recvmsg /@start[tid]/ {
+               @latency_us = hist((nsecs - @start[tid]) / 1000);
+               delete(@start[tid]);
+             }'
+
+# 3. 追踪网卡发包延迟
+bpftrace -e 'kprobe:ixgbe_xmit_frame { @start[tid] = nsecs; }
+             kretprobe:ixgbe_xmit_frame /@start[tid]/ {
+               @us = hist((nsecs - @start[tid]) / 1000);
+               delete(@start[tid]);
+             }'
+
+# 4. 追踪进程调度延迟
+bpftrace -e 'tracepoint:sched:sched_wakeup { @wake[args-&gt;pid] = nsecs; }
+             tracepoint:sched:sched_switch /@wake[args-&gt;next_pid]/ {
+               @sched_lat_us = hist((nsecs - @wake[args-&gt;next_pid]) / 1000);
+               delete(@wake[args-&gt;next_pid]);
+             }'
+
+# 5. 追踪内核函数参数
+bpftrace -e 'kprobe:dev_queue_xmit { printf(&quot;dev=%s len=%d\n&quot;,
+               ((struct sk_buff *)arg0)-&gt;dev-&gt;name,
+               ((struct sk_buff *)arg0)-&gt;len); }'
+</code></pre>
+<h3>bpftrace 语法要点</h3>
+<pre class="code" data-label="code"><code class="c">探针类型:
+  kprobe:func_name        — 函数入口
+  kretprobe:func_name     — 函数返回
+  tracepoint:category:event — 内核 tracepoint
+  profile:hz:99           — 定时采样
+  interval:s:1            — 每秒触发
+
+内置变量:
+  comm    — 进程名
+  pid/tid — 进程/线程 ID
+  nsecs   — 纳秒时间戳
+  arg0-argN / args-&gt;field — 函数参数
+  retval  — 返回值 (kretprobe)
+
+聚合函数:
+  count()   — 计数
+  hist(x)   — 直方图 (2的幂次方分桶)
+  lhist(x, min, max, step) — 线性直方图
+  sum(x)    — 求和
+  avg(x)    — 平均值
+  min(x)/max(x) — 最小/最大值
+</code></pre>
+<hr />
+<h2>BCC 工具集（HFT 常用）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+<th>HFT 场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">runqlat</code></td>
+<td>运行队列延迟分布</td>
+<td>交易线程等待 CPU 的时间</td>
+</tr>
+<tr>
+<td><code class="c">runqslower</code></td>
+<td>超过阈值的调度延迟</td>
+<td>捕获 &gt; 100μs 的调度延迟事件</td>
+</tr>
+<tr>
+<td><code class="c">biosnoop</code></td>
+<td>块 I/O 延迟</td>
+<td>磁盘 I/O 影响交易线程</td>
+</tr>
+<tr>
+<td><code class="c">tcplife</code></td>
+<td>TCP 连接生命周期</td>
+<td>交易连接的建立/持续时间</td>
+</tr>
+<tr>
+<td><code class="c">tcpdrop</code></td>
+<td>TCP 丢包</td>
+<td>行情数据丢包</td>
+</tr>
+<tr>
+<td><code class="c">hardirqs</code></td>
+<td>硬中断分布</td>
+<td>网卡中断占用 CPU 时间</td>
+</tr>
+<tr>
+<td><code class="c">softirqs</code></td>
+<td>软中断分布</td>
+<td>NET_RX 软中断处理时间</td>
+</tr>
+<tr>
+<td><code class="c">cpudist</code></td>
+<td>CPU on-CPU 时间分布</td>
+<td>交易线程每次上 CPU 跑多久</td>
+</tr>
+<tr>
+<td><code class="c">offcputime</code></td>
+<td>离开 CPU 的原因+时长</td>
+<td>交易线程为什么被切走</td>
+</tr>
+<tr>
+<td><code class="c">funclatency</code></td>
+<td>指定函数延迟分布</td>
+<td>内核热路径函数耗时</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># HFT 延迟排查经典命令组合
+
+# 1. 调度延迟
+runqlat -P $(pidof trading_engine) 1
+
+# 2. 超过 50μs 的调度延迟事件
+runqslower -P 50 $(pidof trading_engine)
+
+# 3. 网卡发包延迟
+funclatency -m ixgbe_xmit_frame
+
+# 4. 中断分布
+hardirqs -d 1
+
+# 5. 交易线程离开 CPU 原因
+offcputime -p $(pidof trading_engine) 5
+</code></pre>
+<h3>HFT 延迟排查工作流</h3>
+<pre class="code" data-label="code"><code class="c">交易延迟毛刺 100μs+
+├── 步骤1: runqslower 50 → 捕获调度延迟事件
+│   └── 确认是调度延迟还是其他原因
+├── 步骤2: ftrace wakeup_rt → 确认唤醒到运行的时间
+│   └── 如果 wakeup_rt 正常 → 不是调度问题
+├── 步骤3: ftrace irqsoff → 确认关中断时长
+│   └── 如果 irqsoff 正常 → 不是中断问题
+├── 步骤4: funclatency ixgbe_xmit_frame → 网卡发包耗时
+│   └── 如果正常 → 不是网卡驱动问题
+├── 步骤5: offcputime → 交易线程为什么被切走
+│   └── 如果显示 sched_switch → 正常调度
+└── 步骤6: bpftrace 自定义追踪 → 追踪具体代码路径
+</code></pre>
+<hr />
+<h2>CO-RE (Compile Once Run Everywhere)</h2>
+<pre class="code" data-label="shell"><code class="c"># 传统 BPF 程序需要为每个内核版本编译 (依赖内核头文件)
+# CO-RE 通过 BTF (BPF Type Format) 实现跨内核兼容
+
+# 检查内核是否支持 BTF
+ls -la /sys/kernel/btf/vmlinux
+# 如果存在, 内核有 BTF 支持
+
+# CO-RE 程序编译
+clang -target bpf -O2 -g -c my_bpf.c -o my_bpf.o
+# my_bpf.o 可以在不同内核版本上运行 (只要都有 BTF)
+</code></pre>
+<h3>libbpf 编程模型</h3>
+<pre class="code" data-label="C"><code class="c">// 1. 定义 BPF 程序 (BPF C)
+SEC(&quot;kprobe/ixgbe_xmit_frame&quot;)
+int trace_xmit(struct pt_regs *ctx) {
+    u64 ts = bpf_ktime_get_ns();
+    u32 pid = bpf_get_current_pid_tgid() &gt;&gt; 32;
+    bpf_map_update_elem(&amp;start, &amp;pid, &amp;ts, BPF_ANY);
+    return 0;
+}
+
+// 2. 用户空间程序 (C + libbpf)
+int main() {
+    struct bpf_object *obj = bpf_object__open_file(&quot;my_bpf.o&quot;, NULL);
+    bpf_object__load(obj);
+    struct bpf_link *link = bpf_program__attach_kprobe(
+        bpf_object__find_program_by_name(obj, &quot;trace_xmit&quot;),
+        false, &quot;ixgbe_xmit_frame&quot;);
+    // ... 读取 map 数据 ...
+}
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>工具</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易延迟毛刺</td>
+<td>BCC runqslower</td>
+<td>捕获 &gt; 50μs 的调度延迟事件</td>
+</tr>
+<tr>
+<td>网卡发包慢</td>
+<td>bpftrace kprobe/kretprobe</td>
+<td>ixgbe_xmit_frame 入退时间差直方图</td>
+</tr>
+<tr>
+<td>调度延迟事件</td>
+<td>BCC runqslower</td>
+<td>捕获 &gt; 50μs 的调度延迟事件</td>
+</tr>
+<tr>
+<td>中断分布</td>
+<td>BCC hardirqs</td>
+<td>网卡中断占用 CPU 时间统计</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 生产原则：</strong> eBPF 是生产环境安全的（零开销或极低开销）。bpftrace 适合快速追踪，BCC 工具集适合常用场景，libbpf 适合自定义复杂逻辑。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: ftrace 和 eBPF 的核心区别是什么？HFT 优先用哪个？</summary>
+<p>ftrace 是内核内置的<strong>预定义</strong>追踪框架（function/function_graph/event），不需要安装用户态工具但功能固定。eBPF 是<strong>可编程</strong>的——可以写 C 代码编译成 BPF 字节码注入内核执行，支持任意逻辑（条件判断、聚合统计、直方图）。HFT 优先用 eBPF（更灵活，有 BCC 工具集），但如果只是快速看函数调用链，ftrace function_graph 更简单（不需要装 bpftrace）。</p>
+</details>
+<details>
+<summary>Q2: BTF 是什么？为什么 6.x 默认开启它很重要？</summary>
+<p>BTF (BPF Type Format) 是内核结构体的类型描述信息，存储在 /sys/kernel/btf/vmlinux 中。有了 BTF，eBPF 程序不需要内核调试符号就能访问结构体字段（CO-RE 技术）。6.x 默认开启 BTF 意味着所有 eBPF 工具（bpftrace/BCC/libbpf）开箱即用，不需要额外安装 debuginfo 包。这对 HFT 生产环境很重要——不需要在生产机器上装内核调试包。</p>
+</details>
+<details>
+<summary>Q3: 交易系统出现间歇性 100μs 延迟毛刺，用 eBPF 排查的流程？</summary>
+<p>① <code class="c">BCC runqslower 50 &lt;pid&gt;</code> 捕获具体延迟事件，确认是否调度延迟。② <code class="c">bpftrace</code> 追踪网卡驱动 <code class="c">ixgbe_xmit_frame</code> 延迟，确认是否网卡发包慢。③ <code class="c">BCC offcputime -p &lt;pid&gt;</code> 看交易线程离开 CPU 的原因。④ <code class="c">bpftrace</code> 追踪特定内核函数的耗时分布。⑤ 如果以上都正常，可能是用户空间代码问题，用 perf record 采样 profiling。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="#s-02">02-ftrace-modern.md</a> — ftrace 内置追踪框架</li>
+<li><a href="#s-04">04-crash-drgn-analysis.md</a> — crash/drgn 事后分析</li>
+<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-bpf-observability</a> — eBPF 完整教程</li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>crash 与 drgn：vmcore 事后分析</h2></div>
+<blockquote>
+<p>对标旧书: LKD3 Ch18 (基于 2.6 的 Oops 分析)
+现代: crash + kdump + BTF + drgn</p>
+</blockquote>
+<hr />
+<h2>kdump：自动捕获 vmcore</h2>
+<pre class="code" data-label="shell"><code class="c"># kdump 配置
+# /etc/default/kdump-tools
+KDUMP_KERNEL=/boot/vmlinuz-rt
+KDUMP_INITRD=/boot/initrd.img-rt
+KDUMP_CORE=/var/crash/
+
+# 启用 kdump
+sudo systemctl enable kdump-tools
+sudo systemctl start kdump-tools
+
+# 手动触发 crash dump (测试用)
+echo c &gt; /proc/sysrq-trigger
+# 系统崩溃 → kdump 内核启动 → 复制 vmcore → 重启
+# vmcore 保存在 /var/crash/&lt;timestamp&gt;/
+</code></pre>
+<h3>kdump 工作原理</h3>
+<pre class="code" data-label="code"><code class="c">1. 内核崩溃 (panic)
+2. kdump 预留的内核 (crashkernel) 启动
+   - 预留内存: crashkernel=128M (bootargs)
+3. crashkernel 内核通过 /proc/vmcore 访问崩溃内核的内存
+4. 复制 vmcore 到磁盘
+5. 重启系统
+</code></pre>
+<hr />
+<h2>crash 工具</h2>
+<h3>现代 crash 相比 LKD3 时代</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>LKD3 时代</th>
+<th>现代</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vmcore 获取</td>
+<td>手动配置</td>
+<td>kdump 自动捕获</td>
+</tr>
+<tr>
+<td>内核符号</td>
+<td>kallsyms</td>
+<td>kallsyms + BTF + 调试符号</td>
+</tr>
+<tr>
+<td>结构体解析</td>
+<td>需要调试符号</td>
+<td>BTF 支持（不需要 -g）</td>
+</tr>
+<tr>
+<td>扩展模块</td>
+<td>无</td>
+<td>crash-eppic 脚本、crash-ext</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键命令</h3>
+<pre class="code" data-label="shell"><code class="c">crash vmlinux /var/crash/2026-08-14/vmcore
+
+# === 基础 ===
+crash&gt; bt                 # 崩溃线程栈
+crash&gt; bt -a              # 所有 CPU 的栈
+crash&gt; ps                 # 进程列表
+crash&gt; runq               # 运行队列
+
+# === 内存 ===
+crash&gt; kmem -i            # 内核内存概况
+crash&gt; kmem -s            # SLUB 缓存统计
+crash&gt; vm &lt;pid&gt;           # 进程地址空间
+
+# === 结构体 ===
+crash&gt; struct task_struct ffff888012345678  # 查看指定 task_struct
+crash&gt; struct -o task_struct  # 看结构体偏移
+crash&gt; list task_struct.tasks  # 遍历链表
+
+# === 反汇编 ===
+crash&gt; dis -r ffffffff81234567  # 反汇编+寄存器
+crash&gt; dis ffffffff81234567 20  # 反汇编 20 条指令
+
+# === 设备/网络 ===
+crash&gt; dev                # 设备列表
+crash&gt; net                # 网络接口
+crash&gt; search -t &quot;ixgbe&quot;  # 搜索内存中的字符串
+</code></pre>
+<h3>HFT 崩溃分析场景</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看崩溃时的调用栈
+crash&gt; bt
+# PID: 1234  TASK: ffff888012345678  CPU: 2  COMMAND: &quot;trading_engine&quot;
+#  #0 [ffff800012345670] __crash_kexec at ffffffff81234567
+#  #1 [ffff800012345680] panic at ffffffff81234567
+#  #2 [ffff800012345690] do_exit at ffffffff81234567
+#  ...
+
+# 2. 查看崩溃时的运行队列 (是否有 RT 线程在等待)
+crash&gt; runq
+# CPU 0 RUNQUEUE: ffff888012345678
+#   RT: [PID: 1234] PRIO: 80
+# CPU 1: [empty]
+# CPU 2: [isolated]
+# CPU 3: [isolated]
+
+# 3. 查看崩溃进程的内存映射
+crash&gt; vm 1234
+# VMA           START          END            FLAGS  FILE
+# ffff88801234  00000000aaa0  00000000bbb0  rw-p-  /usr/lib/libc.so
+# ffff88801235  00007fffabc0  00007fffdef0  rw-p-  [stack]
+
+# 4. 检查 SLUB 缓存 (是否有内存泄漏)
+crash&gt; kmem -s
+# CACHE            NAME             OBJSIZE  ALLOCATED  TOTAL
+# ffff8880123456   kmalloc-256         256      1024   2048
+# ffff8880123457   kmalloc-192         192       512   1024
+# 如果 trading_engine 相关的缓存 ALLOCATED 异常多 → 泄漏
+</code></pre>
+<hr />
+<h2>drgn：可编程 vmcore 分析</h2>
+<p>drgn 是一个 Python 库，可以<strong>编程式</strong>分析 vmcore（比 crash 的交互式命令更灵活）。</p>
+<pre class="code" data-label="py"><code class="c"># analyze_crash.py
+from drgn import Object, cast
+import drgn
+
+prog = drgn.Program()
+prog.set_core_dump('/var/crash/2026-08-14/vmcore')
+
+# 遍历所有进程
+for task in prog.for_each_task():
+    print(f&quot;PID={task.pid.value_()} comm={task.comm.string_().decode()}&quot;)
+
+# 查看崩溃进程的调度统计
+current = prog.crashed_thread()
+print(f&quot;Crashed: PID={current.pid.value_()}&quot;)
+
+# 查看网络接口
+for netdev in prog.for_each_net_device():
+    print(f&quot;{netdev.name.string_().decode()}: tx_packets={netdev.stats.tx_packets}&quot;)
+
+# 查看运行队列
+for cpu in range(prog['nr_cpu_ids'].value_()):
+    rq = prog['runqueues'].per_cpu(cpu)
+    cfs = rq.cfs
+    print(f&quot;CPU{cpu}: nr_running={cfs.nr_running.value_()}&quot;)
+</code></pre>
+<h3>crash vs drgn 对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对比</th>
+<th>crash</th>
+<th>drgn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>使用方式</td>
+<td>交互式命令</td>
+<td>Python 脚本</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>快速查看</td>
+<td>复杂分析、批量处理</td>
+</tr>
+<tr>
+<td>灵活性</td>
+<td>固定命令集</td>
+<td>任意 Python 逻辑</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>调试符号</td>
+<td>BTF 或调试符号</td>
+</tr>
+<tr>
+<td>HFT 场景</td>
+<td>快速定位崩溃点</td>
+<td>分析全部交易线程状态</td>
+</tr>
+<tr>
+<td>学习曲线</td>
+<td>低 (命令行)</td>
+<td>中 (需要 Python)</td>
+</tr>
+</tbody>
+</table></div>
+<h3>drgn 实战：分析所有交易线程状态</h3>
+<pre class="code" data-label="py"><code class="c"># analyze_trading_threads.py
+import drgn
+
+prog = drgn.Program()
+prog.set_core_dump('/var/crash/2026-08-14/vmcore')
+
+# 找到所有名为 &quot;trading_engine&quot; 的线程
+for task in prog.for_each_task():
+    comm = task.comm.string_().decode().rstrip('\x00')
+    if 'trading' in comm:
+        print(f&quot;\n=== PID={task.pid.value_()} comm={comm} ===&quot;)
+        print(f&quot;  state={task.__state.value_()}&quot;)  # 0=running, 1=sleeping
+        print(f&quot;  prio={task.prio.value_()}&quot;)
+        print(f&quot;  policy={task.policy.value_()}&quot;)  # 1=FIFO, 2=RR, 0=NORMAL
+        print(f&quot;  on_cpu={task.on_cpu.value_()}&quot;)
+        print(f&quot;  cpus_allowed={task.cpus_mask}&quot;)
+
+        # 查看线程的调用栈
+        if task.__state.value_() != 0:  # 不在运行
+            print(&quot;  Stack:&quot;)
+            for frame in prog.stack_trace(task):
+                print(f&quot;    {frame}&quot;)
+
+# 检查是否有线程在等待锁
+for task in prog.for_each_task():
+    if task.__state.value_() == 2:  # TASK_UNINTERRUPTIBLE
+        comm = task.comm.string_().decode().rstrip('\x00')
+        if 'trading' in comm:
+            print(f&quot;\nWARNING: {comm} (PID={task.pid.value_()}) in D state!&quot;)
+            print(&quot;  May be waiting for a lock or I/O&quot;)
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>LKD3 Ch18 讲的</th>
+<th>6.x 现代实现</th>
+<th>差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>printk 是第一调试手段</td>
+<td>ftrace/eBPF 是第一手段</td>
+<td>printk 退居二线</td>
+</tr>
+<tr>
+<td>kgdb 双机调试</td>
+<td>eBPF 在线调试</td>
+<td>不需要第二台机器</td>
+</tr>
+<tr>
+<td>Oops 栈手动解读</td>
+<td>crash + BTF 自动解析结构体</td>
+<td>不需要手动查 System.map</td>
+</tr>
+<tr>
+<td>无 BPF 概念</td>
+<td>eBPF 是核心观测工具</td>
+<td>LKD3 完全没提</td>
+</tr>
+<tr>
+<td>git bisect</td>
+<td>仍然有效</td>
+<td>不变</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>工具</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>内核 panic</strong></td>
+<td>crash + kdump</td>
+<td>分析 vmcore，bt 看崩溃栈</td>
+</tr>
+<tr>
+<td><strong>内存泄漏</strong></td>
+<td>crash kmem -s</td>
+<td>SLUB 缓存分配统计</td>
+</tr>
+<tr>
+<td><strong>批量分析</strong></td>
+<td>drgn</td>
+<td>Python 脚本遍历所有线程状态</td>
+</tr>
+<tr>
+<td><strong>锁等待死锁</strong></td>
+<td>drgn</td>
+<td>遍历 D 状态线程，检查等待链</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 生产原则：</strong> ① ftrace/eBPF 是生产环境安全的（零开销或极低开销）。② kgdb/gdb+kcore 尽量避免在生产环境使用（会暂停内核）。③ crash 只用于事后分析 vmcore。④ drgn 适合批量分析多个 vmcore。</p>
+</blockquote>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary>Q1: kdump 的工作原理是什么？为什么需要预留内存？</summary>
+<p>kdump 在系统崩溃时启动一个预预留的 crashkernel 内核（通过 crashkernel=128M 参数预留 128MB 内存）。崩溃后，crashkernel 内核启动，通过 /proc/vmcore 接口访问崩溃内核的物理内存，将 vmcore 写入磁盘。需要预留内存是因为崩溃内核不能使用崩溃内核可能已经损坏的内存分配器，必须有自己独立的内存空间。</p>
+</details>
+<details>
+<summary>Q2: drgn 相比 crash 的优势是什么？</summary>
+<p>drgn 是 Python 库，可以编程式分析 vmcore——写脚本批量处理、复杂条件过滤、跨多个 vmcore 对比分析。crash 是交互式命令行，适合快速查看但难以做复杂分析。例如：分析 100 个交易线程的状态，crash 要手动逐个 <code class="c">struct task_struct</code>，drgn 一行 <code class="c">for task in prog.for_each_task()</code> 就完成。drgn 还可以利用 Python 生态（pandas 数据分析、matplotlib 可视化）。</p>
+</details>
+<details>
+<summary>Q3: 交易系统内核 panic 后，crash 分析的标准流程是什么？</summary>
+<p>① <code class="c">crash vmlinux vmcore</code> 打开 vmcore。② <code class="c">bt</code> 看崩溃线程的调用栈，定位崩溃函数。③ <code class="c">ps</code> 查看进程列表，确认交易线程状态。④ <code class="c">runq</code> 查看运行队列，确认是否有 RT 线程在等待。⑤ <code class="c">kmem -s</code> 检查 SLUB 缓存，排除内存泄漏。⑥ <code class="c">struct task_struct &lt;addr&gt;</code> 查看崩溃线程的详细信息（优先级、CPU 绑定、信号等）。⑦ 如果涉及网络，<code class="c">net</code> 和 <code class="c">dev</code> 查看网络接口状态。⑧ 如果需要复杂分析，用 drgn 写 Python 脚本。</p>
+</details>
+<details>
+<summary>Q4: LKD3 说的 kgdb 在现代内核调试中还重要吗？</summary>
+<p>kgdb 仍然存在但不是主力了。现代内核调试以 ftrace/eBPF 动态追踪为主（不需要暂停内核、生产可用）。kgdb 主要用于：① 驱动开发阶段的源码级断点调试（实验室环境）。② 启动早期调试（eBPF/ftrace 还没初始化时）。③ 硬件相关问题（需要看寄存器状态）。日常内核调试和性能分析用 eBPF/ftrace 就够了。详见 05.6-kernel-debugging/chapter-11-kgdb。</p>
+</details>
+<hr />
+<h2>交叉引用</h2>
+<ul>
+<li><a href="#s-02">02-ftrace-modern.md</a> — ftrace 追踪框架</li>
+<li><a href="#s-03">03-ebpf-observability.md</a> — eBPF 可编程追踪</li>
+<li><a href="../../05.6-kernel-debugging/html/chapter-07.html#ch-7">05.6-kernel-debugging/chapter-07-oops</a> — Oops 分析</li>
+<li><a href="../../05.6-kernel-debugging/html/chapter-10.html#ch-10">05.6-kernel-debugging/chapter-10-panic-lockup</a> — Panic/kdump 详解</li>
+</ul>
       </section>
 
 

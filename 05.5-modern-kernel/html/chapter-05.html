@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-irq-domain</a>
+          <a href="#s-02"><span class="n">02</span>02-threaded-irq</a>
+          <a href="#s-03"><span class="n">03</span>03-interrupt-synchronization-bootlin</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +302,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT · 笔记</div>
+          <div class="eyebrow">scheduler / RCU / arm64 / PREEMPT_RT</div>
           <h1>Ch5 中断管理</h1>
           <div class="meta">
-<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.5-modern-kernel</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +315,546 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>线程化中断让交易线程可以抢占网卡中断处理，减少中断对交易线程的干扰。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>IRQ Domain 框架 — 中断号映射</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/460160/">IRQ domain framework</a> (LWN, 2011)
+<strong>内核版本:</strong> 3.x+ (引入), 6.x (广泛使用)
+<strong>对标旧书:</strong> ULK3 Ch4 (硬编码中断号)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>ULK3 时代中断号是全局硬编码的（如 IRQ 0 = timer, IRQ 4 = COM1）。现代内核用 IRQ Domain 框架实现<strong>硬件中断号 → Linux IRQ 号</strong>的动态映射，支持设备树和 ACPI 中断描述。</p>
+<h3>旧模型的问题</h3>
+<pre class="code" data-label="code"><code class="c">// ULK3 时代 — 全局 IRQ 号
+irq_desc[32]  // 全局数组，直接索引
+request_irq(4, com1_handler, ...)  // IRQ 4 = COM1
+</code></pre>
+<p>问题：
+- 多个中断控制器（GIC + GPIO 控制器 + PCIe MSI）的硬件中断号会重叠
+- 不支持设备树动态描述中断
+- 扩展性差</p>
+<h3>IRQ Domain 模型</h3>
+<pre class="code" data-label="C"><code class="c">// 每个中断控制器创建一个 irq_domain
+struct irq_domain {
+    struct irq_domain_ops *ops;  // 映射回调
+    int hwirq_max;               // 最大硬件中断号
+    // ... 映射表 (linear / radix tree / legacy)
+};
+
+// 设备树描述中断时，内核自动创建映射
+// hwirq (硬件中断号) → virq (Linux 虚拟 IRQ 号)
+unsigned int irq = irq_create_mapping(domain, hwirq);
+</code></pre>
+<h3>三种映射策略</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>说明</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Linear</strong></td>
+<td>直接数组 <code class="c">virq[hwirq]</code></td>
+<td>硬件中断号范围小且密集 (如 GIC)</td>
+</tr>
+<tr>
+<td><strong>Radix Tree</strong></td>
+<td>基数树映射</td>
+<td>硬件中断号范围大或稀疏 (如 MSI-X)</td>
+</tr>
+<tr>
+<td><strong>Legacy</strong></td>
+<td>固定映射兼容旧代码</td>
+<td>x86 传统 ISA 中断</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键 API</h3>
+<pre class="code" data-label="C"><code class="c">// 中断控制器驱动注册 irq_domain
+struct irq_domain *domain = irq_domain_add_linear(
+    node, 32, &amp;gic_irq_domain_ops, gic);
+
+// 设备驱动请求中断 (通过设备树)
+int irq = platform_get_irq(pdev, 0);  // 自动解析设备树
+request_irq(irq, my_handler, 0, &quot;my_dev&quot;, dev);
+
+// 中断发生时
+// 硬件中断 → GIC → hwirq → irq_domain 映射 → virq → handler
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>6.x 现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局 <code class="c">irq_desc[]</code> 数组</td>
+<td>per-domain 映射 + 全局 <code class="c">irq_desc[]</code></td>
+</tr>
+<tr>
+<td>硬编码 IRQ 号</td>
+<td>动态分配 virq</td>
+</tr>
+<tr>
+<td><code class="c">request_irq(4, ...)</code></td>
+<td><code class="c">platform_get_irq()</code> + <code class="c">request_irq()</code></td>
+</tr>
+<tr>
+<td>无设备树中断解析</td>
+<td>设备树 <code class="c">interrupts</code> 属性自动解析</td>
+</tr>
+<tr>
+<td>不支持 MSI-X 多向量</td>
+<td>irq_domain + radix tree 支持</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>IRQ Domain 影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>网卡中断绑核</strong></td>
+<td><code class="c">irq_set_affinity()</code> 需要 virq，IRQ Domain 提供映射</td>
+</tr>
+<tr>
+<td><strong>自定义 PCIe 设备</strong></td>
+<td>MSI-X 中断通过 irq_domain 分配 virq</td>
+</tr>
+<tr>
+<td><strong>设备树配置</strong></td>
+<td>树莓派 5 通过设备树描述中断，IRQ Domain 自动映射</td>
+</tr>
+<tr>
+<td><strong>减少中断延迟</strong></td>
+<td>理解 hwirq → virq 映射有助于排查中断延迟问题</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么不能直接用硬件中断号 (hwirq) 作为 Linux IRQ 号？</p>
+<blockquote>
+<p>多个中断控制器可能有相同的 hwirq。例如 GIC 的 hwirq 29 和 GPIO 控制器的 hwirq 29 是不同的中断。IRQ Domain 为每个控制器创建独立的映射空间，将 hwirq 映射到全局唯一的 virq。</p>
+</blockquote>
+<p><strong>Q2:</strong> Linear 映射和 Radix Tree 映射各适合什么场景？</p>
+<blockquote>
+<p>Linear 映射用数组直接索引，O(1) 查找，适合硬件中断号范围小且密集（如 GIC 的 0-31 或 0-1020）。Radix Tree 适合硬件中断号范围大或稀疏（如 MSI-X 可能有数千个向量但只用其中一部分），内存效率更高。</p>
+</blockquote>
+<p><strong>Q3:</strong> 设备树中的 <code class="c">interrupts = &lt;0 23 4&gt;</code> 是什么意思？内核如何处理？</p>
+<blockquote>
+<p>这是 GIC 的设备树中断描述：<code class="c">&lt;中断类型 中断号 触发类型&gt;</code>，即 SPI 中断 23，边沿触发。内核解析设备树时，通过 IRQ Domain 的 <code class="c">xlate</code> 回调将设备树描述翻译为 hwirq，然后 <code class="c">irq_create_mapping()</code> 分配 virq。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Threaded IRQ — 中断线程化</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/302043/">Threaded interrupt handlers</a> (LWN, 2008)
+<strong>作者:</strong> Thomas Gleixner
+<strong>内核版本:</strong> 2.6.30+ (引入), 6.x (PREEMPT_RT 依赖)
+<strong>对标旧书:</strong> ULK3 Ch4 (中断上下文处理)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>传统中断处理在<strong>硬中断上下文</strong> (hardirq) 中执行，不能睡眠、不能持锁过久。Threaded IRQ 将中断处理拆分为<strong>硬中断上半部</strong> (acknowledge + 唤醒) 和<strong>内核线程下半部</strong> (实际处理)，使中断处理可以睡眠和被抢占。</p>
+<h3>传统中断处理的问题</h3>
+<pre class="code" data-label="C"><code class="c">// 传统方式 — 硬中断上下文中处理
+irqreturn_t my_handler(int irq, void *dev) {
+    // 在硬中断上下文执行
+    // 不能睡眠！不能持互斥锁！不能做耗时操作！
+    process_data(dev);  // 如果耗时，会阻塞其他中断
+    return IRQ_HANDLED;
+}
+request_irq(irq, my_handler, 0, &quot;my_dev&quot;, dev);
+</code></pre>
+<p>问题：
+- 硬中断上下文不能睡眠，限制了处理逻辑
+- 耗时的中断处理会阻塞同核其他中断
+- 不支持 PREEMPT_RT（实时内核要求中断可抢占）</p>
+<h3>Threaded IRQ 模型</h3>
+<pre class="code" data-label="C"><code class="c">// 硿中断上半部 — 只做最少的 ack + 返回
+irqreturn_t my_hardirq(int irq, void *dev) {
+    if (!check_interrupt_status(dev))
+        return IRQ_NONE;
+    disable_irq_nosync(irq);  // 禁止中断
+    return IRQ_WAKE_THREAD;    // 唤醒线程
+}
+
+// 内核线程下半部 — 可以睡眠、可以持锁
+irqreturn_t my_thread_fn(int irq, void *dev) {
+    // 在内核线程中执行，可以睡眠！
+    process_data(dev);
+    enable_irq(irq);  // 重新使能中断
+    return IRQ_HANDLED;
+}
+
+request_threaded_irq(irq, my_hardirq, my_thread_fn,
+                     IRQF_ONESHOT, &quot;my_dev&quot;, dev);
+</code></pre>
+<h3>关键标志</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">IRQF_ONESHOT</code></td>
+<td>硬中断后保持中断禁用直到线程处理完成</td>
+</tr>
+<tr>
+<td><code class="c">IRQF_TRIGGER_*</code></td>
+<td>触发类型（边沿/电平）</td>
+</tr>
+<tr>
+<td>0 (无标志)</td>
+<td>默认行为</td>
+</tr>
+</tbody>
+</table></div>
+<h3>PREEMPT_RT 的依赖</h3>
+<p>PREEMPT_RT (实时内核) <strong>强制将所有中断线程化</strong>，因为：
+- 实时内核要求高优先级线程能抢占中断处理
+- 线程化的中断有调度优先级，可以被 RT 线程抢占
+- 线程名通常为 <code class="c">irq/XX-devname</code>，可通过 <code class="c">/proc/&lt;pid&gt;/</code> 查看和调整优先级</p>
+<pre class="code" data-label="code"><code class="c"># 查看中断线程
+$ ps -eo pid,comm,ni,pri | grep irq/
+  42 irq/29-brcmv7   0  20
+  43 irq/31-mmc1     0  20
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>6.x 现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断处理全在 hardirq</td>
+<td>拆分为 hardirq + thread</td>
+</tr>
+<tr>
+<td><code class="c">request_irq()</code></td>
+<td><code class="c">request_threaded_irq()</code></td>
+</tr>
+<tr>
+<td>tasklet / softirq 做下半部</td>
+<td>threaded IRQ 替代大部分 tasklet</td>
+</tr>
+<tr>
+<td>不支持 PREEMPT_RT</td>
+<td>PREEMPT_RT 强制线程化所有中断</td>
+</tr>
+<tr>
+<td>中断不能被抢占</td>
+<td>线程化中断可被 RT 线程抢占</td>
+</tr>
+</tbody>
+</table></div>
+<h3>tasklet 的废弃</h3>
+<p>6.x 内核逐步废弃 tasklet，推荐用 threaded IRQ 替代：</p>
+<pre class="code" data-label="C"><code class="c">// 旧方式 (废弃中)
+void my_tasklet_func(unsigned long data) { ... }
+DECLARE_TASKLET(my_tasklet, my_tasklet_func, 0);
+// 在 hardirq 中: tasklet_schedule(&amp;my_tasklet);
+
+// 新方式 (推荐)
+// 用 request_threaded_irq() 替代
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>Threaded IRQ 影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>网卡中断</strong></td>
+<td>线程化后网卡中断可被交易线程抢占，减少延迟</td>
+</tr>
+<tr>
+<td><strong>PREEMPT_RT</strong></td>
+<td>实时内核依赖 threaded IRQ，交易线程优先级 &gt; 中断线程</td>
+</tr>
+<tr>
+<td><strong>中断绑核</strong></td>
+<td>中断线程可设 CPU affinity，与交易线程隔离</td>
+</tr>
+<tr>
+<td><strong>IRQ 优先级</strong></td>
+<td><code class="c">chrt -f 80</code> 提高中断线程优先级，或降低让交易线程优先</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实盘：</strong> PREEMPT_RT 内核下，网卡中断线程设为 SCHED_FIFO 优先级 50，交易线程设为 SCHED_FIFO 优先级 80。这样<strong>交易线程可以抢占网卡中断处理</strong>，保证行情处理不受网卡中断干扰。</p>
+</blockquote>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> Threaded IRQ 的硬中断上半部为什么只做 <code class="c">return IRQ_WAKE_THREAD</code>？</p>
+<blockquote>
+<p>硬中断上下文不能睡眠、不能持互斥锁。上半部只做最小工作（检查中断源、ack 硬件），然后唤醒内核线程处理实际逻辑。这样上半部极短，不会阻塞其他中断，下半部可以睡眠和持锁。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">IRQF_ONESHOT</code> 标志的作用是什么？不加会怎样？</p>
+<blockquote>
+<p><code class="c">IRQF_ONESHOT</code> 保持中断在硬中断处理后禁用，直到线程处理完成。不加的话，如果中断是电平触发的，硬件会持续触发中断导致线程被反复唤醒。对于边沿触发中断可能不需要，但电平触发必须加。</p>
+</blockquote>
+<p><strong>Q3:</strong> PREEMPT_RT 为什么强制所有中断线程化？</p>
+<blockquote>
+<p>实时内核需要保证高优先级线程的延迟可预测。如果中断在 hardirq 上下文执行，即使最高优先级的 RT 线程也无法抢占它。线程化后中断有调度优先级（通常 SCHED_FIFO 50），RT 线程（SCHED_FIFO 80+）可以抢占它。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>Bootlin: 中断与并发同步</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training</a>
+<strong>主题:</strong> 中断处理 + 内核同步机制
+<strong>对标旧书:</strong> ULK3 Ch4+Ch5 / LKD3 Ch7+Ch9</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>中断处理层次 (6.x)</h3>
+<pre class="code" data-label="code"><code class="c">硬件中断 → GIC → IRQ Domain 映射 → hardirq handler
+                                        ↓
+                                   (返回 IRQ_WAKE_THREAD?)
+                                        ↓
+                              threaded IRQ handler (可睡眠)
+                    OR
+                    softirq / tasklet (6.x 废弃中) / workqueue
+</code></pre>
+<h3>6.x 中断处理变化</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>2.6 时代</th>
+<th>6.x 现代</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>下半部</td>
+<td>tasklet / softirq</td>
+<td>threaded IRQ (推荐) / workqueue</td>
+</tr>
+<tr>
+<td>tasklet</td>
+<td>广泛使用</td>
+<td>废弃中，用 threaded IRQ 替代</td>
+</tr>
+<tr>
+<td>softirq</td>
+<td>9 种</td>
+<td>10 种 (新增 RCU softirq)</td>
+</tr>
+<tr>
+<td>workqueue</td>
+<td>2 种类型</td>
+<td>统一为 WQ (workqueue) + pwq</td>
+</tr>
+</tbody>
+</table></div>
+<h3>同步机制选型 (6.x)</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>能否睡眠</th>
+<th>开销</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>spinlock</strong></td>
+<td>❌</td>
+<td>极低</td>
+<td>短临界区，中断上下文</td>
+</tr>
+<tr>
+<td><strong>qspinlock</strong></td>
+<td>❌</td>
+<td>极低（高争用更优）</td>
+<td>6.x 默认自旋锁</td>
+</tr>
+<tr>
+<td><strong>mutex</strong></td>
+<td>✅</td>
+<td>中</td>
+<td>长临界区，进程上下文</td>
+</tr>
+<tr>
+<td><strong>rwlock</strong></td>
+<td>❌</td>
+<td>低</td>
+<td>读多写少（但 RCU 更好）</td>
+</tr>
+<tr>
+<td><strong>rwsem</strong></td>
+<td>✅</td>
+<td>中</td>
+<td>读多写少，可睡眠</td>
+</tr>
+<tr>
+<td><strong>RCU</strong></td>
+<td>读端❌/写端✅</td>
+<td>读端零开销</td>
+<td>读多写少，指针替换</td>
+</tr>
+<tr>
+<td><strong>SRCU</strong></td>
+<td>✅</td>
+<td>读端低开销</td>
+<td>读多写少，需睡眠</td>
+</tr>
+<tr>
+<td><strong>seqlock</strong></td>
+<td>❌</td>
+<td>极低</td>
+<td>读多写少，写者罕见</td>
+</tr>
+<tr>
+<td><strong>percpu</strong></td>
+<td>N/A</td>
+<td>极低</td>
+<td>per-CPU 计数器/数据</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关键规则</h3>
+<ol>
+<li><strong>中断上下文</strong>：只能用 spinlock / RCU / percpu，不能用 mutex / rwsem</li>
+<li><strong>进程上下文 + 需要睡眠</strong>：用 mutex / rwsem</li>
+<li><strong>读多写少 + 指针替换</strong>：用 RCU（读端零开销）</li>
+<li><strong>per-CPU 数据</strong>：用 <code class="c">local_irq_disable()</code> + percpu 变量</li>
+</ol>
+<h3>PREEMPT_RT 的影响</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>普通内核</th>
+<th>PREEMPT_RT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>spinlock</td>
+<td>禁用抢占</td>
+<td>转为 rt_mutex（可睡眠）</td>
+</tr>
+<tr>
+<td>硬中断</td>
+<td>hardirq</td>
+<td>线程化为 RT 线程</td>
+</tr>
+<tr>
+<td>禁用抢占段</td>
+<td>不可抢占</td>
+<td>可被高优先级 RT 线程抢占</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 查看中断统计
+cat /proc/interrupts
+watch -n 1 cat /proc/interrupts   # 实时监控
+
+# 2. 查看中断绑核
+cat /proc/irq/&lt;irq&gt;/smp_affinity  # 十六进制 CPU mask
+echo 04 &gt; /proc/irq/29/smp_affinity  # 绑定到 CPU 2
+
+# 3. 查看 softirq 统计
+cat /proc/softirqs
+
+# 4. 查看中断线程 (threaded IRQ / PREEMPT_RT)
+ps -eo pid,comm,policy,rtprio | grep &quot;irq/&quot;
+
+# 5. 查看锁竞争 (lockdep)
+echo 1 &gt; /proc/sys/kernel/lock_stat  # 启用锁统计
+cat /proc/lock_stat                    # 查看锁竞争
+
+# 6. 查看抢占模型
+cat /sys/kernel/debug/sched/preempt
+# 或
+zcat /proc/config.gz | grep PREEMPT
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tasklet 是下半部主力</td>
+<td>tasklet 废弃中，用 threaded IRQ</td>
+</tr>
+<tr>
+<td>ticket spinlock</td>
+<td>qspinlock (MCS 队列)</td>
+</tr>
+<tr>
+<td>大内核锁 (BKL)</td>
+<td>已删除 (2.6.37)</td>
+</tr>
+<tr>
+<td>基础 RCU</td>
+<td>Tree RCU + SRCU + lazy RCU</td>
+</tr>
+<tr>
+<td>中断不能被抢占</td>
+<td>PREEMPT_RT 下中断可被 RT 线程抢占</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么在持有 spinlock 时不能睡眠？</p>
+<blockquote>
+<p>普通内核中 spinlock 禁用抢占。如果睡眠，调度器会切换到其他线程，但其他线程如果也尝试获取同一 spinlock 会自旋等待——由于持有者被调度走，锁永远无法释放，导致死锁。PREEMPT_RT 中 spinlock 转为 rt_mutex 可以睡眠，但行为不同。</p>
+</blockquote>
+<p><strong>Q2:</strong> 6.x 为什么废弃 tasklet？</p>
+<blockquote>
+<p>tasklet 在 softirq 上下文执行，不能睡眠，且有两个 tasklet 类型（HI 和 normal）增加复杂性。threaded IRQ 提供了更好的替代——在内核线程中执行，可以睡眠、可以持互斥锁、可以被高优先级线程抢占（PREEMPT_RT）。</p>
+</blockquote>
+<p><strong>Q3:</strong> RCU 读端为什么 "零开销"？</p>
+<blockquote>
+<p><code class="c">rcu_read_lock()</code> 只是禁用抢占（或禁用迁移），不获取任何锁。reader 通过 <code class="c">rcu_dereference()</code> 读取指针（编译器屏障），然后使用数据。没有原子操作、没有缓存行弹跳、没有锁争用。开销仅是禁用抢占的指令。</p>
+</blockquote>
+</details>
       </section>
 
 

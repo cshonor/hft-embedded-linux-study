@@ -276,6 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">01</span>01-page-reclaim-ben-shu</a>
+          <a href="#s-02"><span class="n">02</span>02-page-reclaim-bootlin</a>
+          <a href="#s-03"><span class="n">03</span>03-lru-basics</a>
+          <a href="#s-04"><span class="n">04</span>04-mglru-intro</a>
+          <a href="#s-05"><span class="n">05</span>05-mglru-merge</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">memblock / slub / maple tree / mglru / DAMON</div>
           <h1>Chapter 07: 页回收与 LRU/MGLRU</h1>
           <div class="meta">
-<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.5-modern-mm</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>6</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -320,6 +325,637 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><code class="c">06.5-modern-mm/chapter-06-page-cache-folio/</code>：folio 在 LRU 上的管理</li>
 <li><code class="c">06.5-modern-mm/chapter-08-oom-psi-zswap/</code>：PSI 监控回收压力</li>
 </ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">01</div><h2>页回收 (LRU → MGLRU)</h2></div>
+<blockquote>
+<p>笼叔《奔跑吧 Linux 内核》读书笔记
+对应旧书: ULK3 / LKD3 (Linux 2.6)
+对应现代内核: Linux 5.x / 6.x</p>
+</blockquote>
+<hr />
+<h2>本节要点</h2>
+<h3>页回收机制概览</h3>
+<p>当内存不足时，内核通过 LRU (Least Recently Used) 算法回收不活跃的页。回收的页包括：clean 页缓存（直接丢弃）、dirty 页缓存（写回磁盘后丢弃）、匿名页（写入 swap 后丢弃）。</p>
+<h3>传统 LRU（2.6 ~ 5.x）</h3>
+<pre class="code" data-label="code"><code class="c">每个 zone 有 5 个 LRU 链表:
+  inactive_anon   — 不活跃匿名页
+  active_anon     — 活跃匿名页
+  inactive_file   — 不活跃文件页 (页缓存)
+  active_file     — 活跃文件页
+  unevictable     — 不可回收页 (mlock 等)
+
+回收流程:
+  1. kswapd 内核线程被唤醒 (free &lt; watermark)
+  2. 从 inactive LRU 尾部扫描
+  3. 如果是 clean file page → 直接丢弃
+  4. 如果是 dirty file page → 写回后丢弃
+  5. 如果是 anon page → 写入 swap 后丢弃
+</code></pre>
+<h3>MGLRU (Multi-Gen LRU, 6.1+)</h3>
+<p>MGLRU 是 Google 开发的新 LRU 实现，合入 Linux 6.1：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>传统 LRU</th>
+<th>MGLRU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代数</td>
+<td>2 代 (active/inactive)</td>
+<td>N 代 (多代)</td>
+</tr>
+<tr>
+<td>精度</td>
+<td>粗粒度 (active↔inactive)</td>
+<td>细粒度 (按访问时间分多代)</td>
+</tr>
+<tr>
+<td>扫描效率</td>
+<td>全链表扫描</td>
+<td>按代批量扫描，更精准</td>
+</tr>
+<tr>
+<td>工作集保护</td>
+<td>一般</td>
+<td>更好 (老代不轻易被回收)</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>大内存机器回收慢</td>
+<td>显著改善 (减少 90% 页扫描)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>MGLRU 核心思想：</strong> 不是简单的 active/inactive 二分，而是维护多个"代"（generation），每代记录一批页。新页进入最年轻代，回收从最老代开始。页被访问时"晋升"到更年轻的代。</p>
+<pre class="code" data-label="shell"><code class="c"># 启用 MGLRU (6.1+)
+echo y &gt; /sys/kernel/mm/lru_gen/enabled
+
+# 查看代信息
+cat /sys/kernel/mm/lru_gen/debugfs  # 需要 CONFIG_LRU_GEN_DEBUG=y
+</code></pre>
+<h3>swap 与 zswap</h3>
+<pre class="code" data-label="shell"><code class="c"># zswap: 压缩的 swap 缓存 (内存中)
+# 启用 zswap
+echo 1 &gt; /sys/module/zswap/parameters/enabled
+echo zstd &gt; /sys/module/zswap/parameters/compressor  # 压缩算法
+echo 20 &gt; /sys/module/zswap/parameters/max_pool_percent  # 最多用 20% 内存
+
+# zram: 压缩的 RAM 块设备
+modprobe zram num_devices=1
+echo lz4 &gt; /sys/block/zram0/comp_algorithm
+echo 2G &gt; /sys/block/zram0/disksize
+mkswap /dev/zram0
+swapon /dev/zram0
+</code></pre>
+<h3>OOM Killer</h3>
+<pre class="code" data-label="C"><code class="c">// 内存耗尽时，OOM killer 选择进程杀死
+// 选择标准: oom_score (基于 RSS + nice + 运行时间)
+// /proc/&lt;pid&gt;/oom_score_adj 可调整 (-1000 到 1000)
+echo -1000 &gt; /proc/&lt;pid&gt;/oom_score_adj  // 永不被 OOM
+echo 1000 &gt; /proc/&lt;pid&gt;/oom_score_adj   // 优先被 OOM
+</code></pre>
+<hr />
+<h2>与旧书对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 (2.6)</th>
+<th>笨叔 (5.x/6.x)</th>
+<th>变化原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2 代 LRU (active/inactive)</td>
+<td>MGLRU 多代 LRU (6.1+)</td>
+<td>大内存机器回收效率</td>
+</tr>
+<tr>
+<td>per-zone LRU</td>
+<td>per-node LRU + memcg LRU</td>
+<td>NUMA 和 cgroup 支持</td>
+</tr>
+<tr>
+<td>无 zswap</td>
+<td>zswap (3.11+) / zram</td>
+<td>压缩比 swap 快</td>
+</tr>
+<tr>
+<td><code class="c">badness()</code> OOM 评分</td>
+<td><code class="c">oom_badness()</code> + oom_score_adj</td>
+<td>更灵活的 OOM 控制</td>
+</tr>
+<tr>
+<td>kswapd 单线程</td>
+<td>kswapd + 多线程回收</td>
+<td>大内存并行回收</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>关键数据结构 / 函数</h2>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/vmscan.c
+// MGLRU 核心结构
+struct lruvec {
+    struct lru_gen_struct lrugen;  // MGLRU 代信息
+    // ...
+};
+
+struct lru_gen_struct {
+    unsigned long max_seq;         // 最年轻代号
+    unsigned long min_seq[ANON_AND_FILE];  // 最老代号 (匿名/文件分开)
+    struct list_head folios[MAX_NR_GENS][ANON_AND_FILE][MAX_NR_ZONES];
+    // folios[代号][类型][zone] — 按代分组的 folio 链表
+};
+
+// 源码路径: mm/oom_kill.c
+int oom_badness(struct task_struct *p, unsigned long totalpages);
+</code></pre>
+<hr />
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>禁用 swap</strong>：HFT 系统 <code class="c">swapoff -a</code> 禁用 swap，任何页回收导致 swap I/O 都是毫秒级灾难</li>
+<li><strong>mlockall 防回收</strong>：锁定所有交易相关页在内存，不会被 kswapd 回收</li>
+<li><strong>MGLRU 对 HFT 影响</strong>：HFT 内存使用模式简单（大页池 + 少量堆），MGLRU 的多代精度对 HFT 帮助不大，但减少 kswapd 扫描开销有益</li>
+<li><strong>OOM 保护</strong>：HFT 交易进程设 <code class="c">oom_score_adj = -1000</code>，确保永不被 OOM killer 选中</li>
+<li><strong>zswap 不适用于 HFT</strong>：压缩/解压缩引入微秒级延迟，HFT 应直接禁用 swap + zswap</li>
+</ul>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1: MGLRU 相比传统 LRU 的核心改进是什么？为什么对大内存机器效果显著？</summary>
+<p>核心改进是将 2 代 (active/inactive) 扩展为 N 代，按页访问时间精细分级。传统 LRU 在大内存机器上问题：(1) inactive 链表很长，扫描耗时长；(2) active↔inactive 的二分精度不够，容易误回收工作集页。MGLRU 按代批量扫描，老代才回收，工作集保护更好。Google 测试 Chrome OS 上减少 90% 页扫描，CPU 占用降低 20%。</p>
+</details>
+<details>
+<summary>Q2: HFT 系统应该如何配置内存回收相关参数？</summary>
+<p>(1) <code class="c">swapoff -a</code> 禁用 swap；(2) <code class="c">mlockall(MCL_CURRENT|MCL_FUTURE)</code> 锁定所有页；(3) <code class="c">echo -1000 &gt; /proc/&lt;pid&gt;/oom_score_adj</code> 防 OOM；(4) 减少 <code class="c">vm.swappiness</code>（虽已禁 swap 但保持 <code class="c">echo 0 &gt; /proc/sys/vm/swappiness</code>）；(5) 预留大页池 <code class="c">echo 1024 &gt; /proc/sys/vm/nr_hugepages</code>；(6) 可关闭 transparent hugepage (<code class="c">echo never &gt; ...enabled</code>) 避免 khugepaged 抢占。</p>
+</details>
+<details>
+<summary>Q3: zswap 和 zram 的区别？为什么都不适合 HFT？</summary>
+<p>zswap 是内核内建的压缩 swap 缓存，在内存中压缩匿名页，需要时解压回内存，避免真正写入磁盘 swap。zram 是一个压缩的 RAM 块设备，需要配置为 swap 设备使用。两者都不适合 HFT：(1) 压缩/解压缩引入微秒级延迟（zstd 压缩 ~3μs/4KB）；(2) HFT 要求确定性延迟，压缩时间不稳定；(3) HFT 直接禁 swap + mlockall，不需要任何形式的 swap。</p>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>Bootlin: 页回收 (MGLRU / swap / zswap)</h2></div>
+<blockquote>
+<p><strong>来源:</strong> <a href="https://bootlin.com/docs/kernel/">Bootlin Kernel Training — Memory Management</a>
+<strong>主题:</strong> 页回收机制、MGLRU、swap、zswap
+<strong>对标旧书:</strong> ULK3 Ch17 / LKD3 Ch18</p>
+</blockquote>
+<hr />
+<h2>讲义要点</h2>
+<h3>回收路径</h3>
+<pre class="code" data-label="code"><code class="c">内存压力 (free &lt; watermark)
+  │
+  ├── kswapd (后台异步回收)
+  │     ├── 扫描 LRU (传统) 或 MGLRU (6.1+)
+  │     ├── clean file page → 丢弃
+  │     ├── dirty file page → writeback 后丢弃
+  │     └── anon page → swap (或 zswap 压缩)
+  │
+  └── direct reclaim (同步回收, 分配路径)
+        └── 同 kswapd 但同步执行, 阻塞调用者
+</code></pre>
+<h3>MGLRU (6.1+)</h3>
+<pre class="code" data-label="shell"><code class="c"># 启用 MGLRU
+echo y &gt; /sys/kernel/mm/lru_gen/enabled
+
+# MGLRU 将页按访问时间分为多代
+# 最老代的页优先回收
+# 减少 90% 页扫描量
+</code></pre>
+<h3>swap</h3>
+<pre class="code" data-label="shell"><code class="c"># 配置 swap
+swapon /dev/sda2          # swap 分区
+swapon /swapfile          # swap 文件
+
+# 查看 swap 状态
+cat /proc/swaps
+cat /proc/meminfo | grep Swap
+
+# swappiness (0-200, 默认 60)
+# 0 = 尽量不用 swap, 200 = 积极使用 swap
+cat /proc/sys/vm/swappiness
+
+# HFT: 禁用 swap
+swapoff -a
+echo 0 &gt; /proc/sys/vm/swappiness
+</code></pre>
+<h3>zswap</h3>
+<pre class="code" data-label="shell"><code class="c"># 启用 zswap
+echo 1 &gt; /sys/module/zswap/parameters/enabled
+echo zstd &gt; /sys/module/zswap/parameters/compressor
+echo 20 &gt; /sys/module/zswap/parameters/max_pool_percent
+</code></pre>
+<h3>OOM Killer</h3>
+<pre class="code" data-label="shell"><code class="c"># 调整 OOM 优先级
+echo -1000 &gt; /proc/&lt;pid&gt;/oom_score_adj  # 永不被 OOM
+echo 1000 &gt; /proc/&lt;pid&gt;/oom_score_adj   # 优先被 OOM
+
+# 查看当前 OOM 分数
+cat /proc/&lt;pid&gt;/oom_score
+
+# 禁用 OOM killer (危险!)
+echo 1 &gt; /proc/sys/vm/panic_on_oom
+</code></pre>
+<hr />
+<h2>动手实验</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 观察 kswapd 活动
+cat /proc/vmstat | grep -E &quot;kswapd|pgscan|pgsteal&quot;
+
+# 2. 触发回收 (慎用)
+echo 3 &gt; /proc/sys/vm/drop_caches
+
+# 3. 内存压力测试
+stress-ng --vm 4 --vm-bytes 1G --timeout 60s
+
+# 4. 观察 OOM
+dmesg | grep -i &quot;oom\|killed&quot;
+
+# 5. 查看 MGLRU 状态
+cat /sys/kernel/mm/lru_gen/debugfs
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3</th>
+<th>Bootlin 讲义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2 代 LRU</td>
+<td>MGLRU 多代 (6.1+)</td>
+</tr>
+<tr>
+<td>无 zswap</td>
+<td>zswap (3.11+)</td>
+</tr>
+<tr>
+<td><code class="c">badness()</code> OOM</td>
+<td><code class="c">oom_badness()</code> + oom_score_adj</td>
+</tr>
+<tr>
+<td>per-zone LRU</td>
+<td>per-node + per-memcg LRU</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> kswapd 和 direct reclaim 哪个对延迟敏感应用影响更大？如何避免 direct reclaim？</p>
+<blockquote>
+<p>direct reclaim 影响更大——它在分配路径同步执行，阻塞调用者微秒到毫秒级。kswapd 是后台线程，不影响分配延迟（除非 kswapd 来不及导致 direct reclaim 兜底）。避免 direct reclaim：(1) 确保空闲内存始终高于 watermark（预留足够内存）；(2) <code class="c">mlockall</code> 锁定关键页；(3) 禁用 swap 减少 anon 页回收；(4) 调高 <code class="c">vm.min_free_kbytes</code> 增加安全余量。</p>
+</blockquote>
+<p><strong>Q2:</strong> HFT 系统为什么应该 <code class="c">swapoff -a</code>？</p>
+<blockquote>
+<p>(1) swap I/O 延迟毫秒级，对 HFT 不可接受；(2) swap 活动导致 kswapd 唤醒，消耗 CPU；(3) 即使不 swap，swappiness&gt;0 时内核仍会尝试 swap，影响调度。HFT 应：<code class="c">swapoff -a</code> + <code class="c">echo 0 &gt; /proc/sys/vm/swappiness</code> + <code class="c">mlockall</code>。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>LRU 页回收基础</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/845171/">LRU and reclaim</a> (LWN, 2021)
+<strong>对标旧书:</strong> ULK3 Ch17 / LKD3 Ch18 (页帧回收)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>本文回顾传统 LRU 页回收机制，作为理解 MGLRU 的基础。</p>
+<h3>LRU 双链表设计</h3>
+<pre class="code" data-label="code"><code class="c">每个 zone 维护 5 个 LRU 链表:
+  LRU_INACTIVE_ANON — 不活跃匿名页 (可 swap)
+  LRU_ACTIVE_ANON   — 活跃匿名页
+  LRU_INACTIVE_FILE — 不活跃文件页 (可丢弃)
+  LRU_ACTIVE_FILE   — 活跃文件页
+  LRU_UNEVICTABLE   — 不可回收 (mlock)
+
+页在链表间的迁移:
+  新分配 → INACTIVE
+  第二次访问 → ACTIVE (晋升)
+  长期未访问 → INACTIVE (降级)
+  回收从 INACTIVE 尾部开始
+</code></pre>
+<h3>kswapd 回收流程</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/vmscan.c
+// kswapd 线程: 空闲页低于 watermark 时唤醒
+
+// 1. 计算需要回收的页数
+nr_to_reclaim = SWAP_CLUSTER_MAX (32 页);
+
+// 2. 扫描 inactive 链表尾部
+while (nr_reclaimed &lt; nr_to_reclaim) {
+    page = lru_to_unevictable(lruvec);  // 从尾部取
+    if (page_is_file(page) &amp;&amp; !page_dirty(page))
+        __free_page(page);           // clean file page: 直接丢弃
+    else if (page_is_file(page) &amp;&amp; page_dirty(page))
+        writepage(page);             // dirty file page: 写回后丢弃
+    else  // anon page
+        swap_page(page);             // 写入 swap 后丢弃
+}
+</code></pre>
+<h3>active/inactive 平衡</h3>
+<pre class="code" data-label="C"><code class="c">// 源码路径: mm/vmscan.c
+// 通过 active/inactive 比率控制
+// 当 inactive 过少时，从 active 降级一些页到 inactive
+
+// /proc/sys/vm/active_ratio 相关参数
+// 默认: inactive 占 anon 总量的 1/3, file 总量的 2/5
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 / LKD3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>per-zone LRU</td>
+<td>per-node LRU + per-memcg LRU (5.x+)</td>
+</tr>
+<tr>
+<td><code class="c">mmap_sem</code></td>
+<td><code class="c">mmap_lock</code></td>
+</tr>
+<tr>
+<td>手动 LRU 操作</td>
+<td>LRU 自动管理 + MGLRU (6.1+)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>HFT 应禁用 swap + mlockall，使 kswapd 不接触交易相关页。但仍需注意：kswapd 扫描本身会持有锁，可能间接影响延迟。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么文件页和匿名页用不同的 LRU 链表？</p>
+<blockquote>
+<p>回收代价不同：clean file page 可以直接丢弃（零成本），dirty file page 需要写回磁盘（I/O），anon page 需要 swap（I/O + 压缩）。分开管理让回收算法优先回收低成本页（clean file），保护高成本页（anon）。</p>
+</blockquote>
+<p><strong>Q2:</strong> kswapd 和 direct reclaim 的区别是什么？哪个对 HFT 影响更大？</p>
+<blockquote>
+<p>kswapd 是后台线程，在空闲页低于 watermark 时异步回收。direct reclaim 是分配路径上同步回收（当 kswapd 来不及或被禁用时）。direct reclaim 对 HFT 影响更大——它在 <code class="c">alloc_pages()</code> 调用中同步执行，导致微秒到毫秒级停顿。HFT 应通过预留足够内存 + mlockall 避免 direct reclaim。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>MGLRU 简介</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/856831/">MGLRU: Multi-Gen LRU</a> (LWN, 2022)
+<strong>作者:</strong> Yu Zhao (Google)
+<strong>内核版本:</strong> 6.1+ (合入主线)
+<strong>对标旧书:</strong> ULK3 Ch17 (传统 LRU 已过时)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>MGLRU (Multi-Generational LRU) 是 Google 开发的新 LRU 实现，通过多代分级提高页回收精度和效率。</p>
+<h3>传统 LRU 的不足</h3>
+<pre class="code" data-label="code"><code class="c">传统 LRU (2 代):
+  Active ←→ Inactive
+
+问题:
+  1. 只有 2 代，精度粗
+  2. inactive 链表很长，扫描慢
+  3. 工作集在 active↔inactive 反复迁移 (thrashing)
+  4. 大内存机器回收扫描耗时长
+</code></pre>
+<h3>MGLRU 设计</h3>
+<pre class="code" data-label="code"><code class="c">MGLRU (N 代):
+  最年轻代 (newest) → ... → 最老代 (oldest)
+
+  新页 → 进入最年轻代
+  页被访问 → 晋升到更年轻的代
+  回收 → 从最老代开始
+
+  代分为两类:
+    Gen 0, 2, 4, ... (youngest set): 活跃代
+    Gen 1, 3, 5, ... (oldest set):   不活跃代
+
+  晋升: oldest set → youngest set (批量)
+  回收: oldest set 尾部页
+</code></pre>
+<h3>关键优势</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>传统 LRU</th>
+<th>MGLRU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代数</td>
+<td>2</td>
+<td>N (默认 max 4-8)</td>
+</tr>
+<tr>
+<td>页扫描量</td>
+<td>全 inactive 链表</td>
+<td>仅最老代 (批量小)</td>
+</tr>
+<tr>
+<td>工作集保护</td>
+<td>一般</td>
+<td>老代不被轻易回收</td>
+</tr>
+<tr>
+<td>cold memory 检测</td>
+<td>粗</td>
+<td>精细 (按代时间戳)</td>
+</tr>
+<tr>
+<td>CPU 占用</td>
+<td>高 (大内存)</td>
+<td>低 (减少 90% 扫描)</td>
+</tr>
+</tbody>
+</table></div>
+<h3>使用方法</h3>
+<pre class="code" data-label="shell"><code class="c"># 启用 MGLRU (6.1+)
+echo y &gt; /sys/kernel/mm/lru_gen/enabled
+# 或
+echo y &gt; /sys/kernel/mm/lru_gen/enabled &amp;&amp; echo y &gt; /sys/kernel/mm/lru_gen/min_ttl_ms
+
+# 查看 MGLRU 状态
+cat /sys/kernel/mm/lru_gen/debugfs  # 需要 CONFIG_LRU_GEN_DEBUG
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>MGLRU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>active/inactive 二分</td>
+<td>多代分级</td>
+</tr>
+<tr>
+<td>全链表扫描</td>
+<td>按代批量扫描</td>
+</tr>
+<tr>
+<td><code class="c">shrink_active_list()</code></td>
+<td><code class="c">lru_gen_look_around()</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>MGLRU 对 HFT 直接影响小（HFT 禁 swap + mlockall），但减少 kswapd CPU 占用有益于整体系统稳定性。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> MGLRU 如何减少 90% 的页扫描？</p>
+<blockquote>
+<p>传统 LRU 回收时从整个 inactive 链表尾部扫描，大量页需要检查 referenced 标志。MGLRU 只扫描最老代的页，而最老代只包含最久未访问的页（数量远少于全 inactive）。加上按代批量处理，单次回收扫描的页数减少 90%。</p>
+</blockquote>
+<p><strong>Q2:</strong> MGLRU 的 "generation" 和传统 LRU 的 "active/inactive" 有什么本质区别？</p>
+<blockquote>
+<p>active/inactive 是二元分类，只有"活跃"和"不活跃"两个状态。generation 是时间序列分级，页按最后访问时间分到不同代。代数越多，分级越精细。例如 4 代可以区分"1秒前访问"、"10秒前访问"、"1分钟前访问"、"10分钟前访问"，而传统 LRU 只能区分"活跃"和"不活跃"。</p>
+</blockquote>
+</details>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>MGLRU 合入 6.1</h2></div>
+<blockquote>
+<p><strong>原文:</strong> <a href="https://lwn.net/Articles/913685/">MGLRU merged for 6.1</a> (LWN, 2022)
+<strong>内核版本:</strong> 6.1 (合入主线)
+<strong>对标旧书:</strong> ULK3 Ch17 (传统 LRU 已过时)</p>
+</blockquote>
+<hr />
+<h2>核心观点</h2>
+<p>MGLRU 经过 3 年开发和测试，最终在 Linux 6.1 合入主线。Google 在 Chrome OS 和 Android 上验证了显著性能提升。</p>
+<h3>合入数据</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>传统 LRU</th>
+<th>MGLRU</th>
+<th>改善</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chrome OS 内存压力</td>
+<td>基准</td>
+<td>减少 90% 页扫描</td>
+<td>CPU 占用 -20%</td>
+</tr>
+<tr>
+<td>Android 冷启动</td>
+<td>基准</td>
+<td>-15% 启动时间</td>
+<td>更少 I/O</td>
+</tr>
+<tr>
+<td>服务器 (大内存)</td>
+<td>基准</td>
+<td>kswapd CPU -40%</td>
+<td>尾延迟改善</td>
+</tr>
+<tr>
+<td>数据库 (PostgreSQL)</td>
+<td>基准</td>
+<td>+5% TPS</td>
+<td>缓存命中率更高</td>
+</tr>
+</tbody>
+</table></div>
+<h3>合入过程</h3>
+<pre class="code" data-label="code"><code class="c">2019: Yu Zhao 开始开发 MGLRU
+2021: 首次提交 LKML
+2022.3: 合入 linux-next 测试
+2022.10: Linus 接受合入 6.1
+</code></pre>
+<h3>争议与解决</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>争议</th>
+<th>解决</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代码复杂度高 (~3000 行)</td>
+<td>通过编译选项 CONFIG_LRU_GEN 控制，不启用零影响</td>
+</tr>
+<tr>
+<td>与 cgroup v2 内存回收交互</td>
+<td>扩展 memcg LRU 支持 MGLRU</td>
+</tr>
+<tr>
+<td>调试困难</td>
+<td>添加 debugfs 接口</td>
+</tr>
+<tr>
+<td>部分 maintainer 反对</td>
+<td>Google 生产数据说服</td>
+</tr>
+</tbody>
+</table></div>
+<h3>配置</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核配置
+CONFIG_LRU_GEN=y        # 启用 MGLRU
+CONFIG_LRU_GEN_ENABLED=y  # 默认启用 (运行时可关)
+CONFIG_LRU_GEN_STATS=y    # 统计信息
+
+# 运行时控制
+echo y &gt; /sys/kernel/mm/lru_gen/enabled    # 启用
+echo n &gt; /sys/kernel/mm/lru_gen/enabled    # 禁用 (回退到传统 LRU)
+</code></pre>
+<hr />
+<h2>与旧书差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ULK3 讲的</th>
+<th>现代实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>传统 2 代 LRU</td>
+<td>MGLRU 多代 LRU (6.1+)</td>
+</tr>
+<tr>
+<td><code class="c">shrink_lruvec()</code></td>
+<td><code class="c">lru_gen_look_around()</code></td>
+</tr>
+<tr>
+<td>无运行时开关</td>
+<td><code class="c">lru_gen/enabled</code> 可运行时切换</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT 关联</h2>
+<p>MGLRU 减少 kswapd CPU 占用 40%，间接为交易线程留出更多 CPU 时间。HFT 系统建议启用 MGLRU（虽然 mlockall 后实际回收少，但 kswapd 扫描开销降低有益）。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> MGLRU 合入后，传统 LRU 代码是否被删除？</p>
+<blockquote>
+<p>没有。MGLRU 和传统 LRU 共存，通过 CONFIG_LRU_GEN 编译选项选择。不启用 MGLRU 时，内核使用传统 LRU 代码。运行时也可以通过 <code class="c">/sys/kernel/mm/lru_gen/enabled</code> 禁用 MGLRU 回退到传统 LRU。</p>
+</blockquote>
+</details>
       </section>
 
 

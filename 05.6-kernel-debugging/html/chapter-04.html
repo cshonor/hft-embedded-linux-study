@@ -276,6 +276,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">4.1</span>Kprobes 原理与架构</a>
+          <a href="#s-02"><span class="n">4.2</span>kprobe：函数入口探针</a>
+          <a href="#s-03"><span class="n">4.3</span>kretprobe：函数返回探针</a>
+          <a href="#s-04"><span class="n">4.4</span>动态注册 Kprobes (通过 /sys)</a>
+          <a href="#s-05"><span class="n">4.5</span>perf probe 与 Kprobes 的关系</a>
+          <a href="#s-06"><span class="n">4.6</span>Kprobes 与 eBPF 的关系</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -299,10 +305,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="hero-grid"></div>
       <div class="content" style="grid-template-columns:1fr">
         <div>
-          <div class="eyebrow">printk / kprobes / ftrace / kgdb · 笔记</div>
+          <div class="eyebrow">printk / kprobes / ftrace / kgdb</div>
           <h1>Ch4 Debug via Instrumentation - Kprobes</h1>
           <div class="meta">
-<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>05.6-kernel-debugging</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>7</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -312,6 +318,1257 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
 <p>精读。Kprobes 是 HFT 延迟溯源的核心工具之一，可在生产环境动态插入探针测量内核函数耗时。同时也是 eBPF tracing 的底层机制。</p>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">4.1</div><h2>Kprobes 原理与架构</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>Kprobes 允许在<strong>任意内核函数的任意指令地址</strong>动态插入探针，捕获寄存器和参数，无需重编译内核。</p>
+<h2>三种探针类型</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>插入点</th>
+<th>能力</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>kprobe</strong></td>
+<td>函数入口</td>
+<td>捕获入口寄存器/参数</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>kretprobe</strong></td>
+<td>函数返回</td>
+<td>捕获返回值</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>jprobe</strong></td>
+<td>函数入口</td>
+<td>直接获取函数参数</td>
+<td>❌ 6.x 移除</td>
+</tr>
+</tbody>
+</table></div>
+<h2>工作原理</h2>
+<pre class="code" data-label="code"><code class="c">原始指令:    [函数入口指令]
+               ↓
+kprobe 注册后:
+  → 保存原始指令
+  → 将入口指令替换为断点指令 (BRK on ARM64 / INT3 on x86)
+  → 执行到断点 → 触发异常 → kprobe 异常处理器
+  → 调用 pre_handler(寄存器上下文)
+  → 单步执行原始指令 (out-of-line execution)
+  → 调用 post_handler(寄存器上下文)
+  → 恢复执行
+</code></pre>
+<h3>断点指令架构差异</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>断点指令</th>
+<th>异常类型</th>
+<th>额外操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86_64</td>
+<td>INT3 (0xCC)</td>
+<td>#BP</td>
+<td>无</td>
+</tr>
+<tr>
+<td>ARM64</td>
+<td>BRK #0x4</td>
+<td>Synchronous Abort</td>
+<td>flush icache</td>
+</tr>
+<tr>
+<td>ARM32</td>
+<td>BKPT #0</td>
+<td>Prefetch Abort</td>
+<td>flush icache</td>
+</tr>
+<tr>
+<td>RISC-V</td>
+<td>ebreak</td>
+<td>Exception</td>
+<td>flush icache</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Out-of-Line Execution</h3>
+<pre class="code" data-label="code"><code class="c">kprobe 不在原地址执行原始指令（因为已被替换为断点）
+而是将原始指令拷贝到单独的缓冲区执行:
+
+原地址:        [BRK 指令]  ← 触发异常
+                      ↓
+kprobe 缓冲区: [原始指令]  ← 单步执行
+                [返回指令]  ← 跳回原地址+4
+</code></pre>
+<h2>关键数据结构</h2>
+<pre class="code" data-label="C"><code class="c">struct kprobe {
+    kprobe_opcode_t *addr;         // 探针地址（运行时解析）
+    const char *symbol_name;       // 函数名（可选，自动解析为 addr）
+    unsigned int offset;           // 函数内偏移
+    kprobe_pre_handler_t pre_handler;   // 入口回调
+    kprobe_post_handler_t post_handler;  // 单步后回调
+    // ...
+};
+
+struct kretprobe {
+    struct kprobe kp;              // 内部 kprobe
+    kretprobe_handler_t handler;   // 返回回调
+    int maxactive;                 // 最大并发实例数
+    // ...
+};
+</code></pre>
+<h2>kprobe 黑名单</h2>
+<pre class="code" data-label="shell"><code class="c"># 某些函数不允许设置 kprobe（会导致递归或崩溃）
+cat /sys/kernel/debug/kprobes/blacklist | head -20
+# 输出示例:
+# 0xffffffff80001000  0xffffffff80001100  kprobe_handler
+# 0xffffffff80001200  0xffffffff80001300  entry_SYSCALL_64
+
+# 标记 __kprobes 的函数会自动加入黑名单
+# 标记 NOKPROBE_SYMBOL() 的函数也会加入
+</code></pre>
+<pre class="code" data-label="C"><code class="c">// 在代码中标记函数为 kprobe 禁区
+NOKPROBE_SYMBOL(my_critical_function);
+
+// 或使用 __kprobes 修饰符
+static int __kprobes my_kprobe_handler(struct kprobe *p, struct pt_regs *regs)
+{
+    // 这个函数本身不能被 kprobe
+    return 0;
+}
+</code></pre>
+<h2>kprobe 开销分析</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>开销</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>断点异常</td>
+<td>~200-500ns</td>
+<td>CPU 触发异常 + 上下文保存</td>
+</tr>
+<tr>
+<td>pre_handler 执行</td>
+<td>取决于代码</td>
+<td>通常 &lt;1μs</td>
+</tr>
+<tr>
+<td>单步执行原始指令</td>
+<td>~100ns</td>
+<td>out-of-line execution</td>
+</tr>
+<tr>
+<td>post_handler 执行</td>
+<td>取决于代码</td>
+<td>通常 &lt;1μs</td>
+</tr>
+<tr>
+<td>恢复执行</td>
+<td>~100ns</td>
+<td>上下文恢复</td>
+</tr>
+<tr>
+<td><strong>总计（空回调）</strong></td>
+<td>~1-5μs</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<p>Kprobes 是 HFT 延迟溯源的核心——在生产环境动态测量内核函数耗时，无需重编译、无需重启。</p>
+<pre class="code" data-label="shell"><code class="c"># HFT 典型用法：测量 schedule() 耗时分布
+echo 'p:my_in schedule' &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 'r:my_out schedule $retval' &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals' &gt; \
+    /sys/kernel/tracing/events/kprobes/my_out/trigger
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> kprobe 是如何在不修改源码的情况下插入探针的？</p>
+<blockquote>
+<p>kprobe 在注册时将目标地址的原始指令保存，替换为架构特定的断点指令（ARM64: BRK，x86: INT3）。CPU 执行到该地址时触发异常，kprobe 的异常处理器保存寄存器上下文并调用 pre_handler。然后单步执行原始指令（out-of-line），调用 post_handler，最后恢复执行。</p>
+</blockquote>
+<p><strong>Q2:</strong> jprobe 为什么在 6.x 中被移除？</p>
+<blockquote>
+<p>jprobe 通过修改寄存器来"伪装"成被探测函数，实现复杂且容易出错，在 ARM64 等架构上难以正确实现。6.x 移除 jprobe，推荐用 kprobe + 手动提取参数替代，或直接用 eBPF/bpftrace。</p>
+</blockquote>
+<p><strong>Q3:</strong> kprobes 在 ARM64 上如何实现断点？</p>
+<blockquote>
+<p>ARM64 使用 BRK 指令（breakpoint）替代 x86 的 INT3。kprobe 在目标地址替换为 BRK #0x4，触发异常进入 kprobe handler。原始指令保存在单独页面（out-of-line execution）。ARM64 还需要 flush icache（指令缓存一致性）。</p>
+</blockquote>
+<p><strong>Q4:</strong> kprobes 为什么不能在某些函数上设置探针？</p>
+<blockquote>
+<p>内核标记 <code class="c">__kprobes</code> 的函数本身是 kprobe 基础设施，在其上设探针会递归。另外 NMI/硬中断上下文中的某些路径（如 entry code）不允许 kprobe，因为 kprobe 处理需要进程上下文。用 <code class="c">/sys/kernel/debug/kprobes/blacklist</code> 查看禁止列表。</p>
+</blockquote>
+<p><strong>Q5:</strong> kprobe 的 out-of-line execution 是什么？为什么需要？</p>
+<blockquote>
+<p>kprobe 将原始指令拷贝到单独缓冲区执行，而不是在原地址执行。因为原地址的指令已被替换为断点指令，直接在原地址单步会再次触发断点。out-of-line execution 将原始指令拷贝到安全缓冲区，执行后跳回原地址的下一条指令。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch04 kprobe 入口探针</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch04 kretprobe</a></li>
+<li><a href="chapter-12.html#s-01">05.6 ch09 ftrace</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">4.2</div><h2>kprobe：函数入口探针</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>kprobe 在函数入口插入探针，捕获入口寄存器和参数。支持编程式（内核模块）和动态式（kprobe_events）两种使用方式。</p>
+<h2>编程式 kprobe（内核模块）</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/kprobes.h&gt;
+
+static int my_pre_handler(struct kprobe *p, struct pt_regs *regs) {
+    // ARM64: regs-&gt;regs[0]-[7] = x0-x7 (函数参数)
+    // x8 = 返回值地址 (indirect result location)
+    pr_info(&quot;schedule() called, prev=%px\n&quot;, (void *)regs-&gt;regs[0]);
+    return 0;
+}
+
+static struct kprobe kp = {
+    .symbol_name = &quot;schedule&quot;,
+    .pre_handler = my_pre_handler,
+};
+
+static int __init my_init(void) {
+    int ret = register_kprobe(&amp;kp);
+    if (ret &lt; 0) {
+        pr_err(&quot;register_kprobe failed: %d\n&quot;, ret);
+        return ret;
+    }
+    pr_info(&quot;kprobe registered at %px\n&quot;, kp.addr);
+    return 0;
+}
+
+static void __exit my_exit(void) {
+    unregister_kprobe(&amp;kp);
+}
+module_init(my_init);
+module_exit(my_exit);
+MODULE_LICENSE(&quot;GPL&quot;);
+</code></pre>
+<h2>通过 /sys 动态注册 (kprobe_events)</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 添加 kprobe
+echo 'p:my_probe schedule' &gt; /sys/kernel/tracing/kprobe_events
+# 格式: p:&lt;name&gt; &lt;symbol&gt; [offset] [args]
+# p = kprobe, r = kretprobe
+
+# 2. 捕获参数
+echo 'p:my_probe do_sys_openat2 dfd=%arg1 filename=+0(%arg2):string flags=%arg3' \
+    &gt; /sys/kernel/tracing/kprobe_events
+
+# 3. 启用
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_probe/enable
+
+# 4. 查看输出
+cat /sys/kernel/tracing/trace_pipe
+# ... my_probe: (... dfd=0xffffffff filename=&quot;/etc/hosts&quot; flags=0x0)
+
+# 5. 清除
+echo &gt; /sys/kernel/tracing/kprobe_events
+</code></pre>
+<h2>ARM64 寄存器映射</h2>
+<pre class="code" data-label="C"><code class="c">// ARM64 函数参数在 pt_regs 中:
+// regs-&gt;regs[0]  = x0 (arg1)
+// regs-&gt;regs[1]  = x1 (arg2)
+// ...
+// regs-&gt;regs[7]  = x7 (arg8)
+// regs-&gt;sp       = 栈指针
+// regs-&gt;pc       = 程序计数器
+// regs-&gt;pstate   = 状态寄存器
+
+// x86_64 函数参数在 pt_regs 中:
+// regs-&gt;di = rdi (arg1)
+// regs-&gt;si = rsi (arg2)
+// regs-&gt;dx = rdx (arg3)
+// regs-&gt;cx = rcx (arg4)
+// regs-&gt;r8 = r8  (arg5)
+</code></pre>
+<h2>kprobe_events 参数格式详解</h2>
+<pre class="code" data-label="shell"><code class="c"># 参数格式语法:
+# &lt;argname&gt;=&lt;type&gt;             — 简单寄存器
+# &lt;argname&gt;=+offset(%reg)      — 内存引用
+# &lt;argname&gt;=+offset(%reg):type — 带类型的内存引用
+# $retval                      — 返回值 (仅 kretprobe)
+# $stack, $stackN              — 栈值
+# $comm                        — 当前进程名
+# $arg1, $arg2, ...            — 函数参数（自动解析）
+
+# 类型支持:
+# :u8  :u16 :u32 :u64  — 无符号整数
+# :s8  :s16 :s32 :s64  — 有符号整数
+# :x8  :x16 :x32 :x64  — 十六进制
+# :string               — 字符串
+# :char[NN]             — 字符数组
+</code></pre>
+<h3>实用示例</h3>
+<pre class="code" data-label="shell"><code class="c"># 追踪 kmalloc 的分配大小
+echo 'p:my_alloc __kmalloc size=$arg1' &gt; /sys/kernel/tracing/kprobe_events
+echo 'size &gt; 65536' &gt; /sys/kernel/tracing/events/kprobes/my_alloc/filter
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_alloc/enable
+# 只追踪 &gt; 64KB 的分配
+
+# 追踪特定进程
+echo 'p:my_sched schedule' &gt; /sys/kernel/tracing/kprobe_events
+echo 'common_pid == 1234' &gt; /sys/kernel/tracing/events/kprobes/my_sched/filter
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_sched/enable
+
+# 追踪函数调用栈
+echo 'p:my_probe schedule' &gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/options/stacktrace
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_probe/enable
+</code></pre>
+<h2>pre_handler vs post_handler</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>回调</th>
+<th>执行时机</th>
+<th>可获取信息</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pre_handler</td>
+<td>原始指令执行<strong>前</strong></td>
+<td>入口寄存器（参数）</td>
+<td>记录入参、开始计时</td>
+</tr>
+<tr>
+<td>post_handler</td>
+<td>原始指令执行<strong>后</strong></td>
+<td>执行后的寄存器</td>
+<td>记录中间状态</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">// 注意：post_handler 拿不到返回值（函数还没返回）
+// 要拿返回值必须用 kretprobe
+
+static int pre(struct kprobe *p, struct pt_regs *regs) {
+    // 函数入口：可以拿到参数
+    pr_info(&quot;entry: arg0=%lx\n&quot;, regs-&gt;regs[0]);
+    return 0;
+}
+
+static void post(struct kprobe *p, struct pt_regs *regs, unsigned long flags) {
+    // 原始指令执行后，函数还没返回
+    // 这里 regs 可能被函数修改了
+    pr_info(&quot;post: x0=%lx\n&quot;, regs-&gt;regs[0]);
+}
+</code></pre>
+<h2>kprobe 性能开销</h2>
+<pre class="code" data-label="shell"><code class="c"># 测量 kprobe 开销
+echo 'p:my_probe schedule' &gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_probe/enable
+echo 1 &gt; /sys/kernel/tracing/options/latency-format
+echo 'hist:keys=common_pid:vals=$wallclock_ns' &gt; \
+    /sys/kernel/tracing/events/kprobes/my_probe/trigger
+
+# 对比不同工具开销:
+# kprobe (内核模块):  ~1-5μs/次
+# kprobe_events:      ~1-5μs/次 (相同底层机制)
+# ftrace function:    ~100-300ns/次
+# eBPF kprobe:        ~50-100ns/次
+# trace_printk:       ~100-200ns/次
+</code></pre>
+<h2>HFT 关联</h2>
+<p>kprobe 在 HFT 中的典型用途：
+1. <strong>延迟溯源</strong>：测量 <code class="c">schedule()</code>、<code class="c">__netif_receive_skb()</code> 等函数耗时
+2. <strong>参数捕获</strong>：捕获网卡驱动的关键参数（如 DMA 描述符地址）
+3. <strong>调用链追踪</strong>：配合 stacktrace 查看谁调用了关键函数
+4. <strong>条件过滤</strong>：只追踪特定 PID 或特定大小的分配</p>
+<pre class="code" data-label="shell"><code class="c"># HFT 热路径延迟溯源
+echo 'p:hft_rx hft_process_packet' &gt; /sys/kernel/tracing/kprobe_events
+echo 'r:hft_rx_ret hft_process_packet $retval' &gt; /sys/kernel/tracing/kprobe_events
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals:asc' &gt; \
+    /sys/kernel/tracing/events/kprobes/hft_rx_ret/trigger
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> kprobe_events 的 <code class="c">+0(%arg2):string</code> 是什么意思？</p>
+<blockquote>
+<p><code class="c">+0(%arg2)</code> 表示取 arg2（第二个参数）的值作为地址，偏移 0 字节处。<code class="c">:string</code> 表示从该地址读取以 null 结尾的字符串。这样可以把指针参数的内容（如文件名）打印出来。<code class="c">+offset(%arg):type</code> 格式支持 string/u32/x64 等类型。</p>
+</blockquote>
+<p><strong>Q2:</strong> kprobe 探针的性能开销大约是多少？</p>
+<blockquote>
+<p>单次 kprobe 触发的开销约 1-5μs（断点异常 + 保存上下文 + 回调 + 单步执行 + 恢复）。对于高频函数（如 schedule、timer），可能显著影响性能。如果需要更低开销，考虑 ftrace function tracer（约 100-300ns）或 eBPF（约 50-100ns）。</p>
+</blockquote>
+<p><strong>Q3:</strong> kprobe 的 pre_handler 和 post_handler 分别在什么时候执行？</p>
+<blockquote>
+<p>pre_handler：在原始指令执行<strong>之前</strong>调用，可以检查入参寄存器。post_handler：在原始指令执行<strong>之后</strong>调用，可以检查执行后的寄存器状态。对于函数入口的 kprobe，pre_handler 拿到的是参数，post_handler 拿不到返回值（函数还没返回）。要拿返回值用 kretprobe。</p>
+</blockquote>
+<p><strong>Q4:</strong> 如何只追踪特定 PID 的函数调用？</p>
+<blockquote>
+<p>通过 ftrace 的 filter 机制：<code class="c">echo 'common_pid == 1234' &gt; /sys/kernel/tracing/events/kprobes/my_probe/filter</code>。只有 PID 1234 的进程触发 kprobe 时才会记录。支持 <code class="c">==</code>, <code class="c">!=</code>, <code class="c">&gt;</code>, <code class="c">&lt;</code>, <code class="c">&amp;&amp;</code>, <code class="c">||</code> 等操作符。</p>
+</blockquote>
+<p><strong>Q5:</strong> 编程式 kprobe 和 kprobe_events 各有什么优劣？</p>
+<blockquote>
+<p>编程式 kprobe（内核模块）：可以在回调中执行任意逻辑（如修改数据结构），但需要编译和加载模块。kprobe_events：通过 /sys 接口动态配置，不需要编译模块，适合临时调试。但只能在 trace 中记录参数，不能执行复杂逻辑。HFT 调试优先用 kprobe_events（快速、不需重编译）。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch04 kprobes 架构</a></li>
+<li><a href="chapter-12.html#s-03">05.6 ch04 kretprobe</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch04 动态注册</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">4.3</div><h2>kretprobe：函数返回探针</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>kretprobe 在函数入口插入 kprobe，但回调中<strong>替换返回地址</strong>，使函数返回时跳转到 trampoline，执行 handler 后再返回原调用者。</p>
+<h2>kretprobe 原理</h2>
+<pre class="code" data-label="code"><code class="c">正常函数调用:
+  caller → callee → ret → caller
+
+kretprobe 插入后:
+  caller → callee(入口被替换为BRK)
+                  ↓
+           kprobe handler: 替换返回地址为 trampoline
+                  ↓
+           callee 执行函数体
+                  ↓
+           ret → trampoline → kretprobe handler → 原caller
+</code></pre>
+<h2>编程式 kretprobe</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/kprobes.h&gt;
+
+static int my_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
+    // ARM64: 返回值在 regs-&gt;regs[0] (x0)
+    unsigned long retval = regs_return_value(regs);
+    pr_info(&quot;schedule() returned, retval=%ld\n&quot;, retval);
+    return 0;
+}
+
+static struct kretprobe kr = {
+    .handler = my_ret_handler,
+    .maxactive = 20,  // 最多追踪 20 个并发实例
+    .kp.symbol_name = &quot;schedule&quot;,
+};
+
+static int __init my_init(void) {
+    return register_kretprobe(&amp;kr);
+}
+static void __exit my_exit(void) {
+    unregister_kretprobe(&amp;kr);
+    pr_info(&quot;missed %d calls\n&quot;, kr.nmissed);
+}
+module_init(my_init);
+module_exit(my_exit);
+MODULE_LICENSE(&quot;GPL&quot;);
+</code></pre>
+<h2>kretprobe_instance 机制</h2>
+<ul>
+<li>函数可能被并发调用（如 schedule() 在多核上同时执行）</li>
+<li>每个调用需要一个独立的 instance 保存返回地址</li>
+<li><code class="c">maxactive</code> 限制并发 instance 数量，超过则计数 <code class="c">nmissed</code></li>
+</ul>
+<pre class="code" data-label="code"><code class="c">kretprobe_instance 池:
+
+  instance[0] → 保存 CPU0 上 schedule() 的返回地址
+  instance[1] → 保存 CPU1 上 schedule() 的返回地址
+  instance[2] → 空闲
+  ...
+  instance[19] → 空闲
+
+  如果 20 个 instance 全部被占用，新的调用被跳过 → nmissed++
+</code></pre>
+<h3>maxactive 选择建议</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数类型</th>
+<th>建议 maxactive</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>低频（init/open）</td>
+<td>10（默认）</td>
+<td>很少并发</td>
+</tr>
+<tr>
+<td>中频（read/write）</td>
+<td>20-50</td>
+<td>可能多线程并发</td>
+</tr>
+<tr>
+<td>高频（schedule/timer）</td>
+<td>100+</td>
+<td>多核高频并发</td>
+</tr>
+<tr>
+<td>极高频（netif_rx）</td>
+<td>200+</td>
+<td>网络风暴时大量并发</td>
+</tr>
+</tbody>
+</table></div>
+<h2>通过 kprobe_events 注册 kretprobe</h2>
+<pre class="code" data-label="shell"><code class="c"># r: 表示 kretprobe
+echo 'r:my_ret schedule $retval' &gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_ret/enable
+cat /sys/kernel/tracing/trace_pipe
+</code></pre>
+<h2>测量函数耗时 (entry + return)</h2>
+<pre class="code" data-label="shell"><code class="c"># 同时注册 kprobe 和 kretprobe，测量函数耗时
+echo 'p:my_entry schedule' &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 'r:my_exit schedule $retval' &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/enable
+
+# 使用 hist trigger 测量耗时分布
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals' &gt; \
+    /sys/kernel/tracing/events/kprobes/my_exit/trigger
+
+# 查看直方图
+cat /sys/kernel/tracing/events/kprobes/my_exit/hist
+# { common_pid: 1234 }  wallclock_ns: 5000-10000  count: 42
+# { common_pid: 1234 }  wallclock_ns: 10000-20000 count: 10
+</code></pre>
+<h2>kretprobe trampoline 实现</h2>
+<pre class="code" data-label="C"><code class="c">// kretprobe 的 trampoline 机制（架构相关）
+
+// ARM64:
+// 1. 函数入口的 kprobe handler 替换 LR (Link Register) 为 trampoline 地址
+// 2. 函数执行 ret 指令 → 跳转到 trampoline
+// 3. trampoline 保存寄存器，调用 kretprobe handler
+// 4. 恢复原始 LR，跳回原调用者
+
+// x86_64:
+// 1. 函数入口的 kprobe handler 替换栈上的返回地址为 trampoline 地址
+// 2. 函数执行 ret 指令 → 弹出 trampoline 地址 → 跳转到 trampoline
+// 3. trampoline 保存寄存器，调用 kretprobe handler
+// 4. 恢复原始返回地址，ret 跳回原调用者
+</code></pre>
+<h2>HFT 关联</h2>
+<p>kretprobe 是测量内核函数耗时的核心工具：</p>
+<pre class="code" data-label="shell"><code class="c"># 测量 schedule() 耗时分布（判断调度延迟）
+echo 'p:sched_in schedule' &gt; /sys/kernel/tracing/kprobe_events
+echo 'r:sched_out schedule $retval' &gt; /sys/kernel/tracing/kprobe_events
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals:asc' &gt; \
+    /sys/kernel/tracing/events/kprobes/sched_out/trigger
+
+# 测量网卡收包耗时
+echo 'p:rx_in __netif_receive_skb skb=%arg1' &gt; /sys/kernel/tracing/kprobe_events
+echo 'r:rx_out __netif_receive_skb $retval' &gt; /sys/kernel/tracing/kprobe_events
+echo 'hist:keys=common_pid:vals=$wallclock_ns' &gt; \
+    /sys/kernel/tracing/events/kprobes/rx_out/trigger
+</code></pre>
+<p>HFT 场景中 kretprobe 的应用：
+1. <strong>调度延迟</strong>：测量 <code class="c">schedule()</code> 实际耗时，判断是否在可接受范围
+2. <strong>收包延迟</strong>：测量 <code class="c">__netif_receive_skb()</code> 耗时，定位网络处理瓶颈
+3. <strong>中断处理</strong>：测量 IRQ handler 耗时，确认是否影响实时性
+4. <strong>内存分配</strong>：测量 <code class="c">__kmalloc()</code> 耗时，确认是否在高频路径中分配</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> kretprobe 如何在函数返回时触发回调？</p>
+<blockquote>
+<p>kretprobe 在函数入口的 kprobe 回调中，将栈上的返回地址替换为 kretprobe trampoline 的地址，同时将原始返回地址保存在 kretprobe_instance 中。函数执行 <code class="c">ret</code> 指令时跳转到 trampoline，trampoline 调用 handler，然后恢复原始返回地址并跳回。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">nmissed</code> 计数什么时候会增加？</p>
+<blockquote>
+<p>当并发调用函数的实例数超过 <code class="c">maxactive</code> 时，新的调用无法分配 kretprobe_instance，被跳过（不触发返回回调），<code class="c">nmissed</code> 递增。对于高频函数应设置较大的 <code class="c">maxactive</code>（如 20-50）以减少 miss。</p>
+</blockquote>
+<p><strong>Q3:</strong> kretprobe 如何保存和恢复返回地址？</p>
+<blockquote>
+<p>kretprobe 在函数入口替换返回地址为 trampoline 地址。当函数返回时跳到 trampoline，trampoline 调用 handler 处理返回值，然后恢复原始返回地址跳转。每个 kretprobe 实例用 kretprobe_instance 池避免每次分配。</p>
+</blockquote>
+<p><strong>Q4:</strong> kretprobe 的 maxactive 参数有什么作用？</p>
+<blockquote>
+<p>maxactive 指定同时活跃的 kretprobe 实例数（默认 10）。如果一个函数在多个 CPU 上并发执行且尚未返回，需要多个 instance。maxactive 太小会导致丢失某些调用（missed），太大浪费内存。高频函数应设大（如 100）。</p>
+</blockquote>
+<p><strong>Q5:</strong> 如何用 kprobe + kretprobe 测量函数耗时？</p>
+<blockquote>
+<p>注册配对的 kprobe（入口）和 kretprobe（返回），在入口记录时间戳，在返回时计算差值。或使用 hist trigger：<code class="c">echo 'hist:keys=common_pid:vals=$wallclock_ns' &gt; .../trigger</code>，ftrace 自动配对 entry/return 并计算耗时分布。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch04 kprobe 入口探针</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch04 动态注册</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch04 perf probe</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">4.4</div><h2>动态注册 Kprobes (通过 /sys)</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>通过 kprobe_events 接口动态注册探针，不需要编写内核模块，是 HFT 调试中最常用的 kprobe 使用方式。</p>
+<h2>kprobe_events 格式</h2>
+<pre class="code" data-label="shell"><code class="c"># 语法:
+# p:&lt;event-name&gt; &lt;symbol&gt; [offset] [&lt;args&gt;]
+# r:&lt;event-name&gt; &lt;symbol&gt; [&lt;args&gt;]
+
+# 参数格式:
+# &lt;argname&gt;=&lt;type&gt;        — 简单寄存器
+# &lt;argname&gt;=+offset(%reg) — 内存引用
+# &lt;argname&gt;=+offset(%reg):string — 字符串
+# $retval                 — 返回值 (仅 kretprobe)
+# $stack, $stackN         — 栈值
+# $comm                   — 当前进程名
+# $arg1, $arg2, ...       — 函数参数（6.x 自动解析）
+</code></pre>
+<h2>实用示例</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 追踪 open 系统调用的文件名
+echo 'p:my_open do_sys_openat2 dfd=%arg1 file=+0(%arg2):string' \
+    &gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_open/enable
+cat /sys/kernel/tracing/trace_pipe
+
+# 2. 追踪特定进程的函数调用
+echo 'p:my_sched schedule' &gt; /sys/kernel/tracing/kprobe_events
+echo 'common_pid == 1234' &gt; /sys/kernel/tracing/events/kprobes/my_sched/filter
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_sched/enable
+
+# 3. 测量函数耗时（entry + return 配对）
+echo 'p:my_in schedule' &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 'r:my_out schedule $retval' &gt;&gt; /sys/kernel/tracing/kprobe_events
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=common_pid' &gt; \
+    /sys/kernel/tracing/events/kprobes/my_out/trigger
+
+# 4. 追踪内核函数的调用者（栈回溯）
+echo 'p:my_probe schedule' &gt; /sys/kernel/tracing/kprobe_events
+echo 1 &gt; /sys/kernel/tracing/options/stacktrace
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_probe/enable
+
+# 5. 条件过滤
+echo 'p:my_alloc __kmalloc size=%arg1' &gt; /sys/kernel/tracing/kprobe_events
+echo 'size &gt; 1048576' &gt; /sys/kernel/tracing/events/kprobes/my_alloc/filter
+echo 1 &gt; /sys/kernel/tracing/events/kprobes/my_alloc/enable
+# 只追踪分配 &gt; 1MB 的请求
+</code></pre>
+<h2>使用 perf probe 注册</h2>
+<pre class="code" data-label="shell"><code class="c"># perf probe 提供更友好的接口
+sudo perf probe --add 'schedule'
+sudo perf probe --add 'schedule%return'
+sudo perf probe --add 'do_sys_openat2 file=+0(%x1):string'
+
+# 查看已注册探针
+perf probe -l
+
+# 使用 perf record 追踪
+sudo perf record -e probe:schedule -a sleep 5
+sudo perf report
+
+# 删除探针
+sudo perf probe --del 'schedule'
+</code></pre>
+<h2>filter 过滤语法</h2>
+<pre class="code" data-label="shell"><code class="c"># 支持的操作符
+# ==  !=  &gt;  &lt;  &gt;=  &lt;=  &amp;&amp;  ||
+
+# 按进程过滤
+echo 'common_pid == 1234' &gt; filter
+echo 'common_pid != 0' &gt; filter
+
+# 按参数过滤
+echo 'size &gt; 65536' &gt; filter
+echo 'size &gt; 4096 &amp;&amp; size &lt; 65536' &gt; filter
+
+# 按进程名过滤
+echo 'comm == &quot;my_hft_app&quot;' &gt; filter
+
+# 组合条件
+echo 'common_pid == 1234 &amp;&amp; size &gt; 1024' &gt; filter
+</code></pre>
+<h2>hist trigger 直方图</h2>
+<pre class="code" data-label="shell"><code class="c"># 按进程统计调用次数
+echo 'hist:keys=common_pid:vals=hitcount' &gt; trigger
+
+# 按进程统计耗时分布
+echo 'hist:keys=common_pid:vals=$wallclock_ns' &gt; trigger
+
+# 按大小统计分配次数
+echo 'hist:keys=size:vals=hitcount:sort=hitcount:desc' &gt; trigger
+
+# 按进程+大小二维统计
+echo 'hist:keys=common_pid,size:vals=hitcount' &gt; trigger
+
+# 查看结果
+cat hist
+</code></pre>
+<h2>HFT 关联</h2>
+<p>HFT 调试中 kprobe_events 的典型工作流：</p>
+<pre class="code" data-label="shell"><code class="c">#!/bin/bash
+# hft_debug.sh: HFT 热路径调试脚本
+
+TRACE=/sys/kernel/tracing
+
+# 清除旧探针
+echo &gt; $TRACE/kprobe_events
+echo nop &gt; $TRACE/current_tracer
+
+# 注册探针
+echo 'p:hft_rx hft_process_packet' &gt; $TRACE/kprobe_events
+echo 'r:hft_rx_ret hft_process_packet $retval' &gt; $TRACE/kprobe_events
+echo 'p:net_rx __netif_receive_skb' &gt; $TRACE/kprobe_events
+echo 'r:net_rx_ret __netif_receive_skb $retval' &gt; $TRACE/kprobe_events
+
+# 启用耗时直方图
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals:desc' &gt; \
+    $TRACE/events/kprobes/hft_rx_ret/trigger
+echo 'hist:keys=common_pid:vals=$wallclock_ns:sort=vals:desc' &gt; \
+    $TRACE/events/kprobes/net_rx_ret/trigger
+
+# 开始追踪
+echo 1 &gt; $TRACE/tracing_on
+echo &quot;Tracing started. Press Enter to stop...&quot;
+read
+echo 0 &gt; $TRACE/tracing_on
+
+# 查看结果
+echo &quot;=== HFT RX 耗时分布 ===&quot;
+cat $TRACE/events/kprobes/hft_rx_ret/hist
+echo &quot;=== Net RX 耗时分布 ===&quot;
+cat $TRACE/events/kprobes/net_rx_ret/hist
+
+# 清理
+echo &gt; $TRACE/kprobe_events
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 如何只追踪特定 PID 的函数调用？</p>
+<blockquote>
+<p>通过 ftrace 的 filter 机制：<code class="c">echo 'common_pid == 1234' &gt; /sys/kernel/tracing/events/kprobes/my_probe/filter</code>。只有 PID 1234 的进程触发 kprobe 时才会记录。支持 <code class="c">==</code>, <code class="c">!=</code>, <code class="c">&gt;</code>, <code class="c">&lt;</code>, <code class="c">&amp;&amp;</code>, <code class="c">||</code> 等操作符。</p>
+</blockquote>
+<p><strong>Q2:</strong> perf probe 和直接写 kprobe_events 有什么区别？</p>
+<blockquote>
+<p>perf probe 是 kprobe_events 的封装，提供更友好的命令行接口。它自动解析符号和行号（<code class="c">perf probe --add 'schedule:15'</code> 可以在 schedule 函数第 15 行插入探针），支持 C 表达式（<code class="c">perf probe --add 'kmalloc size'</code> 自动识别 size 参数）。底层仍使用 kprobe_events，但省去了手动计算偏移和参数位置的麻烦。</p>
+</blockquote>
+<p><strong>Q3:</strong> hist trigger 的 <code class="c">vals=$wallclock_ns</code> 是什么意思？</p>
+<blockquote>
+<p><code class="c">$wallclock_ns</code> 是 kretprobe 事件的特殊变量，表示从对应的 kprobe（入口）到 kretprobe（返回）的墙钟时间差（纳秒）。<code class="c">vals=$wallclock_ns</code> 在直方图中统计这个时间差，用于测量函数耗时分布。</p>
+</blockquote>
+<p><strong>Q4:</strong> kprobe_events 中 <code class="c">&gt;&gt;</code> 和 <code class="c">&gt;</code> 的区别？</p>
+<blockquote>
+<p><code class="c">&gt;</code> 覆盖写入（清除所有旧探针，只保留新的）。<code class="c">&gt;&gt;</code> 追加写入（在现有探针基础上添加新的）。批量注册多个探针时用 <code class="c">&gt;&gt;</code>，重新开始时用 <code class="c">&gt;</code>。</p>
+</blockquote>
+<p><strong>Q5:</strong> 如何在 kprobe_events 中追踪函数内部特定行？</p>
+<blockquote>
+<p>直接写 kprobe_events 只支持函数名+偏移（<code class="c">echo 'p:my_probe schedule+0x20' &gt; kprobe_events</code>），不支持行号。需要行号级探针用 <code class="c">perf probe --add 'schedule:42'</code>，perf probe 利用 DWARF 调试信息将行号转为地址。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-02">05.6 ch04 kprobe 入口探针</a></li>
+<li><a href="chapter-11.html#s-05">05.6 ch04 perf probe</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch09 ftrace 事件</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">4.5</div><h2>perf probe 与 Kprobes 的关系</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>perf probe 是 kprobe_events 的高级封装，利用 DWARF 调试信息提供行号级探针和自动参数提取。</p>
+<h2>perf probe 架构</h2>
+<pre class="code" data-label="code"><code class="c">用户命令          工具层               内核层
+┌────────┐    ┌──────────┐     ┌──────────────────┐
+│perf    │───→│perf probe│────→│kprobe_events     │
+│probe   │    │(DWARF    │     │(kprobe 注册/注销) │
+│--add   │    │ 解析)    │     │                  │
+└────────┘    └──────────┘     └──────────────────┘
+                                    ↓
+                              ┌──────────┐
+                              │ kprobe   │
+                              │ engine   │
+                              └──────────┘
+</code></pre>
+<h2>perf probe 的优势</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>kprobe_events (手动)</th>
+<th>perf probe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>符号解析</td>
+<td>仅函数名</td>
+<td>函数名 + 行号 + 变量名</td>
+</tr>
+<tr>
+<td>参数提取</td>
+<td>手动指定寄存器/偏移</td>
+<td>自动从 DWARF 识别</td>
+</tr>
+<tr>
+<td>行号探针</td>
+<td>不支持</td>
+<td><code class="c">schedule:42</code> 可行</td>
+</tr>
+<tr>
+<td>批量操作</td>
+<td>逐条</td>
+<td>支持 <code class="c">--add</code> 批量</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>仅 debugfs</td>
+<td>需要调试符号 (vmlinux)</td>
+</tr>
+<tr>
+<td>参数验证</td>
+<td>无</td>
+<td>编译时检查类型</td>
+</tr>
+</tbody>
+</table></div>
+<h2>典型用法</h2>
+<pre class="code" data-label="shell"><code class="c"># 在函数特定行插入探针
+perf probe --add '__kmalloc:12 size bytes_req'
+
+# 查看可用探针点（需要调试符号）
+perf probe --line '__kmalloc'
+# 输出:
+# __kmalloc@aabbccdd:
+#       0  size_t size;
+#       1  gfp_t flags;
+#       2  {
+#       3      struct kmem_cache *s;
+
+# 查看可用变量
+perf probe --vars '__kmalloc'
+# 输出:
+# @&lt;__kmalloc+0&gt;
+#         size_t  size
+#         gfp_t   flags
+
+# 使用 perf record 追踪
+perf record -e probe:__kmalloc -aR sleep 5
+perf script  # 查看结果
+
+# 与 callchain 配合（查看调用栈）
+perf record -e probe:__kmalloc -g -aR sleep 5
+perf report -g graph
+</code></pre>
+<h2>perf probe + perf record 工作流</h2>
+<pre class="code" data-label="shell"><code class="c"># Step 1: 注册探针
+perf probe --add 'schedule'
+perf probe --add 'schedule%return'
+perf probe --add '__kmalloc size'
+
+# Step 2: 查看已注册探针
+perf probe -l
+# probe:schedule      (on schedule)
+# probe:schedule__return (on schedule%return)
+# probe:__kmalloc     (on __kmalloc with size)
+
+# Step 3: 记录
+perf record -e probe:schedule -e probe:__kmalloc -aR sleep 10
+
+# Step 4: 分析
+perf script   # 时间线视图
+perf report   # 热点统计
+
+# Step 5: 清理
+perf probe --del 'schedule'
+perf probe --del 'schedule%return'
+perf probe --del '__kmalloc'
+</code></pre>
+<h2>perf probe 高级用法</h2>
+<pre class="code" data-label="shell"><code class="c"># 条件探针（只在满足条件时触发）
+perf probe --add '__kmalloc size' --filter 'size &gt; 65536'
+
+# 带调用栈
+perf probe --add 'schedule' --call-graph dwarf
+
+# 批量注册
+perf probe --add 'schedule' --add '__kmalloc size' --add 'kfree'
+
+# 模块函数
+perf probe --add 'my_module:my_func'
+
+# 行号范围
+perf probe --line '__kmalloc:10-20'
+</code></pre>
+<h2>perf probe vs kprobe_events 对比</h2>
+<pre class="code" data-label="shell"><code class="c"># kprobe_events: 手动指定参数位置
+echo 'p:my_open do_sys_openat2 dfd=%arg1 file=+0(%arg2):string' &gt; kprobe_events
+
+# perf probe: 自动解析参数
+perf probe --add 'do_sys_openat2 dfd file:string'
+# perf probe 自动从 DWARF 识别 dfd 和 file 参数的寄存器位置
+
+# kprobe_events: 不支持行号
+# perf probe: 支持行号
+perf probe --add 'vfs_write:642 count'
+</code></pre>
+<h2>HFT 关联</h2>
+<p>perf probe 结合 perf record/report 提供 HFT 内核函数耗时分析的完整工作流：</p>
+<ol>
+<li><strong>定位热点</strong>：<code class="c">perf record -g</code> + <code class="c">perf report</code> 找到耗时最多的函数</li>
+<li><strong>插入探针</strong>：<code class="c">perf probe --add 'hot_func'</code> 在热点函数注册探针</li>
+<li><strong>记录详情</strong>：<code class="c">perf record -e probe:hot_func -g</code> 收集调用栈</li>
+<li><strong>分析结果</strong>：<code class="c">perf report -g graph</code> 查看调用链和耗时</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 延迟溯源完整工作流
+# 1. 找热点
+perf record -g -a sleep 10
+perf report
+
+# 2. 在热点函数插入探针
+perf probe --add 'hft_process_packet'
+perf probe --add 'hft_process_packet%return'
+
+# 3. 记录耗时
+perf record -e probe:hft_process_packet -e probe:hft_process_packet__return -a sleep 10
+
+# 4. 分析
+perf script  # 查看每次调用的耗时
+perf report  # 统计分析
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> perf probe 需要什么前提条件？</p>
+<blockquote>
+<p>需要内核调试符号（CONFIG_DEBUG_INFO=y，有 vmlinux 文件）。DWARF 调试信息用于解析变量名和行号。如果没有调试符号，perf probe 退化为只能按函数名注册（等同于直接写 kprobe_events）。</p>
+</blockquote>
+<p><strong>Q2:</strong> perf probe 和 perf record 的关系是什么？</p>
+<blockquote>
+<p>perf probe 负责<strong>注册/注销</strong> kprobe 探针，perf record 负责<strong>收集</strong>探针触发的事件。工作流：1) <code class="c">perf probe --add</code> 注册探针 → 2) <code class="c">perf record -e probe:xxx</code> 收集事件 → 3) <code class="c">perf report</code> 分析 → 4) <code class="c">perf probe --del</code> 清理。</p>
+</blockquote>
+<p><strong>Q3:</strong> perf probe 和直接写 kprobe_events 相比有什么优势？</p>
+<blockquote>
+<p>perf probe 自动解析行号和变量名（需要 DEBUG_INFO），不需要手动查寄存器映射。例如 <code class="c">perf probe --add "vfs_write:642 size"</code> 自动找到 vfs_write 第642行并提取 size 变量。直接写 kprobe_events 需要手动指定偏移和寄存器。</p>
+</blockquote>
+<p><strong>Q4:</strong> perf probe --line 的作用是什么？</p>
+<blockquote>
+<p><code class="c">perf probe --line 'function'</code> 显示函数的源码和对应的行号，帮助确定在哪个位置插入探针。例如 <code class="c">perf probe --line '__kmalloc'</code> 显示 <code class="c">__kmalloc</code> 函数的源码行号，然后可以用 <code class="c">perf probe --add '__kmalloc:12'</code> 在第 12 行插入探针。</p>
+</blockquote>
+<p><strong>Q5:</strong> perf probe --filter 和 kprobe_events filter 有什么区别？</p>
+<blockquote>
+<p>两者功能相似但层次不同。kprobe_events filter 在内核中执行（每个事件都检查）。perf probe --filter 也是写入内核 filter，但 perf probe 还支持在用户空间过滤（perf record --filter）。内核 filter 开销更低。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch04 kprobes 架构</a></li>
+<li><a href="chapter-12.html#s-04">05.6 ch04 动态注册</a></li>
+<li><a href="chapter-11.html#s-06">05.6 ch04 kprobes vs eBPF</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-06">
+        <div class="sec-head"><div class="sec-no">4.6</div><h2>Kprobes 与 eBPF 的关系</h2></div>
+<blockquote>
+<p>🔴 精读 · Part 2: Instrumentation &amp; Memory Debugging</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>eBPF 是 kprobes 的进化——底层仍使用 kprobes 机制，但在其之上提供安全沙箱、可编程聚合和更低开销。</p>
+<h2>eBPF 如何使用 Kprobes</h2>
+<pre class="code" data-label="code"><code class="c">bpftrace / BCC / libbpf
+         ↓
+    eBPF 程序 (BPF bytecode)
+         ↓
+    bpf() 系统调用加载到内核
+         ↓
+    verifier 验证安全性
+         ↓
+    JIT 编译为原生指令
+         ↓
+    attach 到 kprobe / kretprobe / tracepoint
+         ↓
+    kprobe 触发 → 执行 eBPF 程序（原生速度） → 收集数据到 map
+</code></pre>
+<h2>Kprobes vs eBPF 对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>kprobes (内核模块)</th>
+<th>eBPF (bpftrace/BCC)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>编程方式</td>
+<td>C 内核模块</td>
+<td>C (BCC) / AWK-like (bpftrace)</td>
+</tr>
+<tr>
+<td>编译</td>
+<td>需编译 .ko</td>
+<td>JIT 编译</td>
+</tr>
+<tr>
+<td>安全性</td>
+<td>可能导致 panic</td>
+<td>验证器保证安全</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>~1-5μs/次</td>
+<td>~50-100ns/次</td>
+</tr>
+<tr>
+<td>数据处理</td>
+<td>回调中处理</td>
+<td>map 聚合 + 用户态读取</td>
+</tr>
+<tr>
+<td>持久性</td>
+<td>模块加载即生效</td>
+<td>程序终止即清理</td>
+</tr>
+<tr>
+<td>生产可用</td>
+<td>⚠️ 需谨慎</td>
+<td>✅ 安全</td>
+</tr>
+</tbody>
+</table></div>
+<h2>bpftrace 示例</h2>
+<pre class="code" data-label="shell"><code class="c"># 等价于 kretprobe 测量 schedule() 耗时
+sudo bpftrace -e '
+kretprobe:schedule {
+    @sched_ns[pid] = nsecs;
+}
+kretprobe:schedule /@sched_ns[pid]/ {
+    $dur = nsecs - @sched_ns[pid];
+    @sched_us = hist($dur / 1000);
+    delete(@sched_ns[pid]);
+}'
+
+# 追踪 open 系统调用（等价于 kprobe_events）
+sudo bpftrace -e '
+kprobe:do_sys_openat2 {
+    printf(&quot;%s opened %s\n&quot;, comm, str(arg2));
+}'
+
+# 统计函数调用次数
+sudo bpftrace -e 'kprobe:__kmalloc { @[comm] = count(); }'
+
+# 测量函数耗时分布
+sudo bpftrace -e '
+kprobe:hft_process_packet { @start[tid] = nsecs; }
+kretprobe:hft_process_packet /@start[tid]/ {
+    @us = hist((nsecs - @start[tid]) / 1000);
+    delete(@start[tid]);
+}'
+
+# 追踪大于 64KB 的分配
+sudo bpftrace -e '
+kprobe:__kmalloc /arg1 &gt; 65536/ {
+    printf(&quot;%s allocated %lu bytes\n&quot;, comm, arg1);
+}'
+</code></pre>
+<h2>eBPF 安全性：verifier</h2>
+<pre class="code" data-label="code"><code class="c">eBPF 程序加载时的验证流程:
+
+1. 控制流图 (CFG) 构建
+   └── 确保没有不可达代码
+
+2. 类型检查
+   └── 寄存器类型追踪（scalar/ptr/ctx）
+
+3. 边界检查
+   └── 所有内存访问必须有边界验证
+
+4. 终止性
+   └── 确保程序不会无限循环（DAG 检查）
+
+5. 资源限制
+   └── 指令数限制（4096 条，6.x 放宽到 100万）
+   └── 栈大小限制（512 字节）
+
+结果: 通过验证 → JIT 编译加载
+      失败 → 拒绝加载，返回错误
+</code></pre>
+<h2>eBPF 数据收集方式</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>说明</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>printf()</td>
+<td>直接输出到 trace_pipe</td>
+<td>调试、实时查看</td>
+</tr>
+<tr>
+<td>map (hash)</td>
+<td>键值对聚合</td>
+<td>统计计数、分类</td>
+</tr>
+<tr>
+<td>map (hist)</td>
+<td>直方图</td>
+<td>延迟分布</td>
+</tr>
+<tr>
+<td>map (stack)</td>
+<td>栈追踪</td>
+<td>调用链分析</td>
+</tr>
+<tr>
+<td>ringbuf</td>
+<td>高性能环形缓冲区</td>
+<td>事件流</td>
+</tr>
+<tr>
+<td>bpf_get_stackid()</td>
+<td>栈 ID 去重</td>
+<td>大规模栈追踪</td>
+</tr>
+</tbody>
+</table></div>
+<h2>何时用 Kprobes vs eBPF</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>快速临时探查</td>
+<td>bpftrace (eBPF)</td>
+<td>一行命令，无需编译</td>
+</tr>
+<tr>
+<td>需要修改内核行为</td>
+<td>kprobes (内核模块)</td>
+<td>eBPF 不能修改数据</td>
+</tr>
+<tr>
+<td>需要复杂数据处理</td>
+<td>eBPF (map 聚合)</td>
+<td>内核中聚合，减少用户态开销</td>
+</tr>
+<tr>
+<td>内核版本 &lt; 5.x</td>
+<td>kprobes</td>
+<td>eBPF 功能不全</td>
+</tr>
+<tr>
+<td>HFT 生产环境</td>
+<td>eBPF</td>
+<td>更低开销、安全验证</td>
+</tr>
+<tr>
+<td>需要精确参数捕获</td>
+<td>kprobe_events</td>
+<td>更直接、可控</td>
+</tr>
+<tr>
+<td>需要长期监控</td>
+<td>eBPF (BCC 工具)</td>
+<td>安全、可编程</td>
+</tr>
+</tbody>
+</table></div>
+<h2>eBPF 在 HFT 中的应用</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 网卡收包延迟监控（长期运行，低开销）
+bpftrace -e '
+kprobe:__netif_receive_skb { @start[tid] = nsecs; }
+kretprobe:__netif_receive_skb /@start[tid]/ {
+    @rx_us = hist((nsecs - @start[tid]) / 1000);
+    delete(@start[tid]);
+}'
+
+# 2. 系统调用延迟监控
+bpftrace -e '
+tracepoint:syscalls:sys_enter_epoll_wait { @start[tid] = nsecs; }
+tracepoint:syscalls:sys_exit_epoll_wait /@start[tid]/ {
+    @epoll_us = hist((nsecs - @start[tid]) / 1000);
+    delete(@start[tid]);
+}'
+
+# 3. 调度延迟监控
+bpftrace -e '
+tracepoint:sched:sched_switch {
+    @offcpu[prev_pid] = nsecs;
+}
+tracepoint:sched:sched_wakeup /@offcpu[args-&gt;pid]/ {
+    @wakeup_us[args-&gt;pid] = (nsecs - @offcpu[args-&gt;pid]) / 1000;
+    delete(@offcpu[args-&gt;pid]);
+}'
+</code></pre>
+<h2>HFT 关联</h2>
+<p>eBPF 是 HFT 生产环境监控的<strong>首选工具</strong>：</p>
+<ol>
+<li><strong>安全</strong>：verifier 保证不会崩溃内核</li>
+<li><strong>低开销</strong>：JIT 编译，~50-100ns/次</li>
+<li><strong>可编程</strong>：自定义过滤、聚合、输出</li>
+<li><strong>无需重编译</strong>：动态加载/卸载</li>
+<li><strong>长期运行</strong>：适合 7×24 监控</li>
+</ol>
+<p>eBPF 不能完全替代 kprobes——eBPF 的 kprobe attach 底层仍用 kprobes 机制。但 eBPF 在 kprobes 之上提供了安全沙箱和聚合能力。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么 eBPF 比 kprobes 内核模块更安全？</p>
+<blockquote>
+<p>eBPF 程序在加载前经过验证器 (verifier) 检查：确保不会越界访问内存、不会无限循环、不会持有锁过久。kprobes 内核模块没有验证，代码 bug 会导致内核 panic。eBPF 程序出错最多是探针失效，不会崩溃内核。</p>
+</blockquote>
+<p><strong>Q2:</strong> eBPF 的性能为什么比 kprobes 内核模块好？</p>
+<blockquote>
+<p>eBPF 程序经 JIT 编译为原生指令，在 kprobe 回调中直接执行，无需保存/恢复完整寄存器上下文（验证器保证安全）。kprobes 内核模块需要完整的异常处理流程（保存所有寄存器 → 回调 → 单步执行原始指令 → 恢复）。eBPF 开销约 50-100ns vs kprobes 1-5μs。</p>
+</blockquote>
+<p><strong>Q3:</strong> eBPF 能完全替代 kprobes 吗？</p>
+<blockquote>
+<p>不能完全替代。eBPF 的 kprobe/kretprobe attach 底层仍用 kprobes 机制。eBPF 在 kprobes 之上提供安全沙箱和聚合能力，但断点注入和 out-of-line execution 仍由 kprobes 提供。eBPF 还可以 attach 到 tracepoint、perf event、XDP 等更多 hook 点。</p>
+</blockquote>
+<p><strong>Q4:</strong> bpftrace 中 hist() 和 printf() 有什么区别？</p>
+<blockquote>
+<p><code class="c">printf()</code> 每次事件都输出一行，适合实时查看但高频时会大量输出。<code class="c">hist()</code> 在内核中聚合为直方图，只输出统计结果，适合高频事件的性能分析。HFT 调试中优先用 hist() 减少开销。</p>
+</blockquote>
+<p><strong>Q5:</strong> eBPF verifier 如何保证程序不会无限循环？</p>
+<blockquote>
+<p>verifier 构建控制流图 (CFG)，检查程序是否为有向无环图 (DAG)。对于循环，verifier 要求必须有明确的退出条件且循环次数有界。6.x 放宽了限制（支持有界循环），但仍检查终止性。指令数也有上限（4096 条，6.x 放宽到 100万）。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-12.html#s-01">05.6 ch04 kprobes 架构</a></li>
+<li><a href="chapter-09.html#s-08">05.6 ch09 ftrace vs eBPF</a></li>
+</ul>
       </section>
 
 
