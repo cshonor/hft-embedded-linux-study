@@ -46,6 +46,26 @@ Linux **没有** 单独的「线程」内核对象类型：
 └──────────┴──────────┴───────────────┘
 ```
 
+#### LWP：共享 vs 私有清单
+
+LWP（Light-Weight Process）在内核里是**一份完整独立的 `task_struct`**，调度器直接调度它：
+
+| 同组 LWP **共享** | 每个 LWP **私有** |
+|-------------------|-------------------|
+| `mm` 地址空间（同一份页表） | `task_struct` 本身 + 唯一 **TID** |
+| `files` 文件描述符表 | **用户栈**（`clone` 时分配的新栈） |
+| `fs`（cwd、root、umask） | **内核栈**（`task_struct->stack`） |
+| `sighand` 信号处理函数表 | 寄存器上下文（调度切换时保存） |
+| | **信号掩码**（`task_struct->blocked`） |
+| | **TLS**（`CLONE_SETTLS` 设置各自线程局部存储） |
+
+> 观察命令：**`ps -aL`** —— 同一个 PID（=TGID）下面列出多条不同 LWP-ID（=TID）的任务。
+> `getpid()` 返回 **TGID**（同组全一样），`gettid()` 返回 **TID**（每条不同）。
+
+⚠️ **`CLONE_THREAD` 是"是线程"的判定标志，不是 `CLONE_VM`**：不开 `CLONE_THREAD`、只开 `CLONE_VM`，产物**不是 POSIX 线程**——它有自己独立的 TGID（新进程），不归属任何线程组，父进程要 `wait` 回收它。它只是一个「共享地址空间的独立进程」。用户态看是两个进程共享内存，内核看是两条无关 task_struct 恰好指向同一个 `mm`。
+
+> 通俗比喻：`clone` 是万能工厂，flags 是一排开关——**全关（fork）→ 普通进程；把一排共享开关全开（pthread_create）→ LWP**。内核本身分不清"进程/线程"，眼里只有 task_struct；**进程和线程只是用户层的抽象概念**，边界由开关组合决定。
+
 #### NPTL 要点
 
 | 特性 | 说明 |
@@ -60,6 +80,8 @@ Linux **没有** 单独的「线程」内核对象类型：
 int clone_start(void *(*fn)(void *), void *arg, void *stack, void *tls);
 /* glibc 组装 CLONE_VM|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|... */
 ```
+
+> 源码印证：glibc `nptl/pthread_create.c`（github.com/bminor/glibc）里能看到这组 flags 的组装现场。
 
 #### 三类线程模型 · 用户态 / 内核态 / 混合（教科书视角）
 
@@ -157,6 +179,14 @@ LinuxThreads 用单独进程实现线程，每线程一个 PID，信号处理混
 <details><summary>答案</summary>
 
 goroutine 是 M:N 混合模型：G 是用户态调度单元，由 Go runtime 调度，M 才映射到内核 LWP。Linux pthread 是 1:1 内核态线程：pthread_create 直接 clone 出一条内核可见的 LWP（NPTL 只是内核态线程模型的 POSIX 库实现，不是第三种模型）。内核态线程（LWP，有用户地址空间）≠ 内核线程（kthread，mm=NULL 的纯内核执行流）。
+
+</details>
+
+**Q4.** 只开 `CLONE_VM`（不开 `CLONE_THREAD`）clone 出的任务是什么？它和同组线程怎么区分？`getpid()` 和 `gettid()` 在一个多线程进程里各返回什么？
+
+<details><summary>答案</summary>
+
+只是**共享地址空间的独立进程**：有自己的 TGID，不属于任何线程组，父进程须 `wait` 回收——不是 POSIX 线程。「是不是线程」由 `CLONE_THREAD` 判定，不是 `CLONE_VM`。多线程进程里 `getpid()` 返回 TGID（所有线程相同），`gettid()` 返回各线程自己的 TID（每条不同）。
 
 </details>
 
