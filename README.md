@@ -21,27 +21,130 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 
 ---
 
-## 📖 HTML 阅读版（单文件聚合页）
+## 📖 HTML 阅读版（单文件聚合页 · 全仓 59 本）
 
 > 每章一份单文件 HTML，**CFS 同款暗色主题** + 侧边栏目录 + 进度条 + scrollspy + 自测题折叠。
 > 离线可读，手机/平板/打印机都方便。
+>
+> **全部 59 本书已按 11 个领域分组**，每本一个封面入口 → 章节页/附录页。
+> 在线浏览：[GitHub Pages](https://cshonor.github.io/hft-embedded-linux-study/) · **顶层总目录** → [html/index.html](./html/index.html)
 
-| # | 模块 | HTML 入口 | 章节数 |
-|---|------|-----------|:------:|
-| 01 | K&R · The C Programming Language | [html/index.html](./01-c-language/01-Primer-K-and-R-C/html/index.html) | 8 + 3 附录 |
-| 05 | Linux Kernel Development | [html/index.html](./05-linux-kernel/html/index.html) | 20 |
-| 05.5 | 现代内核（scheduler / RCU / arm64） | [html/index.html](./05.5-modern-kernel/html/index.html) | 12 |
-| 05.6 | 内核调试（printk / kprobes / ftrace / kgdb） | [html/index.html](./05.6-kernel-debugging/html/index.html) | 12 |
-| 06 | Linux 虚拟内存管理 + 附录 A–M | [html/index.html](./06-linux-mm/html/index.html) | 14 + 13 |
-| 06.5 | 现代内存（memblock / slub / maple tree / mglru / DAMON） | [html/index.html](./06.5-modern-mm/html/index.html) | 10 |
-| 06.6 | Systems Performance | [html/index.html](./06.6-systems-performance/html/index.html) | 16 + 5 附录 |
-| 06.7 | BPF Performance Tools | [html/index.html](./06.7-bpf-observability/bpf-performance-tools/html/index.html) | 18 + 5 附录 |
-| 06.7 | Learning eBPF | [html/index.html](./06.7-bpf-observability/learning-ebpf/html/index.html) | 11 |
+### C 语言（6 本）
 
-**顶层总目录：** [html/index.html](./html/index.html)
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| The C Programming Language | K&R · 8 章 + 3 附录精读 | [html](./01-c-language/01-Primer-K-and-R-C/html/index.html) | 19 |
+| Pointers on C | Kenneth Reek · 指针与 C 精读 | [html](./01-c-language/02-Pointers-on-C/html/index.html) | 19 |
+| Expert C Programming | van der Linden · 深 C 语言 | [html](./01-c-language/03-Advanced-Expert-C-Programming/html/index.html) | 13 |
+| Modern C | Jens Gustedt · 现代 C 精读 | [html](./01-c-language/04-Modern-C/html/index.html) | 24 |
+| 嵌入式 C 语言自我修养 | 从编译链接到内核素养 | [html](./01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/html/index.html) | 10 |
+| C Traps and Pitfalls | Koenig · C 陷阱与缺陷 | [html](./01-c-language/06-Reference-C-Traps-and-Pitfalls/html/index.html) | 11 |
+
+### 数字逻辑 · 体系结构（5 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| 数字逻辑与 CPU | Digital Design 实践笔记 · RPi | [html](./00-digital-logic-cpu/html/index.html) | 9 |
+| Computer Systems | CSAPP · 深入理解计算机系统 | [html](./02-computer-systems/html/index.html) | 13 |
+| Computer Architecture | 量化研究方法 · QCA 笔记 | [html](./15-computer-architecture/html/index.html) | 20 |
+| AArch64 实践 | ARM64 体系结构与汇编实践 | [html](./07-arm-architecture/aarch64-practice/html/index.html) | 23 |
+| ARM32 汇编 | ARM 汇编语言与体系结构 | [html](./07-arm-architecture/arm32-asm/html/index.html) | 22 |
+
+### Linux 内核（4 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| Linux Kernel Development | Robert Love · LKD 3e 中文笔记 | [html](./05-linux-kernel/html/index.html) | 20 |
+| 现代内核特性 | scheduler / RCU / arm64 / PREEMPT_RT | [html](./05.5-modern-kernel/html/index.html) | 12 |
+| 内核调试 | printk / kprobes / ftrace / kgdb | [html](./05.6-kernel-debugging/html/index.html) | 12 |
+| Linux 内核深度 | Understanding the Linux Kernel · 深入解析 | [html](./16-linux-kernel-deep/html/index.html) | 22 |
+
+### 内存管理（2 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| Linux 虚拟内存管理 | Mel Gorman ULVM + 附录 A–M 源码导读 | [html](./06-linux-mm/html/index.html) | 27 |
+| 现代内存管理 | memblock / slub / maple tree / mglru / DAMON | [html](./06.5-modern-mm/html/index.html) | 10 |
+
+### 系统编程 · 网络 API（5 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| Linux 用户态 API | TLPI · Linux 系统编程接口 | [html](./03-linux-userspace-api/html/index.html) | 64 |
+| UNP · 卷1 基础篇 | Unix 网络编程 · 基本套接字 | [html](./03.5-unix-network-api/1_BasicFoundation/html/index.html) | 8 |
+| UNP · 卷1 进阶篇 | Unix 网络编程 · 高级 IO 与线程 | [html](./03.5-unix-network-api/2_AdvancedSkill/html/index.html) | 5 |
+| UNP · 卷1 深化篇 | Unix 网络编程 · 原始套接字与广播 | [html](./03.5-unix-network-api/3_DeepMaster/html/index.html) | 8 |
+| UNP · 卷1 设计篇 | Unix 网络编程 · SCTP 与架构设计 | [html](./03.5-unix-network-api/4_ArchitectureDesign/html/index.html) | 10 |
+
+### 网络协议 · 内核网络（8 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| TCP/IP 详解 | 卷一 协议 · 中文笔记 | [html](./11-tcpip-protocols/html/index.html) | 18 |
+| Wireshark 抓包分析 | 包分析实践 · 全 13 章 | [html](./11.5-wireshark-packet-analysis/html/index.html) | 15 |
+| 抓包 · HFT 场景 | 低延迟 TCP 延迟 / 卸载 / bypass 实战 | [html](./11.5-wireshark-packet-analysis/hft-scenarios/html/index.html) | 1 |
+| 抓包 · 速查表 | 安装验证与常用命令笔记 | [html](./11.5-wireshark-packet-analysis/cheatsheet/html/index.html) | 1 |
+| Linux 内核网络 | 深入理解 Linux 网络技术内幕 | [html](./12-kernel-networking/html/index.html) | 17 |
+| 现代内核网络 | NAPI / XDP / eBPF / io_uring | [html](./12.5-modern-networking/html/index.html) | 15 |
+| DPDK 入门 | DPDK 应用基础 · 初阶 | [html](./13-dpdk/01-Intro-Book/html/index.html) | 15 |
+| DPDK 进阶 | DPDK 深入与性能调优 | [html](./13-dpdk/02-Advanced-Book/html/index.html) | 1 |
+
+### 性能分析 · eBPF（3 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| Systems Performance | Brendan Gregg · 企业版中文笔记 | [html](./06.6-systems-performance/html/index.html) | 21 |
+| BPF Performance Tools | Brendan Gregg · 上下册笔记 | [html](./06.7-bpf-observability/bpf-performance-tools/html/index.html) | 23 |
+| Learning eBPF | O'Reilly · 入门到 verifier | [html](./06.7-bpf-observability/learning-ebpf/html/index.html) | 11 |
+
+### HFT · 量化 · 运动控制（3 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| HFT 工程 | 高频交易全栈工程笔记 | [html](./14-hft-engineering/html/index.html) | 13 |
+| 市场微观结构 | Harris · Trading and Exchanges | [html](./19-markets-microstructure/html/index.html) | 29 |
+| 运动控制 | PID / IMU / 电机 / 飞控调度 | [html](./10-motion-control/html/index.html) | 5 |
+
+### C++（11 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| C++ Primer | C++ Primer · 入门语法精读 | [html](./04-cpp/M0-entry-syntax/01-C++Primer/html/index.html) | 19 |
+| Effective Modern C++ | Scott Meyers · 现代 C++ 42 条款 | [html](./04-cpp/M1-modern-cpp/01-Effective-Modern-C++/html/index.html) | 8 |
+| C++ 网络编程 | 套接字 / epoll / 序列化实践 | [html](./04-cpp/M2-cpp-network-programming/html/index.html) | 1 |
+| C++ 对象模型 | Inside the C++ Object Model | [html](./04-cpp/M3-deep-principles/01-Cpp-Object-Model/html/index.html) | 8 |
+| C++ 并发 | C++ Concurrency in Action | [html](./04-cpp/M3-deep-principles/02-Cpp-Concurrency/html/index.html) | 15 |
+| Effective C++ | Meyers · 55 条款 | [html](./04-cpp/M4-engineering-standards/01-Effective-C++/html/index.html) | 9 |
+| More Effective C++ | Meyers · 35 条款 | [html](./04-cpp/M4-engineering-standards/02-More-Effective-C++/html/index.html) | 7 |
+| Effective STL | Meyers · 50 条款 | [html](./04-cpp/M4-engineering-standards/03-Effective-STL/html/index.html) | 9 |
+| STL 源码剖析 | 侯捷 · 容器与算法源码 | [html](./04-cpp/M4-engineering-standards/04-STL-Source-Analysis/html/index.html) | 11 |
+| C++17 完全指南 | C++17 the Complete Guide | [html](./04-cpp/M5-advanced-standards/01-C++17-The-Complete-Guide/html/index.html) | 35 |
+| C++20 完全指南 | C++20 the Complete Guide | [html](./04-cpp/M5-advanced-standards/02-C++20-The-Complete-Guide/html/index.html) | 24 |
+
+### Rust（8 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| Rust · The Book | The Rust Programming Language | [html](./17-rust-foundation/00-Book/html/index.html) | 19 |
+| Rust · 扩展阅读 | Rust 生态与扩展索引 | [html](./17-rust-foundation/01-ER/html/index.html) | 6 |
+| Rust · 引用与生命周期 | Rust for Rustaceans 方向 | [html](./17-rust-foundation/02-RFR/html/index.html) | 13 |
+| Rust · 标准库深入 | core / alloc / std 剖析 | [html](./17-rust-foundation/03-DeepRustStdLib/html/index.html) | 14 |
+| Rust · Nomicon | 不安全的 Rust 圣经 | [html](./17-rust-foundation/04-Rust-Nomicon/html/index.html) | 10 |
+| Rust · 异步与并发 | Async / Atomics / 网络 | [html](./17-rust-foundation/05-Async-Concurrency-Network/html/index.html) | 3 |
+| Rust · 编译器与 LLVM | 编译原理与 LLVM 学习 | [html](./17-rust-foundation/06_Compilers-and-LLVM-Learning/html/index.html) | 4 |
+| Rust · WebAssembly | Programming WebAssembly with Rust | [html](./17-rust-foundation/07-Programming-WebAssembly-with-Rust/html/index.html) | 8 |
+
+### 嵌入式 · 驱动（4 本）
+
+| 书 | 定位 | HTML 入口 | 页数 |
+|---|------|-----------|:----:|
+| 嵌入式系统入门 | 系统启动与内核构建概览 | [html](./08-embedded-boot-build/primer-system-overview/html/index.html) | 19 |
+| 工具链与 Yocto | 交叉工具链与 Yocto 构建 | [html](./08-embedded-boot-build/build-toolchain-yocto/html/index.html) | 21 |
+| Linux 设备驱动 · 经典 | LDD3 · 字符设备与并发 | [html](./09-device-drivers-dt/classic-driver-theory/html/index.html) | 18 |
+| Linux 设备驱动 · 现代 | platform / DT / i2c / regmap / IIO | [html](./09-device-drivers-dt/modern-driver-practice/html/index.html) | 22 |
 
 > 各书 HTML 由 `build_all.py` + `cfs-style.css` 从笔记 md 实时生成；
-> 笔记更新后 `python build_all.py` 即可重新构建。`01-c-language` 用单独的 `build_html.py`（早期版本）。
+> 笔记更新后 `python build_all.py` 即可重新构建。
 
 ---
 
