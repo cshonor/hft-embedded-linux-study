@@ -15,11 +15,24 @@ Linux **没有** 单独的「线程」内核对象类型：
 | 标志 | 共享内容 | pthread 近似 |
 |------|----------|--------------|
 | **`CLONE_VM`** | 地址空间（`mm`） | 默认线程 |
-| **`CLONE_FILES`** | 文件描述符表 | 默认共享 fd |
-| **`CLONE_SIGHAND`** | 信号处理函数表 | 同进程信号语义 |
-| **`CLONE_THREAD`** | 同 **线程组**（`tgid`） | `pthread_create` 必设 |
-| **`CLONE_FS`** | `fs_struct`（cwd、root） | 可共享 |
-| **`CLONE_SETTLS`** | 线程局部存储区 | `pthread` TLS |
+| **`CLONE_FILES`** | 文件描述符表 | 默认共享 fd；一线程 `close(fd)` 全组可见；`exec` 时自动复制断开共享 |
+| **`CLONE_SIGHAND`** | 信号处理函数表（`sa_handler`） | 共享；但**信号掩码 per-task 独立**（`task_struct->blocked`，各线程可独立 `pthread_sigmask`） |
+| **`CLONE_THREAD`** | 同 **线程组**（`tgid`） | `pthread_create` 必设；线程退出**不发 SIGCHLD** → 不能 `wait`，要用 `pthread_join` |
+| **`CLONE_FS`** | `fs_struct`（cwd、root、umask） | 共享；一线程 `chdir` 全组生效 |
+| **`CLONE_SETTLS`** | 线程局部存储区 | `pthread` TLS，实现 `__thread` 变量 |
+| **`CLONE_PARENT_SETTID`** | 内核把新线程 TID 写回父进程用户态地址 | `pthread_create` 返回的 TID 来源 |
+| **`CLONE_CHILD_CLEARTID`** | 线程退出时清空指定地址并触发 futex 唤醒 | `pthread_join` 阻塞等待的底层机制 |
+
+> `CLONE_CHILD_CLEARTID` 是 `pthread_join` 的核心：join 方在用户态 futex 等待该地址，线程退出时内核清地址 + futex wake，join 方即被唤醒。避免了「线程退出通知」走信号路径——这也解释了为什么 `CLONE_THREAD` 路径下终止信号传 **0**（不发 SIGCHLD）。
+
+#### LinuxThreads → NPTL（历史）
+
+| 缺陷 | LinuxThreads | NPTL |
+|------|--------------|------|
+| 线程组 | 每线程各自独立 PID（无 `CLONE_THREAD`） | 同 `tgid`，`getpid()` 返回一致 |
+| 信号 | 每线程独立进程，信号语义混乱 | per-thread 掩码 + 线程组定向，符合 POSIX |
+| `getpid()` | 每线程返回不同值 | 线程组内一致 |
+| 管理 | `wait` 能收线程（不符合 POSIX） | 线程用 `pthread_join`，进程用 `wait` |
 
 ```
 进程（线程组 tgid = 100）
