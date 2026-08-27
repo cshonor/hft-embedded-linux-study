@@ -640,13 +640,13 @@ def build_book(book, chapters, appendices):
     n = 0
     for chno, chapter_dir, secs in chapters:
         html = build_chapter(book, chno, chapter_dir, secs, book_nav, None)
-        (out_dir / f"chapter-{chno:02d}.html").write_text(html, encoding="utf-8")
+        _write_if_changed(out_dir / f"chapter-{chno:02d}.html", html)
         n += 1
     for letter, app_path in appendices:
         html = build_appendix(book, letter, app_path, book_nav)
         if html is None:
             continue
-        (out_dir / f"appendix-{letter}.html").write_text(html, encoding="utf-8")
+        _write_if_changed(out_dir / f"appendix-{letter}.html", html)
         n += 1
     return n, all_pages
 
@@ -744,7 +744,7 @@ def build_top_index(book_meta):
   </main>
 </div>
 </body></html>"""
-        out.write_text(body, encoding="utf-8")
+        _write_if_changed(out, body)
     return len(BOOKS)
 
 # ---------- 每本书封面 index.html ----------
@@ -809,7 +809,7 @@ def build_book_index(book, n_pages, all_pages):
   </main>
 </div>
 </body></html>"""
-    (out_dir / "index.html").write_text(body, encoding="utf-8")
+    _write_if_changed(out_dir / "index.html", body)
 
 def build_chapter_titles(book):
     """从 README 头一行解析章节标题，作为封面卡片的副标题。"""
@@ -883,8 +883,9 @@ def _u(name):
                 .replace(" ", "%20").replace("?", "%3F"))
 
 
-def _write_retry(path, text, tries=5):
-    """写入文件，容忍杀软/同步盘瞬时锁（PermissionError 时删除重写/换名替换）。"""
+def _write_retry(path, text, tries=40):
+    """写入文件，容忍杀软/同步盘瞬时锁（PermissionError 时删除重写/换名替换）。
+    锁通常数秒~数十秒释放，默认 40 次、退避 1→5s（约 3 分钟内持续重试）。"""
     import time
     for i in range(tries):
         try:
@@ -909,7 +910,17 @@ def _write_retry(path, text, tries=5):
                     except OSError: pass
             if i == tries - 1:
                 raise
-            time.sleep(0.4 * (i + 1))
+            time.sleep(min(1.0 * (i + 1), 5.0))
+
+
+def _write_if_changed(path, text):
+    """内容未变则跳过写入（既是抗杀软写锁的正解，也让增量重跑从分钟级降到秒级）。"""
+    try:
+        if path.exists() and path.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass  # 读失败（锁）也继续走重试写入
+    _write_retry(path, text)
 
 
 def build_dir_indexes():
@@ -958,14 +969,15 @@ def build_dir_indexes():
                     f'<span class="fname">{html_mod.escape(sub)}</span>'
                     f'<span class="fnote">HTML 阅读版</span></a>')
             else:
-                n_items = sum(1 for _ in sp.iterdir())
+                n_items = sum(1 for x in sp.iterdir()
+                              if not (x.is_file() and ".tmp" in x.name))
                 rows.append(
                     f'<a class="frow" href="{_u(sub)}/"><span class="fico">📁</span>'
                     f'<span class="fname">{html_mod.escape(sub)}</span>'
                     f'<span class="fnote">{n_items} 项</span></a>')
         # 文件条目
         for f in sorted(filenames):
-            if f.startswith(".") or f == "index.html":
+            if f.startswith(".") or f == "index.html" or ".tmp" in f:
                 continue
             icon = FILE_ICONS.get(Path(f).suffix.lower(), "📄")
             rows.append(
@@ -992,10 +1004,7 @@ def build_dir_indexes():
 </div>
 </body>
 </html>"""
-        out = d / "index.html"
-        if out.exists() and out.read_text(encoding="utf-8") == body:
-            continue  # 内容未变，跳过写入
-        _write_retry(out, body)
+        _write_if_changed(d / "index.html", body)
         count += 1
     return count
 

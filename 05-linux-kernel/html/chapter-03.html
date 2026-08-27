@@ -553,41 +553,161 @@ waitpid(pid,                /* 参数1: 要等的子进程 PID（wait() = 等任
         0);                 /* 参数3: 选项位。0 = 阻塞等到它退出为止 */
                              /* 不 wait 的后果：子进程退出后变僵尸（Z），task_struct 无法释放 */
 </code></pre>
-<h4>exec 族后缀速记</h4>
+<h4>exec 族速记与调用示例</h4>
+<p>后缀是正交的开关，任意组合：<strong>函数名 = <code class="c">exec</code> + 最多 2 个后缀（l/v 二选一，p/e 可选）</strong>，共 6 个。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>后缀拆解</th>
+<th>调用示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">execl</code></td>
+<td>l = list</td>
+<td><code class="c">execl("/bin/ls", "ls", "-l", NULL);</code></td>
+</tr>
+<tr>
+<td><code class="c">execlp</code></td>
+<td>l + p = 搜 PATH</td>
+<td><code class="c">execlp("ls", "ls", "-l", NULL);</code> ← 路径可省</td>
+</tr>
+<tr>
+<td><code class="c">execle</code></td>
+<td>l + e = 自带 envp</td>
+<td><code class="c">execle("/bin/ls", "ls", NULL, myenvp);</code> ← 变参表的 NULL 后面跟 envp</td>
+</tr>
+<tr>
+<td><code class="c">execv</code></td>
+<td>v = vector</td>
+<td><code class="c">char *av[] = { "ls", "-l", NULL }; execv("/bin/ls", av);</code></td>
+</tr>
+<tr>
+<td><code class="c">execvp</code></td>
+<td>v + p</td>
+<td><code class="c">execvp("ls", av);</code></td>
+</tr>
+<tr>
+<td><code class="c">execve</code></td>
+<td>v + e（<strong>唯一系统调用</strong>）</td>
+<td><code class="c">execve("/bin/ls", av, myenvp);</code></td>
+</tr>
+</tbody>
+</table></div>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>后缀</th>
 <th>含义</th>
-<th>例</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">l</code></td>
 <td>list —— 参数逐个列出，NULL 结尾</td>
-<td><code class="c">execl</code></td>
 </tr>
 <tr>
 <td><code class="c">v</code></td>
 <td>vector —— 参数打包成 <code class="c">char *argv[]</code> 数组</td>
-<td><code class="c">execv</code></td>
 </tr>
 <tr>
 <td><code class="c">p</code></td>
 <td>搜 <code class="c">PATH</code> 环境变量找程序（否则必须写全路径）</td>
-<td><code class="c">execlp</code></td>
 </tr>
 <tr>
 <td><code class="c">e</code></td>
 <td>自带环境变量数组 <code class="c">envp</code>（否则继承当前环境）</td>
-<td><code class="c">execve</code>（唯一系统调用）</td>
 </tr>
 </tbody>
 </table></div>
 <blockquote>
 <p><code class="c">execve</code> / <code class="c">execveat</code> 是真正的系统调用，其余 execl/execv/execlp... 都是 libc 包装。</p>
 </blockquote>
+<h4>exec 独立示例：程序 exec 自己，验证「PID 不变、映像已换」</h4>
+<pre class="code" data-label="C"><code class="c">/* exec_demo.c —— gcc -Wall -o exec_demo exec_demo.c &amp;&amp; ./exec_demo */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(int argc, char *argv[])
+{
+    printf(&quot;[run] PID=%ld  argv[0]=%s  argc=%d\n&quot;,
+           (long)getpid(), argv[0], argc);
+
+    if (argc == 1) {                       /* 第一轮：没带额外参数 */
+        char heap_var = 'A';               /* 堆/栈/全局变量 —— exec 后全部蒸发 */
+        char *newargv[] = { &quot;fake-name&quot;,   /* argv[0] 可以随便骗：ps 里显示这个名字 */
+                            &quot;stage2&quot;, NULL };
+        printf(&quot;heap_var=%c 即将被销毁\n&quot;, heap_var);
+        fflush(stdout);                    /* stdio 缓冲区也是旧映像的，exec 前必须冲刷 */
+        execv(&quot;/proc/self/exe&quot;, newargv);  /* /proc/self/exe = 内核记录的本程序真实路径 */
+        perror(&quot;execv&quot;);                   /* exec 返回 = 失败，且只有失败才返回 */
+        return 127;                        /* 惯例退出码 127 = command not found */
+    }
+    /* 第二轮：已被新映像替换，从这里重新开始 */
+    printf(&quot;[new image] heap_var 已不存在；argv 被换成 \&quot;%s\&quot; \&quot;%s\&quot;\n&quot;,
+           argv[0], argv[1]);
+    return 0;
+}
+</code></pre>
+<p>运行输出：</p>
+<pre class="code" data-label="code"><code class="c">[run] PID=22841  argv[0]=./exec_demo  argc=1
+heap_var=A 即将被销毁
+[new image] heap_var 已不存在；argv 被换成 &quot;fake-name&quot; &quot;stage2&quot;
+</code></pre>
+<p>两轮 PID 相同 → <strong>还是同一个进程</strong>；argv/内存全变 → <strong>程序映像已被整个替换</strong>。
+用 <code class="c">strace ./exec_demo</code> 可以直接看到那条系统调用：<code class="c">execve("/proc/self/exe", ["fake-name", "stage2"], /* environ */) = 0</code>。</p>
+<h4>什么能跨过 exec 存活</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>存活 ✔</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PID / PPID</td>
+<td>进程还是那个进程</td>
+</tr>
+<tr>
+<td>打开的 fd（未设 <code class="c">O_CLOEXEC</code>）</td>
+<td>继承——shell 重定向就靠这个</td>
+</tr>
+<tr>
+<td>当前工作目录、umask、nice</td>
+<td>属性不随映像销毁</td>
+</tr>
+<tr>
+<td>信号屏蔽字</td>
+<td>保留；但 <strong>已捕获的信号处理函数重置为默认</strong>（新映像没有旧 handler）</td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>丢失 ✘</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代码 / 数据 / 堆 / 栈</td>
+<td>整个用户地址空间推倒重建（§3.7）</td>
+</tr>
+<tr>
+<td>全局/局部变量、<code class="c">atexit</code> 处理器</td>
+<td>随旧映像消失</td>
+</tr>
+<tr>
+<td>环境变量</td>
+<td>默认继承 environ，但 <code class="c">execve</code>/<code class="c">execle</code> 传新 <code class="c">envp</code> 时整个替换</td>
+</tr>
+</tbody>
+</table></div>
 <h4>内核视角（预告 §3.2）</h4>
 <pre class="code" data-label="code"><code class="c">用户态进程                内核
 ┌─────────────┐          ┌──────────────┐
@@ -982,6 +1102,67 @@ if (p-&gt;state == TASK_RUNNING)
       <section class="section" id="s-3-3">
         <div class="sec-head"><div class="sec-no">3.3</div><h2>section-3.3-进程状态</h2></div>
 <p><code class="c">task_struct</code> 的 <strong><code class="c">state</code></strong> 字段 — 任一时刻必居 <strong>下列状态之一</strong>（经典 3rd 表述；新内核用位掩码组合，直觉相同）：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/sched.h */
+struct task_struct {
+        ...
+        volatile long state;    /* -1 unrunnable, 0 runnable, &gt;0 stopped */
+        ...
+};
+
+#define TASK_RUNNING            0x0000
+#define TASK_INTERRUPTIBLE      0x0001
+#define TASK_UNINTERRUPTIBLE    0x0002
+#define __TASK_STOPPED          0x0004
+#define __TASK_TRACED           0x0008
+/* include/linux/sched.h 末尾（task_state_array 用）+ EXIT_* 在 exit_state 里 */
+#define EXIT_DEAD               0x0010
+#define EXIT_ZOMBIE             0x0020
+</code></pre>
+<blockquote>
+<p>三个看点：<code class="c">volatile</code> — state 常被唤醒方在另一个 CPU 上改，禁止编译器缓存到寄存器；RUNNING 的值是 <strong>0</strong> 而非「在跑」标志 —— 它只表示<strong>可运行</strong>，在不在 CPU 上由调度器说了算；EXIT_* 是独立字段 <code class="c">exit_state</code>，所以僵尸不算 state 里的一员。</p>
+</blockquote>
+<h4>state 不是孤军 —— 谁配合它</h4>
+<p>state 只回答「<strong>能不能跑</strong>」，不回答「<strong>在哪等、等谁</strong>」。后半句由其他字段/结构承担：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>疑问</th>
+<th>配套结构</th>
+<th>方向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>睡着后在哪？等谁？</td>
+<td><strong><code class="c">wait_queue_head_t</code></strong> — 属于资源方（设备、futex bucket、epoll 等待项）</td>
+<td><strong>反向</strong>：进程把自己的 <code class="c">wait_queue_entry</code>（通常在栈上，<code class="c">DEFINE_WAIT</code>）挂到资源的队列里</td>
+</tr>
+<tr>
+<td>就绪后排在哪？</td>
+<td><strong><code class="c">sched_entity</code></strong> 挂进 per-CPU 的 cfs_rq / rt_rq</td>
+<td>也不在 task_struct 内 — 调度器视图 <a href="chapter-04.html#s-4-4">Ch 4</a></td>
+</tr>
+<tr>
+<td>全局进程清单？</td>
+<td><code class="c">list_head tasks</code> — 串起所有 task_struct</td>
+<td>前向：进程自己持有</td>
+</tr>
+<tr>
+<td>僵尸时等谁收尸？</td>
+<td><code class="c">exit_state</code> + <code class="c">exit_code</code> + <code class="c">real_parent</code> / <code class="c">children</code></td>
+<td>配合 <code class="c">wait()</code> — <a href="#s-3-6">§3.6</a></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* 睡眠的真实动作：state 改变 + 入队，两者必须配对 */
+DEFINE_WAIT(wait);                          /* entry 在本进程内核栈上 */
+prepare_to_wait(&amp;wq, &amp;wait, TASK_INTERRUPTIBLE);  /* 挂到资源的等待队列 + 改 state */
+schedule();                                 /* 让出 CPU；醒来时从这句之后继续 */
+finish_wait(&amp;wq, &amp;wait);                    /* 出队 + state 回 TASK_RUNNING */
+</code></pre>
+<blockquote>
+<p>所以 <code class="c">ps</code> 里两个都显示 <code class="c">S</code> 的进程，可能在等完全不同的东西 —— state 相同、所在的等待队列千差万别。排查「卡在哪」要顺着 fd / wchan（<code class="c">cat /proc/&lt;pid&gt;/wchan</code>）找队列，而不是看 state。</p>
+</blockquote>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1029,31 +1210,57 @@ if (p-&gt;state == TASK_RUNNING)
 <tr>
 <th>ps 字符</th>
 <th>内核态</th>
+<th>怎么亲眼看到（复现例子）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>R</strong></td>
 <td><code class="c">TASK_RUNNING</code></td>
+<td><code class="c">while :; do :; done &amp;</code> 死循环 — 一直 R；<code class="c">ps -o stat= -p $!</code></td>
 </tr>
 <tr>
 <td><strong>S</strong></td>
 <td>可中断睡眠</td>
+<td>几乎所有后台守护进程（sshd、cron）；前台 <code class="c">sleep 100</code> — 99% 时间在 S</td>
 </tr>
 <tr>
 <td><strong>D</strong></td>
 <td>不可中断睡眠</td>
+<td>块设备卡死/NFS 断连时出现：<code class="c">dd if=/dev/sda of=/dev/null</code> 期间拔盘；正常机器上转瞬即逝，<strong>长期 D 才是故障</strong></td>
 </tr>
 <tr>
-<td><strong>T/t</strong></td>
-<td>停止 / 跟踪停止</td>
+<td><strong>T</strong></td>
+<td>停止</td>
+<td><code class="c">sleep 300</code> 后按 <strong>Ctrl+Z</strong>（SIGTSTP）；或 <code class="c">kill -STOP &lt;pid&gt;</code>（SIGSTOP 不可捕获）</td>
+</tr>
+<tr>
+<td><strong>t</strong></td>
+<td>跟踪停止</td>
+<td><code class="c">gdb ./a.out</code> 打断点停在断点上时，被调试进程就是 t</td>
 </tr>
 <tr>
 <td><strong>Z</strong></td>
 <td>僵尸</td>
+<td>父进程生而不收的子进程（下方代码）</td>
 </tr>
 </tbody>
 </table></div>
+<pre class="code" data-label="C"><code class="c">/* zombie_demo.c —— 制造一个持续 60s 的僵尸 */
+#include &lt;unistd.h&gt;
+#include &lt;stdio.h&gt;
+int main(void) {
+    pid_t pid = fork();
+    if (pid == 0) { _exit(0); }        /* 子进程立刻退出     */
+    /* 父进程不 wait，睡 60s —— 期间子进程一直是 Z */
+    printf(&quot;child %d is zombie now, run: ps -o pid,stat,cmd -p %d\n&quot;, pid, pid);
+    sleep(60);
+    return 0;
+}
+</code></pre>
+<blockquote>
+<p>STAT 还会带修饰符：<code class="c">Ss</code> = 会话首_leader、<code class="c">Sl</code> = 多线程（带 NPTL 线程）、<code class="c">R+</code> = 前台进程组、<code class="c">&lt;</code> = 高优先级（negative nice）、<code class="c">N</code> = 低优先级。<code class="c">ps axo pid,ppid,stat,wchan:20,cmd</code> 一次看全。</p>
+</blockquote>
 <h4>状态迁移（简化）</h4>
 <pre class="code" data-label="code"><code class="c">        调度选中                    wake_up / 信号
   RUNNING ◄───────────────────────────────┐
@@ -1223,6 +1430,50 @@ set_current_state(TASK_RUNNING);
   ├─ 复制 P → P'（若真正共享且有人写）
   └─ 更新 fault 方页表 → 可写映射 P'
 </code></pre>
+<h4>页表 vs 物理页（COW 的两个层级）</h4>
+<pre class="code" data-label="code"><code class="c">进程看到的地址（虚拟地址）          物理内存条上的真实位置
+   ┌────────────┐   页表            ┌────────────┐
+   │ 虚拟页 0   │──┐ PTE           │ 物理页 P   │  ← 4KB 真实存储（PFN）
+   │ 虚拟页 1   │──┘                │            │
+   │ ...        │                   │            │
+   └────────────┘                   └────────────┘
+       每进程一张自己的页表              机器上只有一份
+</code></pre>
+<ul>
+<li><strong>物理页</strong>：内存条上真实的 4KB 存储格子，编号叫 PFN。CPU 真正读写的对象。</li>
+<li><strong>页表</strong>：一张「虚拟页号 → 物理页号」的翻译表，每个进程一份。进程各看各的虚拟地址，互不干扰。</li>
+<li>同一物理页可出现在<strong>多个进程的页表里</strong> —— 这就是「共享」。fork 后父子页表都指向同一批物理页，于是「没真复制，只是多挂一张翻译表」。</li>
+</ul>
+<p>对照三步：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>页表层做了什么</th>
+<th>物理页层做了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fork 后</td>
+<td>子页表=父页表拷贝；所有 PTE 标只读 + COW 位</td>
+<td><strong>不动</strong>，父子指向同一批物理页</td>
+</tr>
+<tr>
+<td>写触发</td>
+<td>fault → 改写者 PTE 指向新页、恢复可写</td>
+<td><strong>才复制</strong>：找新物理页 P'，P→P' 拷内容</td>
+</tr>
+<tr>
+<td>另一方</td>
+<td>页表没动，仍只读指向原页</td>
+<td>数据不变，继续用原物理页</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>「复制」复制的是<strong>物理页</strong>，「标记只读」标记的是<strong>页表项</strong>——两件事发生在不同层级，新手最易混的就是把「页表只读」当成「物理页只读」。</p>
+</blockquote>
 <h4>fork 复制什么？（内核路径 <code class="c">_do_fork</code> / <code class="c">copy_process</code>）</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1355,6 +1606,9 @@ wait(NULL);
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p>经典表述：<strong>进程是资源分配的最小单位，线程是 CPU 调度的最小单位</strong>。Linux 里这两者都是 <code class="c">task_struct</code>——调度器只看 task_struct，资源边界由 clone 标志决定。</p>
+</blockquote>
 <h4>常见 CLONE_* 标志</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1373,27 +1627,72 @@ wait(NULL);
 <tr>
 <td><strong><code class="c">CLONE_FILES</code></strong></td>
 <td>文件描述符表</td>
-<td>默认共享 fd</td>
+<td>默认共享 fd；一线程 <code class="c">close(fd)</code> 全组可见；<code class="c">exec</code> 时自动复制断开共享</td>
 </tr>
 <tr>
 <td><strong><code class="c">CLONE_SIGHAND</code></strong></td>
-<td>信号处理函数表</td>
-<td>同进程信号语义</td>
+<td>信号处理函数表（<code class="c">sa_handler</code>）</td>
+<td>共享；但<strong>信号掩码 per-task 独立</strong>（<code class="c">task_struct-&gt;blocked</code>，各线程可独立 <code class="c">pthread_sigmask</code>）</td>
 </tr>
 <tr>
 <td><strong><code class="c">CLONE_THREAD</code></strong></td>
 <td>同 <strong>线程组</strong>（<code class="c">tgid</code>）</td>
-<td><code class="c">pthread_create</code> 必设</td>
+<td><code class="c">pthread_create</code> 必设；线程退出<strong>不发 SIGCHLD</strong> → 不能 <code class="c">wait</code>，要用 <code class="c">pthread_join</code></td>
 </tr>
 <tr>
 <td><strong><code class="c">CLONE_FS</code></strong></td>
-<td><code class="c">fs_struct</code>（cwd、root）</td>
-<td>可共享</td>
+<td><code class="c">fs_struct</code>（cwd、root、umask）</td>
+<td>共享；一线程 <code class="c">chdir</code> 全组生效</td>
 </tr>
 <tr>
 <td><strong><code class="c">CLONE_SETTLS</code></strong></td>
 <td>线程局部存储区</td>
-<td><code class="c">pthread</code> TLS</td>
+<td><code class="c">pthread</code> TLS，实现 <code class="c">__thread</code> 变量</td>
+</tr>
+<tr>
+<td><strong><code class="c">CLONE_PARENT_SETTID</code></strong></td>
+<td>内核把新线程 TID 写回父进程用户态地址</td>
+<td><code class="c">pthread_create</code> 返回的 TID 来源</td>
+</tr>
+<tr>
+<td><strong><code class="c">CLONE_CHILD_CLEARTID</code></strong></td>
+<td>线程退出时清空指定地址并触发 futex 唤醒</td>
+<td><code class="c">pthread_join</code> 阻塞等待的底层机制</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">CLONE_CHILD_CLEARTID</code> 是 <code class="c">pthread_join</code> 的核心：join 方在用户态 futex 等待该地址，线程退出时内核清地址 + futex wake，join 方即被唤醒。避免了「线程退出通知」走信号路径——这也解释了为什么 <code class="c">CLONE_THREAD</code> 路径下终止信号传 <strong>0</strong>（不发 SIGCHLD）。</p>
+</blockquote>
+<h4>LinuxThreads → NPTL（历史）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>缺陷</th>
+<th>LinuxThreads</th>
+<th>NPTL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>线程组</td>
+<td>每线程各自独立 PID（无 <code class="c">CLONE_THREAD</code>）</td>
+<td>同 <code class="c">tgid</code>，<code class="c">getpid()</code> 返回一致</td>
+</tr>
+<tr>
+<td>信号</td>
+<td>每线程独立进程，信号语义混乱</td>
+<td>per-thread 掩码 + 线程组定向，符合 POSIX</td>
+</tr>
+<tr>
+<td><code class="c">getpid()</code></td>
+<td>每线程返回不同值</td>
+<td>线程组内一致</td>
+</tr>
+<tr>
+<td>管理</td>
+<td><code class="c">wait</code> 能收线程（不符合 POSIX）</td>
+<td>线程用 <code class="c">pthread_join</code>，进程用 <code class="c">wait</code></td>
 </tr>
 </tbody>
 </table></div>
@@ -1467,6 +1766,124 @@ int clone_start(void *(*fn)(void *), void *arg, void *stack, void *tls);
   task_struct ──► mm = NULL
                 ──► 只跑 kernel text 中的函数
 </code></pre>
+<h4>三种创建路径对比</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th><code class="c">fork()</code></th>
+<th><code class="c">vfork()</code></th>
+<th><code class="c">pthread_create()</code>（NPTL）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>底层 clone flags</strong></td>
+<td>仅 <code class="c">SIGCHLD</code>（无任何 CLONE_* 共享）</td>
+<td><code class="c">CLONE_VM \| CLONE_VFORK \| SIGCHLD</code></td>
+<td><code class="c">CLONE_VM \| CLONE_FILES \| CLONE_SIGHAND \| CLONE_THREAD \| CLONE_FS \| CLONE_SETTLS \| CLONE_PARENT_SETTID \| CLONE_CHILD_CLEARTID</code>，终止信号 <strong>0</strong></td>
+</tr>
+<tr>
+<td><strong>地址空间 mm</strong></td>
+<td>独立（COW 写时复制）</td>
+<td><strong>共享</strong>（不 COW，父挂起）</td>
+<td>共享</td>
+</tr>
+<tr>
+<td><strong>fd 表 files</strong></td>
+<td>复制（引用计数 +1）</td>
+<td>复制</td>
+<td>共享</td>
+</tr>
+<tr>
+<td><strong>信号处理表 sighand</strong></td>
+<td>复制</td>
+<td>复制</td>
+<td>共享（但<strong>信号掩码 per-task 独立</strong>）</td>
+</tr>
+<tr>
+<td><strong>cwd / root / umask</strong></td>
+<td>复制（不设 CLONE_FS）</td>
+<td>复制</td>
+<td>共享（一线程 chdir 全组生效）</td>
+</tr>
+<tr>
+<td><strong>线程组归属</strong></td>
+<td>新 tgid（=新 PID）</td>
+<td>新 tgid</td>
+<td><strong>同 tgid</strong>（getpid 返回相同值）</td>
+</tr>
+<tr>
+<td><strong>父进程行为</strong></td>
+<td>父子并发</td>
+<td>父<strong>阻塞</strong>到子 <code class="c">_exit/exec</code></td>
+<td>父子并发</td>
+</tr>
+<tr>
+<td><strong>子退出通知</strong></td>
+<td><code class="c">SIGCHLD</code> 给父 → <code class="c">wait</code> 回收</td>
+<td><code class="c">SIGCHLD</code> 给父 → <code class="c">wait</code> 回收</td>
+<td><strong>不发信号</strong>；靠 <code class="c">CLONE_CHILD_CLEARTID</code> 触发 futex 唤醒 → <code class="c">pthread_join</code></td>
+</tr>
+<tr>
+<td><strong>终止信号参数</strong></td>
+<td><code class="c">SIGCHLD</code></td>
+<td><code class="c">SIGCHLD</code></td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td><strong>PID/TID</strong></td>
+<td>子获新 PID（=TID）</td>
+<td>子获新 PID</td>
+<td>子获新 <strong>TID</strong>，TGID 不变</td>
+</tr>
+<tr>
+<td><strong>典型用途</strong></td>
+<td>shell 起子进程、daemon</td>
+<td>几乎不用（fork+COW 已够快）</td>
+<td>多线程并行、IO 线程</td>
+</tr>
+<tr>
+<td><strong>现代评价</strong></td>
+<td>通用</td>
+<td><strong>不推荐</strong>，posix_spawn 替代</td>
+<td>标准 POSIX 线程</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>「终止信号 SIGCHLD vs 0」是上表的关键差异：<code class="c">CLONE_THREAD</code> 置位时内核不向父发 SIGCHLD，所以才不能用 <code class="c">wait</code> 收线程，只能 <code class="c">pthread_join</code>（底层由 <code class="c">CLONE_CHILD_CLEARTID</code> 清地址 + futex 唤醒实现）。</p>
+</blockquote>
+<h4>fork 与多线程的三个坑</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>根因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. fork 只保留调用线程</strong></td>
+<td>多线程父进程 fork 后，子进程里<strong>只有调用 fork 的那条 LWP 存活</strong>，其余线程全部消失</td>
+<td>fork 只复制当前 <code class="c">task_struct</code>，不复制同组的其他线程；子进程的 <code class="c">mm</code> 仍指向原地址空间（COW），但其他线程的调度实体没了</td>
+</tr>
+<tr>
+<td><strong>2. <code class="c">exit()</code> 杀全组</strong></td>
+<td>线程里调 <code class="c">exit()</code> 会终止<strong>整个线程组所有线程</strong></td>
+<td><code class="c">exit()</code> 作用于 tgid（进程级）；只杀当前 LWP 要用 <code class="c">pthread_exit()</code>，它只销毁当前 <code class="c">task_struct</code> 并触发 <code class="c">CLONE_CHILD_CLEARTID</code> 的 futex 唤醒</td>
+</tr>
+<tr>
+<td><strong>3. 共享地址 → 需同步</strong></td>
+<td>LWP 间全局变量直接互相可见，不加锁就 race</td>
+<td><code class="c">CLONE_VM</code> 让所有线程共用同一份页表；fork 出的子进程是独立 <code class="c">mm</code>，改了也不影响父（COW）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>坑 1 的实战后果：fork 后子进程<strong>不要随便碰 pthread 库</strong>——锁的状态是从父进程那一刻冻结的快照，如果别的线程正持着锁，子进程里那把锁永远等不到释放 → 死锁。POSIX 规定只有 async-signal-safe 函数能在 fork 后的子进程里调用，就是这个道理。</p>
+</blockquote>
 <h4>对比表</h4>
 <div class="tbl-wrap"><table>
 <thead>
