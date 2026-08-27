@@ -61,6 +61,25 @@ kthread（无用户地址空间）
                 ──► 只跑 kernel text 中的函数
 ```
 
+#### 三种创建路径对比
+
+| 维度 | `fork()` | `vfork()` | `pthread_create()`（NPTL） |
+|------|----------|-----------|------------------------------|
+| **底层 clone flags** | 仅 `SIGCHLD`（无任何 CLONE_* 共享） | `CLONE_VM \| CLONE_VFORK \| SIGCHLD` | `CLONE_VM \| CLONE_FILES \| CLONE_SIGHAND \| CLONE_THREAD \| CLONE_FS \| CLONE_SETTLS \| CLONE_PARENT_SETTID \| CLONE_CHILD_CLEARTID`，终止信号 **0** |
+| **地址空间 mm** | 独立（COW 写时复制） | **共享**（不 COW，父挂起） | 共享 |
+| **fd 表 files** | 复制（引用计数 +1） | 复制 | 共享 |
+| **信号处理表 sighand** | 复制 | 复制 | 共享（但**信号掩码 per-task 独立**） |
+| **cwd / root / umask** | 复制（不设 CLONE_FS） | 复制 | 共享（一线程 chdir 全组生效） |
+| **线程组归属** | 新 tgid（=新 PID） | 新 tgid | **同 tgid**（getpid 返回相同值） |
+| **父进程行为** | 父子并发 | 父**阻塞**到子 `_exit/exec` | 父子并发 |
+| **子退出通知** | `SIGCHLD` 给父 → `wait` 回收 | `SIGCHLD` 给父 → `wait` 回收 | **不发信号**；靠 `CLONE_CHILD_CLEARTID` 触发 futex 唤醒 → `pthread_join` |
+| **终止信号参数** | `SIGCHLD` | `SIGCHLD` | **0** |
+| **PID/TID** | 子获新 PID（=TID） | 子获新 PID | 子获新 **TID**，TGID 不变 |
+| **典型用途** | shell 起子进程、daemon | 几乎不用（fork+COW 已够快） | 多线程并行、IO 线程 |
+| **现代评价** | 通用 | **不推荐**，posix_spawn 替代 | 标准 POSIX 线程 |
+
+> 「终止信号 SIGCHLD vs 0」是上表的关键差异：`CLONE_THREAD` 置位时内核不向父发 SIGCHLD，所以才不能用 `wait` 收线程，只能 `pthread_join`（底层由 `CLONE_CHILD_CLEARTID` 清地址 + futex 唤醒实现）。
+
 #### 对比表
 
 | 类型 | 地址空间 | 创建者 | 典型用途 |
