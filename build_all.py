@@ -490,14 +490,16 @@ def build_book(book, chapters, appendices):
 def build_top_index():
     """生成 hft-reclone/html/index.html —— 8 本书封面。"""
     rows = []
+    top_idx_dir = WORKSPACE / "html"
     for book in BOOKS:
-        rel = book["out"]
         root = WORKSPACE / book["root"]
         nch = sum(1 for d in root.iterdir() if d.is_dir() and d.name.startswith("chapter-"))
         napp = sum(1 for f in root.iterdir() if f.is_file() and f.name.lower().startswith("appendix-"))
         meta = f"{nch} 章" + (f" + {napp} 附录" if napp else "")
+        # 封面页位于 html/index.html，书封面位于 <root>/html/index.html，需计算相对路径
+        href = os.path.relpath(root / "html" / "index.html", top_idx_dir).replace("\\", "/")
         rows.append(
-            f'      <a class="book-card" href="{rel}/index.html">'
+            f'      <a class="book-card" href="{href}">'
             f'<div class="sec-no">{len(rows)+1:02d}</div>'
             f'<h2>{html_mod.escape(book["title_zh"])}</h2>'
             f'<p class="lead">{html_mod.escape(book["sub_zh"])} · {meta}</p>'
@@ -578,6 +580,7 @@ def build_book_index(book, n_pages, all_pages):
 .book-card .lead{color:var(--muted);font-family:var(--font-mono);font-size:12px;margin:0}
 .book-card .sec-no{color:var(--red);font-family:var(--font-mono);font-size:12px;letter-spacing:.06em}
 """
+    top_idx_rel = os.path.relpath(WORKSPACE / "html" / "index.html", out_dir).replace("\\", "/")
     body = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -611,7 +614,7 @@ def build_book_index(book, n_pages, all_pages):
     <div class="content">
 {grid}
     </div>
-    <footer class="footer"><div class="content"><p><a href="../../../html/index.html"><code class="c">← 全套笔记总目录</code></a></p></div></footer>
+    <footer class="footer"><div class="content"><p><a href="{top_idx_rel}"><code class="c">← 全套笔记总目录</code></a></p></div></footer>
   </main>
 </div>
 </body></html>"""
