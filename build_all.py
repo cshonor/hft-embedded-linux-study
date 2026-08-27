@@ -652,44 +652,52 @@ def build_book(book, chapters, appendices):
 
 # ---------- 顶层封面（跨全部书，按领域分组） ----------
 def build_top_index(book_meta):
-    """生成 hft-reclone/html/index.html —— 全部书封面，按领域分组。"""
-    top_idx_dir = WORKSPACE / "html"
+    """生成顶层封面（html/index.html + 根 index.html）—— 全部书封面，按领域分组。
+    根 index.html 直接渲染完整封面，替代 meta-refresh 跳转页，打开 Pages 根路径即见内容。"""
     # book_meta: (book, chapters, appendices) 与 BOOKS 顺序一致
     per_book = {}
-    total_pages = 0
     chapters_total = 0
     for book, chapters, appendices in book_meta:
         per_book[book["root"]] = (len(chapters), len(appendices))
         chapters_total += len(chapters)
-    by_group = {}
-    idx = 0
-    for book in BOOKS:
-        nch, napp = per_book.get(book["root"], (0, 0))
-        total_pages += nch + napp
-        root = WORKSPACE / book["root"]
-        meta = f"{nch} 章" + (f" + {napp} 附录" if napp else "")
-        href = os.path.relpath(root / "html" / "index.html", top_idx_dir).replace("\\", "/")
-        idx += 1
-        card = (f'      <a class="book-card" href="{href}">'
-                f'<div class="sec-no">{idx:02d}</div>'
-                f'<h2>{html_mod.escape(book["title_zh"])}</h2>'
-                f'<p class="lead">{html_mod.escape(book["sub_zh"])} · {meta}</p>'
-                f'<code class="c">{book["root"]}</code>'
-                f'</a>')
-        by_group.setdefault(book["group"], []).append(card)
-    sections = []
-    for gkey, gname in GROUP_ORDER:
-        cards = by_group.get(gkey)
-        if not cards:
-            continue
-        sections.append(
-            f'<div class="grp"><h2 class="grp-title"><span class="gdot"></span>{gname}</h2>\n'
-            + "\n".join(cards) + "\n</div>"
-        )
-    grid = "\n".join(sections)
-    out = WORKSPACE / "html" / "index.html"
-    out.parent.mkdir(exist_ok=True)
-    css_extra = """
+
+    def render(top_idx_dir):
+        by_group = {}
+        total_pages = 0
+        idx = 0
+        for book in BOOKS:
+            nch, napp = per_book.get(book["root"], (0, 0))
+            total_pages += nch + napp
+            root = WORKSPACE / book["root"]
+            meta = f"{nch} 章" + (f" + {napp} 附录" if napp else "")
+            href = os.path.relpath(root / "html" / "index.html", top_idx_dir).replace("\\", "/")
+            idx += 1
+            card = (f'      <a class="book-card" href="{href}">'
+                    f'<div class="sec-no">{idx:02d}</div>'
+                    f'<h2>{html_mod.escape(book["title_zh"])}</h2>'
+                    f'<p class="lead">{html_mod.escape(book["sub_zh"])} · {meta}</p>'
+                    f'<code class="c">{book["root"]}</code>'
+                    f'</a>')
+            by_group.setdefault(book["group"], []).append(card)
+        sections = []
+        for gkey, gname in GROUP_ORDER:
+            cards = by_group.get(gkey)
+            if not cards:
+                continue
+            sections.append(
+                f'<div class="grp"><h2 class="grp-title"><span class="gdot"></span>{gname}</h2>\n'
+                + "\n".join(cards) + "\n</div>"
+            )
+        grid = "\n".join(sections)
+        out = top_idx_dir / "index.html"
+        out.parent.mkdir(exist_ok=True)
+        return total_pages, grid
+
+    total_pages, grid = render(WORKSPACE / "html")
+    _, grid_root = render(WORKSPACE)
+    for top_idx_dir, g in ((WORKSPACE / "html", grid), (WORKSPACE, grid_root)):
+        out = top_idx_dir / "index.html"
+        css_extra = """
 .grp{margin:34px 0 6px}
 .grp-title{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:.08em;color:var(--red);text-transform:uppercase;display:flex;align-items:center;gap:10px;margin:0 0 6px;border-bottom:1px solid var(--line);padding-bottom:10px}
 .grp-title .gdot{width:9px;height:9px;border-radius:50%;background:var(--red);flex:0 0 auto}
@@ -699,7 +707,7 @@ def build_top_index(book_meta):
 .book-card .lead{color:var(--muted);font-size:14px;margin:0 0 10px}
 .book-card .sec-no{color:var(--red);font-family:var(--font-mono);font-size:13px;letter-spacing:.06em}
 """
-    body = f"""<!DOCTYPE html>
+        body = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -731,12 +739,12 @@ def build_top_index(book_meta):
       </div>
     </header>
     <div class="content">
-{grid}
+{g}
     </div>
   </main>
 </div>
 </body></html>"""
-    out.write_text(body, encoding="utf-8")
+        out.write_text(body, encoding="utf-8")
     return len(BOOKS)
 
 # ---------- 每本书封面 index.html ----------
