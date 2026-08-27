@@ -93,6 +93,16 @@ kthread（无用户地址空间）
 
 > 「终止信号 SIGCHLD vs 0」是上表的关键差异：`CLONE_THREAD` 置位时内核不向父发 SIGCHLD，所以才不能用 `wait` 收线程，只能 `pthread_join`（底层由 `CLONE_CHILD_CLEARTID` 清地址 + futex 唤醒实现）。
 
+#### fork 与多线程的三个坑
+
+| 坑 | 现象 | 根因 |
+|----|------|------|
+| **1. fork 只保留调用线程** | 多线程父进程 fork 后，子进程里**只有调用 fork 的那条 LWP 存活**，其余线程全部消失 | fork 只复制当前 `task_struct`，不复制同组的其他线程；子进程的 `mm` 仍指向原地址空间（COW），但其他线程的调度实体没了 |
+| **2. `exit()` 杀全组** | 线程里调 `exit()` 会终止**整个线程组所有线程** | `exit()` 作用于 tgid（进程级）；只杀当前 LWP 要用 `pthread_exit()`，它只销毁当前 `task_struct` 并触发 `CLONE_CHILD_CLEARTID` 的 futex 唤醒 |
+| **3. 共享地址 → 需同步** | LWP 间全局变量直接互相可见，不加锁就 race | `CLONE_VM` 让所有线程共用同一份页表；fork 出的子进程是独立 `mm`，改了也不影响父（COW） |
+
+> 坑 1 的实战后果：fork 后子进程**不要随便碰 pthread 库**——锁的状态是从父进程那一刻冻结的快照，如果别的线程正持着锁，子进程里那把锁永远等不到释放 → 死锁。POSIX 规定只有 async-signal-safe 函数能在 fork 后的子进程里调用，就是这个道理。
+
 #### 对比表
 
 | 类型 | 地址空间 | 创建者 | 典型用途 |
