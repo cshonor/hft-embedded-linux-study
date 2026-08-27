@@ -10,6 +10,8 @@ Linux **没有** 单独的「线程」内核对象类型：
 | 创建 | **`clone()`** syscall + **标志位** 指定共享项 |
 | 用户库 | **NPTL**（Native POSIX Thread Library）— `pthread_*` 封装 `clone` |
 
+> 经典表述：**进程是资源分配的最小单位，线程是 CPU 调度的最小单位**。Linux 里这两者都是 `task_struct`——调度器只看 task_struct，资源边界由 clone 标志决定。
+
 #### 常见 CLONE_* 标志
 
 | 标志 | 共享内容 | pthread 近似 |
