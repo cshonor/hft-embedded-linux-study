@@ -28,6 +28,8 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 >
 > **全部 59 本书已按 11 个领域分组**，每本一个封面入口 → 章节页/附录页。
 > 在线浏览：[GitHub Pages](https://cshonor.github.io/hft-embedded-linux-study/) · **顶层总目录** → [html/index.html](./html/index.html)
+>
+> 站内**每个文件夹都有自动生成的目录导航页**（文件树式逐级浏览），例如 [01-c-language/](https://cshonor.github.io/hft-embedded-linux-study/01-c-language/)、[04-cpp/](https://cshonor.github.io/hft-embedded-linux-study/04-cpp/)。
 
 ### C 语言（6 本）
 

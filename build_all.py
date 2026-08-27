@@ -850,6 +850,156 @@ def build_chapter_titles(book):
     return titles
 
 # ---------- main ----------
+DIR_CSS = """
+body{background:var(--ink);color:var(--paper);font-family:var(--font-mono);margin:0}
+.dirwrap{max-width:880px;margin:0 auto;padding:34px 20px 70px}
+.crumbs{font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.7;word-break:break-all}
+.crumbs a{color:var(--red);text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
+h1{font-family:var(--font-display);font-size:26px;font-weight:700;margin:0 0 6px}
+.dsub{color:var(--muted);font-size:13px;margin:0 0 22px}
+.dirlist{border:1px solid var(--line);border-radius:12px;background:var(--ink-2);overflow:hidden}
+.frow{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--paper);font-size:14px;transition:background .12s}
+.frow:last-child{border-bottom:none}
+.frow:hover{background:var(--ink-3)}
+.frow.book .fname{color:var(--red)}
+.fname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fnote{color:var(--muted);font-size:12px;white-space:nowrap}
+.fico{width:22px;text-align:center;flex:none}
+.gen{color:var(--muted);font-size:11px;margin-top:18px}
+@media(max-width:640px){.fnote{display:none}}
+"""
+
+FILE_ICONS = {".md": "📄", ".py": "🐍", ".css": "🎨", ".html": "🌐", ".png": "🖼", ".jpg": "🖼", ".jpeg": "🖼",
+              ".gif": "🖼", ".svg": "🖼", ".pdf": "📕", ".json": "🔧", ".txt": "📃", ".sh": "⚙"}
+
+
+DIR_GEN_MARK = "目录导航页由 build_all.py 自动生成"
+
+
+def _u(name):
+    """最小 URL 转义：只处理 href 中会破坏语义的字符，中文保持原样。"""
+    return (name.replace("%", "%25").replace("#", "%23")
+                .replace(" ", "%20").replace("?", "%3F"))
+
+
+def _write_retry(path, text, tries=5):
+    """写入文件，容忍杀软/同步盘瞬时锁（PermissionError 时删除重写/换名替换）。"""
+    import time
+    for i in range(tries):
+        try:
+            path.write_text(text, encoding="utf-8")
+            return
+        except PermissionError:
+            try:
+                if path.exists():
+                    os.remove(path)  # 删除被锁文件后重写
+                    path.write_text(text, encoding="utf-8")
+                    return
+            except OSError:
+                pass
+            tmp = path.with_suffix(path.suffix + f".tmp{i}")
+            try:
+                tmp.write_text(text, encoding="utf-8")
+                os.replace(tmp, path)
+                return
+            except OSError:
+                if tmp.exists():
+                    try: os.remove(tmp)
+                    except OSError: pass
+            if i == tries - 1:
+                raise
+            time.sleep(0.4 * (i + 1))
+
+
+def build_dir_indexes():
+    """为所有没有 index.html 的文件夹生成目录导航页 —— 全站按文件夹逐级浏览。"""
+    roots = {b["root"]: b for b in BOOKS}
+    root_idx = WORKSPACE / "index.html"
+    css_path = WORKSPACE / "cfs-style.css"
+    cover_dirs = {WORKSPACE, WORKSPACE / "html"} | {WORKSPACE / b["root"] / "html" for b in BOOKS}
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(WORKSPACE):
+        dirnames[:] = sorted(d for d in dirnames if d != ".git")
+        d = Path(dirpath)
+        if d in cover_dirs:
+            continue  # 封面页所在目录跳过（封面不覆盖）
+        rel = d.relative_to(WORKSPACE)
+        rel_posix = rel.as_posix()
+        name = rel_posix if rel_posix != "." else str(WORKSPACE.name)
+        # 面包屑：根 → 各级父目录
+        crumbs = [f'<a href="{os.path.relpath(root_idx, d).replace(os.sep, "/")}">🏠 hft-embedded-linux-study</a>']
+        acc = ""
+        for seg in rel.parts:
+            acc = f"{acc}/{seg}" if acc else seg
+            parent = WORKSPACE / acc
+            if (parent / "index.html").exists():
+                href = os.path.relpath(parent / "index.html", d).replace(os.sep, "/")
+                crumbs.append(f' / <a href="{href}">{seg}</a>')
+            else:
+                crumbs.append(f" / {seg}")
+        # 子目录条目
+        rows = []
+        for sub in dirnames:
+            sp = d / sub
+            sub_rel = f"{rel_posix}/{sub}" if rel_posix != "." else sub
+            cover = sp / "html" / "index.html"
+            if sub_rel in roots:
+                book = roots[sub_rel]
+                href = _u(os.path.relpath(cover, d).replace(os.sep, "/"))
+                rows.append(
+                    f'<a class="frow book" href="{href}"><span class="fico">📖</span>'
+                    f'<span class="fname">{html_mod.escape(book["title_zh"])}</span>'
+                    f'<span class="fnote">{html_mod.escape(sub)} · HTML 阅读版</span></a>')
+            elif cover.exists():
+                href = _u(os.path.relpath(cover, d).replace(os.sep, "/"))
+                rows.append(
+                    f'<a class="frow book" href="{href}"><span class="fico">📖</span>'
+                    f'<span class="fname">{html_mod.escape(sub)}</span>'
+                    f'<span class="fnote">HTML 阅读版</span></a>')
+            else:
+                n_items = sum(1 for _ in sp.iterdir())
+                rows.append(
+                    f'<a class="frow" href="{_u(sub)}/"><span class="fico">📁</span>'
+                    f'<span class="fname">{html_mod.escape(sub)}</span>'
+                    f'<span class="fnote">{n_items} 项</span></a>')
+        # 文件条目
+        for f in sorted(filenames):
+            if f.startswith(".") or f == "index.html":
+                continue
+            icon = FILE_ICONS.get(Path(f).suffix.lower(), "📄")
+            rows.append(
+                f'<a class="frow" href="{_u(f)}"><span class="fico">{icon}</span>'
+                f'<span class="fname">{html_mod.escape(f)}</span></a>')
+        body = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{html_mod.escape(name)} · 目录</title>
+<link rel="stylesheet" href="{os.path.relpath(css_path, d).replace(os.sep, "/")}">
+<style>{DIR_CSS}</style>
+</head>
+<body>
+<div class="dirwrap">
+  <nav class="crumbs">{''.join(crumbs)}</nav>
+  <h1>📁 {html_mod.escape(name)}</h1>
+  <p class="dsub">{len(dirnames)} 个子目录 · {len(rows) - len(dirnames)} 个文件</p>
+  <div class="dirlist">
+{chr(10).join('  ' + r for r in rows) if rows else '  <div class="frow"><span class="fico">—</span><span class="fname">空目录</span></div>'}
+  </div>
+  <p class="gen">目录导航页由 build_all.py 自动生成</p>
+</div>
+</body>
+</html>"""
+        out = d / "index.html"
+        if out.exists() and out.read_text(encoding="utf-8") == body:
+            continue  # 内容未变，跳过写入
+        _write_retry(out, body)
+        count += 1
+    return count
+
+
 def main():
     # 1. 注册全局锚点（依赖全部书，但 books 间无交叉）
     book_meta = []  # (book, chapters, appendices, all_pages)
@@ -867,7 +1017,8 @@ def main():
         total += n
         print(f"[{book['root']}] {n} 页")
     nb = build_top_index(book_meta)
-    print(f"\n总计 {total} 章/附录页 + {nb} 本书封面 + 1 顶层封面")
+    nd = build_dir_indexes()
+    print(f"\n总计 {total} 章/附录页 + {nb} 本书封面 + 1 顶层封面 + {nd} 个文件夹目录页")
 
 if __name__ == "__main__":
     main()
