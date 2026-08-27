@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ch 16 页高速缓存和页回写 · The Page Cache and Page Writeback</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --ink:#141416;
+  --ink-2:#1b1b1f;
+  --ink-3:#202024;
+  --code:#101012;
+  --line:#2a2a30;
+  --paper:#e9e7e1;
+  --muted:#9a9790;
+  --red:#e5484d;
+  --red-dim:#b93a3e;
+  --red-soft:rgba(229,72,77,.14);
+  --font-display:"Space Grotesk","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono","SF Mono",Consolas,"Liberation Mono",monospace;
+  --font-body:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  background:var(--ink);
+  color:var(--paper);
+  font-family:var(--font-body);
+  font-size:16px;
+  line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+::selection{background:var(--red);color:#0d0d0e}
+a{color:var(--red);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
+/* progress */
+#progress{position:fixed;top:0;left:0;height:2px;width:0;background:var(--red);z-index:60}
+
+/* layout */
+.layout{display:grid;grid-template-columns:280px 1fr;max-width:1280px;margin:0 auto}
+
+/* sidebar */
+.sidebar{
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+  padding:28px 22px 60px;border-right:1px solid var(--line);
+}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--red);flex:0 0 auto}
+.brand .dot.alt{background:#0a0a0b;border:1.5px solid var(--muted)}
+.brand strong{font-family:var(--font-display);font-size:14px;letter-spacing:.04em;font-weight:600}
+.brand small{display:block;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.08em}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav a{
+  display:flex;align-items:baseline;gap:10px;padding:6px 10px;border-radius:6px;
+  color:var(--muted);font-size:13.5px;line-height:1.5;text-decoration:none;
+  border-left:2px solid transparent;
+}
+.nav a .n{font-family:var(--font-mono);font-size:11px;color:var(--muted);flex:0 0 auto}
+.nav a:hover{color:var(--paper);background:var(--ink-2)}
+.nav a.active{color:var(--paper);background:var(--ink-2);border-left-color:var(--red)}
+.nav a.active .n{color:var(--red)}
+.nav-label{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;margin:18px 10px 6px}
+
+/* top bar (mobile) */
+.topbar{display:none;position:sticky;top:0;z-index:50;background:rgba(20,20,22,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:12px 18px}
+.topbar summary{list-style:none;cursor:pointer;font-family:var(--font-display);font-weight:600;display:flex;align-items:center;gap:8px}
+.topbar summary::-webkit-details-marker{display:none}
+.topbar .burger{width:14px;height:2px;background:var(--red);box-shadow:0 -5px 0 var(--red),0 5px 0 var(--red)}
+.topbar details[open] .burger{box-shadow:0 -5px 0 var(--red)}
+
+/* main */
+.main{min-width:0;padding:0 0 120px}
+.content{max-width:760px;margin:0 auto;padding:0 28px}
+
+/* hero */
+.hero{
+  position:relative;overflow:hidden;
+  border-bottom:1px solid var(--line);
+  padding:72px 28px 56px;
+}
+.hero .content{position:relative;z-index:2;display:grid;grid-template-columns:1fr 320px;gap:40px;align-items:center}
+.eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.18em;color:var(--red);text-transform:uppercase;margin-bottom:20px}
+.hero h1{font-family:var(--font-display);font-weight:700;font-size:clamp(30px,4.5vw,50px);line-height:1.08;letter-spacing:-.02em}
+.hero h1 .accent{color:var(--red)}
+.hero .sub{margin-top:20px;color:var(--muted);font-size:16px;max-width:46ch}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}
+.meta span{
+  font-family:var(--font-mono);font-size:11px;color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:5px 12px;
+}
+.meta span b{color:var(--paper);font-weight:500}
+.hero-tree{position:relative;z-index:2}
+.hero-tree .cap{font-family:var(--font-mono);font-size:11px;color:var(--muted);text-align:center;margin-top:10px}
+.hero-grid{position:absolute;inset:0;z-index:1;opacity:.35;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(ellipse at 30% 20%,#000 0%,transparent 75%)}
+
+/* tree svg */
+.tnode text{font-family:var(--font-mono);font-weight:700;font-size:13px;text-anchor:middle;dominant-baseline:central}
+.tedge{stroke:#3a3a42;stroke-width:1.6}
+.tred{fill:var(--red)}
+.tblack{fill:#101012;stroke:#52525a;stroke-width:1.5}
+.tred text{fill:#150a0a}
+.tblack text{fill:var(--paper)}
+.tmin{stroke:var(--red);stroke-width:2;stroke-dasharray:4 3;animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{stroke-opacity:.3}50%{stroke-opacity:1}}
+.tlabel{font-family:var(--font-mono);font-size:10px;fill:var(--muted)}
+.tarrow{stroke:var(--red);stroke-width:1.4;fill:none}
+
+/* sections */
+.section{padding:64px 0 8px;border-bottom:1px solid var(--line)}
+.section:last-of-type{border-bottom:none}
+.sec-head{margin-bottom:8px}
+.sec-no{
+  font-family:var(--font-mono);font-size:12px;letter-spacing:.12em;color:var(--red);
+  display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;
+}
+.sec-no::before{content:"";width:14px;height:14px;background:var(--red);border-radius:3px;display:inline-block}
+.sec-no::after{content:"";height:1px;width:44px;background:var(--line);display:inline-block}
+.section h2{font-family:var(--font-display);font-weight:700;font-size:clamp(24px,3vw,32px);letter-spacing:-.01em;line-height:1.2}
+.section .lead{color:var(--muted);margin-top:10px;font-size:15px}
+
+.section h3{
+  font-family:var(--font-display);font-weight:600;font-size:19px;line-height:1.4;
+  margin:44px 0 14px;display:flex;align-items:baseline;gap:10px;
+}
+.section h3 .kn{font-family:var(--font-mono);font-size:13px;color:var(--red);flex:0 0 auto}
+.section p{margin:14px 0;color:#d6d3cc}
+.section ul,.section ol{margin:12px 0 12px 4px;padding-left:22px}
+.section li{margin:7px 0;color:#d6d3cc}
+.section li::marker{color:var(--red)}
+.section strong{color:var(--paper)}
+.section blockquote{
+  margin:20px 0;padding:14px 18px;border-left:3px solid var(--red);
+  background:var(--red-soft);border-radius:0 8px 8px 0;color:var(--paper);
+}
+.section blockquote p{margin:6px 0;color:var(--paper)}
+
+/* inline code */
+code.c{
+  font-family:var(--font-mono);font-size:.86em;
+  background:var(--ink-3);border:1px solid var(--line);border-radius:4px;
+  padding:1px 6px;color:var(--paper);white-space:nowrap;
+}
+
+/* code block */
+pre.code{
+  position:relative;margin:20px 0;background:var(--code);
+  border:1px solid var(--line);border-radius:8px;padding:18px 20px 16px;
+  overflow-x:auto;font-family:var(--font-mono);font-size:13px;line-height:1.65;color:#d8d5ce;
+}
+pre.code::before{
+  content:attr(data-label);display:block;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:.12em;color:var(--red);text-transform:uppercase;margin-bottom:10px;
+}
+pre.code code{font-family:inherit;color:inherit}
+pre.code::-webkit-scrollbar{height:6px}
+pre.code::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{background:var(--ink-2);font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.02em;text-align:left;padding:11px 14px;color:var(--paper);white-space:nowrap}
+td{padding:10px 14px;border-top:1px solid var(--line);color:#d6d3cc;vertical-align:top}
+tbody tr:hover{background:var(--ink-2)}
+td code.c{font-size:.82em}
+
+/* callout */
+.callout{display:flex;gap:12px;margin:22px 0;padding:16px 18px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px}
+.callout .tag{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;color:var(--red);background:var(--red-soft);border-radius:4px;padding:3px 8px;height:max-content}
+.callout p{margin:0;color:#d6d3cc}
+.callout p + p{margin-top:8px}
+.callout code.c{font-size:.8em}
+
+/* timeline (vruntime A B C D) */
+.timeline{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap}
+.tnode-box{display:flex;flex-direction:column;align-items:center;gap:6px}
+.tnode-box .v{width:34px;height:34px;border-radius:50%;border:2px solid var(--line);background:var(--ink-2);display:grid;place-items:center;font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--paper)}
+.tnode-box.sel .v{border-color:var(--red);color:var(--red)}
+.tnode-box .l{font-family:var(--font-mono);font-size:10px;color:var(--muted)}
+.tedge-bar{width:30px;height:2px;background:var(--line);margin-bottom:22px;flex:0 0 auto}
+.tnode-box.sel .l{color:var(--red)}
+
+/* ladder (priority order) */
+.ladder{margin:22px 0;display:flex;flex-direction:column;gap:4px}
+.ladder .rung{display:flex;align-items:center;gap:12px;font-family:var(--font-mono);font-size:13px;color:var(--paper);background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:8px 14px}
+.ladder .rung i{width:9px;height:9px;border-radius:2px;background:var(--line);flex:0 0 auto}
+.ladder .rung.fair i{background:var(--red)}
+.ladder .rung .d{color:var(--muted);font-size:11px}
+
+/* QA */
+.qa{margin:26px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.qa-q{padding:14px 18px;background:var(--ink-2);font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--paper);display:flex;gap:12px;align-items:baseline}
+.qa-q .qid{font-family:var(--font-mono);font-size:12px;color:var(--red);flex:0 0 auto}
+.qa-a{padding:14px 18px;color:#d6d3cc;font-size:15px}
+.qa-a p{margin:8px 0}
+.qa-a ul{margin:8px 0 8px 4px;padding-left:20px}
+.qa-a li{margin:5px 0}
+.qa-a pre.code{margin:12px 0}
+
+/* tree diagram in section 4 */
+.treediagram{display:flex;flex-direction:column;gap:2px;margin:20px 0;font-family:var(--font-mono);font-size:13px;color:var(--muted);white-space:pre;overflow-x:auto;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:18px 20px}
+.treediagram b{color:var(--paper);font-weight:500}
+.treediagram .r{color:var(--red)}
+
+/* footer */
+.footer{border-top:1px solid var(--line);padding:40px 28px 0;text-align:center}
+.footer .content{padding:0}
+.footer .rb{display:flex;justify-content:center;gap:8px;margin-bottom:14px}
+.footer .rb i{width:12px;height:12px;border-radius:50%}
+.footer .rb i.r{background:var(--red)}
+.footer .rb i.b{background:#0a0a0b;border:1.5px solid var(--muted)}
+.footer p{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+
+@media (max-width:1080px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .topbar{display:block}
+  .hero .content{grid-template-columns:1fr}
+  .hero-tree{max-width:420px;margin:0 auto}
+}
+@media (max-width:640px){
+  .hero{padding:48px 18px 40px}
+  .content{padding:0 18px}
+  .section{padding:48px 0 4px}
+  .tedge-bar{width:16px}
+}
+
+
+.section h3.sub{font-family:var(--font-display);font-size:20px;font-weight:600;letter-spacing:-.01em;color:var(--paper);margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.section h4{font-family:var(--font-display);font-size:16.5px;font-weight:600;color:var(--paper);margin:32px 0 10px}
+.section h5{font-family:var(--font-mono);font-size:12.5px;letter-spacing:.08em;color:var(--red);text-transform:uppercase;margin:28px 0 8px}
+.section .lead{color:var(--muted);font-size:16.5px;margin-bottom:22px}
+.section p{margin:14px 0}
+.section ul,.section ol{margin:14px 0 14px 4px;padding-left:22px}
+.section li{margin:6px 0}
+.section ul ul{margin:6px 0}
+details{border:1px solid var(--line);border-radius:10px;background:var(--ink-2);margin:14px 0;overflow:hidden}
+details summary{cursor:pointer;list-style:none;padding:11px 16px;font-family:var(--font-mono);font-size:12.5px;color:var(--red);letter-spacing:.06em;user-select:none}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"▸ ";color:var(--red)}
+details[open] summary::before{content:"▾ "}
+details summary:hover{background:var(--ink-3)}
+details > *:not(summary){margin:0 16px}
+details p, details li{margin:10px 0;color:var(--paper)}
+details .code{margin:12px 16px}
+details .tbl-wrap{margin:12px 16px}
+details blockquote{margin:12px 16px}
+hr{border:none;border-top:1px solid var(--line);margin:34px 0}
+.section a code.c{color:var(--red)}
+.meta span.hft{border-color:var(--red-dim);color:var(--red)}
+.nav a .n{min-width:2.6em}
+
+
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="dot"></div>
+      <div>
+        <strong>05-linux-kernel</strong>
+        <small>hft-embedded-linux-study</small>
+      </div>
+    </div>
+    <div class="nav-label">本章</div>
+    <nav class="nav">
+          <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-16-1"><span class="n"></span>section-16.1-缓存策略与写回</a>
+          <a href="#s-16-2"><span class="n"></span>section-16.2-缓存回收与双链表策略</a>
+          <a href="#s-16-3"><span class="n"></span>section-16.3-address_space-与基数树</a>
+          <a href="#s-16-4"><span class="n"></span>section-16.4-缓冲区高速缓存</a>
+          <a href="#s-16-5"><span class="n"></span>section-16.5-flusher-线程</a>
+          <a href="#s-16-6"><span class="n"></span>section-16.6-膝上型计算机模式</a>
+          <a href="#s-16-7"><span class="n"></span>section-16.7-历史演进与避免拥塞</a>
+          <a href="#s-16-8"><span class="n"></span>section-16.8-读路径与写路径衔接</a>
+    </nav>
+    <div class="nav-label">全书</div>
+    <nav class="nav">
+          <a href="chapter-01.html#intro"><span class="n">01</span>Ch 1 Linux 内核简介 · Introduction to the Linux Kernel</a>
+          <a href="chapter-02.html#intro"><span class="n">02</span>Ch 2 内核入门 · Getting Started with the Kernel</a>
+          <a href="chapter-03.html#intro"><span class="n">03</span>Ch 3 进程管理 · Process Management</a>
+          <a href="chapter-04.html#intro"><span class="n">04</span>Ch 4 进程调度 · Process Scheduling</a>
+          <a href="chapter-05.html#intro"><span class="n">05</span>Ch 5 系统调用 · System Calls</a>
+          <a href="chapter-06.html#intro"><span class="n">06</span>Ch 6 内核数据结构 · Kernel Data Structures</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Ch 7 中断和中断处理程序 · Interrupts and Interrupt Handlers</a>
+          <a href="chapter-08.html#intro"><span class="n">08</span>Ch 8 下半部和推后执行的工作 · Bottom Halves and Deferring Work</a>
+          <a href="chapter-09.html#intro"><span class="n">09</span>Ch 9 内核同步介绍 · An Introduction to Kernel Synchronization</a>
+          <a href="chapter-10.html#intro"><span class="n">10</span>Ch 10 内核同步方法 · Kernel Synchronization Methods</a>
+          <a href="chapter-11.html#intro"><span class="n">11</span>Ch 11 定时器和时间管理 · Timers and Time Management</a>
+          <a href="chapter-12.html#intro"><span class="n">12</span>Ch 12 内存管理 · Memory Management</a>
+          <a href="chapter-13.html#intro"><span class="n">13</span>Ch 13 虚拟文件系统 · The Virtual Filesystem</a>
+          <a href="chapter-14.html#intro"><span class="n">14</span>Ch 14 块 I/O 层 · The Block I/O Layer</a>
+          <a href="chapter-15.html#intro"><span class="n">15</span>Ch 15 进程地址空间 · The Process Address Space</a>
+          <a href="chapter-16.html#intro"><span class="n">16</span>Ch 16 页高速缓存和页回写 · The Page Cache and Page Writeback</a>
+          <a href="chapter-17.html#intro"><span class="n">17</span>Ch 17 设备与模块 · Devices and Modules</a>
+          <a href="chapter-18.html#intro"><span class="n">18</span>Ch 18 调试 · Debugging</a>
+          <a href="chapter-19.html#intro"><span class="n">19</span>Ch 19 可移植性 · Portability</a>
+          <a href="chapter-20.html#intro"><span class="n">20</span>Ch 20 补丁、开发和社区 · Patches, Hacking, and the Community</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="hero">
+      <div class="hero-grid"></div>
+      <div class="content" style="grid-template-columns:1fr">
+        <div>
+          <div class="eyebrow">Robert Love · LKD 3e 中文笔记</div>
+          <h1>Ch 16 页高速缓存和页回写 · The Page Cache and Page Writeback</h1>
+          <div class="meta">
+<span>book <b>05-linux-kernel</b></span><span>chapter <b>Ch 16</b></span><span>sections <b>9</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+      <section class="section" id="intro">
+        <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本节结构</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节</th>
+<th>主题</th>
+<th>带走什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>① 写回策略</strong></td>
+<td>write-back</td>
+<td><strong>脏页</strong></td>
+</tr>
+<tr>
+<td><strong>② 双链表 LRU</strong></td>
+<td>active / inactive</td>
+<td>回收干净页</td>
+</tr>
+<tr>
+<td><strong>③ address_space</strong></td>
+<td>基数树</td>
+<td>按偏移找页</td>
+</tr>
+<tr>
+<td><strong>④ buffer cache</strong></td>
+<td>与页缓存统一</td>
+<td>2.4+</td>
+</tr>
+<tr>
+<td><strong>⑤ flusher</strong></td>
+<td>脏页写回触发</td>
+<td><code class="c">dirty_*</code> · <code class="c">fsync</code></td>
+</tr>
+<tr>
+<td><strong>⑥ Laptop Mode</strong></td>
+<td>省电写回</td>
+<td>搭便车</td>
+</tr>
+<tr>
+<td><strong>⑦ 历史演进</strong></td>
+<td>bdflush → flusher</td>
+<td>每盘一线程</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>本章小结</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>答案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux 写策略？</td>
+<td><strong>write-back</strong> · <strong>脏页</strong> 延迟落盘</td>
+</tr>
+<tr>
+<td>如何回收？</td>
+<td><strong>active / inactive</strong> 双 LRU</td>
+</tr>
+<tr>
+<td>谁管缓存索引？</td>
+<td><strong><code class="c">address_space</code> + 基数树</strong></td>
+</tr>
+<tr>
+<td>buffer cache？</td>
+<td><strong>已并入 page cache</strong>（2.4+）</td>
+</tr>
+<tr>
+<td>何时写回？</td>
+<td><strong>内存压力 · 超时 · sync/fsync</strong></td>
+</tr>
+<tr>
+<td>flusher 演进？</td>
+<td><strong>bdflush → pdflush → per-spindle flusher</strong></td>
+</tr>
+<tr>
+<td>HFT？</td>
+<td>热路径 <strong>少 FS 写</strong>；懂 <strong>fsync 尖刺</strong> 与 <strong>cachestat</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>本章学习目标 · 自检</h2>
+<ul>
+<li>[ ] 对比 <strong>write-back vs write-through</strong></li>
+<li>[ ] 解释 <strong>active/inactive</strong> 双链表解决的一次性读问题</li>
+<li>[ ] 说出 <strong><code class="c">address_space</code></strong> 与 inode/VMA 的关系</li>
+<li>[ ] 列出 flusher <strong>三种触发</strong> 条件</li>
+<li>[ ] 画 <strong>write → 脏页 → 异步回写</strong> 路径</li>
+<li>[ ] 知 <strong><code class="c">O_DIRECT</code> / mmap`</strong> 与页缓存的关系</li>
+</ul>
+<hr />
+<h2>相关章节</h2>
+<ul>
+<li>上一章：<a href="chapter-15.html#ch-15">../chapter-15-process-address-space/</a></li>
+<li>下一章：<a href="chapter-17.html#ch-17">../chapter-17-devices-modules/</a></li>
+<li>全书导读：<a href="#intro">../README.md</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">../OUTLINE.md</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-16-1">
+        <div class="sec-head"><h2>section-16.1-缓存策略与写回</h2></div>
+<p>Linux 对 <strong>可缓存的页数据</strong> 采用 <strong>写回（write-back）</strong> — 非 no-write、非 write-through。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>write-back</strong></td>
+<td>写先进入 <strong>页高速缓存</strong> → 页标 <strong>脏（dirty）</strong> → 入 <strong>脏页链表</strong> → <strong>定期写回磁盘</strong> → 清脏</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">应用 write()
+    ▼
+页缓存（内存）— 立即返回（通常）
+    ▼
+（稍后）flusher 写回磁盘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对比</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>write-through</strong></td>
+<td>每次写都落盘 — 慢、一致性强</td>
+</tr>
+<tr>
+<td><strong>write-back</strong></td>
+<td>批量异步写 — <strong>快</strong> · 崩溃可能丢未回写数据</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT：</strong> tick 路径 <strong>不应依赖</strong> 写回完成；关键持久化用 <strong><code class="c">fsync</code></strong> / 独立日志盘 / <strong><code class="c">O_DIRECT</code></strong> 自管缓存。</p>
+<p>→ <a href="../../06.6-systems-performance/html/chapter-08.html#ch-8">06.6 SysPerf Ch8 FS</a> · <a href="../../06.6-systems-performance/html/chapter-07.html#s-7-6">Ch7 <code class="c">vm.dirty_*</code></a></p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> write-back 和 write-through 的区别？Linux 为什么选 write-back？</p>
+<details>
+<summary>答案</summary>
+<p>write-through：写同时更新缓存和磁盘 → 数据安全但慢。write-back：只写缓存，标记脏页，后台异步写回磁盘 → 快但断电可能丢数据。Linux 选 write-back 因为：1) 多次写合并为一次 IO（减少磁盘操作）；2) 延迟写让 IO 调度器合并排序。HFT 交易日志不能丢数据 → 用 O_SYNC 或 fsync() 强制写回。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-2">
+        <div class="sec-head"><h2>section-16.2-缓存回收与双链表策略</h2></div>
+<p>内存紧张时需 <strong>驱逐缓存页</strong> — 优先换出 <strong>干净</strong> 页。</p>
+<p>Linux 使用修改版 <strong>LRU</strong> — <strong>双链表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>链表</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>active（活跃）</strong></td>
+<td><strong>热数据</strong> — <strong>不会被回收</strong></td>
+</tr>
+<tr>
+<td><strong>inactive（非活跃）</strong></td>
+<td><strong>可回收候选</strong></td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页在 inactive 被 <strong>再次访问</strong></td>
+<td>提升到 <strong>active</strong></td>
+</tr>
+<tr>
+<td>仅 inactive 上 <strong>干净页</strong> 可被回收</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">解决什么问题？
+  一次性顺序读大文件 — 若传统 LRU，会冲掉真正热的缓存
+  双链表：一次扫描的页留在 inactive，不挤 active 热页
+</code></pre>
+<p>→ <strong>Ch 12</strong> 物理页回收</p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> Linux 页面回收的 LRU 双链表策略是什么？</p>
+<details>
+<summary>答案</summary>
+<p>active_list（活跃页）和 inactive_list（不活跃页）。新页进 inactive 尾部。被再次访问时从 inactive 提升到 active。回收从 inactive 尾部开始。这比单链表 LRU 更好：防止「一次扫描污染」（如 find / 扫描大量文件后不立即驱逐活跃数据）。HFT 用 mlock 锁页不参与回收。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-3">
+        <div class="sec-head"><h2>section-16.3-address_space-与基数树</h2></div>
+<p>页缓存 <strong>通用</strong> — 不只缓存「文件」，还缓存任何 <strong>基于页的对象</strong>（含部分 mmap 路径）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>角色</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">address_space</code></strong></td>
+<td>管理 <strong>缓存条目 + 页 I/O</strong> — 可视为 VMA 的 <strong>「物理页侧」对应物</strong></td>
+</tr>
+<tr>
+<td>关联</td>
+<td>常挂在 <strong>inode</strong> 上（<code class="c">inode-&gt;i_mapping</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>基数树 · Radix Tree</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>按 <strong>文件偏移</strong> 快速查 <strong>缓存页是否在内存</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>替代</td>
+<td>2.6 前 <strong>全局哈希</strong> — 锁争用、开销大</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">address_space
+    └── radix tree: offset ──► struct page *
+</code></pre>
+<blockquote>
+<p>新内核中部分实现演进为 <strong>xarray</strong> — 语义仍为 <strong>索引 → page</strong>。</p>
+</blockquote>
+<p>→ <strong>Ch 15</strong> VMA · <strong>Ch 13</strong> inode</p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> address_space 和 page cache 的关系？</p>
+<details>
+<summary>答案</summary>
+<p>address_space 是 page cache 的管理单位：每个 inode（文件）对应一个 address_space，其中包含该文件所有缓存页的基数树（radix tree / xarray）。查找文件 offset 对应的缓存页：address_space → xarray → page。mmap 文件时，VMA 的 vm_ops-&gt;fault 回调从 address_space 取页。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-4">
+        <div class="sec-head"><h2>section-16.4-缓冲区高速缓存</h2></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>历史</th>
+<th>磁盘块经 <strong>buffer_head</strong> 映射到页（Ch 14）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>2.4+</strong></td>
+<td>独立 <strong>buffer cache</strong> 与 <strong>page cache</strong> <strong>统一</strong></td>
+</tr>
+<tr>
+<td>效果</td>
+<td>块 <strong>直接缓存在页缓存</strong> — 无双重拷贝、无重复占用</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">今天：read 文件块 ──► 页缓存中的一页 ──► 需要时 bio 写盘（Ch 14）
+</code></pre>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> buffer cache 和 page cache 的关系？现代内核还有 buffer cache 吗？</p>
+<details>
+<summary>答案</summary>
+<p>2.4 之前 buffer cache 缓存磁盘块（512B），page cache 缓存文件页（4KB），两者重复缓存同一数据。2.4 后统一：buffer cache 合并到 page cache 中，buffer_head 只作为页内块偏移的描述符。<code class="c">free</code> 命令中的 "buff/cache" 就是 page cache（含 buffer）。现代内核已无独立 buffer cache。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-5">
+        <div class="sec-head"><h2>section-16.5-flusher-线程</h2></div>
+<p><strong>内核线程组</strong> — 负责 <strong>脏页写回</strong>。</p>
+<h4>三种触发条件</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>触发</th>
+<th>配置/接口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>可用内存低于阈值</strong></td>
+<td><code class="c">dirty_background_ratio</code> 等 — 必须写回释内存</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>脏页停留超时</strong></td>
+<td><code class="c">dirty_expire_interval</code> — 防崩溃丢太多</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>用户显式同步</strong></td>
+<td><strong><code class="c">sync()</code></strong> · <strong><code class="c">fsync()</code></strong> / <code class="c">fdatasync</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">脏页积累
+    ├─ 内存压力 ──► flusher 后台写回
+    ├─ 时间到期 ──► 周期性写回
+    └─ fsync()   ──► 该文件脏页刷盘（可能阻塞）
+</code></pre>
+<p>| 观测 | <strong><code class="c">cachestat</code></strong> 命中率 · <strong><code class="c">ext4slower</code></strong> 慢 fsync |</p>
+<p><strong>HFT：</strong> 突发 <strong><code class="c">fsync</code> 日志</strong> 仍可能造成 <strong>P99 尖刺</strong> — 与策略核隔离、异步批量、专用盘。</p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> flusher 线程什么时候触发写回？HFT 如何控制？</p>
+<details>
+<summary>答案</summary>
+<p>触发条件：1) 脏页比例超阈值（vm.dirty_ratio 默认 20%）；2) 脏页存活超时（vm.dirty_expire_centisecs 默认 30s）；3) 用户调用 sync/fsync。HFT 控制：调小 vm.dirty_ratio 减少突发写回；交易日志用 O_SYNC 或 fsync 保证即时落盘。flusher 是后台线程，不影响前台交易线程（除非内存回收时阻塞）。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-6">
+        <div class="sec-head"><h2>section-16.6-膝上型计算机模式</h2></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标</th>
+<th><strong>硬盘尽量停转</strong> — 省电</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行为</td>
+<td>除超时脏页外，在磁盘 <strong>因其他 I/O 已转</strong> 时 <strong>搭便车</strong> 写回 <strong>全部脏缓冲</strong> — 避免 <strong>专为写回再启动</strong> 硬盘</td>
+</tr>
+</tbody>
+</table></div>
+<p>| 场景 | 笔记本 · 非 HFT 实盘常态 — 了解即可 |</p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> Laptop Mode 对 HFT 有什么启发？</p>
+<details>
+<summary>答案</summary>
+<p>Laptop Mode 通过延迟写回让磁盘长时间停转省电。HFT 启发：1) 如果交易日志用 NVMe（无机械部件），Laptop Mode 无意义；2) 但原理可借鉴——批量写回减少 IO 次数。HFT 可以调高 vm.dirty_writeback_centisecs 让 flusher 少运行，减少对交易线程的干扰。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-7">
+        <div class="sec-head"><h2>section-16.7-历史演进与避免拥塞</h2></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时代</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期</td>
+<td><strong><code class="c">bdflush</code></strong> · <strong><code class="c">kupdated</code></strong> — 单线程后台写</td>
+</tr>
+<tr>
+<td>2.6</td>
+<td><strong><code class="c">pdflush</code></strong> — 按 <strong>系统负载</strong> 动态扩展线程数</td>
+</tr>
+<tr>
+<td><strong>2.6.32+</strong></td>
+<td><strong>flusher 线程</strong> — 取代 pdflush</td>
+</tr>
+</tbody>
+</table></div>
+<h4>flusher 改进</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计</th>
+<th>收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>每个磁盘主轴（spindle）一个专属 flusher 线程</strong></td>
+<td><strong>同步回写</strong> 各盘</td>
+</tr>
+<tr>
+<td>避免</td>
+<td>所有写回 <strong>堵在同一拥塞设备队列</strong></td>
+</tr>
+<tr>
+<td>结果</td>
+<td>多盘系统 <strong>整体 I/O 吞吐</strong> 更好</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">旧：一个 pdflush 线程 ──► 盘 A 拥塞 ──► 盘 B 写回也被拖死
+新：flusher-A / flusher-B ──► 各管各队列
+</code></pre>
+<p>→ <strong>Ch 14</strong> request_queue · <strong>NVMe 多队列</strong> 时代思想仍相关</p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> pdflush 和 flusher 线程的区别？为什么换？</p>
+<details>
+<summary>答案</summary>
+<p>pdflush（2.6.6+）：全局线程池，多设备竞争同一池 → 锁竞争。flusher（2.6.32+）：每块设备一个线程（bdi_writeback），无跨设备竞争。NVMe 的 multi-queue 进一步：每 CPU 一个提交队列。演进方向：减少锁竞争、提高并行度。这就是为什么 NVMe + multi-queue 比 SATA 快——不仅是带宽，更是架构并行度。</p>
+</details>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-16-8">
+        <div class="sec-head"><h2>section-16.8-读路径与写路径衔接</h2></div>
+<pre class="code" data-label="code"><code class="c">read(path)
+    ▼
+VFS（Ch 13）─► 查 address_space / 页缓存
+    ├─ 命中 ──► 拷贝到用户缓冲（零拷贝/mmap 可优化）
+    └─ 未命中 ──► 读盘（Ch 14 bio）─► 填入页缓存
+
+write(path)
+    ▼
+页缓存（可能 COW，Ch 3/15）─► 标脏 ──► flusher 异步写回
+</code></pre>
+<p>| 绕过页缓存 | <strong><code class="c">O_DIRECT</code></strong> — DB/自管缓冲 · HFT 大数据文件有时 mmap + mlock |</p>
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1.</strong> read() 命中 page cache 和 miss 的性能差异有多大？</p>
+<details>
+<summary>答案</summary>
+<p>Hit：page cache → copy_to_user → ~1-5μs。Miss：page cache 未命中 → bio → IO 调度 → 磁盘 → DMA → page cache → copy_to_user → NVMe ~50-100μs，SATA ~1-10ms。HFT 启发：1) 预读（readahead/madvise WILLNEED）让数据提前进 cache；2) mmap 零拷贝跳过 copy_to_user；3) O_DIRECT 绕过 page cache（自管理 buffer）。</p>
+</details>
+</details>
+<hr />
+      </section>
+
+
+
+    <footer class="footer">
+      <div class="content">
+        <p>Generated from <code class="c">05-linux-kernel/chapter-16-page-cache</code> · hft-embedded-linux-study</p>
+      </div>
+    </footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('progress');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0?(h.scrollTop/max)*100:0)+'%';
+  }
+  document.addEventListener('scroll',onScroll,{passive:true});
+  onScroll();
+  var links=document.querySelectorAll('.sidebar .nav a[href^="#"]');
+  var map={};
+  links.forEach(function(a){var id=a.getAttribute('href').slice(1);map[id]=a;});
+  var secs=Array.prototype.map.call(document.querySelectorAll('main [id]'),function(el){return el.id;});
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting&&map[e.target.id]){
+        links.forEach(function(a){a.classList.remove('active');});
+        map[e.target.id].classList.add('active');
+      }
+    });
+  },{rootMargin:'-20% 0px -70% 0px',threshold:0});
+  secs.forEach(function(id){var el=document.getElementById(id);if(el)obs.observe(el);});
+})();
+</script>
+</body>
+</html>

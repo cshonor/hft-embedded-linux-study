@@ -21,6 +21,30 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 
 ---
 
+## 📖 HTML 阅读版（单文件聚合页）
+
+> 每章一份单文件 HTML，**CFS 同款暗色主题** + 侧边栏目录 + 进度条 + scrollspy + 自测题折叠。
+> 离线可读，手机/平板/打印机都方便。
+
+| # | 模块 | HTML 入口 | 章节数 |
+|---|------|-----------|:------:|
+| 01 | K&R · The C Programming Language | [html/index.html](./01-c-language/01-Primer-K-and-R-C/html/index.html) | 8 + 3 附录 |
+| 05 | Linux Kernel Development | [html/index.html](./05-linux-kernel/html/index.html) | 20 |
+| 05.5 | 现代内核（scheduler / RCU / arm64） | [html/index.html](./05.5-modern-kernel/html/index.html) | 12 |
+| 05.6 | 内核调试（printk / kprobes / ftrace / kgdb） | [html/index.html](./05.6-kernel-debugging/html/index.html) | 12 |
+| 06 | Linux 虚拟内存管理 + 附录 A–M | [html/index.html](./06-linux-mm/html/index.html) | 14 + 13 |
+| 06.5 | 现代内存（memblock / slub / maple tree / mglru / DAMON） | [html/index.html](./06.5-modern-mm/html/index.html) | 10 |
+| 06.6 | Systems Performance | [html/index.html](./06.6-systems-performance/html/index.html) | 16 + 5 附录 |
+| 06.7 | BPF Performance Tools | [html/index.html](./06.7-bpf-observability/bpf-performance-tools/html/index.html) | 18 + 5 附录 |
+| 06.7 | Learning eBPF | [html/index.html](./06.7-bpf-observability/learning-ebpf/html/index.html) | 11 |
+
+**顶层总目录：** [html/index.html](./html/index.html)
+
+> 各书 HTML 由 `build_all.py` + `cfs-style.css` 从笔记 md 实时生成；
+> 笔记更新后 `python build_all.py` 即可重新构建。`01-c-language` 用单独的 `build_html.py`（早期版本）。
+
+---
+
 ## 技术模块总览（编号 = 读序）
 
 > **递进主轴：** 硬件底层 → 编程语言 → Linux 系统 → 驱动/设备树 → 嵌入式工程 → 网络栈 → 性能工具 → HFT 上层业务
