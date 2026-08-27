@@ -62,16 +62,83 @@ waitpid(pid,                /* 参数1: 要等的子进程 PID（wait() = 等任
                              /* 不 wait 的后果：子进程退出后变僵尸（Z），task_struct 无法释放 */
 ```
 
-#### exec 族后缀速记
+#### exec 族速记与调用示例
 
-| 后缀 | 含义 | 例 |
-|------|------|----|
-| `l` | list —— 参数逐个列出，NULL 结尾 | `execl` |
-| `v` | vector —— 参数打包成 `char *argv[]` 数组 | `execv` |
-| `p` | 搜 `PATH` 环境变量找程序（否则必须写全路径） | `execlp` |
-| `e` | 自带环境变量数组 `envp`（否则继承当前环境） | `execve`（唯一系统调用） |
+后缀是正交的开关，任意组合：**函数名 = `exec` + 最多 2 个后缀（l/v 二选一，p/e 可选）**，共 6 个。
+
+| 函数 | 后缀拆解 | 调用示例 |
+|------|----------|----------|
+| `execl` | l = list | `execl("/bin/ls", "ls", "-l", NULL);` |
+| `execlp` | l + p = 搜 PATH | `execlp("ls", "ls", "-l", NULL);` ← 路径可省 |
+| `execle` | l + e = 自带 envp | `execle("/bin/ls", "ls", NULL, myenvp);` ← 变参表的 NULL 后面跟 envp |
+| `execv` | v = vector | `char *av[] = { "ls", "-l", NULL }; execv("/bin/ls", av);` |
+| `execvp` | v + p | `execvp("ls", av);` |
+| `execve` | v + e（**唯一系统调用**） | `execve("/bin/ls", av, myenvp);` |
+
+| 后缀 | 含义 |
+|------|------|
+| `l` | list —— 参数逐个列出，NULL 结尾 |
+| `v` | vector —— 参数打包成 `char *argv[]` 数组 |
+| `p` | 搜 `PATH` 环境变量找程序（否则必须写全路径） |
+| `e` | 自带环境变量数组 `envp`（否则继承当前环境） |
 
 > `execve` / `execveat` 是真正的系统调用，其余 execl/execv/execlp... 都是 libc 包装。
+
+#### exec 独立示例：程序 exec 自己，验证「PID 不变、映像已换」
+
+```c
+/* exec_demo.c —— gcc -Wall -o exec_demo exec_demo.c && ./exec_demo */
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main(int argc, char *argv[])
+{
+    printf("[run] PID=%ld  argv[0]=%s  argc=%d\n",
+           (long)getpid(), argv[0], argc);
+
+    if (argc == 1) {                       /* 第一轮：没带额外参数 */
+        char heap_var = 'A';               /* 堆/栈/全局变量 —— exec 后全部蒸发 */
+        char *newargv[] = { "fake-name",   /* argv[0] 可以随便骗：ps 里显示这个名字 */
+                            "stage2", NULL };
+        printf("heap_var=%c 即将被销毁\n", heap_var);
+        fflush(stdout);                    /* stdio 缓冲区也是旧映像的，exec 前必须冲刷 */
+        execv("/proc/self/exe", newargv);  /* /proc/self/exe = 内核记录的本程序真实路径 */
+        perror("execv");                   /* exec 返回 = 失败，且只有失败才返回 */
+        return 127;                        /* 惯例退出码 127 = command not found */
+    }
+    /* 第二轮：已被新映像替换，从这里重新开始 */
+    printf("[new image] heap_var 已不存在；argv 被换成 \"%s\" \"%s\"\n",
+           argv[0], argv[1]);
+    return 0;
+}
+```
+
+运行输出：
+
+```
+[run] PID=22841  argv[0]=./exec_demo  argc=1
+heap_var=A 即将被销毁
+[new image] heap_var 已不存在；argv 被换成 "fake-name" "stage2"
+```
+
+两轮 PID 相同 → **还是同一个进程**；argv/内存全变 → **程序映像已被整个替换**。
+用 `strace ./exec_demo` 可以直接看到那条系统调用：`execve("/proc/self/exe", ["fake-name", "stage2"], /* environ */) = 0`。
+
+#### 什么能跨过 exec 存活
+
+| 存活 ✔ | 说明 |
+|--------|------|
+| PID / PPID | 进程还是那个进程 |
+| 打开的 fd（未设 `O_CLOEXEC`） | 继承——shell 重定向就靠这个 |
+| 当前工作目录、umask、nice | 属性不随映像销毁 |
+| 信号屏蔽字 | 保留；但 **已捕获的信号处理函数重置为默认**（新映像没有旧 handler） |
+
+| 丢失 ✘ | 说明 |
+|--------|------|
+| 代码 / 数据 / 堆 / 栈 | 整个用户地址空间推倒重建（§3.7） |
+| 全局/局部变量、`atexit` 处理器 | 随旧映像消失 |
+| 环境变量 | 默认继承 environ，但 `execve`/`execle` 传新 `envp` 时整个替换 |
 
 #### 内核视角（预告 §3.2）
 
