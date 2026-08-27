@@ -61,6 +61,20 @@ int clone_start(void *(*fn)(void *), void *arg, void *stack, void *tls);
 /* glibc 组装 CLONE_VM|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|... */
 ```
 
+#### 三类线程模型 · 用户态 / 内核态 / 混合（教科书视角）
+
+| 模型 | 调度在哪 | 内核视角 | 一条线程阻塞 syscall | 代表 |
+|------|----------|---------|---------------------|------|
+| **用户态线程**（N:1） | 用户空间库 | **只见 1 个 task_struct**，看不见内部线程 | **整个进程全卡住**（内核把 syscall 阻塞算在整个进程头上） | 早期 green threads、**goroutine 的 G** |
+| **内核态线程**（1:1） | 内核调度器 | **每条线程一个 task_struct**（LWP） | 只阻塞当前那条，其余继续跑 | **NPTL pthread**（`clone` 创建 LWP） |
+| **混合**（M:N） | 用户库 + 内核协作 | M 条用户线程映射到 N 条 LWP | 只阻塞所在的 LWP | Go runtime（G-M-P） |
+
+- **切换开销**：用户态线程切换不陷内核、最快；内核态线程切换要走 syscall 路径，开销大一些
+- **NPTL 不是第三种模型** —— 它是「内核态线程（1:1）」的 POSIX 用户库实现：`pthread_create` → `clone` → 一条内核可见的 LWP
+- ⚠️ **术语陷阱**：**内核态线程**（kernel-level thread = LWP，有用户地址空间）≠ **内核线程**（kernel thread = `kthread`，`mm=NULL` 的纯内核执行流，见下节）——一字之差，两个概念
+
+> 通俗比喻：用户态线程 = **一个工人**手上切换多个活，他去打水（阻塞 `read()`），所有活全停；NPTL/LWP = 向工厂申请**多个工人**共享一间办公室（同一份 `mm`），一人打水别人继续干，且工厂（内核）认识每个工人。
+
 #### 内核线程 · Kernel Threads
 
 | 特点 | 说明 |
@@ -135,6 +149,14 @@ Linux 内核没有「线程」概念，线程 = 共享资源的进程。clone(CL
 <details><summary>答案</summary>
 
 LinuxThreads 用单独进程实现线程，每线程一个 PID，信号处理混乱。NPTL（Native POSIX Thread Library）：线程共享 PID（gettid 区分），信号符合 POSIX（per-thread 信号掩码），线程创建快 10x+。HFT 多线程依赖 NPTL 的 futex 快速锁和 per-thread 信号。
+
+</details>
+
+**Q3.** 三类线程模型中，Go 的 goroutine 和 Linux 的 pthread 各属于哪类？内核态线程和内核线程是一回事吗？
+
+<details><summary>答案</summary>
+
+goroutine 是 M:N 混合模型：G 是用户态调度单元，由 Go runtime 调度，M 才映射到内核 LWP。Linux pthread 是 1:1 内核态线程：pthread_create 直接 clone 出一条内核可见的 LWP（NPTL 只是内核态线程模型的 POSIX 库实现，不是第三种模型）。内核态线程（LWP，有用户地址空间）≠ 内核线程（kthread，mm=NULL 的纯内核执行流）。
 
 </details>
 
