@@ -59,6 +59,19 @@ else if (WIFSIGNALED(status))
                                  init wait 循环回收
 ```
 
+> 三句大白话速记：**子死父活、父不 wait → 僵尸（有害，占 PID）**；**父死子活 → 孤儿，过继 init（无害，有人兜底回收）**；`WNOHANG` → 非阻塞轮询，父进程不卡。
+
+#### 僵尸能被 `kill -9` 杀掉吗？—— 不能
+
+僵尸**已经死了**，只剩一具 `task_struct` 空壳，没有可接收信号的执行上下文；`kill` 是给**活着**的进程发信号。清掉僵尸只有两条路：
+
+| 办法 | 原理 |
+|------|------|
+| 父进程调 `wait`/`waitpid` | 正道 —— `release_task()` 正常回收 |
+| **杀掉父进程** | 僵尸变「孤儿僵尸」过继给 init（或 subreaper），由其 wait 循环回收 |
+
+> 排查口诀：看到一堆 Z，别对着僵尸 `kill`，去找**它爹**——要么让爹修好 wait 逻辑，要么干掉爹让 init 接盘。
+
 #### 资源到底何时释放？
 
 | 资源 | 释放时机 |
@@ -97,6 +110,14 @@ else if (WIFSIGNALED(status))
 <details><summary>答案</summary>
 
 _exit()` 直接执行 sys_exit 系统调用（内核态：释放资源、设置退出码、通知父进程）。`exit()` 是 libc 包装：先执行 atexit 注册函数 + flush stdio buffer + 调 _exit()。HFT 进程退出时如果需要保证日志 flush，用 exit()；如果 crash 路径想立即终止不 flush，用 _exit()。
+
+</details>
+
+**Q3.** 系统里出现大量僵尸进程，能直接 `kill -9` 它们清理掉吗？正确的处理方式？
+
+<details><summary>答案</summary>
+
+不能。僵尸已退出，只剩 task_struct 空壳等待父进程 wait，没有执行上下文可接收信号。正确处理：1) 修复父进程——补上 wait/waitpid 或 SIGCHLD handler 里的 WNOHANG 循环回收；2) 若父进程无法修，杀掉父进程，僵尸过继给 init/subreaper 由其回收。临时清场用第 2 招，根治必须让父进程承担 wait 责任。
 
 </details>
 
