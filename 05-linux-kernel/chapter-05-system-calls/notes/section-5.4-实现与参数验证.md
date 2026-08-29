@@ -70,6 +70,22 @@ ssize_t copy_from_user(void *to, const char __user *from, size_t n);
 
 > 三者都是 sparse 注解：关闭 sparse 编译时全部展开为空，零运行时开销。看到 `__user *` 就条件反射——**禁止直接解引用，必须 `copy_{to,from}_user`**；看到 `__iomem *`（驱动开发常客）同理——用 `readl()/writel()` 访问。
 
+**语法位置：为什么写 `char __user *buf`，不写 `__user char *buf`？**
+
+`__user` 是 GNU C **类型限定符**，语法位置与 `const` 一致——放在基础类型和 `*` 之间：
+
+```c
+char const  *buf;   /* const 修饰被指向的 char：内容只读              */
+char __user *buf;   /* __user 标注指针本身：指针值是用户态地址         */
+__user char *buf;   /* ❌ 错误位置，sparse 识别不到                    */
+
+char          *k_buf;   /* 普通内核指针，指向内核内存                   */
+char __user   *u_buf;   /* 用户空间指针，来自用户程序，禁直接 *u_buf     */
+char __iomem  *io_buf;  /* IO 寄存器映射指针，硬件 IO 内存              */
+```
+
+语义各司其职：`char` 说明**被指向的数据是什么类型**（缓冲区存字节）；`__user` 说明**指针值属于哪个地址空间**（用户态）；`*` 说明 buf 是指针变量。细微差别：`const` 修饰的是**被指对象**（内容只读），`__user` 标注的是**指针本身**（值是用户地址）——语法位置相同，修饰对象不同。标准 C 没有 `__user`，只存在于内核 GNU-C 环境；不开 sparse 编译器不查它，写错了解引用照样编译通过，到运行时才 Oops。
+
 ---
 
 ### 参数校验要点
