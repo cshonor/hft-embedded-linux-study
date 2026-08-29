@@ -51,6 +51,25 @@ SYSCALL_DEFINE3(read, int, fd, char __user *, buf, size_t, count)
 - `SYSCALL_DEFINE0~5`：尾号数字 = **参数个数**，宏自动从寄存器提取参数、包装函数、注册进系统调用表（寄存器传参细节见 §5.2/5.3）。
 - `__user` 是 **gcc sparse 静态检查标记**：编译期提示"此指针来自用户空间"，**运行时不产生任何机器码**——它只是给 sparse 和开发者看的，内核里对该指针照样不能写 `*buf`。
 
+**`__user` 的真身与三兄弟标记**：
+
+```c
+/* 内核源码定义（简化）—— GCC attribute，非 C 关键字 */
+# define __user   __attribute__((noderef, address_space(1)))
+/* noderef: 不许直接解引用;  address_space(1): 用户地址空间编号 */
+
+ssize_t copy_to_user(char __user *to, const void *from, size_t n);
+ssize_t copy_from_user(void *to, const char __user *from, size_t n);
+```
+
+| 标记 | 指向哪里 | 场景 |
+|------|----------|------|
+| `__user *` | **用户态地址空间** | 系统调用参数里用户传来的指针（本文主角） |
+| `__kernel *` | 内核地址空间 | sparse 区分两套地址空间，防止混用 |
+| `__iomem *` | **硬件 IO 寄存器**的映射地址 | MMIO 设备驱动（嵌入式常用）；访问要用 `readl/writel`，不能直接解引用 |
+
+> 三者都是 sparse 注解：关闭 sparse 编译时全部展开为空，零运行时开销。看到 `__user *` 就条件反射——**禁止直接解引用，必须 `copy_{to,from}_user`**；看到 `__iomem *`（驱动开发常客）同理——用 `readl()/writel()` 访问。
+
 ---
 
 ### 参数校验要点
