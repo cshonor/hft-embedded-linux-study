@@ -96,8 +96,8 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | 书 | 定位 | HTML 入口 | 页数 |
 |---|------|-----------|:----:|
 | Systems Performance | Brendan Gregg · 企业版中文笔记 | [html](./06.6-systems-performance/html/index.html) | 21 |
-| BPF Performance Tools | Brendan Gregg · 上下册笔记 | [html](./06.7-bpf-observability/bpf-performance-tools/html/index.html) | 23 |
-| Learning eBPF | O'Reilly · 入门到 verifier | [html](./06.7-bpf-observability/learning-ebpf/html/index.html) | 11 |
+| BPF Performance Tools | Brendan Gregg · 上下册笔记 | [html](./06.7-bpf-observability/02-bpf-performance-tools/html/index.html) | 23 |
+| Learning eBPF | O'Reilly · 入门到 verifier | [html](./06.7-bpf-observability/01-learning-ebpf/html/index.html) | 11 |
 
 ### HFT · 量化 · 运动控制（3 本）
 

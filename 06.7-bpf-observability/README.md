@@ -12,12 +12,12 @@
 
 ```
 06.7-bpf-observability/
-├── learning-ebpf/            ← 第一本（原理入门）
+├── 01-learning-ebpf/            ← 第一本（原理入门）
 │   ├── LEARNING-EBPF-NOTES.md   导读索引
 │   └── chapter-01~11-*/         每章一文件夹
 │       ├── README.md            章导读（目标/小节索引/交叉引用）
 │       └── notes/               按节拆分的笔记
-├── bpf-performance-tools/    ← 第二本（工具谱系）
+├── 02-bpf-performance-tools/    ← 第二本（工具谱系）
 │   ├── OUTLINE.md               全书目录 + HFT 读/跳标注
 │   ├── BPF-PERFORMANCE-TOOLS-EVAL.md
 │   ├── chapter-01~18/           章导读 + 分节笔记
@@ -36,8 +36,8 @@
 
 | 顺序 | 书 | 笔记入口 | 定位 | 篇幅 |
 |------|----|------|------|------|
-| **1** | **Learning eBPF**（Liz Rice, 2023） | [LEARNING-EBPF-NOTES.md](./learning-ebpf/LEARNING-EBPF-NOTES.md) | **原理 + 写程序**：eBPF 是什么、map、验证器、程序/附加类型、libbpf + CO-RE 现代开发栈、网络/安全应用 | 11 章，快速建框架 |
-| **2** | **BPF Performance Tools**（Brendan Gregg, 2019） | [OUTLINE.md](./bpf-performance-tools/OUTLINE.md) → [全书评析](./bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) | **工具谱系 + 方法论**：BCC/bpftrace 按 CPU/内存/IO/网络资源域的观测工具百科与性能分析方法 | 18 章 + 附录 A–E，工具书 |
+| **1** | **Learning eBPF**（Liz Rice, 2023） | [LEARNING-EBPF-NOTES.md](./01-learning-ebpf/LEARNING-EBPF-NOTES.md) | **原理 + 写程序**：eBPF 是什么、map、验证器、程序/附加类型、libbpf + CO-RE 现代开发栈、网络/安全应用 | 11 章，快速建框架 |
+| **2** | **BPF Performance Tools**（Brendan Gregg, 2019） | [OUTLINE.md](./02-bpf-performance-tools/OUTLINE.md) → [全书评析](./02-bpf-performance-tools/BPF-PERFORMANCE-TOOLS-EVAL.md) | **工具谱系 + 方法论**：BCC/bpftrace 按 CPU/内存/IO/网络资源域的观测工具百科与性能分析方法 | 18 章 + 附录 A–E，工具书 |
 
 ### 为什么是这个顺序
 
@@ -55,7 +55,7 @@
 
 ## 第二本 · BPF Performance Tools 内部导航
 
-各章导读见 [bpf-performance-tools/OUTLINE.md](./bpf-performance-tools/OUTLINE.md)（含 🔴🟡⚪ HFT 读/跳标注）。
+各章导读见 [bpf-performance-tools/OUTLINE.md](./02-bpf-performance-tools/OUTLINE.md)（含 🔴🟡⚪ HFT 读/跳标注）。
 
 **HFT 精读捷径：**
 

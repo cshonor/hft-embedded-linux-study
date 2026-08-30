@@ -185,7 +185,7 @@ perf report -s type,typecln,typeoff -H
 
 ## 五、BPF 工具演进概览
 
-> 详细 BPF 生态演进请参阅姊妹书笔记目录下的 [`SUPPLEMENT-web-resources.md`](../06.7-bpf-observability/bpf-performance-tools/SUPPLEMENT-web-resources.md)。
+> 详细 BPF 生态演进请参阅姊妹书笔记目录下的 [`SUPPLEMENT-web-resources.md`](../06.7-bpf-observability/02-bpf-performance-tools/SUPPLEMENT-web-resources.md)。
 
 ### 5.1 关键变化摘要
 
@@ -465,4 +465,4 @@ perf report -s type --group
 
 ### 姊妹书补充
 
-- [BPF Performance Tools SUPPLEMENT](../06.7-bpf-observability/bpf-performance-tools/SUPPLEMENT-web-resources.md) — BPF 生态 2019 年后演进详解
+- [BPF Performance Tools SUPPLEMENT](../06.7-bpf-observability/02-bpf-performance-tools/SUPPLEMENT-web-resources.md) — BPF 生态 2019 年后演进详解

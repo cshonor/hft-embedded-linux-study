@@ -26,7 +26,7 @@
 
 - 用户态、0-RTT、多路复用 — Web/API；**tick 热路径**量化系统较少用，了解即可。
 
-→ [14-Rosen](../../../12-kernel-networking/) · [06.7-BPF note-XDP](../../../06.7-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md)
+→ [14-Rosen](../../../12-kernel-networking/) · [06.7-BPF note-XDP](../../../06.7-bpf-observability/02-bpf-performance-tools/note-XDP与tc-BPF.md)
 
 ### Linux 网络栈路径（简化）
 

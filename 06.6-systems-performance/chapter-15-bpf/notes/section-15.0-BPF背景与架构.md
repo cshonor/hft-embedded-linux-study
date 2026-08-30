@@ -57,7 +57,7 @@
 | **kprobe/kretprobe** | 内核函数动态 | `tcp_sendmsg` |
 | **uprobe** | 用户函数 | strategy 内函数 |
 | **USDT** | 用户静态探针 | 应用预埋 |
-| **XDP / tc** | 网络最早/ qdisc | [06.7-BPF XDP note](../../../06.7-bpf-observability/bpf-performance-tools/note-XDP与tc-BPF.md) |
+| **XDP / tc** | 网络最早/ qdisc | [06.7-BPF XDP note](../../../06.7-bpf-observability/02-bpf-performance-tools/note-XDP与tc-BPF.md) |
 
 ---
 

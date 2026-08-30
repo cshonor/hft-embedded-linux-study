@@ -35,7 +35,7 @@ sudo bpftrace -e 'uprobe:/path/strategy:decode { @start[tid] = nsecs; }
 | 快速 kprobe/uprobe 实验 | 极老内核无 bpftrace |
 | 与 BCC 工具 **组合** | 替代所有 BCC（不必） |
 
-→ [06.7-BPF ch05 bpftrace](../../../06.7-bpf-observability/bpf-performance-tools/chapter-05-bpftrace/)
+→ [06.7-BPF ch05 bpftrace](../../../06.7-bpf-observability/02-bpf-performance-tools/chapter-05-bpftrace/)
 
 ---
 
