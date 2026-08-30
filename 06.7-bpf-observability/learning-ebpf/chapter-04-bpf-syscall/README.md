@@ -13,13 +13,13 @@
 
 ## 小节索引
 
-| 小节 | 笔记 |
+| 原书小节 | 笔记 |
 |---|---|
-| 4.1–4.2 | [bpf总览与strace实例](./notes/4.1_bpf总览与strace实例.md) |
-| 4.3–4.4 | [对象生命周期与kprobe挂载](./notes/4.3_对象生命周期与kprobe挂载.md) |
-| 4.5–4.6 | [perf与RingBuffer](./notes/4.5_perf与RingBuffer.md) |
-| 4.7 | [遍历map的syscall序列](./notes/4.7_遍历map的syscall序列.md) |
-| 4.8–4.10 | [坑点HFT关联与自测](./notes/4.8_坑点HFT关联与自测.md) |
+| §4.1–4.2 | [4.1 bpf总览与strace实例](./notes/4.1_bpf总览与strace实例.md) |
+| §4.3–4.4 | [4.2 对象生命周期与kprobe挂载](./notes/4.2_对象生命周期与kprobe挂载.md) |
+| §4.5–4.6 | [4.3 perf与RingBuffer](./notes/4.3_perf与RingBuffer.md) |
+| §4.7 | [4.4 遍历map的syscall序列](./notes/4.4_遍历map的syscall序列.md) |
+| §4.8–4.10 | [4.5 坑点HFT关联与自测](./notes/4.5_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

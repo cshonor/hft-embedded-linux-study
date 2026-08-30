@@ -14,11 +14,11 @@
 
 ## 小节索引
 
-| 小节 | 笔记 |
+| 原书小节 | 笔记 |
 |---|---|
-| 8.1–8.3 | [网络路径XDP与TC](./notes/8.1_网络路径XDP与TC.md) |
-| 8.4–8.5 | [uprobe与Kubernetes](./notes/8.4_uprobe与Kubernetes.md) |
-| 8.6–8.8 | [坑点HFT关联与自测](./notes/8.6_坑点HFT关联与自测.md) |
+| §8.1–8.3 | [8.1 网络路径XDP与TC](./notes/8.1_网络路径XDP与TC.md) |
+| §8.4–8.5 | [8.2 uprobe与Kubernetes](./notes/8.2_uprobe与Kubernetes.md) |
+| §8.6–8.8 | [8.3 坑点HFT关联与自测](./notes/8.3_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 
