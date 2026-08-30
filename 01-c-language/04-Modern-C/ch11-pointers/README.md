@@ -25,7 +25,7 @@ int **pp = &p;     // pp 存储 p 的地址（二级指针）
 | 指针算术 | `p + 1` 前进 `sizeof(*p)` 字节（指针缩放） |
 | 数组退化 | 数组名在表达式中退化为指向首元素的指针 |
 
-> 详见 [K&R 5.1–5.4](../01-Primer-K-and-R-C/ch05-pointers-and-arrays/5.1-指针与地址.md) 和《C 和指针》全书。
+> 详见 [K&R 5.1–5.4](../../01-Primer-K-and-R-C/ch05-pointers-and-arrays/5.1-指针与地址.md) 和《C 和指针》全书。
 
 ## 二、不透明结构（Opaque Struct）— 工程重点
 

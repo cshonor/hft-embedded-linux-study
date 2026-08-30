@@ -35,4 +35,4 @@
 ### HFT 关联
 
 - 现场排障优先级：**BCC 现成工具 → bpftrace 单行/短脚本 → 定制 BCC**。bpftrace 是"问答式"探针，10 秒内回答一个假设；BCC 工具适合挂后台长跑收集
-- 交易机最小化安装的场景（发行版不带 BCC 的重型依赖链）→ 对应 ply 的嵌入式定位思路；现代替代是 libbpf + CO-RE 单二进制（见 [learning-ebpf Ch5](../../01-learning-ebpf/chapter-05-core-btf-libbpf/)）
+- 交易机最小化安装的场景（发行版不带 BCC 的重型依赖链）→ 对应 ply 的嵌入式定位思路；现代替代是 libbpf + CO-RE 单二进制（见 [learning-ebpf Ch5](../../../01-learning-ebpf/chapter-05-core-btf-libbpf/)）

@@ -111,7 +111,7 @@ fail_cfg:
 | `goto` 只往前跳 | 跳到清理标签，不回跳 |
 | 每个标签释放对应资源 | 到 `fail_tx` 时 rx_ring 已分配，需释放 |
 
-> 这正是内核 `goto err` 模式，见 [LKD](../../14-hft-engineering/) 和 [Ch3 控制流](../ch03-everything-about-control/README.md)。
+> 这正是内核 `goto err` 模式，见 [LKD](../../../14-hft-engineering/) 和 [Ch3 控制流](../ch03-everything-about-control/README.md)。
 
 ## 三、`assert` 与 `errno`
 

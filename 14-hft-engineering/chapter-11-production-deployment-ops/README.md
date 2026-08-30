@@ -33,4 +33,4 @@
 
 **下一章：** [chapter-12 做市与套利](../chapter-12-market-making-arbitrage/README.md) —— 前面所有工程能力的**盈利出口**。
 
-→ [06.6-Systems-Performance](../../../06.6-systems-performance/) · [chapter-10 风控](../chapter-10-risk-compliance-slippage/README.md)
+→ [06.6-Systems-Performance](../../06.6-systems-performance/) · [chapter-10 风控](../chapter-10-risk-compliance-slippage/README.md)

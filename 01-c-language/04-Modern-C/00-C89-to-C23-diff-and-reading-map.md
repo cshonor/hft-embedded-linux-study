@@ -12,7 +12,7 @@
 |------|------|--------|------------------|
 | C89/C90 | 1989/1990 | ANSI C / ISO C，其余五本书基线 | 内核 ≤5.17 基底（`-std=gnu89`），非 C99 |
 | C99 | 1999 | `//` 注释、`stdint.h`、VLA、`inline` | 内核日常写法大量沿用，但**从来不是内核基准** |
-| C11 | 2011 | `_Atomic`、`threads.h`、`_Generic` | DPDK（`-std=c11`）、新项目默认；**内核 ≥5.18（2022）升 `-std=gnu11`**（详见 [LKD Ch2 §2.4](../../../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)） |
+| C11 | 2011 | `_Atomic`、`threads.h`、`_Generic` | DPDK（`-std=c11`）、新项目默认；**内核 ≥5.18（2022）升 `-std=gnu11`**（详见 [LKD Ch2 §2.4](../../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)） |
 | C17/C18 | 2018 | 纯缺陷修复，零新特性 | 现代编译器默认（gcc 13 默认 gnu17） |
 | C23 | 2024 | `nullptr`、`constexpr`、`typeof` | gcc 14+ 支持，逐渐铺开 |
 

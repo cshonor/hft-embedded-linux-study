@@ -42,4 +42,4 @@
 
 **下一章：** [chapter-11 实盘上线与运维](../chapter-11-production-deployment-ops/README.md) —— 风控参数的生产值核对，就在上线清单里。
 
-→ [19-markets-microstructure](../../../19-markets-microstructure/) · [06.6-Systems-Performance](../../../06.6-systems-performance/)
+→ [19-markets-microstructure](../../19-markets-microstructure/) · [06.6-Systems-Performance](../../06.6-systems-performance/)

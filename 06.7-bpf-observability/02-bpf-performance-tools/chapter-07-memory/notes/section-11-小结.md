@@ -48,6 +48,6 @@
 
 - 缺页与文件缓存深入（mmapfiles/fimapfaults/cachestat）：[chapter-08 文件系统](../../chapter-08-file-systems/)
 - 内核内存（kmem/slabratetop/numamove）：[chapter-14 内核](../../chapter-14-kernel/)
-- MM 理论：[06-linux-mm](../../../06-linux-mm/) · [06.5-modern-mm](../../../06.5-modern-mm/)
-- SysPerf 对照：[06.6-systems-performance/chapter-07-memory](../../../06.6-systems-performance/)
+- MM 理论：[06-linux-mm](../../../../06-linux-mm/) · [06.5-modern-mm](../../../../06.5-modern-mm/)
+- SysPerf 对照：[06.6-systems-performance/chapter-07-memory](../../../../06.6-systems-performance/)
 - 下一章文件系统：[chapter-08-file-systems](../../chapter-08-file-systems/)

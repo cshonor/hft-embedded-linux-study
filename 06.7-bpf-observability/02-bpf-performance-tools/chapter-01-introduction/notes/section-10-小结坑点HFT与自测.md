@@ -68,4 +68,4 @@
 - BCC 专章：[Ch 4](../../chapter-04-bcc/) · bpftrace 专章：[Ch 5](../../chapter-05-bpftrace/)
 - 方法论展开：[Ch 3 性能分析](../../chapter-03-performance-analysis/)
 - 单行程序全集：[附录 A](../../appendix-A-bpftrace单行命令.md) · BCC 开发入门：[附录 C](../../appendix-C-BCC工具开发.md)
-- 现代开发栈（libbpf/CO-RE）对照：[learning-ebpf Ch5](../../01-learning-ebpf/chapter-05-core-btf-libbpf/)
+- 现代开发栈（libbpf/CO-RE）对照：[learning-ebpf Ch5](../../../01-learning-ebpf/chapter-05-core-btf-libbpf/)

@@ -48,7 +48,7 @@
 
 ## 相关章节
 
-- 调度器原理深入：[chapter-05-linux-kernel](../../../05-linux-kernel/)（调度子系统）
-- 缓存/微架构理论：[15-computer-architecture](../../../15-computer-architecture/) · [02-CSAPP Ch6](../../../02-computer-systems/chapter-06-memory-hierarchy/)
-- SysPerf 对照：[06.6-systems-performance/chapter-06-cpus](../../../06.6-systems-performance/chapter-06-cpus/)
+- 调度器原理深入：[chapter-05-linux-kernel](../../../../05-linux-kernel/)（调度子系统）
+- 缓存/微架构理论：[15-computer-architecture](../../../../15-computer-architecture/) · [02-CSAPP Ch6](../../../../02-computer-systems/chapter-06-memory-hierarchy/)
+- SysPerf 对照：[06.6-systems-performance/chapter-06-cpus](../../../../06.6-systems-performance/chapter-06-cpus/)
 - 下一章内存：[chapter-07-memory](../../chapter-07-memory/)
