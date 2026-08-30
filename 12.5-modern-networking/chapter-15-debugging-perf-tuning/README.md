@@ -9,6 +9,7 @@
 |---|------|------|
 | 1 | [debugging](notes/01-debugging.md) | Bootlin：网络调试工具、dropwatch、tcpdump、ss |
 | 2 | [perf-tuning](notes/02-perf-tuning.md) | Bootlin：网络性能调优、NIC 参数、中断亲缘性 |
+| 3 | [latency-measurement](notes/03-latency-measurement.md) | 延迟测量方法论：时钟选择（CLOCK_MONOTONIC_RAW / rdtsc）、分位直方图、误差源清单、报告模板 |
 
 ## HFT 关联
 
@@ -18,9 +19,15 @@
   - `ethtool -G eth0 rx 4096 tx 4096`：增大 ring buffer
   - `ethtool -C eth0 rx-usecs 0`：关闭 IRQ coalescing（HFT 要低延迟而非高吞吐）
   - `ethtool -K eth0 gro off tso off`：关闭 GRO/TSO（HFT 发包要即时，不聚合）
-- **RPS/RFS**：软件接收包分发，确保包到达正确 CPU core
+- **RPS/RFS：HFT 应关闭。** 它是为多核吞吐设计的软件分发，会引入 IPI 与额外排队，
+  只增加延迟抖动；有硬件多队列时纯负收益。改用 RSS / ntuple 硬件分发
+  → [02 HFT 综合调优清单](notes/02-perf-tuning.md)、[ch02/07-queue-steering-rss](../chapter-02-napi-rx-path/notes/07-queue-steering-rss.md)
+- **延迟必须看分位数**：p999 才是考核线，均值会掩盖所有导致亏损的尾延迟
+  → [03-latency-measurement](notes/03-latency-measurement.md)
 
 ## 交叉引用
 
 - `06.6-systems-performance/`：系统级性能调优
 - `05.6-kernel-debugging/`：内核调试工具体系
+- `14-hft-engineering/chapter-09-latency-measurement-benchmarking/`：本 ch03 是它的实操方法基础
+- `projects/P10-hft-prototype/docs/benchmark.md`：用 ch03 的报告模板落地延迟数据

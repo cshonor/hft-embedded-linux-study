@@ -280,6 +280,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-02"><span class="n">01</span>— Documentation/networking/napi.rst</a>
           <a href="#s-03"><span class="n">01</span>— NAPI 现代化：threaded NAPI 与 busy polling</a>
           <a href="#s-04"><span class="n">03</span>— GRO/GSO 演进与性能</a>
+          <a href="#s-05"><span class="n">05</span>— UDP 组播收包路径与行情接入</a>
+          <a href="#s-06"><span class="n">06</span>— Busy Polling 完整机制：从 socket 选项到 NAPI defer</a>
+          <a href="#s-07"><span class="n">07</span>— 多队列、RSS 与行情流定向</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -309,7 +312,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">NAPI / XDP / eBPF / io_uring</div>
           <h1>Chapter 02: NAPI 与收包路径</h1>
           <div class="meta">
-<span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>8</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -323,11 +326,20 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>GRO 聚合</strong>：GRO 将多个小包合并为一个大 skb，减少协议栈处理次数；但增加延迟（需等待聚合窗口）</li>
 <li><strong>busy polling</strong>：<code class="c">SO_BUSY_POLL=50</code> 让用户态线程主动 poll NAPI，避免 IRQ 唤醒延迟</li>
 <li><strong>budget 调优</strong>：<code class="c">netdev_budget</code> 控制单次 NAPI poll 处理的包数，HFT 应适当增大</li>
+<li><strong>行情走 UDP 组播不是 TCP</strong>：组播路径多出 <code class="c">ip_route_input_mc()</code> 与 per-socket skb 复制；
+  旁路后 IGMP 不再自动发出，必须先与交换机确认静态组播 → <a href="chapter-13.html#s-05">05</a></li>
+<li><strong>NAPI defer 是内核栈天花板</strong>：<code class="c">napi_defer_hard_irqs</code> + <code class="c">gro_flush_timeout</code>（单位<strong>纳秒</strong>）
+  零代码成本压到 2-5μs；p99 仍不达标才值得付出旁路复杂度 → <a href="chapter-02.html#s-06">06</a></li>
+<li><strong>行情流必须用 ntuple 钉队列</strong>：组播四元组固定 → RSS 恒定落同一队列，不主动规划就队头阻塞；
+  关 irqbalance、关 RPS/RFS、<code class="c">isolcpus</code> 带 <code class="c">managed_irq</code> → <a href="chapter-02.html#s-07">07</a></li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
 <li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：page pool 为 NAPI 提供缓冲区</li>
 <li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 在 NAPI poll 之前拦截</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/notes/03-af-xdp-umem-layout.md</code>：AF_XDP 按队列旁路，配合 07 的流定向</li>
+<li><code class="c">13-dpdk/01-Intro-Book/notes/chapter-05-组播行情接入.md</code>：05 的内核路径 → DPDK 旁路对照</li>
+<li><code class="c">12-kernel-networking/note-组播IGMP.md</code>：组播协议基础（IGMP snooping / 组播路由）</li>
 </ul>
       </section>
       <section class="section" id="s-01">
@@ -677,6 +689,800 @@ setsockopt(sockfd, SOL_SOCKET, SO_BUSY_POLL, &amp;val, sizeof(val));
 <li><strong>交易发送</strong>：TSO 会将多个小报文合并发送，影响发送时机，HFT 应关闭 <code class="c">ethtool -K eth0 tso off</code></li>
 <li><strong>UDP GRO</strong>：5.0+ 引入，组播行情批量接收可提升吞吐，但增加延迟</li>
 </ul>
+      </section>
+      <section class="section" id="s-05">
+        <div class="sec-head"><div class="sec-no">05</div><h2>— UDP 组播收包路径与行情接入</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> Ch（组播路由）部分覆盖；RX 路径组播分支未展开
+<strong>内核源码路径:</strong> <code class="c">net/ipv4/ip_input.c</code>、<code class="c">net/ipv4/udp.c</code>、<code class="c">net/ipv4/igmp.c</code></p>
+</blockquote>
+<h2>文档概述</h2>
+<p>行情链路几乎全部走 <strong>UDP 组播</strong>（ITCH/OUCH over MoldUDP64），而不是 TCP。
+本笔记补全现代内核中组播收包的完整路径，以及<strong>旁路之后 IGMP 失效</strong>这个最容易踩的坑。</p>
+<p>→ 前置：<a href="chapter-15.html#s-01">01-rx-path-bootlin</a>（通用收包路径）
+→ 下游：<a href="../../13-dpdk/01-Intro-Book/html/chapter-05.html#ch-5">13-dpdk 组播行情接入</a></p>
+<hr />
+<h2>核心内容</h2>
+<h3>为什么行情一定是组播</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>单播 TCP</th>
+<th>组播 UDP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易所带宽</td>
+<td>随客户数线性增长</td>
+<td>恒定，一份流</td>
+</tr>
+<tr>
+<td>复制位置</td>
+<td>交易所服务器</td>
+<td>交换机 / 网卡</td>
+</tr>
+<tr>
+<td>可靠性</td>
+<td>内核保证（重传、排序）</td>
+<td><strong>应用层自己保证</strong></td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>有握手、ACK、拥塞控制</td>
+<td>无，纯单向</td>
+</tr>
+<tr>
+<td>一个包的去留</td>
+<td>只影响自己</td>
+<td>丢包影响所有订阅者</td>
+</tr>
+</tbody>
+</table></div>
+<p>行情的本质是"同一份数据、同时给所有人"，组播把复制代价从交易所转嫁给网络设备，
+这是唯一能支撑上万客户端同时收同一份 orderbook 的方式。</p>
+<p><strong>代价转嫁给了你：</strong> UDP 不重传、不排序、不保到达。接收端必须自己做
+<strong>序列号 gap 检测 + 独立的 TCP 重传通道</strong>（交易所一般提供 "retransmission / snapshot" 服务）。</p>
+<hr />
+<h3>IPv4 组播 → MAC 地址映射（第一个坑）</h3>
+<p>网卡硬件过滤工作在 L2，但组播成员管理在 L3。二者靠一个<strong>有损映射</strong>连接：</p>
+<pre class="code" data-label="code"><code class="c">IPv4 组播地址      224.x.y.z        (224.0.0.0/4, 高 4 位 = 1110)
+                        │
+                        │  只取低 23 位（丢掉高 5 位）
+                        ▼
+MAC 地址           01:00:5E:0&lt;23 位&gt;
+</code></pre>
+<p>映射规则：<code class="c">MAC 低 23 位 = IPv4 组播地址低 23 位</code>。</p>
+<p><strong>后果：2^5 = 32 个不同的 IPv4 组播地址，映射到同一个 MAC 地址。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>网卡按 MAC 过滤</td>
+<td>会收到"你不想要的"另外 31 个组播地址的流量</td>
+</tr>
+<tr>
+<td>多余流量进入驱动</td>
+<td>消耗 XDP/sk_buff 处理，直到 IP 层才被丢弃</td>
+</tr>
+<tr>
+<td>HFT 应对</td>
+<td>向交易所确认组播地址分配，<strong>避免选到同 MAC 的另一个组</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>这也是为什么 <code class="c">XDP</code> 早过滤在组播场景收益特别大——L2 硬件过滤不过滤干净的部分，
+在 XDP 里一次判断就能丢掉，省掉后面的 sk_buff 分配和协议栈遍历。</p>
+<hr />
+<h3>组播收包路径（对比单播多出来的步骤）</h3>
+<pre class="code" data-label="code"><code class="c">NIC 硬件组播过滤（ imperfect filter，见上）
+   ↓
+[交换机侧] IGMP snooping 决定是否往本端口转发
+   ↓
+驱动收帧 → XDP hook                    ← 无关组播在此 DROP，收益最大
+   ↓
+sk_buff 分配
+   ↓
+ip_rcv() → ip_route_input_mc()         ← 组播专用路由判定（非普通路由表）
+   ↓
+ip_mc_sf_allow()  源过滤（IGMPv3 SSM）
+   ↓
+udp_rcv() → __udp4_lib_mcast_deliver() ← 组播 socket 匹配
+   ↓
+★ skb clone/copy → 每一个匹配的 socket 各一份
+   ↓
+各 socket receive queue → 唤醒用户进程
+</code></pre>
+<p><strong>单播没有的两处开销：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ip_route_input_mc()</code></td>
+<td>组播不走普通路由表，走组播路由判定（LOCAL / FORWARD / 丢弃）</td>
+</tr>
+<tr>
+<td><code class="c">__udp4_lib_mcast_deliver()</code></td>
+<td>一个 skb 要复制给<strong>所有</strong>匹配 socket</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键陷阱：同一台机器上开 N 个进程收同一个组播组，内核要复制 N 份 skb。</strong>
+每份都要走一遍协议栈后半段。所以 HFT 机器上"多开一个监控进程看同一份行情"
+不是免费的——它直接放大主进程的延迟抖动。正确做法是<strong>单进程收 + 用户态分发</strong>（共享内存 / SPSC ring）。</p>
+<hr />
+<h3>IGMP：旁路之后最大的坑</h3>
+<p>内核协议栈会自动发 IGMP Membership Report（v2/v3），告诉交换机"我要这个组"。
+交换机靠 IGMP snooping 只往订阅过的端口转发。<strong>不发 report = 收不到任何包。</strong></p>
+<pre class="code" data-label="code"><code class="c">内核栈路径：  socket(AF_INET, SOCK_DGRAM)
+              setsockopt(IP_ADD_MEMBERSHIP)   ← 内核自动发 IGMP report ✓
+                    ↓ 交换机学到 → 开始转发
+
+DPDK 旁路：   网卡被 UIO/VFIO 接管，内核不再管这张网卡
+              rte_eth_allmulticast_enable()   ← 只是让网卡&quot;硬件不过滤&quot;
+              ✗ 没有任何 IGMP report 发出
+              ✗ 交换机从未学习 → 不往这个端口转发
+              ✗ 程序跑了半天，一个包都收不到，还以为 rx_burst 写错了
+</code></pre>
+<p><strong>三种解法：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>做法</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交换机静态组播</td>
+<td>配 static mrouter port / static group 到该端口</td>
+<td>托管机房、自家交换机，最省事</td>
+</tr>
+<tr>
+<td>应用自己发 IGMP</td>
+<td>DPDK 里构造 IGMPv2/v3 Membership Report 并从该口发出</td>
+<td>无权改交换机配置</td>
+</tr>
+<tr>
+<td>端口 flood</td>
+<td>交换机配成泛洪</td>
+<td>不推荐，流量放大几十倍</td>
+</tr>
+</tbody>
+</table></div>
+<p>→ 实操见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/01-Intro-Book/code/mcast-minimal/README.md">13-dpdk/code/mcast-minimal</a></p>
+<hr />
+<h3>丢包定位（组播没有重传，必须自己发现）</h3>
+<p>组播 UDP 丢包是静默的——协议栈不会告诉你。必须主动监控：</p>
+<pre class="code" data-label="shell"><code class="c"># 网卡层丢包（驱动收不进来）
+ethtool -S eth0 | grep -Ei 'miss|no_buf|drop|fifo'
+
+# 内核 UDP 层丢包（socket 队列满）
+cat /proc/net/udp        # 看 drops 列
+ss -ulpn                 # Recv-Q 堆积
+
+# AF_XDP 专用
+xdp-stat queue 0         # rx_dropped = FILL ring 空
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>计数字段</th>
+<th>典型原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NIC</td>
+<td><code class="c">rx_missed</code>, <code class="c">rx_no_buffer</code></td>
+<td>网卡 buffer 满，PCIe/RSS 跟不上</td>
+</tr>
+<tr>
+<td>驱动</td>
+<td><code class="c">rx_nombuf</code>（DPDK）</td>
+<td>mbuf 池耗尽，用户态消费太慢</td>
+</tr>
+<tr>
+<td>AF_XDP</td>
+<td><code class="c">rx_dropped</code></td>
+<td>FILL ring 空，没及时回填 buffer</td>
+</tr>
+<tr>
+<td>socket</td>
+<td><code class="c">/proc/net/udp</code> drops</td>
+<td>接收队列满，用户态消费太慢</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 硬要求：</strong> 应用层必须做<strong>序列号 gap 检测</strong>。交易所组播头里带递增序号，
+发现跳号立刻走 TCP 重传通道补单，而不是等下一个快照。</p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>行情 = UDP 组播，不是 TCP。</strong> 指望内核帮你重传、排序是错的，这些都在应用层</li>
+<li><strong>L2 映射有损：</strong> 32 个组播 IP 共用一个 MAC，多余的 31 个要靠 XDP 或 IP 层过滤</li>
+<li><strong>同机组播多收一份 = 多一次 skb 复制</strong>，监控进程要收用户态分发，不要多开进程订阅同一组</li>
+<li><strong>旁路后 IGMP 失效</strong>是最高频的踩坑点：先确认交换机侧是否配了静态组播</li>
+<li><strong>gap 检测是刚需</strong>，没有它你不知道自己看到的是不是完整的 orderbook</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>组播过滤</td>
+<td>主要靠 IP 层 + 协议栈</td>
+<td>XDP 可在 sk_buff 之前 DROP，省掉分配</td>
+</tr>
+<tr>
+<td>Rx buffer</td>
+<td>动态 alloc_page</td>
+<td>page_pool 复用，AF_XDP 直接映射</td>
+</tr>
+<tr>
+<td>旁路后 IGMP</td>
+<td>未涉及（当时 XDP 不存在）</td>
+<td>旁路必须自己处理 IGMP，否则收不到流</td>
+</tr>
+<tr>
+<td>组播复制</td>
+<td>已有 <code class="c">__udp4_lib_mcast_deliver</code></td>
+<td>机制不变，但多队列 + RSS 下队列选择影响延迟</td>
+</tr>
+</tbody>
+</table></div>
+      </section>
+      <section class="section" id="s-06">
+        <div class="sec-head"><div class="sec-no">06</div><h2>— Busy Polling 完整机制：从 socket 选项到 NAPI defer</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> 不存在（3.x 无 busy polling）
+<strong>内核源码路径:</strong> <code class="c">Documentation/networking/napi.rst</code>、<code class="c">net/core/dev.c</code>、<code class="c">include/net/busy_poll.h</code></p>
+</blockquote>
+<h2>文档概述</h2>
+<p><a href="chapter-15.html#s-03">03-napi-modern</a> 只讲了 <code class="c">SO_BUSY_POLL</code> 这一个 socket 选项。
+但 HFT 实际用的不是它——5.11+ 引入了<strong>不依赖 socket 的 NAPI defer 轮询机制</strong>，
+让整个网卡进入"准轮询"状态。这是<strong>内核协议栈能把延迟压到的极限</strong>，
+再往下只有旁路（XDP/AF_XDP/DPDK）。</p>
+<hr />
+<h2>核心内容</h2>
+<h3>三代 busy polling 的演进</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代</th>
+<th>内核</th>
+<th>机制</th>
+<th>粒度</th>
+<th>局限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一代</td>
+<td>3.11+</td>
+<td><code class="c">SO_BUSY_POLL</code></td>
+<td>单 socket</td>
+<td>只有调用 <code class="c">recvmsg</code> 时才轮询；socket 一多开销失控</td>
+</tr>
+<tr>
+<td>二代</td>
+<td>5.11+</td>
+<td><code class="c">SO_PREFER_BUSY_POLL</code> + NAPI defer</td>
+<td>单 socket 但用全局轮询线程</td>
+<td>仍需有 socket 在等</td>
+</tr>
+<tr>
+<td>三代</td>
+<td>5.11+</td>
+<td><code class="c">napi_defer_hard_irqs</code> + <code class="c">gro_flush_timeout</code></td>
+<td><strong>整个网卡队列</strong></td>
+<td>无需任何 socket，纯 sysfs 配置</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键区分：</strong> 一代/二代是"应用去问内核要不要数据"；三代是"内核自己一直盯着网卡"。</p>
+<hr />
+<h3>三代机制：NAPI defer（HFT 真正用的）</h3>
+<p>传统 NAPI：收完一批包 → 重开中断 → 睡眠等下一个中断（中断唤醒代价 ~1-5 μs）。</p>
+<p>NAPI defer：收完包后<strong>不立即重开中断</strong>，而是继续轮询一段时间。</p>
+<pre class="code" data-label="shell"><code class="c"># 核心两个参数（按队列/设备配置）
+echo 2       &gt; /sys/class/net/eth0/napi_defer_hard_irqs   # 允许连续推迟硬中断的次数
+echo 200000  &gt; /sys/class/net/eth0/gro_flush_timeout      # 无包后继续轮询多久（纳秒 = 200μs）
+
+# 配套全局默认值（微秒）
+sysctl -w net.core.busy_read=50      # SO_BUSY_POLL 的默认值
+sysctl -w net.core.busy_poll=50      # epoll/io_uring 无 socket 时的默认 busy poll 时长
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>单位</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">napi_defer_hard_irqs</code></td>
+<td>次</td>
+<td>NAPI 轮询结束后，推迟重新使能硬中断的最大次数</td>
+</tr>
+<tr>
+<td><code class="c">gro_flush_timeout</code></td>
+<td><strong>纳秒</strong></td>
+<td>无新包时继续保持轮询的时长（超时才退出并开中断）</td>
+</tr>
+<tr>
+<td><code class="c">net.core.busy_read</code></td>
+<td>微秒</td>
+<td><code class="c">SO_BUSY_POLL</code> 的系统级默认值</td>
+</tr>
+<tr>
+<td><code class="c">net.core.busy_poll</code></td>
+<td>微秒</td>
+<td>epoll/io_uring 层 busy poll 的默认时长</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <code class="c">gro_flush_timeout</code> 单位是<strong>纳秒</strong>，不是微秒。写成 <code class="c">200</code> 只有 0.2μs，等于没配。
+常见值：200000（200μs）；要求极致延迟配 1000000（1ms），代价是 CPU 长期 100%。</p>
+</blockquote>
+<p><strong>效果：</strong> 队列进入持续轮询，硬中断几乎不再触发，
+延迟从"中断路径的 5-10μs"压到"纯轮询的 1-3μs"。</p>
+<hr />
+<h3>配套 socket 选项（二代，与 defer 叠加）</h3>
+<pre class="code" data-label="C"><code class="c">/* 5.11+：告诉内核优先用 busy poll 而不是等中断 */
+int prefer = 1;
+setsockopt(fd, SOL_SOCKET, SO_PREFER_BUSY_POLL, &amp;prefer, sizeof(prefer));
+
+/* busy poll 时长（微秒）；0 = 用 net.core.busy_read 默认值 */
+int usec = 50;
+setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &amp;usec, sizeof(usec));
+
+/* 6.1+：一次 busy poll 最多处理多少包（控制单次调用的延迟上限） */
+int budget = 64;
+setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL_BUDGET, &amp;budget, sizeof(budget));
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>内核</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SO_BUSY_POLL</code></td>
+<td>3.11+</td>
+<td>本 socket 的 busy poll 时长（μs）</td>
+</tr>
+<tr>
+<td><code class="c">SO_PREFER_BUSY_POLL</code></td>
+<td>5.11+</td>
+<td>优先 busy poll，压过中断路径</td>
+</tr>
+<tr>
+<td><code class="c">SO_BUSY_POLL_BUDGET</code></td>
+<td>6.1+</td>
+<td>单次调用处理包数上限，<strong>牺牲吞吐换尾延迟</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>epoll / io_uring 侧的纳秒超时</h3>
+<p>5.11+ 的 <code class="c">epoll_pwait2()</code> 支持<strong>纳秒级超时</strong>，配合 busy poll 用：</p>
+<pre class="code" data-label="C"><code class="c">struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 };  /* 100μs */
+epoll_pwait2(epfd, events, maxevents, &amp;ts, NULL);
+</code></pre>
+<p>io_uring 侧对应的是 SQPOLL 模式 + <code class="c">IORING_SETUP_COOP_TASKRUN</code>（6.x 默认行为），
+内核线程替你轮询，省掉一次系统调用。→ 详见 <a href="chapter-12.html#ch-12">12-io-uring-net</a></p>
+<hr />
+<h3>代价与配套配置</h3>
+<p>Busy polling 是<strong>拿 CPU 换延迟</strong>，配套必须做全，否则收益被调度抖动吃掉：</p>
+<pre class="code" data-label="shell"><code class="c"># 1. 隔离 CPU（ isolcpus + nohz_full + rcu_nocbs ）
+#    内核启动参数：
+#    isolcpus=domain,managed_irq,2-7 nohz_full=2-7 rcu_nocbs=2-7
+#    managed_irq 很关键：把受管中断移出隔离核，否则仍会被打断
+
+# 2. 关闭该核的 watchdog / timer 迁移
+sysctl -w kernel.watchdog=0
+
+# 3. 进程绑核
+taskset -c 3 ./feed_handler
+
+# 4. 关 GRO（聚合会等窗口，直接加延迟）
+ethtool -K eth0 gro off
+
+# 5. 中断合并归零
+ethtool -C eth0 rx-usecs 0 rx-frames 0
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代价</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 100%</td>
+<td>一个核全程被轮询占死，一核一队列</td>
+</tr>
+<tr>
+<td>功耗</td>
+<td>满载，不适合笔记本/云按量实例</td>
+</tr>
+<tr>
+<td>调度敏感</td>
+<td>必须 isolcpus + nohz_full，否则上下文切换会毁掉收益</td>
+</tr>
+<tr>
+<td>多队列</td>
+<td>N 个队列要 N 个核，核数直接决定能收多少行情流</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>内核栈的极限在哪（为什么还要 DPDK）</h3>
+<p>即使把上面全部配到位，包仍然要走完这些步骤：</p>
+<pre class="code" data-label="code"><code class="c">NIC → page_pool → sk_buff 分配 → GRO 判定 → 路由查找
+   → UDP 层 socket 匹配 → 组播复制 → socket 接收队列
+   → 唤醒/epoll 返回 → recvmsg() 拷贝到用户态  ← 又一次拷贝
+</code></pre>
+<p><strong>省不掉的：</strong> sk_buff 分配、协议栈遍历、socket 查找、<strong>内核→用户态的数据拷贝</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>典型 tick-to-trade</th>
+<th>省掉了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认中断</td>
+<td>10-50 μs</td>
+<td>—</td>
+</tr>
+<tr>
+<td>NAPI defer + busy poll</td>
+<td>2-5 μs</td>
+<td>中断唤醒、GRO 等待</td>
+</tr>
+<tr>
+<td>AF_XDP zero-copy</td>
+<td>0.5-2 μs</td>
+<td>sk_buff、协议栈、拷贝</td>
+</tr>
+<tr>
+<td>DPDK</td>
+<td>0.3-1 μs</td>
+<td>再加内核 syscall 与队列管理</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论：</strong> NAPI defer 是<strong>不旁路时的最优解</strong>，投入产出比极高（几行 sysctl，无需改代码）。
+要再往下走，必须放弃内核协议栈，代价是牺牲 TCP/路由/SSH 等一切内核功能。</p>
+<p>→ 决策树见 <a href="chapter-15.html#s-02">07-xdp-vs-dpdk</a></p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>先配 NAPI defer 再谈 DPDK。</strong> 它是零代码成本的，且是内核栈的天花板</li>
+<li><code class="c">gro_flush_timeout</code> 单位是<strong>纳秒</strong>，写成 200 等于没配（最常见错误）</li>
+<li>必须配 <code class="c">isolcpus=...,managed_irq</code>，否则中断还是会打到你的轮询核</li>
+<li><code class="c">SO_BUSY_POLL_BUDGET</code> 是调尾延迟的旋钮：budget 小 → p999 好，吞吐差</li>
+<li>一核一队列，核数直接决定能并行收多少条行情流——<strong>这是容量规划的硬约束</strong></li>
+<li>判断标准：如果 busy poll 后 p99 仍不达标，才值得付出旁路的复杂度</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>busy polling</td>
+<td>不存在</td>
+<td>三代机制（socket / prefer / NAPI defer）</td>
+</tr>
+<tr>
+<td>NAPI 收尾行为</td>
+<td>poll 完立即重开中断</td>
+<td>可推迟中断持续轮询（defer）</td>
+</tr>
+<tr>
+<td>epoll 超时精度</td>
+<td>毫秒</td>
+<td>纳秒（<code class="c">epoll_pwait2</code>）</td>
+</tr>
+<tr>
+<td>Rx buffer</td>
+<td>动态分配</td>
+<td>page_pool 复用，配合轮询无分配热点</td>
+</tr>
+</tbody>
+</table></div>
+      </section>
+      <section class="section" id="s-07">
+        <div class="sec-head"><div class="sec-no">07</div><h2>— 多队列、RSS 与行情流定向</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> Ch14（RPS/RFS，软分发）
+<strong>内核源码路径:</strong> <code class="c">Documentation/networking/scaling.rst</code></p>
+</blockquote>
+<h2>文档概述</h2>
+<p>现代网卡有多个 RX/TX 队列，每个队列对应一个 NAPI 实例和一个中断。
+<strong>包落到哪个队列，决定了它在哪个 CPU 上被处理</strong>——这一步直接决定延迟与抖动。
+本笔记讲如何用硬件（RSS / ntuple）把行情组播流钉到独占队列。</p>
+<hr />
+<h2>核心内容</h2>
+<h3>队列 → NAPI → 中断 → CPU 的绑定关系</h3>
+<pre class="code" data-label="code"><code class="c">                ┌─ RX queue 0 ─→ napi 0 ─→ IRQ_A ─→ CPU 0
+  NIC 多队列 ───┼─ RX queue 1 ─→ napi 1 ─→ IRQ_B ─→ CPU 1
+   (RSS hash)   ├─ RX queue 2 ─→ napi 2 ─→ IRQ_C ─→ CPU 2
+                └─ RX queue 3 ─→ napi 3 ─→ IRQ_D ─→ CPU 3
+</code></pre>
+<p><strong>一核一队列</strong>是 HFT 的标准部署：队列 N 的中断绑到 CPU N，收包进程也绑到 CPU N，
+包从进队列到被处理的全过程不跨核、不跨 NUMA。</p>
+<hr />
+<h3>RSS：硬件决定包去哪个队列</h3>
+<p>RSS（Receive Side Scaling）用硬件 hash 分发：</p>
+<pre class="code" data-label="code"><code class="c">hash( src_ip, dst_ip, src_port, dst_port )  →  indirection table  →  queue id
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 查看 indirection table（每队列权重）
+ethtool -x eth0
+
+# 把全部流量集中到队列 2
+ethtool -X eth0 weight 0 0 1 0
+
+# 自定义 hash 字段（按驱动支持）
+ethtool -N eth0 rx-flow-hash udp4 sd   # s=src port, d=dst port
+</code></pre>
+<p><strong>行情组播的 RSS 特性（重要）：</strong></p>
+<p>组播流的四元组（交易所 src IP、组播 dst IP、两个端口）<strong>全部固定</strong>
+→ hash 恒定 → <strong>永远落同一个队列</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>后果</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>好的一面</td>
+<td>完全确定，可预测，能精确规划</td>
+</tr>
+<tr>
+<td>坏的一面</td>
+<td>该队列成为唯一热点；若上面还跑别的流量 → 队头阻塞，延迟抖动</td>
+</tr>
+<tr>
+<td>更坏的</td>
+<td><strong>多条行情流可能 hash 到同一队列</strong>，互相抢</td>
+</tr>
+<tr>
+<td>解法</td>
+<td>不用 RSS 默认 hash，改用 ntuple 显式指定队列</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>ntuple / Flow Steering：显式钉队列</h3>
+<p>绕过 hash，直接下规则："这个组播组 + 这个端口 → 队列 3"。</p>
+<pre class="code" data-label="shell"><code class="c"># 把行情组播流钉到队列 3（Intel 叫 Flow Director，mlx5 叫 Flow Steering）
+ethtool -U eth0 flow-type udp4 dst-ip 224.1.2.3 dst-port 12345 action 3
+
+# 查看已下发的规则
+ethtool -u eth0
+
+# 删除规则
+ethtool -U eth0 delete 40      # 40 = 规则 location
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>厂商</th>
+<th>名称</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Intel (ice/i40e/ixgbe)</td>
+<td>Flow Director (fdir)</td>
+<td>规则数有限（数千）</td>
+</tr>
+<tr>
+<td>Mellanox (mlx5)</td>
+<td>Flow Steering</td>
+<td>规则数大，支持复杂匹配</td>
+</tr>
+<tr>
+<td>Broadcom (bnxt)</td>
+<td>NTuple filter</td>
+<td>依网卡型号</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>典型分流设计（HFT 标准做法）：</strong></p>
+<pre class="code" data-label="code"><code class="c">队列 0            → SSH / 监控 / 管理流量        → 内核协议栈
+队列 1, 2         → 行情组播流 A, B              → AF_XDP / DPDK 独占
+队列 3            → 订单链路（TCP/FIX）          → 内核协议栈（要 TCP）
+</code></pre>
+<p>关键点：<strong>被 AF_XDP/DPDK 接管的队列，流量不再进内核栈。</strong>
+所以必须先把行情流和管理流分开，否则你旁路掉自己 SSH 的同时也旁路了心跳包。</p>
+<hr />
+<h3>RPS / RFS：HFT 应该关掉</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>位置</th>
+<th>HFT 取舍</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RSS</td>
+<td>网卡硬件</td>
+<td>✅ 用，零 CPU 成本</td>
+</tr>
+<tr>
+<td>ntuple</td>
+<td>网卡硬件</td>
+<td>✅ 用，精确可控</td>
+</tr>
+<tr>
+<td><strong>RPS</strong></td>
+<td>软件（收包后跨 CPU 分发）</td>
+<td>❌ 关：引入 IPI + 排队，只加延迟</td>
+</tr>
+<tr>
+<td><strong>RFS</strong></td>
+<td>软件（按应用所在 CPU 分发）</td>
+<td>❌ 关：同上，且收益在吞吐不在延迟</td>
+</tr>
+</tbody>
+</table></div>
+<p>RPS/RFS 是为"多核吞吐"设计的，HFT 要的是"单核确定性"。
+已有硬件队列时开 RPS 是纯负收益。</p>
+<pre class="code" data-label="shell"><code class="c"># 确认已关闭
+cat /sys/class/net/eth0/queues/rx-*/rps_cpus    # 应为 0
+</code></pre>
+<hr />
+<h3>中断绑定：irqbalance 是敌人</h3>
+<pre class="code" data-label="shell"><code class="c"># ① 必须关掉 irqbalance —— 它会动态迁移中断，毁掉你的绑核规划
+systemctl stop irqbalance
+systemctl disable irqbalance
+
+# ② 查看每个队列的中断号
+grep -E 'eth0|TxRx|rx-' /proc/interrupts
+
+# ③ 绑到指定 CPU（bitmask，bit3 = CPU3 → 0x8）
+echo 8 &gt; /proc/irq/&lt;irq&gt;/smp_affinity
+
+# ④ 或用 smp_affinity_list 更直观
+echo 3 &gt; /proc/irq/&lt;irq&gt;/smp_affinity_list
+</code></pre>
+<p><strong><code class="c">managed_irq</code> 坑：</strong> 内核启动参数若不加 <code class="c">managed_irq</code>，
+受管中断（managed interrupt）仍可能落到你的隔离核上：</p>
+<pre class="code" data-label="code"><code class="c">isolcpus=domain,managed_irq,2-7 nohz_full=2-7 rcu_nocbs=2-7
+              ↑ 这个必须加
+</code></pre>
+<hr />
+<h3>队列数与 CPU 拓扑</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>约束</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>队列数 ≤ 隔离核数</td>
+<td>每队列要一个独占核轮询，核不够就开不了那么多队列</td>
+</tr>
+<tr>
+<td>队列与核同 NUMA</td>
+<td>跨节点访存 +100ns 起，且不可预测</td>
+</tr>
+<tr>
+<td>超线程</td>
+<td>HFT 通常关掉或只用一个兄弟核，避免 SMT 争抢</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 调队列数（需驱动支持，且会短暂断流）
+ethtool -l eth0                 # 查看当前/最大
+ethtool -L eth0 combined 4      # 设为 4 队列
+
+# NUMA 归属检查
+cat /sys/class/net/eth0/device/numa_node
+lscpu | grep NUMA
+numactl --cpunodebind=0 --membind=0 ./feed_handler
+</code></pre>
+<hr />
+<h3>验证：流量到底落在哪个队列</h3>
+<pre class="code" data-label="shell"><code class="c"># 每队列收包计数（确认分流是否生效）
+ethtool -S eth0 | grep -E 'rx_queue_[0-9]+_(packets|bytes)'
+
+# 或看软中断分布（每 CPU 的 NET_RX）
+watch -n1 'cat /proc/softirqs | grep NET_RX'
+
+# 确认没有丢包
+ethtool -S eth0 | grep -Ei 'miss|no_buf|drop'
+</code></pre>
+<p><strong>排障口诀：</strong> 行情收不到 → 先看 <code class="c">ethtool -S</code> 里队列 N 的 packets 是否增长
+→ 不增长说明流没进这个队列（RSS/ntuple 问题，或交换机 IGMP 问题）
+→ 增长但应用收不到，说明是用户态消费慢（ring/buffer 满）。</p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>行情流必须用 ntuple 钉队列</strong>，不能指望默认 RSS hash 帮你分好</li>
+<li><strong>关掉 irqbalance</strong>，它是绑核规划的头号破坏者</li>
+<li><strong>关掉 RPS/RFS</strong>，硬件队列够用，软件分发只加抖动</li>
+<li><code class="c">isolcpus</code> 要带 <code class="c">managed_irq</code>，否则中断仍会打进隔离核</li>
+<li>队列规划要预留：行情走旁路队列，SSH/监控/订单链路留内核队列</li>
+<li><strong>一核一队列</strong>是容量规划的硬约束——核数决定能并行处理多少条行情流</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分发机制</td>
+<td>RPS/RFS（软）为主</td>
+<td>RSS + ntuple 硬件分发为主，RPS 降级为兜底</td>
+</tr>
+<tr>
+<td>队列数</td>
+<td>单/双队列常见</td>
+<td>数十队列常态，配合 RSS indirection table</td>
+</tr>
+<tr>
+<td>中断绑定</td>
+<td>手工 <code class="c">/proc/irq</code></td>
+<td>同，但多了 <code class="c">managed_irq</code> 与 irqbalance 的冲突</td>
+</tr>
+<tr>
+<td>旁路共存</td>
+<td>无此概念</td>
+<td>需按队列划分"内核管"与"旁路独占"</td>
+</tr>
+</tbody>
+</table></div>
       </section>
 
 

@@ -278,6 +278,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">04</span>— Documentation/networking/af_xdp.rst</a>
           <a href="#s-02"><span class="n">06</span>— AF_XDP：零拷贝到用户态</a>
+          <a href="#s-03"><span class="n">03</span>— UMEM 布局与 copy / zero-copy 的微观差异</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -307,7 +308,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">NAPI / XDP / eBPF / io_uring</div>
           <h1>Chapter 06: AF_XDP</h1>
           <div class="meta">
-<span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -321,11 +322,15 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>HFT 收包主力</strong>：AF_XDP 是内核态零拷贝收包的最佳方案，延迟 ~200-500ns（DPDK ~100ns 但完全 bypass 内核）</li>
 <li><strong>UMEM 共享</strong>：UMEM 内存区域在内核与用户态之间共享，pre-registered 避免 mmap 开销</li>
 <li><strong>bind 到特定 queue</strong>：AF_XDP socket 绑定到特定 RX queue，实现 per-core 收包</li>
+<li><strong>只认 zero-copy</strong>：copy 模式仍分配 sk_buff 且多一次 memcpy，相对 <code class="c">recvmsg</code> 优势有限
+  → <a href="chapter-15.html#s-03">03</a></li>
+<li><strong>FILL ring 水位是生命线</strong>：<code class="c">rx_dropped</code> 增长 = frame 归还太慢 → <a href="chapter-15.html#s-03">03</a></li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
 <li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：UMEM 基于 page_pool</li>
 <li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 架构，AF_XDP 是 XDP redirect 目标</li>
+<li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md</code>：AF_XDP 按队列旁路，需先用 ntuple 把行情流钉到独占队列</li>
 <li><code class="c">13-dpdk/</code>：DPDK 完全 bypass，AF_XDP 是内核态折中</li>
 </ul>
       </section>
@@ -616,6 +621,316 @@ while (1) {
 <td>适合 HFT</td>
 <td>中低频策略</td>
 <td>超低延迟 co-location</td>
+</tr>
+</tbody>
+</table></div>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>— UMEM 布局与 copy / zero-copy 的微观差异</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> 无（AF_XDP 4.18+ 才存在）
+<strong>内核源码路径:</strong> <code class="c">Documentation/networking/af_xdp.rst</code>、<code class="c">net/xdp/xsk.c</code>、<code class="c">net/xdp/xsk_queue.h</code></p>
+</blockquote>
+<h2>文档概述</h2>
+<p><a href="chapter-15.html#s-01">01-af-xdp</a> 讲了创建流程和"两种模式"，但没有回答两个关键问题：
+<strong>UMEM 到底怎么布局</strong>、<strong>copy 模式比 zero-copy 多付出什么</strong>。
+这两点决定了 AF_XDP 值不值得用——答案是：只有 zero-copy 才值得。</p>
+<hr />
+<h2>核心内容</h2>
+<h3>UMEM：一块被用户态和网卡共享的内存</h3>
+<p>UMEM 是用户态分配的一块连续内存，划成等长的 <strong>frame</strong>，网卡和用户态都直接读写它。</p>
+<pre class="code" data-label="code"><code class="c">UMEM (用户态 mmap，建议 hugepage 或 posix_memalign)
+┌──────────┬──────────┬──────────┬──────────┬─────
+│ frame 0  │ frame 1  │ frame 2  │ frame 3  │ ...
+└──────────┴──────────┴──────────┴──────────┴─────
+
+单个 frame 内部（frame_size 通常 2048 或 4096）：
+┌────────────┬─────────────────┬───────────┐
+│  headroom  │   packet data   │ tailroom  │
+│  (256 B)   │                 │           │
+└────────────┴─────────────────┴───────────┘
+      ↑ 供 XDP 程序 bpf_xdp_adjust_head() 用（加/去封装头）
+</code></pre>
+<p><strong>关键：<code class="c">xdp_desc.addr</code> 是 UMEM 区域内的字节偏移，不是指针。</strong></p>
+<pre class="code" data-label="C"><code class="c">struct xdp_desc {
+    __u64 addr;     /* 相对 UMEM 起始的偏移 */
+    __u32 len;      /* 包长度 */
+    __u32 options;
+};
+
+/* 由偏移拿到数据指针 */
+void *pkt = xsk_umem__get_data(umem_area, desc.addr);
+</code></pre>
+<p>注册参数（<code class="c">setsockopt(XDP_UMEM_REG)</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+<th>典型值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">addr</code></td>
+<td>UMEM 起始地址</td>
+<td>mmap 返回值</td>
+</tr>
+<tr>
+<td><code class="c">len</code></td>
+<td>UMEM 总大小</td>
+<td>frame_size × frame_count</td>
+</tr>
+<tr>
+<td><code class="c">frame_size</code></td>
+<td>每个 frame 长度</td>
+<td>2048（小包）/ 4096（含 jumbo）</td>
+</tr>
+<tr>
+<td><code class="c">frame_headroom</code></td>
+<td>每 frame 前置保留</td>
+<td>256（<code class="c">XDP_PACKET_HEADROOM</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">addr</code> 必须按 frame_size 对齐；建议 UMEM 落在 hugepage 上，减少 TLB miss。</p>
+</blockquote>
+<hr />
+<h3>四个 ring 的生产者 / 消费者关系</h3>
+<pre class="code" data-label="code"><code class="c">                 ┌─────────────── 内核态 ───────────────┐
+                 │                                      │
+   FILL ring  ──→│  空闲 frame 地址池（用户填，内核取）  │
+                 │            ↓                          │
+                 │      网卡 DMA 写入 frame              │
+                 │            ↓                          │
+   RX ring    ←──│  已收包描述符（addr + len）            │
+                 │                                      │
+   TX ring    ──→│  待发包描述符（用户填，内核取）         │
+                 │            ↓                          │
+  COMPLETION  ←──│  已发完的 frame（可复用）              │
+                 │                                      │
+                 └──────────────────────────────────────┘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Ring</th>
+<th>方向</th>
+<th>作用</th>
+<th>空了/满了会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FILL</td>
+<td>用户 → 内核</td>
+<td>提供空闲 frame 给网卡写</td>
+<td><strong>空 → 收包丢包</strong> (<code class="c">rx_dropped</code>)</td>
+</tr>
+<tr>
+<td>RX</td>
+<td>内核 → 用户</td>
+<td>交付已收包</td>
+<td>用户读慢 → 队列积压，最终丢</td>
+</tr>
+<tr>
+<td>TX</td>
+<td>用户 → 内核</td>
+<td>提交待发包</td>
+<td>—</td>
+</tr>
+<tr>
+<td>COMPLETION</td>
+<td>内核 → 用户</td>
+<td>归还已发送 frame</td>
+<td>用户不回收 → 无空闲 frame</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 最重要的运维点：FILL ring 水位。</strong>
+收包路径是"内核从 FILL ring 拿 frame → DMA 写入 → 放回 RX ring"，
+用户态消费 RX ring 后必须<strong>把 frame 地址重新填回 FILL ring</strong>，否则水位耗尽就开始丢包。</p>
+<pre class="code" data-label="C"><code class="c">/* 典型主循环骨架（libbpf xsk.h） */
+uint32_t idx_rx, idx_fill, rcvd;
+
+rcvd = xsk_ring_cons__peek(&amp;rx, BATCH, &amp;idx_rx);
+if (rcvd &gt; 0) {
+    /* 1. 预留同等数量的 FILL 槽位，把用完的 frame 还回去 */
+    xsk_ring_prod__reserve(&amp;fill, rcvd, &amp;idx_fill);
+    for (i = 0; i &lt; rcvd; i++) {
+        uint64_t addr = xsk_ring_cons__rx_desc(&amp;rx, idx_rx + i)-&gt;addr;
+        /* ... 处理包 ... */
+        *xsk_ring_prod__fill_addr(&amp;fill, idx_fill + i) = addr;  /* 归还 */
+    }
+    xsk_ring_prod__submit(&amp;fill, rcvd);
+    xsk_ring_cons__release(&amp;rx, rcvd);
+}
+</code></pre>
+<p><strong>建议：</strong> FILL ring 大小 ≥ 2048，运行时水位保持 &gt; 50%。
+批处理（一次还一批）能摊薄 ring 操作开销，但要权衡批量带来的延迟。</p>
+<hr />
+<h3>copy vs zero-copy：差的到底是哪一步</h3>
+<p>这是本笔记的核心。两条路径对比：</p>
+<pre class="code" data-label="code"><code class="c">【copy 模式】—— 名字叫 XDP，其实没省掉关键开销
+  NIC DMA → page_pool page
+      → 驱动分配 sk_buff            ← 1. 分配开销 ~100ns
+      → NAPI poll → XDP_REDIRECT
+      → 内核把 payload memcpy 到 UMEM frame   ← 2. 拷贝开销 20~200ns（随包长）
+      → RX ring 描述符
+      → 用户态读取
+
+【zero-copy 模式】—— 真旁路
+  NIC DMA 直接写进 UMEM frame（page_pool 与 UMEM 共享映射）
+      → 驱动只填一个 xdp_desc       ← 无 sk_buff、无 memcpy
+      → RX ring 描述符
+      → 用户态读取（就是网卡刚写过的那块内存）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开销项</th>
+<th>copy</th>
+<th>zero-copy</th>
+<th>差值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sk_buff 分配</td>
+<td>有</td>
+<td><strong>无</strong></td>
+<td>~100 ns</td>
+</tr>
+<tr>
+<td>payload memcpy</td>
+<td>有</td>
+<td><strong>无</strong></td>
+<td>20–200 ns（随包长）</td>
+</tr>
+<tr>
+<td>缓存污染</td>
+<td>两次触碰数据</td>
+<td>一次</td>
+<td>影响后续访问</td>
+</tr>
+<tr>
+<td>典型收包延迟</td>
+<td>1.5–3 μs</td>
+<td>0.5–1 μs</td>
+<td><strong>2–3x</strong></td>
+</tr>
+<tr>
+<td>典型吞吐/core</td>
+<td>3–6 Mpps</td>
+<td>10–24 Mpps</td>
+<td><strong>3–4x</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论：</strong> copy 模式省掉的只是协议栈遍历，<strong>仍然分配 sk_buff、仍然 memcpy</strong>。
+它相对 <code class="c">recvmsg()</code> 的优势有限，却要付出独占队列 + BPF 开发的代价。
+所以 <a href="chapter-15.html#s-01">01-af-xdp</a> 说"零拷贝是唯一理由"——用之前先用 <code class="c">XDP_ZEROCOPY</code> 试，
+驱动不支持就老实走内核栈 + busy poll，别用 copy 模式。</p>
+<pre class="code" data-label="shell"><code class="c"># 校验你的驱动是否真支持 zero-copy（绑定时带 XDP_ZEROCOPY flag）
+# 绑定失败或退化为 copy 模式，说明驱动/队列配置不支持
+xdp-loader load -m native eth0 prog.o
+</code></pre>
+<hr />
+<h3>与 DPDK 的结构对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>AF_XDP zero-copy</th>
+<th>DPDK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rx 缓冲区</td>
+<td>UMEM frame（page_pool 映射，内核分配）</td>
+<td>rte_mbuf（hugepage mempool，用户分配）</td>
+</tr>
+<tr>
+<td>描述符</td>
+<td><code class="c">xdp_desc{addr,len}</code> 数组</td>
+<td><code class="c">rte_mbuf*</code> 指针数组</td>
+</tr>
+<tr>
+<td>收包 ring</td>
+<td>RX ring + FILL ring（两套）</td>
+<td>硬件 Rx descriptor ring（一套）</td>
+</tr>
+<tr>
+<td>buffer 归还</td>
+<td>用户显式填 FILL ring</td>
+<td>驱动复用 desc，用户 free mbuf</td>
+</tr>
+<tr>
+<td>驱动</td>
+<td><strong>内核驱动</strong> + XDP 程序</td>
+<td>用户态 PMD（UIO/VFIO）</td>
+</tr>
+<tr>
+<td>网卡独占</td>
+<td>仅该队列</td>
+<td>整张网卡</td>
+</tr>
+<tr>
+<td>内核功能共存</td>
+<td>✅ 其他队列走协议栈</td>
+<td>❌ 网卡被接管</td>
+</tr>
+<tr>
+<td>首次 touching</td>
+<td>内核已碰过（填 desc）</td>
+<td>用户态独占，缓存更干净</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结构性差异：</strong> AF_XDP 的 buffer 所有权由内核和用户态<strong>来回交接</strong>（FILL/RX 两套 ring），
+DPDK 是用户态<strong>独占</strong> mbuf 池。这套交接带来了额外的 ring 操作，
+是 AF_XDP 在极限延迟上略逊 DPDK 的主要原因。</p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>先验证 zero-copy 能用</strong>，驱动不支持就别用 AF_XDP——copy 模式不划算</li>
+<li><code class="c">xdp_desc.addr</code> 是<strong>偏移不是指针</strong>，用 <code class="c">xsk_umem__get_data()</code> 转换</li>
+<li><strong>FILL ring 水位是生命线</strong>：<code class="c">xdp-stat</code> 里 <code class="c">rx_dropped</code> 涨 = 你归还 frame 太慢</li>
+<li>UMEM 放 hugepage 上，frame_size 按最大包长选（行情包通常小，2048 够）</li>
+<li>headroom 留 256 B，方便 XDP 程序做 <code class="c">bpf_xdp_adjust_head()</code></li>
+<li>AF_XDP 只接管<strong>指定队列</strong>，其他队列仍走内核栈——这是它相对 DPDK 最大的工程优势</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户态收包</td>
+<td>只有 socket + recvmsg</td>
+<td>AF_XDP 零拷贝，绕过协议栈</td>
+</tr>
+<tr>
+<td>Rx buffer 分配</td>
+<td>每次 alloc_page</td>
+<td>page_pool 复用，UMEM 直接映射</td>
+</tr>
+<tr>
+<td>内核/用户交接</td>
+<td>一次拷贝（recvmsg）</td>
+<td>零拷贝 + FILL/RX ring 所有权交接</td>
+</tr>
+<tr>
+<td>队列粒度旁路</td>
+<td>无此概念</td>
+<td>AF_XDP 可按队列旁路，与内核栈共存</td>
 </tr>
 </tbody>
 </table></div>
