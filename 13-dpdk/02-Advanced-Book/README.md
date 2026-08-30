@@ -30,7 +30,10 @@
 
 | 实验 | 路径 | 状态 |
 |------|------|------|
-| （待补充） | [code/](../../../../claude code 安装.mp4) | — |
+| （待补充） | `code/`（目录尚未创建） | — |
+
+> 进阶实验可先复用 [01-Intro-Book/code/mcast-minimal/](../01-Intro-Book/code/mcast-minimal/)
+> 的同口径测法：DPDK 版 vs 内核栈版对照，换掉变量（XDP / Onload）再测一轮即可。
 
 ---
 

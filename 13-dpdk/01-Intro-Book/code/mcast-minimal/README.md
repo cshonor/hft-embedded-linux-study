@@ -126,4 +126,15 @@ dpdk-devbind.py --bind=vfio-pci 0000:01:00.0
   批量越大吞吐越高，但批次内后包的队头等待越长 —— 这就是"吞吐 vs 尾延迟"的取舍
 - 加解码：在 `parse_packet()` 返回后直接读 `v->payload`，接 MoldUDP64 / ITCH
 - 延迟测量方法论：[12.5/chapter-15/notes/03-latency-measurement.md](../../../../12.5-modern-networking/chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md)
-- 组播行情笔记：[../notes/chapter-05-组播行情接入.md](../notes/chapter-05-组播行情接入.md)
+- 组播行情笔记：[chapter-05-组播行情接入](../../notes/chapter-05-组播行情接入.md)
+
+## 对应笔记
+
+本实验的代码与下面四篇笔记**逐点对应**，改代码前先读：
+
+| 代码位置 | 笔记 |
+|---------|------|
+| `rte_pktmbuf_pool_create()` / `rte_pktmbuf_free()` | [chapter-02-mbuf与内存池](../../notes/chapter-02-mbuf与内存池.md) |
+| `rte_eth_rx_burst()` / `BURST_SIZE` / `hist_burst` | [chapter-03-PMD与轮询模式](../../notes/chapter-03-PMD与轮询模式.md) |
+| 为什么对照组要跑同样口径 | [chapter-04-零拷贝与用户态旁路](../../notes/chapter-04-零拷贝与用户态旁路.md) |
+| `rte_eth_allmulticast_enable()` 那段长注释 | [chapter-05-组播行情接入](../../notes/chapter-05-组播行情接入.md) |
