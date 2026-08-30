@@ -45,6 +45,7 @@ chapter-XX-english-slug/
 | aarch64 交叉编译 `asm/types.h` 坑与修复 | Ch3 §3 |
 | `invalid bpf_context access off=4` 真实 verifier 拒绝日志 | Ch6 §3.6 |
 | 用户态指针必须 probe_read、printk %s 收指针 | Ch2 坑点 7-8 |
+| lab04：strace 拆解 libbpf 的 50 个 bpf() 调用（探测 vs 真活儿；BTF_LOAD 在无内核 BTF 机器上成功；BPF_LINK_CREATE 挂载；memfd placeholder fd 槽位） | Ch4 §2 |
 
 ---
 
