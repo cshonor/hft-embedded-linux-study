@@ -13,15 +13,11 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. 验证过程核心机制 | [notes/section-1-验证过程核心机制.md](./notes/section-1-验证过程核心机制.md) |
-| 2. 验证器日志 | [notes/section-2-验证器日志.md](./notes/section-2-验证器日志.md) |
-| 3. 六类典型验证失败 | [notes/section-3-六类典型验证失败.md](./notes/section-3-六类典型验证失败.md) |
-| 4. 保证"运行到完成" | [notes/section-4-保证运行到完成.md](./notes/section-4-保证运行到完成.md) |
-| 5. 坑点清单 | [notes/section-5-坑点清单.md](./notes/section-5-坑点清单.md) |
-| 6. HFT 关联 | [notes/section-6-HFT关联.md](./notes/section-6-HFT关联.md) |
-| 7. 自测题 | [notes/section-7-自测题.md](./notes/section-7-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 6.1–6.2 | [验证机制与日志](./notes/6.1_验证机制与日志.md) |
+| 6.3–6.4 | [典型验证失败与完成保证](./notes/6.3_典型验证失败与完成保证.md) |
+| 6.5–6.7 | [坑点HFT关联与自测](./notes/6.5_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

@@ -14,17 +14,12 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. BCC 的老方案为什么不行 | [notes/section-1-BCC的老方案为什么不行.md](./notes/section-1-BCC的老方案为什么不行.md) |
-| 2. CO-RE 五要素 | [notes/section-2-CO-RE五要素.md](./notes/section-2-CO-RE五要素.md) |
-| 3. BTF 深入 | [notes/section-3-BTF深入.md](./notes/section-3-BTF深入.md) |
-| 4. vmlinux.h：一个头文件替代全部内核头 | [notes/section-4-vmlinux.h：一个头文件替代全部内核头.md](./notes/section-4-vmlinux.h：一个头文件替代全部内核头.md) |
-| 5. 内核侧代码（hello-buffer-config.bpf.c） | [notes/section-5-内核侧代码（hello-buffer-config.bpf.c）.md](./notes/section-5-内核侧代码（hello-buffer-config.bpf.c）.md) |
-| 6. 用户侧：libbpf + BPF Skeleton | [notes/section-6-用户侧：libbpf+BPFSkeleton.md](./notes/section-6-用户侧：libbpf+BPFSkeleton.md) |
-| 7. 坑点清单 | [notes/section-7-坑点清单.md](./notes/section-7-坑点清单.md) |
-| 8. HFT 关联 | [notes/section-8-HFT关联.md](./notes/section-8-HFT关联.md) |
-| 9. 自测题 | [notes/section-9-自测题.md](./notes/section-9-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 5.1–5.2 | [BCC之弊与CO-RE要素](./notes/5.1_BCC之弊与CO-RE要素.md) |
+| 5.3–5.4 | [BTF与vmlinux](./notes/5.3_BTF与vmlinux.md) |
+| 5.5–5.6 | [内核侧与用户侧实现](./notes/5.5_内核侧与用户侧实现.md) |
+| 5.7–5.9 | [坑点HFT关联与自测](./notes/5.7_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

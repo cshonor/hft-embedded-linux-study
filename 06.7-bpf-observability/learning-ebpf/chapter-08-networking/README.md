@@ -14,16 +14,11 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. eBPF 在网络路径上的位置 | [notes/section-1-eBPF在网络路径上的位置.md](./notes/section-1-eBPF在网络路径上的位置.md) |
-| 2. XDP（eXpress Data Path） | [notes/section-2-XDP（eXpressDataPath）.md](./notes/section-2-XDP（eXpressDataPath）.md) |
-| 3. TC（Traffic Control）层 | [notes/section-3-TC（TrafficControl）层.md](./notes/section-3-TC（TrafficControl）层.md) |
-| 4. uprobe 钩 SSL：看加密流量的明文 | [notes/section-4-uprobe钩SSL：看加密流量的明文.md](./notes/section-4-uprobe钩SSL：看加密流量的明文.md) |
-| 5. Kubernetes 与 eBPF（Cilium 视角） | [notes/section-5-Kubernetes与eBPF（Cilium视角）.md](./notes/section-5-Kubernetes与eBPF（Cilium视角）.md) |
-| 6. 坑点清单 | [notes/section-6-坑点清单.md](./notes/section-6-坑点清单.md) |
-| 7. HFT 关联 | [notes/section-7-HFT关联.md](./notes/section-7-HFT关联.md) |
-| 8. 自测题 | [notes/section-8-自测题.md](./notes/section-8-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 8.1–8.3 | [网络路径XDP与TC](./notes/8.1_网络路径XDP与TC.md) |
+| 8.4–8.5 | [uprobe与Kubernetes](./notes/8.4_uprobe与Kubernetes.md) |
+| 8.6–8.8 | [坑点HFT关联与自测](./notes/8.6_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

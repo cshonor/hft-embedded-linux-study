@@ -15,16 +15,11 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. 安全可观测性 = 策略 + 上下文 | [notes/section-1-安全可观测性=策略+上下文.md](./notes/section-1-安全可观测性=策略+上下文.md) |
-| 2. 基于系统调用的安全（三代方案） | [notes/section-2-基于系统调用的安全（三代方案）.md](./notes/section-2-基于系统调用的安全（三代方案）.md) |
-| 3. BPF LSM：权威检查点（5.7+） | [notes/section-3-BPFLSM：权威检查点（5.7+）.md](./notes/section-3-BPFLSM：权威检查点（5.7+）.md) |
-| 4. Cilium Tetragon：挂内核内部函数 | [notes/section-4-CiliumTetragon：挂内核内部函数.md](./notes/section-4-CiliumTetragon：挂内核内部函数.md) |
-| 5. 防护型安全（preventative） | [notes/section-5-防护型安全（preventative）.md](./notes/section-5-防护型安全（preventative）.md) |
-| 6. 坑点清单 | [notes/section-6-坑点清单.md](./notes/section-6-坑点清单.md) |
-| 7. HFT 关联 | [notes/section-7-HFT关联.md](./notes/section-7-HFT关联.md) |
-| 8. 自测题 | [notes/section-8-自测题.md](./notes/section-8-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 9.1–9.3 | [安全模型与syscall方案](./notes/9.1_安全模型与syscall方案.md) |
+| 9.4–9.5 | [Tetragon与防护型安全](./notes/9.4_Tetragon与防护型安全.md) |
+| 9.6–9.8 | [坑点HFT关联与自测](./notes/9.6_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

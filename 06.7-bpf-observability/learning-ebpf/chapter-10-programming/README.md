@@ -15,17 +15,11 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. bpftrace：最高层的追踪语言 | [notes/section-1-bpftrace：最高层的追踪语言.md](./notes/section-1-bpftrace：最高层的追踪语言.md) |
-| 2. 内核侧语言选择 | [notes/section-2-内核侧语言选择.md](./notes/section-2-内核侧语言选择.md) |
-| 3. 用户态库全景 | [notes/section-3-用户态库全景.md](./notes/section-3-用户态库全景.md) |
-| 4. 测试与性能统计 | [notes/section-4-测试与性能统计.md](./notes/section-4-测试与性能统计.md) |
-| 5. 多 eBPF 程序的协作 | [notes/section-5-多eBPF程序的协作.md](./notes/section-5-多eBPF程序的协作.md) |
-| 6. 选型速查（作者结论） | [notes/section-6-选型速查（作者结论）.md](./notes/section-6-选型速查（作者结论）.md) |
-| 7. 坑点清单 | [notes/section-7-坑点清单.md](./notes/section-7-坑点清单.md) |
-| 8. HFT 关联 | [notes/section-8-HFT关联.md](./notes/section-8-HFT关联.md) |
-| 9. 自测题 | [notes/section-9-自测题.md](./notes/section-9-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 10.1–10.3 | [语言与库全景](./notes/10.1_语言与库全景.md) |
+| 10.4–10.6 | [测试统计与程序协作](./notes/10.4_测试统计与程序协作.md) |
+| 10.7–10.9 | [坑点HFT关联与自测](./notes/10.7_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

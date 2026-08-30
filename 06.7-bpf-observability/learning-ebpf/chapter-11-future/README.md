@@ -14,15 +14,11 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. eBPF 基金会（2021） | [notes/section-1-eBPF基金会（2021）.md](./notes/section-1-eBPF基金会（2021）.md) |
-| 2. eBPF for Windows | [notes/section-2-eBPFforWindows.md](./notes/section-2-eBPFforWindows.md) |
-| 3. Linux eBPF 的演进方向 | [notes/section-3-LinuxeBPF的演进方向.md](./notes/section-3-LinuxeBPF的演进方向.md) |
-| 4. "eBPF 是平台，不是功能" | [notes/section-4-eBPF是平台，不是功能.md](./notes/section-4-eBPF是平台，不是功能.md) |
-| 5. 坑点清单 | [notes/section-5-坑点清单.md](./notes/section-5-坑点清单.md) |
-| 6. HFT 关联 | [notes/section-6-HFT关联.md](./notes/section-6-HFT关联.md) |
-| 7. 自测题 | [notes/section-7-自测题.md](./notes/section-7-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 11.1–11.2 | [基金会与Windows版](./notes/11.1_基金会与Windows版.md) |
+| 11.3–11.4 | [演进方向与平台观](./notes/11.3_演进方向与平台观.md) |
+| 11.5–11.7 | [坑点HFT关联与自测](./notes/11.5_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

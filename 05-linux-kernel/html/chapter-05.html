@@ -1066,6 +1066,10 @@ sysret ──► 回到用户态
 <td><strong><code class="c">sysenter</code> / <code class="c">syscall</code></strong></td>
 <td>更快路径（现代 64 位主流为 <strong><code class="c">syscall</code></strong>）</td>
 </tr>
+<tr>
+<td><strong><code class="c">svc #0</code></strong></td>
+<td><strong>AArch64</strong>（树莓派等 ARM64）的陷入指令，Supervisor Call — 与 <code class="c">syscall</code> 同角色：主动陷入内核</td>
+</tr>
 </tbody>
 </table></div>
 <h4>x86（书中 32 位约定）</h4>
@@ -1118,7 +1122,10 @@ sysret ──► 回到用户态
 <p>例如：</p>
 <pre class="code" data-label="C"><code class="c">read(fd, buf, 100);
 </code></pre>
-<p><code class="c">buf</code> 是用户态虚拟地址；内核若直接访问，可能触发页错误，严重时 <strong>Oops</strong>。</p>
+<p><code class="c">buf</code> 是用户态虚拟地址（用户进程页表里的映射）。内核若直接 <code class="c">*buf</code> 访问：
+- 该页可能不在内存 → 触发缺页（错误路径下没人兜底）；
+- 地址非法/未映射 → 直接 <strong>Oops</strong> 内核崩溃；
+- 恶意程序<strong>故意传伪造指针</strong> → 内核越读越写，直接变成安全漏洞。</p>
 <hr />
 <h3>核心函数</h3>
 <div class="tbl-wrap"><table>
@@ -1139,9 +1146,13 @@ sysret ──► 回到用户态
 </tr>
 </tbody>
 </table></div>
-<p>这两个函数会：校验用户地址合法性、配合缺页处理、安全复制缓冲区。<br />
+<p>这两个函数做三件事：<strong>校验</strong>用户虚拟地址是否属于当前进程、<strong>优雅处理缺页</strong>（页不在内存时安全换入，不 Oops）、<strong>完成拷贝</strong>。
 凡是系统调用接收用户传入指针，<strong>必须</strong> 用这一组（或同类安全接口）；直接裸访问会崩溃 / 被当成漏洞。</p>
-<p>失败时常返回 <strong><code class="c">-EFAULT</code></strong> 等。</p>
+<p>失败时常返回 <strong><code class="c">-EFAULT</code></strong>（用户地址非法）。</p>
+<p>⚠️ <strong>高频考点：<code class="c">copy_from_user</code>/<code class="c">copy_to_user</code> 可能睡眠</strong> —— 缺页处理可能要等磁盘 I/O 换页。所以：
+- ❌ <strong>中断上下文</strong>（IRQ handler、tasklet、softirq）里禁止调用 → <a href="chapter-07.html#ch-7">Ch 7</a>；
+- ❌ <strong>持有自旋锁</strong>期间禁止调用 → <a href="chapter-09.html#ch-9">Ch 9–10</a>（自旋锁持有者不能睡眠）；
+- ✅ 只能在<strong>进程上下文</strong>（syscall、内核线程）里用 → <a href="#s-5-5">§5.5</a>。</p>
 <hr />
 <h3>系统调用函数标准形式</h3>
 <pre class="code" data-label="C"><code class="c">SYSCALL_DEFINE3(read, int, fd, char __user *, buf, size_t, count)
@@ -1149,7 +1160,58 @@ sysret ──► 回到用户态
     /* __user 只是标记：指针来自用户空间，提醒不能直接解引用 */
 }
 </code></pre>
-<p><code class="c">SYSCALL_DEFINE*</code> 是内核宏：自动完成函数包装、参数提取，最终注册进系统调用表。</p>
+<ul>
+<li><code class="c">SYSCALL_DEFINE0~5</code>：尾号数字 = <strong>参数个数</strong>，宏自动从寄存器提取参数、包装函数、注册进系统调用表（寄存器传参细节见 §5.2/5.3）。</li>
+<li><code class="c">__user</code> 是 <strong>gcc sparse 静态检查标记</strong>：编译期提示"此指针来自用户空间"，<strong>运行时不产生任何机器码</strong>——它只是给 sparse 和开发者看的，内核里对该指针照样不能写 <code class="c">*buf</code>。</li>
+</ul>
+<p><strong><code class="c">__user</code> 的真身与三兄弟标记</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 内核源码定义（简化）—— GCC attribute，非 C 关键字 */
+# define __user   __attribute__((noderef, address_space(1)))
+/* noderef: 不许直接解引用;  address_space(1): 用户地址空间编号 */
+
+ssize_t copy_to_user(char __user *to, const void *from, size_t n);
+ssize_t copy_from_user(void *to, const char __user *from, size_t n);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标记</th>
+<th>指向哪里</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__user *</code></td>
+<td><strong>用户态地址空间</strong></td>
+<td>系统调用参数里用户传来的指针（本文主角）</td>
+</tr>
+<tr>
+<td><code class="c">__kernel *</code></td>
+<td>内核地址空间</td>
+<td>sparse 区分两套地址空间，防止混用</td>
+</tr>
+<tr>
+<td><code class="c">__iomem *</code></td>
+<td><strong>硬件 IO 寄存器</strong>的映射地址</td>
+<td>MMIO 设备驱动（嵌入式常用）；访问要用 <code class="c">readl/writel</code>，不能直接解引用</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>三者都是 sparse 注解：关闭 sparse 编译时全部展开为空，零运行时开销。看到 <code class="c">__user *</code> 就条件反射——<strong>禁止直接解引用，必须 <code class="c">copy_{to,from}_user</code></strong>；看到 <code class="c">__iomem *</code>（驱动开发常客）同理——用 <code class="c">readl()/writel()</code> 访问。</p>
+</blockquote>
+<p><strong>语法位置：为什么写 <code class="c">char __user *buf</code>，不写 <code class="c">__user char *buf</code>？</strong></p>
+<p><code class="c">__user</code> 是 GNU C <strong>类型限定符</strong>，语法位置与 <code class="c">const</code> 一致——放在基础类型和 <code class="c">*</code> 之间：</p>
+<pre class="code" data-label="C"><code class="c">char const  *buf;   /* const 修饰被指向的 char：内容只读              */
+char __user *buf;   /* __user 标注指针本身：指针值是用户态地址         */
+__user char *buf;   /* ❌ 错误位置，sparse 识别不到                    */
+
+char          *k_buf;   /* 普通内核指针，指向内核内存                   */
+char __user   *u_buf;   /* 用户空间指针，来自用户程序，禁直接 *u_buf     */
+char __iomem  *io_buf;  /* IO 寄存器映射指针，硬件 IO 内存              */
+</code></pre>
+<p>语义各司其职：<code class="c">char</code> 说明<strong>被指向的数据是什么类型</strong>（缓冲区存字节）；<code class="c">__user</code> 说明<strong>指针值属于哪个地址空间</strong>（用户态）；<code class="c">*</code> 说明 buf 是指针变量。细微差别：<code class="c">const</code> 修饰的是<strong>被指对象</strong>（内容只读），<code class="c">__user</code> 标注的是<strong>指针本身</strong>（值是用户地址）——语法位置相同，修饰对象不同。标准 C 没有 <code class="c">__user</code>，只存在于内核 GNU-C 环境；不开 sparse 编译器不查它，写错了解引用照样编译通过，到运行时才 Oops。</p>
 <hr />
 <h3>参数校验要点</h3>
 <ol>
@@ -1216,6 +1278,11 @@ sysret ──► 回到用户态
 <summary>答案</summary>
 <p>memcpy 直接拷贝不检查地址 → 如果用户态传入内核地址会破坏内核内存。copy_from_user 检查地址范围 + 处理 page fault + 返回未拷贝字节数。如果用户态页面被换出，copy_from_user 会安全地 page in，memcpy 会直接 oops。</p>
 </details>
+<p><strong>Q3.</strong> ① 内核里能直接解引用 <code class="c">__user</code> 指针吗？② <code class="c">copy_from_user</code> 失败返回什么？③ <code class="c">__user</code> 是运行时还是编译期机制？④ 为什么中断上下文里不能调 <code class="c">copy_from_user</code>？</p>
+<details>
+<summary>答案</summary>
+<p>① 不能——该地址可能未映射（缺页）、非法（Oops），恶意伪造指针还会造成内核越权读写漏洞。② 返回 <code class="c">-EFAULT</code>。③ 编译期：gcc sparse 静态检查标记，运行时不产生任何机器码。④ <code class="c">copy_from_user</code> 内部可能触发缺页异常，缺页换页可能睡眠；中断上下文没有可被调度的进程上下文，禁止睡眠 → 调用会造成严重 bug。同理，持有自旋锁时也不能调用。</p>
+</details>
 </details>
 <hr />
       </section>
@@ -1258,28 +1325,190 @@ sysret ──► 回到用户态
 <tr>
 <th></th>
 <th>系统调用（进程上下文）</th>
-<th>硬件中断服务（中断上下文）</th>
+<th>硬件中断（中断上下文）</th>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><strong>触发来源</strong></td>
+<td><strong>软件指令</strong>，用户主动发起（x86_64 <code class="c">syscall</code> / AArch64 <code class="c">svc #0</code>）</td>
+<td><strong>硬件电信号</strong>，被动突发</td>
+</tr>
 <tr>
 <td>可否休眠</td>
 <td>✅ <strong>允许</strong></td>
 <td>❌ <strong>绝对不能</strong></td>
 </tr>
 <tr>
+<td><code class="c">copy_from_user</code></td>
+<td>✅ 可以</td>
+<td>❌ 禁止（可能缺页→睡眠）</td>
+</tr>
+<tr>
+<td><strong>谁的栈</strong></td>
+<td>当前进程的<strong>内核栈</strong></td>
+<td>中断栈 / 独立栈</td>
+</tr>
+<tr>
+<td><strong>发生时机</strong></td>
+<td>应用想用内核服务时（主动）</td>
+<td><strong>任何时刻随机打断</strong>——不管 CPU 当时在跑用户代码还是内核代码</td>
+</tr>
+<tr>
 <td>典型例子</td>
 <td><code class="c">read</code> 等磁盘 → 进程可休眠，调度器跑别的进程</td>
 <td>IRQ handler</td>
 </tr>
+</tbody>
+</table></div>
+<ul>
+<li>系统调用在分类学上属于<strong>异常（Exception/trap）</strong>——软件触发的同步陷入，<strong>不是硬件中断</strong>（易混淆点；<code class="c">int $0x80</code> 时代借用了"软件中断"之名，见 §5.3）。注意<strong>系统调用 ⊂ 软件陷阱</strong>：trap 还包括缺页、除零、调试断点，syscall 只是其中"主动请求"的那类。</li>
+<li>⚠️ <strong>译名撞车坑</strong>：CPU 教材的 software interrupt（=软件陷阱，syscall 属于它）与 <strong>Linux 内核的 softirq（下半部延后处理，中断上下文、不能睡眠）中文都叫"软中断"，但完全是两码事</strong>——详见 <a href="chapter-08.html#s-8-3">§8.3</a> 术语防撞表。</li>
+<li>中断上下文<strong>不代表任何任务</strong>：在里头睡眠 = 调度器无人可切 → <strong>死锁 / Oops</strong>。这就是"干完活立刻走人"的原因。</li>
+<li>⚠️ <strong>坑点（面试高频）</strong>：硬件中断打断进程 A 时，<strong><code class="c">current</code> 仍然指向 A</strong>（栈也是借用的——x86_64 用 per-CPU IRQ 栈，ARM64 直接用 A 的内核栈），但此时跑的是<strong>硬件事件的处理逻辑，不代表 A</strong>。<code class="c">current</code> 变量还在、值也没变，<strong>上下文含义却变了</strong>——不能据此睡眠、不能 <code class="c">copy_from_user</code>。</li>
+<li>中断可能打断<strong>正在内核态跑的代码</strong>（比如持着锁的内核路径），所以中断处理必须尽量短——这是 Ch 7/8 顶半部/底半部拆分的根源。</li>
+</ul>
+<blockquote>
+<p>比喻：syscall = 学生<strong>举手主动</strong>找老师（内核）问问题，处理这件事的就是这个学生（进程上下文）；硬件中断 = <strong>火警铃</strong>突然响，老师不管正在跟谁说话都得立刻去处理——处理火警不属于任何一个学生（中断上下文）。</p>
+</blockquote>
+<p>很多内核 bug 的根源就是 <strong>混淆二者</strong> — 中断里调用了会睡眠的路径。</p>
+<hr />
+<h3>特权级切换 ≠ 进程切换（syscall 的"变"与"不变"）</h3>
+<p>syscall 从用户态陷入内核态，<strong>全程同一个 <code class="c">task_struct</code></strong>：不换任务、不新建结构体、不发生调度。变的只有三样：特权级、栈、现场保存位置。</p>
+<div class="tbl-wrap"><table>
+<thead>
 <tr>
-<td>信号等</td>
-<td>可涉及信号处理路径（语义更复杂）</td>
-<td>通常不能做「像进程一样」的事</td>
+<th></th>
+<th><strong>特权级切换</strong>（syscall 陷入/返回）</th>
+<th><strong>进程上下文切换</strong>（<code class="c">schedule()</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">task_struct</code></td>
+<td><strong>同一个</strong>，<code class="c">current</code> 不变</td>
+<td>换成另一个 task，<code class="c">current</code> 更新</td>
+</tr>
+<tr>
+<td>地址空间/页表</td>
+<td><strong>不切换</strong>，MMU 仍用当前进程的页表</td>
+<td>切换（换 <code class="c">mm</code>、刷 TLB）</td>
+</tr>
+<tr>
+<td>CPU 特权级</td>
+<td>Ring3→Ring0（x86_64）/ EL0→EL1（AArch64）</td>
+<td>不变（切换发生在内核态内部）</td>
+</tr>
+<tr>
+<td>栈</td>
+<td>用户栈 → 该 task <strong>专属内核栈</strong>，用户现场（寄存器/pc/sp）压入栈顶的 <strong><code class="c">pt_regs</code></strong></td>
+<td>换成新 task 的内核栈</td>
+</tr>
+<tr>
+<td>是否调度</td>
+<td>❌ 没有 <code class="c">schedule()</code></td>
+<td>✅ 这就是调度本身</td>
 </tr>
 </tbody>
 </table></div>
-<p>很多内核 bug 的根源就是 <strong>混淆二者</strong> — 中断里调用了会睡眠的路径。</p>
+<blockquote>
+<p>这就是"进程上下文 = 内核<strong>替某个 task 干活</strong>"的准确含义：内核代码在跑，但 <code class="c">current</code> 绑定着发起 syscall 的任务，可以理直气壮地访问它的 fd 表、<code class="c">mm</code>、信号等全部资源。
+一句话记牢：<strong>进程上下文 = 内核替某个 task 干活；中断上下文 = 硬件事件，与 task 逻辑无关。</strong></p>
+</blockquote>
+<hr />
+<h3>串联案例：一次键盘按键的两条路径（面试高频坑）</h3>
+<pre class="code" data-label="code"><code class="c">按下 A 键
+   │
+   ▼ ① 硬件中断（中断上下文）
+键盘芯片生成扫描码 scancode（只是数字，不是 ASCII）
+键盘控制器向 CPU 发 IRQ ──► CPU 立刻停下手上的活
+   │
+   ▼ ② 顶半部（仍在中断上下文，只干最少的事）
+键盘驱动 handler：读出扫描码、应答中断 ──► 快速退出
+   │  （解析/转字符等耗时活交给底半部 → 进程上下文，见 Ch 8）
+   ▼ ③ 内核把字符存进 tty 环形缓冲区（内核内存，非程序内存）…… 在这里等待
+   │     程序继续跑自己的业务代码，完全不受敲键干扰
+   ▼ ④ read() 系统调用（进程上下文）——程序主动来取
+sys_read 从内核缓冲区 copy_to_user 拷回用户缓冲区
+</code></pre>
+<p><strong>两种上下文各干一段，缺一不可：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>① 按键发生（硬件中断）</th>
+<th>④ 程序读取（<code class="c">read</code> syscall）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁发起</td>
+<td>键盘硬件，电信号</td>
+<td>用户程序主动调用</td>
+</tr>
+<tr>
+<td>上下文</td>
+<td>中断上下文</td>
+<td>进程上下文</td>
+</tr>
+<tr>
+<td>能否睡眠</td>
+<td>❌ 绝对不行</td>
+<td>✅ 可以阻塞等（没按键就卡在 read）</td>
+</tr>
+<tr>
+<td><code class="c">copy_to_user</code></td>
+<td>❌ 禁止</td>
+<td>✅ 允许</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>关键洞察：事件到来 ≠ 程序读取。</strong> 就算没有任何程序调用 <code class="c">read()</code>，你敲键盘<strong>照样触发硬件中断</strong>，内核照样把按键存进缓冲区等着——中断是内核与硬件的事，read 是程序与内核的事。
+硬件中断是<strong>设备行为</strong>：键盘芯片根本不知道应用想不想读、有没有调 <code class="c">read</code>，<strong>软件无权阻止硬件产生电信号</strong>。程序"不需要输入"只能做到<strong>不去 <code class="c">read</code>、装看不见</strong>——中断路径照走完整。
+比喻：中断 = <strong>门铃</strong>响了（不管你在干嘛都得去开门）；<code class="c">read()</code> = 你<strong>主动</strong>走到门口问"有没有我的快递"。门铃响不响由快递员（硬件）决定，不由屋里人意愿决定。</p>
+</blockquote>
+<p><strong>那什么时候才真的收不到这个中断？</strong> 只有两种：
+1. <strong>屏蔽该 IRQ 线</strong>——内核对中断控制器编程：硬件<strong>照样发信号</strong>，控制器收到并记录 pending，但<strong>不提交给 CPU</strong> → handler 不跑、按键<strong>不入缓冲区、直接丢失</strong>。普通用户程序<strong>没有这个权限</strong>，只有内核能做；
+2. <strong>给设备断电</strong>（拔键盘）。</p>
+<blockquote>
+<p>对比记忆：<strong>"程序不 read" ≠ "屏蔽中断"</strong>。不 read 时中断<strong>完整执行</strong>、数据躺在缓冲区里等着；屏蔽时中断<strong>根本不进 CPU</strong>、数据直接丢。比喻：快递送到了<strong>门卫</strong>（中断控制器），门卫扣下不转交（CPU）——快递到了，但你拿不到。详见 <a href="chapter-07.html#s-7-1">§7.1</a>（可屏蔽 vs NMI）。</p>
+</blockquote>
+<p><strong>两条边界规则：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>边界</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>缓冲区有限</strong></td>
+<td>tty 环形缓冲区<strong>装满后，新按键直接丢弃</strong>（丢的是新来的）。疯狂敲键盘而程序不 <code class="c">read</code> → 按键丢失</td>
+</tr>
+<tr>
+<td><strong><code class="c">Ctrl+C</code> 不走 read</strong></td>
+<td>tty 行规程识别到 INTR 字符，内核<strong>直接给前台进程发 <code class="c">SIGINT</code></strong>——信号路径独立于 read 路径，就算程序从不读输入也能被 Ctrl+C 杀掉</td>
+</tr>
+<tr>
+<td><strong>中断只入队，不投递</strong></td>
+<td>中断上下文只负责把数据<strong>丢进内核缓冲区</strong>；拷到用户空间必须等 <code class="c">read</code> 在<strong>进程上下文</strong>做 <code class="c">copy_to_user</code>——中断上下文绝不能直接拷给用户程序（§5.4 睡眠禁令）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>GUI 桌面模式分叉：tty 之外还有第二条路径。</strong> 上面的 tty 环形缓冲区是<strong>控制台模式</strong>的路径；图形桌面（X11/Wayland）下键盘事件走另一条分发链：</p>
+<pre class="code" data-label="code"><code class="c">①硬件中断 → ②内核 input 子系统生成 EV_KEY 输入事件
+   → ③交给显示服务（X11/Wayland）进程 —— 不进 tty 缓冲区！
+   → ④显示服务按「焦点」分发：有焦点的窗口才收到事件（经 socket 送给应用进程）
+   → ⑤应用（如浏览器）再转发给内部组件（JS 的 onkeydown）
+</code></pre>
+<ul>
+<li><strong>失焦 ≠ 没有硬件中断</strong>：浏览器窗口在后台时敲键盘，IRQ 照常触发、内核照常生成事件——只是 X/Wayland <strong>不转发</strong>给浏览器进程，JS 的 <code class="c">onkeydown</code> 不触发。内核知道你按了键，浏览器不知道。</li>
+<li><strong>键盘 vs 鼠标分发差异</strong>：键盘事件固定送给<strong>拥有焦点的唯一窗口</strong>；鼠标事件送给<strong>被点中的那个窗口</strong>（点桌面空白，浏览器就拿不到 click）。</li>
+<li>面试一句话：<strong>应用收不到输入 ≠ 没有硬件中断</strong>。中断是硬件↔内核的事（必然发生）；事件给不给应用，由 GUI 显示服务的焦点逻辑决定——与 tty 模式下"程序不 read"是同一思想的两层实例：<em>底层事件必然到达，上层取不取/收不收是另一回事</em>。</li>
+</ul>
+<p><strong>HFT：</strong> 行情网卡收包同理——数据到达是 NIC 硬件中断 + NAPI 软中断（Ch 7/8），策略线程拿到数据靠 <code class="c">recv()</code> 系统调用（进程上下文，可阻塞/可非阻塞）。两条路径的时间差就是<strong>收包到应用的延迟</strong>的一部分，调优就是压缩中间每一环。</p>
 <p><strong>HFT：</strong> 一次 <code class="c">read</code>/<code class="c">send</code> 尖刺 — 除用户态逻辑外，还要看 <strong>是否阻塞、是否持锁过久、是否触发调度</strong>。</p>
 <hr />
 <h3><code class="c">current</code> 与 fd 模型</h3>
@@ -1349,6 +1578,30 @@ sysret ──► 回到用户态
 <details>
 <summary>答案</summary>
 <p>不会。syscall 在进程上下文执行，current 始终指向调用进程的 task_struct。即使 syscall 中间发生了抢占（preemption），调度回来后 current 仍是同一进程。只有在 schedule() 实际切换后 current 才变。syscall 中访问 current 是安全的。</p>
+</details>
+<p><strong>Q3.</strong> syscall 属于中断吗？两者的本质区别是什么？</p>
+<details>
+<summary>答案</summary>
+<p>不属于。syscall 是<strong>异常（trap）</strong>——软件指令主动触发的同步陷入（x86_64 <code class="c">syscall</code> / AArch64 <code class="c">svc #0</code>）；中断是<strong>硬件电信号</strong>在任意时刻异步打断 CPU。本质区别在上下文：syscall 跑在进程上下文（有 current、有内核栈、可睡眠），中断跑在中断上下文（不属于任何进程、无 task 可调度、严禁睡眠）。</p>
+</details>
+<p><strong>Q4.</strong> 没有任何程序调用 <code class="c">read()</code> 时，敲键盘还会触发硬件中断吗？按键数据去哪了？程序最终靠什么拿到字符？</p>
+<details>
+<summary>答案</summary>
+<p>会。中断是硬件与内核之间的事，与是否有程序在读无关——按键照样触发 IRQ，内核照样把按键事件存进缓冲区。程序最终靠 <code class="c">read()</code> 系统调用（进程上下文）主动取数据。即"事件到来（中断）"和"程序读取（syscall）"是两条独立路径。</p>
+</details>
+<p><strong>Q5.</strong> 缓冲区满了还继续敲键盘会怎样？<code class="c">Ctrl+C</code> 杀掉一个从不读输入的程序，走的是 read 路径吗？</p>
+<details>
+<summary>答案</summary>
+<p>① tty 环形缓冲区满后，<strong>新来的按键直接丢弃</strong>（旧数据保留）——所以不 read 疯狂敲键会丢字。② 不走 read：<code class="c">Ctrl+C</code> 由内核 tty 行规程识别为 INTR 字符后<strong>直接给前台进程投递 <code class="c">SIGINT</code> 信号</strong>，信号是内核到进程的另一条独立通道，与 read/copy_to_user 无关。</p>
+<p><strong>Q6.</strong> ① <code class="c">read</code> 系统调用在内核执行时，<code class="c">current</code> 指向谁？② 网卡中断打断进程 A、执行 handler 期间，<code class="c">current</code> 指向谁？此时能睡眠吗？③ syscall 陷入内核会切页表吗？</p>
+<details>
+<summary>答案</summary>
+<p>① 指向发起 <code class="c">read</code> 的任务——syscall 全程同一个 <code class="c">task_struct</code>，只换特权级和栈（现场存 <code class="c">pt_regs</code>），不换任务、不切页表、不调度。② <code class="c">current</code> <strong>仍指向 A</strong>（栈也可能是借用的），但这是<strong>中断上下文</strong>——跑的是硬件事件的处理逻辑，不代表 A，<strong>不能睡眠</strong>。这就是"current 还在、上下文含义变了"的经典坑。③ 不切：MMU 仍用当前进程的页表，切页表只发生在 <code class="c">schedule()</code> 换任务时。</p>
+</details>
+<p><strong>Q7.</strong> 图形桌面下浏览器窗口失焦时敲键盘：① 会产生键盘硬件中断吗？② 内核知道你按了键吗？③ 前端 JS 能拿到 keydown 吗？为什么？</p>
+<details>
+<summary>答案</summary>
+<p>① 会——硬件中断是键盘芯片与内核之间的事，与任何应用无关。② 知道，内核 input 子系统照常生成 EV_KEY 事件。③ 拿不到：GUI 模式下键盘事件交给 X11/Wayland 显示服务，由它按<strong>焦点</strong>分发——失焦窗口收不到事件（不转发给浏览器进程），<code class="c">onkeydown</code> 不触发。注意 GUI 模式不走 tty 环形缓冲区，路径是 input 子系统 → 显示服务 → 焦点窗口。</p>
 </details>
 </details>
 <hr />

@@ -1650,6 +1650,11 @@ wait(NULL);
 <td><code class="c">pthread</code> TLS，实现 <code class="c">__thread</code> 变量</td>
 </tr>
 <tr>
+<td><strong><code class="c">CLONE_SYSVSEM</code></strong></td>
+<td>System V 信号量 undo 列表（<code class="c">sem_adj</code>）</td>
+<td>共享；NPTL 实际也传这个 flag</td>
+</tr>
+<tr>
 <td><strong><code class="c">CLONE_PARENT_SETTID</code></strong></td>
 <td>内核把新线程 TID 写回父进程用户态地址</td>
 <td><code class="c">pthread_create</code> 返回的 TID 来源</td>
@@ -1661,7 +1666,28 @@ wait(NULL);
 </tr>
 </tbody>
 </table></div>
+<h4>flags 的结构：低 8 位是退出信号，高位才是开关</h4>
+<p><code class="c">flags</code> 就是一个<strong>比特掩码整数</strong>：每个 <code class="c">CLONE_*</code> 宏只有单独一位置 1；用户态用<strong>按位或 <code class="c">|</code></strong> 把多个开关叠加进同一个参数，内核用<strong>按位与 <code class="c">&amp;</code></strong> 逐个检测：</p>
+<pre class="code" data-label="C"><code class="c">/* 用户态组合 */
+flags = CLONE_VM | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | SIGCHLD;
+/* 内核检测（copy_process 路径） */
+if (flags &amp; CLONE_VM)
+        p-&gt;mm = current-&gt;mm;      /* 共享地址空间 */
+else
+        p-&gt;mm = dup_mm(current);  /* 复制 + COW */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">flags 整数
+├─ 低 8 bit（1 字节）：子任务死亡时发给父进程的信号（fork 填 SIGCHLD；
+│                     NPTL 线程因 CLONE_THREAD 路径填 0，不发信号）
+└─ 其余高位比特：各 CLONE_* 开关（fork 全 0 → 全部资源复制）
+</code></pre>
+<p>⚠️ <strong>不能乱拼——内核有依赖校验</strong>（<code class="c">copy_process</code> 中检查，违反直接 <code class="c">-EINVAL</code>）：</p>
+<ul>
+<li>开 <code class="c">CLONE_SIGHAND</code> <strong>必须</strong>同时开 <code class="c">CLONE_VM</code>（共享信号处理表的前提是共享地址空间）</li>
+<li>开 <code class="c">CLONE_THREAD</code> <strong>必须</strong>同时开 <code class="c">CLONE_SIGHAND</code>（进而必须 <code class="c">CLONE_VM</code>）</li>
+</ul>
 <blockquote>
+<p>所以 NPTL 传的是一整套成体系的 flag 组合，不是随便开一两个。依赖链条：<code class="c">CLONE_THREAD → CLONE_SIGHAND → CLONE_VM</code>。</p>
 <p><code class="c">CLONE_CHILD_CLEARTID</code> 是 <code class="c">pthread_join</code> 的核心：join 方在用户态 futex 等待该地址，线程退出时内核清地址 + futex wake，join 方即被唤醒。避免了「线程退出通知」走信号路径——这也解释了为什么 <code class="c">CLONE_THREAD</code> 路径下终止信号传 <strong>0</strong>（不发 SIGCHLD）。</p>
 </blockquote>
 <h4>LinuxThreads → NPTL（历史）</h4>
@@ -1700,10 +1726,82 @@ wait(NULL);
 ┌─────────────────────────────────────┐
 │  共享：mm · files · sighand（可选）    │
 ├──────────┬──────────┬───────────────┤
-│ task pid │ task pid │ task pid      │
-│   100    │   101    │   102         │  ← 各有一个 task_struct
+│ pid=100  │ pid=101  │ pid=102       │  ← 各有一个 task_struct（pid 字段=TID）
+│(组长=主) │ (TID)    │ (TID)         │     tgid 全部 = 100
 └──────────┴──────────┴───────────────┘
 </code></pre>
+<h4>LWP：共享 vs 私有清单</h4>
+<p>LWP（Light-Weight Process）在内核里是<strong>一份完整独立的 <code class="c">task_struct</code></strong>，调度器直接调度它：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>同组 LWP <strong>共享</strong></th>
+<th>每个 LWP <strong>私有</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mm</code> 地址空间（同一份页表）</td>
+<td><code class="c">task_struct</code> 本身 + 唯一 <strong>TID</strong></td>
+</tr>
+<tr>
+<td><code class="c">files</code> 文件描述符表</td>
+<td><strong>用户栈</strong>（<code class="c">clone</code> 时分配的新栈）</td>
+</tr>
+<tr>
+<td><code class="c">fs</code>（cwd、root、umask）</td>
+<td><strong>内核栈</strong>（<code class="c">task_struct-&gt;stack</code>）</td>
+</tr>
+<tr>
+<td><code class="c">sighand</code> 信号处理函数表</td>
+<td>寄存器上下文（调度切换时保存）</td>
+</tr>
+<tr>
+<td></td>
+<td><strong>信号掩码</strong>（<code class="c">task_struct-&gt;blocked</code>）</td>
+</tr>
+<tr>
+<td></td>
+<td><strong>TLS</strong>（<code class="c">CLONE_SETTLS</code> 设置各自线程局部存储）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>观察命令：<strong><code class="c">ps -aL</code></strong> —— 同一个 PID（=TGID）下面列出多条不同 LWP-ID（=TID）的任务；<strong>LWP 列打印的就是 <code class="c">gettid()</code> 的值</strong>。
+<code class="c">getpid()</code> 返回 <strong>TGID</strong>（同组全一样），<code class="c">gettid()</code> 返回 <strong>TID</strong>（每条不同）。</p>
+</blockquote>
+<h5>字段名陷阱：<code class="c">task_struct-&gt;pid</code> 存的其实是 TID</h5>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核字段</th>
+<th>实际语义</th>
+<th>用户态取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">task_struct-&gt;pid</code></td>
+<td><strong>TID</strong>（任务唯一 ID，调度器真正识别的 ID）</td>
+<td><code class="c">gettid()</code></td>
+</tr>
+<tr>
+<td><code class="c">task_struct-&gt;tgid</code></td>
+<td>线程组 ID（= 用户说的"进程号"）</td>
+<td><code class="c">getpid()</code></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>fork 普通进程</strong>：<code class="c">pid == tgid</code>（自己是组长，组里只有自己）</li>
+<li><strong>同进程多条 LWP</strong>：<code class="c">tgid</code> 全部相同，<code class="c">pid</code>（LWP 号）各自不同</li>
+<li><strong>主线程也是 LWP</strong>：<code class="c">pid == tgid</code>，它是<strong>线程组组长</strong>（<code class="c">group_leader</code>）</li>
+<li>⚠️ 术语边界：<strong>LWP 特指开了 <code class="c">CLONE_VM</code> 共享地址空间的任务</strong>（用户态说的"线程"）；fork 出的普通进程一般<strong>不算</strong> LWP。LWP 是口语/教科书称呼，不是内核结构体名——内核里统一叫 task（<code class="c">task_struct</code>）。</li>
+</ul>
+<p>⚠️ <strong><code class="c">CLONE_THREAD</code> 是"是线程"的判定标志，不是 <code class="c">CLONE_VM</code></strong>：不开 <code class="c">CLONE_THREAD</code>、只开 <code class="c">CLONE_VM</code>，产物<strong>不是 POSIX 线程</strong>——它有自己独立的 TGID（新进程），不归属任何线程组，父进程要 <code class="c">wait</code> 回收它。它只是一个「共享地址空间的独立进程」（广义上算轻量级进程，但 NPTL 不这么干，平时几乎碰不到）。用户态看是两个进程共享内存，内核看是两条无关 task_struct 恰好指向同一个 <code class="c">mm</code>。</p>
+<blockquote>
+<p>通俗比喻：<code class="c">clone</code> 是万能工厂，flags 是一排开关——<strong>全关（fork）→ 普通进程；把一排共享开关全开（pthread_create）→ LWP</strong>。内核本身分不清"进程/线程"，眼里只有 task_struct；<strong>进程和线程只是用户层的抽象概念</strong>，边界由开关组合决定。</p>
+</blockquote>
 <h4>NPTL 要点</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1735,6 +1833,52 @@ wait(NULL);
 int clone_start(void *(*fn)(void *), void *arg, void *stack, void *tls);
 /* glibc 组装 CLONE_VM|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|... */
 </code></pre>
+<blockquote>
+<p>源码印证：glibc <code class="c">nptl/pthread_create.c</code>（github.com/bminor/glibc）里能看到这组 flags 的组装现场。</p>
+</blockquote>
+<h4>三类线程模型 · 用户态 / 内核态 / 混合（教科书视角）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模型</th>
+<th>调度在哪</th>
+<th>内核视角</th>
+<th>一条线程阻塞 syscall</th>
+<th>代表</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>用户态线程</strong>（N:1）</td>
+<td>用户空间库</td>
+<td><strong>只见 1 个 task_struct</strong>，看不见内部线程</td>
+<td><strong>整个进程全卡住</strong>（内核把 syscall 阻塞算在整个进程头上）</td>
+<td>早期 green threads、<strong>goroutine 的 G</strong></td>
+</tr>
+<tr>
+<td><strong>内核态线程</strong>（1:1）</td>
+<td>内核调度器</td>
+<td><strong>每条线程一个 task_struct</strong>（LWP）</td>
+<td>只阻塞当前那条，其余继续跑</td>
+<td><strong>NPTL pthread</strong>（<code class="c">clone</code> 创建 LWP）</td>
+</tr>
+<tr>
+<td><strong>混合</strong>（M:N）</td>
+<td>用户库 + 内核协作</td>
+<td>M 条用户线程映射到 N 条 LWP</td>
+<td>只阻塞所在的 LWP</td>
+<td>Go runtime（G-M-P）</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>切换开销</strong>：用户态线程切换不陷内核、最快；内核态线程切换要走 syscall 路径，开销大一些</li>
+<li><strong>NPTL 不是第三种模型</strong> —— 它是「内核态线程（1:1）」的 POSIX 用户库实现：<code class="c">pthread_create</code> → <code class="c">clone</code> → 一条内核可见的 LWP</li>
+<li>⚠️ <strong>术语陷阱</strong>：<strong>内核态线程</strong>（kernel-level thread = LWP，有用户地址空间）≠ <strong>内核线程</strong>（kernel thread = <code class="c">kthread</code>，<code class="c">mm=NULL</code> 的纯内核执行流，见下节）——一字之差，两个概念</li>
+</ul>
+<blockquote>
+<p>通俗比喻：用户态线程 = <strong>一个工人</strong>手上切换多个活，他去打水（阻塞 <code class="c">read()</code>），所有活全停；NPTL/LWP = 向工厂申请<strong>多个工人</strong>共享一间办公室（同一份 <code class="c">mm</code>），一人打水别人继续干，且工厂（内核）认识每个工人。</p>
+</blockquote>
 <h4>内核线程 · Kernel Threads</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1781,7 +1925,7 @@ int clone_start(void *(*fn)(void *), void *arg, void *stack, void *tls);
 <td><strong>底层 clone flags</strong></td>
 <td>仅 <code class="c">SIGCHLD</code>（无任何 CLONE_* 共享）</td>
 <td><code class="c">CLONE_VM \| CLONE_VFORK \| SIGCHLD</code></td>
-<td><code class="c">CLONE_VM \| CLONE_FILES \| CLONE_SIGHAND \| CLONE_THREAD \| CLONE_FS \| CLONE_SETTLS \| CLONE_PARENT_SETTID \| CLONE_CHILD_CLEARTID</code>，终止信号 <strong>0</strong></td>
+<td><code class="c">CLONE_VM \| CLONE_FILES \| CLONE_SIGHAND \| CLONE_THREAD \| CLONE_FS \| CLONE_SETTLS \| CLONE_SYSVSEM \| CLONE_PARENT_SETTID \| CLONE_CHILD_CLEARTID</code>，终止信号 <strong>0</strong></td>
 </tr>
 <tr>
 <td><strong>地址空间 mm</strong></td>
@@ -1929,6 +2073,16 @@ int clone_start(void *(*fn)(void *), void *arg, void *stack, void *tls);
 <summary>答案</summary>
 <p>LinuxThreads 用单独进程实现线程，每线程一个 PID，信号处理混乱。NPTL（Native POSIX Thread Library）：线程共享 PID（gettid 区分），信号符合 POSIX（per-thread 信号掩码），线程创建快 10x+。HFT 多线程依赖 NPTL 的 futex 快速锁和 per-thread 信号。</p>
 </details>
+<p><strong>Q3.</strong> 三类线程模型中，Go 的 goroutine 和 Linux 的 pthread 各属于哪类？内核态线程和内核线程是一回事吗？</p>
+<details>
+<summary>答案</summary>
+<p>goroutine 是 M:N 混合模型：G 是用户态调度单元，由 Go runtime 调度，M 才映射到内核 LWP。Linux pthread 是 1:1 内核态线程：pthread_create 直接 clone 出一条内核可见的 LWP（NPTL 只是内核态线程模型的 POSIX 库实现，不是第三种模型）。内核态线程（LWP，有用户地址空间）≠ 内核线程（kthread，mm=NULL 的纯内核执行流）。</p>
+</details>
+<p><strong>Q4.</strong> 只开 <code class="c">CLONE_VM</code>（不开 <code class="c">CLONE_THREAD</code>）clone 出的任务是什么？它和同组线程怎么区分？<code class="c">getpid()</code> 和 <code class="c">gettid()</code> 在一个多线程进程里各返回什么？</p>
+<details>
+<summary>答案</summary>
+<p>只是<strong>共享地址空间的独立进程</strong>：有自己的 TGID，不属于任何线程组，父进程须 <code class="c">wait</code> 回收——不是 POSIX 线程。「是不是线程」由 <code class="c">CLONE_THREAD</code> 判定，不是 <code class="c">CLONE_VM</code>。多线程进程里 <code class="c">getpid()</code> 返回 TGID（所有线程相同），<code class="c">gettid()</code> 返回各线程自己的 TID（每条不同）。补充：主线程也是 LWP，<code class="c">pid == tgid</code>，是线程组组长。</p>
+</details>
 </details>
 <hr />
       </section>
@@ -2063,6 +2217,32 @@ else if (WIFSIGNALED(status))
                                       │
                                  init wait 循环回收
 </code></pre>
+<blockquote>
+<p>三句大白话速记：<strong>子死父活、父不 wait → 僵尸（有害，占 PID）</strong>；<strong>父死子活 → 孤儿，过继 init（无害，有人兜底回收）</strong>；<code class="c">WNOHANG</code> → 非阻塞轮询，父进程不卡。</p>
+</blockquote>
+<h4>僵尸能被 <code class="c">kill -9</code> 杀掉吗？—— 不能</h4>
+<p>僵尸<strong>已经死了</strong>，只剩一具 <code class="c">task_struct</code> 空壳，没有可接收信号的执行上下文；<code class="c">kill</code> 是给<strong>活着</strong>的进程发信号。清掉僵尸只有两条路：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>办法</th>
+<th>原理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>父进程调 <code class="c">wait</code>/<code class="c">waitpid</code></td>
+<td>正道 —— <code class="c">release_task()</code> 正常回收</td>
+</tr>
+<tr>
+<td><strong>杀掉父进程</strong></td>
+<td>僵尸变「孤儿僵尸」过继给 init（或 subreaper），由其 wait 循环回收</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>排查口诀：看到一堆 Z，别对着僵尸 <code class="c">kill</code>，去找<strong>它爹</strong>——要么让爹修好 wait 逻辑，要么干掉爹让 init 接盘。</p>
+</blockquote>
 <h4>资源到底何时释放？</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2122,6 +2302,11 @@ else if (WIFSIGNALED(status))
 <details>
 <summary>答案</summary>
 <p>_exit()<code class="c">直接执行 sys_exit 系统调用（内核态：释放资源、设置退出码、通知父进程）。</code>exit()` 是 libc 包装：先执行 atexit 注册函数 + flush stdio buffer + 调 _exit()。HFT 进程退出时如果需要保证日志 flush，用 exit()；如果 crash 路径想立即终止不 flush，用 _exit()。</p>
+</details>
+<p><strong>Q3.</strong> 系统里出现大量僵尸进程，能直接 <code class="c">kill -9</code> 它们清理掉吗？正确的处理方式？</p>
+<details>
+<summary>答案</summary>
+<p>不能。僵尸已退出，只剩 task_struct 空壳等待父进程 wait，没有执行上下文可接收信号。正确处理：1) 修复父进程——补上 wait/waitpid 或 SIGCHLD handler 里的 WNOHANG 循环回收；2) 若父进程无法修，杀掉父进程，僵尸过继给 init/subreaper 由其回收。临时清场用第 2 招，根治必须让父进程承担 wait 责任。</p>
 </details>
 </details>
 <hr />

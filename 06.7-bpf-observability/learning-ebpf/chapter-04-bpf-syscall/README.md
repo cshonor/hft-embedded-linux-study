@@ -13,18 +13,13 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. bpf() 总览 | [notes/section-1-bpf总览.md](./notes/section-1-bpf总览.md) |
-| 2. strace 实例全景（hello-buffer-config.py） | [notes/section-2-strace实例全景（hello-buffer-config.py）.md](./notes/section-2-strace实例全景（hello-buffer-config.py）.md) |
-| 3. BPF 对象生命周期：引用计数 | [notes/section-3-BPF对象生命周期：引用计数.md](./notes/section-3-BPF对象生命周期：引用计数.md) |
-| 4. 挂 kprobe：bpf() 之外的三件套 | [notes/section-4-挂kprobe：bpf之外的三件套.md](./notes/section-4-挂kprobe：bpf之外的三件套.md) |
-| 5. perf buffer 初始化：为什么是每核一个 | [notes/section-5-perfbuffer初始化：为什么是每核一个.md](./notes/section-5-perfbuffer初始化：为什么是每核一个.md) |
-| 6. Ring buffer：单缓冲 + epoll | [notes/section-6-Ringbuffer：单缓冲+epoll.md](./notes/section-6-Ringbuffer：单缓冲+epoll.md) |
-| 7. 遍历 map：bpftool map dump 的 syscall 序列 | [notes/section-7-遍历map：bpftoolmapdump的syscall序列.md](./notes/section-7-遍历map：bpftoolmapdump的syscall序列.md) |
-| 坑点清单 | [notes/section-8-坑点清单.md](./notes/section-8-坑点清单.md) |
-| HFT 关联 | [notes/section-9-HFT关联.md](./notes/section-9-HFT关联.md) |
-| 自测题 | [notes/section-10-自测题.md](./notes/section-10-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 4.1–4.2 | [bpf总览与strace实例](./notes/4.1_bpf总览与strace实例.md) |
+| 4.3–4.4 | [对象生命周期与kprobe挂载](./notes/4.3_对象生命周期与kprobe挂载.md) |
+| 4.5–4.6 | [perf与RingBuffer](./notes/4.5_perf与RingBuffer.md) |
+| 4.7 | [遍历map的syscall序列](./notes/4.7_遍历map的syscall序列.md) |
+| 4.8–4.10 | [坑点HFT关联与自测](./notes/4.8_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

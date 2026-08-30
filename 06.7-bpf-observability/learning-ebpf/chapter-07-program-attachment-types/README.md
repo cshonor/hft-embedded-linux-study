@@ -13,14 +13,10 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. 程序类型决定什么 | [notes/section-1-程序类型决定什么.md](./notes/section-1-程序类型决定什么.md) |
-| 2. 追踪类（perf-related） | [notes/section-2-追踪类（perf-related）.md](./notes/section-2-追踪类（perf-related）.md) |
-| 3. 网络类 | [notes/section-3-网络类.md](./notes/section-3-网络类.md) |
-| 4. 坑点清单 | [notes/section-4-坑点清单.md](./notes/section-4-坑点清单.md) |
-| 5. HFT 关联 | [notes/section-5-HFT关联.md](./notes/section-5-HFT关联.md) |
-| 6. 自测题 | [notes/section-6-自测题.md](./notes/section-6-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 7.1–7.3 | [程序类型全景](./notes/7.1_程序类型全景.md) |
+| 7.4–7.6 | [坑点HFT关联与自测](./notes/7.4_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

@@ -15,17 +15,12 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. 起源：1993 年的 BSD Packet Filter 论文 | [notes/section-1-起源：1993年的BSDPacketFilter论文.md](./notes/section-1-起源：1993年的BSDPacketFilter论文.md) |
-| 2. 演进时间线（记住这几个节点） | [notes/section-2-演进时间线（记住这几个节点）.md](./notes/section-2-演进时间线（记住这几个节点）.md) |
-| 3. eBPF 与 BPF 的称呼 | [notes/section-3-eBPF与BPF的称呼.md](./notes/section-3-eBPF与BPF的称呼.md) |
-| 4. 内核与用户空间（底层视角） | [notes/section-4-内核与用户空间（底层视角）.md](./notes/section-4-内核与用户空间（底层视角）.md) |
-| 5. 传统扩展内核的两条路（以及为什么不行） | [notes/section-5-传统扩展内核的两条路（以及为什么不行）.md](./notes/section-5-传统扩展内核的两条路（以及为什么不行）.md) |
-| 6. eBPF 的三大优势 | [notes/section-6-eBPF的三大优势.md](./notes/section-6-eBPF的三大优势.md) |
-| 7. 云原生环境：对比 sidecar 模型 | [notes/section-7-云原生环境：对比sidecar模型.md](./notes/section-7-云原生环境：对比sidecar模型.md) |
-| HFT 关联 | [notes/section-8-HFT关联.md](./notes/section-8-HFT关联.md) |
-| 自测题 | [notes/section-9-自测题.md](./notes/section-9-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 1.1–1.3 | [起源与演进](./notes/1.1_起源与演进.md) |
+| 1.4–1.5 | [内核边界与传统扩展路径](./notes/1.4_内核边界与传统扩展路径.md) |
+| 1.6–1.7 | [三大优势与云原生对比](./notes/1.6_三大优势与云原生对比.md) |
+| 1.8–1.9 | [HFT关联与自测题](./notes/1.8_HFT关联与自测题.md) |
 
 ## 交叉引用
 

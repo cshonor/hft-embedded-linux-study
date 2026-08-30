@@ -276,15 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-1"><span class="n">1</span>section-1-起源：1993年的BSDPacketFilter论文</a>
-          <a href="#s-2"><span class="n">2</span>section-2-演进时间线（记住这几个节点）</a>
-          <a href="#s-3"><span class="n">3</span>section-3-eBPF与BPF的称呼</a>
-          <a href="#s-4"><span class="n">4</span>section-4-内核与用户空间（底层视角）</a>
-          <a href="#s-5"><span class="n">5</span>section-5-传统扩展内核的两条路（以及为什么不行）</a>
-          <a href="#s-6"><span class="n">6</span>section-6-eBPF的三大优势</a>
-          <a href="#s-7"><span class="n">7</span>section-7-云原生环境：对比sidecar模型</a>
-          <a href="#s-8"><span class="n">8</span>section-8-HFT关联</a>
-          <a href="#s-9"><span class="n">9</span>section-9-自测题</a>
+          <a href="#s-1-1"><span class="n">1.1</span>1.1_起源与演进</a>
+          <a href="#s-1-4"><span class="n">1.4</span>1.4_内核边界与传统扩展路径</a>
+          <a href="#s-1-6"><span class="n">1.6</span>1.6_三大优势与云原生对比</a>
+          <a href="#s-1-8"><span class="n">1.8</span>1.8_HFT关联与自测题</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -310,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">O&#x27;Reilly · 入门到 verifier</div>
           <h1>Learning eBPF · 第 1 章：什么是 eBPF，它为何重要</h1>
           <div class="meta">
-<span>book <b>06.7-bpf-observability · learning-ebpf</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>10</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>06.7-bpf-observability · learning-ebpf</b></span><span>chapter <b>Ch 1</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -333,25 +328,88 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>BPF 之巅对照：<code class="c">../EBPF-BOOKS-COMPARISON.md</code></li>
 </ul>
       </section>
-      <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>起源：1993 年的 BSD Packet Filter 论文</h2></div>
-<p>McCanne &amp; Van Jacobson（劳伦斯伯克利实验室）提出"伪机器"运行过滤器程序——
-用一套 32 位指令集（类汇编）决定网络包的接收/丢弃。论文原文示例：</p>
+      <section class="section" id="s-1-1">
+        <div class="sec-head"><div class="sec-no">1.1</div><h2>起源与演进（1.1–1.3）</h2></div>
+<blockquote>
+<p>合并自原 section-1～3。小节编号保持不变，<code class="c">### N.x</code> 子编号沿用原节号，历史 § 引用依然有效。</p>
+</blockquote>
+<h2>1.1 起源：1993 年的 BSD Packet Filter 论文</h2>
+<blockquote>
+<p>本节讲什么：eBPF 的"前身" cBPF 为什么诞生、它解决的性能问题是什么、以及为什么说 BPF 从第一天起就不只是"抓包工具"。</p>
+</blockquote>
+<h2>1. 问题背景：内核抓包为什么慢</h2>
+<p>1990 年代初，抓包工具（如 tcpdump 的前身）是这样工作的：网卡每收到一个包，<strong>内核把整个包完整拷贝一份</strong>给用户态的过滤进程，过滤进程再决定要不要。</p>
+<p>问题：过滤逻辑跑在用户态，但过滤所需的数据在内核里——<strong>每个包都要白白经历一次"内核→用户态"拷贝 + 上下文切换</strong>，哪怕最后 99% 的包都被丢弃。当你只想抓 SSH 流量而网卡灌进来全机房流量时，这个开销是灾难性的。</p>
+<p><strong>两次拷贝问题图示：</strong></p>
+<pre class="code" data-label="code"><code class="c">   网卡 ──包──▶ 内核协议栈 ──完整包拷贝──▶ 用户态过滤进程
+                                        （在这里才判断&quot;要不要&quot;）
+                    ▲
+                    └── 丢弃的包也付了全额拷贝成本
+</code></pre>
+<h2>2. 论文的答案：把过滤程序搬进内核</h2>
+<p>McCanne &amp; Van Jacobson（劳伦斯伯克利实验室，1993）提出：与其把数据搬到过滤器，不如把<strong>过滤器编译成字节码，塞进内核执行</strong>。内核里跑一个小"伪机器"（pseudo-machine）——一套 32 位寄存器虚拟机，解释执行（当时还没有 JIT）过滤器指令。</p>
+<pre class="code" data-label="code"><code class="c">   网卡 ──包──▶ [内核: BPF 伪机器执行过滤器]
+                      │
+              包在此就地判决 ──只有&quot;要&quot;的包──▶ 拷贝给用户态
+                      └──&quot;不要&quot;的包零拷贝成本丢弃
+</code></pre>
+<p>这就是 BPF 名字的由来：<strong>BSD Packet Filter</strong>。性能上还赢了一个隐性优势：BPF 论文的设计（两个寄存器 + 无间接寻址）比同时代对手（CSPF）的树遍历结构更容易映射成高效机器码，实测快 20 倍左右。</p>
+<h2>3. 论文里的示例程序</h2>
+<p>BPF 过滤器是一门"类汇编"指令集，比如"只要 IP 包"：</p>
 <pre class="code" data-label="code"><code class="c">ldh     [12]                       # 从包偏移 12 处加载 2 字节（以太网帧的 ethertype 字段）
 jeq     #ETHERTYPE_IP, L1, L2      # 是 IP 包则跳 L1，否则跳 L2
-L1:     ret     #TRUE              # 非零返回值 = 接收该包
+L1:     ret     #TRUE              # 非零返回值 = 接收该包（上送用户态）
 L2:     ret     #0                 # 0 = 丢弃
 </code></pre>
-<p><strong>要点</strong>：从第一天起，BPF 的核心思想就是"作者写自定义程序在内核里执行"——这比"抓包过滤器"这个名字的含义深远得多。</p>
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>演进时间线（记住这几个节点）</h2></div>
+<p>逐行解读（你写过 ARM 汇编，这个结构应该很眼熟）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指令</th>
+<th>做什么</th>
+<th>对应你熟悉的 ARM 概念</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ldh [12]</code></td>
+<td>从内存地址加载数据到寄存器（load half-word，2 字节）</td>
+<td><code class="c">ldrh r0, [r1, #12]</code></td>
+</tr>
+<tr>
+<td><code class="c">jeq #imm, L1, L2</code></td>
+<td>比较相等则跳 L1，否则跳 L2</td>
+<td><code class="c">cmp</code> + <code class="c">b.eq</code> / <code class="c">b.ne</code></td>
+</tr>
+<tr>
+<td><code class="c">ret #N</code></td>
+<td>返回，N 就是判决结果</td>
+<td><code class="c">mov r0, #N</code> + <code class="c">bx lr</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>两个细节值得注意：</p>
+<ul>
+<li><strong>偏移 12</strong>：以太网帧头 = 6 字节目的 MAC + 6 字节源 MAC，第 13 字节起是 2 字节 ethertype——<strong>过滤器和数据结构布局强耦合</strong>。这个主题 30 年后换个面目再次出现：CO-RE 就是为了解决"内核数据结构布局变了，我的程序怎么办"（第 5 章）</li>
+<li>今天 <code class="c">tcpdump -d</code> 仍能看到这套指令：<code class="c">tcpdump -d 'ip'</code> 输出的就是 cBPF 字节码——你没有必要手写它，libpcap 替你把过滤表达式编译出来</li>
+</ul>
+<h2>4. 深远意义</h2>
+<p><strong>从第一天起，BPF 的核心思想就是"作者写自定义程序在内核里执行"</strong>——"包过滤"只是它的第一个应用场景。指令集 + 内核执行环境这两个要素 1993 年就齐了，后面 30 年的演进（64 位重写、maps、验证器、更多挂钩点）只是给这台机器不断"加装备"。理解了这一点，后面所有历史都顺理成章。</p>
+<hr />
+<p><strong>衔接</strong>：下一节看这台"伪机器"如何一步步长成今天 64 位的 eBPF——时间线上只有 5 个节点值得记。</p>
+<hr />
+<h2>1.2 演进时间线（记住这几个节点）</h2>
+<blockquote>
+<p>本节讲什么：从 1993 到 2020 的关键节点。不用背年份，要背的是<strong>每个节点给 BPF 加了什么新能力</strong>——能力叠加的顺序本身就是理解 eBPF 的钥匙。</p>
+</blockquote>
+<h2>1. 完整时间线</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>年份</th>
 <th>内核</th>
 <th>事件</th>
+<th>加了什么能力</th>
 </tr>
 </thead>
 <tbody>
@@ -359,108 +417,547 @@ L2:     ret     #0                 # 0 = 丢弃
 <td>1993</td>
 <td>—</td>
 <td>BPF 论文（伪机器 + 指令集）</td>
+<td>内核里跑自定义字节码（仅包过滤场景）</td>
 </tr>
 <tr>
 <td>1997</td>
 <td>2.1.75</td>
 <td>BPF 进入 Linux，用于 tcpdump 高效抓包</td>
+<td>Linux 获得内核态包过滤</td>
 </tr>
 <tr>
 <td>2012</td>
 <td>3.5</td>
-<td><strong>seccomp-bpf</strong>：BPF 程序决定是否允许用户态系统调用——BPF 第一次跳出"包过滤"</td>
+<td><strong>seccomp-bpf</strong>：BPF 程序决定是否允许用户态系统调用</td>
+<td><strong>BPF 第一次跳出"包过滤"</strong>——判决对象从"包"变成"syscall"</td>
 </tr>
 <tr>
 <td>2014</td>
 <td>3.18</td>
 <td><strong>eBPF</strong>：指令集为 64 位重写、引入 maps、<code class="c">bpf()</code> 系统调用、helper 函数、<strong>验证器</strong>。官方生日 2014-09-26（验证器+bpf syscall+maps 补丁集被接受）</td>
+<td>现代形态确立（下表展开）</td>
 </tr>
 <tr>
 <td>2015</td>
 <td>—</td>
 <td>eBPF 可挂 <strong>kprobes</strong>，追踪革命起点；网络栈开始加 hook</td>
+<td>观测任何内核函数入口/返回</td>
 </tr>
 <tr>
 <td>2016</td>
 <td>—</td>
 <td>eBPF 工具进生产（Netflix/Brendan Gregg "superpowers"）；<strong>Cilium</strong> 发布（容器环境整条 datapath 换 eBPF）</td>
+<td>工业界背书</td>
 </tr>
 <tr>
 <td>2017</td>
 <td>—</td>
 <td>Facebook 开源 <strong>Katran</strong>（L4 负载均衡）；此后 facebook.com 每个包都过 eBPF/XDP</td>
+<td>超大规模生产验证</td>
 </tr>
 <tr>
 <td>2018</td>
 <td>—</td>
 <td>eBPF 成为内核独立子系统（维护者 Borkmann/Starovoitov，后加 Nakryiko）；<strong>BTF</strong> 引入（可移植性）</td>
+<td>跨内核版本可移植的地基</td>
 </tr>
 <tr>
 <td>2020</td>
 <td>—</td>
 <td><strong>LSM BPF</strong>：第三大用例（安全）确立</td>
+<td>安全策略可编程</td>
 </tr>
 </tbody>
 </table></div>
-<p>指令数上限从 4096 → 100 万条已验证指令；尾调用/函数调用让限制实际失效。</p>
-      </section>
-      <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>eBPF 与 BPF 的称呼</h2></div>
+<h2>2. 2014 的 eBPF 改造：五大件分别解决什么</h2>
+<p>2014 那次重写是"从量变到质变"，五件套缺一不可：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>新增</th>
+<th>解决的问题</th>
+<th>没有它会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>64 位指令集 + 11 个寄存器</td>
+<td>32 位伪机器算不了 64 位指针/时间戳</td>
+<td>无法处理现代内核数据结构（指针全是 64 位）</td>
+</tr>
+<tr>
+<td>maps（内核键值存储）</td>
+<td>程序没有地方存状态、没法和用户态交换数据</td>
+<td>只能 trace_printk 打印字符串，做不了任何"工具"</td>
+</tr>
+<tr>
+<td><code class="c">bpf()</code> 系统调用</td>
+<td>提供统一的加载/操作界面</td>
+<td>用户态没有正规入口管理 BPF 对象</td>
+</tr>
+<tr>
+<td>helper 函数白名单</td>
+<td>让程序有限地访问内核功能（读内存、拿 pid…）</td>
+<td>要么完全盲区、要么直接放开（等于内核模块）</td>
+</tr>
+<tr>
+<td><strong>验证器</strong></td>
+<td>加载前证明程序安全（不崩、不死循环、不越界）</td>
+<td>内核不敢让任意人跑任意代码——这是 eBPF 和 LKM 的分水岭</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>记忆口诀</strong>：寄存器变宽（能算）、maps（能存）、syscall（能加载）、helper（能访问）、verifier（敢让你跑）。</p>
+<h2>3. 三大用例的形成</h2>
+<p>时间线读到最后，三条主线浮出水面：</p>
+<pre class="code" data-label="code"><code class="c">        观测追踪 (tracing)          网络 (networking)         安全 (security)
+  2014 ─ bpf syscall/verifier     2015 ─ 网络栈 hook        2012 ─ seccomp-bpf
+  2015 ─ kprobes                  2017 ─ XDP/Katran         2020 ─ LSM BPF
+  2016 ─ Gregg 工具集              (facebook 全量流量)       (策略可编程)
+</code></pre>
+<p>本书主线是第一条（观测），第 8 章讲网络，第 9 章讲安全。</p>
+<h2>4. 规模限制的演进</h2>
+<p>指令数上限从 4096 → 100 万条已验证指令（5.2 起）；尾调用（第 2 章）和 BPF-to-BPF 调用让单程序限制实际失效——组合起来理论上可以写任意复杂的逻辑。</p>
+<hr />
+<p><strong>衔接</strong>：历史里"eBPF"这个词从哪来、现在该怎么叫？下一节一分钟讲清。</p>
+<hr />
+<h2>1.3 eBPF 与 BPF 的称呼</h2>
+<blockquote>
+<p>本节讲什么：一个常见的困惑——资料里一会儿写 BPF 一会儿写 eBPF，是不是两个东西？结论先行：<strong>现代语境下是同一个东西</strong>，但用词场合有惯例。</p>
+</blockquote>
+<h2>1. 两个词的来历</h2>
 <ul>
-<li>内核源码和编程界面统一用 <strong>BPF</strong>：<code class="c">bpf()</code>、<code class="c">bpf_</code> 前缀 helper、<code class="c">BPF_PROG_TYPE_*</code></li>
-<li>内核社区之外流行 <strong>eBPF</strong>（ebpf.io、eBPF Foundation）</li>
-<li>两者如今可互换——现代内核全都支持"extended"部分</li>
+<li><strong>BPF</strong>：1993 年的原名（BSD Packet Filter），32 位"伪机器"时代的叫法。今天为了区分，常称 <strong>classic BPF（cBPF）</strong></li>
+<li><strong>eBPF</strong>：2014 年 64 位重写后的叫法，e = extended。内核之外的社区（ebpf.io、eBPF 基金会、O'Reilly 书名）用它强调"不只是包过滤了"</li>
 </ul>
+<h2>2. 现状：谁用哪个词</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场合</th>
+<th>用词</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核源码、内核邮件列表</td>
+<td>统一 <strong>BPF</strong></td>
+<td><code class="c">bpf()</code> 系统调用、<code class="c">bpf_get_current_pid_tgid()</code> 等 helper、<code class="c">BPF_PROG_TYPE_*</code> 程序类型——<strong>内核里根本没有 "eBPF" 这个词</strong></td>
+</tr>
+<tr>
+<td>工具链（libbpf/bpftool/clang）</td>
+<td>统一 <strong>BPF</strong></td>
+<td><code class="c">clang -target bpf</code>、<code class="c">bpftool prog load</code></td>
+</tr>
+<tr>
+<td>内核外社区、营销、书名</td>
+<td>流行 <strong>eBPF</strong></td>
+<td>ebpf.io、eBPF Summit、本书《Learning eBPF》</td>
+</tr>
+<tr>
+<td>bpftrace 等高层工具</td>
+<td>混用</td>
+<td>无所谓</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 为什么内核社区坚持不加 "e"</h2>
+<p>内核维护者的立场：cBPF 在内核里已经被<strong>完全翻译成 eBPF 再执行</strong>（cBPF 程序加载时先被转换），也就是说内核里只有一种 BPF——即 2014 年后的那套。旧名没有独立存在的意义，所以"extended"前缀多余。</p>
+<p><strong>实用结论</strong>：
+- 读内核文档/写 C 代码：心里按 BPF 理解，别找 <code class="c">ebpf_xxx</code> 符号（不存在）
+- 读博客/书：见到 eBPF 直接当 BPF 即可
+- 写搜索关键词：两个都试（如 <code class="c">bpf ring buffer</code> / <code class="c">ebpf ring buffer</code>）</p>
+<hr />
+<p><strong>衔接</strong>：术语清了，下一节回到地基问题——为什么"在内核里执行"这件事价值巨大？先看用户态/内核态的边界长什么样。</p>
       </section>
-      <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>内核与用户空间（底层视角）</h2></div>
-<ul>
-<li>应用跑在非特权用户态，通过 <strong>syscall 接口</strong>请求内核做事（文件、网络、内存、进程协调）</li>
-<li><code class="c">strace -c echo "hello"</code> 实测：一个 echo 触发 <strong>111 次系统调用</strong>（openat 30、mmap 20、newfstatat 19、close 20…）</li>
-<li><strong>推论</strong>：应用与内核的交互面几乎等于应用的全部外部行为——在内核里插桩 = 看穿一切应用，且应用无感知、无需修改</li>
-</ul>
-      </section>
-      <section class="section" id="s-5">
-        <div class="sec-head"><div class="sec-no">5</div><h2>传统扩展内核的两条路（以及为什么不行）</h2></div>
-<p><strong>路径 A：改内核源码</strong>
-- 内核约 3000 万行代码，门槛极高
-- 只有约 <strong>1/3 的补丁被接受</strong>，通常耗时 3-6 个月（Jiang et al. 2013 研究）
-- 进入主线后还要等发行版采纳：写书时 RHEL 8.5（2021-11）用的还是 2018-08 的 4.18 内核——<strong>从想法到生产环境以年计</strong></p>
-<p><strong>路径 B：内核模块（LKM）</strong>
-- 不用进主线，可独立分发
-- 但仍是<strong>完整内核编程</strong>：模块崩溃 = 整机崩溃；恶意/有漏洞的模块拥有全部特权数据访问权
-- 用户天然不敢装陌生模块——没有安全性证明</p>
-<p><strong>eBPF 的答案：验证器（verifier）</strong>
-- 加载时静态验证：不会崩溃、不会死循环锁死机器、不会越界访问数据
-- 详见第 6 章</p>
-      </section>
-      <section class="section" id="s-6">
-        <div class="sec-head"><div class="sec-no">6</div><h2>eBPF 的三大优势</h2></div>
+      <section class="section" id="s-1-4">
+        <div class="sec-head"><div class="sec-no">1.4</div><h2>内核边界与传统扩展路径（1.4–1.5）</h2></div>
+<blockquote>
+<p>合并自原 section-4～5。小节编号保持不变，<code class="c">### N.x</code> 子编号沿用原节号，历史 § 引用依然有效。</p>
+</blockquote>
+<h2>1.4 内核与用户空间（底层视角）</h2>
+<blockquote>
+<p>本节讲什么：为什么"能在内核里挂代码"约等于"能看穿一切应用"。这一节是你 TLPI 学习的复习——用户态/内核态边界，但从 eBPF 视角再看一遍。</p>
+</blockquote>
+<h2>1. 边界模型（TLPI 第 1 章的复习）</h2>
+<pre class="code" data-label="code"><code class="c">┌─────────────────────────────── 用户态（非特权）─────────────────────┐
+│  应用 A      应用 B      应用 C   …                                │
+│    │           │           │                                       │
+│    └─────┬─────┴─────┬─────┘                                       │
+│          │  syscall 接口（唯一的合法通道）                            │
+└──────────┼─────────────────────────────────────────────────────────┘
+           ▼
+┌─────────────────────────────── 内核态（特权）────────────────────────┐
+│  文件系统 │ 网络协议栈 │ 内存管理 │ 调度器(CFS) │ 驱动 │ …            │
+│  ↑↑↑↑↑↑↑↑ 这里发生的事，用户态只能通过 syscall 结果间接感知 ↑↑↑↑↑↑↑↑ │
+└──────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<p>应用要做任何"外部世界"的事（开文件、发包、分配内存、起进程），都必须陷入内核。这条边界对你的意义在 TLPI 已经建立；eBPF 补上的是最后一块拼图：</p>
+<p><strong>TLPI 视角</strong>： syscall 是用户态请求内核干活的协议（学的是"怎么用"）。
+<strong>eBPF 视角</strong>： syscall 边界是插桩的黄金位置——所有请求的必经之路（学的是"怎么观测"）。</p>
+<h2>2. 一个 echo 有多贵：实测数据</h2>
+<p><code class="c">strace -c echo "hello"</code> 的统计：一个看似什么都没干的 echo 触发 <strong>111 次系统调用</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>syscall</th>
+<th>次数</th>
+<th>在干什么（你在 lab02 里亲眼见过）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>openat</td>
+<td>30</td>
+<td>加载动态库：<code class="c">ld.so.cache</code> → <code class="c">libselinux</code> → <code class="c">libc.so.6</code>…</td>
+</tr>
+<tr>
+<td>close</td>
+<td>20</td>
+<td>用完关掉</td>
+</tr>
+<tr>
+<td>mmap</td>
+<td>20</td>
+<td>把库映射进地址空间</td>
+</tr>
+<tr>
+<td>newfstatat</td>
+<td>19</td>
+<td>查文件元数据</td>
+</tr>
+</tbody>
+</table></div>
+<p>你可以在树莓派上自己跑（ebpf-gate lab01 的实验之一）：</p>
+<pre class="code" data-label="shell"><code class="c">strace -c echo &quot;hello&quot;          # 统计表
+sudo bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }'  # eBPF 视角看同样的事
+</code></pre>
+<p>这两条命令看的是<strong>同一件事</strong>，但机制完全不同——strace 用 ptrace 一个进程一个进程地跟（代价：被跟踪进程慢几倍），bpftrace 在内核里对所有进程的事件计数（代价：接近零）。</p>
+<h2>3. 推论：为什么内核插桩 = 看穿一切</h2>
 <ol>
-<li><strong>动态加载</strong>：加载即生效，挂到事件上后<strong>无论事件来自哪个进程都触发</strong>——包括程序加载前就在跑的老进程；容器环境 = 节点上所有 Pod 的进程全可见</li>
-<li><strong>高性能</strong>：JIT 编译为本地机器指令执行；事件在内核里就被过滤，不用每个事件都付出内核态↔用户态切换代价。XDP 论文（CoNEXT '18）实测：XDP 路由比常规内核栈快 <strong>2.5×</strong>，负载均衡比 IPVS 快 <strong>4.3×</strong></li>
-<li><strong>零侵入</strong>：不修改应用代码、不改配置、不重启</li>
+<li><strong>应用与内核的交互面 ≈ 应用的全部外部行为</strong>——读什么文件、连什么地址、花多少 CPU、被谁调度</li>
+<li>在内核里插桩，等于在<strong>所有进程共用的必经之路</strong>上设卡：
+   - 应用无感知（不像 ptrace 会改变行为）
+   - 无需修改应用、无需重编译、无需重启（连加载前就在跑的老进程也覆盖）
+   - 无法绕过（恶意进程也不能"不走 syscall"）</li>
+<li>这就是后面"三大优势"和"安全用例"的物理基础</li>
 </ol>
+<h2>4. 嵌入式视角</h2>
+<p>对嵌入式 Linux：这条边界同样是固件里所有用户态组件（GUI、守护进程、网络服务）的唯一通道。在生产设备上挂一个 eBPF 观测程序，不需要给每个组件插桩就能看全 IO/调度/网络行为——调试现场问题（偶发卡顿、内存泄漏）时这是降维打击。</p>
+<hr />
+<p><strong>衔接</strong>：既然内核插桩这么香，为什么 30 年来没人随便干？因为"改内核"的传统路径极贵——下一节看两条传统路是怎么堵死的。</p>
+<hr />
+<h2>1.5 传统扩展内核的两条路（以及为什么不行）</h2>
+<blockquote>
+<p>本节讲什么：在 eBPF 之前，想给内核加逻辑只有两条路，各自为什么堵死。理解了这个困局，才能理解验证器为什么是 eBPF 的灵魂。</p>
+</blockquote>
+<h2>1. 路径 A：改内核源码</h2>
+<p>想法最直接：需要什么功能，写个补丁进主线。</p>
+<p><strong>现实</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写补丁</td>
+<td>内核约 3000 万行代码，先得看懂相关子系统</td>
+</tr>
+<tr>
+<td>评审</td>
+<td>只有约 <strong>1/3 的补丁被接受</strong>，通常耗时 3-6 个月（Jiang et al. 2013 对 LKML 的研究）</td>
+</tr>
+<tr>
+<td>进主线 → 装到机器上</td>
+<td>还要等发行版采纳：RHEL 8.5（2021-11 发布）用的还是 2018-08 的 4.18 内核——<strong>从想法到生产环境以年计</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>对"我想现在就看一眼某内核函数被谁调用"这种观测需求，3 年等待等于不可行。</p>
+<h2>2. 路径 B：内核模块（LKM）</h2>
+<p>不必进主线，独立编译、自由分发——<code class="c">insmod</code> 即用。看起来完美，但有致命问题：</p>
+<p><strong>问题 1：模块 = 完整特权代码</strong>
+- 模块跑在内核态，拥有全部内核权限：任意读写内存、任意提权
+- 一个空指针解引用 → <strong>整机崩溃</strong>（内核态没有页保护兜底，不像用户态只是段错误）
+- 恶意模块 = rootkit 的天堂</p>
+<p><strong>问题 2：无人敢装</strong>
+- 因为没有安全性证明，你不敢装陌生模块，你的用户也不敢装你的
+- 每次内核升级都可能 API 变动 → 模块失效或加载失败（内核为了保证模块和内核 ABI 匹配会拒绝加载）</p>
+<p><strong>两条路的共同死结</strong>：内核想要"外来逻辑"，但外来代码<strong>没有安全性证明</strong>——要么付出三年时间换取信任（路径 A），要么放弃证明直接裸奔（路径 B）。</p>
+<h2>3. eBPF 的答案：验证器（verifier）</h2>
+<p>第三条路的关键洞察：<strong>不需要所有人相信代码安全，只需要在加载时机器证明它安全</strong>。</p>
+<p>加载 eBPF 程序时，verifier 静态分析全部可能的执行路径（第 6 章展开算法），证明：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>证明项</th>
+<th>对应 LKM 的哪个灾难</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>所有内存访问都在界内（map 值、栈、包）</td>
+<td>空指针/野指针 → 整机崩溃</td>
+</tr>
+<tr>
+<td>程序必然终止（禁无限循环，有指令数上限）</td>
+<td>死循环锁死机器</td>
+</tr>
+<tr>
+<td>只调用白名单 helper，且参数类型正确</td>
+<td>任意特权操作 / rootkit</td>
+</tr>
+<tr>
+<td>不越权访问上下文</td>
+<td>逃逸出隔离的观察面</td>
+</tr>
+</tbody>
+</table></div>
+<p>代价：写 eBPF 程序比写普通 C 难（要过验证器这关，报错经常看不懂）；收益：<strong>内核敢让非内核开发者往内核里塞逻辑</strong>——这是 30 年困局的解锁。</p>
+<blockquote>
+<p>真机体感：你已经在 lab02 见过 verifier 拒绝程序的样子（<code class="c">invalid bpf_context access off=4 size=4</code>）——它连"读了结构体里不该读的字段"这种编译器不查的事都拦。详见 <a href="chapter-06.html#s-6-3">Ch6 §3.6</a>。</p>
+</blockquote>
+<hr />
+<p><strong>衔接</strong>：安全性解锁之后，eBPF 相比传统观测手段的具体优势可以数出来了——下一节：三大优势。</p>
       </section>
-      <section class="section" id="s-7">
-        <div class="sec-head"><div class="sec-no">7</div><h2>云原生环境：对比 sidecar 模型</h2></div>
-<p>sidecar（如 Envoy 注入）的固有缺陷：
-- 加 sidecar 要<strong>重启 Pod</strong>
-- 依赖 YAML 注入流程，标注错了就漏掉 → 未被插桩
-- Pod 内多容器 ready 顺序不可预测 → 启动变慢、竞态（Open Service Mesh 文档承认：Envoy ready 前应用流量全丢）
-- 服务网格走 sidecar = 应用流量必须绕内核网络栈进代理容器，<strong>加延迟</strong></p>
-<p>eBPF 模型：内核插桩 → 节点全进程可见、动态加载、恶意程序逃不过（挖矿程序不会"贴心地"帮你注入 sidecar，但 eBPF 网络安全能监管主机所有流量）。</p>
-      </section>
-      <section class="section" id="s-8">
-        <div class="sec-head"><div class="sec-no">8</div><h2>HFT 关联</h2></div>
+      <section class="section" id="s-1-6">
+        <div class="sec-head"><div class="sec-no">1.6</div><h2>三大优势与云原生对比（1.6–1.7）</h2></div>
+<blockquote>
+<p>合并自原 section-6～7。小节编号保持不变，<code class="c">### N.x</code> 子编号沿用原节号，历史 § 引用依然有效。</p>
+</blockquote>
+<h2>1.6 eBPF 的三大优势</h2>
+<blockquote>
+<p>本节讲什么：动态加载、高性能、零侵入——每个优势的机制依据是什么，配具体数字。</p>
+</blockquote>
+<h2>1. 动态加载：事件驱动，全进程覆盖</h2>
+<p>机制：程序通过 <code class="c">bpf()</code> 加载进内核 → attach 到某个事件源（kprobe/tracepoint/XDP/…）→ <strong>之后该事件每次发生都触发，无论触发者是谁</strong>。</p>
+<p>关键推论：</p>
 <ul>
-<li><strong>内核态过滤是核心卖点</strong>：交易系统每秒百万级事件（ syscall、网卡包、调度事件），eBPF 在内核里先过滤再上送，避免了每事件一次 user/kernel 切换——这正是 HFT 观测工具（如 Pixie、Parca、Hubble）低开销的原因</li>
-<li>XDP 2.5×/4.3× 的数字是评估"内核栈 vs DPDK 旁路"时的基准参照：eBPF 拿到接近旁路的收益却保留内核栈的通用性</li>
-<li>延迟抖动定位：eBPF 挂调度器/中断/网卡队列的 tracepoint，可以抓到 ntpd、页回收、内核锁竞争这类"偶发毫秒级毛刺"的元凶——传统 perf 抓不到的盲区</li>
+<li><strong>老进程也覆盖</strong>：挂上 execve 追踪的那一刻，加载前就在跑的进程再调 execve 照样触发——没有"重启才能生效"一说（对比：给应用插桩、注入 sidecar 都要重启）</li>
+<li><strong>容器环境</strong>：在节点内核里挂一次，该节点上<strong>所有 Pod 的所有进程</strong>全可见——因为容器共享宿主内核，而 eBPF 挂在内核上</li>
+<li>卸载同样即时：ctrl-C 用户态工具，程序从内核摘除</li>
 </ul>
+<p>你在 lab01 亲手验证过：bpftrace 启动 10 秒内，labwc、tailscaled 等早已在跑的进程的 syscall 全被统计——不需要重启它们任何一个。</p>
+<h2>2. 高性能：JIT + 内核态过滤</h2>
+<p>两个因素叠加：</p>
+<p><strong>a) JIT 编译</strong>：eBPF 字节码加载后即编译成本地机器指令（你的树莓派上是 ARM64 机器码），执行速度等同手写内核 C，不是解释执行。</p>
+<p><strong>b) 过滤在内核里发生</strong>（1993 年 BPF 论文的老智慧，见 §1）：</p>
+<pre class="code" data-label="code"><code class="c">传统观测:   每个事件 ──内核→用户态拷贝+切换──▶ 用户态过滤 ──99%丢弃
+eBPF 观测:  每个事件 ──在内核里直接被过滤/聚合──▶ 只有结果出内核
+</code></pre>
+<p>对百万事件/秒的场景，省掉的不是常数优化，而是<strong>每事件一次的上下文切换</strong>——上下文切换是微秒级操作，还污染 cache。</p>
+<p><strong>实测数字</strong>（XDP 论文，CoNEXT '18）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工作负载</th>
+<th>对比基准</th>
+<th>加速</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>XDP 路由转发</td>
+<td>常规内核网络栈</td>
+<td><strong>2.5×</strong></td>
+</tr>
+<tr>
+<td>XDP 负载均衡</td>
+<td>IPVS</td>
+<td><strong>4.3×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 零侵入</h2>
+<p>不改应用代码、不改配置、不重启——机制上：eBPF 挂在内核的事件点上，应用根本没有参与，也就谈不上被修改。</p>
+<p>这在两个场景是刚需：</p>
+<ul>
+<li><strong>第三方/闭源软件</strong>：无法插桩的进程照样观测（它总得走 syscall）</li>
+<li><strong>恶意进程</strong>：不会被观测的进程——挖矿程序不会"贴心地"上报自己的 CPU 占用，但它在内核里的调度事件、网络连接全暴露（第 9 章安全用例的基础）</li>
+</ul>
+<h2>4. 三者的乘法效应</h2>
+<p>三个优势不是并列，是相乘：因为<strong>零侵入</strong>所以敢装在生产；因为<strong>高性能</strong>所以装了不心疼；因为<strong>动态加载</strong>所以随装随用。缺任何一个，eBPF 都成不了"基础设施级"技术。</p>
+<hr />
+<p><strong>衔接</strong>：三大优势放到云原生环境里效果最夸张——下一节对比传统 sidecar 方案，看 eBPF 模型怎么碾压。</p>
+<hr />
+<h2>1.7 云原生环境：对比 sidecar 模型</h2>
+<blockquote>
+<p>本节讲什么：同一个观测需求（网络策略、可观测性）在 K8s 里的传统解法 sidecar 和 eBPF 解法怎么对比。即使你暂时不碰 K8s，这个对比也是"eBPF 三大优势"的最佳综合案例。</p>
+</blockquote>
+<h2>1. sidecar 模型是什么</h2>
+<p>想给 Pod 里的应用加网络观测/流量管理，又不改应用代码——传统做法：往 Pod 里注入一个代理容器（sidecar，如 Envoy），应用的网络流量改道经过它：</p>
+<pre class="code" data-label="code"><code class="c">        Pod（共享 network namespace）
+  ┌───────────────────────────────┐
+  │  应用容器 ⇄ sidecar 代理(Envoy)⇄ veth ⇄ 宿主网络栈 ⇄ 物理网卡
+  └───────────────────────────────┘
+</code></pre>
+<h2>2. sidecar 的四个固有缺陷</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>缺陷</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>加 sidecar 要重启 Pod</strong></td>
+<td>注入发生在 Pod 创建时；存量 Pod 只能重建</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>依赖注入流程，标注错了就漏掉</strong></td>
+<td>YAML 里 annotation 忘写 / namespace 没打标签 → 整个未被插桩，且无报错</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>多容器 ready 顺序不可预测</strong></td>
+<td>应用容器先起、Envoy 后 ready → 竞态：Open Service Mesh 文档承认，代理 ready 前应用流量全丢；启动因此还要人为拉慢</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>绕路加延迟</strong></td>
+<td>应用流量必须离开内核网络栈、进入代理容器（一次用户态往返）、再回内核——每跳都是上下文切换</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. eBPF 模型：同一位置换个挂法</h2>
+<pre class="code" data-label="code"><code class="c">        Pod                    Pod                    Pod
+  ┌────────────┐         ┌────────────┐         ┌────────────┐
+  │  应用容器   │         │  应用容器   │         │  应用容器   │   ← 不加任何容器
+  └─────┬──────┘         └─────┬──────┘         └─────┬──────┘
+        └──────────────────┬───┴──────────────────────┘
+                           ▼
+  ┌─────────────── 宿主机内核（所有 Pod 共享）─────────────────┐
+  │  eBPF 程序挂在网络栈关键点（XDP/TC/cgroup connect）          │
+  │  → 一次加载，全节点所有 Pod 的流量全经过                     │
+  └──────────────────────────────────────────────────────────────┘
+</code></pre>
+<p>四大缺陷逐一消解：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>sidecar 缺陷</th>
+<th>eBPF 对应解法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>重启 Pod 才能加</td>
+<td>动态加载，运行中的节点立即生效（优势 1）</td>
+</tr>
+<tr>
+<td>注入漏标 → 漏观测</td>
+<td>挂在内核上，"漏标"概念不存在——所有进程都在</td>
+</tr>
+<tr>
+<td>ready 顺序竞态</td>
+<td>没有 sidecar 就没有顺序问题</td>
+</tr>
+<tr>
+<td>绕路延迟</td>
+<td>逻辑在内核原地执行，零绕路（优势 2），且不用改应用（优势 3）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 额外的一点：对抗恶意进程</h2>
+<p>观测自家微服务，sidecar 勉强够用；但<strong>恶意程序不会配合你注入 sidecar</strong>。挖矿程序、横向移动的攻击者流量，sidecar 模型看不见；eBPF 挂在内核网络路径上，主机所有流量（不管来自哪个容器、有没有被编排）都在监管范围——这是 Cilium/Tetragon 做运行时安全的根基（第 9 章）。</p>
+<hr />
+<p><strong>衔接</strong>：至此第 1 章完——从 1993 的伪机器到云原生的内核层基础设施。下一章动手：写第一个 eBPF 程序，从 Hello World 开始。</p>
       </section>
-      <section class="section" id="s-9">
-        <div class="sec-head"><div class="sec-no">9</div><h2>自测题</h2></div>
+      <section class="section" id="s-1-8">
+        <div class="sec-head"><div class="sec-no">1.8</div><h2>HFT关联与自测题（1.8–1.9）</h2></div>
+<blockquote>
+<p>合并自原 section-8～9。小节编号保持不变，<code class="c">### N.x</code> 子编号沿用原节号，历史 § 引用依然有效。</p>
+</blockquote>
+<h2>1.8 HFT 关联</h2>
+<blockquote>
+<p>本节讲什么：第 1 章的概念怎么落到 HFT 工程上——不是"能做什么"的罗列，而是三个具体武器。</p>
+</blockquote>
+<h2>1. 内核态过滤 = 低开销观测的物理来源</h2>
+<p>交易系统全链路上每秒百万级事件（syscall、网卡包、调度事件）。观测这些事件的传统做法（每事件拷到用户态再筛）会直接把系统拖垮；eBPF 在内核里<strong>先过滤/聚合，只让结果出内核</strong>：</p>
+<pre class="code" data-label="code"><code class="c">   事件洪流(1M/s) ──▶ [内核: eBPF 过滤/聚合] ──只有感兴趣的事件(1k/s)──▶ 用户态工具
+</code></pre>
+<p>这就是 HFT 观测栈（Pixie、Parca、Hubble、Cilium）敢宣称"低到可以常开"开销的机制根源——不是优化技巧，是架构位置带来的。</p>
+<p><strong>工程含义</strong>：观测工具本身不能再成为延迟抖动源。给交易机常开观测，eBPF 是唯一现实选项。</p>
+<h2>2. XDP 2.5×/4.3×：评估旁路方案时的基准锚点</h2>
+<p>HFT 网络常讨论 DPDK/内核旁路（kernel bypass）——把网卡从内核手里抢过来自己轮询。对比维度：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>DPDK 旁路</th>
+<th>eBPF/XDP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>收益</td>
+<td>最高（完全绕开内核栈）</td>
+<td>接近（快 2.5×/4.3× 的量级）</td>
+</tr>
+<tr>
+<td>代价</td>
+<td>整网卡被独占、丢通用性（tcpdump/常规工具全瞎）、开发重</td>
+<td>网卡还在内核管理，<strong>保留全部常规工具链</strong></td>
+</tr>
+<tr>
+<td>可移植</td>
+<td>特定 NIC + 大量定制</td>
+<td>CO-RE 跨内核</td>
+</tr>
+</tbody>
+</table></div>
+<p>XDP 论文的数字是决策锚点：<strong>eBPF 拿到接近旁路的收益，却保留内核栈的通用性</strong>。对不是极致裸金属的场景（行情接入前处理、风控前置过滤），XDP 是性价比甜点。</p>
+<h2>3. 延迟毛刺狩猎：抓 perf 抓不到的东西</h2>
+<p>HFT 最痛的不是平均延迟，是 <strong>p99.9 的偶发毛刺</strong>——来源往往是：</p>
+<ul>
+<li>调度被抢（CFS 语义，参见你 kernel/2.8 调度类笔记）</li>
+<li>软中断/硬中断插队</li>
+<li>页回收（kswapd）扫了你的页</li>
+<li>内核锁竞争（cgroup、文件系统）</li>
+</ul>
+<p>这些全发生在内核里，且<strong>不可复现、频率极低</strong>——传统采样式 perf（统计采样）大概率漏采。eBPF 的做法是<strong>事件触发</strong>：挂 sched:sched_switch、irq tracepoint、网卡队列事件，无条件记录每一次发生，事后回放时间线。你在 lab01 已经跑过 <code class="c">@[comm] = count()</code> 的雏形；进阶版是给每次调度切换记时间戳算 off-cpu 时间——第 5 阶段（延迟观测）的主菜。</p>
+<h2>4. 本章武器清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>第 1 章概念</th>
+<th>HFT 落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核态过滤</td>
+<td>常开观测不拖慢交易路径</td>
+</tr>
+<tr>
+<td>动态加载+零侵入</td>
+<td>生产交易机上不重启加观测——别无分店</td>
+</tr>
+<tr>
+<td>XDP 数据</td>
+<td>"要不要上旁路"的决策基准</td>
+</tr>
+<tr>
+<td>事件驱动 tracepoint</td>
+<td>偶发毛刺的时间线回放</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<p><strong>衔接</strong>：理论够了，第 2 章上代码——从 BCC 的 Hello World 到 map、ring buffer。</p>
+<hr />
+<h2>1.9 自测题</h2>
+<blockquote>
+<p>先自己答，再展开参考答案。答不出来的回去翻对应小节。</p>
+</blockquote>
 <ol>
 <li>1993 BPF 论文的"伪机器"解决什么问题？为什么说它比抓包过滤器的意义大？</li>
 <li>3.18 (2014) 引入的 eBPF 五大变化是什么？各自解决什么？</li>
@@ -469,6 +966,15 @@ L2:     ret     #0                 # 0 = 丢弃
 <li>echo "hello" 为什么有 100+ 次系统调用？这个事实对 eBPF 观测意味着什么？</li>
 <li>sidecar 模型的四个缺陷，eBPF 分别怎么消除？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> 解决抓包的两次拷贝问题：过滤器跑用户态时每个包（包括被丢弃的）都要付"内核→用户态"拷贝+切换成本；伪机器让过滤器在内核里就地判决，不要的包零成本丢弃。意义在于确立了"自定义程序在内核里执行"的思想——包过滤只是第一个场景，指令集+内核执行环境这两个要素后来长成了 eBPF。</p>
+<p><strong>2.</strong> ①64 位指令集+寄存器——能处理现代内核的 64 位指针/数据；②maps——有地方存状态、和用户态交换结构化数据；③<code class="c">bpf()</code> 系统调用——统一的加载/操作入口；④helper 白名单——有限的内核功能访问（拿 pid、读内存…）；⑤验证器——加载前证明安全，内核因此"敢"执行外来代码。（口诀：能算、能存、能加载、能访问、敢让你跑。）</p>
+<p><strong>3.</strong> 三个阶段各有瓶颈：写补丁（3000 万行代码门槛）→ 评审（仅 1/3 被接受，3-6 个月）→ 等发行版采纳（RHEL 8.5 还在用 3 年前的 4.18）。叠加起来以年计。</p>
+<p><strong>4.</strong> 顾虑一：模块崩溃=整机崩溃（内核态无页保护兜底）→ verifier 证明所有内存访问有界、程序必终止。顾虑二：模块有全部特权、可当 rootkit → verifier 限制只能调用白名单 helper 且参数类型正确，无法任意访问内核内存。</p>
+<p><strong>5.</strong> 因为动态链接：加载 ld.so.cache、libselinux、libc 等 30 次 openat + 20 次 mmap……（lab02 里亲眼见过这条链）。对 eBPF 的意义：syscall 边界是应用全部外部行为的必经之路，在这设卡=看穿一切进程且无感知、不可绕过。</p>
+<p><strong>6.</strong> ①要重启 Pod → eBPF 动态加载即时生效；②注入漏标漏观测 → 挂内核上没有"漏标"概念，全进程覆盖；③ready 顺序竞态 → 没有 sidecar 就没有顺序问题；④流量绕路加延迟 → 逻辑在内核原地执行零绕路。</p>
+</details>
       </section>
 
 

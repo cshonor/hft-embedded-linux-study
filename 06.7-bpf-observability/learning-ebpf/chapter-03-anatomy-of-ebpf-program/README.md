@@ -14,17 +14,12 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. eBPF 虚拟机 | [notes/section-1-eBPF虚拟机.md](./notes/section-1-eBPF虚拟机.md) |
-| 2. XDP 版 Hello World（纯 C） | [notes/section-2-XDP版HelloWorld（纯C）.md](./notes/section-2-XDP版HelloWorld（纯C）.md) |
-| 3. 编译与检查 | [notes/section-3-编译与检查.md](./notes/section-3-编译与检查.md) |
-| 4. 加载、检查、附加、卸载（bpftool） | [notes/section-4-加载、检查、附加、卸载（bpftool）.md](./notes/section-4-加载、检查、附加、卸载（bpftool）.md) |
-| 5. 全局变量 = map | [notes/section-5-全局变量=map.md](./notes/section-5-全局变量=map.md) |
-| 6. BPF to BPF 调用（libbpf 才有） | [notes/section-6-BPFtoBPF调用（libbpf才有）.md](./notes/section-6-BPFtoBPF调用（libbpf才有）.md) |
-| 坑点清单 | [notes/section-7-坑点清单.md](./notes/section-7-坑点清单.md) |
-| HFT 关联 | [notes/section-8-HFT关联.md](./notes/section-8-HFT关联.md) |
-| 自测题 | [notes/section-9-自测题.md](./notes/section-9-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 3.1–3.2 | [虚拟机与XDP版HelloWorld](./notes/3.1_虚拟机与XDP版HelloWorld.md) |
+| 3.3–3.4 | [编译检查与加载附加](./notes/3.3_编译检查与加载附加.md) |
+| 3.5–3.6 | [全局变量与BPFtoBPF调用](./notes/3.5_全局变量与BPFtoBPF调用.md) |
+| 3.7–3.9 | [坑点HFT关联与自测](./notes/3.7_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 

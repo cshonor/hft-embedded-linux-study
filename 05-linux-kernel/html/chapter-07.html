@@ -534,6 +534,133 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 同步异常：
   insn ──► 触发 page fault ──► 缺页处理 ──► 可能返回原 insn 重试
 </code></pre>
+<h4>中断 vs 轮询：硬件与 CPU 的两种沟通方式</h4>
+<p><strong>不是所有硬件电信号都叫中断。</strong> 硬件与 CPU 只有两种沟通方式：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>中断 IRQ</th>
+<th>轮询 polling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁主动</td>
+<td><strong>硬件主动</strong>发电信号通知 CPU</td>
+<td><strong>CPU 主动</strong>反复读硬件寄存器</td>
+</tr>
+<tr>
+<td>硬件行为</td>
+<td>发中断请求</td>
+<td>只把状态放在寄存器里，<strong>不发信号</strong></td>
+</tr>
+<tr>
+<td>代表</td>
+<td>键盘、网卡、磁盘</td>
+<td>简单/慢速设备、部分嵌入式总线</td>
+</tr>
+</tbody>
+</table></div>
+<p>只有设备<strong>主动向中断控制器发请求</strong>的那类信号才叫中断信号。</p>
+<h4>三种典型设备的触发方式：键盘 · 时钟 · 麦克风</h4>
+<p><strong>「硬件有电信号」≠「向 CPU 发 IRQ」。</strong> 三类代表设备的中断行为完全不同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设备</th>
+<th>中断模式</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>键盘</strong></td>
+<td><strong>事件驱动</strong> — 一次按键一次 IRQ</td>
+<td>按键按下 → 键盘控制器发 IRQ；PS/2 原生中断驱动，USB 键盘则是<strong>主机控制器</strong>收到数据后发 IRQ</td>
+</tr>
+<tr>
+<td><strong>系统时钟 tick</strong></td>
+<td><strong>周期性</strong> — 每秒 <code class="c">HZ</code> 次</td>
+<td>硬件定时器芯片（LAPIC timer / arch timer）定期发脉冲：更新 <code class="c">jiffies</code>/墙上时间、<code class="c">scheduler_tick()</code> 更新 vruntime 并检查抢占 —— <strong>操作系统的脉搏</strong>，抢占式调度的支撑</td>
+</tr>
+<tr>
+<td><strong>麦克风/音频</strong></td>
+<td><strong>批量 + DMA</strong> — 缓冲区满才一次 IRQ</td>
+<td>音频是高速连续流，<strong>不能每采一个样本中断一次</strong>（CPU 会被干爆）。DMA 控制器整批搬运样本到内核环形缓冲区（<strong>全程不占 CPU</strong>），缓冲区满才发一次 IRQ 通知 CPU 处理一大块</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>USB 键盘与 USB 麦克风用<strong>不同的 USB 传输类型</strong>，但殊途同归：
+- <strong>USB 键盘 = 中断传输（interrupt transfer）</strong>：主机定时轮询（1ms 级），周期内多个按键打包一个 USB 包 → <strong>一包一次 IRQ</strong>；
+- <strong>USB 麦克风 = 等时传输（isochronous transfer）</strong>：专为连续音视频流设计（保时序、保带宽），凑满一个时间片（如 1~2ms）的音频包 → <strong>一包一次 IRQ</strong>。说一句话上万个采样，只产生几十次中断——若每采样一次 IRQ，CPU 被中断风暴压垮。
+- 共同前提：<strong>USB 设备永远不能主动发电信号打断 CPU</strong>——都是主机定时来取数据，取完整个包才触发一次硬件 IRQ（"中断传输"只是 USB 协议名，别被字面骗了）。
+- 总结：<strong>硬件中断永远是批量通知 CPU</strong>，粒度不会细到每一个字节/每一个采样点——事件设备（键盘）按事件打包，流设备（音频）按时间片打包。</p>
+<p>麦克风的 <strong>DMA 批量中断</strong> 与网卡 <strong>中断合并（interrupt coalescing）</strong>、<strong>NAPI</strong> 本质同源：高速数据流场景下，用「攒一批再通知」换取更低的中断频率 —— 频率越低，对 CPU 热路径（如策略线程）的打断越少。
+USB 麦克风同理：控制器收到音频帧才产生 IRQ，中间大量样本靠总线批量传输。</p>
+<p>⚠️ 误区：硬件内部自己跑信号 ≠ 向 CPU 发 IRQ 请求。麦克风 Codec 不停采样是硬件内部行为，CPU 感知到的只有"DMA 缓冲区满了"这一个事件。</p>
+</blockquote>
+<p><strong>键盘细化：PS/2 一键一中断，USB 打包一次中断</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>PS/2 键盘（老式）</th>
+<th>USB 键盘（现代主流）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>通知 CPU 方式</td>
+<td><strong>一键一 IRQ</strong>：按下（make）一次中断，<strong>松开（break）再来一次</strong></td>
+<td>USB 协议层叫"中断传输"，但<strong>不是每键发 IRQ</strong>——USB 主机控制器<strong>定时轮询</strong>设备（如每 1ms/10ms）</td>
+</tr>
+<tr>
+<td>快速敲 a、b</td>
+<td><strong>两次</strong>硬件中断（不含松开）</td>
+<td>轮询周期内 <strong>打包成一个数据包，只一次</strong> IRQ——包里同时带 a、b 两个按键事件</td>
+</tr>
+<tr>
+<td>回车有无特殊性</td>
+<td><strong>无</strong>。硬件只认识扫描码，回车 = 一个普通扫描码；翻译成 <code class="c">\n</code> 是内核驱动/行规程的事，"回车换行"是纯软件概念</td>
+<td>同左</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>本质上 USB 键盘 = <strong>轮询 + 批量中断</strong>，又是一个「攒一批再通知」的实例。无论 PS/2 还是 USB，把字符交给用户程序永远靠 <code class="c">read()</code> 系统调用（进程上下文）——硬件中断只负责拿到扫描码。</p>
+</blockquote>
+<h4>可屏蔽中断 vs NMI（不可屏蔽中断）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>可屏蔽中断</th>
+<th><strong>NMI</strong>（Non-Maskable Interrupt）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>能否屏蔽</td>
+<td>✅ 可以（<code class="c">disable_irq</code> / 控制器屏蔽该线，见 §7.7）</td>
+<td>❌ <strong>拦不住，CPU 必须响应</strong></td>
+</tr>
+<tr>
+<td>屏蔽后</td>
+<td>硬件<strong>照样发信号</strong>，控制器记录 pending 但不提交 CPU → handler 不跑，事件<strong>丢失</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>典型</td>
+<td>键盘、网卡、磁盘</td>
+<td><strong>电源故障、内存硬件损坏</strong>等灾难事件</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>屏蔽 ≠ 信号消失：快递照样送到<strong>门卫</strong>（中断控制器），门卫把快递扣下不送给你（CPU）——快递确实到了，只是你拿不到。</p>
+</blockquote>
 <h4>中断的代价</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -610,6 +737,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>① <code class="c">/proc/irq/[n]/smp_affinity</code> 绑中断到非交易核。② <code class="c">service irqbalance stop</code>。③ <code class="c">isolcpus</code> 隔离交易核。④ <code class="c">nohz_full</code> 减少定时器中断。⑤ DPDK 用户态轮询完全绕过中断。⑥ NAPI 轮询模式（网络收包）。</p>
+</details>
+<p><strong>Q4.</strong> 麦克风每采集 1 个音频样本会触发一次中断吗？系统时钟 tick 是什么来源？USB 键盘数据到达靠什么通知 CPU？</p>
+<details>
+<summary>答案</summary>
+<p>麦克风<strong>不会</strong>每样本中断 —— DMA 控制器整批搬运样本到内核环形缓冲区，<strong>缓冲区满才一次 IRQ</strong>（批量 + DMA，否则 CPU 被干爆）。时钟 tick 是<strong>硬件定时器芯片的周期性中断</strong>（每秒 HZ 次），驱动 <code class="c">scheduler_tick()</code>。USB 键盘：设备数据经 USB 总线批量传输，<strong>USB 主机控制器</strong>收到数据后产生硬件中断（不是键盘芯片直接连 IRQ 线）。</p>
+<p>三者的数据获取殊途同归：中断上下文只把数据放进内核缓冲区（禁睡眠、禁 <code class="c">copy_from_user</code>），用户程序最终靠 <code class="c">read()</code> 系统调用（进程上下文）<code class="c">copy_to_user</code> 取走 —— 见 <a href="chapter-05.html#s-5-5">§5.5</a>。</p>
 </details>
 </details>
 <h2>&gt; ↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-2">ULK Ch4 §2 中断与异常分类</a></h2>

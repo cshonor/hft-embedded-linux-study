@@ -13,16 +13,11 @@
 
 ## 小节索引
 
-| 节 | 笔记 |
-|----|------|
-| 1. 第一个 Hello World（BCC 版） | [notes/section-1-第一个HelloWorld（BCC版）.md](./notes/section-1-第一个HelloWorld（BCC版）.md) |
-| 2. BPF Maps：结构化数据通道 | [notes/section-2-BPFMaps：结构化数据通道.md](./notes/section-2-BPFMaps：结构化数据通道.md) |
-| 3. Perf / Ring Buffer：事件推送 | [notes/section-3-Perf／RingBuffer：事件推送.md](./notes/section-3-Perf／RingBuffer：事件推送.md) |
-| 4. 函数调用 | [notes/section-4-函数调用.md](./notes/section-4-函数调用.md) |
-| 5. 尾调用（Tail Calls） | [notes/section-5-尾调用（TailCalls）.md](./notes/section-5-尾调用（TailCalls）.md) |
-| 坑点清单 | [notes/section-6-坑点清单.md](./notes/section-6-坑点清单.md) |
-| HFT 关联 | [notes/section-7-HFT关联.md](./notes/section-7-HFT关联.md) |
-| 自测题 | [notes/section-8-自测题.md](./notes/section-8-自测题.md) |
+| 小节 | 笔记 |
+|---|---|
+| 2.1–2.3 | [HelloWorld与数据通道](./notes/2.1_HelloWorld与数据通道.md) |
+| 2.4–2.5 | [函数调用与尾调用](./notes/2.4_函数调用与尾调用.md) |
+| 2.6–2.8 | [坑点HFT关联与自测](./notes/2.6_坑点HFT关联与自测.md) |
 
 ## 交叉引用
 
