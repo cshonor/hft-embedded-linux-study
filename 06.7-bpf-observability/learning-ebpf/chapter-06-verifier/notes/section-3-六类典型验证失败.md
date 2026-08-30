@@ -88,3 +88,35 @@ R7 invalid mem access 'map_value_or_null'
 ### 3.6 上下文字段访问越权
 
 tracepoint 上下文开头的公共字段（common_type/common_flags/common_preempt_count/common_pid）**不允许** eBPF 访问，只能访问 tracepoint 特有字段；读错报 `invalid bpf_context access`。
+
+**真机实录（树莓派 5 / 6.18 内核实测，2026-08）**：追踪 `sys_enter_openat` 时想偷懒直接读 `ctx->common_pid`（结构体 offset 4，u32）：
+
+```c
+struct sys_enter_openat_ctx {          // 手工按 format 文件还原的布局
+    unsigned short common_type;        // offset 0
+    unsigned char  common_flags;       // offset 2
+    unsigned char  common_preempt_count;// offset 3
+    int common_pid;                    // offset 4  ← 读了这里
+    long __syscall_nr;                 // offset 8
+    // ... 参数区从 offset 8 开始（每槽 8 字节）
+    const char *filename;              // offset 24 ← 这里有读权限
+};
+```
+
+验证器日志：
+
+```
+verifier output:
+2: (61) r1 = *(u32 *)(r1 +4)
+invalid bpf_context access off=4 size=4
+```
+
+**规则本质**：syscall 类 tracepoint 的 ctx 只对**参数区**（offset ≥ 8）开放访问，前面的 common 头由 `perf tracepoint` 基础设施管理，不开放给 BPF 程序。同一程序里读 `ctx->filename`（offset 24）则完全合法——**越权与否按 offset 划线**，不是按"结构体成员"划线。
+
+**正确姿势**：pid 别从 ctx 拿，用 helper：
+
+```c
+u64 id = bpf_get_current_pid_tgid();  // 高 32 位 = tgid(pid), 低 32 位 = pid(线程id)
+```
+
+这解释了为什么书里的例子全用 `bpf_get_current_*` 系列 helper——不是风格偏好，是 ctx 里根本没有权限。

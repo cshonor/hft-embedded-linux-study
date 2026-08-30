@@ -35,6 +35,17 @@ chapter-XX-english-slug/
 | 10 | [chapter-10-programming](./chapter-10-programming/) | bpftrace、BCC、libbpf、cilium/ebpf(bpf2go)、libbpfgo、Aya/Rust 选型 | 🟡 | 选读 — Rust eBPF 可对接 [18-rust-quant](../../18-rust-quant/) |
 | 11 | [chapter-11-future](./chapter-11-future/) | eBPF 基金会、Windows 版架构、签名/指针/内存分配在研方向 | ⚪ | 跳过 — 了解即可 |
 
+### 真机实验佐证（2026-08 起逐步补强）
+
+理论笔记之外，配套真机实验在 [cshonor/ebpf-gate](https://github.com/cshonor/ebpf-gate)（树莓派 5 / aarch64 / 6.18 内核 / clang 19 / bpftrace 0.23），一手实验结论已回灌对应章节：
+
+| 实验 | 回灌位置 |
+|---|---|
+| lab02：无 BTF 内核上 tracepoint 追踪 openat（手工 format 结构体） | Ch5 §3.5、Ch5 坑点 9-10 |
+| aarch64 交叉编译 `asm/types.h` 坑与修复 | Ch3 §3 |
+| `invalid bpf_context access off=4` 真实 verifier 拒绝日志 | Ch6 §3.6 |
+| 用户态指针必须 probe_read、printk %s 收指针 | Ch2 坑点 7-8 |
+
 ---
 
 ## 一句话结论

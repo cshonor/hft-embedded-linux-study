@@ -43,3 +43,40 @@ bpftool btf dump prog <id>          # 只看某个程序的
 ### 3.4 map 创建时如何携带 BTF
 
 `bpf(BPF_MAP_CREATE)` 的 attr 里有 `btf_fd / btf_key_type_id / btf_value_type_id` 三个字段。BTF 之前，内核只知道 key/value 各占多少字节（`key_size/value_size`），不知道内部结构。注意 key 和 value 是**分开传两个 type_id**，`____btf_map_config` 只是 BCC 用户态的产物，内核不用它。
+
+### 3.5 真机案例：一个没有 BTF 的真实内核（树莓派 5 实测，2026-08）
+
+不是所有现代内核都有 BTF——**树莓派官方内核（rpi-6.18.x）就没开 `CONFIG_DEBUG_INFO_BTF`**，且新旧版本都如此（`readelf -S /boot/firmware/kernel_2712.img` 无 `.BTF` 段）。三部检测法：
+
+```bash
+# 1. 运行时接口（最常用）：BTF 内核会在 /sys 暴露 vmlinux
+ls -lh /sys/kernel/btf/vmlinux        # 不存在 → 无 BTF
+
+# 2. 内核配置确认
+zgrep CONFIG_DEBUG_INFO_BTF /proc/config.gz   # =y 才有
+
+# 3. 直接看镜像 ELF 段（不用重启到新内核也能查）
+readelf -S /boot/firmware/kernel_2712.img | grep -i btf
+```
+
+**无 BTF 时的实际影响与症状**（实测）：
+
+| 能力 | 状态 |
+|---|---|
+| libbpf 加载普通程序（tracepoint/kprobe） | ✅ 正常，只是 libbpf 打日志 `failed to find valid kernel BTF` / `btf_vmlinux is malformed`——**纯噪音，可无视** |
+| `vmlinux.h`（bpftool btf dump file 生成） | ❌ 没原料，CO-RE 程序卡死在这 |
+| libbpf 骨架、map、ring buffer | ✅ 都正常（不依赖内核 BTF） |
+| bpftrace | ✅ 基本功能正常（用它自己内置的类型信息兜底） |
+
+**绕行方案**（也是理解 CO-RE 价值的机会）：不用 `vmlinux.h`，改从**tracepoint format 文件**手工还原结构体——
+
+```bash
+sudo cat /sys/kernel/tracing/events/syscalls/sys_enter_openat/format
+# field:unsigned short common_type; offset:0; size:2;
+# field:int common_pid;  offset:4; size:4;
+# field:const char * filename; offset:24; size:8;
+```
+
+按 offset/size 手写成 C 结构体（注意对齐填充）。这恰好是 CO-RE 出现前所有人的日常——**踩过这个坑，才知道 BTF + CO-RE 到底替你省了什么**：手工布局只在内核不变时正确，字段一挪就静默读错数据；CO-RE 是加载时按 BTF 重定位。
+
+> 完整实验：[ebpf-gate/labs/02-kprobe](https://github.com/cshonor/ebpf-gate)（无 BTF 内核上手工 format 结构体方案，真机跑通）

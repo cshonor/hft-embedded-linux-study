@@ -8,3 +8,5 @@
 6. **同机编译加载时重定位日志全是 0→0**——别误以为重定位没生效；跨内核才能看到真 patch
 7. **libbpf 1.0 起节名严格**——老教程里的自由格式 SEC 名会加载失败
 8. **perf buffer map 不带 BTF**——btf list 里看不到它属正常
+9. **"无 BTF 内核"真实存在（rpi 官方内核实测）**——`/sys/kernel/btf/vmlinux` 不存在 ≠ eBPF 不可用：tracepoint/kprobe/map/ringbuf 全正常，只有 `vmlinux.h` 路线死了；libbpf 的 `failed to find valid kernel BTF` 日志是噪音，别被它劝退。绕行方案见 3.5
+10. **新内核装好 ≠ 在运行**——`apt` 升级内核后 `uname -r` 仍显示旧版直到重启；查 BTF 前先确认跑的是哪个内核，别对着还没启用的镜像做判断
