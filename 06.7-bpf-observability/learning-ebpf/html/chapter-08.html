@@ -559,6 +559,17 @@ int pingpong(struct __sk_buff *skb) {
 </ul>
 <h3>3.4 TC 的多程序协作</h3>
 <p>TC 的 clsact qdisc 允许在 filter 链上挂多个 eBPF 程序，<strong>按顺序执行</strong>，前一个的返回码决定是否继续走链。Cilium 等大型方案正是靠这个把"每个容器一个策略程序"串起来执行——XDP 做不到这一点（一接口一程序）。</p>
+<hr />
+<h2>8.1.1 真机佐证（lab07，树莓派 5 · 6.18.34 · 2026-08-30）</h2>
+<blockquote>
+<p>实验仓库：<a href="https://github.com/cshonor/ebpf-gate/tree/main/labs/07-xdp-socket">ebpf-gate/labs/07-xdp-socket</a></p>
+</blockquote>
+<ul>
+<li><strong>XDP 跑通</strong>（SKB/generic 模式挂 <code class="c">lo</code>）：eth→ip→udp 逐层边界检查，目的端口 9999 返回 <code class="c">XDP_DROP</code>。实测 ICMP/UDP 9998 放行（packets 增长），UDP 9999 被 DROP（drops 增长）——<strong>被丢的包不进入内核协议栈</strong>，比 iptables 的栈中丢弃更省 CPU（HFT 视角：坏包越早掐掉开销越小）。lo 上只能 SKB 模式；真网卡 native XDP 更早（DMA 后立刻）。</li>
+<li><strong>SOCKET_FILTER 的意外</strong>：本内核上 socket filter 程序<strong>不能解引用 <code class="c">skb-&gt;data</code>/<code class="c">skb-&gt;data_end</code></strong>（最小用例实测：读 <code class="c">skb-&gt;len</code>（off=0）通过，读 data（off=76）→ <code class="c">invalid bpf_context access off=76 size=4</code>）——ctx 白名单比 XDP 严。改用 <code class="c">skb-&gt;protocol</code> 字段过滤反而更贴近 tcpdump 实战。</li>
+<li><strong>socket filter 的性能本义实测</strong>：<code class="c">seen=8 passed(IPv4)=4 recv_user=0</code>——filter 返回 0 的包，用户态 <code class="c">recv</code> 根本看不到（IPv6 ping 8 个包全被拦下）；<code class="c">recv(sock, NULL, 0, MSG_TRUNC)</code> 只拿包长不拷贝。<strong>过滤发生在 copy 之前</strong>。</li>
+<li>per-CPU map（<code class="c">PERCPU_ARRAY</code>）dump 时 value 缓冲要按 <code class="c">libbpf_num_possible_cpus()</code> 扩容再逐 CPU 求和。</li>
+</ul>
       </section>
       <section class="section" id="s-8-2">
         <div class="sec-head"><div class="sec-no">8.2</div><h2>uprobe与Kubernetes（原书 §8.4–8.5）</h2></div>
@@ -612,6 +623,15 @@ int BPF_KPROBE(ssl_read_exit) {
 </ol>
 <h3>4.3 更通用的视角</h3>
 <p>同一模式适用于一切"函数边界即明文边界"的场景：压缩库（zlib 的 <code class="c">deflate</code>/<code class="c">inflate</code> 前后）、数据库驱动、行情解码函数——<strong>只要符号可见，uprobe 就能看到进出函数的数据</strong>。</p>
+<h3>4.4 真机限制（lab06，树莓派 5 · 6.18.34 · 2026-08-30）</h3>
+<p>本机 <strong>uprobe 整体不可用</strong>——树莓派官方内核 <code class="c"># CONFIG_UPROBE_EVENTS is not set</code>。完整证据链：</p>
+<ol>
+<li><code class="c">bpf_program__attach_uprobe</code> 返回 ENOENT（libbpf 日志 <code class="c">failed to create uprobe ... perf event</code>）</li>
+<li><code class="c">/sys/kernel/tracing/uprobe_events</code> 不存在（同目录的 kprobe_events 正常）</li>
+<li>kallsyms 只剩 <code class="c">bpf_uprobe_multi_*</code> 符号桩（多 uprobe 的 BPF API 在，底层没编）</li>
+<li><code class="c">/boot/config-6.18.34+rpt-rpi-2712</code> 直接确认配置项</li>
+</ol>
+<p>要复刻书里挂 <code class="c">SSL_read</code>/<code class="c">SSL_write</code> 的实验：自编内核开 <code class="c">CONFIG_UPROBE_EVENTS=y</code>，或换 Debian 官方 arm64 内核（顺带解决 BTF/CO-RE）。uprobe 的代码与加载器（<code class="c">ebpf-gate/labs/06-kprobe-uprobe</code>）已保留并带可用性检测，换内核后可直接跑。</p>
 <hr />
 <h2>8.5 Kubernetes 与 eBPF（Cilium 视角）</h2>
 <h3>5.1 iptables 的困境</h3>

@@ -46,6 +46,10 @@ chapter-XX-english-slug/
 | `invalid bpf_context access off=4` 真实 verifier 拒绝日志 | Ch6 §3.6 |
 | 用户态指针必须 probe_read、printk %s 收指针 | Ch2 坑点 7-8 |
 | lab04：strace 拆解 libbpf 的 50 个 bpf() 调用（探测 vs 真活儿；BTF_LOAD 在无内核 BTF 机器上成功；BPF_LINK_CREATE 挂载；memfd placeholder fd 槽位） | Ch4 §2 |
+| lab05：verifier 六类拒绝实验集——三大"洗白"发现（未初始化栈读被 6.18 特权模式放行 commit 6715df8d5d24；ARRAY+常量 key 洗白 NULL 检查；unreachable 指令只能内联汇编注入） | Ch6 §5 |
+| lab06：kprobe 挂 do_sys_openat2 跑通（do_sys_open 实测 0 次；6.18 PARM2 直接是用户态 char*）；uprobe 勘察：内核未编 CONFIG_UPROBE_EVENTS | Ch7 §2、Ch8 §4.4 |
+| lab07：XDP 挂 lo 跑通（UDP 9999 网卡层 DROP）；SOCKET_FILTER 禁碰 data/data_end（改 protocol 字段过滤） | Ch8 §1.1 |
+| lab08：seccomp classic BPF 沙箱跑通（ERRNO+KILL 双版本）；LSM 勘察（bpf 不在 LSM 链） | Ch9 §4 |
 
 ---
 

@@ -511,6 +511,24 @@ invalid bpf_context access off=4 size=4
 <li>无效指令（未知 opcode）：编译器 bug 才会出现，除非手写字节码；但<strong>新指令在老内核上不过</strong>（如原子操作指令）</li>
 <li>不可达指令：拒绝（通常编译器已优化掉）</li>
 </ul>
+<hr />
+<h2>6.5 真机佐证（lab05，树莓派 5 · 6.18.34 · 2026-08-30）</h2>
+<blockquote>
+<p>实验仓库：<a href="https://github.com/cshonor/ebpf-gate/tree/main/labs/05-verifier-rejects">ebpf-gate/labs/05-verifier-rejects</a> —— 六个故意写坏的程序逐个加载，抓 verifier 原话。三个"教科书级"拒绝在真机上<strong>被洗白</strong>，各有一手解释：</p>
+</blockquote>
+<h3>5.1 未初始化栈读：特权模式下已被"赦免"</h3>
+<p>书 §6.1 的经典案例（<code class="c">invalid read from stack</code>）在 6.18 + sudo 加载下 <strong>ACCEPTED</strong>——反汇编确认字节码里真实存在 <code class="c">r1 = *(u64 *)(r10 - 0x18)</code>（读从未写过的槽位），不是编译器优化掉的。根因是内核 commit <code class="c">6715df8d5d24</code>（"bpf: Allow reads from uninit stack"，2024）：加载者持有 CAP_PERFMON/CAP_SYS_ADMIN 时 <code class="c">allow_uninit_stack=1</code>，未初始化栈读放行（值域按全范围任意数处理），换来状态比较 30–70% 提速。非特权模式依旧拒绝——但 <code class="c">kernel.unprivileged_bpf_disabled=2</code> 的机器上非特权 BPF 整个被禁，此案例<strong>不可复现</strong>。教训：<strong>书的出版年份 = verifier 行为快照的年份</strong>。</p>
+<h3>5.2 map 类型影响 NULL 检查的强制程度</h3>
+<p><code class="c">bpf_map_lookup_elem</code> 结果不判 NULL 就解引用：<strong>ARRAY map + 常量 key 时居然通过</strong>——verifier 静态推断 slot 必存在，把返回值直接标为非 NULL。换 HASH map（key 可能 miss）立刻拿到原书同款报错：</p>
+<pre class="code" data-label="code"><code class="c">7: (79) r1 = *(u64 *)(r0 +0)
+R0 invalid mem access 'map_value_or_null'
+processed 7 insns (limit 1000000)
+</code></pre>
+<p>写"验证失败"测试用例时，map 类型不是随便选的。</p>
+<h3>5.3 C 语言写不出不可达指令</h3>
+<p><code class="c">return</code> 后的代码在 clang <strong>前端 codegen 阶段就被丢弃</strong>（-O0 也一样，反汇编只有 15 条指令）。真正触发 <code class="c">unreachable instruction</code> 拒绝要用内联汇编注入：<code class="c">asm volatile("r0 = 0; exit; r0 = 1; exit;")</code>——exit 之后还有字节码就是不可达。启示：verifier 拒绝的是<strong>字节码形态</strong>而非 C 代码意图，前端（clang）与后端（verifier）各守一段防线。</p>
+<h3>5.4 有界循环白送（对照）</h3>
+<p><code class="c">for (i = 0; i &lt; 10; i++)</code> 直接通过——与 §4.1 的演进表互相印证，本内核（6.18）bounded loop 是原生能力；对照程序 <code class="c">for (;;)</code> 依然 <code class="c">infinite loop detected at insn 0</code>。</p>
       </section>
       <section class="section" id="s-6-3">
         <div class="sec-head"><div class="sec-no">6.3</div><h2>坑点HFT关联与自测（原书 §6.5–6.7）</h2></div>

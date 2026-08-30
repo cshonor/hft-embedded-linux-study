@@ -398,6 +398,61 @@ int BPF_PROG(path_chmod, const struct path *path, umode_t mode)
 <li>参数是内核数据结构（<code class="c">path-&gt;dentry-&gt;d_iname</code> 直接是文件名）——策略判断<strong>完全在内核内完成，高性能</strong></li>
 <li>限制：需要 5.7+ 内核且开启 <code class="c">CONFIG_BPF_LSM</code>（boot 参数 <code class="c">lsm=bpf</code>），成书时多数发行版还没普及</li>
 </ul>
+<hr />
+<h2>9.4 真机佐证（lab08，树莓派 5 · 6.18.34 · 2026-08-30）</h2>
+<blockquote>
+<p>实验仓库：<a href="https://github.com/cshonor/ebpf-gate/tree/main/labs/08-seccomp-lsm">ebpf-gate/labs/08-seccomp-lsm</a></p>
+</blockquote>
+<h3>4.1 seccomp-bpf 沙箱实测（无 root，一次通过）</h3>
+<p>手写 classic BPF filter 禁止 <code class="c">getpid()</code>（arm64 号 172），fork 子进程对照：</p>
+<pre class="code" data-label="code"><code class="c">子进程(有 filter): getpid() = -1            ← ERRNO|EPERM 拦截
+子进程其他 syscall 不受影响: getppid() = ...  ← 只禁一个，其余放行
+KILL 版子进程被信号终止: yes (SIGSYS=31)      ← KILL_PROCESS 直接杀
+</code></pre>
+<p>一手坑与观察：</p>
+<ul>
+<li><strong>安装三件套</strong>：<code class="c">PR_SET_NO_NEW_PRIVS</code>（先放弃提权，否则非 root 不许装）→ <code class="c">sock_filter[]</code>（classic BPF 短指令）→ <code class="c">seccomp(SET_MODE_FILTER)</code></li>
+<li><strong>classic BPF 跳转偏移是手数的</strong>：架构检查的 jf 写错一位就越界，<code class="c">seccomp: Invalid argument</code> 直接拒装——libseccomp 存在的意义</li>
+<li><strong>glibc 观察</strong>：被 ERRNO 拦截后返回值 -1 确凿，但 glibc 的 getpid 包装没把 errno 置出来（打印为 0）——判定拦截看返回值，别只信 errno</li>
+<li><strong><code class="c">_exit()</code> 不走 stdio 清理</strong>：子进程 printf 不 flush 输出会"神秘消失"——fork 实验的标准姿势：fork 前后各 fflush</li>
+</ul>
+<h3>4.2 BPF LSM 本机勘察（不可运行，但结论明确）</h3>
+<ul>
+<li>当前 LSM 链：<code class="c">lockdown,integrity</code>（无 bpf）；启动参数无 <code class="c">lsm=</code></li>
+<li><code class="c">CONFIG_SECURITY=y</code> 但 BPF_LSM 未启用</li>
+<li>双重门槛：即便加 <code class="c">lsm=...,bpf</code> 重启，LSM BPF 程序强依赖 CO-RE（<code class="c">struct file</code> 等类型来自 vmlinux.h），本内核无 BTF——<code class="c">lsm_probe.sh</code> 的检测三件套：LSM 链、/proc/cmdline、内核配置</li>
+</ul>
+<h3>4.3 三代"拒绝"机制位置对比（全书实验收束）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>年代</th>
+<th>挂钩点</th>
+<th>本机状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>classic BPF socket filter</td>
+<td>1992</td>
+<td>抓包路径</td>
+<td>✅ lab07</td>
+</tr>
+<tr>
+<td>seccomp-BPF</td>
+<td>2005</td>
+<td>syscall 入口</td>
+<td>✅ lab08</td>
+</tr>
+<tr>
+<td>BPF LSM</td>
+<td>2020（5.7）</td>
+<td>安全钩子</td>
+<td>❌ 需换内核</td>
+</tr>
+</tbody>
+</table></div>
       </section>
       <section class="section" id="s-9-2">
         <div class="sec-head"><div class="sec-no">9.2</div><h2>Tetragon与防护型安全（原书 §9.4–9.5）</h2></div>
