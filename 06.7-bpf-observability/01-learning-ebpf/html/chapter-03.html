@@ -334,33 +334,61 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p>合并自原 section-1～2。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
 </blockquote>
 <h2>3.1 eBPF 虚拟机</h2>
-<ul>
-<li>字节码早期在内核里<strong>解释执行</strong>，现已被 <strong>JIT 编译</strong>取代——既为性能，也为规避 eBPF 解释器的 Spectre 类侧信道漏洞</li>
-<li>指令集/寄存器模型设计成与主流 CPU 架构<strong>一一映射</strong>，使 JIT/解释都简单直接</li>
-</ul>
-<p><strong>寄存器</strong>（软件实现，<code class="c">include/uapi/linux/bpf.h</code> 中 <code class="c">BPF_REG_0</code>~<code class="c">BPF_REG_10</code>）：
-- R0-R9 通用；R10 = 栈帧指针（只读）
-- 程序入参 ctx 放 <strong>R1</strong>；返回值放 <strong>R0</strong>
-- 调用函数时参数放 R1-R5（最多 5 个参数）</p>
+<p><strong>执行模型</strong>：字节码早期在内核里<strong>解释执行</strong>，现已被 <strong>JIT 编译</strong>取代——既为性能，也为规避 eBPF 解释器的 Spectre 类侧信道漏洞。<code class="c">net.core.bpf_jit_enable</code> sysctl 与 <code class="c">CONFIG_BPF_JIT</code> 控制开关（<code class="c">bpftool prog list</code> 里 <code class="c">jited</code> 标志即其产物）。</p>
+<p><strong>指令集/寄存器模型设计成与主流 CPU 架构一一映射</strong>，使 JIT/解释都简单直接——这是 eBPF 能跨 x86/ARM64 高效落地的根基：字节码里的寄存器语义与真实寄存器几乎一一对应，JIT 退化为"翻译"而非"模拟"。</p>
+<p><strong>寄存器</strong>（软件实现，<code class="c">include/uapi/linux/bpf.h</code> 中 <code class="c">BPF_REG_0</code>~<code class="c">BPF_REG_10</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>寄存器</th>
+<th>角色</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R0</td>
+<td><strong>返回值</strong>（helper 返回值 + 程序返回值共用）</td>
+<td>程序退出时 R0 就是返回码（如 XDP_PASS）</td>
+</tr>
+<tr>
+<td>R1–R5</td>
+<td>函数调用参数</td>
+<td>R1 兼任<strong>程序入口的 ctx 指针</strong>；R5 之后就没有了 → helper 最多 5 个参数</td>
+</tr>
+<tr>
+<td>R6–R9</td>
+<td><strong>跨调用保持</strong>（callee-saved）</td>
+<td>helper 调用不破坏——验证器日志里大量 <code class="c">r6 = r1</code> 就是把 ctx 存进 R6 备份（<a href="chapter-06.html#s-6-1">6.1</a>）</td>
+</tr>
+<tr>
+<td>R10</td>
+<td>栈帧指针（只读）</td>
+<td>512 字节栈的底；<code class="c">r10 - 8</code> 是栈顶第一个可用槽</td>
+</tr>
+</tbody>
+</table></div>
+<p>对照：这套寄存器约定和 x86-64 SysV ABI（RDI/RSI/RDX/RCX/R8/R9 传参、RAX 返回、RBX/R12-R15 callee-saved）是刻意同构的——JIT 时 r1→rdi、r6→rbx 几乎直译。</p>
 <p><strong>指令</strong> <code class="c">struct bpf_insn</code>（64 位 / 8 字节）：</p>
 <pre class="code" data-label="C"><code class="c">struct bpf_insn {
-    __u8 code;          /* 操作码 */
+    __u8 code;          /* 操作码：指令大类 + 具体 op */
     __u8 dst_reg:4;     /* 目标寄存器 */
     __u8 src_reg:4;     /* 源寄存器 */
-    __s16 off;          /* 有符号偏移（跳转/访存） */
+    __s16 off;          /* 有符号偏移（跳转目标/访存偏移） */
     __s32 imm;          /* 有符号立即数 */
 };
 </code></pre>
 <ul>
-<li>需要装载 64 位立即数时放不下 → <strong>宽指令编码 16 字节</strong>（两条槽）</li>
+<li>需要装载 64 位立即数时 imm（32 位）放不下 → <strong>宽指令编码 16 字节</strong>（两条槽：<code class="c">ldimm64</code> 占两个 bpf_insn，反汇编里 offset 0 的下一条在 2——见 <a href="#s-3-2">3.2</a> 的反汇编精读）</li>
 <li>指令大类：装载（立即数/内存/寄存器）、存储、算术、条件跳转</li>
-<li>5.12 加入原子指令（ADD/AND/OR/XOR 由 imm 指定）——与 04-cpp 学的原子操作直接对应</li>
+<li>5.12 加入<strong>原子指令</strong>（ADD/AND/OR/XOR 由 imm 指定）——与 04-cpp 学的原子操作直接对应；map value 里的计数器自此可以做内核态原子 <code class="c">xadd</code>，不必"读-改-写"三步</li>
 </ul>
+<p><strong>指令上限</strong>：单个程序 100 万条<strong>已验证指令</strong>（<code class="c">BPF_COMPLEXITY_LIMIT_INSNS</code>）；非特权用户仍是老限制 <code class="c">BPF_MAXINSNS = 4096</code>（定义在 <code class="c">include/uapi/linux/bpf_common.h</code>，不在 bpf.h——全仓 grep 找定义时的最后一个反例）。</p>
 <hr />
 <h2>3.2 XDP 版 Hello World（纯 C）</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;linux/bpf.h&gt;
 #include &lt;bpf/bpf_helpers.h&gt;
-int counter = 0;                       // 全局变量
+int counter = 0;                       // 全局变量（= map，见 3.5）
 SEC(&quot;xdp&quot;)                             // ELF 段名 = 程序类型标记
 int hello(void *ctx) {
     bpf_printk(&quot;Hello World %d&quot;, counter);
@@ -369,12 +397,61 @@ int hello(void *ctx) {
 }
 char LICENSE[] SEC(&quot;license&quot;) = &quot;Dual BSD/GPL&quot;;
 </code></pre>
-<p><strong>要点：</strong>
-- 文件名约定 <code class="c">*.bpf.c</code> 区分内核态代码与用户态代码
-- <code class="c">SEC("license")</code> 是<strong>硬性要求</strong>：部分 helper 是 "GPL only"，声明不兼容时验证器直接拒绝；LSM 类程序必须 GPL 兼容
-- <code class="c">bpf_printk</code>（libbpf 名）/<code class="c">bpf_trace_printk</code>（BCC 名）是同一内核函数的封装
-- XDP 在包<strong>到达网卡入口</strong>的瞬间触发，可改包内容并给裁决（PASS/DROP/REDIRECT…）
-- 部分网卡支持 <strong>XDP 卸载</strong>，程序直接跑在网卡上（DDoS 防护、防火墙、负载均衡利器）</p>
+<p><strong>要点：</strong></p>
+<ul>
+<li>文件名约定 <code class="c">*.bpf.c</code> 区分内核态代码与用户态代码（同一仓库里 <code class="c">.c</code> 是加载器）</li>
+<li><code class="c">SEC("license")</code> 是<strong>硬性要求</strong>：部分 helper 是 "GPL only"（如 <code class="c">bpf_probe_read_kernel</code>），声明不兼容时验证器直接拒绝；LSM 类程序必须 GPL 兼容。libbpf 靠 ELF 段名驱动一切——<code class="c">SEC("xdp")</code> 决定程序类型，段名错了后面全错</li>
+<li><code class="c">bpf_printk</code>（libbpf 名）/<code class="c">bpf_trace_printk</code>（BCC 名）是同一内核函数的封装；输出进 <code class="c">/sys/kernel/debug/tracing/trace_pipe</code>（全机共享、慢，生产用 ring buffer——<a href="chapter-02.html#s-2-3">2.3</a> 坑点 1）</li>
+<li>XDP 在包<strong>到达网卡入口</strong>的瞬间触发，可改包内容并给裁决；<strong>此时还没有任何进程与之关联</strong>（trace 行首 <code class="c">&lt;idle&gt;-0</code>）——网络类程序里 <code class="c">bpf_get_current_pid_tgid()</code> 拿不到有意义的值</li>
+</ul>
+<p><strong>XDP 五种返回码</strong>（<code class="c">include/uapi/linux/bpf.h</code>，v6.6 实测核对）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回码</th>
+<th>值</th>
+<th>语义</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>XDP_ABORTED</td>
+<td><strong>0</strong></td>
+<td>异常中止，报错并丢包</td>
+<td>程序内错误路径；<strong>返回 0 ≠ 成功</strong></td>
+</tr>
+<tr>
+<td>XDP_DROP</td>
+<td>1</td>
+<td>立即丢弃</td>
+<td>黑名单过滤、early drop</td>
+</tr>
+<tr>
+<td>XDP_PASS</td>
+<td>2</td>
+<td>正常继续走内核栈</td>
+<td>默认放行</td>
+</tr>
+<tr>
+<td>XDP_TX</td>
+<td>3</td>
+<td>从同一网卡<strong>弹回发送</strong></td>
+<td>负载均衡应答反射</td>
+</tr>
+<tr>
+<td>XDP_REDIRECT</td>
+<td>4</td>
+<td>转发到另一网卡/CPU（配合 devmap/cpumap）</td>
+<td>RSS 定向、旁路采集</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>部分网卡支持 <strong>XDP 卸载</strong>（offload），程序直接跑在网卡上——包进主机内存之前就被处理掉（DDoS 清洗、防火墙、负载均衡利器）；代价是网卡固件的功能子集（卸载路径只支持部分 helper）</li>
+<li>XDP 程序按<strong>接口</strong>挂载（不同接口可挂不同程序），但一个接口只能挂一个——多逻辑要靠程序内部分发（<a href="chapter-07.html#s-7-2">7.2</a> 坑点 1）</li>
+</ul>
+<p><strong>衔接</strong>：程序怎么编译、验证、加载、挂到网卡——<a href="#s-3-2">3.2 编译检查与加载附加</a>；全局变量为什么让 bpftool 显示"没写 map 却有 2 个 map"——<a href="#s-3-3">3.3</a>。</p>
       </section>
       <section class="section" id="s-3-2">
         <div class="sec-head"><div class="sec-no">3.2</div><h2>编译检查与加载附加（原书 §3.3–3.4）</h2></div>
@@ -447,11 +524,41 @@ rm /sys/fs/bpf/hello                               # 删 pin 文件 = 卸载
 <p>合并自原 section-5～6。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
 </blockquote>
 <h2>3.5 全局变量 = map</h2>
-<p>2019 年起支持全局变量，实现就是 map：
-- <code class="c">hello.bss</code>（array map，1 项）→ 初始化为 0 的全局变量（counter）
-- <code class="c">hello.rodata</code>（array map，1 项，frozen）→ 只读数据（格式串 "Hello World %d"）</p>
-<p>有 BTF（<code class="c">-g</code>）时 <code class="c">bpftool map dump</code> 能漂亮打印变量名和值；没有则只能看裸十六进制（<code class="c">19 01 00 00</code> = 小端 281）。</p>
-<p><strong>pin 机制</strong>：bpffs（<code class="c">/sys/fs/bpf/</code>）上的伪文件持有程序/map 的引用；删除文件即释放（无 <code class="c">prog unload</code> 命令时用 rm）。用户态程序退出后，pinned 的程序仍留在内核。</p>
+<p>2019 年（5.10 前后）起支持全局变量，实现就是 map——<strong>编译器/加载器把 ELF 的数据段变成特殊 array map，全局变量读写被改写为 map 访问</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ELF 段</th>
+<th>map 形态</th>
+<th>内容</th>
+<th>初始化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">hello.bss</code></td>
+<td>array map，1 项</td>
+<td>初始化为 <strong>0</strong> 的全局变量（<code class="c">int counter</code>）</td>
+<td>加载时内核清零</td>
+</tr>
+<tr>
+<td><code class="c">hello.data</code></td>
+<td>array map，1 项</td>
+<td>初始化为<strong>非 0</strong> 的全局变量</td>
+<td>加载时从 ELF 拷入</td>
+</tr>
+<tr>
+<td><code class="c">hello.rodata</code></td>
+<td>array map，1 项，<strong>frozen</strong></td>
+<td>只读数据（格式串 <code class="c">"Hello World %d"</code>）</td>
+<td>加载时冻结，之后写会被拒</td>
+</tr>
+</tbody>
+</table></div>
+<p>（Hello World 例子里 counter 是 0 初始化 → .bss；格式串是 const → .rodata——所以源码没写 map，<code class="c">bpftool prog show</code> 却关联了 2 个 map。<a href="#s-3-4">3.4</a> 自测题 3 的答案。）</p>
+<p><strong>性能要点</strong>：全局变量虽然实现为 map，但 verifier/JIT 会把它优化成<strong>直接内存访问</strong>（map value 地址在加载时已确定，指令里就是 <code class="c">ldimm64 r6, &lt;地址&gt;</code> + 普通访存）——不走 <code class="c">bpf_map_lookup_elem</code> helper，无哈希查找开销。<strong>内核态全局变量的读写成本 ≈ 普通内存访问</strong>，这是 eBPF 里最便宜的持久状态。</p>
+<p>有 BTF（编译加 <code class="c">-g</code>）时 <code class="c">bpftool map dump name hello</code> 能漂亮打印变量名和值；没有则只能看裸十六进制（<code class="c">19 01 00 00</code> = 小端 281）——BTF 是"map 的元数据"，第 5 章 CO-RE 的地基。</p>
+<p><strong>pin 机制</strong>：bpffs（<code class="c">/sys/fs/bpf/</code>）上的伪文件持有程序/map 的引用；删除文件即释放（没有 <code class="c">bpftool prog unload</code> 命令时用 rm）。用户态程序退出后，pinned 的程序仍留在内核。pin 是<strong>路径即引用</strong>的设计——把"内核对象的生命周期"映射成"文件系统的生命周期"，运维语义友好（ls 看得见、rm 能删、重启清空）。</p>
 <hr />
 <h2>3.6 BPF to BPF 调用（libbpf 才有）</h2>
 <pre class="code" data-label="C"><code class="c">static __attribute((noinline)) int get_opcode(struct bpf_raw_tracepoint_args *ctx) {
@@ -464,8 +571,51 @@ int hello(struct bpf_raw_tracepoint_args *ctx) {
    return 0;
 }
 </code></pre>
-<p>字节码里 <code class="c">call pc+7</code> 跳到子程序偏移 8 处——<strong>真实函数调用，非内联</strong>。函数调用要把状态压栈以便返回，而栈只有 512 字节 → <strong>嵌套深度受限</strong>。（<code class="c">noinline</code> 仅为演示防编译器优化掉；生产代码让编译器自行决定。）</p>
-<p>对照第 2 章：尾调用替换栈帧不增长栈，BPF-to-BPF 调用消耗栈但可返回——5.10 起两者可混用。</p>
+<p>字节码里 <code class="c">call pc+7</code> 跳到子程序偏移 8 处——<strong>真实函数调用，非内联</strong>（编译器默认会把小函数内联掉，<code class="c">noinline</code> 仅为演示；生产代码让编译器自行决定）。函数调用要把状态压栈以便返回，而栈只有 512 字节（<code class="c">MAX_BPF_STACK</code>，<code class="c">include/linux/filter.h:90</code>）→ <strong>嵌套深度受限</strong>（经验上 5 层左右就要掂量了，每层还要留局部变量空间）。</p>
+<p><strong>尾调用 vs 子程序对照</strong>（与 <a href="chapter-02.html#s-2-2">2.2</a> 呼应）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>BPF-to-BPF 调用</th>
+<th>尾调用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>字节码</td>
+<td><code class="c">call pc+N</code>（相对偏移）</td>
+<td><code class="c">call imm=2</code>（特殊操作码）+ PROG_ARRAY 查表</td>
+</tr>
+<tr>
+<td>栈</td>
+<td><strong>消耗</strong>：子函数栈叠在调用者之上</td>
+<td><strong>替换</strong>：被调程序从零开始，调用者栈作废</td>
+</tr>
+<tr>
+<td>能否返回</td>
+<td>能（拿返回值继续）</td>
+<td><strong>永不返回</strong>（类比 execve 替换进程映像）</td>
+</tr>
+<tr>
+<td>深度上限</td>
+<td>512B 栈间接限制（几层）</td>
+<td>33 层（MAX_TAIL_CALLS）</td>
+</tr>
+<tr>
+<td>跨程序共享状态</td>
+<td>栈上传递即可</td>
+<td>只能走 map</td>
+</tr>
+<tr>
+<td>组合</td>
+<td>5.10 起两者可混用（先子调用再尾调用出去）</td>
+<td>同左</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>选型直觉</strong>：要复用代码片段、拿返回值 → 子程序；要"接力棒式"串起不同策略的阶段 → 尾调用 + PROG_ARRAY（策略做成数据）。</p>
+<p><strong>衔接</strong>：本章坑点与 HFT 关联 → <a href="#s-3-4">3.4</a>；BCC 全流程手工化对比 → 第 4 章 <a href="chapter-04.html#s-4-1">bpf() 总览</a>。</p>
       </section>
       <section class="section" id="s-3-4">
         <div class="sec-head"><div class="sec-no">3.4</div><h2>坑点HFT关联与自测（原书 §3.7–3.9）</h2></div>
@@ -474,21 +624,25 @@ int hello(struct bpf_raw_tracepoint_args *ctx) {
 </blockquote>
 <h2>3.7 坑点清单</h2>
 <ol>
-<li><strong>XDP 返回 0 = XDP_ABORTED ≠ 成功</strong>——返回 0 挂到 eth0 会丢掉所有包，SSH 直连机器直接失联。测试 XDP 放容器/虚拟网卡里（参考 lizrice/lb-from-scratch）</li>
-<li>忘了 <code class="c">SEC("license")</code> 或用了 GPL-only helper 却声明专有许可 → 验证器拒绝</li>
-<li>编译不加 <code class="c">-g</code>：没 BTF → bpftool 无法漂亮打印、CO-RE 不可用（第 5 章）</li>
-<li>bpftool 必定 pin；忘删 pin 文件 = 程序滞留内核（重启前一直占内存）</li>
-<li><code class="c">net.core.bpf_jit_enable</code> sysctl / <code class="c">CONFIG_BPF_JIT</code> 控制 JIT——性能测试前先确认开着</li>
-<li>tag 与 id 的区别：tag 跟着内容走（内容变 tag 变），id 跟着加载实例走</li>
+<li><strong>XDP 返回 0 = XDP_ABORTED ≠ 成功</strong>——返回 0 挂到 eth0 会丢掉所有包，SSH 直连机器直接失联。五种返回码（ABORTED=0/DROP=1/PASS=2/TX=3/REDIRECT=4，v6.6 <code class="c">bpf.h</code> 核对）与直觉相反：C 语言的"0=成功"惯性在这里是毒。测试 XDP 放容器/虚拟网卡里（参考 lizrice/lb-from-scratch），物理网卡上先 <code class="c">XDP_PASS</code> 起步再逐步加逻辑</li>
+<li>忘了 <code class="c">SEC("license")</code> 或用了 GPL-only helper 却声明专有许可 → 验证器拒绝（<code class="c">bpf_probe_read_kernel</code> 等全是 GPL-only；LSM 程序整体必须 GPL 兼容）</li>
+<li>编译不加 <code class="c">-g</code>：没 BTF → bpftool 无法漂亮打印、CO-RE 不可用（第 5 章）、验证器日志里没有 C 源码行——排错成本直接翻倍</li>
+<li>bpftool 必定 pin；忘删 pin 文件 = 程序滞留内核（重启前一直占 memlock 内存），下次 load 同名路径会报"File exists"</li>
+<li><code class="c">net.core.bpf_jit_enable</code> sysctl / <code class="c">CONFIG_BPF_JIT</code> 控制 JIT——性能测试前先确认开着（<code class="c">bpftool prog list</code> 看 <code class="c">jited</code> 标志）；解释执行的吞吐差一个量级，还带着 Spectre 侧信道风险</li>
+<li>tag 与 id 的区别：tag 跟着内容走（指令的 SHA 哈希，内容变 tag 变），id 跟着加载实例走（每次加载新分配）。同一程序重加载：tag 不变、id 变——CI 里做"程序是否真的是这版"的校验用 tag</li>
 </ol>
 <hr />
 <h2>3.8 HFT 关联</h2>
-<ul>
-<li><code class="c">bpftool prog dump jited</code> 是核对"最终执行的机器码"的手段——类比反汇编交易热路径确认编译器优化，eBPF 侧要确认验证器改写和 JIT 没引入意外</li>
-<li>memlock 常驻内存：eBPF 程序和数据永不换页——与 HFT 的 mlockall 哲学一致，天然适合延迟敏感路径</li>
-<li>XDP 卸载到网卡 = 在包进主机内存前处理，理论上限低于 DPDK 但零改动内核栈——交易前置的行情过滤器可以用这个层次</li>
-<li>读字节码是理解验证器日志的前置技能（第 6 章验证失败报的都是指令偏移）</li>
-</ul>
+<h3>1. <code class="c">bpftool prog dump jited</code> = eBPF 侧的"反汇编确认"</h3>
+<p>交易热路径调优时你会反汇编二进制确认编译器没自作聪明；eBPF 侧同理——验证器会改写字节码（如把全局变量访问重定位成绝对地址、dead code 消除），JIT 再翻译成机器码。<strong>"我写的源码"和"CPU 执行的机器码"之间有两层改写</strong>，性能异常时 <code class="c">dump jited</code> 是唯一真相。bytes_xlated/bytes_jited 两个数字（<a href="#s-3-2">3.2</a>）先看规模是否合理。</p>
+<h3>2. memlock 常驻内存：与 mlockall 哲学天然一致</h3>
+<p>eBPF 程序和数据锁定内存、永不换页——交易机把策略进程 mlockall 防缺页尖刺，eBPF 观测程序天然享受同等待遇，<strong>观测层自己不会成为缺页抖动源</strong>。memlock rlimit（老内核）或 memcg 计费（新内核）要注意额度。</p>
+<h3>3. XDP 卸载 = 行情前置过滤的理论最优层</h3>
+<p>包在进主机内存<strong>之前</strong>就被网卡处理——比 DPDK 少一次 DMA、比 tc-BPF 更早。交易机网口的"非行情流量 early drop"（心跳风暴、异常广播）放这层做，CPU 完全无感。限制：offload 只支持 helper 子集、网卡固件版本绑定（换网卡=回归测试）。</p>
+<h3>4. 512B 栈 → 观测探针的"薄"是强制的</h3>
+<p><a href="chapter-02.html#s-2-3">2.3</a> 已论证：小栈强制薄探针、测量工具越薄数据越可信。本章补充：<strong>复杂逻辑的正确去处是用户态</strong>（内核只做"取时间戳+写 map"），子程序/尾调用是"复用与接力"的组织手段，不是"塞复杂逻辑"的许可。</p>
+<h3>5. 读字节码是验证器日志的前置技能</h3>
+<p>第 6 章验证失败报的全是<strong>指令偏移</strong>（<code class="c">0: (bf) r6 = r1</code>）——不会读字节码就只会对着报错发呆。<a href="#s-3-2">3.2</a> 的反汇编精读 + 宽指令占两槽的细节（offset 0 的下一条在 2）是基础功。</p>
 <hr />
 <h2>3.9 自测题</h2>
 <ol>
@@ -499,6 +653,17 @@ int hello(struct bpf_raw_tracepoint_args *ctx) {
 <li>BPF-to-BPF 调用和尾调用在字节码层和栈使用上的区别？</li>
 <li>为什么 trace 输出显示 <code class="c">&lt;idle&gt;-0</code>？这反映 XDP 事件的什么特性？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> R0=返回值（helper 返回 + 程序返回码共用）；R1–R5=函数调用参数（最多 5 个），R1 兼任程序入口的 ctx 指针；R6–R9=跨 helper 调用保持（callee-saved，所以入口先 <code class="c">r6 = r1</code> 备份 ctx）；R10=栈帧指针（只读，512B 栈的底）。寄存器模型与 x86-64 ABI 刻意同构，JIT 近乎直译。</p>
+<p><strong>2.</strong> <code class="c">bpf_insn</code> 的 imm 字段只有 32 位，装不下 64 位立即数（如全局变量的内核态地址）→ <code class="c">ldimm64</code> 占<strong>两个指令槽</strong>（16 字节），反汇编里 offset 0 的下一条指令在 offset 2。</p>
+<p><strong>3.</strong> 全局变量实现为 map：<code class="c">counter</code>（0 初始化）→ <code class="c">.bss</code> 段 map；格式串（const）→ <code class="c">.rodata</code> 段 map（frozen）。源码没写 map，但 ELF 段被加载器变成了 2 个 array map。</p>
+<p><strong>4.</strong> <strong>id 和 pinned path 唯一</strong>；name 和 tag 可重复（不同进程可加载同名程序、相同内容程序 tag 相同）。</p>
+<p><strong>5.</strong> 字节码层：子程序是 <code class="c">call pc+N</code> 相对偏移跳转、正常函数调用；尾调用是特殊操作码 + PROG_ARRAY 查表替换。栈：子程序<strong>叠</strong>在调用者栈上、可返回（受 512B 总量限制，几层就满）；尾调用<strong>替换</strong>调用者、栈从零开始、永不返回（33 层上限）。5.10 起可混用。</p>
+<p><strong>6.</strong> 包到达网卡入口时<strong>没有任何进程与之关联</strong>——XDP 在驱动层触发，早于中断/软中断分配给任何 socket，<code class="c">bpf_get_current_pid_tgid()</code> 返回的是当时 CPU 上恰好在跑的（无关）任务，通常是 idle。这解释了网络类程序为何不能按"当前进程"过滤。</p>
+</details>
+<hr />
+<p><strong>衔接</strong>：第 4 章把 BCC 的黑盒完全拆开——bpf() syscall 的全量命令、对象生命周期、kprobe 挂载的 syscall 三件套。</p>
       </section>
 
 

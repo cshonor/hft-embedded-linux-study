@@ -332,50 +332,62 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p>合并自原 section-1～2。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
 </blockquote>
 <h2>5.1 BCC 的老方案为什么不行</h2>
-<p>BCC 的思路：<strong>在目标机器上运行时现场编译</strong> eBPF 源码。痛点（原文列举）：</p>
+<p>BCC 的思路：<strong>在目标机器上运行时现场编译</strong> eBPF 源码（源码作为字符串嵌在 Python 脚本里，运行时交 Clang 编译）。痛点（原文列举）：</p>
 <ol>
-<li>每台目标机都要装<strong>编译工具链 + 内核头文件</strong>（头文件默认往往不存在）</li>
+<li>每台目标机都要装<strong>编译工具链 + 内核头文件</strong>（头文件默认往往不存在——服务器最小化安装的常态）</li>
 <li>每次启动工具都要等编译，<strong>数秒延迟</strong></li>
-<li>大规模同构机器集群上逐台重复编译，<strong>浪费算力</strong></li>
+<li>大规模同构机器集群上逐台重复编译，<strong>浪费算力</strong>（100 台机器编译 100 次同一个程序）</li>
 <li>打进容器镜像能解决分发，但解决不了内核头文件缺失，多个 BCC 容器还会互相重复</li>
-<li><strong>嵌入式设备内存不够</strong>跑编译</li>
+<li><strong>嵌入式设备内存不够</strong>跑编译（BCC 交叉编译不可用的结论在 <a href="../../../06.6-systems-performance/html/chapter-04.html#s-4-1">06.6 4.1 危机工具</a> 已展开）</li>
 </ol>
+<p><strong>还有一条书中没列但工程上更痛的</strong>：BCC 方言的 C 不是标准 C——<code class="c">BPF_RINGBUF_OUTPUT</code>、对象方法等宏只在 BCC 里有（<a href="chapter-10.html#s-10-3">10.3 坑点 4</a>），代码不可移植到 libbpf，等于绑死在 BCC 生态。</p>
 <blockquote>
 <p>作者原话：如果你要开发一个正经的新 eBPF 项目、尤其是要分发给别人用，<strong>不推荐</strong>传统 BCC 方式。BCC 适合学习和快速原型（Python 用户态代码简洁）；BCC 仓库自己都把工具迁移到了 <code class="c">libbpf-tools/</code> 目录（C + libbpf + CO-RE 版本）。</p>
 </blockquote>
+<p><strong>BCC 没死</strong>：作为<strong>运行时</strong>它退役了（生产分发场景），作为<strong>工具集入口</strong>它还活着——<code class="c">bcc-tools</code> 包里的 runqlat/biolatency 依然是运维第一反应的观测武器（<a href="../../../06.6-systems-performance/html/chapter-04.html#s-4-1">06.6 4.1</a> 的危机工具包清单）。准确表述：<strong>BCC 的开发范式退役，BCC 的工具资产永存</strong>。</p>
 <hr />
 <h2>5.2 CO-RE 五要素</h2>
+<p>CO-RE（Compile Once, Run Everywhere）的核心命题：<strong>在开发机上编译一次，产出的字节码能在不同内核版本的目标机上运行</strong>。破题思路：编译时不知道目标内核的结构布局 → 把"结构布局依赖"变成<strong>加载时重定位</strong>。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>要素</th>
 <th>作用</th>
+<th>缺了会怎样</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>BTF</strong></td>
 <td>描述数据结构与函数签名的格式；用来对比"编译时布局"与"运行时布局"的差异。5.4 起内核自带（需 <code class="c">CONFIG_DEBUG_INFO_BTF</code>）</td>
+<td>无法知道目标内核的 <code class="c">task_struct</code> 长什么样，重定位无从谈起</td>
 </tr>
 <tr>
 <td><strong>内核头文件</strong></td>
-<td>不再逐个 include 内核头文件，用 <code class="c">bpftool</code> 生成一个 <code class="c">vmlinux.h</code> 全量搞定</td>
+<td>不再逐个 include 内核头文件，用 <code class="c">bpftool</code> 生成一个 <code class="c">vmlinux.h</code> 全量搞定（把整个内核的类型定义压成一个头）</td>
+<td>手写结构定义 → 布局漂移 → 静默读错内存（无 BTF 的树莓派内核正是这状态）</td>
 </tr>
 <tr>
 <td><strong>编译器支持</strong></td>
-<td>Clang 加 <code class="c">-g</code> 编译时生成 CO-RE 重定位信息（GCC 12 起也支持 BPF 目标的 CO-RE）</td>
+<td>Clang 加 <code class="c">-g</code> 编译时生成 CO-RE 重定位信息（<code class="c">.BTF.ext</code> 段里的 <code class="c">preserve_access_index</code> 标记——字段访问不硬编码偏移，留待重定位）。GCC 12 起也支持 BPF 目标的 CO-RE</td>
+<td>字节码里偏移写死，换内核就读错字段</td>
 </tr>
 <tr>
 <td><strong>重定位库</strong></td>
 <td>加载时改写字节码适配目标内核：C 用 libbpf，Go 用 cilium/ebpf，Rust 用 Aya</td>
+<td>没人执行重定位，CO-RE 只是纸面能力</td>
 </tr>
 <tr>
 <td><strong>BPF skeleton</strong>（可选）</td>
-<td><code class="c">bpftool gen skeleton</code> 自动生成的生命周期管理代码，比裸调库方便</td>
+<td><code class="c">bpftool gen skeleton</code> 自动生成的生命周期管理代码（open/load/attach 一条龙 + 类型安全的对象访问），比裸调库方便</td>
+<td>手写几十行样板代码，容易漏 attach/cleanup</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>重定位发生在哪一刻</strong>：libbpf 加载 <code class="c">.o</code> 时——读目标内核的 BTF（<code class="c">/sys/kernel/btf/vmlinux</code>）、对比编译时嵌入的 BTF、把字节码里的字段偏移改成目标内核的值，然后才 PROG_LOAD。<strong>"一次编译"的字节码在每台机器上被微调成各自的版本</strong>——这是 CO-RE 与"为每个内核版本编译一份"的分发模型的本质区别。</p>
+<p><strong>CO-RE 的适用边界</strong>（与 <a href="../../../06.6-systems-performance/html/chapter-15.html#s-15-1-7">06.6 15.1.7 BCC vs bpftrace</a> 的升格工作流衔接）：结构布局差异可以重定位，但<strong>语义差异</strong>（函数改名、逻辑重构）重定位不了——内核大版本跳跃后仍需回归测试。真机佐证：6.18 的 <code class="c">do_sys_openat2</code> 参数已从 <code class="c">struct filename *</code> 重构为 <code class="c">const char __user *</code>（<a href="chapter-07.html#s-7-1">7.1 真机</a>）——这种变化 CO-RE 挡不住，只有挂点选稳定接口（tracepoint/syscall 入口）才稳。</p>
 <p>必读材料（作者反复点名 Andrii Nakryiko）：CO-RE 博客、《BPF CO-RE Reference Guide》、libbpf-bootstrap 教程、BCC→libbpf 迁移指南。</p>
+<p><strong>衔接</strong>：BTF 数据长什么样、vmlinux.h 怎么生成 → <a href="#s-5-2">5.2</a>；内核侧/用户侧的完整实现 → <a href="#s-5-3">5.3</a>。</p>
       </section>
       <section class="section" id="s-5-2">
         <div class="sec-head"><div class="sec-no">5.2</div><h2>BTF与vmlinux（原书 §5.3–5.4）</h2></div>

@@ -515,23 +515,36 @@ ip link set dev eth0 xdp off                         # 卸载
 </blockquote>
 <h2>7.4 坑点清单</h2>
 <ol>
-<li><strong>一个接口只能挂一个 XDP 程序</strong>——再挂报 <code class="c">Device or resource busy</code>；多逻辑要用程序内部分发（第 2 章 PROG_ARRAY 尾调用）</li>
-<li>kprobe 挂到被内联的函数 = 静默没有入口点</li>
-<li>kprobe 声明参数时只能省略<strong>尾部</strong>参数，不能跳过中间的</li>
-<li>tracepoint 前 4 个公共字段（common_type/flags/preempt_count/pid）访问即验证失败</li>
-<li>uprobe 的库路径是架构全路径，跨架构部署要分别定义；容器内路径 ≠ 宿主机路径</li>
-<li>Go &lt; 1.17 二进制参数在栈上，pt_regs 方案失效</li>
-<li>kfunc 无稳定性承诺，生产分发慎用（helper 才有 UAPI 保证）</li>
+<li><strong>一个接口只能挂一个 XDP 程序</strong>——再挂报 <code class="c">Device or resource busy</code>；多逻辑要用程序内部分发（第 2 章 PROG_ARRAY 尾调用）。注意多协议共存（freplace/mprog 框架）是新内核的演进方向，成书时（2022）通用路径仍是"单程序+内部分发"</li>
+<li>kprobe 挂到被内联的函数 = <strong>静默没有入口点</strong>——符号表里有名字（static inline 也有符号信息），但运行时没有独立函数体可断点；先 <code class="c">bpftrace -l</code> 验证路径（<a href="#s-7-1">7.1 真机</a>：猜符号名必错，<code class="c">do_sys_open</code> 0 触发、openat 全走 <code class="c">do_sys_openat2</code>）</li>
+<li>kprobe 声明参数时只能省略<strong>尾部</strong>参数，不能跳过中间的——参数按内存顺序（寄存器序）排列，跳中间=后面全错位</li>
+<li>tracepoint 前 4 个公共字段（common_type/flags/preempt_count/pid）访问即验证失败——ctx 访问检查按 format 文件的用户字段放行</li>
+<li>uprobe 的库路径是架构全路径（<code class="c">/usr/lib/aarch64-linux-gnu/libssl.so.3</code>），跨架构部署要分别定义；容器内路径 ≠ 宿主机路径（探针路径按容器内挂载命名空间解析）</li>
+<li>Go &lt; 1.17 二进制参数在栈上，pt_regs 取参方案失效——Go 1.17 起才改用寄存器传参；老 Go 二进制要靠 USDT 或 Frida 类方案</li>
+<li>kfunc 无稳定性承诺，生产分发慎用（helper 才有 UAPI 保证）——kfunc 是内核内部函数直接暴露给 BPF，内核重构说变就变</li>
+<li>（真机补充，lab06）<strong>内核重构会改函数语义</strong>：6.18 的 <code class="c">do_sys_openat2</code> PARM2 直接是 <code class="c">const char __user *</code>（旧资料说是 <code class="c">struct filename *</code>）——kprobe 签名以真机实测为准，书上/网上的签名都可能是旧版本</li>
 </ol>
 <hr />
 <h2>7.5 HFT 关联</h2>
-<ul>
-<li><strong>选型决策树</strong>：行情链路观测优先 fentry/fexit（新内核、开销最低、参数+返回值全拿）；syscall 级审计用 tp_btf（稳定接口 + 免手写结构）；热点函数计时用 kprobe+kretprobe 或 fentry+fexit 对（计算延迟分布进 histogram map）</li>
-<li><strong>fexit 拿全参+返回值</strong>对测量"某内核路径耗时与返回原因"一步到位，避免 kprobe/kretprobe 两次挂载、跨事件配对的复杂度</li>
-<li><strong>XDP 单程序限制</strong>：交易机网卡入口做过滤/early drop 时，所有逻辑（黑名单、速率限制、重定向到旁路采集）必须在一个 XDP 程序内组织好</li>
-<li><strong>uprobe 钩 SSL/加密库</strong>思路同样适用于钩交易网关二进制的关键函数（下单路径计时），但注意静态链接与 Go 调用约定的坑</li>
-<li>LSM 返回码可阻断操作 → 可做交易进程的<strong>内核级行为白名单</strong>（如禁止非交易进程 connect 交易所网段），见第 9 章</li>
-</ul>
+<h3>1. 挂点选型决策树（行情链路观测）</h3>
+<pre class="code" data-label="code"><code class="c">要观测什么？
+├─ 内核函数路径（耗时/返回原因） ──&gt; fentry/fexit（5.5+/ARM 6.0+）
+│     开销最低 + fexit 全参+返回值一步到位，免 kprobe/kretprobe 两次挂载、跨事件配对
+├─ syscall 级审计/资产盘点 ──&gt; tp_btf（稳定接口 + 免手写结构）
+│     签名来自 vmlinux.h 的 trace_event_raw_*，免版本漂移
+├─ 热点内核函数计时（老内核） ──&gt; kprobe + kretprobe 出入对
+│     跨事件配对用 @start[tid] map，延迟分布进 hist map
+└─ 用户态二进制关键函数 ──&gt; uprobe/uretprobe（注意静态链接与 Go 调用约定）
+</code></pre>
+<p><strong>fexit 拿全参+返回值</strong>对测量"某内核路径耗时与返回原因"一步到位——kretprobe 只有 ret、拿不到入参，要重建"哪个 fd 的哪次 read 慢了"得跨两个探针配对；fexit 一个探针全拿到，<strong>配对逻辑消失 = 丢样本的风险消失</strong>（跨事件配对在事件洪峰下会丢半边）。</p>
+<h3>2. XDP 单程序限制 = 交易机网口的架构约束</h3>
+<p>所有入口逻辑（黑名单、速率限制、重定向到旁路采集）必须在一个 XDP 程序内组织好——用 PROG_ARRAY 尾调用做内部分发：主程序查表决定调哪个子程序，<strong>策略做成数据</strong>（改黑名单改 map，不改程序不重新加载）。这是"热更新"在 eBPF 侧的标准形态。</p>
+<h3>3. uprobe 钩交易网关二进制</h3>
+<p>钩 SSL/加密库的思路同样适用于钩交易网关的关键函数（下单路径计时）——<strong>不用改一行被测代码</strong>是最大优点（对不能重编译的第三方网关是唯一选择）。三个前提：函数有符号（非 stripped）、动态链接（或接受静态地址硬编码）、C 调用约定（Go 老版本出局）。开销 ~1-2µs/次——纳秒级路径不可用，微秒级路径可用。</p>
+<h3>4. LSM 返回码可阻断 → 内核级行为白名单</h3>
+<p>LSM 程序返回非零直接让内核拒绝操作（区别于追踪类的返回码被忽略）——可做交易进程的<strong>内核级行为白名单</strong>（如禁止非交易进程 connect 交易所网段），见<a href="chapter-09.html#s-9-1">第 9 章</a>。这比 iptables 强在<strong>带进程上下文</strong>（哪个 PID/cgroup 干的），比 seccomp 强在<strong>动态可换</strong>。</p>
+<h3>5. 真机教训的泛化：挂点验证先于程序开发</h3>
+<p>lab06 的教训（<code class="c">do_sys_open</code> 零触发、<code class="c">do_sys_openat2</code> 签名变了）泛化成纪律：<strong>写程序前先用 bpftrace 一行命令验证挂点真的在目标路径上</strong>——<code class="c">bpftrace -l "*openat*"</code> 列挂点、<code class="c">bpftrace -e 'kprobe:xxx { @[comm]=count(); }'</code> 数触发。挂错点的 eBPF 程序不报错、只是静默零数据，是"工具坏了还是路径错了"排查里最费时间的一类。</p>
 <hr />
 <h2>7.6 自测题</h2>
 <ol>
@@ -544,6 +557,19 @@ ip link set dev eth0 xdp off                         # 卸载
 <li>为什么一个接口挂第二个 XDP 程序会失败？多逻辑怎么组织？</li>
 <li>helper 函数和 kfunc 在兼容性承诺上的区别？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> ①可附加的事件；②上下文参数的结构（ctx 指向什么）；③可用的 helper 函数集合（验证器按此检查）；④返回码的含义（XDP：放行/丢包/重定向；追踪类：被忽略；LSM：非零=拒绝操作）。</p>
+<p><strong>2.</strong> <code class="c">BPF_KPROBE_SYSCALL</code>：挂 <strong>syscall 入口</strong>（ksyscall/），参数按 syscall 签名取（稳定接口，跨内核稳）；<code class="c">BPF_KPROBE</code>：挂<strong>任意内核函数</strong>（kprobe/），参数按内核函数签名取（含 struct 指针，随内核版本变）；<code class="c">BPF_PROG</code>：fentry/fexit/tp_btf 等宏（<code class="c">BPF_PROG(name, 类型化参数...)</code>，配合 vmlinux.h 的类型直接声明参数）。</p>
+<p><strong>3.</strong> fexit <strong>同时拿到入参和返回值</strong>（kretprobe 只有 ret）。依赖 <strong>BPF trampoline</strong> 机制（函数出入口动态生成跳板代码）。x86 5.5 引入，ARM64 要 6.0。</p>
+<p><strong>4.</strong> tp：手写结构体照抄 format 文件（offset/size 对齐），慢但兼容性最好；raw_tp：跳过参数映射直接拿原始 <code class="c">__u64</code> 数组，最快但自己转型（架构相关）；tp_btf：BTF 自动提供 <code class="c">trace_event_raw_*</code> 匹配结构（vmlinux.h 里），免手写、免漂移——<strong>首选</strong>（需要目标内核有 BTF）。</p>
+<p><strong>5.</strong> 过滤的是发给 tcpdump 等观察工具的<strong>数据副本</strong>（packet socket 路径），不是发给应用的数据——"SOCKET_FILTER"听起来像过滤应用流量，实际是抓包过滤；应用数据不受它影响。</p>
+<p><strong>6.</strong> LSM 返回非零 = <strong>内核拒绝该操作</strong>（阻断生效，安全语义）；追踪类返回码被内核<strong>忽略</strong>（纯观察）。</p>
+<p><strong>7.</strong> XDP 挂载点是 per-interface 的单槽位（驱动层只有一个 XDP 程序入口），第二个程序无处可放 → EBUSY。多逻辑：程序内部分发——PROG_ARRAY 尾调用（策略查表决定调谁）或 if/else 单体程序。</p>
+<p><strong>8.</strong> helper 是 <strong>UAPI 稳定接口</strong>：一经定义不再变化，跨内核版本可依赖；kfunc 是内核内部函数直接注册给 BPF，<strong>无兼容性保证</strong>（内核重构即变），生产分发要自行承担版本适配。</p>
+</details>
+<hr />
+<p><strong>衔接</strong>：挂点选定后，网络路径上的 XDP/tc 细节与 uprobe 在 Kubernetes 的限制 → <a href="chapter-08.html#s-8-1">8.1/8.2</a>；安全场景的挂点选择（TOCTOU 为什么 syscall 入口不行）→ 第 9 章。</p>
       </section>
 
 

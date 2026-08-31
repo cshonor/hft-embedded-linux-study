@@ -537,22 +537,26 @@ processed 7 insns (limit 1000000)
 </blockquote>
 <h2>6.5 坑点清单</h2>
 <ol>
-<li><strong>验证器看的是字节码</strong>：源码改了没复现预期报错，先想编译器是不是把代码优化没了</li>
-<li><code class="c">unknown func</code> 先查<strong>程序类型</strong>是否支持该 helper，别怀疑内核版本</li>
-<li>循环上界来自全局变量/map 值 = 验证器无法证明有界 = 拒绝；改成常量或用 <code class="c">bpf_loop()</code></li>
-<li><code class="c">if (p != 0)</code> 检查必须在<strong>解引用之前</strong>；<code class="c">bpf_map_lookup_elem</code> 返回值不判空直接用是最常见新手错误</li>
-<li>无 return 的函数：碰巧调过 helper 也能过验证，但返回值是 helper 的残留——语义错误验证器管不了</li>
-<li>非 root：4096 指令老限制仍在</li>
-<li>报错里的 "map value" 未必是你建的 map——全局变量也是 map</li>
+<li><strong>验证器看的是字节码</strong>：源码改了没复现预期报错，先想编译器是不是把代码优化没了（-O2 下不可达分支、常量折叠都会改写指令序列）</li>
+<li><code class="c">unknown func</code> 先查<strong>程序类型</strong>是否支持该 helper，别怀疑内核版本——helper 可用性由 <code class="c">get_func_proto</code> 按程序类型查表（<a href="chapter-07.html#s-7-1">7.1</a>：程序类型决定 helper 集合），<code class="c">bpftool feature</code> 一查便知</li>
+<li>循环上界来自全局变量/map 值 = 验证器无法证明有界 = 拒绝；改成常量或用 <code class="c">bpf_loop()</code>。注意坑中有坑：<strong>全局变量也是 map</strong>（<a href="chapter-03.html#s-3-3">3.3</a>）——<code class="c">for (i = 0; i &lt; counter; i++)</code> 里 counter 是 .bss map 的值，验证器按"任意值"处理</li>
+<li><code class="c">if (p != 0)</code> 检查必须在<strong>解引用之前</strong>；<code class="c">bpf_map_lookup_elem</code> 返回值不判空直接用是最常见新手错误——验证器按指令序做值域推理，检查和解引用的<strong>相对顺序</strong>就是它推理的依据</li>
+<li>无 return 的函数：碰巧调过 helper 也能过验证，但返回值是 helper 的残留——语义错误验证器管不了（验证器保证"不崩溃"，不保证"干了你想要的事"）</li>
+<li>非 root：4096 指令老限制仍在（<code class="c">BPF_MAXINSNS</code>，bpf_common.h）——同一程序 root 能过、普通用户被拒时先想这条</li>
+<li>报错里的 "map value" 未必是你建的 map——全局变量也是 map（.bss/.data/.rodata）；日志里 <code class="c">map_value</code> + off 偏移可能指的就是你的全局变量</li>
 </ol>
 <hr />
 <h2>6.6 HFT 关联</h2>
-<ul>
-<li><strong>验证器 = 交易系统里"确定性执行"的守门员</strong>：程序绝无死循环（有界性被数学证明）、绝无越界读写（值域推理）、绝无野指针崩溃——这类保证对交易机近乎"停机保证"，是 eBPF 敢于上生产内核的理由</li>
-<li><strong>验证开销在加载时一次性支付</strong>，运行时零开销——与"审计在事前、执行在纳秒级"的交易系统设计哲学同构</li>
-<li>排查线上探针加载失败时，验证器日志的指令号+源码行+寄存器值域是唯一的调试入口；<code class="c">R1 type=fp expected=map_ptr</code> 这类报错要能秒读</li>
-<li>有界循环限制提醒：<strong>在 eBPF 里做批量统计（如遍历 map 聚合延迟分布）优先用 <code class="c">bpf_for_each_map_elem</code>/<code class="c">bpf_loop</code> 回调式</strong>，而不是展开式循环——验证器只需验证回调一次，加载快、指令数省</li>
-</ul>
+<h3>1. 验证器 = 交易系统里"确定性执行"的守门员</h3>
+<p>程序绝无死循环（有界性被数学证明）、绝无越界读写（值域推理）、绝无野指针崩溃——这类保证对交易机近乎"停机保证"，是 eBPF 敢于上生产内核的理由。<strong>对比内核模块</strong>：一个 BUG 的 kmod 直接 panic 整机（交易中断）；一个 BUG 的 eBPF 程序最多加载失败——出错半径从"整机"缩到"一个 fd"。</p>
+<h3>2. 验证开销在加载时一次性支付，运行时零开销</h3>
+<p>与"审计在事前、执行在纳秒级"的交易系统设计哲学同构。<strong>性能敏感路径不付验证税</strong>——运行时执行的就是 JIT 后的机器码，与手工写的内核代码同级。这也是 eBPF 探针敢挂热路径的底气（对比：某些动态插桩方案每次触发都有检查成本）。</p>
+<h3>3. 验证器日志是线上探针加载失败的唯一调试入口</h3>
+<p><code class="c">R1 type=fp expected=map_ptr</code> 这类报错要能秒读：<strong>R1 现在是栈指针（fp），但这条指令需要 map 指针</strong>——顺着指令号找源码行（<code class="c">-g</code> 编译才有），再看寄存器状态快照推断是哪次赋值引入的错误类型。值班排查时这套阅读能力就是 MTTR 的差距。</p>
+<h3>4. 批量统计优先回调式，不写展开式循环</h3>
+<p>在 eBPF 里做批量统计（如遍历 map 聚合延迟分布）优先用 <code class="c">bpf_for_each_map_elem</code>/<code class="c">bpf_loop</code> 回调式——<strong>验证器只需验证回调体一次</strong>，加载快、指令数省；展开式循环每个迭代都是新路径，状态空间爆炸（processed insns 暴涨）。这与 HFT 的"把复杂度从热路径挪走"是同一纪律：验证成本也是成本，也该省。</p>
+<h3>5. 剪枝机制的性能直觉</h3>
+<p>验证时间 = 状态数 × 每状态成本——<code class="c">peak_states</code> 高的程序加载慢（秒级）。<strong>写"对验证器友好"的程序</strong>：早 return（先过滤再干活）、少分支、map lookup 后立即判空——这些习惯既让验证快，也常让运行时更快（早 return 少执行指令）。</p>
 <hr />
 <h2>6.7 自测题</h2>
 <ol>
@@ -565,6 +569,19 @@ processed 7 insns (limit 1000000)
 <li>100 万指令上限是按什么计数的？为什么实际程序必须远小于 100 万条？</li>
 <li>tracepoint 上下文的公共字段为什么不能访问？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> 分支处把当前全部寄存器状态<strong>压栈</strong>，先验证一条路径到 return（或达上限），弹栈验证另一条。剪枝：验证器在固定间隔（每 10 条指令）存状态快照，若后续以相同或<strong>子集</strong>状态到达同一指令，跳过剩余验证——"子集状态"指新状态的类型一致且值域是旧状态的子集（更收紧），后续推理结论必然相同，重验无意义。</p>
+<p><strong>2.</strong> R6-R9 是 callee-saved：helper 调用<strong>不会破坏</strong>它们（R1-R5 传参、R0 收返回值都会被调用覆盖）。程序入口 ctx 在 R1，开头 <code class="c">r6 = r1</code> 把 ctx 备份到 R6，之后随便调 helper 都不丢——这是<a href="chapter-06.html#s-6-1">6.1</a> 寄存器约定表的核心行。</p>
+<p><strong>3.</strong> 验证器按序步进维护每个寄存器的<strong>类型</strong>（bpf_reg_type）；指令要求 R1 是 map 指针（如把 R1 传给需要 map_ptr 的 helper）时查类型不匹配——"fp"表示之前的指令把栈指针赋给了 R1（栈只能经 <code class="c">r10 - off</code> 访问，不是 map 对象）。日志里 R1_w=fp0 的快照就是证据。</p>
+<p><strong>4.</strong> <code class="c">c &lt;= 12</code> 成立时 c 可以等于 12，而有效下标最大 11——<code class="c">arr[c]</code> 在 c=12 时越界一字节。日志里 umax_value=12（而非 11）的那行寄存器状态给出关键线索：验证器推到"c 最大 12"时发现访问 <code class="c">arr[c]</code> 的 off=12 超出 map_value/栈的 12 字节边界。修法：<code class="c">c &lt; sizeof(arr)</code>。</p>
+<p><strong>5.</strong> 5.3 前：循环直接被拒绝（验证器无法证明回边终止）。5.3 起：<strong>有界循环</strong>可验证（循环上界必须是验证器可见的常量/可推值域）。<code class="c">bpf_loop()</code>（5.17）：循环体是回调函数，验证器<strong>只验证回调一次</strong>（不管迭代多少次），支持最多百万次迭代且上界可以来自变量——绕开了展开式验证的状态爆炸。</p>
+<p><strong>6.</strong> 验证器要求"所有路径必须初始化 R0 到 return"——<code class="c">bpf_printk()</code> 的返回值恰好落在 R0（helper 返回值寄存器），充当了"已初始化的返回值"。风险：返回值是 printk 的字符数（无意语义），程序返回码完全是垃圾——<strong>验证器保证类型安全，不保证语义正确</strong>；XDP 程序里这种垃圾返回码可能恰好是 0=XDP_ABORTED（丢所有包）。</p>
+<p><strong>7.</strong> 按<strong>已验证指令</strong>计（processed insns）——有分支时同一条指令会被多条路径重复处理，processed 计数乘性地放大。所以 100 万上限对应的实际程序长度要小一两个数量级（分支密集的程序几千条指令就可能 processed 上百万）。</p>
+<p><strong>8.</strong> tracepoint 上下文的前 4 个公共字段（common_type/flags/preempt_count/pid）是 tracing 基础设施的元数据，bpf context 访问检查（<code class="c">bpf_ctx_access</code>）按 format 文件的用户字段布局放行，公共字段不在放行范围——访问即 <code class="c">invalid bpf_context access</code>。</p>
+</details>
+<hr />
+<p><strong>衔接</strong>：验证器放行之后，程序怎么挂到事件上——第 7 章程序类型全景（五种 execve 入口挂法对比）。</p>
       </section>
 
 

@@ -462,9 +462,9 @@ KILL 版子进程被信号终止: yes (SIGSYS=31)      ← KILL_PROCESS 直接�
 <h2>9.4 Cilium Tetragon：挂内核内部函数</h2>
 <p>LSM 普及前的另一条路：把 eBPF 程序挂到<strong>任意内核函数</strong>（不限于稳定接口）。</p>
 <ul>
-<li>依据：syscall/LSM 只是 3000 万行内核代码中极小的稳定部分；大量内部函数事实上多年未变；新内核普及需数年，不兼容有充足时间修复</li>
-<li>Tetragon 贡献者含内核开发者，凭内部知识挑出<strong>安全且信息完备</strong>的挂点</li>
-<li>K8s 自定义资源 <strong>TracingPolicy</strong> 声明式定义：挂点 + 条件 + 动作</li>
+<li>依据：syscall/LSM 只是 3000 万行内核代码中极小的稳定部分；大量内部函数事实上多年未变；新内核普及需数年，不兼容有充足时间修复——<strong>用"事实稳定"替代"承诺稳定"</strong>，风险由升级时的回归测试兜底</li>
+<li>Tetragon 贡献者含内核开发者，凭内部知识挑出<strong>安全且信息完备</strong>的挂点（不是随便挑函数：要保证参数此刻已填充、无 TOCTOU）</li>
+<li>K8s 自定义资源 <strong>TracingPolicy</strong> 声明式定义：挂点 + 条件 + 动作——安全策略像 K8s 资源一样可版本化、可滚动下发</li>
 </ul>
 <pre class="code" data-label="yaml"><code class="c">spec:
   kprobes:
@@ -475,17 +475,28 @@ KILL 版子进程被信号终止: yes (SIGSYS=31)      ← KILL_PROCESS 直接�
       values: [&quot;/etc/&quot;]       # 只关心 /etc/ 下的文件
 </code></pre>
 <ul>
-<li>挂 <code class="c">fd_install</code> 而非 <code class="c">open</code> syscall 的原因：它在<strong>文件数据结构填充完之后</strong>调用——和 LSM 同理，天然免疫 TOCTOU</li>
-<li>内核内过滤：只把<strong>超出策略</strong>的事件报告用户态，而不是全量上报再筛</li>
+<li>挂 <code class="c">fd_install</code> 而非 <code class="c">open</code> syscall 的原因：它在<strong>文件数据结构填充完之后</strong>调用——和 LSM 同理，天然免疫 TOCTOU（<a href="#s-9-1">9.1</a> 的竞态窗口在内核侧数据结构上不存在）</li>
+<li><strong>内核内过滤</strong>：只把<strong>超出策略</strong>的事件报告用户态，而不是全量上报再筛——matchArgs 在内核里就完成判断，事件洪峰不产生用户态负载</li>
 </ul>
+<p><strong>TracingPolicy 的三段式结构拆解</strong>：<code class="c">call</code>（挂点）+ <code class="c">matchArgs</code>（内核内过滤条件，支持 Prefix/Equal/Mask 等算子）+ <code class="c">action</code>（默认告警，可选 Sigkill/Postprocess）。这就是"策略即数据"在安全域的落地——<strong>改策略不改程序</strong>，与 <a href="chapter-07.html#s-7-2">7.2</a> 的 PROG_ARRAY 分发同构。</p>
 <hr />
 <h2>9.5 防护型安全（preventative）</h2>
 <ul>
-<li>检测型模式：eBPF → 异步通知用户态 → 用户态处理——窗口期内数据可能已外泄、恶意代码可能已落盘</li>
-<li><strong>同步阻断</strong>：<code class="c">bpf_send_signal()</code>（5.3+）在 eBPF 程序内直接给违规进程发 <strong>SIGKILL</strong>——内核正在执行的动作被同步终止，来不及完成</li>
-<li>实操建议：先跑<strong>审计模式</strong>（只告警不杀），确认策略无误报后再开 Sigkill——错误策略会杀掉正常应用</li>
+<li>检测型模式：eBPF → 异步通知用户态 → 用户态处理——窗口期内数据可能已外泄、恶意代码可能已落盘。<strong>检测的时延 = 攻击者的机会窗口</strong>（毫秒到秒级）</li>
+<li><strong>同步阻断</strong>：<code class="c">bpf_send_signal()</code>（5.3+）在 eBPF 程序内直接给违规进程发 <strong>SIGKILL</strong>——内核正在执行的动作被同步终止，来不及完成。阻断发生在<strong>内核态、syscall 返回用户态之前</strong>——比"用户态 agent 收到事件再 kill"快三个数量级，且不给攻击者留任何执行窗口</li>
+<li>实操建议：先跑<strong>审计模式</strong>（只告警不杀），确认策略无误报后再开 Sigkill——错误策略会杀掉正常应用（交易机上误杀交易进程的代价 &gt;&gt; 漏放一次可疑操作的代价）</li>
 <li>网络安全早已是防护模式（防火墙直接丢包；XDP offload 后恶意包根本到不了 CPU）；主机侧因为工具误报率高长期只能审计——eBPF 细粒度准确的控制正在把"可预防"从网络扩展到非网络事件</li>
 </ul>
+<p><strong>检测 → 防护的光谱</strong>（本节的工程地图）：</p>
+<pre class="code" data-label="code"><code class="c">观测 ──────────────────────────────► 防护
+  │                                    │
+  eBPF 记录 → 用户态告警     eBPF 判定 → 内核内阻断
+  （事后取证，攻击已完成）    （bpf_send_signal / LSM 返回码 / XDP 丢包）
+  │                                    │
+  时延：ms~s 级                        时延：µs 级（syscall 返回前）
+  误报代价：低（只是日志）             误报代价：高（杀错进程）→ 必须先审计模式
+</code></pre>
+<p><strong>衔接</strong>：坑点与 HFT → <a href="#s-9-3">9.3</a>；BPF LSM 的机制细节（返回码语义、TOCTOU 免疫原理）→ <a href="#s-9-1">9.1</a>。</p>
       </section>
       <section class="section" id="s-9-3">
         <div class="sec-head"><div class="sec-no">9.3</div><h2>坑点HFT关联与自测（原书 §9.6–9.8）</h2></div>
@@ -494,22 +505,26 @@ KILL 版子进程被信号终止: yes (SIGSYS=31)      ← KILL_PROCESS 直接�
 </blockquote>
 <h2>9.6 坑点清单</h2>
 <ol>
-<li><strong>syscall 入口探针不能当安全工具用</strong>——TOCTOU 可被"幻影攻击"绕过；观测用途没问题（第 7 章伏笔的完整答案）</li>
-<li><strong>seccomp profile 覆盖错误路径</strong>：压力/故障场景触发的 syscall 若不在 profile 里，应用会在最需要报警的时候死掉</li>
-<li><code class="c">seccomp_unotify</code> 官方明确不可用于安全策略——别拿它做防护</li>
-<li><strong>BPF LSM 需要 5.7+ 且启用</strong> <code class="c">lsm=bpf</code>；生产前先确认内核配置</li>
-<li>挂内核内部函数（Tetragon 式）没有稳定保证——升级内核要回归测试；选挂点必须选"数据结构已填充完"的位置</li>
+<li><strong>syscall 入口探针不能当安全工具用</strong>——TOCTOU 可被"幻影攻击"绕过（DEFCON 29 直接打 Falco 的演示）；观测用途没问题（第 7 章伏笔的完整答案）。判据一句话：<strong>检查的数据 ≠ 内核使用的数据，就不是防线</strong></li>
+<li><strong>seccomp profile 覆盖错误路径</strong>：压力/故障场景触发的 syscall（磁盘满时的 fstatat 重试链、OOM 时的 prctl）若不在 profile 里，应用会在<strong>最需要报警的时候死掉</strong>——记录期要包含故障注入测试</li>
+<li><code class="c">seccomp_unotify</code> 官方明确不可用于安全策略——man page 原话；别拿它做防护（同样是 TOCTOU）</li>
+<li><strong>BPF LSM 需要 5.7+ 且启用</strong> <code class="c">lsm=bpf</code>；生产前先确认内核配置（lab08 勘察三件套：<code class="c">cat /sys/kernel/security/lsm</code>、<code class="c">/proc/cmdline</code>、<code class="c">CONFIG_BPF_LSM</code>——树莓派 6.18 官方内核也没开，双重门槛还包括 CO-RE 依赖的 BTF）</li>
+<li>挂内核内部函数（Tetragon 式）没有稳定保证——升级内核要回归测试；选挂点必须选"数据结构已填充完"的位置（fd_install 而非 open）</li>
 <li>Sigkill 策略先审计后强制；从审计切到强制前复盘所有历史告警</li>
 <li>seccomp profile 只能在进程启动时应用——对已运行进程要用 syscall 追踪类工具（Falco/Tetragon）</li>
 </ol>
 <hr />
 <h2>9.7 HFT 关联</h2>
-<ul>
-<li><strong>交易进程 syscall 白名单</strong>：交易进程只需要 40-70 个 syscall，用 eBPF 记录 + seccomp 收紧，缩小被入侵后的行动空间（供给面防御）</li>
-<li><strong>关键配置文件防护</strong>：Tetragon 式策略盯 <code class="c">/etc/</code>（交易所网关证书、密钥、hosts）的写入，Sigkill 同步阻断——比事后取证好</li>
-<li><strong>TOCTOU 教训泛化</strong>：任何"检查用户态内存再让内核处理"的审计逻辑都有竞态；合规审计挂点要选内核侧数据结构</li>
-<li><strong>内核内过滤省带宽</strong>：只上报违规事件，交易机上安全监控的常驻开销可忽略——不用为审计牺牲微秒</li>
-</ul>
+<h3>1. 交易进程 syscall 白名单（攻击面收敛）</h3>
+<p>交易进程实际只用 <strong>40-70 个 syscall</strong>（Aqua 统计的容器应用同量级）——用 eBPF 记录实际集合（<a href="#s-9-1">9.1</a> 的 Inspektor Gadget profiler 模式）+ seccomp 收紧到白名单。被入侵后的行动空间从 300+ syscall 缩到几十个：<strong>反弹 shell（socket/execve 组合）直接被 EPERM 挡住</strong>。这是"纵深防御"里成本最低的一层——不需要改交易代码，只需要一个 profile。</p>
+<h3>2. 关键配置文件防护（Tetragon 式 + 同步阻断）</h3>
+<p>盯 <code class="c">/etc/</code>（交易所网关证书、密钥、hosts）的写入：TracingPolicy 挂 fd_install 前缀匹配 /etc/ → 动作 Sigkill。<strong>篡改交易配置的进程在 write 完成前被杀</strong>——比"事后从审计日志发现配置被改"（此时可能已经下了一小时的错价单）是两个安全等级。先审计模式跑两周，零误报再开强制。</p>
+<h3>3. TOCTOU 教训泛化到审计系统设计</h3>
+<p>任何"检查用户态内存再让内核处理"的审计逻辑都有竞态——<strong>合规审计挂点必须选内核侧数据结构</strong>（LSM 钩子 / fd_install / file_open 之后）。这个教训对自研风控/审计探针同样适用：挂点选错，审计记录本身就是假的（记录的是攻击者想让你看到的路径）。</p>
+<h3>4. 内核内过滤省带宽 = 交易机安全监控零成本常驻</h3>
+<p>只上报违规事件（matchArgs 内核内判断），正常流量的观测开销是零事件零上报——<strong>交易机上安全监控的常驻开销可忽略，不用为审计牺牲微秒</strong>。对比"全量 syscall 上报 + 用户态过滤"的方案：事件洪峰期的上报本身就会挤占交易核的 cache 和带宽。</p>
+<h3>5. 误杀的代价函数不对称</h3>
+<p>HFT 场景的安全策略设计要点：<strong>误杀交易进程的代价（盘中断单、错过行情）远大于漏放一次可疑操作的代价</strong>——所以 HFT 的策略梯度应该是：观测（永远开）→ 审计告警（值班响应）→ 同步阻断（只对"铁定无合法理由"的操作开，如非交易进程写 /etc/certs）。与互联网公司"宁可错杀"的防爬虫思路相反。</p>
 <hr />
 <h2>9.8 自测题</h2>
 <ol>
@@ -523,6 +538,20 @@ KILL 版子进程被信号终止: yes (SIGSYS=31)      ← KILL_PROCESS 直接�
 <li><code class="c">bpf_send_signal</code> 实现的防护与"通知用户态再处理"有何本质不同？</li>
 <li>为什么网络安全工具普遍用防护模式而主机侧长期用审计模式？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> 可观测工具<strong>观察并报告</strong>（不影响内核行为，返回码被忽略）；安全工具<strong>判定并执行策略</strong>（返回码/信号影响内核行为）。策略要覆盖错误路径：磁盘满、连接断开等故障触发的 syscall 链平时不出现——漏掉它们，正常应用会在故障时刻被自己的安全策略杀死。</p>
+<p><strong>2.</strong> 严格模式只允许 read/write/_exit/sigreturn。四种动作：①放行 ②返回错误码给用户态（EPERM 等）③杀死线程/进程 ④seccomp-unotify 通知用户态代理（5.0+）。</p>
+<p><strong>3.</strong> ①BPF 代码<strong>不能解引用参数指针</strong>（只看得到指针值，看不到文件名——按值过滤做不了）；②profile <strong>必须在进程启动时应用</strong>，运行中不能改。</p>
+<p><strong>4.</strong> 挂 <code class="c">raw_syscalls:sys_enter</code> tracepoint，map 记录见过的 syscall 号。每个进程一份独立程序：map 以 pid/tgid 为过滤键（filter 直接写死 pid），事件在内核里就分流——避免单程序按 pid 查表的开销和 map 键空间膨胀。</p>
+<p><strong>5.</strong> 窗口：用户态传指针 → eBPF 在 syscall 入口读该指针（看到 "/tmp/a"）→ <strong>另一线程此刻改写该内存</strong> → 内核 copy_from_user 拷入实际数据（"/etc/shadow"）——检查的数据 ≠ 使用的数据。seccomp-bpf 不受影响因为它<strong>根本不解引用指针</strong>（无数据可比对，也就无竞态——它只按 syscall 号和标量参数过滤）。Sysmon 缓解：同时挂入口+出口，<strong>调用完成后</strong>从内核数据结构反查（fd → file → 文件名）拿准确视图；代价：只能记录不能阻止（syscall 已执行完）。</p>
+<p><strong>6.</strong> LSM 钩子在"内核即将对<strong>内核数据结构</strong>操作之前"触发——参数已 copy_from_user 进内核内存，不存在窗口。返回值：非零=拒绝操作（阻断生效）。需要 5.7+ 且 <code class="c">CONFIG_BPF_LSM=y</code> + 启动参数 <code class="c">lsm=bpf</code>。</p>
+<p><strong>7.</strong> fd_install 在文件结构<strong>填充完成之后</strong>被调用（file 指针已就绪），参数是内核侧数据（<code class="c">struct file *</code>）——无 TOCTOU；open syscall 入口的 filename 参数是用户态指针，检查它=开竞态窗口。</p>
+<p><strong>8.</strong> bpf_send_signal 在 <strong>eBPF 程序内、syscall 返回用户态之前</strong>同步发 SIGKILL——违规动作被终止于执行中；"通知用户态再处理"是异步链路（事件→用户态 agent→决策→kill），毫秒级窗口内恶意操作已完成。本质区别：<strong>阻断点在内核内的同步路径上 vs 在用户态的异步响应里</strong>。</p>
+<p><strong>9.</strong> 网络侧误报率低（防火墙规则基于包特征，确定性高）且误杀代价可接受（丢一个连接）；主机侧工具长期误报率高（行为判断难）且误杀代价大（杀业务进程）——eBPF 的细粒度内核内判断正在改变这个不对称，把主机侧推向防护模式。</p>
+</details>
+<hr />
+<p><strong>衔接</strong>：第 10 章收束工程话题——语言/库选型、测试统计、多程序协作；两本书的原理部分到此完结，接着是 BPT 的工具百科（02 目录）。</p>
       </section>
 
 

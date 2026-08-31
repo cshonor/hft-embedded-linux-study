@@ -374,16 +374,25 @@ bpf(BPF_MAP_UPDATE_ELEM, {map_fd=5, ...})      = 0   # 写 config 表项
 <p>合并自原 section-3～4。文件名序号是合并后的笔记序号；正文小节标题沿用原书节号，历史 § 引用依然有效。</p>
 </blockquote>
 <h2>4.3 BPF 对象生命周期：引用计数</h2>
-<p>规则：<strong>引用计数归零 → 内核删除对象</strong>。计数来源：</p>
+<p>规则：<strong>引用计数归零 → 内核删除对象</strong>（程序和 map 同一套规则）。计数来源：</p>
 <ol>
 <li><strong>fd</strong>：用户态进程持有；进程退出即释放（这就是 BCC 程序 Ctrl+C 后程序消失的原因）</li>
 <li><strong>pin 到 bpffs</strong>：<code class="c">/sys/fs/bpf/</code> 伪文件系统（内存态，重启即失）；bpftool prog load 必须指定 pin 路径，否则它退出时程序立刻被删，加载毫无意义</li>
 <li><strong>挂到 hook</strong>：附加本身也计引用
    - 追踪类（kprobe/tracepoint）与用户态进程绑定，进程退即减
    - <strong>网络栈/cgroup 类不绑定进程</strong>——<code class="c">ip link set dev eth0 xdp obj ...</code> 命令退出后程序仍在</li>
-<li><strong>BPF link</strong>：程序与事件之间的抽象层，link 自身可 pin；加载器进程退出后程序靠 link 的引用活着。libbpf 默认走 <code class="c">bpf(BPF_LINK_CREATE)</code>（练习 8 可见）</li>
+<li><strong>BPF link</strong>：程序与事件之间的抽象层，link 自身可 pin；加载器进程退出后程序靠 link 的引用活着。libbpf 默认走 <code class="c">bpf(BPF_LINK_CREATE)</code>（<a href="#s-4-1">4.1</a> 真机佐证：现代三步走 = perf_event_open → BPF_LINK_CREATE → ioctl ENABLE，link 是有 fd 的一等对象）</li>
 </ol>
-<p>补充命令：<code class="c">BPF_PROG_BIND_MAP</code> 把 map 绑到程序（程序源码定义了却没用到的 map——如存放元数据的全局变量——不会被自动引用，需显式绑定防清理）。maps 同样有引用计数与 pin 能力。</p>
+<p>四类来源一张图：</p>
+<pre class="code" data-label="code"><code class="c">bpf_prog 对象
+  ├─ ref: fd（进程退出 → 减）
+  ├─ ref: hook 附加点（detach → 减；网络类不随进程走）
+  ├─ ref: link 对象（link 可 pin，link 活 → 程序活）
+  └─ ref: bpffs pin 文件（rm → 减）
+任何时刻计数 = 0 → 内核释放
+</code></pre>
+<p><strong>为什么要设计 link</strong>：老机制（ioctl SET_BPF 直接绑）把"附加关系"埋在 perf 事件内部，没有独立对象——不能单独管理、不能 pin、替换程序要拆事件。link 把<strong>附加关系本身变成一等公民</strong>：可以 pin 到 bpffs（加载器死了附加还在）、可以原子替换（BPF_LINK_UPDATE，探针热升级不丢事件）、可以查询（<code class="c">bpftool link show</code>）。</p>
+<p>补充：<code class="c">BPF_PROG_BIND_MAP</code> 把 map 绑到程序（程序源码定义了却没用到的 map——如存放元数据的全局变量 map——不会被自动引用，需显式绑定防清理）。maps 同样有引用计数与 pin 能力。</p>
 <hr />
 <h2>4.4 挂 kprobe：bpf() 之外的三件套</h2>
 <p>挂 kprobe <strong>不用 bpf()</strong>：</p>
@@ -392,9 +401,12 @@ ioctl(7, PERF_EVENT_IOC_SET_BPF, 6)     = 0   # 把程序 fd 6 绑到 kprobe 事
 ioctl(7, PERF_EVENT_IOC_ENABLE, 0)      = 0   # 使能
 </code></pre>
 <ul>
-<li>type=6 来自 <code class="c">/sys/bus/event_source/devices/kprobe/type</code>——kprobe 是动态注册的 PMU（perf 子系统本身就是 eBPF 的宿主基础设施）</li>
-<li>对照：raw tracepoint 挂载就一条 <code class="c">bpf(BPF_RAW_TRACEPOINT_OPEN, {name="sys_enter", prog_fd=6})</code>；cgroup 程序用 <code class="c">bpf(BPF_PROG_ATTACH)</code>。<strong>附加机制因程序类型而异</strong></li>
+<li>type=6 来自 <code class="c">/sys/bus/event_source/devices/kprobe/type</code>——kprobe 是<strong>动态注册的 PMU</strong>（perf 子系统本身就是 eBPF 的宿主基础设施）。perf_event_open 的 type 参数本意是选硬件 PMU（cpu cycles 等），kprobe 复用这套框架把自己注册成一个"事件源"——eBPF 追踪与 perf 剖析共享同一套事件基础设施，这不是偶然而是设计</li>
+<li>对照：raw tracepoint 挂载就一条 <code class="c">bpf(BPF_RAW_TRACEPOINT_OPEN, {name="sys_enter", prog_fd=6})</code>；cgroup 程序用 <code class="c">bpf(BPF_PROG_ATTACH)</code>；现代 libbpf 对 kprobe 也走 <code class="c">BPF_LINK_CREATE</code>。<strong>附加机制因程序类型而异</strong>——没有统一的"attach"syscall</li>
+<li>这三件套正是 [03-linux-userspace-api perf_event_open 章节]（TLPI/perf 篇）的路径：ioctl 管 fd 的 enable/disable 状态，perf_event_open 造事件——学过 perf 子系统再读这组 strace 会心一笑</li>
 </ul>
+<p><strong>排错应用</strong>：<code class="c">strace -e bpf,perf_event_open,ioctl</code> 一个不漏地看加载器实际发了什么——<code class="c">BPF_PROG_LOAD</code> 返回负值=验证失败（看 stderr 日志），<code class="c">perf_event_open</code> 返回 ENOENT=符号不存在（kprobe 挂了被内联/改名的函数），<code class="c">BPF_LINK_CREATE</code> 返回 EBADF=fd 已失效。三段各对应一类失败。</p>
+<p><strong>衔接</strong>：perf buffer 与 ring buffer 的初始化 syscall 细节 → <a href="#s-4-3">4.3</a>；map 遍历序列 → <a href="#s-4-4">4.4</a>；坑点与 HFT → <a href="#s-4-5">4.5</a>。</p>
       </section>
       <section class="section" id="s-4-3">
         <div class="sec-head"><div class="sec-no">4.3</div><h2>perf与RingBuffer（原书 §4.5–4.6）</h2></div>
@@ -409,15 +421,61 @@ ioctl(Y, PERF_EVENT_IOC_ENABLE)
 bpf(BPF_MAP_UPDATE_ELEM, {map_fd=4, ...})   # map 第 X 项指向该核的 perf 缓冲
 </code></pre>
 <p>四核机器 = 4 轮 = <code class="c">PERF_EVENT_ARRAY</code> 里 4 个条目——"array" 就是每核一缓冲的数组。之后用户态用 <code class="c">ppoll()</code> 同时等 4 个 fd，哪个核触发读哪个。</p>
+<p><strong>为什么必须每核一个</strong>：perf buffer 是无锁环形缓冲，单缓冲多核同写必然加锁/争用——每核独立缓冲让<strong>内核侧写入零锁</strong>（事件在哪个核发生就写哪个核的缓冲，天然无竞争），代价转嫁给用户态（要聚合多个 fd）。这与 <a href="chapter-02.html#s-2-3">2.3</a> 的 per-CPU map 是同一设计哲学：<strong>把同步成本从热路径挪到冷路径</strong>。</p>
+<p><strong>PERF_EVENT_ARRAY 的条目数 = 核数</strong>（不是随便定的 max_entries）——这也是 <a href="#s-4-5">4.5 坑点</a> 里"perf buffer 事件跨核乱序"的根源：各核独立缓冲，用户态聚合时的到达顺序与真实时间序无关。</p>
 <hr />
 <h2>4.6 Ring buffer：单缓冲 + epoll</h2>
-<p><code class="c">BPF_MAP_CREATE</code> 一条搞定（<code class="c">key_size=0, value_size=0, max_entries=4096</code>），无每核 setup。优点：性能更好 + <strong>跨核提交保序</strong>（perf buffer 各核独立、顺序无保证）。</p>
+<p><code class="c">BPF_MAP_CREATE</code> 一条搞定（<code class="c">key_size=0, value_size=0, max_entries=4096</code>），无每核 setup。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>perf buffer（每核一个）</th>
+<th>ring buffer（全局一个）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓冲数量</td>
+<td>N 核 N 个</td>
+<td><strong>1 个</strong>（内部按页对齐的 reserve 区域）</td>
+</tr>
+<tr>
+<td>内核侧写</td>
+<td>零锁（每核私有）</td>
+<td>零锁（reserve/commit 两阶段，跨核靠原子操作）</td>
+</tr>
+<tr>
+<td>内存效率</td>
+<td>每核固定预算，核多浪费</td>
+<td><strong>按需 reserve</strong>——大事件不必适配每核页大小，整体利用率高</td>
+</tr>
+<tr>
+<td>跨核顺序</td>
+<td>无保证（各核独立）</td>
+<td><strong>提交保序</strong>（commit 时间戳定序）</td>
+</tr>
+<tr>
+<td>用户态等待</td>
+<td>ppoll 等 N 个 fd</td>
+<td><strong>epoll 等 1 个 fd</strong></td>
+</tr>
+<tr>
+<td>内核版本</td>
+<td>4.x 起广泛可用</td>
+<td>5.8+</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>ring buffer 的两阶段提交</strong>是关键设计：<code class="c">bpf_ringbuf_reserve()</code> 在环形区里划一块（此时别的核 reserve 别的区域，无锁），填完数据 <code class="c">bpf_ringbuf_submit()</code> 才让它对消费者可见——<strong>"写数据"和"发布"分离</strong>，用户态永远只看到完整事件，杜绝读到半截数据。丢弃路径用 <code class="c">discard()</code> 静默归还。</p>
 <p>等待机制从 ppoll 升级为 epoll：</p>
 <pre class="code" data-label="code"><code class="c">epoll_create1(EPOLL_CLOEXEC)                       = 8   # 内核里建一个 epoll 实例
 epoll_ctl(8, EPOLL_CTL_ADD, 4, {EPOLLIN})          = 0   # 把 ringbuf fd 4 加入集合
 epoll_pwait(8, ...)                                 # 阻塞等数据
 </code></pre>
-<p>ppoll 每次返回都要重新传整个 fd 集合；epoll 的 fd 集合由<strong>内核对象</strong>持有，注册一次即可。（与 03.5/04-cpp 网络编程模块里 poll vs epoll 的对比完全同源。）</p>
+<p>ppoll 每次返回都要重新传整个 fd 集合（用户态→内核态拷贝 + 内核线性扫描）；epoll 的 fd 集合由<strong>内核对象</strong>持有，注册一次即可，就绪回调挂到 fd 上——fd 数量大时差距是 O(n) vs O(1)。（与 03.5/04-cpp 网络编程模块里 poll vs epoll 的对比完全同源；3.3-3.4 里 epoll 作为 Linux 里程碑的 O(1) 论述也在此落地。）</p>
+<p><strong>选型结论</strong>：新内核（5.8+）一律 ring buffer——内存省、保序、等待简单；perf buffer 只在老内核或工具链绑定 BCC 老范式时出现。<strong>需要时间序的事件流（延迟分布、事件序列重建）ring buffer 是硬需求</strong>。</p>
+<p><strong>衔接</strong>：用户态读 map 的完整 syscall 序列 → <a href="#s-4-4">4.4</a>；本章坑点与 HFT → <a href="#s-4-5">4.5</a>。</p>
       </section>
       <section class="section" id="s-4-4">
         <div class="sec-head"><div class="sec-no">4.4</div><h2>遍历map的syscall序列（原书 §4.7）</h2></div>
@@ -436,6 +494,66 @@ bpf(BPF_MAP_LOOKUP_ELEM, {map_fd, key, value})        # 取值
 ... 循环直到 GET_NEXT_KEY 返回 ENOENT
 </code></pre>
 <p>配套还有 <code class="c">BPF_MAP_DELETE_ELEM</code>（删除）。</p>
+<p><strong>两段式的架构含义</strong>：</p>
+<ol>
+<li><strong>id 空间是全局的，fd 是进程私有的</strong>——跨进程引用内核对象必须经"id → fd"翻译（<code class="c">BPF_MAP_GET_FD_BY_ID</code>），这正是 <a href="#s-4-5">4.5 坑点 1</a> 的机制根源。这套 GET_NEXT_ID / GET_FD_BY_ID / OBJ_GET_INFO_BY_FD 三连对所有 BPF 对象通用（prog/link 同样有 GET_NEXT_ID）——<code class="c">bpftool prog list</code>、<code class="c">bpftool link list</code> 都是这个模式的复读</li>
+<li><strong>GET_NEXT_KEY 的 key=NULL 约定</strong>：传 NULL 表示"给我第一个键"，返回 ENOENT 表示"没有下一个了"——<strong>迭代器协议用两条 syscall 表达</strong>（cursor 由内核从 key 本身推导，不单独存游标）。hash map 的遍历顺序无序（哈希桶序），array map 是索引序——依赖遍历顺序的代码已经错了</li>
+<li><strong>LOOKUP 是拷贝语义</strong>：value 从内核拷到用户态缓冲——读大 value（如整个直方图桶数组）时这是一次 memcpy，高频轮询采集要掂量</li>
+</ol>
+<p><strong>为什么 libbpf 程序不走这条路</strong>：加载器自己持有 fd（MAP_CREATE 的返回值），不需要 id 查找——id 三连是<strong>第三方工具发现别人的 map</strong> 的路径。自己的程序读写自己的 map 用 <code class="c">bpf_map_lookup_elem()</code> 库函数（内部就是 BPF_MAP_LOOKUP_ELEM syscall），dump 序列只在调试和监控 agent 里出现。</p>
+<p><strong>BPFTOOL 之外的等价物</strong>：<code class="c">/proc</code> 没有暴露 map 内容（不像中断有 /proc/interrupts）——map 内容的<strong>唯一系统级访问路径就是这套 syscall</strong>。想在 Prometheus exporter 里暴露 eBPF 指标，就是循环 GET_NEXT_KEY + LOOKUP。</p>
+<p><strong>完整示例：strace 下的 bpftool map dump name config</strong></p>
+<pre class="code" data-label="text"><code class="c"># 阶段一：id 空间扫描（每个 map 三连，直到 ENOENT）
+bpf(BPF_MAP_GET_NEXT_ID, {start_id=0})        = 4    # 第一个 map id
+bpf(BPF_MAP_GET_FD_BY_ID, {map_id=4})         = 5    # → fd 5（本进程的）
+bpf(BPF_OBJ_GET_INFO_BY_FD, {info={...}})     = 0    # name=&quot;counts&quot;，不是目标，继续
+bpf(BPF_MAP_GET_NEXT_ID, {start_id=4})        = 5
+bpf(BPF_MAP_GET_FD_BY_ID, {map_id=5})         = 6    # → fd 6
+bpf(BPF_OBJ_GET_INFO_BY_FD, {info={...}})     = 0    # name=&quot;config&quot;，命中！保留 fd 6
+bpf(BPF_MAP_GET_NEXT_ID, {start_id=5})        = -1 ENOENT   # id 空间到头，扫描结束
+
+# 阶段二：键值迭代（游标即 key）
+bpf(BPF_MAP_GET_NEXT_KEY, {map_fd=6, key=NULL, next_key=...}) = 0   # NULL → 第一个键
+bpf(BPF_MAP_LOOKUP_ELEM, {map_fd=6, key=0x..., value=0x...})  = 0   # 取值
+bpf(BPF_MAP_GET_NEXT_KEY, {map_fd=6, key=0x..., next_key=...}) = 0  # 当前键 → 下一个
+bpf(BPF_MAP_LOOKUP_ELEM, ...)                                 = 0
+bpf(BPF_MAP_GET_NEXT_KEY, ...)                                = -1 ENOENT  # 迭代结束
+</code></pre>
+<p><strong>迭代语义的三个细节</strong>（读这段 strace 时容易看漏）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>细节</th>
+<th>语义</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">key=NULL</code> 起步</td>
+<td>"给我第一个键"</td>
+<td>空表时第一条 GET_NEXT_KEY 就 ENOENT（不是错误）</td>
+</tr>
+<tr>
+<td>next_key 回填到用户缓冲</td>
+<td>游标就是 key 本身</td>
+<td><strong>迭代中被删的键</strong>：GET_NEXT_KEY 以旧 key 为锚找后继，删除不影响迭代推进</td>
+</tr>
+<tr>
+<td>顺序未定义（hash map）</td>
+<td>桶序而非插入序</td>
+<td>依赖顺序的代码已经错了；array map 是索引序</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>与 LOAD/CREATE 序列的关系</strong>（把第 4 章串起来）：</p>
+<pre class="code" data-label="code"><code class="c">自己程序读写自己的 map      BPF_MAP_CREATE 返回的 fd 直用     [4.1 strace 实例]
+第三方工具发现别人的 map     GET_NEXT_ID → GET_FD_BY_ID 三连   本节
+挂到 perf/ringbuf 的事件通道  MAP_UPDATE_ELEM 指向 perf buffer   [4.3]
+</code></pre>
+<p>三个场景三套序列——fd 私有性决定了"是谁的 map"决定"怎么访问它"。</p>
+<p><strong>性能直觉</strong>：一次 dump = O(条目数) 次 syscall（每条目两个：NEXT_KEY + LOOKUP）——十万条目的 map dump 要二十万次系统调用，秒级耗时。<strong>监控 agent 高频轮询大 map 的正确姿势</strong>：内核侧定期聚合（hist map 自带桶），用户态只 LOOKUP 聚合结果，而不是逐条目拉原始事件。</p>
+<p><strong>衔接</strong>：map 的创建/更新在 <a href="#s-4-1">4.1 strace 实例</a>；本章坑点与 HFT → <a href="#s-4-5">4.5</a>。</p>
       </section>
       <section class="section" id="s-4-5">
         <div class="sec-head"><div class="sec-no">4.5</div><h2>坑点HFT关联与自测（原书 §4.8–4.10）</h2></div>
@@ -444,21 +562,26 @@ bpf(BPF_MAP_LOOKUP_ELEM, {map_fd, key, value})        # 取值
 </blockquote>
 <h2>4.8 坑点清单</h2>
 <ol>
-<li>fd 是进程私有的——跨进程传 fd 数字没有意义（同一 map 两个进程 fd 值不同）</li>
-<li>bpffs 是内存伪文件系统：<strong>重启后 pin 的程序全部消失</strong>，开机自启要靠 systemd/skeleton 重载</li>
-<li>BCC 程序 Ctrl+C 程序即卸载；想持久必须 pin 程序（或用 libbpf 的 link）</li>
-<li>strace 里 <code class="c">expected_attach_type</code> 出现网络类值不代表程序是网络程序（默认 0 占位）</li>
-<li>perf buffer 每核一缓冲，事件跨核乱序；需要时间序就用 ring buffer（5.8+）</li>
-<li>max_entries=10240 这种"魔法数字"是 BCC 默认，生产要显式设定</li>
+<li><strong>fd 是进程私有的</strong>——跨进程传 fd 数字没有意义（同一 map 两个进程 fd 值不同）。跨进程引用必须走 id 空间：<code class="c">BPF_MAP_GET_FD_BY_ID</code> 翻译（<a href="#s-4-4">4.4</a>）；libbpf 还有基于 pin 路径的 <code class="c">bpf_obj_get()</code>——路径是跨进程的稳定名字</li>
+<li>bpffs 是内存伪文件系统：<strong>重启后 pin 的程序全部消失</strong>，开机自启要靠 systemd/skeleton 重载——"部署"一个 eBPF 程序 = 二进制 + 重载机制，缺一不可</li>
+<li>BCC 程序 Ctrl+C 程序即卸载；想持久必须 pin 程序（或用 libbpf 的 link pin）——调试工具"随用随走"是特性，常驻 agent"必须 pin"是纪律</li>
+<li>strace 里 <code class="c">expected_attach_type</code> 出现网络类值不代表程序是网络程序（默认 0 占位，恰好是 <code class="c">BPF_CGROUP_INET_INGRESS</code> 的枚举值）——<a href="#s-4-1">4.1 真机佐证 ⑤</a> 确认该字段只对部分程序类型有意义</li>
+<li>perf buffer 每核一缓冲，事件跨核乱序；需要时间序就用 ring buffer（5.8+）——<strong>乱序不是 bug 是 per-CPU 设计的代价</strong>，见 <a href="#s-4-3">4.3</a> 对比表</li>
+<li>max_entries=10240 这种"魔法数字"是 BCC 默认，生产要显式设定——容量规划：条目数 × value 大小 × 2（hash 负载因子）就是内存预算</li>
+<li>（真机补充，lab04）libbpf 的 fd 陷阱：MAP_CREATE 返回 6、UPDATE 却用 map_fd=4——libbpf 用 memfd 预留低位 fd 槽位再 dup3 顶进；<strong>只看过滤后的 strace 会以为 fd 乱跳，必须看全量</strong></li>
 </ol>
 <hr />
 <h2>4.9 HFT 关联</h2>
-<ul>
-<li><strong>这一章就是"eBPF 的 TLPI 时刻"</strong>：与 03-linux-userspace-api 模块学 perf_event_open/ioctl 的路径打通——eBPF 追踪复用 perf 子系统的基础设施，理解 perf_event_open 才能理解 kprobe 挂载为何长这样</li>
-<li>ring buf + epoll 是用户态收集内核事件的标准范式，与行情网关的 epoll 收包同构；跨核保序对延迟直方图/事件序列重建至关重要</li>
-<li>引用计数的 pin 机制用于常驻观测 agent：交易机上 eBPF 监控随开机加载、独立于加载器进程存活，机器重启自动重载需要落地为 systemd unit</li>
-<li>strace -e bpf 是排查"eBPF 工具为何加载失败"的第一工具（看 BPF_PROG_LOAD 返回值即知验证是否通过）</li>
-</ul>
+<h3>1. 这一章就是"eBPF 的 TLPI 时刻"</h3>
+<p>与 03-linux-userspace-api 模块学 perf_event_open/ioctl 的路径打通——eBPF 追踪<strong>复用 perf 子系统的基础设施</strong>（kprobe 是动态注册的 PMU），理解 perf_event_open 的 type/config/pid/cpu 四元组才能理解 kprobe 挂载为何长那样。系统调用的知识在 eBPF 这里直接变现。</p>
+<h3>2. ring buf + epoll 是用户态收集内核事件的标准范式</h3>
+<p>与行情网关的 epoll 收包同构（同一套 fd 事件驱动模型）。<strong>跨核保序</strong>对延迟直方图/事件序列重建至关重要：perf buffer 各核独立缓冲，聚合时"到达序"≠"发生序"——重排两个事件的先后，延迟归因就南辕北辙。5.8+ 内核上 ring buffer 是唯一正确选择。</p>
+<h3>3. 引用计数的 pin 机制用于常驻观测 agent</h3>
+<p>交易机上 eBPF 监控随开机加载、独立于加载器进程存活——机器重启自动重载需要落地为 systemd unit（OnFailure 重试 + ExecStartPre 检查内核版本）。<strong>"程序活着"的三重保障</strong>：link pin（附加关系）+ map pin（状态数据）+ systemd（重载入口）。</p>
+<h3>4. strace -e bpf 是排查"eBPF 工具为何加载失败"的第一工具</h3>
+<p>看 BPF_PROG_LOAD 返回值即知验证是否通过（负值=失败，stderr 有验证器日志）；perf_event_open 返回 ENOENT=kprobe 符号不存在；BPF_LINK_CREATE 返回 EPERM=权限不足。比"工具报了个错"的黑盒信息量大一个数量级——<strong>先 strace 再 Google</strong> 的纪律在 eBPF 侧同样成立。</p>
+<h3>5. dump 序列是监控 agent 的实现路径</h3>
+<p>Prometheus exporter 暴露 eBPF 指标 = GET_NEXT_KEY + LOOKUP 循环（<a href="#s-4-4">4.4</a>）——LOOKUP 是拷贝语义，大 value 高频轮询有成本，采集间隔要和直方图聚合窗口匹配。</p>
 <hr />
 <h2>4.10 自测题</h2>
 <ol>
@@ -469,6 +592,17 @@ bpf(BPF_MAP_LOOKUP_ELEM, {map_fd, key, value})        # 取值
 <li>ppoll 和 epoll 管理 fd 集合的本质区别？</li>
 <li><code class="c">bpftool map dump name config</code> 在找 map 和读元素两个阶段各用什么命令迭代？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> <code class="c">int bpf(int cmd, union bpf_attr *attr, unsigned int size)</code>——cmd 是命令（MAP_CREATE/PROG_LOAD/…），attr 是联合体参数，size 是 attr 字节数。内核里的 eBPF 程序访问 map <strong>不走 syscall</strong>，走 helper 函数（<code class="c">bpf_map_lookup_elem()</code> 编译成 <code class="c">call imm=&lt;helper号&gt;</code>）；syscall 接口只属于用户态。</p>
+<p><strong>2.</strong> 四种来源：①fd（进程退出即减）、②bpffs pin 文件（rm 即减）、③hook 附加（detach 即减）、④BPF link（link 活着程序就活）。差异：追踪类附加<strong>与用户态进程绑定</strong>（perf_event_open 的 fd 进程退出即失效）；网络栈/cgroup 类<strong>不绑定进程</strong>（ip link 挂的 XDP 命令退出后仍在）。</p>
+<p><strong>3.</strong> <code class="c">perf_event_open({type=kprobe_PMU})</code> → <code class="c">ioctl(fd, PERF_EVENT_IOC_SET_BPF, prog_fd)</code> → <code class="c">ioctl(fd, PERF_EVENT_IOC_ENABLE)</code>。raw tracepoint 一条 <code class="c">bpf(BPF_RAW_TRACEPOINT_OPEN)</code> 搞定——因为 kprobe 是动态注册的 perf PMU 事件（复用 perf 子系统），而 raw tracepoint 的挂点是内核静态注册的，BPF syscall 能直接定位。</p>
+<p><strong>4.</strong> 条目数 = <strong>CPU 核数</strong>（每核一个 perf 缓冲，key 是 CPU id）。ring buffer 全局单缓冲（内部 reserve/commit 两阶段），无每核概念——所以也没有 perf buffer 的跨核乱序问题（提交保序）。</p>
+<p><strong>5.</strong> ppoll 每次调用把整个 fd 集合从用户态拷进内核、返回后再拷回就绪集合（O(n) 每次扫描）；epoll 的集合由<strong>内核对象</strong>持有（epoll_ctl 注册一次），就绪 fd 通过回调挂链表，epoll_wait 只取链表（O(1)）。</p>
+<p><strong>6.</strong> 找 map 阶段：<code class="c">BPF_MAP_GET_NEXT_ID</code>（下一个 id）+ <code class="c">BPF_MAP_GET_FD_BY_ID</code>（换 fd）+ <code class="c">BPF_OBJ_GET_INFO_BY_FD</code>（拿名字比对），ENOENT 终止。读元素阶段：<code class="c">BPF_MAP_GET_NEXT_KEY</code>（key=NULL 起步，游标即 key 本身）+ <code class="c">BPF_MAP_LOOKUP_ELEM</code>，ENOENT 终止。</p>
+</details>
+<hr />
+<p><strong>衔接</strong>：第 5 章进入现代开发栈——BCC 运行时编译的五大痛点与 CO-RE（BTF/vmlinux.h/libbpf/skeleton）的完整解法。</p>
       </section>
 
 
