@@ -48,7 +48,11 @@
 <summary>自测题</summary>
 
 1. biolatency 默认用哪两个 kprobe？为什么用 request 指针做哈希键？
-2. -Q 和 -F 分别改变什么统计口径？
-3. biosnoop 中什么样的输出模式是排队证据？
+   <details><summary>答案</summary>`blk_account_io_start`（起）/ `blk_account_io_done`（止）。因为 I/O 的发起与完成常发生在**不同 CPU/线程上下文**（中断上下文完成、kworker 写回发起），pid/comm 在两侧不一致；request 结构体指针在请求生命周期内恒定唯一——它是唯一贯穿起止的标识。（与 ch05 的 /@start[tid]/ 计时模板同类思路，但键从 tid 换成了更本质的请求指针。）</details>
 
+2. -Q 和 -F 分别改变什么统计口径？
+   <details><summary>答案</summary>-Q 把统计对象从"总请求时长"换成"排队等待时长"（发布前那段）——用于区分设备慢还是队列挤；-F 按 rwbs（Read/Sync-Write/Flush/Metadata）各出一张直方图——用于把延迟归到 I/O 类型（比如只有 Sync-Write 慢 → 排查 fsync 路径）。</details>
+
+3. biosnoop 中什么样的输出模式是排队证据？
+   <details><summary>答案</summary>扇区连续递增的一串 I/O，完成时间却几乎同时——说明它们被攒在设备队列里串行服务，发布时刻被前面的 I/O 拖住（QUE 列大而服务时长正常）。对照：真设备慢是每个 I/O 的服务时长都大。</details>
 </details>

@@ -22,6 +22,50 @@
 - 第 7 题是 kprobe 版与跟踪点版的对照实验，正好体会 9.3.1 讲的"键选择"差异
 - 第 5/6 题练的是"文本输出 → 可视化"流水线，散点图看个例、热力图看密度，各自回答不同问题
 
+## 参考骨架（自测后再看）
+
+题 1/2（biolatency 改造——lhist + 每秒打印）：
+
+```awk
+kprobe:blk_account_io_start  { @ts[arg0] = nsecs; }
+kprobe:blk_account_io_done   /@ts[arg0]/ {
+    // 线性直方图：0–100ms、1ms 一档（µs 口径）——SLA 已知值域时比 log2 桶好读
+    @ms = lhist((nsecs - @ts[arg0]) / 1000, 0, 100000, 1000);
+    delete(@ts[arg0]);
+}
+interval:s:1 { print(@ms); clear(@ms); }   // 每秒打一次并清零 = 时间序列化
+```
+
+题 3（按 CPU 统计完成事件——中断亲和检查）：
+
+```awk
+tracepoint:block:block_rq_complete { @[cpu] = count(); }
+// 读法：完成中断集中在少数 CPU = 软中断热点核；配 /proc/irq/*/smp_affinity
+// 与 ch6 的 IRQ affinity 检查呼应（交易机上这些核不该是策略核）
+```
+
+题 7（跟踪点版 biosnoop——体会键选择差异）：
+
+```awk
+tracepoint:block:block_rq_issue    { @ts[args->dev, args->sector] = nsecs; }
+tracepoint:block:block_rq_complete /@ts[args->dev, args->sector]/ {
+    printf("%dms\n", (nsecs - @ts[args->dev, args->sector]) / 1000000);
+    delete(@ts[args->dev, args->sector]);
+}
+// 跟踪点 format 里没有 request 指针 → 只能用 [dev,sector] 替代键，
+// 并行同扇区 I/O（镜像/校验）会配对串味——这就是 kprobe 版更稳的原因
+```
+
+题 9（超时统计——bioerr 的特化）：
+
+```awk
+tracepoint:block:block_rq_complete /args->error == -124/ {   // BLK_STS_TIMEOUT→ETIMEDOUT
+    @[args->dev] = count();
+}
+// 错误码映射走 blk_status_to_errno：BLK_STS_TIMEOUT=15 → ETIMEDOUT(110→-110)；
+// 精确值以所测内核 include/linux/blk_types.h 为准（写工具前先核对，别凭记忆）
+```
+
 ## 与第 8 章练习的衔接
 
 第 8 章练文件系统层（页缓存命中率、ext4 过滤），本章练块层；两者结合即可完成"应用 read() → 页缓存 miss → 块 I/O → 设备完成"的全链路延迟拆解实验。

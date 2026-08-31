@@ -69,7 +69,11 @@ dmesg -w                            # 看输出
 <summary>自测题</summary>
 
 1. blktrace 的 Q、D、C 三个符号分别对应请求时长中的哪两段？
-2. 为什么书中说 perf 三跟踪点方式开销大？
-3. SCSI 日志为什么算不了延迟？
+   <details><summary>答案</summary>Q→D 是等待时长（进块层到发布给驱动，含排队/合并/调度）；D→C 是服务时长（驱动到设备完成）。两段相加 = 完整请求时长——这就是 biolatency -Q（排队）与默认模式（总时长）各自测的东西的 blktrace 手工版。</details>
 
+2. 为什么书中说 perf 三跟踪点方式开销大？
+   <details><summary>答案</summary>perf record 把三个跟踪点的**全量事件**搬到用户态（perf.data），高 IOPS 系统上搬运本身就成了负载，还要事后 perf script 后处理拼延迟；BPF 在内核态 map 里完成配对与聚合，用户态只拿摘要。与第 8 章 perf record 自反馈循环是同一个教训的两面。</details>
+
+3. SCSI 日志为什么算不了延迟？
+   <details><summary>答案</summary>日志输出缺请求标识符——起止两条日志无法配对，没有配对就没有差值；这正是 scsilatency/scsiresult（BPF 用命令结构体指针做键）填的坑。</details>
 </details>

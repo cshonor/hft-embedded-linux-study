@@ -17,3 +17,40 @@
 - 第 1、2 题一组做完即可体会"跟踪点稳定但语义粗、kprobe 精确但脆弱"的核心权衡。
 - 第 4 题就是本章与第 9 章的桥梁，做完等于打通逻辑/物理两层。
 - 第 7 题作者标注未解决——它的答案本质上就是 cachestat 存在的理由：把事件分布降级为每秒聚合统计。
+
+## 参考骨架（自测后再看）
+
+题 1（跟踪点版 filelife——创建/删除都走系统调用跟踪点）：
+
+```awk
+tracepoint:syscalls:sys_enter_creat /comm != "bpftrace"/ {
+    printf("%s create %s\n", comm, str(args->pathname));
+}
+// unlink 记时间戳，sys_exit_unlink 打印存活时长（filelife 的寿命=now-create_ts）
+tracepoint:syscalls:sys_enter_unlink {
+    printf("%s unlink %s\n", comm, str(args->pathname));
+}
+// 题 2 的"劣"由此显形：跟踪点看不到内核内部路径的 unlink（如 tmpfs 自动清理），
+// 且 creat 只是 open(O_CREAT) 家族的古董变体——生产代码多走 openat
+```
+
+题 3（vfsstatx 的文件系统分流——核心是那一串穿针引线）：
+
+```awk
+// 从 file 结构体拿到文件系统类型名：
+// file->f_inode->i_sb->s_type->name（kprobe:vfs_read 的 arg0 是 struct file*）
+kprobe:vfs_read {
+    $fs = ((struct file *)arg0)->f_inode->i_sb->s_type->name;
+    @[str($fs)] = count();
+}
+```
+
+题 5（FD 泄漏——alloc_fd/close_fd 配对，本质是 fd 版 memleak）：
+
+```awk
+kprobe:alloc_fd  { @open[tid] = nsecs; }          // 记账
+kprobe:close_fd  { delete(@open[tid]); }          // 销账
+interval:s:10 {
+    print(@open); clear(@open);                   // 周期性打印"仍在账上"的 FD
+}   // 悬账持续增长的 tid = 泄漏线程；配 kretprobe:alloc_fd 拿 retval(FD 号) 更完整
+```

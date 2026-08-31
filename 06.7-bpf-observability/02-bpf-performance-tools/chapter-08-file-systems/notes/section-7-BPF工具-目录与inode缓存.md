@@ -72,6 +72,11 @@ kretprobe `find_inode_fast`，retval==0 计 miss。`find` 遍历目录树时 ino
 <summary>自测</summary>
 
 1. dcstat 的 SLOW/s 列是什么？为什么会有快慢两条路径？
+   <details><summary>答案</summary>SLOW 是没走 dcache 快速路径的查找次数。自 2.5.11 起 dentry 查找有两条路：快速路径用 seqlock/RCU 无锁遍历（对 ""、"/usr" 等热项做了 CPU 缓存友好优化），慢路径走传统加锁 d_lookup。SLOW 高说明查找大量落在加锁路径或 miss——它是"快速路径失效"的计数器。</details>
+
 2. dcsnoop 默认只显示什么？为什么这样设计？
+   <details><summary>答案</summary>默认只显示 miss（T=M）。dcache 查找每秒几十万次，逐事件打印全部的开销会淹没系统；而 dcstat 已经告诉你命中率——下钻要看的只是"哪些路径没命中"，miss 通常占很小比例，默认过滤正是把输出量压到可承受的必要手段（与 BCC 工具"丢数据型过滤下沉内核态"的共同参数模式一致）。</details>
+
 3. mountsnoop 输出中的 MNT_NS 列对容器调试有什么意义？
+   <details><summary>答案</summary>挂载命名空间 ID 把一条 mount(2) 调用归属到具体容器——宿主机上全局看 mount 事件时，MNT_NS 是"这是谁挂的"的唯一可靠线索（容器里进程的 pid/comm 可以重名，命名空间不重样）。排查"容器启动挂载了什么/哪个容器在偷偷挂东西"直接按 MNT_NS 过滤。</details>
 </details>

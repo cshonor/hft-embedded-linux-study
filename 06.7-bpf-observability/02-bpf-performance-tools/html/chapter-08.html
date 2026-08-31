@@ -621,9 +621,25 @@ Filesystem  Size  Used Avail Use% Mounted on
 <summary>自测</summary>
 <ol>
 <li>为什么 Use% 接近 100% 时文件系统写入性能会下降？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>接近满的文件系统空闲块高度碎片化，分配器找不到物理连续的空闲区，extent（多块分配）退化成零散小块——每次写入的块分配搜索变慢，且产生碎片化布局让后续顺序读写也变慢。容量问题和性能问题是同一个根源的两个面。</p>
+</details>
+<ol start="2">
 <li>perf record 跟踪文件系统写事件会产生什么问题？BPF 为什么没有？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>自反馈循环：记录写事件产生样本 → 样本写入 perf.data 本身是文件系统写 → 触发更多事件 → 更多样本（书例滚到 1.3GB / 1400 万样本，大部分在测 perf 自己）。BPF 在内核态 map 里聚合，只存统计量不落盘，输出是 Ctrl-C 后的一次性摘要——没有"观测产生被观测事件"的回路。</p>
+</details>
+<ol start="3">
 <li>strace 和 opensnoop 测同样的事件，开销差几个数量级？原因是什么？</li>
 </ol>
+<details>
+<summary>答案</summary>
+<p>约两个数量级（书内同负载实测参照：fatrace 67% vs opensnoop 1.1%，strace 的 ptrace 双停机制更重）。原因：strace 基于 ptrace——每次系统调用目标进程都被停下两次（入口+出口）、信号送 tracer、上下文切换全程参与；opensnoop 是 tracepoint 上挂 BPF，事件在内核态处理完才回用户态打印，目标进程不感知。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-3">
@@ -1057,9 +1073,25 @@ TIME      DEVICE  PAGES  REASON     ms
 <summary>自测</summary>
 <ol>
 <li>cachestat 的四个 kprobe 各测什么？为什么它跨内核脆弱？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>mark_page_accessed=命中、add_to_page_cache_lru=未命中（新页进缓存）、mark_buffer_dirty=缓冲写入、account_page_dirtied=脏页。脆弱因为它们是内核<strong>内部函数</strong>（非稳定 ABI）：函数改名/拆分/内联都会让探针挂失败或语义漂移——所以作者称之为"沙堡"，换内核必须先测试验证。</p>
+</details>
+<ol start="2">
 <li>writeback 输出中 background 与 periodic 写回的触发条件差异？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>periodic：时间驱动——<code class="c">vm.dirty_writeback_centisecs</code>（默认 5s）到点就醒来把到期脏页刷下去，量小而规律。background：水位驱动——空闲内存吃紧、脏页比例超过 <code class="c">vm.dirty_background_ratio</code> 触发，量可达万页级、耗时毫秒到几十毫秒，且时机与内存压力相关（可能撞上应用高峰）。</p>
+</details>
+<ol start="3">
 <li>命中率从 90% 提到 100% 为什么收益远超 10%？</li>
 </ol>
+<details>
+<summary>答案</summary>
+<p>未命中的 10% 每次都要同步等磁盘 I/O（微秒~毫秒级），而命中是纯内存访问（百 ns 级）——延迟差 1~3 个数量级。尾延迟由最差路径决定：只要还有 miss，p99 就被磁盘钉死；全命中后整条路径都在内存里，分布的尾巴彻底消失。对尾延迟敏感的负载（交易、缓存服务），"消灭最后 10%"往往是收益最大的一步。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-7">
@@ -1149,9 +1181,25 @@ TIME(s)    PID   COMM   T FILE
 <summary>自测</summary>
 <ol>
 <li>dcstat 的 SLOW/s 列是什么？为什么会有快慢两条路径？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>SLOW 是没走 dcache 快速路径的查找次数。自 2.5.11 起 dentry 查找有两条路：快速路径用 seqlock/RCU 无锁遍历（对 ""、"/usr" 等热项做了 CPU 缓存友好优化），慢路径走传统加锁 d_lookup。SLOW 高说明查找大量落在加锁路径或 miss——它是"快速路径失效"的计数器。</p>
+</details>
+<ol start="2">
 <li>dcsnoop 默认只显示什么？为什么这样设计？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>默认只显示 miss（T=M）。dcache 查找每秒几十万次，逐事件打印全部的开销会淹没系统；而 dcstat 已经告诉你命中率——下钻要看的只是"哪些路径没命中"，miss 通常占很小比例，默认过滤正是把输出量压到可承受的必要手段（与 BCC 工具"丢数据型过滤下沉内核态"的共同参数模式一致）。</p>
+</details>
+<ol start="3">
 <li>mountsnoop 输出中的 MNT_NS 列对容器调试有什么意义？</li>
 </ol>
+<details>
+<summary>答案</summary>
+<p>挂载命名空间 ID 把一条 mount(2) 调用归属到具体容器——宿主机上全局看 mount 事件时，MNT_NS 是"这是谁挂的"的唯一可靠线索（容器里进程的 pid/comm 可以重名，命名空间不重样）。排查"容器启动挂载了什么/哪个容器在偷偷挂东西"直接按 MNT_NS 过滤。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-8">
@@ -1352,8 +1400,18 @@ sys_enter_readlinkat    34
 <summary>自测</summary>
 <ol>
 <li>read 返回 0、1、负值各代表什么？哪个最值得优化？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>0=EOF（正常读完）；1=只读了 1 字节——<strong>最值得优化</strong>：一次系统调用（百 ns~µs 级固定成本）只搬 1 字节数据，是调用粒度的浪费（书例 15609 次 1 字节读，抓 ustack 即定位到代码行）；负值=-errno，错误另案分析（看是 EAGAIN 这类可重试还是真错）。</p>
+</details>
+<ol start="2">
 <li>ext4_readpages 的两条触发路径分别是什么系统调用/异常引起的？</li>
 </ol>
+<details>
+<summary>答案</summary>
+<p>栈1：mmap 后的<strong>缺页异常</strong>（handle_mm_fault→filemap_fault→预读把周围页一起拉进缓存）——read 系统调用都没发生；栈2：<strong>显式 read(2)</strong>（vfs_read→generic_file_read_iter→ondemand_readahead）。同一预读函数服务两种触发，这也是"文件 I/O 不只发生在 read 调用里"的实证——只审计 syscall 看不到 mmap 缺页路径的 I/O。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-10">
@@ -1413,6 +1471,33 @@ sys_enter_readlinkat    34
 <li>第 4 题就是本章与第 9 章的桥梁，做完等于打通逻辑/物理两层。</li>
 <li>第 7 题作者标注未解决——它的答案本质上就是 cachestat 存在的理由：把事件分布降级为每秒聚合统计。</li>
 </ul>
+<h2>参考骨架（自测后再看）</h2>
+<p>题 1（跟踪点版 filelife——创建/删除都走系统调用跟踪点）：</p>
+<pre class="code" data-label="awk"><code class="c">tracepoint:syscalls:sys_enter_creat /comm != &quot;bpftrace&quot;/ {
+    printf(&quot;%s create %s\n&quot;, comm, str(args-&gt;pathname));
+}
+// unlink 记时间戳，sys_exit_unlink 打印存活时长（filelife 的寿命=now-create_ts）
+tracepoint:syscalls:sys_enter_unlink {
+    printf(&quot;%s unlink %s\n&quot;, comm, str(args-&gt;pathname));
+}
+// 题 2 的&quot;劣&quot;由此显形：跟踪点看不到内核内部路径的 unlink（如 tmpfs 自动清理），
+// 且 creat 只是 open(O_CREAT) 家族的古董变体——生产代码多走 openat
+</code></pre>
+<p>题 3（vfsstatx 的文件系统分流——核心是那一串穿针引线）：</p>
+<pre class="code" data-label="awk"><code class="c">// 从 file 结构体拿到文件系统类型名：
+// file-&gt;f_inode-&gt;i_sb-&gt;s_type-&gt;name（kprobe:vfs_read 的 arg0 是 struct file*）
+kprobe:vfs_read {
+    $fs = ((struct file *)arg0)-&gt;f_inode-&gt;i_sb-&gt;s_type-&gt;name;
+    @[str($fs)] = count();
+}
+</code></pre>
+<p>题 5（FD 泄漏——alloc_fd/close_fd 配对，本质是 fd 版 memleak）：</p>
+<pre class="code" data-label="awk"><code class="c">kprobe:alloc_fd  { @open[tid] = nsecs; }          // 记账
+kprobe:close_fd  { delete(@open[tid]); }          // 销账
+interval:s:10 {
+    print(@open); clear(@open);                   // 周期性打印&quot;仍在账上&quot;的 FD
+}   // 悬账持续增长的 tid = 泄漏线程；配 kretprobe:alloc_fd 拿 retval(FD 号) 更完整
+</code></pre>
       </section>
       <section class="section" id="s-11">
         <div class="sec-head"><div class="sec-no">8.6</div><h2>小结</h2></div>
@@ -1448,6 +1533,52 @@ sys_enter_readlinkat    34
 </table></div>
 <h2>一句话总结（原书）</h2>
 <p>BPF 工具覆盖了系统调用、VFS、文件系统函数与跟踪点四层跟踪，写回与预读取两个机制，以及页缓存/dcache/inode 缓存/缓冲缓存四种缓存；延迟直方图工具（xfsdist/ext4dist 等）用于识别多峰分布与特殊情况，最终服务于解决应用程序的性能问题。</p>
+<h3>四种缓存 × 各自的健康指标</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>缓存</th>
+<th>工具</th>
+<th>健康形态</th>
+<th>异常形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页缓存（文件数据）</td>
+<td>cachestat</td>
+<td>活跃数据集 100% 命中</td>
+<td>HITRATIO 掉 → 冷读进延迟路径</td>
+</tr>
+<tr>
+<td>dcache（路径→inode）</td>
+<td>dcstat</td>
+<td>99%+，SLOW 低</td>
+<td>miss 高 → 深目录/冷路径设计代价</td>
+</tr>
+<tr>
+<td>inode 缓存</td>
+<td>icstat</td>
+<td>稳态近 100%</td>
+<td>骤降 → 冷元数据扫描（find/遍历）</td>
+</tr>
+<tr>
+<td>缓冲缓存</td>
+<td>bufgrow</td>
+<td>稳态增长有限</td>
+<td>持续增长 → 争内存（与 ch7 页缓存消费合并看）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>排障的层次纪律（本章可迁移的方法论）</h3>
+<pre class="code" data-label="code"><code class="c">应用说&quot;文件慢&quot; → 先问哪一层慢：
+  syscalls 层（opensnoop/scread）   —— 调用方式蠢不蠢？（1 字节读/高频 stat）
+  VFS 层（fileslower/filetop）      —— 哪个文件慢？
+  FS 层（ext4dist/xfsdist）         —— 分布是多峰还是拖尾？
+  缓存层（cachestat/dcstat）        —— 是不是该命中的没命中？
+  （还慢 → 交给 ch9 块层/设备）
+</code></pre>
+<p>自上而下逐层收窄，每层一个工具一句话就能筛掉一层——这正是 BPF 按层观测的结构红利。</p>
 <h2>与相邻章衔接</h2>
 <ul>
 <li><strong>上游 第 7 章（内存）</strong>：页缓存本身就是内存消费者——cachestat 的 CACHED_MB、bufgrow 的缓冲增长都从文件系统侧解释了 free 输出；mmap 文件的缺页（fmapfault）是 7 章 faults 的子集。</li>

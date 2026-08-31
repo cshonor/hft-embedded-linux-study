@@ -60,7 +60,11 @@ driver_byte << 24 | host_byte << 16 | msg_byte << 8 | status_byte
 <summary>自测题</summary>
 
 1. scsiresult 的 result 四字节各是什么？取 host byte 的位运算？
-2. nvmelatency 的作者在没有跟踪点的系统上如何确定 kprobe 边界和 opcode 读法？
-3. iosched 的入队/出队各用哪个探针？
+   <details><summary>答案</summary>`driver_byte<<24 | host_byte<<16 | msg_byte<<8 | status_byte`；host byte = `result>>16 & 0xff`（查 DID_* 表），status byte = `result & 0xff`（查 SAM_STAT_* 表）。映射表在内核 `include/trace/events/scsi.h`。</details>
 
+2. nvmelatency 的作者在没有跟踪点的系统上如何确定 kprobe 边界和 opcode 读法？
+   <details><summary>答案</summary>四步：① funccount 'nvme*' 摸底各函数频次（184 个探针里找热点）；② 读驱动源码确定延迟边界（nvme_setup_cmd→nvme_complete_rq）；③ 去看**新版内核** nvme 跟踪点的实现源码——跟踪点实现是"怎么读这个结构体"的权威示例；④ 识别管理命令（无 rq_disk）单独计数防解引用出错。这套流程可原样复用到任何驱动层观测。</details>
+
+3. iosched 的入队/出队各用哪个探针？
+   <details><summary>答案</summary>入队 `elv_add_request`，出队 `blk_start_request`/`blk_mq_start_request`（发布到设备）——输出的是调度器内排队时长，与设备服务时长解耦。</details>
 </details>

@@ -32,6 +32,8 @@
 <summary>自测题</summary>
 
 1. seeksize 和 biopattern 各跟踪哪个跟踪点、各测什么侧的随机度？
-2. 书中 %RND→%SEQ 转换案例说明了什么方法论？
+   <details><summary>答案</summary>seeksize 跟踪 `block_rq_issue`（发布侧/请求侧）——调度器看到的请求间寻址距离；biopattern 跟踪 `block_rq_complete`（完成侧）——设备实际服务时的随机/顺序比例。两者可以不同：调度器合并/重排会把请求侧的随机转成完成侧的（部分）顺序。</details>
 
+2. 书中 %RND→%SEQ 转换案例说明了什么方法论？
+   <details><summary>答案</summary>"感觉是随机 I/O"必须变成**可度量的百分比**才有资格指导优化：83% RND 是测量值 → 改造负载（布局/访问模式）→ 100% SEQ 复测 → 吞吐暴涨闭环证明因果。没有前后两次测量，"优化了随机读"只是叙事，不是工程。</details>
 </details>

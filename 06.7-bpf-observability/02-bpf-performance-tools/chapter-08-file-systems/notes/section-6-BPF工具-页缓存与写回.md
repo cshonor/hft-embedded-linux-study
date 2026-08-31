@@ -68,6 +68,11 @@ TIME      DEVICE  PAGES  REASON     ms
 <summary>自测</summary>
 
 1. cachestat 的四个 kprobe 各测什么？为什么它跨内核脆弱？
+   <details><summary>答案</summary>mark_page_accessed=命中、add_to_page_cache_lru=未命中（新页进缓存）、mark_buffer_dirty=缓冲写入、account_page_dirtied=脏页。脆弱因为它们是内核**内部函数**（非稳定 ABI）：函数改名/拆分/内联都会让探针挂失败或语义漂移——所以作者称之为"沙堡"，换内核必须先测试验证。</details>
+
 2. writeback 输出中 background 与 periodic 写回的触发条件差异？
+   <details><summary>答案</summary>periodic：时间驱动——`vm.dirty_writeback_centisecs`（默认 5s）到点就醒来把到期脏页刷下去，量小而规律。background：水位驱动——空闲内存吃紧、脏页比例超过 `vm.dirty_background_ratio` 触发，量可达万页级、耗时毫秒到几十毫秒，且时机与内存压力相关（可能撞上应用高峰）。</details>
+
 3. 命中率从 90% 提到 100% 为什么收益远超 10%？
+   <details><summary>答案</summary>未命中的 10% 每次都要同步等磁盘 I/O（微秒~毫秒级），而命中是纯内存访问（百 ns 级）——延迟差 1~3 个数量级。尾延迟由最差路径决定：只要还有 miss，p99 就被磁盘钉死；全命中后整条路径都在内存里，分布的尾巴彻底消失。对尾延迟敏感的负载（交易、缓存服务），"消灭最后 10%"往往是收益最大的一步。</details>
 </details>

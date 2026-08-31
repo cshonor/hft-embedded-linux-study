@@ -100,5 +100,8 @@ sys_enter_readlinkat    34
 <summary>自测</summary>
 
 1. read 返回 0、1、负值各代表什么？哪个最值得优化？
+   <details><summary>答案</summary>0=EOF（正常读完）；1=只读了 1 字节——**最值得优化**：一次系统调用（百 ns~µs 级固定成本）只搬 1 字节数据，是调用粒度的浪费（书例 15609 次 1 字节读，抓 ustack 即定位到代码行）；负值=-errno，错误另案分析（看是 EAGAIN 这类可重试还是真错）。</details>
+
 2. ext4_readpages 的两条触发路径分别是什么系统调用/异常引起的？
+   <details><summary>答案</summary>栈1：mmap 后的**缺页异常**（handle_mm_fault→filemap_fault→预读把周围页一起拉进缓存）——read 系统调用都没发生；栈2：**显式 read(2)**（vfs_read→generic_file_read_iter→ondemand_readahead）。同一预读函数服务两种触发，这也是"文件 I/O 不只发生在 read 调用里"的实证——只审计 syscall 看不到 mmap 缺页路径的 I/O。</details>
 </details>

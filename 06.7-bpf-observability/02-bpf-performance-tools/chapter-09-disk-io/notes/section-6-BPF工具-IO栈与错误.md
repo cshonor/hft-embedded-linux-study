@@ -45,7 +45,11 @@
 <summary>自测题</summary>
 
 1. biostacks 用哪两个事件配对？为什么完成点选 blk_start_request 而非 rq_complete？
-2. 书中 EIO 每 2 秒一次的真实原因是什么？
-3. mdflush 解决什么"尖峰归因"问题？
+   <details><summary>答案</summary>配对 = `blk_account_io_start`（存 kstack+时间戳）→ `blk_start_request`/`blk_mq_start_request`（取出打印）。选发布点而非完成点，是因为要打印的是**发起路径的内核栈**——发起栈在进程/软中断上下文里才有意义，越早取出越接近原始因果；拖到 rq_complete 时上下文已换成完成中断，栈也早没了（栈必须在现场抓）。</details>
 
+2. 书中 EIO 每 2 秒一次的真实原因是什么？
+   <details><summary>答案</summary>USB 存储的 `scsi_test_unit_ready` 周期探测——设备 0,0 上每 2s 一次 TEST UNIT READY 探测失败返回 EIO，属正常探测行为而非数据错误。教训：非零 error 的**频率+设备号+comm** 三要素看完再定性。</details>
+
+3. mdflush 解决什么"尖峰归因"问题？
+   <details><summary>答案</summary>周期性延迟尖峰（如每 5s 一次 flush 请求把设备写缓存刷穿，代价高）与具体应用的挂接——filebeat 案例：监控时间轴上的尖峰周期 == mdflush 记录的 flush 周期 == 某应用 fdatasync 节奏，三方对表即锁定元凶。</details>
 </details>

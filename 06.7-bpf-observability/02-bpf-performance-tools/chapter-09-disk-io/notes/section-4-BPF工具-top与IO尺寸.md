@@ -35,6 +35,8 @@ top 的磁盘版：按进程统计 IOPS / 字节 / 延迟，周期刷新。
 <summary>自测题</summary>
 
 1. biotop 为什么看不到后台写的原进程？怎么办？
-2. bitesize 对顺序负载和随机负载分别关注什么？
+   <details><summary>答案</summary>脏页写回由 kworker 内核线程异步执行——到块层时进程上下文早已不在，能拿到的 pid/comm 只剩 kworker。要找原进程回第 8 章页缓存层（filetop/cachestat/writeback 那里还有进程上下文），或用 biostacks 看内核栈因果链。"层越低、归因越模糊"是块层观测的结构性规律。</details>
 
+2. bitesize 对顺序负载和随机负载分别关注什么？
+   <details><summary>答案</summary>顺序负载看**最大尺寸档**——大 I/O 才能吃满顺序带宽，被小 I/O 碎片化就是浪费；随机负载看**应用尺寸是否匹配设备特性**（如 4K 对齐）——错配的尺寸让每次随机访问付出整块代价。共同的反模式：小尺寸高频率 I/O（每次系统调用+请求固定成本只搬一点数据）。</details>
 </details>

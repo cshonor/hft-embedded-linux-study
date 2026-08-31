@@ -108,6 +108,8 @@ bpftrace -e 't:block:block_rq_issue { @[args->rwbs] = count(); }'
 <summary>自测题</summary>
 
 1. 如何一条命令从"IOPS 按类型"切换为"字节量按类型"？
-2. plug/unplug 蓄流的意义是什么？哪个单行测量它？
+   <details><summary>答案</summary>把 `@[args->rwbs] = count()` 换成 `@[args->rwbs] = sum(args->bytes)`——键不变、聚合函数从计数换求和。count() 回答"次数"，sum() 回答"体积"：小 I/O 高频时两者画像完全不同（IOPS 视角吓人、吞吐视角无辜）。</details>
 
+2. plug/unplug 蓄流的意义是什么？哪个单行测量它？
+   <details><summary>答案</summary>plug 是块层的合并窗口：发起方先攒一批请求（plug）再一次性交给调度器，目的是把相邻小请求合并成大 I/O 提升顺序性——代价是人为引入微秒~毫秒级的蓄流等待。测量单行：`k:blk_start_plug { @ts[arg0]=nsecs; } k:blk_flush_plug_list /@ts[arg0]/ { @plug_ns=hist(nsecs-@ts[arg0]); delete(@ts[arg0]); }`（双探针计时模板，键是 task 结构体指针）。</details>
 </details>
