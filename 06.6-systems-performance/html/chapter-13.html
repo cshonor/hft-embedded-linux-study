@@ -276,13 +276,13 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-13-1"><span class="n">13.1</span>section-13.1-13.2-子命令概述与单行命令</a>
-          <a href="#s-13-3"><span class="n">13.3</span>section-13.3-13.7-perf-事件源</a>
-          <a href="#s-13-8"><span class="n">13.8</span>section-13.8-perf-stat-事件计数</a>
-          <a href="#s-13-9"><span class="n">13.9</span>section-13.9-perf-record-剖析采样</a>
-          <a href="#s-13-10"><span class="n">13.10</span>section-13.10-perf-report-与-perf-script</a>
-          <a href="#s-13-11"><span class="n">13.11</span>section-13.11-perf-trace-系统调用追踪</a>
-          <a href="#s-13-12"><span class="n">13.12</span>section-13.12-其他常用能力延伸</a>
+          <a href="#s-13-1"><span class="n">13.1</span>–13.2 子命令概述与单行命令</a>
+          <a href="#s-13-3"><span class="n">13.3</span>–13.7 perf 事件源</a>
+          <a href="#s-13-8"><span class="n">13.8</span>`perf stat` — 事件计数</a>
+          <a href="#s-13-9"><span class="n">13.9</span>`perf record` — 剖析采样</a>
+          <a href="#s-13-10"><span class="n">13.10</span>`perf report` 与 `perf script`</a>
+          <a href="#s-13-11"><span class="n">13.11</span>`perf trace` — 系统调用追踪</a>
+          <a href="#s-13-12"><span class="n">13.12</span>其他常用能力延伸</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -401,696 +401,1743 @@ Ch 13  perf（本章：官方剖析器实操）
 </ul>
       </section>
       <section class="section" id="s-13-1">
-        <div class="sec-head"><div class="sec-no">13.1</div><h2>section-13.1-13.2-子命令概述与单行命令</h2></div>
-<h3 class="sub">perf 工具集架构</h3>
-<pre class="code" data-label="code"><code class="c">perf
-├── stat      事件计数（低开销）
-├── record    采样 → perf.data
-├── report    交互/文本汇总热点
-├── script    逐行样本 → 火焰图输入
-├── top       实时 TUI 热点
-├── trace     syscall 追踪（低开销 strace）
-├── list      列出可用 events
-├── probe     创建 kprobe/uprobe
-└── ...       mem, sched, lock, stat 等扩展
+        <div class="sec-head"><div class="sec-no">13.1</div><h2>–13.2 子命令概述与单行命令</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 下一节：<a href="#s-13-3">13.3–13.7 perf 事件源</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>perf 的<strong>子命令地图</strong>与 HFT 常备单行命令。但更重要的是先立起一个架构认知：<code class="c">perf</code> 命令只是<strong>用户态前端</strong>——它的全部超能力来自内核的 <code class="c">perf_event_open()</code> 系统调用和 PMU 硬件。看不懂这三层，后面所有机制（采样、multiplexing、ring buffer）都是黑盒。</p>
+<hr />
+<h2>1. perf 三层架构</h2>
+<pre class="code" data-label="code"><code class="c">┌─────────────────────────────────────────────┐
+│ 用户态：perf(1) 命令行工具                    │
+│   stat / record / report / script / trace…  │  ← tools/perf/*.c
+│   只做三件事：配置 attr、读写数据、格式化输出   │
+├─────────────────────────────────────────────┤
+│ 系统调用边界：perf_event_open(attr, …)       │
+│   v6.6: kernel/events/core.c:12351          │
+│   返回一个 fd——&quot;一个事件 = 一个 fd&quot;          │
+├─────────────────────────────────────────────┤
+│ 内核：perf_event 核心 + 各 PMU 驱动           │
+│   struct pmu 抽象（perf_event.h:302）        │
+│   x86: arch/x86/events/*.c  ARM: drivers/perf│
+│   软件事件在 core.c 内部计数                  │
+├─────────────────────────────────────────────┤
+│ 硬件：PMC 性能监控计数器（每核 4~8 个通用）     │
+└─────────────────────────────────────────────┘
 </code></pre>
-<p><strong>版本：</strong> <code class="c">perf</code> 需 <strong>匹配运行内核</strong>（<code class="c">linux-tools-$(uname -r)</code>）— Ch 4 危机工具清单。</p>
-<h3>单行命令集锦（HFT 常备）</h3>
-<pre class="code" data-label="shell"><code class="c"># --- 快速健康 ---
+<p>三个要点：</p>
+<ol>
+<li><strong>一个事件 = 一个 fd</strong>。<code class="c">perf stat -e cycles,instructions</code> 背后是两次 <code class="c">perf_event_open</code>，得到两个 fd；<code class="c">read(fd)</code> 读累计计数、<code class="c">mmap(fd)</code> 拿采样 buffer、<code class="c">ioctl(fd, PERF_EVENT_IOC_ENABLE/…)</code> 控制启停（v6.6 core.c:5833–5843）。perf 子命令全是这套 fd API 的封装。</li>
+<li><strong>PMU 是内核里的插件接口</strong>。<code class="c">struct pmu</code>（include/linux/perf_event.h:302）定义 <code class="c">add/del/start/stop/read</code> 回调——x86 PMC、ARM PMU、软件事件（<code class="c">perf_swevent</code>，core.c:10018）、tracepoint 各注册一个实例。<strong>Pi5 上 perf 能用，就是因为 drivers/perf 下有 ARMv8 PMU 驱动</strong>。</li>
+<li><strong>版本为什么必须匹配</strong>：perf_event_attr 结构和事件语义随内核演进（perf_event_open 是 v2.6.32 引入，此后每个版本都在加字段）；perf 工具检查 <code class="c">perf_event_open</code> 返回的版本与自身编译头是否兼容——<code class="c">linux-tools-$(uname -r)</code> 就是为了对齐这条边界。错配的典型症状：事件列表空、采样数据字段错位。</li>
+</ol>
+<h2>2. 子命令地图（按数据流组织）</h2>
+<pre class="code" data-label="code"><code class="c">                    ┌─ stat ──── read(fd) 累计计数（不采样）
+                    ├─ top ──── 周期性 read + TUI
+perf_event_open ────┼─ record ── mmap ring buffer 采样 → perf.data
+        (fd)        ├─ report ─┐
+                    ├─ script ─┤ 读 perf.data 离线分析
+                    ├─ annotate┘
+                    ├─ trace ── tracepoint 事件流（syscall 视图）
+                    ├─ list ─── 列出可用事件（探测 PMU/tracepoint 覆盖面）
+                    ├─ probe ── 创建 kprobe/uprobe/USDT 事件
+                    └─ mem/sched/lock/c2c ─ 专项子命令（13.12）
+</code></pre>
+<p><strong>记忆锚点</strong>：stat/top 是"计数流"（read 路径），record/report/script 是"采样流"（mmap 路径），trace 是"事件流"（tracepoint 路径）。三条数据流后面三节分别拆开。</p>
+<h2>3. HFT 常备单行命令</h2>
+<pre class="code" data-label="shell"><code class="c"># --- 健康速查（计数流，开销≈0，生产可跑）---
 perf stat -e cycles,instructions,cache-misses,branch-misses -- sleep 1
-perf stat -p $(pidof strategy) -- sleep 5
-
-# --- IPC + 缺页 ---
+perf stat -p $(pidof strategy) -- sleep 5                  # 目标进程
 perf stat -e cycles,instructions,page-faults,major-faults -p $(pidof strategy) -- sleep 10
 
-# --- CPU 热点（短采，限时长）---
+# --- CPU 热点（采样流，限 PID + 限时长）---
 perf record -F 99 -g -p $(pidof strategy) -- sleep 30
-perf report --stdio | head -40
+perf report --stdio --no-children | head -40
 
 # --- 火焰图管道（需 FlameGraph 仓库）---
-perf record -F 99 -g -p $(pidof strategy) -- sleep 60
 perf script | stackcollapse-perf.pl | flamegraph.pl &gt; strategy.svg
 
-# --- 实时 top ---
+# --- 实时 top（开发机）---
 perf top -p $(pidof strategy)
 
-# --- syscall 追踪（开发/debug，生产限时长）---
+# --- syscall 追踪（开发/debug，限时长）---
 perf trace -p $(pidof strategy) -- sleep 5
 
-# --- 列出事件 ---
-perf list | grep -E 'cache|fault|sched'
+# --- 事件勘探 ---
+perf list | grep -E 'cache|fault|sched'     # 看 PMU 覆盖面
+perf list pmu                               # 列出本机 PMU
 </code></pre>
-<p><strong>生产原则：</strong> <code class="c">stat</code>/<code class="c">top</code> 优先；<code class="c">record</code> <strong>限 PID + 限时长</strong>；<code class="c">trace</code> 比 strace 轻但仍非零开销。</p>
-<p>→ Ch 4 <a href="chapter-04.html#ch-4">perf 定位</a> · Ch 12 <a href="chapter-12.html#ch-12">压测时 profile</a></p>
-<hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>perf 版本不匹配内核——perf 需要 linux-tools-$(uname -r)，不匹配时事件不可用或数据错误</li>
-<li>perf record 生产不限时长——perf record 有开销（采样写入），生产应限 PID + 限时长</li>
-<li>perf trace 当 strace 长跑——perf trace 比 strace 轻但仍非零开销，生产限时长</li>
-</ol>
-<details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf 的核心子命令有哪些？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>stat（计数）、record（采样）、report（热点）、script（逐行→火焰图）、top（实时）、trace（syscall）</p>
-</details>
-<ol start="2">
-<li>perf 版本为什么必须匹配内核？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>perf 需要 linux-tools-$(uname -r)——不匹配时 PMC/tracepoint 事件可能不可用或数据错误</p>
-</details>
-<ol start="3">
-<li>HFT 生产环境 perf 的使用原则？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>stat/top 优先（低开销）；record 限 PID + 限时长；trace 仍限时长</p>
-</details>
-</details>
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
-      </section>
-      <section class="section" id="s-13-3">
-        <div class="sec-head"><div class="sec-no">13.3</div><h2>section-13.3-13.7-perf-事件源</h2></div>
-<h3 class="sub">硬件事件（Hardware Events / PMCs）</h3>
-<p>来自 CPU <strong>性能监控计数器</strong> — Ch 6 周期分析基础。</p>
+<p><strong>生产纪律</strong>（每条命令背后都是真金白银的开销）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>事件（示例）</th>
+<th>命令</th>
+<th>开销量级</th>
+<th>生产可用性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">perf stat</code></td>
+<td>≈0（读几次计数器）</td>
+<td>✅ 长跑</td>
+</tr>
+<tr>
+<td><code class="c">perf top</code></td>
+<td>低（周期 read）</td>
+<td>✅ 观察</td>
+</tr>
+<tr>
+<td><code class="c">perf record -F 99</code></td>
+<td>每样本 µs 级 × 99/s</td>
+<td>⚠️ 限 PID+时长</td>
+</tr>
+<tr>
+<td><code class="c">perf trace</code></td>
+<td>每 syscall 一条事件</td>
+<td>⚠️ 限时长</td>
+</tr>
+<tr>
+<td><code class="c">perf probe</code> 热函数</td>
+<td>每次调用一次 uprobe 陷阱</td>
+<td>❌ 开发机</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 危机响应中的位置（Ch 4 工作流）</h2>
+<pre class="code" data-label="code"><code class="c">60 秒标准流程（前 10 条命令）→ perf stat 全局 → perf top 定位进程
+→ perf record -g 短采 → 火焰图 → 若 on-CPU 无热点 → 转 off-CPU（BPF offcputime，Ch 15）
+</code></pre>
+<p>对照 <a href="chapter-16.html#s-16-9">ch16 案例 S0–S4 演练</a>：perf stat 是 S2（统计快照）的第一工具，record/火焰图是 S3（动态追踪）的入场券。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易机最小观测集</td>
+<td><code class="c">perf stat</code> 是唯一能<strong>常驻生产</strong>的深检工具——<a href="chapter-16.html#s-16-1-5">ch16.1.5 PMC 精读</a>的输出全靠它</td>
+</tr>
+<tr>
+<td>Pi5/嵌入式</td>
+<td>ARM PMU 主线支持完整，<code class="c">perf stat</code>/<code class="c">record</code> 全可用——eBPF 实验线（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7</a>）前的第一手数据</td>
+</tr>
+<tr>
+<td>供应链约束</td>
+<td>perf 是内核自带生态（linux-tools 包），过审计比拉 BCC 编译链容易</td>
+</tr>
+<tr>
+<td>版本陷阱</td>
+<td>交易机内核固化 → perf 必须用配套 linux-tools；容器里跑 perf 需特权 + 宿主内核匹配</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>下一节：<a href="#s-13-3">13.3–13.7 事件源</a>——四类事件源在内核里的三条实现路径</li>
+<li>Ch 4 <a href="chapter-04.html#ch-4">perf 在工具地图的位置</a></li>
+<li>Ch 12 <a href="chapter-12.html#ch-12">压测时 profile</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：<code class="c">perf stat -e cycles,instructions</code> 执行时，用户态和内核的分工是什么？</summary>
+<p>用户态 perf 命令解析参数、构造两个 <code class="c">perf_event_attr</code>、调用两次 <code class="c">perf_event_open()</code>（core.c:12351）拿到 fd；内核按 attr 找到对应 PMU（x86 PMC）配置硬件计数器。运行期间硬件自由计数，结束时用户态 <code class="c">read(fd)</code> 取累计值。perf 工具本身不接触硬件。</p>
+</details>
+<details>
+<summary>Q2：为什么说"一个事件 = 一个 fd"？这个设计带来什么？</summary>
+<p>每个 perf_event_open 返回一个 fd，事件生命周期就是 fd 生命周期——<code class="c">read</code> 取计数、<code class="c">mmap</code> 拿采样 buffer、<code class="c">ioctl(PERF_EVENT_IOC_ENABLE/DISABLE)</code> 控启停、<code class="c">close</code> 销毁。fd 语义让 perf 复用了 poll/epoll 整套多路复用基础设施。</p>
+</details>
+<details>
+<summary>Q3：perf 为什么必须匹配运行内核？</summary>
+<p>perf_event_attr 结构与事件语义随内核版本演进。perf 工具头文件里编译进的 attr 布局若与运行内核不一致，轻则事件不可用，重则字段错位读出垃圾数据。<code class="c">linux-tools-$(uname -r)</code> 对齐的就是这条 ABI 边界。</p>
+</details>
+<details>
+<summary>Q4：Pi5 上 perf 能工作的前提是什么？</summary>
+<p>内核启用 CONFIG_PERF_EVENTS 且有 ARMv8 PMU 驱动（drivers/perf/）注册成 <code class="c">struct pmu</code> 实例。主线内核对这些支持完整——这正是嵌入式 Linux 与 HFT 观测栈交汇的便利点。</p>
+</details>
+<details>
+<summary>Q5：生产机器上 perf 三大流（计数/采样/事件）哪些可以常开？</summary>
+<p>计数流（stat/top）可常开——读计数器近零开销；采样流（record）限 PID+短窗——每样本有真实成本；事件流（trace）限短窗——每 syscall 一条事件的量。uprobe 类动态探针只在开发机。</p>
+</details>
+      </section>
+      <section class="section" id="s-13-3">
+        <div class="sec-head"><div class="sec-no">13.3</div><h2>–13.7 perf 事件源</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-13-1">13.1–13.2 子命令概述</a> · 下一节：<a href="#s-13-8">13.8 perf stat</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>perf 的四类事件源（Hardware / Software / Tracepoint / Probe）。重点不是背事件名——而是分清它们在内核里走的<strong>三条实现路径</strong>，以及两个决定数据质量的关键机制：</p>
+<ol>
+<li><strong>PMC 计数器只有 4~8 个</strong> → 事件超配时的 <strong>multiplexing 轮换</strong>（perf stat 数字里的 <code class="c">scale</code> 之谜）</li>
+<li><strong>采样地址的 skid 滑差</strong> → <code class="c">precise_ip</code> 字段与 PEBS/SPE</li>
+</ol>
+<hr />
+<h2>1. 四类事件源总览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th><code class="c">perf list</code> 前缀</th>
+<th>实现路径</th>
+<th>计数发生在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hardware（PMC）</strong></td>
+<td>无前缀（cycles…）</td>
+<td>x86_pmu / ARMv8 PMU 驱动</td>
+<td><strong>硬件计数器</strong></td>
+</tr>
+<tr>
+<td><strong>Software</strong></td>
+<td><code class="c">software:</code>（可省）</td>
+<td>core.c 内核计数（<code class="c">perf_swevent</code> PMU，:10018）</td>
+<td>内核事件点</td>
+</tr>
+<tr>
+<td><strong>Tracepoint</strong></td>
+<td><code class="c">sched:</code> <code class="c">block:</code> <code class="c">syscalls:</code> …</td>
+<td>挂 Ftrace tracepoint（<a href="chapter-14.html#s-14-5">Ch 14</a>）</td>
+<td>内核静态埋点</td>
+</tr>
+<tr>
+<td><strong>Probe</strong></td>
+<td><code class="c">probe:*</code>（kprobe/uprobe/USDT）</td>
+<td>动态插桩（perf probe 创建）</td>
+<td>断点陷阱</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心认知</strong>：perf 没有自己的插桩基础设施——tracepoint/kprobe/uprobe 全部<strong>复用 Ftrace 体系</strong>（经由 <code class="c">struct pmu</code> 的 perf_tracepoint/perf_probe 实例桥接）。perf 与 Ftrace 是<strong>同一套观测点的两种消费方式</strong>（perf 用 fd + ring buffer，Ftrace 用 tracefs 文件）。</p>
+<h2>2. Hardware 事件（PMC）</h2>
+<h3>2.1 常用事件与判读去向</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
 <th>含义</th>
+<th>判读</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">cycles</code></td>
 <td>CPU 周期</td>
+<td>IPC 分母</td>
 </tr>
 <tr>
 <td><code class="c">instructions</code></td>
-<td>retired 指令 → <strong>IPC</strong></td>
+<td>retired 指令</td>
+<td>IPC 分子</td>
 </tr>
 <tr>
-<td><code class="c">cache-references</code> / <code class="c">cache-misses</code></td>
-<td>cache 行为</td>
+<td><code class="c">cache-references/misses</code></td>
+<td>LLC 级 cache 行为</td>
+<td>内存墙</td>
 </tr>
 <tr>
 <td><code class="c">L1-dcache-load-misses</code></td>
-<td>L1 数据 miss</td>
-</tr>
-<tr>
-<td><code class="c">LLC-load-misses</code></td>
-<td>末级 cache miss</td>
+<td>L1D miss</td>
+<td>数据布局</td>
 </tr>
 <tr>
 <td><code class="c">branch-misses</code></td>
 <td>分支预测失败</td>
+<td>热分支</td>
 </tr>
 <tr>
 <td><code class="c">stalled-cycles-frontend/backend</code></td>
-<td>流水线停滞</td>
+<td>流水线停顿（x86 老事件）</td>
+<td>新 CPU 用 Top-down 替代</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">perf stat -e cycles,instructions,cache-misses,LLC-load-misses ./strategy
-</code></pre>
-<p><strong>频率采样（Frequency Sampling）：</strong></p>
-<ul>
-<li><code class="c">perf record -F 99</code> — 约每秒 99 次样本（<strong>非</strong> 固定每 N 周期）。</li>
-<li>优点：样本量随 CPU 活动自适应；<strong>99 Hz</strong> 减与 OS timer 拍频共振。</li>
-<li>对比：<code class="c">perf record -c 1000000 -e cycles</code> — 每 100 万周期采一次（event-based）。</li>
-</ul>
-<p><strong>HFT：</strong> 优化 order book 前后各跑 <strong><code class="c">perf stat</code> IPC + LLC-misses</strong> — 比凭感觉改结构可靠。</p>
-<h3>软件事件（Software Events）</h3>
-<p>内核维护的计数 — 无需特定 PMC。</p>
+<p>判读方法（IPC 四象限、Top-down）在 <a href="chapter-16.html#s-16-1-5">ch16.1.5 PMC 与软件事件精读</a>；微架构背景在 <a href="chapter-06.html#ch-6">Ch 6 CPU</a>。</p>
+<h3>2.2 ⭐ multiplexing：计数器不够用时的轮换</h3>
+<p><strong>问题</strong>：每核通用 PMC 通常只有 <strong>4~8 个</strong>（x86 常见 8，ARMv8 常见 6）。<code class="c">perf stat -e</code> 列 12 个硬件事件时放不下。</p>
+<p><strong>内核解法</strong>（v6.6 锚点）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>事件</th>
-<th>含义</th>
+<th>部件</th>
+<th>说明</th>
+<th>位置</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">page-faults</code> / <code class="c">minor-faults</code> / <code class="c">major-faults</code></td>
-<td>缺页</td>
+<td>每 CPU 一个 hrtimer</td>
+<td><code class="c">__perf_mux_hrtimer_init()</code>，默认间隔 <code class="c">PERF_CPU_HRTIMER = 1000/HZ</code> ms（一个 tick）</td>
+<td>core.c:1066/:1090</td>
 </tr>
 <tr>
-<td><code class="c">context-switches</code></td>
-<td>上下文切换</td>
+<td>到期回调</td>
+<td><code class="c">perf_mux_hrtimer_handler()</code> → <code class="c">perf_rotate_context()</code>——把放不下的事件<strong>分组轮换</strong>上下 CPU</td>
+<td>core.c:1070</td>
 </tr>
 <tr>
-<td><code class="c">cpu-migrations</code></td>
-<td>线程迁核</td>
-</tr>
-<tr>
-<td><code class="c">emulation-faults</code></td>
-<td>等</td>
-</tr>
-</tbody>
-</table></div>
-<pre class="code" data-label="shell"><code class="c">perf stat -e page-faults,context-switches,cpu-migrations -p $(pidof strategy) -- sleep 10
-</code></pre>
-<p>→ Ch 7 <a href="chapter-07.html#ch-7">缺页火焰图</a></p>
-<h3>追踪点事件（Tracepoint Events）</h3>
-<p>内核 <strong>静态</strong> 观测点 — 稳定 ABI。</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>类</th>
-<th>例子</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>syscalls</td>
-<td><code class="c">syscalls:sys_enter_read</code></td>
-</tr>
-<tr>
-<td>sched</td>
-<td><code class="c">sched:sched_switch</code></td>
-</tr>
-<tr>
-<td>block</td>
-<td><code class="c">block:block_rq_issue/complete</code></td>
-</tr>
-<tr>
-<td>kmem</td>
-<td><code class="c">kmem:kmalloc</code></td>
+<td>结果</td>
+<td>每个事件只有部分时间在计数 → perf stat 读出<strong>原始计数 + 计数时间占比 <code class="c">time_enabled/time_running</code></strong></td>
+<td>—</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">perf list 'syscalls:*' | head
-perf record -e 'syscalls:sys_enter_write' -a -- sleep 5
-</code></pre>
-<p><strong>与 Ftrace：</strong> tracepoint 是 Ftrace 子集；perf 可 <strong>采样或计数</strong> tracepoint — Ch 14 更偏 Ftrace 专精。</p>
-<h3>探针事件（Probe Events）</h3>
+<p>这就是 perf stat 输出里 <code class="c">(xx.xx%)</code> 的含义，perf 用 <code class="c">count × time_enabled / time_running</code> <strong>外推</strong>（scale）满时段值。<strong>代价</strong>：外推有误差，两组轮换的事件之间相关性也被破坏（无法比较同一瞬间的 cache-miss 与 branch-miss）。</p>
+<p><strong>工程对策</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>类型</th>
-<th>作用</th>
-<th>稳定性</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>kprobes</strong></td>
-<td>内核任意函数动态插桩</td>
-<td>内核版本变可能断</td>
-</tr>
-<tr>
-<td><strong>uprobes</strong></td>
-<td>用户态函数插桩</td>
-<td>需符号</td>
-</tr>
-<tr>
-<td><strong>USDT</strong></td>
-<td>用户静态探针（如 libc、MySQL）</td>
-<td>应用需编译支持</td>
-</tr>
-</tbody>
-</table></div>
-<pre class="code" data-label="shell"><code class="c"># 创建 uprobe（示例）
-perf probe -x /path/strategy 'decode_entry'
-perf record -e probe_strategy:decode_entry -p PID -- sleep 10
-</code></pre>
-<p><strong>HFT：</strong> 热路径函数 uprobe <strong>有开销</strong> — 开发/短采；生产优先 <strong>99Hz 采样</strong> 或 USDT span。</p>
-<p>→ Ch 15 <a href="chapter-15.html#ch-15">BPF 可编程探针</a></p>
-<hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>硬件事件当软件事件用——PMC 数量有限（通常 4-8 个），同时监测的事件有上限</li>
-<li>kprobe 不理解稳定性——kprobe 追踪内核函数名可能随版本变更，应优先 tracepoint</li>
-<li>uprobe 不测开销——uprobe 每次函数调用都陷入，热路径高频函数显著增延迟</li>
-</ol>
-<details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf 事件源的四大类是什么？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>硬件事件（PMC）、软件事件（page-fault/cs）、tracepoint（稳定 ABI）、probe（kprobe/uprobe）</p>
-</details>
-<ol start="2">
-<li>kprobe 和 tracepoint 的稳定性区别？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>tracepoint 是稳定 ABI 不会变；kprobe 追踪的内核函数名可能随版本变更而失效</p>
-</details>
-<ol start="3">
-<li>uprobe 在热路径的风险？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>每次函数调用都陷入 BPF 处理——高频函数显著增延迟，应限时长或用 USDT 替代</p>
-</details>
-</details>
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
-      </section>
-      <section class="section" id="s-13-8">
-        <div class="sec-head"><div class="sec-no">13.8</div><h2>section-13.8-perf-stat-事件计数</h2></div>
-<h3 class="sub">用途与特点</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>特点</th>
+<th>手段</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Counting</strong></td>
-<td>非采样 — 统计事件 <strong>总次数</strong></td>
+<td><code class="c">-e</code> 少放事件</td>
+<td>一轮 ≤ 4~6 个硬件事件，跑两轮</td>
 </tr>
 <tr>
-<td><strong>低开销</strong></td>
-<td>适合生产长时间跑</td>
+<td><code class="c">--no-multiplex</code></td>
+<td>关轮换——放不下直接报错，宁可显式失败</td>
 </tr>
 <tr>
-<td><strong>范围</strong></td>
-<td>全局 <code class="c">-a</code> 或进程 <code class="c">-p PID</code></td>
+<td>事件分组</td>
+<td><code class="c">{}:u</code> 分组内互斥计数轮换，组间并行</td>
 </tr>
 </tbody>
 </table></div>
-<h3>高级选项</h3>
+<h3>2.3 ⭐ skid 与 precise_ip</h3>
+<p>PMC 溢出中断到达时，流水线已又执行了若干条指令——<strong>采样到的 IP 不是溢出瞬间的指令</strong>，这段滑差叫 <strong>skid</strong>。<code class="c">perf_event_attr.precise_ip</code>（uapi perf_event.h:426–435）声明容忍度：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
+<th>值</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>任意 skid</td>
+</tr>
+<tr>
+<td>1</td>
+<td>恒定 skid</td>
+</tr>
+<tr>
+<td>2</td>
+<td>请求 0 skid</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>必须</strong> 0 skid（x86 PEBS / ARM SPE）</td>
+</tr>
+</tbody>
+</table></div>
+<p>x86 上 PEBS（Processor Event-Based Sampling）把溢出时的寄存器组快照进内存，几乎消除 skid；ARMv8 有 SPE（Statistical Profiling Extension，Pi5 的 Cortex-A76 无，Graviton/新 Neoverse 有）。<strong>HFT 视角</strong>：追"哪条指令导致 LLC miss"必须 <code class="c">:p</code> 以上（perf 自动加 <code class="c">:pp</code> 尽力精确），否则热点归因差好几条指令。</p>
+<h2>3. Software 事件</h2>
+<p>内核事件点直接计数，<strong>不占 PMC</strong>（v6.6：软件事件分发 <code class="c">do_perf_sw_event()</code> core.c:9766，<code class="c">___perf_sw_event()</code> :9805，CPU_CLOCK 处理 :9990）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
+<th>触发点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">page-faults</code> / <code class="c">minor/major</code></td>
+<td>缺页异常路径（→ <a href="../../06-linux-mm/html/index.html">06-linux-mm fault 四路分发</a>）</td>
+</tr>
+<tr>
+<td><code class="c">context-switches</code></td>
+<td><code class="c">__schedule()</code></td>
+</tr>
+<tr>
+<td><code class="c">cpu-migrations</code></td>
+<td>任务迁核</td>
+</tr>
+<tr>
+<td><code class="c">cpu-clock</code> / <code class="c">task-clock</code></td>
+<td>定时器驱动的时间计数</td>
+</tr>
+<tr>
+<td><code class="c">emulation-faults</code></td>
+<td>指令模拟</td>
+</tr>
+</tbody>
+</table></div>
+<p>软件事件<strong>永远可用</strong>（无硬件依赖）但本身有内核成本（每次触发走一次事件路径）——<code class="c">page-faults</code> 高频进程上 stat 无妨，<strong>record 采样软件事件</strong>时注意开销。</p>
+<h2>4. Tracepoint 事件</h2>
+<pre class="code" data-label="code"><code class="c">perf list 'sched:*'
+perf record -e sched:sched_switch -a -- sleep 5
+perf stat -e 'syscalls:sys_enter_read' -p PID -- sleep 3
+</code></pre>
+<p>tracepoint 字段与 Ftrace 完全同一套（<code class="c">events/…/format</code>）——<a href="chapter-14.html#s-14-5">Ch 14.5 事件源</a>讲过 ABI 稳定性。perf 消费方式的独特价值：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>消费方式</th>
+<th>Ftrace</th>
+<th>perf</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计数</td>
+<td>hist trigger</td>
+<td>✅ <code class="c">perf stat -e tracepoint</code>（当计数器用）</td>
+</tr>
+<tr>
+<td>采样</td>
+<td>—</td>
+<td>✅ <strong>按 tracepoint 触发采调用栈</strong>（如每次 major-fault 采一次栈）</td>
+</tr>
+<tr>
+<td>时间线</td>
+<td>trace_pipe</td>
+<td>perf script</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>杀手用法</strong>：<code class="c">perf record -e major-faults -g</code>——<strong>每次缺页采一个栈</strong>，直接看"谁在触发缺页"（对照 <a href="chapter-07.html#ch-7">Ch 7 缺页火焰图</a>）。</p>
+<h2>5. Probe 事件（kprobe / uprobe / USDT）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>插桩对象</th>
+<th>创建命令</th>
+<th>稳定性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kprobe</td>
+<td>内核函数</td>
+<td><code class="c">perf probe -a 'tcp_v4_rcv skb'</code></td>
+<td>随内核漂移</td>
+</tr>
+<tr>
+<td>uprobe</td>
+<td>用户函数偏移</td>
+<td><code class="c">perf probe -x ./strategy 'decode_tick'</code></td>
+<td>随二进制漂移</td>
+</tr>
+<tr>
+<td>USDT</td>
+<td>应用静态埋点</td>
+<td><code class="c">perf probe -x ./strategy 'udt:tick_begin'</code></td>
+<td>应用自控，稳</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">perf probe -x /path/strategy 'decode_entry'      # 创建 uprobe 事件
+perf record -e probe_strategy:decode_entry -p PID -- sleep 10
+perf probe -d 'decode_entry'                     # 用完删
+</code></pre>
+<p><strong>开销警示</strong>：uprobe 每次命中都是一次 int3 陷阱 + 页权限操作——热路径函数（每 tick 调用的解码器）上显著增延迟。<strong>开发/短采用</strong>；生产要长时间观测热点区间 → 优先 99Hz 采样或 USDT（应用自己埋的点可以做成零成本未启用态）。</p>
+<p>与 BPF 的分工：BPF kprobe/uprobe 走同一插桩点但回调在内核内执行（<a href="chapter-15.html#ch-15">Ch 15</a>）——perf probe 每命中一次就把样本送用户态，BPF 可以在内核里先聚合。高频点 BPF 赢，低频点（如异常路径）perf probe 足够。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>组合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>order book 优化验收</td>
+<td>前后各一轮 <code class="c">perf stat -e cycles,instructions,LLC-load-misses,branch-misses</code>——IPC 与 LLC miss 的 delta 是硬证据</td>
+</tr>
+<tr>
+<td>采样精确归因</td>
+<td>事件加 <code class="c">:pp</code>（precise_ip=2），PEBS/SPE 可用时热点对到指令</td>
+</tr>
+<tr>
+<td>缺页归因</td>
+<td><code class="c">perf record -e major-faults -g</code> → 缺页火焰图（THP/mmap 决策的数据来源，对照 <a href="../../06-linux-mm/html/index.html">06-linux-mm</a>）</td>
+</tr>
+<tr>
+<td>事件超配纪律</td>
+<td>生产脚本固定 ≤6 个硬件事件/轮；对照分析跑两轮，不用 multiplexing 外推值下结论</td>
+</tr>
+<tr>
+<td>Pi5</td>
+<td>ARM PMU 事件名与 x86 有差异（<code class="c">perf list</code> 勘探）；无 SPE → precise_ip 上限低，归因粒度粗</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-13-1">perf 三层架构与 fd API</a></li>
+<li>下一节：<a href="#s-13-8">13.8 perf stat——计数流的完整机制</a></li>
+<li>tracepoint 的另一消费面：<a href="chapter-14.html#intro">Ch 14 Ftrace</a></li>
+<li>可编程对照：<a href="chapter-15.html#ch-15">Ch 15 BPF</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 perf stat 输出里有的事件带 <code class="c">(53.21%)</code>？</summary>
+<p>multiplexing：硬件 PMC 放不下所有事件，内核用 hrtimer（默认每 tick，core.c:1066/:1090）轮换事件组。括号是 <code class="c">time_running/time_enabled</code> 占比，perf 按比例外推计数。外推值有误差且组间不可比。</p>
+</details>
+<details>
+<summary>Q2：perf 和 Ftrace 在 tracepoint 上的关系？</summary>
+<p>同一套插桩点、两种消费面。tracepoint 基础设施属于 Ftrace 体系（tracefs）；perf 经 <code class="c">perf_event_open</code> 把 tracepoint 事件接进 fd + ring buffer 世界，可计数（stat）、可采样采栈（record -e tracepoint -g）、可时间线（script）。</p>
+</details>
+<details>
+<summary>Q3：skid 是什么？怎么消除？</summary>
+<p>PMC 溢出中断到达时流水线已继续执行多条指令，采到的 IP 偏离真正触发事件的那条——这段滑差即 skid。<code class="c">attr.precise_ip</code> 声明容忍度（uapi:426–435）；x86 用 PEBS、ARM 用 SPE 硬件快照寄存器组实现 0-skid。perf 事件名加 <code class="c">:p/:pp/:ppp</code> 请求。</p>
+</details>
+<details>
+<summary>Q4：软件事件和硬件事件"计数发生在哪"的区别，为什么软件事件不占 PMC？</summary>
+<p>硬件事件由 PMC 硬件自增（CPU 微码级），内核只在读/溢出时介入；软件事件在内核代码路径的埋点处经 <code class="c">___perf_sw_event()</code>（core.c:9805）分发计数——纯内核内存操作，与 PMC 寄存器无关。代价是每次触发都有内核执行成本。</p>
+</details>
+<details>
+<summary>Q5：uprobe 插热路径函数为什么危险？有没有替代？</summary>
+<p>每次函数命中都是 int3 陷阱 + 单步恢复 + 可能的页表操作，高频函数上微秒级膨胀。替代：99Hz 采样看统计热点；USDT 由应用方控制埋点密度；BPF uprobe 有批量优化（内核内过滤后再送样本）。</p>
+</details>
+      </section>
+      <section class="section" id="s-13-8">
+        <div class="sec-head"><div class="sec-no">13.8</div><h2>`perf stat` — 事件计数</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-13-3">13.3–13.7 perf 事件源</a> · 下一节：<a href="#s-13-9">13.9 perf record</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>perf stat 是<strong>计数流</strong>的全貌。原书给的是选项表——这里补上三块机制理解：</p>
+<ol>
+<li>内核里 <code class="c">read(fd)</code> 到底读了什么（<code class="c">perf_event_read</code>，v6.6 core.c:4593）</li>
+<li><strong>Shadow statistics</strong>——IPC、GHz、miss 率这些"衍生指标"是 perf <strong>用户态算的</strong>，不是硬件直接给</li>
+<li>multiplexing 下的数字可信度边界（接上节）</li>
+</ol>
+<hr />
+<h2>1. 机制：计数态和采样态用的是同一个 fd</h2>
+<p><code class="c">perf stat ./strategy</code> 的内核侧路径：</p>
+<pre class="code" data-label="code"><code class="c">perf_event_open(attr.disabled=0)
+   → PMU add/start（硬件计数器开始自增）
+运行期间：硬件自由计数，内核零介入（软件事件在埋点点计数）
+结束时：read(fd) → perf_event_read()（core.c:4593）
+   → 读 PMC 现值 + time_enabled/time_running → 64bit 计数返回用户态
+</code></pre>
+<p><strong>要点</strong>：</p>
+<ul>
+<li>计数态<strong>没有中断、没有 buffer</strong>——硬件计数器自己加，内核只在 read 时介入一次。这是 stat 开销近零的根源（对照 record：溢出中断 + 每样本写 buffer）。</li>
+<li>读回的不只是一个数，是一组：<code class="c">{count, time_enabled, time_running}</code>（multiplexing 外推用）+ 事件 ID。<code class="c">perf_event_read</code> 在跨核事件（CPU 迁移过的任务）上还要 IPI 到事件所在的 CPU 读现场（core.c:4593 的 task context 同步逻辑）。</li>
+</ul>
+<h2>2. 常用选项（按用途分组）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组</th>
 <th>选项</th>
 <th>作用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">-e EVENT1,EVENT2</code></td>
-<td>指定事件</td>
-</tr>
-<tr>
+<td>定时</td>
 <td><code class="c">-I 1000</code></td>
-<td><strong>每 1000ms 间隔</strong> 打印一行 — 看趋势</td>
+<td>每 1s 打一行——<strong>趋势序列</strong>（看波动/双峰）</td>
 </tr>
 <tr>
+<td>定位</td>
 <td><code class="c">-A</code> / <code class="c">--no-aggr</code></td>
-<td><strong>每 CPU</strong> 分开 — 负载均衡</td>
+<td>每 CPU 一行——热核审计</td>
 </tr>
 <tr>
-<td><code class="c">--filter</code></td>
-<td>内核/用户过滤 <code class="c">u</code>/<code class="c">k</code></td>
+<td>域</td>
+<td><code class="c">-a</code> / <code class="c">-p PID</code> / <code class="c">-t TID</code></td>
+<td>全系统 / 进程 / 线程</td>
 </tr>
 <tr>
-<td><code class="c">-d</code></td>
-<td>详细 stat（更多默认事件）</td>
+<td>态</td>
+<td><code class="c">-u</code> / <code class="c">-k</code></td>
+<td>只用户态 / 只内核态（<code class="c">exclude_kernel/exclude_user</code> attr 位）</td>
 </tr>
 <tr>
+<td>稳</td>
 <td><code class="c">-r 5</code></td>
-<td><strong>重复 N 次</strong> — 看方差</td>
+<td>重复 5 次给均值±方差</td>
+</tr>
+<tr>
+<td>增</td>
+<td><code class="c">-d</code> / <code class="c">-dd</code></td>
+<td>加任务时钟/IPC/前端后端（Top-down 雏形）</td>
+</tr>
+<tr>
+<td>控</td>
+<td><code class="c">--delay ms</code> / <code class="c">--pre</code>/<code class="c">--post</code></td>
+<td>跳过 warmup；前后钩子</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c"># 每 CPU 每秒 IPC 趋势
+<pre class="code" data-label="shell"><code class="c"># 每 CPU 每秒 IPC 趋势（热核审计）
 perf stat -e cycles,instructions -I 1000 -a -- sleep 5
 
-# 仅用户态
+# 只看用户态（策略/解码代码）
 perf stat -e cycles,instructions -u -p $(pidof strategy) -- sleep 10
+
+# 前后对比（A/B 实验纪律）
+perf stat -r 5 -e cycles,instructions,LLC-load-misses ./strategy_old &gt; old.txt
+perf stat -r 5 -e cycles,instructions,LLC-load-misses ./strategy_new &gt; new.txt
 </code></pre>
-<p><strong>Shadow Statistics：</strong> 某些环境下 perf 用 <strong>影子计数</strong> 减干扰 — 详见 <code class="c">man perf-stat</code>；理解「数字从哪来」即可。</p>
-<p><strong>HFT 验收：</strong> 绑核/调优前后 <strong><code class="c">perf stat</code> 固定事件集</strong> — 存档对比。</p>
+<h2>3. ⭐ Shadow Statistics——衍生指标从哪来</h2>
+<p>perf stat 输出里 <code class="c">insn per cycle</code>、<code class="c">GHz</code>、<code class="c">% of all branches</code> 这几列不是硬件给的——是 perf <strong>用户态</strong>用同轮事件相除算出的"影子统计"：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>衍生指标</th>
+<th>计算</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IPC</td>
+<td><code class="c">instructions / cycles</code></td>
+</tr>
+<tr>
+<td>GHz</td>
+<td><code class="c">cycles / task-clock</code></td>
+</tr>
+<tr>
+<td>cache miss 率</td>
+<td><code class="c">cache-misses / cache-references</code></td>
+</tr>
+<tr>
+<td>branch miss 率</td>
+<td><code class="c">branch-misses / branches</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么重要</strong>：① multiplexing 时两组外推值相除，<strong>误差放大</strong>——比单事件更不可信；② <code class="c">-e</code> 自选事件集时影子列会消失（perf 不知道你想要衍生指标）——想要 IPC 列就别把默认事件集拆散，或手动除。</p>
+<p>判读方法（IPC 四象限、GHz 先行纪律、组合阅读矩阵）在 <a href="chapter-16.html#s-16-1-5">ch16.1.5</a>——本节管"数字从哪来"，那边管"数字怎么读"。</p>
+<h2>4. multiplexing 数字的正确姿势（接 13.3–13.7）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结论级数据 <code class="c">--no-multiplex</code> 分轮跑</td>
+<td>外推值的误差不该进报告</td>
+</tr>
+<tr>
+<td>趋势观察（-I 序列）可用 mux 值</td>
+<td>单事件自身的时间序列仍自洽</td>
+</tr>
+<tr>
+<td>比值类指标（IPC/miss率）看占比一致性</td>
+<td>两事件若不在同一轮换组，比值无意义</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. <code class="c">perf stat</code> 输出精读模板</h2>
+<pre class="code" data-label="code"><code class="c"> Performance counter stats for process id '4242':
+
+      12,345,678,901      cycles                    #    3.201 GHz
+      15,678,901,234      instructions              #    1.27  insn per cycle
+                                                    #    0.65  stalled cycles per insn
+         1,234,567,890      cache-references
+           123,456,789      cache-misses              #   10.00 % of all cache refs
+       ...                    (68.23%)
+             3.856223456 seconds time elapsed
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>判读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">(68.23%)</code></td>
+<td>该事件被 mux 轮换，实际计数时间 68%——数字是外推值</td>
+</tr>
+<tr>
+<td><code class="c">insn per cycle</code></td>
+<td>影子统计；对照 <a href="chapter-16.html#s-16-1-5">IPC 四象限</a>：低 IPC + 高 cache-miss → 内存墙；低 IPC + 低 miss → 停顿/依赖链</td>
+</tr>
+<tr>
+<td><code class="c">stalled cycles per insn</code></td>
+<td>x86 老事件；新平台用 <code class="c">-dd</code> 看 Top-down 四分类</td>
+</tr>
+<tr>
+<td><code class="c">seconds time elapsed</code></td>
+<td>与 task-clock 差异大 → 时间花在 off-CPU（转 <a href="chapter-16.html#s-16-1-7">offcputime 路线</a>）</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>perf stat 只跑一次——单次有抖动，应用 -r 5 重复 5 次看方差</li>
-<li>不区分用户态/内核态——-u 只看用户态、-k 只看内核态，混在一起看不出是策略慢还是内核慢</li>
-<li>不看 per-CPU——-A 每核分开，HFT 热核和其他核可能差很大</li>
-</ol>
-<details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf stat 的 -r 5 选项有什么用？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>重复 5 次看方差——单次有抖动，重复后看 std dev 判断稳定性</p>
-</details>
-<ol start="2">
-<li>如何区分用户态和内核态开销？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>-u 只看用户态（策略/解码）、-k 只看内核态（syscall/协议栈）——分别排查</p>
-</details>
-<ol start="3">
-<li>HFT 为什么要用 -A（per-CPU）模式？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>热核和其他核可能差很大——全局平均掩盖热核问题</p>
-</details>
-</details>
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>验收基线</strong></td>
+<td>绑核/调优/换内核参数前后，固定事件集 + <code class="c">-r 5</code> 存档 diff——<a href="chapter-16.html#s-16-1-3">ch16.1.4 配置审计</a>的"前后对照"环节</td>
+</tr>
+<tr>
+<td>热核审计</td>
+<td><code class="c">-A -I 1000</code>：隔离核上的 IPC 应显著高于普通核；突然拉平 = 隔离失效或迁核</td>
+</tr>
+<tr>
+<td>用户/内核分账</td>
+<td><code class="c">-u</code>/<code class="c">-k</code> 各跑一轮：策略慢（用户态）还是协议栈慢（内核态）一刀分开</td>
+</tr>
+<tr>
+<td>生产常驻</td>
+<td>stat 是唯一可长跑的深检——<a href="chapter-16.html#s-16-9">ch16 S0-S4 演练</a>的 S2 阶段主力</td>
+</tr>
+<tr>
+<td>Pi5</td>
+<td>无 PEBS/SPE，但计数流完整——eBPF 实验前先 stat 建立基线</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<p>← <a href="#intro">本章导读</a></p>
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-13-3">事件源与 multiplexing</a></li>
+<li>下一节：<a href="#s-13-9">13.9 perf record——采样流与 ring buffer</a></li>
+<li>数字判读：<a href="chapter-16.html#s-16-1-5">ch16.1.5 PMC 精读</a></li>
+<li>缺页计数延伸：<a href="chapter-07.html#ch-7">Ch 7 内存</a> · <a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：perf stat 为什么开销近零？和 record 的本质区别？</summary>
+<p>计数态没有中断和 buffer：硬件 PMC 自增，内核只在结束时 read(fd) 介入一次。record 是采样态——PMC 溢出中断每样本触发，内核写 ring buffer，用户态定期收割。stat 是"读表"，record 是"装监控"。</p>
+</details>
+<details>
+<summary>Q2：IPC 这一列是谁算的？multiplexing 下它还可信吗？</summary>
+<p>perf 用户态影子统计：instructions/cycles 相除。mux 下两事件若在不同轮换组，各自外推误差再相除放大——结论级数据应 <code class="c">--no-multiplex</code> 分轮采集。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">-I 1000</code> 和 <code class="c">-r 5</code> 各解决什么问题？</summary>
+<p><code class="c">-I 1000</code> 给时间序列（看波动/双峰/周期性），<code class="c">-r 5</code> 给重复样本（看方差/置信度）。前者发现"什么时候异常"，后者确认"差异是否显著"。</p>
+</details>
+<details>
+<summary>Q4：elapsed 和 task-clock 差很多说明什么？下一步查什么？</summary>
+<p>进程大量时间不在 CPU 上（等锁/IO/调度）。on-CPU 工具到此为止——转 off-CPU 路线：offcputime/eBPF（<a href="chapter-16.html#s-16-1-7">ch16.1.7</a>）。</p>
+</details>
+<details>
+<summary>Q5：为什么任务迁移过的进程 read 计数要 IPI？</summary>
+<p>事件绑定在"打开时的上下文"（task context），迁移后计数现场在别的 CPU。<code class="c">perf_event_read</code>（core.c:4593）需 IPI 到事件当前所在 CPU 读取 PMC 现场保证一致性——这也是 <code class="c">cpu-migrations</code> 软件事件存在的原因：迁移本身有观测成本。</p>
+</details>
       </section>
       <section class="section" id="s-13-9">
-        <div class="sec-head"><div class="sec-no">13.9</div><h2>section-13.9-perf-record-剖析采样</h2></div>
-<h3 class="sub">工作原理</h3>
-<pre class="code" data-label="code"><code class="c">定时/事件触发 → 采当前 PC + 栈（若 -g）
-    → 写入 perf.data（含符号表索引）
+        <div class="sec-head"><div class="sec-no">13.9</div><h2>`perf record` — 剖析采样</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-13-8">13.8 perf stat</a> · 下一节：<a href="#s-13-10">13.10 perf report 与 script</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>record 是采样流的核心。原书讲选项——这里把<strong>一次采样的内核全生命周期</strong>拆开：</p>
+<pre class="code" data-label="code"><code class="c">PMC 溢出中断（NMI）
+  → __perf_event_overflow()（core.c:9500）
+  → irq_work 转移到可安全上下文（:2471）
+  → 采集样本（IP/时间戳/调用栈，按 sample_type 位掩码）
+  → perf_output_sample()（:7262）写 mmap ring buffer
+  → 用户态 perf 周期性收割 perf.data
 </code></pre>
+<p>以及栈回溯三种方法的取舍、<code class="c">-F 99</code> 的拍频理由、内核限流机制。</p>
+<hr />
+<h2>1. 采样触发：两种节拍</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>选项</th>
+<th>语义</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>频率</strong></td>
+<td><code class="c">-F 99</code></td>
+<td>每秒约 99 个样本（内核自动调周期）</td>
+<td>默认推荐</td>
+</tr>
+<tr>
+<td><strong>周期</strong></td>
+<td><code class="c">-c 1000000 -e cycles</code></td>
+<td>每 100 万周期采一次</td>
+<td>需要与工作量对齐时</td>
+</tr>
+<tr>
+<td>软件节拍</td>
+<td><code class="c">-e cpu-clock -F 99</code></td>
+<td>定时器驱动（无 PMC 依赖）</td>
+<td>环境 PMC 不可用时</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">-F 99</code> 而非 100</strong>：避开与 OS timer（100/250/1000Hz）及常见周期任务的<strong>拍频共振</strong>——100Hz 采样会总落在同一相位，周期性任务可能被系统性错过或放大。</p>
+<p><strong>频率模式的实现</strong>：<code class="c">attr.sample_freq</code> 写入后，内核在每个样本后按 <code class="c">period = 计数值/目标频率</code> 动态重设 PMC 周期（uapi <code class="c">sample_freq</code> :404 与 <code class="c">sample_period</code> :403 共用 union）。</p>
+<h2>2. ⭐ 一次采样的内核旅程（v6.6 锚点）</h2>
+<h3>2.1 溢出中断与 NMI</h3>
+<p>PMC 溢出触发的中断在 x86 上通常是 <strong>NMI</strong>（不可屏蔽）——因为采样对象可能是内核关中断区，普通中断进不去。NMI 上下文有严格限制（不能睡眠、不能拿锁），所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>v6.6 位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 溢出处理入口 <code class="c">__perf_event_overflow()</code></td>
+<td>core.c:9500</td>
+<td>判断限流、构造样本数据</td>
+</tr>
+<tr>
+<td>② <code class="c">irq_work_queue(&amp;event-&gt;pending_irq)</code></td>
+<td>core.c:2471</td>
+<td><strong>把真正的工作推迟到下一个可安全中断上下文</strong>（NMI → 普通 irq_work）</td>
+</tr>
+<tr>
+<td>③ <code class="c">__perf_event_output()</code></td>
+<td>core.c:7803</td>
+<td>调 ring buffer 写入</td>
+</tr>
+<tr>
+<td>④ <code class="c">perf_output_sample()</code></td>
+<td>core.c:7262</td>
+<td>按 <code class="c">sample_type</code> 位掩码逐字段序列化样本</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>⭐ 这就是"采样样本之间 skid/时间戳抖动"的机制根源</strong>：NMI → irq_work 的转移本身有延迟窗口，样本时间戳来自溢出时刻（<code class="c">data-&gt;time</code>）但落 buffer 在稍后。</p>
+<h3>2.2 限流（throttle）</h3>
+<p>内核防采样风暴的三道闸（core.c）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>闸</th>
+<th>值</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sysctl_perf_event_sample_rate</code></td>
+<td>默认 <strong>100000/s</strong>（:426–430 <code class="c">DEFAULT_MAX_SAMPLE_RATE</code>）</td>
+<td>全局频率上限</td>
+</tr>
+<tr>
+<td><code class="c">max_samples_per_tick</code></td>
+<td>100000/HZ 每 tick</td>
+<td>防 tick 内爆发</td>
+</tr>
+<tr>
+<td><code class="c">perf_sample_allowed_ns</code></td>
+<td>换算成 ns</td>
+<td>单事件级限流，超限的样本被丢弃并记 <code class="c">PERF_RECORD_THROTTLE</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">-F 99</code> 远低于限流线，正常 profiling 碰不到；但 <code class="c">-e page-faults -c 1</code>（每次缺页都采）在缺页风暴下会被内核 throttle——<strong>收不到样本先想限流</strong>，不是 bug。</p>
+</blockquote>
+<h3>2.3 ring buffer：mmap 出来的生产者-消费者环</h3>
+<p><code class="c">perf record</code> 启动时 <code class="c">mmap(fd)</code> 得到一块共享内存，布局：<code class="c">user_page + data 环形区</code>。无锁协议（ring_buffer.c:58–98 注释原文，经典的一读一写指针设计）：</p>
+<pre class="code" data-label="code"><code class="c">内核（生产者）                    用户态（消费者）
+  本地变量 head                     本地变量 tail
+  LOAD  rb-&gt;user_page-&gt;data_tail    LOAD  rb-&gt;user_page-&gt;data_head
+  写样本数据到 head                 读 [tail, head) 区间
+  STORE rb-&gt;user_page-&gt;data_head    消费完 STORE rb-&gt;user_page-&gt;data_tail
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>细节</th>
+<th>v6.6 锚点</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核写侧</td>
+<td><code class="c">__perf_output_begin()</code>（:149），读 data_tail :197</td>
+<td>环满时的丢样本策略</td>
+</tr>
+<tr>
+<td>发布写指针</td>
+<td><code class="c">WRITE_ONCE(rb-&gt;user_page-&gt;data_head, head)</code> :110</td>
+<td><strong>唯一共享可变状态</strong>——release 语义</td>
+</tr>
+<tr>
+<td>内存屏障</td>
+<td>:88–98 大段注释</td>
+<td>保证"消费者先见 head 后见数据"的顺序</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>⭐ HFT 视角</strong>：这是<strong>用户态与内核最高效的数据通道</strong>（零拷贝、无系统调用、无锁）——与 DPDK 的 ring、<a href="../../03-linux-userspace-api/html/index.html">io_uring 的 SQ/CQ</a> 同一设计家族。perf 99Hz 下每秒 99 条毫无压力；调到万级频率也撑得住，瓶颈在采样本身的 NMI/irq_work 成本而非传输。</p>
+<h2>3. 栈回溯（<code class="c">-g</code>）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方法</th>
+<th>原理</th>
+<th>要求</th>
+<th>取舍</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>fp</strong>（帧指针）</td>
+<td>沿 RBP 链逐帧走</td>
+<td>编译 <code class="c">-fno-omit-frame-pointer</code></td>
+<td>快、通用；<strong>牺牲一个寄存器</strong>（~1-2% 性能）</td>
+</tr>
+<tr>
+<td><strong>dwarf</strong></td>
+<td>展开 .eh_frame/.debug_info</td>
+<td>二进制带 debuginfo</td>
+<td>准；每样本拷贝数 KB 栈 + 用户态展开，<strong>慢且 perf.data 巨大</strong></td>
+</tr>
+<tr>
+<td><strong>lbr</strong></td>
+<td>硬件 Last Branch Record 栈</td>
+<td>Intel CPU</td>
+<td>快且准；栈深受限（32 层）、老 AMD 无</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">perf record -F 99 -g --call-graph fp -p $(pidof strategy) -- sleep 30
+</code></pre>
+<p><strong>HFT 生产构建的默认立场</strong>：<strong>Release 保留 <code class="c">-g -fno-omit-frame-pointer</code></strong>。1-2% 的寄存器开销换"任何时候都能拿到可读火焰图"——尾延迟事故的归因价值远超这点成本（<a href="chapter-05.html#ch-5">Ch 5 Gotchas</a>）。</p>
+<p><strong>[unknown] 诊断表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全是 <code class="c">[unknown]</code></td>
+<td>符号被 strip</td>
+<td>装 debuginfo / 勿 strip</td>
+</tr>
+<tr>
+<td>栈只有 2-3 帧就断</td>
+<td>fp 被优化掉</td>
+<td>编译选项 / 试 dwarf</td>
+</tr>
+<tr>
+<td>某几个函数无栈</td>
+<td><code class="c">-O3</code> inline 重灾区</td>
+<td><code class="c">--call-graph dwarf</code> 或 <code class="c">__attribute__((noinline))</code> 热点函数</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 关键选项速查</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>选项</th>
 <th>含义</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">-F 99</code></td>
-<td>99 Hz 频率采样</td>
+<td><code class="c">-F N</code></td>
+<td>目标频率</td>
+<td>99 常规；499 短窗口细查</td>
 </tr>
 <tr>
-<td><code class="c">-c N -e cycles</code></td>
-<td>每 N 周期采一次</td>
+<td><code class="c">-c N</code></td>
+<td>周期触发</td>
+<td>与 -F 互斥</td>
 </tr>
 <tr>
 <td><code class="c">-g</code></td>
-<td><strong>调用栈</strong>（call graph）</td>
+<td>采调用栈</td>
+<td>等价 <code class="c">--call-graph fp</code></td>
 </tr>
 <tr>
-<td><code class="c">--call-graph fp</code></td>
-<td>帧指针 unwinding（推荐，需 -fno-omit-frame-pointer）</td>
+<td><code class="c">-e E</code></td>
+<td>按事件采</td>
+<td><code class="c">-e major-faults -g</code> = 缺页火焰图</td>
 </tr>
 <tr>
-<td><code class="c">--call-graph dwarf</code></td>
-<td>debuginfo 栈 — 准但慢、体积大</td>
+<td><code class="c">-p PID</code> / <code class="c">-a</code></td>
+<td>进程 / 全系统</td>
+<td>生产限 PID</td>
 </tr>
 <tr>
-<td><code class="c">-p PID</code></td>
-<td>单进程</td>
-</tr>
-<tr>
-<td><code class="c">-a</code></td>
-<td>全系统</td>
-</tr>
-<tr>
-<td><code class="c">-e EVENT</code></td>
-<td>按事件采（如 page-faults）</td>
+<td><code class="c">-C CPU</code></td>
+<td>指定核</td>
+<td>隔离核专项</td>
 </tr>
 <tr>
 <td><code class="c">-- sleep N</code></td>
-<td>采 N 秒</td>
+<td>限定时长</td>
+<td><strong>生产铁律</strong></td>
+</tr>
+<tr>
+<td><code class="c">-o file</code></td>
+<td>输出文件</td>
+<td>默认 perf.data</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">perf record -F 99 -g --call-graph fp -p $(pidof strategy) -- sleep 30
-# 或全系统 crisis
-perf record -F 99 -g -a -- sleep 10
-</code></pre>
-<h3>Stack Walking（栈回溯）配置</h3>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>方法</th>
-<th>要求</th>
-<th>HFT 推荐</th>
+<th>场景</th>
+<th>用法</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>fp（帧指针）</strong></td>
-<td><code class="c">-fno-omit-frame-pointer</code></td>
-<td><strong>Release 保留 fp</strong></td>
+<td>尾延迟归因</td>
+<td><code class="c">-F 499 -g -p PID -- sleep 60</code>：抓 P99 尖刺的栈——尖刺是稀有事件，<strong>长窗 + 高频</strong>才采得到</td>
 </tr>
 <tr>
-<td><strong>dwarf</strong></td>
-<td><code class="c">-g</code> debuginfo</td>
-<td>调试构建</td>
+<td>隔离核专项</td>
+<td><code class="c">-C 2,3 -a</code>：只采隔离核，热核视角不被普通核稀释</td>
 </tr>
 <tr>
-<td><strong>lbr</strong></td>
-<td>硬件 Last Branch Record</td>
-<td>部分 CPU</td>
+<td>缺页火焰图</td>
+<td><code class="c">-e major-faults -g</code>：直接对照 <a href="../../06-linux-mm/html/index.html">THP/mmap 决策</a></td>
+</tr>
+<tr>
+<td>perf.data 归档</td>
+<td>每次调优前后留档——<a href="chapter-16.html#s-16-0">ch16 baseline 纪律</a>的可回放要求</td>
+</tr>
+<tr>
+<td>ring buffer 设计模式</td>
+<td>perf mmap 环是零拷贝双指针协议的教科书实现——与 io_uring/DPDK ring 对照着读</td>
+</tr>
+<tr>
+<td>Pi5</td>
+<td>ARM fp 栈回溯依赖 <code class="c">-fomit-frame-pointer</code> 未开；SPE 缺席 → 栈与 IP 精度受限，火焰图仍可用</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Ch 5 Gotchas 落地：</strong></p>
+<hr />
+<h2>衔接</h2>
 <ul>
-<li><code class="c">[unknown]</code> → 装 debuginfo / 勿 strip</li>
-<li>栈浅/断层 → 开 fp；减 <code class="c">-O3</code> inline 或 dwarf</li>
+<li>上一节：<a href="#s-13-8">stat 计数机制</a></li>
+<li>下一节：<a href="#s-13-10">report/script——perf.data 的两种读法与火焰图</a></li>
+<li>off-CPU 缺口：<a href="chapter-15.html#ch-15">Ch 15 BPF offcputime</a></li>
+<li>内存事件深入：<a href="chapter-07.html#ch-7">Ch 7</a> · <a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
 <hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>-F 99 不知道为什么——99 Hz 减少与 OS timer（100/250/1000 Hz）拍频共振</li>
-<li>栈回溯不用 fp——dwarf 准但慢体积大，lbr 依赖硬件，fp 最通用但需编译保留</li>
-<li>采样时间太短——HFT tail latency 需要长采样才能采到 P99 尖刺的栈</li>
-</ol>
+<h2>代码自测</h2>
 <details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf record -F 99 为什么用 99 而不是 100？</li>
-</ol>
+<summary>Q1：一次 perf record 样本从溢出到落盘，经过哪几站？</summary>
+<p>PMC 溢出（多为 NMI）→ <code class="c">__perf_event_overflow</code>（core.c:9500）→ <code class="c">irq_work_queue</code> 推迟（:2471，NMI 上下文不能拿锁）→ <code class="c">__perf_event_output</code> → <code class="c">perf_output_sample</code> 按 sample_type 序列化 → 写 mmap ring buffer（用户态零拷贝收割）。落 perf.data 是用户态收割后的二次序列化。</p>
+</details>
 <details>
-<summary>答</summary>
-<p>减与 OS timer（100/250/1000 Hz）拍频共振——避免采样总是落在同一相位</p>
+<summary>Q2：perf 的 ring buffer 为什么可以无锁？</summary>
+<p>单生产者（内核）单消费者（用户态）+ 各写各的指针：内核只 STORE data_head、只 LOAD data_tail；用户态反之。唯一共享可变状态是两个指针（data_head/data_tail），配上 release/acquire 语义的内存屏障（ring_buffer.c:58–98 协议注释）即可——读写同一块环形内存但永远不碰对方正在写的区域。</p>
 </details>
-<ol start="2">
-<li>栈回溯的三种方法及 HFT 推荐？</li>
-</ol>
 <details>
-<summary>答</summary>
-<p>fp（帧指针，推荐需 -fno-omit-frame-pointer）、dwarf（准但慢）、lbr（硬件依赖）</p>
+<summary>Q3：<code class="c">-F 99</code> 为什么比 100 好？-c 和 -F 什么时候选哪个？</summary>
+<p>99 避开与 OS timer（100/250/1000Hz）拍频共振——同相位采样会系统性漏采/过采周期任务。-F 适合统计画像（样本量随活动自适应）；-c 适合把采样与工作量对齐（如"每处理 100 万个报文采一次"）。</p>
 </details>
-<ol start="3">
-<li>为什么采样时间不能太短？</li>
-</ol>
 <details>
-<summary>答</summary>
-<p>HFT P99 尖刺是稀有事件——短采样可能采不到，需要足够长才能捕获尾部栈</p>
+<summary>Q4：为什么 NMI 里不能直接写 ring buffer，要绕 irq_work？</summary>
+<p>NMI 上下文不可睡眠、不可拿自旋锁、甚至部分 per-CPU 基础设施都不可重入。直接做输出可能死锁。irq_work 把工作排队到下一个正常中断上下文执行——代价是时间戳与写入时刻的微小偏差。</p>
 </details>
+<details>
+<summary>Q5：Release 构建该不该保留帧指针？</summary>
+<p>应该：<code class="c">-g -fno-omit-frame-pointer</code>。代价约 1-2%（一个寄存器），换来任意时刻可采可读的调用栈。HFT 尾延迟事故里"事后能归因"的价值远超这点稳态开销——没有栈的火焰图只有 [unknown]。</p>
 </details>
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-13-10">
-        <div class="sec-head"><div class="sec-no">13.10</div><h2>section-13.10-perf-report-与-perf-script</h2></div>
-<h3 class="sub"><code class="c">perf report</code></h3>
-<p>解析 <code class="c">perf.data</code> — TUI 或文本热点。</p>
-<pre class="code" data-label="shell"><code class="c">perf report --stdio --no-children | head -50
-perf report --sort comm,dso,symbol    # 按进程/库/符号
-perf report -g graph,0.5,caller        # 调用图
+        <div class="sec-head"><div class="sec-no">13.10</div><h2>`perf report` 与 `perf script`</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-13-9">13.9 perf record</a> · 下一节：<a href="#s-13-11">13.11 perf trace</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p><code class="c">perf.data</code> 的两种读法：</p>
+<ul>
+<li><strong>report</strong>：聚合视图（热点表 + 调用图）——回答"哪热"</li>
+<li><strong>script</strong>：逐样本流水（每行一个样本）——回答"何时、什么序列"，且是<strong>火焰图的标准输入</strong></li>
+</ul>
+<p>外加 self/children 计分原理、火焰图管道、以及 on-CPU 图的根本盲区。</p>
+<hr />
+<h2>1. <code class="c">perf report</code> — 聚合视图</h2>
+<pre class="code" data-label="shell"><code class="c">perf report --stdio --no-children | head -50       # 纯文本热点表
+perf report --sort comm,dso,symbol                  # 按进程/库/符号三维
+perf report -g graph,0.5,caller                     # 调用图（caller 视角）
+perf report -g fractal,0.5,callee                   # callee 视角（火焰图式）
 </code></pre>
+<h3>1.1 ⭐ Overhead 的分母与 self/children</h3>
+<p>样本里每帧都被记一次账。两种计法：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>视图</th>
+<th>计法</th>
+<th>含义</th>
 <th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Overhead %</strong></td>
-<td>哪个符号占样本比最多</td>
+<td><strong>Self（<code class="c">--no-children</code>）</strong></td>
+<td>只记<strong>栈顶帧</strong>的样本</td>
+<td>找"真正的热点函数"——CPU 周期烧在哪行</td>
 </tr>
 <tr>
 <td><strong>Children</strong></td>
-<td>含子调用累计</td>
-</tr>
-<tr>
-<td><strong>DSO</strong></td>
-<td>哪个 .so/.内核模块</td>
+<td>栈里<strong>每一帧都记</strong>一次</td>
+<td>找"调用链热点"——哪条路径整体在烧</td>
 </tr>
 </tbody>
 </table></div>
-<h3><code class="c">perf script</code></h3>
-<p><strong>逐行打印</strong> 每个样本 — 火焰图 <strong>预处理输入</strong>。</p>
-<pre class="code" data-label="shell"><code class="c">perf script &gt; out.perf
-perf script | stackcollapse-perf.pl | flamegraph.pl &gt; cpu.svg
+<pre class="code" data-label="code"><code class="c">main() ──&gt; dispatch() ──&gt; decode() ──&gt; 解码热点
 </code></pre>
-<p><strong>FlameGraph 仓库（Brendan Gregg）：</strong></p>
-<pre class="code" data-label="shell"><code class="c"># 克隆一次
-git clone https://github.com/brendangregg/FlameGraph
+<p>100 个样本都长这样：decode 的 self=100；main/dispatch/decode 的 children 都是 100（每帧全记）。</p>
+<p><strong>判读纪律</strong>：</p>
+<ol>
+<li><strong>先 self 后 children</strong>：self 表定位叶子热点（改哪里）；children 表看传播路径（谁把流量引来的）</li>
+<li>children 高 self 低 ≠ 无罪——<code class="c">dispatch()</code> 可能是<strong>分错账的入口</strong>（它调了三个函数，热度被摊薄），用 <code class="c">-g</code> 展开看分叉</li>
+<li><strong><code class="c">--no-children</code> 是严肃分析姿势</strong>——默认 TUI 的 children 视图容易把注意力引向 main 这种"人人经过"的帧</li>
+</ol>
+<h3>1.2 常用 sort 维度</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>回答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">symbol</code></td>
+<td>哪个函数</td>
+</tr>
+<tr>
+<td><code class="c">dso</code></td>
+<td>哪个 .so / 内核模块（<strong>第三方库拖后腿证据</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">comm</code></td>
+<td>哪个进程/线程</td>
+</tr>
+<tr>
+<td><code class="c">cpu</code></td>
+<td>哪个核（热核 vs 均衡）</td>
+</tr>
+<tr>
+<td><code class="c">srcline</code>（需 debuginfo）</td>
+<td>哪一行</td>
+</tr>
+<tr>
+<td><code class="c">parent</code></td>
+<td>谁调的</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. <code class="c">perf script</code> — 逐样本流水</h2>
+<pre class="code" data-label="shell"><code class="c">perf script &gt; out.perf        # 每样本一块：线程/CPU/时间戳/符号栈
+perf script -F comm,pid,tid,cpu,time,ip,sym    # 定制字段
+</code></pre>
+<p>输出形态（火焰图管道的原料）：</p>
+<pre class="code" data-label="code"><code class="c">strategy  4242/4242  [003] 40231.812345:  1234 cycles:
+        fffffe00+00a0b0 [strategy] decode_tick
+        fffffe00+0091c2 [strategy] dispatch
+        ...
+</code></pre>
+<p><strong>定位差异</strong>：report 是"聚合后的结论"，script 是"原始证据"——看<strong>时间分布</strong>（热点是均匀烧还是爆发式）、<strong>单样本异常</strong>（一个 2ms 长栈在 99Hz 下稀有几个样本）、<strong>与其他日志对时间轴</strong>时必须用 script。</p>
+<h2>3. 火焰图管道</h2>
+<pre class="code" data-label="shell"><code class="c">git clone https://github.com/brendangregg/FlameGraph
 export PATH=$PATH:/path/to/FlameGraph
 
+perf record -F 99 -g -p $(pidof strategy) -- sleep 60
 perf script | stackcollapse-perf.pl | flamegraph.pl --title=&quot;strategy CPU&quot; &gt; strategy.svg
 </code></pre>
-<p>→ Ch 1/2/5/6 <a href="chapter-02.html#ch-2">火焰图读法</a></p>
-<p><strong>Off-CPU：</strong> <code class="c">perf record</code> 默认采 <strong>on-CPU</strong>；off-CPU 用 BPF <code class="c">offcputime</code>（Ch 5/15）— <strong>CPU + Off-CPU 火焰图缺一不可</strong>。</p>
+<p>三级流水各做什么：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>级</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">perf script</code></td>
+<td>吐逐样本栈</td>
+</tr>
+<tr>
+<td><code class="c">stackcollapse-perf.pl</code></td>
+<td>每个样本压成 <code class="c">main;dispatch;decode 123</code> 的单行（分号链 + 计数）</td>
+</tr>
+<tr>
+<td><code class="c">flamegraph.pl</code></td>
+<td>聚合同链计数 → 画宽度∝样本数的矩形</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>读图规则</strong>（对照 <a href="chapter-02.html#ch-2">Ch 2 方法论</a>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>看宽度不看高度</strong></td>
+<td>高度=栈深（无意义），宽度=样本占比</td>
+</tr>
+<tr>
+<td>横向顺序无关</td>
+<td>按字母排——<strong>不代表执行顺序</strong></td>
+</tr>
+<tr>
+<td>平顶宽 = 叶子热点</td>
+<td>直接优化目标</td>
+</tr>
+<tr>
+<td>热但很浅的塔</td>
+<td>调用链级问题（间接开销/分派混乱）</td>
+</tr>
+<tr>
+<td>变体</td>
+<td><code class="c">flamegraph.pl --invert</code>（icicle）、<code class="c">--colors</code> 按模块着色</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>off-CPU 火焰图</strong>：perf record 默认只在<strong>线程 on-CPU</strong> 时采样——等锁/IO/调度的时间在图上<strong>完全不可见</strong>（这类时间根本不产生样本）。补法：BPF <code class="c">offcputime</code>（<a href="chapter-15.html#ch-15">Ch 15</a>）采"唤醒→上CPU"间隔的栈——<strong>CPU + Off-CPU 两张图缺一不可</strong>，只看 CPU 图会把"等"误判成"没事"。</p>
+<h2>4. 一个 HFT 完整例：tick 处理 P99 恶化</h2>
+<pre class="code" data-label="shell"><code class="c"># ① 计数先行（S2）
+perf stat -e cycles,instructions,LLC-load-misses,context-switches -p $(pidof strat) -I 1000 -- sleep 60
+#    → IPC 正常但 context-switches 每 10s 一个尖 → 调度问题，CPU 图白采
+
+# ② on-CPU 长采（S3）
+perf record -F 499 -g -p $(pidof strat) -C 3 -- sleep 120
+perf script | stackcollapse-perf.pl | flamegraph.pl &gt; strat-cpu.svg
+#    → CPU 图无异常热点 → 排除计算慢
+
+# ③ off-CPU 补刀（转 BPF）
+offcputime -p $(pidof strat) 60 &gt; off.svg
+#    → 5ms 尖刺=epoll_wait 唤醒后等 CPU → runqlat 迁核审计
+</code></pre>
+<p>这个例子的教训在 <a href="chapter-16.html#s-16-1-7">ch16.1.7 动态追踪</a>：<strong>工具会撒谎——不是数据假，是覆盖面有洞</strong>。on-CPU 图"干净"只是证明"CPU 上没问题"。</p>
 <hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>report 只看 overhead%——Children 列（含子调用累计）也很重要，单看 overhead 会漏调用链热点</li>
-<li>script 不用 stackcollapse——直接看 perf script 输出是逐行原始样本，需要 stackcollapse + flamegraph 才可视化</li>
-<li>on-CPU 火焰图当全部——off-CPU 时间（等锁/IO/调度）用 perf record 看不到，需 BPF offcputime</li>
-</ol>
-<details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf report 的 Overhead% 和 Children 列有什么区别？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>Overhead = 当前函数自身样本占比；Children = 含子调用累计占比——Children 高说明调用链热</p>
-</details>
-<ol start="2">
-<li>perf script 输出如何变成火焰图？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>perf script | stackcollapse-perf.pl | flamegraph.pl &gt; out.svg——需要 FlameGraph 仓库工具</p>
-</details>
-<ol start="3">
-<li>on-CPU 火焰图的局限？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>只显示在 CPU 上执行的时间——等锁/IO/调度的时间不在图上，需 offcputime 补充</p>
-</details>
-</details>
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调优验收</td>
+<td>前后各留 svg + <code class="c">--sort dso</code> 表——LLC miss 类优化看 dso 维度（数据结构所在库）</td>
+</tr>
+<tr>
+<td>第三方库审计</td>
+<td><code class="c">--sort dso</code>：行情解码库/内核协议栈各占多少，一键分账</td>
+</tr>
+<tr>
+<td>长尾样本考古</td>
+<td><code class="c">perf script</code> 后按时间过滤稀有长栈样本——99Hz 下 P99 尖刺每秒约 1 个样本，60s 采样约 60 个证据点</td>
+</tr>
+<tr>
+<td>容器/多机归档</td>
+<td>perf.data + svg 进 release 工单，<a href="chapter-16.html#s-16-0">ch16 可回放纪律</a></td>
+</tr>
+<tr>
+<td>Pi5</td>
+<td>火焰图管道全流程可用——<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7 eBPF</a> 实验线的标配输出</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<p>← <a href="#intro">本章导读</a></p>
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-13-9">record 采样机制</a></li>
+<li>下一节：<a href="#s-13-11">13.11 perf trace——syscall 视角</a></li>
+<li>off-CPU 补齐：<a href="chapter-15.html#ch-15">Ch 15 BPF</a></li>
+<li>方法论：<a href="chapter-02.html#ch-2">Ch 2 USE/Drill-Down</a> · <a href="chapter-16.html#s-16-9">ch16 演练</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：Self 和 Children 列分别怎么记账？各自用来回答什么问题？</summary>
+<p>Self 只把样本记给栈顶帧（真热点在哪行）；Children 给栈里每帧都记（哪条路径在烧）。分析顺序：先 <code class="c">--no-children</code> 找叶子热点，再看 children 理解流量从哪来。children 高 self 低的帧是"路径"不是"病灶"。</p>
+</details>
+<details>
+<summary>Q2：火焰图为什么"看宽度不看高度"？塔的横向顺序有意义吗？</summary>
+<p>宽度∝样本占比（时间份额），高度只是调用深度。横向按字典序排列、可任意重排——不代表执行顺序或时间顺序。想看顺序要回 perf script 流水。</p>
+</details>
+<details>
+<summary>Q3：CPU 火焰图上完全看不到锁等待，为什么？</summary>
+<p>record 只在线程 on-CPU 时由 PMC 溢出触发采样；等锁/IO/调度的线程不产生任何样本——这段时间在图上是空白而非显式条目。要显式看"等"的时间需 off-CPU 采样（BPF offcputime 用唤醒/切换事件对栈）。</p>
+</details>
+<details>
+<summary>Q4：report 和 script 各自的不可替代场景？</summary>
+<p>report：聚合结论（热点表、dso 分账）。script：时间维度证据——热点的时间分布（均匀 vs 爆发）、稀有长栈样本、与外部日志对时间轴。火焰图丢失时间信息，script 保留全部。</p>
+</details>
+<details>
+<summary>Q5：<code class="c">--sort dso</code> 在第三方库审计里怎么用？</summary>
+<p>按动态库/内核模块聚合样本：一行一个 .so。行情解码库占比 40% 而自家策略 10%——优化方向立判；也用于验证"换版 libfoo 后开销占比下降"这类跨版本对比。</p>
+</details>
       </section>
       <section class="section" id="s-13-11">
-        <div class="sec-head"><div class="sec-no">13.11</div><h2>section-13.11-perf-trace-系统调用追踪</h2></div>
-<p>类似 <strong>strace</strong>，基于 perf 基础设施 — <strong>通常更低开销</strong>。</p>
-<pre class="code" data-label="shell"><code class="c">perf trace -p $(pidof strategy) -- sleep 5
-perf trace -e open,read,write,mmap -- sleep 3
+        <div class="sec-head"><div class="sec-no">13.11</div><h2>`perf trace` — 系统调用追踪</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-13-10">13.10 perf report 与 script</a> · 下一节：<a href="#s-13-12">13.12 其他能力延伸</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>perf trace 是 syscall 视角的观测器（strace 的 perf 版）。核心内容：</p>
+<ol>
+<li><strong>strace 为什么慢</strong>——ptrace 的双陷阱机制</li>
+<li><strong>perf trace 为什么快</strong>——tracepoint 单点旁路</li>
+<li>syscall 汇总模式（<code class="c">-s</code>）——开销再降一个量级的统计姿势</li>
+</ol>
+<hr />
+<h2>1. 机制对比：ptrace vs tracepoint</h2>
+<h3>1.1 strace 的双陷阱</h3>
+<pre class="code" data-label="code"><code class="c">strace（ptrace ATTACH）
+  目标进程每次 syscall：
+    ① 入口：内核 ptrace 停止 → SIGSTOP 唤醒 strace → strace ptrace(PEEKUSRD) 拷参数
+       → ptrace(CONT) 恢复目标
+    ② 出口：再停止一次 → 再唤醒 strace → 再拷返回值 → 再恢复
+</code></pre>
+<p><strong>每次 syscall 两次进程切换 + 两次上下文往返</strong>——高频 syscall 进程（网络行情接收）直接慢 10~100 倍。ptrace 本质是<strong>调试器协议</strong>，不是观测通道。</p>
+<h3>1.2 perf trace 的单点路径</h3>
+<pre class="code" data-label="code"><code class="c">perf trace
+  内核 tracepoint：syscalls:sys_enter_read / sys_exit_read（静态埋点，[Ch 14.5](../../chapter-14-ftrace/notes/section-14.5-14.714.10-事件源Filter-与-Hist-Triggers.md)）
+  每次 syscall：埋点把参数/返回值写进 perf ring buffer（mmap 零拷贝，[13.9](./section-13.9-perf-record-剖析采样.md)）
+  perf 用户态异步收割打印
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>vs strace</th>
+<th></th>
+<th>strace</th>
 <th>perf trace</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>经典、功能全</td>
-<td>集成 perf 生态</td>
+<td>拦截机制</td>
+<td>ptrace（调试协议）</td>
+<td>tracepoint（观测埋点）</td>
 </tr>
 <tr>
-<td>开销常较大</td>
-<td>相对轻</td>
+<td>每 syscall 成本</td>
+<td>2×进程切换 + 2×ptrace 往返</td>
+<td>1 次 buffer 写</td>
 </tr>
 <tr>
-<td>生产慎用</td>
-<td><strong>仍限时长</strong></td>
+<td>目标进程感知</td>
+<td>被<strong>串行化</strong>（等 tracer 放行）</td>
+<td>无感，继续跑</td>
+</tr>
+<tr>
+<td>时序</td>
+<td>强保序</td>
+<td>大致有序（per-CPU buffer）</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>逐条强制</td>
+<td>逐条或<strong>汇总</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 发现热路径 unexpected <code class="c">read</code>/<code class="c">mmap</code> — 开发机 <code class="c">perf trace</code> 5 秒定位 syscall 类型。</p>
-<hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>perf trace 生产长跑——虽然比 strace 轻但仍有开销，生产应限时长</li>
-<li>perf trace 不限事件——trace -e 指定 syscall 类型，全量 trace 开销巨大</li>
-<li>strace 和 perf trace 不区分——strace 用 ptrace（开销巨大），perf trace 用 perf 基础设施（相对轻）</li>
-</ol>
-<details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf trace 和 strace 的根本区别？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>strace 用 ptrace（每 syscall 两次陷入，开销巨大）；perf trace 用 perf 基础设施（相对轻）</p>
-</details>
-<ol start="2">
-<li>perf trace 在生产环境的注意事项？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>限时长 + 指定事件（-e open,read,write）——全量 trace 开销巨大</p>
-</details>
-<ol start="3">
-<li>HFT 什么时候用 perf trace？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>发现热路径 unexpected read/mmap——开发机 perf trace 5 秒定位 syscall 类型</p>
-</details>
-</details>
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
-      </section>
-      <section class="section" id="s-13-12">
-        <div class="sec-head"><div class="sec-no">13.12</div><h2>section-13.12-其他常用能力延伸</h2></div>
+<p><strong>仍要限时长</strong>：tracepoint 每命中一次都写 buffer + perf 用户态解析——几万 syscall/s 的进程上，观测负载仍可观（对照 <a href="#s-13-1">13.1 生产纪律表</a>）。</p>
+<h2>2. 用法</h2>
+<pre class="code" data-label="shell"><code class="c"># 逐条视图（strace 式）
+perf trace -p $(pidof strategy) -- sleep 5
+perf trace -e open,read,write,mmap -- sleep 3          # 只跟这几类
+
+# ⭐ 汇总模式：syscall 直方统计（不开逐条打印）
+perf trace -s -p $(pidof strategy) -- sleep 10
+perf trace -s --summary-mode total-call / total-time …
+
+# 延迟视角（每 syscall 耗时分布）
+perf trace -s --call-trace …… # 视版本；syscall 耗时 = exit 时间戳 − enter 时间戳
+</code></pre>
+<h3>2.1 <code class="c">-s</code> 汇总输出精读</h3>
+<pre class="code" data-label="code"><code class="c"> Summary of events (strategy, 10 threads):
+
+   syscall            calls    errors  total min avg max  (msec)
+   --------------- --------  --------  ----- --- --- ---
+   futex              28103           1  0.002 0.000 0.000 12.3
+   epoll_wait          6001           0 45.001 1.102 7.500 61.2
+   recvfrom            5999           0  3.210 0.001 0.001 55.3
+   read                1200         120  0.980 0.000 0.001 8.9
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>子命令</th>
-<th>用途</th>
+<th>列</th>
+<th>HFT 判读</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">perf mem</code></td>
-<td>内存访问剖析</td>
+<td>calls</td>
+<td><strong>syscall 密度</strong>——行情进程 recvfrom 6k/10s 正常；read 1200 里 120 errors = 重试风暴（网络不稳/非阻塞 EAGAIN 未处理）</td>
 </tr>
 <tr>
-<td><code class="c">perf sched</code></td>
-<td>调度延迟、迁移</td>
+<td>avg / max</td>
+<td>平均健康但 max 尖刺 → 尾延迟在内核路径或调度（转 <a href="chapter-16.html#s-16-1-7">runqlat</a>）</td>
 </tr>
 <tr>
-<td><code class="c">perf lock</code></td>
-<td>锁竞争</td>
+<td>futex 巨多</td>
+<td><strong>锁行为画像</strong>——无竞争 futex（无 FUTEX_WAIT 命中）便宜，但暗示共享结构；FUTEX_WAIT 慢 = 争用（转 <a href="#s-13-12">perf lock，13.12</a>）</td>
 </tr>
 <tr>
-<td><code class="c">perf c2c</code></td>
-<td><strong>伪共享 / cache line</strong> 争用（需支持）</td>
-</tr>
-<tr>
-<td><code class="c">perf annotate</code></td>
-<td>源码/汇编级热点</td>
+<td>epoll_wait avg≈7.5ms</td>
+<td><strong>事件驱动节奏</strong>——唤醒粒度即处理粒度；对照 busy-poll 决策（→ <a href="chapter-10.html#ch-10">10 网络</a>）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">perf sched record -p $(pidof strategy) -- sleep 10
-perf sched latency
+<h3>2.2 典型排查：热路径 unexpected syscall</h3>
+<pre class="code" data-label="shell"><code class="c"># 症状：tick 处理偶发 200µs 尖刺，CPU 图无热点
+perf trace -s -p $(pidof strategy) -- sleep 10
+# 发现：mmap/munmap 600 次 —— 每 tick 动态映射！
+# 定位：munmap 触发 TLB shootdown（IPI 广播，[06-linux-mm ch03](../../../06-linux-mm/)）
+# 修法：预分配 arena / mmap cache
 </code></pre>
-<p><strong>HFT 锁/伪共享：</strong> <code class="c">perf c2c record</code> 或 Ch 6 PMC + <a href="../../15-computer-architecture/html/index.html">19-Hennessy</a> — 争用严重时再开。</p>
+<p>这个模式是 perf trace 的 HFT 最强用法：<strong>syscall 直方图 = 内核交互行为画像</strong>——内存映射、页错误、调度、锁全在里面留痕。</p>
 <hr />
-<h3>常见陷阱</h3>
-<ol>
-<li>perf c2c 不用——伪共享是 HFT 常见杀手，perf c2c 能直接量化 cache line 争用</li>
-<li>perf sched 只看调度次数——latency 子命令看调度延迟（线程就绪到被 CPU 执行），这才是 HFT 关心</li>
-<li>perf lock 不在开发阶段用——锁竞争在生产才暴露，但开发阶段用 perf lock 可以提前发现</li>
-</ol>
-<details>
-<summary>自测题（点击展开）</summary>
-<ol>
-<li>perf c2c 能发现什么问题？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>伪共享（false sharing）——多线程写同一 cache line 不同字段，cache 一致性协议打穿性能</p>
-</details>
-<ol start="2">
-<li>perf sched latency 和 sched record 的区别？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>record 采集调度事件；latency 分析线程从就绪到被 CPU 执行的延迟——HFT 关心调度等待时间</p>
-</details>
-<ol start="3">
-<li>HFT 什么时候该用 perf lock？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>怀疑锁竞争导致 tail latency——perf lock 量化锁等待时长和持有时长</p>
-</details>
-</details>
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>上线前 syscall 审计</td>
+<td>开发机 <code class="c">perf trace -s</code> 存一份"健康档案"；生产异常时对比 syscall 集合差异——新出现的 mmap/ioctl 就是嫌疑犯</td>
+</tr>
+<tr>
+<td>延迟分账</td>
+<td>syscall avg/max + <a href="#s-13-8">perf stat</a> 内核态周期：内核路径慢（syscall max 大）vs 调度慢（syscall 正常但 off-CPU 大）</td>
+</tr>
+<tr>
+<td>锁画像</td>
+<td>futex 调用形态（WAIT vs WAKE 比例、错误率）比源码读锁更快发现问题</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>strace 在弱机上不可用（开销崩）；perf trace + 汇总模式是弱机 syscall 观测的唯一现实选项</td>
+</tr>
+<tr>
+<td>永远别在生产逐条跑</td>
+<td>逐条模式只做开发机 5 秒级定位；生产只要汇总</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<p>← <a href="#intro">本章导读</a></p>
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-13-10">report/script</a></li>
+<li>下一节：<a href="#s-13-12">13.12 perf lock/sched/c2c/mem 延伸</a></li>
+<li>tracepoint 机制：<a href="chapter-14.html#s-14-5">Ch 14.5 事件源</a></li>
+<li>更强的 syscall 追踪（参数过滤/聚合）：<a href="chapter-15.html#ch-15">Ch 15 bpftrace</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：strace 慢的根本原因？</summary>
+<p>ptrace 调试协议：每次 syscall 在入口和出口各停一次目标进程、唤醒 tracer（两次上下文切换 + ptrace 调用往返拷贝）。目标被 tracer <strong>串行化</strong>——它必须等 strace 放行才能继续。</p>
+</details>
+<details>
+<summary>Q2：perf trace 的数据通路和 strace 有什么本质不同？</summary>
+<p>tracepoint 静态埋点（sys_enter/sys_exit）→ 参数写进 mmap ring buffer（零拷贝）→ perf 异步收割。目标进程<strong>不被拦截</strong>，继续执行；观测是旁路不是关卡。</p>
+</details>
+<details>
+<summary>Q3：汇总模式（-s）为什么比逐条便宜一个量级？</summary>
+<p>逐条模式要为每条 syscall 解码参数 + 格式化打印（用户态 CPU 密集）；汇总只聚合计数/耗时直方——buffer 写入相同，用户态处理从"每条全解析"降为"每条一次桶自增"（与 hist trigger 同一思想，<a href="chapter-14.html#s-14-5">Ch 14.5</a>）。</p>
+</details>
+<details>
+<summary>Q4：syscall 汇总里 futex 调用极多但耗时不长，说明什么？</summary>
+<p>锁的"行为指纹"：多为无竞争的原子路径（futex 无 WAIT 时不进内核等待），性能无害；但暴露了共享结构的密度——真争用（FUTEX_WAIT 耗时/错误）才是要处理的。对照 perf lock 进一步分账。</p>
+</details>
+<details>
+<summary>Q5：热路径尖刺但 CPU 火焰图干净，perf trace 能提供什么线索？</summary>
+<p>CPU 图只覆盖 on-CPU 时间。syscall 汇总暴露内核交互面：偶现的 mmap/munmap（TLB shootdown）、read 错误重试、epoll_wait 长尾（调度等待）——这些"不烧 CPU 但制造延迟"的行为只在 syscall 视角留痕。</p>
+</details>
+      </section>
+      <section class="section" id="s-13-12">
+        <div class="sec-head"><div class="sec-no">13.12</div><h2>其他常用能力延伸</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-13-11">13.11 perf trace</a> · 下一章：<a href="chapter-14.html#intro">Ch 14 Ftrace</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>perf 家族里四个专项子命令——<code class="c">sched</code> / <code class="c">lock</code> / <code class="c">c2c</code> / <code class="c">mem</code> / <code class="c">annotate</code>。它们不是日常工具，但每个都对应一类 HFT 特有病灶，且<strong>触发条件明确</strong>：知道症状 → 知道用哪个 → 知道输出怎么读。</p>
+<hr />
+<h2>1. <code class="c">perf sched</code> — 调度行为分析</h2>
+<pre class="code" data-label="shell"><code class="c">perf sched record -p $(pidof strategy) -- sleep 10   # 采 sched tracepoint 流
+perf sched latency                                    # 每线程的调度延迟表
+perf sched timehist                                   # 时间线视图
+</code></pre>
+<h3>1.1 <code class="c">perf sched latency</code> 输出精读</h3>
+<pre class="code" data-label="code"><code class="c">  Individual delays for each thread (in ms):
+
+  task               CPU   run time  delay      avg delay    max
+  ---------------   ----  ---------  --------  ----------  -------
+  strategy:4242      [03]   942.3 ms    5.1 ms   0.012 ms   3.854 ms
+  strategy:4243      [05]    88.1 ms   21.9 ms   0.431 ms   18.722 ms
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>列</th>
+<th>含义</th>
+<th>HFT 判读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>delay</td>
+<td><strong>就绪→上 CPU 的总等待</strong></td>
+<td>唤醒延迟的直接证据</td>
+</tr>
+<tr>
+<td>avg / max delay</td>
+<td>平均/最坏唤醒等待</td>
+<td>max 大 = 有过被低优先级/中断压住的瞬间</td>
+</tr>
+<tr>
+<td>run time</td>
+<td>实际占 CPU</td>
+<td>与 delay 的比例即"调度健康度"</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>与 BPF runqlat 的分工</strong>：<code class="c">perf sched latency</code> 是<strong>逐线程表</strong>（谁等得多）；runqlat 是<strong>全系统直方图</strong>（P50/P99 分布形态）。诊断"线程 4243 为什么等"用前者，监控"整机调度恶化了吗"用后者（<a href="chapter-16.html#s-16-1-7">ch16.1.7</a>）。</p>
+<h2>2. <code class="c">perf lock</code> — 锁竞争</h2>
+<pre class="code" data-label="shell"><code class="c">perf lock record -p $(pidof strategy) -- sleep 10
+perf lock report            # 按锁聚合：争用等待直方
+perf lock report -F held    # 按持有时间
+</code></pre>
+<p>数据源是内核 lockdep/lock tracepoint 事件（<code class="c">lock:lock_acquire/lock_contended</code>）——要求内核配置开启。输出按<strong>锁实例</strong>聚合：哪把锁、争用了多少次、等了多久。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>读法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高频 contended + 短等待</td>
+<td>自旋态争用（轻）——无竞争 fastpath 已挡不住，考虑细粒度/无锁结构</td>
+</tr>
+<tr>
+<td>低频 contended + <strong>长等待</strong></td>
+<td>真持锁过久——找持锁方（配合火焰图）</td>
+</tr>
+<tr>
+<td>futex 调用多但 lock 无争用</td>
+<td>用户态锁（pthread 语义），内核 lock 事件看不见——转 <a href="#s-13-11">perf trace futex 画像</a></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>限制：perf lock 只看<strong>内核可见的锁事件</strong>；纯用户态 futex 的争用细节要 BPF（futex tracepoint / offcputime 栈）。</p>
+</blockquote>
+<h2>3. <code class="c">perf c2c</code> — 伪共享 / cache line 争用 ⭐</h2>
+<p><code class="c">c2c</code> = <strong>cache-to-cache</strong>。专抓<strong>跨核缓存一致性流量</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">perf c2c record -p $(pidof strategy) -- sleep 15
+perf c2c report
+</code></pre>
+<p><strong>机制</strong>：采样 LLC load 事件时记录<strong>数据虚拟地址 + 物理地址 + 命中的 cache line 所在核</strong>——如果多个核反复 hit/modify 同一 cache line（各改各的偏移），报告直接点名<strong>地址、偏移、涉事核</strong>。</p>
+<p><strong>HFT 杀手场景——false sharing</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct counters {          // 两个线程各写各的字段，看似无竞争
+    uint64_t ticks;        // 线程 A 写（0x00）
+    uint64_t msgs;         // 线程 B 写（0x08）——同一 64B cache line！
+};
+// MESI：每次写都让对方核的 line 失效 → 缓存行乒乓 → 每次写变跨核总线事务
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>报告要素</th>
+<th>读法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HITM（Hit Modified）率</td>
+<td>核 A 读到核 B 改过的 line——乒乓证据</td>
+</tr>
+<tr>
+<td>涉事地址列表</td>
+<td>直接对回源码结构体字段</td>
+</tr>
+<tr>
+<td>核对（origin ↔ target）</td>
+<td>谁和谁在乒乓</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>修法</strong>：字段按核分 cacheline 对齐（<code class="c">alignas(64)</code>）、per-CPU 计数（与内核 pcp/SLUB 同思想，<a href="../../06-linux-mm/html/index.html">06-linux-mm</a>）、热字段分结构。</p>
+<p><strong>适用条件</strong>：需 CPU 支持 load latency 采样（Intel Haswell+ 的 LDLAT 事件；ARM 平台支持有限——Pi5 上 c2c 基本不可用，靠 <a href="chapter-06.html#ch-6">Ch 6 PMC</a> 手工观测）。</p>
+<h2>4. <code class="c">perf mem</code> — 内存访问剖析</h2>
+<pre class="code" data-label="shell"><code class="c">perf mem record -p $(pidof strategy) -- sleep 10
+perf mem report            # 按 数据地址/指令 聚合 load 延迟
+</code></pre>
+<p>采样 load/store 的<strong>数据地址 + 延迟 + 本地/远端</strong>（NUMA 维度）。与 c2c 的分工：mem 看"<strong>哪个访问慢</strong>"（NUMA 远端、TLB miss），c2c 看"<strong>哪条 line 在乒乓</strong>"。同样依赖平台 load-latency 采样支持。</p>
+<h2>5. <code class="c">perf annotate</code> — 指令级热点</h2>
+<pre class="code" data-label="shell"><code class="c">perf record -F 99 -e cycles -p PID -- sleep 30
+perf annotate decode_tick        # 该函数逐指令的样本占比 + 源码对照
+</code></pre>
+<p>热点函数内部下钻：<strong>哪一行/哪条指令</strong>烧的周期。配合 <code class="c">:pp</code>（<a href="#s-13-3">precise_ip，13.3</a>）指令归因更准。优化 order book 数据结构时：annotate 告诉你慢在 miss 的那次访问还是分支预测失败的那条跳转。</p>
+<h2>6. 全家族选型表（章末收束）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>工具</th>
+<th>生产可用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整机/进程计数画像</td>
+<td><code class="c">perf stat</code>（13.8）</td>
+<td>✅ 常驻</td>
+</tr>
+<tr>
+<td>CPU 热点 + 调用链</td>
+<td><code class="c">record -g</code> + 火焰图（13.9/13.10）</td>
+<td>⚠️ 限窗</td>
+</tr>
+<tr>
+<td>syscall 行为画像</td>
+<td><code class="c">perf trace -s</code>（13.11）</td>
+<td>⚠️ 限窗</td>
+</tr>
+<tr>
+<td>调度等待归因</td>
+<td><code class="c">perf sched latency</code></td>
+<td>⚠️ 限窗</td>
+</tr>
+<tr>
+<td>锁争用分账</td>
+<td><code class="c">perf lock report</code></td>
+<td>⚠️ 限窗</td>
+</tr>
+<tr>
+<td><strong>伪共享定位</strong></td>
+<td><code class="c">perf c2c record</code></td>
+<td>开发机</td>
+</tr>
+<tr>
+<td>NUMA/访问延迟</td>
+<td><code class="c">perf mem report</code></td>
+<td>开发机</td>
+</tr>
+<tr>
+<td>函数内指令热点</td>
+<td><code class="c">perf annotate</code></td>
+<td>离线</td>
+</tr>
+</tbody>
+</table></div>
+<p>与 BPF 的总分工（承 <a href="chapter-15.html#ch-15">Ch 15</a>）：perf 家 = <strong>预定义观测</strong>（快、稳、零开发）；BPF 家 = <strong>自定义观测</strong>（任意谓词聚合）。成熟的低延迟团队两家并用：perf 做基线巡检，BPF 做专项深挖。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多线程计数器优化</td>
+<td><code class="c">perf c2c</code> 点名乒乓地址 → <code class="c">alignas(64)</code>/per-CPU 计数——教科书级 ROI</td>
+</tr>
+<tr>
+<td>NUMA 亲和审计</td>
+<td><code class="c">perf mem</code> 远端访问占比——网卡与内存的 socket 对齐（对照 <a href="chapter-10.html#ch-10">10 网络</a>）</td>
+</tr>
+<tr>
+<td>唤醒延迟验收</td>
+<td><code class="c">perf sched latency</code> 前后对比——<code class="c">isolcpus</code>/优先级调整的效果证据</td>
+</tr>
+<tr>
+<td>热点函数微雕</td>
+<td><code class="c">perf annotate</code> + <code class="c">:pp</code>——数据结构布局优化的最后一公里</td>
+</tr>
+<tr>
+<td>弱平台（Pi5）</td>
+<td>c2c/mem 依赖平台采样器常缺席——退回 Ch 6 PMC 手工事件组合</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章完 → <a href="chapter-14.html#intro">Ch 14 Ftrace</a>（tracepoint 的另一消费面 + hwlat）</li>
+<li>BPF 专项深挖：<a href="chapter-15.html#ch-15">Ch 15</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-bpf-observability</a></li>
+<li>微架构背景：<a href="chapter-06.html#ch-6">Ch 6 CPU</a> · <a href="../../15-computer-architecture/html/index.html">15-computer-architecture</a></li>
+<li>方法论总装：<a href="chapter-16.html#s-16-9">ch16 案例演练</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：false sharing 为什么会拖慢两个"各写各字段"的线程？</summary>
+<p>两个字段落在同一 64B cache line，缓存一致性按 line 粒度工作：核 A 写 ticks 使核 B 的该 line 失效，核 B 写 msgs 又使 A 失效——每次写都触发跨核无效化/传输。数据层面无竞争，缓存层面全是竞争。</p>
+</details>
+<details>
+<summary>Q2：perf c2c 是怎么把"乒乓的 line"点出来的？</summary>
+<p>采样 LLC load 事件并记录数据物理地址 + 命中来源核。同一物理地址被多个核反复以"命中对方修改过的 line"（HITM）访问 → 该地址进入报告：涉事偏移、核对、频率。修法是让各核的热字段分属不同 line。</p>
+</details>
+<details>
+<summary>Q3：perf sched latency 和 runqlat 各回答什么问题？</summary>
+<p>sched latency 给<strong>逐线程表</strong>（哪个线程等得多、avg/max），runqlat 给<strong>全系统直方图</strong>（P50/P99 分布形态）。定位"谁受害"用前者，监控"整机是否恶化/双峰"用后者。</p>
+</details>
+<details>
+<summary>Q4：perf lock 报告无争用但 futex 调用极多，矛盾吗？</summary>
+<p>不矛盾：perf lock 消费的是内核 lock tracepoint（主要覆盖内核锁）；pthread 互斥的争用走 futex syscall 路径，内核 lock 事件看不到。用户态锁画像用 perf trace 的 futex 汇总或 BPF futex/uprobe 观测。</p>
+</details>
+<details>
+<summary>Q5：perf mem 和 perf c2c 的分工边界？</summary>
+<p>mem 回答"哪个<strong>访问</strong>慢"（NUMA 远端、TLB miss、延迟分布），c2c 回答"哪条 <strong>cache line</strong> 在多核间乒乓"。前者是延迟视角，后者是一致性流量视角；NUMA 优化用 mem，伪共享修整用 c2c。</p>
+</details>
       </section>
 
 
