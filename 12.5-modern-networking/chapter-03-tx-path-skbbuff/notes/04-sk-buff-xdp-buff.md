@@ -266,8 +266,11 @@ bpftrace -e 'tracepoint:xdp:xdp_redirect { @[args->prog_id] = count(); }'
 bpftool net show dev eth0
 #   显示 offloaded / native / generic
 
-# page_pool 统计
-cat /proc/net/page_pools   # 6.x
+# page_pool 统计（⚠️ v6.6 主线没有 /proc/net/page_pools，见 ch04/01）
+grep PAGE_POOL_STATS /boot/config-$(uname -r)
+ethtool -S eth0 | grep -i pp_
+#   关注 rx_pp_alloc_fast（缓存命中率）与 rx_pp_recycle_released_ref（页面漏出）
+#   → [chapter-04/01](../../chapter-04-page-pool/notes/01-page-pool.md)
 ```
 
 ---
