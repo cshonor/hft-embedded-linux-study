@@ -278,6 +278,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-01"><span class="n">19</span>— TCP 内部优化（TSO / pacing / RACK）</a>
           <a href="#s-02"><span class="n">20</span>— UDP GRO：批量接收</a>
+          <a href="#s-03"><span class="n">03</span>— UDP 组播收包路径与行情接入</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -287,7 +288,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -307,7 +308,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">NAPI / XDP / eBPF / io_uring</div>
           <h1>Chapter 14: TCP/UDP 内部机制</h1>
           <div class="meta">
-<span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 14</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 14</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -321,11 +322,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>Nagle 禁用</strong>：<code class="c">TCP_NODELAY=1</code> 是 HFT 必备，禁用 Nagle 算法避免小包等待</li>
 <li><strong>UDP GRO</strong>：行情数据用 UDP 多播，GRO 聚合多个 UDP 包减少处理开销</li>
 <li><strong>TCP buffer 调优</strong>：<code class="c">tcp_rmem</code> / <code class="c">tcp_wmem</code> 调大窗口，避免窗口缩放不足导致限速</li>
+<li><strong>行情走 UDP 组播不是 TCP</strong>（§3）：组播路径多出 <code class="c">ip_route_input_mc()</code> 与 per-socket skb 复制；
+  <strong>旁路后 IGMP 不再自动发出</strong>，必须先与交换机确认静态组播，否则收不到任何流量</li>
+<li><strong>组播是 at-most-once</strong>：无重传，必须做序列号 gap 检测 + 独立的 TCP 补单通道</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
 <li><code class="c">11-tcpip-protocols/</code>：TCP/UDP 协议基础</li>
-<li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/</code>：GRO 在收包路径</li>
+<li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/</code>：GRO 与 busy polling 在收包路径（§3 的性能前提）</li>
+<li><code class="c">13-dpdk/01-Intro-Book/notes/chapter-05-组播行情接入.md</code>：§3 的内核路径 → DPDK 旁路对照</li>
+<li><code class="c">12-kernel-networking/note-组播IGMP.md</code>：组播协议基础（IGMP snooping / 组播路由）</li>
 </ul>
       </section>
       <section class="section" id="s-01">
@@ -507,6 +513,272 @@ int n = recvmsg(sockfd, &amp;msg, 0);
 <blockquote>
 <p>HFT 交易路径不建议开 UDP GRO（延迟优先）。行情录制/转发等非关键路径可开（吞吐优先）。</p>
 </blockquote>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>— UDP 组播收包路径与行情接入</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> 组播路由有覆盖；<strong>收包路径上的组播分支未展开</strong>（本篇补这部分）
+<strong>内核源码路径:</strong> <code class="c">net/ipv4/ip_input.c</code>、<code class="c">net/ipv4/udp.c</code>、<code class="c">net/ipv4/igmp.c</code></p>
+</blockquote>
+<h2>文档概述</h2>
+<p>行情链路几乎全部走 <strong>UDP 组播</strong>（ITCH/OUCH over MoldUDP64），而不是 TCP。
+本笔记补全现代内核中组播收包的完整路径，以及<strong>旁路之后 IGMP 失效</strong>这个最容易踩的坑。</p>
+<blockquote>
+<p>📌 本篇原在 chapter-02-napi-rx-path 下，已移至本章 —— 组播属<strong>协议内部机制</strong>
+（L2 有损映射、IGMP、组播复制、gap 检测），不是 NAPI 收包路径的内容。</p>
+</blockquote>
+<p>→ 前置：<a href="chapter-15.html#s-01">chapter-02/01-rx-path-bootlin</a>（通用收包路径）
+→ 相关：<a href="chapter-02.html#s-06">chapter-02/06-queue-steering-rss</a>（把组播流钉到指定队列）
+→ 下游：<a href="../../13-dpdk/01-Intro-Book/html/chapter-05.html#ch-5">13-dpdk 组播行情接入</a></p>
+<hr />
+<h2>核心内容</h2>
+<h3>为什么行情一定是组播</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>单播 TCP</th>
+<th>组播 UDP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易所带宽</td>
+<td>随客户数线性增长</td>
+<td>恒定，一份流</td>
+</tr>
+<tr>
+<td>复制位置</td>
+<td>交易所服务器</td>
+<td>交换机 / 网卡</td>
+</tr>
+<tr>
+<td>可靠性</td>
+<td>内核保证（重传、排序）</td>
+<td><strong>应用层自己保证</strong></td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>有握手、ACK、拥塞控制</td>
+<td>无，纯单向</td>
+</tr>
+<tr>
+<td>一个包的去留</td>
+<td>只影响自己</td>
+<td>丢包影响所有订阅者</td>
+</tr>
+</tbody>
+</table></div>
+<p>行情的本质是"同一份数据、同时给所有人"，组播把复制代价从交易所转嫁给网络设备，
+这是唯一能支撑上万客户端同时收同一份 orderbook 的方式。</p>
+<p><strong>代价转嫁给了你：</strong> UDP 不重传、不排序、不保到达。接收端必须自己做
+<strong>序列号 gap 检测 + 独立的 TCP 重传通道</strong>（交易所一般提供 "retransmission / snapshot" 服务）。</p>
+<hr />
+<h3>IPv4 组播 → MAC 地址映射（第一个坑）</h3>
+<p>网卡硬件过滤工作在 L2，但组播成员管理在 L3。二者靠一个<strong>有损映射</strong>连接：</p>
+<pre class="code" data-label="code"><code class="c">IPv4 组播地址      224.x.y.z        (224.0.0.0/4, 高 4 位 = 1110)
+                        │
+                        │  只取低 23 位（丢掉高 5 位）
+                        ▼
+MAC 地址           01:00:5E:0&lt;23 位&gt;
+</code></pre>
+<p>映射规则：<code class="c">MAC 低 23 位 = IPv4 组播地址低 23 位</code>。</p>
+<p><strong>后果：2^5 = 32 个不同的 IPv4 组播地址，映射到同一个 MAC 地址。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>网卡按 MAC 过滤</td>
+<td>会收到"你不想要的"另外 31 个组播地址的流量</td>
+</tr>
+<tr>
+<td>多余流量进入驱动</td>
+<td>消耗 XDP/sk_buff 处理，直到 IP 层才被丢弃</td>
+</tr>
+<tr>
+<td>HFT 应对</td>
+<td>向交易所确认组播地址分配，<strong>避免选到同 MAC 的另一个组</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>这也是为什么 <code class="c">XDP</code> 早过滤在组播场景收益特别大——L2 硬件过滤不过滤干净的部分，
+在 XDP 里一次判断就能丢掉，省掉后面的 sk_buff 分配和协议栈遍历。</p>
+<hr />
+<h3>组播收包路径（对比单播多出来的步骤）</h3>
+<pre class="code" data-label="code"><code class="c">NIC 硬件组播过滤（ imperfect filter，见上）
+   ↓
+[交换机侧] IGMP snooping 决定是否往本端口转发
+   ↓
+驱动收帧 → XDP hook                    ← 无关组播在此 DROP，收益最大
+   ↓
+sk_buff 分配
+   ↓
+ip_rcv() → ip_route_input_mc()         ← 组播专用路由判定（非普通路由表）
+   ↓
+ip_mc_sf_allow()  源过滤（IGMPv3 SSM）
+   ↓
+udp_rcv() → __udp4_lib_mcast_deliver() ← 组播 socket 匹配
+   ↓
+★ skb clone/copy → 每一个匹配的 socket 各一份
+   ↓
+各 socket receive queue → 唤醒用户进程
+</code></pre>
+<p><strong>单播没有的两处开销：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ip_route_input_mc()</code></td>
+<td>组播不走普通路由表，走组播路由判定（LOCAL / FORWARD / 丢弃）</td>
+</tr>
+<tr>
+<td><code class="c">__udp4_lib_mcast_deliver()</code></td>
+<td>一个 skb 要复制给<strong>所有</strong>匹配 socket</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键陷阱：同一台机器上开 N 个进程收同一个组播组，内核要复制 N 份 skb。</strong>
+每份都要走一遍协议栈后半段。所以 HFT 机器上"多开一个监控进程看同一份行情"
+不是免费的——它直接放大主进程的延迟抖动。正确做法是<strong>单进程收 + 用户态分发</strong>（共享内存 / SPSC ring）。</p>
+<hr />
+<h3>IGMP：旁路之后最大的坑</h3>
+<p>内核协议栈会自动发 IGMP Membership Report（v2/v3），告诉交换机"我要这个组"。
+交换机靠 IGMP snooping 只往订阅过的端口转发。<strong>不发 report = 收不到任何包。</strong></p>
+<pre class="code" data-label="code"><code class="c">内核栈路径：  socket(AF_INET, SOCK_DGRAM)
+              setsockopt(IP_ADD_MEMBERSHIP)   ← 内核自动发 IGMP report ✓
+                    ↓ 交换机学到 → 开始转发
+
+DPDK 旁路：   网卡被 UIO/VFIO 接管，内核不再管这张网卡
+              rte_eth_allmulticast_enable()   ← 只是让网卡&quot;硬件不过滤&quot;
+              ✗ 没有任何 IGMP report 发出
+              ✗ 交换机从未学习 → 不往这个端口转发
+              ✗ 程序跑了半天，一个包都收不到，还以为 rx_burst 写错了
+</code></pre>
+<p><strong>三种解法：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>做法</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交换机静态组播</td>
+<td>配 static mrouter port / static group 到该端口</td>
+<td>托管机房、自家交换机，最省事</td>
+</tr>
+<tr>
+<td>应用自己发 IGMP</td>
+<td>DPDK 里构造 IGMPv2/v3 Membership Report 并从该口发出</td>
+<td>无权改交换机配置</td>
+</tr>
+<tr>
+<td>端口 flood</td>
+<td>交换机配成泛洪</td>
+<td>不推荐，流量放大几十倍</td>
+</tr>
+</tbody>
+</table></div>
+<p>→ 实操见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/01-Intro-Book/code/mcast-minimal/README.md">13-dpdk/code/mcast-minimal</a></p>
+<hr />
+<h3>丢包定位（组播没有重传，必须自己发现）</h3>
+<p>组播 UDP 丢包是静默的——协议栈不会告诉你。必须主动监控：</p>
+<pre class="code" data-label="shell"><code class="c"># 网卡层丢包（驱动收不进来）
+ethtool -S eth0 | grep -Ei 'miss|no_buf|drop|fifo'
+
+# 内核 UDP 层丢包（socket 队列满）
+cat /proc/net/udp        # 看 drops 列
+ss -ulpn                 # Recv-Q 堆积
+
+# AF_XDP 专用
+xdp-stat queue 0         # rx_dropped = FILL ring 空
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>计数字段</th>
+<th>典型原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NIC</td>
+<td><code class="c">rx_missed</code>, <code class="c">rx_no_buffer</code></td>
+<td>网卡 buffer 满，PCIe/RSS 跟不上</td>
+</tr>
+<tr>
+<td>驱动</td>
+<td><code class="c">rx_nombuf</code>（DPDK）</td>
+<td>mbuf 池耗尽，用户态消费太慢</td>
+</tr>
+<tr>
+<td>AF_XDP</td>
+<td><code class="c">rx_dropped</code></td>
+<td>FILL ring 空，没及时回填 buffer</td>
+</tr>
+<tr>
+<td>socket</td>
+<td><code class="c">/proc/net/udp</code> drops</td>
+<td>接收队列满，用户态消费太慢</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 硬要求：</strong> 应用层必须做<strong>序列号 gap 检测</strong>。交易所组播头里带递增序号，
+发现跳号立刻走 TCP 重传通道补单，而不是等下一个快照。</p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>行情 = UDP 组播，不是 TCP。</strong> 指望内核帮你重传、排序是错的，这些都在应用层</li>
+<li><strong>L2 映射有损：</strong> 32 个组播 IP 共用一个 MAC，多余的 31 个要靠 XDP 或 IP 层过滤</li>
+<li><strong>同机组播多收一份 = 多一次 skb 复制</strong>，监控进程要收用户态分发，不要多开进程订阅同一组</li>
+<li><strong>旁路后 IGMP 失效</strong>是最高频的踩坑点：先确认交换机侧是否配了静态组播</li>
+<li><strong>gap 检测是刚需</strong>，没有它你不知道自己看到的是不是完整的 orderbook</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>组播过滤</td>
+<td>主要靠 IP 层 + 协议栈</td>
+<td>XDP 可在 sk_buff 之前 DROP，省掉分配</td>
+</tr>
+<tr>
+<td>Rx buffer</td>
+<td>动态 alloc_page</td>
+<td>page_pool 复用，AF_XDP 直接映射</td>
+</tr>
+<tr>
+<td>旁路后 IGMP</td>
+<td>未涉及（当时 XDP 不存在）</td>
+<td>旁路必须自己处理 IGMP，否则收不到流</td>
+</tr>
+<tr>
+<td>组播复制</td>
+<td>已有 <code class="c">__udp4_lib_mcast_deliver</code></td>
+<td>机制不变，但多队列 + RSS 下队列选择影响延迟</td>
+</tr>
+</tbody>
+</table></div>
       </section>
 
 

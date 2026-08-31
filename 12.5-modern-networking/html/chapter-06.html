@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">04</span>— Documentation/networking/af_xdp.rst</a>
-          <a href="#s-02"><span class="n">06</span>— AF_XDP：零拷贝到用户态</a>
+          <a href="#s-01"><span class="n">01</span>— AF_XDP 接口精读：从 socket() 到收包的每一步约束</a>
+          <a href="#s-02"><span class="n">02</span>— AF_XDP 工程实践：值不值、延迟预算、唤醒与批处理</a>
           <a href="#s-03"><span class="n">03</span>— UMEM 布局与 copy / zero-copy 的微观差异</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -288,7 +288,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -316,324 +316,2150 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的五个核心结论</h2>
+<ol>
+<li><strong>不写 <code class="c">XDP_ZEROCOPY</code> 就会静默降级。</strong> <code class="c">xp_assign_dev()</code>（xsk_buff_pool.c:149）在
+   驱动不支持时走 <code class="c">err_unreg_pool: if (!force_zc) err = 0; /* fallback to copy mode */</code>——
+   bind 返回 0，一切正常，只是慢 2–3 倍。<strong>bind 后必查 <code class="c">XDP_OPTIONS_ZEROCOPY</code>。</strong></li>
+<li><strong><code class="c">bpf_redirect_map(&amp;xsks_map, idx, 0)</code> 是自杀式写法。</strong> flags 的低位是
+   "lookup 失败时的返回值"（<code class="c">include/linux/filter.h:1498</code>），0 = <code class="c">XDP_ABORTED</code>
+   = <strong>静默丢掉所有非目标流量</strong>（ARP/ICMP/SSH 全断），而 tcpdump 和 ethtool 都显示正常。
+   写 <code class="c">XDP_PASS</code>。</li>
+<li><strong>AF_XDP 零拷贝不用 page_pool。</strong> UMEM 由内核 <code class="c">xp_dma_map()</code> 自己映射
+   （<code class="c">xsk_buff_pool</code> 有独立的 <code class="c">dma_pages</code> 数组）。
+   "AF_XDP 基于 page_pool"只在 <strong>copy 模式</strong>下成立。</li>
+<li><strong>RX ring 的 producer 只在 <code class="c">xsk_flush()</code> 时发布，而 flush 在 NAPI poll 结束时发生</strong>
+   （<code class="c">__xsk_map_flush()</code>，xsk.c:382）。所以用户态<strong>一次看到一批包</strong>，
+   批内位置决定单包延迟——这是"零拷贝却仍有几微秒延迟"的主要来源之一。</li>
+<li><strong><code class="c">chunk_size</code> 只有 2048 / 4096 可选</strong>（下界 2048、上界 PAGE_SIZE、必须 2 的幂），
+   且 <code class="c">frame_len = chunk_size - headroom - 256</code>。<strong>jumbo frame 单个 chunk 装不下</strong>，
+   只能靠 <code class="c">XDP_USE_SG</code>。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>AF_XDP 零拷贝</strong>：XDP_REDIRECT 将 NIC DMA 的包直接放入用户态 UMEM，零拷贝收包到用户态</li>
-<li><strong>HFT 收包主力</strong>：AF_XDP 是内核态零拷贝收包的最佳方案，延迟 ~200-500ns（DPDK ~100ns 但完全 bypass 内核）</li>
-<li><strong>UMEM 共享</strong>：UMEM 内存区域在内核与用户态之间共享，pre-registered 避免 mmap 开销</li>
-<li><strong>bind 到特定 queue</strong>：AF_XDP socket 绑定到特定 RX queue，实现 per-core 收包</li>
-<li><strong>只认 zero-copy</strong>：copy 模式仍分配 sk_buff 且多一次 memcpy，相对 <code class="c">recvmsg</code> 优势有限
-  → <a href="chapter-15.html#s-03">03</a></li>
-<li><strong>FILL ring 水位是生命线</strong>：<code class="c">rx_dropped</code> 增长 = frame 归还太慢 → <a href="chapter-15.html#s-03">03</a></li>
+<li><strong>决策树</strong>：驱动不支持 zc → 不用 AF_XDP（回内核栈 + busy poll）；
+  要独占整卡 → DPDK；<strong>要跟内核共存 → AF_XDP</strong></li>
+<li><strong>只接管指定队列</strong>，其余队列仍走内核栈——SSH/监控/NTP 不受影响，
+  这是它相对 DPDK 最大的工程优势</li>
+<li><strong>UMEM 常驻内存</strong>（<code class="c">pin_user_pages(FOLL_LONGTERM)</code>）且吃 <code class="c">RLIMIT_MEMLOCK</code>，
+  容器部署前先查 <code class="c">ulimit -l</code>（失败 errno 是 <code class="c">-ENOBUFS</code> 不是 <code class="c">-ENOMEM</code>）</li>
+<li><strong>丢包诊断看计数器比值</strong>：<code class="c">rx_ring_full</code> 涨 = 消费慢；
+  <code class="c">rx_fill_ring_empty_descs</code> 涨 = 归还 frame 慢；
+  <code class="c">rx_dropped</code> 涨而前两者为 0 = <strong>包比 <code class="c">frame_len</code> 大</strong></li>
+<li><strong><code class="c">XDP_USE_NEED_WAKEUP</code> + busy poll 是标准配置</strong>：
+  前者避免无谓 syscall，后者让 <code class="c">recvfrom()</code> 直接在调用上下文驱动 NAPI 并跳过 <code class="c">ndo_xsk_wakeup</code></li>
+<li><strong>批处理从 32 起测</strong>（内核 <code class="c">TX_BATCH_SIZE</code> 也是 32），按 P99 与吞吐两条曲线找拐点</li>
+<li><strong>一个 (dev, queue_id) 只能有一个 xsk</strong>，<code class="c">SO_REUSEPORT</code> 对 AF_XDP 无效；
+  多核扩展靠多队列 + <code class="c">ethtool -N/-X</code> 流 steering</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：UMEM 基于 page_pool</li>
-<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 架构，AF_XDP 是 XDP redirect 目标</li>
-<li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md</code>：AF_XDP 按队列旁路，需先用 ntuple 把行情流钉到独占队列</li>
-<li><code class="c">13-dpdk/</code>：DPDK 完全 bypass，AF_XDP 是内核态折中</li>
+<li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：驱动侧缓冲区池；
+  ⚠️ AF_XDP 零拷贝<strong>不用</strong> page_pool，两者是两套体系</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 架构与
+  <a href="chapter-15.html#s-02">四个 ring 的设计</a>，
+  AF_XDP 是 XDP_REDIRECT 的目的地</li>
+<li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/notes/06-queue-steering-rss.md</code>：
+  按队列旁路前需先用 ntuple / RSS 把行情流钉到独占队列</li>
+<li><code class="c">12.5-modern-networking/chapter-07-xdp-redirect-dpdk/</code>：redirect 机制本体与 DPDK 对比</li>
+<li><code class="c">13-dpdk/</code>：完全 bypass 内核的另一种选择</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">04</div><h2>— Documentation/networking/af_xdp.rst</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— AF_XDP 接口精读：从 socket() 到收包的每一步约束</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/af_xdp.rst</code></p>
+<p><strong>内核文档：</strong> <code class="c">Documentation/networking/af_xdp.rst</code>
+<strong>对应 Rosen:</strong> 无（AF_XDP 4.18+ 才存在，3.x 时代无此概念）
+<strong>内核版本：</strong> 以 <strong>v6.6</strong> 为准。所有常量、errno、判定条件均取自源码，行号标注如下：
+- <code class="c">include/uapi/linux/if_xdp.h</code> — 用户态 ABI（socket 选项、<code class="c">xdp_umem_reg</code>、<code class="c">xdp_statistics</code>）
+- <code class="c">net/xdp/xsk.c</code> — socket 层（<code class="c">xsk_bind</code> 1082、<code class="c">xsk_rcv</code> 348、<code class="c">xsk_rcv_check</code> 309）
+- <code class="c">net/xdp/xdp_umem.c</code> — UMEM 注册校验（<code class="c">xdp_umem_reg</code> 151）
+- <code class="c">net/xdp/xsk_buff_pool.c</code> — buffer pool（<code class="c">xp_assign_dev</code> 149）
+- <code class="c">include/linux/filter.h</code> — <code class="c">__bpf_xdp_redirect_map</code> 1498（redirect flags 语义）</p>
 </blockquote>
+<hr />
 <h2>文档概述</h2>
-<p>AF_XDP socket 官方文档，描述用户态零拷贝收发包的完整接口。</p>
-<h2>核心内容</h2>
-<h3>AF_XDP socket 创建流程</h3>
-<pre class="code" data-label="code"><code class="c">1. socket(AF_XDP, SOCK_RAW, 0)
-2. 分配 UMEM（mmap 或 malloc + posix_memalign）
-3. setsockopt(XDP_UMEM_REG) 注册 UMEM
-4. 创建四个 ring（FILL/RX/TX/COMPLETION）
-5. setsockopt(XDP_UMEM_FILL_RING / XDP_UMEM_RX_RING / ...)
-6. bind(sockfd, sockaddr_xdp{ifindex, queue_id, flags})
-7. 预填充 FILL ring（提供空闲 buffer）
-8. 轮询 RX ring 收包
-</code></pre>
-<h3>两种模式</h3>
+<p>官方 <code class="c">af_xdp.rst</code> 讲的是"怎么用"，本篇讲的是"<strong>为什么必须这么用</strong>"——
+把每一步背后的内核校验条件挖出来，因为 AF_XDP 的失败模式有一个共同特征：
+<strong>大部分错误不是崩，而是静默降级。</strong> 你以为在跑零拷贝，其实在走 copy 模式；
+你以为没匹配到 socket 的包会走协议栈，其实被 <code class="c">XDP_ABORTED</code> 全丢了。</p>
+<h3>本篇与同章其他笔记的分工</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>模式</th>
-<th>flag</th>
+<th>笔记</th>
+<th>回答什么</th>
+<th>关键词</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>01（本篇）</strong></td>
+<td>接口的<strong>每一步约束</strong>与失败模式</td>
+<td>UMEM 注册校验、bind 判定、redirect flags、统计量语义</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02 工程实践</a></td>
+<td>值不值得用、延迟预算、wakeup、批处理、选型</td>
+<td>决策、调优、排障清单</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03 UMEM 布局</a></td>
+<td>UMEM 内存怎么排布、copy 比 zc 多付什么</td>
+<td>frame/chunk/headroom、所有权交接</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、AF_XDP 在整栈里的位置</h2>
+<pre class="code" data-label="code"><code class="c">                         ┌──────────── 内核态 ────────────┐
+NIC ──DMA──→ 驱动 Rx ring ──→ NAPI poll ──→ XDP hook
+                                              │
+                                              │ bpf_redirect_map(&amp;xsks_map, queue_id, XDP_PASS)
+                                              ↓
+                                   __xsk_map_redirect()      xsk.c:368
+                                              ↓
+                                     xsk_rcv()                xsk.c:348
+                                    ┌─────────┴─────────┐
+                    mem.type == MEM_TYPE_XSK_BUFF_POOL ? │
+                                    │                   │
+                             是 → xsk_rcv_zc()      否 → __xsk_rcv()（copy）
+                            （零拷贝，填 desc）      （分配 UMEM frame + memcpy）
+                                    │                   │
+                                    └─────────┬─────────┘
+                                              ↓
+                                   RX ring（producer++）
+                                              ↓  xsk_flush()  xsk.c:326
+                                   ┌──────────┴──────────┐
+                                   ↓                     ↓
+                              用户态看到包            FILL ring 释放
+                                                              └──────────── 用户态 ────────────┘
+</code></pre>
+<p>关键点：<strong>AF_XDP 不是"绕过 XDP"，而是"XDP 的一个 destination"</strong>。
+没有 XDP 程序（或 <code class="c">libxdp</code>/<code class="c">xdp-loader</code> 自带的 <code class="c">xdpsock</code> 程序）把包 redirect 进 <code class="c">xsks_map</code>，
+socket 就永远不会收到一个包——<strong>它自己不会"抓"包</strong>。</p>
+<hr />
+<h2>二、socket 生命周期：八步，每步一个坑</h2>
+<pre class="code" data-label="code"><code class="c">①  socket(AF_XDP, SOCK_RAW, 0)
+②  分配 UMEM          ← 必须页对齐，malloc 不行
+③  setsockopt(XDP_UMEM_REG)          ← 四条硬校验
+④  setsockopt(XDP_RX_RING / XDP_TX_RING)
+⑤  setsockopt(XDP_UMEM_FILL_RING / XDP_UMEM_COMPLETION_RING)
+⑥  mmap() 四个 ring                  ← 偏移来自 getsockopt(XDP_MMAP_OFFSETS)
+⑦  bind(sockfd, sockaddr_xdp)        ← zc/copy 在此判决
+⑧  预填 FILL ring → 加载 XDP 程序 → 轮询 RX ring
+</code></pre>
+<p>顺序不是建议，是<strong>强制</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>顺序约束</th>
+<th>违反的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>③ 之前要 ②</td>
+<td>UMEM 必须先分配</td>
+<td>—</td>
+</tr>
+<tr>
+<td>④ ⑤ 必须在 ⑦ 之前</td>
+<td><code class="c">xsk_bind</code> 检查 <code class="c">xs-&gt;state != XSK_READY</code> → <strong><code class="c">-EBUSY</code></strong>（xsk.c:1108）</td>
+<td>bind 直接失败</td>
+</tr>
+<tr>
+<td>③ 只能做一次</td>
+<td><code class="c">xsk_setsockopt</code> 检查 <code class="c">xs-&gt;state != XSK_READY \|\| xs-&gt;umem</code> → <strong><code class="c">-EINVAL</code></strong>（xsk.c:1308）</td>
+<td>不能改 UMEM</td>
+</tr>
+<tr>
+<td>④ ⑤ 只能做一次</td>
+<td>同上（xsk.c:1281 / 1335）</td>
+<td>不能改 ring 大小</td>
+</tr>
+<tr>
+<td>⑦ 之前必须 ③</td>
+<td><code class="c">!xs-&gt;umem \|\| !xsk_validate_queues(xs)</code> → <strong><code class="c">-EINVAL</code></strong>（xsk.c:1214）</td>
+<td>bind 失败</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>最常见的初学错误</strong>：先 <code class="c">bind()</code> 再 <code class="c">setsockopt()</code>。
+得到的不是"参数错误"，而是 <code class="c">-EBUSY</code>，错误信息完全指向不了真实原因。</p>
+</blockquote>
+<h3>状态机</h3>
+<pre class="code" data-label="code"><code class="c">     XSK_UNBOUND ──(setsockopt 配好 rx/tx + fq/cq)──→ XSK_READY
+                                                          │
+                                                      bind()
+                                                          ↓
+                                                      XSK_BOUND
+</code></pre>
+<p>只有 <code class="c">XSK_BOUND</code> 状态的 socket 才会被 XDP redirect 命中——
+<code class="c">xsk_rcv_check()</code> 第一件事就是 <code class="c">if (!xsk_is_bound(xs)) return -ENXIO;</code>（xsk.c:311）。
+<strong>所以"我 bind 了但收不到包"要查的第一件事是：bind 到底返回了什么。</strong></p>
+<hr />
+<h2>三、UMEM 注册：内核的四条硬校验与三笔账</h2>
+<h3>3.1 <code class="c">xdp_umem_reg</code> 的四条硬校验（<code class="c">xdp_umem_reg()</code>，xdp_umem.c:151）</h3>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_xdp.h:73 */
+struct xdp_umem_reg {
+    __u64 addr;        /* 用户态内存起始地址 */
+    __u64 len;         /* 总字节数 */
+    __u32 chunk_size;  /* 每个 chunk 的长度 */
+    __u32 headroom;    /* 每个 chunk 前置保留 */
+    __u32 flags;       /* XDP_UMEM_UNALIGNED_CHUNK_FLAG */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>校验（源码位置）</th>
+<th>条件</th>
+<th>errno</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Copy</td>
-<td>无</td>
-<td>内核拷贝包到 UMEM，兼容所有驱动</td>
+<td>1</td>
+<td>xdp_umem.c:160</td>
+<td><code class="c">chunk_size &lt; 2048 \|\| chunk_size &gt; PAGE_SIZE</code></td>
+<td><code class="c">-EINVAL</code></td>
+<td><strong>下界 2048</strong>（<code class="c">XDP_UMEM_MIN_CHUNK_SHIFT = 11</code>，<code class="c">xdp_sock_drv.h:12</code>），<strong>上界一页</strong></td>
 </tr>
 <tr>
-<td>Zero-copy</td>
-<td>XDP_ZEROCOPY</td>
-<td>page_pool 直接映射，需驱动支持</td>
+<td>2</td>
+<td>xdp_umem.c:173</td>
+<td>非 unaligned 模式下 <code class="c">chunk_size</code> 不是 2 的幂</td>
+<td><code class="c">-EINVAL</code></td>
+<td>所以实际只有 <strong>2048 / 4096</strong> 两个选择（4K 页系统）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>xdp_umem.c:176</td>
+<td><code class="c">!PAGE_ALIGNED(addr)</code></td>
+<td><code class="c">-EINVAL</code></td>
+<td><strong>必须页对齐 → <code class="c">malloc()</code> 直接失败</strong>，用 <code class="c">mmap</code> / <code class="c">posix_memalign</code> / hugepage</td>
+</tr>
+<tr>
+<td>4</td>
+<td>xdp_umem.c:196/199</td>
+<td><code class="c">len % chunk_size != 0</code>（非 unaligned）<br><code class="c">headroom &gt;= chunk_size - 256</code></td>
+<td><code class="c">-EINVAL</code></td>
+<td>UMEM 必须被 chunk 整除；headroom 不能把空间吃光</td>
 </tr>
 </tbody>
 </table></div>
-<h3>驱动支持情况</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>驱动</th>
-<th>copy</th>
-<th>zero-copy</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>mlx5</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>ice</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>i40e</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>stmmac</td>
-<td>✅</td>
-<td>✅（5.x+）</td>
-</tr>
-<tr>
-<td>virtio-net</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-</tbody>
-</table></div>
-<h3>统计信息</h3>
-<pre class="code" data-label="shell"><code class="c"># 查看 AF_XDP socket 统计
-xdp-stat queue 0
+<p><strong>⚠️ 第 1 条最反直觉：<code class="c">chunk_size</code> 的上限是一页（x86_64 上 4096）。</strong>
+想用 AF_XDP 收 9000 字节的 jumbo frame？<strong>单个 chunk 装不下，做不到。</strong>
+唯一出路是 <code class="c">XDP_USE_SG</code>（multi-buffer，5.19+），把一个包切成多个描述符
+（<code class="c">XDP_PKT_CONTD</code> 标志）。这也是 MTU 超过 <code class="c">frame_len</code> 的包的归宿——
+见第四节。</p>
+<h3>3.2 内核为 UMEM 付的三笔账</h3>
+<p><code class="c">xdp_umem_reg()</code> 除了校验，还做了三件事（xdp_umem.c:214-224）：</p>
+<pre class="code" data-label="C"><code class="c">err = xdp_umem_account_pages(umem);   /* ① RLIMIT_MEMLOCK 记账 */
+if (err) return err;
+err = xdp_umem_pin_pages(umem, (unsigned long)addr);  /* ② 钉页 */
+if (err) goto out_account;
+err = xdp_umem_addr_map(umem, umem-&gt;pgs, umem-&gt;npgs); /* ③ vmap */
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>统计项</th>
-<th>含义</th>
+<th>步骤</th>
+<th>源码</th>
+<th>后果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>rx_dropped</td>
-<td>FILL ring 空导致丢包</td>
+<td>① 记账</td>
+<td><code class="c">capable(CAP_IPC_LOCK)</code> 才跳过；否则 <code class="c">rlimit(RLIMIT_MEMLOCK)</code> 超限 → <strong><code class="c">-ENOBUFS</code></strong>（xdp_umem.c:144）</td>
+<td><strong><code class="c">ulimit -l</code> 不够，注册直接失败。</strong> 这是容器/CI 环境最常见的启动失败原因</td>
 </tr>
 <tr>
-<td>rx_invalid_descs</td>
-<td>无效描述符</td>
+<td>② 钉页</td>
+<td><code class="c">pin_user_pages(..., FOLL_WRITE \| FOLL_LONGTERM, ...)</code>（xdp_umem.c:105）</td>
+<td>UMEM <strong>常驻内存，永不换出</strong>；<code class="c">FOLL_LONGTERM</code> 对某些特殊内存（如某些 GUP-longterm 不支持的页）会失败</td>
 </tr>
 <tr>
-<td>tx_invalid_descs</td>
-<td>发送无效描述符</td>
+<td>③ 映射</td>
+<td><code class="c">vmap(pages, nr_pages, VM_MAP, PAGE_KERNEL)</code>（xdp_umem.c:49）</td>
+<td>内核建立自己的虚拟映射，用于 copy 模式访问</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 要点</h2>
-<ul>
-<li>零拷贝模式是 HFT 用 AF_XDP 的唯一理由（copy 模式不如直接 recvmsg）</li>
-<li>绑定到特定 RX 队列：<code class="c">ethtool -L eth0 combined N</code> 设置队列数</li>
-<li>FILL ring 预填充数量需 &gt; ring 大小 / 2，避免空 buffer 丢包</li>
-</ul>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">06</div><h2>— AF_XDP：零拷贝到用户态</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> 4.18+（初始）；zero-copy 模式需驱动支持</p>
-</blockquote>
-<h2>AF_XDP 是什么</h2>
-<p>AF_XDP（Address Family XDP）是一种 socket 类型，允许用户态程序直接从 XDP hook 接收包：
-- XDP 程序将包 redirect 到 AF_XDP socket
-- 用户态程序从共享内存环形缓冲区读取包
-- 零拷贝模式下，page_pool 的 page 直接映射到用户态</p>
-<h2>架构</h2>
-<pre class="code" data-label="code"><code class="c">NIC DMA → page_pool → XDP hook → XDP_REDIRECT → AF_XDP socket
-                                                    ↓
-                                           UMEM（用户态共享内存）
-                                           ↙              ↘
-                                     FILL ring          RX ring
-                                   (空闲 buffer)      (收到的包)
-
-                                     TX ring          COMPLETION ring
-                                   (待发送包)        (发送完成通知)
+<p><strong>HFT 推论：</strong> UMEM 一旦注册就<strong>常驻物理内存</strong>，<code class="c">top</code> 里看到的进程 RSS 是实打实的。
+一个 2048 chunk × 65536 = 128 MB 的 UMEM 会永久占用 128 MB，且计入 memlock 限额。</p>
+<h3>3.3 <code class="c">frame_len</code>：你的包最大能有多大</h3>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk_buff_pool.c:84 */
+pool-&gt;frame_len = umem-&gt;chunk_size - umem-&gt;headroom - XDP_PACKET_HEADROOM;
 </code></pre>
-<h2>四个环形缓冲区</h2>
+<p>（<code class="c">XDP_PACKET_HEADROOM = 256</code>，<code class="c">include/uapi/linux/bpf.h:6276</code>）</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>Ring</th>
-<th>方向</th>
-<th>作用</th>
+<th>chunk_size</th>
+<th>headroom</th>
+<th>可用包长 <code class="c">frame_len</code></th>
+<th>能装下 1500B 吗</th>
+<th>能装下 9000B jumbo 吗</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>FILL</td>
-<td>用户→内核</td>
-<td>用户态提供空闲 buffer 给内核填充</td>
+<td>2048</td>
+<td>0</td>
+<td><strong>1792</strong></td>
+<td>✅</td>
+<td>❌</td>
 </tr>
 <tr>
-<td>RX</td>
-<td>内核→用户</td>
-<td>内核将收到的包放入 buffer，通知用户态</td>
+<td>2048</td>
+<td>256</td>
+<td><strong>1536</strong></td>
+<td>⚠️ 仅剩 36 B 余量（含以太网头 14B）</td>
+<td>❌</td>
 </tr>
 <tr>
-<td>TX</td>
-<td>用户→内核</td>
-<td>用户态将待发送包放入 buffer</td>
+<td>4096</td>
+<td>0</td>
+<td><strong>3840</strong></td>
+<td>✅</td>
+<td>❌</td>
 </tr>
 <tr>
-<td>COMPLETION</td>
-<td>内核→用户</td>
-<td>内核通知发送完成，buffer 可回收</td>
+<td>4096</td>
+<td>256</td>
+<td><strong>3584</strong></td>
+<td>✅</td>
+<td>❌</td>
 </tr>
 </tbody>
 </table></div>
-<h2>两种模式</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>模式</th>
-<th>机制</th>
-<th>延迟</th>
-<th>驱动要求</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Copy mode</td>
-<td>内核拷贝包到 UMEM</td>
-<td>较高</td>
-<td>所有 XDP 驱动</td>
-</tr>
-<tr>
-<td>Zero-copy mode</td>
-<td>page_pool 直接映射</td>
-<td>最低</td>
-<td>驱动支持 zero-copy</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码框架</h2>
-<pre class="code" data-label="C"><code class="c">// 创建 AF_XDP socket
-int sockfd = socket(AF_XDP, SOCK_RAW, 0);
+<p><strong>结论：AF_XDP 单描述符路径最大包长是 3584（4K chunk）。</strong>
+要收 jumbo 只能开 <code class="c">XDP_USE_SG</code>，且驱动要支持（<code class="c">xdp_zc_max_segs &gt; 1</code>），
+否则 <code class="c">xp_assign_dev</code> 返回 <code class="c">-EOPNOTSUPP</code>（xsk_buff_pool.c:184）。</p>
+<hr />
+<h2>四、bind()：zc / copy 的判决点（本篇最重要的一节）</h2>
+<h3>4.1 源码：<code class="c">xp_assign_dev()</code>，xsk_buff_pool.c:149</h3>
+<pre class="code" data-label="C"><code class="c">    force_zc = flags &amp; XDP_ZEROCOPY;
+    force_copy = flags &amp; XDP_COPY;
 
-// 注册 UMEM（共享内存区域）
-struct xdp_umem_reg umem = {
-    .addr = (uintptr_t)buffer,
-    .len = BUFFER_SIZE,
-    .chunk_size = 4096,
-};
-setsockopt(sockfd, SOL_XDP, XDP_UMEM_REG, &amp;umem, sizeof(umem));
+    if (force_zc &amp;&amp; force_copy)
+        return -EINVAL;
 
-// 绑定到网卡+队列
-struct sockaddr_xdp sxdp = {
-    .sxdp_family = AF_XDP,
-    .sxdp_ifindex = ifindex,
-    .sxdp_queue_id = queue_id,
-    .sxdp_flags = XDP_ZEROCOPY,  // 零拷贝模式
-};
-bind(sockfd, (struct sockaddr*)&amp;sxdp, sizeof(sxdp));
+    if (xsk_get_pool_from_qid(netdev, queue_id))
+        return -EBUSY;          /* 这个 (dev, queue) 已经被别的 xsk 占了 */
+    ...
+    if (force_copy)
+        /* For copy-mode, we are done. */
+        return 0;
 
-// 用户态轮询收包
-struct xdp_desc desc;
-while (1) {
-    while (xsk_ring_cons__has_data(&amp;rx_ring)) {
-        // 直接访问 UMEM 中的包数据，零拷贝
-        void *pkt = xsk_umem__get_data(buffer, desc.addr);
-        // 处理行情...
+    if ((netdev-&gt;xdp_features &amp; NETDEV_XDP_ACT_ZC) != NETDEV_XDP_ACT_ZC) {
+        err = -EOPNOTSUPP;
+        goto err_unreg_pool;
     }
+    ...
+    err = netdev-&gt;netdev_ops-&gt;ndo_bpf(netdev, &amp;bpf);   /* XDP_SETUP_XSK_POOL */
+    if (err)
+        goto err_unreg_pool;
+
+    if (!pool-&gt;dma_pages) {
+        WARN(1, &quot;Driver did not DMA map zero-copy buffers&quot;);
+        err = -EINVAL;
+        goto err_unreg_xsk;
+    }
+    pool-&gt;umem-&gt;zc = true;
+    return 0;
+
+err_unreg_xsk:
+    xp_disable_drv_zc(pool);
+err_unreg_pool:
+    if (!force_zc)
+        err = 0;             /* ⭐ fallback to copy mode */
+    if (err) {
+        xsk_clear_pool_at_qid(netdev, queue_id);
+        dev_put(netdev);
+    }
+    return err;
+</code></pre>
+<h3>4.2 判决表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">XDP_ZEROCOPY</code></th>
+<th><code class="c">XDP_COPY</code></th>
+<th>驱动支持 ZC</th>
+<th>bind() 返回</th>
+<th>实际模式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+<td>0</td>
+<td><strong>zero-copy</strong> ✅</td>
+</tr>
+<tr>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td><strong>0（成功！）</strong></td>
+<td><strong>copy（静默降级）</strong> ⚠️</td>
+</tr>
+<tr>
+<td>✅</td>
+<td>❌</td>
+<td>✅</td>
+<td>0</td>
+<td>zero-copy ✅</td>
+</tr>
+<tr>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td><strong><code class="c">-EOPNOTSUPP</code></strong></td>
+<td>失败</td>
+</tr>
+<tr>
+<td>❌</td>
+<td>✅</td>
+<td>任意</td>
+<td>0</td>
+<td>copy ✅</td>
+</tr>
+<tr>
+<td>✅</td>
+<td>✅</td>
+<td>任意</td>
+<td><strong><code class="c">-EINVAL</code></strong></td>
+<td>失败</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<h3>⭐ 一句话结论</h3>
+<p><strong>不显式指定 <code class="c">XDP_ZEROCOPY</code>，驱动不支持时 bind() 依然返回 0，只是静默变成 copy 模式。</strong>
+这是 AF_XDP 头号陷阱：<a href="chapter-15.html#s-02">02 篇</a>会说明 copy 模式比零拷贝慢 2–3 倍，
+而你在 <code class="c">ss</code>/<code class="c">bpftool</code> 里看到的一切都是"正常运行"。</p>
+<p><strong>唯一可靠的验证方式</strong>（bind 之后）：
+<code class="c">c
+struct xdp_options opts;
+socklen_t len = sizeof(opts);
+getsockopt(xsk_fd, SOL_XDP, XDP_OPTIONS, &amp;opts, &amp;len);
+if (!(opts.flags &amp; XDP_OPTIONS_ZEROCOPY))
+        fprintf(stderr, "⚠️ 降级到 copy 模式，别上生产\n");</code></p>
+</blockquote>
+<h3>4.3 bind() 的其他 errno</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>条件（源码）</th>
+<th>排查方向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-EBUSY</code></td>
+<td><code class="c">xsk_get_pool_from_qid()</code> 已存在（xsk_buff_pool.c:164）</td>
+<td>该 (dev, queue_id) 已被另一个 xsk 占用——<strong>一个队列只能有一个 xsk</strong></td>
+</tr>
+<tr>
+<td><code class="c">-EINVAL</code></td>
+<td><code class="c">XDP_COPY</code> 与 <code class="c">XDP_ZEROCOPY</code> 同时给</td>
+<td>二选一</td>
+</tr>
+<tr>
+<td><code class="c">-EINVAL</code></td>
+<td>flag 含未定义位（xsk.c:1098）</td>
+<td>只允许 <code class="c">XDP_SHARED_UMEM/COPY/ZEROCOPY/USE_NEED_WAKEUP/USE_SG</code></td>
+</tr>
+<tr>
+<td><code class="c">-EINVAL</code></td>
+<td><code class="c">XDP_SHARED_UMEM</code> 与上述任一 flag 同时给（xsk.c:1130）</td>
+<td><strong>共享 UMEM 的 socket 不许单独指定模式</strong>，继承首个 socket 的</td>
+</tr>
+<tr>
+<td><code class="c">-EOPNOTSUPP</code></td>
+<td>驱动无 <code class="c">NETDEV_XDP_ACT_ZC</code>，或 <code class="c">xdp_zc_max_segs == 1</code> 却要 <code class="c">XDP_USE_SG</code></td>
+<td>换驱动/换网卡；查 <code class="c">ethtool -i</code> + 驱动源码</td>
+</tr>
+<tr>
+<td><code class="c">-EINVAL</code></td>
+<td>驱动没 DMA 映射（<code class="c">WARN</code> 打内核日志）</td>
+<td>驱动 bug，<code class="c">dmesg</code> 里能看到那句 WARN</td>
+</tr>
+<tr>
+<td><code class="c">-ENODEV</code></td>
+<td>ifindex 不存在</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>五、XDP 程序侧：<code class="c">xsks_map</code> 的 flags 陷阱</h2>
+<p>AF_XDP 必须配一个 XDP 程序把包 redirect 进 socket。典型写法：</p>
+<pre class="code" data-label="C"><code class="c">SEC(&quot;xdp&quot;)
+int xdp_sock_prog(struct xdp_md *ctx)
+{
+    int index = ctx-&gt;rx_queue_index;
+    /* 只把感兴趣的 UDP 行情包送进用户态，其余走内核栈 */
+    if (!is_market_data(ctx))
+        return XDP_PASS;
+    return bpf_redirect_map(&amp;xsks_map, index, XDP_PASS);
 }
 </code></pre>
-<h2>HFT 关联</h2>
+<h3>5.1 flags 的低位是"lookup 失败时的返回值"</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/filter.h:1498 */
+static __always_inline long __bpf_xdp_redirect_map(struct bpf_map *map, u64 index,
+                           u64 flags, const u64 flag_mask,
+                           void *lookup_elem(struct bpf_map *map, u32 key))
+{
+    const u64 action_mask = XDP_ABORTED | XDP_DROP | XDP_PASS | XDP_TX;
+
+    /* Lower bits of the flags are used as return code on lookup failure */
+    if (unlikely(flags &amp; ~(action_mask | flag_mask)))
+        return XDP_ABORTED;
+
+    ri-&gt;tgt_value = lookup_elem(map, index);
+    if (unlikely(!ri-&gt;tgt_value) &amp;&amp; !(flags &amp; BPF_F_BROADCAST)) {
+        ...
+        return flags &amp; action_mask;      /* ⭐ 查不到就返回这个 */
+    }
+    ...
+}
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>维度</th>
-<th>AF_XDP 优势</th>
+<th>你写的 flags</th>
+<th><code class="c">xsks_map[queue_id]</code> 查不到时</th>
+<th>后果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>零拷贝</td>
-<td>包数据不经过内核协议栈，直接到用户态</td>
+<td><strong><code class="c">0</code></strong></td>
+<td>返回 <code class="c">XDP_ABORTED</code>（=0）</td>
+<td>⚠️ <strong>包被丢弃 + 触发 tracepoint</strong>。你没挂 socket 的队列、ARP、ICMP、SSH 全丢</td>
 </tr>
 <tr>
-<td>低延迟</td>
-<td>接近 DPDK，但不需要独占网卡</td>
+<td><code class="c">XDP_PASS</code></td>
+<td>返回 <code class="c">XDP_PASS</code></td>
+<td>✅ 交给内核协议栈（推荐默认）</td>
 </tr>
 <tr>
-<td>内核共存</td>
-<td>与其他内核网络功能（路由/TCP）共存</td>
+<td><code class="c">XDP_DROP</code></td>
+<td>返回 <code class="c">XDP_DROP</code></td>
+<td>丢弃，但<strong>不打 tracepoint</strong>（比 ABORTED 干净）</td>
 </tr>
 <tr>
-<td>灵活切换</td>
-<td>行情流走 AF_XDP，管理流走普通 socket</td>
+<td><code class="c">XDP_TX</code></td>
+<td>返回 <code class="c">XDP_TX</code></td>
+<td>原路反弹回去</td>
+</tr>
+<tr>
+<td>含非法位（如 <code class="c">XDP_REDIRECT</code>）</td>
+<td>立刻返回 <code class="c">XDP_ABORTED</code></td>
+<td><strong>连查都不查，所有包全丢</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h2>AF_XDP vs DPDK</h2>
+<h3>5.2 两种写法的差别</h3>
+<pre class="code" data-label="C"><code class="c">/* ❌ 致命：查不到 → XDP_ABORTED → 静默丢包 */
+return bpf_redirect_map(&amp;xsks_map, idx, 0);
+
+/* ✅ 正确：查不到 → 交给内核协议栈，其他队列/其他协议照常工作 */
+return bpf_redirect_map(&amp;xsks_map, idx, XDP_PASS);
+</code></pre>
+<p><strong>为什么这条对 HFT 特别危险：</strong>
+<code class="c">XDP_ABORTED</code> 的包<strong>不会出现在 tcpdump 里</strong>（tcpdump 的 <code class="c">AF_PACKET</code> 挂在
+<code class="c">ptype_all</code>，<code class="c">dev.c:5394</code>，在 XDP 之后），也不会计入任何 per-queue 的 RX 计数。
+你只会看到"网络莫名其妙不通"，而所有常规工具都说一切正常。</p>
+<pre class="code" data-label="shell"><code class="c"># 唯一能看到它的地方
+bpftool prog show id &lt;ID&gt;     # 看不到 ABORTED
+cat /sys/kernel/debug/tracing/events/xdp/xdp_redirect_err/format   # 需要开 tracepoint
+perf trace -e xdp:*           # 或
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+</code></pre>
+<hr />
+<h2>六、收包路径：<code class="c">xsk_rcv()</code> 逐包判定 zc / copy</h2>
+<p>bind() 时的 flag 决定"<strong>能不能</strong>"用零拷贝，而<strong>实际走哪条路由每个包自己决定</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk.c:348 */
+static int xsk_rcv(struct xdp_sock *xs, struct xdp_buff *xdp)
+{
+    u32 len = xdp_get_buff_len(xdp);
+    int err;
+
+    err = xsk_rcv_check(xs, xdp, len);
+    if (err)
+        return err;
+
+    if (xdp-&gt;rxq-&gt;mem.type == MEM_TYPE_XSK_BUFF_POOL) {
+        len = xdp-&gt;data_end - xdp-&gt;data;
+        return xsk_rcv_zc(xs, xdp, len);      /* 零拷贝 */
+    }
+
+    err = __xsk_rcv(xs, xdp, len);            /* copy 模式 */
+    if (!err)
+        xdp_return_buff(xdp);                 /* 把驱动的 page 还回去 */
+    return err;
+}
+</code></pre>
+<blockquote>
+<p><strong>判定依据是 <code class="c">xdp-&gt;rxq-&gt;mem.type</code>——包来自哪种内存池。</strong>
+来自 XSK buff pool（驱动为 zc 准备的 UMEM）→ 零拷贝；
+来自驱动的普通 page_pool → copy 模式（拷一份进 UMEM，再把原页还给 page_pool）。</p>
+<p>这条源码也终结了一个常见误解：<strong>AF_XDP 零拷贝不使用 page_pool。</strong>
+UMEM 由内核自己 DMA 映射（<code class="c">xp_dma_map()</code>，pool 自带的 <code class="c">dma_pages</code> 数组，
+<code class="c">include/net/xsk_buff_pool.h:68</code>）。"AF_XDP 基于 page_pool"只在 copy 模式下成立。
+详见 <a href="chapter-15.html#s-01">chapter-04/01</a>。</p>
+</blockquote>
+<h3>6.1 三道检查（<code class="c">xsk_rcv_check()</code>，xsk.c:309）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>检查</th>
+<th>失败返回</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">!xsk_is_bound(xs)</code></td>
+<td><code class="c">-ENXIO</code></td>
+<td>socket 未 bind，包继续走 XDP 的后续处理</td>
+</tr>
+<tr>
+<td><code class="c">xs-&gt;dev != xdp-&gt;rxq-&gt;dev \|\| xs-&gt;queue_id != xdp-&gt;rxq-&gt;queue_index</code></td>
+<td><code class="c">-EINVAL</code></td>
+<td><strong>设备/队列不匹配</strong>。<code class="c">xsks_map</code> 里塞了错的 socket 就是这个错</td>
+</tr>
+<tr>
+<td><code class="c">len &gt; xsk_pool_get_rx_frame_size(pool) &amp;&amp; !xs-&gt;sg</code></td>
+<td><code class="c">-ENOSPC</code> + <strong><code class="c">xs-&gt;rx_dropped++</code></strong></td>
+<td>包比 <code class="c">frame_len</code> 大且没开 <code class="c">XDP_USE_SG</code> → <strong>丢弃</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ 第三条是"包太大"的唯一出口，<strong>它计入的是 <code class="c">rx_dropped</code>，不是 <code class="c">rx_ring_full</code></strong>。
+如果你的 MTU 设成了 9000 而 chunk 是 2048，你会看到 <code class="c">rx_dropped</code> 疯涨而
+<code class="c">rx_ring_full</code> 为 0——这正好是"包太大"和"用户读太慢"的区分方法。</p>
+<h3>6.2 copy 模式的三个失败点（<code class="c">__xsk_rcv()</code>，xsk.c:223）</h3>
+<pre class="code" data-label="C"><code class="c">    if (len &lt;= frame_size &amp;&amp; !xdp_buff_has_frags(xdp)) {
+        xsk_xdp = xsk_buff_alloc(xs-&gt;pool);
+        if (!xsk_xdp) {
+            xs-&gt;rx_dropped++;          /* ① UMEM 里没空闲 frame */
+            return -ENOMEM;
+        }
+        ...
+    }
+
+    num_desc = (len - 1) / frame_size + 1;
+    if (!xsk_buff_can_alloc(xs-&gt;pool, num_desc)) {
+        xs-&gt;rx_dropped++;              /* ② 同上，多描述符场景 */
+        return -ENOMEM;
+    }
+    if (xskq_prod_nb_free(xs-&gt;rx, num_desc) &lt; num_desc) {
+        xs-&gt;rx_queue_full++;           /* ③ RX ring 满 → 用户态读太慢 */
+        return -ENOBUFS;
+    }
+</code></pre>
+<ul>
+<li><strong>① ② <code class="c">rx_dropped</code></strong> = UMEM 侧没资源了 → <strong>FILL ring 空</strong>（你归还 frame 太慢）</li>
+<li><strong>③ <code class="c">rx_queue_full</code></strong> = RX ring 侧没位置了 → <strong>用户态消费太慢</strong></li>
+</ul>
+<p>两者症状都是"丢包"，但解法完全相反：前者要加大 FILL ring 水位，后者要加快消费循环。</p>
+<h3>6.3 零拷贝路径极简（<code class="c">__xsk_rcv_zc()</code>，xsk.c:139）</h3>
+<pre class="code" data-label="C"><code class="c">static int __xsk_rcv_zc(struct xdp_sock *xs, struct xdp_buff_xsk *xskb, u32 len, u32 flags)
+{
+    u64 addr;
+    int err;
+
+    addr = xp_get_handle(xskb);
+    err = xskq_prod_reserve_desc(xs-&gt;rx, addr, len, flags);
+    if (err) {
+        xs-&gt;rx_queue_full++;
+        return err;
+    }
+    xp_release(xskb);
+    return 0;
+}
+</code></pre>
+<p><strong>只有两步：取地址 → 填描述符。</strong> 没有分配、没有拷贝。
+零拷贝模式下 <code class="c">rx_dropped</code> 基本不会涨（除了 <code class="c">xsk_rcv_check</code> 的包太大分支），
+<strong>丢包几乎全在 <code class="c">rx_ring_full</code> 和 <code class="c">rx_fill_ring_empty_descs</code></strong>。</p>
+<hr />
+<h2>七、观测：<code class="c">xdp_statistics</code> 六个计数器怎么用</h2>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_xdp.h:81 */
+struct xdp_statistics {
+    __u64 rx_dropped;                  /* 其他原因丢弃 */
+    __u64 rx_invalid_descs;            /* 描述符非法 */
+    __u64 tx_invalid_descs;            /* 发送描述符非法 */
+    __u64 rx_ring_full;                /* RX ring 满 */
+    __u64 rx_fill_ring_empty_descs;    /* 从 FILL ring 取不到东西 */
+    __u64 tx_ring_empty_descs;         /* 从 TX ring 取不到东西 */
+};
+</code></pre>
+<h3>7.1 诊断对照表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>计数器</th>
+<th>源码产生点</th>
+<th>含义</th>
+<th>处置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rx_ring_full</code></td>
+<td>xsk.c:262 / 145 (<code class="c">__xsk_rcv_zc</code>)</td>
+<td><strong>RX ring 满 → 用户态消费太慢</strong></td>
+<td>加大 RX ring；加快循环；批处理收包</td>
+</tr>
+<tr>
+<td><code class="c">rx_dropped</code></td>
+<td>xsk.c:241 / 258（copy：无空闲 frame）<br>xsk.c:318（<strong>包 &gt; frame_len 且未开 SG</strong>）</td>
+<td>两个完全不同的原因</td>
+<td>先看 chunk/MTU：<code class="c">rx_dropped</code> 涨而 <code class="c">rx_ring_full</code> 为 0 → <strong>包太大</strong>；反之 → FILL ring 空</td>
+</tr>
+<tr>
+<td><code class="c">rx_fill_ring_empty_descs</code></td>
+<td><code class="c">xskq_nb_queue_empty_descs(pool-&gt;fq)</code>（xsk.c:1408）</td>
+<td><strong>FILL ring 空 → 你归还 frame 太慢</strong>（ZC 模式丢包主因）</td>
+<td>加大 FILL ring；提高归还频率；别在收包循环里做重活</td>
+</tr>
+<tr>
+<td><code class="c">rx_invalid_descs</code></td>
+<td>xsk_queue.h:199</td>
+<td>用户态往 RX ring 侧提交了非法描述符</td>
+<td>几乎必是用户态 bug（addr 越界、len=0）</td>
+</tr>
+<tr>
+<td><code class="c">tx_invalid_descs</code></td>
+<td>同上 / xsk.c:570</td>
+<td>待发包的描述符非法</td>
+<td>检查 TX 路径的 addr/len</td>
+</tr>
+<tr>
+<td><code class="c">tx_ring_empty_descs</code></td>
+<td>xsk.c:488</td>
+<td>驱动想发但 TX ring 空</td>
+<td>正常（空闲时必然涨），不是错误</td>
+</tr>
+</tbody>
+</table></div>
+<h3>7.2 ⚠️ 一个隐蔽的坑：v1 结构体会把两个计数器折叠</h3>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk.c:1389 */
+    if (len &lt; sizeof(struct xdp_statistics_v1)) {
+        return -EINVAL;
+    } else if (len &lt; sizeof(stats)) {
+        extra_stats = false;
+        stats_size = sizeof(struct xdp_statistics_v1);
+    } else {
+        stats_size = sizeof(stats);
+    }
+    ...
+    stats.rx_dropped = xs-&gt;rx_dropped;
+    if (extra_stats) {
+        stats.rx_ring_full = xs-&gt;rx_queue_full;
+        stats.rx_fill_ring_empty_descs = xskq_nb_queue_empty_descs(xs-&gt;pool-&gt;fq);
+        stats.tx_ring_empty_descs = xskq_nb_queue_empty_descs(xs-&gt;tx);
+    } else {
+        stats.rx_dropped += xs-&gt;rx_queue_full;   /* ⭐ 折叠！ */
+    }
+</code></pre>
+<p>如果你传的 <code class="c">optlen</code> 只有旧的 <code class="c">struct xdp_statistics_v1</code> 大小（3 个 <code class="c">__u64</code>），
+内核<strong>只填前三个字段，并把 <code class="c">rx_queue_full</code> 加进 <code class="c">rx_dropped</code></strong>——
+于是"用户读太慢"和"包太大"彻底混在一起，无法诊断。</p>
+<blockquote>
+<p><strong>务必用完整的 <code class="c">struct xdp_statistics</code>（6 个字段），并让 <code class="c">optlen</code> 等于它的大小。</strong></p>
+</blockquote>
+<h3>7.3 观测命令</h3>
+<pre class="code" data-label="shell"><code class="c"># xdp-tools 自带的统计（最方便）
+xdp-stat -i eth0            # 或旧名 xdp_stats
+
+# 自己取（C 代码）
+struct xdp_statistics stats;
+socklen_t optlen = sizeof(stats);        # ⚠️ 必须是完整结构体的大小
+getsockopt(fd, SOL_XDP, XDP_STATISTICS, &amp;stats, &amp;optlen);
+
+# 驱动层：确认包确实进了网卡（这是&quot;包根本没到&quot;与&quot;包被 XDP 丢了&quot;的分水岭）
+ethtool -S eth0 | grep -E 'rx_packets|rx_dropped|xdp'
+
+# 确认 XDP 程序在跑、在哪个模式
+bpftool net show dev eth0
+bpftool prog show id &lt;ID&gt;
+
+# 确认这个 socket 是真零拷贝（不是静默降级的 copy）
+#   → 见 4.2 的 getsockopt(XDP_OPTIONS)
+</code></pre>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>第一件事永远是验证 <code class="c">XDP_OPTIONS_ZEROCOPY</code></strong>。不显式要求 <code class="c">XDP_ZEROCOPY</code> 就会静默降级，
+  而降级后的性能（见 <a href="chapter-15.html#s-02">02 篇</a>）不值得这套开发成本。</li>
+<li><strong><code class="c">bpf_redirect_map(&amp;xsks_map, idx, 0)</code> 是自杀式写法</strong>。低位 flags 是 lookup 失败时的返回值，
+  0 = <code class="c">XDP_ABORTED</code> = 静默丢光非目标流量。默认写 <code class="c">XDP_PASS</code>。</li>
+<li><strong><code class="c">chunk_size</code> 只能 2048 或 4096</strong>（4K 页系统），可用包长上限 3584。
+  HFT 行情包通常 100–1500 B，2048 就够，还能省一半 TLB 压力和 cache footprint。</li>
+<li><strong>UMEM 会 <code class="c">pin_user_pages(FOLL_LONGTERM)</code> 常驻</strong>，并且吃 <code class="c">RLIMIT_MEMLOCK</code>。
+  容器里起不来先查 <code class="c">ulimit -l</code>，errno 是 <code class="c">-ENOBUFS</code> 而不是 <code class="c">-ENOMEM</code>。</li>
+<li><strong>一个 (dev, queue_id) 只能有一个 xsk</strong>（<code class="c">-EBUSY</code>）。多策略进程要靠 <code class="c">SO_REUSEPORT</code> 不行，
+  得靠多队列 + <code class="c">XDP_SHARED_UMEM</code> 或用户态分发。</li>
+<li><strong>丢包诊断先看 <code class="c">rx_dropped</code> 与 <code class="c">rx_ring_full</code> 的比值</strong>：
+  <code class="c">rx_dropped</code> 独涨 = 包太大或 UMEM 无空闲 frame；<code class="c">rx_ring_full</code> 独涨 = 消费太慢。</li>
+<li><strong><code class="c">headroom</code> 是从 <code class="c">frame_len</code> 里扣的</strong>。2048 chunk + 256 headroom 只剩 1536 B，
+  刚好卡在标准 MTU 边缘——行情网关若带 VLAN tag 或需要 <code class="c">bpf_xdp_adjust_head()</code> 加封装头，
+  请直接用 4096。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>维度</th>
-<th>AF_XDP</th>
+<th>Rosen（3.x）</th>
+<th>现代（4.18+ / v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户态收包</td>
+<td><code class="c">socket()</code> + <code class="c">recvmsg()</code>，必经协议栈 + 一次拷贝</td>
+<td>AF_XDP：XDP_REDIRECT 直送 UMEM，零拷贝</td>
+</tr>
+<tr>
+<td>Rx 缓冲区归属</td>
+<td>内核 <code class="c">alloc_page</code>，用完释放</td>
+<td>用户态 UMEM，内核 DMA 映射到它</td>
+</tr>
+<tr>
+<td>缓冲区归还</td>
+<td>内核自动</td>
+<td><strong>用户态必须显式填 FILL ring</strong>，不填就丢包</td>
+</tr>
+<tr>
+<td>旁路粒度</td>
+<td>无（要么走栈，要么 PF_PACKET 拷贝一份）</td>
+<td><strong>按队列旁路</strong>，一张网卡可以 0 号队列给 AF_XDP、其余走内核栈</td>
+</tr>
+<tr>
+<td>丢包可见性</td>
+<td><code class="c">netstat -s</code>、网卡计数</td>
+<td>每个 socket 独立的 <code class="c">xdp_statistics</code> 六计数器</td>
+</tr>
+<tr>
+<td>驱动契约</td>
+<td><code class="c">ndo_start_xmit</code></td>
+<td>增加 <code class="c">ndo_bpf(XDP_SETUP_XSK_POOL)</code> + <code class="c">xdp_features</code> 声明</td>
+</tr>
+<tr>
+<td>内存约束</td>
+<td>只受进程地址空间限制</td>
+<td><strong>额外受 <code class="c">RLIMIT_MEMLOCK</code> 与页对齐约束</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary><b>Q1：</b>你调用 <code class="c">bind()</code> 返回 0，一切正常。但收包延迟是预期的 3 倍。最可能的原因是什么？怎么一次验证？</summary>
+<p><strong>最可能：静默降级到 copy 模式。</strong></p>
+<p><code class="c">xp_assign_dev()</code>（xsk_buff_pool.c:149）在驱动不支持 <code class="c">NETDEV_XDP_ACT_ZC</code> 时走
+<code class="c">err_unreg_pool:</code> 标签，然后：</p>
+<pre class="code" data-label="C"><code class="c">    if (!force_zc)
+        err = 0; /* fallback to copy mode */
+</code></pre>
+<p>只要你在 <code class="c">sockaddr_xdp.sxdp_flags</code> 里<strong>没写</strong> <code class="c">XDP_ZEROCOPY</code>，<code class="c">force_zc</code> 为假，
+<code class="c">bind()</code> 返回 0，socket 正常工作——只是每个包都要分配 UMEM frame 并 memcpy 一次。</p>
+<p><strong>一次性验证（bind 之后立刻做）：</strong></p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/if_xdp.h&gt;
+
+struct xdp_options opts = {};
+socklen_t len = sizeof(opts);
+if (getsockopt(xfd, SOL_XDP, XDP_OPTIONS, &amp;opts, &amp;len) == 0) {
+        printf(&quot;zero-copy: %s\n&quot;,
+               (opts.flags &amp; XDP_OPTIONS_ZEROCOPY) ? &quot;YES&quot; : &quot;NO  ← 降级了&quot;);
+}
+</code></pre>
+<p><strong>根治：bind 时就加 flag。</strong></p>
+<pre class="code" data-label="C"><code class="c">struct sockaddr_xdp sxdp = {
+        .sxdp_family   = AF_XDP,
+        .sxdp_ifindex  = ifindex,
+        .sxdp_queue_id = qid,
+        .sxdp_flags    = XDP_ZEROCOPY | XDP_USE_NEED_WAKEUP,
+};
+if (bind(xfd, (struct sockaddr *)&amp;sxdp, sizeof(sxdp)) &lt; 0) {
+        /* 现在不支持会明确报 -EOPNOTSUPP，而不是假装成功 */
+        perror(&quot;bind&quot;);
+        return -1;
+}
+</code></pre>
+<p><strong>为什么不一开始就用 <code class="c">XDP_ZEROCOPY</code>？</strong>
+因为很多人想要"有 zc 就用，没有就退化"。但 AF_XDP 的价值几乎全在 zc 上——
+copy 模式比零拷贝慢 2–3 倍（见 <a href="chapter-15.html#s-03">03 篇</a>），
+还不如直接走内核栈 + busy poll。<strong>宁可失败，不要降级。</strong></p>
+</details>
+<details>
+<summary><b>Q2：</b>生产上把 XDP 程序挂上去之后，SSH 断了、ARP 不通，但 <code class="c">tcpdump</code> 什么异常包都看不到，<code class="c">ethtool -S</code> 的 rx 计数照常涨。为什么？</summary>
+<p><strong><code class="c">bpf_redirect_map()</code> 的第三个参数写成了 0。</strong></p>
+<p><code class="c">__bpf_xdp_redirect_map()</code>（include/linux/filter.h:1498）的语义是：
+<strong>flags 的低位是"lookup 失败时的返回值"</strong>。</p>
+<pre class="code" data-label="C"><code class="c">    const u64 action_mask = XDP_ABORTED | XDP_DROP | XDP_PASS | XDP_TX;
+    ...
+    ri-&gt;tgt_value = lookup_elem(map, index);
+    if (unlikely(!ri-&gt;tgt_value) &amp;&amp; !(flags &amp; BPF_F_BROADCAST)) {
+        return flags &amp; action_mask;
+    }
+</code></pre>
+<p><code class="c">XDP_ABORTED</code> 的定义是 <strong>0</strong>（<code class="c">include/uapi/linux/bpf.h</code>），所以 <code class="c">flags = 0</code>
+时，任何<strong>没有对应 AF_XDP socket 的队列 / 任何非行情协议</strong>的包都返回 <code class="c">XDP_ABORTED</code>
+→ 丢包 + 触发 <code class="c">xdp_redirect_err</code> tracepoint。</p>
+<p><strong>为什么 tcpdump 看不到？</strong>
+因为 AF_PACKET（tcpdump 的抓包点）挂在 <code class="c">ptype_all</code>，位于 <code class="c">dev.c:5394</code>，
+在 <strong>XDP 之后</strong>。XDP 丢掉的包根本走不到 tcpdump。
+（这个顺序见 <a href="chapter-15.html#s-01">chapter-01</a>）</p>
+<p><strong>为什么 ethtool 计数照常涨？</strong>
+驱动 <code class="c">rx_packets</code> 统计的是"DMA 完成、进了驱动的包"，XDP 在其之后执行，
+XDP 丢包不会回退驱动计数。</p>
+<p><strong>怎么确认？</strong> 只有 tracepoint 看得到：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:xdp:xdp_redirect_err { printf(&quot;err=%d\n&quot;, args-&gt;err); }'
+# 或
+perf trace -e xdp:xdp_redirect_err
+</code></pre>
+<p><strong>修复：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 行情包进 socket，其余全部交回内核协议栈 */
+return bpf_redirect_map(&amp;xsks_map, ctx-&gt;rx_queue_index, XDP_PASS);
+</code></pre>
+<p>如果确实想"非目标流量直接丢"，用 <code class="c">XDP_DROP</code> 而不是 0——语义相同但不打 tracepoint，
+不会把 tracepoint 通道刷爆。</p>
+</details>
+<details>
+<summary><b>Q3：</b>零拷贝模式下 <code class="c">rx_dropped</code> 几乎为 0，但 <code class="c">rx_ring_full</code> 在涨。而另一个环境里 <code class="c">rx_dropped</code> 疯涨、<code class="c">rx_ring_full</code> 为 0。两者原因分别是什么？</summary>
+<p><strong>它们指向完全不同的瓶颈。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>计数器来源</th>
+<th>含义</th>
+<th>解法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rx_ring_full</code> 涨</td>
+<td>xsk.c:262（<code class="c">__xsk_rcv</code>）<br>xsk.c:145（<code class="c">__xsk_rcv_zc</code>）</td>
+<td><strong>RX ring 没有空位</strong> → 用户态消费循环跟不上</td>
+<td>加快消费循环 / 批处理 / 加大 RX ring / 把重活移出循环</td>
+</tr>
+<tr>
+<td><code class="c">rx_dropped</code> 涨、<code class="c">rx_ring_full</code> 为 0</td>
+<td>xsk.c:318（<code class="c">xsk_rcv_check</code>）<br>xsk.c:241/258（copy 模式无空闲 frame）</td>
+<td>两种可能，见下</td>
+<td>分别处理</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">rx_dropped</code> 的两个来源要再拆：</p>
+<pre class="code" data-label="C"><code class="c">/* ① 包太大（xsk_rcv_check, xsk.c:317） */
+    if (len &gt; xsk_pool_get_rx_frame_size(xs-&gt;pool) &amp;&amp; !xs-&gt;sg) {
+        xs-&gt;rx_dropped++;
+        return -ENOSPC;
+    }
+
+/* ② copy 模式下 UMEM 无空闲 frame（xsk.c:240 / 257） */
+    xsk_xdp = xsk_buff_alloc(xs-&gt;pool);
+    if (!xsk_xdp) {
+        xs-&gt;rx_dropped++;
+        return -ENOMEM;
+    }
+</code></pre>
+<p><strong>区分 ① 和 ② 的办法：</strong></p>
+<ul>
+<li><strong>零拷贝模式下 ② 基本不会发生</strong>（不需要临时分配 UMEM frame，包本来就在 UMEM 里），
+  所以 <strong>zc 模式下 <code class="c">rx_dropped</code> 涨 ≈ 包太大</strong>。
+  检查 <code class="c">MTU</code> vs <code class="c">frame_len = chunk_size - 256 - headroom</code>（4K chunk、headroom 0 → 3584）。</li>
+<li><strong>copy 模式下 ① ② 都可能</strong>。此时看 <code class="c">rx_fill_ring_empty_descs</code>：
+  它涨 → 是 ②（FILL ring 空，你归还 frame 太慢）。</li>
+</ul>
+<p><strong>一句话诊断口诀：</strong></p>
+<pre class="code" data-label="code"><code class="c">rx_ring_full              涨 → 收包循环慢
+rx_fill_ring_empty_descs  涨 → 归还 frame 慢（ZC 模式头号丢包源）
+rx_dropped 涨而两者为 0    → 包比 frame_len 大（MTU/chunk 不匹配）
+</code></pre>
+<p><strong>⚠️ 前提：你传的 <code class="c">optlen</code> 必须是 <code class="c">sizeof(struct xdp_statistics)</code>。</strong>
+传小了内核会走 v1 分支，把 <code class="c">rx_queue_full</code> 折进 <code class="c">rx_dropped</code>（xsk.c:1412），
+三个原因彻底混在一起，无从下手。</p>
+</details>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-01">01 AF_XDP 接口精读</a>
+→ 后一篇：<a href="chapter-15.html#s-02">02 AF_XDP 工程实践</a>
+→ 相关：<a href="chapter-15.html#s-03">03 UMEM 布局与 copy/zc 差异</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a> · <a href="chapter-04.html#ch-4">chapter-04 page_pool</a></p>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>— AF_XDP 工程实践：值不值、延迟预算、唤醒与批处理</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> 无（AF_XDP 4.18+ 才存在）
+<strong>内核版本：</strong> 以 <strong>v6.6</strong> 为准，行为与常量均取自源码
+<strong>源码索引：</strong> <code class="c">net/xdp/xsk.c</code>（<code class="c">xsk_wakeup</code> 502、<code class="c">__xsk_recvmsg</code> 873、<code class="c">__xsk_sendmsg</code> 828、<code class="c">xsk_poll</code> 910、<code class="c">__xsk_map_flush</code> 382）、
+<code class="c">net/xdp/xsk_buff_pool.c</code>（<code class="c">xp_assign_dev</code> 149）、<code class="c">include/uapi/linux/if_xdp.h</code></p>
+</blockquote>
+<hr />
+<h2>文档概述</h2>
+<p><a href="chapter-15.html#s-01">01 篇</a>讲的是"接口每一步的约束"，本篇回答四个工程问题：</p>
+<ol>
+<li><strong>值不值得用</strong>——copy 模式和零拷贝的真实差距在哪一跳</li>
+<li><strong>延迟从哪来</strong>——端到端预算表，以及为什么你的实测总比理论慢几微秒</li>
+<li><strong>什么时候必须 <code class="c">poll()</code>/<code class="c">sendto()</code></strong>——<code class="c">XDP_USE_NEED_WAKEUP</code> 的完整语义</li>
+<li><strong>批处理的账怎么算</strong>——RX ring 的生产者索引到底在什么时候更新</li>
+</ol>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>笔记</th>
+<th>侧重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01 接口精读</a></td>
+<td>每一步的约束、errno、静默降级</td>
+</tr>
+<tr>
+<td><strong>02（本篇）</strong></td>
+<td>决策、延迟预算、唤醒、批处理、排障清单</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03 UMEM 布局</a></td>
+<td>frame/chunk/headroom、copy vs zc 微观差异</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、先做决策：三条用户态收包路线</h2>
+<pre class="code" data-label="code"><code class="c">                      内核协议栈                        旁路程度
+   ┌────────────────────────────────────────────────────┼──────────┐
+   │                                                    │          │
+  recvmsg()/recvfrom()                                  │  0%      │
+   └─ 走完整协议栈 + 一次 copy_to_user                    │          │
+   │                                                    │          │
+  PF_PACKET / AF_PACKET (mmap v3)                       │  ~30%    │
+   └─ 绕过 L3/L4，仍在 skb 层，零拷贝到 mmap ring          │          │
+   │                                                    │          │
+  AF_XDP zero-copy                                      │  ~95%    │
+   └─ 无 skb、无协议栈、无拷贝，网卡直接写 UMEM             │          │
+   │                                                    │          │
+  DPDK                                                  │  100%    │
+   └─ 连内核驱动都不要，用户态 PMD 独占网卡                 │          │
+   └────────────────────────────────────────────────────┴──────────┘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>内核 socket</th>
+<th><strong>AF_XDP zc</strong></th>
 <th>DPDK</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>零拷贝</td>
-<td>是（page_pool 映射）</td>
-<td>是（大页 + VFIO）</td>
-</tr>
-<tr>
-<td>网卡独占</td>
-<td>否（与其他队列共享）</td>
+<td>是否分配 <code class="c">sk_buff</code></td>
 <td>是</td>
+<td><strong>否</strong></td>
+<td>否</td>
 </tr>
 <tr>
-<td>CPU 占用</td>
-<td>用户态轮询</td>
-<td>用户态轮询</td>
+<td>是否经过协议栈</td>
+<td>是</td>
+<td><strong>否</strong></td>
+<td>否</td>
 </tr>
 <tr>
-<td>部署</td>
-<td>加载 BPF + bind socket</td>
-<td>绑定 VFIO + 配 hugepage</td>
+<td>数据拷贝次数</td>
+<td>1（<code class="c">copy_to_user</code>）</td>
+<td><strong>0</strong></td>
+<td>0</td>
 </tr>
 <tr>
-<td>延迟</td>
-<td>略高于 DPDK</td>
-<td>最低</td>
+<td>网卡是否独占</td>
+<td>否</td>
+<td><strong>否（按队列）</strong></td>
+<td><strong>是</strong></td>
 </tr>
 <tr>
-<td>适合 HFT</td>
-<td>中低频策略</td>
-<td>超低延迟 co-location</td>
+<td>内核网络功能是否可用</td>
+<td>全可用</td>
+<td><strong>其他队列仍可用</strong></td>
+<td>不可用</td>
+</tr>
+<tr>
+<td>需要 BPF 程序</td>
+<td>否</td>
+<td><strong>是</strong></td>
+<td>否</td>
+</tr>
+<tr>
+<td>需要 hugepage</td>
+<td>否</td>
+<td>建议</td>
+<td>必需</td>
+</tr>
+<tr>
+<td>驱动</td>
+<td>任意</td>
+<td><strong>需 <code class="c">NETDEV_XDP_ACT_ZC</code></strong></td>
+<td>需 PMD 支持</td>
+</tr>
+<tr>
+<td>运维复杂度</td>
+<td>低</td>
+<td><strong>中</strong></td>
+<td>高</td>
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<h3>决策口诀</h3>
+<ul>
+<li><strong>行情是小包、要跟内核共存（SSH/监控/组播管理流还要走栈）→ AF_XDP</strong></li>
+<li><strong>只要这一张网卡的全部带宽、能接受它从内核消失 → DPDK</strong></li>
+<li><strong>驱动不支持零拷贝 → 别用 AF_XDP</strong>，走内核栈 + busy poll（<code class="c">SO_BUSY_POLL</code>）</li>
+<li><strong>包量很小（&lt; 100 Kpps）→ 用内核 socket</strong>，AF_XDP 的复杂度换不来什么</li>
+</ul>
+</blockquote>
+<hr />
+<h2>二、为什么 copy 模式不值得：每一跳的账</h2>
+<p>从 <a href="chapter-15.html#s-01">01 篇</a>第六节知道，<code class="c">xsk_rcv()</code>（xsk.c:348）按
+<code class="c">xdp-&gt;rxq-&gt;mem.type</code> 逐包分流。两条路径的差别：</p>
+<pre class="code" data-label="code"><code class="c">【零拷贝】
+  NIC DMA → UMEM frame（驱动 Rx 描述符直接指向 UMEM）
+      → 驱动构造 xdp_buff（mem.type = MEM_TYPE_XSK_BUFF_POOL）
+      → XDP_REDIRECT
+      → __xsk_rcv_zc()：取 addr、填 desc          ← 就这两步
+      → RX ring
+      → 用户态读到&quot;网卡刚写过的那块内存&quot;
+
+【copy 模式】
+  NIC DMA → page_pool page（驱动自己的普通收包路径）
+      → 驱动构造 xdp_buff（mem.type = MEM_TYPE_PAGE_*）
+      → XDP_REDIRECT
+      → __xsk_rcv()：
+           xsk_buff_alloc(pool)        ← ① 从 UMEM 拿一个 frame
+           memcpy(frame, pkt, len)     ← ② 整包复制
+           xdp_return_buff(xdp)        ← ③ 把驱动的 page 还回 page_pool
+      → RX ring
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开销项</th>
+<th>copy</th>
+<th>zero-copy</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UMEM frame 分配</td>
+<td>有</td>
+<td>无</td>
+<td>走 <code class="c">xsk_buff_alloc()</code>，池空则 <code class="c">rx_dropped++</code></td>
+</tr>
+<tr>
+<td>payload memcpy</td>
+<td><strong>有（整包）</strong></td>
+<td>无</td>
+<td>随包长线性增长</td>
+</tr>
+<tr>
+<td>缓存触碰次数</td>
+<td>2 次（源页 + 目标 frame）</td>
+<td>1 次</td>
+<td>copy 后源页还在 cache 里，污染后续访问</td>
+</tr>
+<tr>
+<td><code class="c">xdp_return_buff()</code></td>
+<td>有</td>
+<td>无</td>
+<td>页回收路径</td>
+</tr>
+<tr>
+<td>内存带宽</td>
+<td>2× 包长</td>
+<td>1× 包长</td>
+<td>10 Gbps 线速下这是硬指标</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>关键认知：copy 模式只省掉了协议栈遍历，没省掉分配和拷贝。</strong>
+它相对 <code class="c">recvmsg()</code> 的优势很有限，却要你付出写 BPF 程序、独占队列、
+自己管 FILL ring 的代价。<strong>不要用它。</strong></p>
+</blockquote>
+<hr />
+<h2>三、延迟预算：为什么实测总比"零拷贝"慢几微秒</h2>
+<p>零拷贝常被宣传为"亚微秒"，但实测端到端往往 2–10 μs。差额在这里：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>说明</th>
+<th>可控性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① NIC DMA 写 UMEM</td>
+<td>由网卡决定，PCIe 往返</td>
+<td>❌ 硬件</td>
+</tr>
+<tr>
+<td>② <strong>等待 NAPI poll 被调度</strong></td>
+<td>中断 → 软中断 → NAPI poll</td>
+<td>⚠️ 可用 busy poll 消除（见第五节）</td>
+</tr>
+<tr>
+<td>③ NAPI poll 循环跑 XDP</td>
+<td>每包执行 BPF + <code class="c">__xsk_map_redirect()</code></td>
+<td>✅ 程序复杂度</td>
+</tr>
+<tr>
+<td>④ <strong>等待 <code class="c">xdp_do_flush()</code></strong></td>
+<td><strong>RX ring 的 producer 只在 flush 时更新</strong></td>
+<td>⚠️ 见第四节</td>
+</tr>
+<tr>
+<td>⑤ 用户态循环看到 desc</td>
+<td>取决于你轮询的频率</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>⑥ 用户态处理</td>
+<td>你的策略代码</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>⑦ 归还 FILL ring</td>
+<td>必须做，否则丢包</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>② 和 ④ 是最容易被忽略的两项</strong>，它们能把"零拷贝"变成几微秒的等待。</p>
+<ul>
+<li><strong>② 的消除</strong>：开 busy poll（第五节），让 <code class="c">recvmsg()</code> 直接驱动 NAPI，
+  跳过中断 → 软中断的调度延迟。</li>
+<li><strong>④ 的消除</strong>：理解它，接受它——它是批处理换吞吐的必然代价。见下节。</li>
+</ul>
+<hr />
+<h2>四、批处理与 flush：RX ring 的生产者索引何时更新</h2>
+<p>这是本篇最有价值的一节。</p>
+<h3>4.1 redirect 是批量的，不是即时的</h3>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk.c:368 */
+int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp)
+{
+    struct list_head *flush_list = this_cpu_ptr(&amp;xskmap_flush_list);
+    int err;
+
+    err = xsk_rcv(xs, xdp);
+    if (err)
+        return err;
+
+    if (!xs-&gt;flush_node.prev)
+        list_add(&amp;xs-&gt;flush_node, flush_list);   /* 只挂链表，还没提交 */
+
+    return 0;
+}
+
+/* net/xdp/xsk.c:382 */
+void __xsk_map_flush(void)
+{
+    struct list_head *flush_list = this_cpu_ptr(&amp;xskmap_flush_list);
+    struct xdp_sock *xs, *tmp;
+
+    list_for_each_entry_safe(xs, tmp, flush_list, flush_node) {
+        xsk_flush(xs);
+        __list_del_clearprev(&amp;xs-&gt;flush_node);
+    }
+}
+
+/* net/xdp/xsk.c:326 */
+static void xsk_flush(struct xdp_sock *xs)
+{
+    xskq_prod_submit(xs-&gt;rx);        /* ⭐ 现在才 publish producer */
+    __xskq_cons_release(xs-&gt;pool-&gt;fq);
+    sock_def_readable(&amp;xs-&gt;sk);      /* 唤醒阻塞在 poll/select 的 */
+}
+</code></pre>
+<p><strong><code class="c">__xsk_map_flush()</code> 由驱动在 NAPI poll 结束时通过 <code class="c">xdp_do_flush()</code> 调用。</strong></p>
+<h3>4.2 这意味着什么</h3>
+<pre class="code" data-label="code"><code class="c">驱动 NAPI poll（一次处理 weight 个包，默认 64）
+  ├─ 包 1 → XDP_REDIRECT → 进 RX ring 的 desc 数组（未发布 producer）
+  ├─ 包 2 → XDP_REDIRECT → ...
+  ├─ ...
+  ├─ 包 N → XDP_REDIRECT → ...
+  └─ poll 结束 → xdp_do_flush() → __xsk_map_flush() → xskq_prod_submit()
+                                                        ↑
+                                          此刻用户态才第一次看到这 N 个包
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>后果</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>你永远一次看到一批包</strong></td>
+<td>单包延迟 = 该包在批次中的位置决定（队尾的包等得更久）</td>
+</tr>
+<tr>
+<td><strong>低包速时延迟反而高</strong></td>
+<td>100 pps 时，一个包要等 NAPI poll 结束才被 publish</td>
+</tr>
+<tr>
+<td><strong><code class="c">xsk_ring_cons__peek()</code> 返回的数量是批量的</strong></td>
+<td>循环要能处理 N 个，不能只处理 1 个</td>
+</tr>
+<tr>
+<td><strong><code class="c">sock_def_readable()</code> 也在 flush 里</strong></td>
+<td>阻塞式 <code class="c">poll()</code> 的唤醒粒度是"每 NAPI poll 一次"，不是每包</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.3 批处理策略对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>单包延迟</th>
+<th>吞吐</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次处理 1 个 desc</td>
+<td>最低（批内第一个包）</td>
+<td>低（ring 操作开销占比高）</td>
+<td>极致延迟、低包速</td>
+</tr>
+<tr>
+<td>一次处理 16–64 个</td>
+<td>中</td>
+<td>高</td>
+<td><strong>通用推荐</strong></td>
+</tr>
+<tr>
+<td>一次处理 256+</td>
+<td>高（队尾包要等）</td>
+<td>最高</td>
+<td>批处理/回放、不在乎尾延迟</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 建议：从 32 开始测。</strong> <code class="c">TX_BATCH_SIZE</code> 在内核里就是 32（xsk.c:35），
+而 NAPI poll 的 weight 默认 64——32 大致对应"半个 NAPI 批次"，
+不会因为等一批而引入额外抖动。</p>
+<h3>4.4 FILL ring 归还也是批量的</h3>
+<p><code class="c">xsk_flush()</code> 里同时做了 <code class="c">__xskq_cons_release(xs-&gt;pool-&gt;fq)</code>——
+<strong>内核释放 FILL ring 的消费位置也在 flush 时</strong>。</p>
+<p>所以用户态的最佳实践是"<strong>收多少、还多少</strong>"，在同一循环里完成：</p>
+<pre class="code" data-label="C"><code class="c">/* libbpf xsk.h 风格 */
+uint32_t idx_rx = 0, idx_fill = 0, rcvd;
+
+rcvd = xsk_ring_cons__peek(&amp;rx, BATCH, &amp;idx_rx);
+if (!rcvd) {
+        /* 没包：按需唤醒驱动（见第五节） */
+        if (xsk_ring_prod__needs_wakeup(&amp;fill))
+            recvfrom(xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, NULL);
+        continue;
+}
+
+/* 1. 预留同等数量的 FILL 槽位 —— 关键：先预留，避免处理中途发现没槽位 */
+while (xsk_ring_prod__reserve(&amp;fill, rcvd, &amp;idx_fill) != rcvd)
+        ;   /* 实际要处理 FILL ring 满的情况，通常不会发生（收多少还多少） */
+
+for (uint32_t i = 0; i &lt; rcvd; i++) {
+        const struct xdp_desc *d = xsk_ring_cons__rx_desc(&amp;rx, idx_rx + i);
+        uint64_t addr = d-&gt;addr;
+
+        process(xsk_umem__get_data(umem_area, addr), d-&gt;len);   /* 你的策略 */
+
+        *xsk_ring_prod__fill_addr(&amp;fill, idx_fill + i) = addr;  /* 归还同一个 frame */
+}
+xsk_ring_prod__submit(&amp;fill, rcvd);
+xsk_ring_cons__release(&amp;rx, rcvd);
+</code></pre>
+<blockquote>
+<p><strong>⚠️ 为什么"收多少还多少"能保证 FILL ring 不满？</strong>
+因为每个包都对应一个从 FILL ring 取走的 frame，你归还的数量正是取走的数量。
+FILL ring 的空闲槽位在数学上始终 ≥ 在途包数。
+<strong>破坏这个不变量的做法</strong>（比如把 addr 存起来延迟归还做零拷贝转发）会直接导致
+<code class="c">rx_fill_ring_empty_descs</code> 上涨。</p>
+</blockquote>
+<hr />
+<h2>五、<code class="c">XDP_USE_NEED_WAKEUP</code>：什么时候必须 <code class="c">poll()</code> / <code class="c">sendto()</code></h2>
+<h3>5.1 机制</h3>
+<p>零拷贝模式下，<strong>包是在驱动的 NAPI 上下文里被投递的</strong>。
+如果驱动此时没有在轮询（比如 RX 中断被关闭、或者 NAPI 已经退出），
+你填再多 FILL ring 也没人去取。所以需要"踢"驱动一下。</p>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk.c:502 —— 踢驱动的本质 */
+static int xsk_wakeup(struct xdp_sock *xs, u8 flags)
+{
+    struct net_device *dev = xs-&gt;dev;
+    return dev-&gt;netdev_ops-&gt;ndo_xsk_wakeup(dev, xs-&gt;queue_id, flags);
+}
+</code></pre>
+<p>驱动通过 <code class="c">xsk_set_rx_need_wakeup()</code> / <code class="c">xsk_set_tx_need_wakeup()</code>（xsk.c:39 / 49）
+设置标志位，用户态通过 mmap 出来的 ring flags 读：</p>
+<pre class="code" data-label="C"><code class="c">/* xsk.c:39 —— 注意：RX 的标志位打在 FILL ring 上 */
+void xsk_set_rx_need_wakeup(struct xsk_buff_pool *pool)
+{
+    if (pool-&gt;cached_need_wakeup &amp; XDP_WAKEUP_RX)
+        return;
+    pool-&gt;fq-&gt;ring-&gt;flags |= XDP_RING_NEED_WAKEUP;
+    pool-&gt;cached_need_wakeup |= XDP_WAKEUP_RX;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>用户态检查哪个 ring 的 flags</th>
+<th>唤醒方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RX</td>
+<td><strong>FILL ring</strong></td>
+<td><code class="c">recvfrom(fd, ..., MSG_DONTWAIT)</code> 或 <code class="c">poll()</code></td>
+</tr>
+<tr>
+<td>TX</td>
+<td><strong>TX ring</strong></td>
+<td><code class="c">sendto(fd, ..., MSG_DONTWAIT)</code> 或 <code class="c">poll()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>libbpf 封装：<code class="c">xsk_ring_prod__needs_wakeup(&amp;fill)</code> / <code class="c">xsk_ring_prod__needs_wakeup(&amp;tx)</code>。</p>
+<h3>5.2 三条规则</h3>
+<p><strong>规则一：不设 <code class="c">XDP_USE_NEED_WAKEUP</code> 就要无条件 syscall</strong></p>
+<pre class="code" data-label="C"><code class="c">/* xp_assign_dev()，xsk_buff_pool.c:172 */
+    if (flags &amp; XDP_USE_NEED_WAKEUP)
+        pool-&gt;uses_need_wakeup = true;
+    /* Tx needs to be explicitly woken up the first time. Also
+     * for supporting drivers that do not implement this feature.
+     * They will always have to call sendto() or poll().
+     */
+    pool-&gt;cached_need_wakeup = XDP_WAKEUP_TX;
+</code></pre>
+<p>不设该 flag 时 <code class="c">uses_need_wakeup = false</code>，驱动<strong>不会</strong>维护那个标志位，
+你就只能每次循环无条件调用 <code class="c">recvfrom()</code>/<code class="c">sendto()</code>——
+在低包速时这是每秒几十万次无谓的 syscall。</p>
+<p><strong>规则二：TX 第一次必须唤醒</strong></p>
+<p><code class="c">cached_need_wakeup</code> 初值就是 <code class="c">XDP_WAKEUP_TX</code>。
+<strong>第一次 <code class="c">sendto()</code> 之前，光把描述符写进 TX ring 不会触发发送。</strong></p>
+<p><strong>规则三：开了 busy poll 就不需要唤醒</strong></p>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk.c:807 */
+static bool xsk_no_wakeup(struct sock *sk)
+{
+#ifdef CONFIG_NET_RX_BUSY_POLL
+    /* Prefer busy-polling, skip the wakeup. */
+    return READ_ONCE(sk-&gt;sk_prefer_busy_poll) &amp;&amp; READ_ONCE(sk-&gt;sk_ll_usec) &amp;&amp;
+        READ_ONCE(sk-&gt;sk_napi_id) &gt;= MIN_NAPI_ID;
+#else
+    return false;
+#endif
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* __xsk_recvmsg()，xsk.c:873 */
+    if (sk_can_busy_loop(sk))
+        sk_busy_loop(sk, 1);        /* ⭐ 直接驱动 NAPI，不等中断 */
+
+    if (xsk_no_wakeup(sk))
+        return 0;                   /* ⭐ 跳过 ndo_xsk_wakeup */
+
+    if (xs-&gt;pool-&gt;cached_need_wakeup &amp; XDP_WAKEUP_RX &amp;&amp; xs-&gt;zc)
+        return xsk_wakeup(xs, XDP_WAKEUP_RX);
+</code></pre>
+<p><strong>busy poll + NEED_WAKEUP 是最优组合</strong>：<code class="c">recvfrom()</code> 进来先跑
+<code class="c">sk_busy_loop()</code> 直接在当前上下文驱动 NAPI 收包（消除第 ② 项延迟），
+然后<strong>跳过</strong> <code class="c">ndo_xsk_wakeup</code>（省掉一次 IPI / doorbell）。</p>
+<pre class="code" data-label="C"><code class="c">int busy_poll_usec = 50;
+setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL,      &amp;busy_poll_usec, sizeof(int));
+int prefer = 1;
+setsockopt(fd, SOL_SOCKET, SO_PREFER_BUSY_POLL, &amp;prefer,        sizeof(int));
+</code></pre>
+<blockquote>
+<p>⚠️ 前提是内核开了 <code class="c">CONFIG_NET_RX_BUSY_POLL</code>。另外 <code class="c">sk_napi_id</code> 要有效——
+由 <code class="c">sk_mark_napi_id_once_xdp()</code>（<code class="c">xsk_rcv_check</code> 里，xsk.c:322）在首次收包时设置，
+所以<strong>必须先收到至少一个包，busy poll 才完全生效</strong>。</p>
+</blockquote>
+<h3>5.3 ⚠️ <code class="c">recvmsg()</code> 必须是非阻塞的</h3>
+<pre class="code" data-label="C"><code class="c">/* __xsk_recvmsg()，xsk.c:879 */
+    if (unlikely(need_wait))
+        return -EOPNOTSUPP;
+</code></pre>
+<p><code class="c">MSG_DONTWAIT</code> 不给 → <strong><code class="c">-EOPNOTSUPP</code></strong>。AF_XDP 不支持阻塞接收，
+休眠/唤醒一律走 <code class="c">poll()</code>。</p>
+<h3>5.4 <code class="c">poll()</code> 有副作用</h3>
+<pre class="code" data-label="C"><code class="c">/* xsk_poll()，xsk.c:910 */
+    pool = xs-&gt;pool;
+    if (pool-&gt;cached_need_wakeup) {
+        if (xs-&gt;zc)
+            xsk_wakeup(xs, pool-&gt;cached_need_wakeup);
+        else if (xs-&gt;tx)
+            /* Poll needs to drive Tx also in copy mode */
+            xsk_generic_xmit(sk);
+    }
+</code></pre>
+<p><strong><code class="c">poll()</code> 不只是"等"，它还会去踢驱动。</strong>
+在忙轮询循环里每轮都 <code class="c">poll()</code> 等于每轮一次 syscall + 一次 <code class="c">ndo_xsk_wakeup</code>。
+正确做法是：<strong>只在确实要休眠时才 <code class="c">poll()</code>，忙时用 <code class="c">xsk_ring_prod__needs_wakeup()</code> 判断。</strong></p>
+<h3>5.5 TX 侧的一个细节</h3>
+<pre class="code" data-label="C"><code class="c">/* xsk.c:291 */
+static bool xsk_tx_writeable(struct xdp_sock *xs)
+{
+    if (xskq_cons_present_entries(xs-&gt;tx) &gt; xs-&gt;tx-&gt;nentries / 2)
+        return false;
+    return true;
+}
+</code></pre>
+<p><code class="c">poll()</code> 的 <code class="c">POLLOUT</code> 只在 <strong>TX ring 未完成的条目少于一半</strong>时才置位。
+这是个粗糙的背压信号，不要用它做精确流控——用 COMPLETION ring 的回收速率。</p>
+<hr />
+<h2>六、容量规划：UMEM 和 ring 该多大</h2>
+<h3>6.1 四个 ring 的推荐值</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ring</th>
+<th>推荐大小</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FILL</td>
+<td><strong>≥ RX ring 大小 + 批处理余量</strong>，常取 2048–4096</td>
+<td>水位是生命线；空了就丢包（<code class="c">rx_fill_ring_empty_descs</code>）</td>
+</tr>
+<tr>
+<td>RX</td>
+<td>2048</td>
+<td>太小吃不下 NAPI 批次；太大则批内延迟高</td>
+</tr>
+<tr>
+<td>TX</td>
+<td>2048</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>COMPLETION</td>
+<td>≥ TX</td>
+<td>必须能装下所有在途发送帧</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>所有 ring 大小必须是 2 的幂</strong>（<code class="c">xsk_queue</code> 用 <code class="c">ring_mask = nentries - 1</code> 做取模）。</p>
+</blockquote>
+<h3>6.2 UMEM 大小</h3>
+<pre class="code" data-label="code"><code class="c">UMEM_size = chunk_size × frame_count
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>chunk_size</th>
+<th>frame_count</th>
+<th>UMEM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行情小包（&lt; 1500 B）</td>
+<td>2048</td>
+<td>4096–16384</td>
+<td>8–32 MB</td>
+</tr>
+<tr>
+<td>需要 headroom 256</td>
+<td>4096</td>
+<td>4096</td>
+<td>16 MB</td>
+</tr>
+<tr>
+<td>高吞吐（10 Gbps）</td>
+<td>2048</td>
+<td>65536</td>
+<td>128 MB</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>约束（<a href="chapter-15.html#s-01">01 篇</a>第三节）：</strong>
+- <code class="c">chunk_size ∈ [2048, PAGE_SIZE]</code> 且为 2 的幂 → 实际只有 2048 / 4096
+- <code class="c">UMEM_size % chunk_size == 0</code>（不开 unaligned 模式）
+- UMEM 起始地址<strong>必须页对齐</strong>
+- <strong>吃 <code class="c">RLIMIT_MEMLOCK</code></strong>（<code class="c">pin_user_pages(FOLL_LONGTERM)</code>）</p>
+<h3>6.3 在途帧守恒（务必理解）</h3>
+<pre class="code" data-label="code"><code class="c">frame_count = FILL 中的 + 驱动持有的 + RX 中的 + 用户态处理中的 + COMPLETION 中的
+</code></pre>
+<p>只要任何一个环节"囤积"帧，FILL ring 水位就会下降，最终丢包。
+<strong>典型囤积点：用户态把 addr 存起来做延迟处理（转发、批量落盘）。</strong></p>
+<hr />
+<h2>七、多队列与多进程</h2>
+<h3>7.1 硬约束：一个 (dev, queue_id) 只能有一个 xsk</h3>
+<pre class="code" data-label="C"><code class="c">/* xp_assign_dev()，xsk_buff_pool.c:164 */
+    if (xsk_get_pool_from_qid(netdev, queue_id))
+        return -EBUSY;
+</code></pre>
+<p>所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多进程都要收同一队列</td>
+<td>❌ 做不到。必须用户态单进程收 + 分发</td>
+</tr>
+<tr>
+<td>多进程各收一个队列</td>
+<td>✅ <code class="c">ethtool -L eth0 combined N</code>，每队列一个 xsk</td>
+</tr>
+<tr>
+<td>多队列、共享一个 UMEM</td>
+<td>✅ <code class="c">XDP_SHARED_UMEM</code>（见下）</td>
+</tr>
+<tr>
+<td>想用 <code class="c">SO_REUSEPORT</code> 做负载均衡</td>
+<td>❌ <strong>AF_XDP 不支持</strong>。<code class="c">SO_REUSEPORT</code> 是 L4 的概念</td>
+</tr>
+</tbody>
+</table></div>
+<h3>7.2 <code class="c">XDP_SHARED_UMEM</code></h3>
+<pre class="code" data-label="C"><code class="c">/* xsk_bind()，xsk.c:1128 */
+    if (flags &amp; XDP_SHARED_UMEM) {
+        if ((flags &amp; XDP_COPY) || (flags &amp; XDP_ZEROCOPY) ||
+            (flags &amp; XDP_USE_NEED_WAKEUP) || (flags &amp; XDP_USE_SG)) {
+            /* Cannot specify flags for shared sockets. */
+            err = -EINVAL;
+            ...
+        }
+        if (xs-&gt;umem) {
+            /* We have already our own. */
+            err = -EINVAL;
+            ...
+        }
+        ...
+    }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>约束</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>不许带任何模式 flag</strong></td>
+<td>模式由第一个 socket 决定，后续继承</td>
+</tr>
+<tr>
+<td><strong>不许自己有 UMEM</strong></td>
+<td>只能共享别人的</td>
+</tr>
+<tr>
+<td><strong>同一个 (dev, queue_id)</strong></td>
+<td>共享 buffer pool（<code class="c">xp_get_pool</code>）</td>
+</tr>
+<tr>
+<td><strong>不同 (dev, queue_id)</strong></td>
+<td>通过 <code class="c">xp_assign_dev_shared()</code> 挂到别的设备/队列</td>
+</tr>
+<tr>
+<td>FILL / COMPLETION ring</td>
+<td><strong>每个 socket 各自一套</strong>（只有 UMEM 是共享的）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 用法</strong>：一个进程管 UMEM + 一个 xsk per queue，用共享 UMEM 让多个 worker 线程
+（每个线程自己的 FILL/CQ）共用同一块内存池，省内存且减少 NUMA 抖动。</p>
+<h3>7.3 与 RSS / flow steering 配合</h3>
+<pre class="code" data-label="code"><code class="c"># 把行情组播流固定到 0 号队列（让 AF_XDP 独占它）
+ethtool -N eth0 flow-type udp dst-port 12345 action 0
+
+# 或者用 RSS 把特定流哈希到指定队列
+ethtool -X eth0 equal 4       # 4 个队列均分
+ethtool -L eth0 combined 4    # 确认队列数
+</code></pre>
+<p>⚠️ <strong>顺序很重要</strong>：先配好队列数和流规则，再 bind xsk 并加载 XDP 程序。
+中途改队列数会触发驱动 reconfigure，xsk 会被强制解绑。</p>
+<hr />
+<h2>八、与内核共存：哪些流量还走协议栈</h2>
+<p>AF_XDP 只接管<strong>被 XDP 程序 redirect 进来的包</strong>。其他包照常走内核栈。</p>
+<pre class="code" data-label="code"><code class="c">                         ┌─ 行情 UDP（XDP 匹配）→ xsks_map → AF_XDP → 用户态
+包进 0 号队列 → XDP prog ─┤
+                         └─ 其他（ARP/ICMP/SSH）→ XDP_PASS → 内核协议栈
+
+包进 1~N 号队列 → 没有 XDP 命中 → 全部走内核栈
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>流量</th>
+<th>去向</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>匹配规则的行情包</td>
+<td>AF_XDP</td>
+<td>内核看不到，tcpdump 抓不到</td>
+</tr>
+<tr>
+<td>同队列的非匹配包</td>
+<td>内核栈（若 flags = <code class="c">XDP_PASS</code>）</td>
+<td><strong>flags 写 0 会全丢</strong>，见 <a href="chapter-15.html#s-01">01 篇第五节</a></td>
+</tr>
+<tr>
+<td>其他队列的包</td>
+<td>内核栈</td>
+<td>完全不受影响</td>
+</tr>
+<tr>
+<td>本机发出的包</td>
+<td>内核栈 → TX</td>
+<td>AF_XDP 不接管 TX，除非你显式用 TX ring 发</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>运维意义</strong>：你可以把 AF_XDP 部署在生产机器上而不影响 SSH、监控、NTP。
+这是它相对 DPDK 最大的工程优势——DPDK 一旦接管网卡，
+你就得再插一张卡跑管理流量。</p>
+</blockquote>
+<hr />
+<h2>九、排障清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>症状</th>
+<th>检查</th>
+<th>根因 / 解法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>bind 成功但延迟 3 倍</td>
+<td><code class="c">getsockopt(XDP_OPTIONS)</code> 查 <code class="c">XDP_OPTIONS_ZEROCOPY</code></td>
+<td><strong>静默降级到 copy</strong>，bind 时加 <code class="c">XDP_ZEROCOPY</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>收不到任何包</td>
+<td><code class="c">bpftool net show dev eth0</code></td>
+<td><strong>XDP 程序没挂</strong> / 挂在了别的 ifindex</td>
+</tr>
+<tr>
+<td>3</td>
+<td>收不到任何包（程序已挂）</td>
+<td>XDP 程序的 match 逻辑</td>
+<td>包没被 redirect；用 <code class="c">bpftool prog show</code> 看 <code class="c">run_cnt</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>只有部分队列收不到</td>
+<td><code class="c">xsks_map</code> 的 key</td>
+<td>key 必须是 <code class="c">ctx-&gt;rx_queue_index</code>，写死 0 就只有 0 号队列有</td>
+</tr>
+<tr>
+<td>5</td>
+<td>SSH/ARP 全断</td>
+<td>XDP 程序的 redirect flags</td>
+<td><strong>写了 0 → <code class="c">XDP_ABORTED</code></strong>，改成 <code class="c">XDP_PASS</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code class="c">rx_fill_ring_empty_descs</code> 涨</td>
+<td>归还 frame 的逻辑</td>
+<td>处理循环太慢 / 囤积了 addr / FILL ring 太小</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code class="c">rx_ring_full</code> 涨</td>
+<td>消费循环</td>
+<td>批处理太小 / 循环里做了重活（日志、系统调用）</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code class="c">rx_dropped</code> 涨、<code class="c">rx_ring_full</code> 为 0</td>
+<td><code class="c">frame_len</code> vs MTU</td>
+<td><strong>包太大</strong>：<code class="c">frame_len = chunk_size - 256 - headroom</code>；开 <code class="c">XDP_USE_SG</code> 或加大 chunk</td>
+</tr>
+<tr>
+<td>9</td>
+<td>三个计数器混在一起看不清</td>
+<td><code class="c">getsockopt</code> 的 <code class="c">optlen</code></td>
+<td><strong>传小了</strong>会走 v1 分支把 <code class="c">rx_queue_full</code> 折进 <code class="c">rx_dropped</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>UMEM 注册失败 <code class="c">-ENOBUFS</code></td>
+<td><code class="c">ulimit -l</code></td>
+<td><strong>RLIMIT_MEMLOCK 不够</strong>（<code class="c">xdp_umem_account_pages</code>）</td>
+</tr>
+<tr>
+<td>11</td>
+<td>UMEM 注册失败 <code class="c">-EINVAL</code></td>
+<td>UMEM 地址对齐</td>
+<td>必须 <code class="c">PAGE_ALIGNED</code>；<code class="c">malloc()</code> 不行</td>
+</tr>
+<tr>
+<td>12</td>
+<td>bind 返回 <code class="c">-EBUSY</code></td>
+<td>队列占用</td>
+<td>该 (dev, queue) 已有 xsk；或 <code class="c">setsockopt</code> 不在 <code class="c">XSK_READY</code> 状态</td>
+</tr>
+<tr>
+<td>13</td>
+<td>TX 第一次发不出去</td>
+<td>是否调用过 <code class="c">sendto()</code>/<code class="c">poll()</code></td>
+<td><code class="c">cached_need_wakeup</code> 初值 <code class="c">XDP_WAKEUP_TX</code>，<strong>必须显式唤醒一次</strong></td>
+</tr>
+<tr>
+<td>14</td>
+<td>低包速时延迟高</td>
+<td>是否开 busy poll</td>
+<td>未开则要等中断；开 <code class="c">SO_BUSY_POLL</code> + <code class="c">SO_PREFER_BUSY_POLL</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td>延迟抖动大</td>
+<td>NAPI flush 批次</td>
+<td>见第四节；减小批处理大小 / 减小 <code class="c">netdev_budget</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>十、观测命令速查</h2>
+<pre class="code" data-label="shell"><code class="c"># ① 有没有挂 XDP、挂的什么
+bpftool net show dev eth0
+bpftool prog show id &lt;ID&gt;          # run_cnt / run_time → 单包 BPF 耗时
+
+# ② xdp-tools 自带的统计（最方便）
+xdp-stat -i eth0
+
+# ③ 驱动层：包到底有没有进网卡
+ethtool -S eth0 | grep -E 'rx_packets|rx_dropped|rx_missed|xdp'
+
+# ④ 队列与流 steering
+ethtool -l eth0                    # 当前/最大队列数
+ethtool -n eth0                    # 已配置的 flow 规则
+
+# ⑤ 中断与软中断分布（确认队列绑核正确）
+cat /proc/irq/&lt;irq&gt;/smp_affinity_list
+cat /proc/softirqs | grep NET_RX
+
+# ⑥ redirect 错误（XDP_ABORTED 的唯一可见处）
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+
+# ⑦ 确认是真零拷贝（C 代码，bind 之后）
+#    getsockopt(fd, SOL_XDP, XDP_OPTIONS, &amp;opts, &amp;len)
+#    opts.flags &amp; XDP_OPTIONS_ZEROCOPY
+</code></pre>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>决策树</strong>：驱动不支持 zc → 不用 AF_XDP；要独占整卡 → 用 DPDK；
+  要跟内核共存 → AF_XDP。copy 模式是伪旁路，别用。</li>
+<li><strong>延迟的两大隐藏项</strong>：NAPI 调度等待（用 busy poll 消除）、
+  <code class="c">xdp_do_flush()</code> 批量发布（无法消除，只能用批处理大小去权衡）。</li>
+<li><strong><code class="c">XDP_USE_NEED_WAKEUP</code> + busy poll 是标准配置</strong>。
+  前者避免无谓 syscall，后者让 <code class="c">recvfrom()</code> 直接在调用上下文驱动 NAPI。</li>
+<li><strong>批处理从 32 起测</strong>，不要盲目加大——队尾包的延迟由批次大小决定。</li>
+<li><strong>"收多少还多少" 是 FILL ring 不变量的保证</strong>。任何囤积 addr 的优化都会打破它。</li>
+<li><strong>一个队列一个 xsk，<code class="c">SO_REUSEPORT</code> 无效</strong>。多核扩展靠多队列 + RSS/flow steering。</li>
+<li><strong>UMEM 常驻内存且吃 memlock 限额</strong>，容器里部署前先 <code class="c">ulimit -l</code>。</li>
+<li><strong><code class="c">recvmsg()</code> 必须带 <code class="c">MSG_DONTWAIT</code></strong>，否则直接 <code class="c">-EOPNOTSUPP</code>。</li>
+<li><strong>XDP 程序务必用 <code class="c">XDP_PASS</code> 作为 redirect 的 fallback flags</strong>，
+  否则非行情流量（含你的 SSH）会被 <code class="c">XDP_ABORTED</code> 静默丢弃，
+  而所有常规工具（tcpdump、ethtool）都显示"一切正常"。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（4.18+ / v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户态收包</td>
+<td><code class="c">recvmsg()</code> + 一次 <code class="c">copy_to_user</code></td>
+<td>AF_XDP：零拷贝，包直接来自网卡 DMA</td>
+</tr>
+<tr>
+<td>唤醒模型</td>
+<td>中断 → 软中断 → 唤醒进程</td>
+<td><strong>用户态可主动驱动</strong>（busy poll）或显式踢驱动（<code class="c">ndo_xsk_wakeup</code>）</td>
+</tr>
+<tr>
+<td>批处理</td>
+<td><code class="c">recvmmsg()</code>（系统调用级）</td>
+<td><strong>内核级批处理</strong>：<code class="c">xdp_do_flush()</code> 一次发布整个 NAPI 批</td>
+</tr>
+<tr>
+<td>背压</td>
+<td>内核 socket 缓冲区自动</td>
+<td><strong>用户态自己管 FILL ring</strong>，管不好就丢包</td>
+</tr>
+<tr>
+<td>队列粒度</td>
+<td>无（socket 与队列无关）</td>
+<td><strong>socket 绑定到具体 (dev, queue_id)</strong>，一对一</td>
+</tr>
+<tr>
+<td>与内核共存</td>
+<td>天然共存</td>
+<td>需要显式用 <code class="c">XDP_PASS</code> 让非目标流量回落内核栈</td>
+</tr>
+<tr>
+<td>内存管理</td>
+<td>内核管</td>
+<td><strong>用户态管 UMEM，钉页常驻，受 memlock 限额</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary><b>Q1：</b>你开了 <code class="c">XDP_USE_NEED_WAKEUP</code>，收包循环里每次都调用 <code class="c">recvfrom(..., MSG_DONTWAIT)</code>。高包速下没问题，低包速下 CPU 占用却很高。为什么？正确写法是什么？</summary>
+<p><strong>问题在于无条件调用 syscall。</strong></p>
+<p><code class="c">recvfrom()</code> 落到 <code class="c">__xsk_recvmsg()</code>（xsk.c:873）：</p>
+<pre class="code" data-label="C"><code class="c">    if (sk_can_busy_loop(sk))
+        sk_busy_loop(sk, 1);
+
+    if (xsk_no_wakeup(sk))
+        return 0;
+
+    if (xs-&gt;pool-&gt;cached_need_wakeup &amp; XDP_WAKEUP_RX &amp;&amp; xs-&gt;zc)
+        return xsk_wakeup(xs, XDP_WAKEUP_RX);   /* → ndo_xsk_wakeup */
+    return 0;
+</code></pre>
+<p>高包速下驱动一直在轮询，RX 标志位通常是清的，调用基本空转返回。
+<strong>但低包速下驱动可能停了轮询，你不调用就收不到包</strong>——所以看起来"必须每次调"。</p>
+<p><strong>正确的是：用 ring flags 做判断，只在驱动真的要求时才 syscall。</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 内核在 xsk_set_rx_need_wakeup() 里把标志打在 FILL ring 上（xsk.c:39） */
+static inline void kick_rx_if_needed(int fd, struct xsk_ring_prod *fill)
+{
+        if (xsk_ring_prod__needs_wakeup(fill))          /* 读 mmap 出来的 flags */
+                recvfrom(fd, NULL, 0, MSG_DONTWAIT, NULL, NULL);
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">for (;;) {
+        rcvd = xsk_ring_cons__peek(&amp;rx, BATCH, &amp;idx_rx);
+        if (rcvd) {
+                /* ... 处理并归还 FILL ... */
+                continue;                                /* 有包：继续忙循环 */
+        }
+        /* 没包：先问驱动需要唤醒吗，需要才 syscall */
+        kick_rx_if_needed(fd, &amp;fill);
+        /* 或者：真的要休眠才 poll() */
+        /* poll(&amp;pfd, 1, timeout); */
+}
+</code></pre>
+<p><strong>⚠️ 别忘了 <code class="c">poll()</code> 有副作用</strong>（xsk.c:910）：</p>
+<pre class="code" data-label="C"><code class="c">    if (pool-&gt;cached_need_wakeup) {
+        if (xs-&gt;zc)
+            xsk_wakeup(xs, pool-&gt;cached_need_wakeup);
+        ...
+    }
+</code></pre>
+<p>在忙循环里每轮 <code class="c">poll()</code> = 每轮一次 syscall + 一次 <code class="c">ndo_xsk_wakeup</code>（可能是 IPI）。
+<strong><code class="c">poll()</code> 只应在你准备休眠时用。</strong></p>
+<p><strong>更进一步的优化（消除 syscall）</strong>：开 busy poll
+（<code class="c">SO_BUSY_POLL</code> + <code class="c">SO_PREFER_BUSY_POLL</code>）。此时 <code class="c">xsk_no_wakeup()</code> 返回真
+（xsk.c:807），<code class="c">recvfrom()</code> 内部先 <code class="c">sk_busy_loop()</code> 直接驱动 NAPI，
+然后<strong>跳过</strong> <code class="c">xsk_wakeup()</code>——既收了包又没踢驱动。</p>
+</details>
+<details>
+<summary><b>Q2：</b>你把 <code class="c">chunk_size</code> 设成 2048、<code class="c">headroom</code> 设成 256，MTU 是 1500。上线后 <code class="c">rx_dropped</code> 一直涨，<code class="c">rx_ring_full</code> 却是 0。为什么？怎么办？</summary>
+<p><strong>因为可用包长只剩下 1536 字节。</strong></p>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk_buff_pool.c:84 */
+pool-&gt;frame_len = umem-&gt;chunk_size - umem-&gt;headroom - XDP_PACKET_HEADROOM;
+</code></pre>
+<p><code class="c">XDP_PACKET_HEADROOM = 256</code>，所以：</p>
+<pre class="code" data-label="code"><code class="c">frame_len = 2048 - 256(headroom) - 256(XDP_PACKET_HEADROOM) = 1536
+</code></pre>
+<p>而一个 1500 字节 MTU 的以太网帧实际是 <strong>1514 字节</strong>（+14 B 以太网头），
+带 VLAN tag 是 <strong>1518</strong>，某些场景还有额外的封装。1536 只剩 18~22 字节余量，
+<strong>任何超过 1536 的包都会被丢弃</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* xsk_rcv_check()，xsk.c:317 */
+    if (len &gt; xsk_pool_get_rx_frame_size(xs-&gt;pool) &amp;&amp; !xs-&gt;sg) {
+        xs-&gt;rx_dropped++;
+        return -ENOSPC;
+    }
+</code></pre>
+<p>注意它计入的是 <strong><code class="c">rx_dropped</code></strong>，不是 <code class="c">rx_ring_full</code>——
+这正是"<strong>包太大</strong>"与"<strong>用户读太慢</strong>"的区分标志。</p>
+<p><strong>三种解法：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>解法</th>
+<th>做法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>① 加大 chunk（推荐）</strong></td>
+<td><code class="c">chunk_size = 4096</code> → <code class="c">frame_len = 3584</code></td>
+<td>UMEM 占用翻倍；每帧浪费更多（小包场景）</td>
+</tr>
+<tr>
+<td><strong>② 去掉 headroom</strong></td>
+<td><code class="c">headroom = 0</code> → <code class="c">frame_len = 1792</code></td>
+<td>无法用 <code class="c">bpf_xdp_adjust_head()</code> 加/去封装头</td>
+</tr>
+<tr>
+<td><strong>③ 开 <code class="c">XDP_USE_SG</code></strong></td>
+<td>bind 时加 flag，多描述符拼大包</td>
+<td>用户态要处理 <code class="c">XDP_PKT_CONTD</code>；驱动需 <code class="c">xdp_zc_max_segs &gt; 1</code>，否则 bind 返回 <code class="c">-EOPNOTSUPP</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推荐 ①</strong>：行情包通常几百字节，4096 的浪费相比"持续丢包"不值一提。
+<strong>UMEM 内存很便宜，<code class="c">rx_dropped</code> 很贵。</strong></p>
+<p><strong>顺带的诊断口诀</strong>：</p>
+<pre class="code" data-label="code"><code class="c">rx_ring_full              涨 → 消费太慢
+rx_fill_ring_empty_descs  涨 → 归还 frame 太慢
+rx_dropped 涨而两者为 0    → 包比 frame_len 大（查 MTU vs frame_len）
+</code></pre>
+</details>
+<details>
+<summary><b>Q3：</b>零拷贝模式下为什么用户态"一下子看到一批包"而不是一个一个？这对单包延迟意味着什么？</summary>
+<p><strong>因为 RX ring 的 producer 索引只在 <code class="c">xsk_flush()</code> 时发布，而 flush 发生在 NAPI poll 结束时。</strong></p>
+<p>链路是这样的：</p>
+<pre class="code" data-label="C"><code class="c">/* 每包：只填 desc，不发布 producer（xsk.c:368） */
+int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp)
+{
+    err = xsk_rcv(xs, xdp);          /* → __xsk_rcv_zc()：取 addr、填 desc */
+    if (err)
+        return err;
+    if (!xs-&gt;flush_node.prev)
+        list_add(&amp;xs-&gt;flush_node, flush_list);   /* 挂 per-CPU 链表 */
+    return 0;
+}
+
+/* NAPI poll 结束：驱动调 xdp_do_flush() → __xsk_map_flush()（xsk.c:382） */
+void __xsk_map_flush(void)
+{
+    list_for_each_entry_safe(xs, tmp, flush_list, flush_node) {
+        xsk_flush(xs);
+        ...
+    }
+}
+
+/* xsk.c:326 */
+static void xsk_flush(struct xdp_sock *xs)
+{
+    xskq_prod_submit(xs-&gt;rx);        /* ⭐ 此刻才 publish producer */
+    __xskq_cons_release(xs-&gt;pool-&gt;fq);
+    sock_def_readable(&amp;xs-&gt;sk);
+}
+</code></pre>
+<p><strong>所以一个 NAPI poll 批次（默认 weight = 64）里被 redirect 的所有包，
+会在 poll 结束的同一瞬间对用户态可见。</strong></p>
+<p><strong>对延迟的三点含义：</strong></p>
+<ol>
+<li>
+<p><strong>批内位置决定单包延迟</strong>。第 1 个包和第 64 个包虽然同时被 publish，
+   但第 64 个包在网卡里躺了更久。如果你只关心"第一个包到达用户态的时间"，
+   小批量更好；如果关心 P99，要控制批大小。</p>
+</li>
+<li>
+<p><strong>低包速时延迟反而更高</strong>。100 pps 的场景下，一个包进来了，
+   但 NAPI poll 还没结束（没填满 weight，也没退出），
+   producer 就没发布——<strong>你在等一个永远不会填满的批次结束</strong>。
+   驱动通常靠"poll 返回前没更多包了"来结束，所以这里是 poll 的单轮开销，
+   但仍然是额外的等待。</p>
+</li>
+<li>
+<p><strong><code class="c">sock_def_readable()</code> 也在 flush 里</strong>，所以阻塞式 <code class="c">poll()</code> 的唤醒粒度
+   是"每个 NAPI poll 一次"，不是每包。<strong>不要用 <code class="c">poll()</code> 的返回频率去推测包速。</strong></p>
+</li>
+</ol>
+<p><strong>怎么调：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>减小用户态批处理大小（16/32）</td>
+<td>降低批内等待，但 ring 操作开销占比上升</td>
+</tr>
+<tr>
+<td>减小 NAPI weight（<code class="c">net.core.dev_weight</code>，默认 64）</td>
+<td>批次更小 → flush 更频繁 → 延迟降低，吞吐略降</td>
+</tr>
+<tr>
+<td>开 busy poll</td>
+<td>消除等待 NAPI 被调度的延迟（第 ② 项）</td>
+</tr>
+<tr>
+<td>接受它</td>
+<td>如果目标是 P50 而非 P99，批处理的吞吐收益更大</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 建议：从 batch = 32 起测</strong>（内核 <code class="c">TX_BATCH_SIZE</code> 也是 32，xsk.c:35），
+按 P99 延迟和吞吐两条曲线找拐点，不要照抄别人的数字。</p>
+</details>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-02">02 AF_XDP 工程实践</a>
+→ 前一篇：<a href="chapter-15.html#s-01">01 AF_XDP 接口精读</a>
+→ 相关：<a href="chapter-15.html#s-03">03 UMEM 布局与 copy/zc 差异</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a> · <a href="chapter-07.html#ch-7">chapter-07 XDP redirect 与 DPDK</a></p>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>— UMEM 布局与 copy / zero-copy 的微观差异</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> 无（AF_XDP 4.18+ 才存在）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/af_xdp.rst</code>、<code class="c">net/xdp/xsk.c</code>、<code class="c">net/xdp/xsk_queue.h</code></p>
+<strong>内核源码路径:</strong> <code class="c">Documentation/networking/af_xdp.rst</code>、<code class="c">net/xdp/xsk.c</code>、<code class="c">net/xdp/xdp_umem.c</code>、<code class="c">net/xdp/xsk_buff_pool.c</code>、<code class="c">net/xdp/xsk_queue.h</code>
+<strong>内核版本:</strong> 以 <strong>v6.6</strong> 为准，注册校验与布局公式均取自源码</p>
 </blockquote>
 <h2>文档概述</h2>
-<p><a href="chapter-15.html#s-01">01-af-xdp</a> 讲了创建流程和"两种模式"，但没有回答两个关键问题：
-<strong>UMEM 到底怎么布局</strong>、<strong>copy 模式比 zero-copy 多付出什么</strong>。
+<p><a href="chapter-15.html#s-01">01-af-xdp</a> 讲了接口每一步的约束，
+<a href="chapter-15.html#s-02">02-af-xdp-lwn</a> 讲了工程决策与延迟预算，
+本篇回答剩下两个微观问题：<strong>UMEM 到底怎么布局</strong>、<strong>copy 模式比 zero-copy 多付出什么</strong>。
 这两点决定了 AF_XDP 值不值得用——答案是：只有 zero-copy 才值得。</p>
 <hr />
 <h2>核心内容</h2>
@@ -661,7 +2487,7 @@ while (1) {
 /* 由偏移拿到数据指针 */
 void *pkt = xsk_umem__get_data(umem_area, desc.addr);
 </code></pre>
-<p>注册参数（<code class="c">setsockopt(XDP_UMEM_REG)</code>）：</p>
+<p>注册参数（<code class="c">setsockopt(XDP_UMEM_REG)</code>，<code class="c">include/uapi/linux/if_xdp.h:73</code>）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -674,28 +2500,152 @@ void *pkt = xsk_umem__get_data(umem_area, desc.addr);
 <tr>
 <td><code class="c">addr</code></td>
 <td>UMEM 起始地址</td>
-<td>mmap 返回值</td>
+<td>mmap / posix_memalign 返回值</td>
 </tr>
 <tr>
 <td><code class="c">len</code></td>
 <td>UMEM 总大小</td>
-<td>frame_size × frame_count</td>
+<td>chunk_size × chunk 数</td>
 </tr>
 <tr>
-<td><code class="c">frame_size</code></td>
-<td>每个 frame 长度</td>
-<td>2048（小包）/ 4096（含 jumbo）</td>
+<td><code class="c">chunk_size</code></td>
+<td>每个 chunk 的长度</td>
+<td>2048（小包）/ 4096（留 headroom 或大包）</td>
 </tr>
 <tr>
-<td><code class="c">frame_headroom</code></td>
-<td>每 frame 前置保留</td>
-<td>256（<code class="c">XDP_PACKET_HEADROOM</code>）</td>
+<td><code class="c">headroom</code></td>
+<td>每 chunk 的<strong>额外</strong>前置保留</td>
+<td>0 或 256</td>
+</tr>
+<tr>
+<td><code class="c">flags</code></td>
+<td><code class="c">XDP_UMEM_UNALIGNED_CHUNK_FLAG</code></td>
+<td>0（对齐模式）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>⚠️ 注册时的四条硬校验（<code class="c">xdp_umem_reg()</code>，<code class="c">net/xdp/xdp_umem.c:151</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>校验（行号）</th>
+<th>违反的 errno</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">chunk_size &lt; 2048 \|\| chunk_size &gt; PAGE_SIZE</code>（:160）</td>
+<td><code class="c">-EINVAL</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>对齐模式下 <code class="c">chunk_size</code> 不是 2 的幂（:173）</td>
+<td><code class="c">-EINVAL</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">!PAGE_ALIGNED(addr)</code>（:176）</td>
+<td><code class="c">-EINVAL</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">len % chunk_size != 0</code>（:196）或 <code class="c">headroom &gt;= chunk_size - 256</code>（:199）</td>
+<td><code class="c">-EINVAL</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两条最容易被写错的：</strong></p>
+<ul>
+<li><strong><code class="c">addr</code> 的对齐要求是"页对齐"，不是"chunk 对齐"。</strong>
+  <code class="c">malloc()</code> 返回的地址不保证页对齐 → <strong><code class="c">-EINVAL</code></strong>。
+  用 <code class="c">mmap(NULL, len, ..., MAP_ANONYMOUS\|MAP_HUGETLB, ...)</code> 或 <code class="c">posix_memalign(&amp;p, 4096, len)</code>。</li>
+<li><strong><code class="c">chunk_size</code> 的下界是 2048、上界是一页（x86_64 上 4096）</strong>，
+  且必须是 2 的幂（对齐模式下）。所以实际只有 <strong>2048 和 4096</strong> 两个选择。
+  <strong>想用一个 9 KB 的 chunk 装 jumbo frame 是做不到的</strong>，只能用 <code class="c">XDP_USE_SG</code> 拆多描述符。</li>
+</ul>
+<h3>UMEM 注册后内核做了三件事（<code class="c">xdp_umem_reg()</code>，:214-224）</h3>
+<pre class="code" data-label="C"><code class="c">err = xdp_umem_account_pages(umem);                        /* ① RLIMIT_MEMLOCK 记账 */
+err = xdp_umem_pin_pages(umem, (unsigned long)addr);       /* ② 钉页 */
+err = xdp_umem_addr_map(umem, umem-&gt;pgs, umem-&gt;npgs);      /* ③ vmap 建内核映射 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>源码</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 记账</td>
+<td><code class="c">rlimit(RLIMIT_MEMLOCK)</code> 超限 → <code class="c">-ENOBUFS</code>（:144）；有 <code class="c">CAP_IPC_LOCK</code> 才跳过</td>
+<td>容器/CI 里最常见的启动失败原因</td>
+</tr>
+<tr>
+<td>② 钉页</td>
+<td><code class="c">pin_user_pages(..., FOLL_WRITE \| FOLL_LONGTERM, ...)</code>（:105）</td>
+<td><strong>UMEM 常驻物理内存，永不换出</strong></td>
+</tr>
+<tr>
+<td>③ 映射</td>
+<td><code class="c">vmap(pages, nr_pages, VM_MAP, PAGE_KERNEL)</code>（:49）</td>
+<td>建立内核侧虚拟映射，供 copy 模式访问</td>
 </tr>
 </tbody>
 </table></div>
 <blockquote>
-<p><code class="c">addr</code> 必须按 frame_size 对齐；建议 UMEM 落在 hugepage 上，减少 TLB miss。</p>
+<p>建议 UMEM 落在 hugepage 上，减少 TLB miss——但注意 <code class="c">FOLL_LONGTERM</code> 对
+部分特殊内存类型（如某些设备私有内存）会直接失败。</p>
 </blockquote>
+<h3><code class="c">frame_len</code>：chunk 里真正能装包的字节数</h3>
+<pre class="code" data-label="C"><code class="c">/* net/xdp/xsk_buff_pool.c:84 */
+pool-&gt;frame_len = umem-&gt;chunk_size - umem-&gt;headroom - XDP_PACKET_HEADROOM;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>chunk_size</th>
+<th>headroom</th>
+<th><code class="c">frame_len</code></th>
+<th>装 1500B MTU（实际 1514B）</th>
+<th>装 9000B jumbo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2048</td>
+<td>0</td>
+<td><strong>1792</strong></td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>2048</td>
+<td>256</td>
+<td><strong>1536</strong></td>
+<td>⚠️ 仅剩 18 B 余量，带 VLAN 就悬</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>4096</td>
+<td>0</td>
+<td><strong>3840</strong></td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>4096</td>
+<td>256</td>
+<td><strong>3584</strong></td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>超出 <code class="c">frame_len</code> 且没开 <code class="c">XDP_USE_SG</code> 的包会被丢，计入 <code class="c">rx_dropped</code></strong>（<code class="c">xsk_rcv_check()</code>，xsk.c:317）。</p>
 <hr />
 <h3>四个 ring 的生产者 / 消费者关系</h3>
 <pre class="code" data-label="code"><code class="c">                 ┌─────────────── 内核态 ───────────────┐
@@ -773,16 +2723,22 @@ if (rcvd &gt; 0) {
 <h3>copy vs zero-copy：差的到底是哪一步</h3>
 <p>这是本笔记的核心。两条路径对比：</p>
 <pre class="code" data-label="code"><code class="c">【copy 模式】—— 名字叫 XDP，其实没省掉关键开销
-  NIC DMA → page_pool page
-      → 驱动分配 sk_buff            ← 1. 分配开销 ~100ns
+  NIC DMA → page_pool page（驱动自己的普通收包路径）
+      → 驱动构造 xdp_buff（mem.type = MEM_TYPE_PAGE_*）
       → NAPI poll → XDP_REDIRECT
-      → 内核把 payload memcpy 到 UMEM frame   ← 2. 拷贝开销 20~200ns（随包长）
+      → __xsk_rcv()：
+            xsk_buff_alloc(pool)      ← 1. 从 UMEM 取一个 frame
+            memcpy(frame, pkt, len)   ← 2. 整包复制
+            xdp_return_buff(xdp)      ← 3. 把驱动的 page 还回 page_pool
       → RX ring 描述符
-      → 用户态读取
+      → 用户态读取（副本）
 
 【zero-copy 模式】—— 真旁路
-  NIC DMA 直接写进 UMEM frame（page_pool 与 UMEM 共享映射）
-      → 驱动只填一个 xdp_desc       ← 无 sk_buff、无 memcpy
+  NIC DMA 直接写进 UMEM frame
+  （驱动把硬件 Rx 描述符指向 UMEM，UMEM 由内核 xp_dma_map() 做 DMA 映射）
+      → 驱动构造 xdp_buff（mem.type = MEM_TYPE_XSK_BUFF_POOL）
+      → NAPI poll → XDP_REDIRECT
+      → __xsk_rcv_zc()：取 addr、填 desc   ← 就这两步
       → RX ring 描述符
       → 用户态读取（就是网卡刚写过的那块内存）
 </code></pre>
@@ -797,22 +2753,34 @@ if (rcvd &gt; 0) {
 </thead>
 <tbody>
 <tr>
-<td>sk_buff 分配</td>
-<td>有</td>
+<td>UMEM frame 分配</td>
+<td>有（<code class="c">xsk_buff_alloc</code>）</td>
 <td><strong>无</strong></td>
-<td>~100 ns</td>
+<td>池空还会 <code class="c">rx_dropped++</code></td>
 </tr>
 <tr>
 <td>payload memcpy</td>
-<td>有</td>
+<td><strong>有（整包）</strong></td>
 <td><strong>无</strong></td>
 <td>20–200 ns（随包长）</td>
+</tr>
+<tr>
+<td><code class="c">xdp_return_buff()</code></td>
+<td>有</td>
+<td><strong>无</strong></td>
+<td>页回收路径</td>
 </tr>
 <tr>
 <td>缓存污染</td>
 <td>两次触碰数据</td>
 <td>一次</td>
 <td>影响后续访问</td>
+</tr>
+<tr>
+<td>内存带宽</td>
+<td>2× 包长</td>
+<td>1× 包长</td>
+<td>线速下的硬指标</td>
 </tr>
 <tr>
 <td>典型收包延迟</td>
@@ -828,13 +2796,34 @@ if (rcvd &gt; 0) {
 </tr>
 </tbody>
 </table></div>
-<p><strong>结论：</strong> copy 模式省掉的只是协议栈遍历，<strong>仍然分配 sk_buff、仍然 memcpy</strong>。
+<blockquote>
+<h3>⚠️ 两处需要澄清的常见说法</h3>
+<p><strong>① copy 模式并不分配 <code class="c">sk_buff</code>。</strong>
+XDP 在 skb 分配之前运行（见 <a href="chapter-15.html#s-01">chapter-01</a>），
+两种模式下都没有 skb。copy 模式多付的是"<strong>从 UMEM 取 frame + 整包 memcpy + 归还驱动页</strong>"，
+不是 skb 分配。</p>
+<p><strong>② zero-copy 不用 page_pool。</strong>
+UMEM 由内核自己 DMA 映射——<code class="c">struct xsk_buff_pool</code> 有自己的 <code class="c">dma_pages</code> 数组
+（<code class="c">include/net/xsk_buff_pool.h:68</code>），由 <code class="c">xp_dma_map()</code> 填充。
+<strong>说"AF_XDP 基于 page_pool"只在 copy 模式下成立</strong>（那条路径上驱动确实用 page_pool）。
+详见 <a href="chapter-15.html#s-01">chapter-04/01</a>。</p>
+<p>判定是<strong>逐包</strong>做的，依据包的来源：
+<code class="c">c
+/* net/xdp/xsk.c:348 */
+if (xdp-&gt;rxq-&gt;mem.type == MEM_TYPE_XSK_BUFF_POOL)
+        return xsk_rcv_zc(xs, xdp, len);   /* 零拷贝 */
+err = __xsk_rcv(xs, xdp, len);             /* copy */</code></p>
+</blockquote>
+<p><strong>结论：</strong> copy 模式省掉的只是协议栈遍历，<strong>仍然分配 frame、仍然 memcpy</strong>。
 它相对 <code class="c">recvmsg()</code> 的优势有限，却要付出独占队列 + BPF 开发的代价。
-所以 <a href="chapter-15.html#s-01">01-af-xdp</a> 说"零拷贝是唯一理由"——用之前先用 <code class="c">XDP_ZEROCOPY</code> 试，
-驱动不支持就老实走内核栈 + busy poll，别用 copy 模式。</p>
-<pre class="code" data-label="shell"><code class="c"># 校验你的驱动是否真支持 zero-copy（绑定时带 XDP_ZEROCOPY flag）
-# 绑定失败或退化为 copy 模式，说明驱动/队列配置不支持
-xdp-loader load -m native eth0 prog.o
+所以用之前先按 <a href="chapter-15.html#s-01">01 篇</a>第四节的办法验证——<strong>bind 时加 <code class="c">XDP_ZEROCOPY</code>，
+不支持就让它明确返回 <code class="c">-EOPNOTSUPP</code> 失败</strong>，别接受静默降级。</p>
+<pre class="code" data-label="shell"><code class="c"># 校验你的驱动是否真支持 zero-copy（bind 之后查，不是 bind 之前猜）
+#   C 代码：getsockopt(fd, SOL_XDP, XDP_OPTIONS, &amp;opts, &amp;len)
+#           opts.flags &amp; XDP_OPTIONS_ZEROCOPY
+
+# 或者：不带 XDP_ZEROCOPY bind 一次看是否成功、再用 bpftool/net 确认模式
+bpftool net show dev eth0
 </code></pre>
 <hr />
 <h3>与 DPDK 的结构对照</h3>
@@ -849,7 +2838,7 @@ xdp-loader load -m native eth0 prog.o
 <tbody>
 <tr>
 <td>Rx 缓冲区</td>
-<td>UMEM frame（page_pool 映射，内核分配）</td>
+<td>UMEM frame（用户分配，内核 <code class="c">xp_dma_map()</code> 映射）</td>
 <td>rte_mbuf（hugepage mempool，用户分配）</td>
 </tr>
 <tr>
@@ -895,11 +2884,18 @@ DPDK 是用户态<strong>独占</strong> mbuf 池。这套交接带来了额外�
 <hr />
 <h2>HFT 要点</h2>
 <ul>
-<li><strong>先验证 zero-copy 能用</strong>，驱动不支持就别用 AF_XDP——copy 模式不划算</li>
+<li><strong>先验证 zero-copy 能用</strong>，驱动不支持就别用 AF_XDP——copy 模式不划算。
+  验证靠 <code class="c">getsockopt(XDP_OPTIONS)</code> 的 <code class="c">XDP_OPTIONS_ZEROCOPY</code>，不靠 bind 是否成功</li>
 <li><code class="c">xdp_desc.addr</code> 是<strong>偏移不是指针</strong>，用 <code class="c">xsk_umem__get_data()</code> 转换</li>
-<li><strong>FILL ring 水位是生命线</strong>：<code class="c">xdp-stat</code> 里 <code class="c">rx_dropped</code> 涨 = 你归还 frame 太慢</li>
-<li>UMEM 放 hugepage 上，frame_size 按最大包长选（行情包通常小，2048 够）</li>
-<li>headroom 留 256 B，方便 XDP 程序做 <code class="c">bpf_xdp_adjust_head()</code></li>
+<li><strong>FILL ring 水位是生命线</strong>，但别看错计数器：</li>
+<li><code class="c">rx_fill_ring_empty_descs</code> 涨 = 归还 frame 太慢（ZC 模式头号丢包源）</li>
+<li><code class="c">rx_ring_full</code> 涨 = RX ring 满，用户态消费太慢</li>
+<li><code class="c">rx_dropped</code> 涨而上面两个为 0 = <strong>包比 <code class="c">frame_len</code> 大</strong>（MTU 不匹配）</li>
+<li>UMEM 放 hugepage 上；<code class="c">chunk_size</code> 只有 2048 / 4096 可选（4K 页系统），
+  按最大包长选——<strong>要留 256 B headroom 就直接上 4096</strong>，否则 2048 只剩 1536 B</li>
+<li>headroom 方便 XDP 程序做 <code class="c">bpf_xdp_adjust_head()</code>，但<strong>它是从 <code class="c">frame_len</code> 里扣的</strong></li>
+<li>UMEM 注册会 <code class="c">pin_user_pages(FOLL_LONGTERM)</code> 常驻内存并吃 <code class="c">RLIMIT_MEMLOCK</code>，
+  容器里失败先查 <code class="c">ulimit -l</code></li>
 <li>AF_XDP 只接管<strong>指定队列</strong>，其他队列仍走内核栈——这是它相对 DPDK 最大的工程优势</li>
 </ul>
 <h2>与 Rosen 3.x 的差异</h2>
@@ -920,7 +2916,7 @@ DPDK 是用户态<strong>独占</strong> mbuf 池。这套交接带来了额外�
 <tr>
 <td>Rx buffer 分配</td>
 <td>每次 alloc_page</td>
-<td>page_pool 复用，UMEM 直接映射</td>
+<td>UMEM 一次性分配 + DMA 长期映射（驱动侧另用 page_pool）</td>
 </tr>
 <tr>
 <td>内核/用户交接</td>
@@ -932,8 +2928,17 @@ DPDK 是用户态<strong>独占</strong> mbuf 池。这套交接带来了额外�
 <td>无此概念</td>
 <td>AF_XDP 可按队列旁路，与内核栈共存</td>
 </tr>
+<tr>
+<td>内存约束</td>
+<td>只受进程地址空间限制</td>
+<td>追加：页对齐、<code class="c">RLIMIT_MEMLOCK</code>、常驻不换出</td>
+</tr>
 </tbody>
 </table></div>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-03">03 UMEM 布局与 copy/zc 差异</a>
+→ 前一篇：<a href="chapter-15.html#s-01">01 AF_XDP 接口精读</a> · <a href="chapter-15.html#s-02">02 AF_XDP 工程实践</a>
+→ 相关：<a href="chapter-04.html#ch-4">chapter-04 page_pool</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a> · <a href="chapter-07.html#ch-7">chapter-07 XDP redirect 与 DPDK</a></p>
       </section>
 
 

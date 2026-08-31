@@ -276,9 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">04</span>— XDP 实操</a>
-          <a href="#s-02"><span class="n">03</span>— Documentation/networking/xdp-rings-design.rst</a>
-          <a href="#s-03"><span class="n">05</span>— XDP 架构与 use case 全景</a>
+          <a href="#s-01"><span class="n">01</span>— XDP 实操：工具链、模式选择与排障</a>
+          <a href="#s-02"><span class="n">02</span>— AF_XDP 的四个 ring：UMEM 与无锁同步</a>
+          <a href="#s-03"><span class="n">03</span>— XDP 架构全景：五个动作、verifier 边界与定位</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -288,7 +288,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -316,276 +316,1398 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的五个核心结论</h2>
+<ol>
+<li><strong><code class="c">XDP_ABORTED == 0</code>。</strong> <code class="c">enum xdp_action</code> 里 0 是"异常 + 丢包 + 触发 tracepoint"，
+   <strong>不是</strong>"放行"。返回 0 的程序会静默丢光所有包，而 <code class="c">bpftool prog show</code> 显示它正常运行。</li>
+<li><strong>XDP 在 skb 分配之前运行</strong>，这是它与 tc/Netfilter 的根本分野：
+   没有 <code class="c">sk_buff</code> 就没有协议栈的一切开销，代价是<strong>没有 skb 就没有 skb 上的所有便利</strong>
+   （无 GRO、无 socket 关联、无 skb 元数据）。</li>
+<li><strong>generic XDP 会先拷贝</strong>。满足 <code class="c">skb_cloned()</code> || <code class="c">skb_is_nonlinear()</code> ||
+   <code class="c">skb_headroom() &lt; XDP_PACKET_HEADROOM</code> 任一条件就 <code class="c">pskb_expand_head()</code>。
+   加载时不指定模式 → <strong>静默降级到 generic</strong>，性能归零但程序照跑。</li>
+<li><strong>verifier 的三条硬规则</strong>：有界循环、指针算术必须先验边界检查、不能任意调内核函数
+   （只能调 BPF helper）。写不出 stdlib 风格的代码不是工具链问题，是模型约束。</li>
+<li><strong>XDP 与 DPDK 的分界是"谁拥有网卡"，不是"谁更快"</strong>。
+   要看 ARP/ICMP、要跟内核路由表共存 → XDP；要独占网卡、要自己实现一切 → DPDK。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>XDP 位置</strong>：XDP 在 NIC DMA 完成后、sk_buff 分配之前拦截，延迟 &lt; 100ns</li>
-<li><strong>XDP_DROP</strong>：恶意/无关包在协议栈之前丢弃，不消耗 skb 内存和 CPU</li>
-<li><strong>XDP_TX</strong>：包直接从 NIC 反射出去，不经过协议栈转发路径</li>
-<li><strong>XDP_REDIRECT</strong>：包重定向到另一个 NIC 或 AF_XDP socket，实现零拷贝到用户态</li>
-<li><strong>native vs offload</strong>：native XDP 在驱动层运行（通用），offload XDP 在 SmartNIC 硬件运行</li>
+<li><strong>丢包位置最靠前</strong>：XDP_DROP 在驱动 NAPI poll 里就完成，不分配 skb、不走协议栈，
+  单机抗噪能力比 iptables/nftables 高一个量级</li>
+<li><strong>XDP_TX 做原路反弹</strong>：组播行情的"反射"、行情扇出前的初筛都可以在这里做，
+  延迟只有一次 DMA + 一次 doorbell</li>
+<li><strong>XDP_REDIRECT 到 AF_XDP</strong>：用户态零拷贝收包的唯一路径，
+  是 HFT 里唯一能与 DPDK 同台竞技的内核方案（见 chapter-06）</li>
+<li><strong>generic XDP 只能验正确性，不能测性能</strong>：veth + generic 模式是 CI 的利器，
+  但拿它的数字去说服任何人都是误导</li>
+<li><strong>加载失败优先查这三样</strong>：驱动是否支持 native（降级到 generic）、
+  每队列 ring 大小是否与 XDP 程序声明一致、MTU 是否超过单页</li>
+<li><strong>观测别用 tcpdump 看 XDP 之后的包</strong>：tcpdump 挂在 <code class="c">ptype_all</code>（<code class="c">dev.c:5394</code>），
+  在 XDP <strong>之后</strong>，XDP 丢的包 tcpdump 看不见——要用 <code class="c">ethtool -S</code> 的驱动计数和
+  <code class="c">xdp_statistics</code> 交叉验证</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：AF_XDP 将包重定向到用户态</li>
-<li><code class="c">12.5-modern-networking/chapter-07-xdp-redirect-dpdk/</code>：XDP redirect 机制与 DPDK 对比</li>
-<li><code class="c">13-dpdk/</code>：DPDK 完全 bypass 内核，XDP 是内核态替代方案</li>
+<li><code class="c">12.5-modern-networking/chapter-01-net-stack-architecture/</code>：XDP 在整栈中的精确位置（H1 钩子）</li>
+<li><code class="c">12.5-modern-networking/chapter-03-tx-path-skbbuff/</code>：XDP_PASS 之后 <code class="c">xdp_buff</code> 如何变 <code class="c">sk_buff</code></li>
+<li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：XDP_REDIRECT / XDP_TX 依赖 page_pool 的保持映射</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：XDP_REDIRECT 的目的地之一，UMEM 零拷贝落地</li>
+<li><code class="c">12.5-modern-networking/chapter-07-xdp-redirect-dpdk/</code>：redirect 机制本体与 DPDK 对比</li>
+<li><code class="c">12.5-modern-networking/chapter-09-tc-bpf/</code>：tc-BPF 同样是 eBPF，但作用在 skb 上（XDP 之后）</li>
+<li><code class="c">13-dpdk/</code>：绕过内核的另一种选择</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">04</div><h2>— XDP 实操</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— XDP 实操：工具链、模式选择与排障</h2></div>
 <blockquote>
 <p><strong>Bootlin 课程模块：</strong> XDP
-<strong>对应 Rosen:</strong> 无</p>
+<strong>对应 Rosen:</strong> 无（书出版时 XDP 不存在）
+<strong>内核版本:</strong> 以 v6.6 为准，<code class="c">XDP_FLAGS_*</code> 取自 <code class="c">include/uapi/linux/if_link.h</code></p>
 </blockquote>
-<h2>XDP 工具链</h2>
-<h3>xdp-tools</h3>
-<pre class="code" data-label="shell"><code class="c"># 安装
-apt install xdp-tools
-
-# 加载 XDP 程序
-xdp-loader load eth0 xdp_program.o
-
-# 查看已加载程序
-xdp-loader status
-
-# 卸载
-xdp-loader unload eth0 &lt;id&gt;
-</code></pre>
-<h3>libbpf + BPF CO-RE</h3>
-<pre class="code" data-label="shell"><code class="c"># 编译
-clang -target bpf -O2 -g -c xdp_prog.c -o xdp_prog.o
-
-# 加载（通过 bpftool）
-bpftool prog load xdp_prog.o /sys/fs/bpf/xdp_prog
-bpftool net attach xdpgeneric name xdp_prog dev eth0
-</code></pre>
-<h2>实验环境</h2>
-<h3>树莓派 5 + veth</h3>
-<pre class="code" data-label="shell"><code class="c"># 创建 veth 对
-ip link add veth0 type veth peer name veth1
-ip link set veth0 up
-ip link set veth1 up
-
-# 在 veth0 上加载 XDP（generic 模式）
-xdp-loader load --mode generic veth0 xdp_prog.o
-
-# 从 veth1 发包测试
-ping -I veth1 10.0.0.1
-</code></pre>
-<h3>实验清单</h3>
+<h2>文档概述</h2>
+<p>本篇是 chapter-05 里<strong>唯一动手的一篇</strong>：怎么把 XDP 程序装上去、装不上去怎么办、怎么验证它真的在工作。</p>
+<p>本篇与兄弟篇的分工：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>实验</th>
-<th>目标</th>
+<th>篇</th>
+<th>讲什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>XDP DROP all</td>
-<td>验证 XDP 生效（ping 不通）</td>
+<td><strong>01（本篇）</strong></td>
+<td><strong>实操</strong>：工具链、三种模式怎么选、加载失败排查、实验方法</td>
 </tr>
 <tr>
-<td>XDP 按端口过滤</td>
-<td>只放行特定端口</td>
+<td><a href="chapter-15.html#s-02">02-xdp-rings</a></td>
+<td>AF_XDP 的<strong>四个 ring</strong>（UMEM 与无锁同步）</td>
 </tr>
 <tr>
-<td>XDP redirect CPUMAP</td>
-<td>多核收包分发</td>
-</tr>
-<tr>
-<td>AF_XDP 收包</td>
-<td>用户态零拷贝接收</td>
-</tr>
-<tr>
-<td>XDP + page_pool</td>
-<td>观察 page_pool 统计</td>
+<td><a href="chapter-15.html#s-03">03-xdp-architecture</a></td>
+<td>XDP <strong>架构全景</strong>：五个动作、verifier 约束、与 DPDK 的定位区别</td>
 </tr>
 </tbody>
 </table></div>
+<p>原笔记只有 1.1 KB，给了几条命令和一张实验清单。问题是<strong>它没说这些命令失败了该怎么办</strong>——而 XDP 实操里 80% 的时间都花在"为什么加载不上去"上。本篇把这部分补上。</p>
+<hr />
+<h2>一、三种挂载模式怎么选</h2>
+<p>模式不是"性能越高越好"，而是<strong>你的驱动和硬件支持哪个</strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_link.h:1295 */
+#define XDP_FLAGS_UPDATE_IF_NOEXIST (1U &lt;&lt; 0)
+#define XDP_FLAGS_SKB_MODE      (1U &lt;&lt; 1)
+#define XDP_FLAGS_DRV_MODE      (1U &lt;&lt; 2)
+#define XDP_FLAGS_HW_MODE       (1U &lt;&lt; 3)
+#define XDP_FLAGS_REPLACE       (1U &lt;&lt; 4)
+#define XDP_FLAGS_MODES         (XDP_FLAGS_SKB_MODE | \
+                     XDP_FLAGS_DRV_MODE | \
+                     XDP_FLAGS_HW_MODE)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>flag</th>
+<th>挂载点</th>
+<th>sk_buff 分配了吗</th>
+<th>性能</th>
+<th>什么时候用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Native / DRV</strong></td>
+<td><code class="c">XDP_FLAGS_DRV_MODE</code></td>
+<td>驱动 Rx poll 里</td>
+<td>❌ 没有</td>
+<td><strong>最高</strong></td>
+<td><strong>默认目标</strong>；驱动必须实现 XDP hook</td>
+</tr>
+<tr>
+<td><strong>Generic / SKB</strong></td>
+<td><code class="c">XDP_FLAGS_SKB_MODE</code></td>
+<td><code class="c">__netif_receive_skb_core()</code></td>
+<td>✅ <strong>已分配</strong></td>
+<td>最低</td>
+<td>驱动不支持时；<strong>开发调试用</strong></td>
+</tr>
+<tr>
+<td><strong>Offloaded / HW</strong></td>
+<td><code class="c">XDP_FLAGS_HW_MODE</code></td>
+<td>网卡硬件（SmartNIC）</td>
+<td>❌ 不进主机</td>
+<td>极致（不占 CPU）</td>
+<td>只有少数网卡支持（Netronome、部分 mlx）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>⚠️ 关键认知：Generic 模式不省 sk_buff</h3>
+<p>很多人以为"装了 XDP 就快了"。<strong>Generic 模式下不是的</strong>——它的挂载点在 <code class="c">net/core/dev.c:5373</code> 的 <code class="c">do_xdp_generic()</code>，那时 skb 早就分配好了。Generic 模式的价值是<strong>功能验证</strong>（不用挑网卡、不用挑驱动），不是性能。</p>
+<pre class="code" data-label="code"><code class="c">驱动 Rx → page_pool → [native XDP hook] → napi_build_skb() → GRO
+                            ↑                                    ↓
+                      这里才省 skb                    __netif_receive_skb_core()
+                                                        ├─ do_xdp_generic()  dev.c:5373
+                                                        │    ↑ 这里 skb 已分配
+                                                        ├─ ptype_all（tcpdump） dev.c:5394
+                                                        └─ sch_handle_ingress（tc）dev.c:5412
+</code></pre>
+<p>顺带一个有用的推论：<strong>generic XDP 在 <code class="c">ptype_all</code> 之前</strong>（5373 &lt; 5394），所以 generic 模式的 <code class="c">XDP_DROP</code> 包 <strong>tcpdump 也看不到</strong>——和 native 模式一致。</p>
+<hr />
+<h2>二、工具链：三条路，别混用</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>定位</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>libbpf + CO-RE</strong>（推荐）</td>
+<td>自己写 C、自己编译、自己加载</td>
+<td>生产程序、需要精细控制</td>
+</tr>
+<tr>
+<td><strong>xdp-tools</strong></td>
+<td>一套现成工具：<code class="c">xdp-loader</code> / <code class="c">xdp-dump</code> / <code class="c">xdp-filter</code></td>
+<td>快速验证、不想写加载器</td>
+</tr>
+<tr>
+<td><strong>bpftool</strong></td>
+<td>内核自带，最底层</td>
+<td>排查、查看已加载状态</td>
+</tr>
+</tbody>
+</table></div>
+<h3>libbpf + CO-RE（生产路线）</h3>
+<pre class="code" data-label="shell"><code class="c"># 编译（注意 -target bpf，不是本机架构）
+clang -target bpf -O2 -g -c xdp_prog.c -o xdp_prog.o
+
+# 生成 BTF（CO-RE 重定位需要；内核需 CONFIG_DEBUG_INFO_BTF=y）
+# 大部分发行版内核在 /sys/kernel/btf/vmlinux
+ls -l /sys/kernel/btf/vmlinux        # 没有就说明内核没开 BTF
+
+# 查看程序信息
+llvm-objdump -h xdp_prog.o           # 看 section
+bpftool prog load xdp_prog.o /sys/fs/bpf/xdp_prog
+</code></pre>
+<h3>xdp-tools（快速验证路线）</h3>
+<pre class="code" data-label="shell"><code class="c">apt install xdp-tools
+
+xdp-loader load eth0 xdp_program.o        # 自动选最佳模式
+xdp-loader status                          # 看加载到了哪种模式 ← 最重要
+xdp-loader unload eth0 &lt;id&gt;
+
+# 用现成的过滤器，不用写程序
+xdp-filter load eth0 --mode native
+xdp-filter port 12345
+xdp-filter status
+</code></pre>
+<h3>bpftool（排查路线）</h3>
+<pre class="code" data-label="shell"><code class="c">bpftool net show dev eth0        # 看挂了什么程序、什么模式
+bpftool prog show id &lt;id&gt;        # 看 JIT 了没、run_time、run_cnt
+bpftool map dump id &lt;id&gt;         # 看你的统计 map
+bpftool prog tracelog            # 配合 bpf_printk 调试
+</code></pre>
+<blockquote>
+<p>⚠️ <strong><code class="c">xdp-loader status</code> 是你每次加载后第一个要看的东西</strong>。它告诉你实际落到了
+native / generic / offloaded 哪一种。很多人以为自己在 native 模式，其实静默降级到
+generic 了，然后得出"XDP 没什么用"的错误结论。</p>
+</blockquote>
+<hr />
+<h2>三、加载失败排查清单（本篇最实用的一节）</h2>
+<p>XDP 加载失败的原因出乎意料地集中。按出现频率排序：</p>
+<h3>1. 加载时静默降级到 generic 模式</h3>
+<p><strong>症状</strong>：<code class="c">xdp-loader status</code> 显示 <code class="c">generic</code>，不是 <code class="c">native</code>。</p>
+<p><strong>原因</strong>：驱动没实现 XDP hook。</p>
+<pre class="code" data-label="shell"><code class="c"># 确认驱动是否支持：看驱动源码有没有 XDP 相关回调
+#   网卡驱动里要有 ndo_bpf 回调
+ethtool -i eth0                     # 先确认驱动名
+modinfo &lt;driver&gt; | grep -i xdp      # 未必准，看内核源码最可靠
+</code></pre>
+<p>常见支持 native XDP 的驱动：mlx5、ice、i40e、ixgbe（部分）、virtio-net、veth、tun、bnxt。
+<strong>veth 支持 native XDP</strong>，所以本机 veth 实验是可以跑在 native 模式的。</p>
+<h3>2. ring 大小不匹配</h3>
+<p><strong>症状</strong>：<code class="c">Error: ... ring size</code> 或加载后收不到包。</p>
+<p><strong>原因</strong>：native XDP 要求 Rx ring 与 TX ring 大小一致（部分驱动如此）。</p>
+<pre class="code" data-label="shell"><code class="c">ethtool -g eth0                       # 看当前
+ethtool -G eth0 rx 2048 tx 2048       # 拉成一样
+</code></pre>
+<h3>3. MTU 超过单页</h3>
+<p><strong>症状</strong>：改 MTU 后 XDP 挂不上，或大包被丢。</p>
+<p><strong>原因</strong>：native XDP 依赖 page_pool 的单页 buffer。MTU 太大（&gt; 约 3500 字节）时，
+一个 page（4 KB）装不下「headroom + 包 + tailroom + skb_shared_info」。</p>
+<pre class="code" data-label="shell"><code class="c">ip link set eth0 mtu 1500             # 先降回常规值验证
+</code></pre>
+<h3>4. verifier 拒绝</h3>
+<p><strong>症状</strong>：<code class="c">libbpf: prog 'xdp_prog': -- BEGIN PROG LOAD LOG -- ... invalid access to packet</code></p>
+<p><strong>原因</strong>：<strong>verifier 要求你在解引用前逐字节检查边界</strong>。这是最常见的写错点：</p>
+<pre class="code" data-label="C"><code class="c">/* ❌ 错：没检查边界就解引用 */
+struct ethhdr *eth = data;
+if (eth-&gt;h_proto != htons(ETH_P_IP)) ...   // verifier 拒绝
+
+/* ✅ 对：先验证指针范围，再解引用 */
+void *data = (void *)(long)ctx-&gt;data;
+void *data_end = (void *)(long)ctx-&gt;data_end;
+struct ethhdr *eth = data;
+if ((void *)(eth + 1) &gt; data_end)
+    return XDP_DROP;                        // 先验证
+if (eth-&gt;h_proto != htons(ETH_P_IP))        // 再解引用
+    return XDP_PASS;
+</code></pre>
+<p><strong>每一层协议头都要这么检查一遍</strong>（eth → ip → udp），verifier 才会放行。</p>
+<pre class="code" data-label="shell"><code class="c">bpftool prog load xdp_prog.o /sys/fs/bpf/p 2&gt;&amp;1 | tail -40   # 看 verifier 日志
+</code></pre>
+<h3>5. 忘了卸载旧程序</h3>
+<p><strong>症状</strong>：<code class="c">XDP_FLAGS_UPDATE_IF_NOEXIST</code> 报错，或行为不符合预期（旧程序还在）。</p>
+<pre class="code" data-label="shell"><code class="c">xdp-loader status                     # 看看挂了几个
+xdp-loader unload eth0 --all          # 全卸掉重来
+</code></pre>
+<h3>6. 程序返回了 <code class="c">XDP_ABORTED</code> 而不自知</h3>
+<p><strong>症状</strong>：verifier 通过、程序加载成功，但<strong>所有包都被丢弃</strong>。</p>
+<p><strong>原因</strong>：<code class="c">enum xdp_action</code> 里 <strong><code class="c">XDP_ABORTED = 0</code></strong>（第一个）。如果你某条路径
+忘了写 return（或 return 0），返回的就是 <code class="c">XDP_ABORTED</code>——<strong>语义是"程序出错，丢弃并记 tracepoint"</strong>，
+不是 <code class="c">XDP_PASS</code>。</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/bpf.h */
+enum xdp_action {
+    XDP_ABORTED = 0,
+    XDP_DROP,
+    XDP_PASS,
+    XDP_TX,
+    XDP_REDIRECT,
+};
+</code></pre>
+<p>这个坑非常隐蔽：<strong>返回 0 ≠ 放行</strong>。检查办法：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+#   看到 XDP_ABORTED 计数在涨 → 你的程序有路径返回了 0
+</code></pre>
+<hr />
+<h2>四、实验清单（含验证方法）</h2>
+<p>原笔记列了 5 个实验，但没说<strong>怎么证明实验成功</strong>。补上验证方法：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>实验</th>
+<th>怎么做</th>
+<th><strong>怎么验证真的生效</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>XDP DROP all</td>
+<td>加载 <code class="c">return XDP_DROP</code> 的程序</td>
+<td><code class="c">ping</code> 不通；<code class="c">ethtool -S eth0</code> 的 rx 计数<strong>仍在涨</strong>（说明包进网卡了，只是被 XDP 丢了）</td>
+</tr>
+<tr>
+<td>2</td>
+<td>按端口过滤</td>
+<td>检查 UDP dst port，非目标端口 DROP</td>
+<td><code class="c">xdp-filter status</code> 看命中数；用 <code class="c">bpftool map dump</code> 看你自己的计数 map</td>
+</tr>
+<tr>
+<td>3</td>
+<td>模式对比</td>
+<td>同一程序分别用 native / generic 加载</td>
+<td>用 <code class="c">bpftool prog show id &lt;id&gt;</code> 的 <code class="c">run_time / run_cnt</code> 算<strong>单包耗时</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>XDP_REDIRECT cpumap</td>
+<td>把包转到指定 CPU</td>
+<td><code class="c">bpftrace -e 'tracepoint:xdp:xdp_redirect { @[cpu] = count(); }'</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>AF_XDP 收包</td>
+<td>用 xdpsock 收包</td>
+<td><code class="c">xdpsock -i eth0 -r</code> 的统计输出；<code class="c">rx_dropped</code> 是否非 0</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>XDP 打时间戳</strong></td>
+<td>在 XDP 里 <code class="c">bpf_ktime_get_ns()</code> 存进 map</td>
+<td>与用户态收包时刻相减 = NIC→用户态延迟。<strong>这是 HFT 最有用的一个实验</strong></td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>验证 tcpdump 看不到 XDP_DROP</strong></td>
+<td>一边 <code class="c">tcpdump</code> 一边 <code class="c">XDP_DROP</code></td>
+<td>tcpdump <strong>什么都抓不到</strong>，但 <code class="c">ethtool -S</code> 的 rx 在涨 → 证明 XDP 在 skb 之前</td>
+</tr>
+</tbody>
+</table></div>
+<p>第 7 个实验是我推荐的<strong>第一个</strong>实验：它用最直观的方式证明了"XDP 在 skb 分配之前"，
+而这正是 XDP 全部性能收益的来源。</p>
+<h3>veth 实验环境（无需特殊硬件）</h3>
+<pre class="code" data-label="shell"><code class="c">ip link add veth0 type veth peer name veth1
+ip link set veth0 up
+ip link set veth1 up
+ip addr add 10.0.0.1/24 dev veth0
+ip addr add 10.0.0.2/24 dev veth1
+
+# veth 支持 native XDP，不用退到 generic
+xdp-loader load --mode native veth0 xdp_prog.o
+xdp-loader status          # 确认真的是 native
+
+# 从 veth1 发包测试
+ping -I veth1 10.0.0.1
+</code></pre>
+<p>⚠️ 注意：<strong>veth 上的性能数据不能代表物理网卡</strong>。veth 没有 DMA、没有真实的
+Rx ring，测出来的单包耗时没有参考价值。veth 只适合做<strong>正确性验证</strong>，性能要上物理网卡测。</p>
+<hr />
+<h2>五、观测</h2>
+<pre class="code" data-label="shell"><code class="c"># 1) 挂了什么、什么模式（第一件事）
+xdp-loader status
+bpftool net show dev eth0
+
+# 2) 程序执行了多少次、花了多少时间（算单包耗时）
+bpftool prog show id &lt;id&gt;
+#   run_cnt / run_time → 单包平均耗时
+
+# 3) 异常（XDP_ABORTED 在这里）
+bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+
+# 4) REDIRECT 成功/失败
+bpftrace -e 'tracepoint:xdp:xdp_redirect { @ok = count(); }'
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+
+# 5) 驱动层：确认包确实进了网卡（XDP_DROP 之后 rx 计数仍在涨）
+ethtool -S eth0 | grep -E &quot;rx_packets|rx_dropped&quot;
+
+# 6) page_pool 是否健康（XDP 依赖它）
+ethtool -S eth0 | grep -i &quot;rx_pp_&quot;
+#   → [chapter-04/01](../../chapter-04-page-pool/notes/01-page-pool.md)
+</code></pre>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>每次加载后第一件事是 <code class="c">xdp-loader status</code></strong>：静默降级到 generic 会让你的性能结论完全错误。</li>
+<li><strong>Generic 模式不省 sk_buff</strong>，它的挂载点在 skb 分配之后（dev.c:5373）。只有 native/offloaded 才省。</li>
+<li><strong><code class="c">XDP_ABORTED = 0</code></strong>：返回 0 不是放行，是"出错丢弃"。忘了写 return 的路径会静默吃掉所有包。用 <code class="c">xdp_exception</code> tracepoint 查。</li>
+<li><strong>veth 只能验证正确性，不能测性能</strong>：没有 DMA、没有真实 Rx ring。</li>
+<li><strong>最有用的实验是"XDP 打时间戳"</strong>：<code class="c">bpf_ktime_get_ns()</code> 存进 map，与用户态收包时刻相减，直接得到 NIC → 用户态的端到端延迟分段。</li>
+<li><strong>tcpdump 看不到 XDP_DROP 的包</strong>——这既是排障的坑，也是验证 XDP 在 skb 之前的最直观方法。</li>
+<li><strong>native XDP 要求 MTU 别太大</strong>：超过约 3500 字节时单页装不下，会挂不上或丢大包。</li>
+<li><strong>verifier 要求逐层边界检查</strong>：eth → ip → udp 每层都要先验证指针再解引用，这是写 XDP 程序最常卡住的地方。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<p>Rosen 写作时 XDP 不存在，所以整章都是新增内容。但从<strong>方法论</strong>上有一处重要差异值得点出：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 时代的网络编程</th>
+<th>XDP 时代</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写内核代码 = 写内核模块（风险高、要跟进内核版本）</td>
+<td>写 eBPF 程序，<strong>verifier 保证不会搞崩内核</strong></td>
+</tr>
+<tr>
+<td>出问题 = oops / panic</td>
+<td>出问题 = 加载被拒（<strong>编译期就拦住</strong>）</td>
+</tr>
+<tr>
+<td>包处理在协议栈里</td>
+<td>包处理在<strong>协议栈之前</strong></td>
+</tr>
+<tr>
+<td>观测靠 printk</td>
+<td>观测靠 map + tracepoint + <code class="c">bpftool</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>verifier 是 XDP 相对于内核模块的核心优势</strong>：它把"运行时崩溃"变成了"加载时拒绝"。
+代价就是你必须按它的规则写（逐层边界检查），这也是新手最不适应的一点。</p>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你加载了 XDP 程序，<code class="c">ping</code> 不通了，以为成功了。但 <code class="c">ethtool -S eth0</code> 的 rx_packets 也完全不涨。这说明什么？</summary>
+<p><b>答：</b>这不是 XDP 的功劳——<b>包根本没进到 XDP 那一层</b>。</p>
+<p>正确的现象应该是：XDP_DROP 时 <code class="c">ethtool -S</code> 的 Rx 计数<b>仍在上涨</b>（包进了网卡、被 DMA 到
+Rx ring、驱动也处理了），只是在 XDP 层被丢掉。这是"XDP 在 skb 之前"的直接证据。</p>
+<p>rx_packets 不涨，说明丢点在更前面，按这个顺序查：</p>
+<ol>
+<li><strong>物理层</strong>：链路 up 了吗？<code class="c">ip link show eth0</code></li>
+<li><strong>网线/光模块</strong>：<code class="c">ethtool eth0</code> 看 Link detected</li>
+<li><strong>MAC 过滤/混杂模式</strong>：目标 MAC 不是本机？组播没加组？</li>
+<li><strong>Rx ring 描述符为 0</strong>：<code class="c">ethtool -g eth0</code>，有些驱动设为 0 会直接不收包</li>
+<li><strong>驱动根本没起来</strong>：<code class="c">ethtool -i eth0</code> 看驱动，dmesg 看报错</li>
+</ol>
+<p><b>诊断口诀</b>：driver 计数涨 → 包进了网卡；XDP 的 map/计数涨 → 包进了 XDP；
+tcpdump 看得到 → 包建了 skb。三个层次对应三个位置，逐级排除。</p>
+</details>
+<details>
+<summary>Q2：你的 XDP 程序加载成功、verifier 通过，但所有包都被丢弃了。代码逻辑看着没问题。最可能的原因？</summary>
+<p><b>答：</b>某条路径返回了 <b>0</b>，而 0 是 <code class="c">XDP_ABORTED</code>，不是 <code class="c">XDP_PASS</code>。</p>
+<p>看枚举定义：</p>
+<pre class="code" data-label="C"><code class="c">enum xdp_action {
+    XDP_ABORTED = 0,
+    XDP_DROP,
+    XDP_PASS,
+    XDP_TX,
+    XDP_REDIRECT,
+};
+</code></pre>
+<p><code class="c">XDP_ABORTED</code> 的语义是"<b>程序出错，丢弃包并记 tracepoint</b>"。所以：</p>
+<ul>
+<li>你有一条路径忘了写 return → 返回 0 → ABORTED → 丢弃</li>
+<li>或者你显式 <code class="c">return 0</code> 想表示"放行" → 实际是"丢弃"</li>
+</ul>
+<p><b>排查</b>：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+</code></pre>
+<p>看到 ABORTED 计数在涨就坐实了。</p>
+<p><b>为什么这么设计</b>：这是 C 语言的惯例——0 通常表示"无动作/默认"，
+而 XDP 选择了"无动作 = 出错"这个语义，因为静默放行一个程序本该处理却没处理的包，
+比丢弃更危险。</p>
+<p><b>教训</b>：XDP 程序里<b>永远显式返回具名常量</b>（<code class="c">XDP_PASS</code> / <code class="c">XDP_DROP</code>），
+不要写裸数字，也不要依赖隐式返回。</p>
+</details>
+<details>
+<summary>Q3：你在本机 veth 上测得 XDP 单包耗时 200ns，很高兴。能把这个数字用到生产网卡上吗？</summary>
+<p><b>答：</b>不能。<b>veth 上的 XDP 性能数据没有参考价值</b>。</p>
+<p>原因：veth 是虚拟设备，<b>没有 DMA、没有真实的 Rx ring、不经过 page_pool 的收发循环</b>。
+它走的是完全不同的代码路径——包从 veth1 的 <code class="c">ndo_start_xmit</code> 直接送到 veth0 的接收侧，
+中间是纯软件流转。</p>
+<p>真实物理网卡的 XDP 路径包含：DMA 取描述符 → 从 page_pool 拿页 → 构造 xdp_buff
+→ 跑 BPF → 决策。这些在 veth 上要么不存在，要么成本完全不同。</p>
+<p><b>veth 适合做什么</b>：
+- ✅ 验证程序<b>逻辑正确性</b>（过滤规则对不对、动作返回对不对）
+- ✅ 验证 verifier 能过
+- ✅ 在没有特殊硬件时学习 XDP API
+- ✅ 验证"tcpdump 看不到 XDP_DROP"这类<b>机制性</b>结论</p>
+<p><b>不适合做什么</b>：
+- ❌ 任何性能数字
+- ❌ 单包延迟对比
+- ❌ PPS 容量评估</p>
+<p>要测性能，上物理网卡（哪怕是 1G 的），并用 <code class="c">bpftool prog show id &lt;id&gt;</code> 的
+<code class="c">run_time / run_cnt</code> 直接在生产环境测量。</p>
+</details>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-01">01 XDP 实操</a>
+→ 后一篇：<a href="chapter-15.html#s-02">02 AF_XDP 的四个 ring</a>
+→ 相关：<a href="chapter-15.html#s-03">03 XDP 架构全景</a> · <a href="chapter-04.html#ch-4">chapter-04 page_pool</a> · <a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a></p>
       </section>
       <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">03</div><h2>— Documentation/networking/xdp-rings-design.rst</h2></div>
+        <div class="sec-head"><div class="sec-no">02</div><h2>— AF_XDP 的四个 ring：UMEM 与无锁同步</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/xdp-rings-design.rst</code></p>
+<p><strong>内核文档：</strong> <code class="c">Documentation/networking/xdp-rings-design.rst</code>
+<strong>对应 Rosen:</strong> 无（书出版时 AF_XDP 不存在）
+<strong>内核版本:</strong> AF_XDP 4.18+，本文以 <strong>v6.6</strong> 为准，常量取自 <code class="c">include/uapi/linux/if_xdp.h</code></p>
 </blockquote>
 <h2>文档概述</h2>
-<p>XDP 环形缓冲区设计文档，描述 AF_XDP socket 的 UMEM 和 ring 数据结构。</p>
-<h2>核心内容</h2>
-<h3>四个 Ring</h3>
+<p>AF_XDP 的全部机制，本质上就是<strong>四个单生产者/单消费者（SPSC）环形队列</strong>加一块共享内存。
+搞懂这四个 ring，AF_XDP 就没有秘密了。</p>
+<blockquote>
+<p>📌 <strong>归档说明</strong>：本篇讲的是 <strong>AF_XDP</strong> 的 ring 设计，按主题应属
+<a href="chapter-06.html#ch-6">chapter-06-af-xdp</a>。因来源是 XDP 文档集，
+保留在此处，并与 chapter-06 建立双向引用。</p>
+</blockquote>
+<p>本篇与兄弟篇的分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>篇</th>
+<th>讲什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01 XDP 实操</a></td>
+<td>工具链、模式选择、加载失败排查</td>
+</tr>
+<tr>
+<td><strong>02（本篇）</strong></td>
+<td><strong>AF_XDP 的四个 ring</strong>：UMEM 布局、收发时序、无锁同步、丢包诊断</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03 XDP 架构全景</a></td>
+<td>XDP 的五个动作、verifier 约束、与 DPDK 定位</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-01">chapter-06/01</a></td>
+<td>AF_XDP 的整体使用方式</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">chapter-06/03</a></td>
+<td>UMEM 内存布局细节</td>
+</tr>
+</tbody>
+</table></div>
+<p>原笔记 1.3 KB，给了一张"四个 ring"的表格和几行要点。缺的是<strong>时序</strong>（谁先写谁后读）
+和<strong>丢包诊断</strong>（ring 相关的丢包怎么定位）。本篇补这两块。</p>
+<hr />
+<h2>一、UMEM：用户态与内核共享的那块内存</h2>
+<pre class="code" data-label="code"><code class="c">用户态地址空间                          内核（XDP / 驱动）
+┌─────────────────────────────┐
+│  UMEM（一整块连续内存）        │◄──────── 同一个物理页，双向可见
+│                             │
+│  ┌─────┬─────┬─────┬─────┐  │
+│  │chunk│chunk│chunk│ ... │  │   chunk_size 通常 2048 或 4096
+│  │  0  │  1  │  2  │     │  │
+│  └─────┴─────┴─────┴─────┘  │
+│   ↑                          │
+│   headroom（注册时指定）        │
+└─────────────────────────────┘
+</code></pre>
+<p>注册 UMEM 时告诉内核三件事：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_xdp.h */
+struct xdp_umem_reg {
+    __u64 addr;         /* 包数据区起始地址 */
+    __u64 len;          /* 包数据区长度 */
+    __u32 chunk_size;   /* 每个 chunk 的大小 */
+    __u32 headroom;     /* 每个 chunk 前面的保留空间 */
+    __u32 flags;        /* XDP_UMEM_UNALIGNED_CHUNK_FLAG */
+};
+</code></pre>
+<p>⚠️ <strong>注意 <code class="c">headroom</code> 是注册 UMEM 时逐 chunk 指定的</strong>，不是每个包临时加的。
+XDP 要求包前面有 <code class="c">XDP_PACKET_HEADROOM</code>（256 字节）的空间，AF_XDP 通过
+注册时的 <code class="c">headroom</code> 字段一次性满足。</p>
+<p><strong>ring 里传的不是指针，是偏移量（offset）</strong>——因为用户态和内核的地址空间不同，
+只有"第几个 chunk / chunk 内偏移"才是双方都能理解的。</p>
+<h3>mmap 偏移</h3>
+<p>四个 ring 都通过 mmap 映射到用户态，各自的页偏移是固定的：</p>
+<pre class="code" data-label="C"><code class="c">#define XDP_PGOFF_RX_RING             0
+#define XDP_PGOFF_TX_RING        0x80000000
+#define XDP_UMEM_PGOFF_FILL_RING    0x100000000ULL
+#define XDP_UMEM_PGOFF_COMPLETION_RING  0x180000000ULL
+</code></pre>
+<p>（实际偏移要用 <code class="c">setsockopt(XDP_MMAP_OFFSETS)</code> 查询，不要硬编码——
+<code class="c">XDP_MMAP_OFFSETS = 1</code> 就是干这个的。）</p>
+<hr />
+<h2>二、四个 ring</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>Ring</th>
 <th>生产者</th>
 <th>消费者</th>
-<th>作用</th>
+<th>传的是什么</th>
+<th>方向</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>FILL</td>
+<td><strong>FILL</strong></td>
 <td>用户态</td>
-<td>内核态</td>
-<td>用户态提供空闲 buffer</td>
+<td>内核</td>
+<td>空闲 chunk 的 offset</td>
+<td>用户态 → 内核："这些 buffer 你可以用来收包"</td>
 </tr>
 <tr>
-<td>RX</td>
-<td>内核态</td>
+<td><strong>RX</strong></td>
+<td>内核</td>
 <td>用户态</td>
-<td>内核通知收到的包</td>
+<td>收到的包的 offset + 长度</td>
+<td>内核 → 用户态："这些 buffer 里有包了"</td>
 </tr>
 <tr>
-<td>TX</td>
+<td><strong>TX</strong></td>
 <td>用户态</td>
-<td>内核态</td>
-<td>用户态提交待发送包</td>
+<td>内核</td>
+<td>待发送包的 offset + 长度</td>
+<td>用户态 → 内核："把这些发出去"</td>
 </tr>
 <tr>
-<td>COMPLETION</td>
-<td>内核态</td>
+<td><strong>COMPLETION</strong></td>
+<td>内核</td>
 <td>用户态</td>
-<td>内核通知发送完成</td>
+<td>已发送完成的 chunk offset</td>
+<td>内核 → 用户态："这些 buffer 还给你"</td>
 </tr>
 </tbody>
 </table></div>
-<h3>UMEM（共享内存）</h3>
+<p>四个都是 <strong>SPSC（单生产者单消费者）</strong> 无锁队列——这是 AF_XDP 快的关键之一：
+<strong>没有锁、没有原子操作的竞争</strong>。</p>
+<h3>⚠️ 关键理解：chunk 的所有权只在 ring 之间流转</h3>
+<pre class="code" data-label="code"><code class="c">                    ┌──────────────┐
+                    │   空闲池      │
+                    └──────┬───────┘
+                           │ 用户态把空闲 chunk 放进 FILL
+                           v
+  用户态 ──FILL──&gt; 内核持有（等着收包）
+                           │ 网卡 DMA 写入数据
+                           v
+  用户态 &lt;──RX─── 内核交还（chunk 里有数据了）
+                           │ 用户态处理完
+                           v
+                    ┌──────────────┐
+                    │  放回空闲池    │  ← 或直接再塞进 FILL 复用
+                    └──────────────┘
+</code></pre>
+<p><strong>同一个 chunk 在任何时刻只属于一方</strong>。这就是为什么不需要锁，也为什么
+<strong>你不能提前把同一个 chunk 塞两次进 FILL</strong>（会造成两个包写到同一块内存）。</p>
+<hr />
+<h2>三、收包完整时序</h2>
+<pre class="code" data-label="code"><code class="c">【初始化】
+  用户态：mmap 四个 ring + UMEM
+        把 N 个空闲 chunk 的 offset 批量塞进 FILL ring
+        更新 FILL-&gt;producer（smp_wmb 之后）
+
+【收包循环】
+  ① 内核（驱动/XDP）：网卡 DMA 把包写进某个 chunk
+       ↓
+  ② 内核：从 FILL ring 取出一个 chunk offset
+       - FILL 空了 → rx_fill_ring_empty_descs++，包被丢弃 ★
+       ↓
+  ③ 内核：把「offset + 包长度」写进 RX ring
+       更新 RX-&gt;producer（smp_wmb 保证数据先落地、指针后更新）
+       ↓
+  ④ 用户态：读 RX-&gt;producer（smp_rmb），发现有新条目
+       从 RX ring 取出 offset + 长度
+       直接读 UMEM[offset] —— 零拷贝，包就在这里
+       ↓
+  ⑤ 用户态：处理完，更新 RX-&gt;consumer
+       ↓
+  ⑥ 用户态：把这个 chunk 重新塞进 FILL ring（或攒一批再塞）
+       更新 FILL-&gt;producer
+       ↓
+     回到 ①
+</code></pre>
+<h3>内存序：为什么必须有 <code class="c">smp_wmb()</code> / <code class="c">smp_rmb()</code></h3>
+<p>生产者写 ring 条目的顺序是：<strong>先写数据，再更新 producer 指针</strong>。
+如果没有写屏障，CPU 或编译器可能把这两步重排——消费者看到 producer 更新了，
+但读到的数据还是旧的。</p>
+<pre class="code" data-label="C"><code class="c">/* 生产者 */
+ring-&gt;entries[idx] = data;      /* ① 写数据 */
+smp_wmb();                      /* ② 屏障：保证 ① 对消费者可见 */
+WRITE_ONCE(ring-&gt;producer, idx+1);  /* ③ 更新指针 */
+
+/* 消费者 */
+idx = READ_ONCE(ring-&gt;producer);    /* ① 读指针 */
+smp_rmb();                      /* ② 屏障：保证看到 ③ 时也能看到 ① */
+data = ring-&gt;entries[idx];      /* ③ 读数据 */
+</code></pre>
+<p><strong>对 HFT 的含义</strong>：这两条屏障是<strong>每包必经</strong>的开销。它们不是锁（x86 上 <code class="c">smp_wmb()</code>
+基本是编译器屏障，不产生指令），但<strong>在弱内存序架构上（ARM）是真指令</strong>。
+这意味着——<strong>在 ARM 平台（如树莓派 5、AWS Graviton）上，AF_XDP 的 per-packet
+同步开销比 x86 更高</strong>。这是选型时值得考虑的一点，也是 eBPF 学习从 x86 迁到
+ARM 时最容易忽略的差异。</p>
+<hr />
+<h2>四、ring 大小与丢包</h2>
+<p>ring 大小由应用通过 setsockopt 指定（<code class="c">XDP_RX_RING</code> / <code class="c">XDP_TX_RING</code> /
+<code class="c">XDP_UMEM_FILL_RING</code> / <code class="c">XDP_UMEM_COMPLETION_RING</code>），<strong>不是内核常量</strong>。</p>
+<p><strong>核心原则</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Ring</th>
+<th>该多大</th>
+<th>太小的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FILL</strong></td>
+<td>≥ RX ring 大小 + 在用户态处理中的包数</td>
+<td><strong>★ 最主要的丢包原因</strong>：<code class="c">rx_fill_ring_empty_descs</code></td>
+</tr>
+<tr>
+<td><strong>RX</strong></td>
+<td>能吸收突发（行情开盘那一瞬）</td>
+<td><code class="c">rx_ring_full</code></td>
+</tr>
+<tr>
+<td><strong>TX</strong></td>
+<td>≥ 单次突发发送量</td>
+<td><code class="c">tx_ring_empty_descs</code>（发送侧）</td>
+</tr>
+<tr>
+<td><strong>COMPLETION</strong></td>
+<td>≥ TX ring 大小</td>
+<td>已完成 buffer 回收不及时</td>
+</tr>
+</tbody>
+</table></div>
+<h3>⚠️ FILL ring 是 AF_XDP 最常见的丢包点</h3>
+<p>原因很直白：<strong>内核要收包时，FILL ring 里必须有空闲 chunk</strong>。
+如果你的用户态程序处理慢了（或批处理粒度太大，攒太多才回塞 FILL），
+内核就会因为"没有 buffer 可用"而丢包。</p>
+<p><strong>这是 AF_XDP 与 DPDK 最不一样的地方</strong>：
+- DPDK 的 mbuf 池由 PMD 自己管，收包时如果池空了，包就留在网卡 ring 里等下一轮
+- AF_XDP 的 FILL ring 空了，包<strong>直接被丢弃</strong>（<code class="c">rx_fill_ring_empty_descs++</code>）</p>
+<p>所以 AF_XDP 调优的第一条是：<strong>FILL ring 要足够大，且回塞要及时</strong>。
+常见做法是攒一批（如 64 个）再回塞，平衡系统调用/更新开销与丢包风险——
+这个批大小直接决定了"最多能容忍多少个包的处理延迟"。</p>
+<hr />
+<h2>五、<code class="c">NEED_WAKEUP</code> 与忙轮询</h2>
+<pre class="code" data-label="C"><code class="c">#define XDP_USE_NEED_WAKEUP (1 &lt;&lt; 3)
+#define XDP_RING_NEED_WAKEUP (1 &lt;&lt; 0)
+</code></pre>
+<p>默认情况下，AF_XDP 的收包靠<strong>中断唤醒</strong>——每来一个包（或每批）触发一次软中断，
+把包交给用户态。这对延迟不友好。</p>
+<p>开启 <code class="c">XDP_USE_NEED_WAKEUP</code> 后语义变成：</p>
 <ul>
-<li>用户态分配的大块连续内存</li>
-<li>切分为固定大小的 chunk（通常 4KB）</li>
-<li>通过偏移量（offset）在 ring 中传递</li>
-<li>零拷贝模式下 page_pool 的 page 映射到 UMEM</li>
+<li>内核<strong>不再自动唤醒</strong>用户态进程</li>
+<li>如果内核需要用户态介入（比如 FILL ring 需要补充、TX ring 需要 kick），
+  会在 ring 的 flags 里置 <code class="c">XDP_RING_NEED_WAKEUP</code></li>
+<li><strong>用户态自己检测这个标志并决定何时 kick</strong>——通常配合<strong>忙轮询</strong></li>
 </ul>
-<h3>Ring 同步</h3>
-<ul>
-<li>生产者写 <code class="c">producer</code> 指针，消费者读</li>
-<li>消费者写 <code class="c">consumer</code> 指针，生产者读</li>
-<li>使用 <code class="c">smp_wmb()</code> / <code class="c">smp_rmb()</code> 保证内存序</li>
-<li>用户态和内核态共享同一块映射内存</li>
-</ul>
+<pre class="code" data-label="C"><code class="c">/* 伪代码 */
+if (xsk_ring_prod__needs_wakeup(&amp;fill_ring))
+    poll(fds, ...);        /* 或者 sendto() 触发一次 kick */
+</code></pre>
+<p><strong>对 HFT</strong>：开启 <code class="c">XDP_USE_NEED_WAKEUP</code> + 用户态忙轮询，是 AF_XDP 达到
+接近 DPDK 延迟的<strong>必要条件</strong>。不开的话，你的延迟里会叠加中断唤醒的抖动。</p>
+<p>⚠️ 代价是<strong>独占一个 CPU 核</strong>。这和 DPDK 的 busy poll 一样，是"用核换延迟"。</p>
+<hr />
+<h2>六、零拷贝 vs copy 模式：怎么确认你在哪种</h2>
+<pre class="code" data-label="C"><code class="c">#define XDP_SHARED_UMEM (1 &lt;&lt; 0)
+#define XDP_COPY    (1 &lt;&lt; 1)      /* Force copy-mode */
+#define XDP_ZEROCOPY    (1 &lt;&lt; 2)      /* Force zero-copy mode */
+#define XDP_USE_NEED_WAKEUP (1 &lt;&lt; 3)
+#define XDP_USE_SG  (1 &lt;&lt; 4)      /* multi-buffer（大于一个 chunk 的包） */
+</code></pre>
+<p><strong>不指定时内核自动选</strong>：驱动支持就零拷贝，不支持就静默降级到 copy 模式。
+⚠️ 和 XDP 的 native/generic 降级一样，<strong>这个静默降级会毁掉你的性能结论</strong>。</p>
+<p>查询方法（v6.6 有专门的接口）：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_xdp.h */
+#define XDP_OPTIONS     8
+#define XDP_OPTIONS_ZEROCOPY (1 &lt;&lt; 0)
+
+struct xdp_options {
+    __u32 flags;
+};
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 命令行看（xdp-tools）
+xdp-loader status          # 会显示 AF_XDP socket 的模式
+</code></pre>
+<p><strong>实践建议：显式指定 <code class="c">XDP_ZEROCOPY</code></strong>。这样如果不支持，你会<strong>直接得到错误</strong>，
+而不是静默地跑在一个慢得多的模式上还以为很快。</p>
+<h3>copy 模式慢在哪</h3>
+<p>copy 模式下，内核把包<strong>复制</strong>进 UMEM 的 chunk，而不是让网卡直接 DMA 到那里。
+于是：
+- 每包多一次内存拷贝（按包长，几百到几千字节）
+- 更重要的是：失去了"NIC DMA 直达用户态内存"这个核心优势</p>
+<p><strong>对 HFT 的结论</strong>：<strong>copy 模式的 AF_XDP 基本没有意义</strong>——它相比普通
+<code class="c">AF_PACKET</code>/<code class="c">recvmmsg</code> 的收益有限，却要你重写整个收包逻辑。
+要么上零拷贝，要么干脆用内核协议栈。</p>
+<hr />
+<h2>七、观测：<code class="c">xdp_statistics</code> 的六个计数器（诊断核心）</h2>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_xdp.h */
+struct xdp_statistics {
+    __u64 rx_dropped;                  /* 其他原因丢弃 */
+    __u64 rx_invalid_descs;            /* 描述符无效 */
+    __u64 tx_invalid_descs;            /* 描述符无效 */
+    __u64 rx_ring_full;                /* RX ring 满 */
+    __u64 rx_fill_ring_empty_descs;    /* FILL ring 空，取不到 buffer ★ */
+    __u64 tx_ring_empty_descs;         /* TX ring 空 */
+};
+</code></pre>
+<p>通过 <code class="c">setsockopt(XDP_STATISTICS)</code> 读取。<strong>这六个数字就是 AF_XDP 的体检表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>计数器</th>
+<th>含义</th>
+<th>处置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">rx_fill_ring_empty_descs</code></strong></td>
+<td><strong>FILL ring 空，内核没 buffer 可用</strong> ★</td>
+<td><strong>最主要的问题</strong>：增大 FILL ring、减小回塞批次、加快用户态处理</td>
+</tr>
+<tr>
+<td><code class="c">rx_ring_full</code></td>
+<td>RX ring 满，用户态取不过来</td>
+<td>增大 RX ring、加快消费</td>
+</tr>
+<tr>
+<td><code class="c">rx_dropped</code></td>
+<td>其他原因（如 XDP 程序 DROP、驱动丢）</td>
+<td>看 XDP 程序逻辑与 <code class="c">ethtool -S</code></td>
+</tr>
+<tr>
+<td><code class="c">tx_ring_empty_descs</code></td>
+<td>TX ring 空（发送侧）</td>
+<td>通常无害，只是没包可发</td>
+</tr>
+<tr>
+<td><code class="c">rx_invalid_descs</code> / <code class="c">tx_invalid_descs</code></td>
+<td>描述符非法</td>
+<td><strong>程序 bug</strong>：offset 越界、重复提交同一 chunk</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最后一行要特别注意</strong>：<code class="c">invalid_descs</code> 增长几乎一定是<strong>你的代码有 bug</strong>，
+最常见的是<strong>把同一个 chunk 提交了两次</strong>（所有权被破坏，见第二节）。</p>
+<pre class="code" data-label="shell"><code class="c"># xdp-tools 的 xdpsock 会直接打印这些
+xdpsock -i eth0 -r -N
+
+# 自己读：setsockopt(XDP_STATISTICS)
+</code></pre>
+<p>⚠️ 注意 <code class="c">XDP_PKT_HEADROOM</code>：如果你自己写 AF_XDP 程序，访问包数据时要跳过
+注册 UMEM 时指定的 <code class="c">headroom</code>，否则读到的位置不对。</p>
+<hr />
 <h2>HFT 要点</h2>
 <ul>
-<li>FILL ring 需要预填充足够 buffer，否则收包丢包</li>
-<li>TX + COMPLETION 用于双向零拷贝（行情接收 + 交易发送）</li>
-<li>ring 大小影响丢包率：太小在高 PPS 下溢出</li>
+<li><strong>四个 ring 都是 SPSC 无锁队列</strong>——这是 AF_XDP 快的根本，但也意味着<strong>单 socket 不能多线程并发收包</strong>（要做多队列 + 多 socket）。</li>
+<li><strong><code class="c">rx_fill_ring_empty_descs</code> 是第一诊断指标</strong>：它涨说明你的用户态补充 buffer 跟不上，这是 AF_XDP 最主要的丢包来源。</li>
+<li><strong>FILL ring 空了包就直接丢</strong>，不像 DPDK 会留在网卡 ring 里等下一轮。这是 AF_XDP 与 DPDK 的关键行为差异。</li>
+<li><strong>必须显式指定 <code class="c">XDP_ZEROCOPY</code></strong>：不指定会静默降级到 copy 模式，毁掉你的性能结论。<strong>copy 模式的 AF_XDP 对 HFT 基本没意义</strong>。</li>
+<li><strong><code class="c">XDP_USE_NEED_WAKEUP</code> + 忙轮询是低延迟的必要条件</strong>，代价是独占一个核。</li>
+<li><strong>ARM 上的每包同步开销比 x86 高</strong>：<code class="c">smp_wmb()</code>/<code class="c">smp_rmb()</code> 在弱内存序架构上是真指令。选型和跨平台移植时要考虑。</li>
+<li><strong><code class="c">invalid_descs</code> 增长 = 你的代码有 bug</strong>，最可能是把同一个 chunk 提交了两次。</li>
+<li><strong>ring 里传的是 offset 不是指针</strong>——用户态和内核地址空间不同，只有 chunk 偏移是双方都能理解的。</li>
 </ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<p>Rosen 写作时 AF_XDP 不存在。但从"内核-用户态数据传递"的角度有一条延续：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 时代的做法</th>
+<th>AF_XDP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">copy_to_user()</code> 把包从内核拷到用户态</td>
+<td><strong>零拷贝：NIC 直接 DMA 到用户态 UMEM</strong></td>
+</tr>
+<tr>
+<td>每包一次系统调用 + 两次特权级切换</td>
+<td>批量操作 ring，<strong>可以完全不进内核</strong>（忙轮询时）</td>
+</tr>
+<tr>
+<td>socket 接收队列由内核管理</td>
+<td><strong>FILL ring 由用户态管理</strong>（责任转移）</td>
+</tr>
+<tr>
+<td>内核决定丢弃时机</td>
+<td><strong>用户态负责补 buffer</strong>，补不上就丢</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最重要的观念转变</strong>：AF_XDP 把"缓冲区管理"的责任从内核<strong>转移到了用户态</strong>。
+这带来了零拷贝，也带来了新的失效模式——<strong>你的程序慢了，内核就得丢包</strong>。
+DPDK 也是这个模型，但 DPDK 池空时包留在网卡里；AF_XDP 是直接丢。</p>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：AF_XDP 收包在高负载下丢包严重，<code class="c">xdp_statistics</code> 里 <code class="c">rx_fill_ring_empty_descs</code> 一直涨，但 <code class="c">rx_ring_full</code> 是 0。怎么调？</summary>
+<p><b>答：</b>这个组合的含义很明确：<b>不是用户态取包慢，是内核没 buffer 可用</b>。</p>
+<ul>
+<li><code class="c">rx_ring_full = 0</code> → RX ring 没满，用户态消费得挺快</li>
+<li><code class="c">rx_fill_ring_empty_descs</code> 涨 → 内核想收包时，FILL ring 里<b>没有空闲 chunk</b></li>
+</ul>
+<p>问题出在<b>回塞 FILL 的节奏</b>上。常见原因：</p>
+<ol>
+<li><strong>批处理粒度太大</strong>。你可能攒了 256 个包处理完才回塞一次 FILL。
+   这期间内核最多只能用 FILL ring 里剩余的 chunk。把批次调小（如 64）。</li>
+<li><strong>FILL ring 太小</strong>。至少要能覆盖"RX ring 深度 + 用户态在处理的包数"。
+   经验：FILL ring ≥ 2 × RX ring。</li>
+<li><strong>处理逻辑里有阻塞</strong>。某个包触发了慢路径（日志、锁、系统调用），
+   整批 chunk 的回塞都被推迟。</li>
+</ol>
+<p><b>调完怎么验证</b>：盯着 <code class="c">rx_fill_ring_empty_descs</code>，目标是<b>归零</b>。
+注意丢包往往是突发性的（行情开盘瞬间），所以要看峰值而不是平均值。</p>
+<p><b>为什么这和 DPDK 不同</b>：DPDK 的 mempool 空了，包会留在网卡的 Rx ring 里
+等下一轮 <code class="c">rx_burst</code>，表现为延迟升高而非丢包。AF_XDP 是<b>直接丢</b>——
+FILL ring 空 = 内核没有可用的 DMA 目标 = 包被丢弃。这个行为差异在容量规划时要算进去。</p>
+</details>
+<details>
+<summary>Q2：你没指定 <code class="c">XDP_ZEROCOPY</code> 也没指定 <code class="c">XDP_COPY</code>，程序跑起来一切正常。这有什么问题？</summary>
+<p><b>答：</b>问题在于<b>你不知道自己跑在哪个模式</b>——不指定时内核自动选择，
+驱动不支持就<b>静默降级到 copy 模式</b>。</p>
+<p>这和 XDP 的 native/generic 降级是同一类坑：功能完全正常，性能差一个量级，
+而你会基于错误的模式得出结论（"AF_XDP 也不过如此"）。</p>
+<p>copy 模式下，内核要把每个包<b>复制</b>进 UMEM 的 chunk，而不是让网卡 DMA 直接写进去。
+于是：
+- 每包多一次内存拷贝（几百到几千字节，按包长）
+- 失去"NIC DMA 直达用户态内存"这个 AF_XDP 的核心优势</p>
+<p><b>正确做法：显式指定</b></p>
+<pre class="code" data-label="C"><code class="c">int opt = XDP_ZEROCOPY;
+setsockopt(xsk_fd, SOL_XDP, XDP_ZEROCOPY, &amp;opt, sizeof(opt));
+</code></pre>
+<p>或者用 <code class="c">XDP_OPTIONS</code> 查询后确认：</p>
+<pre class="code" data-label="C"><code class="c">struct xdp_options opts = {};
+socklen_t len = sizeof(opts);
+getsockopt(xsk_fd, SOL_XDP, XDP_OPTIONS, &amp;opts, &amp;len);
+if (opts.flags &amp; XDP_OPTIONS_ZEROCOPY)
+    /* 确实是零拷贝 */;
+</code></pre>
+<p>显式指定的好处是<b>如果不支持就直接报错</b>，而不是静默地慢。</p>
+<p><b>对 HFT 的补充结论</b>：copy 模式的 AF_XDP 基本没有意义——相比
+<code class="c">recvmmsg</code> + 内核协议栈收益有限，却要你重写整个收包逻辑。
+<b>要么上零拷贝，要么干脆用内核协议栈。</b></p>
+</details>
+<details>
+<summary>Q3：你把 AF_XDP 程序从 x86 服务器移植到 ARM（如树莓派 5 / Graviton），PPS 掉了不少，但 CPU 占用看起来差不多。可能是什么原因？</summary>
+<p><b>答：</b>先怀疑 <b>ring 同步的内存屏障开销</b>。</p>
+<p>AF_XDP 的四个 ring 靠 <code class="c">smp_wmb()</code> / <code class="c">smp_rmb()</code> 保证生产者-消费者的可见性顺序：</p>
+<pre class="code" data-label="C"><code class="c">/* 生产者 */
+ring-&gt;entries[idx] = data;
+smp_wmb();                          /* ← 这里 */
+WRITE_ONCE(ring-&gt;producer, idx+1);
+</code></pre>
+<p>在 <strong>x86（TSO，强内存序）</strong> 上，<code class="c">smp_wmb()</code> 基本只是<b>编译器屏障</b>，
+不产生实际的 CPU 指令——store-store 本来就不会重排。</p>
+<p>在 <strong>ARM（弱内存序）</strong> 上，<code class="c">smp_wmb()</code> 会展开成真正的屏障指令（如 <code class="c">dmb ishst</code>），
+<b>每包都要执行两次</b>（生产者写、消费者读各一处）。</p>
+<p>所以：
+- 每包多几条屏障指令 → PPS 上限下降
+- 但这是"执行了更多指令"而非"占用更多时间片" → CPU 占用率看起来差不多</p>
+<p><b>验证</b>：</p>
+<pre class="code" data-label="shell"><code class="c"># 对比两边的每包耗时（用 bpftool 或自己打时间戳）
+# 如果 ARM 上每包多出几十 ns，且和屏障指令数吻合，就坐实了
+</code></pre>
+<p><b>处置</b>：
+- 增大批处理粒度（一次处理更多包，摊薄每包的屏障开销）
+- 检查内核是否用了最优的屏障实现（ARM64 上 <code class="c">dmb ishst</code> vs <code class="c">dmb ish</code> 差别不小）
+- 选型时就把这一点算进去——ARM 上的 AF_XDP 绝对性能确实不如 x86</p>
+<p><b>延伸</b>：这个差异不只影响 AF_XDP，也影响所有用 lockless ring 的机制
+（io_uring、DPDK 的 rte_ring 同理）。在 ARM 上做低延迟，
+要把"每包的原子/屏障操作"当作一项显式成本来算。</p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-01">01 XDP 实操</a>
+→ 后一篇：<a href="chapter-15.html#s-03">03 XDP 架构全景</a>
+→ 相关：<a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a> · <a href="chapter-07.html#ch-7">chapter-07 XDP vs DPDK</a></p>
       </section>
       <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">05</div><h2>— XDP 架构与 use case 全景</h2></div>
+        <div class="sec-head"><div class="sec-no">03</div><h2>— XDP 架构全景：五个动作、verifier 边界与定位</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> 无（书出版时 XDP 不存在）
-<strong>内核版本:</strong> XDP hook 4.8+；AF_XDP 4.18+；XDP multi-attach 5.1+</p>
+<strong>内核版本:</strong> XDP hook 4.8+；AF_XDP 4.18+；本文以 <strong>v6.6</strong> 为准
+<strong>源码:</strong> <code class="c">include/uapi/linux/bpf.h</code>、<code class="c">include/uapi/linux/if_link.h</code>、<code class="c">net/core/dev.c</code></p>
 </blockquote>
-<h2>XDP 是什么</h2>
-<p>XDP（eXpress Data Path）是内核网络栈的<strong>最早数据路径 hook</strong>：
-- 在驱动层、sk_buff 分配之前执行
-- 以 eBPF 程序形式运行（JIT 编译为原生指令）
-- 可以查看/修改包内容、丢弃、重定向</p>
-<h2>四种 XDP 模式</h2>
+<h2>文档概述</h2>
+<p>本篇是 chapter-05 的<strong>总纲</strong>：XDP 在内核里到底挂在哪、能做什么、不能做什么。</p>
+<p>本篇与兄弟篇的分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>篇</th>
+<th>讲什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01 XDP 实操</a></td>
+<td>工具链、模式选择、加载失败排查、实验</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02 AF_XDP 四 ring</a></td>
+<td>AF_XDP 的 UMEM 与无锁同步</td>
+</tr>
+<tr>
+<td><strong>03（本篇）</strong></td>
+<td><strong>架构总纲</strong>：五个动作、四种模式、<strong>verifier 能力边界</strong>、use case、与 DPDK 定位</td>
+</tr>
+<tr>
+<td><a href="chapter-07.html#ch-7">chapter-07</a></td>
+<td>XDP vs DPDK 的<strong>详细对比</strong>（本篇只给结论表）</td>
+</tr>
+</tbody>
+</table></div>
+<p>原笔记 2.5 KB，讲了"XDP 是什么 + 四种模式 + 一张 use case 表 + XDP vs DPDK"。
+本篇保留这些并补上两块原笔记完全没有的内容：</p>
+<ol>
+<li><strong>Generic 模式什么时候会退化成"拷贝"</strong>（源码里有三个明确条件）</li>
+<li><strong>verifier 的能力边界</strong>——XDP 程序能做什么、不能做什么</li>
+</ol>
+<hr />
+<h2>一、XDP 的精确定位</h2>
+<p>XDP 的卖点常被说成"快"，但<strong>精确的定位</strong>是：</p>
+<blockquote>
+<p><strong>在 <code class="c">sk_buff</code> 分配之前、在协议栈看到包之前，给一个可编程的决策点。</strong></p>
+</blockquote>
+<pre class="code" data-label="code"><code class="c">驱动 Rx poll
+  ├─ 从 Rx ring 取描述符
+  ├─ 拿 page_pool 的页
+  ├─ 构造 xdp_buff（栈上，8 个字段，零分配）
+  ├─ ★ 跑 XDP 程序  ← 就在这里
+  │    返回动作决定包的一生
+  ├─ XDP_PASS → napi_build_skb()（skb 在这里才诞生）
+  └─ 其他动作 → skb 从未存在
+</code></pre>
+<p><strong>这个位置带来两个后果</strong>，是理解 XDP 全部价值的钥匙：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>后果</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>省掉 skb 分配</strong></td>
+<td>100–200 ns，高 PPS 下是实打实的</td>
+</tr>
+<tr>
+<td><strong>省掉整条协议栈</strong></td>
+<td>GRO、ptype_all、tc ingress、Netfilter、路由、L4、socket 队列——<strong>全省</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>注意"省"的顺序</strong>：<code class="c">XDP_DROP</code> 不是"做了某件事很快"，而是<strong>什么都没做</strong>。
+它连 skb 都没生成，于是也没有"释放 skb"这一步——页面直接从 XDP 层还回 page_pool。</p>
+<h3>⚠️ 只有 native/offloaded 才在这个位置</h3>
+<p><strong>Generic 模式不是</strong>。它的挂载点在 <code class="c">__netif_receive_skb_core()</code>（dev.c:5373）里，
+那时 skb 早就分配好了。Generic 模式的价值是<strong>功能验证</strong>，不是性能。</p>
+<p>不过有一个一致的推论：generic XDP 在 <code class="c">ptype_all</code>（dev.c:5394）<strong>之前</strong>，
+所以 generic 模式的 <code class="c">XDP_DROP</code> 包 <strong>tcpdump 也看不到</strong>——与 native 模式行为一致。</p>
+<hr />
+<h2>二、五个动作（<code class="c">enum xdp_action</code>）</h2>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/bpf.h */
+enum xdp_action {
+    XDP_ABORTED = 0,
+    XDP_DROP,
+    XDP_PASS,
+    XDP_TX,
+    XDP_REDIRECT,
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>动作</th>
+<th>值</th>
+<th>语义</th>
+<th>包去哪了</th>
+<th>页面归属</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">XDP_ABORTED</code></strong></td>
+<td><strong>0</strong></td>
+<td><strong>程序出错</strong>，丢弃并记 tracepoint</td>
+<td>丢弃</td>
+<td>回收给 page_pool</td>
+</tr>
+<tr>
+<td><code class="c">XDP_DROP</code></td>
+<td>1</td>
+<td>主动丢弃</td>
+<td>丢弃</td>
+<td>回收给 page_pool</td>
+</tr>
+<tr>
+<td><code class="c">XDP_PASS</code></td>
+<td>2</td>
+<td>放行，交给协议栈</td>
+<td>建 skb → 协议栈</td>
+<td>页变成 skb 数据区（零拷贝）</td>
+</tr>
+<tr>
+<td><code class="c">XDP_TX</code></td>
+<td>3</td>
+<td>原路反弹（从收包的网口发回去）</td>
+<td>发回同一网口</td>
+<td>复用，发完回收</td>
+</tr>
+<tr>
+<td><code class="c">XDP_REDIRECT</code></td>
+<td>4</td>
+<td>重定向到别处</td>
+<td>AF_XDP / cpumap / devmap / veth</td>
+<td>随 <code class="c">xdp_frame</code> 走</td>
+</tr>
+</tbody>
+</table></div>
+<h3>⚠️ 陷阱：<code class="c">XDP_ABORTED = 0</code></h3>
+<p><strong>返回 0 不是"放行"，是"出错丢弃"</strong>。</p>
+<p>C 语言里 0 通常表示"无动作/成功"，但 XDP 选择了相反的语义。所以：</p>
+<ul>
+<li>忘了写 return 的路径 → 返回 0 → <code class="c">XDP_ABORTED</code> → <strong>静默吃掉所有包</strong></li>
+<li>显式 <code class="c">return 0</code> 想表示放行 → 实际是丢弃</li>
+</ul>
+<p>这个坑的隐蔽之处在于：<strong>verifier 通过、程序加载成功、看起来一切正常，
+只是所有包都不见了。</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 检查
+bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+#   ABORTED 计数在涨 → 有路径返回了 0
+</code></pre>
+<p>→ 详见 <a href="chapter-15.html#s-01">01 篇 Q2</a>。</p>
+<h3><code class="c">XDP_REDIRECT</code> 的四个目标</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标</th>
+<th>用途</th>
+<th>HFT 相关</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AF_XDP socket</strong></td>
+<td>送到用户态（零拷贝）</td>
+<td>★ 内核旁路收行情</td>
+</tr>
+<tr>
+<td><strong>cpumap</strong></td>
+<td>转到另一个 CPU 上处理</td>
+<td>⚠️ 跨核有代价，见 <a href="chapter-13.html#s-04">chapter-03/04</a></td>
+</tr>
+<tr>
+<td><strong>devmap</strong></td>
+<td>转发到另一个网口</td>
+<td>软件交换机</td>
+</tr>
+<tr>
+<td><strong>veth / 其他设备</strong></td>
+<td>容器网络</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong><code class="c">XDP_REDIRECT</code> 时需要把 <code class="c">xdp_buff</code> 转成 <code class="c">xdp_frame</code></strong>，而
+<code class="c">xdp_frame</code> <strong>就写在包自己的 headroom 里</strong>（<code class="c">xdp_convert_buff_to_frame()</code>）。
+这也是 XDP 强制要求 headroom 的硬性理由。
+→ 详见 <a href="chapter-13.html#s-04">chapter-03/04</a>。</p>
+<hr />
+<h2>三、四种模式与 <code class="c">XDP_FLAGS</code></h2>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_link.h:1295 */
+#define XDP_FLAGS_UPDATE_IF_NOEXIST (1U &lt;&lt; 0)
+#define XDP_FLAGS_SKB_MODE      (1U &lt;&lt; 1)
+#define XDP_FLAGS_DRV_MODE      (1U &lt;&lt; 2)
+#define XDP_FLAGS_HW_MODE       (1U &lt;&lt; 3)
+#define XDP_FLAGS_REPLACE       (1U &lt;&lt; 4)
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>模式</th>
+<th>flag</th>
 <th>挂载点</th>
-<th>硬件要求</th>
-<th>性能</th>
+<th>skb 分配了吗</th>
+<th>何时用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Native XDP</td>
-<td>驱动层（网卡驱动支持）</td>
-<td>驱动需实现 XDP hook</td>
-<td>最高</td>
+<td><strong>Native (DRV)</strong></td>
+<td><code class="c">DRV_MODE</code></td>
+<td>驱动 Rx poll</td>
+<td>❌</td>
+<td><strong>默认目标</strong></td>
 </tr>
 <tr>
-<td>Offloaded XDP</td>
-<td>网卡硬件（SmartNIC）</td>
-<td>网卡支持 eBPF 卸载</td>
-<td>极致（不占 CPU）</td>
+<td><strong>Generic (SKB)</strong></td>
+<td><code class="c">SKB_MODE</code></td>
+<td><code class="c">__netif_receive_skb_core()</code> dev.c:5373</td>
+<td>✅ 已分配</td>
+<td>驱动不支持时；功能验证</td>
 </tr>
 <tr>
-<td>Generic XDP</td>
-<td>协议栈入口（sk_buff 之后）</td>
-<td>无</td>
-<td>最低（仍分配 sk_buff）</td>
+<td><strong>Offloaded (HW)</strong></td>
+<td><code class="c">HW_MODE</code></td>
+<td>网卡硬件</td>
+<td>❌ 不进主机</td>
+<td>仅少数 SmartNIC</td>
 </tr>
 <tr>
-<td>SKB-mode XDP</td>
-<td>类似 Generic</td>
-<td>无</td>
-<td>低</td>
+<td>—</td>
+<td><code class="c">UPDATE_IF_NOEXIST</code></td>
+<td>仅在没有程序时才挂载</td>
+<td>—</td>
+<td>防止覆盖</td>
+</tr>
+<tr>
+<td>—</td>
+<td><code class="c">REPLACE</code></td>
+<td>替换已挂载的程序</td>
+<td>—</td>
+<td>热更新（配合 <code class="c">XDP_FLAGS_MODES</code> 指定模式）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>XDP 程序类型</h2>
-<pre class="code" data-label="C"><code class="c">// 最简 XDP 程序：丢弃所有包
-SEC(&quot;xdp&quot;)
-int xdp_drop_all(struct xdp_md *ctx) {
-    return XDP_DROP;
-}
+<h3>⚠️ Generic 模式的三个"补拷"条件（源码原文）</h3>
+<p>这是本篇最技术性的一个点。Generic 模式下包已经是 skb 了，而 XDP 程序
+<strong>要求包是线性的、且有足够 headroom</strong>。内核源码（dev.c:4950-4965）里写着：</p>
+<pre class="code" data-label="C"><code class="c">    if (skb_is_redirected(skb))
+        return XDP_PASS;
 
-// 检查目标端口，丢弃非行情端口
-SEC(&quot;xdp&quot;)
-int xdp_filter(struct xdp_md *ctx) {
-    void *data = (void *)(long)ctx-&gt;data;
-    void *data_end = (void *)(long)ctx-&gt;data_end;
-    struct ethhdr *eth = data;
-    if ((void*)(eth+1) &gt; data_end) return XDP_DROP;
-    if (eth-&gt;h_proto != htons(ETH_P_IP)) return XDP_PASS;
-    // ... 检查 IP/TCP/UDP 头
-    return XDP_PASS;
-}
+    /* XDP packets must be linear and must have sufficient headroom
+     * of XDP_PACKET_HEADROOM bytes. This is the guarantee that also
+     * native XDP provides, thus we need to do it here as well.
+     */
+    if (skb_cloned(skb) || skb_is_nonlinear(skb) ||
+        skb_headroom(skb) &lt; XDP_PACKET_HEADROOM) {
+        int hroom = XDP_PACKET_HEADROOM - skb_headroom(skb);
+        int troom = skb-&gt;tail + skb-&gt;data_len - skb-&gt;end;
+        ...
+        if (pskb_expand_head(skb, ...))
 </code></pre>
-<h2>XDP use case 全景</h2>
+<p>翻成判定表——<strong>满足任一条件，generic XDP 就会先拷贝/线性化一份再跑程序</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>什么时候会命中</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">skb_cloned(skb)</code></td>
+<td>包被克隆过（<strong>tcpdump 正在抓包时几乎必然命中</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">skb_is_nonlinear(skb)</code></td>
+<td>有非线性区（GRO 合并后、大包分片）</td>
+</tr>
+<tr>
+<td><code class="c">skb_headroom(skb) &lt; XDP_PACKET_HEADROOM</code></td>
+<td>headroom 不足 256 字节</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这一条解释了一个很反直觉的现象</strong>：generic 模式下，<strong>开着 tcpdump 反而更慢</strong>——
+因为 tcpdump 让 skb 被 clone，于是每个包都要多一次 <code class="c">pskb_expand_head()</code> 拷贝。</p>
+<p>（对照 <a href="chapter-15.html#s-02">chapter-04/02</a> 的陷阱 2：
+tcpdump 会抬高 refcnt 让 page_pool 的页回不了池。<strong>同一个动作，两处惩罚。</strong>）</p>
+<p>还有一行值得注意：<code class="c">if (skb_is_redirected(skb)) return XDP_PASS;</code>——
+<strong>已经在别处被 redirect 过的包，不会再跑一遍 generic XDP</strong>，避免重复处理。</p>
+<hr />
+<h2>四、verifier：XDP 程序的能力边界</h2>
+<p><strong>verifier 是 XDP 相对于内核模块的核心优势</strong>：它把"运行时崩溃"变成"加载时拒绝"。
+代价是你必须按它的规则写。</p>
+<h3>必须遵守的三条硬规则</h3>
+<p><strong>① 逐层边界检查（最常见的新手障碍）</strong></p>
+<p>包数据在解引用<strong>之前</strong>必须先验证指针范围：</p>
+<pre class="code" data-label="C"><code class="c">void *data = (void *)(long)ctx-&gt;data;
+void *data_end = (void *)(long)ctx-&gt;data_end;
+
+struct ethhdr *eth = data;
+if ((void *)(eth + 1) &gt; data_end)      /* ① 先验证 */
+    return XDP_DROP;
+if (eth-&gt;h_proto != htons(ETH_P_IP))   /* ② 再解引用 */
+    return XDP_PASS;
+
+struct iphdr *ip = (void *)(eth + 1);
+if ((void *)(ip + 1) &gt; data_end)       /* 每一层都要 */
+    return XDP_DROP;
+/* UDP 同理 */
+</code></pre>
+<p><strong>每一层都要检查一遍</strong>，verifier 才会放行。漏一层 = 加载被拒。</p>
+<p><strong>② 不能有无界循环</strong></p>
+<p>verifier 必须能证明程序会终止。传统写法只能用有界循环（<code class="c">#pragma unwind</code> 展开），
+较新内核提供了 <code class="c">bpf_loop()</code> helper 和 open-coded iterators。<strong>不要在 XDP 程序里
+写 <code class="c">while(1)</code> 或依赖运行时条件的循环</strong>。</p>
+<p><strong>③ 栈只有 512 字节</strong></p>
+<p>局部变量要精简。需要大缓冲就放 map。</p>
+<h3>能做什么 / 不能做什么</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>✅ 能做</th>
+<th>❌ 不能做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读写包内容（bounds-checked 后）</td>
+<td>随机访问未验证的包数据</td>
+</tr>
+<tr>
+<td><code class="c">bpf_xdp_adjust_head()</code> / <code class="c">adjust_tail()</code>（增删封装头）</td>
+<td>无界循环、递归</td>
+</tr>
+<tr>
+<td>查/改 map（计数、统计、流表）</td>
+<td>阻塞操作（睡眠、加锁等长时间等待）</td>
+</tr>
+<tr>
+<td><code class="c">bpf_ktime_get_ns()</code> 打时间戳</td>
+<td>访问用户态内存</td>
+</tr>
+<tr>
+<td><code class="c">bpf_redirect()</code> / <code class="c">bpf_redirect_map()</code></td>
+<td>调用任意内核函数（只能调白名单 helper）</td>
+</tr>
+<tr>
+<td><code class="c">bpf_xdp_event_output()</code> 采样送用户态</td>
+<td>分配内存（没有 malloc）</td>
+</tr>
+<tr>
+<td>触发 <code class="c">bpf_printk()</code>（调试用，<strong>很慢</strong>）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong><code class="c">bpf_printk()</code> 只能用于调试</strong>：它走 trace pipe，每个包调用会彻底毁掉性能。
+生产程序用 map 计数，或 <code class="c">bpf_perf_event_output()</code> 采样。</p>
+<h3>verifier 报错怎么读</h3>
+<pre class="code" data-label="shell"><code class="c">bpftool prog load xdp_prog.o /sys/fs/bpf/p 2&gt;&amp;1 | tail -40
+</code></pre>
+<p>v6.6 的 verifier 日志会给出：
+- 出错的<strong>指令序号</strong>
+- 出错时各寄存器的<strong>类型与取值范围</strong>（<code class="c">R1=pkt(offs=14,r=34)</code> 之类）
+- <strong>出错原因</strong>（<code class="c">invalid access to packet, off=34 size=2, R1(id=0,off=34,r=34)</code>）</p>
+<p>配合 <code class="c">llvm-objdump -S xdp_prog.o</code> 把指令序号映射回 C 源码行。</p>
+<hr />
+<h2>五、use case 全景</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>场景</th>
-<th>XDP 动作</th>
+<th>动作</th>
 <th>HFT 关联</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>DDoS 防护</td>
-<td>XDP_DROP 丢弃攻击包</td>
+<td><code class="c">XDP_DROP</code> 攻击包</td>
 <td>保护交易服务器</td>
 </tr>
 <tr>
+<td>行情早过滤</td>
+<td><code class="c">XDP_DROP</code> 无关组播组</td>
+<td>★ 只放行目标行情，垃圾包不建 skb</td>
+</tr>
+<tr>
+<td><strong>延迟测量</strong></td>
+<td>打时间戳进 map</td>
+<td>★ <strong>HFT 最有用的用法</strong>：分段测量 NIC→用户态</td>
+</tr>
+<tr>
 <td>负载均衡</td>
-<td>XDP_REDIRECT 到后端</td>
+<td><code class="c">XDP_REDIRECT</code> 到后端</td>
 <td>行情分发</td>
 </tr>
 <tr>
-<td>包过滤</td>
-<td>XDP_DROP 无关包</td>
-<td>行情流早过滤</td>
-</tr>
-<tr>
 <td>协议预处理</td>
-<td>XDP_TX 响应</td>
-<td>ARP/ICMP 快速响应</td>
+<td><code class="c">XDP_TX</code> 快速响应</td>
+<td>ARP/ICMP 快速应答，不进协议栈</td>
 </tr>
 <tr>
 <td>监控统计</td>
-<td>XDP_PASS + 计数</td>
-<td>延迟/丢包监控</td>
+<td>map 计数</td>
+<td>丢包/延迟监控，几乎零成本</td>
 </tr>
 <tr>
-<td>AF_XDP</td>
-<td>XDP_REDIRECT 到用户态</td>
-<td>内核旁路收包</td>
+<td><strong>AF_XDP 收包</strong></td>
+<td><code class="c">XDP_REDIRECT</code> 到 socket</td>
+<td>★ 内核旁路，接近 DPDK</td>
+</tr>
+<tr>
+<td>采样抓包</td>
+<td><code class="c">bpf_xdp_event_output()</code></td>
+<td>比 tcpdump 开销低得多</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 关联</h2>
-<p>XDP 是 HFT 在<strong>不使用 DPDK 时的最佳内核态方案</strong>：
-- 行情组播流：XDP 过滤无关组播组，只放行目标行情
-- 延迟监控：XDP 打时间戳，测量 NIC → 内核 → 用户态各段延迟
-- AF_XDP：零拷贝将行情包送到用户态，性能接近 DPDK</p>
-<h2>与 DPDK 的定位区别</h2>
+<h3>对 HFT 最有价值的两个用法</h3>
+<p><strong>① 延迟分段测量</strong></p>
+<p>在 XDP 程序里 <code class="c">bpf_ktime_get_ns()</code> 打时间戳存进 map，用户态收到包时再取一次
+<code class="c">clock_gettime()</code>，两者相减 = <strong>NIC → 用户态的端到端延迟</strong>。这是唯一能在不改动
+内核、不换网卡的前提下拿到"收包路径真实耗时"的方法。</p>
+<p><strong>② 行情早过滤</strong></p>
+<p>行情是多路组播，你只关心其中几路。在 XDP 层按组播地址/端口过滤，
+<strong>无关的包连 skb 都不建</strong>。这比在 socket 层过滤省一个量级。</p>
+<hr />
+<h2>六、XDP vs DPDK：结论表</h2>
+<p>（详细对比见 <a href="chapter-07.html#ch-7">chapter-07</a>，这里只给结论。）</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -597,31 +1719,213 @@ int xdp_filter(struct xdp_md *ctx) {
 <tbody>
 <tr>
 <td>运行位置</td>
-<td>内核态</td>
-<td>用户态</td>
+<td>内核态（但极早）</td>
+<td>用户态（完全旁路）</td>
 </tr>
 <tr>
-<td>内核参与</td>
-<td>是（但极早）</td>
-<td>否（完全旁路）</td>
+<td><strong>网卡归属</strong></td>
+<td><strong>仍归内核</strong>（可与内核功能共存）</td>
+<td><strong>被独占</strong>（绑定 UIO/VFIO，内核看不到这个口）</td>
+</tr>
+<tr>
+<td>sk_buff</td>
+<td>可以不建</td>
+<td>从不建</td>
 </tr>
 <tr>
 <td>部署复杂度</td>
 <td>低（加载 BPF 程序）</td>
-<td>高（绑定 UIO/VFIO 驱动）</td>
+<td>高（绑驱动、大页、NUMA）</td>
 </tr>
 <tr>
 <td>灵活性</td>
 <td>高（可与其他内核功能共存）</td>
-<td>低（网卡被独占）</td>
+<td>低</td>
 </tr>
 <tr>
-<td>适用场景</td>
-<td>中低频、需内核功能</td>
-<td>超低延迟、co-location</td>
+<td>极限延迟</td>
+<td>略高</td>
+<td>最低</td>
+</tr>
+<tr>
+<td><strong>HFT 定位</strong></td>
+<td><strong>中低频、需要内核功能、或渐进改造</strong></td>
+<td><strong>超低延迟、co-location</strong></td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>一句话</strong>：XDP 和 DPDK 的真正区别不是"谁更快"，而是<strong>谁拥有网卡</strong>。
+DPDK 独占网卡换来最低延迟；XDP 保留内核所有权，换来共存和灵活性。</p>
+<hr />
+<h2>七、性能怎么测（别信网上的绝对值）</h2>
+<pre class="code" data-label="shell"><code class="c"># 最直接：bpftool 给出程序执行次数与总耗时
+bpftool prog show id &lt;id&gt;
+#   run_cnt  = 执行次数
+#   run_time = 总耗时（ns）
+#   → run_time / run_cnt = 单包平均耗时
+
+# 对比不同模式：同一程序分别 native / generic 加载，各测一次
+xdp-loader load --mode native  eth0 prog.o
+bpftool prog show id &lt;id&gt;      # 记下 run_time/run_cnt
+xdp-loader unload eth0 --all
+xdp-loader load --mode generic eth0 prog.o
+bpftool prog show id &lt;id&gt;      # 再记一次
+
+# 端到端（HFT 真正关心的）：XDP 时间戳 vs 用户态收包时刻
+</code></pre>
+<p>⚠️ <strong>不要在 veth 上测性能</strong>——没有 DMA、没有真实 Rx ring，数字没有参考价值。
+→ 见 <a href="chapter-15.html#s-01">01 篇 Q3</a>。</p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>XDP 的价值来自"在 skb 之前"这个位置</strong>，不是"它是 eBPF 所以快"。Generic 模式不在这个位置，所以不省 skb。</li>
+<li><strong><code class="c">XDP_ABORTED = 0</code></strong>：返回 0 是出错丢弃，不是放行。忘了写 return 会静默吃掉所有包。</li>
+<li><strong>Generic 模式在 tcpdump 开启时会更慢</strong>：<code class="c">skb_cloned()</code> 命中 → 每个包多一次 <code class="c">pskb_expand_head()</code> 拷贝。和 page_pool 的 refcnt 惩罚是同一个动作的两处后果。</li>
+<li><strong>verifier 是优势不是障碍</strong>：它把运行时崩溃变成加载时拒绝。代价是逐层边界检查。</li>
+<li><strong>对 HFT 最有价值的用法是延迟分段测量</strong>，不是包过滤。</li>
+<li><strong>XDP vs DPDK 的真正分界是谁拥有网卡</strong>，不是谁更快。</li>
+<li><strong>生产程序别用 <code class="c">bpf_printk()</code></strong>，用 map 计数或 perf event 采样。</li>
+<li><strong>每次加载后确认实际模式</strong>（<code class="c">xdp-loader status</code>），静默降级会毁掉性能结论。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<p>Rosen 写作时 XDP 不存在。从<strong>网络编程方法论</strong>看，XDP 带来的是一次范式转移：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 3.x 时代</th>
+<th>XDP 时代</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>要改内核网络行为 → 写内核模块</td>
+<td>写 eBPF 程序，verifier 保证安全</td>
+</tr>
+<tr>
+<td>出问题 = oops / panic / 机器挂</td>
+<td>出问题 = <strong>加载被拒</strong>（编译期拦截）</td>
+</tr>
+<tr>
+<td>包处理只能在协议栈内</td>
+<td>包处理在<strong>协议栈之前</strong></td>
+</tr>
+<tr>
+<td>用户态高性能收包 = <code class="c">PF_PACKET</code> / <code class="c">recvmmsg</code></td>
+<td>AF_XDP 零拷贝</td>
+</tr>
+<tr>
+<td>观测靠 printk / 计数器</td>
+<td>map + tracepoint + <code class="c">bpftool</code></td>
+</tr>
+<tr>
+<td>功能演进要等内核发布</td>
+<td><strong>功能可以热加载</strong>（<code class="c">XDP_FLAGS_REPLACE</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>最后一行是运维层面的重大变化：<strong>XDP 程序可以在不重启、不重载驱动的情况下
+热替换</strong>（<code class="c">XDP_FLAGS_REPLACE</code>）。对 HFT 这种不能随便停机重启的系统，这个能力的价值
+不亚于性能本身。</p>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你要在 XDP 里做行情组播过滤，只放行 <code class="c">239.1.2.3:12345</code>。写出最小可用代码，并说明每一处边界检查的必要性。</summary>
+<p><b>答：</b></p>
+<pre class="code" data-label="C"><code class="c">SEC(&quot;xdp&quot;)
+int mcast_filter(struct xdp_md *ctx)
+{
+    void *data = (void *)(long)ctx-&gt;data;
+    void *data_end = (void *)(long)ctx-&gt;data_end;
+
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) &gt; data_end)          /* ① 必须有 */
+        return XDP_DROP;
+    if (eth-&gt;h_proto != htons(ETH_P_IP))
+        return XDP_DROP;                        /* ② 非 IP 直接丢 */
+
+    struct iphdr *ip = (void *)(eth + 1);
+    if ((void *)(ip + 1) &gt; data_end)           /* ③ 必须有 */
+        return XDP_DROP;
+    if (ip-&gt;protocol != IPPROTO_UDP)
+        return XDP_DROP;
+
+    /* IP 头可能带选项，长度要用 ihl 算 */
+    if (ip-&gt;ihl &lt; 5)
+        return XDP_DROP;
+    struct udphdr *udp = (void *)ip + (ip-&gt;ihl * 4);
+    if ((void *)(udp + 1) &gt; data_end)          /* ④ 必须有 */
+        return XDP_DROP;
+
+    if (udp-&gt;dest != htons(12345))
+        return XDP_DROP;                        /* ⑤ 端口过滤 */
+
+    return XDP_PASS;
+}
+</code></pre>
+<p><b>为什么 ①③④ 必须有</b>：verifier 在<b>加载时</b>静态分析每一条路径。
+它要知道"解引用 <code class="c">eth + 1</code> 时，这个地址一定在 <code class="c">[data, data_end)</code> 之内"。
+没有那个 if，verifier 无法证明，<b>直接拒绝加载</b>——不是运行时崩溃，是根本装不上。</p>
+<p><b>容易漏的两点</b>：
+1. <strong>IP 头长度要用 <code class="c">ip-&gt;ihl * 4</code></strong>，不能直接 <code class="c">(void*)ip + 20</code>——
+   带 IP 选项的包头部更长，硬编码 20 会读错位置。
+2. <strong>组播的 MAC 也要查</strong>（更省）：组播 IP 会映射到组播 MAC
+   （<code class="c">01:00:5e:xx:xx:xx</code>），在 ① 之后立刻查 MAC 就能丢掉绝大部分无关流量，
+   连 IP 头都不用解析。</p>
+<p><b>性能提示</b>：把过滤条件<b>按"能最早排除最多包"排序</b>。
+MAC → 端口 → 才是完整解析。</p>
+</details>
+<details>
+<summary>Q2：你在 generic 模式做性能对比，发现开着 tcpdump 时吞吐明显下降，关掉就恢复。不是应该"tcpdump 只影响被抓的包"吗？</summary>
+<p><b>答：</b>不对，tcpdump 会影响<b>所有</b>包——在 generic 模式下尤其明显。</p>
+<p>看内核源码 dev.c:4950 附近：</p>
+<pre class="code" data-label="C"><code class="c">/* XDP packets must be linear and must have sufficient headroom
+ * of XDP_PACKET_HEADROOM bytes. This is the guarantee that also
+ * native XDP provides, thus we need to do it here as well.
+ */
+if (skb_cloned(skb) || skb_is_nonlinear(skb) ||
+    skb_headroom(skb) &lt; XDP_PACKET_HEADROOM) {
+    ...
+    if (pskb_expand_head(skb, ...))
+</code></pre>
+<p>AF_PACKET（tcpdump 的底层）会给匹配的包<b>克隆一份</b>给抓包 socket，
+于是 <code class="c">skb_cloned(skb)</code> 为真 → 命中这个条件 → 每个包都要先
+<code class="c">pskb_expand_head()</code> <strong>拷贝/线性化一次</strong>，然后才轮到你的 XDP 程序跑。</p>
+<p>所以 tcpdump 的成本不是"复制一份给抓包进程"，而是<b>让每个包都多了一次完整拷贝</b>。</p>
+<p><b>雪上加霜的是第二处惩罚</b>：clone 会抬高 page 的 refcnt，
+按 page_pool 的规则（refcnt &gt; 1 就真释放），这些页面<b>回不了池</b>——
+池被抽干后每个包都要走 <code class="c">alloc_page()</code> 慢路径。
+→ 见 <a href="chapter-15.html#s-02">chapter-04/02 陷阱 2</a></p>
+<p><b>实践建议</b>：
+- 排障时尽量用 XDP 层采样（<code class="c">bpf_xdp_event_output()</code>），而不是 skb 层全量抓包
+- 必须抓包就加严格 filter，减少 clone 数量
+- 抓完确认指标恢复——池需要时间重新填满</p>
+</details>
+<details>
+<summary>Q3：为什么 XDP 程序不能用无界循环？这给"在 XDP 里做复杂解析"带来什么限制？</summary>
+<p><b>答：</b>因为 <b>verifier 必须在加载时静态证明程序一定会终止</b>。</p>
+<p>verifier 不会运行你的程序，它做的是静态分析——遍历所有可能的执行路径，
+证明每条路径都能在有限步内到达 return。无界循环（<code class="c">while(1)</code>、
+或退出条件依赖运行时数据的循环）无法静态证明终止，所以被拒绝。</p>
+<p><b>这带来三个实际限制</b>：</p>
+<ol>
+<li><strong>不能写依赖包内容的循环</strong>。比如"遍历所有 IP 选项直到遇到 EOL"——
+   退出条件来自包数据，verifier 无法证明有界。<strong>要写成固定次数的有界循环</strong>。</li>
+<li><strong>较新内核的解法</strong>：用 <code class="c">bpf_loop()</code> helper（把循环次数作为参数传给 helper，
+   verifier 能验证），或用 open-coded iterators。老内核只能用
+   <code class="c">#pragma unroll</code> 完全展开。</li>
+<li><strong>复杂解析要拆成 tail call 或用 map 存中间状态</strong>。</li>
+</ol>
+<p><b>对 HFT 的含义</b>：XDP 适合做<b>固定格式的浅层解析</b>（MAC / IP / UDP 头、
+固定偏移的行情协议字段）。如果你的协议需要变长遍历（TLV、变长字段），
+XDP 层做起来会很痛苦——<strong>这时候更应该把包 REDIRECT 到用户态，
+在用户态用正常代码解析</strong>。</p>
+<p><b>选型结论</b>：XDP 的强项是"用极低成本做粗筛和统计"，不是"做完整的协议解析"。
+把它定位成<b>分流器</b>而不是<b>解析器</b>，设计会顺畅很多。</p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-02">02 AF_XDP 四 ring</a>
+→ 本章完，下一章：<a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a>
+→ 相关：<a href="chapter-15.html#s-01">chapter-01 hook 顺序</a> · <a href="chapter-04.html#ch-4">chapter-04 page_pool</a> · <a href="chapter-07.html#ch-7">chapter-07 XDP vs DPDK</a></p>
       </section>
 
 

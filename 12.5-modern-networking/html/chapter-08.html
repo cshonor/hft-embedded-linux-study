@@ -276,10 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">05</span>— eBPF 网络</a>
-          <a href="#s-02"><span class="n">05</span>— Documentation/bpf/</a>
-          <a href="#s-03"><span class="n">10</span>— XDP-BPF：收包路径中的 eBPF</a>
-          <a href="#s-04"><span class="n">11</span>— cgroup-BPF：容器网络隔离</a>
+          <a href="#s-01"><span class="n">01</span>— eBPF 网络：hook 全景、程序类型与工具链实操</a>
+          <a href="#s-02"><span class="n">02</span>— BPF 类型系统、map 与 verifier 的真实约束</a>
+          <a href="#s-03"><span class="n">03</span>— XDP 程序：能力边界、返回码与 native/generic 的真实代价</a>
+          <a href="#s-04"><span class="n">04</span>— cgroup BPF：attach 语义、继承规则与返回码真相</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -289,7 +289,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -317,338 +317,3661 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的六个核心结论</h2>
+<ol>
+<li>
+<p><strong>⭐ cgroup ingress 不在「包进协议栈时」，而在 socket 入队时。</strong>
+   <code class="c">BPF_CGROUP_RUN_PROG_INET_INGRESS</code> 在 v6.6 只有一处调用点：
+   <code class="c">sk_filter_trim_cap()</code>（<code class="c">net/core/filter.c:138</code>），位置是
+   <code class="c">sock_queue_rcv_skb()</code> → <code class="c">sk_filter()</code>。走完路由、Netfilter、UDP/TCP 栈、
+   socket 查找之后才轮到它。<strong>被转发的包、未加入的组播、没有 socket 的包根本不会经过。</strong>
+   → 想省 CPU 的过滤必须放在 XDP 或 tc，放 cgroup 等于什么都没省。</p>
+</li>
+<li>
+<p><strong>⭐ cgroup egress 在 Netfilter POST_ROUTING 之后。</strong>
+   <code class="c">ip_finish_output()</code>（<code class="c">net/ipv4/ip_output.c:314/318</code>）是
+   <code class="c">NF_HOOK_COND(..., NF_INET_POST_ROUTING, ..., ip_finish_output)</code> 的 <strong>okfn</strong>。
+   所以 SNAT/MASQUERADE 先跑，cgroup egress 看到的是 SNAT 之后的地址。
+   组播走<strong>独立路径</strong> <code class="c">ip_mc_finish_output()</code>（<code class="c">ip_output.c:330/337</code>）——单播和组播要各测一遍。</p>
+</li>
+<li>
+<p><strong>⭐ <code class="c">XDP_ABORTED == 0</code>，这是 XDP 最危险的默认值。</strong>
+   任何「忘了 return」或「把 helper 的负 errno 当返回码」的程序，返回值默认 0 = <code class="c">XDP_ABORTED</code> = 丢包。
+   加载不报错、编译器不警告、tcpdump 看不到（AF_PACKET 在 XDP 之后）、
+   <code class="c">ethtool -S</code> 也看不到（驱动统计在 XDP 之后才更新）。
+   <strong>唯一的可见处是 <code class="c">tracepoint:xdp:xdp_exception</code>。</strong></p>
+</li>
+<li>
+<p><strong>⭐ generic XDP 会为每个包补做 <code class="c">pskb_expand_head()</code> + <code class="c">skb_linearize()</code>。</strong>
+   <code class="c">netif_receive_generic_xdp()</code>（<code class="c">net/core/dev.c:4941</code>）为了「模拟」native 的
+   线性 + <code class="c">XDP_PACKET_HEADROOM</code>(256) 保证，对不满足条件的包做内存分配 + 数据拷贝，
+   <strong>分配失败则 <code class="c">goto do_drop</code> 静默丢包</strong>。
+   → generic 只用于验证逻辑正确性，<strong>不能用于性能评估或生产</strong>；用 <code class="c">xdpdrv</code> 而不是 <code class="c">xdp</code> 加载。</p>
+</li>
+<li>
+<p><strong>⭐ cgroup BPF 不做短路：所有程序都会执行。</strong>
+   UAPI 注释原文（<code class="c">include/uapi/linux/bpf.h:1117</code>）：
+   <em>"All eligible programs are executed regardless of return code from earlier programs."</em>
+   这与 Netfilter（<code class="c">NF_DROP</code> 短路）和 tc（<code class="c">TC_ACT_SHOT</code> 短路）<strong>完全相反</strong>。
+   → 想表达「白名单优先于黑名单」必须靠共享 map 或合并成一个程序。</p>
+</li>
+<li>
+<p><strong>⭐ verifier 文档注释已过时，实际限流是 100 万而非 64k。</strong>
+   <code class="c">kernel/bpf/verifier.c:50</code> 的注释说「第二遍 limited to 64k insn」「branches limited to 1k」，
+   但 v6.6 代码里这两个数字<strong>都不存在</strong>：实际是
+   <code class="c">++env-&gt;insn_processed &gt; BPF_COMPLEXITY_LIMIT_INSNS</code>（<code class="c">verifier.c:16455</code>），
+   而 <code class="c">BPF_COMPLEXITY_LIMIT_INSNS = 1000000</code>（<code class="c">include/linux/bpf.h:1723</code>）。
+   另外 <code class="c">BPF_MAXINSNS = 4096</code> 定义在 <strong><code class="c">include/uapi/linux/bpf_common.h:54</code></strong>
+   （不在 <code class="c">bpf.h</code>，所以很多人 grep 不到），且<strong>只对无特权调用者生效</strong>。</p>
+</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>XDP BPF</strong>：HFT 可在 XDP hook 运行 BPF 程序做快速过滤/解析，延迟 &lt; 100ns</li>
-<li><strong>cgroup BPF</strong>：按 cgroup 挂载 BPF 程序，仅对交易进程的 socket 生效，不影响其他进程</li>
-<li><strong>sock_ops BPF</strong>：监控 socket 状态变化，记录 RTT/丢包，无需修改应用代码</li>
-<li><strong>JIT 编译</strong>：eBPF JIT 为原生指令，性能接近手写内核代码</li>
+<li><strong>选 hook 就是选「能为这个包付多少 CPU」</strong>：
+  XDP（驱动层，无 skb）&lt; tc ingress（有 skb，L3 前）&lt; cgroup ingress（走完整个协议栈 + socket 查找）</li>
+<li><strong>cgroup BPF 的真实价值是「零侵入可观测」</strong>，不是性能：
+  <code class="c">sock_ops</code> 的 <code class="c">srtt_us</code> / <code class="c">rtt_min</code> / <code class="c">snd_cwnd</code> / <code class="c">RETRANS_CB</code> / <code class="c">STATE_CB</code>
+  让你在<strong>不碰交易程序一行代码</strong>的前提下采到 TCP 健康度，
+  比 <code class="c">ss -i</code> 轮询（有采样间隔、会漏瞬时抖动）可靠得多</li>
+<li><strong><code class="c">sock_ops</code> 的高频回调必须先订阅</strong>：<code class="c">RTT_CB</code> / <code class="c">RTO_CB</code> / <code class="c">RETRANS_CB</code> / <code class="c">STATE_CB</code>
+  默认不触发，要在 <code class="c">*_ESTABLISHED_CB</code> 里调 <code class="c">bpf_sock_ops_cb_flags_set()</code></li>
+<li><strong><code class="c">bpf_redirect_map()</code> 的 flags 永远显式写 <code class="c">XDP_PASS</code></strong>，不要写 0
+  （flags 低位 = 未命中时的返回码，写 0 就是 <code class="c">XDP_ABORTED</code> = 静默丢弃 ARP/ICMP/SSH）</li>
+<li><strong><code class="c">run_time_ns</code>/<code class="c">run_cnt</code> 是成本归因的第一站</strong>，但它自带
+  <code class="c">sched_clock()</code> ×2 + 关中断 seqcount 的埋点开销，可能比程序本身还贵，<strong>测完要关</strong></li>
+<li><strong>v6.6 起 tc 有两条路</strong>：tcx（bpf_link 语义，推荐新项目）与 legacy clsact；
+  <code class="c">sch_handle_ingress()</code> 里 <strong>tcx 先跑、legacy 后跑</strong>（<code class="c">net/core/dev.c:4023-4030</code>）</li>
+<li><strong>进程隔离用 cgroup，别用 iptables <code class="c">-m owner</code></strong>：后者只能按 uid/gid 固定属性匹配，
+  前者可以跑任意 BPF 逻辑 + 查 map 状态</li>
+<li><strong>⚠️ socket 的 cgroup 归属终身不变</strong>：创建时继承，之后进程迁移也不变。
+  做灰度切换要么重建连接，要么新旧 cgroup 都挂一份</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP hook 是 eBPF 的 attach 点</li>
-<li><code class="c">12.5-modern-networking/chapter-09-tc-bpf/</code>：TC BPF 流量分类</li>
+<li><code class="c">12.5-modern-networking/chapter-01-net-stack-architecture/notes/01-net-stack-architecture.md</code>：
+  hook 点总顺序（本篇的所有位置都是在它的骨架上插桩）</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 基础架构，本篇第 3 节的能力边界由此而来</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：XSKMAP 目的地，<code class="c">XDP_REDIRECT</code> 到 AF_XDP 的完整机制</li>
+<li><code class="c">12.5-modern-networking/chapter-07-xdp-redirect-dpdk/notes/01-xdp-redirect.md</code>：
+  <code class="c">xdp_do_flush()</code> 的三步批量语义</li>
+<li><code class="c">12.5-modern-networking/chapter-09-tc-bpf/</code>：tc-BPF（81 个 helper，XDP 只有 23 个）</li>
+<li><code class="c">12.5-modern-networking/chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md</code>：
+  延迟测量方法（本篇刻意不给 cycles 数字的原因）</li>
 <li><code class="c">06.7-bpf-observability/</code>：eBPF 可观测性体系</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">05</div><h2>— eBPF 网络</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— eBPF 网络：hook 全景、程序类型与工具链实操</h2></div>
 <blockquote>
-<p><strong>Bootlin 课程模块：</strong> eBPF Networking
-<strong>对应 Rosen:</strong> 无</p>
+<p><strong>来源：</strong> Bootlin（eBPF Networking 课程模块）+ Linux v6.6 内核源码核对
+<strong>对应 Rosen：</strong> 无（Rosen 3.x 时代只有 classic BPF，即 <code class="c">struct sock_fprog</code> / <code class="c">sk_filter</code>，没有 eBPF）
+<strong>内核版本：</strong> 全部结论基于 <strong>v6.6</strong> 源码核对，行号引用 v6.6</p>
 </blockquote>
-<h2>eBPF 网络程序全景</h2>
+<h2>文档概述</h2>
+<p>本篇回答一个问题：<strong>eBPF 在 Linux 网络栈里到底能挂在哪里，每个挂载点用什么工具挂、挂上去之后怎么验证它真的生效了。</strong></p>
+<p>这是「全景 + 实操」篇。姊妹篇的分工：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>类型</th>
-<th>挂载点</th>
-<th>工具</th>
+<th>文件</th>
+<th>主题</th>
+<th>本篇与它的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-02">02-bpf.md</a></td>
+<td>程序类型 / map 类型 / verifier 限制</td>
+<td>本篇给出「类型 × 挂载点 × 工具」的横表，02 给出每种类型的 helper 能力集与 verifier 约束</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03-xdp-bpf.md</a></td>
+<td>XDP 程序能做什么、返回码语义</td>
+<td>本篇只定位 XDP 在栈中最早的位置，03 展开 XDP 本身</td>
+</tr>
+<tr>
+<td><a href="chapter-13.html#s-04">04-cgroup-bpf.md</a></td>
+<td>cgroup 系列程序的 attach 语义、继承与叠加</td>
+<td>本篇指出 cgroup hook 的真实调用点（在 socket 入队 / IP finish 处），04 展开 attach 规则</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>本篇的阅读顺序建议：</strong> 先看第 2 节的 hook 全景图建立位置感 → 第 3 节逐点核对源码位置（本篇价值最高的部分，有 3 处会颠覆常见认知）→ 第 4 节按需求挑程序类型 → 第 5–7 节上手工具链与观测。</p>
+<hr />
+<h2>1. 先建立位置感：五个 hook 点的相对顺序</h2>
+<p>先看一张图（<strong>RX 路径自上而下，TX 路径自下而上</strong>）。图中每一行的行号都是 v6.6 源码实测位置，不是记忆：</p>
+<pre class="code" data-label="code"><code class="c">                        ┌─────────────────────────────────────────┐
+                        │  网卡硬件 / DMA ring                     │
+                        └────────────────┬────────────────────────┘
+                                         │
+  ┌──────────────────────────────────────▼──────────────────────────────────┐
+  │ ① XDP（驱动 NAPI poll 内，skb 之前）                                      │
+  │    bpf_prog_run_xdp()          include/net/xdp.h:482                    │
+  │    上下文：struct xdp_md（也就是内核侧的 struct xdp_buff）                │
+  │    程序类型：BPF_PROG_TYPE_XDP                                          │
+  │    挂载工具：xdp-loader / ip link set dev X xdp obj ...                  │
+  └──────────────────────────────────────┬──────────────────────────────────┘
+                                         │ XDP_PASS
+                    ┌────────────────────▼────────────────────┐
+                    │  build_skb() / napi_gro_receive()       │
+                    │  → 分配 sk_buff                          │
+                    └────────────────────┬────────────────────┘
+                                         │
+  ┌──────────────────────────────────────▼──────────────────────────────────┐
+  │ ② tc ingress（__netif_receive_skb_core 内，L3 之前）                     │
+  │    sch_handle_ingress()        net/core/dev.c:5412（函数体 4005）        │
+  │    上下文：struct __sk_buff                                              │
+  │    程序类型：BPF_PROG_TYPE_SCHED_CLS                                     │
+  │    挂载工具：tc filter add ... ingress bpf da obj ...                    │
+  │    注：v6.6 起入口变成「tcx 优先，legacy clsact 兜底」                    │
+  └──────────────────────────────────────┬──────────────────────────────────┘
+                                         │
+            ip_rcv() → NF_HOOK(PRE_ROUTING) → 路由查找 → ip_local_deliver()
+                                         │
+  ┌──────────────────────────────────────▼──────────────────────────────────┐
+  │ ③ cgroup ingress（socket 入队时， skb 已找到目标 socket）                │
+  │    BPF_CGROUP_RUN_PROG_INET_INGRESS()   net/core/filter.c:138           │
+  │    宿主函数：sk_filter_trim_cap()                                        │
+  │    上下文：struct __sk_buff                                              │
+  │    程序类型：BPF_PROG_TYPE_CGROUP_SKB                                    │
+  │    挂载工具：bpftool cgroup attach &lt;CG&gt; ingress id &lt;PROG&gt;                │
+  └──────────────────────────────────────┬──────────────────────────────────┘
+                                         │
+                       sk_filter（SO_ATTACH_BPF）→ 应用 recv()
+
+
+  ───────────────────────── TX 方向（自下往上读）───────────────────────────
+
+                       应用 send()/sendmsg()
+                                         │
+            tcp_sendmsg() → ip_queue_xmit() → 路由查找
+                    → NF_HOOK(LOCAL_OUT) → ip_output()
+                                         │
+                    NF_HOOK(POST_ROUTING)  ─── okfn 回调 ───┐
+                                                            │
+  ┌─────────────────────────────────────────────────────────▼───────────────┐
+  │ ④ cgroup egress（Netfilter POST_ROUTING **之后**）                       │
+  │    单播：ip_finish_output()        net/ipv4/ip_output.c:314/318         │
+  │    组播：ip_mc_finish_output()     net/ipv4/ip_output.c:330/337         │
+  │    IPv6：ip6_finish_output()       net/ipv6/ip6_output.c:203            │
+  │    程序类型：BPF_PROG_TYPE_CGROUP_SKB                                    │
+  └──────────────────────────────────────┬──────────────────────────────────┘
+                                         │
+                    邻居解析 → __dev_queue_xmit()
+                                         │
+  ┌──────────────────────────────────────▼──────────────────────────────────┐
+  │ ⑤ tc egress（__dev_queue_xmit 内，qdisc 之前）                           │
+  │    sch_handle_egress()          net/core/dev.c:4311（函数体 4061）       │
+  │    程序类型：BPF_PROG_TYPE_SCHED_CLS                                     │
+  └──────────────────────────────────────┬──────────────────────────────────┘
+                                         │
+                        qdisc → ndo_start_xmit() → 网卡
+</code></pre>
+<p><strong>这张图里最容易被记错的三处</strong>（下面第 3 节逐条用源码钉死）：</p>
+<ol>
+<li>cgroup <strong>ingress</strong> 不在 L3 交付处，而是在 <strong>socket 入队</strong> 时；</li>
+<li>cgroup <strong>egress</strong> 不在 POST_ROUTING 之前，而在 <strong>POST_ROUTING 之后</strong>；</li>
+<li>tc ingress/egress 在 v6.6 已经分裂成 <strong>tcx（link-based）</strong> 与 <strong>legacy clsact</strong> 两套机制，且 tcx 优先。</li>
+</ol>
+<hr />
+<h2>2. 逐点核对：源码里的真实位置</h2>
+<h3>2.1 XDP —— 最早点，且没有 sk_buff</h3>
+<pre class="code" data-label="C"><code class="c">/* include/net/xdp.h:482 */
+static __always_inline u32 bpf_prog_run_xdp(const struct bpf_prog *prog,
+                                            struct xdp_buff *xdp)
+</code></pre>
+<p>调用者是各网卡驱动的 NAPI poll 循环（<code class="c">driver → xdp_do_redirect</code> 之前的 <code class="c">bpf_prog_run_xdp</code>）。此时：</p>
+<ul>
+<li><strong>还没有 <code class="c">sk_buff</code></strong>，<code class="c">xdp_buff</code> 只是 <code class="c">{data, data_end, data_meta, data_hard_start, rxq}</code> 几个指针加一个长度。</li>
+<li>返回码是 <code class="c">enum xdp_action</code>（<code class="c">include/uapi/linux/bpf.h:6283</code>）：</li>
+</ul>
+<pre class="code" data-label="C"><code class="c">enum xdp_action {
+    XDP_ABORTED = 0,   /* 注意：是 0 */
+    XDP_DROP,
+    XDP_PASS,
+    XDP_TX,
+    XDP_REDIRECT,
+};
+</code></pre>
+<blockquote>
+<p><strong>⚠️ <code class="c">XDP_ABORTED == 0</code> 是本篇第一个必须记住的陷阱。</strong> 任何「忘记 return」或「返回值来自一个出错的 helper 调用」的 XDP 程序，返回值默认就是 0 = <code class="c">XDP_ABORTED</code> = 丢包并触发 tracepoint。详见 <a href="chapter-15.html#s-03">03-xdp-bpf.md</a> 对 <code class="c">bpf_redirect_map()</code> flags 低位的分析。</p>
+</blockquote>
+<ul>
+<li><strong>观测盲区</strong>：XDP 在 <code class="c">ptype_all</code>（AF_PACKET / tcpdump 的抓包点，<code class="c">net/core/dev.c</code> 的 <code class="c">dev_queue_xmit_nit</code> 与 <code class="c">__netif_receive_skb_core</code> 的 <code class="c">ptype_all</code> 遍历）<strong>之前</strong>，所以 <strong>tcpdump 看不到被 XDP 丢弃的包</strong>；它也不计入 <code class="c">ethtool -S</code> 的 rx 计数（驱动统计在 XDP 判定之后才更新）。</li>
+</ul>
+<h3>2.2 tc ingress / egress —— v6.6 的 tcx 与 legacy 双机制</h3>
+<p><code class="c">sch_handle_ingress()</code>（<code class="c">net/core/dev.c:4005</code>）的 v6.6 实现：</p>
+<pre class="code" data-label="C"><code class="c">sch_handle_ingress(struct sk_buff *skb, struct packet_type **pt_prev, int *ret,
+           struct net_device *orig_dev, bool *another)
+{
+    struct bpf_mprog_entry *entry = rcu_dereference_bh(skb-&gt;dev-&gt;tcx_ingress);
+    int sch_ret;
+
+    if (!entry)
+        return skb;
+    ...
+    if (static_branch_unlikely(&amp;tcx_needed_key)) {
+        sch_ret = tcx_run(entry, skb, true);
+        if (sch_ret != TC_ACT_UNSPEC)
+            goto ingress_verdict;
+    }
+    sch_ret = tc_run(tcx_entry(entry), skb);
+ingress_verdict:
+    switch (sch_ret) {
+    case TC_ACT_REDIRECT:
+        __skb_push(skb, skb-&gt;mac_len);
+        if (skb_do_redirect(skb) == -EAGAIN) { ... }
+        ...
+    case TC_ACT_SHOT:
+        kfree_skb_reason(skb, SKB_DROP_REASON_TC_INGRESS);
+        ...
+    }
+    return skb;
+}
+</code></pre>
+<p>从这段源码能读出四点：</p>
+<ol>
+<li><strong>两份入口共存</strong>：<code class="c">skb-&gt;dev-&gt;tcx_ingress</code> 这个 <code class="c">bpf_mprog_entry</code> 同时承载 tcx 程序和 legacy clsact 的 filter 链。<code class="c">tcx_run()</code> 跑 tcx 程序，<strong>返回 <code class="c">TC_ACT_UNSPEC</code> 时继续跑 <code class="c">tc_run()</code>（legacy）</strong>。也就是说 legacy 不会被 tcx 取代掉，两者会串联执行。</li>
+<li><strong><code class="c">static_branch_unlikely(&amp;tcx_needed_key)</code></strong>：没有任何 tcx 程序时零开销，不会走到 <code class="c">tcx_run()</code>。</li>
+<li><strong><code class="c">tcx</code> 是 v6.6 新增的 attach 类型</strong>：<code class="c">BPF_TCX_INGRESS</code> / <code class="c">BPF_TCX_EGRESS</code>（<code class="c">include/uapi/linux/bpf.h:1040-1041</code>），通过 <code class="c">bpf(BPF_LINK_CREATE)</code> 挂，走 bpf_link 语义（可以 pin、可以 <code class="c">bpftool link show</code>、进程退出自动 detach）。legacy clsact 是 <code class="c">netlink</code> + tc 命令挂的。</li>
+<li><strong>丢包有 drop reason</strong>：<code class="c">SKB_DROP_REASON_TC_INGRESS</code>，可用 <code class="c">dropreason</code> 工具或 <code class="c">perf</code> 的 <code class="c">skb:kfree_skb</code> tracepoint 看到，比 legacy 时代只能数 <code class="c">tc -s filter show</code> 的 drop 计数要精确。</li>
+</ol>
+<p><strong>egress 同理</strong>：<code class="c">sch_handle_egress()</code>（<code class="c">dev.c:4061</code>）在 <code class="c">__dev_queue_xmit()</code> 的 <code class="c">dev.c:4311</code> 被调用，位置在 <strong>qdisc enqueue 之前</strong>。</p>
+<blockquote>
+<p>这带来一个 HFT 相关的细节：tc egress 在 qdisc 之前，所以<strong>绕过了 qdisc 排队</strong>，但也意味着你在 tc egress 里看到的包还没经过任何流量整形；想做「出方向限速」必须在 tc egress 之后配合 qdisc，或者直接用 <code class="c">TC_ACT_STOLEN</code> + 自己排。</p>
+</blockquote>
+<h3>2.3 cgroup ingress —— 在 socket 入队时，不在 L3</h3>
+<p>这是本篇<strong>最反直觉</strong>的一处。搜索 <code class="c">BPF_CGROUP_RUN_PROG_INET_INGRESS</code> 在 v6.6 的调用点，只有一处：</p>
+<pre class="code" data-label="C"><code class="c">/* net/core/filter.c:124 */
+int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
+{
+    int err;
+    struct sk_filter *filter;
+
+    if (skb_pfmemalloc(skb) &amp;&amp; !sock_flag(sk, SOCK_MEMALLOC)) {
+        NET_INC_STATS(sock_net(sk), LINUX_MIB_PFMEMALLOCDROP);
+        return -ENOMEM;
+    }
+    err = BPF_CGROUP_RUN_PROG_INET_INGRESS(sk, skb);   /* ← net/core/filter.c:138 */
+    if (err)
+        return err;
+
+    err = security_sock_rcv_skb(sk, skb);
+    ...
+    filter = rcu_dereference(sk-&gt;sk_filter);   /* SO_ATTACH_BPF 的程序 */
+</code></pre>
+<p><strong>含义拆解：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>常见误解</th>
+<th>实际情况（v6.6 源码）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cgroup ingress 在包进入协议栈时就跑</td>
+<td>❌ 它在 <code class="c">sk_filter_trim_cap()</code> 里，该函数由 <code class="c">sock_queue_rcv_skb()</code> → <code class="c">sk_filter()</code> 调用</td>
+</tr>
+<tr>
+<td>它对设备上的所有包生效</td>
+<td>❌ 只对<strong>已经完成 socket 查找、确定要交给某个 socket 的包</strong>生效；被路由转发、被丢、没找到 socket 的包根本不会经过</td>
+</tr>
+<tr>
+<td>它在 <code class="c">sk_filter</code>（<code class="c">SO_ATTACH_BPF</code>）之后</td>
+<td>❌ 它在 <strong><code class="c">security_sock_rcv_skb()</code> 之前、<code class="c">sk_filter</code> 之前</strong>——比 socket 自己的 BPF 还早</td>
+</tr>
+<tr>
+<td>它在 Netfilter 之前</td>
+<td>✅ 对 RX 而言是的（PRE_ROUTING → 路由 → local_deliver → UDP/TCP → <code class="c">sock_queue_rcv_skb</code> → 这里）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这直接决定了 cgroup ingress 的适用边界：</strong></p>
+<ul>
+<li>✅ 适合：按进程/容器做「这个 cgroup 的进程能不能收到这类包」的准入控制、按 cgroup 记账。</li>
+<li>❌ 不适合：<strong>任何想在包刚进机器时就做的过滤</strong>。例如丢弃某个 DDoS 源、丢弃非目标组播组——这些包到达 cgroup ingress 时已经走完了路由、UDP/TCP 栈、socket 查找，该付的 CPU 都付了。这类需求要用 XDP 或 tc ingress。</li>
+<li>❌ 对<strong>被转发的包、组播未加入组的包、没有 socket 的包完全不生效</strong>。</li>
+</ul>
+<h3>2.4 cgroup egress —— 在 Netfilter POST_ROUTING 之后</h3>
+<p><code class="c">BPF_CGROUP_RUN_PROG_INET_EGRESS</code> 的调用点：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>函数</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IPv4 单播</td>
+<td><code class="c">ip_finish_output()</code></td>
+<td><code class="c">net/ipv4/ip_output.c:314</code>（宏在 318）</td>
+</tr>
+<tr>
+<td>IPv4 组播 / 广播</td>
+<td><code class="c">ip_mc_finish_output()</code></td>
+<td><code class="c">net/ipv4/ip_output.c:330</code>（宏在 337）</td>
+</tr>
+<tr>
+<td>IPv6</td>
+<td><code class="c">ip6_finish_output()</code></td>
+<td><code class="c">net/ipv6/ip6_output.c:203</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>而这三个函数都是 <strong><code class="c">NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING, ..., okfn)</code> 的 okfn</strong>。以 <code class="c">ip_output()</code> 为例（<code class="c">net/ipv4/ip_output.c:424</code>）：</p>
+<pre class="code" data-label="C"><code class="c">int ip_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+{
+    struct net_device *dev = skb_dst(skb)-&gt;dev, *indev = skb-&gt;dev;
+
+    skb-&gt;dev = dev;
+    skb-&gt;protocol = htons(ETH_P_IP);
+
+    return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING,
+                net, sk, skb, indev, dev,
+                ip_finish_output,                      /* ← okfn */
+                !(IPCB(skb)-&gt;flags &amp; IPSKB_REROUTED));
+}
+</code></pre>
+<p><strong>结论：cgroup egress 在 Netfilter POST_ROUTING hook 链的「通过了所有 hook 之后」才执行</strong>。所以：</p>
+<ul>
+<li>iptables/nft 的 POST_ROUTING（含 SNAT/MASQUERADE）<strong>先跑</strong>，cgroup egress 看到的是 SNAT <strong>之后</strong>的地址。</li>
+<li>返回码语义也不是 XDP 那套，而是 <code class="c">NET_XMIT_SUCCESS</code> / <code class="c">NET_XMIT_CN</code>，其余一律丢：</li>
+</ul>
+<pre class="code" data-label="C"><code class="c">static int ip_finish_output(struct net *net, struct sock *sk, struct sk_buff *skb)
+{
+    int ret;
+
+    ret = BPF_CGROUP_RUN_PROG_INET_EGRESS(sk, skb);
+    switch (ret) {
+    case NET_XMIT_SUCCESS:
+        return __ip_finish_output(net, sk, skb);
+    case NET_XMIT_CN:
+        return __ip_finish_output(net, sk, skb) ? : ret;
+    default:
+        kfree_skb_reason(skb, SKB_DROP_REASON_BPF_CGROUP_EGRESS);
+        return ret;
+    }
+}
+</code></pre>
+<blockquote>
+<p><strong>HFT 相关性</strong>：组播走的是 <code class="c">ip_mc_finish_output()</code> 这条<strong>独立</strong>路径（<code class="c">net/ipv4/ip_output.c:337</code>），和单播不是一个函数。写 cgroup egress 做「限制交易进程出向带宽」时，如果只测单播没测组播，很容易漏掉组播路径上的行为差异（例如组播的 loopback 副本是通过 <code class="c">ip_mc_output()</code> 里 <code class="c">skb_clone()</code> + 独立 <code class="c">NF_HOOK(..., ip_mc_finish_output)</code> 发出去的，见 <code class="c">ip_output.c:396-400</code>）。</p>
+</blockquote>
+<hr />
+<h2>3. 程序类型 × 挂载点 × 工具 横表</h2>
+<p>v6.6 的 <code class="c">enum bpf_prog_type</code> 共 <strong>33 个成员</strong>（<code class="c">include/uapi/linux/bpf.h:958-990</code>，从 <code class="c">BPF_PROG_TYPE_UNSPEC</code> 到 <code class="c">BPF_PROG_TYPE_NETFILTER</code>）。其中与网络直接相关的主要如下：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>程序类型</th>
+<th>挂载点（attach type）</th>
+<th>上下文类型</th>
+<th>挂载工具</th>
+<th>返回码语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_XDP</code></td>
+<td>设备 XDP hook（<code class="c">ip link</code> / xdp-loader）</td>
+<td><code class="c">struct xdp_md</code></td>
+<td><code class="c">ip link set dev X xdp obj</code>、<code class="c">xdp-loader load</code></td>
+<td><code class="c">enum xdp_action</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SCHED_CLS</code></td>
+<td><code class="c">BPF_TCX_INGRESS</code>/<code class="c">EGRESS</code>（v6.6+）、legacy clsact</td>
+<td><code class="c">struct __sk_buff</code></td>
+<td><code class="c">bpftool prog attach</code>（tcx）、<code class="c">tc filter add ... bpf da</code></td>
+<td><code class="c">TC_ACT_*</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SCHED_ACT</code></td>
+<td>tc action（已基本被 <code class="c">da</code> 模式取代）</td>
+<td><code class="c">struct __sk_buff</code></td>
+<td><code class="c">tc actions add bpf</code></td>
+<td><code class="c">TC_ACT_*</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SOCKET_FILTER</code></td>
+<td><code class="c">setsockopt(SO_ATTACH_BPF)</code></td>
+<td><code class="c">struct __sk_buff</code></td>
+<td>应用代码 / <code class="c">bpftool prog attach fd</code></td>
+<td>接受的字节数（0 = 丢弃）</td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_CGROUP_SKB</code></td>
+<td><code class="c">BPF_CGROUP_INET_INGRESS</code>/<code class="c">EGRESS</code></td>
+<td><code class="c">struct __sk_buff</code></td>
+<td><code class="c">bpftool cgroup attach</code></td>
+<td>ingress: 0/1；egress: <code class="c">NET_XMIT_*</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_CGROUP_SOCK</code></td>
+<td><code class="c">BPF_CGROUP_INET_SOCK_CREATE</code>/<code class="c">..._SOCK_RELEASE</code></td>
+<td><code class="c">struct bpf_sock</code></td>
+<td><code class="c">bpftool cgroup attach</code></td>
+<td>0/1</td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_CGROUP_SOCK_ADDR</code></td>
+<td><code class="c">BPF_CGROUP_INET4/6_{BIND,CONNECT,POST_BIND}</code>, <code class="c">UDP4/6_{SENDMSG,RECVMSG}</code>, <code class="c">GET{SOCK,PEER}NAME</code></td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+<td><code class="c">bpftool cgroup attach</code></td>
+<td>0/1</td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_CGROUP_SOCKOPT</code></td>
+<td><code class="c">BPF_CGROUP_{GET,SET}SOCKOPT</code></td>
+<td><code class="c">struct bpf_sockopt</code></td>
+<td><code class="c">bpftool cgroup attach</code></td>
+<td><code class="c">0=忽略 / 1=接管 / 2=不再调后续</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_CGROUP_SYSCTL</code></td>
+<td><code class="c">BPF_CGROUP_SYSCTL</code></td>
+<td><code class="c">struct bpf_sysctl</code></td>
+<td><code class="c">bpftool cgroup attach</code></td>
+<td><code class="c">0=拒绝 / 1=放行 / 2=继续调</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SOCK_OPS</code></td>
+<td><code class="c">BPF_CGROUP_SOCK_OPS</code></td>
+<td><code class="c">struct bpf_sock_ops</code></td>
+<td><code class="c">bpftool cgroup attach</code></td>
+<td>依事件而定（见 <a href="chapter-13.html#s-04">04</a>）</td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SK_SKB</code></td>
+<td><code class="c">BPF_SK_SKB_STREAM_PARSER</code> / <code class="c">..._STREAM_VERDICT</code></td>
+<td><code class="c">struct __sk_buff</code></td>
+<td><code class="c">bpf(BPF_PROG_ATTACH)</code> + sockmap</td>
+<td><code class="c">SK_PASS</code> / <code class="c">SK_DROP</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SK_MSG</code></td>
+<td><code class="c">BPF_SK_MSG_VERDICT</code></td>
+<td><code class="c">struct sk_msg_md</code></td>
+<td><code class="c">bpf(BPF_PROG_ATTACH)</code> + sockmap</td>
+<td><code class="c">SK_PASS</code> / <code class="c">SK_DROP</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SK_REUSEPORT</code></td>
+<td><code class="c">BPF_SK_REUSEPORT_SELECT</code> / <code class="c">..._SELECT_OR_MIGRATE</code></td>
+<td><code class="c">struct sk_reuseport_md</code></td>
+<td><code class="c">setsockopt(SO_ATTACH_REUSEPORT_EBPF)</code></td>
+<td>索引（选中的 socket 下标）</td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_SK_LOOKUP</code></td>
+<td><code class="c">BPF_SK_LOOKUP</code></td>
+<td><code class="c">struct bpf_sk_lookup</code></td>
+<td><code class="c">bpftool prog attach</code>（netns）</td>
+<td><code class="c">SK_DROP</code> / <code class="c">SK_PASS</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_FLOW_DISSECTOR</code></td>
+<td>netns flow dissector</td>
+<td><code class="c">struct __sk_buff</code></td>
+<td><code class="c">bpf(BPF_PROG_ATTACH)</code></td>
+<td><code class="c">BPF_FLOW_DISSECTOR_CONT</code> / <code class="c">..._RET</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_LWT_{IN,OUT,XMIT}</code></td>
+<td>路由的 light-weight tunnel</td>
+<td><code class="c">struct __sk_buff</code></td>
+<td><code class="c">ip route add ... encap bpf</code></td>
+<td><code class="c">BPF_LWT_REROUTE</code> 等</td>
+</tr>
+<tr>
+<td><code class="c">BPF_PROG_TYPE_NETFILTER</code></td>
+<td><code class="c">BPF_NETFILTER</code>（v6.4+）</td>
+<td><code class="c">struct bpf_nf_ctx</code></td>
+<td><code class="c">bpftool prog attach</code></td>
+<td><code class="c">NF_ACCEPT</code> / <code class="c">NF_DROP</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.1 各类型可用 helper 数量（v6.6 实测）</h3>
+<p>helper 能力集决定了一个程序到底能干什么。以下是 <code class="c">net/core/filter.c</code> 中 <code class="c">get_func_proto</code> 各实现里 <code class="c">case BPF_FUNC_*</code> 的分支数：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分发函数</th>
+<th>位置</th>
+<th><code class="c">case</code> 分支数</th>
+<th>兜底</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">xdp_func_proto()</code></td>
+<td><code class="c">net/core/filter.c:8084</code></td>
+<td><strong>23</strong></td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">tc_cls_act_func_proto()</code></td>
+<td><code class="c">net/core/filter.c:7968</code></td>
+<td><strong>81</strong>（含 <code class="c">#ifdef</code> 项，其中 <code class="c">CONFIG_INET</code> 项最多）</td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">sk_msg_func_proto()</code></td>
+<td><code class="c">net/core/filter.c:8226</code></td>
+<td>14</td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">sock_ops_func_proto()</code></td>
+<td><code class="c">net/core/filter.c:8178</code></td>
+<td>14</td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">cg_skb_func_proto()</code></td>
+<td><code class="c">net/core/filter.c:7919</code></td>
+<td>15 + <code class="c">cgroup_common_func_proto()</code></td>
+<td><code class="c">sk_filter_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">sk_filter_func_proto()</code></td>
+<td><code class="c">net/core/filter.c:7897</code></td>
+<td><strong>5</strong></td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这张表说明的问题：</strong></p>
+<ol>
+<li><strong>XDP 的 helper 集合（23）远小于 tc（81）</strong>。XDP 拿不到 <code class="c">bpf_skb_*</code> 系列（因为根本没有 skb），也拿不到 <code class="c">bpf_redirect_neigh</code> / <code class="c">bpf_clone_redirect</code> / <code class="c">bpf_sk_assign</code> 这类依赖 skb 语义的东西。想用 <code class="c">bpf_redirect_neigh()</code> 做「改邻居后转发」，只有 tc 能做到。</li>
+<li><code class="c">sk_filter_func_proto()</code> 只有 5 个 helper（<code class="c">skb_load_bytes</code>、<code class="c">skb_load_bytes_relative</code>、<code class="c">get_socket_cookie</code>、<code class="c">get_socket_uid</code>、<code class="c">perf_event_output</code>），全部程序类型的能力集最终都会兜底到 <code class="c">bpf_sk_base_func_proto()</code>——后者提供 map 操作、<code class="c">bpf_ktime_get_ns()</code>、<code class="c">bpf_trace_printk()</code>、<code class="c">bpf_probe_read_*</code> 等通用能力。</li>
+<li><code class="c">cg_skb_func_proto()</code> 的兜底是 <code class="c">sk_filter_func_proto()</code>，所以 <strong>cgroup SKB 程序天然拥有 socket filter 的 5 个 helper</strong>，再加 15 个专属的（<code class="c">sk_fullsock</code>、<code class="c">sk_storage_get/delete</code>、<code class="c">skb_cgroup_id</code>、<code class="c">sk_lookup_tcp/udp</code>、<code class="c">tcp_sock</code> 等）。</li>
+</ol>
+<hr />
+<h2>4. 工具链：三条路线，各有适用场景</h2>
+<h3>4.1 路线 A：libbpf + CO-RE（生产首选）</h3>
+<pre class="code" data-label="shell"><code class="c"># 1. 生成 vmlinux.h（一次性，每个内核版本一份）
+bpftool btf dump file /sys/kernel/btf/vmlinux format c &gt; vmlinux.h
+
+# 2. 编译（clang 需要 -g -O2 才能生成 BTF）
+clang -g -O2 -target bpf -D__TARGET_ARCH_x86_64 \
+      -I/path/to/libbpf/src -c prog.bpf.c -o prog.bpf.o
+
+# 3. 生成 skeleton（把 load/attach/detach 封装成 C 结构体）
+bpftool gen skeleton prog.bpf.o &gt; prog.skel.h
+
+# 4. 用户态程序里用 skeleton
+#    prog_bpf__open() → prog_bpf__load() → prog_bpf__attach() → ... → prog_bpf__destroy()
+</code></pre>
+<p><strong>CO-RE（Compile Once – Run Everywhere）解决什么</strong>：同一份 <code class="c">.bpf.o</code> 在不同内核版本上跑，内核结构体的字段偏移不同。CO-RE 靠 BTF 在<strong>加载时</strong>重定位 <code class="c">bpf_core_read()</code> 的偏移，不需要目标机器上有内核头文件，也不需要 clang 现场编译。</p>
+<p><strong>常见报错</strong>：<code class="c">invalid bpf_context access</code> / <code class="c">R1 invalid mem access 'scalar'</code>
+→ 多半是 CO-RE 重定位失败，或访问的字段在该内核的 BTF 里不存在。用 <code class="c">bpftool btf dump file /sys/kernel/btf/vmlinux format c</code> 检查目标内核是否真有该字段。</p>
+<h3>4.2 路线 B：xdp-tools / tc（运维最快）</h3>
+<pre class="code" data-label="shell"><code class="c"># XDP
+xdp-loader load -m native  eth0 xdp_prog.bpf.o    # native = 驱动层（零拷贝能力）
+xdp-loader load -m skb     eth0 xdp_prog.bpf.o    # generic = 通用模式（性能降级）
+xdp-loader status eth0                             # ⭐ 一定看 mode，确认没降级
+xdp-loader unload -i &lt;id&gt; eth0
+
+# tc（legacy clsact）
+tc qdisc add dev eth0 clsact
+tc filter add dev eth0 ingress bpf da obj tc_prog.o sec ingress
+tc filter show dev eth0 ingress                    # 带统计
+tc -s filter show dev eth0 ingress                 # 带 packets/bytes/drops
+tc qdisc del dev eth0 clsact
+
+# v6.6+ tcx（link-based，推荐新项目用）
+bpftool prog load tc_prog.bpf.o /sys/fs/bpf/tc_prog
+bpftool prog attach id &lt;PROG_ID&gt; tcx_ingress dev eth0
+bpftool link show dev eth0
+</code></pre>
+<blockquote>
+<p><strong><code class="c">da</code>（direct-action）的含义</strong>：legacy clsact 的 filter 命中后可以再跟一串 action。加 <code class="c">da</code> 后，BPF 程序的返回值<strong>直接</strong>就是 filter 的 verdict（<code class="c">TC_ACT_OK</code>/<code class="c">TC_ACT_SHOT</code>/<code class="c">TC_ACT_REDIRECT</code>…），不再走 action 链。省一次间接跳转，几乎所有现代 tc-BPF 都用 <code class="c">da</code>。不加 <code class="c">da</code> 时返回值会被解释成「要执行的 action 编号」——这是个隐蔽的坑。</p>
+</blockquote>
+<h3>4.3 路线 C：bpftool（观测 + 挂载通用入口）</h3>
+<pre class="code" data-label="shell"><code class="c">bpftool prog show                  # 所有已加载程序（type / id / tag / jited）
+bpftool prog show id &lt;ID&gt; --pretty # 详情
+bpftool prog dump xlated id &lt;ID&gt;   # 反汇编（verifier 改写后的指令）
+bpftool prog dump jited  id &lt;ID&gt;   # JIT 之后的机器码 ⭐ 性能分析用
+bpftool map  show / dump id &lt;ID&gt;
+bpftool link show
+bpftool net  show                  # ⭐ 一眼看清 XDP / tc / flow_dissector 挂在哪
+bpftool feature probe              # 内核支持哪些 prog/map 类型、哪些 helper
+</code></pre>
+<p><code class="c">bpftool net show</code> 的输出形如：</p>
+<pre class="code" data-label="code"><code class="c">xdp:
+eth0(2) driver id 42
+
+tc:
+eth0(2) clsact/ingress tc_prog.bpf.o:[ingress] id 43
+eth0(2) clsact/egress  tc_prog.bbf.o:[egress]  id 44
+
+flow_dissector:
+</code></pre>
+<p><strong>这就是「确认程序真的挂上了」的第一步，也是最容易被跳过的一步。</strong></p>
+<hr />
+<h2>5. 观测：四层递进，从粗到细</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>手段</th>
+<th>能看到什么</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1 是否挂载</td>
+<td><code class="c">bpftool net show</code>、<code class="c">xdp-loader status</code>、<code class="c">tc filter show</code></td>
+<td>程序在不在、挂在哪个设备/方向</td>
+<td>无</td>
+</tr>
+<tr>
+<td>L2 聚合计数</td>
+<td><code class="c">tc -s filter show</code>、<code class="c">bpftool prog show</code>（<code class="c">run_cnt</code>）、<code class="c">bpftool map dump</code></td>
+<td>处理了多少包、丢了多少、map 里存了什么</td>
+<td>需要开 <code class="c">kernel.bpf_stats_enabled</code></td>
+</tr>
+<tr>
+<td>L3 逐事件</td>
+<td><code class="c">bpf_printk()</code> + <code class="c">cat /sys/kernel/debug/tracing/trace_pipe</code>；或 BPF ringbuf / perfbuf 自定义事件</td>
+<td>单包级别的字段值</td>
+<td>高（trace_pipe 全局共享、ringbuf 有每事件开销）</td>
+</tr>
+<tr>
+<td>L4 内核 tracepoint</td>
+<td><code class="c">bpftrace -e 'tracepoint:xdp:* { @[probe] = count(); }'</code>，<code class="c">xdp_redirect</code> / <code class="c">xdp_redirect_err</code> / <code class="c">xdp_exception</code>、<code class="c">skb:kfree_skb</code>（带 reason）</td>
+<td>内核侧的丢包原因</td>
+<td>中</td>
+</tr>
+</tbody>
+</table></div>
+<h3>5.1 ⭐ <code class="c">run_time_ns</code> / <code class="c">run_cnt</code>：单次执行成本的免费测量</h3>
+<p>这是本篇认为<strong>最有价值、最少被使用</strong>的观测手段。</p>
+<p><code class="c">struct bpf_prog_info</code>（<code class="c">include/uapi/linux/bpf.h:6396</code>）里有这两个字段（<code class="c">:6430-6431</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    __u64 run_time_ns;
+    __u64 run_cnt;
+</code></pre>
+<p>它们由 <code class="c">bpftool prog show</code> 显示（<code class="c">kernel/bpf/syscall.c:2233-2234</code>），取值为 <code class="c">info.run_time_ns = stats.nsecs; info.run_cnt = stats.cnt;</code>（<code class="c">kernel/bpf/syscall.c:4323-4324</code>）。</p>
+<p><strong>但默认是关的</strong>，因为埋点有成本。<code class="c">include/linux/filter.h:592</code> 的 <code class="c">__bpf_prog_run()</code>：</p>
+<pre class="code" data-label="C"><code class="c">static __always_inline u32 __bpf_prog_run(const struct bpf_prog *prog,
+                      const void *ctx,
+                      bpf_dispatcher_fn dfunc)
+{
+    u32 ret;
+
+    cant_migrate();
+    if (static_branch_unlikely(&amp;bpf_stats_enabled_key)) {
+        struct bpf_prog_stats *stats;
+        u64 start = sched_clock();
+        unsigned long flags;
+
+        ret = dfunc(ctx, prog-&gt;insnsi, prog-&gt;bpf_func);
+        stats = this_cpu_ptr(prog-&gt;stats);
+        flags = u64_stats_update_begin_irqsave(&amp;stats-&gt;syncp);
+        u64_stats_inc(&amp;stats-&gt;cnt);
+        u64_stats_add(&amp;stats-&gt;nsecs, sched_clock() - start);
+        u64_stats_update_end_irqrestore(&amp;stats-&gt;syncp, flags);
+    } else {
+        ret = dfunc(ctx, prog-&gt;insnsi, prog-&gt;bpf_func);
+    }
+    return ret;
+}
+</code></pre>
+<p><strong>打开方式：</strong></p>
+<pre class="code" data-label="shell"><code class="c">sysctl -w kernel.bpf_stats_enabled=1      # 0=关，1=开（只有 BPF_STATS_RUN_TIME=0 这个值）
+bpftool prog show id &lt;ID&gt;                 # 现在有 run_cnt / run_time_ns
+sysctl -w kernel.bpf_stats_enabled=0      # 测完记得关
+</code></pre>
+<p><strong>三个必须知道的细节：</strong></p>
+<ol>
+<li><strong><code class="c">kernel.bpf_stats_enabled</code> 是 sysctl（<code class="c">kernel/bpf/syscall.c:5686</code>），不是 sysfs 文件</strong>，mode <code class="c">0644</code>，handler 是 <code class="c">bpf_stats_handler</code>，合法取值 <code class="c">SYSCTL_ZERO</code>～<code class="c">SYSCTL_TWO</code>。通过 <code class="c">bpf(BPF_ENABLE_STATS)</code> 系统调用开也行（<code class="c">kernel/bpf/syscall.c:5208</code>，需要 <code class="c">CAP_SYS_ADMIN</code>，只接受 <code class="c">BPF_STATS_RUN_TIME</code>）。</li>
+<li><strong>每次执行多两次 <code class="c">sched_clock()</code> 调用 + 一次 per-CPU u64_stats 更新</strong>。在 XDP 这种每包几十纳秒的场景下，这个开销可能比程序本身还大。<strong>所以测量结果是「带埋点的成本」，不是真实成本；测完一定要关掉。</strong></li>
+<li><strong><code class="c">stats</code> 是 per-CPU 的</strong>（<code class="c">this_cpu_ptr(prog-&gt;stats)</code>），bpftool 显示的是所有 CPU 的累加。如果你把程序只挂在一个队列上，看到的是那个队列所在 CPU 的统计——这反而是个好处，可以做 per-queue 的分解。</li>
+</ol>
+<p><strong>用法示例：</strong></p>
+<pre class="code" data-label="shell"><code class="c">sysctl -w kernel.bpf_stats_enabled=1
+# 记下 run_cnt0 / run_time_ns0
+bpftool -j prog show id 42 | jq '.run_cnt, .run_time_ns'
+sleep 10
+# 再读一次，做差
+bpftool -j prog show id 42 | jq '.run_cnt, .run_time_ns'
+# 平均每包 ns = (ns1 - ns0) / (cnt1 - cnt0)
+sysctl -w kernel.bpf_stats_enabled=0
+</code></pre>
+<blockquote>
+<p><strong>HFT 视角</strong>：这是唯一能在<strong>不改动程序、不引入第二套时钟</strong>的前提下拿到「内核里单次 BPF 执行耗时」的手段。做行情过滤程序的成本归因时，先跑这个拿到基线，再决定要不要上更重的测量（硬件时间戳 / 用户态打点）。</p>
+</blockquote>
+<h3>5.2 L4 tracepoint：XDP 丢包的唯一可见处</h3>
+<pre class="code" data-label="shell"><code class="c"># XDP 相关的 tracepoint
+perf list | grep xdp
+bpftrace -l 'tracepoint:xdp:*'
+
+# 实时看 XDP 异常（XDP_ABORTED 等）
+bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+
+# 看 redirect 失败（★ bpf_redirect_map flags 写错时，这里才会报）
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+
+# 看 skb 丢弃原因（cgroup BPF 丢包也能在这看到 reason）
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+</code></pre>
+<p><code class="c">xdp_redirect_err</code> 的 <code class="c">err</code> 值：<code class="c">-EINVAL</code>（map/索引非法）、<code class="c">-ENOSPC</code>（AF_XDP rx ring 满或包超长）、<code class="c">-EOPNOTSUPP</code>（目标设备不支持）、<code class="c">-EBUSY</code> 等。</p>
+<hr />
+<h2>6. 常见故障对照表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>定位命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>程序加载成功但完全没被调用</td>
+<td>挂到了错误的设备 / 方向；或 XDP 挂在了 <code class="c">offload</code> 模式但硬件不支持</td>
+<td><code class="c">bpftool net show</code></td>
+</tr>
+<tr>
+<td>XDP 程序「生效了」但性能没提升</td>
+<td>实际上是 <strong>generic 模式</strong>（<code class="c">-m skb</code>），每包额外一次 skb 分配</td>
+<td><code class="c">xdp-loader status eth0</code> 看 mode</td>
+</tr>
+<tr>
+<td>挂了 XDP 之后 SSH 断了 / ARP 不通</td>
+<td><code class="c">bpf_redirect_map()</code> 的 flags 低位写了 0 → 未命中时返回 <code class="c">XDP_ABORTED</code>（=0）→ 静默丢弃</td>
+<td><code class="c">tracepoint:xdp:xdp_redirect_err</code>；tcpdump <strong>看不到</strong></td>
+</tr>
+<tr>
+<td><code class="c">libbpf: prog 'xdp': failed to load: -EINVAL</code> + <code class="c">invalid bpf_context access</code></td>
+<td>CO-RE 重定位失败或访问了 BTF 中不存在的字段</td>
+<td><code class="c">bpftool btf dump file /sys/kernel/btf/vmlinux</code> 检查字段</td>
+</tr>
+<tr>
+<td><code class="c">R2 offset is outside of the packet</code></td>
+<td>边界检查写法不对（verifier 要求先判 <code class="c">data_end</code> 再解引用）</td>
+<td><code class="c">bpftool prog dump xlated id &lt;ID&gt;</code> 看 verifier 的改写</td>
+</tr>
+<tr>
+<td>tc filter 加不上去：<code class="c">Cannot find device "clsact"</code></td>
+<td>忘了先 <code class="c">tc qdisc add dev eth0 clsact</code></td>
+<td><code class="c">tc qdisc show dev eth0</code></td>
+</tr>
+<tr>
+<td>tc-BPF 返回值行为诡异</td>
+<td>没加 <code class="c">da</code>，返回值被当 action 编号解释</td>
+<td>加 <code class="c">da</code></td>
+</tr>
+<tr>
+<td>cgroup ingress 对某些包完全不生效</td>
+<td>那些包没有对应 socket（转发 / 未加入的组播 / 无监听）→ 走不到 <code class="c">sk_filter_trim_cap()</code></td>
+<td>用 <code class="c">tracepoint:skb:kfree_skb</code> 或改用 tc ingress</td>
+</tr>
+<tr>
+<td><code class="c">bpftool prog show</code> 里 <code class="c">run_cnt</code> 一直是 0</td>
+<td>没开 <code class="c">kernel.bpf_stats_enabled</code></td>
+<td><code class="c">sysctl -w kernel.bpf_stats_enabled=1</code></td>
+</tr>
+<tr>
+<td>程序里 <code class="c">bpf_printk()</code> 什么都没输出</td>
+<td>需要 <code class="c">cat /sys/kernel/debug/tracing/trace_pipe</code>（且它会被其他 tracer 抢）</td>
+<td>改用 ringbuf</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. HFT 要点</h2>
+<ol>
+<li><strong>选 hook 就是选「能为这个包付多少 CPU」。</strong> 想丢弃的包越早丢越划算：XDP（驱动层，无 skb）&lt; tc ingress（有 skb，L3 之前）&lt; cgroup ingress（走完整个协议栈 + socket 查找）。<strong>「过滤非目标组播流」必须放在 XDP 或 tc ingress，放 cgroup ingress 等于什么都没省。</strong></li>
+<li><strong>XDP 的观测盲区要先建立信任补偿。</strong> tcpdump 与 <code class="c">ethtool -S</code> 都看不到 XDP 之后的包，调试期必须靠 <code class="c">tracepoint:xdp:*</code> + 程序自己的计数器 map。否则你会遇到「程序明明是对的，但看不到任何现象」的困境。</li>
+<li><strong><code class="c">run_cnt</code>/<code class="c">run_time_ns</code> 是成本归因的第一站</strong>，但记住它自带 <code class="c">sched_clock()</code> ×2 的埋点开销，测完要关。</li>
+<li><strong>v6.6 起 tc 有 tcx 和 legacy 两条路</strong>，新项目用 tcx（bpf_link 语义，生命周期可控，进程崩了自动摘）；legacy clsact 仍然有效且会与 tcx 串联执行。混用时要清楚执行顺序是 <strong>tcx 先、legacy 后</strong>。</li>
+<li><strong>组播 egress 走独立代码路径</strong>（<code class="c">ip_mc_finish_output()</code>）。任何在 cgroup egress 上做的策略，单播和组播都要各测一遍。</li>
+<li><strong>cgroup BPF 是「治理工具」不是「性能工具」。</strong> 它慢（在 socket 入队处）、粒度是进程组，价值在于把交易进程和行情进程隔离开、按 cgroup 记账、用 <code class="c">sock_ops</code> 采 RTT 而不用改应用代码——这些是运维收益，不是延迟收益。</li>
+<li><strong><code class="c">bpf_redirect_map()</code> 的 flags 永远显式写 <code class="c">XDP_PASS</code></strong>，不要写 0。<code class="c">XDP_ABORTED == 0</code> 意味着写 0 的代价是静默丢掉所有未命中的包（ARP、ICMP、SSH 全中招），而且 tcpdump 和 ethtool 都发现不了。</li>
+</ol>
+<hr />
+<h2>8. 与 Rosen（《Linux Kernel Networking》，Rosen 3.x）的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen 3.x 的世界</th>
+<th>现在（v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BPF 形态</td>
+<td>classic BPF（<code class="c">struct sock_fprog</code>），只有 <code class="c">SO_ATTACH_BPF</code> 和 tcpdump 过滤器</td>
+<td>eBPF，33 种程序类型、独立指令集、JIT</td>
+</tr>
+<tr>
+<td>程序能力</td>
+<td>只能读包、返回接受长度</td>
+<td>可改包头、可重定向、可写 map、可调用 20–80 个 helper</td>
+</tr>
+<tr>
+<td>挂载点</td>
+<td>只有 socket filter</td>
+<td>XDP / tc / cgroup / sockmap / sk_lookup / netfilter / lwt</td>
+</tr>
+<tr>
+<td>校验</td>
+<td>无（classic BPF 只检查 jump 范围）</td>
+<td>verifier 做全路径静态分析（DAG、无回边、类型追踪、边界检查）</td>
+</tr>
+<tr>
+<td>与 Netfilter 关系</td>
+<td>Netfilter 是唯一可编程点</td>
+<td>XDP/tc 在 Netfilter 之前；v6.4+ 甚至有 <code class="c">BPF_PROG_TYPE_NETFILTER</code> 直接挂进 NF hook</td>
+</tr>
+<tr>
+<td>观测</td>
+<td><code class="c">iptables -L -nvx</code></td>
+<td><code class="c">bpftool</code> + <code class="c">bpf_stats_enabled</code> + <code class="c">tracepoint:xdp:*</code> + drop reason</td>
+</tr>
+</tbody>
+</table></div>
+<p>Rosen 那套知识仍然解释了协议栈的主体流程（路由、neighbour、qdisc、socket 层），<strong>本篇的所有 hook 位置都是在它的骨架上「插桩」</strong>。两本书不冲突，是叠加关系。</p>
+<hr />
+<h2>9. 代码自测</h2>
+<details>
+<summary>Q1：你把 XDP 程序挂在 eth0 上，它返回一个新的组播过滤逻辑。加载成功后，你用 <code class="c">tcpdump -i eth0</code> 抓包，发现目标组播包仍然能看到——这说明 XDP 程序没生效吗？</summary>
+<p><strong>不一定，而且多半恰恰相反：程序生效了。</strong></p>
+<p>原因在位置。<code class="c">tcpdump</code> 用的是 AF_PACKET，它在 <code class="c">__netif_receive_skb_core()</code> 里通过 <code class="c">ptype_all</code> 链表抓包（<code class="c">dev.c</code> 中 <code class="c">__netif_receive_skb_core</code> 会先遍历 <code class="c">ptype_all</code>）。而 XDP 在驱动 NAPI poll 里执行，<strong>在 <code class="c">build_skb()</code> 之前</strong>，更在 <code class="c">ptype_all</code> 之前。</p>
+<p>所以：</p>
+<ul>
+<li>返回 <code class="c">XDP_PASS</code> 的包 → 走到 <code class="c">ptype_all</code> → <strong>tcpdump 能看到</strong> ✅（这正是你观察到的）</li>
+<li>返回 <code class="c">XDP_DROP</code> / <code class="c">XDP_REDIRECT</code> 的包 → 从来没变成 skb → <strong>tcpdump 看不到</strong> ❌</li>
+</ul>
+<p><strong>正确的验证方式：</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 1. 确认挂上了
+bpftool net show
+xdp-loader status eth0          # 顺带确认 mode 是 native 不是 skb
+
+# 2. 程序里维护一个 map 计数器，用 bpftool 读
+bpftool map dump name my_stats
+
+# 3. 内核侧丢包原因
+bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+</code></pre>
+<p><strong>不要</strong>用 tcpdump 的「看不看得见」来判断 XDP 是否生效——它只能证明「包没被 XDP 丢」。</p>
+</details>
+<details>
+<summary>Q2：你写了一个 cgroup ingress 程序，想丢弃「非目标组播组」的包来省 CPU。测试发现丢是丢了，但 CPU 占用几乎没降。为什么？</summary>
+<p><strong>因为 cgroup ingress 跑在 <code class="c">sk_filter_trim_cap()</code>（<code class="c">net/core/filter.c:138</code>），位置是 socket 入队时。</strong> 到这一步，包已经完成了：</p>
+<pre class="code" data-label="code"><code class="c">NAPI poll → build_skb → tc ingress → ip_rcv → PRE_ROUTING → 路由
+→ ip_local_deliver → NF_LOCAL_IN → udp_rcv → __udp4_lib_mcast_deliver / 单播查找
+→ sock_queue_rcv_skb → sk_filter() → sk_filter_trim_cap() → 【你的程序在这里】
+</code></pre>
+<p>真正贵的部分（GRO、路由查找、Netfilter、UDP 栈、组播 socket 组遍历、socket 查找）<strong>全都在你的程序之前</strong>。丢在这里只省掉了最后的拷贝到用户态，以及——</p>
+<p>更糟的是：<strong>如果你的进程没有加入那个组播组，那个包根本走不到你的 cgroup 程序。</strong> 内核在 <code class="c">__udp4_lib_mcast_deliver()</code> 里发现没有 socket 要它，就直接 <code class="c">kfree_skb()</code> 了。所以你「成功丢弃」的那些包，只可能是<strong>已经确定要交给某个 socket</strong> 的包——也就是说程序实际上没起到「过滤无关流量」的作用。</p>
+<p><strong>正确做法：把过滤下沉到 XDP 或 tc ingress。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>位置</th>
+<th>省掉什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>XDP</td>
 <td>驱动层</td>
-<td>xdp-loader</td>
+<td>skb 分配 + GRO + 路由 + Netfilter + UDP 栈 + socket 查找（<strong>几乎全部</strong>）</td>
 </tr>
 <tr>
-<td>tc-BPF</td>
-<td>tc ingress/egress</td>
-<td>tc</td>
+<td>tc ingress</td>
+<td><code class="c">__netif_receive_skb_core</code> 内</td>
+<td>路由 + Netfilter + UDP 栈 + socket 查找（<strong>仍然要付 skb 分配</strong>）</td>
 </tr>
 <tr>
-<td>cgroup-BPF</td>
-<td>cgroup</td>
-<td>bpftool cgroup</td>
+<td>cgroup ingress</td>
+<td><code class="c">sk_filter_trim_cap</code></td>
+<td>只有用户态拷贝</td>
+</tr>
+</tbody>
+</table></div>
+<p>顺带一个验证技巧：对比 <code class="c">cat /proc/net/softnet_stat</code> 第二列（<code class="c">time_squeeze</code>）和 <code class="c">ethtool -S eth0 | grep rx_</code>，下沉前后应有明显差异；cgroup 方案不会有任何变化。</p>
+</details>
+<details>
+<summary>Q3：你开了 <code class="c">kernel.bpf_stats_enabled=1</code> 测 XDP 程序，得到「平均 340 ns/包」。关掉 sysctl 之后用外部打点测，只有 90 ns。这个差距合理吗？为什么？</summary>
+<p><strong>合理，而且 340 ns 里的大部分很可能就是埋点本身的成本。</strong></p>
+<p>看 <code class="c">include/linux/filter.h:592</code> 的 <code class="c">__bpf_prog_run()</code>：开启统计后，每次执行都要额外做</p>
+<pre class="code" data-label="C"><code class="c">u64 start = sched_clock();                                  /* 1 */
+ret = dfunc(ctx, prog-&gt;insnsi, prog-&gt;bpf_func);
+stats = this_cpu_ptr(prog-&gt;stats);
+flags = u64_stats_update_begin_irqsave(&amp;stats-&gt;syncp);      /* 2：关中断 + seqcount */
+u64_stats_inc(&amp;stats-&gt;cnt);
+u64_stats_add(&amp;stats-&gt;nsecs, sched_clock() - start);        /* 3 */
+u64_stats_update_end_irqrestore(&amp;stats-&gt;syncp, flags);      /* 4 */
+</code></pre>
+<p>即：<strong>2 次 <code class="c">sched_clock()</code> + 1 次关中断的 seqcount 临界区 + 1 次 per-CPU 访问</strong>。</p>
+<ul>
+<li><code class="c">sched_clock()</code> 在 x86 上通常是 TSC 读取（~20–30 ns/次），但在某些配置下会退化成 HPET / <code class="c">ktime_get()</code> 路径，<strong>单次可达 100 ns 以上</strong>。两次就是 200 ns+。</li>
+<li><code class="c">u64_stats_update_begin_irqsave()</code> 涉及 <code class="c">local_irq_save</code>，有额外的指令和可能的 pipeline 影响。</li>
+<li>这些代码插入在你程序的前后，<strong>污染了 I-cache 和分支预测</strong>，间接拖慢程序本身。</li>
+</ul>
+<p><strong>所以正确的用法是：</strong></p>
+<ol>
+<li><strong><code class="c">run_time_ns</code>/<code class="c">run_cnt</code> 用于「相对比较」和「找热点」，不用于「绝对数字」。</strong> 比如：程序 A 埋点后 340 ns、程序 B 埋点后 180 ns，可以放心地说 A 比 B 慢一倍；但 340 ns 不等于 A 的真实成本。</li>
+<li><strong>测完立刻关掉</strong>：<code class="c">sysctl -w kernel.bpf_stats_enabled=0</code>。它是<strong>全局</strong>开关，开着会拖慢机器上<strong>所有</strong> BPF 程序的每次执行——包括别人挂的 Cilium/XDP 程序。</li>
+<li><strong>想要真实绝对数字</strong>，用三层测量：
+   - 硬件时间戳（网卡 PTP + <code class="c">SO_TIMESTAMPING</code>）做端到端；
+   - <code class="c">bpf_ktime_get_ns()</code> 在程序首尾各打一次，把差值写进 map（只增加约 40 ns，且不依赖 sysctl）；
+   - <code class="c">bpftool prog dump jited id &lt;ID&gt;</code> 数指令条数做静态估算。</li>
+</ol>
+<p>另外注意：<code class="c">stats</code> 是 <strong>per-CPU</strong> 的（<code class="c">this_cpu_ptr(prog-&gt;stats)</code>），bpftool 显示的是跨 CPU 累加值。如果你的 XDP 程序只挂在 1 个队列上，实际上测的是那一个 CPU 的数据——这恰好可以用来做 per-queue 的成本分解。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-07.html#ch-7">chapter-07-xdp-redirect-dpdk</a> — XDP_REDIRECT 的三步语义与 devmap/cpumap</li>
+<li><strong>本篇：</strong></li>
+<li><a href="chapter-15.html#s-02">02-bpf.md</a> — 程序类型、map 类型、verifier 限制</li>
+<li><a href="chapter-15.html#s-03">03-xdp-bpf.md</a> — XDP 程序的能力边界与返回码</li>
+<li><a href="chapter-13.html#s-04">04-cgroup-bpf.md</a> — cgroup attach 语义、继承与叠加</li>
+<li><strong>下一篇：</strong> <a href="chapter-09.html#ch-9">chapter-09-tc-bpf</a> — tc-BPF 流量分类</li>
+<li><strong>相关：</strong> <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture</a> XDP 架构 · <a href="chapter-06.html#ch-6">chapter-06-af-xdp</a> AF_XDP · <code class="c">06.7-bpf-observability/</code> eBPF 可观测性体系 · <a href="chapter-15.html#s-01">chapter-01</a> 网络栈 hook 点总顺序</li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>— BPF 类型系统、map 与 verifier 的真实约束</h2></div>
+<blockquote>
+<p><strong>来源：</strong> Linux 内核文档 <code class="c">Documentation/bpf/</code> + <strong>v6.6 源码逐条核对</strong>
+<strong>对应 Rosen：</strong> 无
+<strong>本篇立场：</strong> 网络上流传的「BPF 限制清单」有大量过时或错误的条目（尤其是指令数上限）。本篇所有数字都来自 v6.6 源码，并明确标注<strong>哪些文档注释已经与代码不一致</strong>。</p>
+</blockquote>
+<h2>文档概述</h2>
+<p>本篇回答三个问题：</p>
+<ol>
+<li><strong>v6.6 里到底有多少种程序类型、多少种 map 类型，各自是干什么的。</strong></li>
+<li><strong>谁有资格把一个 BPF 程序塞进内核</strong>（权限模型，这块几乎没人写清楚）。</li>
+<li><strong>verifier 真正卡住你的是什么</strong>——不是「不能有循环」这种口号，而是具体的限流常量，以及<strong>哪些常量的文档注释已经过时</strong>。</li>
+</ol>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>本篇与它的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01-ebpf-net-bootlin.md</a></td>
+<td>01 给出「类型 × 挂载点 × 工具」横表；本篇给出类型的<strong>全部清单</strong>和<strong>能力边界</strong></td>
 </tr>
 <tr>
-<td>sk_msg</td>
-<td>socket</td>
-<td>skmsg</td>
+<td><a href="chapter-15.html#s-03">03-xdp-bpf.md</a></td>
+<td>本篇的 verifier 规则在 XDP 上的具体体现（包边界检查）由 03 展开</td>
 </tr>
 <tr>
-<td>sk_reuseport</td>
-<td>SO_REUSEPORT</td>
+<td><a href="chapter-13.html#s-04">04-cgroup-bpf.md</a></td>
+<td>本篇的 cgroup 类型在 04 展开 attach 语义</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>1. 程序类型：v6.6 共 33 种</h2>
+<p><code class="c">enum bpf_prog_type</code>（<code class="c">include/uapi/linux/bpf.h:958-990</code>），从 <code class="c">BPF_PROG_TYPE_UNSPEC</code> 到 <code class="c">BPF_PROG_TYPE_NETFILTER</code>，<strong>共 33 个成员</strong>。</p>
+<p>完整清单（按内核版本引入顺序大致排列）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>类型</th>
+<th>引入</th>
+<th>领域</th>
+<th>上下文结构体</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code class="c">UNSPEC</code></td>
+<td>—</td>
+<td>占位</td>
+<td>—</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code class="c">SOCKET_FILTER</code></td>
+<td>3.19</td>
+<td>网络</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code class="c">KPROBE</code></td>
+<td>4.1</td>
+<td>追踪</td>
+<td><code class="c">struct pt_regs</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">SCHED_CLS</code></td>
+<td>4.1</td>
+<td>网络（tc）</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">SCHED_ACT</code></td>
+<td>4.1</td>
+<td>网络（tc action）</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">TRACEPOINT</code></td>
+<td>4.7</td>
+<td>追踪</td>
+<td>tracepoint 参数结构</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code class="c">XDP</code></td>
+<td>4.8</td>
+<td>网络</td>
+<td><code class="c">struct xdp_md</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code class="c">PERF_EVENT</code></td>
+<td>4.9</td>
+<td>追踪</td>
+<td><code class="c">struct bpf_perf_event_data</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code class="c">CGROUP_SKB</code></td>
+<td>4.10</td>
+<td>cgroup 网络</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td><code class="c">CGROUP_SOCK</code></td>
+<td>4.10</td>
+<td>cgroup 网络</td>
+<td><code class="c">struct bpf_sock</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td><code class="c">LWT_IN</code></td>
+<td>4.10</td>
+<td>路由隧道</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td><code class="c">LWT_OUT</code></td>
+<td>4.10</td>
+<td>路由隧道</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td><code class="c">LWT_XMIT</code></td>
+<td>4.12</td>
+<td>路由隧道</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>13</td>
+<td><code class="c">SOCK_OPS</code></td>
+<td>4.13</td>
+<td>cgroup 网络</td>
+<td><code class="c">struct bpf_sock_ops</code></td>
+</tr>
+<tr>
+<td>14</td>
+<td><code class="c">SK_SKB</code></td>
+<td>4.14</td>
+<td>sockmap</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td><code class="c">CGROUP_DEVICE</code></td>
+<td>4.15</td>
+<td>cgroup 设备</td>
+<td><code class="c">struct bpf_cgroup_dev_ctx</code></td>
+</tr>
+<tr>
+<td>16</td>
+<td><code class="c">SK_MSG</code></td>
+<td>4.17</td>
+<td>sockmap</td>
+<td><code class="c">struct sk_msg_md</code></td>
+</tr>
+<tr>
+<td>17</td>
+<td><code class="c">RAW_TRACEPOINT</code></td>
+<td>4.17</td>
+<td>追踪</td>
+<td><code class="c">struct bpf_raw_tracepoint_args</code></td>
+</tr>
+<tr>
+<td>18</td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td>4.18</td>
+<td>cgroup 网络</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td>19</td>
+<td><code class="c">LWT_SEG6LOCAL</code></td>
+<td>4.18</td>
+<td>SRv6</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>20</td>
+<td><code class="c">LIRC_MODE2</code></td>
+<td>4.18</td>
+<td>红外</td>
+<td><code class="c">unsigned int</code></td>
+</tr>
+<tr>
+<td>21</td>
+<td><code class="c">SK_REUSEPORT</code></td>
+<td>4.19</td>
+<td>网络</td>
+<td><code class="c">struct sk_reuseport_md</code></td>
+</tr>
+<tr>
+<td>22</td>
+<td><code class="c">FLOW_DISSECTOR</code></td>
+<td>4.20</td>
+<td>网络</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td>23</td>
+<td><code class="c">CGROUP_SYSCTL</code></td>
+<td>5.2</td>
+<td>cgroup sysctl</td>
+<td><code class="c">struct bpf_sysctl</code></td>
+</tr>
+<tr>
+<td>24</td>
+<td><code class="c">RAW_TRACEPOINT_WRITABLE</code></td>
+<td>5.2</td>
+<td>追踪</td>
+<td><code class="c">struct bpf_raw_tracepoint_args</code></td>
+</tr>
+<tr>
+<td>25</td>
+<td><code class="c">CGROUP_SOCKOPT</code></td>
+<td>5.3</td>
+<td>cgroup 网络</td>
+<td><code class="c">struct bpf_sockopt</code></td>
+</tr>
+<tr>
+<td>26</td>
+<td><code class="c">TRACING</code></td>
+<td>5.5</td>
+<td>追踪（fentry/fexit）</td>
+<td>依 attach 而定</td>
+</tr>
+<tr>
+<td>27</td>
+<td><code class="c">STRUCT_OPS</code></td>
+<td>5.6</td>
+<td>内核子系统（如拥塞控制）</td>
+<td>依具体 ops</td>
+</tr>
+<tr>
+<td>28</td>
+<td><code class="c">EXT</code></td>
+<td>5.6</td>
+<td>扩展已有程序</td>
+<td>—</td>
+</tr>
+<tr>
+<td>29</td>
+<td><code class="c">LSM</code></td>
+<td>5.7</td>
+<td>安全</td>
+<td><code class="c">struct bpf_ctx</code></td>
+</tr>
+<tr>
+<td>30</td>
+<td><code class="c">SK_LOOKUP</code></td>
+<td>5.8</td>
+<td>网络</td>
+<td><code class="c">struct bpf_sk_lookup</code></td>
+</tr>
+<tr>
+<td>31</td>
+<td><code class="c">SYSCALL</code></td>
+<td>5.14</td>
+<td>用户态调用</td>
+<td><code class="c">union bpf_attr</code> 等</td>
+</tr>
+<tr>
+<td>32</td>
+<td><code class="c">NETFILTER</code></td>
+<td><strong>6.4</strong></td>
+<td>网络（NF hook）</td>
+<td><code class="c">struct bpf_nf_ctx</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意枚举值是稳定的 ABI</strong>：这些数字一旦发布就不能改，所以内核只能「在末尾追加」。这也是为什么列表里出现了 <code class="c">LIRC_MODE2</code> 这种和网络毫无关系的成员。</p>
+</blockquote>
+<p><strong>与网络直接相关的有 17 种</strong>（上表中「领域」列含「网络 / cgroup 网络 / sockmap / 路由隧道 / NF」的）。这也是 <a href="chapter-15.html#s-01">01</a> 第 3 节那张横表的来源。</p>
+<h3>1.1 谁有资格加载：<code class="c">CAP_BPF</code></h3>
+<p><code class="c">kernel/bpf/syscall.c:2584-2592</code> 的加载检查（<code class="c">BPF_PROG_LOAD</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    if (sysctl_unprivileged_bpf_disabled &amp;&amp; !bpf_capable())
+        return -EPERM;
+
+    if (attr-&gt;insn_cnt == 0 ||
+        attr-&gt;insn_cnt &gt; (bpf_capable() ? BPF_COMPLEXITY_LIMIT_INSNS : BPF_MAXINSNS))
+        return -E2BIG;
+    if (type != BPF_PROG_TYPE_SOCKET_FILTER &amp;&amp;
+        type != BPF_PROG_TYPE_CGROUP_SKB &amp;&amp;
+        !bpf_capable())
+        return -EPERM;
+</code></pre>
+<p>三条规则：</p>
+<ol>
+<li><strong><code class="c">sysctl_unprivileged_bpf_disabled</code> = 1 时，非特权一律 <code class="c">-EPERM</code>。</strong> 现代发行版（含 Debian/RHEL 默认）基本都是 1。</li>
+<li><strong>指令数超限返回 <code class="c">-E2BIG</code>，不是 <code class="c">-EINVAL</code></strong>（很多人按 <code class="c">-EINVAL</code> 去 grep，永远找不到）。</li>
+<li><strong>即使关掉 <code class="c">unprivileged_bpf_disabled</code>，无特权进程也只能加载 <code class="c">SOCKET_FILTER</code> 和 <code class="c">CGROUP_SKB</code> 两种。</strong> 想挂 XDP / tc，必须有 <code class="c">CAP_BPF</code> 或 <code class="c">CAP_SYS_ADMIN</code>。</li>
+</ol>
+<p><code class="c">bpf_capable()</code> 的定义（<code class="c">include/linux/capability.h:200</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static inline bool bpf_capable(void)
+{
+    return capable(CAP_BPF) || capable(CAP_SYS_ADMIN);
+}
+</code></pre>
+<h3>1.2 一个反直觉的细节：特权程序反而「验得更快」</h3>
+<p>verifier 里 <code class="c">env-&gt;bpf_capable</code> 会影响精度追踪的开关（<code class="c">kernel/bpf/verifier.c:2276</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    reg-&gt;precise = !env-&gt;bpf_capable;
+</code></pre>
+<p>即：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用者</th>
+<th><code class="c">precise</code></th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>有 <code class="c">CAP_BPF</code>/<code class="c">CAP_SYS_ADMIN</code></td>
+<td><code class="c">false</code></td>
+<td>默认不做精确标量追踪 → verifier <strong>更宽松、更快</strong></td>
+</tr>
+<tr>
+<td>无特权</td>
+<td><code class="c">true</code></td>
+<td>强制精确追踪 → verifier <strong>更严格、更慢</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>原因是安全模型：特权代码已经被信任，不需要用 verifier 兜底；非特权代码必须靠 verifier 严格证明。</p>
+<p>同理，回边检测处（<code class="c">kernel/bpf/verifier.c:14761</code>）：</p>
+<pre class="code" data-label="C"><code class="c">        if (loop_ok &amp;&amp; env-&gt;bpf_capable)
+            return DONE_EXPLORING;
+</code></pre>
+<p>——<code class="c">bpf_loop()</code> 这类 helper 构造的循环，<strong>只有特权程序才能用</strong>；无特权程序遇到回边直接 <code class="c">-EINVAL</code>。</p>
+<hr />
+<h2>2. Map 类型：v6.6 共 33 种</h2>
+<p><code class="c">enum bpf_map_type</code>（<code class="c">include/uapi/linux/bpf.h:907-946</code>），同样 33 种。按用途分四类：</p>
+<h3>2.1 通用键值存储（8 种）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>特点</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">HASH</code></td>
+<td>哈希表，动态增删</td>
+<td>连接跟踪、流表</td>
+</tr>
+<tr>
+<td><code class="c">ARRAY</code></td>
+<td>定长数组，索引即 key</td>
+<td>计数器、配置</td>
+</tr>
+<tr>
+<td><code class="c">PERCPU_HASH</code> / <code class="c">PERCPU_ARRAY</code></td>
+<td>每 CPU 独立副本</td>
+<td><strong>高吞吐计数</strong>（无原子竞争）</td>
+</tr>
+<tr>
+<td><code class="c">LRU_HASH</code> / <code class="c">LRU_PERCPU_HASH</code></td>
+<td>满了自动淘汰</td>
+<td>缓存</td>
+</tr>
+<tr>
+<td><code class="c">LPM_TRIE</code></td>
+<td>最长前缀匹配</td>
+<td><strong>路由表 / IP 前缀过滤</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.2 特殊语义存储（7 种）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PROG_ARRAY</code></td>
+<td>尾调用（<code class="c">bpf_tail_call</code>）的程序数组</td>
+</tr>
+<tr>
+<td><code class="c">ARRAY_OF_MAPS</code> / <code class="c">HASH_OF_MAPS</code></td>
+<td>map 中存 map 的 fd，做 map-in-map</td>
+</tr>
+<tr>
+<td><code class="c">QUEUE</code> / <code class="c">STACK</code></td>
+<td>FIFO / LIFO，只能 <code class="c">push</code>/<code class="c">pop</code>/<code class="c">peek</code>，<strong>不能随机访问</strong></td>
+</tr>
+<tr>
+<td><code class="c">BLOOM_FILTER</code></td>
+<td>5.16+，概率型成员查询，省内存</td>
+</tr>
+<tr>
+<td><code class="c">STRUCT_OPS</code></td>
+<td>内核子系统的函数指针表（如自定义 TCP 拥塞控制算法）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.3 网络专用（7 种）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>用途</th>
+<th>详细见</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">DEVMAP</code> / <code class="c">DEVMAP_HASH</code></td>
+<td>XDP redirect 到网卡</td>
+<td><a href="chapter-15.html#s-01">chapter-07</a></td>
+</tr>
+<tr>
+<td><code class="c">CPUMAP</code></td>
+<td>XDP redirect 到另一个 CPU</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">XSKMAP</code></td>
+<td>XDP redirect 到 AF_XDP socket</td>
+<td><a href="chapter-15.html#s-01">chapter-06</a></td>
+</tr>
+<tr>
+<td><code class="c">SOCKMAP</code> / <code class="c">SOCKHASH</code></td>
+<td>socket 重定向（sk_msg / sk_skb）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">REUSEPORT_SOCKARRAY</code></td>
+<td><code class="c">SO_REUSEPORT</code> 组内的 socket 数组</td>
 <td>—</td>
 </tr>
 </tbody>
 </table></div>
-<h2>tc-BPF 实验</h2>
-<pre class="code" data-label="shell"><code class="c"># 加载 tc-BPF 分类器
-tc qdisc add dev eth0 clsact
-tc filter add dev eth0 ingress bpf da obj tc_prog.o sec ingress
-
-# 查看统计
-tc filter show dev eth0 ingress
-
-# 删除
-tc qdisc del dev eth0 clsact
-</code></pre>
-<h2>BPF Map 实验</h2>
-<pre class="code" data-label="shell"><code class="c"># 查看所有 BPF map
-bpftool map show
-
-# 查看 map 内容
-bpftool map dump id &lt;map_id&gt;
-
-# 查看加载的程序
-bpftool prog show
-</code></pre>
-<h2>调试 BPF 程序</h2>
-<pre class="code" data-label="shell"><code class="c"># BPF trace pipe
-cat /sys/kernel/debug/tracing/trace_pipe
-
-# bpf_trace_printk() 输出到 trace pipe
-# 在 BPF 程序中：
-# bpf_trace_printk(&quot;pkt: port=%d\n&quot;, port);
-</code></pre>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">05</div><h2>— Documentation/bpf/</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核源码路径:</strong> <code class="c">Documentation/bpf/</code></p>
-</blockquote>
-<h2>文档概述</h2>
-<p>eBPF 官方文档目录，涵盖 BPF 程序类型、verifier、工具链、指令集等。</p>
-<h2>与网络相关的 BPF 程序类型</h2>
+<h3>2.4 存储类（local storage，6 种）+ 事件通道（3 种）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>程序类型</th>
-<th>挂载点</th>
+<th>类型</th>
 <th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>BPF_PROG_TYPE_XDP</td>
-<td>网卡驱动层</td>
-<td>收包最早点处理</td>
+<td><code class="c">SK_STORAGE</code></td>
+<td>挂在 <code class="c">struct sock</code> 上的 per-socket 私有数据</td>
 </tr>
 <tr>
-<td>BPF_PROG_TYPE_SCHED_CLS</td>
-<td>tc ingress/egress</td>
-<td>流量分类</td>
+<td><code class="c">INODE_STORAGE</code> / <code class="c">TASK_STORAGE</code> / <code class="c">CGRP_STORAGE</code></td>
+<td>挂在这些内核对象上的私有数据</td>
 </tr>
 <tr>
-<td>BPF_PROG_TYPE_SCHED_ACT</td>
-<td>tc action</td>
-<td>流量动作</td>
+<td><code class="c">CGROUP_STORAGE</code> / <code class="c">PERCPU_CGROUP_STORAGE</code></td>
+<td>cgroup 私有数据（前者已 deprecated，与 <code class="c">CGROUP_STORAGE_DEPRECATED</code> 同值）</td>
 </tr>
 <tr>
-<td>BPF_PROG_TYPE_CGROUP_SKB</td>
-<td>cgroup</td>
-<td>进程组网络过滤</td>
+<td><code class="c">PERF_EVENT_ARRAY</code></td>
+<td>perf 事件环形缓冲（per-CPU <strong>且</strong> 每个 buffer 独立，乱序）</td>
 </tr>
 <tr>
-<td>BPF_PROG_TYPE_CGROUP_SOCK_ADDR</td>
-<td>connect/bind</td>
-<td>socket 地址拦截</td>
+<td><code class="c">RINGBUF</code></td>
+<td>5.8+，全局单一环形缓冲，<strong>按提交顺序</strong>，无 per-CPU 拷贝</td>
 </tr>
 <tr>
-<td>BPF_PROG_TYPE_SK_REUSEPORT</td>
-<td>SO_REUSEPORT</td>
-<td>连接分发</td>
-</tr>
-<tr>
-<td>BPF_PROG_TYPE_SK_MSG</td>
-<td>socket sendmsg</td>
-<td>socket 消息拦截/重定向</td>
+<td><code class="c">USER_RINGBUF</code></td>
+<td>6.1+，<strong>用户态生产、内核消费</strong>（方向与 <code class="c">RINGBUF</code> 相反）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>BPF Map 类型</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>Map 类型</th>
-<th>网络用途</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>BPF_MAP_TYPE_DEVMAP</td>
-<td>XDP redirect 到网卡</td>
-</tr>
-<tr>
-<td>BPF_MAP_TYPE_CPUMAP</td>
-<td>XDP redirect 到 CPU</td>
-</tr>
-<tr>
-<td>BPF_MAP_TYPE_XSKMAP</td>
-<td>AF_XDP socket 查找</td>
-</tr>
-<tr>
-<td>BPF_MAP_TYPE_SOCKMAP</td>
-<td>socket 重定向</td>
-</tr>
-<tr>
-<td>BPF_MAP_TYPE_LPM_TRIE</td>
-<td>最长前缀匹配（路由）</td>
-</tr>
-</tbody>
-</table></div>
-<h3>Verifier 限制</h3>
-<ul>
-<li>程序大小有限（100 万指令）</li>
-<li>不能有无限循环</li>
-<li>不能解引用空指针</li>
-<li>必须检查 data_end 边界</li>
-<li>不能直接访问内核内存（需通过 helper）</li>
-</ul>
-<h2>HFT 要点</h2>
-<ul>
-<li>XDP + XSKMAP 实现 AF_XDP 路径</li>
-<li>CPUMAP + BPF 实现行情多核分发</li>
-<li>verifier 限制：复杂的包解析逻辑需注意指令数限制</li>
-</ul>
-      </section>
-      <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">10</div><h2>— XDP-BPF：收包路径中的 eBPF</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> XDP BPF 4.8+</p>
+<p><strong><code class="c">RINGBUF</code> vs <code class="c">PERF_EVENT_ARRAY</code> 的选型</strong>：前者保序、内存利用率高、但所有 CPU 竞争同一个 producer 位置；后者 per-CPU 无竞争、但<strong>事件在多个 CPU 间可能乱序</strong>，且每个 CPU 都得预留一份内存。HFT 场景如果要做「按到达顺序重建事件序列」，只能用 <code class="c">RINGBUF</code>；如果只做聚合计数，<code class="c">PERCPU_ARRAY</code> 最省。</p>
 </blockquote>
-<h2>XDP-BPF vs tc-BPF</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>XDP-BPF</th>
-<th>tc-BPF</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>挂载位置</td>
-<td>驱动层（sk_buff 之前）</td>
-<td>tc ingress/egress（sk_buff 之后）</td>
-</tr>
-<tr>
-<td>数据结构</td>
-<td>xdp_buff</td>
-<td>sk_buff</td>
-</tr>
-<tr>
-<td>能修改 skb 元数据</td>
-<td>否（无 sk_buff）</td>
-<td>是（mark/priority/queue_mapping）</td>
-</tr>
-<tr>
-<td>性能</td>
-<td>最高</td>
-<td>次之</td>
-</tr>
-<tr>
-<td>适用场景</td>
-<td>早过滤/早丢弃/早分类</td>
-<td>需要 skb 元数据的场景</td>
-</tr>
-</tbody>
-</table></div>
-<h2>XDP-BPF 程序能做什么</h2>
-<ol>
-<li><strong>读取/修改包内容</strong>：直接操作 xdp_buff 的 data/data_end</li>
-<li><strong>丢弃包</strong>：返回 XDP_DROP，不分配 sk_buff</li>
-<li><strong>重定向</strong>：CPUMAP / DEVMAP / AF_XDP</li>
-<li><strong>反弹发送</strong>：XDP_TX（修改 MAC 后原路返回）</li>
-<li><strong>修改包</strong>：增删头部（bpf_xdp_adjust_head）</li>
-</ol>
-<h2>实际 HFT 应用：行情组播早过滤</h2>
-<pre class="code" data-label="C"><code class="c">SEC(&quot;xdp&quot;)
-int xdp_md_filter(struct xdp_md *ctx) {
-    void *data = (void *)(long)ctx-&gt;data;
-    void *data_end = (void *)(long)ctx-&gt;data_end;
-
-    struct ethhdr *eth = data;
-    if ((void*)(eth + 1) &gt; data_end) return XDP_DROP;
-    if (eth-&gt;h_proto != bpf_htons(ETH_P_IP)) return XDP_PASS;
-
-    struct iphdr *ip = (void*)(eth + 1);
-    if ((void*)(ip + 1) &gt; data_end) return XDP_DROP;
-
-    // 只放行特定组播地址的行情流
-    if (ip-&gt;daddr == bpf_htonl(0xe1000001)) {  // 225.0.0.1
-        return XDP_PASS;  // 目标行情流
-    }
-    return XDP_DROP;  // 丢弃非行情组播
-}
+<hr />
+<h2>3. Verifier：三条硬规则 + 真实限流常量</h2>
+<h3>3.1 三条硬规则（这个说法是对的）</h3>
+<p><code class="c">kernel/bpf/verifier.c:44-62</code> 的文档注释：</p>
+<pre class="code" data-label="C"><code class="c">/* bpf_check() is a static code analyzer that walks eBPF program
+ * instruction by instruction and updates register/stack state.
+ * All paths of conditional branches are analyzed until 'bpf_exit' insn.
+ *
+ * The first pass is depth-first-search to check that the program is a DAG.
+ * It rejects the following programs:
+ * - larger than BPF_MAXINSNS insns
+ * - if loop is present (detected via back-edge)
+ * - unreachable insns exist (shouldn't be a forest. program = one function)
+ * - out of bounds or malformed jumps
+ * The second pass is all possible path descent from the 1st insn.
+ * Since it's analyzing all paths through the program, the length of the
+ * analysis is limited to 64k insn, which may be hit even if total number of
+ * insn is less then 4K, but there are too many branches that change stack/regs.
+ * Number of 'branches to be analyzed' is limited to 1k
+ */
 </code></pre>
-<h2>性能数据（参考）</h2>
+<p>三条硬规则：<strong>程序必须是 DAG（不能有回边）</strong>、<strong>不能有不可达指令</strong>、<strong>跳转不能越界或畸形</strong>。</p>
+<p>配套的具体约束（都是 XDP/tc 程序天天会撞到的）：</p>
+<ul>
+<li><strong>包边界检查</strong>：<code class="c">data + offset + size &gt; data_end</code> 必须在使用前显式判掉，否则 <code class="c">R? offset is outside of the packet</code>。</li>
+<li><strong>栈大小</strong>：<code class="c">MAX_BPF_STACK = 512</code> 字节（<code class="c">include/linux/filter.h:90</code>）。</li>
+<li><strong>调用深度</strong>：<code class="c">MAX_CALL_FRAMES 8</code>（<code class="c">include/linux/bpf_verifier.h:316</code>）。</li>
+<li><strong>可变偏移范围</strong>：<code class="c">BPF_MAX_VAR_OFF = BPF_MAX_VAR_SIZ = 1 &lt;&lt; 29</code>（<code class="c">include/linux/bpf_verifier.h:16,20</code>），即 512 MB。</li>
+<li><strong>寄存器</strong>：R0 返回值，R1–R5 传参，R6–R9 callee-saved，R10 只读帧指针（见 verifier.c:66-73 注释）。<strong>R1 进入时是 <code class="c">PTR_TO_CTX</code>。</strong></li>
+</ul>
+<h3>3.2 ⚠️ 三处「文档与代码不一致」，必须纠正</h3>
+<h4>纠正 1：第二遍的限流是 <strong>100 万</strong>，不是 64k</h4>
+<p>文档注释说「the analysis is limited to 64k insn」。<strong>v6.6 代码里不是这样。</strong> 实际执行点在 <code class="c">kernel/bpf/verifier.c:16455</code>：</p>
+<pre class="code" data-label="C"><code class="c">        if (++env-&gt;insn_processed &gt; BPF_COMPLEXITY_LIMIT_INSNS) {
+            verbose(env,
+                &quot;BPF program is too large. Processed %d insn\n&quot;,
+                env-&gt;insn_processed);
+            return -E2BIG;
+        }
+</code></pre>
+<p>而 <code class="c">BPF_COMPLEXITY_LIMIT_INSNS</code> 是（<code class="c">include/linux/bpf.h:1723</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define BPF_COMPLEXITY_LIMIT_INSNS      1000000 /* yes. 1M insns */
+</code></pre>
+<p><strong>所以：第二遍路径分析的预算是 100 万条「被处理的指令」，不是 64k。</strong> 这个预算是<strong>累计处理量</strong>，不是程序长度——一个 500 条指令但有大量分支的程序，可以轻松把 <code class="c">insn_processed</code> 推到 100 万。</p>
+<p>报错信息是 <code class="c">BPF program is too large. Processed %d insn</code>，返回 <code class="c">-E2BIG</code>。</p>
+<h4>纠正 2：「branches 限制 1k」已经不存在</h4>
+<p>注释里的 <code class="c">Number of 'branches to be analyzed' is limited to 1k</code> 在 v6.6 代码里<strong>找不到对应的限流</strong>。<code class="c">struct bpf_verifier_state</code> 里的 <code class="c">u32 branches</code> 字段（<code class="c">include/linux/bpf_verifier.h:368</code>）另有用途——它是<strong>「还剩多少条路径没探索」的计数</strong>，用于检测无限循环：</p>
+<pre class="code" data-label="C"><code class="c">    /*
+     * 'branches' field is the number of branches left to explore:
+     * 0 - all possible paths from this state reached bpf_exit or
+     *     were safely pruned
+     * 1 - at least one path is being explored.
+     * ...
+     * If is_state_visited() sees a state with branches &gt; 0 it means
+     * there is a loop. ...
+     * This algorithm may not find all possible infinite loops or
+     * loop iteration count may be too high.
+     * In such cases BPF_COMPLEXITY_LIMIT_INSNS limit kicks in.
+     */
+    u32 branches;
+</code></pre>
+<p>注意最后一句：<strong>「漏检的循环最终靠 <code class="c">BPF_COMPLEXITY_LIMIT_INSNS</code> 兜底」</strong>——也就是说这个 100 万指令预算<strong>同时也是循环检测的兜底机制</strong>。写 verifier 日志里出现 <code class="c">BPF program is too large</code> 时，原因可能是程序真的太大，也可能是<strong>写了一个 verifier 没识别出来的循环</strong>。</p>
+<h4>纠正 3：<code class="c">BPF_MAXINSNS</code> 确实存在，且是 4096</h4>
+<p>上一版笔记和很多资料说「4096」，但没给出处。<code class="c">BPF_MAXINSNS</code> 定义在 <strong><code class="c">include/uapi/linux/bpf_common.h:53-54</code></strong>（不在 <code class="c">bpf.h</code>，也不在 <code class="c">filter.h</code>，这也是为什么大家 grep 不到）：</p>
+<pre class="code" data-label="C"><code class="c">#ifndef BPF_MAXINSNS
+#define BPF_MAXINSNS 4096
+#endif
+</code></pre>
+<p>完整的两级指令数上限：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>操作</th>
-<th>延迟（cycles）</th>
+<th>调用者</th>
+<th>单程序最大指令数</th>
+<th>位置</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>XDP DROP（空程序）</td>
-<td>~10</td>
+<td>有 <code class="c">CAP_BPF</code>/<code class="c">CAP_SYS_ADMIN</code></td>
+<td><strong>1,000,000</strong>（<code class="c">BPF_COMPLEXITY_LIMIT_INSNS</code>）</td>
+<td><code class="c">include/linux/bpf.h:1723</code></td>
 </tr>
 <tr>
-<td>XDP PASS（空程序）</td>
-<td>~20</td>
-</tr>
-<tr>
-<td>XDP + 包头解析</td>
-<td>~50-100</td>
-</tr>
-<tr>
-<td>sk_buff 分配 + 协议栈</td>
-<td>~300+</td>
+<td>无特权</td>
+<td><strong>4,096</strong>（<code class="c">BPF_MAXINSNS</code>）</td>
+<td><code class="c">include/uapi/linux/bpf_common.h:54</code></td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 关联</h2>
-<p>XDP-BPF 是 HFT 在内核态做<strong>最早点包处理</strong>的唯一方案：
-- 比 tc-BPF 更早（不分配 sk_buff）
-- 比 Netfilter 更早（不经过协议栈）
-- 可与 AF_XDP 配合实现接近 DPDK 的零拷贝路径</p>
-      </section>
-      <section class="section" id="s-04">
-        <div class="sec-head"><div class="sec-no">11</div><h2>— cgroup-BPF：容器网络隔离</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> cgroup BPF 4.10+；SOCK_ADDR 4.18+</p>
-</blockquote>
-<h2>cgroup-BPF 是什么</h2>
-<p>cgroup-BPF 允许在 cgroup 级别挂载 BPF 程序，对该 cgroup 内所有进程的网络操作进行过滤/修改：</p>
+<p>超限在 <code class="c">BPF_PROG_LOAD</code> 阶段返回 <code class="c">-E2BIG</code>（<code class="c">kernel/bpf/syscall.c:2587</code>）。</p>
+<h3>3.3 v6.6 里真实存在的其他限流常量</h3>
+<p><code class="c">kernel/bpf/verifier.c:183-184</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define BPF_COMPLEXITY_LIMIT_JMP_SEQ    8192
+#define BPF_COMPLEXITY_LIMIT_STATES 64
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>程序类型</th>
-<th>挂载点</th>
+<th>常量</th>
+<th>值</th>
 <th>作用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>BPF_CGROUP_INET_INGRESS</td>
-<td>cgroup ingress</td>
-<td>过滤该 cgroup 进程收到的包</td>
+<td><code class="c">BPF_COMPLEXITY_LIMIT_JMP_SEQ</code></td>
+<td>8192</td>
+<td>单条「跳转序列」的复杂度上限</td>
 </tr>
 <tr>
-<td>BPF_CGROUP_INET_EGRESS</td>
-<td>cgroup egress</td>
-<td>过滤该 cgroup 进程发出的包</td>
+<td><code class="c">BPF_COMPLEXITY_LIMIT_STATES</code></td>
+<td>64</td>
+<td>剪枝点的候选状态数上限（超出就不再尝试 <code class="c">states_equal()</code> 剪枝）</td>
 </tr>
 <tr>
-<td>BPF_CGROUP_SOCK_ADDR</td>
-<td>connect/bind</td>
-<td>拦截/修改 connect/bind 调用</td>
+<td><code class="c">BPF_COMPLEXITY_LIMIT_INSNS</code></td>
+<td>1,000,000</td>
+<td>加载时上限 + 第二遍路径分析预算（<strong>双重用途</strong>）</td>
 </tr>
 <tr>
-<td>BPF_CGROUP_SOCK_ops</td>
-<td>socket 操作</td>
-<td>监控/修改 socket 状态</td>
+<td><code class="c">MAX_CALL_FRAMES</code></td>
+<td>8</td>
+<td>子程序调用深度</td>
+</tr>
+<tr>
+<td><code class="c">MAX_BPF_STACK</code></td>
+<td>512 字节</td>
+<td>BPF 栈</td>
 </tr>
 </tbody>
 </table></div>
-<h2>与 XDP-BPF / tc-BPF 的区别</h2>
+<h3>3.4 完整报错速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>verifier 报错</th>
+<th>真实原因</th>
+<th>对策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">R? offset is outside of the packet</code></td>
+<td>包边界检查缺失或写法让 verifier 无法推断</td>
+<td>在解引用前 <code class="c">if ((void *)(hdr + 1) &gt; data_end) return XDP_PASS;</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF program is too large. Processed %d insn</code></td>
+<td><code class="c">insn_processed</code> 超 100 万；<strong>也可能是未识别的循环</strong></td>
+<td>拆分逻辑、减少分支、用尾调用；或检查是否写出隐式循环</td>
+</tr>
+<tr>
+<td><code class="c">back-edge from insn %d to %d</code></td>
+<td>检测到回边（循环）</td>
+<td>展开循环为固定次数；或用 <code class="c">bpf_loop()</code>（需特权）</td>
+</tr>
+<tr>
+<td><code class="c">invalid bpf_context access</code></td>
+<td>访问了上下文结构体中不存在的字段（常见于 CO-RE 或类型不匹配）</td>
+<td>确认程序类型与上下文类型匹配；用 <code class="c">bpftool btf dump</code> 核对字段</td>
+</tr>
+<tr>
+<td><code class="c">jump out of range</code></td>
+<td>跳转目标越界</td>
+<td>编译器问题，检查是否手写了 <code class="c">.S</code></td>
+</tr>
+<tr>
+<td><code class="c">unreachable insn %d</code></td>
+<td>存在不可达指令</td>
+<td>通常是编译器产生的死代码，升级 clang</td>
+</tr>
+<tr>
+<td><code class="c">call to invalid bpf_func_id</code> / <code class="c">unknown func</code></td>
+<td>该程序类型不支持这个 helper</td>
+<td>查 <a href="chapter-15.html#s-01">01</a> 第 3.1 节的 helper 能力集表</td>
+</tr>
+<tr>
+<td><code class="c">R1 type=scalar expected=ctx</code></td>
+<td>把 R1 当普通寄存器用了</td>
+<td>R1 进入时是 <code class="c">PTR_TO_CTX</code>，别覆盖它</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>4. helper 能力集：程序类型决定你能调什么</h2>
+<p><code class="c">net/core/filter.c</code> 里各 <code class="c">get_func_proto</code> 的 <code class="c">case BPF_FUNC_*</code> 分支数（v6.6 实测）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分发函数</th>
+<th>源码位置</th>
+<th><code class="c">case</code> 数</th>
+<th>兜底</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tc_cls_act_func_proto()</code></td>
+<td>:7968</td>
+<td><strong>81</strong></td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">xdp_func_proto()</code></td>
+<td>:8084</td>
+<td><strong>23</strong></td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">cg_skb_func_proto()</code></td>
+<td>:7919</td>
+<td>15 + <code class="c">cgroup_common_func_proto()</code></td>
+<td><code class="c">sk_filter_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">sk_msg_func_proto()</code></td>
+<td>:8226</td>
+<td>14</td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">sock_ops_func_proto()</code></td>
+<td>:8178</td>
+<td>14</td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+<tr>
+<td><code class="c">sk_filter_func_proto()</code></td>
+<td>:7897</td>
+<td><strong>5</strong></td>
+<td><code class="c">bpf_sk_base_func_proto()</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.1 XDP 的 23 个 helper（<code class="c">xdp_func_proto()</code>，net/core/filter.c:8084）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>helper</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>包改写</td>
+<td><code class="c">xdp_adjust_head</code>、<code class="c">xdp_adjust_tail</code>、<code class="c">xdp_adjust_meta</code></td>
+</tr>
+<tr>
+<td>包访问</td>
+<td><code class="c">xdp_load_bytes</code>、<code class="c">xdp_store_bytes</code>、<code class="c">xdp_get_buff_len</code></td>
+</tr>
+<tr>
+<td>转发</td>
+<td><code class="c">redirect</code>、<code class="c">redirect_map</code></td>
+</tr>
+<tr>
+<td>校验和</td>
+<td><code class="c">csum_diff</code></td>
+</tr>
+<tr>
+<td>查表</td>
+<td><code class="c">fib_lookup</code>、<code class="c">check_mtu</code></td>
+</tr>
+<tr>
+<td>socket 关联</td>
+<td><code class="c">sk_lookup_tcp</code>、<code class="c">sk_lookup_udp</code>、<code class="c">skc_lookup_tcp</code>、<code class="c">sk_release</code></td>
+</tr>
+<tr>
+<td>syncookie</td>
+<td><code class="c">tcp_check_syncookie</code>、<code class="c">tcp_gen_syncookie</code>、<code class="c">tcp_raw_{gen,check}_syncookie_ipv4</code>、<code class="c">tcp_raw_{gen,check}_syncookie_ipv6</code></td>
+</tr>
+<tr>
+<td>输出/杂项</td>
+<td><code class="c">perf_event_output</code>、<code class="c">get_smp_processor_id</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>XDP 拿不到的</strong>（这是选型时的硬约束）：所有 <code class="c">skb_*</code> 系列（没有 skb）、<code class="c">bpf_redirect_neigh</code>（依赖邻居子系统）、<code class="c">bpf_clone_redirect</code>、<code class="c">bpf_sk_assign</code>、<code class="c">bpf_skb_change_tail</code>、<code class="c">bpf_get_socket_cookie</code>（无 socket）等等。</p>
+<h3>4.2 tc 的 81 个 helper（<code class="c">tc_cls_act_func_proto()</code>，net/core/filter.c:7968）</h3>
+<p>比 XDP 多出的关键能力：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>helper</th>
+<th>为什么 XDP 不能有</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>邻居转发</td>
+<td><code class="c">redirect_neigh</code>、<code class="c">redirect_peer</code></td>
+<td>需要 <code class="c">struct neighbour</code>，属于 skb/路由层</td>
+</tr>
+<tr>
+<td>克隆转发</td>
+<td><code class="c">clone_redirect</code></td>
+<td>需要 skb 的引用计数</td>
+</tr>
+<tr>
+<td>包长度调整</td>
+<td><code class="c">skb_change_tail</code>、<code class="c">skb_adjust_room</code>、<code class="c">skb_change_head</code></td>
+<td>需要 skb 的线性/非线性区管理</td>
+</tr>
+<tr>
+<td>校验和增量更新</td>
+<td><code class="c">l3_csum_replace</code>、<code class="c">l4_csum_replace</code>、<code class="c">csum_update</code>、<code class="c">csum_level</code></td>
+<td>XDP 只有 <code class="c">csum_diff</code>（算差值，不写回）</td>
+</tr>
+<tr>
+<td>VLAN</td>
+<td><code class="c">skb_vlan_push</code>、<code class="c">skb_vlan_pop</code></td>
+<td>skb 元数据</td>
+</tr>
+<tr>
+<td>socket 绑定</td>
+<td><code class="c">sk_assign</code></td>
+<td>需要 socket 查找后的目标</td>
+</tr>
+<tr>
+<td>隧道</td>
+<td><code class="c">skb_get/set_tunnel_key</code>、<code class="c">skb_get/set_tunnel_opt</code></td>
+<td>skb metadata</td>
+</tr>
+<tr>
+<td>hash</td>
+<td><code class="c">set_hash</code>、<code class="c">set_hash_invalid</code>、<code class="c">get_hash_recalc</code></td>
+<td>skb 元数据</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>选型结论</strong>：要「改完包再转发出去」→ tc；要「尽早丢或尽早转」→ XDP。二者的 helper 集合差异不是偶然，是<strong>有没有 skb</strong> 的直接后果。</p>
+</blockquote>
+<hr />
+<h2>5. HFT 要点</h2>
+<ol>
+<li><strong>指令数上限对 HFT 程序基本不是约束</strong>（特权下 100 万条），真正的约束是 <strong><code class="c">env-&gt;insn_processed</code> 的路径分析预算</strong> 和 <strong>verifier 的加载耗时</strong>。一个分支很多的行情解析程序，即使只有 800 条指令，也可能把 <code class="c">insn_processed</code> 推爆。判据是报错信息 <code class="c">Processed %d insn</code> 里的数字。</li>
+<li><strong><code class="c">BPF program is too large</code> 不一定是程序大，可能是循环。</strong> 这是最浪费时间的报错之一：verifier 的循环检测（<code class="c">branches &gt; 0</code> + <code class="c">states_maybe_looping()</code>）是启发式的，漏检时靠指令预算兜底。遇到这个报错先查循环，再查大小。</li>
+<li><strong>map 选型直接决定竞争开销</strong>：高频计数一律用 <code class="c">PERCPU_ARRAY</code> / <code class="c">PERCPU_HASH</code>（无原子竞争）；需要保序的事件流用 <code class="c">RINGBUF</code>；<code class="c">PERF_EVENT_ARRAY</code> 会乱序。</li>
+<li><strong>别指望 unprivileged BPF</strong>：现代发行版默认 <code class="c">sysctl_unprivileged_bpf_disabled=1</code>，且就算关掉也只允许 <code class="c">SOCKET_FILTER</code> 和 <code class="c">CGROUP_SKB</code> 两种类型。生产部署一律 <code class="c">CAP_BPF</code>，不要给 <code class="c">CAP_SYS_ADMIN</code>（后者权限大得多）。</li>
+<li><strong>栈只有 512 字节</strong>。想在 BPF 里暂存一个包头做解析？放栈上没问题；想暂存一张表？必须放 map。超过 512 字节会直接 <code class="c">invalid stack</code> 类的报错。</li>
+<li><strong>子程序调用最多 8 层</strong>（<code class="c">MAX_CALL_FRAMES</code>）。写深度嵌套的协议解析时要注意，用尾调用（<code class="c">PROG_ARRAY</code>）可以突破这个限制但会丢掉寄存器状态。</li>
+</ol>
+<hr />
+<h2>6. 与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen 3.x（classic BPF）</th>
+<th>v6.6（eBPF）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型数</td>
+<td>1（socket filter）</td>
+<td>33 种程序类型 + 33 种 map 类型</td>
+</tr>
+<tr>
+<td>指令集</td>
+<td>32 位，2 个寄存器（A/X），scratch memory 16 字</td>
+<td>64 位，11 个寄存器（R0–R10）+ 512 字节栈</td>
+</tr>
+<tr>
+<td>JIT</td>
+<td>有（x86 从 3.0 起）</td>
+<td>有，且每个 arch 都有</td>
+</tr>
+<tr>
+<td>校验</td>
+<td>只检查 jump 是否越界</td>
+<td>verifier 全路径静态分析（DAG / 类型追踪 / 边界 / 全路径）</td>
+</tr>
+<tr>
+<td>写能力</td>
+<td>只读</td>
+<td>可改包头、可写 map、可重定向</td>
+</tr>
+<tr>
+<td>子程序</td>
+<td>无</td>
+<td>有（<code class="c">BPF_PSEUDO_CALL</code>，最多 8 层）+ 尾调用</td>
+</tr>
+<tr>
+<td>权限</td>
+<td><code class="c">CAP_NET_ADMIN</code>（<code class="c">SO_ATTACH_BPF</code>） / <code class="c">CAP_NET_RAW</code>（抓包）</td>
+<td><code class="c">CAP_BPF</code>（专用，权限面小得多）+ 类型白名单</td>
+</tr>
+</tbody>
+</table></div>
+<p>Rosen 时代的 BPF 是「tcpdump 过滤器语法的后端」；eBPF 是一台独立的、带内存安全证明的虚拟机。名字一样，东西完全不同。</p>
+<hr />
+<h2>7. 代码自测</h2>
+<details>
+<summary>Q1：你把 XDP 程序写得很大（很多层的协议解析 + 大量分支），<code class="c">BPF_PROG_LOAD</code> 返回 <code class="c">-E2BIG</code>，日志说 <code class="c">BPF program is too large. Processed 1000001 insn</code>。程序实际只有 900 条指令。为什么？</summary>
+<p><strong>因为 100 万是「被处理的指令数」，不是程序长度。</strong></p>
+<p>看 <code class="c">kernel/bpf/verifier.c:16455</code>：</p>
+<pre class="code" data-label="C"><code class="c">        if (++env-&gt;insn_processed &gt; BPF_COMPLEXITY_LIMIT_INSNS) {
+            verbose(env,
+                &quot;BPF program is too large. Processed %d insn\n&quot;,
+                env-&gt;insn_processed);
+            return -E2BIG;
+        }
+</code></pre>
+<p><code class="c">env-&gt;insn_processed</code> 是<strong>第二遍（全路径下降）中累计走过的指令条数</strong>。verifier 要遍历<strong>所有可能的分支组合</strong>，每走一条指令就 +1。</p>
+<p>一个 900 条指令、有 N 个二分支的程序，最坏路径数是 2^N。即使有状态剪枝（<code class="c">is_state_visited()</code> + <code class="c">states_equal()</code>），只要每个分支都改变了栈或寄存器状态，剪枝就会失效，路径数呈指数增长。</p>
+<p><strong>这条限制的另一个身份是循环检测的兜底。</strong> <code class="c">include/linux/bpf_verifier.h:346-367</code> 的注释说得明白：</p>
+<pre class="code" data-label="code"><code class="c"> * This algorithm may not find all possible infinite loops or
+ * loop iteration count may be too high.
+ * In such cases BPF_COMPLEXITY_LIMIT_INSNS limit kicks in.
+</code></pre>
+<p>所以排查顺序应该是：</p>
+<ol>
+<li><strong>先查循环。</strong> 有没有用 <code class="c">goto</code> 往回跳？有没有数组索引驱动的间接跳转？有没有 <code class="c">bpf_loop()</code> 之外构造的循环？日志里如果有 <code class="c">back-edge from insn %d to %d</code> 就是明确的信号（<code class="c">verifier.c:14764</code>）。</li>
+<li><strong>再查分支爆炸。</strong> 把大的 <code class="c">if/else if</code> 链改成 map 查表（比如用 <code class="c">BPF_MAP_TYPE_HASH</code> 做 ethertype → handler 的分派），或拆成多个 tail call。</li>
+<li><strong>第三查剪枝失效。</strong> 如果每个分支都在往栈上写不同的东西，verifier 就无法判定状态等价。尽量让分支只改寄存器、不改栈。</li>
+</ol>
+<p><strong>顺便纠正一个流传很广的错误说法</strong>：很多资料（包括内核自己的 <code class="c">verifier.c:50</code> 注释）说第二遍「limited to 64k insn」和「branches limited to 1k」。<strong>v6.6 代码里这两个数字都不存在</strong>：实际是 <code class="c">BPF_COMPLEXITY_LIMIT_INSNS = 1000000</code>（<code class="c">include/linux/bpf.h:1723</code>），而 <code class="c">branches</code> 字段（<code class="c">include/linux/bpf_verifier.h:368</code>）是「剩余待探索路径数」的计数，用于判环，不是限流阈值。</p>
+</details>
+<details>
+<summary>Q2：你的同事说他写的 BPF 程序「只有 4000 条指令」所以不受限制，因此拒绝了你的拆分建议。他说得对吗？</summary>
+<p><strong>不对，而且他混淆了两个完全不同的限制。</strong></p>
+<p>v6.6 有两级指令数上限，都由 <code class="c">kernel/bpf/syscall.c:2586-2587</code> 检查：</p>
+<pre class="code" data-label="C"><code class="c">    if (attr-&gt;insn_cnt == 0 ||
+        attr-&gt;insn_cnt &gt; (bpf_capable() ? BPF_COMPLEXITY_LIMIT_INSNS : BPF_MAXINSNS))
+        return -E2BIG;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>限制</th>
+<th>值</th>
+<th>卡的是</th>
+<th>谁会撞到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">BPF_MAXINSNS</code></td>
+<td>4,096</td>
+<td><strong>程序本身的指令条数</strong>（<code class="c">attr-&gt;insn_cnt</code>）</td>
+<td><strong>只有无特权调用者</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_COMPLEXITY_LIMIT_INSNS</code></td>
+<td>1,000,000</td>
+<td>① 特权调用者的程序长度上限<br>② verifier 第二遍的<strong>累计处理指令数</strong></td>
+<td><strong>所有人都可能撞到 ②</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">BPF_MAXINSNS</code> 定义在 <strong><code class="c">include/uapi/linux/bpf_common.h:53-54</code></strong>（注意：不在 <code class="c">bpf.h</code>，这是很多人 grep 不到的原因）：</p>
+<pre class="code" data-label="C"><code class="c">#ifndef BPF_MAXINSNS
+#define BPF_MAXINSNS 4096
+#endif
+</code></pre>
+<p><strong>关键区分：</strong></p>
+<ul>
+<li>如果你们用 <code class="c">CAP_BPF</code> 加载（生产环境必然如此），那 4096 <strong>根本不适用</strong>，加载时上限是 100 万。他的「只有 4000 条」在加载阶段毫无意义。</li>
+<li>真正会卡住他的是 <code class="c">env-&gt;insn_processed</code> 的 100 万预算，而这个和程序的<strong>静态长度</strong>没有直接关系，只和<strong>分支路径数</strong>有关。</li>
+</ul>
+<p><strong>所以正确的表达是</strong>：「加载阶段的 4096 限制跟我们无关，但路径分析的 100 万预算跟分支数有关，我们的程序分支很多，得拆。」</p>
+<p>另外提醒两个细节：</p>
+<ul>
+<li>这两个限制超限都返回 <strong><code class="c">-E2BIG</code></strong>，不是 <code class="c">-EINVAL</code>。</li>
+<li>即使把 <code class="c">kernel.unprivileged_bpf_disabled</code> 设成 0，<strong>无特权进程也只允许加载 <code class="c">SOCKET_FILTER</code> 和 <code class="c">CGROUP_SKB</code></strong>（<code class="c">kernel/bpf/syscall.c:2588-2591</code>）。想挂 XDP / tc 必须有 <code class="c">CAP_BPF</code>（<code class="c">include/linux/capability.h:200</code>：<code class="c">capable(CAP_BPF) || capable(CAP_SYS_ADMIN)</code>）。</li>
+</ul>
+</details>
+<details>
+<summary>Q3：你在 tc-BPF 程序里调用了 <code class="c">bpf_redirect_neigh()</code> 做转发，verifier 通过了。后来想把这段逻辑下沉到 XDP 里省掉 skb，结果 <code class="c">bpf_redirect_neigh()</code> 报 <code class="c">unknown func</code>。为什么 XDP 用不了它？</summary>
+<p><strong>因为能力集是按程序类型静态分发的，而 XDP 的 helper 表里根本没有这个 helper。</strong></p>
+<p>看 <code class="c">net/core/filter.c</code> 的两张表：</p>
+<pre class="code" data-label="C"><code class="c">/* tc：net/core/filter.c:7968 */
+    case BPF_FUNC_redirect_neigh:
+        return &amp;bpf_redirect_neigh_proto;
+    case BPF_FUNC_redirect_peer:
+        return &amp;bpf_redirect_peer_proto;
+    ...
+</code></pre>
+<p>而 XDP 的 <code class="c">xdp_func_proto()</code>（<code class="c">net/core/filter.c:8084</code>）里，转发相关的<strong>只有</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    case BPF_FUNC_redirect:
+        return &amp;bpf_xdp_redirect_proto;
+    case BPF_FUNC_redirect_map:
+        return &amp;bpf_xdp_redirect_map_proto;
+</code></pre>
+<p><strong>根本原因不是「还没实现」，而是语义上做不到。</strong> <code class="c">bpf_redirect_neigh()</code> 的作用是「查邻居表拿到 L2 地址，然后转发出去」，它需要：</p>
+<ol>
+<li><code class="c">struct neighbour</code> / <code class="c">struct dst_entry</code> —— 属于路由子系统，XDP 层还没有做路由查找；</li>
+<li>一个 <code class="c">sk_buff</code> 来承载 L2 头改写和后续 qdisc 排队。</li>
+</ol>
+<p>而 XDP 执行时<strong>既没有 skb 也没有路由结果</strong>（<code class="c">bpf_prog_run_xdp()</code> 在 <code class="c">include/net/xdp.h:482</code>，此时包还只是 DMA 区域里的一段内存）。</p>
+<p><strong>这是 XDP 与 tc 能力边界的本质差异：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>XDP（23 helper）</th>
+<th>tc（81 helper）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>有没有 skb</td>
+<td>❌ 只有 <code class="c">xdp_buff</code></td>
+<td>✅ 完整 <code class="c">sk_buff</code></td>
+</tr>
+<tr>
+<td>路由/邻居</td>
+<td>❌</td>
+<td>✅ <code class="c">fib_lookup</code>、<code class="c">redirect_neigh</code>、<code class="c">redirect_peer</code></td>
+</tr>
+<tr>
+<td>改包长度</td>
+<td><code class="c">xdp_adjust_head/tail</code>（只能缩/扩头部边界）</td>
+<td><code class="c">skb_change_tail</code>、<code class="c">skb_adjust_room</code>、<code class="c">skb_change_head</code>（可任意增删）</td>
+</tr>
+<tr>
+<td>校验和</td>
+<td><code class="c">csum_diff</code>（只算差值，不写回）</td>
+<td><code class="c">l3/l4_csum_replace</code>、<code class="c">csum_update</code>（增量写回）</td>
+</tr>
+<tr>
+<td>克隆</td>
+<td>❌</td>
+<td><code class="c">clone_redirect</code></td>
+</tr>
+<tr>
+<td>VLAN</td>
+<td>❌</td>
+<td><code class="c">skb_vlan_push/pop</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>给 HFT 的选型结论：</strong></p>
+<ul>
+<li>想「尽早丢包 / 尽早分流到 AF_XDP / 尽早做 XDP_TX 回弹」→ <strong>XDP</strong>，接受 helper 少的约束。</li>
+<li>想「改包内容 + 查邻居 + 转发 / 做隧道 / 改 skb 元数据」→ <strong>tc</strong>，接受已经付了 skb 分配的代价。</li>
+<li>想两者兼得 → 混合架构：XDP 做快路径（丢包 + AF_XDP 分流），<code class="c">XDP_PASS</code> 上去的慢路径交给 tc 处理。这是 Cilium 等项目的标准做法，详见 <a href="chapter-09.html#ch-9">chapter-09-tc-bpf</a>。</li>
+</ul>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>本篇：</strong> <a href="chapter-15.html#s-01">01-ebpf-net-bootlin.md</a> hook 全景与工具链 · <a href="chapter-15.html#s-03">03-xdp-bpf.md</a> · <a href="chapter-13.html#s-04">04-cgroup-bpf.md</a></li>
+<li><strong>相关：</strong> <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture</a> · <a href="chapter-07.html#ch-7">chapter-07-xdp-redirect-dpdk</a> · <code class="c">06.7-bpf-observability/</code></li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>— XDP 程序：能力边界、返回码与 native/generic 的真实代价</h2></div>
+<blockquote>
+<p><strong>来源：</strong> LWN XDP 系列 + <strong>v6.6 源码核对</strong>
+<strong>对应 Rosen：</strong> 无
+<strong>内核版本：</strong> 全部源码引用基于 v6.6</p>
+</blockquote>
+<h2>文档概述</h2>
+<p>本篇回答三个问题：</p>
+<ol>
+<li><strong>XDP 程序能做什么、不能做什么</strong>（能力边界来自「有没有 skb」，不是来自「还没实现」）。</li>
+<li><strong>五个返回码各自意味着什么</strong>，以及<strong>为什么 <code class="c">XDP_ABORTED == 0</code> 是最危险的默认值</strong>。</li>
+<li><strong>native 与 generic XDP 的真实差异</strong>——不是「快慢两档」，而是<strong>generic 会为每个包额外做一次头部扩展/线性化，且可能静默丢包</strong>。</li>
+</ol>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>本篇与它的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01-ebpf-net-bootlin.md</a></td>
+<td>01 定位 XDP 在栈中的位置；本篇展开 XDP 程序本身</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02-bpf.md</a></td>
+<td>02 给出 verifier 的全部限流常量；本篇给出 XDP 特有的 verifier 约束（包边界 + helper 失效）</td>
+</tr>
+<tr>
+<td><a href="chapter-13.html#s-04">04-cgroup-bpf.md</a></td>
+<td>另一类（cgroup）程序，位置与 XDP 完全不同</td>
+</tr>
+<tr>
+<td><a href="chapter-05.html#ch-5">chapter-05-xdp-architecture</a></td>
+<td>XDP 自身的架构（xdp_buff、ring、驱动接口）在那里展开</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>1. 上下文：<code class="c">struct xdp_md</code> 只有 6 个字段</h2>
+<p><code class="c">include/uapi/linux/bpf.h:6294</code>：</p>
+<pre class="code" data-label="C"><code class="c">struct xdp_md {
+    __u32 data;
+    __u32 data_end;
+    __u32 data_meta;
+    /* Below access go through struct xdp_rxq_info */
+    __u32 ingress_ifindex; /* rxq-&gt;dev-&gt;ifindex */
+    __u32 rx_queue_index;  /* rxq-&gt;queue_index  */
+
+    __u32 egress_ifindex;  /* txq-&gt;dev-&gt;ifindex */
+};
+</code></pre>
+<p>对比 tc-BPF 的 <code class="c">struct __sk_buff</code>（几十个可写字段：<code class="c">mark</code>、<code class="c">priority</code>、<code class="c">queue_mapping</code>、<code class="c">cb[5]</code>、<code class="c">hash</code>、<code class="c">tstamp</code>…），XDP 的上下文<strong>极其贫瘠</strong>，而且：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>读</th>
+<th>写</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">data</code> / <code class="c">data_end</code></td>
+<td>✅</td>
+<td>❌（只能通过 helper 改）</td>
+<td>包数据的起止</td>
+</tr>
+<tr>
+<td><code class="c">data_meta</code></td>
+<td>✅</td>
+<td>❌（只能通过 <code class="c">bpf_xdp_adjust_meta</code>）</td>
+<td>metadata 区，需要驱动预留</td>
+</tr>
+<tr>
+<td><code class="c">ingress_ifindex</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>走 <code class="c">rxq-&gt;dev-&gt;ifindex</code></td>
+</tr>
+<tr>
+<td><code class="c">rx_queue_index</code></td>
+<td>✅</td>
+<td>❌</td>
+<td><strong>做多队列分流的关键字段</strong></td>
+</tr>
+<tr>
+<td><code class="c">egress_ifindex</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>供 devmap / cpumap 的<strong>次级程序</strong>使用</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">rx_queue_index</code> 是 XDP 里最重要的字段之一。</strong> 多队列网卡上，<code class="c">bpf_redirect_map(&amp;xsks_map, ctx-&gt;rx_queue_index, XDP_PASS)</code> 是标准写法——把每个队列的包送到对应的 AF_XDP socket。这个字段的来源就是 <code class="c">struct xdp_rxq_info</code>（<code class="c">xdp_md</code> 注释里写的 "Below access go through struct xdp_rxq_info"），也就是说<strong>读它会走一次间接寻址</strong>。</p>
+<p><strong><code class="c">egress_ifindex</code> 是为 devmap/cpumap 的两级程序模型准备的</strong>：主程序在 ingress 网卡上执行，redirect 后目标路径上还可以挂一个次级程序，那个程序通过 <code class="c">egress_ifindex</code> 知道自己现在在哪个出接口上。</p>
+</blockquote>
+<hr />
+<h2>2. 五个返回码：语义与代价</h2>
+<p><code class="c">enum xdp_action</code>（<code class="c">include/uapi/linux/bpf.h:6283</code>）：</p>
+<pre class="code" data-label="C"><code class="c">enum xdp_action {
+    XDP_ABORTED = 0,
+    XDP_DROP,
+    XDP_PASS,
+    XDP_TX,
+    XDP_REDIRECT,
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回码</th>
+<th>值</th>
+<th>内核做什么</th>
+<th>后续开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">XDP_ABORTED</code></td>
+<td><strong>0</strong></td>
+<td><code class="c">trace_xdp_exception()</code> + 丢包</td>
+<td>与 DROP 相同，<strong>外加一次 tracepoint</strong></td>
+</tr>
+<tr>
+<td><code class="c">XDP_DROP</code></td>
+<td>1</td>
+<td>直接释放页/回收帧</td>
+<td>最小</td>
+</tr>
+<tr>
+<td><code class="c">XDP_PASS</code></td>
+<td>2</td>
+<td>交给内核继续处理（<code class="c">build_skb</code> + GRO + 协议栈）</td>
+<td>全部协议栈开销</td>
+</tr>
+<tr>
+<td><code class="c">XDP_TX</code></td>
+<td>3</td>
+<td>从<strong>同一个网卡、同一个队列</strong>发回去</td>
+<td>需要改 L2 头；不经过 qdisc（native）</td>
+</tr>
+<tr>
+<td><code class="c">XDP_REDIRECT</code></td>
+<td>4</td>
+<td>目标写入 per-CPU <code class="c">bpf_redirect_info</code>，在 <code class="c">xdp_do_flush()</code> 时统一批量提交</td>
+<td>见 <a href="chapter-15.html#s-01">chapter-07</a></td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.1 ⚠️ <code class="c">XDP_ABORTED == 0</code>：最危险的默认值</h3>
+<p>这是 XDP 编程中最容易踩、最难排查的陷阱。出处在 generic 路径的处理逻辑（<code class="c">net/core/dev.c:4975-4991</code>）能看得很清楚：</p>
+<pre class="code" data-label="C"><code class="c">    act = bpf_prog_run_generic_xdp(skb, xdp, xdp_prog);
+    switch (act) {
+    case XDP_REDIRECT:
+    case XDP_TX:
+    case XDP_PASS:
+        break;
+    default:
+        bpf_warn_invalid_xdp_action(skb-&gt;dev, xdp_prog, act);
+        fallthrough;
+    case XDP_ABORTED:
+        trace_xdp_exception(skb-&gt;dev, xdp_prog, act);
+        fallthrough;
+    case XDP_DROP:
+    do_drop:
+        kfree_skb(skb);
+        break;
+    }
+</code></pre>
+<p><strong>三个后果：</strong></p>
+<ol>
+<li><strong>任何「忘了 return」的 XDP 程序，返回值默认 0 = <code class="c">XDP_ABORTED</code> = 丢包。</strong> 编译器不会警告（BPF 的 R0 初值就是 0），加载不会失败。</li>
+<li><strong>任何非法返回值都走 <code class="c">default</code> → <code class="c">XDP_ABORTED</code>。</strong> 例如把 helper 的负 errno 直接当返回码返回（<code class="c">return bpf_redirect_map(...)</code> 写错时很常见）。</li>
+<li><strong><code class="c">XDP_ABORTED</code> 与 <code class="c">XDP_DROP</code> 的区别只有一次 <code class="c">trace_xdp_exception()</code>。</strong> 功能上都是丢包。</li>
+</ol>
+<p><strong>唯一的可见性</strong>：<code class="c">tracepoint:xdp:xdp_exception</code>。这个异常<strong>既不被 tcpdump 看到</strong>（AF_PACKET 在 XDP 之后），<strong>也不计入 <code class="c">ethtool -S</code> 的 rx 计数</strong>（驱动统计在 XDP 判定之后）。</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+</code></pre>
+<h3>2.2 <code class="c">XDP_TX</code> 的两个细节</h3>
+<ol>
+<li><strong>它是「原路返回」</strong>——从同一个 net_device、同一个队列发出去。所以做 L2 转发必须<strong>自己改目的 MAC 和源 MAC</strong>（<code class="c">bpf_xdp_adjust_head</code> 或直接改 <code class="c">ethhdr</code>）。</li>
+<li><strong>native 模式下 <code class="c">XDP_TX</code> 走驱动专属 TX 队列，绕过 qdisc。</strong> 但 <strong>generic 模式的 <code class="c">XDP_TX</code>（<code class="c">generic_xdp_tx()</code>，<code class="c">dev.c:5000</code>）也绕过 qdisc 和网络 taps</strong>，内核源码里的注释明确警告了这个副作用：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">/* When doing generic XDP we have to bypass the qdisc layer and the
+ * network taps in order to match in-driver-XDP behavior. This also means
+ * that XDP packets are able to starve other packets going through a qdisc,
+ * and DDOS attacks will be more effective. In-driver-XDP use dedicated TX
+ * queues, so they do not have this starvation issue.
+ */
+void generic_xdp_tx(struct sk_buff *skb, struct bpf_prog *xdp_prog)
+</code></pre>
+<p><strong>结论：generic XDP 下用 <code class="c">XDP_TX</code> 可能饿死其他流量，且 DDOS 更有效。native 用专属 TX 队列，无此问题。</strong></p>
+<hr />
+<h2>3. 能力边界：能做什么，不能做什么</h2>
+<h3>3.1 能做的（23 个 helper，见 <a href="chapter-15.html#s-02">02</a> 第 4.1 节）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>helper</th>
+<th>约束</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读写包内容</td>
+<td>直接指针访问（<code class="c">data</code>..<code class="c">data_end</code>）+ <code class="c">xdp_load_bytes</code> / <code class="c">xdp_store_bytes</code></td>
+<td><strong>必须先做 <code class="c">data_end</code> 边界检查</strong></td>
+</tr>
+<tr>
+<td>增删头部</td>
+<td><code class="c">xdp_adjust_head</code>（push/pop）、<code class="c">xdp_adjust_tail</code>（增删尾部）</td>
+<td>见下方约束</td>
+</tr>
+<tr>
+<td>读写 metadata</td>
+<td><code class="c">xdp_adjust_meta</code></td>
+<td>需要驱动预留 metadata 空间；<strong>不是所有驱动都支持</strong></td>
+</tr>
+<tr>
+<td>查包长</td>
+<td><code class="c">xdp_get_buff_len</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>校验和差值</td>
+<td><code class="c">csum_diff</code></td>
+<td><strong>只算差值，不写回包头</strong>——写回要自己动手</td>
+</tr>
+<tr>
+<td>FIB 查表</td>
+<td><code class="c">fib_lookup</code></td>
+<td>只读查询，不做路由决策</td>
+</tr>
+<tr>
+<td>MTU 检查</td>
+<td><code class="c">check_mtu</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>重定向</td>
+<td><code class="c">redirect</code>（指定 ifindex）、<code class="c">redirect_map</code>（DEVMAP/CPUMAP/XSKMAP）</td>
+<td><code class="c">redirect_map</code> 的 flags 低位 = <strong>未命中时的返回码</strong></td>
+</tr>
+<tr>
+<td>关联 socket</td>
+<td><code class="c">sk_lookup_tcp</code> / <code class="c">sk_lookup_udp</code> / <code class="c">skc_lookup_tcp</code> / <code class="c">sk_release</code></td>
+<td>有性能代价（socket 查找）</td>
+</tr>
+<tr>
+<td>syncookie</td>
+<td><code class="c">tcp_{gen,check}_syncookie</code>、<code class="c">tcp_raw_*</code></td>
+<td>DDoS 防护</td>
+</tr>
+<tr>
+<td>输出</td>
+<td><code class="c">perf_event_output</code>、<code class="c">get_smp_processor_id</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.2 <code class="c">bpf_xdp_adjust_head()</code> 的三个硬约束</h3>
+<p><code class="c">net/core/filter.c:3874</code>：</p>
+<pre class="code" data-label="C"><code class="c">BPF_CALL_2(bpf_xdp_adjust_head, struct xdp_buff *, xdp, int, offset)
+{
+    void *xdp_frame_end = xdp-&gt;data_hard_start + sizeof(struct xdp_frame);
+    unsigned long metalen = xdp_get_metalen(xdp);
+    void *data_start = xdp_frame_end + metalen;
+    void *data = xdp-&gt;data + offset;
+
+    if (unlikely(data &lt; data_start ||
+             data &gt; xdp-&gt;data_end - ETH_HLEN))
+        return -EINVAL;
+
+    if (metalen)
+        memmove(xdp-&gt;data_meta + offset,
+            xdp-&gt;data_meta, metalen);
+    xdp-&gt;data_meta += offset;
+    xdp-&gt;data = data;
+
+    return 0;
+}
+</code></pre>
+<p>读出的三条：</p>
+<ol>
+<li><strong>下界受 <code class="c">sizeof(struct xdp_frame)</code> 保护。</strong> <code class="c">data</code> 不能前移到 <code class="c">data_hard_start + sizeof(struct xdp_frame) + metalen</code> 之前。原因：<code class="c">XDP_REDIRECT</code> 时包会被转成 <code class="c">struct xdp_frame</code>（<code class="c">xdp_convert_buff_to_frame()</code>），那块区域要留给这个结构体。<strong>所以你最多能把 data 往前推 <code class="c">XDP_PACKET_HEADROOM(256) - sizeof(struct xdp_frame)</code> 左右。</strong></li>
+<li><strong>上界是 <code class="c">data_end - ETH_HLEN</code>（14 字节）。</strong> XDP <strong>不允许把包缩到小于一个以太网头</strong>。</li>
+<li><strong>metadata 会跟着 data 一起移动</strong>（<code class="c">memmove</code>）。有 metadata 时 <code class="c">adjust_head</code> 多一次内存搬移。</li>
+<li><strong>失败返回 <code class="c">-EINVAL</code></strong>——必须检查返回值，否则你以为 push 了头部，其实没有，后续写包会写到错误的偏移。</li>
+</ol>
+<h3>3.3 ⚠️ 调用 <code class="c">adjust_*</code> 之后，verifier 会作废所有包指针</h3>
+<p><code class="c">net/core/filter.c:7750-7775</code> 的 <code class="c">bpf_helper_changes_pkt_data()</code> 列出的 helper 中，XDP 相关的有三个：</p>
+<pre class="code" data-label="C"><code class="c">        func == bpf_xdp_adjust_head ||
+        func == bpf_xdp_adjust_meta ||
+        ...
+        func == bpf_xdp_adjust_tail ||
+</code></pre>
+<p>含义：<strong>调用这些 helper 之后，所有之前 verifier 已验证过的包指针全部失效</strong>，必须重新做 <code class="c">data_end</code> 边界检查。这是新手最常见的 <code class="c">invalid mem access</code> 来源：</p>
+<pre class="code" data-label="C"><code class="c">/* ❌ 错误：adjust_head 之后再解引用旧指针 */
+struct ethhdr *eth = data;
+if ((void *)(eth + 1) &gt; data_end) return XDP_DROP;
+bpf_xdp_adjust_head(ctx, 0 - (int)sizeof(struct iphdr));
+if (eth-&gt;h_proto == ...) { }        /* verifier: R1 invalid mem access */
+
+/* ✅ 正确：adjust 之后重新取指针、重新检查 */
+if (bpf_xdp_adjust_head(ctx, 0 - (int)sizeof(struct iphdr)))
+        return XDP_DROP;
+data = (void *)(long)ctx-&gt;data;
+data_end = (void *)(long)ctx-&gt;data_end;
+struct ethhdr *eth = data;
+if ((void *)(eth + 1) &gt; data_end) return XDP_DROP;
+</code></pre>
+<p>UAPI 文档（<code class="c">include/uapi/linux/bpf.h:2616-2620</code>）也明确写了这一点：</p>
+<blockquote>
+<p>A call to this helper is susceptible to change the underlying packet buffer. Therefore, at load time, all checks on pointers previously done by the verifier are invalidated and must be performed again, if the helper is used in combination with direct packet access.</p>
+</blockquote>
+<h3>3.4 不能做的（这是本质限制，不是缺失）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>为什么 XDP 做不到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>查邻居、改 L2 后转发（<code class="c">redirect_neigh</code>）</td>
+<td>需要 <code class="c">struct neighbour</code> / <code class="c">dst_entry</code>，XDP 层还没做路由</td>
+</tr>
+<tr>
+<td>克隆转发（<code class="c">clone_redirect</code>）</td>
+<td>需要 skb 的引用计数</td>
+</tr>
+<tr>
+<td>增量校验和更新（<code class="c">l3/l4_csum_replace</code>、<code class="c">csum_update</code>）</td>
+<td>只有 <code class="c">csum_diff</code>（算差值）；XDP 侧需要自己写回</td>
+</tr>
+<tr>
+<td>任意增删包体（<code class="c">skb_change_tail</code>、<code class="c">skb_adjust_room</code>）</td>
+<td>需要 skb 的线性/非线性区管理</td>
+</tr>
+<tr>
+<td>VLAN push/pop</td>
+<td>属于 skb 元数据</td>
+</tr>
+<tr>
+<td>读写 skb 元数据（<code class="c">mark</code>、<code class="c">priority</code>、<code class="c">queue_mapping</code>、<code class="c">hash</code>、<code class="c">tstamp</code>）</td>
+<td>XDP 时<strong>根本不存在 skb</strong></td>
+</tr>
+<tr>
+<td><code class="c">bpf_sk_assign</code>（把包绑到指定 socket）</td>
+<td>需要 socket 查找后的绑定点</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判断口诀：需要 skb 或路由/邻居信息的，XDP 一律做不到；只涉及「这段内存里的字节」的，XDP 都能做。</strong> 详见 <a href="chapter-15.html#s-02">02</a> 第 4.2 节的对比表。</p>
+<hr />
+<h2>4. native / generic / offload：三种模式的真实差异</h2>
+<p><code class="c">XDP_FLAGS_*</code>（<code class="c">include/uapi/linux/if_link.h:1295-1304</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define XDP_FLAGS_UPDATE_IF_NOEXIST (1U &lt;&lt; 0)
+#define XDP_FLAGS_SKB_MODE      (1U &lt;&lt; 1)   /* generic */
+#define XDP_FLAGS_DRV_MODE      (1U &lt;&lt; 2)   /* native  */
+#define XDP_FLAGS_HW_MODE       (1U &lt;&lt; 3)   /* offload */
+#define XDP_FLAGS_REPLACE       (1U &lt;&lt; 4)
+</code></pre>
+<h3>4.1 位置对比（v6.6 源码实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>执行位置</th>
+<th>有没有 skb</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>native</strong>（<code class="c">DRV_MODE</code>）</td>
+<td>驱动 NAPI poll 内，<code class="c">bpf_prog_run_xdp()</code>（<code class="c">include/net/xdp.h:482</code>）</td>
+<td>❌ 还是 DMA 页</td>
+</tr>
+<tr>
+<td><strong>generic</strong>（<code class="c">SKB_MODE</code>）</td>
+<td><code class="c">__netif_receive_skb_core()</code> 内，<code class="c">do_xdp_generic()</code> 调用点在 <strong><code class="c">net/core/dev.c:5373</code></strong></td>
+<td>✅ <strong>skb 已分配</strong></td>
+</tr>
+<tr>
+<td><strong>offload</strong>（<code class="c">HW_MODE</code>）</td>
+<td>网卡硬件/固件里</td>
+<td>❌（数据不在主机内存）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.2 ⚠️ generic XDP 的隐藏代价：每个包可能做一次头部扩展 + 线性化</h3>
+<p>这是本篇<strong>最重要</strong>的一节。<code class="c">netif_receive_generic_xdp()</code>（<code class="c">net/core/dev.c:4941</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static u32 netif_receive_generic_xdp(struct sk_buff *skb,
+                     struct xdp_buff *xdp,
+                     struct bpf_prog *xdp_prog)
+{
+    u32 act = XDP_DROP;
+
+    /* Reinjected packets coming from act_mirred or similar should
+     * not get XDP generic processing.
+     */
+    if (skb_is_redirected(skb))
+        return XDP_PASS;
+
+    /* XDP packets must be linear and must have sufficient headroom
+     * of XDP_PACKET_HEADROOM bytes. This is the guarantee that also
+     * native XDP provides, thus we need to do it here as well.
+     */
+    if (skb_cloned(skb) || skb_is_nonlinear(skb) ||
+        skb_headroom(skb) &lt; XDP_PACKET_HEADROOM) {
+        int hroom = XDP_PACKET_HEADROOM - skb_headroom(skb);
+        int troom = skb-&gt;tail + skb-&gt;data_len - skb-&gt;end;
+
+        /* In case we have to go down the path and also linearize,
+         * then lets do the pskb_expand_head() work just once here.
+         */
+        if (pskb_expand_head(skb,
+                     hroom &gt; 0 ? ALIGN(hroom, NET_SKB_PAD) : 0,
+                     troom &gt; 0 ? troom + 128 : 0, GFP_ATOMIC))
+            goto do_drop;
+        if (skb_linearize(skb))
+            goto do_drop;
+    }
+
+    act = bpf_prog_run_generic_xdp(skb, xdp, xdp_prog);
+    ...
+</code></pre>
+<p><strong>四个必须知道的后果：</strong></p>
+<ol>
+<li><strong>generic XDP 为了「模拟」native 的保证（线性 + 256 字节 headroom），会为每个不满足条件的包执行 <code class="c">pskb_expand_head()</code> + <code class="c">skb_linearize()</code>。</strong> 这两个操作涉及<strong>内存分配和数据拷贝</strong>——正是 XDP 想省掉的东西。<code class="c">XDP_PACKET_HEADROOM = 256</code>（<code class="c">include/uapi/linux/bpf.h:6276</code>）。</li>
+<li><strong>分配失败 → <code class="c">goto do_drop</code> → 静默丢包。</strong> 这在内存压力下会表现为「XDP 程序明明是 <code class="c">XDP_PASS</code>，包却不见了」。</li>
+<li><strong>被重定向的包（<code class="c">skb_is_redirected(skb)</code>）直接 <code class="c">return XDP_PASS</code>，跳过 XDP 处理。</strong> 从 <code class="c">act_mirred</code> 等 tc action 重新注入的包不会再过一遍 generic XDP——这是个正确但容易困惑的行为。</li>
+<li><strong>generic XDP 的位置在 tc ingress 之前</strong>（<code class="c">do_xdp_generic</code> 在 <code class="c">dev.c:5373</code>，<code class="c">sch_handle_ingress</code> 在 <code class="c">dev.c:5412</code>），所以「generic XDP 仍然比 tc-BPF 早」是对的，但它<strong>早的那部分已经被 skb 分配 + 可能的线性化抵消了</strong>。</li>
+</ol>
+<h3>4.3 三模式选择表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>native</th>
+<th>generic</th>
+<th>offload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>需要驱动支持</td>
+<td>✅ 需要（ixgbe/i40e/mlx5/bnxt…）</td>
+<td>❌ 任何网卡</td>
+<td>需要 SmartNIC（Netronome 等）</td>
+</tr>
+<tr>
+<td>有无 skb</td>
+<td>❌</td>
+<td>✅ <strong>有</strong>（XDP 的主要优势丧失）</td>
+<td>❌（不在主机内存）</td>
+</tr>
+<tr>
+<td>额外 per-packet 工作</td>
+<td>无</td>
+<td><code class="c">pskb_expand_head</code> + <code class="c">skb_linearize</code></td>
+<td>无（在硬件里）</td>
+</tr>
+<tr>
+<td><code class="c">XDP_TX</code> 队列</td>
+<td>驱动专属 TX 队列</td>
+<td><strong>绕过 qdisc，会饿死其他流量</strong></td>
+<td>硬件队列</td>
+</tr>
+<tr>
+<td>支持 XDP_REDIRECT</td>
+<td>✅ 全部（DEVMAP/CPUMAP/XSKMAP）</td>
+<td>✅ 但走 skb 路径</td>
+<td>受限</td>
+</tr>
+<tr>
+<td><strong>AF_XDP 零拷贝</strong></td>
+<td>✅</td>
+<td>❌ <strong>不可能</strong></td>
+<td>受限</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>生产</td>
+<td><strong>开发/功能验证</strong></td>
+<td>特殊硬件</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论：generic XDP 只应该用于「在没有支持的硬件上验证程序逻辑是否正确」，不能用于任何性能评估或生产部署。</strong> 用 generic 模式测出来的数字与 native 完全不可比。</p>
+</blockquote>
+<h3>4.4 如何确认自己没掉进 generic</h3>
+<pre class="code" data-label="shell"><code class="c"># 方法 1：xdp-tools
+xdp-loader status eth0
+#   输出里的 mode 字段必须是 native（或 offload）
+
+# 方法 2：bpftool
+bpftool net show
+#   xdp:
+#   eth0(2) driver id 42        ← driver = native ✅
+#   eth0(2) generic id 42       ← generic ❌（要排查）
+#   eth0(2) offload id 42
+
+# 方法 3：加载时显式指定并要求 DRV_MODE
+ip link set dev eth0 xdpgeneric obj prog.bpf.o sec xdp    # 强制 generic
+ip link set dev eth0 xdpdrv     obj prog.bpf.o sec xdp    # 强制 native，驱动不支持会失败
+ip link set dev eth0 xdpoffload obj prog.bpf.o sec xdp    # 强制 offload
+</code></pre>
+<p><strong>推荐做法：用 <code class="c">xdpdrv</code> 而不是 <code class="c">xdp</code>。</strong> 前者在驱动不支持时<strong>直接失败</strong>，后者会<strong>静默降级到 generic</strong>——你以为在用 XDP，其实在跑一个退化版本。</p>
+<hr />
+<h2>5. 成本结构：XDP 到底省掉了什么</h2>
+<blockquote>
+<p><strong>本节不给 cycles 数字。</strong> 网上流传的「XDP DROP ~10 cycles / PASS ~20 cycles」这类表格没有可复现的测量条件（网卡、驱动、CPU、包长、是否 GRO、是否 busy poll 都会改变结果），照搬只会误导。<strong>下面给的是「消除了哪些工作」，这个是可以从源码确认的结构性事实。</strong></p>
+</blockquote>
+<h3>5.1 一次 <code class="c">XDP_DROP</code>（native）省掉的</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工作项</th>
+<th>传统路径（无 XDP）</th>
+<th>XDP_DROP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">build_skb()</code> 分配 sk_buff</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>GRO（<code class="c">napi_gro_receive</code>）</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>tc ingress</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td><code class="c">ip_rcv</code> / 路由查找</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>Netfilter PRE_ROUTING</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td><code class="c">ip_local_deliver</code> / UDP or TCP 栈</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>socket 查找</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td><code class="c">sock_queue_rcv_skb</code> + <code class="c">sk_filter</code></td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>拷贝到用户态</td>
+<td>✅ 要</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td><strong>剩下要做的</strong></td>
+<td>—</td>
+<td>驱动 NAPI poll + XDP 程序 + 页回收</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这就是为什么「尽早丢」的价值最大</strong>：一个包被 XDP 丢掉，内核为它做的全部工作就是 NAPI poll 和你的程序。</p>
+<h3>5.2 一次 <code class="c">XDP_PASS</code> 之后仍然要付的</h3>
+<p><code class="c">XDP_PASS</code> <strong>不省任何协议栈开销</strong>，只省掉了 XDP 之前可能存在的其他过滤。它的价值在于：<strong>让「需要上送的包」以最短路径走到 <code class="c">build_skb()</code></strong>。</p>
+<h3>5.3 一次 <code class="c">XDP_REDIRECT</code> 到 AF_XDP 的分摊成本</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>说明</th>
+<th>章节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① XDP 程序执行</td>
+<td>每包一次</td>
+<td>本篇</td>
+</tr>
+<tr>
+<td>② <code class="c">xdp_do_redirect()</code> 入批量队列</td>
+<td>每包一次，写 per-CPU <code class="c">bpf_redirect_info</code></td>
+<td><a href="chapter-15.html#s-01">ch07/01</a></td>
+</tr>
+<tr>
+<td>③ <strong>等待 <code class="c">xdp_do_flush()</code></strong></td>
+<td><strong>批量提交，包在队列里等待 NAPI poll 结束</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>④ <code class="c">xsk_rcv_zc()</code> / <code class="c">__xsk_rcv()</code></td>
+<td>写 RX ring（zc 只有句柄）</td>
+<td><a href="chapter-15.html#s-01">ch06/01</a></td>
+</tr>
+<tr>
+<td>⑤ 用户态 <code class="c">xsk_ring_cons__peek</code></td>
+<td><strong>一次性看到整批</strong></td>
+<td><a href="chapter-15.html#s-02">ch06/02</a></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第 ③ 步的「等待」是隐藏成本</strong>：包在批量队列里停留的时间取决于 NAPI poll 还要处理多少包。这是「吞吐优先」和「延迟优先」的直接权衡——详见 <a href="chapter-15.html#s-02">ch06/02</a> 的延迟预算表。</p>
+<h3>5.4 如何测</h3>
+<p>三层方法，与 <a href="chapter-15.html#s-01">01</a> 第 5 节一致：</p>
+<pre class="code" data-label="shell"><code class="c"># L1 结构层：确认模式与挂载
+bpftool net show
+xdp-loader status eth0
+
+# L2 聚合层：per-程序执行次数与耗时（⚠️ 有埋点开销）
+sysctl -w kernel.bpf_stats_enabled=1
+bpftool prog show id &lt;ID&gt;          # run_cnt / run_time_ns
+sysctl -w kernel.bpf_stats_enabled=0
+
+# L3 端到端：硬件时间戳（最可信）
+ethtool -T eth0                    # 确认支持 HW timestamps
+# 配合 SO_TIMESTAMPING 在用户态取收包时刻
+
+# L4 内核层：XDP 异常与丢包原因
+bpftrace -e 'tracepoint:xdp:xdp_exception     { @[args-&gt;act] = count(); }'
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err  { @[args-&gt;err] = count(); }'
+</code></pre>
+<hr />
+<h2>6. 实战：一行都不能错的行情组播过滤模板</h2>
+<p>原始笔记里那段代码有一个<strong>致命 bug</strong>（见第 7 节 Q1）。下面是修正后的可用版本：</p>
+<pre class="code" data-label="C"><code class="c">/* SPDX-License-Identifier: GPL-2.0 */
+#include &lt;linux/bpf.h&gt;
+#include &lt;linux/if_ether.h&gt;
+#include &lt;linux/ip.h&gt;
+#include &lt;linux/udp.h&gt;
+#include &lt;bpf/bpf_helpers.h&gt;
+
+/* 目标行情组播组：225.0.0.1 */
+#define MARKET_DATA_GROUP  0xe1000001   /* 网络字节序下的 225.0.0.1 */
+
+struct {
+        __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+        __uint(max_entries, 8);
+        __type(key, __u32);
+        __type(value, __u64);
+} stats SEC(&quot;.maps&quot;);
+
+enum {
+        S_TOTAL = 0,
+        S_NON_IP,
+        S_NON_UDP,
+        S_HIT,
+        S_MISS,
+        S_MALFORMED,
+};
+
+static __always_inline void bump(__u32 key)
+{
+        __u64 *v = bpf_map_lookup_elem(&amp;stats, &amp;key);
+        if (v)
+                *v += 1;
+}
+
+SEC(&quot;xdp&quot;)
+int xdp_md_filter(struct xdp_md *ctx)
+{
+        void *data     = (void *)(long)ctx-&gt;data;
+        void *data_end = (void *)(long)ctx-&gt;data_end;
+
+        bump(S_TOTAL);
+
+        /* ① 每个指针解引用前都必须先做 data_end 检查 */
+        struct ethhdr *eth = data;
+        if ((void *)(eth + 1) &gt; data_end) {
+                bump(S_MALFORMED);
+                return XDP_DROP;
+        }
+        if (eth-&gt;h_proto != bpf_htons(ETH_P_IP)) {
+                bump(S_NON_IP);
+                return XDP_PASS;        /* 非 IP（ARP 等）必须放行 */
+        }
+
+        struct iphdr *ip = (void *)(eth + 1);
+        if ((void *)(ip + 1) &gt; data_end) {
+                bump(S_MALFORMED);
+                return XDP_DROP;
+        }
+        /* ip-&gt;ihl 可变，必须校验，不能假设 20 字节 */
+        if (ip-&gt;ihl &lt; 5) {
+                bump(S_MALFORMED);
+                return XDP_DROP;
+        }
+        void *l4 = (void *)ip + (ip-&gt;ihl * 4);
+        if (ip-&gt;protocol != IPPROTO_UDP) {
+                bump(S_NON_UDP);
+                return XDP_PASS;
+        }
+
+        struct udphdr *udp = l4;
+        if ((void *)(udp + 1) &gt; data_end) {
+                bump(S_MALFORMED);
+                return XDP_DROP;
+        }
+
+        /* ② 命中目标组播组 → 交给上层（或 redirect 到 AF_XDP） */
+        if (ip-&gt;daddr == bpf_htonl(MARKET_DATA_GROUP)) {
+                bump(S_HIT);
+                return XDP_PASS;
+        }
+
+        /* ③ 未命中 → 尽早丢弃，省掉整个协议栈 */
+        bump(S_MISS);
+        return XDP_DROP;
+}
+
+char _license[] SEC(&quot;license&quot;) = &quot;GPL&quot;;
+</code></pre>
+<p><strong>四个关键点：</strong></p>
+<ol>
+<li><strong>非 IP 包必须 <code class="c">XDP_PASS</code> 而不是 <code class="c">XDP_DROP</code></strong>（原笔记写的是 DROP）。否则 ARP 被丢 → 邻居表老化 → 整机会话中断。</li>
+<li><strong><code class="c">ip-&gt;ihl</code> 必须校验</strong>。IPv4 头长度可变（options），写死 <code class="c">+20</code> 会解析错位。</li>
+<li><strong><code class="c">PERCPU_ARRAY</code> 做计数器</strong>，避免多队列并发写的原子竞争。</li>
+<li><strong>计数器 map 是唯一可靠的观测手段</strong>——tcpdump 看不到 XDP 之后的包。</li>
+</ol>
+<p><strong>配套观测：</strong></p>
+<pre class="code" data-label="shell"><code class="c">bpftool map dump name stats
+bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+</code></pre>
+<hr />
+<h2>7. 代码自测</h2>
+<details>
+<summary>Q1：原笔记里的示例代码有 3 个 bug，你能全部找出来吗？（代码：<code class="c">if (eth-&gt;h_proto != bpf_htons(ETH_P_IP)) return XDP_DROP;</code> 等）</summary>
+<p>原笔记的代码：</p>
+<pre class="code" data-label="C"><code class="c">    if ((void*)(eth + 1) &gt; data_end) return XDP_DROP;
+    if (eth-&gt;h_proto != bpf_htons(ETH_P_IP)) return XDP_PASS;
+
+    struct iphdr *ip = (void*)(eth + 1);
+    if ((void*)(ip + 1) &gt; data_end) return XDP_DROP;
+
+    if (ip-&gt;daddr == bpf_htonl(0xe1000001)) {  // 225.0.0.1
+        return XDP_PASS;
+    }
+    return XDP_DROP;
+</code></pre>
+<p><strong>Bug 1（最致命）：<code class="c">return XDP_DROP</code> 丢掉了所有非 IP 包。</strong></p>
+<p>表面上 <code class="c">eth-&gt;h_proto != ETH_P_IP</code> 时返回的是 <code class="c">XDP_PASS</code>（第 2 行，写对了）。但<strong>第 1 行和第 4 行的 <code class="c">XDP_DROP</code> 会把「畸形包」和「IP 头不完整的包」丢掉</strong>——这些包里混杂着 VLAN 封装（<code class="c">ETH_P_8021Q</code>）、PPPoE、MPLS 等。更要命的是：<strong>如果这段代码后面接了 <code class="c">bpf_redirect_map()</code> 分流，<code class="c">XDP_DROP</code> 之外还有 <code class="c">XDP_ABORTED == 0</code> 的陷阱</strong>。</p>
+<p>真正会立刻炸的是另一个变体：很多人把 <code class="c">XDP_PASS</code> 写成了 <code class="c">XDP_DROP</code>，结果 <strong>ARP 请求全被丢</strong> → 网关 MAC 学不到 → 邻居表老化 → 几分钟后整机上不了网，而 <code class="c">ping</code> 不通的第一反应是「网络问题」，想不到是 XDP。</p>
+<p><strong>正确原则：非目标流量且你不确定是什么 → <code class="c">XDP_PASS</code>；确认为攻击/噪声 → <code class="c">XDP_DROP</code>。</strong></p>
+<hr />
+<p><strong>Bug 2（隐蔽）：<code class="c">ip-&gt;daddr</code> 的解引用可能越界。</strong></p>
+<pre class="code" data-label="C"><code class="c">struct iphdr *ip = (void*)(eth + 1);
+if ((void*)(ip + 1) &gt; data_end) return XDP_DROP;
+</code></pre>
+<p><code class="c">ip + 1</code> 只检查了 <strong>20 字节</strong>（<code class="c">sizeof(struct iphdr)</code>）。但访问 <code class="c">ip-&gt;daddr</code> 的偏移是 16–19 字节，在 20 字节内，所以<strong>这里侥幸没问题</strong>。</p>
+<p><strong>真正的问题在别处</strong>：IPv4 头长度由 <code class="c">ip-&gt;ihl * 4</code> 决定，<code class="c">ihl</code> 最小是 5（20 字节），但可以更大（options）。如果后续要访问 UDP 头，写成 <code class="c">(void *)ip + 20</code> 就错了——<strong>IP options 存在时 UDP 头不在偏移 20</strong>。而且 <code class="c">ip-&gt;ihl</code> 本身可能是 0（畸形包），导致 <code class="c">ip-&gt;ihl * 4 = 0</code>，指针反而往回走。</p>
+<p>正确写法：</p>
+<pre class="code" data-label="C"><code class="c">if (ip-&gt;ihl &lt; 5) return XDP_DROP;              /* 先校验 ihl 合法 */
+void *l4 = (void *)ip + (ip-&gt;ihl * 4);         /* 再按实际头长前进 */
+struct udphdr *udp = l4;
+if ((void *)(udp + 1) &gt; data_end) return XDP_DROP;
+</code></pre>
+<hr />
+<p><strong>Bug 3（所有新手都会踩）：只比较 <code class="c">daddr</code> 就认为是目标行情流。</strong></p>
+<p><code class="c">225.0.0.1</code> 是组播地址，但<strong>同一个 MAC 上可能跑着多个组播组</strong>。只比较目的 IP 会漏掉：</p>
+<ul>
+<li><strong>不同端口的同一组播组</strong>（行情通常一组一端口，但快照/增量/逐笔可能同组不同口）；</li>
+<li><strong>源地址过滤</strong>——行情网关可能有主备两条流，主用 <code class="c">10.0.0.1</code>、备用 <code class="c">10.0.0.2</code>，只按 daddr 会把备用流也算进去（或者反过来，你想做主备切换时却区分不了）。</li>
+</ul>
+<p>生产环境至少要做 <strong>(daddr, dport)</strong> 二元组，最好加上 <strong>src_addr</strong> 做三元组。</p>
+<hr />
+<p><strong>附带的第 4 个问题：<code class="c">0xe1000001</code> 的字节序写法容易出错。</strong></p>
+<pre class="code" data-label="C"><code class="c">if (ip-&gt;daddr == bpf_htonl(0xe1000001))
+</code></pre>
+<p><code class="c">ip-&gt;daddr</code> 是<strong>网络字节序</strong>。<code class="c">bpf_htonl(0xe1000001)</code> 在小端机上把 <code class="c">0xe1000001</code> 转成网络序——<code class="c">0xe1000001</code> 的字节序列是 <code class="c">e1 00 00 01</code>，转成网络序后，整数值在小端机上变成 <code class="c">0x010000e1</code>。</p>
+<p>这个写法<strong>恰好是对的</strong>（因为 <code class="c">225.0.0.1</code> 的点分十进制转整数就是 <code class="c">0xe1000001</code>，而 <code class="c">ip-&gt;daddr</code> 存的正是这个值的大端表示）。但极易被误改成 <code class="c">bpf_ntohl(ip-&gt;daddr) == 0xe1000001</code>（也对）或直接 <code class="c">ip-&gt;daddr == 0xe1000001</code>（<strong>错</strong>）。</p>
+<p><strong>建议写法</strong>：统一用 <code class="c">bpf_ntohl(ip-&gt;daddr) == 0xe1000001</code>，与人类书写的点分十进制顺序一致，不容易搞反。</p>
+</details>
+<details>
+<summary>Q2：你的 XDP 程序在一台开发机上跑得好好的，换到另一台机器后同样的程序「生效了但性能没提升」，而且偶尔有包莫名其妙丢掉。可能是什么原因？</summary>
+<p><strong>第一个怀疑对象：掉进了 generic 模式（<code class="c">XDP_FLAGS_SKB_MODE</code>）。</strong></p>
+<p><code class="c">ip link set dev eth0 xdp obj ...</code> 在驱动不支持时<strong>会静默降级到 generic</strong>。generic 模式的 <code class="c">XDP</code> 跑在 <code class="c">do_xdp_generic()</code>（<code class="c">net/core/dev.c:5032</code>），位置是 <code class="c">__netif_receive_skb_core()</code> 内的 <code class="c">dev.c:5373</code>——<strong>skb 已经分配完了</strong>。</p>
+<p>而且它还要为每个包补做 native 的保证（<code class="c">net/core/dev.c:4955-4970</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    if (skb_cloned(skb) || skb_is_nonlinear(skb) ||
+        skb_headroom(skb) &lt; XDP_PACKET_HEADROOM) {
+        int hroom = XDP_PACKET_HEADROOM - skb_headroom(skb);
+        int troom = skb-&gt;tail + skb-&gt;data_len - skb-&gt;end;
+
+        if (pskb_expand_head(skb,
+                     hroom &gt; 0 ? ALIGN(hroom, NET_SKB_PAD) : 0,
+                     troom &gt; 0 ? troom + 128 : 0, GFP_ATOMIC))
+            goto do_drop;
+        if (skb_linearize(skb))
+            goto do_drop;
+    }
+</code></pre>
+<p><strong>这正好解释了你的两个症状：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>性能没提升</td>
+<td><code class="c">pskb_expand_head()</code> + <code class="c">skb_linearize()</code> 涉及<strong>内存分配和数据拷贝</strong>——正是 XDP 想省的东西。generic 把这些又加回来了，还多跑一次 XDP 程序。</td>
+</tr>
+<tr>
+<td>偶尔丢包</td>
+<td><code class="c">pskb_expand_head()</code> / <code class="c">skb_linearize()</code> 失败（内存压力）→ <code class="c">goto do_drop</code> → <strong>静默丢包</strong>。你的 XDP 程序根本没被调用，包就没了。这种丢包<strong>不计入任何计数器</strong>，只在 <code class="c">tracepoint:skb:kfree_skb</code> 里能看到。</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>排查：</strong></p>
+<pre class="code" data-label="shell"><code class="c">bpftool net show
+#   eth0(2) driver id 42   ← native ✅
+#   eth0(2) generic id 42  ← ❌ 就是这里
+
+xdp-loader status eth0     # 看 mode 字段
+</code></pre>
+<p><strong>修复：</strong> 用 <code class="c">xdpdrv</code> 强制 native：</p>
+<pre class="code" data-label="shell"><code class="c">ip link set dev eth0 xdpdrv obj prog.bpf.o sec xdp
+# 驱动不支持时会直接报错，不会静默降级
+</code></pre>
+<p>支持 native XDP 的主流驱动：<code class="c">ixgbe</code>（X550/X710 系列）、<code class="c">i40e</code>、<code class="c">ice</code>、<code class="c">mlx5_core</code>（Mellanox/ NVIDIA）、<code class="c">bnxt_en</code>（Broadcom）、<code class="c">virtio_net</code>、<code class="c">veth</code>、<code class="c">tun</code>。<strong>注意 <code class="c">e1000e</code>、<code class="c">r8169</code> 这类普通桌面网卡不支持。</strong></p>
+<p><strong>第二个怀疑对象：<code class="c">XDP_TX</code> 在 generic 下绕过 qdisc。</strong></p>
+<p>如果你的程序用了 <code class="c">XDP_TX</code>，generic 路径的 <code class="c">generic_xdp_tx()</code>（<code class="c">dev.c:5000</code>）源码注释明确警告：</p>
+<pre class="code" data-label="code"><code class="c">/* When doing generic XDP we have to bypass the qdisc layer and the
+ * network taps in order to match in-driver-XDP behavior. This also means
+ * that XDP packets are able to starve other packets going through a qdisc,
+ * and DDOS attacks will be more effective. In-driver-XDP use dedicated TX
+ * queues, so they do not have this starvation issue.
+ */
+</code></pre>
+<p>即：generic + <code class="c">XDP_TX</code> 会绕开 qdisc，<strong>饿死其他流量</strong>。</p>
+</details>
+<details>
+<summary>Q3：你在 XDP 程序里调用 <code class="c">bpf_xdp_adjust_head()</code> push 了一个 IP 头，之后访问原来的 <code class="c">eth</code> 指针，verifier 报 <code class="c">invalid mem access 'inv'</code>。为什么？返回值你已经检查了。</summary>
+<p><strong>因为 <code class="c">bpf_xdp_adjust_head()</code> 会让 verifier 作废所有已验证的包指针——这和返回值成不成功无关，是 verifier 在加载时的静态规则。</strong></p>
+<p><code class="c">net/core/filter.c</code> 的 <code class="c">bpf_helper_changes_pkt_data()</code>（<code class="c">:7750-7775</code>）把这三个 XDP helper 列入了「会改变包数据」的名单：</p>
+<pre class="code" data-label="C"><code class="c">        func == bpf_xdp_adjust_head ||
+        func == bpf_xdp_adjust_meta ||
+        ...
+        func == bpf_xdp_adjust_tail ||
+</code></pre>
+<p>verifier 在看到对它们的调用后，会<strong>主动 invalidate 所有 <code class="c">PTR_TO_PACKET</code> 类型的寄存器</strong>。UAPI 文档（<code class="c">include/uapi/linux/bpf.h:2616-2620</code>）写得很明确：</p>
+<blockquote>
+<p>A call to this helper is susceptible to change the underlying packet buffer. Therefore, at load time, <strong>all checks on pointers previously done by the verifier are invalidated and must be performed again</strong>, if the helper is used in combination with direct packet access.</p>
+</blockquote>
+<p><strong>正确写法（重新取指针、重新检查）：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* push 一个 IP 头 */
+if (bpf_xdp_adjust_head(ctx, 0 - (int)sizeof(struct iphdr)))
+        return XDP_DROP;
+
+/* ⭐ 必须重新读 ctx-&gt;data / ctx-&gt;data_end */
+void *data     = (void *)(long)ctx-&gt;data;
+void *data_end = (void *)(long)ctx-&gt;data_end;
+
+/* ⭐ 必须重新做边界检查 */
+struct ethhdr *eth = data;
+if ((void *)(eth + 1) &gt; data_end)
+        return XDP_DROP;
+/* 现在才能用 eth */
+</code></pre>
+<p><strong>顺带三条 <code class="c">adjust_head</code> 的硬约束</strong>（<code class="c">net/core/filter.c:3874</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    void *xdp_frame_end = xdp-&gt;data_hard_start + sizeof(struct xdp_frame);
+    unsigned long metalen = xdp_get_metalen(xdp);
+    void *data_start = xdp_frame_end + metalen;
+    void *data = xdp-&gt;data + offset;
+
+    if (unlikely(data &lt; data_start ||
+             data &gt; xdp-&gt;data_end - ETH_HLEN))
+        return -EINVAL;
+</code></pre>
+<ol>
+<li><strong>下界</strong>：<code class="c">data</code> 不能前移到 <code class="c">data_hard_start + sizeof(struct xdp_frame) + metalen</code> 之前。那块区域要留给 <code class="c">XDP_REDIRECT</code> 时转换出的 <code class="c">struct xdp_frame</code>。实际可用 headroom 大约是 <code class="c">XDP_PACKET_HEADROOM(256)</code> 减去 <code class="c">sizeof(struct xdp_frame)</code>。</li>
+<li><strong>上界</strong>：<code class="c">data</code> 不能后移到 <code class="c">data_end - ETH_HLEN</code>（14 字节）之后——<strong>XDP 不允许把包缩到小于一个以太网头</strong>。</li>
+<li><strong>metadata 会跟着搬</strong>：如果用了 <code class="c">bpf_xdp_adjust_meta()</code>，<code class="c">adjust_head</code> 会额外做一次 <code class="c">memmove(data_meta + offset, data_meta, metalen)</code>。</li>
+<li>失败返回 <strong><code class="c">-EINVAL</code></strong>——<strong>必须检查返回值</strong>。不检查的话，一旦失败你后续的写包会写到错误偏移，产生一个「看起来合法但内容错乱」的包，这种 bug 极难排查。</li>
+</ol>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>本篇：</strong> <a href="chapter-15.html#s-01">01-ebpf-net-bootlin.md</a> · <a href="chapter-15.html#s-02">02-bpf.md</a> · <a href="chapter-13.html#s-04">04-cgroup-bpf.md</a></li>
+<li><strong>深入 XDP：</strong> <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture</a> XDP 架构 · <a href="chapter-06.html#ch-6">chapter-06-af-xdp</a> AF_XDP · <a href="chapter-07.html#ch-7">chapter-07-xdp-redirect-dpdk</a> redirect 与 DPDK 对比</li>
+<li><strong>相关：</strong> <code class="c">06.7-bpf-observability/</code></li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-04">
+        <div class="sec-head"><div class="sec-no">04</div><h2>— cgroup BPF：attach 语义、继承规则与返回码真相</h2></div>
+<blockquote>
+<p><strong>来源：</strong> LWN cgroup BPF 系列 + <strong>v6.6 源码核对</strong>（<code class="c">kernel/bpf/cgroup.c</code>、<code class="c">include/uapi/linux/bpf.h</code>、<code class="c">net/core/filter.c</code>）
+<strong>对应 Rosen：</strong> 无
+<strong>内核版本：</strong> cgroup BPF 4.10+；SOCK_ADDR 4.18+；SOCKOPT 5.3+；全部结论基于 v6.6 核对</p>
+</blockquote>
+<h2>文档概述</h2>
+<p>本篇回答四个问题：</p>
+<ol>
+<li><strong>cgroup BPF 到底能挂在哪、每类挂点的真实调用时机是什么</strong>（注意：cgroup ingress 不是「包进协议栈时」，是「socket 入队时」——见 <a href="chapter-15.html#s-01">01</a> 第 2.3 节）。</li>
+<li><strong><code class="c">BPF_F_ALLOW_OVERRIDE</code> / <code class="c">BPF_F_ALLOW_MULTI</code> / <code class="c">BPF_F_REPLACE</code> 这些 flag 怎么决定子 cgroup 能不能挂、以及多个程序的执行顺序</strong>（这是 cgroup BPF 最容易搞错的部分，本篇把 UAPI 注释原文贴出来逐行解释）。</li>
+<li><strong><code class="c">BPF_CGROUP_SETSOCKOPT</code> 的返回码到底怎么用</strong>——这块源码里的语义比文档复杂得多。</li>
+<li><strong><code class="c">sock_ops</code> 的 16 个事件各自能拿到什么</strong>，以及怎么用它在<strong>不改应用代码</strong>的前提下采到 RTT。</li>
+</ol>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>本篇与它的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01-ebpf-net-bootlin.md</a></td>
+<td>01 用源码钉死了 cgroup ingress/egress 的<strong>真实调用点</strong>；本篇展开 attach 规则</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02-bpf.md</a></td>
+<td>02 给出类型清单与 verifier 限制；本篇聚焦 cgroup 系列类型</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03-xdp-bpf.md</a></td>
+<td>XDP 是「设备级」程序，与 cgroup 的「进程组级」形成对比</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>1. cgroup BPF 的本质：作用域从「设备」变成「进程组」</h2>
+<p>这是理解所有 cgroup BPF 的起点。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>XDP / tc-BPF</th>
+<th>cgroup BPF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>作用域</td>
+<td><strong>设备级</strong>：挂到 <code class="c">net_device</code>，该网卡上所有包都过</td>
+<td><strong>进程组级</strong>：挂到 cgroup，只有该 cgroup 内进程的 socket 操作才触发</td>
+</tr>
+<tr>
+<td>判定依据</td>
+<td>包从哪个接口进来</td>
+<td><code class="c">sk-&gt;sk_cgrp_data</code>（socket 创建时从进程继承）</td>
+</tr>
+<tr>
+<td>粒度</td>
+<td>每个包</td>
+<td>每个 socket / 每个 socket 操作</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>过滤、分流、转发</td>
+<td>准入控制、地址重写、策略下发、可观测</td>
+</tr>
+<tr>
+<td>性能定位</td>
+<td><strong>性能工具</strong></td>
+<td><strong>治理工具</strong>（见下方说明）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键机制</strong>：socket 在创建时从当前进程「继承」cgroup 归属，之后即使进程 <code class="c">setns</code>/迁移，这个 socket 的 cgroup 也不变。所以 cgroup BPF 的规则对<strong>已建立的 socket 是终身有效的</strong>。</p>
+<blockquote>
+<p><strong>这是 cgroup BPF 最重要的工程性质</strong>：你把交易进程挪到新 cgroup，它<strong>已经建立的连接</strong>仍然受旧 cgroup 的规则约束。要做热切换必须重建连接，或者把策略写成「新旧 cgroup 都挂一份」。</p>
+</blockquote>
+<hr />
+<h2>2. attach 类型全表（v6.6）</h2>
+<p><code class="c">enum bpf_attach_type</code>（<code class="c">include/uapi/linux/bpf.h:994-1028</code>）里 cgroup 相关的成员：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>attach type</th>
+<th>程序类型</th>
+<th>触发时机</th>
+<th>上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">BPF_CGROUP_INET_INGRESS</code></td>
+<td><code class="c">CGROUP_SKB</code></td>
+<td><strong>socket 入队时</strong>（<code class="c">sk_filter_trim_cap()</code>，<code class="c">net/core/filter.c:138</code>）</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET_EGRESS</code></td>
+<td><code class="c">CGROUP_SKB</code></td>
+<td><strong>Netfilter POST_ROUTING 之后</strong>（<code class="c">ip_finish_output()</code>，<code class="c">net/ipv4/ip_output.c:318</code>；组播 <code class="c">ip_mc_finish_output():337</code>）</td>
+<td><code class="c">struct __sk_buff</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET_SOCK_CREATE</code></td>
+<td><code class="c">CGROUP_SOCK</code></td>
+<td><code class="c">socket()</code> 创建时</td>
+<td><code class="c">struct bpf_sock</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET_SOCK_RELEASE</code></td>
+<td><code class="c">CGROUP_SOCK</code></td>
+<td>socket 释放时（6.9 才正式暴露，v6.6 枚举已存在）</td>
+<td><code class="c">struct bpf_sock</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_SOCK_OPS</code></td>
+<td><code class="c">SOCK_OPS</code></td>
+<td>16 种连接生命周期事件（见第 6 节）</td>
+<td><code class="c">struct bpf_sock_ops</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET4_BIND</code> / <code class="c">INET6_BIND</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td><code class="c">bind()</code> 时</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET4_POST_BIND</code> / <code class="c">INET6_POST_BIND</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td>内核绑定端口之后（程序可读取实际端口）</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET4_CONNECT</code> / <code class="c">INET6_CONNECT</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td><code class="c">connect()</code> 时（<strong>可改 <code class="c">user_ip4</code>/<code class="c">user_port</code> 做重定向</strong>）</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET4_GETSOCKNAME</code> / <code class="c">INET6_GETSOCKNAME</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td><code class="c">getsockname()</code> 时（可伪装本地地址）</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_INET4_GETPEERNAME</code> / <code class="c">INET6_GETPEERNAME</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td><code class="c">getpeername()</code> 时（可伪装对端地址）</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_UDP4_SENDMSG</code> / <code class="c">UDP6_SENDMSG</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td>UDP <code class="c">sendmsg()</code> 时（可改目的地址）</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_UDP4_RECVMSG</code> / <code class="c">UDP6_RECVMSG</code></td>
+<td><code class="c">CGROUP_SOCK_ADDR</code></td>
+<td>UDP <code class="c">recvmsg()</code> 时（<strong>可改 <code class="c">user_ip4</code> 影响 <code class="c">msg_name</code> 回填</strong>）</td>
+<td><code class="c">struct bpf_sock_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_SETSOCKOPT</code></td>
+<td><code class="c">CGROUP_SOCKOPT</code></td>
+<td><code class="c">setsockopt()</code> 时</td>
+<td><code class="c">struct bpf_sockopt</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_GETSOCKOPT</code></td>
+<td><code class="c">CGROUP_SOCKOPT</code></td>
+<td><code class="c">getsockopt()</code> 时</td>
+<td><code class="c">struct bpf_sockopt</code></td>
+</tr>
+<tr>
+<td><code class="c">BPF_CGROUP_SYSCTL</code></td>
+<td><code class="c">CGROUP_SYSCTL</code></td>
+<td>读写 sysctl 时</td>
+<td><code class="c">struct bpf_sysctl</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.1 三类语义的区分</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>成员</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>数据路径</strong>（每包）</td>
+<td><code class="c">INET_INGRESS</code> / <code class="c">INET_EGRESS</code></td>
+<td>在 skb 上做过滤/记账；<strong>只有这类是 per-packet 的</strong></td>
+</tr>
+<tr>
+<td><strong>控制路径</strong>（每 socket 操作）</td>
+<td><code class="c">SOCK_CREATE</code>、<code class="c">*_BIND</code>、<code class="c">*_CONNECT</code>、<code class="c">*_SENDMSG</code>、<code class="c">SETSOCKOPT</code> 等</td>
+<td>在 socket 系统调用时改写参数或拒绝</td>
+</tr>
+<tr>
+<td><strong>事件通知</strong>（连接生命周期）</td>
+<td><code class="c">SOCK_OPS</code>、<code class="c">INET_SOCK_RELEASE</code></td>
+<td>通知 + 可选改写，用于可观测和自动调优</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>性能影响天差地别</strong>：数据路径类的程序在<strong>每个包</strong>上跑；控制路径类只在系统调用时跑一次。做性能优化时，能放控制路径就别放数据路径。</p>
+<hr />
+<h2>3. ⭐ attach flags：继承与叠加的完整规则</h2>
+<p>这是 cgroup BPF 最容易被搞错的地方。UAPI 注释原文（<code class="c">include/uapi/linux/bpf.h:1096-1118</code>）：</p>
+<pre class="code" data-label="C"><code class="c"> * A cgroup with MULTI or OVERRIDE flag allows any attach flags in
+ * sub-cgroups.
+ * A cgroup with NONE doesn't allow any programs in sub-cgroups.
+ * Ex1:
+ * cgrp1 (MULTI progs A, B) -&gt;
+ *    cgrp2 (OVERRIDE prog C) -&gt;
+ *      cgrp3 (MULTI prog D) -&gt;
+ *        cgrp4 (OVERRIDE prog E) -&gt;
+ *          cgrp5 (NONE prog F)
+ * the event in cgrp5 triggers execution of F,D,A,B in that order.
+ * if prog F is detached, the execution is E,D,A,B
+ * if prog F and D are detached, the execution is E,A,B
+ * if prog F, E and D are detached, the execution is C,A,B
+ *
+ * All eligible programs are executed regardless of return code from
+ * earlier programs.
+ */
+#define BPF_F_ALLOW_OVERRIDE    (1U &lt;&lt; 0)
+#define BPF_F_ALLOW_MULTI   (1U &lt;&lt; 1)
+/* Generic attachment flags. */
+#define BPF_F_REPLACE       (1U &lt;&lt; 2)
+#define BPF_F_BEFORE        (1U &lt;&lt; 3)
+#define BPF_F_AFTER     (1U &lt;&lt; 4)
+#define BPF_F_ID        (1U &lt;&lt; 5)
+</code></pre>
+<h3>3.1 逐条拆解</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flag</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">BPF_F_ALLOW_OVERRIDE</code></td>
+<td><code class="c">1&lt;&lt;0</code></td>
+<td>该 cgroup 允许<strong>一个</strong>程序；子 cgroup 可以继续挂（挂了就覆盖本层）</td>
+</tr>
+<tr>
+<td><code class="c">BPF_F_ALLOW_MULTI</code></td>
+<td><code class="c">1&lt;&lt;1</code></td>
+<td>该 cgroup 允许<strong>多个</strong>程序（按挂接顺序组成列表）</td>
+</tr>
+<tr>
+<td><code class="c">BPF_F_REPLACE</code></td>
+<td><code class="c">1&lt;&lt;2</code></td>
+<td>配合 <code class="c">replace_bpf_fd</code>，替换列表里指定位置的旧程序</td>
+</tr>
+<tr>
+<td><code class="c">BPF_F_BEFORE</code> / <code class="c">BPF_F_AFTER</code></td>
+<td><code class="c">1&lt;&lt;3</code> / <code class="c">1&lt;&lt;4</code></td>
+<td>配合 <code class="c">expected_revision</code>/<code class="c">relative_fd</code>，把新程序插入到指定程序的前/后</td>
+</tr>
+<tr>
+<td><code class="c">BPF_F_ID</code></td>
+<td><code class="c">1&lt;&lt;5</code></td>
+<td>用 prog <strong>ID</strong> 而不是 fd 来指定位置</td>
+</tr>
+<tr>
+<td>不指定任何 flag（NONE）</td>
+<td>—</td>
+<td>允许<strong>一个</strong>程序，<strong>且禁止子 cgroup 再挂</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.2 三条规则（把注释翻译成可执行的理解）</h3>
+<p><strong>规则 1：子 cgroup 的程序先执行，父 cgroup 的后执行。</strong>
+执行顺序是「从事件发生处（最内层 cgroup）向根遍历」。</p>
+<p><strong>规则 2：<code class="c">OVERRIDE</code> 层的语义是「继承链上只保留最内层的那个」。</strong>
+看注释给的链：<code class="c">cgrp1(MULTI: A,B) → cgrp2(OVERRIDE: C) → cgrp3(MULTI: D) → cgrp4(OVERRIDE: E) → cgrp5(NONE: F)</code></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>cgrp5 的情况</th>
+<th>执行顺序</th>
+<th>解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F 挂着</td>
+<td><strong>F, D, A, B</strong></td>
+<td>F 在最内层；往上遇到 <code class="c">cgrp4(OVERRIDE: E)</code>，E 被 F 覆盖；再往上 <code class="c">cgrp3(MULTI: D)</code> 全部执行；再往上 <code class="c">cgrp2(OVERRIDE: C)</code>，C 被 D 覆盖；<code class="c">cgrp1(MULTI: A,B)</code> 全部执行</td>
+</tr>
+<tr>
+<td>F 摘掉</td>
+<td><strong>E, D, A, B</strong></td>
+<td>E 变成最内层，不再被覆盖</td>
+</tr>
+<tr>
+<td>F、D 都摘掉</td>
+<td><strong>E, A, B</strong></td>
+<td>D 没了，C 不再被 D 覆盖？<strong>注意：实际是 E, A, B，C 仍然被 E 覆盖</strong>——因为 E 在更内层</td>
+</tr>
+<tr>
+<td>F、E、D 都摘掉</td>
+<td><strong>C, A, B</strong></td>
+<td>C 终于生效</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这张表的推理要点</strong>：一个 <code class="c">OVERRIDE</code> 层的程序<strong>只有在它和根之间没有其他程序时</strong>才会执行。换句话说，<code class="c">OVERRIDE</code> 是「这一层最多一个，且被更内层的程序顶掉」。</p>
+<p><strong>规则 3（最容易忽略）：<code class="c">All eligible programs are executed regardless of return code from earlier programs.</code></strong></p>
+<p><strong>所有符合条件的程序都会被执行，前面程序的返回值不会中断链条。</strong> 这和 Netfilter（<code class="c">NF_ACCEPT</code>/<code class="c">NF_DROP</code> 会短路）以及 tc（<code class="c">TC_ACT_*</code> 会决定后续）<strong>完全不同</strong>。</p>
+<blockquote>
+<p><strong>工程含义</strong>：cgroup BPF 里<strong>不能靠返回码做短路优化</strong>。如果你在父 cgroup 挂了一个「放行白名单」程序，它返回 1 之后，子 cgroup 的「拒绝黑名单」程序<strong>照样会跑</strong>。要做「先白后黑」的语义，必须在程序之间共享 map 状态，或者干脆合并成一个程序。</p>
+</blockquote>
+<h3>3.3 实操命令</h3>
+<pre class="code" data-label="shell"><code class="c"># 挂载（OVERRIDE：允许子 cgroup 覆盖，本层只能挂一个）
+bpftool cgroup attach /sys/fs/cgroup/trading/ ingress id &lt;PROG_ID&gt;
+
+# 挂载（MULTI：本层可挂多个，按顺序执行）
+bpftool cgroup attach /sys/fs/cgroup/trading/ ingress_multi id &lt;PROG_ID1&gt;
+bpftool cgroup attach /sys/fs/cgroup/trading/ ingress_multi id &lt;PROG_ID2&gt;
+
+# 查看某个 cgroup 上挂了什么
+bpftool cgroup show /sys/fs/cgroup/trading/
+
+# 查看详细（含 attach flags、程序名、是否有效）
+bpftool cgroup show /sys/fs/cgroup/trading/ --pretty
+
+# 摘掉
+bpftool cgroup detach /sys/fs/cgroup/trading/ ingress id &lt;PROG_ID&gt;
+
+# 所有 attach type 的名字
+bpftool cgroup help
+</code></pre>
+<p><strong><code class="c">bpftool cgroup show</code> 的输出里有一列 <code class="c">attach_flags</code></strong>，直接显示 <code class="c">multi</code> / <code class="c">override</code>——这是排查「为什么我的程序没被执行」的第一步。</p>
+<hr />
+<h2>4. ⭐ <code class="c">BPF_CGROUP_SETSOCKOPT</code> 的返回码真相</h2>
+<p>这块源码里的语义比大多数文档复杂。看 <code class="c">kernel/bpf/cgroup.c</code> 的 <code class="c">__cgroup_bpf_run_filter_setsockopt()</code>（v6.6）：</p>
+<pre class="code" data-label="C"><code class="c">    /* Allocate a bit more than the initial user buffer for
+     * BPF program. The canonical use case is overriding
+     * TCP_CONGESTION(nv) to TCP_CONGESTION(cubic).
+     */
+    max_optlen = max_t(int, 16, *optlen);
+    max_optlen = sockopt_alloc_buf(&amp;ctx, max_optlen, &amp;buf);
+    if (max_optlen &lt; 0)
+        return max_optlen;
+
+    ctx.optlen = *optlen;
+
+    if (copy_from_user(ctx.optval, optval, min(*optlen, max_optlen)) != 0) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    lock_sock(sk);
+    ret = bpf_prog_run_array_cg(&amp;cgrp-&gt;bpf, CGROUP_SETSOCKOPT,
+                    &amp;ctx, bpf_prog_run, 0, NULL);
+    release_sock(sk);
+
+    if (ret)
+        goto out;                      /* ← ① */
+
+    if (ctx.optlen == -1) {
+        /* optlen set to -1, bypass kernel */
+        ret = 1;                       /* ← ② */
+    } else if (ctx.optlen &gt; max_optlen || ctx.optlen &lt; -1) {
+        /* optlen is out of bounds */
+        if (*optlen &gt; PAGE_SIZE &amp;&amp; ctx.optlen &gt;= 0) {
+            pr_info_once(&quot;bpf setsockopt: ignoring program buffer with optlen=%d (max_optlen=%d)\n&quot;,
+                     ctx.optlen, max_optlen);
+            ret = 0;
+            goto out;
+        }
+        ret = -EFAULT;                 /* ← ③ */
+    } else {
+        /* optlen within bounds, run kernel handler */
+        ret = 0;                       /* ← ④ */
+
+        /* export any potential modifications */
+        *level = ctx.level;
+        *optname = ctx.optname;
+
+        /* optlen == 0 from BPF indicates that we should
+         * use original userspace data.
+         */
+        if (ctx.optlen != 0) {
+            *optlen = ctx.optlen;
+            ...
+            if (!sockopt_buf_allocated(&amp;ctx, &amp;buf)) {
+                void *p = kmalloc(ctx.optlen, GFP_USER);
+
+                if (!p) {
+                    ret = -ENOMEM;
+</code></pre>
+<h3>4.1 四条语义（对照上面标号）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标号</th>
+<th>condition</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><strong>BPF 程序返回非 0</strong></td>
+<td>该返回值<strong>直接成为 <code class="c">setsockopt()</code> 的返回值</strong>；链上剩余的 BPF 程序<strong>和</strong>内核处理<strong>全部跳过</strong></td>
+</tr>
+<tr>
+<td>②</td>
+<td>BPF 返回 0 <strong>且</strong> 设了 <code class="c">ctx-&gt;optlen = -1</code></td>
+<td><strong>BPF 已完全接管</strong>，跳过内核 handler，返回 1</td>
+</tr>
+<tr>
+<td>③</td>
+<td>BPF 返回 0，但 <code class="c">optlen</code> 越界（<code class="c">&lt; -1</code> 或 <code class="c">&gt; max_optlen</code>）</td>
+<td>若原 <code class="c">optlen &gt; PAGE_SIZE</code> 且新 <code class="c">optlen &gt;= 0</code> → 打印一次 <code class="c">pr_info_once</code> 警告并<strong>照旧继续</strong>（<code class="c">ret = 0</code>）；否则 <code class="c">-EFAULT</code></td>
+</tr>
+<tr>
+<td>④</td>
+<td>BPF 返回 0，<code class="c">optlen</code> 合法</td>
+<td><strong>调内核 handler</strong>。若 <code class="c">optlen == 0</code> 用原始用户态数据；否则用 BPF 填的 buffer（可能需要 <code class="c">kmalloc</code> 搬运，可 <code class="c">-ENOMEM</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.2 三个必须知道的细节</h3>
+<ol>
+<li><strong>内核为每个 <code class="c">setsockopt</code> 预留至少 16 字节的 buffer</strong>（<code class="c">max_t(int, 16, *optlen)</code>），注释里说明这是为了「把 <code class="c">TCP_CONGESTION</code> 从 <code class="c">nv</code> 覆盖成 <code class="c">cubic</code>」——后者的名字更长。<strong>所以你在 BPF 里能安全写入的 optval 长度至少是 16 字节</strong>，超过原 <code class="c">optlen</code> 的部分要走 <code class="c">max_optlen</code> 判定。</li>
+<li><strong>整个 BPF 执行期间持有 <code class="c">lock_sock(sk)</code></strong>。这意味着：① 你的程序<strong>不能睡眠</strong>（BPF 本来也不行）；② <strong>如果同一 socket 上有大量并发 setsockopt，它们会在 <code class="c">lock_sock</code> 上串行化</strong>——这是个容易被忽略的锁竞争点。</li>
+<li><strong><code class="c">GETSOCKOPT</code> 的短路条件不同</strong>：同样是 <code class="c">kernel/bpf/cgroup.c</code>，GETSOCKOPT 分支写的是 <code class="c">if (ret &lt; 0) goto out;</code>，<strong>只有负返回值才短路</strong>；0 或正数会继续走内核 handler 并 <code class="c">copy_to_user</code>。这与 SETSOCKOPT 的 <code class="c">if (ret)</code>（任何非 0 都短路）<strong>不对称</strong>。写代码时不要想当然。</li>
+</ol>
+<h3>4.3 上下文结构与可用字段</h3>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/bpf.h:7159 */
+struct bpf_sockopt {
+    __bpf_md_ptr(struct bpf_sock *, sk);
+    __bpf_md_ptr(void *, optval);
+    __bpf_md_ptr(void *, optval_end);
+
+    __s32   level;
+    __s32   optname;
+    __s32   optlen;
+    __s32   retval;
+};
+</code></pre>
+<hr />
+<h2>5. <code class="c">BPF_CGROUP_SOCK_ADDR</code>：能做和不能做的事</h2>
+<p><code class="c">struct bpf_sock_addr</code>（<code class="c">include/uapi/linux/bpf.h:2700</code> 起）可分两类字段：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>字段</th>
+<th>可写？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>内核看到的地址</strong>（内核实际要连/绑的地址）</td>
+<td><code class="c">user_ip4</code>、<code class="c">user_ip6</code>、<code class="c">user_port</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>用户看到的地址</strong>（回填给 <code class="c">msg_name</code> / <code class="c">sockaddr</code>）</td>
+<td><code class="c">msg_src_ip4</code>、<code class="c">msg_src_ip6</code>、<code class="c">msg_src_port</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>各 attach 点的可写性（v6.6）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>attach type</th>
+<th>可改什么</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">INET4/6_CONNECT</code></td>
+<td><code class="c">user_ip4/6</code>、<code class="c">user_port</code>；<code class="c">msg_src_ip4/6</code>、<code class="c">msg_src_port</code></td>
+<td><strong>强制走本地代理</strong>、透明劫持连接</td>
+</tr>
+<tr>
+<td><code class="c">INET4/6_BIND</code></td>
+<td><code class="c">user_ip4/6</code>、<code class="c">user_port</code></td>
+<td>强制绑定地址/端口</td>
+</tr>
+<tr>
+<td><code class="c">INET4/6_POST_BIND</code></td>
+<td><strong>只读</strong>（内核已绑定完）</td>
+<td>记录实际分配到的端口</td>
+</tr>
+<tr>
+<td><code class="c">UDP4/6_SENDMSG</code></td>
+<td><code class="c">user_ip4/6</code>、<code class="c">user_port</code></td>
+<td>改写 UDP 目的地址（做透明代理）</td>
+</tr>
+<tr>
+<td><code class="c">UDP4/6_RECVMSG</code></td>
+<td><code class="c">msg_src_ip4/6</code>、<code class="c">msg_src_port</code></td>
+<td><strong>改写回填给应用的源地址</strong></td>
+</tr>
+<tr>
+<td><code class="c">INET4/6_GETSOCKNAME</code></td>
+<td><code class="c">msg_src_ip4/6</code>、<code class="c">msg_src_port</code></td>
+<td>伪装 <code class="c">getsockname()</code> 的结果</td>
+</tr>
+<tr>
+<td><code class="c">INET4/6_GETPEERNAME</code></td>
+<td><code class="c">msg_src_ip4/6</code>、<code class="c">msg_src_port</code></td>
+<td>伪装 <code class="c">getpeername()</code> 的结果</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>返回码</strong>：<code class="c">0</code> = 拒绝该操作（<code class="c">connect()</code>/<code class="c">bind()</code> 返回 <code class="c">-EPERM</code>）；<code class="c">1</code> = 放行。</p>
+<blockquote>
+<p><strong>⚠️ 常见的坑</strong>：在 <code class="c">UDP4_RECVMSG</code> 里，你改的是 <strong><code class="c">msg_src_*</code></strong>（用户看到的源地址），<strong>不是</strong> <code class="c">user_*</code>（内核实际用的）。改错了没报错，只是没效果。</p>
+</blockquote>
+<hr />
+<h2>6. <code class="c">sock_ops</code>：不改应用代码采集 TCP 指标的唯一手段</h2>
+<h3>6.1 16 个事件（<code class="c">include/uapi/linux/bpf.h:6727-6800</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
+<th>触发时机</th>
+<th>返回值语义</th>
+<th>HFT 用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_VOID</code></td>
+<td>占位</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_TIMEOUT_INIT</code></td>
+<td>建连时</td>
+<td>返回 SYN-RTO 值；<code class="c">-1</code> = 用默认</td>
+<td><strong>为跨机房链路定制初始 RTO</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_RWND_INIT</code></td>
+<td>建连时</td>
+<td>返回初始通告窗口（包数）；<code class="c">-1</code> = 默认</td>
+<td>小包高频场景调窗口</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_TCP_CONNECT_CB</code></td>
+<td>主动建连前</td>
+<td>—</td>
+<td>记录建连</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB</code></td>
+<td>主动建连完成</td>
+<td>—</td>
+<td>记录连接建立时刻</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB</code></td>
+<td>被动建连完成</td>
+<td>—</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_NEEDS_ECN</code></td>
+<td>拥塞控制需 ECN 时</td>
+<td><code class="c">1</code> = 启用 ECN，<code class="c">0</code> = 不启用</td>
+<td><strong>行情组播/单播链路的 ECN 策略</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_BASE_RTT</code></td>
+<td>拥塞控制查询 base RTT</td>
+<td>返回 base RTT</td>
+<td><strong>为 BBR 等算法喂正确的 base RTT</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_RTO_CB</code></td>
+<td><strong>RTO 触发时</strong><br>arg1=<code class="c">icsk_retransmits</code>, arg2=<code class="c">icsk_rto</code>, arg3=是否超时</td>
+<td>—</td>
+<td>⭐ <strong>重传告警</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_RETRANS_CB</code></td>
+<td><strong>skb 重传时</strong><br>arg1=首字节 seq, arg2=段数, arg3=<code class="c">tcp_transmit_skb</code> 返回值</td>
+<td>—</td>
+<td>⭐ <strong>重传计数</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_STATE_CB</code></td>
+<td><strong>TCP 状态变化时</strong><br>arg1=old_state, arg2=new_state</td>
+<td>—</td>
+<td>⭐ <strong>连接状态机追踪</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_TCP_LISTEN_CB</code></td>
+<td><code class="c">listen()</code> 后进入 LISTEN</td>
+<td>—</td>
+<td>监听点监控</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_RTT_CB</code></td>
+<td><strong>每个 RTT</strong></td>
+<td>—</td>
+<td>⭐⭐ <strong>RTT 采样</strong></td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_PARSE_HDR_OPT_CB</code></td>
+<td>解析 TCP 选项</td>
+<td>—</td>
+<td>自定义 TCP 选项</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_HDR_OPT_LEN_CB</code></td>
+<td>预留 TCP 选项空间</td>
+<td>返回需要的字节数</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">BPF_SOCK_OPS_WRITE_HDR_OPT_CB</code></td>
+<td>写入 TCP 选项</td>
+<td>—</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<h3>6.2 ⭐ 回调必须先「订阅」：否则部分事件不会触发</h3>
+<p><code class="c">RTO_CB</code> / <code class="c">RETRANS_CB</code> / <code class="c">STATE_CB</code> / <code class="c">RTT_CB</code> 这几个<strong>高频</strong>事件默认是不触发的，必须在程序里显式设置 <code class="c">bpf_sock_ops_cb_flags</code>（<code class="c">include/uapi/linux/bpf.h:6673-6704</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define BPF_SOCK_OPS_RTO_CB_FLAG    (1&lt;&lt;0)
+#define BPF_SOCK_OPS_RETRANS_CB_FLAG    (1&lt;&lt;1)
+#define BPF_SOCK_OPS_STATE_CB_FLAG  (1&lt;&lt;2)
+#define BPF_SOCK_OPS_RTT_CB_FLAG    (1&lt;&lt;3)
+#define BPF_SOCK_OPS_PARSE_ALL_HDR_OPT_CB_FLAG      (1&lt;&lt;4)
+#define BPF_SOCK_OPS_PARSE_UNKNOWN_HDR_OPT_CB_FLAG  (1&lt;&lt;5)
+</code></pre>
+<p>写法（通常在 <code class="c">ACTIVE_ESTABLISHED_CB</code> / <code class="c">PASSIVE_ESTABLISHED_CB</code> 里设一次）：</p>
+<pre class="code" data-label="C"><code class="c">SEC(&quot;sockops&quot;)
+int sockops_prog(struct bpf_sock_ops *ops)
+{
+    switch (ops-&gt;op) {
+    case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+    case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
+        /* 订阅 RTT + 重传 + 状态变化回调 */
+        bpf_sock_ops_cb_flags_set(ops,
+            BPF_SOCK_OPS_RTT_CB_FLAG     |
+            BPF_SOCK_OPS_RETRANS_CB_FLAG |
+            BPF_SOCK_OPS_STATE_CB_FLAG);
+        break;
+
+    case BPF_SOCK_OPS_RTT_CB:
+        /* ops-&gt;srtt_us 是平滑 RTT（微秒），ops-&gt;rtt_min 是最小 RTT */
+        record_rtt(ops);
+        break;
+
+    case BPF_SOCK_OPS_RETRANS_CB:
+        /* ops-&gt;args[0] = seq, args[1] = segments */
+        count_retrans(ops);
+        break;
+    }
+    return 0;
+}
+</code></pre>
+<blockquote>
+<p><strong>这是 cgroup BPF 最常见的「程序挂上了但什么都没发生」的原因</strong>：没设 <code class="c">bpf_sock_ops_cb_flags_set()</code>，<code class="c">RTT_CB</code> 就永远不会触发。</p>
+</blockquote>
+<h3>6.3 <code class="c">struct bpf_sock_ops</code> 的关键字段</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">op</code></td>
+<td>当前事件类型（就是上表的枚举值）</td>
+</tr>
+<tr>
+<td><code class="c">args[4]</code></td>
+<td>事件参数（含义见上表）</td>
+</tr>
+<tr>
+<td><code class="c">family</code>、<code class="c">remote_ip4/6</code>、<code class="c">local_ip4/6</code></td>
+<td>地址</td>
+</tr>
+<tr>
+<td><code class="c">remote_port</code>、<code class="c">local_port</code></td>
+<td>端口（<strong>注意是主机字节序</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">srtt_us</code></td>
+<td><strong>平滑 RTT（微秒）</strong></td>
+</tr>
+<tr>
+<td><code class="c">rtt_min</code>、<code class="c">rtt_var_us</code></td>
+<td>最小 RTT、RTT 方差</td>
+</tr>
+<tr>
+<td><code class="c">snd_cwnd</code>、<code class="c">snd_ssthresh</code></td>
+<td>拥塞窗口、慢启动阈值</td>
+</tr>
+<tr>
+<td><code class="c">state</code></td>
+<td>TCP 状态</td>
+</tr>
+<tr>
+<td><code class="c">is_fullsock</code></td>
+<td>是否为 full socket（不是时很多字段不可用）</td>
+</tr>
+<tr>
+<td><code class="c">bpf_sock_ops_cb_flags</code></td>
+<td>回调订阅开关</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 价值</strong>：<code class="c">srtt_us</code> + <code class="c">rtt_min</code> + <code class="c">snd_cwnd</code> 这三个字段组合起来，就等价于<strong>在内核里跑了一个零侵入的 TCP 健康度探针</strong>——不需要在交易程序里加任何埋点，也不需要 <code class="c">ss -i</code> 轮询（轮询有采样间隔，会漏掉瞬时抖动）。</p>
+</blockquote>
+<hr />
+<h2>7. 与 XDP / tc 的三方对比</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -661,32 +3984,367 @@ int xdp_md_filter(struct xdp_md *ctx) {
 <tbody>
 <tr>
 <td>作用域</td>
-<td>全局（网卡级）</td>
-<td>全局（网卡级）</td>
-<td>cgroup 级（进程组）</td>
+<td>设备级</td>
+<td>设备级</td>
+<td><strong>进程组级</strong></td>
+</tr>
+<tr>
+<td>判定归属</td>
+<td>包从哪来</td>
+<td>包从哪来</td>
+<td><code class="c">sk-&gt;sk_cgrp_data</code>（socket 创建时继承，<strong>终身不变</strong>）</td>
+</tr>
+<tr>
+<td>时机（RX）</td>
+<td>驱动层，<strong>无 skb</strong></td>
+<td><code class="c">__netif_receive_skb_core</code>，有 skb</td>
+<td><strong><code class="c">sk_filter_trim_cap()</code>，socket 入队时</strong></td>
+</tr>
+<tr>
+<td>时机（TX）</td>
+<td>无</td>
+<td><code class="c">__dev_queue_xmit</code>，qdisc 前</td>
+<td><strong><code class="c">ip_finish_output()</code>，POST_ROUTING 之后</strong></td>
 </tr>
 <tr>
 <td>粒度</td>
 <td>每个包</td>
-<td>每个 sk_buff</td>
-<td>每个进程的网络操作</td>
+<td>每个 skb</td>
+<td>每包（仅 INET_INGRESS/EGRESS）或每 socket 操作</td>
 </tr>
 <tr>
-<td>能力</td>
-<td>包过滤/重定向</td>
-<td>包分类/标记</td>
-<td>socket 级过滤/修改</td>
+<td>返回码短路</td>
+<td>是（<code class="c">XDP_DROP</code> 等决定命运）</td>
+<td>是（<code class="c">TC_ACT_*</code>）</td>
+<td><strong>否——「All eligible programs are executed regardless of return code」</strong></td>
+</tr>
+<tr>
+<td>性能定位</td>
+<td>消除开销</td>
+<td>分类/整形</td>
+<td><strong>治理/可观测</strong></td>
+</tr>
+<tr>
+<td>是否能改 skb 元数据</td>
+<td>❌（无 skb）</td>
+<td>✅</td>
+<td>部分（<code class="c">__sk_buff</code> 的只读/可写子集）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 关联</h2>
-<p>cgroup-BPF 在 HFT 中主要用于<strong>进程隔离和资源控制</strong>：
-- 交易进程和行情进程在不同 cgroup，各自有独立网络策略
-- 限制非交易进程的网络带宽
-- 监控每个进程的 socket 状态（重传/RTT 等）</p>
-<blockquote>
-<p>注：cgroup-BPF 不是 HFT 网络路径的主力工具，主要用于运维/隔离层面。</p>
-</blockquote>
+<hr />
+<h2>8. 观测与排障</h2>
+<pre class="code" data-label="shell"><code class="c"># ① 该 cgroup 上挂了什么、attach flags 是什么
+bpftool cgroup show /sys/fs/cgroup/trading/ --pretty
+
+# ② 程序是否被执行
+sysctl -w kernel.bpf_stats_enabled=1
+bpftool prog show id &lt;ID&gt;            # run_cnt / run_time_ns
+sysctl -w kernel.bpf_stats_enabled=0
+
+# ③ cgroup 相关的 tracepoint
+bpftrace -l 'tracepoint:cgroup:*'
+bpftrace -e 'tracepoint:cgroup:cgroup_attach_task { printf(&quot;%s -&gt; %s\n&quot;, str(args-&gt;dst_path), str(args-&gt;comm)); }'
+
+# ④ 被 cgroup BPF 丢的包（有 drop reason）
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+#   相关 reason：SKB_DROP_REASON_BPF_CGROUP_EGRESS
+
+# ⑤ sock_ops 是否触发
+#   在程序里维护一个 PERCPU_ARRAY 计数器，用 bpftool map dump 读
+bpftool map dump name sockops_stats
+</code></pre>
+<p><strong>常见故障表：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>排查</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>程序挂上了但从未执行</td>
+<td>cgroup ingress/egress 只对<strong>有 socket 的包</strong>生效；转发包、未加入的组播包不走</td>
+<td>改用 tc/XDP，或用 <code class="c">tracepoint:skb:kfree_skb</code> 确认</td>
+</tr>
+<tr>
+<td><code class="c">sock_ops</code> 的 <code class="c">RTT_CB</code> 不触发</td>
+<td>没调 <code class="c">bpf_sock_ops_cb_flags_set()</code> 订阅</td>
+<td>在 <code class="c">*_ESTABLISHED_CB</code> 里设 flag</td>
+</tr>
+<tr>
+<td>子 cgroup 挂不上去</td>
+<td>父 cgroup 挂的是 NONE（无 flag）</td>
+<td><code class="c">bpftool cgroup show</code> 看 <code class="c">attach_flags</code>；父层改用 <code class="c">multi</code>/<code class="c">override</code></td>
+</tr>
+<tr>
+<td>期望「白名单优先」但黑名单仍然生效</td>
+<td><strong>cgroup BPF 不停短路</strong>：所有程序都跑</td>
+<td>用 map 在程序间共享决策，或合并成一个程序</td>
+</tr>
+<tr>
+<td><code class="c">setsockopt()</code> 被 BPF 拦截后返回值不对</td>
+<td>SETSOCKOPT 的 <code class="c">if (ret)</code> 会把 BPF 的非 0 返回值直接当系统调用返回值；GETSOCKOPT 只有负数才短路</td>
+<td>检查返回码；见第 4 节</td>
+</tr>
+<tr>
+<td>高并发下 <code class="c">setsockopt</code> 变慢</td>
+<td>BPF 执行期间持有 <code class="c">lock_sock(sk)</code>，串行化</td>
+<td>减少 setsockopt 频率，或把逻辑挪到 <code class="c">SOCK_OPS</code></td>
+</tr>
+<tr>
+<td>进程迁移到新 cgroup 后策略不变</td>
+<td>socket 的 cgroup 归属在<strong>创建时确定，终身不变</strong></td>
+<td>必须重建连接，或新旧 cgroup 都挂</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>9. HFT 要点</h2>
+<ol>
+<li><strong>cgroup BPF 是治理工具，不是性能工具。</strong> 它唯一 per-packet 的两个挂载点（INGRESS/EGRESS）分别位于 socket 入队和 POST_ROUTING 之后——<strong>包走到那里时该付的 CPU 已经全部付完了</strong>。想省 CPU 只能上 XDP 或 tc。</li>
+<li><strong>它的真实价值是「零侵入可观测」</strong>：<code class="c">sock_ops</code> 的 <code class="c">srtt_us</code> / <code class="c">rtt_min</code> / <code class="c">snd_cwnd</code> / <code class="c">RETRANS_CB</code> / <code class="c">STATE_CB</code> 让你在<strong>不碰交易程序一行代码</strong>的前提下拿到 TCP 层的健康度数据。这比在应用里埋点安全得多（不会引入延迟抖动，不会改发布流程）。</li>
+<li><strong>进程隔离</strong>：交易进程和行情进程分属不同 cgroup，各自挂独立的网络策略。配合 <code class="c">BPF_CGROUP_INET4_CONNECT</code> 可以强制交易进程只能连指定的行情网关/交易所前置地址，防止配置错误连错环境。</li>
+<li><strong><code class="c">BASE_RTT</code> 和 <code class="c">RWND_INIT</code> 是可写的</strong>，这给了你在内核里针对特定链路调优 TCP 的能力——比如为跨机房的组播补包通道（TCP）设置一个更贴合实际的 base RTT，避免 BBR 在慢启动阶段过度探测。</li>
+<li><strong>永远记住「不停短路」这条规则</strong>：多个 cgroup 程序叠加时，前一个的返回值不影响后一个是否执行。要表达「优先级」必须靠共享 map。</li>
+<li><strong><code class="c">setsockopt</code> 路径上有 <code class="c">lock_sock()</code></strong>。如果你的程序在跑高频 <code class="c">setsockopt</code>（比如频繁调 <code class="c">TCP_NODELAY</code> 或 <code class="c">SO_RCVBUF</code>），cgroup SOCKOPT 程序会把它串行化。这类调用在初始化时一次性做完。</li>
+<li><strong>socket 的 cgroup 归属终身不变</strong>——做灰度切换时这是个陷阱，也是个保障（长连接策略稳定）。</li>
+</ol>
+<hr />
+<h2>10. 与 Rosen 3.x 的差异</h2>
+<p>Rosen 3.x 的时代（2.6/3.x 内核）<strong>完全没有 cgroup BPF</strong>，只有：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 时代的能力</th>
+<th>现在的对应物</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SO_BINDTODEVICE</code>（绑定到设备）</td>
+<td><code class="c">BPF_CGROUP_INET4_BIND</code> 可改 <code class="c">user_ip4</code></td>
+</tr>
+<tr>
+<td>iptables <code class="c">-m owner</code>（按 uid/gid/pid 匹配）</td>
+<td>cgroup BPF（按 cgroup 匹配，<strong>粒度更细、可编程</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">tcp_(diag)</code> / <code class="c">ss -i</code> 轮询</td>
+<td><code class="c">sock_ops</code> 事件驱动（无采样间隔）</td>
+</tr>
+<tr>
+<td>SELinux/AppArmor 网络规则</td>
+<td><code class="c">BPF_PROG_TYPE_LSM</code> + cgroup BPF</td>
+</tr>
+</tbody>
+</table></div>
+<p>cgroup BPF 把「按进程做网络策略」从<strong>固定属性的匹配</strong>（uid/gid）升级成了<strong>可编程的判定</strong>（任意 BPF 逻辑 + map 状态）。</p>
+<hr />
+<h2>11. 代码自测</h2>
+<details>
+<summary>Q1：你在父 cgroup 挂了一个「放行白名单」程序（命中白名单返回 1），在子 cgroup 挂了一个「拒绝黑名单」程序（命中黑名单返回 0）。你期望白名单先短路，结果一条本该放行的连接被拒了。为什么？</summary>
+<p><strong>因为 cgroup BPF 不做短路。</strong> UAPI 注释（<code class="c">include/uapi/linux/bpf.h:1117-1118</code>）写得非常直白：</p>
+<pre class="code" data-label="code"><code class="c"> * All eligible programs are executed regardless of return code from
+ * earlier programs.
+</code></pre>
+<p><strong>所有符合条件的程序都会被执行，与前面程序返回什么都无关。</strong></p>
+<p>这和另外两个 hook 形成鲜明对比：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>hook</th>
+<th>返回码是否中断链条</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Netfilter</td>
+<td>✅ <code class="c">NF_DROP</code> / <code class="c">NF_ACCEPT</code> 决定后续</td>
+</tr>
+<tr>
+<td>tc（clsact）</td>
+<td>✅ <code class="c">TC_ACT_SHOT</code> / <code class="c">TC_ACT_OK</code> / <code class="c">TC_ACT_STOLEN</code> 决定后续</td>
+</tr>
+<tr>
+<td><strong>cgroup BPF</strong></td>
+<td>❌ <strong>不停短路，全部执行</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>所以执行顺序是：</strong></p>
+<pre class="code" data-label="code"><code class="c">事件发生在子 cgroup
+  → 子 cgroup 的「拒绝黑名单」程序先跑（子层先于父层）
+     → 命中黑名单 → 返回 0（拒绝）
+  → 父 cgroup 的「放行白名单」程序后跑
+     → 命中白名单 → 返回 1（放行）
+  → 内核汇总：只要有一个返回 0，整个操作被拒绝
+</code></pre>
+<p><strong>白名单程序跑得比黑名单晚，且它的「放行」无法撤销黑名单已经做出的「拒绝」。</strong></p>
+<p><strong>三种修法：</strong></p>
+<ol>
+<li><strong>合并成一个程序</strong>，挂在同一个 cgroup 上，内部按优先级判断（白名单优先，命中就 return 1）。<strong>最简单，推荐。</strong></li>
+<li><strong>用共享 map 传递决策</strong>：白名单程序先执行（挂到更内层 cgroup），命中时往 map 里写 <code class="c">allowed=1</code>；黑名单程序查这个 map，若 <code class="c">allowed</code> 则跳过。注意执行顺序是<strong>子层先、父层后</strong>，所以要让白名单挂到<strong>更内层</strong>。</li>
+<li><strong>只挂一层，用 map 存两套规则</strong>，在程序里统一裁决。</li>
+</ol>
+<p><strong>顺带复习执行顺序规则</strong>（<code class="c">include/uapi/linux/bpf.h:1104-1116</code> 的 Ex1）：</p>
+<pre class="code" data-label="code"><code class="c">cgrp1 (MULTI progs A, B) -&gt;
+   cgrp2 (OVERRIDE prog C) -&gt;
+     cgrp3 (MULTI prog D) -&gt;
+       cgrp4 (OVERRIDE prog E) -&gt;
+         cgrp5 (NONE prog F)
+the event in cgrp5 triggers execution of F,D,A,B in that order.
+</code></pre>
+<ul>
+<li><strong>子层先、父层后</strong>（F 最内层，最先跑）。</li>
+<li><code class="c">OVERRIDE</code> 层（C、E）的程序<strong>会被更内层的程序顶掉</strong>：F 存在时 E 不跑；F 摘掉后 E 才跑。</li>
+<li><code class="c">MULTI</code> 层（A、B、D）的程序<strong>全部都跑</strong>。</li>
+</ul>
+</details>
+<details>
+<summary>Q2：你写了一个 <code class="c">sock_ops</code> 程序想采集 RTT，程序挂上了、<code class="c">bpftool prog show</code> 里 <code class="c">run_cnt</code> 也在涨，但 <code class="c">RTT_CB</code> 分支里的计数器一直是 0。为什么？</summary>
+<p><strong>因为你没有订阅 RTT 回调。</strong></p>
+<p><code class="c">RTT_CB</code>、<code class="c">RTO_CB</code>、<code class="c">RETRANS_CB</code>、<code class="c">STATE_CB</code> 这几个<strong>高频</strong>事件在 v6.6 默认是关闭的，必须通过 <code class="c">bpf_sock_ops_cb_flags_set()</code> 显式打开（<code class="c">include/uapi/linux/bpf.h:6673-6704</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define BPF_SOCK_OPS_RTO_CB_FLAG    (1&lt;&lt;0)
+#define BPF_SOCK_OPS_RETRANS_CB_FLAG    (1&lt;&lt;1)
+#define BPF_SOCK_OPS_STATE_CB_FLAG  (1&lt;&lt;2)
+#define BPF_SOCK_OPS_RTT_CB_FLAG    (1&lt;&lt;3)
+#define BPF_SOCK_OPS_PARSE_ALL_HDR_OPT_CB_FLAG      (1&lt;&lt;4)
+#define BPF_SOCK_OPS_PARSE_UNKNOWN_HDR_OPT_CB_FLAG  (1&lt;&lt;5)
+</code></pre>
+<p><strong>为什么默认关？</strong> 因为这几个事件在<strong>每个 RTT / 每次重传 / 每次状态变化</strong>时触发，属于热路径。内核的设计是「你不订阅就不付代价」——<code class="c">run_cnt</code> 涨是因为 <code class="c">ACTIVE_ESTABLISHED_CB</code> 这类低频事件在跑，说明程序确实挂上了、也确实在被调用，只是 RTT 事件没订阅。</p>
+<p><strong>修法</strong>：在连接建立时订阅一次：</p>
+<pre class="code" data-label="C"><code class="c">SEC(&quot;sockops&quot;)
+int sockops_prog(struct bpf_sock_ops *ops)
+{
+    switch (ops-&gt;op) {
+    case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+    case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
+        bpf_sock_ops_cb_flags_set(ops,
+            BPF_SOCK_OPS_RTT_CB_FLAG     |   /* 每 RTT 触发 */
+            BPF_SOCK_OPS_RETRANS_CB_FLAG |   /* 每次重传触发 */
+            BPF_SOCK_OPS_STATE_CB_FLAG);     /* 状态变化触发 */
+        break;
+
+    case BPF_SOCK_OPS_RTT_CB:
+        /* ops-&gt;srtt_us  : 平滑 RTT（微秒）
+         * ops-&gt;rtt_min  : 观测到的最小 RTT
+         * ops-&gt;rtt_var_us: RTT 方差
+         */
+        record(ops-&gt;srtt_us, ops-&gt;rtt_min);
+        break;
+    }
+    return 0;
+}
+</code></pre>
+<p><strong>两个配套的坑：</strong></p>
+<ol>
+<li><strong>订阅是 per-socket 的</strong>，不是全局的。所以必须在<strong>每个连接</strong>建立时都设一次（这就是上面放到 <code class="c">*_ESTABLISHED_CB</code> 里的原因）。</li>
+<li><strong><code class="c">ops-&gt;local_port</code> / <code class="c">remote_port</code> 是主机字节序</strong>，<code class="c">local_ip4</code> / <code class="c">remote_ip4</code> 是网络字节序。做 key 的时候别搞混，否则 map 查不到。</li>
+</ol>
+<p><strong>验证订阅是否生效</strong>：读 <code class="c">ops-&gt;bpf_sock_ops_cb_flags</code> 并打到 map 里，或者用 <code class="c">bpftool map dump</code> 看 <code class="c">*_ESTABLISHED_CB</code> 分支的计数是否在涨。</p>
+</details>
+<details>
+<summary>Q3：你在 <code class="c">BPF_CGROUP_SETSOCKOPT</code> 程序里想覆盖 <code class="c">TCP_CONGESTION</code>，返回了 1 表示「我处理完了」，结果发现内核的 setsockopt 仍然被调用了；而另一个场景里你返回了 1，用户的 <code class="c">setsockopt()</code> 却收到了返回值 1（看起来像成功但没有实际生效）。这两次分别错在哪？</summary>
+<p><strong>两次都错在对返回码语义的理解上。</strong> 看 <code class="c">kernel/bpf/cgroup.c</code> 的源码：</p>
+<pre class="code" data-label="C"><code class="c">    lock_sock(sk);
+    ret = bpf_prog_run_array_cg(&amp;cgrp-&gt;bpf, CGROUP_SETSOCKOPT,
+                    &amp;ctx, bpf_prog_run, 0, NULL);
+    release_sock(sk);
+
+    if (ret)
+        goto out;                       /* ← ① 非 0 就直接短路 */
+
+    if (ctx.optlen == -1) {
+        /* optlen set to -1, bypass kernel */
+        ret = 1;                        /* ← ② 这才是「绕过内核」 */
+    } else if (ctx.optlen &gt; max_optlen || ctx.optlen &lt; -1) {
+        ...
+    } else {
+        /* optlen within bounds, run kernel handler */
+        ret = 0;                        /* ← ④ 默认：继续调内核 */
+    }
+</code></pre>
+<p><strong>完整语义表：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>BPF 返回值</th>
+<th><code class="c">ctx-&gt;optlen</code></th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>非 0</strong></td>
+<td>任意</td>
+<td><strong>该值直接成为 <code class="c">setsockopt()</code> 的返回值</strong>；链上剩余 BPF 程序 + 内核 handler <strong>全部跳过</strong></td>
+</tr>
+<tr>
+<td>0</td>
+<td><strong><code class="c">-1</code></strong></td>
+<td>BPF 已完全接管，跳过内核 handler，返回 1</td>
+</tr>
+<tr>
+<td>0</td>
+<td><code class="c">0</code></td>
+<td>用<strong>原始用户态数据</strong>继续调内核 handler</td>
+</tr>
+<tr>
+<td>0</td>
+<td>合法（<code class="c">1..max_optlen</code>）</td>
+<td>用 <strong>BPF 填的 buffer</strong> 继续调内核 handler</td>
+</tr>
+<tr>
+<td>0</td>
+<td>越界</td>
+<td><code class="c">*optlen &gt; PAGE_SIZE &amp;&amp; optlen &gt;= 0</code> → <code class="c">pr_info_once</code> 警告 + 照旧继续；否则 <code class="c">-EFAULT</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对照你的两个场景：</strong></p>
+<ul>
+<li><strong>场景一（返回 1 但内核仍被调用）</strong>：你把「返回 1」理解成了「继续让内核处理」。实际上返回非 0 是 <strong>短路</strong>（①），内核 handler 应该<strong>不会</strong>被调用。如果你观察到内核仍被调用，说明<strong>你返回的其实是 0</strong>——常见原因是程序走了另一条分支（<code class="c">level</code>/<code class="c">optname</code> 不匹配时 <code class="c">return 0</code> 提前返回了）。请在每个分支验证返回值。</li>
+<li><strong>场景二（返回 1，用户拿到返回值 1 但没生效）</strong>：这正是 ① 的行为——你的返回值 1 被直接当作 <code class="c">setsockopt()</code> 的返回值交给了用户，而<strong>内核 handler 被完全跳过</strong>，所以拥塞算法其实没被设置。用户看到返回值 1 会当成「成功」（虽然 <code class="c">setsockopt</code> 约定成功是 0），于是静默失败。</li>
+</ul>
+<p><strong>正确写法（覆盖 TCP_CONGESTION）：</strong></p>
+<pre class="code" data-label="C"><code class="c">SEC(&quot;cgroup/setsockopt&quot;)
+int setsockopt_prog(struct bpf_sockopt *ctx)
+{
+    if (ctx-&gt;level != SOL_TCP || ctx-&gt;optname != TCP_CONGESTION)
+        return 1;      /* 不关心的选项：返回值语义见下 */
+
+    /* 检查 optval 空间是否够写 &quot;cubic&quot; */
+    if (ctx-&gt;optval_end - ctx-&gt;optval &lt; 6)
+        return 1;
+
+    __builtin_memcpy(ctx-&gt;optval, &quot;cubic&quot;, 6);
+    ctx-&gt;optlen = 6;       /* 告诉内核用 BPF 的 buffer，长度 6 */
+
+    return 0;              /* ⭐ 返回 0 = 继续，内核会用 BPF 填的 optval */
+}
+</code></pre>
+<p><strong>如果确实要「完全接管、不让内核碰」</strong>，则：</p>
+<pre class="code" data-label="C"><code class="c">    __builtin_memcpy(ctx-&gt;optval, &quot;cubic&quot;, 6);
+    ctx-&gt;optlen = -1;      /* ⭐ -1 = bypass kernel */
+    return 0;              /* ⭐ 必须返回 0，否则走 ① 短路分支 */
+</code></pre>
+<p><strong>三个附带细节：</strong></p>
+<ol>
+<li><strong>内核为每个 setsockopt 预留至少 16 字节 buffer</strong>：<code class="c">max_optlen = max_t(int, 16, *optlen)</code>，注释明确说是为了「把 <code class="c">TCP_CONGESTION</code> 从 <code class="c">nv</code> 覆盖成 <code class="c">cubic</code>」这类场景（新名字更长）。所以写 6 字节的 <code class="c">cubic</code> 是安全的。</li>
+<li><strong>GETSOCKOPT 的短路条件不同</strong>：源码里是 <code class="c">if (ret &lt; 0) goto out;</code>，<strong>只有负数才短路</strong>，0 和正数都会继续走内核 handler 并 <code class="c">copy_to_user</code>。<strong>两个方向不对称，别想当然。</strong></li>
+<li><strong>整个 BPF 执行期间持有 <code class="c">lock_sock(sk)</code></strong>。高频 <code class="c">setsockopt</code> 会被串行化，且有 <code class="c">kmalloc(GFP_USER)</code> 的可能（当 BPF 填的 optlen 需要交给内核 handler 时）。</li>
+</ol>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>本篇：</strong> <a href="chapter-15.html#s-01">01-ebpf-net-bootlin.md</a> · <a href="chapter-15.html#s-02">02-bpf.md</a> · <a href="chapter-15.html#s-03">03-xdp-bpf.md</a></li>
+<li><strong>相关：</strong> <a href="chapter-09.html#ch-9">chapter-09-tc-bpf</a> tc-BPF · <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture</a> XDP · <code class="c">06.7-bpf-observability/</code> 可观测性</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
       </section>
 
 

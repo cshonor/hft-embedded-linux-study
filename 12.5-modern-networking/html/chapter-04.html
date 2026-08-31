@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">02</span>— Documentation/networking/page_pool.rst</a>
-          <a href="#s-02"><span class="n">02</span>— page_pool API：现代 Rx buffer 管理</a>
+          <a href="#s-01"><span class="n">01</span>— page_pool 机制本体：Rx buffer 的回收池</a>
+          <a href="#s-02"><span class="n">02</span>— page_pool 实践：为什么需要它、HFT 调优清单与陷阱</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -287,7 +287,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -315,154 +315,870 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的四个核心结论</h2>
+<ol>
+<li><strong>最大的一笔收益是 <code class="c">PP_FLAG_DMA_MAP</code> 的保持映射</strong>，不是"避免 <code class="c">alloc_page</code>"。
+   有 IOMMU 时每次 <code class="c">dma_map</code> 可达数百 ns，page_pool 把它完全消除（映射一次、长期保持）。</li>
+<li><strong><code class="c">pool_size</code> 管的不是快缓存</strong>。per-CPU 快缓存是<strong>硬编码的 128</strong>（<code class="c">PP_ALLOC_CACHE_SIZE</code>），
+   不可调；<code class="c">pool_size</code> 决定的是第二层 <strong>ptr_ring</strong> 的大小（默认 1024，<strong>上限 32768</strong>）。</li>
+<li><strong>回收判定全靠 refcnt</strong>：refcnt == 1 → 回收进池；refcnt &gt; 1 → unmap 并真释放回伙伴系统。
+   所有 page_pool 相关的"性能莫名劣化"都源于这条规则。</li>
+<li><strong>AF_XDP 零拷贝不用 page_pool</strong>（用用户态 UMEM，<code class="c">MEM_TYPE_XSK_BUFF_POOL</code>）。
+   说"AF_XDP 基于 page_pool"只在 <strong>copy 模式</strong>下成立。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>缓冲区池化</strong>：page_pool 复用已 DMA 映射的 page，避免每次收包都 alloc_page + dma_map</li>
-<li><strong>延迟降低</strong>：page_pool recycle 使收包路径减少 ~200ns 的页分配开销</li>
-<li><strong>AF_XDP 共享</strong>：AF_XDP 的 UMEM 基于 page_pool，实现内核-用户态零拷贝共享缓冲区</li>
-<li><strong>NUMA 亲和</strong>：page_pool 保证缓冲区来自本地 NUMA 节点</li>
+<li><strong>缓冲区池化</strong>：page_pool 复用已 DMA 映射的 page，避免每次收包都 <code class="c">alloc_page</code> + <code class="c">dma_map</code></li>
+<li><strong>延迟降低</strong>：消除收包路径上的伙伴系统往返与 DMA 映射开销（具体数值随 IOMMU/配置差异很大，<strong>需自测</strong>）</li>
+<li><strong>NUMA 亲和</strong>：<code class="c">page_pool_params.nid</code> 指定 page 来源节点——⚠️ 应设成<strong>网卡所在</strong>节点，
+  不是当前线程所在节点（与 DPDK <code class="c">rte_eth_dev_socket_id()</code> 同一类坑）</li>
+<li><strong>frag 模式</strong>：<code class="c">PP_FLAG_PAGE_FRAG</code> 一页多段，行情小包场景必需（4 KB 页给 64 B 包浪费 98%）</li>
+<li><strong>XDP_TX 要用 <code class="c">DMA_BIDIRECTIONAL</code></strong>：<code class="c">PP_FLAG_DMA_MAP</code> 下只接受 <code class="c">DMA_FROM_DEVICE</code>
+  和 <code class="c">DMA_BIDIRECTIONAL</code>，前者做不了原路反弹发送</li>
+<li><strong>tcpdump 会抽干 page_pool</strong>：AF_PACKET 克隆 skb → refcnt 抬高 → 页面永久离池。
+  <strong>排障工具本身是观测扰动源</strong></li>
+<li><strong>运行中别改 ring 大小 / 队列数</strong>：驱动 reload 会重建 pool，页面全丢，之后延迟明显升高</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
 <li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/</code>：NAPI 使用 page_pool 分配接收缓冲区</li>
-<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：AF_XDP UMEM 基于 page_pool</li>
+<li><code class="c">12.5-modern-networking/chapter-03-tx-path-skbbuff/</code>：page_pool 的页如何零拷贝变成 skb</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 依赖 page_pool 的回收语义</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：AF_XDP 零拷贝用 UMEM，与 page_pool 是两套体系</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">02</div><h2>— Documentation/networking/page_pool.rst</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— page_pool 机制本体：Rx buffer 的回收池</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> Ch1（Rx buffer 分配）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/page_pool.rst</code></p>
+<p><strong>内核文档：</strong> <code class="c">Documentation/networking/page_pool.rst</code>
+<strong>对应 Rosen:</strong> Ch1（Rx buffer 分配）
+<strong>内核版本:</strong> 以 <strong>v6.6</strong> 为准，API 签名与注释均取自
+<code class="c">include/net/page_pool/types.h</code>、<code class="c">include/net/page_pool/helpers.h</code>、<code class="c">net/core/page_pool.c</code></p>
 </blockquote>
 <h2>文档概述</h2>
-<p>page_pool API 官方文档，描述 Rx buffer 的 recycling 池机制。</p>
-<h2>核心内容</h2>
-<h3>page_pool 工作流程</h3>
-<pre class="code" data-label="code"><code class="c">1. 驱动初始化：page_pool_create(&amp;params)
-2. 收包：page = page_pool_dev_alloc_pages(pp)
-3. DMA 映射：page_pool_get_dma_addr(page)
-4. 传递给协议栈（增加引用计数）
-5. 协议栈释放：page_pool_put_full_page(pp, page, false) → 回到池中
+<p>page_pool 是现代 Linux 收包路径的<strong>内存底座</strong>。它不显眼，但决定了两件事：</p>
+<ol>
+<li>高 PPS 下收包还能不能撑住（<code class="c">alloc_page()</code> 在 1 Mpps 以上会成为瓶颈）</li>
+<li><strong>XDP 能不能用</strong>（XDP 依赖 page_pool 的回收语义，没有 page_pool 就没有 XDP）</li>
+</ol>
+<p>本篇讲 page_pool 的<strong>机制本体</strong>——它内部怎么组织、分配/释放的判定规则是什么。</p>
+<p>本篇与兄弟篇的分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>篇</th>
+<th>讲什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>01（本篇）</strong></td>
+<td>机制本体：三层结构、分配/释放 API、<strong>refcnt 判定规则</strong>、frag 模式</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02-page-pool-lwn</a></td>
+<td>为什么需要它、驱动采用情况、<strong>HFT 调优清单</strong>、陷阱</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">chapter-03/02</a></td>
+<td>传统 vs 现代驱动的对照</td>
+</tr>
+<tr>
+<td><a href="chapter-13.html#s-04">chapter-03/04</a></td>
+<td>page_pool 的页如何零拷贝变成 skb</td>
+</tr>
+</tbody>
+</table></div>
+<p>原笔记只有 1.4 KB，列了 5 个参数、5 步流程、一行性能对比。下面补齐的是<strong>回收判定规则</strong>——那才是 page_pool 真正的机制核心，也是所有 page_pool 相关 bug 的来源。</p>
+<hr />
+<h2>一、问题：<code class="c">alloc_page()</code> 在收包路径上贵在哪</h2>
+<p>每个 Rx buffer 都是一页（或半页）。传统路径上，每收一个包就要：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">alloc_page()</code> → 伙伴系统</td>
+<td>拿 zone-&gt;lock（<strong>全局竞争</strong>）、查 free list、可能触发回收</td>
+</tr>
+<tr>
+<td><code class="c">dma_map_page()</code></td>
+<td>建 IOMMU 映射、刷 TLB（有 IOMMU 时更贵）</td>
+</tr>
+<tr>
+<td>页面引用计数原子操作</td>
+<td>cacheline 在多个 CPU 间弹</td>
+</tr>
+<tr>
+<td>释放时 <code class="c">dma_unmap_page()</code> + <code class="c">put_page()</code></td>
+<td>再来一遍，同样有锁</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键不是单次多贵，而是这些操作每包都要做两遍（分配 + 释放），且都带全局竞争。</strong> 在 1 Mpps 下，单个 CPU 每秒要做 200 万次伙伴系统往返——这个量级上，<code class="c">alloc_page()</code> 本身就能吃掉收包预算的一大半。</p>
+<p>page_pool 的思路很朴素：<strong>页面用完别还给伙伴系统，放回自己的池子里。</strong></p>
+<hr />
+<h2>二、三层结构</h2>
+<pre class="code" data-label="code"><code class="c">        ┌─────────────────────────────────────────────┐
+        │  ① per-CPU cache（无锁，最快）                │
+        │     pool-&gt;alloc.cache[]                      │
+        │     命中 → 统计量 rx_pp_alloc_fast            │
+        └──────────────────┬──────────────────────────┘
+                           │ miss
+                           v
+        ┌─────────────────────────────────────────────┐
+        │  ② ptr_ring（跨 CPU / NAPI 之间周转）          │
+        │     命中 → 统计量 rx_pp_alloc_slow            │
+        └──────────────────┬──────────────────────────┘
+                           │ 空
+                           v
+        ┌─────────────────────────────────────────────┐
+        │  ③ 伙伴系统（真正的 alloc_page，慢路径）        │
+        │     统计量 rx_pp_alloc_empty / _refill        │
+        └─────────────────────────────────────────────┘
+
+回收方向（对称）：
+  释放 → refcnt == 1 ? → ① per-CPU cache（rx_pp_recycle_cached）
+                       → ① 满 → ② ptr_ring（rx_pp_recycle_ring）
+                       → ② 满 → ③ 还给伙伴系统（rx_pp_recycle_released_ref）
 </code></pre>
-<h3>关键配置参数</h3>
+<p>这个三层结构不是猜的——它正好对应 v6.6 <code class="c">net/core/page_pool.c</code> 里导出的 <strong>11 个统计量</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static const char pp_stats[][ETH_GSTRING_LEN] = {
+    &quot;rx_pp_alloc_fast&quot;,        /* ① per-CPU 缓存命中 */
+    &quot;rx_pp_alloc_slow&quot;,        /* ② ptr_ring 命中 */
+    &quot;rx_pp_alloc_slow_ho&quot;,     /* ② 高 order 页 */
+    &quot;rx_pp_alloc_empty&quot;,       /* ③ 池空，走伙伴系统 */
+    &quot;rx_pp_alloc_refill&quot;,      /* ③ 正在补充 */
+    &quot;rx_pp_alloc_waive&quot;,       /* ③ 放弃填充 */
+    &quot;rx_pp_recycle_cached&quot;,    /* 回收进 ① */
+    &quot;rx_pp_recycle_cache_full&quot;,/* ① 满 */
+    &quot;rx_pp_recycle_ring&quot;,      /* 回收进 ② */
+    &quot;rx_pp_recycle_ring_full&quot;, /* ② 满 */
+    &quot;rx_pp_recycle_released_ref&quot;, /* refcnt&gt;1，真释放 */
+};
+</code></pre>
+<p><strong>这组数字就是 page_pool 的健康体检表</strong>，见第五节。</p>
+<hr />
+<h2>三、分配：两个 API，选错会浪费内存</h2>
+<pre class="code" data-label="C"><code class="c">/* include/net/page_pool/helpers.h */
+
+static inline struct page *page_pool_dev_alloc_pages(struct page_pool *pool)
+{
+    gfp_t gfp = (GFP_ATOMIC | __GFP_NOWARN);
+    return page_pool_alloc_pages(pool, gfp);
+}
+
+static inline struct page *page_pool_dev_alloc_frag(struct page_pool *pool,
+                            unsigned int *offset,
+                            unsigned int size)
+{
+    gfp_t gfp = (GFP_ATOMIC | __GFP_NOWARN);
+    return page_pool_alloc_frag(pool, offset, size, gfp);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>返回</th>
+<th>用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">page_pool_dev_alloc_pages()</code></td>
+<td><strong>一整页</strong></td>
+<td>大帧、jumbo frame；或不在意内存浪费的简单驱动</td>
+</tr>
+<tr>
+<td><code class="c">page_pool_dev_alloc_frag()</code></td>
+<td>一页里的<strong>一段</strong>（通过 <code class="c">offset</code> 返回偏移）</td>
+<td><strong>小包场景</strong>，配合 <code class="c">PP_FLAG_PAGE_FRAG</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>注意两者的 gfp 都是 <strong><code class="c">GFP_ATOMIC | __GFP_NOWARN</code></strong>——收包路径不能睡眠。</p>
+<h3>frag 模式：一页切给多个包</h3>
+<p>4 KB 一页给一个 64 字节的包，浪费 98%。frag 模式把一页切成多段，每包占一段。</p>
+<p>相关的计数器操作：</p>
+<pre class="code" data-label="C"><code class="c">static inline void page_pool_fragment_page(struct page *page, long nr);
+static inline long page_pool_defrag_page(struct page *page, long nr);
+
+static inline bool page_pool_is_last_frag(struct page_pool *pool,
+                      struct page *page)
+{
+    /* If fragments aren't enabled or count is 0 we were the last user */
+    return !(pool-&gt;p.flags &amp; PP_FLAG_PAGE_FRAG) ||
+           (page_pool_defrag_page(page, 1) == 0);
+}
+</code></pre>
+<p><strong>为什么不能用 page 的 refcount 来管 frag？</strong> 内核源码里那句注释说明了：</p>
+<blockquote>
+<p><em>"pp_frag_count represents the number of writers who can update the page
+either by updating <code class="c">skb-&gt;data</code> or via DMA mappings for the device.
+We can't rely on the page refcnt for that as we don't know who might be…"</em></p>
+</blockquote>
+<p>即：page 的 refcount 是"被谁持有"，而 <code class="c">pp_frag_count</code> 是"谁可能写这块内存"。<strong>语义不同，必须分开计。</strong> 混淆这两者是 page_pool 相关 bug 的经典来源。</p>
+<hr />
+<h2>四、释放：refcnt 决定"回收"还是"真释放"</h2>
+<p><strong>这是 page_pool 最核心的一条规则</strong>，直接看 <code class="c">page_pool_put_page()</code> 的官方注释：</p>
+<pre class="code" data-label="C"><code class="c">/**
+ * page_pool_put_page() - release a reference to a page pool page
+ * @pool:   pool from which page was allocated
+ * @page:   page to release a reference on
+ * @dma_sync_size: how much of the page may have been touched by the device
+ * @allow_direct: released by the consumer, allow lockless caching
+ *
+ * The outcome of this depends on the page refcnt. If the driver bumps
+ * the refcnt &gt; 1 this will unmap the page. If the page refcnt is 1
+ * the allocator owns the page and will try to recycle it in one of the pool
+ * caches. If PP_FLAG_DMA_SYNC_DEV is set, the page will be synced for_device
+ * using dma_sync_single_range_for_device().
+ */
+</code></pre>
+<p>翻成判定表：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>释放时 page refcnt</th>
+<th>归属</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>== 1</strong></td>
+<td>池仍独占该页</td>
+<td><strong>回收</strong>进 per-CPU cache 或 ptr_ring</td>
+</tr>
+<tr>
+<td><strong>&gt; 1</strong></td>
+<td>有人（协议栈 / clone / 转发）还拿着</td>
+<td><strong>unmap 并真释放</strong>回伙伴系统</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这条规则的实践含义</strong>：</p>
+<ul>
+<li>XDP_DROP / 驱动丢弃 → refcnt 仍是 1 → <strong>直接回收，零成本</strong></li>
+<li>XDP_PASS → 页变成 skb 的数据区，refcnt 可能被抬高 → skb 释放时如果还有别人持有，就<strong>回不了池</strong></li>
+<li>GRO 合并、包被 clone、转发到其他设备 → 都会抬高 refcnt → 页面"漏出"pool</li>
+</ul>
+<p>所以<strong>页面回不了池不是 page_pool 的失职，是设计如此</strong>：只要还有人在用这块内存，就不能回收。这也是为什么高 PPS 下要盯 <code class="c">rx_pp_recycle_released_ref</code>——它涨了，说明你的页面在往外漏。</p>
+<h3>三个释放 API 的区别</h3>
+<pre class="code" data-label="C"><code class="c">static inline void page_pool_put_page(struct page_pool *pool,
+                      struct page *page,
+                      unsigned int dma_sync_size,
+                      bool allow_direct);
+
+static inline void page_pool_put_full_page(struct page_pool *pool,
+                       struct page *page, bool allow_direct)
+{
+    page_pool_put_page(pool, page, -1, allow_direct);
+}
+
+static inline void page_pool_recycle_direct(struct page_pool *pool,
+                        struct page *page)
+{
+    page_pool_put_full_page(pool, page, true);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th><code class="c">dma_sync_size</code></th>
+<th><code class="c">allow_direct</code></th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">page_pool_put_page()</code></td>
+<td>调用者指定同步多少字节</td>
+<td>调用者定</td>
+<td>通用</td>
+</tr>
+<tr>
+<td><code class="c">page_pool_put_full_page()</code></td>
+<td><code class="c">-1</code>（按 <code class="c">params.max_len</code> 全同步）</td>
+<td>调用者定</td>
+<td>常用</td>
+</tr>
+<tr>
+<td><code class="c">page_pool_recycle_direct()</code></td>
+<td><code class="c">-1</code></td>
+<td><strong><code class="c">true</code></strong></td>
+<td><strong>调用者必须保证安全上下文（如 NAPI），页直接进 per-CPU 快缓存</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">page_pool_recycle_direct()</code> 的注释很硬：</p>
+<blockquote>
+<p><em>"Similar to <code class="c">page_pool_put_full_page()</code> but caller must guarantee safe context
+(e.g NAPI), since it will recycle the page directly into the pool fast cache."</em></p>
+</blockquote>
+<p><strong>这是最快的释放路径</strong>（XDP_DROP 就走它），但用错上下文会破坏 per-CPU 缓存的无锁假设。</p>
+<h3>DMA 地址</h3>
+<pre class="code" data-label="C"><code class="c">static inline dma_addr_t page_pool_get_dma_addr(struct page *page)
+{
+    dma_addr_t ret = page-&gt;dma_addr;
+    if (PAGE_POOL_DMA_USE_PP_FRAG_COUNT)
+        ret |= (dma_addr_t)page-&gt;dma_addr_upper &lt;&lt; 16 &lt;&lt; 16;
+    ...
+}
+</code></pre>
+<p>注意那个条件：当 <code class="c">sizeof(dma_addr_t) &gt; sizeof(unsigned long)</code> 时，DMA 地址<strong>被拆成两个字段存</strong>（<code class="c">dma_addr</code> + <code class="c">dma_addr_upper</code>）。这是 32 位系统配 64 位 DMA 地址的情形。写驱动时别直接读 <code class="c">page-&gt;dma_addr</code>，要用这个函数。</p>
+<hr />
+<h2>五、flags 与创建参数（v6.6 完整版）</h2>
+<h3>三个 flag</h3>
+<pre class="code" data-label="C"><code class="c">#define PP_FLAG_DMA_MAP     BIT(0) /* Should page_pool do the DMA map */
+#define PP_FLAG_DMA_SYNC_DEV    BIT(1) /* If set all pages that the driver gets
+                    * will be DMA-synced for_device */
+#define PP_FLAG_PAGE_FRAG   BIT(2) /* for page frag feature */
+#define PP_FLAG_ALL     (PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV | PP_FLAG_PAGE_FRAG)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flag</th>
+<th>作用</th>
+<th>不开会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PP_FLAG_DMA_MAP</code></td>
+<td>让 pool 做 DMA 映射，并<strong>保持映射</strong>（页面在池期间一直有效）</td>
+<td>驱动要自己每次 map/unmap</td>
+</tr>
+<tr>
+<td><code class="c">PP_FLAG_DMA_SYNC_DEV</code></td>
+<td>每次分配页面时做一次 <code class="c">dma_sync_for_device</code></td>
+<td>驱动要自己 sync（否则可能读到脏 cache）</td>
+</tr>
+<tr>
+<td><code class="c">PP_FLAG_PAGE_FRAG</code></td>
+<td>启用一页多段</td>
+<td>每个包占一整页，内存浪费</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">PP_FLAG_DMA_MAP</code> 是 page_pool 最大的一笔性能收益</strong>：它让 DMA 映射<strong>只做一次、长期保持</strong>，收发循环里完全省掉 <code class="c">dma_map</code>/<code class="c">dma_unmap</code> 这一对（有 IOMMU 时每次可达数百 ns）。</p>
+<h3>创建参数（v6.6）</h3>
+<pre class="code" data-label="C"><code class="c">/* include/net/page_pool/types.h */
+struct page_pool_params {
+    unsigned int    flags;
+    unsigned int    order;
+    unsigned int    pool_size;
+    int     nid;
+    struct device   *dev;
+    struct napi_struct *napi;
+    enum dma_data_direction dma_dir;
+    unsigned int    max_len;
+    unsigned int    offset;
+/* private: used by test code only */
+    void (*init_callback)(struct page *page, void *arg);
+    void *init_arg;
+};
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>参数</th>
 <th>说明</th>
+<th>HFT 关注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">pool_size</code></td>
-<td>池中 page 数量</td>
+<td><code class="c">flags</code></td>
+<td>上面三个 flag 的组合</td>
+<td>必须带 <code class="c">PP_FLAG_DMA_MAP</code></td>
 </tr>
 <tr>
 <td><code class="c">order</code></td>
-<td>page order（0 = 4KB，1 = 8KB...）</td>
+<td>页阶（0 = 4 KB，1 = 8 KB…）</td>
+<td>0 最常用；大帧考虑 1</td>
 </tr>
 <tr>
-<td><code class="c">flags</code></td>
-<td>PP_FLAG_DMA_MAP / PP_FLAG_DMA_SYNC_DEV</td>
+<td><code class="c">pool_size</code></td>
+<td>池的初始/环形容量</td>
+<td>见 <a href="chapter-15.html#s-02">02 篇</a> 的调优清单</td>
 </tr>
 <tr>
 <td><code class="c">nid</code></td>
-<td>NUMA node 绑定</td>
+<td><strong>NUMA 节点</strong></td>
+<td>⚠️ 必须设成网卡所在的 node</td>
+</tr>
+<tr>
+<td><code class="c">dev</code></td>
+<td>关联的 <code class="c">struct device</code>（DMA 用）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">napi</code></td>
+<td>关联的 <code class="c">napi_struct</code></td>
+<td>影响 <code class="c">allow_direct</code> 的判定</td>
 </tr>
 <tr>
 <td><code class="c">dma_dir</code></td>
-<td>DMA 方向</td>
+<td>DMA 方向，收包是 <code class="c">DMA_FROM_DEVICE</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">max_len</code></td>
+<td><strong><code class="c">PP_FLAG_DMA_SYNC_DEV</code> 时</strong>的最大同步长度</td>
+<td>不设会导致 sync 不全</td>
+</tr>
+<tr>
+<td><code class="c">offset</code></td>
+<td>DMA 同步地址的偏移</td>
+<td>配合 <code class="c">max_len</code></td>
+</tr>
+<tr>
+<td><code class="c">init_callback</code> / <code class="c">init_arg</code></td>
+<td>仅测试代码用</td>
+<td>生产别碰</td>
 </tr>
 </tbody>
 </table></div>
-<h3>与 XDP 的关系</h3>
-<ul>
-<li>XDP 程序运行在 page_pool 分配的 page 上</li>
-<li>XDP PASS → page 传递给 sk_buff（不释放）</li>
-<li>XDP DROP → page 直接回收到池中</li>
-<li>AF_XDP → page 映射到用户态 UMEM</li>
-</ul>
-<h3>性能数据</h3>
+<blockquote>
+<p>⚠️ 常见资料里只列 5 个参数（<code class="c">pool_size</code>/<code class="c">order</code>/<code class="c">flags</code>/<code class="c">nid</code>/<code class="c">dma_dir</code>），
+v6.6 实际有 <strong>10 个</strong>。<code class="c">max_len</code> / <code class="c">offset</code> / <code class="c">napi</code> 都是后来加的，
+<code class="c">max_len</code> 与 <code class="c">PP_FLAG_DMA_SYNC_DEV</code> 配套，漏设会造成同步范围错误。</p>
+</blockquote>
+<h3>NUMA 节点可以运行时改变</h3>
+<pre class="code" data-label="C"><code class="c">static inline void page_pool_nid_changed(struct page_pool *pool, int new_nid);
+</code></pre>
+<p>存在这个 API 本身就说明一件事：<strong>网卡的 NUMA 节点不是一成不变的</strong>（热插拔、驱动重绑、某些虚拟设备迁移）。如果你的系统有这类情况，需要注意 pool 的 <code class="c">nid</code> 可能与网卡实际位置脱节。</p>
+<hr />
+<h2>六、与 XDP / AF_XDP 的关系</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>场景</th>
-<th>alloc_page</th>
-<th>page_pool</th>
-<th>提升</th>
+<th>XDP 动作</th>
+<th>page 去向</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>1 Mpps</td>
-<td>~300 cycles/pkt</td>
-<td>~20 cycles/pkt</td>
-<td>15x</td>
+<td><code class="c">XDP_DROP</code></td>
+<td><code class="c">page_pool_recycle_direct()</code> 直接回池，<strong>零分配零释放</strong></td>
 </tr>
 <tr>
-<td>10 Mpps</td>
-<td>瓶颈</td>
-<td>轻松应对</td>
-<td>—</td>
+<td><code class="c">XDP_PASS</code></td>
+<td>页变成 skb 的数据区（<code class="c">napi_build_skb()</code>），<strong>不复制</strong></td>
+</tr>
+<tr>
+<td><code class="c">XDP_TX</code></td>
+<td>页复用做发送，完成后回收</td>
+</tr>
+<tr>
+<td><code class="c">XDP_REDIRECT</code>（cpumap/devmap）</td>
+<td>页随 <code class="c">xdp_frame</code> 走，<code class="c">mem</code> 字段记着"该还给哪个 pool"</td>
+</tr>
+<tr>
+<td><code class="c">XDP_REDIRECT</code>（AF_XDP 零拷贝）</td>
+<td>页来自用户态 UMEM，<strong>不是 page_pool</strong></td>
 </tr>
 </tbody>
 </table></div>
+<p>最后一行很重要：AF_XDP 零拷贝模式下内存是 <code class="c">MEM_TYPE_XSK_BUFF_POOL</code>（用户态 UMEM），<strong>与 page_pool 是两套体系</strong>。很多资料说"AF_XDP 基于 page_pool"，准确说法是：<strong>AF_XDP 的 copy 模式用 page_pool，零拷贝模式不用。</strong></p>
+<blockquote>
+<p>详见 <a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a> 与
+<a href="chapter-13.html#s-04">chapter-03/04</a>。</p>
+</blockquote>
+<hr />
+<h2>七、观测</h2>
+<h3>⚠️ 先更正一个常见说法：<code class="c">/proc/net/page_pools</code> 在 v6.6 主线<strong>不存在</strong></h3>
+<p>我核对了 v6.6 的 <code class="c">net/core/page_pool.c</code>，<strong>全文没有任何 <code class="c">proc_create</code> / <code class="c">proc_net</code> 注册</strong>。
+很多笔记（包括本仓库之前的版本）写的 <code class="c">cat /proc/net/page_pools</code> 在标准 v6.6 上是空文件或不存在的
+——如果你在自己的机器上看到了，那是发行版补丁或别的版本。<strong>先确认再依赖。</strong></p>
+<h3>真正的观测出口：ethtool 统计接口</h3>
+<p>v6.6 提供的是一组 ethtool stats 回调：</p>
+<pre class="code" data-label="C"><code class="c">int  page_pool_ethtool_stats_get_count(void);
+u8  *page_pool_ethtool_stats_get_strings(u8 *data);
+u64 *page_pool_ethtool_stats_get(u64 *data, void *stats);
+
+bool page_pool_get_stats(struct page_pool *pool, struct page_pool_stats *stats);
+</code></pre>
+<p><code class="c">page_pool_get_stats()</code> 的注释明确说了条件：</p>
+<blockquote>
+<p><em>"This API is only available if the kernel has been configured with
+<code class="c">CONFIG_PAGE_POOL_STATS=y</code>. A pointer to a caller allocated struct
+<code class="c">page_pool_stats</code> structure is passed to this API which is filled in.
+The caller can then report those stats to the user (perhaps via ethtool, debugfs, etc.)."</em></p>
+</blockquote>
+<p>所以正确姿势是：</p>
+<pre class="code" data-label="shell"><code class="c"># 1) 确认内核开启了统计
+grep PAGE_POOL_STATS /boot/config-$(uname -r)
+#   或 zcat /proc/config.gz | grep PAGE_POOL_STATS
+
+# 2) 通过 ethtool 看（驱动需集成 page_pool 统计）
+ethtool -S eth0 | grep -i pp_
+
+# 3) 先看有没有 /proc/net/page_pools（多数机器没有）
+ls -l /proc/net/page_pools 2&gt;/dev/null || echo &quot;（v6.6 主线无此文件）&quot;
+</code></pre>
+<h3>11 个统计量怎么读</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>统计量</th>
+<th>含义</th>
+<th>健康信号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rx_pp_alloc_fast</code></td>
+<td>per-CPU 缓存命中</td>
+<td><strong>这个应该占绝大多数</strong></td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_alloc_slow</code></td>
+<td>走了 ptr_ring</td>
+<td>偏高说明本 CPU 缓存不够</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_alloc_slow_ho</code></td>
+<td>高 order 页</td>
+<td>与 <code class="c">order</code> 设置有关</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_alloc_empty</code></td>
+<td>池空，走伙伴系统</td>
+<td><strong>持续非 0 = 池太小</strong></td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_alloc_refill</code></td>
+<td>正在补充</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_alloc_waive</code></td>
+<td>放弃填充</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_recycle_cached</code></td>
+<td>回收进 per-CPU 缓存</td>
+<td>应该占绝大多数</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_recycle_cache_full</code></td>
+<td>缓存满</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_recycle_ring</code></td>
+<td>回收进 ptr_ring</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">rx_pp_recycle_ring_full</code></td>
+<td>ring 满</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong><code class="c">rx_pp_recycle_released_ref</code></strong></td>
+<td><strong>refcnt &gt; 1，真释放回伙伴系统</strong></td>
+<td><strong>★ 持续上涨 = 页面在漏出池</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心诊断</strong>：<code class="c">rx_pp_alloc_fast / (总分配)</code> 越接近 1 越好；<code class="c">rx_pp_recycle_released_ref</code> 越大说明越多页面回不了池（GRO 合并、clone、转发都会导致）。后者涨到一定程度，page_pool 就退化成"每次都 alloc_page"了。</p>
+<hr />
 <h2>HFT 要点</h2>
 <ul>
-<li>page_pool 消除收包路径的动态内存分配</li>
-<li>NUMA 绑定确保 Rx buffer 在正确 NUMA node</li>
-<li>page_pool 是 AF_XDP 零拷贝的基础</li>
+<li><strong>page_pool 的最大收益是 <code class="c">PP_FLAG_DMA_MAP</code> 的保持映射</strong>，不是"避免 alloc_page"。有 IOMMU 时每次 map/unmap 可达数百 ns，这个才是大头。</li>
+<li><strong><code class="c">rx_pp_recycle_released_ref</code> 是最该盯的数字</strong>：它涨说明页面回不了池，page_pool 正在失去意义。</li>
+<li><strong><code class="c">page_pool_recycle_direct()</code> 最快但要求调用者在 NAPI 上下文</strong>——XDP_DROP 走的就是这条。用错上下文会破坏无锁假设。</li>
+<li><strong>frag 模式对行情小包是刚需</strong>：4 KB 页给 64 字节的包浪费 98%，而且浪费的是 cache 和 TLB 覆盖，不只是内存。</li>
+<li><strong><code class="c">pp_frag_count</code> 和 page refcount 是两套计数</strong>：前者管"谁能写"，后者管"谁持有"。混用会出难以复现的内存 bug。</li>
+<li><strong><code class="c">nid</code> 必须设成网卡所在 NUMA 节点</strong>，不是当前线程所在节点。这个坑和 DPDK 的 <code class="c">rte_eth_dev_socket_id()</code> 是同一类。</li>
+<li><strong>AF_XDP 零拷贝不用 page_pool</strong>（用用户态 UMEM）。说"AF_XDP 基于 page_pool"只在 copy 模式下成立。</li>
+<li><strong><code class="c">/proc/net/page_pools</code> 在 v6.6 主线不存在</strong>，别把它写进运维手册。</li>
 </ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 3.x（2.6/3.x 时代）</th>
+<th>现在（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rx buffer 每次 <code class="c">alloc_page()</code></td>
+<td>page_pool 池化复用</td>
+</tr>
+<tr>
+<td>DMA 每次 map / unmap</td>
+<td><code class="c">PP_FLAG_DMA_MAP</code> 保持映射，<strong>只做一次</strong></td>
+</tr>
+<tr>
+<td>一页一包</td>
+<td><code class="c">PP_FLAG_PAGE_FRAG</code> 一页多段</td>
+</tr>
+<tr>
+<td>无 XDP，也就不需要回收语义</td>
+<td><strong>XDP 依赖 page_pool 的"refcnt==1 就回收"规则</strong></td>
+</tr>
+<tr>
+<td>无 page_pool 统计</td>
+<td>11 个 <code class="c">rx_pp_*</code> 统计量（需 <code class="c">CONFIG_PAGE_POOL_STATS=y</code>）</td>
+</tr>
+<tr>
+<td>NUMA 靠驱动自己管</td>
+<td><code class="c">page_pool_params.nid</code> 显式指定 + <code class="c">page_pool_nid_changed()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>方法论上的变化</strong>：Rosen 时代的 Rx buffer 是"用完就还"的租借模型；page_pool 是"<strong>只要没人用就留在自己手里</strong>"的所有制模型。判定依据是 refcnt——这个判定规则是 page_pool 的全部精髓。</p>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你启用了 page_pool，但 <code class="c">rx_pp_alloc_empty</code> 持续上涨，<code class="c">rx_pp_recycle_released_ref</code> 也在涨。怎么定位？</summary>
+<p><b>答：</b>两个数字同时涨，指向同一个根因：<b>页面回收不回来，池被抽干</b>。</p>
+<p>按这条链查：</p>
+<ol>
+<li>
+<p><strong><code class="c">rx_pp_recycle_released_ref</code> 为什么会涨？</strong> 回顾 <code class="c">page_pool_put_page()</code> 的规则——
+   释放时 refcnt &gt; 1 就 unmap 并真释放回伙伴系统。所以一定有人在抬高 refcnt。</p>
+</li>
+<li>
+<p><strong>谁在抬高 refcnt？</strong> 常见的几个：
+   - <strong>GRO</strong>：合并后的 skb 持有多个页片段
+   - <strong>包被 clone</strong>：<code class="c">skb_clone()</code> 共享数据区
+   - <strong>转发 / bridge / bond</strong>：<code class="c">rx_handler</code> 之后包去了别的设备
+   - <strong>AF_PACKET（tcpdump）</strong>：抓包会让 skb 被克隆一份给 tap
+   - <strong>应用没及时读</strong>：skb 在 socket 接收队列里堆积，页一直被占</p>
+</li>
+<li>
+<p><strong>快速验证</strong>：<code class="c">bpftrace</code> 挂在 <code class="c">page_pool_put_defragged_page</code> 上看 refcnt 分布，
+   或者直接对照——关掉 GRO、停掉 tcpdump，看 <code class="c">released_ref</code> 是否掉下来。</p>
+</li>
+<li>
+<p><strong>处置方向</strong>：
+   - 增大 <code class="c">pool_size</code>（治标）
+   - 减小 GRO 合并窗口（<code class="c">gro_flush_timeout</code>，见 chapter-02/04）
+   - 排障期间别开 tcpdump（它会 clone，本身就是干扰源）
+   - 确认应用读取速度跟得上（<code class="c">/proc/net/udp</code> 的 rx_queue）</p>
+</li>
+</ol>
+<p><b>注意</b>：<code class="c">released_ref</code> 涨不是 page_pool 的 bug，是设计如此——还有人在用，就不能收。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">page_pool_recycle_direct()</code> 和 <code class="c">page_pool_put_full_page(pool, page, true)</code> 完全等价吗？</summary>
+<p><b>答：</b>从代码上看是等价的——</p>
+<pre class="code" data-label="C"><code class="c">static inline void page_pool_recycle_direct(struct page_pool *pool,
+                        struct page *page)
+{
+    page_pool_put_full_page(pool, page, true);
+}
+</code></pre>
+<p>但<b>语义上不等价</b>，差别在调用契约。<code class="c">page_pool_recycle_direct()</code> 的注释：</p>
+<blockquote>
+<p><em>"Similar to <code class="c">page_pool_put_full_page()</code> but caller must guarantee safe context
+(e.g NAPI), since it will recycle the page directly into the pool fast cache."</em></p>
+</blockquote>
+<p>它明确要求调用者<b>保证自己在 NAPI 上下文</b>，因为 <code class="c">allow_direct = true</code> 会让页面直接进
+per-CPU 缓存——而那个缓存是<b>无锁</b>的，只在"本 CPU 不会并发访问"的前提下安全。</p>
+<p>所以：
+- 在驱动的 <code class="c">napi_poll()</code> 里（XDP_DROP 路径）→ 用 <code class="c">page_pool_recycle_direct()</code>，最快
+- 在中断上下文、或其他不确定的上下文 → 用 <code class="c">page_pool_put_full_page(pool, page, false)</code>，
+  让它走 ptr_ring，安全但慢一点</p>
+<p><b>直接写 <code class="c">put_full_page(pool, page, true)</code> 不算错，但把契约埋起来了</b>——
+用 <code class="c">page_pool_recycle_direct()</code> 这个显式的名字，等于把"我在 NAPI 里"这个前提写进代码。</p>
+</details>
+<details>
+<summary>Q3：你给 page_pool 设了 <code class="c">PP_FLAG_DMA_SYNC_DEV</code>，但没设 <code class="c">max_len</code>。会出什么问题？</summary>
+<p><b>答：</b><code class="c">max_len</code> 与 <code class="c">PP_FLAG_DMA_SYNC_DEV</code> 是配套的，看 <code class="c">page_pool_params</code> 的字段注释：</p>
+<pre class="code" data-label="code"><code class="c"> * @max_len:    max DMA sync memory size for PP_FLAG_DMA_SYNC_DEV
+ * @offset: DMA sync address offset for PP_FLAG_DMA_SYNC_DEV
+</code></pre>
+<p><code class="c">PP_FLAG_DMA_SYNC_DEV</code> 的行为是：每次驱动拿到页面时，为 device 做一次 DMA 同步
+（<code class="c">dma_sync_single_range_for_device</code>）。同步<b>多少字节</b>就由 <code class="c">max_len</code> 和 <code class="c">offset</code> 决定。</p>
+<p>不设（默认 0）的实际后果是<b>同步范围不对</b>——该同步的区域可能没被同步。在有
+non-coherent DMA 的架构上（部分 ARM、以及带 IOMMU 且 cache 不一致的场景），
+表现为<b>读到脏数据或旧数据</b>，而且是<b>间歇性</b>的：取决于 cacheline 恰好有没有被写过。</p>
+<p>这类 bug 极难查，因为：
+- 大部分 x86 服务器是 cache-coherent 的，同步是 no-op，所以测试环境往往复现不了
+- 一旦换到 non-coherent 平台就随机出错</p>
+<p><b>结论</b>：如果开了 <code class="c">PP_FLAG_DMA_SYNC_DEV</code>，必须同时设 <code class="c">max_len</code>（通常是 MTU + headroom + tailroom），
+有偏移就设 <code class="c">offset</code>。不确定就<b>别开这个 flag</b>——让驱动自己显式 sync，范围自己清楚。</p>
+</details>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-01">01 page_pool 机制本体</a>
+→ 后一篇：<a href="chapter-15.html#s-02">02 page_pool：为什么需要它 + HFT 调优清单</a>
+→ 相关：<a href="chapter-15.html#s-02">chapter-03/02 驱动契约</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP</a> · <a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a></p>
       </section>
       <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">02</div><h2>— page_pool API：现代 Rx buffer 管理</h2></div>
+        <div class="sec-head"><div class="sec-no">02</div><h2>— page_pool 实践：为什么需要它、HFT 调优清单与陷阱</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> Ch1/Ch4（收包路径中 buffer 分配）
-<strong>内核版本:</strong> 4.18+（page_pool 核心库），广泛采用于 5.x 驱动</p>
+<strong>内核版本:</strong> page_pool 4.18+ 引入，广泛采用于 5.x 驱动；本文以 <strong>v6.6</strong> 为准
+<strong>源码:</strong> <code class="c">net/core/page_pool.c</code>、<code class="c">include/net/page_pool/types.h</code></p>
 </blockquote>
-<h2>问题背景</h2>
-<p>传统收包路径中，每个 Rx buffer 需要分配一个 page：
-- <code class="c">alloc_page()</code> → 映射 DMA → 填充数据 → 传递给协议栈
-- page 使用完后 <code class="c">put_page()</code> 释放，下次收包再 <code class="c">alloc_page()</code>
-- 高 PPS 场景下，page 分配/释放成为瓶颈</p>
-<h2>page_pool 解决方案</h2>
-<p>page_pool 是一个<strong>页 recycling 池</strong>：
-- 预分配一批 page，收包时从池中取
-- page 传递给协议栈时增加引用计数
-- 协议栈释放 page 时回到池中（而非真正释放）
-- 避免反复 <code class="c">alloc_page()</code> / <code class="c">put_page()</code></p>
-<pre class="code" data-label="C"><code class="c">struct page_pool *pp;
-struct page_pool_params params = {
-    .order = 0,
-    .flags = PP_FLAG_DMA_MAP,
-    .pool_size = 256,
-    .nid = NUMA_NO_NODE,
-    .dev = &amp;pdev-&gt;dev,
-    .dma_dir = DMA_FROM_DEVICE,
+<h2>文档概述</h2>
+<p>上一篇 <a href="chapter-15.html#s-01">01-page-pool</a> 讲的是 <strong>page_pool 内部怎么运作</strong>（三层结构、refcnt 判定、分配/释放 API）。本篇讲<strong>工程实践</strong>：</p>
+<ol>
+<li>它到底解决了什么问题（性能账怎么算）</li>
+<li>容量模型与<strong>调优清单</strong></li>
+<li>五个真实的陷阱</li>
+<li>怎么确认你的驱动真的在用</li>
+</ol>
+<p>原笔记 2.2 KB，给了示例代码和一张驱动采用表。本篇保留那些，并补上原笔记完全没覆盖的部分：<strong>容量模型</strong>（<code class="c">pool_size</code> 到底管什么）、<strong>调优清单</strong>、<strong>陷阱</strong>。</p>
+<hr />
+<h2>一、为什么需要 page_pool：三笔账</h2>
+<p>page_pool 的收益常被笼统地说成"避免 <code class="c">alloc_page</code>"。拆开算其实是<strong>三笔独立的账</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>省掉什么</th>
+<th>为什么贵</th>
+<th>由哪个机制省</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>伙伴系统往返</strong></td>
+<td><code class="c">alloc_page()</code> 要拿 <code class="c">zone-&gt;lock</code>，多核下是<strong>全局竞争点</strong>；<code class="c">put_page()</code> 同样</td>
+<td>per-CPU 缓存 + ptr_ring 复用</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>DMA map / unmap</strong></td>
+<td>建 IOMMU 映射、刷 TLB，有 IOMMU 时每次可达数百 ns</td>
+<td><strong><code class="c">PP_FLAG_DMA_MAP</code> 保持映射，只做一次</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>引用计数原子操作</strong></td>
+<td>每次 get/put 都是 atomic，cacheline 在多核间弹</td>
+<td>池独占时（refcnt == 1）走无锁快路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第 2 笔往往是大头</strong>，但最容易被忽略——很多资料只讲第 1 笔。如果你的机器开了 IOMMU（虚拟化环境、<code class="c">intel_iommu=on</code>），<code class="c">dma_map_page()</code> 的代价能到几百 ns，而 page_pool 把它<strong>完全消除</strong>（映射一次，长期保持）。</p>
+<blockquote>
+<p>⚠️ 关于具体数字：流传很广的对比是"<code class="c">alloc_page</code> ~300 cycles/包 → page_pool ~20 cycles/包"。
+这个量级方向是对的，但<strong>绝对值高度依赖</strong>是否有 IOMMU、<code class="c">order</code>、是否 frag 模式、
+per-CPU 缓存命中率。<strong>别把它当基准，自己测</strong>（方法见第六节）。</p>
+</blockquote>
+<h3>一个必要的澄清：<code class="c">pool_size</code> 不管快缓存</h3>
+<p>这是最容易搞错的地方。看 v6.6 的源码常量：</p>
+<pre class="code" data-label="C"><code class="c">/* include/net/page_pool/types.h */
+#define PP_ALLOC_CACHE_SIZE 128     /* per-CPU 缓存数组大小 */
+#define PP_ALLOC_CACHE_REFILL   64      /* 批量补充的批量大小 */
+
+struct page_pool {
+    ...
+    struct {
+        struct page *cache[PP_ALLOC_CACHE_SIZE];   /* ← 固定 128，不可配 */
+        ...
+    } alloc;
+    ...
 };
-pp = page_pool_create(&amp;params);
-
-// 收包时
-page = page_pool_dev_alloc_pages(pp);
-dma_addr = page_pool_get_dma_addr(page);
-
-// 释放时（协议栈持有完毕）
-page_pool_put_full_page(pp, page, false);
 </code></pre>
-<h2>现代驱动采用情况</h2>
+<p>而 <code class="c">pool_size</code> 管的是<strong>第二层的 ptr_ring</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* net/core/page_pool.c: page_pool_init() */
+unsigned int ring_qsize = 1024; /* Default */
+...
+if (pool-&gt;p.pool_size)
+    ring_qsize = pool-&gt;p.pool_size;
+
+/* Sanity limit mem that can be pinned down */
+if (ring_qsize &gt; 32768)
+    return -E2BIG;
+
+...
+if (ptr_ring_init(&amp;pool-&gt;ring, ring_qsize, GFP_KERNEL) &lt; 0)
+    ...
+</code></pre>
+<p>所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>控制什么</th>
+<th>默认值</th>
+<th>可调范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>per-CPU 缓存</td>
+<td><strong>固定 128</strong>，硬编码</td>
+<td>128</td>
+<td>❌ <strong>不可调</strong></td>
+</tr>
+<tr>
+<td>批量补充</td>
+<td>固定 64，硬编码</td>
+<td>64</td>
+<td>❌ 不可调</td>
+</tr>
+<tr>
+<td><code class="c">pool_size</code></td>
+<td><strong>ptr_ring</strong> 大小</td>
+<td><strong>1024</strong></td>
+<td>✅ 可调，<strong>上限 32768</strong>（超出返回 <code class="c">-E2BIG</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>含义</strong>：把 <code class="c">pool_size</code> 从 1024 加到 8192，<strong>不会让单个 CPU 的快路径变快</strong>（快缓存永远是 128）。它变大的是"跨 CPU / NAPI 之间周转"的缓冲深度。所以调 <code class="c">pool_size</code> 解决的是<strong>突发和跨核归还</strong>，不是单核分配延迟。</p>
+<hr />
+<h2>二、容量模型</h2>
+<pre class="code" data-label="code"><code class="c">  每个 CPU 的热页面（无锁，最快）
+    ├─ per-CPU cache：128 个（固定）
+    └─ 批量补充：一次 64 个
+                    ↑
+                    │ 溢出 / 跨 CPU 归还
+                    v
+  ptr_ring：pool_size 个（默认 1024，上限 32768）
+                    ↑
+                    │ 溢出
+                    v
+  真正释放回伙伴系统（rx_pp_recycle_released_ref / ring_full）
+
+  外加：Rx ring 描述符占用的页面（不在池里，在网卡手里）
+  外加：协议栈 / 应用手里持有的页面（refcnt &gt; 1，回不来）
+</code></pre>
+<p><strong>估算总量时的三条经验</strong>：</p>
+<ol>
+<li><strong>在途页面</strong> ≥ Rx ring 描述符总数（<code class="c">ethtool -g eth0</code> 的 RX 值 × 队列数）。这部分一直在网卡手里，不在池里。</li>
+<li><strong>per-CPU 缓存</strong> = 128 × 参与收包的 CPU 数（硬开销，省不掉）。</li>
+<li><strong>ptr_ring</strong> 要能吸收突发：行情开盘那一瞬间可能有几万个包涌进来，<code class="c">pool_size</code> 太小就会看到 <code class="c">rx_pp_alloc_empty</code> 上涨。</li>
+</ol>
+<p><strong>保守公式</strong>：</p>
+<pre class="code" data-label="code"><code class="c">pool_size ≥ 2 × (RX_DESC × QUEUES)
+</code></pre>
+<p>再往上调到 <code class="c">rx_pp_alloc_empty</code> 归零即可。<strong>注意上限 32768</strong>——别写个 100 万进去，会直接 <code class="c">-E2BIG</code> 创建失败。</p>
+<hr />
+<h2>三、驱动采用情况与确认方法</h2>
+<p>原笔记列了几个使用 page_pool 的驱动。这里保留，并给出<strong>自己确认的方法</strong>（比背一张表可靠）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>驱动</th>
-<th>是否使用 page_pool</th>
-<th>内核版本</th>
+<th>采用 page_pool</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>mlx5（Mellanox）</td>
+<td>mlx5（Mellanox/NVIDIA）</td>
 <td>是</td>
-<td>5.x+</td>
+<td>5.x+，也是 page_pool 的主要推动方</td>
 </tr>
 <tr>
 <td>ice（Intel E810）</td>
@@ -472,7 +1188,7 @@ page_pool_put_full_page(pp, page, false);
 <tr>
 <td>stmmac（树莓派 5 网卡）</td>
 <td>是</td>
-<td>5.x+</td>
+<td>5.x+，eBPF 真机实验常用的廉价平台</td>
 </tr>
 <tr>
 <td>virtio-net</td>
@@ -481,61 +1197,316 @@ page_pool_put_full_page(pp, page, false);
 </tr>
 </tbody>
 </table></div>
-<h2>与 XDP 的协同</h2>
-<p>page_pool 是 XDP 的基础设施：
-- XDP 程序在 page_pool 分配的 page 上运行
-- AF_XDP 零拷贝路径直接使用 page_pool 的 page
-- XDP redirect 可以传递 page_pool 的 page 到其他设备</p>
-<h2>HFT 关联</h2>
+<p><strong>⚠️ 这张表会过时</strong>（驱动随时可能改）。确认你自己机器上的情况，用：</p>
+<pre class="code" data-label="shell"><code class="c"># 方法 1：看内核配置
+grep PAGE_POOL /boot/config-$(uname -r)
+
+# 方法 2：看 ethtool 是否吐出 rx_pp_* 统计（需要 CONFIG_PAGE_POOL_STATS=y）
+ethtool -S eth0 | grep -i &quot;rx_pp_&quot;
+#   有输出 → 驱动在用 page_pool 且统计已开启
+#   无输出 → 要么没用，要么统计没编译进去
+
+# 方法 3：看驱动源码（最可靠）
+#   在内核源码树里 grep 对应驱动文件
+grep -l &quot;page_pool&quot; drivers/net/ethernet/&lt;vendor&gt;/*.c
+</code></pre>
+<hr />
+<h2>四、HFT 调优清单</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>维度</th>
-<th>HFT 影响</th>
+<th>项</th>
+<th>建议</th>
+<th>理由</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>内存分配延迟</td>
-<td>消除收包路径中的 alloc_page 开销</td>
+<td><code class="c">flags</code></td>
+<td><strong>必带 <code class="c">PP_FLAG_DMA_MAP</code></strong></td>
+<td>保持 DMA 映射，这是第二笔大账</td>
 </tr>
 <tr>
-<td>NUMA 亲和性</td>
-<td>page_pool 可绑定 NUMA node，避免跨节点访问</td>
+<td><code class="c">flags</code></td>
+<td>小包场景带 <code class="c">PP_FLAG_PAGE_FRAG</code></td>
+<td>一页多段，4 KB 给 64 B 包浪费 98%</td>
 </tr>
 <tr>
-<td>DMA 映射开销</td>
-<td>page_pool 缓存 DMA 映射，避免重复 map/unmap</td>
+<td><code class="c">flags</code></td>
+<td><code class="c">PP_FLAG_DMA_SYNC_DEV</code> <strong>慎开</strong></td>
+<td>开了必须同时设 <code class="c">max_len</code>/<code class="c">offset</code>，否则同步范围错误（见 <a href="chapter-15.html#s-01">01 篇 Q3</a>）</td>
+</tr>
+<tr>
+<td><code class="c">nid</code></td>
+<td><strong>设成网卡所在 NUMA 节点</strong></td>
+<td>⚠️ 不是当前线程所在节点。与 DPDK <code class="c">rte_eth_dev_socket_id()</code> 同一类坑</td>
+</tr>
+<tr>
+<td><code class="c">dma_dir</code></td>
+<td>收包 <code class="c">DMA_FROM_DEVICE</code>；<strong>要用 XDP_TX 就必须是 <code class="c">DMA_BIDIRECTIONAL</code></strong></td>
+<td>源码里对 <code class="c">PP_FLAG_DMA_MAP</code> 有校验，只允许这两个值</td>
+</tr>
+<tr>
+<td><code class="c">order</code></td>
+<td>0（4 KB）起步；jumbo frame 考虑 1</td>
+<td>order 越大单页越大，frag 模式下的段数也越多</td>
+</tr>
+<tr>
+<td><code class="c">pool_size</code></td>
+<td><code class="c">≥ 2 × (RX_DESC × QUEUES)</code>，上限 32768</td>
+<td>调它吸收突发，不改善单核分配延迟</td>
+</tr>
+<tr>
+<td><code class="c">napi</code></td>
+<td>填上关联的 <code class="c">napi_struct</code></td>
+<td>影响 <code class="c">allow_direct</code> 快路径的判定</td>
 </tr>
 </tbody>
 </table></div>
+<h3>XDP_TX 与 <code class="c">dma_dir</code> 的联动</h3>
+<p>源码注释说得很明确：</p>
+<pre class="code" data-label="C"><code class="c">/* DMA direction is either DMA_FROM_DEVICE or DMA_BIDIRECTIONAL.
+ * DMA_BIDIRECTIONAL is for allowing page used for DMA sending,
+ * which is the XDP_TX use-case.
+ */
+</code></pre>
+<p><strong>要做 XDP_TX（原路反弹发送）就必须用 <code class="c">DMA_BIDIRECTIONAL</code></strong>，否则映射方向不对。这一条在写 XDP 转发程序时经常漏。</p>
+<hr />
+<h2>五、五个陷阱</h2>
+<h3>陷阱 1：别对 page_pool 的页面做 <code class="c">get_page()</code> / <code class="c">put_page()</code></h3>
+<p>回收判定完全依赖 <strong>refcnt == 1</strong>（见 <a href="chapter-15.html#s-01">01 篇</a> 第四节）。你手动 <code class="c">get_page()</code> 会把 refcnt 抬到 2，于是：</p>
+<ul>
+<li>释放时走 <strong><code class="c">rx_pp_recycle_released_ref</code></strong> 分支——<strong>页面被真释放回伙伴系统</strong>，永远离开池子</li>
+<li>page_pool 悄悄退化成"每次都 alloc_page"</li>
+</ul>
+<p><strong>症状</strong>：<code class="c">rx_pp_recycle_released_ref</code> 持续上涨，性能逐渐劣化，但功能完全正常（不报错）。</p>
+<h3>陷阱 2：GRO / clone / tcpdump 会让页面回不了池</h3>
+<p>和陷阱 1 同源，但更隐蔽——<strong>不是你干的</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行为</th>
+<th>抬高 refcnt 吗</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GRO 合并</td>
+<td>是</td>
+<td>合并期间页面被多个片段持有</td>
+</tr>
+<tr>
+<td><code class="c">skb_clone()</code></td>
+<td>是（共享数据区）</td>
+<td>克隆存活期间页面回不来</td>
+</tr>
+<tr>
+<td><strong>tcpdump / AF_PACKET</strong></td>
+<td><strong>是</strong>（给 tap 克隆一份）</td>
+<td><strong>排障工具本身在干扰被测系统</strong></td>
+</tr>
+<tr>
+<td>bridge / bond 转发</td>
+<td>是</td>
+<td>包去了别的设备</td>
+</tr>
+<tr>
+<td>应用读取慢，skb 堆在接收队列</td>
+<td>是</td>
+<td>队列积压越久，页面被占越久</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>最后两行对 HFT 尤其重要</strong>：
+- 你在抓包排障时，tcpdump 正在改变系统的内存行为
+- 应用读取跟不上时，不只是延迟升高——<strong>页面被占住导致 page_pool 被抽干</strong>，进而拖累整个收包路径</p>
+<h3>陷阱 3：驱动 reload 会重建 pool，页面全部丢失</h3>
+<pre class="code" data-label="shell"><code class="c">ethtool -G eth0 rx 4096     # 改 ring 大小
+ethtool -L eth0 combined 8  # 改队列数
+rmmod/modprobe              # 重载驱动
+</code></pre>
+<p>这些操作会<strong>销毁并重建 page_pool</strong>，池里所有页面归还伙伴系统。之后的一段时间里：</p>
+<ul>
+<li>每个包都要走"池空 → 伙伴系统"的慢路径</li>
+<li><code class="c">rx_pp_alloc_empty</code> 暴涨</li>
+<li><strong>表现为 reload 后的一段时间内延迟明显升高</strong>，然后逐渐恢复</li>
+</ul>
+<p><strong>对 HFT 的含义</strong>：别在运行中改这些参数。要改就在开盘前改，改完等性能稳定再接入。</p>
+<h3>陷阱 4：per-CPU 缓存溢出是静默的</h3>
+<pre class="code" data-label="C"><code class="c">static bool page_pool_recycle_in_cache(struct page *page,
+                       struct page_pool *pool)
+{
+    if (unlikely(pool-&gt;alloc.count == PP_ALLOC_CACHE_SIZE)) {
+        recycle_stat_inc(pool, cache_full);
+        return false;      /* ← 静默降级到 ptr_ring */
+    }
+    /* Caller MUST have verified/know (page_ref_count(page) == 1) */
+    pool-&gt;alloc.cache[pool-&gt;alloc.count++] = page;
+    recycle_stat_inc(pool, cached);
+    return true;
+}
+</code></pre>
+<p>缓存满了就 <strong>静默降级</strong>到 ptr_ring，不报错、不告警。你只能通过 <code class="c">rx_pp_recycle_cache_full</code> 统计量看到。</p>
+<p>注意那句注释 <strong>"Caller MUST have verified/know (page_ref_count(page) == 1)"</strong>——调用 <code class="c">page_pool_recycle_in_cache()</code> 之前必须已经确认 refcnt 为 1。这也是为什么 <code class="c">page_pool_recycle_direct()</code> 要求调用者在 NAPI 上下文：<strong>契约是靠调用者维护的，不是靠函数自己检查的。</strong></p>
+<h3>陷阱 5：统计默认可能没编译进去</h3>
+<p><code class="c">page_pool_get_stats()</code> 的注释：</p>
+<blockquote>
+<p><em>"This API is only available if the kernel has been configured with
+<code class="c">CONFIG_PAGE_POOL_STATS=y</code>."</em></p>
+</blockquote>
+<p>很多发行版内核<strong>默认不开</strong>这个配置。所以你 <code class="c">ethtool -S</code> 看不到 <code class="c">rx_pp_*</code>，不一定代表驱动没用 page_pool——也可能只是统计没编译进去。</p>
+<pre class="code" data-label="shell"><code class="c">grep PAGE_POOL_STATS /boot/config-$(uname -r)
+#   没有输出 → 统计不可用，只能靠间接指标（如 /proc/meminfo、延迟变化）判断
+</code></pre>
+<hr />
+<h2>六、观测与自测方法</h2>
+<pre class="code" data-label="shell"><code class="c"># 1) 先确认统计是否可用
+grep PAGE_POOL_STATS /boot/config-$(uname -r)
+
+# 2) 核心健康指标
+ethtool -S eth0 | grep -i &quot;rx_pp_&quot;
+#   rx_pp_alloc_fast          应占总分配的绝大多数
+#   rx_pp_alloc_empty         持续非 0 → pool_size 太小
+#   rx_pp_recycle_cached      应占回收的绝大多数
+#   rx_pp_recycle_released_ref 持续上涨 → 页面在漏出（见陷阱 1/2）
+
+# 3) Rx ring 大小（估算 pool_size 用）
+ethtool -g eth0
+
+# 4) 网卡在哪个 NUMA 节点（设 nid 用）
+cat /sys/class/net/eth0/device/numa_node
+#   ⚠️ 返回 -1 表示该设备不提供 NUMA 信息（常见于部分虚拟设备）
+
+# 5) 自己测 page_pool 的收益（别信网上的绝对值）
+#    方法：开关 XDP 前后对比 rx_pp_alloc_fast 比例 + 用
+#    chapter-15 的延迟测量方法对比 PPS 极限
+</code></pre>
+<p><strong>测"page_pool 有没有起作用"的最直接办法</strong>：看 <code class="c">rx_pp_alloc_fast</code> 占比。
+如果它占总分配的 99% 以上，说明几乎全走 per-CPU 快缓存，page_pool 在正常工作。
+如果 <code class="c">rx_pp_alloc_empty</code> 或 <code class="c">alloc_slow</code> 占比很高，说明池在被反复抽干。</p>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>最大的一笔收益是 <code class="c">PP_FLAG_DMA_MAP</code> 的保持映射</strong>，尤其在你开了 IOMMU 时。别只盯着 <code class="c">alloc_page</code>。</li>
+<li><strong><code class="c">pool_size</code> 管的是 ptr_ring，不是快缓存</strong>：快缓存固定 128，不可调。调 <code class="c">pool_size</code> 吸收的是突发和跨核归还，不改善单核分配延迟。</li>
+<li><strong><code class="c">pool_size</code> 上限 32768</strong>，超了直接创建失败（<code class="c">-E2BIG</code>）。</li>
+<li><strong>XDP_TX 必须用 <code class="c">DMA_BIDIRECTIONAL</code></strong>，否则映射方向不对。</li>
+<li><strong>tcpdump 会抬高 refcnt</strong>，让页面回不了池——排障工具本身在干扰被测系统。</li>
+<li><strong>应用读取慢会抽干 page_pool</strong>：不只是延迟问题，会通过 refcnt 传导到内存层。</li>
+<li><strong>运行中别改 ring 大小/队列数</strong>：reload 会重建 pool，页面全丢，之后一段时间延迟明显升高。</li>
+<li><strong><code class="c">nid</code> 用网卡的 NUMA 节点</strong>，不用当前线程的。</li>
+<li><strong>统计默认可能没编译</strong>（<code class="c">CONFIG_PAGE_POOL_STATS</code>），看不到 <code class="c">rx_pp_*</code> 不代表 page_pool 没在工作。</li>
+</ul>
 <h2>与 Rosen 3.x 的差异</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>维度</th>
-<th>Rosen（3.x）</th>
-<th>现代（5.x/6.x）</th>
+<th>Rosen 3.x</th>
+<th>现在（5.x/6.x）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Rx buffer 分配</td>
-<td>alloc_page 每次分配</td>
-<td>page_pool recycling</td>
+<td>Rx buffer: <code class="c">alloc_page()</code> 每包一次</td>
+<td>page_pool 池化：per-CPU 缓存(128) → ptr_ring(默认 1024) → 伙伴系统</td>
 </tr>
 <tr>
-<td>DMA 映射</td>
-<td>每次收包 map/unmap</td>
-<td>缓存映射</td>
+<td>DMA 每次 map/unmap</td>
+<td><code class="c">PP_FLAG_DMA_MAP</code> 映射一次长期保持</td>
 </tr>
 <tr>
-<td>XDP 支持</td>
-<td>不存在</td>
-<td>page_pool 是 XDP 基础设施</td>
+<td>一页一包</td>
+<td><code class="c">PP_FLAG_PAGE_FRAG</code> 一页多段</td>
+</tr>
+<tr>
+<td>无回收判定概念</td>
+<td><strong>refcnt == 1 就回收，&gt; 1 就真释放</strong></td>
+</tr>
+<tr>
+<td>内存 NUMA 靠驱动自己管</td>
+<td><code class="c">page_pool_params.nid</code> + 运行时 <code class="c">page_pool_nid_changed()</code></td>
+</tr>
+<tr>
+<td>无 page_pool 统计</td>
+<td>11 个 <code class="c">rx_pp_*</code>（需 <code class="c">CONFIG_PAGE_POOL_STATS=y</code>）</td>
+</tr>
+<tr>
+<td>XDP 不存在</td>
+<td>XDP 依赖 page_pool；XDP_TX 还要求 <code class="c">DMA_BIDIRECTIONAL</code></td>
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你把 <code class="c">pool_size</code> 从 1024 调到了 8192，期待单核收包延迟下降，结果没变。为什么？</summary>
+<p><b>答：</b>因为 <code class="c">pool_size</code> 管的不是快缓存。</p>
+<p>v6.6 源码里：</p>
+<pre class="code" data-label="C"><code class="c">#define PP_ALLOC_CACHE_SIZE 128     /* 固定，硬编码 */
+...
+unsigned int ring_qsize = 1024; /* Default */
+if (pool-&gt;p.pool_size)
+    ring_qsize = pool-&gt;p.pool_size;
+...
+ptr_ring_init(&amp;pool-&gt;ring, ring_qsize, ...)
+</code></pre>
+<p><code class="c">pool_size</code> → <code class="c">ring_qsize</code> → <strong>ptr_ring 的大小</strong>。而真正决定单核分配速度的是
+<strong>per-CPU 缓存（<code class="c">cache[128]</code>，硬编码，不可配）</strong>。</p>
+<p>所以调 <code class="c">pool_size</code> 改变的是"跨 CPU / 跨 NAPI 归还时能缓冲多少页面"，即：
+- 突发吸收能力（行情开盘那一瞬）
+- 跨核归还时的争用</p>
+<p>它<strong>不改善单核的分配延迟</strong>——那是 128 个缓存槽的事，你动不了。</p>
+<p>要验证调得对不对，看 <code class="c">rx_pp_alloc_empty</code> 和 <code class="c">rx_pp_recycle_ring_full</code>：
+- 这两个归零 → 池够大了，再加没意义
+- 还在涨 → 继续加（上限 32768）</p>
+</details>
+<details>
+<summary>Q2：你的 XDP 程序用 <code class="c">XDP_TX</code> 把包原路反弹，但发送失败或数据不对。排除程序逻辑后，该查什么？</summary>
+<p><b>答：</b>查 page_pool 创建时的 <code class="c">dma_dir</code>。</p>
+<p>v6.6 的校验和注释：</p>
+<pre class="code" data-label="C"><code class="c">/* DMA direction is either DMA_FROM_DEVICE or DMA_BIDIRECTIONAL.
+ * DMA_BIDIRECTIONAL is for allowing page used for DMA sending,
+ * which is the XDP_TX use-case.
+ */
+if (pool-&gt;p.flags &amp; PP_FLAG_DMA_MAP) {
+    if ((pool-&gt;p.dma_dir != DMA_FROM_DEVICE) &amp;&amp;
+        (pool-&gt;p.dma_dir != DMA_BIDIRECTIONAL))
+        ...  /* 创建失败 */
+}
+</code></pre>
+<p><code class="c">PP_FLAG_DMA_MAP</code> 下，<strong>只接受两个方向</strong>：
+- <code class="c">DMA_FROM_DEVICE</code>：只能收，页面映射为"设备写、CPU 读"
+- <code class="c">DMA_BIDIRECTIONAL</code>：<strong>XDP_TX 必须用这个</strong>——同一块页面既要设备写（收）又要设备读（发）</p>
+<p>如果你的 pool 是 <code class="c">DMA_FROM_DEVICE</code>，反弹发送时映射方向不对，设备读不到正确数据。</p>
+<p>这只对<strong>你自己创建 page_pool</strong> 的场景适用（写驱动、或用某些 XDP 框架）。
+用现成驱动时，驱动已经按自己是否支持 XDP_TX 配好了——但确认一下 <code class="c">dma_dir</code> 总没错。</p>
+</details>
+<details>
+<summary>Q3：你在生产环境跑了 tcpdump 抓包排障，抓完发现延迟指标比平时差，而且持续了一段时间才恢复。可能的原因？</summary>
+<p><b>答：</b>两个叠加的原因，都和 refcnt 有关：</p>
+<p><b>① tcpdump 会 clone skb</b>。AF_PACKET 要给每个匹配的包复制一份给抓包 socket，
+<code class="c">skb_clone()</code> 共享数据区 → page 的 refcnt 变 2 → 按 page_pool 的规则，
+释放时走 <strong><code class="c">rx_pp_recycle_released_ref</code></strong>（refcnt &gt; 1 就真释放回伙伴系统）。
+于是<b>你抓的每个包，都让一个页面永久离开 page_pool</b>。</p>
+<p><b>② 池被抽干后需要时间恢复</b>。抓包期间池被持续抽空，之后要重新从伙伴系统
+批量补充（<code class="c">PP_ALLOC_CACHE_REFILL = 64</code> 一次），期间 <code class="c">rx_pp_alloc_empty</code> 偏高、
+分配走慢路径——这就是你看到的"持续了一段时间才恢复"。</p>
+<p>验证：</p>
+<pre class="code" data-label="shell"><code class="c">ethtool -S eth0 | grep rx_pp_recycle_released_ref
+# 抓包前后对比，会看到明显增长
+</code></pre>
+<p><b>实践建议</b>：
+- 排障时尽量用 <strong>XDP 采样</strong>（在 XDP 层只取你关心的包，其余 <code class="c">XDP_DROP</code>），
+  而不是在 skb 层全量抓包
+- 必须抓包就加严格 filter（<code class="c">-i eth0 'udp port 12345'</code>），减少 clone 数量
+- 抓包窗口尽量短，抓完确认指标恢复
+- 记住：<strong>抓包工具本身是观测扰动源</strong>，这在 HFT 系统上尤其明显</p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-01">01 page_pool 机制本体</a>
+→ 本章完，下一章：<a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a>
+→ 相关：<a href="chapter-15.html#s-02">chapter-03/02 驱动契约</a> · <a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a></p>
       </section>
 
 

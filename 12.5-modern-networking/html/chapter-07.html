@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chapter 07: XDP Redirect 与 XDP vs DPDK</title>
+<title>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">07</span>— XDP redirect 与 cpumap</a>
-          <a href="#s-02"><span class="n">08</span>— XDP vs DPDK：内核旁路两条路</a>
+          <a href="#s-01"><span class="n">01</span>— XDP_REDIRECT 的四个目的地：批量语义、devmap 与 cpumap</a>
+          <a href="#s-02"><span class="n">02</span>— XDP vs DPDK：旁路路线的真正分野</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -287,7 +287,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -305,7 +305,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="content" style="grid-template-columns:1fr">
         <div>
           <div class="eyebrow">NAPI / XDP / eBPF / io_uring</div>
-          <h1>Chapter 07: XDP Redirect 与 XDP vs DPDK</h1>
+          <h1>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</h1>
           <div class="meta">
 <span>book <b>12.5-modern-networking</b></span><span>chapter <b>Ch 7</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
@@ -315,245 +315,1327 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的五个核心结论</h2>
+<ol>
+<li><strong><code class="c">XDP_REDIRECT</code> 不是立即动作。</strong> 程序返回后包还在 per-CPU 批量队列里，
+   真正送走要等 <code class="c">xdp_do_flush()</code>——它由驱动在 <strong>NAPI poll 结束前</strong>调用
+   （<code class="c">net/core/filter.c:4202</code>，且必须早于 <code class="c">napi_complete_done()</code>，
+   整个 redirect 靠"同处一个 NAPI poll"获得 RCU 保护）。</li>
+<li><strong>批量大小：devmap 16、cpumap 8、AF_XDP 跟随 NAPI weight（默认 64）。</strong>
+   所以单包延迟取决于它在批次里的位置——谈 XDP 延迟要看分布（P50/P99），不是平均值。</li>
+<li><strong>devmap 没有重排队。</strong> <code class="c">ndo_xdp_xmit()</code> 没发完的帧被
+   <code class="c">xdp_return_frame_rx_napi()</code> 直接释放（丢弃），<strong>不产生 errno</strong>，
+   只在 <code class="c">trace_xdp_devmap_xmit</code> 的 <code class="c">drops</code> 参数里可见。</li>
+<li><strong>cpumap 不省 <code class="c">sk_buff</code></strong>（最常见的误解）。它在目标 CPU 上
+   <code class="c">kmem_cache_alloc_bulk()</code> 批量分配 skb，终点是 <code class="c">netif_receive_skb_list()</code>。
+   cpumap 优化的是<strong>分配位置与分发策略</strong>，而且 v6.6 用的是 <strong>kthread</strong>（有线程调度），
+   所以它<strong>不是低延迟机制</strong>。</li>
+<li><strong>XDP vs DPDK 的分野是"谁拥有网卡"，不是"谁更快"。</strong>
+   要跟内核共存 → XDP；要独占网卡换确定性延迟 → DPDK。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>XDP redirect 到 CPUMAP</strong>：将收包重定向到特定 CPU 的队列，实现 RSS 替代方案</li>
-<li><strong>XDP redirect 到 AF_XDP</strong>：零拷贝到用户态，HFT 收包路径</li>
-<li><strong>XDP vs DPDK 权衡</strong>：</li>
-<li>DPDK：完全 bypass 内核，延迟最低（~100ns），但独占 NIC、需 hugepage、驱动支持有限</li>
-<li>XDP/AF_XDP：内核态，延迟稍高（~200-500ns），但 NIC 共享、无需 hugepage、驱动支持广</li>
-<li><strong>HFT 选择</strong>：核心交易路径用 DPDK（极致延迟），监控/备份路径用 AF_XDP（灵活性）</li>
+<li><strong>devmap 做内核态 L2 转发</strong>：绕过 qdisc、绕过 tc egress、不构建 skb。
+  但⚠️<strong>没有重排队</strong>，且<strong>静默丢弃超过出口 MTU 的帧</strong></li>
+<li><strong>cpumap 按业务规则分核</strong>：比 RPS 灵活（BPF 自定义策略 + 二级过滤），
+  但有一次线程调度——<strong>低延迟分核请用硬件 RSS / flow steering</strong></li>
+<li><strong>XSKMAP 是唯一跳过 <code class="c">xdp_convert_buff_to_frame()</code> 的目的地</strong>——
+  包已经在 UMEM 里，不需要搬。这是零拷贝路径最短的结构性原因</li>
+<li><strong>混合架构是常态</strong>：行情接收旁路、下单走内核、管理走内核，
+  用不同网卡/不同队列分开，别追求"全线旁路"</li>
+<li><strong>⚠️ 留一个队列给内核栈</strong>：全旁路后内核收不到 IGMP，
+  组播成员关系会超时被交换机剪掉，行情断流</li>
+<li><strong>性能数字必须自己测</strong>：包长、驱动、IOMMU、CPU 型号任一不同结论都可能反转。
+  延迟只有硬件时间戳测出来的才可信，且要有"内核 socket + busy poll"对照基线</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 基础架构</li>
-<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：AF_XDP redirect 目标</li>
-<li><code class="c">13-dpdk/</code>：DPDK 详细对比</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 基础架构与五个动作</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：XSKMAP 目的地，AF_XDP 完整机制</li>
+<li><code class="c">12.5-modern-networking/chapter-03-tx-path-skbbuff/notes/04-sk-buff-xdp-buff.md</code>：
+  <code class="c">xdp_convert_buff_to_frame()</code> 为什么必须要有 headroom</li>
+<li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：驱动侧缓冲区池
+  （⚠️ AF_XDP 零拷贝不用它）</li>
+<li><code class="c">12.5-modern-networking/chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md</code>：
+  延迟测量方法</li>
+<li><code class="c">13-dpdk/</code>：DPDK 详细内容</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">07</div><h2>— XDP redirect 与 cpumap</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— XDP_REDIRECT 的四个目的地：批量语义、devmap 与 cpumap</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> XDP redirect 4.8+；CPUMAP 4.15+；DEVMAP 4.14+</p>
+<p><strong>对应 Rosen:</strong> 无（XDP 4.8+、DEVMAP 4.14+、CPUMAP 4.15+，3.x 时代均不存在）
+<strong>内核版本：</strong> 以 <strong>v6.6</strong> 为准，行号取自：
+- <code class="c">net/core/filter.c</code> — <code class="c">xdp_do_redirect</code>、<code class="c">__xdp_do_redirect_frame</code> 4274、<code class="c">xdp_do_flush</code> 4202
+- <code class="c">kernel/bpf/devmap.c</code> — <code class="c">bq_enqueue</code> 441、<code class="c">bq_xmit_all</code> 361、<code class="c">dev_map_enqueue</code> 525
+- <code class="c">kernel/bpf/cpumap.c</code> — <code class="c">bq_enqueue</code> 697、<code class="c">cpu_map_kthread_run</code> 262
+- <code class="c">include/net/xdp.h</code> — <code class="c">XDP_BULK_QUEUE_SIZE</code> 190、<code class="c">struct xdp_cpumap_stats</code> 212</p>
+<p>⚠️ <strong>路径提示</strong>：v6.6 起 devmap 已从 <code class="c">net/core/devmap.c</code> 移到 <strong><code class="c">kernel/bpf/devmap.c</code></strong>，
+cpumap 在 <strong><code class="c">kernel/bpf/cpumap.c</code></strong>。网上大量资料仍写旧路径。</p>
 </blockquote>
-<h2>XDP redirect 概述</h2>
-<p>XDP 程序可以将包重定向到不同目标，而非简单 PASS/DROP：
-- <strong>CPUMAP</strong>：将包分发到特定 CPU 核心处理
-- <strong>DEVMAP</strong>：将包转发到另一个网卡
-- <strong>AF_XDP socket</strong>：将包送到用户态
-- <strong>BPF map（全局）</strong>：跨程序/跨 CPU 传递包</p>
-<h2>CPUMAP：CPU 亲和性收包分发</h2>
-<p>传统 RPS 在软件层分发包到不同 CPU，但需要先分配 sk_buff。
-CPUMAP 在 XDP 层（sk_buff 之前）分发：</p>
-<pre class="code" data-label="C"><code class="c">// BPF 程序：按 hash 将包分发到不同 CPU
-SEC(&quot;xdp&quot;)
-int xdp_cpumap(struct xdp_md *ctx) {
-    void *data = (void *)(long)ctx-&gt;data;
-    // 解析包头部计算 hash
-    uint32_t cpu = hash % NUM_CPUS;
-    return bpf_redirect_map(&amp;cpumap, cpu, 0);  // XDP_REDIRECT
+<hr />
+<h2>文档概述</h2>
+<p><a href="chapter-05.html#ch-5">chapter-05</a> 讲了 XDP 的五个动作和它的位置，
+<a href="chapter-06.html#ch-6">chapter-06</a> 讲了其中一个目的地（AF_XDP socket）。
+本篇补齐剩下三个目的地，并回答一个几乎所有资料都含糊带过的问题：</p>
+<blockquote>
+<p><strong><code class="c">XDP_REDIRECT</code> 返回的那一刻，包去哪了？</strong></p>
+</blockquote>
+<p>答案是：<strong>哪儿都没去，它还在 per-CPU 的批量队列里躺着。</strong>
+真正把它送走的是 <code class="c">xdp_do_flush()</code>，而那要等到 NAPI poll 结束。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>笔记</th>
+<th>侧重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>01（本篇）</strong></td>
+<td>redirect 的三步语义、四个目的地（devmap/cpumap/xskmap/ifindex）、批量队列、观测</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02 XDP vs DPDK</a></td>
+<td>旁路路线选型："谁拥有网卡"而不是"谁更快"</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、<code class="c">XDP_REDIRECT</code> 不是立即动作：三步语义</h2>
+<p>内核源码里有一段把这件事讲得最清楚的注释（<code class="c">net/core/filter.c:4170</code>）：</p>
+<pre class="code" data-label="code"><code class="c"> * 1. The bpf_redirect() and bpf_redirect_map() helpers will lookup the target
+ *    of the redirect and store it (along with some other metadata) in a per-CPU
+ *    struct bpf_redirect_info.
+ *
+ * 2. When the program returns the XDP_REDIRECT return code, the driver will
+ *    call xdp_do_redirect() which will use the information in struct
+ *    bpf_redirect_info to actually enqueue the frame into a map type-specific
+ *    bulk queue structure.
+ *
+ * 3. Before exiting its NAPI poll loop, the driver will call
+ *    xdp_do_flush(), which will flush all the different bulk queues,
+ *    thus completing the redirect. Note that xdp_do_flush() must be
+ *    called before napi_complete_done() in the driver, as the
+ *    XDP_REDIRECT logic relies on being inside a single NAPI instance
+ *    through to the xdp_do_flush() call for RCU protection of all
+ *    in-kernel data structures.
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* net/core/filter.c:4202 */
+void xdp_do_flush(void)
+{
+    __dev_flush();
+    __cpu_map_flush();
+    __xsk_map_flush();
+}
+EXPORT_SYMBOL_GPL(xdp_do_flush);
+</code></pre>
+<pre class="code" data-label="code"><code class="c">包进来
+  │
+  ├─ ① bpf_redirect_map()  ──→ 查 map，结果存进 per-CPU bpf_redirect_info
+  │                              （此时包还没动）
+  ├─ ② 程序返回 XDP_REDIRECT
+  │     └→ xdp_do_redirect() ──→ xdp_convert_buff_to_frame()
+  │                              → 进 per-CPU 批量队列（devmap 16 / cpumap 8）
+  │
+  ├─ （继续处理 NAPI poll 里的其他包，每个都重复 ①②）
+  │
+  └─ ③ NAPI poll 即将结束 → xdp_do_flush()
+        ├─ __dev_flush()      → devmap 批量队列 → ndo_xdp_xmit()
+        ├─ __cpu_map_flush()  → cpumap 批量队列 → ptr_ring → 唤醒 kthread
+        └─ __xsk_map_flush()  → xsk 批量队列   → 发布 RX ring producer
+</code></pre>
+<h3>为什么要这么设计</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原因</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>摊销开销</strong></td>
+<td><code class="c">ndo_xdp_xmit()</code> / doorbell MMIO 是 per-batch 的成本，一次发 16 个比发 16 次便宜得多</td>
+</tr>
+<tr>
+<td><strong>RCU 保护窗口</strong></td>
+<td>map 里的目标指针（<code class="c">bpf_dtab_netdev</code> 等）靠"整个 redirect 过程在同一个 NAPI poll 内"来保证不被并发释放，<strong>不需要额外的 <code class="c">rcu_read_lock()</code></strong></td>
+</tr>
+<tr>
+<td><strong>驱动页回收时序</strong></td>
+<td>cpumap 的入队注释明确写了：必须先把 <code class="c">xdp_frame</code> 排进队列，否则会和驱动的 page-refcnt 回收技巧（如 ixgbe）竞争</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>推论：<code class="c">XDP_REDIRECT</code> 的延迟不是单包的，是批的。</strong>
+一个批次里第 16 个包和第 1 个包同时被送走，
+但第 16 个包在队列里躺了更久。这一点与
+<a href="chapter-15.html#s-02">chapter-06/02</a> 第四节讲的
+AF_XDP flush 语义是同一个机制的两种表现。</p>
+</blockquote>
+<hr />
+<h2>二、四个目的地总览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标</th>
+<th>写法</th>
+<th>载体</th>
+<th>终点</th>
+<th>是否构建 <code class="c">sk_buff</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>另一张网卡</strong></td>
+<td><code class="c">bpf_redirect_map(&amp;devmap, ifindex, flags)</code></td>
+<td><code class="c">xdp_frame</code> → per-CPU 批量队列（16）</td>
+<td><code class="c">ndo_xdp_xmit()</code></td>
+<td>❌ 不构建</td>
+</tr>
+<tr>
+<td><strong>另一个 CPU</strong></td>
+<td><code class="c">bpf_redirect_map(&amp;cpumap, cpu, flags)</code></td>
+<td><code class="c">xdp_frame</code> → <code class="c">ptr_ring</code> → kthread</td>
+<td><code class="c">netif_receive_skb_list()</code></td>
+<td>✅ <strong>构建</strong>（在目标 CPU 上批量构建）</td>
+</tr>
+<tr>
+<td><strong>AF_XDP socket</strong></td>
+<td><code class="c">bpf_redirect_map(&amp;xsks_map, qid, flags)</code></td>
+<td>直接填 RX ring</td>
+<td>用户态 UMEM</td>
+<td>❌ 不构建（零拷贝）</td>
+</tr>
+<tr>
+<td><strong>按 ifindex 转发</strong></td>
+<td><code class="c">bpf_redirect(ifindex, 0)</code></td>
+<td>同 devmap（走通用路径）</td>
+<td><code class="c">ndo_xdp_xmit()</code></td>
+<td>❌ 不构建</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">xdp_do_redirect()</code> 的分流（<code class="c">net/core/filter.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
+            struct bpf_prog *xdp_prog)
+{
+    struct bpf_redirect_info *ri = this_cpu_ptr(&amp;bpf_redirect_info);
+    enum bpf_map_type map_type = ri-&gt;map_type;
+
+    if (map_type == BPF_MAP_TYPE_XSKMAP)
+        return __xdp_do_redirect_xsk(ri, dev, xdp, xdp_prog);
+
+    return __xdp_do_redirect_frame(ri, dev, xdp_convert_buff_to_frame(xdp),
+                       xdp_prog);
 }
 </code></pre>
-<p>CPUMAP 的工作原理：
-1. XDP 程序调用 <code class="c">bpf_redirect_map()</code> 将包放入目标 CPU 的队列
-2. 目标 CPU 的 kthread 从队列取出包
-3. 构造 sk_buff，送入协议栈（或再次通过 BPF 处理）</p>
+<p><strong>除 XSKMAP 之外，所有 redirect 都要先做一次 <code class="c">xdp_convert_buff_to_frame()</code></strong>
+——把 <code class="c">xdp_buff</code> 转成 <code class="c">xdp_frame</code>。这一步会把 <code class="c">struct xdp_frame</code> 结构
+<strong>写进包自己的 headroom 里</strong>（这也是 XDP 强制要求 headroom 的硬原因，
+详见 <a href="chapter-13.html#s-04">chapter-03/04</a>）。</p>
+<blockquote>
+<p><strong>所以 XSKMAP 是唯一"不做 frame 转换"的目的地</strong>——因为包本来就在 UMEM 里，
+不需要搬。这也是零拷贝路径最短的结构性原因。</p>
+</blockquote>
+<hr />
+<h2>三、DEVMAP：内核态 L2 转发</h2>
+<h3>3.1 批量队列：每个 (目标设备, CPU) 一个，容量 16</h3>
+<pre class="code" data-label="C"><code class="c">/* include/net/xdp.h:190 */
+#define XDP_BULK_QUEUE_SIZE 16
+/* include/net/xdp.h:384 */
+#define DEV_MAP_BULK_SIZE XDP_BULK_QUEUE_SIZE
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* kernel/bpf/devmap.c:56 */
+struct xdp_dev_bulk_queue {
+    struct xdp_frame *q[DEV_MAP_BULK_SIZE];
+    struct net_device *dev;
+    struct net_device *dev_rx;
+    struct bpf_prog *xdp_prog;
+    struct list_head flush_node;
+    unsigned int count;
+};
+</code></pre>
+<p>入队（<code class="c">bq_enqueue()</code>，devmap.c:441）：</p>
+<pre class="code" data-label="C"><code class="c">    struct xdp_dev_bulk_queue *bq = this_cpu_ptr(dev-&gt;xdp_bulkq);
+
+    if (unlikely(bq-&gt;count == DEV_MAP_BULK_SIZE))
+        bq_xmit_all(bq, 0);       /* 满了就先发一批 */
+
+    /* Ingress dev_rx will be the same for all xdp_frame's in
+     * bulk_queue, because bq stored per-CPU and must be flushed
+     * from net_device drivers NAPI func end.
+     */
+    if (!bq-&gt;dev_rx) {
+        bq-&gt;dev_rx = dev_rx;
+        bq-&gt;xdp_prog = xdp_prog;
+        list_add(&amp;bq-&gt;flush_node, flush_list);
+    }
+
+    bq-&gt;q[bq-&gt;count++] = xdpf;
+</code></pre>
+<p><strong>两个易错点：</strong></p>
+<ol>
+<li><strong>批量队列是 per-(目标设备, CPU) 的</strong>，不是全局的。
+   从 3 个不同入口网卡 redirect 到同一个出口网卡，会有 3×CPU 个队列在竞争。</li>
+<li><strong>队列满（16）会立刻 <code class="c">bq_xmit_all()</code></strong>，不等 NAPI poll 结束。
+   所以高包速下"批量"其实是被 16 切碎的多次发送，不是一次大批量。</li>
+</ol>
+<h3>3.2 发送：二级 XDP 程序 + <code class="c">ndo_xdp_xmit()</code></h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/bpf/devmap.c:361 */
+static void bq_xmit_all(struct xdp_dev_bulk_queue *bq, u32 flags)
+{
+    ...
+    for (i = 0; i &lt; cnt; i++)
+        prefetch(bq-&gt;q[i]);
+
+    if (bq-&gt;xdp_prog) {
+        to_send = dev_map_bpf_prog_run(bq-&gt;xdp_prog, bq-&gt;q, cnt, dev);
+        if (!to_send)
+            goto out;
+    }
+
+    sent = dev-&gt;netdev_ops-&gt;ndo_xdp_xmit(dev, to_send, bq-&gt;q, flags);
+    if (sent &lt; 0) {
+        /* If ndo_xdp_xmit fails with an errno, no frames have
+         * been xmit'ed. */
+        err = sent;
+        sent = 0;
+    }
+
+    /* If not all frames have been transmitted, it is our
+     * responsibility to free them */
+    for (i = sent; unlikely(i &lt; to_send); i++)
+        xdp_return_frame_rx_napi(bq-&gt;q[i]);
+
+out:
+    bq-&gt;count = 0;
+    trace_xdp_devmap_xmit(bq-&gt;dev_rx, dev, sent, cnt - sent, err);
+}
+</code></pre>
+<blockquote>
+<h3>⚠️ 关键差异：devmap 没有重排队</h3>
+<p>普通 TX 路径里，驱动返回 <code class="c">NETDEV_TX_BUSY</code> 时内核会 requeue 稍后重试。
+<strong>devmap 不会</strong>——<code class="c">ndo_xdp_xmit()</code> 没发完的帧被直接 <code class="c">xdp_return_frame_rx_napi()</code>
+释放回内存池，也就是<strong>丢弃</strong>。</p>
+<p>这是 XDP 转发丢包的头号来源，而且它<strong>不产生任何 errno 给调用者</strong>：
+你只能在 <code class="c">trace_xdp_devmap_xmit</code> 的 <code class="c">drops</code> 参数里看到（<code class="c">cnt - sent</code>）。</p>
+</blockquote>
+<h3>3.3 目标合法性检查（<code class="c">is_valid_dst()</code>，devmap.c:533）</h3>
+<pre class="code" data-label="C"><code class="c">static bool is_valid_dst(struct bpf_dtab_netdev *obj, struct xdp_frame *xdpf)
+{
+    if (!obj)
+        return false;
+    if (!(obj-&gt;dev-&gt;xdp_features &amp; NETDEV_XDP_ACT_NDO_XMIT))
+        return false;
+    if (unlikely(!(obj-&gt;dev-&gt;xdp_features &amp; NETDEV_XDP_ACT_NDO_XMIT_SG) &amp;&amp;
+             xdp_frame_has_frags(xdpf)))
+        return false;
+    if (xdp_ok_fwd_dev(obj-&gt;dev, xdp_get_frame_len(xdpf)))
+        return false;
+    return true;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>拒绝原因</th>
+<th>条件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>出口设备没有 <code class="c">ndo_xdp_xmit</code></td>
+<td><code class="c">NETDEV_XDP_ACT_NDO_XMIT</code> 缺失</td>
+<td>虚拟设备（如 veth 的某些模式）、隧道设备常见</td>
+</tr>
+<tr>
+<td>多段帧但设备不支持 SG</td>
+<td><code class="c">NETDEV_XDP_ACT_NDO_XMIT_SG</code> 缺失</td>
+<td>开了 <code class="c">XDP_USE_SG</code> / 大 MTU 时要特别注意</td>
+</tr>
+<tr>
+<td>帧长超过出口 MTU</td>
+<td><code class="c">xdp_ok_fwd_dev()</code></td>
+<td><strong>入口 MTU &gt; 出口 MTU 时静默丢包</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.4 devmap 的两个高级特性</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>特性</th>
-<th>RPS（传统）</th>
-<th>CPUMAP（XDP）</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>分发时机</td>
-<td>sk_buff 分配后</td>
-<td>sk_buff 分配前</td>
+<td><strong>二级 XDP 程序</strong></td>
+<td>devmap 的 value 可以带 <code class="c">bpf_prog.fd</code>，在<strong>出口设备上下文</strong>再跑一个 XDP 程序（<code class="c">BPF_XDP_DEVMAP</code> 类型）。适合做出口侧的最后一道过滤/改写</td>
 </tr>
 <tr>
-<td>CPU 开销</td>
-<td>需分配 sk_buff</td>
-<td>轻量，延迟分配</td>
-</tr>
-<tr>
-<td>灵活性</td>
-<td>hash 策略固定</td>
-<td>BPF 程序自定义</td>
+<td><strong><code class="c">BPF_F_BROADCAST</code> 组播</strong></td>
+<td><code class="c">dev_map_redirect_clone()</code>（devmap.c:687）会为每个目标 <code class="c">xdpf_clone()</code> 一份。注意：<strong>克隆需要分配内存，失败就是丢包</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h2>DEVMAP：网卡间转发</h2>
-<pre class="code" data-label="C"><code class="c">SEC(&quot;xdp&quot;)
-int xdp_redirect_dev(struct xdp_md *ctx) {
-    return bpf_redirect_map(&amp;devmap, target_ifindex, 0);
-}
+<hr />
+<h2>四、CPUMAP：⚠️ 它不省 <code class="c">sk_buff</code>，只是把分配挪到目标 CPU</h2>
+<p>这是本篇最需要纠正的认知。</p>
+<h3>4.1 v6.6 的实现：kthread + <code class="c">ptr_ring</code></h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/bpf/cpumap.c:57 */
+struct bpf_cpu_map_entry {
+    u32 cpu;    /* kthread CPU and map index */
+    int map_id;
+
+    /* XDP can run multiple RX-ring queues, need __percpu enqueue store */
+    struct xdp_bulk_queue __percpu *bulkq;
+
+    /* Queue with potential multi-producers, and single-consumer kthread */
+    struct ptr_ring *queue;
+    struct task_struct *kthread;
+
+    struct bpf_cpumap_val value;
+    struct bpf_prog *prog;
+    ...
+};
 </code></pre>
-<ul>
-<li>可实现内核态 L2 转发（替代部分 bridge 功能）</li>
-<li>性能远高于传统转发（不经过协议栈）</li>
-</ul>
-<h2>HFT 关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>场景</th>
-<th>redirect 类型</th>
-<th>用途</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>行情多核分发</td>
-<td>CPUMAP</td>
-<td>不同行情流分发到不同 CPU，各自独立处理</td>
-</tr>
-<tr>
-<td>行情镜像</td>
-<td>DEVMAP</td>
-<td>将行情复制转发到监控/录制服务器</td>
-</tr>
-<tr>
-<td>行情旁路</td>
-<td>AF_XDP</td>
-<td>将行情包送到用户态交易进程</td>
-</tr>
-<tr>
-<td>跨网卡转发</td>
-<td>DEVMAP</td>
-<td>交易报文从内网网卡转发到交易所网卡</td>
-</tr>
-</tbody>
-</table></div>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">08</div><h2>— XDP vs DPDK：内核旁路两条路</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> XDP 4.8+；DPDK 用户态</p>
-</blockquote>
-<h2>两条旁路路线</h2>
+<p><strong>v6.6 的 cpumap 用的是 kthread，不是 NAPI。</strong> 每个目标 CPU 一个
+<code class="c">kthread</code> + 一个 <code class="c">ptr_ring</code>。</p>
+<h3>4.2 kthread 主循环（<code class="c">cpu_map_kthread_run()</code>，cpumap.c:262）</h3>
+<pre class="code" data-label="C"><code class="c">    while (!kthread_should_stop() || !__ptr_ring_empty(rcpu-&gt;queue)) {
+        ...
+        /* ① 队列空就睡，被唤醒再继续 */
+        if (__ptr_ring_empty(rcpu-&gt;queue)) {
+            set_current_state(TASK_INTERRUPTIBLE);
+            if (__ptr_ring_empty(rcpu-&gt;queue)) {
+                schedule();
+                sched = 1;
+            } else {
+                __set_current_state(TASK_RUNNING);
+            }
+        } else {
+            sched = cond_resched();
+        }
+
+        /* ② 批量出队，一次最多 CPUMAP_BATCH 个 */
+        n = __ptr_ring_consume_batched(rcpu-&gt;queue, frames, CPUMAP_BATCH);
+        ...
+            prefetchw(page);          /* 把 page 拉到本 CPU */
+
+        /* ③ 在目标 CPU 上再跑一个 XDP 程序 */
+        nframes = cpu_map_bpf_prog_run(rcpu, frames, xdp_n, &amp;stats, &amp;list);
+
+        /* ④ 批量分配 skb 头 */
+        if (nframes) {
+            m = kmem_cache_alloc_bulk(skbuff_cache, gfp, nframes, skbs);
+            if (unlikely(m == 0)) {
+                ...
+                kmem_alloc_drops += nframes;   /* 分配失败 → 全丢 */
+            }
+        }
+
+        /* ⑤ xdp_frame → sk_buff */
+        local_bh_disable();
+        for (i = 0; i &lt; nframes; i++) {
+            skb = __xdp_build_skb_from_frame(xdpf, skb, xdpf-&gt;dev_rx);
+            if (!skb) { xdp_return_frame(xdpf); continue; }
+            list_add_tail(&amp;skb-&gt;list, &amp;list);
+        }
+        /* ⑥ 送进协议栈 */
+        netif_receive_skb_list(&amp;list);
+
+        trace_xdp_cpumap_kthread(rcpu-&gt;map_id, n, kmem_alloc_drops, sched, &amp;stats);
+        local_bh_enable();
+    }
+</code></pre>
+<h3>4.3 所以 cpumap 到底是什么</h3>
+<pre class="code" data-label="code"><code class="c">XDP（入口 CPU）
+  → xdp_convert_buff_to_frame()
+  → per-CPU 批量队列（CPU_MAP_BULK_SIZE = 8）
+  → [xdp_do_flush] → ptr_ring（qsize，上限 16384）
+  → 唤醒目标 CPU 的 kthread          ← ⚠️ 一次调度
+  → 目标 CPU：批量出队（CPUMAP_BATCH = 8）
+  → 跑二级 XDP 程序
+  → kmem_cache_alloc_bulk(skbuff_cache)   ← ⚠️ 仍然分配 skb
+  → __xdp_build_skb_from_frame()
+  → netif_receive_skb_list()        ← 进入协议栈
+</code></pre>
+<p><strong>三个必须记住的事实：</strong></p>
+<ol>
+<li><strong><code class="c">sk_buff</code> 还是要分配的</strong>，只是从"入口 CPU 上逐包分配"变成了
+   "目标 CPU 上批量分配（<code class="c">kmem_cache_alloc_bulk</code>）"。
+   cpumap 省的是<strong>入口 CPU 的开销和锁竞争</strong>，不是 skb 本身。</li>
+<li><strong>有一次线程调度</strong>。kthread 队列空时会 <code class="c">schedule()</code> 睡下去，
+   唤醒再跑。这决定了 <strong>cpumap 不是低延迟机制</strong>——它优化的是
+   "多核间的负载均衡"，不是"单包延迟"。</li>
+<li><strong>终点是协议栈</strong>（<code class="c">netif_receive_skb_list()</code>），不是用户态。
+   想要旁路到用户态请用 <a href="chapter-06.html#ch-6">XSKMAP / AF_XDP</a>。</li>
+</ol>
+<h3>4.4 CPUMAP vs RPS</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>维度</th>
-<th>XDP（内核态旁路）</th>
-<th>DPDK（用户态旁路）</th>
+<th>RPS（传统）</th>
+<th>CPUMAP</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>核心理念</strong></td>
-<td>在内核最早点处理，跳过协议栈</td>
-<td>完全绕过内核，用户态驱动</td>
+<td>分发点</td>
+<td>收包软中断里，<code class="c">sk_buff</code> <strong>已分配之后</strong></td>
+<td>XDP 层，<code class="c">sk_buff</code> <strong>分配之前</strong></td>
 </tr>
 <tr>
-<td><strong>运行位置</strong></td>
-<td>内核态（驱动层）</td>
-<td>用户态</td>
+<td>搬运的东西</td>
+<td>已构建的 <code class="c">sk_buff</code></td>
+<td><code class="c">xdp_frame</code>（更小的结构体）</td>
 </tr>
 <tr>
-<td><strong>网卡控制</strong></td>
-<td>内核驱动管理，XDP 挂载 BPF 程序</td>
-<td>用户态驱动（UIO/VFIO），内核放弃控制</td>
+<td>跨 CPU 载体</td>
+<td>per-CPU <code class="c">input_pkt_queue</code> + IPI</td>
+<td><code class="c">ptr_ring</code> + kthread 唤醒</td>
 </tr>
 <tr>
-<td><strong>内存管理</strong></td>
-<td>page_pool（内核管理）</td>
-<td>hugepage（用户态管理）</td>
+<td>skb 分配位置</td>
+<td>入口 CPU</td>
+<td><strong>目标 CPU，批量分配</strong></td>
 </tr>
 <tr>
-<td><strong>零拷贝</strong></td>
-<td>AF_XDP zero-copy（page_pool 映射）</td>
-<td>RTE buffer + hugepage</td>
+<td>调度策略</td>
+<td>内核固定的 hash</td>
+<td><strong>BPF 程序自定义</strong>（可以按 UDP 端口、组播组、五元组任意分发）</td>
 </tr>
 <tr>
-<td><strong>CPU 占用</strong></td>
-<td>NAPI 轮询 + BPF（可配置）</td>
-<td>100% 轮询（DPDK polling mode）</td>
+<td>能否过滤</td>
+<td>❌ 只能选 CPU</td>
+<td>✅ 二级 XDP 程序可以在搬运前后各过滤一次</td>
 </tr>
 <tr>
-<td><strong>中断</strong></td>
-<td>可关闭（busy poll）</td>
-<td>完全关闭</td>
-</tr>
-<tr>
-<td><strong>协议栈共存</strong></td>
-<td>是（非 XDP 路径仍走协议栈）</td>
-<td>否（网卡被 DPDK 独占）</td>
-</tr>
-<tr>
-<td><strong>部署复杂度</strong></td>
-<td>低（加载 BPF 程序）</td>
-<td>高（绑定驱动 + hugepage + NUMA）</td>
-</tr>
-<tr>
-<td><strong>调试工具</strong></td>
-<td>内核工具（bpftool/xdp-tools）</td>
-<td>DPDK 工具（testpmd/dpdk-proc-info）</td>
-</tr>
-<tr>
-<td><strong>生态</strong></td>
-<td>内核主线，跟随内核更新</td>
-<td>独立项目，需适配内核版本</td>
+<td>延迟</td>
+<td>较低（软中断内完成）</td>
+<td><strong>较高（多一次线程调度）</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h2>性能对比（典型值）</h2>
+<blockquote>
+<p><strong>选型</strong>：想"按业务规则把不同行情流钉到不同核"→ cpumap 合适
+（灵活、能过滤）。想"最低延迟地把包分散开"→ RSS / flow steering 更直接，
+它在硬件层就分好了，根本不用搬运。</p>
+</blockquote>
+<h3>4.5 cpumap 的容量与统计</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>指标</th>
-<th>XDP</th>
-<th>DPDK</th>
-<th>差距</th>
+<th>参数</th>
+<th>值</th>
+<th>位置</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>收包延迟</td>
-<td>~100-200 ns</td>
-<td>~50-100 ns</td>
-<td>DPDK 快 2x</td>
+<td><code class="c">CPU_MAP_BULK_SIZE</code>（入队批量）</td>
+<td><strong>8</strong>（注释：8 == 64 位架构上的一条 cacheline）</td>
+<td>cpumap.c:45</td>
 </tr>
 <tr>
-<td>包处理速率</td>
-<td>~24 Mpps/core</td>
-<td>~40+ Mpps/core</td>
-<td>DPDK 快 1.5-2x</td>
+<td><code class="c">CPUMAP_BATCH</code>（出队批量）</td>
+<td><strong>8</strong></td>
+<td>cpumap.c:236</td>
 </tr>
 <tr>
-<td>CPU 占用</td>
-<td>可配置</td>
-<td>100%</td>
-<td>XDP 灵活</td>
+<td><code class="c">qsize</code> 上限</td>
+<td><strong>16384</strong>（超过返回 <code class="c">-EOVERFLOW</code>）</td>
+<td>cpumap.c:540</td>
 </tr>
 <tr>
-<td>额外内存</td>
-<td>page_pool（少量）</td>
-<td>hugepage（GB 级）</td>
-<td>XDP 少</td>
+<td><code class="c">max_entries</code> 上限</td>
+<td><code class="c">NR_CPUS</code>（超过返回 <code class="c">-E2BIG</code>）</td>
+<td>cpumap.c:96</td>
+</tr>
+<tr>
+<td>value 可以只给 <code class="c">qsize</code></td>
+<td>或 <code class="c">qsize</code> + <code class="c">bpf_prog.fd</code></td>
+<td>cpumap.c:90</td>
+</tr>
+<tr>
+<td><code class="c">qsize == 0</code></td>
+<td><strong>等价于删除该条目</strong></td>
+<td>cpumap.c:547</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 选型决策</h2>
-<pre class="code" data-label="code"><code class="c">需要极致延迟（&lt; 1μs）？
-  ├─ 是 → co-location 环境 → DPDK
-  └─ 否 → 需要内核功能（路由/TCP/安全）？
-            ├─ 是 → XDP + AF_XDP
-            └─ 否 → 延迟要求 &lt; 5μs？
-                      ├─ 是 → DPDK（非 co-location 也可）
-                      └─ 否 → XDP（性价比最高）
+<pre class="code" data-label="C"><code class="c">/* include/net/xdp.h:212 */
+struct xdp_cpumap_stats {
+    unsigned int redirect;   /* 二级程序返回 XDP_REDIRECT 的数量 */
+    unsigned int pass;       /* 送到协议栈的数量 */
+    unsigned int drop;       /* 二级程序丢弃的数量 */
+};
 </code></pre>
-<h2>混合方案</h2>
-<p>部分 HFT 系统使用混合架构：
-- <strong>行情接收</strong>：DPDK（超低延迟，网卡独占）
-- <strong>管理通道</strong>：内核协议栈（SSH/监控/控制）
-- <strong>行情分发</strong>：XDP CPUMAP（在内核层分发到非 DPDK 网卡）
-- 需要双网卡：一张 DPDK 独占，一张内核管理</p>
-<h2>常见误区</h2>
+<hr />
+<h2>五、XSKMAP：唯一"不做 frame 转换"的目的地</h2>
+<pre class="code" data-label="C"><code class="c">/* net/core/filter.c — xdp_do_redirect() */
+    if (map_type == BPF_MAP_TYPE_XSKMAP)
+        return __xdp_do_redirect_xsk(ri, dev, xdp, xdp_prog);
+    /* 其他所有类型都要先转换 */
+    return __xdp_do_redirect_frame(ri, dev, xdp_convert_buff_to_frame(xdp), ...);
+</code></pre>
+<p>机制与批量语义见：</p>
+<ul>
+<li><a href="chapter-15.html#s-01">chapter-06/01</a> 第六节：<code class="c">xsk_rcv()</code> 逐包判定 zc/copy</li>
+<li><a href="chapter-15.html#s-02">chapter-06/02</a> 第四节：<code class="c">__xsk_map_flush()</code> 与批量发布</li>
+</ul>
+<hr />
+<h2>六、观测：redirect 的 tracepoint 是唯一的可见性来源</h2>
+<p><code class="c">XDP_REDIRECT</code> 的失败<strong>不会返回 errno 给调用者</strong>（BPF 程序只拿到 <code class="c">XDP_REDIRECT</code>），
+所有丢弃都只在 tracepoint 里可见。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tracepoint</th>
+<th>触发</th>
+<th>关键参数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">xdp_redirect</code></td>
+<td><code class="c">bpf_redirect()</code> 成功</td>
+<td><code class="c">tgt_index</code>, <code class="c">act</code></td>
+<td>按 ifindex 转发</td>
+</tr>
+<tr>
+<td><code class="c">xdp_redirect_err</code></td>
+<td><code class="c">bpf_redirect()</code> 失败</td>
+<td><code class="c">err</code></td>
+<td><strong>唯一能看到 <code class="c">XDP_ABORTED</code> 的地方</strong></td>
+</tr>
+<tr>
+<td><code class="c">xdp_redirect_map</code></td>
+<td>map redirect 成功</td>
+<td><code class="c">map_id</code>, <code class="c">tgt_index</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">xdp_redirect_map_err</code></td>
+<td>map redirect 失败（含 lookup 失败）</td>
+<td><code class="c">err</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">xdp_devmap_xmit</code></td>
+<td><code class="c">bq_xmit_all()</code></td>
+<td><code class="c">sent</code>, <strong><code class="c">drops</code></strong>, <code class="c">err</code></td>
+<td><strong>devmap 丢包看这里</strong>（<code class="c">cnt - sent</code>）</td>
+</tr>
+<tr>
+<td><code class="c">xdp_cpumap_enqueue</code></td>
+<td>cpumap 批量入队</td>
+<td><code class="c">processed</code>, <strong><code class="c">drops</code></strong>, <code class="c">to_cpu</code></td>
+<td><strong>ptr_ring 满 → 丢包看这里</strong></td>
+</tr>
+<tr>
+<td><code class="c">xdp_cpumap_kthread</code></td>
+<td>kthread 一轮处理</td>
+<td><code class="c">n</code>, <strong><code class="c">kmem_alloc_drops</code></strong>, <code class="c">sched</code>, <code class="c">stats</code></td>
+<td><strong>skb 分配失败看这里</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># devmap 丢包（出口驱动没发完 → 内核直接释放）
+bpftrace -e 'tracepoint:xdp:xdp_devmap_xmit /args-&gt;drops &gt; 0/ { @[args-&gt;err] = sum(args-&gt;drops); }'
+
+# cpumap 入队丢包（ptr_ring 满 → 加大 qsize）
+bpftrace -e 'tracepoint:xdp:xdp_cpumap_enqueue /args-&gt;drops &gt; 0/ { @[args-&gt;to_cpu] = sum(args-&gt;drops); }'
+
+# cpumap kthread 里 skb 分配失败
+bpftrace -e 'tracepoint:xdp:xdp_cpumap_kthread /args-&gt;kmem_alloc_drops &gt; 0/ { @ = sum(args-&gt;kmem_alloc_drops); }'
+
+# redirect 目标查找失败（XDP_ABORTED 在这里）
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+
+# 概览
+perf list 'xdp:*'
+</code></pre>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong><code class="c">XDP_REDIRECT</code> 是批量的</strong>，包在 per-CPU 队列里等到 NAPI poll 结束才被送走。
+  批量大小：devmap <strong>16</strong>、cpumap <strong>8</strong>。别用单包延迟的眼光看它。</li>
+<li><strong>devmap 没有重排队</strong>。<code class="c">ndo_xdp_xmit()</code> 没发完的帧直接被释放（丢弃），
+  只在 <code class="c">trace_xdp_devmap_xmit</code> 的 <code class="c">drops</code> 里可见。</li>
+<li><strong>devmap 会静默丢弃超过出口 MTU 的帧</strong>（<code class="c">xdp_ok_fwd_dev()</code>）。
+  做跨网卡转发时两端 MTU 必须一致，否则大包全丢且毫无提示。</li>
+<li><strong>cpumap 不省 <code class="c">sk_buff</code></strong>，它把分配移到目标 CPU 上批量做。
+  它换来的是"入口 CPU 上不分配"和"BPF 自定义分发策略"。</li>
+<li><strong>cpumap 有一次线程调度</strong>（kthread 睡/醒），<strong>不是低延迟机制</strong>。
+  低延迟的分核请用硬件 RSS / flow steering。</li>
+<li><strong>cpumap 的终点是协议栈</strong>，不是用户态。旁路到用户态只能走 XSKMAP。</li>
+<li><strong><code class="c">xsk_map</code> 是唯一跳过 <code class="c">xdp_convert_buff_to_frame()</code> 的目的地</strong>——
+  包已经在 UMEM 里了，不需要搬。这是零拷贝路径最短的结构性原因。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（4.8+ / v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>转发决策点</td>
+<td>路由表 / bridge，都在 <code class="c">sk_buff</code> 上</td>
+<td>XDP 层，<code class="c">sk_buff</code> 之前</td>
+</tr>
+<tr>
+<td>跨网卡转发</td>
+<td><code class="c">dev_queue_xmit()</code>，重新走 qdisc</td>
+<td>devmap → <code class="c">ndo_xdp_xmit()</code>，<strong>绕过 qdisc</strong>（也绕过了 tc egress）</td>
+</tr>
+<tr>
+<td>跨 CPU 分发</td>
+<td>RPS（skb 已分配后）</td>
+<td>cpumap（skb 分配前，BPF 自定义策略）</td>
+</tr>
+<tr>
+<td>转发失败处理</td>
+<td>重排队 / 返回错误</td>
+<td>devmap <strong>直接丢弃</strong>，只在 tracepoint 可见</td>
+</tr>
+<tr>
+<td>批量</td>
+<td><code class="c">netif_receive_skb_list()</code> 等局部批量</td>
+<td><strong>框架级批量</strong>：三步 redirect + <code class="c">xdp_do_flush()</code></td>
+</tr>
+<tr>
+<td>用户态旁路</td>
+<td>只有 <code class="c">recvmsg</code> 拷贝</td>
+<td>XSKMAP 零拷贝</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary><b>Q1：</b>你在 XDP 程序里对 1000 个包返回 <code class="c">XDP_REDIRECT</code>（目标是 devmap），出口网卡却只发出去 940 个。<code class="c">bpftool prog show</code> 一切正常，没有报错。包去哪了？</summary>
+<p><strong>最可能：出口驱动的 <code class="c">ndo_xdp_xmit()</code> 没发完，剩下的被内核直接释放了。</strong></p>
+<p><code class="c">bq_xmit_all()</code>（devmap.c:361）：</p>
+<pre class="code" data-label="C"><code class="c">    sent = dev-&gt;netdev_ops-&gt;ndo_xdp_xmit(dev, to_send, bq-&gt;q, flags);
+    if (sent &lt; 0) {
+        /* If ndo_xdp_xmit fails with an errno, no frames have
+         * been xmit'ed. */
+        err = sent;
+        sent = 0;
+    }
+
+    /* If not all frames have been transmitted, it is our
+     * responsibility to free them */
+    for (i = sent; unlikely(i &lt; to_send); i++)
+        xdp_return_frame_rx_napi(bq-&gt;q[i]);
+
+out:
+    bq-&gt;count = 0;
+    trace_xdp_devmap_xmit(bq-&gt;dev_rx, dev, sent, cnt - sent, err);
+</code></pre>
+<p><strong>devmap 没有重排队机制。</strong> 普通 TX 路径上驱动返回 <code class="c">NETDEV_TX_BUSY</code> 时
+内核会 requeue；XDP 转发不会——<code class="c">sent &lt; to_send</code> 的差额直接被
+<code class="c">xdp_return_frame_rx_napi()</code> 送回内存池，也就是<strong>丢了</strong>。</p>
+<p><strong>而且这件事对 BPF 程序完全不可见</strong>：程序拿到的返回值就是 <code class="c">XDP_REDIRECT</code>，
+丢包数只写在 tracepoint 的参数里。</p>
+<p><strong>怎么确认：</strong></p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:xdp:xdp_devmap_xmit /args-&gt;drops &gt; 0/ {
+    printf(&quot;devmap drops=%d err=%d\n&quot;, args-&gt;drops, args-&gt;err); }'
+</code></pre>
+<p><strong>三个常见根因：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>根因</th>
+<th>判据</th>
+<th>解法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>出口驱动的 <code class="c">ndo_xdp_xmit</code> 队列满</td>
+<td>drops 零散出现、和突发流量相关</td>
+<td>降速 / 加大出口队列 / 换驱动</td>
+</tr>
+<tr>
+<td>帧长超过出口 MTU</td>
+<td><strong>所有大包全丢</strong>，小包正常</td>
+<td><code class="c">xdp_ok_fwd_dev()</code> 检查；两端 MTU 配一致</td>
+</tr>
+<tr>
+<td>多段帧但出口不支持 SG</td>
+<td>只有大包/分片包丢</td>
+<td>检查 <code class="c">NETDEV_XDP_ACT_NDO_XMIT_SG</code>；或不开 <code class="c">XDP_USE_SG</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>排障顺序：先用 <code class="c">xdp_ok_fwd_dev</code> 那条（MTU）排查</strong>，它最容易查也最常见——
+入口是 9000 MTU 的行情网卡、出口是 1500 的管理网卡时，大包 100% 全丢。</p>
+</details>
+<details>
+<summary><b>Q2：</b>你想用 cpumap "绕过 sk_buff 分配"来降低行情分发的延迟。这个想法哪里错了？cpumap 到底优化了什么？</summary>
+<p><strong>错在：cpumap 仍然分配 <code class="c">sk_buff</code>，只是换了个 CPU 和换了个分配方式。</strong></p>
+<p>看 kthread 主循环（cpumap.c:262）的第 ④⑤ 步：</p>
+<pre class="code" data-label="C"><code class="c">        /* ④ 批量分配 skb 头 */
+        if (nframes) {
+            m = kmem_cache_alloc_bulk(skbuff_cache, gfp, nframes, skbs);
+            if (unlikely(m == 0)) {
+                for (i = 0; i &lt; nframes; i++)
+                    skbs[i] = NULL; /* effect: xdp_return_frame */
+                kmem_alloc_drops += nframes;
+            }
+        }
+
+        /* ⑤ xdp_frame → sk_buff */
+        local_bh_disable();
+        for (i = 0; i &lt; nframes; i++) {
+            struct xdp_frame *xdpf = frames[i];
+            struct sk_buff *skb = skbs[i];
+
+            skb = __xdp_build_skb_from_frame(xdpf, skb, xdpf-&gt;dev_rx);
+            ...
+            list_add_tail(&amp;skb-&gt;list, &amp;list);
+        }
+        netif_receive_skb_list(&amp;list);   /* ⑥ 进协议栈 */
+</code></pre>
+<p><strong>cpumap 真正优化的三件事：</strong></p>
+<ol>
+<li><strong>入口 CPU 上不分配 <code class="c">sk_buff</code></strong>。分配被推迟到目标 CPU 上做，
+   而且用 <code class="c">kmem_cache_alloc_bulk()</code> <strong>批量</strong>分配（一次最多 <code class="c">CPUMAP_BATCH = 8</code> 个），
+   比逐包 <code class="c">kmem_cache_alloc()</code> 便宜。</li>
+<li><strong>跨 CPU 搬运的是 <code class="c">xdp_frame</code> 而不是 <code class="c">sk_buff</code></strong>。
+   <code class="c">xdp_frame</code> 比 <code class="c">sk_buff</code> 小得多，跨核 cacheline 传输成本低。</li>
+<li><strong>分发策略由 BPF 程序自定义</strong>。RPS 只能用内核固定的 hash；
+   cpumap 可以按 UDP 端口、组播组、任意业务字段分发，
+   还能挂二级 XDP 程序在目标 CPU 上再过滤一次。</li>
+</ol>
+<p><strong>cpumap 没有优化（甚至恶化）的：</strong></p>
+<ul>
+<li><strong>延迟</strong>。kthread 队列空时 <code class="c">schedule()</code> 睡下去，包来了要唤醒——
+  这是一次完整的线程调度。<strong>cpumap 是吞吐/均衡优化，不是延迟优化。</strong></li>
+<li><strong><code class="c">sk_buff</code> 的存在性</strong>。终点是 <code class="c">netif_receive_skb_list()</code>，也就是协议栈。
+  想旁路到用户态，唯一路径是 <a href="chapter-06.html#ch-6">XSKMAP / AF_XDP</a>。</li>
+</ul>
+<p><strong>如果你要的是"低延迟地把流量分到多个核"</strong>：</p>
+<pre class="code" data-label="code"><code class="c">优先：硬件 RSS / flow steering
+      ethtool -N eth0 flow-type udp dst-port 12345 action 0
+      （硬件层面就分好了，零搬运、零调度）
+
+其次：AF_XDP 每队列一个 socket，用户态自己分发
+      （旁路到用户态，无 skb、无协议栈）
+
+最后：cpumap
+      （适合&quot;策略复杂 + 最终还是要走协议栈&quot;的场景）
+</code></pre>
+</details>
+<details>
+<summary><b>Q3：</b>XDP 程序对一批包全部返回 <code class="c">XDP_REDIRECT</code>，为什么这些包不是"一个一个"被送走的？批量大小是多少？这意味着什么？</summary>
+<p><strong>因为 <code class="c">XDP_REDIRECT</code> 只是"入队"，真正送走要等 <code class="c">xdp_do_flush()</code>。</strong></p>
+<p>源码注释（<code class="c">net/core/filter.c:4170</code>）把它讲得很清楚：</p>
+<pre class="code" data-label="code"><code class="c"> * 1. bpf_redirect()/bpf_redirect_map() 查目标，存进 per-CPU bpf_redirect_info
+ * 2. 返回 XDP_REDIRECT → xdp_do_redirect() 把帧放进 per-CPU 批量队列
+ * 3. NAPI poll 结束前 → xdp_do_flush() 冲刷所有批量队列
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* net/core/filter.c:4202 */
+void xdp_do_flush(void)
+{
+    __dev_flush();
+    __cpu_map_flush();
+    __xsk_map_flush();
+}
+</code></pre>
+<p><strong>批量大小：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>常量</th>
+<th>值</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>devmap 入队</td>
+<td><code class="c">DEV_MAP_BULK_SIZE</code> = <code class="c">XDP_BULK_QUEUE_SIZE</code></td>
+<td><strong>16</strong></td>
+<td><code class="c">include/net/xdp.h:190/384</code></td>
+</tr>
+<tr>
+<td>cpumap 入队</td>
+<td><code class="c">CPU_MAP_BULK_SIZE</code></td>
+<td><strong>8</strong></td>
+<td><code class="c">kernel/bpf/cpumap.c:45</code></td>
+</tr>
+<tr>
+<td>cpumap 出队</td>
+<td><code class="c">CPUMAP_BATCH</code></td>
+<td><strong>8</strong></td>
+<td><code class="c">kernel/bpf/cpumap.c:236</code></td>
+</tr>
+<tr>
+<td>AF_XDP</td>
+<td>无独立批量，跟随 NAPI poll 的 weight</td>
+<td>默认 64</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三点含义：</strong></p>
+<p><strong>① 队列是 per-(目标, CPU) 的</strong></p>
+<pre class="code" data-label="C"><code class="c">    struct xdp_dev_bulk_queue *bq = this_cpu_ptr(dev-&gt;xdp_bulkq);
+</code></pre>
+<p>所以"批量"不是全局的 16，而是每个 CPU、每个出口设备各有一个 16 槽队列。</p>
+<p><strong>② 队列满会提前发送，不等 NAPI poll 结束</strong></p>
+<pre class="code" data-label="C"><code class="c">    if (unlikely(bq-&gt;count == DEV_MAP_BULK_SIZE))
+        bq_xmit_all(bq, 0);
+</code></pre>
+<p>高包速下，一个 NAPI poll 里会触发多次 <code class="c">bq_xmit_all()</code>，
+"批量"实际被 16 切成了多段。</p>
+<p><strong>③ 单包延迟取决于它在批里的位置</strong>
+批里第 1 个包和第 16 个包同时被送走，但第 16 个包多等了一段入队时间。
+<strong>所以"XDP 转发延迟"谈单包意义有限，要看分布（P50/P99）。</strong></p>
+<p><strong>另外一条容易忽略的约束</strong>（同一段注释）：</p>
+<blockquote>
+<p><code class="c">xdp_do_flush()</code> <strong>must be called before <code class="c">napi_complete_done()</code></strong> in the driver,
+as the XDP_REDIRECT logic relies on being inside a single NAPI instance
+through to the <code class="c">xdp_do_flush()</code> call for <strong>RCU protection</strong> of all in-kernel
+data structures.</p>
+</blockquote>
+<p>也就是说整个 redirect 过程的内存安全，靠的是"全在同一个 NAPI poll 里"
+这个前提，而<strong>没有额外的 <code class="c">rcu_read_lock()</code></strong>。自己写驱动或改 XDP 框架时
+动了这里，会产生很难复现的 use-after-free。</p>
+</details>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-01">01 XDP_REDIRECT 的四个目的地</a>
+→ 后一篇：<a href="chapter-15.html#s-02">02 XDP vs DPDK</a>
+→ 相关：<a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a> · <a href="chapter-13.html#s-04">chapter-03 xdp_buff ↔ sk_buff</a></p>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>— XDP vs DPDK：旁路路线的真正分野</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> 无（XDP 4.8+、AF_XDP 4.18+、DPDK 独立项目）
+<strong>内核版本：</strong> 内核侧以 <strong>v6.6</strong> 为准
+<strong>本篇立场：</strong> 不比"谁更快"，只讲<strong>结构性差异</strong>。
+任何具体数字都依赖硬件/驱动/内核版本/包长，<strong>必须自己测</strong>（第十节给方法）。</p>
+</blockquote>
+<hr />
+<h2>文档概述</h2>
+<p><a href="chapter-15.html#s-01">01 篇</a>讲了 XDP_REDIRECT 的机制，
+本篇回答选型问题：什么时候用 XDP（+AF_XDP），什么时候用 DPDK。</p>
+<p>网上绝大多数 "XDP vs DPDK" 对比表都在比延迟数字，而那些数字
+<strong>几乎无法复现</strong>——它们来自特定的网卡、特定的驱动版本、特定的包长和特定的
+测试方法。本篇换一个轴：</p>
+<blockquote>
+<p><strong>分野是"谁拥有网卡"，不是"谁更快"。</strong></p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>笔记</th>
+<th>侧重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01 XDP_REDIRECT</a></td>
+<td>redirect 的三步语义与四个目的地</td>
+</tr>
+<tr>
+<td><strong>02（本篇）</strong></td>
+<td>旁路路线选型、所有权模型、混合架构、测量方法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、先纠正三个流传很广的错误说法</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>常见说法</th>
+<th>事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"AF_XDP 零拷贝是 page_pool 映射"</td>
+<td>❌ <strong>零拷贝不用 page_pool</strong>。UMEM 由内核 <code class="c">xp_dma_map()</code> 独立映射，pool 有自己的 <code class="c">dma_pages</code> 数组（<code class="c">include/net/xsk_buff_pool.h:68</code>）。"AF_XDP 基于 page_pool"只在 <strong>copy 模式</strong>下成立（那条路径上驱动确实用 page_pool）。详见 <a href="chapter-15.html#s-01">chapter-04/01</a></td>
+</tr>
+<tr>
+<td>"XDP 不需要 hugepage"</td>
+<td>⚠️ 内核不强求，但<strong>UMEM 强烈建议放 hugepage</strong>。XDP 驱动侧用 page_pool（4K 页），AF_XDP 的 UMEM 是用户态内存——你放 4K 页上也能跑，只是 TLB miss 更多</td>
+</tr>
+<tr>
+<td>"DPDK 不需要内核"</td>
+<td>⚠️ DPDK <strong>需要 UIO/VFIO 内核模块</strong>做 IOMMU 映射和中断屏蔽，只是<strong>数据路径</strong>不进内核。没有内核它连网卡都够不着</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>二、核心分野：谁拥有网卡</h2>
+<pre class="code" data-label="code"><code class="c">【XDP / AF_XDP】内核拥有网卡，你只是&quot;插&quot;了一段程序
+┌──────────────────────────────────────────────────┐
+│  应用（你的策略）                                  │
+│       ↑ AF_XDP（UMEM，仅指定队列）                 │
+│  ─────┼────────────────────────────────────────   │
+│  内核：驱动 / NAPI / XDP / 协议栈 / 路由 / nftables │
+│       ↑                                          │
+│  网卡（内核驱动管理，队列 0 给 AF_XDP，其余照常）    │
+└──────────────────────────────────────────────────┘
+
+【DPDK】用户态拥有网卡，内核被摘掉
+┌──────────────────────────────────────────────────┐
+│  应用（含 PMD，直接操作硬件描述符环）               │
+│       ↑ rte_mbuf + hugepage mempool                │
+│  ─────┼────────────────────────────────────────   │
+│  VFIO/UIO（只做 IOMMU 映射和权限）                  │
+│       ↑                                          │
+│  网卡（整张被接管，内核看不到它）                    │
+└──────────────────────────────────────────────────┘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>XDP / AF_XDP</th>
+<th>DPDK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>网卡归谁管</strong></td>
+<td><strong>内核驱动</strong></td>
+<td><strong>用户态 PMD</strong></td>
+</tr>
+<tr>
+<td>内核还能看到这张卡吗</td>
+<td>✅ 能（<code class="c">ip link</code>、<code class="c">ethtool</code>、路由表都正常）</td>
+<td>❌ 不能（<code class="c">ip link</code> 里它还在，但收发全走 PMD）</td>
+</tr>
+<tr>
+<td>旁路粒度</td>
+<td><strong>按队列</strong>（队列 0 旁路，1~N 照常走栈）</td>
+<td>整张卡</td>
+</tr>
+<tr>
+<td>中断/NAPI</td>
+<td>内核的 NAPI 负责收包，你挂程序</td>
+<td>你自己 100% 轮询，没有 NAPI</td>
+</tr>
+<tr>
+<td>描述符环归谁写</td>
+<td>驱动</td>
+<td><strong>你的代码</strong></td>
+</tr>
+<tr>
+<td>Hugepage</td>
+<td>可选（建议）</td>
+<td><strong>必需</strong></td>
+</tr>
+<tr>
+<td>驱动兼容</td>
+<td>用内核主线驱动，<strong>网卡型号跟着内核走</strong></td>
+<td>需要 DPDK 里有对应 PMD，<strong>版本要对齐</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这条轴线决定了一切其他差异。</strong></p>
+<hr />
+<h2>三、逐维度对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>XDP + AF_XDP</th>
+<th>DPDK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>运行位置</strong></td>
+<td>内核态（驱动 NAPI 上下文）</td>
+<td>用户态（轮询线程）</td>
+</tr>
+<tr>
+<td><strong>网卡控制</strong></td>
+<td>内核驱动</td>
+<td>用户态 PMD（VFIO/UIO）</td>
+</tr>
+<tr>
+<td><strong>旁路粒度</strong></td>
+<td><strong>按队列</strong></td>
+<td>整张卡</td>
+</tr>
+<tr>
+<td><strong>sk_buff</strong></td>
+<td>不分配（XDP 在 skb 之前）</td>
+<td>不存在（rte_mbuf）</td>
+</tr>
+<tr>
+<td><strong>协议栈</strong></td>
+<td>可共存（其他队列/其他协议照常）</td>
+<td>不存在（想用 TCP 得自己实现或用 F-Stack/mTCP）</td>
+</tr>
+<tr>
+<td><strong>内存</strong></td>
+<td>UMEM（用户态，建议 hugepage）+ page_pool（驱动侧）</td>
+<td>hugepage mempool（<strong>GB 级预留</strong>）</td>
+</tr>
+<tr>
+<td><strong>CPU 模型</strong></td>
+<td>NAPI 驱动（可 busy poll 消除中断）</td>
+<td><strong>100% 轮询</strong>，一个核被吃掉</td>
+</tr>
+<tr>
+<td><strong>延迟构成</strong></td>
+<td>DMA → NAPI 调度 → XDP → 用户态</td>
+<td>DMA → PMD 轮询 → 用户态（<strong>少一次 NAPI 调度</strong>）</td>
+</tr>
+<tr>
+<td><strong>批处理</strong></td>
+<td>内核决定（<code class="c">XDP_BULK_QUEUE_SIZE</code>=16、NAPI weight 默认 64）</td>
+<td><strong>你自己决定</strong>（<code class="c">rte_eth_rx_burst()</code> 的 nb_pkts）</td>
+</tr>
+<tr>
+<td><strong>部署</strong></td>
+<td>加载 BPF 程序 + bind socket</td>
+<td>绑 VFIO + 配 hugepage + NUMA 对齐 + 隔离核</td>
+</tr>
+<tr>
+<td><strong>调试工具</strong></td>
+<td><code class="c">bpftool</code>、<code class="c">xdp-tools</code>、<code class="c">ethtool</code>、<code class="c">perf</code>、<code class="c">dropwatch</code></td>
+<td><code class="c">dpdk-proc-info</code>、<code class="c">testpmd</code>、<code class="c">dpdk-telemetry</code></td>
+</tr>
+<tr>
+<td><strong>升级耦合</strong></td>
+<td>跟内核版本（BTF/CO-RE 缓解）</td>
+<td>跟 DPDK 版本 + 内核（VFIO 接口）</td>
+</tr>
+<tr>
+<td><strong>故障爆炸半径</strong></td>
+<td>程序 bug → 该队列丢包，其他队列正常</td>
+<td>PMD bug → <strong>整张卡不通</strong></td>
+</tr>
+<tr>
+<td><strong>运维可见性</strong></td>
+<td>网卡在内核里，<code class="c">ip</code>/<code class="c">ethtool</code>/<code class="c">ss</code> 全可用</td>
+<td>内核看不到流量，<strong>所有常规工具失效</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>四、为什么 DPDK 在极限延迟上有结构性优势</h2>
+<p>不是"DPDK 代码写得更好"，而是<strong>它少了几跳</strong>：</p>
+<pre class="code" data-label="code"><code class="c">【AF_XDP 零拷贝】
+  NIC DMA → UMEM
+      → 网卡发中断（或 busy poll 主动驱动）
+      → NAPI poll 被调度                    ← ⚠️ ① 一次调度
+      → NAPI 循环跑 XDP + redirect
+      → NAPI poll 结束 → xdp_do_flush()      ← ⚠️ ② 批量发布，包在队里等
+      → 用户态看到包
+
+【DPDK】
+  NIC DMA → rte_mbuf（hugepage mempool）
+      → PMD 线程本来就在轮询（无中断、无调度）
+      → rte_eth_rx_burst() 直接取           ← ✅ 无 ①②
+      → 用户态看到包
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>消除的项</th>
+<th>AF_XDP 能做到吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① NAPI 调度等待</td>
+<td><strong>部分能</strong>：开 busy poll（<code class="c">SO_BUSY_POLL</code> + <code class="c">SO_PREFER_BUSY_POLL</code>）后，<code class="c">recvmsg()</code> 直接在调用上下文驱动 NAPI。但仍然是"用户态调一次 → 驱动跑一轮"的模型</td>
+</tr>
+<tr>
+<td>② 批量发布等待</td>
+<td><strong>不能</strong>。<code class="c">xdp_do_flush()</code> 由 NAPI poll 结束触发（<a href="chapter-15.html#s-01">01 篇</a>第一节），用户态无法提前拿到</td>
+</tr>
+<tr>
+<td>DMA 目标内存</td>
+<td><strong>能</strong>（UMEM 可以放 hugepage，效果等同 mbuf pool）</td>
+</tr>
+<tr>
+<td>描述符环控制</td>
+<td><strong>不能</strong>。环由驱动管理，AF_XDP 看到的是第二层（四个 ring）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>还有一项非显式的：缓存热度。</strong>
+AF_XDP 路径上，内核已经碰过这个包一次（构造 <code class="c">xdp_buff</code>、填 desc）；
+DPDK 里用户态是第一个碰它的。在极小包、极致延迟场景，这点差异是可测的。</p>
+<hr />
+<h2>五、为什么 XDP 在工程上是更好的默认选择</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优势</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>与内核共存</strong></td>
+<td>一张卡：队列 0 给行情旁路，队列 1~N 仍走内核栈。<strong>SSH、监控、NTP、组播管理流全部不受影响</strong>——DPDK 做不到，它接管整张卡后你得再插一张卡跑管理流量</td>
+</tr>
+<tr>
+<td><strong>运维工具全部可用</strong></td>
+<td><code class="c">ip link</code>、<code class="c">ethtool -S</code>、<code class="c">ss</code>、<code class="c">tcpdump</code>（非旁路队列）、<code class="c">bpftool</code>、<code class="c">perf</code> 全在</td>
+</tr>
+<tr>
+<td><strong>渐进式引入</strong></td>
+<td>可以先只把一条流旁路掉，其余不动；出问题 <code class="c">xdp-loader unload</code> 就恢复。<strong>DPDK 的切换是"断网→绑驱动→起来"</strong></td>
+</tr>
+<tr>
+<td><strong>不需要 hugepage 预留</strong></td>
+<td>内核不强求（建议用于 UMEM）。DPDK 必须预留 GB 级 hugepage，且要和 NUMA 节点对齐</td>
+</tr>
+<tr>
+<td><strong>网卡型号跟着内核走</strong></td>
+<td>用主线驱动即可，内核支持新卡你就支持。DPDK 要等对应 PMD 和版本匹配</td>
+</tr>
+<tr>
+<td><strong>故障爆炸半径小</strong></td>
+<td>XDP 程序挂了只影响被 redirect 的流；PMD 挂了整张卡不通</td>
+</tr>
+<tr>
+<td><strong>开发迭代快</strong></td>
+<td>BPF 可以热加载/热替换，verifier 帮你挡住大部分内存错误</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>六、性能数字：为什么不给，以及怎么自己测</h2>
+<p><strong>不给数字的理由</strong>：XDP vs DPDK 的差距高度依赖</p>
+<ul>
+<li>网卡型号与驱动（同为 10G，ixgbe 和 mlx5 差很多）</li>
+<li>是否开 IOMMU（DMA 映射成本差异巨大）</li>
+<li>包长（64 B vs 1500 B 的结论可以完全相反）</li>
+<li>是否开 busy poll / 中断合并参数</li>
+<li>CPU 型号、NUMA 布局、是否超线程</li>
+<li>内核版本与配置（<code class="c">CONFIG_NET_RX_BUSY_POLL</code>、<code class="c">CONFIG_PAGE_POOL_STATS</code> 等）</li>
+</ul>
+<p>脱离这些条件引用的数字，在本机基本不可复现。</p>
+<h3>测量方法（三种，精度递增）</h3>
+<pre class="code" data-label="shell"><code class="c"># ① 粗测：驱动/PPS 计数（吞吐，非延迟）
+ethtool -S eth0 | grep -E 'rx_packets|tx_packets'
+# 或 xdp-benchmark（xdp-tools 自带，可测 XDP 各动作的 Mpps）
+xdp-bench drop eth0
+
+# ② 中测：BPF 程序自身耗时（XDP 侧，不含用户态）
+bpftool prog show id &lt;ID&gt;
+#   run_cnt / run_time → 单包 BPF 平均耗时（纳秒级，内核直接测）
+
+# ③ 精测：端到端，用硬件时间戳（唯一可信的延迟测量方式）
+#   网卡侧：ethtool -T eth0 看是否支持 HW TX/RX timestamp
+#   应用侧：SO_TIMESTAMPING 取 RX_HARDWARE 与用户态处理完成的差值
+#
+#   对照基线：先测&quot;内核 socket + busy poll&quot;，再测 AF_XDP，
+#             两者同机同卡同包长对比才有意义
+</code></pre>
+<blockquote>
+<p><strong>⚠️ 不要用 <code class="c">gettimeofday()</code> 在用户态测单包延迟。</strong>
+你测到的是"从你看到包到你打完时间戳"，中间的调度、cache miss、
+时钟读取本身的开销都会混进来。延迟测量请见
+<a href="chapter-15.html#s-03">chapter-15/03</a>。</p>
+</blockquote>
+<hr />
+<h2>七、选型决策树</h2>
+<pre class="code" data-label="code"><code class="c">① 驱动支持 AF_XDP zero-copy 吗？
+     └─ 不支持 ──→ 别用 AF_XDP。走内核栈 + busy poll
+                   （或换网卡 / 上 DPDK）
+     │
+     支持
+     ↓
+② 这张网卡上还有别的流量要跑吗？（SSH/监控/其他业务/路由）
+     └─ 有 ──→ XDP + AF_XDP（按队列旁路，其他队列走栈）
+     │
+     没有，这张卡就是给交易用的
+     ↓
+③ 团队能接受&quot;整张卡从内核消失&quot;的运维代价吗？
+     ├─ 能，且需要确定性延迟（P99.9 是硬指标）──→ DPDK
+     └─ 不能 / 无所谓 ──────────────────────────→ XDP + AF_XDP
+     │
+④ 需要 TCP 吗？
+     └─ 需要 ──→ 别用 DPDK（要自己实现或用 F-Stack/mTCP 这类移植栈）
+</code></pre>
+<p><strong>一句话总结：</strong></p>
+<blockquote>
+<p><strong>要"跟内核共存"→ XDP；要"独占网卡换确定性"→ DPDK。</strong>
+这不是性能问题，是<strong>所有权问题</strong>。</p>
+</blockquote>
+<hr />
+<h2>八、混合架构（实际生产里最常见）</h2>
+<pre class="code" data-label="code"><code class="c">                    ┌──────────────────────────────────┐
+   行情网卡（10G/25G）│  队列 0 ──→ AF_XDP ──→ 策略进程      │
+                    │  队列 1~3 → 内核栈 → 组播加入/监控    │
+                    └──────────────────────────────────┘
+                                   ↑ 同一张卡，两种路径共存
+
+                    ┌──────────────────────────────────┐
+   交易网卡（给 DPDK） │  整卡被 PMD 接管 ──→ 下单进程        │
+                    └──────────────────────────────────┘
+                                   ↑ 单独一张卡，内核看不到
+
+                    ┌──────────────────────────────────┐
+   管理网卡（1G）     │  完全走内核栈：SSH / NTP / 监控       │
+                    └──────────────────────────────────┘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>流量</th>
+<th>技术选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行情接收（高 PPS、只读）</td>
+<td>AF_XDP 或 DPDK</td>
+<td>旁路，不进协议栈</td>
+</tr>
+<tr>
+<td>下单（低 PPS、要 TCP 或需要内核路由）</td>
+<td>内核 socket + busy poll</td>
+<td>PPS 低，内核栈开销可接受；要 TCP 就只能走内核</td>
+</tr>
+<tr>
+<td>管理/监控</td>
+<td>内核栈</td>
+<td>天然</td>
+</tr>
+<tr>
+<td>组播加入（IGMP）</td>
+<td>内核栈</td>
+<td><strong>IGMP 必须由内核处理</strong>——AF_XDP 旁路的队列收不到 IGMP，组播成员关系要由内核队列维护</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>⚠️ 一个实战陷阱</strong>：如果你把<strong>整个</strong>网卡的所有队列都给了 AF_XDP，
+内核就收不到 IGMP Query/Report，组播成员关系会超时被交换机剪掉。
+<strong>务必留至少一个队列给内核栈处理控制面协议。</strong></p>
+</blockquote>
+<hr />
+<h2>九、常见误区（逐条澄清）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -563,23 +1645,299 @@ int xdp_redirect_dev(struct xdp_md *ctx) {
 </thead>
 <tbody>
 <tr>
-<td>XDP 一定能替代 DPDK</td>
-<td>不一定，co-location 场景 DPDK 延迟优势明显</td>
+<td>"XDP 一定能替代 DPDK"</td>
+<td>❌ 需要确定性 P99.9 延迟、要独占网卡时，DPDK 的结构性优势无法用 XDP 补上</td>
 </tr>
 <tr>
-<td>DPDK 一定比 XDP 快</td>
-<td>非零拷贝 AF_XDP 比 DPDK 慢，但 zero-copy 差距缩小</td>
+<td>"DPDK 一定比 XDP 快"</td>
+<td>⚠️ 非零拷贝的 AF_XDP 比 DPDK 慢很多；<strong>零拷贝 AF_XDP 差距会显著缩小</strong>，具体取决于硬件和包长——<strong>必须自己测</strong></td>
 </tr>
 <tr>
-<td>XDP 不需要 CPU</td>
-<td>Native XDP 仍需要 CPU 轮询（NAPI 驱动）</td>
+<td>"XDP 不需要 CPU"</td>
+<td>❌ Native XDP 仍然跑在 NAPI poll 里，需要 CPU。只是比协议栈省，不是不需要</td>
 </tr>
 <tr>
-<td>DPDK 不需要内核</td>
-<td>DPDK 需要 UIO/VFIO 内核模块，只是数据路径旁路</td>
+<td>"DPDK 不需要内核"</td>
+<td>⚠️ 需要 UIO/VFIO 内核模块做 IOMMU 映射，只是数据路径不进内核</td>
+</tr>
+<tr>
+<td>"AF_XDP 零拷贝用 page_pool"</td>
+<td>❌ 用 UMEM（<code class="c">MEM_TYPE_XSK_BUFF_POOL</code>），内核 <code class="c">xp_dma_map()</code> 独立映射。page_pool 只在 copy 模式那条路径上出现</td>
+</tr>
+<tr>
+<td>"cpumap 能省掉 sk_buff"</td>
+<td>❌ cpumap 在目标 CPU 上照样 <code class="c">kmem_cache_alloc_bulk()</code> 分配 skb，终点是 <code class="c">netif_receive_skb_list()</code>。它优化的是<strong>分配位置</strong>，不是<strong>分配本身</strong>。见 <a href="chapter-15.html#s-01">01 篇</a></td>
+</tr>
+<tr>
+<td>"XDP 转发不会丢包"</td>
+<td>❌ devmap 的 <code class="c">ndo_xdp_xmit()</code> 没发完就直接释放剩余帧，<strong>不重排队</strong>。见 <a href="chapter-15.html#s-01">01 篇</a></td>
+</tr>
+<tr>
+<td>"开了 XDP 就没有中断了"</td>
+<td>❌ 默认仍走中断 + NAPI。要消除中断得开 busy poll</td>
+</tr>
+<tr>
+<td>"DPDK 必须关闭超线程"</td>
+<td>⚠️ 不必须，但<strong>轮询核的对端 SMT 兄弟核</strong>如果被别的负载占用会引入抖动——建议隔离或不用</td>
+</tr>
+<tr>
+<td>"AF_XDP 是 DPDK 的替代品"</td>
+<td>⚠️ 是"<strong>能跟内核共存的旁路方案</strong>"，不是 DPDK 的等价替代。两者的适用边界不同</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong>决策轴是所有权，不是速度</strong>：要共存 → XDP；要独占换确定性 → DPDK。</li>
+<li><strong>先验证驱动支持 <code class="c">XDP_ZEROCOPY</code></strong>（<a href="chapter-15.html#s-01">chapter-06/01</a>）。
+  不支持就别用 AF_XDP，copy 模式不划算。</li>
+<li><strong>留一个队列给内核栈</strong>：IGMP、ARP、SSH 都要走它。全旁路会导致组播成员关系超时。</li>
+<li><strong>延迟只有硬件时间戳测出来的才可信</strong>，且必须用"内核 socket + busy poll"做对照基线。</li>
+<li><strong>DPDK 的隐藏成本不是开发，是运维</strong>：整机网卡从内核消失，所有常规排障工具失效。</li>
+<li><strong>混合架构是常态</strong>：行情接收旁路、下单走内核、管理走内核，
+  用不同网卡/不同队列分开，别追求"全线旁路"。</li>
+<li><strong>不要引用别人的性能数字</strong>。包长、驱动、IOMMU、CPU 型号任何一个不同，
+  结论都可能反转。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（4.8+ / v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>旁路选项</td>
+<td>只有 <code class="c">PF_PACKET</code>（仍需拷贝一次到用户态）</td>
+<td>XDP / AF_XDP 零拷贝、DPDK</td>
+</tr>
+<tr>
+<td>协议栈可绕过性</td>
+<td>不可绕过</td>
+<td><strong>可按队列绕过</strong></td>
+</tr>
+<tr>
+<td>与内核共存</td>
+<td>天然共存（因为没有旁路）</td>
+<td>需要显式设计（留队列 + <code class="c">XDP_PASS</code> 回落）</td>
+</tr>
+<tr>
+<td>延迟优化手段</td>
+<td>调中断合并、调缓冲区</td>
+<td>旁路 + 轮询 + 内存池 + NUMA 绑定</td>
+</tr>
+<tr>
+<td>内存管理</td>
+<td>内核 skb + 页</td>
+<td>UMEM / hugepage mempool，用户态管理</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary><b>Q1：</b>团队想用 DPDK 替换现有的内核收包，理由是"DPDK 更快"。作为架构评审，你会问哪三个问题？</summary>
+<p><strong>不要先问"快多少"，先问这三个能决定成败的问题：</strong></p>
+<p><strong>① 这张网卡上还有别的流量吗？</strong></p>
+<p>DPDK 接管的是<strong>整张卡</strong>。接管后内核看不到它：
+- SSH/监控/NTP 走不了（得再插一张管理网卡）
+- 路由表、<code class="c">ip</code>/<code class="c">ethtool</code>/<code class="c">tcpdump</code> 在该卡上全部失效
+- IGMP 收不到 → 组播成员关系会被交换机剪掉</p>
+<p>如果答案是"有"，AF_XDP 的<strong>按队列旁路</strong>是更合适的方案：
+队列 0 旁路给策略，队列 1~N 照常走内核栈。</p>
+<p><strong>② 需要 TCP 吗？</strong></p>
+<p>DPDK 里没有内核协议栈。要用 TCP 得引入 F-Stack / mTCP / lwIP 这类移植栈，
+那又是一整套需要调优和背锅的东西。
+<strong>行情（UDP 组播）可以旁路，下单（常要 TCP）通常不适合。</strong></p>
+<p><strong>③ 团队能接受运维方式的改变吗？</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>内核/XDP</th>
+<th>DPDK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>排障工具</td>
+<td><code class="c">ip</code> / <code class="c">ethtool</code> / <code class="c">ss</code> / <code class="c">tcpdump</code> / <code class="c">perf</code> / <code class="c">dropwatch</code></td>
+<td><code class="c">dpdk-proc-info</code> / <code class="c">testpmd</code> / <code class="c">dpdk-telemetry</code></td>
+</tr>
+<tr>
+<td>故障爆炸半径</td>
+<td>XDP 程序挂 → 该队列丢包</td>
+<td>PMD 挂 → <strong>整张卡不通</strong></td>
+</tr>
+<tr>
+<td>部署</td>
+<td>加载 BPF 程序</td>
+<td>绑 VFIO + hugepage + NUMA 对齐 + 核隔离</td>
+</tr>
+<tr>
+<td>升级耦合</td>
+<td>跟内核（CO-RE 缓解）</td>
+<td>跟 DPDK 版本 + 内核 VFIO 接口</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>如果这三个问题里有两个答不上来，默认选 XDP/AF_XDP。</strong>
+XDP 的上手成本远低于 DPDK，且可以随时 <code class="c">xdp-loader unload</code> 回退；
+DPDK 的切换是"断网 → 绑驱动 → 起来"的一次性动作。</p>
+<p><strong>什么时候该坚持 DPDK</strong>：需要 P99.9 的确定性延迟、能接受独占网卡、
+团队有 DPDK 运维经验、且流量模型是纯 UDP 或自研协议。</p>
+</details>
+<details>
+<summary><b>Q2：</b>你把整张网卡的所有队列都配给了 AF_XDP，行情收得很好，但十几分钟后组播流断了。为什么？</summary>
+<p><strong>因为内核收不到 IGMP，组播成员关系超时被交换机剪掉了。</strong></p>
+<p>AF_XDP 是<strong>按队列</strong>旁路的——被 redirect 进 socket 的包<strong>不再进入内核协议栈</strong>。
+如果你把所有队列都给了 AF_XDP：</p>
+<pre class="code" data-label="code"><code class="c">队列 0 ──→ AF_XDP（行情 UDP）      ✅ 正常
+队列 1 ──→ AF_XDP                  ✅ 正常
+...
+队列 N ──→ AF_XDP                  ✅ 正常
+                    ↓
+        内核栈收不到任何包
+                    ↓
+        IGMP Query / Report 无人应答
+                    ↓
+        交换机判定&quot;该端口无成员&quot; → 停止转发组播
+                    ↓
+        行情断流 🎉
+</code></pre>
+<p><strong>同样会断的还有</strong>：ARP（无法应答地址解析）、SSH（连不上）、
+ICMP（ping 不通，监控告警）、NTP（时钟漂移）。</p>
+<p><strong>解法：留至少一个队列给内核栈。</strong></p>
+<pre class="code" data-label="shell"><code class="c"># ① 确认队列数
+ethtool -l eth0
+
+# ② 用 flow steering 把行情流钉到 0 号队列给 AF_XDP
+ethtool -N eth0 flow-type udp dst-port 12345 action 0
+
+# ③ 其余队列的流量继续走内核栈
+#    XDP 程序里非匹配包必须 XDP_PASS（不要写 flags=0！）
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* XDP 程序：只把行情包送进 socket，其余全部交回内核栈 */
+SEC(&quot;xdp&quot;)
+int prog(struct xdp_md *ctx)
+{
+        if (is_market_data(ctx) &amp;&amp; ctx-&gt;rx_queue_index == 0)
+                return bpf_redirect_map(&amp;xsks_map, ctx-&gt;rx_queue_index,
+                                        XDP_PASS);   /* ⚠️ 第三个参数是 fallback */
+        return XDP_PASS;
+}
+</code></pre>
+<p><strong>⚠️ 顺带复习一个致命写法</strong>（详见 <a href="chapter-15.html#s-01">chapter-06/01</a>第五节）：</p>
+<pre class="code" data-label="C"><code class="c">bpf_redirect_map(&amp;xsks_map, idx, 0);   /* ❌ 0 = XDP_ABORTED = 静默丢包 */
+</code></pre>
+<p>flags 的低位是"lookup 失败时的返回值"（<code class="c">include/linux/filter.h:1498</code>）。
+写 0 会让所有没有对应 socket 的队列/协议被静默丢弃，
+而 tcpdump 和 <code class="c">ethtool -S</code> 都显示"一切正常"。</p>
+</details>
+<details>
+<summary><b>Q3：</b>有人说"DPDK 比 AF_XDP 快一倍"。你怎么判断这个说法在你的环境里成不成立？</summary>
+<p><strong>不接受现成数字，自己做对照实验。差距高度依赖下面这些变量，
+任何一个不同结论都可能反转：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变量</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>网卡型号与驱动</td>
+<td>同为 10G，ixgbe 与 mlx5 的 XDP 路径差异很大</td>
+</tr>
+<tr>
+<td>是否开 IOMMU</td>
+<td>DMA 映射成本差异巨大，能改变整个结论</td>
+</tr>
+<tr>
+<td>包长</td>
+<td>64 B 与 1500 B 的结论可以<strong>完全相反</strong>（小包看 per-packet 开销，大包看内存带宽）</td>
+</tr>
+<tr>
+<td>busy poll / 中断合并</td>
+<td>AF_XDP 不开 busy poll 就多一次调度等待（<a href="chapter-15.html#s-02">chapter-06/02</a>第三节）</td>
+</tr>
+<tr>
+<td>CPU 型号 / NUMA / 超线程</td>
+<td>轮询核的兄弟核被占用会引入抖动</td>
+</tr>
+<tr>
+<td>内核配置</td>
+<td><code class="c">CONFIG_NET_RX_BUSY_POLL</code> 决定 busy poll 能否生效</td>
+</tr>
+</tbody>
+</table></div>
+<h3>三段式测量</h3>
+<p><strong>① 先定基线（很重要，很多人省了这步）</strong></p>
+<pre class="code" data-label="code"><code class="c">基线 = 内核 socket + SO_BUSY_POLL + SO_PREFER_BUSY_POLL
+</code></pre>
+<p>没有基线，你就不知道"AF_XDP 提升了多少"，更别说跟 DPDK 比。</p>
+<p><strong>② 用硬件时间戳测端到端延迟（唯一可信）</strong></p>
+<pre class="code" data-label="shell"><code class="c">ethtool -T eth0      # 确认支持 hardware 时间戳
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* 应用侧：SO_TIMESTAMPING 取硬件时间戳 */
+int flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &amp;flags, sizeof(flags));
+</code></pre>
+<p><strong>延迟定义要写清楚</strong>：从"网卡收到最后一个字节（HW RX timestamp）"
+到"用户态策略函数被调用"的差值。</p>
+<p><strong>⚠️ 不要用 <code class="c">gettimeofday()</code> 在用户态掐表</strong>——你测到的是
+"从你看到包到你打完时间戳"，中间混入了调度、cache miss、时钟读取本身。
+延迟测量详见 <a href="chapter-15.html#s-03">chapter-15/03</a>。</p>
+<p><strong>③ 分层定位，别只看总延迟</strong></p>
+<pre class="code" data-label="shell"><code class="c"># BPF 程序自身耗时（内核直接测，纳秒级）
+bpftool prog show id &lt;ID&gt;       # run_time / run_cnt
+
+# 驱动层 PPS 与丢包
+ethtool -S eth0 | grep -E 'rx_packets|rx_missed|rx_dropped|xdp'
+
+# XDP 各动作的吞吐上限
+xdp-bench drop eth0
+</code></pre>
+<h3>判断标准</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结果</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DPDK 优势 &lt; 20%</td>
+<td><strong>选 AF_XDP</strong>——用可忽略的性能换运维能力和与内核共存</td>
+</tr>
+<tr>
+<td>DPDK 优势 20–50%</td>
+<td>看业务：如果 P99.9 是硬指标 → DPDK；否则 AF_XDP</td>
+</tr>
+<tr>
+<td>DPDK 优势 &gt; 50%</td>
+<td>八成是 AF_XDP 配置有问题（没开 busy poll / 降级到 copy 模式 / NUMA 不对），<strong>先排查再下结论</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最后一条：如果 AF_XDP 的实测比预期慢 2–3 倍，
+先查是不是静默降级到了 copy 模式</strong>（<a href="chapter-15.html#s-01">chapter-06/01</a>第四节）：</p>
+<pre class="code" data-label="C"><code class="c">struct xdp_options opts;
+socklen_t len = sizeof(opts);
+getsockopt(fd, SOL_XDP, XDP_OPTIONS, &amp;opts, &amp;len);
+/* opts.flags &amp; XDP_OPTIONS_ZEROCOPY == 0 就是降级了 */
+</code></pre>
+</details>
+<hr />
+<p>→ 本篇：<a href="chapter-15.html#s-02">02 XDP vs DPDK</a>
+→ 前一篇：<a href="chapter-15.html#s-01">01 XDP_REDIRECT 的四个目的地</a>
+→ 相关：<a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a> · <a href="chapter-15.html#s-03">chapter-15 延迟测量</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-dpdk/</a></p>
       </section>
 
 

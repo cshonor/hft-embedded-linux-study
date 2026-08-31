@@ -276,7 +276,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">01</span>— 网络栈架构</a>
+          <a href="#s-01"><span class="n">01</span>— Linux 网络栈架构与 hook 点顺序</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -286,7 +286,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -327,109 +327,523 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">01</div><h2>— 网络栈架构</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— Linux 网络栈架构与 hook 点顺序</h2></div>
 <blockquote>
 <p><strong>Bootlin 课程模块：</strong> Network Stack Architecture
-<strong>对应 Rosen:</strong> Ch1</p>
+<strong>对应 Rosen:</strong> Ch1（概述）
+<strong>内核源码路径：</strong> <code class="c">net/core/dev.c</code>、<code class="c">net/socket.c</code>、<code class="c">include/linux/netdevice.h</code>、<code class="c">include/linux/skbuff.h</code></p>
 </blockquote>
-<h2>课程内容</h2>
-<h3>Linux 网络栈全景</h3>
-<pre class="code" data-label="code"><code class="c">用户态:  application → socket API
-           ↓
-内核态:  socket layer → TCP/UDP → IP → routing → tc → driver → NIC
-           ↑                                                    ↓
-           └──────────── XDP hook (最早点) ←─────────────────────┘
+<h2>文档概述</h2>
+<p>原笔记给了全景图和结构表，但<strong>图里 XDP 的位置画错了</strong> ——
+它被画在协议栈旁边，好像是一个平行的旁路选项。实际上：</p>
+<blockquote>
+<p><strong>XDP 在 <code class="c">sk_buff</code> 分配之前执行。</strong> 那一刻还没有 skb，
+所以 XDP 拿到的不是 skb 而是 <code class="c">xdp_buff</code> —— 这是它能做到"零分配丢包"的根本原因。</p>
+</blockquote>
+<p>本篇的核心产出是一张<strong>hook 点顺序表</strong>：包从网卡进来，依次经过哪些可干预点、
+每个点能看到什么、适合做什么。所有优化手段都得挂到具体某一点上。</p>
+<hr />
+<h2>一、全景：收与发两条路径</h2>
+<pre class="code" data-label="code"><code class="c">═════════════════════════════ 收包 RX ═════════════════════════════
+
+  NIC ──DMA──&gt; Rx ring
+    │
+    ├─[H1] XDP（驱动层）        ← 最早点。**此时还没有 sk_buff**
+    │        └─ DROP / TX / REDIRECT / PASS
+    │                              （只是 page_pool 的一页 + 描述符）
+    ↓ (XDP_PASS)
+  napi_build_skb()  ← sk_buff 在这里才诞生
+    │
+  napi_gro_receive()   ── GRO 聚合（等合并窗口 = 延迟）
+    │
+  __netif_receive_skb_core()      net/core/dev.c:5330
+    ├─[H2] ptype_all（AF_PACKET → tcpdump 在这里抓包）   dev.c:5394/5400
+    ├─[H3] tc ingress（clsact/ingress qdisc）           dev.c:5412
+    ├─    Netfilter ingress（nf_ingress）                dev.c:5420
+    ├─    rx_handler（bridge / bonding）                 dev.c:5440
+    └─[H4] ptype_base 分发：ETH_P_IP → ip_rcv()          dev.c:5504
+    ↓
+  ip_rcv() → ip_rcv_core()        net/ipv4/ip_input.c
+    ├─[H5] Netfilter PRE_ROUTING（nftables 挂载点）
+    └─ ip_route_input() 路由查找
+         ├─ 本机  → ip_local_deliver()
+         │            └─[H6] Netfilter LOCAL_IN
+         │                 → udp_rcv() / tcp_v4_rcv()
+         │                     → sock_queue_rcv_skb() → sk_data_ready()
+         │                         → 唤醒进程 → copy_to_user
+         │
+         └─ 转发  → [H7] Netfilter FORWARD
+                      → [H8] Netfilter POST_ROUTING
+                          → [H9] tc egress → dev_queue_xmit()
+
+═════════════════════════════ 发包 TX ═════════════════════════════
+
+  应用 send()/sendmsg()
+    ↓
+  sock_sendmsg() → udp_sendmsg()        net/ipv4/udp.c
+    ↓
+  ip_send_skb() → ip_local_out()        net/ipv4/ip_output.c
+    ├─[H10] Netfilter LOCAL_OUT
+    ↓
+  ip_output()
+    ├─[H11] Netfilter POST_ROUTING
+    ↓
+  ip_finish_output() → ip_finish_output2() → neigh_resolve_output()
+    ↓
+  dev_queue_xmit() → __dev_queue_xmit()   net/core/dev.c
+    ├─[H12] tc egress（qdisc：fq_codel / mqprio / ETF...）
+    ↓
+  dev_hard_header() → ndo_start_xmit()
+    ↓
+  NIC ──DMA──&gt; Tx ring ──&gt; 线上
 </code></pre>
-<h3>核心数据结构</h3>
+<hr />
+<h2>二、hook 点顺序表（本篇核心）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>hook</th>
+<th>位置</th>
+<th>能看到</th>
+<th>适合做什么</th>
+<th>时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H1</td>
+<td><strong>XDP</strong></td>
+<td>驱动 Rx，skb 之前</td>
+<td><code class="c">xdp_buff</code>（裸帧）</td>
+<td>丢包、采样、重定向</td>
+<td><strong>最早，最便宜</strong></td>
+</tr>
+<tr>
+<td>H2</td>
+<td><strong>AF_PACKET（tcpdump）</strong></td>
+<td><code class="c">ptype_all</code>，dev.c:5394</td>
+<td>skb</td>
+<td><strong>抓包、观测</strong></td>
+<td>在 tc ingress <strong>之前</strong></td>
+</tr>
+<tr>
+<td>H3</td>
+<td>tc ingress</td>
+<td><code class="c">sch_handle_ingress()</code>，dev.c:5412</td>
+<td>skb</td>
+<td>限速、过滤、镜像</td>
+<td>在 tcpdump <strong>之后</strong></td>
+</tr>
+<tr>
+<td>H3b</td>
+<td>Netfilter ingress</td>
+<td><code class="c">nf_ingress()</code>，dev.c:5420</td>
+<td>skb</td>
+<td>nftables ingress</td>
+<td>在 tc ingress 之后</td>
+</tr>
+<tr>
+<td>H4</td>
+<td>ptype 分发</td>
+<td><code class="c">ptype_base[]</code>，dev.c:5504</td>
+<td>skb</td>
+<td>协议注册</td>
+<td>内核内部分发点</td>
+</tr>
+<tr>
+<td>H5</td>
+<td>NF PRE_ROUTING</td>
+<td><code class="c">ip_rcv()</code></td>
+<td>skb</td>
+<td>nftables 过滤/NAT</td>
+<td>路由前</td>
+</tr>
+<tr>
+<td>H6</td>
+<td>NF LOCAL_IN</td>
+<td><code class="c">ip_local_deliver()</code></td>
+<td>skb</td>
+<td>本机入站过滤</td>
+<td>路由后、L4 前</td>
+</tr>
+<tr>
+<td>H7</td>
+<td>NF FORWARD</td>
+<td><code class="c">ip_forward()</code></td>
+<td>skb</td>
+<td>转发过滤</td>
+<td>仅转发路径</td>
+</tr>
+<tr>
+<td>H8</td>
+<td>NF POST_ROUTING</td>
+<td><code class="c">ip_output()</code></td>
+<td>skb</td>
+<td>SNAT</td>
+<td>出去前最后一点</td>
+</tr>
+<tr>
+<td>H9/H12</td>
+<td><strong>tc egress</strong></td>
+<td><code class="c">__dev_queue_xmit()</code></td>
+<td>skb</td>
+<td>排队、整形、ETF 定时发送</td>
+<td>驱动之前</td>
+</tr>
+<tr>
+<td>H10</td>
+<td>NF LOCAL_OUT</td>
+<td><code class="c">ip_local_out()</code></td>
+<td>skb</td>
+<td>本机出站过滤</td>
+<td>路由后</td>
+</tr>
+<tr>
+<td>H11</td>
+<td>NF POST_ROUTING</td>
+<td><code class="c">ip_output()</code></td>
+<td>skb</td>
+<td>同上</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三个容易记错的顺序：</strong></p>
+<ol>
+<li><strong>XDP 在 skb 之前，tc ingress 在 skb 之后</strong> —— 所以 XDP 能省掉 skb 分配（100–200ns），
+   tc 不能。</li>
+<li><strong>tcpdump（AF_PACKET / <code class="c">ptype_all</code>）在 tc ingress 之<em>前</em></strong> —— ⚠️ 这条极易记反。
+   内核源码 <code class="c">net/core/dev.c</code> 的顺序是：generic XDP（dev.c:5373）→ <code class="c">ptype_all</code> 分发
+   （dev.c:5394，tcpdump 在这里拿到包）→ <code class="c">skip_taps:</code> → <code class="c">sch_handle_ingress()</code>
+   （dev.c:5412，tc ingress 在这里）。所以：
+   - 在 <strong>tc ingress</strong> 里丢的包，<strong>tcpdump 能看到</strong>（抓到之后才被丢）
+   - <code class="c">XDP_DROP</code> 的包 <strong>tcpdump 看不到</strong>（那时连 skb 都没有，AF_PACKET 无从挂钩）
+   - 这个差别正好是排障利器：tcpdump 抓到但应用没收到 → 丢点在 tcpdump 之后
+     （tc ingress / Netfilter / socket 队列）；tcpdump 根本没抓到 → 丢点在更前面
+     （驱动 / XDP / 网卡）。</li>
+<li><strong>tc egress 在驱动之前</strong> —— 所以 ETF（Earliest TxTime First）qdisc 才能做到
+   "精确到纳秒的发送时刻控制"，HFT 的发送时序整形靠它。而且 6.x 在 tc egress
+   <strong>之前</strong>还多了一个 <code class="c">nf_hook_egress()</code>（dev.c:4307），发包侧其实是
+   「Netfilter egress → tc egress → qdisc → 驱动」三层。</li>
+</ol>
+<hr />
+<h2>三、核心数据结构</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>结构</th>
-<th>作用</th>
-<th>现代变化</th>
+<th>定义</th>
+<th>关键字段/语义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">struct net_device</code></td>
-<td>网卡抽象</td>
-<td>新增 XDP 相关字段</td>
+<td><code class="c">include/linux/netdevice.h</code></td>
+<td><code class="c">napi_list</code>、<code class="c">rx_queue</code>、<code class="c">features</code>（offload 开关位）、<code class="c">xdp_prog</code></td>
 </tr>
 <tr>
 <td><code class="c">struct sk_buff</code></td>
-<td>包数据 + 元数据</td>
-<td>逐步与 xdp_buff 分流</td>
+<td><code class="c">include/linux/skbuff.h</code></td>
+<td><code class="c">head/data/tail/end</code>、<code class="c">len</code> vs <code class="c">data_len</code>、<code class="c">frags[]</code>、<code class="c">napi_id</code>、<code class="c">skb_iif</code></td>
 </tr>
 <tr>
 <td><code class="c">struct xdp_buff</code></td>
-<td>XDP 路径包数据</td>
-<td>轻量，sk_buff 之前</td>
+<td><code class="c">include/linux/bpf.h</code></td>
+<td>只有 <code class="c">data</code>/<code class="c">data_end</code>/<code class="c">data_meta</code>/<code class="c">rxq</code> —— <strong>没有 skb 那几十个字段</strong></td>
 </tr>
 <tr>
 <td><code class="c">struct sock</code></td>
-<td>socket 抽象</td>
-<td>新增 sk_reuseport / BPF</td>
+<td><code class="c">include/net/sock.h</code></td>
+<td><code class="c">sk_receive_queue</code>、<code class="c">sk_data_ready</code>、<code class="c">sk_napi_id</code>、<code class="c">sk_reuseport_cb</code></td>
 </tr>
 <tr>
 <td><code class="c">struct net</code></td>
-<td>网络命名空间</td>
-<td>容器网络隔离</td>
+<td><code class="c">include/net/net_namespace.h</code></td>
+<td>网络命名空间，容器隔离的基础</td>
 </tr>
 </tbody>
 </table></div>
-<h3>关键子系统</h3>
+<h3><code class="c">sk_buff</code> 与 <code class="c">xdp_buff</code> 的分工</h3>
+<pre class="code" data-label="code"><code class="c">        sk_buff                          xdp_buff
+  ┌──────────────────┐            ┌──────────────────┐
+  │ 几十个字段        │            │ data             │
+  │ 协议头指针        │            │ data_end         │
+  │ frags[] 非线性区  │            │ data_meta        │
+  │ 引用计数、时间戳  │            │ rxq (queue_index)│
+  │ dst/路由缓存      │            └──────────────────┘
+  │ socket 关联       │              v6.6 共 8 个字段（4.8 引入时只有 4 个，
+                               后来加了 txq / frame_sz / flags）
+  └──────────────────┘              分配成本 ≈ 0
+   分配成本 100-200ns
+</code></pre>
+<p><strong>这就是为什么 XDP_DROP 比"进协议栈再丢"快一个量级</strong>：
+它连 skb 都没建，直接把 page 还给 page_pool。</p>
+<h3><code class="c">sk_buff</code> 的线性区陷阱</h3>
+<pre class="code" data-label="C"><code class="c">unsigned int len;       /* 数据总长（含非线性区） */
+unsigned int data_len;  /* 非线性区长度 */
+/* 线性区长度 = len - data_len */
+</code></pre>
+<p><code class="c">skb-&gt;data</code> 只有在线性区才有意义。<strong>别假设包是连续的</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 错误：GRO 合并 / 分片 / 非线性 skb 下会读飞 */
+memcpy(buf, skb-&gt;data, skb-&gt;len);
+
+/* 正确 */
+skb_copy_bits(skb, 0, buf, skb-&gt;len);
+/* 或者只读取头部时用（会自动处理非线性） */
+iph = skb_header_pointer(skb, 0, sizeof(*iph), &amp;_iph);
+</code></pre>
+<blockquote>
+<p>这条与 13-dpdk <code class="c">mcast-minimal/src/main.c</code> 里 <code class="c">m-&gt;nb_segs != 1</code> 的检查
+是同一个道理：<strong>DPDK 的 mbuf 和内核的 skb 都可能不是连续的一块内存</strong>。</p>
+</blockquote>
+<hr />
+<h2>四、子系统与源码位置</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>子系统</th>
-<th>作用</th>
+<th>源码</th>
 <th>对应 Rosen</th>
+<th>本章后续</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>socket layer</td>
-<td>用户态接口</td>
+<td><code class="c">net/socket.c</code>、<code class="c">net/core/sock.c</code></td>
 <td>Ch11</td>
+<td>03.5-unix-network-api</td>
 </tr>
 <tr>
-<td>协议栈</td>
-<td>TCP/UDP/IP</td>
+<td>L4 (TCP/UDP)</td>
+<td><code class="c">net/ipv4/tcp*.c</code>、<code class="c">udp.c</code></td>
 <td>Ch4/Ch11</td>
+<td><a href="chapter-14.html#ch-14">ch14</a></td>
 </tr>
 <tr>
-<td>路由</td>
-<td>FIB 查找</td>
+<td>L3 (IP/路由)</td>
+<td><code class="c">net/ipv4/ip_input.c</code>、<code class="c">route.c</code>、<code class="c">fib_*.c</code></td>
 <td>Ch5/Ch6</td>
+<td>—</td>
 </tr>
 <tr>
 <td>Netfilter/nftables</td>
-<td>包过滤</td>
+<td><code class="c">net/netfilter/</code>、<code class="c">net/netfilter/nf_tables_*.c</code></td>
 <td>Ch9</td>
+<td><a href="chapter-10.html#ch-10">ch10</a></td>
 </tr>
 <tr>
 <td>Traffic Control</td>
-<td>QoS</td>
+<td><code class="c">net/sched/</code></td>
 <td>Ch6</td>
+<td><a href="chapter-09.html#ch-9">ch09</a></td>
 </tr>
 <tr>
 <td>XDP</td>
-<td>早数据路径</td>
+<td><code class="c">net/core/filter.c</code>、<code class="c">kernel/bpf/devmap.c</code></td>
 <td>无</td>
+<td><a href="chapter-05.html#ch-5">ch05</a></td>
 </tr>
 <tr>
 <td>NAPI</td>
-<td>收包轮询</td>
+<td><code class="c">net/core/dev.c</code></td>
 <td>Ch1/Ch14</td>
+<td><a href="chapter-02.html#ch-2">ch02</a></td>
+</tr>
+<tr>
+<td>page_pool</td>
+<td><code class="c">net/core/page_pool.c</code></td>
+<td>无</td>
+<td><a href="chapter-04.html#ch-4">ch04</a></td>
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>五、四种"少走几层"的旁路</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>跳过什么</th>
+<th>保留什么</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>XDP</strong></td>
+<td>部分（skb 分配之前丢包）</td>
+<td>网卡仍属内核</td>
+<td>要写 BPF</td>
+</tr>
+<tr>
+<td><strong>AF_XDP</strong></td>
+<td>skb + 协议栈（按队列）</td>
+<td>网卡仍属内核，其它队列正常</td>
+<td>独占队列</td>
+</tr>
+<tr>
+<td><strong>DPDK</strong></td>
+<td>全部</td>
+<td>无（内核看不到这张网卡）</td>
+<td><strong>失去 TCP/路由/SSH</strong></td>
+</tr>
+<tr>
+<td><strong>nf_flowtable</strong></td>
+<td>Netfilter 规则遍历</td>
+<td>内核栈其余部分</td>
+<td>仅对已建立的流生效</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">                    协议栈参与度
+  完整内核栈  ████████████████  功能全，延迟 10-50μs
+  nf_flowtable█████████████    快速路径，跳过规则遍历
+  XDP         ████████          skb 之前可丢/可转
+  AF_XDP      ████              skb+协议栈都不过，但网卡还是内核的
+  DPDK        ░                 内核完全不管这张卡
+</code></pre>
+<p>选择决策树 → <a href="chapter-07.html#ch-7">../../chapter-07-xdp-redirect-dpdk/</a></p>
+<hr />
+<h2>六、观测：确认包走了哪条路</h2>
+<pre class="code" data-label="shell"><code class="c"># XDP 是否真的挂上了
+ip link show dev eth0 | grep -i xdp
+bpftool net show dev eth0
+
+# tc 过滤规则命中计数（hwt/sent/drop）
+tc -s filter show dev eth0 ingress
+tc -s qdisc show dev eth0
+
+# nftables 规则计数（确认走了 fastpath 还是 slowpath）
+nft list ruleset -a
+
+# 丢包在哪一层？（kfree_skb 的 reason，5.15+）
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+#   或 4.x/5.x 老内核用：
+bpftrace -e 'kprobe:kfree_skb { @[kstack()] = count(); }'
+</code></pre>
+<p><code class="c">kfree_skb</code> 的 <code class="c">reason</code> 是定位"包在哪一层被丢"最直接的信号，
+5.15+ 才有；老内核要用栈回溯替代。</p>
+<hr />
 <h2>HFT 要点</h2>
 <ul>
-<li>理解完整数据路径是延迟优化的前提</li>
-<li>XDP 是最早 hook 点，之后是 tc ingress，之后是协议栈</li>
-<li>每经过一层，延迟增加、灵活性增加</li>
+<li><strong>hook 越早，能省的成本越多，但能看到的信息越少</strong>：
+  XDP 看不到 socket、看不到连接状态，只有裸帧</li>
+<li><strong>"最早"不等于"最合适"</strong>：需要连接状态、需要重组的逻辑，只能往后放</li>
+<li><strong>XDP_DROP 的包 tcpdump 抓不到</strong> —— 排障时先把 XDP 摘掉，或用
+  <code class="c">XDP_ABORTED</code> + tracepoint 观察</li>
+<li><strong>tc egress 是发送时序的控制点</strong>（ETF qdisc），报单的发送时刻整形靠它</li>
+<li><strong>别把所有过滤都堆在 Netfilter</strong> —— 那是成本最高的位置之一，
+  能在 XDP 做的就别往后放</li>
 </ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen（3.x）</th>
+<th>现代（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>最早干预点</td>
+<td>无（只能进协议栈）</td>
+<td><strong>XDP</strong>（skb 之前）</td>
+</tr>
+<tr>
+<td>包结构</td>
+<td>只有 <code class="c">sk_buff</code></td>
+<td><code class="c">sk_buff</code> + <strong><code class="c">xdp_buff</code></strong> 双轨</td>
+</tr>
+<tr>
+<td>过滤框架</td>
+<td>iptables</td>
+<td><strong>nftables</strong> + bpf + flowtable</td>
+</tr>
+<tr>
+<td>旁路</td>
+<td>无</td>
+<td>XDP_REDIRECT / <strong>AF_XDP</strong> / DPDK</td>
+</tr>
+<tr>
+<td>命名空间</td>
+<td>有</td>
+<td>更完善，容器网络基础</td>
+</tr>
+<tr>
+<td>丢包诊断</td>
+<td>靠计数</td>
+<td><code class="c">kfree_skb</code> 带 reason（5.15+）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：XDP 到底在 sk_buff 之前还是之后？为什么说它"零拷贝"？</summary>
+<p><strong>在之前。</strong> 驱动 poll 从 Rx ring 拿到的是 DMA 页和描述符，
+此时可以直接构造 <code class="c">xdp_buff</code>（<strong>栈上的</strong>临时结构，v6.6 是 8 个字段，<strong>无任何分配</strong>）交给 BPF 程序。
+只有返回 <code class="c">XDP_PASS</code> 时，内核才调用 <code class="c">napi_build_skb()</code> 把这页包装成 <code class="c">sk_buff</code>。</p>
+<p>至于"零拷贝"这个说法要小心：XDP 并没有省掉 DMA（DMA 本来就不经 CPU），
+它省掉的是 <strong>sk_buff 分配 + 后续的协议栈遍历和拷贝</strong>。
+内核栈版也有 DMA，所以"零拷贝"指的是<strong>相对内核栈少几次拷贝</strong>，不是绝对零次。
+→ <a href="../../13-dpdk/01-Intro-Book/html/chapter-04.html#ch-4">13-dpdk/chapter-04-零拷贝与用户态旁路</a></p>
+</details>
+<details>
+<summary>Q2：我在 tc ingress 里 DROP 了一个包，tcpdump 还能看到它吗？在 XDP 里 DROP 呢？</summary>
+<ul>
+<li><strong>tc ingress DROP</strong>：<strong>能看到</strong>。tcpdump 的底层是 AF_PACKET，挂在 <code class="c">ptype_all</code>；
+  它在 <code class="c">net/core/dev.c:5394</code> 分发，而 tc ingress 的 <code class="c">sch_handle_ingress()</code>
+  在 <code class="c">dev.c:5412</code>——<strong>tcpdump 先拿到包，tc 才丢</strong>。
+  （这条极易记反，我第一次也写错了，后来查 v6.6 源码才改正。）</li>
+<li><strong>XDP DROP</strong>：<strong>看不到</strong>。那时连 <code class="c">sk_buff</code> 都还没分配，AF_PACKET 无从挂钩。</li>
+</ul>
+<p><strong>排障结论</strong>：正好可以用这个差别做二分定位。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>丢点在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tcpdump <strong>能</strong>抓到，应用没收到</td>
+<td>tcpdump 之后：tc ingress / Netfilter / 路由 / socket 队列</td>
+</tr>
+<tr>
+<td>tcpdump <strong>抓不到</strong>，但驱动计数在涨</td>
+<td>tcpdump 之前：驱动 / XDP / 硬件 GRO</td>
+</tr>
+</tbody>
+</table></div>
+<p>抓不到包不等于没收到。要确认"包到底进没进网卡"，看<strong>驱动层计数</strong>和 <strong>XDP 自己的计数</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">ethtool -S eth0 | grep -E 'rx_packets|missed'
+bpftool prog show id &lt;id&gt;   # 看 XDP 程序的 run_time / 计数
+</code></pre>
+<p>⚠️ 另有一个会破坏这套推理的陷阱：<strong>开了 <code class="c">rx-gro-hw</code> 之后，包在进内核之前就被网卡合并了</strong>，
+tcpdump 看到的是合并后的"假包"，上面这张表就不成立了。排障期间先关掉硬件 GRO。
+→ 详见 <a href="chapter-13.html#s-04">chapter-02/04-gro-gso</a></p>
+</details>
+<details>
+<summary>Q3：<code class="c">skb-&gt;len</code> 和 <code class="c">skb-&gt;data_len</code> 有什么区别？什么时候必须注意？</summary>
+<ul>
+<li><code class="c">len</code>：整个 skb 的数据总长（线性区 + 非线性区）</li>
+<li><code class="c">data_len</code>：<strong>非线性区</strong>长度（存在 <code class="c">frags[]</code> 页引用里，不在 <code class="c">skb-&gt;data</code> 后面）</li>
+<li>线性区 = <code class="c">len - data_len</code></li>
+</ul>
+<p>必须在意的场景：</p>
+<ol>
+<li><strong>GRO 合并后</strong> —— 大概率是非线性的</li>
+<li><strong>IP 分片重组</strong> —— 一定是非线性的</li>
+<li><strong>大于一页的包</strong> —— 放不下就进 frags</li>
+</ol>
+<p>在这些包上直接 <code class="c">memcpy(dst, skb-&gt;data, skb-&gt;len)</code> 会读到 <code class="c">skb-&gt;data</code> 后面的
+<strong>未映射内存</strong>（不是"读到错数据"，是可能直接崩）。
+正确做法用 <code class="c">skb_copy_bits()</code> 或 <code class="c">skb_header_pointer()</code>。</p>
+</details>
       </section>
 
 

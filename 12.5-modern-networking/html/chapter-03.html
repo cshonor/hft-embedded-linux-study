@@ -276,10 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">03</span>— 发包路径</a>
-          <a href="#s-02"><span class="n">08</span>— Documentation/networking/txrx.rst</a>
-          <a href="#s-03"><span class="n">09</span>— sk_buff 生命周期</a>
-          <a href="#s-04"><span class="n">04</span>— sk_buff → xdp_buff：收包路径分流</a>
+          <a href="#s-01"><span class="n">01</span>— 发包路径（sendmsg → tc egress → ndo_start_xmit → 完成中断）</a>
+          <a href="#s-02"><span class="n">02</span>— 驱动与内核的契约（txrx.rst 视角）</a>
+          <a href="#s-03"><span class="n">03</span>— sk_buff 生命周期：从 slab 到释放</a>
+          <a href="#s-04"><span class="n">04</span>— xdp_buff ↔ sk_buff：三种转换路径</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -289,7 +289,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-04.html#intro"><span class="n">04</span>Chapter 04: Page Pool</a>
           <a href="chapter-05.html#intro"><span class="n">05</span>Chapter 05: XDP 架构</a>
           <a href="chapter-06.html#intro"><span class="n">06</span>Chapter 06: AF_XDP</a>
-          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP Redirect 与 XDP vs DPDK</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Chapter 07: XDP_REDIRECT 与 XDP vs DPDK</a>
           <a href="chapter-08.html#intro"><span class="n">08</span>Chapter 08: eBPF 与 cgroup BPF</a>
           <a href="chapter-09.html#intro"><span class="n">09</span>Chapter 09: TC 与 BPF</a>
           <a href="chapter-10.html#intro"><span class="n">10</span>Chapter 10: nftables</a>
@@ -317,394 +317,1894 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的四个核心结论</h2>
+<ol>
+<li><strong>qdisc 是发包延迟的主战场</strong>：默认 <code class="c">fq_codel</code> 的 CoDel target 是 <strong>5 ms</strong>，
+   它会主动把队列攒到 5 ms 才丢包。换 <code class="c">pfifo_fast</code> / <code class="c">noqueue</code> 是收益最大的一步。</li>
+<li><strong><code class="c">NETDEV_TX_BUSY</code> 不是正常的背压机制</strong>：正规流控是
+   <code class="c">netif_tx_stop_queue()</code> / <code class="c">netif_tx_wake_queue()</code>（零成本），
+   BUSY + requeue 是"走到门口又退回来"的纯浪费。看 <code class="c">tc -s qdisc</code> 的 <code class="c">requeues</code>。</li>
+<li><strong>释放函数选错会让丢包监控说谎</strong>：完成路径该用 <code class="c">napi_consume_skb(skb, budget)</code>
+   （<code class="c">SKB_CONSUMED</code>，不计丢包，走 per-CPU 缓存），误用 <code class="c">kfree_skb()</code> 会把
+   <strong>每个成功的包都记成一次丢包</strong>。</li>
+<li><strong><code class="c">xdp_frame</code> 存在包自己的 headroom 里</strong>（<code class="c">xdp_convert_buff_to_frame()</code> 里
+   <code class="c">xdp_frame = xdp-&gt;data_hard_start;</code>）——这才是 XDP 强制要求 headroom 的硬性理由，
+   不只是"为了加封装头"。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>sk_buff 开销</strong>：每个 sk_buff 分配约 200-300ns + 元数据初始化；XDP 用 xdp_buff 跳过 sk_buff</li>
-<li><strong>qdisc 延迟</strong>：默认 fq_codel qdisc 引入排队延迟；HFT 发包应用 <code class="c">pfifo_fast</code> 或直接 bypass</li>
-<li><strong>TSQ（TCP Small Queues）</strong>：限制每连接发包队列深度，防止 bufferbloat；HFT 需要调大 <code class="c">txqueue_len</code></li>
-<li><strong>零拷贝发送</strong>：MSG_ZEROCOPY 避免 sk_buff 数据拷贝，见 ch13</li>
+<li><strong>qdisc 延迟</strong>：默认 <code class="c">fq_codel</code> 引入毫秒级尾延迟；HFT 发包应用 <code class="c">pfifo_fast</code> 或直接 bypass</li>
+<li><strong>发包延迟是双峰的</strong>：qdisc 空时 ~2 μs，一开始排队就跳到"队列深度 × 单包时间"。
+  <strong>只测 mean 会完全看不到第二个峰</strong></li>
+<li><strong><code class="c">MSG_ZEROCOPY</code> 对小包是负优化</strong>：真实代价不是系统调用，而是发送 buffer 在完成通知
+  到达前<strong>不能复用</strong>（通知还被 <code class="c">tx-usecs</code> 合并延迟）。约 10 KB 以下用普通 send</li>
+<li><strong><code class="c">xmit_more</code> 会攒住前几个包</strong>：单包延迟测量必须一次只发一个，否则测到的是被攒住的部分</li>
+<li><strong>下单链路先查 <code class="c">TCP_NODELAY</code></strong>：Nagle + Delayed ACK 能凭空造出 200 ms</li>
+<li><strong>TCP 发包没有 busy poll</strong>：<code class="c">SO_BUSY_POLL</code> 只管收包；发包的完成清理依赖中断，
+  所以 <code class="c">ethtool -C</code> 的 <strong>TX</strong> 合并同样重要</li>
+<li><strong><code class="c">skbuff_small_head</code></strong>（6.x 新增）：下单报文几十~几百字节正好命中这个 cache，省一次页面分配</li>
+<li><strong>fclone 省在分配、亏在释放</strong>：<code class="c">skb_clone()</code> 几乎零成本，但 clone 出的 skb 释放时
+  <strong>走不了 per-CPU 缓存</strong>（<code class="c">napi_consume_skb</code> 里 <code class="c">fclone != SKB_FCLONE_UNAVAILABLE</code> 就退化）</li>
+<li><strong><code class="c">users</code> 和 <code class="c">dataref</code> 是两套计数</strong>：<code class="c">skb_clone()</code> 后 <code class="c">users == 1</code> 但 <code class="c">cloned == 1</code></li>
+<li><strong>别往 <code class="c">cb[48]</code> 塞跨层的东西</strong>：48 字节被每层复用，下一层会覆盖</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：xdp_buff 绕过 sk_buff</li>
+<li><code class="c">12.5-modern-networking/chapter-01-net-stack-architecture/</code>：12 个 hook 点的全局顺序</li>
+<li><code class="c">12.5-modern-networking/chapter-02-napi-rx-path/</code>：收包侧 NAPI 与 GRO</li>
+<li><code class="c">12.5-modern-networking/chapter-04-page-pool/</code>：page_pool 与 DMA 保持映射</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP 程序本身</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：AF_XDP 零拷贝（<code class="c">MEM_TYPE_XSK_BUFF_POOL</code>）</li>
+<li><code class="c">12.5-modern-networking/chapter-09-tc-bpf/</code>：qdisc 与 tc-BPF 详细机制</li>
 <li><code class="c">12.5-modern-networking/chapter-13-zerocopy-highperf/</code>：MSG_ZEROCOPY 零拷贝发送</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">03</div><h2>— 发包路径</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— 发包路径（sendmsg → tc egress → ndo_start_xmit → 完成中断）</h2></div>
 <blockquote>
 <p><strong>Bootlin 课程模块：</strong> TX Path
-<strong>对应 Rosen:</strong> Ch11</p>
+<strong>对应 Rosen:</strong> Ch11
+<strong>内核版本:</strong> 以 v6.6 <code class="c">net/core/dev.c</code> 为准，行号已核对源码</p>
 </blockquote>
-<h2>现代 TX 路径（5.x/6.x）</h2>
-<pre class="code" data-label="code"><code class="c">1. sendmsg() → 协议栈构造 sk_buff
-   ├─ MSG_ZEROCOPY → 不拷贝数据，映射用户 page
-   └─ 普通模式 → copy_from_user() 拷贝数据
-2. TCP/UDP 处理 → 设置序列号/校验和
-3. IP 层 → 路由查找 → 设置 IP 头
-4. tc egress → qdisc 排队
-   ├─ tc-BPF → 分类/标记
-   └─ fq/codel → pacing/调度
-5. 驱动 dequeue → DMA 映射 → 写入 Tx ring
-6. NIC DMA 发送 → 线缆
-7. NIC 完成中断 → 驱动清理 Tx ring → 释放 sk_buff
-</code></pre>
-<h2>发包延迟优化</h2>
+<h2>文档概述</h2>
+<p>本篇是 chapter-03 的<strong>主线</strong>：一次 <code class="c">sendmsg()</code> 从用户态落到线缆上，中间经过哪些函数、哪些队列、哪些延迟源。</p>
+<p>本篇与兄弟篇的分工：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>优化</th>
-<th>效果</th>
-<th>代价</th>
+<th>篇</th>
+<th>讲什么</th>
+<th>不讲什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>关闭 TSO</td>
-<td>每包独立发送，降低延迟</td>
-<td>吞吐量降低</td>
+<td><strong>01（本篇）</strong></td>
+<td>发包的<strong>函数调用链</strong>与延迟构成</td>
+<td>驱动内部细节</td>
 </tr>
 <tr>
-<td>关闭 qdisc</td>
-<td>减少 qdisc 排队延迟</td>
-<td>无 QoS</td>
+<td><a href="chapter-15.html#s-02">02-txrx</a></td>
+<td>驱动与内核的<strong>契约</strong>（<code class="c">ndo_start_xmit</code> 返回值、DMA 映射、Tx ring 清理）</td>
+<td>协议栈上层</td>
 </tr>
 <tr>
-<td>MSG_ZEROCOPY</td>
-<td>大包减少拷贝</td>
-<td>小包通知开销大</td>
+<td><a href="chapter-15.html#s-03">03-sock-sk-buff</a></td>
+<td><code class="c">sk_buff</code> 的<strong>分配/克隆/释放</strong>生命周期</td>
+<td>发包时序</td>
 </tr>
 <tr>
-<td>io_uring SEND_ZC</td>
-<td>异步零拷贝</td>
-<td>需要 6.0+</td>
+<td><a href="chapter-13.html#s-04">04-sk-buff-xdp-buff</a></td>
+<td><code class="c">xdp_buff</code> ↔ <code class="c">sk_buff</code> 的<strong>三种转换</strong></td>
+<td>hook 顺序</td>
 </tr>
 <tr>
-<td>BQL（Byte Queue Limits）</td>
-<td>限制驱动队列长度</td>
-<td>默认开启</td>
+<td><a href="chapter-15.html#s-01">chapter-01</a></td>
+<td>收发 12 个 hook 点的<strong>全局顺序</strong></td>
+<td>单条路径内部</td>
+</tr>
+<tr>
+<td><a href="chapter-09.html#ch-9">chapter-09</a></td>
+<td>qdisc / tc-BPF 的<strong>详细机制</strong></td>
+<td>发包路径全貌</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 发包延迟分解</h2>
+<p><strong>一句话结论</strong>：发包延迟里，唯一能被你自己搞成毫秒级的，是 <strong>qdisc 排队</strong>。协议栈和驱动那部分通常总共 1–3 μs，你动不了多少；qdisc 一个 <code class="c">fq_codel</code> 就能给你加 5 ms。</p>
+<p>原笔记给了一张延迟分解表，数字大致没错，但有两个问题：一是<strong>没说怎么测</strong>（数字不可复现就没有意义），二是漏了<strong>完成中断</strong>这一段——而它恰恰是 <code class="c">MSG_ZEROCOPY</code> 的真实代价所在。</p>
+<hr />
+<h2>一、完整链路（函数级）</h2>
+<pre class="code" data-label="code"><code class="c">用户态  sendmsg() / sendto() / write()
+  │  系统调用 + 两次特权级切换（含 copy_from_user）
+  ▼
+socket 层
+  udp_sendmsg()                           net/ipv4/udp.c
+  tcp_sendmsg()                           net/ipv4/tcp.c
+  ├─ 普通路径：copy_from_user() 拷进 skb 线性区
+  ├─ MSG_ZEROCOPY：不拷数据，把用户 page 通过
+  │   skb_frag 挂到 skb_shinfo(skb)-&gt;frags[]，标记 SKBTX_ZEROCOPY_FRAG
+  └─ io_uring SEND_ZC（6.0+）：同上 + 不阻塞等完成
+  ▼
+传输层
+  udp_send_skb() / tcp_write_xmit()
+  ├─ 填 L4 头、校验和（CHECKSUM_PARTIAL → 交给网卡算）
+  └─ TCP 额外：Nagle 判断、拥塞窗口、TSQ 限速、pacing
+  ▼
+IP 层
+  ip_send_skb() → __ip_local_out() → ip_output()
+  ├─ Netfilter OUTPUT → POST_ROUTING
+  ├─ 路由查找（fib_lookup）
+  └─ 分片 / GSO 分段
+  ▼
+邻居子系统（仅单播）
+  neigh_output()                          net/core/neighbour.c
+  ├─ ARP 命中 → neigh_hh_output()（走 hh_cache 缓存的 L2 头，快）
+  └─ ARP 未命中 → neigh_resolve_output()，包被**暂存**，首包多一次 ARP 往返
+  ▼
+dev_queue_xmit() → __dev_queue_xmit()     net/core/dev.c:4277
+  ├─ ① __skb_tstamp_tx(SCM_TSTAMP_SCHED)   dev.c:4289（ETF/SO_TXTIME 打时间戳）
+  ├─ ② nf_hook_egress()                    Netfilter egress（6.x，在 tc 之前）
+  ├─ ③ sch_handle_egress()                 dev.c:4311 ← tc egress / clsact-BPF
+  ├─ ④ netdev_core_pick_tx()               选 txq（多队列网卡）
+  └─ ⑤ q-&gt;enqueue → __dev_xmit_skb()      进 qdisc
+      └─ qdisc 空且无人占用 → sch_direct_xmit() 直接发
+         qdisc 有人占 → 入队，唤醒 net_tx_action softirq / 等 TX 完成中断
+  ▼
+qdisc 出队
+  __qdisc_run() → qdisc_restart() → dequeue_skb()
+      → sch_direct_xmit() → dev_hard_start_xmit()   dev.c:3579
+  ▼
+dev_hard_start_xmit()                      dev.c:3579
+  while (skb) {
+      xmit_one(skb, dev, txq, next != NULL);   ← 注意第 4 个参数
+      ...
+  }
+  ▼
+xmit_one()                                 dev.c:3562
+  ├─ if (dev_nit_active(dev)) dev_queue_xmit_nit(skb, dev);  ← tcpdump 抓发包点
+  └─ netdev_start_xmit(skb, dev, txq, more)  → ndo_start_xmit()
+  ▼
+驱动 ndo_start_xmit()
+  ├─ dma_map_single() / dma_map_page()  流式 DMA 映射
+  ├─ 填 Tx ring 描述符
+  └─ if (!more) 写门铃寄存器（doorbell）告知网卡
+  ▼
+网卡 DMA 取数据 → 发送 → 线缆
+  ▼
+TX 完成中断（或 NAPI poll）
+  驱动清理函数 → dma_unmap → napi_consume_skb() → 回收 skb / 释放 zero-copy page
+  ▼
+MSG_ZEROCOPY 场景：完成通知进 socket error queue（SO_EE_ORIGIN_ZEROCOPY）
+</code></pre>
+<h3>三个容易被忽略的点</h3>
+<p><strong>① 不是"驱动 dequeue"，是"qdisc 决定什么时候发"</strong></p>
+<p>原笔记第 5 步写成「驱动 dequeue → DMA 映射」，读起来像驱动自己来拉包。实际是：</p>
+<ul>
+<li>进程上下文 <code class="c">sendmsg()</code> 时，如果 qdisc 空且没别的 CPU 在跑它，<code class="c">sch_direct_xmit()</code> 立刻把包发出去（<strong>fast path，无排队延迟</strong>）；</li>
+<li>否则入队，由 <code class="c">net_tx_action</code> softirq 或 TX 完成中断触发 <code class="c">__qdisc_run()</code> 出队。</li>
+</ul>
+<p>这个区别是实操的关键：<strong>发包延迟是双峰的</strong>。qdisc 空时 ~2 μs；一旦开始排队，延迟 = 队列深度 × 单包发送时间。只看 mean 完全看不到第二个峰。</p>
+<p><strong>② <code class="c">xmit_more</code> / doorbell 批量</strong></p>
+<p><code class="c">xmit_one(skb, dev, txq, next != NULL)</code> 的第四个参数就是 <code class="c">xmit_more</code>：告诉驱动"后面还有，先别写门铃"。驱动据此推迟 doorbell 寄存器写（一次 MMIO 写 ~100 ns 以上）。</p>
+<p>对 HFT 的含义：<strong>批量发多个包时，前面的包是被"攒"住的</strong>，只有最后一个包触发门铃。所以不要拿"第 1 个包的延迟"当单包延迟——真要测单包延迟，必须一次只发一个、且 qdisc 为空。</p>
+<p><strong>③ tcpdump 抓发包，抓的是 tc egress 之后</strong></p>
+<p><code class="c">dev_queue_xmit_nit()</code> 在 <code class="c">xmit_one()</code> 里，即在 <code class="c">sch_handle_egress()</code> 之后、紧邻 <code class="c">ndo_start_xmit()</code>。所以 <strong>tc egress 丢掉的包，tcpdump 抓不到</strong>。诊断 tc egress 丢包要用 <code class="c">tc -s filter show dev eth0 egress</code> 看计数。</p>
+<hr />
+<h2>二、延迟构成与"谁该背锅"</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>阶段</th>
-<th>延迟（ns）</th>
+<th>典型延迟</th>
+<th>你能改吗</th>
+<th>怎么改</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>sendmsg → sk_buff</td>
-<td>500-2000</td>
+<td>系统调用 + <code class="c">copy_from_user</code></td>
+<td>500–2000 ns</td>
+<td>部分</td>
+<td><code class="c">MSG_ZEROCOPY</code> / <code class="c">io_uring</code>；小包反而更慢</td>
 </tr>
 <tr>
-<td>协议栈处理</td>
-<td>500-1000</td>
+<td>传输层（UDP）</td>
+<td>300–800 ns</td>
+<td>少</td>
+<td>关校验和卸载前先想清楚</td>
 </tr>
 <tr>
-<td>qdisc 排队</td>
-<td>100-10000（取决于队列长度）</td>
+<td>IP 层 + 路由</td>
+<td>200–800 ns</td>
+<td>少</td>
+<td>路由表小、无 Netfilter 规则</td>
 </tr>
 <tr>
-<td>驱动 dequeue → DMA</td>
-<td>100-500</td>
+<td><strong>qdisc 排队</strong></td>
+<td><strong>0 ns ～ 数 ms</strong></td>
+<td><strong>★ 主战场</strong></td>
+<td>换 <code class="c">pfifo_fast</code> / 用 ETF 定时发送</td>
 </tr>
 <tr>
-<td>NIC 发送</td>
-<td>100-500</td>
+<td>驱动 xmit + DMA 映射</td>
+<td>100–500 ns</td>
+<td>少</td>
+<td>关 TSO/GSO 减少分段</td>
 </tr>
 <tr>
-<td><strong>总计</strong></td>
-<td>~1-5 μs</td>
+<td>网卡发送 + 线缆</td>
+<td>100–500 ns + 传播延迟</td>
+<td>否</td>
+<td>换网卡 / 缩短光纤</td>
+</tr>
+<tr>
+<td><strong>完成中断</strong></td>
+<td><strong>0 ～ 数 ms</strong></td>
+<td><strong>★</strong></td>
+<td><code class="c">ethtool -C eth0 tx-usecs 0</code></td>
 </tr>
 </tbody>
 </table></div>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">08</div><h2>— Documentation/networking/txrx.rst</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> Ch1（收发包路径）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/txrx.rst</code>（或相关 driver 文档）</p>
-</blockquote>
-<h2>文档概述</h2>
-<p>网卡驱动收发包路径文档，描述 NIC → 内核 → 协议栈的完整数据流。</p>
-<h2>收包路径（RX）</h2>
-<pre class="code" data-label="code"><code class="c">1. NIC 收到帧 → DMA 写入 Rx ring 的 buffer（page_pool 分配）
-2. NIC 写回 Rx 描述符 → 触发中断
-3. 驱动中断处理 → napi_schedule()
-4. NAPI 轮询 → napi_poll() → 驱动从 Rx ring 取包
-5. 构造 sk_buff（或 XDP 处理）
-   ├─ XDP hook（如果有 XDP 程序）
-   │   ├─ DROP → page 回收
-   │   ├─ PASS → 继续
-   │   ├─ REDIRECT → AF_XDP / CPUMAP / DEVMAP
-   │   └─ TX → 原路返回
-   └─ 无 XDP → 分配 sk_buff
-6. napi_gro_receive() → GRO 合并
-7. netif_receive_skb() → 协议栈
-8. IP 层 → TCP/UDP 层 → socket 队列
+<p><strong>怎么测</strong>：上表的每一行都不是拍脑袋来的，靠 <code class="c">SO_TIMESTAMPING</code> 的分段时间戳。用 <code class="c">TX_SCHED</code>（进 qdisc 前，dev.c:4289 那个 <code class="c">SCM_TSTAMP_SCHED</code>）和 <code class="c">TX_HARDWARE</code>（网卡真实上线缆时刻，需网卡支持）相减，得到的就是<strong>纯队列 + 驱动延迟</strong>。这个差值直接告诉你该不该换 qdisc。</p>
+<p>最后一行是被忽略最多的：<strong>发包还有个"尾巴"</strong>。TX 完成中断的合并（<code class="c">tx-usecs</code> / <code class="c">tx-frames</code>）默认是开的，意味着你的 skb（以及 <code class="c">MSG_ZEROCOPY</code> 的用户 buffer）要等合并窗口过去才被释放。</p>
+<p><strong><code class="c">MSG_ZEROCOPY</code> 对 HFT 的真实代价就在这里</strong>——不是系统调用省了拷贝，而是<strong>你的发送缓冲区在完成通知到达前不能复用</strong>。完成通知被合并延迟，等于把缓冲区池变小、把内存压力变成延迟。小包（&lt; 10 KB）本来就省不了多少拷贝，反而多一次 error queue 通知，所以业界共识是：<strong>小包别用 <code class="c">MSG_ZEROCOPY</code></strong>。</p>
+<hr />
+<h2>三、qdisc：主战场</h2>
+<h3>默认 qdisc 是 <code class="c">fq_codel</code>，而 CoDel 的 target 是 5 ms</h3>
+<pre class="code" data-label="code"><code class="c">$ sysctl net.core.default_qdisc
+net.core.default_qdisc = fq_codel
 </code></pre>
-<h2>发包路径（TX）</h2>
-<pre class="code" data-label="code"><code class="c">1. sendmsg() / sendpage() → 协议栈构造 sk_buff
-2. qdisc 排队（fq / pfifo_fast）
-3. 驱动 dequeue → 映射 DMA → 写入 Tx ring
-4. NIC DMA 发送
-5. NIC 完成中断 → 驱动清理 Tx ring → 释放 sk_buff
-</code></pre>
-<h2>现代驱动关键点</h2>
+<p>CoDel（Controlled Delay）的设计目标是"把队列延迟控制在 <strong>5 ms</strong>"（<code class="c">target</code>），判定周期 <code class="c">interval</code> 100 ms。它<strong>主动</strong>允许排队到 5 ms 才开始丢包。对 HFT 这是灾难性的：你什么都没做错，qdisc 自己就在制造毫秒级尾延迟。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>组件</th>
-<th>传统</th>
-<th>现代</th>
+<th>qdisc</th>
+<th>排队行为</th>
+<th>适合 HFT 吗</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Rx buffer</td>
-<td>alloc_page</td>
-<td>page_pool</td>
+<td><code class="c">fq_codel</code></td>
+<td>每流公平 + 主动延迟到 5 ms</td>
+<td>❌ 默认项，必须换</td>
 </tr>
 <tr>
-<td>XDP</td>
-<td>无</td>
-<td>native XDP hook</td>
+<td><code class="c">fq</code></td>
+<td>每流公平 + pacing，<strong>不做 CoDel 延迟</strong></td>
+<td>⚠️ 多流时可用，注意 pacing</td>
 </tr>
 <tr>
-<td>GRO</td>
-<td>软件</td>
-<td>软件 + 硬件 offload</td>
+<td><code class="c">pfifo_fast</code></td>
+<td>三个优先级 FIFO，无主动延迟</td>
+<td>✅ 传统 HFT 选择</td>
 </tr>
 <tr>
-<td>TSO</td>
-<td>软件</td>
-<td>硬件 TSO</td>
+<td><code class="c">noqueue</code> / <code class="c">mq</code> + bypass</td>
+<td>不排队，直接 xmit 或 <code class="c">NETDEV_TX_BUSY</code></td>
+<td>✅ 极致低延迟（丢包风险自负）</td>
 </tr>
 <tr>
-<td>中断合并</td>
-<td>无</td>
-<td>ethtool -C 可调</td>
+<td><code class="c">etf</code></td>
+<td><strong>按纳秒时间戳定时发送</strong></td>
+<td>✅ 需要确定性发送时刻时</td>
 </tr>
 </tbody>
 </table></div>
+<pre class="code" data-label="shell"><code class="c"># 换成无主动延迟的 qdisc
+tc qdisc replace dev eth0 root pfifo_fast
+# 或直接绕过（配合 SO_PRIORITY / 单流）
+tc qdisc replace dev eth0 root mq
+
+# 确认当前用的是什么
+tc qdisc show dev eth0
+</code></pre>
+<h3>队列长度：<code class="c">txqueuelen</code> 和 BQL</h3>
+<pre class="code" data-label="code"><code class="c">$ ip link show eth0 | grep qlen
+    link/ether ... qlen 1000
+</code></pre>
+<p><code class="c">txqueuelen</code> 默认 1000 包。这是<strong>包数</strong>，不是字节数。10 Gbps 下 1000 个 64 B 小包 ≈ 67 μs 排队；1000 个 1500 B 包 ≈ 1.2 ms。HFT 场景常把它压到几十。</p>
+<p>BQL（Byte Queue Limits）是另一层：它按<strong>字节</strong>动态限制硬件 Tx ring 的驻留量，防止 bufferbloat 发生在驱动队列里（那里 qdisc 管不到）。</p>
+<pre class="code" data-label="shell"><code class="c"># 看 BQL 当前限制与在途字节
+cat /sys/class/net/eth0/queues/tx-0/byte_queue_limits/limit
+cat /sys/class/net/eth0/queues/tx-0/byte_queue_limits/inflight
+</code></pre>
+<p><code class="c">inflight</code> 长期贴着 <code class="c">limit</code>，说明硬件队列里堆着东西——尾延迟就在那儿。</p>
+<h3>ETF + <code class="c">SO_TXTIME</code>：纳秒级定时发送</h3>
+<p>如果想<strong>精确控制包什么时候上线缆</strong>（而不是"尽快发"），内核侧的方案是 ETF qdisc：</p>
+<pre class="code" data-label="shell"><code class="c"># offload 需要网卡支持（Intel i210/i225 等 TSN 网卡）
+tc qdisc replace dev eth0 root etf clockid CLOCK_TAI delta 300000 offload
+</code></pre>
+<p>配合 socket 的 <code class="c">SO_TXTIME</code> + <code class="c">SCM_TXTIME</code> cmsg 指定每个包的发送时刻。</p>
+<p><strong>但要注意</strong>：没有 <code class="c">offload</code> 时，ETF 用 hrtimer 在软件里等到点再发，抖动在几十 μs 量级——比不排队还糟。<strong>ETF 的价值完全依赖网卡硬件卸载</strong>。这也是为什么真正做确定性发送的 HFT 系统通常直接用 Solarflare / Exablaze 的 <code class="c">ef_vi</code> 定时发送，而不是内核 ETF。</p>
+<p>时间戳打在 <code class="c">__dev_queue_xmit()</code> 开头：skb 带 <code class="c">SKBTX_SCHED_TSTAMP</code> 时记录 <code class="c">SCM_TSTAMP_SCHED</code>（dev.c:4289）。因为它是<strong>进 qdisc 之前</strong>打的，所以能反映"实际发送时刻 vs 期望时刻"的偏差。</p>
+<hr />
+<h2>四、TCP 特有的坑（下单链路）</h2>
+<p>行情是 UDP 组播，但下单是 TCP。以下每一项都能给下单加几十到几百毫秒：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>默认值</th>
+<th>症状</th>
+<th>处置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Nagle</strong></td>
+<td>开</td>
+<td>小包被攒着等 ACK</td>
+<td><code class="c">TCP_NODELAY</code></td>
+</tr>
+<tr>
+<td><strong>Delayed ACK</strong></td>
+<td>开（~40 ms）</td>
+<td>对端 ACK 慢 → RTT 测量虚高</td>
+<td>对端设 <code class="c">TCP_QUICKACK</code>，或避免"写-写-读"模式</td>
+</tr>
+<tr>
+<td><strong>Nagle + Delayed ACK 死锁</strong></td>
+<td>都开</td>
+<td>请求-响应模式下直接卡 ~200 ms</td>
+<td>必须关 Nagle</td>
+</tr>
+<tr>
+<td><strong>TSQ</strong>（TCP Small Queues）</td>
+<td>限制每流在途字节</td>
+<td>单流突发被截断成多批</td>
+<td><code class="c">sysctl net.ipv4.tcp_limit_output_bytes</code>（先查当前值）</td>
+</tr>
+<tr>
+<td><strong>pacing</strong></td>
+<td><code class="c">fq</code> 下默认开</td>
+<td>按 <code class="c">sk_pacing_rate</code> 摊平发送</td>
+<td><code class="c">SO_MAX_PACING_RATE</code> 设为极大</td>
+</tr>
+<tr>
+<td><strong><code class="c">SO_SNDBUF</code></strong></td>
+<td>自动调优</td>
+<td>大 buffer → 更多在途数据 → 尾延迟</td>
+<td>小包低延迟：调小并显式 setsockopt</td>
+</tr>
+</tbody>
+</table></div>
+<p>最典型的现场：<strong>下单用 TCP，忘了 <code class="c">TCP_NODELAY</code>，延迟看起来"随机"地多出 40–200 ms</strong>。这不是网络问题，是协议栈在按设计工作。</p>
+<hr />
+<h2>五、观测：延迟花在哪一步</h2>
+<pre class="code" data-label="shell"><code class="c"># 1) qdisc 是否排队（最重要）
+tc -s qdisc show dev eth0
+#   看 backlog / requeues / dropped；backlog 长期 &gt; 0 → 队列在堆
+
+# 2) 硬件 Tx ring 里堆了多少（BQL）
+cat /sys/class/net/eth0/queues/tx-0/byte_queue_limits/inflight
+
+# 3) 驱动层统计：丢包、错误、Tx 超时
+ethtool -S eth0 | grep -i &quot;tx_&quot;
+
+# 4) 中断合并（决定完成通知的延迟）
+ethtool -c eth0
+ethtool -C eth0 tx-usecs 0 tx-frames 1     # 低延迟：关掉 TX 合并
+
+# 5) TCP 层面：在途、重传、pacing
+ss -tinp 'sport = :12345'                  # 看 rtt / cwnd / pacing_rate / retrans
+
+# 6) 端到端：内核 + 硬件时间戳
+ethtool -T eth0                            # 先看网卡支持哪些
+#   setsockopt SO_TIMESTAMPING = SOF_TIMESTAMPING_TX_HARDWARE
+</code></pre>
+<hr />
 <h2>HFT 要点</h2>
 <ul>
-<li>理解完整 RX 路径是延迟优化的基础</li>
-<li>每一步都可能引入延迟：中断合并、GRO、协议栈处理、socket 唤醒</li>
-<li>XDP 在步骤 5 最早期处理，是减少延迟的关键</li>
+<li><strong>qdisc 是发包延迟的主战场</strong>：<code class="c">fq_codel</code> 默认给你 5 ms，换成 <code class="c">pfifo_fast</code> / <code class="c">noqueue</code> 是收益最大的一步。</li>
+<li><strong>发包延迟是双峰的</strong>：qdisc 空时 ~2 μs，一开始排队就跳到队列深度 × 单包时间。<strong>只测 mean 会完全看不到第二个峰</strong>。</li>
+<li><strong><code class="c">MSG_ZEROCOPY</code> 对小包是负优化</strong>：省下的拷贝 &lt; 完成通知 + buffer 锁定成本。只对大包（10 KB 以上）划算。</li>
+<li><strong><code class="c">xmit_more</code> 会"攒"住前几个包</strong>：单包延迟测量必须一次只发一个，否则测到的是被攒住的那部分。</li>
+<li><strong>下单链路先查 <code class="c">TCP_NODELAY</code></strong>：Nagle + Delayed ACK 能凭空造出 200 ms，比任何网络问题都常见。</li>
+<li><strong>TCP 发包没有 busy poll</strong>：<code class="c">SO_BUSY_POLL</code> 只管收包。发包的完成清理依赖中断 / softirq，所以 <code class="c">ethtool -C</code> 的 TX 合并同样重要。</li>
+<li><strong>收发不对称</strong>：收包可以忙轮询绕开中断延迟；发包只能"尽快走完 + 尽快被通知完成"。</li>
+<li><strong>ARP 未命中的首包</strong>多一次往返。长期运行的行情进程无所谓，但冷启动的第一笔下单会踩到——预热一条连接。</li>
 </ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<p>Rosen 第 11 章描述的是 2.6.x 时代的发包路径，有几处已经不成立了：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 3.x</th>
+<th>现在（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>qdisc 默认 <code class="c">pfifo_fast</code></td>
+<td>默认 <strong><code class="c">fq_codel</code></strong>（主动引入 5 ms 队列延迟）</td>
+</tr>
+<tr>
+<td>发包路径无 BPF 介入</td>
+<td><strong>tc egress BPF</strong>（clsact）在 qdisc 之前</td>
+</tr>
+<tr>
+<td>无 <code class="c">MSG_ZEROCOPY</code></td>
+<td>4.14+ <code class="c">MSG_ZEROCOPY</code>，6.0+ <code class="c">io_uring SEND_ZC</code></td>
+</tr>
+<tr>
+<td>无硬件定时发送</td>
+<td>5.x+ <strong>ETF qdisc + <code class="c">SO_TXTIME</code></strong></td>
+</tr>
+<tr>
+<td>单队列为主</td>
+<td>多队列 + <code class="c">netdev_core_pick_tx()</code>，队列选择影响锁竞争</td>
+</tr>
+<tr>
+<td>无 egress Netfilter hook</td>
+<td>6.x 加 <strong><code class="c">nf_hook_egress()</code></strong>，且在 tc egress <strong>之前</strong></td>
+</tr>
+<tr>
+<td>GSO/TSO 是优化</td>
+<td>对 HFT 常常是<strong>负优化</strong>（大包分段 → 单包延迟上升）</td>
+</tr>
+<tr>
+<td>驱动主动 dequeue</td>
+<td>出队由 qdisc 层驱动（<code class="c">__qdisc_run</code> / <code class="c">sch_direct_xmit</code>），驱动只提供 <code class="c">ndo_start_xmit</code> 回调</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你把 <code class="c">fq_codel</code> 换成了 <code class="c">pfifo_fast</code>，p99 发包延迟从 4.8 ms 降到 120 μs，但 mean 几乎没变。为什么？</summary>
+<p><b>答：</b>因为 mean 主要落在"qdisc 为空"的 fast path 上（~2 μs），本来就没受影响。CoDel 的伤害集中在<b>有排队时的尾部</b>——它主动把队列攒到 5 ms 才丢包。</p>
+<p>这说明：低延迟优化几乎全部体现在 p99 / p99.9 上，<b>mean 是几乎无信息的指标</b>。如果一个"优化"只改了 mean 没改 p99，那它优化的是吞吐，不是延迟。</p>
+</details>
+<details>
+<summary>Q2：你用 <code class="c">MSG_ZEROCOPY</code> 发 200 字节的下单报文，为什么延迟反而变差了？</summary>
+<p><b>答：</b>三个原因叠加：</p>
+<ol>
+<li>200 字节的 <code class="c">copy_from_user()</code> 只有几十 ns，本来就不是瓶颈——你省了个不存在的东西。</li>
+<li>zero-copy 需要把用户页 pin 住并挂到 <code class="c">skb_shinfo-&gt;frags[]</code>，涉及 <code class="c">get_user_pages()</code>，这比拷贝<b>贵得多</b>。</li>
+<li>完成通知要等到 TX 完成中断（还被 <code class="c">tx-usecs</code> 合并），在此之前那块 buffer 不能用。小包高频下等于把发送缓冲池缩小，退化成隐式的流控阻塞。</li>
+</ol>
+<p>业界经验阈值：大约 <b>10 KB</b> 以下用普通 send，以上才考虑 <code class="c">MSG_ZEROCOPY</code>。</p>
+</details>
+<details>
+<summary>Q3：你测出"第一个包延迟 8 μs，后续每个 1.2 μs"，怀疑是 <code class="c">xmit_more</code> 导致的。怎么验证？</summary>
+<p><b>答：</b>做对照实验——<b>一次只发一个包，两次 send 之间等一个 RTT</b>（确保 qdisc 排空），再测。</p>
+<ul>
+<li>若单发测得 ~1.5 μs，说明 8 μs 确实来自批量：第 1 个包被 <code class="c">xmit_more=1</code> 标记、门铃没写，一直等到最后一个包才触发 doorbell。</li>
+<li>若单发仍是 8 μs，问题在别处：ARP 未命中首包、qdisc 非空、TSQ 限速、NUMA 跨节点。</li>
+</ul>
+<p>顺带验证队列是否真的空：<code class="c">tc -s qdisc show dev eth0</code> 看 <code class="c">backlog</code>。非 0 说明你测的是排队延迟，不是单包延迟。</p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-01">chapter-01 网络栈架构与 hook 点顺序</a>
+→ 后一篇：<a href="chapter-15.html#s-02">02-txrx：驱动与内核的契约</a>
+→ 相关：<a href="chapter-09.html#ch-9">chapter-09 tc/BPF</a> · <a href="chapter-13.html#ch-13">chapter-13 零拷贝</a></p>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>— 驱动与内核的契约（txrx.rst 视角）</h2></div>
+<blockquote>
+<p><strong>内核文档：</strong> <code class="c">Documentation/networking/txrx.rst</code>
+<strong>对应 Rosen:</strong> Ch1（收发包路径）
+<strong>内核版本:</strong> 以 v6.6 为准，行号已核对源码</p>
+</blockquote>
+<h2>文档概述</h2>
+<p>上一篇 <a href="chapter-15.html#s-01">01-tx-path-bootlin</a> 讲的是<strong>协议栈怎么把包交给网卡</strong>。本篇换一个视角：站在<strong>驱动作者</strong>的位置，看内核要求驱动遵守哪些约定。</p>
+<p>为什么要看这个？因为<strong>你在 HFT 里遇到的很多"网络延迟"，其实是驱动对契约的某种实现方式造成的</strong>——中断合并策略、Tx ring 清理时机、DMA 映射方式、skb 释放路径，全是驱动自己选的。看不懂契约，就只能对着 <code class="c">ethtool -S</code> 的计数器瞎猜。</p>
+<p>本篇与兄弟篇的分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>篇</th>
+<th>视角</th>
+<th>关键词</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01</a></td>
+<td>协议栈俯视</td>
+<td>qdisc、tc egress、延迟构成</td>
+</tr>
+<tr>
+<td><strong>02（本篇）</strong></td>
+<td><strong>驱动作者</strong></td>
+<td><code class="c">ndo_start_xmit</code>、DMA、ring 清理、释放路径</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03</a></td>
+<td>数据结构</td>
+<td><code class="c">sk_buff</code> 分配/克隆/释放</td>
+</tr>
+<tr>
+<td><a href="chapter-13.html#s-04">04</a></td>
+<td>数据表示</td>
+<td><code class="c">xdp_buff</code> ↔ <code class="c">sk_buff</code> 转换</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>💡 本篇的"现代驱动关键点"表格原笔记只列了 5 行对比（传统 vs 现代）。下面把它展开成<strong>契约条目</strong>，每一条都说明"不遵守会怎样"。</p>
+</blockquote>
+<hr />
+<h2>一、RX 契约：驱动收包时该做什么</h2>
+<pre class="code" data-label="code"><code class="c">NIC 收到帧 → DMA 写入 Rx ring 的 buffer（page_pool 分配）
+NIC 写回 Rx 描述符 → 触发中断（受 rx-usecs / rx-frames 合并）
+驱动中断 handler → napi_schedule(&amp;napi)
+驱动的 napi_poll(napi, budget) 被调用：
+  ├─ 从 Rx ring 取包（最多 budget 个）
+  ├─ 为每个包跑 XDP 程序（native XDP，如有）
+  │   ├─ XDP_DROP     → page 立刻回收给 page_pool
+  │   ├─ XDP_PASS     → 构造 sk_buff 继续走协议栈
+  │   ├─ XDP_TX       → 原路反弹
+  │   └─ XDP_REDIRECT → 交给 AF_XDP / CPUMAP / DEVMAP / veth
+  ├─ 无 XDP → 直接构造 sk_buff
+  ├─ napi_gro_receive()  ← 注意：不是直接 netif_receive_skb()
+  ├─ 补充 Rx ring 的新 buffer（refill）
+  └─ return work_done
+     ├─ work_done &lt; budget → napi_complete_done()，重新开中断
+     └─ work_done == budget → 直接返回，softirq 会让它再跑一轮
+</code></pre>
+<h3>契约条目</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>约定</th>
+<th>违反后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>XDP 必须<strong>先于</strong> <code class="c">sk_buff</code> 构造</td>
+<td>否则 XDP_DROP 省不掉 skb 分配开销，XDP 失去意义</td>
+</tr>
+<tr>
+<td>2</td>
+<td>必须用 <code class="c">napi_gro_receive()</code> 而非 <code class="c">netif_receive_skb()</code></td>
+<td>GRO 收不到包，吞吐暴跌</td>
+</tr>
+<tr>
+<td>3</td>
+<td>严格遵守 <code class="c">budget</code> 上限</td>
+<td>超了会导致单轮 softirq 过长，其他 queue 饿死、调度延迟上升</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">work_done == budget</code> 时不调用 <code class="c">napi_complete_done()</code></td>
+<td>重入时丢包；反过来漏调会导致中断关死后不再收包</td>
+</tr>
+<tr>
+<td>5</td>
+<td>页面从 <code class="c">page_pool</code> 分配</td>
+<td>不用 page_pool 的话 XDP 无法工作（XDP 依赖 page_pool 的回收语义）</td>
+</tr>
+<tr>
+<td>6</td>
+<td>中断合并通过 <code class="c">ethtool -C</code> 暴露</td>
+<td>无法调优，收包延迟下不来</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第 3 条对 HFT 的直接含义</strong>：<code class="c">budget</code> 越大，单轮 softirq 越长，<strong>别的 CPU 核上的收包线程被推迟的时间就越长</strong>。低延迟场景要的是<strong>小 budget + 频繁轮询</strong>，不是"一次多收点"。</p>
+<hr />
+<h2>二、TX 契约：<code class="c">ndo_start_xmit</code> 的返回值</h2>
+<p>这是本篇最有价值的一节，因为<strong>常见资料（包括 Rosen）里写的返回值已经过时了</strong>。</p>
+<h3>v6.6 的真实枚举</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/netdevice.h:124 */
+enum netdev_tx {
+    __NETDEV_TX_MIN  = INT_MIN, /* make sure enum is signed */
+    NETDEV_TX_OK     = 0x00,    /* driver took care of packet */
+    NETDEV_TX_BUSY   = 0x10,    /* driver tx path was busy*/
+};
+</code></pre>
+<p><strong>只有两个值。</strong> 老资料里的 <code class="c">NETDEV_TX_LOCKED</code>（"tx 锁已被别的 CPU 拿着"）在 v6.6 已经<strong>不存在</strong>——txq 锁的语义改了，驱动不再需要返回这个值。</p>
+<h3>返回值怎么被处理</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/netdevice.h */
+static inline bool dev_xmit_complete(int rc)
+{
+    /*
+     * Positive cases with an skb consumed by a driver:
+     * - successful transmission (rc == NETDEV_TX_OK)
+     * - error while transmitting (rc &lt; 0)
+     * - error while queueing to a different device (rc &amp; NET_XMIT_MASK)
+     */
+    if (likely(rc &lt; NET_XMIT_MASK))
+        return true;
+    return false;
+}
+</code></pre>
+<p>配套常量（<code class="c">include/linux/netdevice.h:114</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define NET_XMIT_SUCCESS    0x00
+#define NET_XMIT_DROP       0x01    /* skb dropped */
+#define NET_XMIT_CN     0x02    /* congestion notification */
+#define NET_XMIT_MASK       0x0f    /* qdisc flags */
+</code></pre>
+<p>所以判定逻辑是 <code class="c">rc &lt; 0x0f</code>。代入：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回值</th>
+<th>值</th>
+<th><code class="c">dev_xmit_complete</code></th>
+<th>内核动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">NETDEV_TX_OK</code></td>
+<td>0x00</td>
+<td>true</td>
+<td>skb 已被驱动接管，内核<strong>不再碰它</strong></td>
+</tr>
+<tr>
+<td>负数（驱动出错）</td>
+<td>&lt; 0</td>
+<td>true</td>
+<td>同样视为已消费（错误已统计）</td>
+</tr>
+<tr>
+<td><code class="c">NET_XMIT_CN</code></td>
+<td>0x02</td>
+<td>true</td>
+<td>拥塞通知，但 skb 已消费</td>
+</tr>
+<tr>
+<td><strong><code class="c">NETDEV_TX_BUSY</code></strong></td>
+<td><strong>0x10</strong></td>
+<td><strong>false</strong></td>
+<td><strong>驱动没接管 skb → 内核 requeue 重发</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>⚠️ <code class="c">NETDEV_TX_BUSY</code> 是"设计缺陷的兜底"，不是正常机制</h3>
+<p>重点来了：<strong>一个正确的驱动不应该频繁返回 <code class="c">NETDEV_TX_BUSY</code></strong>。</p>
+<p>正规的流控是靠队列的 stop / wake：</p>
+<pre class="code" data-label="C"><code class="c">/* 驱动侧：Tx ring 快满时 */
+netif_tx_stop_queue(txq);        /* 告诉上层：别再给我了 */
+...
+/* 完成中断里清理完 ring 后 */
+netif_tx_wake_queue(txq);        /* 恢复，并触发 qdisc 出队 */
+</code></pre>
+<p><code class="c">netif_tx_stop_queue()</code> 之后，qdisc 层看到队列 stop 就不会再 dequeue，<code class="c">ndo_start_xmit</code> 根本不会被调用。这才是<strong>零成本</strong>的流控。</p>
+<p>而 <code class="c">NETDEV_TX_BUSY</code> 是"驱动发现真的发不出去了"时的最后手段：内核要把 skb 重新入队、<code class="c">qdisc-&gt;qstats.requeues++</code>、然后<strong>重新调度</strong>。这整个过程是<strong>纯延迟</strong>，而且会让 <code class="c">tc -s qdisc</code> 里的 <code class="c">requeues</code> 计数上涨。</p>
+<p><strong>观测结论</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">tc -s qdisc show dev eth0
+# 如果 requeues 持续增长 → 你的 Tx ring 太小 / 队列 stop 阈值设置不合理
+# 这是纯浪费，不是&quot;正常的背压&quot;
+</code></pre>
+<p>对 HFT，requeues 增多意味着发包延迟出现<strong>无法预测的尖峰</strong>——因为它发生在队列将满未满的边界上，属于典型的双峰分布第二个峰的来源。</p>
+<hr />
+<h2>三、DMA：映射与解映射的时点</h2>
+<pre class="code" data-label="code"><code class="c">ndo_start_xmit(skb)
+  ├─ dma_map_single(...) / dma_map_page(...)     ← 流式映射，CPU 之后不能再碰这块内存
+  ├─ 填 Tx ring 描述符
+  └─ 写门铃（除非 xmit_more）
+
+        ───── 网卡 DMA 读走数据并发送 ─────
+
+TX 完成中断 / NAPI poll
+  ├─ 读回描述符的完成位
+  ├─ dma_unmap_single(...) / dma_unmap_page(...)
+  └─ 释放 skb
+</code></pre>
+<p><strong>契约：在网卡确认发送完成之前，不能 unmap、不能释放、不能复用。</strong></p>
+<p>这一点决定了 <code class="c">MSG_ZEROCOPY</code> 的真实代价（详见 <a href="chapter-15.html#s-01">01 篇</a>）：你的用户态 buffer 被 pin 住挂在 <code class="c">skb_shinfo-&gt;frags[]</code> 上，只有当<strong>完成中断</strong>处理完、<code class="c">SKBTX_ZEROCOPY_FRAG</code> 的通知进了 error queue，那块内存才重新归你。</p>
+<p>完成中断什么时候来？取决于中断合并：</p>
+<pre class="code" data-label="shell"><code class="c">ethtool -c eth0 | grep -i tx
+#   tx-usecs / tx-frames 非 0 → 完成通知被攒着，buffer 释放被推迟
+</code></pre>
+<p>所以 <code class="c">ethtool -C eth0 tx-usecs 0</code> 不只是"降低延迟"，它还<strong>直接把你可用的发送缓冲池变大</strong>。</p>
+<hr />
+<h2>四、skb 释放路径：四个函数，差别很大</h2>
+<p>驱动清理 Tx ring 时要释放 skb，用哪个函数<strong>不是随意的</strong>——它们在<strong>统计语义</strong>和<strong>释放速度</strong>上都不同。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>场景</th>
+<th>计入丢包吗</th>
+<th>走 per-CPU 缓存吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kfree_skb(skb)</code></td>
+<td>通用释放</td>
+<td><strong>计入</strong>（<code class="c">SKB_DROP_REASON_NOT_SPECIFIED</code>）</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">__kfree_skb(skb)</code></td>
+<td>内部实现</td>
+<td>计入</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">consume_skb(skb)</code></td>
+<td>正常投递完成</td>
+<td><strong>不计入</strong>（<code class="c">SKB_CONSUMED</code>）</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">napi_consume_skb(skb, budget)</code></td>
+<td><strong>NAPI 上下文</strong>（推荐）</td>
+<td>不计入</td>
+<td><strong>是</strong> ← 快</td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">napi_consume_skb</code> 的实际实现（v6.6 <code class="c">net/core/skbuff.c</code>）</h3>
+<pre class="code" data-label="C"><code class="c">void napi_consume_skb(struct sk_buff *skb, int budget)
+{
+    /* Zero budget indicate non-NAPI context called us, like netpoll */
+    if (unlikely(!budget)) {
+        dev_consume_skb_any(skb);
+        return;
+    }
+
+    DEBUG_NET_WARN_ON_ONCE(!in_softirq());
+
+    if (!skb_unref(skb))
+        return;
+
+    /* if reaching here SKB is ready to free */
+    trace_consume_skb(skb, __builtin_return_address(0));
+
+    /* if SKB is a clone, don't handle this case */
+    if (skb-&gt;fclone != SKB_FCLONE_UNAVAILABLE) {
+        __kfree_skb(skb);
+        return;
+    }
+
+    skb_release_all(skb, SKB_CONSUMED, !!budget);
+    napi_skb_cache_put(skb);      /* ← per-CPU 缓存，避免 slab 分配器往返 */
+}
+</code></pre>
+<p>三个关键细节：</p>
+<ol>
+<li><strong><code class="c">budget</code> 参数不是"预算"，是"你是否在 NAPI 上下文"的标记</strong>。<code class="c">budget == 0</code> 表示非 NAPI 调用（如 netpoll），退化成 <code class="c">dev_consume_skb_any()</code>。这个参数名极具误导性。</li>
+<li><strong>最后一个参数是 <code class="c">!!budget</code>，控制是否走 <code class="c">napi_skb_cache_put()</code></strong>——即是否把 skb 头放进 per-CPU 缓存。这是"NAPI 上下文释放更快"的真正来源：省了一次 slab 分配器往返。</li>
+<li><strong>clone 的 skb 走不到缓存</strong>（<code class="c">skb-&gt;fclone != SKB_FCLONE_UNAVAILABLE</code> 就退化成 <code class="c">__kfree_skb</code>）。所以<strong>克隆过的包释放更贵</strong>。</li>
+</ol>
+<h3>⚠️ 统计陷阱：用错函数会让你的监控说谎</h3>
+<p><code class="c">kfree_skb</code> 与 <code class="c">consume_skb</code> 的区别是<strong>语义</strong>上的：</p>
+<ul>
+<li><code class="c">kfree_skb()</code> → <code class="c">SKB_DROP_REASON_NOT_SPECIFIED</code> → <strong>会被丢包监控（drop_monitor、kfree_skb_reason tracepoint）记录下来</strong></li>
+<li><code class="c">consume_skb()</code> / <code class="c">napi_consume_skb()</code> → <code class="c">SKB_CONSUMED</code> → <strong>正常投递，不计丢包</strong></li>
+</ul>
+<p>所以：如果你在驱动的完成路径里误用了 <code class="c">kfree_skb()</code>，那么<strong>每个成功发出的包都会被统计成一次丢包</strong>。<code class="c">dropwatch</code> 里会看到天量的 <code class="c">skb_kfree</code> 事件，而实际上一个包都没丢。这是驱动开发里很经典的坑，反过来也说明——<strong>看到 <code class="c">kfree_skb</code> 事件猛增，先怀疑是不是有人在错误的地方用了错误的释放函数</strong>，而不是立刻认定在丢包。</p>
+<hr />
+<h2>五、page_pool：为什么现代驱动不再 <code class="c">alloc_page</code></h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>传统（<code class="c">alloc_page</code>）</th>
+<th>现代（<code class="c">page_pool</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配成本</td>
+<td>每次走伙伴系统</td>
+<td>per-CPU 缓存，命中即返回</td>
+</tr>
+<tr>
+<td>回收</td>
+<td><code class="c">put_page()</code> 回伙伴系统</td>
+<td>驱动/XDP 直接回收进池</td>
+</tr>
+<tr>
+<td>XDP 支持</td>
+<td>无（XDP 依赖 page_pool）</td>
+<td>原生支持</td>
+</tr>
+<tr>
+<td>NUMA</td>
+<td>需要自己管</td>
+<td>池按 NUMA 节点创建</td>
+</tr>
+<tr>
+<td>DMA 映射</td>
+<td>每次 map/unmap</td>
+<td><strong>可保持映射</strong>（<code class="c">PAGE_POOL_DMA_MAP</code>），省掉每次 map</td>
+</tr>
+</tbody>
+</table></div>
+<p>最后一行是关键：page_pool 可以<strong>预先做好 DMA 映射并保持住</strong>，收发循环里就省掉了 <code class="c">dma_map</code>/<code class="c">dma_unmap</code> 这一对（每次约几十到几百 ns，且涉及 IOMMU 时更贵）。</p>
+<blockquote>
+<p>详见 <a href="chapter-04.html#ch-4">chapter-04 page_pool</a>。</p>
+</blockquote>
+<hr />
+<h2>六、观测：把契约变成可查的数字</h2>
+<pre class="code" data-label="shell"><code class="c"># 队列是否频繁 stop/wake（→ requeues 的根源）
+tc -s qdisc show dev eth0          # 看 requeues / backlog / dropped
+
+# 驱动层计数器（驱动自己定义的名字，各家不同）
+ethtool -S eth0 | grep -iE &quot;tx_|rx_&quot;
+#   重点：tx_busy / tx_restart / no_buf / missed / rx_dropped
+
+# 中断合并（决定收包延迟和完成通知延迟）
+ethtool -c eth0
+ethtool -C eth0 rx-usecs 0 tx-usecs 0      # 低延迟：全关
+ethtool -C eth0 adaptive-rx off            # 自适应合并会自己把延迟加上去
+
+# 队列 stop 的直接证据（tracepoint）
+perf trace -e 'net:net_dev_xmit_timeout'   # Tx 超时
+bpftrace -e 'tracepoint:net:net_dev_queue { @[comm] = count(); }'
+
+# 丢包定位（5.15+ 带 reason）
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+</code></pre>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong><code class="c">NETDEV_TX_BUSY</code> 不是正常的背压机制</strong>，是驱动兜底。看到 <code class="c">requeues</code> 涨，要去调 Tx ring 大小和 stop 阈值，不是"接受它"。</li>
+<li><strong>队列 stop/wake 才是零成本流控</strong>：<code class="c">netif_tx_stop_queue()</code> 让 qdisc 根本不 dequeue，比"dequeue 了再返回 BUSY 让内核 requeue"便宜得多。</li>
+<li><strong>释放函数选错会让监控说谎</strong>：完成路径用 <code class="c">napi_consume_skb(skb, budget)</code>，别用 <code class="c">kfree_skb()</code>——后者会把每个成功的包记成丢包。</li>
+<li><strong><code class="c">napi_consume_skb</code> 的 <code class="c">budget</code> 参数是"是否 NAPI 上下文"的标记</strong>，非零才走 per-CPU 缓存。名字极具误导性。</li>
+<li><strong>克隆过的包释放不走缓存</strong>，更贵。高 PPS 下能省则省。</li>
+<li><strong>中断合并同时影响收发两端</strong>：<code class="c">rx-usecs</code> 决定收包延迟，<code class="c">tx-usecs</code> 决定完成通知延迟（进而决定 <code class="c">MSG_ZEROCOPY</code> 的 buffer 周转）。</li>
+<li><strong>budget 越大延迟越"尖"</strong>：单轮 softirq 太长会推迟其他核。低延迟要小 budget。</li>
+<li><strong>page_pool 的保持映射</strong>是收发循环里最容易被忽略的一笔节省（省掉每次 DMA map/unmap）。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 3.x（2.6 时代）</th>
+<th>现在（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">NETDEV_TX_LOCKED</code> 是有效返回值</td>
+<td><strong>已移除</strong>，<code class="c">netdev_tx</code> 只剩 OK / BUSY</td>
+</tr>
+<tr>
+<td>Rx buffer 用 <code class="c">alloc_page</code></td>
+<td><code class="c">page_pool</code>（可保持 DMA 映射）</td>
+</tr>
+<tr>
+<td>驱动直接 <code class="c">netif_receive_skb()</code></td>
+<td>必须 <code class="c">napi_gro_receive()</code></td>
+</tr>
+<tr>
+<td>无 XDP</td>
+<td>native XDP 在 skb 构造之前</td>
+</tr>
+<tr>
+<td>释放 skb 用 <code class="c">dev_kfree_skb</code> / <code class="c">kfree_skb</code></td>
+<td>NAPI 上下文用 <code class="c">napi_consume_skb()</code></td>
+</tr>
+<tr>
+<td>丢包只能靠计数器猜</td>
+<td>5.15+ <code class="c">kfree_skb_reason</code> tracepoint 直接给出原因</td>
+</tr>
+<tr>
+<td>单队列</td>
+<td>多队列 + per-queue <code class="c">napi_struct</code></td>
+</tr>
+<tr>
+<td>GRO 仅软件</td>
+<td>还有硬件 GRO（<code class="c">rx-gro-hw</code>），但会让 tcpdump 看到假包</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>关于硬件 GRO 的陷阱，见 <a href="chapter-13.html#s-04">chapter-02/04-gro-gso</a>。</p>
+</blockquote>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你在 <code class="c">dropwatch</code> 里看到每秒几万次 <code class="c">kfree_skb</code> 事件，但业务没报丢包、对端也正常收到。最可能的原因是什么？</summary>
+<p><b>答：</b>首先怀疑<b>释放函数用错了</b>，而不是真丢包。</p>
+<p><code class="c">kfree_skb()</code> 走 <code class="c">SKB_DROP_REASON_NOT_SPECIFIED</code>，会被 drop_monitor 记录；而 <code class="c">consume_skb()</code> / <code class="c">napi_consume_skb()</code> 走 <code class="c">SKB_CONSUMED</code>，属于正常投递、不记录。</p>
+<p>如果某个驱动（或你自己写的 BPF/内核模块）在完成路径上误用了 <code class="c">kfree_skb()</code>，那么<b>每一个成功发出的包都会被记成一次丢包</b>——数量级恰好和 PPS 吻合。</p>
+<p>验证方法：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:skb:kfree_skb { @[kstack] = count(); }'
+</code></pre>
+<p>看调用栈来自哪里。如果来自驱动的 Tx 清理路径，就是误用；如果来自 <code class="c">udp_rcv</code> / socket 队列溢出之类，才是真丢包。</p>
+<p><b>判断顺序很重要：先看栈，再下结论。</b></p>
+</details>
+<details>
+<summary>Q2：<code class="c">tc -s qdisc show</code> 显示 <code class="c">requeues</code> 持续上涨。这代表什么？该怎么处理？</summary>
+<p><b>答：</b><code class="c">requeues</code> 上涨说明 <code class="c">ndo_start_xmit()</code> 返回了 <code class="c">NETDEV_TX_BUSY</code>（0x10），导致 <code class="c">dev_xmit_complete(rc)</code> 判定为 false，内核把 skb 重新入队再调度一次。</p>
+<p><b>这是纯浪费的延迟</b>——本来正确的做法是驱动在 Tx ring 快满时调用 <code class="c">netif_tx_stop_queue(txq)</code>，让 qdisc 层根本不 dequeue；完成中断里再 <code class="c">netif_tx_wake_queue(txq)</code> 恢复。stop/wake 是零成本的，BUSY + requeue 是"已经走到门口了又退回来"。</p>
+<p>处理：
+1. 增大 Tx ring：<code class="c">ethtool -G eth0 tx 4096</code>（原值用 <code class="c">ethtool -g eth0</code> 查）
+2. 检查驱动的 stop 阈值是否合理（有些驱动 ring 剩 1/8 才 stop，太晚）
+3. 降低 burst：如果应用一次性塞太多包，考虑分批</p>
+<p>注意：requeues 发生在"队列将满未满"的边界，这正是发包延迟分布<b>第二个峰</b>的来源——不可预测，危害比稳定的排队更大。</p>
+</details>
+<details>
+<summary>Q3：驱动的 Tx 清理函数里，把 <code class="c">napi_consume_skb(skb, budget)</code> 改成 <code class="c">napi_consume_skb(skb, 0)</code>，性能会变差吗？为什么？</summary>
+<p><b>答：</b>会变差，而且是两方面：</p>
+<ol>
+<li>
+<p><strong>丢了 per-CPU 缓存</strong>。<code class="c">budget == 0</code> 时函数直接 <code class="c">dev_consume_skb_any(skb)</code> 返回，走不到底部的 <code class="c">napi_skb_cache_put(skb)</code>。于是每个 skb 头都要走一次 slab 分配器，而不是从 per-CPU 缓存拿/放。高 PPS 下这是实打实的 cache miss 和锁竞争。</p>
+</li>
+<li>
+<p><strong>语义变了</strong>。<code class="c">budget</code> 在这里的真实含义是"你是否在 NAPI 上下文"，不是"还剩多少预算"。传 0 等于告诉内核"我不在 NAPI 里"，于是走非 NAPI 路径——连 <code class="c">DEBUG_NET_WARN_ON_ONCE(!in_softirq())</code> 的检查都绕过去了，掩盖了真实问题。</p>
+</li>
+</ol>
+<p>这个参数名确实极具误导性：<b>它长得像预算，实际是个布尔标记。</b></p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-01">01 发包路径</a>
+→ 后一篇：<a href="chapter-15.html#s-03">03 sk_buff 生命周期</a>
+→ 相关：<a href="chapter-04.html#ch-4">chapter-04 page_pool</a> · <a href="chapter-15.html#s-02">chapter-02 NAPI</a></p>
       </section>
       <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">09</div><h2>— sk_buff 生命周期</h2></div>
+        <div class="sec-head"><div class="sec-no">03</div><h2>— sk_buff 生命周期：从 slab 到释放</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> Ch1/Ch11（sk_buff 是核心数据结构）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/</code> 相关 + <code class="c">include/linux/skbuff.h</code></p>
+<strong>内核源码路径:</strong> <code class="c">include/linux/skbuff.h</code>、<code class="c">net/core/skbuff.c</code>
+<strong>内核版本:</strong> 以 v6.6 为准，符号与函数体已核对源码</p>
 </blockquote>
-<h2>sk_buff 概述</h2>
-<p>sk_buff（socket buffer）是 Linux 网络栈的核心数据结构：
-- 包含包数据指针 + 元数据（协议头偏移、队列映射、时间戳等）
-- 在协议栈各层之间传递
-- 分配/释放是网络栈的主要开销之一</p>
-<h2>关键字段</h2>
+<h2>文档概述</h2>
+<p><code class="c">sk_buff</code> 是 Linux 网络栈里唯一贯穿全程的数据结构。Rosen 用了一整章讲它，但讲的是 2.6 时代的形态。本篇按 v6.6 重写，重点补三件原笔记没讲的事：</p>
+<ol>
+<li><strong>三个 slab cache</strong>（不止一个 <code class="c">skbuff_head_cache</code>，v6.6 还有 <code class="c">skbuff_small_head</code>）</li>
+<li><strong>fclone 机制</strong>——为什么"克隆"有时比"分配"快得多</li>
+<li><strong>释放函数的语义差异</strong>——选错会让你的丢包监控说谎</li>
+</ol>
+<p>本篇与兄弟篇的分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>篇</th>
+<th>讲 sk_buff 的哪一面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>03（本篇）</strong></td>
+<td>分配 / 克隆 / 释放的<strong>生命周期</strong></td>
+</tr>
+<tr>
+<td><a href="chapter-13.html#s-04">04</a></td>
+<td>与 <code class="c">xdp_buff</code> 的<strong>表示转换</strong></td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-02">02</a></td>
+<td>驱动侧的<strong>释放路径选择</strong></td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-01">chapter-01</a></td>
+<td><code class="c">len</code> / <code class="c">data_len</code> <strong>线性区陷阱</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、结构全景：四指针 + 三偏移</h2>
+<pre class="code" data-label="code"><code class="c">        head                 data                  tail              end
+         |                    |                     |                 |
+         v                    v                     v                 v
+  +------+--------------------+---------------------+-----------------+------+
+  | headroom | &lt;- 已 push 的协议头 -&gt; |   线性数据区     |   tailroom      | shinfo|
+  +------+--------------------+---------------------+-----------------+------+
+         |                    |                                       |
+         |&lt;--- skb_headroom() -&gt;|                                     |
+         |&lt;----------- skb_headlen() = len - data_len ---------------&gt;|
+         |&lt;------------------ skb-&gt;end - skb-&gt;head -------------------&gt;|
+                                                                        ^
+                                                          skb_shared_info
+                                                          （frags[] / gso 等）
+
+  非线性区（data_len &gt; 0）：由 skb_shared_info-&gt;frags[] 指向的页面承载
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>字段</th>
-<th>作用</th>
-<th>HFT 关注</th>
+<th>含义</th>
+<th>注意</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">head</code> / <code class="c">data</code> / <code class="c">tail</code> / <code class="c">end</code></td>
-<td>数据缓冲区指针</td>
-<td>数据访问</td>
+<td><code class="c">head</code> / <code class="c">end</code></td>
+<td>整个缓冲区的起止（<strong>固定</strong>）</td>
+<td>分配后不变</td>
 </tr>
 <tr>
-<td><code class="c">len</code> / <code class="c">data_len</code></td>
-<td>包长度</td>
-<td>—</td>
+<td><code class="c">data</code> / <code class="c">tail</code></td>
+<td>当前"有效数据"的起止（<strong>会动</strong>）</td>
+<td>各层 push/pull 就是在动这两个</td>
 </tr>
 <tr>
-<td><code class="c">protocol</code></td>
-<td>L3 协议</td>
-<td>解析</td>
+<td><code class="c">len</code></td>
+<td><strong>总</strong>长度（线性 + 非线性）</td>
+<td>⚠️ 不是线性区长度</td>
 </tr>
 <tr>
-<td><code class="c">pkt_type</code></td>
-<td>包类型（unicast/multicast/broadcast）</td>
-<td>行情组播</td>
+<td><code class="c">data_len</code></td>
+<td><strong>非线性区</strong>长度</td>
+<td>线性区 = <code class="c">len - data_len</code></td>
 </tr>
 <tr>
-<td><code class="c">mark</code></td>
-<td>skb 标记</td>
-<td>tc-BPF 设置</td>
+<td><code class="c">mac_header</code> / <code class="c">network_header</code> / <code class="c">transport_header</code></td>
+<td>各层起始偏移</td>
+<td>可能为 <code class="c">~0U</code> 表示未设置</td>
 </tr>
 <tr>
-<td><code class="c">priority</code></td>
-<td>优先级</td>
-<td>qdisc</td>
+<td><code class="c">users</code></td>
+<td>skb 头自身的引用计数</td>
+<td><code class="c">skb_get()</code> / <code class="c">kfree_skb()</code></td>
 </tr>
 <tr>
-<td><code class="c">queue_mapping</code></td>
-<td>网卡队列映射</td>
-<td>多核收包</td>
+<td><code class="c">cloned</code></td>
+<td><strong>数据区</strong>是否被共享</td>
+<td>与 <code class="c">users</code> 是两套计数！</td>
 </tr>
 <tr>
-<td><code class="c">tstamp</code> / <code class="c">ktstamp</code></td>
-<td>时间戳</td>
-<td>延迟测量</td>
+<td><code class="c">fclone</code></td>
+<td>是否来自 fclone cache</td>
+<td><code class="c">SKB_FCLONE_ORIG</code> / <code class="c">_CLONE</code> / <code class="c">_UNAVAILABLE</code></td>
 </tr>
 <tr>
-<td><code class="c">cb</code></td>
-<td>控制块（每层自定义）</td>
-<td>传递元数据</td>
+<td><code class="c">cb[48]</code></td>
+<td>控制块，<strong>每层复用同一块内存</strong></td>
+<td>跨层传递会互相踩</td>
 </tr>
 <tr>
-<td><code class="c">skb-&gt;users</code></td>
-<td>引用计数</td>
-<td>生命周期</td>
+<td><code class="c">sk</code></td>
+<td>归属的 socket</td>
+<td>影响 socket 内存记账与释放时序</td>
 </tr>
 </tbody>
 </table></div>
-<h2>分配/释放路径</h2>
-<pre class="code" data-label="code"><code class="c">alloc_skb() → kmem_cache_alloc(skbuff_head_cache)
-  → 分配 sk_buff 结构体（~256 字节）
-  → 分配数据缓冲区（__alloc_skb / page_pool）
-
-kfree_skb() → 引用计数减 1
-  → 引用计数 = 0 → 释放数据缓冲区 + 释放 sk_buff
+<h3>⚠️ 两套引用计数，别混</h3>
+<p>这是最容易搞错的地方：</p>
+<ul>
+<li><strong><code class="c">users</code></strong>：<code class="c">struct sk_buff</code> <strong>这个结构体本身</strong>被引用几次。<code class="c">skb_get()</code> 加 1，<code class="c">kfree_skb()</code> 减 1，归零才释放 skb 头。</li>
+<li><strong>数据区引用</strong>：在 <code class="c">skb_shared_info-&gt;dataref</code> 里。<code class="c">skb_clone()</code> <strong>不增加 <code class="c">users</code></strong>，它新建一个 skb 头、共享数据区、把 <code class="c">dataref</code> 加 1，并把原 skb 和克隆 skb 都打上 <code class="c">cloned</code> 标记。</li>
+</ul>
+<p>所以 <code class="c">skb_clone()</code> 出来的 skb，<code class="c">users == 1</code>，但 <code class="c">cloned == 1</code>。<strong>一个包可以同时被 <code class="c">users</code> 和 <code class="c">dataref</code> 管着，两个都得归零才真正消失。</strong></p>
+<h3><code class="c">cb[48]</code> 是个共享的 48 字节</h3>
+<p><code class="c">cb</code> 是"每层自定义"的暂存区——IP 层用完 TCP 层接着用，<strong>同一块 48 字节</strong>。它的用处是省内存（避免每层都加字段），代价是<strong>跨层传递时如果你往 <code class="c">cb</code> 里写了东西，下一层会覆盖掉</strong>。写 tc-BPF / kprobe 时往 <code class="c">cb</code> 塞自定义元数据，一定要确认中间没有别的层会踩它。</p>
+<p>顺带一个安全细节：<code class="c">skbuff_head_cache</code> 是用 <code class="c">kmem_cache_create_usercopy()</code> 创建的，白名单区间恰好是 <code class="c">cb</code>（<code class="c">offsetof(struct sk_buff, cb)</code> 起、长度 <code class="c">sizeof(cb)</code>）——也就是说<strong>只有 <code class="c">cb</code> 允许被 copy 到用户态</strong>，其余字段不行。这是历史上一批 <code class="c">sk_buff</code> 信息泄漏漏洞之后的加固。</p>
+<hr />
+<h2>二、分配：三个 slab cache</h2>
+<p>原笔记只写了 <code class="c">kmem_cache_alloc(skbuff_head_cache)</code>。v6.6 实际有<strong>三个</strong>（<code class="c">net/core/skbuff.c</code> 的 <code class="c">skb_init()</code>）：</p>
+<pre class="code" data-label="C"><code class="c">void __init skb_init(void)
+{
+    skbuff_cache = kmem_cache_create_usercopy(&quot;skbuff_head_cache&quot;,
+                    sizeof(struct sk_buff), 0,
+                    SLAB_HWCACHE_ALIGN|SLAB_PANIC|
+                      FLAG_SKB_NO_MERGE,
+                    offsetof(struct sk_buff, cb),
+                    sizeof_field(struct sk_buff, cb),
+                    NULL);
+    skbuff_fclone_cache = kmem_cache_create(&quot;skbuff_fclone_cache&quot;,
+                    sizeof(struct sk_buff_fclones), 0,
+                    SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
+    /* usercopy should only access first SKB_SMALL_HEAD_HEADROOM bytes.
+     * struct skb_shared_info is located at the end of skb-&gt;head,
+     * and should not be copied to/from user.
+     */
+    skb_small_head_cache = kmem_cache_create_usercopy(&quot;skbuff_small_head&quot;,
+                    SKB_SMALL_HEAD_CACHE_SIZE, 0,
+                    SLAB_HWCACHE_ALIGN | SLAB_PANIC,
+                    0, SKB_SMALL_HEAD_HEADROOM, NULL);
+    skb_extensions_init();
+}
 </code></pre>
-<h2>XDP 对 sk_buff 的影响</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>XDP 动作</th>
-<th>sk_buff</th>
-<th>延迟</th>
+<th>cache</th>
+<th>装什么</th>
+<th>什么时候用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>XDP_DROP</td>
-<td>不分配</td>
-<td>最少</td>
+<td><code class="c">skbuff_head_cache</code></td>
+<td>单个 <code class="c">struct sk_buff</code></td>
+<td>普通分配</td>
 </tr>
 <tr>
-<td>XDP_PASS</td>
-<td>分配（延迟到 XDP 之后）</td>
-<td>减少</td>
+<td><code class="c">skbuff_fclone_cache</code></td>
+<td><code class="c">struct sk_buff_fclones</code>（<strong>一对</strong> skb）</td>
+<td>预知马上要 clone 时（如 TCP 发送）</td>
 </tr>
 <tr>
-<td>XDP_REDIRECT (AF_XDP)</td>
-<td>不分配</td>
-<td>最少</td>
-</tr>
-<tr>
-<td>无 XDP</td>
-<td>立即分配</td>
-<td>传统</td>
+<td><code class="c">skbuff_small_head</code></td>
+<td><strong>小数据区</strong>（<code class="c">SKB_SMALL_HEAD_CACHE_SIZE</code>）</td>
+<td>小包（如 TCP ACK、控制报文），避免为几十字节单独分配页面</td>
 </tr>
 </tbody>
 </table></div>
+<p><code class="c">skbuff_small_head</code> 是 6.x 才加的，常见资料（包括 Rosen）都没提。它对 HFT 有意义：<strong>下单报文通常就几十到几百字节，正好落在这个 cache 里</strong>，省掉一次页面分配。</p>
+<h3>分配函数怎么选</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>用在哪</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">alloc_skb(size, gfp)</code></td>
+<td>通用</td>
+<td>最基础</td>
+</tr>
+<tr>
+<td><code class="c">netdev_alloc_skb(dev, len)</code></td>
+<td>驱动收包（老接口）</td>
+<td>带 <code class="c">NET_SKB_PAD</code> headroom</td>
+</tr>
+<tr>
+<td><code class="c">napi_alloc_skb(napi, len)</code></td>
+<td>驱动收包（<strong>现代推荐</strong>）</td>
+<td>可能从 NAPI 的 per-CPU 缓存拿，更快</td>
+</tr>
+<tr>
+<td><code class="c">build_skb(data, frag_size)</code></td>
+<td>已有数据区时</td>
+<td>只分配 skb 头，数据区复用</td>
+</tr>
+<tr>
+<td><code class="c">napi_build_skb(data, frag_size)</code></td>
+<td><strong>XDP_PASS 后接进协议栈</strong></td>
+<td>见 <a href="chapter-13.html#s-04">04 篇</a></td>
+</tr>
+<tr>
+<td><code class="c">skb_alloc_from_fclone</code></td>
+<td>内部</td>
+<td>走 fclone cache</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键区别</strong>：<code class="c">alloc_skb()</code> 要同时分配「skb 头」+「数据区」两笔；<code class="c">build_skb()</code> / <code class="c">napi_build_skb()</code> <strong>只分配 skb 头</strong>，数据区用现成的（比如 page_pool 里的页面）。后者是 XDP_PASS 能"零拷贝接进协议栈"的原因。</p>
+<hr />
+<h2>三、fclone：为"马上要克隆"准备的一对 skb</h2>
+<p>TCP 发送必须保留一份副本用于重传，所以每发一个包都要 clone。如果每次 clone 都走一次 slab 分配，成本很高。</p>
+<p>fclone 的解法：<strong>一次性分配一对</strong> <code class="c">struct sk_buff</code>（<code class="c">sk_buff_fclones</code>），一个标记为 <code class="c">SKB_FCLONE_ORIG</code>，另一个预留为 <code class="c">SKB_FCLONE_CLONE</code>。</p>
+<pre class="code" data-label="C"><code class="c">/* net/core/skbuff.c:673 */
+skb-&gt;fclone = SKB_FCLONE_ORIG;
+</code></pre>
+<p>之后调用 <code class="c">skb_clone()</code> 时，如果原 skb 是 <code class="c">SKB_FCLONE_ORIG</code> 且那个预留的兄弟还没被用掉，<strong>直接拿来用，完全不走 slab</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* net/core/skbuff.c:1009 附近，__kfree_skb / skb_clone 的分支 */
+case SKB_FCLONE_UNAVAILABLE:   /* 普通 skb，释放时回收头 */
+case SKB_FCLONE_ORIG:          /* orig 释放时，把兄弟的克隆标记清掉 */
+default: /* SKB_FCLONE_CLONE */ /* clone 释放时，把兄弟还给可用状态 */
+</code></pre>
+<p><strong>含义</strong>：fclone 路径下 clone 的成本接近零——只是一次结构体填写，没有任何分配器交互。</p>
+<p><strong>代价</strong>：每个 fclone 分配占的内存是单个 skb 的两倍。所以只有<strong>明确知道要 clone</strong> 的路径（TCP 发送）才用它；收包路径不用。</p>
+<p><strong>一个反直觉的细节</strong>（见 <code class="c">napi_consume_skb</code> 源码）：</p>
+<pre class="code" data-label="C"><code class="c">/* if SKB is a clone, don't handle this case */
+if (skb-&gt;fclone != SKB_FCLONE_UNAVAILABLE) {
+    __kfree_skb(skb);
+    return;
+}
+skb_release_all(skb, SKB_CONSUMED, !!budget);
+napi_skb_cache_put(skb);
+</code></pre>
+<p><strong>clone 出来的 skb 用不了 per-CPU 缓存</strong>，只能走 <code class="c">__kfree_skb()</code>。所以"克隆很便宜"是真的，但"克隆的释放也很便宜"是假的——<strong>省在分配，亏在释放</strong>。</p>
+<hr />
+<h2>四、四种"复制"语义完全不同</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>复制 skb 头</th>
+<th>复制数据区</th>
+<th>可写</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">skb_clone()</code></td>
+<td>✅ 新建</td>
+<td>❌ <strong>共享</strong>（<code class="c">dataref++</code>）</td>
+<td>❌ 只读</td>
+<td>TCP 重传副本、抓包分流</td>
+</tr>
+<tr>
+<td><code class="c">skb_copy()</code></td>
+<td>✅</td>
+<td>✅ 全部</td>
+<td>✅</td>
+<td>需要修改数据</td>
+</tr>
+<tr>
+<td><code class="c">pskb_copy()</code></td>
+<td>✅</td>
+<td>✅ <strong>仅线性区</strong>（frags 仍共享）</td>
+<td>部分</td>
+<td>只需改协议头</td>
+</tr>
+<tr>
+<td><code class="c">skb_copy_expand()</code></td>
+<td>✅</td>
+<td>✅ 全部 + <strong>加大 headroom</strong></td>
+<td>✅</td>
+<td>要往前加封装头</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>对 clone 出来的 skb 写数据会污染原 skb</strong>——它们共享同一块数据区。如果确实要写，内核要求先 <code class="c">skb_cow()</code>（copy-on-write）确认独占。这是驱动/BPF 开发里的经典 bug 来源。</p>
+<p>⚠️ <strong><code class="c">pskb_copy()</code> 只拷线性区</strong>：如果包有分片（<code class="c">data_len &gt; 0</code>），<code class="c">frags[]</code> 仍然共享。只改头部时没问题，改 payload 就出事了。</p>
+<hr />
+<h2>五、生命周期状态机</h2>
+<pre class="code" data-label="code"><code class="c">                    alloc_skb() / napi_build_skb()
+                              │
+                              v
+                    ┌──────────────────┐
+                    │   users = 1      │
+                    │   data_len = 0   │
+                    │   cloned = 0     │
+                    └──────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │                     │                     │
+   skb_get()             skb_clone()          GRO 合并 / IP 分片重组
+   users++           新建头 + dataref++         → data_len &gt; 0（非线性）
+        │                cloned = 1                 │
+        │                     │                     │
+        └─────────────────────┼─────────────────────┘
+                              │
+                  各层 push/pull 改 data/tail
+                  skb_pull()  skb_push()  skb_put()  skb_trim()
+                              │
+                              v
+                  释放（四选一，语义不同）
+        ┌─────────────┬───────────────┬──────────────────┐
+        │             │               │                  │
+  kfree_skb()   consume_skb()   napi_consume_skb()  __kfree_skb()
+  计入丢包      正常投递         NAPI 上下文        内部实现
+  reason=       reason=         reason=CONSUMED    reason=
+  NOT_SPECIFIED CONSUMED        + per-CPU 缓存     NOT_SPECIFIED
+        │             │               │
+        └─────────────┴───────────────┘
+                      │
+              users-- → 0 ?
+              dataref-- → 0 ?
+                      │
+                      v
+        释放数据区（page / page_pool 回收）
+        + 回收 skb 头（slab 或 per-CPU 缓存）
+</code></pre>
+<h3><code class="c">kfree_skb_reason</code>：丢包原因（5.15+）</h3>
+<p>这是定位"包在哪一层被丢"最直接的信号。内核给每次 <code class="c">kfree_skb</code> 附带一个 <code class="c">enum skb_drop_reason</code>，比如 <code class="c">SKB_DROP_REASON_SOCKET_FILTER</code>、<code class="c">SKB_DROP_REASON_UDP_CSUM_ERROR</code>、<code class="c">SKB_DROP_REASON_NO_SOCKET</code>、<code class="c">SKB_DROP_REASON_SOCKET_RCVBUFF</code> 等。</p>
+<pre class="code" data-label="shell"><code class="c"># 按原因聚合丢包
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+
+# 带调用栈，直接定位到函数
+bpftrace -e 'tracepoint:skb:kfree_skb /args-&gt;reason &gt; 2/ { printf(&quot;%s\n&quot;, kstack); }'
+
+# 老内核（4.x / 5.0-5.14）没有 reason，只能退回到 dropwatch
+dropwatch -l kas
+</code></pre>
+<p><strong><code class="c">SKB_CONSUMED</code> 是正常投递</strong>，不算丢包。所以上面的过滤条件 <code class="c">reason &gt; 2</code> 就是在排除正常情况。（具体枚举值随版本变化，用 <code class="c">cat /sys/kernel/tracing/events/skb/kfree_skb/format</code> 确认。）</p>
+<hr />
+<h2>六、<code class="c">sk</code> 指针与 socket 的耦合</h2>
+<p><code class="c">skb-&gt;sk</code> 把包和 socket 关联起来，带来两个 HFT 相关的后果：</p>
+<p><strong>① 发送方向的内存记账</strong>
+TCP 发出的 skb 在收到 ACK 之前不能释放，<code class="c">sk-&gt;sk_wmem_alloc</code> 记账。如果发送缓冲耗尽，<code class="c">tcp_sendmsg()</code> 会阻塞（非阻塞则返回 <code class="c">EAGAIN</code>）。<strong>这是发包侧的隐性背压</strong>——<code class="c">SO_SNDBUF</code> 调太小时，你的 send 会莫名其妙地"卡"。</p>
+<p><strong>② 接收方向的释放时序</strong>
+包进 socket 接收队列后，skb 仍持有 <code class="c">sk</code> 引用。<strong>socket 关闭时不等于 skb 立即释放</strong>——队列里的包要等应用读完（或 socket 真正销毁）才释放。</p>
+<p>这意味着：<strong>行情程序退出时，接收队列里积压的包会延迟释放</strong>，短时间内 RSS 不降反升。高频场景下如果进程反复重启，会看到内存"阶梯式"上涨。</p>
+<p><code class="c">skb_orphan()</code> 用来切断这个关联（把 <code class="c">skb-&gt;sk = NULL</code> 并归还记账），常用于转发路径——转发出去的包不应该继续占着收包 socket 的账。</p>
+<hr />
+<h2>七、观测</h2>
+<pre class="code" data-label="shell"><code class="c"># slab 使用量（三个 cache 分别多少）
+cat /proc/slabinfo | grep -E &quot;skbuff&quot;
+
+# 按原因统计丢包（5.15+）
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+
+# 谁在分配 skb（调用栈聚合）
+bpftrace -e 'kprobe:__alloc_skb { @[kstack] = count(); }'
+
+# 克隆频率（TCP 发送路径会很高）
+bpftrace -e 'kprobe:skb_clone { @[comm] = count(); }'
+
+# socket 接收队列积压（对应上面的 ②）
+ss -ulnp            # Recv-Q 列
+cat /proc/net/udp   # tx_queue / rx_queue 列
+</code></pre>
+<hr />
 <h2>HFT 要点</h2>
 <ul>
-<li>sk_buff 分配开销约 ~100-200 cycles，高 PPS 场景累积显著</li>
-<li>XDP DROP 路径避免 sk_buff 分配，是性能关键</li>
-<li><code class="c">skb-&gt;tstamp</code> 可用于测量协议栈各段延迟</li>
-<li><code class="c">skb-&gt;mark</code> 配合 tc qdisc 实现流量优先级</li>
+<li><strong>XDP_DROP 省的不只是 skb 分配，还有整条协议栈</strong>：原笔记只提了"分配开销 ~100-200 cycles"，但分配只是起点。真正的收益是 <code class="c">XDP_DROP</code> 让包在 <code class="c">napi_build_skb()</code> <strong>之前</strong>就结束。</li>
+<li><strong><code class="c">skbuff_small_head</code> 对小包有直接收益</strong>：下单报文几十~几百字节，正好命中这个 cache，省一次页面分配。6.x 才有。</li>
+<li><strong>fclone 省在分配、亏在释放</strong>：clone 本身接近零成本，但 clone 出来的 skb 释放时<strong>走不了 per-CPU 缓存</strong>。</li>
+<li><strong><code class="c">users</code> 和 <code class="c">dataref</code> 是两套计数</strong>：<code class="c">skb_clone()</code> 后 <code class="c">users == 1</code> 但 <code class="c">cloned == 1</code>。只看一个会误判包是否还在被引用。</li>
+<li><strong>别往 <code class="c">cb</code> 里塞跨层的东西</strong>：48 字节被每层复用，下一层会覆盖。</li>
+<li><strong><code class="c">SO_SNDBUF</code> 太小会让 send 隐性阻塞</strong>：<code class="c">sk_wmem_alloc</code> 记账耗尽时，非阻塞 send 返回 <code class="c">EAGAIN</code>，看起来像"随机的发送失败"。</li>
+<li><strong>进程退出时队列里的包不会立即释放</strong>：高频重启会看到内存阶梯式上涨，这不是泄漏。</li>
+<li><strong><code class="c">kfree_skb_reason</code> 是第一手的丢包定位手段</strong>：比 <code class="c">dropwatch</code> 精确得多，能直接给出原因枚举。</li>
 </ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 3.x（2.6 时代）</th>
+<th>现在（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一个 <code class="c">skbuff_head_cache</code></td>
+<td><strong>三个</strong> cache（多了 fclone 专用和 <code class="c">skbuff_small_head</code>）</td>
+</tr>
+<tr>
+<td>未提 fclone</td>
+<td><code class="c">skbuff_fclone_cache</code> + <code class="c">SKB_FCLONE_ORIG/CLONE</code> 三态</td>
+</tr>
+<tr>
+<td>释放主要讲 <code class="c">kfree_skb</code> / <code class="c">dev_kfree_skb</code></td>
+<td><code class="c">napi_consume_skb(skb, budget)</code> 走 per-CPU 缓存</td>
+</tr>
+<tr>
+<td>丢包只能看计数器</td>
+<td>5.15+ <code class="c">kfree_skb_reason</code> 带原因枚举</td>
+</tr>
+<tr>
+<td><code class="c">sk_buff</code> 有 <code class="c">dst</code>、<code class="c">sp</code>（sec_path）等字段</td>
+<td>大量字段已外移到 <code class="c">skb_ext</code>（按需分配，省内存）</td>
+</tr>
+<tr>
+<td>无 usercopy 白名单</td>
+<td><code class="c">kmem_cache_create_usercopy</code> 只允许 <code class="c">cb</code> 拷到用户态</td>
+</tr>
+<tr>
+<td><code class="c">len</code> vs <code class="c">data_len</code> 区分不明显</td>
+<td>非线性区（GRO / 分片）普遍存在，必须区分</td>
+</tr>
+</tbody>
+</table></div>
+<h3>补充：<code class="c">skb_ext</code> 按需外移</h3>
+<p>现代内核把一些不常用字段（如 <code class="c">dst</code>、<code class="c">sec_path</code>、bridge 元数据、TLS 上下文）移出 <code class="c">struct sk_buff</code>，放进按需分配的 <code class="c">skb_ext</code>。<strong>代价是一次额外的指针跳转，收益是 <code class="c">struct sk_buff</code> 本身更小、cache 命中率更高。</strong></p>
+<p>对 HFT 的含义：<code class="c">struct sk_buff</code> 在热路径上被反复读写，它越小越好。这也解释了为什么内核愿意为 <code class="c">cb</code>（48 字节固定）保留在结构体内，而把其他东西挪走——<code class="c">cb</code> 是热路径每包都碰的。</p>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你对一个刚 <code class="c">skb_clone()</code> 出来的 skb 调用 <code class="c">skb_put()</code> 往尾部追加数据，发现原始 skb 的数据也被改了。为什么？怎么修？</summary>
+<p><b>答：</b>因为 <code class="c">skb_clone()</code> <b>只新建 skb 头，数据区是共享的</b>（<code class="c">skb_shared_info-&gt;dataref</code> 加 1，两个 skb 都打上 <code class="c">cloned</code> 标记）。<code class="c">skb_put()</code> 写的是那块共享数据区，所以原 skb 一起变了。</p>
+<p>这是个<b>静默</b> bug——不报错、不崩溃，只是数据莫名其妙被改。</p>
+<p>修法：写之前先确认独占。</p>
+<pre class="code" data-label="C"><code class="c">if (skb_cow(skb, needed_headroom))
+        goto drop;      /* 无法独占（拷贝失败），按丢包处理 */
+</code></pre>
+<p><code class="c">skb_cow()</code> 会检查 <code class="c">skb_cloned()</code>，如果数据区被共享就做一次真正的拷贝（<code class="c">skb_copy</code> 语义），确保之后可写。</p>
+<p>同类陷阱：<code class="c">pskb_copy()</code> <b>只拷线性区</b>，<code class="c">frags[]</code> 仍共享。只改协议头时没问题，改 payload 就会踩到。</p>
+</details>
+<details>
+<summary>Q2：你查 <code class="c">/proc/slabinfo</code>，发现 <code class="c">skbuff_head_cache</code> 和 <code class="c">skbuff_fclone_cache</code> 都有大量对象，但你不记得自己写的代码 clone 过任何包。谁在用？</summary>
+<p><b>答：</b>多半是 <b>TCP 发送路径</b>。</p>
+<p>TCP 必须为每个发出的包保留重传副本，所以 <code class="c">tcp_write_xmit()</code> 走的就是 fclone 路径：分配 <code class="c">SKB_FCLONE_ORIG</code>，随即 <code class="c">skb_clone()</code> 出 <code class="c">SKB_FCLONE_CLONE</code>（因为兄弟是预分配的，这次 clone <b>完全不走 slab</b>）。</p>
+<p>纯 UDP 行情接收路径不应该有 fclone——如果你看到 UDP 进程也在大量使用 <code class="c">skbuff_fclone_cache</code>，查一下是不是有什么抓包/镜像/Netfilter 模块在做 clone 分流。</p>
+<p>验证：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'kprobe:skb_clone { @[kstack] = count(); }'
+</code></pre>
+<p>栈里出现 <code class="c">tcp_*</code> 就是正常的 TCP 重传副本。</p>
+</details>
+<details>
+<summary>Q3：你的 TCP 下单程序在高负载下 <code class="c">send()</code> 偶尔返回 <code class="c">EAGAIN</code>，但 <code class="c">SO_SNDBUF</code> 明明还有空间。<code class="c">ss -tin</code> 也没看到异常。问题在哪？</summary>
+<p><b>答：</b>你看到的是 <code class="c">SO_SNDBUF</code> 的<b>名义大小</b>，但限制你的很可能是 <b>TSQ（TCP Small Queues）</b>——它在 <code class="c">SO_SNDBUF</code> 之外，另外限制<b>单个连接在途未确认的字节数</b>。</p>
+<pre class="code" data-label="shell"><code class="c">sysctl net.ipv4.tcp_limit_output_bytes
+</code></pre>
+<p>TSQ 的本意是防止单个连接把 qdisc 和硬件队列塞满（bufferbloat）。对 HFT 的下单场景，它表现为："缓冲区明明够，但 send 就是发不出去"。</p>
+<p>另外两条容易混淆的：<code class="c">SO_SNDBUF</code> 的<b>实际可用值会小于你 setsockopt 设的值</b>（内核按 <code class="c">net.ipv4.tcp_wmem</code> 的上限截断，且有开销记账的折扣），以及 <code class="c">sk_wmem_alloc</code> 记账包含了已发出但未 ACK 的数据——那部分你看不见但确实占着额度。</p>
+<p>排查顺序：
+1. <code class="c">ss -tinp</code> 看 <code class="c">snd_wnd</code> / <code class="c">cwnd</code> / <code class="c">pacing_rate</code>——是不是被流控或 pacing 限住
+2. <code class="c">sysctl net.ipv4.tcp_limit_output_bytes</code>——TSQ 是否太小
+3. <code class="c">cat /sys/class/net/eth0/queues/tx-0/byte_queue_limits/inflight</code>——BQL 是否已经顶到硬件队列上限
+4. 确认 <code class="c">TCP_NODELAY</code> 已开（否则 Nagle 会让你以为"发不出去"）</p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-02">02 驱动与内核的契约</a>
+→ 后一篇：<a href="chapter-13.html#s-04">04 sk_buff ↔ xdp_buff</a>
+→ 相关：<a href="chapter-15.html#s-01">chapter-01 线性区陷阱</a> · <a href="chapter-04.html#ch-4">chapter-04 page_pool</a></p>
       </section>
       <section class="section" id="s-04">
-        <div class="sec-head"><div class="sec-no">04</div><h2>— sk_buff → xdp_buff：收包路径分流</h2></div>
+        <div class="sec-head"><div class="sec-no">04</div><h2>— xdp_buff ↔ sk_buff：三种转换路径</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> Ch1/Ch11（sk_buff 是唯一数据结构）
-<strong>内核版本:</strong> xdp_buff 4.8+；xdp_frame 4.18+</p>
+<p><strong>对应 Rosen:</strong> Ch1/Ch11（Rosen 时代 <code class="c">sk_buff</code> 是唯一表示）
+<strong>内核版本:</strong> <code class="c">xdp_buff</code> 4.8+、<code class="c">xdp_frame</code> 4.18+，本文以 <strong>v6.6</strong> 为准
+<strong>源码:</strong> <code class="c">include/net/xdp.h</code>、<code class="c">net/core/xdp.c</code>、<code class="c">include/linux/skbuff.h</code></p>
 </blockquote>
-<h2>传统收包路径（Rosen 3.x）</h2>
-<pre class="code" data-label="code"><code class="c">NIC DMA → alloc_page → NAPI poll → sk_buff alloc → 协议栈 → socket
+<h2>文档概述</h2>
+<p>XDP 最重要的设计不是"快"，而是<strong>引入了一种新的包表示</strong>——<code class="c">xdp_buff</code>。同一个以太网帧，在内核里可能以三种形态存在：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表示</th>
+<th>本质</th>
+<th>生命周期</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">xdp_buff</code></td>
+<td><strong>栈上的临时视图</strong>，指向 DMA 缓冲区</td>
+<td>只在 XDP 程序执行期间有效</td>
+</tr>
+<tr>
+<td><code class="c">xdp_frame</code></td>
+<td><strong>可脱离队列的帧</strong>（能跨 CPU、能排队）</td>
+<td>REDIRECT / cpumap / devmap 期间</td>
+</tr>
+<tr>
+<td><code class="c">sk_buff</code></td>
+<td><strong>完整的协议栈表示</strong></td>
+<td>XDP_PASS 之后直到 socket</td>
+</tr>
+</tbody>
+</table></div>
+<p>本篇讲这三种形态之间<strong>怎么转换</strong>。原笔记只画了一张"分流图"（DROP / PASS / TX / REDIRECT），没讲转换本身——而转换的实现细节里藏着两个关键事实：</p>
+<ol>
+<li><strong><code class="c">xdp_frame</code> 就存在包自己的 headroom 里</strong>（<code class="c">xdp_convert_buff_to_frame()</code> 把 <code class="c">struct xdp_frame</code> 写在 <code class="c">xdp-&gt;data_hard_start</code>）</li>
+<li><strong>XDP_PASS 是零拷贝的</strong>：page_pool 的页面直接变成 skb 的数据区，不复制</li>
+</ol>
+<p>本篇与兄弟篇的分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>篇</th>
+<th>讲什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>04（本篇）</strong></td>
+<td>三种表示之间的<strong>转换实现</strong></td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-01">chapter-01</a></td>
+<td>各 hook 点的<strong>先后顺序</strong>（XDP 在 skb 之前还是之后）</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03 sk_buff 生命周期</a></td>
+<td><code class="c">sk_buff</code> 的<strong>分配/克隆/释放</strong></td>
+</tr>
+<tr>
+<td><a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a></td>
+<td>XDP 程序本身怎么写</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、两种"轻量表示"的真实字段</h2>
+<h3><code class="c">struct xdp_buff</code>（v6.6 <code class="c">include/net/xdp.h</code>）</h3>
+<pre class="code" data-label="C"><code class="c">struct xdp_buff {
+    void *data;
+    void *data_end;
+    void *data_meta;
+    void *data_hard_start;
+    struct xdp_rxq_info *rxq;
+    struct xdp_txq_info *txq;
+    u32 frame_sz; /* frame size to deduce data_hard_end/reserved tailroom*/
+    u32 flags; /* supported values defined in xdp_buff_flags */
+};
 </code></pre>
-<ul>
-<li>每个收到的包都分配一个 <code class="c">sk_buff</code>（约 256 字节）</li>
-<li>sk_buff 包含大量元数据（指针、协议头偏移、队列映射等）</li>
-<li>分配 sk_buff 后才能传递给协议栈处理</li>
-</ul>
-<h2>XDP 引入的数据路径分流</h2>
-<pre class="code" data-label="code"><code class="c">NIC DMA → page_pool alloc → XDP hook (xdp_buff) → 决策：
-  ├─ XDP_PASS  → 分配 sk_buff → 协议栈 → socket（传统路径）
-  ├─ XDP_DROP  → 直接丢弃，不分配 sk_buff
-  ├─ XDP_TX    → 原路反弹发送
-  ├─ XDP_REDIRECT → 转发到其他设备/CPUMAP/AF_XDP socket
-  └─ XDP_ABORTED → 错误，丢弃
+<p><strong>8 个字段。</strong> 常见资料说"4 个字段"（<code class="c">data</code>/<code class="c">data_end</code>/<code class="c">data_meta</code>/<code class="c">data_hard_start</code>）是 4.8 刚引入时的形态，<code class="c">rxq</code> / <code class="c">txq</code> / <code class="c">frame_sz</code> / <code class="c">flags</code> 是后来加的。</p>
+<p>注意 <code class="c">xdp_buff</code> <strong>不描述缓冲区的总长度</strong>，只有 <code class="c">frame_sz</code>（整帧大小）。<code class="c">data_hard_end</code> 是<strong>推算</strong>出来的：<code class="c">data_hard_start + frame_sz</code>。这跟 <code class="c">sk_buff</code> 有 <code class="c">head</code>/<code class="c">end</code> 显式边界的做法不同。</p>
+<h3><code class="c">struct xdp_frame</code>（v6.6 <code class="c">include/net/xdp.h</code>）</h3>
+<pre class="code" data-label="C"><code class="c">struct xdp_frame {
+    void *data;
+    u16 len;
+    u16 headroom;
+    u32 metasize; /* uses lower 8-bits */
+    /* Lifetime of xdp_rxq_info is limited to NAPI/enqueue time,
+     * while mem info is valid on remote CPU.
+     */
+    struct xdp_mem_info mem;
+    struct net_device *dev_rx; /* used by cpumap */
+    u32 frame_sz;
+    u32 flags; /* supported values defined in xdp_buff_flags */
+};
 </code></pre>
-<h2>xdp_buff vs sk_buff</h2>
+<p>源码里那句注释很关键：</p>
+<blockquote>
+<p><em>"Lifetime of <code class="c">xdp_rxq_info</code> is limited to NAPI/enqueue time, while mem info is valid on remote CPU."</em></p>
+</blockquote>
+<p>翻译：<strong><code class="c">xdp_buff</code> 里的 <code class="c">rxq</code> 指针只在当前 NAPI 周期内有效</strong>，一旦包要跨 CPU（cpumap）或跨设备（devmap），那个指针就会失效。所以 <code class="c">xdp_frame</code> 不存 <code class="c">rxq</code>，改存 <strong><code class="c">mem</code>（内存类型 + 分配器 id）</strong>——因为内存怎么归还，在远端 CPU 上也是成立的。</p>
+<h3>三形态对照</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>维度</th>
-<th>sk_buff</th>
-<th>xdp_buff</th>
+<th><code class="c">xdp_buff</code></th>
+<th><code class="c">xdp_frame</code></th>
+<th><code class="c">sk_buff</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>分配时机</td>
-<td>收到包后立即分配</td>
-<td>XDP 处理完才分配（PASS 时）</td>
+<td>存储位置</td>
+<td><strong>栈上</strong>（驱动 <code class="c">napi_poll</code> 的局部变量）</td>
+<td><strong>包自己的 headroom 里</strong></td>
+<td>独立 <code class="c">sk_buff</code> 结构 + 数据区</td>
 </tr>
 <tr>
-<td>大小</td>
-<td>~256 字节元数据</td>
-<td>~64 字节，轻量</td>
+<td>字段数</td>
+<td>8</td>
+<td>8</td>
+<td>几十个（v6.6 已外移部分到 <code class="c">skb_ext</code>）</td>
 </tr>
 <tr>
-<td>数据访问</td>
-<td>指针跳转多层</td>
-<td>线性 data/data_end 指针</td>
+<td>能跨 CPU 吗</td>
+<td>❌（<code class="c">rxq</code> 会失效）</td>
+<td>✅（改用 <code class="c">mem</code>）</td>
+<td>✅</td>
 </tr>
 <tr>
-<td>协议栈</td>
-<td>必需</td>
-<td>不经过协议栈</td>
+<td>能排队吗</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
 </tr>
 <tr>
-<td>可修改性</td>
-<td>可改头部但开销大</td>
-<td>可原地改包内容</td>
+<td>见过协议栈吗</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>有 <code class="c">len</code> 吗</td>
+<td>需算 <code class="c">data_end - data</code></td>
+<td>✅ <code class="c">len</code></td>
+<td>✅ <code class="c">len</code></td>
+</tr>
+<tr>
+<td>分配成本</td>
+<td><strong>零</strong>（栈上构造）</td>
+<td>零（写 headroom）</td>
+<td>一次 slab 分配</td>
 </tr>
 </tbody>
 </table></div>
-<h2>性能影响</h2>
-<p>XDP DROP 路径完全不分配 sk_buff：
-- 传统路径：alloc_page + alloc sk_buff + 协议栈处理 → ~300 cycles
-- XDP DROP：检查包头 → ~10 cycles
-- 对 HFT 行情流中的垃圾包过滤非常有效</p>
-<h2>HFT 关联</h2>
+<hr />
+<h2>二、三种转换路径</h2>
+<pre class="code" data-label="code"><code class="c">                         NIC DMA（写入 page_pool 的页面）
+                                   │
+                                   v
+                    ┌──────────────────────────────┐
+                    │  xdp_buff（栈上临时视图）      │
+                    │  data / data_end / rxq ...    │
+                    └──────────────────────────────┘
+                                   │
+                          XDP 程序返回动作
+                                   │
+        ┌──────────────┬───────────┼────────────┬──────────────┐
+        │              │           │            │              │
+    XDP_DROP      XDP_PASS     XDP_TX     XDP_REDIRECT    XDP_ABORTED
+        │              │           │            │              │
+        │              │           │            │              │
+   page 归还      【转换 A】   原路反弹     【转换 B】        丢弃 +
+   page_pool    napi_build_skb()      xdp_convert_         trace_xdp_
+        │              │              buff_to_frame()       exception
+        │              │                    │
+        │              v                    │
+        │      ┌───────────────┐            ├─────────&gt; cpumap（跨 CPU）
+        │      │   sk_buff     │            │                │
+        │      │ 数据区 = 同一个│            ├─────────&gt; devmap（跨设备）
+        │      │ page_pool 页   │            │                │
+        │      │ （零拷贝！）    │            └─────────&gt; AF_XDP（用户态）
+        │      └───────────────┘                             │
+        │              │                                     │
+        │              v                             【转换 C】
+        │        协议栈 → socket                 xdp_build_skb_from_frame()
+        │                                                    │
+        │                                                    v
+        │                                            ┌───────────────┐
+        │                                            │   sk_buff     │
+        │                                            └───────────────┘
+        v                                                    │
+    结束（最便宜）                                     协议栈 → socket
+</code></pre>
+<h3>转换 A：<code class="c">xdp_buff</code> → <code class="c">sk_buff</code>（XDP_PASS）</h3>
+<p>驱动在 XDP 返回 PASS 后调用（v6.6 <code class="c">include/linux/skbuff.h:1273</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct sk_buff *napi_build_skb(void *data, unsigned int frag_size);
+</code></pre>
+<p><strong>只分配 <code class="c">sk_buff</code> 头，数据区不拷贝</strong>——<code class="c">data</code> 直接指向 page_pool 的那个页面。这就是"零拷贝接进协议栈"的含义。</p>
+<p>⚠️ 注意：这里<strong>没有</strong>一个叫 <code class="c">xdp_update_skb()</code> 的函数把 xdp_buff 的字段搬过去。驱动要自己用 <code class="c">napi_build_skb()</code> 构造 skb，再手工设置 protocol / pkt_type 等。这一点和很多资料的简化描述不同——<strong>XDP_PASS 之后是驱动的责任，不是一个统一的内核辅助函数</strong>。</p>
+<p>（内核里确实有 <code class="c">xdp_update_skb_shared_info()</code>，见 <code class="c">include/net/xdp.h:226</code>，但它只处理 <code class="c">skb_shared_info</code> 的分片信息，用于 multi-buf 场景，不是通用的"xdp_buff 转 skb"。）</p>
+<h3>转换 B：<code class="c">xdp_buff</code> → <code class="c">xdp_frame</code>（REDIRECT 用）</h3>
+<p><strong>本篇最有意思的一段</strong>（v6.6 <code class="c">include/net/xdp.h:291</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* Convert xdp_buff to xdp_frame */
+static inline
+struct xdp_frame *xdp_convert_buff_to_frame(struct xdp_buff *xdp)
+{
+    struct xdp_frame *xdp_frame;
+
+    if (xdp-&gt;rxq-&gt;mem.type == MEM_TYPE_XSK_BUFF_POOL)
+        return xdp_convert_zc_to_xdp_frame(xdp);
+
+    /* Store info in top of packet */
+    xdp_frame = xdp-&gt;data_hard_start;
+    if (unlikely(xdp_update_frame_from_buff(xdp, xdp_frame) &lt; 0))
+        return NULL;
+
+    /* rxq only valid until napi_schedule ends, convert to xdp_mem_info */
+    xdp_frame-&gt;mem = xdp-&gt;rxq-&gt;mem;
+
+    return xdp_frame;
+}
+</code></pre>
+<p>三个关键点：</p>
+<p><strong>① <code class="c">xdp_frame</code> 写在包的 headroom 里</strong>（<code class="c">xdp_frame = xdp-&gt;data_hard_start;</code>）。</p>
+<p>那个注释 <code class="c">/* Store info in top of packet */</code> 就是字面意思：<code class="c">struct xdp_frame</code> 被<strong>就地写进包前面的那段空白</strong>。零额外分配。</p>
+<p><strong>这解释了 XDP 为什么强制要求 headroom</strong>。包前面那段空白（默认 256 字节）不是"为了方便加封装头"这么简单——它是 <code class="c">xdp_frame</code> 的<strong>存储空间</strong>。没有它，REDIRECT 就得为每帧额外分配一个 <code class="c">xdp_frame</code> 结构。</p>
+<blockquote>
+<p>通用 XDP（generic XDP，非 native）在 <code class="c">net/core/dev.c:4954</code> 附近有这样的检查：headroom 不足时<strong>先拷贝一份 skb</strong> 补出 <code class="c">XDP_PACKET_HEADROOM</code> 字节再跑 XDP 程序。这就是通用 XDP 比 native XDP 慢的一个原因——它可能多一次拷贝。</p>
+</blockquote>
+<p><strong>② <code class="c">rxq</code> 换成 <code class="c">mem</code></strong>：那句注释 <code class="c">rxq only valid until napi_schedule ends</code> 说明了一切。<code class="c">xdp_buff</code> 的 <code class="c">rxq</code> 指针生命周期只到 NAPI 周期结束，跨 CPU 就废了；<code class="c">xdp_frame</code> 存 <code class="c">struct xdp_mem_info</code>（内存类型 + 分配器 id），在远端 CPU 上也能正确归还内存。</p>
+<p><strong>③ AF_XDP 零拷贝走特殊分支</strong>：<code class="c">MEM_TYPE_XSK_BUFF_POOL</code> 时调用 <code class="c">xdp_convert_zc_to_xdp_frame()</code>，因为它的内存来自用户态 UMEM，归还逻辑不同。</p>
+<h3>转换 C：<code class="c">xdp_frame</code> → <code class="c">sk_buff</code>（cpumap / veth / devmap）</h3>
+<p>当帧被转到另一个 CPU（cpumap）或另一个设备（veth、devmap）后，接收侧要把它变成 skb 才能上协议栈（v6.6 <code class="c">net/core/xdp.c:656</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct sk_buff *xdp_build_skb_from_frame(struct xdp_frame *xdpf,
+                     struct net_device *dev)
+{
+    struct sk_buff *skb;
+
+    skb = kmem_cache_alloc(skbuff_cache, GFP_ATOMIC);
+    if (unlikely(!skb))
+        return NULL;
+
+    memset(skb, 0, offsetof(struct sk_buff, tail));
+
+    return __xdp_build_skb_from_frame(xdpf, skb, dev);
+}
+</code></pre>
+<p>两个细节：</p>
+<ul>
+<li><strong>用的是 <code class="c">skbuff_cache</code></strong>，不是 <code class="c">skbuff_fclone_cache</code> —— 说明这条路<b>不打算 clone</b>。</li>
+<li><code class="c">memset(skb, 0, offsetof(struct sk_buff, tail))</code> —— <strong>只清零到 <code class="c">tail</code> 字段为止</strong>，<code class="c">tail</code> 之后的字段不清。这是精心设计的：热路径上能少清几个字节就少清。（对照本篇 <a href="chapter-15.html#s-03">03 篇</a> 的 <code class="c">sk_buff</code> 布局图，你就明白为什么要清到 <code class="c">tail</code> 为止。）</li>
+</ul>
+<hr />
+<h2>三、内存类型：<code class="c">xdp_mem_info</code> 决定"归还给谁"</h2>
+<p><code class="c">xdp_frame-&gt;mem</code> 的类型决定这个帧最终还给哪个分配器：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>场景</th>
-<th>xdp_buff 优势</th>
+<th><code class="c">MEM_TYPE_*</code></th>
+<th>内存来自</th>
+<th>归还路径</th>
+<th>用在哪</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行情早过滤</td>
-<td>XDP 检查组播地址/端口，丢弃无关包，不分配 sk_buff</td>
+<td><code class="c">MEM_TYPE_PAGE_SHARED</code></td>
+<td>page_pool（page 引用计数 &gt; 1）</td>
+<td><code class="c">page_pool_put_page()</code></td>
+<td>常规 XDP</td>
 </tr>
 <tr>
-<td>行情早分类</td>
-<td>XDP 修改包的队列映射，引导到特定 CPU</td>
+<td><code class="c">MEM_TYPE_PAGE_ORDER0</code></td>
+<td>page_pool（独占 page）</td>
+<td><code class="c">page_pool_put_page()</code></td>
+<td>常规 XDP</td>
 </tr>
 <tr>
+<td><code class="c">MEM_TYPE_PAGE_POOL</code></td>
+<td>page_pool</td>
+<td><code class="c">page_pool_put_page()</code></td>
+<td>常规 XDP</td>
+</tr>
+<tr>
+<td><code class="c">MEM_TYPE_XSK_BUFF_POOL</code></td>
+<td><strong>AF_XDP 的 UMEM</strong>（用户态内存）</td>
+<td>归还到 XSK 的 FILL ring</td>
 <td>AF_XDP 零拷贝</td>
-<td>xdp_buff 直接 redirect 到用户态，不经过协议栈</td>
 </tr>
 </tbody>
 </table></div>
+<p>最后一行是 AF_XDP 零拷贝的核心：帧<strong>从来不属于内核</strong>，它一直在用户态注册的 UMEM 里，内核只是借用一下"归还权"。所以 <code class="c">xdp_convert_zc_to_xdp_frame()</code> 才需要单独一条路径。</p>
+<blockquote>
+<p>详见 <a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a>。</p>
+</blockquote>
+<hr />
+<h2>四、为什么 XDP_DROP 那么便宜</h2>
+<p>原笔记给的数字（传统 ~300 cycles，XDP DROP ~10 cycles）方向是对的，但要说清<strong>省掉了什么</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>传统路径</th>
+<th>XDP_DROP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配数据区</td>
+<td>page_pool / alloc_page</td>
+<td>❌ 省（页面已经在 ring 里）</td>
+</tr>
+<tr>
+<td>构造 <code class="c">xdp_buff</code></td>
+<td>—</td>
+<td>栈上填 8 个字段，<strong>几百 ns 不到</strong></td>
+</tr>
+<tr>
+<td>分配 <code class="c">sk_buff</code></td>
+<td>一次 slab 分配</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>初始化 <code class="c">sk_buff</code></td>
+<td>几十个字段的 memset</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>GRO 处理</td>
+<td>查流表、尝试合并</td>
+<td>❌ 省</td>
+</tr>
+<tr>
+<td>协议栈遍历</td>
+<td>ptype_all → tc → netfilter → L3 → L4</td>
+<td>❌ 全省</td>
+</tr>
+<tr>
+<td>归还页面</td>
+<td>从 skb 释放路径</td>
+<td><strong>直接归还 page_pool</strong>，一步到位</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>注意"省"的顺序</strong>：XDP_DROP 不是"做了某件事很快"，而是<strong>什么都没做</strong>。它连 <code class="c">sk_buff</code> 都没生成，也就没有"释放 skb"这一步——页面直接从 XDP 层就还回 page_pool 了。</p>
+<p>这也是为什么 <code class="c">xdp_buff</code> 必须是栈上的临时结构：它不需要分配，也就不需要释放。</p>
+<hr />
+<h2>五、观测</h2>
+<pre class="code" data-label="shell"><code class="c"># XDP 各动作的计数（需要驱动支持，或用 XDP 程序自己维护 map）
+bpftool prog show
+bpftool map dump id &lt;id&gt;
+
+# XDP 异常（XDP_ABORTED / 程序错误）
+bpftrace -e 'tracepoint:xdp:xdp_exception { @[args-&gt;act] = count(); }'
+
+# XDP_REDIRECT 是否成功（失败会走 xdp_redirect_err）
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+bpftrace -e 'tracepoint:xdp:xdp_redirect { @[args-&gt;prog_id] = count(); }'
+
+# 确认是 native 还是 generic（generic 会慢很多且可能多一次拷贝）
+bpftool net show dev eth0
+#   显示 offloaded / native / generic
+
+# page_pool 统计（⚠️ v6.6 主线没有 /proc/net/page_pools，见 ch04/01）
+grep PAGE_POOL_STATS /boot/config-$(uname -r)
+ethtool -S eth0 | grep -i pp_
+#   关注 rx_pp_alloc_fast（缓存命中率）与 rx_pp_recycle_released_ref（页面漏出）
+#   → [chapter-04/01](../../chapter-04-page-pool/notes/01-page-pool.md)
+</code></pre>
+<hr />
+<h2>HFT 要点</h2>
+<ul>
+<li><strong><code class="c">xdp_buff</code> 是栈上的，零分配</strong>——这是它快的根本原因，不要理解成"结构小所以快"。</li>
+<li><strong><code class="c">xdp_frame</code> 存在包自己的 headroom 里</strong>：这是 XDP 强制 headroom 的真正理由（不只是为了加封装头）。</li>
+<li><strong><code class="c">xdp_buff</code> 不能跨 CPU，<code class="c">xdp_frame</code> 能</strong>：因为 <code class="c">rxq</code> 指针的生命周期只到 NAPI 周期结束，跨 CPU 必须换成 <code class="c">mem</code>。做 cpumap 分流时这条是硬约束。</li>
+<li><strong>XDP_PASS 是零拷贝的</strong>：<code class="c">napi_build_skb()</code> 只分配 skb 头，数据区沿用 page_pool 的页面。但<strong>之后就是驱动的责任</strong>，没有统一的转换函数。</li>
+<li><strong>通用 XDP 可能多一次拷贝</strong>：headroom 不足时内核要先拷贝 skb 补出 <code class="c">XDP_PACKET_HEADROOM</code>。所以 generic XDP 的性能数据和 native 不可比。</li>
+<li><strong><code class="c">xdp_build_skb_from_frame()</code> 只用 <code class="c">skbuff_cache</code></strong>：cpumap / veth 这条路径明确不打算 clone，所以别指望它走 fclone 快路径。</li>
+<li><strong><code class="c">memset</code> 只到 <code class="c">tail</code></strong>：连清零都精打细算，可见 <code class="c">sk_buff</code> 初始化的成本有多敏感。</li>
+<li><strong>AF_XDP 零拷贝走独立的 <code class="c">MEM_TYPE_XSK_BUFF_POOL</code> 路径</strong>：帧一直在用户态 UMEM 里，内核只有借用权。这是 AF_XDP 零拷贝与"AF_XDP copy 模式"的本质区别。</li>
+</ul>
+<h2>与 Rosen 3.x 的差异</h2>
+<p>Rosen 写作时（2.6 时代）XDP 还不存在，<code class="c">sk_buff</code> 是收包路径上<strong>唯一</strong>的包表示。所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 3.x 的图景</th>
+<th>现在（5.x/6.x）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>收包必先分配 <code class="c">sk_buff</code></td>
+<td>XDP 阶段只有 <code class="c">xdp_buff</code>（栈上，零分配）</td>
+</tr>
+<tr>
+<td>一种表示贯穿全程</td>
+<td><strong>三种表示</strong>：<code class="c">xdp_buff</code> / <code class="c">xdp_frame</code> / <code class="c">sk_buff</code></td>
+</tr>
+<tr>
+<td>数据区必有一次 <code class="c">alloc_page</code> + 拷贝</td>
+<td>page_pool 页面直接变成 skb 数据区，<strong>零拷贝</strong></td>
+</tr>
+<tr>
+<td>丢包 = 释放 skb</td>
+<td>XDP_DROP 直接还 page_pool，skb 从未存在</td>
+</tr>
+<tr>
+<td>无跨 CPU 的包表示</td>
+<td><code class="c">xdp_frame</code> 专为跨 CPU / 跨设备设计</td>
+</tr>
+<tr>
+<td>无用户态内存直通</td>
+<td><code class="c">MEM_TYPE_XSK_BUFF_POOL</code> 让帧始终住在用户态 UMEM</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>方法论上的差异</strong>：Rosen 教的是"包沿着协议栈逐层上移"；XDP 引入的是"<strong>先决定这个包值不值得走协议栈</strong>"。前者优化的是每一层的成本，后者优化的是<strong>要不要走</strong>。</p>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：你在写 XDP 程序做 <code class="c">XDP_REDIRECT</code> 到 cpumap，发现跨 CPU 之后程序崩了或行为异常。最可能踩了什么坑？</summary>
+<p><b>答：</b>最可能是<b>试图在远端 CPU 上使用 <code class="c">xdp_buff</code> 里的 <code class="c">rxq</code> 信息</b>，或者依赖了 <code class="c">xdp_buff</code> 本身的生命周期。</p>
+<p><code class="c">include/net/xdp.h</code> 里那句注释是硬约束：</p>
+<blockquote>
+<p><em>"Lifetime of <code class="c">xdp_rxq_info</code> is limited to NAPI/enqueue time, while mem info is valid on remote CPU."</em></p>
+</blockquote>
+<p><code class="c">xdp_buff</code> 是<strong>栈上</strong>的视图，<code class="c">rxq</code> 指针只在当前 NAPI 周期有效。跨 CPU 之后，那个指针指向的 <code class="c">xdp_rxq_info</code> 可能已经被回收或复用了。</p>
+<p>正确做法：REDIRECT 时内核会用 <code class="c">xdp_convert_buff_to_frame()</code> 把 <code class="c">xdp_buff</code> 转成 <code class="c">xdp_frame</code>，其中：</p>
+<pre class="code" data-label="C"><code class="c">/* rxq only valid until napi_schedule ends, convert to xdp_mem_info */
+xdp_frame-&gt;mem = xdp-&gt;rxq-&gt;mem;
+</code></pre>
+<p><code class="c">xdp_frame</code> <strong>不保存 <code class="c">rxq</code></strong>，只保存 <code class="c">mem</code>（内存类型 + 分配器 id）——因为"这块内存该还给谁"在远端 CPU 上依然成立。</p>
+<p>所以排查方向：<b>你的程序里有没有引用 <code class="c">xdp-&gt;rxq</code> 的字段？有没有把 <code class="c">xdp_buff</code> 的指针存下来跨周期使用？</b>两者都是未定义行为。</p>
+</details>
+<details>
+<summary>Q2：为什么 XDP 强制要求包前面留出 headroom？很多人回答"为了 <code class="c">bpf_xdp_adjust_head()</code> 加封装头"，这个答案完整吗？</summary>
+<p><b>答：</b>不完整。加封装头只是用途之一，<b>更硬性的理由是 <code class="c">xdp_frame</code> 要存在那里</b>。</p>
+<p>看 <code class="c">xdp_convert_buff_to_frame()</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* Store info in top of packet */
+xdp_frame = xdp-&gt;data_hard_start;
+</code></pre>
+<p><code class="c">struct xdp_frame</code> 被<strong>就地写进包前面的空白区</strong>（<code class="c">data_hard_start</code> 指向的位置），零额外分配。如果没有那段 headroom，每次 REDIRECT 都得额外分配一个 <code class="c">xdp_frame</code> 结构——那就不是"零成本转换"了。</p>
+<p>反证：通用 XDP（generic）路径在 <code class="c">net/core/dev.c:4954</code> 附近检查 headroom，不足时<b>先拷贝一份 skb</b> 补出 <code class="c">XDP_PACKET_HEADROOM</code> 字节。这说明 headroom 是<b>不可协商的先决条件</b>，不是优化选项。</p>
+<p>所以完整答案是三层：
+1. 存 <code class="c">xdp_frame</code>（REDIRECT 必需）
+2. <code class="c">bpf_xdp_adjust_head()</code> 往前加封装头
+3. 协议栈接收时需要的 <code class="c">skb</code> headroom</p>
+</details>
+<details>
+<summary>Q3：同是"把包变成 <code class="c">sk_buff</code>"，<code class="c">XDP_PASS</code> 和 <code class="c">xdp_build_skb_from_frame()</code> 有什么本质区别？</summary>
+<p><b>答：</b>两者的数据来源和上下文完全不同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">XDP_PASS</code>（<code class="c">napi_build_skb()</code>）</th>
+<th><code class="c">xdp_build_skb_from_frame()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入</td>
+<td><code class="c">xdp_buff</code>（栈上视图）</td>
+<td><code class="c">xdp_frame</code>（存在 headroom 里）</td>
+</tr>
+<tr>
+<td>调用者</td>
+<td><strong>驱动自己</strong>，在 <code class="c">napi_poll</code> 里</td>
+<td>内核（cpumap / veth / devmap 的接收侧）</td>
+</tr>
+<tr>
+<td>上下文</td>
+<td>同一个 NAPI 周期、同一个 CPU</td>
+<td>可能是<strong>另一个 CPU</strong></td>
+</tr>
+<tr>
+<td>slab cache</td>
+<td>驱动决定</td>
+<td>固定 <code class="c">skbuff_cache</code>（不打算 clone）</td>
+</tr>
+<tr>
+<td>内存归还</td>
+<td>page_pool（同 CPU 直接还）</td>
+<td>按 <code class="c">xdp_frame-&gt;mem</code> 归还，可能跨 CPU 批量还</td>
+</tr>
+</tbody>
+</table></div>
+<p><b>最关键的区别</b>：<code class="c">XDP_PASS</code> 发生在<b>同一个 NAPI 周期内</b>，所以 <code class="c">napi_build_skb()</code> 之后可以立刻复用 page_pool 的本地缓存、走 per-CPU 快路径；而 <code class="c">xdp_build_skb_from_frame()</code> 在远端 CPU 上，必须靠 <code class="c">mem</code> 信息判断怎么归还，且用不了本地缓存。</p>
+<p>这也是为什么 <b>cpumap 分流虽然能均衡 CPU，但会付出跨 CPU 内存归还的代价</b>——对 HFT，跨核传递往往得不偿失，能用 RSS/flow steering 把包直接送到目标核，就不要用 cpumap 转一手。</p>
+</details>
+<hr />
+<p>→ 前一篇：<a href="chapter-15.html#s-03">03 sk_buff 生命周期</a>
+→ 本章完，下一章：<a href="chapter-04.html#ch-4">chapter-04 page_pool</a>
+→ 相关：<a href="chapter-15.html#s-01">chapter-01 hook 点顺序</a> · <a href="chapter-05.html#ch-5">chapter-05 XDP 架构</a> · <a href="chapter-06.html#ch-6">chapter-06 AF_XDP</a></p>
       </section>
 
 
