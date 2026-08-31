@@ -359,32 +359,46 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tr>
 <th>指标</th>
 <th>含义</th>
+<th>HFT 对应</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>延迟</td>
 <td>完成一次请求/操作的时间（常以毫秒计）</td>
+<td>tick→发单延迟（P50/P99/P99.9）</td>
 </tr>
 <tr>
 <td>速率</td>
 <td>每秒操作或请求数</td>
+<td>订单提交速率、行情处理速率</td>
 </tr>
 <tr>
 <td>吞吐量</td>
 <td>每秒传输数据量（bit/byte）</td>
+<td>行情带宽（Mbps）</td>
 </tr>
 <tr>
 <td>利用率</td>
 <td>资源在一段时间内的繁忙程度（%）</td>
+<td>交易核 CPU%、网卡带宽占用</td>
 </tr>
 <tr>
 <td>成本</td>
 <td>开销/性能比</td>
+<td>每百万订单的硬件摊销</td>
 </tr>
 </tbody>
 </table></div>
 <p>延迟 = 请求时间的组成之和：CPU 运行时间 + 等资源时间（磁盘 I/O、网络、锁）+ 等 CPU 调度时间。理论上可写一个 BPF 工具同时跟踪总延迟和各组成部分，但这与具体应用绑定且多事件跟踪开销大；<strong>实践中更普遍的做法是用小而专的工具逐个研究特定组件</strong>——本书的路线。</p>
+<p>这个"组成之和"正是后续所有下钻工具的理论坐标系——每个工具测的其实是其中一项：</p>
+<pre class="code" data-label="text"><code class="c">总延迟 = CPU 运行        → profile(1) 采样剖析哪段代码
+       + 等磁盘 I/O      → biolatency/biosnoop
+       + 等网络          → tcpretrans/soconnlat（远端 RTT）
+       + 等锁            → offcputime（含阻塞栈）
+       + 等 CPU 调度     → runqlat/runqlen
+</code></pre>
+<p>"用一个工具全测"与"小工具逐项测"的取舍，本质是<strong>通用性×开销 vs 专用性×精度</strong>：全链路计时要在应用里埋点（侵入），小工具只挂内核边界（无侵入但要知道自己在测哪一段）。</p>
 <p>作者的经验告诫：BPF 工具很容易"生成大量数据 → 花大量时间理解 → 发现指标不重要"。开发者常发来"看起来不健康"的指标截图，作者第一反应是"<strong>你有已知的性能问题吗？</strong>"——先明确目标（降延迟还是降成本），分析才有上下文。</p>
 <h2>3.1.2 分析工作（表 3-1）</h2>
 <div class="tbl-wrap"><table>
@@ -425,22 +439,30 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<p>注意这张表的活动分布在<strong>整个软件生命周期</strong>（原型→开发→发布→生产），不只是"出了事再查"。BPF 工具的两种运行形态也由此分野：</p>
+<ul>
+<li><strong>短窗口交互式</strong>（排障、PoC）：人盯着输出，单行程序/现成工具</li>
+<li><strong>7×24 常驻式</strong>（生产监控、非回归）：聚合直方图 + 定期输出，要求输出量与事件率解耦——这类工具的开发纪律比排障高一个量级（内存上限、丢弃策略、输出节流都要设计）</li>
+</ul>
 <h2>3.1.3 多重性能问题</h2>
 <ul>
 <li>用工具时要<strong>做好同时发现多个问题的准备</strong>；主要问题变成"哪个最重要"——通常是对延迟或成本影响最大的那个。</li>
 <li>可以查组件的 bug tracker 搜"性能"，通常有多个未解决问题（还不含没列出来的）。</li>
 <li>解决一个瓶颈后，其他问题才浮现；原瓶颈消除后新瓶颈出现。</li>
 </ul>
+<p>"瓶颈会搬家"是常态而非异常：排队论视角下，系统吞吐受限于最慢一环，修复它之后次慢的一环立刻暴露。这决定了性能工作不是"一次项目"而是<strong>持续过程</strong>——也是"非回归测试"在表 3-1 里占一行的原因：每轮优化都可能把瓶颈推到新位置，需要基线对比。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>HFT 的量化目标天然清晰：<strong>tick→决策→发单延迟（P50/P99/P99.9）、订单吞吐、行情处理速率</strong>。"改善用户体验"在 HFT 里就是"比对手快"。</li>
 <li>"多重问题"提醒：对交易系统做第一次全链路观测时，会同时看到调度抖动、GC 停顿、缓存 miss……按对 P99 延迟的影响排序，而不是见一个修一个。</li>
 <li>"你有已知的性能问题吗？"——HFT 每日复盘（昨日 P99 尖刺）就是最好的切入点，比无目标巡检高效。</li>
+<li>延迟组成公式直接映射排障四件套：profile（CPU）→ runqlat（调度）→ biolatency（IO）→ offcputime（锁/阻塞），与 3.3/3.4 清单的顺序一致。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>无目标巡检：把"有趣的输出"当问题修，浪费时间还引入风险。</li>
 <li>只盯均值不看尾部分布：HFT 的钱都在 P99+ 里。</li>
+<li>试图一次建"全链路统一计时工具"：与业务绑定死、多事件开销大——先用内核边界的小工具拼出分段画像，确有缺口再在应用内补点。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -450,6 +472,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>2. 为什么不用一个 BPF 工具跟踪应用的全部延迟组成？</summary>
 <p>与具体应用绑定（不可复用），同时跟踪多个事件开销显著；小而专的工具更普遍。</p>
+</details>
+<details>
+<summary>3. "修复瓶颈后新瓶颈出现"在排队论视角下如何解释？对工程流程有什么要求？</summary>
+<p>系统吞吐受限于最慢环节（约束理论/排队论的必然结论），修复后次慢环节成为新的约束。工程上要求把性能工作当成持续过程：每轮优化后重新画像（基线对比），而不是假设"修完就好"；表 3-1 的"非回归测试"行就是为此存在的。</p>
 </details>
       </section>
       <section class="section" id="s-2">
@@ -834,6 +860,7 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
   · 已知延迟问题找根因   → 下钻分析（一层层拆，直到可修的机制）
   · 系统性巡检找盲区     → USE（每资源×使用率/饱和度/错误）
 </code></pre>
+<p>这张主线图也定义了<strong>两套清单的分工</strong>：60 秒清单全是传统工具（零依赖、任何机器秒开），负责"有没有明显异常"；BCC 清全是逐事件工具（要装 BCC/bpftrace），负责"异常具体是什么"。中间的衔接信号：60 秒清单里哪个指标可疑，就到 BCC 清单里找对应资源域的工具（vmstat 的 r 高 → runqlat；iostat 的 await 高 → biolatency/biosnoop）。</p>
 <h2>全章坑点表（HFT 视角）</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -883,12 +910,14 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
 </tr>
 </tbody>
 </table></div>
+<p>坑点 2 的"时间戳案例"值得记住：下钻分析的经典示范——磁盘"慢"只是现象，钻到最底发现是设备驱动层时间戳处理函数的低效，改一行配置就解决。<strong>"慢"是结论不是根因</strong>，能修的机制（一个函数、一条配置、一个参数）才是下钻的终点。</p>
 <h2>HFT 落地建议</h2>
 <ol>
 <li>每日例行：60 秒清单 + 11 个 BCC 工具打包成脚本，开盘前后各跑一轮存档对比。</li>
 <li>事件驱动复盘：昨日 P99 尖刺 → runqlat/profile/biosnoop/tcpretrans 四件套按序下钻。</li>
 <li>资源盲区盘点：按 USE 资源图核对监控覆盖，补齐饱和度类指标（队列、重传、runq）。</li>
 </ol>
+<p>落地建议 1 的关键是<strong>存档对比</strong>：单轮清单只有瞬时值，"开盘前后各一轮"的 diff 才能暴露变化（开盘后 runq 尖刺、行情风暴期 retrans 飙升）。这与 sar 趋势定位、BPF 现场下钻的分工（见 <a href="../../../06.6-systems-performance/html/chapter-04.html#ch-4">14-SysPerf Ch4 观测工具</a>）同构。</p>
 <h2>自测</h2>
 <details>
 <summary>1. 用一句话概括第 3 章的主线。</summary>
@@ -897,6 +926,14 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
 <details>
 <summary>2. iostat 显示 %util 100% 且 await 3ms，说明什么？</summary>
 <p>设备持续繁忙但响应快——并行设备吞吐可能还有余量，不是必然瓶颈；重点看 await 与队列。</p>
+</details>
+<details>
+<summary>3. 60 秒清单与 BCC 清单的衔接信号怎么读？举两个"传统指标→BPF 工具"的映射。</summary>
+<p>60 秒清单暴露可疑指标 → 按资源域映射到 BCC 逐事件工具确认机制。例：vmstat r 列高（CPU 排队）→ runqlat 看排队延迟分布；iostat await 高 → biolatency/biosnoop 分解块层延迟与具体 I/O；sar -n DEV 的 rxerr/tcp 重传 → tcpretrans/skbdrop。</p>
+</details>
+<details>
+<summary>4. 为什么说"'磁盘慢'是结论不是根因"？下钻分析到什么程度可以停？</summary>
+<p>"慢"只描述了现象层级，不可执行；根因要落到可修的机制——具体的函数、配置项、参数（时间戳案例：驱动层时间戳处理函数低效）。下钻到"能写出修复代码/配置"的那一层才停，停在"某设备/CPU 慢"等于把问题原样复述了一遍。</p>
 </details>
 <h2>交叉引用</h2>
 <ul>

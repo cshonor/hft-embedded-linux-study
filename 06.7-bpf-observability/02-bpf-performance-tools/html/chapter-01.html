@@ -356,38 +356,118 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <h2>一句话定义</h2>
 <p>BPF 提供了一种<strong>在各种内核事件和应用程序事件发生时运行一段小程序的机制</strong>。</p>
 <p>作者用的类比很精准：JavaScript 允许网站在浏览器事件（鼠标单击）发生时运行小程序，由此催生了 Web 应用生态；BPF 允许内核在系统和应用事件（如磁盘 I/O）发生时运行小程序，由此把<strong>内核变得完全可编程</strong>——而且不需要你是内核开发人员。</p>
+<p>这个类比值得多想一步：JS 之所以能催生生态，是因为浏览器充当了<strong>安全沙箱</strong>（网页代码崩不了浏览器）；BPF 能进生产内核，靠的也是同样的结构——<strong>验证器 + 沙箱化的执行环境</strong>。没有沙箱的"内核可编程"（比如直接写内核模块）早就存在，但没人敢在生产环境用。</p>
 <h2>BPF 的组成（三件套）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>组成</th>
 <th>说明</th>
+<th>类比</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>指令集</strong></td>
 <td>虚拟指令集规范，因此 BPF 可视作一种虚拟机实现</td>
+<td>CPU 的 ISA</td>
 </tr>
 <tr>
 <td><strong>存储对象</strong></td>
-<td>map 等</td>
+<td>map 等（内核态 key-value 存储，用户态可读写）</td>
+<td>进程的共享内存</td>
 </tr>
 <tr>
 <td><strong>辅助函数</strong></td>
-<td>helper functions</td>
+<td>helper functions（内核提供的服务调用，程序不能任意调内核函数）</td>
+<td>系统调用表</td>
 </tr>
 </tbody>
 </table></div>
-<p>执行方式两种：<strong>解释器</strong> + <strong>JIT 编译器</strong>（把 BPF 指令动态翻译成本地指令）。执行之前必须过<strong>验证器（verifier）</strong>安全检查——保证程序自身不会崩溃或损坏内核，但<strong>不保证程序合乎逻辑</strong>（可以写出能跑但没意义的程序）。</p>
+<p>三件套的边界就是 BPF 程序的能力边界：</p>
+<ul>
+<li>程序<strong>不能</strong>随意访问内核内存——只能通过 verifier 认可的指针访问（如 ctx 里的包数据）</li>
+<li>程序<strong>不能</strong>调用任意内核函数——只能调 helper（<code class="c">bpf_probe_read_kernel</code>、<code class="c">bpf_map_update_elem</code>…），helper 集合按程序类型裁剪</li>
+<li>程序<strong>不能</strong>无限循环/无限内存——verifier 强制有限执行路径（v6.6 起有界循环已允许，但循环次数上限受验证状态约束）</li>
+</ul>
+<p>这套"能力裁剪 + 静态验证"的组合，就是"安全沙箱"的内核实现。</p>
+<h2>执行方式：解释器 + JIT</h2>
+<ul>
+<li><strong>解释器</strong>：逐条解码执行 BPF 指令（<code class="c">bpf_prog_run</code> 路径），慢但通用</li>
+<li><strong>JIT 编译器</strong>：把 BPF 指令动态翻译成本机指令（x86-64/ARM64 各有后端），翻译一次、执行接近原生速度</li>
+<li>现代内核大多 <code class="c">CONFIG_BPF_JIT_ALWAYS_ON=y</code>（发行版默认），不可解释执行不可关——spectre 缓解的一部分（禁止攻击者注入可解释字节码）</li>
+</ul>
+<p><strong>对性能的含义</strong>：JIT 后的 BPF 程序就是普通的本机代码，单次执行是纳秒级——这是"BPF 观测可用于生产"的性能前提。若每次事件都要走解释器，µs 级的单事件开销在 HFT 事件速率下不可接受。</p>
+<h2>验证器：保证什么、不保证什么</h2>
+<p>执行之前必须过<strong>验证器（verifier）</strong>安全检查：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>验证器保证</th>
+<th>验证器不保证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>程序自身不会崩溃（除零、空指针解引用、越界访问）</td>
+<td>程序合乎逻辑（可以写出能跑但没意义的程序）</td>
+</tr>
+<tr>
+<td>有限步内终止（无界循环被拒）</td>
+<td>数值正确（统计口径错、单位错照样过）</td>
+</tr>
+<tr>
+<td>不越权访问内存/不破坏内核数据结构</td>
+<td>语义正确（读错了字段、配错了探针照样过）</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 BPF 程序的失效模式是"<strong>悄悄输出错误数据</strong>"而不是"内核 panic"——这决定了上线纪律：<strong>新观测程序先在测试机对照已知基准（如 /proc 统计）验证输出，再上交易机</strong>。</p>
 <h2>名字辨析：BPF vs eBPF</h2>
 <ul>
 <li>1992 年的 BPF = Berkeley Packet Filter（伯克利数据包过滤器），冷门的包过滤技术</li>
 <li>2014 年，Alexei Starovoitov 提交重新实现 BPF 的内核补丁，与 Daniel Borkmann 共同完善后并入主线——BPF 变成<strong>通用执行引擎</strong></li>
 <li>扩展后的 BPF 常缩写为 <strong>eBPF</strong>，但<strong>官方缩写仍然是不带 e 的 BPF</strong></li>
 <li>内核中只有一个执行引擎，同时支持"扩展版"和"经典"程序；经典 BPF 程序由内核自动迁移到扩展引擎执行，经典 BPF 开发已停止</li>
-<li>本书（以及如今社区惯例）用 <strong>BPF 指代扩展后的 BPF</strong></li>
+<li>本书（以及如今社区惯例）用 <strong>BPF</strong> 指代扩展后的 BPF</li>
 </ul>
+<p>新旧两代的本质差异（为什么"重新实现"是质变）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>经典 BPF (1992)</th>
+<th>扩展 BPF (2014–)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>寄存器</td>
+<td>2 个 32 位（A 累加器 + X 变址）</td>
+<td>11 个 64 位（R0–R10）</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>仅包过滤（tcpdump 表达式）</td>
+<td>通用执行引擎（网络/观测/安全）</td>
+</tr>
+<tr>
+<td>存储</td>
+<td>无</td>
+<td>map</td>
+</tr>
+<tr>
+<td>外部调用</td>
+<td>无</td>
+<td>helper 函数集</td>
+</tr>
+<tr>
+<td>目标</td>
+<td>尽快 accept/drop 包</td>
+<td>任意计算 + 与用户态交互</td>
+</tr>
+</tbody>
+</table></div>
 <h2>三大应用领域</h2>
 <p>网络、可观测性、安全。本书聚焦<strong>可观测性（跟踪）</strong>。</p>
 <hr />
@@ -395,8 +475,33 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <ul>
 <li>"事件发生时运行一段小程序"= 行情包到达、订单回调、定时器到期时<strong>现场计算统计</strong>，而不是把原始事件全部搬运到用户态再处理——这是 HFT 延迟观测零拷贝思路的根源</li>
 <li>验证器"保证不崩内核但不保证逻辑正确"：写 BPF 观测程序时，<strong>数值错误不会搞挂交易机，但可能让数据悄悄失真</strong>——上线前要对照已知基准验证输出</li>
-<li>交叉引用：<a href="chapter-02.html#ch-2">../chapter-02-technology-background/</a> 详解指令集与验证器</li>
+<li>JIT 近原生速度 + 内核态聚合，使 BPF 观测对被测路径的干扰可压到亚微秒/事件；配合"未启用零开销"的插桩模型（见 1.6），平时交易路径不背任何观测税</li>
+<li>交叉引用：指令集/寄存器/验证器的源码级细节在 <a href="chapter-03.html#ch-3">Learning eBPF Ch3 虚拟机</a> 与 <a href="chapter-06.html#ch-6">Ch6 验证器</a>；本模块重点是<strong>用工具</strong>，机制细节以那边为准</li>
 </ul>
+<details>
+<summary>📝 自测题（点击展开）</summary>
+<ol>
+<li><strong>BPF"沙箱"由哪几个机制共同构成？为什么"内核可编程"早就有（内核模块）却没催生生态？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>沙箱 = 验证器（静态证明安全）+ helper 白名单（能力裁剪）+ map 隔离存储 + JIT（可控的执行方式）。内核模块没有验证、可调任意内核符号、一个 bug 就 panic——生产环境不可接受。JS/浏览器类比：没有沙箱的 ActiveX 也曾"可编程"，被淘汰正是因为不安全。</p>
+</details>
+<ol start="2">
+<li><strong>验证器通过了一个输出错误统计的观测程序，会以什么形式"失败"？这决定了什么上线纪律？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>不会崩溃，而是悄悄输出错误数据（静默失真）——比崩溃更危险，因为基于错误数据的调优决策看起来一切正常。纪律：新观测程序先在测试环境对照已知真值（/proc 计数器、路由器统计）校验输出，再上生产/交易机。</p>
+</details>
+<ol start="3">
+<li><strong>经典 BPF 和扩展 BPF 最本质的差异是什么？（不是"用途更多"）</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>执行模型：2 个 32 位寄存器、无存储、无外部调用的"包过滤器"变成 11 个 64 位寄存器 + map + helper 的通用虚拟机。用途扩展（网络/观测/安全）是这个执行模型质变的结果而非原因。</p>
+</details>
+</details>
       </section>
       <section class="section" id="s-2">
         <div class="sec-head"><div class="sec-no">1.2</div><h2>跟踪、嗅探、采样、剖析和可观测性分别是什么</h2></div>
@@ -446,14 +551,93 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>跟踪 vs 采样</strong>：跟踪开销与事件频率成正比但<strong>不漏事件</strong>；采样开销小但只给大致画像、<strong>会遗漏事件</strong></li>
 <li>命名冷知识：strace 名字里有 trace，但不是所有跟踪工具都带 trace（tcpdump）；作者在 Solaris 时代（有一丝后悔地）普遍用 snoop 命名，才有今天一串 *snoop 工具</li>
 </ul>
+<h2>跟踪 vs 采样：开销与漏检的交换</h2>
+<p>这是本节真正的工程判断点，值得一张量级表：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>跟踪（per-event）</th>
+<th>采样（定时/profiling）</th>
+<th>固定计数器（/proc、sar）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开销与什么成正比</td>
+<td><strong>事件频率</strong>（10k 事件/s 的函数就别无脑跟踪）</td>
+<td>采样率（与事件频率无关）</td>
+<td>几乎恒定（读的时候才付钱）</td>
+</tr>
+<tr>
+<td>漏检</td>
+<td>不漏</td>
+<td>会漏：两次采样之间的事件不可见</td>
+<td>只给累计值，事件细节全无</td>
+</tr>
+<tr>
+<td>典型单次成本</td>
+<td>bpftrace/kprobe 探针 + BPF 程序 ≈ 1–3 µs/事件</td>
+<td>perf 采样 + 栈回溯 ≈ 采样一次的成本，99+ Hz 常态</td>
+<td>读文件 + 解析文本 ≈ ms 级但频率低</td>
+</tr>
+<tr>
+<td>适合回答</td>
+<td>"<strong>那几笔</strong>慢在哪/谁干的"</td>
+<td>"CPU 时间整体花在哪些函数"</td>
+<td>"水位是否正常"（USE 方法的第一步）</td>
+</tr>
+<tr>
+<td>尾部延迟</td>
+<td><strong>可精确捕获</strong>（P99.9 那几笔就在输出里）</td>
+<td>统计意义上有偏（尾部事件被采到的概率与占比同）</td>
+<td>完全不可见</td>
+</tr>
+</tbody>
+</table></div>
+<p>采样对尾部事件的盲区是结构性的：一个占 0.1% 时间的现象，在 99 Hz 采样下平均要 ~1000 秒才采到一次——<strong>均值正常 + P99 异常的系统，采样只会告诉你一切正常</strong>。</p>
+<h2>"剖析 profiling"的两种含义</h2>
+<p>书里 profiling ≈ 采样，但要留意日常语境的另一个用法："CPU profile" 常特指<strong>基于 PMC/定时器的采样剖析</strong>，而 "memory profile / leak profile" 可能是<strong>全量跟踪</strong>（每次分配都记）。判断工具属于哪类，看它的开销模型（与事件频率成正比 → 跟踪型）而不是名字。</p>
 <h2>可编程跟踪</h2>
 <p>BPF 催生了<strong>可编程的跟踪工具</strong>：事件发生时运行一段小程序，实时定制摘要或动作。这是它与传统固定统计工具（top(1) 这类"固定计数器 + 摘要打印"）的本质分界。</p>
+<p>三种模式的递进：</p>
+<pre class="code" data-label="text"><code class="c">固定计数器:  工具作者预先决定统计什么 → 你只能看作者给的视图
+跟踪+后处理: 全量事件搬回用户态 → 灵活但数据量爆炸（strace -o 大文件）
+可编程跟踪:  事件发生时在内核里执行你写摘要逻辑 → 灵活 + 数据量可控
+</code></pre>
+<p>第三种正是 BPF 之前"跟踪"与"低开销"不可兼得的解法——也是本书所有工具的公共底座。</p>
 <hr />
 <h3>HFT 关联</h3>
 <ul>
 <li>行情风暴期间每秒百万级事件——<strong>采样会漏掉决定性的那几笔</strong>，延迟尖刺排查必须用跟踪（per-event）工具；而常态画像用采样足够且开销低。两者互补，与 <a href="../../../06.6-systems-performance/html/chapter-04.html#ch-4">14-SysPerf 观测工具</a> 的口径一致</li>
 <li>"内核里做摘要"= 单核上的聚合不占用交易核，不经过用户态 ring buffer 拷贝</li>
+<li>选型纪律模板：<strong>常态水位看计数器（sar/_exporter）→ 周期画像用采样（perf）→ 尖刺现场用跟踪（BPF）</strong>。三级递进，每级只在下一级证据需要时才升级开销</li>
+<li>strace 这类"全量搬回用户态"的跟踪在交易机上属于应急手段（开销可把 QPS 压塌），日常排障用 BPF 版（execsnoop/opensnoop 只输出已过滤的少数事件）</li>
 </ul>
+<details>
+<summary>📝 自测题（点击展开）</summary>
+<ol>
+<li><strong>均值正常、P99 异常的系统，为什么 CPU 采样剖析（perf record）发现不了问题？该换哪类工具？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>采样看到的是时间占比的统计画像——尾部事件占比小，被采到的期望次数正比于占比，短窗口内几乎采不到。换跟踪型（per-event）工具：对延迟直接逐事件计时（如 runqlat/offcputime 的直方图模式，本质上每个慢事件都进了桶）。</p>
+</details>
+<ol start="2">
+<li><strong>跟踪的开销与什么成正比？挂探针前要做的第一个评估是什么？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>与被跟踪事件的频率成正比（与采样不同——采样与事件率无关）。挂之前先估目标函数/事件的 QPS：µs 级单次成本 × 事件率 ≈ 总开销，超预算就要换聚合模式（内核 map 直方图）或换采样。</p>
+</details>
+<ol start="3">
+<li><strong>可观测性定义里为什么明确排除基准测试？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>基准测试会改变系统状态（注入负载、改变缓存/调度行为），观测的是"被测系统+压测负载"的合成状态而非生产真实状态；观测工具的设计目标是"观测不改变被观测对象"（最小观测者效应）。两者互补但口径不同——benchmark 的结论不能直接当作生产画像。</p>
+</details>
+</details>
       </section>
       <section class="section" id="s-3">
         <div class="sec-head"><div class="sec-no">1.3</div><h2>BCC、bpftrace 和 IOVisor</h2></div>
@@ -499,10 +683,20 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tbody>
 </table></div>
 <p>两者<strong>互补</strong>，不互斥。</p>
+<h2>BCC 的架构代价：运行时编译</h2>
+<p>BCC 的内核侧是 C，意味着<strong>每次工具启动都要现场把 C 源码编译成 BPF 字节码</strong>（内置 Clang/LLVM）：</p>
+<ul>
+<li>优点：工具源码就是普通 C，开发者可以在程序里用宏和循环逻辑（bpftrace DSL 做不到的表达力）</li>
+<li>代价一：<strong>目标机必须装内核头文件</strong>（BCC 编译时要 include 对应版本的内核结构定义）——"每台机器都要装一大坨开发包"</li>
+<li>代价二：<strong>结构体布局绑定编译时的内核版本</strong>——工具与内核版本错位时可能编不过，或更糟：编过了但字段偏移错（CO-RE/BTF 就是为了解决这个，见下）</li>
+<li>代价三：LLVM 运行时依赖让 BCC 工具二进制约几十 MB，最小化安装的交易机/嵌入式设备放不下</li>
+</ul>
+<p>这就是 bpftrace 也长不大、libbpf+CO-RE 单二进制最终胜出的结构性原因（<a href="chapter-05.html#ch-5">Learning eBPF Ch5</a>：BCC 之弊与 CO-RE 要素）。</p>
 <h2>库的血统</h2>
 <ul>
 <li>BCC 是 <strong>libbcc 和 libbpf 库的前身</strong>（最早的 libbpf 由 Wang Nan 为 perf 开发，如今 libbpf 已并入内核代码树）</li>
 <li>bpftrace 基于 libbcc 和 libbpf 构建</li>
+<li>libbpf 进入内核树（tools/lib/bpf）是个分水岭：它让"用户态加载器"与内核 ABI 的演进同步维护，CO-RE 重定位、BPF link 等 API 都以 libbpf 为参考实现——<strong>新工具链开发默认直接用 libbpf，不再经 libbcc</strong></li>
 </ul>
 <h2>周边项目</h2>
 <ul>
@@ -515,8 +709,26 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <h3>HFT 关联</h3>
 <ul>
 <li>现场排障优先级：<strong>BCC 现成工具 → bpftrace 单行/短脚本 → 定制 BCC</strong>。bpftrace 是"问答式"探针，10 秒内回答一个假设；BCC 工具适合挂后台长跑收集</li>
-<li>交易机最小化安装的场景（发行版不带 BCC 的重型依赖链）→ 对应 ply 的嵌入式定位思路；现代替代是 libbpf + CO-RE 单二进制（见 <a href="chapter-05.html#ch-5">learning-ebpf Ch5</a>）</li>
+<li>交易机最小化安装的场景（发行版不带 BCC 的重型依赖链）→ 对应 ply 的嵌入式定位思路；现代替代是 libbpf + CO-RE 单二进制（见 <a href="chapter-05.html#ch-5">learning-ebpf Ch5</a>）——静态编译、无运行时编译、跨内核版本可移植，正是交易机部署观测探针的理想形态</li>
+<li>版本错位风险要写进运维 runbook：<strong>BCC 工具跟着内核升级走</strong>（重装 headers + 重编译），CO-RE 工具跟着 BTF 走（<code class="c">/sys/kernel/btf/vmlinux</code> 存在即可）——两类工具的"升级检查项"不同，混在一张表里会漏检</li>
 </ul>
+<details>
+<summary>📝 自测题（点击展开）</summary>
+<ol>
+<li><strong>BCC 为什么要求目标机安装内核头文件？这个约束的根源是什么？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>BCC 在工具启动时现场编译 C 内核态程序，C 源码要 include 内核结构定义（task_struct 等布局）才能编译通过。根源：BCC 不做重定位——结构体偏移在编译期烧死，必须有编译期对应的头文件。CO-RE 用 BTF + 重定位把这一步移到加载期，才解除了这个约束。</p>
+</details>
+<ol start="2">
+<li><strong>bpftrace 和 BCC 各自的"甜点区"是什么？给出一个具体分工例子。</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>bpftrace：单行/短脚本的快速问答（"现在谁在打开这个文件？"）。BCC：需要命令行参数、后台长跑、组合多事件源的成熟工具（opensnoop -p PID -x 挂着收证据）。例子：先用 bpftrace 单行确认假设存在，再让 BCC 工具带过滤参数长跑收集完整证据链。</p>
+</details>
+</details>
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">1.4</div><h2>初识 BCC：快速上手</h2></div>
@@ -597,6 +809,7 @@ grep     12989  12987  0   /bin/grep org.apache.catalina
 </blockquote>
 <h2>核心主张</h2>
 <p>BPF 跟踪可以在<strong>整个软件栈</strong>范围内提供能见度：生产环境<strong>立刻部署、不重启系统、不以特殊方式重启应用</strong>。作者类比：像医学 X 光——需要检查哪个内核组件、设备、应用库时，能以前所未有的方式看到其内部运作，而且是<strong>生产环境现场直播</strong>。</p>
+<p>"不重启"的工程含义值得强调：传统内核观测要 <code class="c">debugfs</code>/重启开 kprobe、应用级观测要预装 agent 并滚动重启进程。BPF 的探针生命周期是<strong>分钟级热插拔</strong>——出问题的当下就能挂上，不需要预约变更窗口。</p>
 <h2>图 1-2：软件栈全景 × 工具覆盖</h2>
 <p>原书用一张大图把通用软件栈自上而下分层，每层标注可用工具（此处摘录主干）：</p>
 <div class="tbl-wrap"><table>
@@ -646,6 +859,12 @@ grep     12989  12987  0   /bin/grep org.apache.catalina
 </tbody>
 </table></div>
 <p><strong>浏览这张图的意义</strong>：发现自己先前的<strong>分析盲区</strong>——每个栈层都有工具覆盖，没有哪一层是黑盒。</p>
+<h3>这张图怎么用（读图法）</h3>
+<ol>
+<li><strong>横着读（排障）</strong>：延迟问题先归到某一层，再看该层有什么工具——"工具名已在图上，不需要发明轮子"</li>
+<li><strong>竖着读（学习路径）</strong>：本书 Part II 就是按这张图自上而下组织的（ch06 CPU → ch10 网络 → …），每章 = 栈层 × 通用方法论</li>
+<li><strong>对号入座（自研系统）</strong>：把自家交易栈画成同构分层图，标注每层已有什么观测、缺什么——多数团队的空白在<strong>系统库层</strong>（gethostlatency 这类）和<strong>驱动/设备层</strong>（nettxlat/skbdrop）</li>
+</ol>
 <h2>表 1-1：传统工具 vs BPF 跟踪</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -688,10 +907,41 @@ grep     12989  12987  0   /bin/grep org.apache.catalina
 </tr>
 </tbody>
 </table></div>
+<p>注意"内核"一行的<strong>"—"</strong>：传统工具时代，内核内部行为基本靠 <code class="c">/proc</code> 计数器 + 想象。这不是工具作者偷懒，而是<strong>传统工具没有安全进入内核内部的机制</strong>——perf 事件点有限、debugfs 需要定制内核。BPF 补的正是这一层的空白，顺带把其他层的观测也统一到同一套可编程框架。</p>
 <p>定位关系：传统工具是性能分析的<strong>起点</strong>，BPF 跟踪做更深入的调查（第 3 章给出结合两者的 60 秒分析流程）。</p>
 <hr />
 <h3>HFT 关联</h3>
 <p>这张全景图就是<strong>交易路径逐层计时</strong>的选型地图：行情网卡（nettxlat/skbdrop）→ IP/TCP（tcpretrans/tcpwin）→ 套接字（soconnlat/sormem）→ VFS（vfsstat）→ 调度（runqlat/offcputime）。每层的工具名已在图上，遇到延迟问题按层下钻即可，不需要发明轮子。</p>
+<p>配套纪律（避免"全景能见度"变成"全景开销"）：</p>
+<ul>
+<li><strong>不是全挂</strong>——全景图是选型地图不是部署清单；常驻的只有几个聚合型工具（直方图/计数器类），逐事件打印类（<em>snoop/</em>slower）只在上手工单时挂</li>
+<li>交易机上 BPF 工具的输出通道也要管：<code class="c">fprintf</code> 逐行输出到终端在风暴期本身就是负载——优先 <code class="c">@hist()</code> 直方图、<code class="c">interval</code> 定期打印</li>
+<li>交叉引用：60 秒分析流程见 <a href="chapter-03.html#ch-3">Ch3 性能分析</a>；各资源域工具详解从 <a href="chapter-06.html#ch-6">Ch6 CPUs</a> 开始</li>
+</ul>
+<details>
+<summary>📝 自测题（点击展开）</summary>
+<ol>
+<li><strong>表 1-1 中"内核"一行为什么是空的？这反映了传统工具的什么结构性缺陷？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>传统工具没有安全进入内核内部执行的机制——能做的只有预先埋好的计数器（/proc）和有限的事件点（perf）。缺陷：内核内部行为的观测依赖内核开发者预先放什么接口，使用者不可编程定制。BPF 的 verifier 把"在内核里跑任意（经验证安全的）小程序"变成可能，才填上这一格。</p>
+</details>
+<ol start="2">
+<li><strong>"立刻部署、不重启"对生产排障的价值是什么？对比传统 agent 方案的差异。</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>传统 agent 要预装、随版本滚动重启进程，观测窗口从"出事后几分钟"退化为"下次变更窗口后"。BPF 探针热插拔意味着问题的第一现场（往往稍纵即逝）就能被捕获——排障最贵的不是分析，是等问题复现。</p>
+</details>
+<ol start="3">
+<li><strong>为什么说全景图"不是部署清单"？哪些工具适合常驻、哪些只该手工单次挂载？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>每多挂一个逐事件探针，就多一份与事件率成正比的开销。常驻：聚合型（直方图/计数/延迟分桶，如 runqlat/biolatency）；手工：逐事件打印型（<em>snoop）、带过滤阈值但输出量不可控的（</em>slower 不带阈值时）。</p>
+</details>
+</details>
       </section>
       <section class="section" id="s-6">
         <div class="sec-head"><div class="sec-no">1.6</div><h2>动态插桩：kprobes 和 uprobes</h2></div>
@@ -706,6 +956,19 @@ grep     12989  12987  0   /bin/grep org.apache.catalina
 <li>原理上属于"在运行程序的任意指令地址插入断点"的技术，但与调试器不同：<strong>记录完信息后自动继续执行</strong>，不把控制权交给调试器</li>
 </ul>
 <p>作者的原话：这种能见度"深入和彻底，给人的感觉就像是一种超能力"。</p>
+<h2>机制速览：断点是怎么打的（深入一层）</h2>
+<p>动态插桩"未启用零开销"的底气来自它的实现方式——<strong>不改指令流就什么都不发生</strong>：</p>
+<pre class="code" data-label="text"><code class="c">未启用:   CPU 直接执行函数原指令，探针不存在，开销严格为 0
+启用后:   原首字节被替换为断点指令（x86: int3 / arm64: brk）
+          → CPU 陷入异常 → kprobe/ uprobe 处理器接管
+          → 单步执行被替换的原指令 → 跳回后续指令继续
+</code></pre>
+<ul>
+<li><strong>kprobe</strong>（内核函数）：断点处理器在内核里跑，可直接调 BPF 程序</li>
+<li><strong>uprobe</strong>（用户函数）：断点处理器把对应<strong>页</strong>标记 COW 替换（插入 int3 的副本页），进程执行到该页时陷入内核——同一可执行文件的多个进程共享同一探针</li>
+<li><strong>kretprobe/uretprobe</strong>（返回位置）：不是在"每个 return 语句处"打断点，而是<strong>在函数入口把返回地址偷换成 trampoline</strong>，函数无论从哪个 return 走都会先进 trampoline——这就是"多返回点全覆盖"的实现原理</li>
+</ul>
+<p>单次开销 ≈ 异常陷入 + 单步 + BPF 程序执行 ≈ 1–3 µs 量级（无栈回溯时更低），<strong>与函数调用频率相乘</strong>才是真实成本。</p>
 <h2>历史脉络（为什么它今天能安全用在生产环境）</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -738,14 +1001,16 @@ grep     12989  12987  0   /bin/grep org.apache.catalina
 </tbody>
 </table></div>
 <p>早期动态跟踪工具（如 Kerninst）自带跟踪语言但太复杂、少用，且风险高：实时修改地址空间中的应用指令，出错即进程或内核崩溃。</p>
+<p>历史教训的两面：DProbes 被拒不是技术不行，而是<strong>没有证明安全性</strong>（任意指令插桩 + 复杂前置分析）；DTrace 成功靠的是"安全语言 + 默认安装"的产品化。BPF 跟踪的 verifier 正是把这两条路合流。</p>
 <h2>bpftrace 探针写法（表 1-2）</h2>
 <pre class="code" data-label="text"><code class="c">kprobe:vfs_read                   内核函数 vfs_read() 开始位置插桩
 kretprobe:vfs_read                内核函数 vfs_read() 返回位置插桩
 uprobe:/bin/bash:readline         /bin/bash 中 readline() 开始位置插桩
-uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
+uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插针
 </code></pre>
 <blockquote>
 <p>细节：函数只有一个入口但<strong>可以有多个返回点</strong>（不同位置 return），返回探针会对<strong>所有</strong>返回点插桩（原理见第 2 章）。</p>
+<p>现代内核还有更快的替代：<strong>fentry/fexit</strong>（基于编译期 patch 的函数入口直连，无断点陷入，x86 5.5+/ARM64 6.0+），语义与 kprobe/kretprobe 类似但开销更低且是"稳定接口"。挂点选型决策树见 <a href="chapter-07.html#ch-7">Learning eBPF Ch7</a>；ftrace 机制详解见 <a href="../../../06.6-systems-performance/html/chapter-14.html#ch-14">14-SysPerf Ch14 ftrace</a>。</p>
 </blockquote>
 <hr />
 <h3>HFT 关联</h3>
@@ -753,6 +1018,7 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
 <li>动态插桩"未启用零开销"意味着<strong>平时不装探针、出事才挂</strong>，平时不给交易路径添一个周期</li>
 <li>kretprobe 多返回点：给策略函数计时时<strong>不能</strong>只挂一个 return——要么用 uretprobe/kretprobe（自动覆盖全部返回点），要么改挂调用者侧配对</li>
 <li>函数被内联后无法插桩（见 1.7）——对热点小函数（如内联的行情解析）要确认符号存在，编译时 <code class="c">-fno-inline</code> 关键路径是 HFT 常见做法</li>
+<li>断点陷入的 1–3 µs 单次成本在调用频率 100k+/s 的函数上就是百分之几的吞吐税——<strong>交易热路径上的探针必须先做频率评估</strong>，优先挂低频入口（如"每笔订单一次"的策略入口而非"每个 tick 多次"的解析循环）</li>
 </ul>
 <details>
 <summary>📝 自测题（点击展开）</summary>
@@ -770,6 +1036,20 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
 <summary>参考答案</summary>
 <p>它证明动态跟踪可以安全用于生产环境（Solaris 10 默认安装），加上易用的 D 语言和 Sun 的市场推广，把这项技术从"艰深难用、运行风险高"转变为广为人知且被期待的特性。</p>
 </details>
+<ol start="3">
+<li><strong>kretprobe 如何做到"对所有返回点插桩"？它与"在每个 return 语句处打断点"有何不同？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>kretprobe 在函数入口把返回地址替换为 trampoline，任何 return 都会先跳进 trampoline 执行探针再回真实调用者——一次入口插桩覆盖全部返回路径。"在每个 return 打断点"则要静态识别所有 return 位置且逐个打点，开销和复杂度都更高（bpftrace 对 C 函数也没有这种语法）。</p>
+</details>
+<ol start="4">
+<li><strong>fentry/fexit 相比 kprobe/kretprobe 的优势是什么？为什么现代工具优先选它？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>fentry 基于 ftrace 的编译期 patch（函数入口直接跳转到跟踪函数），没有 int3 异常陷入和单步模拟，开销更低（约几十 ns vs µs 级）；且是内核维护的稳定接口，不随函数重命名漂移。限制：只能挂带 <code class="c">__init</code>/可 patch 属性的内核函数、需要 BTF 支持的内核版本——不满足时退回 kprobe。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-7">
@@ -782,6 +1062,7 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
 <li><strong>接口稳定性</strong>：软件版本变更后，被插桩的函数可能被重命名或移除——升级内核/应用后，BPF 工具可能报"找不到函数"，也可能<strong>静默无输出</strong>（更危险）</li>
 <li><strong>内联（inline）</strong>：编译器优化会把函数内联掉，导致 kprobes/uprobes <strong>无函数可插</strong>。变通办法是函数偏移量跟踪（function offset），但它作为接口比函数入口<strong>更不稳定</strong></li>
 </ol>
+<p>补充第三个软肋（书里后文展开，先记结论）：<strong>函数签名变化</strong>——kprobe 挂上了，但参数布局变了，读出来的字段是垃圾。tracepoint 的 <code class="c">format</code> 文件是自描述的，字段变化会显式暴露。</p>
 <h2>解法：静态插桩</h2>
 <p>把<strong>稳定的事件名字</strong>编码进软件代码、由开发者维护：</p>
 <ul>
@@ -789,11 +1070,57 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
 <li><strong>USDT</strong>（user-level statically defined tracing）：用户态的静态定义跟踪</li>
 </ul>
 <p>静态插桩的代价：插桩点增加开发者维护成本，所以<strong>数量十分有限</strong>。</p>
+<h2>机制速览：静态插桩为什么"稳定且近乎零开销"</h2>
+<p>tracepoint 的实现基础是 <strong>static key（jump label）</strong>：</p>
+<pre class="code" data-label="text"><code class="c">未启用:   代码里是一条无条件跳转（nop 5 字节 / 直接跳过探针体），开销≈0
+启用后:   内核把该指令原地 patch 成跳到探针处理器的分支
+</code></pre>
+<ul>
+<li>每个静态跟踪点在 <code class="c">/sys/kernel/tracing/events/&lt;族&gt;/&lt;事件&gt;/</code> 下有 <strong>format 文件</strong>——自描述字段名和偏移，BPF 程序按名取字段（<code class="c">args-&gt;filename</code>），<strong>不猜结构布局</strong></li>
+<li>这也是 tracepoint 稳定性的实质：<strong>字段名是开发者承诺的接口</strong>，改字段名等于改 ABI，要过内核评审</li>
+<li>USDT 同理：<code class="c">DTRACE_PROBE(provider, probe)</code> 宏在二进制的 note 段落登记探针位置与参数，<code class="c">readelf -n</code> 可见；运行时 uprobe 挂到登记的地址上</li>
+</ul>
 <h2>选型策略（作者明确推荐）</h2>
 <blockquote>
 <p>先试静态（tracepoint / USDT），不够用再转动态（kprobes / uprobes）。</p>
 </blockquote>
 <p>稳定、不受内联影响；但覆盖面窄，动态插桩是"任何函数都能挂"的兜底。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>tracepoint/USDT</th>
+<th>kprobe/uprobe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>接口稳定性</td>
+<td>字段名是承诺的 ABI</td>
+<td>函数名/签名随时可变</td>
+</tr>
+<tr>
+<td>内联影响</td>
+<td>无</td>
+<td>内联后无函数可挂</td>
+</tr>
+<tr>
+<td>覆盖面</td>
+<td>数量有限（开发者埋多少有多少）</td>
+<td>任意函数</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>static key，未启用≈0</td>
+<td>断点陷入</td>
+</tr>
+<tr>
+<td>自描述</td>
+<td>format 文件/note 段</td>
+<td>靠开发者自己查内核源码签名</td>
+</tr>
+</tbody>
+</table></div>
 <h2>bpftrace 探针写法（表 1-3）</h2>
 <pre class="code" data-label="text"><code class="c">tracepoint:syscalls:sys_enter_open        对 open(2) 系统调用插桩
 usdt:/usr/sbin/mysqld:mysql:query__start  mysqld 中的 query__start 探针
@@ -801,12 +1128,18 @@ usdt:/usr/sbin/mysqld:mysql:query__start  mysqld 中的 query__start 探针
 <blockquote>
 <p>脚注：系统调用跟踪点需要内核编译时开启 <code class="c">CONFIG_FTRACE_SYSCALLS</code>。</p>
 </blockquote>
+<p>实用检查命令——排障第一步先确认探针存在：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -l 'tracepoint:syscalls:*open*'     # 列出 syscall 跟踪点
+cat /sys/kernel/tracing/events/syscalls/sys_enter_openat/format   # 看字段定义
+bpftrace -l 'usdt:/usr/sbin/mysqld'          # 列出二进制里的 USDT 探针（需 debug info）
+</code></pre>
 <hr />
 <h3>HFT 关联</h3>
 <ul>
 <li>交易机上长期挂载的观测脚本应<strong>优先绑 tracepoint</strong>（内核小版本升级不破），临时排障才用 kprobe——运维友好性差异巨大</li>
 <li>USDT 思路可移植到自家策略引擎：在<strong>策略框架代码里埋稳定的 USDT 探针</strong>（order__submit、signal__generated），版本迭代中观测脚本不用改——这是把"插桩稳定性"内建进自己软件的正确方式</li>
 <li>"静默无输出"是排障大坑：脚本挂上一个已不存在的 kprobe 目标时，先确认探针真的 attach 上了（bpftrace 会打印 Attaching N probes... 的数量）</li>
+<li>format 文件自描述字段 = 写 BPF 程序前<strong>必读的接口文档</strong>；kprobe 没有等价物（要读内核源码确认参数），这是排障时间成本的隐性差异</li>
 </ul>
 <details>
 <summary>📝 自测题（点击展开）</summary>
@@ -823,6 +1156,20 @@ usdt:/usr/sbin/mysqld:mysql:query__start  mysqld 中的 query__start 探针
 <details>
 <summary>参考答案</summary>
 <p>函数入口有符号名做锚点；偏移量是相对函数内某条指令的硬编码位置，任何一次重新编译（哪怕函数逻辑没变，只是指令布局变化）都可能让偏移失效，且失效后探针挂到错误指令上，行为不可预测。</p>
+</details>
+<ol start="3">
+<li><strong>tracepoint 的 format 文件解决了什么问题？kprobe 为什么没有等价物？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>format 自描述事件字段（名字+偏移+类型），BPF 程序按名取数，不依赖内核版本的结构布局；字段变更对使用者可见。kprobe 挂的是任意函数，内核不承诺其签名——参数布局只能靠使用者读内核源码确认，版本升级后无任何提示，属于"无契约接口"。</p>
+</details>
+<ol start="4">
+<li><strong>如何提前发现"探针静默失效"？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>部署时验证而非运行时等待：bpftrace 启动时打印 "Attaching N probes..."，脚本应断言 N 符合预期（BCC 可在 Python 层检查 attach 结果）；CI 里跑一次工具 smoke 测试；对关键常驻脚本加心跳输出（interval 块定期打印），输出停止 = 探针失效或事件流断流的告警信号。</p>
 </details>
 </details>
       </section>
@@ -934,6 +1281,62 @@ PID    COMM             FD   ERR PATH
 ...
 </code></pre>
 <p><strong>不断重复的打开失败</strong>——可能指向程序效率问题或可修复的配置错误（ERR=2 即 ENOENT：文件不存在）。</p>
+<p>参数背后的设计思路值得注意：<strong>bpftrace 版要改源码才能实现的过滤，BCC 版做成了参数</strong>。这不是简单堆功能——过滤发生在<strong>内核态 BPF 程序里</strong>（<code class="c">-p PID</code> 是把 pid 写进 map、BPF 程序里比对后丢弃），不满足条件的事件根本不进输出通道。对比"全部打印到用户态再 grep"是量级的差别：过滤前置到内核，输出通道零浪费。</p>
+<h2>ERR 列速查（排障时直接对表）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ERR</th>
+<th>常见含义</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2 ENOENT</td>
+<td>文件/路径不存在</td>
+<td>配置漂移、挂载点变化、路径拼错</td>
+</tr>
+<tr>
+<td>13 EACCES</td>
+<td>权限拒绝</td>
+<td>运行用户与文件属主不匹配（容器里高发）</td>
+</tr>
+<tr>
+<td>21 EISDIR</td>
+<td>是目录</td>
+<td>把目录当文件打开</td>
+</tr>
+<tr>
+<td>24 EMFILE</td>
+<td>进程 fd 用尽</td>
+<td>fd 泄漏（配合 closesnoop/exitsnoop 找泄漏点）</td>
+</tr>
+<tr>
+<td>11 EAGAIN</td>
+<td>非阻塞模式下暂不可用</td>
+<td>打开了 FIFO/套接字类特殊文件</td>
+</tr>
+</tbody>
+</table></div>
+<h2>BCC 工具的形态：一个文件两截代码</h2>
+<p>BCC 工具是 Python 脚本，但内嵌 C 源码字符串（示意，opensnoop 简化版）：</p>
+<pre class="code" data-label="py"><code class="c">#!/usr/bin/python
+from bcc import BPF
+b = BPF(text='''
+#include &lt;uapi/linux/ptrace.h&gt;
+TRACEPOINT_PROBE(syscalls, sys_enter_openat) {
+    bpftrace_printk(&quot;%s\\n&quot;, args-&gt;filename);   // 内核态：C，事件发生时执行
+    return 0;
+}
+''')
+b.trace_print()                                   # 用户态：Python，收事件打印
+</code></pre>
+<ul>
+<li><code class="c">BPF(text=...)</code> 触发<strong>运行时编译</strong>（Clang/LLVM）→ 加载 → attach</li>
+<li>内核态 C 与用户态 Python 的通信走 perf buffer/ring buffer 或 map——这就是"一个工具、两个执行域"的直观形态</li>
+<li>改行为 = 改源码；这也是 BCC 工具天然适合"fork 一份定制"的原因（70+ 工具都是可读可改的模板）</li>
+</ul>
 <h2>BCC vs bpftrace 分工（本章结论性对比）</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -972,9 +1375,11 @@ PID    COMM             FD   ERR PATH
 <hr />
 <h3>HFT 关联</h3>
 <ul>
-<li><code class="c">-p PID</code> 按进程过滤是交易机必备：观测窗口只盯策略进程，不把系统其他噪声（监控 agent、日志切割）混进来</li>
+<li><code class="c">-p PID</code> 按进程过滤是交易机必备：观测窗口只盯策略进程，不把系统其他噪声（监控 agent、日志切割）混进来——且过滤在内核态完成，噪声事件不占输出带宽</li>
 <li><code class="c">opensnoop -x</code> 是发现<strong>配置漂移</strong>的利器：容器化交易组件挂载路径变化后，反复 ENOENT 的重试循环会直接烧 CPU 并拖慢初始化</li>
+<li>ERR 列是"免费的健康度信号"：定期抓一段 <code class="c">-x</code> 输出做 diff，EMFILE 增长 = fd 泄漏前兆（交易网关的常见慢性病）</li>
 <li>bpftrace（原型验证）→ BCC/libbpf（产品化）的演进路径，对应 HFT 观测工具的迭代纪律：先证明指标有用，再工程化常驻</li>
+<li>交叉引用：BCC 内部机制（运行时编译、libbcc 架构）详解见 <a href="chapter-04.html#ch-4">Ch4 BCC</a> 与 <a href="chapter-05.html#ch-5">Learning eBPF Ch5</a></li>
 </ul>
 <details>
 <summary>📝 自测题（点击展开）</summary>
@@ -991,6 +1396,20 @@ PID    COMM             FD   ERR PATH
 <details>
 <summary>参考答案</summary>
 <p>当脚本需要反复使用、需要精细命令行参数（按 PID/TID/时长/失败过滤）、要作为后台进程长跑或与其他事件源组合时——bpftrace 改源码的成本开始超过一次性收益。</p>
+</details>
+<ol start="3">
+<li><strong>BCC 的 <code class="c">-p PID</code> 过滤和"输出后再 <code class="c">grep PID"</code>有什么本质区别？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>BCC 的过滤在内核态 BPF 程序内完成（pid 写入 map，程序里比对丢弃）——不满足的事件不进输出通道，不占 perf buffer、不叫醒用户态。grep 是全量事件都走完"内核→用户态"通路后才丢弃：开销差着"事件率 × 通路成本"的量级。</p>
+</details>
+<ol start="4">
+<li><strong>BCC 工具源码里为什么同时有 Python 和 C？两者各在哪个执行域、怎么通信？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>C 部分编译成 BPF 程序在内核态事件发生时执行（采集/过滤/聚合）；Python 部分在用户态负责编译加载、参数解析、收输出。通信走 perf/ring buffer（事件流）或 map（聚合结果、控制参数如 pid 过滤值）。</p>
 </details>
 </details>
       </section>

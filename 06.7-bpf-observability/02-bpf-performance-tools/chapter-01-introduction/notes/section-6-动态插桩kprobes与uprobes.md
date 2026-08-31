@@ -12,6 +12,23 @@
 
 作者的原话：这种能见度"深入和彻底，给人的感觉就像是一种超能力"。
 
+## 机制速览：断点是怎么打的（深入一层）
+
+动态插桩"未启用零开销"的底气来自它的实现方式——**不改指令流就什么都不发生**：
+
+```text
+未启用:   CPU 直接执行函数原指令，探针不存在，开销严格为 0
+启用后:   原首字节被替换为断点指令（x86: int3 / arm64: brk）
+          → CPU 陷入异常 → kprobe/ uprobe 处理器接管
+          → 单步执行被替换的原指令 → 跳回后续指令继续
+```
+
+- **kprobe**（内核函数）：断点处理器在内核里跑，可直接调 BPF 程序
+- **uprobe**（用户函数）：断点处理器把对应**页**标记 COW 替换（插入 int3 的副本页），进程执行到该页时陷入内核——同一可执行文件的多个进程共享同一探针
+- **kretprobe/uretprobe**（返回位置）：不是在"每个 return 语句处"打断点，而是**在函数入口把返回地址偷换成 trampoline**，函数无论从哪个 return 走都会先进 trampoline——这就是"多返回点全覆盖"的实现原理
+
+单次开销 ≈ 异常陷入 + 单步 + BPF 程序执行 ≈ 1–3 µs 量级（无栈回溯时更低），**与函数调用频率相乘**才是真实成本。
+
 ## 历史脉络（为什么它今天能安全用在生产环境）
 
 | 时间 | 事件 |
@@ -24,16 +41,20 @@
 
 早期动态跟踪工具（如 Kerninst）自带跟踪语言但太复杂、少用，且风险高：实时修改地址空间中的应用指令，出错即进程或内核崩溃。
 
+历史教训的两面：DProbes 被拒不是技术不行，而是**没有证明安全性**（任意指令插桩 + 复杂前置分析）；DTrace 成功靠的是"安全语言 + 默认安装"的产品化。BPF 跟踪的 verifier 正是把这两条路合流。
+
 ## bpftrace 探针写法（表 1-2）
 
 ```text
 kprobe:vfs_read                   内核函数 vfs_read() 开始位置插桩
 kretprobe:vfs_read                内核函数 vfs_read() 返回位置插桩
 uprobe:/bin/bash:readline         /bin/bash 中 readline() 开始位置插桩
-uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
+uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插针
 ```
 
 > 细节：函数只有一个入口但**可以有多个返回点**（不同位置 return），返回探针会对**所有**返回点插桩（原理见第 2 章）。
+
+> 现代内核还有更快的替代：**fentry/fexit**（基于编译期 patch 的函数入口直连，无断点陷入，x86 5.5+/ARM64 6.0+），语义与 kprobe/kretprobe 类似但开销更低且是"稳定接口"。挂点选型决策树见 [Learning eBPF Ch7](../../../01-learning-ebpf/chapter-07-program-attachment-types/)；ftrace 机制详解见 [14-SysPerf Ch14 ftrace](../../../../06.6-systems-performance/chapter-14-ftrace/)。
 
 ---
 
@@ -42,6 +63,7 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
 - 动态插桩"未启用零开销"意味着**平时不装探针、出事才挂**，平时不给交易路径添一个周期
 - kretprobe 多返回点：给策略函数计时时**不能**只挂一个 return——要么用 uretprobe/kretprobe（自动覆盖全部返回点），要么改挂调用者侧配对
 - 函数被内联后无法插桩（见 1.7）——对热点小函数（如内联的行情解析）要确认符号存在，编译时 `-fno-inline` 关键路径是 HFT 常见做法
+- 断点陷入的 1–3 µs 单次成本在调用频率 100k+/s 的函数上就是百分之几的吞吐税——**交易热路径上的探针必须先做频率评估**，优先挂低频入口（如"每笔订单一次"的策略入口而非"每个 tick 多次"的解析循环）
 
 <details>
 <summary>📝 自测题（点击展开）</summary>
@@ -59,6 +81,22 @@ uretprobe:/bin/bash:readline      /bin/bash 中 readline() 返回位置插桩
    <details><summary>参考答案</summary>
 
    它证明动态跟踪可以安全用于生产环境（Solaris 10 默认安装），加上易用的 D 语言和 Sun 的市场推广，把这项技术从"艰深难用、运行风险高"转变为广为人知且被期待的特性。
+
+   </details>
+
+3. **kretprobe 如何做到"对所有返回点插桩"？它与"在每个 return 语句处打断点"有何不同？**
+
+   <details><summary>参考答案</summary>
+
+   kretprobe 在函数入口把返回地址替换为 trampoline，任何 return 都会先跳进 trampoline 执行探针再回真实调用者——一次入口插桩覆盖全部返回路径。"在每个 return 打断点"则要静态识别所有 return 位置且逐个打点，开销和复杂度都更高（bpftrace 对 C 函数也没有这种语法）。
+
+   </details>
+
+4. **fentry/fexit 相比 kprobe/kretprobe 的优势是什么？为什么现代工具优先选它？**
+
+   <details><summary>参考答案</summary>
+
+   fentry 基于 ftrace 的编译期 patch（函数入口直接跳转到跟踪函数），没有 int3 异常陷入和单步模拟，开销更低（约几十 ns vs µs 级）；且是内核维护的稳定接口，不随函数重命名漂移。限制：只能挂带 `__init`/可 patch 属性的内核函数、需要 BTF 支持的内核版本——不满足时退回 kprobe。
 
    </details>
 

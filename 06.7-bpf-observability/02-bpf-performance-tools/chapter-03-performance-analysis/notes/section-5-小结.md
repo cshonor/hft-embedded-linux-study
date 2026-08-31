@@ -24,6 +24,8 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
   · 系统性巡检找盲区     → USE（每资源×使用率/饱和度/错误）
 ```
 
+这张主线图也定义了**两套清单的分工**：60 秒清单全是传统工具（零依赖、任何机器秒开），负责"有没有明显异常"；BCC 清全是逐事件工具（要装 BCC/bpftrace），负责"异常具体是什么"。中间的衔接信号：60 秒清单里哪个指标可疑，就到 BCC 清单里找对应资源域的工具（vmstat 的 r 高 → runqlat；iostat 的 await 高 → biolatency/biosnoop）。
+
 ## 全章坑点表（HFT 视角）
 
 | # | 坑 | 后果 | 对策 |
@@ -35,11 +37,15 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
 | 5 | load average 当 CPU 指标 | IO 等待虚高误判 | vmstat r 列（不含 D 状态） |
 | 6 | USE 只查使用率 | 漏掉排队（饱和度） | 三项都查，饱和度常是延迟根因 |
 
+坑点 2 的"时间戳案例"值得记住：下钻分析的经典示范——磁盘"慢"只是现象，钻到最底发现是设备驱动层时间戳处理函数的低效，改一行配置就解决。**"慢"是结论不是根因**，能修的机制（一个函数、一条配置、一个参数）才是下钻的终点。
+
 ## HFT 落地建议
 
 1. 每日例行：60 秒清单 + 11 个 BCC 工具打包成脚本，开盘前后各跑一轮存档对比。
 2. 事件驱动复盘：昨日 P99 尖刺 → runqlat/profile/biosnoop/tcpretrans 四件套按序下钻。
 3. 资源盲区盘点：按 USE 资源图核对监控覆盖，补齐饱和度类指标（队列、重传、runq）。
+
+落地建议 1 的关键是**存档对比**：单轮清单只有瞬时值，"开盘前后各一轮"的 diff 才能暴露变化（开盘后 runq 尖刺、行情风暴期 retrans 飙升）。这与 sar 趋势定位、BPF 现场下钻的分工（见 [14-SysPerf Ch4 观测工具](../../../../06.6-systems-performance/chapter-04-observability-tools/)）同构。
 
 ## 自测
 
@@ -53,6 +59,18 @@ BCC 11 工具清单（execsnoop→…→profile）── 定位具体层
 <summary>2. iostat 显示 %util 100% 且 await 3ms，说明什么？</summary>
 
 设备持续繁忙但响应快——并行设备吞吐可能还有余量，不是必然瓶颈；重点看 await 与队列。
+</details>
+
+<details>
+<summary>3. 60 秒清单与 BCC 清单的衔接信号怎么读？举两个"传统指标→BPF 工具"的映射。</summary>
+
+60 秒清单暴露可疑指标 → 按资源域映射到 BCC 逐事件工具确认机制。例：vmstat r 列高（CPU 排队）→ runqlat 看排队延迟分布；iostat await 高 → biolatency/biosnoop 分解块层延迟与具体 I/O；sar -n DEV 的 rxerr/tcp 重传 → tcpretrans/skbdrop。
+</details>
+
+<details>
+<summary>4. 为什么说"'磁盘慢'是结论不是根因"？下钻分析到什么程度可以停？</summary>
+
+"慢"只描述了现象层级，不可执行；根因要落到可修的机制——具体的函数、配置项、参数（时间戳案例：驱动层时间戳处理函数低效）。下钻到"能写出修复代码/配置"的那一层才停，停在"某设备/CPU 慢"等于把问题原样复述了一遍。
 </details>
 
 ## 交叉引用
