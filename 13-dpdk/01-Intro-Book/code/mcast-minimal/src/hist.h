@@ -103,11 +103,18 @@ static inline void hist_dump(const struct hist *h, double ns_per_tick,
     printf("  %-8s %-10s %-10s %-10s %-10s %-10s\n",
            "p50", "p99", "p999", "p9999", "max", "mean");
 
-    uint64_t p[4];
+    /* ★ 超量程的分位数绝不能打印成 0 ★
+       真实含义是"慢到量程装不下"，显示成 0 会被读成"快得不可思议"，
+       恰好相反 —— 而尾延迟恰恰是最该被看见的那个数。统一标记 ">量程"。 */
+    char pbuf[4][24];
     const double qs[4] = { 0.50, 0.99, 0.999, 0.9999 };
     for (int i = 0; i < 4; i++) {
         uint64_t t = hist_quantile(h, qs[i]);
-        p[i] = (t == UINT64_MAX) ? 0 : (uint64_t)((double)t * ns_per_tick);
+        if (t == UINT64_MAX)
+            snprintf(pbuf[i], sizeof(pbuf[i]), ">量程");
+        else
+            snprintf(pbuf[i], sizeof(pbuf[i]), "%llu",
+                     (unsigned long long)((double)t * ns_per_tick));
     }
 
     uint64_t max_t = 0;
@@ -118,11 +125,22 @@ static inline void hist_dump(const struct hist *h, double ns_per_tick,
         }
     }
 
-    printf("  %-8llu %-10llu %-10llu %-10llu %-10llu %-10.1f\n",
-           (unsigned long long)p[0], (unsigned long long)p[1],
-           (unsigned long long)p[2], (unsigned long long)p[3],
-           (unsigned long long)((double)max_t * ns_per_tick),
-           hist_mean(h) * ns_per_tick);
+    /* 有溢出样本时真实 max 一定大于量程上限，拿量程内的最大值冒充 max 会低估尾部。
+       同理 mean 也只是下界（溢出样本被按量程上限计入），标 ">=" 而不是给个假精确值。 */
+    char maxbuf[24], meanbuf[24];
+    if (h->overflow)
+        snprintf(maxbuf, sizeof(maxbuf), ">%llu",
+                 (unsigned long long)((double)HIST_BUCKETS *
+                                      HIST_TICKS_PER_BUCKET * ns_per_tick));
+    else
+        snprintf(maxbuf, sizeof(maxbuf), "%llu",
+                 (unsigned long long)((double)max_t * ns_per_tick));
+
+    snprintf(meanbuf, sizeof(meanbuf), "%s%.1f",
+             h->overflow ? ">=" : "", hist_mean(h) * ns_per_tick);
+
+    printf("  %-8s %-10s %-10s %-10s %-10s %-10s\n",
+           pbuf[0], pbuf[1], pbuf[2], pbuf[3], maxbuf, meanbuf);
 
     if (h->overflow)
         printf("  ⚠ 有 %llu 个样本超出量程，分位数偏乐观，请调大 HIST_TICKS_PER_BUCKET\n",

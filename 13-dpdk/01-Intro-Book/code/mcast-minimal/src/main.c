@@ -90,6 +90,12 @@ static inline int parse_packet(const struct rte_mbuf *m, struct pkt_view *v)
     const struct rte_udp_hdr *udp;
     size_t ihl, off;
 
+    /* 多段 mbuf（开 jumbo / RTE_ETH_RX_OFFLOAD_SCATTER 时）在内存里不连续，
+       下面这套"线性指针偏移"解析会直接读飞 —— 必须先拒绝，或先
+       rte_pktmbuf_linearize() 拉平。MTU 1500 且未开 scatter 时恒为 1 段。 */
+    if (m->nb_segs != 1)
+        return PARSE_TOO_SHORT;
+
     /* 关键：mbuf 里的就是裸以太网帧，没有任何内核帮你做的长度校验。
        行情包通常很小，但网络上什么包都可能有，必须先验长度再解引用。 */
     if (m->data_len < sizeof(*eth))
@@ -129,11 +135,19 @@ static inline int parse_packet(const struct rte_mbuf *m, struct pkt_view *v)
 
     off += sizeof(*udp);
     {
+        /* ★ dgram_len 是"对面声明的"，不是"实际收到的" ★
+           DPDK 不会替你校验二者是否一致：一个畸形包可以声明 65535 字节，
+           而 mbuf 里只有 40 字节。若直接拿它当 payload 长度去读就出界了。
+           先按声明算，再与真实剩余字节核对，不一致就丢。
+           正常行情包二者必然相等 —— 不等说明帧被截断或就是畸形包。 */
         uint16_t dlen = rte_be_to_cpu_16(udp->dgram_len);
         if (dlen < sizeof(*udp))
             return PARSE_TOO_SHORT;
         v->payload_len = (uint16_t)(dlen - sizeof(*udp));
     }
+    if ((size_t)off + v->payload_len > m->data_len)
+        return PARSE_TOO_SHORT;
+
     v->payload = (const uint8_t *)eth + off;
 
     /* 真正的行情解析在这里接：MoldUDP64 / ITCH / 自定义二进制协议。
@@ -247,21 +261,28 @@ int main(int argc, char **argv)
     if (rte_eth_dev_count_avail() == 0)
         rte_exit(EXIT_FAILURE, "没有可用的 DPDK 网卡，先用 dpdk-devbind.py 绑定\n");
 
+    /* 本例单端口单队列：真实系统会按 lcore 数起多个线程，一核一队列。
+       ★ 顺序很重要：先定端口，再建 mbuf 池 ★
+       池的 socket_id 要跟"网卡挂在哪个 NUMA 节点"走，而不是"当前线程
+       跑在哪个核上"—— 双路机器上这两者常常不是同一个节点。池建错节点，
+       每个包都要多一次跨 socket 的远程内存访问，正好抵消掉旁路省下的时间。
+       → chapter-02-mbuf与内存池.md 的 socket_id 一节 */
+    int found = 0;
+    RTE_ETH_FOREACH_DEV(port_id) { found = 1; break; }
+    if (!found)
+        rte_exit(EXIT_FAILURE, "没有可用端口\n");
+
     g_mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
                                           NUM_MBUFS,
                                           MBUF_CACHE_SIZE,
                                           0,
                                           RTE_MBUF_DEFAULT_BUF_SIZE,
-                                          rte_socket_id());
+                                          rte_eth_dev_socket_id(port_id));
     if (g_mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "mbuf pool 创建失败（大页配置了吗？）\n");
 
-    /* 本例单端口单队列：真实系统会按 lcore 数起多个线程，一核一队列 */
-    RTE_ETH_FOREACH_DEV(port_id) {
-        if (port_init(port_id) != 0)
-            rte_exit(EXIT_FAILURE, "端口 %u 初始化失败\n", port_id);
-        break;
-    }
+    if (port_init(port_id) != 0)
+        rte_exit(EXIT_FAILURE, "端口 %u 初始化失败\n", port_id);
 
     tsc_hz = rte_get_tsc_hz();
 

@@ -7,7 +7,7 @@
  *
  * 对照关系（口径要对齐，否则数字没有意义）：
  *   hist_recv   = recvmmsg 系统调用 + 内核→用户态拷贝  ← 走内核栈独有，DPDK 为 0
- *   hist_burst  = 批次内位置延迟                      ← 与 DPDK 版同口径
+ *   hist_burst  = 批次内位置延迟                      ← 公式同 DPDK，构成不同（见文末）
  *   hist_oh     = 测量本身开销（基线，报告里要扣除）
  *   socket 端到端 ≈ hist_recv + hist_burst
  *
@@ -204,11 +204,12 @@ int main(int argc, char **argv)
         total += (uint64_t)rc;
 
         for (int i = 0; i < rc; i++) {
-            /* 与 DPDK 版同口径：批次内第 i 个包相对批次开始的位置延迟。
+            /* 公式与 DPDK 版一致（第 i 个包相对批次开始），但**构成不同**，
+               直接相减会得出错误结论 —— 详见文末说明。
                ★ 每包只调用一次 now_ns()。多打一个时间戳，那个调用的开销
-                 就会被算进 t2 - t0 里 —— 测量代码污染被测路径，
-                 会让 hist_burst 每包虚高约 25ns。基线已在启动时单独测好。
-               真实解析放在这里（本骨架只统计数据已到用户态）。 */
+                 就会被算进 t2 - t0 里 —— 测量代码污染被测路径。
+                 基线已在启动时单独测好，报告时扣除。
+               真实解析应放在这里（本骨架只统计数据已到用户态）。 */
             (void)msgs[i].msg_len;
             uint64_t t2 = now_ns();
             hist_record(&hist_burst, t2 - t0);
