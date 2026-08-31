@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">06</span>— Documentation/networking/filter.rst</a>
-          <a href="#s-02"><span class="n">07</span>— Documentation/networking/nf_flowtable.rst</a>
+          <a href="#s-01"><span class="n">01</span>— 包过滤器：从 cBPF 到 eBPF，与 socket filter 的真实位置</a>
+          <a href="#s-02"><span class="n">02</span>— Netfilter flowtable：连接级快路径</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -315,94 +315,665 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的核心结论</h2>
+<ol>
+<li>
+<p><strong>⭐ v6.6 内核里没有 cBPF 解释器。</strong> <code class="c">SO_ATTACH_FILTER</code> 进来的 cBPF 被
+   <code class="c">bpf_migrate_filter()</code>（filter.c:1242）翻译成 eBPF 再 JIT——tcpdump 的过滤器
+   跑的是原生机器码，「cBPF 解释执行慢」是过时知识。</p>
+</li>
+<li>
+<p><strong>⭐ cBPF 返回值是截断长度，不是布尔</strong>：0 = 丢包，k = 保留前 k 字节
+   （tcpdump <code class="c">-s</code> 的实现机制）。</p>
+</li>
+<li>
+<p><strong>⭐ socket filter 是最晚的内核过滤点</strong>：跑在 <code class="c">sock_queue_rcv_skb()</code> 入口，
+   完整协议栈已付出；且 <code class="c">SOCKET_FILTER</code> 类型连 <code class="c">data</code>/<code class="c">data_end</code> 都禁访
+   （能力由位置语义决定，详见 <a href="chapter-15.html#s-02">chapter-09/02 §4.2</a>）。</p>
+</li>
+<li>
+<p><strong>⭐ flowtable 拦截点强制 netdev ingress</strong>（<code class="c">nf_tables_api.c</code> 校验
+   <code class="c">hooknum == NF_NETDEV_INGRESS</code>），<code class="c">flow offload</code> 表达式强制 FORWARD 链
+   （<code class="c">nft_flow_offload.c:385</code>）——快路径语义是「绕过整个 IP 栈」。</p>
+</li>
+<li>
+<p><strong>⭐ 快路径缓存的是「查询」，不缓存「不变量」</strong>：MTU、TCP 状态、路由有效性
+   每包都查（O(1)）；NAT 走增量 checksum；TTL 照减。命中包 <code class="c">NF_STOLEN</code>
+   从设备层直发——IP 层 tracepoint/nft counter 都看不到，排障别误判为丢包。</p>
+</li>
+<li>
+<p><strong>⭐ flowtable 加速的是转发吞吐，不是本机收包延迟</strong>——HFT 行情机
+   （本机终结）用不上；行情前置网关/分流器才是它的主场。</p>
+</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>flowtable 快速路径</strong>：已建立连接的包跳过 Netfilter 规则匹配，直接转发，延迟降低 50%+</li>
-<li><strong>硬件卸载</strong>：flowtable 可卸载到 SmartNIC，实现线速转发</li>
-<li><strong>socket filter</strong>：BPF socket filter 在收包路径提前过滤，减少无关包到达应用层</li>
-<li><strong>HFT 应用</strong>：HFT 服务器一般不用 flowtable（不做转发），但 BPF socket filter 可用于过滤行情数据</li>
+<li><strong>socket filter 的现代用法只有一种</strong>：<code class="c">SO_ATTACH_BPF</code> + map（用户态服务实时更新
+  白名单），适合多进程共享 socket 的粗筛；行情早过滤必须在 XDP</li>
+<li><strong>过滤点位置账单</strong>：XDP（仅 DMA）&lt; tc ingress（+skb）&lt; nft INPUT（+路由/conntrack）
+  &lt; socket filter（+完整栈）&lt; 用户态（+唤醒/系统调用）</li>
+<li><strong>flowtable 顺带受益场景</strong>：行情前置机/风控网关的 L3/L4 分流——forward 流量
+  offload 后 CPU 留给行情处理</li>
+<li><strong>per 包逻辑在 offload 后失效</strong>（nft limit 等）——吞吐换灵活性的取舍与 XDP 同构</li>
+<li><strong>硬件 offload 是 CPU 零参与的唯一路径</strong>：比一切软件快路径都快，依赖 mlx5/ice 类网卡</li>
+<li><strong>tcpdump 内核态预过滤</strong>（libpcap→cBPF→翻译→JIT）是低成本观测方案</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-08-ebpf-cgroup-bpf/</code>：BPF 包过滤基础</li>
-<li><code class="c">12.5-modern-networking/chapter-10-nftables/</code>：nftables 与 flowtable 协同</li>
+<li><code class="c">12.5-modern-networking/chapter-08-ebpf-cgroup-bpf/</code>：eBPF 类型系统（SOCKET_FILTER 的能力残缺）</li>
+<li><code class="c">12.5-modern-networking/chapter-10-nftables/</code>：flowtable 的宿主体系（hook/优先级/conntrack）</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP（逐包可编程的对照解法）</li>
+<li><code class="c">12.5-modern-networking/chapter-07-xdp-redirect-dpdk/</code>：高性能转发的另一条路</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">06</div><h2>— Documentation/networking/filter.rst</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— 包过滤器：从 cBPF 到 eBPF，与 socket filter 的真实位置</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> Ch9（Netfilter）/ Ch1（socket filter）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/filter.rst</code></p>
+<strong>内核源码路径：</strong> <code class="c">Documentation/networking/filter.rst</code>
+<strong>核对源码：</strong> v6.6 <code class="c">net/core/filter.c</code>（转换与挂载链路）、<code class="c">include/uapi/linux/filter.h</code>、<code class="c">include/uapi/linux/bpf_common.h</code></p>
 </blockquote>
 <h2>文档概述</h2>
-<p>Linux 包过滤器文档，从经典 BPF（cBPF）到 eBPF 的演进。</p>
-<h2>核心内容</h2>
-<h3>cBPF（Classic BPF）</h3>
+<p><code class="c">filter.rst</code> 是内核对「包过滤器」的官方总账：cBPF（classic BPF）怎么来的、eBPF 怎么扩展的、两者怎么共存。本篇在文档基础上补齐<strong>源码级链路</strong>：cBPF 程序塞进内核后到底发生了什么、socket filter 挂在哪、为什么它是「最晚的过滤点」。</p>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-02">02-nf-flowtable.md</a></td>
+<td>Netfilter flowtable：连接级快路径</td>
+<td>本篇讲「包级过滤器的演进」，02 讲「流级缓存的思路」——同一动机（慢路径太贵）的两种解法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>1. cBPF：1992 年的设计，至今还在用</h2>
+<p>cBPF（classic BPF，来自 BSD Packet Filter，McCanne &amp; Jacobson 1992）是<strong>为 tcpdump 而生</strong>的：</p>
 <ul>
-<li>原始 BSD 包过滤器，用于 tcpdump / SO_ATTACH_FILTER</li>
-<li>指令集简单（load/store/jump/ret）</li>
-<li>32 位寄存器</li>
+<li><strong>两个 32 位寄存器</strong>：A（累加器）、X（变址）</li>
+<li><strong>一个 16 位字长的栈</strong>（<code class="c">BPF_MEMWORDS = 16</code>）</li>
+<li>指令集：<code class="c">load</code>（从包的固定偏移取数）→ <code class="c">jump</code>（条件/无条件）→ <code class="c">ret</code>（给裁决）</li>
 </ul>
-<h3>eBPF（Extended BPF）</h3>
-<ul>
-<li>10 个 64 位寄存器</li>
-<li>JIT 编译为原生指令</li>
-<li>可调用 helper 函数</li>
-<li>verifier 保证安全性</li>
-</ul>
-<h3>cBPF → eBPF 转换</h3>
-<p>内核内部将 cBPF 程序翻译为 eBPF 再执行：</p>
-<pre class="code" data-label="C"><code class="c">// tcpdump 编译为 cBPF
-// 内核自动翻译为 eBPF
-// JIT 编译为原生指令
-</code></pre>
-<h3>Socket Filter</h3>
-<pre class="code" data-label="C"><code class="c">// 经典 cBPF socket filter
-struct sock_filter code[] = {
-    BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 12),   // 加载 ethertype
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x0800, 0, 1),  // IPv4?
-    BPF_STMT(BPF_RET | BPF_K, 65535),  // 接受
-    BPF_STMT(BPF_RET | BPF_K, 0),      // 拒绝
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/bpf_common.h —— 指令编码 */
+struct sock_filter {    /* Filter block */
+    __u16   code;   /* Actual filter code */
+    __u8    jt; /* Jump true */
+    __u8    jf; /* Jump false */
+    __u32   k;  /* Generic multiuse field */
 };
-struct sock_fprog prog = { .len = 4, .filter = code };
-setsockopt(sockfd, SOL_SOCKET, SO_ATTACH_FILTER, &amp;prog, sizeof(prog));
+
+struct sock_fprog { /* Required for SO_ATTACH_FILTER. */
+    unsigned short      len;
+    struct sock_filter __user *filter;
+};
 </code></pre>
-<h2>HFT 要点</h2>
+<p><strong>今天还在用它的地方</strong>：tcpdump/libpcap 的过滤器表达式（<code class="c">tcp port 9090</code>）编译成的就是 cBPF；<code class="c">SO_ATTACH_FILTER</code> 接收的也是 cBPF。<strong>不是因为好，而是因为兼容</strong>——libpcap 的 ABI 覆盖了所有 Unix。</p>
+<h3>1.1 cBPF 的返回值语义（容易搞错）</h3>
+<pre class="code" data-label="C"><code class="c">BPF_STMT(BPF_RET | BPF_K, 65535);   /* 返回 65535 = 「接受整个包」 */
+BPF_STMT(BPF_RET | BPF_K, 0);       /* 返回 0 = 「丢弃」 */
+BPF_STMT(BPF_RET | BPF_K, 64);      /* 返回 64 = 「接受前 64 字节」 */
+</code></pre>
+<p><strong>返回值是「保留的字节数」，不是布尔裁决</strong>。返回 64 意味着内核只把前 64 字节放进 socket 队列（snapshot length 语义，tcpdump 的 <code class="c">-s</code> 就是这么实现的）。</p>
+<hr />
+<h2>2. ⭐ v6.6 的真相：cBPF 在内核里已被「翻译执行」</h2>
+<p><strong>内核里没有 cBPF 解释器了</strong>（对有 JIT 的平台）。<code class="c">SO_ATTACH_FILTER</code> 塞进来的 cBPF 会被翻译成 eBPF 再执行：</p>
+<pre class="code" data-label="C"><code class="c">/* net/core/filter.c:1242 —— 挂载路径上的一环 */
+static struct bpf_prog *bpf_migrate_filter(struct bpf_prog *fp)
+{
+    ...
+    /* 1st pass: 计算翻译后的指令数 */
+    err = bpf_convert_filter(old_prog, old_len, NULL, &amp;new_len, ...);
+    /* 2nd pass: 真正翻译 */
+    err = bpf_convert_filter(old_prog, old_len, fp, &amp;new_len, ...);
+</code></pre>
+<p>翻译器 <code class="c">bpf_convert_filter()</code>（<code class="c">net/core/filter.c:559</code>）做的事：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>cBPF 概念</th>
+<th>eBPF 对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A/X 寄存器</td>
+<td>函数序言里把 <code class="c">BPF_REG_0</code>/<code class="c">BPF_REG_1</code> 初始化为 0（「Classic BPF expects A and X to be reset first」，源码注释）</td>
+</tr>
+<tr>
+<td><code class="c">BPF_LD \| BPF_ABS</code>（从包固定偏移取数）</td>
+<td><code class="c">BPF_LD \| BPF_W \| BPF_ABS</code>（eBPF 的 64 位变体，语义继承）</td>
+</tr>
+<tr>
+<td>16 个 scratch 内存字</td>
+<td>eBPF 栈（<code class="c">MAX_BPF_STACK = 512</code> 字节里划区）</td>
+</tr>
+<tr>
+<td>条件跳转 jt/jf（两个目标）</td>
+<td>eBPF 单目标条件跳转 + 反转（每条 cBPF 条件跳转可能膨胀成两条 eBPF 指令）</td>
+</tr>
+<tr>
+<td><code class="c">ret k</code></td>
+<td>eBPF <code class="c">mov r0, k; exit</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>翻译后走和原生 eBPF 完全一样的路：<strong>verifier 审查 → JIT 编译成原生机器码</strong>。</p>
+<p><strong>实操含义</strong>：</p>
+<ol>
+<li>tcpdump 的过滤器在 v6.6 上跑的是 <strong>JIT 过的 eBPF</strong>——「cBPF 慢」的旧知识已过时</li>
+<li><code class="c">BPF_MAXINSNS = 4096</code>（<code class="c">bpf_common.h:53-54</code>）限制的是<strong>翻译前</strong>的 cBPF 指令数（<code class="c">len &gt; BPF_MAXINSNS</code> → <code class="c">-EINVAL</code>，<code class="c">bpf_convert_filter</code> 开头检查）</li>
+<li>cBPF 的跳转是「包内数据驱动的稀疏匹配」模型，eBPF 是「通用计算」模型——前者表达不了循环和状态，这是当年的安全设计，也是它被取代的原因</li>
+</ol>
+<hr />
+<h2>3. socket filter 的完整挂载链路</h2>
+<pre class="code" data-label="C"><code class="c">/* 两种挂载方式 */
+setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &amp;sock_fprog, ...);  /* cBPF：结构体 */
+setsockopt(fd, SOL_SOCKET, SO_ATTACH_BPF, &amp;bpf_fd, ...);          /* eBPF：文件描述符 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">SO_ATTACH_FILTER</code></th>
+<th><code class="c">SO_ATTACH_BPF</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入</td>
+<td><code class="c">sock_fprog</code>（cBPF 指令数组）</td>
+<td>eBPF 程序的 fd（先 <code class="c">bpf()</code> 加载）</td>
+</tr>
+<tr>
+<td>内核处理</td>
+<td><code class="c">bpf_migrate_filter()</code> 翻译 → verifier → JIT</td>
+<td>直接 verifier → JIT</td>
+</tr>
+<tr>
+<td>能力</td>
+<td>只能读包头固定偏移</td>
+<td>完整 eBPF：map、helper</td>
+</tr>
+<tr>
+<td>进程关系</td>
+<td>程序嵌入 socket</td>
+<td>fd 引用，可多 socket 共享</td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.1 挂载过程（<code class="c">net/core/filter.c</code>）</h3>
+<pre class="code" data-label="code"><code class="c">sk_attach_filter()
+  ├─ bpf_prog_get_type_dev()          /* 取 eBPF 程序 */
+  ├─ __sk_filter_charge(sk, fp)       /* ⭐ 内存配额检查 */
+  └─ rcu_assign_pointer(sk-&gt;sk_filter, fp)   /* RCU 替换，旧程序 grace period 后释放 */
+</code></pre>
+<p><code class="c">__sk_filter_charge()</code>（filter.c:1216）限制单个 socket 上的 filter 程序总内存（<code class="c">sk_filter</code> 配额，防 fork 炸弹式资源耗尽——每个子进程继承 socket 时都要 charge）。</p>
+<h3>3.2 执行位置：socket 入队口的 <code class="c">sk_filter_trim_cap()</code></h3>
+<p>这个位置在 <a href="chapter-08.html#ch-8">chapter-08</a> 已核对过（<code class="c">net/core/filter.c:124/138</code>），这里给全链：</p>
+<pre class="code" data-label="code"><code class="c">收包：... → IP 栈 → UDP/TCP → socket 查找 → sock_queue_rcv_skb()
+                                                  │
+                                                  ▼
+                                       sk_filter_trim_cap()   ← socket filter 在这跑
+                                                  │
+                                          ├─ 返回 0 → 入队（可截断到返回值长度）
+                                          └─ 返回 非0 → 丢弃（EPERM）
+                                                  ▼
+                                       接收队列 → 唤醒应用 → recvmsg()
+</code></pre>
+<p><strong>注意已经付出了什么</strong>：完整协议栈解析、conntrack（若启用）、路由、socket 查找全做完了。socket filter 省的只是「协议栈处理后的排队和唤醒」。</p>
+<h3>3.3 socket filter 的能力残缺（v6.6 实测）</h3>
+<p>eBPF socket filter（<code class="c">BPF_PROG_TYPE_SOCKET_FILTER</code>）虽然是 eBPF，但 helper 只有 <strong>5 个</strong>（对照 tc 的 81 个），且：</p>
 <ul>
-<li>socket filter 可在 recvmsg 之前过滤无关包</li>
-<li>现代 HFT 更多用 XDP-BPF 替代 socket filter（更早过滤）</li>
-<li>tcpdump 使用 cBPF，在协议栈之后</li>
+<li>❌ <strong>禁访 <code class="c">data</code>/<code class="c">data_end</code></strong>——读不到包内容（只能看 <code class="c">len</code>/<code class="c">protocol</code> 等元数据）</li>
+<li>❌ 不能写任何 skb 字段（除 <code class="c">cb[]</code>）</li>
+<li>✅ 能查 map（LPM trie 做白名单是唯一有点意思的用法）</li>
+</ul>
+<p>这是位置决定的：它运行在 <code class="c">sk_filter_trim_cap()</code>，这个点的语义就是「这个包要不要交给这个 socket」的二元裁决，内核没给它更多权限。（详细对比表见 <a href="chapter-15.html#s-02">chapter-09 的 02 篇 §4.2</a>。）</p>
+<hr />
+<h2>4. 位置对比：五个「过滤点」的完整账单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>过滤点</th>
+<th>位置</th>
+<th>已付出的成本（被丢的包白白消耗）</th>
+<th>拿到什么</th>
+<th>程序类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>XDP</td>
+<td>驱动层，skb 分配前</td>
+<td>仅 DMA + 驱动中断/NAPI</td>
+<td><code class="c">xdp_buff</code>（线性区）</td>
+<td><code class="c">BPF_PROG_TYPE_XDP</code></td>
+</tr>
+<tr>
+<td>tc ingress</td>
+<td><code class="c">__netif_receive_skb_core</code> :5412</td>
+<td>+ skb 分配、ptype_all</td>
+<td><code class="c">__sk_buff</code>（可改）</td>
+<td><code class="c">SCHED_CLS</code></td>
+</tr>
+<tr>
+<td>nft INPUT</td>
+<td>IP 层 LOCAL_IN</td>
+<td>+ VLAN 剥层、IP 校验、路由、conntrack</td>
+<td>完整 skb 上下文</td>
+<td>nft 表达式</td>
+</tr>
+<tr>
+<td>socket filter</td>
+<td><code class="c">sock_queue_rcv_skb</code></td>
+<td>+ 完整 UDP/TCP 栈、socket 查找</td>
+<td>socket 局部视图</td>
+<td><code class="c">SOCKET_FILTER</code></td>
+</tr>
+<tr>
+<td>recvmsg 后过滤</td>
+<td>用户态</td>
+<td>+ 排队、唤醒、上下文切换、系统调用</td>
+<td>任意（用户代码）</td>
+<td>应用代码</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 的结论不变</strong>：过滤每往后挪一层，被丢流量浪费的 CPU 就多一截。socket filter 在这个序列里<strong>只比「不过滤」强一点</strong>——它的正当用途是「同一台机上多进程共享 socket，某进程只想要子集」这种粗筛，而不是行情过滤的主力。</p>
+<hr />
+<h2>5. tcpdump 的一个实用细节</h2>
+<p>tcpdump 自己就是 socket filter 的最大用户（<code class="c">AF_PACKET</code> + <code class="c">SO_ATTACH_FILTER</code>）：</p>
+<ul>
+<li><strong>过滤器在 tap 之前生效的部分</strong>：libpcap 编译的 cBPF 在内核里跑（<code class="c">PACKET_FILTER</code>），不匹配的包<strong>根本不会拷贝到用户态</strong>——这就是「tcpdump 带过滤比不带过滤对系统影响小」的原因</li>
+<li><strong>位置在 ptype_all</strong>（dev.c:5394）：所有 Netfilter/tc/XDP 之外的处理之前。被 tc/nft/cgroup 丢的包 tcpdump 都看得到；被 XDP 丢的看不到</li>
+<li>抓包本身有成本：每个匹配包都要 <code class="c">skb_clone</code> + 用户态拷贝。<strong>生产环境长开 tcpdump 过滤器要收窄</strong>，别 <code class="c">tcpdump -i eth0</code> 全抓</li>
+</ul>
+<hr />
+<h2>6. HFT 要点</h2>
+<ol>
+<li><strong>cBPF 已是「历史接口」</strong>：v6.6 里它被翻译成 eBPF 执行，性能与手写 eBPF 同级（JIT 后），但能力是子集——新代码没有理由再写 cBPF</li>
+<li><strong>socket filter 是最晚的内核过滤点</strong>，省的只是排队+唤醒；行情早过滤必须在 XDP</li>
+<li><strong><code class="c">SO_ATTACH_BPF</code> + map</strong> 是 socket filter 唯一的现代玩法：用户态服务实时更新白名单 map，filter 只查 map 裁决</li>
+<li><strong>tcpdump 的内核态预过滤</strong>（libpcap → cBPF → 翻译 → JIT）是低成本观测方案，比全抓+用户态过滤便宜一个数量级</li>
+<li><strong>返回值语义</strong>：cBPF 返回的是截断长度不是布尔值——<code class="c">return 0</code> 才是丢，<code class="c">return -1</code>（或大值）是收</li>
+</ol>
+<hr />
+<h2>7. 与 Rosen 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen 3.x</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cBPF 执行</td>
+<td>独立解释器（<code class="c">sk_run_filter</code>）</td>
+<td><strong>翻译成 eBPF</strong> → verifier → JIT</td>
+</tr>
+<tr>
+<td>eBPF</td>
+<td>无（书里不会有）</td>
+<td>33 种程序类型的体系（见 <a href="chapter-08.html#ch-8">chapter-08</a>）</td>
+</tr>
+<tr>
+<td>socket filter 能力</td>
+<td>读包头</td>
+<td>元数据 only（连 data 都禁）</td>
+</tr>
+<tr>
+<td>tcpdump 过滤</td>
+<td>解释执行</td>
+<td>JIT 执行</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>8. 代码自测</h2>
+<details>
+<summary>Q1：<code class="c">BPF_STMT(BPF_RET | BPF_K, 128)</code> 在 socket filter 里是什么意思？</summary>
+<p>「接受这个包，但只保留前 128 字节进接收队列」。cBPF 的返回值是 <strong>snapshot length</strong>：</p>
+<ul>
+<li><code class="c">0</code> → 丢包</li>
+<li><code class="c">k &gt; 0</code> → 保留 min(k, len) 字节（tcpdump <code class="c">-s 128</code> 就是生成这个）</li>
+</ul>
+<p>不是布尔语义。eBPF socket filter（<code class="c">SO_ATTACH_BPF</code>）继承了同样语义：返回值 = 保留字节数。</p>
+</details>
+<details>
+<summary>Q2：tcpdump 的过滤器在 v6.6 内核里以什么形式执行？</summary>
+<p><strong>JIT 编译的 eBPF 机器码</strong>。链路：libpcap 把 <code class="c">tcp port 9090</code> 编译成 cBPF → <code class="c">SO_ATTACH_FILTER</code>（<code class="c">AF_PACKET</code> socket 上是 <code class="c">PACKET_FILTER</code>）→ <code class="c">bpf_migrate_filter()</code>（filter.c:1242）→ <code class="c">bpf_convert_filter()</code> 两遍翻译成 eBPF → verifier → JIT。</p>
+<p>所以「cBPF 是解释执行所以慢」的说法在 v6.6 上不成立；过滤开销主要在<strong>匹配包的 clone + 用户态拷贝</strong>，不在过滤器执行本身。</p>
+</details>
+<details>
+<summary>Q3：为什么 eBPF socket filter 连包内容都读不到？</summary>
+<p>程序类型的能力由<strong>执行位置的语义</strong>决定。socket filter 跑在 <code class="c">sk_filter_trim_cap()</code>（<code class="c">net/core/filter.c:124</code>），是 socket 接收队列入口的「该不该入队」裁决器。内核为它定义的访问规则（<code class="c">bpf_base_func_proto</code> + <code class="c">sk_filter_func_proto</code>）里没有授权 <code class="c">data</code>/<code class="c">data_end</code> 直接访存——<code class="c">bpf_skb_is_valid_access()</code> 对 SOCKET_FILTER 类型拒绝这两个字段。</p>
+<p>设计意图：入队裁决不需要看内容（看 len/protocol 就够）；要看内容的过滤应该在 tc/XDP 做，那里有完整的包访问授权。</p>
+</details>
+<details>
+<summary>Q4：多进程共享一个 UDP socket，进程 A 只要端口 5000 的包。用 socket filter 还是 XDP？</summary>
+<p><strong>socket filter 就够了</strong>（前提：过滤条件是元数据可见的）。但注意端口对 socket filter 是「本 socket 的端口」，多进程共享 socket 意味着看到的都是同端口——「只要端口 5000」这个条件在 socket 层已经没有区分度了，实际得按<strong>包内容/源地址</strong>分。</p>
+<p>如果按源 IP 分：<code class="c">SO_ATTACH_BPF</code> + LPM trie map（用户态可实时更新）是正解——这是 socket filter 少数有意义的现代用法。XDP 在这里杀鸡用牛刀（XDP 丢弃是全 socket 的，你只想对 A 的队列过滤，XDP 做不到「按进程」）。</p>
+<p><strong>陷阱</strong>：SO_ATTACH_BPF 是 socket 级别的，同一 socket 上 A/B 两进程都会受影响。多进程各开 socket + SO_REUSEPORT 才能各自挂各自的 filter。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>下一篇：</strong> <a href="chapter-15.html#s-02">02-nf-flowtable.md</a> — Netfilter flowtable：把「首包慢路径」和「后续包快路径」分开的连接级缓存</li>
+<li><strong>相关：</strong> <a href="chapter-08.html#ch-8">chapter-08-ebpf-cgroup-bpf/</a> eBPF 类型系统与 socket filter 能力残缺的对比 · <a href="chapter-10.html#ch-10">chapter-10-nftables/</a> nftables hook 体系 · <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture/</a> XDP（真正的早过滤）</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
 </ul>
       </section>
       <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">07</div><h2>— Documentation/networking/nf_flowtable.rst</h2></div>
+        <div class="sec-head"><div class="sec-no">02</div><h2>— Netfilter flowtable：连接级快路径</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> Ch9（Netfilter）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/nf_flowtable.rst</code></p>
+<p><strong>对应 Rosen:</strong> Ch9（Netfilter——无此机制，flowtable 是 4.16+ 的产物）
+<strong>内核源码路径：</strong> <code class="c">Documentation/networking/nf_flowtable.rst</code>
+<strong>核对源码：</strong> v6.6 <code class="c">net/netfilter/nf_flow_table_core.c</code>、<code class="c">nf_flow_table_ip.c</code>、
+<code class="c">nf_flow_table_inet.c</code>、<code class="c">nft_flow_offload.c</code>、<code class="c">nf_tables_api.c</code>、
+<code class="c">include/net/netfilter/nf_flow_table.h</code></p>
 </blockquote>
 <h2>文档概述</h2>
-<p>nftables flow table 文档，描述 Netfilter 的硬件流加速机制。</p>
-<h2>核心内容</h2>
-<h3>Flow Table 是什么</h3>
-<p>传统 Netfilter 对每个包执行规则匹配，高流量时性能瓶颈。
-Flow Table 将已建立连接的流从慢路径（规则匹配）切换到快路径（直接转发）：
-- 第一个包走慢路径（完整 Netfilter 规则）
-- 建立连接后，流信息缓存到 flow table
-- 后续包直接查 flow table，跳过规则匹配</p>
-<h3>工作流程</h3>
-<pre class="code" data-label="code"><code class="c">包到达 → 查 flow table
-  ├─ 命中 → 快路径（直接转发，O(1)）
-  └─ 未命中 → 慢路径（Netfilter 规则匹配）→ 建立 flow entry
+<p>flowtable 是 Netfilter 对「每包规则匹配太贵」的自我救赎：<strong>首包走完整慢路径建立状态，后续包查一次哈希表直接转发</strong>。本篇基于 v6.6 源码拆解它的位置、快路径具体做了什么、和 conntrack/NAT 的关系，以及 HFT 视角下它的适用边界。</p>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01-packet-filter.md</a></td>
+<td>包级过滤器（BPF）的演进</td>
+<td>01 是「包级」优化，本篇是「流级」缓存——同一动机的两种解法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>1. 动机与位置：flowtable 挂在哪</h2>
+<p><strong>转发场景的痛点</strong>：一个转发流量的网关，每个包要走 conntrack → 规则匹配 → NAT → 路由 → 邻居解析，其中规则匹配和 conntrack 查找都是每包开销。但流的首包已经把「该不该转、怎么转、改成什么地址」全决定了——后续包理论上只需要查一次缓存。</p>
+<p><strong>v6.6 的 flowtable 架构（两半）</strong>：</p>
+<pre class="code" data-label="code"><code class="c">                          nftables 配置
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        ▼                      ▼                      ▼
+  ① flowtable 对象       ② forward 链里的          （普通规则照常）
+  hook ingress            「flow offload」表达式
+  priority &lt;n&gt;            type filter hook forward
+  devices = { eth0, eth1 }
+        │                      │
+        ▼                      ▼
+  设备级 ingress hook      首包经过时把流
+  （每个设备一个）          写入 flowtable
+        │
+        ▼
+  后续包在「进入 IP 栈之前」被拦截 → 快路径直转
 </code></pre>
-<h3>硬件 offload</h3>
-<p>部分网卡支持将 flow table 卸载到硬件：
-- 网卡根据 flow table 直接转发包，不经过 CPU
-- 需要网卡驱动支持（mlx5 / ice 等）</p>
-<h2>HFT 要点</h2>
+<p>两个源码级事实（v6.6）：</p>
+<ol>
+<li><strong>flowtable 只能挂 netdev ingress</strong>：<code class="c">nf_tables_api.c</code> 的 <code class="c">nft_flowtable_parse_hook()</code> 里 <code class="c">hooknum != NF_NETDEV_INGRESS</code> 直接 <code class="c">-EOPNOTSUPP</code>。位置在 <code class="c">__netif_receive_skb_core()</code> 的 <code class="c">nf_ingress()</code>（dev.c:5420，即 nft netdev ingress 同一入口，按 flowtable 的 priority 排序）。</li>
+<li><strong><code class="c">flow offload</code> 表达式只能出现在 FORWARD 链</strong>：<code class="c">nft_flow_offload.c:385</code>，<code class="c">hook_mask = (1 &lt;&lt; NF_INET_FORWARD)</code>，链校验强制。</li>
+</ol>
+<p><strong>为什么拦截点在 ingress 而不是 forward？</strong> 因为快路径的目标是<strong>完全绕过 IP 栈</strong>：包从 eth0 进来，flowtable 命中后直接从 eth1 发出去，中间的 <code class="c">ip_rcv</code>、路由、conntrack、forward 链全都不走。挂在 ingress 才有机会在进栈前截住。</p>
+<p><strong>文档强调的优先级规则</strong>（<code class="c">doc_nf_flowtable.rst:100-102</code>）：<em>flowtable 的 priority 必须</em><em>小于</em><em>同设备上 nftables ingress 链的 priority</em>——否则包先被 ingress 链处理（可能被丢弃/标记），flowtable 的语义就乱了。</p>
+<hr />
+<h2>2. 快路径逐行：<code class="c">nf_flow_offload_ip_hook()</code></h2>
+<p>这是每个命中包走的核心函数（<code class="c">nf_flow_table_ip.c:409</code>，v6.6 已重构为 <code class="c">nf_flow_offload_forward()</code> + 发送分支）：</p>
+<pre class="code" data-label="C"><code class="c">nf_flow_offload_ip_hook(void *priv, struct sk_buff *skb, ...)
+{
+    tuplehash = nf_flow_offload_lookup(&amp;ctx, flow_table, skb);   /* ① rhashtable 查流 */
+    if (!tuplehash)
+        return NF_ACCEPT;                        /* 未命中 → 回慢路径 */
+
+    ret = nf_flow_offload_forward(&amp;ctx, flow_table, tuplehash, skb);
+    if (ret &lt; 0)  return NF_DROP;                   /* MTU 超限等硬错误 */
+    else if (ret == 0)  return NF_ACCEPT;           /* 状态失效 → 回慢路径 */
+
+    if (unlikely(tuplehash-&gt;tuple.xmit_type == FLOW_OFFLOAD_XMIT_XFRM)) {
+        return nf_flow_xmit_xfrm(skb, state, &amp;rt-&gt;dst);   /* ② IPsec 隧道 */
+    }
+
+    switch (tuplehash-&gt;tuple.xmit_type) {
+    case FLOW_OFFLOAD_XMIT_NEIGH:                   /* ③ 普通邻居转发 */
+        rt = (struct rtable *)tuplehash-&gt;tuple.dst_cache;
+        skb-&gt;dev = outdev;
+        nexthop = rt_nexthop(rt, ...);
+        skb_dst_set_noref(skb, &amp;rt-&gt;dst);
+        neigh_xmit(NEIGH_ARP_TABLE, outdev, &amp;nexthop, skb);
+        ret = NF_STOLEN;                            /* ⭐ 包的所有权转移 */
+        break;
+    case FLOW_OFFLOAD_XMIT_DIRECT:                  /* ④ VLAN 直发 */
+        ret = nf_flow_queue_xmit(state-&gt;net, skb, tuplehash, ETH_P_IP);
+        break;
+    }
+    return ret;
+}
+</code></pre>
+<h3>2.1 <code class="c">nf_flow_offload_forward()</code> 里做的「迷你 IP 转发」</h3>
+<pre class="code" data-label="C"><code class="c">/* nf_flow_table_ip.c —— 顺序即要点 */
+mtu = flow-&gt;tuplehash[dir].tuple.mtu + ctx-&gt;offset;
+if (unlikely(nf_flow_exceeds_mtu(skb, mtu))) return 0;   /* MTU 检查 */
+
+if (nf_flow_state_check(flow, iph-&gt;protocol, skb, thoff)) /* TCP 状态检查 */
+    return 0;
+
+if (!nf_flow_dst_check(&amp;tuplehash-&gt;tuple)) {              /* 路由缓存还有效？ */
+    flow_offload_teardown(flow);                      /* ⭐ 失效 → 拆流回慢路径 */
+    return 0;
+}
+
+flow_offload_refresh(flow_table, flow, false);           /* 刷新 30s 超时 */
+
+nf_flow_encap_pop(skb, tuplehash);                       /* 剥 VLAN 封装 */
+nf_flow_nat_ip(flow, skb, thoff, dir, iph);              /* ⭐ 做 NAT（增量校验和） */
+ip_decrease_ttl(iph);                                    /* TTL 减一 */
+skb_clear_tstamp(skb);
+</code></pre>
+<p><strong>要点</strong>：快路径不是「什么都不查直接发」，而是把慢路径里<strong>有状态的检查</strong>（MTU、TCP 连接状态、路由有效性）压缩成 O(1) 的缓存命中 + 增量更新。NAT 在这里做增量 checksum 修改（<code class="c">nf_flow_nat_ip</code>），不重算整个校验和。</p>
+<h3>2.2 <code class="c">NF_STOLEN</code>：快路径的返回语义</h3>
+<p><code class="c">neigh_xmit()</code> 直接把包交给邻居子系统发出，skb 所有权转移——对 Netfilter 框架返回 <code class="c">NF_STOLEN</code>（=2），<code class="c">nf_hook_slow()</code> 对它「return 0 装作成功」。<strong>这就是快路径「绕过」的表达方式：不是跳过代码，而是把包偷走。</strong></p>
+<h3>2.3 双向 tuple：original/reply 各有一条</h3>
+<pre class="code" data-label="C"><code class="c">/* include/net/netfilter/nf_flow_table.h */
+enum flow_offload_tuple_dir {
+    FLOW_OFFLOAD_DIR_ORIGINAL = IP_CT_DIR_ORIGINAL,   /* 去程 */
+    FLOW_OFFLOAD_DIR_REPLY    = IP_CT_DIR_REPLY,      /* 回程 */
+};
+
+struct flow_offload {
+    struct flow_offload_tuple_rhash tuplehash[FLOW_OFFLOAD_DIR_MAX];  /* 两条 */
+    ...
+};
+</code></pre>
+<p>流表按<strong>五元组 + 方向</strong>索引（rhashtable，查一次 O(1)）。回程包查到的是 REPLY tuple，NAT 反向映射直接从 tuple 里取——<strong>快路径自己完成了 de-NAT</strong>，不查 conntrack。</p>
+<h3>2.4 XMIT 类型的完整清单</h3>
+<pre class="code" data-label="C"><code class="c">enum flow_offload_xmit_type {
+    FLOW_OFFLOAD_XMIT_UNSPEC = 0,
+    FLOW_OFFLOAD_XMIT_NEIGH,     /* 普通下一跳（neigh_xmit + NF_STOLEN） */
+    FLOW_OFFLOAD_XMIT_XFRM,      /* IPsec 策略路由 */
+    FLOW_OFFLOAD_XMIT_DIRECT,    /* MAC 直发（同网段/VLAN 子接口） */
+    FLOW_OFFLOAD_XMIT_TC,        /* ⭐ v6.6 新增：发回 TC 层 */
+};
+</code></pre>
+<p><code class="c">XMIT_TC</code> 是 v6.6 的新能力：快路径命中后不直接发，而是<strong>注入回 tc 层</strong>（配合 flower 的 hw offload 场景）——说明 flowtable 和 tc 的边界在融合。</p>
+<hr />
+<h2>3. 生命周期：首包建立、超时回收</h2>
+<h3>3.1 建表：<code class="c">flow offload</code> 表达式</h3>
+<pre class="code" data-label="code"><code class="c">首包路径：ingress → ip_rcv → conntrack(建流) → forward 链 → 「flow offload」表达式
+                                                                    │
+                                    flow_offload_alloc(ct)          ▼
+                                    （从 conntrack tuple 复制）→ flow_offload_add()
+                                                                加入 rhashtable
+</code></pre>
+<p><code class="c">flow_offload_alloc()</code>（<code class="c">nf_flow_table_core.c:52</code>）从 <strong>conntrack 表项</strong>复制五元组和 NAT 信息——flowtable 依赖 conntrack 存在（<code class="c">flow offload</code> 表达式要求 ct 状态为 ESTABLISHED 才建条目，由 <code class="c">nft_flow_offload_eval()</code> 检查）。</p>
+<h3>3.2 超时与 GC</h3>
+<pre class="code" data-label="C"><code class="c">#define NF_FLOW_TIMEOUT (30 * HZ)     /* 30 秒 */
+
+/* flow_offload_refresh()：每个命中包刷新 */
+flow-&gt;timeout = nf_flowtable_time_stamp + flow_offload_get_timeout(flow);
+</code></pre>
 <ul>
-<li>HFT 行情流通常不走 Netfilter（已用 XDP 过滤）</li>
-<li>flow table 对非交易流量（管理/监控）的转发加速有用</li>
-<li>硬件 offload 可减少非交易流量的 CPU 占用</li>
+<li>每个<strong>命中包</strong>都刷新超时（<code class="c">nf_flow_offload_forward()</code> 里的 <code class="c">flow_offload_refresh</code>）</li>
+<li>30 秒无流量 → GC work（<code class="c">system_power_efficient_wq</code> 上的 <code class="c">gc_work</code>，每 HZ 跑一轮）回收</li>
+<li>TCP 流的 teardown（FIN/RST）也会触发 <code class="c">flow_offload_teardown()</code></li>
+</ul>
+<h3>3.3 counter 同步（可选）</h3>
+<pre class="code" data-label="code"><code class="c">flowtable f { hook ingress priority 0; devices = { eth0, eth1 }; counter; }
+</code></pre>
+<p>加 <code class="c">counter</code> 后，flowtable 快路径的包/字节计数<strong>同步回 conntrack 表项</strong>（<code class="c">doc_nf_flowtable.rst:168-169</code>）——<code class="c">conntrack -L</code> 看到的计数包含快路径流量，监控不瞎。<code class="c">nft list ruleset</code> 里能看到 offload 了多少流（<code class="c">[OFFLOAD]</code> 标记，<code class="c">conntrack -L</code> 也能看）。</p>
+<hr />
+<h2>4. 硬件 offload：<code class="c">flags offload</code></h2>
+<pre class="code" data-label="code"><code class="c">flowtable f {
+    hook ingress priority 0; devices = { eth0, eth1 };
+    flags offload;      /* 请求网卡接管已建立的流 */
+}
+</code></pre>
+<p>软件 flowtable 命中后仍要走 CPU（查表、改 TTL/checksum、neigh_xmit）；硬件 offload 把<strong>整条流</strong>下发到网卡（<code class="c">nf_flow_table_offload.c</code>，通过 tc 的 flow block 基础设施 <code class="c">FLOW_ACTION_</code> 指令），后续包<strong>网卡直接转发，CPU 完全不参与</strong>。</p>
+<p>驱动支持：mlx5、ice 等企业卡。限制：硬件能表达的匹配/动作有限（五元组匹配 + 少量 action），复杂 NAT/策略仍回软件。</p>
+<hr />
+<h2>5. 完整配置示例（文档例子 + 注释）</h2>
+<pre class="code" data-label="shell"><code class="c">nft add table inet t
+nft add flowtable inet t f '{ hook ingress priority 0 \; devices = { eth0, eth1 } \; }'
+
+# forward 链：policy accept（保证没被 offload 的包正常转发）
+nft add chain inet t y '{ type filter hook forward priority 0 \; policy accept \; }'
+
+# 计数器：观察多少包没走快路径（offload 生效后这个 counter 应该只在首包增长）
+nft add rule inet t y counter
+
+# 核心规则：已建立的连接 offload 到 flowtable
+nft add rule inet t y ct state established flow offload
+
+# 验证：
+conntrack -L      # offload 的流带 [OFFLOAD] 标记
+nft list ruleset  # flowtable 状态可见
+</code></pre>
+<p><strong>排障三板斧</strong>：</p>
+<ol>
+<li><code class="c">conntrack -L | grep OFFLOAD</code>——流有没有进表</li>
+<li>forward 链的 counter——后续包还在过慢路径说明没命中（先查 <code class="c">ct state established</code> 匹配和 devices 列表）</li>
+<li><code class="c">perf trace -e net:netif_receive_skb</code> 或 dropwatch——快路径的包<strong>不会</strong>出现在 IP 层 tracepoint 里（这就是它快的原因，也是「包凭空消失」的正常表现）</li>
+</ol>
+<hr />
+<h2>6. HFT 要点</h2>
+<ol>
+<li><strong>flowtable 的目标是转发流量的吞吐，不是本机收包的延迟</strong>。它对「包从 eth0 进、eth1 出」的网关场景是数量级优化；HFT 行情机是<strong>本机终结</strong>（包交给应用），flowtable 帮不上</li>
+<li><strong>HFT 顺带受益的场景</strong>：行情前置机/风控网关做 L3/L4 分流（同机多策略进程），forward 流量 offload 后 CPU 留给行情处理</li>
+<li><strong>「绕过 IP 栈」是有代价的语义收缩</strong>：快路径不做 conntrack 更新（除计数）、不做 per包规则、不做 QoS——<strong>依赖 per 包逻辑的功能（如 nft limit）在 offload 后失效</strong>。这是吞吐换灵活性，与 XDP 的取舍同构</li>
+<li><strong>30 秒超时 + 每包刷新</strong>：静默连接会被拆回慢路径重建。对长连接低频流量（管理通道）要注意首包延迟的偶发回归</li>
+<li><strong>与 XDP 的关系是分工不是竞争</strong>：XDP 逐包可编程（首包就能决策），flowtable 是「首包学习 + 后续包 O(1)」的固定模式。两者可叠加：XDP 做粗筛/丢弃，flowtable 加速剩余转发</li>
+<li><strong>硬件 offload 是「CPU 零参与」的唯一路径</strong>——比任何软件快路径（XDP 也包括在内）都快，但灵活性最低、且依赖网卡</li>
+</ol>
+<hr />
+<h2>7. 与 Rosen 的差异</h2>
+<p>Rosen 3.x 时代没有 flowtable（4.16 引入软件版，5.x 成熟硬件 offload）。对应它的知识空位：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Rosen 的世界</th>
+<th>flowtable 的世界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每包走完整 Netfilter</td>
+<td>首包建流，后续包 ingress 截住直转</td>
+</tr>
+<tr>
+<td>转发性能靠规则精简</td>
+<td>转发性能与规则数解耦（查一次哈希）</td>
+</tr>
+<tr>
+<td>NAT 每包查 conntrack</td>
+<td>de-NAT 从流表 tuple 直接取</td>
+</tr>
+<tr>
+<td>无硬件参与</td>
+<td><code class="c">flags offload</code> 下网卡整流接管</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>8. 代码自测</h2>
+<details>
+<summary>Q1：flowtable 的拦截点为什么在 ingress 而不是 FORWARD（规则挂的地方）？</summary>
+<p>因为快路径的语义是「<strong>完全绕过 IP 栈</strong>」。挂在 FORWARD 意味着包已经走完 <code class="c">ip_rcv</code>（校验、conntrack 查找）和路由——这些正是要省掉的开销。</p>
+<p>v6.6 的实现：flowtable 对象在<strong>每个成员设备</strong>上注册 netdev ingress hook（<code class="c">nf_tables_api.c</code> 强制 <code class="c">hooknum == NF_NETDEV_INGRESS</code>），拦截点就是 <code class="c">nf_ingress()</code>（dev.c:5420）。命中的包从设备层直接 <code class="c">neigh_xmit</code> 出去，IP 栈整个不经过。</p>
+<p>而 FORWARD 链上只挂「flow offload」<strong>表达式</strong>——它的作用是在首包过慢路径时<strong>建流</strong>，不是拦截。</p>
+</details>
+<details>
+<summary>Q2：快路径对命中的包做了哪些「必须做」的检查？分别为什么？</summary>
+<p><code class="c">nf_flow_offload_forward()</code>（nf_flow_table_ip.c）逐项：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>检查</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MTU 超限</td>
+<td>出接口路径 MTU 变了（隧道增删、路由切换），超限包必须回慢路径走分片/ICMP</td>
+</tr>
+<tr>
+<td>TCP 状态（<code class="c">nf_flow_state_check</code>）</td>
+<td>收到 FIN/RST 后连接要结束，不能继续无状态直转</td>
+</tr>
+<tr>
+<td>路由缓存有效（<code class="c">nf_flow_dst_check</code>）</td>
+<td>路由表变了，缓存的 <code class="c">dst_cache</code> 指向的设备可能已下线；失效则 <code class="c">flow_offload_teardown</code> 拆流</td>
+</tr>
+<tr>
+<td>TTL 减一 + 增量 NAT</td>
+<td>转发的协议义务，不做就是黑洞/环路</td>
+</tr>
+</tbody>
+</table></div>
+<p>设计哲学：<strong>缓存加速的是「查询」，不缓存「不变量」</strong>——每个可能失效的条件每包都要验，验的成本必须是 O(1)。</p>
+</details>
+<details>
+<summary>Q3：为什么 <code class="c">flow offload</code> 表达式要求 <code class="c">ct state established</code>？首包（SYN）能 offload 吗？</summary>
+<p>不能。flowtable 的快路径<strong>不维护连接状态机</strong>（除了 TCP 状态的粗检查），它只是 conntrack 结论的缓存。首包（SYN）时：</p>
+<ol>
+<li>conntrack 表项刚建立，还没有经过完整的规则链验证（forward 链的过滤规则还没跑完）</li>
+<li>NAT 映射可能尚未确定（DNAT 在 PRE_ROUTING 已做，但依赖路由结果的 SNAT 还没到）</li>
+</ol>
+<p>所以表达式设计成只在 <code class="c">ct state established</code> 时建流——首包完整走慢路径正是<strong>正确性的一部分</strong>，不是浪费。</p>
+<p>（技术细节：<code class="c">nft_flow_offload_eval()</code> 会检查 ct；v6.6 里也允许 <code class="c">flow add at ...</code> 之类更精细的时点控制，但 established 是默认门槛。）</p>
+</details>
+<details>
+<summary>Q4：一个被 flowtable 快路径转发的包，<code class="c">tracepoint:net:netif_receive_skb</code> 和 nft forward counter 分别能看到吗？</summary>
+<p><strong>都看不到</strong>：</p>
+<ul>
+<li>快路径发生在 <code class="c">nf_ingress()</code>（设备层），<strong>早于</strong> <code class="c">__netif_receive_skb_core</code> 的协议处理和 <code class="c">ip_rcv</code>——IP 层 tracepoint 不触发（skb 被 <code class="c">neigh_xmit</code> 直接从设备层发出去了，<code class="c">NF_STOLEN</code>）</li>
+<li>forward 链只在首包和未命中包上执行——offload 后 counter 不再增长（这正是文档例子里放 counter 的目的：<strong>验证 offload 生效</strong>）</li>
+</ul>
+<p>这也是 flowtable 排障「包凭空消失」错觉的来源：所有基于 IP 层以上的观测（tcpdump 在 ptype_all 倒是能看到、nft counter、conntrack 计数）里，快路径流量只反映在 flowtable 的 counter（若配置）和 conntrack 的同步计数里。</p>
+</details>
+<details>
+<summary>Q5：HFT 行情网关，XDP 过滤 + flowtable 转发剩余流量，顺序对吗？</summary>
+<p>对，且顺序固定（由位置决定）：</p>
+<pre class="code" data-label="code"><code class="c">包到达 → XDP（驱动层，丢弃垃圾流量）→ tc/nft ingress → flowtable 拦截（设备 ingress hook，
+按 priority 与 nft ingress 链排序）→ [命中 → 直转发] / [未命中 → IP 栈 → ...]
+</code></pre>
+<p>XDP 在最前（skb 分配前），flowtable 的 ingress hook 在其后。两者语义互补：XDP 是<strong>无状态的逐包决策</strong>（首包就要丢的流量直接丢），flowtable 是<strong>有状态的流缓存</strong>（首包放行后加速后续）。注意 flowtable 的 priority 要小于同设备 nft ingress 链的 priority（文档要求），否则 ingress 链的 drop/标记逻辑会先跑，语义就乱了。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-15.html#s-01">01-packet-filter.md</a> — 包级过滤器（cBPF→eBPF）</li>
+<li><strong>相关：</strong> <a href="chapter-10.html#ch-10">chapter-10-nftables/</a> flowtable 的宿主体系（hook/优先级/conntrack） · <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture/</a> XDP（逐包可编程的对照解法） · <a href="chapter-07.html#ch-7">chapter-07-xdp-redirect-dpdk/</a> 高性能转发的另一条路</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
 </ul>
       </section>
 
