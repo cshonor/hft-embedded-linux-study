@@ -61,7 +61,14 @@ bpftrace: hist(args->retval)   # 以返回值为字节数
 <summary>自测题</summary>
 
 1. 为什么 sock_recvmsg/sendmsg 是 socketio 的最佳跟踪点？
+   <details><summary>答案</summary>它们是**所有套接字 I/O 路径的汇聚点**：read/write/readv/sendto/sendmsg/recvmsg 无论从哪个系统调用进来，最终都走 sock_recvmsg/sock_sendmsg。在这里打一个点覆盖全部路径；反过来只跟踪 VFS 侧（socket_file_ops 的 read_iter/write_iter）会漏掉直走 sendmsg 族的应用。</details>
+
 2. soconnect 中 LAT 与 RESULT 如何处理非阻塞 EINPROGRESS？
+   <details><summary>答案</summary>EINPROGRESS 只是"SYN 已发出"的中间态，不算完成也不算失败——LAT 的终点要等到 poll/select 报告可写（握手完成），RESULT 记录的是最终的 errno（成功为 0）。把 EINPROGRESS 当失败统计会把所有非阻塞 connect 全算成错误。</details>
+
 3. sormem 对应哪两个 sock 跟踪点？配套 sysctl 是什么？
+   <details><summary>答案</summary>`sock:sock_rcvqueue_full`（接收队列满、开始丢包）与 `sock:sock_exceed_buf_limit`（超限告警）。调优 sysctl：`tcp_rmem`（接收缓冲 min/default/max）+ `tcp_moderate_rcvbuf`（自动调节接收窗开关）。</details>
+
 4. soprotocol 直接读 sk_prot->name 的风险及稳定替代方案？
+   <details><summary>答案</summary>sk->sk_prot->name 是**不稳定结构体路径**——内核结构体布局随版本变，直接解引用跨内核会读错。稳定替代：LSM `security_socket_*` 函数族（内核导出的稳定 hook 点）。</details>
 </details>

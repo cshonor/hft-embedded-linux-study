@@ -82,7 +82,14 @@ ethtool -K eth0 tso off   # 运行时调节
 <summary>自测题</summary>
 
 1. nstat 默认行为是什么？如何安全做"前后对比"？
+   <details><summary>答案</summary>默认**读取即重置**计数器——读完这一秒的值，下次读从零开始。安全对比：两次都加 `-S`（snapshot 模式不重置），各自存档再求差。忘加 -S 的话，第二次读到的是"距上次读取以来的增量"，语义完全不同。</details>
+
 2. ss -i 输出里 cwnd、pacing_rate 分别反映什么？
+   <details><summary>答案</summary>cwnd=发送端拥塞窗口（当前允许的在途数据量，丢包/拥塞事件后收缩）；pacing_rate=发包节奏速率（把本来突发的窗口摊到时间轴上匀速发出，BBR 与 fq qdisc 配合的关键参数）。前者是"能发多少"，后者是"以什么速率发"。</details>
+
 3. nicstat 的 %util 与 netstat 的差异在哪？
+   <details><summary>答案</summary>%util 是**接口饱和度**（接口速率占链路带宽的百分比）——netstat 只有收发计数，没有"离满载还有多远"这个概念。容量规划看 %util，计数排查看 netstat。</details>
+
 4. tcpdump 的四个盲区是什么？BPF 如何补齐？
+   <details><summary>答案</summary>① 内核状态盲区（cwnd/队列深度看不到）；② 进程盲区（无 PID/comm）；③ 调用栈盲区（无内核栈）；④ 开销盲区（整包拷贝到用户态+用户态过滤，高流量链路开销巨大）。BPF 工具取"包摘要+进程+栈"，内核态聚合零拷贝。</details>
 </details>

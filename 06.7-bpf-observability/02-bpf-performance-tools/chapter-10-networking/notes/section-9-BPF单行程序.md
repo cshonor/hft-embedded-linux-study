@@ -57,5 +57,8 @@ bpftrace -e 't:iwlwifi:iwlwifi_* { @[probe] = count(); }'
 <summary>自测题</summary>
 
 1. 如何用一条 bpftrace 看到完整发送路径？
+   <details><summary>答案</summary>`bpftrace -e 't:net:net_dev_xmit { kstack(15); exit(); }'`——在发送完成点抓 15 帧内核栈：栈里回溯得到 write()→VFS→socket 层→TCP→IP→qdisc→驱动的完整链条。`exit()` 让第一个事件就触发退出打印，一条命令一次取证（比挂着采样更快拿到样本）。</details>
+
 2. 为什么驱动自带 tracepoint 优于 kprobe 驱动函数？
+   <details><summary>答案</summary>厂商自带 tracepoint（如 ixgbevf:、iwlwifi:）是**驱动作者承诺的稳定 ABI**——函数签名/字段含义随版本保持；kprobe 驱动内部函数则随驱动重构漂移（改名/内联/删除都可能）。能用 tracepoint 的地方一律优先（全书"跟踪点优先"原则在驱动层的体现）。</details>
 </details>

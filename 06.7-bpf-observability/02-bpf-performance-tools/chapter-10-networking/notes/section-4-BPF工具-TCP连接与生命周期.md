@@ -52,7 +52,14 @@ PID   COMM       LADDR           LPORT RADDR           RPORT TX_KB RX_KB MS
 <summary>自测题</summary>
 
 1. soconnlat 为什么不能在 connect() 返回处就算延迟？
+   <details><summary>答案</summary>非阻塞 connect() 返回 EINPROGRESS 时握手还在路上——返回时刻只代表"内核已受理"。连接完成要等 poll/select 报告可写（收到 SYN+ACK 并发出 ACK）。延迟=发起→可写，在 connect 返回处掐表会把 RTT 漏掉。</details>
+
 2. tcpaccept 跟踪 inet_csk_accept 而非 accept 系统调用的好处？
+   <details><summary>答案</summary>inet_csk_accept 是 `tcp_prot.accept` 成员函数——TCP 层所有 accept 的**必经汇聚点**，比 syscall 层更底层更全（覆盖各种封装变体）；且在函数入口能拿到 struct sock（连接的五元组+归属信息）。</details>
+
 3. tcplife 如何在软中断上下文拿到正确的 PID？
+   <details><summary>答案</summary>**sock 指针缓存法**：连接建立时（进程上下文）以 sock 指针为键把 PID/comm 存进 map；close/输出时（可能是软中断上下文）用同一个 sock 指针查表取回。sock 指针在连接生命周期内恒定，是跨上下文的可靠键——与 ch09 biolatency 用 request 指针同理。</details>
+
 4. solstbyte 的 @connstart 键是什么？何时清理？
+   <details><summary>答案</summary>键 `[pid, fd]`（同一进程多个连接靠 fd 区分）。清理两处：该 fd 首次 read 命中即输出并删除（正常路径）；close() 时删除（连接关了还没读到首字节——防 map 泄漏）。配对与销账双清理，是配对类工具的标配。</details>
 </details>

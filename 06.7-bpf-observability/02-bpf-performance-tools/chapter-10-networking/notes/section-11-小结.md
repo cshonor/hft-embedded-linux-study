@@ -34,6 +34,11 @@ tcplife         # 连接画像（时长/吞吐/归属）
 <summary>自测题</summary>
 
 1. "跟踪事件而非每包"为什么是网络 BPF 的核心原则？
+   <details><summary>答案</summary>包率以 10 万 pps 计且与负载线性相关——逐包跟踪的开销随流量增长（iptraf-ng/tcpdump 的 90% CPU 就是下场）；而高价值事件（重传/丢包/状态迁移/缓冲超限）天然稀少（重传 ≈1%），跟踪开销与**事件率**而非**包率**成正比。聚合放内核态、只把低频事件送出来，是低开销的结构性来源。</details>
+
 2. 内核 4.15/4.16 新增的 tcp 跟踪点解决了什么问题？
+   <details><summary>答案</summary>tcp:tcp_retransmit_skb（4.15）与 tcp:tcpprobe（4.16）把原来必须 kprobe 内核函数（tcp_retransmit_skb/tcp_rcv_established）的观测迁移到稳定跟踪点——kprobe 受函数改名、内联、参数漂移影响（ch05/ch06 反复出现的脆弱性），跟踪点是稳定 ABI，跨内核可移植。本章"tp 版工具"（tcpconnect-tp、tcpaccept-tp 等）都是这波迁移的产物。</details>
+
 3. 说出网络三板斧及各自回答的问题。
+   <details><summary>答案</summary>tcpretrans——哪里在丢包/重传（跨网质量信号）；tcpconnect -t——谁在建连、建得快不快（建连异常与延迟）；tcplife——每条连接的时长/吞吐/归属画像（连接行为审计）。三件都是事件型低开销，可常驻。</details>
 </details>

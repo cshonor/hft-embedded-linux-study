@@ -64,7 +64,14 @@ backlog_queue_len: 按最大长度直方图（<=0, 1, 2-3, ... 4096+）
 <summary>自测题</summary>
 
 1. 为什么 tcpretrans 开销可忽略？给出数量级估算。
+   <details><summary>答案</summary>开销与**重传事件率**（而非包率）成正比，重传率天然低：书例 10 万 pps 中约 1000 重传/s——相当于只有 1% 的包触发跟踪，每次 ~1µs 的 BPF 处理摊到全部流量上 ≈ 0.001% 量级。这是"跟踪事件而非每包"原则的教科书案例。</details>
+
 2. tcpsynbl 读取哪个字段？两个相关内核参数是什么？
+   <details><summary>答案</summary>读 `sk_max_ack_backlog`（当前 SYN 积压长度，与 listen backlog 上限对比）。参数：`listen(2)` 第二参数（应用侧 backlog）+ `net.core.somaxconn`（系统级上限——应用设再大也会被它截断）。</details>
+
 3. tcpwin 输出中 snd_cwnd 锯齿说明什么？
+   <details><summary>答案</summary>典型 AIMD 拥塞控制节律：丢包/拥塞事件后 cwnd 减半（锯齿跌落），拥塞避免阶段线性爬回（缓坡）——每个锯齿周期对应一次丢包事件。锯齿密度=拥塞频率，跌幅=拥塞严重度，是"这链路丢包长什么样"的时间序列答案。</details>
+
 4. tcpnagle 的输出如何解读才算"Nagle 确实造成延迟"？
+   <details><summary>答案</summary>Nagle OFF 计数大≠有延迟（书例 OFF 226697 次但真正引入延迟仅 5 次——大部分 OFF 只是"这个包本来就有 PUSH/满段，Nagle 不适用"）。判据是"因 Nagle 而**等待凑包**的实际延迟事件数"那一栏显著非零。先测再关 TCP_NODELAY，避免盲改。</details>
 </details>

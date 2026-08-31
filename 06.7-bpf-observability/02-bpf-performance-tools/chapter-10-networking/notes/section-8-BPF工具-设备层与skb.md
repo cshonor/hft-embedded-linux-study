@@ -45,7 +45,14 @@ KSTACK（8 帧）+ 自动 nstat 计数
 <summary>自测题</summary>
 
 1. netsize 用哪四个跟踪点？为什么 CPU 占用远低于 iptraf-ng？
+   <details><summary>答案</summary>`net:netif_receive_skb`（收）、`net:net_dev_queue`（发排队）、`net:napi_gro_receive_entry`（GRO 合并）、`net:net_dev_xmit`（发送完成）。iptraf-ng 走 libpcap——每个包完整拷贝到用户态再过滤渲染（书例 90% CPU）；netsize 在内核态只做直方图计数（0%）——聚合与逐包搬运的开销差就是这两个数量级。</details>
+
 2. nettxlat 为什么要删除时间戳？
+   <details><summary>答案</summary>skb 可能被 qdisc **重入队**——再次经过 net_dev_queue 打点。不清掉旧时间戳的话，重入队的 skb 会拿第一次的时间戳配第二次的出队，产生巨大假延迟（ch05 "入口未记录"陷阱的镜像版：这里是"旧账未清"）。</details>
+
 3. skbdrop 的 kfree_skb 为什么能代表"丢包"？--unsafe 从何而来？
+   <details><summary>答案</summary>skb 的正常善终是 consume_skb（被消费掉）；kfree_skb 是非正常路径释放（校验失败、缓冲满、协议栈放弃）——它就是内核丢包的汇聚点，此时的内核栈指向"谁丢的"。--unsafe 是因为工具内部调 system() 跑 nstat 做计数对账——system() 属于不安全内建，需要显式解锁。</details>
+
 4. skblife 的合并问题如何影响测量？
+   <details><summary>答案</summary>GSO/GRO/tcp_try_coalesce 会把多个 skb 合并成一个——原 skb 在合并点被提前 kfree，测到的"寿命"其实是"合并前寿命"，系统性偏短。读数字时记住这是下界视角，不是端到端真相。</details>
 </details>

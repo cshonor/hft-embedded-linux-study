@@ -46,6 +46,11 @@ $qdisc_latency:
 <summary>自测题</summary>
 
 1. qdisc-fq 用什么键配对入队/出队？前提条件是什么？
+   <details><summary>答案</summary>键 = sk_buff 地址（skb 在队列里期间指针恒定，出队后即可销账——与 ch09 的 request 指针、本章的 sock 指针同一"用生命周期稳定的内核对象做键"思想）。前提：`modprobe sch_fq` 已加载且该接口 qdisc 确实是 fq——没挂上就零事件，先 `tc qdisc show` 确认再怀疑工具。</details>
+
 2. 如何给一个书中没有的新 qdisc 写观测工具？
+   <details><summary>答案</summary>三步：pahole/BTF/crash 查该 qdisc 的 `Qdisc_ops` 结构体拿到 enqueue/dequeue 成员函数名 → 套 qdisc-latency 模板替换两个函数名 → 编译。模板化是因为所有 qdisc 都实现同一对接口——观测工具的差异只在函数名。</details>
+
 3. qdisc 延迟恒为 0 说明什么？
+   <details><summary>答案</summary>qdisc 空转——包进来立刻被 dequeue 发走，队列没有堆积。瓶颈在别处（驱动、物理链路或对端），继续向 qdisc 下游（nettxlat/驱动层）找。</details>
 </details>

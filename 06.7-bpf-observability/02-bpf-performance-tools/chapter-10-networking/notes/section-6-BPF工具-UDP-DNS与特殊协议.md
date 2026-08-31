@@ -55,7 +55,14 @@ PACKET_TYPE  LAT(ms)
 <summary>自测题</summary>
 
 1. gethostlatency 用什么探针？测不到哪些 resolver？
+   <details><summary>答案</summary>uprobe/uretprobe 挂 libc 的 getaddrinfo/gethostbyname/gethostbyname2（入口存 host 名，出口算延迟）。测不到：静态链接二进制（无 libc 符号可挂）、systemd-resolved 直连（走自己的 resolver 库）、任何自研/替代 resolver（c-ares 等）——uprobe 只认符号名。</details>
+
 2. superping 用什么键配对请求与响应？与 ping -U 的差值说明什么？
+   <details><summary>答案</summary>键 `[id, seq]`（ICMP 报文头的标识+序号，天然一一对应）。差值 0.10ms = 用户态打点的调度噪声（ping 的计时跨越用户态唤醒/调度），证明**测量点越靠近内核越准**——这 100µs 对普通运维无所谓，对延迟预算以微秒计的链路就是全部误差来源。</details>
+
 3. ipecn 教训：为什么有些函数 kprobe 不到？
+   <details><summary>答案</summary>**内联函数没有独立的符号和入口地址**，kprobe 无处下断点。选函数前先用 funccount 验证可跟踪性——"目标函数是否存在且非 inline"是 kprobe 工具的第一道检查。</details>
+
 4. tcpdrop 与 tcpretrans 如何配合定位丢包位置？
+   <details><summary>答案</summary>tcpdrop 报**本机内核主动丢弃**的段（带原因+内核栈——丢在哪个函数）；tcpretrans 报**重传**（发送方因丢包/超时重发）。配合逻辑：只有重传无 drop → 包丢在网络中间/对端；重传+本机 drop 栈 → 本机就丢了（栈直接给凶手）。Shopify 用这对组合定位防火墙静默丢包。</details>
 </details>
