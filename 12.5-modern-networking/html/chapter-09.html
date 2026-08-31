@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">06</span>— Traffic Control</a>
-          <a href="#s-02"><span class="n">09</span>— tc-BPF：流量控制中的 eBPF</a>
+          <a href="#s-01"><span class="n">01</span>— Traffic Control：qdisc 体系与 HFT 出向调度</a>
+          <a href="#s-02"><span class="n">02</span>— tc-BPF：v6.6 的 tcx 双机制、返回码与 `__sk_buff` 可写性</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -315,198 +315,2111 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的核心结论</h2>
+<ol>
+<li>
+<p><strong>⭐ tc egress 在 qdisc 之前</strong>——这是本篇最重要的位置认知。
+   出向路径是 <strong>Netfilter egress → tc egress → qdisc → 驱动</strong>（<code class="c">dev.c:4306</code> vs <code class="c">:4311</code>），
+   所以 tc-BPF 能做的是<strong>分类 + 丢包</strong>，<strong>整形必须靠 qdisc</strong>。
+   BPF 和 qdisc 是 tc 的两半：BPF 决定「这个包属于哪类、要不要丢」，qdisc 决定「什么时候发」。</p>
+</li>
+<li>
+<p><strong>⭐ filter 不是流水线阶段，是「挂」在 qdisc 上的。</strong>
+   「socket → qdisc → class → filter → driver」是流传很广的错误画法。
+   正确理解：filter 挂在 qdisc/class 上做分类决策，clsact 是不带队列的纯挂载点。</p>
+</li>
+<li>
+<p><strong>⭐ v6.6 起 tc-BPF 有两条挂载路径，且会串联执行。</strong>
+   <code class="c">sch_handle_ingress()</code>（<code class="c">dev.c:4005</code>）里 <strong>tcx 先跑、legacy clsact 后跑</strong>；
+   tcx 的 <code class="c">TCX_NEXT</code> 继续链，其他返回值终止链。新项目用 tcx
+   （bpf_link 语义、可原子替换、无需 clsact qdisc），存量继续 legacy。</p>
+</li>
+<li>
+<p><strong>⭐ tcx 的「忘 return」= 放行（0 = <code class="c">TCX_PASS</code>），与 XDP 完全相反</strong>（0 = <code class="c">XDP_ABORTED</code> = 丢包）。
+   两边安全默认值不同，跨程序类型搬代码时要特别注意。
+   tcx 只认 <code class="c">-1/0/2/7</code> 四个返回值，其他值被归一化成 <code class="c">TCX_NEXT</code>。</p>
+</li>
+<li>
+<p><strong>⭐ <code class="c">etf</code> 是唯一能给「确定性发送时刻」的 qdisc，但硬约束多。</strong>
+   必须 <code class="c">CLOCK_TAI</code>、socket 必须 <code class="c">SO_TXTIME</code>、硬件卸载需要 TSN 网卡，
+   三条任一不匹配就是<strong>静默丢包</strong>（<code class="c">skip_sock_check</code> 除外）。</p>
+</li>
+<li>
+<p><strong>⭐ tcpdump 能看到被 tc ingress 丢弃的包，看不到被 XDP 丢弃的。</strong>
+   这是调试时区分「XDP 丢的还是 tc 丢的」的第一判据。
+   丢包计数走 <code class="c">SKB_DROP_REASON_TC_INGRESS/EGRESS</code> + <code class="c">tracepoint:skb:kfree_skb</code>。</p>
+</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>clsact qdisc</strong>：无队列分类器，ingress/egress hook 不引入排队延迟</li>
-<li><strong>TC BPF egress</strong>：在发包路径插入 BPF 程序，可修改/丢弃/重定向包</li>
-<li><strong>TC vs XDP</strong>：TC 在协议栈之后（可操作 sk_buff），XDP 在协议栈之前（仅 xdp_buff）；HFT 优先用 XDP</li>
-<li><strong>fq qdisc</strong>：fq qdisc 配合 pacing 可控制发包速率，避免 burst 导致交换机 buffer 溢出</li>
+<li><strong>选型基线</strong>：tc ingress（有 skb，L3 前，能改写）补足 XDP 做不到的<strong>改包/重定向/多队列导向</strong>；
+  XDP 仍是无 skb 的最快路径，两者不是替代关系</li>
+<li><strong><code class="c">clsact</code> 不引入排队延迟</strong>：挂 tc-BPF 用 clsact（无队列），整形另配 fq/tbf/prio</li>
+<li><strong><code class="c">fq</code> 的 pacing 是降低出向 burst 的主要手段</strong>：burst 打爆交换机 buffer 造成的
+  排队抖动（几十 µs~ms 级）比 CPU 优化重要得多</li>
+<li><strong><code class="c">prio</code> 会饥饿低优先级</strong>：永远给高优先级流量配上限速（下层 tbf / fq）</li>
+<li><strong>多队列网卡上 <code class="c">skb-&gt;queue_mapping</code> 可在 tc egress 设置</strong>，影响 TX 队列选择
+  （发生在 <code class="c">netdev_core_pick_tx</code> 之前，但受 <code class="c">netdev_xmit_txqueue_skipped()</code> 约束）</li>
+<li><strong><code class="c">local_port</code> 主机字节序、<code class="c">remote_port</code> 网络字节序</strong>——做 map key 时必须分别处理</li>
+<li><strong><code class="c">SO_ATTACH_BPF</code> 的 socket filter 连包内容都读不到</strong>（禁访 <code class="c">data</code>/<code class="c">data_end</code>），
+  内容过滤必须用 tc-BPF 或 XDP</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
 <li><code class="c">12.5-modern-networking/chapter-03-tx-path-skbbuff/</code>：TC 在发包路径的位置</li>
-<li><code class="c">12.5-modern-networking/chapter-08-ebpf-cgroup-bpf/</code>：eBPF 通用框架</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP（tcpdump 看不到的那个 hook）</li>
+<li><code class="c">12.5-modern-networking/chapter-08-ebpf-cgroup-bpf/</code>：eBPF 通用框架与 verifier</li>
+<li><code class="c">12.5-modern-networking/chapter-15-debugging-perf-tuning/</code>：延迟测量</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">06</div><h2>— Traffic Control</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— Traffic Control：qdisc 体系与 HFT 出向调度</h2></div>
 <blockquote>
 <p><strong>Bootlin 课程模块：</strong> Traffic Control
-<strong>对应 Rosen:</strong> Ch6</p>
+<strong>对应 Rosen:</strong> Ch6（Traffic Control）
+<strong>内核版本：</strong> 全部位置与参数基于 <strong>v6.6</strong> 源码核对</p>
 </blockquote>
-<h2>现代 tc 架构</h2>
-<pre class="code" data-label="code"><code class="c">发送方向:     socket → qdisc → class → filter → driver
-              ↑          ↑        ↑        ↑
-              tc-BPF    fq/codel  u32    cls_bpf
-
-接收方向:     driver → tc ingress → 协议栈
-                         ↑
-                     tc-BPF / cls_bpf
+<h2>文档概述</h2>
+<p>本篇是 <strong>TC（Traffic Control）子系统</strong> 的总览与实操篇，聚焦<strong>出向（egress）调度</strong>——这是 Rosen Ch6 讲的东西在现代内核里的样子。</p>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-02">02-tc-bpf.md</a></td>
+<td><strong>tc-BPF 程序</strong>：clsact / tcx、返回码、<code class="c">__sk_buff</code> 可写性、81 个 helper</td>
+<td>本篇讲 <strong>qdisc（排队规则）</strong>，02 讲 <strong>filter（分类器 + BPF）</strong>。两者是 tc 的两半，容易混淆</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>一句话区分</strong>：<strong>qdisc 决定「什么时候发」，filter/BPF 决定「这个包属于哪一类、要不要丢、要不要改」。</strong> 本篇讲前者，02 讲后者。</p>
+<hr />
+<h2>1. ⚠️ 先纠正一张流传很广的错误图</h2>
+<p>常见画法（也出现在本章的旧版笔记里）：</p>
+<pre class="code" data-label="code"><code class="c">❌ 错误：
+发送方向:  socket → qdisc → class → filter → driver
 </code></pre>
-<h2>常用 qdisc</h2>
+<p><strong>问题在于：filter 不在 qdisc 之后，也不在它之前——filter 是「挂」在 qdisc（或 clsact）上的，不是一个独立的流水线阶段。</strong></p>
+<p>正确的 v6.6 出向路径（<code class="c">__dev_queue_xmit()</code>，<code class="c">net/core/dev.c</code> 约 4278-4360）：</p>
+<pre class="code" data-label="code"><code class="c">sendmsg()/sendto()
+      │
+      ▼
+  ip_queue_xmit() → 路由查找 → NF_HOOK(LOCAL_OUT) → ip_output()
+      │
+      ▼  NF_HOOK(POST_ROUTING) 的 okfn
+  【cgroup egress BPF】ip_finish_output()      net/ipv4/ip_output.c:314/318
+      │
+      ▼
+  邻居解析 → dev_queue_xmit()
+      │
+      ▼
+╔═══════════════════════════════════════════════════════════════════════╗
+║  __dev_queue_xmit()  net/core/dev.c:4278 起                             ║
+║                                                                        ║
+║  ① skb_reset_mac_header(); skb_assert_len()                            ║
+║  ② if (SKBTX_SCHED_TSTAMP) __skb_tstamp_tx(...)   ← SW SCHED 时间戳     ║
+║  ③ rcu_read_lock_bh()                                                  ║
+║  ④ skb_update_prio(skb)     ← 从 sk-&gt;sk_priority 更新 skb-&gt;priority     ║
+║  ⑤ qdisc_pkt_len_init(skb)                                             ║
+║  ⑥ tcx_set_ingress(skb, false)                                         ║
+║                                                                        ║
+║  ⑦ if (egress_needed_key) {            /* CONFIG_NET_EGRESS */          ║
+║       if (nf_hook_egress_active())                                     ║
+║           skb = nf_hook_egress(skb, &amp;rc, dev);   ← ★ Netfilter egress   ║
+║       netdev_xmit_skip_txqueue(false);                                 ║
+║       nf_skip_egress(skb, true);                                       ║
+║       skb = sch_handle_egress(skb, &amp;rc, dev);    ← ★★ tc egress         ║
+║                                          net/core/dev.c:4311            ║
+║       if (netdev_xmit_txqueue_skipped())                               ║
+║           txq = netdev_tx_queue_mapping(dev, skb);                     ║
+║     }                                                                  ║
+║                                                                        ║
+║  ⑧ skb_dst_drop() / skb_dst_force()                                    ║
+║  ⑨ if (!txq) txq = netdev_core_pick_tx(dev, skb, sb_dev);  ← 选 TX 队列 ║
+║  ⑩ q-&gt;enqueue() ... q-&gt;dequeue()                                       ║
+║       └── 这里才是 prio / fq / fq_codel / tbf / etf 起作用的地方          ║
+║  ⑪ ndo_start_xmit() → 网卡                                             ║
+╚═══════════════════════════════════════════════════════════════════════╝
+</code></pre>
+<p><strong>从源码读出的五个结论（这些都是能改变工程决策的）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>结论</th>
+<th>源码依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>tc egress 在 qdisc 之前</strong>，不是在之后</td>
+<td><code class="c">sch_handle_egress()</code> 在 <code class="c">dev.c:4311</code>，队列选择在 <code class="c">dev.c:4328</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Netfilter egress（nftables netdev family）在 tc egress 之前</strong></td>
+<td><code class="c">nf_hook_egress()</code> 在 <code class="c">sch_handle_egress()</code> 之上</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong><code class="c">skb-&gt;priority</code> 在 tc egress 之前就已经由 socket 优先级设定</strong></td>
+<td><code class="c">skb_update_prio()</code> 在步骤 ④</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>软件 SCHED 时间戳在 tc egress 之前打</strong></td>
+<td><code class="c">__skb_tstamp_tx()</code> 在步骤 ②</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>tc egress 可以改变 TX 队列选择</strong></td>
+<td>步骤 ⑦ 末尾的 <code class="c">netdev_xmit_txqueue_skipped()</code> 分支</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论 1 的工程含义（最重要）</strong>：</p>
+<blockquote>
+<p><strong>tc egress 无法做「出向限速」。</strong> 限速是 qdisc（tbf / fq / htb）的职责，而 tc egress 在 qdisc <strong>之前</strong>。
+在 tc-BPF egress 里丢包可以实现「超出速率就丢」，但<strong>做不了整形（shaping）</strong>——包不会被延迟发送，只会被直接丢掉。
+想要整形必须配 qdisc；tc-BPF 能做的是<strong>给包打标记/分类</strong>，然后由 qdisc 的 class（prio / htb / cbq）去分流。</p>
+</blockquote>
+<p><strong>结论 5 的工程含义</strong>：多队列网卡上，TX 队列的选择（<code class="c">netdev_core_pick_tx</code>）发生在 tc egress <strong>之后</strong>。所以 tc egress 程序可以通过设置 <code class="c">skb-&gt;queue_mapping</code> 影响最终队列——前提是该路径触发了 <code class="c">netdev_xmit_txqueue_skipped()</code>。</p>
+<hr />
+<h2>2. qdisc 是什么：三个角色</h2>
+<p>TC 的构件只有三个，理清它们的关系，所有 tc 命令都能看懂：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>构件</th>
+<th>作用</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>qdisc</strong>（排队规则）</td>
+<td>决定包<strong>如何排队、何时发送</strong></td>
+<td><code class="c">pfifo_fast</code>、<code class="c">fq</code>、<code class="c">fq_codel</code>、<code class="c">tbf</code>、<code class="c">etf</code>、<code class="c">prio</code>、<code class="c">htb</code></td>
+</tr>
+<tr>
+<td><strong>class</strong>（类别）</td>
+<td>qdisc 内部的<strong>分支</strong>，每个分支可以挂子 qdisc</td>
+<td><code class="c">htb</code> 的 <code class="c">1:10</code> / <code class="c">1:20</code>；<code class="c">prio</code> 的 <code class="c">1:1</code>~<code class="c">1:3</code></td>
+</tr>
+<tr>
+<td><strong>filter</strong>（分类器）</td>
+<td>判断「这个包属于哪个 class」或「执行什么动作」</td>
+<td><code class="c">u32</code>、<code class="c">flower</code>、<code class="c">bpf</code>（<code class="c">cls_bpf</code>）、<code class="c">fw</code>、<code class="c">route</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键区分（旧笔记漏掉的）：</strong></p>
+<ul>
+<li><strong>有类（classful）qdisc</strong>：<code class="c">prio</code>、<code class="c">htb</code>、<code class="c">cbq</code>、<code class="c">dr</code>、<code class="c">mqprio</code>。它们内部有 class，可以挂 filter 做分流，class 下面还能再挂 qdisc。</li>
+<li><strong>无类（classless）qdisc</strong>：<code class="c">pfifo_fast</code>、<code class="c">fq</code>、<code class="c">fq_codel</code>、<code class="c">tbf</code>、<code class="c">sfq</code>、<code class="c">cake</code>。没有 class，<strong>filter 挂在 qdisc 自身上</strong>。</li>
+<li><strong>无队列 qdisc（用于 filter 挂载）</strong>：<code class="c">ingress</code>、<code class="c">clsact</code>。<strong>没有 enqueue/dequeue</strong>，纯粹是为了提供 filter 挂载点。</li>
+</ul>
+<h3>2.1 <code class="c">clsact</code> 与 <code class="c">ingress</code>：为什么 clsact 是现在唯一该用的</h3>
+<p>v6.6 源码（<code class="c">net/sched/sch_ingress.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static struct Qdisc_ops ingress_qdisc_ops __read_mostly = {
+    .cl_ops         =   &amp;ingress_class_ops,
+    .id         =   &quot;ingress&quot;,
+    .priv_size      =   sizeof(struct ingress_sched_data),
+    .static_flags       =   TCQ_F_INGRESS | TCQ_F_CPUSTATS,
+    .init           =   ingress_init,
+    .destroy        =   ingress_destroy,
+    .dump           =   ingress_dump,
+    .ingress_block_set  =   ingress_ingress_block_set,
+    .ingress_block_get  =   ingress_ingress_block_get,
+    .owner          =   THIS_MODULE,
+};
+                                        /* ↑ 只有 ingress_block_*，没有 egress */
+
+static struct Qdisc_ops clsact_qdisc_ops __read_mostly = {
+    .cl_ops         =   &amp;clsact_class_ops,
+    .id         =   &quot;clsact&quot;,
+    .priv_size      =   sizeof(struct clsact_sched_data),
+    .static_flags       =   TCQ_F_INGRESS | TCQ_F_CPUSTATS,
+    .init           =   clsact_init,
+    .destroy        =   clsact_destroy,
+    .dump           =   ingress_dump,
+    .ingress_block_set  =   clsact_ingress_block_set,
+    .egress_block_set   =   clsact_egress_block_set,   /* ← 有 egress */
+    .ingress_block_get  =   clsact_ingress_block_get,
+    .egress_block_get   =   clsact_egress_block_get,   /* ← 有 egress */
+    .owner          =   THIS_MODULE,
+};
+</code></pre>
+<p>三点：</p>
+<ol>
+<li><strong>两者都没有 <code class="c">.enqueue</code> / <code class="c">.dequeue</code> / <code class="c">.peek</code></strong> → <strong>不排队，不引入排队延迟</strong>。旧 README 里这句是对的。</li>
+<li><strong><code class="c">ingress</code> qdisc 只提供 ingress block</strong>，<code class="c">clsact</code> 同时提供 ingress 和 egress block。所以想挂 egress filter 必须用 <code class="c">clsact</code>。</li>
+<li><code class="c">MODULE_ALIAS("sch_clsact")</code>——模块名。</li>
+</ol>
+<blockquote>
+<p><strong>结论</strong>：<code class="c">tc qdisc add dev eth0 clsact</code> 是现在唯一正确的写法；<code class="c">ingress</code> 是历史遗留（只支持 RX 方向）。</p>
+</blockquote>
+<hr />
+<h2>3. 常用 qdisc 全景（v6.6 实测存在）</h2>
+<p>核对方式：<code class="c">net/sched/sch_*.c</code> 文件是否存在。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>qdisc</th>
-<th>用途</th>
-<th>HFT 适用</th>
+<th>源文件</th>
+<th>类型</th>
+<th>作用</th>
+<th>排队延迟</th>
+<th>HFT 场景</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>pfifo_fast</td>
-<td>先进先出（默认）</td>
-<td>简单够用</td>
+<td><code class="c">pfifo_fast</code></td>
+<td>内核默认</td>
+<td>无类</td>
+<td>3 个 band 的 FIFO（按 <code class="c">skb-&gt;priority</code> 分）</td>
+<td>低（满队即丢）</td>
+<td>老默认，现代已被 fq_codel 取代</td>
 </tr>
 <tr>
-<td>fq</td>
-<td>Flow pacing（TCP 发送节奏）</td>
-<td>行情转发流</td>
+<td><code class="c">fq</code></td>
+<td><code class="c">sch_fq.c</code> (27 KB)</td>
+<td>无类</td>
+<td><strong>Flow Queue</strong>：每流独立队列 + RR 调度 + pacing</td>
+<td><strong>可控</strong></td>
+<td>⭐ <strong>TCP 出向的标准选择</strong></td>
 </tr>
 <tr>
-<td>fq_codel</td>
-<td>fq + AQM（延迟控制）</td>
-<td>非交易流</td>
+<td><code class="c">fq_codel</code></td>
+<td><code class="c">sch_fq_codel.c</code> (20 KB)</td>
+<td>无类</td>
+<td>fq + CoDel AQM（主动队列管理）</td>
+<td>低且自限</td>
+<td>通用默认（多数发行版默认）</td>
 </tr>
 <tr>
-<td>tbf</td>
-<td>Token Bucket（带宽限制）</td>
-<td>限制非交易流量</td>
+<td><code class="c">tbf</code></td>
+<td><code class="c">sch_tbf.c</code> (15 KB)</td>
+<td>无类</td>
+<td>Token Bucket Filter，<strong>硬限速 + 允许 burst</strong></td>
+<td>可控</td>
+<td>限制非交易流量带宽</td>
 </tr>
 <tr>
-<td>etf</td>
-<td>Earliest Tx First（时间感知）</td>
-<td>HFT 交易流调度</td>
+<td><code class="c">prio</code></td>
+<td><code class="c">sch_prio.c</code> (10 KB)</td>
+<td><strong>有类</strong>（3 band）</td>
+<td>严格优先级：band 0 空了才发 band 1</td>
+<td>无（但有饥饿风险）</td>
+<td>⭐ 交易流高优先</td>
+</tr>
+<tr>
+<td><code class="c">etf</code></td>
+<td><code class="c">sch_etf.c</code> (12 KB)</td>
+<td>无类</td>
+<td><strong>Earliest TxTime First</strong>：按 <code class="c">SO_TXTIME</code> 截止时间发送</td>
+<td>确定性</td>
+<td>⭐⭐ <strong>时间确定性发送（TSN）</strong></td>
+</tr>
+<tr>
+<td><code class="c">mqprio</code></td>
+<td><code class="c">sch_mqprio.c</code> (21 KB)</td>
+<td>有类</td>
+<td>把 traffic class 映射到硬件 TX 队列</td>
+<td>取决于下层</td>
+<td>多队列 + 优先级映射</td>
+</tr>
+<tr>
+<td><code class="c">cake</code></td>
+<td><code class="c">sch_cake.c</code> (81 KB)</td>
+<td>无类</td>
+<td>综合 AQM + shaping + 流隔离</td>
+<td>低</td>
+<td>家用/边缘，非 HFT</td>
+</tr>
+<tr>
+<td><code class="c">noqueue</code></td>
+<td>内核内建</td>
+<td>无类</td>
+<td>直接发不排队</td>
+<td>无</td>
+<td>loopback / 隧道设备默认</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT tc 配置示例</h2>
-<pre class="code" data-label="shell"><code class="c"># 交易流走高优先级队列
-tc qdisc add dev eth0 root handle 1: prio
-tc filter add dev eth0 protocol ip parent 1:0 prio 1 u32     match ip dport 8001 0xffff flowid 1:1
-
-# 非交易流带宽限制
-tc qdisc add dev eth0 parent 1:3 handle 30: tbf     rate 10mbit burst 10kb latency 50ms
-</code></pre>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">09</div><h2>— tc-BPF：流量控制中的 eBPF</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> Ch6（Advanced Routing）/ Ch9（Netfilter）
-<strong>内核版本:</strong> tc-BPF cls 4.1+；direct-action 4.1+</p>
-</blockquote>
-<h2>tc-BPF 是什么</h2>
-<p>Linux Traffic Control（tc）子系统支持用 eBPF 程序做包分类和动作：
-- <strong>cls_bpf</strong>：BPF 分类器，替代 u32/fw 等 传统分类器
-- <strong>direct-action</strong>：BPF 程序直接返回动作（TC_ACT_OK/SHOT/REDIRECT），不需要单独的 filter action 模块</p>
-<h2>挂载点</h2>
+<h3>3.1 ⭐ <code class="c">fq</code>：为什么它是 TCP 出向的默认推荐</h3>
+<p><code class="c">fq</code>（Fair Queue）的核心：每条流一个队列，轮转调度，并对每条流做 <strong>pacing</strong>（按 <code class="c">flow_max_rate</code> 平滑发送）。</p>
+<p>可调参数（<code class="c">net/sched/sch_fq.c:786-800</code> 的 <code class="c">fq_policy</code>）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>挂载点</th>
-<th>方向</th>
-<th>作用</th>
+<th>参数</th>
+<th>含义</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>tc ingress</td>
-<td>收包入口</td>
-<td>在协议栈之前分类/丢弃/修改包</td>
+<td><code class="c">plimit</code></td>
+<td>总包数上限</td>
+<td>默认 10000</td>
 </tr>
 <tr>
-<td>tc egress</td>
-<td>发包出口</td>
-<td>在 qdisc 之后、驱动之前分类/修改包</td>
+<td><code class="c">flow_plimit</code></td>
+<td><strong>单流</strong>包数上限</td>
+<td>默认 100，防止单流占满队列</td>
+</tr>
+<tr>
+<td><code class="c">quantum</code></td>
+<td>每轮给每条流补充的额度</td>
+<td>默认 2×MTU（约 3028）</td>
+</tr>
+<tr>
+<td><code class="c">initial_quantum</code></td>
+<td>新建流的初始额度</td>
+<td>默认 10×MTU</td>
+</tr>
+<tr>
+<td><code class="c">rate_enable</code></td>
+<td>是否启用 pacing</td>
+<td>需配合 <code class="c">flow_max_rate</code> / <code class="c">flow_default_rate</code></td>
+</tr>
+<tr>
+<td><code class="c">flow_default_rate</code> / <code class="c">flow_max_rate</code></td>
+<td>每流 pacing 速率</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">buckets_log</code></td>
+<td>哈希表大小（log2）</td>
+<td>默认 10 左右</td>
+</tr>
+<tr>
+<td><code class="c">timer_slack</code></td>
+<td>timer 松弛</td>
+<td>—</td>
 </tr>
 </tbody>
 </table></div>
-<h2>tc ingress vs XDP</h2>
+<p><strong>HFT 用法</strong>：</p>
+<pre class="code" data-label="shell"><code class="c"># TCP 出向用 fq，控制 burst 避免打爆交换机 buffer
+tc qdisc replace dev eth0 root fq \
+    flow_limit 100 \
+    quantum 1514 \
+    initial_quantum 15140
+</code></pre>
+<p><strong>为什么 burst 有害</strong>：一次性把 100 个包丢给网卡，网卡/交换机的出端口 buffer 会积压，产生<strong>排队延迟</strong>。pacing 把它们摊平到时间轴上，单包延迟更稳定（代价是吞吐略有下降）。</p>
+<h3>3.2 ⭐⭐ <code class="c">etf</code>：唯一能提供「确定性发送时刻」的 qdisc</h3>
+<p><code class="c">etf</code>（Earliest TxTime First）让你可以为<strong>每个包</strong>指定「不早于某个绝对时刻发送」，驱动按截止时间排序发送。这是 TSN（Time-Sensitive Networking）和硬件时间戳发射的基础。</p>
+<p><strong>⚠️ 三条硬约束（<code class="c">net/sched/sch_etf.c</code>）：</strong></p>
+<pre class="code" data-label="C"><code class="c">static inline int validate_input_params(struct tc_etf_qopt *qopt,
+                    struct netlink_ext_ack *extack)
+{
+    /* ...
+     *  * Dynamic clockids are not supported.
+     * ...
+     */
+    if (qopt-&gt;clockid &lt; 0) {
+        NL_SET_ERR_MSG(extack, &quot;Dynamic clockids are not supported&quot;);
+        return -EINVAL;
+    }
+    if (qopt-&gt;clockid != CLOCK_TAI) {
+        NL_SET_ERR_MSG(extack, &quot;Invalid clockid. CLOCK_TAI must be used&quot;);
+        return -EINVAL;
+    }
+</code></pre>
+<ol>
+<li><strong>必须使用 <code class="c">CLOCK_TAI</code></strong>（国际原子时），不是 <code class="c">CLOCK_MONOTONIC</code> 也不是 <code class="c">CLOCK_REALTIME</code>。这是 ETF 的硬校验，写错直接 <code class="c">-EINVAL</code>。</li>
+<li><strong>动态 clockid（<code class="c">&lt; 0</code>）不支持</strong>。</li>
+<li><strong>每个包的 socket 必须与 qdisc 配置匹配，否则包被丢弃</strong>（<code class="c">etf_enqueue()</code>，<code class="c">:82-97</code>）：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">    if (q-&gt;skip_sock_check)
+        return 0;                       /* 配置为跳过检查 */
+
+    /* Drop if packet's clockid differs from qdisc's. */
+    if (sk-&gt;sk_clockid != q-&gt;clockid)
+        ... drop ...
+    if (sk-&gt;sk_txtime_deadline_mode != q-&gt;deadline_mode)
+        ... drop ...
+</code></pre>
+<p><strong>实操步骤：</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 1. 挂 ETF（必须用 CLOCK_TAI，clockid 11）
+tc qdisc replace dev eth0 root etf \
+    clockid CLOCK_TAI \
+    delta 200000 \          # 截止时间前 200us 开始准备（ns）
+    deadline_mode on        # 可选
+
+# 2. 应用侧必须设置 SO_TXTIME
+#    struct sock_txtime sk_txt;
+#    sk_txt.clockid = CLOCK_TAI;         /* 必须与 qdisc 一致 */
+#    sk_txt.flags   = SK_TXTIME_DEADLINE_MODE;  /* 与 deadline_mode 一致 */
+#    setsockopt(fd, SOL_SOCKET, SO_TXTIME, &amp;sk_txt, sizeof(sk_txt));
+#
+#    然后每个包用 cmsg SCM_TXTIME 带上 uint64 的绝对 TAI 时刻（ns）
+
+# 3. 硬件卸载（可选，需要网卡支持）
+tc qdisc replace dev eth0 root etf clockid CLOCK_TAI delta 200000 offload
+#   不支持时报错：&quot;Specified device does not support ETF offload&quot;
+</code></pre>
+<p><strong>常见问题排查：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">Invalid clockid. CLOCK_TAI must be used</code></td>
+<td>用了 <code class="c">CLOCK_MONOTONIC</code>；<strong>ETF 强制 CLOCK_TAI</strong></td>
+</tr>
+<tr>
+<td>配好 ETF 后发包全丢</td>
+<td>socket 没设 <code class="c">SO_TXTIME</code>，或 <code class="c">sk_clockid</code>/<code class="c">deadline_mode</code> 与 qdisc 不一致</td>
+</tr>
+<tr>
+<td>设了 <code class="c">SO_TXTIME</code> 仍然丢</td>
+<td>检查 <code class="c">skip_sock_check</code> 是否开着（开着就不检查，但也就没有 txtime 语义）</td>
+</tr>
+<tr>
+<td><code class="c">offload</code> 报错</td>
+<td>网卡不支持 ETF 硬件卸载（需要 Intel i210/i225 这类 TSN 网卡）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.3 <code class="c">prio</code>：最简单可靠的优先级隔离</h3>
+<pre class="code" data-label="shell"><code class="c"># 3 个 band：band 0 最高，band 2 最低。只有高 band 空了才发低 band
+tc qdisc add dev eth0 root handle 1: prio bands 3
+
+# 默认 priomap：内核 skb-&gt;priority → band
+#   0,1,2 → band 1 ; 3,4 → band 1 ; 5,6 → band 2 ; 7 → band 0 ...（可用 priomap 改）
+
+# 用 u32 按端口分流
+tc filter add dev eth0 parent 1: protocol ip prio 1 u32 \
+    match ip dport 8001 0xffff flowid 1:1        # 交易流 → band 0
+tc filter add dev eth0 parent 1: protocol ip prio 2 u32 \
+    match ip dport 9001 0xffff flowid 1:3        # 行情流 → band 2
+</code></pre>
+<p><strong>⚠️ 饥饿风险</strong>：<code class="c">prio</code> 是严格优先级——只要 band 0 一直有包，band 2 一滴也发不出去。<strong>必须确保高优先级流量有上限</strong>（配合 tbf 或 fq 的下层 qdisc）。</p>
+<h3>3.4 <code class="c">tbf</code>：限制非交易流量</h3>
+<pre class="code" data-label="shell"><code class="c"># 在 prio 的 band 2（低优先）下挂 tbf 限速
+tc qdisc add dev eth0 parent 1:3 handle 30: tbf \
+    rate 10mbit burst 10kb latency 50ms
+</code></pre>
+<p>或</p>
+<pre class="code" data-label="shell"><code class="c">tc qdisc add dev eth0 parent 1:3 handle 30: tbf \
+    rate 10mbit burst 10kb mtu 64kb peakrate 20mbit
+</code></pre>
+<p><strong>参数含义</strong>：<code class="c">rate</code> 长期平均速率；<code class="c">burst</code> 允许的突发（必须 ≥ rate/HZ）；<code class="c">latency</code> 包在队列里的最长停留时间（与 <code class="c">limit</code> 二选一）。</p>
+<hr />
+<h2>4. HFT 出向配置模板</h2>
+<h3>4.1 场景：交易流优先 + 行情流限速 + 其余默认</h3>
+<pre class="code" data-label="shell"><code class="c">DEV=eth0
+
+# 根 qdisc：prio 三档
+tc qdisc replace dev $DEV root handle 1: prio bands 3
+
+# band 0（1:1）：交易下单流，用 fq 做 pacing
+tc qdisc add dev $DEV parent 1:1 handle 10: fq flow_limit 100
+
+# band 2（1:3）：行情/后台流，用 tbf 限速
+tc qdisc add dev $DEV parent 1:3 handle 30: tbf rate 50mbit burst 32kb latency 20ms
+
+# 分流规则（用 BPF 分类器，见 02）
+tc filter add dev $DEV parent 1: protocol ip prio 1 bpf da obj class.bpf.o sec cls
+</code></pre>
+<h3>4.2 场景：时间确定性发送（交易流）</h3>
+<pre class="code" data-label="shell"><code class="c">DEV=eth0
+tc qdisc replace dev $DEV root etf clockid CLOCK_TAI delta 200000 deadline_mode on
+# 应用侧配合 SO_TXTIME + SCM_TXTIME
+</code></pre>
+<h3>4.3 观测</h3>
+<pre class="code" data-label="shell"><code class="c">tc -s qdisc show dev eth0        # 每个 qdisc 的 sent/dropped/overlimits/requeries
+tc -s filter show dev eth0       # filter 命中统计
+tc -s class show dev eth0        # class 级统计（有类 qdisc）
+
+# 排队延迟的直接观测（fq_codel / cake 有）
+tc -s qdisc show dev eth0 | grep -i delay
+</code></pre>
+<p><strong><code class="c">dropped</code> 与 <code class="c">overlimits</code> 的区别：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>计数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">dropped</code></td>
+<td>队列满 / AQM 主动丢的包</td>
+</tr>
+<tr>
+<td><code class="c">overlimits</code></td>
+<td>超过 limit 被延迟的次数（<strong>不一定丢</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">requeues</code></td>
+<td>重新入队次数（驱动 <code class="c">NETDEV_TX_BUSY</code> 时）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">requeues</code> 是非零值时最值得警惕的信号</strong>：说明驱动把包退回来了，通常意味着 TX ring 满。在高 PPS 场景这是常态，但数值持续飙升说明出向被打爆。</p>
+</blockquote>
+<hr />
+<h2>5. HFT 要点</h2>
+<ol>
+<li><strong>tc egress 在 qdisc 之前</strong>——这是本篇最重要的位置认知。BPF 能做的是<strong>分类 + 丢包</strong>，<strong>整形必须靠 qdisc</strong>。</li>
+<li><strong><code class="c">clsact</code> 是不带队列的 filter 挂载点</strong>，用它挂 tc-BPF 不会引入排队延迟。但<strong>它本身也不能替你整形</strong>。</li>
+<li><strong>默认 qdisc 值得检查</strong>：多数发行版默认是 <code class="c">fq_codel</code>，它带有 AQM 和流隔离，对延迟友好但对 HFT 未必最优（CoDel 会主动丢包）。交易机上建议显式设置。</li>
+<li><strong><code class="c">fq</code> 的 pacing 是降低出向 burst 的主要手段</strong>。burst 打爆交换机 buffer 会造成几十微秒甚至毫秒级的排队抖动，这比 CPU 上的优化重要得多。</li>
+<li><strong><code class="c">etf</code> 是唯一能给「确定性发送时刻」的 qdisc</strong>，但硬约束多：必须 <code class="c">CLOCK_TAI</code>、socket 必须 <code class="c">SO_TXTIME</code>、硬件卸载需要 TSN 网卡。三条任一不匹配就是<strong>静默丢包</strong>。</li>
+<li><strong><code class="c">prio</code> 会饥饿低优先级队列</strong>。永远给高优先级流量配上限速（下层 tbf / fq）。</li>
+<li><strong>多队列网卡上，TX 队列选择（<code class="c">netdev_core_pick_tx</code>）发生在 tc egress 之后</strong>，所以 tc egress 里设置 <code class="c">skb-&gt;queue_mapping</code> 可以影响最终队列——但只在 <code class="c">netdev_xmit_txqueue_skipped()</code> 为真时生效。</li>
+</ol>
+<hr />
+<h2>6. 与 Rosen Ch6 的差异</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>维度</th>
-<th>XDP</th>
-<th>tc ingress</th>
+<th>Rosen 3.x</th>
+<th>v6.6</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>挂载位置</td>
-<td>驱动层（sk_buff 之前）</td>
-<td>协议栈入口（sk_buff 之后）</td>
+<td>默认 qdisc</td>
+<td><code class="c">pfifo_fast</code></td>
+<td>多数发行版 <code class="c">fq_codel</code></td>
 </tr>
 <tr>
-<td>数据结构</td>
-<td>xdp_buff（轻量）</td>
-<td>sk_buff（完整元数据）</td>
+<td>分类器</td>
+<td><code class="c">u32</code> / <code class="c">fw</code> / <code class="c">route</code>（classic BPF）</td>
+<td><code class="c">flower</code> / <strong><code class="c">cls_bpf</code>（eBPF）</strong> 为主</td>
 </tr>
 <tr>
-<td>可访问信息</td>
-<td>包内容 + RX 队列索引</td>
-<td>包内容 + sk_buff 全部元数据</td>
+<td>egress filter</td>
+<td>无（<code class="c">ingress</code> qdisc 只有 RX）</td>
+<td><strong><code class="c">clsact</code> 提供 ingress + egress 两个 block</strong></td>
 </tr>
 <tr>
-<td>能力</td>
-<td>丢/转/改包</td>
-<td>丢/转/改包 + 可设置 skb mark/priority</td>
+<td>时间确定性发送</td>
+<td>无</td>
+<td><strong><code class="c">etf</code> + <code class="c">SO_TXTIME</code></strong></td>
 </tr>
 <tr>
-<td>性能</td>
-<td>最高</td>
-<td>略低（已分配 sk_buff）</td>
+<td>硬件卸载</td>
+<td>无</td>
+<td><code class="c">mqprio</code> / <code class="c">etf offload</code>（TSN）</td>
+</tr>
+<tr>
+<td>出向 hook 顺序</td>
+<td>只有 qdisc</td>
+<td><strong>Netfilter egress → tc egress → qdisc → 驱动</strong></td>
+</tr>
+<tr>
+<td>配置工具</td>
+<td><code class="c">tc</code>（iproute2）</td>
+<td>同为 <code class="c">tc</code>，但 <code class="c">bpf da</code> 模式 + v6.6 的 tcx</td>
 </tr>
 </tbody>
 </table></div>
-<h2>使用示例</h2>
-<pre class="code" data-label="shell"><code class="c"># 加载 tc-BPF 程序到网卡 ingress
-tc qdisc add dev eth0 clsact
-tc filter add dev eth0 ingress bpf da obj filter.o sec tc-ingress
-
-# 查看
-tc filter show dev eth0 ingress
+<p>Rosen 讲的 qdisc/class/filter 三元模型<strong>完全没变</strong>，变化的是：分类器主流从 u32 换成了 BPF，多出了 egress 方向，多出了时间确定性发送。</p>
+<hr />
+<h2>7. 代码自测</h2>
+<details>
+<summary>Q1：你想在 tc-BPF egress 程序里实现「限制交易进程出向带宽到 100 Mbps」。你写好了令牌桶逻辑，超过速率就返回 <code class="c">TC_ACT_SHOT</code>。上线后发现：带宽确实被限住了，但对端看到的是「大量的重传和吞吐抖动」，而不是平滑的 100 Mbps。为什么？</summary>
+<p><strong>因为你做的是 policing（ policing = 超了就丢），不是 shaping（整形 = 超了就排队延迟）。</strong></p>
+<p>看 <code class="c">__dev_queue_xmit()</code> 的顺序（<code class="c">net/core/dev.c</code>）：</p>
+<pre class="code" data-label="code"><code class="c">⑦ sch_handle_egress(skb, &amp;rc, dev);     /* ← 你的程序在这里，dev.c:4311 */
+⑨ txq = netdev_core_pick_tx(dev, skb, sb_dev);
+⑩ q-&gt;enqueue() → q-&gt;dequeue()           /* ← tbf/fq 在这里 */
+⑪ ndo_start_xmit() → 网卡
 </code></pre>
-<pre class="code" data-label="C"><code class="c">// tc-BPF 程序：按目标端口标记包
-SEC(&quot;tc-ingress&quot;)
-int tc_ingress(struct __sk_buff *skb) {
-    void *data_end = (void *)(long)skb-&gt;data_end;
-    void *data = (void *)(long)skb-&gt;data;
-    struct ethhdr *eth = data;
-    // ... 解析 IP/TCP 头
-    if (tcp-&gt;dest == htons(9090)) {
-        skb-&gt;mark = 0x9090;  // 标记行情流
-        return TC_ACT_OK;
-    }
-    return TC_ACT_OK;  // 放行
-}
+<p><strong>tc egress 在 qdisc 之前。</strong> 你的程序执行时，包还没进任何队列。你返回 <code class="c">TC_ACT_SHOT</code> 时：</p>
+<pre class="code" data-label="C"><code class="c">    case TC_ACT_SHOT:
+        kfree_skb_reason(skb, SKB_DROP_REASON_TC_EGRESS);
+        *ret = NET_XMIT_DROP;
+        return NULL;
 </code></pre>
-<h2>HFT 关联</h2>
+<p>——包<strong>直接被 free</strong>，根本没有「等一会儿再发」这个选项。</p>
+<p><strong>对 TCP 的后果</strong>：突发 200 Mbps → 你丢掉一半 → TCP 看到的是<strong>随机丢包</strong>（不是 ECN、不是主动队列管理），触发超时重传或快速重传，拥塞窗口剧烈收缩 → 吞吐抖动、延迟尖刺。这正是你看到的现象。</p>
+<p><strong>正确做法：把限速交给 qdisc。</strong></p>
+<pre class="code" data-label="shell"><code class="c"># tbf 做整形：超出 rate 的包会被延迟（排队），而不是丢弃
+tc qdisc add dev eth0 root handle 1: prio
+tc qdisc add dev eth0 parent 1:1 handle 10: tbf \
+    rate 100mbit burst 32kb latency 20ms
+</code></pre>
+<p>tbf 的 <code class="c">latency</code> 参数就是「包最多在队列里待多久」——这是 shaping 的核心：<strong>用延迟换平滑</strong>。</p>
+<p><strong>那 tc-BPF 在出向该干什么？</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>场景</th>
-<th>tc-BPF 用途</th>
+<th>你想做的事</th>
+<th>该用什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行情流标记</td>
-<td>按 DSCP/端口设置 skb-&gt;mark，配合路由策略</td>
+<td>分类（这个包属于哪个 class/band）</td>
+<td><strong>tc-BPF</strong>：设 <code class="c">skb-&gt;mark</code> / <code class="c">skb-&gt;priority</code>，返回 <code class="c">TC_ACT_OK</code>，交给 <code class="c">prio</code> qdisc 分流</td>
 </tr>
 <tr>
-<td>发包控制</td>
-<td>tc egress 限制非交易流量带宽</td>
+<td>丢包（确定不要的包）</td>
+<td><strong>tc-BPF</strong>：<code class="c">TC_ACT_SHOT</code></td>
 </tr>
 <tr>
-<td>包丢弃</td>
-<td>丢弃不符合规则的包，在协议栈前拦截</td>
+<td>改包内容 / 重定向</td>
+<td><strong>tc-BPF</strong></td>
 </tr>
 <tr>
-<td>延迟测量</td>
-<td>tc-BPF 打时间戳到 skb-&gt;cb</td>
+<td><strong>限速 / 整形 / pacing</strong></td>
+<td><strong>qdisc</strong>：<code class="c">tbf</code> / <code class="c">fq</code> / <code class="c">fq_codel</code></td>
+</tr>
+<tr>
+<td><strong>确定性发送时刻</strong></td>
+<td><strong>qdisc</strong>：<code class="c">etf</code> + <code class="c">SO_TXTIME</code></td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>组合用法</strong>（标准做法）：</p>
+<pre class="code" data-label="shell"><code class="c">tc qdisc add dev eth0 root handle 1: prio
+tc qdisc add dev eth0 parent 1:1 handle 10: tbf rate 100mbit burst 32kb latency 20ms
+# tc-BPF 只负责打标记，prio 按 skb-&gt;priority 选 band
+tc filter add dev eth0 parent 1: protocol all prio 1 bpf da obj cls.bpf.o sec cls
+</code></pre>
+<p>BPF 里：</p>
+<pre class="code" data-label="C"><code class="c">SEC(&quot;cls&quot;)
+int cls_prog(struct __sk_buff *skb)
+{
+    if (is_trading_flow(skb)) {
+        skb-&gt;priority = 1;      /* → prio 的 band 0 */
+        return TC_ACT_OK;
+    }
+    skb-&gt;priority = 6;              /* → prio 的 band 2（被 tbf 限速） */
+    return TC_ACT_OK;
+}
+</code></pre>
+<p><strong>注意</strong>：<code class="c">skb_update_prio(skb)</code> 在 tc egress <strong>之前</strong>（<code class="c">dev.c:4293</code>）已经把 socket 的 <code class="c">SO_PRIORITY</code> 写进 <code class="c">skb-&gt;priority</code> 了。你在 tc egress 里覆盖它会生效，但要考虑是否会破坏上层已经设定的优先级。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">tc qdisc add dev eth0 ingress</code> 和 <code class="c">tc qdisc add dev eth0 clsact</code> 有什么区别？为什么现在都用 clsact？</summary>
+<p><strong>源码级区别</strong>（<code class="c">net/sched/sch_ingress.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static struct Qdisc_ops ingress_qdisc_ops __read_mostly = {
+    .id         =   &quot;ingress&quot;,
+    .static_flags       =   TCQ_F_INGRESS | TCQ_F_CPUSTATS,
+    ...
+    .ingress_block_set  =   ingress_ingress_block_set,
+    .ingress_block_get  =   ingress_ingress_block_get,
+    /* ← 只有 ingress block */
+};
+
+static struct Qdisc_ops clsact_qdisc_ops __read_mostly = {
+    .id         =   &quot;clsact&quot;,
+    .static_flags       =   TCQ_F_INGRESS | TCQ_F_CPUSTATS,
+    ...
+    .ingress_block_set  =   clsact_ingress_block_set,
+    .egress_block_set   =   clsact_egress_block_set,   /* ← 多了这个 */
+    .ingress_block_get  =   clsact_ingress_block_get,
+    .egress_block_get   =   clsact_egress_block_get,   /* ← 多了这个 */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">ingress</code></th>
+<th><code class="c">clsact</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ingress filter</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>egress filter</strong></td>
+<td>❌ <strong>不支持</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>排队（enqueue/dequeue）</td>
+<td>❌ 无</td>
+<td>❌ 无</td>
+</tr>
+<tr>
+<td><code class="c">TCQ_F_INGRESS</code> 标记</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>引入排队延迟</td>
+<td>无</td>
+<td>无</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三个要点：</strong></p>
+<ol>
+<li>
+<p><strong>只有 <code class="c">clsact</code> 能挂 egress filter。</strong> 这是选它的首要原因。想做出向的 BPF 处理（打标记、丢包、重定向、改包）必须用 <code class="c">clsact</code>。</p>
+</li>
+<li>
+<p><strong>两者都不排队。</strong> Qdisc_ops 里<strong>没有 <code class="c">.enqueue</code> / <code class="c">.dequeue</code> / <code class="c">.peek</code> 成员</strong>，所以它们纯粹是 filter 的挂载点，不引入任何排队延迟。旧 README 里「clsact qdisc：无队列分类器，ingress/egress hook 不引入排队延迟」这句话是对的，但<strong>要理解成「它不排队」，不是「它替你整形」</strong>。</p>
+</li>
+<li>
+<p><strong><code class="c">TCQ_F_INGRESS</code> 这个 flag 容易让人误解</strong>：<code class="c">clsact</code> 也带这个 flag（因为它是从 ingress qdisc 演化来的），但它同时支持 egress 方向。flag 名字是历史遗留。</p>
+</li>
+</ol>
+<p><strong>实操：</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 挂 clsact（一个 qdisc 同时提供 ingress + egress 两个 block）
+tc qdisc add dev eth0 clsact
+
+tc filter add dev eth0 ingress bpf da obj p.bpf.o sec rx
+tc filter add dev eth0 egress  bpf da obj p.bpf.o sec tx
+
+tc filter show dev eth0 ingress
+tc filter show dev eth0 egress
+
+# 删除（会同时摘掉 ingress 和 egress 上的所有 filter）
+tc qdisc del dev eth0 clsact
+</code></pre>
+<p><strong>⚠️ 一个常见错误</strong>：<code class="c">tc qdisc del dev eth0 clsact</code> 会<strong>一次性</strong>摘掉两个方向的所有 filter。生产环境做变更时要意识到这个操作的爆炸半径。</p>
+<p><strong>另外，v6.6 起还有第三条路——tcx</strong>（<code class="c">BPF_TCX_INGRESS</code> / <code class="c">BPF_TCX_EGRESS</code>，<code class="c">include/uapi/linux/bpf.h:1040-1041</code>）：</p>
+<pre class="code" data-label="shell"><code class="c">bpftool prog load p.bpf.o /sys/fs/bpf/p
+bpftool prog attach id &lt;PROG_ID&gt; tcx_ingress dev eth0
+bpftool link show dev eth0
+</code></pre>
+<p>tcx 走 <strong>bpf_link 语义</strong>（可 pin、进程退出自动 detach、<code class="c">bpftool link show</code> 可见），且<strong>不需要先创建 clsact qdisc</strong>。详见 <a href="chapter-15.html#s-02">02-tc-bpf.md</a> 第 2 节。</p>
+</details>
+<details>
+<summary>Q3：你配好了 <code class="c">etf</code> qdisc 和应用的 <code class="c">SO_TXTIME</code>，但一个包都发不出去，<code class="c">tc -s qdisc show</code> 里 dropped 一直在涨。列出至少 3 个可能原因。</summary>
+<p><strong><code class="c">etf</code> 的失败模式几乎全是「静默丢包」</strong>——包进 <code class="c">etf_enqueue()</code> 后因为不匹配被直接丢，没有任何 errno 反馈给应用。</p>
+<p><strong>原因 1：用了错误的 clockid（最常见的坑）。</strong></p>
+<p>ETF <strong>强制 <code class="c">CLOCK_TAI</code></strong>，硬校验在 <code class="c">net/sched/sch_etf.c</code>：</p>
+<pre class="code" data-label="C"><code class="c">    if (qopt-&gt;clockid &lt; 0) {
+        NL_SET_ERR_MSG(extack, &quot;Dynamic clockids are not supported&quot;);
+        return -EINVAL;
+    }
+    if (qopt-&gt;clockid != CLOCK_TAI) {
+        NL_SET_ERR_MSG(extack, &quot;Invalid clockid. CLOCK_TAI must be used&quot;);
+        return -EINVAL;
+    }
+</code></pre>
+<p>注意：<strong>如果你用 <code class="c">CLOCK_MONOTONIC</code>，qdisc 创建就会直接失败</strong>（不会到丢包阶段）。所以如果 qdisc 创建成功了但还丢包，clockid 错的可能可以排除——但要确认<strong>应用侧的 <code class="c">sk_clockid</code> 也是 <code class="c">CLOCK_TAI</code></strong>。</p>
+<p><strong>原因 2：socket 的 clockid / deadline_mode 与 qdisc 不一致。</strong></p>
+<p><code class="c">etf_enqueue()</code>（<code class="c">sch_etf.c:82-97</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    if (q-&gt;skip_sock_check)
+        return 0;
+
+    /* Drop if packet's clockid differs from qdisc's. */
+    if (sk-&gt;sk_clockid != q-&gt;clockid)
+        ... drop ...
+    if (sk-&gt;sk_txtime_deadline_mode != q-&gt;deadline_mode)
+        ... drop ...
+</code></pre>
+<p><strong>三个必须完全对齐的设置：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>设置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>qdisc</td>
+<td><code class="c">tc qdisc ... etf clockid CLOCK_TAI deadline_mode on</code></td>
+</tr>
+<tr>
+<td>socket</td>
+<td><code class="c">setsockopt(fd, SOL_SOCKET, SO_TXTIME, &amp;sk_txt, sizeof)</code> 里 <code class="c">sk_txt.clockid = CLOCK_TAI</code></td>
+</tr>
+<tr>
+<td>socket</td>
+<td><code class="c">sk_txt.flags = SK_TXTIME_DEADLINE_MODE</code>（<strong>必须与 qdisc 的 <code class="c">deadline_mode on/off</code> 一致</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>三者任一不匹配 → 包被丢。</p>
+<p><strong>应用侧正确写法：</strong></p>
+<pre class="code" data-label="C"><code class="c">struct sock_txtime sk_txt = {
+    .clockid = CLOCK_TAI,                  /* ← 必须 TAI */
+    .flags   = SK_TXTIME_DEADLINE_MODE,    /* ← 与 qdisc 的 deadline_mode 对齐 */
+};
+setsockopt(fd, SOL_SOCKET, SO_TXTIME, &amp;sk_txt, sizeof(sk_txt));
+
+/* 每个包：用 cmsg 带上绝对截止时间（ns，CLOCK_TAI 时基） */
+char cbuf[CMSG_SPACE(sizeof(uint64_t))];
+struct cmsghdr *cm = (struct cmsghdr *)cbuf;
+cm-&gt;cmsg_level = SOL_SOCKET;
+cm-&gt;cmsg_type  = SCM_TXTIME;
+cm-&gt;cmsg_len   = CMSG_LEN(sizeof(uint64_t));
+uint64_t txtime = tai_now_ns() + 50000;    /* 50us 之后发 */
+memcpy(CMSG_DATA(cm), &amp;txtime, sizeof(txtime));
+
+struct msghdr msg = { .msg_control = cbuf, .msg_controllen = CMSG_SPACE(sizeof(uint64_t)) };
+sendmsg(fd, &amp;msg, 0);
+</code></pre>
+<p><strong>原因 3：截止时间已经过去了（或用错了时基）。</strong></p>
+<p>即使 clockid 都是 <code class="c">CLOCK_TAI</code>，如果你算出来的 <code class="c">txtime</code> 是 <code class="c">CLOCK_MONOTONIC</code> 或 <code class="c">CLOCK_REALTIME</code> 的时基，数值会差出几十亿纳秒（TAI 与 UTC 差 37 秒的闰秒偏移，与 MONOTONIC 差整个 boot 时间）。结果是要么「截止时间远在未来」（包永远不发），要么「已过期」（立即丢/立即发）。</p>
+<p><strong>验证时基：</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 读当前 CLOCK_TAI（需要 CLOCK_TAI 支持）
+# 用 clock_gettime(CLOCK_TAI, &amp;ts) 而不是 gettimeofday / CLOCK_MONOTONIC
+</code></pre>
+<p><strong>原因 4：<code class="c">offload</code> 配了但网卡不支持。</strong></p>
+<pre class="code" data-label="C"><code class="c">static int etf_enable_offload(struct net_device *dev, struct etf_sched_data *q,
+                  struct netlink_ext_ack *extack)
+{
+    ...
+    if (!ops-&gt;ndo_setup_tc) {
+        NL_SET_ERR_MSG(extack, &quot;Specified device does not support ETF offload&quot;);
+        ...
+</code></pre>
+<p>这会直接报错（不静默），但错误信息容易被忽略。硬件卸载需要 TSN 网卡（Intel i210 / i225 等）。</p>
+<p><strong>原因 5：<code class="c">delta</code> 设置不合理。</strong></p>
+<p><code class="c">delta</code> 是「截止时间前多久开始准备」。设置过小（&lt; 驱动准备时间）会导致错过截止时间；某些驱动实现会因此丢包。通常从 100–200 µs 起调。</p>
+<p><strong>排查清单：</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 1. 确认 qdisc 参数
+tc qdisc show dev eth0
+#   应看到：etf ... clockid CLOCK_TAI delta ... deadline_mode
+
+# 2. 看丢包计数
+tc -s qdisc show dev eth0
+#   dropped 持续增长 = enqueue 阶段被丢
+
+# 3. 内核日志
+dmesg | grep -i etf
+
+# 4. 拿掉 skip_sock_check 再试（排除配置不匹配）
+tc qdisc replace dev eth0 root etf clockid CLOCK_TAI delta 200000
+#   然后确认应用侧的 SO_TXTIME 设置
+</code></pre>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>下一篇：</strong> <a href="chapter-15.html#s-02">02-tc-bpf.md</a> — tc-BPF 程序：v6.6 tcx 机制、返回码、<code class="c">__sk_buff</code> 可写性、81 个 helper</li>
+<li><strong>相关：</strong> <a href="chapter-03.html#ch-3">chapter-03-tx-path-skbbuff/</a> 发包路径与 skb · <a href="chapter-08.html#ch-8">chapter-08-ebpf-cgroup-bpf/</a> eBPF 框架 · <a href="chapter-15.html#ch-15">chapter-15-debugging-perf-tuning/</a> 延迟测量</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>— tc-BPF：v6.6 的 tcx 双机制、返回码与 `__sk_buff` 可写性</h2></div>
+<blockquote>
+<p><strong>来源：</strong> LWN tc-BPF 系列 + <strong>v6.6 源码逐条核对</strong>
+<strong>对应 Rosen:</strong> Ch6（Advanced Routing）/ Ch9（Netfilter）
+<strong>内核版本：</strong> tc-BPF（cls_bpf）4.1+；<code class="c">direct-action</code> 4.1+；<strong>tcx 6.6+</strong></p>
+</blockquote>
+<h2>文档概述</h2>
+<p>本篇是 <strong>tc 的 BPF 侧</strong>：程序挂在哪、返回码怎么解释、<code class="c">__sk_buff</code> 哪些字段能写、能调哪些 helper。</p>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">01-tc-bootlin.md</a></td>
+<td><strong>qdisc</strong>：排队规则、prio/fq/tbf/etf、HFT 出向配置</td>
+<td>01 讲「什么时候发」，本篇讲「这个类怎么判、要不要丢、要不要改」</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>v6.6 最重要变化：tc-BPF 有两条挂载路径了。</strong></p>
+<pre class="code" data-label="code"><code class="c">                    tc-BPF 程序
+                         │
+        ┌────────────────┴────────────────┐
+        │                                 │
+   ① legacy（clsact）                ② tcx（6.6+）
+   tc filter add ... bpf da           bpftool prog attach ... tcx_ingress
+   netlink / tc 命令                  bpf(BPF_LINK_CREATE) / bpf_link 语义
+        │                                 │
+        └────────────────┬────────────────┘
+                         │
+              sch_handle_ingress() / sch_handle_egress()
+              【tcx 先跑，返回 TC_ACT_UNSPEC 时继续跑 legacy】
+</code></pre>
+<p><strong>这是本篇的核心内容</strong>，也是网上资料几乎全都还没覆盖的部分。</p>
+<hr />
+<h2>1. 位置：ingress 在 5412，egress 在 4311</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>宿主函数</th>
+<th>调用点</th>
+<th>上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ingress</strong></td>
+<td><code class="c">__netif_receive_skb_core()</code></td>
+<td><code class="c">net/core/dev.c:5412</code></td>
+<td>skb 已分配，<strong>在 L3 之前</strong></td>
+</tr>
+<tr>
+<td><strong>egress</strong></td>
+<td><code class="c">__dev_queue_xmit()</code></td>
+<td><code class="c">net/core/dev.c:4311</code></td>
+<td>skb 完整，<strong>在 qdisc 之前</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>1.1 ingress 的完整上下文</h3>
+<pre class="code" data-label="C"><code class="c">    if (skb_skip_tc_classify(skb))
+        goto skip_classify;          /* ← 重注入的包跳过整个分类 */
+
+    if (pfmemalloc)
+        goto skip_taps;              /* ← 内存紧张时跳过抓包点 */
+
+    list_for_each_entry_rcu(ptype, &amp;ptype_all, list) { ... }        /* 全局抓包点 */
+    list_for_each_entry_rcu(ptype, &amp;skb-&gt;dev-&gt;ptype_all, list) { ...} /* 设备抓包点 */
+
+skip_taps:
+#ifdef CONFIG_NET_INGRESS
+    if (static_branch_unlikely(&amp;ingress_needed_key)) {
+        bool another = false;
+
+        nf_skip_egress(skb, true);
+        skb = sch_handle_ingress(skb, &amp;pt_prev, &amp;ret, orig_dev, &amp;another);
+        if (another)
+            goto another_round;
+        ...
+</code></pre>
+<p><strong>⭐ 结论：tcpdump 能看到被 tc ingress 丢弃的包，看不到被 XDP 丢弃的包。</strong></p>
+<p><code class="c">ptype_all</code>（AF_PACKET / tcpdump / <code class="c">libpcap</code>）在 <code class="c">dev.c:5394-5403</code> 遍历，而 <code class="c">sch_handle_ingress()</code> 在 <code class="c">dev.c:5412</code> —— <strong>抓包点在 tc ingress 之前</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>hook</th>
+<th>tcpdump 能看到被它丢的包吗</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>XDP</strong></td>
+<td>❌ <strong>看不到</strong></td>
+<td>XDP 在 <code class="c">build_skb()</code> 之前，包还没进 <code class="c">ptype_all</code></td>
+</tr>
+<tr>
+<td><strong>tc ingress</strong></td>
+<td>✅ <strong>能看到</strong></td>
+<td><code class="c">ptype_all</code> 遍历在 <code class="c">sch_handle_ingress()</code> 之前</td>
+</tr>
+<tr>
+<td>tc egress</td>
+<td>✅ 能看到（走 <code class="c">dev_queue_xmit_nit</code>）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这条差异是调试时的关键判据</strong>：如果你怀疑是 XDP 在丢包，tcpdump 上什么都看不到；如果是 tc ingress 丢的，tcpdump 能看到包进来了但应用收不到。</p>
+<p>另外两个细节：</p>
+<ul>
+<li><strong><code class="c">skb_skip_tc_classify()</code></strong> → 直接 <code class="c">goto skip_classify</code>，<strong>同时跳过抓包点和 tc ingress</strong>。这类包是「不应被重新分类」的（如从 <code class="c">act_mirred</code> 重新注入的包）。写 tc 程序时要注意你的规则对这类包不生效。</li>
+<li><strong>整个 path 由 <code class="c">static_branch_unlikely(&amp;ingress_needed_key)</code> 守着</strong>（<code class="c">CONFIG_NET_INGRESS</code>），没挂任何 ingress 程序时零开销。</li>
+</ul>
+<h3>1.2 egress 的完整上下文</h3>
+<p>见 <a href="chapter-15.html#s-01">01</a> 第 1 节的完整图。要点复述：</p>
+<pre class="code" data-label="code"><code class="c">② if (SKBTX_SCHED_TSTAMP) __skb_tstamp_tx(...)   ← SW 时间戳（tc egress 之前）
+④ skb_update_prio(skb)                            ← socket 优先级已写入
+⑦ if (egress_needed_key) {
+      nf_hook_egress(skb, &amp;rc, dev);              ← ★ Netfilter egress 先跑
+      skb = sch_handle_egress(skb, &amp;rc, dev);     ← ★★ tc egress（dev.c:4311）
+   }
+⑨ txq = netdev_core_pick_tx(...)                  ← 选 TX 队列（tc egress 之后）
+⑩ q-&gt;enqueue() → q-&gt;dequeue()                     ← qdisc 排队（tc egress 之后）
+</code></pre>
+<p><strong>旧笔记说「tc egress 在 qdisc 之后、驱动之前」是错的</strong>——已在 01 篇纠正。</p>
+<hr />
+<h2>2. ⭐ v6.6 的双机制：tcx 与 legacy clsact</h2>
+<h3>2.1 <code class="c">sch_handle_ingress()</code> 的完整实现（<code class="c">net/core/dev.c:4005</code>）</h3>
+<pre class="code" data-label="C"><code class="c">sch_handle_ingress(struct sk_buff *skb, struct packet_type **pt_prev, int *ret,
+           struct net_device *orig_dev, bool *another)
+{
+    struct bpf_mprog_entry *entry = rcu_dereference_bh(skb-&gt;dev-&gt;tcx_ingress);
+    int sch_ret;
+
+    if (!entry)
+        return skb;                                    /* ① */
+    if (*pt_prev) {
+        *ret = deliver_skb(skb, *pt_prev, orig_dev);
+        *pt_prev = NULL;
+    }
+
+    qdisc_skb_cb(skb)-&gt;pkt_len = skb-&gt;len;
+    tcx_set_ingress(skb, true);
+
+    if (static_branch_unlikely(&amp;tcx_needed_key)) {          /* ② */
+        sch_ret = tcx_run(entry, skb, true);
+        if (sch_ret != TC_ACT_UNSPEC)
+            goto ingress_verdict;
+    }
+    sch_ret = tc_run(tcx_entry(entry), skb);                /* ③ */
+ingress_verdict:
+    switch (sch_ret) {
+    case TC_ACT_REDIRECT:
+        __skb_push(skb, skb-&gt;mac_len);
+        if (skb_do_redirect(skb) == -EAGAIN) {
+            __skb_pull(skb, skb-&gt;mac_len);
+            *another = true;
+            break;
+        }
+        *ret = NET_RX_SUCCESS;
+        return NULL;
+    case TC_ACT_SHOT:
+        kfree_skb_reason(skb, SKB_DROP_REASON_TC_INGRESS);
+        *ret = NET_RX_DROP;
+        return NULL;
+    /* used by tc_run */
+    case TC_ACT_STOLEN:
+    case TC_ACT_QUEUED:
+    case TC_ACT_TRAP:
+        consume_skb(skb);
+        fallthrough;
+    case TC_ACT_CONSUMED:
+        *ret = NET_RX_SUCCESS;
+        return NULL;
+    }
+
+    return skb;
+}
+</code></pre>
+<p><strong>四点解读：</strong></p>
+<ol>
+<li><strong>① <code class="c">entry</code> 是 <code class="c">dev-&gt;tcx_ingress</code></strong>（<code class="c">struct bpf_mprog_entry</code>），它<strong>同时</strong>承载 tcx 程序和 legacy clsact 的 filter 链。只要任一存在，<code class="c">entry</code> 就非 NULL。</li>
+<li><strong>② tcx 先跑</strong>，由 <code class="c">tcx_needed_key</code> 静态分支守着（没有任何 tcx 程序时零开销）。</li>
+<li><strong>③ tcx 返回 <code class="c">TC_ACT_UNSPEC</code>（-1）时才继续跑 legacy</strong>。也就是说<strong>两条路会串联执行</strong>，不是二选一。</li>
+<li><strong><code class="c">sch_handle_egress()</code> 的结构完全相同</strong>（<code class="c">dev.c:4061</code>），唯一区别是 <code class="c">tcx_run(entry, skb, false)</code> —— <code class="c">needs_mac = false</code>。</li>
+</ol>
+<h3>2.2 <code class="c">needs_mac</code>：ingress push，egress 不 push</h3>
+<p><code class="c">tcx_run()</code>（<code class="c">dev.c:3983-4000</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static __always_inline enum tcx_action_base
+tcx_run(const struct bpf_mprog_entry *entry, struct sk_buff *skb,
+    const bool needs_mac)
+{
+    const struct bpf_mprog_fp *fp;
+    const struct bpf_prog *prog;
+    int ret = TCX_NEXT;
+
+    if (needs_mac)
+        __skb_push(skb, skb-&gt;mac_len);          /* ← ingress 才做 */
+    bpf_mprog_foreach_prog(entry, fp, prog) {
+        bpf_compute_data_pointers(skb);
+        ret = bpf_prog_run(prog, skb);
+        if (ret != TCX_NEXT)
+            break;
+    }
+    if (needs_mac)
+        __skb_pull(skb, skb-&gt;mac_len);
+    return tcx_action_code(skb, ret);
+}
+</code></pre>
+<p>以及 <code class="c">sch_handle_egress()</code> 里的注释：</p>
+<pre class="code" data-label="C"><code class="c">    case TC_ACT_REDIRECT:
+        /* No need to push/pop skb's mac_header here on egress! */
+        skb_do_redirect(skb);
+</code></pre>
+<p><strong>含义：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th><code class="c">needs_mac</code></th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ingress</strong></td>
+<td><code class="c">true</code></td>
+<td>到达 <code class="c">__netif_receive_skb_core</code> 时 L2 头已被 <code class="c">__skb_pull()</code> 掉（skb-&gt;data 指向 L3），需要 push 回才能让 BPF 看到以太头</td>
+</tr>
+<tr>
+<td><strong>egress</strong></td>
+<td><code class="c">false</code></td>
+<td>出向时 L2 头还在（<code class="c">__dev_queue_xmit</code> 开头有 <code class="c">skb_reset_mac_header</code>），不需要动</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>写程序时的直接影响</strong>：同一个 BPF 程序<strong>不能不加区分地同时用在 ingress 和 egress</strong>——两侧看到的 <code class="c">skb-&gt;data</code> 起点不同。</p>
+<h3>2.3 ⭐ tcx 的返回码：<code class="c">TCX_NEXT</code> 是链条的「继续」</h3>
+<p><code class="c">enum tcx_action_base</code>（<code class="c">include/uapi/linux/bpf.h:6265-6270</code>）：</p>
+<pre class="code" data-label="C"><code class="c">enum tcx_action_base {
+    TCX_NEXT    = -1,
+    TCX_PASS    = 0,
+    TCX_DROP    = 2,
+    TCX_REDIRECT    = 7,
+};
+</code></pre>
+<p><strong>这些值被刻意对齐到 <code class="c">TC_ACT_*</code>：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tcx</th>
+<th>值</th>
+<th>对应的 legacy TC_ACT</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">TCX_NEXT</code></td>
+<td>-1</td>
+<td><code class="c">TC_ACT_UNSPEC</code></td>
+<td>-1</td>
+</tr>
+<tr>
+<td><code class="c">TCX_PASS</code></td>
+<td>0</td>
+<td><code class="c">TC_ACT_OK</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">TCX_DROP</code></td>
+<td>2</td>
+<td><code class="c">TC_ACT_SHOT</code></td>
+<td>2</td>
+</tr>
+<tr>
+<td><code class="c">TCX_REDIRECT</code></td>
+<td>7</td>
+<td><code class="c">TC_ACT_REDIRECT</code></td>
+<td>7</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以<strong>同一套返回值在两条路径上都适用</strong>——这是设计上的兼容。</p>
+<p><strong>归一化逻辑</strong>（<code class="c">include/net/tcx.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static inline enum tcx_action_base tcx_action_code(struct sk_buff *skb,
+                           int code)
+{
+    switch (code) {
+    case TCX_PASS:
+        skb-&gt;tc_index = qdisc_skb_cb(skb)-&gt;tc_classid;
+        fallthrough;
+    case TCX_DROP:
+    case TCX_REDIRECT:
+        return code;
+    case TCX_NEXT:
+    default:
+        return TCX_NEXT;
+    }
+}
+</code></pre>
+<p><strong>⚠️ 一个隐蔽的坑</strong>：<code class="c">default: return TCX_NEXT</code>。</p>
+<p><code class="c">tcx_run()</code> 里的 <code class="c">break</code> 条件是 <code class="c">ret != TCX_NEXT</code>（<strong>原始值</strong>），但归一化时只认 <code class="c">-1/0/2/7</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>程序返回值</th>
+<th>是否 <code class="c">break</code> 出链路</th>
+<th>归一化后</th>
+<th>最终行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-1</code>（NEXT）</td>
+<td>否，继续下一个程序</td>
+<td><code class="c">TCX_NEXT</code></td>
+<td>继续跑后续 tcx 程序 → 全部 NEXT 则落到 legacy</td>
+</tr>
+<tr>
+<td><code class="c">0</code>（OK）</td>
+<td>是</td>
+<td><code class="c">TCX_PASS</code></td>
+<td>交付上层 / 入 qdisc</td>
+</tr>
+<tr>
+<td><code class="c">2</code>（SHOT）</td>
+<td>是</td>
+<td><code class="c">TCX_DROP</code></td>
+<td>丢包</td>
+</tr>
+<tr>
+<td><code class="c">7</code>（REDIRECT）</td>
+<td>是</td>
+<td><code class="c">TCX_REDIRECT</code></td>
+<td>重定向</td>
+</tr>
+<tr>
+<td><strong>其他任何值</strong>（如 <code class="c">TC_ACT_STOLEN=4</code>、<code class="c">TC_ACT_QUEUED=5</code>、<code class="c">TC_ACT_TRAP=8</code>）</td>
+<td><strong>是</strong>（因为 ≠ -1）</td>
+<td><strong><code class="c">TCX_NEXT</code></strong></td>
+<td>⚠️ <strong>终止 tcx 链条，但因为归一化成 -1 = <code class="c">TC_ACT_UNSPEC</code>，<code class="c">sch_handle_*</code> 不会 <code class="c">goto verdict</code>，而是继续跑 legacy <code class="c">tc_run()</code></strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实践建议：在 tcx 程序里只返回 <code class="c">-1 / 0 / 2 / 7</code> 这四个值。</strong> 返回其他值的行为是「跳过剩余 tcx 程序 + 落到 legacy」，几乎肯定不是你想要的。</p>
+<blockquote>
+<p><strong>对比 XDP</strong>：XDP 里 <code class="c">XDP_ABORTED == 0</code>，「忘记 return」= 丢包。
+<strong>tcx 里相反</strong>：默认返回 0 = <code class="c">TCX_PASS</code> = <strong>放行</strong>。所以 tcx 的「忘 return」不会造成静默丢包，但会造成<strong>静默放行</strong>（程序等于没生效）。</p>
+</blockquote>
+<h3>2.4 tcx vs legacy：怎么选</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>legacy clsact（<code class="c">tc filter add ... bpf da</code>）</th>
+<th><strong>tcx（<code class="c">bpftool prog attach ... tcx_*</code>）</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>挂载方式</td>
+<td>netlink + <code class="c">tc</code> 命令</td>
+<td><code class="c">bpf(BPF_LINK_CREATE)</code> / bpftool</td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td>需显式 <code class="c">tc filter del</code>；<code class="c">tc qdisc del</code> 会一次全清</td>
+<td><strong>bpf_link</strong>：进程退出自动 detach；可 pin 到 bpffs</td>
+</tr>
+<tr>
+<td>可见性</td>
+<td><code class="c">tc filter show</code></td>
+<td><code class="c">bpftool link show dev eth0</code></td>
+</tr>
+<tr>
+<td>多程序</td>
+<td>一个 filter 链，按 prio 排序</td>
+<td><strong>bpf_mprog 数组</strong>，按 attach 顺序，<code class="c">BPF_F_BEFORE/AFTER/ID</code> 可插队</td>
+</tr>
+<tr>
+<td>原子替换</td>
+<td>删除 + 添加（有窗口期）</td>
+<td><code class="c">BPF_F_REPLACE</code> 原子替换</td>
+</tr>
+<tr>
+<td>需要 clsact qdisc</td>
+<td><strong>是</strong></td>
+<td><strong>否</strong></td>
+</tr>
+<tr>
+<td>与 legacy 共存</td>
+<td>—</td>
+<td><strong>串联</strong>：tcx 先、legacy 后</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推荐</strong>：新项目用 tcx（生命周期可控、可插队、可原子替换）。存量系统继续用 legacy，两者会正确串联。</p>
+<pre class="code" data-label="shell"><code class="c"># tcx 挂载（v6.6+）
+bpftool prog load tc_prog.bpf.o /sys/fs/bpf/tc_prog
+bpftool prog attach id &lt;PROG_ID&gt; tcx_ingress dev eth0
+bpftool prog attach id &lt;PROG_ID&gt; tcx_egress  dev eth0
+
+# 查看
+bpftool link show dev eth0
+bpftool net show
+
+# 插队（在已有程序前后）
+bpftool prog attach id &lt;NEW&gt; tcx_ingress dev eth0 link_before &lt;EXISTING_LINK_ID&gt;
+</code></pre>
+<hr />
+<h2>3. 返回码：legacy 的完整语义</h2>
+<p><code class="c">include/uapi/linux/pkt_cls.h:63-79</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define TC_ACT_UNSPEC   (-1)
+#define TC_ACT_OK       0
+#define TC_ACT_RECLASSIFY   1
+#define TC_ACT_SHOT     2
+#define TC_ACT_PIPE     3
+#define TC_ACT_STOLEN       4
+#define TC_ACT_QUEUED       5
+#define TC_ACT_REPEAT       6
+#define TC_ACT_REDIRECT     7
+#define TC_ACT_TRAP     8
+#define TC_ACT_VALUE_MAX    TC_ACT_TRAP
+</code></pre>
+<p><strong>ingress 侧的处理</strong>（<code class="c">sch_handle_ingress()</code> 的 <code class="c">switch</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回码</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">TC_ACT_REDIRECT</code>(7)</td>
+<td><code class="c">__skb_push(skb, mac_len)</code> → <code class="c">skb_do_redirect()</code>；返回 <code class="c">-EAGAIN</code> 时 <code class="c">*another = true</code> 重新走一轮</td>
+</tr>
+<tr>
+<td><code class="c">TC_ACT_SHOT</code>(2)</td>
+<td><code class="c">kfree_skb_reason(skb, SKB_DROP_REASON_TC_INGRESS)</code></td>
+</tr>
+<tr>
+<td><code class="c">TC_ACT_STOLEN</code>(4) / <code class="c">TC_ACT_QUEUED</code>(5) / <code class="c">TC_ACT_TRAP</code>(8)</td>
+<td><code class="c">consume_skb(skb)</code>（<strong>计入已接收，不算丢包</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">TC_ACT_CONSUMED</code></td>
+<td>直接 <code class="c">*ret = NET_RX_SUCCESS</code></td>
+</tr>
+<tr>
+<td>其他（<code class="c">OK</code>/<code class="c">UNSPEC</code>/<code class="c">RECLASSIFY</code>/<code class="c">PIPE</code>/<code class="c">REPEAT</code>）</td>
+<td><strong>继续正常收包路径</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>egress 侧的处理</strong>（<code class="c">sch_handle_egress()</code>）——几乎一致，但注释指出 egress 不需要 push/pop mac header。</p>
+<h3>3.1 <code class="c">da</code>（direct-action）到底是什么</h3>
+<pre class="code" data-label="shell"><code class="c">tc filter add dev eth0 ingress bpf da obj p.bpf.o sec rx
+#                            ^^
+</code></pre>
+<p><strong>不加 <code class="c">da</code> 时</strong>：cls_bpf 的返回值被解释成「要执行的 action 编号」（<code class="c">res.classid</code> 之类），filter 命中后还要再走一遍 tc 的 action 链。</p>
+<p><strong>加 <code class="c">da</code> 时</strong>：BPF 程序的返回值<strong>直接</strong>就是 filter 的 verdict（<code class="c">TC_ACT_OK</code> / <code class="c">TC_ACT_SHOT</code> / <code class="c">TC_ACT_REDIRECT</code> …），<strong>跳过整个 action 链</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>不加 <code class="c">da</code></th>
+<th>加 <code class="c">da</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回值含义</td>
+<td>action 索引/编号</td>
+<td><strong>verdict 本身</strong></td>
+</tr>
+<tr>
+<td>是否走 action 链</td>
+<td>是（额外一次间接跳转）</td>
+<td>否</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>需要 <code class="c">action mirred</code>/<code class="c">action skbedit</code> 串联</td>
+<td><strong>几乎所有现代用法</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>不加 <code class="c">da</code> 是最隐蔽的 bug 来源之一</strong>：你返回 <code class="c">TC_ACT_OK</code>(0)，结果被当成「执行第 0 号 action」，行为完全不可预测。<strong>任何时候都用 <code class="c">da</code></strong>。</p>
+</blockquote>
+<h3>3.2 丢包的可见性</h3>
+<p><code class="c">kfree_skb_reason(skb, SKB_DROP_REASON_TC_INGRESS / TC_EGRESS)</code> —— v6.6 的 tc 丢包带 <strong>drop reason</strong>，可以精确观测：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+#   关注 SKB_DROP_REASON_TC_INGRESS / TC_EGRESS
+
+# 或者用 tc 自带的统计
+tc -s filter show dev eth0 ingress
+</code></pre>
+<hr />
+<h2>4. <code class="c">__sk_buff</code>：哪些字段能写</h2>
+<p><code class="c">struct __sk_buff</code>（<code class="c">include/uapi/linux/bpf.h:6074</code>）共 30 个具名字段（<code class="c">cb[5]</code> 和 <code class="c">remote_ip6[4]</code>/<code class="c">local_ip6[4]</code> 是数组）：</p>
+<pre class="code" data-label="C"><code class="c">struct __sk_buff {
+    __u32 len;
+    __u32 pkt_type;
+    __u32 mark;
+    __u32 queue_mapping;
+    __u32 protocol;
+    __u32 vlan_present;
+    __u32 vlan_tci;
+    __u32 vlan_proto;
+    __u32 priority;
+    __u32 ingress_ifindex;
+    __u32 ifindex;
+    __u32 tc_index;
+    __u32 cb[5];
+    __u32 hash;
+    __u32 tc_classid;
+    __u32 data;
+    __u32 data_end;
+    __u32 napi_id;
+
+    /* Accessed by BPF_PROG_TYPE_sk_skb types from here to ... */
+    __u32 family;
+    __u32 remote_ip4;   /* Stored in network byte order */
+    __u32 local_ip4;    /* Stored in network byte order */
+    __u32 remote_ip6[4];    /* Stored in network byte order */
+    __u32 local_ip6[4]; /* Stored in network byte order */
+    __u32 remote_port;  /* Stored in network byte order */
+    __u32 local_port;   /* stored in host byte order */
+    /* ... here. */
+
+    __u32 data_meta;
+    __bpf_md_ptr(struct bpf_flow_keys *, flow_keys);
+    __u64 tstamp;
+    __u32 wire_len;
+    __u32 gso_segs;
+    __bpf_md_ptr(struct bpf_sock *, sk);
+    __u32 gso_size;
+    __u8  tstamp_type;
+    __u32 :24;      /* Padding, future use. */
+    __u64 hwtstamp;
+};
+</code></pre>
+<h3>4.1 可写性规则（<code class="c">bpf_skb_is_valid_access()</code>，<code class="c">net/core/filter.c:8413</code>）</h3>
+<p><strong>默认规则</strong>：<code class="c">default</code> 分支只在 <code class="c">type == BPF_WRITE &amp;&amp; size != 4</code> 时拒绝 → <strong>所有 4 字节字段都可写</strong>。</p>
+<p><strong>例外（写被拒绝 / 完全禁止）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>读</th>
+<th>写</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>所有 4 字节字段（<code class="c">mark</code>、<code class="c">priority</code>、<code class="c">tc_index</code>、<code class="c">cb[0..4]</code>、<code class="c">hash</code>、<code class="c">tc_classid</code>、<code class="c">queue_mapping</code>、<code class="c">pkt_type</code>、<code class="c">protocol</code>、<code class="c">vlan_tci</code>、<code class="c">ingress_ifindex</code>、<code class="c">ifindex</code>、<code class="c">napi_id</code>、<code class="c">gso_segs</code>、<code class="c">gso_size</code>、<code class="c">wire_len</code>、<code class="c">family</code>、<code class="c">remote_ip4</code>、<code class="c">local_ip4</code>、<code class="c">remote_ip6[4]</code>、<code class="c">local_ip6[4]</code>、<code class="c">remote_port</code>、<code class="c">local_port</code>）</td>
+<td>✅</td>
+<td>✅</td>
+<td><code class="c">default</code> 分支</td>
+</tr>
+<tr>
+<td><code class="c">tstamp</code></td>
+<td>✅</td>
+<td>✅（<strong>必须 8 字节访存</strong>）</td>
+<td><code class="c">if (size != sizeof(__u64)) return false;</code></td>
+</tr>
+<tr>
+<td><code class="c">hwtstamp</code></td>
+<td>✅（8 字节）</td>
+<td>❌</td>
+<td><code class="c">if (type == BPF_WRITE \|\| size != sizeof(__u64)) return false;</code></td>
+</tr>
+<tr>
+<td><code class="c">sk</code></td>
+<td>✅（8 字节，得到 <code class="c">PTR_TO_SOCK_COMMON_OR_NULL</code>）</td>
+<td>❌</td>
+<td><code class="c">if (type == BPF_WRITE \|\| size != sizeof(__u64)) return false;</code></td>
+</tr>
+<tr>
+<td><code class="c">flow_keys</code></td>
+<td>❌</td>
+<td>❌</td>
+<td><code class="c">return false;</code></td>
+</tr>
+<tr>
+<td><code class="c">tstamp_type</code></td>
+<td>❌</td>
+<td>❌</td>
+<td><code class="c">return false;</code></td>
+</tr>
+<tr>
+<td><code class="c">tstamp_type</code> 与 <code class="c">hwtstamp</code> 之间的 padding</td>
+<td>❌</td>
+<td>❌</td>
+<td>「Explicitly prohibit access to padding」</td>
+</tr>
+<tr>
+<td><code class="c">data</code> / <code class="c">data_end</code> / <code class="c">data_meta</code></td>
+<td>✅</td>
+<td>❌（只能通过 helper）</td>
+<td><code class="c">if (size != size_default) return false;</code>（读）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 最关心的三个：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>用途</th>
+<th>字节序陷阱</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mark</code></td>
+<td>配合策略路由 / nftables / tc filter 做分流</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">priority</code></td>
+<td>决定 <code class="c">prio</code> qdisc 的 band；<strong>注意 <code class="c">skb_update_prio()</code> 已在 tc egress 前跑过</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">tstamp</code></td>
+<td>⭐ <strong>读：RX 硬件时间戳；写：配合 <code class="c">bpf_skb_set_tstamp()</code> 设 TX 时间戳</strong></td>
+<td>ns</td>
+</tr>
+<tr>
+<td><code class="c">hwtstamp</code></td>
+<td>⭐ <strong>只读</strong>：网卡硬件时间戳（ns）</td>
+<td>ns</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>⚠️ <code class="c">local_port</code> 是主机字节序，<code class="c">remote_port</code> 是网络字节序。</strong> 这个不对称是历史遗留，源码注释里明确写了：<code class="c">__u32 remote_port; /* Stored in network byte order */</code> vs <code class="c">__u32 local_port; /* stored in host byte order */</code>。做 map key 时要分别处理。</p>
+</blockquote>
+<h3>4.2 ⭐ 对比：<code class="c">SOCKET_FILTER</code> 程序的可写范围小得多</h3>
+<p><code class="c">sk_filter_is_valid_access()</code>（<code class="c">net/core/filter.c:8478</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static bool sk_filter_is_valid_access(int off, int size,
+                      enum bpf_access_type type,
+                      const struct bpf_prog *prog,
+                      struct bpf_insn_access_aux *info)
+{
+    switch (off) {
+    case bpf_ctx_range(struct __sk_buff, tc_classid):
+    case bpf_ctx_range(struct __sk_buff, data):
+    case bpf_ctx_range(struct __sk_buff, data_meta):
+    case bpf_ctx_range(struct __sk_buff, data_end):
+    case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+    case bpf_ctx_range(struct __sk_buff, tstamp):
+    case bpf_ctx_range(struct __sk_buff, wire_len):
+    case bpf_ctx_range(struct __sk_buff, hwtstamp):
+        return false;                    /* ← 完全禁止访问 */
+    }
+
+    if (type == BPF_WRITE) {
+        switch (off) {
+        case bpf_ctx_range_till(struct __sk_buff, cb[0], cb[4]):
+            break;                       /* ← 只有 cb[5] 可写 */
+        default:
+            return false;
+        }
+    }
+    ...
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>程序类型</th>
+<th>可写字段</th>
+<th>禁访字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>tc-BPF</strong>（<code class="c">SCHED_CLS</code>）</td>
+<td>所有 4 字节字段 + <code class="c">tstamp</code></td>
+<td><code class="c">hwtstamp</code>、<code class="c">sk</code>、<code class="c">flow_keys</code>、<code class="c">tstamp_type</code>、padding</td>
+</tr>
+<tr>
+<td><strong><code class="c">SOCKET_FILTER</code></strong>（<code class="c">SO_ATTACH_BPF</code>）</td>
+<td><strong>只有 <code class="c">cb[0..4]</code></strong></td>
+<td><code class="c">tc_classid</code>、<code class="c">data</code>、<code class="c">data_meta</code>、<code class="c">data_end</code>、<code class="c">family..local_port</code>、<code class="c">tstamp</code>、<code class="c">wire_len</code>、<code class="c">hwtstamp</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这是「tc-BPF 比 socket filter 强在哪」的源码答案</strong>：<code class="c">SO_ATTACH_BPF</code> 的程序连包内容都读不到（禁访 <code class="c">data</code>/<code class="c">data_end</code>），<strong>只能做 accept/reject 决策</strong>；tc-BPF 能读包、能改包、能改元数据。</p>
+<hr />
+<h2>5. Helper 能力集：81 个 vs XDP 的 23 个</h2>
+<p><code class="c">tc_cls_act_func_proto()</code>（<code class="c">net/core/filter.c:7968</code>）有 <strong>81 个 <code class="c">case BPF_FUNC_*</code> 分支</strong>（含 <code class="c">#ifdef</code> 项），是网络类程序里能力集最大的。</p>
+<p><strong>XDP 有而 tc 没有的</strong>：无（XDP 的 23 个是 tc 的子集加上 XDP 专属的 <code class="c">xdp_adjust_*</code> / <code class="c">xdp_load_bytes</code> / <code class="c">xdp_store_bytes</code> / <code class="c">xdp_get_buff_len</code>）。</p>
+<p><strong>tc 有而 XDP 没有的关键能力：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>helper</th>
+<th>为什么 XDP 没有</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>邻居转发</td>
+<td><code class="c">redirect_neigh</code>、<code class="c">redirect_peer</code></td>
+<td>需要 <code class="c">struct neighbour</code> / <code class="c">dst_entry</code>，XDP 层还没路由</td>
+</tr>
+<tr>
+<td>克隆转发</td>
+<td><code class="c">clone_redirect</code></td>
+<td>需要 skb 引用计数</td>
+</tr>
+<tr>
+<td>包长度调整</td>
+<td><code class="c">skb_change_tail</code>、<code class="c">skb_adjust_room</code>、<code class="c">skb_change_head</code></td>
+<td>需要 skb 线性/非线性区管理</td>
+</tr>
+<tr>
+<td>校验和增量写回</td>
+<td><code class="c">l3_csum_replace</code>、<code class="c">l4_csum_replace</code>、<code class="c">csum_update</code>、<code class="c">csum_level</code></td>
+<td>XDP 只有 <code class="c">csum_diff</code>（算差值）</td>
+</tr>
+<tr>
+<td>VLAN</td>
+<td><code class="c">skb_vlan_push</code>、<code class="c">skb_vlan_pop</code></td>
+<td>skb 元数据</td>
+</tr>
+<tr>
+<td>socket 绑定</td>
+<td><code class="c">sk_assign</code></td>
+<td>需要 socket 查找后的绑定点</td>
+</tr>
+<tr>
+<td>隧道</td>
+<td><code class="c">skb_get/set_tunnel_key</code>、<code class="c">skb_get/set_tunnel_opt</code></td>
+<td>skb metadata</td>
+</tr>
+<tr>
+<td>hash</td>
+<td><code class="c">set_hash</code>、<code class="c">set_hash_invalid</code>、<code class="c">get_hash_recalc</code></td>
+<td>skb 元数据</td>
+</tr>
+<tr>
+<td>时间戳</td>
+<td><strong><code class="c">skb_set_tstamp</code></strong></td>
+<td>XDP 时还没有 skb</td>
+</tr>
+<tr>
+<td>GRO/拉取线性</td>
+<td><code class="c">skb_pull_data</code></td>
+<td>XDP 无需（本来就线性）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong><code class="c">bpf_skb_set_tstamp()</code> 是 tc-BPF 独有的延迟测量能力</strong>：配合 <code class="c">SO_TIMESTAMPING</code> 可以在内核里直接给包打时间戳，不需要用户态往返。</p>
+</blockquote>
+<hr />
+<h2>6. 完整示例：行情流打标记 + 延迟测量</h2>
+<pre class="code" data-label="C"><code class="c">/* SPDX-License-Identifier: GPL-2.0 */
+#include &lt;linux/bpf.h&gt;
+#include &lt;linux/if_ether.h&gt;
+#include &lt;linux/ip.h&gt;
+#include &lt;linux/udp.h&gt;
+#include &lt;bpf/bpf_helpers.h&gt;
+
+struct {
+        __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+        __uint(max_entries, 4);
+        __type(key, __u32);
+        __type(value, __u64);
+} stats SEC(&quot;.maps&quot;);
+
+enum { S_TOTAL = 0, S_MARKET = 1, S_OTHER = 2 };
+
+static __always_inline void bump(__u32 k)
+{
+        __u64 *v = bpf_map_lookup_elem(&amp;stats, &amp;k);
+        if (v) *v += 1;
+}
+
+SEC(&quot;tc-ingress&quot;)
+int tc_ingress(struct __sk_buff *skb)
+{
+        void *data     = (void *)(long)skb-&gt;data;
+        void *data_end = (void *)(long)skb-&gt;data_end;
+
+        bump(S_TOTAL);
+
+        /* ⚠️ tc ingress 的 data 指向【L3】——mac header 已被 pull 掉。
+         * tcx_run() 里有 __skb_push(skb, skb-&gt;mac_len)，
+         * 但那是在 bpf_prog_run 之前 push、之后 pull，
+         * 程序内 ctx-&gt;data 仍是 L3 起点。
+         * 所以这里从 iphdr 开始解析。 */
+        struct iphdr *ip = data;
+        if ((void *)(ip + 1) &gt; data_end)
+                return TC_ACT_OK;              /* 不是 IP，放行 */
+        if (ip-&gt;ihl &lt; 5)
+                return TC_ACT_SHOT;
+
+        if (ip-&gt;protocol != IPPROTO_UDP)
+                return TC_ACT_OK;
+
+        struct udphdr *udp = (void *)ip + (ip-&gt;ihl * 4);
+        if ((void *)(udp + 1) &gt; data_end)
+                return TC_ACT_SHOT;
+
+        if (udp-&gt;dest == bpf_htons(9090)) {
+                skb-&gt;mark = 0x9090;            /* 行情流标记 → 策略路由/nft 用 */
+                skb-&gt;priority = 1;             /* → prio qdisc 的 band 0 */
+                bump(S_MARKET);
+                return TC_ACT_OK;
+        }
+
+        bump(S_OTHER);
+        return TC_ACT_OK;
+}
+
+char _license[] SEC(&quot;license&quot;) = &quot;GPL&quot;;
+</code></pre>
+<p><strong>配套的 tc 配置：</strong></p>
+<pre class="code" data-label="shell"><code class="c">DEV=eth0
+
+# 1. 挂 clsact（提供 ingress + egress 两个 block，且不排队）
+tc qdisc add dev $DEV clsact
+
+# 2. 挂 legacy tc-BPF（da 模式）
+tc filter add dev $DEV ingress bpf da obj tc_prog.bpf.o sec tc-ingress
+
+# 3. 出向用 prio + tbf 做分流与限速（BPF 只打标记，整形交给 qdisc）
+tc qdisc add dev $DEV root handle 1: prio
+tc qdisc add dev $DEV parent 1:1 handle 10: fq flow_limit 100
+tc qdisc add dev $DEV parent 1:3 handle 30: tbf rate 50mbit burst 32kb latency 20ms
+
+# 4. 观测
+tc -s filter show dev $DEV ingress
+bpftool map dump name stats
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+</code></pre>
+<p><strong>⚠️ 一个必须验证的假设</strong>：上面代码假设 <code class="c">skb-&gt;data</code> 在 tc ingress 时指向 L3（IP 头）。这在<strong>标准路径</strong>成立（<code class="c">__netif_receive_skb_core</code> 前 <code class="c">__skb_pull</code> 掉了 mac header，tcx 的 <code class="c">needs_mac</code> 只在 <code class="c">bpf_prog_run</code> 前后临时 push/pull）。</p>
+<p>但<strong>不要依赖记忆</strong>——用下面的代码实测确认：</p>
+<pre class="code" data-label="C"><code class="c">        /* 调试期：打印 data 处的前 2 字节，判断是不是 L3 */
+        if ((void *)data + 2 &lt;= data_end) {
+                __u8 b0 = *(__u8 *)data;
+                bpf_printk(&quot;first byte = 0x%02x\n&quot;, b0);
+                /* 0x45 = IPv4 (version 4, ihl 5) → data 指向 L3
+                 * 0x?? 且 eth-&gt;h_proto 可见 → data 指向 L2 */
+        }
+</code></pre>
+<hr />
+<h2>7. HFT 要点</h2>
+<ol>
+<li><strong>v6.6 起 tc-BPF 有两条挂载路径，且会串联执行</strong>（tcx 先、legacy 后）。新建用 tcx（bpf_link 语义、可插队、可原子替换、无需 clsact qdisc），存量继续用 legacy。混用时必须清楚顺序。</li>
+<li><strong>tcx 只认 <code class="c">-1/0/2/7</code> 四个返回值</strong>，其他值被归一化成 <code class="c">TCX_NEXT</code>，行为是「终止 tcx 链 + 落到 legacy」。<strong>这不是你想要的</strong>。</li>
+<li><strong>tcx 的「忘 return」= 放行</strong>（返回 0 = <code class="c">TCX_PASS</code>），与 XDP 的「忘 return = 丢包」（<code class="c">XDP_ABORTED == 0</code>）<strong>完全相反</strong>。两边的安全默认值不同，跨类型搬代码时要特别注意。</li>
+<li>⭐ <strong>tcpdump 能看到被 tc ingress 丢弃的包，看不到被 XDP 丢弃的</strong>。这是调试时区分「XDP 丢的」还是「tc 丢的」的第一判据。</li>
+<li><strong>tc egress 在 qdisc 之前</strong>——BPF 只能分类+丢包，<strong>整形必须靠 qdisc</strong>（见 <a href="chapter-15.html#s-01">01</a>）。</li>
+<li><strong><code class="c">skb-&gt;priority</code> 在 tc egress 之前已被 <code class="c">skb_update_prio()</code> 设定</strong>（从 socket 的 <code class="c">SO_PRIORITY</code>）。在 tc egress 里覆盖它会破坏上层意图，谨慎。</li>
+<li><strong><code class="c">local_port</code> 是主机字节序、<code class="c">remote_port</code> 是网络字节序</strong>——源码注释明确的不对称，做 map key 时必须分别处理。</li>
+<li><strong><code class="c">hwtstamp</code> 只读且必须 8 字节访存</strong>；<code class="c">tstamp</code> 可读写（8 字节）。配合 <code class="c">bpf_skb_set_tstamp()</code> 做内核态打点。</li>
+<li><strong><code class="c">SO_ATTACH_BPF</code> 的 socket filter 连包内容都读不到</strong>（禁访 <code class="c">data</code>/<code class="c">data_end</code>），只能 accept/reject。要做内容过滤必须用 tc-BPF 或 XDP。</li>
+</ol>
+<hr />
+<h2>8. 与 Rosen Ch6/Ch9 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen 3.x</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分类器</td>
+<td><code class="c">u32</code> / <code class="c">fw</code> / <code class="c">route</code>（classic BPF）</td>
+<td><strong><code class="c">cls_bpf</code>（eBPF）为主</strong> + v6.6 的 <strong>tcx</strong></td>
+</tr>
+<tr>
+<td>出向 filter</td>
+<td>无（<code class="c">ingress</code> qdisc 只有 RX）</td>
+<td><strong><code class="c">clsact</code> 提供 ingress+egress</strong>；tcx 直接 <code class="c">tcx_egress</code></td>
+</tr>
+<tr>
+<td>程序能力</td>
+<td>classic BPF 只读包、返回长度</td>
+<td>81 个 helper，能改包、改元数据、重定向、打时间戳</td>
+</tr>
+<tr>
+<td>挂载生命周期</td>
+<td><code class="c">tc filter add/del</code></td>
+<td>tcx 走 <strong>bpf_link</strong>（进程退出自动 detach）</td>
+</tr>
+<tr>
+<td>丢包可见性</td>
+<td>只能数 <code class="c">tc -s</code> 的 drop</td>
+<td><strong><code class="c">SKB_DROP_REASON_TC_INGRESS/EGRESS</code> + <code class="c">tracepoint:skb:kfree_skb</code></strong></td>
+</tr>
+<tr>
+<td>与 Netfilter 关系</td>
+<td>tc 是独立子系统</td>
+<td><strong>Netfilter egress 在 tc egress 之前</strong>（<code class="c">dev.c:4306</code> vs <code class="c">:4311</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>9. 代码自测</h2>
+<details>
+<summary>Q1：你写了一个 tcx 程序，想让「非目标端口的包直接丢弃」，代码是 <code class="c">if (port != 9090) return TC_ACT_STOLEN;</code>。上线后发现：目标包正常，非目标包<strong>也被正常交付了</strong>，而 <code class="c">TC_ACT_SHOT</code> 换成 2 之后就对了。为什么 <code class="c">TC_ACT_STOLEN</code>(4) 不工作？</summary>
+<p><strong>因为 tcx 的返回值归一化只认四个值，<code class="c">TC_ACT_STOLEN</code>(4) 被当成了 <code class="c">TCX_NEXT</code>。</strong></p>
+<p>看 <code class="c">include/net/tcx.h</code> 的归一化函数：</p>
+<pre class="code" data-label="C"><code class="c">static inline enum tcx_action_base tcx_action_code(struct sk_buff *skb,
+                           int code)
+{
+    switch (code) {
+    case TCX_PASS:
+        skb-&gt;tc_index = qdisc_skb_cb(skb)-&gt;tc_classid;
+        fallthrough;
+    case TCX_DROP:
+    case TCX_REDIRECT:
+        return code;
+    case TCX_NEXT:
+    default:
+        return TCX_NEXT;          /* ← 4 落到这里 */
+    }
+}
+</code></pre>
+<p><code class="c">enum tcx_action_base</code>（<code class="c">include/uapi/linux/bpf.h:6265-6270</code>）只有四个值：</p>
+<pre class="code" data-label="C"><code class="c">enum tcx_action_base {
+    TCX_NEXT    = -1,
+    TCX_PASS    = 0,
+    TCX_DROP    = 2,
+    TCX_REDIRECT    = 7,
+};
+</code></pre>
+<p><strong>完整的执行链条：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* dev.c:3983 tcx_run() */
+bpf_mprog_foreach_prog(entry, fp, prog) {
+    bpf_compute_data_pointers(skb);
+    ret = bpf_prog_run(prog, skb);
+    if (ret != TCX_NEXT)          /* 原始值 4 != -1 → break */
+        break;
+}
+...
+return tcx_action_code(skb, ret);   /* 4 → default → TCX_NEXT(-1) */
+
+/* dev.c:4023 sch_handle_ingress() */
+if (static_branch_unlikely(&amp;tcx_needed_key)) {
+    sch_ret = tcx_run(entry, skb, true);
+    if (sch_ret != TC_ACT_UNSPEC)    /* TCX_NEXT(-1) == TC_ACT_UNSPEC(-1) → 不 goto */
+        goto ingress_verdict;
+}
+sch_ret = tc_run(tcx_entry(entry), skb);   /* ← 继续跑 legacy filter 链 */
+</code></pre>
+<p><strong>所以 <code class="c">TC_ACT_STOLEN</code>(4) 的实际行为是：</strong></p>
+<ol>
+<li><strong>终止 tcx 程序链</strong>（因为原始值 4 ≠ <code class="c">TCX_NEXT</code>，<code class="c">break</code> 了）——后面的 tcx 程序不会跑；</li>
+<li><strong>归一化成 <code class="c">TCX_NEXT</code>(-1)</strong>；</li>
+<li><code class="c">sch_handle_ingress()</code> 看到 -1 = <code class="c">TC_ACT_UNSPEC</code>，<strong>不进 verdict 分支</strong>，继续跑 legacy <code class="c">tc_run()</code>；</li>
+<li>legacy 链上没有 filter 的话，<code class="c">tc_run</code> 返回 <code class="c">TC_ACT_UNSPEC</code>，<code class="c">switch</code> 落到 default → <strong>正常交付</strong>。</li>
+</ol>
+<p><strong>最终：包被正常交付。</strong> 这正是你观察到的现象。</p>
+<p><strong>修法：只用 <code class="c">-1 / 0 / 2 / 7</code>。</strong></p>
+<pre class="code" data-label="C"><code class="c">if (port != 9090)
+        return TCX_DROP;        /* 或 return 2，或直接 return TC_ACT_SHOT */
+</code></pre>
+<p><strong>为什么设计成这样？</strong> <code class="c">TCX_NEXT</code>(-1) 与 legacy 的 <code class="c">TC_ACT_UNSPEC</code>(-1) 同值，是为了让「tcx 没有最终裁决」和「legacy 没有 filter 命中」这两种情况汇合到同一条路径：<strong>继续往下走</strong>。而 <code class="c">TC_ACT_STOLEN</code>/<code class="c">QUEUED</code>/<code class="c">TRAP</code> 这些 legacy 的复杂语义在 tcx 里没有对应物，于是被保守地归一化成「继续」。</p>
+<p><strong>对比记忆（很重要）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>hook</th>
+<th>「忘 return」的默认值</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>XDP</strong></td>
+<td>0 = <code class="c">XDP_ABORTED</code></td>
+<td><strong>丢包</strong>（静默，tcpdump 看不到）</td>
+</tr>
+<tr>
+<td><strong>tcx</strong></td>
+<td>0 = <code class="c">TCX_PASS</code></td>
+<td><strong>放行</strong>（程序等于没生效）</td>
+</tr>
+</tbody>
+</table></div>
+<p>两个方向相反，跨类型搬代码时必须检查。</p>
+</details>
+<details>
+<summary>Q2：你想确认「包到底是被 XDP 丢的还是被 tc ingress 丢的」。tcpdump 抓到了包，说明什么？抓不到又说明什么？</summary>
+<p><strong>这是本篇最实用的一条判据。</strong></p>
+<p>关键点在 <code class="c">ptype_all</code>（AF_PACKET，tcpdump/libpcap 的抓包点）与两个 hook 的<strong>相对位置</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* net/core/dev.c:5394-5403，__netif_receive_skb_core() 内 */
+    list_for_each_entry_rcu(ptype, &amp;ptype_all, list) {          /* 全局抓包点 */
+        if (pt_prev)
+            ret = deliver_skb(skb, pt_prev, orig_dev);
+        pt_prev = ptype;
+    }
+
+    list_for_each_entry_rcu(ptype, &amp;skb-&gt;dev-&gt;ptype_all, list) { /* 设备抓包点 */
+        if (pt_prev)
+            ret = deliver_skb(skb, pt_prev, orig_dev);
+        pt_prev = ptype;
+    }
+
+skip_taps:
+#ifdef CONFIG_NET_INGRESS
+    if (static_branch_unlikely(&amp;ingress_needed_key)) {
+        skb = sch_handle_ingress(skb, &amp;pt_prev, &amp;ret, orig_dev, &amp;another);
+        /*                        ↑ dev.c:5412，tc ingress 在抓包点【之后】 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结果</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>tcpdump 抓到了包</strong></td>
+<td>包至少走到了 <code class="c">ptype_all</code>。<strong>排除 XDP 丢弃</strong>（XDP 在 <code class="c">build_skb()</code> 之前，包还没成型，更到不了 <code class="c">ptype_all</code>）。<br>丢包发生在 tc ingress 或之后。</td>
+</tr>
+<tr>
+<td><strong>tcpdump 抓不到包</strong></td>
+<td>两种可能：<br>① <strong>被 XDP 丢/重定向</strong>了（最常见）<br>② 被 tc ingress 之前的其他机制丢（极少见）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>所以完整的排查流程：</strong></p>
+<pre class="code" data-label="shell"><code class="c"># 1. tcpdump 能看到 → 不是 XDP 丢的
+tcpdump -i eth0 -nn 'udp port 9090'
+
+# 2. 看 tc ingress 的 filter 命中与统计
+tc -s filter show dev eth0 ingress
+
+# 3. 看 tc 丢包的 drop reason（v6.6 有）
+bpftrace -e 'tracepoint:skb:kfree_skb { @[args-&gt;reason] = count(); }'
+#   关注 SKB_DROP_REASON_TC_INGRESS
+
+# 4. tcpdump 看不到 → 查 XDP
+bpftool net show
+xdp-loader status eth0
+bpftrace -e 'tracepoint:xdp:xdp_exception    { @[args-&gt;act] = count(); }'
+bpftrace -e 'tracepoint:xdp:xdp_redirect_err { @[args-&gt;err] = count(); }'
+</code></pre>
+<p><strong>背后的原理（一句话）：</strong></p>
+<pre class="code" data-label="code"><code class="c">驱动 NAPI poll
+   ↓
+【XDP】bpf_prog_run_xdp()          ← tcpdump 看不到
+   ↓ XDP_PASS
+build_skb() / napi_gro_receive()
+   ↓
+__netif_receive_skb_core()
+   ↓
+ptype_all（tcpdump）                ← 从这里开始 tcpdump 可见
+   ↓
+【tc ingress】sch_handle_ingress()  ← tcpdump 能看到
+   ↓
+ip_rcv() → ...
+</code></pre>
+<p><strong>注意一个例外</strong>：<code class="c">skb_skip_tc_classify(skb)</code> 为真时会 <code class="c">goto skip_classify</code>，<strong>同时跳过抓包点和 tc ingress</strong>。这类包（如 <code class="c">act_mirred</code> 重新注入的）tcpdump 也看不到，且 tc ingress 不生效。</p>
+<p><strong>egress 方向的对应</strong>：出向抓包走 <code class="c">dev_queue_xmit_nit()</code>，位置在 qdisc 之后、<code class="c">ndo_start_xmit()</code> 之前——<strong>tc egress 丢的包 tcpdump 也看不到</strong>（因为 tc egress 在 qdisc 之前，包还没到 <code class="c">dev_queue_xmit_nit</code>）。</p>
+</details>
+<details>
+<summary>Q3：你在 tc-BPF 程序里写 <code class="c">skb-&gt;mark = 0x9090;</code> 成功了，但同一份代码改成 <code class="c">SO_ATTACH_BPF</code> 的 socket filter 之后，verifier 报 <code class="c">invalid bpf_context access</code>。为什么 tc 能写，socket filter 不能？</summary>
+<p><strong>因为两种程序类型的 <code class="c">__sk_buff</code> 访问校验函数不同，socket filter 的严格得多。</strong></p>
+<p><strong>tc-BPF 用的是 <code class="c">bpf_skb_is_valid_access()</code></strong>（<code class="c">net/core/filter.c:8413</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    switch (off) {
+    ...
+    case bpf_ctx_range(struct __sk_buff, hwtstamp):
+        if (type == BPF_WRITE || size != sizeof(__u64))
+            return false;                 /* hwtstamp 只读 */
+        break;
+    case bpf_ctx_range(struct __sk_buff, tstamp):
+        if (size != sizeof(__u64))
+            return false;                 /* tstamp 可读写，但要 8 字节 */
+        break;
+    case offsetof(struct __sk_buff, sk):
+        if (type == BPF_WRITE || size != sizeof(__u64))
+            return false;                 /* sk 只读 */
+        break;
+    ...
+    default:
+        /* Only narrow read access allowed for now. */
+        if (type == BPF_WRITE) {
+            if (size != size_default)     /* 写必须是 4 字节 */
+                return false;
+        } else {
+            ...
+        }
+    }
+
+    return true;
+</code></pre>
+<p>→ <strong><code class="c">default</code> 分支允许所有 4 字节字段写入</strong>，所以 <code class="c">mark</code>、<code class="c">priority</code>、<code class="c">tc_index</code>、<code class="c">cb[5]</code>、<code class="c">hash</code>、<code class="c">tc_classid</code> 等全部可写。</p>
+<p><strong>socket filter 用的是 <code class="c">sk_filter_is_valid_access()</code></strong>（<code class="c">net/core/filter.c:8478</code>），它<strong>先做减法再委托</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static bool sk_filter_is_valid_access(int off, int size,
+                      enum bpf_access_type type,
+                      const struct bpf_prog *prog,
+                      struct bpf_insn_access_aux *info)
+{
+    switch (off) {
+    case bpf_ctx_range(struct __sk_buff, tc_classid):
+    case bpf_ctx_range(struct __sk_buff, data):
+    case bpf_ctx_range(struct __sk_buff, data_meta):
+    case bpf_ctx_range(struct __sk_buff, data_end):
+    case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+    case bpf_ctx_range(struct __sk_buff, tstamp):
+    case bpf_ctx_range(struct __sk_buff, wire_len):
+    case bpf_ctx_range(struct __sk_buff, hwtstamp):
+        return false;                     /* ← 完全禁止访问 */
+    }
+
+    if (type == BPF_WRITE) {
+        switch (off) {
+        case bpf_ctx_range_till(struct __sk_buff, cb[0], cb[4]):
+            break;                        /* ← 只有 cb[5] 可写 */
+        default:
+            return false;                 /* ← 其他一律不可写 */
+        }
+    }
+
+    return bpf_skb_is_valid_access(off, size, type, prog, info);
+}
+</code></pre>
+<p><strong>对比表：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>tc-BPF（<code class="c">SCHED_CLS</code>）</th>
+<th><code class="c">SOCKET_FILTER</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读包内容（<code class="c">data</code>/<code class="c">data_end</code>）</td>
+<td>✅</td>
+<td>❌ <strong>被禁</strong></td>
+</tr>
+<tr>
+<td>写 <code class="c">mark</code> / <code class="c">priority</code> / <code class="c">hash</code> / <code class="c">tc_index</code></td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>写 <code class="c">cb[0..4]</code></td>
+<td>✅</td>
+<td>✅ <strong>（唯一可写的）</strong></td>
+</tr>
+<tr>
+<td>读 <code class="c">remote_ip4</code> / <code class="c">local_port</code> 等</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>读 <code class="c">tstamp</code> / <code class="c">hwtstamp</code></td>
+<td>✅ / ✅</td>
+<td>❌ / ❌</td>
+</tr>
+<tr>
+<td>helper 数量</td>
+<td><strong>81</strong></td>
+<td><strong>5</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这个限制不是随意的，而是由位置决定的：</strong></p>
+<p><code class="c">SO_ATTACH_BPF</code> 的程序运行在 <code class="c">sk_filter_trim_cap()</code> 里（<code class="c">net/core/filter.c:124</code>），位置是 socket 接收队列的入口。设计上它被定位为<strong>「这个包要不要交给这个 socket」的决策器</strong>——只需要看包内容做判断（实际上连内容都读不了，只能看 <code class="c">len</code>/<code class="c">protocol</code> 这类元数据），不需要修改任何东西。</p>
+<p>而 tc-BPF 运行在 <code class="c">__netif_receive_skb_core()</code> / <code class="c">__dev_queue_xmit()</code>，<strong>是数据路径的中途站</strong>，需要完整的读写能力来做分类、改写、重定向。</p>
+<p><strong>实际影响：</strong></p>
+<ul>
+<li>想做「按端口过滤」→ 不能用 socket filter（读不到 <code class="c">data</code>）。需要用 <strong>tc-BPF</strong> 或 <strong>XDP</strong>。</li>
+<li>想在 socket 上做一个「只接受某类包」的兜底 → socket filter 够用，但它只能 accept/reject，且拿到的信息很有限。</li>
+<li>想在 socket filter 里「给包打标记供后续使用」→ <strong>只能写 <code class="c">cb[5]</code></strong>（5 个 32 位字），且这个 cb 在包离开这个 socket 的路径后就可能失效。</li>
+</ul>
+<p><strong>修法</strong>：把程序类型从 <code class="c">BPF_PROG_TYPE_SOCKET_FILTER</code> 改成 <code class="c">BPF_PROG_TYPE_SCHED_CLS</code>，挂到 tc 上。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-15.html#s-01">01-tc-bootlin.md</a> — qdisc 体系与 HFT 出向调度</li>
+<li><strong>相关：</strong> <a href="chapter-08.html#ch-8">chapter-08-ebpf-cgroup-bpf/</a> eBPF 框架与 verifier · <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture/</a> XDP（tcpdump 看不到的那个 hook）· <a href="chapter-03.html#ch-3">chapter-03-tx-path-skbbuff/</a> 发包路径</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
       </section>
 
 
