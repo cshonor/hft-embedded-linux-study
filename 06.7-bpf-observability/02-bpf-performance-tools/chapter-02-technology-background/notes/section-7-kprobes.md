@@ -54,6 +54,23 @@ bpftrace -e 'kprobe:vfs* { @[probe] = count(); }'
 
 内核 Documentation/kprobes.txt；"An introduction to kprobes"；"Kernel Debugging with kprobes"。
 
+## kprobe 开销模型（挂载前的必算账）
+
+int3 机制的单次成本可以拆开估：
+
+```text
+单次触发 ≈ 异常陷入（~100ns，含 IDT 查找/栈切换）
+         + 单步执行原指令（~100ns，含恢复断点）
+         + BPF 程序执行（简单计数 ~50–100ns，带栈回溯/字符串则 µs 级）
+         ≈ 0.3–1.5 µs/事件（不含输出）
+
+预算公式: 允许观测税 ≤ 吞吐的 1% 时
+          事件率上限 ≈ 0.01 × CPU核时间预算 / 单次成本
+          例: 单核 1% 预算 = 10ms/s ÷ 1µs ≈ 10k 事件/s
+```
+
+这就是"挂探针前先估 QPS"的量化版：**10k/s 是单核 1% 观测税下简单探针的量级上限**，带栈回溯再降一个量级。fentry（直跳无陷入）把单次成本压到 ~50ns 级，上限提高约一个量级——但预算逻辑不变。
+
 ## HFT 关联
 
 - kprobes 是给"没有现成 tracepoint 的内核路径"打临时探针的唯一快速手段：如跟踪收包软中断内部函数、TCP 内部状态机，量化内核协议栈对延迟的贡献。

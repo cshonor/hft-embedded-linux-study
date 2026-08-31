@@ -404,16 +404,65 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<p>把这张图展开成数据流（每个箭头都是后续某节的主题）：</p>
+<pre class="code" data-label="text"><code class="c">   事件源                BPF 程序                输出通道             前端
+┌──────────┐  触发   ┌──────────────┐  写入  ┌──────────────┐ 读取 ┌─────────┐
+│ kprobe   │ ──────▶ │              │ ─────▶ │ map（聚合）   │ ◀─── │         │
+│ uprobe   │         │ 验证过的字节码│        │ perf 环形缓冲 │      │ BCC /   │
+│ tracepoint│        │ + helper 调用 │        │ （逐事件）    │      │bpftrace │
+│ USDT     │         │              │        └──────────────┘      │ perf(1) │
+│ PMC 溢出 │         └──────────────┘                              └─────────┘
+└──────────┘           ▲      │                          控制流：map 双向
+                       │      └── 读内核状态（bpf_probe_read_kernel）
+                       └── 用户态经 bpf(2) 加载程序、更新 map 参数
+</code></pre>
+<p>控制流与数据流是<strong>双向</strong>的：用户态前端不只收数据，还经 map 把运行时参数（PID 过滤值、阈值）写进内核态程序——这是 BCC 工具 <code class="c">-p PID</code> 过滤的实现通道。</p>
 <h2>关键认知</h2>
 <ol>
 <li><strong>BPF 程序是"事件驱动"的</strong>——不是常驻循环，而是事件发生时被调起运行的小程序。这决定了它天然适合观测（可观测性），而不是通用计算。</li>
 <li><strong>数据处理尽量在内核完成</strong>——直方图、计数、聚合都通过 map 在内核态做完，只把"结果"传回用户态，避免了传统跟踪器每事件一次内核↔用户态往返的开销（这也是 2.3 节论证 BPF 优于旧方案的核心）。</li>
 <li><strong>事件源是可插拔的</strong>——同一套 BPF 程序框架，换一个事件源就是另一类工具。第 2 部分各章的差异本质上就是事件源和所读内核状态的不同。</li>
 </ol>
+<p>第 3 点是理解本书结构（也是写自己工具）的钥匙：学一个 BPF 工具 = 问三个问题——<strong>挂在哪个事件源、读了什么内核状态、在 map 里聚合了什么</strong>。第 2 部分十几个章节的几十个工具，全部能用这三问拆解。</p>
+<h2>逐事件 vs 聚合：输出通道的选择</h2>
+<p>图中"缓冲区"一栏其实藏着工具设计的第一决策：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>输出模式</th>
+<th>通道</th>
+<th>数据量</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>逐事件</td>
+<td>perf 环形缓冲</td>
+<td>∝ 事件率</td>
+<td>*snoop 类：每个事件一行（opensnoop/biosnoop）</td>
+</tr>
+<tr>
+<td>聚合</td>
+<td>map</td>
+<td>与事件率解耦</td>
+<td><em>latency/</em>count 类：直方图/计数表（biolatency/runqlat）</td>
+</tr>
+<tr>
+<td>混合</td>
+<td>map + 定期读</td>
+<td>可控</td>
+<td>*top 类：定时快照</td>
+</tr>
+</tbody>
+</table></div>
+<p>同一事件源配不同输出模式就是不同工具——<code class="c">kprobe:vfs_read</code> + 逐事件打印 = biosnoop 风格；+ <code class="c">@</code> 直方图 = vfs 延迟分布。<strong>写工具先选输出模式，再写程序体</strong>。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>HFT 低延迟系统的观测全景可以按这张图分类：哪个事件源最接近你的问题（收包 → 网卡/网络层探针；调度延迟 → sched tracepoint；锁竞争 → futex/uprobe）。</li>
 <li>"内核态聚合、只回传结果"对 HFT 尤其重要：行情风暴时每秒百万级事件，若每事件都拷贝到用户态，观测本身就会拖垮被观测系统。</li>
+<li>map 双向通道的用法：把交易进程 PID 提前写进 map，内核态程序比对过滤——观测噪声零外泄。</li>
+<li>图中四组件 = 交易机观测方案的四个检查项：事件源选型（见 2.6 表）、程序复杂度预算（verifier 限制）、输出通道（风暴期禁逐事件）、前端部署（CO-RE 单二进制）。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -424,6 +473,14 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <summary>2. 为什么 BPF 工具强调"在内核态做聚合"？</summary>
 <p>避免每个事件一次内核↔用户态数据拷贝和系统调用开销。高频事件下（每秒百万级），用户态处理会把观测开销放大到不可接受，内核态直方图/map 聚合后只回传摘要。</p>
 </details>
+<details>
+<summary>3. 用户态前端如何把过滤参数（如 PID）传给内核态 BPF 程序？</summary>
+<p>经 map 双向通道：前端把参数值写进 map（BCC 在 attach 前初始化），BPF 程序在事件处理时查 map 比对，不匹配的事件直接丢弃——过滤发生在内核态，不占输出带宽。</p>
+</details>
+<details>
+<summary>4. 同挂 kprobe:vfs_read，为什么能做出两类完全不同的工具？差异在哪一层？</summary>
+<p>输出通道层：配 perf 环形缓冲逐事件输出 = snoopy 类工具（看单个 I/O）；配 map 直方图聚合 = latency 类工具（看分布）。事件源相同，输出模式决定工具形态——这也是"写工具先选输出模式"的原因。</p>
+</details>
       </section>
       <section class="section" id="s-2">
         <div class="sec-head"><div class="sec-no">2.2</div><h2>BPF（经典 BPF 的历史）</h2></div>
@@ -432,6 +489,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </blockquote>
 <h2>经典 BPF 是什么</h2>
 <p>BPF（Berkeley Packet Filter，伯克利数据包过滤器）最早是为 <strong>tcpdump(1) 抓包过滤</strong>设计的：在内核中运行一个小过滤程序，决定哪些数据包复制给抓包程序，避免把所有包都搬到用户态再过滤。</p>
+<p>它解决的问题在今天依然经典——<strong>把过滤前置到数据产生的地方</strong>：</p>
+<pre class="code" data-label="text"><code class="c">无过滤:   网卡 ──全部包──▶ 内核 ──全部包──▶ tcpdump（用户态逐包判断丢/留）
+有 BPF:   网卡 ──全部包──▶ 内核 ──BPF 程序在内核里判断──▶ 只把命中的包拷给 tcpdump
+</code></pre>
+<p>这个"移动计算到数据旁"的思想，正是 20 年后 eBPF 内核态聚合的祖先——变的只是"能跑什么程序"，不变的是"别把原始数据搬到用户态"。</p>
 <h2>时间线</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -467,20 +529,56 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<p>值得注意的演进节奏：<strong>1992→2011 近二十年 BPF 几乎静止</strong>（一个足够好的包过滤器不需要演进），而 2013 之后的十年从包过滤长成通用执行引擎——一旦"通用化"这个方向打开，演进速度完全换挡。技术演进的非线性，这是极好的样本。</p>
 <h2>经典 BPF 的限制（也是 eBPF 出现的原因）</h2>
 <ul>
 <li>只有 <strong>2 个寄存器</strong>（A 和 X）、<strong>16 个 32 位槽位</strong>的暂存空间</li>
 <li>程序只能做包过滤这一件事，无法调用内核函数、无法与用户态共享状态</li>
 <li>没有映射（map）机制</li>
 </ul>
+<p>把限制翻译成"能力缺失"：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>缺失能力</th>
+<th>后果</th>
+<th>eBPF 的补法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>寄存器/暂存不足</td>
+<td>复杂逻辑编不出来</td>
+<td>11 个 64 位寄存器</td>
+</tr>
+<tr>
+<td>无共享状态</td>
+<td>过滤器之间、内核↔用户态无法协作</td>
+<td>map</td>
+</tr>
+<tr>
+<td>不能调内核函数</td>
+<td>只能看包数据，干不了别的</td>
+<td>helper 函数集</td>
+</tr>
+<tr>
+<td>无加载接口</td>
+<td>只能作为 socket 附件</td>
+<td>bpf(2) 系统调用</td>
+</tr>
+</tbody>
+</table></div>
+<p>最后一条常被忽略但最关键：<strong>没有 bpf(2)，BPF 程序只能是其他子系统的配件</strong>（socket 过滤器）；有了它，BPF 才成为可独立加载、可挂到任意事件源的一等公民。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>经典 BPF 至今活在两处：tcpdump 的包过滤表达式、seccomp 沙箱规则。HFT 系统若用 seccomp 加固交易进程，底层跑的就是经典 BPF（或 eBPF，取决于内核与配置）。</li>
 <li>理解这段历史的价值在于明白：eBPF 的本质突破不是"过滤包"，而是<strong>把"内核中安全运行小程序"泛化成通用机制</strong>。</li>
+<li>"过滤前置到数据旁"的原始思想直接适用于行情链路：与其把全量行情搬进策略进程再丢弃，不如在收包路径上（XDP/TC 层）先过滤——这正是 eBPF 网络能力在 HFT 里的正确打开方式（见 <a href="../../../12.5-modern-networking/html/index.html">12.5-modern-networking</a> 的 XDP 章）。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>tcpdump 的 filter 语法（如 <code class="c">tcp port 8000</code>）编译出的就是经典 BPF 字节码，与 eBPF 不是一回事，但两者常被混称为"BPF"。</li>
+<li>seccomp 的"经典 BPF"描述也过时了：现代内核的 seccomp 默认用 eBPF 实现（CONFIG_SECCOMP_FILTER），只有极老内核才是纯 cBPF——文档里看到"seccomp-BPF"要先问哪个 BPF。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -488,8 +586,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <p>2 个（A、X）；最初用途是 tcpdump 的内核态包过滤。</p>
 </details>
 <details>
-<summary>2. 哪个内核版本引入了 bpf(2) 系统调用？</summary>
-<p>Linux 3.18。</p>
+<summary>2. 哪个内核版本引入了 bpf(2) 系统调用？它为什么重要？</summary>
+<p>Linux 3.18。没有独立的加载接口，BPF 只能作为 socket 等子系统的配件过滤器；bpf(2) 让 BPF 程序成为可独立加载、可挂任意事件源的一等公民——通用化的起点。</p>
+</details>
+<details>
+<summary>3. 经典 BPF"把计算移到数据旁"的思想在现代 HFT 网络路径上如何复现？</summary>
+<p>行情过滤前置：与其把全量行情拷进用户态再筛选，不如在 XDP/TC 层用 eBPF 在收包路径上直接过滤/分流——数据不动、计算靠近数据，思想同源，能力从"包过滤"扩到"任意程序"。</p>
 </details>
       </section>
       <section class="section" id="s-3">
@@ -710,6 +812,18 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 </tr>
 </tbody>
 </table></div>
+<h2>栈回溯的完整管线（从地址到火焰图）</h2>
+<p>把 2.4.1–2.4.5 串成一条管线，注意每一步的"断点"都在哪里：</p>
+<pre class="code" data-label="text"><code class="c">采样触发 ─▶ 抓栈（FP链/ORC/LBR） ─▶ 内核聚合 ─▶ 用户态符号化 ─▶ 呈现
+             ▲断点1：无FP且无ORC     ▲断点2：缺符号表   ▲断点3：地址错位
+               → [unknown] 帧          → 数字堆            → 归因到错函数
+</code></pre>
+<ul>
+<li><strong>断点 1</strong>（抓不到）：内核栈基本有 ORC 兜底，用户栈看编译选项——这是唯一能在编译期预防的断点</li>
+<li><strong>断点 2</strong>（翻不出名字）：/proc/kallsyms 权限、ELF 被 strip——部署期可预防（保留 symtab、单独存 debuginfo）</li>
+<li><strong>断点 3</strong>（翻错名字）：ASLR 基址算错、多版本库混装——运行期问题，交给 BCC/bpftrace 自动处理</li>
+</ul>
+<p>防御顺序也由此定：<strong>编译期保 FP &gt; 部署期保符号 &gt; 运行期用成熟前端</strong>。三道防线都过，火焰图才是可信证据；任何一道缺失，图中 [unknown] 的占比就是数据可信度的折扣率。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>HFT 交易路径上每纳秒都贵，历史倾向 <code class="c">-fomit-frame-pointer</code> 抠性能 → 出问题时没有栈。常见折衷：<strong>生产版保留帧指针</strong>（RBP 占用约 1 寄存器的代价，通常 &lt;1%，换来全程可观测），或至少 debug 构建保留。</li>
@@ -735,6 +849,10 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 <summary>3. 栈回溯拿到的地址如何变成函数名？</summary>
 <p>内核：/proc/kallsyms 查符号区间；用户态：ELF symtab + 加载基址（PIE 需解析 /proc/<pid>/maps）。</p>
 </details>
+<details>
+<summary>4. 栈回溯管线的三个"断点"分别在哪一步？哪个能在编译期预防？</summary>
+<p>抓栈断点（无 FP 且无 ORC → [unknown] 帧）、符号化断点（缺 symtab/kallsyms 权限 → 纯地址）、归因断点（基址算错 → 名字张冠李戴）。抓栈断点可编译期预防（-fno-omit-frame-pointer），符号化断点可部署期预防（保留符号），归因断点交给成熟前端（BCC/bpftrace 自动处理 ASLR）。</p>
+</details>
       </section>
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">2.5</div><h2>火焰图（读法 / 特性 / 变体）</h2></div>
@@ -744,6 +862,20 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 <p>火焰图是 Brendan Gregg 的招牌发明，本节讲它如何从调用栈数据生成、怎么读、有哪些变体。</p>
 <h2>2.5.1–2.5.2 调用栈信息 → 剖析</h2>
 <p>采样得到的调用栈（每栈若干帧）按"栈底→栈顶"逐帧拼接计数。例如采样两次 <code class="c">main→func_a→func_c</code>、一次 <code class="c">main→func_a</code>，得到每帧的计数。这一步把海量栈数据压缩成可画的树。</p>
+<p>工作示例（务必亲手推一遍）：</p>
+<pre class="code" data-label="text"><code class="c">采样 1: main → func_a → func_c
+采样 2: main → func_a → func_c
+采样 3: main → func_a
+
+逐帧计数（父帧计数 = 包含它的采样数）:
+main       : 3     ← 3 次采样都在 main 里
+func_a     : 3     ← 3 次都经过 func_a
+func_c     : 2     ← 2 次深入到 func_c
+
+含义: main 的 CPU 时间里，100% 在 func_a；其中 2/3 深入 func_c。
+     func_a 自身（不含子调用）占 1/3。
+</code></pre>
+<p>这个"<strong>父帧宽度 = 子帧宽度之和 + 自身宽度</strong>"的关系是读图的核心不变量。</p>
 <h2>2.5.3 火焰图怎么画</h2>
 <ul>
 <li>每个帧一个矩形；<strong>宽度 ∝ 该帧出现次数（频率）</strong>；Y 轴是栈深（上=被调者）。</li>
@@ -753,10 +885,15 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 <h2>2.5.4 读法要点（书中的核心经验）</h2>
 <ol>
 <li><strong>先看最宽的"塔"</strong>——占比最大的代码路径最值得优化。</li>
-<li><strong>自顶向下找宽_plateau_（平顶）</strong>——顶部无子帧的宽矩形是叶子函数，直接热点。</li>
+<li><strong>自顶向下找宽 plateau（平顶）</strong>——顶部无子帧的宽矩形是叶子函数，直接热点。</li>
 <li>X 相邻不代表时间相邻；比较两个矩形宽度才有意义。</li>
 <li>火焰图显示的是<strong>采样占比</strong>（on-CPU 时间份额），不是单次调用耗时。</li>
 </ol>
+<p>补充两条实战读法：</p>
+<ul>
+<li><strong>宽塔 ≠ 慢函数</strong>：宽度是时间份额。一个函数宽可能因为"单次慢"，也可能因为"调得频"——火焰图区分不了，要看下一层结构（子帧多 = 调了好多东西；无子帧且宽 = 自身计算重）或配合 call count 工具（如 funccount）。</li>
+<li><strong>栈深突然变化</strong>是线索：某条路径比邻居深好几层，常意味着框架层误用（重复包装、递归）——横着扫一遍深度突变点。</li>
+</ul>
 <h2>2.5.5 变体</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -794,17 +931,21 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 </tr>
 </tbody>
 </table></div>
+<p>变体的生成逻辑：<strong>火焰图 = 栈数据 + 计数的可视化</strong>，换掉"数据源"就得到新变体——这与 2.1 节"事件源可插拔"完全同构。off-CPU 图的数据源是调度器事件（线程被切下 CPU 时抓栈 + 记录唤醒它的线程），所以它的"宽度"是<strong>离开 CPU 的时间份额</strong>。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>HFT 延迟分析两大杀手锏：<strong>on-CPU 火焰图</strong>（交易线程热路径、找宽塔=最耗时函数）+ <strong>off-CPU 火焰图</strong>（行情线程为何被挂起：锁、page fault、futex 等待）。两者合起来覆盖"在跑"和"没在跑"的全部时间。</li>
 <li>差分火焰图用于验证调优：改动前各抓一份，对比确认热点迁移。</li>
 <li>注意：perf 采样对被观测进程有微开销，HFT 生产机上建议短窗口、低频率（如 49Hz）采样。</li>
+<li>延迟尖刺复盘的取图顺序：先 on-CPU 看常态热点（宽塔），无异常再上 off-CPU 查阻塞——"尖刺"多数在 off-CPU 图里（等锁/换页/调度）。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>把 X 轴当时间轴读（"左边先执行"）——错，是字母序。</li>
 <li>on-CPU 火焰图看不到睡眠/阻塞：交易系统"线程闲着但延迟高"要看 off-CPU 图。</li>
 <li>采样频率与目标工作负载频率锁相（如都恰好 100Hz）会引入偏差 → 用 99Hz 这类质数频率。</li>
+<li>宽塔直接当"慢函数"修：先分清"单次慢"还是"调用频"（看子帧结构/配合计数工具），否则优化方向可能完全反了。</li>
+<li>off-CPU 图的"时间份额"含正常等待（如等下一条行情的空转）——先按等待时长过滤（offcputime -K）再画，否则图被闲等淹没。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -818,6 +959,14 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 <details>
 <summary>3. off-CPU 火焰图解决什么问题？</summary>
 <p>展示线程不在 CPU 上运行时的时间分布（等锁、IO、调度延迟等），与 on-CPU 图互补。</p>
+</details>
+<details>
+<summary>4. 一个宽矩形，如何判断它是"单次耗时长"还是"调用频率高"？</summary>
+<p>看下一层：有大量子帧 → 时间花在子调用上（继续下钻）；无子帧且宽 → 自身计算重；还要配合调用计数工具（funccount）区分"频次 × 单次成本"。宽度只给乘积，拆开乘积要靠结构和其他工具。</p>
+</details>
+<details>
+<summary>5. 为什么"父帧宽度 = 子帧宽度之和 + 自身宽度"？违反它的图说明什么？</summary>
+<p>父帧计数 = 包含该帧的采样数，每个采样必然同时计入父帧与其中一条子路径（或父帧自身叶子），所以守恒。违反说明可视化或数据有 bug（如栈截断、递归合并错误），读数不可信。</p>
 </details>
       </section>
       <section class="section" id="s-6">
@@ -882,12 +1031,31 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 </tr>
 </tbody>
 </table></div>
+<p>这张表有两个正交维度，值得显式拆开：</p>
+<pre class="code" data-label="text"><code class="c">            内核态                用户态              硬件
+静态     tracepoints           USDT（+动态USDT）     ——
+动态     kprobes/kretprobes    uprobes/uretprobes   ——
+采样     ——                    ——                  PMC 溢出
+</code></pre>
+<ul>
+<li><strong>静态/动态</strong>决定稳定性与覆盖面的交换（静态稳定但少、动态全覆盖但脆）</li>
+<li><strong>内核/用户/硬件</strong>决定你能看到哪一段（内核函数行为、应用函数行为、微架构事件）</li>
+<li><strong>事件/采样</strong>决定开销模型（∝ 事件率 vs ∝ 采样率）</li>
+</ul>
+<p>任何观测需求都能在这 3×3 网格里定位：先问"问题发生在哪个态"，再问"该态有没有静态点"，最后问"逐事件太贵要不要改采样"。</p>
 <h2>选型原则（贯穿全书的纪律）</h2>
 <p><strong>能用稳定的就用稳定的</strong>：tracepoint &gt; kprobe；USDT &gt; uprobe。动态插桩只在静态点不存在时作为兜底——因为动态点随版本漂移，工具会悄悄失效。</p>
+<p>落地成三步检查：</p>
+<ol>
+<li><code class="c">bpftrace -l 'tracepoint:*&lt;关键词&gt;*'</code> —— 有现成 tracepoint？用它</li>
+<li>没有 → 该内核函数存在且未内联？<code class="c">kprobe:func</code> 兜底（挂载前估事件频率）</li>
+<li>事件率过高（&gt;100k/s）→ 放弃逐事件，改采样或聚合模式</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
 <li>HFT 观测体系设计可以直接抄这张表：网络收包路径（可 tracepoint + kprobe 兜底）、内存分配（uprobes 但注意开销，见 2.8.4）、锁与调度（sched tracepoint）、硬件级 IPC/缓存命中（PMC）。</li>
 <li>生产 7×24 挂载的工具尽量选静态稳定源，避免内核小版本升级后探针静默丢失。</li>
+<li>3×3 网格也是"观测盲区自检表"：交易系统的常见盲区是<strong>用户态静态位</strong>（USDT 没埋）和<strong>硬件位</strong>（PMC 没验证可用性）——内核位反而覆盖最全（工具最多）。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -897,6 +1065,14 @@ bpftool btf dump file /sys/kernel/btf/vmlinux format c   # 内核 BTF 转 C 头�
 <details>
 <summary>2. 为什么说"先静态后动态"是插桩选型纪律？</summary>
 <p>静态点开销低（禁用时近零成本）且跨版本稳定；动态点数量多、覆盖广但脆弱，只应作为静态点缺失时的替代。</p>
+</details>
+<details>
+<summary>3. 事件源全景表的两个正交维度是什么？用它们定位"交易进程等锁"该用哪类事件源。</summary>
+<p>维度一：内核/用户/硬件态；维度二：静态/动态/采样。"等锁"发生在用户态（futex 系统调用是边界）——优先 sched tracepoint（内核侧看调度切换），用户态内部看 USDT/uprobe（futex 调用点），阻塞时长聚合用 offcputime 模式。</p>
+</details>
+<details>
+<summary>4. 事件率 500k/s 的函数想看耗时分布，逐事件挂探针为什么不行？正确的替代是什么？</summary>
+<p>逐事件开销 ∝ 事件率：µs 级单次成本 × 500k/s = 数十秒 CPU 秒/分钟，观测税不可接受。替代：保持逐事件但只做内核态聚合（直方图 map，输出与事件率解耦）；或放弃该函数改采样（PMC/定时采样画火焰图）。</p>
 </details>
       </section>
       <section class="section" id="s-7">
@@ -962,6 +1138,18 @@ b.attach_kprobe(event=&quot;vfs_create&quot;, fn_name=&quot;do_create&quot;)
 </code></pre>
 <h2>2.7.4 更多资料</h2>
 <p>内核 Documentation/kprobes.txt；"An introduction to kprobes"；"Kernel Debugging with kprobes"。</p>
+<h2>kprobe 开销模型（挂载前的必算账）</h2>
+<p>int3 机制的单次成本可以拆开估：</p>
+<pre class="code" data-label="text"><code class="c">单次触发 ≈ 异常陷入（~100ns，含 IDT 查找/栈切换）
+         + 单步执行原指令（~100ns，含恢复断点）
+         + BPF 程序执行（简单计数 ~50–100ns，带栈回溯/字符串则 µs 级）
+         ≈ 0.3–1.5 µs/事件（不含输出）
+
+预算公式: 允许观测税 ≤ 吞吐的 1% 时
+          事件率上限 ≈ 0.01 × CPU核时间预算 / 单次成本
+          例: 单核 1% 预算 = 10ms/s ÷ 1µs ≈ 10k 事件/s
+</code></pre>
+<p>这就是"挂探针前先估 QPS"的量化版：<strong>10k/s 是单核 1% 观测税下简单探针的量级上限</strong>，带栈回溯再降一个量级。fentry（直跳无陷入）把单次成本压到 ~50ns 级，上限提高约一个量级——但预算逻辑不变。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>kprobes 是给"没有现成 tracepoint 的内核路径"打临时探针的唯一快速手段：如跟踪收包软中断内部函数、TCP 内部状态机，量化内核协议栈对延迟的贡献。</li>
@@ -1029,6 +1217,40 @@ b.attach_uretprobe(name=&quot;libc&quot;, sym=&quot;getaddrinfo&quot;, fn_name=&
 <p>未来方向：用共享库（如 LTTng-UST 模式）替代需要内核往返的 uprobes，用户态内完成跟踪，快 10–100 倍。</p>
 <h2>2.8.5 扩展阅读</h2>
 <p>内核 Documentation/trace/uprobetracer.txt。</p>
+<h2>高频事件的替代方案对照（2.8.4 展开）</h2>
+<p>"避开高频事件，找低频事件回答同样的问题"——具体换法按问题类型：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>想知道</th>
+<th>高频挂法（危险）</th>
+<th>低频替代</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存是否泄漏</td>
+<td>uprobe:malloc/free</td>
+<td>周期读 /proc/<pid>/statm 水位 + brk/mmap 次数（memleak 工具的采样模式）</td>
+</tr>
+<tr>
+<td>分配热点在谁</td>
+<td>uprobe:malloc 带 size 分桶</td>
+<td>memleak 的采样模式（只跟踪部分分配）+ exit 时的未释放汇总</td>
+</tr>
+<tr>
+<td>锁竞争</td>
+<td>uprobe:pthread_mutex_lock</td>
+<td>futex tracepoint（syscall 边界，冲突时才有事件）+ offcputime</td>
+</tr>
+<tr>
+<td>函数调用计数</td>
+<td>uprobe:func</td>
+<td>若有编译期插桩条件改 USDT；或 funccount 限短窗口</td>
+</tr>
+</tbody>
+</table></div>
+<p>共同模式：<strong>把"每次都发生的事件"换成"只在异常/边界时发生的事件"</strong>——futex 只在锁冲突时进内核（无冲突的 fast path 是纯用户态原子操作），brk/mmap 远稀于 malloc——低频事件天然自带过滤。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>HFT 交易软件是典型用户态程序：给自家撮合/风控二进制加 uprobe 探针（毫秒级热路径函数）可在不改代码的情况下量化内部耗时——但<strong>绝不能上 malloc/free 这类每秒千万级事件</strong>。</li>
@@ -1294,12 +1516,29 @@ if (FOLLY_SDT_IS_ENABLED(provider, name)) {
 </blockquote>
 <h2>解决什么问题</h2>
 <p>常规 USDT 需要预编译进 ELF 文件的 notes 段。但 Java/JVM 类语言<strong>运行时解释或 JIT 编译</strong>，JIT 出的代码没有 ELF、没有 notes 段 → 常规 USDT 加不进去。（JVM 自身的 C++ 部分倒是有很多内置 USDT 探针：GC、类加载等。）</p>
+<p>问题拆开看是两层：</p>
+<ol>
+<li><strong>解释/JIT 代码本身</strong>（如 Python 字节码循环里的一段逻辑）：它不经过链接器，永远不会有 ELF notes——动态 USDT 也救不了，这类只能靠语言级探针机制（如 Python 的 USDT 封装）或 uprobe 挂解释器内部</li>
+<li><strong>语言代码想触发的探针点</strong>（"策略脚本执行到这一行时通知我"）：这是动态 USDT 的用武之地——探针不在 JIT 代码里，而在<strong>一个真正的共享库</strong>里，语言代码只是"调用"它</li>
+</ol>
 <h2>动态 USDT 的三步方案</h2>
 <ol>
 <li><strong>预编译一个共享库</strong>（C/C++），内含想要的 USDT 探针和 ELF notes 段——它与普通 USDT 探针一样可被插桩。</li>
 <li>运行时用 <strong>dlopen(3)</strong> 把该库加载进目标进程。</li>
 <li>在目标语言中通过合适的 API 封装，调用该库中的探针函数。</li>
 </ol>
+<p>架构示意：</p>
+<pre class="code" data-label="text"><code class="c">┌────────── 目标进程（Node.js / Python / Ruby）──────────┐
+│  语言代码:  probe1.fire(() =&gt; [reqStr])                  │
+│               │ 仅当探针被 attach 时才执行回调            │
+│               ▼                                          │
+│  libstapsdt 动态生成/加载的小 .so                         │
+│  ┌────────────────────────────────┐                      │
+│  │ ELF .note.stapsdt + nop 探针    │ ← 外部跟踪器按普通    │
+│  └────────────────────────────────┘   USDT 流程 attach    │
+└──────────────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>关键洞察</strong>：动态 USDT 没有发明新机制——它只是把"探针所在的二进制"从"编译期链接的主程序"换成了"运行时 dlopen 的辅助库"，之后的一切（notes 段、nop→int3、attach 流程）复用常规 USDT 的全部基础设施。</p>
 <h2>libstapsdt</h2>
 <p>Matheus Marchini 为 Node.js 和 Python 实现了 libstapsdt 库（其他语言可封装它，如 Dale Hamel 的 Ruby C 扩展）。libstapsdt 在<strong>运行时自动创建包含 USDT 探针与 ELF notes 的共享库，并映射到运行中程序的地址空间</strong>。</p>
 <p>Node.js 示例：</p>
@@ -1315,11 +1554,14 @@ probe1.fire(function () { return [currentRequestString]; });
 <ul>
 <li>HFT 大量使用 Python（策略研究/风控脚本）与 JIT 语言；动态 USDT 让这些代码也能拥有零开销静态探针——平时零成本，需要时 attach。</li>
 <li><code class="c">fire()</code> 回调惰性求值的模式值得记住：<strong>任何自研观测点都应设计成"未启用时零成本"</strong>。</li>
+<li>更现代的替代路径要认识到：对 JVM 系，热点自带探针 + JVM 内置 USDT（GC/JIT 事件）往往够用，动态 USDT 是长尾补充；对 Python，语言层开销常在解释器侧，探针点选在 FFI/关键库边界比选在纯 Python 循环里有效。</li>
+<li>交易系统的正确埋点层级：C++ 核心路径常规 USDT（编译期）、脚本层动态 USDT（运行时）、第三方黑盒 uprobe（应急）——三层各管一段。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>动态创建的 so 映射地址每次运行不同，手工定位探针不现实——必须经 libstapsdt/BCC/bpftrace 走标准流程。</li>
 <li>与信号量场景类似：<code class="c">fire()</code> 的匿名函数里也别做重活，attach 期间它每事件执行一次。</li>
+<li>dlopen 的库受 ASLR 影响，每次进程启动地址都变——观测脚本要按"库路径+探针名"定位（bpftrace usdt: 支持按 PID + 路径），别缓存上次会话的地址。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -1327,8 +1569,16 @@ probe1.fire(function () { return [currentRequestString]; });
 <p>常规 USDT 需要 ELF 文件的 .note.stapsdt 段（编译期产物）；JIT 代码运行时生成，没有 ELF notes。</p>
 </details>
 <details>
-<summary>2. 动态 USDT 的核心思路是什么？</summary>
-<p>预编译带 USDT 探针的共享库 → dlopen 装入进程 → 目标语言 API 调用库内探针函数（libstapsdt 运行时生成并映射该库）。</p>
+<summary>2. 动态 USDT 的核心思路是什么？它发明了新机制吗？</summary>
+<p>预编译带 USDT 探针的共享库 → dlopen 装入进程 → 目标语言 API 调用库内探针函数（libstapsdt 运行时生成并映射该库）。没有发明新机制——只是把探针宿主从主程序换成运行时加载的辅助库，attach 流程完全复用常规 USDT 基础设施。</p>
+</details>
+<details>
+<summary>3. <code class="c">fire()</code> 的惰性求值保证了什么？这个模式如何泛化？</summary>
+<p>保证未启用时零成本（回调不执行、参数不构造），启用时才付参数构造成本。泛化：一切自研观测点的接口设计都应是"检查启用状态 → 短路或执行"，把昂贵的部分放在检查之后。</p>
+</details>
+<details>
+<summary>4. 解释型语言里"探针埋在纯语言循环内"和"埋在 FFI/库边界"哪个更有效？为什么？</summary>
+<p>FFI/库边界。纯解释循环里的探针每次经过都吃解释器开销（无论探针自身多轻，跨语言调用的桥接成本固定存在）；库边界上事件频率低一个量级、且探针落在编译代码里（nop 开销真正为零），信噪比更好。</p>
 </details>
       </section>
       <section class="section" id="s-12">
@@ -1338,6 +1588,7 @@ probe1.fire(function () { return [currentRequestString]; });
 </blockquote>
 <h2>是什么</h2>
 <p>PMC = Performance Monitoring Counter，别名 PIC / CPC / PMU event：<strong>处理器上的硬件可编程计数器</strong>。这是唯一能量化"硬件在干什么"的事件源。</p>
+<p>定位一句话：软件事件源（kprobe/tracepoint）告诉你"<strong>执行流到了哪</strong>"，PMC 告诉你"<strong>微架构层发生了什么</strong>"（缓存命中了吗、分支猜对了吗、流水线空转了几拍）——两者结合才能回答"代码为什么慢"，只有前者只能回答"代码在跑什么"。</p>
 <h2>Intel 架构集合（表 2-8 节选）</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1381,6 +1632,37 @@ probe1.fire(function () { return [currentRequestString]; });
 </tbody>
 </table></div>
 <p>由 IPC（指令/周期）、LLC 命中率、分支预测命中率可推断 CPU 效率瓶颈。</p>
+<p>派生指标的判读（Top-down 思路的入门版）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>派生指标</th>
+<th>公式</th>
+<th>健康区间（经验）</th>
+<th>偏离的含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IPC</td>
+<td>INST_RETIRED / CPU_CLK_UNHALTED</td>
+<td>&gt;1（标量码 ≈1，向量化/高 ILP 可 2+）</td>
+<td>≪1：流水线在等（缓存/分支/依赖链）</td>
+</tr>
+<tr>
+<td>LLC 命中率</td>
+<td>1 − MISS/REFERENCE</td>
+<td>&gt;90%</td>
+<td>低：数据集溢出缓存/跨 NUMA</td>
+</tr>
+<tr>
+<td>分支预测命中率</td>
+<td>1 − MISP/BR_INST</td>
+<td>&gt;95%</td>
+<td>低：不可预测分支（行情驱动码常见）</td>
+</tr>
+</tbody>
+</table></div>
 <h2>关键限制</h2>
 <p>PMC 有数百个，但 CPU 同时只允许<strong>固定数量的寄存器（可能只有 6 个）</strong>读取。要么精选，要么<strong>循环采样</strong>多个 PMC 集合（perf(1) 自动支持）。软件计数器无此限制。</p>
 <h2>2.12.1 PMC 的两种模式</h2>
@@ -1408,9 +1690,11 @@ probe1.fire(function () { return [currentRequestString]; });
 </tr>
 </tbody>
 </table></div>
+<p>溢出采样的妙处：<strong>"每 N 次事件通知一次"天然把任意高频硬件事件转成可控频率的中断流</strong>——LLC miss 每秒上亿次，配 <code class="c">cmiss... 采样周期</code> 后中断率精确可调。这是"硬件事件→软件可消费"的通用转换器。</p>
 <h2>2.12.2 PEBS（精确事件采样）</h2>
-<p>问题：溢出采样存在<strong>中断延迟（打滑 skid）</strong>与乱序执行 → 记录的指令指针可能不是真正触发事件的指令。对周期采样无所谓（甚至故意加不规则采样频率避免 lockstep，如 99Hz），但 LLC 未命中率这类事件必须精确。
-方案：Intel PEBS 用<strong>硬件缓冲区记录 PMC 事件发生时的正确指令指针</strong>；Linux perf_events 支持 PEBS。</p>
+<p>问题：溢出采样存在<strong>中断延迟（打滑 skid）</strong>与乱序执行 → 记录的指令指针可能不是真正触发事件的指令。对周期采样无所谓（甚至故意加不规则采样频率避免 lockstep，如 99Hz），但 LLC 未命中率这类事件必须精确。</p>
+<p>方案：Intel PEBS 用<strong>硬件缓冲区记录 PMC 事件发生时的正确指令指针</strong>；Linux perf_events 支持 PEBS。</p>
+<p>skid 的量级感：中断路径（PMC overflow → NMI → 内核记录 IP）在数百 ns~µs 级，现代 CPU 这段时间已执行上千条指令——<strong>不用 PEBS 时，采样 IP 落点可能距真实事件点隔整个函数</strong>。归因到"哪行代码造成 cache miss"必须 PEBS（perf 的 <code class="c">:pp</code>/<code class="c">:ppp</code> 后缀，对应精确度等级）。</p>
 <h2>2.12.3 云计算</h2>
 <p>许多云环境不给虚拟机 PMC 访问。技术上可行：Xen 有 vpmu 选项（作者本人提交过 Xen 中启用不同 PMC 模式的代码）；Amazon Nitro 主机开放了部分 PMC 支持。</p>
 <h2>HFT 关联</h2>
@@ -1418,12 +1702,14 @@ probe1.fire(function () { return [currentRequestString]; });
 <li>HFT 单核优化离不开 PMC：IPC 掉了=流水线受阻（缓存/分支 miss）；LLC miss 飙升=数据结构跨 NUMA/缓存行伪共享。<code class="c">perf stat</code> 一分钟就能给出判断。</li>
 <li>交易机部署在云/虚拟化环境时<strong>先验证 PMC 可用性</strong>（<code class="c">perf stat ls</code> 看有无计数），否则整条硬件观测路径失效。</li>
 <li>PMC 溢出采样是 on-CPU 火焰图的数据源；HFT 中用 99Hz 这类非整频率避免锁步偏差。</li>
+<li>微调（NUMA 绑定、缓存行对齐、分支提示）后的回归验证也靠 PMC：优化前后的 IPC/LLC 命中率对比是"改了有没有用"的硬件级证据——比墙钟时间更早暴露回归。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>想同时监控超过寄存器数的 PMC → 需分组循环采样，别以为计数都"同时在跑"。</li>
 <li>忽略 skid 直接用采样 IP 判 LLC miss 责任代码 → 结论错位几条指令；需要精确归因用 PEBS 事件。</li>
 <li>虚机里 perf stat 全 0 还以为"没有缓存问题"——是 PMC 没暴露。</li>
+<li>perf stat 显示多组 PMC 时要确认 multiplexing（时间片轮换）：各计数不是同窗口测的，比值类指标（IPC）要参考 TIME ENABLED 比例缩放。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -1437,6 +1723,14 @@ probe1.fire(function () { return [currentRequestString]; });
 <details>
 <summary>3. PMC 数百个，为何一次只能读几个？</summary>
 <p>CPU 中可编程计数寄存器数量固定（约 6 个），须精选或循环采样覆盖。</p>
+</details>
+<details>
+<summary>4. IPC=0.4、LLC 命中率 85%，最可能的瓶颈方向是什么？软件事件源为什么给不出这个答案？</summary>
+<p>内存子系统：LLC 大量未命中意味着主存/NUMA 访问在阻塞流水线，IPC 被拖到远低于 1。软件事件源（kprobe/tracepoint）只看执行流（跑了哪些函数），看不到微架构层的停顿（cache miss/流水线空转）——"在等内存"不产生任何软件事件，只有 PMC 计数得到。</p>
+</details>
+<details>
+<summary>5. perf stat 里 TIME ENABLED &lt; TIME RUN 的计数器说明什么？比值指标怎么办？</summary>
+<p>说明发生了 multiplexing：该事件没独占一个物理计数器，与其他事件分时轮换，计数值只覆盖部分窗口。比值指标（如 IPC）要用 enabled/running 比例对分母做缩放，否则系统性偏低。</p>
 </details>
       </section>
       <section class="section" id="s-13">
@@ -1453,17 +1747,37 @@ probe1.fire(function () { return [currentRequestString]; });
 <li>现在<strong>通过 perf_event_open() 观测所有事件</strong>（kprobe/uprobe/tracepoint/USDT/PMC 统一挂载）</li>
 </ol>
 <p>→ perf_events 实际成了 BPF 跟踪工具的事件汇聚层/统一入口。</p>
+<p>这个"汇聚"的架构意义值得展开：perf_event_open(2) 把异构事件源统一成一种内核对象（perf event fd），BPF 工具只需要会一种挂载协议：</p>
+<pre class="code" data-label="text"><code class="c">                    perf_event_open(2)
+                         │ 统一接口
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+   kprobe/uprobe    tracepoint/USDT     PMC 溢出
+        └────────────────┼────────────────┘
+                         ▼
+              perf event（每 CPU 一个环形缓冲）
+                         ▲ 事件写入
+              挂在该 event 上的 BPF 程序
+                         ▲
+              bpf(BPF_PROG_LOAD) + ioctl(PERF_EVENT_IOC_SET_BPF)
+</code></pre>
+<p>对比"每种事件源一套独立 API"的世界：工具开发者要为每个源写不同的挂载代码。汇聚层把这个成本摊平——这也是 BCC 70+ 工具能快速长出来的生态学原因之一。</p>
+<blockquote>
+<p>补充（书成之后的演进）：现代 libbpf 引入了 <strong>BPF link</strong>（attach 关系成为一等对象）与 perf_event 之外的新挂载通道（如 fentry 直接 link），perf_events 不再是唯一汇聚层，但"统一事件对象"的设计思想被继承。</p>
+</blockquote>
 <h2>perf(1) 本身也是 BPF 前端</h2>
 <p>perf(1) 开发了使用 BPF 的接口，成为又一个 BPF 跟踪器。与 BCC/bpftrace 不同：<strong>perf(1) 代码在 Linux 内核源码树中，是唯一内置的 BPF 前端</strong>（无需额外安装）。其 BPF 功能仍在开发、使用尚不便利（附录 D 有 perf+BPF 例子）。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>理解"一切事件经由 perf_event_open()"意味着：排障时用 <code class="c">perf list</code> / <code class="c">bpftool perf show</code> 就能盘点系统上所有观测点（含别人挂的），避免观测互相踩踏。</li>
 <li>生产交易机用 perf(1) 内置 BPF 能力可少装一个包（BCC 全家桶很重），轻量采集场景（如 PMC 采样画火焰图）perf(1) 一把梭。</li>
+<li>交易机的"观测点台账"可以建立在 perf event 之上：常驻探针统一用 <code class="c">bpftool perf show</code> 导出清单，变更评审时核对——谁挂的、挂哪了、事件率多少，一目了然。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>多个工具同时经 perf_events 挂同一事件时输出会互相影响；排查"数据怪异"先查 <code class="c">bpftool perf show</code>。</li>
 <li>perf(1) 在内核树中 → 版本与内核强绑定，跨机器迁移脚本时注意版本差异。</li>
+<li>perf_event_open 需要权限（CAP_PERFMON / paranoid 设置）：容器化交易服务里跑 BCC 工具常在这里失败，报"Operation not permitted"——不是 BPF 的问题，是事件汇聚层的准入问题。</li>
 </ul>
 <h2>自测</h2>
 <details>
@@ -1473,6 +1787,14 @@ probe1.fire(function () { return [currentRequestString]; });
 <details>
 <summary>2. 为什么说 perf(1) 是唯一内置的 BPF 前端？</summary>
 <p>它的代码位于 Linux 内核源码树中，随内核发布；BCC/bpftrace 都是外部项目。</p>
+</details>
+<details>
+<summary>3. "统一事件对象"的设计给工具生态带来什么好处？BPF link 出现后这一思想如何延续？</summary>
+<p>工具开发者只需实现一种挂载协议（perf_event_open + ioctl SET_BPF），新事件源接入即被全部工具免费获得——摊平了每源适配成本，支撑了 BCC 工具数量的爆发。BPF link 把"attach 关系"提升为一等内核对象（可 pin、可原子替换），依然是为异构事件源提供统一抽象，只是从"fd 副作用"升级成"独立对象"。</p>
+</details>
+<details>
+<summary>4. 容器里跑 bpftrace 报 Operation not permitted，最可能的检查点是什么？</summary>
+<p>perf_event_open 的权限准入：kernel.perf_event_paranoid 设置与容器的 CAP_PERFMON capability——汇聚层不让进门，后面的 BPF 加载根本走不到。</p>
 </details>
       </section>
       <section class="section" id="s-14">
@@ -1492,6 +1814,7 @@ USDT/动态USDT        [用户/静态]    栈回溯：FP / ORC           火焰�
 PMC                  [硬件]         （LBR/DWARF 补充）         bpftool 检视
 perf_events          [汇聚层]
 </code></pre>
+<p>读这张地图的正确姿势：横向三列分别是"<strong>输入-处理-输出</strong>"，任何 BPF 工具 = 三列各取一格的组合。第 2 部分的几十个工具全部落在这张组合表里，理解了地图就再没有"新工具"——只有新组合。</p>
 <h2>选型决策树</h2>
 <ol>
 <li>有 tracepoint / USDT 吗？→ 有，用静态（稳定+零禁用开销）</li>
@@ -1500,6 +1823,7 @@ perf_events          [汇聚层]
 <li>7×24 常挂 → BPF_RAW_TRACEPOINT（4.17+）</li>
 <li>跨内核版本分发工具 → CO-RE + libbpf</li>
 </ol>
+<p>决策树的前三条是<strong>事件源选型</strong>，后两条是<strong>程序形态与分发</strong>——分开展率：源选错（高频挂动态）是性能事故，形态选错（无常驻优化）是开销事故，分发选错（BCC 而非 CO-RE）是运维事故。三类事故的爆炸半径完全不同。</p>
 <h2>全章坑点表（HFT 视角）</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1561,6 +1885,19 @@ perf_events          [汇聚层]
 </tr>
 </tbody>
 </table></div>
+<p>坑点分类记忆法：</p>
+<ul>
+<li><strong>观测失效类</strong>（1/7/8）：探针挂上了但拿不到数据——隐蔽，靠 CI 断言和 attach 计数防御</li>
+<li><strong>观测致害类</strong>（2/3）：观测本身伤害被观测系统——靠"先估事件率"纪律防御</li>
+<li><strong>数据误导类</strong>（4/6）：拿到了数据但是错的——最危险，靠读图训练和部署前验证防御</li>
+</ul>
+<h2>HFT 视角的第 2 章总结</h2>
+<p>把全章技术栈压成交易机观测的三个设计决定：</p>
+<ol>
+<li><strong>事件源矩阵先填表</strong>：按 2.6 的 3×3 网格盘点——sched tracepoint（调度）、网络 tracepoint+kprobe（收包路径）、自家 USDT（策略路径）、PMC（微架构）——缺格即盲区</li>
+<li><strong>输出通道与事件率解耦</strong>：常驻工具一律 map 聚合（直方图/计数），逐事件输出只留应急</li>
+<li><strong>观测事故与交易事故同级对待</strong>：观测失效 = 延迟尖刺时是瞎子；观测致害 = 自己制造尖刺——runbook 里两者都要有预案</li>
+</ol>
 <h2>自测</h2>
 <details>
 <summary>1. 用一句话概括第 2 章的主线。</summary>
@@ -1569,6 +1906,14 @@ perf_events          [汇聚层]
 <details>
 <summary>2. 你的交易服务延迟尖刺，每秒百万次调用，想看"哪个函数最耗内核时间"，第 2 章技术怎么组合？</summary>
 <p>不逐事件跟踪：PMC 溢出采样（99Hz）触发 BPF 抓帧指针栈 → 内核聚合直方图 → off-CPU/on-CPU 火焰图定位宽塔。</p>
+</details>
+<details>
+<summary>3. 全章八个坑点按"爆炸半径"分三类，各举一例并说明防御手段。</summary>
+<p>观测失效类（如 kprobe 挂内联函数，静默无数据）——CI 断言 + attach 计数核对；观测致害类（如 uprobe 挂 malloc，目标慢 10 倍）——挂载前估事件率；数据误导类（如虚机 PMC 全 0 误判无瓶颈）——部署前验证 + 交叉核对已知真值。</p>
+</details>
+<details>
+<summary>4. 为什么"事件源选型、程序形态、分发方式"三类选型错误的事故性质不同？</summary>
+<p>事件源选错（高频挂动态）是性能事故——直接伤害被观测系统的吞吐/延迟；形态选错（逐事件常驻）是开销事故——观测资源随事件率失控；分发选错（BCC 跨版本）是运维事故——内核升级后工具批量失效。防御分别靠频率评估纪律、输出通道设计、CO-RE/BTF 检查。</p>
 </details>
 <h2>交叉引用</h2>
 <ul>

@@ -53,6 +53,19 @@ bpftrace -e 'uprobe:/lib/x86_64-linux-gnu/libc.so.6:gethost* { @[probe] = count(
 
 内核 Documentation/trace/uprobetracer.txt。
 
+## 高频事件的替代方案对照（2.8.4 展开）
+
+"避开高频事件，找低频事件回答同样的问题"——具体换法按问题类型：
+
+| 想知道 | 高频挂法（危险） | 低频替代 |
+|---|---|---|
+| 内存是否泄漏 | uprobe:malloc/free | 周期读 /proc/<pid>/statm 水位 + brk/mmap 次数（memleak 工具的采样模式） |
+| 分配热点在谁 | uprobe:malloc 带 size 分桶 | memleak 的采样模式（只跟踪部分分配）+ exit 时的未释放汇总 |
+| 锁竞争 | uprobe:pthread_mutex_lock | futex tracepoint（syscall 边界，冲突时才有事件）+ offcputime |
+| 函数调用计数 | uprobe:func | 若有编译期插桩条件改 USDT；或 funccount 限短窗口 |
+
+共同模式：**把"每次都发生的事件"换成"只在异常/边界时发生的事件"**——futex 只在锁冲突时进内核（无冲突的 fast path 是纯用户态原子操作），brk/mmap 远稀于 malloc——低频事件天然自带过滤。
+
 ## HFT 关联
 
 - HFT 交易软件是典型用户态程序：给自家撮合/风控二进制加 uprobe 探针（毫秒级热路径函数）可在不改代码的情况下量化内部耗时——但**绝不能上 malloc/free 这类每秒千万级事件**。
