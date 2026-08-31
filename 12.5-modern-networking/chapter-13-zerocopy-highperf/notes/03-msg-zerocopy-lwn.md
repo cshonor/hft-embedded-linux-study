@@ -160,7 +160,7 @@ splice/sendfile 的成本模型也完全不同：它们没有 pin/unpin、没有
 - **订单流不用**（< 1KB，固定开销 > 线性拷贝），但**策略回放/行情录制回放**（GB 级文件重放）走"mmap 录制文件 + sendfile/splice"路线更优——源头在页缓存。
 - **发布/订阅转发器**（收行情 → 加工 → 发给策略进程）是第二类场景的真命中：数据在用户态被改写过，且单条大（整本书的深度快照可达 MB 级）。
 - 监控真实 ZC 命中率：统计带 `SO_EE_CODE_ZEROCOPY_COPIED` 的通知占比——持续偏高说明路由没走 SG 网卡或重传率高。
-- 与 io_uring SEND_ZC 对比见 [12-02](../chapter-12-io-uring-net/notes/02-io-uring-net-lwn.md)：同一 uarg 机制，通知从 errqueue 换成 NOTIF CQE，省掉收通知 syscall。
+- 与 io_uring SEND_ZC 对比见 [12-02](../../chapter-12-io-uring-net/notes/02-io-uring-net-lwn.md)：同一 uarg 机制，通知从 errqueue 换成 NOTIF CQE，省掉收通知 syscall。
 
 ## 衔接
 

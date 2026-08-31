@@ -7,7 +7,7 @@
 
 | 上一篇 | 本篇 | 下一篇 |
 |---|---|---|
-| [chapter-13 零拷贝](../chapter-13-zerocopy-highperf/README.md) | **14-01 TCP 内部** | [14-02 UDP GRO](02-udp-gro.md) |
+| [chapter-13 零拷贝](../../chapter-13-zerocopy-highperf/README.md) | **14-01 TCP 内部** | [14-02 UDP GRO](02-udp-gro.md) |
 
 ## 本节讲什么
 

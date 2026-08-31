@@ -7,7 +7,7 @@
 
 | 上一篇 | 本篇 | 下一篇 |
 |---|---|---|
-| [13-04 接收侧 ZC](04-tcp-zero-copy-recv.md) | **13-05 SO_REUSEPORT** | [chapter-14 TCP/UDP 内部机制](../chapter-14-tcp-udp-internals/README.md) |
+| [13-04 接收侧 ZC](04-tcp-zero-copy-recv.md) | **13-05 SO_REUSEPORT** | [chapter-14 TCP/UDP 内部机制](../../chapter-14-tcp-udp-internals/README.md) |
 
 ## 本节讲什么
 
@@ -150,7 +150,7 @@ int pick_worker(struct sk_reuseport_md *ctx)
 
 ## 衔接
 
-至此 chapter-13（零拷贝与高性能网络）收尾：页级零拷贝（收/发）、多核 steering、多监听分发三条线补完。下一篇 [chapter-14 TCP/UDP 内部机制](../chapter-14-tcp-udp-internals/README.md) 下沉到协议本身：TCP 状态机、定时器与拥塞控制在 v6.6 里的实现路径。
+至此 chapter-13（零拷贝与高性能网络）收尾：页级零拷贝（收/发）、多核 steering、多监听分发三条线补完。下一篇 [chapter-14 TCP/UDP 内部机制](../../chapter-14-tcp-udp-internals/README.md) 下沉到协议本身：TCP 状态机、定时器与拥塞控制在 v6.6 里的实现路径。
 
 ## 代码自测
 

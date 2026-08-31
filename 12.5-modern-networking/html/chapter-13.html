@@ -276,11 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">10</span>— Documentation/networking/scaling.rst（RPS/RFS/XPS）</a>
-          <a href="#s-02"><span class="n">11</span>— Documentation/networking/msg_zerocopy.rst</a>
-          <a href="#s-03"><span class="n">16</span>— MSG_ZEROCOPY：零拷贝发送</a>
-          <a href="#s-04"><span class="n">17</span>— TCP zero-copy 接收</a>
-          <a href="#s-05"><span class="n">18</span>— SO_REUSEPORT：多进程负载均衡</a>
+          <a href="#s-01"><span class="n">13</span>-01 — Receive/Transmit Packet Steering：RSS / RPS / RFS / aRFS / XPS / SO_INCOMING_CPU（v6.6 源码级）</a>
+          <a href="#s-02"><span class="n">13</span>-02 — MSG_ZEROCOPY：用户态发送零拷贝（内核文档 + errqueue 协议）</a>
+          <a href="#s-03"><span class="n">13</span>-03 — MSG_ZEROCOPY 实现内幕：ubuf_info、page pin 与引用计数生命周期</a>
+          <a href="#s-04"><span class="n">13</span>-04 — TCP_ZEROCOPY_RECEIVE：接收侧零拷贝（mmap 语义，v6.6 源码级）</a>
+          <a href="#s-05"><span class="n">13</span>-05 — SO_REUSEPORT：内核级多监听者分发与 eBPF 选择器（v6.6 源码级）</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -318,61 +318,340 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>核心结论（全章浓缩）</h2>
+<ol>
+<li><strong>多核扩展是一条五层链</strong>：RSS（硬件 hash）→ RPS（软件 hash）→ RFS（包追消费者）→ <code class="c">SO_INCOMING_CPU</code>+reuseport（socket 归核）→ XPS（发送侧镜像）——任何一环断裂就是一次跨核 cache miss 或 IPI；<code class="c">get_rps_cpu()</code>（dev.c:4557）两表皆空时零开销通过。</li>
+<li><strong>MSG_ZEROCOPY 的本质是"逐字节拷贝 → 页 pin + 完成通知"</strong>：buffer 释放边界从 sendmsg 返回推迟到 errqueue 通知（<code class="c">[ee_info, ee_data]</code> 序号区间，相邻区间在内核侧合并）；TCP 要求 <code class="c">sk_route_caps &amp; NETIF_F_SG</code>，不满足则带 <code class="c">SO_EE_CODE_ZEROCOPY_COPIED</code> 降级。</li>
+<li><strong>uarg 藏在零长 skb 的 cb 里</strong>（skbuff.c:1540）：一次 <code class="c">sock_omalloc(sk, 0)</code> 同时解决容器生命周期、refcount、通知载体三件事；512KB/USHRT_MAX 聚合上限控制通知粒度与 pin 集合。</li>
+<li><strong>接收侧 <code class="c">TCP_ZEROCOPY_RECEIVE</code> 是 mmap 语义</strong>：<code class="c">mmap(socket_fd)</code> 建 <code class="c">tcp_vm_ops</code> VMA，setsockopt 换页（32 页一批 <code class="c">vm_insert_pages</code>），只映射整页、<code class="c">inq &lt;= copybuf_len</code> 退化为拷贝；映射即 ACK——可靠性契约比 recvmsg 弱。</li>
+<li><strong>零拷贝收益全是量级问题</strong>：发送拐点 ~10KB（固定开销 2-3μs vs 线性 memcpy），接收拐点 ~32KB（TLB flush 成本）；<strong>io_uring registered buffers 不是接收零拷贝</strong>（省 pin 不省 memcpy），DMA 直达只有 AF_XDP/DPDK。</li>
+<li><strong>SO_REUSEPORT = 内核 lookup 路径里的分发器</strong>：BPF 优先（<code class="c">sk_reuseport_md</code> 从传输层头开始可见）、hash 兜底、5.14+ 支持 listener 迁移（滚动重启不丢连接）；UDP 组播是每 socket 一份的天然 fan-out。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>MSG_ZEROCOPY 发送</strong>：避免内核拷贝数据到 sk_buff，DMA 直接从用户态内存发送；节省 ~100ns/包</li>
-<li><strong>TCP zero-copy recv</strong>：<code class="c">mmap</code> TCP 接收缓冲区到用户态，避免 recvmsg 的数据拷贝</li>
-<li><strong>SO_REUSEPORT</strong>：多个进程 bind 同一端口，内核做 per-flow 负载均衡，避免单进程瓶颈</li>
-<li><strong>RSS/RFS</strong>：RSS 硬件多队列 + RFS 软件路由，确保收包在正确 CPU 处理</li>
-<li><strong>HFT 完整方案</strong>：AF_XDP 收包 + MSG_ZEROCOPY 发包 + SO_REUSEPORT 多进程</li>
+<li><strong>交易报文（&lt; 1KB）</strong>：不用任何零拷贝——拷贝几十 ns，pin+通知的固定开销是它的 10 倍</li>
+<li><strong>行情转发/回放（大 payload）</strong>：MSG_ZEROCOPY（发送）+ TCP_ZEROCOPY_RECEIVE（接收）拐点之上收益 3-25x</li>
+<li><strong>全链路同核范式</strong>：ntuple/RSS 分流 + SO_INCOMING_CPU accept-retry + sched_setaffinity + XPS——终极形态是收发包和处理在同核零跨</li>
+<li><strong>HFT 完整方案</strong>：AF_XDP 收 + MSG_ZEROCOPY/SEND_ZC 发 + SO_REUSEPORT+BPF 按 symbol 分发</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
 <li><code class="c">12.5-modern-networking/chapter-03-tx-path-skbbuff/</code>：发包路径与零拷贝</li>
 <li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：AF_XDP 零拷贝收包</li>
+<li><code class="c">12.5-modern-networking/chapter-12-io-uring-net/</code>：SEND_ZC（同一 uarg 机制的异步化）</li>
 <li><code class="c">04-cpp/M2-cpp-network-programming/</code>：SO_REUSEPORT 基础</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">10</div><h2>— Documentation/networking/scaling.rst（RPS/RFS/XPS）</h2></div>
+        <div class="sec-head"><div class="sec-no">13</div><h2>01 — Receive/Transmit Packet Steering：RSS / RPS / RFS / aRFS / XPS / SO_INCOMING_CPU（v6.6 源码级）</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> Ch14（高级主题）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/scaling.rst</code></p>
+<strong>内核源码路径:</strong> <code class="c">Documentation/networking/scaling.rst</code>、<code class="c">net/core/dev.c</code>、<code class="c">net/core/sock.c</code>、<code class="c">net/core/sock_reuseport.c</code></p>
 </blockquote>
-<h2>文档概述</h2>
-<p>Linux 网络多核扩展技术文档，描述 RPS/RFS/XPS 三种机制。</p>
-<h2>三种扩展机制</h2>
-<h3>RPS（Receive Packet Steering）</h3>
-<ul>
-<li>软件层将收到的包分发到不同 CPU 的 backlog 队列</li>
-<li>基于 4-tuple hash 选择目标 CPU</li>
-<li>不需要网卡硬件支持</li>
-<li>代价：跨 CPU 传递 sk_buff 开销</li>
-</ul>
-<h3>RFS（Receive Flow Steering）</h3>
-<ul>
-<li>RPS 的增强版：将包分发到<strong>正在处理该 socket 的 CPU</strong></li>
-<li>保持 CPU cache 亲和性</li>
-<li><code class="c">rps_flow_table</code> 记录 flow → CPU 映射</li>
-<li>需要网卡支持 aRFS（硬件 RFS）</li>
-</ul>
-<h3>XPS（Transmit Packet Steering）</h3>
-<ul>
-<li>发包方向：选择特定 CPU 使用特定 Tx 队列</li>
-<li>减少锁竞争（每个 Tx 队列有锁）</li>
-<li>通过 <code class="c">/sys/class/net/eth0/queues/tx-*/xps_cpus</code> 配置</li>
-</ul>
-<h2>配置</h2>
-<pre class="code" data-label="shell"><code class="c"># RPS：设置可处理 RX 队列 0 的 CPU
-echo f &gt; /sys/class/net/eth0/queues/rx-0/rps_cpus
-
-# RFS：全局 flow table 大小
-echo 32768 &gt; /proc/sys/net/core/rps_sock_flow_entries
-
-# XPS：CPU 0-3 使用 Tx 队列 0
-echo f &gt; /sys/class/net/eth0/queues/tx-0/xps_cpus
+<h2>章节导航</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-12.html#intro">12-io-uring-net</a></td>
+<td><strong>13-01 scaling</strong></td>
+<td><a href="chapter-15.html#s-02">13-02 MSG_ZEROCOPY</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2>本节讲什么</h2>
+<p>上一章 io_uring 解决的是<strong>单个线程内部的系统调用开销</strong>；本节解决的是<strong>包与 CPU 的物理分布问题</strong>——一个 skb 从网卡 DMA 到达、到最终被应用层 <code class="c">recvmsg</code> 读走，中间经历的所有"该在哪个 CPU 上处理"的决策点。这是多核扩展（scaling）的完整链路：</p>
+<pre class="code" data-label="code"><code class="c">网卡硬件 RSS ──► RX 队列选择
+                   │
+                   ▼
+           netif_receive_skb_internal()     dev.c:5730
+                   │
+                   ▼
+           get_rps_cpu()                    dev.c:4557
+           ├── RFS：flow→CPU 全局表命中？
+           │      └── 命中 → enqueue_to_backlog() 到目标 CPU（IPI）
+           └── RPS：仅按 hash 分发
+                   │
+                   ▼
+           TCP 层 → socket 锁 → 应用 recvmsg
+                   │
+                   ▼
+           reuseport_select_sock_by_hash()   sock_reuseport.c:528
+           （SO_REUSEPORT + incoming_cpu 联动的最终收口）
 </code></pre>
-<h2>vs XDP CPUMAP</h2>
+<p>发送侧对称的问题是 XPS：<strong>哪个 CPU 允许使用哪个 TX 队列</strong>。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>RSS 是硬件、RPS 是软件、RFS 是带亲和性的 RPS、aRFS 是 RFS 的硬件加速版</strong>——四者不是并列选项，而是同一决策链上可叠加的层。</li>
+<li><strong>RPS 的分发现场在 <code class="c">get_rps_cpu()</code>（dev.c:4557）</strong>：先查 RFS 全局流表 <code class="c">rps_sock_flow_table</code>（dev.c:4497），未命中才退回按 <code class="c">skb_get_hash()</code> 纯 hash 分发。两张表都为空时函数直接 <code class="c">goto done</code> 返回 -1，<strong>零开销通过</strong>。</li>
+<li><strong>RPS 的代价是 IPI（处理器间中断）+ <code class="c">enqueue_to_backlog()</code>（dev.c:4788）的入队锁</strong>：<code class="c">rps_lock_irqsave</code>（dev.c:220）保护目标 CPU 的 <code class="c">softnet_data</code> backlog 队列。跨 NUMA 节点的 cache miss + IPI 延迟是微秒级——对 HFT 这是不可忽视的成本。</li>
+<li><strong>RFS 的核心洞察</strong>：纯 hash RPS 会把同一 flow 的包分到固定 CPU，但<strong>消费该 socket 的应用线程可能跑在另一个 CPU 上</strong>，导致 socket 锁跨核、skb 数据 cache-cold。RFS 用 <code class="c">rps_sock_flow_table</code> 记录"上次 <code class="c">recvmsg</code> 发生在哪个 CPU"，让包追着消费者走。</li>
+<li><strong><code class="c">SO_INCOMING_CPU</code>（sock.c:1451 设置 / :1924 读取）+ accept 时的 <code class="c">newsk-&gt;sk_incoming_cpu = raw_smp_processor_id()</code>（sock.c:2385）</strong>：内核在 accept 时自动给新 socket 打上"出生 CPU"标记，配合 <code class="c">reuseport_select_sock_by_hash()</code> 的 incoming_cpu 匹配（sock_reuseport.c:528），实现 O(1) 的 CPU 亲和 accept 调度。</li>
+<li><strong>XPS 是发送侧镜像</strong>：<code class="c">/sys/class/net/eth0/queues/tx-*/xps_cpus</code> 限定"CPU→TX 队列"映射，避免多 CPU 争抢同一 TX 队列的 <code class="c">__netif_tx_lock</code>，同时保证 skb 在构造它的同一 CPU 上完成 DMA（cache 友好）。</li>
+</ol>
+<h2>一、RSS：硬件 hash，问题的第一层</h2>
+<p>多队列网卡（RSS，Receive Side Scaling）在硬件中对每个到达的包计算 4-tuple hash（Intel 称 RSS hash），通过 indirection table（间接表）映射到某个 RX 队列。<strong>每个 RX 队列绑定一个 MSI-X 中断，中断亲和性决定包在哪个 CPU 触发 NAPI 软中断</strong>。</p>
+<pre class="code" data-label="code"><code class="c">ethtool -x eth0          # 查看 indirection table
+ethtool -X eth0 equal 4  # 均匀分发到 4 个队列
+ethtool -L eth0 combined 4   # 4 个 RX/TX 组合队列
+</code></pre>
+<p>RSS 的局限：
+- hash 输入固定为 4-tuple，<strong>无法感知应用层负载</strong>——行情组播流量全落同一个 flow（同 group 同 port），单队列打满，其他队列空闲。
+- 硬件表大小有限（通常 128/512 项），且对 jumbo frame / 分段包 hash 质量下降。</p>
+<p><strong>HFT 视角</strong>：交易所行情走组播，同一 multicast group 的所有流量 4-tuple 相同 → RSS 彻底失效，<strong>必须靠多播组级别分流（网卡 ntuple 规则把不同 group 指到不同队列）或 XDP CPUMAP</strong>。</p>
+<h2>二、RPS：软件 steering，<code class="c">get_rps_cpu()</code> 源码级</h2>
+<p>RPS 在 <code class="c">netif_receive_skb_internal()</code>（dev.c:5730）之后的 <code class="c">process_context</code> 里调用 <code class="c">get_rps_cpu()</code>。先看判空快速路径：</p>
+<pre class="code" data-label="C"><code class="c">// dev.c:4557 get_rps_cpu() 开头（节选）
+flow_table = rcu_dereference(rxqueue-&gt;rps_flow_table);
+map = rcu_dereference(rxqueue-&gt;rps_map);
+if (!flow_table &amp;&amp; !map)
+    goto done;              // ← 没配 RPS/RFS：直接返回 -1，零开销
+</code></pre>
+<p><strong>关键点：RPS/RFS 完全是 opt-in 的</strong>。不配置任何 <code class="c">rps_cpus</code> 时，这段代码对性能零影响（一次 RCU 读 + 两次判空）。</p>
+<p>配置后，hash 计算用的是 <code class="c">skb_get_hash()</code>（基于 flow dissector 的通用 hash，不依赖网卡硬件 hash 值）：</p>
+<pre class="code" data-label="C"><code class="c">skb_reset_network_header(skb);
+hash = skb_get_hash(skb);
+if (!hash)
+    goto done;
+</code></pre>
+<h3>RPS 分发目标的选择</h3>
+<p>纯 RPS（没配 RFS）时目标 CPU = <code class="c">map-&gt;cpus[hash % map-&gt;len]</code>——按 rxqueue 的 <code class="c">rps_map</code>（来自 sysfs 的 <code class="c">rps_cpus</code> 掩码）做取模选择。</p>
+<h3><code class="c">enqueue_to_backlog()</code>：跨 CPU 递送的现场</h3>
+<pre class="code" data-label="C"><code class="c">// dev.c:4788（节选）
+static int enqueue_to_backlog(struct sk_buff *skb, int cpu,
+                  unsigned int *qtail)
+{
+    struct softnet_data *sd;
+    unsigned long flags;
+    unsigned int qlen;
+
+    sd = &amp;per_cpu(softnet_data, cpu);       // ← 目标 CPU 的 backlog
+    rps_lock_irqsave(sd, &amp;flags);           // ← dev.c:220，per-CPU 队列锁
+    if (!netif_running(skb-&gt;dev))
+        goto drop;
+    qlen = skb_queue_len(&amp;sd-&gt;input_pkt_queue);
+    if (qlen &lt;= netdev_max_backlog &amp;&amp; !skb_flow_limit(skb, qlen)) {
+        if (skb_queue_len(&amp;sd-&gt;input_pkt_queue)) {
+enqueue:
+            __skb_queue_tail(&amp;sd-&gt;input_pkt_queue, skb);
+            ...
+            return NET_RX_SUCCESS;
+        }
+        /* Schedule NAPI for backlog queue */
+        ____napi_schedule(sd, &amp;sd-&gt;backlog);  // ← 目标 CPU 上排软中断
+        ...
+    }
+    ...
+}
+</code></pre>
+<p>成本清单（跨 CPU RPS 一跳的实际代价）：
+1. 目标 CPU <code class="c">softnet_data</code> 队列锁（目标 CPU 上如果也在收包，有争抢）；
+2. <code class="c">____napi_schedule</code> 触发 <strong>IPI</strong>（<code class="c">smp_call_function_single</code> 路径），唤醒目标 CPU 的 softirq；
+3. skb 数据本身 cache-cold——它在源 CPU 的 cache 里是热的，到目标 CPU 要重新拉 line；
+4. backlog 队列有 <code class="c">netdev_max_backlog</code>（默认 1000）上限，超限直接 drop——<strong><code class="c">/proc/net/softnet_stat</code> 第二列增长 = RPS 溢出丢包</strong>。</p>
+<h2>三、RFS：让包追着消费者走</h2>
+<h3>全局流表 <code class="c">rps_sock_flow_table</code></h3>
+<pre class="code" data-label="C"><code class="c">// dev.c:4497
+struct rps_sock_flow_table __rcu *rps_sock_flow_table __read_mostly;
+</code></pre>
+<p>这是一个全局（非 per-queue）的 flow→CPU 表，大小由 <code class="c">/proc/sys/net/core/rps_sock_flow_entries</code> 控制。<strong>写入时机</strong>：应用调用 <code class="c">recvmsg</code>/<code class="c">sendmsg</code> 时，<code class="c">sock_rps_record_flow()</code> 把「flow hash → 当前 CPU」记入表中（<code class="c">lockless</code> 的 <code class="c">WRITE_ONCE</code>，见 <code class="c">rps_record_sock_flow()</code>，与 <code class="c">get_rps_cpu()</code> 里的 <code class="c">READ_ONCE(ident)</code> 配对）。</p>
+<h3>查表逻辑（get_rps_cpu 中段）</h3>
+<pre class="code" data-label="C"><code class="c">// dev.c:4557 函数体节选
+ident = READ_ONCE(sock_flow_table-&gt;ents[hash &amp; sock_flow_table-&gt;mask]);
+if ((ident ^ hash) &amp; ~rps_cpu_mask)
+    goto try_rps;            // ← 表项不属于这个 flow（陈旧/冲突）→ 退回纯 RPS
+
+next_cpu = ident &amp; rps_cpu_mask;
+</code></pre>
+<p>表项把 hash 的高位存进 ident 字段做"属主校验"，避免 hash 冲突时错配。校验通过后还要过第二张表——<strong>per-RX-queue 的 <code class="c">rps_flow_table</code></strong>（设备侧），其表项记录"上次实际分发的 CPU"（tcpu），当且仅当满足以下条件才切换到新 CPU：目标 CPU 未设置 / offline / <strong>旧 CPU 的 backlog 尾部已推进到该 flow 项之后</strong>（保证同 flow 的包不乱序）。这就是文档里著名的 anti-reordering 约束。</p>
+<h3>aRFS：硬件加速 RFS</h3>
+<p>RFS 仍是软件分发（IPI 已经发生）。aRFS（accelerated RFS）把决策前推到网卡：驱动实现 <code class="c">ndo_rx_flow_steer()</code>（netdevice.h:1531），内核在 <code class="c">get_rps_cpu()</code> 路径中调用它（dev.c:4533），驱动把 ntuple 规则写入网卡，<strong>让后续同 flow 的包直接由硬件投递到目标 RX 队列</strong>（该队列的中断已绑在消费者 CPU 上）——IPI 消失，包天生落在正确的 CPU。</p>
+<p>陈旧规则的回收：驱动周期性调用 <code class="c">rps_may_expire_flow()</code>（dev.c:4667），判断某 ntuple filter 是否已无对应的活跃流表项，可安全删除。 Mellanox（mlx4/mlx5）与部分 Chelsio 网卡支持。</p>
+<pre class="code" data-label="shell"><code class="c"># aRFS 前提：打开网卡 ntuple
+ethtool -K eth0 ntuple on
+echo 32768 &gt; /proc/sys/net/core/rps_sock_flow_entries
+# per-queue flow count = 全局 entries / 队列数
+</code></pre>
+<h2>四、XPS：发送侧镜像</h2>
+<p>TX 队列选择函数 <code class="c">netdev_pick_tx()</code> 的逻辑：如果配置了 XPS（<code class="c">tx-*/xps_cpus</code>），从「当前 CPU 允许的队列集合」中按 <code class="c">skb_get_hash</code> 或 round-robin 选一个；没配置则在<strong>所有队列</strong>间 round-robin——多 CPU 同时发包时会集中争抢同一把 <code class="c">__netif_tx_lock</code>（qdisc lock），且 <code class="c">skb</code> 在 CPU A 构造、在 CPU B 的队列里 DMA，cache 全程冰冷。</p>
+<pre class="code" data-label="shell"><code class="c"># 4 队列 × 4 CPU 一对一绑定（HFT 典型）
+for i in 0 1 2 3; do
+  echo $((1 &lt;&lt; i)) &gt; /sys/class/net/eth0/queues/tx-$i/xps_cpus
+done
+</code></pre>
+<p>XPS 与 RPS 的对称性：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>RPS</th>
+<th>XPS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>方向</td>
+<td>RX</td>
+<td>TX</td>
+</tr>
+<tr>
+<td>配置</td>
+<td><code class="c">queues/rx-*/rps_cpus</code></td>
+<td><code class="c">queues/tx-*/xps_cpus</code></td>
+</tr>
+<tr>
+<td>选择依据</td>
+<td>flow hash + RFS 流表</td>
+<td>当前 CPU 掩码 + hash</td>
+</tr>
+<tr>
+<td>收益</td>
+<td>软中断负载分散</td>
+<td>队列锁不争抢 + DMA cache 亲和</td>
+</tr>
+</tbody>
+</table></div>
+<h2>五、<code class="c">SO_INCOMING_CPU</code> + SO_REUSEPORT：调度层的收口</h2>
+<p>前四层解决"包到 CPU"，最后一层解决"CPU 上的多个 listen socket 归谁"。这是 v4.6+ 加入（Facebook 贡献）的机制，三条源码锚点：</p>
+<pre class="code" data-label="C"><code class="c">// sock.c:1451  —— setsockopt(SO_INCOMING_CPU, n)
+case SO_INCOMING_CPU:
+    ret = -EPERM;
+    if (!sockopt_capable(CAP_NET_ADMIN))
+        break;
+    ret = -EINVAL;
+    if (val &lt; -1 || val &gt;= nr_cpu_ids)
+        break;
+    write_lock_bh(&amp;sk-&gt;sk_callback_lock);
+    if (!sock_flag(sk, SOCK_INCOMING_NAPI_ID)) { ... }
+    WRITE_ONCE(sk-&gt;sk_incoming_cpu, val);
+    ...
+
+// sock.c:2385 —— accept 时新 socket 继承&quot;出生 CPU&quot;
+newsk-&gt;sk_incoming_cpu = raw_smp_processor_id();
+</code></pre>
+<p><strong>默认值 -1</strong>（sock.c:3479 初始化），表示"未标记"。</p>
+<h3><code class="c">reuseport_select_sock_by_hash()</code> 的完整逻辑（sock_reuseport.c:528）</h3>
+<pre class="code" data-label="C"><code class="c">static struct sock *reuseport_select_sock_by_hash(struct sock_reuseport *reuse,
+                          u32 hash, u16 num_socks)
+{
+    struct sock *first_valid_sk = NULL;
+    int i, j;
+
+    i = j = reciprocal_scale(hash, num_socks);   // ← hash → [0, num_socks)
+    do {
+        struct sock *sk = reuse-&gt;socks[i];
+
+        if (sk-&gt;sk_state != TCP_ESTABLISHED) {
+            if (!READ_ONCE(reuse-&gt;incoming_cpu))
+                return sk;                       // ① 无 CPU 亲和要求
+            if (READ_ONCE(sk-&gt;sk_incoming_cpu) == raw_smp_processor_id())
+                return sk;                       // ② 本 CPU 专属 socket
+            if (!first_valid_sk)
+                first_valid_sk = sk;             // ③ 记住第一个可用者
+        }
+        i++;
+        if (i &gt;= num_socks)
+            i = 0;
+    } while (i != j);
+
+    return first_valid_sk;                        // ④ 全不匹配 → 退化为轮询
+}
+</code></pre>
+<p>逐条解读：
+- <strong><code class="c">reciprocal_scale(hash, num_socks)</code></strong>：用乘法+移位代替除法取模（<code class="c">(u64)hash * ep_ro &gt;&gt; 32</code>），避免 div 指令的 ~20-40 cycle 开销——热路径细节。
+- <strong>② 命中条件</strong>：<code class="c">sk_incoming_cpu == 当前 CPU</code>。注意 <code class="c">reuse-&gt;incoming_cpu</code> 是个计数器（sock_reuseport.c:40-61），统计组内有多少个 socket 设置了 CPU 亲和——<strong>组内一个都没设时走 ① 直接返回，保持纯 hash 行为</strong>。
+- <strong>④ 兜底</strong>：本 CPU 的专属 socket 全部 ESTABLISHED（忙），从 hash 起点轮询找第一个非 ESTABLISHED 的——保证 accept 不饿死，只是失去亲和。</p>
+<h3>accept-retry 编程范式</h3>
+<p>配合 <code class="c">SO_INCOMING_CPU</code> 的经典服务端写法（每个工作线程一个 listen socket）：</p>
+<pre class="code" data-label="C"><code class="c">// 每线程：
+int fd = socket(...);
+setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, ...);
+bind(fd, ...); listen(fd, ...);
+
+// 获取&quot;这个 socket 被内核调度在哪个 CPU&quot;（读 sock.c:1924 的 get 路径）
+int cpu;
+socklen_t len = sizeof(cpu);
+getsockopt(fd, SOL_SOCKET, SO_INCOMING_CPU, &amp;cpu, &amp;len);
+
+// CPU 不对就关掉重来，直到内核把 fd 放到本线程的 CPU 上
+while (cpu != sched_getcpu()) {
+    close(fd);
+    fd = recreate_listen_socket();
+    getsockopt(fd, SOL_SOCKET, SO_INCOMING_CPU, &amp;cpu, &amp;len);
+}
+// 此后：accept 出的连接的 sk_incoming_cpu == 本 CPU（sock.c:2385），
+// 软中断、TCP 处理、应用读全在同核。
+</code></pre>
+<h2>六、五层机制总对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>机制</th>
+<th>决策者</th>
+<th>粒度</th>
+<th>需要硬件支持</th>
+<th>配置接口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>RSS</td>
+<td>网卡</td>
+<td>4-tuple</td>
+<td>✅ 多队列网卡</td>
+<td><code class="c">ethtool -X</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>RPS</td>
+<td>内核软件</td>
+<td>flow hash</td>
+<td>❌</td>
+<td>sysfs <code class="c">rps_cpus</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>RFS</td>
+<td>内核软件</td>
+<td>flow→消费者 CPU</td>
+<td>❌</td>
+<td><code class="c">rps_sock_flow_entries</code></td>
+</tr>
+<tr>
+<td>3+</td>
+<td>aRFS</td>
+<td>网卡 ntuple</td>
+<td>flow→队列</td>
+<td>✅ 驱动支持</td>
+<td><code class="c">ethtool -K ntuple on</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>SO_INCOMING_CPU + reuseport</td>
+<td>内核调度</td>
+<td>socket→CPU</td>
+<td>❌</td>
+<td>setsockopt</td>
+</tr>
+<tr>
+<td>TX</td>
+<td>XPS</td>
+<td>内核软件</td>
+<td>CPU→TX 队列</td>
+<td>❌</td>
+<td>sysfs <code class="c">xps_cpus</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>七、vs XDP CPUMAP</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -384,87 +663,192 @@ echo f &gt; /sys/class/net/eth0/queues/tx-0/xps_cpus
 <tbody>
 <tr>
 <td>分发时机</td>
-<td>sk_buff 之后</td>
-<td>sk_buff 之前</td>
+<td>sk_buff 分配<strong>之后</strong></td>
+<td>sk_buff 分配<strong>之前</strong>（XDP 程序里）</td>
 </tr>
 <tr>
 <td>CPU 开销</td>
-<td>分配 sk_buff + IPI</td>
-<td>轻量</td>
+<td>分配 skb + 队列锁 + IPI</td>
+<td>轻量：ptr 入 per-CPU ring</td>
 </tr>
 <tr>
 <td>亲和性</td>
-<td>RFS 自动</td>
-<td>BPF 自定义</td>
+<td>RFS 跟踪 recvmsg CPU</td>
+<td>BPF 自定义（任意字段）</td>
 </tr>
 <tr>
 <td>灵活性</td>
-<td>hash 固定</td>
-<td>BPF 任意逻辑</td>
+<td>hash 固定 4-tuple</td>
+<td>BPF 任意逻辑（可解析 payload）</td>
+</tr>
+<tr>
+<td>功能</td>
+<td>只搬运</td>
+<td>搬运 + 可就地修改/丢弃</td>
 </tr>
 </tbody>
 </table></div>
+<p>细节：CPUMAP 转发用的也是 <code class="c">enqueue_to_backlog</code> 同款 per-CPU backlog 机制（<code class="c">cpu_map_enqueue</code>），但因为发生在 skb 构造之前，省掉了丢弃路径的 skb 分配成本。</p>
 <h2>HFT 要点</h2>
 <ul>
-<li>HFT 行情接收：用 XDP CPUMAP 或网卡 RSS（硬件 hash）替代 RPS</li>
-<li>HFT 交易发送：XPS 配置确保发包在交易 CPU 上</li>
-<li>RFS 对 HFT 意义不大（HFT 通常用 AF_XDP/DPDK 绕过协议栈）</li>
+<li><strong>行情接收（组播）</strong>：RSS 因 4-tuple 相同而失效 → 用 ntuple 规则（<code class="c">ethtool -N</code>）按组播组分流到 RX 队列，或直接 XDP CPUMAP（可按 payload 里的 symbol/channel 分流，比 ntuple 灵活）。</li>
+<li><strong>交易发送</strong>：XPS 一对一绑定，确保 <code class="c">sendmsg</code> → qdisc → DMA 全程同一 CPU，TX 队列锁零争抢。</li>
+<li><strong>RFS 对 HFT 意义有限</strong>：前提是包走完整协议栈；HFT 行情走 XDP/AF_XDP 时根本不经过 <code class="c">get_rps_cpu()</code>。</li>
+<li><strong>终极形态是"全链路同核"</strong>：RSS/ntuple（包到对 CPU）+ <code class="c">SO_INCOMING_CPU</code>（socket 到对 CPU）+ <code class="c">sched_setaffinity</code>（线程绑核）+ XPS（发包不跨核）——中间任何一环断裂，就是一次跨核 cache miss 或 IPI。</li>
+<li>监控：<code class="c">/proc/net/softnet_stat</code>（第 1 列 packet 处理数、第 2 列 drop、第 3 列 squeeze）；<code class="c">ss -tma</code> 看连接的 napi_id/incoming_cpu。</li>
 </ul>
+<h2>衔接</h2>
+<p>本篇解决"包和 CPU 怎么对齐"。下一篇 <a href="chapter-15.html#s-02">13-02 MSG_ZEROCOPY</a> 解决"对齐之后，数据还要在内核态与应用态之间搬运几次"——发送方向的用户态零拷贝（<code class="c">skbuff.c:1540</code> 的 <code class="c">msg_zerocopy_alloc</code> / page pin / completions 通知链）。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么说"RPS 在有 RSS 的机器上通常是负优化"？什么情况下例外？</summary>
+<p>RSS 让包从硬件层面就落在中断亲和指定的 CPU 上，数据一路 cache 热。RPS 在软件层把包再搬到另一个 CPU，白白付出 IPI + cache miss。例外：
+1. 单队列网卡 + 多核机器（无 RSS 可用）；
+2. RSS hash 失效场景（如全部流量同 4-tuple）且配合 RFS 让包跟随消费者；
+3. 需要把 RX 软中断从实时核上挪走（如行情核不跑 softirq，包转到其他核处理，代价换隔离）。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">get_rps_cpu()</code> 里 RFS 表项的 <code class="c">(ident ^ hash) &amp; ~rps_cpu_mask</code> 校验在防什么？</summary>
+<p>防 hash 冲突误配。表项用 <code class="c">hash &amp; mask</code> 做索引，两个不同 flow 可能落在同一表项。表项把原始 hash 的<strong>高位</strong>（~rps_cpu_mask 的部分）存下来，查表时比对——不一致说明表项属于另一个 flow（或已陈旧），直接 <code class="c">goto try_rps</code> 退回纯 hash 分发，不会把包送到别的 flow 的 CPU 上。</p>
+</details>
+<details>
+<summary>Q3：RFS 为什么需要 per-queue 的第二张表（rps_flow_table）？只有全局表行不行？</summary>
+<p>只有全局表会产生<strong>乱序</strong>：全局表说"新 CPU"，但旧 CPU 的 backlog 里可能还压着同 flow 的前几个包，直接切换会导致后包先到 TCP 层。per-queue 表项记录 <code class="c">last_qtail</code>——只有当旧 CPU 的队列尾部已推进越过该 flow 上次入队的位置（旧包已消费完），才允许切换到新 CPU。这是 RFS 文档里 anti-reordering 机制的核心。</p>
+</details>
+<details>
+<summary>Q4：<code class="c">reuseport_select_sock_by_hash()</code> 为什么先检查 <code class="c">!READ_ONCE(reuse-&gt;incoming_cpu)</code> 就直接返回，而不是检查单个 socket？</summary>
+<p><code class="c">reuse-&gt;incoming_cpu</code> 是<strong>组内设置了 CPU 亲和的 socket 计数</strong>（sock_reuseport.c:40-61 的 get/put 对维护）。组内一个都没设置时（计数为 0），逐个检查 <code class="c">sk_incoming_cpu == 当前CPU</code> 毫无意义（都是 -1），直接返回 hash 选中的 socket 保持纯 hash 语义——这是一次 O(1) 的整组短路，避免热路径浪费 N 次比较。</p>
+</details>
+<details>
+<summary>Q5：XPS 没配置时，多线程发包的性能损失具体在哪两个环节？</summary>
+<ol>
+<li><strong>TX 队列锁争抢</strong>：<code class="c">netdev_pick_tx()</code> 无 XPS 时在全部队列间 round-robin，多个 CPU 会撞到同一队列的 <code class="c">__netif_tx_lock</code>（qdisc 入队锁），产生自旋等待；</li>
+<li><strong>DMA cache miss</strong>：skb 在 CPU A 构造（数据在 A 的 L1/L2 里是热的），却从 CPU B 关联的 TX 队列做 DMA，网卡读内存时数据对 LLC 而言位置随意——配置 XPS 后包从构造到 DMA 全程同核，数据始终 cache 热。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">11</div><h2>— Documentation/networking/msg_zerocopy.rst</h2></div>
+        <div class="sec-head"><div class="sec-no">13</div><h2>02 — MSG_ZEROCOPY：用户态发送零拷贝（内核文档 + errqueue 协议）</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> Ch11（sendmsg 拷贝模式）
-<strong>内核源码路径:</strong> <code class="c">Documentation/networking/msg_zerocopy.rst</code></p>
+<strong>内核源码路径:</strong> <code class="c">Documentation/networking/msg_zerocopy.rst</code>、<code class="c">net/core/skbuff.c</code>、<code class="c">net/ipv4/tcp.c</code></p>
 </blockquote>
-<h2>文档概述</h2>
-<p>MSG_ZEROCOPY 官方文档，描述零拷贝发送机制和通知接口。</p>
-<h2>核心内容</h2>
-<h3>启用零拷贝</h3>
-<pre class="code" data-label="C"><code class="c">int opt = 1;
-setsockopt(sockfd, SOL_SOCKET, SO_ZEROCOPY, &amp;opt, sizeof(opt));
-// 或在 sendmsg flags 中传入 MSG_ZEROCOPY
-sendmsg(sockfd, &amp;msg, MSG_ZEROCOPY);
-</code></pre>
-<h3>通知机制</h3>
-<p>零拷贝发送后，buffer 不能立即释放。内核通过 errqueue 通知完成：</p>
-<pre class="code" data-label="C"><code class="c">// 接收完成通知
-struct msghdr msg = {};
-char control[CMSG_SPACE(sizeof(struct sock_extended_err))];
-msg.msg_control = control;
-msg.msg_controllen = sizeof(control);
-recvmsg(sockfd, &amp;msg, MSG_ERRQUEUE);
-
-// 解析完成范围
-struct cmsghdr *cm = CMSG_FIRSTHDR(&amp;msg);
-struct sock_extended_err *serr = (void *)CMSG_DATA(cm);
-// serr-&gt;ee_data = 完成的范围起始序号
-// serr-&gt;ee_info = 完成的范围结束序号
-</code></pre>
-<h3>适用条件</h3>
+<h2>章节导航</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>条件</th>
-<th>要求</th>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>网卡</td>
-<td>支持 checksum offload + scatter-gather</td>
-</tr>
-<tr>
-<td>协议</td>
-<td>TCP / UDP（4.14+ TCP，5.x UDP）</td>
-</tr>
-<tr>
-<td>数据量</td>
-<td>&gt; 4KB 才有收益（小包通知开销 &gt; 拷贝开销）</td>
+<td><a href="chapter-15.html#s-01">13-01 scaling</a></td>
+<td><strong>13-02 MSG_ZEROCOPY</strong></td>
+<td><a href="chapter-15.html#s-03">13-03 LWN 深入</a></td>
 </tr>
 </tbody>
 </table></div>
-<h3>性能数据</h3>
+<h2>本节讲什么</h2>
+<p>传统发送路径 <code class="c">sendmsg()</code> 把用户态 buffer <code class="c">copy_from_user()</code> 进内核 skb——每字节一次拷贝。MSG_ZEROCOPY（4.14+）把这个逐字节成本替换为<strong>页级 pin + 完成通知</strong>：内核把用户态 page 直接挂进 frag list，NIC DMA 直接读用户态内存。本篇讲清楚<strong>用户态可见的完整协议</strong>：如何启用、buffer 何时能改、完成通知怎么收、什么条件下内核会"偷偷退回拷贝模式"。</p>
+<pre class="code" data-label="code"><code class="c">传统：  user buf ──copy_from_user──► skb linear data ──DMA──► NIC
+ZC：    user page ──pin───────────► skb frag list ───DMA──► NIC
+                                          │
+                                          ▼ refcount 归零
+                              errqueue 完成通知（ee_info..ee_data 区间）
+</code></pre>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>buffer 的释放边界从"sendmsg 返回"推迟到"errqueue 通知到达"</strong>——sendmsg 返回只代表数据已提交给栈，page 还被 DMA 引用着。提前改写 = 发出去的是脏数据。</li>
+<li><strong>完成通知走 <code class="c">MSG_ERRQUEUE</code></strong>，不是普通数据队列：<code class="c">recvmsg(fd, &amp;msg, MSG_ERRQUEUE)</code> 读出 <code class="c">sock_extended_err</code>，<code class="c">ee_origin == SO_EE_ORIGIN_ZEROCOPY</code>、<code class="c">ee_errno == 0</code>、区间为 <code class="c">[ee_info, ee_data]</code>（按 send 调用序号编号，<code class="c">uarg-&gt;id</code> 起始）。</li>
+<li><strong>完成 ≠ 发送成功</strong>：通知只表示"数据已离开 DMA 引用"。部分场景（网卡不支持 SG、retransmit）内核退回拷贝，此时通知带 <code class="c">SO_EE_CODE_ZEROCOPY_COPIED</code> 标志——<strong>数据是拷贝出去的，但 buffer 同样可以释放</strong>。</li>
+<li><strong>TCP 只有 <code class="c">sk-&gt;sk_route_caps &amp; NETIF_F_SG</code> 才走真 ZC</strong>（tcp.c:1054）；不满足时 <code class="c">uarg_to_msgzc(uarg)-&gt;zerocopy = 0</code>（tcp.c:1066）降级为拷贝+通知协议。</li>
+<li><strong>区间合并</strong>：相邻完成的 [lo, hi] 区间会在 errqueue 尾部合并成一个 skb（<code class="c">skb_zerocopy_notify_extend</code>），64KB 通知开销摊到多个 send 上——这是 ZC 对小包不划算之外的第二层批量机制。</li>
+<li><strong>收益拐点约 10KB</strong>：官方基准里 1KB 时 ZC 慢 ~50%，64KB 快 3x，1MB 快 25x。HFT 交易报文（几百字节）<strong>不要用</strong>。</li>
+</ol>
+<h2>一、启用方式</h2>
+<p>两种，二选一：</p>
+<pre class="code" data-label="C"><code class="c">/* 方式 A：socket 级开关（之后所有 send 零拷贝） */
+int opt = 1;
+setsockopt(sockfd, SOL_SOCKET, SO_ZEROCOPY, &amp;opt, sizeof(opt));
+
+/* 方式 B：调用级标志（更精细） */
+sendmsg(sockfd, &amp;msg, MSG_ZEROCOPY);
+</code></pre>
+<p>注意 SO_ZEROCOPY 需要 <code class="c">CAP_NET_ADMIN</code>（版本早期）或受 <code class="c">optmem</code> 限额约束——因为 ZC 要 pin 用户 page，占用 socket 的 optmem 预算（RLIMIT_MEMLOCK 相关），超过限额 sendmsg 返回 <code class="c">-ENOBUFS</code> 或静默退回拷贝模式。</p>
+<h2>二、完成通知协议（errqueue）</h2>
+<h3>接收端样板代码</h3>
+<pre class="code" data-label="C"><code class="c">int wait_zc_completion(int fd)
+{
+    struct msghdr msg = { .msg_flags = MSG_ERRQUEUE };
+    char control[CMSG_SPACE(sizeof(struct sock_extended_err))];
+    struct cmsghdr *cm;
+    struct sock_extended_err *serr;
+
+    msg.msg_control = control;
+    msg.msg_controllen = sizeof(control);
+
+    if (recvmsg(fd, &amp;msg, MSG_ERRQUEUE) &lt; 0)
+        return -1;                          /* 队列空 */
+
+    cm = CMSG_FIRSTHDR(&amp;msg);
+    if (!cm)
+        return -1;
+    serr = (void *)CMSG_DATA(cm);
+    if (serr-&gt;ee_origin != SO_EE_ORIGIN_ZEROCOPY)
+        return -1;                          /* 其他 errqueue 事件（如 ICMP） */
+
+    printf(&quot;completed: %u..%u%s\n&quot;,
+           serr-&gt;ee_info, serr-&gt;ee_data,    /* [lo, hi] 闭区间 */
+           (serr-&gt;ee_code &amp; SO_EE_CODE_ZEROCOPY_COPIED) ? &quot; (copied)&quot; : &quot;&quot;);
+    return 0;
+}
+</code></pre>
+<p>每个 send 调用分配一个<strong>单调递增序号</strong>（<code class="c">sk_zckey</code>，见 <code class="c">msg_zerocopy_realloc</code> 的 <code class="c">atomic_read(&amp;sk-&gt;sk_zckey)</code>）。通知给出闭区间 <code class="c">[ee_info, ee_data]</code>：区间内所有序号的 buffer 都已释放。应用侧维护一个 ring buffer 记录序号→buffer 指针的映射即可。</p>
+<h3>区间合并的内核实现</h3>
+<pre class="code" data-label="C"><code class="c">// skbuff.c:1647 __msg_zerocopy_callback()（节选）
+q = &amp;sk-&gt;sk_error_queue;
+spin_lock_irqsave(&amp;q-&gt;lock, flags);
+tail = skb_peek_tail(q);
+if (!tail || SKB_EXT_ERR(tail)-&gt;ee.ee_origin != SO_EE_ORIGIN_ZEROCOPY ||
+    !skb_zerocopy_notify_extend(tail, lo, len)) {
+    __skb_queue_tail(q, skb);        // 合并失败 → 新通知 skb
+    skb = NULL;
+}
+spin_unlock_irqrestore(&amp;q-&gt;lock, flags);
+sk_error_report(sk);                // → 唤醒等待者（poll EPOLLERR）
+</code></pre>
+<p>新通知先尝试<strong>扩展 errqueue 尾部那条通知的 hi</strong>（前提：<code class="c">lo == 旧 hi + 1</code> 严格相邻），失败才入队新的。等待方式：<code class="c">poll/epoll</code> 监听 <code class="c">EPOLLERR</code>（<code class="c">sk_error_report</code> 触发），而不是阻塞 recvmsg。</p>
+<h3>"copied" 降级标志</h3>
+<p><code class="c">ee_code &amp; SO_EE_CODE_ZEROCOPY_COPIED</code> 置位时表示这段数据实际是<strong>拷贝后发送</strong>的（网卡路径不支持 SG、或 TCP 重传路径重建 skb 等）。语义契约不变——buffer 依然可以释放——只是告知性能特征。<strong>应用不应把它当错误处理</strong>。</p>
+<h2>三、TCP 路径的准入判断（tcp.c 源码）</h2>
+<pre class="code" data-label="C"><code class="c">// tcp.c:1054（tcp_sendmsg_locked 节选）
+if (sk-&gt;sk_route_caps &amp; NETIF_F_SG)
+    uarg = msg_zerocopy_realloc(sk, size, skb_zcopy(skb));
+...
+if (!(sk-&gt;sk_route_caps &amp; NETIF_F_SG))    // tcp.c:1063（发送包时二次确认）
+    ...
+    uarg_to_msgzc(uarg)-&gt;zerocopy = 0;    // tcp.c:1066：标记&quot;实为拷贝&quot;
+</code></pre>
+<p><code class="c">sk_route_caps</code> 在路由查找时由网卡 feature 与路径协商得出。<strong>loopback、不支持 SG 的虚拟设备</strong>上 MSG_ZEROCOPY 永远走"拷贝+copied 通知"模式——测试时在 lo 上测不到真 ZC 收益，这是常见踩坑点。</p>
+<p>数据入 skb 用的是 <code class="c">skb_zerocopy_iter_stream()</code>（tcp.c:1233）：把用户 iov 逐段 <code class="c">pin_user_pages</code> 后填进 skb 的 frag list，不是拷贝进 linear 区。</p>
+<h2>四、uarg 的聚合与 512KB 上限</h2>
+<p><code class="c">msg_zerocopy_realloc()</code>（skbuff.c:1577）允许<strong>一个 uarg 服务多个 skb</strong>（TCP 流式发送时同一 TSO 聚合内的多个分段共享一个 ubuf_info）：</p>
+<pre class="code" data-label="C"><code class="c">const u32 byte_limit = 1 &lt;&lt; 19;       /* limit to a few TSO */
+...
+if (uarg_zc-&gt;len == USHRT_MAX - 1 || bytelen &gt; byte_limit) {
+    if (sk-&gt;sk_type == SOCK_STREAM)
+        goto new_alloc;       // TCP：开新 uarg，旧的自然完成
+    return NULL;             // UDP cork：放弃扩展
+}
+</code></pre>
+<ul>
+<li><code class="c">bytelen &gt; 512KB</code>（约几个 TSO 大小）就切新 uarg——控制单条通知的区间粒度，也限制 pin 的 page 集合大小；</li>
+<li><code class="c">len</code> 以 <strong>send 调用次数</strong>计（USHRT_MAX=65535 个序号上限）；</li>
+<li>序号连续性用 <code class="c">sk_zckey</code> 校验：<code class="c">(uarg_zc-&gt;id + uarg_zc-&gt;len) == next</code> 才扩展，否则新分配（中途有别的调用插队会断开区间）。</li>
+</ul>
+<h2>五、官方基准与适用条件</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -477,197 +861,590 @@ struct sock_extended_err *serr = (void *)CMSG_DATA(cm);
 <tbody>
 <tr>
 <td>1 KB</td>
-<td>1.0 μs</td>
-<td>1.5 μs</td>
-<td>-50%（更慢）</td>
+<td>~1 μs</td>
+<td>~1.5 μs</td>
+<td><strong>-50%（更慢）</strong></td>
 </tr>
 <tr>
 <td>4 KB</td>
-<td>1.5 μs</td>
-<td>1.2 μs</td>
-<td>+20%</td>
-</tr>
-<tr>
-<td>64 KB</td>
-<td>5.0 μs</td>
-<td>1.5 μs</td>
-<td>+230%</td>
-</tr>
-<tr>
-<td>1 MB</td>
-<td>80 μs</td>
-<td>3.0 μs</td>
-<td>+2500%</td>
-</tr>
-</tbody>
-</table></div>
-<h2>HFT 要点</h2>
-<ul>
-<li>交易报文（&lt; 1KB）：不用零拷贝（通知开销 &gt; 拷贝开销）</li>
-<li>行情转发（大包）：零拷贝收益大</li>
-<li>io_uring SEND_ZC（6.0+）是更好的零拷贝发送方案（异步 + 批量通知）</li>
-</ul>
-      </section>
-      <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">16</div><h2>— MSG_ZEROCOPY：零拷贝发送</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> Ch11（sendmsg 只有拷贝模式）
-<strong>内核版本:</strong> MSG_ZEROCOPY 4.14+</p>
-</blockquote>
-<h2>传统发送路径</h2>
-<pre class="code" data-label="code"><code class="c">用户态 buffer → copy_from_user() → 内核 skb data → 驱动 → NIC DMA
-</code></pre>
-<ul>
-<li>sendmsg() 将用户态数据拷贝到内核 sk_buff</li>
-<li>大数据量时拷贝开销显著（memcpy 占 CPU）</li>
-</ul>
-<h2>MSG_ZEROCOPY 机制</h2>
-<pre class="code" data-label="C"><code class="c">int opt = 1;
-setsockopt(sockfd, SOL_SOCKET, SO_ZEROCOPY, &amp;opt, sizeof(opt));
-
-// 发送时标记零拷贝
-sendmsg(sockfd, &amp;msg, MSG_ZEROCOPY);
-</code></pre>
-<p>工作原理：
-1. 内核不拷贝用户态数据，而是将用户态 page 映射到 sk_buff
-2. NIC DMA 直接从用户态 page 读取数据
-3. 发送完成后内核通知用户态（通过 errqueue）
-4. 用户态收到通知后才能修改/释放 buffer</p>
-<h2>通知机制</h2>
-<p>零拷贝发送是异步的，内核通过 <code class="c">MSG_ERRQUEUE</code> 通知完成：</p>
-<pre class="code" data-label="C"><code class="c">struct msghdr msg = {};
-char control[CMSG_SPACE(sizeof(struct sock_extended_err))];
-msg.msg_control = control;
-msg.msg_controllen = sizeof(control);
-recvmsg(sockfd, &amp;msg, MSG_ERRQUEUE);
-// 检查完成通知，可以安全释放 buffer
-</code></pre>
-<h2>性能提升</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>数据量</th>
-<th>传统 sendmsg</th>
-<th>MSG_ZEROCOPY</th>
-<th>提升</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1 KB</td>
-<td>~1 μs</td>
 <td>~1.5 μs</td>
-<td>更慢（通知开销）</td>
+<td>~1.2 μs</td>
+<td>+20%</td>
 </tr>
 <tr>
 <td>64 KB</td>
 <td>~5 μs</td>
 <td>~1.5 μs</td>
-<td>3x</td>
+<td>+230%</td>
 </tr>
 <tr>
 <td>1 MB</td>
 <td>~80 μs</td>
 <td>~3 μs</td>
-<td>25x</td>
+<td>+2500%</td>
 </tr>
 </tbody>
 </table></div>
-<blockquote>
-<p>小包零拷贝反而更慢（通知开销 &gt; 拷贝开销），HFT 交易报文通常很小，不一定适合。</p>
-</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>网卡</td>
+<td>checksum offload + scatter-gather（NETIF_F_SG）</td>
+</tr>
+<tr>
+<td>协议</td>
+<td>TCP（4.14+）；UDP 需 4.14+ 且 cork 场景才有意义</td>
+</tr>
+<tr>
+<td>数据量</td>
+<td><strong>&gt; ~10KB 才正收益</strong></td>
+</tr>
+<tr>
+<td>内存</td>
+<td>optmem 限额内（pin page 计账），超限退回拷贝</td>
+</tr>
+</tbody>
+</table></div>
+<p>小包变慢的三个来源：page pin/unpin 的固定成本（每次 send 数百 ns）、errqueue 通知的 skb 分配、应用侧收通知的额外 syscall。</p>
 <h2>HFT 关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>场景</th>
-<th>MSG_ZEROCOPY 适用性</th>
+<th>判定</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>交易报文（&lt; 1KB）</td>
-<td>不推荐（通知开销 &gt; 拷贝开销）</td>
+<td><strong>不用</strong>——拷贝几百字节只要几十 ns，pin+通知的固定开销是它的 10 倍</td>
 </tr>
 <tr>
-<td>行情转发（大包）</td>
-<td>推荐（减少大包拷贝）</td>
+<td>行情转发/回放松重放（大 payload）</td>
+<td>值得——1MB 级 payload 25x 提升</td>
 </tr>
 <tr>
-<td>批量发送</td>
-<td>配合 io_uring SEND_ZC 效果更好</td>
+<td>与 io_uring 组合</td>
+<td><code class="c">IORING_OP_SEND_ZC</code>（6.0+）是同一机制的异步化，通知从 errqueue 变成第二个 CQE（<code class="c">IORING_CQE_F_NOTIF</code>），批量场景比裸 MSG_ZEROCOPY 更优（见 <a href="chapter-12.html#intro">12-io-uring-net</a>）</td>
 </tr>
 </tbody>
 </table></div>
+<h2>衔接</h2>
+<p>本篇讲完用户态协议。下一篇 <a href="chapter-15.html#s-03">13-03 LWN 深入</a> 下沉到实现层：<code class="c">ubuf_info_msgzc</code> 藏在 skb-&gt;cb 里的免分配技巧、page pin 的 refcount 生命周期、destructor 回调链如何驱动 errqueue，以及 MSG_ZEROCOPY 与 splice/sendfile/mmap+write 三条替代路线的横向对比。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：sendmsg(MSG_ZEROCOPY) 返回后立刻 memset 用户 buffer，会发生什么？</summary>
+<p>数据损坏。sendmsg 返回 ≠ DMA 完成——NIC 可能还在从你的 page 里读数据。正确做法：等 errqueue 上 <code class="c">[ee_info, ee_data]</code> 覆盖该 send 序号的通知到达后才能复用/释放 buffer。ZC 把"buffer 生命周期管理"从同步语义变成了异步协议，这是它复杂度的根源。</p>
+</details>
+<details>
+<summary>Q2：收到 ee_code 带 SO_EE_CODE_ZEROCOPY_COPIED 的通知，应用该怎么处理？</summary>
+<p>正常处理，不当错误。它只是"性能公告"：这段数据实际是拷贝发送的（路由不支持 SG / TCP 重传重建了 skb）。语义上 buffer 照样可以释放——协议契约不变。只有想统计真实 ZC 命中率时才需要区分（io_uring 的 IORING_NOTIF_SQ_POLL 类似物是 REPORT_USAGE 选项）。</p>
+</details>
+<details>
+<summary>Q3：为什么在 loopback 上压测 MSG_ZEROCOPY 看不到收益？</summary>
+<p><code class="c">sk-&gt;sk_route_caps &amp; NETIF_F_SG</code> 为假（lo 设备不支持 SG scatter-gather），tcp.c:1054 的准入判断不过，内核直接走拷贝路径 + <code class="c">zerocopy = 0</code> 标记，最后给你一条 COPIED 通知。必须两台物理机、支持 SG 的网卡间测。</p>
+</details>
+<details>
+<summary>Q4：512KB 的 byte_limit 为什么注释写 "limit to a few TSO"?</summary>
+<p>TSO 单 skb 最大 64KB（GSO_MAX_SIZE 相关），512KB ≈ 8 个 TSO skb。一个 uarg 覆盖多个 skb 意味着这些 skb 的生命周期被绑在一起（refcount 共享）——全部发完才能通知。限制在"几个 TSO"粒度是为了：①单条通知覆盖的区间不至太大（失败重传影响面可控）；②pin 的 page 集合有上界（optmem 记账可控）。</p>
+</details>
+<details>
+<summary>Q5：通知为什么用 errqueue 而不是设计一个新的数据队列？</summary>
+<p>复用现有基础设施：①errqueue 的 skb 承载机制（cmsg + sock_extended_err）天然适合"带元数据的带外事件"；②poll/epoll 已监听 EPOLLERR，等待路径零新增；③errqueue 已有排队/唤醒逻辑（sk_error_report）。一个 socket 只有一条 errqueue 也没关系——区间合并（notify_extend）把同源通知压缩成少量 skb。</p>
+</details>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">13</div><h2>03 — MSG_ZEROCOPY 实现内幕：ubuf_info、page pin 与引用计数生命周期</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> Ch11
+<strong>内核源码路径:</strong> <code class="c">net/core/skbuff.c:1540-1760</code>、<code class="c">net/ipv4/tcp.c</code>、<code class="c">include/linux/skbuff.h</code></p>
+</blockquote>
+<h2>章节导航</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-02">13-02 MSG_ZEROCOPY</a></td>
+<td><strong>13-03 实现内幕</strong></td>
+<td><a href="#s-04">13-04 TCP_ZEROCOPY_RECEIVE</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2>本节讲什么</h2>
+<p>上一篇讲了用户态协议；本篇沿 LWN 对该机制的分析路线下沉到实现：<strong>内核如何做到"免拷贝挂接用户 page"，代价（pin、refcount、通知）分别发生在哪条代码路径上</strong>，以及四条零拷贝路线（sendfile / splice / mmap+write / MSG_ZEROCOPY）的机制对比。读完应该能回答："一次 64KB 的 ZC send，内核里额外发生了什么"。</p>
+<pre class="code" data-label="code"><code class="c">tcp_sendmsg_locked()
+   │ sock_owned_by_user ✓
+   ▼
+msg_zerocopy_realloc()           skbuff.c:1577 ── 复用或新建 uarg
+   │
+   ├─ 复用路径：bytelen ≤ 512KB 且 sk_zckey 连续 → uarg-&gt;len++
+   └─ 新建路径
+        ▼
+msg_zerocopy_alloc()             skbuff.c:1540
+   ├─ sock_omalloc(sk, 0)        ← 零长 skb，只为借它的 cb
+   ├─ uarg = (void *)skb-&gt;cb     ← BUILD_BUG_ON 保证放得下
+   ├─ mm_account_pinned_pages()  ← RLIMIT_MEMLOCK 记账
+   └─ uarg-&gt;ubuf.callback = msg_zerocopy_callback
+        ▼
+skb_zerocopy_iter_stream()       tcp.c:1233 ── pin_user_pages → frag list
+        ▼
+   ...NIC DMA 用户 page...
+        ▼
+skb 释放 → skb_zcopy_clear() → msg_zerocopy_callback()   skbuff.c:1700
+   └─ refcount_dec_and_test == 0 → __msg_zerocopy_callback()  skbuff.c:1647
+                                    └─ errqueue 通知 + sk_error_report()
+</code></pre>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong><code class="c">ubuf_info_msgzc</code> 不单独分配，藏在零长 skb 的 <code class="c">cb</code> 数组里</strong>（skbuff.c:1540 <code class="c">msg_zerocopy_alloc</code>）——一次 <code class="c">sock_omalloc(sk, 0, ...)</code> 同时解决了 uarg 存活（借 skb 的析构机制）和通知 skb（完成时直接把宿主 skb 塞进 errqueue）两个问题。</li>
+<li><strong>一个 uarg 的生命周期 = 它覆盖的所有 skb 的生命周期之并</strong>：<code class="c">net_zcopy_get/put</code> 维护 refcount，最后一个引用释放才触发完成通知。这就是"buffer 释放边界"在内核侧的对应物。</li>
+<li><strong>page pin 走 <code class="c">mm_account_pinned_pages</code></strong>，受 RLIMIT_MEMLOCK 约束——ZC 的内存代价不是"拷贝多少"而是"pin 多少页 + 一个 uarg"。</li>
+<li><strong>失败路径也要遵守协议</strong>：sendmsg 中途出错时 <code class="c">msg_zerocopy_put_abort()</code> 走 refcount 归零但 <code class="c">uarg-&gt;len == 0</code> 的分支——<code class="c">__msg_zerocopy_callback</code> 里 <code class="c">if (!uarg-&gt;len) goto release</code> 保证<strong>不排队假通知</strong>。</li>
+<li><strong>四条零拷贝路线本质是两类</strong>：sendfile/splice 是"页缓存→socket"的内核内部管道（用户态根本不接触数据）；mmap+write 与 MSG_ZEROCOPY 是"用户态→socket"方向（用户先拥有数据）。HFT 转发场景数据在用户态加工过，只能走第二类。</li>
+</ol>
+<h2>一、<code class="c">msg_zerocopy_alloc()</code>：借 skb 的 cb 免分配</h2>
+<pre class="code" data-label="C"><code class="c">// skbuff.c:1540（完整逻辑）
+static struct ubuf_info *msg_zerocopy_alloc(struct sock *sk, size_t size)
+{
+    struct ubuf_info_msgzc *uarg;
+    struct sk_buff *skb;
+
+    WARN_ON_ONCE(!in_task());
+
+    skb = sock_omalloc(sk, 0, GFP_KERNEL);     // ① 零长 skb
+    if (!skb)
+        return NULL;
+
+    BUILD_BUG_ON(sizeof(*uarg) &gt; sizeof(skb-&gt;cb));  // ② cb 放得下 uarg
+    uarg = (void *)skb-&gt;cb;
+    uarg-&gt;mmp.user = NULL;
+
+    if (mm_account_pinned_pages(&amp;uarg-&gt;mmp, size)) { // ③ MEMLOCK 记账
+        kfree_skb(skb);
+        return NULL;
+    }
+
+    uarg-&gt;ubuf.callback = msg_zerocopy_callback;
+    ...
+}
+</code></pre>
+<p>设计精妙之处：
+- <strong>零长 skb 是宿主也是通知载体</strong>：uarg 需要一个"活到 DMA 结束"的容器——内核里现成的引用计数容器就是 skb。而这个 skb 完成使命后直接被 <code class="c">__msg_zerocopy_callback</code> 塞进 errqueue（装 <code class="c">sock_exterr_skb</code> 也正好用它的 cb），一物两用，<strong>从 alloc 到通知零额外分配</strong>。
+- <strong><code class="c">sizeof(*uarg) &gt; sizeof(skb-&gt;cb)</code> 编译期断言</strong>：<code class="c">skb-&gt;cb</code> 是 48 字节的 per-layer 私有区（TCP 用它放 <code class="c">tcp_skb_cb</code>，这里放 <code class="c">ubuf_info_msgzc</code>），越界会在编译期爆炸而不是运行期踩内存。</p>
+<p><code class="c">sock_omalloc</code> 分配的 skb 不计入 socket 发送队列内存（<code class="c">sk_omem_alloc</code> 单独记账，受 <code class="c">sysctl_optmem_max</code> 约束）——所以 ZC 的内存预算是 optmem 而不是 wmem。</p>
+<h2>二、refcount 生命周期：通知的唯一触发器</h2>
+<pre class="code" data-label="code"><code class="c">msg_zerocopy_alloc           refcnt = 1（宿主 skb 持有）
+   │
+   ├─ msg_zerocopy_realloc 复用（TCP 流）→ net_zcopy_get()：每个共享 skb +1
+   │
+   ▼
+每个挂了 uarg 的 skb 发送完毕被释放
+   → skb_zcopy_clear(skb) → uarg-&gt;ubuf.callback = msg_zerocopy_callback()
+       │
+       ▼ skbuff.c:1700
+void msg_zerocopy_callback(struct sk_buff *skb, struct ubuf_info *uarg,
+               bool success)
+{
+    uarg_zc-&gt;zerocopy = uarg_zc-&gt;zerocopy &amp; success;  // ① 任一失败 → COPIED
+    if (refcount_dec_and_test(&amp;uarg-&gt;refcnt))
+        __msg_zerocopy_callback(uarg_zc);          // ② 最后一个引用
+}
+</code></pre>
+<ul>
+<li><strong>① <code class="c">success</code> 参数</strong>：callback 的调用方告知"这段数据是否真的零拷贝发出"。TCP 重传时如果走重建 skb 的路径（拷贝数据），对应回调 <code class="c">success=false</code>，uarg 的 <code class="c">zerocopy</code> 位被清零——最终通知带 <code class="c">SO_EE_CODE_ZEROCOPY_COPIED</code>。多个 skb 共享 uarg 时只要有一个非 ZC 路径，整条通知都标 COPIED（保守语义）。</li>
+<li><strong>② <code class="c">refcount_dec_and_test</code></strong>：通知只在最后一个引用释放时发生。应用侧看到的"一条 [lo,hi] 通知"，内核侧可能对应十几次 dec。</li>
+</ul>
+<p><strong>TCP 的 clone 增引用</strong>：TSO/GSO 分段、重传克隆（<code class="c">skb_clone</code>）都会 <code class="c">net_zcopy_get</code>——同一个 uarg 被 clone 链上每个 skb 引用，全部消化完才算完。这也是 <code class="c">msg_zerocopy_realloc</code> 里 TCP 特有 <code class="c">net_zcopy_get(uarg)</code> 的原因（流式追加时新旧边界）。</p>
+<h2>三、中止路径：不出假通知</h2>
+<pre class="code" data-label="C"><code class="c">// __msg_zerocopy_callback 开头（skbuff.c:1647 之后）
+mm_unaccount_pinned_pages(&amp;uarg-&gt;mmp);
+
+/* if !len, there was only 1 call, and it was aborted
+ * so do not queue a completion notification
+ */
+if (!uarg-&gt;len || sock_flag(sk, SOCK_DEAD))
+    goto release;
+</code></pre>
+<p>sendmsg 中途失败（比如拷贝 iov 时 EFAULT）走 <code class="c">msg_zerocopy_put_abort()</code>：把 refcount 清到 0 触发回调，但 <code class="c">uarg-&gt;len == 0</code>（还没有成功的 send 序号挂在上面）→ 直接 release，<strong>不排队通知</strong>。否则应用会收到一个从未 send 成功的序号的"完成"，把错误的 buffer 标记为可释放。</p>
+<p><code class="c">SOCK_DEAD</code> 检查：socket 已关闭时也没必要通知了，直接释放。</p>
+<h2>四、pin 语义：<code class="c">mm_account_pinned_pages</code> 与两条限制</h2>
+<ol>
+<li><strong>RLIMIT_MEMLOCK</strong>：pin 的 page 总量计入进程 memlock 配额（与 mlock 共享），超限 <code class="c">sendmsg</code> 返回 <code class="c">-ENOBUFS</code>（tcp_sendmsg_locked 里 uarg == NULL 的处理）。容器/cgroup 环境里这个 limit 常是 64KB 默认值——ZC 大流量会先撞这里。</li>
+<li><strong>页不可迁移的代价</strong>：pin 期间该 page 不能被 swap/迁移（DMA 需要<strong>物理地址稳定</strong>）。长连接大流量 ZC 会让内存碎片整理（compaction）在这些页上失败——对延迟敏感机器上属于慢性病，量级取决于并发 pinned 集合大小。</li>
+</ol>
+<h2>五、四条零拷贝路线对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>数据路径</th>
+<th>用户态接触数据</th>
+<th>需要 fd 源</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sendfile(out, in)</code></td>
+<td>page cache → socket，splice 管道</td>
+<td>❌</td>
+<td>输入是文件</td>
+<td>静态文件服务</td>
+</tr>
+<tr>
+<td><code class="c">splice(pipe ↔ socket)</code></td>
+<td>page cache ↔ pipe ↔ socket，页引用搬移</td>
+<td>❌</td>
+<td>任意两个带管道的 fd</td>
+<td>内核内转发（代理）</td>
+</tr>
+<tr>
+<td><code class="c">mmap(file) + write(sock)</code></td>
+<td>page cache 映射进用户态 → write 仍拷贝进 skb</td>
+<td>✅（只读）</td>
+<td>输入是文件</td>
+<td>需要读数据但不改</td>
+</tr>
+<tr>
+<td><code class="c">MSG_ZEROCOPY</code></td>
+<td>用户 page → skb frag（pin）</td>
+<td>✅（读写，异步释放）</td>
+<td>无</td>
+<td><strong>用户态生成/加工的数据</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>关键差异：前三条处理"数据源头在内核（页缓存）"的场景；MSG_ZEROCOPY 处理"数据源头在用户态"——HFT 的订单报文是<strong>序列化/加密后生成的</strong>，页缓存里没有现成品，必须走第四条。</p>
+<p>splice/sendfile 的成本模型也完全不同：它们没有 pin/unpin、没有完成通知（页缓存 page 天生稳定引用），代价是管道 fd 的 syscall 次数——所以"文件→socket"场景永远优先前三者。</p>
+<h2>六、一次 64KB ZC send 的完整成本清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>代码位置</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uarg 分配/复用</td>
+<td>skbuff.c:1540/1577</td>
+<td>~100ns（含 sock_omalloc；复用时为 0）</td>
+</tr>
+<tr>
+<td>pin 16 个 page</td>
+<td><code class="c">skb_zerocopy_iter_stream</code> → pin_user_pages</td>
+<td>~500ns-1μs（fault 会计账）</td>
+</tr>
+<tr>
+<td>frag 填充</td>
+<td>tcp.c:1233</td>
+<td>~100ns</td>
+</tr>
+<tr>
+<td>NIC DMA</td>
+<td>网卡读用户 page</td>
+<td>0（这正是收益来源：省 64KB memcpy ≈ 4-6μs）</td>
+</tr>
+<tr>
+<td>skb 释放回调链</td>
+<td>每段 TSO 一次 dec + test</td>
+<td>~几十 ns × 段数</td>
+</tr>
+<tr>
+<td>通知排队+唤醒</td>
+<td>skbuff.c:1647</td>
+<td>~200ns（含可能的区间合并）</td>
+</tr>
+<tr>
+<td>应用收通知</td>
+<td>recvmsg(MSG_ERRQUEUE)</td>
+<td>~1μs syscall</td>
+</tr>
+</tbody>
+</table></div>
+<p>对比：拷贝模式只有一项"64KB memcpy ≈ 4-6μs"，但它是<strong>每字节线性</strong>的；ZC 的固定开销 ~2-3μs，<strong>与数据量无关</strong>——这就是拐点在 ~10KB 的原因，两边都是可推导的。</p>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>订单流不用</strong>（&lt; 1KB，固定开销 &gt; 线性拷贝），但<strong>策略回放/行情录制回放</strong>（GB 级文件重放）走"mmap 录制文件 + sendfile/splice"路线更优——源头在页缓存。</li>
+<li><strong>发布/订阅转发器</strong>（收行情 → 加工 → 发给策略进程）是第二类场景的真命中：数据在用户态被改写过，且单条大（整本书的深度快照可达 MB 级）。</li>
+<li>监控真实 ZC 命中率：统计带 <code class="c">SO_EE_CODE_ZEROCOPY_COPIED</code> 的通知占比——持续偏高说明路由没走 SG 网卡或重传率高。</li>
+<li>与 io_uring SEND_ZC 对比见 <a href="chapter-15.html#s-02">12-02</a>：同一 uarg 机制，通知从 errqueue 换成 NOTIF CQE，省掉收通知 syscall。</li>
+</ul>
+<h2>衔接</h2>
+<p>发送侧零拷贝到此完整。下一篇 <a href="#s-04">13-04 TCP_ZEROCOPY_RECEIVE</a> 补接收侧：<code class="c">tcp_zerocopy_receive()</code>（tcp.c:2068 起）如何把接收队列映射进用户态只读 mapping，以及它和"接收路径零拷贝"（AF_XDP / DPDK bypass）的本质区别。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 uarg 要藏在零长 skb 的 cb 里，而不是 kmalloc 一个独立结构？</summary>
+<p>需要一个生命周期与"DMA 引用集合"精确同步、且有现成引用计数机制的容器。独立 kmalloc 结构得自建 refcount + 释放钩子 + 错误路径清理；而 skb 天生具备：①引用计数（skb_zcopy_get/put 直接复用）；②cb 私有区刚好放得下 uarg（编译期断言保证）；③完成时这个宿主 skb 直接变身为 errqueue 通知（装 sock_exterr_skb），零额外分配。一次 <code class="c">sock_omalloc(sk, 0)</code> 解决全部三件事。</p>
+</details>
+<details>
+<summary>Q2：TSO 分段后一个 uarg 被 8 个 skb 引用，通知什么时候发？refcount 怎么变？</summary>
+<p><code class="c">msg_zerocopy_realloc</code> 聚合时（TCP 流式）每追加一段 <code class="c">net_zcopy_get</code> +1；每个分段 skb 被网卡确认释放时 <code class="c">msg_zerocopy_callback</code> 里 -1。最后一个 -1（refcount_dec_and_test 为真）才进 <code class="c">__msg_zerocopy_callback</code> 排通知。所以应用收到一条通知 = 内核里可能发生了一串 dec——通知的"区间语义"（[id, id+len-1]）就是为这种多 skb 聚合设计的。</p>
+</details>
+<details>
+<summary>Q3：应用 sendmsg 返回 -EFAULT（iov 地址非法），会误发一条完成通知吗？</summary>
+<p>不会。错误路径调用 <code class="c">msg_zerocopy_put_abort()</code>：清 refcount 触发 <code class="c">__msg_zerocopy_callback</code>，但此时 <code class="c">uarg-&gt;len == 0</code>（没有任何 send 序号成功挂上），函数开头 <code class="c">if (!uarg-&gt;len ...) goto release</code> 直接释放资源、跳过排队。这个 len==0 分支就是防假通知的闸门——否则应用会收到一个失败 send 的"完成"，错误释放 buffer。</p>
+</details>
+<details>
+<summary>Q4：为什么 sendfile/splice 没有完成通知机制？它们不需要吗？</summary>
+<p>不需要。页缓存的 page 由 page cache 持有稳定引用，物理地址天然稳定，socket 侧只是"借用页引用"——skb 释放后引用归还页缓存，数据源永远不会消失。MSG_ZEROCOPY 的数据源是<strong>用户匿名内存</strong>，没有 page cache 那样的持久宿主，才需要 pin + 通知来定义"何时用户可安全复用"。问题根源不同，机制重量级自然不同。</p>
+</details>
+<details>
+<summary>Q5：容器里跑 ZC 大流量 sendmsg 报 -ENOBUFS，最可能撞了什么？</summary>
+<p>RLIMIT_MEMLOCK（或 sysctl_optmem_max）。<code class="c">mm_account_pinned_pages</code> 把 pin 的页计入进程 memlock 配额，容器默认常只有 64KB——几十个并发 ZC send 就会超。处理：调大 ulimit -l / cgroup 的 memlock 限额，或改小单次 send 聚合（byte_limit 本来就限制 512KB/8 页级别 × 并发数）。</p>
+</details>
       </section>
       <section class="section" id="s-04">
-        <div class="sec-head"><div class="sec-no">17</div><h2>— TCP zero-copy 接收</h2></div>
+        <div class="sec-head"><div class="sec-no">13</div><h2>04 — TCP_ZEROCOPY_RECEIVE：接收侧零拷贝（mmap 语义，v6.6 源码级）</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> Ch11（recvmsg 只有拷贝模式）
-<strong>内核版本:</strong> TCP zero-copy receive 5.0+（tcp_recvmsg MSG_ZEROCOPY 实为 mmap 方案）</p>
+<p><strong>对应 Rosen:</strong> Ch11（recvmsg 拷贝模式）
+<strong>内核源码路径:</strong> <code class="c">net/ipv4/tcp.c:1743-2205</code>（<code class="c">tcp_mmap</code>、<code class="c">tcp_zerocopy_receive</code>）</p>
 </blockquote>
-<h2>传统接收路径</h2>
-<pre class="code" data-label="code"><code class="c">NIC DMA → 内核 page → copy_to_user() → 用户态 buffer
-</code></pre>
-<ul>
-<li>recvmsg() 将内核 sk_buff 数据拷贝到用户态</li>
-<li>高吞吐场景拷贝开销大</li>
-</ul>
-<h2>TCP zero-copy 接收方案</h2>
-<p>Linux 提供两种 TCP 零拷贝接收方式：</p>
-<h3>方案 1：TCP mmap（<code class="c">TCP_ZEROCOPY_RECEIVE</code>，4.18+）</h3>
-<pre class="code" data-label="C"><code class="c">struct tcp_zerocopy_receive zc = {
-    .address = (uintptr_t)mapped_buffer,
-    .length = buffer_size,
-};
-setsockopt(sockfd, IPPROTO_TCP, TCP_ZEROCOPY_RECEIVE,
-           &amp;zc, sizeof(zc));
-</code></pre>
-<ul>
-<li>内核将 TCP 接收队列中的 page 映射到用户态地址空间</li>
-<li>用户态直接读取映射内存，无需拷贝</li>
-<li>读取完后通知内核（offset 更新）</li>
-</ul>
-<h3>方案 2：io_uring registered buffers（5.7+）</h3>
-<pre class="code" data-label="C"><code class="c">// 注册用户态 buffer 到 io_uring
-struct iovec iov = { .iov_base = buf, .iov_len = buf_size };
-io_uring_register_buffers(ring, &amp;iov, 1);
+<h2>章节导航</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-03">13-03 ZC 实现内幕</a></td>
+<td><strong>13-04 接收侧 ZC</strong></td>
+<td><a href="#s-05">13-05 SO_REUSEPORT</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2>本节讲什么</h2>
+<p>发送侧零拷贝（MSG_ZEROCOPY）讲完了，接收侧的对称问题是：<code class="c">recvmsg()</code> 要把 skb 数据 <code class="c">copy_to_user()</code> 进用户 buffer——每字节一次。Linux 在 TCP 上给出的答案是 <code class="c">TCP_ZEROCOPY_RECEIVE</code>（4.18+）：<strong>把 skb frag 里的 page 直接映射进用户地址空间</strong>，应用读 mapping 就等于读接收队列，拷贝次数归零（严格说是归到"页对齐部分"）。</p>
+<p>先纠正一个常见误解（本仓库旧版笔记也写错过）：<strong>io_uring registered buffers 不是接收零拷贝</strong>——它只是把 buffer 预 pin 好省掉每次操作的 pin 开销，recv 数据仍然从 skb memcpy 进用户 buffer。真正的"DMA 直达用户态"只有 AF_XDP / DPDK bypass。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>协议是两步的：先 <code class="c">mmap(socket_fd)</code> 拿只读 VMA，再循环 <code class="c">setsockopt(TCP_ZEROCOPY_RECEIVE)</code> 换页</strong>。VMA 由 <code class="c">tcp_mmap()</code>（tcp.c:1746）创建并打上 <code class="c">tcp_vm_ops</code> 标记——后续 setsockopt 只接受带这个标记的 VMA（<code class="c">find_tcp_vma</code> 校验，tcp.c:2041）。</li>
+<li><strong>只映射整页</strong>：<code class="c">inq &lt; PAGE_SIZE</code> 时直接返回 0（tcp.c:2101，<code class="c">recv_skip_hint</code> 告知还差多少）；页边界外的"零头"用 <code class="c">copybuf</code> 拷贝兜底（<code class="c">tcp_zc_handle_leftover</code>）。<strong><code class="c">inq &lt;= copybuf_len</code> 时整个调用退化为纯拷贝</strong>（tcp.c:2098 <code class="c">receive_fallback_to_copy</code>）。</li>
+<li><strong>每次调用默认做一次 TLB flush</strong>：<code class="c">zap_page_range_single</code>（tcp.c:2121）——把上一轮映射的旧页从 TLB 踢掉再 <code class="c">vm_insert_pages</code> 新页。这是单次调用的固定成本，也是为什么高频小量调用反而亏。<code class="c">TCP_RECEIVE_ZEROCOPY_FLAG_TLB_CLEAN_HINT</code> 可延迟 flush。</li>
+<li><strong>消费进度 = <code class="c">tp-&gt;copied_seq</code> 前进</strong>：映射完成即认为已读（tcp.c:2200 <code class="c">WRITE_ONCE(tp-&gt;copied_seq, seq)</code> + <code class="c">tcp_cleanup_rbuf</code> 发 ACK）——<strong>没有"应用确认"环节</strong>，映射进去但没读也会被 ACK 掉，这是与 recvmsg 最大的语义差异。</li>
+<li><strong>RFS 联动</strong>：入口处 <code class="c">sock_rps_record_flow(sk)</code>（tcp.c:2093）——每次 ZC 接收都更新全局流表，让 RFS 把后续包引导到消费线程所在 CPU（呼应 <a href="chapter-15.html#s-01">13-01</a>）。</li>
+<li><strong>映射是只读的</strong>（<code class="c">VM_WRITE → -EPERM</code>，tcp.c:1750），且页属于内核 skb——skb 被清理后 mapping 里是脏数据，<strong>必须按序推进</strong>。</li>
+</ol>
+<h2>一、用户态完整协议</h2>
+<pre class="code" data-label="C"><code class="c">/* 步骤 1：在 socket fd 上 mmap 一个只读窗口 */
+size_t mapping_len = 1 &lt;&lt; 21;              /* 建议 2MB 起步 */
+void *base = mmap(NULL, mapping_len, PROT_READ, MAP_SHARED,
+                  tcp_fd, 0);              /* ← fd 是 TCP socket 本身 */
 
-// 提交 recv 直接写入注册 buffer
-io_uring_prep_recv(sqe, sockfd, buf, buf_size, 0);
+/* 步骤 2：循环&quot;换页&quot; */
+uint32_t offset = 0;
+for (;;) {
+    struct tcp_zerocopy_receive zc = {
+        .address  = (uintptr_t)(base + offset),
+        .length   = mapping_len - offset,
+        .copybuf_address = (uintptr_t)copybuf,   /* 零头拷贝缓冲 */
+        .copybuf_len     = sizeof(copybuf),
+    };
+    if (setsockopt(tcp_fd, IPPROTO_TCP, TCP_ZEROCOPY_RECEIVE,
+                   &amp;zc, sizeof(zc)) &lt; 0) {
+        if (errno == EINVAL) { /* 没有 mappable 数据 */ }
+        break;
+    }
+    /* zc.length  = 本次映射了多少字节（页对齐部分） */
+    /* zc.recv_skip_hint = 建议下次跳过多少（下页对齐边界） */
+
+    处理数据(base + offset, zc.length);
+
+    offset += zc.length + zc.recv_skip_hint;
+    if (offset &gt;= mapping_len) offset = 0;   /* 环形复用窗口 */
+}
+</code></pre>
+<h2>二、源码主流程：<code class="c">tcp_zerocopy_receive()</code>（tcp.c:2068）</h2>
+<h3>入口三连判（决定了行为分支）</h3>
+<pre class="code" data-label="C"><code class="c">if (address &amp; (PAGE_SIZE - 1) || address != zc-&gt;address)
+    return -EINVAL;                          // ① 必须页对齐
+
+if (inq &amp;&amp; inq &lt;= copybuf_len)
+    return receive_fallback_to_copy(sk, zc, inq, tss);  // ② 数据量≤copybuf → 全拷
+
+if (inq &lt; PAGE_SIZE) {
+    zc-&gt;length = 0;
+    zc-&gt;recv_skip_hint = inq;                // ③ 不满一页 → 等数据，别空转
+    if (!inq &amp;&amp; sock_flag(sk, SOCK_DONE))
+        return -EIO;
+    return 0;
+}
+</code></pre>
+<p>三级判定总结：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地址未页对齐</td>
+<td><code class="c">-EINVAL</code>，协议错误</td>
+</tr>
+<tr>
+<td><code class="c">0 &lt; inq &lt;= copybuf_len</code></td>
+<td>整段拷贝进 copybuf（拷贝比换页便宜）</td>
+</tr>
+<tr>
+<td><code class="c">inq &lt; PAGE_SIZE</code></td>
+<td>返回 0，<code class="c">recv_skip_hint</code> 提示等待</td>
+</tr>
+<tr>
+<td><code class="c">inq &gt;= PAGE_SIZE</code></td>
+<td>走映射</td>
+</tr>
+</tbody>
+</table></div>
+<h3>映射核心循环</h3>
+<pre class="code" data-label="C"><code class="c">total_bytes_to_map = avail_len &amp; ~(PAGE_SIZE - 1);   // 只取页对齐部分
+if (total_bytes_to_map) {
+    if (!(zc-&gt;flags &amp; TCP_RECEIVE_ZEROCOPY_FLAG_TLB_CLEAN_HINT))
+        zap_page_range_single(vma, address, total_bytes_to_map, NULL);  // TLB flush
+    ...
+}
+while (length + PAGE_SIZE &lt;= zc-&gt;length) {
+    ...
+    page = skb_frag_page(frags);              // 直接取 skb 的 frag page
+    prefetchw(page);
+    pages[pages_to_map++] = page;
+    length += PAGE_SIZE;
+    ...
+    if (pages_to_map == TCP_ZEROCOPY_PAGE_BATCH_SIZE || ...) {
+        ret = tcp_zerocopy_vm_insert_batch(...);   // 32 页一批插入 VMA
+        ...
+    }
+}
 </code></pre>
 <ul>
-<li>内核直接将数据写入预注册的用户态 buffer</li>
-<li>无需拷贝（DMA → 用户态 page）</li>
+<li><strong>批量 32 页</strong>（<code class="c">TCP_ZEROCOPY_PAGE_BATCH_SIZE</code>，tcp.c:2066）：一次 <code class="c">vm_insert_pages</code> 映射一批，摊薄 PTE 锁开销；批边界对齐 skb 边界（"cannot unroll failed ops across skbs"——失败回滚不跨 skb）。</li>
+<li><strong><code class="c">prefetchw(page)</code></strong>：预取 page 结构体并准备写（<code class="c">vm_insert_pages</code> 要写 page 的 mapcount）——热路径细节。</li>
+<li><strong><code class="c">vm_insert_pages</code> 半成功也要推进</strong>：<code class="c">tcp_zerocopy_vm_insert_batch_error</code> 里先算已映射页数、更新 seq/address，再决定 zap 重试或回滚 length（tcp.c:1941-1983）。</li>
 </ul>
-<h2>性能对比</h2>
+<h3>尾部结算</h3>
+<pre class="code" data-label="C"><code class="c">copylen = tcp_zc_handle_leftover(zc, sk, skb, &amp;seq, copybuf_len, tss); // 零头拷贝
+
+if (length + copylen) {
+    WRITE_ONCE(tp-&gt;copied_seq, seq);         // ← 消费进度推进
+    tcp_cleanup_rbuf(sk, length + copylen);  // ← 清 skb + 发 ACK
+    ...
+}
+zc-&gt;length = length;
+</code></pre>
+<p><code class="c">tcp_zerocopy_set_hint_for_skb()</code>（tcp.c:1806）在 <code class="c">recv_skip_hint</code> 里维护"到下一个可映射 frag 的距离"——应用据此跳过不可映射区（如 hdr 占的首页偏移）。</p>
+<h2>三、成本模型与拐点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每次 setsockopt syscall</td>
+<td>~0.5-1 μs</td>
+</tr>
+<tr>
+<td>TLB flush（zap_page_range_single）</td>
+<td>~1 μs 级（广播 IPI 到用过该 mapping 的核）</td>
+</tr>
+<tr>
+<td>vm_insert_pages 32 页</td>
+<td>~1-2 μs</td>
+</tr>
+<tr>
+<td>换来的收益</td>
+<td>省掉 N×PAGE_SIZE 的 memcpy（~60-80 GB/s → 每页 ~50ns）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>单页净亏</strong>（成本 &gt; 收益），<strong>一个 batch（32 页=128KB）净赚</strong>。拐点约 32KB+ 且持续满页到达——典型命中场景是<strong>镜像/日志/行情录制回放类大流量单连接</strong>，而不是高频小报文。</p>
+<h2>四、与发送侧 MSG_ZEROCOPY 的机制对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>MSG_ZEROCOPY（发送）</th>
+<th>TCP_ZEROCOPY_RECEIVE（接收）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>零拷贝对象</td>
+<td>用户 page → skb frag（pin）</td>
+<td>skb frag page → 用户 VMA（insert）</td>
+</tr>
+<tr>
+<td>page 归属</td>
+<td>用户态（内核借用）</td>
+<td>内核态（用户借用）</td>
+</tr>
+<tr>
+<td>生命周期管理</td>
+<td>refcount + errqueue 通知</td>
+<td>copied_seq 推进，无确认环节</td>
+</tr>
+<tr>
+<td>固定成本</td>
+<td>pin/unpin + 通知</td>
+<td>TLB flush + PTE 批量插入</td>
+</tr>
+<tr>
+<td>拐点</td>
+<td>~10KB</td>
+<td>~32KB（一个 batch）</td>
+</tr>
+</tbody>
+</table></div>
+<p>发送侧问题是"用户内存物理地址要稳定"（pin），接收侧问题是"内核页要出现在用户页表里"（insert）——方向相反，但都是"用页表/引用操作换 memcpy"。</p>
+<h2>五、三方案真实对比（修正版）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>方案</th>
 <th>拷贝次数</th>
-<th>延迟</th>
-<th>复杂度</th>
+<th>真相</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>传统 recvmsg</td>
-<td>1（内核→用户）</td>
-<td>基准</td>
-<td>低</td>
+<td>1 次 skb→user</td>
+<td>每字节线性，小包其实很快</td>
+</tr>
+<tr>
+<td>io_uring + registered buffers</td>
+<td><strong>仍是 1 次</strong></td>
+<td>注册只是预 pin buffer，recv 内核态拷贝照旧；省的是 get_user_pages 不是 memcpy</td>
 </tr>
 <tr>
 <td>TCP_ZEROCOPY_RECEIVE</td>
-<td>0（mmap）</td>
-<td>略低</td>
-<td>中</td>
+<td>页对齐部分 0 次</td>
+<td>TLB flush + PTE 换页换来的；零头仍拷贝</td>
 </tr>
 <tr>
-<td>io_uring + registered buf</td>
-<td>0（DMA 直达）</td>
-<td>最低</td>
-<td>高</td>
+<td>AF_XDP / DPDK</td>
+<td>0 次且不经协议栈</td>
+<td>RX 描述符直指用户态内存，真正 bypass</td>
 </tr>
 </tbody>
 </table></div>
@@ -676,101 +1453,265 @@ io_uring_prep_recv(sqe, sockfd, buf, buf_size, 0);
 <thead>
 <tr>
 <th>场景</th>
-<th>推荐方案</th>
+<th>判定</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行情接收（小包）</td>
-<td>传统 recvmsg（小包拷贝开销可忽略）</td>
+<td>行情接收（小包、突发）</td>
+<td><strong>不用</strong>——<code class="c">inq &lt; PAGE_SIZE</code> 直接返回 0，高频调用只剩 syscall + 判空开销；小包 recvmsg 的 memcpy 只有几十 ns</td>
 </tr>
 <tr>
-<td>行情转发（大包）</td>
-<td>TCP_ZEROCOPY_RECEIVE 或 io_uring</td>
+<td>行情录制/回放服务（大流量 TCP 单连接下发）</td>
+<td><strong>命中</strong>——持续满页到达时拐点之上收益稳定</td>
 </tr>
 <tr>
-<td>AF_XDP</td>
-<td>最优（根本不经过 TCP 协议栈）</td>
+<td>追求极致接收</td>
+<td>AF_XDP（见 chapter-08）——零拷贝且免协议栈，是 TCP_ZEROCOPY_RECEIVE 的真上位替代</td>
+</tr>
+<tr>
+<td>语义陷阱</td>
+<td>映射即 ACK：内核认为"给你看了就是消费了"。策略层如果读一半崩溃，TCP 层已无法重传——<strong>可靠性契约比 recvmsg 弱</strong></td>
 </tr>
 </tbody>
 </table></div>
+<h2>衔接</h2>
+<p>至此收发两侧的"页级零拷贝"闭环。下一篇 <a href="#s-05">13-05 SO_REUSEPORT</a> 换维度：不省拷贝，省的是<strong>多个监听者之间的分发开销</strong>——reuseport 组、eBPF 选择器与 <code class="c">reuseport_select_sock_by_hash</code> 的 CPU 亲和联动（把 13-01 的 <code class="c">SO_INCOMING_CPU</code> 收口补完）。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么第一步是 mmap(socket_fd) 而不是普通匿名内存？</summary>
+<p><code class="c">tcp_mmap()</code>（tcp.c:1746）给 VMA 打上 <code class="c">vm_ops = &amp;tcp_vm_ops</code> 标记并强制只读。后续 setsockopt 里 <code class="c">find_tcp_vma()</code>（tcp.c:2041）用这个标记校验"这是我为 TCP ZC 准备的窗口"——防止用户拿任意的匿名 mapping 来接收内核 page（那会破坏该 VMA 的匿名页语义）。tcp_vm_ops 本身是个空操作表：它只当"身份证"用，fault/缺失处理全靠 vm_insert_pages 预先填好 PTE。</p>
+</details>
+<details>
+<summary>Q2：TLB_CLEAN_HINT 标志解决什么问题？为什么默认不开？</summary>
+<p>默认行为是每次调用先 zap 旧映射（TLB flush）——安全但贵（flush 是广播 IPI）。如果应用保证"换页前已读完旧数据、且不跨线程读"，可置 <code class="c">TCP_RECEIVE_ZEROCOPY_FLAG_TLB_CLEAN_HINT</code> 跳过主动 flush，只在 <code class="c">vm_insert_pages</code> 返回 -EBUSY（PTE 还被别的核缓存着）时才补一次 zap（tcp.c:1941 的 error 路径）。默认关是因为乱序读写旧页的后果是读到脏数据——正确性换性能的开关。</p>
+</details>
+<details>
+<summary>Q3：零头数据（straggler）为什么不干脆也映射进去？</summary>
+<p>映射的粒度是 PTE = 页。零头要么不足一页（<code class="c">inq &lt; PAGE_SIZE</code>），要么是 frag 内偏移非零（<code class="c">offset_frag != 0</code>，主循环里直接 break）。把半页数据凑成整页映射需要内核先搬移数据进对齐页——那就变成拷贝了，不如 <code class="c">tcp_copy_straggler_data</code> 直接拷进 copybuf（应用栈上 buffer，一次 memcpy 到位），语义和成本都更干净。</p>
+</details>
+<details>
+<summary>Q4：io_uring registered buffers 省的到底是什么开销？</summary>
+<p>省的是<strong>每次 I/O 的 pin/校验</strong>：普通 recv 每 op 都要走 get_user_pages（查 VMA、pin page、记 accounting，数百 ns 固定成本）；注册过的 buffer 一次性 pin 好，后续 op 直接用。但数据路径不变：中断/软中断收进 skb，io_uring 的 io_recv 仍然 memcpy skb→user buffer。它是"syscall 与 pin 优化"，不是零拷贝——零拷贝的判定标准是有没有那次逐字节 memcpy。</p>
+</details>
+<details>
+<summary>Q5：TCP_ZEROCOPY_RECEIVE 与 recvmsg 在可靠性契约上的差异，对上层协议意味着什么？</summary>
+<p>recvmsg 语义：拷贝进用户 buffer 才算消费，应用崩了没拷的数据还在接收队列，对端可以重传（应用层可重连续传）。ZC 语义：<code class="c">copied_seq</code> 在映射完成即推进、<code class="c">tcp_cleanup_rbuf</code> 即 ACK（tcp.c:2200）——数据"交付"给了一个内核不追踪其读取进度的 mapping。应用读一半崩溃，那些数据永久丢失且对端以为已交付。上层协议如果自己有序列号/确认机制（行情序号），可以自愈重传；纯字节流协议要自己加校验点。</p>
+</details>
       </section>
       <section class="section" id="s-05">
-        <div class="sec-head"><div class="sec-no">18</div><h2>— SO_REUSEPORT：多进程负载均衡</h2></div>
+        <div class="sec-head"><div class="sec-no">13</div><h2>05 — SO_REUSEPORT：内核级多监听者分发与 eBPF 选择器（v6.6 源码级）</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> SO_REUSEPORT 3.9+；eBPF attach 4.6+</p>
+<p><strong>对应 Rosen:</strong> 无（3.x 时代机制，Rosen 未覆盖）
+<strong>内核源码路径:</strong> <code class="c">net/core/sock_reuseport.c</code>、<code class="c">include/uapi/linux/bpf.h:6355</code>（<code class="c">sk_reuseport_md</code>）</p>
 </blockquote>
-<h2>传统多进程监听同一端口</h2>
-<ul>
-<li><code class="c">SO_REUSEADDR</code>：多个 socket 绑定同一地址，但只有最后一个能 accept</li>
-<li>需要一个 master 进程 accept 后分发给 worker</li>
-<li>master 成为瓶颈</li>
-</ul>
-<h2>SO_REUSEPORT</h2>
-<pre class="code" data-label="C"><code class="c">int opt = 1;
-setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &amp;opt, sizeof(opt));
-bind(sockfd, (struct sockaddr*)&amp;addr, sizeof(addr));
-listen(sockfd, backlog);
-</code></pre>
-<ul>
-<li>多个进程/线程各自创建 socket，都绑定同一地址+端口</li>
-<li>内核将连接<strong>均匀分发</strong>到各 socket</li>
-<li>每个进程独立 accept，无 master 瓶颈</li>
-</ul>
-<h2>分发算法</h2>
+<h2>章节导航</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>版本</th>
-<th>算法</th>
-<th>特点</th>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>3.9-4.5</td>
-<td>hash(4-tuple) % N</td>
-<td>同一连接总是到同一 socket</td>
-</tr>
-<tr>
-<td>4.6+</td>
-<td>eBPF 自定义</td>
-<td>可按任意逻辑分发（CPU 亲和性等）</td>
+<td><a href="#s-04">13-04 接收侧 ZC</a></td>
+<td><strong>13-05 SO_REUSEPORT</strong></td>
+<td><a href="chapter-14.html#intro">chapter-14 TCP/UDP 内部机制</a></td>
 </tr>
 </tbody>
 </table></div>
-<h2>eBPF 分发（4.6+）</h2>
-<pre class="code" data-label="C"><code class="c">SEC(&quot;sk_reuseport&quot;)
-int select_socket(struct sk_reuseport_md *ctx) {
-    // 按 CPU 亲和性选择 socket
-    int cpu = bpf_get_smp_processor_id();
-    return cpu % NUM_SOCKETS;
+<h2>本节讲什么</h2>
+<p>本模块前四篇都在优化"一条数据路径"的效率；本篇优化"<strong>多条数据路径的入口分布</strong>"：多个进程/线程监听同一端口时，连接（或数据报）如何到达正确的消费者。SO_REUSEPORT（3.9+）把分发从用户态 master 进程下沉到内核 lookup 路径里，4.6+ 又允许 eBPF 接管选择逻辑，5.14+ 进一步支持请求迁移。它还是 <a href="chapter-15.html#s-01">13-01</a> 里 <code class="c">SO_INCOMING_CPU</code> + <code class="c">reuseport_select_sock_by_hash()</code> 那条 CPU 亲和链的最后一环。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>REUSEPORT 组是内核里的一个 RCU 保护数组</strong>：<code class="c">struct sock_reuseport</code>（sock_reuseport.c）持有 <code class="c">socks[]</code>、BPF prog 指针和 <code class="c">incoming_cpu</code> 计数器；<code class="c">bind()</code> 时 <code class="c">reuseport_alloc()</code>（:189）建组，满了 <code class="c">reuseport_grow()</code>（:247）翻倍扩容并剔除已关闭的成员。</li>
+<li><strong>分发现场在协议栈 lookup 路径</strong>（TCP <code class="c">__inet_lookup_listener</code>、UDP <code class="c">__udp4_lib_lookup</code>）：命中组后调 <code class="c">reuseport_select_sock()</code>（sock_reuseport.c:569）——<strong>BPF 优先，hash 兜底</strong>。</li>
+<li><strong>两种 BPF 程序类型</strong>：<code class="c">BPF_PROG_TYPE_SK_REUSEPORT</code>（专为此设计，返回值 = 组内 socket 索引）和 legacy socket filter（返回 0..N-1 同语义，靠 <code class="c">run_bpf_filter</code> 解释）。BPF 返回无效值（越界/负）时静默退回 hash 选择。</li>
+<li><strong><code class="c">sk_reuseport_md</code> 上下文从传输层头部开始</strong>（uapi bpf.h:6355）：<code class="c">data/data_end</code> 指向 TCP/UDP header，另有 <code class="c">len/eth_protocol/ip_protocol/bind_inany/hash</code> 和两个 sock 指针——<strong>BPF 可以看 4-tuple 之外的东西</strong>（如 TCP 选项、payload 前几字节）做路由决策。</li>
+<li><strong>TCP listener 迁移（5.14+，<code class="c">reuseport_migrate_sock()</code> :621）</strong>：组内某 listen socket 关闭时，其未完成的握手（reqsk）和已建立连接可被 BPF 程序"改嫁"到组内其他 socket——滚动重启 worker 不丢连接。</li>
+<li><strong>UDP 组播与单播语义不同</strong>：单播数据报走 <code class="c">reuseport_select_sock</code> 选<strong>一个</strong>；组播则是<strong>每个加入了该组的 socket 各得一份拷贝</strong>——多进程行情分发的免费 fan-out。</li>
+</ol>
+<h2>一、没有 REUSEPORT 的世界</h2>
+<ul>
+<li><strong><code class="c">SO_REUSEADDR</code> ≠ <code class="c">SO_REUSEPORT</code></strong>：REUSEADDR 只允许 TIME_WAIT 重绑定，同端口并发监听仍冲突（除组播）。</li>
+<li>旧方案 A：master 进程 accept 后 fd 传递给 worker（SCM_RIGHTS）——master 是单点，两次上下文切换。</li>
+<li>旧方案 B：多进程阻塞在同一 listen fd 上 accept——内核唤醒所有等待者（惊群），N-1 个抢空而归；<code class="c">WQ_FLAG_EXCLUSIVE</code> 缓解但不消除。</li>
+<li>旧方案 C：epoll 共享 listen fd + EPOLLEXCLUSIVE——事件分发仍单点，负载不均。</li>
+</ul>
+<p>REUSEPORT 把选择权<strong>直接放进包的 lookup 路径</strong>：每个 worker 自己的 listen socket 都在内核 hash 表里，SYN 到达时当场决定走谁的队列——没有 master、没有惊群、没有额外切换。</p>
+<h2>二、组的管理：alloc / grow / detach</h2>
+<pre class="code" data-label="code"><code class="c">bind() 时 sk_reuseport=1 且地址已被其他同 flag socket 占用
+   → 加入对方的 reuseport 组（或建组）
+   → __reuseport_add_sock()：socks[num_socks++] = sk，smp_wmb() 发布
+close(sk)
+   → reuseport_detach_sock()：摘除；组空则释放
+   → 有 BPF prog 时先通知（REUSEPORT_SOCKARRAY map 里的引用失效）
+</code></pre>
+<p><code class="c">reuseport_grow()</code>（:247）的细节：扩容翻倍新数组、RCU 替换；<strong>顺手剔除已关闭的 socket</strong>（<code class="c">RCU_INIT_POINTER(sk-&gt;sk_reuseport_cb, NULL)</code>，:262）——<code class="c">INIT_SOCKS</code>（初始容量）之后按 2 的幂增长。<code class="c">__reuseport_add_sock</code> 的 <code class="c">smp_wmb()</code> 与 <code class="c">reuseport_select_sock</code> 里的 <code class="c">smp_rmb()</code> 配对：保证选择者看到的 <code class="c">num_socks</code> 增大时，<code class="c">socks[]</code> 内容必然已就绪。</p>
+<h2>三、分发核心：<code class="c">reuseport_select_sock()</code>（:569）</h2>
+<pre class="code" data-label="C"><code class="c">struct sock *reuseport_select_sock(struct sock *sk, u32 hash,
+                   struct sk_buff *skb, int hdr_len)
+{
+    reuse = rcu_dereference(sk-&gt;sk_reuseport_cb);
+    if (!reuse) goto out;                       // 组还没建好（竞态窗口）
+
+    prog = rcu_dereference(reuse-&gt;prog);
+    socks = READ_ONCE(reuse-&gt;num_socks);
+    if (likely(socks)) {
+        smp_rmb();                              // 与 add_sock 的 wmb 配对
+
+        if (!prog || !skb)
+            goto select_by_hash;
+
+        if (prog-&gt;type == BPF_PROG_TYPE_SK_REUSEPORT)
+            sk2 = bpf_run_sk_reuseport(reuse, sk, prog, skb, NULL, hash);
+        else
+            sk2 = run_bpf_filter(reuse, socks, prog, skb, hdr_len);
+
+select_by_hash:
+        if (!sk2)                               // 无 BPF 或 BPF 给了无效结果
+            sk2 = reuseport_select_sock_by_hash(reuse, hash, socks);
+    }
+    ...
 }
 </code></pre>
-<h2>HFT 关联</h2>
+<p>关键设计：<strong>BPF 永远有 hash 兜底</strong>。BPF 程序崩了逻辑（返回越界索引）、或 attach 被摘掉的瞬间，数据路径不中断——最多退化为 hash 分发。这符合"BPF 增强而不接管关键路径"的一贯哲学（对照 chapter-05 XDP 的 verdict 兜底）。</p>
+<p><code class="c">reuseport_select_sock_by_hash()</code> 的逐行解读（<code class="c">reciprocal_scale</code> + incoming_cpu 匹配 + 兜底轮询）在 <a href="chapter-15.html#s-01">13-01 第五节</a>——那里是把它当"CPU 亲和收口"讲的，这里补充分发视角：<strong>hash 保证 per-flow 一致性</strong>（同一客户端总是到同一 worker，TCP 序列/状态不分裂），incoming_cpu 修饰只影响"同 flow 重选"场景。</p>
+<h2>四、eBPF 选择器：<code class="c">sk_reuseport_md</code> 上下文</h2>
+<pre class="code" data-label="C"><code class="c">// include/uapi/linux/bpf.h:6355
+struct sk_reuseport_md {
+    void *data;          // ← 从 TCP/UDP 头开始
+    void *data_end;
+    __u32 len;           // 从传输层头起的总长
+    __u32 eth_protocol;
+    __u32 ip_protocol;
+    __u32 bind_inany;
+    __u32 hash;          // 4-tuple hash（内核算好的）
+    struct bpf_sock *sk;          // 组内当前被 lookup 的 socket
+    struct bpf_sock *migrating_sk; // 迁移场景下的原 socket
+};
+</code></pre>
+<p><strong>返回值即选择</strong>：程序返回 <code class="c">0..num_socks-1</code> 的索引。更工程化的写法是配合 <code class="c">BPF_MAP_TYPE_REUSEPORT_SOCKARRAY</code> map + <code class="c">bpf_sk_select_reuseport()</code> helper（uapi bpf.h:3503）——map 里存 socket 引用，程序按业务逻辑查 map 选 socket，worker 动态增减时只需更新 map（内核会校验所选 socket 确实在组里且匹配）。</p>
+<pre class="code" data-label="C"><code class="c">/* 典型：按 payload 首字段把行情分给对应 symbol-owner worker */
+SEC(&quot;sk_reuseport&quot;)
+int pick_worker(struct sk_reuseport_md *ctx)
+{
+    __u32 symbol_id;
+    if (bpf_skb_load_bytes(ctx, 0, &amp;symbol_id, sizeof(symbol_id)))
+        return 0;                        // 读不到 → 索引 0 兜底
+    __u32 idx = symbol_id % NUM_WORKERS;
+    if (bpf_sk_select_reuseport(ctx, &amp;sock_arr, &amp;idx, 0))
+        return 0;                        // helper 失败 → 兜底
+    return idx;
+}
+</code></pre>
+<p>注意旧版笔记里 <code class="c">return cpu % NUM_SOCKETS</code> 的写法是<strong>错的</strong>：返回值是组内索引不是 CPU 号；想按 CPU 选要么维护"CPU→索引"映射（结合 <code class="c">bpf_get_smp_processor_id</code>），要么干脆用 <a href="chapter-15.html#s-01">13-01</a> 讲的 <code class="c">SO_INCOMING_CPU</code> 路线（内核自动，无 BPF）。</p>
+<h2>五、TCP listener 迁移（5.14+）</h2>
+<p><code class="c">reuseport_migrate_sock()</code>（:621）在两种时机被调：
+1. <strong>listen socket 关闭</strong>：其 accept 队列里的 reqsk（半连接）与已建连 socket 被拿出来重新选主；
+2. 对应 BPF 上下文里 <code class="c">migrating_sk != NULL</code>——程序可以感知"这是迁移不是新连接"，按连接属性（而非新 SYN 的 hash）选择目标。</p>
+<p>生产意义：<strong>滚动重启 worker 不丢连接</strong>。老内核里关闭 listen socket 会杀掉整个 accept 队列（半连接直接 RST）；有了迁移 + BPF 自定义逻辑，连接被平移到其他 worker，客户端无感。</p>
+<h2>六、UDP：单播选一 vs 组播全发</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>场景</th>
-<th>SO_REUSEPORT 用途</th>
+<th>流量</th>
+<th>行为</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行情组播接收</td>
-<td>多进程各自绑定同一组播组，各自独立处理</td>
+<td>UDP 单播</td>
+<td><code class="c">__udp4_lib_lookup</code> → reuseport_select_sock → hash/BPF 选<strong>一个</strong> socket</td>
 </tr>
 <tr>
-<td>TCP 行情连接</td>
-<td>多 worker 线程各自 accept，避免 master 瓶颈</td>
-</tr>
-<tr>
-<td>CPU 亲和性</td>
-<td>eBPF 按当前 CPU 选择 socket，数据和处理在同核</td>
+<td>UDP 组播</td>
+<td>遍历所有 join 该 (group, port) 的 socket，<strong>每个都拷贝一份</strong>投递</td>
 </tr>
 </tbody>
 </table></div>
+<p>对 HFT 行情组播：N 个策略进程各自 <code class="c">bind + IP_ADD_MEMBERSHIP</code>，网卡只收一份、内核复制 N 份（<code class="c">udpv4_mcast_deliver</code> 路径）——进程间隔离零共享，代价是每进程一次 skb clone。当 N 大且单份成本敏感时，才值得换"单进程收 + 共享内存分发"架构（这是 chapter-06 AF_XDP 后处理的话题）。</p>
+<h2>七、惊群与分发机制对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>分发者</th>
+<th>惊群</th>
+<th>per-flow 一致性</th>
+<th>可编程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>master accept + fd 传递</td>
+<td>用户态</td>
+<td>无</td>
+<td>无（accept 顺序）</td>
+<td>✅ 完全</td>
+</tr>
+<tr>
+<td>多进程阻塞 accept</td>
+<td>内核唤醒</td>
+<td><strong>有</strong>（WQ_FLAG_EXCLUSIVE 缓解）</td>
+<td>无</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>epoll + EPOLLEXCLUSIVE</td>
+<td>内核事件</td>
+<td>消除</td>
+<td>无</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>SO_REUSEPORT（hash）</td>
+<td>内核 lookup</td>
+<td>无</td>
+<td><strong>有</strong>（4-tuple hash）</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>SO_REUSEPORT + BPF</td>
+<td>内核 lookup</td>
+<td>无</td>
+<td>自定义</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<ul>
+<li><strong>TCP 行情/交易网关</strong>：多 worker REUSEPORT + <code class="c">SO_INCOMING_CPU</code>（<a href="chapter-15.html#s-01">13-01</a> accept-retry 范式）——分发、绑核、accept 全在内核路径完成，网关层零 master。</li>
+<li><strong>按 symbol 亲和</strong>：BPF 选择器读 payload 首字段，把同一合约的行情永久固定给同一 worker——worker 内部 symbol 状态（订单簿）无锁、cache 常驻。</li>
+<li><strong>组播 fan-out</strong>：默认每进程一份拷贝已够用；进程数 &gt; 8 且单进程 CPU 成本可见时再考虑 UDS/共享内存分发。</li>
+<li><strong>滚动重启</strong>：listener 迁移（5.14+）让升级策略进程不断线——对交易系统是实打实的可用性收益。</li>
+</ul>
+<h2>衔接</h2>
+<p>至此 chapter-13（零拷贝与高性能网络）收尾：页级零拷贝（收/发）、多核 steering、多监听分发三条线补完。下一篇 <a href="chapter-14.html#intro">chapter-14 TCP/UDP 内部机制</a> 下沉到协议本身：TCP 状态机、定时器与拥塞控制在 v6.6 里的实现路径。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：SYN 到达 reuseport 组时，内核用哪个 hash 做分发？为什么必须保证 per-flow 一致？</summary>
+<p><code class="c">sk_reuseport_md.hash</code>——内核在 lookup 前算好的 4-tuple hash（siphash 系）。一致性是正确性要求：同一个客户端的 SYN 走 socket A，第三个 ACK 阶段的 lookup 也必须命中 A，否则连接请求散落在不同 socket 的队列里，accept 出来的是碎的。hash 输入是稳定 4-tuple，天然保证；BPF 程序如果自己选，也要保证同样输入同样输出（迁移场景除外，那是显式的重新选主）。</p>
+</details>
+<details>
+<summary>Q2：BPF 选择器返回了 num_socks（越界值），会发生什么？</summary>
+<p>静默退回 hash 分发：<code class="c">reuseport_select_sock()</code> 里 <code class="c">if (!sk2) sk2 = reuseport_select_sock_by_hash(...)</code>。BPF 的返回值经校验（bpf_run_sk_reuseport 内部），无效结果返回 NULL 而不是报错——数据路径永不因 BPF 逻辑错误而丢包，这是"增强不接管"的设计红线。但注意：退化为 hash 后 per-flow 亲和性可能与 BPF 时代不同，长连接已建立的不受影响（只影响新连接）。</p>
+</details>
+<details>
+<summary>Q3：worker 进程崩溃（listen socket 被 close），它 accept 队列里的半连接会怎样？</summary>
+<p>v5.14 之前：全灭——close 时 reqsk 队列被清空，客户端收到 RST，重连才进其他 worker。v5.14+ 且 attach 了支持迁移的 BPF 程序：<code class="c">reuseport_migrate_sock()</code> 接管，reqsk 和已建连被"改嫁"给组内其他 listen socket（BPF 的 migrating_sk 非空分支可见原 socket）。没 attach BPF 时仍有内核默认迁移路径（by_hash 选新主）。生产滚动重启必须依赖这条路径。</p>
+</details>
+<details>
+<summary>Q4：reuseport_grow() 扩容时，正在并发执行的 reuseport_select_sock() 怎么办？</summary>
+<p>RCU 隔离。grow 分配新数组、复制内容、<code class="c">rcu_assign_pointer</code> 发布新指针；并发中的 select 持有的是旧数组的 RCU 引用，访问完整安全，结束后自然释放。发布侧 <code class="c">__reuseport_add_sock</code> 的 <code class="c">smp_wmb()</code> 与消费侧 <code class="c">smp_rmb()</code> 保证 <code class="c">num_socks</code> 与 <code class="c">socks[]</code> 内容的顺序可见性——选择者不会读到"数量已增大但内容未填充"的中间态。</p>
+</details>
+<details>
+<summary>Q5：为什么说"组播 + 多进程各自 bind"是免费 fan-out？代价上限在哪？</summary>
+<p>免费是因为网卡只收一份、分发在内核 lookup 里完成（每个 join 的 socket 一次 skb 拷贝），进程间完全隔离（一个 crash 不影响他人），零共享内存同步成本。代价是 O(N) 份 skb clone + N 次 UDP 入队——单条行情几十字节时 N 个进程成本可忽略；但 N &gt; 8 且每秒百万级报文时，clone 的内存带宽和每进程的协议栈成本成为可见项，此时"单进程收 + 环形缓冲共享内存分发"（或 AF_XDP 直达）是规模化的下一步。</p>
+</details>
       </section>
 
 

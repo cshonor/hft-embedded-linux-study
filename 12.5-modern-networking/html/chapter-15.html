@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">08</span>— 网络调试工具</a>
-          <a href="#s-02"><span class="n">09</span>— 性能调优</a>
+          <a href="#s-01"><span class="n">15</span>-01 — 网络调试工具链：丢包定位与延迟分解（v6.6 核验版）</a>
+          <a href="#s-02"><span class="n">15</span>-02 — 网络性能调优：网卡/内核/拓扑三层清单（v6.6 修订版）</a>
           <a href="#s-03"><span class="n">03</span>— 延迟测量方法论</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -316,14 +316,23 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>核心结论（全章浓缩）</h2>
+<ol>
+<li><strong>v6.6 丢包定位标准姿势是 <code class="c">kfree_skb</code> tracepoint + drop reason</strong>（trace_skb.h:24，<code class="c">enum skb_drop_reason</code> 符号化输出）——dropwatch 只是同源事件的旧封装；perf/bpftrace 能同时拿到 location 与 reason。</li>
+<li><strong>bpftrace tracepoint 字段以 <code class="c">format</code> 文件为准</strong>：<code class="c">netif_receive_skb</code>/<code class="c">net_dev_queue</code> 的字段是 <code class="c">skbaddr</code>（net.h:23），不是旧笔记编造的 <code class="c">args-&gt;skb</code>；XDP 计时的 kprobe 目标是 <code class="c">bpf_prog_run_xdp()</code>（dev.c:4887）。</li>
+<li><strong>四层计数器先跑再上重武器</strong>：ethtool -S（驱动）→ softnet_stat（softirq）→ nstat（协议）→ ss（socket）——层间差值直接圈定丢包位置，零观测开销。</li>
+<li><strong>低延迟第一杠杆是中断合并</strong>（rx-usecs 直接加在尾延迟上）；<strong>"关 GRO/TSO 降延迟"是错误依据</strong>（ch14 已证伪：GRO 无等待窗、TSO 不等凑包）——关它们的真实理由是行为可预测性，且要付吞吐代价。</li>
+<li><strong>调优按流量画像分口</strong>：交易口 <code class="c">pfifo limit 256</code> + 中断清零 + busy poll + 单核隔离（nohz_full + rcu_nocbs 成对 + cpuset partition + irqbalance 必停）；转发口 GRO on + fq（EDT pacing 执行者）。</li>
+<li><strong>树莓派 5 网卡是 RP1 南桥上的 Cadence GEM（<code class="c">macb</code> 驱动）+ BCM54213 PHY</strong>——不是 BCM2712（那是 SoC），也不是 Pi 4 的 bcmgenet；单队列 GbE 决定多队列范式在 Pi 上练不了，但方法论（合并清零/busy poll/隔离/量测闭环）完全同构。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>dropwatch</strong>：监控内核网络栈各层丢包计数，定位 HFT 包丢失位置</li>
 <li><strong>NIC 中断绑核</strong>：<code class="c">/proc/irq/&lt;irq&gt;/smp_affinity</code> 将 NIC 中断绑定到特定 core，避免迁移</li>
 <li><strong>NIC 调优参数</strong>：</li>
 <li><code class="c">ethtool -G eth0 rx 4096 tx 4096</code>：增大 ring buffer</li>
-<li><code class="c">ethtool -C eth0 rx-usecs 0</code>：关闭 IRQ coalescing（HFT 要低延迟而非高吞吐）</li>
-<li><code class="c">ethtool -K eth0 gro off tso off</code>：关闭 GRO/TSO（HFT 发包要即时，不聚合）</li>
+<li><code class="c">ethtool -C eth0 rx-usecs 0</code>：关闭 IRQ coalescing（<strong>低延迟第一杠杆</strong>，合并窗直接加在尾延迟上）</li>
+<li>GRO/TSO：交易口关 GRO 是为<strong>行为可预测</strong>（非"省合并延迟"——GRO 无等待窗）；TSO 保持开（不等凑包，关掉无收益，见 ch14-01/02）</li>
 <li><strong>RPS/RFS：HFT 应关闭。</strong> 它是为多核吞吐设计的软件分发，会引入 IPI 与额外排队，
   只增加延迟抖动；有硬件多队列时纯负收益。改用 RSS / ntuple 硬件分发
   → <a href="chapter-15.html#s-02">02 HFT 综合调优清单</a>、<a href="chapter-02.html#s-06">ch02/06-queue-steering-rss</a></li>
@@ -339,205 +348,404 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">08</div><h2>— 网络调试工具</h2></div>
+        <div class="sec-head"><div class="sec-no">15</div><h2>01 — 网络调试工具链：丢包定位与延迟分解（v6.6 核验版）</h2></div>
 <blockquote>
 <p><strong>Bootlin 课程模块：</strong> Network Debugging Tools
-<strong>对应 Rosen:</strong> 无</p>
+<strong>对应 Rosen:</strong> 无
+<strong>内核源码路径:</strong> <code class="c">include/trace/events/skb.h:24</code>（kfree_skb + drop reason）、<code class="c">include/trace/events/net.h</code>（net_dev_queue / netif_receive_skb）、<code class="c">net/core/dev.c:4887</code>（bpf_prog_run_xdp）</p>
 </blockquote>
-<h2>收包诊断工具链</h2>
+<h2>章节导航</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>工具</th>
-<th>作用</th>
-<th>层级</th>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">ethtool -S</code></td>
-<td>网卡统计（rx_drops/rx_errors）</td>
-<td>驱动</td>
-</tr>
-<tr>
-<td><code class="c">ethtool -c</code></td>
-<td>中断合并参数</td>
-<td>驱动</td>
-</tr>
-<tr>
-<td><code class="c">nstat</code></td>
-<td>内核网络统计（snmp）</td>
-<td>协议栈</td>
-</tr>
-<tr>
-<td><code class="c">ss</code></td>
-<td>socket 统计</td>
-<td>socket</td>
-</tr>
-<tr>
-<td><code class="c">dropwatch</code></td>
-<td>丢包位置（内核函数级）</td>
-<td>全路径</td>
-</tr>
-<tr>
-<td><code class="c">tcpdump</code></td>
-<td>包捕获</td>
-<td>协议栈</td>
-</tr>
-<tr>
-<td><code class="c">perf</code></td>
-<td>内核函数级性能分析</td>
-<td>全路径</td>
+<td><a href="chapter-14.html#intro">chapter-14 TCP/UDP 内部</a></td>
+<td><strong>15-01 调试工具链</strong></td>
+<td><a href="#s-02">15-02 性能调优</a></td>
 </tr>
 </tbody>
 </table></div>
-<h2>dropwatch：定位丢包</h2>
-<pre class="code" data-label="shell"><code class="c"># 交互模式
-dropwatch -l kas
-
-# 输出示例
-1 drops at tcp_rcv_established+0x1a2 (0xffffffff8c2b3c42)
-5 drops at __netif_receive_skb_core+0x89 (0xffffffff8c28a1b9)
-</code></pre>
-<h2>ethtool：网卡级诊断</h2>
-<pre class="code" data-label="shell"><code class="c"># 统计信息
-ethtool -S eth0 | grep -E &quot;rx_dropped|rx_missed|rx_no_dma&quot;
-
-# 中断合并
-ethtool -c eth0
-
-# 调整（减少延迟）
-ethtool -C eth0 rx-usecs 0 rx-frames 0
-
-# 队列信息
-ethtool -l eth0   # 查看队列数
-ethtool -L eth0 combined 4  # 设置队列数
-
-# offload 状态
-ethtool -k eth0
-</code></pre>
-<h2>BPF 追踪网络延迟</h2>
-<pre class="code" data-label="shell"><code class="c"># 追踪收包延迟（NIC → socket）
-bpftrace -e 'tracepoint:net:netif_receive_skb { @start[args-&gt;skb] = nsecs; }
-tracepoint:net:net_dev_queue { @latency[nsecs - @start[args-&gt;skb]] = count(); }'
-
-# 追踪 XDP 程序执行
-bpftrace -e 'kprobe:xdp_prog_run { @start[tid] = nsecs; }
-kretprobe:xdp_prog_run /@start[tid]/ { printf(&quot;XDP: %d ns\n&quot;, nsecs - @start[tid]); }'
-</code></pre>
-<h2>HFT 延迟诊断流程</h2>
-<pre class="code" data-label="code"><code class="c">1. ethtool -S → 网卡有没有丢包/错误
-2. dropwatch → 内核哪里丢包
-3. nstat → 协议栈层面统计
-4. ss -ti → TCP 层面（重传/RTT）
-5. bpftrace → 函数级延迟分解
-6. perf record → CPU 热点分析
-</code></pre>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">09</div><h2>— 性能调优</h2></div>
-<blockquote>
-<p><strong>Bootlin 课程模块：</strong> Network Performance Tuning
-<strong>对应 Rosen:</strong> Ch14</p>
-</blockquote>
-<h2>调优清单</h2>
-<h3>网卡参数（ethtool）</h3>
-<pre class="code" data-label="shell"><code class="c"># 关闭 GRO/TSO（降低延迟）
-ethtool -K eth0 gro off tso off
-
-# 中断合并调零（最低延迟）
-ethtool -C eth0 rx-usecs 0 rx-frames 0 tx-usecs 0 tx-frames 0
-
-# 设置队列数
-ethtool -L eth0 combined 4
-
-# RSS（硬件多队列 hash）
-ethtool -X eth0 equal 4
-</code></pre>
-<h3>内核参数（sysctl）</h3>
-<pre class="code" data-label="shell"><code class="c"># 网络缓冲区
-sysctl -w net.core.rmem_max=33554432
-sysctl -w net.core.wmem_max=33554432
-sysctl -w net.core.rmem_default=262144
-sysctl -w net.core.wmem_default=262144
-
-# backlog
-sysctl -w net.core.netdev_max_backlog=10000
-
-# TCP 调优
-sysctl -w net.ipv4.tcp_no_metrics_save=1
-sysctl -w net.ipv4.tcp_low_latency=1  # (已弃用，参考意义)
-</code></pre>
-<h3>CPU 亲和性</h3>
-<pre class="code" data-label="shell"><code class="c"># 网卡中断绑定到特定 CPU
-# 查看 IRQ 号
-cat /proc/interrupts | grep eth0
-
-# 绑定
-echo &lt;cpu_mask&gt; &gt; /proc/irq/&lt;irq&gt;/smp_affinity
-
-# NAPI 线程绑定
-taskset -c 2 $(pgrep &quot;napi/eth0&quot;)
-</code></pre>
-<h3>HFT 综合调优清单</h3>
+<h2>本节讲什么</h2>
+<p>调试网络性能问题只有两类：<strong>东西丢了</strong>（丢在哪一层）和<strong>东西慢了</strong>（慢在哪一跳）。本篇按"计数器 → tracepoint → 函数级"三级递进组织工具链，并把旧笔记里两处 tracepoint 字段错误修正掉（<code class="c">args-&gt;skb</code> 不存在，实际字段是 <code class="c">args-&gt;skbaddr</code>；v6.6 丢包定位首选 <code class="c">kfree_skb</code> 的 drop reason 而不是老 dropwatch）。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>先计数器后 tracepoint</strong>：<code class="c">ethtool -S</code>（驱动层）→ <code class="c">/proc/net/softnet_stat</code>（softirq 层）→ <code class="c">nstat</code>（协议层）→ <code class="c">ss</code>（socket 层）——四层计数器定位丢包的"层"，零开销，先跑这些再上重武器。</li>
+<li><strong>v6.6 丢包定位的正确姿势是 <code class="c">kfree_skb</code> tracepoint + drop reason</strong>：事件携带 <code class="c">reason</code> 字段（<code class="c">enum skb_drop_reason</code>，trace_skb.h:24-45，<code class="c">__print_symbolic</code> 直接输出符号名）——5.17+ 起 300+ 处 <code class="c">kfree_skb_reason()</code> 调用点都会给出结构化原因，dropwatch 只是它的老封装。</li>
+<li><strong><code class="c">netif_receive_skb</code> / <code class="c">net_dev_queue</code> 的 bpftrace 字段是 <code class="c">args-&gt;skbaddr</code></strong>（net.h:23，<code class="c">net_dev_template</code> 事件类）——旧笔记的 <code class="c">args-&gt;skb</code> 是编造的，直接报错。</li>
+<li><strong>XDP 程序计时 kprobe 的目标是 <code class="c">bpf_prog_run_xdp()</code></strong>（dev.c:4887）——不是旧笔记写的 <code class="c">xdp_prog_run</code>（内核里没有这个符号）。</li>
+<li><strong>tcpdump 本身会改路径</strong>：AF_PACKET 在 <code class="c">ptype_all</code>（dev.c:5394），先于 tc ingress 执行（chapter-11-01 已详述）——测延迟时捕包工具不在被测路径上（用镜像口或硬件 tap）。</li>
+<li><strong>诊断顺序即成本顺序</strong>：每下一级工具，观测开销和定位精度同时上升——计数器（0 开销）→ tracepoint（每事件 ~1μs）→ kprobe + perf record（函数级但有 skid）。</li>
+</ol>
+<h2>一、四层计数器：零成本先跑</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>项目</th>
-<th>设置</th>
-<th>目的</th>
+<th>层</th>
+<th>命令</th>
+<th>看什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>驱动/网卡</td>
+<td><code class="c">ethtool -S eth0</code></td>
+<td><code class="c">rx_dropped</code>（驱动丢弃）、<code class="c">rx_missed</code>（FIFO 溢出=带宽超限）、<code class="c">rx_no_dma</code>/<code class="c">rx_buf_alloc</code>（内存压力）；<strong>per-queue 细分</strong>能直接看出哪个队列打满</td>
+</tr>
+<tr>
+<td>设备/softirq</td>
+<td><code class="c">cat /proc/net/softnet_stat</code></td>
+<td>第 1 列处理包数、第 2 列 <strong>drop（backlog 满，<code class="c">enqueue_to_backlog</code> 的 <code class="c">netdev_max_backlog</code> 超限——见 <a href="chapter-15.html#s-01">13-01</a>）</strong>、第 3 列 squeeze（软中断时间片耗尽分批）</td>
+</tr>
+<tr>
+<td>协议栈</td>
+<td><code class="c">nstat -az</code></td>
+<td><code class="c">UdpInErrors</code>/<code class="c">UdpRcvbufErrors</code>（socket buffer 满）、<code class="c">UdpInDatagrams</code>（对不上=路上丢）、<code class="c">TcpExtListenDrops</code>（accept 队列满）、<code class="c">TcpRetransSegs</code></td>
+</tr>
+<tr>
+<td>socket</td>
+<td><code class="c">ss -tiuma</code></td>
+<td><code class="c">retrans</code>、<code class="c">rtt</code>/<code class="c">min/max</code>、<code class="c">cwnd</code>、<code class="c">pacing_rate</code>（EDT 模型的实际速率）、<code class="c">skmem</code>（内存水位）</td>
+</tr>
+</tbody>
+</table></div>
+<p>对照法：<strong><code class="c">ethtool -S</code> 的 rx 计数和 <code class="c">nstat</code> 的 InDatagrams 对不上，差值就是"进了内核没到协议栈"</strong>（GRO 合并、XDP 丢弃、backlog 丢）；协议栈计数和 <code class="c">ss</code> 收到的对不上，就是 socket 层问题（buffer 满、filter 丢弃）。</p>
+<h2>二、丢包定位：kfree_skb 的 drop reason（v6.6 标准姿势）</h2>
+<p>tracepoint 定义（trace_skb.h:24，已核验）：</p>
+<pre class="code" data-label="C"><code class="c">TRACE_EVENT(kfree_skb,
+    TP_PROTO(struct sk_buff *skb, void *location, enum skb_drop_reason reason),
+    TP_STRUCT__entry(
+        __field(void *,     skbaddr)
+        __field(void *,     location)      // ← 丢弃现场的函数地址（%pS 符号化）
+        __field(unsigned short, protocol)
+        __field(enum skb_drop_reason,   reason)  // ← 结构化原因
+    ),
+    TP_printk(&quot;skbaddr=%p protocol=%u location=%pS reason: %s&quot;, ...
+</code></pre>
+<h3>perf 一条龙</h3>
+<pre class="code" data-label="shell"><code class="c"># 抓 10 秒所有丢包，带原因和位置
+perf record -e skb:kfree_skb -a sleep 10
+perf script                       # 每行: 进程/CPU/时间 + location=pS + reason=SKB_DROP_REASON_XXX
+
+# 只统计原因分布
+perf record -e skb:kfree_skb -a sleep 10
+perf script | awk -F'reason: ' '{print $2}' | sort | uniq -c | sort -rn
+</code></pre>
+<h3>bpftrace 按原因+位置聚合（开销最低的常驻监控）</h3>
+<pre class="code" data-label="shell"><code class="c">bpftrace -e '
+tracepoint:skb:kfree_skb {
+    @[args-&gt;reason, kstack] = count();     // reason 枚举值 + 调用栈
+}'
+</code></pre>
+<p>dropwatch（<code class="c">-l kas</code> 模式）输出的"位置"与上面 <code class="c">location=%pS</code> 同源——它就是 kfree_skb tracepoint 的 curses 前端；v6.6 上直接用 perf/bpftrace 拿到的信息严格更多（多了 reason）。</p>
+<h2>三、延迟分解：从 tracepoint 到 kprobe</h2>
+<h3>收发路径 tracepoint（字段已核验：<code class="c">skbaddr</code>）</h3>
+<pre class="code" data-label="shell"><code class="c"># 发送侧：进 qdisc 的时刻（net.h:144，net_dev_template 类）
+bpftrace -e 'tracepoint:net:net_dev_queue { @[args-&gt;name] = count(); }'
+
+# 接收侧：进协议栈的时刻（net.h:151）
+bpftrace -e 'tracepoint:net:netif_receive_skb { @[args-&gt;name] = count(); }'
+
+# ⚠️ 旧笔记的 args-&gt;skb / @start[args-&gt;skb] 是错的：
+# net_dev_template 的字段是 skbaddr/len/name（net.h:22-33），没有 skb 指针
+</code></pre>
+<h3>XDP 程序执行计时</h3>
+<pre class="code" data-label="shell"><code class="c"># bpf_prog_run_xdp 是真实入口（dev.c:4887，native 与 generic 路径都过这里）
+bpftrace -e '
+kprobe:bpf_prog_run_xdp { @start[tid] = nsecs; }
+kretprobe:bpf_prog_run_xdp /@start[tid]/ {
+    printf(&quot;XDP: %d ns\n&quot;, nsecs - @start[tid]);
+    delete(@start[tid]);
+}'
+</code></pre>
+<h3>RX 完整延迟的正确量法</h3>
+<p>tracepoint 只能覆盖协议栈内部；<strong>NIC 硬件时间戳 → 应用收到</strong>的端到端延迟用 <code class="c">SO_TIMESTAMPING</code>（硬件时间戳模式）——这正是本模块 <a href="#s-03">15-03 延迟量测</a> 的主题，工具链上不要试图用 kprobe 拼端到端时间线（时钟域和精度都不对）。</p>
+<h3>perf CPU 热点</h3>
+<pre class="code" data-label="shell"><code class="c">perf record -g -e cycles -C &lt;收包核&gt; sleep 5     # 指定核，避免全核噪声
+perf report --no-children                          # 自顶向下看热点函数
+# 网络负载下高频出现在: netif_receive_skb* / tcp_v4_rcv / ip_rcv / napi poll 回调
+</code></pre>
+<h2>四、tcpdump 的观测者效应（回顾）</h2>
+<p>chapter-11-01 的结论在此复核一遍：AF_PACKET 挂在 <code class="c">ptype_all</code>（dev.c:5394），<strong>早于 tc ingress 与所有协议栈处理</strong>——每个包多一次 clone + BPF 过滤执行。生产延迟敏感路径上的排障流程：先用计数器锁定嫌疑层 → 停流量或镜像口上抓包。内核侧预过滤（<code class="c">SO_ATTACH_FILTER</code>，cBPF→eBPF 翻译）能省用户态拷贝，但 clone 本身省不掉。</p>
+<h2>五、HFT 延迟诊断流程（修订版）</h2>
+<pre class="code" data-label="code"><code class="c">① 计数器定位层（零开销，随时跑）
+   ethtool -S → 网卡/FIFO 丢包？per-queue 是否偏斜？
+   /proc/net/softnet_stat → backlog 丢？squeeze 频繁？
+   nstat -az → 协议层丢？重传率？
+   ss -ti → rtt/cwnd/pacing_rate/retrans 异常？
+        │
+② 丢包已确认 → 结构化定位（低开销）
+   perf record -e skb:kfree_skb → 按 reason + location 分组
+        │
+③ 瓶颈在处理慢而非丢 → 热点分析
+   perf record -e cycles -g -C &lt;核&gt; → 函数级热点
+        │
+④ 怀疑 XDP/驱动层 → kprobe 计时
+   bpf_prog_run_xdp 进出计时；驱动 poll 周期统计
+        │
+⑤ 端到端延迟分位数 → SO_TIMESTAMPING 硬件时间戳（15-03）
+</code></pre>
+<h2>衔接</h2>
+<p>诊断讲完"哪里丢、哪里慢"。下一篇 <a href="#s-02">15-02 性能调优</a> 给出修复侧：中断合并、offload 取舍（与 ch14 的纠错统一）、sysctl、qdisc、CPU/NUMA 隔离的完整清单——以及每项设置"为什么"的可辩护理由。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 v6.6 上 perf -e skb:kfree_skb 比 dropwatch 更好？</summary>
+<p>同源但信息更多：dropwatch 监听的就是 kfree_skb tracepoint（输出 location），而 v6.6 的事件多了 <code class="c">reason</code> 字段（<code class="c">enum skb_drop_reason</code>，300+ 处 <code class="c">kfree_skb_reason()</code> 调用点填充）——dropwatch 的终端 UI 丢弃了这个字段。perf/bpftrace 能同时拿到 location（丢弃函数）和 reason（结构化原因如 <code class="c">SKB_DROP_REASON_SOCKET_RCVBUFF</code>），还能直接做聚合统计。</p>
+</details>
+<details>
+<summary>Q2：ethtool -S 里 rx_missed 和 /proc/net/softnet_stat 第 2 列 drop 分别说明什么？</summary>
+<p>不同层：<code class="c">rx_missed</code> 是网卡 <strong>RX FIFO/描述符环</strong>溢出——包根本没进主机（DMA 都没来得及），通常是带宽超限或驱动分配不及时；softnet_stat 的 drop 是 <code class="c">enqueue_to_backlog</code> 里 <strong>backlog 队列满</strong>（超过 <code class="c">netdev_max_backlog</code>，默认 1000）——包进了主机但软中断处理不过来。前者加钱换网卡/分流，后者调 backlog、开 RSS 分散 softirq 或找 CPU 瓶颈。</p>
+</details>
+<details>
+<summary>Q3：bpftrace 脚本里写 args-&gt;skb 为什么报错？正确字段是什么？</summary>
+<p>tracepoint 的可访问字段由 <code class="c">TP_STRUCT__entry</code> 定义，不是 C 函数原型。<code class="c">netif_receive_skb</code>/<code class="c">net_dev_queue</code> 用的是 <code class="c">net_dev_template</code> 事件类（net.h:22-33），字段为 <code class="c">queue_mapping/skbaddr/vlan_tagged/.../len/name</code>——没有 <code class="c">skb</code>。BTF/tracefs 的 format 文件列的就是这些字段，<code class="c">args-&gt;skb</code> 在加载期就报 <code class="c">unknown field</code>。查字段最快的办法：<code class="c">cat /sys/kernel/tracing/events/net/netif_receive_skb/format</code>。</p>
+</details>
+<details>
+<summary>Q4：为什么不能用 kprobe 拼出"网卡到应用"的完整延迟时间线？</summary>
+<p>三个硬伤：①时钟域不同——kprobe 用的是本机 monotonic 时钟，而包的"到达时刻"权威定义在网卡硬件时钟（要 PTP 对齐）；②精度不够——kprobe 探针本身有开销和 skid，路径上的探针越多失真越大；③插桩改变被测系统（每个探针百 ns 级 + cache 污染）。端到端延迟的正解是 SO_TIMESTAMPING 硬件时间戳 + 应用侧收时间做差——只在两个端点各记一次，零中间插桩。</p>
+</details>
+<details>
+<summary>Q5：nstat 的 UdpInDatagrams 与 ethtool -S 的 rx_packets 对不上，中间可能发生了什么（按可能性排序）？</summary>
+<p>①GRO 合并：N 个包进协议栈算 1 次（最常见，per-packet vs per-skb 的口径差）；②XDP/过滤器丢弃：XDP_DROP 在协议栈之前，rx_packets 已计数；③softnet backlog 丢弃（softnet_stat 第 2 列会涨）；④校验错误（UdpInErrors 会涨）；⑤非 UDP 流量（多协议共用网卡，要先按协议过滤口径）。排查顺序：先看 softnet_stat 和 nstat 的错误计数，再看是否开了 GRO——多数情况是口径问题不是真丢。</p>
+</details>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">15</div><h2>02 — 网络性能调优：网卡/内核/拓扑三层清单（v6.6 修订版）</h2></div>
+<blockquote>
+<p><strong>Bootlin 课程模块：</strong> Network Performance Tuning
+<strong>对应 Rosen:</strong> Ch14
+<strong>关联核验:</strong> <code class="c">net/core/dev.c</code>（RPS/backlog）、<code class="c">net/ipv4/tcp_output.c</code>（TSQ/EDT）、chapter-13/14 的源码结论</p>
+</blockquote>
+<h2>章节导航</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#s-01">15-01 调试工具链</a></td>
+<td><strong>15-02 性能调优</strong></td>
+<td><a href="#s-03">15-03 延迟量测</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2>本节讲什么</h2>
+<p>调优的本质是<strong>把每一跳的固定成本压掉或摊薄</strong>。本篇按"网卡层 → 内核层 → 拓扑层"组织一份每项都带"为什么"的清单，并修正旧版两处流传甚广的错误依据：<strong>"关 GRO 减少合并延迟"和"关 TSO 降低发送延迟"</strong>——这两条在本仓库 <a href="chapter-15.html#s-01">14-01</a> 已经用源码证伪（GRO 没有等待窗口、TSO 不等凑包），调优决策应该基于正确的机制模型。最后给出树莓派 5 的实测修正（旧版写的 BCM2712 网卡是错的——那是 SoC，网卡在 RP1 南桥上）。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>低延迟的第一杠杆是中断合并，不是 offload</strong>：<code class="c">rx-usecs</code> 是收包延迟里最大的可调项（每微秒合并窗 = 直接加到尾延迟上）；GRO/TSO 的开关对单条小消息流的影响测不出来。</li>
+<li><strong>关 GRO/TSO 的正确理由是"可控性与抖动"，不是"减少延迟"</strong>：offload 路径的批量行为（TSO 分段 microburst、GRO 合并包的增量校验）在个别场景引入抖动，追求行为可预测时才关——并且要接受吞吐和 CPU 的代价。</li>
+<li><strong>sysctl 里对延迟真正有意义的是 backlog 与 busy_poll 一族</strong>；<code class="c">rmem_max/wmem_max</code> 只在 buffer 不足（丢包/限速证据出现）时才调大——盲目调大伤 cache 局部性。</li>
+<li><strong>qdisc 的选择按流量画像</strong>：交易口 <code class="c">pfifo</code> 小限深（排队可见可控）；行情转发口 <code class="c">fq</code>（EDT pacing 的执行者，<a href="chapter-15.html#s-01">14-01</a>）；默认 <code class="c">fq_codel</code> 对 HFT 无益（AQM 是为 bufferbloat 设计的）。</li>
+<li><strong>CPU 隔离的现代组合是 <code class="c">nohz_full</code> + <code class="c">rcu_nocbs</code> + IRQ 亲和 + cgroup cpuset</strong>：isolcpus 仍可用但粒度粗；<strong>irqbalance 必须停</strong>——否则亲和性设置会被周期性改掉。</li>
+<li><strong>NUMA 错位是隐形的百 ns 级税</strong>：网卡 PCI 所在节点、中断目标核、应用线程三者的 NUMA 一致性要用 <code class="c">numa_node</code> 文件实测，不能假设。</li>
+</ol>
+<h2>一、网卡层</h2>
+<h3>中断合并：延迟 vs CPU 的直接交换</h3>
+<pre class="code" data-label="shell"><code class="c">ethtool -c eth0                        # 看当前 coalescing
+ethtool -C eth0 rx-usecs 0 rx-frames 1 # 每包一中断（最低延迟，CPU 换的）
+ethtool -C eth0 adaptive-rx off        # 关掉自适应（否则驱动会自己改回去）
+</code></pre>
+<p>机制：硬件攒 <code class="c">rx-usecs</code> 微秒或 <code class="c">rx-frames</code> 个包才触发一次 MSI-X。<strong>合并窗直接加在尾延迟上</strong>（包到了但要等窗结束）。HFT 交易口用 0/1；行情口按 PPS 算一下中断风暴是否可承受（每秒 10 万中断 ≈ 单核 5-10% 只做中断）。</p>
+<h3>队列与 RSS</h3>
+<pre class="code" data-label="shell"><code class="c">ethtool -l eth0 &amp;&amp; ethtool -L eth0 combined 4    # 队列数 = 预期的并行 softirq 数
+ethtool -X eth0 equal 4                          # indirection table 均匀分发
+# 组播流量 RSS 失效（同 4-tuple）→ ntuple 规则按组播组分流：
+ethtool -N eth0 flow-type udp4 dst-ip 239.1.1.1 action 1   # 该组 → RX 队列 1
+</code></pre>
+<p>（RSS 对组播失效的机理与 ntuple 方案见 <a href="chapter-15.html#s-01">13-01</a>。）</p>
+<h3>offload 取舍（修订版，与 ch14 结论统一）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>offload</th>
+<th>建议</th>
+<th>依据</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>GRO</td>
-<td>off</td>
-<td>减少合并延迟</td>
+<td>交易口 <strong>off</strong>、转发口 <strong>on</strong></td>
+<td>GRO 无等待窗口（<a href="chapter-15.html#s-02">14-02</a>），关它不是为了延迟——是让每包独立走完路径、行为可预测；转发口开着 PPS 能力 2-3x</td>
 </tr>
 <tr>
 <td>TSO</td>
-<td>off</td>
-<td>降低发送延迟</td>
+<td><strong>on</strong></td>
+<td>不等凑包（<a href="chapter-15.html#s-01">14-01</a>），关它只损失吞吐；真问题是 TSO 段的 microburst，由 fq pacing 削</td>
 </tr>
 <tr>
-<td>中断合并</td>
-<td>0</td>
-<td>最低收包延迟</td>
+<td>checksum（rx/tx）</td>
+<td><strong>永远 on</strong></td>
+<td>硬件校验免费；关掉是纯 CPU 浪费（除非在抓校验错误的 bug）</td>
 </tr>
 <tr>
-<td>RPS/RFS</td>
-<td>off（用 RSS/XDP 替代）</td>
-<td>避免软件分发开销</td>
-</tr>
-<tr>
-<td>SO_BUSY_POLL</td>
-<td>50-100 μs</td>
-<td>跳过中断唤醒</td>
-</tr>
-<tr>
-<td>CPU 隔离</td>
-<td>isolcpus + irq affinity</td>
-<td>交易 CPU 独占</td>
-</tr>
-<tr>
-<td>NUMA 绑定</td>
-<td>numactl --cpunodebind --membind</td>
-<td>避免跨节点访问</td>
-</tr>
-<tr>
-<td>QDisc</td>
-<td>pfifo_fast 或 noop</td>
-<td>减少排队延迟</td>
+<td>GSO</td>
+<td><strong>on</strong></td>
+<td>软件路径的 TSO 延伸，无理由关</td>
 </tr>
 </tbody>
 </table></div>
-<h3>树莓派 5 特殊注意事项</h3>
-<ul>
-<li>树莓派 5 网卡（BCM2712）支持 XDP generic 模式</li>
-<li>AF_XDP 零拷贝模式需要内核 5.x+ 驱动支持</li>
-<li>中断亲和性需通过 <code class="c">/proc/irq/</code> 手动配置</li>
-<li>无硬件 TSO/GRO offload（纯软件），性能低于服务器网卡</li>
-</ul>
+<h2>二、内核层（sysctl）</h2>
+<pre class="code" data-label="shell"><code class="c"># --- 对延迟有直接意义的 ---
+net.core.netdev_max_backlog = 10000    # backlog 满会丢包（softnet_stat 第2列），但调大 = 允许更多排队
+net.core.busy_read = 50                # μs；读路径 busy poll 窗口
+net.core.busy_poll = 50                # μs；poll/epoll 路径 busy poll 窗口
+
+# --- buffer：有证据（丢包/限速）才调 ---
+net.core.rmem_max = 33554432           # 大流量转发才需要；交易口默认即够
+net.core.wmem_max = 33554432
+net.ipv4.tcp_rmem / tcp_wmem           # TCP 自动调节的 max 列
+
+# --- 对照诊断，不是调优 ---
+net.ipv4.tcp_no_metrics_save = 1       # 不让历史 RTT/cwnd 影响新连接（一致性）
+# net.ipv4.tcp_low_latency：已移除的 no-op，别写进配置
+</code></pre>
+<p>busy poll 家族的语义（chapter-12 有 io_uring 版对照）：应用阻塞在 <code class="c">recvmsg</code>/<code class="c">epoll</code> 时，内核在这几十微秒里<strong>主动轮询驱动收包队列</strong>而不是睡等中断——用 CPU 换"中断唤醒 + cache 冷却"那两跳的延迟。</p>
+<h3>qdisc</h3>
+<pre class="code" data-label="shell"><code class="c"># 交易口：短队列，排队行为可见可控
+tc qdisc replace dev eth0 root pfifo limit 256
+
+# 行情转发口：fq（TCP EDT pacing 的执行者）
+tc qdisc replace dev eth1 root fq
+
+# 检查当前 qdisc 与排队：
+tc -s qdisc show dev eth0              # 看 backlog/drops 计数
+</code></pre>
+<p><code class="c">fq_codel</code>（很多发行版默认）的 AQM 逻辑是为交互流量抗 bufferbloat 的，HFT 场景要么 <code class="c">pfifo</code>（显式限深）要么 <code class="c">fq</code>（EDT 配套），没有第三选项。</p>
+<h2>三、拓扑层：CPU 隔离与 NUMA</h2>
+<h3>IRQ 亲和（收包核的前提）</h3>
+<pre class="code" data-label="shell"><code class="c">grep eth0 /proc/interrupts                     # 每个 RX 队列一个 MSI-X 向量
+cat /proc/irq/&lt;N&gt;/smp_affinity_list
+echo 2 &gt; /proc/irq/&lt;N&gt;/smp_affinity_list      # RX-0 → CPU2
+systemctl stop irqbalance                      # ⚠️ 必停，否则会被改回
+</code></pre>
+<h3>内核参数组合（grub/cmdline）</h3>
+<pre class="code" data-label="code"><code class="c">nohz_full=2-5      # 这些核不做周期 tick（每秒少几百次时钟中断）
+rcu_nocbs=2-5      # RCU 回调挪到别的核（否则隔离核被 RCU 唤醒）
+# isolcpus=2-5     # 粗粒度老办法；现代等价物是 cgroup cpuset isolated partition
+</code></pre>
+<p>cgroup v2 的 cpuset 隔离分区（6.x）：</p>
+<pre class="code" data-label="shell"><code class="c"># 把 CPU 2-5 从调度器整体摘出（比 isolcpus 细，可在线调整）
+echo &quot;2-5&quot; &gt; /sys/fs/cgroup/machine.slice/cpuset.cpus
+echo root &gt; /sys/fs/cgroup/machine.slice/cpuset.cpus.partition
+</code></pre>
+<h3>NUMA 一致性三查</h3>
+<pre class="code" data-label="shell"><code class="c">cat /sys/bus/pci/devices/0000:xx:00.0/numa_node   # 网卡在哪个节点
+cat /sys/class/net/eth0/device/numa_node           # 同上（另一条路）
+numactl --cpunodebind=0 --membind=0 ./trader      # 应用绑同节点
+</code></pre>
+<p>错位代价：跨 NUMA 的 DMA/中断/内存访问每跳加 ~100-140ns 且流量过 interconnect——对微秒级路径是可见税项。</p>
+<h2>四、HFT 综合调优清单（修订版：每项给真实理由）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>设置</th>
+<th>真实目的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断合并</td>
+<td>rx-usecs 0/1，adaptive off</td>
+<td><strong>消灭合并窗延迟</strong>（第一杠杆）</td>
+</tr>
+<tr>
+<td>GRO</td>
+<td>交易口 off</td>
+<td>行为可预测、逐包独立，<strong>不是</strong>省"合并延迟"（不存在）</td>
+</tr>
+<tr>
+<td>TSO</td>
+<td>on</td>
+<td>关掉无收益（不等凑包），只损失吞吐</td>
+</tr>
+<tr>
+<td>RSS/ntuple</td>
+<td>按流分队列</td>
+<td>组播下 RSS 失效，用 ntuple 按组分流（13-01）</td>
+</tr>
+<tr>
+<td>RPS/RFS</td>
+<td>off（有 RSS 时）</td>
+<td>软件 steering 的 IPI/cache miss 是纯开销（13-01）</td>
+</tr>
+<tr>
+<td>SO_BUSY_POLL</td>
+<td>50-100μs</td>
+<td>换掉中断唤醒两跳</td>
+</tr>
+<tr>
+<td>CPU 隔离</td>
+<td>nohz_full + rcu_nocbs + cpuset partition</td>
+<td>清除隔离核上的定时器/RCU 唤醒</td>
+</tr>
+<tr>
+<td>IRQ 亲和</td>
+<td>RX 队列 → 隔离核，irqbalance 停</td>
+<td>softirq 与应用同核（13-01 的全链路同核范式）</td>
+</tr>
+<tr>
+<td>NUMA</td>
+<td>网卡/中断/应用同节点</td>
+<td>消跨节点 ~100ns/跳</td>
+</tr>
+<tr>
+<td>QDisc</td>
+<td>交易口 pfifo(256)；转发口 fq</td>
+<td>排队可见可控 / EDT pacing 配套</td>
+</tr>
+<tr>
+<td>clocksource</td>
+<td>tsc（确认）</td>
+<td>时间读数的纳秒级前提（15-03 详述）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>五、树莓派 5 修正（重要事实纠错）</h2>
+<p>旧版写的"BCM2712 网卡"是错的——BCM2712 是 SoC；<strong>网口在 RP1 南桥上，是 Cadence GEM 控制器 + Broadcom BCM54213 PHY，驱动为 <code class="c">macb</code></strong>（不是 Pi 4 的 bcmgenet）。上游主线对 RP1 网口的支持 2025 年才合入（6.12+ 陆续补齐）；树莓派官方内核早已可用。</p>
+<p>实测清单（装好系统先跑，别抄结论）：</p>
+<pre class="code" data-label="shell"><code class="c">ethtool -i eth0                     # 确认 driver=macb
+ethtool -k eth0                     # offload 实际能力（GEM 的 checksum/散射列表）
+ethtool -l eth0                     # 队列数——单队列的话 RSS/IRQ 分流全部免谈
+ethtool -c eth0                     # 中断合并可调与否
+dmesg | grep -i -E &quot;macb|xdp&quot;       # XDP 支持迹象（macb 的 XDP 支持较新且不完整）
+cat /sys/bus/pci/devices/*/numa_node # 单节点系统，此项无意义（只为验证习惯）
+</code></pre>
+<p>预期画像：单/少队列 GbE、offload 集比服务器网卡窄、XDP 只在较新内核可用（generic 模式随时可用但性能意义有限——chapter-05 已讲 native vs generic 的差距）。<strong>Pi 5 是学习/验证平台，不是低延迟参照系</strong>——清单里"中断合并清零 + busy poll + 单核隔离"这套最小组合可以练手，RSS/多队列范式练不了。</p>
+<h2>衔接</h2>
+<p>调优把成本压到位之后，需要验证"到底多快"。下一篇 <a href="#s-03">15-03 延迟量测</a>（已是完整版）覆盖 SO_TIMESTAMPING 硬件时间戳、时钟域对齐与分位数统计——量测方法论是一切调优的可信度来源。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么说中断合并是低延迟的第一杠杆，而 GRO/TSO 不是？</summary>
+<p>量级和机制都不同：中断合并窗（rx-usecs，通常 25-125μs 的默认值）<strong>直接加在每包尾延迟上</strong>且可调到 0——是微秒级的第一大项；GRO 没有等待窗口（NAPI 批内机会主义合并）、TSO 不等凑包（发送时刻由 tcp_push 决定）——两者对"单条小消息何时到达/发出"的影响在纳秒级且测不出显著差。把可调项按对目标指标的影响排序，是调优清单的第一设计原则。</p>
+</details>
+<details>
+<summary>Q2：fq_codel 默认留着不行吗？它是"更好"的 qdisc 啊。</summary>
+<p>"更好"是有对象的：fq_codel 的 AQM（主动队列管理）为对抗 bufferbloat 设计——在深队列里智能丢包/标记，保护<strong>交互流</strong>不被<strong>批量流</strong>的积压伤害。HFT 交易口的问题是"任何排队都不可接受"——正确解是 <code class="c">pfifo limit 256</code> 把队列深度显式钉死（排队即丢，丢即暴露），AQM 的智能反而让排队"安静地"发生。转发口则要 fq 而不是 fq_codel——EDT pacing（14-01）的执行者是 fq。</p>
+</details>
+<details>
+<summary>Q3：netdev_max_backlog 调大和调小分别适合什么？HFT 该选哪边？</summary>
+<p>调大：吞吐优先——backlog 是 RPS/softirq 的缓冲（<code class="c">enqueue_to_backlog</code>，dev.c:4788），满则丢（softnet_stat 第 2 列），大 backlog 吸收突发不丢包，代价是排队延迟变长。调小：延迟优先——早丢早暴露，排队不会悄悄积累。HFT 交易口倾向<strong>默认甚至更小 + 严格监控第 2 列</strong>（任何 drop 都是 capacity 问题的信号，而不是该调大 backlog 的信号）；转发口（丢包代价高、有应用层重整）才往上调。</p>
+</details>
+<details>
+<summary>Q4：nohz_full 和 rcu_nocbs 为什么必须成对出现？</summary>
+<p>nohz_full 让隔离核脱离周期 tick（消除定时器中断噪声），但<strong>RCU 回调</strong>（延后释放的回调，如 RCU 宽限期结束后的释放工作）默认会在任意核上执行——隔离核一旦碰上 RCU 回调照样被唤醒，nohz 白做。rcu_nocbs 把这些核的 RCU 回调卸载（offload）给专用 rcuo 线程跑在别的核上。单用 nohz_full 的典型症状：隔离核上 <code class="c">perf stat</code> 仍能看到零星的内核活动，找半天发现是 RCU。</p>
+</details>
+<details>
+<summary>Q5：树莓派 5 上按服务器清单照搬调优，哪几项注定无效？</summary>
+<p>①RSS/多队列分流——macb 单队列（或极少队列），<code class="c">ethtool -X</code> 无从谈起；②IRQ per-queue 亲和的多核范式——没有多个 RX 向量可绑；③NUMA 一致性——单节点系统无跨节点问题；④EDT pacing 的收益——GbE 线速下 TSO 段的 microburst 影响和 fq 红黑树成本基本对冲。能练的：中断合并清零、busy poll、单核隔离（nohz_full+cpuset）、SO_TIMESTAMPING 量测闭环（15-03）——方法论部分和服务器完全同构，这正是 Pi 5 作为学习平台的价值。</p>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>— 延迟测量方法论</h2></div>

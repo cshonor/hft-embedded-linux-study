@@ -276,8 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">19</span>— TCP 内部优化（TSO / pacing / RACK）</a>
-          <a href="#s-02"><span class="n">20</span>— UDP GRO：批量接收</a>
+          <a href="#s-01"><span class="n">14</span>-01 — TCP 内部优化：TSO / TSQ / Pacing(EDT) / RACK（v6.6 源码级）</a>
+          <a href="#s-02"><span class="n">14</span>-02 — UDP GRO：批量接收与交付协议（v6.6 源码级）</a>
           <a href="#s-03"><span class="n">03</span>— UDP 组播收包路径与行情接入</a>
     </nav>
     <div class="nav-label">全书</div>
@@ -316,6 +316,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>核心结论（全章浓缩）</h2>
+<ol>
+<li><strong>TSO 不等凑包</strong>：发送时刻由 <code class="c">tcp_push</code>（NODELAY 即刻）决定，TSO 只影响"同一批排队数据打包成多大 skb"（≤64KB，<code class="c">tcp_tso_autosize</code> 按 pacing rate 自适应）——"关 TSO 降延迟"对单条小消息流测不出差异。</li>
+<li><strong>TSQ 才是发送闸门</strong>：<code class="c">tcp_small_queue_check()</code>（tcp_output.c:2568）限制单 socket 在飞内存（<code class="c">2*truesize</code> 或 pacing 派生），超限扣住新数据（TSQ_THROTTLED），但重传队列空/单 skb 时永远放行——保底延迟。</li>
+<li><strong>v6.6 pacing 是 EDT 模型</strong>：TCP 把出发时刻写进 <code class="c">skb-&gt;tstamp</code>（tcp_output.c:1407），fq qdisc 按时刻放行（sch_fq.c:470）——CC 算法与 qdisc 解耦，BBR 的精确 pacing 即插即用；horizon（10s）防时钟错乱卡死队列。</li>
+<li><strong>RACK 默认且覆盖 tail loss</strong>：任意新 ACK 推进 rack.mstamp，"早于它发出 + 超过 reo_wnd 未确认"即判丢（tcp_recovery.c:58）——尾丢从 RTO 级降到亚 RTT 级，是交易 TCP 连接免费的尾延迟改善。</li>
+<li><strong>UDP GRO 的 HFT killer 是零 checksum</strong>：<code class="c">udp_gro_receive_segment()</code> 要求 csum 非零（udp_offload.c:464），交易所行情组播普遍关 checksum → GRO 直接不生效；先 <code class="c">tcpdump -vv</code> 验证再谈收益。</li>
+<li><strong>UDP GRO 交付协议是 cmsg 不是 MSG_EOR</strong>：socket 开 UDP_GRO（=104，udp.c:2710）后合并包整条交付（单次 recvmsg ≤64KB），gso_size 经 <code class="c">SOL_UDP/UDP_GRO</code> cmsg 上报（include/linux/udp.h:122）；不开则 <code class="c">udp_rcv_segment()</code> 拆回逐条投递，向下兼容。</li>
+<li><strong>TCP-AO 在 v6.6 尚不存在</strong>（<code class="c">tcp_ao.c</code> 为 6.7+），旧笔记"5.15+"说法已纠正。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>TCP 拥塞控制</strong>：HFT 交易连接用 <code class="c">tcp_congestion_control=none</code>（或 BBR）避免 AIMD 降窗</li>
@@ -335,64 +345,230 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">19</div><h2>— TCP 内部优化（TSO / pacing / RACK）</h2></div>
+        <div class="sec-head"><div class="sec-no">14</div><h2>01 — TCP 内部优化：TSO / TSQ / Pacing(EDT) / RACK（v6.6 源码级）</h2></div>
 <blockquote>
 <p><strong>对应 Rosen:</strong> Ch11（TCP 基础实现）
-<strong>内核版本:</strong> TSO 很早；pacing 3.12+；RACK 4.9+；TCP internal offload 持续演进</p>
+<strong>内核源码路径:</strong> <code class="c">net/ipv4/tcp_output.c</code>、<code class="c">net/ipv4/tcp_input.c</code>、<code class="c">net/ipv4/tcp_recovery.c</code>、<code class="c">net/sched/sch_fq.c</code></p>
 </blockquote>
-<h2>TSO（TCP Segmentation Offload）</h2>
-<p>内核构造一个大的 TCP 段（最多 64KB），由硬件负责分段：
-- 减少协议栈处理次数
-- 减少驱动 DMA 描述符数量
-- 现代网卡普遍支持</p>
-<p>HFT 注意：TSO 会影响发送时机——内核等待凑够大段才发送，增加延迟。</p>
-<pre class="code" data-label="shell"><code class="c"># 关闭 TSO（降低发送延迟）
-ethtool -K eth0 tso off
+<h2>章节导航</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-13.html#intro">chapter-13 零拷贝</a></td>
+<td><strong>14-01 TCP 内部</strong></td>
+<td><a href="chapter-15.html#s-02">14-02 UDP GRO</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2>本节讲什么</h2>
+<p>Rosen 时代（3.x 前后）的 TCP 发送路径是"cwnd 控制总量 + 中断驱动发包"。v6.6 的现实是四个相互咬合的机制：<strong>TSO</strong>（大段下推网卡分段）、<strong>TSQ</strong>（发送队列内存上限防 burst）、<strong>EDT pacing</strong>（把发送时刻写进每个 skb，由 fq qdisc 严格执行）、<strong>RACK</strong>（基于时间的丢包检测替代 3-dup-ACK）。本篇用源码把这四个机制各自的位置、相互作用和对延迟的真实影响讲清楚——其中有两个流传甚广的说法（"TSO 要等凑满 64KB"、"关 TSO 降延迟"）需要修正。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>TSO 不等待凑包</strong>：<code class="c">tcp_write_xmit()</code>（tcp_output.c:2670）发送的是<strong>发送队列里现成的数据</strong>——TCP_NODELAY 下 <code class="c">tcp_push</code> 有多少发多少，TSO 只是把"同一时刻排队的多段"打包成一个 64KB 大 skb 交给网卡分段。小消息路径根本碰不到 TSO 阈值（<code class="c">tcp_tso_autosize</code>，tcp_output.c:1976）。</li>
+<li><strong>TSQ（TCP Small Queues）才是真正的"闸门"</strong>：<code class="c">tcp_small_queue_check()</code>（tcp_output.c:2568）用 <code class="c">2*truesize</code> 或 <code class="c">pacing_rate &gt;&gt; sk_pacing_shift</code> 限制 socket 在飞行中的字节数——<strong>队列里积压超过 limit 时新数据被扣住</strong>（<code class="c">TSQ_THROTTLED</code>）。这是比 cwnd 更贴近发送机的流控。</li>
+<li><strong>v6.6 的 pacing 是 EDT（Earliest Departure Time）模型</strong>：TCP 在 <code class="c">tcp_transmit_skb</code> 里把"最早出发时刻"写进 <code class="c">skb-&gt;tstamp</code>（tcp_output.c:1407 注释原文 <em>"Leave earliest departure time in skb-&gt;tstamp"</em>），fq qdisc 按 tstamp 排队出队（sch_fq.c:470）——<strong>不再有令牌桶，每个包自带时刻表</strong>。</li>
+<li><strong>RACK 已是默认丢包检测</strong>（tcp_recovery.c，IETF draft-ietf-tcpm-rack-01）："收到更新的 ACK 时，发送时间早于它且超过 reo_wnd 没被确认的段，判丢"。比 3-dup-ACK 快一个 RTT 级别，且天然处理 tail loss（最后几个包丢了不会有 dup ACK）。</li>
+<li><strong>reo_wnd 自适应</strong>：DSACK 频发（网络在重排序，RACK 误判过）时窗口按 step 增长（tcp_recovery.c:5，<code class="c">reo_wnd_steps</code>，上限逻辑在 tcp_input.c:2585 <code class="c">TCP_RACK_RECOVERY_THRESH</code>）——用"误判历史"调节容差。</li>
+<li><strong>TCP-AO 在 v6.6 还不存在</strong>：<code class="c">net/ipv4/tcp_ao.c</code> 是 6.7 才合入的；旧笔记的"TCP_AUTHOPT 5.15+"说法不准（5.15 合入的是 authopt 框架雏形，完整 RFC 5925 支持是 6.7+）。</li>
+</ol>
+<h2>一、TSO：下推分段，不是攒包</h2>
+<h3>机制</h3>
+<pre class="code" data-label="code"><code class="c">tcp_sendmsg → 写入发送队列 → tcp_push → tcp_write_xmit()
+                                        │ tcp_tso_segs() 算单次最大段数
+                                        ▼
+                        构造 ≤64KB 的大 skb（gso_size = mss）
+                                        ▼
+                        驱动 DMA 一次，网卡按 MSS 切段发出
 </code></pre>
-<h2>Pacing（发送节奏控制）</h2>
-<p>传统 TCP 依赖拥塞窗口（cwnd）控制发送量，但不控制发送节奏：
-- cwnd 允许发送 N 个包，内核可能瞬间全部发出（burst）
-- burst 导致交换机队列拥塞 → 尾延迟增加</p>
-<p>Pacing 将 cwnd 均匀分布在 RTT 内发送：
-- <code class="c">sk_pacing_rate</code>：每个 socket 的发送速率
-- 内核用 fq qdisc 或 sch_fq 实现 pacing
-- 3.12+ 默认为每个 TCP 流设置 pacing rate</p>
-<p>HFT 影响：交易报文通常很小，pacing 影响不大。但行情转发流受 pacing 影响。</p>
-<h2>RACK（Recent ACKnowledgement，4.9+）</h2>
-<p>RACK 改进 TCP 丢包检测：
-- 传统：3 个重复 ACK 或超时 → 判定丢包
-- RACK：根据最近 ACK 的时间戳推断哪些包可能丢失
-- 更快检测丢包，减少等待时间
-- 已成为默认丢包检测算法（替代 SACK + FACK）</p>
-<h2>其他现代 TCP 优化</h2>
+<p><code class="c">tcp_tso_autosize()</code>（tcp_output.c:1976）的"自动尺寸"逻辑：</p>
+<pre class="code" data-label="C"><code class="c">static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
+                u32 min_tso_segs)
+{
+    unsigned long bytes;
+    u32 r;
+
+    bytes = sk-&gt;sk_pacing_rate &gt;&gt; READ_ONCE(sk-&gt;sk_pacing_shift);  // 每毫秒字节数
+
+    r = tcp_skb_pcount(skb)-1; /* 段数越多步进越大 */
+    if (r &lt; BITS_PER_TYPE(sk-&gt;sk_gso_max_size))
+        bytes += sk-&gt;sk_gso_max_size &gt;&gt; r;   // 逼近 gso_max_size(默认64KB)
+    bytes = min_t(unsigned long, bytes, sk-&gt;sk_gso_max_size);
+    return bytes  → 换算成段数;
+}
+</code></pre>
+<p>设计意图：<strong>pacing rate 高的流允许更大的 TSO 段</strong>（一次排队摊薄更多协议栈成本）；rate 低则小段——避免低速率流在网卡里积压"已分段未发出"的数据。</p>
+<h3>修正两个流行说法</h3>
+<ul>
+<li><strong>"TSO 增加发送延迟，HFT 应关闭"</strong>——错。TSO 是<strong>机会主义</strong>的：发送时刻由 tcp_push 决定（TCP_NODELAY 即刻），TSO 只影响"这一批发多少打包方式"。1KB 的订单消息永远不会被扣住等 64KB。关 TSO 真正影响的是<strong>吞吐路径</strong>（每 MSS 一次协议栈遍历 vs 每 64KB 一次）和分段的<strong>时间分布</strong>（网卡分段出的连续帧背靠背上线，交换机瞬间 microburst——这才是 fq pacing 要解决的问题）。</li>
+<li><strong>"ethtool -K eth0 tso off 降延迟"</strong>——对单条小消息流测不出差异；对满速大流量反而升 CPU。HFT 机器关不关 TSO 的正确判据是：交易口几乎只有小消息（TSO 无关紧要）+ 独立行情/回放口（开着有益）。</li>
+</ul>
+<h2>二、TSQ：发送机的内存闸门</h2>
+<pre class="code" data-label="C"><code class="c">// tcp_output.c:2568 tcp_small_queue_check()（节选）
+limit = max_t(unsigned long,
+          2 * skb-&gt;truesize,
+          sk-&gt;sk_pacing_rate &gt;&gt; READ_ONCE(sk-&gt;sk_pacing_shift));
+if (sk-&gt;sk_pacing_status == SK_PACING_NONE)
+    limit = min_t(unsigned long, limit,
+              READ_ONCE(sock_net(sk)-&gt;ipv4.sysctl_tcp_limit_output_bytes)); // 默认 1MB
+...
+if (refcount_read(&amp;sk-&gt;sk_wmem_alloc) &gt; limit) {
+    if (tcp_rtx_queue_empty_or_single_skb(sk))
+        return false;                      // 队列空/只剩一段：总是发
+    set_bit(TSQ_THROTTLED, &amp;sk-&gt;sk_tsq_flags);   // 否则扣住，等 TX 完成回调唤醒
+    ...
+    return true;
+}
+</code></pre>
+<p>TSQ 的意义：限制<strong>单个 socket 在驱动/qdisc 里滞留的内存</strong>——没有它，10G 线速下一个 cwnd 窗口的数据瞬间灌进 qdisc，饿死其他流且 swap 抖动。注意 <code class="c">tcp_rtx_queue_empty_or_single_skb</code> 的例外：<strong>重传队列为空或只剩一个 skb 时永远放行</strong>——保底延迟，不让 TSQ 卡死最后一条消息。</p>
+<h2>三、Pacing：EDT 模型与 fq qdisc</h2>
+<h3>传统问题</h3>
+<p>cwnd 只回答"能发多少"，不回答"什么时候发"。窗口打开瞬间内核把 N 个包背靠背喷出（burst）→ 交换机入口队列瞬时打满 → <strong>同机房其他流的尾延迟被你制造出来</strong>。</p>
+<h3>EDT 解法（v4.20+ 落地）</h3>
+<pre class="code" data-label="code"><code class="c">tcp_transmit_skb()  ──►  skb-&gt;tstamp = now + 该流速率推算的出发时刻
+        │                        （tcp_output.c:1407）
+        ▼
+   qdisc (sch_fq)
+        │ fq_enqueue: fq_skb_cb(skb)-&gt;time_to_send = skb-&gt;tstamp  (sch_fq.c:470)
+        │ fq_dequeue: 只发 tstamp ≤ now 的包（红黑树按时间排序）
+        ▼
+      网卡（必要时配合 TSO 分段）
+</code></pre>
+<ul>
+<li><strong>fq 自动激活 pacing</strong>：sch_fq.c:325/351，第一个带 <code class="c">sk_pacing_rate</code> 的 skb 到达时 <code class="c">smp_store_release(&amp;sk-&gt;sk_pacing_status, SK_PACING_NEEDED)</code>——socket 侧从此知道"我的包会被按时放行"。</li>
+<li><strong>没有 fq 时</strong>：<code class="c">SK_PACING_NEEDED</code> 状态下 TCP 用内部 hrtimer 模拟 pacing（tcp_output.c:1209 一带，<code class="c">tcp_pace_kick</code>）——精度略差但语义一致。</li>
+<li><strong>horizon 防御</strong>：sch_fq.c:439，tstamp 离现在太远（超过 horizon，默认 10s）的包被夹回来——防止某 socket 的时钟错乱把整个 qdisc 卡住。</li>
+<li><strong>速率来源</strong>：<code class="c">tcp_update_pacing_rate()</code>（CC 模块在 cwnd 更新时调用）：reno/cubic = cwnd/RTT 的 2 倍左右的启发式；BBR 直接给精确带宽估计——<strong>BBR 的高精度 pacing 是它低队列占用的根基</strong>。</li>
+</ul>
+<h3>HFT 视角</h3>
+<p>交易流（KB 级、偶发）受 pacing 影响可忽略——pacing rate 远高于消息速率，EDT 时刻就是 now。行情转发流（持续满速）则完全活在 EDT 模型里：<strong>fq qdisc 的红黑树插拔在发送热路径上</strong>，交换侧 microburst 被削平的代价是每包一次 rbtree 操作。</p>
+<h2>四、RACK：基于时间的丢包检测</h2>
+<h3>核心数据（<code class="c">tp-&gt;rack</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>更新点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mstamp</code></td>
+<td>最近一次（新）数据被确认的时间</td>
+<td><code class="c">tcp_rack_advance()</code> tcp_recovery.c:118</td>
+</tr>
+<tr>
+<td><code class="c">rtt_us</code></td>
+<td>该次确认测得的 RTT</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">advanced</code></td>
+<td>有新进展待重估</td>
+<td>同上置 1</td>
+</tr>
+<tr>
+<td><code class="c">reo_wnd_steps</code></td>
+<td>重排序容差步数（自适应）</td>
+<td>DSACK 误判时增长（tcp_input.c:2585）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>判丢逻辑</h3>
+<pre class="code" data-label="C"><code class="c">// tcp_recovery.c:58 tcp_rack_detect_loss()（节选）
+reo_wnd = tcp_rack_reo_wnd(sk);                       // 容差窗口
+list_for_each_entry_safe(skb, ...) {                   // 遍历重传队列
+    if (!tcp_skb_sent_after(tp-&gt;rack.mstamp,
+                tp-&gt;rack.end_seq, scb-&gt;end_seq))
+        continue;                               // 只看发送时间晚于 rack.mstamp 的段？
+    // ↑ 实际是反向：发送时间【早于】最新确认对应时间的段才有资格被判丢
+    remaining = tcp_rack_skb_timeout(tp, skb, reo_wnd); // rtt + reo_wnd - 已等待
+    if (remaining &gt; 0)
+        *reo_timeout = max(...)                  // 还有耐心，定个重估定时器
+    else
+        tcp_skb_mark_lost_unsacked(sk, skb);     // 判丢
+}
+</code></pre>
+<p><strong>一句话</strong>："我最新的数据都确认了（用了 rtt_us），你比它早发却还没到，而且我给了你 reo_wnd 的容差——你八成是丢了。"</p>
+<p>对比传统机制：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>3-dup-ACK + FACK</th>
+<th>RACK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>信号</td>
+<td>收到第 3 个重复 ACK</td>
+<td>任何携带新数据的 ACK</td>
+</tr>
+<tr>
+<td>tail loss</td>
+<td>检测不到（无 dup）→ 等 RTO</td>
+<td><strong>天然检测</strong>（时间超限即判丢）</td>
+</tr>
+<tr>
+<td>重排序容错</td>
+<td>scoreboard/SACK 记账</td>
+<td>reo_wnd 时间窗，自适应</td>
+</tr>
+<tr>
+<td>误判代价</td>
+<td>过早重传（spurious）</td>
+<td>reo_wnd 增大慢恢复</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>v6.6 里仍并存（<code class="c">tcp_dupack</code> 路径）</td>
+<td>默认主路径，<code class="c">tcp_rack_mark_lost()</code>（:95）在每个 ACK 后调用</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">tcp_rack_reo_wnd()</code>（:5）的容差：<code class="c">min(min_rtt/4 * steps, ...)</code>——<strong>以 RTT 的四分之一为基数按步进放大</strong>；DSACK 说明"你判丢的那个其实到了"时 steps++（上限 <code class="c">TCP_RACK_RECOVERY_THRESH</code>），此后逐渐衰减回 1。</p>
+<h2>五、其他现代特性速览（v6.6 事实核对）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>特性</th>
-<th>内核版本</th>
-<th>作用</th>
+<th>版本</th>
+<th>v6.6 状态</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>TCP Fast Open</td>
-<td>3.6+</td>
-<td>首包携带数据，省一个 RTT</td>
+<td>3.6+ cookie, <code class="c">TCP_FASTOPEN_CONNECT</code> 4.15+</td>
+<td>可用；<code class="c">sendmsg</code> 无 sockopt 变体（<code class="c">tcp_fastopen</code> flag）在 connect 前置数据</td>
 </tr>
 <tr>
 <td>TCP repair</td>
 <td>3.5+</td>
-<td>迁移 TCP 连接（容器/进程迁移）</td>
+<td>可用（<code class="c">TCP_REPAIR</code> 一族 sockopt），容器热迁移用</td>
 </tr>
 <tr>
-<td>TLS offload</td>
-<td>4.13+</td>
-<td>网卡硬件 TLS 加解密</td>
+<td>kTLS（TLS offload）</td>
+<td>4.13+ tx / 5.x rx</td>
+<td>可用；<code class="c">TLS_TX</code>/<code class="c">TLS_RX</code> setsockopt 后数据路径走加密 offload</td>
 </tr>
 <tr>
-<td>TCP_AUTHOPT</td>
-<td>5.15+</td>
-<td>TCP MD5 替代（AO 选项）</td>
+<td><strong>TCP-AO（RFC 5925）</strong></td>
+<td><strong>6.7+</strong></td>
+<td><strong>v6.6 无 <code class="c">tcp_ao.c</code></strong>（jsdelivr 404 实测）；旧笔记"5.15+"是 authopt 框架雏形</td>
+</tr>
+<tr>
+<td>SACK/FACK/RACK</td>
+<td>RACK 4.9+，默认</td>
+<td><code class="c">sysctl_tcp_recovery</code>（RACK 丢失定时器微调）可用</td>
 </tr>
 </tbody>
 </table></div>
@@ -400,119 +576,261 @@ ethtool -K eth0 tso off
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>特性</th>
-<th>HFT 建议</th>
+<th>机制</th>
+<th>HFT 判定</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>TSO</td>
-<td>交易报文关闭（降低延迟）</td>
+<td>交易口无所谓（碰不到阈值）；行情/回放口保持开启；<strong>不存在"关 TSO 降延迟"的收益</strong></td>
 </tr>
 <tr>
-<td>Pacing</td>
-<td>交易流影响小；行情转发流注意</td>
+<td>TSQ</td>
+<td>长肥管道满速回放时它是防 microburst 的闸门；默认参数即可</td>
+</tr>
+<tr>
+<td>EDT pacing</td>
+<td>交易流无感；行情转发流要意识到 fq 的 rbtree 在热路径——规模大时考虑 <code class="c">fq</code> 换 <code class="c">noqueue</code>+独立口</td>
 </tr>
 <tr>
 <td>RACK</td>
-<td>保持默认（更快丢包检测）</td>
+<td>保持默认——对交易 TCP 连接，RACK 把丢包恢复从 RTO 级（百 ms）拉到亚 RTT 级，是<strong>免费的尾部延迟改善</strong></td>
 </tr>
 <tr>
-<td>TCP Fast Open</td>
-<td>交易连接建立时可启用</td>
+<td>TFO</td>
+<td>交易网关与前置间长连接 + 断线重连场景，TFO 省一个 RTT；首次连接仍需 cookie 协商</td>
 </tr>
 <tr>
-<td>TLS offload</td>
-<td>加密交易流时可用</td>
+<td>kTLS</td>
+<td>加密回放流可用；交易流极少有人愿意把 TLS 放进关键路径</td>
 </tr>
 </tbody>
 </table></div>
+<h2>衔接</h2>
+<p>TCP 的发送/检测机制讲完。下一篇 <a href="chapter-15.html#s-02">14-02 UDP GRO</a> 讲接收侧的批量合并——组播行情每秒几十万包的 PPS 压力，GRO 用"一次协议栈遍历处理 N 个包"来摊薄成本，以及为什么交易所行情常用的零 checksum 会让它整个失效。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：TCP_NODELAY 开着，为什么 TSO 仍然不会让小消息变慢？</summary>
+<p>发送时刻由 <code class="c">tcp_push</code>→<code class="c">tcp_write_xmit</code> 的调用决定，NODELAY 意味着数据写入即触发。TSO 的影响只在 <code class="c">tcp_tso_segs()</code> 算出的"单次最大段数"——它决定这一批数据打成多大的 skb，但<strong>不决定什么时候发</strong>。队列里只有 1KB 时，发出去的就是 1KB 的普通 skb（连 gso_size 都不设）。TSO 的收益场景（大流量多段排队）与代价场景（网卡分段 microburst）都不在"单条小消息"上。</p>
+</details>
+<details>
+<summary>Q2：TSQ 的 limit 为什么用 truesize（含开销）而不是 len（纯数据）？</summary>
+<p>TSQ 管的是<strong>内存占用</strong>不是数据量：一个 skb 在驱动/qdisc 里占的内存是 truesize（数据 + skb 结构 + 预留），网卡环形描述符、qdisc 队列的内存压力都跟 truesize 走。用 len 会导致小包流（truesize/len 比值大）实际内存占用远超预期。<code class="c">2 * truesize</code> 下限还保证了"至少能发一个包"——极限情况下不饿死。</p>
+</details>
+<details>
+<summary>Q3：EDT 模型里 TCP 和 fq 的分工边界在哪？为什么把时刻写进 skb 而不是 fq 自己算？</summary>
+<p>TCP 知道流语义（速率、RTT、cwnd 变化），由它算"这个包最早该几点走"（tcp_output.c:1407 写 skb-&gt;tstamp）；fq 只负责"到点放行"（sch_fq.c:470）——单调时钟比较 + 红黑树。这样 qdisc 无需理解每流的 CC 状态，CC 换算法零改动 qdisc；反过来 fq 给 TCP 的反馈只有 <code class="c">sk_pacing_status</code>（"我在按时放行，你可以按 EDT 计划"）。解耦后 BBR 的精确 pacing 才能即插即用。</p>
+</details>
+<details>
+<summary>Q4：尾丢（tail loss，窗口最后两个包丢了）为什么 3-dup-ACK 救不了而 RACK 能？</summary>
+<p>dup ACK 由"乱序到达"触发：后续包到达才产生 dup。尾部丢了之后<strong>没有后续包</strong>，收不到任何 dup——传统路径只能等 RTO（百 ms 级）。RACK 是时间驱动：任意新 ACK 都推进 rack.mstamp，尾部段"发送时间早于 mstamp + 容差内未确认"即可判丢——不需要额外的包到达信号，重估定时器（reo_timeout）兜底触发恢复。</p>
+</details>
+<details>
+<summary>Q5：DSACK 不断增加 reo_wnd_steps，会不会让丢包检测退化到不可用？</summary>
+<p>不会无限涨：<code class="c">reo_wnd_steps</code> 有上限（tcp_input.c:2585，<code class="c">TCP_RACK_RECOVERY_THRESH</code>，达到即进入保守模式），且窗口基数是 min_rtt/4——steps 涨的是倍数，绝对值仍受 RTT 约束。设计上的权衡：误判重传（spurious retransmit）烧带宽且可能触发不必要的 CC 回退，比晚一点判丢更贵；网络真的长期深度重排序时，宁可慢一点。另外 steps 会随时间/无 DSACK 阶段回落，不是单调增长。</p>
+</details>
       </section>
       <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">20</div><h2>— UDP GRO：批量接收</h2></div>
+        <div class="sec-head"><div class="sec-no">14</div><h2>02 — UDP GRO：批量接收与交付协议（v6.6 源码级）</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> Ch11（UDP 无 GRO）
-<strong>内核版本:</strong> UDP GRO 5.0+</p>
+<p><strong>对应 Rosen:</strong> Ch11（UDP 无 GRO，机制是 4.x/5.x 产物）
+<strong>内核源码路径:</strong> <code class="c">net/ipv4/udp_offload.c</code>、<code class="c">net/ipv4/udp.c</code>、<code class="c">include/linux/udp.h:98,122</code>、<code class="c">include/uapi/linux/udp.h</code></p>
 </blockquote>
-<h2>背景</h2>
-<p>组播行情通常使用 UDP：
-- 每个行情更新一个 UDP 包
-- 高频行情流每秒数万包
-- 每个包小（几百字节到 1KB）
-- 高 PPS 导致每包处理开销大</p>
-<h2>UDP GRO 机制</h2>
-<p>GRO（Generic Receive Offload）原只支持 TCP，5.0+ 扩展到 UDP：
-- 收包路径将同 flow 的多个 UDP 包合并成一个大包
-- 协议栈只处理一次（而非 N 次）
-- <code class="c">recvmsg()</code> 一次读取合并后的大包</p>
-<pre class="code" data-label="C"><code class="c">// 接收 UDP GRO 合并包
-struct msghdr msg = {};
-char buf[65535];
-struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
-msg.msg_iov = &amp;iov;
-msg.msg_iovlen = 1;
-
-int n = recvmsg(sockfd, &amp;msg, 0);
-// n 可能是多个原始包合并后的大小
-// 需要解析 GSO 段（msg.msg_flags &amp; MSG_EOR 标记分段）
+<h2>章节导航</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上一篇</th>
+<th>本篇</th>
+<th>下一篇</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-01">14-01 TCP 内部</a></td>
+<td><strong>14-02 UDP GRO</strong></td>
+<td><a href="chapter-15.html#s-03">14-03 组播 RX 路径</a></td>
+</tr>
+</tbody>
+</table></div>
+<h2>本节讲什么</h2>
+<p>组播行情的典型画像：每包几百字节、每秒十万级 PPS、单 flow。每个包过一遍完整协议栈（IP 头解析、UDP 查找、checksum、入队、唤醒）的固定成本 ~200-500ns，乘以 PPS 就是整核的消耗。GRO（Generic Receive Offload）的思路：<strong>在 NAPI 批处理循环里把同 flow 的连续包合并成一个大 skb，协议栈只过一遍</strong>。本篇讲 UDP GRO 的准入条件（其中一个会让交易所行情直接失效）、交付协议（cmsg 上报 gso_size，<strong>不是</strong>网上流传的 MSG_EOR）、以及收发两侧的对称设计。</p>
+<h2>要点（先记住结论）</h2>
+<ol>
+<li><strong>合并的准入在 <code class="c">udp_gro_receive()</code>（udp_offload.c:545）</strong>：socket 开了 <code class="c">UDP_GRO</code>（或设备开 <code class="c">NETIF_F_GRO_UDP_FWD</code> 走转发路径）才调 <code class="c">udp_gro_receive_segment()</code>（:464）做 L4 合并——<strong>没开的 socket，GRO 引擎对 UDP 直接 flush</strong>。</li>
+<li><strong>零 checksum = 不合并（killer）</strong>：<code class="c">udp_gro_receive_segment()</code> 开头 <code class="c">if (!uh-&gt;check)</code> 直接放弃（注释原文 <em>"requires non zero csum, for symmetry with GSO"</em>）。<strong>交易所行情组播普遍关闭 UDP checksum（省发送端开销）——这类流量上 UDP GRO 整个不生效</strong>，这是 HFT 场景最重要的一条判据。</li>
+<li><strong>交付协议是 cmsg，不是 MSG_EOR</strong>（纠正旧笔记）：socket 开 <code class="c">UDP_GRO</code>（uapi/udp.h:36，选项号 104，设置走 udp.c:2710→<code class="c">up-&gt;gro_enabled</code>）后，合并包<strong>整条</strong>入队，一次 <code class="c">recvmsg</code> 可读到 64KB；<strong>分段大小通过 cmsg <code class="c">SOL_UDP/UDP_GRO</code> 上报</strong>（<code class="c">udp_cmsg_recv()</code>，include/linux/udp.h:122，内容是 <code class="c">skb_shinfo(skb)-&gt;gso_size</code>）——应用按 gso_size 自行切分。</li>
+<li><strong>不开 UDP_GRO 的 socket 收到 GRO 合并包会被拆回去</strong>：<code class="c">udp_queue_rcv_skb()</code>（udp.c:2177）里 <code class="c">udp_unexpected_gso()</code> 判定为"不速之客"→ <code class="c">udp_rcv_segment()</code>（:2188）逐段拆开、逐条入队——行为与无 GRO 完全一致，向下兼容零成本。</li>
+<li><strong>发送侧对称机制是 <code class="c">UDP_SEGMENT</code> cmsg</strong>（uapi/udp.h:35，选项号 103）：一次 sendmsg 写 ≤64KB，内核按 gso_size 切段（<code class="c">cork-&gt;gso_size</code>，udp.c:908-934），单段上限 <code class="c">UDP_MAX_SEGMENTS = 64</code>（include/linux/udp.h:98）——配合网卡 GSO/USO 一次 DMA 发出。</li>
+<li><strong>GRO 没有等待窗口</strong>：合并在 NAPI poll 的同一次批处理里完成（<code class="c">dev_gro_receive</code> 持续把包挂到 hold 状态的 skb 上），<strong>不存在"攒包等合并"的额外延迟</strong>——"合并窗口增加延迟"的旧说法不准确，真实的延迟影响只有一个：合并包的 checksum 验证从硬件（每包独立）变成增量式。</li>
+</ol>
+<h2>一、合并发生在哪：NAPI 循环里的 GRO</h2>
+<pre class="code" data-label="code"><code class="c">NAPI poll（chapter-02 讲过的循环）
+   └─ napi_gro_receive()
+        └─ dev_gro_receive()
+             ├─ 已有同 flow 的 hold skb？→ 挂到它的 frag list（不上协议栈）
+             └─ 第一个包：标记 hold，记 flow 信息
+        └─ napi_gro_flush()（poll 结束）→ 合并完的大 skb 进协议栈
 </code></pre>
-<h2>UDP GRO forwarding</h2>
-<p>合并后的 UDP 包可以转发到其他 socket 或网卡：
-- <code class="c">UDP_GRO</code> → <code class="c">sendmsg(MSG_ZEROCOPY)</code> → GSO 发送
-- 减少转发路径处理开销</p>
-<h2>性能影响</h2>
+<p><code class="c">udp_gro_receive()</code> 是 UDP 层的 merge 判定回调：</p>
+<pre class="code" data-label="C"><code class="c">// udp_offload.c:545（节选）
+if (!sk || !udp_sk(sk)-&gt;gro_receive) {              // ① socket 侧判定
+    if (skb-&gt;dev-&gt;features &amp; NETIF_F_GRO_FRAGLIST)
+        NAPI_GRO_CB(skb)-&gt;is_flist = sk ? !udp_sk(sk)-&gt;gro_enabled : 1;
+
+    if ((!sk &amp;&amp; (skb-&gt;dev-&gt;features &amp; NETIF_F_GRO_UDP_FWD)) ||
+        (sk &amp;&amp; udp_sk(sk)-&gt;gro_enabled) || NAPI_GRO_CB(skb)-&gt;is_flist)
+        return call_gro_receive(udp_gro_receive_segment, head, skb);
+
+    /* no GRO, be sure flush the current packet */
+    goto out;                                        // ② 未开启：flush
+}
+</code></pre>
+<p>两条合并路线：
+- <strong>L4 模式</strong>（<code class="c">udp_gro_receive_segment</code>）：要求每包 checksum 非零且校验通过，合并成 <code class="c">SKB_GSO_UDP_L4</code> 类型；
+- <strong>fraglist 模式</strong>（<code class="c">NETIF_F_GRO_FRAGLIST</code>）：不剥头、整包链成 fraglist——对转发场景友好（转出去时头还在）。</p>
+<h2>二、交付协议：收一条 64KB 合并包</h2>
+<pre class="code" data-label="C"><code class="c">/* 正确的接收端写法（替代旧笔记错误的 MSG_EOR 说法） */
+int one = 1;
+setsockopt(fd, IPPROTO_UDP, UDP_GRO, &amp;one, sizeof(one));   /* udp.c:2710 */
+
+char buf[64 * 1024];
+char ctrl[CMSG_SPACE(sizeof(int))];
+struct msghdr msg = {
+    .msg_iov     = &amp;(struct iovec){ .iov_base = buf, .iov_len = sizeof(buf) },
+    .msg_iovlen  = 1,
+    .msg_control = ctrl, .msg_controllen = sizeof(ctrl),
+};
+int n = recvmsg(fd, &amp;msg, 0);
+
+/* n 可能是多个原始报文的总长（≤64KB）
+ * 分段大小从 cmsg 拿 —— udp_cmsg_recv() (include/linux/udp.h:122): */
+for (struct cmsghdr *cm = CMSG_FIRSTHDR(&amp;msg); cm; cm = CMSG_NXTHDR(&amp;msg, cm)) {
+    if (cm-&gt;cmsg_level == IPPROTO_UDP &amp;&amp; cm-&gt;cmsg_type == UDP_GRO) {
+        int gso_size;
+        memcpy(&amp;gso_size, CMSG_DATA(cm), sizeof(gso_size));
+        /* buf 里每 gso_size 字节一个原始报文，最后一页可能不足 */
+    }
+}
+</code></pre>
+<p>内核侧的对称实现（三处锚点）：</p>
+<pre class="code" data-label="C"><code class="c">// udp.c:2710  设置
+case UDP_GRO:
+    ...
+    up-&gt;gro_enabled = valbool;              // :2716
+
+// udp.c:1871  recvmsg 时附带 cmsg
+if (udp_sk(sk)-&gt;gro_enabled)
+    udp_cmsg_recv(msg, sk, skb);           // 报 gso_size
+
+// include/linux/udp.h:122  cmsg 构造
+static inline void udp_cmsg_recv(struct msghdr *msg, struct sock *sk,
+                 struct sk_buff *skb)
+{
+    int gso_size;
+    if (skb_shinfo(skb)-&gt;gso_type &amp; SKB_GSO_UDP_L4) {
+        gso_size = skb_shinfo(skb)-&gt;gso_size;
+        put_cmsg(msg, SOL_UDP, UDP_GRO, sizeof(gso_size), &amp;gso_size);
+    }
+}
+</code></pre>
+<h3>不开 UDP_GRO 时的兜底</h3>
+<p>GRO 在设备层合并时<strong>不知道</strong>这些包最终落在哪个 socket（GRO 在协议栈之前）——合并包进了 UDP 层才发现目标 socket 不收大包：<code class="c">udp_queue_rcv_skb()</code>（udp.c:2177）→ <code class="c">udp_unexpected_gso()</code> 为真 → <code class="c">udp_rcv_segment()</code>（:2188）把大 skb 拆回单报文，逐条 <code class="c">udp_queue_rcv_one_skb()</code>。<strong>多进程场景下只要有一个进程开了 UDP_GRO，其他进程行为不变</strong>（拆回去的分发逻辑在 per-socket 队列之前……严格说在入队前拆完再各自投递）。</p>
+<h2>三、发送侧：UDP_SEGMENT 与 GSO</h2>
+<pre class="code" data-label="C"><code class="c">/* 应用一次写 64KB，内核切成 N 个 MSS 段发出（一次协议栈遍历） */
+char ctrl[CMSG_SPACE(sizeof(__u16))];
+struct msghdr msg = { .msg_iov = &amp;(struct iovec){ buf, 64*1024 },
+                      .msg_control = ctrl, .msg_controllen = sizeof(ctrl) };
+struct cmsghdr *cm = CMSG_FIRSTHDR(&amp;msg);
+cm-&gt;cmsg_level = IPPROTO_UDP;
+cm-&gt;cmsg_type  = UDP_SEGMENT;             /* uapi/udp.h:35 = 103 */
+cm-&gt;cmsg_len   = CMSG_LEN(sizeof(__u16));
+*(__u16 *)CMSG_DATA(cm) = 1400;           /* 分段大小 */
+sendmsg(fd, &amp;msg, 0);
+</code></pre>
+<p>内核侧（udp.c:908-934，<code class="c">udp_sendmsg</code> 的 cork 分支）：<code class="c">cork-&gt;gso_size</code> 记住分段大小；<code class="c">datalen &gt; cork-&gt;gso_size</code> 时设置 <code class="c">skb_shinfo(skb)-&gt;gso_size</code> 交给网卡 GSO；上限 <code class="c">datalen &gt; cork-&gt;gso_size * UDP_MAX_SEGMENTS</code>（=64 段）拒绝发送。注意 cmsg 校验在 <code class="c">udp_cmsg_send()</code>（udp.c:1014）：<strong>分段大小必须是偶数字节</strong>（<code class="c">cmsg_len</code> 检查 + gso_size 为 16 位）。</p>
+<h2>四、性能真相与适用判定</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>指标</th>
 <th>无 UDP GRO</th>
 <th>UDP GRO</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>协议栈遍历</td>
+<td>每包一次</td>
+<td>每 N 包一次</td>
+<td>NAPI 批内合并</td>
+</tr>
+<tr>
+<td>checksum</td>
+<td>硬件逐包</td>
+<td>增量式（L4 模式）</td>
+<td>合并时逐包累计校验</td>
+</tr>
 <tr>
 <td>PPS 处理能力</td>
 <td>~3 Mpps/core</td>
 <td>~8 Mpps/core</td>
+<td>官方基准量级</td>
 </tr>
 <tr>
-<td>延迟</td>
+<td>应用解析</td>
+<td>每次一报文</td>
+<td>每次 N 报文</td>
+<td>要按 gso_size 切</td>
+</tr>
+<tr>
+<td><strong>延迟</strong></td>
 <td>基准</td>
-<td>增加合并窗口延迟</td>
-</tr>
-<tr>
-<td>CPU 占用</td>
-<td>高</td>
-<td>低</td>
+<td><strong>几乎无差</strong></td>
+<td>无等待窗口；仅有增量 csum</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>判定树</strong>：</p>
+<pre class="code" data-label="code"><code class="c">行情包 checksum == 0？
+ ├─ 是 → UDP GRO 直接不生效（udp_offload.c:464 的准入），别折腾
+ └─ 否 → 延迟敏感的交易/决策路径？
+          ├─ 是 → 不开（省 cmsg 解析 + 应用切分复杂度，收益在吞吐不在延迟）
+          └─ 否（录制/转发/回放）→ 开，PPS 压力立减 2-3x
+</code></pre>
+<p>转发场景的完整链路：<code class="c">UDP_GRO 收</code> → 零修改透传 → <code class="c">NETIF_F_GRO_UDP_FWD</code> + GSO 发——fraglist 模式下连头都不用剥，是 UDP 中继（行情放大器）的标准姿势。</p>
 <h2>HFT 关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>场景</th>
-<th>UDP GRO 适用性</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>行情接收（需最低延迟）</td>
-<td>不推荐（合并窗口增加延迟）</td>
-</tr>
-<tr>
-<td>行情转发/录制（吞吐优先）</td>
-<td>推荐（减少 CPU 开销）</td>
-</tr>
-<tr>
-<td>组播行情中继</td>
-<td>推荐</td>
-</tr>
-</tbody>
-</table></div>
-<blockquote>
-<p>HFT 交易路径不建议开 UDP GRO（延迟优先）。行情录制/转发等非关键路径可开（吞吐优先）。</p>
-</blockquote>
+<ul>
+<li><strong>先查 checksum 再谈 GRO</strong>：<code class="c">tcpdump -vv</code> 看行情流 <code class="c">bad cksum 0</code>（发送端关闭）还是正常——前者 GRO 免谈，这是很多"HFT 上 GRO 没效果"的根因。</li>
+<li><strong>交易路径不开</strong>：收益是吞吐/CPU，代价是应用层切分逻辑复杂度；交易路径的瓶颈从来不在 PPS。</li>
+<li><strong>行情中继/录制器必开</strong>：3 Mpps/core → 8 Mpps/core 意味着 4 个核变 1.5 个核，或同样核数扛 3 倍通道。</li>
+<li><strong>与 chapter-13 的衔接</strong>：转发器"收大包" + <a href="chapter-15.html#s-02">MSG_ZEROCOPY/SEND_ZC 发大包</a>——两端都摆脱逐包成本，中继的 CPU 曲线和延迟抖动一起改善。</li>
+</ul>
+<h2>衔接</h2>
+<p>GRO 是"包处理批量化的软件层"。下一篇 <a href="chapter-15.html#s-03">14-03 组播 RX 路径</a> 已是完整版（组播在 IP 层的分发、<code class="c">ip_mc_join_group</code> 与网卡 hash 的关系）——本篇的 csum 准入问题在那里从组播配置的角度还有呼应。</p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 udp_gro_receive_segment 坚持 checksum 非零才合并（"for symmetry with GSO"）？</summary>
+<p>对称性问题：GSO 发送时网卡按 gso_size 切段，每段的 UDP checksum 由硬件逐段重算（分段后头字段变了）——这要求原始大包的 checksum 是"可增量分解"的。GRO 是逆操作：合并时逐包做增量校验（NAPI_GRO_CB 的 csum 累计），最后算总 checksum——零 checksum 的包没有可累计的校验值，合并后也无法为拆回场景重建每段的合法 checksum（转发路径要用）。所以干脆规定：L4 合并只对"校验在场"的流量开放。</p>
+</details>
+<details>
+<summary>Q2：设备层 GRO 合并时并不知道包会到哪个 socket，那 UDP_GRO 的 per-socket 开关怎么生效？</summary>
+<p>两段判定：①设备层看的是<strong>当前 NAPI poll 对应 RX 队列的流量特征</strong>+设备特性（GRO_UDP_FWD/GRO_FRAGLIST），先做机会主义合并；②合并包进 UDP 层做 socket lookup 时（udp_gro_receive 的 <code class="c">sk</code> 参数来自查找结果）再按 <code class="c">udp_sk(sk)-&gt;gro_enabled</code> 决定"这条合并能不能继续存在"——不开就 udp_rcv_segment 拆回去。所以 GRO 的合并尝试对所有流量发生，交付形态由目标 socket 的开关决定。</p>
+</details>
+<details>
+<summary>Q3：一次 recvmsg 读到 65536 字节、gso_size=512，原始报文到底几条？</summary>
+<p>128 条（65536/512），但<strong>最后一页可能不足 gso_size</strong>——gso_size 是"分段上限"不是"固定长度"（发送端最后一个 UDP_SEGMENT 段可以是任意 ≤gso_size 的长度）。正确解析：按 gso_size 切，剩余不足 gso_size 的尾巴是一条独立报文；总长必须能整除才全是满段。这也是为什么 cmsg 里给的是 size 而不是"报文数"——数是算出来的且尾段特殊。</p>
+</details>
+<details>
+<summary>Q4：UDP_SEGMENT 发送和 UDP_CORK 有什么关系？必须 cork 吗？</summary>
+<p>实现上 gso_size 存在 <code class="c">cork-&gt;gso_size</code>（udp.c:908），cork 结构是"本次 sendmsg 的暂存上下文"——但<strong>不需要应用显式 UDP_CORK</strong>：带 UDP_SEGMENT cmsg 的单次 sendmsg 内部就走 cork 路径（构造大 skb → 设 gso_size → 一次发出）。显式 UDP_CORK 是另一个功能（攒多次 sendmsg 的数据再一次性发出）。两者可组合但独立：GSO 分段管"一次写多大怎么切"，cork 管"什么时候发"。</p>
+</details>
+<details>
+<summary>Q5：GRO 合并会不会把不同源/目标的 UDP 包合在一起？应用需要担心串流吗？</summary>
+<p>不会。merge 判定在 <code class="c">udp_gro_receive_segment</code> 里逐字段比对：目标端口、源端口、源地址（同 flow 的 4-tuple 语义）都要一致才能挂进同一 hold skb。串流风险为零——这是协议栈内合并与"应用层攒批"的本质区别：内核有完整头信息做严格判据，应用层攒批反而容易把业务上不该合的合了。</p>
+</details>
       </section>
       <section class="section" id="s-03">
         <div class="sec-head"><div class="sec-no">03</div><h2>— UDP 组播收包路径与行情接入</h2></div>

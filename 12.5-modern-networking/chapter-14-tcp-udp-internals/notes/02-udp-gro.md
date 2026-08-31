@@ -153,7 +153,7 @@ sendmsg(fd, &msg, 0);
 - **先查 checksum 再谈 GRO**：`tcpdump -vv` 看行情流 `bad cksum 0`（发送端关闭）还是正常——前者 GRO 免谈，这是很多"HFT 上 GRO 没效果"的根因。
 - **交易路径不开**：收益是吞吐/CPU，代价是应用层切分逻辑复杂度；交易路径的瓶颈从来不在 PPS。
 - **行情中继/录制器必开**：3 Mpps/core → 8 Mpps/core 意味着 4 个核变 1.5 个核，或同样核数扛 3 倍通道。
-- **与 chapter-13 的衔接**：转发器"收大包" + [MSG_ZEROCOPY/SEND_ZC 发大包](../chapter-13-zerocopy-highperf/notes/02-msg-zerocopy.md)——两端都摆脱逐包成本，中继的 CPU 曲线和延迟抖动一起改善。
+- **与 chapter-13 的衔接**：转发器"收大包" + [MSG_ZEROCOPY/SEND_ZC 发大包](../../chapter-13-zerocopy-highperf/notes/02-msg-zerocopy.md)——两端都摆脱逐包成本，中继的 CPU 曲线和延迟抖动一起改善。
 
 ## 衔接
 

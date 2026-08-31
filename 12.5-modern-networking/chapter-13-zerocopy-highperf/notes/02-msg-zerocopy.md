@@ -159,7 +159,7 @@ if (uarg_zc->len == USHRT_MAX - 1 || bytelen > byte_limit) {
 |------|------|
 | 交易报文（< 1KB） | **不用**——拷贝几百字节只要几十 ns，pin+通知的固定开销是它的 10 倍 |
 | 行情转发/回放松重放（大 payload） | 值得——1MB 级 payload 25x 提升 |
-| 与 io_uring 组合 | `IORING_OP_SEND_ZC`（6.0+）是同一机制的异步化，通知从 errqueue 变成第二个 CQE（`IORING_CQE_F_NOTIF`），批量场景比裸 MSG_ZEROCOPY 更优（见 [12-io-uring-net](../chapter-12-io-uring-net/README.md)） |
+| 与 io_uring 组合 | `IORING_OP_SEND_ZC`（6.0+）是同一机制的异步化，通知从 errqueue 变成第二个 CQE（`IORING_CQE_F_NOTIF`），批量场景比裸 MSG_ZEROCOPY 更优（见 [12-io-uring-net](../../chapter-12-io-uring-net/README.md)） |
 
 ## 衔接
 

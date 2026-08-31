@@ -7,7 +7,7 @@
 
 | 上一篇 | 本篇 | 下一篇 |
 |---|---|---|
-| [12-io-uring-net](../chapter-12-io-uring-net/README.md) | **13-01 scaling** | [13-02 MSG_ZEROCOPY](02-msg-zerocopy.md) |
+| [12-io-uring-net](../../chapter-12-io-uring-net/README.md) | **13-01 scaling** | [13-02 MSG_ZEROCOPY](02-msg-zerocopy.md) |
 
 ## 本节讲什么
 
