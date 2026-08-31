@@ -380,6 +380,45 @@ kretprobe:fn /@start[tid]/
 bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 </code></pre>
 <p>输出即 2 的幂次直方图——一行抵 BCC 数十行。</p>
+<h3>这一行背后发生了什么（与前章 BCC 对照）</h3>
+<p>把这条单行和 BCC 里做同一件事的工具（<code class="c">biolatency.py</code> 之流的写法）对照，就能看清 bpftrace 的"翻译"能力：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>你写的</th>
+<th>bpftrace 替你做的事</th>
+<th>BCC 里你要手写什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kretprobe:vfs_read</code></td>
+<td>kretprobe 挂载、trampoline 处理</td>
+<td><code class="c">BPF.attach_kretprobe(fn="vfs_read", ...)</code></td>
+</tr>
+<tr>
+<td><code class="c">retval</code></td>
+<td>kretprobe 返回值读取 helper 展开</td>
+<td><code class="c">PT_REGS_RC(ctx)</code> + BPF 重写器方言</td>
+</tr>
+<tr>
+<td><code class="c">@bytes = hist(retval)</code></td>
+<td>map 创建 + log2 分桶 + 逐桶计数</td>
+<td><code class="c">BPF_HISTOGRAM(dist)</code> + <code class="c">dist.increment(...)</code></td>
+</tr>
+<tr>
+<td>（无）</td>
+<td>Ctrl-C 时自动遍历 map 打印直方图</td>
+<td>Python 侧 <code class="c">dist.print_log2_hist()</code></td>
+</tr>
+<tr>
+<td>（无）</td>
+<td>符号解析、事件循环、清理</td>
+<td><code class="c">trace()</code> 循环 + 信号处理</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：bpftrace 不是"另一个 BPF 前端"，而是把 BCC 的<strong>双执行域样板代码</strong>（BPF C + Python）收编成一门声明式语言。语言越短，验证猜想的周转越快——这正是它在排障流程里的定位（假设 → 一行 → 读图 → 下一个假设）。</p>
 <h3>图 5-1：仓库高层结构</h3>
 <pre class="code" data-label="code"><code class="c">bpftrace/
 ├── tools/        # 工具：*.bt 脚本 + *example.txt 示例
@@ -422,22 +461,102 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 </tr>
 </tbody>
 </table></div>
+<h3>找东西速查（仓库内三层目标）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>你要找什么</th>
+<th>去哪里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>现成工具（opensnoop、runqlat…）</td>
+<td><code class="c">tools/*.bt</code></td>
+</tr>
+<tr>
+<td>某工具怎么用、输出怎么读</td>
+<td><code class="c">man 8 &lt;tool&gt;</code> 或 <code class="c">tools/*_example.txt</code></td>
+</tr>
+<tr>
+<td>语法/内置变量/函数怎么写</td>
+<td><code class="c">docs/reference_guide.md</code></td>
+</tr>
+<tr>
+<td>想从头学写单行</td>
+<td><code class="c">docs/tutorial_one_liners.md</code></td>
+</tr>
+<tr>
+<td>想改工具/看编译过程</td>
+<td><code class="c">src/ast/</code>（见 5.16 流水线）</td>
+</tr>
+</tbody>
+</table></div>
 <h3>与 BCC 的分工（本章学习目标）</h3>
 <ul>
 <li><strong>bpftrace 适合</strong>：临时创造单行程序和短小脚本进行观测；</li>
 <li><strong>BCC 适合</strong>：编写复杂工具和守护进程；</li>
-<li>学习目标包括：了解特性并与其他工具对比、找到工具和文档、读懂后续章节的 bpftrace 工具源码、自己写单行程序和工具、（可选）了解内部实现。</li>
 </ul>
+<p>分工的本质是<strong>复杂度分界</strong>，可展开成一张维度对照：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>bpftrace</th>
+<th>BCC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言</td>
+<td>一门高级语言（类 awk/C）</td>
+<td>两套 API：BPF C（内核态）+ Python（用户态）</td>
+</tr>
+<tr>
+<td>单个观测的代码量</td>
+<td>1 行 ~ 几十行</td>
+<td>几十 ~ 几百行（双份）</td>
+</tr>
+<tr>
+<td>学习曲线</td>
+<td>小时级上手</td>
+<td>天级（要懂 BPF C + 验证器 + Python 绑定）</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>仍需 LLVM/Clang（解析 C 结构体）、libbcc/libbpf</td>
+<td>同左 + Python + BCC 框架本身</td>
+</tr>
+<tr>
+<td>表达力上限</td>
+<td>无浮点、无自由循环、512B 栈</td>
+<td>完整 C（方言），可写守护进程、复杂解析</td>
+</tr>
+<tr>
+<td>部署形态</td>
+<td>单二进制 + .bt 脚本（脚本即配置）</td>
+<td>Python 工具集</td>
+</tr>
+<tr>
+<td>典型角色</td>
+<td><strong>排障期的探针生成器</strong></td>
+<td><strong>固化下来的观测工具/服务</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>学习目标包括：了解特性并与其他工具对比、找到工具和文档、读懂后续章节的 bpftrace 工具源码、自己写单行程序和工具、（可选）了解内部实现。</p>
 <h3>历史</h3>
 <p>Alastair Robertson 于 2016 年 12 月创建（业余项目）；因设计良好、与 BCC/LLVM/BPF 工具链匹配好，作者（Gregg）加入并成为代码/工具/文档主要贡献者；第一版主要特性 2018 年完成。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>bpftrace = <strong>排障假设的快速验证器</strong>：一行命令验证一个猜想（见 5.5 与附录 A）；</li>
-<li>交易机上往往更适合带 bpftrace 而非完整 BCC（无 Python 依赖时），但注意它同样需要 root。</li>
+<li>交易机上往往更适合带 bpftrace 而非完整 BCC（无 Python 依赖时），但注意它同样需要 root；</li>
+<li>周转速度视角：HFT 排障窗口常以分钟计（盘后复盘或盘中急查），"想法→结果"的延迟直接决定一晚能验证多少个假设——bpftrace 把这个循环压到 ~30 秒，BCC 自研要 ~半小时起步。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 工具文件后缀是 <code class="c">.bt</code>，运行方式 <code class="c">bpftrace tool.bt</code> 或 <code class="c">./tool.bt</code>（需 shebang + chmod）。</li>
+<li>⚠️ "基于 BCC"指<strong>复用 libbcc/libbpf 生态库</strong>（插桩/加载/USDT），不是用 BCC 的 Python 框架——依赖关系见 5.16 流水线图，别把两者部署需求混为一谈（但 LLVM/Clang 依赖确实是共享的）。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -455,6 +574,13 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 <summary>答案</summary>
 <p><code class="c">.bt</code>。</p>
 </details>
+<ol start="3">
+<li><code class="c">kretprobe:vfs_read { @bytes = hist(retval); }</code> 这一行里，map 的创建和直方图打印分别由谁完成？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>都由 bpftrace 隐式完成：map 在语义分析/代码生成阶段自动创建（见 5.16），打印在 Ctrl-C 退出时由用户态异步动作 print_map() 完成。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-2">
@@ -464,6 +590,15 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 </blockquote>
 <h2>内容详解</h2>
 <p>与 BCC 不同（内核态/用户态两套 API），bpftrace <strong>只有一种 API：bpftrace 编程语言</strong>。特性按事件源、动作、一般特性分类。</p>
+<h3>"只有一种 API"意味着什么</h3>
+<p>BCC 的双执行域让你在两种语言间<strong>手动搬运上下文</strong>（BPF C 里算好 → map → Python 里取出来格式化）；bpftrace 把这条鸿沟缝死了：</p>
+<pre class="code" data-label="code"><code class="c">BCC:   [BPF C: 探针+过滤+聚合] --map--&gt; [Python: 取数+格式化+打印]
+                     ↑ 你要同时维护两边的一致性（键类型、列宽、单位换算）
+
+bpftrace: [probe /filter/ { action }]
+          一门语言写到底，map 的创建/键类型/打印全部由语言隐式管理
+</code></pre>
+<p>代价是表达力封顶（无浮点、无自由循环、语言刻意保持小）；收益是<strong>没有"两边对不上"这类 bug 的生存空间</strong>。</p>
 <h3>5.2.1 事件源（括号内为 bpftrace 探针类型）</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -508,23 +643,66 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 </tbody>
 </table></div>
 <p>计划中：sockets 和 skb 事件、裸跟踪点、内存断点、自定义 PMC 事件。</p>
+<p>观察这张表的<strong>骨架</strong>：行 = 第 2 章事件源的"态×方式"正交网格（内核/用户 × 动态/静态/采样），列 = 语言里的探针类型名。也就是说 bpftrace 把第 2 章的底层技术矩阵<strong>原样投影成了语法</strong>——学完 ch02 再看这张表，每个探针类型背后的事件源开销模型（kprobe ~百 ns、tracepoint ~几十 ns、profile 固定频率税）可以直接沿用，不用重学。</p>
 <h3>5.2.2 动作（事件触发后可执行，关键部分）</h3>
-<ul>
-<li>过滤（谓词条件）</li>
-<li>每事件输出 <code class="c">printf()</code></li>
-<li>基础变量（global、scratch <code class="c">$x</code>、per <code class="c">[tid]</code>）</li>
-<li>内置变量（pid、tid、comm、nsecs…）</li>
-<li>关联数组（<code class="c">key[value]</code>）</li>
-<li>频率计数（<code class="c">count()</code> 或 <code class="c">++</code>）</li>
-<li>统计值（min()/max()/sum()/avg()/stats()）</li>
-<li>直方图（hist()/lhist()）</li>
-<li>时间戳和时间差（nsecs 及哈希存储）</li>
-<li>调用栈：kstack（内核态）/ ustack（用户态）</li>
-<li>符号解析：ksym()/kaddr()（内核）、usym()/uaddr()（用户）</li>
-<li>访问 C 结构体成员（<code class="c">-&gt;</code>）、数组访问（<code class="c">[]</code>）</li>
-<li>shell 命令 <code class="c">system()</code>、打印文件 <code class="c">cat()</code></li>
-<li>基于位置的参数（<code class="c">$1</code>、<code class="c">$2</code>…）</li>
-</ul>
+<p>按用途重新分组（原书是平铺清单）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>动作</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>控制要不要算</strong></td>
+<td>过滤（谓词条件）</td>
+<td><code class="c">/pid == 123/</code>，内核态先筛</td>
+</tr>
+<tr>
+<td><strong>逐事件看细节</strong></td>
+<td><code class="c">printf()</code></td>
+<td>每事件一次，开销最高的一档</td>
+</tr>
+<tr>
+<td><strong>存中间值</strong></td>
+<td>基础变量（global、scratch <code class="c">$x</code>、per <code class="c">[tid]</code>）、内置变量（pid、tid、comm、nsecs…）</td>
+<td>计时器的 <code class="c">@start[tid]</code> 就是 per-键变量</td>
+</tr>
+<tr>
+<td><strong>聚合</strong></td>
+<td>关联数组 <code class="c">key[value]</code>、<code class="c">count()</code>/<code class="c">++</code>、min/max/sum/avg/stats()、hist()/lhist()</td>
+<td>内核态聚合，Ctrl-C 才打印——低开销的关键</td>
+</tr>
+<tr>
+<td><strong>计时</strong></td>
+<td>时间戳和时间差（nsecs 及哈希存储）</td>
+<td>双探针计时模板的原料</td>
+</tr>
+<tr>
+<td><strong>归因</strong></td>
+<td>调用栈 kstack/ustack；符号解析 ksym()/kaddr()/usym()/uaddr()</td>
+<td>配 stackid map（见 5.16 语义分析器）</td>
+</tr>
+<tr>
+<td><strong>读数据</strong></td>
+<td>访问 C 结构体成员 <code class="c">-&gt;</code>、数组 <code class="c">[]</code></td>
+<td>靠 Clang 解析头文件</td>
+</tr>
+<tr>
+<td><strong>联动外部</strong></td>
+<td>shell 命令 <code class="c">system()</code>、打印文件 <code class="c">cat()</code></td>
+<td>需 <code class="c">--unsafe</code>，见 5.8</td>
+</tr>
+<tr>
+<td><strong>脚本参数</strong></td>
+<td>位置参数 <code class="c">$1</code>、<code class="c">$2</code>…</td>
+<td>让 .bt 工具可参数化</td>
+</tr>
+</tbody>
+</table></div>
+<p>聚合 + 计时两族动作覆盖了性能分析 80% 的需求（分布、延迟、计数），且全部在内核态完成——这是 bpftrace 低开销的结构性原因。</p>
 <p>设计取向：<strong>语言规模保持越小越好，易于学习</strong>。</p>
 <h3>5.2.3 一般特性</h3>
 <ul>
@@ -563,15 +741,52 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 </tr>
 </tbody>
 </table></div>
+<p>按"你要什么"翻译成选型决策：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>首选</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自定义延迟分布直方图（内核态聚合）</td>
+<td>bpftrace</td>
+</tr>
+<tr>
+<td>全量事件落盘、离线反复分析</td>
+<td>perf record / LTTng</td>
+</tr>
+<tr>
+<td>嵌入式/无 LLVM 环境</td>
+<td>Ftrace</td>
+</tr>
+<tr>
+<td>高频函数计数（启停快、税低）</td>
+<td>Ftrace function profiling</td>
+</tr>
+<tr>
+<td>RHEL 系 + 已有 tapset 资产</td>
+<td>SystemTap（其他发行版别碰）</td>
+</tr>
+<tr>
+<td>只有用户态、且厂商提供探针</td>
+<td>应用定制工具</td>
+</tr>
+</tbody>
+</table></div>
 <p><strong>作者结论：无须拘泥于 bpftrace。目标是解决问题，有时组合使用工具更快。</strong></p>
 <h2>HFT 关联</h2>
 <ul>
 <li>嵌入式/资源受限的行情网卡机器上 Ftrace（无 LLVM 依赖）可能更合适；正常交易/回测机用 bpftrace 获得内核态直方图能力。</li>
 <li>对比 perf：需要<strong>自定义分布</strong>（延迟直方图、报文大小分布）时 bpftrace 胜；需要<strong>全量事件落盘离线分析</strong>时 perf record 胜。</li>
+<li>一个现实组合拳：盘中用 bpftrace 实时盯直方图（聚合、不落盘、开销可控），异常时段切换 perf record 全量抓现场，盘后离线交叉分析——实时排障与取证两条线用不同工具，别让一个工具干两种活。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ "bpftrace 万能"是误区——函数级高频统计 Ftrace 更快，事件转储分析 LTTng/perf 更强；按问题选工具。</li>
+<li>⚠️ "一种 API"不等于"一种实现"：底层仍是 libbcc/libbpf + LLVM（5.16），部署依赖并没有消失，消失的只是你写代码时的双语言切换成本。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -589,6 +804,13 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 <summary>答案</summary>
 <p>依赖更多（LLVM/Clang），不适合嵌入式；函数统计类 Ftrace 版本启停更快、开销更低。</p>
 </details>
+<ol start="3">
+<li>5.2.2 的动作清单里，哪一族动作是"低开销看分布"的关键？为什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>聚合族（count/sum/hist 等 + 关联数组）：每事件只在内核态做一次 map 更新（约百 ns 级），不产生逐事件输出，Ctrl-C 才统一打印——对比 printf 每事件都要走 perf 缓冲区+用户态格式化。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-3">
@@ -602,6 +824,83 @@ bpftrace -e 'kretprobe:vfs_read { @bytes = hist(retval); }'
 <li>推荐 <strong>Linux 4.9（2016-12）或更新</strong>；主要 BPF 组件在 4.1–4.9 间加入，<strong>越新的内核越好</strong>（BCC 文档有各版本 BPF 特性列表）；</li>
 <li>内核配置（多数发行版默认开启）：<code class="c">CONFIG_BPF=y</code>、<code class="c">CONFIG_BPF_SYSCALL=y</code>、<code class="c">CONFIG_BPF_JIT=y</code>、<code class="c">CONFIG_HAVE_EBPF_JIT=y</code>、<code class="c">CONFIG_BPF_EVENTS=y</code>。</li>
 </ul>
+<p>内核特性 → 脚本能力的对应（为什么"越新越好"不止是口号）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核版本</th>
+<th>解锁的能力</th>
+<th>对 bpftrace 脚本的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4.1</td>
+<td>bpf(2) 系统调用</td>
+<td>存在的前提</td>
+</tr>
+<tr>
+<td>4.4–4.6</td>
+<td>大量 helper、stackid</td>
+<td>kstack/ustack 聚合可用</td>
+</tr>
+<tr>
+<td>4.7</td>
+<td><code class="c">--no-bpf</code> 之外的完备 perf_events attach</td>
+<td>profile/interval/hardware 探针</td>
+</tr>
+<tr>
+<td>4.9</td>
+<td>kprobe/kretprobe 上的 BPF + BTF 前身（书中的推荐线）</td>
+<td>kprobe 计时模板全线可用</td>
+</tr>
+<tr>
+<td>5.3</td>
+<td><strong>BPF 有界循环</strong></td>
+<td>for/while 语法（替代 unroll 硬展开）</td>
+</tr>
+<tr>
+<td>5.x+</td>
+<td>BTF、<code class="c">bpf_probe_read_kernel/user</code> 拆分</td>
+<td>CO-RE 式结构体访问、kptr/uptr</td>
+</tr>
+</tbody>
+</table></div>
+<p>"书里推荐的 4.9"是 2019 年的<strong>能跑线</strong>；2026 年的<strong>舒服线</strong>是 5.10+（BTF 默认开、有界循环、kptr/uptr 全都有）。老内核上不是不能用，而是每一条语法限制都要逐一核对。</p>
+<p>CONFIG 五开关核对（与 4.3 BCC 一致的套路）：</p>
+<pre class="code" data-label="shell"><code class="c"># 一条命令核对全部
+grep -E &quot;CONFIG_(BPF|BPF_SYSCALL|BPF_JIT|HAVE_EBPF_JIT|BPF_EVENTS)[= ]&quot; /boot/config-$(uname -r)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>CONFIG</th>
+<th>缺了会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">CONFIG_BPF=y</code></td>
+<td>一切免谈（bpf(2) 不存在）</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_BPF_SYSCALL=y</code></td>
+<td>用户态无法加载程序</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_BPF_JIT=y</code></td>
+<td>解释执行，每条指令开销放大 1~2 个数量级——生产环境等于不可用</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_HAVE_EBPF_JIT=y</code></td>
+<td>只有 cBPF JIT，eBPF 程序走解释器</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_BPF_EVENTS=y</code></td>
+<td>kprobe/tracepoint 探针类型挂不上（-e 直接报错）</td>
+</tr>
+</tbody>
+</table></div>
 <h3>5.3.2 Ubuntu</h3>
 <pre class="code" data-label="shell"><code class="c">sudo apt-get update
 sudo apt-get install bpftrace        # 19.04+ 有包
@@ -624,17 +923,28 @@ sudo ./src/bpftrace -e 'kprobe:do_nanosleep { printf(&quot;sleep by %s\n&quot;, 
 sudo make install    # 二进制→/usr/local/bin/bpftrace，工具→/usr/local/share/bpftrace/tools
 </code></pre>
 <p>默认前缀 <code class="c">-DCMAKE_INSTALL_PREFIX=/usr/local</code>。</p>
+<p>验证命令选 <code class="c">do_nanosleep</code> 是有讲究的：任何系统每秒都有进程在睡（cron、sshd 心跳……），<strong>不需要制造负载就能看到输出</strong>。自己换验证探针时优先选这类"天然自触发"的函数。</p>
 <h3>5.3.5 其他发行版</h3>
 <p>先查有无安装包；详见仓库 <code class="c">INSTALL.md</code>。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>交易机最小依赖部署：优先发行版包；源码构建需带全套 LLVM/Clang，只留在构建机做，产物拷贝部署（注意 glibc/内核 ABI 匹配）。</li>
 <li>部署前核对 <code class="c">uname -r</code> 与五个 CONFIG 选项（与 BCC 相同套路）。</li>
+<li>部署检查单（拿到一台新交易机时）：</li>
 </ul>
+<pre class="code" data-label="shell"><code class="c">uname -r                                   # 1. 内核版本 ≥ 4.9（舒服线 5.10+）
+grep -cE &quot;CONFIG_(BPF|BPF_SYSCALL|BPF_JIT|HAVE_EBPF_JIT|BPF_EVENTS)=y&quot; \
+  /boot/config-$(uname -r)                 # 2. 期望输出 5
+bpftrace --version                         # 3. 版本决定语法上限
+sudo bpftrace -e 'kprobe:do_nanosleep { printf(&quot;%s\n&quot;, comm); }'
+                                           # 4. 端到端冒烟（探针+验证器+输出全链路）
+bpftrace -l 'kprobe:vfs_*' | head          # 5. 探针可见性 + BTF/头文件解析
+</code></pre>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 老书时期的包很少——现在主流发行版都有 <code class="c">bpftrace</code> 包，但版本差异大（语言特性如 <code class="c">curtask</code>、<code class="c">unroll</code> 上限等随版本变），脚本要注明最低版本。</li>
 <li>⚠️ <code class="c">make install</code> 的工具路径不在 PATH 中时，脚本 shebang <code class="c">#!/usr/local/bin/bpftrace</code> 找不到解释器。</li>
+<li>⚠️ 源码构建的 bpftrace 绑定构建机的 libbcc/libbpf——拷贝部署到目标机时，目标机的 BCC 库版本不匹配会出现"编译期正常、运行期探针挂载失败"这类跨机问题。runbook 里注明构建机与目标机的配对关系。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -652,6 +962,13 @@ sudo make install    # 二进制→/usr/local/bin/bpftrace，工具→/usr/local
 <summary>答案</summary>
 <p>跑 <code class="c">tests/bpftrace_test</code>，或执行一条 <code class="c">kprobe:do_nanosleep</code> 单行程序看输出。</p>
 </details>
+<ol start="3">
+<li><code class="c">CONFIG_BPF_JIT</code> 关闭时 bpftrace 还能用吗？后果是什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>能加载能跑，但 BPF 程序解释执行，每事件开销放大 1~2 个数量级——观测本身就成了性能问题，生产环境视为不可用。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-4">
@@ -662,6 +979,7 @@ sudo make install    # 二进制→/usr/local/bin/bpftrace，工具→/usr/local
 <h2>内容详解</h2>
 <h3>图 5-2：按系统组件组织的工具全景</h3>
 <p>工具覆盖整个栈：应用程序 / 编程语言运行时 / 系统库 / 系统调用接口 / 虚拟文件系统 / 文件系统 / 卷管理器 / TCP·UDP / IP / 调度器 / 虚拟内存 / 块设备 / 网络设备 / 设备驱动。图中黑色 = bpftrace 仓库已有工具，灰色 = 本书新增（变体工具未列，如第 10 章的 qdisc 变体）。</p>
+<p>这张图与本仓库 ch01 的"BPF 跟踪能见度"全景图是<strong>同一张地图的两种画法</strong>：ch01 画的是"哪里能插桩"（技术视角），这里画的是"哪里已有现成工具"（货架视角）。排障时的用法：先在 ch01 图上确认目标层有观测手段，再回这张图查货架——货架上没有的才需要自己写单行。</p>
 <h3>5.4.1 重点工具（表 5-1，按主题 × 章节）</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -735,6 +1053,48 @@ sudo make install    # 二进制→/usr/local/bin/bpftrace，工具→/usr/local
 </tbody>
 </table></div>
 <p>（BCC 工具不在表 5-1 中；本书后续章节按观测目标把 BCC 与 bpftrace 工具一起讲，可当参考手册查。）</p>
+<p><strong>按症状反查这张表</strong>（症状 → 首查工具）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>首查</th>
+<th>逻辑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>延迟毛刺、尾延迟抖动</td>
+<td>runqlat.bt、offcputime.bt（ch6）</td>
+<td>先分清"在 CPU 上慢"还是"在等"</td>
+</tr>
+<tr>
+<td>进程莫名消失/被杀</td>
+<td>execsnoop.bt、oomkill.bt（ch6/7）</td>
+<td>谁启动了它 / 谁杀了它</td>
+</tr>
+<tr>
+<td>磁盘 I/O 慢</td>
+<td>biolatency.bt、bitesize.bt（ch9）</td>
+<td>延迟分布 + 是否小 I/O 碎片化</td>
+</tr>
+<tr>
+<td>连接异常（重传/被拒）</td>
+<td>tcpretrans.bt、tcpdrop.bt（ch10）</td>
+<td>网络丢包/栈内主动 drop</td>
+</tr>
+<tr>
+<td>文件打开失败</td>
+<td>opensnoop.bt（ch8）</td>
+<td>ERR 列直接给 errno</td>
+</tr>
+<tr>
+<td>睡眠过头（定时器漂移）</td>
+<td>naptime.bt（ch13）</td>
+<td>nanosleep 实际睡了多久</td>
+</tr>
+</tbody>
+</table></div>
 <h3>5.4.2 工具特征</h3>
 <ul>
 <li>解决真实世界的观测问题；</li>
@@ -755,14 +1115,22 @@ PID    COMM  FD ERR PATH
 <li>不加 sudo 直接跑会报错：<code class="c">ERROR: bpftrace currently only supports running as the root user.</code>；</li>
 <li>工具可拷入 <code class="c">/usr/local/sbin</code> 等目录与其他系统工具并列。</li>
 </ul>
+<p>读输出的三个约定（后续章节通用，先建立习惯）：</p>
+<ol>
+<li><strong>Attaching N probes</strong> 是健康信号——N 符合预期说明通配符展开成功；N=0 或报错先看探针名；</li>
+<li><strong>ERR 列</strong>是 errno（0=成功），opensnoop/filelife 族工具的排障主入口；</li>
+<li><strong>Hit Ctrl-C to end</strong> 提醒你：多数工具在内核 map 里聚合，Ctrl-C 才打印摘要——挂在后台忘了就是白跑（自动化场景配 interval+exit，见 5.5）。</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
 <li>图 5-2 + 表 5-1 是"症状→工具"的索引页：先按资源域定位章节（如延迟抖动 → ch6 CPU 工具），再进对应章读详解；</li>
-<li>bpftrace 工具短小（.bt 通常几十行）可直接读源码学习改写——这正是后续章节全部附源码的原因。</li>
+<li>bpftrace 工具短小（.bt 通常几十行）可直接读源码学习改写——这正是后续章节全部附源码的原因；</li>
+<li>.bt 工具 = <strong>脚本即文档</strong>：交易机的 runbook 里不需要额外维护一份工具说明，注明工具名 + man 页 + 关键参数即可；改工具 = 改脚本，diff 可审——比二进制工具友好得多。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 表 5-1 的工具是 bpftrace 版；同名的 BCC 版（如 biolatency）行为/参数不同，runbook 中注明 <code class="c">.bt</code>。</li>
+<li>⚠️ "Attaching 5 probes" 里探针数取决于内核版本与编译符号——同一脚本在不同内核上探针数不同属正常，不是脚本坏了。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -780,6 +1148,13 @@ PID    COMM  FD ERR PATH
 <summary>答案</summary>
 <p>语言定位即临时观测；复杂工具应交给 BCC 实现。</p>
 </details>
+<ol start="3">
+<li>交易机盘后发现"某策略进程消失"，按症状反查表先跑哪两个工具？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>execsnoop.bt（谁启动的、带了什么参数）+ oomkill.bt（是否被 OOM 杀掉；两者分别对应 ch6/ch7）。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-5">
@@ -789,11 +1164,14 @@ PID    COMM  FD ERR PATH
 </blockquote>
 <h2>内容详解</h2>
 <p>单行程序既有用，又是展示 bpftrace 能力的最佳教材。注意：<strong>许多单行在内核内存中统计数据，Ctrl-C 后才打印摘要</strong>。</p>
-<h3>书中单行清单（<code class="c">-e</code> 执行）</h3>
+<h3>书中单行清单（<code class="c">-e</code> 执行，12 条全）</h3>
 <pre class="code" data-label="shell"><code class="c"># 1. 谁在执行什么命令（execve 入参）
 bpftrace -e 'tracepoint:syscalls:sys_enter_execve { printf(&quot;%s -&gt; %s\n&quot;, comm, str(args-&gt;filename)); }'
 
-# 2. 新进程创建及参数
+# 2. 新进程创建及参数（execve 的 argv 逐个打印）
+bpftrace -e 'tracepoint:syscalls:sys_enter_execve { join(args-&gt;argv); }'
+# join() 按 8 字节步长解引用 argv 数组直到 NULL，空格拼接——argv 是 char**，
+# str() 只能读一层，数组要靠 join()
 
 # 3. openat() 打开的文件，按进程打印
 bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf(&quot;%s %s\n&quot;, comm, str(args-&gt;filename)); }'
@@ -801,9 +1179,11 @@ bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf(&quot;%s %s\n&quot;, 
 # 4. 按程序统计系统调用次数
 bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }'
 
-# 5. 按系统调用探针名计数
+# 5. 按系统调用探针名计数（一个通配符看全部 syscall 的分布）
+bpftrace -e 'tracepoint:syscalls:sys_enter_* { @[probe] = count(); }'
 
 # 6. 按进程统计系统调用数量
+bpftrace -e 'tracepoint:syscalls:sys_enter_* { @[comm, pid] = count(); }'
 
 # 7. 按进程统计 read 总字节数
 bpftrace -e 'tracepoint:syscalls:sys_exit_read /args-&gt;ret &gt; 0/ { @[comm] = sum(args-&gt;ret); }'
@@ -821,48 +1201,133 @@ bpftrace -e 'software:major-faults:1 { @[comm] = count(); }'
 bpftrace -e 'software:faults:1 { @[comm] = count(); }'
 
 # 12. 对 PID 189 以 49Hz 抓取用户态调用栈
+bpftrace -e 'profile:hz:49 /pid == 189/ { @[ustack] = count(); }'
 </code></pre>
+<h3>每条单行在"看什么"（读法）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>单行</th>
+<th>回答的问题</th>
+<th>输出形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1/2/3</td>
+<td>execve/openat 逐事件打印</td>
+<td><strong>谁</strong>在<strong>碰什么</strong>（审计向）</td>
+<td>每事件一行</td>
+</tr>
+<tr>
+<td>4/5/6</td>
+<td>按 comm/pid/probe 计数</td>
+<td><strong>负载画像</strong>：哪个进程/哪类调用最热</td>
+<td>Ctrl-C 摘要（计数表）</td>
+</tr>
+<tr>
+<td>7/8</td>
+<td>read 的 sum 与 hist</td>
+<td><strong>吞吐 vs 分布</strong>：总量大的未必单次大</td>
+<td>Ctrl-C 摘要</td>
+</tr>
+<tr>
+<td>9</td>
+<td>block_rq_issue 的 bytes</td>
+<td>I/O 尺寸画像（大 I/O 换吞吐、小 I/O 换延迟）</td>
+<td>每事件一行</td>
+</tr>
+<tr>
+<td>10/11</td>
+<td>软件事件计数</td>
+<td><strong>内存行为异常</strong>：缺页/换页集中到谁</td>
+<td>Ctrl-C 摘要</td>
+</tr>
+<tr>
+<td>12</td>
+<td>profile 采样 ustack</td>
+<td>该进程的 CPU 时间去哪了（火焰图原料）</td>
+<td>Ctrl-C 摘要（栈计数）</td>
+</tr>
+</tbody>
+</table></div>
 <h3>共性套路</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>套路</th>
 <th>模式</th>
+<th>开销档位</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>看细节</td>
 <td><code class="c">printf("%s %s\n", comm, str(args-&gt;xxx))</code></td>
+<td>高（逐事件出内核）</td>
 </tr>
 <tr>
 <td>计数</td>
 <td><code class="c">@[comm] = count()</code>（键可为 comm/pid/probe）</td>
+<td>低（内核态聚合）</td>
 </tr>
 <tr>
 <td>求和</td>
 <td><code class="c">@[comm] = sum(args-&gt;ret)</code>（配过滤滤掉负值错误码）</td>
+<td>低</td>
 </tr>
 <tr>
 <td>分布</td>
 <td><code class="c">@[comm] = hist(...)</code></td>
+<td>低</td>
 </tr>
 <tr>
 <td>软件事件采样</td>
 <td><code class="c">software:faults:1</code>（每 1 次触发）</td>
+<td>取决于事件频率</td>
+</tr>
+<tr>
+<td>采样归因</td>
+<td><code class="c">profile:hz:N /pid==X/ { @[ustack] = count(); }</code></td>
+<td>固定税（N Hz × 栈抓取）</td>
 </tr>
 </tbody>
 </table></div>
+<p>三条隐藏纪律，比套路本身更重要：</p>
+<ol>
+<li><strong>负值过滤纪律</strong>：所有 <code class="c">sum()/avg()</code> 前先问"返回值可能是 -errno 吗？"——read/write 族必须 <code class="c">/args-&gt;ret &gt; 0/</code>；</li>
+<li><strong>采样频率选素数</strong>：49Hz 而非 50Hz——避免与系统中 10/50Hz 周期活动锁相（永远采到同一相位），这是 perf 99Hz、bpftrace 示例 49Hz 的共同原因；</li>
+<li><strong>双探针计时纪律</strong>（书中 5.17 的经典 bug 泛化）：凡 kprobe 存时间戳 → kretprobe 求差的模板，<strong>kretprobe 一律加 <code class="c">/@start[tid]/</code></strong>：</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># 通用双探针计时模板（第 6-10 章 runqlat/biolatency/tcplatency 全族的骨架）
+bpftrace -e '
+kprobe:某函数   { @start[tid] = nsecs; }
+kretprobe:某函数 /@start[tid]/ {
+    @ns = hist(nsecs - @start[tid]);   # 有 /过滤/ 才不会把&quot;入口未记录&quot;的
+    delete(@start[tid]);               # 半截调用算成天文数字
+}'
+</code></pre>
 <p>更多单行见<strong>附录 A</strong>（完整单行宝典）与附录 B 备忘单。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>这 12 条就是<strong>分钟级健康检查</strong>的雏形：read 分布看 I/O 尺寸、faults 看内存行为、按 comm 计数看进程活跃度——不用装任何监控 Agent；</li>
-<li>把单行固化到 runbook 时，务必加<strong>运行时长控制</strong>（<code class="c">interval:s:N { exit(); }</code>），避免无限跑。</li>
+<li>把单行固化到 runbook 时，务必加<strong>运行时长控制</strong>（<code class="c">interval:s:N { exit(); }</code>），避免无限跑：</li>
+</ul>
+<pre class="code" data-label="shell"><code class="c"># runbook 固化形态：限时 60s 自动退出 + exit() 触发摘要打印
+sudo timeout 70 bpftrace -e '
+tracepoint:syscalls:sys_exit_read /args-&gt;ret &gt; 0/ { @[comm] = hist(args-&gt;ret); }
+interval:s:60 { exit(); }'
+</code></pre>
+<ul>
+<li>单行 → 工具的升级路径：反复用的单行存成 <code class="c">.bt</code> 文件（加 shebang + 注释 + man 式头），就完成了从"即兴"到"货架"的转化——这正是 tools/ 目录里每个工具的由来。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ <code class="c">sum(args-&gt;ret)</code> 必须加 <code class="c">/args-&gt;ret &gt; 0/</code> 过滤——read 的负返回值是错误码，混入求和结果完全失真；</li>
 <li>⚠️ 单行默认<strong>不带时长限制</strong>，Ctrl-C 才出摘要——自动化脚本里要配 interval+exit。</li>
+<li>⚠️ <code class="c">join(args-&gt;argv)</code> 读的是<strong>用户态指针数组</strong>，进程执行完 execve 后 argv 内存可能已变——看到个别行乱码属正常，统计意义不受影响。</li>
+<li>⚠️ 12 号的 <code class="c">profile:hz:49</code> 是<strong>全 CPU 每 CPU 49Hz</strong>，不是全局 49Hz——多核机上总采样率 = 49 × 核数，读栈计数时注意口径。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -879,6 +1344,27 @@ bpftrace -e 'software:faults:1 { @[comm] = count(); }'
 <details>
 <summary>答案</summary>
 <p>多数在 Ctrl-C 退出时统一打印摘要（内核映射表统计）。</p>
+</details>
+<ol start="3">
+<li>书里采样用 49Hz 而不是 50Hz，为什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>选素数频率避免与系统周期性活动（10/50Hz）锁相——整数倍频率会永远采到同一相位，看不到完整周期面貌。</p>
+</details>
+<ol start="4">
+<li><code class="c">str(args-&gt;filename)</code> 能读 argv 吗？该用什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>不能——argv 是 char**（指针数组），str() 只做单层字符串解引用；读数组要用 join()。</p>
+</details>
+<ol start="5">
+<li>双探针计时模板里 kretprobe 侧的 <code class="c">/@start[tid]/</code> 过滤器防的是什么 bug？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>工具启动前已在执行中的函数（或中途进来的线程）在 kretprobe 触发时 @start[tid] 不存在（按 0 处理），nsecs-0 产生巨大假值直方图离群点（5.17 的 vfs_read 经典案例）。</p>
 </details>
 </details>
       </section>
@@ -921,14 +1407,86 @@ bpftrace -e 'software:faults:1 { @[comm] = count(); }'
 </tbody>
 </table></div>
 <p>作者为帮助学习专门编写了"bpftrace One-Liner Tutorial"和"bpftrace Reference Guide"两份文档，均在仓库 /docs 下。</p>
+<h3>四类文档的使用时机（别拿错工具）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>该查哪个</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"这个工具输出什么意思？"</td>
+<td>man 8 / *_example.txt</td>
+<td>工具层问题</td>
+</tr>
+<tr>
+<td>"我想学写脚本，从哪开始？"</td>
+<td>tutorial_one_liners.md</td>
+<td>教程按难度递进</td>
+</tr>
+<tr>
+<td>"hist() 参数怎么传？"</td>
+<td>reference_guide.md</td>
+<td>语言层速查</td>
+</tr>
+<tr>
+<td>"为什么这句编译不过？"</td>
+<td>reference_guide.md（<strong>在线版</strong>）</td>
+<td>语言演进快，书/本地版可能滞后</td>
+</tr>
+</tbody>
+</table></div>
+<h3>版本演进对照（书快照 v0.9-232 → 现代）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语言点</th>
+<th>书中（2019, v0.9）</th>
+<th>现代版本趋势</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>循环</td>
+<td>仅 <code class="c">unroll(≤20)</code></td>
+<td>内核 5.3+ 上支持有界 <code class="c">for</code>/<code class="c">while</code></td>
+</tr>
+<tr>
+<td><code class="c">kstack</code>/<code class="c">ustack</code></td>
+<td>基本用法</td>
+<td>支持 <code class="c">[kstack]</code> 内联文本、输出模式选项</td>
+</tr>
+<tr>
+<td><code class="c">str()</code></td>
+<td>长度 64B（环境变量调）</td>
+<td>语义一致，上限仍受 BPF 512B 栈约束</td>
+</tr>
+<tr>
+<td>地址空间</td>
+<td>自动判定内核/用户</td>
+<td><code class="c">kptr()/uptr()</code> 显式区分（5.15 所述演进已落地）</td>
+</tr>
+<tr>
+<td>探针类型</td>
+<td>12 类</td>
+<td>新增 <code class="c">watchpoint</code>、<code class="c">asyncwatchpoint</code>、<code class="c">kfunc</code>/<code class="c">kretfunc</code>、<code class="c">iter</code> 等</td>
+</tr>
+</tbody>
+</table></div>
+<p>（具体以所装版本的 reference_guide 为准——这张表的正确用法是<strong>提醒你别拿书当现行规范</strong>，而不是背右边一列。）</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>团队新人入门路径建议：<code class="c">tutorial_one_liners.md</code>（动手 1 小时）→ 本章 5.7–5.14（语法）→ <code class="c">reference_guide.md</code>（查询手册）→ 附录 A（抄单行）；</li>
-<li>参考手册在线持续更新，比书中内容新——<strong>遇到语法报错先查在线版</strong>（语言演进快：unroll→for/while、str 长度限制等都在变）。</li>
+<li>参考手册在线持续更新，比书中内容新——<strong>遇到语法报错先查在线版</strong>（语言演进快：unroll→for/while、str 长度限制等都在变）；</li>
+<li>交易机上没网时：<code class="c">bpftrace --help</code> + 本地 docs/ 是兜底；离线 runbook 里固化单行时<strong>同时固化它当时验证过的 bpftrace 版本号</strong>，语法漂移的锅提前甩清楚。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 书中语法快照（2019 年 v0.9）与最新 bpftrace 有差异；以所装版本的 <code class="c">reference_guide</code> 为准。</li>
+<li>⚠️ 网上博客/Stack Overflow 的 bpftrace 片段要看出处年代——unroll 时代的写法在有 for/while 的版本上仍能跑，但反过来必然失败（老版本没有新语法）。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -938,6 +1496,13 @@ bpftrace -e 'software:faults:1 { @[comm] = count(); }'
 <details>
 <summary>答案</summary>
 <p>"bpftrace One-Liner Tutorial"（单行程序指引）与"bpftrace Reference Guide"（参考手册），都在仓库 /docs 目录。</p>
+</details>
+<ol start="2">
+<li>团队新人的推荐入门顺序是什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>tutorial_one_liners.md（动手）→ 5.7–5.14 语法 → reference_guide.md（工具书式查询）→ 附录 A 抄单行。</p>
 </details>
 </details>
       </section>
@@ -1086,55 +1651,73 @@ kretprobe:vfs_read
 <tr>
 <th>选项</th>
 <th>作用</th>
+<th>典型组合</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">-e 'program'</code></td>
 <td>执行单行程序</td>
+<td>一切排障的入口</td>
 </tr>
 <tr>
 <td><code class="c">-l [search]</code></td>
 <td>列出探针</td>
+<td>配通配符先看探针名再写脚本（防挂错）</td>
 </tr>
 <tr>
 <td><code class="c">-p PID</code></td>
 <td>对 PID 启用 USDT 探针</td>
+<td>探已运行进程</td>
 </tr>
 <tr>
 <td><code class="c">-c 'CMD'</code></td>
 <td>运行命令并对其进程启用 USDT</td>
+<td>探"从出生到退出"的短命进程</td>
 </tr>
 <tr>
 <td><code class="c">-d</code> / <code class="c">-dd</code></td>
 <td>调试信息 dry run（AST+LLVM IR / 更详细）</td>
+<td>编译期排障（见 5.17.2）</td>
 </tr>
 <tr>
 <td><code class="c">-v</code></td>
 <td>详情模式（运行时打印 BPF 字节码等）</td>
+<td>运行期排障（见 5.17.3）</td>
 </tr>
 <tr>
 <td><code class="c">-o file</code></td>
 <td>输出重定向到文件</td>
+<td>自动化收集（绕开 tee 的缓冲问题）</td>
 </tr>
 <tr>
 <td><code class="c">-I DIR</code> / <code class="c">--include FILE</code></td>
 <td>头文件搜索路径 / 预处理前注入 #include</td>
+<td>读自编译内核的结构体时指路</td>
 </tr>
 <tr>
 <td><code class="c">-B MODE</code></td>
 <td>输出缓冲模式（line/full/none）</td>
+<td>管道场景要 line，否则看不到实时输出</td>
 </tr>
 <tr>
 <td><code class="c">--unsafe</code></td>
 <td>允许不安全内建函数（如 system()）</td>
+<td>慎用——见下</td>
 </tr>
 <tr>
 <td><code class="c">-V</code></td>
 <td>版本</td>
+<td>runbook 第一行</td>
 </tr>
 </tbody>
 </table></div>
+<p><code class="c">-l</code> 的正确用法（先侦察后开枪）：</p>
+<pre class="code" data-label="shell"><code class="c">bpftrace -l 'kprobe:vfs_*'          # 确认函数名/通配符展开符合预期
+bpftrace -l 'tracepoint:syscalls:'  # 看 syscall 跟踪点的真实命名
+bpftrace -l 'usdt:/path/to/binary:' # 看二进制里有哪些 USDT 探针
+# 然后才写 -e 脚本——探针名拼错是新手第一报错来源
+</code></pre>
 <h3>重要环境变量</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1142,6 +1725,7 @@ kretprobe:vfs_read
 <th>变量</th>
 <th>默认</th>
 <th>含义</th>
+<th>超限的后果</th>
 </tr>
 </thead>
 <tbody>
@@ -1149,29 +1733,39 @@ kretprobe:vfs_read
 <td><code class="c">BPFTRACE_STRLEN</code></td>
 <td>64</td>
 <td>每个 str() 的 BPF 栈字节数</td>
+<td>字符串静默截断（长路径只看到前 63 字符）</td>
 </tr>
 <tr>
 <td><code class="c">BPFTRACE_NO_CPP_DEMANGLE</code></td>
 <td>0</td>
 <td>禁用 C++ 符号 demangle</td>
+<td>—</td>
 </tr>
 <tr>
 <td><code class="c">BPFTRACE_MAP_KEYS_MAX</code></td>
 <td>4096</td>
 <td>映射表最大键数</td>
+<td><strong>静默丢新键</strong>（统计不全且无告警）</td>
 </tr>
 <tr>
 <td><code class="c">BPFTRACE_CAT_BYTES_MAX</code></td>
 <td>10K</td>
 <td>cat() 最大读取字节</td>
+<td>cat 输出截断</td>
 </tr>
 <tr>
 <td><code class="c">BPFTRACE_MAXPROBES</code></td>
 <td>512</td>
 <td>最大探针数</td>
+<td>通配符挂太多直接拒绝启动</td>
 </tr>
 </tbody>
 </table></div>
+<p>两个"静默坑"的机理展开：</p>
+<ul>
+<li><strong>STRLEN 与 512B 栈的预算关系</strong>：一次探针执行里所有 str()/局部变量共享 BPF 的 512 字节栈。默认 64B 意味着同一次执行最多 ~7 个 str() 就逼近上限（还有别的局部变量）——验证器报 "stack depth" 错误时，先数脚本里有几个 str()，而不是盲目调小 STRLEN。反过来，把 STRLEN 调到 256 再来两个 str() 同样爆栈：<strong>变量（单个变大）和表达式（个数变多）两条路都会撞墙</strong>。</li>
+<li><strong>MAP_KEYS_MAX 的静默丢失</strong>：map 是哈希表，键数到上限后新键<strong>插入失败但不报错</strong>——按"IP 五元组 × 时间分桶"这类大键空间聚合时，表会停在 4096 行，你以为看到了全貌，其实只看到了前 4096 个流。发现"条目数恰好是 4096"这个特征值就该怀疑它。</li>
+</ul>
 <h3>示例（帮助内置）</h3>
 <pre class="code" data-label="shell"><code class="c">bpftrace -l '*sleep*'                 # 列出含 sleep 的探针
 bpftrace -e 'kprobe:do_nanosleep { printf(&quot;PID %d sleeping...\n&quot;, pid); }'
@@ -1180,12 +1774,15 @@ bpftrace -e 'kprobe:do_nanosleep { printf(&quot;PID %d sleeping...\n&quot;, pid)
 <h2>HFT 关联</h2>
 <ul>
 <li><code class="c">BPFTRACE_MAP_KEYS_MAX</code>（默认 4096）是隐秘的坑：按海量键聚合（如按 IP 五元组）时会<strong>静默丢数据/截断</strong>——大键空间场景要显式调大；</li>
-<li><code class="c">BPFTRACE_STRLEN</code>（64B）限制路径/消息截断——抓长路径时调大（当前实现上限受 BPF 512B 栈限制）。</li>
+<li><code class="c">BPFTRACE_STRLEN</code>（64B）限制路径/消息截断——抓长路径时调大（当前实现上限受 BPF 512B 栈限制）；</li>
+<li>交易机固化脚本建议显式 <code class="c">export</code> 这两个变量（即使值就是默认值）——把"隐式默认"变成"显式声明"，升级 bpftrace 版本时默认值变化也伤不到你；</li>
+<li><code class="c">-B line</code> 在 <code class="c">| tee</code> / 管道进日志采集器时必加，否则全缓冲导致日志实时性归零（你以为没输出，其实堆在缓冲区）。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ <code class="c">-d</code>/<code class="c">-v</code> 输出的字节码主要给 bpftrace 开发者；排障常规手段还是 printf（见 5.17）。</li>
 <li>⚠️ 帮助信息随版本增长很快，别背——记住 <code class="c">-l</code>、<code class="c">-e</code>、<code class="c">-c</code>、<code class="c">--unsafe</code> 四个高频项即可。</li>
+<li>⚠️ <code class="c">--unsafe</code> 解锁的 system() 是<strong>内核态事件直接触发用户态命令</strong>——命令本身以 root 跑，探针高频触发时能 fork 炸掉机器。生产环境只在探针频率极低且有明确理由时使用。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -1202,6 +1799,20 @@ bpftrace -e 'kprobe:do_nanosleep { printf(&quot;PID %d sleeping...\n&quot;, pid)
 <details>
 <summary>答案</summary>
 <p><code class="c">-c 'CMD'</code>（对已运行进程则 <code class="c">-p PID</code>）。</p>
+</details>
+<ol start="3">
+<li>直方图聚合跑了十分钟，输出恰好 4096 行且不再增长，怀疑什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>BPFTRACE_MAP_KEYS_MAX（默认 4096）到达上限后新键静默丢弃——4096 这个特征值就是指纹；显式调大该环境变量重跑。</p>
+</details>
+<ol start="4">
+<li>为什么脚本里三个 str() 各 64B 没爆栈，改成两个 str() 各 256B 反而验证器拒绝？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>栈预算按每次探针执行的所有 str() + 局部变量总和算：3×64=192B 可以，2×256=512B 单独就吃满 512B 栈上限，验证器直接拒绝。</p>
 </details>
 </details>
       </section>
@@ -1378,6 +1989,38 @@ interval:s:1     # 单 CPU 上每秒 1 次（周期打印）
 <h2>内容详解</h2>
 <p>bpftrace 支持 3 种测试：<strong>过滤器、三元运算符、if 语句</strong>。布尔运算符：<code class="c">==</code>、<code class="c">!=</code>、<code class="c">&gt;</code>、<code class="c">&lt;</code>、<code class="c">&gt;=</code>、<code class="c">&lt;=</code>、<code class="c">&amp;&amp;</code>、<code class="c">||</code>；表达式可用括号分组。</p>
 <p><strong>循环支持有限</strong>：BPF 验证器出于安全拒绝可能无限循环的代码；bpftrace 支持<strong>循环展开</strong>，未来支持有界循环。</p>
+<h3>三种测试的选型（同一件事的三种写法，开销和适用面不同）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>形式</th>
+<th>每事件开销</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>过滤器</td>
+<td><code class="c">probe /test/ {...}</code></td>
+<td><strong>最低</strong>——不满足直接跳过整个动作块</td>
+<td>单一条件、整段动作都依赖它时<strong>永远首选</strong></td>
+</tr>
+<tr>
+<td>三元</td>
+<td><code class="c">test ? a : b</code></td>
+<td>低</td>
+<td>单个表达式的二选一（求绝对值、选单位）</td>
+</tr>
+<tr>
+<td>if</td>
+<td><code class="c">if (test) {...} else {...}</code></td>
+<td>低</td>
+<td>多语句分支（IPv4/IPv6 各处理一段）</td>
+</tr>
+</tbody>
+</table></div>
+<p>纪律（与 5.5 呼应）：<strong>能用过滤器的绝不写进 if</strong>。过滤器在动作块之前判断，命中失败的连块都不进；if 是进了块再分支。对高频探针，"大部分事件都不命中"的场景，过滤器版本把不命中路径压到最短。</p>
 <h3>5.10.1 过滤器</h3>
 <pre class="code" data-label="code"><code class="c">probe/filter/{ action }
 </code></pre>
@@ -1386,28 +2029,72 @@ interval:s:1     # 单 CPU 上每秒 1 次（周期打印）
 <pre class="code" data-label="code"><code class="c">test ? true_statement : false_statement
 </code></pre>
 <p>经典用例——求绝对值：<code class="c">$abs = $x &gt; 0 ? $x : -$x;</code></p>
+<p>（注意：书中此例在"全部 64 位无符号"的语义下要小心——<code class="c">-$x</code> 的结果仍按无符号解释，见 5.11 陷阱。真正安全的绝对值要先把被比较量想清楚是否可能"逻辑为负"。）</p>
 <h3>5.10.3 if 语句</h3>
 <pre class="code" data-label="code"><code class="c">if (test) { true_statements }
 if (test) { true_statements } else { false_statements }
 </code></pre>
-<p>用例：IPv4/IPv6 分支处理 <code class="c">if ($inetfamily == AF_INET) {...} else {...}</code>。<strong>不支持 else if</strong>（可嵌套 if 代替）。</p>
+<p>用例：IPv4/IPv6 分支处理 <code class="c">if ($inetfamily == AF_INET) {...} else {...}</code>。<strong>不支持 else if</strong>（可嵌套 if 代替）：</p>
+<pre class="code" data-label="awk"><code class="c">// 没有 else if，多分支只能嵌套：
+if ($f == 1) { ... } else {
+    if ($f == 2) { ... } else {
+        if ($f == 3) { ... }
+    }
+}
+// 三层以上就该重构：换 map 查表或拆成多个探针/过滤器
+</code></pre>
 <h3>5.10.4 循环展开</h3>
 <pre class="code" data-label="code"><code class="c">unroll(count) { statements }
 </code></pre>
 <ul>
 <li>count 是<strong>编译期常量</strong>，最大 <strong>20</strong>；不能传变量——循环次数必须在 BPF 编译阶段确定；</li>
 <li>背景：BPF 运行在受限环境，验证器必须能证明程序可终止；</li>
-<li>Linux 5.3 起内核支持 <strong>BPF 有界循环</strong>，bpftrace 后续版本在 unroll() 之外提供 for/while。</li>
 </ul>
+<h3>unroll 的机理：为什么"常量、≤20"</h3>
+<p>unroll 不是"执行循环"，而是<strong>编译期把循环体复制 N 份</strong>：</p>
+<pre class="code" data-label="code"><code class="c">unroll(4) { printf(&quot;%d&quot;, $i); }
+        │ 编译期展开（bpftrace 里 $i 逐次代换）
+        ▼
+printf(&quot;%d&quot;, 0); printf(&quot;%d&quot;, 1); printf(&quot;%d&quot;, 2); printf(&quot;%d&quot;, 3);
+        │ 一份源码 → 4 倍指令数
+        ▼
+BPF 字节码：指令数 × 4（上限 BPF_MAXINSNS = 4096）
+</code></pre>
+<p>三个限制全是这套机制的直接后果：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>限制</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>必须编译期常量</td>
+<td>展开发生在编译阶段，运行时才知道的次数没法展开</td>
+</tr>
+<tr>
+<td>上限 20</td>
+<td>指令数膨胀 ×N，4096 指令上限很容易被 20 份循环体+主逻辑顶穿（书取 20 是保守值）</td>
+</tr>
+<tr>
+<td>没有循环变量运算</td>
+<td>展开后的"每次迭代"其实是独立指令序列，不是真的跳转回边</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Linux 5.3 起内核支持 BPF 有界循环</strong>（验证器对后向跳转做状态分析，证明循环计数器单调收敛到退出），bpftrace 后续版本在 unroll() 之外提供 for/while——真正的循环，指令不膨胀，但要求验证器能推断上界。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>内核态过滤（<code class="c">/.../</code>）永远优先于用户态过滤——把条件写进探针行，事件不过滤就不出内核；</li>
-<li>需要遍历数组/链表的场景在老版本上只能 unroll(20) 硬展开，新内核+新版 bpftrace 才有真正的 for/while——写脚本前先确认版本支持。</li>
+<li>需要遍历数组/链表的场景在老版本上只能 unroll(20) 硬展开，新内核+新版 bpftrace 才有真正的 for/while——写脚本前先确认版本支持；</li>
+<li>多分支嵌套 vs map 查表：行情解码类脚本（按 msg type 分支）在 bpftrace 里更地道的写法是 <code class="c">@[msgtype] = count()</code> 先看分布、再对可疑 type 单独开探针——<strong>用聚合代替分支</strong>，把"程序逻辑"降级成"数据统计"。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 无 else if；无 while(true)；普通 for/while 在 5.3 内核之前不可用（unroll 上限 20 且必须常量）。</li>
 <li>⚠️ 三元/if 里的复杂表达式同样受验证器约束（除法、指针访问规则），编译报错时先简化表达式。</li>
+<li>⚠️ unroll(20) × 大循环体 → 验证器报 "program too large / 指令数超限"：这不是循环写错了，是展开后的指令数爆了——减小循环体或拆分。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -1424,6 +2111,20 @@ if (test) { true_statements } else { false_statements }
 <details>
 <summary>答案</summary>
 <p>验证器必须证明程序能终止、不会死循环挂起内核。</p>
+</details>
+<ol start="3">
+<li>同一个条件，写过滤器 <code class="c">/pid == 123/</code> 和写 <code class="c">if (pid == 123)</code> 有何区别？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>过滤器在动作块之前判断，不命中连块都不进（最短路径）；if 是进块后分支。高频探针上不命中占多数时，过滤器版本的不命中开销更低——养成"条件上浮到过滤器"的习惯。</p>
+</details>
+<ol start="4">
+<li>unroll(20) 报"program too large"，根因是什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>unroll 是编译期复制循环体，指令数 ×20 膨胀，顶穿 BPF_MAXINSNS=4096 上限——是展开机制的数学后果，不是语法错误。</p>
 </details>
 </details>
       </section>
@@ -1469,15 +2170,62 @@ if (test) { true_statements } else { false_statements }
 </tbody>
 </table></div>
 <p>定义与 C 语言类似。</p>
+<h3>"类 C"的例外：全是 64 位无符号</h3>
+<p>运算符表看着像 C，但求值语义有一个根本差异——<strong>所有整数都是 64 位无符号</strong>（5.12.1）。这个差异在四个运算符族上爆雷：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>运算</th>
+<th>C 里你习惯的</th>
+<th>bpftrace（无符号语义）下的实际行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>比较 <code class="c">x &lt; 0</code></td>
+<td>负数为真</td>
+<td><strong>永假</strong>——无符号数没有"负"</td>
+</tr>
+<tr>
+<td>减法 <code class="c">a - b</code>（a&lt;b）</td>
+<td>得负数</td>
+<td>得<strong>巨大正数</strong>（2⁶⁴ 附近的回绕值）</td>
+</tr>
+<tr>
+<td>右移 <code class="c">x &gt;&gt; 56</code></td>
+<td>算术/逻辑移位看类型</td>
+<td>一律逻辑移位（高位补 0），符号位不保</td>
+</tr>
+<tr>
+<td>除法 <code class="c">/</code></td>
+<td>同左</td>
+<td>一致，但被 0 除是验证器/运行期错误</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么单行 7 的过滤是 <code class="c">/args-&gt;ret &gt; 0/</code> 而不是 <code class="c">args-&gt;ret != -1</code></strong>：无符号世界里 errno 是 2⁶⁴-N 的回绕值，按负数思维写比较全部失真；按"只要大于 0 就是字节数"过滤，语义上天然正确，还顺便滤掉了 0（EOF）。排障实践中"结果大得离谱"（直方图最右桶爆表）往往就是无符号回绕的指纹。</p>
+<h3>位运算的三个实战形态</h3>
+<pre class="code" data-label="awk"><code class="c">// 1. 标志位测试（最常用）：按位与，非零为真
+args-&gt;flags &amp; O_NONBLOCK        // open 的非阻塞标志
+args-&gt;gfp_mask &amp; __GFP_FS       // 分配是否允许递归文件系统操作
+
+// 2. 位域抽取：移位 + 掩码
+(args-&gt;gfp_mask &gt;&gt; 1) &amp; 0x3     // 取第 1-2 位组成的子字段
+
+// 3. 对齐判断：
+$addr &amp; 0xFFF                   // 非零 = 不是页对齐（4K 页）
+</code></pre>
 <h2>HFT 关联</h2>
 <ul>
 <li>位运算常用于标志位解析：<code class="c">args-&gt;flags &amp; O_NONBLOCK</code>、<code class="c">args-&gt;gfp_mask &amp; __GFP_FS</code>；</li>
-<li><code class="c">++</code>/<code class="c">+=</code> 配映射表做快速计数（注意 <code class="c">@x++</code> 并发精度问题，见 5.7.11）。</li>
+<li><code class="c">++</code>/<code class="c">+=</code> 配映射表做快速计数（注意 <code class="c">@x++</code> 并发精度问题，见 5.7.11）；</li>
+<li>无符号语义对延迟计算的反向保护：<code class="c">nsecs - @start[tid]</code> 依赖"@start 先于 nsecs 记录"这一时序——一旦时序被破坏（5.17 的入口未记录案例，@start 缺失按 0 算），回绕值巨大直接把直方图打爆，<strong>离群点反而是 bug 的显影剂</strong>。工程上可在求差后加合理性过滤：<code class="c">/(nsecs - @start[tid]) &lt; 10000000000/</code>（10s 上限）兜底。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 所有整数当前都是 <strong>64 位无符号</strong>（见 5.12.1）——<code class="c">-</code> 结果的符号判断、<code class="c">&gt;&gt;</code> 语义都按无符号处理；比较负错误码要用 <code class="c">args-&gt;ret &lt; 0</code> 这类写法时留意版本行为（可先转 str/强转）。</li>
 <li>⚠️ 无浮点运算——比率计算在 print 时用除数参数（见 5.14.7 print 的 div）。</li>
+<li>⚠️ 移位量超过 63 是未定义行为（和 C 一样）——<code class="c">$x &lt;&lt; 64</code> 在不同后端可能直接得到 0 或垃圾值，别依赖。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -1494,6 +2242,20 @@ if (test) { true_statements } else { false_statements }
 <details>
 <summary>答案</summary>
 <p><code class="c">args-&gt;flags &amp; O_NONBLOCK</code>（按位与，非零为真）。</p>
+</details>
+<ol start="3">
+<li>无符号语义下 <code class="c">5 - 7</code> 等于多少？这对 sum 类统计意味着什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>2⁶⁴-2（回绕成巨大正数）——任何"逻辑上应为负"的差值混进聚合，都会把 sum/avg/hist 彻底打爆；所以过滤必须在进聚合之前做。</p>
+</details>
+<ol start="4">
+<li>直方图最右桶出现天文数字，按什么顺序排查？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>① 无符号回绕（负差值/错误码混入——查过滤器）→ ② 双探针入口未记录（/@start[tid]/ 缺失）→ ③ 才考虑系统真有离群慢事件。</p>
 </details>
 </details>
       </section>
@@ -2002,6 +2764,7 @@ interval:s:1 { print(@); clear(@); }
 </blockquote>
 <h2>内容详解</h2>
 <p>计划中的演进（拿到书时可能已完成，查发布文档）。</p>
+<p><strong>读这节的正确姿势</strong>：它是一份 2019 年的路线图，很多条目如今已落地。对学习者的价值不在"预测未来"，而在<strong>理解每条演进背后的驱动力</strong>——限制为什么存在、又是怎么被拆除的。</p>
 <h3>5.15.1 显式区分地址模式（最大改动）</h3>
 <p>背景：为支持部分处理器架构，<code class="c">bpf_probe_read()</code> 将拆分为 <code class="c">bpf_probe_read_kernel()</code> 与 <code class="c">bpf_probe_read_user()</code>，bpftrace 相应要求<strong>显式区分内核态/用户态地址</strong>，并新增 <code class="c">kstr()/ustr()</code> 函数。对书中工具无影响——bpftrace 按探针上下文<strong>自动判定</strong>地址空间：</p>
 <div class="tbl-wrap"><table>
@@ -2031,16 +2794,18 @@ interval:s:1 { print(@); clear(@); }
 </tbody>
 </table></div>
 <p>curtask() 之类函数无论上下文都返回内核指针（符合预期）。（极少数架构如 sparc32、老 x86 4G:4G 分隔模式确实需要这种区分——Linus 语。）</p>
+<p><strong>这条已落地</strong>：现代 bpftrace 提供 <code class="c">kptr()/uptr()</code>；内核侧对应 <code class="c">bpf_probe_read_kernel()/bpf_probe_read_user()</code>（v5.5 起，x86 上的分开寻址 helper）。书上"自动判定"的表如今读法是：默认规则不变，<strong>跨空间访问必须显式标注</strong>——/syscall 探针里读内核结构配 kptr，读用户缓冲配 uptr，写反了读回来的是别的地址空间的数据（不崩，但全是垃圾）。</p>
 <h3>5.15.2 其他扩展</h3>
+<p>逐条标注落地状态（★=已进入主线版本；以所用版本 reference guide 为准）：</p>
 <ul>
-<li>内存观察点、socket 和 skb 程序、裸跟踪点探针；</li>
+<li>★ 内存观察点（<code class="c">watchpoint</code> 探针——监控变量被谁改）、socket 和 skb 程序（kfunc/iter 路线）、裸跟踪点（rawtracepoint）探针；</li>
 <li>带偏移量的 uprobe/kprobe；</li>
-<li>支持 Linux 5.3 BPF 有界循环的 <strong>for/while</strong>；</li>
+<li>★ 支持 Linux 5.3 BPF 有界循环的 <strong>for/while</strong>；</li>
 <li>裸 PMC 探针类型（掩码+事件选择）；</li>
 <li>uprobe 支持相对函数名（免完整路径）；</li>
-<li><code class="c">signal()</code> 向进程发信号（含 SIGKILL）；</li>
+<li>★ <code class="c">signal()</code> 向进程发信号（含 SIGKILL）；</li>
 <li><code class="c">return()/override()</code> 重写事件返回值（bpf_override_return()）；</li>
-<li><strong>ehist()</strong> 指数区间直方图（比 2 的幂 hist 精度更高）；</li>
+<li><strong>ehist()</strong> 指数区间直方图（比 2 的幂 hist 精度更高）——截至近年版本仍未进入主线，<strong>别在脚本里指望它</strong>，hist()/lhist() 仍是唯二选择；</li>
 <li><strong>pcomm</strong>：进程名（comm 是线程名，Java 每线程不同 comm，pcomm 恒为 "java"）；</li>
 <li>file 结构体指针→完整路径的辅助函数。</li>
 </ul>
@@ -2049,15 +2814,54 @@ interval:s:1 { print(@); clear(@); }
 <pre class="code" data-label="shell"><code class="c"># ply 'tracepoint:syscalls/sys_enter_open { printf(&quot;PID: %d (%s) opening: %s\n&quot;, pid, comm, str(data-&gt;filename)); }'
 PID: 22737 (Chrome IOThread) opening: /dev/shm/.org.chromium.Chromium...
 </code></pre>
+<p><strong>ply 填的生态位</strong>（和 Ftrace 形成"无 LLVM"双选项）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>bpftrace</th>
+<th>ply</th>
+<th>Ftrace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>依赖</td>
+<td>LLVM/Clang + libbcc/libbpf</td>
+<td>几乎零依赖（自含编译器后端）</td>
+<td>内核自带</td>
+</tr>
+<tr>
+<td>结构体成员访问</td>
+<td>✓（Clang 解析头文件/BTF）</td>
+<td>✗（只能用 tracepoint 的 <code class="c">data-&gt;</code> 原始字段）</td>
+<td>tracepoint format 字段</td>
+</tr>
+<tr>
+<td>语言表达力</td>
+<td>高（聚合/hist/栈）</td>
+<td>中</td>
+<td>自有语法</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>服务器/交易机</td>
+<td>深度嵌入式（路由器固件级）</td>
+<td>内核功能全覆盖</td>
+</tr>
+</tbody>
+</table></div>
 <h2>HFT 关联</h2>
 <ul>
 <li>pcomm vs comm：多线程引擎（尤其 Java 系策略/风控）按"进程"聚合用 pcomm，按线程用 comm；</li>
-<li>kptr/uptr 区分在读 syscall 参数（用户指针）×内核结构（内核指针）混用场景（如网络探针里读 skb）必须正确，否则读错地址空间数据。</li>
+<li>kptr/uptr 区分在读 syscall 参数（用户指针）×内核结构（内核指针）混用场景（如网络探针里读 skb）必须正确，否则读错地址空间数据；</li>
+<li><strong>演进意识是脚本资产的一部分</strong>：runbook 里每个 .bt 脚本头部注明"验证于 bpftrace vX.Y / kernel A.B"——语言还在长（unroll→for/while、kptr 落地都是近年的事），不带版本戳的脚本两年后跑挂了说不清是谁的锅。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 书中代码基于"自动判定"时代；新版 bpftrace 若已强制地址模式，跨空间解引用要显式 uptr/kptr。</li>
 <li>⚠️ ply 无 Clang → 无结构体成员访问；复杂脚本别指望 ply 跑得动。</li>
+<li>⚠️ 表格里的"已落地"以你手上的版本为准——同一台机器上内核和 bpftrace 双双要够新（如 for/while 要内核 5.3+ <strong>且</strong> bpftrace 新版），单边达标没用。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -2074,6 +2878,20 @@ PID: 22737 (Chrome IOThread) opening: /dev/shm/.org.chromium.Chromium...
 <details>
 <summary>答案</summary>
 <p>comm 是线程名（Java 每线程可不同）；pcomm 恒为进程名（如 "java"）。</p>
+</details>
+<ol start="3">
+<li>syscall 探针里同时要读 args-&gt;filename（用户指针）和当前 task_struct 的字段（内核指针），要注意什么？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>地址空间混用场景：syscall 跟踪点上下文按用户地址空间解引用，读内核结构要 kptr() 包住显式切换；写反了不报错但读回垃圾数据。</p>
+</details>
+<ol start="4">
+<li>ehist() 能用吗？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>书里是"计划中"，至今未进主线——别在脚本里用；指数精度需求用 lhist() 手工划桶替代。</p>
 </details>
 </details>
       </section>
@@ -2142,14 +2960,107 @@ perf 缓冲区：每事件输出+异步动作（printf、AsyncAction） / 异步
 </tbody>
 </table></div>
 <p>数据面：事件→perf 缓冲区→每事件输出（异步 printf）或异步统计（print_map 拉取映射表）。</p>
+<h3>控制面 vs 数据面：一条命令的完整旅程</h3>
+<p>流水线上半段（启动期，<strong>只跑一次</strong>）：语言 → AST → 语义检查 → LLVM IR → BPF 字节码 → 验证器 → 挂载。下半段（运行期，<strong>每事件跑</strong>）：探针触发 → BPF 程序执行（过滤/聚合/压 perf 缓冲区）→ 用户态异步动作。</p>
+<p>这解释了几个日常现象：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>流水线解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语法错报错带行号、很友好</td>
+<td>语义分析器（ast/semantic_analyser）在<strong>你的语言层</strong>检查</td>
+</tr>
+<tr>
+<td>验证器报错晦涩难懂</td>
+<td>已经编译成字节码，错误以指令/栈偏移描述——离你的源码很远</td>
+</tr>
+<tr>
+<td>printf 输出乱序/延迟</td>
+<td>异步动作经 perf 缓冲区批量上送（<code class="c">-B full</code> 时更明显）</td>
+</tr>
+<tr>
+<td>Ctrl-C 才出直方图</td>
+<td>聚合在内核 map；打印是退出时的 print_map() 异步动作</td>
+</tr>
+<tr>
+<td><code class="c">@x = hist(...)</code> 没写 map 声明也能跑</td>
+<td>语义分析器隐式创建 map（见 5.1 对照表）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>与 4.11 BCC 九步的对照（排障环节映射）</h3>
+<p>bpftrace 与 BCC 走的是<strong>同一条加载链路</strong>，只是前半段的"编译"来源不同（BCC：BPF C 源码；bpftrace：自建语言）。故障定位按环节对号入座：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环节</th>
+<th>BCC（4.11）</th>
+<th>bpftrace（本章）</th>
+<th>卡在这的症状</th>
+<th>定位动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言/语法检查</td>
+<td>Python 语法 + BPF C 编译错</td>
+<td>解析器 + <strong>语义分析器</strong></td>
+<td>报错带行号、信息友好</td>
+<td>直接读错误消息改脚本</td>
+</tr>
+<tr>
+<td>结构体解析</td>
+<td>Clang 编译 BPF C（头文件路径问题高发）</td>
+<td>Clang 解析器（include 路径/BTF）</td>
+<td><code class="c">unknown struct/field</code></td>
+<td><code class="c">-I</code> 指路或查 BTF</td>
+</tr>
+<tr>
+<td>编译到字节码</td>
+<td>LLVM（改写器方言 C）</td>
+<td>codegen_llvm + irbuilder</td>
+<td>少见（内部 bug 才到这）</td>
+<td><code class="c">-d</code> 看 IR</td>
+</tr>
+<tr>
+<td><strong>验证器</strong></td>
+<td>bpf_load_prog 同款</td>
+<td>同款</td>
+<td>晦涩错误（栈深/指针/指令数）</td>
+<td><code class="c">-v</code> 看字节码+stack depth</td>
+</tr>
+<tr>
+<td>探针挂载</td>
+<td>attach_kprobe 等</td>
+<td>bpf_attach_*（libbcc/libbpf 代劳）</td>
+<td>挂不上、MAXPROBES 超限</td>
+<td>dmesg、<code class="c">-l</code> 核对探针名</td>
+</tr>
+<tr>
+<td>运行期数据面</td>
+<td>perf ring + Python 回调</td>
+<td>perf ring + <strong>异步动作</strong>（printf/print_map）</td>
+<td>丢事件、无输出</td>
+<td>ch18 丢事件排障</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>记忆钩子：报错友好 → 问题在语言层（自己改脚本）；报错晦涩 → 问题在加载/验证层（上 -v/d 看内部）。</strong></p>
 <h2>HFT 关联</h2>
 <ul>
 <li>理解流水线才能定位故障环节：语法错在解析/语义分析（错误消息友好）；验证器拒绝在加载（5.17 -v 可看字节码）；挂载失败查 dmesg（同 4.12.6）；</li>
-<li>bpftrace 复用 libbcc/libbpf——与 BCC 同源同版本约束：升级 bpftrace 时留意 BCC 库兼容性。</li>
+<li>bpftrace 复用 libbcc/libbpf——与 BCC 同源同版本约束：升级 bpftrace 时留意 BCC 库兼容性；</li>
+<li>"启动期 vs 运行期"的划分对交易机的意义：Clang 解析头文件是<strong>启动期一次性成本</strong>（可能秒级），运行期每事件成本只有 BPF 程序本身——挂探针前那一下卡顿不是"开销大"，是编译在跑；盘中评估工具扰动时只算运行期。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ bpftrace "友好报错"主要在语义分析阶段；验证器拒绝时的错误信息依然晦涩（同 BCC）——两段排障手段不同。</li>
+<li>⚠️ 流水线里 Clang 解析结构体依赖<strong>运行环境的内核头/BTF</strong>——同一脚本在开发机跑得动、在目标机报 unknown field，先查目标机头文件与 BTF 是否齐，别改脚本。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -2167,6 +3078,20 @@ perf 缓冲区：每事件输出+异步动作（printf、AsyncAction） / 异步
 <summary>答案</summary>
 <p>libbpf/libbcc——探针插桩、程序加载、USDT 支持。</p>
 </details>
+<ol start="3">
+<li>报错信息友好 vs 晦涩，分别对应流水线哪个阶段？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>友好=语义分析器（语言层，带行号）；晦涩=验证器（字节码层，以指令/栈偏移描述）。排障手段：前者读消息改脚本，后者 -v 看字节码与 stack depth。</p>
+</details>
+<ol start="4">
+<li>bpftrace 挂探针前卡了一两秒才出 "Attaching..."，这是每事件开销吗？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>不是——那是启动期一次性成本（Clang 解析结构体+编译到 BPF 字节码）；运行期每事件只有 BPF 程序本身的执行成本。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-17">
@@ -2177,6 +3102,7 @@ perf 缓冲区：每事件输出+异步动作（printf、AsyncAction） / 异步
 <h2>内容详解</h2>
 <p>定位问题先看 <strong>第 18 章</strong>（事件丢失、调用栈残缺、符号不完整等常见问题）。</p>
 <p><strong>与 BCC 的本质差异</strong>：bpftrace 由一组稳定的、设计上可安全共存的功能集组成，倾向失败时弹<strong>用户友好错误消息</strong>，一般不需进一步调试；BCC 允许 C/Python 自由发挥，能力更广但不保证协同工作，更常需要调试模式。</p>
+<p>一句话分工：<strong>bpftrace 调"逻辑 bug"（用 printf），BCC 调"一切"（逻辑+集成+环境）</strong>。</p>
 <h3>5.17.1 printf 调试</h3>
 <p>经典 bug 现场——vfs_read 计时直方图出现<strong>超高离群点</strong>，你能定位吗？</p>
 <pre class="code" data-label="awk"><code class="c">kprobe:vfs_read  { @start[tid] = nsecs; }
@@ -2190,6 +3116,51 @@ kretprobe:vfs_read
 <p>问题：<strong>过滤器缺失</strong>。bpftrace 启动时已在执行中的 vfs_read（入口没记录），其 kretprobe 仍触发，<code class="c">@start[tid]</code> 未初始化 = 0 → <code class="c">nsecs - 0</code> = 巨大假值。解决：kretprobe 加 <code class="c">/@start[tid]/</code>。printf 检查输入即可确认：</p>
 <pre class="code" data-label="awk"><code class="c">printf(&quot;%d duration_ms=(%d-%d)/1000000\n&quot;, tid, nsecs, @start[tid]);
 </code></pre>
+<h4>展开成通用模式：双探针计时陷阱</h4>
+<p>这个 bug 值得泛化记住，因为它<strong>寄生在全族计时工具里</strong>（runqlat、biolatency、tcplife、execsnoop……书第 6-10 章会反复遇到）。时序：</p>
+<pre class="code" data-label="code"><code class="c">                    工具启动
+                       │
+ ──────────────────────┼──────────────────────────────────► t
+                       │
+     [调用 A：入口在启动前]        [调用 B：完整经历入口+出口]
+      kprobe 没赶上                 kprobe ✓ kretprobe ✓
+      kretprobe ✓ ← 灾难在这         duration 正确
+      @start[tid] 不存在 → 0
+      nsecs - 0 ≈ 开机以来的纳秒数
+</code></pre>
+<p>三条判别线索（不重跑也能认出它）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>线索</th>
+<th>指向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>离群值量级 ≈ 系统 uptime（纳秒）</td>
+<td>入口未记录（本 bug），不是真实慢调用</td>
+</tr>
+<tr>
+<td>离群值集中在工具刚启动的头几秒</td>
+<td>同上——只有"存量"在飞调用会中招</td>
+</tr>
+<tr>
+<td>离群值随时间持续出现且量级随机</td>
+<td>多半是<strong>真离群点</strong>（page cache 冷读、锁竞争……）另查</td>
+</tr>
+</tbody>
+</table></div>
+<p>修复模板（对照 5.5 的计时纪律）：</p>
+<pre class="code" data-label="awk"><code class="c">kprobe:fn     { @start[tid] = nsecs; }
+kretprobe:fn  /@start[tid]/          // ← 三件套之一：出口侧过滤
+{
+    $ns = nsecs - @start[tid];
+    delete(@start[tid]);              // ← 之二：用完即删（防 tid 复用串味）
+    @ns = hist($ns);                  // ← 之三：先删后聚合，删漏的下次又被过滤挡
+}
+</code></pre>
+<p><strong>tid 复用是第二层坑</strong>：线程退出后 tid 会被新线程复用。若只过滤不 delete，老线程的残留 @start 会算到新线程头上——量级不对（两个活跃线程的时间差，通常是秒级而非 uptime 级），更隐蔽。所以 delete 不是洁癖，是正确性的一部分。</p>
 <h3>5.17.2 调试模式（-d）</h3>
 <ul>
 <li><code class="c">-d</code> <strong>不运行程序</strong>，展示语法分析→LLVM IR 转换过程（主要面向 bpftrace 开发者）；</li>
@@ -2212,15 +3183,49 @@ Program
 <li>程序 ID 可配合 <strong>bpftool</strong>（第 2 章）打印 BPF 内核状态；</li>
 <li>与 -d 一样主要对核心开发者有用，普通用户无需关心字节码。</li>
 </ul>
+<h3>-d vs -v 对照（应试重点）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">-d</code> / <code class="c">-dd</code></th>
+<th><code class="c">-v</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>阶段</td>
+<td><strong>编译期</strong>（dry run，不加载不运行）</td>
+<td><strong>运行期</strong>（真的加载并跑）</td>
+</tr>
+<tr>
+<td>看到什么</td>
+<td>AST → LLVM IR（-dd 含优化前后两份）</td>
+<td>程序 ID、BPF 字节码、验证器日志、挂载的探针</td>
+</tr>
+<tr>
+<td>什么时候用</td>
+<td>"编译到底生成了什么"——验证宏/展开/优化怀疑</td>
+<td>"验证器为什么拒/挂了什么"——运行失败取证</td>
+</tr>
+<tr>
+<td>对应流水线（5.16）</td>
+<td>codegen 之前的检查</td>
+<td>bpf_load_prog 之后的环节</td>
+</tr>
+</tbody>
+</table></div>
 <h2>HFT 关联</h2>
 <ul>
 <li>90% 的 bpftrace 排障 = printf + 检查过滤器；遇到验证器拒绝（如栈超 512B、访问非法指针）才上 -v 看字节码与 stack depth；</li>
-<li>"离群点 = 入口未记录"这一模式在所有双探针计时工具（runqlat、biolatency…）中通用，读这些工具源码时注意它们如何处理。</li>
+<li>"离群点 = 入口未记录"这一模式在所有双探针计时工具（runqlat、biolatency…）中通用，读这些工具源码时注意它们如何处理；</li>
+<li>交易机延迟报告里的"尾部离群"出报告前先过一遍本节三线索：<strong>离群点若是 uptime 级，是测量 bug 不是市场/系统事件</strong>——把测量 bug 当系统事故复盘，是观测驱动团队最容易犯的低级错误之一。</li>
 </ul>
 <h2>陷阱</h2>
 <ul>
 <li>⚠️ 直方图离群点先查 <code class="c">/@start[tid]/</code> 过滤器，再怀疑系统真有问题。</li>
 <li>⚠️ -v 输出的 <code class="c">processed N insns, stack depth N</code> 是验证器视角——stack depth 接近 512 时 str()/局部变量多就会失败。</li>
+<li>⚠️ 过滤器修了离群点但还有"秒级怪值"——查 delete() 是否漏了（tid 复用串味，见上文第二层坑）。</li>
 </ul>
 <details>
 <summary>自测题</summary>
@@ -2238,6 +3243,20 @@ Program
 <summary>答案</summary>
 <p>-d dry run 打印 AST 和 LLVM IR（不运行）；-v 运行时打印程序 ID、BPF 字节码、验证器状态。</p>
 </details>
+<ol start="3">
+<li>加了 /@start[tid]/ 后直方图仍有秒级怪值（不是 uptime 级），下一怀疑对象？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>delete(@start[tid]) 漏写——tid 复用后新线程读到老线程的残留时间戳，量级是两线程活跃时间差（秒级）。</p>
+</details>
+<ol start="4">
+<li>怎么快速判断离群点是"测量 bug"还是"真实慢事件"？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>量级对比：离群值 ≈ 系统 uptime（纳秒）→ 入口未记录的测量 bug；持续出现且量级随机 → 真离群点；集中在工具启动头几秒 → 存量在飞调用中招（也是测量 bug）。</p>
+</details>
 </details>
       </section>
       <section class="section" id="s-18">
@@ -2254,7 +3273,21 @@ Program
 <li>最后：调试与内部运作。</li>
 </ol>
 <p>后续章节进入 Part II——按性能目标（观测对象）逐章展开，BCC 与 bpftrace 工具一起讲。bpftrace 的一大优势：<strong>代码简洁到可以全书全文引用</strong>。</p>
-<h2>本章语言速查（考试级）</h2>
+<h3>本章一张图：你此刻在工具箱里的位置</h3>
+<pre class="code" data-label="code"><code class="c">观测需求
+   │
+   ├─ 临时验证假设（分钟级周转）────────► bpftrace 单行/短脚本   ← 本章
+   │                                      代价：表达力封顶（无浮点/512B栈/无自由循环*）
+   │
+   ├─ 固化观测工具/守护进程 ────────────► BCC（ch04）/ 现代替代 libbpf-tools CO-RE
+   │
+   ├─ 全量落盘离线分析 ─────────────────► perf record / LTTng
+   │
+   └─ 高频函数计数 / 无 LLVM 环境 ──────► Ftrace
+
+   * 老内核下；5.3+ 有界循环已解
+</code></pre>
+<h3>本章语言速查（考试级）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -2273,7 +3306,7 @@ Program
 </tr>
 <tr>
 <td>计时模板</td>
-<td>kprobe 存 <code class="c">@start[tid]=nsecs</code> → kretprobe <code class="c">/@start[tid]/</code> 求差</td>
+<td>kprobe 存 <code class="c">@start[tid]=nsecs</code> → kretprobe <code class="c">/@start[tid]/</code> 求差 + <strong>delete</strong></td>
 </tr>
 <tr>
 <td>变量</td>
@@ -2294,6 +3327,90 @@ Program
 <tr>
 <td>陷阱高发</td>
 <td>sum 前滤负值；先存纳秒打印时除；str 64B/200B 上限；system 需 --unsafe</td>
+</tr>
+</tbody>
+</table></div>
+<h3>陷阱四天王（全章报错率最高）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>陷阱</th>
+<th>一行修复</th>
+<th>出自</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>双探针计时不加出口过滤</td>
+<td>kretprobe 加 <code class="c">/@start[tid]/</code></td>
+<td>5.5/5.17</td>
+</tr>
+<tr>
+<td>2</td>
+<td>sum/avg 混入 -errno</td>
+<td><code class="c">/args-&gt;ret &gt; 0/</code></td>
+<td>5.5/5.11</td>
+</tr>
+<tr>
+<td>3</td>
+<td>无符号回绕当成系统离群</td>
+<td>离群值 ≈ uptime 纳秒 → 查过滤器</td>
+<td>5.11/5.17</td>
+</tr>
+<tr>
+<td>4</td>
+<td>map 键 4096 静默截断</td>
+<td>条目数恰为 4096 → 调 MAP_KEYS_MAX</td>
+<td>5.8</td>
+</tr>
+</tbody>
+</table></div>
+<h3>BCC vs bpftrace 全维对照（收束 ch04+ch05）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>BCC</th>
+<th>bpftrace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API</td>
+<td>双执行域（BPF C + Python）</td>
+<td>单语言</td>
+</tr>
+<tr>
+<td>代码量（同等观测）</td>
+<td>~10×</td>
+<td>1×</td>
+</tr>
+<tr>
+<td>表达力上限</td>
+<td>高（完整 C 方言+Python 生态）</td>
+<td>低（刻意小语言）</td>
+</tr>
+<tr>
+<td>报错风格</td>
+<td>编译错（C）+运行错（Python）双轨</td>
+<td>语义错友好 / 验证器错晦涩</td>
+</tr>
+<tr>
+<td>复用关系</td>
+<td>—</td>
+<td><strong>复用 libbcc/libbpf + LLVM</strong>（同源版本约束）</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>固化工具、守护进程</td>
+<td>临时单行、快速验证、教学</td>
+</tr>
+<tr>
+<td>现代趋势</td>
+<td>libbpf-tools CO-RE 正在取代其 Python 工具位</td>
+<td>仍是交互排障首选前端</td>
 </tr>
 </tbody>
 </table></div>
@@ -2318,6 +3435,20 @@ Program
 <details>
 <summary>答案</summary>
 <p>极简——同一能力代码量约为 BCC 的 1/10，短到可全文印在书里。</p>
+</details>
+<ol start="3">
+<li>map 聚合表输出恰好停在 4096 行，哪个环境变量、什么机理？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>BPFTRACE_MAP_KEYS_MAX 默认 4096；达到上限后新键静默丢弃（哈希表插入失败不报错）。</p>
+</details>
+<ol start="4">
+<li>本章与 ch04 的复用关系一句话？</li>
+</ol>
+<details>
+<summary>答案</summary>
+<p>bpftrace 底层复用 libbcc/libbpf + LLVM 完成插桩/加载/编译——与 BCC 同源，因此共享版本约束与验证器排障手段（dmesg、-v 看字节码）。</p>
 </details>
 </details>
       </section>
