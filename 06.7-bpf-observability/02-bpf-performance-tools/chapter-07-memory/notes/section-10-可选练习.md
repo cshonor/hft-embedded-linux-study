@@ -24,6 +24,32 @@
 
 10. （未解决）调查频繁换页：展示**每个内存页在换页设备上的存活时间**直方图（需测量换出↔换入配对时间，页粒度关联难度大）。
 
+### 开发题参考骨架（自测后再看）
+
+题 5+6 合并（虚拟内存增长监控——brk/mmap 两跟踪点）：
+
+```awk
+tracepoint:syscalls:sys_enter_brk /pid == $1/ {
+    printf("%s brk(0x%lx)\n", comm, args->brk);
+}
+tracepoint:syscalls:sys_enter_mmap /pid == $1/ {
+    printf("%s mmap len=%lu\n", comm, args->len);
+}
+// 增量计算：sys_exit_brk 的 ret 是新 break——exit.ret - entry.brk 即本次扩展字节数
+```
+
+题 7（compaction 耗时——5.17 双探针计时模板的又一遍）：
+
+```awk
+tracepoint:compaction:mm_compaction_begin { @start[tid] = nsecs; }
+tracepoint:compaction:mm_compaction_end /@start[tid]/ {
+    @ns = hist(nsecs - @start[tid]);   // 模板三件套：存→过滤求差→delete
+    delete(@start[tid]);
+}
+```
+
+题 8 的结构提示：kprobe `shrink_slab` / 各 `shrinker` 回调，键取 `func`（bpftrace 内置变量，探针对应的函数名）——`@[func] = hist(...)`，连"哪个收缩器最慢"一起回答。
+
 ## HFT 建议优先级
 
 - **必做**：1（vmscan→drsnoop 递进是无 swap 交易机的核心技能）、3+4（缺页火焰图定位 RSS 增长）

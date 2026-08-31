@@ -1391,6 +1391,37 @@ PID     NAME        CPU   MISS   REFERENCE  HIT%
 <li>默认采样率 1/100（<code class="c">-c SAMPLEPERIOD</code> 可调）→ 开销低</li>
 <li><strong>采样偏差提醒</strong>：书例中出现"未命中计数 &gt; 查找计数"的矛盾 — 两个计数器独立采样、各自近似，可能不自洽；看趋势别抠绝对值</li>
 </ul>
+<h3>PMC 溢出采样的机制展开</h3>
+<p>llcstat 把两类事件各挂一个 PMC，各自溢出触发 BPF：</p>
+<pre class="code" data-label="code"><code class="c">硬件 LLC miss 计数器:  miss × 100 ──溢出──► 触发 BPF: @[pid].miss++   （计数器清零）
+硬件 LLC ref  计数器:  ref  × 100 ──溢出──► 触发 BPF: @[pid].ref++    （计数器清零）
+                                                    │
+                    HIT% = 1 - miss×100 / (ref×100) │ ← 两侧独立放大
+</code></pre>
+<p>"MISS &gt; REFERENCE"为什么可能：两个计数器<strong>独立采样、各自外推</strong>（×100），同一秒内 miss 采样到的进程和 ref 采样到的进程不保证同分布——ref 溢出时 CPU 上跑的是 A 进程，miss 溢出时是 B 进程。所以 llcstat 的数字是<strong>统计画像</strong>，不是会计意义上的精确值。看趋势（HIT% 从 99 掉到 95）可靠；看绝对值不可靠。</p>
+<p>顺带把第 2 章 PMC 三特性在这类工具上的投影收拢：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>PMC 特性</th>
+<th>在 llcstat 上的体现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>溢出采样（非逐事件）</td>
+<td>开销与采样率挂钩，与事件频率无关——天然适合高频微架构事件</td>
+</tr>
+<tr>
+<td>计数器数量有限（每核几个）</td>
+<td>miss/ref 各占一个，再想同时看分支预测就得轮换（multiplexing）</td>
+</tr>
+<tr>
+<td>skid（事件与 PC 有滑差）</td>
+<td>llcstat 只记进程不记指令地址，skid 无害化</td>
+</tr>
+</tbody>
+</table></div>
 <h2>6.3.17 其他工具</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1424,11 +1455,47 @@ PID     NAME        CPU   MISS   REFERENCE  HIT%
 </tbody>
 </table></div>
 <p>cpuunclaimed 值得展开：它度量的是"<strong>理论上能并行却没并行</strong>"的浪费 — 队列里有活干、别的核却闲着。对绑核部署（HFT、专机专用）是直接的健康指标。</p>
+<h3>cpuwalk 的读法（线性直方图怎么用）</h3>
+<pre class="code" data-label="code"><code class="c">CPU   DISTRIBUTION      comm
+ 0     |@@@@@@          nginx         ← CPU0 大部分采样点在跑 nginx
+ 1     |@@              nginx
+ 2     |                ← 几乎空白：CPU2 基本闲
+ 3     |@@@             java
+</code></pre>
+<ul>
+<li>每行是一台 CPU 的"时间去了哪个进程"的<strong>占比条</strong>，不是计数；</li>
+<li>诊断模式：<strong>一列极重 + 相邻列空白</strong> = 绑核过窄（单核打满邻居闲置）；<strong>各列均匀</strong> = 负载均衡正常；</li>
+<li>与 runqlen 互补：runqlen 告诉你队列多长（压力），cpuwalk 告诉你压力<strong>压在哪些核的哪些进程上</strong>（归属）。</li>
+</ul>
+<h3>cpuunclaimed 的采样逻辑</h3>
+<p>它并非跟踪调度事件，而是定时采样回答一个问题："此刻是否存在『某核队列非空 &amp;&amp; 其他核 idle』？"——命中即计一次 unclaimed。这解释了"偶发 vs 频发"的语义边界：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>观测</th>
+<th>解释</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>偶发低比例</td>
+<td>CPU 亲和黏合（线程不愿迁移丢缓存）——<strong>正常代价</strong></td>
+<td>无需动作</td>
+</tr>
+<tr>
+<td>持续高比例</td>
+<td>负载均衡失效：cpuset 圈死、sched_domain 配置错误、cgroup 限额错配</td>
+<td>检查绑定集/cpuset/irqbalance</td>
+</tr>
+</tbody>
+</table></div>
 <h2>HFT 关联</h2>
 <ul>
 <li>llcstat 验证策略热数据的缓存驻留：HIT% 从 99% 掉到 95% 意味着关键路径多了数百 ns 的内存访问 — 数据结构尺寸逼近 LLC 边界的信号（配合 15-computer-architecture 的缓存理论）</li>
 <li>cpuunclaimed 与绑核矛盾场景：策略核排队 + 闲核并存 = 亲和设置把负载圈死了，要么扩容绑定集要么调整线程数</li>
 <li>云主机注意：PMC 不透传时 llcstat 不可用（同 perf stat PMC 全 0）</li>
+<li>cpuwalk 在交易机的专项用法：<code class="c">profile</code> 探针加 <code class="c">/cpu == N/</code> 过滤（6.5 练习 4）单看策略核被谁占用——中断漂移到策略核这类事故，cpuwalk + hardirqs 两张图交叉锁定。</li>
 </ul>
 <h2>常见陷阱</h2>
 <ol>
@@ -1451,6 +1518,20 @@ PID     NAME        CPU   MISS   REFERENCE  HIT%
 <details>
 <summary>参考答案</summary>
 <p>检测"有 CPU 排队的同时存在空闲 CPU"。偶发：CPU 亲和/黏合度导致的正常现象（线程不愿迁移丢缓存）；频发：调度器配置错误或 Bug（负载均衡没起作用），白白浪费算力。</p>
+</details>
+<ol start="3">
+<li><strong>为什么 llcstat 可能输出 MISS &gt; REFERENCE？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>miss 和 ref 两个计数器独立溢出采样、各自 ×100 外推；两次溢出时刻 CPU 上跑的进程可以不同（采样到的归属不一致），所以两侧数字各自是近似值，不保证会计式自洽。看趋势别抠绝对值。</p>
+</details>
+<ol start="4">
+<li><strong>cpuwalk 和 runqlen 各回答什么问题？</strong></li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p>runqlen：队列多长（压力有多大，每核视角）；cpuwalk：每个 CPU 的时间花在哪些进程上（压力的归属）。一个是水位计，一个是归属表；绑核诊断两者交叉用。</p>
 </details>
 </details>
       </section>
@@ -1593,6 +1674,38 @@ bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread-2.27.so:pthread_create { printf(
    taskset -c 0 sh -c 'while :; do :; done' &amp;</code>
    用 <code class="c">uptime</code>（负载平均）、<code class="c">mpstat -P ALL</code>（单核 100%）、<code class="c">runqlen</code>（CPU0 队列=1）、<code class="c">runqlat</code>（右尾右移）分析 CPU0 情况；<strong>做完记得 kill</strong>。</li>
 </ol>
+<p>四工具对照读法（本题的教学内核——同一压力四种口径）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>口径</th>
+<th>本实验预期</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uptime</td>
+<td>1/5/15 分钟指数衰减均值</td>
+<td>缓慢爬升（衰减惯性，反应最慢）</td>
+</tr>
+<tr>
+<td>mpstat</td>
+<td>CPU 利用率</td>
+<td>CPU0 100%，其余核 0%</td>
+</tr>
+<tr>
+<td>runqlen</td>
+<td>瞬时队列长度采样</td>
+<td>CPU0 队列 1（两线程轮转，一跑一等）</td>
+</tr>
+<tr>
+<td>runqlat</td>
+<td>入队→上 CPU 的等待时间分布</td>
+<td>右尾右移（每线程等一个时间片）</td>
+</tr>
+</tbody>
+</table></div>
 <h2>剖析实战题（4–8 题，围绕 dd 流水线）</h2>
 <ol start="4">
 <li>写一个只采样 CPU0 内核调用栈的工具/单行。（提示：<code class="c">profile:hz:99 /cpu == 0/ { @[kstack] = count(); }</code>）</li>
@@ -1603,6 +1716,7 @@ bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread-2.27.so:pthread_create { printf(
 <li>用 <code class="c">offcputime</code> 抓内核栈，分析第 5 题阻塞在哪里（bs=1 的第二个 dd 会大量阻塞在写管道）。</li>
 <li>给第 7 题生成 <strong>off-CPU 火焰图</strong>（--bgcolor=blue）。</li>
 </ol>
+<p>5–8 题的期望结论（做完自查）：同一条 dd 流水线，<strong>profile 图里占宽的是 copy_user/copy_page 一族</strong>（在 CPU 上搬运数据），<strong>offcputime 图里占宽的是 pipe_write 睡眠</strong>（第二个 dd 每 1 字节读一次管道，把第一个 dd 也堵住）——on-CPU 与 off-CPU 两张图讲的是同一条流水线的两种时间，合起来才是全部墙钟时间。</p>
 <h2>开发题（9–12 题，无现成答案）</h2>
 <ol start="9">
 <li><strong>procsnoop</strong>：execsnoop 只见 execve(2)；fork/clone 不 exec 的进程池不可见。写 procsnoop 尽量输出所有新进程（跟踪 fork/clone 或 sched:sched_process_fork 跟踪点）。</li>
@@ -1610,10 +1724,32 @@ bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread-2.27.so:pthread_create { printf(
 <li>写 <strong>bpftrace 版 cpudist</strong>（sched_switch 双探针计时 + hist 聚合；参考 runqlat 的 bpftrace 实现结构）。</li>
 <li>用 cpudist（任意版本）<strong>分别</strong>对主动/被动上下文切换输出直方图（区分 <code class="c">prev_state == TASK_RUNNING</code>）。</li>
 </ol>
+<h3>开发题参考骨架（自测后再看）</h3>
+<p>题 9（procsnoop——跟踪点版最稳）：</p>
+<pre class="code" data-label="awk"><code class="c">// sched_process_fork 跟踪点天然覆盖 fork/clone/vfork 全部路径
+tracepoint:sched:sched_process_fork {
+    printf(&quot;%s pid=%d child=%d\n&quot;, comm, pid, args-&gt;child_pid);
+}
+</code></pre>
+<p>题 11+12 合并（cpudist + 主动/被动分桶——sched_switch 单探针就够，双探针反而多余）：</p>
+<pre class="code" data-label="awk"><code class="c">tracepoint:sched:sched_switch {
+    // pick_next_task 的耗时 = 本次调度延迟，可从 prev/next 算 on-CPU 时长：
+    // 这里用「上 CPU 时刻」map 计时
+    if (args-&gt;prev_state == TASK_RUNNING /* 0 */) {
+        @ voluntary[comm] = count();      // 主动让出（睡眠等 IO）
+    } else {
+        @involuntary[comm] = count();     // 被抢占（时间片到/高优先级唤醒）
+    }
+}
+// on-CPU 时长版：kprobe:finish_task_switch 配 sched_switch 存时间戳，
+// 下一次 sched_switch 的 prev==上次 next 时求差——runqlat.bt 的镜像结构
+</code></pre>
+<p>注意题 12 的判定依据：<code class="c">prev_state == TASK_RUNNING</code>（0）表示 prev 仍在 runnable 被抢——<strong>被动</strong>；非 0（S/D 等）是主动睡眠。这是"主动 vs 被动"唯一可靠的判据，比看进程类型猜靠谱。</p>
 <h2>开放难题（13 题）</h2>
 <ol start="13">
 <li>（未解决的难题）输出线程因 <strong>CPU 黏合度</strong>浪费的等待时间：线程 RUNNABLE、有空闲 CPU，但因缓存热度不迁移（参考 <code class="c">kernel.sched_migration_cost_ns</code> sysctl、<code class="c">task_hot()</code> 可能被内联无法直接跟踪、<code class="c">can_migrate_task()</code>）。</li>
 </ol>
+<p>题 13 的破解思路笔记：定义"浪费的等待" = runqlat 中「队列空闲却仍在等」的那部分。近似做法：sched_wakeup 时记 <code class="c">wakeups[tid]=nsecs</code>，sched_switch 上 CPU 时求差，同时对每个时刻查全核 idle 比例（runqlen 全局视图）——被观测的不是"为何不迁移"（task_hot 被内联），而是"迁移欠账"的总量。精度天花板在采样密度与 map 键空间，够写一篇小工具了。</p>
 <h2>HFT 建议优先级</h2>
 <ul>
 <li><strong>必做</strong>：3（runqlat/runqlen 实验直觉）、5+6（火焰图全流程）、7+8（off-CPU 火焰图全流程）— 这六个覆盖交易机排查 80% 场景</li>
@@ -1625,6 +1761,7 @@ bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread-2.27.so:pthread_create { printf(
 <li><strong>实验 3 忘记清理 busy-loop 进程</strong> — 占着 CPU0 影响后续所有实验</li>
 <li><strong>第 5 题 dd 用了 /dev/nvme0n1p3 却没有 direct 标志</strong> — 没有 iflag=direct 就绕过 page cache，测的是不同路径</li>
 <li><strong>练习 12 只统计全部切换</strong> — 不区分 prev_state 就回答不了"主动 vs 被动"的分布差异问题</li>
+<li><strong>题 9 用 kprobe:do_fork 跟踪</strong> — 新内核函数名已变（kernel_thread/fork 系统），用 sched_process_fork 跟踪点免受函数改名影响（tracepoint 是稳定 ABI，这也是全书"优先跟踪点"原则的实例）。</li>
 </ol>
       </section>
       <section class="section" id="s-12">
@@ -1712,6 +1849,49 @@ bpftrace -e 'u:/lib/x86_64-linux-gnu/libpthread-2.27.so:pthread_create { printf(
 <li><strong>事件跟踪</strong>（runqlat / cpudist / offcputime / funccount）与事件频率成正比 → 繁忙系统短期运行、-p 限定范围</li>
 <li>开销估算公式：额外开销 ≈ 每事件处理耗时 × 事件频率 ÷ CPU 数（书例：1µs × 100 万次/s ÷ 10 CPU = 10%）</li>
 </ul>
+<p>公式的工作示例（把"纪律"变成"算术"）——一台 8 核交易机，评估三个候选工具：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>每事件成本</th>
+<th>事件频率</th>
+<th>总开销（÷8 核）</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>runqlat（sched_wakeup+switch）</td>
+<td>~1µs</td>
+<td>切换 2 万次/s</td>
+<td>0.25%</td>
+<td>可放心跑半天</td>
+</tr>
+<tr>
+<td>offcputime（同上+栈抓取）</td>
+<td>~5µs</td>
+<td>2 万次/s</td>
+<td>1.25%</td>
+<td>排障期短跑</td>
+</tr>
+<tr>
+<td>memleak 类逐 malloc</td>
+<td>~1µs</td>
+<td>200 万次/s</td>
+<td>25%</td>
+<td>绝不生产（ch7）</td>
+</tr>
+</tbody>
+</table></div>
+<p>数字本身不用背——要背的是<strong>先算再挂</strong>的习惯：任何工具上线前过一遍这三个变量。</p>
+<h2>60 秒 CPU 检查（小结的操作化）</h2>
+<pre class="code" data-label="code"><code class="c">uptime                        # 1. 负载 vs 核数（粗筛）
+mpstat -P ALL 1 5             # 2. 单核饱和？idle 分布
+runqlat.bt（60s 自动退出）     # 3. 排队延迟分布——右尾是重点
+profile -af 60 &gt; out.svg      # 4. on-CPU 火焰图（可疑时）
+</code></pre>
+<p>第 3 步右尾异常才进第 4 步——顺序本身就是开销纪律：便宜的先跑。</p>
 <h2>HFT 收尾 Checklist</h2>
 <ul>
 <li>[ ] runqlat：策略核延迟分布近全在 0–15µs 桶</li>

@@ -799,6 +799,59 @@ kprobe:oom_kill_process
 <li>输出栈需要帧指针（书例 bash 用 <code class="c">-fno-omit-frame-pointer</code> 编译）+ 符号</li>
 </ul>
 <p><strong>重要限定</strong>：memleak 只能列出"分配后很久没释放"的栈 — <strong>无法区分</strong>真泄漏（无引用永不释放）、正常增长、长期存活的合理内存。定性必须<strong>读代码</strong>理解这些路径的意图。</p>
+<h3>配对机制（它凭什么知道"未释放"）</h3>
+<p>memleak 的核心数据结构是一张<strong>以指针为键的 hash map</strong>：</p>
+<pre class="code" data-label="code"><code class="c">malloc(ptr=0x7f.., size=192, stack=S1)
+   │  uprobe/kprobe 触发
+   ▼
+  map[0x7f..] = { size:192, ts:now, stackid:S1 }     ← 分配记账
+
+free(ptr=0x7f..)
+   │
+   ▼
+  delete map[0x7f..]                                  ← 配对销账
+
+每 5s：遍历 map，按 stackid 聚合输出仍在账上的分配
+   （= 分配了、没 free、也没到 -O 年龄线的&quot;悬账&quot;）
+</code></pre>
+<p>三个推论：</p>
+<ol>
+<li><strong>开销的来源</strong>是每一次 malloc/free 都要走一遍"uprobe 陷入→BPF→map 更新"，与分配频率成正比——不是栈抓取（栈只在记账时抓一次）；</li>
+<li><strong>-S 采样</strong>的作用点在最前面：1/RATE 的事件才记账。但 free 也同样被采样——ptr 没记上账的 free 直接跳过，账目两边一致地稀疏，趋势仍对；</li>
+<li><strong>map 键空间</strong> = 在飞分配数。百万级在飞分配的对象（比如每连接一个 buffer）会把 map 撑大——这既是内存成本也是遍历成本，-O 过滤缓解输出侧但不缓解 map 侧。</li>
+</ol>
+<h3>-S 与 -O 的组合策略</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>-S</th>
+<th>-O</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>生产环境初筛</td>
+<td>100+</td>
+<td>—</td>
+<td>先确认"有泄漏迹象"再说</td>
+</tr>
+<tr>
+<td>回测复现（分配率中等）</td>
+<td>10</td>
+<td>5000</td>
+<td>滤掉短命缓冲，聚焦长期悬账</td>
+</tr>
+<tr>
+<td>测试环境精确定位</td>
+<td>1（全量）</td>
+<td>10000</td>
+<td>慢但账目完整</td>
+</tr>
+</tbody>
+</table></div>
+<p>-O 的年龄线怎么定：比"合法缓存的典型存活期"再长一档。行情快照缓存存活秒级，就设 -O 10000（10s）——比它短的悬账大概率是正常周转。</p>
 <h2>命令行</h2>
 <pre class="code" data-label="code"><code class="c">memleak [options] [-p PID] [-c COMMAND] [interval [count]]
 </code></pre>
@@ -838,6 +891,7 @@ kprobe:oom_kill_process
 <li><strong>生产环境全量跟踪</strong> — 每秒百万次 malloc 的进程会掉到 1/10 速度；加 -S 采样或换 profile</li>
 <li><strong>栈全是 [unknown]</strong> — 目标没编译帧指针/没符号；CFLAGS=-fno-omit-frame-pointer 重编（或见 13.2.9）</li>
 <li><strong>内核态/用户态搞混</strong> — 不带 -p 跟踪的是内核 kmem；用户态进程必须 -p/-c 指定</li>
+<li><strong>在飞分配数巨大的进程上 map 爆内存</strong> — 每个未配对分配占一条账（指针+大小+栈 id）；百万级在飞对象时 memleak 自身吃几百 MB 正常，容器里注意配额</li>
 </ol>
 <details>
 <summary>📝 自测题（点击展开）</summary>
@@ -1257,6 +1311,49 @@ swapin       → 换入卡了谁（逐事件）
 <p>内核内存方向的更多工具在第 14 章：kmem(8)、kpages(8)、slabratetop(8)、numamove(8)。</p>
 <h2>profile 替代 memleak 的思路</h2>
 <p>memleak 跟踪每次 malloc/free（每秒百万次、开销巨大）；profile 定时采样（49Hz）在 CPU 上运行的栈 — 分配密集的代码路径自然被高频采样到。得到的是"哪些路径在做分配"的粗粒度画像，足够指导优化方向，且开销可忽略。精细到字节级的泄漏定位再上 memleak（测试环境 + <code class="c">-S</code> 采样）。</p>
+<h3>两者对比（同为"找分配路径"，模型完全不同）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>memleak</th>
+<th>profile</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>观测模型</td>
+<td>逐事件记账（malloc/free 配对）</td>
+<td>定时采样在跑的栈</td>
+</tr>
+<tr>
+<td>回答的问题</td>
+<td>"哪些分配<strong>没有还</strong>"</td>
+<td>"哪些路径<strong>在做</strong>分配"</td>
+</tr>
+<tr>
+<td>漏检风险</td>
+<td>无（全量时）</td>
+<td>低频路径可能采不到（0.1% 占比的分配路径在 49Hz 下平均 ~20 分钟才一帧）</td>
+</tr>
+<tr>
+<td>误报方向</td>
+<td>把正常长期内存列为悬账</td>
+<td>把"常在 CPU 上"误当"常在分配"（要人工看栈里是不是分配路径）</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>与分配频率成正比（可 &gt;10×）</td>
+<td>固定 49Hz 税</td>
+</tr>
+<tr>
+<td>定位</td>
+<td>需要</td>
+<td>演示/回测机</td>
+</tr>
+</tbody>
+</table></div>
+<p>两段式工作流的判据：<strong>先问"量对不对"（growth 曲线/RSS 趋势），再问"路径在哪"</strong>。量没问题的机器连 profile 都不用挂——crontab 里的 RSS 采样就够。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>策略进程的分配热点画像：<code class="c">profile -F 49 -u -p &lt;pid&gt;</code> 跑一段回测，栈里 malloc/operator new 占比高的路径就是改造对象（arena/对象池/预分配）</li>
@@ -1336,6 +1433,54 @@ bpftrace -e 't:compaction:mm_compaction_begin { time(); }'
 <li><strong><code class="c">t:vmscan:**</code></strong>：跟踪点通配，一次看清内核回收路径的活跃度分布</li>
 <li>页迁移/页压缩是 NUMA 平衡与碎片整理的信号：频繁迁移意味着内存布局在抖动</li>
 </ul>
+<h3>每条单行的读法（这 7 条各自在"听"什么）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>单行</th>
+<th>监听的事件源</th>
+<th>异常形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>brk 按栈计数</td>
+<td>堆顶调整</td>
+<td>稳态进程出现新栈 = 有代码还在长堆</td>
+</tr>
+<tr>
+<td>page-fault 按进程</td>
+<td>缺页（含次级）</td>
+<td>稳态后不归零/单调上涨</td>
+</tr>
+<tr>
+<td>page-fault 按用户栈</td>
+<td>同上+归因</td>
+<td>哪条代码路径在触发缺页</td>
+</tr>
+<tr>
+<td>vmscan 通配</td>
+<td>回收子系统活跃度</td>
+<td>kswapd 病理性活跃 = 内存压力</td>
+</tr>
+<tr>
+<td>hugepage_madvise</td>
+<td>显式巨页申请</td>
+<td>频繁申请但 hfaults 不涨 = 池不够在退化</td>
+</tr>
+<tr>
+<td>mm_migrate_pages</td>
+<td>页迁移</td>
+<td>NUMA 策略在搬页（远端访问+缓存失效）</td>
+</tr>
+<tr>
+<td>mm_compaction_begin</td>
+<td>碎片整理</td>
+<td>突增 = 巨页/高阶分配在触发整理（停顿源）</td>
+</tr>
+</tbody>
+</table></div>
+<p>前 5 条开销趋零可常驻；后 2 条在迁移/整理风暴时有放大效应（事件本身就说明系统在挣扎）。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li><code class="c">software:page-fault:1 { @[comm] = count(); }</code> 一行即可常驻监控缺页：稳态交易进程应趋近 0，突增即告警</li>
@@ -1375,6 +1520,24 @@ bpftrace -e 't:compaction:mm_compaction_begin { time(); }'
 <ol start="10">
 <li>（未解决）调查频繁换页：展示<strong>每个内存页在换页设备上的存活时间</strong>直方图（需测量换出↔换入配对时间，页粒度关联难度大）。</li>
 </ol>
+<h3>开发题参考骨架（自测后再看）</h3>
+<p>题 5+6 合并（虚拟内存增长监控——brk/mmap 两跟踪点）：</p>
+<pre class="code" data-label="awk"><code class="c">tracepoint:syscalls:sys_enter_brk /pid == $1/ {
+    printf(&quot;%s brk(0x%lx)\n&quot;, comm, args-&gt;brk);
+}
+tracepoint:syscalls:sys_enter_mmap /pid == $1/ {
+    printf(&quot;%s mmap len=%lu\n&quot;, comm, args-&gt;len);
+}
+// 增量计算：sys_exit_brk 的 ret 是新 break——exit.ret - entry.brk 即本次扩展字节数
+</code></pre>
+<p>题 7（compaction 耗时——5.17 双探针计时模板的又一遍）：</p>
+<pre class="code" data-label="awk"><code class="c">tracepoint:compaction:mm_compaction_begin { @start[tid] = nsecs; }
+tracepoint:compaction:mm_compaction_end /@start[tid]/ {
+    @ns = hist(nsecs - @start[tid]);   // 模板三件套：存→过滤求差→delete
+    delete(@start[tid]);
+}
+</code></pre>
+<p>题 8 的结构提示：kprobe <code class="c">shrink_slab</code> / 各 <code class="c">shrinker</code> 回调，键取 <code class="c">func</code>（bpftrace 内置变量，探针对应的函数名）——<code class="c">@[func] = hist(...)</code>，连"哪个收缩器最慢"一起回答。</p>
 <h2>HFT 建议优先级</h2>
 <ul>
 <li><strong>必做</strong>：1（vmscan→drsnoop 递进是无 swap 交易机的核心技能）、3+4（缺页火焰图定位 RSS 增长）</li>
@@ -1476,6 +1639,17 @@ bpftrace -e 't:compaction:mm_compaction_begin { time(); }'
 <li>低频事件（OOM/mmap/brk/换页/vmscan）→ 跟踪开销可忽略，可常驻</li>
 <li>高频事件（malloc 每秒百万次）→ memleak 是调试工具；分配路径画像用 profile 采样替代</li>
 </ul>
+<h3>内存排障三段式（本章工具的战术编队）</h3>
+<pre class="code" data-label="code"><code class="c">第一段 · 容量与出口（常驻零开销）
+  oomkill + vmscan + swapin —— 有没有到危险的边缘？
+   └─ 异常 → 第二段
+第二段 · 路径画像（低开销短期）
+  brkstack / faults / hfaults —— 增长和缺页从哪来？
+   └─ 需要精确到分配 → 第三段
+第三段 · 精确记账（测试环境）
+  memleak -S + 读代码定性 —— 悬账是否真是泄漏？
+</code></pre>
+<p>每段只在前一段出异常时进入——这套递进本身就是开销纪律的执行形态。</p>
 <h2>HFT 收尾 Checklist</h2>
 <ul>
 <li>[ ] oomkill 常驻 + 关键进程 oom_score_adj 保护（无 swap 机器唯一故障出口）</li>
