@@ -32,10 +32,12 @@
     │
   napi_gro_receive()   ── GRO 聚合（等合并窗口 = 延迟）
     │
-  __netif_receive_skb_core()      net/core/dev.c
-    ├─[H2] tc ingress（clsact/ingress qdisc）
-    ├─[H3] ptype_all（AF_PACKET → tcpdump 在这里抓包）
-    └─[H4] ptype_base 分发：ETH_P_IP → ip_rcv()
+  __netif_receive_skb_core()      net/core/dev.c:5330
+    ├─[H2] ptype_all（AF_PACKET → tcpdump 在这里抓包）   dev.c:5394/5400
+    ├─[H3] tc ingress（clsact/ingress qdisc）           dev.c:5412
+    ├─    Netfilter ingress（nf_ingress）                dev.c:5420
+    ├─    rx_handler（bridge / bonding）                 dev.c:5440
+    └─[H4] ptype_base 分发：ETH_P_IP → ip_rcv()          dev.c:5504
     ↓
   ip_rcv() → ip_rcv_core()        net/ipv4/ip_input.c
     ├─[H5] Netfilter PRE_ROUTING（nftables 挂载点）
@@ -79,9 +81,10 @@
 | # | hook | 位置 | 能看到 | 适合做什么 | 时机 |
 |---|------|------|--------|-----------|------|
 | H1 | **XDP** | 驱动 Rx，skb 之前 | `xdp_buff`（裸帧） | 丢包、采样、重定向 | **最早，最便宜** |
-| H2 | tc ingress | `__netif_receive_skb_core()` | skb | 限速、过滤、镜像 | skb 已分配 |
-| H3 | AF_PACKET | ptype_all | skb | **tcpdump 抓包** | 在 tc ingress 之后 |
-| H4 | ptype 分发 | 同函数末尾 | skb | 协议注册 | 内核内部分发点 |
+| H2 | **AF_PACKET（tcpdump）** | `ptype_all`，dev.c:5394 | skb | **抓包、观测** | 在 tc ingress **之前** |
+| H3 | tc ingress | `sch_handle_ingress()`，dev.c:5412 | skb | 限速、过滤、镜像 | 在 tcpdump **之后** |
+| H3b | Netfilter ingress | `nf_ingress()`，dev.c:5420 | skb | nftables ingress | 在 tc ingress 之后 |
+| H4 | ptype 分发 | `ptype_base[]`，dev.c:5504 | skb | 协议注册 | 内核内部分发点 |
 | H5 | NF PRE_ROUTING | `ip_rcv()` | skb | nftables 过滤/NAT | 路由前 |
 | H6 | NF LOCAL_IN | `ip_local_deliver()` | skb | 本机入站过滤 | 路由后、L4 前 |
 | H7 | NF FORWARD | `ip_forward()` | skb | 转发过滤 | 仅转发路径 |
@@ -93,12 +96,20 @@
 **三个容易记错的顺序：**
 
 1. **XDP 在 skb 之前，tc ingress 在 skb 之后** —— 所以 XDP 能省掉 skb 分配（100–200ns），
-   tc 不能
-2. **tcpdump（AF_PACKET）在 tc ingress 之后** —— 如果你在 tc ingress 里把包丢了，
-   tcpdump 依然能看到；反过来，XDP_DROP 的包**tcpdump 看不到**
-   （这是 XDP 排障最容易踩的坑）
+   tc 不能。
+2. **tcpdump（AF_PACKET / `ptype_all`）在 tc ingress 之*前*** —— ⚠️ 这条极易记反。
+   内核源码 `net/core/dev.c` 的顺序是：generic XDP（dev.c:5373）→ `ptype_all` 分发
+   （dev.c:5394，tcpdump 在这里拿到包）→ `skip_taps:` → `sch_handle_ingress()`
+   （dev.c:5412，tc ingress 在这里）。所以：
+   - 在 **tc ingress** 里丢的包，**tcpdump 能看到**（抓到之后才被丢）
+   - `XDP_DROP` 的包 **tcpdump 看不到**（那时连 skb 都没有，AF_PACKET 无从挂钩）
+   - 这个差别正好是排障利器：tcpdump 抓到但应用没收到 → 丢点在 tcpdump 之后
+     （tc ingress / Netfilter / socket 队列）；tcpdump 根本没抓到 → 丢点在更前面
+     （驱动 / XDP / 网卡）。
 3. **tc egress 在驱动之前** —— 所以 ETF（Earliest TxTime First）qdisc 才能做到
-   "精确到纳秒的发送时刻控制"，HFT 的发送时序整形靠它
+   "精确到纳秒的发送时刻控制"，HFT 的发送时序整形靠它。而且 6.x 在 tc egress
+   **之前**还多了一个 `nf_hook_egress()`（dev.c:4307），发包侧其实是
+   「Netfilter egress → tc egress → qdisc → 驱动」三层。
 
 ---
 
@@ -122,7 +133,8 @@
   │ frags[] 非线性区  │            │ data_meta        │
   │ 引用计数、时间戳  │            │ rxq (queue_index)│
   │ dst/路由缓存      │            └──────────────────┘
-  │ socket 关联       │              只有 4 个字段
+  │ socket 关联       │              v6.6 共 8 个字段（4.8 引入时只有 4 个，
+                               后来加了 txq / frame_sz / flags）
   └──────────────────┘              分配成本 ≈ 0
    分配成本 100-200ns
 ```
@@ -165,7 +177,7 @@ iph = skb_header_pointer(skb, 0, sizeof(*iph), &_iph);
 | Netfilter/nftables | `net/netfilter/`、`net/netfilter/nf_tables_*.c` | Ch9 | [ch10](../../chapter-10-nftables/) |
 | Traffic Control | `net/sched/` | Ch6 | [ch09](../../chapter-09-tc-bpf/) |
 | XDP | `net/core/filter.c`、`kernel/bpf/devmap.c` | 无 | [ch05](../../chapter-05-xdp-architecture/) |
-| NAPI | `net/core/dev.c` | Ch1/Ch14 | [ch02](../chapter-02-napi-rx-path/) |
+| NAPI | `net/core/dev.c` | Ch1/Ch14 | [ch02](../../chapter-02-napi-rx-path/) |
 | page_pool | `net/core/page_pool.c` | 无 | [ch04](../../chapter-04-page-pool/) |
 
 ---
@@ -245,7 +257,7 @@ bpftrace -e 'kprobe:kfree_skb { @[kstack()] = count(); }'
 <summary>Q1：XDP 到底在 sk_buff 之前还是之后？为什么说它"零拷贝"？</summary>
 
 **在之前。** 驱动 poll 从 Rx ring 拿到的是 DMA 页和描述符，
-此时可以直接构造 `xdp_buff`（4 个字段，无分配）交给 BPF 程序。
+此时可以直接构造 `xdp_buff`（**栈上的**临时结构，v6.6 是 8 个字段，**无任何分配**）交给 BPF 程序。
 只有返回 `XDP_PASS` 时，内核才调用 `napi_build_skb()` 把这页包装成 `sk_buff`。
 
 至于"零拷贝"这个说法要小心：XDP 并没有省掉 DMA（DMA 本来就不经 CPU），
@@ -257,19 +269,29 @@ bpftrace -e 'kprobe:kfree_skb { @[kstack()] = count(); }'
 <details>
 <summary>Q2：我在 tc ingress 里 DROP 了一个包，tcpdump 还能看到它吗？在 XDP 里 DROP 呢？</summary>
 
-- **tc ingress DROP**：能。AF_PACKET（tcpdump 的底层）在 ptype_all 分发，
-  位置在 tc ingress **之后**… 不对，实际顺序是
-  `__netif_receive_skb_core()` 里先跑 `sch_handle_ingress()`（tc），
-  再跑 `ptype_all`。所以 **tc DROP 之后 tcpdump 看不到**。
-- **XDP DROP**：更看不到，那时连 skb 都没有，AF_PACKET 根本无从挂钩。
+- **tc ingress DROP**：**能看到**。tcpdump 的底层是 AF_PACKET，挂在 `ptype_all`；
+  它在 `net/core/dev.c:5394` 分发，而 tc ingress 的 `sch_handle_ingress()`
+  在 `dev.c:5412`——**tcpdump 先拿到包，tc 才丢**。
+  （这条极易记反，我第一次也写错了，后来查 v6.6 源码才改正。）
+- **XDP DROP**：**看不到**。那时连 `sk_buff` 都还没分配，AF_PACKET 无从挂钩。
 
-**排障结论**：抓不到包不等于没收到。要确认"包到底进没进网卡"，
-得看**驱动层计数**和 **XDP 自己的计数**：
+**排障结论**：正好可以用这个差别做二分定位。
+
+| 现象 | 丢点在哪 |
+|------|---------|
+| tcpdump **能**抓到，应用没收到 | tcpdump 之后：tc ingress / Netfilter / 路由 / socket 队列 |
+| tcpdump **抓不到**，但驱动计数在涨 | tcpdump 之前：驱动 / XDP / 硬件 GRO |
+
+抓不到包不等于没收到。要确认"包到底进没进网卡"，看**驱动层计数**和 **XDP 自己的计数**：
 
 ```bash
 ethtool -S eth0 | grep -E 'rx_packets|missed'
 bpftool prog show id <id>   # 看 XDP 程序的 run_time / 计数
 ```
+
+⚠️ 另有一个会破坏这套推理的陷阱：**开了 `rx-gro-hw` 之后，包在进内核之前就被网卡合并了**，
+tcpdump 看到的是合并后的"假包"，上面这张表就不成立了。排障期间先关掉硬件 GRO。
+→ 详见 [chapter-02/04-gro-gso](../../chapter-02-napi-rx-path/notes/04-gro-gso.md)
 </details>
 
 <details>
