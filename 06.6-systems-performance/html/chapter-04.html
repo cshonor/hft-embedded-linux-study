@@ -463,53 +463,242 @@ Ch 4  观测工具（本章：选型 + 数据源）
       </section>
       <section class="section" id="s-4-1">
         <div class="sec-head"><div class="sec-no">4.1</div><h2>section-4.1-工具覆盖范围与危机工具</h2></div>
-<h3 class="sub">危机工具（Crisis Tools）</h3>
-<p><strong>Gregg 观点：</strong> 性能危机时再装调试工具 = <strong>为时已晚</strong>，还可能延长 MTTR（装包、依赖、版本不匹配）。</p>
-<p><strong>应提前部署的 Linux 工具包：</strong></p>
+<blockquote>
+<p>本章导读 · <a href="#s-4-2">4.2 工具的分类与原理</a> · <a href="#s-4-3">4.3 核心观测数据源</a> · <a href="#s-4-4">4.4 sar 工具</a> · <a href="#s-4-5">4.5 四大追踪器</a> · <a href="#s-4-6">4.6 观测的观测</a></p>
+</blockquote>
+<hr />
+<h3>本节讲什么</h3>
+<p>回答一个看起来「不像技术问题」的问题：<strong>性能工具应该什么时候装？</strong> Gregg 的答案是：出事之前。本节展开他的「为时已晚」论证，给出危机工具包的构成、五个包之间的依赖关系、版本匹配的具体坑位，以及 HFT runbook 里第一反应命令的组织方法。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话展开</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>危机时装工具 = 双重惩罚</td>
+<td>装包本身耗时延长 MTTR；装错版本引入新问题</td>
+</tr>
+<tr>
+<td>2</td>
+<td>五大包按「数据源 → 前端」分层</td>
+<td>procps/sysstat 读 /proc；linux-tools 接 perf 事件；bcc/bpftrace 走 eBPF</td>
+</tr>
+<tr>
+<td>3</td>
+<td>perf 版本必须匹配内核</td>
+<td><code class="c">linux-tools-$(uname -r)</code>，否则事件列表为空或数据错误</td>
+</tr>
+<tr>
+<td>4</td>
+<td>BCC 依赖内核 headers + clang</td>
+<td>危机时才发现没装 headers，等于 BPF 全线瘫痪</td>
+</tr>
+<tr>
+<td>5</td>
+<td>runbook 的价值在「复制粘贴即可跑」</td>
+<td>第一反应命令预先写好、预先验证过，而不是现场翻 man</td>
+</tr>
+<tr>
+<td>6</td>
+<td>嵌入式例外</td>
+<td>BCC 运行时编译在交叉目标机上常不可用，需 libbpf+CO-RE 预编译</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、Gregg 的「为时已晚」论证</h3>
+<p>性能危机的典型时刻：线上 tick-to-trade P99 突然从 5µs 飙到 50µs，老板站在工位后面，每分钟都在问「查到没有」。这时你执行：</p>
+<pre class="code" data-label="shell"><code class="c">apt install linux-tools-$(uname -r) bpftrace
+</code></pre>
+<p>然后发生什么？</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环节</th>
+<th>危机时刻的代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>包仓库不可达</strong></td>
+<td>生产机常常无外网 / 只有内部 mirror，mirror 里未必有匹配版本</td>
+</tr>
+<tr>
+<td><strong>依赖解析失败</strong></td>
+<td>bpftrace 依赖 libbpf、bcc 依赖 clang+headers，缺一环装不上</td>
+</tr>
+<tr>
+<td><strong>版本不匹配</strong></td>
+<td><code class="c">uname -r</code> 是定制内核（云厂商 / PREEMPT_RT），仓库里根本没有对应 linux-tools</td>
+</tr>
+<tr>
+<td><strong>装上了但不能用</strong></td>
+<td>perf 报 <code class="c">not found for this kernel</code>，BCC 报 <code class="c">bcc: Unable to compile</code></td>
+</tr>
+<tr>
+<td><strong>现场学工具</strong></td>
+<td>就算装上了，第一次跑 bpftrace 现查语法，几分钟又没了</td>
+</tr>
+</tbody>
+</table></div>
+<p>结论：<strong>工具链的可用性必须在平时验证，而不是危机时赌运气</strong>。MTTR（平均恢复时间）里最冤枉的部分，就是花在「装工具」上的那一段。</p>
+<hr />
+<h3>二、危机工具包：五个包的依赖关系</h3>
+<p>不是五个独立软件包，而是有层次结构的组合。理解依赖关系，才知道「装了 A 没装 B」时坏的是哪条腿：</p>
+<pre class="code" data-label="code"><code class="c">┌─────────────────── 用户态前端 ───────────────────┐
+│  procps        sysstat      perf      BCC    bpftrace
+│  (top/vmstat   (iostat/     (剖析+     (Python   (单行DSL)
+│   pidstat/ps)   sar/mpstat)  trace)     工具集)      │
+└────┬─────────────┬───────────┬──────────┬─────────┬──┘
+     │             │           │          │         │
+     ▼             ▼           ▼          ▼         ▼
+  /proc,       /proc,      perf_event  eBPF VM   eBPF VM
+  /sys 读取    /sys 读取    子系统       ▲         ▲
+  (纯文本)     (纯文本)    (内核内建)    │         │
+                                        │         │
+                              clang + 内核headers  │
+                              (运行时编译)         │
+                                        └────┬────┘
+                                             ▼
+                                    BTF / tracepoint
+                                    (内核侧插桩点)
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>包 / 组件</th>
 <th>提供什么</th>
+<th>依赖什么</th>
+<th>缺了会怎样</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>procps</strong></td>
-<td><code class="c">ps</code>、<code class="c">top</code>、<code class="c">vmstat</code>、<code class="c">pidstat</code> 等</td>
+<td><code class="c">ps</code>、<code class="c">top</code>、<code class="c">vmstat</code>、<code class="c">pidstat</code>、<code class="c">free</code></td>
+<td>仅 /proc、/sys</td>
+<td>60 秒清单前 10 条全部失效</td>
 </tr>
 <tr>
 <td><strong>sysstat</strong></td>
 <td><code class="c">iostat</code>、<code class="c">mpstat</code>、<code class="c">sar</code>、<code class="c">sadc</code></td>
+<td>/proc、/sys</td>
+<td>磁盘/CPU 分核视图失效、无历史归档</td>
 </tr>
 <tr>
-<td><strong>linux-tools-common</strong></td>
-<td><code class="c">perf</code>（版本需匹配内核）</td>
+<td><strong>linux-tools-common + linux-tools-$(uname -r)</strong></td>
+<td><code class="c">perf</code></td>
+<td>perf_event 子系统 + <strong>版本匹配的内核</strong></td>
+<td>perf 报版本错误或事件不可用</td>
 </tr>
 <tr>
 <td><strong>bcc-tools</strong></td>
-<td>BCC 自带脚本（biolatency、runqlat…）</td>
+<td>biolatency、runqlat、biostacks、ext4slower…</td>
+<td>eBPF VM + <strong>clang + 内核 headers</strong></td>
+<td>编译报错，所有 BCC 工具瘫痪</td>
 </tr>
 <tr>
 <td><strong>bpftrace</strong></td>
 <td>单行/脚本 eBPF 追踪</td>
+<td>eBPF VM + BTF（推荐）</td>
+<td>即兴查询能力消失</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 裸机 checklist：</strong></p>
-<pre class="code" data-label="code"><code class="c">[ ] perf 版本 = 运行中内核
-[ ] bpftrace + bcc 可加载最小 BPF 程序
-[ ] sar/sadc 已配置历史归档（非热路径机器也建议有）
-[ ] 危机 runbook 写清：先 60 秒清单 → 再 perf/bpftrace
+<p>关键认知：<strong>前两个包是「纯读者」</strong>（只 cat /proc），几乎不会坏；<strong>后三个是「内核合作者」</strong>，需要内核侧配合（perf_event、eBPF VM、BTF、headers），版本错位就罢工。危机清单的验证深度也应对应分层——读者类验证存在性即可，合作者类必须实际跑通一条最小命令。</p>
+<hr />
+<h3>三、版本匹配的三个坑</h3>
+<h4>坑 1：perf 与内核</h4>
+<pre class="code" data-label="shell"><code class="c"># 正确安装（Debian/Ubuntu 系）
+apt install linux-tools-common linux-tools-$(uname -r)
+
+# 验证
+perf stat -e cycles,instructions true   # 能出数 = OK
 </code></pre>
-<p>→ Ch 1 <a href="chapter-01.html#ch-1">60 秒清单</a><br />
-→ 附录 <a href="appendix-C.html#app-C">bpftrace 单行命令</a></p>
+<p>云厂商定制内核（AWS Nitro、Azure 内核）和 PREEMPT_RT 补丁内核常常在发行版仓库里<strong>没有对应的 linux-tools 包</strong>。这时 perf 要么从内核源码树自己编译（<code class="c">tools/perf/</code>），要么用静态链接发行版。HFT 用 RT 补丁内核的团队，这一条要在镜像制作时就固化。</p>
+<h4>坑 2：BCC 与 headers</h4>
+<p>BCC 的运行时编译模型（详见 <a href="chapter-15.html#ch-15">15.1 BCC</a>）要求<strong>目标机上有 clang 和当前内核的 headers</strong>。生产机按最小化原则装系统时，headers 几乎必然缺席。两条出路：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>做法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>补装 headers</td>
+<td><code class="c">apt install linux-headers-$(uname -r)</code> + clang</td>
+<td>目标机多出几百 MB；定制内核同样可能无包</td>
+</tr>
+<tr>
+<td>libbpf + CO-RE</td>
+<td>开发机上预编译成 .o，目标机只有 libbpf 加载器</td>
+<td>失去 BCC 快速迭代；换 15.1.7 的工作流</td>
+</tr>
+</tbody>
+</table></div>
+<h4>坑 3：BTF 与 bpftrace</h4>
+<p>新版 bpftrace 的很多功能（<code class="c">kfunc</code>、结构体定义）依赖内核开启 <code class="c">CONFIG_DEBUG_INFO_BTF</code>。<code class="c">ls /sys/kernel/btf/vmlinux</code> 存在即开启。老内核（&lt;5.2 或发行版没开 BTF）上 bpftrace 退化为只能用 kprobe 猜偏移的模式。</p>
+<hr />
+<h3>四、runbook：第一反应命令的组织法</h3>
+<p>工具预装只是硬件条件；<strong>runbook 是把「我知道该跑什么」变成「值班的人也会跑」的机制</strong>。组织原则：</p>
+<p><strong>1. 按「越跑越深」分梯度，而不是按工具分类</strong></p>
+<pre class="code" data-label="text"><code class="c">S0  无害常驻（永远在跑）
+    sar 10s 归档 · node_exporter · 超时计数器
+
+S1  60 秒清单（复制粘贴一整块，10 条命令一起看）
+    uptime · vmstat 1 · mpstat -P ALL 1 · pidstat 1 · iostat -xz 1
+    · free -m · sar -n DEV 1 · ss -tiepm · dmesg | tail · top
+
+S2  定向深挖（按 S1 指到的方向选一两条）
+    CPU 方向   → perf record -F 99 -g -p &lt;PID&gt; / runqlat
+    磁盘方向   → biolatency / biostacks / iostat -x 精读
+    网络方向   → ss -tiepm 逐字段 / tcpretrans
+    内存方向   → vmstat si/so / PSI / drsnoop
+
+S3  全量插桩（需授权，限时窗口）
+    bpftrace 汇总脚本 · perf trace 短窗口
+</code></pre>
+<p><strong>2. 每条命令预设「正常长什么样」</strong></p>
+<p>只有命令没有基线，值班的人跑完还是不会判断。S1 的每条命令旁注明该机器的常态值（例：<code class="c">vmstat 1 的 cs 正常 5k~8k，&gt;50k 才是异常</code>）。</p>
+<p><strong>3. 演练优先</strong></p>
+<p>runbook 写完不演练等于没写——S1 块在例行维护窗口实际跑一遍，确认每条都能出数、无版本报错。这与 <a href="chapter-16.html#ch-16">Ch 16 案例研究</a>的「先跑清单再深入」流程互为表里：ch16 是分析方法的演练，本节是工具可用性的演练。</p>
+<hr />
+<h3>HFT / 嵌入式关联</h3>
+<p><strong>HFT 裸机 checklist（开机验收项）：</strong></p>
+<pre class="code" data-label="code"><code class="c">[ ] perf stat -e cycles,instructions true  能出数（版本已匹配）
+[ ] bpftrace -e 'BEGIN { printf(&quot;ok\n&quot;); exit(); }'  能加载
+[ ] bcc 的 runqlat 5 2 能出直方图（clang + headers 就位）
+[ ] sar/sadc 已配置历史归档（非热路径机器也建议有）
+[ ] /sys/kernel/btf/vmlinux 存在（CO-RE 可用）
+[ ] runbook S1 块演练通过一次，记录基线值
+</code></pre>
+<p><strong>嵌入式交叉目标机例外：</strong> BCC 的运行时编译需要目标机上的 clang——交叉编译的嵌入式板卡上通常既没有 clang 也没有磁盘空间放 headers。嵌入式场景的「危机工具包」是 <strong>libbpf + CO-RE 预编译 .o + 最小加载器</strong>，在开发机上编译、随固件一起部署。这与 <a href="chapter-15.html#ch-15">15.1 BCC 三篇</a>中「嵌入式交叉编译不可用」的结论一致。</p>
+<p><strong>共置机的额外一条：</strong> 危机工具本身有开销（见 <a href="#s-4-6">4.6 观测的观测</a>）。S2/S3 级命令对热路径是侵入性的——runbook 里应写明「S2 起需值班长批准，S3 限时 30s 窗口」。</p>
+<hr />
+<h3>衔接</h3>
+<ul>
+<li>上一节（<a href="#s-4-2">4.2 工具分类</a>）回答「工具分几类」；本节回答「什么时候装、怎么验证」。</li>
+<li>下一节 <a href="#s-4-4">4.4 sar</a>：危机包里唯一自带「历史回溯」能力的工具。</li>
+<li><a href="chapter-01.html#ch-1">Ch 1 的 60 秒清单</a> 是 S1 块的原始出处；<a href="appendix-C.html#app-C">附录 C bpftrace 单行命令</a> 是 S2/S3 的弹药库。</li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
 <li>危机时才装工具——出事时才发现 perf/BPF 没装或版本不匹配，应该预装并验证</li>
 <li>危机工具不熟——出事时现学 man page 太慢，runbook 应预设好第一反应命令</li>
 <li>工具和内核版本不匹配——perf 需匹配 linux-tools-$(uname -r)，BCC 需匹配内核 headers</li>
+<li>只验证「装了」不验证「能跑」——<code class="c">which perf</code> 存在不等于 <code class="c">perf stat</code> 能出数；合作者类工具必须实际执行最小命令</li>
+<li>runbook 无基线——命令跑出来了，值班的人不知道什么算异常；每条命令要配常态值</li>
+<li>嵌入式照搬服务器清单——BCC 运行时编译在交叉目标机不可用，要换 libbpf+CO-RE 路线</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -518,21 +707,35 @@ Ch 4  观测工具（本章：选型 + 数据源）
 </ol>
 <details>
 <summary>答</summary>
-<p>出事时第一时间需要的工具（vmstat/mpstat/perf/ss/iostat）——出事时才装可能网络不通或版本不对</p>
+<p>出事时第一时间需要的工具（vmstat/mpstat/perf/ss/iostat）——出事时才装可能网络不通或版本不对；且装包耗时直接延长 MTTR</p>
 </details>
 <ol start="2">
 <li>perf 工具的版本匹配要求是什么？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>perf 需匹配 linux-tools-$(uname -r)，不匹配会导致事件不可用或数据错误</p>
+<p>perf 需匹配 linux-tools-$(uname -r)，不匹配会导致事件不可用或数据错误；定制内核（RT 补丁、云厂商内核）可能仓库无对应包，需从内核源码 tools/perf 自编译</p>
 </details>
 <ol start="3">
 <li>HFT runbook 中危机工具应该怎么组织？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>预设好第一反应命令（如 vmstat 1; mpstat -P ALL 1; ss -tiepm），复制粘贴即可跑</p>
+<p>预设好第一反应命令（如 vmstat 1; mpstat -P ALL 1; ss -tiepm），复制粘贴即可跑；按 S0 常驻 → S1 60 秒清单 → S2 定向深挖 → S3 全量插桩分梯度，每条配常态基线值并定期演练</p>
+</details>
+<ol start="4">
+<li>五个包里哪两个是「纯读者」、哪三个是「内核合作者」？区别是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>procps 和 sysstat 是纯读者（只读 /proc、/sys，几乎不会坏）；perf、BCC、bpftrace 是合作者（需要 perf_event 子系统、eBPF VM、BTF/headers 配合），版本错位就罢工，必须实际跑通最小命令验证</p>
+</details>
+<ol start="5">
+<li>嵌入式板卡上为什么 BCC 经常不可用？替代方案是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>BCC 运行时编译需要目标机上的 clang 和当前内核 headers，交叉编译的嵌入式设备通常都没有；替代是 libbpf + CO-RE——开发机预编译 .o，目标机只放最小加载器，随固件部署</p>
 </details>
 </details>
 <hr />
@@ -823,50 +1026,292 @@ CPU 热点     perf 剖析 + PMC（perf stat）
       </section>
       <section class="section" id="s-4-4">
         <div class="sec-head"><div class="sec-no">4.4</div><h2>section-4.4-sar-工具</h2></div>
-<p><strong>sar（System Activity Reporter）</strong> — 虽有了 BPF，仍是<strong>必备</strong>传统利器。</p>
+<blockquote>
+<p>本章导读 · <a href="#s-4-1">4.1 危机工具</a> · <a href="#s-4-3">4.3 核心数据源</a> · <a href="#s-4-5">4.5 四大追踪器</a> · <a href="#s-4-6">4.6 观测的观测</a></p>
+</blockquote>
+<hr />
+<h3>本节讲什么</h3>
+<p>sar 是 sysstat 包里最老牌的工具——<strong>表面上是一个实时统计命令，本质上是「时间机器」</strong>。本节讲清它的三重身份（实时采样器 / 历史回放器 / sadc 归档系统的前端）、为什么有了 BPF 之后它反而更重要、输出字段的精读方法，以及 HFT 场景下采样间隔的取舍。</p>
+<h3>要点</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>能力</th>
-<th>说明</th>
+<th>#</th>
+<th>要点</th>
+<th>一句话展开</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>实时</strong></td>
-<td><code class="c">sar -u 1</code>、<code class="c">sar -n DEV 1</code>、<code class="c">sar -B 1</code> 等</td>
+<td>1</td>
+<td>sar = 实时 + 历史双模</td>
+<td>实时模式 <code class="c">sar -u 1</code>；历史模式 <code class="c">sar -f</code> 读 sadc 归档</td>
 </tr>
 <tr>
-<td><strong>历史</strong></td>
-<td>后台 <strong>sadc</strong> 定期采样，<code class="c">sar -f</code> 读归档</td>
+<td>2</td>
+<td>独有价值是「上周同一时段对比」</td>
+<td>BPF 工具全都是「现在时」，只有 sar 有时间轴</td>
 </tr>
 <tr>
-<td><strong>覆盖</strong></td>
-<td>CPU、内存、swap、I/O、网络、队列、进程…</td>
+<td>3</td>
+<td>sadc 是真正在干活的后台进程</td>
+<td>sysstat cron 定期调 sadc 落盘，sar 只负责读</td>
+</tr>
+<tr>
+<td>4</td>
+<td>归档路径与轮转有默认约定</td>
+<td><code class="c">/var/log/sysstat/saDD</code>，按天轮转，默认保留 7~28 天</td>
+</tr>
+<tr>
+<td>5</td>
+<td>采样间隔是开销 vs 分辨率的权衡</td>
+<td>10s 归档够趋势分析；微秒级尖刺 sar 原理上看不到</td>
+</tr>
+<tr>
+<td>6</td>
+<td>与 USE 方法字段高度重合</td>
+<td>附录 B 的 USE 清单几乎每行都能用一条 sar 子命令覆盖</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>为何仍重要：</strong></p>
-<ul>
-<li>低开销、久经考验</li>
-<li><strong>「上周同一时段对比」</strong> — BPF 常缺长期基线 unless 自建</li>
-<li>与 <a href="appendix-A.html#app-A">USE 方法</a> 清单字段高度重合</li>
-</ul>
-<p><strong>常用示例：</strong></p>
-<pre class="code" data-label="shell"><code class="c">sar -u 1 5          # CPU
+<hr />
+<h3>一、三重身份</h3>
+<p><strong>身份 1：实时采样器</strong>（和 vmstat/mpstat 同类，但一个命令覆盖所有子系统）：</p>
+<pre class="code" data-label="shell"><code class="c">sar -u 1 5          # CPU（1 秒间隔，采 5 次）
 sar -n DEV 1 5      # 网络接口
 sar -q 1 5          # 运行队列与 load
 sar -r 1 5          # 内存
 sar -B 1 5          # 分页统计
+sar -d 1 5          # 块设备
+sar -W 1 5          # swap 换入换出
 </code></pre>
-<p><strong>HFT：</strong> 热路径机器 <strong>sadc 间隔别太短</strong>（如 ≥10s）；危机时用实时 <code class="c">sar</code>，复盘用归档。</p>
-<p>→ 字段详解：<a href="appendix-B.html#app-B">附录 B sar 总结</a></p>
+<p><strong>身份 2：历史回放器</strong>——这是 vmstat/mpstat 做不到的：</p>
+<pre class="code" data-label="shell"><code class="c">sar -u -f /var/log/sysstat/sa28      # 看 28 号那天的 CPU
+sar -q -s 09:30:00 -e 10:30:00       # 只看某个时间窗
+sar -n DEV -f /var/log/sysstat/sa28  # 回放当天的网络
+</code></pre>
+<p><strong>身份 3：sadc 归档系统的前端</strong>。架构上真正在持续干活的是 <code class="c">sadc</code>（System Activity Data Collector）：</p>
+<pre class="code" data-label="code"><code class="c">sysstat 的 cron/systemd-timer
+   │  (默认每 10 分钟)
+   ▼
+sadc ——读——&gt; /proc, /sys ——写——&gt; /var/log/sysstat/saDD
+   │                                    (按天一个文件，自动轮转)
+   ▼
+sar -f &lt;file&gt;  &lt;──  人类可读回放  &lt;──  sadf -d &lt;file&gt;（CSV 导出）
+</code></pre>
+<p>日常说的「sar 历史数据」其实是 sadc 采的；sar 只是读取器。<code class="c">sadf -d</code> 能导 CSV 喂给其它分析工具，<code class="c">sadf -j</code> 导 JSON。</p>
+<hr />
+<h3>二、为什么有了 BPF，sar 反而更重要</h3>
+<p>一个反直觉的判断：<strong>现代观测工具越强，历史基线越值钱</strong>。原因在对比表里：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>BPF 工具（runqlat/biolatency…）</th>
+<th>sar/sadc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时间维度</td>
+<td>现在（attach 即开始累积）</td>
+<td><strong>过去（从归档任意回放）</strong></td>
+</tr>
+<tr>
+<td>分辨率</td>
+<td>事件级、纳秒级时间戳</td>
+<td>采样级，默认 10 分钟</td>
+</tr>
+<tr>
+<td>部署前提</td>
+<td>内核版本/BTF 配合</td>
+<td>只读 /proc，几乎零依赖</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>可编程（可控可不小）</td>
+<td>固定极低（读几个 /proc 文件）</td>
+</tr>
+<tr>
+<td>回答的问题</td>
+<td>「现在延迟长在哪」</td>
+<td><strong>「这事上周有没有发生过？什么时候开始的？」</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>性能调查最常见的问题形态其实是第二种：「P99 是从什么时候开始劣化的？那天改了什么？」——BPF 工具对此无能为力（事件已经过去了），sar 归档是唯一的答案来源。这就是 Gregg 在 2011 年（BPF 出现之前）就在推 sar、今天仍然推 sar 的原因：<strong>工具的价值不在分辨率，在于你出事时它已经在场</strong>。</p>
+<hr />
+<h3>三、输出精读：sar -u 与 sar -q</h3>
+<p><strong>sar -u 1（CPU）：</strong></p>
+<pre class="code" data-label="text"><code class="c">Linux 6.6.0 (hft-bare)  08/31/2026  _x86_64_    (24 CPU)
+
+14:22:01     CPU     %user     %nice   %system   %iowait    %steal     %idle
+14:22:02     all      3.10      0.00      1.85      0.42      0.00     94.63
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>精读</th>
+<th>红线</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>%user</td>
+<td>应用代码（含自旋锁自旋计入 system 之外的路径）</td>
+<td>HFT 热路径核不应看全局，用 <code class="c">sar -P 3,4</code> 看指定核</td>
+</tr>
+<tr>
+<td>%system</td>
+<td>内核态（syscall、softirq）</td>
+<td>异常抬升先想 softirq / syscall 风暴</td>
+</tr>
+<tr>
+<td>%iowait</td>
+<td><strong>空闲且有待完成磁盘 I/O 的 CPU 时间占比</strong></td>
+<td>注意稀释机制：分母是空闲时间（见 <a href="chapter-09.html#s-9-1">9.1 核心概念</a>）</td>
+</tr>
+<tr>
+<td>%steal</td>
+<td>虚拟化被宿主偷走的时间</td>
+<td>物理机恒为 0；云上 &gt;2% 就要找云厂商</td>
+</tr>
+<tr>
+<td>%idle</td>
+<td>空闲</td>
+<td><strong>高 idle ≠ 无问题</strong>——热路径核被空出来才是隔离的目标</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>sar -q 1（队列与 load）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>精读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>runq-sz</td>
+<td>运行队列长度——<strong>&gt;0 即有排队</strong>，HFT 热核上应恒为 0~1</td>
+</tr>
+<tr>
+<td>plist-sz</td>
+<td>进程/线程总数——持续上涨 = 泄漏信号</td>
+</tr>
+<tr>
+<td>ldavg-1/5/15</td>
+<td>1/5/15 分钟负载——<strong>分钟级指数平滑，对秒级事件天然失明</strong></td>
+</tr>
+<tr>
+<td>blocked</td>
+<td>等待 I/O 的不可中断任务数——配合 %iowait 看</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">-P ALL</code>（或 <code class="c">-P 0,3,4</code>）分核视图是 sar 相对 top 的优势：归档也是分核落盘的，可以回放「上周三下午 3 核和 4 核的 load 是多少」。</p>
+<hr />
+<h3>四、采样间隔：开销、分辨率、用途三角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>间隔</th>
+<th>开销</th>
+<th>能看到</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1s（<code class="c">sa1 1</code>）</td>
+<td>仍很低，但归档变大</td>
+<td>秒级趋势</td>
+<td>上线后第一周摸底</td>
+</tr>
+<tr>
+<td><strong>10s（默认）</strong></td>
+<td>可忽略</td>
+<td>分钟级趋势</td>
+<td>常规基线，够用</td>
+</tr>
+<tr>
+<td>10min（老默认）</td>
+<td>零</td>
+<td>小时级趋势</td>
+<td>只够容量规划</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键认知：<strong>sar 的分辨率天花板是采样间隔，与工具无关</strong>。10s 采样下，一次持续 2s 的 CPU 尖刺要么完全错过、要么被稀释成一个不痛不痒的半高样本。这不是 bug 而是设计——sar 的使命是趋势与基线，微秒级尖刺是 BPF 工具（runqlat、drsnoop）的辖区。<strong>两个分辨率层次解决两类问题，缺一不可</strong>：</p>
+<pre class="code" data-label="code"><code class="c">「上周开始 P99 变差」 ──&gt; sar 归档定位到天/小时
+        │
+        ▼（下钻）
+「变差的那个小时里延迟堆在哪」 ──&gt; BPF 工具现场复现
+</code></pre>
+<p><strong>HFT 建议：</strong> 热路径机器 sadc 间隔设 ≥10s（低开销换长期基线），微秒级诊断不指望 sar 而指望常驻的超时计数器与 BPF。危机处置时用实时 <code class="c">sar</code>（1s 间隔）看当下，复盘用归档。</p>
+<hr />
+<h3>五、常见坑</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sadc 根本没在跑</td>
+<td><code class="c">sar</code> 报 <code class="c">no such file</code>，归档目录空</td>
+<td>启用 <code class="c">sysstat</code> 服务 / systemd-timer；容器环境尤其要主动配</td>
+</tr>
+<tr>
+<td>归档被 logrotate 清掉</td>
+<td>想看两周前，文件已删</td>
+<td>调 <code class="c">HISTORY</code> 参数；重要节点归档外发</td>
+</tr>
+<tr>
+<td>云镜像默认不装 sysstat</td>
+<td>新机器全是盲区</td>
+<td>烘进基础镜像——这正是 <a href="#s-4-1">4.1 危机工具</a> 的预装清单</td>
+</tr>
+<tr>
+<td>用 load average 判断 HFT 状况</td>
+<td>ldavg 全绿但 P99 已爆</td>
+<td>load 是分钟级平滑均值，热核排队要看 runq-sz 实时值</td>
+</tr>
+<tr>
+<td><code class="c">%iowait 高 = 磁盘慢</code></td>
+<td>误判</td>
+<td>%iowait 是「空闲+有未完成 I/O」占比，被空闲稀释（见 ch9）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>「上周同一时段对比」是容量规划的原始输入</strong>：报单速率翻倍前后的 sar 曲线对比，直接给出 λ 变化对排队的影响——与 <a href="chapter-02.html#s-2-6-1">2.6 排队论</a>的拐点估算闭环。</li>
+<li><strong>steal 列是云上 HFT 的免费体检</strong>：共置机器若非裸机，%steal 直接量化「邻居税」（见 <a href="chapter-11.html#s-11-2">11.2 硬件虚拟化</a>）。</li>
+<li><strong>嵌入式：</strong> sysstat 体积小、只读 /proc，适合进嵌入式镜像做长期基线；交叉板卡上常是唯一可用的「历史」来源。</li>
+</ul>
+<p>→ 字段详解与 USE 方法映射：<a href="appendix-B.html#app-B">附录 B sar 总结</a></p>
+<hr />
+<h3>衔接</h3>
+<ul>
+<li>上一节 <a href="#s-4-3">4.3 核心数据源</a>：sar 读的 /proc 就是那里讲的「书」。</li>
+<li>下一节 <a href="#s-4-5">4.5 四大追踪器</a>：sar 管不了的事件级追踪。</li>
+<li><a href="chapter-01.html#ch-1">Ch 1 60 秒清单</a>里 sar 的位置；<a href="chapter-07.html#ch-7">Ch 7 内存</a>、<a href="chapter-09.html#ch-9">Ch 9 磁盘</a> 各章的「60 秒检查」都假设 sar 已归档。</li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
 <li>sar 只看历史不告警——sar 记录历史但不主动告警，需要配合 Prometheus/Grafana 做实时告警</li>
-<li>sar 默认粒度太粗——10 分钟平均看不到 HFT 微秒级尖刺，需要 sar -I 1 或更高频</li>
+<li>sar 默认粒度太粗——10 分钟平均看不到 HFT 微秒级尖刺，秒级趋势要 10s 采样，微秒级要换 BPF</li>
 <li>不存 sar 历史数据——出事才想看昨天的趋势，但 sadc 没配或被清理了</li>
+<li>load average 当实时指标——1 分钟 load 也是分钟级指数平滑，秒级排队要看 runq-sz</li>
+<li>云镜像不装 sysstat——新机器零历史基线，要烘进基础镜像</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -875,21 +1320,35 @@ sar -B 1 5          # 分页统计
 </ol>
 <details>
 <summary>答</summary>
-<p>历史性能数据回溯——记录 CPU/内存/IO/网络等指标，事后分析趋势</p>
+<p>历史性能数据回溯——记录 CPU/内存/IO/网络等指标，事后分析趋势；实时模式只是副业，核心价值是 sadc 归档带来的「时间机器」能力</p>
 </details>
 <ol start="2">
 <li>sar 对 HFT 的局限性是什么？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>默认 10 分钟粒度太粗，看不到微秒级尖刺；且只记录不告警</p>
+<p>采样级分辨率（默认 10 分钟、可调 10s），看不到微秒级尖刺；且只记录不告警——分辨率天花板由采样间隔决定，微秒级诊断属于 BPF 工具辖区</p>
 </details>
 <ol start="3">
 <li>如何让 sar 数据对 HFT 有用？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>调高采样频率（sar -I 1）+ 长期存储 + 配合实时监控（Prometheus）</p>
+<p>采样间隔 10s 建长期基线 + sadf 导出做容量规划对比 + 配合实时监控（Prometheus）告警 + 热核用 -P 指定核回放</p>
+</details>
+<ol start="4">
+<li>sadc 和 sar 的关系是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>sadc 是真正干活的采集器（由 sysstat 的 cron/timer 定期调用，写 /var/log/sysstat/saDD）；sar 是前端——实时模式自己采，历史模式 -f 读 sadc 的归档</p>
+</details>
+<ol start="5">
+<li>为什么说 BPF 越强 sar 越重要？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>BPF 工具全是「现在时」——事件过去就没数据；性能调查最常见的「劣化从什么时候开始」只能靠历史归档回答。两者是趋势定位（sar）与现场下钻（BPF）的互补关系</p>
 </details>
 </details>
 <hr />
@@ -897,13 +1356,102 @@ sar -B 1 5          # 分页统计
       </section>
       <section class="section" id="s-4-5">
         <div class="sec-head"><div class="sec-no">4.5</div><h2>section-4.5-四大追踪器</h2></div>
-<p>Gregg 归纳的现代 Linux <strong>高级追踪</strong> 分工：</p>
+<blockquote>
+<p>本章导读 · <a href="#s-4-1">4.1 危机工具</a> · <a href="#s-4-4">4.4 sar 工具</a> · <a href="#s-4-6">4.6 观测的观测</a></p>
+</blockquote>
+<hr />
+<h3>本节讲什么</h3>
+<p>把「追踪」（tracing）从「统计」（counting）里分离出来讲：<strong>统计告诉你发生了多少，追踪告诉你每一次是怎么发生的</strong>。本节梳理现代 Linux 四大追踪器的分工谱系、它们与数据源的关系、开销量级对比，以及 HFT 语境下的选型决策树。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话展开</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>统计 vs 追踪是两个世界</td>
+<td>iostat 给速率，biosnoop 给每一个 I/O 的完整故事</td>
+</tr>
+<tr>
+<td>2</td>
+<td>四大追踪器各有辖区</td>
+<td>perf 剖析、Ftrace 内核内建、BCC 生产工具集、bpftrace 即兴查询</td>
+</tr>
+<tr>
+<td>3</td>
+<td>数据源是共同的，前端正交</td>
+<td>perf/Ftrace/eBPF 都消费 tracepoint/kprobe/uprobe/USDT</td>
+</tr>
+<tr>
+<td>4</td>
+<td>开销从「可忽略」到「毁灭性」排开</td>
+<td>Ftrace 函数级 &gt; BPF 聚合 &gt; perf 采样 &gt;（更差的）strace</td>
+</tr>
+<tr>
+<td>5</td>
+<td>strace 不在四大之列但是必修反面教材</td>
+<td>ptrace 双陷阱让热路径慢 10-100×</td>
+</tr>
+<tr>
+<td>6</td>
+<td>生产环境的选择顺序</td>
+<td>有预制工具用预制 → bpftrace 单行 → 才轮到自写 BCC</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、先分清：统计与追踪</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>统计（counting）</th>
+<th>追踪（tracing）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>例子</td>
+<td><code class="c">iostat -x</code>、<code class="c">vmstat</code>、<code class="c">mpstat</code></td>
+<td><code class="c">biosnoop</code>、<code class="c">perf trace</code>、<code class="c">bpftrace</code></td>
+</tr>
+<tr>
+<td>输出</td>
+<td>聚合值（速率、占比、均值）</td>
+<td>事件流（每次调用的参数/时长/时序）</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>极低（读 counter）</td>
+<td>与事件数成正比</td>
+</tr>
+<tr>
+<td>回答</td>
+<td>「每秒多少次」「平均多长」</td>
+<td><strong>「最长的那一次是谁、卡在哪一步」</strong></td>
+</tr>
+<tr>
+<td>HFT 视角</td>
+<td>常驻可用</td>
+<td>按需开窗，事件级诊断</td>
+</tr>
+</tbody>
+</table></div>
+<p>一条铁律：<strong>均值正常 + P99 异常的问题，只能靠追踪查</strong>。统计把事件聚合掉的瞬间，尾部信息就消失了（见 <a href="chapter-02.html#s-2-5">2.5 方法论</a> 的 histogram 论述）。</p>
+<hr />
+<h3>二、四大追踪器分工</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具</th>
 <th>定位</th>
 <th>擅长</th>
+<th>详见</th>
 </tr>
 </thead>
 <tbody>
@@ -911,25 +1459,29 @@ sar -B 1 5          # 分页统计
 <td><strong>perf</strong></td>
 <td>官方剖析器</td>
 <td>CPU 采样、PMC、部分 trace、火焰图</td>
+<td><a href="chapter-13.html#ch-13">Ch 13</a></td>
 </tr>
 <tr>
 <td><strong>Ftrace</strong></td>
 <td>内核内置</td>
 <td>内核函数路径、调度、irq、latency histogram</td>
+<td><a href="chapter-14.html#ch-14">Ch 14</a></td>
 </tr>
 <tr>
 <td><strong>BCC</strong></td>
 <td>eBPF + Python/Lua 前端</td>
 <td>复杂脚本、生产级工具集（biolatency…）</td>
+<td><a href="chapter-15.html#ch-15">Ch 15</a></td>
 </tr>
 <tr>
 <td><strong>bpftrace</strong></td>
 <td>eBPF 单行 DSL</td>
 <td>ad hoc 查询、一行命令、教程友好</td>
+<td><a href="chapter-15.html#ch-15">Ch 15</a></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>关系：</strong></p>
+<p><strong>关系：数据源共享，前端正交</strong></p>
 <pre class="code" data-label="code"><code class="c">        ┌─────────── 数据源 ───────────┐
         │ /proc  PMC  tracepoint     │
         │ kprobe  uprobe  USDT       │
@@ -943,19 +1495,137 @@ sar -B 1 5          # 分页统计
      │                │         ▼             ▼
      └────────────────┴────  BCC        bpftrace
 </code></pre>
-<p><strong>HFT 实践路径：</strong></p>
+<p>关键点：<strong>四大追踪器不是四种数据源，而是同一个数据源集合的四种消费方式</strong>。选哪个工具，本质是选「消费方式」——要采样选 perf、要内核内建配置选 Ftrace、要可编程聚合选 eBPF 系。数据源本身的属性（tracepoint 稳定 vs kprobe 不稳）在 <a href="#s-4-3">4.3 核心数据源</a> 已讲，与前端无关。</p>
+<hr />
+<h3>三、开销量级：决定生产可用性的排序</h3>
+<p>追踪器之间的核心差异之一是<strong>每个事件的成本</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>追踪方式</th>
+<th>每事件开销量级</th>
+<th>机制</th>
+<th>生产可用性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>perf 采样（-F 99）</td>
+<td>与事件数无关（固定采样率）</td>
+<td>PMI/定时器采样</td>
+<td>常年可开</td>
+</tr>
+<tr>
+<td><strong>BPF 内核态聚合</strong></td>
+<td>~1µs 级，且<strong>不向用户态逐事件发数据</strong></td>
+<td>map 聚合，读直方图</td>
+<td>高（前提是 filter 收窄）</td>
+</tr>
+<tr>
+<td>Ftrace function 跟踪</td>
+<td>数百 ns~µs/次，<strong>逐事件写 ring buffer</strong></td>
+<td>内核内建</td>
+<td>短窗口</td>
+</tr>
+<tr>
+<td>perf trace / bpftrace 逐事件打印</td>
+<td>事件越多越贵，<strong>用户态格式化是瓶颈</strong></td>
+<td>事件→用户态</td>
+<td>限时窗口</td>
+</tr>
+<tr>
+<td>strace（ptrace）</td>
+<td><strong>每 syscall 两次进程陷入，最重</strong></td>
+<td>ptrace 停-继续模型</td>
+<td><strong>生产禁用</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>BPF 的「内核聚合」是本表的关键分水岭：bpftrace 的 <code class="c">@usecs = hist(nsecs)</code> 在内核里把一百万次事件聚成一个直方图再交给用户态——<strong>高频事件不打爆用户态</strong>正是它能进生产的原因（详见 <a href="chapter-15.html#ch-15">15.2 bpftrace</a>）。</p>
+<p><strong>strace 为什么是反面教材</strong>：ptrace 模型下每个 syscall 前后都要把被追踪进程停下来、唤醒 tracer、再放行——两次上下文切换外加两次 ptrace 系统调用本身。热路径上等于每次 syscall 乘一个常数因子，吞吐型负载可观测到 10-100× 减速。等价的正确姿势：</p>
+<pre class="code" data-label="shell"><code class="c"># 错：strace -p &lt;PID&gt;
+# 对（低开销替代，仍有开销但低一个量级以上）：
+perf trace -p &lt;PID&gt;          # 单点旁路，不 ptrace 停进程
+bpftrace -e 'tracepoint:raw_syscalls:sys_enter @[comm] = count();'
+</code></pre>
+<hr />
+<h3>四、选型决策树</h3>
+<pre class="code" data-label="code"><code class="c">要回答什么问题？
+│
+├─ CPU 时间花在哪（剖析）
+│    └─&gt; perf record -F 99 -g → 火焰图          [Ch 13]
+│
+├─ 某个内核路径内部发生了什么（时序/路径）
+│    └─&gt; Ftrace（function_graph / 事件 trace）   [Ch 14]
+│
+├─ 事件级统计（延迟直方图 / 按进程聚合）
+│    ├─&gt; 有现成 BCC 工具？── 是 ──&gt; biolatency/runqlat/tcpretrans
+│    └─&gt; 没有 ──&gt; bpftrace 单行（先试）
+│                  └─ 复杂逻辑/需要发布 ──&gt; 自写 BCC / libbpf
+│
+└─ 只想看某进程干了哪些 syscall（盘点/审计）
+     └─&gt; bpftrace sys_enter 计数 或 syscount（绝不 strace）
+</code></pre>
+<p><strong>HFT 实践路径</strong>（按上手顺序）：</p>
 <ol>
-<li><strong>perf</strong> — 火焰图、cache miss（Ch 13）</li>
-<li><strong>bpftrace</strong> — syscall 计数、run queue 延迟、网络栈 tracepoint（Ch 15 + 附录 C）</li>
-<li><strong>Ftrace</strong> — 内核延迟 odd case（Ch 14）</li>
-<li><strong>BCC</strong> — 现成工具不够时再写 Python BPF</li>
+<li><strong>perf</strong> — 火焰图、cache miss（<a href="chapter-13.html#ch-13">Ch 13</a>）</li>
+<li><strong>bpftrace</strong> — syscall 计数、run queue 延迟、网络栈 tracepoint（<a href="chapter-15.html#ch-15">Ch 15</a> + <a href="appendix-C.html#app-C">附录 C</a>）</li>
+<li><strong>Ftrace</strong> — 内核延迟 odd case（<a href="chapter-14.html#ch-14">Ch 14</a>）</li>
+<li><strong>BCC</strong> — 现成工具不够时再写 Python BPF（<a href="chapter-15.html#ch-15">15.1</a>）</li>
 </ol>
+<p>即：<strong>先采样后追踪、先预制后自写、先聚合后逐事件</strong>。每一步都比下一步便宜，能用便宜的回答就不动用贵的。</p>
+<hr />
+<h3>五、strace 的合法用途</h3>
+<p>翻案一下：strace 并非一无是处，它的 ptrace 模型换来的能力是<strong>进程级隔离视角</strong>（只追一个进程、能看到完整 syscall 参数解码）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调试启动失败（配置文件找不着、权限拒绝）</td>
+<td>✅ 合法——进程还没进热路径，开销无所谓</td>
+</tr>
+<tr>
+<td>一次性短命令的行为审计</td>
+<td>✅ 合适</td>
+</tr>
+<tr>
+<td>生产热路径进程</td>
+<td>❌ 绝对禁止</td>
+</tr>
+<tr>
+<td>「这个程序打开了哪些文件」</td>
+<td>更好的答案：<code class="c">bpftrace opensnoop.bt</code> 或 <code class="c">perf trace -e open*</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>经验法则：<strong>strace 只碰「还没开工」或「即将退出」的进程，永远不碰正在跑热路径的进程</strong>。更进一步——syscall 资产盘点的正确姿势是 <a href="chapter-05.html#s-5-5">5.5 观测工具</a> 里讲的 syscount / <code class="c">bpftrace sys_enter</code> 计数法。</p>
+<hr />
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>热路径机器的追踪纪律</strong>：追踪器全部有开销（<a href="#s-4-6">4.6 观测的观测</a>）；HFT 的规矩是「常驻只用统计（sar + 超时计数器），追踪开窗需授权且限时长」。</li>
+<li><strong>四大追踪器在 tick 路径排查中的分工</strong>：perf 剖析答「CPU 花哪」、bpftrace 答「事件延迟分布」、Ftrace 答「内核内这条路怎么走的」、BCC 工具集答「标准问题用标准答案」——四者互查可以交叉验证，正合 4.6 的「多来源对照」原则。</li>
+<li><strong>嵌入式</strong>：perf 与 Ftrace 随内核提供（开 CONFIG 即可），BCC 交叉编译困难（见 <a href="#s-4-1">4.1</a>），嵌入式板卡上实际可用的是 perf（简化版）+ Ftrace + libbpf 预编译。</li>
+</ul>
+<hr />
+<h3>衔接</h3>
+<ul>
+<li>上一节 <a href="#s-4-4">4.4 sar</a>：统计侧的王者；本节是事件侧。</li>
+<li>深入各工具：<a href="chapter-13.html#ch-13">Ch 13 perf</a> · <a href="chapter-14.html#ch-14">Ch 14 Ftrace</a> · <a href="chapter-15.html#ch-15">Ch 15 BPF</a>（ch13-15 三章正是对四大追踪器的逐一深挖）。</li>
+<li>strace 机制细节与 syscount 用法：<a href="chapter-05.html#s-5-5">5.5 应用观测工具</a>。</li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
 <li>strace 生产直接跑——strace 开销巨大（每个 syscall 两次 ptrace），生产禁用或限时</li>
 <li>perf trace 当 strace 用——perf trace 开销比 strace 低但仍有开销，生产限时长</li>
 <li>ftrace 和 BPF 不分场景——ftrace 适合内核内建追踪，BPF 适合可编程聚合</li>
+<li>逐事件打印上高频路径——bpftrace 逐事件 print 在百万级事件/秒的路径上本身成为瓶颈；用 map 聚合（hist/count）</li>
+<li>「追踪比统计高级」的错觉——两者回答不同问题；P99 异常但均值正常时才轮到追踪，日常容量问题统计就够</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -964,21 +1634,42 @@ sar -B 1 5          # 分页统计
 </ol>
 <details>
 <summary>答</summary>
-<p>strace（syscall）、perf trace（低开销 strace）、ftrace（内核追踪）、BPF（可编程追踪）</p>
+<p>perf（官方剖析器：采样/PMC/火焰图）、Ftrace（内核内建：函数路径/调度/irq）、BCC（eBPF+Python 前端：生产级工具集）、bpftrace（eBPF 单行 DSL：即兴查询）——strace/perf trace 是入门级追踪但不在「四大」之列</p>
 </details>
 <ol start="2">
 <li>为什么 strace 不能在生产环境用？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>每个 syscall 两次 ptrace 陷入，开销巨大——HFT 热路径会变成原来的 10-100 倍慢</p>
+<p>每个 syscall 两次 ptrace 陷入（进程停-继续-再放行），热路径会变成原来的 10-100 倍慢；合法用途只剩调试启动失败/一次性短命令审计</p>
 </details>
 <ol start="3">
 <li>ftrace 和 BPF 各自适合什么场景？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>ftrace 适合内核内建 tracepoint/函数追踪，BPF 适合可编程聚合（直方图/过滤/计算）</p>
+<p>ftrace 适合内核内建 tracepoint/函数追踪（要路径时序），BPF 适合可编程聚合（直方图/过滤/计算）；两者共享数据源，选的是消费方式</p>
+</details>
+<ol start="4">
+<li>四大追踪器为什么说是「同一数据源的四种消费方式」？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>perf/Ftrace/eBPF 都消费 tracepoint/kprobe/uprobe/USDT/PMC——数据源属性（如 tracepoint 稳定、kprobe 不稳）在前端之间通用，选工具选的是采样、路径记录还是可编程聚合</p>
+</details>
+<ol start="5">
+<li>BPF 内核态聚合为什么能进生产？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>事件在内核里聚合成直方图/计数，不向用户态逐事件发数据——百万事件/秒的路径上开销仍是 µs 级/事件，用户态零压力；这是与逐事件追踪（perf trace/打印型）的本质分水岭</p>
+</details>
+<ol start="6">
+<li>HFT 的追踪使用纪律是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>常驻只用统计（sar + 超时计数器）；追踪按「先采样后追踪、先预制后自写、先聚合后逐事件」的顺序选；热路径机器上开窗需授权且限时长</p>
 </details>
 </details>
 <hr />
@@ -986,47 +1677,266 @@ sar -B 1 5          # 分页统计
       </section>
       <section class="section" id="s-4-6">
         <div class="sec-head"><div class="sec-no">4.6</div><h2>section-4.6-观测的观测Observing-Observability</h2></div>
-<p>Gregg 提醒：<strong>对观测结果保持怀疑</strong>。</p>
+<blockquote>
+<p>本章导读 · <a href="#s-4-1">4.1 危机工具</a> · <a href="#s-4-4">4.4 sar 工具</a> · <a href="#s-4-5">4.5 四大追踪器</a></p>
+</blockquote>
+<hr />
+<h3>本节讲什么</h3>
+<p>性能工程里最容易被跳过的一课：<strong>观测系统本身也是被观测系统的一部分</strong>。工具会写错、内核 counter 会不准、测量行为会改变被测对象。本节把「对观测结果保持怀疑」落成可操作的规程——四类风险、量化自身开销的实验方法、盲区清单，以及 HFT 共置机上「debug 用全量 trace 可能改变 P99」这个最尖锐的案例。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话展开</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>观测有四类失败来源</td>
+<td>工具实现 bug、内核指标 bug、文档错误、观测者效应</td>
+</tr>
+<tr>
+<td>2</td>
+<td>观测者效应可量化</td>
+<td>追踪开/关各测一遍，差值就是工具开销</td>
+</tr>
+<tr>
+<td>3</td>
+<td>每类工具都有结构性盲区</td>
+<td>采样漏短事件、counter 无时序、/proc 是快照</td>
+</tr>
+<tr>
+<td>4</td>
+<td>交叉验证是唯一通用解药</td>
+<td>同一现象至少两个独立数据源对答案</td>
+</tr>
+<tr>
+<td>5</td>
+<td>观测条件要随数据一起存</td>
+<td>内核/工具版本、采样率——否则无法复现</td>
+</tr>
+<tr>
+<td>6</td>
+<td>HFT 的极端形态</td>
+<td>为 debug 开的全量 trace 本身就能改变 P99</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、四类风险与实例</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>风险</th>
 <th>说明</th>
+<th>真实案例形态</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>工具实现错误</strong></td>
-<td>解析 /proc 字段 bug、单位搞错</td>
+<td>解析 /proc 字段 bug、单位换算错</td>
+<td>某版本工具把 KB 当 KiB 算，内存显示差 2.4%；读 /proc/stat 没处理 counter 回绕，算出负速率</td>
 </tr>
 <tr>
 <td><strong>内核指标 bug</strong></td>
-<td>某版本 counter 不准（需对照多个来源）</td>
+<td>某内核版本 counter 本身不准</td>
+<td>iowait 在某些配置下语义漂移；NIC 驱动统计 rx_drops 恒 0（驱动没实现该回调）</td>
 </tr>
 <tr>
-<td><strong>手册错误</strong></td>
-<td>官方文档与行为不一致</td>
+<td><strong>手册/文档错误</strong></td>
+<td>man page 与实际行为不一致</td>
+<td>man 说单位是毫秒，代码里是微秒（或反之）；文档描述的是老版本行为</td>
 </tr>
 <tr>
 <td><strong>观测者效应</strong></td>
 <td>追踪本身占 CPU、改 cache 行为、拖慢被测系统</td>
+<td>perf 采样让热核多了 PMI 中断；BPF 程序挤占热核指令 cache</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>应对：</strong></p>
+<p><strong>为什么「文档错误」也单列一列</strong>：初学者默认 man page 是权威，实际上性能工具的文档更新速度远落后于代码。Gregg 的忠告：<strong>当工具输出与理论预期矛盾时，先怀疑三层——自己的理解、工具的实现、内核的 counter——最后才怀疑硬件</strong>。</p>
+<hr />
+<h3>二、观测者效应：量化自身开销的实验</h3>
+<p>不要猜开销有多大，<strong>测</strong>。对照实验模板：</p>
+<pre class="code" data-label="shell"><code class="c"># ① 基线：不挂任何观测
+./benchmark --duration 60 --output baseline.json
+
+# ② 挂上你要用的观测（例：perf 采样 + bpftrace）
+perf record -F 99 -g -p &lt;PID&gt; -o perf.data &amp;
+bpftrace -e 'tracepoint:block:block_rq_issue { @[comm] = count(); }' &amp;
+./benchmark --duration 60 --output with_tools.json
+
+# ③ 对比 P50/P99/吞吐
+#    差值 = 观测开销（对被测指标的影响，不是工具的 CPU 占用）
+</code></pre>
+<p>三个容易被混淆的口径：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>口径</th>
+<th>含义</th>
+<th>谁关心</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>工具自身 CPU 占用</td>
+<td>perf/bpftrace 进程吃了几 % CPU</td>
+<td>运维（别把机器压垮）</td>
+</tr>
+<tr>
+<td><strong>对被测指标的影响</strong></td>
+<td>挂上工具后 benchmark 的 P99 变差多少</td>
+<td><strong>性能工程师（这才是观测者效应）</strong></td>
+</tr>
+<tr>
+<td>对系统整体的影响</td>
+<td>其它进程被挤慢多少</td>
+<td>共置场景</td>
+</tr>
+</tbody>
+</table></div>
+<p>最隐蔽的是第三种：perf 采样挂在热核旁边，自己 CPU 占用 2% 看似无害，但<strong>每次 PMI 中断都冲刷热路径的指令/数据 cache</strong>——被测进程 P99 的劣化远超 2%。这正是「工具的 CPU% 不能代表伤害」的原因。</p>
+<hr />
+<h3>三、每类工具的结构性盲区</h3>
+<p>盲区不是 bug，是<strong>原理决定的看不到</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具类</th>
+<th>盲区</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>采样型（perf record）</td>
+<td>两次采样之间发生的一切</td>
+<td>99Hz 采样 = 平均每 10ms 一个样本，<strong>短于几 ms 的尖刺只能靠运气撞见</strong></td>
+</tr>
+<tr>
+<td>counter 型（vmstat/iostat）</td>
+<td>事件的时序与分布</td>
+<td>「这秒 1000 次 cache miss」看不出是均匀还是一次 burst 全砸</td>
+</tr>
+<tr>
+<td>/proc 快照型（top/ps）</td>
+<td>两次刷新间的生死</td>
+<td>活了 3ms 就退出的进程，top 永远看不见</td>
+</tr>
+<tr>
+<td>逐事件追踪型</td>
+<td>事件太多时自身成为瓶颈</td>
+<td>ptrace/bpftrace print 模式限流后事件被丢弃</td>
+</tr>
+<tr>
+<td>直方图聚合型</td>
+<td>个体身份</td>
+<td>runqlat 直方图知道「有次延迟 50ms」，不知道是哪个任务、为什么</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>组合解法</strong>：先聚合型工具看分布形状（有没有尾巴），形状异常再上逐事件型（biosnoop/drsnoop）拿个体身份，最后 Ftrace/perf 拿因果链。这也是全书反复出现的「漏斗」结构（<a href="chapter-06.html#s-6-5">6.5 三级方法漏斗</a> 同构）。</p>
+<hr />
+<h3>四、交叉验证规程</h3>
+<p>「对观测结果保持怀疑」的操作化，是让<strong>两个独立数据源对答案</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要验证的量</th>
+<th>数据源 A</th>
+<th>数据源 B（独立实现）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 利用率</td>
+<td>mpstat（读 /proc/stat）</td>
+<td>pidstat 按进程加总 / sar -u</td>
+</tr>
+<tr>
+<td>磁盘 IOPS</td>
+<td>iostat（/proc/diskstats）</td>
+<td>biosnoop 计数（BPF 事件级）</td>
+</tr>
+<tr>
+<td>内存压力</td>
+<td>vmstat si/so</td>
+<td>PSI /proc/pressure/memory</td>
+</tr>
+<tr>
+<td>网络丢包</td>
+<td>ethtool -S（NIC 计数）</td>
+<td>ss 计数 + netstat -s（协议栈计数）</td>
+</tr>
+<tr>
+<td>syscall 次数</td>
+<td>strace -c（ptrace）</td>
+<td>bpftrace sys_enter count（eBPF）</td>
+</tr>
+</tbody>
+</table></div>
+<p>两源一致 → 采信；<strong>两源矛盾 → 有一个在说谎，这本身就是线索</strong>（典型：NIC 说没丢包、协议栈说有——问题在两者之间的 ring buffer，见 <a href="chapter-10.html#s-10-5">10.5 UDP 五段丢包定位</a>）。</p>
+<p><strong>观测条件的记录</strong>：每次留下性能数据的记录都要附环境指纹——<code class="c">uname -r</code>、工具版本（<code class="c">perf -v</code>、<code class="c">bpftrace --version</code>）、采样率、挂了哪些探针。三个月后复现「当时的测量」时，缺了这些等于没有数据。</p>
+<hr />
+<h3>五、HFT 尖锐案例：为 debug 开的全量 trace 改变了 P99</h3>
+<p>场景：tick-to-trade P99 偶发劣化，工程师决定「上 bpftrace 挂全量 tracepoint 抓现场」。结果劣化从「每分钟一次」变成「持续存在」——<strong>观测行为消灭了要观测的现象，同时制造了新现象</strong>。</p>
+<p>三层教训：</p>
 <ol>
-<li><strong>交叉验证</strong> — 同一现象用两种数据源（如 <code class="c">vmstat</code> vs <code class="c">/proc/stat</code> vs perf）</li>
-<li><strong>控制变量</strong> — 追踪开关前后对比，量化 overhead</li>
-<li><strong>限范围/限时长</strong> — 尤其生产 HFT</li>
-<li><strong>记录工具版本</strong> — perf/BPF 与内核必须匹配</li>
+<li><strong>热路径上的每个探针都有成本</strong>。即使 BPF 聚合开销只有 µs 级/事件，热核上每秒百万事件叠加起来的 cache 污染与额外分支不是零。</li>
+<li><strong>正确姿势是先旁路后现场</strong>：shadow/replay 环境先复现（<a href="chapter-12.html#s-12-2">12.2 replay</a>、<a href="chapter-16.html#ch-16">Ch 16 案例演练</a>），复现不了再上生产、且<strong>收窄探针范围</strong>（只挂嫌疑函数、filter 收到单个 PID）+ <strong>限时窗口</strong>（30s 自动 detach）。</li>
+<li><strong>测量结果要标注「这是挂了观测时测的」</strong>。挂 trace 时测到的 P99 和裸奔 P99 是两个不同的量，报告里混用就是自己骗自己。</li>
 </ol>
-<p><strong>HFT：</strong> 共置机上「为了 debug 开的全量 trace」本身可能改变 <strong>P99</strong> — 先在 shadow/replay 环境复现，再缩短生产窗口。</p>
+<p>这也是「常驻统计、按需追踪」纪律（<a href="#s-4-5">4.5</a>）的最终理由：<strong>统计工具的开销低到可以忽略，才配常驻；追踪工具的开销决定了它只能开窗</strong>。</p>
+<hr />
+<h3>HFT / 嵌入式关联</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>应用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>上线前验收</td>
+<td>对照实验量化每个常驻观测项的 P99 影响，超预算（如 &gt;100ns）的移到非热核跑</td>
+</tr>
+<tr>
+<td>剖析流程</td>
+<td>perf 挂上后的火焰图代表「有观测时的 CPU 分布」，结论外推到裸奔状态要留余量</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>板卡资源少，观测者效应更显著（cache 更小、CPU 更弱）；Ftrace ring buffer 大小要预算</td>
+</tr>
+<tr>
+<td>报告纪律</td>
+<td>性能报告必附观测条件指纹；「无观测基线」与「有观测测量」分列</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>衔接</h3>
+<ul>
+<li>上一节 <a href="#s-4-5">4.5 四大追踪器</a>：本节解释了为什么追踪要「先聚合后逐事件、常驻只用统计」。</li>
+<li><a href="chapter-05.html#s-5-5">5.5 观测工具</a> 的 strace 双陷阱是观测者效应的最典型标本。</li>
+<li><a href="#s-4-1">4.1 危机工具</a> 的「记录工具版本」checklist 项来源于此。</li>
+<li><a href="chapter-12.html#ch-12">Ch 12 基准测试</a> 的「有效性三支柱」中的可解释性，与本章「观测的观测」互为方法论支撑。</li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
 <li>观测工具不测开销——BPF/perf 本身消耗 CPU，可能改变系统行为，导致观测结果不准</li>
 <li>观测盲区不自知——以为看到了全部，实际 /proc 和采样都有盲区，短事件/极短进程可能漏</li>
 <li>不记录观测条件——内核版本/工具版本/采样率不记录，复现时条件不一致</li>
+<li>用工具自身 CPU% 代表伤害——perf 占 2% CPU 但 cache 冲刷让被测 P99 劣化更多；要对被测指标做开关对照</li>
+<li>两源矛盾时随机采信一个——矛盾本身是线索（如 NIC vs 协议栈丢包差异指向中间 ring buffer）</li>
+<li>挂着 trace 测的数当裸奔基线——「有观测的 P99」和「无观测的 P99」是两个量，报告必须分列</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -1035,21 +1945,42 @@ sar -B 1 5          # 分页统计
 </ol>
 <details>
 <summary>答</summary>
-<p>观测工具本身也消耗资源，需要测量工具自身开销——否则测到的数据被工具污染</p>
+<p>观测工具本身也消耗资源，需要测量工具自身开销——否则测到的数据被工具污染；更完整地说：对观测系统本身也应用怀疑与验证（工具 bug、内核 counter bug、文档错误、观测者效应四类风险）</p>
 </details>
 <ol start="2">
 <li>观测工具有哪些盲区？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>采样漏短事件、/proc 是快照非实时、top 采不到极短进程、计数器不记录事件序列</p>
+<p>采样漏短事件（99Hz 撞不见毫秒级尖刺）、counter 无时序（看不出 burst）、/proc 是快照（3ms 的进程 top 看不见）、逐事件追踪在事件洪峰时丢事件、直方图丢个体身份</p>
 </details>
 <ol start="3">
 <li>为什么观测结果需要记录环境条件？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>内核版本/工具版本/采样率不同结果不同——不记录则无法复现和对比</p>
+<p>内核版本/工具版本/采样率不同结果不同——不记录则无法复现和对比；性能数据必须附观测条件指纹</p>
+</details>
+<ol start="4">
+<li>如何量化一个观测工具对被测系统的影响？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>开关对照实验：基线跑一遍、挂上观测再跑一遍，对比被测指标的 P50/P99/吞吐，差值即观测者效应；注意区分「工具自身 CPU%」和「对被测指标的影响」两个口径</p>
+</details>
+<ol start="5">
+<li>两个数据源矛盾时该怎么办？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>不是随机采信一个——矛盾本身是线索，常常指向两个测量点之间的环节（如 NIC 计数与协议栈计数不一致 → 问题在中间的 ring buffer/backlog）</p>
+</details>
+<ol start="6">
+<li>HFT 生产机上抓 tick 路径偶发劣化的正确姿势？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>先 shadow/replay 复现；复现不了才上生产，探针收窄到嫌疑点（filter 到单 PID）、限时窗口自动 detach；挂 trace 期间的测量单独标注，不与裸奔基线混用</p>
 </details>
 </details>
 <hr />

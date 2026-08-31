@@ -717,76 +717,182 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
       </section>
       <section class="section" id="s-10-5">
         <div class="sec-head"><div class="sec-no">10.5</div><h2>section-10.5-分析方法论</h2></div>
-<h3 class="sub">USE 方法（Network Interface）</h3>
-<p>对 <strong>每个 NIC</strong>（及 bond/VLAN 逻辑口）：</p>
+<blockquote>
+<p>章节导航：<a href="#intro">本章导读</a> · 下一篇 <a href="#s-10-6">10.6 观测工具</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：网络接口的 USE 检查、TCP 健康的指标集（重传/乱序/backlog/TIME_WAIT）、UDP 与 TCP 两条路径的不同分析框架、抓包的定位（最后手段）。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>USE 只查吞吐是常见失误</td>
+<td><strong>重传/drop/backlog</strong> 才是延迟杀手</td>
+</tr>
+<tr>
+<td>2</td>
+<td>UDP 与 TCP 的分析框架<strong>完全不同</strong></td>
+<td>无连接 vs 有连接</td>
+</tr>
+<tr>
+<td>3</td>
+<td>重传 = 延迟暴增的<strong>确定性前兆</strong></td>
+<td>HFT 发单通道红线指标</td>
+</tr>
+<tr>
+<td>4</td>
+<td>softirq CPU 是<strong>收包路径的税</strong></td>
+<td>高 pps 时 ksoftirqd 抢核</td>
+</tr>
+<tr>
+<td>5</td>
+<td>抓包是<strong>最后手段</strong></td>
+<td>先 ss/nstat/BPF</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、USE 方法（Network Interface）</h3>
+<p>对<strong>每个 NIC</strong>（及 bond/VLAN 逻辑口）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>字母</th>
 <th>问什么</th>
 <th>信号</th>
+<th>工具</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>U</strong> Utilization</td>
 <td>吞吐 / 协商带宽</td>
+<td>rx/tx bytes、pps</td>
 <td><code class="c">sar -n DEV</code>、<code class="c">nicstat</code></td>
 </tr>
 <tr>
 <td><strong>S</strong> Saturation</td>
 <td>队列满、重传、overrun</td>
-<td><code class="c">ip -s link</code> drop、<code class="c">netstat -s</code> retrans、<code class="c">ss</code> 队列</td>
+<td>drop、retrans、backlog 溢出</td>
+<td><code class="c">ip -s link</code>、<code class="c">netstat -s</code>、<code class="c">ss -lnt</code></td>
 </tr>
 <tr>
 <td><strong>E</strong> Errors</td>
 <td>CRC、frame error、drop</td>
+<td>驱动级错误</td>
 <td><code class="c">ethtool -S</code>、<code class="c">ip -s link</code></td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="appendix-A.html#app-A">附录 A</a></p>
-<h3>工作负载与 TCP 分析</h3>
+<p><strong>注意「逻辑口」</strong>：bond 主备、VLAN 子接口、网桥端口各有独立统计——USE 要对每一层都过一遍（物理口正常不代表 bond 口正常）。</p>
+<p><strong>与磁盘的差异</strong>：磁盘的 U 看忙时比；网络的 U 看<strong>带宽占比 + pps 占比两个维度</strong>——小包场景带宽 5% 但 pps 已顶格（64B 小包线速 = 14.88Mpps，软中断先跪）。</p>
+<blockquote>
+<p>完整检查表：<a href="appendix-A.html#app-A">附录 A</a></p>
+</blockquote>
+<h3>二、TCP 路径分析（发单通道）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>指标</th>
 <th>意义</th>
+<th>哪里看</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>rx/tx bytes &amp; pps</strong></td>
-<td>负载量级</td>
-</tr>
-<tr>
-<td><strong>并发连接数</strong></td>
-<td><code class="c">ss -s</code></td>
+<td><strong>RTT</strong></td>
+<td>网络 RTT 实测</td>
+<td><code class="c">ss -ti</code> 的 rtt 字段</td>
 </tr>
 <tr>
 <td><strong>Retransmit rate</strong></td>
-<td>拥塞/丢包 — <strong><code class="c">tcpretrans</code></strong></td>
+<td>拥塞/丢包——<strong>延迟暴增前兆</strong></td>
+<td><code class="c">tcpretrans</code>（事件级）、netstat -s（计数级）</td>
+</tr>
+<tr>
+<td><strong>cwnd / ssthresh</strong></td>
+<td>拥塞窗口状态</td>
+<td><code class="c">ss -ti</code></td>
 </tr>
 <tr>
 <td><strong>Out-of-order</strong></td>
 <td>路径多径/重排</td>
+<td>netstat -s</td>
 </tr>
 <tr>
 <td><strong>Listen backlog 满</strong></td>
-<td>丢 SYN</td>
+<td>丢 SYN（accept 跟不上）</td>
+<td><code class="c">ss -lnt</code>（Recv-Q 接近 Send-Q 上限）</td>
+</tr>
+<tr>
+<td><strong>Send-Q 积压</strong></td>
+<td>发不出去（对端窗口/网络拥塞）</td>
+<td><code class="c">ss -tn</code> 的 Send-Q</td>
 </tr>
 <tr>
 <td><strong>TIME_WAIT 数量</strong></td>
 <td>短连接扩展性</td>
+<td><code class="c">ss -s</code> 汇总</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 红线：</strong></p>
-<ul>
-<li>行情路径：<strong>UDP 丢包率、pps、softirq CPU</strong></li>
-<li>发单路径：<strong>TCP RTT、重传、Send-Q 积压</strong></li>
-</ul>
-<h3>抓包（Packet Sniffing）</h3>
+<p><strong>重传为什么是红线</strong>：一次重传 = RTO 等待（最短 200ms 级）或 fast retrans（一个 RTT 延迟）——对 µs 级 SLA 的发单通道，<strong>一次重传就把这单的延迟打到 ms 级</strong>。重传率的监控要在事件级（tcpretrans 带栈）而非计数级。</p>
+<p><strong>Send-Q 积压的归因链</strong>：</p>
+<pre class="code" data-label="code"><code class="c">Send-Q 持续有积压
+  ├─ 对端 rcv 窗口小（对端处理慢/应用读得慢）→ ss -ti 看 peer 窗口
+  ├─ cwnd 被打小（丢包历史）→ ss -ti 看 cwnd + 重传计数
+  └─ 本地 qdisc 排队（发不出去）→ tc -s qdisc show
+</code></pre>
+<h3>三、UDP 路径分析（行情通道）</h3>
+<p>UDP 无连接——TCP 的窗口/重传分析全不适用，框架换成<strong>丢包定位</strong>：</p>
+<pre class="code" data-label="code"><code class="c">丢包可能在哪？
+  ① NIC RX ring 满（softirq 处理跟不上）   → ethtool -S 的 rx_missed/rx_no_buffer
+  ② netdev backlog 满（软中断队列溢出）     → /proc/net/softnet_stats 的 dropped 列
+  ③ socket 接收缓冲满（应用读得慢）         → ss -u -m 的接收队列 / netstat -s 的 RcvbufErrors
+  ④ 应用层丢（epoll 循环慢）               → 应用计数（收包序号空洞检测）
+  └ ⑤ 网络中丢（中间设备）                  → 发端计数 vs 收端计数对比
+</code></pre>
+<p><strong>行情数据的空洞检测</strong>：feed 序号连续性检查是最直接的应用层证据——序号跳变 = 中间丢包，结合 ①-④ 的内核计数定位丢在哪一段。</p>
+<p><strong>softirq CPU 的监控</strong>：高 pps 时 <code class="c">ksoftirqd/N</code> 占用是收包路径的直接成本——监控 <code class="c">/proc/softirqs</code> 的 NET_RX 增速与 <code class="c">mpstat</code> 的 %soft；热路径机器要给收包中断分配 dedicated 核（<a href="chapter-06.html#ch-6">ch6 中断亲和</a>）。</p>
+<h3>四、工作负载特征化</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>负载量级（bytes/pps）？</td>
+<td><code class="c">sar -n DEV 1</code></td>
+</tr>
+<tr>
+<td>并发连接数与状态分布？</td>
+<td><code class="c">ss -s</code></td>
+</tr>
+<tr>
+<td>哪个进程在收发？</td>
+<td><code class="c">tcptop</code>/<code class="c">iftop</code>（<a href="#s-10-6">10.6</a>）</td>
+</tr>
+<tr>
+<td>连接生命周期？</td>
+<td><code class="c">tcplife</code></td>
+</tr>
+<tr>
+<td>RTT 与重传？</td>
+<td><code class="c">ss -tiepm</code> + <code class="c">tcpretrans</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>五、抓包的定位</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -796,18 +902,51 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
 </thead>
 <tbody>
 <tr>
-<td>最全协议细节</td>
-<td><strong>CPU + 磁盘</strong> 开销巨大</td>
+<td>最全协议细节（字段级）</td>
+<td><strong>CPU + 磁盘</strong>开销巨大；敏感数据合规风险</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Gregg：</strong> 生产 <strong>最后手段</strong> — 优先 <code class="c">ss</code>、<code class="c">nstat</code>、BPF；抓包限时长、限 filter、mirror 口离线分析。</p>
+<p><strong>Gregg</strong>：生产<strong>最后手段</strong>——优先 <code class="c">ss</code>、<code class="c">nstat</code>、BPF（计数/事件已覆盖 90% 问题）；抓包只在协议层谜题（字段错、中间盒篡改）时短窗口使用：</p>
+<pre class="code" data-label="shell"><code class="c"># 必须带 filter + 限包数 + 限时长
+timeout 10 tcpdump -i eth0 -c 10000 -w /tmp/net.pcap 'udp port 5001 and host 10.1.2.3'
+# 更好：mirror 口/交换机端口镜像 → 离线机器分析
+</code></pre>
+<h3>六、HFT 双路径红线汇总</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>红线指标</th>
+<th>阈值思路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行情（UDP 组播）</td>
+<td>丢包率（①-⑤ 分段计数）、pps、softirq CPU</td>
+<td>丢包 = 数据不完整 → 补救流程；softirq 持续 &gt;50% 单核 → 加队列/分流</td>
+</tr>
+<tr>
+<td>发单（TCP）</td>
+<td>RTT、重传、Send-Q 积压</td>
+<td>任何重传 = 该单延迟 ms 级；Send-Q 非零持续 = 网络或对端问题</td>
+</tr>
+</tbody>
+</table></div>
+<h3>衔接</h3>
+<ul>
+<li>下一节：<a href="#s-10-6">10.6 观测工具</a>（ss -tiepm 精读）</li>
+<li>关联：<a href="chapter-02.html#ch-2">ch2 USE</a>、<a href="chapter-06.html#ch-6">ch6 softirq/中断亲和</a>、<a href="../../14-hft-engineering/html/chapter-06.html#intro">14-HFT ch06 低延迟网络协议</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03.5-unix-network-api/">12-UNP</a>（socket 层机制）</li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>USE 只查吞吐——Errors（CRC/frame/drop）和 Saturation（重传/backlog）才是 HFT 关键</li>
-<li>抓包当首选——抓包 CPU/磁盘开销巨大，Gregg 说生产最后手段，先 ss/nstat/BPF</li>
-<li>重传率不监控——TCP 重传 = 丢包/拥塞，HFT 发单通道重传 = 延迟暴增</li>
+<li><strong>USE 只查吞吐</strong>——Errors（CRC/frame/drop）和 Saturation（重传/backlog）才是 HFT 关键。</li>
+<li><strong>抓包当首选</strong>——CPU/磁盘开销巨大，先 ss/nstat/BPF。</li>
+<li><strong>重传率不监控</strong>——TCP 重传 = 丢包 = 延迟暴增；要事件级（tcpretrans）不是计数级。</li>
+<li><strong>UDP 丢包只查网络</strong>——①②③④ 四段本地丢包（NIC ring/backlog/socket buf/应用）比网络丢更常见。</li>
+<li><strong>小包场景只看带宽</strong>——pps 才是上限维度，softirq 先于带宽饱和。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -816,21 +955,35 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
 </ol>
 <details>
 <summary>答</summary>
-<p>Saturation（重传/backlog 满）和 Errors（CRC/drop）——吞吐够高但重传会导致延迟暴增</p>
+<p>Saturation（重传/backlog 满）和 Errors（CRC/drop）——吞吐够高但重传会导致延迟暴增。</p>
 </details>
 <ol start="2">
+<li>UDP 丢包的本地四段排查？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>①NIC RX ring 满（ethtool -S rx_missed）②netdev backlog 溢出（softnet_stats dropped）③socket 缓冲满（RcvbufErrors）④应用 epoll 读慢（序号空洞检测）——再加⑤网络段（两端计数对比）。</p>
+</details>
+<ol start="3">
+<li>为什么重传是发单通道的红线？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>一次重传至少一个 RTT 的额外延迟（fast retrans）或 200ms 级 RTO——µs 级 SLA 直接破防；事件级监控（tcpretrans 带栈）才能定位根因。</p>
+</details>
+<ol start="4">
+<li>Send-Q 积压的三个可能原因？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>对端接收窗口小（对端慢）、cwnd 被历史丢包打小、本地 qdisc 排队——ss -ti 看窗口/cwnd，tc -s qdisc 看本地队列。</p>
+</details>
+<ol start="5">
 <li>为什么抓包是最后手段？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>CPU + 磁盘开销巨大——先 ss/nstat/BPF，抓包限时长限 filter</p>
-</details>
-<ol start="3">
-<li>HFT 发单通道的关键指标？</li>
-</ol>
-<details>
-<summary>答</summary>
-<p>TCP RTT、重传率、Send-Q 积压——重传 = 丢包 = 延迟翻倍</p>
+<p>CPU + 磁盘开销巨大——先 ss/nstat/BPF（计数/事件级已覆盖 90%）；抓包限时长限 filter，或用 mirror 口离线分析。</p>
 </details>
 </details>
 <hr />
@@ -838,7 +991,49 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
       </section>
       <section class="section" id="s-10-6">
         <div class="sec-head"><div class="sec-no">10.6</div><h2>section-10.6-观测工具</h2></div>
-<h3 class="sub">传统统计</h3>
+<blockquote>
+<p>章节导航：<a href="#s-10-5">10.5 分析方法论</a> · 上一篇 ← · 下一篇 <a href="#s-10-7">10.7–10.8 实验与调优</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：网络观测的三层工具（套接字统计 / BPF 事件级 / 抓包）、<code class="c">ss -tiepm</code> 输出逐字段精读、ethtool 驱动级统计的解读。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">ss -tiepm</code> 是 TCP 诊断的<strong>瑞士军刀</strong></td>
+<td>一条命令看 RTT/cwnd/重传/内存</td>
+</tr>
+<tr>
+<td>2</td>
+<td>计数级 vs <strong>事件级</strong></td>
+<td>nstat 告诉你有多少，tcpretrans 告诉你<strong>谁和哪</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">ethtool -S</code> 比 ss <strong>更底层更早</strong></td>
+<td>NIC ring 丢包 ss 看不见</td>
+</tr>
+<tr>
+<td>4</td>
+<td>tcplife 是<strong>事后审计</strong>神器</td>
+<td>每连接完整生命周期</td>
+</tr>
+<tr>
+<td>5</td>
+<td>抓包只解<strong>协议谜题</strong></td>
+<td>字段级问题的最后仲裁</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、传统统计层</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -851,17 +1046,17 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
 <tr>
 <td><strong><code class="c">ss -tiepm</code></strong></td>
 <td>套接字 <strong>TCP 内部状态</strong></td>
-<td>RTT、cwnd、retrans、mem、BBR 信息</td>
+<td>RTT、cwnd、retrans、mem（见下方精读）</td>
 </tr>
 <tr>
 <td><strong><code class="c">ip -s link</code></strong></td>
 <td>接口吞吐、drop、overrun</td>
-<td><code class="c">RX/TX errors</code></td>
+<td>RX/TX errors、dropped</td>
 </tr>
 <tr>
 <td><strong><code class="c">nstat</code> / <code class="c">netstat -s</code></strong></td>
 <td>SNMP 协议栈计数</td>
-<td>retrans、failed connects</td>
+<td>retrans、failed connects、RcvbufErrors</td>
 </tr>
 <tr>
 <td><strong><code class="c">sar -n DEV</code></strong></td>
@@ -875,49 +1070,129 @@ TX: write() → TCP 分段 → qdisc → driver → NIC
 </tr>
 <tr>
 <td><strong><code class="c">ethtool -S</code></strong></td>
-<td><strong>驱动级</strong> 统计</td>
-<td>NIC drop、no buffer</td>
+<td><strong>驱动级</strong>统计</td>
+<td>NIC drop、no buffer、rx_missed</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">ss -tiepm | head -50          # 看 RTT、重传、mss
-ip -s link show eth0
-nstat -az | grep -i retrans
-ethtool -S eth0 | grep -i drop
+<p><strong>⭐ <code class="c">ss -tiepm</code> 输出逐字段精读</strong>：</p>
+<pre class="code" data-label="code"><code class="c">ESTAB  0  32768  10.1.2.3:gateway  10.4.5.6:5001  ...（-t 已显示的状态行）
+  cubic wscale:7,7 rto:204 rtt:0.023/0.005 ato:40 mss:1448 cwnd:10
+  bytes_acked:1.2M bytes_received:890.5K segs_out:1200 segs_in:980
+  send 45.2Mbps lastsnd:120 lastrcv:8 lastack:8 pacing_rate:90.4Mbps
+  retrans 0/12 rcv_rtt:1 rcv_space:65535 notsend:0
+  skmem:(r0,rb131072,t0,tb46080,f0,w0,o0,bl0,d0)
 </code></pre>
-<h3>BPF / BCC</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>HFT 判读</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rtt:0.023/0.005</code></td>
+<td>RTT 平滑值/偏差（µs 或 ms 视量级）</td>
+<td>共置应在 <strong>&lt;100µs</strong>；rtt 波动大 = 路径抖动</td>
+</tr>
+<tr>
+<td><code class="c">cwnd:10</code></td>
+<td>拥塞窗口（报文段数）</td>
+<td>被打小说明有丢包历史</td>
+</tr>
+<tr>
+<td><code class="c">rto:204</code></td>
+<td>重传超时（ms）</td>
+<td>一次 RTO 重传 = 这个量级的停顿</td>
+</tr>
+<tr>
+<td><code class="c">mss:1448</code></td>
+<td>最大段大小</td>
+<td>40B TCP 头 + 12B 选项</td>
+</tr>
+<tr>
+<td><code class="c">retrans 0/12</code></td>
+<td><strong>重传 0 / 总发 12 段</strong>（或已重传/总重传，版本语义注意）</td>
+<td>非零即红线（<a href="#s-10-5">10.5</a>）</td>
+</tr>
+<tr>
+<td><code class="c">send 45.2Mbps</code></td>
+<td>当前发送速率</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">notsend:0</code></td>
+<td>未发送排队字节</td>
+<td><strong>Send-Q 语义的应用层视角</strong>，非零 = 发不出去</td>
+</tr>
+<tr>
+<td><code class="c">skmem:(r0,rb131072,t0,tb46080,...)</code></td>
+<td>socket 内存（读队列/读缓冲上限/写...）</td>
+<td>rb 打满 → 应用读慢 → UDP 会丢</td>
+</tr>
+<tr>
+<td><code class="c">lastsnd/lastrcv</code></td>
+<td>距上次收发 ms</td>
+<td>心跳判断</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>用法纪律</strong>：<code class="c">ss -tiepm</code> 不加过滤会打出全部连接——生产上先 <code class="c">ss -tn state established '( dport = :5001 or sport = :5001 )'</code> 缩小范围。</p>
+<p><strong>ethtool -S 精读</strong>（驱动级，名字因驱动而异）：</p>
+<pre class="code" data-label="shell"><code class="c">ethtool -S eth0 | grep -iE 'drop|miss|no_buf|discard'
+# rx_missed:      NIC RX ring 满（软中断跟不上）——[10.5 UDP 丢包①]
+# rx_no_buffer / rx_no_dma_resources: 缓冲分配失败
+# tx_discards:    发送侧丢
+</code></pre>
+<p><strong>/proc/net/softnet_stats</strong>（软中断队列）：</p>
+<pre class="code" data-label="shell"><code class="c">awk '{print $2}' /proc/net/softnet_stats   # 第2列=dropped，非零 = backlog 溢出 [10.5 ②]
+</code></pre>
+<h3>二、BPF / BCC 层（事件级）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具</th>
 <th>作用</th>
+<th>独特价值</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">tcplife</code></strong></td>
-<td>每连接生命周期、吞吐 — <strong>极实用</strong></td>
+<td>每连接生命周期（起止/时长/流量）</td>
+<td><strong>事后审计</strong>——哪个连接何时建立了多久</td>
 </tr>
 <tr>
 <td><strong><code class="c">tcptop</code></strong></td>
-<td>按进程网络吞吐</td>
+<td>按进程网络吞吐排行</td>
+<td>归属</td>
 </tr>
 <tr>
 <td><strong><code class="c">tcpretrans</code></strong></td>
-<td>重传事件 + 栈</td>
+<td>重传<strong>事件</strong> + 内核栈</td>
+<td>定位哪个连接哪段代码触发重传</td>
 </tr>
 <tr>
 <td><strong><code class="c">tcpconnect</code> / <code class="c">tcpaccept</code></strong></td>
-<td>连接建立追踪</td>
+<td>active/passive open 逐次 + 耗时</td>
+<td>连接建立延迟（含 TCP 握手 RTT）</td>
 </tr>
 <tr>
-<td><strong><code class="c">bpftrace</code></strong></td>
-<td>自定义丢包、内核栈</td>
+<td><code class="c">bpftrace</code> 单行</td>
+<td>自定义丢包/内核栈</td>
+<td>见 <a href="chapter-15.html#s-15-2">ch15</a></td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="chapter-15.html#ch-15">Ch 15 BPF</a> · <a href="appendix-C.html#app-C">附录 C</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a></p>
-<h3>抓包</h3>
+<p><strong>计数级 vs 事件级的本质区别</strong>：<code class="c">nstat</code> 的 retrans 计数告诉你「有 37 次重传」；<code class="c">tcpretrans</code> 告诉你「PID 4321 在 14:03:22 的 connect 路径上重传了发往 10.4.5.6:5001 的段」——<strong>归因能力差一个维度</strong>。生产红线监控用事件级（<a href="chapter-15.html#s-15-1-7">ch15 的升格工作流</a>）。</p>
+<p><strong>tcplife 输出</strong>（连接结束时刻输出一行）：</p>
+<pre class="code" data-label="code"><code class="c">PID   COMM       LADDR           LPORT RADDR           RPORT TX_KB RX_KB MS
+4321  strategy   10.1.2.3        45678 10.4.5.6        5001     12    45 8900
+</code></pre>
+<p>一条连接活了 8.9 秒、发 12KB 收 45KB——会话审计/异常连接筛查（陌生地址、异常时长）的好工具。</p>
+<h3>三、抓包层</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -928,20 +1203,76 @@ ethtool -S eth0 | grep -i drop
 <tbody>
 <tr>
 <td><strong><code class="c">tcpdump</code></strong></td>
-<td>服务器 CLI 过滤抓包</td>
+<td>服务器 CLI 过滤抓包（<strong>必带 filter + -c + timeout</strong>）</td>
 </tr>
 <tr>
 <td><strong>Wireshark</strong></td>
-<td>离线 decode、TCP 流分析</td>
+<td>离线 decode、TCP 流分析（IO graph、专家信息）</td>
 </tr>
 </tbody>
 </table></div>
+<p>抓包的合法场景：协议字段谜题（中间盒篡改 MSS/选项）、应用层协议协商失败、重排/重复的包级证据。永远镜像口离线分析优先（<a href="#s-10-5">10.5</a>）。</p>
+<h3>四、工具选型速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>第一工具</th>
+<th>深挖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>这条 TCP 连接健康吗？</td>
+<td><code class="c">ss -tiepm</code></td>
+<td>tcpretrans 事件</td>
+</tr>
+<tr>
+<td>接口丢包吗？</td>
+<td><code class="c">ip -s link</code></td>
+<td>ethtool -S（驱动级）</td>
+</tr>
+<tr>
+<td>UDP 丢在哪一段？</td>
+<td>softnet_stats + ethtool -S</td>
+<td>bpftrace 定点</td>
+</tr>
+<tr>
+<td>谁在收发流量？</td>
+<td>tcptop / ss</td>
+<td>tcplife 审计</td>
+</tr>
+<tr>
+<td>协议字段对不对？</td>
+<td>tcpdump 短窗口</td>
+<td>Wireshark 离线</td>
+</tr>
+<tr>
+<td>历史趋势？</td>
+<td>sar -n DEV</td>
+<td>监控系统时序库</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>巡检常驻</strong>：<code class="c">ss -tiepm</code>（发单连接快照）+ softnet_stats + ethtool -S 关键 drop 计数——低开销，进 cron/监控。</li>
+<li><strong>事件触发</strong>：tcpretrans（重传定罪）+ tcpconnect（建连延迟）。</li>
+<li><strong>嵌入式</strong>：小内存设备上 tcpdump 不可承受——bpftrace 单行 + 计数文件是全部观测面。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-10-5">10.5 分析方法论</a></li>
+<li>下一节：<a href="#s-10-7">10.7–10.8 实验与调优</a></li>
+<li>关联：<a href="chapter-15.html#ch-15">ch15 BPF</a>、<a href="appendix-C.html#app-C">附录 C</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03.5-unix-network-api/">12-UNP</a>（socket 机制）、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>ss 不加 -tiepm——只看连接列表不看 RTT/重传/cwnd/mss，丢失关键 TCP 内部状态</li>
-<li>ethtool -S 不看——驱动级统计（NIC drop/no buffer）比 ss 更底层更早发现问题</li>
-<li>BPF tcpretrans 不用——重传事件+栈定位丢包根因，比 netstat -s 的计数更精确</li>
+<li><strong>ss 不加 -tiepm</strong>——只看连接列表，丢掉 RTT/重传/cwnd/mss 全部 TCP 内部状态。</li>
+<li><strong>ethtool -S 不看</strong>——NIC ring 丢包（rx_missed）比 ss 层更早发生，ss 根本看不见。</li>
+<li><strong>重传只看计数不看事件</strong>——netstat -s 的数字无法归因；tcpretrans 才能定位到连接和栈。</li>
+<li><strong>ss 全量输出</strong>——生产机器连接多，先按端口/状态过滤再精读。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -950,21 +1281,35 @@ ethtool -S eth0 | grep -i drop
 </ol>
 <details>
 <summary>答</summary>
-<p>TCP 内部状态：RTT、cwnd、retrans、mss、mem、BBR 信息——诊断 TCP 性能必需</p>
+<p>TCP 内部状态：rtt/偏差、cwnd、rto、mss、retrans、发送速率、notsend、skmem——诊断 TCP 性能必需。</p>
 </details>
 <ol start="2">
 <li>ethtool -S 能发现什么 ss 看不到的？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>驱动级统计——NIC drop/no buffer/rx_missed 等，比 ss 更早发现硬件层丢包</p>
+<p>驱动级统计——rx_missed（NIC ring 满）、rx_no_buffer 等硬件层丢包，发生在内核统计之前。</p>
 </details>
 <ol start="3">
 <li>tcpretrans 比 netstat -s retrans 有什么优势？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>tcpretrans 给出每次重传的事件+栈——定位是哪个连接/哪段代码触发重传</p>
+<p>事件级：每次重传的连接四元组+内核栈——直接归因到连接和触发路径；计数级只知道总数。</p>
+</details>
+<ol start="4">
+<li>ss 的 notsend 字段什么含义？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>应用已写但尚未发送的排队字节（Send-Q 的语义化视角）——非零持续说明网络或对端窗口堵塞。</p>
+</details>
+<ol start="5">
+<li>softnet_stats 的 dropped 列对应哪段丢包？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>netdev backlog 溢出——软中断处理跟不上，包在内核入口队列被丢（NIC ring 之后、socket 之前）。</p>
 </details>
 </details>
 <hr />
@@ -972,153 +1317,289 @@ ethtool -S eth0 | grep -i drop
       </section>
       <section class="section" id="s-10-7">
         <div class="sec-head"><div class="sec-no">10.7</div><h2>section-10.7-10.8-实验与调优</h2></div>
-<h3 class="sub">微基准与故障模拟</h3>
+<blockquote>
+<p>章节导航：<a href="#s-10-6">10.6 观测工具</a> · 上一篇 ← · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：网络微基准与故障注入（iperf3/netperf/netem）、sysctl 调优的语义与「低延迟 vs 高吞吐参数集相反」的原因、套接字选项的机制与 HFT 选择。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>iperf3 测的是<strong>栈上限</strong>，不是业务延迟</td>
+<td>应用级测试另做</td>
+</tr>
+<tr>
+<td>2</td>
+<td>netem 是<strong>混沌工程</strong>的廉价入口</td>
+<td>delay/loss/reorder 注入</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>低延迟与高吞吐的 sysctl 相反</strong></td>
+<td>Netflix 表不能抄到 HFT</td>
+</tr>
+<tr>
+<td>4</td>
+<td>TCP_NODELAY 是 HFT 的<strong>默认</strong></td>
+<td>Nagle 与延迟互斥</td>
+</tr>
+<tr>
+<td>5</td>
+<td>busy poll 用 CPU 换延迟</td>
+<td>与 DPDK poll 同哲学</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、微基准与故障模拟</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具</th>
 <th>用途</th>
+<th>注意</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">iperf3</code></strong></td>
 <td>TCP/UDP 最大吞吐</td>
+<td>单流 vs <code class="c">-P</code> 多流测不同问题（单流受窗口/单核限制，多流测聚合）</td>
 </tr>
 <tr>
 <td><strong><code class="c">netperf</code></strong></td>
-<td>RPC 风格 RTT</td>
+<td>RPC 风格 RTT（request-response）</td>
+<td>比 iperf 更像交易型负载</td>
 </tr>
 <tr>
 <td><strong><code class="c">tc netem</code></strong></td>
-<td>注入 <strong>delay/loss/reorder</strong> — 混沌测试</td>
+<td>注入 <strong>delay/loss/reorder</strong></td>
+<td>混沌测试——验证策略对烂网络的鲁棒性</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">iperf3 -c server -t 30 -P 4
-tc qdisc add dev eth0 root netem delay 2ms loss 0.1%
+<pre class="code" data-label="shell"><code class="c">iperf3 -c server -t 30 -P 4        # 4 流并行测聚合吞吐
+# 注入 2ms 延迟 + 0.1% 丢包 + 少量乱序（测试环境！）
+tc qdisc add dev eth0 root netem delay 2ms loss 0.1% reorder 0.5%
+tc qdisc del dev eth0 root         # 撤销
 </code></pre>
-<p><strong>HFT：</strong> 共置 baseline <strong>iperf + 应用级 ping 订单通道</strong>；netem 在 <strong>测试环境</strong> 验证策略 robustness。</p>
-<h3>系统级 sysctl（Netflix 示例思路）</h3>
+<p><strong>HFT</strong>：共置 baseline 用 <strong>iperf + 应用级 ping 订单通道</strong>双口径（iperf 是栈上限，应用 ping 才含编解码/策略）；netem 在测试环境验证<strong>策略鲁棒性</strong>（丢包时降级逻辑、重连超时）——生产绝不上 netem。</p>
+<h3>二、系统级 sysctl：语义与方向</h3>
+<p><strong>为什么低延迟与高吞吐参数集相反</strong>——大 buffer 吞吐友好（吸收抖动、攒大包），但<strong>排队延迟上升</strong>（bufferbloat）；小 buffer 延迟友好（早丢早重传），吞吐受损。Netflix（高吞吐 Web）与 HFT（低延迟交易）在这根曲线上取相反的点。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>参数</th>
-<th>方向</th>
+<th>高吞吐方向</th>
+<th>低延迟方向</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">net.core.netdev_max_backlog</code></strong></td>
+<td><code class="c">net.core.netdev_max_backlog</code></td>
 <td>↑</td>
-<td>入口队列</td>
+<td>适度（过大=排队）</td>
+<td>入口软中断队列</td>
 </tr>
 <tr>
-<td><strong><code class="c">net.core.somaxconn</code></strong></td>
+<td><code class="c">net.core.somaxconn</code></td>
 <td>↑</td>
-<td>accept 队列</td>
+<td>↑（够用即可）</td>
+<td>accept 队列上限</td>
 </tr>
 <tr>
-<td><strong><code class="c">net.ipv4.tcp_max_syn_backlog</code></strong></td>
+<td><code class="c">net.ipv4.tcp_max_syn_backlog</code></td>
 <td>↑</td>
+<td>↑（够用）</td>
 <td>SYN 队列</td>
 </tr>
 <tr>
-<td><strong><code class="c">net.ipv4.tcp_rmem</code> / <code class="c">tcp_wmem</code></strong></td>
+<td><code class="c">tcp_rmem</code> / <code class="c">tcp_wmem</code></td>
+<td>↑↑</td>
+<td><strong>保守</strong></td>
+<td>TCP 窗口——大=吞吐小=延迟</td>
+</tr>
+<tr>
+<td><code class="c">rmem_max</code> / <code class="c">wmem_max</code></td>
 <td>↑</td>
-<td>TCP 窗口上下限</td>
-</tr>
-<tr>
-<td><strong><code class="c">net.ipv4.tcp_congestion_control</code></strong></td>
-<td><code class="c">bbr</code></td>
-<td>拥塞算法</td>
-</tr>
-<tr>
-<td><strong><code class="c">net.ipv4.tcp_tw_reuse</code></strong></td>
-<td>1</td>
-<td>TIME_WAIT 重用（理解风险）</td>
-</tr>
-<tr>
-<td><strong><code class="c">net.core.rmem_max</code> / <code class="c">wmem_max</code></strong></td>
-<td>↑</td>
+<td>按需</td>
 <td>socket buffer 上限</td>
+</tr>
+<tr>
+<td><code class="c">tcp_congestion_control</code></td>
+<td><code class="c">bbr</code></td>
+<td><strong>cubic/无所谓</strong>（内网无拥塞）</td>
+<td>BBR 对有损公网好；共置内网丢包≈故障不是拥塞</td>
+</tr>
+<tr>
+<td><code class="c">tcp_tw_reuse</code></td>
+<td>1</td>
+<td>理解再开</td>
+<td>TIME_WAIT 端口重用（旧数据残留风险）</td>
+</tr>
+<tr>
+<td><code class="c">tcp_notsent_lowat</code></td>
+<td>默认</td>
+<td><strong>调小</strong>（如 16K）</td>
+<td>限制 notsend 排队——低延迟 TCP 的关键参数</td>
+</tr>
+<tr>
+<td><code class="c">tcp_low_latency</code>（已移除）</td>
+<td>—</td>
+<td>历史</td>
+<td>老内核提示，现代内核无此旋钮</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 注意：</strong></p>
-<ul>
-<li>共置 <strong>低延迟</strong> 与云 <strong>高吞吐</strong> 参数集 <strong>不同</strong> — 勿盲抄 Netflix 全表。</li>
-<li>与 <strong>12-HFT ch05/ch06</strong> 合并成 <strong>单一 sysctl runbook</strong>，变更可回滚。</li>
-</ul>
-<p>→ <a href="../../14-hft-engineering/html/chapter-06.html#intro">14-HFT ch06</a></p>
-<h3>套接字选项（应用层）</h3>
+<p><strong><code class="c">tcp_notsent_lowat</code> 是低延迟 TCP 的隐藏王牌</strong>：限制内核里「应用已写但未发送」的字节数——超出即让 write() 返回/EPOLLOUT 暂时不就绪，把排队从内核搬回应用可控层。发单通道设小值 = 延迟上限可控。</p>
+<p><strong>纪律</strong>：与 <a href="../../14-hft-engineering/html/index.html">14-HFT ch05/ch06</a> 合并成<strong>单一 sysctl runbook</strong>——每条注明动机、预期效果、回滚方法；变更走对照实验（改一条测一条，<a href="chapter-12.html#ch-12">ch12 方法论</a>）。</p>
+<h3>三、套接字选项（应用层）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>选项</th>
-<th>效果</th>
+<th>机制</th>
 <th>HFT</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">TCP_NODELAY</code></strong></td>
-<td>禁 Nagle — <strong>小包立即发</strong></td>
-<td>发单/低延迟 tick 常见</td>
+<td>禁 Nagle——小包立即发</td>
+<td><strong>发单/低延迟默认开</strong></td>
 </tr>
 <tr>
-<td><strong><code class="c">TCP_CORK</code></strong></td>
-<td>聚合小包 — 提吞吐</td>
-<td>批量非紧急数据</td>
+<td><code class="c">TCP_CORK</code></td>
+<td>聚合小包攒大段</td>
+<td>批量非紧急数据（与 NODELAY 相反）</td>
+</tr>
+<tr>
+<td><strong><code class="c">SO_BUSY_POLL</code></strong> / <code class="c">epoll</code> busy poll</td>
+<td>读路径轮询代替中断等待</td>
+<td>降 latency、增 CPU 占用</td>
 </tr>
 <tr>
 <td><strong><code class="c">SO_REUSEPORT</code></strong></td>
-<td>多进程 bind 同一端口</td>
-<td>收包扩展</td>
+<td>多进程 bind 同端口，内核分流</td>
+<td>收包多进程扩展</td>
 </tr>
 <tr>
-<td><strong><code class="c">SO_BUSY_POLL</code></strong></td>
-<td>socket  busy poll</td>
-<td>降 latency、增 CPU</td>
+<td><code class="c">SO_PRIORITY</code></td>
+<td>设置 skb 优先级（配合 qdisc）</td>
+<td>流量分级</td>
 </tr>
 <tr>
-<td><strong>非阻塞 + epoll</strong></td>
+<td>非阻塞 + epoll</td>
 <td>事件驱动</td>
-<td>Ch 5 · UNP</td>
+<td><a href="chapter-05.html#ch-5">ch5</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03.5-unix-network-api/">UNP</a></td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03.5-unix-network-api/">12-UNP</a> · <a href="../../02-computer-systems/html/chapter-11.html#ch-11">02-CSAPP Ch11</a></p>
+<p><strong>Nagle 算法 vs TCP_NODELAY 的机制</strong>：Nagle 说「有未 ACK 的小包在外时，新小包攒着」——防小包洪泛（1988 年的善意）对交互延迟是灾难（一个未 ACK 段就能把后续发单拖住一个 RTT）。HFT 一切小包通道默认 <code class="c">TCP_NODELAY</code>；聚合需求由应用显式控制（自己攒批，不交给内核猜）。</p>
+<p><strong>busy poll 的哲学</strong>：中断/睡眠唤醒有 µs 级固定成本；<code class="c">SO_BUSY_POLL</code>（或 epoll 的 busy poll 模式）让 CPU 原地轮询 NIC——<strong>用 100% CPU 换几 µs 延迟</strong>。与 DPDK 的 poll mode（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-DPDK</a>）、io_uring 的 polled 模式（<a href="chapter-09.html#s-9-4">ch9 io_poll</a>）同一家族：低延迟工程的终极旋钮都是「中断换轮询」。</p>
+<h3>四、调优优先级（与磁盘同构）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>手段</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>应用层：NODELAY、异步、批量自主、连接复用</td>
+<td>代码</td>
+</tr>
+<tr>
+<td>2</td>
+<td>拓扑：中断亲和、RPS/RFS、队列分流（<a href="chapter-06.html#ch-6">ch6</a>）</td>
+<td>配置</td>
+</tr>
+<tr>
+<td>3</td>
+<td>sysctl：按低延迟口径</td>
+<td>配置</td>
+</tr>
+<tr>
+<td>4</td>
+<td>硬件：更快的 NIC/交换机、直连拓扑</td>
+<td>预算</td>
+</tr>
+<tr>
+<td>5</td>
+<td>旁路：DPDK/XDP（把内核栈整个搬走）</td>
+<td>架构改造</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>共置参数集 vs 云参数集分开维护</strong>：同一份 sysctl 基线在两种环境下都次优——runbook 里明确「这台机器跑哪套」。</li>
+<li><strong>应用级 ping 是验收标准</strong>：订单通道 round-trip（发单→回执）的 P99——iperf 只是容量参考（<a href="chapter-12.html#s-12-4">ch12 拷问</a>：测量点在哪）。</li>
+<li><strong>netem 验收鲁棒性</strong>：丢包 0.1% 时策略的降级行为、重连风暴——上线前必测。</li>
+<li><strong>嵌入式</strong>：无 tc netem 权限时，用 iptables 的随机 drop 或 EMEDIUM 模拟——目的相同（注入劣化验证鲁棒性）。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-10-6">10.6 观测工具</a></li>
+<li>关联：<a href="chapter-06.html#ch-6">ch6 中断与亲和</a>、<a href="chapter-12.html#ch-12">ch12 基准测试</a>、<a href="../../14-hft-engineering/html/chapter-06.html#intro">14-HFT ch06 低延迟网络协议</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-DPDK</a>（旁路终点）、<a href="../../02-computer-systems/html/chapter-11.html#ch-11">02-CSAPP ch11</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>盲抄 Netflix sysctl——Netflix 面向高吞吐 Web，HFT 面向低延迟，参数集完全不同</li>
-<li>tcp_tw_reuse 不理解就开——TIME_WAIT 重用有风险（旧连接残留数据），需理解场景</li>
-<li>iperf3 当业务 benchmark——iperf3 测的是 TCP 吞吐上限，不是应用层 tick-to-trade 延迟</li>
+<li><strong>盲抄 Netflix sysctl</strong>——Netflix 面向高吞吐 Web（大 buffer/BBR），HFT 面向低延迟（小 buffer/NODELAY/notsent_lowat），参数集相反。</li>
+<li><strong>tcp_tw_reuse 不理解就开</strong>——TIME_WAIT 端口重用有旧数据残留风险。</li>
+<li><strong>iperf3 当业务 benchmark</strong>——测 TCP 栈吞吐上限，不含编解码/策略/发单；验收用应用级 ping。</li>
+<li><strong>netem 上生产</strong>——故障注入只属于测试环境；忘了删 netem 规则是经典事故。</li>
+<li><strong>Nagle 没关就抱怨延迟抖</strong>——一个未 ACK 段拖住后续小包一个 RTT；TCP_NODELAY 是第一检查项。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
 <ol>
-<li>为什么不能直接抄 Netflix 的 sysctl 配置？</li>
+<li>为什么不能直接抄 Netflix 的 sysctl？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>Netflix 面向高吞吐 Web（大 buffer/BBR），HFT 面向低延迟（小 buffer/NODELAY）——参数集相反</p>
+<p>Netflix 高吞吐 Web（大 buffer 吸收抖动、BBR 抗公网丢包）；HFT 低延迟（小 buffer 控排队、内网丢包=故障不是拥塞）——同一根吞吐-延迟曲线取相反的点。</p>
 </details>
 <ol start="2">
-<li>tcp_tw_reuse 的风险是什么？</li>
+<li>tcp_notsent_lowat 为什么是低延迟 TCP 关键参数？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>TIME_WAIT 状态的端口重用——旧连接的残留数据可能被新连接误收，需确认场景适用</p>
+<p>限制「应用已写但未发送」的内核排队字节——把排队从内核搬回应用可控层，延迟上限可控。</p>
 </details>
 <ol start="3">
-<li>iperf3 能替代 HFT 应用层 benchmark 吗？</li>
+<li>Nagle 算法和 TCP_NODELAY 的机制？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>不能——iperf3 测 TCP 吞吐上限，不包含编解码/策略/发单，需应用级 ping/订单通道测试</p>
+<p>Nagle：有未 ACK 小包在外时新小包攒着（防洪泛）——交互延迟灾难；NODELAY 禁掉它，小包立即发，聚合由应用自主。</p>
+</details>
+<ol start="4">
+<li>busy poll 为什么降延迟？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>中断/睡眠唤醒有 µs 级固定成本；原地轮询 NIC 用 100% CPU 换掉这段——与 DPDK/io_uring polled 同一哲学：中断换轮询。</p>
+</details>
+<ol start="5">
+<li>netem 的正确使用姿势？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>仅测试环境：注入 delay/loss/reorder 验证策略鲁棒性（降级逻辑/重连超时）；生产禁用；用后即删。</p>
 </details>
 </details>
 <hr />

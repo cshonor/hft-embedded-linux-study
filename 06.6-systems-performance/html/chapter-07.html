@@ -716,13 +716,56 @@ numactl --cpunodebind=0 --membind=0 ./strategy
       </section>
       <section class="section" id="s-7-4">
         <div class="sec-head"><div class="sec-no">7.4</div><h2>section-7.4-分析方法论</h2></div>
-<h3 class="sub">USE 方法（Memory）</h3>
+<blockquote>
+<p>章节导航：<a href="#intro">本章导读</a> · 下一篇 <a href="#s-7-5">7.5 观测工具</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：内存的 USE 检查（saturation 三信号）、泄漏 vs 正常增长的判定法、缺页/WSS/direct reclaim 三个深挖方向、内存压力的传导链。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>free 低 ≠ 有问题</td>
+<td>cache 可回收，<strong>saturation 信号</strong>才算数</td>
+</tr>
+<tr>
+<td>2</td>
+<td>swap / direct reclaim / PSI = <strong>三个红灯</strong></td>
+<td>任一非零即压力</td>
+</tr>
+<tr>
+<td>3</td>
+<td>判泄漏看<strong>形状</strong>不看绝对值</td>
+<td>单调涨不回落 vs 涨后平台</td>
+</tr>
+<tr>
+<td>4</td>
+<td>minor fault 快、<strong>major fault 是盘 I/O</strong></td>
+<td>分开计数分开归因</td>
+</tr>
+<tr>
+<td>5</td>
+<td>WSS &gt; 可用内存 = 结构性 swap</td>
+<td>加内存或减工作集</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、USE 方法（Memory）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>字母</th>
 <th>问什么</th>
 <th>怎么量</th>
+<th>判读</th>
 </tr>
 </thead>
 <tbody>
@@ -730,25 +773,74 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 <td><strong>U</strong> Utilization</td>
 <td>物理/虚拟内存使用</td>
 <td><code class="c">free -h</code>、<code class="c">/proc/meminfo</code>、RSS/PSS</td>
+<td><strong>free 低本身不报警</strong>——available 才有意义</td>
 </tr>
 <tr>
 <td><strong>S</strong> Saturation</td>
 <td>扫描、Swap、direct reclaim、OOM</td>
 <td><code class="c">vmstat si/so</code>、<code class="c">sar -B</code>、<strong>PSI memory</strong>、<code class="c">dmesg</code> OOM</td>
+<td>见下方三红灯</td>
 </tr>
 <tr>
 <td><strong>E</strong> Errors</td>
 <td>分配失败、ECC</td>
 <td><code class="c">dmesg</code>、EDAC、应用 ENOMEM</td>
+<td>OOM kill 计数</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>PSI memory：</strong></p>
-<pre class="code" data-label="shell"><code class="c">cat /proc/pressure/memory
-# some/full — 线程因等内存而 stall 的时间占比
+<p><strong>为什么 U 的判读特殊</strong>：Linux 拿空闲内存做 page cache（<a href="chapter-08.html#ch-8">ch8</a>）——free 低是常态而非故障。真正要看的：</p>
+<pre class="code" data-label="shell"><code class="c">free -h
+#              total   used   free   shared  buff/cache  available
+# Mem:          125G    40G    1.2G     2.1G        84G        85G   ← available 才是可用量
 </code></pre>
-<p>→ <a href="appendix-A.html#app-A">附录 A</a> · Ch 6 <a href="chapter-06.html#ch-6">PSI 概念</a></p>
-<h3>内存泄漏 vs 正常增长</h3>
+<p><strong>Saturation 三红灯</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>信号</th>
+<th>工具</th>
+<th>含义</th>
+<th>HFT 判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>swap si/so</strong></td>
+<td><code class="c">vmstat 1</code></td>
+<td>匿名页换入换出</td>
+<td>持续非零 = 灾难（ms 级停顿）</td>
+</tr>
+<tr>
+<td><strong>direct reclaim</strong></td>
+<td><code class="c">sar -B</code> 的 pgscan/direct；BPF drsnoop</td>
+<td>分配时同步回收（kswapd 跟不上）</td>
+<td>任何出现都是尖刺源</td>
+</tr>
+<tr>
+<td><strong>PSI memory</strong></td>
+<td><code class="c">/proc/pressure/memory</code></td>
+<td>线程因内存 stall 的时间占比</td>
+<td>some &gt; 0 即告警</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>完整检查表：<a href="appendix-A.html#app-A">附录 A</a> · PSI 概念见 <a href="chapter-06.html#ch-6">Ch6</a></p>
+</blockquote>
+<h3>二、内存压力的传导链</h3>
+<p>理解信号之间的关系（避免只见症状不知病因）：</p>
+<pre class="code" data-label="code"><code class="c">内存水位逼近 low watermark
+  → kswapd 后台回收（异步，尚无直接延迟）
+    → 回收速度 &lt; 分配速度
+      → 水位触 min watermark
+        → ★ direct reclaim：分配者自己同步回收（页延迟从 ns 变 ms 级）
+          → 可回收不够 → 直接扫描 → 换出匿名页
+            → swap out（盘写）→ 后续访问 swap in（盘读，ms 级停顿）
+              → 还不够 → OOM kill
+</code></pre>
+<p><strong>drsnoop 的价值</strong>：direct reclaim 发生在分配路径上（malloc → 缺页 → 回收）——受害者进程能被逐次抓到（谁、等了多久）；这是「偶发的分配变慢」的头号嫌疑。回收机制细节见 <a href="../../06-linux-mm/html/chapter-04.html#ch-4">06-linux-mm ch04 fault 路径</a>。</p>
+<h3>三、内存泄漏 vs 正常增长</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -760,23 +852,33 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 <tbody>
 <tr>
 <td>RSS 单调涨、从不回落</td>
-<td><strong>Leak</strong> — alloc 无 free</td>
-<td>Valgrind/ASan（测试）；生产 BPF uprobe malloc</td>
+<td><strong>Leak</strong>——alloc 无 free</td>
+<td>Valgrind/ASan（测试）；生产 BPF uprobe malloc/free 差值</td>
 </tr>
 <tr>
 <td>启动后涨然后平台</td>
 <td>预热 cache、加载合约字典</td>
-<td>预期行为</td>
+<td>预期行为（画曲线确认平台）</td>
 </tr>
 <tr>
 <td>PSS 涨、多进程共享库</td>
 <td>映射增多</td>
 <td><code class="c">pmap -X</code> 分项</td>
 </tr>
+<tr>
+<td>阶梯涨（每天一阶）</td>
+<td>日志缓冲/日报表累积</td>
+<td>对齐业务周期</td>
+</tr>
+<tr>
+<td>RSS 稳但 available 降</td>
+<td>别的进程/内核 slab 在涨</td>
+<td>slabtop + 全进程扫描</td>
+</tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 7×24 运行的行情服务 — 画 <strong>RSS/PSS 日曲线</strong>；斜率异常先查 leak，再查 order book 是否无界增长。</p>
-<h3>缺页与 WSS 剖析</h3>
+<p><strong>HFT</strong>：7×24 行情服务画 <strong>RSS/PSS 日曲线</strong>——斜率异常先查 leak（工具见 <a href="#s-7-5">7.5</a>），再查 order book 是否无界增长（业务对象泄漏：过期合约/断线会话没清）。<strong>内核侧</strong>同样会泄漏：slabtop 里 dentry/skbuf 持续涨是内核对象泄漏的形态。</p>
+<h3>四、缺页与 WSS 剖析</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -788,50 +890,115 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 <tbody>
 <tr>
 <td><strong>Page fault profiling</strong></td>
-<td><code class="c">perf record -e page-faults</code></td>
-<td><strong>缺页火焰图</strong> — 谁在 touch 新页</td>
+<td><code class="c">perf record -e page-faults -g</code></td>
+<td><strong>缺页火焰图</strong>——谁在 touch 新页</td>
+</tr>
+<tr>
+<td><strong>Major fault 精查</strong></td>
+<td><code class="c">perf record -e major-faults -g</code></td>
+<td>谁的缺页在读盘</td>
 </tr>
 <tr>
 <td><strong>Direct reclaim 延迟</strong></td>
 <td>BPF <code class="c">drsnoop</code></td>
-<td>哪进程在等回收</td>
+<td>哪进程在等回收、等多久</td>
 </tr>
 <tr>
 <td><strong>WSS 估算</strong></td>
-<td>BPF <code class="c">wss</code>（实验）</td>
-<td>容量规划</td>
+<td>BPF <code class="c">wss</code>（referenced 位法）</td>
+<td>容量规划——真实热集多大</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>minor vs major fault 的性能差</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>处理</th>
+<th>延迟量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>minor fault</td>
+<td>内核分配物理页 + 建映射（可能 zero page）</td>
+<td>~1µs</td>
+</tr>
+<tr>
+<td>major fault</td>
+<td>从盘读回（swap 或文件）</td>
+<td><strong>ms 级</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>热路径的纪律：<strong>稳态零 major fault、minor fault 也要平稳</strong>——启动后数据常驻（mlock/预 touch），任何稳态缺页都是工作集在漂移的信号。缺页四路分发机制（匿名/COW/文件/swap）见 <a href="../../06-linux-mm/html/chapter-04.html#ch-4">06-linux-mm ch04</a>。</p>
+<p><strong>WSS 的用途</strong>：<code class="c">wss</code> 用页表 referenced 位采样统计「真实被摸过的页」——比 RSS 准（RSS 含冷页）。容量规划的口径：<strong>WSS + 余量 &lt; available</strong>，且 WSS 的增长曲线要有上限。</p>
+<h3>五、60 秒内存检查</h3>
+<pre class="code" data-label="shell"><code class="c">free -m                          # available
+vmstat 1 5                       # si/so、扫描
+cat /proc/pressure/memory        # PSI
+slabtop -o | head -15            # 内核 slab top
+dmesg -T | grep -i oom | tail    # OOM 历史
+numastat -M                      # NUMA 均衡（[ch7 其他节]）
+</code></pre>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>热路径内存 mlock</strong>：order book/行情缓冲锁在物理内存——杜绝 major fault（swap-in）与直接回收导致的 µs→ms 尖刺；mlock 配合 <a href="chapter-06.html#ch-6">ch6 隔离栈</a> 是低延迟双保险。</li>
+<li><strong>hugepage 减 TLB miss</strong>：见 <a href="../../06-linux-mm/html/chapter-03.html#ch-3">06-linux-mm THP</a>——数据库式显式 hugetlbfs 或 THP always。</li>
+<li><strong>RSS 曲线进监控</strong>：斜率告警（%/天）比阈值告警早发现泄漏。</li>
+<li><strong>嵌入式</strong>：无 swap 的板子 swap 信号恒零——PSI + direct reclaim 计数是唯一压力信号；内存不足直接 OOM（更暴力）。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>下一节：<a href="#s-7-5">7.5 观测工具</a>（本方法论的武器）</li>
+<li>关联：<a href="chapter-06.html#ch-6">ch6 PSI</a>、<a href="chapter-08.html#ch-8">ch8 page cache</a>、<a href="chapter-09.html#ch-9">ch9 swap-in 的盘侧</a>、<a href="../../06-linux-mm/html/chapter-04.html#ch-4">06-linux-mm ch04 fault 机制</a>、<a href="../../06-linux-mm/html/chapter-06.html#ch-6">06-linux-mm ch06 回收</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>USE 只查 free——Saturation（swap/direct reclaim/PSI memory）才是关键</li>
-<li>RSS 当真实占用——RSS 包含共享库整页，PSS（按比例分摊）才反映真实占用</li>
-<li>leak 只看 RSS——RSS 涨可能是 cache/映射增多，要用 pmap -X 分项确认是 heap leak</li>
+<li><strong>USE 只查 free</strong>——saturation（swap/direct reclaim/PSI）才是关键；free 低是 Linux 正常形态。</li>
+<li><strong>RSS 当真实占用</strong>——共享库整页重复计算；PSS 才公平。</li>
+<li><strong>leak 只看 RSS</strong>——可能是 cache/映射增多；pmap -X 分项确认 heap。</li>
+<li><strong>忽略内核侧泄漏</strong>——slab（dentry/skbuf）涨挤占用户内存，进程视角不可见。</li>
+<li><strong>稳态 minor fault 不当回事</strong>——工作集在漂移的早期信号，等 major fault 才查就晚了。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
 <ol>
-<li>内存的 USE 方法中 Saturation 看什么？</li>
+<li>内存饱和的三个红灯？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>swap si/so、direct reclaim、PSI memory stall——任一非零说明内存压力</p>
+<p>swap si/so（换页在发生）、direct reclaim（分配者同步回收）、PSI memory stall——任一非零即有压力。</p>
 </details>
 <ol start="2">
-<li>RSS 和 PSS 的区别？</li>
+<li>direct reclaim 为什么造成分配尖刺？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>RSS 把共享库整页算给每个进程（重复计算），PSS 按进程数分摊共享页（更真实）</p>
+<p>水位触 min 后分配路径同步回收——malloc/缺页从 ns 级变 ms 级；kswapd 异步回收跟不上时发生。</p>
 </details>
 <ol start="3">
-<li>如何区分内存泄漏和正常增长？</li>
+<li>如何区分泄漏和正常预热？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>RSS 单调涨不回落 = leak；涨后平台 = 预热 cache——用 pmap -X 分项确认是 heap 还是映射</p>
+<p>形状：单调涨不回落 = leak；涨后平台 = 预热。pmap -X 分项确认 heap 还是映射；内核侧查 slabtop。</p>
+</details>
+<ol start="4">
+<li>minor 和 major fault 的延迟差？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>minor ~1µs（内核分配页+建映射）；major ms 级（盘读回）——稳态出现 major fault 是热路径事故。</p>
+</details>
+<ol start="5">
+<li>WSS 和 RSS 的区别与用途？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>WSS 是真实被访问的热页集（referenced 位采样），RSS 含冷页——容量规划用 WSS+余量，比 RSS 准。</p>
 </details>
 </details>
 <hr />
@@ -839,7 +1006,49 @@ numactl --cpunodebind=0 --membind=0 ./strategy
       </section>
       <section class="section" id="s-7-5">
         <div class="sec-head"><div class="sec-no">7.5</div><h2>section-7.5-观测工具</h2></div>
-<h3 class="sub">传统统计工具</h3>
+<blockquote>
+<p>章节导航：<a href="#s-7-4">7.4 分析方法论</a> · 上一篇 ← · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：内存观测的四层工具（全局统计 / 进程映射 / slab-NUMA / perf-BPF 专项）、VSZ/RSS/PSS 三指标精读、缺页火焰图与 drsnoop 的用法、工具选型速查。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">vmstat</code> 的 <strong>si/so</strong> 是 HFT 红线列</td>
+<td>持续非零 = swap</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>PSS 是公平口径</strong></td>
+<td>RSS 共享页重复算</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">pmap -X</code> + smaps 是<strong>映射归因</strong></td>
+<td>哪段映射占内存</td>
+</tr>
+<tr>
+<td>4</td>
+<td>缺页火焰图回答<strong>谁在 touch 新页</strong></td>
+<td>leak 与工作集漂移</td>
+</tr>
+<tr>
+<td>5</td>
+<td>drsnoop 抓 <strong>direct reclaim 受害者</strong></td>
+<td>分配尖刺定罪</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、全局统计层</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -857,21 +1066,34 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 <tr>
 <td><strong><code class="c">sar -r</code> / <code class="c">sar -B</code></strong></td>
 <td>历史内存、分页</td>
-<td><code class="c">-B</code>：pgpgin/out、fault</td>
+<td><code class="c">-B</code>：pgscan/pgsteal（回收）、majflt/s</td>
 </tr>
 <tr>
-<td><strong><code class="c">slabtop</code></strong></td>
-<td>内核 Slab</td>
-<td>哪个 cache 占用异常</td>
-</tr>
-<tr>
-<td><strong><code class="c">numastat</code></strong></td>
-<td>NUMA 命中</td>
-<td><code class="c">numa_hit</code> vs <code class="c">numa_foreign</code></td>
+<td><strong><code class="c">/proc/meminfo</code></strong></td>
+<td>权威细分</td>
+<td>MemAvailable、AnonPages、Slab、SwapCached</td>
 </tr>
 </tbody>
 </table></div>
-<h3>进程级工具</h3>
+<p><strong>vmstat 精读</strong>：</p>
+<pre class="code" data-label="code"><code class="c">procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 2  0  52428 1204332 482112 83920132    0    0     0    12  ...        ...
+     └──────────┬──────────┘    └─┬─┘ └─┬─┘
+       swpd=已换出 KB         si=换入  so=换出（KB/s）
+</code></pre>
+<ul>
+<li><strong>si/so 持续非零 = swap 在发生</strong>——HFT 灾难信号（一次 swap-in 是 ms 级盘读）</li>
+<li><code class="c">b</code> 列（阻塞进程）高 + so 高 = 有进程在等换页</li>
+<li>swpd 大但 si/so=0：历史换出、现在不活跃——不算当前压力，但说明曾经压力过</li>
+</ul>
+<p><strong>/proc/meminfo 的关键行</strong>：</p>
+<pre class="code" data-label="code"><code class="c">MemAvailable:    88123456 kB   ← 真正可用（free + 可回收 - 保留水位）
+AnonPages:       38221044 kB   ← 匿名页（进程堆栈——swap 候选）
+Slab:             4210332 kB   ← 内核对象缓存（slabtop 细分）
+SwapCached:        512344 kB   ← 换出又被读回的页（还在 swap 区）
+</code></pre>
+<h3>二、进程映射层</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -886,38 +1108,73 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 </tr>
 <tr>
 <td><strong><code class="c">pmap -x</code> / <code class="c">pmap -X</code></strong></td>
-<td>映射明细；<strong>PSS</strong> = 共享页按比例分摊</td>
+<td>映射明细；<code class="c">-X</code> 额外给 <strong>PSS</strong> 分摊</td>
 </tr>
 <tr>
 <td><strong><code class="c">/proc/PID/smaps</code></strong></td>
-<td>每映射 RSS/Pss/Shared — 脚本化分析</td>
+<td>每映射的 Rss/Pss/Shared/Private——脚本化分析</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>VSZ vs RSS vs PSS：</strong></p>
+<p><strong>三指标精读</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>指标</th>
 <th>含义</th>
+<th>陷阱</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>VSZ</strong></td>
-<td>地址空间大小 — 含未 touch 的映射，<strong>可远大于 RAM</strong></td>
+<td>地址空间大小——含未 touch 的映射</td>
+<td>malloc 保留区/稀疏映射让它<strong>远大于 RAM</strong>，本身无害</td>
 </tr>
 <tr>
 <td><strong>RSS</strong></td>
-<td>实际在物理内存的页 — 共享库 <strong>整页算给每个进程</strong></td>
+<td>实际在物理内存的页</td>
+<td><strong>共享库整页算给每个进程</strong>——100 个进程共享 libc 时总 RSS 重复计费</td>
 </tr>
 <tr>
 <td><strong>PSS</strong></td>
-<td>共享页按进程数分摊 — <strong>更公平的总占用</strong></td>
+<td>共享页按进程数分摊</td>
+<td>总和 = 全系统真实占用（容器计费口径）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>perf 与 BPF</h3>
+<p><strong>pmap -X 精读</strong>（归因哪段映射在吃内存）：</p>
+<pre class="code" data-label="code"><code class="c">Address  Perm   Offset Device   Inode  Size  Rss  Pss Shared_Private...  Mapping
+00007f00 rw-    0000000  00:00        0  1024  512  512         0        [heap]     ← 堆泄漏看这
+00007f12 rw-    ...                        512  256   64       192        libc 的数据页 ← 共享分摊
+00007f2a rw-s   ...                   1048576 1048576 1048576  0        /dev/hugepages/... ← hugepage 映射
+</code></pre>
+<p>heap 段持续涨 = 用户态泄漏；映射数持续涨 = mmap 泄漏（没 munmap）；anon 段涨 = 线程栈泄漏（线程没回收）。</p>
+<h3>三、内核与 NUMA 层</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">slabtop</code></strong></td>
+<td>内核 slab 各 cache 占用排行（dentry/inode/skbuf——slab 机制见 <a href="../../06-linux-mm/html/chapter-08.html#ch-8">06-linux-mm ch08</a>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">numastat</code></strong></td>
+<td>numa_hit（本地命中）vs numa_foreign（远端访问）</td>
+</tr>
+<tr>
+<td><code class="c">cat /proc/zoneinfo</code></td>
+<td>各 zone 水位（min/low/high）与剩余</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>numastat 判读</strong>：numa_foreign 占比高 = 跨 NUMA 访问多——内存带宽减半 + 延迟上升；对策是绑核绑内存同 node（<code class="c">numactl --cpunodebind=0 --membind=0</code>）。NUMA 架构与 buddy 的 zone 机制见 <a href="../../06-linux-mm/html/chapter-06.html#ch-6">06-linux-mm ch06</a>。</p>
+<h3>四、perf 与 BPF 专项</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -928,19 +1185,19 @@ numactl --cpunodebind=0 --membind=0 ./strategy
 <tbody>
 <tr>
 <td><strong><code class="c">perf stat -e page-faults,major-faults,minor-faults</code></strong></td>
-<td>缺页计数</td>
+<td>缺页计数（分 minor/major）</td>
 </tr>
 <tr>
 <td><strong><code class="c">perf record -e page-faults -g</code></strong></td>
-<td>缺页火焰图</td>
+<td>缺页火焰图——谁在 touch 新页</td>
 </tr>
 <tr>
 <td><strong><code class="c">drsnoop</code>（BCC）</strong></td>
-<td>追踪 <strong>direct reclaim</strong> 路径延迟</td>
+<td><strong>direct reclaim</strong> 逐次延迟（谁在等回收）</td>
 </tr>
 <tr>
-<td><strong><code class="c">wss</code>（BCC，实验）</strong></td>
-<td>估算进程 WSS</td>
+<td><strong><code class="c">wss</code>（BCC，referenced 位）</strong></td>
+<td>进程 WSS 估算</td>
 </tr>
 </tbody>
 </table></div>
@@ -950,14 +1207,80 @@ vmstat 1 | awk 'NR&gt;2 {print $7,$8}'   # si so
 # 缺页热点（开发/压测环境）
 perf record -e major-faults -g -p $(pidof strategy) -- sleep 30
 perf script | stackcollapse-perf.pl | flamegraph.pl &gt; major-fault.svg
+
+# direct reclaim 受害者逐次输出
+sudo drsnoop-bpfcc
+# TIME(s)  COMM   PID    LAT(ms)
+# 1.234    strategy 4321  3.5       ← 分配路径等回收 3.5ms
 </code></pre>
-<p>→ <a href="chapter-13.html#ch-13">Ch 13 perf</a> · <a href="chapter-15.html#ch-15">Ch 15 BPF</a> · <a href="appendix-C.html#app-C">附录 C</a></p>
+<p><strong>drsnoop 的判读</strong>：LAT(ms) 列就是分配尖刺的内存侧证据——配合 <a href="#s-7-4">7.4 传导链</a> 定位是水位问题还是回收效率问题。缺页事件机制（fault 四路分发）见 <a href="../../06-linux-mm/html/chapter-04.html#ch-4">06-linux-mm ch04</a>——perf 抓的 page-faults 就是 do_anonymous_page/wp_page_copy 这些路径的触发。</p>
+<h3>五、工具选型速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>第一工具</th>
+<th>深挖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>现在有内存压力吗？</td>
+<td>PSI + vmstat si/so</td>
+<td>sar -B 回收历史</td>
+</tr>
+<tr>
+<td>真实可用多少？</td>
+<td>free 的 available</td>
+<td>/proc/meminfo</td>
+</tr>
+<tr>
+<td>哪个进程占内存？</td>
+<td>top/ps RSS</td>
+<td>pmap -X（PSS 归因）</td>
+</tr>
+<tr>
+<td>是泄漏吗？</td>
+<td>RSS 日曲线形状</td>
+<td>pmap -X 分项 + 缺页火焰图</td>
+</tr>
+<tr>
+<td>谁在等回收？</td>
+<td>drsnoop</td>
+<td>zoneinfo 水位</td>
+</tr>
+<tr>
+<td>NUMA 均衡吗？</td>
+<td>numastat</td>
+<td>numactl 调整</td>
+</tr>
+<tr>
+<td>内核内存去哪了？</td>
+<td>slabtop</td>
+<td>/proc/slabinfo</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>巡检常驻</strong>：vmstat si/so（恒零红线）+ PSI memory + MemAvailable——低开销三件。</li>
+<li><strong>日曲线</strong>：RSS/PSS/slab 三条曲线进监控——斜率告警早于阈值告警。</li>
+<li><strong>每次上线前</strong>：major-faults 计数应恒零（mlock 生效验证）；drsnoop 短窗口确认无 direct reclaim。</li>
+<li><strong>嵌入式</strong>：/proc/meminfo 是全部观测面（无 BCC）——Slab 与 MemAvailable 的比值是内核开销的健康指标。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-7-4">7.4 分析方法论</a></li>
+<li>关联：<a href="chapter-13.html#ch-13">Ch13 perf</a>、<a href="chapter-15.html#ch-15">Ch15 BPF</a>、<a href="appendix-C.html#app-C">附录 C</a>、<a href="../../06-linux-mm/html/chapter-08.html#ch-8">06-linux-mm ch08 slab</a>、<a href="../../06-linux-mm/html/chapter-04.html#ch-4">06-linux-mm ch04 fault</a>、<a href="../../06-linux-mm/html/chapter-06.html#ch-6">06-linux-mm ch06 zone/水位</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>vmstat 只看 free 列——si/so 才是关键，si/so 持续非零 = swap 在发生 = HFT 灾难</li>
-<li>slabtop 不看——内核 slab（dentry/inode）膨胀挤占用户内存，sar/slabtop 才能看到</li>
-<li>pmap 不用 -X——pmap -x 只给 RSS，-X 给 PSS/共享/私有分项更详细</li>
+<li><strong>vmstat 只看 free 列</strong>——si/so 才是红线；free 低是 cache 占用的正常形态。</li>
+<li><strong>slabtop 不看</strong>——内核对象（dentry/skbuf）膨胀挤占用户内存，进程视角不可见。</li>
+<li><strong>pmap 不用 -X</strong>——-x 只有 RSS；-X 的 PSS/私有分项才是归因依据。</li>
+<li><strong>VSZ 大当泄漏</strong>——稀疏映射/malloc 保留区让 VSZ 天然大；看 RSS/PSS 和映射明细。</li>
+<li><strong>缺页火焰图在污染态跑</strong>——应在压测/复现场景抓，正常巡检抓不到东西。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -966,21 +1289,35 @@ perf script | stackcollapse-perf.pl | flamegraph.pl &gt; major-fault.svg
 </ol>
 <details>
 <summary>答</summary>
-<p>si/so（swap in/out）——持续非零 = anonymous paging 在发生 = 不可接受</p>
+<p>si/so（swap in/out）——持续非零 = 匿名页换页在发生 = ms 级停顿源，不可接受。</p>
 </details>
 <ol start="2">
-<li>slabtop 能发现什么问题？</li>
+<li>RSS 与 PSS 的计算差异？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>内核 slab cache（dentry/inode/task_struct）膨胀——挤占用户内存导致 direct reclaim</p>
+<p>RSS 把共享库整页算给每个进程（重复计费）；PSS 把共享页按共享进程数分摊——全系统 PSS 之和 = 真实总占用。</p>
 </details>
 <ol start="3">
-<li>pmap -X 比 pmap -x 多什么信息？</li>
+<li>pmap -X 里 heap 涨、映射数涨、anon 段涨各指什么泄漏？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>-X 包含 PSS（按比例分摊共享页）、Private_Dirty 等分项——定位是哪段映射占内存</p>
+<p>heap 涨 = malloc 泄漏；映射数涨 = mmap 没 munmap；anon 涨（各 8MB 级）= 线程栈泄漏（线程没回收）。</p>
+</details>
+<ol start="4">
+<li>drsnoop 的 LAT 列是什么的证据？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>分配路径同步等回收的毫秒数——分配尖刺（malloc/缺页变慢）的内存侧直接定罪。</p>
+</details>
+<ol start="5">
+<li>numa_foreign 高说明什么、怎么修？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>跨 NUMA 访问占比高——带宽减半延迟上升；numactl 把进程的 CPU 与内存绑到同一 node。</p>
 </details>
 </details>
 <hr />

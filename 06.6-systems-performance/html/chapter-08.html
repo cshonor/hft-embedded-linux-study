@@ -576,46 +576,99 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
       </section>
       <section class="section" id="s-8-4">
         <div class="sec-head"><div class="sec-no">8.4</div><h2>section-8.4-文件系统架构与特性</h2></div>
-<h3 class="sub">VFS（虚拟文件系统）</h3>
+<blockquote>
+<p>章节导航：<a href="#intro">本章导读</a> · 下一篇 <a href="#s-8-5">8.5 分析方法论</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：VFS 抽象层的分析价值（统一观测点）、三大缓存的分工与联动、journal 模式对写路径的影响、主流 FS 的 HFT 选型。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>VFS 是 BPF 追踪的<strong>统一观测点</strong></td>
+<td>不管底层什么 FS</td>
+</tr>
+<tr>
+<td>2</td>
+<td>page cache 同时缓存<strong>读与写</strong></td>
+<td>写是攒着异步刷的</td>
+</tr>
+<tr>
+<td>3</td>
+<td>journal 三种模式 = <strong>一致性/性能旋钮</strong></td>
+<td>ordered 是默认平衡</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">free</code> 低 ≠ 内存不够</td>
+<td>cache 可回收（直到 direct reclaim）</td>
+</tr>
+<tr>
+<td>5</td>
+<td>HFT 选型：ext4/xfs + noatime + 物理分盘</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、VFS（虚拟文件系统）</h3>
 <pre class="code" data-label="code"><code class="c">App: read() / write() / open()
          ↓
     VFS: vfs_read() / vfs_write()  ← BPF 追踪统一点
          ↓
-    ext4 / xfs / zfs / ...
+    ext4 / xfs / zfs / tmpfs / procfs...
          ↓
-    block layer → disk
+    page cache（文件 FS）→ block layer → disk
 </code></pre>
-<p><strong>性能分析：</strong> 可在 <strong>应用 syscall</strong>、<strong>VFS</strong>、<strong>具体 FS（ext4_xfs_*）</strong> 各层量延迟 — 层越低越接近真实磁盘。</p>
-<p>→ Ch 3 <a href="chapter-03.html#ch-3">VFS 概念</a></p>
-<h3>Linux 缓存层</h3>
+<p><strong>性能分析价值</strong>：可在<strong>应用 syscall</strong>、<strong>VFS</strong>、<strong>具体 FS（ext4_xfs_*）</strong> 各层量延迟——三层对比本身就是定位法：syscall 慢而 VFS 快 = 应用层开销；VFS 慢而 FS 快 = 缓存/锁；FS 层慢 = 真 I/O（<a href="#s-8-5">8.5 延迟分析</a>）。</p>
+<p>VFS 的抽象也让 <strong>tmpfs</strong>（纯内存 FS）、<strong>procfs</strong> 走同一接口——<code class="c">read()</code> 到 tmpfs 就是内存拷贝，没有块层。</p>
+<h3>二、Linux 缓存三层</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>缓存</th>
 <th>存什么</th>
 <th>工具</th>
+<th>失效代价</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>Page Cache</strong></td>
-<td>文件 <strong>内容</strong>页</td>
+<td>文件<strong>内容</strong>页（读缓存 + 写缓冲）</td>
 <td><code class="c">free</code>、<code class="c">cachestat</code></td>
+<td>一次盘 I/O</td>
 </tr>
 <tr>
 <td><strong>Dentry Cache</strong></td>
-<td>路径名 → inode 查找</td>
+<td>路径名 → inode 映射（目录项）</td>
 <td><code class="c">sar -v</code></td>
+<td>再走一遍路径解析</td>
 </tr>
 <tr>
 <td><strong>Inode Cache</strong></td>
-<td>inode 结构 / 属性</td>
+<td>inode 结构/属性</td>
 <td><code class="c">sar -v</code>、<code class="c">slabtop</code></td>
+<td>从盘上读 inode</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>与 Ch 7 关系：</strong> page cache 占用 <strong>主存</strong> — <code class="c">free</code> 低不代表没内存，可能是 <strong>cache 可回收</strong>（直到 direct reclaim）。</p>
-<h3>高级特性</h3>
+<p>三层联动：<code class="c">open("/data/foo/bar")</code> 要走 dentry 查 <code class="c">/data</code>→<code class="c">foo</code>→<code class="c">bar</code>（每级一次 lookup），拿到 inode 后 read 才查 page cache——<strong>长路径 + 冷 dentry = 元数据 I/O 风暴</strong>（每次 lookup 都可能是一次盘读）。容器/大量短生命周期文件场景 dentry/inode slab 占用可观（<a href="chapter-07.html#ch-7">ch7 内存</a>、slab 机制见 <a href="../../06-linux-mm/html/chapter-08.html#ch-8">06-linux-mm ch08</a>）。</p>
+<p><strong>⭐ page cache 的双重身份</strong>：</p>
+<pre class="code" data-label="code"><code class="c">读路径：miss → 发起块 I/O → 填页 → 返回（下次命中免 I/O）
+写路径：write() → 只写 page cache（标记脏）→ 立即返回！
+        → writeback 线程异步刷盘（脏页超阈值/超时）
+        → fsync() 强制把本文件的脏页刷完 + 等
+</code></pre>
+<p><strong>写快的代价</strong>：write() 返回 µs 级是「记在账上」，真落盘要等 writeback/fsync——<strong>崩溃时未刷脏页丢失</strong>（journal 只保元数据一致性，data=ordered 下数据页顺序有保证但内容未必最新）。延迟敏感的应用必须明白这个账期：日志「写成功」的语义分 <code class="c">write()</code> 返回（内存）和 <code class="c">fsync()</code> 返回（盘上）两档。</p>
+<h3>三、高级特性</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -627,22 +680,59 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
 <tbody>
 <tr>
 <td><strong>Extents</strong></td>
-<td>连续块分配，减碎片</td>
+<td>连续块区间分配（代替间接块）——减碎片、减元数据</td>
 <td>顺序大文件友好</td>
 </tr>
 <tr>
 <td><strong>Journaling</strong></td>
-<td>崩溃一致性</td>
-<td>元数据 journal 增写放大</td>
+<td>崩溃一致性——元数据变更先写日志</td>
+<td>增写放大；commit 有节奏</td>
 </tr>
 <tr>
 <td><strong>COW</strong></td>
-<td>快照、克隆</td>
-<td>btrfs/ZFS；写路径可能变复杂</td>
+<td>写时复制——快照/克隆/校验的基础</td>
+<td>btrfs/ZFS；写路径变复杂（重定向）</td>
+</tr>
+<tr>
+<td><strong>Delayed allocation</strong></td>
+<td>攒够再分配块（XFS/ext4 delalloc）</td>
+<td>减碎片，但 fsync 更重</td>
 </tr>
 </tbody>
 </table></div>
-<h3>常见文件系统（Linux）</h3>
+<p><strong>ext4 journal 三模式</strong>（一致性/性能旋钮）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>journal 内容</th>
+<th>崩溃后</th>
+<th>性能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">data=journal</code></td>
+<td>元数据 + <strong>数据</strong></td>
+<td>数据不丢</td>
+<td>最慢（全双写）</td>
+</tr>
+<tr>
+<td><code class="c">data=ordered</code>（默认）</td>
+<td>元数据；数据先于元数据落盘</td>
+<td>数据旧但一致</td>
+<td>平衡</td>
+</tr>
+<tr>
+<td><code class="c">data=writeback</code></td>
+<td>仅元数据</td>
+<td><strong>可能见到新旧混合数据</strong></td>
+<td>最快，有合规风险</td>
+</tr>
+</tbody>
+</table></div>
+<p>journal 是 I/O 来源：ext4 的 <code class="c">jbd2</code> 线程周期性 commit（默认 5s）——biostacks 里的常客（<a href="chapter-09.html#s-9-5">ch9</a>）；日志盘与数据盘分离（ext4 可把 journal 放独立设备）是老牌优化。</p>
+<h3>四、常见文件系统选型</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -654,46 +744,225 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
 <tbody>
 <tr>
 <td><strong>ext4</strong></td>
-<td>默认、成熟</td>
-<td>系统盘、日志盘</td>
+<td>默认、成熟、工具链全</td>
+<td>系统盘、通用</td>
 </tr>
 <tr>
 <td><strong>XFS</strong></td>
-<td>大文件、并行分配组、延迟分配</td>
-<td>大容量日志 / 数据归档</td>
+<td>大文件、并行分配组（allocation groups）、延迟分配</td>
+<td>大容量日志/数据归档、高并发写</td>
 </tr>
 <tr>
 <td><strong>ZFS</strong></td>
-<td>ARC 缓存、存储池、recordsize</td>
-<td>非 tick 路径；调 recordsize 匹配 I/O</td>
+<td>ARC 自适应缓存、存储池、快照/校验</td>
+<td>非 tick 路径；recordsize 匹配 I/O 大小</td>
 </tr>
 <tr>
 <td><strong>btrfs</strong></td>
-<td>COW、快照</td>
-<td>备份、开发环境</td>
+<td>COW、快照、压缩</td>
+<td>备份、开发环境（COW 写放大不适合日志热路径）</td>
+</tr>
+<tr>
+<td><strong>tmpfs</strong></td>
+<td>纯内存</td>
+<td>replay 缓冲、IPC 中转——盘 I/O 直接消失</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 实践：</strong> 系统盘 ext4/xfs + <strong><code class="c">noatime</code></strong>；NVMe 日志盘与数据盘 <strong>分离</strong>，避免 journaling 与 bulk 写争抢。</p>
+<p><strong>XFS 的 AG（allocation group）</strong>：把盘切成多个独立分配区——多线程同时写大文件时各用各的 AG <strong>分配锁不互斥</strong>（与 blk-mq、SLUB per-CPU 同一哲学：共享变分区）。</p>
+<h3>五、HFT 实践</h3>
+<ul>
+<li>系统盘 ext4/xfs + <strong><code class="c">noatime</code></strong>（每次读文件不再更新 atime——省一次元数据写）。</li>
+<li>NVMe 日志盘与数据盘<strong>物理分离</strong>——journaling 与 bulk 写不争盘（<a href="chapter-09.html#ch-9">ch9</a>）。</li>
+<li>可重生的中间数据用 tmpfs——replay 缓冲、短期状态文件零盘 I/O。</li>
+<li>配置/小文件读多：启动后 dentry/inode 已热，正常路径无盘 I/O——但要防内存压力把 cache 挤掉（回收见 <a href="chapter-07.html#ch-7">ch7</a>）。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>下一节：<a href="#s-8-5">8.5 分析方法论</a>（延迟分层测量）</li>
+<li>关联：<a href="chapter-03.html#ch-3">ch3 OS 概念</a>、<a href="chapter-07.html#ch-7">ch7 内存</a>（page cache 与回收）、<a href="chapter-09.html#ch-9">ch9 磁盘</a>（下层）、<a href="../../06-linux-mm/html/chapter-08.html#ch-8">06-linux-mm ch08 slab</a>（dentry/inode 的物理形态）</li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>write() 返回当落盘</strong>——只写进 page cache；崩溃丢数据、fsync 才是持久化语义。</li>
+<li><strong>free 低当内存耗尽</strong>——page cache 是可回收内存（直到 direct reclaim 打断你，<a href="chapter-07.html#ch-7">ch7</a>）。</li>
+<li><strong>nobarrier 图快</strong>——掉电一致性换性能，生产慎用（UPS/BBU 也要想清楚）。</li>
+<li><strong>长路径冷启动</strong>——dentry 未热时 open 是一串元数据 I/O；高频小文件路径要短。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>VFS 层对性能分析的价值？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>统一观测点：不管底层什么 FS 都能在 vfs_read/write 追踪；且 syscall/VFS/FS 三层延迟对比本身就是定位法。</p>
+</details>
+<ol start="2">
+<li>write() 为什么 µs 级返回？代价是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>只写 page cache 标脏，writeback 异步刷——快是「记账快」；崩溃丢脏页，持久化语义在 fsync。</p>
+</details>
+<ol start="3">
+<li>ext4 三种 journal 模式的权衡？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>journal（数据+元数据全日志，最慢最安全）/ordered（数据先于元数据，默认平衡）/writeback（仅元数据，最快但崩溃后可能新旧数据混合）。</p>
+</details>
+<ol start="4">
+<li>XFS 的 allocation group 为什么利于并发？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>多独立分配区各有分配锁——多线程写大文件时锁不互斥（共享变分区的通用哲学）。</p>
+</details>
+<ol start="5">
+<li>tmpfs 为什么零盘 I/O？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>纯内存 FS，走 VFS 接口但没有 page cache 之下的块层——读写就是内存拷贝；代价是占 RAM、重启即失。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-8-5">
         <div class="sec-head"><div class="sec-no">8.5</div><h2>section-8.5-分析方法论</h2></div>
-<h3 class="sub">延迟分析（Latency Analysis）</h3>
-<p><strong>测量层次：</strong></p>
-<pre class="code" data-label="code"><code class="c">① 应用事务计时（端到端）
-② syscall 层（strace / BPF 测 read/write 耗时）
-③ VFS 层（vfs_read/write 追踪）
-④ FS 层（ext4_file_read_iter / xfs_* 延迟直方图）
+<blockquote>
+<p>章节导航：<a href="#s-8-4">8.4 文件系统架构与特性</a> · 上一篇 ← · 下一篇 <a href="#s-8-6">8.6 观测工具</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：文件系统的延迟分层测量法、读/写两条路径的分解树、工作负载特征化五维度、事务成本判定阈值、WSS 陷阱。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>四层延迟测量</strong>自上而下</td>
+<td>应用→syscall→VFS→FS</td>
+</tr>
+<tr>
+<td>2</td>
+<td>读写路径<strong>分开分解</strong></td>
+<td>读卡在 cache miss；写卡在 writeback/fsync</td>
+</tr>
+<tr>
+<td>3</td>
+<td>事务成本 <strong>&lt;1% 排除 FS</strong></td>
+<td>&gt;10% 深挖</td>
+</tr>
+<tr>
+<td>4</td>
+<td>读 I/O 的第一嫌疑是 <strong>cache miss</strong></td>
+<td>写 I/O 的第一嫌疑是 <strong>fsync/journal</strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td>WSS &lt;&lt; RAM 的 fio 测的是 <strong>cache</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、延迟分析：四层测量</h3>
+<pre class="code" data-label="code"><code class="c">① 应用事务计时（端到端）       —— 策略一个主循环多少 µs
+② syscall 层                  —— read/write/fsync 各多少（perf trace / BPF）
+③ VFS 层                      —— vfs_read/write 追踪
+④ FS 层                       —— ext4_file_read_iter / xfs_* 延迟直方图（ext4dist）
+⑤ 块层（Ch 9）                —— biolatency/biosnoop
 </code></pre>
-<p><strong>事务成本（Transaction Cost）：</strong></p>
+<p><strong>层间差值即线索</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①慢 ②快</td>
+<td>问题不在 FS（锁/调度/计算）</td>
+</tr>
+<tr>
+<td>②慢 ③④快</td>
+<td>syscall 路径开销（copy、锁竞争）</td>
+</tr>
+<tr>
+<td>③慢 ④快</td>
+<td>cache/路径查找问题</td>
+</tr>
+<tr>
+<td>④慢 ⑤快</td>
+<td>FS 内部：journal、分配、锁</td>
+</tr>
+<tr>
+<td>⑤慢</td>
+<td>盘/队列（<a href="chapter-09.html#s-9-5">ch9 方法论</a>）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>二、读路径分解树</h3>
+<pre class="code" data-label="code"><code class="c">read() 慢
+  ├─ page cache 命中？ → cachestat 命中率
+  │     ├─ 命中且仍慢 → copy/锁/syscall 开销（②③层）
+  │     └─ miss 高 → 谁把 cache 挤了？
+  │           ├─ 内存压力回收（ch7 PSI memory）
+  │           ├─ 工作集真大于 RAM（WSS 问题）
+  │           └─ 读模式随机（预读无效）
+  └─ 变成块 I/O → ch9 分解（wait vs service）
+</code></pre>
+<p><strong>读问题的第一嫌疑永远是 cache miss</strong>——命中率从 99% 掉到 90%，盘 I/O 涨 10×（线性放大效应）。<code class="c">cachestat</code>（<a href="#s-8-6">8.6</a>）是第一手证据。</p>
+<h3>三、写路径分解树</h3>
+<pre class="code" data-label="code"><code class="c">write() 慢 / fsync() 慢
+  ├─ write() 慢？
+  │     ├─ 脏页超阈值 → writeback 限速（throttle，可感知为偶发巨慢）
+  │     └─ dirty_ratio 太小 / 刷盘跟不上
+  ├─ fsync() 慢？
+  │     ├─ journal commit 争用（jbd2 在 commit 中，等下一个周期）
+  │     ├─ 脏页量大（攒太久一次刷）
+  │     └─ 盘 GC/排队（ch9）
+  └─ ext4slower/xfsslower 抓现场 + biostacks 看 jbd2
+</code></pre>
+<p><strong>写问题的第一嫌疑是 fsync/journal</strong>：异步写把成本推迟到 fsync 时刻集中爆发——「平时快、偶尔 ms 级尖刺」的典型来源。<code class="c">data=ordered</code> + 大 commit 间隔 + 攒批写 是标准缓解。</p>
+<h3>四、事务成本（Transaction Cost）</h3>
 <pre class="code" data-label="code"><code class="c">事务成本 = 事务总时间中阻塞在 FS I/O 上的比例
 </code></pre>
-<p>若 &lt; 1% — FS 不是瓶颈；若 &gt; 10% — 查 cache 命中、慢 fsync、元数据风暴。</p>
-<p>→ Ch 2 <a href="chapter-02.html#ch-2">延迟分解</a></p>
-<h3>工作负载特征</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>比例</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt; 1%</td>
+<td>FS 不是瓶颈——去查 CPU/锁/调度（<a href="chapter-06.html#ch-6">ch6</a>）</td>
+</tr>
+<tr>
+<td>1–10%</td>
+<td>边缘——看趋势</td>
+</tr>
+<tr>
+<td>&gt; 10%</td>
+<td>深挖：cache 命中、慢 fsync、元数据风暴</td>
+</tr>
+</tbody>
+</table></div>
+<p>这是<strong>快速排除法</strong>——比逐层排查省时间：先量比例，小就直接换方向。</p>
+<h3>五、工作负载特征化（五维度）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -730,7 +999,8 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
 </tr>
 </tbody>
 </table></div>
-<h3>微基准测试注意：WSS</h3>
+<p>特征化的价值：<strong>负载形状决定调优方向</strong>——顺序读调预读（read_ahead_kb）、随机读调缓存大小、写多查 journal 策略、元数据多（小文件创建删除）查分配器与 dentry。</p>
+<h3>六、微基准的 WSS 陷阱</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -741,7 +1011,7 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
 <tbody>
 <tr>
 <td><strong>WSS &lt;&lt; RAM</strong></td>
-<td><strong>page cache 性能</strong> — 极快，误导</td>
+<td><strong>page cache 性能</strong>——极快，误导</td>
 </tr>
 <tr>
 <td><strong>WSS &gt;&gt; RAM</strong></td>
@@ -753,44 +1023,156 @@ posix_fadvise(fd, off, len, POSIX_FADV_DONTNEED); // 提示可丢弃 cache
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c"># 清空 page cache（仅测试环境！生产禁止）
+<pre class="code" data-label="shell"><code class="c"># 清空 page cache（仅测试环境！生产禁止——会引发 I/O 风暴）
 echo 3 | sudo tee /proc/sys/vm/drop_caches
 </code></pre>
-<p>→ <a href="chapter-12.html#ch-12">Ch 12 基准测试</a></p>
+<p>与 <a href="chapter-12.html#s-12-1">ch12 的失败模式①</a> 完全同源：测试集必须 &gt;&gt; RAM 或 direct=1，否则报告的是内存带宽。</p>
+<h3>七、60 秒 FS 检查</h3>
+<pre class="code" data-label="shell"><code class="c">mount | grep -v proc          # 挂载选项（noatime 有没有）
+free -m                       # cache 占用（可回收）
+sar -v 1 3                    # dentry/inode 增长
+sudo cachestat-bpfcc 5        # 命中率
+sudo ext4slower-bpfcc 10      # &gt;10ms 的慢操作
+</code></pre>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>tick 循环的事务成本应 &lt; 0.1%</strong>：热路径读到的一切（配置、合约表）启动时加载并常驻——任何常态 FS I/O 都是架构问题。</li>
+<li><strong>日志的 fsync 策略是显式决策</strong>：每条 fsync（安全、慢）vs 攒批周期刷（快、可丢最后 N 秒）——合规要求决定，不是性能决定；写进 runbook。</li>
+<li><strong>嵌入式 flash</strong>：小文件高频创建删除（日志分片）在 eMMC 上触发元数据 I/O 风暴——环形缓冲单文件 + 定长记录绕开元数据。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-8-4">8.4 架构与特性</a></li>
+<li>下一节：<a href="#s-8-6">8.6 观测工具</a></li>
+<li>关联：<a href="chapter-02.html#ch-2">ch2 延迟分解</a>、<a href="chapter-07.html#ch-7">ch7 内存回收</a>、<a href="chapter-09.html#s-9-5">ch9 磁盘方法论</a>、<a href="chapter-12.html#ch-12">ch12 基准测试</a></li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>读慢直接查盘</strong>——先看 cachestat：命中率跌 9% 就能让盘 I/O 涨 10×，问题在内存不在盘。</li>
+<li><strong>写慢只看 write()</strong>——异步写把成本搬到 fsync；两条路径分开分解。</li>
+<li><strong>事务成本没量就深挖</strong>——&lt;1% 时全部 FS 调优都是白费，先排除再动手。</li>
+<li><strong>fio 测试集小于 RAM</strong>——测的是 page cache（<a href="chapter-12.html#ch-12">ch12 同款陷阱</a>）。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>syscall 慢但 VFS/FS 层快，说明什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>开销在 syscall 路径本身——copy_to/from_user、锁竞争、路径查找，不是 I/O。</p>
+</details>
+<ol start="2">
+<li>cache 命中率从 99% 掉到 90% 意味着什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>盘 I/O 涨 10 倍（线性放大）——先查谁把 cache 挤掉（内存回收/工作集增长），不是查盘。</p>
+</details>
+<ol start="3">
+<li>「平时快、偶尔 ms 级写尖刺」的第一嫌疑？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>fsync 集中爆发或 writeback 限速——异步写攒的账一次清；ext4slower 抓现场。</p>
+</details>
+<ol start="4">
+<li>事务成本阈值怎么用？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>&lt;1% 直接排除 FS 换方向；&gt;10% 深挖（cache/fsync/元数据）；中间看趋势。</p>
+</details>
+<ol start="5">
+<li>随机读负载该调什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>调小预读（read_ahead_kb，防污染 cache）+ 保证缓存容量；预读对随机读无效。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-8-6">
         <div class="sec-head"><div class="sec-no">8.6</div><h2>section-8.6-观测工具</h2></div>
-<h3 class="sub">传统统计工具</h3>
+<blockquote>
+<p>章节导航：<a href="#s-8-5">8.5 分析方法论</a> · 上一篇 ← · 下一篇 <a href="#s-8-7">8.7–8.8 实验与调优</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：FS 观测的两层工具（传统统计 / BCC 专项）、cachestat 与 ext4slower 的输出精读、双峰直方图的判读。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">cachestat</code> 回答「<strong>到底有没有读盘</strong>」</td>
+<td>命中率第一手证据</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code class="c">ext4dist</code> 的<strong>双峰</strong>是结构信息</td>
+<td>快 cache / 慢 disk</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">ext4slower</code> 抓<strong>超阈值现场</strong></td>
+<td>慢操作逐次+进程+文件</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">opensnoop</code> 揪意外文件访问</td>
+<td>配置/权限/安全</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">filetop</code> 是 FS 层的 <strong>top</strong></td>
+<td>哪个文件在狂读写</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、传统统计层</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具</th>
 <th>用途</th>
+<th>关键</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">mount</code></strong></td>
-<td>挂载选项：<code class="c">noatime</code>、<code class="c">data=writeback</code> 等</td>
+<td>挂载选项审计</td>
+<td><code class="c">noatime</code>、<code class="c">data=</code> 模式</td>
 </tr>
 <tr>
 <td><strong><code class="c">free</code> / <code class="c">top</code> / <code class="c">vmstat</code></strong></td>
-<td>cache 占用；与 Ch 7 联动</td>
+<td>cache 占用</td>
+<td>与 <a href="chapter-07.html#ch-7">ch7</a> 联动</td>
 </tr>
 <tr>
 <td><strong><code class="c">sar -v</code></strong></td>
 <td>dentry/inode cache 统计</td>
+<td>增长趋势（泄漏/洪泛）</td>
 </tr>
 <tr>
 <td><strong><code class="c">slabtop</code></strong></td>
-<td>dentry/inode 等 slab 占用</td>
+<td>dentry/inode slab 占用</td>
+<td>谁吃掉了内存</td>
 </tr>
 </tbody>
 </table></div>
-<h3>BPF / BCC 工具集</h3>
+<p><code class="c">sar -v</code> 的 dentunusd（未用 dentry）持续涨 = 文件创建删除频繁（或泄漏）；<code class="c">slabtop</code> 里 dentry/inode 占用大 = 元数据工作集大——两者都指向「小文件风暴」型负载。</p>
+<h3>二、BPF / BCC 工具集</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -808,7 +1190,7 @@ echo 3 | sudo tee /proc/sys/vm/drop_caches
 <tr>
 <td><strong><code class="c">filetop</code></strong></td>
 <td>按文件 I/O 吞吐排序</td>
-<td>哪份日志/数据文件在狂读写的</td>
+<td>哪份日志/数据文件在狂读写</td>
 </tr>
 <tr>
 <td><strong><code class="c">cachestat</code></strong></td>
@@ -818,151 +1200,497 @@ echo 3 | sudo tee /proc/sys/vm/drop_caches
 <tr>
 <td><strong><code class="c">ext4dist</code> / <code class="c">xfsdist</code></strong></td>
 <td>FS 操作延迟直方图</td>
-<td>看双峰（快 cache / 慢 disk）</td>
+<td>看双峰</td>
 </tr>
 <tr>
 <td><strong><code class="c">ext4slower</code> / <code class="c">xfsslower</code></strong></td>
-<td>超过阈值（如 10ms）的慢操作</td>
+<td>超阈值慢操作</td>
 <td>抓 fsync、journal 尖刺</td>
 </tr>
 <tr>
-<td><strong>bpftrace VFS 单行</strong></td>
-<td>追踪 <code class="c">vfs_read</code> 等</td>
-<td>附录 C 扩展</td>
+<td><code class="c">fileslower</code></td>
+<td>VFS 层慢操作（跨 FS）</td>
+<td>不依赖具体 FS</td>
+</tr>
+<tr>
+<td>bpftrace VFS 单行</td>
+<td><code class="c">vfs_read</code> 等定点</td>
+<td><a href="appendix-C.html#app-C">附录 C</a></td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c"># 页缓存命中情况（需 BCC）
-sudo cachestat-bpfcc 5
-
-# 慢 ext4 操作 &gt; 10ms
-sudo ext4slower-bpfcc 10
-
-# 谁在 open 文件
-sudo opensnoop-bpfcc
+<p><strong>⭐ cachestat 精读</strong>：</p>
+<pre class="code" data-label="code"><code class="c">    HITS   MISSES  DIRTIES HITRATIO   BUFFERS_MB   CACHES_MB
+   12345        3       12    99.98%          32      10240
 </code></pre>
-<p>→ <a href="chapter-15.html#ch-15">Ch 15 BPF</a> · <a href="appendix-C.html#app-C">附录 C</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a></p>
+<ul>
+<li><code class="c">HITRATIO 99.98%</code>：读几乎全命中——读慢与盘无关（<a href="#s-8-5">8.5 读路径分解</a>）</li>
+<li><code class="c">MISSES</code>：每秒真读盘次数——<strong>这是连接 FS 层与 ch9 的桥</strong>（miss 数 ≈ iostat 的 r/s）</li>
+<li><code class="c">DIRTIES</code>：每秒脏页数——writeback 压力的前瞻指标</li>
+<li>命中率跌 + miss 涨 → 查内存回收/工作集（ch7）；miss 稳定但延迟涨 → 查盘（ch9）</li>
+</ul>
+<p><strong>⭐ ext4slower 精读</strong>：</p>
+<pre class="code" data-label="code"><code class="c">Tracing ext4 operations slower than 10 ms
+TIME     COMM           PID    T BYTES   OFF_KB   LAT(ms) FILENAME
+14:03:22 strategy       4321   W 4096    1048572  12.5     trade-20260831.log
+14:03:22 jbd2/nvme0n1-8 305    W 131072  -        15.2     -   ← journal 线程！
+</code></pre>
+<ul>
+<li>每行 = 一次超阈值操作：谁、读/写、多大、哪个文件、多慢</li>
+<li><code class="c">jbd2</code> 出现 = journal commit 在慢操作现场——写尖刺与 journal 争用的直接证据（<a href="#s-8-4">8.4 journal</a>）</li>
+<li><code class="c">trade-*.log</code> 频繁出现 = 日志盘/策略路径的 I/O 冲突实锤</li>
+</ul>
+<p><strong>ext4dist 双峰判读</strong>：</p>
+<pre class="code" data-label="code"><code class="c">     usecs           : count    distribution
+         0 -&gt; 1      : 45201    |**************      ← cache 命中（µs 级）
+         2 -&gt; 7      : 3012     |*
+       ...
+      8192 -&gt; 16383  : 892      |                     ← 盘 I/O（ms 级）第二峰
+</code></pre>
+<p>两个峰天然分开（内存 vs 盘的数量级差）——<strong>峰高比例就是 cache 命中率的另一种表达</strong>；第二峰变宽/右移 = 盘路径恶化。</p>
+<h3>三、工具选型速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>第一工具</th>
+<th>深挖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>到底有没有读盘？</td>
+<td><code class="c">cachestat</code></td>
+<td>ext4dist 双峰</td>
+</tr>
+<tr>
+<td>哪个操作慢？</td>
+<td><code class="c">ext4slower</code>/<code class="c">fileslower</code></td>
+<td>biostacks（ch9）</td>
+</tr>
+<tr>
+<td>哪个文件在狂读写？</td>
+<td><code class="c">filetop</code></td>
+<td>biosnoop</td>
+</tr>
+<tr>
+<td>谁在 open 奇怪文件？</td>
+<td><code class="c">opensnoop</code></td>
+<td>auditd（合规级）</td>
+</tr>
+<tr>
+<td>元数据缓存健康？</td>
+<td><code class="c">sar -v</code></td>
+<td><code class="c">slabtop</code></td>
+</tr>
+<tr>
+<td>挂载选项对不对？</td>
+<td><code class="c">mount</code></td>
+<td>/etc/fstab 审计</td>
+</tr>
+</tbody>
+</table></div>
+<h3>四、与 ch9 的分工</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>本章</th>
+<th>ch9</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>问题形态</td>
+<td>「应用读写慢」「fsync 尖刺」</td>
+<td>「盘忙」「I/O 延迟高」</td>
+</tr>
+<tr>
+<td>工具</td>
+<td>cachestat/ext4slower/filetop</td>
+<td>biolatency/biosnoop/iostat</td>
+</tr>
+<tr>
+<td>桥接</td>
+<td>cachestat 的 MISSES</td>
+<td>≈ iostat 的 r/s</td>
+</tr>
+<tr>
+<td>典型结论</td>
+<td>cache miss / journal 争用</td>
+<td>队列 / GC / Sloth</td>
+</tr>
+</tbody>
+</table></div>
+<p>自上而下：先用本章工具确认「FS 层真有问题且到了块层」，再换 ch9 工具在块层归因。</p>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>巡检常驻</strong>：cachestat 命中率（热路径读应恒 100%）——跌破即告警，早于任何延迟指标。</li>
+<li><strong>事件触发</strong>：ext4slower 抓写尖刺现场 + jbd2 出现与否（journal 争用 vs 盘问题分流的第一个证据）。</li>
+<li><strong>opensnoop 安全审计</strong>：热路径进程的文件访问白名单化——意外 open（配置热加载、locale 文件、/etc 查询）是启动延迟和隐蔽 I/O 的来源。</li>
+<li><strong>嵌入式</strong>：BCC 不可用时，<code class="c">/proc/meminfo</code> 的 Cached + vmstat 的 bi/bo 是 cachestat 的退化替代（精度低但有总账）。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-8-5">8.5 分析方法论</a></li>
+<li>下一节：<a href="#s-8-7">8.7–8.8 实验与调优</a></li>
+<li>关联：<a href="chapter-15.html#ch-15">ch15 BPF</a>、<a href="chapter-09.html#s-9-6">ch9 磁盘观测</a>、<a href="chapter-07.html#ch-7">ch7 内存</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a></li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>读慢不查 cachestat</strong>——命中率是第一手证据；miss 数直接桥接 ch9。</li>
+<li><strong>ext4slower 只看应用进程行</strong>——jbd2 行才是 journal 争用的实锤。</li>
+<li><strong>filetop 忽略读方向</strong>——读热点文件（配置/字典反复读）与写热点（日志）是不同问题。</li>
+<li><strong>slabtop 里 dentry 大不管</strong>——元数据工作集大说明文件数量失控（容器场景常见）。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>cachestat 的 MISSES 字段为什么是连接 ch8/ch9 的桥？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>miss 即真读盘次数——近似等于 iostat 的 r/s：FS 层的 miss 计数与块层的读计数对上，问题就从「FS 层」推进到「块层」。</p>
+</details>
+<ol start="2">
+<li>ext4slower 里出现 jbd2 行说明什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>ext4 journal 线程的 commit 操作超阈值——写尖刺时刻 journal 在现场，争用/串行化的直接证据。</p>
+</details>
+<ol start="3">
+<li>ext4dist 双峰的成因与判读？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>cache 命中（µs）与盘 I/O（ms）天然分离；峰高比≈命中率，第二峰右移/变宽=盘路径恶化。</p>
+</details>
+<ol start="4">
+<li>热路径进程被 opensnoop 发现读意外文件，可能是？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>配置热加载轮询、locale/zoneinfo 惰性读取、动态链接库缺失后的搜索路径——启动延迟与隐蔽 I/O 的来源。</p>
+</details>
+<ol start="5">
+<li>dentry/inode slab 占用大说明什么负载？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>文件数量庞大的元数据工作集（海量小文件/容器镜像层）——查创建删除频率与目录结构。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-8-7">
         <div class="sec-head"><div class="sec-no">8.7</div><h2>section-8.7-8.8-实验与调优</h2></div>
-<h3 class="sub">fio 基准测试</h3>
-<p><strong>fio</strong> = 灵活 I/O 测试器 — 支持随机分布、延迟分位（P99、P99.99）、多线程。</p>
+<blockquote>
+<p>章节导航：<a href="#s-8-6">8.6 观测工具</a> · 上一篇 ← · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：fio 做 FS 层基准的口径、应用层 I/O advise API（fadvise/madvise/sync_file_range）、挂载与 FS 参数的语义、FS 视角的 USE 检查。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>fio 的 <code class="c">--size</code> 必须 <strong>&gt; RAM</strong></td>
+<td>否则测 cache（<a href="chapter-12.html#ch-12">ch12</a> 同坑）</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>正确 hint 比大 buffer 有效</strong></td>
+<td>fadvise/madvise 让内核按你的访问模式优化</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">noatime</code> 是免费午餐</td>
+<td>每次读省一次元数据写</td>
+</tr>
+<tr>
+<td>4</td>
+<td>nobarrier 是<strong>一致性换性能</strong></td>
+<td>生产慎用</td>
+</tr>
+<tr>
+<td>5</td>
+<td>ZFS 的 <code class="c">recordsize</code> 要<strong>匹配 I/O 大小</strong></td>
+<td>错配 = 读放大或写放大</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、fio 基准测试（FS 层口径）</h3>
 <pre class="code" data-label="shell"><code class="c">fio --name=seqread --filename=/data/testfile --size=32G \
     --rw=read --bs=1M --direct=1 --ioengine=libaio \
-    --runtime=60 --time_based --group_reporting
+    --runtime=60 --time_based --group_reporting \
+    --percentile_list=50:99:99.9
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>参数</th>
 <th>含义</th>
+<th>口径陷阱</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">--direct=1</code></strong></td>
-<td>O_DIRECT，测磁盘非 cache</td>
+<td>O_DIRECT</td>
+<td>不加 = 测 page cache（除非 size &gt;&gt; RAM）</td>
 </tr>
 <tr>
 <td><strong><code class="c">--size</code></strong></td>
-<td>必须 <strong>&gt; RAM</strong> 才测真磁盘（否则测 cache）</td>
+<td>测试集大小</td>
+<td><strong>必须 &gt; RAM</strong> 才测真磁盘</td>
 </tr>
 <tr>
 <td><strong><code class="c">--bs</code></strong></td>
-<td>块大小 — 对齐应用真实 I/O</td>
+<td>块大小</td>
+<td><strong>对齐应用真实 I/O</strong>（日志 4K？归档 1M？）</td>
 </tr>
 <tr>
-<td><strong><code class="c">--rw</code></strong></td>
+<td><code class="c">--rw</code></td>
 <td>read/write/randread/randwrite</td>
+<td>随机/顺序测的是不同东西（<a href="chapter-09.html#s-9-7">ch9</a>）</td>
+</tr>
+<tr>
+<td><code class="c">--ioengine</code></td>
+<td>libaio/io_uring</td>
+<td>引擎不同 = 提交路径不同</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 上线前对 <strong>日志盘</strong> 单独 fio — 确认与 NVMe 数据面 <strong>不共享瓶颈</strong>。</p>
-<h3>应用层调优</h3>
+<p><strong>FS 层 vs 裸盘层</strong>：fio 挂<strong>文件</strong>（<code class="c">/data/testfile</code>）测的是 FS+盘整条路径；挂<strong>块设备</strong>（<code class="c">/dev/nvme1n1</code>，direct）绕过 FS——两次差值就是 FS 开销（journal/分配/元数据）。HFT 日志盘验收建议两个都跑。</p>
+<p><strong>HFT</strong>：上线前对<strong>日志盘</strong>单独 fio——确认与 NVMe 数据面不共享瓶颈（PCIe/GC，<a href="chapter-09.html#s-9-4">ch9.4</a>）。</p>
+<h3>二、应用层调优：advise API</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>API</th>
 <th>作用</th>
+<th>典型用法</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">posix_fadvise()</code></strong></td>
-<td>顺序/随机、willneed、dontneed</td>
+<td>文件访问模式提示</td>
+<td><code class="c">POSIX_FADV_SEQUENTIAL</code>（开预读）/<code class="c">FADV_RANDOM</code>（关预读）/<code class="c">FADV_DONTNEED</code>（读后弃缓存）</td>
 </tr>
 <tr>
 <td><strong><code class="c">madvise()</code></strong></td>
-<td>mmap 区域：SEQUENTIAL、RANDOM、DONTNEED</td>
+<td>mmap 区域提示</td>
+<td><code class="c">MADV_SEQUENTIAL</code>/<code class="c">MADV_RANDOM</code>/<code class="c">MADV_DONTNEED</code>（释放）/<code class="c">MADV_HUGEPAGE</code>（THP，见 <a href="../../06-linux-mm/html/chapter-03.html#ch-3">06-linux-mm</a>）</td>
 </tr>
 <tr>
 <td><strong><code class="c">sync_file_range()</code></strong></td>
-<td>范围刷盘（细粒度控制）</td>
+<td>范围刷盘</td>
+<td>细粒度控制——刷 10MB 文件中间那 1MB，不用全文件 fsync</td>
+</tr>
+<tr>
+<td><code class="c">fallocate()</code></td>
+<td>预分配</td>
+<td>消除写时分配延迟与碎片</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>原则：</strong> 给内核 <strong>正确 hint</strong> 比盲目增大 buffer 更有效。</p>
-<h3>挂载与 FS 参数</h3>
+<p><strong>原则：给内核正确 hint 比盲目增大 buffer 更有效</strong>。两个高价值场景：</p>
+<ol>
+<li><strong>随机读 mmap</strong>：默认预读会把无用邻居页灌进 cache——<code class="c">madvise(MADV_RANDOM)</code> 关掉，cache 利用率立刻改善（cachestat 验证）。</li>
+<li><strong>一次性大文件处理</strong>：<code class="c">fadvise(DONTNEED)</code> 处理完就弃——防止把热数据挤出 page cache（对同机其他进程是公益）。</li>
+</ol>
+<p><code class="c">sync_file_range</code> 的低延迟用法：日志线程攒批后<strong>分区段刷</strong>（每段独立 sync_file_range）——单段失败不影响全局，且把一次大 fsync 拆成多个小窗口。</p>
+<h3>三、挂载与 FS 参数</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>选项 / 参数</th>
+<th>选项/参数</th>
 <th>效果</th>
+<th>注意</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">noatime</code> / <code class="c">relatime</code></strong></td>
-<td>减少读触发的元数据写</td>
+<td><strong><code class="c">noatime</code> / <code class="c">nodiratime</code></strong></td>
+<td>读文件不再更新 atime——<strong>每次读省一次元数据写</strong></td>
+<td>免费午餐；relatime 是折中默认</td>
 </tr>
 <tr>
-<td><strong><code class="c">barrier</code> / <code class="c">nobarrier</code></strong></td>
-<td>一致性 vs 性能 — <strong>生产慎用 nobarrier</strong></td>
+<td><code class="c">barrier</code> / <code class="c">nobarrier</code></td>
+<td>写屏障——掉电时 journal 顺序保证</td>
+<td><strong>nobarrier = 一致性换性能</strong>，生产慎用（UPS/BBU 下再考虑）</td>
 </tr>
 <tr>
-<td><strong>ext4 <code class="c">data=ordered</code></strong></td>
-<td>默认平衡</td>
+<td>ext4 <code class="c">data=ordered/writeback/journal</code></td>
+<td>journal 模式</td>
+<td><a href="#s-8-4">8.4</a></td>
 </tr>
 <tr>
-<td><strong>XFS <code class="c">allocsize</code></strong></td>
-<td>预分配减少碎片</td>
+<td>ext4 <code class="c">commit=</code></td>
+<td>journal commit 间隔（默认 5s）</td>
+<td>加大 = 攒批更久，崩溃窗口更大</td>
 </tr>
 <tr>
-<td><strong>ZFS <code class="c">recordsize</code></strong></td>
-<td>匹配应用 I/O 大小（如 128K）</td>
+<td>ext4 <code class="c">journal_dev=</code></td>
+<td>journal 放独立设备</td>
+<td>日志/数据分盘的经典实现</td>
+</tr>
+<tr>
+<td>XFS <code class="c">allocsize</code> / <code class="c">swalloc</code></td>
+<td>预分配</td>
+<td>减碎片</td>
+</tr>
+<tr>
+<td>ZFS <code class="c">recordsize</code></td>
+<td>记录块大小（默认 128K）</td>
+<td><strong>匹配应用 I/O</strong>：DB 8K/16K；日志 128K+</td>
+</tr>
+<tr>
+<td><code class="c">noexec/nosuid/nodev</code></td>
+<td>安全</td>
+<td>不影响性能但 runbook 该有</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 日志盘示例（思路，按合规调整）：</strong></p>
+<p><strong>ZFS recordsize 错配的代价</strong>：应用每次读 8K 而 recordsize=128K——<strong>读放大 16×</strong>（读一整个 record）；应用每次写 8K——<strong>写放大</strong>（COW 整个 128K record 重写）。调对 recordsize 是 ZFS 性能的第一杠杆。</p>
+<p><strong>HFT 日志盘示例</strong>：</p>
 <pre class="code" data-label="code"><code class="c">UUID=... /var/log/hft  xfs  noatime,nodiratime,logbufs=8  0 2
 </code></pre>
-<h3>USE 方法（File System 视角）</h3>
+<h3>四、USE 方法（File System 视角）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>字母</th>
 <th>问什么</th>
+<th>工具</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>U</strong></td>
 <td>cache 利用、FS 层 CPU</td>
+<td><code class="c">cachestat</code>、ext4dist</td>
 </tr>
 <tr>
 <td><strong>S</strong></td>
 <td>慢 I/O 队列、应用阻塞在 read/write/fsync</td>
+<td><code class="c">ext4slower</code>、PSI io、<code class="c">pidstat -d</code> 的 iodelay</td>
 </tr>
 <tr>
 <td><strong>E</strong></td>
-<td>I/O error、只读 remount</td>
+<td>I/O error、只读 remount（journal 损伤后）</td>
+<td><code class="c">dmesg</code>、<code class="c">df</code>（只读挂载检查）</td>
 </tr>
 </tbody>
 </table></div>
+<h3>五、调优优先级</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>手段</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>挂载选项：<code class="c">noatime</code></td>
+<td>零</td>
+</tr>
+<tr>
+<td>2</td>
+<td>应用 hint：fadvise/madvise/攒批</td>
+<td>代码小改</td>
+</tr>
+<tr>
+<td>3</td>
+<td>journal 策略：commit 间隔/分盘</td>
+<td>配置</td>
+</tr>
+<tr>
+<td>4</td>
+<td>recordsize/allocsize 匹配</td>
+<td>重建 FS</td>
+</tr>
+<tr>
+<td>5</td>
+<td>换 FS / 换盘</td>
+<td>预算</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>日志写路径的最终形态</strong>：定长记录 + 环形单文件（元数据零开销）+ 攒批 + sync_file_range 分段刷 + noatime 挂载——这条链上每一环都有本节的依据。</li>
+<li><strong>回放读路径</strong>：mmap + MADV_SEQUENTIAL + 预读（或一次性整文件读进 tmpfs）——cache 命中恒 100%（cachestat 验证）。</li>
+<li><strong>合规 vs 性能</strong>：fsync 频率是合规决策（<a href="#s-8-5">8.5</a>）——runbook 里写明「允许丢失的窗口」并让 journal commit 间隔与之对齐。</li>
+<li><strong>嵌入式 flash</strong>：atime 更新在 eMMC 上是<strong>写寿命税</strong>——noatime 从优化变成必选。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-8-6">8.6 观测工具</a></li>
+<li>关联：<a href="chapter-09.html#s-9-7">ch9 fio 口径</a>、<a href="chapter-12.html#s-12-4">ch12 基准拷问</a>、<a href="../../06-linux-mm/html/chapter-03.html#ch-3">06-linux-mm THP</a>、<a href="../../14-hft-engineering/html/index.html">14-HFT 工程实践</a></li>
+<li>下一章：<a href="chapter-09.html#ch-9">ch9 磁盘</a></li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>fio size 小于 RAM</strong>——测的是 cache 带宽，报告极快（<a href="chapter-12.html#ch-12">ch12 失败模式</a>）。</li>
+<li><strong>随机读不 madvise</strong>——默认预读污染 cache，命中率虚低。</li>
+<li><strong>nobarrier 上生产</strong>——掉电后 journal 可能失效、FS 损伤；性能收益远小于风险。</li>
+<li><strong>ZFS 默认 recordsize 直接用</strong>——8K 访问模式配 128K record = 16× 读放大。</li>
+<li><strong>忘了 noatime</strong>——每次读文件一次元数据写，eMMC 上直接烧寿命。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>fio 挂文件和挂块设备的差值是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>FS 开销——journal、块分配、元数据维护；两轮对比即可量化 FS 层成本。</p>
+</details>
+<ol start="2">
+<li>madvise(MADV_RANDOM) 什么时候用？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>mmap 随机访问时关掉默认预读——防止无用邻居页灌满 cache（改善命中率与回收压力）。</p>
+</details>
+<ol start="3">
+<li>sync_file_range 相比 fsync 的优势？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>范围粒度——只刷指定区间，把一次大 fsync 拆成多个小窗口，且不强制元数据 journal 语义（按需组合）。</p>
+</details>
+<ol start="4">
+<li>ZFS recordsize 错配的两个代价？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>读放大（小读拉整 record）+ 写放大（COW 整 record 重写）——都必须匹配应用 I/O 大小。</p>
+</details>
+<ol start="5">
+<li>为什么嵌入式 eMMC 上 noatime 是必选？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>atime 更新是每次读都触发的元数据写——消耗 flash 写寿命（有擦写上限），不只是性能问题。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>

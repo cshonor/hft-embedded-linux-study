@@ -734,86 +734,249 @@ Ch 5  应用程序（本章：优化主战场 + 剖应用方法论）
       </section>
       <section class="section" id="s-5-3">
         <div class="sec-head"><div class="sec-no">5.3</div><h2>section-5.3-编程语言与垃圾回收</h2></div>
-<h3 class="sub">执行方式对比</h3>
+<blockquote>
+<p>章节导航：<a href="#intro">本章导读</a> · 下一篇 <a href="#s-5-4">5.4 分析方法论</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：三类语言执行模型的性能特征、C/C++ 编译优化级别的取舍、GC 的四个代价与对策、以及「tick 路径零分配」的工程落地。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>延迟可预测性：<strong>编译型 &gt; JIT &gt; 解释型</strong></td>
+<td>HFT 要的是尾部不是峰值</td>
+</tr>
+<tr>
+<td>2</td>
+<td>GC 的本质代价是<strong>暂停不可预测</strong></td>
+<td>不是慢，是不知道什么时候慢</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>分配速率决定 GC 频率</strong></td>
+<td>少分配少 GC</td>
+</tr>
+<tr>
+<td>4</td>
+<td>C++ 热路径也要管分配</td>
+<td>malloc 锁/碎片/缺页</td>
+</tr>
+<tr>
+<td>5</td>
+<td>验证「无暂停」靠<strong>测</strong>不靠声称</td>
+<td>BPF 抓 malloc/fault/sched</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、执行方式对比</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>类型</th>
 <th>例子</th>
 <th>性能特征</th>
+<th>延迟形态</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>编译型</strong></td>
+<td><strong>编译型（AOT）</strong></td>
 <td>C、C++、Rust</td>
-<td>静态优化、<code class="c">gcc -O3</code> / LTO；延迟可预测</td>
+<td>静态优化、<code class="c">-O3</code>/LTO/PGO</td>
+<td><strong>可预测</strong>——最坏情况由代码决定</td>
 </tr>
 <tr>
 <td><strong>解释型</strong></td>
 <td>Python、早期 Ruby</td>
-<td>启动快、峰值慢；量化热路径慎用</td>
+<td>启动快、开发快；峰值慢</td>
+<td>峰值高且稳定地慢</td>
 </tr>
 <tr>
 <td><strong>VM + JIT</strong></td>
-<td>Java、C#</td>
-<td>预热后接近原生；预热期与 deopt 需关注</td>
+<td>Java、C#、JS V8</td>
+<td>预热后接近原生</td>
+<td><strong>双峰</strong>——预热前慢 + deopt 时回退</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>编译优化级别（C/C++）：</strong></p>
-<ul>
-<li><code class="c">-O0</code>：调试</li>
-<li><code class="c">-O2</code>：生产默认</li>
-<li><code class="c">-O3</code>：激进内联、向量化 — <strong>需 benchmark 验证</strong>，有时反而变大导致 I-cache miss</li>
-<li><code class="c">-flto</code>：链接期优化</li>
-</ul>
-<p><strong>HFT：</strong> 策略核心多为 <strong>C++ / Rust</strong>；研究层 Python 可以，但<strong>不能把解释型路径放上 tick 热路径</strong>。</p>
-<p>→ <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/18-rust-quant/">18-Rust Guide</a> 零成本抽象 vs GC 语言</p>
-<h3>垃圾回收（GC）</h3>
-<p>自动内存管理的代价：</p>
+<p><strong>JIT 的两个坑</strong>：
+1. <strong>预热</strong>：前几千次调用走解释/低优化档——冷启动延迟高（<a href="chapter-11.html#s-11-5">ch11.5 FaaS</a> 的层 2 成本）。
+2. <strong>去优化（deopt）</strong>：分支 profile 变化（比如行情模式突变）触发已编译代码作废、回解释档——<strong>稳态系统里突然出现的延迟台阶</strong>，经典 JIT 陷阱。</p>
+<p><strong>编译优化级别（C/C++）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>级别</th>
+<th>用途</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code></td>
+<td>调试</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code></td>
+<td>生产默认</td>
+<td>稳健</td>
+</tr>
+<tr>
+<td><code class="c">-O3</code></td>
+<td>激进内联、向量化</td>
+<td><strong>需 benchmark</strong>——代码膨胀可能反而 I-cache miss（<a href="#s-5-6">5.6</a>）</td>
+</tr>
+<tr>
+<td><code class="c">-flto</code></td>
+<td>链接期跨模块优化</td>
+<td>构建慢、收益中</td>
+</tr>
+<tr>
+<td>PGO</td>
+<td>按 profile 引导布局</td>
+<td>I-cache/分支预测友好——HFT 值得做</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT</strong>：策略核心 <strong>C++ / Rust</strong>（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/18-rust-quant/">18-Rust</a> 零成本抽象）；研究层 Python 随便——但<strong>不能把解释型路径放上 tick 热路径</strong>。</p>
+<h3>二、垃圾回收（GC）：四个代价</h3>
+<p>自动内存管理不是免费的，代价有四个维度：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>问题</th>
 <th>表现</th>
+<th>机制</th>
 <th>对策</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td><strong>Stop-the-world 暂停</strong></td>
+<td><strong>P99/P999 尖刺</strong></td>
+<td>GC 根扫描/整理时冻结所有应用线程</td>
+<td>低延迟 GC（ZGC/Shenandoah，亚 ms 级）；堆 sizing</td>
+</tr>
+<tr>
+<td><strong>GC CPU 开销</strong></td>
+<td>年轻代频繁 minor GC</td>
+<td>分配速率高 → 回收勤</td>
+<td>少短命对象、逃逸分析、栈上分配</td>
+</tr>
+<tr>
 <td><strong>内存膨胀</strong></td>
 <td>堆一直涨</td>
-<td>对象池、复用 buffer</td>
+<td>GC 觉得还有余量就不回收</td>
+<td>容量上限 + 对象池</td>
 </tr>
 <tr>
-<td><strong>GC CPU</strong></td>
-<td>年轻代频繁 minor GC</td>
-<td>少短命对象、<code class="c">-XX:+AlwaysPreTouch</code></td>
-</tr>
-<tr>
-<td><strong>Stop-the-world</strong></td>
-<td><strong>P99/P999 尖刺</strong></td>
-<td>选低延迟 GC（ZGC、Shenandoah）、堆 sizing</td>
-</tr>
-<tr>
-<td><strong>分配速率</strong></td>
-<td>分配越快 GC 越勤</td>
-<td>逃逸分析、栈上对象、off-heap</td>
+<td><strong>分配速率反馈环</strong></td>
+<td>负载越高 GC 越勤 → 有效算力下降</td>
+<td>分配与回收争 CPU</td>
+<td>off-heap、buffer 复用</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 经验法则：</strong></p>
+<p><strong>GC 暂停的量级参考</strong>（JVM 系）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>GC</th>
+<th>典型 pause</th>
+<th>对 HFT 预算（µs 级）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parallel（吞吐优先）</td>
+<td>数百 ms ~ 秒</td>
+<td>❌ 不可用</td>
+</tr>
+<tr>
+<td>G1（默认）</td>
+<td>数十~数百 ms</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>ZGC / Shenandoah（低延迟）</td>
+<td><strong>&lt;1ms（亚 ms）</strong></td>
+<td>仍超预算 10~100×</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论不是「Java 不能做低延迟」</strong>：LMAX/Disruptor 一系证明 JVM 上可以做到 µs 级——但代价是<strong>热路径零分配</strong>（对象池 + off-heap DirectBuffer）+ 低延迟 GC + 精细调优。同样的纪律性投入放 C++ 上更省力——语言选择的本质是<strong>你要花多少精力买回可预测性</strong>。</p>
+<h3>三、tick 路径零分配（无论什么语言）</h3>
+<p>「无分配、无 GC」的工程清单（C++/Java/Rust 通用思想）：</p>
+<pre class="code" data-label="code"><code class="c">启动阶段（慢没关系）：
+  □ 预分配所有 order book 容器（reserve 到上限）
+  □ 对象池：消息/事件/迭代器复用
+  □ ring buffer 固定槽位（Disruptor 模式）
+  □ 预 touch + mlock 全部热数据（[ch7](../../chapter-07-memory/)）
+  □ hugepage 映射（TLB 友好，[06-linux-mm THP](../../../06-linux-mm/chapter-03-page-table-management/notes/note-透明大页THP.md)）
+
+稳态 tick 处理（每个包）：
+  □ 零 malloc/free（池化对象 checkout/checkin）
+  □ 零异常抛出路径（异常 = 分配 + 栈展开不可控）
+  □ 零字符串构造（定长 buffer + 视图）
+  □ 零日志格式化（二进制日志 + 离线格式化）
+  □ 零锁分配路径（无锁队列/seqlock；锁本身不分配但等待不可控）
+</code></pre>
+<p><strong>C++ 特有</strong>：默认 malloc 也不是「免费」的——多线程下 ptmalloc 的 arena 锁竞争、长期运行碎片化（<a href="../../06-linux-mm/html/chapter-08.html#ch-8">06-linux-mm slab</a> 讲内核侧；用户态 jemalloc/tcmalloc 缓解）；HFT 的答案是<strong>热路径根本没有 malloc 调用</strong>，不是换个更快的分配器。</p>
+<h3>四、监控与验证</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>验证项</th>
+<th>工具</th>
+<th>预期</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GC/分配暂停</td>
+<td>GC log + 延迟热力图对齐（<a href="chapter-02.html#ch-2">ch2</a>）</td>
+<td>尖刺与 GC 时间不重合</td>
+</tr>
+<tr>
+<td>热路径 malloc</td>
+<td>BPF uprobe malloc 计数（<a href="chapter-15.html#ch-15">ch15</a>）</td>
+<td>恒零</td>
+</tr>
+<tr>
+<td>热路径缺页</td>
+<td>perf -e page-faults（<a href="chapter-07.html#ch-7">ch7</a>）</td>
+<td>稳态恒零</td>
+</tr>
+<tr>
+<td>分配速率</td>
+<td>GC 统计 / tcmalloc counters</td>
+<td>平稳</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>「声称无 GC」不算数——BPF 抓 malloc/fault/sched 时长验证</strong>（热路径线程的非预期事件 = 谎言被拆穿）。</p>
+<h3>衔接</h3>
 <ul>
-<li><strong>tick 路径：</strong> 无分配、无 GC — C++/Rust 或 Java 里把热路径做成 <strong>off-heap + 预分配</strong>。</li>
-<li><strong>监控：</strong> GC log + <strong>延迟热力图</strong> 对齐，看尖刺是否与 Full GC 重合。</li>
+<li>下一节：<a href="#s-5-4">5.4 分析方法论</a></li>
+<li>关联：<a href="chapter-07.html#ch-7">ch7 内存</a>（预 touch/mlock）、<a href="chapter-13.html#ch-13">ch13 perf</a>（验证工具）、<a href="chapter-15.html#ch-15">ch15 BPF</a>（uprobe 验证）、<a href="../../06-linux-mm/html/chapter-08.html#ch-8">06-linux-mm slab</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/18-rust-quant/">18-Rust</a>（零成本抽象）</li>
 </ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>GC 语言做 HFT 热路径——Java/Go 的 GC pause 即使是 ms 级也远超 HFT 预算，热路径应用 C++</li>
-<li>C++ 不管内存分配——默认 malloc 有锁竞争和碎片，HFT 应用对象池/arena/pre-allocated</li>
-<li>不测 GC/分配器实际暂停——声称「无 GC」但不测，实际有 major page fault 或 malloc stall</li>
+<li><strong>GC 语言做 HFT 热路径不设防</strong>——不做零分配纪律的 JVM 热路径，GC pause 直接打穿预算。</li>
+<li><strong>C++ 不管分配</strong>——malloc 锁竞争/碎片/缺页；热路径目标是零 malloc 而非「更快的 malloc」。</li>
+<li><strong>不测暂停就声称无</strong>——BPF 验证 malloc/fault/sched，热路径线程的非预期事件。</li>
+<li><strong>-O3 无脑上</strong>——代码膨胀 → I-cache miss 可能倒退；benchmark 决定（<a href="#s-5-6">5.6</a>）。</li>
+<li><strong>JIT 系统不防 deopt</strong>——稳态延迟台阶的经典来源；关键路径考虑 AOT（GraalVM native / C++）。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -822,21 +985,35 @@ Ch 5  应用程序（本章：优化主战场 + 剖应用方法论）
 </ol>
 <details>
 <summary>答</summary>
-<p>GC pause 即使 ms 级也远超 HFT 微秒级预算——C++ 手动内存管理可预分配/池化，无暂停</p>
+<p>GC pause 即使低延迟 GC 也亚 ms 级，超预算 10-100×；C++ 手动管理可预分配/池化——但正确表述是「同等的零分配纪律在 C++ 上更省力」。</p>
 </details>
 <ol start="2">
-<li>C++ 热路径内存管理应该怎么做？</li>
+<li>GC 的四个代价维度？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>对象池/arena/pre-allocated——热路径零 malloc，避免分配器锁和 page fault</p>
+<p>STW 暂停（P99 尖刺）、GC CPU（回收算力）、内存膨胀（不回收到上限）、分配速率反馈环（负载→分配→GC→算力下降）。</p>
 </details>
 <ol start="3">
-<li>如何验证热路径真的「无暂停」？</li>
+<li>tick 路径零分配的清单核心项？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>BPF 追踪 malloc/page-fault/sched 时长——看热路径线程是否有非预期事件</p>
+<p>启动期预分配/池化/ring buffer 固定槽 + 稳态零 malloc/零异常/零字符串构造/零日志格式化——分配在启动期一次做完。</p>
+</details>
+<ol start="4">
+<li>JIT 的 deopt 为什么是延迟陷阱？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>分支 profile 变化触发已编译代码作废回解释档——稳态系统里突现的延迟台阶，难归因（看起来什么都没变）。</p>
+</details>
+<ol start="5">
+<li>怎么验证热路径真的零分配？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>BPF uprobe 挂 malloc/free 计数 + perf page-faults + sched 时长——热路径线程上任何非零计数都拆穿声称。</p>
 </details>
 </details>
 <hr />
@@ -1019,66 +1196,304 @@ Ch 5  应用程序（本章：优化主战场 + 剖应用方法论）
       </section>
       <section class="section" id="s-5-5">
         <div class="sec-head"><div class="sec-no">5.5</div><h2>section-5.5-观测工具</h2></div>
-<h3 class="sub">工具集概览</h3>
+<blockquote>
+<p>章节导航：<a href="#s-5-4">5.4 分析方法论</a> · 上一篇 ← · 下一篇 <a href="#s-5-6">5.6 常见陷阱</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：应用层观测的工具地图（syscall 追踪 / CPU 剖析 / Off-CPU / 事件追踪 / 自定义探针）、每类的开销量级与生产纪律、多线程程序的观测口径。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>多线程看 TID 不看 PID</strong></td>
+<td>进程级平均稀释热路径线程</td>
+</tr>
+<tr>
+<td>2</td>
+<td>strace 开发用，<strong>生产换 perf trace</strong></td>
+<td>ptrace 双陷阱机制（<a href="chapter-13.html#s-13-11">ch13.11</a>）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>On-CPU 与 <strong>Off-CPU 是互补半圆</strong></td>
+<td>剖析只回答一半</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">syscount</code> 做 <strong>syscall 资产盘点</strong></td>
+<td>热路径不应有意外 syscall</td>
+</tr>
+<tr>
+<td>5</td>
+<td>USDT/静态探针是<strong>业务级观测</strong>的正路</td>
+<td>比 uprobe 稳定便宜</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、工具地图</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具</th>
 <th>类型</th>
 <th>用途</th>
+<th>开销</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">strace</code></strong></td>
-<td>syscall 追踪</td>
-<td>开发/debug；<strong>生产慎用</strong>（开销大）</td>
+<td>syscall 追踪（ptrace）</td>
+<td>开发/debug；<strong>生产慎用</strong></td>
+<td><strong>2-10× 降速</strong></td>
+</tr>
+<tr>
+<td><code class="c">perf trace</code></td>
+<td>syscall 追踪（tracepoint）</td>
+<td>生产级 syscall 时长</td>
+<td>低</td>
 </tr>
 <tr>
 <td><strong><code class="c">perf</code></strong></td>
 <td>采样剖析</td>
-<td>CPU 火焰图、PMC、部分 trace</td>
+<td>CPU 火焰图、PMC</td>
+<td>~1-5%</td>
 </tr>
 <tr>
-<td><strong>BCC <code class="c">profile</code></strong></td>
-<td>BPF CPU 栈</td>
-<td>全栈、内核+用户</td>
+<td>BCC <code class="c">profile</code></td>
+<td>BPF CPU 栈采样</td>
+<td>全栈（内核+用户）、可过滤</td>
+<td>~1-5%</td>
 </tr>
 <tr>
-<td><strong>BCC/bpftrace <code class="c">offcputime</code></strong></td>
+<td><strong><code class="c">offcputime</code></strong></td>
 <td>Off-CPU 栈</td>
-<td>阻塞分析</td>
+<td>阻塞/等待分析</td>
+<td>中</td>
 </tr>
 <tr>
-<td><strong><code class="c">execsnoop</code></strong></td>
-<td>追踪 exec</td>
-<td>意外子进程 / 脚本调用</td>
+<td><code class="c">execsnoop</code></td>
+<td>exec 追踪</td>
+<td>意外子进程/脚本调用</td>
+<td>低</td>
 </tr>
 <tr>
 <td><strong><code class="c">syscount</code></strong></td>
-<td>syscall 计数</td>
-<td>热路径 syscall 种类与频率</td>
+<td>syscall 计数排行</td>
+<td>syscall 资产盘点</td>
+<td>低</td>
 </tr>
 <tr>
-<td><strong>应用层 USDT / 静态探针</strong></td>
+<td><code class="c">pidstat -t</code></td>
+<td>线程级 CPU</td>
+<td>TID 级归属</td>
+<td>低</td>
+</tr>
+<tr>
+<td>USDT / 静态探针</td>
 <td>自定义 tracepoint</td>
 <td>业务阶段 span</td>
+<td>极低</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="chapter-04.html#ch-4">Ch 4 观测工具</a> · <a href="appendix-C.html#app-C">附录 C bpftrace</a></p>
-<h3>bpftrace 示例（Off-CPU 思路）</h3>
-<pre class="code" data-label="shell"><code class="c"># 需 BCC offcputime 或等价脚本；概念：采样「可运行但未运行」的栈
-# 生产环境优先用预装 BCC 脚本，限时长运行
+<blockquote>
+<p>工具全景：<a href="chapter-04.html#ch-4">Ch4 观测工具</a> · 原理：<a href="chapter-13.html#ch-13">ch13 perf</a>、<a href="chapter-14.html#ch-14">ch14 ftrace</a>、<a href="chapter-15.html#ch-15">ch15 BPF</a></p>
+</blockquote>
+<h3>二、syscall 观测：三个工具的梯度</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>工具</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开发调试，看参数与返回值</td>
+<td><code class="c">strace -f -T -e trace=network</code></td>
+<td>信息最全（参数级别）</td>
+</tr>
+<tr>
+<td>生产看 syscall 时长分布</td>
+<td><code class="c">perf trace -p PID -s</code></td>
+<td>tracepoint 单点旁路，开销可接受（<a href="chapter-13.html#s-13-11">ch13.11 机制对比</a>）</td>
+</tr>
+<tr>
+<td>只数频率不做计时</td>
+<td><code class="c">syscount</code> / bpftrace 单行</td>
+<td>计数级最便宜</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>strace 慢的机制</strong>（为什么生产禁用）：ptrace 模型下每个 syscall 触发<strong>两次陷阱</strong>（入口停 + 出口停），每次都切换到 tracer 进程——syscall 从 ns 级变 µs 级。perf trace 用 tracepoint 单点旁路，无第二次陷阱。</p>
+<p><strong>syscount 的独特用途——syscall 资产盘点</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">sudo syscount-bpfcc -p $(pidof strategy) 30
+</code></pre>
+<p>输出热路径进程全部 syscall 频率表——<strong>预期清单</strong>（recvfrom/sendto/epoll_wait/clock_gettime）之外出现任何东西都是要解释的：futex 飙高（锁竞争）、ioctl（意外的驱动交互）、open/read（配置轮询泄漏）、madvise/mmap（分配抖动）。「unexpected syscall 定位法」与 <a href="chapter-13.html#s-13-11">ch13.11</a> 的 -s 汇总模式互补。</p>
+<h3>三、CPU 归属：On-CPU 与 Off-CPU 互补</h3>
+<pre class="code" data-label="shell"><code class="c"># On-CPU：CPU 时间花在哪（剖析）
+perf record -F 99 -g -p $(pidof strategy) -- sleep 30
+# 或 BCC 版（内核+用户栈一次采全）
+sudo profile-bpfcc -p $(pidof strategy) 30
+
+# Off-CPU：不在 CPU 上的时间花在哪（阻塞）
 sudo offcputime-bpfcc -p $(pidof strategy) 30
 </code></pre>
-<p>→ 完整脚本库：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a> · 本仓库附录 C</p>
+<p><strong>两半圆的关系</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>视角</th>
+<th>回答</th>
+<th>盲区</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>On-CPU 剖析</td>
+<td>CPU 周期烧在哪些栈</td>
+<td>等锁/等 I/O/等调度的时间<strong>不可见</strong></td>
+</tr>
+<tr>
+<td>Off-CPU</td>
+<td>阻塞在哪些栈、多久</td>
+<td>烧 CPU 的低效代码不可见</td>
+</tr>
+</tbody>
+</table></div>
+<p>延迟问题（tick P99）往往在 Off-CPU 半圆——「CPU 才 30% 却延迟尖刺」的第一嫌疑就是阻塞等待；吞吐问题（每秒处理多少）在 On-CPU 半圆。<strong>先用 pidstat -t 判断线程是 CPU-bound 还是阻塞-bound，再选半圆</strong>。</p>
+<p>Off-CPU 的机制：采样「离开 CPU 时的栈 + 等待时长」（sched_switch/sched_wakeup tracepoint 配对）——比剖析新，判读也多一个坑：<strong>等待不等于浪费</strong>（等 tick 是正常等待；等锁才是问题）——要按等待源分类看。</p>
+<h3>四、事件追踪层</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">execsnoop</code></td>
+<td>谁 exec 了什么——意外子进程（shell 调用、cron 泄漏）</td>
+</tr>
+<tr>
+<td>USDT 探针</td>
+<td>应用编译期埋的稳定探针（<code class="c">-DUSDT</code> / SystemTap SDT）</td>
+</tr>
+<tr>
+<td>uprobe（定制）</td>
+<td>没埋 USDT 时的补位——生产慎挂热函数</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>USDT vs uprobe 的取舍</strong>（<a href="chapter-15.html#s-15-2">ch15.2</a>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>USDT</th>
+<th>uprobe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>稳定性</td>
+<td>ABI 级（升级不破）</td>
+<td>函数名绑定（改代码即失效）</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>探针点设计过（低）</td>
+<td>任意函数任意热度</td>
+</tr>
+<tr>
+<td>前提</td>
+<td>源码可控（自己埋）</td>
+<td>二进制有符号</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>业务级 span 的正确路</strong>：在关键阶段（decode/strategy/risk/send）埋 USDT，BPF 一次采样端到端分解——这比在应用里写日志（分配/格式化开销）干净得多，与 <a href="../../14-hft-engineering/html/chapter-09.html#intro">14-HFT ch09 的延迟测量</a> 直接衔接。</p>
+<h3>五、多线程观测口径</h3>
+<pre class="code" data-label="shell"><code class="c">pidstat -t -p $(pidof strategy) 1     # -t：线程级（TID）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>陷阱</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程级平均掩盖热路径</td>
+<td><code class="c">-t</code> 看 TID；热线程单列判读</td>
+</tr>
+<tr>
+<td>不知道哪个线程是热路径</td>
+<td>启动时命名线程（pthread_setname_np）</td>
+</tr>
+<tr>
+<td>线程迁移干扰判读</td>
+<td>结合 <a href="chapter-06.html#ch-6">ch6 绑核</a> 看 per-CPU</td>
+</tr>
+</tbody>
+</table></div>
+<h3>六、生产纪律</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>生产策略</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>strace</td>
+<td>❌（只进开发环境）</td>
+</tr>
+<tr>
+<td>perf record/profile</td>
+<td>✅ 短窗口限 PID</td>
+</tr>
+<tr>
+<td>offcputime/syscount/execsnoop</td>
+<td>✅ 短窗口（30s 级）</td>
+</tr>
+<tr>
+<td>uprobe 热函数</td>
+<td>⚠️ staging 验证开销后短窗口</td>
+</tr>
+<tr>
+<td>USDT</td>
+<td>✅ 常驻可接受（探针开销设计过）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-5-4">5.4 分析方法论</a></li>
+<li>下一节：<a href="#s-5-6">5.6 常见陷阱</a>（符号/栈/inline）</li>
+<li>关联：<a href="chapter-04.html#ch-4">Ch4 观测工具</a>、<a href="chapter-13.html#ch-13">ch13 perf</a>、<a href="chapter-15.html#ch-15">ch15 BPF</a>、<a href="appendix-C.html#app-C">附录 C</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>pidstat 不指定 TID——多线程程序只看进程级数据，热路径线程被其他线程平均掉</li>
-<li>perf record 不加 -g——不加 -g 只采到当前函数采不到调用栈，无法做火焰图</li>
-<li>uprobe 生产直接挂——uprobe 有开销（每次调用陷入），热路径高频函数可能显著增延迟</li>
+<li><strong>pidstat 不指定 TID</strong>——进程级平均把热路径线程和 housekeeping 线程搅在一起。</li>
+<li><strong>perf record 不加 -g</strong>——只有当前函数没有调用栈，无法做火焰图。</li>
+<li><strong>uprobe 生产直接挂热函数</strong>——每次调用都有开销，µs 级路径显著增延迟；用 USDT。</li>
+<li><strong>延迟问题只跑 On-CPU 剖析</strong>——阻塞时间在剖析里不可见；pidstat -t 判断后选半圆。</li>
+<li><strong>offcputime 输出全当问题</strong>——等 tick 是正常等待，按等待源分类判读。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -1087,21 +1502,35 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
 </ol>
 <details>
 <summary>答</summary>
-<p>用 -t 指定 TID——进程级数据会把热路径线程和 housekeeping 线程平均掉</p>
+<p>用 -t 看 TID——进程级数据会把热路径线程和 housekeeping 线程平均掉；配合线程命名。</p>
 </details>
 <ol start="2">
-<li>perf record 为什么要加 -g？</li>
+<li>strace 和 perf trace 的机制差异？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>-g 采集调用栈——不加只能看到当前函数，无法做火焰图定位调用链热点</p>
+<p>strace 是 ptrace 双陷阱（进出各停一次，syscall ns→µs）；perf trace 用 tracepoint 单点旁路只记事件——生产用后者。</p>
 </details>
 <ol start="3">
-<li>uprobe 在生产环境的注意事项？</li>
+<li>On-CPU 和 Off-CPU 各自的盲区？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>有每次调用的开销——热路径高频函数会显著增延迟，应限时长或用 USDT 替代</p>
+<p>On-CPU 看不见阻塞（锁/IO/调度等待）；Off-CPU 看不见低效计算——延迟问题先想 Off-CPU，吞吐问题先想 On-CPU。</p>
+</details>
+<ol start="4">
+<li>syscount 在 HFT 的独特用途？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>syscall 资产盘点：热路径进程的 syscall 应限于预期清单（recvfrom/epoll/clock...），任何意外项（futex 飙高/open 轮询）都是线索。</p>
+</details>
+<ol start="5">
+<li>USDT 为什么比裸 uprobe 适合业务观测？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>ABI 稳定（代码升级不破）、探针点开销经过设计、语义明确（业务阶段名）——uprobe 绑函数名且任意热度。</p>
 </details>
 </details>
 <hr />
@@ -1109,65 +1538,213 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
       </section>
       <section class="section" id="s-5-6">
         <div class="sec-head"><div class="sec-no">5.6</div><h2>section-5.6-常见陷阱Gotchas</h2></div>
-<h3 class="sub">Missing Symbols（缺失符号）</h3>
-<p>火焰图 / perf report 出现 <code class="c">[unknown]</code> 或 <code class="c">0x7f...</code> 地址：</p>
+<blockquote>
+<p>章节导航：<a href="#s-5-5">5.5 观测工具</a> · 上一篇 ← · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：应用层观测的三大可观测性陷阱——缺失符号（[unknown]）、缺失堆栈（栈断层）、过度 inline——的机制与工程对策，以及 HFT 发布构建的可观测性配置基线。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>可观测性是<strong>编译期决定</strong>的</td>
+<td>出事时补不回来</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code class="c">[unknown]</code> = 符号缺失；<strong>平头栈</strong> = 帧指针缺失</td>
+<td>两个不同病</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>-O3 与可观测性有权衡</strong></td>
+<td>inline 太狠栈变浅</td>
+</tr>
+<tr>
+<td>4</td>
+<td>JIT 语言要<strong>额外喂符号</strong>给 perf</td>
+<td>perf-map 机制</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Release 也要 <code class="c">-g</code> + 帧指针</td>
+<td>危机时刻 5 分钟定生死</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、Missing Symbols（缺失符号）</h3>
+<p>火焰图 / perf report 出现 <code class="c">[unknown]</code> 或裸 <code class="c">0x7f...</code> 地址：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>原因</th>
+<th>机制</th>
 <th>解决</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>strip</strong> 了符号表</td>
-<td>编译加 <code class="c">-g</code>，发布用 <strong>split debuginfo</strong></td>
+<td>发布流水线默认 strip</td>
+<td>编译加 <code class="c">-g</code>，发布用 <strong>split debuginfo</strong>（符号进单独 debug 包）</td>
 </tr>
 <tr>
 <td>动态库无 debuginfo</td>
+<td>系统库只装了运行时</td>
 <td>安装 <code class="c">-dbg</code> / <code class="c">-debuginfo</code> 包</td>
 </tr>
 <tr>
 <td><strong>JIT</strong>（Java、Node）</td>
-<td><code class="c">perf-map-agent</code>、<code class="c">-XX:+PreserveFramePointer</code></td>
+<td>代码运行时生成，没有 ELF 符号</td>
+<td><code class="c">perf-map-agent</code>、<code class="c">-XX:+PreserveFramePointer</code>、JITDump</td>
 </tr>
 </tbody>
 </table></div>
-<h3>Missing Stacks（缺失堆栈）</h3>
+<p><strong>split debuginfo 的工作方式</strong>：二进制里的 <code class="c">.gnu_debuglink</code> 指向外部 debug 文件——生产机器只部署轻量二进制，分析机上有 debug 包即可还原符号。<strong>两头兼顾</strong>：发布体积小 + 危机 perf 可读。</p>
+<p><strong>JIT 符号问题的本质</strong>：perf 采到的 PC 指向运行时生成的机器码，ELF 里查无此址——JVM 的解法是往 <code class="c">/tmp/perf-PID.map</code> 写运行时映射（perf-map-agent），或 JITDump 直接喂符号化信息；<code class="c">-XX:+PreserveFramePointer</code> 让栈回溯可用。</p>
+<h3>二、Missing Stacks（缺失堆栈）</h3>
 <p>栈断层 → 火焰图「平头」、深度不够：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>原因</th>
+<th>机制</th>
 <th>解决</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>省略帧指针</strong>（<code class="c">-fomit-frame-pointer</code>）</td>
-<td>编译 <code class="c">-fno-omit-frame-pointer</code>（或 <code class="c">-mno-omit-leaf-frame-pointer</code>）</td>
+<td>栈上没有回溯链，fp 回溯断</td>
+<td>编译 <code class="c">-fno-omit-frame-pointer</code>（叶子函数可 <code class="c">-mno-omit-leaf-frame-pointer</code> 折中）</td>
 </tr>
 <tr>
 <td>栈太深 / 采样限制</td>
-<td>增大 <code class="c">--call-graph fp</code> 深度</td>
+<td>回溯层数上限</td>
+<td>增大 <code class="c">--call-graph fp</code> 深度 / <code class="c">--stack-size</code></td>
 </tr>
 <tr>
 <td><strong>inline 过多</strong></td>
-<td>权衡 <code class="c">-O3</code> 与可观测性</td>
+<td>函数被内联后栈上没有独立帧</td>
+<td>权衡 <code class="c">-O3</code> 与可观测性；<code class="c">--inlines</code> 展示内联帧</td>
+</tr>
+<tr>
+<td>unwind 信息缺失（dwarf 模式）</td>
+<td><code class="c">.eh_frame</code> 不完整</td>
+<td><code class="c">--call-graph dwarf</code> 需要完整 debuginfo</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 发布构建建议：</strong></p>
+<p><strong>fp vs dwarf vs lbr 三种栈回溯的取舍</strong>（<a href="chapter-13.html#s-13-9">ch13.9</a> 详细对比）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>前提</th>
+<th>开销</th>
+<th>精度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>fp（帧指针）</strong></td>
+<td>编译保留 fp</td>
+<td>最低</td>
+<td>好（除 inline/汇编帧）</td>
+</tr>
+<tr>
+<td>dwarf</td>
+<td>debuginfo</td>
+<td>高（每样本拷贝栈）</td>
+<td>好</td>
+</tr>
+<tr>
+<td>lbr</td>
+<td>Intel LBR 硬件</td>
+<td>低</td>
+<td>硬件栈深有限</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 默认 fp</strong>：开销最低且常驻可接受——代价是编译选项（本节核心）。</p>
+<h3>三、过度 inline 的双重代价</h3>
+<p><code class="c">-O3</code> 激进 inline：</p>
+<ol>
+<li><strong>性能反面</strong>：函数体膨胀 → I-cache 命中率下降（热路径代码挤爆 L1i）——有时 -O2 反而更快（<a href="#s-5-3">5.3</a>）。</li>
+<li><strong>可观测反面</strong>：内联函数没有独立栈帧——火焰图「平头」，多个逻辑函数合并成一坨，<strong>热点看不出调用层次</strong>。</li>
+</ol>
+<p><strong>权衡手段</strong>：关键模块 <code class="c">-fno-inline</code>（或 <code class="c">__attribute__((noinline))</code>）标注；PGO 让编译器按真实热度决定 inline（冷的展开、热的保留）。</p>
+<h3>四、HFT 发布构建基线</h3>
 <pre class="code" data-label="code"><code class="c">Release：-O3 -g -fno-omit-frame-pointer
-Debug symbols：单独 debug 包，生产按需挂载
-危机 perf：永远能采到可读的 strategy 栈
+Debug symbols：单独 debug 包（split debuginfo），生产按需挂载
+线程：命名（pthread_setname_np）——pidstat -t / 火焰图直接可读
+USDT：关键阶段埋探针（decode/strategy/risk/send）——危机时 BPF 直读
+验证：上线前跑一次 perf record -g，确认火焰图可读、无 [unknown] 大块
 </code></pre>
+<p><strong>最后一条是纪律</strong>：可观测性配置改完要<strong>验证</strong>——发布前 5 分钟的 perf 采样能救危机时的 5 小时。这是 <a href="chapter-16.html#ch-16">ch16「baseline 事前纪律」</a>在构建维度的版本：<strong>不是出事时才想符号，是构建时保证出事时能读</strong>。</p>
+<h3>五、症状速查表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>火焰图症状</th>
+<th>病因</th>
+<th>方向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>大块 <code class="c">[unknown]</code></td>
+<td>符号缺失</td>
+<td>split debuginfo / debuginfo 包</td>
+</tr>
+<tr>
+<td>栈全 2-3 层就断（平头）</td>
+<td>帧指针被 omit</td>
+<td>-fno-omit-frame-pointer</td>
+</tr>
+<tr>
+<td>内核侧正常用户侧全断</td>
+<td>用户态二进制没 -g</td>
+<td>用户态构建选项</td>
+</tr>
+<tr>
+<td>地址正常但函数名怪</td>
+<td>JIT 代码</td>
+<td>perf-map / PreserveFramePointer</td>
+</tr>
+<tr>
+<td>个别深递归断</td>
+<td>回溯深度上限</td>
+<td>--call-graph 深度</td>
+</tr>
+<tr>
+<td>同一函数巨大无层次</td>
+<td>inline 过度</td>
+<td>noinline 标注 / PGO</td>
+</tr>
+</tbody>
+</table></div>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-5-5">5.5 观测工具</a></li>
+<li>关联：<a href="chapter-13.html#s-13-9">ch13 perf 栈回溯</a>、<a href="chapter-15.html#ch-15">ch15 BPF 栈</a>、<a href="chapter-12.html#s-12-1">ch12 baseline 纪律</a>、<a href="chapter-16.html#ch-16">ch16 案例研究</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>编译去掉帧指针——-O2 默认 -fomit-frame-pointer，perf 栈回溯全是 [unknown]</li>
-<li>strip 掉符号表——生产二进制 strip 后 perf report 看不到函数名，应保留 debuginfo</li>
-<li>inline 过度——-O3 激进 inline 导致函数太大影响 I-cache，且火焰图栈变浅看不清层次</li>
+<li><strong>-O2 默认 omit 帧指针不知道</strong>——主流平台 -O2 起默认 <code class="c">-fomit-frame-pointer</code>，perf 栈全是 [unknown]；显式加回。</li>
+<li><strong>strip 后不备 debug 包</strong>——生产 perf report 无函数名；split debuginfo 流程要在 CI 里。</li>
+<li><strong>inline 过度只看性能不看可观测</strong>——火焰图平头同样阻碍危机归因。</li>
+<li><strong>JIT 应用不配 perf-map</strong>——用户态栈全断；PreserveFramePointer 一行参数。</li>
+<li><strong>构建选项改完不验证</strong>——上线前跑一次 perf record -g 确认可读。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -1176,21 +1753,35 @@ Debug symbols：单独 debug 包，生产按需挂载
 </ol>
 <details>
 <summary>答</summary>
-<p>perf 栈回溯需要帧指针（-fno-omit-frame-pointer）——去掉后栈全是 [unknown] 无法分析</p>
+<p>fp 是开销最低的栈回溯方式（比 dwarf 便宜）——保住它，危机时 perf 火焰图可读；-O2 起默认会 omit，要显式加回。</p>
 </details>
 <ol start="2">
-<li>strip 符号表有什么后果？</li>
+<li>split debuginfo 怎么两头兼顾？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>perf report 看不到函数名——应保留 debuginfo 包或不在生产二进制上 strip</p>
+<p>.gnu_debuglink 指向外部 debug 文件——生产部署轻量二进制，分析机挂 debug 包还原符号。</p>
 </details>
 <ol start="3">
-<li>-O3 aggressive inline 有什么副作用？</li>
+<li>[unknown] 和平头栈分别是缺什么？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>函数过大影响 I-cache（icache miss），且火焰图栈变浅看不清调用层次</p>
+<p>[unknown] = 符号缺失（strip/无 debuginfo）；平头栈 = 帧指针缺失（omit-frame-pointer）——两个不同病两个不同药。</p>
+</details>
+<ol start="4">
+<li>JIT 语言的符号问题怎么解？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>运行时代码无 ELF 符号——perf-map-agent 写 /tmp/perf-PID.map、JITDump、或 -XX:+PreserveFramePointer 保栈回溯。</p>
+</details>
+<ol start="5">
+<li>inline 过度的两个代价？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>①I-cache 命中率下降（可能比 -O2 慢）②火焰图平头（函数无独立帧，热点无层次）——PGO/noinline 控制。</p>
 </details>
 </details>
 <hr />

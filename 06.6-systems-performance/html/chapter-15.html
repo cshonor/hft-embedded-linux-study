@@ -610,123 +610,332 @@ Ch 15  BPF（本章）
       </section>
       <section class="section" id="s-15-1">
         <div class="sec-head"><div class="sec-no">15.1</div><h2>section-15.1-BCC-BPF-Compiler-Collection</h2></div>
-<h3 class="sub">是什么</h3>
+<blockquote>
+<p>章节导航：<a href="#s-15-0">15.0 BPF 背景与架构</a> · 上一篇 ← · 下一篇 <a href="chapter-15.html#s-15-1-7">15.1.7 BCC vs bpftrace</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：BCC 的三层构成（框架/库/预制工具）、一次 BCC 工具调用的完整生命周期（LLVM 即时编译 → 验证器 → attach → ring buffer 输出）、工具地图与输出精读、BCC 开发模型与 libbpf+CO-RE 的演进关系。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>BCC = <strong>框架 + 库 + 70+ 预制工具</strong></td>
+<td>日常跑预制，开发用 Python</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>运行时才编译</strong></td>
+<td>每台目标机都要装 clang/LLVM + 内核头</td>
+</tr>
+<tr>
+<td>3</td>
+<td>预制工具 = <strong>runbook 弹药</strong></td>
+<td>runqlat/biolatency/tcpretrans 日常化</td>
+</tr>
+<tr>
+<td>4</td>
+<td>输出走 <strong>ring buffer + map</strong></td>
+<td>内核聚合，高频事件不打爆用户态</td>
+</tr>
+<tr>
+<td>5</td>
+<td>新代码走 <strong>libbpf + CO-RE</strong></td>
+<td>BCC Python 是旧路径但仍是最快原型法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、BCC 是什么：三层构成</h3>
+<pre class="code" data-label="code"><code class="c">┌──────────────────────────────────────────────┐
+│ bcc-tools（预制工具层）                        │
+│   runqlat biolatency tcplife execsnoop ...    │ ← 日常直接跑
+├──────────────────────────────────────────────┤
+│ bcc 库（开发框架层）                           │
+│   Python API: BPF(text=...)/attach_*/[]      │ ← 写自定义工具
+├──────────────────────────────────────────────┤
+│ 底座：clang/LLVM 编译 + bpf() syscall + 验证器 │ ← 内核机制
+└──────────────────────────────────────────────┘
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>组成</th>
 <th>说明</th>
+<th>谁在用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>bcc 库</strong></td>
-<td>C/Python/Lua 写 BPF，编译加载</td>
+<td>Python/Lua/C++ 绑定，<code class="c">BPF(text='...')</code> 一行加载</td>
+<td>工具开发者</td>
 </tr>
 <tr>
 <td><strong>bcc-tools</strong></td>
-<td>大量 <strong>预制单用途工具</strong> — <code class="c">/usr/share/bcc/tools/</code></td>
+<td>70+ 预制单用途工具，<code class="c">/usr/share/bcc/tools/</code></td>
+<td>所有人</td>
 </tr>
 <tr>
 <td><strong>libbpf 时代</strong></td>
-<td>新工具渐迁 <strong>libbpf + CO-RE</strong> — 04-BPF 专书详述</td>
+<td>新工具渐迁 libbpf + CO-RE（BTF 重定位），详见 <a href="../../06.7-bpf-observability/02-bpf-performance-tools/html/chapter-04.html#ch-4">06.7-BPF ch04</a></td>
+<td>新项目</td>
 </tr>
 </tbody>
 </table></div>
-<h3>安装与危机清单</h3>
-<pre class="code" data-label="shell"><code class="c"># Debian/Ubuntu 示例
-sudo apt install bpfcc-tools linux-headers-$(uname -r)
-
-# 验证
-ls /usr/share/bcc/tools/ | head
-sudo biolatency-bpfcc -h 2&gt;/dev/null || sudo biolatency -h
+<h3>二、一次 BCC 工具调用的完整生命周期</h3>
+<p>以 <code class="c">runqlat-bpfcc 10</code> 为例，从敲回车到出直方图，内核与用户态各发生了什么：</p>
+<pre class="code" data-label="code"><code class="c">用户态                                内核态
+──────                                ──────
+1. Python 启动，读内嵌 BPF C 源码
+2. clang/LLVM 编译成 BPF 字节码
+   （机器上的 clang + /lib/modules/`uname -r`/build 头文件）
+3. bpf(BPF_PROG_LOAD) ──────────────→ 4. Verifier 静态验证
+   （DAG 分析：所有路径可达返回、               指针安全、循环展开上限
+    栈 512B 上限、map 访问检查）
+5. attach：tracepoint/kprobe 注册 ──→ 6. 插桩点挂上（复用 ftrace 基建，
+                                       见 ch14 的 ftrace_ops 多路复用）
+7. 事件流：每次 sched_wakeup …──────→ 8. BPF 程序执行，@start[tid] 记时间戳
+9. perf_event mmap / ring buffer ←── 10. map 聚合（直方图在内核算）
+11. Ctrl-C 时读 map，用户态渲染直方图
 </code></pre>
-<p>→ Ch 4 <a href="chapter-04.html#ch-4">危机工具包</a></p>
-<h3>工具地图（与前文章节对照）</h3>
+<p>三个关键点：</p>
+<ol>
+<li><strong>为什么 BCC 每台机器都要装内核头</strong>：第 2 步是运行时编译，<code class="c">#include &lt;linux/sched.h&gt;</code> 直接用目标机当前内核的头文件——结构体布局天然匹配，代价是每台机器都要装 clang/LLVM（几百 MB）。CO-RE 就是为了消灭这个代价（BTF 记录布局 + 加载时重定位）。</li>
+<li><strong>为什么安全</strong>：第 4 步验证器在加载时做静态分析，保证 BPF 程序不会死循环、不会野指针访问、不会崩溃内核——加载失败 = 改程序，绝不能 <code class="c">--force</code> 绕过。</li>
+<li><strong>为什么快</strong>：第 10 步聚合发生在内核——每秒百万次 sched_switch 也不会往用户态灌水，用户态只在结束时读一次 map。</li>
+</ol>
+<h3>三、工具地图（与前文章节对照）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>领域</th>
 <th>BCC 工具</th>
 <th>SysPerf 章</th>
+<th>测什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>CPU</strong></td>
-<td><code class="c">profile</code>, <code class="c">runqlat</code>, <code class="c">runqlen</code>, <code class="c">cpudist</code></td>
+<td><code class="c">profile</code></td>
 <td>Ch 6</td>
+<td>on-CPU 采样（perf record 替代）</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">runqlat</code></td>
+<td>Ch 6</td>
+<td><strong>调度延迟直方图</strong>（金标准）</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">runqlen</code></td>
+<td>Ch 6</td>
+<td>run queue 长度</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">cpudist</code></td>
+<td>Ch 6</td>
+<td>on-CPU 时长分布</td>
 </tr>
 <tr>
 <td><strong>内存</strong></td>
-<td><code class="c">drsnoop</code>, <code class="c">wss</code></td>
+<td><code class="c">drsnoop</code></td>
 <td>Ch 7</td>
+<td>direct reclaim 逐次延迟</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">wss</code></td>
+<td>Ch 7</td>
+<td>工作集大小采样</td>
 </tr>
 <tr>
 <td><strong>文件/盘</strong></td>
-<td><code class="c">opensnoop</code>, <code class="c">filetop</code>, <code class="c">cachestat</code>, <code class="c">biolatency</code>, <code class="c">biosnoop</code>, <code class="c">biotop</code>, <code class="c">biostacks</code></td>
-<td>Ch 8–9</td>
+<td><code class="c">opensnoop</code></td>
+<td>Ch 8</td>
+<td>open() 逐次（路径+fd+错误）</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">filetop</code></td>
+<td>Ch 8</td>
+<td>文件读写 top</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">cachestat</code></td>
+<td>Ch 8</td>
+<td>page cache 命中率</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">biolatency</code></td>
+<td>Ch 9</td>
+<td>块 I/O 延迟直方图</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">biosnoop</code></td>
+<td>Ch 9</td>
+<td>块 I/O 逐次（谁发的+延迟）</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">biostacks</code></td>
+<td>Ch 9</td>
+<td>块 I/O 全栈（含下潜路径）</td>
 </tr>
 <tr>
 <td><strong>网络</strong></td>
-<td><code class="c">tcplife</code>, <code class="c">tcptop</code>, <code class="c">tcpretrans</code>, <code class="c">tcpconnect</code>, <code class="c">gethostlatency</code></td>
+<td><code class="c">tcplife</code></td>
 <td>Ch 10</td>
+<td>TCP 连接生命周期</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">tcpretrans</code></td>
+<td>Ch 10</td>
+<td>重传逐次（HFT 网络 mvp）</td>
+</tr>
+<tr>
+<td></td>
+<td><code class="c">tcpconnect</code></td>
+<td>Ch 10</td>
+<td>active open 逐次+延迟</td>
 </tr>
 <tr>
 <td><strong>进程</strong></td>
-<td><code class="c">execsnoop</code>, <code class="c">execsnoop</code></td>
+<td><code class="c">execsnoop</code></td>
 <td>Ch 5</td>
+<td>新进程逐次</td>
 </tr>
 <tr>
-<td><strong>综合</strong></td>
-<td><code class="c">hardirqs</code>, <code class="c">softirqs</code>, <code class="c">offcputime</code></td>
-<td>Ch 5–6</td>
+<td></td>
+<td><code class="c">offcputime</code></td>
+<td>Ch 5</td>
+<td><strong>off-CPU 栈</strong>（与 perf 互补）</td>
+</tr>
+<tr>
+<td><strong>中断</strong></td>
+<td><code class="c">hardirqs</code>/<code class="c">softirqs</code></td>
+<td>Ch 6</td>
+<td>中断耗时</td>
 </tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="shell"><code class="c"># 调度延迟分布（Ch 6 金标准）
 sudo runqlat-bpfcc 10
 
-# 块 I/O 延迟直方图（Ch 9）
+# 块 I/O 延迟直方图，按 flag 分组，毫秒单位，5 秒一轮
 sudo biolatency-bpfcc -F -m 5 10
 
 # TCP 连接生命周期（Ch 10）
 sudo tcplife-bpfcc
 
-# Off-CPU 栈（Ch 5 — 与 perf 互补）
+# Off-CPU 栈：30 秒内进程离开 CPU 都在等什么（Ch 5）
 sudo offcputime-bpfcc -p $(pidof strategy) 30
 </code></pre>
-<h3>BCC 适用场景</h3>
+<h3>四、输出精读：runqlat 直方图</h3>
+<pre class="code" data-label="code"><code class="c">     usecs           : count    distribution
+         0 -&gt; 1      : 0        |                                      |
+         2 -&gt; 3      : 2        |                                      |
+         4 -&gt; 7      : 7        |                                      |
+         8 -&gt; 15     : 44       |*                                     |
+        16 -&gt; 31     : 202      |*****                                 |
+        32 -&gt; 63     : 816      |*********************                 |
+        64 -&gt; 127    : 1038     |***************************           |
+       128 -&gt; 255    : 622      |****************                      |
+       256 -&gt; 511    : 313      |********                              |
+       512 -&gt; 1023   : 148      |****                                  |
+      1024 -&gt; 2047   : 71       |*                                     |
+      2048 -&gt; 4095   : 29       |                                      |
+</code></pre>
+<p>判读三步（与 <a href="chapter-16.html#s-16-0">ch16 的直方图判读法</a>同一套语言）：</p>
+<ol>
+<li><strong>形状</strong>：单峰右偏 = 正常调度；出现第二峰（如 1ms/10ms 处）= 有周期性事件在插队（定时器/远端唤醒）。</li>
+<li><strong>尾部</strong>：<code class="c">&gt;4ms</code> 的计数就是被抢占/迁移的受害者——HFT 上 dedicated 核应接近零。</li>
+<li><strong>对比</strong>：改隔离参数前后各跑一次，看尾部而非均值。</li>
+</ol>
+<h3>五、BCC 开发模型：什么时候自己写</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>适合</th>
-<th>例子</th>
+<th>场景</th>
+<th>选择</th>
+<th>理由</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>标准工具日常化</strong></td>
-<td>runbook 固定几条 BCC</td>
+<td>预制工具已覆盖</td>
+<td>直接跑</td>
+<td>70+ 工具覆盖面已很大</td>
 </tr>
 <tr>
-<td><strong>复杂多事件工具</strong></td>
-<td>需状态机、多 map 协作</td>
+<td>简单假设验证</td>
+<td><strong>bpftrace</strong> 单行</td>
+<td>见 <a href="#s-15-2">15.2</a></td>
 </tr>
 <tr>
-<td><strong>打包给团队</strong></td>
-<td>Python CLI 封装</td>
+<td>复杂多事件工具</td>
+<td><strong>BCC Python</strong></td>
+<td>状态机、多 map 协作、定时器</td>
+</tr>
+<tr>
+<td>团队共享/产品化</td>
+<td>BCC → 升格 libbpf/CO-RE</td>
+<td>去掉运行时编译依赖</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>开发：</strong> Python + BCC — 比 bpftrace 冗长，但 <strong>可维护、可发布</strong>。</p>
-<p>→ <a href="../../06.7-bpf-observability/02-bpf-performance-tools/html/chapter-04.html#ch-4">06.7-BPF ch04 BCC</a></p>
+<p>最小 BCC Python 骨架（体验开发模型）：</p>
+<pre class="code" data-label="py"><code class="c">from bcc import BPF
+
+b = BPF(text='''
+#include &lt;uapi/linux/ptrace.h&gt;
+BPF_HASH(start, u32, u64);          // map: tid → 入队时间戳
+
+int trace_wake(struct pt_regs *ctx) {
+    u64 ts = bpf_ktime_get_ns();
+    start.update((u32*)&amp;(ctx-&gt;di), &amp;ts);   // 伪代码：记入队时刻
+    return 0;
+}
+''')
+# b.attach_kprobe(event=&quot;__schedule&quot;, fn_name=&quot;trace_wake&quot;) ...
+# 定时读 map 渲染
+</code></pre>
+<p>三个 BCC 特有 map 宏：<code class="c">BPF_HASH</code>（键值表）、<code class="c">BPF_HISTOGRAM</code>（对数分桶——直方图在内核分桶）、<code class="c">BPF_PERF_ARRAY</code>（读取内核计数器）。<strong>直方图工具全部靠 BPF_HISTOGRAM 在内核分桶</strong>，这就是「高频率事件不打爆用户态」的落地。</p>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>生产裸机标配三件套</strong>：<code class="c">runqlat</code>（隔离是否真生效）、<code class="c">tcpretrans</code>（发单通道健康）、<code class="c">offcputime</code>（延迟尖刺归因）——写进危机 runbook（见 <a href="chapter-04.html#ch-4">ch4 危机工具</a>）。</li>
+<li><strong>与 perf 的分工</strong>：perf 管计数与 on-CPU 采样（<a href="chapter-13.html#ch-13">ch13</a>），BCC 管「逐次事件 + off-CPU + 内核聚合直方图」——两者互补，HFT 环境都装。</li>
+<li><strong>风险纪律</strong>：自定义 kprobe 上生产前先 staging 验证加载与开销；观测全程限 PID 限时长（观测者效应）。</li>
+<li><strong>嵌入式注意</strong>：交叉编译环境下 BCC 运行时编译几乎不可用（目标机没有 clang），嵌入式观测走 <strong>libbpf + CO-RE 预编译</strong>——见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7-BPF</a>。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-15-0">15.0 BPF 背景与架构</a>（验证器与 map 的机制总览）</li>
+<li>下一节：<a href="chapter-15.html#s-15-1-7">15.1.7 BCC vs bpftrace</a>（双剑怎么分工）</li>
+<li>深入：<a href="../../06.7-bpf-observability/02-bpf-performance-tools/html/chapter-04.html#ch-4">06.7-BPF ch04 BCC</a>（BCC 编程全书级展开）</li>
+<li>单行弹药库：<a href="appendix-C.html#app-C">附录 C bpftrace 单行命令</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>BCC 工具名带 -bpfcc 后缀不知道——Debian/Ubuntu 包名 bpfcc-tools，命令名加 -bpfcc 后缀</li>
-<li>BCC 当 bpftrace 用——BCC 适合标准化工具（团队共享），bpftrace 适合即兴诊断（个人脚本）</li>
-<li>libbpf/CO-RE 不知道——新工具渐迁 libbpf + CO-RE（一次编译到处运行），BCC Python 方式是旧路径</li>
+<li><strong>BCC 工具名带 -bpfcc 后缀不知道</strong>——Debian/Ubuntu 包名 bpfcc-tools，命令名加 -bpfcc 后缀（runqlat-bpfcc）。</li>
+<li><strong>BCC 当 bpftrace 用</strong>——BCC 适合标准化工具（团队共享），bpftrace 适合即兴诊断（单行命令极快）。</li>
+<li><strong>libbpf/CO-RE 不知道</strong>——新工具渐迁 libbpf + CO-RE（一次编译到处运行），BCC Python 方式是旧路径但仍是最快原型法。</li>
+<li><strong>忘了 BCC 是运行时编译</strong>——目标机没装 clang 或内核头不匹配（刚换内核没装 headers），工具直接起不来。</li>
+<li><strong>把直方图当均值看</strong>——直方图的价值在尾部与形状，均值会把第二峰抹平。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -738,18 +947,32 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
 <p>-bpfcc——如 runqlat-bpfcc、biolatency-bpfcc（包名 bpfcc-tools）</p>
 </details>
 <ol start="2">
-<li>BCC 和 bpftrace 的定位区别？</li>
+<li>BCC 为什么每台目标机都要装 clang 和内核头？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>BCC 适合标准化团队工具（Python CLI 封装可维护），bpftrace 适合即兴诊断（单行命令极快）</p>
+<p>BCC 是运行时编译：加载前用目标机的 clang + 当前内核头把 BPF C 源码编成字节码，结构体布局天然匹配本机内核；代价就是依赖重。CO-RE 用 BTF + 加载时重定位消灭了这个代价。</p>
 </details>
 <ol start="3">
-<li>libbpf/CO-RE 相比 BCC 的优势？</li>
+<li>BCC 直方图工具为什么高频事件也不打爆用户态？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>一次编译到处运行（CO-RE = Compile Once Run Everywhere），无需目标机装 BCC/Clang</p>
+<p>BPF_HISTOGRAM map 在内核里完成分桶计数，用户态只在结束时读一次 map 渲染——每秒百万事件也只传一份聚合结果。</p>
+</details>
+<ol start="4">
+<li>runqlat 直方图出现 1ms 处的第二峰说明什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>有周期性 ~1ms 的唤醒源在插队（典型：定时器、内核线程、远端核唤醒），需要结合 offcputime/wakeup 来源进一步定位。</p>
+</details>
+<ol start="5">
+<li>嵌入式目标机为什么通常不能用 BCC？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>BCC 需要目标机上有 clang/LLVM 和内核头做运行时编译，嵌入式板上通常没有这套重依赖；改用 libbpf + CO-RE 预编译字节码加载。</p>
 </details>
 </details>
 <hr />
@@ -757,6 +980,49 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
       </section>
       <section class="section" id="s-15-1-7">
         <div class="sec-head"><div class="sec-no">15.1.7</div><h2>section-15.1.7-BCC-vs-bpftrace</h2></div>
+<blockquote>
+<p>章节导航：<a href="#s-15-1">15.1 BCC</a> · 上一篇 ← · 下一篇 <a href="#s-15-2">15.2 bpftrace</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：两个 BPF 前端在语言、开发速度、性能、维护、输出五个维度的系统对比，Gregg 的「先标准工具 → 即兴追 → 升格」工作流，以及 HFT runbook 里两剑怎么配合。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>不是二选一，是双剑互补</strong></td>
+<td>BCC 标准武器库 + bpftrace 现场手术刀</td>
+</tr>
+<tr>
+<td>2</td>
+<td>分界线是<strong>复杂度</strong></td>
+<td>单探针/单行 → bpftrace；多事件状态机 → BCC</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>升格工作流</strong></td>
+<td>重复有用的 bpftrace 脚本要升格，不要每次重写</td>
+</tr>
+<tr>
+<td>4</td>
+<td>生产危机<strong>先跑预制工具</strong></td>
+<td>定制是第二步，不是第一步</td>
+</tr>
+<tr>
+<td>5</td>
+<td>长期产品走 <strong>libbpf/CO-RE</strong></td>
+<td>两者的终点</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、五维对比表</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -768,55 +1034,130 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
 <tbody>
 <tr>
 <td><strong>语言</strong></td>
-<td>Python/Lua + C BPF</td>
-<td>专用 DSL</td>
+<td>Python/Lua + C BPF 程序</td>
+<td>专用 DSL（类 awk）</td>
 </tr>
 <tr>
 <td><strong>上手</strong></td>
-<td>跑预制工具快；开发慢</td>
+<td>跑预制工具快；开发慢（三件套：C + Python + 构建环境）</td>
 <td>单行极快；复杂脚本中等</td>
 </tr>
 <tr>
-<td><strong>输出</strong></td>
-<td>成熟 CLI 格式</td>
-<td>自定义 print/map</td>
+<td><strong>表达力</strong></td>
+<td>任意 Python 逻辑 + 多 map 协作 + 状态机</td>
+<td>单探针多 action；循环/复杂控制流受限</td>
 </tr>
 <tr>
-<td><strong>维护</strong></td>
-<td>适合 <strong>团队标准工具</strong></td>
-<td>适合 <strong>个人诊断脚本</strong></td>
+<td><strong>输出</strong></td>
+<td>成熟 CLI 格式（表/直方图/汇总）</td>
+<td>自定义 print/map 输出</td>
 </tr>
 <tr>
 <td><strong>性能</strong></td>
-<td>优化充分</td>
+<td>优化充分（直方图内核聚合等已调好）</td>
 <td>多数场景足够</td>
 </tr>
 <tr>
-<td><strong>关系</strong></td>
-<td><strong>互补双剑</strong></td>
-<td><strong>互补双剑</strong></td>
+<td><strong>维护</strong></td>
+<td>适合<strong>团队标准工具</strong>（版本化、测试、文档）</td>
+<td>适合<strong>个人诊断脚本</strong>（改一行就跑）</td>
+</tr>
+<tr>
+<td><strong>部署依赖</strong></td>
+<td>clang/LLVM + 内核头（重）</td>
+<td>bpftrace 二进制（轻，含内嵌编译器但开箱即用）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Gregg 工作流：</strong></p>
+<p><strong>判断口诀：</strong>
+- 「<strong>这个内核函数慢不慢？</strong>」→ bpftrace 一行
+- 「<strong>每次 X 事件，把 A 和 B 两个时间戳对齐算差值，还要按进程分桶</strong>」→ BCC</p>
+<h3>二、同一任务的两副面孔：测函数延迟</h3>
+<p>bpftrace 版（单行，30 秒写完）：</p>
+<pre class="code" data-label="shell"><code class="c">sudo bpftrace -e 'uprobe:/opt/strategy:decode { @s[tid] = nsecs; }
+  uretprobe:/opt/strategy:decode /@s[tid]/ { @lat = hist(nsecs - @s[tid]); delete(@s[tid]); }'
+</code></pre>
+<p>BCC 版（同等功能，Python + C 约 60 行，省略）能多做的是：输出格式定制、错误路径处理、<code class="c">--verbose</code> 调试、多工具参数（-p/-d/-T）工程化、单元测试、随包发布给不写代码的同事。</p>
+<p><strong>本质区别不在能不能做，而在做完之后谁维护</strong>：一次性问题用 bpftrace；要进 runbook 给值班同学复制粘贴的，用 BCC 预制或升格版。</p>
+<h3>三、Gregg 升格工作流</h3>
 <pre class="code" data-label="code"><code class="c">1. 生产 crisis → BCC 标准工具（runqlat、tcpretrans、biolatency…）
-2. 标准工具不够 → bpftrace 即兴追 kprobe/uprobe
-3. 证明重复有用 → 升格为 BCC 工具或 runbook 脚本
-4. 长期产品 → 04-BPF 专书 + libbpf/CO-RE
+   ↓ 不够用（没有现成探针/维度）
+2. bpftrace 即兴追 kprobe/uprobe → 验证假设
+   ↓ 证明这个问题会重复出现
+3. 升格：bpftrace 脚本 → BCC 工具 / runbook 固化条目
+   ↓ 要成为长期产品级组件
+4. libbpf + CO-RE（04-BPF 专书）
 </code></pre>
-<p><strong>HFT runbook 示例：</strong></p>
-<pre class="code" data-label="code"><code class="c">延迟尖刺
-  → offcputime / runqlat（BCC）
-  → 若 Lock → bpftrace 追 mutex
-  → 若 Net → tcpretrans + ss -tiepm
-  → 若 mystery stall → Ftrace hwlat（Ch 14）
+<p>关键纪律：<strong>第 2 步到第 3 步的升格经常被跳过</strong>——同一个 bpftrace 脚本每次出事重新翻出来改，三次之后就该升格进 runbook（版本化、加注释、写判读指南）。</p>
+<h3>四、HFT runbook：两剑配合实例</h3>
+<pre class="code" data-label="code"><code class="c">告警：tick-to-order P99 尖刺
+  ├─ 第 0 反应（预制 BCC，无脑跑）
+  │    runqlat-bpfcc 10        → 调度延迟形状？
+  │    offcputime-bpfcc -p $(pidof strategy) 30  → 离开 CPU 在等什么？
+  │    tcpretrans-bpfcc 30     → 通道有无重传？
+  │
+  ├─ 分流 A：Lock 等待 → bpftrace 追具体锁
+  │    bpftrace -e 'kprobe:__mutex_lock_slowpath { @[comm] = count(); }'
+  │
+  ├─ 分流 B：网络 → ss -tiepm + tcpretrans（ch10）
+  │
+  └─ 分流 C：mystery stall（软件全盲）→ Ftrace hwlat（ch14，SMI 检测）
 </code></pre>
+<p>要点：
+- <strong>第 0 反应必须是预制工具</strong>——危机时刻没有时间写脚本，runbook 里预设好可直接复制的命令（见 <a href="chapter-16.html#s-16-9">ch16 HFT 演练模板 S0</a>）。
+- <strong>bpftrace 只在分流后的定点追击</strong>——假设已经收窄到具体函数/锁，一行 kprobe 定罪。
+- <strong>每次危机后复盘</strong>：这次用的 bpftrace 有没有第二次出现？有 → 升格。</p>
+<h3>五、什么时候两个都不选</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情况</th>
+<th>用什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只要计数/比率，不需要逐次</td>
+<td><strong>perf stat</strong>（<a href="chapter-13.html#ch-13">ch13</a>，零开销）</td>
+</tr>
+<tr>
+<td>只要 on-CPU 热点</td>
+<td><strong>perf record</strong>（<a href="chapter-13.html#ch-13">ch13</a>）</td>
+</tr>
+<tr>
+<td>要 function_graph 调用层级</td>
+<td><strong>Ftrace</strong>（<a href="chapter-14.html#ch-14">ch14</a>）</td>
+</tr>
+<tr>
+<td>要硬件级延迟（SMI）</td>
+<td><strong>Ftrace hwlat</strong>（<a href="chapter-14.html#s-14-9">ch14</a>）</td>
+</tr>
+<tr>
+<td>需要跨内核版本分发二进制</td>
+<td><strong>libbpf + CO-RE</strong>（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7</a>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>观测工具的完整选型闭环见 <a href="#intro">ch15 README 的分工表</a>。</p>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>值守同学不写代码</strong>：runbook 的第一反应命令全部是 BCC 预制工具或封装好的脚本——即兴 bpftrace 是工程师的特权，不是值守流程的一部分。</li>
+<li><strong>升格 = 降低 MTTR</strong>：三次手写的脚本升格成 runbook 条目后，下次危机从 10 分钟定位降到 30 秒。</li>
+<li><strong>审计口径</strong>：runbook 里的每条 BCC/bpftrace 命令要有预期输出样例和判读注释——没有判读指南的命令等于没写。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-15-1">15.1 BCC</a>（工具地图与生命周期）</li>
+<li>下一节：<a href="#s-15-2">15.2 bpftrace</a>（语言语法与单行库）</li>
+<li>实战场景：<a href="chapter-16.html#s-16-9">ch16 HFT 演练模板</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>BCC 和 bpftrace 二选一——Gregg 强调互补双剑：生产 crisis 用 BCC 标准工具，不够再上 bpftrace</li>
-<li>bpftrace 脚本不升格——重复有用的 bpftrace 脚本应升格为 BCC 工具或 runbook，不是每次重写</li>
-<li>BCC 工具不记 runbook——出事才 man page，runbook 应预设好第一反应 BCC 命令</li>
+<li><strong>BCC 和 bpftrace 二选一</strong>——Gregg 强调互补双剑：生产 crisis 用 BCC 标准工具，不够再上 bpftrace。</li>
+<li><strong>bpftrace 脚本不升格</strong>——重复有用的 bpftrace 脚本应升格为 BCC 工具或 runbook，不是每次重写。</li>
+<li><strong>BCC 工具不记 runbook</strong>——出事才 man page，runbook 应预设好第一反应 BCC 命令。</li>
+<li>** crisis 时刻现场写脚本**——第一反应永远是预制工具；定制化追击是假设收窄后的事。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -825,21 +1166,35 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
 </ol>
 <details>
 <summary>答</summary>
-<p>1) 生产 crisis → BCC 标准工具 2) 不够 → bpftrace 即兴追 3) 证明有用 → 升格 BCC/runbook</p>
+<p>1) 生产 crisis → BCC 标准工具 2) 不够 → bpftrace 即兴追 3) 证明有用 → 升格 BCC/runbook 4) 长期产品 → libbpf/CO-RE</p>
 </details>
 <ol start="2">
 <li>为什么 bpftrace 脚本应该升格？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>重复有用的脚本应升格为 BCC 工具或 runbook——避免每次出事重写，且可团队共享</p>
+<p>重复有用的脚本应升格为 BCC 工具或 runbook——避免每次出事重写，且可团队共享、可加判读指南。</p>
 </details>
 <ol start="3">
 <li>HFT runbook 中 BCC 工具应该怎么用？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>预设好第一反应命令（延迟尖刺→offcputime/runqlat），复制粘贴即可跑</p>
+<p>预设好第一反应命令（延迟尖刺→offcputime/runqlat），复制粘贴即可跑；输出样例与判读注释一并写入。</p>
+</details>
+<ol start="4">
+<li>「测某函数每次耗时并分桶」选哪个？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>一次性验证 → bpftrace 单行（uprobe+uretprobe+hist）；要产品化给团队 → BCC Python。</p>
+</details>
+<ol start="5">
+<li>什么时候 BPF 两剑都不如别的工具？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>只要计数比率 → perf stat 零开销；on-CPU 热点 → perf record；调用层级 → Ftrace function_graph；SMI 硬件延迟 → hwlat。</p>
 </details>
 </details>
 <hr />
@@ -847,76 +1202,318 @@ sudo offcputime-bpfcc -p $(pidof strategy) 30
       </section>
       <section class="section" id="s-15-2">
         <div class="sec-head"><div class="sec-no">15.2</div><h2>section-15.2-bpftrace</h2></div>
-<h3 class="sub">是什么</h3>
-<p><strong>高级追踪语言</strong> — 语法类似 awk/C，<strong>单行命令</strong> 极快。</p>
+<blockquote>
+<p>章节导航：<a href="chapter-15.html#s-15-1-7">15.1.7 BCC vs bpftrace</a> · 上一篇 ← · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：bpftrace 的语言模型（probe / filter / action 三段式）、探针类型速查、map 与内置变量、单行命令的写法套路、生产纪律。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>语言模型 = <strong>probe /filter /action</strong></td>
+<td>和 awk 的 pattern-action 同构</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>聚合在内核</strong>，print 在用户态</td>
+<td>高频事件永远用 map</td>
+</tr>
+<tr>
+<td>3</td>
+<td>单行是它的<strong>统治区间</strong></td>
+<td>10× 于写 BCC Python</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>-l 列探针，先确认再挂</strong></td>
+<td>挂错探针 = 白跑</td>
+</tr>
+<tr>
+<td>5</td>
+<td>生产前 staging 验证<strong>开销</strong></td>
+<td>观测者效应是真实的</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、语言模型：三段式</h3>
+<pre class="code" data-label="code"><code class="c">probe[,probe...]  /filter/  { action; action; }
+ └─ 什么时候              └─ 附加条件     └─ 干什么
+</code></pre>
 <pre class="code" data-label="shell"><code class="c"># 统计 read syscall 调用次数
 sudo bpftrace -e 'tracepoint:syscalls:sys_enter_read { @ = count(); }'
 
-# 按进程统计 open 路径
-sudo bpftrace -e 'tracepoint:syscalls:sys_enter_openat /pid==$(pidof strategy)/ { @[comm] = count(); }'
+# 只统计 strategy 进程的 openat
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_openat /pid == 12345/ { @[comm] = count(); }'
 
-# uprobe 用户函数延迟直方图
-sudo bpftrace -e 'uprobe:/path/strategy:decode { @start[tid] = nsecs; }
-    uretprobe:/path/strategy:decode /@start[tid]/ { @lat = hist(nsecs - @start[tid]); delete(@start[tid]); }'
+# 多探针共享一个 action（大括号语法）
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_{read,write} /pid==12345/ { @[probe] = count(); }'
 </code></pre>
-<h3>单行命令优势</h3>
+<h3>二、探针类型速查</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
+<th>探针</th>
+<th>语法</th>
 <th>场景</th>
-<th>bpftrace</th>
+<th>开销</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>即兴假设验证</strong></td>
-<td>「是不是这个内核函数慢？」— 一行 kprobe</td>
+<td><strong>tracepoint</strong></td>
+<td><code class="c">tracepoint:syscalls:sys_enter_read</code></td>
+<td>稳定 API，首选</td>
+<td>低</td>
 </tr>
 <tr>
-<td><strong>定制 filter</strong></td>
-<td>pid、comm、栈、直方图</td>
+<td><strong>kprobe</strong></td>
+<td><code class="c">kprobe:vfs_read</code></td>
+<td>内核函数入口（无 tracepoint 时）</td>
+<td>中</td>
+</tr>
+<tr>
+<td><strong>kretprobe</strong></td>
+<td><code class="c">kretprobe:vfs_read</code></td>
+<td>函数返回（retval）</td>
+<td>中</td>
+</tr>
+<tr>
+<td><strong>uprobe</strong></td>
+<td><code class="c">uprobe:/opt/bin/strategy:decode</code></td>
+<td>用户函数入口</td>
+<td>中</td>
+</tr>
+<tr>
+<td><strong>uretprobe</strong></td>
+<td><code class="c">uretprobe:/opt/bin/strategy:decode</code></td>
+<td>用户函数返回</td>
+<td>中</td>
 </tr>
 <tr>
 <td><strong>USDT</strong></td>
-<td><code class="c">usdt:...</code> 探针</td>
+<td><code class="c">usdt:/opt/bin/strategy:probe_name</code></td>
+<td>应用埋点（稳定，推荐）</td>
+<td>低</td>
 </tr>
 <tr>
-<td><strong>教学/探索</strong></td>
-<td>比写 BCC Python 快 10×</td>
+<td><strong>profile</strong></td>
+<td><code class="c">profile:hz:99</code></td>
+<td>定频采样（on-CPU）</td>
+<td>低</td>
+</tr>
+<tr>
+<td><strong>interval</strong></td>
+<td><code class="c">interval:s:1</code></td>
+<td>每秒一次（输出心跳）</td>
+<td>极低</td>
+</tr>
+<tr>
+<td><strong>software</strong></td>
+<td><code class="c">software:cpu-clock:99</code></td>
+<td>软件 PMC（对齐 perf）</td>
+<td>低</td>
+</tr>
+<tr>
+<td><strong>hardware</strong></td>
+<td><code class="c">hardware:cache-misses:99</code></td>
+<td>硬件 PMC</td>
+<td>低</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>本仓库：</strong> <a href="appendix-C.html#app-C">附录 C bpftrace 单行命令</a> — SysPerf 配套备忘。</p>
-<h3>bpftrace 适用场景</h3>
+<p>选择顺序：<strong>有 tracepoint/USDT 绝不用 kprobe/uprobe</strong>——前者是稳定 ABI，内核/应用升级不破；后者函数名一变就失效。</p>
+<pre class="code" data-label="shell"><code class="c"># 先列出可用探针，确认名字再挂（避免拼写错误白跑）
+sudo bpftrace -l 'tracepoint:syscalls:*' | head
+sudo bpftrace -l 'kprobe:*mutex*' | head
+</code></pre>
+<h3>三、map：内核态聚合</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>适合</th>
-<th>不适合</th>
+<th>map</th>
+<th>语义</th>
+<th>典型用法</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Ad hoc 根因、一次性调查</td>
-<td>需复杂 GUI、长期产品化</td>
+<td><code class="c">@ = count()</code></td>
+<td>计数器</td>
+<td>事件频率</td>
 </tr>
 <tr>
-<td>快速 kprobe/uprobe 实验</td>
-<td>极老内核无 bpftrace</td>
+<td><code class="c">@ = hist(x)</code></td>
+<td><strong>对数直方图</strong></td>
+<td>延迟分布（最有价值）</td>
 </tr>
 <tr>
-<td>与 BCC 工具 <strong>组合</strong></td>
-<td>替代所有 BCC（不必）</td>
+<td><code class="c">@[k] = count()</code></td>
+<td>按 k 分组计数</td>
+<td>按 pid/comm 聚合</td>
+</tr>
+<tr>
+<td><code class="c">@[k] = hist(x)</code></td>
+<td>按 k 分组的直方图</td>
+<td>每进程延迟分布</td>
+</tr>
+<tr>
+<td><code class="c">@s[tid] = nsecs</code></td>
+<td>时间戳暂存</td>
+<td>出入对（测区间）</td>
+</tr>
+<tr>
+<td><code class="c">lhist(x, min, max, step)</code></td>
+<td>线性直方图</td>
+<td>已知量程（如队列深度）</td>
+</tr>
+<tr>
+<td><code class="c">@ = sum/min/max/avg(x)</code></td>
+<td>聚合函数</td>
+<td>统计摘要</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="../../06.7-bpf-observability/02-bpf-performance-tools/html/chapter-05.html#ch-5">06.7-BPF ch05 bpftrace</a></p>
+<p><strong>出入对模式</strong>（测函数耗时的标准骨架）：</p>
+<pre class="code" data-label="shell"><code class="c">sudo bpftrace -e '
+  uprobe:/opt/strategy:decode { @start[tid] = nsecs; }
+  uretprobe:/opt/strategy:decode /@start[tid]/ {
+      @decode_us = hist((nsecs - @start[tid]) / 1000);
+      delete(@start[tid]);
+  }'
+</code></pre>
+<p>三个细节：
+1. <code class="c">/@start[tid]/</code> 过滤掉没有入记录的返回（重入/跳过路径）；
+2. <code class="c">delete()</code> 防止 map 泄漏（tid 会复用）；
+3. <strong>内核里只存时间戳和分桶</strong>，直方图渲染在用户态 Ctrl-C 时完成——这就是高频不打爆的秘密（与 <a href="chapter-14.html#s-14-5">ch14 hist trigger</a>、<a href="#s-15-1">BCC BPF_HISTOGRAM</a> 同一思路，三家都靠内核聚合）。</p>
+<h3>四、内置变量速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变量</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pid</code> / <code class="c">tid</code></td>
+<td>进程/线程 ID</td>
+</tr>
+<tr>
+<td><code class="c">comm</code></td>
+<td>进程名（16 字节）</td>
+</tr>
+<tr>
+<td><code class="c">nsecs</code></td>
+<td>纳秒时间戳（单调钟）</td>
+</tr>
+<tr>
+<td><code class="c">cpu</code></td>
+<td>CPU ID</td>
+</tr>
+<tr>
+<td><code class="c">curtask</code></td>
+<td>当前 task_struct（可探 struct 成员）</td>
+</tr>
+<tr>
+<td><code class="c">args</code></td>
+<td>tracepoint 参数（<code class="c">args-&gt;filename</code>，稳定）</td>
+</tr>
+<tr>
+<td><code class="c">retval</code></td>
+<td>kretprobe/uretprobe 返回值</td>
+</tr>
+<tr>
+<td><code class="c">func</code></td>
+<td>探针函数名</td>
+</tr>
+<tr>
+<td><code class="c">ustack</code> / <code class="c">kstack</code></td>
+<td>用户/内核栈</td>
+</tr>
+</tbody>
+</table></div>
+<h3>五、单行命令套路库</h3>
+<pre class="code" data-label="shell"><code class="c"># 新进程追踪（execve 逐次）
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_execve { printf(&quot;%s -&gt; %s\n&quot;, comm, str(args-&gt;filename)); }'
+
+# 每秒输出一次 CPU 分布心跳
+sudo bpftrace -e 'interval:s:1 { printf(&quot;tick\n&quot;); }'
+
+# 按进程统计块 I/O 大小分布
+sudo bpftrace -e 'tracepoint:block:block_rq_issue { @bytes[comm] = hist(args-&gt;bytes); }'
+
+# 内核函数调用频率 top
+sudo bpftrace -e 'kprobe:vfs_* { @[func] = count(); }'   # Ctrl-C 后看排行
+
+# 定频采样内核栈（自制 profiler 雏形）
+sudo bpftrace -e 'profile:hz:99 { @[kstack] = count(); }'
+</code></pre>
+<p>完整弹药库：<a href="appendix-C.html#app-C">附录 C bpftrace 单行命令</a>。</p>
+<h3>六、生产纪律</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>纪律</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>先 -l 确认探针存在</strong></td>
+<td>拼错名字静默失败或挂错点</td>
+</tr>
+<tr>
+<td><strong>staging 先跑，量开销</strong></td>
+<td>kprobe 挂在超热路径（每秒百万次）会有可测开销</td>
+</tr>
+<tr>
+<td><strong>永远用 map 聚合，别 printf 每事件</strong></td>
+<td>sched_switch 级别的事件 printf 会打爆 CPU</td>
+</tr>
+<tr>
+<td><strong>限 pid/限时长</strong></td>
+<td><code class="c">/pid==X/</code> filter 在内核执行，代价最小</td>
+</tr>
+<tr>
+<td><strong><code class="c">--unsafe</code> 系列（如 kaddr）慎用</strong></td>
+<td>绕过验证器保护的接口</td>
+</tr>
+<tr>
+<td><strong>exit 用 END 块输出</strong></td>
+<td><code class="c">END { print(@); clear(@); }</code> 收尾渲染</td>
+</tr>
+</tbody>
+</table></div>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>热路径函数延迟</strong>：uprobe/uretprobe 出入对是「策略 decode 耗时分布」的最快答案——不用改一行代码，比加日志干净（无锁、无内存分配）。</li>
+<li><strong>发现未知 syscall</strong>：<code class="c">sys_enter_*</code> 通配 + 按 probe 分组计数，一次看清热路径进程到底碰了哪些 syscall（与 <a href="chapter-13.html#s-13-11">perf trace -s</a> 同结论交叉验证）。</li>
+<li><strong>Pi5 实操</strong>：本节所有单行都可在 ebpf-gate 仓库（cshonor/ebpf-gate，独立 repo）的 bpftrace lab 里跑——06.7 与实验线在那里合流。</li>
+<li><strong>代价意识</strong>：uprobe 会给目标函数加 ~1-2µs 级别开销（陷阱 + 上下文切换语义）——测纳秒级路径时这个观测者效应不可忽略，改用 tracepoint 或预埋 USDT。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="chapter-15.html#s-15-1-7">15.1.7 BCC vs bpftrace</a>（什么时候用它、什么时候不用）</li>
+<li>深入：<a href="../../06.7-bpf-observability/02-bpf-performance-tools/html/chapter-05.html#ch-5">06.7-BPF ch05 bpftrace</a>（语言参考全书级展开）</li>
+<li>弹药库：<a href="appendix-C.html#app-C">附录 C bpftrace 单行命令</a></li>
+</ul>
 <hr />
 <h3>常见陷阱</h3>
 <ol>
-<li>bpftrace 生产直接跑自定义脚本——自定义 kprobe 可能加载失败或开销过大，应先 staging 验证</li>
-<li>bpftrace 每事件输出——高频事件（sched_switch）每条 print 打爆 CPU，应用 map 聚合</li>
-<li>bpftrace 当 BCC 用——复杂状态机/多 map 协作用 BCC Python，bpftrace DSL 表达力有限</li>
+<li><strong>bpftrace 生产直接跑自定义脚本</strong>——自定义 kprobe 可能加载失败或开销过大，应先 staging 验证。</li>
+<li><strong>bpftrace 每事件输出</strong>——高频事件（sched_switch）每条 print 打爆 CPU，应用 map 聚合。</li>
+<li><strong>bpftrace 当 BCC 用</strong>——复杂状态机/多 map 协作用 BCC Python，bpftrace DSL 表达力有限。</li>
+<li><strong>有 tracepoint 偏用 kprobe</strong>——tracepoint 是稳定 ABI，kprobe 挂函数名，内核升级即失效。</li>
+<li><strong>出入对忘了 delete(@start[tid])</strong>——tid 复用会串数据，map 也会缓慢增长。</li>
 </ol>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -925,21 +1522,35 @@ sudo bpftrace -e 'uprobe:/path/strategy:decode { @start[tid] = nsecs; }
 </ol>
 <details>
 <summary>答</summary>
-<p>kprobe 可能加载失败/开销过大——应先在 staging 验证加载和开销</p>
+<p>kprobe 可能加载失败/开销过大——应先在 staging 验证加载和开销。</p>
 </details>
 <ol start="2">
 <li>为什么 bpftrace 高频事件不能每条 print？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>sched_switch 每秒上千次——每条送到用户态会打爆 CPU，应用 map histogram 聚合</p>
+<p>sched_switch 每秒上千次——每条送到用户态会打爆 CPU，应用 map histogram 在内核聚合。</p>
 </details>
 <ol start="3">
-<li>bpftrace 和 BCC 的分工？</li>
+<li>bpftrace 的三段式语言模型？</li>
 </ol>
 <details>
 <summary>答</summary>
-<p>bpftrace 适合即兴单行/简单脚本；复杂多事件状态机用 BCC Python</p>
+<p>probe（什么时候）+ /filter/（附加条件，内核态执行）+ { action }（做什么）——与 awk 的 pattern-action 同构。</p>
+</details>
+<ol start="4">
+<li>测一个用户函数的耗时分布，探针和 map 怎么选？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>uprobe 存 @start[tid]=nsecs，uretprobe 里 /@start[tid]/ 过滤后 hist((nsecs-@start[tid])/1000)，记得 delete。</p>
+</details>
+<ol start="5">
+<li>kprobe 与 tracepoint 的选择顺序？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>有 tracepoint 绝不用 kprobe：tracepoint 参数 ABI 稳定（args-&gt;），kprobe 绑函数名，内核升级即失效。</p>
 </details>
 </details>
 <hr />

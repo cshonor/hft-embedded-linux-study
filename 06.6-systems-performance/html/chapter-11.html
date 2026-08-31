@@ -400,13 +400,56 @@ HFT 要低延迟：<strong>先选裸机与共置</strong>；上云的是 <strong
       </section>
       <section class="section" id="s-11-1">
         <div class="sec-head"><div class="sec-no">11.1</div><h2>section-11.1-云计算背景与架构</h2></div>
-<h3 class="sub">水平扩展（Horizontal Scalability）</h3>
+<blockquote>
+<p>章节导航：<a href="#intro">本章导读</a> · 下一篇 <a href="#s-11-2">11.2 硬件虚拟化</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：云的性能模型——水平/垂直扩展的权衡、容量规划与动态缩放的陷阱（bursting cliff）、多租户与 K8s 编排的性能代价，以及 HFT 各组件的云/裸机选型原则。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>云的经济学 = <strong>资源共享</strong></td>
+<td>共享 = noisy neighbor 的根源</td>
+</tr>
+<tr>
+<td>2</td>
+<td>水平扩展只对<strong>无状态</strong>友好</td>
+<td>有状态热路径靠垂直扩展</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Bursting 是性能 cliff</strong> 不是平滑加成</td>
+<td>credits 耗尽瞬间跌落</td>
+</tr>
+<tr>
+<td>4</td>
+<td>K8s 的每层抽象都有<strong>延迟价格</strong></td>
+<td>overlay 网络 +1 hop</td>
+</tr>
+<tr>
+<td>5</td>
+<td>HFT 的正确拆分</td>
+<td>热路径裸机、周边上云</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、水平扩展 vs 垂直扩展</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>模式</th>
 <th>做法</th>
 <th>典型组件</th>
+<th>适用</th>
 </tr>
 </thead>
 <tbody>
@@ -414,32 +457,63 @@ HFT 要低延迟：<strong>先选裸机与共置</strong>；上云的是 <strong
 <td><strong>垂直扩展</strong></td>
 <td>单机更大 CPU/内存</td>
 <td>传统大型机、裸机 scale-up</td>
+<td>有状态、低延迟、难拆分</td>
 </tr>
 <tr>
 <td><strong>水平扩展</strong></td>
 <td>更多实例分担负载</td>
 <td>LB + 无状态 app 集群 + 分片存储</td>
+<td>无状态、高吞吐、可复制</td>
 </tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="code"><code class="c">                    Load Balancer
                    /      |      \
-              Web/App   Web/App   Web/App
+              Web/App   Web/App   Web/App      ← 无状态层：随便复制
                    \      |      /
-                  Sharded / Cloud-native DB
+                  Sharded / Cloud-native DB     ← 有状态层：分片是难点
 </code></pre>
-<p><strong>HFT 对比：</strong></p>
-<ul>
-<li><strong>tick 热路径</strong>：垂直扩展 + <strong>绑核裸机</strong> — 不靠水平复制同一策略实例（状态难拆）。</li>
-<li><strong>可水平部分</strong>：行情 fan-out、回测 worker、监控、研究 notebook — 适合云。</li>
-</ul>
-<h3>容量规划与动态缩放</h3>
+<p><strong>水平扩展的前提是状态可拆</strong>：会话无粘性（或集中存储）、数据可分片、结果可合并。云原生技术栈（LB/分片存储/auto scaling）全部围绕这个前提构建。</p>
+<p><strong>HFT 对比</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>扩展方式</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>tick 热路径</strong></td>
+<td>垂直扩展 + <strong>绑核裸机</strong></td>
+<td>策略状态（order book、持仓）强一致，拆分代价 &gt; 复制代价；微秒级延迟不容许任何间接层</td>
+</tr>
+<tr>
+<td>行情 fan-out</td>
+<td>水平</td>
+<td>发布订阅天然无状态</td>
+</tr>
+<tr>
+<td>回测 worker</td>
+<td>水平</td>
+<td>embarrassingly parallel</td>
+</tr>
+<tr>
+<td>监控/研究 notebook</td>
+<td>水平</td>
+<td>非关键路径</td>
+</tr>
+</tbody>
+</table></div>
+<h3>二、容量规划与动态缩放的三个陷阱</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>机制</th>
 <th>好处</th>
 <th>风险</th>
+<th>表现特征</th>
 </tr>
 </thead>
 <tbody>
@@ -447,52 +521,211 @@ HFT 要低延迟：<strong>先选裸机与共置</strong>；上云的是 <strong
 <td><strong>按需计费</strong></td>
 <td>用多少付多少</td>
 <td>忘记关机 → 账单</td>
+<td>成本侧</td>
 </tr>
 <tr>
 <td><strong>Auto Scaling</strong></td>
 <td>负载涨 → 加实例</td>
 <td>缩放滞后、冷实例</td>
+<td>流量突增的前几分钟延迟尖刺</td>
 </tr>
 <tr>
 <td><strong>Bursting</strong></td>
 <td>短时超配 CPU credits</td>
 <td>credits 耗尽 → <strong>性能 cliff</strong></td>
+<td>突然跌到 baseline 的 10-20%</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>监控：</strong> 不仅看 CPU%，还要看 <strong>P99 延迟、throttle、成本/请求</strong> — 防 overprovisioning。</p>
-<h3>多租户与编排（Kubernetes）</h3>
+<p><strong>⭐ Bursting cliff 的机制</strong>（t 系列 CPU credits 模型）：</p>
+<pre class="code" data-label="code"><code class="c">CPU 性能
+  ▲ 突发区（花 credits）
+  │ ────────────────
+  │                 ╲  credits 耗尽
+  │                  ╲ ← cliff：不是渐降，是瞬间跌到 baseline
+  │  baseline ────────┴────────
+  └──────────────────────────▶ 时间
+</code></pre>
+<p>对延迟敏感服务这是灾难：前 30 分钟 P99 正常，credits 耗尽后延迟直接翻 5-10×，且告警往往只盯 CPU%（还是满的）——<strong>监控要看 throttle/credits 余量</strong>，不只看 CPU%。</p>
+<p><strong>容量监控的正确口径</strong>：CPU% 之外，加 P99 延迟、throttle 指标、成本/请求——防止 overprovisioning（为峰值 1% 付全天费用）和 underprovisioning（cliff）。</p>
+<h3>三、多租户与 Kubernetes 的性能价格</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>概念</th>
 <th>性能影响</th>
+<th>机制</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>Multi-tenancy</strong></td>
 <td>共享物理机 → <strong>noisy neighbor</strong></td>
+<td>争 CPU（steal）、LLC、内存带宽、磁盘队列（<a href="#s-11-2">ch11.2</a>）</td>
 </tr>
 <tr>
-<td><strong>Kubernetes Pod</strong></td>
-<td>调度、CNI 网络、overlay 增 hop</td>
+<td><strong>K8s Pod 调度</strong></td>
+<td>pod 可能被驱逐/迁移</td>
+<td>调度器不懂你的延迟 SLA</td>
 </tr>
 <tr>
-<td><strong>CNI</strong></td>
-<td>VXLAN/iptables/eBPF — 吞吐与延迟特征不同</td>
+<td><strong>CNI overlay</strong></td>
+<td>VXLAN/IPIP 封装 +1 hop</td>
+<td>每包额外封装/解封装 + MTU 缩水</td>
+</tr>
+<tr>
+<td>CNI 实现差异</td>
+<td>VXLAN/iptables/eBPF 各不同</td>
+<td>iptables 规则链随 service 数线性增长；eBPF 最短路径</td>
+</tr>
+<tr>
+<td><strong>requests/limits</strong></td>
+<td>limit 触发 <strong>CPU throttle</strong></td>
+<td>cgroup quota 机制（<a href="#s-11-3">11.3</a>）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 生产策略 <strong>避免</strong> 与未知负载同节点；若 K8s 跑 <strong>非热路径</strong>（/grafana/批任务），需 <strong>Dedicated node pool + tolerations</strong>。</p>
-<p>→ Ch 10 <a href="chapter-10.html#ch-10">网络</a> · Ch 6/7 <a href="chapter-06.html#ch-6">cgroups</a></p>
+<p><strong>K8s 网络的延迟叠加</strong>（同节点 pod 间通信为例）：</p>
+<pre class="code" data-label="code"><code class="c">直接裸机：app A → loopback/veth → app B        ~ 1-5µs
+K8s 同节点：A → veth pair → bridge → veth → B   ~ 10-50µs
+跨节点 + VXLAN：+ 封装 → 物理网 → 解封装         ~ 50-200µs + 抖动
+</code></pre>
+<p>对 HFT 的意义：跨节点 overlay 的抖动是结构性不可控的——<strong>热路径组件要么同节点要么裸机直连</strong>。</p>
+<h3>四、HFT 的云/裸机选型决策表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>部署</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tick 引擎 + 发单</td>
+<td><strong>裸金属 / dedicated host</strong></td>
+<td>微秒 SLA + 物理隔离</td>
+</tr>
+<tr>
+<td>行情落盘/回放</td>
+<td>裸机（本地 NVMe）</td>
+<td>盘 I/O 直控</td>
+</tr>
+<tr>
+<td>回测集群</td>
+<td>云 spot/preemptible</td>
+<td>批处理，中断可容忍</td>
+</tr>
+<tr>
+<td>监控/面板</td>
+<td>云</td>
+<td>非关键路径</td>
+</tr>
+<tr>
+<td>灾备/研发</td>
+<td>云</td>
+<td>弹性 + 成本</td>
+</tr>
+<tr>
+<td>若必须云上跑延迟敏感组件</td>
+<td><strong>裸金属实例 + SR-IOV + 增强网络</strong></td>
+<td>见 <a href="#s-11-2">11.2</a></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>若用 K8s 跑非热路径</strong>：dedicated node pool + tolerations，把监控/批任务和策略周边隔开——不是防延迟，是防资源争抢和调度驱逐。</p>
+<h3>衔接</h3>
+<ul>
+<li>下一节：<a href="#s-11-2">11.2 硬件虚拟化</a>（VM-EXIT/EPT/直通机制）</li>
+<li>关联：<a href="chapter-10.html#ch-10">ch10 网络</a>（overlay 的网络侧）、<a href="chapter-06.html#ch-6">ch6 cgroups</a>（throttle 机制）、<a href="chapter-12.html#ch-12">ch12</a>（云上基准的邻居噪声）</li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>以为 bursting 是平滑的弹性</strong>——credits 模型是 cliff 不是斜坡，耗尽瞬间跌到 baseline。</li>
+<li><strong>K8s requests/limits 不看 throttle</strong>——CPU% 满不等于没被限流，<code class="c">nr_throttled</code> 才是证据。</li>
+<li><strong>延迟敏感服务放 overlay 网络</strong>——每包 +1 hop 封装，抖动结构性不可控。</li>
+<li><strong>有状态热路径硬拆水平</strong>——策略状态的强一致拆分代价远超垂直 scale-up。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>水平扩展的前提是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>状态可拆：会话无粘性、数据可分片、结果可合并。云原生栈全部围绕这个前提。</p>
+</details>
+<ol start="2">
+<li>bursting 的性能 cliff 为什么监控 CPU% 发现不了？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>credits 耗尽后 vCPU 仍显示高占用（在 baseline 频率上跑满）——要看 credits 余量和实际吞吐/P99。</p>
+</details>
+<ol start="3">
+<li>K8s overlay 网络的延迟代价从哪来？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>VXLAN/IPIP 封装解封装 + 额外网桥 hop + MTU 缩水；iptables 型 CNI 还有规则链增长问题。</p>
+</details>
+<ol start="4">
+<li>HFT 哪些组件适合上云？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>回测 worker、监控面板、研究环境、灾备——无状态、可中断、非微秒敏感的周边。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-11-2">
         <div class="sec-head"><div class="sec-no">11.2</div><h2>section-11.2-硬件虚拟化Hardware-Virtualization</h2></div>
-<h3 class="sub">Hypervisor 与常见实现</h3>
+<blockquote>
+<p>章节导航：<a href="#s-11-1">11.1 云计算背景与架构</a> · 上一篇 ← · 下一篇 <a href="#s-11-3">11.3 操作系统虚拟化/容器</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：hypervisor 类型与 KVM 架构、虚拟化性能开销的四个机制来源（VM-EXIT / I/O 代理 / 嵌套页表 / steal）、硬件直通与 Nitro 如何逼近裸机、Guest 内外观测的盲区边界。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>VM 的每次敏感操作都是 <strong>VM-EXIT</strong></td>
+<td>陷入 hypervisor = 微秒级税</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>I/O 代理是最大延迟源</strong></td>
+<td>虚拟网卡走宿主软件路径</td>
+</tr>
+<tr>
+<td>3</td>
+<td>嵌套页表让 <strong>TLB 有效容量缩小</strong></td>
+<td>同 workload 更多 TLB miss</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>steal time 是唯一的 Guest 内可见证据</strong></td>
+<td><code class="c">%st</code> 高 = 物理争用</td>
+</tr>
+<tr>
+<td>5</td>
+<td>直通（SR-IOV）≈ 裸机，但失去 <strong>vMotion/在线迁移</strong></td>
+<td>隔离与灵活性的权衡</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、Hypervisor 类型</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -504,159 +737,298 @@ HFT 要低延迟：<strong>先选裸机与共置</strong>；上云的是 <strong
 <tbody>
 <tr>
 <td><strong>Type 1</strong></td>
-<td>VMware ESXi、Hyper-V、Xen（部分）</td>
-<td>裸金属 Hypervisor</td>
+<td>VMware ESXi、Hyper-V、Xen</td>
+<td>裸金属 hypervisor，直接管硬件</td>
 </tr>
 <tr>
-<td><strong>Type 2 / 模块</strong></td>
+<td><strong>Type 2 / 内核模块</strong></td>
 <td><strong>KVM</strong>（Linux 内核模块）</td>
-<td>宿主机也是 Linux</td>
+<td>宿主机是普通 Linux，KVM 把它变成 Type 1（CPU 虚拟化指令直接支持）</td>
 </tr>
 </tbody>
 </table></div>
-<p>每个 <strong>VM</strong> = 完整 Guest OS + 虚拟 vCPU/vNIC/vDisk。</p>
-<h3>性能开销来源</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>开销</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>VM-EXIT / VM-ENTRY</strong></td>
-<td>Guest ↔ Hypervisor 上下文切换</td>
-</tr>
-<tr>
-<td><strong>I/O 代理</strong></td>
-<td>虚拟磁盘/网卡经 Hypervisor 软件路径 — <strong>延迟高</strong></td>
-</tr>
-<tr>
-<td><strong>嵌套页表</strong></td>
-<td>内存虚拟化 — TLB 压力</td>
-</tr>
-<tr>
-<td><strong>Steal time</strong></td>
-<td>Guest 内可见 — <strong>vCPU 被宿主机抢走</strong> 的时间</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>Guest 内 <code class="c">top</code>：</strong> <code class="c">%st</code>（steal）高 → <strong>物理 CPU 争用</strong>，非 Guest 算力足。</p>
-<h3>硬件直通与 Nitro</h3>
+<p>每个 <strong>VM</strong> = 完整 Guest OS + 虚拟 vCPU/vNIC/vDisk。KVM 架构里，QEMU 是用户态设备模拟器，KVM 内核模块管 CPU/内存虚拟化——「KVM/QEMU」组合中<strong>性能敏感的归内核，设备模拟在用户态</strong>。</p>
+<h3>二、性能开销的四个机制来源</h3>
+<p><strong>① VM-EXIT / VM-ENTRY（CPU 虚拟化税）</strong></p>
+<p>Guest 执行敏感指令（I/O 端口、MMIO、HLT、CPUID、写中断控制器…）触发 VM-EXIT，陷入 KVM 处理后 VM-ENTRY 返回：</p>
+<pre class="code" data-label="code"><code class="c">Guest 用户态 ──(普通指令)──&gt; 直接跑，硬件级速度
+Guest 内核态 ──(敏感指令)──&gt; VM-EXIT → KVM 处理 → VM-ENTRY → 返回
+                              └──── 每次几 µs 的税 ────┘
+</code></pre>
+<p>高频敏感操作（时钟读取、IPI、页表操作）会累积可观开销。硬件辅助（APICv/posted interrupt）已把常见路径做进硬件，但<strong>类别税不会归零</strong>。</p>
+<p><strong>② I/O 代理（软件设备模拟）</strong></p>
+<p>默认虚拟网卡/磁盘是<strong>软件设备</strong>：Guest 驱动写 virtio ring → VM-EXIT → KVM 唤醒宿主机上 QEMU 线程 → QEMU 代 Guest 执行真实 I/O → 注回中断。一次网络收包路径多了<strong>两次上下文切换 + 一次 vCPU/线程调度</strong>——延迟和抖动的主要来源。</p>
+<p><strong>③ 嵌套页表（EPT/NPT）——内存虚拟化税</strong></p>
+<p>Guest 虚拟地址 → Guest 物理地址 → Host 物理地址的两次翻译由硬件 EPT 完成，但代价是<strong>单次 TLB miss 的页表走查翻倍</strong>（或更多）。等效于 TLB 有效容量缩小——大内存、稀疏访问的 workload 受伤最重（TLB miss 每次几百 ns，见 <a href="../../06-linux-mm/html/chapter-03.html#ch-3">06-linux-mm TLB</a>）。</p>
+<p><strong>④ Steal time（物理 CPU 争用）</strong></p>
+<p>宿主机超卖 vCPU，Guest 的 vCPU 等待物理 CPU 的时间在 Guest 内可见为 <code class="c">%st</code>：</p>
+<pre class="code" data-label="code"><code class="c">Guest 内 top：  %Cpu(s): 75.0 us,  0.0 sy,  0.0 ni, 12.0 id, 13.0 st
+                                                       └───── vCPU 被&quot;偷走&quot; 13%
+</code></pre>
+<p><code class="c">%st</code> 高 = 物理 CPU 争用，<strong>不是</strong> Guest 算力不足——加 vCPU 没用。</p>
+<h3>三、硬件直通与 Nitro：逼近裸机</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>技术</th>
+<th>机制</th>
 <th>效果</th>
+<th>代价</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>PCI Passthrough / SR-IOV</strong></td>
-<td>网卡/ NVMe <strong>直通</strong> Guest — 绕过软件 I/O 代理</td>
+<td><strong>PCI Passthrough</strong></td>
+<td>整个设备 VFIO 直通给一个 Guest</td>
+<td>绕过全部软件 I/O 路径</td>
+<td>设备被独占，不能 vMotion</td>
+</tr>
+<tr>
+<td><strong>SR-IOV</strong></td>
+<td>网卡切多个 VF，每 VF 直通一个 Guest</td>
+<td>直通速度 + 多 Guest 共享</td>
+<td>VF 数量有限，vMotion 受限</td>
 </tr>
 <tr>
 <td><strong>AWS Nitro</strong></td>
-<td>网络/存储 offload 到专用硬件 — <strong>接近裸机</strong> 网络</td>
+<td>网络/存储 offload 到专用 Nitro 卡（本地 hypervisor 极薄）</td>
+<td><strong>接近裸机</strong>网络性能</td>
+<td>AWS 私有</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 若必须在云上跑延迟敏感组件 — 选 <strong>裸金属实例 / SR-IOV / 增强网络</strong>，勿用普通虚拟网卡 + 共享 tenancy。</p>
-<h3>资源控制与观测</h3>
+<p><strong>SR-IOV 的本质</strong>：把「软件模拟设备 + hypervisor 代理」换成「硬件虚拟化的真实设备」——中断直投 Guest（绕过宿主机 CPU），DMA 直接进 Guest 内存。代价是失去在线迁移的透明性（设备状态不连续了）——<strong>隔离性与运维灵活性二选一</strong>，HFT 选前者。</p>
+<h3>四、资源控制与内存超卖</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>控制</th>
 <th>机制</th>
+<th>观测信号</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>vCPU 数量</td>
 <td>限算力</td>
+<td>—</td>
 </tr>
 <tr>
 <td><strong>Balloon driver</strong></td>
-<td>从 Guest <strong>回收内存</strong> 给宿主机 — Guest 内可用内存 <strong>突然降</strong></td>
+<td>Guest 内驱动"充气"占用内存再归还宿主机</td>
+<td>Guest 内可用内存<strong>突然下降</strong></td>
 </tr>
 <tr>
 <td>内存 overcommit</td>
-<td>宿主机卖超 — 触发 swap/压缩</td>
+<td>宿主机卖超</td>
+<td>触发宿主 swap/KSM 压缩 → 延迟尖刺</td>
+</tr>
+<tr>
+<td>CPU limit（cgroup）</td>
+<td>宿主侧配额</td>
+<td>Guest 内表现为随机的执行停顿</td>
 </tr>
 </tbody>
 </table></div>
+<p>Balloon 的诡异之处：Guest 内看到的是「自己的进程吃了内存」——<strong>Guest 内无法区分 balloon 和真实内存压力</strong>，只能对照宿主机数据。</p>
+<h3>五、观测的两层盲区</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>观测位置</th>
 <th>工具</th>
+<th>能看到</th>
+<th>看不到</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>宿主机</strong></td>
-<td><code class="c">kvm_stat</code>、<code class="c">perf kvm</code>、<code class="c">xentop</code>、Hypervisor CLI</td>
+<td><code class="c">kvm_stat</code>（VM-EXIT 原因分布）、<code class="c">perf kvm</code>、<code class="c">perf record -e kvm:*</code></td>
+<td>物理资源真况、VM-EXIT 频率、steal 真值</td>
+<td>Guest 内部逻辑</td>
 </tr>
 <tr>
 <td><strong>Guest 内</strong></td>
-<td>常规 perf/BPF — <strong>见虚拟资源</strong>，物理瓶颈可能 <strong>不透明</strong></td>
+<td>常规 perf/BPF/[top]</td>
+<td>虚拟资源视图（vCPU、virtio）</td>
+<td>物理邻居、balloon、宿主调度延迟、真实中断路由</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>排障原则：</strong> 延迟尖刺在 Guest 内无法解释 → <strong>升 ticket 看宿主机</strong> 或迁 <strong>dedicated host</strong>。</p>
+<p><strong>排障原则</strong>：延迟尖刺在 Guest 内无法解释（无 CPU、无 I/O、无锁证据）→ <strong>问题在虚拟化层或邻居</strong>——升 ticket 看宿主机，或迁 dedicated host。<code class="c">kvm_stat</code> 的 VM-EXIT 原因分布是宿主侧第一手证据：<code class="c">hlt</code>/<code class="c">io_instruction</code>/<code class="c">ept_violation</code> 的计数激增直接指向开销类别。</p>
+<h3>HFT / 嵌入式关联</h3>
+<ul>
+<li><strong>云上跑延迟敏感组件的最低配置</strong>：裸金属实例（或 dedicated host）+ SR-IOV/增强网络 + 固定 vCPU 绑定（CPU affinity 在 hypervisor 层）——普通共享实例的 steal 和 I/O 代理抖动对微秒 SLA 是结构性的。</li>
+<li><strong>「Unexplained Win」的云版教训</strong>（<a href="chapter-16.html#ch-16">ch16</a>）：云宿主机更换对 Guest 是不可见的——配置 diff 抓不到，只有同周同时段对比 + PMC 数据才能定罪。</li>
+<li><strong>嵌入式</strong>：实时虚拟化（KVM + RT 补丁）用于安全域隔离（车载/工控）时，VM-EXIT 延迟抖动是核心指标——和 HFT 的关注点同源。</li>
+<li><strong>自建 vs 云的延迟账</strong>：共置交易所的裸机是 HFT 的物理刚需，云主要用于弹性周边——这不仅是成本问题，是<strong>光速与隔离</strong>问题。</li>
+</ul>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-11-1">11.1 云计算背景与架构</a></li>
+<li>下一节：<a href="#s-11-3">11.3 操作系统虚拟化/容器</a>（无 hypervisor 层的隔离方式）</li>
+<li>关联：<a href="../../06-linux-mm/html/chapter-03.html#ch-3">06-linux-mm TLB/页表</a>（EPT 两级翻译的底座）、<a href="chapter-16.html#ch-16">ch16 云宿主陷阱</a></li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>%st 高了加 vCPU</strong>——steal 是物理 CPU 争用，加 vCPU 让争用更糟；要换 dedicated/裸金属。</li>
+<li><strong>把 virtio 网卡的延迟当选型依据</strong>——软件代理路径的抖动不代表 SR-IOV 后的表现，测试必须同口径。</li>
+<li><strong>Guest 内内存下降去找进程泄漏</strong>——先排除 balloon（宿主机侧确认），Guest 内无法区分。</li>
+<li><strong>以为直通只是性能优化</strong>——SR-IOV 同时牺牲 vMotion 等运维能力，是架构决策不是调优项。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>虚拟化 I/O 延迟的主要来源？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>软件设备代理：Guest 写 virtio ring → VM-EXIT → 唤醒 QEMU 线程代执行 → 注回中断——两次上下文切换 + 调度，延迟与抖动双高。直通/SR-IOV 绕过这条路径。</p>
+</details>
+<ol start="2">
+<li>EPT 为什么降低性能？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>两次地址翻译让 TLB miss 的页表走查成本翻倍，等效 TLB 容量缩小；稀疏大内存 workload 的 TLB miss 上升最明显。</p>
+</details>
+<ol start="3">
+<li>Guest 内什么指标能唯一证明物理 CPU 争用？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>steal time（%st）——vCPU 等待物理 CPU 的时间；它在 Guest 内可见，其他 hypervisor 层延迟 Guest 内不可见。</p>
+</details>
+<ol start="4">
+<li>SR-IOV 的运维代价是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>设备状态直通 Guest 后不连续，在线迁移（vMotion）受限——隔离性能与运维灵活性二选一。</p>
+</details>
+<ol start="5">
+<li>Guest 内延迟尖刺排查无果，下一步？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>升级到宿主机层：kvm_stat 看 VM-EXIT 原因分布、看邻居负载/steal 真值；或直接迁 dedicated host 验证（对照实验）。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-11-3">
         <div class="sec-head"><div class="sec-no">11.3</div><h2>section-11.3-操作系统虚拟化-容器</h2></div>
-<h3 class="sub">Namespaces + cgroups</h3>
+<blockquote>
+<p>章节导航：<a href="#s-11-2">11.2 硬件虚拟化</a> · 上一篇 ← · 下一篇 <a href="#s-11-4">11.4 MicroVM</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：容器 = namespaces + cgroups 组合的机制本质、cgroups v2 的资源控制与 throttle 证据链、容器观测的系统性陷阱（工具显示的是宿主机视图）、以及「裸机 + cgroup 隔离」的 HFT 用法。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>容器<strong>不是内核对象</strong></td>
+<td>是 ns + cgroup 的组合视图</td>
+</tr>
+<tr>
+<td>2</td>
+<td>CPU 路径<strong>几乎零开销</strong></td>
+<td>同一内核，无 VM-EXIT</td>
+</tr>
+<tr>
+<td>3</td>
+<td>但<strong>物理 cache/TLB/带宽不隔离</strong></td>
+<td>容器 ≠ 魔法隔离</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">cpu.stat</code> 的 <code class="c">nr_throttled</code> 是 <strong>throttle 铁证</strong></td>
+<td>只看 CPU% 会漏</td>
+</tr>
+<tr>
+<td>5</td>
+<td>容器内传统工具显示的是<strong>宿主机视图</strong></td>
+<td>观测要按 cgroup 口径</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、机制本质：Namespaces + cgroups</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>机制</th>
 <th>隔离什么</th>
+<th>性质</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>Namespaces</strong></td>
-<td>PID、NET、MNT、UTS、IPC、USER — <strong>视图隔离</strong></td>
+<td>PID、NET、MNT、UTS、IPC、USER（+cgroup ns）</td>
+<td><strong>视图隔离</strong>——进程看到的世界</td>
 </tr>
 <tr>
 <td><strong>cgroups</strong></td>
-<td>CPU、内存、blkio、pid 数 — <strong>资源限与统计</strong></td>
+<td>CPU、内存、blkio/io、pids</td>
+<td><strong>资源限额与统计</strong>——进程能用多少</td>
 </tr>
 </tbody>
 </table></div>
-<p>容器 <strong>不是</strong> 内核里单一对象 — 是 <strong>ns + cgroup 的组合</strong>（Docker/LXC/containerd）。</p>
-<h3>开销与争用</h3>
+<p>容器在内核里<strong>没有单一对象</strong>——Docker/LXC/containerd 做的事情是：建一组 namespace（新视图）+ 挂进 cgroup（限额）+ 叠加文件系统（overlayfs）。「容器」是用户态编排出来的概念。</p>
+<p>这就是理解容器一切性能行为的钥匙：
+- <strong>快</strong>：没有 hypervisor 层，syscall 直接进内核（对比 <a href="#s-11-2">11.2 的 VM-EXIT 税</a>）。
+- <strong>不彻底</strong>：视图隔离不等于资源隔离——内核锁、物理 cache、内存带宽、TLB 全共享。</p>
+<h3>二、CPU 路径几乎零开销</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>方面</th>
-<th>容器 vs VM</th>
+<th>容器</th>
+<th>VM</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>CPU/内存映射</strong></td>
-<td>容器 <strong>几乎无额外层</strong> — 同一内核</td>
+<td>syscall 路径</td>
+<td>直接进内核，<strong>无额外层</strong></td>
+<td>敏感操作 VM-EXIT</td>
 </tr>
 <tr>
-<td><strong>启动速度</strong></td>
+<td>内存访问</td>
+<td>原生页表</td>
+<td>EPT 嵌套翻译</td>
+</tr>
+<tr>
+<td>启动速度</td>
 <td>毫秒级</td>
+<td>秒级</td>
+</tr>
+<tr>
+<td>隔离强度</td>
+<td>共享内核（逃逸面大）</td>
+<td>独立内核</td>
 </tr>
 <tr>
 <td><strong>主要问题</strong></td>
-<td><strong>共享内核 + 共享物理 cache/TLB/锁</strong> — noisy neighbor</td>
+<td><strong>共享物理 cache/TLB/内核锁</strong></td>
+<td>hypervisor 税</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 启示：</strong> 容器 <strong>不会</strong>  magically 隔离 L3 cache — 与 VM 一样要 <strong>物理隔离或 dedicated 核</strong>。</p>
-<h3>cgroups 资源控制</h3>
-<p><strong>CPU（cgroup v2 示例）：</strong></p>
+<p><strong>HFT 启示</strong>：容器<strong>不会</strong> magically 隔离 L3 cache——邻居容器冲刷 LLC 时你的热点数据照样被逐出（伪共享的跨容器版，<a href="chapter-13.html#s-13-12">ch13 c2c</a> 同类问题）。延迟敏感场景的隔离靠<strong>物理隔离或 dedicated 核</strong>，容器只是打包便利。</p>
+<h3>三、cgroups 资源控制（v2）</h3>
+<p><strong>CPU：</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -669,31 +1041,40 @@ HFT 要低延迟：<strong>先选裸机与共置</strong>；上云的是 <strong
 <tr>
 <td><strong>weight (shares)</strong></td>
 <td><code class="c">cpu.weight</code></td>
-<td>相对权重</td>
+<td>相对权重，争抢时生效</td>
 </tr>
 <tr>
-<td><strong>bandwidth</strong></td>
+<td><strong>bandwidth（硬 cap）</strong></td>
 <td><code class="c">cpu.max</code></td>
-<td><strong>硬 cap</strong> — 如 <code class="c">max 200000 100000</code> = 2 CPU</td>
+<td>如 <code class="c">max 200000 100000</code> = 每 100ms 周期最多 200ms CPU 时间（2 核）</td>
 </tr>
 <tr>
-<td><strong>throttle</strong></td>
-<td><code class="c">cpu.stat</code> → <strong><code class="c">nr_throttled</code> / <code class="c">throttled_usec</code></strong></td>
-<td>触顶证据</td>
+<td><strong>throttle 证据</strong></td>
+<td><code class="c">cpu.stat</code> → <code class="c">nr_throttled</code> / <code class="c">throttled_usec</code></td>
+<td>触顶的次数与累计时长</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>内存 / blkio：</strong></p>
+<p><strong>⭐ throttle 机制</strong>（为什么 limit 造成延迟尖刺）：<code class="c">cpu.max</code> 按<strong>周期配额</strong>控制——周期开始发满配额，用完后<strong>整个 cgroup 被冻结到下个周期</strong>。4 线程进程配 2 核 quota 时，4 线程并行 50ms 就耗光 100ms 配额，随后<strong>全冻结 50ms</strong>——表现为规律性的延迟尖刺，而不是平滑减速：</p>
+<pre class="code" data-label="code"><code class="c">CPU 时间
+  ▲ 2 核满速 ──┐
+  │            └──冻结──┐      ┌──冻结──┐
+  │                    └──────┘        └─── ...   ← 每 100ms 一个 cliff
+  └─────────────────────────────────▶ 时间
+</code></pre>
+<p><strong>内存 / IO：</strong></p>
 <ul>
-<li><code class="c">memory.max</code>、<code class="c">memory.high</code> — OOM/throttle</li>
-<li><code class="c">io.max</code> — 磁盘 IOPS/带宽限（v2）</li>
+<li><code class="c">memory.max</code>（硬顶，触发 OOM kill）、<code class="c">memory.high</code>（软顶，触发 throttle/reclaim）</li>
+<li><code class="c">memory.events</code>（OOM 计数）——容器重启的真实原因常在这里</li>
+<li><code class="c">io.max</code>（v2）——IOPS/带宽限额</li>
 </ul>
-<pre class="code" data-label="shell"><code class="c"># 容器是否被 CPU 节流（cgroup v2）
+<pre class="code" data-label="shell"><code class="c"># 容器/服务是否被 CPU 节流（cgroup v2）
 cat /sys/fs/cgroup/cpu.stat
 # nr_periods nr_throttled throttled_usec ...
+# nr_throttled &gt; 0 且在涨 = 延迟尖刺的 cgroup 级证据
 </code></pre>
-<h3>观测陷阱（Gregg 重点）</h3>
-<p><strong>容器内运行 <code class="c">top</code> / <code class="c">iostat</code> / <code class="c">uptime</code> / <code class="c">mpstat</code>：</strong></p>
+<h3>四、观测陷阱（Gregg 重点）</h3>
+<p><strong>容器内运行 <code class="c">top</code> / <code class="c">iostat</code> / <code class="c">uptime</code> / <code class="c">mpstat</code>——显示的是宿主机视图</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -704,19 +1085,23 @@ cat /sys/fs/cgroup/cpu.stat
 <tbody>
 <tr>
 <td>8 CPU 全 busy</td>
-<td><strong>宿主机 8 核</strong>，容器可能只 <strong>quota 2 核</strong></td>
+<td><strong>宿主机 8 核</strong>；容器可能只 <strong>quota 2 核</strong>，另 6 核是别人的</td>
 </tr>
 <tr>
 <td>Load average 很高</td>
-<td><strong>宿主机 load</strong>，非容器 cgroup load</td>
+<td><strong>宿主机 load</strong>，非本容器 cgroup 的运行队列</td>
 </tr>
 <tr>
 <td><code class="c">%iowait</code></td>
-<td>宿主机级</td>
+<td>宿主机全局值</td>
+</tr>
+<tr>
+<td>free 内存</td>
+<td>宿主机的（cgroup 限额要看 <code class="c">memory.current</code>）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>正确做法：</strong></p>
+<p><strong>正确观测矩阵：</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -727,68 +1112,422 @@ cat /sys/fs/cgroup/cpu.stat
 <tbody>
 <tr>
 <td><strong>容器内</strong></td>
-<td>cgroup：<code class="c">cpu.stat</code>、<code class="c">memory.current</code>、<code class="c">memory.events</code></td>
+<td>cgroup 文件：<code class="c">cpu.stat</code>、<code class="c">memory.current</code>、<code class="c">memory.events</code>；<code class="c">/sys/fs/cgroup/</code> 就是容器自己的真相</td>
 </tr>
 <tr>
 <td><strong>宿主机</strong></td>
-<td><code class="c">systemd-cgtop</code>、BPF 按 cgroup 过滤、<code class="c">kubectl top</code>（API 层）</td>
+<td><code class="c">systemd-cgtop</code>、BPF 按 cgroup 过滤、<code class="c">kubectl top</code>（API 聚合层）</td>
 </tr>
 <tr>
 <td><strong>K8s</strong></td>
-<td>limits/requests、<strong>CPU throttling</strong> 指标（cAdvisor/Prometheus）</td>
+<td>cAdvisor/Prometheus 的 <strong>CPU throttling 指标</strong>（本质就是 nr_throttled 的时序化）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c"># cgroup v2 CPU 节流
-grep throttled /sys/fs/cgroup/cpu.stat
-
-# 宿主机上 BPF 按 cgroup 追踪（需权限）
-# bpftrace -e '... @cgroup = cgroup...'
+<pre class="code" data-label="shell"><code class="c"># 容器内自己是不是瓶颈：quota、用量、throttle 三件套
+cat /sys/fs/cgroup/cpu.max
+cat /sys/fs/cgroup/cpu.stat
+# 宿主机上按 cgroup 追踪（bpftrace，需宿主权限）
+# bpftrace -e 'tracepoint:sched:sched_switch { @[cgroup] = count(); }'
 </code></pre>
-<p>→ Ch 4 <a href="chapter-04.html#ch-4">观测工具</a> · Ch 15 <a href="chapter-15.html#ch-15">BPF</a></p>
-<p><strong>HFT：</strong> 即使在 <strong>裸机</strong> 上用 systemd/cgroup 隔离进程 — <strong>同样要看 cgroup stat</strong>，勿只信 <code class="c">top</code>。</p>
+<p><strong>判断口诀</strong>：容器内工具看「世界的样子」，cgroup 文件看「自己的份额」——延迟归因永远用后者。</p>
+<h3>五、裸机 + cgroup 的 HFT 用法</h3>
+<p>HFT 裸机上不用 Docker 也该用 cgroup/systemd 划资源边界：</p>
+<pre class="code" data-label="code"><code class="c">/etc/systemd/system/strategy.service
+  [Service]
+  CPUAffinity=2 3          # 绑核
+  CPUQuota=200%            # 等价 cpu.max 硬顶
+  MemoryMax=32G
+  AllowedCPUs=2-3
+</code></pre>
+<p>即使 dedicated 核，也用 cgroup 限额防<strong>失控进程</strong>（内存泄漏吞掉整机）——并周期巡检 <code class="c">cpu.stat</code>/<code class="c">memory.events</code>，勿只信 <code class="c">top</code>。这与 <a href="chapter-06.html#ch-6">ch6 CPU 调优</a>的隔离栈（isolcpus + affinity + cgroup）是同一层的互补工具。</p>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-11-2">11.2 硬件虚拟化</a></li>
+<li>下一节：<a href="#s-11-4">11.4 MicroVM</a>（容器速度 + VM 隔离的折中）</li>
+<li>关联：<a href="chapter-04.html#ch-4">ch4 观测工具</a>、<a href="chapter-15.html#ch-15">ch15 BPF</a>（按 cgroup 过滤）、<a href="chapter-06.html#ch-6">ch6 cgroups</a></li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>容器内 top 判断瓶颈</strong>——显示宿主机 8 核而自己 quota 2 核，误判「CPU 还有富余」。</li>
+<li><strong>CPU limit 造成规律性尖刺不知道</strong>——quota 冻结机制是 cliff 不是斜坡，<code class="c">nr_throttled</code> 是铁证。</li>
+<li><strong>以为容器隔离了 cache</strong>——namespaces 不隔离 LLC/内存带宽/内核锁，物理隔离才是隔离。</li>
+<li><strong>容器重启原因不查 memory.events</strong>——OOM kill 计数在 cgroup 文件里，不在应用日志里。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>容器在内核里是什么？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>没有单一对象——是 namespaces（视图隔离）+ cgroups（资源限额）+ overlayfs 的用户态组合概念。</p>
+</details>
+<ol start="2">
+<li>cpu.max 的 throttle 为什么造成延迟尖刺而非平滑减速？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>按周期发配额：用光后整个 cgroup 冻结到下个周期——并行线程越多消耗越快，冻结窗口越明显，表现为周期性 cliff。</p>
+</details>
+<ol start="3">
+<li>容器内 top 显示 8 核忙，怎么确认自己的真实额度？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>读 /sys/fs/cgroup/cpu.max（quota）和 cpu.stat（用量+throttle）——容器内传统工具显示宿主机视图。</p>
+</details>
+<ol start="4">
+<li>容器和 VM 的隔离本质差异？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>容器共享内核（syscall 零开销但逃逸面大、物理资源不隔离）；VM 独立内核（hypervisor 税但边界硬）。</p>
+</details>
+<ol start="5">
+<li>裸机 HFT 为什么也用 cgroup？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>给失控进程设硬边界（内存泄漏不吞整机）+ systemd 绑核限额一体管理——不是隔离邻居，是防御自己。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-11-4">
         <div class="sec-head"><div class="sec-no">11.4</div><h2>section-11.4-轻量级硬件虚拟化MicroVM</h2></div>
-<h3 class="sub">Firecracker 等</h3>
+<blockquote>
+<p>章节导航：<a href="#s-11-3">11.3 操作系统虚拟化/容器</a> · 上一篇 ← · 下一篇 <a href="#s-11-5">11.5 其他云技术</a> · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：MicroVM 的定位（容器速度 + VM 隔离的折中）、Firecracker 的设计取舍、三种隔离技术的四方对比、以及 HFT 场景的选型判断。</p>
+<h3>要点</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>特点</th>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>MicroVM = <strong>砍到最小的 KVM</strong></td>
+<td>去掉传统 BIOS/PCI 模拟，只留 virtio</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>125ms 启动 + &lt;5MB 开销</strong></td>
+<td>Lambda/Fargate 的底层答案</td>
+</tr>
+<tr>
+<td>3</td>
+<td>隔离强度 = VM（<strong>独立内核</strong>）</td>
+<td>强于容器，弱于专用机</td>
+</tr>
+<tr>
+<td>4</td>
+<td>观测两面性</td>
+<td>Guest 内可用完整 perf/BPF，宿主侧看 hypervisor</td>
+</tr>
+<tr>
+<td>5</td>
+<td>HFT：沙箱好用，<strong>热路径仍裸机</strong></td>
+<td>microVM ≠ 裸机性能</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、为什么需要 MicroVM：容器的安全债</h3>
+<p>容器快但共享内核（<a href="#s-11-3">11.3</a>）——内核漏洞 = 全体容器沦陷；VM 隔离硬但重（启动秒级、内存开销百 MB 起）。<strong>MicroVM 就是把 VM 瘦身到接近容器的成本</strong>：</p>
+<pre class="code" data-label="code"><code class="c">            隔离强度
+               ▲
+   传统 VM ●   │
+               │
+   MicroVM ●   │ ← 容器的成本曲线，VM 的隔离强度
+               │
+   容器 ●______│
+               └──────────────▶ 启动速度/密度
+</code></pre>
+<h3>二、Firecracker 的设计取舍</h3>
+<p>Firecracker（AWS 开源，Rust 编写）是 MicroVM 的代表——Lambda/Fargate 的底层：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计选择</th>
+<th>做法</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>无传统 BIOS/PCI 模拟</strong></td>
+<td>不模拟 1981 年的 PC</td>
+<td>启动从秒级降到 <strong>~125ms</strong></td>
+</tr>
+<tr>
+<td><strong>最小设备集</strong></td>
+<td>只有 virtio-net/blk（不含显卡/USB/声卡）</td>
+<td>攻击面 + 代码面都小</td>
+</tr>
+<tr>
+<td><strong>每 vCPU 一线程</strong></td>
+<td>无复杂的 vCPU 调度层</td>
+<td>延迟可预测</td>
+</tr>
+<tr>
+<td><strong>精简 KVM 用法</strong></td>
+<td>只用 KVM 核心能力</td>
+<td>hypervisor 税最小化</td>
+</tr>
+<tr>
+<td><strong>内存开销 &lt;5MB/VM</strong></td>
+<td>无完整设备模拟的簿记</td>
+<td>高密度（一台宿主机数千 microVM）</td>
+</tr>
+<tr>
+<td><strong>快照</strong></td>
+<td>内存+设备状态快照，恢复即用</td>
+<td>冷启动变温启动（毫秒级）</td>
+</tr>
+</tbody>
+</table></div>
+<p>与 <a href="#s-11-2">11.2</a> 对比：传统 VM 的启动慢、重，大头在设备模拟和 Guest 内核初始化——Firecracker 的答案不是「优化到极致」，是<strong>直接砍掉问题</strong>（不模拟老硬件、精简 Guest 镜像如 microd 镜像 5MB）。</p>
+<p><strong>快照恢复的巧妙之处</strong>：把「拉起进程+内核初始化+runtime init」整条冷启动链<strong>预执行并冻结</strong>，请求来时恢复快照——FaaS 冷启动问题的正解（配合 <a href="#s-11-5">11.5 FaaS</a>）。</p>
+<h3>三、四方对比：裸机 / 容器 / MicroVM / 传统 VM</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>裸机</th>
+<th>容器</th>
+<th>MicroVM</th>
+<th>传统 VM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>启动</td>
+<td>分钟（装机）</td>
+<td>毫秒</td>
+<td><strong>~125ms</strong></td>
+<td>秒~分钟</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>0</td>
+<td>~0</td>
+<td><strong>&lt;5MB</strong></td>
+<td>百 MB</td>
+</tr>
+<tr>
+<td>syscall 路径</td>
+<td>原生</td>
+<td><strong>原生</strong></td>
+<td>VM-EXIT 税（小）</td>
+<td>VM-EXIT 税</td>
+</tr>
+<tr>
+<td>I/O 路径</td>
+<td>原生</td>
+<td><strong>原生</strong></td>
+<td>virtio 代理</td>
+<td>virtio 代理</td>
+</tr>
+<tr>
+<td>内核隔离</td>
+<td>—（就是内核）</td>
+<td><strong>无</strong>（共享内核）</td>
+<td>独立 Guest 内核</td>
+<td>独立 Guest 内核</td>
+</tr>
+<tr>
+<td>cache/TLB 干扰</td>
+<td>只有同机进程</td>
+<td>共享</td>
+<td>EPT 税 + 共享物理</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>观测</td>
+<td>全套 perf/BPF</td>
+<td>全套（按 cgroup 口径）</td>
+<td>Guest 内全套</td>
+<td>Guest 内全套</td>
+</tr>
+<tr>
+<td>密度</td>
+<td>1</td>
+<td>极高</td>
+<td>高（数千/机）</td>
+<td>低-中</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>本质权衡</strong>：从裸机→容器→microVM→VM，<strong>性能下降换隔离上升</strong>。microVM 的定位是「FaaS 密度场景下隔离/成本的最优点」，不是「性能最优点」。</p>
+<h3>四、观测</h3>
+<p>与 KVM 同构（<a href="#s-11-2">11.2 的两层盲区</a>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th>工具</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>精简 Hypervisor</strong></td>
-<td>代码面小 — AWS Lambda/Fargate 等底层</td>
+<td>Guest 内</td>
+<td>perf / BPF / bpftrace 全套</td>
+<td><strong>完整内核</strong>在 Guest 里——比容器好观测（容器内看宿主机视图的问题不存在）</td>
 </tr>
 <tr>
-<td><strong>无传统 BIOS/PCI 模拟</strong></td>
-<td>启动快、内存 <strong>&lt; 5MB</strong> 级开销</td>
-</tr>
-<tr>
-<td><strong>隔离性</strong></td>
-<td>强于容器（独立 Guest 内核）</td>
-</tr>
-<tr>
-<td><strong>密度</strong></td>
-<td>高于传统 VM</td>
+<td>宿主机</td>
+<td><code class="c">kvm_stat</code>、<code class="c">perf kvm</code>、Firecracker metrics（vCPU 数/IO 吞吐）</td>
+<td>microVM 的 hypervisor 侧指标</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>观测：</strong> 与 KVM 类似 — <strong>Guest 内有完整内核</strong>，可用 <strong>perf/BPF</strong>；宿主机仍用 Hypervisor 工具。</p>
-<p><strong>HFT：</strong> 研究/沙箱隔离可用；<strong>共置 tick 引擎</strong> 仍优先 <strong>裸金属</strong> 而非 MicroVM。</p>
+<p>云上用 Lambda/Fargate 时宿主侧不可见——只能靠平台日志/Tracing（<a href="#s-11-5">11.5</a>）。</p>
+<h3>五、HFT / 嵌入式选型</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用 MicroVM？</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tick/发单热路径</td>
+<td>❌ 裸机</td>
+<td>VM-EXIT 税 + EPT 税对微秒 SLA 仍是结构性开销</td>
+</tr>
+<tr>
+<td>策略研究沙箱</td>
+<td>✅</td>
+<td>跑不可信代码，隔离硬</td>
+</tr>
+<tr>
+<td>回测批处理（多云混跑）</td>
+<td>✅</td>
+<td>快照+高密度，弹性好</td>
+</tr>
+<tr>
+<td>第三方信号源解析</td>
+<td>✅</td>
+<td>外部输入解析隔离（异常输入/漏洞不伤主进程）</td>
+</tr>
+<tr>
+<td>嵌入式安全域</td>
+<td>KVM+RT / 车载虚拟化同思路</td>
+<td>隔离优先于性能的场景</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判断口诀</strong>：隔离诉求 &gt; 微秒延迟诉求 → MicroVM 合格；延迟是第一公民 → 裸机没有替代品。</p>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-11-3">11.3 容器</a></li>
+<li>下一节：<a href="#s-11-5">11.5 其他云技术</a>（FaaS/Unikernel）</li>
+<li>关联：<a href="#s-11-2">11.2 硬件虚拟化</a>（VM-EXIT/EPT 机制）、<a href="chapter-12.html#ch-12">ch12 基准测试</a>（云上数字的拷问）</li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>把 MicroVM 当裸机性能卖</strong>——VM-EXIT/EPT 税比传统 VM 小但仍存在；125ms 启动说的是空 VM，不含应用 init。</li>
+<li><strong>快照恢复以为零成本</strong>——恢复要重映射内存、重建设备状态，毫秒级且随内存大小增长。</li>
+<li><strong>沙箱内跑延迟基准再外推</strong>——沙箱的 EPT/代理开销叠加在结果里，外推裸机要扣除。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>Firecracker 为什么能 125ms 启动？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>砍掉传统 BIOS/PCI 模拟（不模拟老 PC）、最小 virtio 设备集、精简 Guest 镜像——问题不是被优化而是被删除。</p>
+</details>
+<ol start="2">
+<li>MicroVM 相对容器的核心优势？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>独立 Guest 内核——内核级隔离（逃逸面大幅缩小），同时保持接近容器的启动速度与内存开销。</p>
+</details>
+<ol start="3">
+<li>快照如何解决 FaaS 冷启动？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>把进程拉起+内核 init+runtime init 整条链预执行并冻结成快照，请求来时恢复——把冷启动变成温启动（毫秒）。</p>
+</details>
+<ol start="4">
+<li>HFT 哪些场景适合 MicroVM？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>研究沙箱（跑不可信代码）、回测批处理、第三方信号解析——隔离诉求大于微秒延迟诉求的周边。</p>
+</details>
+<ol start="5">
+<li>MicroVM 的观测为什么比容器好做？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>Guest 有完整内核，perf/BPF 在 Guest 内看的是自己的真况；容器内传统工具显示的是宿主机视图。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
       <section class="section" id="s-11-5">
         <div class="sec-head"><div class="sec-no">11.5</div><h2>section-11.5-其他云技术</h2></div>
-<h3 class="sub">FaaS（Serverless）</h3>
+<blockquote>
+<p>章节导航：<a href="#s-11-4">11.4 MicroVM</a> · 上一篇 ← · <a href="#intro">本章导读</a></p>
+</blockquote>
+<p><strong>本节讲什么</strong>：FaaS 的冷启动机制与观测局限、Unikernel 的极致取舍、本章云技术的性能全景收束（按延迟敏感度选部署形态）。</p>
+<h3>要点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>FaaS 的代价是<strong>冷启动 + 观测降级</strong></td>
+<td>便利换控制权</td>
+</tr>
+<tr>
+<td>2</td>
+<td>冷启动三层成本</td>
+<td>运行时拉起 → init → <strong>首请求慢</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Unikernel 潜力大、<strong>工具链荒漠</strong></td>
+<td>无 OS = 无观测</td>
+</tr>
+<tr>
+<td>4</td>
+<td>部署形态 = <strong>延迟敏感度</strong>的函数</td>
+<td>裸机→容器→microVM→FaaS 阶梯</td>
+</tr>
+<tr>
+<td>5</td>
+<td>HFT：偶发任务上 FaaS，热路径离云越远越好</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>一、FaaS（Serverless）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -802,13 +1541,55 @@ grep throttled /sys/fs/cgroup/cpu.stat
 <td><strong>冷启动</strong>（容器/MicroVM 拉起 + runtime init）</td>
 </tr>
 <tr>
-<td>自动扩展</td>
-<td><strong>无法</strong> 传统 SSH + 全套 perf 栈 — 观测靠 <strong>平台日志/Tracing</strong></td>
+<td>自动扩展到零</td>
+<td><strong>无法</strong> SSH + 全套 perf 栈——观测靠<strong>平台日志/Tracing</strong></td>
+</tr>
+<tr>
+<td>无容量规划</td>
+<td>执行环境不可预测（实例复用/回收策略黑盒）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 适合 <strong>偶发任务</strong>（报表、告警）；<strong>绝不</strong> 放 tick/发单热路径。</p>
-<h3>Unikernels</h3>
+<p><strong>冷启动的三层成本</strong>（以容器型 FaaS 为例）：</p>
+<pre class="code" data-label="code"><code class="c">层 1  基础设施拉起   容器/microVM 启动           100ms ~ 秒级
+层 2  运行时 init    JVM/Python 解释器/依赖加载   秒 ~ 10s（JVM 最惨）
+层 3  应用 init      连接池、缓存预热、首 JIT     首 N 个请求显著变慢
+</code></pre>
+<p>各云的对策本质都是 <a href="#s-11-4">11.4 的思路</a>：microVM 快照（Firecracker）、预置容器池（层 1 消掉）、按流量保活（层 1+2 消掉，但收闲置费）。<strong>JVM 类运行时的层 2 是用户态问题</strong>，快照解决不了——语言选型决定冷启动命运。</p>
+<p><strong>观测降级</strong>：没有 SSH、没有 perf/BPF、没有 <a href="chapter-13.html#ch-13">ch13/ch14/ch15 的工具箱</a>——只剩结构化日志 + 分布式 Tracing + 平台指标。性能工程从「系统级」降级为「应用级黑盒」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>传统部署</th>
+<th>FaaS 等价物</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>perf 采样</td>
+<td>❌（无权限）</td>
+</tr>
+<tr>
+<td>BPF/bpftrace</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>runqlat/biolatency</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>应用日志 + span</td>
+<td>✅（唯一细粒度来源）</td>
+</tr>
+<tr>
+<td>平台指标（时长/内存/并发）</td>
+<td>✅（聚合口径）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT</strong>：适合<strong>偶发任务</strong>（日终报表、告警处理、数据搬运）；<strong>绝不</strong>放 tick/发单热路径——不是冷启动一个问题，是观测不可达 + 执行环境黑盒两个结构性障碍。</p>
+<h3>二、Unikernels</h3>
+<p>应用 + 极简 libOS 编译成<strong>单一镜像</strong>，直接跑在 hypervisor/裸机上（MirageOS、Unikraft 系）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -818,17 +1599,127 @@ grep throttled /sys/fs/cgroup/cpu.stat
 </thead>
 <tbody>
 <tr>
-<td>应用 + 极简 libOS <strong>单一镜像</strong></td>
-<td>极致性能潜力</td>
+<td>无通用 OS——syscall 直通应用</td>
+<td>极致性能潜力（启动 ms 级、内存 MB 级）</td>
 </tr>
 <tr>
-<td>无完整通用 OS</td>
-<td><strong>观测工具缺乏</strong>、调试难</td>
+<td>攻击面极小（没有多余系统调用）</td>
+<td><strong>观测工具缺乏</strong>：没有 /proc、没有 perf、没有 BPF</td>
+</tr>
+<tr>
+<td>单地址空间单用途</td>
+<td>调试难：崩溃即整机消失，无 core dump 生态</td>
+</tr>
+<tr>
+<td></td>
+<td>生态窄：每换依赖要重编译镜像</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 学术/极端场景；工程主流仍是 <strong>Linux 裸机 + DPDK</strong>。</p>
+<p>Unikernel 的哲学是「不需要观测，因为里面没有多余的东西」——这在<strong>已知行为</strong>的固定功能负载（如协议网关）上成立；但性能工程的前提是<strong>测量</strong>，放弃观测工具链对调优工作是致命的。</p>
+<p><strong>HFT</strong>：学术/极端场景（研究型超低延迟协议栈有价值）；工程主流仍是 <strong>Linux 裸机 + DPDK</strong>——观测能力是工程化的生命线。同类思路的现代变体：DPDK 本身就类似「网卡旁路的 unikernel 化」——poll mode + 用户态栈，但保留完整 Linux 工具链（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-DPDK</a>）。</p>
+<h3>三、本章收束：部署形态 = 延迟敏感度的函数</h3>
+<pre class="code" data-label="code"><code class="c">延迟容忍度
+  ns ~ µs   │ 裸金属 + 绑核 + 直通           ← HFT 热路径
+   ~10µs    │ 裸机 + 容器（dedicated 核）
+   ~100µs   │ 共享云 VM / microVM
+   ~ms      │ 容器平台（K8s）
+   ~100ms   │ FaaS（含冷启动）               ← 偶发任务
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>形态</th>
+<th>隔离</th>
+<th>性能</th>
+<th>观测</th>
+<th>弹性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>裸机</td>
+<td>物理隔离</td>
+<td>★★★★★</td>
+<td>★★★★★</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>容器</td>
+<td>共享内核</td>
+<td>★★★★</td>
+<td>★★★（cgroup 口径）</td>
+<td>★★★</td>
+</tr>
+<tr>
+<td>MicroVM</td>
+<td>独立内核</td>
+<td>★★★</td>
+<td>★★★★（Guest 内全套）</td>
+<td>★★★★</td>
+</tr>
+<tr>
+<td>VM</td>
+<td>独立内核</td>
+<td>★★</td>
+<td>★★★（两层盲区）</td>
+<td>★★★</td>
+</tr>
+<tr>
+<td>FaaS</td>
+<td>独立内核+平台</td>
+<td>★★（冷启动）</td>
+<td>★（日志/tracing）</td>
+<td>★★★★★</td>
+</tr>
+</tbody>
+</table></div>
+<p>没有「最好」的形态——每个格子是不同诉求的最优点。HFT 工程师的工作是把<strong>自己的每个组件</strong>放到正确的格子里。</p>
+<h3>衔接</h3>
+<ul>
+<li>上一节：<a href="#s-11-4">11.4 MicroVM</a></li>
+<li>本章起点：<a href="#s-11-1">11.1 云计算背景与架构</a></li>
+<li>下一章：<a href="chapter-12.html#ch-12">ch12 基准测试</a>（云上数字怎么拷问）</li>
+</ul>
 <hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>FaaS 保活当免费午餐</strong>——最小实例数计费是闲置费；按调用计费与常驻延迟是矛盾需求。</li>
+<li><strong>冷启动只测层 1</strong>——基础设施拉起快 ≠ runtime init 快，JVM 的层 2 才是大头。</li>
+<li><strong>Unikernel 数字直接信</strong>——无观测环境下的 benchmark 无法用第二工具交叉验证（违反 <a href="chapter-12.html#s-12-3">ch12 sanity check</a>）。</li>
+<li><strong>热路径侥幸上 FaaS</strong>——观测黑盒意味着出问题只能等，无法定位。</li>
+</ol>
+<details>
+<summary>自测题（点击展开）</summary>
+<ol>
+<li>FaaS 冷启动的三层成本？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>①基础设施拉起（容器/microVM，快照可消）②运行时 init（JVM/解释器/依赖，用户态问题快照难消）③应用 init（连接池/缓存预热/首 JIT，体现在首 N 请求）。</p>
+</details>
+<ol start="2">
+<li>FaaS 的观测为什么降级？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>无 SSH/无 perf/无 BPF——系统级工具箱全部不可用，只剩结构化日志 + tracing + 平台聚合指标。</p>
+</details>
+<ol start="3">
+<li>Unikernel 为什么不适合调优工作？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>没有 /proc/perf/BPF——「已知行为的固定功能」可以盲跑，调优的前提是测量，无观测即无调优。</p>
+</details>
+<ol start="4">
+<li>DPDK 和 Unikernel 哲学上的相似点？</li>
+</ol>
+<details>
+<summary>答</summary>
+<p>都是「旁路通用层换性能」：unikernel 砍 OS、DPDK 砍内核网络栈——但 DPDK 保留 Linux 工具链，工程可用性完全不同。</p>
+</details>
+</details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
       </section>
