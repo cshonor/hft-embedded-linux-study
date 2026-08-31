@@ -12,12 +12,12 @@
 
 | 节 | 笔记 |
 |----|------|
-| 案例背景：An Unexplained Win | [notes/section-案例背景An-Unexplained-Win.md](./notes/section-案例背景An-Unexplained-Win.md) |
+| 案例背景：An Unexplained Win | [notes/section-16.0-案例背景An-Unexplained-Win.md](./notes/section-16.0-案例背景An-Unexplained-Win.md) |
 | 16.1.1–16.1.2 问题陈述与分析策略 | [notes/section-16.1.1-16.1.2-问题陈述与分析策略.md](./notes/section-16.1.1-16.1.2-问题陈述与分析策略.md) |
 | 16.1.3–16.1.4 统计数据与静态配置 | [notes/section-16.1.3-16.1.4-统计数据与静态配置.md](./notes/section-16.1.3-16.1.4-统计数据与静态配置.md) |
 | 16.1.5–16.1.6 PMC 与软件事件 | [notes/section-16.1.5-16.1.6-PMC-与软件事件.md](./notes/section-16.1.5-16.1.6-PMC-与软件事件.md) |
 | 16.1.7–16.1.8 动态追踪与结论 | [notes/section-16.1.7-16.1.8-动态追踪与结论.md](./notes/section-16.1.7-16.1.8-动态追踪与结论.md) |
-| HFT 版「Unexplained Win」演练模板 | [notes/section-HFT-版Unexplained-Win演练模板.md](./notes/section-HFT-版Unexplained-Win演练模板.md) |
+| HFT 版「Unexplained Win」演练模板 | [notes/section-16.9-HFT-版Unexplained-Win演练模板.md](./notes/section-16.9-HFT-版Unexplained-Win演练模板.md) |
 
 ---
 
