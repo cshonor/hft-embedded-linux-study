@@ -359,247 +359,1182 @@ HFT 用户态 ──► DPDK mempool / 自研 order pool 是同构设计
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 8 §1 Slab 分配器的三大核心目标</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 8 §1 Slab 分配器的三大核心目标（及 SLUB 时代的变化）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/slub.c</code> 头部设计注释、<code class="c">mm/slab_common.c</code>）</p>
 </blockquote>
-<h3>1. Slab 分配器的三大核心目标</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书给 slab 立了三大设计目标。二十年后 SLUB 继承了哪些、推翻了哪些？先记住原书目标，再对照 v6.6 现实——这决定了"从 slab 学到的东西哪些能搬到用户态对象池设计"。</p>
+<hr />
+<h2>1. 原书三大目标</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>目标</th>
-<th>机制</th>
+<th>2.4 slab 机制</th>
 <th>HFT 用户态镜像</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>消除内部碎片</strong></td>
-<td>小于一页的请求 <strong>按对象大小</strong> 从 slab 切分，而非整页浪费</td>
-<td><strong>object pool</strong> 只分配 <code class="c">sizeof(Order)</code> 对齐块，不 <code class="c">malloc</code> 任意大小</td>
+<td>小于一页的请求按对象大小从 slab 切分，而非整页浪费</td>
+<td>object pool 只分配 <code class="c">sizeof(Order)</code> 对齐块</td>
 </tr>
 <tr>
 <td><strong>缓存常用对象</strong></td>
-<td>释放的对象 <strong>保持已初始化状态</strong> 挂在 cache 上，避免重复 ctor/dtor</td>
-<td><strong>free list 复用 Order</strong> — reset 字段而非 <code class="c">new/delete</code></td>
+<td>释放对象保持初始化状态挂 cache 上，复用免 ctor/dtor</td>
+<td>free list 复用 Order，reset 字段而非 new/delete</td>
 </tr>
 <tr>
-<td><strong>优化硬件缓存（Slab 着色）</strong></td>
-<td>用 slab <strong>剩余空间作 color 偏移</strong>，使 <strong>不同 slab 上同类型对象</strong> 落到 <strong>不同 cache line</strong>，减 <strong>false sharing / 行冲突</strong></td>
-<td><strong><code class="c">alignas(64)</code></strong>、按 core 分 arena、padding 热字段</td>
+<td><strong>优化硬件缓存（着色）</strong></td>
+<td>slab 剩余空间作 color 偏移，同类型对象错开 cache line</td>
+<td><code class="c">alignas(64)</code>、按 core 分 arena、padding 热字段</td>
 </tr>
 </tbody>
 </table></div>
-<h3>Slab 着色 (Colouring) — 简图</h3>
-<pre class="code" data-label="code"><code class="c">同一 kmem_cache（对象大小固定）
-  Slab A:  [obj][obj][obj]…  + color_offset_0  → 对象起始地址 mod cache_line = α
-  Slab B:  [obj][obj][obj]…  + color_offset_1  →  mod cache_line = β  (α≠β)
-</code></pre>
-<p><strong>目的：</strong> 多 CPU 同时访问 <strong>不同 slab</strong> 上的 <strong>同类型对象</strong> 时，少 <strong>挤在同一条 cache line</strong>。</p>
+<h2>2. SLUB（v6.6 默认）对三目标的取舍</h2>
+<p><strong>SLUB = Unqueued Slab Allocator</strong>（Christoph Lameter，2007 合入）。设计哲学大转弯：从"管理精细"转向"路径极简"。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书目标</th>
+<th>SLUB 处置</th>
+<th>v6.6 证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>消除内部碎片</td>
+<td><strong>保留</strong>（基本盘）</td>
+<td>尺寸档位+专用 cache 不变</td>
+</tr>
+<tr>
+<td>对象缓存/ctor</td>
+<td><strong>弱化</strong>——ctor/dtor 基本退役，复用即"拿一块干净的内存"</td>
+<td><code class="c">kmem_cache_create</code> 的 ctor 参数仅 debug 用途保留</td>
+</tr>
+<tr>
+<td>着色</td>
+<td><strong>删除</strong>——被 <code class="c">CONFIG_SLAB_FREELIST_RANDOM</code> 取代：freelist 顺序随机化，对象物理布局不可预测（防 heap 溢出利用）+ 天然错开冲突</td>
+<td>slub.c 头注释；<code class="c">slab_freelist_random</code> 初始化</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>SLUB 新立的三个目标（原书没有）：</strong></p>
+<ol>
+<li><strong>快路径无锁</strong>——<code class="c">this_cpu_cmpxchg_double(freelist, tid)</code> 一条原子指令完成分配（slub.c:421 注释），无 cache 级自旋锁</li>
+<li><strong>元数据最小</strong>——空闲链 <strong>嵌在对象体内</strong>（object 前一个 word 当 next 指针），不设 bufctl 数组、不设 on/off-slab 描述符</li>
+<li><strong>多核可扩展</strong>——per-CPU active slab + per-CPU partial 链，避开 <code class="c">node-&gt;list_lock</code> 中央锁（"avoid taking it as much as possible"，slub.c 头注释原文）</li>
+</ol>
+<p><strong>着色之死值得一句纪念：</strong> 着色解决的是"不同 slab 起始地址 mod 64 相同 → 同序号对象挤同一 line"。SLUB 的答案更粗暴——freelist 随机化后访问顺序本身无序，冲突概率自然摊薄，还附赠安全收益。<strong>工程上的通用教训：随机化常常是比精确布局更便宜的同效手段。</strong></p>
+<h2>3. 三分配器血统表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>SLAB（原书主角）</th>
+<th>SLUB（v6.6 默认）</th>
+<th>SLOB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时代</td>
+<td>1994 Bonwick / Linux 2.2</td>
+<td>2007 Lameter</td>
+<td>嵌入式小内存</td>
+</tr>
+<tr>
+<td>per-slab 元数据</td>
+<td>完整（bufctl 数组、三链表）</td>
+<td>极简（嵌入 freelist）</td>
+<td>压栈式</td>
+</tr>
+<tr>
+<td>三链表 full/partial/free</td>
+<td>✓ 每 cache</td>
+<td>✗ 只保留 per-node partial</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>锁</td>
+<td>cache 级自旋</td>
+<td>cmpxchg 快路径 + local lock</td>
+<td>全局锁（小内存可忍）</td>
+</tr>
+<tr>
+<td>v6.6 状态</td>
+<td>仍可选（<code class="c">CONFIG_SLAB</code>），维护半弃</td>
+<td><strong>默认</strong></td>
+<td><code class="c">CONFIG_SLOB</code>（6.4 起正式弃用告警）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>用户态落地</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>专用 cache（一类型一池）</td>
+<td>一种消息/订单一种 pool</td>
+</tr>
+<tr>
+<td>复用免重初始化</td>
+<td>pool 分配一次初始化，复用只 reset 热字段</td>
+</tr>
+<tr>
+<td>着色→随机化的演化</td>
+<td>用户态池无需着色；学 SLUB 用 freelist 而非 bump allocator，天然错行</td>
+</tr>
+<tr>
+<td>快路径无锁</td>
+<td>每核本地池 + 一次 CAS 换主（见 §3/§5）</td>
+</tr>
+<tr>
+<td>kmalloc 泛型档位</td>
+<td>热路径禁止——固定 size pool（§4）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 核心数据结构</a>：SLUB 的三个 struct</li>
+<li><a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a>：LKD 的 slab 叙述同样偏旧，互为印证</li>
+<li><a href="../../06.5-modern-mm/html/chapter-02.html#ch-2">06.5/ch02 slub</a>：现代视角完整版</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：SLUB 为什么敢删掉 ctor/dtor？</strong>
+A：实测绝大多数 cache 的 ctor 只是 memset/链表初始化，而对象复用时调用者本来就要重新初始化业务字段。SLUB 把"池只保证干净内存、初始化归调用者"定为契约，快路径少一层间接调用。教训：<strong>池的职责边界越窄，路径越快</strong>。</p>
+<p><strong>Q2：着色和 freelist 随机化，哪个对性能更好？</strong>
+A：着色是确定性优化（防系统性冲突），随机化是概率性摊薄。对 HFT 用户态池：确定性布局（槽位错开 64B 边界）<strong>尾延迟更可控</strong>——随机化把 p50 和 p99.9 拉近，但引入方差。内核选随机化主因是安全收益，性能上两者差异很小。</p>
+<p><strong>Q3：<code class="c">CONFIG_SLAB_FREELIST_RANDOM</code> 防的是什么攻击？</strong>
+A：heap 溢出类利用需要预测"下一个分配的对象在哪"。确定性 freelist = 攻击者可计算 victim 位置。随机化后即使溢出改写 freelist 指针也难定向。配套的 <code class="c">CONFIG_SLAB_FREELIST_HARDENED</code> 再给 freelist 指针加 XOR 加密。</p>
+<p><strong>Q4：SLOB 为什么被弃用？</strong>
+A：小内存设备现在也够 RAM 跑 SLUB；SLOB 不支持 memcg/debugfs/sysfs 全家桶，维护成本 &gt; 收益。6.4 起 Kconfig 明确 deprecated。嵌入式支线遇到老讲义提 SLOB，按"历史方案"读。</p>
+<p><strong>Q5：用户态对象池要学 SLUB 的哪一条最重要？</strong>
+A：<strong>空闲链嵌对象体</strong>（free slot 自带 next 指针）——池的元数据成本 = 0 额外内存，cache 密度最高。对应实现：拿回 slot 时先读首 word 存的 next，再往 slot 写业务数据。jemalloc/tcmalloc 的 thread cache 同构。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 8 §2 核心数据结构：Cache 与 Slab</h2></div>
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 8 §2 核心数据结构：Cache 与 Slab（SLUB 版）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/slub.c</code> 头注释 :4-:110、<code class="c">include/linux/slub_def.h</code>）</p>
 </blockquote>
-<h3>2. 核心数据结构：Cache 与 Slab</h3>
-<h3>缓存 <code class="c">kmem_cache_t</code></h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书的 <code class="c">kmem_cache_t</code> + <code class="c">slab_t</code> + <code class="c">kmem_bufctl_t</code> 三件套在 SLUB 里被重构成 <strong>三个 struct</strong>：<code class="c">kmem_cache</code>（类型）、<code class="c">kmem_cache_cpu</code>（每 CPU 热层）、<code class="c">kmem_cache_node</code>（每 NUMA 节点冷层）。数据结构的形状就是算法的形状——本节把这个形状讲透。</p>
+<hr />
+<h2>1. 原书结构 → SLUB 结构对照</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>概念</th>
-<th>说明</th>
+<th>原书（SLAB）</th>
+<th>SLUB v6.6</th>
+<th>变化本质</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Cache chain</strong></td>
-<td>各 <strong><code class="c">kmem_cache</code></strong> 双向链表串起 — 每种 <strong>内核对象类型</strong> 一个 cache（如 <code class="c">task_struct</code>、<code class="c">inode</code>、<code class="c">mm_struct</code>）</td>
+<td><code class="c">kmem_cache_t</code> 三条链（full/partial/free）</td>
+<td><code class="c">kmem_cache</code> + 每 node <strong>只保留 partial 链</strong></td>
+<td>full/free 是冗余状态——full slab 无事可做，free 归还 buddy 即可</td>
 </tr>
 <tr>
-<td><strong>三条 Slab 链</strong></td>
-<td><strong><code class="c">slabs_full</code></strong> · <strong><code class="c">slabs_partial</code></strong> · <strong><code class="c">slabs_free</code></strong></td>
+<td><code class="c">slab_t</code>（on/off-slab 描述符）</td>
+<td><strong><code class="c">struct slab</code></strong>（复用 <code class="c">struct page</code>，v5.9 起独立类型名）</td>
+<td>描述符寄生在页元数据里，零额外内存</td>
+</tr>
+<tr>
+<td><code class="c">kmem_bufctl_t[]</code> 空闲索引数组</td>
+<td><strong>freelist 嵌在对象体内</strong>（首 word 当 next）</td>
+<td>元数据随对象走，cache 密度最大化</td>
+</tr>
+<tr>
+<td>per-CPU <code class="c">array_cache</code></td>
+<td><code class="c">struct kmem_cache_cpu</code>（active slab + 本地 partial）</td>
+<td>同思想，更精的结构</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">kmem_cache (e.g. &quot;mm_struct&quot;)
-    slabs_full     ──► 无空闲 object
-    slabs_partial  ──► 有闲有占 ← 分配首选
-    slabs_free     ──► 全空，可还给 Buddy
+<h2>2. SLUB 三件套（v6.6）</h2>
+<pre class="code" data-label="C"><code class="c">struct kmem_cache {              /* 一种对象类型一份 */
+    const char        *name;
+    unsigned long      size;      /* 对象实际大小（含元数据）*/
+    unsigned int       object_size, offset;  /* offset: freelist 指针在对象内的偏移 */
+    slab_flags_t       flags;
+    int                cpu_partial;  /* 每 CPU partial 链的对象数上限 */
+    ...
+    struct kmem_cache_cpu __percpu *cpu_slab;   /* 热层 */
+    struct kmem_cache_node *node[MAX_NUMNODES]; /* 冷层 */
+};
+
+struct kmem_cache_cpu {          /* 每 CPU 一份（热路径常驻） */
+    void  **freelist;            /* 本 CPU active slab 的空闲链头 */
+    struct slab *slab;           /* 当前 active slab */
+    unsigned long tid;           /* 事务号：cmpxchg 双字段校验 */
+    struct slab *partial;        /* 本 CPU partial 链（无锁挂载） */
+};
+
+struct kmem_cache_node {         /* 每 NUMA 节点一份（冷层） */
+    spinlock_t  list_lock;
+    unsigned long nr_partial;
+    struct list_head partial;     /* 节点级 partial slab 链 */
+};
 </code></pre>
-<h3>Slab <code class="c">slab_t</code></h3>
+<h2>3. 关键设计：frozen slab（v6.6 slub.c 头注释 :80-:89 原文）</h2>
+<blockquote>
+<p>"If a slab is frozen then it is exempt from list management. It is not on any list except per cpu partial list. The processor that froze the slab is the one who can perform list operations on the slab. Other processors may put objects onto the freelist but the processor that froze the slab is the only one who can retrieve the objects from the slab's freelist."</p>
+</blockquote>
+<p>翻译成机制语言：</p>
+<pre class="code" data-label="code"><code class="c">active slab（被 CPU0 冻结）：
+  CPU0：分配走 slab-&gt;freelist（取）
+  CPU1：free 到该 slab？→ CAS 挂回 slab-&gt;freelist（只放不取）
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>概念</th>
-<th>说明</th>
+<th>frozen 带来的性质</th>
+<th>意义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>组成</strong></td>
-<td><strong>一个或多个连续物理页</strong>（来自 Buddy），划分为 <strong>N 个 object slot</strong></td>
+<td>分配 = 单边操作（只有 owner 取）</td>
+<td>快路径只需本地 cmpxchg，无需与 free 方协商</td>
 </tr>
 <tr>
-<td><strong>描述符位置</strong></td>
-<td><strong>on-slab</strong>（小对象，描述符在页内）或 <strong>off-slab</strong>（描述符单独分配）</td>
+<td>free 方与 alloc 方通过原子链表会合</td>
+<td>生产者-消费者天然解耦</td>
+</tr>
+<tr>
+<td>slab 不在全局链上</td>
+<td>node-&gt;list_lock 完全不进分配快路径</td>
 </tr>
 </tbody>
 </table></div>
-<h3>空闲对象跟踪：<code class="c">kmem_bufctl_t</code></h3>
-<p>不用 <strong>逐对象链表</strong>，而用 <strong>整型数组</strong> 作 <strong>LIFO 索引栈</strong> — <strong>O(1)</strong> 取空闲 object、归还 object。</p>
-<p>（SLUB 用 <strong>freelist 指针嵌入 object 头部</strong> 等变体 — <strong>思想同为 LIFO 热缓存</strong>。）</p>
+<h2>4. 锁层级（slub.c :51-:56 原文，v6.6 实锚）</h2>
+<pre class="code" data-label="code"><code class="c">1. slab_mutex        （全局，create/destroy cache 时才拿）
+2. node-&gt;list_lock   （per-node，慢路径：partial 链增删）
+3. cpu_slab-&gt;lock    （local lock，慢路径改 kmem_cache_cpu 字段）
+4. slab_lock(slab)   （仅无 cmpxchg_double 的 arch）
+5. object_map_lock   （仅 debug）
+</code></pre>
+<p><strong>快路径（§3 详述）一把锁都不拿</strong>——直接 <code class="c">this_cpu_cmpxchg_double(freelist, tid)</code>。这就是头注释说的 "operations can continue without any centralized lock"。</p>
+<h2>5. slab 的页阶（order）与对象数</h2>
+<pre class="code" data-label="C"><code class="c">/* calculate_order() 决定每 slab 几页 */
+slab_order = min(能放下 min_objects 个对象的 order, max_order);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>默认</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">slub_max_order</code></td>
+<td>3（8KiB..32KiB slab）</td>
+<td>超过则降对象数</td>
+</tr>
+<tr>
+<td><code class="c">slub_min_objects</code></td>
+<td>0（按 CPU 数推）</td>
+<td>每页对象太少 → 提阶</td>
+</tr>
+<tr>
+<td><code class="c">kmem_cache</code> sysfs</td>
+<td><code class="c">/sys/kernel/slab/&lt;name&gt;/order</code></td>
+<td>观测实际 order</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 视角：</strong> order 越大，一次 grow 的 buddy 压力越大（连续页难找），但 partial 链换 slab 频率越低。默认平衡即可；调专用 cache 时 <code class="c">SLAB_HUGE_HP</code> 不存在——内核 slab <strong>不用</strong> hugetlbfs。</p>
+<h2>6. 观测</h2>
+<pre class="code" data-label="shell"><code class="c">cat /proc/slabinfo | head -3        # name active_objs num_objs objsize objperslab pagesperslab
+cat /sys/kernel/slab/&lt;name&gt;/object_size /sys/kernel/slab/&lt;name&gt;/slab_size
+slabtop -o -s c | head              # 按 cache 占用排序（依赖 slabinfo）
+grep -w 'slab_objects\|slabs' /proc/vmstat
+</code></pre>
+<p><code class="c">smaps</code> 里内核 slab 不计入进程 RSS——<strong>容器/memcg 场景要单独盯 <code class="c">/sys/fs/cgroup/.../memory.stat</code> 的 slab 行</strong>。</p>
+<h2>7. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构性质</th>
+<th>用户态镜像</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>frozen 单边取</td>
+<td>每核 ring：单消费者 CAS 取，多生产者 CAS 放（MPSC）</td>
+</tr>
+<tr>
+<td>freelist 嵌对象</td>
+<td>pool 槽位首 8B 作 next——零元数据池</td>
+</tr>
+<tr>
+<td>per-node 冷层</td>
+<td>按.NUMA 节点分 arena（<code class="c">numa_alloc_onnode</code>）</td>
+</tr>
+<tr>
+<td>tid 事务号</td>
+<td>ABA 问题防护：CAS 双字段（指针+计数器），与 lock-free 队列的 tagged pointer 同构</td>
+</tr>
+</tbody>
+</table></div>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-3">§3 对象分配与释放</a>：在这套结构上跑的快慢路径</li>
+<li><a href="chapter-14.html#s-5">§5 每 CPU 对象缓存</a>：<code class="c">kmem_cache_cpu</code> 的完整行为</li>
+<li><a href="chapter-06.html#ch-6">Ch 6 物理页分配</a>：slab 页的来源</li>
+<li><a href="../../06.5-modern-mm/html/chapter-02.html#ch-2">06.5/ch02</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：SLUB 为什么删掉 full 和 free 两条链？</strong>
+A：full slab 永远不会出现在任何查找路径里（它没有空闲对象，partial 查找跳过它），维护它进/出链表纯属白付锁开销；全空 slab 直接还 buddy（或留 per-cpu partial 少量备胎）。<strong>状态机越少，不变量越好守</strong>——删掉的不是链，是两种状态转换。</p>
+<p><strong>Q2：<code class="c">struct slab</code> 和 <code class="c">struct page</code> 什么关系？</strong>
+A：同一块内存的两种"视图"（union 意义上）：页被 slab 化后，<code class="c">page</code> 的部分字段位置由 slab 复用（freelist/counters）。v5.9 起引入 <code class="c">struct slab</code> 类型别名并清理 accessor（<code class="c">slab_address()</code> 等），让"这页是 slab"的语义显式化。类似 struct folio 的路数（06.5/ch06）。</p>
+<p><strong>Q3：freelist 指针为什么可以放对象体内而不会污染业务数据？</strong>
+A：<code class="c">kmem_cache-&gt;offset</code> 记录指针位置：默认 = 对象首 word（对象空闲时首 word 无意义）。开启 <code class="c">CONFIG_SLAB_FREELIST_HARDENED</code> 时还 XOR 一次指针值。分配时内核把 next 读走后才把对象交出去——<strong>借了"空闲对象的身体"当链表节点</strong>。</p>
+<p><strong>Q4：为什么 free 到别的 CPU 的 active slab 是安全的？</strong>
+A：frozen 语义：free 方做的是"原子地把对象 CAS 进 slab-&gt;freelist"（slab_free_freelist_hook 链），只放不取不与 owner 冲突；owner 的分配也是 CAS。两个 CAS 竞争同一 freelist 头时一方重试即可——无锁会合。</p>
+<p><strong>Q5：<code class="c">/proc/slabinfo</code> 里 objsize=64 objperslab=64 pagesperslab=1 是什么意思？</strong>
+A：kmalloc-64 档：每 slab 一页放 64 个 64B 对象，零头 0B。这就是 §4 要讲的"档位"设计的直接后果——<strong>64 的整数倍请求零内部碎片</strong>；65B 的请求进 96 档浪费 31B（32%）。热路径 struct 尺寸应向 2 幂对齐的根据在此。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 8 §3 对象分配与释放</h2></div>
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 8 §3 对象分配与释放（SLUB 快慢路径）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/slub.c</code> :3095 <code class="c">___slab_alloc</code>、:3500 <code class="c">kmem_cache_alloc</code>、:3825 <code class="c">kmem_cache_free</code>）</p>
 </blockquote>
-<h3>3. 对象分配与释放</h3>
-<h3>分配：<code class="c">kmem_cache_alloc()</code></h3>
-<pre class="code" data-label="code"><code class="c">kmem_cache_alloc(cache)
-    │
-    ├─ per-CPU 本地池有？ ──► 直接取（§5）
-    │
-    └─ 从 cache-&gt;slabs_partial 取 object
-           │
-           无 partial ──► kmem_cache_grow()
-                              ├─ Buddy alloc_pages 建新 slab
-                              ├─ 划分 objects
-                              └─ 调用 constructor 初始化（仅新 object）
-</code></pre>
-<h3>释放：<code class="c">kmem_cache_free()</code></h3>
-<pre class="code" data-label="code"><code class="c">kmem_cache_free(cache, obj)
-    │
-    ├─ 优先还 per-CPU 本地池
-    │
-    └─ 标记 object 空闲（bufctl / freelist）
-           │
-           slab 变全空？ ──► 可能移入 slabs_free（稍后 shrink 或 destroy）
-</code></pre>
-<p><strong>HFT：</strong> <strong>grow</strong> = 向 OS 要新页（慢路径）；<strong>partial 命中</strong> = 池内 pop（快路径）— 与 <strong>mempool cache 批量 refill</strong> 同构。</p>
 <hr />
-      </section>
-      <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 8 §4 尺寸缓存 (Sizes Cache) 与 `kmalloc` / `kfree`</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
-</blockquote>
-<h3>4. 尺寸缓存 (Sizes Cache) 与 <code class="c">kmalloc</code> / <code class="c">kfree</code></h3>
-<p>除 <strong>类型专用 cache</strong>（<code class="c">kmem_cache_create("my_struct", …)</code>）外，内核大量 <strong>任意小尺寸</strong> 请求走 <strong>通用尺寸 cache</strong>：</p>
+<h2>本节讲什么</h2>
+<p>原书的 <code class="c">kmem_cache_alloc/free</code> 在 SLUB 里是 <strong>一条无锁快路径 + 三层慢路径</strong> 的瀑布。这条瀑布是内核里被走过最多次的代码路径之一（每个 skb、每个 dentry 都过这里）——它的形状就是"高性能分配器"的参考答案。</p>
+<hr />
+<h2>1. 分配瀑布（v6.6）</h2>
+<pre class="code" data-label="code"><code class="c">kmem_cache_alloc(s, gfp)                    slub.c:3500
+  └─ slab_alloc_node()                      快路径
+       │  object = c-&gt;freelist;             ← 读本 CPU 空闲链头
+       │  this_cpu_cmpxchg_double(c-&gt;freelist, c-&gt;tid,
+       │          object-&gt;next, next_tid)   ← 双字段原子交换（:421 注释）
+       │  命中 → return object              【零锁、单条原子指令】
+       ▼ 未命中（freelist 空 / 被抢）
+  ___slab_alloc(s)                          慢路径 :3095
+       ├─ ① c-&gt;partial 有备胎？→ 换 active slab（仍本 CPU，无全局锁）
+       ├─ ② 本 CPU partial 也空 → 从 node-&gt;partial 搬一个（拿 list_lock）
+       │      搬空的 node partial → 调用 slab 的 deactivate
+       └─ ③ 全空 → new_slab() → alloc_pages()（buddy，可能 reclaim！）
+                → 划对象 → freelist randomize → freeze
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>特点</th>
+<th>层级</th>
+<th>拿什么锁</th>
+<th>频率（稳态）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>快路径 cmpxchg</td>
+<td>无</td>
+<td>99%+</td>
+</tr>
+<tr>
+<td>本 CPU partial 换 slab</td>
+<td>local lock（关抢占）</td>
+<td>slab 用尽时</td>
+</tr>
+<tr>
+<td>node partial 搬运</td>
+<td><code class="c">node-&gt;list_lock</code>（spinlock）</td>
+<td>罕见</td>
+</tr>
+<tr>
+<td>new_slab → buddy</td>
+<td>zone lock + 可能 direct reclaim</td>
+<td>池冷启动/扩张时</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. 快路径细节：<code class="c">tid</code> 事务号</h2>
+<pre class="code" data-label="C"><code class="c">/* 概念还原（slub.c:2757 附近 next_tid 逻辑） */
+c-&gt;tid = next_tid(c-&gt;tid);   /* 每次慢路径操作递增 */
+</code></pre>
+<p><code class="c">cmpxchg_double</code> 同时校验 <code class="c">(freelist, tid)</code> 两个字段：中途被中断/抢占/迁移到别的 CPU 改了任一字段，CAS 失败重走——<strong>这是 ABA 防护</strong>，等价于 lock-free 编程里的 tagged pointer。写用户态 lock-free 池直接抄这个模式。</p>
+<h2>3. 释放路径</h2>
+<pre class="code" data-label="code"><code class="c">kmem_cache_free(s, x)                       slub.c:3825
+  └─ do_slab_free(s, slab, head, tail, cnt)
+       ├─ slab == c-&gt;slab（本 CPU active）？
+       │     → set_freepointer + cmpxchg 挂回 c-&gt;freelist   【快：单 CAS】
+       ├─ slab frozen（别的 CPU 的 active/partial）？
+       │     → CAS 挂回 slab-&gt;freelist（frozen 语义：只放不取）
+       └─ 都不是（冷 slab，还有其他对象在用）
+             → __slab_free：拿 slab 锁判断
+                  全空？→ 归还 buddy（或挂 per-cpu partial 备胎）
+                  半空？→ 挂 node-&gt;partial（list_lock）
+</code></pre>
+<p><strong>free 快路径同样是单 CAS。</strong> 分配/释放双快路径无锁，是 SLUB 相对 SLAB 的核心性能差来源。</p>
+<h2>4. 原书对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书（SLAB）</th>
+<th>SLUB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kmem_cache_grow()</code> 建新 slab</td>
+<td><code class="c">new_slab()</code>（同构：buddy 取页 → 划对象）</td>
+</tr>
+<tr>
+<td>bufctl 索引栈 O(1) 取还</td>
+<td>嵌入式 freelist O(1)（更省）</td>
+</tr>
+<tr>
+<td>三链表找 partial</td>
+<td>per-CPU partial → node partial 两级</td>
+</tr>
+<tr>
+<td>ctor 初始化新对象</td>
+<td>无 ctor；<code class="c">slab_post_alloc_hook</code> 只做 kasan/memcg 记账</td>
+</tr>
+<tr>
+<td>per-CPU array_cache batch refill</td>
+<td>active slab 整块冻结（更粗粒度=更少慢路径次数）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 慢路径的代价账（HFT 视角）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
+<th>量级</th>
+<th>触发场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>本 CPU partial 换 slab</td>
+<td>~100ns（本地）</td>
+<td>每 64~N 个对象一次</td>
+</tr>
+<tr>
+<td>node partial 搬运</td>
+<td>数百 ns + 自旋锁</td>
+<td>池抖动</td>
+</tr>
+<tr>
+<td><strong>new_slap → buddy 直排</strong></td>
+<td><strong>µs~ms（reclaim/compaction 时）</strong></td>
+<td>内存压力下 kmalloc</td>
+</tr>
+<tr>
+<td>memcg/kasan/kfence hook</td>
+<td>每次分配 +几十~几百 ns</td>
+<td>开销与 debug 选项成正比</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>教训同构于用户态：</strong> 池要 <strong>预热</strong>（启动时把 partial/node 层填满），运行期别让分配掉到"向 OS 要内存"那层——mempool/arena 满额、hugepage 预留，都是这个道理。</p>
+<h2>6. 观测与调优</h2>
+<pre class="code" data-label="shell"><code class="c"># 每个 cache 的分配/换主统计
+grep -w 'cmpxchg_double_fail\|cmpxchg_double_cpu_fail' /proc/vmstat   # CAS 竞争程度
+# sysfs 调优旋钮（专用 cache 才值得动）
+echo 64 &gt; /sys/kernel/slab/&lt;name&gt;/cpu_partial   # 每 CPU 备胎对象数
+cat /sys/kernel/slab/&lt;name&gt;/alloc_calls
+</code></pre>
+<h2>7. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>用户态镜像</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cmpxchg_double 快路径</td>
+<td>每核 freeptr + 版本号，单 CAS pop</td>
+</tr>
+<tr>
+<td>三层瀑布</td>
+<td>每核热池 → 每 NUMA 冷池 → mmap 预留区；<strong>每层容量递增、速度递减</strong></td>
+</tr>
+<tr>
+<td>frozen 只放不取</td>
+<td>MPSC ring / 无锁栈的 lazy free 方向</td>
+</tr>
+<tr>
+<td>new_slab 直排惩罚</td>
+<td>池水位线告警 + 预扩容（启动期填充所有层）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 核心数据结构</a>：瀑布跑在其上的结构</li>
+<li><a href="chapter-14.html#s-5">§5 每 CPU 缓存</a>：① 层的完整语义</li>
+<li><a href="chapter-06.html#ch-6">Ch 6 物理页分配</a>：③ 层的下游</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么快路径用 cmpxchg_double 而不是普通 cmpxchg？</strong>
+A：需要同时原子更新两个字段：<code class="c">freelist</code>（指针）和 <code class="c">tid</code>（事务号）。x86_64/ARM64 有 16 字节双字 CAS 指令（CMPXCHG16B / LDXP-STXP），正好放下 (ptr, counter)。只用单字段 CAS 会留 ABA 窗口：链头 A→B→free→A，CAS 以为没变。<strong>用户态复刻时没有 cmpxchg_double 就用 128 位原子或版本号打包。</strong></p>
+<p><strong>Q2：分配快路径里完全没锁，那禁不禁中断？</strong>
+A：不禁。cmpxchg 失败就重试（循环里再读 c-&gt;freelist）。能这样是因为 per-CPU 字段只被本 CPU 的任务/中断上下文触达，竞争窗口只有"被中断后中断处理里又分配同 cache"这种自嵌套——CAS 重试天然解决。比关中断便宜。</p>
+<p><strong>Q3：<code class="c">kmalloc(GFP_ATOMIC)</code> 和 <code class="c">GFP_KERNEL</code> 在 SLUB 层有区别吗？</strong>
+A：SLUB 层几乎无区别（都走同一瀑布）；区别在慢路径 ③：GFP_ATOMIC 禁止睡眠/直排回收（alloc_pages 带 <code class="c">__GFP_NORETRY</code> 语义倾向），拿不到就直接 NULL。中断上下文必须 GFP_ATOMIC 的原因全在 buddy 层。</p>
+<p><strong>Q4：free 一个属于"已从 node partial 摘下的冷 slab"的对象，走哪条路？</strong>
+A：<code class="c">__slab_free</code> 冷路径：拿 slab bit 锁，挂回对象后判断——若因此全空且 partial 备胎超限，整 slab 还 buddy；否则挂 node-&gt;partial。这条路径拿 <code class="c">list_lock</code>，是多核 free-heavy 负载的锁热点（perf 可见）。</p>
+<p><strong>Q5：用户态池怎么抄"预热"最省事？</strong>
+A：启动时循环 alloc N 个对象再全 free——free 会走快路径挂回本 CPU freelist，等效把 active slab + per-CPU partial 填满（注意：对象要真正落在本核 free 才进本 CPU 链，跨核 free 会进 frozen 慢路——所以预热线程要绑核各做一遍）。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-4">
+        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 8 §4 尺寸缓存与 `kmalloc` / `kfree`（v6.6 档位全表）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/slab_common.c:824</code> kmalloc_info[]、<code class="c">include/linux/slab.h:364</code> KMALLOC_TYPES）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">kmalloc</code> 是内核的 <code class="c">malloc</code>：任意小尺寸请求 → 选最近档位 cache → slab 分配。本节给 v6.6 的<strong>真实档位表</strong>（原书是 2.4 的 size-N 系列）、选档算法、以及"为什么 struct 尺寸对齐能白赚 30% 吞吐"的量化依据。</p>
+<hr />
+<h2>1. v6.6 档位表（slab_common.c:824 实锚）</h2>
+<pre class="code" data-label="code"><code class="c">8 · 16 · 32 · 64 · 96 · 128 · 192 · 256 · 512 · 1k · 2k · 4k · 8k ·
+16k · 32k · 64k · 128k · 256k · 512k · 1M · 2M
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特征</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>2 的幂次档位</strong></td>
-<td>原书：<strong>32 B ~ 128 KiB</strong> 一系列 <strong><code class="c">size-N</code></strong> cache</td>
+<td>2 的幂为主体</td>
+<td>8→2M</td>
 </tr>
 <tr>
-<td><strong>两套</strong></td>
-<td>常规 + <strong><code class="c">size-N(DMA)</code></strong> — DMA 可达物理区</td>
+<td><strong>两个非 2 幂插档：96、192</strong></td>
+<td>吸收"64+header""128+header"型请求——C struct 常见尺寸的密度峰</td>
 </tr>
 <tr>
-<td><strong>API</strong></td>
-<td><strong><code class="c">kmalloc(size, gfp)</code></strong> / <strong><code class="c">kfree()</code></strong> — 按 size 选最近档位 cache</td>
+<td>上限 2M</td>
+<td>超过直接走 buddy（<code class="c">kmalloc_large</code>→alloc_pages）</td>
+</tr>
+<tr>
+<td>每档多个类型副本</td>
+<td><code class="c">kmalloc_caches[NR_KMALLOC_TYPES][shift]</code>（slab.h:388）二维数组</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>内部碎片仍存在：</strong> <code class="c">kmalloc(33)</code> 可能占 <strong>64 B 档</strong> — 比 Buddy 整页好，但 <strong>档内浪费</strong>。</p>
-<p><strong>HFT：</strong> 避免 <strong><code class="c">malloc</code> 任意 size</strong>；热路径 <strong>固定 struct + 池</strong> — 对应 <strong>专用 kmem_cache</strong> 而非泛型 kmalloc。</p>
+<p><strong>选档算法：</strong> size ≤ 192 查 <code class="c">size_index[]</code> 表（O(1)，96/192 两档就在这张表里）；&gt;192 上取 2 幂。</p>
+<h2>2. 类型维度（KMALLOC_TYPES，slab.h:364）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">KMALLOC_NORMAL</code></td>
+<td>默认</td>
+</tr>
+<tr>
+<td><code class="c">KMALLOC_DMA</code></td>
+<td><code class="c">GFP_DMA</code> 请求（ISAL 低端内存，现代 x86_64 少用）</td>
+</tr>
+<tr>
+<td><code class="c">KMALLOC_CGROUP</code></td>
+<td>有 memcg 记账的请求（slab 计费入组，5.9+ root/非 root 分列）</td>
+</tr>
+<tr>
+<td><code class="c">KMALLOC_RECLAIM</code></td>
+<td><code class="c">__GFP_RECLAIMABLE</code>（可回收 slab，回收器优先收缩它们）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么分类型副本而不是每对象打标：</strong> 同一 slab 里混记账/不记账对象会让 memcg 统计与回收逻辑复杂化；<strong>按"记账属性"分池</strong>让 slab 整块同质——用户态池设计的同款决策（区分可回收/不可回收 arena）。</p>
+<h2>3. 内部碎片量化</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>请求 size</th>
+<th>落档</th>
+<th>浪费</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>64</td>
+<td>64</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>65</td>
+<td>96</td>
+<td>32%</td>
+</tr>
+<tr>
+<td>97</td>
+<td>128</td>
+<td>24%</td>
+</tr>
+<tr>
+<td>200</td>
+<td>256</td>
+<td>22%</td>
+</tr>
+<tr>
+<td>513</td>
+<td>1k</td>
+<td>44%</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>v6.6 新利好：<code class="c">kmem_cache_create_usercopy</code> 与 <code class="c">kmalloc</code> 的差距在缩小</strong>——但 96/192 两档的存在就是内核承认"常见 struct 尺寸不长在 2 幂上"的证据。<strong>HFT 规则：热路径 struct 尺寸要么压到 2 幂（64/128），要么就是池化专用 cache 完全绕开 kmalloc。</strong></p>
+<h2>4. <code class="c">kfree</code> 怎么知道对象属于哪个 cache？</h2>
+<p><code class="c">kfree(ptr)</code> 不接收 cache 参数——答案在 <strong>页元数据</strong>：</p>
+<pre class="code" data-label="code"><code class="c">ptr → virt_to_head_page(ptr) → struct page(folio)
+     → folio_slab() 判定是 slab 页
+     → page-&gt;slab_cache 指回 kmem_cache
+</code></pre>
+<p>所以 kmalloc 的对象 <strong>天然不能跨界释放</strong>（kfree 一个 vmalloc 指针/栈指针 = 未定义）。这也解释了 §2 为什么 <code class="c">struct slab</code> 寄生在 page 上：<strong>free 路径必须能从裸指针反查归属</strong>——用户态池同理（arena header 或 size-class 索引位）。</p>
+<h2>5. kmalloc 家族速查</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kmalloc(size, gfp)</code> / <code class="c">kfree</code></td>
+<td>通用小对象</td>
+</tr>
+<tr>
+<td><code class="c">kmalloc_node(size, gfp, nid)</code></td>
+<td>NUMA 指定节点（per-CPU 结构、驱动 ring）</td>
+</tr>
+<tr>
+<td><code class="c">kzalloc</code></td>
+<td>+ memset（零页回收友好）</td>
+</tr>
+<tr>
+<td><code class="c">kmalloc_array</code> / <code class="c">kcalloc</code></td>
+<td>数组（带溢出检查）</td>
+</tr>
+<tr>
+<td><code class="c">kmem_cache_alloc(s, gfp)</code></td>
+<td>专用池（热路径首选）</td>
+</tr>
+<tr>
+<td><code class="c">kmem_cache_alloc_bulk</code></td>
+<td>批量（一次 CAS 拿 N 个，slub.c:3915 附近 free_bulk 对称）</td>
+</tr>
+<tr>
+<td><code class="c">devm_kmalloc</code></td>
+<td>设备生命周期绑定（驱动支线）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">kmem_cache_alloc_bulk</code> 值得注意：</strong> 批量接口把 N 次快路径合并成 1 次（一次慢路径换回一批），高频小对象场景（网络栈、块层）专用——<strong>用户态池的 batch pop 同构</strong>。</p>
+<h2>6. 原书对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书（2.4）</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>size-N 系列（32B 起）</td>
+<td>21 档 + 4 类型副本</td>
+</tr>
+<tr>
+<td>size-N(DMA)</td>
+<td>KMALLOC_DMA（同思想）</td>
+</tr>
+<tr>
+<td>无记账</td>
+<td>KMALLOC_CGROUP / memcg slab 计费</td>
+</tr>
+<tr>
+<td><code class="c">kmalloc(&gt;128K)</code> 封顶</td>
+<td>封顶 2M，超走 buddy</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实践</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热路径 struct 定长对齐 2 幂</td>
+<td>档位表 0% 浪费行</td>
+</tr>
+<tr>
+<td>订单/消息对象走专用 kmem_cache（内核态）或对象池（用户态）</td>
+<td>绕开选档+记账 hook</td>
+</tr>
+<tr>
+<td>观测内核态开销：<code class="c">/proc/slabinfo</code> 按大小排序</td>
+<td>找出 alloc 热的 cache（skb_data、kmalloc-512 常客）</td>
+</tr>
+<tr>
+<td>内存压力下 kmalloc 失败处理</td>
+<td>GFP_ATOMIC 返回 NULL 必须处理——HFT 风控路径不能假设分配必成</td>
+</tr>
+</tbody>
+</table></div>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-3">§3 对象分配与释放</a>：选好档后的瀑布</li>
+<li><a href="chapter-06.html#ch-6">Ch 6 物理页分配</a>：&gt;2M 的去向</li>
+<li><a href="../../06.5-modern-mm/html/chapter-02.html#ch-2">06.5/ch02</a>：memcg slab 计费的现代细节</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 96 和 192 两个"怪档"能活到今天？</strong>
+A：64B 和 128B 是 struct 密度峰（带一两个指针/计数器的业务结构），加 8~64B 头（debug/kasan）就溢出到下一档。插 96/192 两档后，这类请求浪费从 ~30% 降到 ~0~15%。这是 1999 年的 profiling 结论沿用至今——<strong>尺寸档位是负载画像的化石</strong>。</p>
+<p><strong>Q2：<code class="c">kmalloc(0)</code> 返回什么？</strong>
+A：返回 <code class="c">ZERO_SIZE_PTR</code>（(void*)16），kfree 它也合法。用户态别模仿——返回唯一哨兵值省一次分配，但调用方忘判就是野指针。内核侧能这么做是因为 kfree 侧同样识别哨兵。</p>
+<p><strong>Q3：<code class="c">kmalloc(3M)</code> 会失败吗？</strong>
+A：不会走 slab——超 MAX_ORDER 相关上限时转 <code class="c">kmalloc_large</code> → alloc_pages 高阶分配。3M 需要连续阶数高（order≥10），碎片化机器上高阶分配可以失败（返回 NULL）或触发 compaction。<strong>需要大缓冲请用 vmalloc（非连续）或专用页池。</strong></p>
+<p><strong>Q4：kfree 一个 kmalloc 返回的指针中间位置（ptr+16）会怎样？</strong>
+A：<code class="c">virt_to_head_page</code> 仍指到同一页、同一 cache——free 进错误对象槽位，freelist 被污染 = 延迟爆炸/内存腐坏。这就是 CONFIG_DEBUG_SLAB/KFENCE 要抓的一类 bug。用户态 free 错指针同理，是 pool API 设计成"句柄化"（pool_index 而非裸指针）的动机。</p>
+<p><strong>Q5：怎么快速判断一次内核路径分配走哪个档？</strong>
+A：<code class="c">bpftrace -e 'kprobe:kmem_cache_alloc /comm=="myproc"/ { @[((struct kmem_cache *)arg0)-&gt;name] = count(); }'</code> 按调用者聚合 cache 名；或 <code class="c">kprobe:__kmalloc</code> 看入参 size 分布。06.7 的 BPF 工具集（<code class="c">kmem</code> 系列）已封装好这类查询。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-5">
-        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 8 §5 每 CPU 对象缓存 (Per-CPU Object Cache)</h2></div>
+        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 8 §5 每 CPU 对象缓存（SLUB 的 per-CPU 三件套）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/slub.c</code> :54 lock 注释、:181 <code class="c">this_cpu_ptr</code>、:340 <code class="c">raw_cpu_inc</code>）</p>
 </blockquote>
-<h3>5. 每 CPU 对象缓存 (Per-CPU Object Cache)</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>多核扩展性的答案在原书里是 <code class="c">array_cache</code>（每 CPU 批量借还）；SLUB 重构为 <strong>active slab + per-CPU partial + tid 事务号</strong> 三件套。本节讲清楚三者的容量语义和换入换出时机——它是"per-CPU 任何缓存"（pcp、mmap batch、io_uring provide batch）的通用范式。</p>
+<hr />
+<h2>1. 原书 array_cache → SLUB 三件套</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>问题</th>
-<th>方案</th>
+<th></th>
+<th>原书 array_cache（SLAB）</th>
+<th>SLUB v6.6</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>多核抢 <strong>cache-&gt;spinlock</strong></td>
-<td>每 CPU <strong><code class="c">array_cache</code></strong> — <strong>本地 object 栈</strong></td>
+<td>热层形态</td>
+<td>指针数组（batch 借还）</td>
+<td><strong>整个 active slab</strong>（一次冻结一整块）</td>
 </tr>
 <tr>
-<td>分配 / 释放</td>
-<td><strong>优先本地 batch</strong>，<strong>无锁</strong></td>
+<td>批量单位</td>
+<td>对象</td>
+<td>slab（一个 slab 的全部对象）</td>
 </tr>
 <tr>
-<td>本地空 / 满</td>
-<td><strong>bulk</strong> 与 <strong>全局 slabs_partial / slabs_free</strong> 交换</td>
+<td>与全局交换</td>
+<td>array_cache.batch 个一批</td>
+<td>slab 用尽 → 换下一个 partial</td>
+</tr>
+<tr>
+<td>空闲管理</td>
+<td>全局 partial 三链</td>
+<td>per-CPU partial 链 + node partial 两级</td>
+</tr>
+<tr>
+<td>元数据</td>
+<td>array_cache 结构体</td>
+<td><code class="c">kmem_cache_cpu</code>（更小）</td>
 </tr>
 </tbody>
 </table></div>
-<p>与 <a href="chapter-11.html#s-6">Ch 6 pageset</a>（<strong>页</strong> 的 per-CPU）并列 — <strong>Slab 做 object 级 per-CPU</strong>。</p>
-<p><strong>HFT 镜像：</strong></p>
-<pre class="code" data-label="code"><code class="c">Core 0:  local Order[64]  ── pop/push 无锁
-         空了 → 从 global pool 一次拿 32 个
+<p><strong>粒度变粗的智慧：</strong> SLAB 按"对象"批交互（频繁少量进慢路径）；SLUB 按"slab"批交互（罕见大量）——<strong>慢路径次数少一个数量级，均摊成本更低</strong>。用户态池的"每次 refill 一页槽位而不是一个对象"同构。</p>
+<h2>2. active slab 生命周期</h2>
+<pre class="code" data-label="code"><code class="c">本 CPU 拿到新 active slab（freeze）
+   │ freelist：obj₁→obj₂→…→obj_N（随机化后顺序）
+   ▼ 分配：CAS 弹头，直到空
+   空！→ deactivate 当前 slab（若全满直接丢；有余留挂 per-CPU partial）
+   ▼
+c-&gt;partial 链有备胎？→ 取一个当新 active（仍无全局锁）
+没有？→ node-&gt;partial 搬（list_lock）
+还没有？→ new_slab → buddy
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>锁</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>active 内分配/本 CPU free</td>
+<td><strong>无锁 CAS</strong></td>
+<td>:181 <code class="c">this_cpu_ptr</code> 命中本核实例</td>
+</tr>
+<tr>
+<td>换 active（本 CPU partial）</td>
+<td>local lock（<code class="c">cpu_slab-&gt;lock</code>，:54）</td>
+<td>关抢占即可</td>
+</tr>
+<tr>
+<td>搬 node partial</td>
+<td><code class="c">node-&gt;list_lock</code></td>
+<td>唯一全局点</td>
+</tr>
+<tr>
+<td>统计计数</td>
+<td><code class="c">raw_cpu_inc</code>（:340 注释：避免 this_cpu_add 的 irq-disable 开销）</td>
+<td>展示 per-CPU 计数器的开销意识</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. per-CPU partial 的容量控制</h2>
+<pre class="code" data-label="C"><code class="c">kmem_cache-&gt;cpu_partial;   /* 每 CPU partial 链允许的对象总数（不是 slab 数） */
+/sys/kernel/slab/&lt;name&gt;/cpu_partial
+</code></pre>
+<ul>
+<li>free 端把"还有空位"的 slab 挂进 per-CPU partial（不用拿 list_lock）</li>
+<li>超过 <code class="c">cpu_partial</code> 上限 → <strong>bulk 转移</strong> 到 node partial（一次锁，搬一串）</li>
+<li>默认值按对象大小反比（小对象多备、大对象少备，总内存近似守恒）</li>
+</ul>
+<p><strong>设计要点：容量阈值统一以"对象数"计，让不同 size 的 cache 的 per-CPU 占用自动归一。</strong> 用户态 per-core arena 的容量策略照抄即可。</p>
+<h2>4. 统计路径的开销洁癖（值得单独学）</h2>
+<pre class="code" data-label="C"><code class="c">/* slub.c:338 注释原文翻译 */
+/*
+ * 追踪统计时用 this_cpu_inc() 会有 irq-disable 开销；
+ * 统计允许丢少许精度 → raw_cpu_inc()：不禁中断，可被中断冲掉一次计数。
+ */
+</code></pre>
+<p><strong>启示：</strong> 热路径上的 per-CPU 计数器，问一句"这个数字需要精确吗"——不需要就 raw 版，省掉每次的中断关开（~20ns×每次分配）。HFT 指标系统同理：<strong>遥测本身不该进延迟预算</strong>。</p>
+<h2>5. 与 Ch 6 pageset 的并列（原书伏笔的正确收法）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Buddy pcp（Ch 6）</th>
+<th>SLUB cpu_slab（本节）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>粒度</td>
+<td>页</td>
+<td>对象</td>
+</tr>
+<tr>
+<td>换入单位</td>
+<td>batch 页</td>
+<td>整个 slab</td>
+</tr>
+<tr>
+<td>上限</td>
+<td><code class="c">high</code> 水位（可调）</td>
+<td><code class="c">cpu_partial</code> 对象数</td>
+</tr>
+<tr>
+<td>越层去向</td>
+<td>zone free_area</td>
+<td>node-&gt;partial</td>
+</tr>
+<tr>
+<td>锁</td>
+<td>zone-&gt;lock</td>
+<td>node-&gt;list_lock</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两级 per-CPU（页级+对象级）串联</strong>，整条链路：对象分配 99% 停在 SLUB 快路径；它偶尔的 slab 补给大多停在 buddy pcp；再往下才是 zone。<strong>每层 per-CPU 都把全局锁频率除以一个量级。</strong></p>
+<h2>6. 观测</h2>
+<pre class="code" data-label="shell"><code class="c">grep -w 'cpu_partial' /sys/kernel/slab/*/ -r 2&gt;/dev/null | head
+cat /sys/kernel/slab/&lt;name&gt;/objects_partial
+# 每 CPU 视角（需 slub_debug）：
+cat /sys/kernel/slab/&lt;name&gt;/slabs_cpu_partial
+</code></pre>
+<h2>7. HFT 用户态镜像（收束成一张实施表）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>SLUB 机制</th>
+<th>用户态对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>active slab 冻结</td>
+<td>每核 bump 区 + freelist 备区</td>
+</tr>
+<tr>
+<td>per-CPU partial 上限</td>
+<td>每核 arena 的 refill 阈值（如 512 槽）</td>
+</tr>
+<tr>
+<td>node partial bulk 转移</td>
+<td>全局池按批收割各核余量（一次锁搬一批）</td>
+</tr>
+<tr>
+<td>tid 防 ABA</td>
+<td>versioned CAS</td>
+</tr>
+<tr>
+<td>raw_cpu_inc 计数</td>
+<td>遥测放慢路径或用宽松原子</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">Core 0:  local Order[64]  ── CAS pop/push 无锁
+         空了 → 从 global pool 一次拿 32 个（bulk）
 Core 1:  同上
 </code></pre>
-<p>→ go-dex 若多 goroutine 抢全局 <code class="c">sync.Pool</code> — 同类 <strong>锁争用</strong> 问题；<strong>按 P 绑定 pool</strong>（或 Rust thread-local）是 slab 思路。</p>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 数据结构</a> / <a href="chapter-14.html#s-3">§3 瀑布</a></li>
+<li><a href="chapter-06.html#ch-6">Ch 6 §6 pageset</a>：页级 per-CPU</li>
+<li><a href="../../06.5-modern-mm/html/chapter-02.html#ch-2">06.5/ch02</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 SLUB 的 per-CPU 慢路径比 SLAB 少一个量级？</strong>
+A：粒度。SLAB array_cache 批量是"对象数"（如 32 个），用完就回全局；SLUB 一次冻结整 slab（64~256 个对象且连带 free 免回全局），慢路径频率 ÷ slab 大小。<strong>per-CPU 层的容量决定它的"续航力"</strong>——用户态池的 refill batch size 是同款参数。</p>
+<p><strong>Q2：active slab 的对象被别的 CPU free 回来，per-CPU 计数还准吗？</strong>
+A：frozen 语义保证对象仍归这个 slab，跨核 free 只是 CAS 挂回 slab-&gt;freelist（不进任何 per-CPU 结构）。所以 <code class="c">slab-&gt;inuse</code> 等计数是 slab 级原子——per-CPU 统计只管"本 CPU 快路径次数"，不试图精确追踪对象归属。<strong>统计口径与结构边界对齐</strong>是并发设计的纪律。</p>
+<p><strong>Q3：<code class="c">cpu_partial</code> 调大有什么代价？</strong>
+A：每 CPU 常驻内存 = Σ(cache) × cpu_partial × object_size × NR_CPUS。16KB 对象的 cache 配 30 备胎 × 96 核 ≈ 45MB 只在 partial 上睡觉。HFT 内核态组件（自研驱动）调优时按"每秒换主次数 × refill 成本"倒推，别拍脑袋加倍。</p>
+<p><strong>Q4：中断上下文里能走 SLUB 快路径吗？</strong>
+A：能——CAS 快路径不禁中断不睡眠，中断里 <code class="c">kmalloc(GFP_ATOMIC)</code> 大概率命中本 CPU freelist 直接返回。只有掉到 ③ 层（buddy）才受 GFP_ATOMIC 约束。这也是"快路径必须可重入/无睡眠"的活例子。</p>
+<p><strong>Q5：用户态 per-core 池的"归还错核"问题，SLUB 怎么绕开的？</strong>
+A：SLUB 不搬对象，只搬 slab：对象 free 回原 slab（跨核也便宜），slab 整块在层间转移。用户态照抄：<strong>不要迁移对象，迁移整块内存的所有权</strong>（arena 手递手 transfer，对象永远呆在出生地）——这是 NUMA 友好且免 128B 对象跨核搬运的做法。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-6">
-        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 8 §6 2.6 内核的新变化</h2></div>
+        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 8 §6 2.6 内核的新变化 → v6.6 演进（mempool / shrinker / slab 全家）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/mempool.c</code>、<code class="c">mm/shrinker.c</code>、<code class="c">mm/slub.c</code>）</p>
 </blockquote>
-<h3>6. 2.6 内核的新变化</h3>
-<h3>内存池 <code class="c">mempool</code></h3>
-<p><strong><code class="c">mempool_t</code></strong> — 在 <strong>系统极度缺内存</strong> 时仍 <strong>保留最低限度关键对象</strong>（如 <strong>bio、scsi 结构</strong>）— <strong>预分配 + reserve list</strong>，<strong>GFP 失败也不死</strong>。</p>
-<p><strong>HFT：</strong> 交易 <strong>reserve order slot</strong>、<strong>预分配 cancel 队列深度</strong> — 同一 <strong>「内存压力下仍要能完成关键路径」</strong> 逻辑。</p>
-<h3>缓存回收：shrinker 取代 <code class="c">kmem_cache_reap()</code></h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书章末"What's New in 2.6"讲了 mempool 与 shrinker 两个仍然活着的机制。本节把它们接到 v6.6，再补 slab 生态二十年沉淀的 debug/安全/记账全家桶——这张全家桶清单是"内核态组件选型"的菜单。</p>
+<hr />
+<h2>1. mempool：内存压力下的保证语义</h2>
+<p><strong><code class="c">mempool_t</code></strong> = 预分配 reserve + 借还记账，核心承诺：<strong>池未耗尽时分配必成</strong>（GFP 失败也回退到 reserve）。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>2.4 及更早</th>
-<th>2.6+</th>
+<th>场景</th>
+<th>v6.6 用户</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">kmem_cache_reap()</code></strong> 盲目全局 reap</td>
-<td><strong><code class="c">set_shrinker()</code></strong> — cache <strong>注册自定义 shrink 回调</strong></td>
+<td>块层 bio</td>
+<td><code class="c">bioset</code>（mempool 的批量版）</td>
 </tr>
 <tr>
-<td>粗暴</td>
-<td><strong>按压力、按类型</strong> 智能释放 <strong>slabs_free</strong> 回 Buddy</td>
+<td>scsi/target</td>
+<td>command pool</td>
+</tr>
+<tr>
+<td>写回</td>
+<td>b_io 页数组</td>
 </tr>
 </tbody>
 </table></div>
-<p>现代 <strong><code class="c">register_shrinker()</code></strong> / <strong><code class="c">shrink_slab</code></strong> — 与 <strong>kswapd / memcg</strong> 联动。</p>
-<hr />
-<h2>Buddy → Slab → kmalloc 一图</h2>
+<pre class="code" data-label="code"><code class="c">mempool_alloc(pool, gfp)
+  ├─ 正常 alloc（进 shrink 后可能失败）
+  ├─ 失败 → 从 pool-&gt;elements 弹预分配元素
+  └─ 允许等待（pool-&gt;free 收到归还再给你）── WARN 点：持锁等待 = 死锁温床
+</code></pre>
+<p><strong>HFT 镜像：</strong> 交易引擎的 <strong>reserve cancel slot</strong>——内存再紧，撤单路径必须能分配。语义三件套照抄：① 预留量与峰值压力挂钩；② 正常态不动用预留；③ 用尽时的等待必须有超时与告警。</p>
+<h2>2. shrinker：从 kmem_cache_reap 到 注册式回收</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>2.4 <code class="c">kmem_cache_reap()</code></th>
+<th>2.6+ <code class="c">register_shrinker()</code> → v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>盲扫全局 cache 收 free slab</td>
+<td><strong>cache 自注册回调</strong>，按压力/按对象类型收缩</td>
+</tr>
+<tr>
+<td>粗粒度</td>
+<td>与 kswapd、direct reclaim、memcg 三方联动</td>
+</tr>
+<tr>
+<td>无优先级</td>
+<td><code class="c">shrinker-&gt;seeks</code> 权重 + count_objects/scan_objects 两段式</td>
+</tr>
+</tbody>
+</table></div>
+<p>v6.6 的 slab shrinker 已是 <strong>通用缓存收缩协议</strong>（dentry/inode/xfs/zram/slab 全用同一接口）。THP 的 <code class="c">deferred_split_shrinker</code>（huge_memory.c:69）也是它——Ch 3 的延迟拆大页队列就挂在这个框架上。</p>
+<h2>3. slab 生态全家桶（v6.6 选型菜单）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>CONFIG / 接口</th>
+<th>作用</th>
+<th>开销</th>
+<th>HFT 建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>freelist 随机化</td>
+<td><code class="c">SLAB_FREELIST_RANDOM</code></td>
+<td>防堆布局预测</td>
+<td>建池时一次</td>
+<td>开</td>
+</tr>
+<tr>
+<td>freelist 加固</td>
+<td><code class="c">SLAB_FREELIST_HARDENED</code></td>
+<td>指针 XOR + 越界校验</td>
+<td>free 路径少量算术</td>
+<td>生产开</td>
+</tr>
+<tr>
+<td><strong>KFENCE</strong></td>
+<td><code class="c">KFENCE</code></td>
+<td>采样式 use-after-free 抓捕（每 slab 页陷阱）</td>
+<td>采样命中才有 ~100ns</td>
+<td>调试期开</td>
+</tr>
+<tr>
+<td><strong>KASAN</strong></td>
+<td><code class="c">KASAN</code></td>
+<td>影子内存全量检查</td>
+<td><strong>每次 kmalloc +~15-20% CPU</strong></td>
+<td>生产<strong>关</strong></td>
+</tr>
+<tr>
+<td>memcg slab 计费</td>
+<td><code class="c">MEMCG_KMEM</code></td>
+<td>slab 内存入 cgroup 账本</td>
+<td>计费 cache 走 KMALLOC_CGROUP 副本</td>
+<td>容器必开、裸金属按需</td>
+</tr>
+<tr>
+<td><code class="c">slub_debug=FZ</code></td>
+<td>boot 参数</td>
+<td>poison/redzone 校验</td>
+<td>显著</td>
+<td>调试期</td>
+</tr>
+<tr>
+<td>random kmalloc cache</td>
+<td><code class="c">RANDOM_KMALLOC_CACHES</code>（6.6 新）</td>
+<td>同尺寸多副本随机路由，粉碎跨 cache 溢出</td>
+<td>小</td>
+<td>开</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>RANDOM_KMALLOC_CACHES 是 v6.6 新特性</strong>：kmalloc-512 变成 512-A/B/C/D 多个物理副本，分配随机路由——攻击者就算溢出一个对象也够不到相邻对象（不同副本物理不相邻）。安全红利几乎免费，值得知道。</p>
+<h2>4. SLAB→SLUB→? 演进时间线</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>年份</th>
+<th>事件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1994</td>
+<td>Bonwick 论文（SunOS slab）</td>
+</tr>
+<tr>
+<td>2.2/2.4</td>
+<td>Linux slab 合入（原书主角）</td>
+</tr>
+<tr>
+<td>2.6.22</td>
+<td><strong>SLUB 默认</strong>（挑翻 SLAB 的理由：多核扩展+元数据省）</td>
+</tr>
+<tr>
+<td>3.x~5.x</td>
+<td>per-CPU partial 引入（2.6.x 末期）、freelist random/hardened、slab→folio 化铺垫</td>
+</tr>
+<tr>
+<td>5.9</td>
+<td><code class="c">struct slab</code> 独立类型名；memcg slab objcg 记账重做</td>
+</tr>
+<tr>
+<td>6.4</td>
+<td>SLOB 正式弃用</td>
+</tr>
+<tr>
+<td>6.6</td>
+<td>RANDOM_KMALLOC_CACHES；ptdesc 收尾页表页抽象（见 Ch 3 §3）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. Buddy → Slab → kmalloc 一图（v6.6 修订版）</h2>
 <pre class="code" data-label="code"><code class="c">         应用 / 内核子系统
                 │
-    ┌───────────┼───────────┐
-    │           │           │
- kmem_cache_alloc   kmalloc    get_free_pages
- (专用类型)      (任意小尺寸)   (整页)
-    │           │           │
-    └───────────┴───────────┘
-                │
-           Slab / SLUB
-      full / partial / free
-      per-CPU object cache
-                │
-           Buddy (Ch 6)
+    ┌───────────┼─────────────┬──────────────┐
+    │           │             │              │
+ kmem_cache_alloc  kmalloc    alloc_pages    kvmalloc
+ (专用类型池)    (档位+泛型)   (整页)        (先kmalloc大档失败→vmalloc)
+    │           │             │              │
+    └───── SLUB: 快路径 CAS ──┘              │
+              per-CPU active/partial         │
+              node partial ── list_lock      │
+                    │                        │
+                 Buddy (Ch 6) ←──────────────┘（高阶失败回退）
 </code></pre>
-<hr />
-<h2>HFT 精读 checklist</h2>
+<p><strong>kvmalloc 值得记：</strong> 大缓冲的"先连续、后映射"复合策略——先试 kmalloc（物理连续、DMA 友好），失败退 vmalloc（虚拟连续即可）。用户态等价物：先试大页 mmap，失败退小页。</p>
+<h2>6. HFT 精读 checklist（章级收束）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -609,35 +1544,56 @@ Core 1:  同上
 </thead>
 <tbody>
 <tr>
-<td><strong>专用 cache</strong></td>
-<td>一种消息/订单 <strong>一种 pool</strong></td>
+<td>专用 cache</td>
+<td>一种消息/订单一种 pool</td>
 </tr>
 <tr>
-<td><strong>partial 优先</strong></td>
-<td>先 <strong>pop free list</strong>，空了再 <strong>grow</strong></td>
+<td>partial 优先</td>
+<td>先 pop free list，空了再 grow</td>
 </tr>
 <tr>
-<td><strong>constructor</strong></td>
-<td>pool 分配时 <strong>一次初始化</strong>，复用时 <strong>reset 热字段</strong></td>
+<td>快路径无锁 CAS</td>
+<td>每核池 + tagged pointer</td>
 </tr>
 <tr>
-<td><strong>着色 / 对齐</strong></td>
-<td><strong>64B align</strong>，热冷数据 <strong>分 cache line</strong></td>
+<td>per-CPU 三件套</td>
+<td>每核热池→NUMA 冷池→mmap 预留</td>
 </tr>
 <tr>
-<td><strong>per-CPU array</strong></td>
-<td><strong>每核 mempool</strong>，批量 refill</td>
+<td>mempool reserve</td>
+<td>风控/撤单路径预留 slot</td>
 </tr>
 <tr>
-<td><strong>mempool reserve</strong></td>
-<td><strong>预留 N 个 slot</strong> 给 <strong>风控/撤单</strong> 关键路径</td>
+<td>kmalloc 泛型</td>
+<td>热路径禁止——固定 size</td>
 </tr>
 <tr>
-<td><strong>kmalloc 式泛型分配</strong></td>
-<td>热路径 <strong>禁止</strong> — 用 <strong>固定 size pool</strong></td>
+<td>slab 生态开关</td>
+<td>KASAN 调试期才开；FREELIST_HARDENED 生产开</td>
 </tr>
 </tbody>
 </table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li>全章：<a href="chapter-14.html#s-1">§1</a> <a href="chapter-14.html#s-2">§2</a> <a href="chapter-14.html#s-3">§3</a> <a href="chapter-14.html#s-4">§4</a> <a href="chapter-14.html#s-5">§5</a></li>
+<li><a href="chapter-10.html#ch-10">Ch 10 页框回收</a>：shrinker 的调用方</li>
+<li><a href="../../06.5-modern-mm/html/chapter-02.html#ch-2">06.5/ch02</a>：memcg/objcg 记账细节</li>
+<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7 BPF</a>：kmem 系列观测工具</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：mempool_alloc 为什么"可以睡眠等归还"？什么情况下这是陷阱？</strong>
+A：mempool 假设"借出者终会归还"（bio 完成必还）。若调用方在持有"归还所需资源"的路径上等待——如持块设备队列锁等 bio，而 bio 完成处理也要这把锁——死锁。所以 mempool 用户要求：<strong>借出-归还不是同一临界区内循环依赖</strong>。HFT 池的"等待池非空"同样要审查锁序。</p>
+<p><strong>Q2：shrinker 的 count/scan 两段式为什么必须分开？</strong>
+A：direct reclaim 需要先全局问价（count_objects，零 IO）再决定扫多少（scan_objects，可能重活）；干失败/不可回收时还能返回 SHRINK_STOP 收手。一体的回调无法做全局预算。<strong>先报数后执行</strong>是所有资源协商协议的推荐形状。</p>
+<p><strong>Q3：生产内核开 KASAN 的实际代价？</strong>
+A：kmalloc 路径 +影子内存读写+redzone 插入，实测网络/调度密集负载掉 15%~30%。HFT 生产路径上等于白送延迟。正确姿势：KFENCE 采样（~0 开销）常开，KASAN 只在压测/复现 bug 的构建上开。</p>
+<p><strong>Q4：<code class="c">RANDOM_KMALLOC_CACHES</code> 与 <code class="c">SLAB_FREELIST_RANDOM</code> 有何不同？</strong>
+A：层次不同。freelist_random 打乱 <strong>同一 slab 内</strong> 的分配顺序（防相邻对象预测）；random_caches 把 <strong>同尺寸请求</strong> 分散到多个物理副本 cache（防跨对象溢出链式受害）。前者 2014 年代，后者 6.6——纵深防御的两层。</p>
+<p><strong>Q5：用户态池怎么对标 <code class="c">kvmalloc</code> 的降级策略？</strong>
+A：申请大块：先 <code class="c">madvise(MADV_HUGEPAGE)</code> 的大页 mmap（TLB 优）；失败/碎片退 4K 小页 mmap。判断依据同内核：<strong>物理连续收益 vs 可用性</strong>。绝不要"一锤子失败就 abort"——降级链是内存子系统面向碎片化的标准容错。</p>
+</details>
 <hr />
       </section>
 

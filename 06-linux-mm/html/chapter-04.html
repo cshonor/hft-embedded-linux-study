@@ -379,364 +379,1226 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 4 §1 线性地址空间 (Linear Address Space)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 4 §1 线性地址空间（x86_64 / ARM64 布局全图）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">Documentation/arch/x86/x86_64/mm.rst</code>、<code class="c">arch/arm64/include/asm/memory.h</code>）</p>
 </blockquote>
-<h3>1. 线性地址空间 (Linear Address Space)</h3>
-<p>从内核视角，线性地址 <strong>一分为二</strong>：</p>
-<pre class="code" data-label="code"><code class="c">  ┌────────────────────────────────────────────── 高地址
-  │  内核空间 (Kernel Space)                       
-  │  各进程共享同一套内核映射；上下文切换时 **不变**   
-  ├──────────────── PAGE_OFFSET (如 0xC0000000) ─── 32-bit 分界
-  │  用户空间 (User Space)                         
-  │  **每进程独立**；上下文切换时随 **mm_struct** 改变
-  └────────────────────────────────────────────── 低地址
+<hr />
+<h2>本节讲什么</h2>
+<p>地址空间怎么切、各段放什么、mmap 从哪分配——这是读 <code class="c">/proc/maps</code>、排查"为什么 hugepage 映射在这个地址"、做 ASLR/固定布局决策的地图课。原书是 32 位三段模型；v6.6 的 64 位布局复杂得多，逐段讲。</p>
+<hr />
+<h2>1. 从原书模型到 64 位</h2>
+<pre class="code" data-label="code"><code class="c">x86-32（原书）：                       x86_64（v6.6，48-bit VA）：
+┌───────────────┐ 0xFFFFFFFF         ┌───────────────────────┐ 0xFFFF8000_00000000
+│ 内核 1GiB     │                    │ 内核空间（canonical 高半）│
+├───────────────┤ 0xC0000000         │  ├ fixmap/vmalloc      │
+│ 用户 3GiB     │                    │  ├ vmemmap             │
+│               │                    │  └ linear map          │
+└───────────────┘ 0x00000000         ├───────────────────────┤ 0x00007FFF_FFFF0000
+                                      │ 用户空间（栈顶之下）    │
+                                      │  ├ stack（ASLR）       │
+                                      │  ├ mmap 区（自上而下）  │
+                                      │  ├ heap（brk，自下而上）│
+                                      │  ├ .text/.data（PIE）  │
+                                      └───────────────────────┘ 0x00000000
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>x86 32 位（原书典型）</th>
-<th>含义</th>
+<th>概念</th>
+<th>原书 32 位</th>
+<th>x86_64 v6.6</th>
+<th>ARM64（4K/48VA）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>低 3GiB</strong></td>
-<td>用户空间</td>
+<td>用户上限 TASK_SIZE</td>
+<td>3GiB</td>
+<td>128TiB</td>
+<td>256GiB(39VA)~128TiB(48VA) 按 CONFIG</td>
 </tr>
 <tr>
-<td><strong>高 1GiB</strong>（≥ <code class="c">PAGE_OFFSET</code>）</td>
-<td>内核 <strong>直接映射</strong> 窗口（Ch 3 <code class="c">__va</code>/<code class="c">__pa</code>）</td>
+<td>内核起点</td>
+<td>0xC0000000</td>
+<td>0xFFFF8000...</td>
+<td>0xFFFF8000...（TTBR1）</td>
+</tr>
+<tr>
+<td>用户 mmap 基址</td>
+<td>固定附近</td>
+<td><code class="c">mmap_base</code>（ASLR 随机）+ <strong>自顶向下</strong></td>
+<td>同左</td>
+</tr>
+<tr>
+<td>内核/用户切换</td>
+<td>同一张表不同段</td>
+<td><strong>双表</strong>（KPTI）/ TTBR0/TTBR1</td>
+<td>同左</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>x86_64：</strong> 用户态可用 <strong>低 canonical 范围</strong>（如 0–128TiB 量级，视配置而定）；内核在 <strong>高位 canonical</strong> — <strong>思想相同</strong>：<strong>切换进程换用户页表，内核部分共享</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 4 §2 进程地址空间描述符 (`mm_struct`)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>2. 进程地址空间描述符 (<code class="c">mm_struct</code>)</h3>
-<p>每个进程的 <strong>完整地址空间</strong> 由 <strong><code class="c">mm_struct</code></strong> 统一管理：</p>
+<h2>2. 内核半边的关键区（x86_64）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>要点</th>
+<th>区</th>
+<th>起点（v6.6 典型）</th>
+<th>用途</th>
+<th>前文对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LDT/user 模式区</td>
+<td>…00000000</td>
+<td>与用户共享的入口跳板（KPTI）</td>
+<td>Ch3 §4</td>
+</tr>
+<tr>
+<td>vmalloc/ioremap</td>
+<td>…f0000000 上方起</td>
+<td>动态内核映射</td>
+<td>Ch3 §5</td>
+</tr>
+<tr>
+<td>vmemmap</td>
+<td>…fd000000? → 0xffffea00…</td>
+<td><code class="c">struct page</code> 连续区（SPARSEMEM_VMEMMAP）</td>
+<td>Ch3 §5</td>
+</tr>
+<tr>
+<td>cpu_entry_area</td>
+<td>每核固定</td>
+<td>入口栈/DSB（Spectre 缓解）</td>
+<td>—</td>
+</tr>
+<tr>
+<td>linear map（直映）</td>
+<td>0xffff8880…</td>
+<td>全部物理内存平移映射</td>
+<td>Ch3 §5</td>
+</tr>
+<tr>
+<td>模块区</td>
+<td>0xffffffffa00…</td>
+<td>内核模块（与内核 .text 邻近）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>要点：</strong> 内核 VA 不是"一段"，是 <strong>多个功能子区</strong>——写内核代码时从 <code class="c">virt_to_page</code>/<code class="c">vmalloc_to_page</code> 的合法性差异就能反推出你落在哪个区（Ch3 §5 的 API 表）。</p>
+<h2>3. 用户半边的分配方向（v6.6）</h2>
+<pre class="code" data-label="code"><code class="c">mmap_base（ASLR 后）
+    ↓ mmap 自顶向下分配（地址递减）
+    ...
+    ↑ brk heap 自底向上（从 exe .data 之后 + 随机 gap）
+    .text/.data（PIE 则也随机）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>HFT 意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mmap 从高往低</td>
+<td>连续 mmap 地址递减；固定地址策略（<code class="c">MAP_FIXED_NOREPLACE</code>）需自己规划</td>
+</tr>
+<tr>
+<td><code class="c">mmap_min_addr</code></td>
+<td>低地址禁止映射（防 null deref 利用）——想 map 到 0 做某些硬件 trick 会被拒</td>
+</tr>
+<tr>
+<td>栈上限 <code class="c">RLIMIT_STACK</code></td>
+<td>深递归策略代码注意；栈 VMA 自动增长向下</td>
+</tr>
+<tr>
+<td>THP 的对齐</td>
+<td>2MiB 大页要求 VMA 地址/长度 2MiB 对齐——<code class="c">posix_memalign</code>/手动 mmap hint</td>
+</tr>
+<tr>
+<td>ASLR</td>
+<td>生产引擎要 <strong>关闭自身 ASLR</strong>（布局可比对、故障可复现）：<code class="c">setarch -R</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>x86_64 5 级分页（la57）下用户上限 128PiB</strong>，但 mmap 默认仍从老 47-bit 顶部往下分——兼容性优先。</p>
+<h2>4. ARM64 特有：TTBR0/TTBR1 天然分界</h2>
+<p>ARM64 用户态走 TTBR0、内核走 TTBR1 两套页表基址——<strong>硬件级分界</strong>，上下文切换只换 TTBR0。对比 x86 的单 CR3 + KPTI 软件模拟，ARM64 免了切换税（Ch3 §4 的 HFT 成本讨论在此兑现）。</p>
+<h2>5. 观测</h2>
+<pre class="code" data-label="shell"><code class="c">cat /proc/self/maps                      # 本进程 VMA 布局（下节主角）
+cat /proc/self/smaps | grep -A2 '\[stack\]'
+pmap -x &lt;pid&gt;                            # RSS/Dirty 分解
+cat /proc/vmallocinfo                    # 内核半边的 vmalloc 占用（谁用了多少）
+</code></pre>
+<p><strong>排障例：</strong> 引擎 hugepage 映射没落在预期地址 → 查 maps 看是否被 PIE/ASLR 顶掉、或与 glibc arena 冲突——<code class="c">MAP_FIXED_NOREPLACE</code> 探测式放置。</p>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局确定性</td>
+<td>启动时 <code class="c">MAP_FIXED_NOREPLACE</code> 定格所有区域；关 ASLR</td>
+</tr>
+<tr>
+<td>大页对齐</td>
+<td>mmap hint 按 2MiB 对齐；检查 maps 里的对齐实况</td>
+</tr>
+<tr>
+<td>内核半边泄漏排查</td>
+<td><code class="c">/proc/vmallocinfo</code> 按调用者聚合（驱动泄漏常客）</td>
+</tr>
+<tr>
+<td>树莓派</td>
+<td>1GiB 内存 + CMA 预留 → 用户 mmap 区照样 39-bit 上限不受影响，但 free 页紧张提前</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 mm_struct</a>：这个空间的"户口本"</li>
+<li><a href="chapter-03.html#ch-3">Ch 3 §4/§5</a>：内核半边各区的页表机制</li>
+<li><a href="../../06.5-modern-mm/html/chapter-05.html#ch-5">06.5/ch05 maple tree</a>：VMA 组织的现代形态</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 mmap 区自顶向下而不是从低处向上长？</strong>
+A：历史布局让 heap（brk）向上、mmap 向下，中间留白给两边增长——32 位时代防止两者过早相遇。64 位地址过剩，此理由消失但方向保留（兼容+栈在顶部的天然邻居）。改 <code class="c">sysctl vm.legacy_va_layout</code> 可回老行为（别在生产动）。</p>
+<p><strong>Q2：<code class="c">MAP_FIXED_NOREPLACE</code> 和老 <code class="c">MAP_FIXED</code> 差在哪？</strong>
+A：NOREPLACE 若目标区间已有映射则 <strong>失败</strong>（EEXIST），绝不覆盖；老 MAP_FIXED 直接拆掉已有映射（把 glibc 的 heap 拆了都不知道）。新代码一律用 NOREPLACE + 探测循环。</p>
+<p><strong>Q3：<code class="c">/proc/maps</code> 里 vdso/vvar 是什么？</strong>
+A：vDSO——内核映射进用户态的"微型系统调用库"（clock_gettime/gettimeofday 不进内核直接读），vvar 是其数据页。HFT 计时热路径的关键：<strong>vdso 的 clock_gettime(CLOCK_MONOTONIC) ≈ 20ns，真 syscall ≈ 100-200ns</strong>。详见 §6。</p>
+<p><strong>Q4：KPTI 对用户半边布局有影响吗？</strong>
+A：没有（用户区本来就在自己的表里）；影响的是 <strong>内核半边被复制进用户表的最小 trampoline</strong>——即 cpu_entry_area 那一小块"用户可见的内核区"。这是 x86 专有税，ARM64 无此问题。</p>
+<p><strong>Q5：怎么确认一段映射真的用了 2MiB 大页？</strong>
+A：<code class="c">/proc/pid/smaps</code> 该 VMA 的 <code class="c">AnonHugePages</code>/<code class="c">KernelPageSize: 2048 kB</code>（hugetlb 映射）；或 <code class="c">pagemap</code> 看 PTE 的PFN 连续性。只看 maps 的地址对齐不可靠——对齐是必要条件非充分。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-2">
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 4 §2 进程地址空间描述符（`mm_struct` · v6.6 版）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mm_types.h</code> :18 <code class="c">mm_mt</code>、:31 <code class="c">task_size</code>、:32 <code class="c">pgd</code>、:91 <code class="c">mmap_lock</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">mm_struct</code> 是地址空间的户口本：页表根、VMA 树、统计、锁全在这。v6.6 相对原书有三个实质变化——<strong>VMA 树换 maple tree</strong>、<strong>mmap_lock 的 cacheline 工程</strong>、<strong>引用计数语义细分</strong>。本节逐字段过一遍，重点讲锁。</p>
+<hr />
+<h2>1. 骨架（v6.6 实锚）</h2>
+<pre class="code" data-label="C"><code class="c">struct mm_struct {
+    struct {                                /* 嵌套 anon struct：cache 布局工程 */
+        struct maple_tree mm_mt;            /* :18  VMA 树（原书：链表+红黑树）*/
+        ...
+        unsigned long task_size;            /* :31 用户 VA 上限 */
+        pgd_t *pgd;                         /* :32 页表根（Ch3） */
+        ...
+        struct rw_semaphore mmap_lock;      /* :91 VMA/页表并发锁 */
+    };
+    atomic_t mm_users;                      /* 用户数（线程数语义）*/
+    atomic_t mm_count;                      /* 引用数（含借用者）*/
+    ...
+    unsigned long hiwater_rss, hiwater_vm;
+    unsigned long total_vm, data_vm, ...;
+};
+</code></pre>
+<h2>2. 三大件逐个说</h2>
+<h3>① VMA 树：maple tree（<code class="c">mm_mt</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书（rbtree + 链表）</th>
+<th>v6.6 maple tree</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>查找 O(log n)，cache 不友好（指针 chasing）</td>
+<td>R-range B-tree，节点多槽（16 槽）→ 树更矮、<strong>cache 命中更好</strong></td>
+</tr>
+<tr>
+<td>遍历用链表</td>
+<td><code class="c">mas_find()</code>/<code class="c">mas_walk()</code>（mmap.c:1111/:1581 实锚）</td>
+</tr>
+<tr>
+<td>写锁粒度粗</td>
+<td>支持写者并发优化（v6.6 持续演进）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>读码换算：</strong> 原书 <code class="c">mm-&gt;mmap</code> 链表遍历 → v6.6 <code class="c">mas_for_each</code>；<code class="c">rb_find</code> → <code class="c">mas_walk</code>。</p>
+<h3>② 页表根 <code class="c">pgd</code> + <code class="c">task_size</code></h3>
+<ul>
+<li><code class="c">pgd</code> 就是 Ch3 一切的出发点；fork 时复制（COW 语义在表项级）</li>
+<li><code class="c">task_size</code> 由 arch 定（x86_64 128TiB）；<code class="c">mmap</code> 上界 = <code class="c">task_size - GAP</code></li>
+</ul>
+<h3>③ <code class="c">mmap_lock</code>（原书叫 <code class="c">mmap_sem</code>，v6.6 是 rw_semaphore）</h3>
+<p><strong>v6.6 在 mm_types.h 里专门写了 cacheline 注释</strong>（:80-:88 实锚大意）：锁高争用时，锁字段与 pgd 等热字段的 cacheline 布局会影响性能，内核刻意把它们隔开——<strong>连 struct 字段排序都在为 SMP 争用做工程</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>拿读锁</th>
+<th>拿写锁</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缺页 handler、GUP 慢路径、<code class="c">/proc/pid/maps</code> 读</td>
+<td>mmap/munmap/mprotect、fork、khugepaged collapse</td>
+</tr>
+<tr>
+<td>多线程并发 OK</td>
+<td>排他</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 要害——写锁的三大延迟事件源：</strong>
+1. <strong>fork</strong>（写锁全程）→ 引擎别 fork；要 fork 就 vfork/posix_spawn
+2. <strong>khugepaged collapse</strong>（读锁+PTE 改写）→ THP=never 消灭
+3. <strong>运行期 mmap/munmap</strong>（写锁）→ 布局启动期定格</p>
+<p>排查工具：<code class="c">/sys/kernel/debug/tracing/events/mm</code> 或 <code class="c">bpftrace -e 'kprobe:__mmap_lock_acquire... '</code>；<code class="c">perf lock</code>。</p>
+<h2>3. 引用计数双轨</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>计数</th>
+<th>谁加减</th>
+<th>归零后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mm_users</code></td>
+<td>线程创建/退出（CLONE_VM 共享不加）；<code class="c">mmgrab</code> 类</td>
+<td>归零 → 触发 exit_mmap（拆页表）</td>
+</tr>
+<tr>
+<td><code class="c">mm_count</code></td>
+<td><code class="c">mmgrab()</code>：内核借用者（如 proc 读、AIO）</td>
+<td>归零 → mm_struct 本体释放</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>经典坑：</strong> 内核线程 <code class="c">borrow</code> 用户 mm（lazy TLB，Ch3 §4）时 <code class="c">mm_count++</code> 而非 <code class="c">mm_users++</code>——借用不阻止 exit_mmap，只保证 mm_struct 本体不被释放。原书时代就有此双轨，v6.6 未变，面试常考。</p>
+<h2>4. 统计字段与观测</h2>
+<pre class="code" data-label="shell"><code class="c">cat /proc/&lt;pid&gt;/status | grep -E 'VmPeak|VmSize|VmRSS|Threads'
+cat /proc/&lt;pid&gt;/stat | awk '{print $24}'      # start_time 旁的 RSS 粗值
+grep -w 'VmHWM' /proc/&lt;pid&gt;/status            # hiwater_rss：峰值驻留
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>HFT 用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">total_vm</code></td>
+<td>虚拟总量</td>
+<td>与预算比（预留地址空间可以大）</td>
+</tr>
+<tr>
+<td><code class="c">RSS</code>/<code class="c">hiwater_rss</code></td>
+<td>实驻/峰值</td>
+<td><strong>锁死 mlock 后 RSS == 预算</strong>，漂移=泄漏</td>
+</tr>
+<tr>
+<td><code class="c">data_vm</code></td>
+<td>私有数据段</td>
+<td>排除共享库干扰看私有增长</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mmap_lock 争用</td>
+<td>多线程读 maps/GUP 并发是读锁可忍；绝不允许运行期 mmap 类写锁事件</td>
+</tr>
+<tr>
+<td>fork 替代</td>
+<td>posix_spawn（fork+exec 合一、代价小）或纯线程模型</td>
+</tr>
+<tr>
+<td>mm 借用</td>
+<td>内核线程与引擎同核时 borrow 会让页表 IPI 找上门（Ch3 §6 lazy TLB 代价）</td>
+</tr>
+<tr>
+<td>峰值监控</td>
+<td>hiwater_rss 告警线 = 预算×1.05，防慢泄漏</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-3">§3 VMA</a>：mm_mt 里挂的东西</li>
+<li><a href="chapter-03.html#ch-3">Ch 3</a>：pgd 以下的世界</li>
+<li><a href="../../06.5-modern-mm/html/chapter-05.html#ch-5">06.5/ch05 maple tree</a>：树结构专项</li>
+<li><a href="../../05-linux-kernel/html/index.html">05-linux-kernel 调度章</a>：active_mm 借用的调度侧</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 mmap_lock 从 semaphore 改名 rw_semaphore？只是改名吗？</strong>
+A：语义统一到读写信号量（可 OPTIMIZE 的路径走读侧）。历史上 mmap_sem 是 rwsem，v5.8 前后统一命名并加了 lockdep/观测插桩（<code class="c">mmap_lock_.*</code> tracepoint）。读码时旧名 mmap_sem 直接当 rwsem 读。</p>
+<p><strong>Q2：两个线程同时缺页（不同 VA），会互相阻塞吗？</strong>
+A：不会。缺页只拿 <strong>读锁</strong>（VMA 树稳定即可），页表级的互斥由 <strong>PTE 锁</strong>（split ptlock，Ch3 §7）承担——每表页一把。锁粒度分层：mmap_lock（结构）→ pte lock（数据）。线程各 fault 各的页 = 各拿各的 pte 锁。</p>
+<p><strong>Q3：<code class="c">mm_users</code> 为 0 但 <code class="c">mm_count</code> &gt; 0，这个 mm 还能缺页吗？</strong>
+A：不能——没有线程用它（exit_mmap 已拆页表）。持有 mm_count 的是借用者（如异步 IO 的 ctx），只保留 <code class="c">mm_struct</code> 元数据 <strong>供回查</strong>（比如 io_uring 完成时查原地址空间）。对象存在≠可用。</p>
+<p><strong>Q4：<code class="c">/proc/pid/maps</code> 读取会不会拖慢目标进程？</strong>
+A：拿读锁瞬间（拷 VMA 快照），但如果此刻有人持写锁（fork/munmap 中），读方要等。监控高频轮询 maps 在写锁事件多的进程上有放大效应——HFT 监控用 smaps_rollup（合并统计，锁窗口更短）。</p>
+<p><strong>Q5：maple tree 比红黑树快在哪？量级多大？</strong>
+A：节点 16 槽（树高 ÷4 vs 二叉树）+ 节点内线性扫描（cache line 内）→ 查找访存次数少约一半。对 mmap 密集进程（JVM 数万 VMA）缺页/查找路径可测提升 10-30%。VMA 少的进程差异不显著——<strong>数据结构选型的收益随规模非线性</strong>。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-3">
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 4 §3 内存区域（VMA · v6.6 视角）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mm_types.h</code> :634 <code class="c">vm_ops</code>、<code class="c">mm/mmap.c</code> VMA 查找/合并路径）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>VMA（<code class="c">vm_area_struct</code>）是地址空间的"地段划分"：一段连续 VA + 统一属性 + 统一行为。本节讲清 VMA 的字段语义、<strong>合并规则</strong>（直接影响 maps 里的段数）、<code class="c">vm_ops</code> 回调体系、以及 HFT 的 VMA 管理纪律。</p>
+<hr />
+<h2>1. VMA 字段速览（v6.6）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>语义</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vm_start/vm_end</code></td>
+<td><code class="c">[start, end)</code> 半开区间</td>
+<td><strong>永不重叠</strong>是树的不变量</td>
+</tr>
+<tr>
+<td><code class="c">vm_flags</code></td>
+<td>READ/WRITE/EXEC/SHARED/MAYSHARE/<code class="c">VM_DONTCOPY</code>…</td>
+<td><strong>页表权限的"申请单"</strong>，缺页按它造 PTE</td>
+</tr>
+<tr>
+<td><code class="c">vm_pgoff</code>/<code class="c">vm_file</code></td>
+<td>文件映射的偏移与文件</td>
+<td>匿名映射为 NULL</td>
+</tr>
+<tr>
+<td><code class="c">vm_ops</code>（mm_types.h:634）</td>
+<td>文件页的行为回调</td>
+<td>fault/close/split/advise</td>
+</tr>
+<tr>
+<td><code class="c">anon_vma</code> 链</td>
+<td>rmap 的锚（Ch3 §7）</td>
+<td>fork/COW 的反向映射根</td>
+</tr>
+<tr>
+<td><code class="c">vm_policy</code></td>
+<td>NUMA 策略（mbind 存这）</td>
+<td>per-VMA 生效的原因</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">vm_flags</code> 是批量的申请单：</strong> <code class="c">mprotect</code> 改的是 VMA 的 flags，然后走 Ch3 的改 PTE+flush 流程。<strong>权限检查（缺页/信号判定）第一层永远先查 VMA flags</strong>（快，无锁读），第二层才是 PTE。</p>
+<h2>2. 合并规则（决定 maps 里段数的隐形逻辑）</h2>
+<p>新 VMA 加入（mmap_region）时尝试与邻居合并（<code class="c">vma_merge</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件（与前后邻居合并需同时满足）</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>线程共享</strong></td>
-<td><strong>同一进程内线程</strong> 通常 <strong>共享一个 <code class="c">mm_struct</code></strong>（<code class="c">clone</code> 不带 <code class="c">CLONE_VM</code>）</td>
+<td>地址相邻（prev.end == new.start）</td>
+<td>无缝</td>
 </tr>
 <tr>
-<td><strong>页表根</strong></td>
-<td>指向该进程 <strong>PGD</strong>（Ch 3）</td>
+<td>flags 相同</td>
+<td>权限/共享性一致</td>
 </tr>
 <tr>
-<td><strong>VMA 组织</strong></td>
-<td><strong>链表</strong> 遍历 + <strong>红黑树</strong>（<code class="c">mm_rb</code>）按地址快速查找</td>
+<td>同一文件 + 连续 pgoff</td>
+<td>文件视图连续</td>
 </tr>
 <tr>
-<td><strong>统计</strong></td>
-<td><strong>RSS</strong>（驻留集）、虚拟大小等</td>
-</tr>
-<tr>
-<td><strong>锁</strong></td>
-<td><strong><code class="c">mmap_lock</code></strong>（读写锁）保护 VMA 与页表并发</td>
+<td>同一 anon_vma / 同 policy</td>
+<td>rmap 与 NUMA 一致</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">task_struct ──► mm_struct ──► pgd
-                  │
-                  ├── VMA 链表 / mm_rb
-                  └── rss, total_vm, …
+<p><strong>工程后果：</strong> 分 100 次 <code class="c">mmap</code> 相同属性的相邻匿名页 → maps 里 <strong>一段</strong>。反之 <code class="c">mprotect</code> 中间一页 → 原段 <strong>分裂成三段</strong>（VMA 数量+2）——<strong>mprotect 是 VMA 数量爆破的元凶</strong>，而 VMA 数量直接影响 maple 树规模与 fork 的复制成本。</p>
+<p><code class="c">max_map_count</code>（默认 65530）是 VMA 数量上限——JVM/多线程进程撞过这个线的案例很多。</p>
+<h2>3. <code class="c">vm_ops</code>：文件映射的行为面</h2>
+<pre class="code" data-label="C"><code class="c">struct vm_operations_struct {
+    vm_fault_t (*fault)(...);      /* 缺页：从文件读页 */
+    void (*close)(...);            /* munmap 收尾 */
+    void (*map_pages)(...);        /* 批量预fault（readaround） */
+    int (*split)(...);             /* VMA 被切分时同步 */
+    ...
+};
 </code></pre>
-<p>→ Ch 1 推荐阅读路线 <strong>第 4 步</strong>：VMA 创建 — <a href="https://elixir.bootlin.com/linux/latest/source/mm/mmap.c"><code class="c">mm/mmap.c</code></a></p>
-<hr />
-      </section>
-      <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 4 §3 内存区域 (Memory Regions · VMA)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>3. 内存区域 (Memory Regions · VMA)</h3>
-<p>进程 <strong>很少用满</strong> 整个用户地址空间，而是 <strong>稀疏</strong> 使用若干 <strong>段</strong> — 每段一个 <strong><code class="c">vm_area_struct</code> (VMA)</strong>。</p>
-<h3>VMA 是什么</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>属性</th>
-<th>含义</th>
+<th>映射类型</th>
+<th>vm_ops</th>
+<th>缺页行为</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>一段连续 VA 范围</strong> <code class="c">[vm_start, vm_end)</code></td>
-<td>不与其它 VMA <strong>重叠</strong></td>
+<td>匿名</td>
+<td>NULL</td>
+<td><code class="c">do_anonymous_page</code>（零页或新页）</td>
 </tr>
 <tr>
-<td><strong>统一属性</strong></td>
-<td>相同 <strong>权限</strong>（读/写/执行）、相同 <strong>用途</strong>（堆、栈、mmap 文件、匿名映射、共享库…）</td>
+<td>文件（ext4/xfs/tmpfs）</td>
+<td><code class="c">generic_file_vm_ops</code> 等</td>
+<td><code class="c">filemap_fault</code> → page cache → 磁盘</td>
 </tr>
 <tr>
-<td><strong>操作函数</strong></td>
-<td><code class="c">vm_ops</code> — 文件映射的 <strong>fault/read</strong> 等回调</td>
+<td>设备（DRM/VFIO）</td>
+<td>驱动自定义</td>
+<td>驱动 fault（常 remap_pfn_range）</td>
+</tr>
+<tr>
+<td>hugetlb</td>
+<td><code class="c">hugetlb_vm_ops</code></td>
+<td>大页专用路径（不走普通 PTE）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>典型 VMA：</strong> 可执行文件 <strong>text</strong>、<strong>heap</strong>、<strong>stack</strong>、<strong>mmap</strong> 的订单簿/共享内存、<strong>vdso/vsyscall</strong> 页（2.6+）。</p>
-<h3>相关系统调用（内核入口在 <code class="c">mm/mmap.c</code> 等）</h3>
+<p><strong>DPDK/AF_XDP 的用户映射就是设备 vm_ops</strong>——驱动 fault 时把 DMA 映射进用户 VMA（<code class="c">VM_IO/VM_PFNMAP</code> 标志，无 struct page，Ch3 §5）。</p>
+<h2>4. 相关系统调用 × v6.6 行为</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>调用</th>
-<th>作用</th>
-<th>HFT</th>
+<th>v6.6 要点</th>
+<th>HFT 姿势</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">mmap</code></strong></td>
-<td><strong>创建</strong> 新 VMA / 映射文件或匿名内存</td>
-<td>订单簿 <strong>预分配 arena</strong>、<strong>共享内存</strong></td>
+<td><code class="c">mmap</code></td>
+<td>MAP_FIXED_NOREPLACE（不覆盖探测）；MAP_POPULATE（预 fault）；MAP_HUGETLB/UNIFIED</td>
+<td>启动期定格布局三件套</td>
 </tr>
 <tr>
-<td><strong><code class="c">mremap</code></strong></td>
-<td><strong>移动/扩大</strong> 已映射区域</td>
-<td>动态扩容堆式缓冲区</td>
+<td><code class="c">mremap</code></td>
+<td>MREMAP_DONTUNMAP（v5.13+，搬走但留旧映射）</td>
+<td>快照切换的页级操作</td>
 </tr>
 <tr>
-<td><strong><code class="c">mlock</code> / <code class="c">mlockall</code></strong></td>
-<td><strong>锁定</strong> 页面于物理内存 — <strong>禁止换出</strong></td>
-<td><strong>延迟敏感进程标配</strong></td>
+<td><code class="c">mlock</code>/<code class="c">mlockall</code></td>
+<td>落 RSS+防换出；<strong>不 prefault</strong>（只 fault 过的页才真锁住）</td>
+<td><code class="c">MAP_POPULATE</code>+mlock 组合拳</td>
 </tr>
 <tr>
-<td><strong><code class="c">munmap</code></strong></td>
-<td><strong>删除</strong> 映射、释放 VMA</td>
-<td>teardown 时释放</td>
+<td><code class="c">madvise</code></td>
+<td>DONTNEED（立刻弃页）/HUGEPAGE/WILLNEED…</td>
+<td>精细分区管理的入口</td>
+</tr>
+<tr>
+<td><code class="c">mbind</code></td>
+<td>per-VMA 策略</td>
+<td>NUMA 钉页</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>注意：</strong> <code class="c">mmap</code> 成功 <strong>≠</strong> 立刻占用等量 <strong>物理 RAM</strong> — 常只是 <strong>VMA + 页表「洞」</strong>；物理页在 <strong>fault</strong> 时落下。</p>
+<p><strong>mlock 陷阱（高频误用）：</strong> mlock <strong>只锁已驻留的页</strong>，"mlock 了但没 touch"的页在首次访问时仍走缺页。正确顺序：mmap → <strong>touch 全区</strong>（或 MAP_POPULATE）→ mlock。</p>
+<h2>5. 观测与排障</h2>
+<pre class="code" data-label="shell"><code class="c">cat /proc/&lt;pid&gt;/maps                     # VMA 清单（起止/权限/来源）
+wc -l /proc/&lt;pid&gt;/maps                   # VMA 数量健康度（别逼近 max_map_count）
+cat /proc/sys/vm/max_map_count
+cat /proc/&lt;pid&gt;/smaps                    # 每段 RSS/PSS/THP/locked 明细
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>maps 行数持续增长</td>
+<td>动态 mmap 未复用 / mprotect 爆破段数 → 查泄漏</td>
+</tr>
+<tr>
+<td>smaps 里 Locked &lt; 预算</td>
+<td>mlock 陷阱（未 touch 就锁）</td>
+</tr>
+<tr>
+<td>巨型 anon 段但 RSS 小</td>
+<td>mmap 了没 prefault——启动期裸奔</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>纪律</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局一次性定型</td>
+<td>消灭运行期写锁事件（§2）+ VMA 数稳定</td>
+</tr>
+<tr>
+<td>段数预算</td>
+<td>引擎 maps 行数应 &lt;100 且恒定；告警线：日环比增长</td>
+</tr>
+<tr>
+<td>vm_flags 预检</td>
+<td>共享行情只读映射 → <code class="c">PROT_READ</code>+<code class="c">MAP_SHARED</code>，防误写触发 COW fault 风暴</td>
+</tr>
+<tr>
+<td>mremap 替代 munmap+mmap</td>
+<td>不产生 VMA 空洞，树不碎</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-4">§4 缺页</a>：VMA flags 兑现成 PTE 的时刻</li>
+<li><a href="chapter-11.html#s-7">Ch 3 §7 rmap</a>：anon_vma 的去向</li>
+<li><a href="chapter-12.html#ch-12">Ch 12 shmem</a>：MAP_SHARED 的文件后端</li>
+<li><a href="../../06.5-modern-mm/html/chapter-05.html#ch-5">06.5/ch05</a>：VMA 树结构</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 VMA 必须按属性分割，而不是每页记权限？</strong>
+A：粒度经济学：页级权限记在 PTE（已有），VMA 是 <strong>批量管理层</strong>——缺页判定、NUMA 策略、rmap 锚、锁边界都以 VMA 为单位。若每页独立管理，fork/遍历/策略的元数据和管理成本爆炸。<strong>分层：VMA 管策略，PTE 管执行。</strong></p>
+<p><strong>Q2：<code class="c">mprotect</code> 一页为什么会产生 3 个 VMA？</strong>
+A：原段 [A,B) 被改 [x,x+1)：前段 [A,x)、改段 [x,x+1)、后段 [x+1,B)。前后段与新 flags 不同不能合并。反复对不同页 mprotect = VMA 数量线性涨——<strong>权限变更应按区域规划，不要逐页打补丁</strong>。</p>
+<p><strong>Q3：匿名 VMA 的 vm_ops 为 NULL，缺页怎么分发？</strong>
+A：<code class="c">handle_mm_fault</code> 判 <code class="c">vma-&gt;vm_ops == NULL || !vm_ops-&gt;fault</code> → 走 <code class="c">do_anonymous_page</code>（memory.c:4067）。文件/设备 VMA 才调 <code class="c">vm_ops-&gt;fault</code>。所以 vm_ops 是否为空是"匿名与否"的分路开关，不靠 flags 推断。</p>
+<p><strong>Q4：MAP_SHARED 匿名映射没有文件，怎么实现共享？</strong>
+A：tmpfs 兜底：内核为 SHARED 匿名 mmap 建 shmem 对象（Ch 12），vm_file 指向它——<strong>"匿名共享"其实有文件（tmpfs）</strong>，pages 挂在该 inode 的 page cache 上，多进程经同一 rmap 树看到同一批页。<code class="c">/dev/zero</code> mmap 老写法同机制。</p>
+<p><strong>Q5：VMA 的 split 回调为什么存在？谁能承受 VMA 分裂？</strong>
+A：mprotect/分裂 VMA 时，回调让持有者同步（如 hugetlb 的预留计数、userfaultfd 的注册区间）。不承受的例子：v6.6 起部分驱动声明 <code class="c">VM_DONTSPLIT</code>。HFT 视角：你的固定映射区域永远不该被 split——布局定型后没有任何 mprotect 会切它。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 4 §4 异常处理与缺页异常 (Page Faulting)</h2></div>
+        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 4 §4 异常处理与缺页异常（v6.6 fault 路径）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/memory.c</code> :4067 <code class="c">do_anonymous_page</code>、:3053 <code class="c">wp_page_copy</code>、:3338 <code class="c">do_wp_page</code>、:5255 <code class="c">handle_mm_fault</code>）</p>
 </blockquote>
-<h3>4. 异常处理与缺页异常 (Page Faulting)</h3>
-<p>用户页 <strong>未必常驻内存</strong>。CPU 访问 <strong>无有效 PTE</strong> 或 <strong>权限不符</strong> 的地址 → <strong>异常</strong> → 内核 <strong><code class="c">do_page_fault()</code></strong> → 架构无关 <strong><code class="c">handle_mm_fault()</code></strong>。</p>
-<h3>合法缺页的三类核心场景</h3>
-<h4>(1) 按需分配 (Demand Allocation) — <strong>首次 touch</strong></h4>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>页类型</th>
-<th>读</th>
-<th>写</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>匿名页</strong></td>
-<td>可映射 <strong>全局零页 (zero page)</strong> — 读共享全 0</td>
-<td><strong>分配新物理页</strong>，内容置 0（<strong>COW 零页优化</strong> 等后续演进）</td>
-</tr>
-<tr>
-<td><strong>文件 / 设备映射</strong></td>
-<td>调 <strong><code class="c">address_space</code> / 驱动</strong> 从 <strong>磁盘/后端</strong> 读入页</td>
-<td>可能先 <strong>COW</strong> 或 <strong>分配 + 读盘</strong></td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>HFT：</strong> 冷路径 <strong>prefault</strong>（写遍每页） vs 生产 <strong>首包 fault</strong> — 必须选一种策略。</p>
-<h4>(2) 请求调页 (Demand Paging) — <strong>从 swap 换回</strong></h4>
-<ul>
-<li>PTE <strong>not present</strong>，但 <strong>保存 swap 槽位号</strong></li>
-<li>fault 路径 <strong>读 swap</strong> → 填回物理页 → 更新 PTE present</li>
-</ul>
-<p><strong>HFT：</strong> <strong><code class="c">mlock</code></strong> / <strong><code class="c">swapoff</code></strong> / 足够 <strong>RAM</strong> — 避免热路径掉进 swap fault。</p>
-<h4>(3) 写时复制 (Copy-On-Write · COW) — <strong><code class="c">fork()</code> 后写入</strong></h4>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>步骤</th>
-<th>行为</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">fork()</code></strong></td>
-<td>父子 <strong>共享物理页</strong>，PTE 标 <strong>只读</strong></td>
-</tr>
-<tr>
-<td><strong>一方写入</strong></td>
-<td><strong>缺页</strong> → 内核 <strong>复制</strong> 物理页 → 写者获 <strong>私有副本</strong>，打破共享</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>HFT：</strong> 多进程 <strong>读共享</strong> 订单簿快照可用；<strong>写共享</strong> 需 <strong><code class="c">MAP_PRIVATE</code> COW</strong> 或 <strong>真共享 + 同步</strong> — fork 后写大结构会 <strong>突发 COW fault</strong>。</p>
-<h3>缺页处理链（简图）</h3>
-<pre class="code" data-label="code"><code class="c">用户态访问 VA
-    → MMU 异常
-    → do_page_fault()
-    → 查 VMA 合法？
-         ├─ 否 → SIGSEGV
-         └─ 是 → handle_mm_fault()
-                    ├─ 首次分配 (demand alloc)
-                    ├─ swap in (demand paging)
-                    └─ COW break
-    → 返回用户态重试指令
+<hr />
+<h2>本节讲什么</h2>
+<p>缺页是地址空间从"申请"到"兑现"的时刻——也是 HFT 延迟事件的高发地。本节把原书三类场景（demand alloc / swap in / COW）钉到 v6.6 的具体函数行号上，并补原书没有的第四类：<strong>userfaultfd</strong>。</p>
+<hr />
+<h2>1. 入口链（v6.6 实锚）</h2>
+<pre class="code" data-label="code"><code class="c">用户态访问 VA → MMU 异常
+  → arch do_page_fault()（x86 exc_page_fault / ARM64 do_mem_abort）
+  → 找 VMA（lockless 快路径 v6.6 per-fault VMA cache）
+       无 VMA 且无 grow 栈可能 → SIGSEGV
+  → handle_mm_fault(vma, addr, flags)        memory.c:5255
+       → __handle_mm_fault(:5031)            逐级 alloc pgd/pud/pmd
+       → pmd 是大页? → huge fault 路径
+       → pte 级分四路（下）
 </code></pre>
-<p>→ 接 Ch 3 <strong>PTE 位</strong>、Ch 10 <strong>回收换出</strong>、Ch 11 <strong>swap</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-5">
-        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 4 §5 内核与用户空间的数据拷贝</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>5. 内核与用户空间的数据拷贝</h3>
-<p>内核 <strong>不能</strong> 裸 dereference 用户指针 — 页可能 <strong>未映射、已换出、仅用户可读</strong>。</p>
+<h2>2. 四路分发</h2>
+<h3>① 按需分配（匿名首访）— <code class="c">do_anonymous_page</code>（:4067）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>API</th>
-<th>方向</th>
+<th>访问</th>
+<th>v6.6 行为</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">copy_from_user()</code></strong></td>
-<td>用户 → 内核</td>
+<td><strong>读</strong></td>
+<td>映射 <strong>全局零页</strong>：<code class="c">pte_mkspecial(pfn_pte(my_zero_pfn(...)))</code>（:4089 实锚）——不分配物理页！</td>
 </tr>
 <tr>
-<td><strong><code class="c">copy_to_user()</code></strong></td>
-<td>内核 → 用户</td>
-</tr>
-<tr>
-<td><strong><code class="c">get_user()</code> / <code class="c">put_user()</code></strong></td>
-<td>标量快捷版</td>
+<td><strong>写</strong></td>
+<td>分配新页（<code class="c">alloc_anon_folio</code>，v6.6 已带 folio/多页批量）→ 零填充 → PTE 写权限</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>机制：</strong></p>
-<ol>
-<li>正常拷贝；若访问 <strong>无效用户地址</strong> → MMU 异常  </li>
-<li><strong>异常表 (Exception Table)</strong> 把 <strong>出错 RIP</strong> 映射到 <strong>fixup 代码</strong>  </li>
-<li>fixup <strong>返回错误码</strong>，<strong>不 oops 内核</strong></li>
-</ol>
-<p><strong>HFT：</strong>  syscall / <strong>ioctl</strong> 路径上的拷贝次数与 <strong>用户指针校验</strong> — 网关若 <strong>内核模块</strong> 或 <strong>bpf</strong> 边界，需理解 <strong>为何不能直接用 <code class="c">memcpy</code> 对用户指针</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-6">
-        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 4 §6 Linux 2.6 内核的新变化</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>6. Linux 2.6 内核的新变化</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>变化</th>
-<th>作用</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>vsyscall 页</strong></td>
-<td>部分 <strong>系统调用</strong> 快速路径（gettimeofday 等）— 减少 <strong>软中断进内核</strong> 成本；后演进 <strong>vdso</strong>（现代仍重要）</td>
-</tr>
-<tr>
-<td><strong>4GiB/4GiB 分割补丁</strong>（可选配置）</td>
-<td>用户/内核 <strong>各 4GiB</strong> — 32 位 <strong>大内存用户进程</strong> 场景</td>
-</tr>
-<tr>
-<td><strong>非线性 VMA / <code class="c">MAP_POPULATE</code></strong></td>
-<td><strong><code class="c">mmap</code> 时预 fault</strong> 填充页表；<strong><code class="c">remap_file_pages</code></strong> 非线性文件映射 — <strong>数据库 / 大文件随机访问</strong> 优化</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>HFT 现代对应：</strong></p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>2.6 概念</th>
-<th>今天</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>vsyscall</td>
-<td><strong>vdso</strong> — <code class="c">clock_gettime</code> 用户态快速路径</td>
-</tr>
-<tr>
-<td><code class="c">MAP_POPULATE</code></td>
-<td>仍可用 — <strong>启动时换 latency 换确定性</strong></td>
-</tr>
-<tr>
-<td>非线性 mmap</td>
-<td>niche；HFT 更常用 <strong>hugepage + 固定布局 arena</strong></td>
-</tr>
-</tbody>
-</table></div>
-<hr />
-<h2>用户地址空间一图</h2>
-<pre class="code" data-label="code"><code class="c">进程
-  mm_struct
-    ├── PGD ──► 页表 (Ch 3)
-    └── VMA[]  (vm_area_struct)
-          ├── [exe text]
-          ├── [heap]
-          ├── [mmap: order book arena]  ← mmap/mlock
-          └── [stack]
-
-  访问某 VA
-    → PTE miss → page fault → 分配/读盘/COW/swap-in
-    → PTE hit  → 正常读写（TLB 仍可能 miss）
+<p><strong>零页共享的深意：</strong> 大片"只读没写"的 .bss 类区域全指到同一张零页——RSS 几乎不涨。<strong>调试技巧：</strong> 想知道匿名段哪部分被写过，<code class="c">/proc/pid/pagemap</code> 看哪些页仍指 zero_pfn。</p>
+<p><strong>HFT：</strong> 零页路径再快也是 fault（~µs）。prefault（写遍）一次交清，运行期零 fault——启动期 1 秒换运行期每秒上万次的确定性。</p>
+<h3>② 请求调页（swap in）</h3>
+<p>PTE 非空非 present → 解码 swap entry → <code class="c">swapin_readahead</code>（预读邻页）→ PTE 恢复。
+<strong>HFT 消灭法：</strong> mlock + 充足 RAM + <code class="c">vm.swappiness=0</code>（防患）+ 监控 <code class="c">pswpin/pswpout</code> 为零。</p>
+<h3>③ COW — <code class="c">do_wp_page</code>（:3338）→ <code class="c">wp_page_copy</code>（:3053）</h3>
+<pre class="code" data-label="code"><code class="c">fork 后写共享只读页：
+  do_wp_page
+    ├─ 只有一个映射且独占 → wp_page_reuse：直接改 PTE 可写（免拷贝！）
+    └─ 共享中 → wp_page_copy:
+         新页 = alloc + copy_user 高路径拷贝源页（:3082 __wp_page_copy_user）
+         rmap 解开本进程旧页 → 挂新页 → PTE 指新页可写
 </code></pre>
-<hr />
-<h2>HFT 精读 checklist</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>细节</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">wp_page_reuse</code> 免拷贝</td>
+<td><strong>fork 后子进程从未 touched 的页，父进程写回不复制</strong>——refcount 归一即复用</td>
+</tr>
+<tr>
+<td>fork 拷贝的单位是 folio</td>
+<td>v6.6 COW 以 folio（可多页）为单位判定复用/复制</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT fork 纪律的机制根据：</strong> fork 后父进程写 1GiB → 最多 26 万次 COW fault（每次 alloc+copy+PTE+可能 flush）。要么纯线程模型，要么 fork 后 exec 前父进程冻结写。</p>
+<h3>④ userfaultfd（原书没有，v5.1+ 常用）</h3>
+<p>用户态进程接管缺页处理（<code class="c">UFFDIO_REGISTER</code> 监视 VMA）：
+- 用途：虚机/容器 <strong>热迁移</strong>（Post-copy：先迁映射，页访问时按需拉取）、CoW 快照（CRIU）、<strong>分布式共享内存底层</strong>
+- <code class="c">UFFDIO_COPY</code> 从另一进程直接灌页——<strong>用户态可控的缺页分发器</strong>
+- HFT 相关性：跨机容灾行情镜像的潜在底座；日常少用但要知道缺页可被用户态接管</p>
+<h2>3. fault 的成本表（把 §1-§3 串起来）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>fault 类型</th>
+<th>典型成本</th>
+<th>组成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>匿名读（零页）</td>
+<td>~1µs</td>
+<td>异常+VMA 查+装 PTE</td>
+</tr>
+<tr>
+<td>匿名写</td>
+<td>~1-2µs</td>
+<td>+分配+零填充</td>
+</tr>
+<tr>
+<td>COW</td>
+<td>~2-5µs</td>
+<td>+拷贝+rmap 调整</td>
+</tr>
+<tr>
+<td>文件读</td>
+<td>数十 µs~ms</td>
+<td>+page cache miss 则磁盘</td>
+</tr>
+<tr>
+<td>swap in</td>
+<td><strong>几十 µs~ms</strong></td>
+<td>+块设备</td>
+</tr>
+<tr>
+<td>THP 缺页（成功）</td>
+<td>~几 µs</td>
+<td>大页 alloc</td>
+</tr>
+<tr>
+<td>THP 缺页（触发 compaction）</td>
+<td><strong>ms 级</strong></td>
+<td>Ch6 §5 的慢路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对照用户的可见症状：</strong> majflt 计数（<code class="c">/proc/pid/stat</code> 第 10 字段后）非零 = 有文件/swap fault；minflt 高 = 匿名/零页。</p>
+<h2>4. 观测</h2>
+<pre class="code" data-label="shell"><code class="c">/usr/bin/time -v ./engine         # minor/major page faults 汇总
+perf stat -e page-faults,faults ./engine
+bpftrace -e 'tracepoint:exceptions:page_fault_user { @[comm] = count(); }'
+# 缺页原因细分（含 anon/cow/swap 归因）：
+perf record -e 'mm_page_fault:*' ...
+</code></pre>
+<h2>5. HFT checklist（本章核心出口）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>目标</th>
 <th>手段</th>
+<th>验证</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>消除运行时 fault</strong></td>
-<td><code class="c">mmap</code> + touch 全区域 / <code class="c">MAP_POPULATE</code> / <code class="c">mlockall</code></td>
+<td>运行期零 fault</td>
+<td>MAP_POPULATE+touch+mlock</td>
+<td>压测中 <code class="c">page-faults</code> 增量为 0</td>
 </tr>
 <tr>
-<td><strong>禁止 swap</strong></td>
-<td><code class="c">mlock</code>、 cgroup 限制、足够物理内存</td>
+<td>无 swap</td>
+<td>mlockall(MCL_CURRENT|MCL_FUTURE)</td>
+<td>pswpin/pswpout=0</td>
 </tr>
 <tr>
-<td><strong>共享只读行情</strong></td>
-<td><code class="c">MAP_SHARED</code> 只读映射；写用 <strong>每进程副本</strong> 或 <strong>无锁 ring</strong></td>
+<td>无 COW 风暴</td>
+<td>线程模型/写前 exec</td>
+<td>minflt 稳定</td>
 </tr>
 <tr>
-<td><strong>避免 fork 后 COW 风暴</strong></td>
-<td><code class="c">pthread</code> 共享地址空间；或 <code class="c">MAP_SHARED</code> + 设计分离</td>
-</tr>
-<tr>
-<td><strong>syscall 延迟</strong></td>
-<td>理解 <strong>vdso</strong> vs 真实 syscall；减少 <strong>copy_from_user</strong> 体积</td>
-</tr>
-<tr>
-<td><strong>与 Ch 2–3 衔接</strong></td>
-<td>fault 落下的是 <strong>哪个 Zone 的 struct page</strong>、PTE 如何 <strong>present</strong></td>
+<td>fault 若发生要可归因</td>
+<td>tracepoint 常备</td>
+<td>06.7 工具链</td>
 </tr>
 </tbody>
 </table></div>
+<h2>6. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-3">§3 VMA</a>：fault 判合法性的依据</li>
+<li><a href="chapter-14.html#s-2">Ch 3 §2</a>：fault 装的 PTE 语义</li>
+<li><a href="chapter-10.html#ch-10">Ch 10/11</a>：换出侧</li>
+<li><a href="../../06.5-modern-mm/html/chapter-06.html#ch-6">06.5/ch06 folio</a>：文件 fault 的现代实现</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：匿名读缺页为什么不分配物理页？怎么发现这个"骗局"？</strong>
+A：零页优化——全 0 内容无需每进程一份。发现：<code class="c">/proc/pid/smaps</code> 段 RSS 远小于映射大小；<code class="c">pagemap</code> 显示 PFN 等于共享零页。破局：写一下就"现原形"（真分配）。<strong>calloc 大区域后只读扫描 = 内存零消耗的假象</strong>，benchmark 常见的坑。</p>
+<p><strong>Q2：<code class="c">wp_page_reuse</code> 什么条件下免拷贝？</strong>
+A：页的 mapcount/refcount 表明"只有我这一个映射者"（fork 的另一边已退出或从未写）→ 直接收回写权限，无需复制。所以 fork+exec 模型里，父进程 COW 成本趋近于零——真正贵的是 fork 后 <strong>双方都活着且都写</strong>。</p>
+<p><strong>Q3：栈缺页自动增长是怎么回事？</strong>
+A：访问恰低于栈 VMA 起点的地址 → arch fault handler 判定在栈扩展范围内（RLIMIT_STACK + gap）→ <code class="c">expand_stack()</code>：VMA 向下改 vm_start，然后走正常匿名缺页。<strong>栈 VMA 是唯一"会动"的常规 VMA</strong>——递归深的代码在高频切换线程上会反复扩展（每次是写锁事件）。</p>
+<p><strong>Q4：userfaultfd 和 KVM 的 EPT 缺页什么关系？</strong>
+A：层级不同：EPT fault 是虚机物理地址层的（KVM 内部处理），userfaultfd 是进程 VA 层的。但虚机热迁移常 <strong>两层数字配合</strong>：EPT 把虚机内存标记为缺失 → 退出到 QEMU → QEMU 按需从源机拉页再 UFFD/THP 灌回。分布式 HFT 的行情热迁移若做，这套是参考架构。</p>
+<p><strong>Q5：怎么区分"良性 prefault 期 fault"和"运行期异常 fault"？</strong>
+A：时间戳聚类：启动期集中爆发+之后归零=良性；稳态期持续零星=泄漏/越界（常见：越界写碰 VMA 边界、动态分配未池化）。bpftrace 给 fault 打时间戳直方图（<code class="c">@usecs = hist(nsecs/1000)</code>）一眼可辨。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-5">
+        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 4 §5 内核与用户空间的数据拷贝（异常表机制）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/uaccess.h</code> :99-:166 <code class="c">should_fail_usercopy</code>/<code class="c">access_ok</code>、<code class="c">arch/*/kernel/extable.c</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>内核为什么不能 <code class="c">memcpy</code> 用户指针、<code class="c">copy_to_user</code> 遇到坏指针为什么不 panic——答案都指向一个优雅的老机制：<strong>异常表（exception table）</strong>。这是"内核优雅处理用户态地雷"的教科书案例，也是理解 syscall 延迟构成的必经一站。</p>
+<hr />
+<h2>1. 为什么不能裸解引用</h2>
+<p>用户指针的三宗罪：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>罪</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>可能未映射/已换出</td>
+<td>内核态访问触发 fault——但内核 fault 没有"用户态缺页处理"兜底</td>
+</tr>
+<tr>
+<td>可能只读而你写</td>
+<td>同上，权限 fault</td>
+</tr>
+<tr>
+<td>恶意指针（用户故意传内核地址）</td>
+<td>安全漏洞（绕过地址空间隔离）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第 3 条是内核漏洞史的半壁江山。</strong> <code class="c">access_ok()</code> 只查范围（用户上限以内），真正的页有效性靠 fault + 修复。</p>
+<h2>2. 异常表：内核里的"出错跳转表"</h2>
+<p>链接期生成 <code class="c">__ex_table</code> 段，每条目 <code class="c">&lt;fault_指令地址, fixup_地址&gt;</code>：</p>
+<pre class="code" data-label="code"><code class="c">copy_from_user 内联汇编：
+  1:  mov (%rax),%rdx          ← 这条指令可能 fault
+      ...
+      .section __ex_table,&quot;a&quot;
+      .quad 1b, 3f             ← 出错则跳标号 3
+      .text
+  3:  mov $-EFAULT,%eax        ← fixup：返回错误码
+</code></pre>
+<p>fault 流程：</p>
+<pre class="code" data-label="code"><code class="c">内核态访问坏用户指针 → MMU 异常
+  → do_page_fault → 查 VMA：这是 **用户地址** 且 fault 指令在内核？
+  → search_exception_tables(fault_ip)   ← 二分查 __ex_table
+       命中 → 修改返回地址为 fixup → copy_from_user 返回 -EFAULT
+       未命中 → 真内核 bug → oops/panic
+</code></pre>
+<p><strong>要点：</strong> 这是 <strong>数据驱动</strong> 的错误处理——每条可能出错的指令自带修复地址，无需运行时注册。<code class="c">fixup_exception()</code> 就是查表函数。用户态 fault 走缺页，内核态 fault 先查表——同一个 arch 入口两条分路。</p>
+<h2>3. <code class="c">copy_from_user</code>/<code class="c">copy_to_user</code> 的完整成本（v6.6）</h2>
+<p>以 <code class="c">copy_to_user</code>（uaccess.h，<code class="c">_copy_to_user</code> 概念展开）为例：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>成本</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">should_fail_usercopy()</code></td>
+<td>1 分支</td>
+<td>fault-injection 钩子（调试用）</td>
+</tr>
+<tr>
+<td><code class="c">access_ok(dst, n)</code></td>
+<td>1 比较</td>
+<td>仅范围检查（编译期已知范围可优化掉）</td>
+</tr>
+<tr>
+<td>rep movsb / SIMD 拷贝</td>
+<td>n/带宽</td>
+<td>memcpy 级</td>
+</tr>
+<tr>
+<td>SMEP/SMAP 防护</td>
+<td>硬件免费</td>
+<td>x86 内核态直接碰用户页 = fault（5.x 起常开）</td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>拷贝大小</th>
+<th>典型 syscall 内开销（x86_64 现代机）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8B（get_user 级）</td>
+<td>~几 ns</td>
+</tr>
+<tr>
+<td>64B（订单/报价包）</td>
+<td>~10-20ns</td>
+</tr>
+<tr>
+<td>4KiB</td>
+<td>~200-400ns</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 眼里的 copy_to_user：</strong> 12.5 系列（网络栈）反复出现——<code class="c">send()</code>/<code class="c">recv()</code> 每次都要过这道门。<strong>这就是 io_uring/send_zerocopy 想消灭/摊薄的东西</strong>：小包（&lt;1KiB）拷贝其实比 pin+DMA 便宜（12.5/ch13 结论：小消息 ZC 是负优化——成本大头恰是这里省不下的固定开销）。</p>
+<h2>4. <code class="c">get_user</code>/<code class="c">put_user</code> 与 <code class="c">_copy</code> 变体家族</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">get_user(x, ptr)</code> / <code class="c">put_user</code></td>
+<td>1/2/4/8B 标量：编译期选指令，异常表单条目</td>
+</tr>
+<tr>
+<td><code class="c">copy_from_user</code>/<code class="c">copy_to_user</code></td>
+<td>块拷贝</td>
+</tr>
+<tr>
+<td><code class="c">unsafe_get_user(...)</code> + <code class="c">user_access_begin/end</code></td>
+<td>v6.6 风格：<code class="c">user_access_begin()</code> 关 SMAP 后 <strong>裸访问</strong>（省每条指令的 stac/clac），结束再开——<strong>临界区内 fault 靠异常表</strong></td>
+</tr>
+<tr>
+<td><code class="c">__copy_from_user_inatomic</code></td>
+<td>不睡眠版（持锁场景，spinlock 里）</td>
+</tr>
+<tr>
+<td><code class="c">copy_from_user_nofault</code></td>
+<td>探测式（ptrace/perf 用），fault 静默返回错误</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">user_access_begin</code> 家族是 v6.6 源码的主流写法</strong>：旧式逐指令 SMAP 开关（stac/clac 每条 ~1-2 cycle）在大拷贝循环里累积可观，批量关+裸访问+批量开更划算——<strong>又一个"批量摊薄固定开销"的案例</strong>（与 pcp/slub batch 一脉相承）。</p>
+<h2>5. 谁在读你的异常表</h2>
+<pre class="code" data-label="shell"><code class="c">cat /proc/kallsyms | grep __ex_table
+dmesg | grep -i 'fixup'          # oops 报告里会写 exception table 命中与否
+</code></pre>
+<p><strong>编程接口：</strong> 内核模块自己写访问用户内存的汇编/优化路径，可用 <code class="c">.pushsection __ex_table</code> 注册 fixup（<code class="c">asm-extable.h</code> 宏 <code class="c">_ASM_EXTABLE_U</code>）。eBPF 里 <code class="c">bpf_probe_read_user()</code> 内部就是 nofault 拷贝——06.7 工具读用户内存不崩的底层。</p>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>syscall 预算</td>
+<td>64B 消息一次 send 的 copy_to_user ~15ns——在 100ns 级 syscall 总预算里占比可观</td>
+</tr>
+<tr>
+<td>批量接口</td>
+<td><code class="c">readv/writev</code>/io_uring 把 N 次 copy 摊进一次 syscall</td>
+</tr>
+<tr>
+<td>用户指针安全</td>
+<td>自研内核模块：永远 copy_from_user 到内核缓冲再校验，<strong>别信用户指针内容</strong>（长度字段也是谎话来源）</td>
+</tr>
+<tr>
+<td>探测用户内存</td>
+<td>bpf_probe_read_user（06.7）背你扛 fault</td>
+</tr>
+<tr>
+<td>嵌入式无 SMAP</td>
+<td>老芯片裸解引用"能跑"是幻觉——换新 SoC（有 SMAP/SMEP）立刻炸，写模块时按有防护的规矩写</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-4">§4 缺页</a>：同源异常的两条分路</li>
+<li><a href="../../12.5-modern-networking/html/chapter-12.html#ch-12">12.5/ch12 io_uring</a>：消灭拷贝/syscall 边界的工程</li>
+<li><a href="../../12.5-modern-networking/html/chapter-13.html#ch-13">12.5/ch13 ZC 决策</a>：copy vs pin 的盈亏平衡</li>
+<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7 BPF</a>：nofault 用户内存读</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：异常表和信号处理器的 fixup 是一回事吗？</strong>
+A：不是。信号是 <strong>用户态</strong> 机制（内核递送 SIGSEGV 给进程）；异常表是 <strong>内核态</strong> 机制（fault 指令在内核里执行时查表改返回地址）。一个跨用户边界递送，一个就地自我修复。同名不同物，面试易混。</p>
+<p><strong>Q2：<code class="c">access_ok</code> 检查了为什么还会 fault？</strong>
+A：access_ok 只验 <strong>地址范围</strong>（&lt; TASK_SIZE，防内核地址冒充），不验 <strong>映射存在</strong>。页在不在、权限对不对，只有真访问时 MMU 才知道——所以 access_ok 是廉价的第 1 关，异常表是兜底的第 2 关。两层缺一不可（只留异常表也行但慢路径多）。</p>
+<p><strong>Q3：SMAP 开着，<code class="c">user_access_begin</code> 之后中断来了怎么办？</strong>
+A：中断入口自己会 <code class="c">stac/clac</code> 管理（或直接在关 SMAP 状态进 handler 的代码路径精心审查过）——v6.6 中断路径不碰用户内存，天然安全。临界区长度受控（一个拷贝函数内），不是长驻状态。<strong>"关防护的窗口要函数级短"</strong> 是安全工程通则。</p>
+<p><strong>Q4：<code class="c">__copy_from_user_inatomic</code> 在持 spinlock 时 fault 了怎么收场？</strong>
+A：查异常表返回 <strong>部分拷贝字节数</strong>（不是 -EFAULT 重试）——调用方拿到"已拷 N 字节"自行决定重试。inatomic 版不能睡眠（缺页换入需要 IO），所以语义只能是"尽力+报告进度"。设计无锁快路径时同款思想：<strong>快路径只承诺尽力，语义完整化交给慢路径</strong>。</p>
+<p><strong>Q5：为什么 perf/bpftrace 读用户内存要用 <code class="c">copy_from_user_nofault</code> 而不是 copy_from_user？</strong>
+A：观测工具面对的是 <strong>任意时刻的任意进程</strong> 页表——目标页可能换出/被迁移/pin。普通版会阻塞在缺页换入（观测工具拖慢被观测者）；nofault 版失败即返回 0/错误，<strong>观测的可用性优先于完整性</strong>。丢样本不丢延迟。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-6">
+        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 4 §6 Linux 2.6 内核的新变化 → v6.6（vDSO / 布局 / 现代对照）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">arch/x86/entry/vdso/</code>、<code class="c">mm/mmap.c</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书章末三个 2.6 新特性（vsyscall、4G/4G 分割、非线性映射）接到 v6.6 的现状，顺带把本章六节收拢成"进程地址空间"的完整体检清单。</p>
+<hr />
+<h2>1. 三个 2.6 特性的今生前世</h2>
+<h3>① vsyscall → vDSO</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>vsyscall（2.6 初）</th>
+<th>vDSO（现代）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>形态</td>
+<td>固定地址 1 页（<code class="c">0xffffffffff600000</code>），静态代码</td>
+<td>动态链接对象 <code class="c">linux-vdso.so.1</code>（随机地址）</td>
+</tr>
+<tr>
+<td>机制</td>
+<td>用户态直接执行（内核预映射）</td>
+<td>同，但 <strong>内核按 CPU 特性现场生成代码</strong>（如 TSC 频率、可用指令集）</td>
+</tr>
+<tr>
+<td>v6.6 状态</td>
+<td>仅保留极小兼容段（且默认模拟执行防侧信道）</td>
+<td><code class="c">clock_gettime</code>/<code class="c">gettimeofday</code>/<code class="c">getcpu</code> 主通道</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>—</td>
+<td><strong>计时热路径的基石</strong>（~20ns 级 vs syscall 100ns+）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>验证自己在走 vDSO：</strong> <code class="c">LD_TRACE_LOADED_OBJECTS=1 /bin/true | grep vdso</code>；strace 里 <code class="c">clock_gettime</code> <strong>不出现</strong>（没进内核）即成功。12.5/ch15 延迟测量的 CLOCK_MONOTONIC_RAW 就跑在这上面。</p>
+<h3>② 4GiB/4GiB 分割 → 已完成历史使命</h3>
+<p>32 位时代让用户/内核各占 4GiB 的补丁（需 TLB 切换开销）——64 位普及后问题消失，<strong>整条支线按历史读</strong>。遗产只剩思想：<strong>内核/用户地址空间分离的极端形态</strong>在现代以 KPTI/TTBR 分离复活（§1 已讲）。</p>
+<h3>③ <code class="c">MAP_POPULATE</code> / 非线性映射</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>v6.6 现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAP_POPULATE</code></td>
+<td>活着且好用：mmap 时同步 prefault（配合 <code class="c">mlock</code> 是 HFT 标配）</td>
+</tr>
+<tr>
+<td><code class="c">remap_file_pages</code></td>
+<td><strong>2.6→4.x 已弃用</strong>（5.x 语义退化为建 VMA），非线性文件映射被 <strong>稀疏多 VMA</strong> 方案取代——勿学</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. 本章六节收拢：进程地址空间完整体检</h2>
+<pre class="code" data-label="code"><code class="c">进程
+  mm_struct（§2）
+    ├─ pgd ──► 页表（Ch 3）
+    └─ mm_mt ──► VMA[]（§3）
+          ├── [exe text/data]      ← PIE 随机
+          ├── [heap]               ← brk
+          ├── [mmap: 行情 arena]    ← MAP_FIXED_NOREPLACE 定格（§1）
+          ├── [mmap: hugetlb 池]
+          └── [stack / vdso]
+
+  访问 VA（§4）
+    → VMA flags 合法？（第一层）
+    → PTE 有效？（第二层，fault 四路分发）
+    → 内核↔用户数据搬运走异常表防线（§5）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>体检项</th>
+<th>命令</th>
+<th>健康标准（HFT 引擎）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>布局稳定</td>
+<td><code class="c">maps</code> 快照 diff</td>
+<td>启动后零变化</td>
+</tr>
+<tr>
+<td>VMA 数量</td>
+<td><code class="c">wc -l maps</code></td>
+<td>&lt;100 且恒定</td>
+</tr>
+<tr>
+<td>驻留达标</td>
+<td><code class="c">smaps</code> 的 RSS == 映射预算</td>
+<td>mlock 后无缺量</td>
+</tr>
+<tr>
+<td>零 fault</td>
+<td>perf page-faults 计数</td>
+<td>稳态增量为 0</td>
+</tr>
+<tr>
+<td>无 swap</td>
+<td>pswpin/pswpout</td>
+<td>= 0</td>
+</tr>
+<tr>
+<td>THP 状态</td>
+<td>smaps AnonHugePages</td>
+<td>按策略（never+显式大页应为 0）</td>
+</tr>
+<tr>
+<td>计时路径</td>
+<td>strace 看不到 clock_gettime</td>
+<td>vDSO 生效</td>
+</tr>
+<tr>
+<td>峰值</td>
+<td>VmHWM</td>
+<td>≤ 预算×1.05</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. HFT 精读 checklist（终版）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标</th>
+<th>手段</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>消除运行时 fault</td>
+<td>MAP_POPULATE + touch + mlock</td>
+<td>§4</td>
+</tr>
+<tr>
+<td>禁止 swap</td>
+<td>mlockall + 容量规划</td>
+<td>§4</td>
+</tr>
+<tr>
+<td>共享只读行情</td>
+<td>MAP_SHARED 只读 + 每进程写副本</td>
+<td>§3</td>
+</tr>
+<tr>
+<td>避免 COW 风暴</td>
+<td>线程模型 / fork 后冻结写</td>
+<td>§4</td>
+</tr>
+<tr>
+<td>syscall 延迟</td>
+<td>vDSO 计时 + 批量 copy</td>
+<td>§5/本节</td>
+</tr>
+<tr>
+<td>布局确定性</td>
+<td>MAP_FIXED_NOREPLACE + 关 ASLR</td>
+<td>§1</td>
+</tr>
+<tr>
+<td>mmap_lock 零写事件</td>
+<td>布局定型 + THP=never + 无运行期 m(un)map</td>
+<td>§2</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 衔接（向后看）</h2>
+<ul>
+<li><a href="chapter-05.html#ch-5">Ch 5 启动内存分配器</a>：这一切在 boot 期的起点</li>
+<li><a href="chapter-08.html#ch-8">Ch 8 slab</a>：缺页落下的页被内核怎么用</li>
+<li><a href="chapter-10.html#ch-10">Ch 10 回收</a>：mlock 之外的页都活在谁的威胁下</li>
+<li><a href="../../12.5-modern-networking/html/index.html">12.5 全系列</a>：本章机制在网络/IO 路径的兑现</li>
+<li><a href="../../06.5-modern-mm/html/chapter-05.html#ch-5">06.5/ch05 maple tree</a>：mm_mt 的专项深读</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 vDSO 代码要内核"现场生成"而不是静态一份？</strong>
+A：它做的事依赖 CPU 具体能力：TSC 是否 invariant、rtdscp 有无、时钟源是 TSC 还是 hpet——静态代码只能取交集（慢路径保底）。现场生成 = 每台机器拿到为自己 CPU 定制的最快版本。<strong>"能力探测 + 特化代码"是跨硬件性能软件的标准形态</strong>（DPDK 的 CPU 微架构分支同构）。</p>
+<p><strong>Q2：<code class="c">clock_gettime</code> 一定走 vDSO 吗？哪些情况会退回 syscall？</strong>
+A：用户显式 <code class="c">syscall()</code> 直调、静态链接的极老 glibc、时钟源为非 TSC 的 CLOCK_REALTIME_COARSE 之外某些源（如 hpet 上 CLOCK_MONOTONIC_RAW 部分版本）——具体看内核 <code class="c">__vdso_clock_gettime</code> 的时钟源 case。验证永远用 strace 实测，别信文档。</p>
+<p><strong>Q3：4G/4G 分割的"TLB 切换开销"在 64 位还存在吗？</strong>
+A：以别的形式存在：KPTI 的双表切换（Ch3）。历史教训值得背：<strong>每次用户/内核地址空间彻底分离，都要付出切换税</strong>——安全与性能在同一处的永恒拔河。</p>
+<p><strong>Q4：<code class="c">MAP_POPULATE</code> 和自己写循环 touch 有差吗？</strong>
+A：细节差：POPULATE 在 mmap 系统调用内批量 fault（持锁路径更短、批量装 PTE）；touch 循环每页一次独立 fault（可观测、可中途校验内容）。生产用 POPULATE+mlock；需要验证每页真驻留（防零页假象）时用 touch 循环。</p>
+<p><strong>Q5：怎么给引擎做"地址空间回归测试"？</strong>
+A：快照 diff 法：启动稳定后 <code class="c">cat /proc/pid/maps &gt; golden.maps</code>；每次发版后 diff——任何新增段（新依赖库/意外 mmap）= 回归。配套 <code class="c">smaps</code> 快照盯 RSS 分布。这比任何文档都诚实地守住 §3 的"布局定型"纪律。</p>
+</details>
 <hr />
       </section>
 

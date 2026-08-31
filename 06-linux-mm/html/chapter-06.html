@@ -361,279 +361,1150 @@ Ch 7 vmalloc ──► 需要连续物理页时仍依赖 Buddy（或 CMA 等）
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 6 §1 空闲块的管理 (Managing Free Blocks)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 6 §1 空闲块的管理（Buddy 与迁移类型）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/page_alloc.c</code> :1565/:1597、<code class="c">include/linux/mmzone.h</code> :29/:226）</p>
 </blockquote>
-<h3>1. 空闲块的管理 (Managing Free Blocks)</h3>
-<h3>阶 (Order)</h3>
-<p>物理内存按 <strong>连续页框块</strong> 组织，块大小为 <strong>2 的幂次页</strong>：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>Buddy 分配器的地基：<strong>按 2 的幂组织空闲块</strong>。原书讲 free_area + 伙伴位图；v6.6 在同一骨架上加了 <strong>迁移类型（migratetype）维度</strong>——这是抗碎片化战争的支柱，也是 HFT 大页稳定性的前提。</p>
+<hr />
+<h2>1. 阶（Order）与 free_area</h2>
+<p>物理空闲页按 <strong>连续 2^k 页</strong> 组织成块，<code class="c">k</code> = order：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>Order</th>
-<th>块含页数</th>
+<th>块大小</th>
+<th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>0</td>
 <td>1 页</td>
+<td>万物起点（pcp、slab）</td>
 </tr>
 <tr>
-<td>1</td>
-<td>2 页</td>
-</tr>
-<tr>
-<td>2</td>
-<td>4 页</td>
-</tr>
-<tr>
-<td>…</td>
-<td>…</td>
+<td>3</td>
+<td>8 页 = 32KiB</td>
+<td><code class="c">PAGE_ALLOC_COSTLY_ORDER</code>（mmzone.h:43）——超过此阶的失败视为"贵"</td>
 </tr>
 <tr>
 <td>9</td>
-<td>512 页（原书 <strong><code class="c">MAX_ORDER=10</code></strong> 时，最大 order 索引为 9）</td>
+<td>512 页 = 2MiB</td>
+<td>THP / hugetlb 的目标阶</td>
+</tr>
+<tr>
+<td>MAX_ORDER-1</td>
+<td>—</td>
+<td><code class="c">MAX_ORDER=10</code> 默认（mmzone.h:29，ARM64 可到 10/13 因页大小不同）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>阶 (order)</strong> = 该块 <strong>log₂(页数)</strong> 的指数（表述上：order <code class="c">k</code> 块含 <strong>2^k</strong> 页）。</p>
-<h3>数据结构</h3>
-<p>每个 <strong>Zone</strong> 维护 <strong><code class="c">free_area_t</code> 数组</strong>（现代 <strong><code class="c">struct free_area</code></strong>）— <strong>每个 order 一条空闲块链表</strong>：</p>
-<pre class="code" data-label="code"><code class="c">zone-&gt;free_area[0]  ──►  1-page  free blocks
-zone-&gt;free_area[1]  ──►  2-page  free blocks
-        …
-zone-&gt;free_area[MAX_ORDER-1]  ──►  最大块
+<p>每个 zone 维护 <strong>每 order 一组 free_list</strong>：</p>
+<pre class="code" data-label="code"><code class="c">zone-&gt;free_area[order].free_list[MIGRATE_UNMOVABLE]  ← v6.6：按迁移类型再分列！
+                       .free_list[MIGRATE_MOVABLE]
+                       .free_list[MIGRATE_RECLAIMABLE]
+                       .free_list[MIGRATE_CMA / HIGHATOMIC ...]
+                       .nr_free
 </code></pre>
-<h3>伙伴位图 (Buddy Bitmap)</h3>
-<p>为 <strong>省空间</strong>，用 <strong>1 bit</strong> 表示 <strong>一对伙伴块</strong> 的状态：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>位值</th>
-<th>含义（原书）</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>0</strong></td>
-<td>该 <strong>伙伴对</strong> 要么 <strong>全空闲</strong>，要么 <strong>全占用</strong></td>
-</tr>
-<tr>
-<td><strong>1</strong></td>
-<td><strong>恰有一边</strong> 被占用</td>
-</tr>
-</tbody>
-</table></div>
-<p>合并 / 拆分时查位图，决定 <strong>能否 coalesce</strong> 成更高 order。</p>
-<p>→ 与 Ch 2 <strong><code class="c">struct zone</code></strong>、<strong><code class="c">pageset</code></strong> 同在一个 zone 数据结构族中。</p>
-<hr />
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 6 §2 页面分配 (Allocating Pages)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>2. 页面分配 (Allocating Pages)</h3>
-<h3>核心：<code class="c">alloc_pages()</code> / <code class="c">__alloc_pages()</code></h3>
-<p><strong>分配 order = n</strong> 的连续 <strong>2^n</strong> 页：</p>
-<pre class="code" data-label="code"><code class="c">请求 order-k 块
-    free_area[k] 有空？ ──是──► 取下返回
-         │
-         否
-         ▼
-    从更高 order 取块 ──► **拆分 (split)**
-         │                    ├─ 一半用于本次分配
-         │                    └─ 另一半（伙伴）挂入较低 order 链表
-         ▼
-    重复直到满足或失败
+<p><strong>原书的"每 order 一条链"在 v6.6 是"每 order × 每 migratetype 一条链"。</strong> 为什么要分列——见 §5，先记住结构。</p>
+<h2>2. 伙伴（Buddy）的数学</h2>
+<p>伙伴定义纯位运算：</p>
+<pre class="code" data-label="code"><code class="c">buddy_pfn = pfn ^ (1 &lt;&lt; order)      /* 翻转 order 位 = 另一半 */
+合并结果 pfn = pfn &amp; ~(1 &lt;&lt; order)  /* 清掉 order 位 = 父块 */
 </code></pre>
-<p><strong>按需拆分 (Splitting)：</strong> 没有正好大小的块时，<strong>把大块一分为二</strong>，一半分配、一半 <strong>降级</strong> 入链 — Buddy 算法核心。</p>
-<h3>节点本地与 Zone Fallback</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>策略</th>
-<th>行为</th>
+<th>原书：伙伴位图</th>
+<th>v6.6</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Node-local</strong></td>
-<td>优先从 <strong>当前 CPU 所属 NUMA node</strong> 分配</td>
-</tr>
-<tr>
-<td><strong>Zone fallback</strong></td>
-<td>首选 zone（如 <strong>HIGHMEM</strong>）不够 → 按预定顺序 <strong>降级</strong>（如 <strong>NORMAL → DMA</strong>）</td>
+<td>每 <strong>对</strong> 伙伴 1 bit（0=同态，1=半空半满）</td>
+<td><code class="c">__free_one_page</code>（page_alloc.c:763）<strong>现算 XOR</strong> 判伙伴 + 查其 <code class="c">PageBuddy()</code> 标志确认空闲</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> <strong><code class="c">numactl --membind</code></strong>、<strong><code class="c">mbind(MPOL_BIND)</code></strong> 是在 <strong>用户态约束</strong> 这一策略；违背后 <strong>remote node</strong> 分配 = <strong>更高延迟</strong>。</p>
-<p>→ <a href="chapter-14.html#s-1">Ch 2 Nodes</a></p>
-<hr />
-      </section>
-      <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 6 §3 页面释放 (Free Pages)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>3. 页面释放 (Free Pages)</h3>
-<h3><code class="c">free_pages()</code> 与合并 (Coalescing)</h3>
-<p>释放 <strong>order-k</strong> 块时：</p>
-<pre class="code" data-label="code"><code class="c">free 块 B
-    伙伴 B' 也空闲？ ──否──► B 挂入 free_area[k]
-         │
-         是
-         ▼
-    合并为 order-(k+1) 块 ──► 递归检查能否继续合并
-</code></pre>
-<p><strong>与拆分对称</strong> — 保证 <strong>相同 order 的空闲块可拼接</strong>，缓解 <strong>外部碎片</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 6 §4 GFP 标志与进程标志 (GFP &amp; Process Flags)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>4. GFP 标志与进程标志 (GFP &amp; Process Flags)</h3>
-<h3>GFP (Get Free Pages)</h3>
-<p>调用 <strong><code class="c">alloc_pages(gfp_mask, order)</code></strong> 时必须传 <strong><code class="c">gfp_mask</code></strong> — 声明 <strong>允许分配器做什么 / 不能做什么</strong>：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>标志（示例）</th>
-<th>含义</th>
-<th>典型场景</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">GFP_KERNEL</code></strong></td>
-<td>可 <strong>睡眠</strong> 等待页、可触发 <strong>直接回收</strong></td>
-<td>进程上下文、多数内核路径</td>
-</tr>
-<tr>
-<td><strong><code class="c">GFP_ATOMIC</code></strong></td>
-<td><strong>不可睡眠</strong> — 失败则立即返回</td>
-<td><strong>中断 / spinlock 持有</strong> 中分配</td>
-</tr>
-<tr>
-<td><strong><code class="c">GFP_NOIO</code></strong></td>
-<td>回收路径中 <strong>不发起 I/O</strong></td>
-<td>避免 <strong>存储栈重入死锁</strong></td>
-</tr>
-<tr>
-<td><strong><code class="c">GFP_HIGHUSER</code> / <code class="c">GFP_DMA</code></strong> 等</td>
-<td>约束 <strong>物理地址范围</strong>、用户可映射等</td>
-<td>设备 DMA、用户页</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>HFT 关联：</strong> 热路径若在 <strong>不当上下文</strong> 触发 <strong><code class="c">GFP_KERNEL</code> 回收</strong> → <strong>毫秒级 stall</strong>；用户态 <strong>mlock</strong> 是为减少 <strong>fault 路径进 allocator + reclaim</strong>。</p>
-<h3>进程标志（突破水位）</h3>
-<p>内存紧张、低于 <strong>pages_min</strong> 时，普通分配可能被 <strong>同步回收</strong> 拖慢；带特殊标志的进程可 <strong>绕过常规水位限制</strong>：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>标志</th>
-<th>谁</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">PF_MEMALLOC</code></strong></td>
-<td><strong><code class="c">kswapd</code></strong> 等回收路径 — 需 <strong>继续拿页完成回收</strong></td>
-</tr>
-<tr>
-<td><strong><code class="c">PF_MEMDIE</code></strong></td>
-<td>正被 <strong>OOM killer</strong> 处理的进程</td>
-</tr>
-</tbody>
-</table></div>
-<p>→ <a href="chapter-13.html#ch-13">Ch 13 OOM</a> · Ch 1 路线 <strong><code class="c">oom_kill.c</code></strong></p>
-<hr />
-      </section>
-      <section class="section" id="s-5">
-        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 6 §5 避免碎片化 (Avoiding Fragmentation)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>5. 避免碎片化 (Avoiding Fragmentation)</h3>
+<p>位图省的是内存，现算省的是维护——内存不再稀缺后内核选了代码更简单的路。<code class="c">struct page</code> 里 <code class="c">page_type</code> 复用存 buddy 标志和 order（<code class="c">PageBuddy</code>/<code class="c">buddy_order</code>）。</p>
+<h2>3. 迁移类型（migratetype）——v6.6 的第二个维度</h2>
+<p>物理内存切成 <strong>pageblock</strong>（<code class="c">pageblock_order</code>，page_alloc.c:226——x86_64 默认 order-9 即 2MiB），每块打一个迁移类型标签：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>类型</th>
 <th>含义</th>
-<th>Buddy 表现</th>
+<th>谁的页</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>外部碎片</strong></td>
-<td>总空闲够，但 <strong>没有足够大的连续物理块</strong></td>
-<td>Buddy <strong>拆分/合并</strong> 专门缓解</td>
+<td><code class="c">MIGRATE_UNMOVABLE</code></td>
+<td>移动 = 改 PTE 都不行（直接映射、内核数据）</td>
+<td>slab、kmalloc</td>
 </tr>
 <tr>
-<td><strong>内部碎片</strong></td>
-<td>只需 <strong>1 小块</strong>，却分到 <strong>整页或多页</strong>，页内浪费</td>
-<td>Buddy <strong>按 2^n 页分配</strong> → <strong>易产生</strong></td>
+<td><code class="c">MIGRATE_MOVABLE</code></td>
+<td>可迁移（改 PTE 搬家）</td>
+<td>用户匿名页、page cache</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_RECLAIMABLE</code></td>
+<td>可回收（释放即可）</td>
+<td>inode/dentry 缓存</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_CMA</code></td>
+<td>CMA 保留区（设备 DMA 专用，空闲时可借给 MOVABLE）</td>
+<td>相机/媒体预留</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_HIGHATOMIC</code></td>
+<td>高阶请求预留</td>
+<td>抗高阶 alloc 抖动</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_ISOLATE</code></td>
+<td>迁移中隔离</td>
+<td>compaction/内存热插拔</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>内部碎片 → Slab：</strong> 内核大量 <strong>小于一页</strong> 的对象（<code class="c">task_struct</code>、<code class="c">inode</code>…）不直接用 Buddy 裸分，而由 <strong><a href="chapter-08.html#ch-8">Ch 8 Slab</a></strong> 在 <strong>整页内切小对象</strong>。</p>
-<p><strong>HFT 用户态镜像：</strong> <strong>DPDK mempool</strong>、<strong>订单簿 arena</strong> — 向 OS 要 <strong>大页/大块</strong>，内部 <strong>自己切对象</strong>，同一逻辑。</p>
-<p><strong>大页 (huge order)：</strong> 请求 <strong>高 order</strong> 或 <strong>hugetlbfs</strong> 需要 <strong>长时间保持连续物理内存</strong> — 外部碎片严重时会 <strong>alloc 失败</strong>（<code class="c">ENOMEM</code>），即使 <strong>总 free 内存不少</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-6">
-        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 6 §6 2.6 内核的新变化</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
-</blockquote>
-<h3>6. 2.6 内核的新变化</h3>
-<h3>每 CPU 页面集合 (Per-CPU Page Lists · pageset)</h3>
+<p><strong>一张图理解抗碎片逻辑：</strong></p>
+<pre class="code" data-label="code"><code class="c">物理内存（pageblock 视角）：
+┌──────┬──────┬──────┬──────┬──────┬──────┐
+│ UNM  │ MOV  │ MOV  │ UNM  │ MOV  │ MOV  │
+└──────┴──────┴──────┴──────┴──────┴──────┘
+  ↑ MOVABLE 页集中放 → UNMOVABLE 不会打散它们
+  → MOV 区内大块连续性容易保住 → 高阶分配(THP)有地可拿
+</code></pre>
+<p>不分类的后果：不可移动页像钉子一样随机钉进每个 2MiB 块，全局碎片化后 <strong>2MiB 连续空闲永远凑不齐</strong>——这正是 §5 主题。</p>
+<h2>4. pcp 视角的 free_list（v6.6 细节）</h2>
+<p><code class="c">__rmqueue_smallest()</code>（page_alloc.c:1565）从 zone 链表取块；order≤3 的分配 <strong>不碰 zone 链</strong>，走 per-CPU pageset（§6 详述）——pcp 的 list 也按 migratetype 分列（<code class="c">NR_PCP_LISTS</code>）。</p>
+<h2>5. 观测</h2>
+<pre class="code" data-label="shell"><code class="c">cat /proc/pagetypeinfo        # 每 zone 每 order 每 migratetype 的空闲块数 —— 碎片化体检表
+grep -w 'pgfree\|pgalloc' /proc/vmstat
+cat /sys/devices/system/node/node*/vmstat | grep -i pgalloc
+</code></pre>
+<p><code class="c">pagetypeinfo</code> 的 <strong>order-9 行 MOVABLE 列归零</strong> = 这台机器 THP/大页即将开始失败的先兆。</p>
+<h2>6. HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>问题</th>
-<th>2.6 方案</th>
+<th>机制</th>
+<th>兑现</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>多核 <strong>order-0（单页）</strong> 分配极频 <strong><code class="c">zone-&gt;lock</code> 争用</strong></td>
-<td>每 CPU <strong><code class="c">pageset</code></strong>：<strong>热页 / 冷页</strong> 缓存</td>
+<td>大页失败预警</td>
+<td>pagetypeinfo 高阶行监控进告警</td>
 </tr>
 <tr>
-<td>每次 alloc/free 都抢 zone 锁</td>
-<td><strong>0 阶</strong> 多数路径 <strong>无锁</strong> 从 <strong>本 CPU pageset</strong> 取/还</td>
+<td>引擎页的类型归属</td>
+<td>用户态引擎几乎全 MIGRATE_MOVABLE（可被 compaction 搬走）——<strong>mlock/pin 的页例外</strong>：迁移被阻 → 引擎长期运行后自己制造 UNMOVABLE 孔洞</td>
+</tr>
+<tr>
+<td>pageblock_order = 2MiB</td>
+<td>THP 的阶恰好钉在 pageblock 上——一个 pageblock 一致才能整块给大页</td>
+</tr>
+<tr>
+<td>树莓派</td>
+<td>小内存下 CMA 预留（视频编解码）挤占 MOVABLE——开机 <code class="c">cat /proc/pagetypeinfo</code> 看 CMA 行</td>
 </tr>
 </tbody>
 </table></div>
-<p>与 <a href="chapter-14.html#s-5">Ch 2 §2.6 pageset</a> 同一机制 — <strong>读源码时 zone 结构和 page_alloc 要一起看</strong>。</p>
-<h3>统一 NUMA API</h3>
-<p>2.4 UMA/NUMA <strong>不同底层函数</strong> → 2.6 <strong><code class="c">numa_node_id()</code></strong> 等 <strong>统一隐式 node 选择</strong> — 应用仍可用 <strong><code class="c">set_mempolicy</code></strong> 覆盖。</p>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 页面分配</a>：在这套结构上取块</li>
+<li><a href="chapter-02.html#ch-2">Ch 2 物理内存</a>：zone/node 的上层组织</li>
+<li><a href="../../06.5-modern-mm/html/chapter-01.html#ch-1">06.5/ch01</a>：boot 期这些结构怎么初始化</li>
+</ul>
 <hr />
-<h2>Buddy 分配 + pageset 简图</h2>
-<pre class="code" data-label="code"><code class="c">                    alloc_pages(gfp, order)
-                              │
-              ┌───────────────┴───────────────┐
-              │ order == 0 ?                  │
-              └───────────────┬───────────────┘
-                    是        │        否
-                    ▼         │         ▼
-            CPU pageset       │    zone-&gt;free_area[order]
-            (hot/cold)        │         │
-                    │         │    无块则 split 高 order
-                    └─────────┴─────────┘
-                              │
-                    水位 / GFP / reclaim ?
-                              │
-                         struct page *
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么伙伴用 XOR 翻转位而不是"地址+块大小"？</strong>
+A：块的起始地址不一定是"低半"（pfn 可能是父块的高半）。<code class="c">pfn ^ (1&lt;&lt;order)</code> 对两种情况统一：低半翻成高半、高半翻成低半。用 + 会把高半算到父块外面去。</p>
+<p><strong>Q2：一个 pageblock 里能混两种 migratetype 吗？</strong>
+A：能，且常见：fallback 借页（§2）会把 UNMOVABLE 请求放进 MOVABLE pageblock，产生"混居"。长期碎片化的机器大量混居。<strong>混居块的大页梦想已碎</strong>——恢复要靠 compaction 把 MOVABLE 搬走 + 释放借来的页。</p>
+<p><strong>Q3：<code class="c">MIGRATE_CMA</code> 空闲时借给谁？</strong>
+A：MOVABLE（<code class="c">__rmqueue_cma_fallback</code>，page_alloc.c:1607 附近）——CMA 只敢借给可迁移页：设备要用时把借住者迁走即可腾出连续区。UNMOVABLE 借了就赖着不走，CMA 即失效。</p>
+<p><strong>Q4：<code class="c">PageBuddy()</code> 标志存哪？为什么够用？</strong>
+A：<code class="c">struct page</code> 的 <code class="c">page_type</code>/flags 位复用：空闲块的头页打 buddy 标志并记 order。够用的原因：<strong>只有空闲块才需要在 free_list 上被识别</strong>，分配出去的页该字段让给业务状态。元数据寄生思想的又一例（同 Ch 3 的 freelist 嵌对象）。</p>
+<p><strong>Q5：<code class="c">PAGE_ALLOC_COSTLY_ORDER=3</code> 的"贵"贵在哪？</strong>
+A：超过 order-3 的分配失败概率急剧上升（连续 32KiB+ 难找），重试与回收的代价不成比例。语义：≥此阶的 <code class="c">__GFP_NORETRY</code> 分配失败要快速认输走降级路径（如 THP 退 4K、kvmalloc 退 vmalloc）。设计用户态 arena 时同款阈值思想：<strong>"多大算大"决定降级策略</strong>。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-2">
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 6 §2 页面分配（rmqueue 与慢路径瀑布）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/page_alloc.c</code> :1565 <code class="c">__rmqueue_smallest</code>、:1597 <code class="c">fallbacks[]</code>、:2106 steal 路径）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>"从 free_area 取一块 order-k"的完整决策链：<strong>本类型直取 → 高阶拆分 → 迁移类型 fallback（偷页）→ zone/node fallback → 慢路径回收</strong>。每往下一层，代价上一个台阶——这张"代价阶梯"就是 HFT 分配延迟分析的地图。</p>
+<hr />
+<h2>1. 快路径：<code class="c">__rmqueue_smallest</code>（page_alloc.c:1565）</h2>
+<pre class="code" data-label="code"><code class="c">请求 (zone, order, migratetype)
+for (o = order; o &lt;= MAX_ORDER-1; o++) {
+    块 = free_list[o][mt] 取头;
+    if (块) {
+        expand(zone, 块, o → order);   /* 拆分：一半交付，其余逐级挂回 free_list */
+        return 块;
+    }
+}
+return NULL;  → 进 fallback
 </code></pre>
+<p><strong>expand 拆分</strong>：从 order-9 拆到 order-0 时，产生 9 个伙伴块挂回各级链——全部挂 <strong>同 migratetype</strong> 链上。</p>
+<p><strong>注意</strong>：order ≤ 3 的用户态路径实际先走 pcp（§6），<code class="c">__rmqueue_smallest</code> 是 pcp miss 后的补给层。</p>
+<h2>2. 迁移类型 fallback：偷页（steal）</h2>
+<p>本类型无空闲时查 <strong>fallbacks 表</strong>（page_alloc.c:1597 实锚）：</p>
+<pre class="code" data-label="C"><code class="c">static int fallbacks[MIGRATE_TYPES][MIGRATE_PCPTYPES - 1] = {
+    [MIGRATE_UNMOVABLE]   = { MIGRATE_RECLAIMABLE, MIGRATE_MOVABLE   },
+    [MIGRATE_MOVABLE]     = { MIGRATE_RECLAIMABLE, MIGRATE_UNMOVABLE },
+    [MIGRATE_RECLAIMABLE] = { MIGRATE_UNMOVABLE,   MIGRATE_MOVABLE   },
+};
+</code></pre>
+<p>偷页规则（<code class="c">rmqueue_fallback</code>，:2106 附近）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>请求 order</th>
+<th>偷法</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt; pageblock_order</td>
+<td>只偷够用的页（<code class="c">can_steal_fallback</code> 判定）</td>
+<td>pageblock 保持原类型标签 → <strong>混居</strong></td>
+</tr>
+<tr>
+<td>≥ pageblock_order（如 THP）</td>
+<td><strong>整块偷</strong>：pageblock 换标签</td>
+<td>整块变 UNMOVABLE——永久性碎片化</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 记住：UNMOVABLE 高阶请求是碎片化的头号制造者。</strong> 长跑机器上 THP/大页失败率上升的元凶常常是早期某驱动反复高阶 kmalloc。</p>
+<h2>3. Zone / Node fallback：zonelist</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层级</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>首选 zone（<code class="c">GFP</code> 的 zone 掩码 + <code class="c">highest_zoneidx</code>）</td>
+<td>NORMAL → DMA32 → DMA 降序尝试（<code class="c">GFP_HIGHUSER</code> 为例）</td>
+</tr>
+<tr>
+<td>本 node 首选 zone 水位不足</td>
+<td>zonelist 上下一个 node 的 zone（<strong>remote 分配</strong>，延迟 +~40-100ns 访存差）</td>
+</tr>
+<tr>
+<td><code class="c">cpuset</code>/<code class="c">mempolicy</code> 生效时</td>
+<td>zonelist 被策略过滤——<code class="c">MPOL_BIND</code> 把 node 锁死</td>
+</tr>
+</tbody>
+</table></div>
+<p>水位判定：<code class="c">zone_watermark_fast()</code>（:2920）快速判断"该 zone 还够不够 + 这次 order 要预留多少"——高 order 判定更苛刻（要满足 order 阶的 fragmentation reserve）。</p>
+<h2>4. 慢路径瀑布（<code class="c">__alloc_pages_slowpath</code>）</h2>
+<p>快路径全线失败（<code class="c">__alloc_pages_noprof</code> 概念路径）：</p>
+<pre class="code" data-label="code"><code class="c">① 降低标准重试（ALLOC_WMARK_MIN、放开 ALLOC_CPUSET） 
+② 唤醒 kswapd（异步回收，自己先跑）
+③ direct reclaim：同步释放页（调用者陷入回收，µs~ms！）
+④ direct compaction：同步搬迁页面凑连续块（THP 大头，最高毫秒级！）
+⑤ __GFP_NORETRY？认输降级 / OOM（Ch 13）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步</th>
+<th>用户态可感症状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>③ direct reclaim</td>
+<td><code class="c">allocstall</code>/<code class="c">allocstall_*</code> vmstat 计数 +1；进程停在 <code class="c">__alloc_pages</code> 的栈</td>
+</tr>
+<tr>
+<td>④ compaction</td>
+<td><code class="c">compact_stall</code> +1；THP 场景 <code class="c">thp_deferred</code> 相关；尾延迟尖刺</td>
+</tr>
+<tr>
+<td>⑤ OOM</td>
+<td>除非 <code class="c">__GFP_NORETRY</code>/<code class="c">GFP_ATOMIC</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 铁律映射：</strong> 用户态 mlock+prefault+大页预留在做的事 = <strong>让引擎运行期永远停在快路径</strong>，③④⑤ 全部转移到启动期。</p>
+<h2>5. GFP → alloc_flags 的翻译</h2>
+<p><code class="c">GFP_KERNEL</code> 之类是"对外语言"，进入分配器先翻译成对内 flags：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>alloc_flags</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ALLOC_WMARK_MIN/LOW/HIGH</code></td>
+<td>用哪条水位线放行</td>
+</tr>
+<tr>
+<td><code class="c">ALLOC_HARDER</code></td>
+<td>高阶请求的额外余地（配合 MIGRATE_HIGHATOMIC）</td>
+</tr>
+<tr>
+<td><code class="c">ALLOC_CPUSET</code></td>
+<td>尊重 cpuset 限制（低水位后放开换生存）</td>
+</tr>
+<tr>
+<td><code class="c">ALLOC_OOM</code></td>
+<td>OOM 允许的最后一搏</td>
+</tr>
+</tbody>
+</table></div>
+<p>同一个 GFP_KERNEL 在水位健康/紧张时行为不同——<strong>分配器的"策略梯度"是运行时状态决定的</strong>。</p>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">numastat</code> 出现远程分配</td>
+<td>zonelist 走到 remote node（bind 策略没锁死或本 node 水位不足）</td>
+</tr>
+<tr>
+<td>尾延迟尖刺 + <code class="c">compact_stall</code></td>
+<td>direct compaction——检查 THP defrag 策略与内存余量</td>
+</tr>
+<tr>
+<td>高阶分配长期失败</td>
+<td>§2 偷页留下的 UNMOVABLE 混居，pagetypeinfo 验证</td>
+</tr>
+<tr>
+<td>引擎启动慢但运行稳</td>
+<td>prefault/预留把 ③④ 转移到启动期的正确姿势</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-1">§1 空闲块的管理</a>：结构基础</li>
+<li><a href="chapter-14.html#s-3">§3 页面释放</a>：对称的一半</li>
+<li><a href="chapter-14.html#s-4">§4 GFP</a>：慢路径开关</li>
+<li><a href="chapter-10.html#ch-10">Ch 10 回收</a>：③ 的内部</li>
+<li><a href="../../06.5-modern-mm/html/chapter-07.html#ch-7">06.5/ch07 MGLRU</a>：回收的现代形态</li>
+</ul>
 <hr />
-<h2>HFT 精读 checklist</h2>
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 MOVABLE 偷页比 UNMOVABLE 偷页危害小？</strong>
+A：偷来的 MOVABLE 页将来可以被 compaction 迁走复原；UNMOVABLE 页（内核直映/slab）钉死在偷来的位置上，pageblock 的原类型布局永久破坏。fallbacks 表里三个类型互为后备，但生态代价不对称。</p>
+<p><strong>Q2：请求 order-9（THP）失败但 free 内存充足，为什么？</strong>
+A："free 充足"是 order-0 视角。order-9 需要 <strong>连续 512 页且同 migratetype 的 free_list 有货</strong>。碎片化后 MOVABLE 的 order-9 链空——只能靠 compaction 现场凑。<code class="c">pagetypeinfo</code> 的 order-9 行比 <code class="c">/proc/meminfo</code> 的 MemFree 更接近真相。</p>
+<p><strong>Q3：<code class="c">GFP_ATOMIC</code> 失败返回 NULL 前做了什么挣扎？</strong>
+A：走快路径 + 水位降到 MIN + 偷 HIGHATOMIC 储备（alloc_flags 含 ALLOC_HARDER 语义）——但 <strong>不做</strong> reclaim/compaction（不可睡眠）。所以 GFP_ATOMIC 失败 ≠ 内存耗尽，只等于"无锁可拿的连续块没了"。中断里的分配者必须处理 NULL。</p>
+<p><strong>Q4：zonelist 的顺序为什么 NORMAL 优先于 DMA？</strong>
+A：ZONE_NORMAL 又大又快（无 DMA 限制）；ZONE_DMA 稀缺（16MiB 以下的 ISA 时代遗产），留给真需要低地址的设备。倒过来会瞬间耗尽 DMA 区。<strong>"越专的池越往后放"是通用资源排程原则。</strong></p>
+<p><strong>Q5：怎么用 perf/bpftrace 抓"谁触发了 direct compaction"？</strong>
+A：<code class="c">perf record -e mm_compaction_try_to_compact_pages</code>；或 bpftrace 挂 kprobe:<code class="c">try_to_compact_pages</code> 打印 comm+order。跑压测时定位到 THP 缺页（khugepaged 关掉却还有 compaction → 检查 gfp 里谁带了 <code class="c">__GFP_DIRECT_RECLAIM</code> 高阶请求，常是某驱动）。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-3">
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 6 §3 页面释放（合并与 v6.6 的尾插启发式）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/page_alloc.c</code> :723 <code class="c">buddy_merge_likely</code>、:763 <code class="c">__free_one_page</code>、:1183 <code class="c">free_pcppages_bulk</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>释放是分配的镜像：<strong>递归合并（coalesce）</strong> 对称于拆分。但 v6.6 在"挂链表"这一步藏了个反直觉优化——<strong>尾插</strong>（to_tail）。理解它等于理解 buddy 的 cache 行为学，这直接指导用户态 arena 的 free 策略。</p>
+<hr />
+<h2>1. 合并主循环（<code class="c">__free_one_page</code>，page_alloc.c:763）</h2>
+<pre class="code" data-label="code"><code class="c">free 块 (pfn, order)
+while (order &lt; MAX_ORDER-1) {
+    buddy_pfn = pfn ^ (1 &lt;&lt; order);          /* 伙伴 */
+    buddy 空闲？(PageBuddy &amp;&amp; buddy_order == order)
+        否 → break
+    是 → 从 free_list 摘掉伙伴
+         pfn &amp;= ~(1 &lt;&lt; order);  order++;      /* 合成父块，继续向上 */
+}
+挂入 free_list[order][migratetype]           /* 头插或尾插！见下 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>性质</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>合并上限</td>
+<td>不能超过 pageblock（跨 pageblock 类型可能不同）</td>
+</tr>
+<tr>
+<td>全程持 zone-&gt;lock</td>
+<td>free 的慢路径（order&gt;3 或 pcp 满）才有此开销</td>
+</tr>
+<tr>
+<td>合并的"级联停止"</td>
+<td>伙伴被占即停——中间留洞是常态</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. v6.6 反直觉优化：尾插（to_tail）</h2>
+<pre class="code" data-label="C"><code class="c">/* page_alloc.c:832（v6.6 实锚） */
+to_tail = buddy_merge_likely(pfn, buddy_pfn, page, order);
+if (to_tail)
+    add_to_free_list_tail(...);   /* 尾插！ */
+else
+    add_to_free_list(...);        /* 传统头插 */
+</code></pre>
+<p><code class="c">buddy_merge_likely()</code>（:723）判断：<strong>这块的更高阶伙伴（祖父块）是否空闲</strong>——若是，释放后马上会被合并走，<strong>挂哪头都活不长</strong>；若否，说明这块大概率要在链上长住。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>插法</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高阶合并大概率发生</td>
+<td>尾插</td>
+<td>反正马上被摘走，别占据头部热位</td>
+</tr>
+<tr>
+<td>块会长住</td>
+<td>头插</td>
+<td>下次 <code class="c">__rmqueue_smallest</code> 从头取 → <strong>刚释放的热块优先复用</strong>（cache 热）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这就是原书 LIFO 热复用思想的 v6.6 精修版</strong>：头部留给"会长住的块"其实是留给"最可能被再取走的热块"。SLUB quicklist → pcp → buddy tail-insert，一条完整的"热块优先"谱系。</p>
+<h2>3. pcp 的批量回吐（<code class="c">free_pcppages_bulk</code>，:1183）</h2>
+<p>order≤3 的 free 先进本 CPU pcp（无 zone 锁）；pcp 计数超过 <code class="c">high</code> 水位时：</p>
+<pre class="code" data-label="code"><code class="c">free_pcppages_bulk(zone, count, pcp)
+  按 migratetype 轮转挑链 → 批量摘页 → 逐页 __free_one_page（拿 zone 锁一次，合并一批）
+</code></pre>
+<p><strong>批的意义：</strong> zone 锁的获取次数 = free 次数 / batch。batch 由 <code class="c">high</code> 水位与 <code class="c">free_factor</code>（v6.6 新：free 压力下自动放大 batch）动态决定——<strong>锁次数被压成与流量亚线性</strong>。</p>
+<h2>4. 释放路径全景（对称于 §2 分配瀑布）</h2>
+<pre class="code" data-label="code"><code class="c">free_pages(page, order)
+  ├─ order ≤ 3 → 本 CPU pcp（无锁快路径）
+  │      pcp 超 high → 批量回 buddy（zone 锁）
+  └─ order &gt; 3（或需特殊处理）→ 直接 buddy：__free_one_page
+                              （zone 锁 + 递归合并）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>锁</th>
+<th>典型耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pcp 快路径</td>
+<td>无（本核）</td>
+<td>~10ns</td>
+</tr>
+<tr>
+<td>pcp 批量回吐</td>
+<td>zone-&gt;lock 一次/batch</td>
+<td>摊薄后仍快</td>
+</tr>
+<tr>
+<td>高阶直入 buddy</td>
+<td>zone-&gt;lock + 递归合并</td>
+<td>与合并深度成正比</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 原书对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书（2.4/2.6）</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>释放一律头插</td>
+<td><code class="c">buddy_merge_likely</code> 尾插启发式</td>
+</tr>
+<tr>
+<td>pcp 只 order-0 且分 hot/cold</td>
+<td><strong>order 0–3 全走 pcp</strong>，hot/cold 概念已删（cache 控制交给 LRU/compaction）</td>
+</tr>
+<tr>
+<td>合并上界 MAX_ORDER</td>
+<td>上界还受 pageblock/migratetype 约束</td>
+</tr>
+<tr>
+<td>batch 固定</td>
+<td><code class="c">free_factor</code> 动态缩放</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>用户态镜像</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>头插热复用</td>
+<td>池的 free 槽 push 到本核链头（别排队 FIFO——cache 冷）</td>
+</tr>
+<tr>
+<td>尾插启发式</td>
+<td>"这块马上会被合并"= 用户态"这个 chunk 马上会被 arena 收割"，不必精细整理</td>
+</tr>
+<tr>
+<td>pcp 批量回吐</td>
+<td>每核池满 → 批量交还全局（一次锁一批）</td>
+</tr>
+<tr>
+<td>递归合并级联</td>
+<td>arena 合并相邻 chunk 的 while 循环同构——注意提前停止条件别写错</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 观测</h2>
+<pre class="code" data-label="shell"><code class="c">grep -w 'pgfree\|free_pcp\|pcp' /proc/vmstat
+# 高阶合并效率：前后对比 pagetypeinfo（free 事件后高阶行 +1 = 合并成功）
+</code></pre>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 页面分配</a>：对称的取块</li>
+<li><a href="chapter-11.html#s-6">§6 pageset</a>：pcp 细节</li>
+<li><a href="chapter-08.html#ch-8">Ch 8 slab</a>：释放的对象级版本（frozen free）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么释放后立即看到 order-9 计数没涨？（明明 free 了很多页）</strong>
+A：两种可能：① 页进了 pcp 还没回 buddy（高水位未到）；② 合并被占用的伙伴阻断——释放的页散布在已占用块的缝隙里。<strong>碎片化的直接可视化</strong>就是 free 总量涨、高阶计数不涨。</p>
+<p><strong>Q2：头插 vs 尾插，对谁友好？</strong>
+A：头插对 <strong>分配者</strong> 友好（热块先出）；尾插对 <strong>合并器</strong> 友好（长住块沉底、短命块排队等合并）。v6.6 用 merge_likely 预测决定——本质是 <strong>按预期寿命分流</strong>，与 LRU 的 young/old 双链同构。</p>
+<p><strong>Q3：释放一个不属于自己的页（double free / 野指针 free）会怎样？</strong>
+A：<code class="c">__free_one_page</code> 检查有限（PageBuddy 校验伙伴、free 页计数器 sanity），内核态 double free 常见后果是 free_list 成环 → 后续分配返回同一页两次 → 数据腐坏。<code class="c">CONFIG_DEBUG_VM</code>/page poisoning 能抓一部分。用户态池同理——句柄化 + free 标志位是最便宜的防线。</p>
+<p><strong>Q4：pcp 的 hot/cold 之分为什么被删了？</strong>
+A：实测 free 到 pcp 的页大概率马上被同核再分配（LIFO 已保证热度），冷热分链增加代码路径却收效甚微。5.x 清理删除。<strong>先测量再优化</strong>的反面教材纪念——原书把它当重要机制讲，实测不值得。</p>
+<p><strong>Q5：高阶页（order&gt;3）为什么不能进 pcp？</strong>
+A：① 高阶块稀少，per-CPU 缓存命中率低还占计数；② 高阶 free 的意义在 <strong>触发合并</strong>（尽快回 buddy 恢复连续性），压在 pcp 里反而推迟合并；③ pcp 链按 pageblock 内 migratetype 分列，高阶块跨 pageblock 语义复杂。只有高频的 order≤3 值得缓存。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-4">
+        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 6 §4 GFP 标志与进程标志（v6.6 语义全表）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/gfp_types.h</code>、<code class="c">mm/page_alloc.c</code> :2835/:2920 水位）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">gfp_mask</code> 是分配请求的 <strong>合同</strong>：声明"我什么上下文、要多干净的页、允许付出什么代价"。读错合同是内核态代码的经典事故源。本节给 v6.6 的完整语义表 + 水位模型 + 两个进程标志。</p>
+<hr />
+<h2>1. GFP 三段式结构（v6.6 <code class="c">gfp_types.h</code>）</h2>
+<p>一个 gfp_mask 由三组位域组成：</p>
+<pre class="code" data-label="code"><code class="c">[ zone 修饰 ]  [ 水位/移动性 ]  [ 行为标志 ]
+   __GFP_DMA       __GFP_HIGH      __GFP_DIRECT_RECLAIM
+   __GFP_DMA32     __GFP_MEMALLOC  __GFP_KSWAPD_RECLAIM
+   __GFP_MOVABLE   __GFP_NOMEMALLOC __GFP_IO / __GFP_FS
+                   __GFP_RECLAIMABLE __GFP_NORETRY / __GFP_RETRY_MAYFAIL
+                                     __GFP_NOWARN / __GFP_NOFAIL ...
+</code></pre>
+<h2>2. 常用组合速查（背下这张就够日常读码）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组合</th>
+<th>展开</th>
+<th>允许什么</th>
+<th>禁止什么</th>
+<th>典型用户</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">GFP_KERNEL</code></td>
+<td>内核普通</td>
+<td>睡眠、reclaim、IO</td>
+<td>—</td>
+<td>进程上下文分配</td>
+</tr>
+<tr>
+<td><code class="c">GFP_ATOMIC</code></td>
+<td><code class="c">(__GFP_HIGH)</code></td>
+<td>不睡眠</td>
+<td>reclaim/IO/compaction 全禁</td>
+<td>中断/持锁</td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOWAIT</code></td>
+<td>—</td>
+<td>不睡眠</td>
+<td>比 ATOMIC 更狠（不碰 pcp 之外的储备）</td>
+<td>io_uring 快路径</td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOIO</code></td>
+<td></td>
+<td>回收但不发 IO</td>
+<td>块栈重入防护</td>
+<td>存储/FS 内部</td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOFS</code></td>
+<td></td>
+<td>回收不走 FS 操作</td>
+<td>FS 重入防护</td>
+<td>文件系统内部</td>
+</tr>
+<tr>
+<td><code class="c">GFP_USER</code></td>
+<td></td>
+<td>用户可映射、可回收</td>
+<td>—</td>
+<td>用户页缺页</td>
+</tr>
+<tr>
+<td><code class="c">GFP_HIGHUSER_MOVABLE</code></td>
+<td></td>
+<td>+ 可迁移</td>
+<td>—</td>
+<td>匿名页/THP 的正主</td>
+</tr>
+<tr>
+<td><code class="c">GFP_DMA</code></td>
+<td></td>
+<td>低 16MiB</td>
+<td>—</td>
+<td>老式 ISA 设备</td>
+</tr>
+<tr>
+<td><code class="c">GFP_KERNEL|__GFP_NORETRY</code></td>
+<td></td>
+<td>一次回收尝试即认输</td>
+<td>无限重试</td>
+<td>高阶"尽力而为"</td>
+</tr>
+<tr>
+<td><code class="c">GFP_KERNEL|__GFP_RETRY_MAYFAIL</code></td>
+<td></td>
+<td>多轮努力但<strong>不触发 OOM</strong></td>
+<td>OOM kill</td>
+<td>宁可失败不要杀进程</td>
+</tr>
+<tr>
+<td><code class="c">GFP_KERNEL|__GFP_NOFAIL</code></td>
+<td></td>
+<td><strong>永不返回 NULL</strong></td>
+<td>失败</td>
+<td>死等（慎用！）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三个 retry 系标志的微差是 v6.6 读码高频考点：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>失败可能</th>
+<th>OOM 可能</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认（GFP_KERNEL）</td>
+<td>低</td>
+<td>有</td>
+<td>常规</td>
+</tr>
+<tr>
+<td><code class="c">__GFP_NORETRY</code></td>
+<td>高</td>
+<td>无</td>
+<td>降级友好（THP/kvmalloc 上游）</td>
+</tr>
+<tr>
+<td><code class="c">__GFP_RETRY_MAYFAIL</code></td>
+<td>中</td>
+<td><strong>无</strong></td>
+<td>"尽力但别杀人"</td>
+</tr>
+<tr>
+<td><code class="c">__GFP_NOFAIL</code></td>
+<td>零</td>
+<td>—</td>
+<td>调用方无法处理失败（历史遗留雷区）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 水位模型（每 zone 三条线）</h2>
+<pre class="code" data-label="code"><code class="c">      ───── high ─────  kswapd 在此线以下被唤醒（异步回收开始）
+         free pages
+      ───── low  ─────  kswapd 加速 + 直接回收阈值逼近
+      ───── min  ─────  以下只许 PF_MEMALLOC 通行；普通分配进慢路径/OOM
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计算</td>
+<td><code class="c">min</code> 由 <code class="c">min_free_kbytes</code>（可调）按 zone 比例分摊；low/high 按 min 的 1.25×/1.5× 推</td>
+</tr>
+<tr>
+<td>判定入口</td>
+<td><code class="c">zone_watermark_fast()</code>（page_alloc.c:2920）——order 越高判定越苛刻（为高阶留 fragmentation reserve）</td>
+</tr>
+<tr>
+<td>HFT 调优</td>
+<td><code class="c">min_free_kbytes</code> 调大 = 给突发/高阶留缓冲垫，减少 direct reclaim 概率；代价是"可用"内存变少</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">/proc/zoneinfo</code> 的 pages min/low/high 三行</strong>就是这三条线的实时值。</p>
+<h2>4. 两个进程标志（原书重点，仍在）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>谁设</th>
+<th>通行权</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PF_MEMALLOC</code></td>
+<td>kswapd、direct reclaim 路径、<code class="c">memalloc_use_reserve()</code> 区段</td>
+<td><strong>无视 min 水位</strong>——回收者必须能拿到页才能完成回收（否则自锁死）</td>
+</tr>
+<tr>
+<td><code class="c">PF_MEMDIE</code>（v6.6 已并入 <code class="c">PF_MEMALLOC</code> 语义下的 <code class="c">TIF_MEMDIE</code>）</td>
+<td>被 OOM 选中的进程</td>
+<td>临终赠礼：让它自己的退出路径能分配内存</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>用户态对应物：</strong> systemd 的 <code class="c">MemoryMin</code>/<code class="c">MemoryLow</code>（cgroup 水位）——"保护关键路径在压力下的分配权"。HFT 部署清单里引擎 cgroup 应设 memory.min，与内核这套思想同源。</p>
+<h2>5. <code class="c">__GFP_ZERO</code> 与编译器不可见性</h2>
+<p><code class="c">alloc_pages(GFP_KERNEL | __GFP_ZERO, order)</code> = 页级 calloc。值得知道：kmalloc 场景 <strong>优先 <code class="c">kzalloc</code> 而非 kmalloc+memset</strong>——<code class="c">__GFP_ZERO</code> 可走 buddy 的零页优化路径（合并到分配循环里做，cache 行为更好）。</p>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>正确姿势</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核态驱动热路径</td>
+<td><code class="c">GFP_ATOMIC</code> + 处理 NULL（或预分配池，见 Ch 8）</td>
+</tr>
+<tr>
+<td>大缓冲</td>
+<td><code class="c">GFP_KERNEL\|__GFP_NORETRY\|__GFP_NOWARN</code> + 失败降级 vmalloc（kvmalloc 已封装）</td>
+</tr>
+<tr>
+<td>避免 OOM 连坐</td>
+<td><code class="c">__GFP_RETRY_MAYFAIL</code>——引擎的内核组件被 OOM kill 是事故</td>
+</tr>
+<tr>
+<td>调水位</td>
+<td><code class="c">min_free_kbytes</code> 适度上调 + <code class="c">/proc/zoneinfo</code> 监控水位穿越频率</td>
+</tr>
+<tr>
+<td>用户态边界</td>
+<td>mlock 之外，引擎还可 <code class="c">madvise(MADV_RANDOM)</code> 减少 page cache 预读的 GFP 压力</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-2">§2 页面分配</a>：这些标志在慢路径瀑布的兑现</li>
+<li><a href="chapter-13.html#ch-13">Ch 13 OOM</a>：<code class="c">TIF_MEMDIE</code> 的完整故事</li>
+<li><a href="../../12.5-modern-networking/html/chapter-12.html#ch-12">12.5/ch12 io_uring</a>：<code class="c">GFP_NOWAIT</code> 的高频用户</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：中断上下文里能用 <code class="c">GFP_KERNEL</code> 吗？就一小块。</strong>
+A：不能，多大都不行。GFP_KERNEL 允许睡眠——中断里睡眠 = 调度崩溃。持自旋锁时同理（睡眠会死锁别的核）。规则不按大小打折：<strong>上下文决定 GFP，需求只决定 size</strong>。</p>
+<p><strong>Q2：<code class="c">__GFP_NOFAIL</code> 为什么是雷区？</strong>
+A：它把"分配失败"这个错误路径整个删除——失败时内核无限重试/等待。调用方看似省事，实际在内存耗尽时造成活锁，且已被标记为待淘汰接口（新代码禁用，存量逐步清理）。教训：<strong>不可失败的接口 = 不可测试的接口</strong>。</p>
+<p><strong>Q3：<code class="c">GFP_NOIO</code> 和 <code class="c">GFP_NOFS</code> 具体防什么死锁？举一例。</strong>
+A：NOFS 防文件系统重入：FS 写路径分配页 → 触发回收 → 回收为释放内存要写脏页 → 又进同一个 FS 的写路径 → 递归持锁死锁。NOIO 同理作用于块层。<strong>回收是"会调用任何人的"公共路径，分配者必须声明自己怕谁。</strong></p>
+<p><strong>Q4：水位三线里为什么需要 low？high 唤醒 kswapd 不够吗？</strong>
+A：kswapd 是异步的、可能跟不上消耗速度。low 线的意义是"分配者自己在 low 以下时也加入回收"（direct reclaim 的触发参考）——两级响应：异步（kswapd）先顶，顶不住同步（direct）跟上。类似熔断器的双阈值设计。</p>
+<p><strong>Q5：<code class="c">min_free_kbytes</code> 调大能消灭 direct reclaim 吗？</strong>
+A：只能降低频率，不能消灭——突发流量或大额泄漏照样穿底。它是"缓冲垫"不是"保证"。真正的消灭手段还是：预留（hugepage/mempool）+ 容量规划 + cgroup 限额把邻居的雷隔开。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-5">
+        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 6 §5 避免碎片化（迁移类型 / compaction / HFT 大页保卫战）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/compaction.c</code>、<code class="c">mm/page_alloc.c</code> :226/:3383）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>外部碎片是 buddy 的原罪：拆分-合并只保证"空闲时能拼回"，<strong>只要块里钉着一页不可移动的钉子，整块连续性就永久报废</strong>。v6.6 的抗碎片化 = 分区（migratetype）+ 搬迁（compaction）+ 预留（CMA/hugetlb）。HFT 的大页可用性完全由这场战争决定。</p>
+<hr />
+<h2>1. 碎片两分法（复习+深化）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>含义</th>
+<th>缓解手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>内部碎片</strong></td>
+<td>分到 2^k 页只用一部分</td>
+<td>slab 切小对象（Ch 8）</td>
+</tr>
+<tr>
+<td><strong>外部碎片</strong></td>
+<td>总空闲够但无大连续块</td>
+<td>migratetype 分区 + compaction</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键认知：外部碎片不可完全消除，只能"分区管理"。</strong> 把不可移动的东西关进自己的区，保住 MOVABLE 区的大块纯度——这是 v6.6 的核心策略。</p>
+<h2>2. 抗碎片三件套</h2>
+<h3>① Migratetype 分区（预防）</h3>
+<p>见 <a href="chapter-14.html#s-1">§1</a>。pageblock 级标签，分配按类入座。<strong>纯度</strong>是关键指标：</p>
+<pre class="code" data-label="shell"><code class="c">cat /proc/pagetypeinfo      # 看 MOVABLE 高阶行的余量 = 大页健康度
+</code></pre>
+<h3>② Compaction（治疗）</h3>
+<pre class="code" data-label="code"><code class="c">kcompactd（后台）/ direct compaction（分配路径同步触发）
+  扫描 zone：一端找空闲页，另一端找可迁移页
+  → 把 MOVABLE 页搬走（改 PTE+TLB flush+拷贝内容）
+  → 腾出连续高阶块 → 交给请求者（常是 THP/大页）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>实锚</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同步入口</td>
+<td><code class="c">try_to_compact_pages</code>（page_alloc.c:3383 分配慢路径调用）</td>
+</tr>
+<tr>
+<td>重试判定</td>
+<td><code class="c">should_compact_retry</code>（:3427）</td>
+</tr>
+<tr>
+<td>成本</td>
+<td>迁移一页 = 内容拷贝 + PTE 改写 + <strong>TLB shootdown</strong>——毫秒级整段停顿</td>
+</tr>
+<tr>
+<td>HFT 关系</td>
+<td>THP=always 机器的尾延迟尖刺头号嫌疑</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>迁移的可能</strong>依赖"页真的 MOVABLE"：pin 住的（GUP/mlock）、UNMOVABLE 类型、内核直映都不能搬——<strong>每 pin 一页，就给 compaction 增加一分不可为</strong>。</p>
+<h3>③ 预留（隔离带）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hugetlb 预留</td>
+<td>boot 期直接扣走，与 buddy 永久隔离——<strong>最硬的保证</strong></td>
+</tr>
+<tr>
+<td>CMA</td>
+<td>启动预留，空闲期借给 MOVABLE，需要时赶人（设备 DMA 场景）</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_HIGHATOMIC</code></td>
+<td>高阶请求的迷你储备，抗抖动</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 碎片化的时间线（一台 HFT 机器的自毁过程）</h2>
+<pre class="code" data-label="code"><code class="c">Day 0   开机：MOVABLE 区纯净，order-9 充足，THP 全中
+Day N   各种驱动高阶 kmalloc 偷页（§2 steal），UNMOVABLE 钉子散布
+        引擎 pin 住 GB 级页（GUP/mlock），大片区域失去可迁移性
+Day M   pagetypeinfo 的 order-9 MOVABLE 行清零
+        THP 缺页 → direct compaction → 同步毫秒级停顿（尾延迟尖刺）
+        或失败退 4K → TLB miss 率上升（稳态延迟缓涨）
+</code></pre>
+<p><strong>对策按阶段：</strong> Day 0 就关 THP 用显式大页（预约式）；运行期监控 <code class="c">pagetypeinfo</code> 与 <code class="c">compact_stall</code>；绝不运行期动态 pin 大量页。</p>
+<h2>4. 观测与量化</h2>
+<pre class="code" data-label="shell"><code class="c"># 碎片体检
+cat /proc/pagetypeinfo | head -30
+# 压缩压力
+grep -w 'compact_stall\|compact_fail\|compact_success' /proc/vmstat
+# 迁移失败（compaction 搬不动的页）
+grep -w 'compact_isolated\|compact_migrate_scanned\|compact_free_scanned' /proc/vmstat
+# 大页水位
+grep -i huge /proc/meminfo
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标组合</th>
+<th>诊断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>compact_stall 高 + THP on</td>
+<td>direct compaction 在吃你的尾延迟</td>
+</tr>
+<tr>
+<td>compact_migrate_scanned 高但 isolated 低</td>
+<td>大量页搬不动（被 pin）——查引擎/驱动</td>
+</tr>
+<tr>
+<td>order-9 MOVABLE = 0 但 UNMOVABLE 高阶有</td>
+<td>偷页混居晚期，重启或大整改</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. HFT 决策收束</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hugetlb 预留 + THP=never</td>
+<td>生产低延迟（12.5 系列反复出现的结论）</td>
+</tr>
+<tr>
+<td>THP=madvise + MADV_HUGEPAGE 限定热区</td>
+<td>无法全显式管理时的折中</td>
+</tr>
+<tr>
+<td><code class="c">min_free_kbytes</code> 上调</td>
+<td>减压缓冲（治标）</td>
+</tr>
+<tr>
+<td><code class="c">numa_balancing=0</code></td>
+<td>免掉自动 NUMA 迁移的额外搬迁（它也是碎片源+抖动源）</td>
+</tr>
+<tr>
+<td>周期性 <code class="c">compact_memory</code>（手动 echo）</td>
+<td>维护窗口触发——别在交易时段做</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-1">§1 迁移类型</a> / <a href="chapter-14.html#s-2">§2 偷页</a>：碎片怎么被制造</li>
+<li><a href="chapter-03.html#ch-3">Ch 3 THP</a>：compaction 的最大客户</li>
+<li><a href="chapter-10.html#ch-10">Ch 10 回收</a>：与 compaction 并列的另一个"治疗"手段</li>
+<li><a href="../../06.5-modern-mm/html/chapter-06.html#ch-6">06.5/ch06 folio</a>：回收单元的现代化</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：compaction 和回收（reclaim）都"腾内存"，区别是什么？</strong>
+A：目标不同——reclaim 要 <strong>空闲页数量</strong>（释放 cache 页即可，零散的也行）；compaction 要 <strong>连续性</strong>（把页搬到一起挤出大块）。顺序上分配慢路径先 reclaim 后 compaction（内存都不够时搬迁无意义）。一个求量一个求形。</p>
+<p><strong>Q2：为什么 compaction 迁移页要 TLB flush？谁付出？</strong>
+A：迁移 = 物理位置变 → PTE 改写 → 旧翻译必须失效。flush 是跨核 IPI——<strong>被波及的是所有映射了该页的进程</strong>（rmap 找出所有 PTE）。这就是"后台 compaction 也伤前端延迟"的机制根源。</p>
+<p><strong>Q3：hugetlb 预留的页为什么不受碎片影响？</strong>
+A：它们从 memblock/buddy 早期就被 <strong>整批摘出</strong>，不在 free_area 里参与日常分配-合并循环——碎片化再严重也烧不到池子内部。代价：这部分内存别人永远用不了（除非手动缩池）。<strong>隔离的代价是低利用率，收益是确定性</strong>——HFT 用延迟买确定性。</p>
+<p><strong>Q4：<code class="c">echo 1 &gt; /proc/sys/vm/compact_memory</code> 在生产机上安全吗？</strong>
+A：能做，但它就是全 zone 的同步 compaction——搬迁+TLB shootdown 全套。交易时段等于自残；只在维护窗口或盘后跑。自动触发（kcompactd）反而有节流和优先级控制，比手动 echo 温和。</p>
+<p><strong>Q5：怎么证明引擎 pin 的页在阻碍 compaction？</strong>
+A：压测前后对比 <code class="c">compact_migrate_scanned</code>（扫描候选数）与 <code class="c">compact_isolated</code>（实际隔离数）——扫描远大于隔离 = 大量候选被 <code class="c">page_mapcount</code>/pin 拒绝。再配 <code class="c">bpftrace</code> 挂 <code class="c">migrate_page</code> 统计迁移失败原因即可闭环。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-6">
+        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 6 §6 2.6 内核的新变化 → v6.6（pageset 的完整形态）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mmzone.h</code> per_cpu_pages、<code class="c">mm/page_alloc.c</code> :1183/:2169/:2323）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>pageset（per-CPU page list）是 2.6 引入、至今仍是 order-0（及 v6.6 的 order≤3）分配的主干。本节给 v6.6 的 <strong>完整结构</strong>（含原书时代不存在的字段）、批量算法、和它与 SLUB cpu_slab 的体系对照。</p>
+<hr />
+<h2>1. v6.6 的 <code class="c">per_cpu_pages</code>（mmzone.h 实锚）</h2>
+<pre class="code" data-label="C"><code class="c">struct per_cpu_pages {
+    spinlock_t lock;
+    int count;              /* 链上页数 */
+    int high;               /* 回吐水位：超过则批量还 buddy */
+    int batch;              /* 每次与 buddy 交换的块大小 */
+    short free_factor;      /* v6.6：free 压力下自动放大 batch */
+#ifdef CONFIG_NUMA
+    short expire;           /* v6.6：远端 pageset 的过期计数 */
+#endif
+    struct list_head lists[NR_PCP_LISTS];  /* 按 order×migratetype 分列！ */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>与原书差异</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>hot/cold 双链已删除</strong></td>
+<td>LIFO 已表达热度；分链是实测无效的过度设计（5.x 清理）</td>
+</tr>
+<tr>
+<td><strong>order 0–3 都进 pcp</strong></td>
+<td><code class="c">NR_LOWORDER_PCP_LISTS = MIGRATE_PCPTYPES × (PAGE_ALLOC_COSTLY_ORDER+1)</code>（mmzone.h:671）——不只是 order-0</td>
+</tr>
+<tr>
+<td><code class="c">free_factor</code></td>
+<td>free 侧 batch 自适应（内存压力下放大批、加快回吐）</td>
+</tr>
+<tr>
+<td><code class="c">expire</code>（NUMA）</td>
+<td>本 CPU 上"远端 node"的 pageset 会过期清空，防远端页滞留</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. 批量算法（v6.6 实锚）</h2>
+<pre class="code" data-label="code"><code class="c">分配：rmqueue_pcplist()（:2169 附近）
+    pcp 空 → 从 buddy 一次拿 batch 页（zone 锁一次）
+释放：free_unref_page() → 本 CPU pcp（无锁）
+    pcp-&gt;count &gt; high → free_pcppages_bulk(zone, to_drain, pcp)（:1183）
+                       按 migratetype 轮转挑链，批量 __free_one_page
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>语义</th>
+<th>调整</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">high</code></td>
+<td>回吐阈值</td>
+<td><code class="c">percpu_pagelist_high_fraction</code> sysctl（0=默认按 zone 大小算）</td>
+</tr>
+<tr>
+<td><code class="c">batch</code></td>
+<td>交换批量</td>
+<td>派生自 high（约 high/4，:2364 <code class="c">min(batch&lt;&lt;2, high)</code> 关系可见）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>设计权衡：</strong> high 大 → zone 锁频率低，但页"藏"在 pcp 里对别的 CPU 不可见（NUMA 远端尤甚）；high 小 → 锁频繁。<strong>per-CPU 缓存的通用两难</strong>，SLUB 的 cpu_partial 同题同解。</p>
+<h2>3. 原书伏笔的正确收法：两级 per-CPU 串联</h2>
+<pre class="code" data-label="code"><code class="c">对象分配（kmalloc/kmem_cache_alloc）
+  └─ SLUB cpu_slab（active slab 冻结）        ← 对象级，Ch 8
+        └─ pcp pageset（order 0–3）            ← 页级，本节
+              └─ zone free_area（buddy）        ← 全局
+                    └─ node fallback → kswapd/compaction/OOM
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>交换单位</th>
+<th>全局锁频率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SLUB</td>
+<td>整 slab（64+ 对象）</td>
+<td>极低</td>
+</tr>
+<tr>
+<td>pcp</td>
+<td>batch 页</td>
+<td>低</td>
+</tr>
+<tr>
+<td>zone</td>
+<td>单块</td>
+<td>每次慢路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>每层把锁频率再除以一个量级</strong>——这是 Linux 多核扩展的"套娃"答案，也是用户态多级池（每核热池→NUMA 冷池→全局）的蓝本。</p>
+<h2>4. 统一 NUMA API（原书 "What's New" 的另一条）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>2.4</th>
+<th>2.6+ / v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UMA/NUMA 底层函数分叉</td>
+<td><code class="c">numa_node_id()</code> 隐式选 node；<code class="c">alloc_pages_node()</code> 显式</td>
+</tr>
+<tr>
+<td>应用无从干预</td>
+<td><code class="c">set_mempolicy()</code>/<code class="c">mbind()</code>/<code class="c">numactl</code> 覆盖（mpol 映射进 zonelist 过滤）</td>
+</tr>
+</tbody>
+</table></div>
+<p>HFT 的 NUMA 纪律照旧：<strong>绑核+绑内存同 node</strong>（线程绑 node0 核、内存 <code class="c">mbind</code> node0），防 pageset 的 expire 机制把你推去远端。</p>
+<h2>5. 观测与调优</h2>
+<pre class="code" data-label="shell"><code class="c">grep -w 'pgalloc\|pgfree\|allocstall' /proc/vmstat
+# pcp 效率：zone 锁争用（perf）：
+perf stat -e 'lock:*zone*' -a sleep 5 2&gt;/dev/null || perf record -g -p &lt;pid&gt;
+# 调整回吐阈值（谨慎）：
+cat /proc/sys/vm/percpu_pagelist_high_fraction   # 0 = 自动
+</code></pre>
+<h2>6. HFT 精读 checklist（章级收束）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -643,27 +1514,48 @@ zone-&gt;free_area[MAX_ORDER-1]  ──►  最大块
 </thead>
 <tbody>
 <tr>
-<td><strong>远程 NUMA 延迟</strong></td>
-<td>是否 <strong>node-local</strong> 分配；<code class="c">numastat</code></td>
+<td>远程 NUMA 延迟</td>
+<td>node-local 分配；<code class="c">numastat</code>；mbind 策略</td>
 </tr>
 <tr>
-<td><strong>latency 尖刺</strong></td>
-<td><strong>direct reclaim</strong>、<strong>compaction</strong>、<strong>GFP</strong> 上下文</td>
+<td>latency 尖刺</td>
+<td>direct reclaim / compaction / GFP 上下文（allocstall/compact_stall）</td>
 </tr>
 <tr>
-<td><strong>大页分配失败</strong></td>
-<td><strong>外部碎片</strong> — 长期运行后 <strong>2MB 连续物理页</strong> 难拿</td>
+<td>大页分配失败</td>
+<td>外部碎片（pagetypeinfo）；pin 页阻碍 compaction</td>
 </tr>
 <tr>
-<td><strong>与 slab/mempool</strong></td>
-<td>Buddy 管 <strong>页</strong>；热路径对象应用 <strong>池化</strong>（Ch 8 / DPDK）</td>
+<td>与 slab/mempool</td>
+<td>Buddy 管页；热路径对象必须池化（Ch 8 / DPDK）</td>
 </tr>
 <tr>
-<td><strong>监控</strong></td>
-<td><code class="c">/proc/vmstat</code>（<code class="c">pgalloc_*</code>、<code class="c">allocstall</code>** 等）</td>
+<td>pcp 参数</td>
+<td>percpu_pagelist_high_fraction（一般不动，知道有此旋钮即可）</td>
 </tr>
 </tbody>
 </table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li>全章：<a href="chapter-14.html#s-1">§1</a> <a href="chapter-14.html#s-2">§2</a> <a href="chapter-14.html#s-3">§3</a> <a href="chapter-14.html#s-4">§4</a> <a href="chapter-14.html#s-5">§5</a></li>
+<li><a href="chapter-14.html#s-5">Ch 2 §5 pageset 原书视角</a></li>
+<li><a href="chapter-14.html#s-5">Ch 8 §5 SLUB 的对象级 per-CPU</a></li>
+<li><a href="../../06.5-modern-mm/html/chapter-01.html#ch-1">06.5/ch01 memblock</a>：pcp/zone 的 boot 期初始化</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：v6.6 pcp 缓存 order 0–3，为什么 cutoff 恰在 3？</strong>
+A：<code class="c">PAGE_ALLOC_COSTLY_ORDER=3</code>（mmzone.h:43）——order&gt;3 的分配"贵"（低频+高失败率），缓存收益低；且高阶块应尽快回 buddy 触发合并（保连续性）。<strong>"缓存高频小请求、直通低频大请求"</strong>是分层缓存的通用划界法。</p>
+<p><strong>Q2：pcp 的页对别的 CPU 可见吗？NUMA 远端 CPU 想要怎么办？</strong>
+A：不可见（本核私有）。远端 CPU 的分配会走自己 pcp→自己 node 的 buddy。唯一交互是 drain：CPU 热插拔/内存隔离/维护时 <code class="c">drain_all_pages()</code> 强制清空。<code class="c">expire</code> 字段管的是另一件事——<strong>本 CPU 上属于远端 node 的 pageset</strong> 定期过期，防页滞留错 node。</p>
+<p><strong>Q3：为什么 free 也要批量回吐而不是立刻逐页还 buddy？</strong>
+A：逐页还 = 每页一次 zone 锁 + 一次合并尝试（伙伴可能不在，白拿锁）。攒到 high 一次性还：锁次数 ÷ batch，且批量还时伙伴互为邻居的几率高（刚分配的页空间局部性强），合并成功率也高。<strong>攒批的收益=锁摊薄+合并概率提升，双份</strong>。</p>
+<p><strong>Q4：<code class="c">free_factor</code> 什么时候会被推高？</strong>
+A：free 侧持续流入（如释放大内存）超过分配消耗时——pcp 快速逼近 high，此时放大 batch 让每次回吐带走更多页，减少"到 high-还一点-又到 high"的振荡。这是 v6.6 加的自适应阻尼，思想等同 TCP 拥塞窗口的加性增。</p>
+<p><strong>Q5：用户态还有必要复刻 pcp 吗？是不是 hugepage 一次到位就够？</strong>
+A：分层仍有价值：hugepage 管大块（TLB/确定性），<strong>页内切分还是池的事</strong>——DPDK mempool 两层齐全（mempool 对象层 + memzone/大页层）正是 pcp+buddy 的用户态复刻。跳过对象层 = 每次分配浪费一整页或去抢全局锁。</p>
+</details>
 <hr />
       </section>
 

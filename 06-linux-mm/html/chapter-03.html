@@ -363,336 +363,1190 @@ Ch 10 / swap：改 PTE、rmap 解映射、换出
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 3 §1 页目录与页表项 (PGD / PMD / PTE)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 3 §1 页目录与页表项 (PGD / P4D / PUD / PMD / PTE)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/pgtable.h</code>、<code class="c">include/linux/mm_types.h</code>）</p>
 </blockquote>
-<h3>1. 页目录与页表项 (PGD / PMD / PTE)</h3>
-<h3>三级结构（原书 · 架构无关模型）</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>页表是 <strong>VA → PA 的硬件查表数据结构</strong>。本节回答三个问题：</p>
+<ol>
+<li>页表分几级？为什么是这么多级？</li>
+<li>每一级的表项（entry）长什么样、放哪些位？</li>
+<li>内核用什么 <strong>类型系统</strong> 把它抽象成架构无关代码？</li>
+</ol>
+<p>原书以 2.4/2.6 的 <strong>三级模型</strong>（PGD→PMD→PTE，x86-32 语境）叙述；v6.6 的真实结构是 <strong>可配置层级</strong>，由 <code class="c">CONFIG_PGTABLE_LEVELS</code> 决定——x86_64/ARM64 均为 <strong>四级 + 一个折叠的 P4D</strong>。</p>
+<hr />
+<h2>1. 层级结构：从三级到五级</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>层级</th>
-<th>名称</th>
-<th>作用</th>
+<th>全称</th>
+<th>v6.6 索引宏（pgtable.h）</th>
+<th>x86_64 位宽（48-bit VA）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>PGD</strong></td>
-<td>Page Global Directory · 页全局目录</td>
-<td>每进程 <strong><code class="c">mm_struct</code></strong> 有指向 <strong>自身 PGD</strong> 的指针</td>
+<td>PGD</td>
+<td>Page Global Directory</td>
+<td><code class="c">pgd_offset(mm, addr)</code>（:145）</td>
+<td>9</td>
 </tr>
 <tr>
-<td><strong>PMD</strong></td>
-<td>Page Middle Directory · 页中间目录</td>
-<td>PGD 项指向 PMD 表</td>
+<td>P4D</td>
+<td>Page 4th Level</td>
+<td><code class="c">p4d_offset(pgd, addr)</code></td>
+<td><strong>0（折叠）</strong></td>
 </tr>
 <tr>
-<td><strong>PTE</strong></td>
-<td>Page Table Entry · 页表项</td>
-<td>PMD 项指向 PTE 表；<strong>PTE 指向物理页框</strong>（用户数据所在）</td>
+<td>PUD</td>
+<td>Page Upper Directory</td>
+<td><code class="c">pud_offset(p4d, addr)</code>（:129）</td>
+<td>9</td>
+</tr>
+<tr>
+<td>PMD</td>
+<td>Page Middle Directory</td>
+<td><code class="c">pmd_offset(pud, addr)</code>（:121）</td>
+<td>9</td>
+</tr>
+<tr>
+<td>PTE</td>
+<td>Page Table Entry</td>
+<td><code class="c">pte_offset_map(...)</code></td>
+<td>9 + 12 位页内偏移</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">线性地址  ──►  PGD[index0]  ──►  PMD[index1]  ──►  PTE[index2]  ──►  物理页框
-                mm_struct-&gt;pgd
+<pre class="code" data-label="code"><code class="c">47        38 37     30 29     21 20     12 11         0
+┌───────────┬──────────┬──────────┬──────────┬──────────┐
+│ PGD index │ PUD index│ PMD index│ PTE index│ 页内偏移  │
+└─────┬─────┴────┬─────┴────┬─────┴────┬─────┴──────────┘
+      ▼          ▼          ▼          ▼
+   mm-&gt;pgd → PUD表 → PMD表 → PTE表 → 物理页框 @ 4KiB
 </code></pre>
-<p><strong>x86_64 注：</strong> 在 PGD 与 PMD 之间多一层 <strong>PUD</strong>（Page Upper Directory）；<strong>Linux 通用宏</strong>（<code class="c">pgd_offset</code>、<code class="c">p4d_offset</code>、<code class="c">pud_offset</code>、<code class="c">pmd_offset</code>、<code class="c">pte_offset</code>）在各级 arch 上展开不同深度。</p>
-<h3>类型与地址拆分宏</h3>
+<p><strong>为什么多级？</strong> 单级 48-bit VA 需要 2^36 个 PTE（512 GiB 页表本身）；四级把稀疏地址空间的页表 <strong>按需分配</strong>——没映射的区域，上层表项为空，下层表根本不分配。代价：<strong>每次 walk 最多 4 次内存访问</strong>（TLB miss 时）。</p>
+<p><strong>P4D 折叠（folded）：</strong> 当 <code class="c">CONFIG_PGTABLE_LEVELS=4</code> 时，<code class="c">p4d_offset()</code> 直接返回 PGD 项本身——代码写五层、运行时少一层，这是内核 <strong>同一套代码兼容 3/4/5 级页表</strong>（x86-5 层 paging la57、ARM64 52-bit VA）的手段。<strong>IA-5 层 paging（la57）开启后 P4D 真实展开。</strong></p>
+<h2>2. 类型系统：<code class="c">pgd_t/p4d_t/pud_t/pmd_t/pte_t</code></h2>
+<pre class="code" data-label="C"><code class="c">typedef struct { pgdval_t pgd; } pgd_t;   /* 每个 arch 一份 */
+typedef struct { pteval_t pte; } pte_t;
+</code></pre>
+<p>不是直接用 <code class="c">unsigned long</code>，而是 <strong>包一层 struct</strong>——让类型检查器拦住「拿 PTE 当 PFN 用」的错误，并支持 <strong>PAE 这类 PTE 位宽 ≠ 无符号字长</strong> 的架构。配套取值宏：<code class="c">pte_val(x)</code> / <code class="c">__pte(v)</code>。</p>
+<p><strong>PTE 各位的语义（架构无关抽象 + x86_64 对应）：</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>类型</th>
-<th>用途</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">pgd_t</code> / <code class="c">pmd_t</code> / <code class="c">pte_t</code></strong></td>
-<td>类型安全的页表项容器；支持 <strong>PAE</strong> 等扩展物理地址位宽</td>
-</tr>
-<tr>
-<td><strong><code class="c">SHIFT</code> / <code class="c">SIZE</code> / <code class="c">MASK</code> 宏</strong></td>
-<td>把 <strong>线性地址</strong> 拆成各级 <strong>索引偏移</strong></td>
-</tr>
-</tbody>
-</table></div>
-<h3>PTE 保护位与状态位（示例）</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>位 / 宏</th>
+<th>抽象宏</th>
+<th>x86_64 硬件位</th>
 <th>含义</th>
+<th>谁会改它</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">PAGE_PRESENT</code></strong></td>
-<td>页在 <strong>内存中</strong>（非 swap / 非 hole）</td>
+<td><code class="c">_PAGE_PRESENT</code></td>
+<td>bit 0</td>
+<td>物理页在内存</td>
+<td>缺页 handler（换入后置位）</td>
 </tr>
 <tr>
-<td><strong><code class="c">PAGE_RW</code></strong></td>
-<td><strong>可写</strong></td>
+<td><code class="c">_PAGE_RW</code></td>
+<td>bit 1</td>
+<td>可写</td>
+<td>fork COW 时清零，写缺页恢复</td>
 </tr>
 <tr>
-<td><strong><code class="c">PAGE_USER</code></strong></td>
-<td><strong>用户态</strong> 可访问（无则仅内核）</td>
+<td><code class="c">_PAGE_USER</code></td>
+<td>bit 2</td>
+<td>用户态可访问</td>
+<td>内核映射清零</td>
 </tr>
 <tr>
-<td><strong><code class="c">PAGE_DIRTY</code></strong></td>
-<td>已被写入 — <strong>脏页</strong>，需写回</td>
+<td><code class="c">_PAGE_ACCESSED</code></td>
+<td>bit 5</td>
+<td>硬件置位「访问过」</td>
+<td>回收扫描后清零（ Aging）</td>
 </tr>
 <tr>
-<td><strong><code class="c">PAGE_ACCESSED</code></strong></td>
-<td>被访问过 — LRU / 回收参考（常对应 <strong>young</strong> 位）</td>
+<td><code class="c">_PAGE_DIRTY</code></td>
+<td>bit 6</td>
+<td>硬件置位「写脏了」</td>
+<td>写回后清零</td>
+</tr>
+<tr>
+<td><code class="c">_PAGE_SPECIAL</code></td>
+<td>软件位</td>
+<td>非 <code class="c">struct page</code> 支撑的映射（如 remap_pfn_range）</td>
+<td>建映射时决定</td>
+</tr>
+<tr>
+<td><code class="c">_PAGE_SOFT_DIRTY</code></td>
+<td>软件位</td>
+<td>checkpoint/迁移用脏跟踪</td>
+<td><code class="c">/proc/pid/clear_refs</code></td>
+</tr>
+<tr>
+<td>swap entry</td>
+<td>全部软件复用</td>
+<td>PTE 非空但非 present → 编码 swap 槽位</td>
+<td>换出路径</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ 与 Ch 2 <strong><code class="c">PG_dirty</code> / <code class="c">PG_active</code></strong> 等 <strong>struct page flags</strong> 协同；换出、写回路径会 <strong>同时</strong> 动 PTE 与 page flags。</p>
+<p><strong>关键：PTE 是「多义」的。</strong> <code class="c">pte_present()==false</code> 且项非空 → 这是 <strong>swap entry / migration entry / file entry</strong>，具体类型看编码。<code class="c">pte_none()</code> 才是真空白。这是理解后面 Ch 11 swap 的地基。</p>
+<h2>3. 页表项 vs struct page flags 的分工</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>PTE 位</th>
+<th><code class="c">struct page</code> flags</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>管什么</td>
+<td><strong>这一个虚拟映射</strong>怎么看</td>
+<td><strong>这一个物理页</strong>的全局状态</td>
+</tr>
+<tr>
+<td>例子</td>
+<td>本映射可写/被访问</td>
+<td><code class="c">PG_dirty</code>（文件页）、<code class="c">PG_locked</code>、<code class="c">PG_writeback</code></td>
+</tr>
+<tr>
+<td>谁消费</td>
+<td>MMU 硬件 + 内核 walker</td>
+<td>回收/写回/rmap</td>
+</tr>
+</tbody>
+</table></div>
+<p>同一物理页映射到两个进程时只有一份 <code class="c">struct page</code>，但两套 PTE——所以 dirty/young 信息 <strong>可能同时存在于 PTE 位和 page flags</strong>，回收时要在 <code class="c">page_referenced()</code>（rmap 遍历）里把各级 PTE 的 accessed 位 <strong>聚合</strong> 到 page 上。</p>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TLB miss 就是 4 次指针 chasing（每次可能 L1/L2 miss）</td>
+<td>页表 walk 成本 ≈ 4×cache miss；大页把 walk 结果缓存覆盖 2MiB/1GiB</td>
+</tr>
+<tr>
+<td>PTE 里 <code class="c">_PAGE_USER</code> 清零的内核映射</td>
+<td>内核线程借用用户 mm 时（lazy TLB）安全的基础</td>
+</tr>
+<tr>
+<td>观察进程真实映射</td>
+<td><code class="c">/proc/pid/pagemap</code> 每行就是一个 PFN+标志位（需 root）</td>
+</tr>
+<tr>
+<td>防侧信道</td>
+<td><code class="c">_PAGE_SPECIAL</code>/<code class="c">pte_mknotpresent</code> 等；<code class="c">mprotect</code> 清 <code class="c">_PAGE_RW</code> 做 W^X</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 遍历与使用页表</a>：内核代码怎么 <strong>走</strong> 这套表</li>
+<li><a href="chapter-14.html#s-3">§3 页表的分配与释放</a>：表页本身从哪来</li>
+<li>现代演进：<a href="../../06.5-modern-mm/html/chapter-04.html#ch-4">06.5/ch04 页表与 TLB</a></li>
+<li>硬件视角：<a href="../../15-computer-architecture/html/chapter-02.html#ch-2">15-体系结构 TLB</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 P4D 在四级页表的 x86_64 上还存在？</strong>
+A：为了让一份内核代码同时服务 3/4/5 级配置。<code class="c">pgtable.h</code> 里 <code class="c">p4d_offset()</code> 在 <code class="c">__PAGETABLE_P4D_FOLDED</code> 时退化为恒等返回（返回 PGD 项的地址当 P4D 用）。5 级（la57）开启时才真正分配 P4D 表。这就是"folded level"——<strong>存在但无实体</strong>。</p>
+<p><strong>Q2：TLB miss 时 walk 页表的是硬件还是内核？</strong>
+A：x86_64/ARM64 都是 <strong>硬件 page table walker</strong>（MMU 自动走，OS 只负责填表+维护 TLB 一致性）。软件 walk 只发生在内核自己遍历（如 <code class="c">follow_page</code>）或架构无硬件 walker（如早期 MIPS）。x86 还有 5-level paging 时 walk 从 CR3 → P4D → …，多一次访存。</p>
+<p><strong>Q3：一个 PTE 8 字节、一页表页 4KiB 能放 512 项，为什么每级索引恰好 9 位？</strong>
+A：4KiB/8B = 2^9。这不是巧合——每级表恰好一页，让页表页可以 <strong>用 buddy 分配器整页分配</strong>，无需子页分配器。ARM64 64KiB 页时每级 13 位（8192 项）。</p>
+<p><strong>Q4：进程 A、B 共享一个物理页（fork 后未 COW），<code class="c">_PAGE_DIRTY</code> 在谁的 PTE 里？</strong>
+A：各自的。PTE 位是 <strong>per-mapping</strong> 的——A 写脏只置 A 的 PTE dirty 位。但 <code class="c">struct page</code> 只有一份，文件页的脏状态以 page/address_space 为准，<code class="c">vm_normal_page()</code> 拿到 page 后统一管理。这也是 rmap 存在的理由：从 page 反向找到所有 PTE。</p>
+<p><strong>Q5：<code class="c">CONFIG_PGTABLE_LEVELS</code> 从 4 变 5（la57），用户程序需要重编译吗？</strong>
+A：不需要——虚拟地址空间用户可见部分仍从 0 开始，只是可寻址上限变大（57-bit VA 128 PiB）。但 VA 布局（<code class="c">TASK_SIZE</code>、mmap top）会变，内核选地址的默认值可能落在更高区域。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-2">
         <div class="sec-head"><div class="sec-no">2</div><h2>Ch 3 §2 遍历与使用页表 (Using Page Table Entries)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/pgtable.h</code>、<code class="c">mm/memory.c</code>）</p>
 </blockquote>
-<h3>2. 遍历与使用页表 (Using Page Table Entries)</h3>
-<p>内核频繁 <strong>页表遍历 (page table walk)</strong> — 缺页、munmap、mprotect、swap、debugger 等。</p>
-<h3>定位各级表项</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>内核在哪些路径要 <strong>自己走页表</strong>、用什么宏逐级下钻、以及读写 PTE 状态的 API 面。这是读 MM 源码的"识字课"——后面所有章节（缺页、COW、swap、munmap、mprotect）全是这些宏的组合应用。</p>
+<hr />
+<h2>1. 谁在遍历页表</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>宏（原书）</th>
-<th>作用</th>
+<th>路径</th>
+<th>入口</th>
+<th>干什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">pgd_offset()</code></strong></td>
-<td>由线性地址 + <code class="c">mm</code> 得 <strong>PGD 项</strong></td>
+<td>缺页</td>
+<td><code class="c">handle_mm_fault()</code>（memory.c）</td>
+<td>walk 到空位 → 分配页/读文件 → <code class="c">set_pte</code></td>
 </tr>
 <tr>
-<td><strong><code class="c">pmd_offset()</code></strong></td>
-<td>得 <strong>PMD 项</strong></td>
+<td>解除映射</td>
+<td><code class="c">unmap_page_range()</code> → <code class="c">zap_pte_range()</code>（memory.c:1629/:1394）</td>
+<td>批量 clear PTE + 释放页表页</td>
 </tr>
 <tr>
-<td><strong><code class="c">pte_offset()</code></strong></td>
-<td>得 <strong>PTE 项</strong></td>
+<td>保护位变更</td>
+<td><code class="c">mprotect</code> → <code class="c">change_pte_range()</code></td>
+<td>批量改 RW 位 → <strong>必须 flush TLB</strong></td>
+</tr>
+<tr>
+<td>反向查询</td>
+<td><code class="c">follow_page()</code>/GUP（<code class="c">get_user_pages</code>）</td>
+<td>VA → <code class="c">struct page</code>（DMA、io_uring、vmsplice 全靠它）</td>
+</tr>
+<tr>
+<td>swap/回收</td>
+<td>rmap（<code class="c">page_referenced</code>、<code class="c">try_to_unmap</code>）</td>
+<td>从 page 反向清 PTE 的 accessed/present</td>
+</tr>
+<tr>
+<td>调试/观测</td>
+<td><code class="c">/proc/pid/pagemap</code>、<code class="c">clear_refs</code></td>
+<td>用户态可见的 PTE 状态镜像</td>
 </tr>
 </tbody>
 </table></div>
-<p>（现代树在深层 arch 上可能先经 <strong><code class="c">p4d_offset</code> / <code class="c">pud_offset</code></strong>。）</p>
-<h3>检查 / 修改 PTE 状态</h3>
+<h2>2. 逐级下钻宏（v6.6 pgtable.h 实锚）</h2>
+<pre class="code" data-label="C"><code class="c">pgd_t *pgd = pgd_offset(mm, addr);          /* :145  mm-&gt;pgd + pgd_index(addr) */
+p4d_t *p4d = p4d_offset(pgd, addr);         /* 四级配置下折叠：返回 pgd 本身 */
+pud_t *pud = pud_offset(p4d, addr);         /* :129 */
+pmd_t *pmd = pmd_offset(pud, addr);         /* :121 */
+pte_t *pte = pte_offset_map(pmd, addr);     /* 注意：v6.6 是 _map/_unmap 配对！ */
+...
+pte_unmap(pte);
+</code></pre>
+<p><strong>原书（2.4）写的是 <code class="c">pte_offset()</code>；v6.6 里它已换成 <code class="c">pte_offset_map()</code>/<code class="c">pte_offset_unmap()</code> 配对。</strong> 为什么：x86-32 HIGHMEM 时代 PTE 页可能临时 kmap；64 位上没有 HIGHMEM，但 API 形态保留——并且 v6.6 引入了 <code class="c">pte_offset_map_nolock()</code>/rcu 读取语义，防并发替换。<strong>读旧书遇到 <code class="c">pte_offset</code> 要脑内换新名。</strong></p>
+<p>每一级下钻前都要判空/判坏：</p>
+<pre class="code" data-label="C"><code class="c">if (pgd_none(*pgd) || pgd_bad(*pgd)) return -1;   /* 没建过下层表 */
+if (pmd_trans_huge(*pmd)) { /* 大页！PMD 即终态，别再下钻 */ }
+</code></pre>
+<p><code class="c">pmd_trans_huge()</code> 检查是 <strong>必须的</strong>——THP 开启时 walk 到 PMD 就直接是大页映射，<code class="c">pmd_offset</code> 之后再 <code class="c">pte_offset_map</code> 会把 PMD 项错当 PTE 表指针解引用。</p>
+<h2>3. PTE 读写 API 面</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
+<th>类别</th>
 <th>宏</th>
-<th>作用</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">pte_present()</code></strong></td>
-<td>是否在内存</td>
+<td>判型</td>
+<td><code class="c">pte_none / pte_present / pte_write / pte_dirty / pte_young</code></td>
+<td>查询位</td>
 </tr>
 <tr>
-<td><strong><code class="c">pte_dirty()</code> / <code class="c">pte_mkdirty()</code></strong></td>
-<td>读/设 dirty</td>
+<td>造/改</td>
+<td><code class="c">pte_mkwrite / pte_wrprotect / pte_mkdirty / pte_mkyoung / pte_mknovnode</code></td>
+<td>返回 <strong>新 pte_t</strong>（值语义，不是原地改）</td>
 </tr>
 <tr>
-<td><strong><code class="c">pte_young()</code> / <code class="c">pte_mkyoung()</code></strong></td>
-<td>读/设 accessed（young）</td>
+<td>安装</td>
+<td><code class="c">set_pte_at(mm, addr, ptep, pte)</code></td>
+<td>原子写表项+arch 钩子（如 ARM 需要 DSB 屏障）</td>
 </tr>
 <tr>
-<td><strong><code class="c">set_pte()</code> / <code class="c">pte_clear()</code></strong></td>
-<td>安装 / 清除映射</td>
+<td>清除</td>
+<td><code class="c">pte_clear / ptep_get_and_clear</code></td>
+<td>后者原子取旧值——COW/换出要先取走</td>
+</tr>
+<tr>
+<td>PFN</td>
+<td><code class="c">pte_pfn(pte)</code> / <code class="c">pte_page(pte)</code></td>
+<td>项 → PFN → <code class="c">struct page</code></td>
+</tr>
+<tr>
+<td>特判</td>
+<td><code class="c">pte_special / pte_devmap / pte_marker</code></td>
+<td>非常规映射（见下）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 热路径 <strong>用户态</strong> 不跑这些宏；但 <strong>prefault、mlock、大页合并/分裂</strong> 会在内核里 <strong>批量改 PTE</strong> → 触发 <strong>TLB shootdown</strong>。</p>
+<p><strong>值语义陷阱：</strong> <code class="c">pte_mkwrite(pte)</code> 返回修改后的副本，<strong>必须再 <code class="c">set_pte_at</code> 写回</strong> 才生效。漏写回 = 白改。</p>
+<h2>4. v6.6 新增：PTE marker（<code class="c">pte_marker</code>）</h2>
+<p>PTE 非 present 时除了编码 swap entry，v6.6 还能编码 <strong>PTE marker</strong>（<code class="c">CONFIG_PTE_MARKER_UFFD_WP</code> 等）：用户态 fault injection（uffd）、uffd-wp 写保护在 <strong>换出后</strong> 仍能记住"这里被 userfaultfd 监视"。读旧书时这片区域是空白——"非 present PTE = swap entry"在 v6.6 已不成立。</p>
+<h2>5. GUP：内核拿用户页的标准通道</h2>
+<pre class="code" data-label="C"><code class="c">get_user_pages_fast(start, nr_pages, gup_flags, pages);  /* 无锁快路径 */
+get_user_pages(start, nr_pages, gup_flags, pages, vmas); /* 慢路径，可睡眠 */
+</code></pre>
+<p><code class="c">_fast</code> 版本先 <strong>无锁走页表</strong>（仅本地中断禁止），失败（缺页/迁移中）退回慢路径拿 mmap_lock + 走 fault。<strong>MSG_ZEROCOPY 的 page pin、io_uring 的 fixed buffer、AF_XDP 的 umem 注册全走 GUP</strong>——它是"内核引用用户内存"的唯一正门，<code class="c">vm_normal_page()</code>（memory.c:581）在底层区分"普通页"与 VM_IO/VM_PFNMAP 特殊映射（<code class="c">_PAGE_SPECIAL</code>）。</p>
+<p><strong>HFT 关键：</strong> GUP pin 住的页不能被回收/迁移——这就是 12.5/ch13 里"注册过的 buffer 物理页被钉死"的机制源头。pin 的页在 cgroup OOM / 内存紧张时是 <strong>不可移动内存</strong>，注册区过大（几十 GB）会直接推高内存碎片。</p>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>机制兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>prefault（启动时摸一遍内存）</td>
+<td>批量触发 <code class="c">do_anonymous_page</code>（memory.c:4067）建 PTE，消灭运行期缺页</td>
+</tr>
+<tr>
+<td><code class="c">mlock</code> + <code class="c">mlockall</code></td>
+<td>PTE 永久 present，swap 路径绕开</td>
+</tr>
+<tr>
+<td>大页合并/分裂</td>
+<td>PMD 级改写 + 全核 TLB shootdown → <strong>尾延迟尖刺源</strong>（见 THP 笔记）</td>
+</tr>
+<tr>
+<td><code class="c">process_vm_readv</code>/ptrace</td>
+<td>内核 walker 替你走对方页表</td>
+</tr>
+<tr>
+<td>侧信道缓解 <code class="c">madvise(MADV_DONTNEED)</code></td>
+<td>PTE 清空 + TLB flush 立即收回</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-1">§1 页目录与页表项</a></li>
+<li>下节 <a href="chapter-14.html#s-3">§3 页表的分配与释放</a></li>
+<li>GUP 实战：<a href="../../12.5-modern-networking/html/chapter-13.html#ch-13">12.5/ch13 零拷贝</a>（page pin 一节）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">pte_offset_map</code> 之后为什么必须 <code class="c">pte_unmap</code>？64 位上不是直接可解引用吗？</strong>
+A：API 契约层面：x86-32 HIGHMEM 的 kmap 配对习惯被保留为通用接口，防止 arch 特定问题。v6.6 里它还有 <strong>rcu/mmap_lock 读取语义</strong>——表页可能被并发 <code class="c">tlb_remove_table</code> 延迟释放，map/unmap 圈出的区间受 RCU 保护。64 位上开销≈0，但配对是强制的。</p>
+<p><strong>Q2：walk 到 PMD 发现 <code class="c">pmd_trans_huge()</code>，想改这一页的权限怎么办？</strong>
+A：不能下钻——PMD 项本身就是"大 PTE"。要么用 <code class="c">pmd_*</code> 系列（<code class="c">pmd_mkwrite</code> 等）直接改 PMD，要么先 <code class="c">split_huge_pmd()</code> 拆成 4KiB PTE 再改。错误下钻 = 把 PMD 值当 PTE 表指针 → panic。</p>
+<p><strong>Q3：<code class="c">set_pte</code> 与 <code class="c">set_pte_at</code> 差在哪？</strong>
+A：<code class="c">set_pte_at(mm, addr, ptep, pte)</code> 带 mm/addr 上下文，arch 可插入屏障/缓存维护（ARM64 必须 DSB 保证页表写对 MMU 可见）；裸 <code class="c">set_pte</code> 只写内存。内核里几乎全用 <code class="c">_at</code> 版本。</p>
+<p><strong>Q4：为什么 GUP 要 <code class="c">_fast</code>/慢路径两套？</strong>
+A：快路径假设 PTE 已 present 且非特殊映射，无锁读表+pte 提 pin（<code class="c">try_grab_folio</code>）。缺页/<code class="c">pte_special</code>/迁移条目则退慢路径：拿 <code class="c">mmap_lock</code>（读）、可能触发缺页或等待迁移——可睡眠。HFT 场景务必启动时把页 pin 好，避免热路径掉进慢路径。</p>
+<p><strong>Q5：遍历用户页表需要持什么锁？</strong>
+A：稳定遍历需 <code class="c">mmap_lock</code>（读）——防 VMA 树被并发改。v6.6 的 VMA 已是 maple tree（06.5/ch05），锁语义不变。仅读单个 PTE 用 rcu 版 <code class="c">pte_offset_map_nolock</code> 可免 mmap_lock，但要自校验。<strong>结论：MM 内核代码的锁纪律 = 先锁再钻。</strong></p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 3 §3 页表的分配与释放 (Quicklists)</h2></div>
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 3 §3 页表的分配与释放（Quicklists → ptdesc）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/asm-generic/pgalloc.h</code>、<code class="c">mm/memory.c</code>、<code class="c">mm/mmu_gather.c</code>）</p>
 </blockquote>
-<h3>3. 页表的分配与释放 (Quicklists)</h3>
-<p>分配 <strong>物理页</strong> 作页表本身（PGD/PMD/PTE 表占用的页）<strong>昂贵</strong> — 常需 <strong>关中断 / 拿锁</strong>。</p>
-<p><strong>2.4/2.6 快速缓存 (Quicklists)：</strong>  per-CPU 或全局 <strong>LIFO 链表</strong> 缓存刚释放的页表页：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>页表 <strong>本身就是物理页</strong>，也要从分配器来。原书讲 2.4 的 quicklist 专用缓存；v6.6 的答案是 <strong><code class="c">pgtable_t</code> + ptdesc + kmem_cache</strong>——但"别让页表分配掉进慢路径"这个目标二十年没变。本节把两代机制对照清楚。</p>
+<hr />
+<h2>1. 原书机制：Quicklists（2.4 时代）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>Quicklist</th>
-<th>缓存对象</th>
+<th>缓存什么</th>
+<th>特性</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">pgd_quicklist</code></strong></td>
-<td>PGD 级表页</td>
+<td><code class="c">pgd_quicklist</code></td>
+<td>PGD 表页</td>
+<td>per-CPU LIFO</td>
 </tr>
 <tr>
-<td><strong><code class="c">pmd_quicklist</code></strong></td>
-<td>PMD 级表页</td>
+<td><code class="c">pmd_quicklist</code></td>
+<td>PMD 表页</td>
+<td>关中断操作（无锁）</td>
 </tr>
 <tr>
-<td><strong><code class="c">pte_quicklist</code></strong></td>
-<td>PTE 级表页</td>
+<td><code class="c">pte_quicklist</code></td>
+<td>PTE 表页</td>
+<td>容量上限（否则内存泄漏倾向）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>LIFO</strong> → 刚释放的页更可能 <strong>仍在 cache 热</strong>，加速 <strong>fork / munmap / 缺页</strong> 路径。</p>
-<blockquote>
-<p><strong>现代内核：</strong> quicklist 概念演化为 <strong>专用 slab / kmem_cache</strong>（如 <code class="c">pgtable_cache</code>）；<strong>思想不变</strong> — <strong>不要每次 walk 到 buddy 分配器</strong>。</p>
-</blockquote>
+<p><strong>动机：</strong> fork+exit 高频的服务器（cgi 时代）页表页反复 alloc/free，buddy 路径（zone lock、伙伴合并）太贵。LIFO 保证 <strong>cache 热</strong> 的表页优先复用。</p>
+<p><strong>问题：</strong> 各 arch 私有实现、无水印控制（quicklist 不算 free memory，OOM 判断失真）——<strong>2.6 即被删除</strong>。</p>
+<h2>2. v6.6 机制：<code class="c">pgtable_t</code> + ptdesc</h2>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/pgalloc.h（实锚） */
+pte_t *__pte_alloc_one_kernel(struct mm_struct *mm);       /* :19 内核 PTE（init_mm 用） */
+pgtable_t __pte_alloc_one(struct mm_struct *mm, gfp_t gfp) /* :64 用户 PTE，跑 pagetable_pte_ctor() */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>v6.6 角色</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pgtable_t</code></td>
+<td><code class="c">struct page *</code> 别名——<strong>一页表 = 一整页</strong>，直接走 buddy（<code class="c">__get_free_page</code>）/slab PGD cache</td>
+</tr>
+<tr>
+<td><code class="c">ptdesc</code>（<code class="c">struct ptdesc</code>）</td>
+<td>页表页的元数据头（复用 <code class="c">struct page</code> 内存布局），v6.6 正在把"页表页的 page"与"数据页的 page"区分开</td>
+</tr>
+<tr>
+<td><code class="c">pagetable_pte_ctor()</code></td>
+<td>构造：挂到 <code class="c">mm-&gt;pte_table_dtor</code> 可跟踪、<code class="c">inc_lru_vec_page_state(PGTABLE)</code> 计数</td>
+</tr>
+<tr>
+<td>PGD</td>
+<td><code class="c">kmem_cache_alloc(pgd_cache)</code>（x86 用专用 cache，因 PGD 只占半页要<strong>共享缓存行</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>分配时机——锁外预分配</strong>（v6.6 memory.c 实锚）：</p>
+<pre class="code" data-label="C"><code class="c">/* memory.c:4202 / :4280 / :4520（缺页路径） */
+vmf-&gt;prealloc_pte = pte_alloc_one(vmf-&gt;vma-&gt;vm_mm);   /* 拿 mmap_lock 前先分配 */
+...
+pte_free(vmf-&gt;vma-&gt;vm_mm, vmf-&gt;prealloc_pte);         /* 用不上则退还 */
+</code></pre>
+<p>缺页 handler 在 <strong>进入临界区前</strong> 预备好表页——如果直接在锁内 <code class="c">__GFP_DIRECT_RECLAIM</code> 分配，可能睡眠持锁，拖垮整个 mm 的并发缺页。<strong>"分配放锁外"是 v6.6 页表路径的硬纪律</strong>，quicklist 时代精神的现代变体。</p>
+<p><strong>copy 过程（fork 建子进程页表）实锚：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* memory.c:437  copy_pte_range() */
+pgtable_t new = pte_alloc_one(mm);      /* 先备好子进程的表页 */
+/* :449  init_mm 的内核表用 pte_alloc_one_kernel() */
+</code></pre>
+<h2>3. 释放：为什么不能"立刻 free"</h2>
+<p>释放页表页的难点：<strong>别的 CPU 的 TLB 里可能还缓存着指向它的翻译</strong>。TLB 是<strong>异步失效</strong>的（发 IPI 等对方 flush），如果立刻把表页还给 buddy 并被改写，别的核再 walk 会读到 <strong>任意脏数据</strong>。</p>
+<p>v6.6 解法 = <strong>mmu_gather 批量延迟释放</strong>（<code class="c">mm/mmu_gather.c</code>）：</p>
+<pre class="code" data-label="code"><code class="c">tlb_gather_mmu(&amp;tlb, mm, start, end)     ┐
+  unmap_page_range(&amp;tlb, ...)            │ ① 先只把待 free 的表页挂进
+    free_pgd_range(&amp;tlb, ...)            │    tlb-&gt;local + batch 链表
+    tlb_remove_table(tlb, table)         ┘    （mmu_gather.c:18 tlb_next_batch 链式批）
+tlb_finish_mmu(&amp;tlb)                      → ② 先 flush TLB（发 IPI 等确认）
+                                           ③ 之后才真正 free 表页
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>mmu_gather 事实（v6.6 实锚）</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>批链表增长</td>
+<td><code class="c">tlb_next_batch()</code>（mmu_gather.c:18），新批 <code class="c">__get_free_page(GFP_NOWAIT|__GFP_NOWARN)</code>（:35）</td>
+</tr>
+<tr>
+<td>批数上限</td>
+<td><code class="c">MAX_GATHER_BATCH_COUNT</code>（防 unmap 大区间把内存吃爆，:32）</td>
+</tr>
+<tr>
+<td>RCU 释放</td>
+<td><code class="c">CONFIG_MMU_GATHER_RCU_TABLE_FREE</code>：表页经 RCU grace period 后释放——正在 rcu 读侧 walk 的 <code class="c">pte_offset_map</code> 不会踩空</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这就是 munmap 大区间时的三段式：解引用 → flush → free。</strong> "unmap 完 TLB 一定干净"在多核上 <strong>必须等 IPI 往返</strong>，不免费。</p>
+<h2>4. 两代机制对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>2.4 Quicklist</th>
+<th>v6.6 ptdesc+mmu_gather</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓存对象</td>
+<td>表页裸页</td>
+<td>PGD 走 slab cache；PTE/PMD/PUD 整页走 buddy</td>
+</tr>
+<tr>
+<td>并发正确性</td>
+<td>关中断躲</td>
+<td>mmap_lock + RCU + batched flush</td>
+</tr>
+<tr>
+<td>可观测性</td>
+<td>无</td>
+<td><code class="c">cat /proc/vmstat \| grep pgtable</code>（PGTABLE_PTE_ALLOC 等计数）</td>
+</tr>
+<tr>
+<td>设计遗产</td>
+<td>LIFO 热复用</td>
+<td>保留在 slab/pcp（per-CPU page list）里——<strong>quicklist 的魂进了 pcp</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>机制兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fork 风暴后 RSS 虚高</td>
+<td>每子进程 PGD+PUD+PMD+PTE 4 页/2MiB 映射；页表本身吃内存（<code class="c">/proc/vmstat</code> pgtable 计数可证）</td>
+</tr>
+<tr>
+<td>TLB shootdown 尖刺</td>
+<td>大批 <code class="c">zap</code>→ ①②③ 模型里的 ②：IPI 等待是同步点</td>
+</tr>
+<tr>
+<td>ARM64 上 pgtable 计数</td>
+<td>每表页 ctor 后在 <code class="c">/proc/vmstat</code> 可见，量价页表内存</td>
+</tr>
+<tr>
+<td>想清空 page cache 页表</td>
+<td><code class="c">munlock</code>/<code class="c">madvise(DONTNEED)</code> 走同一 mmu_gather 路径</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 衔接</h2>
+<ul>
+<li><a href="chapter-11.html#s-6">§6 TLB 与 L1 Cache 管理</a>：② 步 flush 的语义</li>
+<li><a href="chapter-06.html#ch-6">Ch 6 物理页分配</a>：表页的底层来源（buddy/pcp）</li>
+<li><a href="chapter-08.html#ch-8">Ch 8 slab</a>：PGD cache 的底层</li>
+<li>现代全貌：<a href="../../06.5-modern-mm/html/chapter-04.html#ch-4">06.5/ch04</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 PTE 表页不能像普通数据页一样"解除映射后立即 free"？</strong>
+A：TLB 异步失效。别的核可能仍持旧翻译，且页表 walker 硬件不走 TLB 的路径可能引用表页。必须先收集→flush→（RCU grace）→free，即 mmu_gather 三段式。立即 free 的后果 = 野指针式页表读取，随机崩溃。</p>
+<p><strong>Q2：<code class="c">pgtable_t</code> 是什么类型？</strong>
+A：<code class="c">typedef struct page *pgtable_t</code>——指向整页的指针。页表页 <strong>永远整页分配</strong>（512 项×8B=4KiB 恰好一页），所以不需要子页分配器，buddy 直接可服务；元数据寄生在 <code class="c">struct page</code>（v6.6 抽象为 ptdesc）。</p>
+<p><strong>Q3：quicklist 删除后，"热表页复用"由谁继承？</strong>
+A：两条路：PGD → slab cache（对象大小即半页/一页，slab 天然缓存热对象）；PTE/PMD → buddy 的 per-CPU pageset（pcp）——free 到本 CPU pcp、alloc 优先从本 CPU pcp 拿，等效 LIFO 热复用且受 watermark 管辖。</p>
+<p><strong>Q4：fork 时子进程页表页从哪来？是复制父进程表页本身吗？</strong>
+A：<code class="c">copy_pte_range</code> 先 <code class="c">pte_alloc_one</code> 新页（memory.c:437），再逐项拷 PTE 值。<strong>表页不共享</strong>（COW 的是数据页，不是表页）；表页项倒是指向同样的物理页（只读+refcount++）。</p>
+<p><strong>Q5：<code class="c">mmu_gather</code> 的 batch 为什么用 <code class="c">GFP_NOWAIT</code> 分配？</strong>
+A：<code class="c">tlb_next_batch</code> 在 unmap 路径深处（可能持 mmap_lock 写锁），NOWAIT 保证 <strong>不会 reclaim/睡眠</strong>——分配失败就先 flush 当前批腾位子。锁内不可睡眠纪律的又一实例。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>Ch 3 §4 内核页表初始化 (Kernel Page Tables)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/memory.c</code> 的 <code class="c">init_mm</code>、<code class="c">arch/x86|arm64</code> 的启动序列）</p>
 </blockquote>
-<h3>4. 内核页表初始化 (Kernel Page Tables)</h3>
-<p>分页 <strong>非上电即有</strong> — 启动时分阶段建立。</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>分页不是上电就有：从"CPU 以物理地址跑固件"到"内核运行在稳定页表上"是一条分阶段的引导链。本节讲清 <strong>每阶段谁建表、建多大、用什么分配器</strong>——并把原书 2.4 叙事对齐到 v6.6 + ARM64（树莓派/服务器两条线都覆盖）。</p>
+<hr />
+<h2>1. 为什么要分阶段</h2>
+<p>鸡生蛋问题：<strong>页表分配器（buddy/slab）本身要跑在分页上</strong>。解法 = 自举（bootstrapping）：先用手搓的最小页表开启 MMU，再用简单分配器建全量映射，最后退役它。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>阶段</th>
-<th>做什么</th>
+<th>原书（2.4 · x86）</th>
+<th>v6.6 现实</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>引导 (Bootstrapping)</strong></td>
-<td>仅为 <strong>前 8MiB</strong> 物理内存建页表 — 够 <strong>开启 MMU / 分页单元</strong></td>
+<td>① 固件→内核</td>
+<td>真实模式→保护模式，<code class="c">swapper_pg_dir</code> 映射前 8MiB</td>
+<td>x86_64：<code class="c">__startup_64</code> 修复 2MiB 大页初始映射；ARM64：head.S 以<strong>块映射</strong>（2MiB/1GiB section）直映内核镜像+DTB+initrd</td>
 </tr>
 <tr>
-<td><strong>最终化 (Finalizing)</strong></td>
-<td><strong><code class="c">paging_init()</code></strong> → <strong><code class="c">pagetable_init()</code></strong> 等 — 为 <strong><code class="c">ZONE_DMA</code> + <code class="c">ZONE_NORMAL</code></strong> 建立 <strong>内核线性映射</strong>，并初始化 zone 等</td>
+<td>② 开 MMU</td>
+<td><code class="c">cr3 = swapper_pg_dir</code></td>
+<td>x86 写 CR3；ARM64 写 TTBR0_EL1（v6.6 起内核在高 VA 走 <strong>TTBR1</strong>，KPTI 后彻底分离）</td>
+</tr>
+<tr>
+<td>③ 建全量映射</td>
+<td><code class="c">paging_init()</code>→<code class="c">pagetable_init()</code></td>
+<td>x86 <code class="c">init_mem_mapping</code>；ARM64 <code class="c">paging_init()</code>→<code class="c">map_mem()</code> 扫 memblock 逐段块映射</td>
+</tr>
+<tr>
+<td>④ 退役自举分配器</td>
+<td>bootmem → buddy</td>
+<td><strong>memblock</strong> → buddy（见 06.5/ch01）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>用户进程页表</strong> 在 <strong>fork / exec / mmap</strong> 时逐步填充；<strong>内核部分</strong> 在 boot 末段 <strong>全局就绪</strong>。</p>
-<p>→ 与 <a href="chapter-05.html#ch-5">Ch 5 启动内存分配器</a> 衔接（boot 页分配器 vs 正式 page allocator）。</p>
+<h2>2. <code class="c">init_mm</code>：内核的"进程描述符"</h2>
+<p>内核自身页表的拥有者不是任何进程，是 <strong>0 号上下文 <code class="c">init_mm</code></strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/init-mm.c（v6.6） */
+struct mm_struct init_mm = {
+    .pgd    = swapper_pg_dir,          /* x86 名字；ARM64 是 init_pg_dir */
+    .mm_mt  = MTREE_INIT_EXT(mm_mt, ...) /* v6.6：内核 VMA 也在 maple tree 上 */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">init_mm</code> 事实</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 <code class="c">mm_users</code>（不引用计数）</td>
+<td>永生，与内核同寿</td>
+</tr>
+<tr>
+<td>内核线程 <code class="c">borrow</code> 它</td>
+<td><code class="c">active_mm = init_mm</code> → <strong>lazy TLB</strong>：内核线程不切 CR3/TTBR，省一次 full flush</td>
+</tr>
+<tr>
+<td><code class="c">pte_alloc_one_kernel(&amp;init_mm)</code>（memory.c:449）</td>
+<td>内核态建表（如 fixmap/vmalloc）用它</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. ARM64 启动建表（树莓派 5 这条线）</h2>
+<pre class="code" data-label="code"><code class="c">ROM → SPL/uboot（物理地址裸跑）
+  → head.S：建 init_pg_dir，块映射内核镜像（.text/.rodata/.data 分段设权限）
+  → 开 MMU（TTBR0_EL1 = init_pg_dir）
+  → start_kernel → setup_arch → paging_init()
+       → map_mem()：扫 memblock.memory 每个区间
+       → 用 2MiB/1GiB 块映射直映全部 DDR（linear map）
+  → mm_core_init → memblock 交棒给 buddy
+</code></pre>
+<p><strong>linear map 权限细粒度</strong>：v6.6 ARM64 支持 <code class="c">rodata=full</code> 时把直映拆到 4KiB 粒度设 NX/RO（防 ret2dir 攻击）——代价是 <strong>页表页数量暴涨</strong>，<code class="c">vmemmap</code> 与 linear map 的表页本身吃掉几百 MiB（大内存机器）。默认 <code class="c">rodata=on</code> 折中（2MiB 粒度）。</p>
+<p><strong>HFT 视角</strong>：开机后 <code class="c">[dmesg] Memory: ... available</code> 与物理条数之差中，一块就是页表自身开销。</p>
+<h2>4. v6.6 与原书的差异清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书（2.4/x86-32）</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核与用户共享一个 PGD 的高端</td>
+<td>KPTI（x86）/ ARM64 TTBR0/TTBR1 分离：<strong>内核映射不在用户页表里</strong>（meltdown 缓解）</td>
+</tr>
+<tr>
+<td>8MiB 引导映射够用</td>
+<td>内核镜像+initrd+DTB+earlycon 都要在开 MMU 前块映射</td>
+</tr>
+<tr>
+<td>bootmem 位图分配器</td>
+<td><strong>memblock</strong>（type: memory/reserved 两条链）→ 06.5/ch01</td>
+</tr>
+<tr>
+<td><code class="c">swapper_pg_dir</code> 一张表管内核</td>
+<td>vmalloc/fixmap/kasan/vmemmap 各有独立子树，全挂在 <code class="c">init_mm-&gt;pgd</code> 下</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 启动后还能改内核页表吗——能，vmalloc 就是</h2>
+<p>内核页表 <strong>不是只读档案</strong>：</p>
+<ul>
+<li><code class="c">vmalloc()</code>/<code class="c">ioremap()</code> 动态往 vmalloc 区插 PTE——<strong>这就是要锁</strong> 的场景（<code class="c">vmap_area_lock</code> + 页表锁）</li>
+<li>BPF/JIT、模块加载、<code class="c">kasan</code> 影子内存都走这条路</li>
+<li>修改 <code class="c">init_mm</code> 的表项 <strong>不会自动出现在用户进程页表里</strong>：vmalloc 区是 <strong>共享子树</strong>（所有进程 PGD 的内核部分指到同一批下层表）——fork 时只复制用户部分（<code class="c">clone_pg_range</code> 跳过内核 VA）</li>
+</ul>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>机制兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核线程不污染 TLB</td>
+<td><code class="c">active_mm=init_mm</code> + lazy TLB：上下文切换省 CR3/TTBR0 写</td>
+</tr>
+<tr>
+<td>KPTI 开销</td>
+<td>每次用户↔内核切换换页表基址（双 CR3/TTBR）→ 单边 ~100ns 级；<strong>HFT 裸金属部署常 <code class="c">pti=off</code></strong>（自担 meltdown 风险）</td>
+</tr>
+<tr>
+<td>树莓派调内存布局</td>
+<td><code class="c">cat /proc/iomem</code> 看 linear map/vmalloc 划分；vmalloc 区 OOM → <code class="c">vmalloc=xxx</code> 参数</td>
+</tr>
+<tr>
+<td>hugepage 预留发生在哪</td>
+<td><code class="c">hugepages=N</code> 在 boot memblock 阶段就 <strong>先扣走</strong>（<code class="c">hugetlb</code> early reserve）——所以 2MiB 大页池与运行期 CMA/THP 互不干扰</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-5">§5 地址与 struct page 的映射</a>：vmemmap 在启动期如何建</li>
+<li><a href="chapter-05.html#ch-5">Ch 5 启动内存分配器</a>：memblock 前身 bootmem 的原书机制</li>
+<li>现代版：<a href="../../06.5-modern-mm/html/chapter-01.html#ch-1">06.5/ch01 memblock</a></li>
+<li>ARM64 实战：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/07-arm-architecture/">07-arm-architecture</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么内核线程不分配自己的 <code class="c">mm_struct</code>？</strong>
+A：内核线程永远跑在内核 VA（<code class="c">init_mm</code> 共享子树），用户地址空间对它无意义。省掉的是：页表页（每 mm 一份 PGD 起）、TLB 切换（借 <code class="c">active_mm</code> 不换表基址）。切换回用户进程时若 mm 相同则连 flush 都免——这是 05-linux-kernel 调度章节 lazy TLB 的伏笔。</p>
+<p><strong>Q2：KPTI 下用户进程页表里还有内核映射吗？</strong>
+A：只剩最小 trampoline（入口跳板+SYSCALL 存根），完整内核映射在独立 kernel table（x86 PCID 分离 / ARM64 走 TTBR1 本来就分离）。副作用：syscall 进出多一次页表切换。ARM64 从一开始就是 TTBR0/TTBR1 双基址架构，KPTI 对它近乎免费（v8.0 PAN 时代即可），x86 才是真付代价的。</p>
+<p><strong>Q3：vmalloc 的 PTE 建在哪个 mm 里？别的进程怎么看见？</strong>
+A：建在 <code class="c">init_mm</code> 的表里。所有进程 PGD 的内核半区 <strong>指向同一物理下层表</strong>——fork 只复制用户半区。所以 vmalloc 一处建立、全体可见，无需广播。（用户态映射则完全私有。）</p>
+<p><strong>Q4：<code class="c">hugepages=1024</code> 预留的大页，运行期物理内存紧张能被回收吗？</strong>
+A：不能自动回收成 buddy 页（除非 <code class="c">echo &gt; nr_hugepages</code> 主动缩池）。boot 期从 memblock 预留或启动早期从 buddy 抓取（<code class="c">gather_bootmem_prealloc</code>），池子独立。HFT 常用 boot 参数预留而非运行期 echo——后者碎片化后可能失败。</p>
+<p><strong>Q5：<code class="c">init_mm</code> 的 VMA 什么时候用？</strong>
+A：内核自身映射管理：<code class="c">vread()</code>（/dev/kmem 读 vmalloc 区）、<code class="c">register_kernel_stack</code>（v6.6 尚无）、vmalloc 查区间。v6.6 起内核 VMA 也在 maple tree（<code class="c">mm_mt</code>）上，与用户 VMA 同一数据结构——代码统一化的一步。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">5</div><h2>Ch 3 §5 地址与 struct page 的映射</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mmzone.h</code>、<code class="c">include/asm-generic/memory_model.h</code>）</p>
 </blockquote>
-<h3>5. 地址与 struct page 的映射</h3>
-<p>内核需在 <strong>物理地址 ↔ 虚拟地址 ↔ struct page</strong> 之间 <strong>快速转换</strong>。</p>
-<h3>物理地址 ↔ 内核虚拟地址（ZONE_NORMAL）</h3>
-<p>在 <strong>内核直接映射区</strong>（x86 32 位上约 <strong>3GiB 起 <code class="c">PAGE_OFFSET</code></strong>）：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>内核里有 <strong>三套身份</strong> 互相转换：<strong>VA（虚拟地址）、PA（物理地址）、<code class="c">struct page</code>（元数据）</strong>。本节讲清转换表——这是读 MM 代码的第二套"识字课"，也是 <code class="c">virt_to_page</code> 什么时候 <strong>非法</strong> 的判据来源。</p>
+<hr />
+<h2>1. 三套身份一张图</h2>
+<pre class="code" data-label="code"><code class="c">      ┌─────────── linear map（直映区） ───────────┐
+VA ──►│ PAGE_OFFSET + PA（加减互逆：__va/__pa）    │◄── PA
+      └────────────────────────────────────────────┘
+PA ──右移──► PFN ──索引──► vmemmap[PFN] == struct page   （pfn_to_page/page_to_pfn）
+VA ──virt_to_page──► struct page        （仅直映区合法！）
+VA ──页表 walk──► PA/PFN                 （任意映射区）
+</code></pre>
+<p><strong>核心分工：</strong> 页表管 "VA→PA"（per-mm）；vmemmap 管 "PFN→元数据"（全局唯一）。两套系统在 <code class="c">vm_normal_page()</code>（memory.c:581）汇合：walk 出 PFN 再查 struct page。</p>
+<h2>2. 直映区（linear/direct map）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>方向</th>
-<th>思路</th>
+<th>项</th>
+<th>x86_64</th>
+<th>ARM64（4K 页, 48VA）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>物理 → 虚拟</td>
-<td><strong><code class="c">phys + PAGE_OFFSET</code></strong>（宏 <strong><code class="c">__va()</code></strong> / <strong><code class="c">phys_to_virt()</code></strong>）</td>
+<td>起点</td>
+<td><code class="c">PAGE_OFFSET = 0xffff888000000000</code></td>
+<td><code class="c">PAGE_OFFSET = 0xffff800000000000</code></td>
 </tr>
 <tr>
-<td>虚拟 → 物理</td>
-<td>减 <strong><code class="c">PAGE_OFFSET</code></strong>（<strong><code class="c">__pa()</code></strong> / <strong><code class="c">virt_to_phys()</code></strong>）</td>
+<td>覆盖</td>
+<td>全部物理内存线性平移</td>
+<td>同左（块映射）</td>
+</tr>
+<tr>
+<td>转换宏</td>
+<td><code class="c">__va(pa)</code> / <code class="c">__pa(va)</code> = ±PAGE_OFFSET</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>典型用户</td>
+<td>slab 对象、buddy 页、<code class="c">page_address()</code></td>
+<td>同左</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>仅适用于「线性映射窗口」内的物理页</strong> — HIGHMEM 需 <code class="c">kmap</code>（Ch 2 §4）。</p>
-<h3>物理地址 → struct page</h3>
-<ol>
-<li>物理地址 <strong>右移</strong> 得到 <strong>页框号 PFN</strong></li>
-<li>全局 <strong><code class="c">mem_map[]</code></strong>（现代：<strong>sparse vmemmap</strong> / <strong>pfn_to_page</strong>）— <strong>PFN 作索引</strong> 取 <strong><code class="c">struct page</code></strong></li>
-<li>宏 <strong><code class="c">virt_to_page()</code></strong> / <strong><code class="c">pfn_to_page()</code></strong> 封装上述逻辑</li>
-</ol>
-<pre class="code" data-label="code"><code class="c">PFN  ──index──►  mem_map[PFN]  ==  struct page  （Ch 2）
-                      ▲
-PTE ──frame number──┘
+<p><strong>规则：<code class="c">virt_to_page()</code>/<code class="c">phys_to_virt()</code> 只对直映区 VA 合法。</strong> 对 vmalloc 地址、用户地址、模块地址调用 = <strong>未定义行为</strong>（地址不在直映窗口，减出来的"PFN"是垃圾）。v6.6 里这些错误调用有的被 <code class="c">DEBUG_VIRTUAL</code>（<code class="c">CONFIG_DEBUG_VIRTUAL</code>）当场捕获——树莓派调内核时值得开。</p>
+<h2>3. <code class="c">mem_map[]</code> → sparse vmemmap</h2>
+<p>原书时代：全局 <code class="c">struct page mem_map[]</code> 一个大数组，PFN 直接下标。</p>
+<p>v6.6 两条实现（<code class="c">CONFIG_SPARSEMEM_*</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>struct page 存哪</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SPARSEMEM</code>（classic）</td>
+<td>section 表按需分配</td>
+<td>内存空洞不浪费元数据</td>
+</tr>
+<tr>
+<td><code class="c">SPARSEMEM_VMEMMAP</code>（x86_64/ARM64 默认）</td>
+<td>vmemmap 虚拟区（x86: <code class="c">0xffffea0000000000</code>）<strong>连续</strong>排列</td>
+<td><code class="c">pfn_to_page(pfn) = vmemmap + pfn</code> <strong>一次加法</strong>（O(1)）；空洞 section 的表页不分配但地址空间保留连续假象</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* asm-generic/memory_model.h（vmemmap 模式）*/
+#define __pfn_to_page(pfn)  (vmemmap + (pfn))
+#define __page_to_pfn(page) (unsigned long)((page) - vmemmap)
 </code></pre>
-<p>→ <strong>页表管「虚拟→物理」；mem_map/ vmalloc 管「物理→struct page 元数据」</strong>。</p>
+<p><strong>代价</strong>：vmemmap 区本身要页表映射物理内存——每 4GiB 物理内存的 <code class="c">struct page</code>（64B×2^20×... ≈ 每 4KiB 页 64B 元数据 = <strong>1.5% 物理内存</strong>）+ 其页表。512GiB 机器 ≈ 8GiB 元数据。这就是 §4 说的"页表吃内存"的可量化部分。</p>
+<p><strong>HFT 关联</strong>：<code class="c">pfn_to_page</code> O(1) 意味着 GUP/回收路径没有隐藏查找成本；但 <strong>元数据 cache miss</strong> 是真实成本——随机访问 4KiB 页时，struct page（64B，同 cache line 挤 1 个）与数据页本身是两次独立 miss。per-CPU page list 顺带把热的 struct page 留在 cache。</p>
+<h2>4. 带洞物理布局：PFN 的"虚号"</h2>
+<p>PFN 是 <strong>架构物理地址右移</strong>，不是紧凑编号。所以：</p>
+<ul>
+<li>ACPI/PCIe MMIO 洞（x86 3~4GiB）区间的 PFN <strong>没有</strong> struct page</li>
+<li>NUMA 黑洞、内存热插拔空洞同理</li>
+<li><code class="c">pfn_valid(pfn)</code> 必查——直接 <code class="c">pfn_to_page</code> 野 PFN 再解引用 = crash。树莓派外设 VA 用 <code class="c">ioremap</code> 而非直映，就是为了绕开"无 struct page"区。</li>
+</ul>
+<h2>5. 不经 struct page 的映射</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>映射</th>
+<th>为什么没有 struct page</th>
+<th>PTE 标记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ioremap()</code>（MMIO 寄存器）</td>
+<td>设备内存不是 RAM</td>
+<td><code class="c">_PAGE_PCD/PWT</code>（不可缓存）</td>
+</tr>
+<tr>
+<td><code class="c">remap_pfn_range()</code>（用户 mmap 设备）</td>
+<td>同上</td>
+<td><code class="c">_PAGE_SPECIAL</code></td>
+</tr>
+<tr>
+<td>frame buffer / DPDK 的 VFIO 映射</td>
+<td>外部接管的物理页</td>
+<td>VM_IO/VM_PFNMAP 标记 VMA</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">vm_normal_page()</code>（memory.c:581）遇到这些返回 NULL——<strong>回收器、rmap、GUP 对这类映射全体跳过</strong>。这就是 DPDK 大页被 pin 住、"内核不可见"的机制底层（12.5/ch13 的 VFIO/大页路线）。</p>
+<h2>6. 转换 API 速查（合法性判据）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>合法域</th>
+<th>禁区</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__pa(va)</code> / <code class="c">__va(pa)</code></td>
+<td>直映区</td>
+<td>vmalloc/模块/用户 VA</td>
+</tr>
+<tr>
+<td><code class="c">virt_to_page(va)</code></td>
+<td>直映区（lowmem 语义）</td>
+<td>同上；HIGHMEM 页用 <code class="c">kmap</code> 后仍非法</td>
+</tr>
+<tr>
+<td><code class="c">virt_to_phys</code></td>
+<td>同 <code class="c">__pa</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">page_address(page)</code></td>
+<td>直映页；HIGHMEM 例外需 kmap</td>
+<td>vmalloc 页返回 NULL（用 <code class="c">vmalloc_to_page</code>）</td>
+</tr>
+<tr>
+<td><code class="c">vmalloc_to_page(va)</code></td>
+<td>vmalloc 区（walk 页表）</td>
+<td>直映区</td>
+</tr>
+<tr>
+<td><code class="c">follow_page()/GUP</code></td>
+<td>任意用户映射</td>
+<td>内核 VA</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>机制兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DPDK/AF_XDP 大页模式</td>
+<td>页被 pin + 用户直映射，struct page 仅作簿记，回收路径跳过</td>
+</tr>
+<tr>
+<td><code class="c">page_address()</code> 返回 NULL 的 crash</td>
+<td>vmalloc 内存（如某些驱动 buffer）误当直映页——开 <code class="c">DEBUG_VIRTUAL</code> 抓</td>
+</tr>
+<tr>
+<td>树莓派外设寄存器访问</td>
+<td>必须 <code class="c">ioremap</code>，无 struct page、无 cache（映射属性在 PTE 设备位）</td>
+</tr>
+<tr>
+<td>内存开销核算</td>
+<td>struct page ≈ 物理内存 ×1.5%（64B/4KiB）——容量规划别忘</td>
+</tr>
+<tr>
+<td>cacheline 意识</td>
+<td>struct page 与数据页分离 = 顺序 DMA 预取也救不了元数据 miss</td>
+</tr>
+</tbody>
+</table></div>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-02.html#ch-2">Ch 2 物理内存描述</a>：struct page 与 zone/node 的组织</li>
+<li><a href="chapter-14.html#s-4">§4 内核页表初始化</a>：vmemmap 怎么在 boot 期建出来</li>
+<li><a href="../../06.5-modern-mm/html/chapter-06.html#ch-6">06.5/ch06 folio</a>：v6.6 把 struct page 分组为 folio 的演进</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">virt_to_page()</code> 对 <code class="c">kmalloc(64)</code> 返回的指针合法吗？</strong>
+A：合法。kmalloc 走 slab，对象物理页在直映区，对象 VA 也在直映区——<code class="c">virt_to_page</code> 减 PAGE_OFFSET 得 PA 得 PFN 得 page。对 <code class="c">vmalloc(64)</code> 的指针就是 <strong>非法</strong>：vmalloc VA 不在直映窗口（须用 <code class="c">vmalloc_to_page</code>）。</p>
+<p><strong>Q2：vmemmap 模式下，PFN 有洞时 <code class="c">pfn_to_page</code> 会怎样？</strong>
+A：返回一个"地址合法但从未背靠物理页"的 struct page 指针——vmemmap 的该 section 表页没分配（vmemmap pop free 时跳过空洞）。解引用 = fault。所以必须 <code class="c">pfn_valid()</code> 先行；非 vmemmap 的 classic sparse 则是 NULL-ish section 指针。<strong>结论：PFN 不是许可证，pfn_valid 才是。</strong></p>
+<p><strong>Q3：为什么 struct page 不放进 PTE，而是独立数组？</strong>
+A：PTE 是 per-mapping 的（同一页多处映射就有多份 PTE），struct page 是 per-物理页 的唯一状态。若塞进 PTE，共享页的 dirty/refcount 就有多副本一致性问题。分离 = 单一事实源 + rmap 反向桥接。</p>
+<p><strong>Q4：<code class="c">/proc/kpageflags</code> 一个字节都没有 struct page 之外的信息吗？</strong>
+A：它就是 vmemmap 元数据的用户态镜像（每 PFN 8B flags + 8B count + 8B mapping...分文件）。numastat/pagetypeinfo 同源。HFT 内存审计脚本可拿它统计 hugepage 实际分布。</p>
+<p><strong>Q5：ARM64 直映区和 x86_64 的 PAGE_OFFSET 数值不同，跨架构代码怎么办？</strong>
+A：永远用宏（<code class="c">__pa/__va/page_address</code>）而不是裸数值偏移；用户态程序根本看不到这两个区（内核 VA 空间）。跨架构 bug 高发点在驱动：对 ioremap 指针做 <code class="c">virt_to_page</code>（在两架构都是错的，但 ARM64 上常常"碰巧"不崩，埋雷到 x86_64 才炸）。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-6">
         <div class="sec-head"><div class="sec-no">6</div><h2>Ch 3 §6 TLB 与 L1 Cache 管理</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/mmu_gather.c</code>、<code class="c">arch/*/include/asm/tlb.h</code>、<code class="c">arch/*/mm/tlb.c</code>）</p>
 </blockquote>
-<h3>6. TLB 与 L1 Cache 管理</h3>
-<p>CPU 用 <strong>TLB</strong> 缓存 <strong>最近用过的 VA→PA</strong>；<strong>L1 cache</strong> 缓存 <strong>物理帧内容</strong>。页表更新后，硬件 <strong>不一定</strong> 自动使旧 TLB/cache 项失效。</p>
-<p>Linux 在 <strong>改映射、切换 mm、换页</strong> 等路径插入 <strong>架构相关 hook</strong>：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>TLB 是 VA→PA 的硬件 cache，<strong>但它不保证与页表同步</strong>。内核改了页表，必须主动让 TLB 里的旧翻译失效——这个"同步税"是 HFT 尾延迟的最大单点来源之一。本节讲失效 API 面、多核 shootdown 成本模型、以及 lazy TLB 优化。</p>
+<hr />
+<h2>1. 基本事实</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>Hook（示例）</th>
-<th>何时需要</th>
+<th>事实</th>
+<th>数据（现代 x86_64/ARM64 server）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">flush_tlb_all()</code></strong></td>
-<td>全局 TLB 失效</td>
+<td>L1 dTLB</td>
+<td>~64 项，4KiB 页 → 覆盖 256KiB</td>
 </tr>
 <tr>
-<td><strong><code class="c">flush_tlb_mm()</code></strong></td>
-<td>某 <strong><code class="c">mm_struct</code></strong> 的 TLB 项</td>
+<td>L2 STLB</td>
+<td>~1.5K–2K 项，混合页大小 → 覆盖数十 MiB（含 2MiB 项）</td>
 </tr>
 <tr>
-<td><strong><code class="c">flush_tlb_page()</code></strong></td>
+<td>2MiB 大页</td>
+<td>单项覆盖 = 4KiB 的 512× → 同样项数覆盖暴涨</td>
+</tr>
+<tr>
+<td>TLB hit</td>
+<td>~0 周期（与 L1 并行）</td>
+</tr>
+<tr>
+<td>TLB miss→walker</td>
+<td>数十~上百周期（4 次访存链）</td>
+</tr>
+<tr>
+<td><strong>TLB shootdown</strong></td>
+<td><strong>IPI 往返 + 对方 flush，几百 ns~µs 级</strong>（跨核越多越贵）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论先行：</strong> TLB miss 是"稳态税"（可用大页压），shootdown 是"事件税"（必须少触发）。HFT 优化顺序：先消灭 shootdown，再压 miss。</p>
+<h2>2. 失效 API 面（架构无关层）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Hook</th>
+<th>粒度</th>
+<th>典型调用者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">flush_tlb_all()</code></td>
+<td>全核全表</td>
+<td>极少（内核自身重映射）</td>
+</tr>
+<tr>
+<td><code class="c">flush_tlb_mm(mm)</code></td>
+<td>该 mm 全部</td>
+<td><code class="c">mprotect</code>/<code class="c">munmap</code> 大区间（mmu_gather 收口）</td>
+</tr>
+<tr>
+<td><code class="c">flush_tlb_range(vma, start, end)</code></td>
+<td>地址区间</td>
+<td>zap/protect 路径（能单页就别整 mm）</td>
+</tr>
+<tr>
+<td><code class="c">flush_tlb_page(vma, addr)</code></td>
 <td>单页</td>
+<td><code class="c">ptep_clear_flush</code> 单点操作</td>
 </tr>
 <tr>
-<td><strong><code class="c">flush_cache_mm()</code> / <code class="c">flush_cache_page()</code></strong></td>
-<td>某些 arch 上 <strong>cache alias</strong> / <strong>coherency</strong></td>
+<td><code class="c">flush_tlb_kernel_range</code></td>
+<td>内核 VA</td>
+<td>vmalloc unmap、模块卸载</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>上下文切换</strong> 换 <strong><code class="c">mm</code></strong> → 常 <strong>切换页表基址 + 部分 flush</strong> — <strong>多线程绑核</strong> 可减少 <strong>跨核 TLB shootdown</strong>（仍与 <strong>页表共享</strong> 策略有关）。</p>
-<p><strong>HFT：</strong></p>
+<p><strong>关键语义：</strong> 这些函数返回 ≠ TLB 已干净。x86 的 INVLPG/CR3 写是同步的，但 <strong>跨核</strong> 必须 IPI——<code class="c">mmu_gather</code> 的三段式（收集→flush→free，见 <a href="chapter-14.html#s-3">§3</a>）就是为此设计。单核视角"我 flush 完了"，别的核可能还在路上。</p>
+<h2>3. 多核 shootdown：成本模型</h2>
+<pre class="code" data-label="code"><code class="c">CPU0: 改 PTE ──► 需要所有&quot;用过该 mm 的核&quot;失效
+        │
+        ├─ smp_call_function_many(mask=mm_cpumask)   ← IPI 广播
+        │       CPU1: 进 IPI handler，flush 本核 TLB
+        │       CPU2: 正在跑长原子区/中断关闭…… ← **等待者 CPU0 自旋/软等待**
+        ▼
+      全员 ack 后，CPU0 才能安全 free 表页
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>现象</th>
-<th>页表/TLB 视角</th>
+<th>成本项</th>
+<th>量级</th>
+<th>HFT 影响点</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>工作集 &gt; TLB 覆盖</strong></td>
-<td><strong>TLB miss</strong> ↑ → 页表 walk ↑ → 延迟尾</td>
+<td>IPI 发送+处理</td>
+<td>每核 ~1µs 内</td>
+<td>被广播核的 <strong>中断被劫持</strong>——执行线程出现计划外抖动</td>
 </tr>
 <tr>
-<td><strong>4KiB 小页</strong></td>
-<td>同样 1GiB 映射需 <strong>更多 PTE / 更多 TLB 项</strong></td>
+<td>等最慢的核</td>
+<td>无上界（对方 irq 关闭多久就等多久）</td>
+<td><code class="c">tlb_flush_pending</code> 期间页表释放停滞</td>
 </tr>
 <tr>
-<td><strong>2MiB / 1GiB 大页、THP</strong></td>
-<td><strong>更少 PTE、更少 TLB miss</strong> — HFT 常 <strong>显式 hugepage</strong> 或 <strong>关 THP 防 latency 抖动</strong>（见 THP 笔记）</td>
-</tr>
-<tr>
-<td><strong>进程迁移到其他 CPU</strong></td>
-<td>可能 <strong>remote TLB invalidation</strong></td>
+<td>PCID/ASID</td>
+<td>x86 PCID 12-bit / ARM64 ASID 16-bit</td>
+<td>免整表 flush，只刷指定地址空间——<strong>必须开</strong>（默认开）</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="../../15-computer-architecture/html/chapter-02.html#ch-2">Hennessy Ch2 TLB</a> · <a href="../../13-dpdk/01-Intro-Book/html/chapter-01.html#ch-1">13-DPDK EAL 大页</a></p>
+<p><strong>谁在触发 shootdown（用户态可感知清单）：</strong></p>
+<ol>
+<li><code class="c">mprotect</code>/<code class="c">munmap</code>/<code class="c">madvise(MADV_DONTNEED)</code></li>
+<li>THP collapse/split（khugepaged 折叠 511 个 4K 页 → PMD 大页，全局 flush）</li>
+<li><code class="c">mlock</code> 解锁收缩、<code class="c">mremap</code></li>
+<li>fork 后 COW 写缺页（只单页 flush，便宜）</li>
+<li><code class="c">process_vm_writev</code>、ptrace 改对方页表</li>
+</ol>
+<h2>4. Lazy TLB：内核线程的免单</h2>
+<p>上下文切换到内核线程（kworker/softirqd/kswapd）时：</p>
+<pre class="code" data-label="C"><code class="c">/* 概念代码（arch tlb.c 的 switch_mm） */
+if (next-&gt;mm == NULL) {                  /* 内核线程 */
+    next-&gt;active_mm = prev-&gt;active_mm;   /* 借用，不换 CR3/TTBR0 */
+} else {
+    switch_mm_irqs_off(prev-&gt;active_mm, next-&gt;mm, next);
+}
+</code></pre>
+<p><strong>收益：</strong> 内核线程不写 TTBR/CR3 → 用户 TLB 项不失效；切回原进程时发现 CR3 没变 → <strong>零 flush</strong>。</p>
+<p><strong>代价：</strong> 借用期间 <code class="c">mm_cpumask</code> 记着该核——用户进程改页表时，IPI 也要发给"正在跑内核线程借用我 mm 的核"。<strong>HFT 数值线程绑核 + 内核线程被赶到同核</strong>（isolcpus 隔离不彻底时）会把这税带进来。</p>
+<h2>5. L1 cache 别名问题（原书重点，64 位已淡化）</h2>
+<p>32 位 VIPT cache 时代：同物理页两个 VA 映射 → cache 里可能出现 <strong>两份缓存行</strong>（alias）→ 写一个另一个不失效 = 数据不一致。解法是 <code class="c">flush_cache_*</code> 家族 + 限制映射颜色。</p>
+<p>64 位 x86_64/ARM64：L1 为 PIPT（物理索引）→ <strong>别名问题硬件消除</strong>，<code class="c">flush_cache_page</code> 等退化为空或仅 D-cache 维护（ARM64 特定场景 <code class="c">__flush_dcache_page</code> 仍真实存在——非一致性设备 DMA 用）。原书这块按"历史机制"读即可。</p>
+<h2>6. v6.6 新东西</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>内容</th>
+<th>相关</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tlb_remove_table</code> RCU 批量释放</td>
+<td>表页经 RCU grace 后 free，与 <code class="c">pte_offset_map</code> 读侧并发安全</td>
+<td>mmu_gather.c</td>
+</tr>
+<tr>
+<td>ARM64 contiguous TLB bit</td>
+<td>一批连续 PTE 标记 contiguous → 硬件按大项缓存</td>
+<td>次级大页效果，不占 PMD</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_MMU_GATHER_RCU_TABLE_FREE</code></td>
+<td>默认开（SMP）</td>
+<td>减少同步等待</td>
+</tr>
+<tr>
+<td>批量上限</td>
+<td><code class="c">MAX_GATHER_BATCH_COUNT</code>（mmu_gather.c:32）</td>
+<td>munmap 数 GB 时分批 flush</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. HFT 配置范式（本节的总出口）</h2>
+<pre class="code" data-label="shell"><code class="c"># 1) 消灭 shootdown 源
+transparent_hugepage = never          # 防 khugepaged collapse 抖动（见 THP 笔记）
+                                      # 显式 hugetlbfs 大页不受影响
+# 2) 压 TLB miss
+hugepages = &lt;预算&gt;                     # 2MiB 大页给行情/订单簿热区
+# 3) 别让别的核替你交税
+isolcpus=&lt;数值核&gt; nohz_full=&lt;数值核&gt; rcu_nocbs=&lt;数值核&gt;
+# 4) 确认 PCID/ASID 生效
+grep -o 'pcid' /proc/cpuinfo          # x86: flags 里应见 pcid
+# 5) 运行期自证：shootdown 计数（perf）
+perf stat -e dTLB-load-misses,dTLB-loads ./engine
+bpftrace -e 'kprobe:flush_tlb_mm { @[comm] = count(); }'
+</code></pre>
+<h2>8. 衔接</h2>
+<ul>
+<li><a href="chapter-14.html#s-3">§3 页表的分配与释放</a>：三段式 flush 的另一半</li>
+<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/note-透明大页THP.md">note-透明大页THP</a>：THP 与 shootdown 的取舍决策</li>
+<li><a href="../../06.5-modern-mm/html/chapter-04.html#ch-4">06.5/ch04 页表与 TLB</a></li>
+<li><a href="../../15-computer-architecture/html/chapter-02.html#ch-2">15-体系结构 TLB</a>：硬件视角</li>
+<li><a href="../../12.5-modern-networking/html/chapter-13.html#s-04">12.5/ch13 TCP_ZEROCOPY_RECEIVE</a>：mmap 换页 + TLB 成本实例</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 HFT 机器"关 THP 用显式大页"而不是"开 THP"？</strong>
+A：THP 的 collapse 由 khugepaged 后台触发——<strong>把 511 个已映射的 4K 页改写成 1 个 PMD 大页映射</strong>，这个动作需要全核 shootdown + 持 mmap_lock，发生在你无法控制的时刻 = 随机尾延迟。显式 hugetlbfs 大页在 mmap 时就位，运行期不再动。THP 笔记有全表对比。</p>
+<p><strong>Q2：单核改自己进程的 PTE（如缺页填表），也要 IPI 别的核吗？</strong>
+A：不用。缺页是"往空表项装新映射"——旧翻译不存在，别的核 TLB 没有该项，无需失效。只有 <strong>清除/改变已有映射</strong> 才 shootdown。这也是 prefault（提前填表）零 shootdown 成本的原因。</p>
+<p><strong>Q3：PCID 是什么，为什么 HFT 必须确认它开着？</strong>
+A：x86 的进程上下文 ID（12-bit tag）：CR3 切换不自动全表失效，TLB 项按 PCID 分桶。多线程同核切换/内核进出时保留用户 TLB。关掉则每次上下文切换全 flush——syscall 密集型引擎每次进出内核都丢 TLB。ARM64 的对应物是 ASID（16-bit），作用相同。</p>
+<p><strong>Q4：<code class="c">flush_tlb_range</code> 之后表页为什么还不能立刻 free？</strong>
+A：<code class="c">flush_tlb_range</code> 返回只代表<strong>本核</strong>发起完成；其他核的 IPI handler 可能尚未执行。mmu_gather 模型里 free 推迟到 <code class="c">tlb_finish_mmu</code>/RCU 之后，就是这个等待的封装。直接 free = 竞态窗口里 walker 读到已复用的表页。</p>
+<p><strong>Q5：两个线程跑在不同核、共享 mm，一个线程 munmap 一段映射，另一核的线程会付出什么？</strong>
+A：被 IPI 打断（进入 flush handler，数十~百 ns），并且如果它恰在 walk 那段页表（GUP/缺页），会被 mmap_lock 或 pte 锁挡住。所以多线程引擎应 <strong>避免运行期动态 mmap/munmap</strong>——启动期定格映射布局。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-7">
-        <div class="sec-head"><div class="sec-no">7</div><h2>Ch 3 §7 2.6 内核的新变化 (What&#x27;s New in 2.6)</h2></div>
+        <div class="sec-head"><div class="sec-no">7</div><h2>Ch 3 §7 2.6 内核的新变化 (What&#x27;s New in 2.6) → v6.6 演进时间线</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/rmap.c</code>、<code class="c">mm/nommu.c</code>、<code class="c">mm/memory.c</code>）</p>
 </blockquote>
-<h3>7. 2.6 内核的新变化 (What's New in 2.6)</h3>
-<h3>无 MMU 架构 (<code class="c">mm/nommu.c</code>)</h3>
-<p>为 <strong>无 MMU</strong> 微控制器提供 <strong>nommu</strong> 路径 — 无硬件页表，<strong>uClinux</strong> 等场景；与 <strong>HFT 服务器</strong> 关系不大，知道 <strong>Linux MM 有 fork</strong> 即可。</p>
-<h3>反向映射 (Reverse Mapping · rmap) — <strong>重点</strong></h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书每章末的"What's New in 2.6"是 2004 年的"现代"；本节把它接到 v6.6，给出一条 <strong>可检索的演进时间线</strong>——读旧书时随时回来对照"这条机制后来变成了什么"。</p>
+<hr />
+<h2>1. 无 MMU 架构（<code class="c">mm/nommu.c</code>）</h2>
+<p>为无 MMU 微控制器提供 nommu 路径——无硬件页表，地址即物理地址（<code class="c">MAP_FIXED</code> 强制对齐）。v6.6 里 <code class="c">CONFIG_MMU=n</code> 仍然存在（部分 blackfin/nommu arm），<strong>与 HFT 服务器无关</strong>，但嵌入式支线会再遇到：uClinux 风格设备上 <code class="c">fork</code> 不可用（无 COW）、mmap 只能映射设备已暴露的物理段。</p>
+<h2>2. 反向映射（rmap）——重点，至今仍是核心</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -702,43 +1556,112 @@ PTE ──frame number──┘
 </thead>
 <tbody>
 <tr>
-<td><strong>共享页</strong> 换出时需 <strong>扫描所有进程页表</strong> 找指向该页的 PTE — <strong>O(进程×页表)</strong></td>
-<td>每个 <strong><code class="c">struct page</code></strong> 挂 <strong>映射它的 PTE 链表 (anon_vma / address_space)</strong></td>
+<td>共享页换出时需 <strong>扫描所有进程页表</strong> 找指向该页的 PTE——O(进程×页表)</td>
+<td>每个 <code class="c">struct page</code> 挂 <strong>映射它的 PTE 反向链</strong></td>
 </tr>
 <tr>
 <td>解除映射慢、难原子</td>
-<td><strong>直接找到并解除所有 PTE</strong>，换出 (<strong>pageout</strong>) <strong>快得多</strong></td>
+<td>直接定位并解除所有 PTE，pageout 快得多</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>至今仍是核心：</strong> 现代 <strong><code class="c">mm/rmap.c</code></strong> — <strong>RMAP</strong> 与 <strong>LRU 回收、swap、munmap、madvise</strong> 交织。</p>
-<pre class="code" data-label="code"><code class="c">共享物理页 P
-    struct page ──► rmap 链表 ──► [mm₁,vma₁,pte₁] [mm₂,vma₂,pte₂] …
-    换出时：沿链表 clear PTE，而非扫全局
+<p><strong>v6.6 现状（<code class="c">mm/rmap.c</code>）：</strong> 链表对象已不是 PTE 而是 <strong><code class="c">struct anon_vma_chain</code>（AVC）</strong>：</p>
+<pre class="code" data-label="code"><code class="c">物理页 page ──► anon_vma(chain) ──► AVC₁(mm₁/vma₁) AVC₂(mm₂/vma₂) …
+                    ▲                   │
+              锁：rcu_read_lock         ▼ 每链再进 vma 的区间定位 PTE
 </code></pre>
-<p>→ <a href="chapter-10.html#ch-10">Ch 10 页框回收</a> · <a href="chapter-12.html#ch-12">Ch 12 共享内存</a>（文件页 rmap 经 <strong>address_space</strong>）。</p>
-<h3>高端内存中的 PTE (PTEs in High Memory)</h3>
-<p>大内存机器上 <strong>PTE 表本身</strong> 也可能占满 <strong>ZONE_NORMAL</strong> 低端：</p>
-<ul>
-<li>2.6 允许 <strong>PTE 页分配在 ZONE_HIGHMEM</strong></li>
-<li>访问时用 <strong><code class="c">pte_offset_map()</code></strong> <strong>临时映射</strong> 到低端可触达虚拟地址，用完 <strong><code class="c">pte_offset_unmap()</code></strong></li>
-</ul>
-<p><strong>64 位</strong> 上问题缓解，但 <strong>「页表本身也占物理内存、也占低端窗口」</strong> 的思想仍在 <strong>内存紧张 / 嵌入式</strong> 场景出现。</p>
-<hr />
-<h2>三级页表 + 地址转换一图（原书模型）</h2>
-<pre class="code" data-label="code"><code class="c">                    mm_struct
-                        │
-                        ▼
-              ┌─────────────────┐
-    VA ──────►│ PGD ──► PMD ──► PTE ──► PFN ──► struct page
-              └─────────────────┘
-                        │
-              PTE bits: PRESENT RW USER DIRTY ACCESSED …
-                        │
-              TLB 缓存 VA→PA；未命中则 walk 上述层级
-</code></pre>
-<hr />
-<h2>HFT 精读 checklist</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>rmap 消费者</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">page_referenced()</code></td>
+<td>聚合各 PTE 的 accessed 位 → 回收年龄判断</td>
+</tr>
+<tr>
+<td><code class="c">try_to_unmap()</code></td>
+<td>换出前解除全部映射（含 TLB flush）</td>
+</tr>
+<tr>
+<td><code class="c">page_move_account</code>/迁移</td>
+<td>THP defrag、NUMA balance 的前提</td>
+</tr>
+<tr>
+<td><code class="c">folio_mkclean</code></td>
+<td>写回/去脏</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 记住一条：</strong> 共享映射多的页（<code class="c">MAP_SHARED</code> 行情快照、tmpfs）rmap 链长 → 换出/迁移成本高。全 pin（mlock/大页）是绕开 rmap 税的唯一干净办法。</p>
+<h2>3. 高端内存中的 PTE（PTEs in High Memory）</h2>
+<p>2.6 允许 PTE 表页分在 ZONE_HIGHMEM，访问时 <code class="c">pte_offset_map()</code> 临时 kmap。<strong>64 位上 HIGHMEM 已死</strong>（ARM64/x86_64 无此区），但 API 骨架留在 <code class="c">pte_offset_map/unmap</code> 配对里（§2 已讲）。Ch 9 高端内存整章在 64 位语境下按"历史机制"读。</p>
+<h2>4. 2.4 → 2.6 → v6.6 页表机制演进时间线</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>2.4</th>
+<th>2.6</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页表层级</td>
+<td>三级（x86-32）</td>
+<td>四级（x86-64 出现）</td>
+<td>3/4/5 级可配置，P4D 折叠</td>
+</tr>
+<tr>
+<td>表页缓存</td>
+<td>quicklist</td>
+<td>slab/kmem_cache</td>
+<td>ptdesc + per-CPU pcp + RCU 释放</td>
+</tr>
+<tr>
+<td>TLB 失效</td>
+<td>逐操作同步 flush</td>
+<td>mmu_gather 批量</td>
+<td>+ RCU_TABLE_FREE、PCID/ASID 常态化</td>
+</tr>
+<tr>
+<td>rmap</td>
+<td>无（2.4 直接 pte 链）</td>
+<td>anon_vma</td>
+<td>anon_vma_chain + folio 化</td>
+</tr>
+<tr>
+<td>THP</td>
+<td>无</td>
+<td>2.6.38 引入</td>
+<td>THP + khugepaged；mTHP（多尺寸）6.8+</td>
+</tr>
+<tr>
+<td>用户faultfd</td>
+<td>无</td>
+<td>2.6 后期无</td>
+<td>PTE marker 支持 uffd-wp 持久化</td>
+</tr>
+<tr>
+<td>VMA 树</td>
+<td>rbtree+链表</td>
+<td>同</td>
+<td><strong>maple tree</strong>（06.5/ch05）</td>
+</tr>
+<tr>
+<td>页表锁</td>
+<td>mm 级粗锁</td>
+<td>split ptlock（CONFIG_SPLIT_PTLOCK_CPUS）</td>
+<td>同，4KiB 表页一把锁</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>读旧书的换算规则：</strong> 遇到 <code class="c">pte_offset</code> → <code class="c">pte_offset_map/_unmap</code>；遇到 mem_map → vmemmap；遇到 quicklist → slab/pcp；遇到 page-&gt;mapping 直接反查 → 走 AVC。</p>
+<h2>5. HFT 精读 checklist</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -748,27 +1671,51 @@ PTE ──frame number──┘
 </thead>
 <tbody>
 <tr>
-<td><strong>TLB / 页表 walk</strong></td>
-<td>压工作集、<strong>大页</strong>、减少 pointer chasing 数据结构</td>
+<td>TLB / 页表 walk</td>
+<td>压工作集、大页、减少 pointer chasing 数据结构</td>
 </tr>
 <tr>
-<td><strong>PTE present + mlock</strong></td>
-<td>避免 <strong>缺页</strong> 与 <strong>swap</strong> 路径</td>
+<td>PTE present + mlock</td>
+<td>避免缺页与 swap 路径</td>
 </tr>
 <tr>
-<td><strong>flush_tlb_</strong>*</td>
-<td>理解 <strong>绑核</strong>、<strong>减少跨核页表改动</strong></td>
+<td><code class="c">flush_tlb_*</code></td>
+<td>理解绑核、减少跨核页表改动</td>
 </tr>
 <tr>
-<td><strong>rmap</strong></td>
-<td>理解 <strong>共享内存 / mmap 文件</strong> 换出成本 — 多映射页更「重」</td>
+<td>rmap</td>
+<td>理解共享内存 / mmap 文件换出成本——多映射页更「重」</td>
 </tr>
 <tr>
-<td><strong>THP</strong></td>
-<td>在 <strong>减少 TLB miss</strong> 与 <strong>合并延迟抖动</strong> 之间取舍 → <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/note-透明大页THP.md">./note-透明大页THP.md</a></td>
+<td>THP</td>
+<td>在减少 TLB miss 与合并延迟抖动之间取舍 → <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/note-透明大页THP.md">note-透明大页THP</a></td>
+</tr>
+<tr>
+<td>split ptlock</td>
+<td>多线程并发缺页的可扩展性上限（每表页一把 <code class="c">ptdesc-&gt;ptl</code>）</td>
 </tr>
 </tbody>
 </table></div>
+<h2>6. 衔接</h2>
+<ul>
+<li><a href="chapter-10.html#ch-10">Ch 10 页框回收</a>：rmap 的主战场</li>
+<li><a href="chapter-12.html#ch-12">Ch 12 共享内存</a>：文件页 rmap 经 address_space</li>
+<li><a href="../../06.5-modern-mm/html/index.html">06.5</a>：上面时间线右列的逐项展开</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：2.4 的 rmap 原型（page→pte 直接链）为什么被 anon_vma_chain 替换？</strong>
+A：fork 爆炸。直接 PTE 链在 fork 链式共享时每个 page 的链表长度失控（O(fork 深度×vma)）。AVC 两级结构让"链"按 (anon_vma, vma) 去重合并，同一 fork 组共享一条 anon_vma，遍历成本可控。这是面试高频题的内核版答案。</p>
+<p><strong>Q2：<code class="c">CONFIG_SPLIT_PTLOCK_CPUS</code> 是什么？</strong>
+A：split page table lock：CPU 数超过该值（默认 4）时启用——每个 PTE 表页自己一把锁（藏在 ptdesc），而不是整个 mm 一把 page_table_lock。多线程引擎并发缺页/GUP 的可扩展性直接受益。64 位 SMP 上默认开。</p>
+<p><strong>Q3：v6.6 读 <code class="c">/proc/pid/maps</code> 和读旧书讲的 rbtree 遍历一样吗？</strong>
+A：数据结构换成了 maple tree（range B-tree），接口（mmap_lock 读 + mas_find）不同但语义一致。性能差异：查找 O(log n) 且 cache 友好；并发写锁粒度更细。详见 06.5/ch05。</p>
+<p><strong>Q4：nommu 内核上跑 DPDK/AF_XDP 类零拷贝有意义吗？</strong>
+A：nommu 设备（MCU 级）本来就没有用户/内核隔离，"零拷贝"退化为物理地址直访问。AF_XDP/DPDK 依赖的页表 pin、GUP、iommu 在 nommu 上都无意义。嵌入式支线遇到时按"物理直访+寄存器映射"理解。</p>
+<p><strong>Q5：THP 是 2.6.38 引入的，为什么说 mTHP 是 6.8+？两者差别？</strong>
+A：THP 只有 2MiB（PMD 级）一种"透明"尺寸；mTHP（multi-size THP）允许 16K/32K/.../1M 的中间尺寸按 folio 一次映射。v6.6 尚无 mTHP（<code class="c">/sys/kernel/mm/transparent_hugepage/</code> 下无 anon 分档目录）。写 HFT 建议时别把 mTHP 特性算进 6.6。</p>
+</details>
 <hr />
       </section>
 
