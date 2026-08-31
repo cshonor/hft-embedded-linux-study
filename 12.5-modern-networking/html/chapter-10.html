@@ -276,9 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">07</span>— Netfilter/nftables</a>
-          <a href="#s-02"><span class="n">12</span>— nftables 架构与迁移</a>
-          <a href="#s-03"><span class="n">13</span>— nftables 与 eBPF 的关系</a>
+          <a href="#s-01"><span class="n">01</span>— Netfilter/nftables：hook 体系与 v6.6 架构</a>
+          <a href="#s-02"><span class="n">02</span>— nftables 内部机制：求值引擎、规则 blob 与 set 后端</a>
+          <a href="#s-03"><span class="n">03</span>— nftables vs eBPF：位置、成本与选型</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -316,276 +316,1303 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的核心结论</h2>
+<ol>
+<li>
+<p><strong>⭐ v6.6 的 Netfilter 有 7 个 hook，不止经典 5 个。</strong>
+   <code class="c">NF_INET_INGRESS</code>（=5）和 <code class="c">NF_NETDEV_EGRESS</code> 让 nftables 也能「协议栈之前」过滤。
+   收包顺序：tcpdump(:5394) → tc ingress(:5412) → <strong>nft netdev ingress(:5420)</strong> → IP 层。</p>
+</li>
+<li>
+<p><strong>⭐ DNAT(-100) / SNAT(+100) 的优先级是正确性约束。</strong>
+   路由查找发生在两者之间；且 NAT 链 priority ≤ -200（conntrack）直接 <code class="c">-EOPNOTSUPP</code>。</p>
+</li>
+<li>
+<p><strong>⭐ nft 规则是预编译的连续内存 blob，不是链表。</strong>
+   热表达式（cmp/cmp16/bitwise/payload）有<strong>直调旁路</strong>（绕过 retpoline 的间接调用），
+   简单规则单条成本 ~十几 cycle；但<strong>规则数 = 成本</strong>（线性扫，无 skipping）——快查靠 set/vmap。</p>
+</li>
+<li>
+<p><strong>⭐ 原子热更新靠双代际 blob</strong>（<code class="c">blob_gen_0/1</code> + gencursor 翻转），
+   <code class="c">nft -f</code> 全量替换无中间态窗口。生产环境必须用全量替换，不要逐条 add。</p>
+</li>
+<li>
+<p><strong>⭐ set 三后端各司其职</strong>：等值 → hash O(1)；单字段区间 → rbtree O(log n)；
+   <strong>拼接+区间 → pipapo</strong>（其 estimate 只接受 interval + 字段数≥2，x86_64 有 AVX2 加速版）。</p>
+</li>
+<li>
+<p><strong>⭐ tcpdump 可见性是排障分水岭</strong>：看得到 → nft/tc/cgroup 丢的；
+   看不到 → <strong>一定是 XDP</strong>（它在 tap 之前）。nft 丢包有 <code class="c">SKB_DROP_REASON_NETFILTER_DROP</code>
+   + tracepoint 证据链。</p>
+</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>iptables → nftables</strong>：6.x 内核 nftables 全面替代 iptables，规则匹配更快</li>
-<li><strong>规则集大小</strong>：nftables set/map 原生支持集合查找，大量规则时性能优于 iptables 线性遍历</li>
-<li><strong>nftables vs BPF</strong>：nftables 适合固定规则（访问控制），BPF 适合动态逻辑（流量分析）</li>
-<li><strong>HFT 场景</strong>：交易服务器用 nftables 做基础防火墙，BPF 做精细流量控制</li>
+<li><strong>conntrack 是行情机隐形税</strong>：百万 pps 单向流会灌爆连接表，必须 notrack 或不加载模块</li>
+<li><strong>防火墙位置决定被丢包的前置成本</strong>：netdev ingress（早）&lt; PRE_ROUTING &lt; LOCAL_IN &lt; cgroup</li>
+<li><strong>白名单用 interval set（rbtree），多维用 concat+pipapo</strong>——3000 条 CIDR 规则链 vs 一次
+  O(log n) 查找差三个数量级</li>
+<li><strong>NAT 永远留给 nftables</strong>：XDP/tc-BPF 无 conntrack，自己做等于重写半个 conntrack</li>
+<li><strong>三层防线叠加</strong>：XDP 管量（早丢弃）、nft 管策略（安全基线/NAT）、tc-BPF 管动态
+  （与应用联动的分类）、qdisc 管发送时机</li>
+<li><strong>iptables-nft 兼容层没有 fast path 直调</strong>，性能敏感机器应重写为原生 nft 语法</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
-<li><code class="c">12.5-modern-networking/chapter-08-ebpf-cgroup-bpf/</code>：BPF 替代方案</li>
-<li><code class="c">12.5-modern-networking/chapter-11-packet-filter-flowtable/</code>：flowtable 快速转发</li>
+<li><code class="c">12.5-modern-networking/chapter-09-tc-bpf/</code>：tc ingress/egress 与 nft hook 的相对位置</li>
+<li><code class="c">12.5-modern-networking/chapter-08-ebpf-cgroup-bpf/</code>：BPF 框架（对比的另一侧）</li>
+<li><code class="c">12.5-modern-networking/chapter-11-packet-filter-flowtable/</code>：flowtable（Netfilter 的快速路径）</li>
+<li><code class="c">12.5-modern-networking/chapter-05-xdp-architecture/</code>：XDP（tcpdump 看不到的那个 hook）</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">07</div><h2>— Netfilter/nftables</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— Netfilter/nftables：hook 体系与 v6.6 架构</h2></div>
 <blockquote>
 <p><strong>Bootlin 课程模块：</strong> Netfilter/nftables
-<strong>对应 Rosen:</strong> Ch9</p>
+<strong>对应 Rosen:</strong> Ch9（Netfilter/iptables）
+<strong>内核版本：</strong> 全部 hook 位置、优先级常量、行号基于 <strong>v6.6</strong> 源码核对
+（<code class="c">include/uapi/linux/netfilter.h</code>、<code class="c">include/uapi/linux/netfilter_ipv4.h</code>、
+<code class="c">net/netfilter/core.c</code>、<code class="c">net/ipv4/ip_input.c</code>、<code class="c">net/ipv4/ip_output.c</code>、<code class="c">net/core/dev.c</code>）</p>
 </blockquote>
-<h2>nftables 基本操作</h2>
-<pre class="code" data-label="shell"><code class="c"># 创建表
+<h2>文档概述</h2>
+<p>本篇是 <strong>nftables 的 hook 体系篇</strong>：规则挂在哪、优先级怎么排、verdict 怎么解释、五个经典 hook 在收发路径的精确位置。</p>
+<p>姊妹篇分工：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="chapter-15.html#s-02">02-nftables-lwn.md</a></td>
+<td><strong>内部机制</strong>：nft VM 求值引擎、规则 blob、set 三后端、原子替换</td>
+<td>本篇讲「挂哪」，02 讲「跑起来什么样」</td>
+</tr>
+<tr>
+<td><a href="chapter-15.html#s-03">03-nftables-vs-bpf.md</a></td>
+<td><strong>选型对比</strong>：nftables vs XDP/tc-BPF</td>
+<td>本篇讲机制，03 讲「什么时候用它、什么时候不用」</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>1. 先建立全景：Netfilter 是协议栈里的 hook 框架</h2>
+<p>Netfilter 本体只是一组<strong>插入点</strong>（hook）+ 一个<strong>分发器</strong>（<code class="c">nf_hook_slow()</code>）。防火墙（nftables）、NAT、连接跟踪都是「注册到这些 hook 上的消费者」。</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/netfilter.h —— 5 个经典 hook + 1 个后加的 ingress */
+enum nf_inet_hooks {
+    NF_INET_PRE_ROUTING,   /* 0: 路由之前，刚完成 L2→L3 */
+    NF_INET_LOCAL_IN,      /* 1: 路由判定「发给我」之后，交给 L4 之前 */
+    NF_INET_FORWARD,       /* 2: 路由判定「转发」 */
+    NF_INET_LOCAL_OUT,     /* 3: 本机发出的包，进入 IP 输出路径 */
+    NF_INET_POST_ROUTING,  /* 4: 即将交给邻居子系统/驱动之前 */
+    NF_INET_NUMHOOKS,      /* 5 */
+    NF_INET_INGRESS = NF_INET_NUMHOOKS,  /* 5: netdev ingress（挂在 __netif_receive_skb_core） */
+};
+
+/* 另一组：netdev 家族专用（挂在 __dev_queue_xmit / __netif_receive_skb_core） */
+enum nf_dev_hooks {
+    NF_NETDEV_INGRESS,
+    NF_NETDEV_EGRESS,
+};
+</code></pre>
+<p><strong>关键认知</strong>：v6.6 的 Netfilter 有<strong>七个</strong>插入位置，不止经典的五个。<code class="c">NF_INET_INGRESS</code>（5.2+）和 <code class="c">NF_NETDEV_EGRESS</code>（5.16+）是后补的——这让 nftables 也能在「协议栈之前」做事，不再只能等路由之后。</p>
+<h3>地址族（family）</h3>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/netfilter.h */
+enum {
+    NFPROTO_UNSPEC =  0,
+    NFPROTO_INET   =  1,   /* ⭐ 同时匹配 IPv4 和 IPv6 */
+    NFPROTO_IPV4   =  2,
+    NFPROTO_ARP    =  3,
+    NFPROTO_NETDEV =  5,   /* 设备级（早于协议栈） */
+    NFPROTO_BRIDGE =  7,
+    NFPROTO_IPV6   =  10,
+};
+</code></pre>
+<p><strong><code class="c">inet</code> 家族是 nftables 相对 iptables 最大的易用性改进</strong>：一套规则同时管 v4/v6（iptables/ip6tables 要维护两份）。<code class="c">netdev</code> 家族则是「每设备」的早过滤（详见 <a href="chapter-15.html#s-03">03</a>）。</p>
+<hr />
+<h2>2. hook 优先级：一张表排清所有消费者</h2>
+<p>同一个 hook 点可以有多个消费者，<strong>按 priority 从小到大依次执行</strong>（<code class="c">nf_hook_slow()</code> 按注册顺序遍历，注册时已按优先级排好）。</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/netfilter_ipv4.h:31-45 */
+enum {
+    NF_IP_PRI_FIRST            = INT_MIN,
+    NF_IP_PRI_RAW_BEFORE_DEFRAG = -450,  /* raw 表（defrag 前） */
+    NF_IP_PRI_CONNTRACK_DEFRAG = -400,   /* 连接跟踪的分片重组 */
+    NF_IP_PRI_RAW              = -300,   /* raw 表 */
+    NF_IP_PRI_SELINUX_FIRST    = -225,
+    NF_IP_PRI_CONNTRACK        = -200,   /* conntrack */
+    NF_IP_PRI_MANGLE           = -150,   /* mangle 表 */
+    NF_IP_PRI_NAT_DST          = -100,   /* DNAT（目的 NAT 必须在路由前） */
+    NF_IP_PRI_FILTER           = 0,      /* filter 表 */
+    NF_IP_PRI_SECURITY         = 50,
+    NF_IP_PRI_NAT_SRC          = 100,    /* SNAT（源 NAT 必须在路由后） */
+    NF_IP_PRI_SELINUX_LAST     = 225,
+    NF_IP_PRI_CONNTRACK_HELPER = 300,
+    NF_IP_PRI_CONNTRACK_CONFIRM = INT_MAX,
+    NF_IP_PRI_LAST             = INT_MAX,
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>值</th>
+<th>iptables 对应</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-450</td>
+<td>raw-before-defrag</td>
+<td><code class="c">raw</code> 表（NOTRACK 例外）</td>
+<td>重组前就查</td>
+</tr>
+<tr>
+<td>-400</td>
+<td>conntrack-defrag</td>
+<td>—</td>
+<td>分片重组</td>
+</tr>
+<tr>
+<td>-300</td>
+<td>raw</td>
+<td><code class="c">raw</code> 表</td>
+<td>通常只设 NOTRACK</td>
+</tr>
+<tr>
+<td>-200</td>
+<td>conntrack</td>
+<td>—</td>
+<td>连接跟踪</td>
+</tr>
+<tr>
+<td>-150</td>
+<td>mangle</td>
+<td><code class="c">mangle</code> 表</td>
+<td>改 TTL/mark/dscp</td>
+</tr>
+<tr>
+<td>-100</td>
+<td>nat-dst</td>
+<td><code class="c">nat</code> 表 PREROUTING</td>
+<td><strong>DNAT</strong>（必须在路由查找前）</td>
+</tr>
+<tr>
+<td>0</td>
+<td>filter</td>
+<td><code class="c">filter</code> 表</td>
+<td>过滤主战场</td>
+</tr>
+<tr>
+<td>100</td>
+<td>nat-src</td>
+<td><code class="c">nat</code> 表 POSTROUTING</td>
+<td><strong>SNAT/MASQUERADE</strong>（必须在路由查找后）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么 DNAT 在 -100、SNAT 在 +100？</strong> 因为路由查找发生在两者<strong>之间</strong>：目的地址还没改就路由 → 路由到错误接口；源地址在路由前就改 → 还不知道出接口，选错 SNAT 地址。<strong>优先级不是装饰，是正确性约束。</strong></p>
+<p>nftables 里 priority 是<strong>任意整数</strong>，不再限于这几个档位。但 NAT 链有硬校验（<code class="c">nf_tables_api.c:2251</code>）：<code class="c">type nat</code> 的链 priority ≤ <code class="c">NF_IP_PRI_CONNTRACK(-200)</code> 直接返回 <code class="c">-EOPNOTSUPP</code>——防止你在 conntrack 之前做 NAT 把跟踪状态搞乱。</p>
+<hr />
+<h2>3. 五个 hook 在 v6.6 路径上的精确位置</h2>
+<p>收包路径（IPv4，行号均为 v6.6）：</p>
+<pre class="code" data-label="code"><code class="c">驱动收包 → napi
+      │
+      ▼
+__netif_receive_skb_core()                dev.c
+      ├─ ptype_all (tcpdump 抓包点)          :5394
+      ├─ tc ingress (sch_handle_ingress)     :5412   ← tcx 先、legacy 后
+      ├─ nft netdev ingress (nf_ingress)     :5420   ← netdev/inet 家族的 ingress 链
+      ▼
+ip_rcv()                                   ip_input.c:560
+      └─ NF_HOOK(PRE_ROUTING)               :569    okfn=ip_rcv_finish
+            ▼ （路由查找 ip_route_input_slow）
+      ├── 目的是本机 → ip_local_deliver()
+      │         └─ NF_HOOK(LOCAL_IN)        :254    okfn=ip_local_deliver_finish
+      │                  └─ → TCP/UDP
+      └── 需要转发 → ip_forward()
+                └─ NF_HOOK(FORWARD)
+                         └─ → ip_output 路径
+</code></pre>
+<p>发包路径：</p>
+<pre class="code" data-label="code"><code class="c">sendmsg() → tcp_sendmsg → ip_queue_xmit()
+      └─ __ip_local_out()                   ip_output.c:100
+            └─ nf_hook(LOCAL_OUT)           :116    okfn=dst_output
+                  ▼
+ip_output() → ip_finish_output()
+      └─ NF_HOOK_COND(POST_ROUTING)         :418    okfn=ip_finish_output
+            （SNAT/MASQUERADE 在这里改源地址）
+            ▼
+__dev_queue_xmit()                         dev.c
+      ├─ nft netdev egress (nf_hook_egress) :4303
+      ├─ tc egress (sch_handle_egress)      :4311
+      └─ qdisc 排队 → 驱动
+</code></pre>
+<p><strong>四个容易搞错的顺序（全部 v6.6 源码验证）：</strong></p>
+<ol>
+<li><strong>nft netdev ingress 在 tc ingress 之后</strong>（<code class="c">dev.c:5412</code> → <code class="c">:5420</code>）。两者在同一个 <code class="c">CONFIG_NET_INGRESS</code> 块里，都由 <code class="c">ingress_needed_key</code> 静态键控制。</li>
+<li><strong>tcpdump（ptype_all）在一切过滤之前</strong>——所以 tcpdump 能看到「被 XDP 之外的任何东西丢掉的包」。XDP 是唯一例外（它在驱动层，更早）。</li>
+<li><strong>nft netdev egress 在 tc egress 之前</strong>（<code class="c">dev.c:4303</code> → <code class="c">:4311</code>）。而经典的 POST_ROUTING（SNAT）比它们都早。</li>
+<li><strong>LOCAL_OUT 在路由查找之后</strong>（<code class="c">dst_output</code> 是查找结果驱动的 okfn），POST_ROUTING 在分片判断前后都可能（GSO 场景走 <code class="c">:397/:413</code> 的 NF_HOOK，非 GSO 走 <code class="c">:418</code> 的 NF_HOOK_COND）。</li>
+</ol>
+<h3>跳过优化：nf_skip_egress</h3>
+<p>注意 <code class="c">dev.c:5411/5419</code> 的 <code class="c">nf_skip_egress(skb, true/false)</code>：在 tc ingress 处理期间<strong>临时关闭</strong> netdev egress hook（打标记），处理完恢复。这是防止 ingress 处理中重注入的包被 egress 链二次处理的互锁。看到这个词别困惑，它是<strong>防递归</strong>，不是性能开关。</p>
+<hr />
+<h2>4. verdict 语义</h2>
+<p>hook 函数的返回值（<code class="c">include/uapi/linux/netfilter.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define NF_DROP   0    /* 丢包。kfree_skb_reason(SKB_DROP_REASON_NETFILTER_DROP) */
+#define NF_ACCEPT 1    /* 放行，继续下一个 hook / okfn */
+#define NF_STOLEN 2    /* 包的所有权被拿走（queued/重注入），后面什么都别做 */
+#define NF_QUEUE  3    /* 送到用户态 nfqueue */
+#define NF_REPEAT 4    /* 重新执行当前 hook（慎用） */
+#define NF_STOP   5    /* 已废弃 */
+</code></pre>
+<p><strong>两个容易忽视的细节：</strong></p>
+<ol>
+<li><strong><code class="c">NF_DROP</code> 可以携带 errno</strong>：<code class="c">NF_DROP_ERR(x) = (((-x) &lt;&lt; 16) | NF_DROP)</code>，高 16 位编码错误码。<code class="c">nf_hook_slow()</code>（<code class="c">net/netfilter/core.c</code>）里 <code class="c">ret = NF_DROP_GETERR(verdict)</code>，若 ret==0 则默认返回 <code class="c">-EPERM</code>。<strong>所以 sendmsg() 收到的错误不一定是 EPERM，取决于规则怎么编码。</strong></li>
+<li><strong><code class="c">NF_STOLEN</code> 对调用方是「return 0」</strong>（<code class="c">nf_hook_slow</code> default 分支）：看起来像成功，但 skb 已不归你了。调试「包没到但没报错」时要想到它。</li>
+</ol>
+<p><strong>丢包可见性</strong>：<code class="c">NF_DROP</code> 走 <code class="c">kfree_skb_reason(skb, SKB_DROP_REASON_NETFILTER_DROP)</code>（v5.16+），配合 <code class="c">tracepoint:skb:kfree_skb</code> 可以精确数出「netfilter 丢了多少、哪条链丢的」。这是 iptables 时代 <code class="c">iptables -L -v</code> 计数之外的内核态证据链。</p>
+<hr />
+<h2>5. nftables 基本操作（对照 iptables 心智模型）</h2>
+<pre class="code" data-label="code"><code class="c">nftables 的层级：        iptables 的层级：
+table（自定义）           table（内核预定义：filter/nat/mangle/raw）
+ └─ chain（自定义或       chain（预定义：INPUT/OUTPUT/FORWARD...）
+     base chain 挂 hook）  └─ rule（匹配 + target）
+     └─ rule
+        ├─ expression 链（匹配/改写/计数...）
+        └─ verdict（accept/drop/jump/goto...）
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 创建表（inet 家族 = v4/v6 通吃）
 nft add table inet filter
 
-# 创建链
+# 创建 base chain（挂到 input hook，priority 0 = filter 档位）
 nft add chain inet filter input '{ type filter hook input priority 0 \; }'
 
-# 添加规则
+# 添加规则（每条 = 若干 expression + verdict）
 nft add rule inet filter input iif &quot;lo&quot; accept
 nft add rule inet filter input tcp dport 22 accept
 nft add rule inet filter input tcp dport 9090 ip saddr 10.0.0.0/24 accept
 nft add rule inet filter input counter drop
 
-# 查看规则
+# 查看规则集（counter 可见每条规则的命中数）
 nft list ruleset
 
-# 保存/恢复
-nft list ruleset &gt; /etc/nftables.conf
+# 原子替换整个规则集（生产环境标准做法，见 02 篇「双代际」）
 nft -f /etc/nftables.conf
 </code></pre>
-<h2>HFT 防火墙规则示例</h2>
-<pre class="code" data-label="code"><code class="c"># 行情源白名单
+<p><strong>「无状态表」的含义</strong>：table/chain 的存在不依赖内核模块。iptables 时代的 filter/nat/mangle 每个表是一个内核模块；nftables 里它们只是「用户态通过 netlink 定义的元数据」，内核只有一个统一的 nft 核心。这就是为什么 nftables 能按需创建任意数量的表，而 iptables 的表结构是编译期定死的。</p>
+<hr />
+<h2>6. HFT 防火墙规则示例（带源码级注释）</h2>
+<pre class="code" data-label="shell"><code class="c"># ── 行情源白名单：集合 + 区间 ──
+# flags interval → set 后端会选 rbtree 或 pipapo（支持 NFT_SET_INTERVAL）
 nft add set inet filter md_sources '{ type ipv4_addr \; flags interval \; }'
 nft add element inet filter md_sources '{ 10.0.1.0/24, 10.0.2.0/24 }'
 nft add rule inet filter input udp dport 9090 ip saddr @md_sources accept
 
-# 交易端口保护
-nft add set inet filter trade_clients '{ type ipv4_addr \; }'
+# ── 交易端口保护 ──
+nft add set inet filter trade_clients '{ type ipv4_addr \; }'   # 无 interval → hash 后端
 nft add element inet filter trade_clients '{ 10.0.0.5, 10.0.0.6 }'
 nft add rule inet filter input tcp dport 8001 ip saddr @trade_clients accept
 
-# 速率限制（非交易流量）
+# ── 速率限制（非交易流量） ──
 nft add rule inet filter input icmp limit 10/second accept
-</code></pre>
-<h2>iptables → nftables 迁移</h2>
-<pre class="code" data-label="shell"><code class="c"># iptables-nft 兼容层（旧 iptables 命令翻译为 nft 规则）
-update-alternatives --set iptables /usr/sbin/iptables-nft
 
-# 或使用 iptables-translate 直接翻译
-iptables-translate -A INPUT -p tcp --dport 9090 -j ACCEPT
-# 输出: nft add rule inet filter input tcp dport 9090 counter accept
+# ── 丢包审计：counter + 显式 drop ──
+nft add rule inet filter input counter drop comment &quot;default deny&quot;
 </code></pre>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">12</div><h2>— nftables 架构与迁移</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> Ch9（Netfilter/iptables）
-<strong>内核版本:</strong> nftables 3.13+（初始）；4.1+（用户态工具成熟）</p>
-</blockquote>
-<h2>为什么需要 nftables</h2>
-<p>iptables 的问题：
-- 每个 table/chain 是独立的内核模块（filter/nat/mangle/raw）
-- 规则匹配线性扫描，大量规则时性能差
-- IPv4 和 IPv6 需要两套规则（iptables / ip6tables）
-- 每个匹配条件（-m tcp / -m state）是独立模块</p>
-<h2>nftables 架构</h2>
-<p>nftables 统一了 Netfilter 前端：
-- <strong>统一语法</strong>：IPv4/IPv6/ARP/Bridge 一套规则
-- <strong>虚拟机</strong>：规则编译为字节码，在内核 nft VM 中执行
-- <strong>集合和映射</strong>：原生支持 IP 集合，无需额外 ipset
-- <strong>无状态表</strong>：table/chain 由用户态定义，不需要内核模块</p>
-<h2>nftables vs iptables</h2>
+<p><strong>HFT 上线前的自查清单：</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>维度</th>
-<th>iptables</th>
-<th>nftables</th>
+<th>检查项</th>
+<th>命令</th>
+<th>期望</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>语法</td>
-<td>-A INPUT -p tcp --dport 80 -j ACCEPT</td>
-<td>add rule inet filter input tcp dport 80 accept</td>
+<td>filter 链里没有对行情端口的误杀</td>
+<td><code class="c">nft list chain inet filter input</code></td>
+<td>udp 9090 在 drop 之前 accept</td>
 </tr>
 <tr>
-<td>地址族</td>
-<td>ipv4/ip6 分开</td>
-<td>inet 统一（同时匹配 v4/v6）</td>
+<td>conntrack 是否在跑（HFT 机通常不需要）</td>
+<td><code class="c">conntrack -C</code> / <code class="c">lsmod \| grep conntrack</code></td>
+<td>模块未加载，或规则有 notrack</td>
 </tr>
 <tr>
-<td>规则集</td>
-<td>不支持</td>
-<td>原生支持（集合/映射/区间）</td>
+<td>丢包有计数</td>
+<td><code class="c">nft list ruleset</code></td>
+<td>default deny 带 counter</td>
 </tr>
 <tr>
-<td>性能</td>
-<td>线性扫描</td>
-<td>可优化（集合用哈希/区间树）</td>
+<td>内核态丢包证据</td>
+<td><code class="c">perf trace -e skb:kfree_skb</code> 或 bpftrace</td>
+<td>NETFILTER_DROP 只出现在预期链</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>conntrack 是 HFT 收包路径的隐形税</strong>：<code class="c">NF_IP_PRI_CONNTRACK(-200)</code> 在 filter(0) 之前，每个新连接的首包都要建表项。行情机上是百万级 pps 的单向上行流，连接表会被灌爆（<code class="c">nf_conntrack: table full, dropping packet</code>）。解法：raw 表 priority -300 处 <code class="c">notrack</code>（nftables 里是 <code class="c">ct state set notrack</code>），或者干脆不加载 conntrack 模块。</p>
+<hr />
+<h2>7. iptables → nftables 迁移</h2>
+<pre class="code" data-label="shell"><code class="c"># 方案一：iptables-nft 兼容层（iptables 命令翻译成 nft 规则，内核里只有一套）
+update-alternatives --set iptables /usr/sbin/iptables-nft
+# 验证当前用的是哪套：
+iptables -V    # (nf_tables) 字样 = nft 后端
+
+# 方案二：iptables-translate 逐条翻译
+iptables-translate -A INPUT -p tcp --dport 9090 -j ACCEPT
+# 输出: nft add rule ip filter INPUT tcp dport 9090 counter accept
+</code></pre>
+<p><strong>兼容层的代价</strong>：iptables-nft 生成的规则走 iptables 兼容表达式（<code class="c">xt_match</code>/<code class="c">xt_target</code> 包装），<strong>享受不到 nft 原生表达式的 fast path 直调</strong>（见 02 篇 §2）。性能敏感的机器应该用原生 nft 语法重写，而不是长期跑兼容层。</p>
+<hr />
+<h2>8. HFT 要点</h2>
+<ol>
+<li><strong>七个 hook 各有代价，位置决定成本</strong>：netdev ingress（协议栈前）&lt; PRE_ROUTING/LOCAL_IN（IP 层）&lt; cgroup（socket 层）。防火墙规则放得越晚，白白付出的协议栈 CPU 越多。</li>
+<li><strong>conntrack 是行情机的隐形税</strong>，百万 pps 单向流必须 notrack 或卸载模块。</li>
+<li><strong>DNAT/SNAT 的优先级是正确性约束</strong>，不是可调参数。</li>
+<li><strong>inet 家族一套规则管 v4/v6</strong>，减少「v6 忘了配」这种经典事故。</li>
+<li><strong><code class="c">NF_DROP</code> 默认对 sendmsg 报 EPERM</strong>，但可携带 errno；调试发送失败时先查 nft counter。</li>
+<li><strong>丢包走 <code class="c">SKB_DROP_REASON_NETFILTER_DROP</code></strong>，用 kfree_skb tracepoint 可以拿到「谁丢的」的内核态证据，比 nft counter 更细（counter 只到规则粒度，tracepoint 到调用栈）。</li>
+</ol>
+<hr />
+<h2>9. 与 Rosen Ch9 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen 3.x（iptables）</th>
+<th>v6.6（nftables）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前端</td>
+<td>iptables/ip6tables 两套</td>
+<td>nft 一套，inet 家族统一 v4/v6</td>
 </tr>
 <tr>
 <td>表/链</td>
-<td>内核预定义</td>
-<td>用户自定义</td>
+<td>内核预定义（每表一个模块）</td>
+<td>用户自定义，无状态表</td>
 </tr>
 <tr>
-<td>模块</td>
-<td>每个匹配条件一个内核模块</td>
-<td>nft VM 统一执行</td>
+<td>规则执行</td>
+<td>match/target 链式回调</td>
+<td>nft VM 字节码（见 02 篇）</td>
+</tr>
+<tr>
+<td>hook 数</td>
+<td>5 个</td>
+<td><strong>7 个</strong>（+netdev ingress/egress）</td>
+</tr>
+<tr>
+<td>集合</td>
+<td>ipset 外挂</td>
+<td>原生 set（三后端，见 02 篇）</td>
+</tr>
+<tr>
+<td>优先级</td>
+<td>隐含在表结构里</td>
+<td>显式任意整数（NAT 链有下限校验）</td>
+</tr>
+<tr>
+<td>丢包可观测</td>
+<td>counter（规则粒度）</td>
+<td>counter + SKB_DROP_REASON + tracepoint</td>
 </tr>
 </tbody>
 </table></div>
-<h2>迁移示例</h2>
-<pre class="code" data-label="shell"><code class="c"># iptables 规则
-iptables -A INPUT -p tcp --dport 9090 -s 10.0.0.0/24 -j ACCEPT
-
-# 等效 nftables 规则
-nft add rule inet filter input tcp dport 9090 ip saddr 10.0.0.0/24 accept
-
-# 集合用法（替代 ipset）
-nft add set inet filter whitelist { type ipv4_addr \; flags interval \; }
-nft add element inet filter whitelist { 10.0.0.0/24, 192.168.1.0/24 }
-nft add rule inet filter input ip saddr @whitelist accept
+<p>Rosen 的 hook 框架（五个位置、优先级、okfn 瀑布流）<strong>到今天还是对的</strong>——这套设计 25 年没变。变的是前端和执行引擎。</p>
+<hr />
+<h2>10. 代码自测</h2>
+<details>
+<summary>Q1：一个 UDP 行情包（dst port 9090），在到达 socket 之前会经过哪几个 Netfilter hook（假设没有 netdev 链）？</summary>
+<p><strong>两个</strong>：</p>
+<ol>
+<li><code class="c">NF_INET_PRE_ROUTING</code>（<code class="c">ip_rcv()</code>，<code class="c">ip_input.c:569</code>）——路由查找之前</li>
+<li><code class="c">NF_INET_LOCAL_IN</code>（<code class="c">ip_local_deliver()</code>，<code class="c">ip_input.c:254</code>）——路由判定「发给我」之后、UDP 处理之前</li>
+</ol>
+<p>如果还挂了 <code class="c">netdev</code> 或 <code class="c">inet</code> 家族的 ingress 链，则更早：<code class="c">nf_ingress()</code>（<code class="c">dev.c:5420</code>），在 tc ingress 之后、ip_rcv 之前。</p>
+<p>注意：<strong>没有 FORWARD</strong>（那是转发路径），<strong>没有 LOCAL_OUT/POST_ROUTING</strong>（那是发包路径）。</p>
+</details>
+<details>
+<summary>Q2：为什么 tcpdump 能看到「被 filter 表 INPUT 链 drop 的包」？</summary>
+<p>tcpdump 挂在 <code class="c">ptype_all</code>（AF_PACKET tap），位置 <code class="c">dev.c:5394</code>，在 <code class="c">__netif_receive_skb_core()</code> 的<strong>最前面</strong>——早于 tc ingress（:5412）、nft netdev ingress（:5420）、更早于 IP 层的 PRE_ROUTING/LOCAL_IN。</p>
+<p>唯一早于 tcpdump 的过滤点是 <strong>XDP</strong>（驱动层）——这就是「tcpdump 看到了包但应用收不到 → 排查顺序：nft counter → tc → XDP」的判定逻辑依据。</p>
+</details>
+<details>
+<summary>Q3：应用调用 sendto() 返回 EPERM，但程序没检查任何权限。可能是谁干的？</summary>
+<p>大概率是 nftables/iptables 的 OUTPUT 链 <code class="c">NF_DROP</code>。<code class="c">nf_hook_slow()</code>（<code class="c">net/netfilter/core.c</code>）里：</p>
+<pre class="code" data-label="C"><code class="c">case NF_DROP:
+    kfree_skb_reason(skb, SKB_DROP_REASON_NETFILTER_DROP);
+    ret = NF_DROP_GETERR(verdict);
+    if (ret == 0)
+        ret = -EPERM;      /* ⭐ 默认 errno 就是 EPERM */
+    return ret;
 </code></pre>
-<h2>HFT 关联</h2>
+<p>验证：<code class="c">nft list ruleset</code> 看 output 链的 counter 是否在涨；或 <code class="c">bpftrace -e 't:skb:kfree_skb /args-&gt;reason == SKB_DROP_REASON_NETFILTER_DROP/ { @[kstack] = count(); }'</code>。</p>
+</details>
+<details>
+<summary>Q4：nftables 能把规则挂在 tc ingress 之前吗？</summary>
+<p><strong>不能</strong>（v6.6）。收包路径上固定的顺序是：</p>
+<pre class="code" data-label="code"><code class="c">tcpdump(ptype_all) → tc ingress(sch_handle_ingress, dev.c:5412) → nft netdev ingress(nf_ingress, dev.c:5420)
+</code></pre>
+<p>两者都在 <code class="c">CONFIG_NET_INGRESS</code> 块里，由同一个静态键 <code class="c">ingress_needed_key</code> 控制，顺序写死。nftables 最早就到 <code class="c">nf_ingress()</code>。想要「比 tc 更早」只有 XDP（驱动层）。</p>
+<p>发方向则相反：<strong>nft egress（:4303）在 tc egress（:4311）之前</strong>。</p>
+</details>
+<details>
+<summary>Q5：为什么 NAT 链的 priority 不能设成 -300？</summary>
+<p><code class="c">nf_tables_api.c:2251</code> 的硬校验：</p>
+<pre class="code" data-label="C"><code class="c">if (type-&gt;type == NFT_CHAIN_T_NAT &amp;&amp;
+    hook-&gt;priority &lt;= NF_IP_PRI_CONNTRACK)   /* -200 */
+    return -EOPNOTSUPP;
+</code></pre>
+<p>NAT 依赖 conntrack 的连接状态（NAT 表项要挂在 conntrack 表项上）。如果 NAT 链排在 conntrack（-200）之前，改了地址却没有跟踪状态，后续包就匹配不上已有 NAT 映射，连接会烂掉。所以内核直接拒绝这种配置，报「Operation not supported」。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>下一篇：</strong> <a href="chapter-15.html#s-02">02-nftables-lwn.md</a> — nft VM 求值引擎、规则 blob 双代际、set 三后端与选择算法</li>
+<li><strong>相关：</strong> <a href="chapter-09.html#ch-9">chapter-09-tc-bpf/</a> tc ingress/egress 与本篇 hook 的相对位置 · <a href="chapter-11.html#ch-11">chapter-11-packet-filter-flowtable/</a> flowtable（Netfilter 的快速路径） · <a href="chapter-08.html#ch-8">chapter-08-ebpf-cgroup-bpf/</a> eBPF 框架</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">02</div><h2>— nftables 内部机制：求值引擎、规则 blob 与 set 后端</h2></div>
+<blockquote>
+<p><strong>来源：</strong> LWN nftables 系列 + <strong>v6.6 源码逐行核对</strong>
+（<code class="c">net/netfilter/nf_tables_core.c</code>、<code class="c">net/netfilter/nf_tables_api.c</code>、
+<code class="c">net/netfilter/nft_set_{hash,rbtree,pipapo}.c</code>、<code class="c">include/net/netfilter/nf_tables.h</code>、
+<code class="c">include/uapi/linux/netfilter/nf_tables.h</code>）
+<strong>对应 Rosen:</strong> Ch9（无此内容——3.x 时代 iptables 是 match/target 回调链，没有 VM）
+<strong>内核版本：</strong> nftables 3.13+；本篇机制以 <strong>v6.6</strong> 为准</p>
+</blockquote>
+<h2>文档概述</h2>
+<p>本篇拆开 nftables 的发动机舱：<strong>一条规则在内核里怎么跑</strong>（求值引擎）、<strong>规则集怎么原子替换</strong>（双代际 blob）、<strong>集合为什么快</strong>（三后端 + 选择算法）。</p>
+<p>姊妹篇分工：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>场景</th>
-<th>nftables 用途</th>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行情源白名单</td>
-<td>集合管理交易所 IP，一条规则匹配</td>
+<td><a href="chapter-15.html#s-01">01-nftables-bootlin.md</a></td>
+<td>hook 体系、优先级、verdict</td>
+<td>01 讲「挂哪」，本篇讲「跑起来什么样」</td>
 </tr>
 <tr>
-<td>交易端口保护</td>
-<td>只允许特定 IP 连接交易端口</td>
-</tr>
-<tr>
-<td>速率限制</td>
-<td>limit 规则限制 ICMP/DNS 等非交易流量</td>
-</tr>
-<tr>
-<td>兼容性</td>
-<td>iptables-nft 兼容层，旧脚本可平滑迁移</td>
+<td><a href="chapter-15.html#s-03">03-nftables-vs-bpf.md</a></td>
+<td>与 XDP/tc-BPF 的选型对比</td>
+<td>本篇的引擎成本数据是 03 对比的依据</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>1. 为什么需要 nftables：iptables 的四个结构性问题</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>iptables 的问题</th>
+<th>nftables 的解法</th>
+<th>源码对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>每个 match/target 是独立内核模块（<code class="c">xt_tcp.o</code>、<code class="c">xt_state.o</code>...）</td>
+<td>一套 VM + 少量内建表达式，模块只提供新<strong>表达式类型</strong></td>
+<td><code class="c">nft_register_expr()</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>规则 = <code class="c">xt_entry</code> 链表，每条规则线性回调进 match/target</td>
+<td>规则<strong>预编译成连续内存 blob</strong>（见 §2）</td>
+<td><code class="c">nft_rule_dp</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>v4/v6 两套（iptables + ip6tables），规则漂移</td>
+<td><code class="c">NFPROTO_INET</code> 一套</td>
+<td>family 枚举</td>
+</tr>
+<tr>
+<td>4</td>
+<td>集合要外挂 ipset（另一个子系统、另一套命令）</td>
+<td>set 是 nft 一等公民，三种后端自动选择</td>
+<td><code class="c">nft_select_set_ops()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>换来的运维优势</strong>（同样重要）：原子替换整个规则集（<code class="c">nft -f</code>，一瞬间新旧切换，无窗口期）、规则带注释/计数器/超时天然融合、set 支持动态增删（<code class="c">nft add element</code> 不触碰规则）。</p>
+<hr />
+<h2>2. 求值引擎：<code class="c">nft_do_chain()</code> 逐段解析</h2>
+<p>这是 nftables 的心脏（<code class="c">net/netfilter/nf_tables_core.c</code>）。先看结构，再拆关键点。</p>
+<pre class="code" data-label="C"><code class="c">unsigned int
+nft_do_chain(struct nft_pktinfo *pkt, void *priv)
+{
+    const struct nft_chain *chain = priv, *basechain = chain;
+    ...
+    bool genbit = READ_ONCE(net-&gt;nft.gencursor);
+    struct nft_rule_blob *blob;
+    struct nft_jumpstack jumpstack[NFT_JUMP_STACK_SIZE];   /* ⭐ 16 层 */
+
+do_chain:
+    if (genbit)
+        blob = rcu_dereference(chain-&gt;blob_gen_1);    /* ⭐ 双代际 blob */
+    else
+        blob = rcu_dereference(chain-&gt;blob_gen_0);
+
+    rule = (struct nft_rule_dp *)blob-&gt;data;
+next_rule:
+    regs.verdict.code = NFT_CONTINUE;
+    for (; !rule-&gt;is_last ; rule = nft_rule_next(rule)) {       /* 规则线性扫 */
+        nft_rule_dp_for_each_expr(expr, last, rule) {           /* 表达式线性扫 */
+            if (expr-&gt;ops == &amp;nft_cmp_fast_ops)
+                nft_cmp_fast_eval(expr, &amp;regs);          /* ⭐ fast path 直调 */
+            else if (expr-&gt;ops == &amp;nft_cmp16_fast_ops)
+                nft_cmp16_fast_eval(expr, &amp;regs);
+            else if (expr-&gt;ops == &amp;nft_bitwise_fast_ops)
+                nft_bitwise_fast_eval(expr, &amp;regs);
+            else if (expr-&gt;ops != &amp;nft_payload_fast_ops ||
+                 !nft_payload_fast_eval(expr, &amp;regs, pkt))
+                expr_call_ops_eval(expr, &amp;regs, pkt);    /* 慢路径：间接调用 */
+
+            if (regs.verdict.code != NFT_CONTINUE)
+                break;
+        }
+
+        switch (regs.verdict.code) {
+        case NFT_BREAK:            /* 本条规则没匹配上 */
+            regs.verdict.code = NFT_CONTINUE;
+            continue;          /* 下一条规则 */
+        case NFT_CONTINUE:         /* 本条规则全部表达式通过 */
+            continue;          /* 下一条规则（无 verdict = 继续） */
+        }
+        break;                     /* 有 verdict：跳出规则循环 */
+    }
+    ...
+}
+</code></pre>
+<h3>2.1 规则是 blob，不是链表</h3>
+<p>每条链的规则被<strong>预序列化成一段连续内存</strong>（<code class="c">nft_rule_blob</code> → <code class="c">nft_rule_dp</code> 数组，<code class="c">dp</code> = datapath）。指针运算（<code class="c">nft_rule_next(rule)</code>）在连续内存上前进，对 CPU cache 极度友好——这是 nftables 相对 iptables <code class="c">xt_table</code> 链表遍历的第一个性能来源。</p>
+<p><strong>一条 nft 规则的结构</strong>：</p>
+<pre class="code" data-label="code"><code class="c">nft add rule inet filter input tcp dport 9090 ip saddr 10.0.0.0/24 accept
+                 └──── payload ────┘└──── cmp ────┘└─── payload+cmp ───┘└─ verdict ─┘
+</code></pre>
+<p><code class="c">nft</code> 用户态工具把这条命令<strong>编译成一串表达式</strong>：<code class="c">payload(L4头, dport字段) → cmp(==9090) → payload(L3头, saddr) → cmp(in 10.0.0.0/24) → verdict(accept)</code>。每个表达式自带 ops（函数表），数据紧跟在 ops 后面。<strong>编译发生在用户态</strong>，内核只收到「装好的表达式序列」——这是"VM"一词的由来。</p>
+<h3>2.2 fast path：四种表达式直调</h3>
+<pre class="code" data-label="C"><code class="c">if (expr-&gt;ops == &amp;nft_cmp_fast_ops)
+    nft_cmp_fast_eval(expr, &amp;regs);
+</code></pre>
+<p>不是通过 <code class="c">expr-&gt;ops-&gt;eval()</code> 间接调用，而是<strong>比对 ops 指针后直接调</strong>。为什么？看文件开头的注释：</p>
+<pre class="code" data-label="C"><code class="c">#if defined(CONFIG_RETPOLINE) &amp;&amp; defined(CONFIG_X86)
+static struct static_key_false nf_tables_skip_direct_calls;
+</code></pre>
+<p><strong>Spectre v2 缓解（retpoline）让间接调用变贵</strong>（数十 cycle 的陷阱序列），所以 v6.6 给最热的四种表达式做了直调旁路：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>fast path</th>
+<th>覆盖场景</th>
+<th>优化点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">nft_cmp_fast</code></td>
+<td>32 位以内的相等比较（端口、协议号）</td>
+<td><code class="c">((regs-&gt;data[sreg] &amp; mask) == data) ^ inv</code> 一条指令组</td>
+</tr>
+<tr>
+<td><code class="c">nft_cmp16_fast</code></td>
+<td>128 位比较（<strong>IPv6 地址</strong>）</td>
+<td>两个 u64 并行比较</td>
+</tr>
+<tr>
+<td><code class="c">nft_bitwise_fast</code></td>
+<td>掩码异或（<code class="c">and</code>/<code class="c">mask</code> 类操作）</td>
+<td>一条 AND+XOR</td>
+</tr>
+<tr>
+<td><code class="c">nft_payload_fast</code></td>
+<td>从包头取字段</td>
+<td>不走间接调用</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 含义</strong>：典型的「IP+端口白名单」规则（payload + cmp + payload + cmp + verdict）在 v6.6 上<strong>几乎全部命中 fast path</strong>，单条规则的求值成本在十几 cycle 量级。防火墙本身不再是借口——位置（hook 越晚越贵）才是。</p>
+<h3>2.3 verdict 的内部值</h3>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/netfilter/nf_tables.h:65-69 */
+NFT_CONTINUE = -1,   /* 规则内：继续下一个表达式；规则间：继续下一条规则 */
+NFT_BREAK    = -2,   /* 本条规则匹配失败，试下一条 */
+NFT_JUMP     = -3,   /* 跳到另一条链，记住回来的位置 */
+NFT_GOTO     = -4,   /* 跳到另一条链，不回来 */
+NFT_RETURN   = -5,   /* 提前返回跳转栈顶的链 */
+</code></pre>
+<p>注意这些是<strong>负数</strong>，与 Netfilter 层的正数 verdict（<code class="c">NF_ACCEPT=1</code>...）错开。求值结束后统一转换：</p>
+<pre class="code" data-label="C"><code class="c">switch (regs.verdict.code &amp; NF_VERDICT_MASK) {
+case NF_ACCEPT:
+case NF_DROP:
+case NF_QUEUE:
+case NF_STOLEN:
+    return regs.verdict.code;      /* 交给 nf_hook_slow 解释 */
+}
+</code></pre>
+<p><strong><code class="c">NFT_BREAK</code> 是「规则不匹配」的信号</strong>：任何一个 cmp 表达式失败就把 verdict 设为 BREAK，表达式循环 break，规则循环 continue。理解了这一点，「nft 规则为什么天然线性扫描、无法跳过」就清楚了——<strong>没有 rule skipping 优化，规则数就是成本</strong>（大规则集请用 set）。</p>
+<h3>2.4 jump 栈：16 层上限</h3>
+<pre class="code" data-label="C"><code class="c">struct nft_jumpstack jumpstack[NFT_JUMP_STACK_SIZE];   /* 16 */
+...
+case NFT_JUMP:
+    if (WARN_ON_ONCE(stackptr &gt;= NFT_JUMP_STACK_SIZE))
+        return NF_DROP;          /* ⭐ 超过 16 层跳转 = 直接丢包 */
+    jumpstack[stackptr].rule = nft_rule_next(rule);
+    stackptr++;
+    fallthrough;
+case NFT_GOTO:
+    chain = regs.verdict.chain;
+    goto do_chain;
+</code></pre>
+<p><code class="c">jump</code>（带栈返回）vs <code class="c">goto</code>（尾调用，不压栈）。<strong>跳转深度超过 16 直接 NF_DROP</strong>——不是拒绝加载，是运行时丢包。设计规则集时链嵌套别超过 16 层（实际上超过 4-5 层就该重构了）。</p>
+<h3>2.5 trace：排错的杀手锏</h3>
+<pre class="code" data-label="C"><code class="c">if (static_branch_unlikely(&amp;nft_trace_enabled))   /* 静态键，默认零开销 */
+    nft_trace_init(&amp;info, pkt, basechain);
+</code></pre>
+<p><code class="c">nft add rule ... trace</code> 之后，每个包在每条规则上的走向都会通过 netlink 多播出来，<code class="c">nft monitor trace</code> 实时看「这个包为什么被丢」。<strong>静态键保证不 trace 时零成本</strong>——生产环境可以常备 trace 规则，不用时不开就没有开销。</p>
+<hr />
+<h2>3. 原子替换：双代际 blob</h2>
+<pre class="code" data-label="C"><code class="c">bool genbit = READ_ONCE(net-&gt;nft.gencursor);    /* 进链时读一次代际位 */
+...
+if (genbit)
+    blob = rcu_dereference(chain-&gt;blob_gen_1);  /* 新规则装在另一个 blob 里 */
+else
+    blob = rcu_dereference(chain-&gt;blob_gen_0);
+</code></pre>
+<p>每个链有<strong>两个 blob 槽</strong>（<code class="c">blob_gen_0</code> / <code class="c">blob_gen_1</code>）。更新规则集时：</p>
+<ol>
+<li>新规则序列化进<strong>未在用的那个槽</strong></li>
+<li>commit 时翻转 <code class="c">gencursor</code>（<code class="c">nf_tables_api.c:9948</code>：<code class="c">net-&gt;nft.gencursor = nft_gencursor_next(net)</code>）</li>
+<li>正在旧 blob 上跑的包（RCU 读临界区）跑完自己的链，自然结束</li>
+<li>grace period 后回收旧 blob</li>
+</ol>
+<p><strong>这就是 <code class="c">nft -f rules.conf</code> 的原子性来源</strong>：不存在「一半新一半旧」的窗口。正在求值的包看到的是完全一致的旧规则集或新规则集。对比 iptables 逐条 COMMIT 的方式（中间态可被包看到），这是生产环境热更新规则的安全保证。</p>
+<p><strong>代际位只在进链时读一次</strong>（<code class="c">READ_ONCE(net-&gt;nft.gencursor)</code>），链内跳转（jump/goto <code class="c">do_chain</code>）不会重读——保证同一次求值全程用同一个代际，不会被中途翻转撕裂。</p>
+<hr />
+<h2>4. set：三种后端与自动选择</h2>
+<h3>4.1 set 的 flags（<code class="c">include/uapi/linux/netfilter/nf_tables.h</code>）</h3>
+<pre class="code" data-label="C"><code class="c">enum nft_set_flags {
+    NFT_SET_ANONYMOUS = 0x1,   /* 无名集合（编译期生成，随规则删除） */
+    NFT_SET_CONSTANT  = 0x2,   /* 内容绑定后不可变 */
+    NFT_SET_INTERVAL  = 0x4,   /* 包含区间（10.0.1.0/24 这种） */
+    NFT_SET_MAP       = 0x8,   /* 字典：key → data（vmap 可到 verdict） */
+    NFT_SET_TIMEOUT   = 0x10,  /* 元素带超时（自动过期） */
+    NFT_SET_EVAL      = 0x20,  /* 可从求值路径更新（add/update/dump） */
+    NFT_SET_OBJECT    = 0x40,  /* 元素是 stateful object（counter/limit/quota） */
+    NFT_SET_CONCAT    = 0x80,  /* 拼接 key（ip+port 一起查） */
+    NFT_SET_EXPR      = 0x100, /* 元素挂表达式 */
+};
+</code></pre>
+<h3>4.2 三后端能力表（v6.6 <code class="c">.features</code> 字段核对）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>后端</th>
+<th>源文件</th>
+<th>支持的 flags</th>
+<th>数据结构</th>
+<th>擅长</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>rhash</strong></td>
+<td><code class="c">nft_set_hash.c:729</code></td>
+<td>MAP|OBJECT|<strong>TIMEOUT</strong>|EVAL</td>
+<td>rhashtable（可动态扩容）</td>
+<td>大量离散 IP，动态增删</td>
+</tr>
+<tr>
+<td><strong>hash</strong> / hash_fast</td>
+<td><code class="c">nft_set_hash.c:753/772</code></td>
+<td>MAP|OBJECT</td>
+<td>固定大小哈希表</td>
+<td>元素数已知（<code class="c">size N</code>），省内存</td>
+</tr>
+<tr>
+<td><strong>rbtree</strong></td>
+<td><code class="c">nft_set_rbtree.c:757</code></td>
+<td><strong>INTERVAL</strong>|MAP|OBJECT|TIMEOUT</td>
+<td>红黑树</td>
+<td>区间集合（CIDR 白名单）</td>
+</tr>
+<tr>
+<td><strong>pipapo</strong> / pipapo_avx2</td>
+<td><code class="c">nft_set_pipapo.c:2281/2305</code></td>
+<td><strong>INTERVAL</strong>|MAP|OBJECT|TIMEOUT</td>
+<td>PIPAPO 词典</td>
+<td><strong>拼接 key</strong>（IP+端口+协议一起匹配）</td>
+</tr>
+</tbody>
+</table></div>
+<p>（pipapo_avx2 仅 x86_64，用 AVX2 批量匹配，是 pipapo 的加速版。）</p>
+<p><strong>PIPAPO 是 nftables 的独门武器</strong>（5.6+）：传统上「src ip ∈ CIDR ∧ dst port ∈ 范围 ∧ proto ∈ 集合」这种多维匹配要么多条规则线性扫，要么拆成多个 set 再 AND。pipapo 把拼接 key（<code class="c">NFT_SET_CONCAT</code>，字段数 &gt;1 时强制，<code class="c">nf_tables_api.c:4995</code>）按字段分别建词典，一次查表完成多维区间匹配——<strong>这是 nftables 在「大规则集 + 多字段」场景下反超手写规则链的关键</strong>。</p>
+<h3>4.3 选择算法：<code class="c">nft_select_set_ops()</code></h3>
+<pre class="code" data-label="C"><code class="c">/* nf_tables_api.c —— 按声明特征自动选后端 */
+static bool nft_set_ops_candidate(const struct nft_set_type *type, u32 flags)
+{
+    return (flags &amp; type-&gt;features) == (flags &amp; NFT_SET_FEATURES);
+}
+
+/* 遍历 nft_set_types[]（5 个注册项），estimate() 估成本，按 policy 取最优 */
+switch (desc-&gt;policy) {
+case NFT_SET_POL_PERFORMANCE:   /* 性能优先（默认） */
+    if (est.lookup &lt; best.lookup) break;      /* lookup 更快者胜 */
+    ...
+case NFT_SET_POL_MEMORY:        /* 内存优先 */
+    if (est.space &lt; best.space) break;        /* 占用更小者胜 */
+    ...
+}
+</code></pre>
+<p><strong>实操含义</strong>：</p>
+<ul>
+<li><code class="c">type ipv4_addr</code> + 无 flags → hash 系（O(1)）</li>
+<li><code class="c">flags interval</code>（单字段）→ rbtree（O(log n)）</li>
+<li>拼接字段（<code class="c">concat</code>，等值匹配）→ hash 系（拼接 key 整体哈希，O(1)）</li>
+<li>拼接字段 + <code class="c">flags interval</code> → <strong>pipapo</strong>（其 estimate 只接受「interval + 字段数 ≥ 2」，见 Q4）</li>
+</ul>
+<p><strong>HFT 白名单的选型路径</strong>：交易所行情源 = 几十个 CIDR → <code class="c">flags interval</code> → rbtree，查一次 O(log n)，n≈几十时 ~6 次比较，全部在 fast path 的 cmp 之外独立进行。比等价的手写规则链（每源 2-4 条规则线性扫）便宜一个数量级。</p>
+<h3>4.4 vmap：集合直接给 verdict</h3>
+<pre class="code" data-label="shell"><code class="c">nft add map inet filter md_vmap '{ type ipv4_addr : verdict \; }'
+nft add element inet filter md_vmap '{ 10.0.1.5 : accept, 10.0.9.9 : drop \; }'
+nft add rule inet filter input ip saddr vmap @md_vmap
+</code></pre>
+<p>一条规则 + 一个 map = 完整的「不同来源不同处置」策略。比每个来源一条规则（规则数线性涨）便宜得多。</p>
+<hr />
+<h2>5. iptables-nft 兼容层：能跑，但有代价</h2>
+<p>iptables-nft 把 iptables 语法<strong>翻译成 xt 兼容表达式</strong>（<code class="c">xt_match</code>/<code class="c">xt_target</code> 包装）塞进 nft VM：</p>
+<pre class="code" data-label="code"><code class="c">iptables-nft:  规则 → [xt_match 包装] → [xt_target 包装]    （间接调用，无 fast path）
+原生 nft:      规则 → [payload] → [cmp] → [verdict]          （fast path 直调）
+</code></pre>
+<p>代价两层：</p>
+<ol>
+<li><strong>性能</strong>：xt 包装是普通表达式，走 <code class="c">expr_call_ops_eval()</code> 间接调用，没有 §2.2 的直调旁路</li>
+<li><strong>能力</strong>：享受不到 set/vmap/timeout/trace 这些 nft 原生特性</li>
+</ol>
+<p><strong>迁移策略</strong>：先用 iptables-nft 平稳过渡（语义不变），然后 <code class="c">iptables-translate</code> 逐条翻译 + 重写集合逻辑为原生 set，最后 <code class="c">update-alternatives</code> 切走。<strong>不要在性能敏感机器上长期跑兼容层。</strong></p>
+<hr />
+<h2>6. HFT 要点</h2>
+<ol>
+<li><strong>规则数 = 成本</strong>（线性扫，无 skipping）。白名单用 set/vmap，别手写规则链。上千条规则的 filter 链，每个包都要全扫到 verdict 为止。</li>
+<li><strong>fast path 覆盖了典型五元组匹配</strong>：v6.6 的 cmp/cmp16/bitwise/payload 直调让「单条简单规则」的成本低到可以忽略——<strong>位置（hook 深度）才是大头</strong>。</li>
+<li><strong>双代际 blob = 生产热更新安全</strong>：改规则集不会有中间态窗口，敢在交易时段改防火墙。</li>
+<li><strong>拼接维度多就上 pipapo</strong>：<code class="c">concat</code> + interval 的多维白名单是它的主场，一次查表完成。</li>
+<li><strong>jump 栈只有 16 层，超了是丢包不是报错</strong>——规则集设计时链嵌套 ≤ 5 层。</li>
+<li><strong>trace 静态键默认零开销</strong>，排障规则可以常备。</li>
+</ol>
+<hr />
+<h2>7. 与 Rosen Ch9 的差异</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Rosen 3.x</th>
+<th>v6.6</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>规则存储</td>
+<td><code class="c">xt_table</code> 链表</td>
+<td>连续内存 blob（cache 友好）</td>
+</tr>
+<tr>
+<td>求值</td>
+<td>match/target 回调链</td>
+<td>VM 表达式序列 + fast path 直调</td>
+</tr>
+<tr>
+<td>原子替换</td>
+<td>逐条 commit（有中间态）</td>
+<td>双代际 blob 瞬时切换</td>
+</tr>
+<tr>
+<td>集合</td>
+<td>ipset 外挂</td>
+<td>原生三后端 + pipapo 多维匹配</td>
+</tr>
+<tr>
+<td>追踪</td>
+<td>无</td>
+<td>netlink trace（静态键，默认零开销）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>8. 代码自测</h2>
+<details>
+<summary>Q1：<code class="c">nft add rule inet filter input tcp dport 9090 accept</code> 编译成哪些表达式？</summary>
+<ol>
+<li><code class="c">payload</code>：从 L4 头取 dport 字段（fast path）</li>
+<li><code class="c">cmp</code>：== 9090（32 位以内 → <code class="c">nft_cmp_fast_eval</code> 直调）</li>
+<li><code class="c">verdict</code>：accept</li>
+</ol>
+<p>执行序列：payload_fast → cmp_fast → verdict。<strong>两个都走直调旁路</strong>，无间接调用。</p>
+</details>
+<details>
+<summary>Q2：规则链里有 500 条 drop 规则 + 最后一条 accept。对白名单流量，求值成本是多少？</summary>
+<p><strong>501 条规则全扫</strong>。白名单包要先跨过 500 条不匹配的 drop（每条 <code class="c">NFT_BREAK</code> → 下一条），直到最后的 accept。</p>
+<p>这是线性扫描的本性：<strong>不匹配的规则也是成本</strong>。500 条 drop 换成一个 <code class="c">@blacklist</code> set + 一条 drop 规则，成本从 500 次「表达式序列求值」降为 1 次哈希/树查找。</p>
+<p>（对比：如果 drop 的是端口等 cmp_fast 表达式，单条成本低，但 500 条累积依然显著——尤其在你以为「防火墙很便宜」的时候。）</p>
+</details>
+<details>
+<summary>Q3：<code class="c">nft -f</code> 替换规则集的瞬间，正在被处理的包会看到什么？</summary>
+<p>看到<strong>完整一致的旧规则集</strong>。机制：</p>
+<ol>
+<li>包进链时 <code class="c">READ_ONCE(net-&gt;nft.gencursor)</code> 读一次代际位（如当前是 gen_0）</li>
+<li>整条链的求值全程锁在 <code class="c">blob_gen_0</code> 上（jump/goto 重进 <code class="c">do_chain</code> 也不重读代际位）</li>
+<li>commit 翻转 gencursor 到 gen_1 —— 只影响之后进链的包</li>
+<li>旧 blob 等 RCU grace period 后回收</li>
+</ol>
+<p>不存在「半新半旧」。这也是为什么生产环境规则更新<strong>必须</strong>用 <code class="c">nft -f ruleset</code> 全量替换而不是逐条 <code class="c">nft add</code>（后者每条都是一次独立事务，中间态可被包看到）。</p>
+</details>
+<details>
+<summary>Q4：<code class="c">nft add set x '{ type ipv4_addr . inet_service \; }'</code> 创建的 set 用的什么后端？如果加 <code class="c">flags interval</code> 呢？</summary>
+<p>分两种情况（v6.6 源码验证）：</p>
+<p><strong>无 interval（纯等值匹配）→ hash 系后端。</strong> <code class="c">ipv4_addr . inet_service</code> 是拼接类型（<code class="c">desc.field_count &gt; 1</code> 强制 <code class="c">NFT_SET_CONCAT</code> flag，<code class="c">nf_tables_api.c:4995</code>）。但注意 <code class="c">NFT_SET_FEATURES</code> 掩码（<code class="c">nf_tables_api.c:4158</code>）<strong>不含 CONCAT</strong>——后端候选判定只看 INTERVAL|MAP|TIMEOUT|OBJECT|EVAL。所以无 interval 的 concat set 是普通候选，rhash/hash 的 estimate 都通过，拼接 key 整体打包成一个哈希 key，<strong>O(1)</strong>。</p>
+<p><strong>有 interval（区间 + 拼接）→ 只能 pipapo。</strong> <code class="c">nft_pipapo_estimate()</code>（<code class="c">nft_set_pipapo.c:2079</code>）开头两行：</p>
+<pre class="code" data-label="C"><code class="c">if (!(features &amp; NFT_SET_INTERVAL) ||
+    desc-&gt;field_count &lt; NFT_PIPAPO_MIN_FIELDS)   /* = 2 */
+    return false;
+</code></pre>
+<p>pipapo 只接受「interval + 至少两个字段」的 set；而 rbtree 虽然支持 INTERVAL，但对多字段区间的表达能力不足（拼出来的大 key 之间无法做字段独立的范围匹配）。所以 <code class="c">concat + interval</code> 的组合<strong>实际收敛到 pipapo</strong>（x86_64 上是 avx2 加速版）。</p>
+<p>一句话：<strong>等值拼接走哈希，区间拼接走 pipapo。</strong></p>
+</details>
+<details>
+<summary>Q5：为什么 nft 规则没有类似「按首字段建索引跳过不匹配规则」的优化？</summary>
+<p>设计取舍，不是疏忽：</p>
+<ol>
+<li><strong>tc/iptables 时代教训</strong>：优化规则查找的复杂结构（如 iptables 的 chain jump 编排）让语义变晦涩，排错困难</li>
+<li><strong>nft 的答案是把「快」外包给 set</strong>：多维快查用 pipapo/hash 后端（O(1)~O(log n)），规则链保持「顺序、可预测、可 trace」</li>
+<li>blob 连续内存 + fast path 直调已经把<strong>每条规则的常数</strong>压得很低；规则数多到线性扫描成为瓶颈时，正确解法是 set 化，不是给规则链建索引</li>
+</ol>
+<p>这也是 03 篇对比的伏笔：<strong>BPF 是「把逻辑编译成任意程序」，nft 是「把逻辑约束成可优化的数据操作」</strong>——两者哲学不同，各有主场。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-15.html#s-01">01-nftables-bootlin.md</a> — hook 体系、优先级、verdict 语义</li>
+<li><strong>下一篇：</strong> <a href="chapter-15.html#s-03">03-nftables-vs-bpf.md</a> — nftables vs XDP/tc-BPF 选型</li>
+<li><strong>相关：</strong> <a href="chapter-09.html#ch-9">chapter-09-tc-bpf/</a> tc-BPF 的 tcx 机制（同期的 hook 对比） · <a href="chapter-11.html#ch-11">chapter-11-packet-filter-flowtable/</a> flowtable：Netfilter 自己的快速路径</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
       </section>
       <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">13</div><h2>— nftables 与 eBPF 的关系</h2></div>
+        <div class="sec-head"><div class="sec-no">03</div><h2>— nftables vs eBPF：位置、成本与选型</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> nftables 3.13+；eBPF 网络 4.x+</p>
+<p><strong>对应 Rosen:</strong> 无（3.x 时代没有可对比的第二条路）
+<strong>内核版本：</strong> 对比基于 <strong>v6.6</strong> 源码（两侧机制均已核对：nft 求值引擎见 <a href="chapter-15.html#s-02">02</a>；
+XDP/tc-BPF 见 <a href="chapter-05.html#ch-5">chapter-05</a>、<a href="chapter-09.html#ch-9">chapter-09</a>）
+<strong>核心方法论：</strong> 对比「包过滤机制」本质是对比<strong>三件事：位置（决定了前置成本）、能力（能拿到什么、能改什么）、可维护性（谁来运维）</strong></p>
 </blockquote>
-<h2>两种内核包过滤机制</h2>
+<h2>文档概述</h2>
+<p>本篇回答一个工程问题：<strong>同一件事（过滤/标记/丢弃一个包），什么时候用 nftables，什么时候用 XDP/tc-BPF？</strong></p>
+<p>结论先行：</p>
+<ul>
+<li><strong>静态策略（IP/端口/协议的组合、NAT、限速）→ nftables</strong>。声明式、原子热更新、set/vmap 的多维匹配足够快，且运维门槛低（安全团队就会 nft，不一定会写 BPF）</li>
+<li><strong>动态逻辑（按包内容计算、查运行时状态、需要 map 联动）→ XDP/tc-BPF</strong>。图灵完备、位置更早、可观测性靠 bpftrace 一套生态</li>
+<li><strong>HFT 现实</strong>：两者叠着用，各管一层</li>
+</ul>
+<hr />
+<h2>1. 一张图看清全部位置（v6.6 收包路径）</h2>
+<pre class="code" data-label="code"><code class="c">收包（RX）：
+驱动收包 → NAPI
+      │
+      ▼
+  ① XDP（native，驱动层）          ← 没有 skb，最快；tcpdump 看不到被它丢的包
+      ▼
+__netif_receive_skb_core()                    net/core/dev.c
+  ② ptype_all（tcpdump 抓包点）                :5394
+  ③ tc ingress（tcx 先、legacy 后）            :5412
+  ④ nft netdev ingress（nf_ingress）          :5420   ← netdev/inet 家族的 ingress 链
+      ▼
+  ⑤ nft PRE_ROUTING（ip_rcv，含 conntrack/NAT） ip_input.c:569
+      ▼ （路由查找）
+  ⑥ nft LOCAL_IN（ip_local_deliver）            ip_input.c:254
+      ▼
+  ⑦ UDP/TCP 栈 → socket 查找 → cgroup ingress（sk_filter_trim_cap）
+      ▼
+  socket 接收队列 → 应用
+</code></pre>
+<pre class="code" data-label="code"><code class="c">发包（TX）：
+sendmsg()
+      ▼
+  ① nft LOCAL_OUT（__ip_local_out）             ip_output.c:116
+      ▼ （路由查找结果 dst_output）
+  ② nft POST_ROUTING（ip_finish_output，SNAT）   ip_output.c:418
+      ▼
+__dev_queue_xmit()                             net/core/dev.c
+  ③ nft netdev egress（nf_hook_egress）         :4303
+  ④ tc egress（sch_handle_egress，tcx 先）       :4311
+      ▼
+  ⑤ qdisc（fq/prio/etf...）→ 驱动
+</code></pre>
+<p><strong>这张图直接给出第一个选型判据——「想挡住一个包，愿意付出多少前置成本」：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>挡在</th>
+<th>该包已经付出了什么</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>XDP</td>
+<td>仅驱动收包 + DMA</td>
+<td>攻击流量清洗、行情早过滤</td>
+</tr>
+<tr>
+<td>nft netdev ingress</td>
+<td>+ skb 分配、ptype_all 遍历、tc 链</td>
+<td>设备级白名单（比 IP 层早，比 XDP 晚一点）</td>
+</tr>
+<tr>
+<td>nft PRE_ROUTING</td>
+<td>+ VLAN/PPPoE 剥层、ip_rcv 校验</td>
+<td>DNAT、按目的地址分流</td>
+</tr>
+<tr>
+<td>nft LOCAL_IN</td>
+<td>+ 路由查找、conntrack</td>
+<td>传统防火墙（INPUT 链）</td>
+</tr>
+<tr>
+<td>cgroup ingress</td>
+<td>+ 完整 IP/UDP/TCP 栈 + socket 查找</td>
+<td>「这个 socket 该不该收」的业务语义</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>每往后一个位置，被丢弃的包都已经白白消耗了前面所有阶段的 CPU。</strong> 对正常流量无所谓（反正要走到那），对攻击/垃圾流量（目标是丢弃）就是纯浪费。</p>
+<hr />
+<h2>2. 能力对比：拿得到什么，改得动什么</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>维度</th>
 <th>nftables</th>
-<th>eBPF（XDP/tc-BPF）</th>
+<th>tc-BPF</th>
+<th>XDP</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>设计目标</td>
-<td>通用防火墙/NAT</td>
-<td>可编程数据路径</td>
+<td><strong>操作对象</strong></td>
+<td><code class="c">skb</code>（通过 payload/cmp 表达式间接读）</td>
+<td><code class="c">__sk_buff</code>（81 个 helper，大部分字段可写）</td>
+<td><code class="c">xdp_buff</code>（23 个 helper，线性区直接改）</td>
 </tr>
 <tr>
-<td>执行位置</td>
-<td>Netfilter hook（协议栈内）</td>
-<td>XDP hook 或 tc 层</td>
+<td><strong>读包内容</strong></td>
+<td>✅ payload 表达式（固定偏移）</td>
+<td>✅ <code class="c">data</code>/<code class="c">data_end</code>（任意偏移，可循环）</td>
+<td>✅ <code class="c">data</code>/<code class="c">data_end</code></td>
 </tr>
 <tr>
-<td>编程模型</td>
-<td>声明式规则（nft 语法）</td>
-<td>命令式程序（C→BPF）</td>
+<td><strong>改包内容</strong></td>
+<td>⚠️ 有限（payload/mangle 类表达式）</td>
+<td>✅（<code class="c">adjust_head</code> 等）</td>
+<td>✅（最灵活，可增删头部）</td>
 </tr>
 <tr>
-<td>灵活性</td>
-<td>规则匹配（有限）</td>
-<td>任意逻辑（图灵完备）</td>
+<td><strong>逻辑复杂度</strong></td>
+<td>声明式规则 + set 查询</td>
+<td><strong>图灵完备</strong>（C→BPF，verifier 审查）</td>
+<td><strong>图灵完备</strong></td>
 </tr>
 <tr>
-<td>性能</td>
-<td>比 iptables 快，但比 XDP 慢</td>
-<td>XDP 最快，tc-BPF 次之</td>
+<td><strong>运行时状态</strong></td>
+<td>set（可带 timeout/object）</td>
+<td><strong>BPF map</strong>（内核/用户态双向读写，联动应用）</td>
+<td><strong>BPF map</strong></td>
 </tr>
 <tr>
-<td>适用场景</td>
-<td>防火墙/NAT/安全策略</td>
-<td>高性能包处理/过滤/监控</td>
+<td><strong>重定向</strong></td>
+<td>⚠️ 有限</td>
+<td>✅ <code class="c">bpf_redirect</code>（devmap/cpumap）</td>
+<td>✅ <code class="c">bpf_redirect_map</code>（最完整）</td>
+</tr>
+<tr>
+<td><strong>NAT</strong></td>
+<td>✅ 成熟（conntrack 联动）</td>
+<td>⚠️ 要自己维护状态</td>
+<td>❌ 无 conntrack，基本不用于 NAT</td>
+</tr>
+<tr>
+<td><strong>限速</strong></td>
+<td>✅ limit 表达式（简单）</td>
+<td>✅（token bucket 自己写或 map）</td>
+<td>✅（自己写）</td>
+</tr>
+<tr>
+<td><strong>原子热更新</strong></td>
+<td>✅ 双代际 blob（见 <a href="chapter-15.html#s-02">02</a> §3）</td>
+<td>✅ tcx 的 bpf_link 原子替换</td>
+<td>✅ bpf_link</td>
+</tr>
+<tr>
+<td><strong>丢包可观测</strong></td>
+<td>counter + <code class="c">SKB_DROP_REASON_NETFILTER_DROP</code></td>
+<td><code class="c">SKB_DROP_REASON_TC_INGRESS/EGRESS</code></td>
+<td>驱动统计更新在 XDP 之后，<code class="c">tracepoint:xdp:xdp_exception</code> 是唯一可靠观测</td>
+</tr>
+<tr>
+<td><strong>tcpdump 可见性</strong></td>
+<td>✅ 被丢的包 tcpdump 能看到</td>
+<td>✅ 能看到</td>
+<td>❌ <strong>看不到</strong>（XDP 在 tap 之前）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>何时用哪个</h2>
+<p><strong>三个容易误判的能力细节：</strong></p>
+<ol>
+<li><strong>nft 的「读包」是模板化的</strong>：payload 表达式声明「L3 头偏移 X 处取 Y 字节」，适合固定字段（IP/proto/port），<strong>做不了「扫描 payload 找特征」</strong>——那是 BPF 的活。</li>
+<li><strong>XDP 没有 conntrack</strong>：NAT 需要连接状态跟踪，XDP 拿不到（也刻不起）——所以 NAT 是 nftables/iptables 的保留地。</li>
+<li><strong>tcpdump 可见性是排障分水岭</strong>：<code class="c">tcpdump 看得到但应用收不到</code> → 查 nft counter / tc / cgroup；<code class="c">tcpdump 都看不到</code> → <strong>一定是 XDP</strong>（或驱动/链路问题）。</li>
+</ol>
+<hr />
+<h2>3. 成本对比：单次求值到底多贵</h2>
+<p>基于 v6.6 两侧源码的机制分析（量级估算，具体数字需实测）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>求值成本结构</th>
+<th>量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nft 单条简单规则</td>
+<td>fast path 直调（payload_fast + cmp_fast + verdict），无间接调用</td>
+<td>~十几 cycle</td>
+</tr>
+<tr>
+<td>nft 规则链 N 条</td>
+<td>线性 × N（无 skipping）</td>
+<td>N × 十几 cycle</td>
+</tr>
+<tr>
+<td>nft set 查找</td>
+<td>hash O(1) / rbtree O(log n) / pipapo 字段词典</td>
+<td>一次查找替代 N 条规则</td>
+</tr>
+<tr>
+<td>tc-BPF（tcx）</td>
+<td>JIT 后原生代码，helper 调用有进出内核的固定开销</td>
+<td>程序本身 ~几十-几百 cycle，取决于逻辑</td>
+</tr>
+<tr>
+<td>XDP</td>
+<td>JIT 原生代码，无 skb，数据 pointer 直接操作</td>
+<td>最低（省掉了 skb 分配本身 ~几百 ns）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键不对称：</strong></p>
+<ul>
+<li>nft 的成本优势在「<strong>规则简单</strong>」——fast path 直调；劣势在「<strong>规则多</strong>」——线性扫描</li>
+<li>BPF 的成本优势在「<strong>逻辑复杂</strong>」——一次 JIT 程序能干 nft 几百条规则的活；劣势在「简单场景杀鸡用牛刀」以及<strong>开发/验证/运维成本</strong>（要过 verifier、要处理 CO-RE、要有人会改）</li>
+</ul>
+<p><strong>HFT 的量化直觉</strong>：收包路径上每省 100ns，在 10Gbps 线速（14.88Mpps）上相当于每秒省 1.5 秒 CPU。XDP 相对 nft INPUT 链省的是「skb 分配 + 协议栈前半段」（几百 ns 级），nft 相对 cgroup 省的是「协议栈后半段 + socket 查找」（μs 级）。</p>
+<hr />
+<h2>4. 选型决策表</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>场景</th>
 <th>推荐</th>
-<th>原因</th>
+<th>原因（源码/机制依据）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>防火墙规则（端口/IP过滤）</td>
-<td>nftables</td>
-<td>声明式简单，维护方便</td>
+<td>端口/IP 静态白名单（几十~几千条）</td>
+<td><strong>nftables set</strong></td>
+<td>hash O(1)，fast path，运维门槛低</td>
 </tr>
 <tr>
-<td>NAT/路由</td>
-<td>nftables</td>
-<td>Netfilter NAT 成熟稳定</td>
+<td>多维组合（IP 段 × 端口段 × 协议）</td>
+<td><strong>nftables concat set（pipapo）</strong></td>
+<td>一次词典查找完成多维区间匹配</td>
 </tr>
 <tr>
-<td>超低延迟包过滤</td>
-<td>XDP-BPF</td>
-<td>sk_buff 之前处理</td>
+<td>NAT（SNAT/DNAT/MASQUERADE）</td>
+<td><strong>nftables</strong></td>
+<td>conntrack 联动是刚需，BPF 侧没有等价物</td>
 </tr>
 <tr>
-<td>行情早过滤/早丢弃</td>
-<td>XDP-BPF</td>
-<td>不分配 sk_buff</td>
+<td>攻击流量清洗（百万 pps 级丢弃）</td>
+<td><strong>XDP</strong></td>
+<td>位置最早，被丢的包不消耗 skb 分配</td>
 </tr>
 <tr>
-<td>包标记/分类</td>
-<td>tc-BPF</td>
-<td>可设置 skb 元数据</td>
+<td>行情早过滤（组播组+端口粗筛）</td>
+<td><strong>XDP</strong></td>
+<td>行情 pps 高但策略简单；省下的 skb 分配是纯赚</td>
 </tr>
 <tr>
-<td>速率限制</td>
-<td>nftables 或 tc-BPF</td>
-<td>nftables limit 简单，tc-BPF 更灵活</td>
+<td>按包内容做复杂计算（如解析到某字段后查 map 决策）</td>
+<td><strong>tc-BPF 或 XDP</strong></td>
+<td>nft payload 表达式做不了任意逻辑</td>
 </tr>
 <tr>
-<td>包内容修改</td>
-<td>XDP-BPF</td>
-<td>可增删头部</td>
+<td>给包打标记/改 dscp 供 qdisc 用</td>
+<td><strong>nftables 或 tc-BPF</strong></td>
+<td>nft 的 mangle 够用；tc-BPF 适合「标记值需要运行时计算」的场景</td>
 </tr>
 <tr>
-<td>可观测/监控</td>
-<td>eBPF（tracing）</td>
-<td>可 hook 任意内核函数</td>
+<td>限速（简单固定阈值）</td>
+<td><strong>nftables limit</strong></td>
+<td>一行规则</td>
+</tr>
+<tr>
+<td>限速（动态/按对端/联动应用状态）</td>
+<td><strong>tc-BPF + map</strong></td>
+<td>BPF map 可以被应用实时调阈值</td>
+</tr>
+<tr>
+<td>「防火墙规则每周改、由安全团队维护」</td>
+<td><strong>nftables</strong></td>
+<td>声明式 + 原子替换 + trace，不需要程序员</td>
+</tr>
+<tr>
+<td>「逻辑跟交易策略联动、由量化开发维护」</td>
+<td><strong>BPF</strong></td>
+<td>和应用共享 map，一个代码库</td>
+</tr>
+<tr>
+<td>需要丢包有「为什么」的完整证据链</td>
+<td><strong>两者都要</strong></td>
+<td><code class="c">SKB_DROP_REASON_*</code> 按 hook 区分 reason，tracepoint:skb:kfree_skb 全局可见</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT 实践</h2>
-<p>HFT 系统通常两者都用：
-- <strong>nftables</strong>：基础防火墙（管理通道保护、白名单、NAT）
-- <strong>XDP-BPF</strong>：行情流早过滤（组播地址过滤、端口过滤）
-- <strong>tc-BPF</strong>：发包控制（交易流标记、带宽控制）</p>
-<pre class="code" data-label="code"><code class="c">行情包到达 → XDP-BPF（早过滤）→ 协议栈 → nftables（安全规则）→ socket
-交易包发送 → socket → tc-BPF（标记）→ qdisc → nftables（NAT）→ 驱动
+<hr />
+<h2>5. HFT 实践：叠加而非二选一</h2>
+<p>典型行情机的完整防线（v6.6 位置顺序）：</p>
+<pre class="code" data-label="code"><code class="c">RX: ① XDP：行情组播粗筛（非订阅组直接丢）+ 记 per-queue pstats
+    ④ nft netdev ingress（可选）：设备级白名单兜底
+    ⑤ nft PRE_ROUTING：notrack（行情流不进 conntrack）
+    ⑥ nft LOCAL_IN：INPUT 防火墙（管理面 SSH/监控端口 + default deny）
+
+TX: ① nft LOCAL_OUT：OUTPUT 防火墙
+    ④ tc egress：tc-BPF 给交易流打 skb-&gt;priority
+    ⑤ qdisc：prio（交易流高优先级）+ tbf（行情重传/日志限速）
 </code></pre>
+<p><strong>分工原则：</strong></p>
+<ul>
+<li><strong>XDP 管「量」</strong>：百万 pps 级的丢弃/分流，位置就是一切</li>
+<li><strong>nft 管「策略」</strong>：IP/端口维度的安全基线，NAT，conntrack 相关的一切</li>
+<li><strong>tc-BPF 管「动态」</strong>：需要和应用联动（map）、需要复杂计算的分类</li>
+<li><strong>qdisc 管「发送时机」</strong>（见 <a href="chapter-09.html#ch-9">chapter-09</a>）：BPF 只能分类+丢包，整形必须 qdisc</li>
+</ul>
+<p><strong>一个真实的坑</strong>：三层防线（XDP + nft + cgroup）都可能丢包，排障时先看 tcpdump——</p>
+<pre class="code" data-label="code"><code class="c">tcpdump 看得到 → 不是 XDP 丢的
+  → nft counter 在涨？→ nft trace 定位到规则
+  → tc -s 统计在涨？→ tc 侧丢的
+  → 都没有？→ cgroup ingress 或 socket buffer 满（dropwatch / ss -s）
+tcpdump 看不到 → XDP（tracepoint:xdp:xdp_exception）或链路层
+</code></pre>
+<hr />
+<h2>6. 常见误区纠正</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"BPF 一定比 nftables 快"</td>
+<td>简单规则 nft fast path 直调可能更快；BPF 的优势在复杂逻辑和更早的位置，不在「执行引擎本身」</td>
+</tr>
+<tr>
+<td>"nftables 规则多了也不怕，内核会优化"</td>
+<td><strong>没有</strong>规则索引/skipping——线性扫描是设计选择，「快」的路径是 set/vmap（见 <a href="chapter-15.html#s-02">02</a> §4）</td>
+</tr>
+<tr>
+<td>"XDP 能替代防火墙"</td>
+<td>XDP 无 conntrack、无 NAT、无 fragment 处理——它是「最前面的包处理器」，不是防火墙</td>
+</tr>
+<tr>
+<td>"iptables-nft = nftables"</td>
+<td>兼容层走 xt 包装表达式，<strong>没有 fast path 直调</strong>，也用不上 set/vmap（见 <a href="chapter-15.html#s-02">02</a> §5）</td>
+</tr>
+<tr>
+<td>"丢包都能在 tcpdump 里看到"</td>
+<td>XDP 丢的看不到（在 tap 之前）；这也是 XDP 的特性不是缺陷（省掉了 tap 本身的成本）</td>
+</tr>
+<tr>
+<td>"tc 和 nftables 的 egress 谁先谁后无所谓"</td>
+<td>v6.6 固定 <strong>nft egress（dev.c:4303）在 tc egress（:4311）之前</strong>——改源地址/标记要在正确的层做</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 代码自测</h2>
+<details>
+<summary>Q1：一个被 nft INPUT 链 drop 的包，和一个被 XDP drop 的包，tcpdump 分别看得到吗？</summary>
+<ul>
+<li><strong>nft INPUT drop：看得到</strong>。tcpdump 在 <code class="c">ptype_all</code>（dev.c:5394），早于 IP 层的 LOCAL_IN。</li>
+<li><strong>XDP drop：看不到</strong>。XDP 在驱动层，早于 <code class="c">__netif_receive_skb_core()</code> 全部内容（包括 ptype_all）。</li>
+</ul>
+<p>这是排障的第一分水岭。XDP 丢包的观测只有 <code class="c">tracepoint:xdp:xdp_exception</code>（针对 <code class="c">XDP_ABORTED</code>/<code class="c">XDP_DROP</code> 的异常返回）——注意 <code class="c">XDP_PASS</code> 之外的静默丢弃驱动统计可能都不更新。</p>
+</details>
+<details>
+<summary>Q2：为什么 NAT 至今留在 nftables，XDP 做不了？</summary>
+<p>NAT 的语义需要<strong>连接状态</strong>：同一 flow 的后续包要复用首包建立的地址映射，连接结束要回收映射。这套状态机就是 conntrack（<code class="c">NF_IP_PRI_CONNTRACK = -200</code>，跑在所有 NAT 之前，且 NAT 链 priority 有「必须 &gt; -200」的硬校验，<code class="c">nf_tables_api.c:2251</code>）。</p>
+<p>XDP 在 conntrack 之前（驱动层），<strong>既读不到 conntrack 状态，也不该自己去建</strong>（那是分布式状态，绕过 conntrack 会和其它 hook 打架）。技术上可以用 BPF map 自己维护 NAT 表，但等于重写半个 conntrack——没有工程理由。</p>
+</details>
+<details>
+<summary>Q3：白名单有 3000 个 CIDR 网段，方案 A 写 3000 条 nft 规则，方案 B 一个 interval set。差多少？</summary>
+<p><strong>方案 A</strong>：每包线性扫 3000 条规则（不匹配也要逐条 <code class="c">NFT_BREAK</code>），~3000 × 十几 cycle ≈ <strong>4 万+ cycle</strong>。而且规则插入越晚，平均扫描越长。</p>
+<p><strong>方案 B</strong>：一条规则 + <code class="c">@whitelist</code>（interval set → rbtree，O(log n)≈11 次比较 ≈ <strong>几十 cycle</strong>）。集合内容更新不触碰规则链（<code class="c">nft add element</code> 独立事务）。</p>
+<p>差三个数量级。<strong>规则数超过几十条就该 set 化</strong>——这是 nftables 自己的设计哲学（见 <a href="chapter-15.html#s-02">02</a> Q5）。</p>
+</details>
+<details>
+<summary>Q4：tc-BPF 能做 NAT 吗？位置上它在 POST_ROUTING 之后啊？</summary>
+<p><strong>位置上确实晚</strong>（TX 路径：nft LOCAL_OUT → POST_ROUTING(SNAT) → nft netdev egress → tc egress → qdisc），tc-BPF 在 SNAT <strong>之后</strong>跑，看到的是改完源地址的包。</p>
+<p>技术上有 <code class="c">bpf_skb_store_bytes</code> 等能改包头，但没有 conntrack 联动：内核的连接跟踪表里记录的还是 SNAT 之前的映射，回包的 de-SNAT 不会按你 tc-BPF 的改法走。<strong>改了就是自造黑洞</strong>。结论同 Q2：NAT 是 nftables 的保留地。</p>
+</details>
+<details>
+<summary>Q5：行情机想给「非订阅组播组」的包早丢弃，但策略每周由 Python 服务下发。选什么？</summary>
+<p><strong>XDP + BPF map</strong>：</p>
+<ul>
+<li>位置：XDP 最早（省 skb 分配）——组播垃圾流量 pps 可能很高</li>
+<li>策略下发：Python 服务通过 <code class="c">bpftool map update</code> 或 libbpf 更新 devmap/hash map——<strong>改 map 不需要重载程序</strong>，原子生效</li>
+<li>nftables 也能做到类似位置（netdev ingress 链 + interval set 动态增删），但比 XDP 晚一个 skb 分配；如果策略就是「组播组地址列表」这种纯数据，nft netdev ingress 链 + set 也是完全合理的选择（运维更简单）</li>
+</ul>
+<p>判断点：如果丢弃逻辑包含任何计算（如「同组但需要按内容分流」），只能 BPF；纯地址/端口列表则两者皆可，按运维能力选。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-15.html#s-02">02-nftables-lwn.md</a> — nft 求值引擎与 set 后端（本篇成本对比的依据）</li>
+<li><strong>相关：</strong> <a href="chapter-05.html#ch-5">chapter-05-xdp-architecture/</a> XDP 架构 · <a href="chapter-09.html#ch-9">chapter-09-tc-bpf/</a> tc-BPF 双机制 · <a href="chapter-11.html#ch-11">chapter-11-packet-filter-flowtable/</a> flowtable（Netfilter 的快速路径——另一个「拿回性能」的答案）</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
       </section>
 
 
