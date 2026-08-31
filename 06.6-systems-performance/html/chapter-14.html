@@ -276,11 +276,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-14-1"><span class="n">14.1</span>section-14.1-14.2-核心能力与-tracefs</a>
-          <a href="#s-14-3"><span class="n">14.3</span>section-14.3-14.414.8-函数追踪与-function_graph</a>
-          <a href="#s-14-5"><span class="n">14.5</span>section-14.5-14.714.10-事件源Filter-与-Hist-Triggers</a>
-          <a href="#s-14-9"><span class="n">14.9</span>section-14.9-硬件延迟检测hwlat</a>
-          <a href="#s-14-11"><span class="n">14.11</span>section-14.11-14.13-前端工具</a>
+          <a href="#s-14-1"><span class="n">14.1</span>–14.2 核心能力与 tracefs</a>
+          <a href="#s-14-3"><span class="n">14.3</span>–14.4、14.8 函数追踪与 function_graph</a>
+          <a href="#s-14-5"><span class="n">14.5</span>–14.7、14.10 事件源、Filter 与 Hist Triggers</a>
+          <a href="#s-14-9"><span class="n">14.9</span>硬件延迟检测（hwlat）</a>
+          <a href="#s-14-11"><span class="n">14.11</span>–14.13 前端工具：trace-cmd、KernelShark、perf ftrace、perf-tools</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -460,316 +460,1461 @@ Ch 15  BPF — 生产追踪主力
 </ul>
       </section>
       <section class="section" id="s-14-1">
-        <div class="sec-head"><div class="sec-no">14.1</div><h2>section-14.1-14.2-核心能力与-tracefs</h2></div>
-<h3 class="sub">Ftrace 概述</h3>
+        <div class="sec-head"><div class="sec-no">14.1</div><h2>–14.2 核心能力与 tracefs</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：— · 下一节：<a href="#s-14-3">14.3–14.4、14.8 函数追踪与 function_graph</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>Ftrace 的「核心能力地图」和它的用户态接口 tracefs。重点不是罗列命令——而是回答三个问题：</p>
+<ol>
+<li>Ftrace <strong>到底是什么</strong>（一个框架，不是一个 tracer）</li>
+<li>它在<strong>内核里怎么做到</strong>零安装、近乎零闲置开销（动态插桩 text patching）</li>
+<li>tracefs 的文件模型为什么长这样（per-CPU ring buffer + 快照读/流式读两种语义）</li>
+</ol>
+<hr />
+<h2>1. Ftrace 是什么：从 Function Tracer 到框架</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>演进</th>
+<th>演进阶段</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>起源</strong></td>
-<td><strong>Function Tracer</strong> — 追踪内核函数调用</td>
+<td>起源（2.6.27）</td>
+<td><strong>Function Tracer</strong>——只做一件事：记录内核函数调用序列</td>
 </tr>
 <tr>
-<td><strong>现状</strong></td>
-<td>多追踪器框架：function、function_graph、tracepoint、hwlat…</td>
+<td>现状</td>
+<td><strong>多追踪器框架</strong>：<code class="c">function</code>、<code class="c">function_graph</code>、<code class="c">hwlat</code>、tracepoint/kprobe/uprobe 事件、hist trigger 全挂在同一套 tracefs + ring buffer 上</td>
 </tr>
 <tr>
-<td><strong>优势</strong></td>
-<td><strong>内核自带</strong>、无用户态依赖、资源受限环境可用</td>
+<td>定位变化</td>
+<td>它成了内核的<strong>观测基础设施</strong>——perf tracepoint、BPF kprobe/uprobe、livepatch 底层都复用同一套插桩点</td>
 </tr>
 </tbody>
 </table></div>
-<h3>tracefs 接口</h3>
-<p>挂载点（发行版二选一）：</p>
-<pre class="code" data-label="code"><code class="c">/sys/kernel/debug/tracing   # debugfs（需 debug 挂载）
-/sys/kernel/tracing         # 新式 tracefs 挂载
+<p><strong>关键认知</strong>：<code class="c">echo function_graph &gt; current_tracer</code> 里的"tracer"只是框架里的一个插件。事件（tracepoint）体系甚至不走 <code class="c">current_tracer</code>——设成 <code class="c">nop</code> 也能收事件。这是初学者最常见的混淆点。</p>
+<h2>2. 内核里怎么实现（v6.6 源码级）</h2>
+<p>这是本章值得深挖的部分——Ftrace 的「零闲置开销」是<strong>动态代码修补</strong>换来的。</p>
+<h3>2.1 编译期：每个函数开头埋一个调用点</h3>
+<pre class="code" data-label="shell"><code class="c"># 内核编译配置开启：
+CONFIG_FUNCTION_TRACER=y     # 打开 -pg / -mfentry
+CONFIG_DYNAMIC_FTRACE=y      # 动态修补（几乎所有发行版都开）
 </code></pre>
-<p><strong>交互方式：</strong> 读写虚拟文件 — 配置 tracer、启停、读 buffer。</p>
-<pre class="code" data-label="shell"><code class="c"># 常见路径检查
-ls /sys/kernel/tracing 2&gt;/dev/null || ls /sys/kernel/debug/tracing
-
-# 查看可用 tracer
-cat /sys/kernel/tracing/available_tracers
-
-# 当前 tracer
-cat /sys/kernel/tracing/current_tracer
-</code></pre>
+<ul>
+<li>x86_64 用 <code class="c">-mfentry</code>：编译器在<strong>每个函数第一行</strong>插 <code class="c">call __fentry__</code>（5 字节）</li>
+<li>ARM64 用 <code class="c">-pg</code> + patchable-function-entry：等价机制</li>
+<li>所有调用点地址被链接器收集进 <code class="c">__mcount_loc</code> section</li>
+</ul>
+<h3>2.2 启动期：全部打成 NOP</h3>
+<p><code class="c">ftrace_init()</code> 扫描 <code class="c">__mcount_loc</code>，为每个调用点建一个 <code class="c">struct dyn_ftrace</code> 记录（ftrace.c 的 <code class="c">ftrace_process_locs</code>），然后<strong>把所有 <code class="c">call __fentry__</code> 改写成 5 字节 <code class="c">nop</code></strong>。</p>
+<p>结果：<strong>没有 tracer 启用时，每个内核函数只多执行一条 nop</strong>——这就是"闲置近零开销"的来源。</p>
+<h3>2.3 启用 tracer：stop_machine 批量换指令</h3>
+<p>写 <code class="c">current_tracer</code> 触发的事件链（v6.6 锚点）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>文件/目录</th>
-<th>作用</th>
+<th>步骤</th>
+<th>函数</th>
+<th>v6.6 位置</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">current_tracer</code></td>
-<td>选择追踪器（nop/function/function_graph…）</td>
+<td>① 准备</td>
+<td><code class="c">ftrace_arch_code_modify_prepare()</code>——拿 <code class="c">text_mutex</code>、令 CoreSight/RO 页表可写</td>
+<td>ftrace.c:2841</td>
 </tr>
 <tr>
-<td><code class="c">tracing_on</code></td>
-<td>0/1 开关</td>
+<td>② 批量 patch</td>
+<td><code class="c">ftrace_modify_all_code()</code>——按 filter 把选中调用点的 nop 换回 <code class="c">call ftrace_regs_caller</code></td>
+<td>ftrace.c:2866</td>
 </tr>
 <tr>
-<td><code class="c">trace</code></td>
-<td>一次性读 buffer</td>
+<td>③ 同步</td>
+<td>没有静态调用点时的兜底：<code class="c">ftrace_run_stop_machine()</code> → <code class="c">stop_machine(__ftrace_modify_code…)</code> 全核停下换指令</td>
+<td>ftrace.c:2930–2932</td>
 </tr>
 <tr>
-<td><code class="c">trace_pipe</code></td>
-<td><strong>阻塞流式读</strong>（类似 tail -f）</td>
-</tr>
-<tr>
-<td><code class="c">set_ftrace_filter</code></td>
-<td>限制追踪哪些函数</td>
-</tr>
-<tr>
-<td><code class="c">events/</code></td>
-<td>tracepoint 事件树</td>
-</tr>
-<tr>
-<td><code class="c">set_event</code></td>
-<td>启用哪些 tracepoint</td>
+<td>④ 状态记录</td>
+<td><code class="c">ftrace_check_record()</code> 维护每个 <code class="c">dyn_ftrace</code> 的 enabled/disabled 标志（<code class="c">FTRACE_FL_DISABLED</code>）</td>
+<td>ftrace.c:2183</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>权限：</strong> 通常需 <strong>root</strong> 或 <code class="c">CAP_SYS_ADMIN</code> — 生产限时长、限 filter。</p>
-<p>→ Ch 4 <a href="chapter-04.html#ch-4">Ftrace 在工具链中的位置</a></p>
+<h3>2.4 ftrace_ops 多路复用</h3>
+<p>运行时回调不是直接绑 tracer——而是一个 <code class="c">ftrace_ops</code> 链表（ftrace.c:124 <code class="c">ftrace_ops_list</code>）。<code class="c">perf probe</code>、BPF kprobe、livepatch、function tracer 各注册一个 ops，每个 ops 带自己的 filter hash。这就是「BPF 复用 Ftrace 插桩点」的机制根源（→ <a href="chapter-15.html#ch-15">Ch 15 BPF</a>）。</p>
+<blockquote>
+<p><strong>HFT 视角</strong>：<code class="c">stop_machine</code> 换指令本身是<strong>全核停顿</strong>（毫秒级）——在生产热路径机器上启用/关闭 function tracer 属于"自己给自己注入延迟尖刺"。开窗口要短，开关动作要避开交易时段。</p>
+</blockquote>
+<h2>3. tracefs 接口</h2>
+<p>挂载点（发行版二选一，内容相同）：</p>
+<pre class="code" data-label="code"><code class="c">/sys/kernel/debug/tracing   # 老式：挂在 debugfs 下
+/sys/kernel/tracing         # 新式：独立 tracefs（v4.1+，推荐）
+</code></pre>
+<h3>3.1 核心文件清单（v6.6 注册位置）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>作用</th>
+<th>v6.6 注册锚点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">available_tracers</code></td>
+<td>列出可用 tracer</td>
+<td>trace.c:9768 附近批量创建</td>
+</tr>
+<tr>
+<td><code class="c">current_tracer</code></td>
+<td>选择 tracer</td>
+<td>trace.c:9768</td>
+</tr>
+<tr>
+<td><code class="c">tracing_on</code></td>
+<td>总开关 0/1（<strong>buffer 全局闸门</strong>）</td>
+<td>trace.c</td>
+</tr>
+<tr>
+<td><code class="c">trace</code></td>
+<td><strong>快照读</strong> buffer（读完不消耗，<code class="c">ls</code> 式）</td>
+<td>trace.c</td>
+</tr>
+<tr>
+<td><code class="c">trace_pipe</code></td>
+<td><strong>流式读</strong>（阻塞、读走即消耗）</td>
+<td>trace.c:9780（全局）/ :8918（per-CPU）</td>
+</tr>
+<tr>
+<td><code class="c">buffer_size_kb</code></td>
+<td>ring buffer 每 CPU 大小</td>
+<td>trace.c:9783</td>
+</tr>
+<tr>
+<td><code class="c">snapshot</code></td>
+<td>对 max buffer 做快照交换</td>
+<td>trace.c:8935</td>
+</tr>
+<tr>
+<td><code class="c">tracing_max_latency</code></td>
+<td>记录到的最大延迟（irqoff/preemptoff/hwlat 用）</td>
+<td>trace.c:1773</td>
+</tr>
+<tr>
+<td><code class="c">set_ftrace_filter</code></td>
+<td>function tracer 只追这些函数</td>
+<td>ftrace.c:6414 一带</td>
+</tr>
+<tr>
+<td><code class="c">events/</code></td>
+<td>tracepoint/kprobe/uprobe 事件树</td>
+<td>→ <a href="#s-14-5">14.5–14.7</a></td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.2 <code class="c">trace</code> vs <code class="c">trace_pipe</code>——两种读语义</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">cat trace</code></th>
+<th><code class="c">cat trace_pipe</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读后行为</td>
+<td>内容<strong>保留</strong>，下次读还是全部</td>
+<td>读走即<strong>消费</strong>，流式</td>
+</tr>
+<tr>
+<td>阻塞性</td>
+<td>立即返回</td>
+<td>无数据时阻塞（<code class="c">tail -f</code> 式）</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>大 buffer 时反复全量拷贝</td>
+<td>逐条搬，适合管道处理</td>
+</tr>
+<tr>
+<td>典型用法</td>
+<td>事后 dump 分析</td>
+<td><code class="c">trace_pipe \| grep …</code> 实时观察</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实现根源</strong>：两者读的是同一块 per-CPU ring buffer，差别只在读指针是否推进（消费型读会更新 <code class="c">buffer</code> 的 tail 指针）。per-CPU 意味着<strong>无跨 CPU 锁</strong>——这是 Ftrace 高事件率下仍可用的根本原因（对照 <a href="../../06-linux-mm/html/index.html">06-linux-mm</a> 里 per-CPU pageset 的同款思路：能 per-CPU 就不共享）。</p>
+<h3>3.3 上手六步</h3>
+<pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing        # 或 /sys/kernel/debug/tracing
+
+cat $TR/available_tracers     # ① 看有什么：nop function function_graph wakeup ... hwlat
+cat $TR/current_tracer        # ② 当前是 nop
+echo function_graph &gt; $TR/current_tracer   # ③ 选 tracer（下一节）
+echo 1 &gt; $TR/tracing_on       # ④ 开总闸
+# ... 产生负载 ...
+echo 0 &gt; $TR/tracing_on       # ⑤ 关总闸（先关再读，防止边读边写）
+cat $TR/trace | head -50      # ⑥ 读 buffer
+</code></pre>
+<blockquote>
+<p><code class="c">current_tracer</code> 与 <code class="c">tracing_on</code> 是两级开关：tracer 决定<strong>写什么</strong>，<code class="c">tracing_on</code> 决定<strong>写不写</strong>。排查时常见错误：<code class="c">tracing_on</code> 默认是 0，忘了开导致 <code class="c">trace</code> 文件空的。</p>
+</blockquote>
+<p><strong>权限</strong>：root 或 <code class="c">CAP_SYS_ADMIN</code>（可配 <code class="c">tracefs</code> gid 让特定组只读）。生产环境纪律：<strong>限时长、限 filter、限 buffer</strong>——见 <a href="chapter-16.html#s-16-0">ch16 案例纪律</a>。</p>
 <hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易机不许装 BCC/bpftrace（供应链/合规）</td>
+<td>tracefs 是<strong>零依赖</strong>观测面——<code class="c">echo</code> + <code class="c">cat</code> 就是全部客户端</td>
+</tr>
+<tr>
+<td>嵌入式/救援环境（initramfs）</td>
+<td>同上，busybox 就够</td>
+</tr>
+<tr>
+<td>启用 tracer 的瞬间抖动</td>
+<td><code class="c">stop_machine</code> patch 是毫秒级全核停顿——<strong>避开交易时段</strong>开关</td>
+</tr>
+<tr>
+<td>buffer 尺寸规划</td>
+<td><code class="c">buffer_size_kb</code> 按 CPU 配；事件风暴时环形覆盖最老数据，<strong>不 backpressure 生产路径</strong>（丢日志不丢交易）</td>
+</tr>
+<tr>
+<td>与 BPF 的关系</td>
+<td>BPF kprobe 底层就是 ftrace_ops——<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7</a> 学到 kprobe 时回看本节的 ops 链表</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<p>← <a href="#intro">本章导读</a></p>
+<h2>衔接</h2>
+<ul>
+<li>下一节：<a href="#s-14-3">14.3–14.4、14.8 函数追踪与 function_graph</a>——function/function_graph 两个 tracer 的实操与输出精读</li>
+<li>Ch 4 <a href="chapter-04.html#ch-4">Ftrace 在工具链中的位置</a></li>
+<li>Ch 13 <a href="chapter-13.html#ch-13">perf 与 tracepoint 关系</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 Ftrace 未启用时几乎零开销？这个性质是谁给的？</summary>
+<p><code class="c">CONFIG_DYNAMIC_FTRACE</code> 的启动期处理：<code class="c">ftrace_process_locs</code> 把每个函数开头的 <code class="c">call __fentry__</code> 改写成 5 字节 nop。代价是一条 nop 指令（&lt;1 cycle）。这个性质是<strong>动态修补</strong>给的——没有 <code class="c">CONFIG_DYNAMIC_FTRACE</code> 的老内核，<code class="c">-pg</code> 会在所有函数里留一个真实调用，闲置开销显著。</p>
+</details>
+<details>
+<summary>Q2：切换 tracer 时内核做了什么危险的事？为什么 HFT 机器上要避开交易时段？</summary>
+<p><code class="c">ftrace_modify_all_code()</code>（ftrace.c:2866）批量改写内核代码段，必要时经 <code class="c">stop_machine()</code>——<strong>所有 CPU 停在自旋等待</strong>直到 patch 完成，量级毫秒。对 P99 敏感的进程这就是一次注入的尾延迟。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">trace</code> 和 <code class="c">trace_pipe</code> 读的是同一块 buffer，区别在哪？</summary>
+<p>读指针是否推进：<code class="c">trace</code> 是快照读（内容保留、可反复读），<code class="c">trace_pipe</code> 是消费读（读走释放 ring 空间、可阻塞）。后者适合 <code class="c">grep</code> 管道实时处理，前者适合事后 dump。</p>
+</details>
+<details>
+<summary>Q4：<code class="c">current_tracer=nop</code> 时 events/ 下的事件还有输出吗？</summary>
+<p>有。tracepoint 事件体系不依赖 <code class="c">current_tracer</code>——<code class="c">nop</code> 恰恰是"只用事件、不用函数 tracer"的标准姿势。<code class="c">tracing_on</code> 和 <code class="c">events/.../enable</code> 才是事件的两级开关。</p>
+</details>
+<details>
+<summary>Q5：为什么 ring buffer 设计成 per-CPU？</summary>
+<p>消除跨 CPU 写锁竞争。高事件率下单 CPU 只写自己的 buffer，读取端（用户态 cat）天然按 CPU 序切分。这是内核 per-CPU 数据结构的一贯模式（同款思想见 buddy pcp / SLUB cpu_slab）。</p>
+</details>
       </section>
       <section class="section" id="s-14-3">
-        <div class="sec-head"><div class="sec-no">14.3</div><h2>section-14.3-14.414.8-函数追踪与-function_graph</h2></div>
-<h3 class="sub">Function Tracing</h3>
-<p>追踪内核函数 <strong>入口</strong> — 极高体积，必须 <strong>filter</strong>。</p>
+        <div class="sec-head"><div class="sec-no">14.3</div><h2>–14.4、14.8 函数追踪与 function_graph</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-14-1">14.1–14.2 核心能力与 tracefs</a> · 下一节：<a href="#s-14-5">14.5–14.7、14.10 事件源、Filter 与 Hist Triggers</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>Ftrace 的两个招牌 tracer：</p>
+<ul>
+<li><strong><code class="c">function</code></strong>：记录函数<strong>入口</strong>——谁、何时、被谁调用。海量输出，必须 filter。</li>
+<li><strong><code class="c">function_graph</code></strong>：入口 + 出口都追——输出<strong>带每函数耗时、带层级的调用图</strong>。查"内核这条路径到底慢在哪一层"的手术刀。</li>
+</ul>
+<p>外加 graph tracer 的调优选项（14.8 的内容）与输出精读方法。</p>
+<hr />
+<h2>1. function tracer</h2>
+<h3>1.1 最小可用流程</h3>
 <pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing
 echo function &gt; $TR/current_tracer
-echo tcp_v4_rcv &gt; $TR/set_ftrace_filter   # 示例：仅追踪该函数
+echo tcp_v4_rcv &gt; $TR/set_ftrace_filter    # 只追这个函数（关键！）
 echo 1 &gt; $TR/tracing_on
 # ... 产生负载 ...
 echo 0 &gt; $TR/tracing_on
 cat $TR/trace | head -50
 </code></pre>
-<p><strong>风险：</strong> 无 filter 的 function tracer <strong>打爆 buffer、严重拖慢系统</strong> — 仅短窗口 + 窄 filter。</p>
-<h3>function_graph 追踪器</h3>
-<p>同时追踪 <strong>入口 + 出口</strong> → <strong>调用图 + 每函数耗时</strong>。</p>
-<pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing
-echo function_graph &gt; $TR/current_tracer
-echo tcp_recvmsg &gt; $TR/set_graph_function    # 图追踪起点
-echo 1 &gt; $TR/tracing_on
-sleep 2
-echo 0 &gt; $TR/tracing_on
-cat $TR/trace | head -80
+<p>输出形态：</p>
+<pre class="code" data-label="code"><code class="c"># tracer: function
+#
+          &lt;idle&gt;-0       [003] d..3. 40231.812: tcp_v4_rcv &lt;-__netif_receive_skb_one_core
 </code></pre>
-<p><strong>输出形态：</strong></p>
-<pre class="code" data-label="code"><code class="c">tcp_recvmsg() {
-  __skb_recv_datagram() {
-    ...
-  } /* 2.345 us */
-} /* 5.678 us */
-</code></pre>
-<p><strong>HFT 用途：</strong></p>
-<ul>
-<li>内核栈 <strong>收包路径</strong> 慢 — 从 <code class="c">tcp_v4_rcv</code> / <code class="c">udp_rcv</code> 往下追（对照 <a href="../../12-kernel-networking/html/index.html">09 Rosen</a>）。</li>
-<li>对比 <strong>DPDK 旁路</strong> 绕过了哪些函数（→ <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-DPDK</a>）。</li>
-</ul>
-<p>→ Ch 13 <a href="chapter-13.html#ch-13">perf 与 tracepoint 关系</a></p>
-<hr />
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
-      </section>
-      <section class="section" id="s-14-5">
-        <div class="sec-head"><div class="sec-no">14.5</div><h2>section-14.5-14.714.10-事件源Filter-与-Hist-Triggers</h2></div>
-<h3 class="sub">多数据源</h3>
+<p>列含义：<code class="c">任务-PID [CPU] 上下文标志 时间戳: 函数 &lt;- 调用者</code>。上下文标志（d/h/s…）表示抢占/中断/软中断状态——<code class="c">d</code> 是 delayed preempt 计数。</p>
+<h3>1.2 回调侧实现（v6.6）</h3>
+<p>function tracer 的 ops 回调 <code class="c">function_trace_call()</code> 在 trace_functions.c:172（静态 FTRACE 版本在 :25，带 DYNAMIC_FTRACE 的版本在 :172）。它做的事极薄：算好时间戳、调用者/被调者 IP，往 per-CPU ring buffer 写一条事件。<strong>每调用点开销约几百 ns + buffer 写</strong>——这就是不打 filter 会拖垮系统的原因。</p>
+<h3>1.3 filter 三兄弟</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>源</th>
-<th>说明</th>
-<th>配置入口</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Tracepoints</strong></td>
-<td>内核静态观测点</td>
-<td><code class="c">events/.../enable</code></td>
-</tr>
-<tr>
-<td><strong>kprobes</strong></td>
-<td>内核动态函数插桩</td>
-<td><code class="c">events/kprobes/...</code></td>
-</tr>
-<tr>
-<td><strong>uprobes</strong></td>
-<td>用户态动态插桩</td>
-<td><code class="c">events/uprobes/...</code></td>
-</tr>
-</tbody>
-</table></div>
-<pre class="code" data-label="shell"><code class="c"># 启用 sched 切换 tracepoint
-echo 1 &gt; /sys/kernel/tracing/events/sched/sched_switch/enable
-echo 1 &gt; /sys/kernel/tracing/tracing_on
-cat /sys/kernel/tracing/trace_pipe
-</code></pre>
-<h3>Filters 与 Triggers</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>机制</th>
+<th>文件</th>
 <th>作用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Filter</strong></td>
-<td>只记录满足条件的事件（如 <code class="c">pid == 1234</code>）</td>
+<td><code class="c">set_ftrace_filter</code></td>
+<td><strong>白名单</strong>：只追这些函数（支持通配 <code class="c">tcp_*</code>、<code class="c">__schedule</code>）</td>
 </tr>
 <tr>
-<td><strong>Trigger</strong></td>
-<td>事件发生时执行动作（snapshot、stacktrace、<strong>histogram</strong>）</td>
+<td><code class="c">set_ftrace_notrace</code></td>
+<td><strong>黑名单</strong>：追其他所有、跳过这些</td>
+</tr>
+<tr>
+<td><code class="c">available_filter_functions</code></td>
+<td>当前内核<strong>可追的函数全集</strong>（<code class="c">CONFIG_FUNCTION_TRACER</code> 编译进来的、未被 notrace 标记的）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Hist Triggers（直方图触发器）：</strong></p>
-<ul>
-<li>在 <strong>内核内</strong> 对事件字段做 <strong>直方图聚合</strong> — 不需把每条事件送到用户态。</li>
-<li>支持：单键/多键、PID 过滤、<strong>stacktrace</strong>、<strong>synthetic events</strong>（合成事件链）。</li>
-</ul>
-<p><strong>价值：</strong> 高频率事件（如 sched_switch、net receive）— hist 比 raw trace <strong>低开销</strong>。</p>
-<pre class="code" data-label="shell"><code class="c"># 概念示例（语法随内核版本见 Documentation/trace/histogram.rst）
-# echo 'hist:keys=pid:vals=latency' &gt; .../trigger
+<pre class="code" data-label="shell"><code class="c"># 通配 + 追加语法
+echo 'tcp_*' &gt; $TR/set_ftrace_filter        # 覆盖写
+echo 'udp_rcv' &gt;&gt; $TR/set_ftrace_filter     # 追加
+echo &gt; $TR/set_ftrace_filter                # 清空（= 追全部，危险）
+grep -c . $TR/available_filter_functions    # 通常 3~5 万个函数
 </code></pre>
-<p><strong>HFT：</strong> 调度迁移 histogram — 看 hot thread 是否被 <strong>频繁 cpu_migrations</strong>（Ch 6/7）。</p>
-<p>→ Ch 15 <a href="chapter-15.html#ch-15">BPF 可编程聚合</a> — 新系统优先 BPF maps histogram</p>
+<blockquote>
+<p><strong>纪律</strong>：生产上 <code class="c">set_ftrace_filter</code> 空着 + <code class="c">function</code> tracer = 事件风暴。先 <code class="c">cat available_filter_functions | grep 目标</code> 确认函数存在，再窄 filter + 短窗口（秒级）。</p>
+</blockquote>
 <hr />
+<h2>2. function_graph tracer</h2>
+<h3>2.1 原理：入口 push、出口 pop</h3>
+<p>function tracer 只能看到入口（<code class="c">__fentry__</code> 只在函数头）。graph tracer 的魔法在于<strong>出口也能追</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>机制</th>
+<th>v6.6 锚点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 函数入口</td>
+<td><code class="c">trace_graph_entry()</code> 被调，把返回地址替换成 <code class="c">return_to_handler</code>，并把原返回地址压入 per-task shadow 栈</td>
+<td>trace_functions_graph.c:132</td>
+</tr>
+<tr>
+<td>② 函数返回</td>
+<td>CPU 跳到 <code class="c">return_to_handler</code> → <code class="c">trace_graph_return()</code>（:241）：弹 shadow 栈拿原返回地址 + 入口时间戳，算出<strong>本函数耗时</strong></td>
+<td>:222–:241</td>
+</tr>
+<tr>
+<td>③ 输出</td>
+<td>写 <code class="c">funcgraph_entry</code> / <code class="c">funcgraph_exit</code> 事件到 buffer</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>shadow 栈深度上限 <code class="c">FTRACE_RETFUNC_DEPTH = 50</code>（include/linux/ftrace.h:1089）——超过 50 层递归的路径截断，日志里出现 <code class="c">UNDERFLOW</code>/深度省略标记。</p>
+<p>全局 graph 配置单例 <code class="c">graph_array</code>（trace_functions_graph.c:86）——这也是 v6.6 只支持<strong>一个 trace_array 同时跑 graph</strong> 的根源（多实例支持要到 6.12+ 的 multi-fgraph 重构）。</p>
+<h3>2.2 用法</h3>
+<pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing
+echo function_graph &gt; $TR/current_tracer
+echo tcp_recvmsg &gt; $TR/set_graph_function   # 只对以它为根的子树画图
+echo 1 &gt; $TR/tracing_on
+sleep 2
+echo 0 &gt; $TR/tracing_on
+cat $TR/trace | head -80
+</code></pre>
+<h3>2.3 输出精读（会读 = 会用）</h3>
+<pre class="code" data-label="code"><code class="c"># tracer: function_graph
+#
+ CPU  DURATION       FUNCTION CALLS
+#     |     |         |   |   |   |
+  3)   0.550 us    |  tcp_v4_rcv() {
+  3)             |  ip_rcv_finish() {
+  3)   1.204 us    |    ip_route_input_noref();
+  3)   2.831 us    |  }                        /* 累计耗时 */
+  3)   ! 58.31 us  |  }                        /* tcp_v4_rcv 总耗时 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标记</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通数字</td>
+<td>本函数<strong>叶子耗时</strong>（µs）</td>
+</tr>
+<tr>
+<td><code class="c">}</code> 后数字</td>
+<td>本函数<strong>子树累计</strong>耗时（含所有下层调用）</td>
+</tr>
+<tr>
+<td><code class="c">+</code></td>
+<td>&gt; 10 µs</td>
+</tr>
+<tr>
+<td><code class="c">!</code></td>
+<td>&gt; 100 µs</td>
+</tr>
+<tr>
+<td><code class="c">#</code></td>
+<td>超过 buffer 精度上限</td>
+</tr>
+<tr>
+<td><code class="c">{</code> <code class="c">}</code></td>
+<td>调用层级缩进</td>
+</tr>
+<tr>
+<td><code class="c">....</code> 空心列</td>
+<td><strong>被 trace 点亮期间在睡眠</strong>（DURATION 为空 + 点填充）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判读纪律</strong>（对照 <a href="chapter-16.html#s-16-0">ch16 直方图判读</a> 的「平移 vs 尾部」）：</p>
+<ol>
+<li>先看<strong>最外层总量</strong>对不对得上宏观症状（syscall 级 P99）</li>
+<li>再找 <code class="c">!</code>/<code class="c">+</code> 标记——<strong>逐层下钻</strong>到第一个「叶子巨慢」或「层级异常深」的函数</li>
+<li>区分「一个函数慢」vs「循环调了太多次」——后者要看调用计数</li>
+</ol>
+<h3>2.4 graph 选项（14.8 精读）</h3>
+<p>tracer 选项经 <code class="c">trace_options</code>（或 <code class="c">options/</code> 目录）逐个开关，v6.6 注册在 trace_functions_graph.c:60–80：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>作用</th>
+<th>默认</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">funcgraph-tail</code></td>
+<td>每层都显示 <code class="c">}</code> 尾注（否则只有超阈值层显示）</td>
+<td>关</td>
+</tr>
+<tr>
+<td><code class="c">funcgraph-retval</code></td>
+<td><strong>显示函数返回值</strong>（v6.6 新，需 <code class="c">CONFIG_FUNCTION_GRAPH_RETVAL</code>）</td>
+<td>关</td>
+</tr>
+<tr>
+<td><code class="c">funcgraph-retval-hex</code></td>
+<td>返回值十六进制显示</td>
+<td>关</td>
+</tr>
+<tr>
+<td><code class="c">sleep-time</code></td>
+<td><strong>含睡眠时间</strong>（entry→return 之间被调度出去的时间算进耗时）</td>
+<td><strong>开</strong></td>
+</tr>
+<tr>
+<td><code class="c">graph-time</code></td>
+<td>含嵌套函数时间（关掉则父耗时不含子树，用于算"自耗时"）</td>
+<td>开</td>
+</tr>
+<tr>
+<td><code class="c">funcgraph-irq</code></td>
+<td>中断里发生的调用也画进图</td>
+<td>开</td>
+</tr>
+<tr>
+<td><code class="c">funcgraph-proc</code></td>
+<td>显示任务名/PID 列</td>
+<td>关</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">echo nofuncgraph-irq &gt; $TR/trace_options     # 关掉中断内调用（只看进程上下文）
+echo nofuncgraph-sleep-time &gt; $TR/trace_options  # 排除睡眠，只看 CPU 时间
+</code></pre>
+<blockquote>
+<p><strong>HFT 杀手组合</strong>：默认 <code class="c">sleep-time</code> 开着会把"被调度出去等 CPU"的时间算进函数耗时——你以为内核慢，其实在排队。判读延迟问题时先 <code class="c">echo nofuncgraph-sleep-time</code> 分离 <strong>CPU 时间 vs 调度等待</strong>，再决定往 <a href="chapter-13.html#ch-13">runqlat</a> 还是内核路径查。</p>
+</blockquote>
+<h3>2.5 开销对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tracer</th>
+<th>每函数开销（量级）</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">function</code></td>
+<td>~100–500 ns</td>
+<td>写一条 entry 事件</td>
+</tr>
+<tr>
+<td><code class="c">function_graph</code></td>
+<td>~1–2 µs</td>
+<td>entry + shadow 栈操作 + exit 事件 ×2</td>
+</tr>
+</tbody>
+</table></div>
+<p>都远大于 nop（&lt;1 ns）。<strong>graph 必须配 <code class="c">set_graph_function</code> 收窄根节点</strong>——不设则全内核画图，系统直接跪。</p>
 <hr />
-<p>← <a href="#intro">本章导读</a></p>
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核收包路径慢</td>
+<td><code class="c">set_graph_function = tcp_v4_rcv</code>（或 udp_rcv）→ 逐层看 IP/TCP 处理、NAPI softirq 里谁耗时——对照 <a href="../../12-kernel-networking/html/index.html">12-kernel-networking</a> 的路径图</td>
+</tr>
+<tr>
+<td>syscall 尾延迟归因</td>
+<td>graph 根设为目标 syscall 入口（如 <code class="c">__x64_sys_recvmmsg</code>），配合 <code class="c">nofuncgraph-sleep-time</code> 分离排队时间</td>
+</tr>
+<tr>
+<td>对比 DPDK 旁路价值</td>
+<td>把内核收包全路径的 graph 总耗时画出来，就是 DPDK 省掉的那部分（→ <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-dpdk</a>）</td>
+</tr>
+<tr>
+<td>调度链审计</td>
+<td><code class="c">set_graph_function = __schedule</code>，看每次切换的代价分布</td>
+</tr>
+<tr>
+<td>嵌入式弱机</td>
+<td>graph 开销可控（窄根 + 短窗），比采样 profiler 语义更确定</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-14-1">tracefs 与动态插桩机制</a></li>
+<li>下一节：<a href="#s-14-5">事件源、Filter 与 Hist Triggers</a>——不需要 text patching 的轻量观测面</li>
+<li>实战案例：<a href="chapter-16.html#s-16-1-7">ch16 动态追踪环节的判读法</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：function_graph 是怎么知道函数"返回了"的？<strong>fentry</strong> 只在函数开头啊。</summary>
+<p>入口时把函数真实返回地址偷换成 <code class="c">return_to_handler</code> 并压入 per-task shadow 栈；CPU 执行 <code class="c">ret</code> 时跳进 handler，弹出原返回地址恢复执行，同时拿到入口时间戳算耗时。shadow 栈深度上限 50（<code class="c">FTRACE_RETFUNC_DEPTH</code>，ftrace.h:1089）。</p>
+</details>
+<details>
+<summary>Q2：graph 输出里一个函数显示 2 ms，但 CPU 时间只占 3 µs，发生了什么？</summary>
+<p>默认 <code class="c">sleep-time</code> 开：耗时含"被调度出去"的等待。关掉该选项后数字会掉到 CPU 时间。这是"内核慢 vs 排队慢"的一刀切分法。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">set_ftrace_filter</code> 和 <code class="c">set_graph_function</code> 有什么区别？</summary>
+<p>前者管 <code class="c">function</code> tracer（决定哪些<strong>函数入口</strong>记事件）；后者管 <code class="c">function_graph</code> 的<strong>根节点</strong>（从哪些函数开始画子树，图内的所有下层调用自动收录）。graph 的正确姿势是用后者，而不是给 function filter 塞一堆函数。</p>
+</details>
+<details>
+<summary>Q4：为什么 graph tracer 比 function tracer 慢好几倍？</summary>
+<p>每函数两次事件（entry+exit）+ shadow 栈的压弹开销 + 出口还要查时间差。入口还有返回地址替换的间接跳转成本。</p>
+</details>
+<details>
+<summary>Q5：<code class="c">available_filter_functions</code> 里找不到 <code class="c">tcp_v4_rcv</code>，可能是什么原因？</summary>
+<p>① 函数被 <code class="c">notrace</code>/<code class="c">noinstr</code> 标记（如 entry code、NMI 路径）；② 所在模块未加载；③ 内核编译没开 <code class="c">CONFIG_FUNCTION_TRACER</code>；④ 拼写/符号版本差异（用 <code class="c">grep -i tcp_rcv</code> 模糊查确认）。</p>
+</details>
+      </section>
+      <section class="section" id="s-14-5">
+        <div class="sec-head"><div class="sec-no">14.5</div><h2>–14.7、14.10 事件源、Filter 与 Hist Triggers</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-14-3">14.3–14.4、14.8 函数追踪与 function_graph</a> · 下一节：<a href="#s-14-9">14.9 硬件延迟检测 hwlat</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>函数追踪是"手术刀"，事件（event）体系才是日常主力：</p>
+<ol>
+<li>三种事件源：<strong>tracepoint（静态）/ kprobe（内核动态）/ uprobe（用户态动态）</strong></li>
+<li><strong>filter</strong>：内核里按条件丢弃事件——只送你关心的</li>
+<li><strong>trigger + hist trigger</strong>：事件发生时在<strong>内核内</strong>执行动作——直方图聚合是精华</li>
+</ol>
+<hr />
+<h2>1. 三种事件源</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>tracepoint</th>
+<th>kprobe</th>
+<th>uprobe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>本质</td>
+<td>内核源码里<strong>静态埋点</strong> <code class="c">trace_xxx()</code></td>
+<td>动态在任意内核函数入口下<strong>软件断点</strong></td>
+<td>动态在用户态二进制偏移下断点</td>
+</tr>
+<tr>
+<td>稳定性</td>
+<td><strong>ABI 稳定</strong>，字段有承诺</td>
+<td>随内核版本漂移</td>
+<td>随二进制版本漂移</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>低（静态分支，未启用近零）</td>
+<td>中（int3 陷阱 + 单步）</td>
+<td>中（int3 + 页面翻权限）</td>
+</tr>
+<tr>
+<td>字段</td>
+<td>结构化（<code class="c">format</code> 文件定义）</td>
+<td>手写取参表达式</td>
+<td>手写取参表达式</td>
+</tr>
+<tr>
+<td>配置入口</td>
+<td><code class="c">events/&lt;sys&gt;/&lt;evt&gt;/enable</code></td>
+<td><code class="c">kprobe_events</code> 文件</td>
+<td><code class="c">uprobe_events</code> 文件</td>
+</tr>
+</tbody>
+</table></div>
+<p>事件目录树（v6.6 锚点：每个事件目录下 <code class="c">filter</code>/<code class="c">trigger</code>/<code class="c">enable</code>/<code class="c">id</code> 文件由 trace_events.c:2435–2459 创建，<code class="c">set_event</code> 总开关在 :3632）：</p>
+<pre class="code" data-label="code"><code class="c">events/
+├── sched/
+│   ├── sched_switch/       # 调度切换（字段：prev_comm/pid/prio, next_comm/pid/prio）
+│   │   ├── enable  filter  format  id  trigger
+│   ├── sched_wakeup/
+│   └── ...
+├── net/  irq/  timer/  ...
+├── kprobes/                # 动态 kprobe 事件（kprobe_events 写入后出现）
+└── raw_syscalls/
+</code></pre>
+<h3>1.1 tracepoint：启用与 format</h3>
+<pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing
+cat $TR/events/sched/sched_switch/format    # 看字段定义（自动生成）
+echo 1 &gt; $TR/events/sched/sched_switch/enable
+echo 1 &gt; $TR/tracing_on
+cat $TR/trace_pipe                          # 流式观察
+</code></pre>
+<p><code class="c">format</code> 文件给出每个字段的<strong>名字、类型、字节偏移</strong>——filter 语法和 hist 的 <code class="c">keys=/vals=</code> 全靠它。<strong>查字段先 cat format</strong> 是铁律。</p>
+<blockquote>
+<p>tracepoint 静态分支未启用时开销是一个 <code class="c">static_branch</code>（nop 跳转）——比 function tracer 的动态 patch 还轻。这是<strong>生产可常开</strong>的事件源（<code class="c">sched_switch</code>、<code class="c">raw_syscalls</code> 属于低风险常开集）。</p>
+</blockquote>
+<h3>1.2 kprobe：动态插桩任意内核函数</h3>
+<pre class="code" data-label="shell"><code class="c"># p:自定义名:符号+偏移  取参：$retval / 寄存器 / 栈 / @地址
+echo 'p:myrecv tcp_v4_rcv skb=%ax:s64' &gt;&gt; $TR/kprobe_events
+echo 'r:myrecv_ret tcp_v4_rcv $retval' &gt;&gt; $TR/kprobe_events   # r: 返回探针
+echo 1 &gt; $TR/events/kprobes/myrecv/enable
+</code></pre>
+<p>kprobe_events 文件注册于 trace_kprobe.c:1909。语法要点：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>前缀</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">p</code></td>
+<td>入口探针</td>
+</tr>
+<tr>
+<td><code class="c">r</code></td>
+<td>返回探针（<code class="c">$retval</code> 取返回值）</td>
+</tr>
+<tr>
+<td><code class="c">-:名字</code></td>
+<td>删除事件</td>
+</tr>
+</tbody>
+</table></div>
+<p>参数取法（x86_64）：<code class="c">%ax/%bx/…</code>（寄存器）、<code class="c">+0(%ax)</code>（偏移取内存）、<code class="c">$stackN</code>（栈槽）、<code class="c">sym+offset</code>。<strong>ABI 敏感</strong>：参数在哪个寄存器随调用约定/内核版本变化——kprobe 事件是"能跑但会漂"的观测点。</p>
+<h3>1.3 uprobe：用户态插桩</h3>
+<pre class="code" data-label="shell"><code class="c">echo 'p:libfoo_free /usr/lib/libfoo.so:0x11230 size=%ax' &gt;&gt; $TR/uprobe_events
+</code></pre>
+<p>给<strong>无源码/无重编</strong>的二进制插观测点（第三方库 malloc、闭源采集进程）。注意：uprobe 断点走 int3 + 页表操作，<strong>高热函数上开销明显</strong>——malloc 级别的高频点慎用，优先 BPF uprobe（有批量优化）。</p>
+<hr />
+<h2>2. Filter：内核内条件丢弃</h2>
+<pre class="code" data-label="shell"><code class="c">echo 'pid == 4242' &gt; $TR/events/sched/sched_switch/filter
+echo 'prev_pid == 4242 || next_pid == 4242' &gt; $TR/events/sched/sched_switch/filter
+echo 0 &gt; $TR/events/sched/sched_switch/filter      # 清除
+</code></pre>
+<p>字段名来自 <code class="c">format</code>。支持 <code class="c">== != &lt; &gt; &lt;= &gt;= &amp;&amp; ||</code>。<strong>过滤在内核里逐事件求值</strong>（trace_events.c 的 filter 引擎），不合格事件根本不进 ring buffer——比"全收再 grep"省一个数量级的 buffer 带宽。</p>
+<h2>3. Trigger：事件驱动动作</h2>
+<p>写 <code class="c">events/&lt;evt&gt;/trigger</code> 文件，让某事件发生时执行动作：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>动作</th>
+<th>语法（简）</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开关追踪</td>
+<td><code class="c">traceon</code> / <code class="c">traceoff</code></td>
+<td>条件触发停止，保住现场</td>
+</tr>
+<tr>
+<td>抓栈</td>
+<td><code class="c">stacktrace</code> if filter</td>
+<td>只给命中条件的抓调用栈</td>
+</tr>
+<tr>
+<td>快照</td>
+<td><code class="c">snapshot</code> if filter</td>
+<td>命中时交换 snapshot buffer</td>
+</tr>
+<tr>
+<td>级联使能</td>
+<td><code class="c">enable_event:子系统:事件</code></td>
+<td>事件 A 发生才开始收 B（缩小窗口）</td>
+</tr>
+<tr>
+<td>直方图</td>
+<td><code class="c">hist:keys=…:vals=…</code></td>
+<td>下节主角</td>
+</tr>
+</tbody>
+</table></div>
+<p>例：只在目标 PID 切换时抓栈：</p>
+<pre class="code" data-label="shell"><code class="c">echo 'stacktrace if next_pid == 4242' &gt; $TR/events/sched/sched_switch/trigger
+</code></pre>
+<h2>4. Hist Triggers：内核内直方图聚合（本章精华）</h2>
+<h3>4.1 为什么重要</h3>
+<p>原始 trace 模式的成本模型：<strong>每事件一次 ring buffer 写 + 一次用户态拷贝</strong>。sched_switch 每秒上万次、syscall 更高——把每条记录送用户态做 <code class="c">awk</code> 统计，观测本身就成了负载。</p>
+<p>hist trigger 把聚合搬进内核：<strong>每事件只更新一个桶计数</strong>（bucket++），buffer 里零记录，用户态只在最后读一次汇总表。解析入口 <code class="c">event_hist_trigger_parse()</code>（trace_events_hist.c:6543）。</p>
+<h3>4.2 语法与实例</h3>
+<pre class="code" data-label="shell"><code class="c"># 按 PID 统计 sched_switch 次数
+echo 'hist:keys=next_pid' &gt; $TR/events/sched/sched_switch/trigger
+cat $TR/events/sched/sched_switch/hist
+
+# 输出形态（内核内聚合的直方表）：
+# next_pid        count
+# --------        -----
+# 4242            18203
+# 12              542
+</code></pre>
+<p>进阶语法块：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语法</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">keys=a,b</code></td>
+<td>复合键（多维表）</td>
+</tr>
+<tr>
+<td><code class="c">vals=runtime</code></td>
+<td>对字段求和（不只计数）</td>
+</tr>
+<tr>
+<td><code class="c">latency=u64($ts)</code></td>
+<td>表达式变量</td>
+</tr>
+<tr>
+<td><code class="c">.usecs</code></td>
+<td>时间戳按 µs 显示</td>
+</tr>
+<tr>
+<td><code class="c">if filter</code></td>
+<td>内置过滤</td>
+</tr>
+<tr>
+<td><code class="c">onmatch(事件)</code> / synthetic</td>
+<td><strong>跨事件关联</strong>（见下）</td>
+</tr>
+<tr>
+<td><code class="c">sort=…</code> <code class="c">size=…</code></td>
+<td>排序与桶数</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.3 合成事件：测"任意两点间延迟"</h3>
+<p>hist 的杀手锏——把 A 事件的字段<strong>搬运</strong>到 B 事件的直方图里，合成第三个事件：</p>
+<p><strong>例：每个任务的唤醒→上 CPU 延迟（调度延迟）直方图</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing
+cd $TR/events/sched
+
+# ① 合成事件定义：wakeup 时记时间戳，sched_switch 时求差
+echo 'wakeup_lat u64 lat; pid_t pid' &gt; $TR/synthetic_events
+echo 'hist:keys=pid:ts0=common_timestamp.usecs' &gt; sched_wakeup/trigger
+echo 'hist:keys=next_pid:wakeup_lat=common_timestamp.usecs-$ts0:\
+onmatch(sched.sched_wakeup).wakeup_lat($wakeup_lat,next_pid)' &gt; sched_switch/trigger
+
+# ② 看结果：调度延迟直方图（P50/P99 一目了然）
+cat sched_wakeup/hist  # 或对合成事件再套一层 hist
+</code></pre>
+<p><code class="c">common_timestamp</code> 是 trace 子系统给每条事件打的内核时戳（<code class="c">CONFIG_HIST_TRIGGERS</code> + <code class="c">CONFIG_TRACER_SNAPSHOT</code> 相关）。<strong>这是不写一行 C 代码、不装任何 BPF 工具就能拿到的调度延迟直方图</strong>——老内核机器上的救命稻草。</p>
+<blockquote>
+<p>对应的 BPF 版本（<code class="c">runqlat</code>）在 <a href="chapter-15.html#ch-15">Ch 15</a> / <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7</a>——语义相同、可编程性更强。v6.6 上两者并存：hist 胜在<strong>零依赖 + 已在主线多年</strong>；BPF 胜在<strong>任意聚合逻辑 + map 摘取</strong>。</p>
+</blockquote>
+<h3>4.4 输出判读</h3>
+<p>hist 输出自带分位数行（<code class="c">count</code>、总观测数 + percentile 列）。判读对照 <a href="chapter-16.html#s-16-0">ch16 直方图判读纪律</a>：看<strong>形状</strong>（双峰=两类负载混跑）而非只看均值；尾部桶单独追（filter + stacktrace trigger 抓长尾样本的调用栈）。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>组合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>调度延迟基线</strong></td>
+<td>合成事件 wakeup→switch 延迟 hist——上生产前先采一晚，双峰/长尾即告警</td>
+</tr>
+<tr>
+<td>迁移审计</td>
+<td><code class="c">keys=prev_cpu,next_cpu</code> 的 sched_switch hist——热线程是否被频繁迁核（对照 <a href="chapter-16.html#s-16-1-7">ch16.1.7 动态追踪</a> 的 runqlat）</td>
+</tr>
+<tr>
+<td>长尾抓栈</td>
+<td><code class="c">stacktrace if $lat &gt; 50</code> 式 trigger——只在尾部命中时消耗 buffer</td>
+</tr>
+<tr>
+<td>事件窗口压缩</td>
+<td><code class="c">enable_event</code> 级联：异常事件出现才开详追，平时近零开销</td>
+</tr>
+<tr>
+<td>老内核/无 BPF 机器</td>
+<td>tracepoint + hist 是<strong>唯一</strong>内核内聚合手段（<a href="#s-14-11">perf-tools</a> 都只是它的 bash 壳）</td>
+</tr>
+<tr>
+<td>采集进程自身审计</td>
+<td>uprobe 插闭源行情解码库的入口/出口，量测其耗时分布</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-14-3">function_graph 手术刀</a></li>
+<li>下一节：<a href="#s-14-9">hwlat——连事件都看不见的固件级停顿</a></li>
+<li>BPF 对照版：<a href="chapter-15.html#ch-15">Ch 15 BPF</a>（kprobe/uprobe 同源、聚合更强）</li>
+<li>perf 侧事件消费：<a href="chapter-13.html#ch-13">Ch 13 perf trace</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：tracepoint、kprobe、uprobe 三者稳定性怎么排序？为什么？</summary>
+<p>tracepoint &gt; uprobe &gt; kprobe。tracepoint 是内核 ABI 承诺的稳定接口（字段名不变）；uprobe 绑定二进制偏移（二进制不变就不变）；kprobe 绑定内核符号与调用约定，内核一升级就可能失效。</p>
+</details>
+<details>
+<summary>Q2：filter 和用户态 grep 都能筛事件，本质区别是什么？</summary>
+<p>filter 在<strong>内核里逐事件求值</strong>，不合格事件不进 ring buffer——省的是 buffer 写 + 拷贝 + 用户态解析三段成本。grep 是全收再筛，观测开销照付全额。</p>
+</details>
+<details>
+<summary>Q3：hist trigger 为什么能把观测开销压到"每事件一次桶自增"？</summary>
+<p>聚合发生在<strong>内核事件回调路径</strong>里：命中一个桶就 <code class="c">count++</code>（或 val 累加），不写 ring buffer、无用户态拷贝。读取只发生一次（cat hist 文件读汇总表）。成本从 O(事件×拷贝) 变成 O(事件×自增)。</p>
+</details>
+<details>
+<summary>Q4：synthetic event 测唤醒延迟为什么需要两个 hist trigger 配合？</summary>
+<p>延迟 = 终点时间戳 − 起点时间戳，但起点在事件 A（sched_wakeup）、终点在事件 B（sched_switch），不同事件不能直接相减。第一个 hist 以 PID 为键把 ts0 存进<strong>触发器内的哈希表</strong>；第二个 hist 在 B 事件上 <code class="c">onmatch(A)</code> 命中同键时取出 ts0 求差，生成合成事件 wakeup_lat——A 的字段被"搬运"到了 B 的语境。</p>
+</details>
+<details>
+<summary>Q5：kprobe 事件写了 <code class="c">skb=%ax</code>，内核升级后数据变垃圾了，怎么回事？</summary>
+<p><code class="c">%ax</code> 是"按当前调用约定第 N 个参数在 RAX"的假设。内核版本变化可能改变参数寄存器分配/函数签名，断点还在原符号上，但取到的寄存器内容已不是你以为的参数。kprobe 事件没有类型契约——升级后必须重验。</p>
+</details>
       </section>
       <section class="section" id="s-14-9">
-        <div class="sec-head"><div class="sec-no">14.9</div><h2>section-14.9-硬件延迟检测hwlat</h2></div>
-<h3 class="sub">Hardware Latency Tracer</h3>
-<p>检测 <strong>非 OS 可解释的长时间停顿</strong> — 常见原因：</p>
+        <div class="sec-head"><div class="sec-no">14.9</div><h2>硬件延迟检测（hwlat）</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-14-5">14.5–14.7、14.10 事件源、Filter 与 Hist Triggers</a> · 下一节：<a href="#s-14-11">14.11–14.13 前端工具</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>排查链的最后一块拼图：<strong>连内核事件都看不见的停顿</strong>。perf、offcputime、hist trigger 全都基于"OS 还在正常运行"这个前提——而 SMI（系统管理中断）发生的瞬间，<strong>CPU 整体进入 SMM 模式，OS 被冻结、时钟读数停跳</strong>，一切软件观测手段集体失明。hwlat 是用"测量本身的缺口"来暴露这类停顿的探测器。</p>
+<hr />
+<h2>1. 为什么 OS 级工具看不见 SMI</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>原因</th>
-<th>说明</th>
+<th>停顿类型</th>
+<th>OS 能看见吗</th>
+<th>工具</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>SMI</strong></td>
-<td>系统管理中断 — BIOS/固件</td>
+<td>等锁 / 等信号量</td>
+<td>能</td>
+<td>offcputime、lockdep</td>
 </tr>
 <tr>
-<td><strong>其他固件</strong></td>
-<td>BMC、电源管理</td>
+<td>被抢占 / 等调度</td>
+<td>能</td>
+<td>runqlat、sched tracepoint</td>
 </tr>
 <tr>
-<td><strong>硬件 bug</strong></td>
-<td>内存、PCIe</td>
+<td>页错误 / I/O 等待</td>
+<td>能</td>
+<td>biolatency、page-fault trace</td>
+</tr>
+<tr>
+<td><strong>SMI / 固件窃取 / BMC 干扰</strong></td>
+<td><strong>不能</strong></td>
+<td><strong>hwlat</strong> ← 本节</td>
 </tr>
 </tbody>
 </table></div>
+<p>SMI（System Management Interrupt）触发后 CPU 切入 SMM 模式执行固件代码（厂商封闭、不可见），期间：</p>
+<ul>
+<li>OS 的所有核<strong>冻结</strong>——tracepoint 不会记录任何事件</li>
+<li><strong>TSC 继续走</strong>（多数平台），但 OS 自己不在这段时间执行——事件序列出现"空洞"</li>
+<li>典型来源：BIOS 的 ECC 刷洗、温度轮询、电源管理、IPMI/BMC 通信</li>
+</ul>
+<p><strong>症状特征</strong>（对照 <a href="chapter-16.html#s-16-0">ch16 五类真相</a>）：P99/P999 尖刺，但 perf CPU 剖析、offcputime、锁统计<strong>全部对不上账</strong>——CPU 显示非 idle，却没有任何 forward progress。</p>
+<h2>2. hwlat 原理：用采样窗口里的时间空洞当探测器</h2>
+<p>思路极其朴素：<strong>一个线程死循环读时钟，如果两次读数间隙异常大，说明这段时间 CPU 被偷走了</strong>。</p>
+<p>v6.6 实现（kernel/trace/trace_hwlat.c）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>部件</th>
+<th>实现</th>
+<th>v6.6 锚点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数容器</td>
+<td><code class="c">struct hwlat_data</code>（window/width/mode/count）</td>
+<td>:103</td>
+</tr>
+<tr>
+<td>采样循环</td>
+<td><code class="c">get_sample()</code>：busy-loop 里反复读 clock，<code class="c">do … while (total &lt;= sample_width)</code></td>
+<td>:201，循环边界 :272</td>
+</tr>
+<tr>
+<td>停顿判定</td>
+<td>间隙 <code class="c">&gt; threshold</code> 才记录一条 <code class="c">hwlat_sample</code> 事件</td>
+<td>:272 附近比较</td>
+</tr>
+<tr>
+<td>内核线程</td>
+<td><code class="c">kthread_fn()</code> → 每 CPU 一个 <code class="c">hwlatd/%u</code></td>
+<td>:360，<code class="c">kthread_run_on_cpu</code> :499</td>
+</tr>
+<tr>
+<td>轮换策略</td>
+<td><code class="c">move_to_next_cpu()</code>：默认 round-robin 逐核轮测</td>
+<td>:314</td>
+</tr>
+<tr>
+<td>配置文件</td>
+<td><code class="c">hwlat_detector/{window,width,mode}</code></td>
+<td>:782 / :789 / :796</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.1 默认参数</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>默认值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">window</code>（采样窗口）</td>
+<td><strong>1 s</strong>（:53 <code class="c">DEFAULT_SAMPLE_WINDOW</code>）</td>
+<td>一个测量周期长度</td>
+</tr>
+<tr>
+<td><code class="c">width</code>（采样宽度）</td>
+<td><strong>0.5 s</strong>（:54 <code class="c">DEFAULT_SAMPLE_WIDTH</code>）</td>
+<td>窗口内实际死循环采样的时长；剩余 0.5 s 线程睡眠让出 CPU</td>
+</tr>
+<tr>
+<td><code class="c">mode</code></td>
+<td><code class="c">round-robin</code>（:117）</td>
+<td>每个窗口换一个 CPU 测；v6.6 另有 <code class="c">per-cpu</code>（每核常驻一个 hwlatd）和 <code class="c">none</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>window &gt; width 的设计让 hwlatd 自身<strong>不占满 CPU</strong>——采样线程本身也可能被调度出去，所以它测的是"该 CPU 上任何人都会遭遇的停顿"，而非自造负载。</p>
+</blockquote>
+<h3>2.2 阈值</h3>
+<p>阈值在 <code class="c">tracing_threshold</code>（µs）。低于阈值的间隙不记录。经验设定：<strong>目标 P99 的一半</strong>（比如盯 10 µs 的尾延迟，阈值设 5）——太低会淹没在正常调度噪声里。</p>
+<h2>3. 用法</h2>
 <pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing
+
+echo 0 &gt; $TR/tracing_on
 echo hwlat &gt; $TR/current_tracer
+echo 5   &gt; $TR/tracing_threshold          # µs
+# 可选调参：
+echo 1000000 &gt; $TR/hwlat_detector/window  # 1 s（默认）
+echo 500000  &gt; $TR/hwlat_detector/width   # 0.5 s（默认）
+echo per-cpu &gt; $TR/hwlat_detector/mode    # 每核常驻（v6.6+）
+
 echo 1 &gt; $TR/tracing_on
-sleep 30
+sleep 60                                  # 低负载下采 1 分钟
 echo 0 &gt; $TR/tracing_on
 cat $TR/trace
+cat $TR/tracing_max_latency               # 本轮最大停顿
 </code></pre>
-<p><strong>何时用（HFT）：</strong></p>
-<ul>
-<li><strong>P99/P999 尖刺</strong>；<code class="c">perf</code>、<code class="c">offcputime</code>、<strong>biolatency</strong> 都对不上</li>
-<li>CPU <strong>非 idle 但 forward progress 停住</strong></li>
-<li>裸机低延迟验收 — <strong>hwlat baseline</strong></li>
-</ul>
-<p><strong>对策：</strong> 更新 BIOS、关 C-State/SMI 相关选项、换主板 — 与 <a href="../../14-hft-engineering/html/chapter-05.html#intro">14-HFT ch05</a> 联动。</p>
-<hr />
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
-      </section>
-      <section class="section" id="s-14-11">
-        <div class="sec-head"><div class="sec-no">14.11</div><h2>section-14.11-14.13-前端工具</h2></div>
-<h3 class="sub">trace-cmd</h3>
-<p><strong>Ftrace 的命令行前端</strong> — 配置、录制、保存、回放。</p>
-<pre class="code" data-label="shell"><code class="c"># 录制 sched 事件 5 秒
-trace-cmd record -e sched -p function_graph sleep 5
-trace-cmd report | head
-
-# 保存 trace.dat 供 KernelShark 打开
-trace-cmd record -o trace.dat -e net -e sched sleep 10
+<h3>3.1 输出精读</h3>
+<pre class="code" data-label="code"><code class="c"># tracer: hwlat
+#
+#                              _-----=&gt; irqs-off
+#                             / _----=&gt; need-resched
+#                            |  / _---=&gt; hardirq/softirq
+#                            || / _--=&gt; preempt-depth
+#                            ||| /
+#                            ||| /     delay
+#           TASK-PID   CPU#  ||||    TIMESTAMP    FUNCTION
+#              | |       |   ||||       |         |
+           &lt;...&gt;-xxxxx  [003] d...   512.345678us: #475     inner=xx outer=yy
+                                                              ^ nmi_total_ts=zz
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>优点</th>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">#475</code></td>
+<td>本次停顿序号（count，hwlat_data.count）</td>
+</tr>
+<tr>
+<td><code class="c">inner</code> / <code class="c">outer</code></td>
+<td>采样循环<strong>内层/外层</strong>两次检测到的间隙（µs）——inner 更接近真实停顿时长</td>
+</tr>
+<tr>
+<td><code class="c">nmi_total_ts</code></td>
+<td>若配了 NMI watchdog 辅助（<code class="c">CONFIG_HWLAT_TRACER</code> + nmi 选项），<strong>NMI 上下文里测到的间隙</strong>——NMI 不受 SMM 影响，是 SMI 定罪的铁证</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>inner vs outer</strong>：内层循环读表极密（无函数调用），outer 含少量循环维护——两者同时超标才更可信；只有 outer 大时可能是调度噪声。</p>
+</blockquote>
+<h3>3.2 与其他证据交叉</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>看什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">cat /proc/interrupts</code> 两次采样差值</td>
+<td>SMI 行计数是否在涨（部分平台暴露 <code class="c">SMI</code> 或 <code class="c">LOC/SPU</code> 相关计数）</td>
+</tr>
+<tr>
+<td><code class="c">turbostat</code>（x86）</td>
+<td><code class="c">SMI</code> 列计数、C-state 驻留</td>
+</tr>
+<tr>
+<td>hwlat <code class="c">mode=per-cpu</code> + <code class="c">tracing_cpumask</code> 只留隔离核</td>
+<td>确认停顿是否只发生在特定核（挨着 BMC 的 socket？）</td>
+</tr>
+<tr>
+<td>BIOS 日志 / BMC SEL</td>
+<td>时间点对齐（ECC 刷洗、风扇策略事件）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 对策清单（确诊后）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BIOS</td>
+<td>更新版本；关 <code class="c">ECC Scrub</code> 周期性刷洗 / <code class="c">Patrol Scrub</code>；<code class="c">Power Management</code> → 最大性能；关 C-state 深睡（<code class="c">idle=poll</code> 或 BIOS 级）</td>
+</tr>
+<tr>
+<td>内核启动参数</td>
+<td><code class="c">intel_idle.max_cstate=0 processor.max_cstate=0</code>（验代价：功耗↑）；<code class="c">isolcpus</code> + <code class="c">nohz_full</code> 隔离（→ <a href="../../14-hft-engineering/html/chapter-05.html#intro">14-HFT ch05 调优联动</a>）</td>
+</tr>
+<tr>
+<td>BMC/IPMI</td>
+<td>拉长轮询周期或改 event-driven；确认 BMC 与业务网口无共享中断</td>
+</tr>
+<tr>
+<td>硬件</td>
+<td>换主板/平台验证；PCIe 设备逐个拔除定位（固件缺陷设备的 PM 事件会触发 SMI）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>验收纪律</strong>：裸机装机后、部署业务前，先跑 24h hwlat baseline（<code class="c">mode=per-cpu</code> + 低阈值）——把"这台机器天生有 200 µs SMI"这类问题挡在上线前。对照 <a href="chapter-16.html#s-16-0">ch16 baseline 纪律</a>：先有基线，后谈异常。</p>
+</blockquote>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>尾延迟对不上账</strong></td>
+<td>perf/offcputime/锁全部排除后，hwlat 是最后一环——<code class="c">nmi_total_ts</code> 直接给 SMI 定罪</td>
+</tr>
+<tr>
+<td>裸机选型验收</td>
+<td>24h hwlat soak 是低延迟机器的<strong>入场体检</strong></td>
+</tr>
+<tr>
+<td>Pi5 / 嵌入式</td>
+<td>ARM 无 SMI 同款问题但有 PSCI/firmware 调用窃取——<code class="c">mode=per-cpu</code> 逐核测同样有效</td>
+</tr>
+<tr>
+<td>与隔离栈联动</td>
+<td><code class="c">nohz_full</code> + <code class="c">isolcpus</code> 隔离做得再好，SMI 照样全核冻结——<strong>固件层是隔离的天花板</strong>，hwlat 量的是这个天花板</td>
+</tr>
+<tr>
+<td>与 DPDK 关系</td>
+<td>DPDK busy-poll 核上 SMI 尤其致命（每秒百万次读时钟的轮询里空洞直接变丢包）——→ <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-dpdk</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-14-5">hist trigger 内核内聚合</a></li>
+<li>下一节：<a href="#s-14-11">前端工具 trace-cmd / KernelShark / perf-tools</a></li>
+<li>OS 层停顿排查链：<a href="chapter-16.html#s-16-1-7">ch16.1.7 动态追踪与结论</a> 的五类结局分流</li>
+<li>调优动作：<a href="../../14-hft-engineering/html/chapter-05.html#intro">14-HFT ch05 OS/内核调优</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 SMI 发生时 perf、tracepoint、BPF 全部失明？</summary>
+<p>三者都依赖"OS 代码在执行"。SMI 使 CPU 进入 SMM 模式执行厂商固件，OS 所有核冻结——没有事件可记。停顿只能从"事后时间戳的空洞"反推，这正是 hwlat 的原理。</p>
+</details>
+<details>
+<summary>Q2：hwlat 的采样循环为什么 window（1s）要大于 width（0.5s）？</summary>
+<p>width 是死循环读时钟的活跃时长，window 是完整周期。差额时间线程睡眠：既避免 hwlatd 自己成为 CPU 热点，也让"被测停顿"泛化到该 CPU 任意负载都会遭遇的水平。</p>
+</details>
+<details>
+<summary>Q3：hwlat 报了一个 300 µs 的停顿，怎么进一步确认是 SMI 而不是调度噪声？</summary>
+<p>① 看 <code class="c">nmi_total_ts</code>——NMI 上下文的测量不受 SMM 冻结影响，有值即是铁证；② 对比 inner/outer（只有 outer 大偏调度噪声）；③ <code class="c">mode=per-cpu</code> + 只留隔离核复测（隔离核无普通负载）；④ <code class="c">/proc/interrupts</code> SMI 计数或 turbostat SMI 列对时间求差。</p>
+</details>
+<details>
+<summary>Q4：<code class="c">mode=round-robin</code> 和 <code class="c">mode=per-cpu</code> 各适合什么阶段？</summary>
+<p>round-robin（默认）：一个窗口换一个核，<strong>普查</strong>阶段用——低开销扫全部核。per-cpu（v6.6+）：每核常驻 hwlatd，<strong>定位/监控</strong>阶段用——抓间歇性停顿不漏窗，但常驻负载更高。</p>
+</details>
+<details>
+<summary>Q5：isolate + nohz_full 把核隔离好了，还需要 hwlat 吗？</summary>
+<p>需要。隔离解决的是"OS 层打扰"（调度/中断/timer），SMI 是<strong>固件层打扰</strong>——它冻结整个 CPU 包括你的隔离核。hwlat 量的正是隔离栈的天花板。</p>
+</details>
+      </section>
+      <section class="section" id="s-14-11">
+        <div class="sec-head"><div class="sec-no">14.11</div><h2>–14.13 前端工具：trace-cmd、KernelShark、perf ftrace、perf-tools</h2></div>
+<blockquote>
+<p><a href="#intro">章节导航</a> · 上一节：<a href="#s-14-9">14.9 硬件延迟检测 hwlat</a> · 下一节：<a href="chapter-15.html#intro">Ch 15 BPF</a></p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>裸 tracefs 的痛点：多 event 配置要写 N 个文件、buffer 读出来是一坨文本、没法归档对比。本节四个前端解决不同侧面，并给出一张<strong>全章命令速查卡</strong>收尾。</p>
+<hr />
+<h2>1. trace-cmd：命令行前端</h2>
+<p><strong>本质：把 tracefs 的 N 次文件写打包成一条命令</strong>，外加二进制归档格式 <code class="c">trace.dat</code>。</p>
+<pre class="code" data-label="shell"><code class="c"># 录制 sched 事件 5 秒（record 自己管 tracing_on 开关）
+trace-cmd record -e sched sleep 5
+trace-cmd report | head -40          # 解码回放
+
+# 组合：函数图 + 双事件系统 + 指定 CPU/PID
+trace-cmd record -p function_graph -l tcp_recvmsg -e sched -e net sleep 10
+
+# 归档：产出 trace.dat（含事件 format、buffer、CPU 信息——自包含）
+trace-cmd record -o case42.dat -e sched -e irq -e hwlat sleep 60
+
+# 事后提取（机器已崩前留在 buffer 里的内容）
+trace-cmd extract -o crash.dat
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>简化 tracefs 手写</td>
-<td>一条命令多 event</td>
+<td><code class="c">-e 系统/事件</code></td>
+<td>批量启用事件（<code class="c">-e sched</code> = 整个 sched 子系统）</td>
 </tr>
 <tr>
-<td><strong>record/report</strong></td>
-<td>可归档、可分享</td>
+<td><code class="c">-p tracer</code> + <code class="c">-l 函数</code></td>
+<td>graph/function tracer + <code class="c">set_graph_function</code> 一步到位</td>
+</tr>
+<tr>
+<td><code class="c">-P pid</code> / <code class="c">-C cpu</code></td>
+<td>内置过滤（写的是 tracefs filter）</td>
+</tr>
+<tr>
+<td><code class="c">trace.dat</code></td>
+<td><strong>二进制自包含归档</strong>：事件元数据 + 原始 buffer——离线机器上 <code class="c">trace-cmd report</code> 即可复现</td>
+</tr>
+<tr>
+<td><code class="c">trace-cmd listen</code></td>
+<td>网络模式：远程采集集中存（多机排障）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>KernelShark</h3>
-<p><strong>trace-cmd 的 GUI</strong> — 时间线、过滤、关联 CPU。</p>
-<ul>
-<li>适合：<strong>长时间 trace</strong> 人工浏览 — 比 <code class="c">cat trace</code> 可读。</li>
-</ul>
-<h3>perf ftrace</h3>
-<p><code class="c">perf</code> 内置 Ftrace 前端 — 与 Ch 13 统一入口。</p>
+<blockquote>
+<p><strong>HFT 工作流价值</strong>：故障现场只留一个 <code class="c">trace.dat</code>（几 MB~几百 MB），回办公室慢慢 <code class="c">report</code>/KernelShark 分析——与 <a href="chapter-16.html#s-16-1-3">ch16 快照/可回放纪律</a> 直接对齐。</p>
+</blockquote>
+<h2>2. KernelShark：GUI 前端</h2>
+<p><code class="c">trace.dat</code> 的图形界面：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>时间轴视图</strong></td>
+<td>每 CPU 一行、任务按颜色分——肉眼找"齐步走"的异常模式（全场同时静默 = 疑似 SMI，对照 <a href="#s-14-9">hwlat</a>）</td>
+</tr>
+<tr>
+<td>图形过滤</td>
+<td>双击任务/事件即隐藏——万条事件里聚焦目标 PID</td>
+</tr>
+<tr>
+<td>双视图联动</td>
+<td>时间轴 + 原始事件列表同步选中</td>
+</tr>
+<tr>
+<td>调度分析</td>
+<td>graph 模式可视化任务在 CPU 间的迁移/阻塞</td>
+</tr>
+</tbody>
+</table></div>
+<p>定位：<strong>人工浏览长时间 trace</strong>（几分钟的录制、几十万事件）——<code class="c">cat trace</code> 翻不动的地方。</p>
+<h2>3. perf ftrace：统一入口</h2>
+<p><code class="c">perf</code> 内置的 Ftrace 壳，把 graph tracer 挂进 perf 命令族：</p>
 <pre class="code" data-label="shell"><code class="c">perf ftrace --tracer function_graph -- sleep 5
-# 或 perf trace 走 tracepoint（见 Ch 13）
+perf ftrace -G __x64_sys_epoll_wait -- sleep 3    # -G 指定 graph 根
+perf ftrace --tracer function -G tcp_v4_rcv -- sleep 3
 </code></pre>
-<p><strong>分工：</strong> 日常 <strong>perf record/trace</strong> 够用；专精 Ftrace 特性用 <strong>trace-cmd</strong>。</p>
-<h3>perf-tools（Gregg 开源脚本集）</h3>
-<p>将 <strong>Ftrace + 部分 perf</strong> 封装为 <strong>单用途工具</strong>：</p>
+<p>价值：<strong>已经用 perf 的机器不用装新包</strong>；命令历史/脚本统一。限制：只包了 function/graph 两个 tracer——hist、hwlat、kprobe_events 还得裸 tracefs 或 trace-cmd。（<code class="c">perf trace</code> 是另一回事——走 tracepoint 的 strace 替代品，见 <a href="chapter-13.html#ch-13">Ch 13</a>。）</p>
+<h2>4. perf-tools（Gregg 脚本集）</h2>
+<p>https://github.com/brendangregg/perf-tools</p>
+<p><strong>本质：读 tracefs 的 bash 封装</strong>——每个工具就是"写好 filter/trigger + 格式化输出"的一段脚本。这既是它最大的优点（零依赖、可读源码学 tracefs 写法），也是天花板（无内核内聚合逻辑，全靠文本处理）。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具类</th>
-<th>例子</th>
+<th>代表</th>
+<th>tracefs 原理（读源码可见）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td>系统调用</td>
+<td><code class="c">syscount</code>、<code class="c">funclatency</code></td>
+<td>function tracer + filter + awk</td>
+</tr>
+<tr>
 <td>文件</td>
-<td>opensnoop、execsnoop</td>
+<td><code class="c">opensnoop</code>、<code class="c">execsnoop</code></td>
+<td>tracepoint <code class="c">sys_enter_openat</code> + <code class="c">if</code> filter</td>
+</tr>
+<tr>
+<td>调度</td>
+<td><code class="c">runqlat</code>（Ftrace 版）、<code class="c">offcputime</code>（Ftrace 版）</td>
+<td>kprobe <code class="c">finish_task_switch</code> + 文本聚合</td>
 </tr>
 <tr>
 <td>网络</td>
-<td>tcpconnect、tcpretrans（老版 Ftrace 实现）</td>
-</tr>
-<tr>
-<td>磁盘</td>
-<td>部分 biosnoop 前身</td>
+<td><code class="c">tcpconnect</code>、<code class="c">tcpretrans</code></td>
+<td>tracepoint <code class="c">tcp:tcp_retransmit_skb</code></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>何时仍需要：</strong></p>
+<p><strong>何时仍需要它</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>老内核无 BPF（&lt; 4.4 / 发行版未开 BTF）</td>
+<td>BCC/bpftrace 装不了，Ftrace 是唯一动态观测面</td>
+</tr>
+<tr>
+<td>最小环境（容器救援、嵌入式 rootfs）</td>
+<td>bash + tracefs 就能跑</td>
+</tr>
+<tr>
+<td><strong>学习</strong></td>
+<td>100 行 bash 里能看清每个 tracefs 文件怎么用——本系列笔记的实操参考</td>
+</tr>
+</tbody>
+</table></div>
+<p>现代 HFT 裸机：优先 <strong>bpftrace/BCC</strong>（<a href="chapter-15.html#ch-15">Ch 15</a>、<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7</a>）——内核内聚合 + map 摘取 + uprobe 批量优化，观测开销低一个档位。perf-tools 作 fallback 与教材。</p>
+<hr />
+<h2>5. 全章速查卡</h2>
+<pre class="code" data-label="shell"><code class="c">TR=/sys/kernel/tracing                     # 以下 $TR 省略
+# —— 基础闸门 ——
+cat  $TR/available_tracers                 # 看家底
+echo function_graph &gt; $TR/current_tracer   # 选 tracer
+echo 1 &gt; $TR/tracing_on                    # 开总闸（记得关：echo 0）
+# —— 函数/图 ——
+echo 'tcp_*'  &gt; $TR/set_ftrace_filter      # function 白名单
+echo tcp_recvmsg &gt; $TR/set_graph_function  # graph 根
+echo nofuncgraph-sleep-time &gt; $TR/trace_options   # 剥离睡眠时间
+# —— 事件 ——
+echo 1 &gt; $TR/events/sched/sched_switch/enable     # tracepoint
+echo 'p:myrecv tcp_v4_rcv skb=%ax:s64' &gt;&gt; $TR/kprobe_events
+echo 'pid == 4242' &gt; $TR/events/sched/sched_switch/filter
+echo 'stacktrace if next_pid == 4242' &gt; $TR/events/sched/sched_switch/trigger
+# —— 内核内直方图（调度延迟）——
+echo 'hist:keys=next_pid' &gt; $TR/events/sched/sched_switch/trigger
+# —— hwlat ——
+echo hwlat &gt; $TR/current_tracer &amp;&amp; echo 5 &gt; $TR/tracing_threshold
+# —— 读 ——
+cat $TR/trace | head -50                   # 快照读
+cat $TR/trace_pipe | grep --line-buffered xxx   # 流式读
+# —— 前端 ——
+trace-cmd record -e sched sleep 5 &amp;&amp; trace-cmd report
+perf ftrace -G tcp_recvmsg -- sleep 3
+</code></pre>
+<h2>6. 选型决策表（全章收束）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>首选</th>
+<th>备选</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 剖析 / 火焰图 / PMC</td>
+<td><a href="chapter-13.html#ch-13">perf record（Ch 13）</a></td>
+<td>—</td>
+</tr>
+<tr>
+<td>内核路径<strong>逐函数耗时</strong></td>
+<td><code class="c">function_graph</code>（窄根）</td>
+<td>trace-cmd 包一层</td>
+</tr>
+<tr>
+<td>高频事件<strong>直方图</strong></td>
+<td>BPF map / hist trigger</td>
+<td>hist（零依赖）</td>
+</tr>
+<tr>
+<td><strong>SMI/固件停顿</strong></td>
+<td><code class="c">hwlat</code></td>
+<td>turbostat 交叉</td>
+</tr>
+<tr>
+<td>长时间 trace 人工浏览</td>
+<td>trace-cmd + <strong>KernelShark</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>生产通用追踪/自定义聚合</td>
+<td><strong>bpftrace/BCC（Ch 15）</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>老内核/最小环境</td>
+<td><strong>perf-tools + 裸 tracefs</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>故障归档复盘</td>
+<td><code class="c">trace.dat</code></td>
+<td>buffer dump</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>事故复盘</td>
+<td>现场 <code class="c">trace-cmd extract</code> 保住 buffer → <code class="c">trace.dat</code> 归档 → KernelShark 时间轴找全场静默点</td>
+</tr>
+<tr>
+<td>交易机白盒约束</td>
+<td>trace-cmd/perf-tools 是<strong>纯文本工具</strong>，过供应链审计比带编译器的 BCC 容易</td>
+</tr>
+<tr>
+<td>多机排障</td>
+<td><code class="c">trace-cmd listen</code> 汇聚多台采集</td>
+</tr>
+<tr>
+<td>学习路线</td>
+<td>perf-tools 源码 = tracefs 最好的可执行文档——写自定义观测前先抄它</td>
+</tr>
+<tr>
+<td>与 Pi5 实验线</td>
+<td>全部命令在 Pi 上可用（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06.7-bpf-observability/">06.7 eBPF 实操</a> 前的热身）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
 <ul>
-<li><strong>老内核</strong> — 无 BCC/bpftrace/eBPF</li>
-<li><strong>最小环境</strong> — 不能装 bpftrace 包</li>
-<li><strong>学习</strong> — 看脚本如何写 tracefs</li>
+<li>本章完 → 下一章：<a href="chapter-15.html#intro">Ch 15 BPF</a>——生产观测主力，kprobe/uprobe 与本章同源</li>
+<li>回看：<a href="#s-14-1">14.1 tracefs 与动态插桩机制</a></li>
+<li>方法论总装：<a href="chapter-16.html#s-16-9">ch16 案例研究</a>——Ftrace 家工具全部在 S0–S4 演练里出现</li>
 </ul>
-<p><strong>现代 HFT 裸机：</strong> 优先 <strong>BCC/bpftrace</strong>（Ch 15、04-BPF）；perf-tools 作 <strong>fallback</strong> 或读源码学 tracepoint。</p>
-<p>→ https://github.com/brendangregg/perf-tools</p>
 <hr />
-<hr />
-<p>← <a href="#intro">本章导读</a></p>
+<h2>代码自测</h2>
+<details>
+<summary>Q1：trace-cmd 相比裸 tracefs 多给了什么？</summary>
+<p>三样：① 一条命令聚合多 event/tracer 配置（否则要写 N 个 tracefs 文件）；② <code class="c">trace.dat</code> 二进制自包含归档（事件元数据+buffer，可离线复现）；③ <code class="c">extract</code> 从事故机器 buffer 里捞现场。</p>
+</details>
+<details>
+<summary>Q2：KernelShark 时间轴上"所有 CPU 同时出现空档"暗示什么？下一步动作？</summary>
+<p>全场同时静默=OS 整体冻结的嫌疑——典型是 SMI。下一步跑 hwlat（<code class="c">mode=per-cpu</code> + 低阈值）拿 <code class="c">nmi_total_ts</code> 证据，再查 BIOS/BMC。单核空档则更像调度/中断问题，走 runqlat/offcputime。</p>
+</details>
+<details>
+<summary>Q3：perf-tools 的 runqlat 和 bpftrace 的 runqlat 输出几乎一样，本质区别在哪？</summary>
+<p>聚合位置：perf-tools 把每条事件<strong>送用户态</strong>做 awk 统计（文本处理，观测开销随事件率线性涨）；bpftrace 在<strong>内核内</strong>更新 BPF map 桶（每事件一次自增），用户态只摘一次结果。高事件率下后者开销低一个量级。</p>
+</details>
+<details>
+<summary>Q4：<code class="c">perf ftrace</code> 和 <code class="c">perf trace</code> 是一个东西吗？</summary>
+<p>不是。<code class="c">perf ftrace</code> 是 function/function_graph tracer 的壳（写 current_tracer/set_graph_function）；<code class="c">perf trace</code> 是 tracepoint 事件的 strace 式消费（打印 syscall 参数）。前者逐函数耗时，后者系统调用序列。</p>
+</details>
+<details>
+<summary>Q5：为什么 Ftrace 家工具在"无 BPF 老内核"上是唯一选择？</summary>
+<p>Ftrace 自 2.6.27 起就在主线内核里（tracepoint/kprobe_events/hist 都是纯内核特性，无用户态依赖）；BPF 观测栈需要 4.x+ 内核 + BTF/jit 等条件。老机器上 tracefs 是唯一不需要升级内核就能用的动态观测面。</p>
+</details>
       </section>
 
 
