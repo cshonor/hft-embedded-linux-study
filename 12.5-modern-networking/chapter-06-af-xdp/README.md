@@ -25,5 +25,5 @@
 
 - `12.5-modern-networking/chapter-04-page-pool/`：UMEM 基于 page_pool
 - `12.5-modern-networking/chapter-05-xdp-architecture/`：XDP 架构，AF_XDP 是 XDP redirect 目标
-- `12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md`：AF_XDP 按队列旁路，需先用 ntuple 把行情流钉到独占队列
+- `12.5-modern-networking/chapter-02-napi-rx-path/notes/06-queue-steering-rss.md`：AF_XDP 按队列旁路，需先用 ntuple 把行情流钉到独占队列
 - `13-dpdk/`：DPDK 完全 bypass，AF_XDP 是内核态折中

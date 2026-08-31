@@ -143,7 +143,7 @@ RTE_LCORE_FOREACH_WORKER(lcore_id) {
 | lcore 与网卡**同 NUMA** | 跨节点收包 = 每包一次远端内存访问 |
 | `--socket-mem` 按节点分配大页 | pool 建在哪就要哪边有大页 |
 | `isolcpus` + `nohz_full` + `rcu_nocbs` | **把核从调度器手里拿走**，见下节 |
-| 关 `irqbalance`、中断绑走 | 见 [12.5/07 队列定向](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md) |
+| 关 `irqbalance`、中断绑走 | 见 [12.5/06 队列定向](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/06-queue-steering-rss.md) |
 | `watchdog=0` / `nmi_watchdog=0` | 避免周期性 NMI/perf 打断 |
 
 ### 验证绑对了没
@@ -244,7 +244,7 @@ rte_eth_xstats_get(port, values, len);
 - 实体书：[section-2-轮询与混合中断模式.md](../chapter-07-nic-performance-optimization/notes/section-2-轮询与混合中断模式.md)（原理与状态机）· [section-3-IO性能深度优化.md](../chapter-07-nic-performance-optimization/notes/section-3-IO性能深度优化.md)
 - 上一章：[chapter-02-Cache与内存.md](./chapter-02-Cache与内存.md) · [chapter-02-mbuf与内存池.md](./chapter-02-mbuf与内存池.md)
 - 下一章：[chapter-04-零拷贝与用户态旁路.md](./chapter-04-零拷贝与用户态旁路.md)
-- 队列定向与 RSS：[12.5/chapter-02/notes/07-queue-steering-rss](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md)
+- 队列定向与 RSS：[12.5/chapter-02/notes/06-queue-steering-rss](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/06-queue-steering-rss.md)
 - 延迟测量方法论：[12.5/chapter-15/notes/03-latency-measurement](../../../12.5-modern-networking/chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md)
 - 流分类：[chapter-08-流分类与多队列.md](./chapter-08-流分类与多队列.md)
 - 实验：[code/mcast-minimal/](../code/mcast-minimal/)

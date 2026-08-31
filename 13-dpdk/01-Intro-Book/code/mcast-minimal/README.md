@@ -93,7 +93,7 @@ dpdk-devbind.py --bind=vfio-pci 0000:01:00.0
 排查顺序：`ethtool -S` 看网卡计数 → 计数不涨是交换机/IGMP 问题；
 计数涨但程序收不到才是用户态代码问题。
 
-详见 [12.5/chapter-02/notes/05-multicast-rx-path.md](../../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/05-multicast-rx-path.md)
+详见 [12.5/chapter-02/notes/05-multicast-rx-path.md](../../../../12.5-modern-networking/chapter-14-tcp-udp-internals/notes/03-multicast-rx-path.md)
 
 ## 输出解读
 

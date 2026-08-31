@@ -1,6 +1,6 @@
-# 05 — UDP 组播收包路径与行情接入
+# 03 — UDP 组播收包路径与行情接入
 
-> **对应 Rosen:** Ch（组播路由）部分覆盖；RX 路径组播分支未展开
+> **对应 Rosen:** 组播路由有覆盖；**收包路径上的组播分支未展开**（本篇补这部分）
 > **内核源码路径:** `net/ipv4/ip_input.c`、`net/ipv4/udp.c`、`net/ipv4/igmp.c`
 
 ## 文档概述
@@ -8,7 +8,11 @@
 行情链路几乎全部走 **UDP 组播**（ITCH/OUCH over MoldUDP64），而不是 TCP。
 本笔记补全现代内核中组播收包的完整路径，以及**旁路之后 IGMP 失效**这个最容易踩的坑。
 
-→ 前置：[01-rx-path-bootlin](./01-rx-path-bootlin.md)（通用收包路径）
+> 📌 本篇原在 chapter-02-napi-rx-path 下，已移至本章 —— 组播属**协议内部机制**
+> （L2 有损映射、IGMP、组播复制、gap 检测），不是 NAPI 收包路径的内容。
+
+→ 前置：[chapter-02/01-rx-path-bootlin](../../chapter-02-napi-rx-path/notes/01-rx-path-bootlin.md)（通用收包路径）
+→ 相关：[chapter-02/06-queue-steering-rss](../../chapter-02-napi-rx-path/notes/06-queue-steering-rss.md)（把组播流钉到指定队列）
 → 下游：[13-dpdk 组播行情接入](../../../13-dpdk/01-Intro-Book/notes/chapter-05-组播行情接入.md)
 
 ---

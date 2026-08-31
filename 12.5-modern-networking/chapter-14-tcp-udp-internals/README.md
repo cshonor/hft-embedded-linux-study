@@ -9,6 +9,7 @@
 |---|------|------|
 | 1 | [tcp-internals](notes/01-tcp-internals.md) | LWN：TCP 状态机、拥塞控制、发送/接收窗口 |
 | 2 | [udp-gro](notes/02-udp-gro.md) | LWN：UDP GRO 批量接收、多包聚合 |
+| 3 | [multicast-rx-path](notes/03-multicast-rx-path.md) | UDP 组播收包：L2 有损映射、组播复制开销、**旁路后 IGMP 失效**、gap 检测 |
 
 ## HFT 关联
 
@@ -16,8 +17,13 @@
 - **Nagle 禁用**：`TCP_NODELAY=1` 是 HFT 必备，禁用 Nagle 算法避免小包等待
 - **UDP GRO**：行情数据用 UDP 多播，GRO 聚合多个 UDP 包减少处理开销
 - **TCP buffer 调优**：`tcp_rmem` / `tcp_wmem` 调大窗口，避免窗口缩放不足导致限速
+- **行情走 UDP 组播不是 TCP**（§3）：组播路径多出 `ip_route_input_mc()` 与 per-socket skb 复制；
+  **旁路后 IGMP 不再自动发出**，必须先与交换机确认静态组播，否则收不到任何流量
+- **组播是 at-most-once**：无重传，必须做序列号 gap 检测 + 独立的 TCP 补单通道
 
 ## 交叉引用
 
 - `11-tcpip-protocols/`：TCP/UDP 协议基础
-- `12.5-modern-networking/chapter-02-napi-rx-path/`：GRO 在收包路径
+- `12.5-modern-networking/chapter-02-napi-rx-path/`：GRO 与 busy polling 在收包路径（§3 的性能前提）
+- `13-dpdk/01-Intro-Book/notes/chapter-05-组播行情接入.md`：§3 的内核路径 → DPDK 旁路对照
+- `12-kernel-networking/note-组播IGMP.md`：组播协议基础（IGMP snooping / 组播路由）

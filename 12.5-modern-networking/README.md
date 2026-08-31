@@ -47,9 +47,9 @@
 | 顺序 | 笔记 | 解决的问题 |
 |------|------|-----------|
 | 1 | [ch02/01 收包全路径 + 延迟分解](chapter-02-napi-rx-path/notes/01-rx-path-bootlin.md) | 每一步各花多少 ns |
-| 2 | [ch02/07 队列定向 RSS/ntuple](chapter-02-napi-rx-path/notes/07-queue-steering-rss.md) | 流量落到哪个核、怎么钉死 |
-| 3 | [ch02/06 busy poll 机制](chapter-02-napi-rx-path/notes/06-busy-poll-mechanism.md) | 内核栈能压到的极限在哪 |
-| 4 | [ch02/05 UDP 组播路径](chapter-02-napi-rx-path/notes/05-multicast-rx-path.md) | 行情怎么进来、旁路后 IGMP 谁发 |
+| 2 | [ch02/06 队列定向 RSS/ntuple](chapter-02-napi-rx-path/notes/06-queue-steering-rss.md) | 流量落到哪个核、怎么钉死 |
+| 3 | [ch02/05 busy poll 机制](chapter-02-napi-rx-path/notes/05-busy-poll-mechanism.md) | 内核栈能压到的极限在哪 |
+| 4 | [ch02/05 UDP 组播路径](chapter-14-tcp-udp-internals/notes/03-multicast-rx-path.md) | 行情怎么进来、旁路后 IGMP 谁发 |
 | 5 | [ch05 XDP](chapter-05-xdp-architecture/) → [ch06/03 AF_XDP UMEM](chapter-06-af-xdp/notes/03-af-xdp-umem-layout.md) | 开始旁路，zero-copy 怎么用 |
 | 6 | [ch07/02 XDP vs DPDK](chapter-07-xdp-redirect-dpdk/notes/02-xdp-vs-dpdk.md) | 决定要不要彻底旁路 |
 | 全程 | [ch15/03 延迟测量](chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md) | 不能度量就不能优化 |

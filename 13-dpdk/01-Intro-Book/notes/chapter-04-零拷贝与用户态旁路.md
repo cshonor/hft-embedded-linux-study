@@ -206,6 +206,6 @@ AF_XDP 也能零拷贝、也在用户态轮询——差别在**网卡归谁管**
 - 上一章：[chapter-03-PMD与轮询模式.md](./chapter-03-PMD与轮询模式.md)
 - 下一章：[chapter-05-组播行情接入.md](./chapter-05-组播行情接入.md)
 - UMEM/所有权交接对照：[12.5/chapter-06/notes/03-af-xdp-umem-layout](../../../12.5-modern-networking/chapter-06-af-xdp/notes/03-af-xdp-umem-layout.md)
-- 内核栈组播路径：[12.5/chapter-02/notes/05-multicast-rx-path](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/05-multicast-rx-path.md)
+- 内核栈组播路径：[12.5/chapter-14/notes/03-multicast-rx-path](../../../12.5-modern-networking/chapter-14-tcp-udp-internals/notes/03-multicast-rx-path.md)
 - 下一梯度：[02-Advanced note-openonload-rdma对比](../../02-Advanced-Book/notes/note-openonload-rdma对比.md)
 - 实验：[code/mcast-minimal/](../code/mcast-minimal/)

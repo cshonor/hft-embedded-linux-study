@@ -21,7 +21,7 @@
   - `ethtool -K eth0 gro off tso off`：关闭 GRO/TSO（HFT 发包要即时，不聚合）
 - **RPS/RFS：HFT 应关闭。** 它是为多核吞吐设计的软件分发，会引入 IPI 与额外排队，
   只增加延迟抖动；有硬件多队列时纯负收益。改用 RSS / ntuple 硬件分发
-  → [02 HFT 综合调优清单](notes/02-perf-tuning.md)、[ch02/07-queue-steering-rss](../chapter-02-napi-rx-path/notes/07-queue-steering-rss.md)
+  → [02 HFT 综合调优清单](notes/02-perf-tuning.md)、[ch02/06-queue-steering-rss](../chapter-02-napi-rx-path/notes/06-queue-steering-rss.md)
 - **延迟必须看分位数**：p999 才是考核线，均值会掩盖所有导致亏损的尾延迟
   → [03-latency-measurement](notes/03-latency-measurement.md)
 

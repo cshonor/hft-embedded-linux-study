@@ -2,7 +2,7 @@
 
 > **01-Intro-Book** · 官方 Programmer's Guide · **精读**
 
-> **内核对照：** [12.5/chapter-02/notes/05-multicast-rx-path](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/05-multicast-rx-path.md)
+> **内核对照：** [12.5/chapter-14/notes/03-multicast-rx-path](../../../12.5-modern-networking/chapter-14-tcp-udp-internals/notes/03-multicast-rx-path.md)
 > —— 那篇讲**内核栈**里组播怎么走，本篇讲**旁路之后**要自己补哪些事。两篇对着读。
 
 > **实验：** [code/mcast-minimal/](../code/mcast-minimal/)（DPDK 版 + 内核栈对照版，同口径分位统计）
@@ -48,7 +48,7 @@
 | `rte_eth_allmulticast_enable()` | 收**所有**组播 | 最常用；会收到同 MAC 的无关组，靠软件过滤 |
 | `rte_eth_dev_set_mc_addr_list()` | 只收指定组播地址 | 更精确，依赖驱动支持 |
 | `rte_eth_promiscuous_enable()` | 混杂模式，什么都收 | 调试用；生产环境杂包最多 |
-| `rte_flow` / Flow Director | 硬件把行情流钉到指定队列 | 与 [12.5/07 队列定向](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md) 配合 |
+| `rte_flow` / Flow Director | 硬件把行情流钉到指定队列 | 与 [12.5/06 队列定向](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/06-queue-steering-rss.md) 配合 |
 
 注意 **IPv4 组播 → MAC 是有损映射**：32 个组播 IP 共用同一个 MAC
 （`01:00:5E:0<低23位>`）。所以即便开了精确过滤，
@@ -110,8 +110,8 @@ for (i = 0; i < nb_rx; i++) {
 
 - 上一章：[chapter-04-零拷贝与用户态旁路.md](./chapter-04-零拷贝与用户态旁路.md)
 - 下一梯度：[02-Advanced note-openonload-rdma对比](../../02-Advanced-Book/notes/note-openonload-rdma对比.md)
-- 内核栈组播路径：[12.5/chapter-02/notes/05-multicast-rx-path](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/05-multicast-rx-path.md)
-- 队列定向：[12.5/chapter-02/notes/07-queue-steering-rss](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/07-queue-steering-rss.md)
+- 内核栈组播路径：[12.5/chapter-14/notes/03-multicast-rx-path](../../../12.5-modern-networking/chapter-14-tcp-udp-internals/notes/03-multicast-rx-path.md)
+- 队列定向：[12.5/chapter-02/notes/06-queue-steering-rss](../../../12.5-modern-networking/chapter-02-napi-rx-path/notes/06-queue-steering-rss.md)
 - 延迟测量：[12.5/chapter-15/notes/03-latency-measurement](../../../12.5-modern-networking/chapter-15-debugging-perf-tuning/notes/03-latency-measurement.md)
 - 协议：[11-tcpip-protocols](../../../11-tcpip-protocols/) · 内核组播：[12-kernel-networking/note-组播IGMP](../../../12-kernel-networking/note-组播IGMP.md)
 - 实验：[code/mcast-minimal/](../code/mcast-minimal/)
