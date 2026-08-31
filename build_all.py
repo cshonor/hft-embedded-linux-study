@@ -118,18 +118,29 @@ def chapter_no(name):
         return n if n > 0 else None
     return None
 
-SEC_NO_RE = re.compile(r"^(?:section[-_])?(\d+)(?:\.(\d+|[xX]+))?[-_](.+)$")
+SEC_NO_RE = re.compile(r"^(?:section[-_])?(\d+(?:\.\d+)*(?:\.[xX]+)?)[-_.](.+)$")
+SEC_NAME_RE = re.compile(r"^section[-_](.+)$")
+
 def section_no(stem):
-    """小节文件名(stem) → (anchor, label, sortkey)；非小节 → (None, None, None)。"""
+    """小节文件名(stem) → (anchor, label, sortkey)；非小节 → (None, None, None)。
+
+    支持 1–N 级编号（section-2.4-… / section-16.1.1-…）。2 级编号的 anchor
+    （s-X-Y）与历史格式保持一致，不破坏既有站内链接；3 级及以上为 s-X-Y-Z。
+    无编号的 section-* 文件按标题 slug 生成 anchor（s-slug）。
+    """
     m = SEC_NO_RE.match(stem)
-    if not m:
-        return None, None, None
-    major = m.group(1)
-    minor = m.group(2)
-    anchor = "s-" + major + (f"-{minor.lower()}" if minor else "")
-    label = major + (f".{minor}" if minor else "")
-    key = (int(major), int(minor) if minor and minor.isdigit() else 0)
-    return anchor, label, key
+    if m:
+        num = m.group(1)
+        anchor = "s-" + num.replace(".", "-").lower()
+        key = tuple(int(p) if p.isdigit() else 999 for p in num.split("."))
+        return anchor, num, key
+    m = SEC_NAME_RE.match(stem)
+    if m:
+        slug = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "-", m.group(1)).strip("-").lower()
+        if slug:
+            # 无编号小节排在编号小节之后（key 用大数保证稳定）
+            return "s-" + slug, m.group(1), (99, 99, 99)
+    return None, None, None
 
 def collect_sections(chapter_dir):
     """收集章节下的所有小节：优先 notes/，兼顾目录直接平铺的 md。返回 [(anchor, label, md_path)]。"""
@@ -268,10 +279,10 @@ def rewrite_links(body, cur_html_rel):
         return cur_book_root, repo_rel
 
     def anchor_from_tail(tail, anchors_map):
-        """在 tail 里找 section/chapter/appendix 锚点（支持 notes/ 与平铺命名）。"""
-        m_sec = re.search(r"(?:notes/)?(?:section[-_])?(\d+)(?:\.(\d+|[xX]+))?[-_][^/]*$", tail)
+        """在 tail 里找 section/chapter/appendix 锚点（支持 notes/ 与平铺命名、1–N 级编号）。"""
+        m_sec = re.search(r"(?:notes/)?(?:section[-_])?(\d+(?:\.\d+)*(?:\.[xX]+)?)[-_.][^/]*$", tail)
         if m_sec:
-            a = "s-" + m_sec.group(1) + (f"-{m_sec.group(2).lower()}" if m_sec.group(2) else "")
+            a = "s-" + m_sec.group(1).replace(".", "-").lower()
             if a in anchors_map:
                 return a
         m_ch = re.search(r"(?:chapter|ch|Chapter)[-_]?(\d+)", tail, re.I)

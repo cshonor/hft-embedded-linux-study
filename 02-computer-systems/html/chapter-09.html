@@ -284,6 +284,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-9-6"><span class="n">9.6</span>section-9.6-地址翻译</a>
           <a href="#s-9-7"><span class="n">9.7</span>section-9.7-IntelCorei7-Linux案例</a>
           <a href="#s-9-8"><span class="n">9.8</span>section-9.8-内存映射mmap</a>
+          <a href="#s-9-9-1"><span class="n">9.9.1</span>section-9.9.1-malloc和free</a>
+          <a href="#s-9-9-2"><span class="n">9.9.2</span>section-9.9.2-为何动态分配</a>
+          <a href="#s-9-9-3"><span class="n">9.9.3</span>section-9.9.3-分配器目标</a>
+          <a href="#s-9-9-4"><span class="n">9.9.4</span>section-9.9.4-碎片</a>
+          <a href="#s-9-9-5"><span class="n">9.9.5</span>section-9.9.5-9.9.6-实现问题与隐式空闲链表</a>
+          <a href="#s-9-9-7"><span class="n">9.9.7</span>section-9.9.7-9.9.9-放置、分割、扩展堆</a>
+          <a href="#s-9-9-10"><span class="n">9.9.10</span>section-9.9.10-9.9.11-合并与边界标记</a>
+          <a href="#s-9-9-12"><span class="n">9.9.12</span>section-9.9.12-简单分配器综合</a>
+          <a href="#s-9-9-13"><span class="n">9.9.13</span>section-9.9.13-显式空闲链表</a>
+          <a href="#s-9-9-14"><span class="n">9.9.14</span>section-9.9.14-分离空闲链表</a>
           <a href="#s-9-10"><span class="n">9.10</span>section-9.10-垃圾收集</a>
           <a href="#s-9-11"><span class="n">9.11</span>section-9.11-C程序常见内存错误</a>
           <a href="#s-9-12"><span class="n">9.12</span>section-9.12-小结</a>
@@ -314,7 +324,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">CSAPP · 深入理解计算机系统</div>
           <h1>Ch 9 虚拟内存 · Virtual Memory</h1>
           <div class="meta">
-<span>book <b>02-computer-systems</b></span><span>chapter <b>Ch 9</b></span><span>sections <b>12</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>02-computer-systems</b></span><span>chapter <b>Ch 9</b></span><span>sections <b>22</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -845,6 +855,529 @@ mlock(p, size);  // 避免换出
 </details>
 <hr />
 <p>← <a href="#intro">本章导读</a></p>
+      </section>
+      <section class="section" id="s-9-9-1">
+        <div class="sec-head"><div class="sec-no">9.9.1</div><h2>section-9.9.1-malloc和free</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.1</strong> · <a href="#intro">章导读</a> · 上节 <a href="#s-9-8">§9.8 ←</a> · 下节 <a href="chapter-09.html#s-9-9-2">§9.9.2 →</a></p>
+</blockquote>
+<hr />
+<pre class="code" data-label="C"><code class="c">void *malloc(size_t size);
+void free(void *ptr);
+void *calloc(size_t n, size_t size);
+void *realloc(void *ptr, size_t size);
+</code></pre>
+<ul>
+<li>堆在 <strong>program break</strong> 之上增长 — <code class="c">sbrk</code>/<code class="c">brk</code>（内核）</li>
+</ul>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>malloc 返回未初始化内存，calloc 清零</strong> — 不要假设 malloc 的内存是 0，否则引入难排查的 bug</li>
+<li><strong>free 后指针不变，悬空引用（UAF）风险</strong> — free 只标记块为空闲，不清零指针；建议 free 后立即置 NULL</li>
+<li><strong>sbrk/brk 是系统调用，malloc 是库函数</strong> — malloc 在用户态管理堆，只有堆不够时才 sbrk 向内核要更多页</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: malloc、calloc、realloc 的区别？</summary>
+<p>malloc(size) 分配未初始化内存；calloc(n, size) 分配并清零；realloc(ptr, size) 调整大小，可能移动内存（返回新指针，旧指针失效）。</p>
+</details>
+<details>
+<summary>Q2: free 一个指针后，指针本身的值变了吗？为什么有 UAF 风险？</summary>
+<p>不变。free 只标记该块为空闲，不清零指针。如果继续使用该指针（UAF），可能读到被重新分配的数据或触发 crash。</p>
+</details>
+<details>
+<summary>Q3: malloc 和 sbrk 的关系是什么？</summary>
+<p>malloc 是用户态库函数，管理堆的空闲链表。sbrk/brk 是系统调用，调整 program break。malloc 只在现有堆不够时才调 sbrk 向内核申请新页。</p>
+</details>
+<details>
+<summary>Q4: HFT 中为什么避免在热路径调用 malloc？</summary>
+<p>malloc 耗时不确定（可能触发 sbrk 系统调用 + 页表操作），且可能引起碎片。HFT 用预分配池/对象池，热路径只从池中取，零系统调用。</p>
+</details>
+<hr />
+<p>← <a href="#s-9-8">§9.8 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-2">§9.9.2 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-2">
+        <div class="sec-head"><div class="sec-no">9.9.2</div><h2>section-9.9.2-为何动态分配</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.2</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-1">§9.9.1 ←</a> · 下节 <a href="chapter-09.html#s-9-9-3">§9.9.3 →</a></p>
+</blockquote>
+<hr />
+<ul>
+<li>运行时才知道大小；复杂数据结构生命周期不一</li>
+</ul>
+<hr />
+<h3>为什么需要动态分配</h3>
+<ul>
+<li><strong>运行时才知道大小</strong> — 变长数组、动态数据结构</li>
+<li><strong>生命周期不固定</strong> — 栈变量随函数返回释放，堆可跨函数/线程存活</li>
+<li><strong>数据结构动态增长</strong> — 链表、树、哈希表节点按需分配</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分配方式</th>
+<th>生命周期</th>
+<th>速度</th>
+<th>灵活性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>栈（局部变量）</td>
+<td>函数返回自动释放</td>
+<td>最快（移动 SP）</td>
+<td>固定大小</td>
+</tr>
+<tr>
+<td>静态/全局</td>
+<td>程序整个生命周期</td>
+<td>快</td>
+<td>固定大小</td>
+</tr>
+<tr>
+<td>堆（malloc）</td>
+<td>手动 free</td>
+<td>慢（库+可能 syscall）</td>
+<td>任意大小</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT：</strong> 热路径用栈/预分配池；启动阶段用堆分配大缓冲，之后不再 malloc。</p>
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>栈分配自动释放，堆需手动 free</strong> — 忘记 free → 内存泄漏；free 后继续用 → UAF</li>
+<li><strong>动态分配 ≠ 慢</strong> — 池化后接近栈速度；慢的是碎片化和系统调用</li>
+<li><strong>realloc 可能移动内存，旧指针失效</strong> — 不要假设 realloc 原地扩展</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 栈分配和堆分配的主要区别？</summary>
+<p>栈：移动 SP 指针，函数返回自动释放，速度最快但大小固定。堆：通过 malloc/free 手动管理，大小灵活但需维护空闲链表，可能触发系统调用。</p>
+</details>
+<details>
+<summary>Q2: 为什么 HFT 热路径避免动态分配？用什么替代？</summary>
+<p>动态分配耗时不确定（可能 sbrk + 页表操作）。替代：启动时预分配对象池/环形缓冲，热路径从池中取/还，零系统调用。</p>
+</details>
+<details>
+<summary>Q3: realloc 返回值和原指针一定相同吗？</summary>
+<p>不一定。如果原地扩展不够，realloc 分配新块、拷贝数据、释放旧块，返回新指针。使用旧指针是 UAF。</p>
+</details>
+<details>
+<summary>Q4: 哪些场景必须用动态分配而不是栈？</summary>
+<p>1) 大小运行时才确定；2) 生命周期超出函数范围（如跨线程传递）；3) 大数组（栈空间有限，默认 8MB）；4) 动态数据结构节点。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-1">§9.9.1 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-3">§9.9.3 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-3">
+        <div class="sec-head"><div class="sec-no">9.9.3</div><h2>section-9.9.3-分配器目标</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.3</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-2">§9.9.2 ←</a> · 下节 <a href="chapter-09.html#s-9-9-4">§9.9.4 →</a></p>
+</blockquote>
+<hr />
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>吞吐</strong></td>
+<td>malloc/free 快</td>
+</tr>
+<tr>
+<td><strong>空间利用率</strong></td>
+<td>少碎片</td>
+</tr>
+<tr>
+<td><strong>快速</strong></td>
+<td>常数或接近常数时间</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>吞吐和利用率是 tradeoff</strong> — 首次适配吞吐高但碎片多；最佳适配利用率高但搜索慢</li>
+<li><strong>O(1) 不代表快</strong> — 常数可能很大（如分离链表的桶查找）</li>
+<li><strong>空间利用率 ≠ 无碎片</strong> — 利用率高但碎片可能也很高（大量小碎片）</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 分配器的两个核心目标是什么？它们矛盾吗？</summary>
+<p>吞吐量（malloc/free 速度）和空间利用率（少碎片）。矛盾：追求吞吐（首次适配）碎片多；追求利用率（最佳适配）搜索慢。</p>
+</details>
+<details>
+<summary>Q2: 吞吐量和利用率能否同时最优？</summary>
+<p>理论上不能。实际工程用分离适配（segregated fit）在两者间取平衡：按大小分桶，桶内首次适配，兼顾速度和利用率。glibc ptmalloc 就是这种策略。</p>
+</details>
+<details>
+<summary>Q3: 为什么说「O(1) 不代表快」？</summary>
+<p>大 O 表示法忽略常数。分离链表是 O(1) 但需要计算桶号、操作链表指针、可能加锁；实际耗时可能比简单首次适配的 O(n)（n 很小时）还慢。</p>
+</details>
+<details>
+<summary>Q4: HFT 场景下哪个目标更重要？</summary>
+<p>吞吐量（确定性延迟）远比利用率重要。HFT 用固定大小对象池，O(1) 且无碎片，牺牲灵活性换确定性。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-2">§9.9.2 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-4">§9.9.4 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-4">
+        <div class="sec-head"><div class="sec-no">9.9.4</div><h2>section-9.9.4-碎片</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.4</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-3">§9.9.3 ←</a> · 下节 <a href="chapter-09.html#s-9-9-5">§9.9.5-9.9.6 →</a></p>
+</blockquote>
+<hr />
+<ul>
+<li><strong>内部碎片</strong> — 分配块 &gt; 请求</li>
+<li><strong>外部碎片</strong> — 空闲内存总和够，但不连续</li>
+</ul>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>内部碎片 = 块内浪费，外部碎片 = 块间间隙</strong> — 分配 10B 实际给 16B → 内部 6B；空闲总和够但不连续 → 外部</li>
+<li><strong>外部碎片更难处理</strong> — 内部碎片靠减小对齐粒度；外部碎片靠合并/压缩（compaction，C 不支持因为有指针）</li>
+<li><strong>对齐引起的内部碎片不可避免</strong> — 16 字节对齐时分配 1B 也占 16B，这是硬件/ABI 要求</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 内部碎片和外部碎片的定义分别是什么？</summary>
+<p>内部碎片：分配块 &gt; 请求大小，块内多余空间浪费。外部碎片：空闲块总和够大但不连续，无法满足大请求。</p>
+</details>
+<details>
+<summary>Q2: 16 字节对齐时分配 1 字节，浪费多少？属于哪种碎片？</summary>
+<p>实际分配 16 字节，浪费 15 字节。属于内部碎片（块内浪费）。</p>
+</details>
+<details>
+<summary>Q3: 为什么 C 程序的外部碎片不能像 Java 一样用 compaction 解决？</summary>
+<p>Compaction 需要移动对象并更新所有指向它的指针。C/C++ 有裸指针，GC 无法找到所有引用。Java 有引用跟踪，可以移动对象。</p>
+</details>
+<details>
+<summary>Q4: HFT 如何避免外部碎片？</summary>
+<p>1) 固定大小对象池（无分割）；2) 启动时预分配大块，不再 malloc/free；3) 环形缓冲替代动态数组；4) 避免长生命周期和短生命周期混合分配。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-3">§9.9.3 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-5">§9.9.5-9.9.6 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-5">
+        <div class="sec-head"><div class="sec-no">9.9.5</div><h2>section-9.9.5-9.9.6-实现问题与隐式空闲链表</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.5-9.9.6</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-4">§9.9.4 ←</a> · 下节 <a href="chapter-09.html#s-9-9-7">§9.9.7-9.9.9 →</a></p>
+</blockquote>
+<hr />
+<p>← <a href="#intro">本章导读</a></p>
+<hr />
+<h3>隐式空闲链表</h3>
+<ul>
+<li><strong>块格式：</strong> <code class="c">[header(4-8B)] [payload] [padding] [footer(4-8B)]</code></li>
+<li><strong>header/footer 存：</strong> 块大小 + 分配位（1=已分配，0=空闲）</li>
+<li><strong>隐式：</strong> 所有块（已分配+空闲）通过 size 隐含链接，遍历时用 <code class="c">当前地址 + size</code> 跳到下一块</li>
+<li><strong>操作：</strong></li>
+<li><code class="c">find_fit</code> — 从头遍历找够大的空闲块</li>
+<li><code class="c">split</code> — 空闲块大于需求时切分</li>
+<li><code class="c">coalesce</code> — free 时合并相邻空闲块</li>
+</ul>
+<pre class="code" data-label="code"><code class="c">堆布局：[prologue][block1][block2]...[epilogue]
+        ← header ← payload → ← footer →
+</code></pre>
+<p><strong>问题：</strong> 遍历所有块（含已分配）→ O(n)，n = 总块数。</p>
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>隐式链表遍历所有块（含已分配），慢</strong> — 查找空闲块要跳过所有已分配块，O(n)</li>
+<li><strong>header/footer 占额外空间（8-16B/块）</strong> — 小块时开销比例大（16B 块 → 50%+ 开销）</li>
+<li><strong>对齐要求决定最小块大小</strong> — 16B 对齐 → header(4)+payload(1)+pad+footer(4) → 最小 16B</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 隐式空闲链表的「隐式」是什么意思？</summary>
+<p>不需要显式指针链接空闲块。所有块（已分配+空闲）按地址连续排列，通过 header 中的 size 字段隐含「下一块」的位置。</p>
+</details>
+<details>
+<summary>Q2: header 和 footer 各存什么？为什么需要 footer？</summary>
+<p>都存块大小+分配位。footer 用于从当前块地址反向定位前一个块（coalesce 时判断前块是否空闲）。</p>
+</details>
+<details>
+<summary>Q3: 隐式链表查找空闲块的时间复杂度？为什么慢？</summary>
+<p>O(n)，n=总块数（含已分配）。因为要遍历所有块跳过已分配的，即使大部分已分配也要逐个检查。</p>
+</details>
+<details>
+<summary>Q4: 如果 16 字节对齐，header 4B + footer 4B，最小块多大？</summary>
+<p>至少 16B：header(4) + payload(至少 1B) + padding(7B) + footer(4B) → 向上对齐到 16B。这意味着分配 1B 实际占 16B。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-4">§9.9.4 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-7">§9.9.7-9.9.9 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-7">
+        <div class="sec-head"><div class="sec-no">9.9.7</div><h2>section-9.9.7-9.9.9-放置、分割、扩展堆</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.7-9.9.9</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-5">§9.9.5-9.9.6 ←</a> · 下节 <a href="chapter-09.html#s-9-9-10">§9.9.10-9.9.11 →</a></p>
+</blockquote>
+<hr />
+<ul>
+<li><strong>首次适配 / 下一次适配 / 最佳适配</strong> — 时间 vs 碎片权衡</li>
+<li><strong>分割</strong> — 空闲块大于需求时切开</li>
+<li><strong>堆不够</strong> — <code class="c">sbrk</code> 向内核要更多页</li>
+</ul>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>首次适配快但碎片多，最佳适配慢但碎片少</strong> — 下一次适配折中但可能跳过合适块</li>
+<li><strong>分割要留最小块大小</strong> — 切剩的碎片如果 &lt; 最小块（16B），不如不分（全部给请求者）</li>
+<li><strong>sbrk 扩展是系统调用</strong> — 应批量申请（如一次 4KB-64KB），而不是每个 malloc 都 sbrk</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 首次适配、下一次适配、最佳适配的区别？</summary>
+<p>首次适配：从头找第一个够大的。下一次适配：从上次位置继续找（快但碎片多）。最佳适配：找最小的够大块（利用率高但搜索全表）。</p>
+</details>
+<details>
+<summary>Q2: 什么时候不该分割空闲块？</summary>
+<p>分割后剩余部分 &lt; 最小块大小（如 16B）时。碎片太小无法满足任何请求，反而增加 header/footer 开销。此时应把整块给请求者。</p>
+</details>
+<details>
+<summary>Q3: 堆扩展（sbrk）为什么不是每次 malloc 都调？</summary>
+<p>sbrk 是系统调用，开销大（上下文切换+页表操作）。malloc 库维护空闲池，只在池不够时批量 sbrk（如一次申请 64KB），分摊系统调用开销。</p>
+</details>
+<details>
+<summary>Q4: HFT 如何避免堆扩展的不确定延迟？</summary>
+<p>启动时预分配足够大的堆（一次 sbrk/mmap），之后不再扩展。热路径从预分配池中分配，零系统调用。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-5">§9.9.5-9.9.6 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-10">§9.9.10-9.9.11 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-10">
+        <div class="sec-head"><div class="sec-no">9.9.10</div><h2>section-9.9.10-9.9.11-合并与边界标记</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.10-9.9.11</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-7">§9.9.7-9.9.9 ←</a> · 下节 <a href="chapter-09.html#s-9-9-12">§9.9.12 →</a></p>
+</blockquote>
+<hr />
+<ul>
+<li><strong>释放</strong> 时 <strong>合并相邻空闲块</strong> — 减外部碎片</li>
+<li><strong>边界标记 (footer)</strong> — O(1) 判断前块是否空闲</li>
+</ul>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>边界标记用 footer 判断前块状态，但占空间</strong> — 每块多 4-8B footer；可优化为只在空闲块存 footer</li>
+<li><strong>合并只合空闲块，已分配不动</strong> — free 后检查前后块，只有空闲的才合并</li>
+<li><strong>合并方向：前后都看</strong> — 只看后块会漏掉与前块合并的机会；前块用 footer 定位</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 为什么 free 时要合并相邻空闲块？</summary>
+<p>防止外部碎片累积。如果不合并，多次 free 后产生大量小碎片，总和够大但不连续，无法满足大请求。</p>
+</details>
+<details>
+<summary>Q2: 边界标记（boundary tag）是什么？解决什么问题？</summary>
+<p>每个块尾部存一个 footer，内容和 header 一样（size + alloc bit）。解决「如何 O(1) 找到前一块」的问题：当前块地址 - 前一块 footer 中的 size = 前一块起始地址。</p>
+</details>
+<details>
+<summary>Q3: 边界标记的代价是什么？如何优化？</summary>
+<p>代价：每块多 4-8B（footer），小块开销比例大。优化：只在空闲块存 footer，已分配块不存（因为已分配块不会被合并，不需要查前块状态）。</p>
+</details>
+<details>
+<summary>Q4: 合并时需要检查几个方向？为什么？</summary>
+<p>两个方向：前一块和后一块。只合并后块会漏掉与前块合并的机会，导致碎片。前块通过 footer 的 size 字段定位，后块通过当前块 header 的 size 跳转。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-7">§9.9.7-9.9.9 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-12">§9.9.12 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-12">
+        <div class="sec-head"><div class="sec-no">9.9.12</div><h2>section-9.9.12-简单分配器综合</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.12</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-10">§9.9.10-9.9.11 ←</a> · 下节 <a href="chapter-09.html#s-9-9-13">§9.9.13 →</a></p>
+</blockquote>
+<hr />
+<ul>
+<li>课程 lab — 理解 <code class="c">mm_malloc</code> / <code class="c">mm_free</code> / <code class="c">mm_realloc</code></li>
+</ul>
+<hr />
+<h3>CSAPP Malloc Lab 概述</h3>
+<ul>
+<li><strong>目标：</strong> 实现 <code class="c">mm_init</code> / <code class="c">mm_malloc</code> / <code class="c">mm_free</code> / <code class="c">mm_realloc</code></li>
+<li><strong>约束：</strong> 只能调 <code class="c">mem_sbrk</code> 扩展堆，不能直接用系统 malloc</li>
+<li><strong>评分：</strong> 空间利用率 × 吞吐量</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mm_init</code></td>
+<td>初始化堆：prologue + epilogue 块</td>
+</tr>
+<tr>
+<td><code class="c">mm_malloc</code></td>
+<td>find_fit → split → 返回 payload 指针</td>
+</tr>
+<tr>
+<td><code class="c">mm_free</code></td>
+<td>标记空闲 → coalesce 前后</td>
+</tr>
+<tr>
+<td><code class="c">mm_realloc</code></td>
+<td>特殊情况优化（原地扩展/缩小），否则 malloc+copy+free</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>优化路径：</strong> 隐式链表 → 显式链表 → 分离链表 → 分离适配（最佳）</p>
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>Lab 的 mm_malloc 不等于 glibc malloc</strong> — Lab 是教学简化版，glibc 用更复杂的 ptmalloc/tcmalloc/jemalloc</li>
+<li><strong>realloc 不一定原地扩展</strong> — 可能 malloc 新块 + memcpy + free 旧块，数据量大时开销显著</li>
+<li><strong>测试用 trace 文件验证利用率和吞吐</strong> — 利用率 = peak_payload / peak_heap，不只是不泄漏</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: CSAPP Malloc Lab 需要实现哪些函数？评分标准是什么？</summary>
+<p>实现 mm_init/mm_malloc/mm_free/mm_realloc。评分 = 空间利用率（peak_payload / peak_heap）× 吞吐量（ops/sec）。</p>
+</details>
+<details>
+<summary>Q2: mm_init 需要做什么？prologue 和 epilogue 块的作用？</summary>
+<p>mm_init 调 mem_sbrk 创建初始堆结构。prologue 块（已分配，永久存在）防止合并越界到堆前；epilogue 块（size=0, alloc=1）标记堆尾，扩展堆时移动 epilogue。</p>
+</details>
+<details>
+<summary>Q3: realloc 的优化策略有哪些？</summary>
+<p>1) 缩小：原地改 header，分割尾部；2) 下一块空闲且够大：合并下一块，原地扩展；3) 否则：malloc 新块 + memcpy + free 旧块。</p>
+</details>
+<details>
+<summary>Q4: 从隐式链表到分离适配，性能提升的路径是什么？</summary>
+<p>隐式链表 O(n) → 显式链表 O(空闲块数) → 分离链表（按大小分桶）O(桶内空闲块数) → 分离适配（桶内首次适配）≈O(1)。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-10">§9.9.10-9.9.11 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-13">§9.9.13 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-13">
+        <div class="sec-head"><div class="sec-no">9.9.13</div><h2>section-9.9.13-显式空闲链表</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.13</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-12">§9.9.12 ←</a> · 下节 <a href="chapter-09.html#s-9-9-14">§9.9.14 →</a></p>
+</blockquote>
+<hr />
+<ul>
+<li>空闲块内 <strong>指针</strong> 串成链表 — 只遍历空闲块，更快</li>
+</ul>
+<hr />
+<h3>显式空闲链表</h3>
+<ul>
+<li><strong>核心思想：</strong> 空闲块内存 prev/next 指针，串成双向链表</li>
+<li><strong>优势：</strong> find_fit 只遍历空闲块，跳过已分配块 → 快很多</li>
+<li><strong>结构：</strong>
+  <code class="c">空闲块：[header][prev][next][...padding...][footer]
+  已分配块：[header][payload][footer]  （无 prev/next，省空间）</code></li>
+<li><strong>插入策略：</strong></li>
+<li><strong>LIFO</strong> — 新释放块插表头，O(1) 插入，但碎片多</li>
+<li><strong>FIFO</strong> — 插表尾，碎片分布均匀</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对比</th>
+<th>隐式链表</th>
+<th>显式链表</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>find_fit</td>
+<td>O(总块数)</td>
+<td>O(空闲块数)</td>
+</tr>
+<tr>
+<td>空闲块开销</td>
+<td>header+footer</td>
+<td>+prev+next（8-16B）</td>
+</tr>
+<tr>
+<td>已分配块开销</td>
+<td>header+footer</td>
+<td>header+footer（不变）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>显式链表只在空闲块存指针，已分配块不占额外空间</strong> — 指针存在空闲块的 payload 区域</li>
+<li><strong>LIFO vs FIFO 插入策略影响碎片分布</strong> — LIFO 快但碎片集中在表头；FIFO 均匀但插入慢</li>
+<li><strong>指针占用空闲块的有效载荷空间</strong> — 最小空闲块要容纳 header+prev+next+footer</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 显式空闲链表和隐式链表的核心区别？</summary>
+<p>显式链表在空闲块的 payload 中存 prev/next 指针，将所有空闲块串成双向链表。find_fit 只遍历空闲块，跳过已分配块，速度从 O(总块数) 提升到 O(空闲块数)。</p>
+</details>
+<details>
+<summary>Q2: 已分配块需要存 prev/next 指针吗？为什么？</summary>
+<p>不需要。已分配块不会被 find_fit 遍历，不需要链表指针。空闲时才在 payload 区域写入 prev/next，分配时这些空间归还给用户。</p>
+</details>
+<details>
+<summary>Q3: LIFO 和 FIFO 插入策略各自的优缺点？</summary>
+<p>LIFO：释放时插表头，O(1)，但反复分配释放同大小块会在表头形成碎片聚集。FIFO：插表尾，碎片分布均匀，但需要遍历到表尾（或维护尾指针）。</p>
+</details>
+<details>
+<summary>Q4: 显式链表的最小空闲块大小由什么决定？</summary>
+<p>必须容纳 header + prev 指针 + next 指针 + footer。16B 对齐时，最小空闲块通常 16-24B，比隐式链表的最小块大。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-12">§9.9.12 ←</a> · <a href="#intro">本章导读</a> · <a href="chapter-09.html#s-9-9-14">§9.9.14 →</a></p>
+      </section>
+      <section class="section" id="s-9-9-14">
+        <div class="sec-head"><div class="sec-no">9.9.14</div><h2>section-9.9.14-分离空闲链表</h2></div>
+<blockquote>
+<p><strong>Ch9 §9.9.14</strong> · <a href="#intro">章导读</a> · 上节 <a href="chapter-09.html#s-9-9-13">§9.9.13 ←</a> · 下节 <a href="#s-9-10">§9.10 →</a></p>
+</blockquote>
+<hr />
+<p>← <a href="#intro">本章导读</a></p>
+<hr />
+<h3>分离空闲链表（Segregated Free Lists）</h3>
+<ul>
+<li><strong>核心：</strong> 按块大小分类，每类一个空闲链表</li>
+<li><strong>查找：</strong> 根据请求大小定位对应大小类的链表 → 只在该链表内搜索</li>
+</ul>
+<p><strong>大小类划分示例：</strong>
+| 链表 | 大小范围 |
+|------|----------|
+| 0 | 1–16B |
+| 1 | 17–32B |
+| 2 | 33–64B |
+| ... | 2 的幂 |
+| k | &gt; 2^(k+3) |</p>
+<ul>
+<li><strong>glibc ptmalloc：</strong> 用分离适配（segregated fit），每个大小类一条链表</li>
+<li><strong>tcmalloc/jemalloc：</strong> 更细粒度 + 线程局部缓存（thread-local cache）</li>
+</ul>
+<p><strong>优势：</strong> find_fit ≈ O(1)（直接定位大小类 + 链表短）</p>
+<h3>常见陷阱</h3>
+<ol>
+<li><strong>分离链表 = 多个链表按大小分类，不是一条链</strong> — 每个大小类一个独立链表</li>
+<li><strong>桶数选择是 tradeoff</strong> — 多桶查找快但管理开销大（每个桶维护 prev/next）；少桶省空间但桶内链表长</li>
+<li><strong>glibc 的 ptmalloc 用分离适配</strong> — 但不是最优；tcmalloc/jemalloc 用线程局部缓存进一步减少锁竞争</li>
+</ol>
+<h3>自测题</h3>
+<details>
+<summary>Q1: 分离空闲链表如何提升查找效率？</summary>
+<p>按块大小分桶，每个大小类一条链表。malloc 时根据请求大小直接定位对应桶，只在该桶内搜索。桶内链表短，查找接近 O(1)。</p>
+</details>
+<details>
+<summary>Q2: 大小类（size class）如何划分？</summary>
+<p>通常按 2 的幂分组：1-16、17-32、33-64、65-128... 每个组对应一条链表。大请求搜更大的桶，小请求搜更小的桶。</p>
+</details>
+<details>
+<summary>Q3: glibc malloc 用什么策略？和 tcmalloc/jemalloc 有何区别？</summary>
+<p>glibc ptmalloc 用分离适配（多大小类链表）。tcmalloc/jemalloc 在此基础上加线程局部缓存（thread-local cache），减少锁竞争，多线程性能更好。</p>
+</details>
+<details>
+<summary>Q4: HFT 应该用哪个分配器？为什么？</summary>
+<p>最佳方案：自己实现固定大小对象池（无锁、无碎片、O(1)）。如果用通用分配器：jemalloc（线程局部缓存减少锁竞争，低尾延迟）。绝不在线程间共享一个 malloc arena。</p>
+</details>
+<hr />
+<p>← <a href="chapter-09.html#s-9-9-13">§9.9.13 ←</a> · <a href="#intro">本章导读</a> · <a href="#s-9-10">§9.10 →</a></p>
       </section>
       <section class="section" id="s-9-10">
         <div class="sec-head"><div class="sec-no">9.10</div><h2>section-9.10-垃圾收集</h2></div>
