@@ -276,9 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">12</span>— io_uring 网络</a>
-          <a href="#s-02"><span class="n">14</span>— io_uring 网络收发接口</a>
-          <a href="#s-03"><span class="n">15</span>— io_uring vs epoll：性能对比</a>
+          <a href="#s-01"><span class="n">01</span>— io_uring 网络：环形队列与网络 opcode 全景</a>
+          <a href="#s-02"><span class="n">02</span>— io_uring 网络深水区：multishot、provided buffers 与 SEND_ZC</a>
+          <a href="#s-03"><span class="n">03</span>— io_uring vs epoll：事件模型与完成模型的账</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -316,218 +316,760 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>本篇的核心结论</h2>
+<ol>
+<li>
+<p><strong>⭐ io_uring 不是更快的数据路径</strong>——协议栈和拷贝走的是同一份内核代码。
+   它消除的是<strong>外围成本</strong>：syscall（epoll 每包 2+ 次 vs SQPOLL 0 次）、
+   LT/ET 语义坑（<code class="c">SOCK_NONEMPTY</code> 让内核自决策继续收）、每包重提交（multishot 常驻）。</p>
+</li>
+<li>
+<p><strong>⭐ multishot recv 是网络 io_uring 的分水岭</strong>（5.19+）：一次提交常驻，
+   <code class="c">IORING_CQE_F_MORE</code> 承诺后续、消失即请求已死（多半 buffer 池干涸）；
+   <code class="c">IORING_CQE_F_SOCK_NONEMPTY</code>（来自 msg_inq）驱动内核批内连收。</p>
+</li>
+<li>
+<p><strong>⭐ SEND_ZC 的 buffer 生命周期以 NOTIF CQE 为界</strong>：第一个 CQE 只是「数据进了
+   协议栈」，页仍被 pin；带 <code class="c">IORING_CQE_F_NOTIF</code> 的第二个 CQE（<code class="c">io_tx_ubuf_callback</code>
+   析构链）才是「buffer 自由」。提前复用 = 静默数据损坏。</p>
+</li>
+<li>
+<p><strong>⭐ 小报文 ZC 是负优化</strong>：64B 拷贝 ~几 ns，页 pin + notif 管理 ~百 ns 级固定
+   成本——盈亏点在 KB 级。交易报文用普通 SEND 的同步快路径更短更稳。</p>
+</li>
+<li>
+<p><strong>⭐ <code class="c">IOSQE_ASYNC</code> 是热路径毒药</strong>：强制走 io-wq（线程池唤醒几十 µs 级）；
+   数据就绪时默认同步快路径才是低延迟正道。</p>
+</li>
+<li>
+<p><strong>⭐ DEFER_TASKRUN 买的是 cache 局部性</strong>：完成回调从中断上下文推迟到
+   提交线程 enter 时执行（同核同上下文），要求 SINGLE_ISSUER。</p>
+</li>
+</ol>
 <h2>HFT 关联</h2>
 <ul>
-<li><strong>io_uring 批量提交</strong>：多个 send/recv 打包成一次系统调用，减少 syscall 开销（100ns → 20ns/操作）</li>
-<li><strong>注册缓冲区</strong>：io_uring registered buffers 避免每次 recvmsg 的 mmap 开销</li>
-<li><strong>multishot recv</strong>：一次 SQE 持续接收多个包，适合行情订阅场景</li>
-<li><strong>io_uring vs epoll</strong>：</li>
-<li>epoll：事件驱动，每个就绪 fd 需单独 recvmsg（2 次 syscall）</li>
-<li>io_uring：批量提交，一次 io_uring_enter 处理 N 个操作</li>
-<li><strong>HFT 选择</strong>：io_uring 适合批量收发场景，AF_XDP 仍是最快路径</li>
+<li><strong>行情收发标准形态</strong>：SQPOLL（sq_thread_idle=∞ 永不睡）+ multishot recv +
+  ring-mapped provided buffers + registered files + DEFER_TASKRUN——一次提交常驻、
+  零 syscall、批内全收</li>
+<li><strong>等待三档按延迟预算选</strong>：阻塞（2-10µs 唤醒）/自旋（亚 µs）/全 busy poll
+  （SQPOLL + NAPI busy poll 把「收包到应用」钉死单核，epoll 时代做不到的完整方案）</li>
+<li><strong>收方向零拷贝 v6.6 不存在</strong>（后续内核的 zcrx 才有）：一次 1500B 拷贝 ~100ns，
+  成为新瓶颈时上 AF_XDP，而不是一开始就上</li>
+<li><strong>CQ 溢出是右尾延迟的隐形来源</strong>：监控 enter 的 EBUSY，CQSIZE 宁大勿小</li>
+<li><strong>迁移看瓶颈</strong>：syscall 占比 &gt;10-15% 才值得迁；瓶颈在拷贝/协议栈时先解决那头</li>
 </ul>
 <h2>交叉引用</h2>
 <ul>
+<li><code class="c">12.5-modern-networking/chapter-13-zerocopy-highperf/</code>：MSG_ZEROCOPY 体系（SEND_ZC 的前身）与 SO_REUSEPORT</li>
+<li><code class="c">12.5-modern-networking/chapter-06-af-xdp/</code>：收方向零拷贝的真答案</li>
+<li><code class="c">12.5-modern-networking/chapter-15-debugging-perf-tuning/</code>：延迟测量（迁移决策的依据）</li>
 <li><code class="c">04-cpp/M2-cpp-network-programming/</code>：epoll/socket 基础</li>
-<li><code class="c">12.5-modern-networking/chapter-13-zerocopy-highperf/</code>：io_uring + 零拷贝组合</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">12</div><h2>— io_uring 网络</h2></div>
+        <div class="sec-head"><div class="sec-no">01</div><h2>— io_uring 网络：环形队列与网络 opcode 全景</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核源码路径:</strong> <code class="c">Documentation/io_uring/</code>（部分网络操作分散在各子系统文档）</p>
+<p><strong>对应 Rosen:</strong> 无（io_uring 是 5.1+ 的产物）
+<strong>核对源码：</strong> v6.6 <code class="c">include/uapi/linux/io_uring.h</code>、<code class="c">io_uring/io_uring.c</code>、<code class="c">io_uring/net.c</code>
+（v6.6 起 io_uring 代码已从 <code class="c">fs/io_uring.c</code> 迁入 <code class="c">io_uring/</code> 目录，网络操作在 <code class="c">io_uring/net.c</code>）</p>
 </blockquote>
 <h2>文档概述</h2>
-<p>io_uring 网络操作相关文档，涵盖异步 accept/recv/send/connect 等。</p>
-<h2>核心内容</h2>
-<h3>网络相关 opcode</h3>
+<p>本篇是 io_uring 的<strong>机制基础</strong>：两个环形队列怎么工作、setup flags 各自改变什么、网络相关 opcode 全表、SQE 的 flags 与链接模式。收发路径的 v6.6 新机制（multishot/provided buffers/SEND_ZC）在 <a href="chapter-15.html#s-02">02</a>，与 epoll 的选型在 <a href="chapter-15.html#s-03">03</a>。</p>
+<hr />
+<h2>1. 基本结构：SQ / CQ 两个环形队列</h2>
+<pre class="code" data-label="code"><code class="c">用户态共享内存（mmap 一次性映射，IORING_FEAT_SINGLE_MMAP）：
+
+  SQ ring（索引数组）──→ SQE 数组（每项 64 字节，uapi_io_uring.h:93）
+       │  用户写 SQE，更新 tail
+       ▼
+  内核消费 SQE，执行操作
+       │
+       ▼
+  CQ ring（每项 16 字节 struct io_uring_cqe）
+       内核写 CQE，更新 tail
+       用户消费 CQE，更新 head
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/io_uring.h —— SQE 的关键字段 */
+struct io_uring_sqe {
+    __u8    opcode;     /* IORING_OP_* */
+    __u8    flags;      /* IOSQE_* */
+    __u32   fd;     /* 直接 fd 或 registered file index */
+    union { __u64 off; __u64 addr; };   /* offset / 参数 */
+    __u32   len;        /* buffer 长度 */
+    __u64   user_data;  /* 原样回到 CQE —— 关联请求的唯一句柄 */
+    ...
+};
+</code></pre>
+<p><strong>设计核心</strong>：<code class="c">user_data</code> 是请求与完成的<strong>唯一关联</strong>——SQE 里放什么，CQE 里就回来什么。这使批量提交 + 乱序完成成为一等公民。</p>
+<p><strong>一个容易误解的点</strong>：SQ 不是「队列」而是「索引环」。SQE 数组本身是普通数组，SQ ring 里存的是 SQE 下标；提交者写 SQE 数组 + 更新 SQ tail，消费者（内核）从 SQ head 取。这样<strong>同一批 SQE 可以被 SQPOLL 线程和 io_uring_enter 混合消费</strong>而无需复制。</p>
+<h3>1.1 两种消费模式</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>谁消费 SQ</th>
+<th>提交系统调用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认</td>
+<td><code class="c">io_uring_enter(ENTER)</code> 时同步消费</td>
+<td>每批 1 次</td>
+</tr>
+<tr>
+<td>SQPOLL</td>
+<td>内核 sqpoll 线程持续轮询 SQ tail</td>
+<td><strong>0 次</strong>（用户写完 SQE 内存屏障即可）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>2. setup flags：v6.6 全表（<code class="c">uapi_io_uring.h:140-191</code>）</h2>
+<pre class="code" data-label="C"><code class="c">#define IORING_SETUP_IOPOLL     (1U &lt;&lt; 0)   /* 存储 IO 轮询（网络无关） */
+#define IORING_SETUP_SQPOLL     (1U &lt;&lt; 1)   /* 内核 SQ 轮询线程 */
+#define IORING_SETUP_SQ_AFF     (1U &lt;&lt; 2)   /* sq_thread_cpu 有效 */
+#define IORING_SETUP_CQSIZE     (1U &lt;&lt; 3)   /* 应用定义 CQ 大小 */
+#define IORING_SETUP_CLAMP      (1U &lt;&lt; 4)   /* ring 大小钳制 */
+#define IORING_SETUP_ATTACH_WQ      (1U &lt;&lt; 5)   /* 共享 io-wq */
+#define IORING_SETUP_R_DISABLED     (1U &lt;&lt; 6)   /* 启动时禁用（后 enable） */
+#define IORING_SETUP_SUBMIT_ALL     (1U &lt;&lt; 7)   /* 出错也继续提交剩余 */
+#define IORING_SETUP_COOP_TASKRUN   (1U &lt;&lt; 8)   /* 协作式 task_work */
+#define IORING_SETUP_TASKRUN_FLAG   (1U &lt;&lt; 9)   /* IORING_SQ_TASKRUN 标志 */
+#define IORING_SETUP_SQE128     (1U &lt;&lt; 10)  /* SQE 扩到 128 字节 */
+#define IORING_SETUP_CQE32      (1U &lt;&lt; 11)  /* CQE 扩到 32 字节 */
+#define IORING_SETUP_SINGLE_ISSUER  (1U &lt;&lt; 12)  /* 单线程提交（优化前提） */
+#define IORING_SETUP_DEFER_TASKRUN  (1U &lt;&lt; 13)  /* ⭐ 完成在 enter 时跑 */
+#define IORING_SETUP_NO_MMAP        (1U &lt;&lt; 14)  /* 用户自管 ring 内存 */
+#define IORING_SETUP_REGISTERED_FD_ONLY (1U &lt;&lt; 15)  /* ring fd 也注册 */
+#define IORING_SETUP_NO_SQARRAY     (1U &lt;&lt; 16)  /* 无 SQ 索引数组（SQPOLL） */
+</code></pre>
+<p><strong>HFT 关注的三个</strong>：</p>
+<ol>
+<li><strong><code class="c">SQPOLL</code></strong>：零系统调用提交。代价是独占一个 CPU（<code class="c">sq_thread_idle</code> 毫秒后休眠，唤醒有延迟——低延迟场景设大让它永不睡，等于花钱买确定性）</li>
+<li><strong><code class="c">DEFER_TASKRUN</code></strong>（6.1+）：完成回调（task_work）不在中断/软中断上下文跑，而是<strong>推迟到本线程调 <code class="c">io_uring_enter()</code> 时</strong>执行——消除了「中断打扰 + IPI 打爆缓存」的问题，代价是要求 <code class="c">SINGLE_ISSUER</code>。对延迟敏感路径，这是 v6.6 的推荐组合（详见 <a href="chapter-15.html#s-02">02</a> §4）</li>
+<li><strong><code class="c">SINGLE_ISSUER</code></strong>（6.0+）：声明只有一个线程提交，让内核省去跨线程同步——是 DEFER_TASKRUN 的前提，独立使用也有收益</li>
+</ol>
+<hr />
+<h2>3. 网络 opcode 全表（v6.6 <code class="c">uapi_io_uring.h:194-242</code> 核对）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>Opcode</th>
-<th>内核版本</th>
+<th>引入版本</th>
 <th>对应系统调用</th>
+<th>网络语义要点</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>IORING_OP_ACCEPT</td>
+<td><code class="c">IORING_OP_ACCEPT</code></td>
 <td>5.5</td>
-<td>accept4()</td>
+<td><code class="c">accept4()</code></td>
+<td>支持 multishot（5.19+）</td>
 </tr>
 <tr>
-<td>IORING_OP_RECV</td>
+<td><code class="c">IORING_OP_CONNECT</code></td>
 <td>5.6</td>
-<td>recv()/recvfrom()</td>
+<td><code class="c">connect()</code></td>
+<td>异步 TCP 握手</td>
 </tr>
 <tr>
-<td>IORING_OP_RECVMSG</td>
+<td><code class="c">IORING_OP_SEND</code></td>
 <td>5.6</td>
-<td>recvmsg()</td>
+<td><code class="c">send()/sendto()</code></td>
+<td></td>
 </tr>
 <tr>
-<td>IORING_OP_SEND</td>
+<td><code class="c">IORING_OP_SENDMSG</code></td>
 <td>5.6</td>
-<td>send()/sendto()</td>
+<td><code class="c">sendmsg()</code></td>
+<td></td>
 </tr>
 <tr>
-<td>IORING_OP_SENDMSG</td>
+<td><code class="c">IORING_OP_RECV</code></td>
 <td>5.6</td>
-<td>sendmsg()</td>
+<td><code class="c">recv()/recvfrom()</code></td>
+<td>支持 multishot（5.19+）+ provided buffers</td>
 </tr>
 <tr>
-<td>IORING_OP_CONNECT</td>
+<td><code class="c">IORING_OP_RECVMSG</code></td>
 <td>5.6</td>
-<td>connect()</td>
+<td><code class="c">recvmsg()</code></td>
+<td>同上</td>
 </tr>
 <tr>
-<td>IORING_OP_SEND_ZC</td>
+<td><code class="c">IORING_OP_SHUTDOWN</code></td>
+<td>5.11</td>
+<td><code class="c">shutdown()</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_PROVIDE_BUFFERS</code></td>
+<td>5.1</td>
+<td>—</td>
+<td>向内核提供 buffer 池（见 <a href="chapter-15.html#s-02">02</a> §3）</td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_REMOVE_BUFFERS</code></td>
+<td>5.1</td>
+<td>—</td>
+<td>回收 buffer 池</td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_SOCKET</code></td>
+<td>5.19</td>
+<td><code class="c">socket()</code></td>
+<td>连 socket 创建都能异步</td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_SEND_ZC</code></td>
 <td>6.0</td>
-<td>sendmsg 零拷贝</td>
+<td>—</td>
+<td><strong>零拷贝发送</strong>（见 <a href="chapter-15.html#s-02">02</a> §5）</td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_SENDMSG_ZC</code></td>
+<td>6.0</td>
+<td>—</td>
+<td>sendmsg 版零拷贝</td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_MSG_RING</code></td>
+<td>5.18</td>
+<td>—</td>
+<td>ring 间发消息（跨线程唤醒）</td>
+</tr>
+<tr>
+<td><code class="c">IORING_OP_URING_CMD</code></td>
+<td>5.19</td>
+<td>—</td>
+<td>子系统自定义命令（网络侧：<code class="c">SO_URING_CMD</code> 等）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>SQPOLL 模式</h3>
-<pre class="code" data-label="C"><code class="c">struct io_uring_params params = {
-    .flags = IORING_SETUP_SQPOLL,
-    .sq_thread_idle = 10000,  // 空闲 10 秒后退出
+<p><strong>能力完整性</strong>：从 socket 创建（<code class="c">SOCKET</code>）到关闭（<code class="c">CLOSE</code>），连接建立（<code class="c">CONNECT</code>/<code class="c">ACCEPT</code>）到收发（<code class="c">SEND*</code>/<code class="c">RECV*</code>）到断连（<code class="c">SHUTDOWN</code>），<strong>全生命周期都能走 ring</strong>——一个热路径线程可以做到与 syscall 层完全解耦。</p>
+<hr />
+<h2>4. SQE flags：一次提交的编排能力</h2>
+<pre class="code" data-label="C"><code class="c">/* uapi_io_uring.h:123-135 */
+#define IOSQE_FIXED_FILE    /* fd 字段是 registered file 索引，省 fd 查找 */
+#define IOSQE_IO_DRAIN      /* 排空之前的所有请求（顺序屏障） */
+#define IOSQE_IO_LINK       /* 链接下一个 SQE：成功才执行 */
+#define IOSQE_IO_HARDLINK   /* 硬链接：无论如何都执行 */
+#define IOSQE_ASYNC     /* 强制走异步（io-wq），不试同步快路径 */
+#define IOSQE_BUFFER_SELECT /* ⭐ 从 provided buffer 池选 buffer（网络收包核心） */
+#define IOSQE_CQE_SKIP_SUCCESS  /* 成功不发 CQE（链接中间步骤） */
+</code></pre>
+<p><strong>HFT 用法示例——「收包 → 处理 → 发单」的原子链</strong>：</p>
+<pre class="code" data-label="code"><code class="c">SQE1: RECV  (IOSQE_IO_LINK)      ← 从行情 socket 收一个包
+SQE2: URING_CMD/自定义处理        ← 收到后执行（链接保证顺序）
+SQE3: SEND  (交易报文)            ← 处理完成自动发出
+</code></pre>
+<p>链接模式把「多步依赖操作」压进一次提交——<strong>内核侧保证执行顺序，用户线程一次 enter 搞定</strong>，比应用层状态机（回调链）省上下文切换和唤醒延迟。</p>
+<p>注意 <code class="c">IOSQE_ASYNC</code> 是<strong>语义开关不是性能开关</strong>：默认情况下 io_uring 对每个请求先试同步快路径（数据就绪就直接完成，省掉整个异步机制），<code class="c">ASYNC</code> 强制走 io-wq 工作线程——<strong>低延迟路径恰恰要避免它</strong>（线程池唤醒是几十 µs 级的灾难）。</p>
+<hr />
+<h2>5. registered 体系：fd 与 buffer 的预注册</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>注册什么</th>
+<th>省掉什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>registered files（<code class="c">IORING_REGISTER_FILES</code>）</td>
+<td>fd 数组</td>
+<td>每个操作里的 <code class="c">fget()</code> 引用计数原子操作</td>
+</tr>
+<tr>
+<td>registered buffers（<code class="c">IORING_REGISTER_BUFFERS</code>）</td>
+<td>iovec 数组（内核 pin 页）</td>
+<td>每次读写的 <code class="c">get_user_pages()</code>/页表遍历</td>
+</tr>
+<tr>
+<td>provided buffers（<code class="c">PROVIDE_BUFFERS</code> opcode）</td>
+<td>动态 buffer 池</td>
+<td>收包时的「谁来出 buffer」问题（见 <a href="chapter-15.html#s-02">02</a> §3）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三者不是一回事</strong>：前两个是<strong>静态资源预注册</strong>（省固定开销）；provided buffers 是<strong>动态 buffer 生命周期管理</strong>（收多少包不知道，内核从池里挑，用完还回来）。HFT 行情收包的正确组合是 <code class="c">registered files + provided buffers</code>（+ 可选 fixed buffers 用于 SEND_ZC）。</p>
+<hr />
+<h2>6. HFT 配置模板（v6.6）</h2>
+<pre class="code" data-label="C"><code class="c">struct io_uring_params p = {
+    .flags = IORING_SETUP_SQPOLL        // 零系统调用提交
+           | IORING_SETUP_SQ_AFF        // 绑核（与行情线程错开）
+           | IORING_SETUP_SINGLE_ISSUER // 单提交者（DEFER_TASKRUN 前提）
+           | IORING_SETUP_DEFER_TASKRUN,    // 完成推迟到 enter 时跑
+    .sq_thread_cpu = 3,         // 独占核
+    .sq_thread_idle = ~0U,          // 永不休眠（用 CPU 换确定性）
 };
-io_uring_setup(ENTRIES, &amp;params);
+io_uring_setup(4096, &amp;p);
+// 后续：
+// io_uring_register_files(...)      — 注册行情/交易 socket
+// io_uring_register_buffers(...)    — 注册发送 buffer
+// 提交收包：RECV + multishot + BUFFER_SELECT（见 02）
 </code></pre>
+<p><strong>权衡表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>延迟</th>
+<th>CPU 代价</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认（enter 提交）</td>
+<td>基线</td>
+<td>低</td>
+<td>管理通道</td>
+</tr>
+<tr>
+<td>SQPOLL + idle=∞</td>
+<td>最低</td>
+<td>1 核 100%</td>
+<td>行情/交易热路径</td>
+</tr>
+<tr>
+<td>DEFER_TASKRUN（无 SQPOLL）</td>
+<td>低</td>
+<td>低</td>
+<td>中间态：多 ring 场景省核</td>
+</tr>
+<tr>
+<td>SQPOLL + DEFER_TASKRUN</td>
+<td>需实测</td>
+<td>1 核</td>
+<td>组合语义要测（taskwork 推迟到 sqpoll 线程）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. HFT 要点</h2>
+<ol>
+<li><strong>零系统调用是真的，但有前提</strong>：SQPOLL 模式下提交侧完全无 syscall；完成侧仍要自旋读 CQ（或 busy poll）。「零 syscall」≠「零成本」，买的是<strong>路径确定性</strong>（无进出内核的 cache 污染）</li>
+<li><strong><code class="c">sq_thread_idle</code> 设成永不到期</strong>——sqpoll 线程一旦睡眠，唤醒路径（几十 µs）会撕碎延迟分布的右尾</li>
+<li><strong>registered files/buffers 是必做项</strong>：fd 引用计数和 GUP 的开销在微秒级路径上不可忽略</li>
+<li><strong><code class="c">IOSQE_ASYNC</code> 是毒药</strong>（热路径上）：io-wq 唤醒是几十 µs 级；数据就绪时默认的同步快路径才是低延迟正道</li>
+<li><strong>链接模式（LINK）编排「收→算→发」</strong>：依赖操作一次提交，内核保序</li>
+</ol>
+<hr />
+<h2>8. 代码自测</h2>
+<details>
+<summary>Q1：SQPOLL 模式下，用户态提交一个 RECV 的完整动作序列是什么？</summary>
+<ol>
+<li>从 SQ 数组头部取下一个空闲 SQE 槽位（<code class="c">sq-&gt;sqe_tail</code> 管理）</li>
+<li>填写字段：opcode=IORING_OP_RECV, fd, addr=buffer, len, user_data</li>
+<li>写内存屏障（<code class="c">io_uring_smp_store_release</code>——liburing 封装）</li>
+<li>更新 SQ ring 的 tail 索引</li>
+<li><strong>什么都不用再调</strong>——sqpoll 线程在轮询 tail，看到新条目就消费</li>
+</ol>
+<p>完成侧：自旋读 CQ ring tail（与内核共享的内存），有新 CQE 就处理，更新 head。</p>
+<p>全程 0 系统调用。对比默认模式：第 4 步之后还要 <code class="c">io_uring_enter()</code> 通知内核（每批 1 次 syscall）。</p>
+</details>
+<details>
+<summary>Q2：为什么 v6.6 推荐 DEFER_TASKRUN？它解决了什么问题？</summary>
+<p><strong>问题</strong>：io_uring 的完成回调（task_work）默认由<strong>收到数据的中断上下文</strong>投递并执行——软中断里跑完成逻辑会：</p>
+<ol>
+<li>打断正在跑的用户线程（IPI + 缓存污染）</li>
+<li>完成路径的执行核不确定（哪个核收到中断就在哪跑）</li>
+</ol>
+<p><strong>DEFER_TASKRUN 的答案</strong>：完成回调不在中断上下文执行，而是挂到队列上，<strong>等本线程调 <code class="c">io_uring_enter()</code> 时才统一执行</strong>（<code class="c">io_uring_core.c:3320</code> 附近：<code class="c">io_allowed_defer_tw_run(ctx)</code> 校验「正在跑的就是提交线程」）。</p>
+<p>效果：完成逻辑和用户逻辑<strong>同核同上下文</strong>，缓存局部性最好；代价是必须 <code class="c">SINGLE_ISSUER</code>（多线程提交会破坏「等 enter 时跑」的假设）。</p>
+<p>注意与 SQPOLL 的组合：sqpoll 模式下用户连 enter 都不调，task_work 由 sqpoll 线程代跑——语义变成「完成在 sqpoll 线程执行」，要实测确认符合预期。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">IORING_SETUP_SQE128</code> / <code class="c">CQE32</code> 是什么？网络操作需要吗？</summary>
+<p>SQE 从 64 扩到 128 字节、CQE 从 16 扩到 32 字节（<code class="c">IORING_SETUP_CQE32</code> 时 <code class="c">res64</code> 可用）。</p>
 <ul>
-<li>内核创建 sqpoll 线程持续轮询 SQ ring</li>
-<li>用户态不需要 <code class="c">io_uring_enter()</code>，零系统调用</li>
-<li>适合低延迟场景（但消耗一个 CPU）</li>
+<li><code class="c">CQE32</code>：网络侧<strong>确实有用</strong>——后续内核的收方向零拷贝（<code class="c">io_uring/zcrx.c</code>，v6.6 尚无此文件）会用 extra CQE 数据回传 buffer 信息；v6.6 上普通网络操作用不上</li>
+<li><code class="c">SQE128</code>：主要给 <code class="c">URING_CMD</code> 类带大参数的命令用；普通网络 opcode 塞 64 字节足够</li>
 </ul>
-<h3>registered buffers</h3>
-<pre class="code" data-label="C"><code class="c">struct iovec iovecs[N] = { ... };
-io_uring_register_buffers(ring, iovecs, N);
-</code></pre>
+<p>结论：v6.6 的网络热路径<strong>不需要</strong>这两个 flag；开 SQE128 反而让 SQE 数组的 cache footprint 翻倍。</p>
+</details>
+<details>
+<summary>Q4：registered buffers 和 provided buffers 有什么区别？为什么收包用后者、发送用前者？</summary>
+<p><strong>registered buffers</strong>（<code class="c">io_uring_register_buffers</code>）：静态注册一组 iovec，内核 pin 页建立映射。用在 <code class="c">READ_FIXED</code>/<code class="c">WRITE_FIXED</code>/<code class="c">SEND_ZC</code> 的 <code class="c">IORING_RECVSEND_FIXED_BUF</code>——<strong>发送方知道要发什么</strong>，buffer 是应用选定的。</p>
+<p><strong>provided buffers</strong>（<code class="c">PROVIDE_BUFFERS</code> opcode，配 <code class="c">IOSQE_BUFFER_SELECT</code>）：应用把一池 buffer 交给内核，<strong>收包时内核从池里挑一个</strong>装数据，CQE 里带回 buffer id（<code class="c">IORING_CQE_F_BUFFER</code> + buffer 编号在 flags 高 16 位）——<strong>接收方不知道会收到多少包、多大</strong>，必须让内核动态分配。</p>
+<p>发送 = 应用有确定性（用 registered/fixed）；接收 = 不确定性（用 provided 池 + 应用侧还池）。</p>
+</details>
+<details>
+<summary>Q5：一个 ring 吃满（CQ 溢出）会发生什么？</summary>
+<p>CQ 满时新完成事件无处写——默认<strong>丢事件</strong>（<code class="c">IORING_FEAT_NODROP</code> 之前的行为是 drop；有 NODROP 后内核会挂起提交侧，enter 返回 <code class="c">-EBUSY</code>，并在溢出时发 <code class="c">IORING_CQE_FLAG_OVERFLOW</code> 标记的兜底 CQE）。</p>
+<p>对 HFT 的启示：</p>
+<ol>
+<li>CQ 大小要按「最大突发完成数 × 处理延迟」配置（<code class="c">IORING_SETUP_CQSIZE</code>），宁可大</li>
+<li>消费 CQE 必须及时——自旋模式下这是自然保证；休眠模式下要小心</li>
+<li>CQ 溢出 = 延迟分布右尾的隐形来源，监控 <code class="c">io_uring_enter</code> 的 EBUSY 返回</li>
+</ol>
+</details>
+<hr />
+<h2>导航</h2>
 <ul>
-<li>预注册用户态 buffer，内核 pin 住 page</li>
-<li>后续 recv/send 直接使用注册 buffer</li>
-<li>避免 <code class="c">get_user_pages()</code> 开销</li>
-</ul>
-<h3>multishot accept（5.19+）</h3>
-<pre class="code" data-label="C"><code class="c">io_uring_prep_multishot_accept(sqe, sockfd, addr, addrlen, flags);
-</code></pre>
-<ul>
-<li>一次提交，多次完成</li>
-<li>每次新连接自动生成 CQE</li>
-<li>减少 accept 的 SQE 提交开销</li>
-</ul>
-<h2>HFT 要点</h2>
-<ul>
-<li>SQPOLL + registered buffers = 最低延迟网络 IO</li>
-<li>SEND_ZC = 异步零拷贝发送（优于 MSG_ZEROCOPY 的同步通知）</li>
-<li>multishot accept 适合多连接行情源</li>
+<li><strong>下一篇：</strong> <a href="chapter-15.html#s-02">02-io-uring-net-lwn.md</a> — v6.6 网络收发深水区：multishot recv、provided buffers、SEND_ZC 零拷贝链路</li>
+<li><strong>相关：</strong> <a href="chapter-13.html#ch-13">chapter-13-zerocopy-highperf/</a> 零拷贝体系全景 · <a href="chapter-15.html#s-03">chapter-12 的 03</a> 与 epoll 的选型</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
 </ul>
       </section>
       <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">14</div><h2>— io_uring 网络收发接口</h2></div>
+        <div class="sec-head"><div class="sec-no">02</div><h2>— io_uring 网络深水区：multishot、provided buffers 与 SEND_ZC</h2></div>
 <blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> io_uring 5.1+；网络操作 5.5+；multishot 5.19+</p>
+<p><strong>来源：</strong> LWN io_uring 系列 + <strong>v6.6 源码逐行核对</strong>
+（<code class="c">io_uring/net.c</code> 1522 行、<code class="c">io_uring/notif.c</code>、<code class="c">io_uring/io_uring.c</code>、
+<code class="c">net/ipv4/tcp.c</code>、<code class="c">net/ipv4/udp.c</code>、<code class="c">include/uapi/linux/io_uring.h</code>）
+<strong>对应 Rosen:</strong> 无
+<strong>内核版本：</strong> multishot 5.19+，SEND_ZC 6.0+，机制细节以 <strong>v6.6</strong> 为准</p>
 </blockquote>
-<h2>io_uring 是什么</h2>
-<p>io_uring 是 Linux 的异步 IO 框架：
-- 两个环形队列：SQ（提交队列）+ CQ（完成队列）
-- 用户态程序通过共享内存提交 IO 请求，无需系统调用
-- 内核异步完成后写入 CQ，用户态轮询读取</p>
-<h2>io_uring 网络操作</h2>
+<h2>文档概述</h2>
+<p>本篇拆 v6.6 网络收发的三个核心机制：<strong>multishot recv</strong>（一次提交管到底）、<strong>provided buffers</strong>（内核侧 buffer 池）、<strong>SEND_ZC</strong>（零拷贝发送 + 完成通知）。这三者组合是「行情收发」在 io_uring 上的标准形态。</p>
+<p>姊妹篇分工：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>操作</th>
-<th>opcode</th>
-<th>内核版本</th>
-<th>说明</th>
+<th>文件</th>
+<th>主题</th>
+<th>与本篇的关系</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>accept</td>
-<td>IORING_OP_ACCEPT</td>
-<td>5.5</td>
-<td>异步 accept()</td>
+<td><a href="chapter-15.html#s-01">01-io-uring-net.md</a></td>
+<td>ring 结构、opcode 全景、setup flags</td>
+<td>01 是地基，本篇是三个上层机制</td>
 </tr>
 <tr>
-<td>recv/recvmsg</td>
-<td>IORING_OP_RECV / RECVMSG</td>
-<td>5.6</td>
-<td>异步接收</td>
-</tr>
-<tr>
-<td>send/sendmsg</td>
-<td>IORING_OP_SEND / SENDMSG</td>
-<td>5.6</td>
-<td>异步发送</td>
-</tr>
-<tr>
-<td>connect</td>
-<td>IORING_OP_CONNECT</td>
-<td>5.6</td>
-<td>异步 connect</td>
-</tr>
-<tr>
-<td>multishot accept</td>
-<td>IORING_OP_ACCEPT + multishot</td>
-<td>5.19</td>
-<td>一次提交多次完成</td>
-</tr>
-<tr>
-<td>sendzc</td>
-<td>IORING_OP_SEND_ZC</td>
-<td>6.0</td>
-<td>零拷贝发送</td>
+<td><a href="chapter-15.html#s-03">03-io-uring-vs-epoll.md</a></td>
+<td>与 epoll 的选型</td>
+<td>本篇的机制优势是 03 对比论的弹药</td>
 </tr>
 </tbody>
 </table></div>
-<h2>io_uring 网络收发流程</h2>
-<pre class="code" data-label="code"><code class="c">用户态:
-  1. 准备 recv SQE → 写入 SQ ring
-  2. io_uring_enter() 通知内核（或 SQPOLL 模式下内核自旋轮询）
-  3. 轮询 CQ ring 等待完成事件
-
-内核态:
-  1. 从 SQ ring 读取 recv 请求
-  2. 调用 socket 的 recvmsg 回调
-  3. 数据就绪后写入 CQ ring
+<hr />
+<h2>1. multishot recv：一次提交，持续完成</h2>
+<p><strong>传统模式的痛点</strong>：收一个包 = 提交一个 RECV SQE + 消费一个 CQE + <strong>再提交一个 RECV</strong>……每个包两次 SQE 生命周期操作。</p>
+<p><strong>multishot（5.19+）</strong>：提交一次 RECV，内核<strong>持续</strong>完成它——每个到达的包产生一个 CQE（带 <code class="c">IORING_CQE_F_MORE</code> 标志表示「还有更多」），请求本身长期存活：</p>
+<pre class="code" data-label="C"><code class="c">/* io_uring/net.c:590 —— prep 阶段 */
+if (sr-&gt;flags &amp; IORING_RECV_MULTISHOT) {
+    ...
+    req-&gt;flags |= REQ_F_APOLL_MULTISHOT;
+    /* Store the buffer group ... separately */
+}
 </code></pre>
-<h2>SQPOLL 模式（内核轮询线程）</h2>
-<p>io_uring 可以创建一个内核线程持续轮询 SQ：
-- 用户态不需要调用 <code class="c">io_uring_enter()</code>，零系统调用提交
-- 适合 HFT 低延迟场景（但消耗一个 CPU 核心）
-- <code class="c">IORING_SETUP_SQPOLL</code> flag 启用</p>
-<h2>HFT 关联</h2>
+<h3>1.1 完成逻辑逐行：<code class="c">io_recv_finish()</code>（net.c:632）</h3>
+<pre class="code" data-label="C"><code class="c">static inline bool io_recv_finish(struct io_kiocb *req, int *ret,
+                  struct msghdr *msg, bool mshot_finished, ...)
+{
+    cflags = io_put_kbuf(req, issue_flags);        /* 归还 provided buffer */
+
+    if (msg-&gt;msg_inq &amp;&amp; msg-&gt;msg_inq != -1)
+        cflags |= IORING_CQE_F_SOCK_NONEMPTY;  /* ⭐ 队列里还有数据 */
+
+    if (!(req-&gt;flags &amp; REQ_F_APOLL_MULTISHOT)) {   /* 普通 recv：一次完成 */
+        io_req_set_res(req, *ret, cflags);
+        return true;
+    }
+
+    if (!mshot_finished) {                         /* multishot：还有后续 */
+        if (io_fill_cqe_req_aux(req, ..., *ret,
+                    cflags | IORING_CQE_F_MORE)) {   /* ⭐ MORE 标志 */
+            io_recv_prep_retry(req);           /* 重置请求准备下一次 */
+            /* Known not-empty or unknown state, retry —— 立即重试 */
+            if (cflags &amp; IORING_CQE_F_SOCK_NONEMPTY || msg-&gt;msg_inq == -1)
+                return false;              /* 不结束请求，继续收 */
+            ...
+        }
+    }
+    /* buffer 池耗尽等异常 → 结束 multishot */
+    ...
+}
+</code></pre>
+<p><strong>三个精妙设计</strong>（全部 v6.6 源码可考）：</p>
+<ol>
+<li><strong><code class="c">IORING_CQE_F_MORE</code></strong>：CQE flags 里的「后面还有」承诺。应用看到 MORE 就知道<strong>不需要再提交</strong>；没看到 MORE 就知道 multishot 结束了（比如 buffer 池干了），要重新提交</li>
+<li><strong><code class="c">IORING_CQE_F_SOCK_NONEMPTY</code></strong>：来自 <code class="c">msg_inq</code>——recvmsg 内核侧回填的「<strong>接收队列剩余字节数</strong>」。<code class="c">io_recvmsg</code>/<code class="c">io_recv</code> 都设 <code class="c">msg.msg_get_inq = 1</code>（net.c:812/892）请求这个信息。<strong>队列还有数据就不回去等事件，直接连着收</strong>（上例 <code class="c">return false</code> 的分支）——这是「批内聚合」的关键：同一批到达的 N 个包，1 次事件唤醒全收完</li>
+<li><strong><code class="c">io_recvmsg_multishot_overflow()</code></strong>：收到的包比 buffer 大（<code class="c">len &lt; buflen</code> 且非 MSG_TRUNC）时 multishot 自毁——<strong>provided buffer 模式下收不了超长包</strong>，回退普通模式处理</li>
+</ol>
+<h3>1.2 与 epoll 循环的对照</h3>
+<pre class="code" data-label="code"><code class="c">epoll 一次唤醒：epoll_wait(返回 1 个事件) → recvmsg → [队列还有？epoll 不会再通知] → 睡
+                                         └── 想再收要再等下一次 epoll_wait（LT/ET 语义坑）
+
+multishot 一次唤醒：CQE(包1, MORE, NONEMPTY) → CQE(包2, MORE, NONEMPTY) → CQE(包3)
+                    └────────── 同一批全收完才停 ──────────┘
+</code></pre>
+<p><strong>水平触发 vs 边缘触发</strong>的经典难题（epoll LT 的 busy loop、ET 的漏读），在 multishot 里被 <code class="c">SOCK_NONEMPTY</code> 信息直接消解——<strong>内核告诉你要不要继续</strong>，而不是让你猜。</p>
+<hr />
+<h2>2. provided buffers：<code class="c">IOSQE_BUFFER_SELECT</code></h2>
+<p><strong>问题</strong>：multishot recv 的 buffer 谁出？应用不知道会收到多少包、每个多大，没法在 SQE 里写死 buffer 地址。</p>
+<p><strong>答案（5.1+）</strong>：应用预先把一池 buffer 交给内核（<code class="c">IORING_OP_PROVIDE_BUFFERS</code>），SQE 设 <code class="c">IOSQE_BUFFER_SELECT</code> 并标 buffer group id（<code class="c">buf_group</code> 字段）：</p>
+<pre class="code" data-label="code"><code class="c">应用：PROVIDE_BUFFERS(bgid=1, buf[0..N])        → 内核持有一池 buffer
+应用：RECV + BUFFER_SELECT + buf_group=1        → 提交收包（不带地址！）
+内核：挑 buf[i] ← 数据 → CQE(flags = BUFFER|&lt;&lt;16 编号i&gt;&gt;)  → 应用知道数据在哪个 buf
+应用：处理完 → PROVIDE_BUFFERS 归还 buf[i]      → 循环
+</code></pre>
+<p><strong>CQE 里的 buffer id</strong>：<code class="c">IORING_CQE_F_BUFFER</code> 置位时，flags 高 16 位是 buffer 编号（<code class="c">IORING_CQE_BUFFER_SHIFT</code>）。</p>
+<p><strong>HFT 实践要点</strong>：</p>
+<ol>
+<li><strong>池大小 = 最大突发深度</strong>。池干涸时 multishot 自毁（上节 overflow 逻辑），应用要能感知重建</li>
+<li><strong>buffer 归还是显式的</strong>——处理完必须还，否则池单调缩减</li>
+<li><strong>与 registered buffers 是两套体系</strong>（见 <a href="chapter-15.html#s-01">01</a> Q4）：provided 走「内核挑选」，registered 走「应用指定」</li>
+<li>ring-mapped provided buffers（<code class="c">IORING_REGISTER_PBUF_RING</code>，5.19+）是升级版：归还走用户态 ring 无系统调用，热路径推荐</li>
+</ol>
+<hr />
+<h2>3. 收方向零拷贝的现状：v6.6 是「半成品」</h2>
+<p>v6.6 上<strong>没有</strong>收方向的零拷贝（zerocopy receive，<code class="c">io_uring/zcrx.c</code> 在后续内核才出现）。现状：</p>
+<ul>
+<li>multishot + provided buffers 收包，数据仍有一次「内核 skb → 用户 buffer」的拷贝</li>
+<li>想消除这次拷贝，v6.6 的路径只有 <strong>AF_XDP</strong>（见 <a href="chapter-06.html#ch-6">chapter-06</a>）——那是彻底的另一种 socket 模型</li>
+</ul>
+<p><strong>选型直觉</strong>：一次 1500 字节内的拷贝约 100ns 量级；若收包路径的其他开销（唤醒、系统调用）已被 io_uring 压掉，这次拷贝会变成新瓶颈——那时再考虑 AF_XDP，而不是一开始就上。</p>
+<hr />
+<h2>4. DEFER_TASKRUN：完成的「同核同上下文」执行</h2>
+<p>（setup flag 语义见 <a href="chapter-15.html#s-01">01</a> §2，这里补数据路径视角）</p>
+<pre class="code" data-label="code"><code class="c">无 DEFER_TASKRUN：
+  网卡中断（核 A）→ 软中断里跑完成回调 → CQE 写入
+  用户线程（核 B）自旋看到 CQE → 处理
+  问题：完成逻辑在核 A 污染的 cache 里跑；CQE 写入跨核可见性延迟
+
+有 DEFER_TASKRUN：
+  网卡中断（核 A）→ 只把 task_work 挂队列
+  用户线程（核 B）调 io_uring_enter() → 依次执行挂着的完成回调 → CQE 写入
+  效果：完成回调、CQE 写入、用户处理 全在核 B 的热 cache 里
+</code></pre>
+<p>v6.6 的实现锚点：<code class="c">io_uring/io_uring.c</code> 里 <code class="c">IORING_SETUP_DEFER_TASKRUN</code> 出现 10+ 处，核心是 <code class="c">io_allowed_defer_tw_run()</code> 校验「当前线程 == 提交线程」+ <code class="c">io_req_task_work_run()</code> 在 enter 上下文执行。</p>
+<p><strong>HFT 推荐组合</strong>：<code class="c">SQPOLL + SINGLE_ISSUER + DEFER_TASKRUN</code> 中按场景取舍——单核全包（sqpoll 线程既提交又跑完成）最简；多核分离（用户线程 enter 跑完成）cache 更优。<strong>两种都要实测延迟分布</strong>，别信纸面。</p>
+<hr />
+<h2>5. SEND_ZC：零拷贝发送的 io_uring 形态（6.0+）</h2>
+<h3>5.1 与 MSG_ZEROCOPY 的关系</h3>
+<p><code class="c">SO_ZEROCOPY</code> + <code class="c">MSG_ZEROCOPY</code>（4.14+，见 <a href="chapter-13.html#ch-13">chapter-13</a>）是 sendmsg 层的零拷贝：数据 pin 住页直接做 skb frag，<strong>完成通知走 error queue</strong>（<code class="c">MSG_ERRQUEUE</code> 的 <code class="c">SO_EE_ORIGIN_ZEROCOPY</code>），应用要另收一个 socket 事件——<strong>通知机制和主路径割裂</strong>。</p>
+<p><code class="c">IORING_OP_SEND_ZC</code> 把同样的零拷贝数据路径装进 io_uring：<strong>通知就是 ring 里的第二个 CQE</strong>。</p>
+<h3>5.2 两次 CQE 的语义（v6.6 源码核对）</h3>
+<pre class="code" data-label="C"><code class="c">/* io_uring/net.c:978 —— io_send_zc_prep() */
+notif = zc-&gt;notif = io_alloc_notif(ctx);
+notif-&gt;cqe.user_data = req-&gt;cqe.user_data;    /* 同 user_data！ */
+notif-&gt;cqe.flags = IORING_CQE_F_NOTIF;        /* ⭐ 区分标志 */
+</code></pre>
+<ul>
+<li><strong>CQE #1（立即）</strong>：<code class="c">res = 已提交到内核的字节数</code>，<code class="c">flags</code> 无 NOTIF——「数据已交给协议栈」</li>
+<li><strong>CQE #2（延迟，带 <code class="c">IORING_CQE_F_NOTIF</code>）</strong>：<code class="c">res = 0 或错误码</code>——「数据已真正离开」（skb 释放，页解 pin）</li>
+</ul>
+<p><strong>应用侧规则</strong>：同 <code class="c">user_data</code> 收到 NOTIF CQE 前，<strong>发送 buffer 不可复用/释放</strong>。</p>
+<h3>5.3 完成通知的内核侧链路（<code class="c">io_uring/notif.c</code>）</h3>
+<pre class="code" data-label="C"><code class="c">static void io_tx_ubuf_callback(struct sk_buff *skb, struct ubuf_info *uarg, bool success)
+{
+    if (refcount_dec_and_test(&amp;uarg-&gt;refcnt))
+        __io_req_task_work_add(notif, IOU_F_TWQ_LAZY_WAKE);   /* 挂 task_work */
+}
+</code></pre>
+<p>数据路径：<code class="c">io_send_zc()</code>（net.c:1110 附近）→ 检查 <code class="c">SOCK_SUPPORT_ZC</code> → <code class="c">io_sg_from_iter()</code> 把用户页直接填进 <code class="c">skb_shinfo()</code> 的 frags（<strong>零拷贝</strong>，<code class="c">SKBFL_MANAGED_FRAG_REFS</code> 管理引用）→ skb 被网卡发出并释放时，<code class="c">ubuf_info</code> 的析构回调（<code class="c">io_tx_ubuf_callback</code>）触发 → task_work 投递 NOTIF CQE。</p>
+<p><strong>协议支持</strong>（v6.6 核对）：<code class="c">SOCK_SUPPORT_ZC</code> 在 <code class="c">tcp_init_sock()</code>（tcp.c:462）和 <code class="c">udp_init_sock()</code>（udp.c:1582）<strong>无条件置位</strong>——TCP/UDP 都支持。UDP 的零拷贝有额外约束（页必须能作为 frag 组装，且历史上要求 MSG_MORE 场景才划算），TCP 是主场。</p>
+<h3>5.4 <code class="c">IORING_SEND_ZC_REPORT_USAGE</code>：识别「假零拷贝」</h3>
+<pre class="code" data-label="C"><code class="c">/* notif.c —— ext 回调里记账 */
+if (success &amp;&amp; !nd-&gt;zc_used)  WRITE_ONCE(nd-&gt;zc_used, true);
+else if (!success &amp;&amp; !nd-&gt;zc_copied) WRITE_ONCE(nd-&gt;zc_copied, true);
+/* 完成 CQE 里：IORING_NOTIF_USAGE_ZC_COPIED 标志 = 内核拷贝了数据 */
+</code></pre>
+<p>内核某些路径（如 TCP 重传时数据已变化、fastopen）会<strong>退化成拷贝</strong>。带 <code class="c">REPORT_USAGE</code> flag 后，NOTIF CQE 会告诉你这批数据是否真的零拷贝了——<strong>监控零拷贝真实命中率的开关</strong>。</p>
+<hr />
+<h2>6. 完整示例：multishot 收 + ZC 发的骨架</h2>
+<pre class="code" data-label="C"><code class="c">/* ── 初始化 ── */
+ring = io_uring_queue_init(4096, &amp;p /* SQPOLL|DEFER_TASKRUN|... */);
+io_uring_register_files(&amp;ring, fds, NFD);
+io_uring_register_buf_ring(&amp;ring, &amp;br, bgid=1);        /* ring-mapped 池 */
+
+/* ── 收：一次提交，常驻 ── */
+sqe = io_uring_get_sqe(&amp;ring);
+io_uring_prep_recv(sqe, md_fd, NULL, 0, 0);            /* 无 buffer 地址 */
+sqe-&gt;flags |= IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE;
+sqe-&gt;buf_group = 1;
+io_uring_sqe_set_flags_multishot(sqe);                 /* IORING_RECV_MULTISHOT */
+io_uring_submit(&amp;ring);
+
+/* ── 主循环 ── */
+while (1) {
+    io_uring_peek_batch_cqe(&amp;ring, cqes, 64);          /* 批量收 CQE */
+    for (each cqe) {
+        if (cqe-&gt;flags &amp; IORING_CQE_F_NOTIF) {         /* 发送完成通知 */
+            release_tx_buffer(cqe-&gt;user_data);     /* 页可复用了 */
+        } else if (cqe-&gt;flags &amp; IORING_CQE_F_BUFFER) { /* 收到行情包 */
+            buf = get_from_pool(cqe-&gt;flags &gt;&gt; 16);
+            handle_md(buf, cqe-&gt;res);              /* 解析+决策 */
+            maybe_send_order();                   /* ── 发：ZC ── */
+            return_buf_to_pool(buf);              /* 还池 */
+        }
+    }
+    io_uring_cq_advance(&amp;ring, n);
+}
+</code></pre>
+<p><strong>要点</strong>：<code class="c">res</code> 是实际字节数（不是 buffer 大小）；NOTIF CQE 和数据 CQE 用 flags 区分（同 user_data）；buffer 还池是显式的。</p>
+<hr />
+<h2>7. HFT 要点</h2>
+<ol>
+<li><strong>multishot + provided buffers + SOCK_NONEMPTY = 收包的标准形态</strong>：一次提交常驻、批内全收、无需重提——比「每包一提」的 epoll/传统 io_uring 少一个数量级的 SQE 管理</li>
+<li><strong><code class="c">IORING_CQE_F_MORE</code> 消失 = multishot 死了</strong>（多半是 buffer 池干），监控这个事件并重建</li>
+<li><strong>SEND_ZC 的 buffer 生命周期以 NOTIF CQE 为界</strong>——提前复用 buffer = 数据损坏，这是最隐蔽的坑</li>
+<li><strong>收方向零拷贝 v6.6 不存在</strong>，别被「io_uring 全零拷贝」的说法带偏；真需求上 AF_XDP</li>
+<li><strong>UDP + ZC 要实测</strong>：fastopen/重传路径会退化拷贝，用 <code class="c">REPORT_USAGE</code> 监控真实命中率</li>
+<li><strong>DEFER_TASKRUN 的收益是 cache 局部性</strong>不是系统调用数——多核部署时按「完成与处理同核」设计拓扑</li>
+</ol>
+<hr />
+<h2>8. 代码自测</h2>
+<details>
+<summary>Q1：multishot recv 的 CQE 里 flags 同时有 MORE 和 SOCK_NONEMPTY，分别承诺什么？</summary>
+<ul>
+<li><strong><code class="c">IORING_CQE_F_MORE</code></strong>：这个请求还活着，<strong>还会有后续 CQE</strong>——应用不需要（也不应该）重新提交 RECV</li>
+<li><strong><code class="c">IORING_CQE_F_SOCK_NONEMPTY</code></strong>：socket 接收队列里<strong>还有数据</strong>——源自 <code class="c">msg_inq</code>（recvmsg 的 in-queue 字节数，io_uring 侧 <code class="c">msg_get_inq=1</code> 请求，net.c:812/892）。内核用它决定<strong>立即重收</strong>（net.c:654：NONEMPTY 或 inq==-1 时 <code class="c">return false</code> 不退出收包循环）</li>
+</ul>
+<p>一个面向应用（别重提），一个面向内核（接着收）。</p>
+</details>
+<details>
+<summary>Q2：为什么 provided buffer 池干涸会杀死 multishot？</summary>
+<p><code class="c">io_recv_finish()</code> 的 multishot 分支里，<code class="c">io_fill_cqe_req_aux()</code> 失败（无法发「MORE」CQE，通常因 CQ 满或 buffer 不可用）时走到底部：<code class="c">*ret = IOU_STOP_MULTISHOT</code>，请求终结。</p>
+<p>原因：multishot 的持续完成依赖「每个包都有 buffer 可装 + 每个 CQE 都能发出 MORE 承诺」。池干了就装不了下一个包——与其静默丢包，<strong>不如杀掉 multishot 让应用显式感知</strong>（最后一个 CQE 无 MORE），走普通路径重新提交并补池。</p>
+<p>设计哲学：异步机制的失败要<strong>可观测</strong>，不能「看起来在跑实际在丢」。</p>
+</details>
+<details>
+<summary>Q3：SEND_ZC 的两个 CQE 中，哪个之后才能复用发送 buffer？</summary>
+<p><strong>第二个（带 <code class="c">IORING_CQE_F_NOTIF</code> 的）</strong>。</p>
+<ul>
+<li>CQE #1（无 NOTIF）：只表示数据已拷贝/引用进协议栈（<code class="c">res</code> = 提交字节数）——但零拷贝模式下数据<strong>还在你的 buffer 里</strong>（页被 pin 成 skb frag）</li>
+<li>CQE #2（NOTIF）：skb 已释放、<code class="c">ubuf_info</code> 析构回调已跑（<code class="c">io_tx_ubuf_callback</code>）、页解 pin——现在 buffer 真正自由了</li>
+</ul>
+<p>提前复用 = 网卡 DMA 读到的是新数据 = 报文损坏，且大概率不报错。这是 SEND_ZC 第一坑。</p>
+</details>
+<details>
+<summary>Q4：为什么说 <code class="c">IORING_CQE_F_SOCK_NONEMPTY</code> 化解了 epoll LT/ET 的经典难题？</summary>
+<p>epoll 的困境：</p>
+<ul>
+<li><strong>LT（水平触发）</strong>：队列非空就一直通知——收慢了 busy loop，收快了每包一次 epoll_wait 返回</li>
+<li><strong>ET（边缘触发）</strong>：只通知一次新到达——必须循环读到 EAGAIN，漏读就饿死</li>
+</ul>
+<p>根源：epoll 只告诉你「事件发生了」，不告诉你「队列还剩多少」。</p>
+<p>multishot 的答案：每个 CQE 附带 <code class="c">msg_inq</code>（内核精确知道队列剩余字节数），并据此<strong>内核自己决定继续收还是回等</strong>（net.c:654 的分支）。应用的语义退化为「来一个 CQE 处理一个」——既不 busy loop 也不会漏，<strong>状态机在内核里</strong>。</p>
+<p>这是「信息完备性」解决问题的教科书案例：epoll 难题不是调度问题，是信息问题。</p>
+</details>
+<details>
+<summary>Q5：UDP socket 用 SEND_ZC，什么情况下会退化成拷贝？怎么发现？</summary>
+<p>退化场景（skb 生命周期超出 buffer 安全期时的内核自救，如 fastopen 合并、某些分片路径）：内核把 frag 数据拷走，<code class="c">ubuf_info</code> 提前析构。</p>
+<p>发现手段：<code class="c">IORING_SEND_ZC_REPORT_USAGE</code> flag（sqe-&gt;ioprio 里设置）——<code class="c">io_tx_ubuf_callback_ext()</code> 记账 <code class="c">zc_used/zc_copied</code>，NOTIF CQE 的 res 带 <code class="c">IORING_NOTIF_USAGE_ZC_COPIED</code>（notif.c:18）。</p>
+<p><strong>HFT 实操</strong>：上线初期带 REPORT_USAGE 跑一段，确认 ZC 命中率；命中率低说明你的报文尺寸/协议路径不适合 ZC（小报文 ZC 收益本来就小——页 pin/管理开销可能超过一次拷贝）。</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-15.html#s-01">01-io-uring-net.md</a> — ring 结构与 opcode 全景</li>
+<li><strong>下一篇：</strong> <a href="chapter-15.html#s-03">03-io-uring-vs-epoll.md</a> — 与 epoll 的选型对比</li>
+<li><strong>相关：</strong> <a href="chapter-13.html#ch-13">chapter-13-zerocopy-highperf/</a> MSG_ZEROCOPY/sendmsg 体系（SEND_ZC 的前身） · <a href="chapter-06.html#ch-6">chapter-06-af-xdp/</a> 收方向零拷贝的真答案 · <a href="chapter-15.html#s-01">chapter-12 的 01</a> §2 DEFER_TASKRUN 的 setup 语义</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">03</div><h2>— io_uring vs epoll：事件模型与完成模型的账</h2></div>
+<blockquote>
+<p><strong>对应 Rosen:</strong> 无（epoll 见 Ch4 的 select/poll/epoll 演进）
+<strong>内核版本：</strong> epoll 2.6+；io_uring 5.1+，对比基于 <strong>v6.6</strong>（两侧机制见 <a href="chapter-15.html#s-01">01</a>/<a href="chapter-15.html#s-02">02</a>）
+<strong>方法论：</strong> 对比的不是 benchmark 数字，是<strong>每条路径的固定成本结构</strong>——数字随硬件变，结构不变</p>
+</blockquote>
+<h2>文档概述</h2>
+<p>本篇把「收一个行情包从到达 socket 到应用拿到数据」拆成两边各自的<strong>完整成本账单</strong>，然后给选型结论。</p>
+<hr />
+<h2>1. 两种模型的本质差异</h2>
+<pre class="code" data-label="code"><code class="c">epoll（事件模型 / readiness）：
+  epoll_wait() ─→ 「fd 42 可读了」 ─→ 应用调 recvmsg() ─→ 数据到手
+     系统调用 #1      只是通知                系统调用 #2      真正干活
+
+io_uring（完成模型 / completion）：
+  提交 RECV SQE（带 buffer） ─→ 内核异步收 ─→ CQE（数据已在你 buffer 里）
+     0 次系统调用（SQPOLL）                     应用只是消费结果
+</code></pre>
+<p><strong>本质</strong>：epoll 把「等待」和「操作」分成两个系统调用，每次都要进出内核；io_uring 把<strong>操作本身</strong>（不只是等待）搬进共享内存的提交/完成协议，让「进出内核」变成可选的优化项。</p>
+<h3>1.1 一次收包的完整账单（单连接，v6.6）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>维度</th>
-<th>io_uring 优势</th>
+<th>成本项</th>
+<th>epoll + recvmsg</th>
+<th>io_uring（SQPOLL + multishot）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>系统调用开销</td>
-<td>零（SQPOLL 模式）或 1 次/批（非 SQPOLL）</td>
+<td>唤醒等待</td>
+<td><code class="c">epoll_wait()</code> 阻塞/唤醒：1 次 syscall，进出内核</td>
+<td>自旋读 CQ 内存：0 次（或等待时 <code class="c">enter</code> 1 次）</td>
 </tr>
 <tr>
-<td>批量操作</td>
-<td>多个 recv/send 一次提交</td>
+<td>事件通知</td>
+<td>每次 epoll_wait 返回（批量可摊）</td>
+<td>每个 CQE 一次（CQ 批量读取可摊）</td>
 </tr>
 <tr>
-<td>异步等待</td>
-<td>不阻塞，CQ 通知完成</td>
+<td>读数据</td>
+<td><code class="c">recvmsg()</code>：1 次 syscall + 数据拷贝</td>
+<td>已在 provided buffer：只剩数据拷贝（同）</td>
 </tr>
 <tr>
-<td>零拷贝发送</td>
-<td>SEND_ZC（6.0+）</td>
+<td>提交下一个读</td>
+<td>无（LT 模式自动再通知）</td>
+<td><strong>无</strong>（multishot 常驻，<code class="c">MORE</code> 标志）</td>
+</tr>
+<tr>
+<td>LT/ET 语义坑</td>
+<td>有（busy loop 或漏读，见 <a href="chapter-15.html#s-02">02</a> Q4）</td>
+<td>无（<code class="c">SOCK_NONEMPTY</code> 内核自决策）</td>
+</tr>
+<tr>
+<td>buffer 交接</td>
+<td>recvmsg 参数里给</td>
+<td>provided 池自动 + CQE 报 id</td>
 </tr>
 </tbody>
 </table></div>
-<h2>io_uring vs epoll</h2>
+<p><strong>净差</strong>：epoll 路径每包（至少）2 次 syscall ≈ 2 × ~200-500ns（含 cache 污染更贵）；io_uring 热路径 <strong>0 次</strong>。注意这只是 syscall 差额——数据拷贝、协议栈成本两边相同。</p>
+<p><strong>量级直觉</strong>（不是结论，是校准）：syscall 进出 ~200-500ns，一次 1500B 拷贝 ~100ns，跨核 IPI ~1-2µs，线程唤醒 ~2-10µs。<strong>io_uring 省的是第一项；若你的瓶颈在唤醒或拷贝，io_uring 帮不了</strong>——先用 perf 看清再选。</p>
+<hr />
+<h2>2. 等待机制的三档</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>档位</th>
+<th>epoll</th>
+<th>io_uring</th>
+<th>延迟</th>
+<th>CPU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>阻塞等待</strong></td>
+<td><code class="c">epoll_wait</code> 睡眠</td>
+<td><code class="c">io_uring_enter(GETEVENTS)</code> 睡眠</td>
+<td>唤醒延迟 2-10µs</td>
+<td>~0</td>
+</tr>
+<tr>
+<td><strong>中断 + 自旋混合</strong></td>
+<td><code class="c">epoll_wait(timeout=0)</code> 轮询</td>
+<td>CQ tail 原子读自旋</td>
+<td>亚 µs</td>
+<td>中</td>
+</tr>
+<tr>
+<td><strong>全 busy poll</strong></td>
+<td><code class="c">SO_BUSY_POLL</code> + 空转 epoll_wait</td>
+<td>SQPOLL + CQ 自旋</td>
+<td>最低</td>
+<td>100%×核数</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>重要</strong>：busy polling 的收益不只在 syscall——<code class="c">SO_BUSY_POLL</code> 类机制让<strong>协议栈处理也在收包的同一核上立刻发生</strong>（避免 IPI 到别的核再处理）。io_uring 的 SQPOLL + NAPI busy poll（<code class="c">io_uring_register_napi</code>，6.6 支持）组合是把「收包处理+完成+应用」钉在一个核上的完整方案，这是 epoll 时代做不到的。</p>
+<hr />
+<h2>3. 多连接扩展性</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -538,150 +1080,152 @@ io_uring_register_buffers(ring, iovecs, N);
 </thead>
 <tbody>
 <tr>
-<td>事件模型</td>
-<td>事件通知（就绪后 read/write）</td>
-<td>完成模型（直接完成操作）</td>
+<td>每连接状态</td>
+<td>epoll_item + 应用侧 fd map</td>
+<td>SQE 常驻（multishot）+ user_data</td>
 </tr>
 <tr>
-<td>系统调用</td>
-<td>epoll_wait + read/write</td>
-<td>io_uring_enter（或 SQPOLL 零调用）</td>
+<td>万级连接的就绪扫描</td>
+<td>O(就绪数)（红黑树+就绪链表，本身不慢）</td>
+<td>O(完成数)（CQ 消费）</td>
 </tr>
 <tr>
-<td>数据拷贝</td>
-<td>read/write 仍需拷贝</td>
-<td>可配合零拷贝（SEND_ZC）</td>
+<td>批量操作</td>
+<td>一次 epoll_wait 返回 N 个事件，但<strong>每个还是要逐个 recv</strong></td>
+<td>一次提交 N 个操作 / 一次收 N 个 CQE，<strong>操作本身批量化</strong></td>
 </tr>
 <tr>
-<td>批量</td>
-<td>不支持</td>
-<td>一次提交多个操作</td>
-</tr>
-<tr>
-<td>复杂度</td>
-<td>低</td>
-<td>中</td>
+<td>fd 开销</td>
+<td>每连接一个 fd（epoll 本身 + 1）</td>
+<td>registered files 索引化，fd 压力更小</td>
 </tr>
 </tbody>
 </table></div>
-      </section>
-      <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">15</div><h2>— io_uring vs epoll：性能对比</h2></div>
-<blockquote>
-<p><strong>对应 Rosen:</strong> 无
-<strong>内核版本:</strong> epoll 2.6+；io_uring 5.1+</p>
-</blockquote>
-<h2>事件模型 vs 完成模型</h2>
-<p><strong>epoll（事件模型）：</strong></p>
-<pre class="code" data-label="code"><code class="c">epoll_wait() → 通知 socket 可读 → recvmsg() → 数据就绪
-     ↑ 系统调用 1              ↑ 系统调用 2
-</code></pre>
-<ul>
-<li>两次系统调用：epoll_wait + recvmsg</li>
-<li>epoll 只通知"可读"，实际读取仍需调用 recv</li>
-</ul>
-<p><strong>io_uring（完成模型）：</strong></p>
-<pre class="code" data-label="code"><code class="c">提交 recv SQE → 内核异步完成 → CQ 通知数据就绪
-  ↑ 0 次系统调用（SQPOLL）或 1 次
-</code></pre>
-<ul>
-<li>一次提交包含完整操作（recv），内核完成后通知</li>
-<li>SQPOLL 模式下零系统调用</li>
-</ul>
-<h2>性能对比（单连接）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>指标</th>
-<th>epoll + recvmsg</th>
-<th>io_uring (SQPOLL)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>系统调用数</td>
-<td>2（epoll_wait + recv）</td>
-<td>0（SQPOLL 自旋）</td>
-</tr>
-<tr>
-<td>延迟</td>
-<td>~1-2 μs</td>
-<td>~0.5-1 μs</td>
-</tr>
-<tr>
-<td>CPU 占用</td>
-<td>事件驱动（可休眠）</td>
-<td>100%（SQPOLL 线程）</td>
-</tr>
-</tbody>
-</table></div>
-<h2>性能对比（多连接）</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>连接数</th>
-<th>epoll 优势</th>
-<th>io_uring 优势</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>&lt; 100</td>
-<td>简单够用</td>
-<td>批量提交减少系统调用</td>
-</tr>
-<tr>
-<td>100-10000</td>
-<td>仍可接受</td>
-<td>批量优势明显</td>
-</tr>
-<tr>
-<td>&gt; 10000</td>
-<td>性能下降</td>
-<td>优势扩大</td>
-</tr>
-</tbody>
-</table></div>
-<h2>HFT 适用性</h2>
+<p><strong>连接数 &lt;100 的 HFT 行情机</strong>（典型形态）：两边的「扩展性」差异不重要——每连接几十 µs 级的调度抖动才是重点，io_uring 的确定性（无 syscall、无 LT/ET 语义、可 busy poll）是主要收益。</p>
+<p><strong>万级连接的网关形态</strong>：io_uring 的批量提交/完成（一次 enter 处理一批）省 syscall 摊销；epoll 的「N 事件 + N 次 recv」syscall 数随事件数线性涨。</p>
+<hr />
+<h2>4. 决策表（HFT 视角）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>场景</th>
 <th>推荐</th>
-<th>原因</th>
+<th>决定性理由</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>行情接收（少量连接）</td>
-<td>io_uring SQPOLL</td>
-<td>零系统调用，最低延迟</td>
+<td>行情接收（组播/TCP，10-1000 连接，延迟敏感）</td>
+<td><strong>io_uring</strong>：SQPOLL + multishot recv + provided buffers + DEFER_TASKRUN</td>
+<td>零 syscall + 批内全收 + 确定性调度</td>
 </tr>
 <tr>
-<td>交易发送（少量连接）</td>
-<td>io_uring SEND_ZC</td>
-<td>零拷贝 + 异步</td>
+<td>交易发送（小报文，微秒级）</td>
+<td><strong>io_uring</strong>：SEND（不必 ZC——小报文 pin 页不划算）+ 链接模式</td>
+<td>提交路径最短；ZC 只对大报文有意义</td>
 </tr>
 <tr>
-<td>管理通道（多连接）</td>
+<td>大报文发送（策略数据同步、快照推送）</td>
+<td><strong>io_uring SEND_ZC</strong> 或 MSG_ZEROCOPY</td>
+<td>拷贝成本超过 pin 管理成本</td>
+</tr>
+<tr>
+<td>管理通道（SSH/监控/日志，几百连接）</td>
+<td><strong>epoll</strong>（或阻塞 IO）</td>
+<td>延迟不敏感，epoll 生态成熟、代码简单</td>
+</tr>
+<tr>
+<td>与遗留框架共存</td>
 <td>epoll</td>
-<td>简单，不需要 100% CPU</td>
+<td>io_uring 重构是伤筋动骨（buffer 生命周期、错误处理全变）</td>
 </tr>
 <tr>
-<td>兼容性要求</td>
-<td>epoll</td>
-<td>io_uring 需 5.5+ 内核</td>
+<td>内核 &lt; 5.19</td>
+<td>epoll 或降级 io_uring（无 multishot）</td>
+<td>multishot/provided-ring 是 io_uring 网络真正好用的分水岭</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码复杂度对比</h2>
-<p>epoll 代码更简单，io_uring 需要：
-- 初始化 io_uring 实例 + 注册 buffer
-- 管理 SQE/CQE 生命周期
-- 处理 buffer recycling</p>
-<blockquote>
-<p>HFT 建议：行情/交易路径用 io_uring（SQPOLL + 零拷贝），管理通道用 epoll。</p>
-</blockquote>
+<p><strong>反直觉的两条</strong>：</p>
+<ol>
+<li><strong>小报文别用 SEND_ZC</strong>：一次 64B 报文的拷贝 ~几 ns，页 pin/unpin + notif 管理 ~百 ns 级——<strong>零拷贝比拷贝贵</strong>。ZC 的盈亏点在 KB 级以上</li>
+<li><strong>epoll 不会消失</strong>：io_uring 的复杂度（buffer 池管理、CQE 语义、setup flags 组合）是真实成本；延迟不敏感的代码用 epoll 写出来又快又稳</li>
+</ol>
+<hr />
+<h2>5. 迁移路径（epoll → io_uring）</h2>
+<pre class="code" data-label="code"><code class="c">阶段 0：perf 确认瓶颈在 syscall/唤醒（而不是拷贝/协议栈）——否则迁了白迁
+阶段 1：io_uring 默认模式替换 epoll_wait+recv
+        （行为等价：enter 提交+等待，完成=数据到手）—— 验证正确性
+阶段 2：multishot recv + provided buffer ring
+        （消掉每包重提交）—— 收包路径定型
+阶段 3：SQPOLL + DEFER_TASKRUN + registered files/buffers
+        （消掉 syscall + cache 局部性）—— 热路径定型
+阶段 4（可选）：SEND_ZC、链接模式、NAPI busy poll
+</code></pre>
+<p>每阶段都有明确的收益预期和验证手段（<code class="c">strace -c</code> 数 syscall、<code class="c">perf stat</code> 看 cache-miss、延迟直方图）。</p>
+<hr />
+<h2>6. HFT 要点</h2>
+<ol>
+<li><strong>对比的坐标系是成本结构</strong>：syscall 数、唤醒次数、拷贝字节数、cache 迁移距离——benchmark 数字会骗人（测试方法不同结果翻倍），结构不会</li>
+<li><strong>io_uring 的核心收益 = 消除 syscall + 消除语义坑</strong>（LT/ET、每包重提交），不是「更快的数据路径」——数据路径（协议栈+拷贝）两边一模一样</li>
+<li><strong>busy poll 是延迟的最后一级</strong>，io_uring 的 SQPOLL+NAPI 组合把「收包到应用」钉死单核，这是它对 epoll 的结构性优势</li>
+<li><strong>小报文 ZC 是负优化</strong>，盈亏点 KB 级</li>
+<li><strong>迁移看瓶颈</strong>：syscall 不占大头时，先解决拷贝（AF_XDP）或调度（绑核/隔离）</li>
+</ol>
+<hr />
+<h2>7. 代码自测</h2>
+<details>
+<summary>Q1：epoll LT 模式下收 10 个包（同时到达），最少几次系统调用？ET 模式呢？io_uring multishot 呢？</summary>
+<p>假设一次 epoll_wait 一次返回全部就绪事件（理想情况）：</p>
+<ul>
+<li><strong>epoll LT</strong>：1 次 epoll_wait（返回 1 个 fd 可读）+ 10 次 recvmsg（LT 下必须读到空，否则 epoll_wait 立即再返回）= <strong>11 次</strong>；若 epoll_wait 每次只报一次就绪，还会更多</li>
+<li><strong>epoll ET</strong>：1 次 epoll_wait + <strong>循环 recvmsg 直到 EAGAIN</strong> = 10 + 1 次（EAGAIN 那次）= 11-12 次，且漏读风险在自己</li>
+<li><strong>io_uring multishot（SQPOLL）</strong>：<strong>0 次系统调用</strong>——10 个 CQE 依次出现在 CQ ring（SOCK_NONEMPTY 驱动内核连收），应用自旋消费</li>
+</ul>
+<p>差异的本质：epoll 的「通知」和「读取」是两个 syscall；io_uring 的完成<strong>自带数据</strong>。</p>
+</details>
+<details>
+<summary>Q2：为什么说「io_uring 不是更快的数据路径」？</summary>
+<p>收包的协议栈成本（IP 解析 → UDP 查找 → socket 入队）和数据拷贝（skb → 用户 buffer），epoll 和 io_uring <strong>走的是完全相同的内核代码</strong>（<code class="c">udp_recvmsg</code> / <code class="c">tcp_recvmsg</code>）。</p>
+<p>io_uring 改变的是<strong>外围</strong>：怎么知道有数据（CQE vs epoll 事件）、怎么把数据交给应用（provided buffer vs recvmsg 参数）、要几次 syscall（0 vs 2+）。</p>
+<p>所以：<strong>syscall 占大头的场景</strong>（小包、高频、热 buffer 命中）io_uring 收益显著；<strong>拷贝或协议栈占大头的场景</strong>（大报文）收益有限，该去上 ZC/AF_XDP。</p>
+</details>
+<details>
+<summary>Q3：SO_BUSY_POLL 和 io_uring 的 SQPOLL 是一回事吗？</summary>
+<p><strong>不是，层次不同</strong>：</p>
+<ul>
+<li><code class="c">SO_BUSY_POLL</code>（socket 级）：让<strong>阻塞读/epoll</strong> 在队列空时代价高昂地轮询协议栈（避免中断驱动的唤醒延迟）</li>
+<li><code class="c">SQPOLL</code>（ring 级）：让<strong>内核线程</strong>轮询 SQ ring 看有没有新提交（消除提交 syscall）</li>
+</ul>
+<p>一个管「等数据」，一个管「交作业」。HFT 的完整组合是两者叠加：SQPOLL 消提交 syscall + NAPI/io_uring busy poll 消收包唤醒延迟（<code class="c">io_uring_register_napi</code>）——全部代价是烧 CPU 换延迟确定性。</p>
+</details>
+<details>
+<summary>Q4：64 字节的交易报文，用 SEND 还是 SEND_ZC？</summary>
+<p><strong>SEND（普通）</strong>。</p>
+<p>成本对比（64B 报文）：
+- 拷贝 64B：~几 ns（一条 cache line 都不到）
+- ZC 路径：页 pin、<code class="c">ubuf_info</code> 管理、notif 请求分配、第二个 CQE 的排队与消费、页解 pin——<strong>百 ns 级固定成本</strong></p>
+<p>ZC 的盈亏平衡在<strong>KB 级</strong>报文（拷贝成本线性涨，ZC 固定成本不涨）。64B 场景强行 ZC 是负优化——而且交易报文最重要的是<strong>发送路径的确定性</strong>，普通 SEND 的同步快路径（数据就绪即完成）恰恰最短最稳。</p>
+</details>
+<details>
+<summary>Q5：什么信号说明该从 epoll 迁 io_uring？什么信号说明不该迁？</summary>
+<p><strong>该迁</strong>（满足任一）：
+- <code class="c">strace -c</code> 显示 syscall 时间占比 &gt;10-15%（epoll_wait+recv 的进出内核成为大头）
+- 延迟直方图右尾由唤醒抖动主导（跨核 IPI、调度延迟——DEFER_TASKRUN + busy poll 能压）
+- 需要批内聚合语义（一批到达的包一次处理），epoll LT 的 busy 风险和 ET 的漏读风险都不可接受</p>
+<p><strong>不该迁</strong>：
+- 瓶颈在数据拷贝（大报文）——去解决拷贝（ZC/AF_XDP），迁 io_uring 是白折腾
+- 管理面代码（延迟不敏感）——epoll 生态成熟、可维护性好
+- 团队没有带宽驾驭 buffer 生命周期管理（provided 池、NOTIF 语义）——写错的 io_uring 比写对的 epoll 慢
+- 内核 &lt; 5.19——没有 multishot/provided-ring 的 io_uring 网络是残血版</p>
+</details>
+<hr />
+<h2>导航</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="chapter-15.html#s-02">02-io-uring-net-lwn.md</a> — multishot / provided buffers / SEND_ZC 的机制细节</li>
+<li><strong>相关：</strong> <a href="chapter-13.html#ch-13">chapter-13-zerocopy-highperf/</a> 零拷贝体系（ZC 盈亏点的另一侧） · <a href="chapter-06.html#ch-6">chapter-06-af-xdp/</a> 收方向零拷贝 · <a href="chapter-15.html#ch-15">chapter-15-debugging-perf-tuning/</a> 延迟测量方法</li>
+<li><strong>章节主页：</strong> <a href="#intro">README</a></li>
+</ul>
       </section>
 
 
