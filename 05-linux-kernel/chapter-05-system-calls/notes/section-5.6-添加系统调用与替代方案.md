@@ -36,7 +36,29 @@
 
 > **工程准则：尽量不要新增自定义系统调用。**
 
-**HFT 工程：** 生产 rarely 改内核 syscall；调优多用 **已有接口**（`epoll`、`mmap`、`setsockopt`、netlink）或 **内核模块 / 驱动**。
+#### 「刻在石头上」有多硬：ABI 永久性案例
+
+| 案例 | 说明 |
+|------|------|
+| 参数语义不能改 | 一旦发布，`copy_from_user` 的字段布局就冻结——后来发现设计错了只能**新增**调用再废弃旧的（`epoll`→`epoll_pwait2` 这类后缀就是这么来的） |
+| 编号永不复用 | syscall 表只增不减；被废弃的号**空着**也不给新调用用——旧二进制兼容性优先 |
+| 修 bug 都要克制 | 行为变化可能破坏依赖旧 bug 的用户态——内核史上多次"修 bug 引发故障"后回退 |
+
+> 这就是内核对新增 syscall 极度吝啬的原因：**每加一个都是一份永久维护合同**。主线一年新增 syscall 个位数。
+
+#### 替代方案选型决策表
+
+| 需求特征 | 首选 | 理由 |
+|----------|------|------|
+| 驱动配置/命令 | **ioctl** | 命令码空间自管；无 ABI 全局占用；**缺点**：无类型安全、每命令一个码 |
+| 内核⇄用户态**异步事件流** | **Netlink** | 双向、多播、可阻塞可轮询；conntrack/路由表变更通知全走它 |
+| 简单参数读写 | **sysfs**（模块属性） | `echo 1 > /sys/module/xxx/parameters/yyy`——一行 shell 即测试 |
+| 观测/策略可编程 | **eBPF** | 不改内核即可注入逻辑（[06.7 模块](../../../06.7-bpf-observability/)全书） |
+| 大块数据流 | 字符设备 read/write | 天然走 VFS 缓冲语义 |
+
+> ioctl vs netlink 的经典取舍：ioctl **同步一问一答**、零开销起步但扩展性差；netlink **异步事件驱动**、支持多播但解析复杂（netlink 消息要手写头）。历史上 iproute2 从 ioctl 迁到 netlink（`ifconfig`→`ip`）正是一次"配置量爆炸后被迫换通道"的实例。
+
+**HFT 工程：** 生产 rarely 改内核 syscall；调优多用 **已有接口**（`epoll`、`mmap`、`setsockopt`、netlink）或 **内核模块 / 驱动**。自研低延迟数据通路的首选组合：**字符设备 + mmap 零拷贝区 + ioctl 控制面**（控制走 ioctl、数据走映射页、事件走轮询）——DPDK 的 `/dev/uio` 与 VFIO 就是这个模板的工业化版本。
 
 → 收官：[Ch 20 补丁与社区](../../chapter-20-patches-community/) · [P3.5 BusyBox 实操](../../../projects/P3.5-busybox-minimal-linux/) · 回 [§5.1](./section-5.1-与内核通信.md)
 
