@@ -24,7 +24,7 @@ DMA = **硬件自己搬运内存数据，CPU 不亲自拷贝**。本章是低延
 | 前置 | DMA 基础（搬运机制 / 地址空间 / 两种模式） | **精读** | ✅ [12.0 扩展精读](./12.0-dma-fundamentals.md) |
 | 12.1 | 缓存一致性 | **精读（低延迟）** | ✅ [12.1 扩展精读](./12.1-cache-coherence.md) |
 | 12.2 | 一致性 / 流式映射 | **精读** | ✅ [12.2 扩展精读](./12.2-coherent-streaming-mappings.md) |
-| 12.3 | scatter/gather | 精读 | 待填 |
+| 12.3 | scatter/gather | 精读 | ✅ [12.3 扩展精读](./12.3-scatter-gather.md) |
 | 12.4 | DMA Engine | 精读 | 待填 |
 | 12.5 | DTS 绑定 DMA | 精读 | 待填 |
 
@@ -36,9 +36,10 @@ DMA = **硬件自己搬运内存数据，CPU 不亲自拷贝**。本章是低延
 
 - 无 / 有 DMA 全流程（ASCII 图，下沉到指令层：PIO `in/out`、MMIO `load/store`）
 - ⭐ "终点都是内存"洞察与误区澄清（不走 CPU 寄存器流水线 ≠ 不走内存）
+- ⭐ "DMA 是谁在跑"三段角色拆解（配置 CPU 忙 / 搬运硬件自发 / 完成中断唤起）+ 控制器**两种硬件形态**表（集中式 bcm2835 控制块链 vs 网卡内嵌总线主控描述符环）+ 网卡真实链路三步（中断只是信号不含数据；DPDK 省的是中断+轮询）
 - DMA 地址 ≠ 虚拟地址（`dma_handle` 是总线地址；IOMMU 平台上 = IOVA ≠ 物理地址，按 v6.6 `dma-api.rst` 核对修正）
 - coherent vs streaming 两模式对比、`copy_from_user` vs DMA 对比
-- HFT / 嵌入式关联、`dma_alloc_coherent` 描述符环代码骨架、自测 4 问
+- HFT / 嵌入式关联、`dma_alloc_coherent` 描述符环代码骨架、自测 6 问
 
 **[12.1-cache-coherence.md](./12.1-cache-coherence.md)** — 缓存一致性：
 
@@ -54,6 +55,15 @@ DMA = **硬件自己搬运内存数据，CPU 不亲自拷贝**。本章是低延
 - 方向枚举表与 BIDIRECTIONAL 双 sync 规则、`dma_mapping_error` 错误检查（不能只判 0）
 - ⭐ `dma_need_sync()` 官方接口（v6.6 实现链：mapping.c:822 → direct.c:610，x86 几乎恒 false，唯一例外 swiotlb）
 - 收包路径完整生命周期伪代码（howto 精简）+ coherent 映射仍需 wmb() 的顺序性陷阱、自测 3 问
+
+**[12.3-scatter-gather.md](./12.3-scatter-gather.md)** — scatter/gather：
+
+- 动机：`dma_map_single` 物理连续硬约束 vs 散页现实（page cache/碎片化/jumbo frame）；scatter/gather 名字两半的方向语义
+- ⭐ `struct scatterlist` 真身（v6.6 :11）与 `page_link` 低 2 位复用图（SG_CHAIN/SG_END——无 next 指针的链表实现）
+- `dma_map_sg` 返回值语义（实际段数可小于 nents、相邻合并、失败返回 **0**）+ "映射破坏 sg 信息、不能 map 两次"陷阱
+- ⭐ `dma_unmap_sg` 的 nents 陷阱（必须传原始值而非 count，文档加粗 note）——与 12.2 "unmap 参数逐项一致"同一条纪律
+- `struct sg_table` 的 nents vs orig_nents 两个视角 + 配套遍历宏（for_each_sgtable_sg/dma_sg）
+- 非连续分配族（`dma_alloc_noncontiguous` 保证 DMA 侧 1 段 + vmap/mmap 系列）、API 速查表、自测 5 问
 
 ---
 
