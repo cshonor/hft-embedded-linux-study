@@ -24,6 +24,37 @@ bpftrace -e 'tracepoint:syscalls:sys_enter_openat
 
 （练习可用 bpftrace 或 BCC 完成。）
 
+### 参考骨架
+
+**练习 1/2（同一模式：给既有工具加 nodename 键）**——以 opensnoop 为例，改动只在事件处理块加一行取键：
+
+```bash
+bpftrace -e '
+#include <linux/nsproxy.h>
+#include <linux/utsname.h>
+tracepoint:syscalls:sys_enter_open
+{
+    $uts = ((struct task_struct *)curtask)->nsproxy->uts_ns;
+    @[str($uts->name.nodename), comm] = count();   // 或并入原输出列
+}'
+```
+
+要点：①`#include` 让 BTF 解析结构体链 nsproxy→uts_ns→name；②nodename 是 char 数组要 str() 截断；③pidns 版换 `pid_ns_for_children->ns.inum`（数值键不用 str）。runqlat 同理把 `@start[tid]` 之外多存一份 nodename（或输出时反查）。
+
+**练习 3（memcg 换出计数）**：
+
+```bash
+bpftrace -e '
+#include <linux/memcontrol.h>
+kprobe:mem_cgroup_swapout
+{
+    $memcg = (struct mem_cgroup *)arg1;    // 签名以目标内核源码为准
+    @[ $memcg->css.id ] = count();         // css.id = cgroup ID（blkthrot 同款键）
+}'
+```
+
+要点：①css.id 提取模板直接复用 15.3.3 blkthrot 的写法；②arg 位置必须先查当前内核的 mem_cgroup_swapout 签名（kprobe 无契约，见 1.7）；③要区分"换出是因为 memcg limit 还是全局内存压力"，加对 `try_to_free_mem_cgroup_pages` 的栈归因（stackcount）更完整。
+
 ## HFT 关联
 
 - cgroupid() 过滤单行可作模板：K8s 上按 cgroup（pod）过滤任何系统调用的通用套路，比 pidns 过滤更贴近 K8s 的资源模型（cgroup v2）

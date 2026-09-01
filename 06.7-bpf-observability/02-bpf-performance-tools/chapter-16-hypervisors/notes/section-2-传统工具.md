@@ -51,4 +51,10 @@
 2. `perf kvm stat live` 示例中为什么 HLT 的最大时间最长且时间占比最高？
 3. BPF 版 kvmexits 相比 perf kvm stat 的主要优势是什么？
 
+<details><summary>参考答案</summary>
+
+1. `xl top`（资源使用概览）与 `xentrace`（事件跟踪）。
+2. HLT = 访客 vCPU 空闲时主动 halt 等中断——**空闲本身就是"退出直到下次中断"**，所以单次 halt 可以持续到 100ms 级（等定时器/网络中断唤醒），时间占比自然最高（99.63%）。这是正常现象不是问题；真正要盯的是 IO_INSTRUCTION / EPT_VIOLATION / PREEMPTION_TIMER 这类非空闲退出。
+3. **完整延迟直方图**（分布形态可见）vs min/avg/max 三值汇总——多峰/长尾在 avg 里完全不可见，直方图一眼看出（对照 argdist 的均值失明三例）。且 kvmexits 用跟踪点对（kvm_exit/kvm_entry）而非 perf 采样，不受采样偏差影响。
+</details>
 </details>

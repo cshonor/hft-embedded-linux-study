@@ -39,4 +39,9 @@
 1. 本章 BPF 工具分别覆盖了访客系统与宿主机的哪三类信息？
 2. xenhyper 与 kvmexits 在实现上的共同"模式"是什么？各自的映射表来自哪个头文件？
 
+<details><summary>参考答案</summary>
+
+1. 超级调用（xenhyper 计数/funclatency 延迟/stackcount 来源）、被盗用 CPU 时间（cpustolen 差值直方图）、VM 退出（kvmexits 按原因直方图，宿主机侧）。
+2. **手写编号→名称映射表**：跟踪点/kprobe 只给数字编号（hypercall 号、exit reason 号），内核不提供符号——从内核头文件抄录成 @name[N] 哈希，随内核版本手动维护。xenhyper 用 xen-hypercalls.h（0..33），kvmexits 用 vmx.h 的 exit reason（0..58）。这也是 11 章 eperm 读 sys_call_table 的对照：那边让内核自己翻译，这边只能人肉维护。
+</details>
 </details>
