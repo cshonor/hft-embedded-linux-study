@@ -564,6 +564,93 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<h4><code class="c">gfp_mask</code>：上下文决定你<strong>能不能等</strong></h4>
+<p><code class="c">kmalloc(size, gfp_mask)</code> 的第二参数不是装饰——它声明"<strong>此刻允许内核做什么来凑内存</strong>"：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>gfp_mask</th>
+<th>能否睡眠/触发回收</th>
+<th>允许的上下文</th>
+<th>失败时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">GFP_KERNEL</code></td>
+<td>✓ 可睡眠（直接回收、换出）</td>
+<td><strong>进程上下文</strong></td>
+<td>重试后仍 NULL</td>
+</tr>
+<tr>
+<td><strong><code class="c">GFP_ATOMIC</code></strong></td>
+<td>✗ <strong>绝不睡眠</strong>（只从预留水位掏）</td>
+<td><strong>中断 / softirq / 持 spinlock</strong></td>
+<td>高水位线以下直接 <strong>失败返回 NULL</strong></td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOWAIT</code></td>
+<td>✗ 不睡但可轻微回收</td>
+<td>不能睡又要尽力</td>
+<td>NULL</td>
+</tr>
+<tr>
+<td><code class="c">GFP_DMA / GFP_DMA32</code></td>
+<td>限地址范围</td>
+<td>老式设备 DMA</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>为什么 GFP_ATOMIC 更容易失败</strong>：它不许触发磁盘回收（睡眠），只能从 <code class="c">min_watermark</code> 以下的<strong>紧急预留</strong>里掏——所以中断路径的分配失败要先想到"预留水位不够"，而不是"内存真没了"。<code class="c">/proc/zoneinfo</code> 的 <code class="c">min</code> 与 <code class="c">VM event: pgalloc</code> 排查。（预留大小可由 <code class="c">watermark_scale_factor</code> 调节。）</p>
+</blockquote>
+<pre class="code" data-label="code"><code class="c">        进程上下文 ──► GFP_KERNEL ──► 可回收/可睡眠 → 尽力成功
+中断/softirq/持spin ──► GFP_ATOMIC ──► 只碰预留水 → 容易失败
+</code></pre>
+<h4>内核页为何<strong>不可换出</strong>：自举死锁</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>链条</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>换出一页需要</td>
+<td>把它写到 <strong>swap 设备</strong> → 需要 <strong>I/O</strong></td>
+</tr>
+<tr>
+<td>执行 I/O 需要</td>
+<td><strong>内核代码在物理内存里</strong>运行（驱动、块层）</td>
+</tr>
+<tr>
+<td>若内核页自己被换出</td>
+<td>取回它又要执行<strong>换入代码</strong>——<strong>换入代码在哪个页里？</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>→ <strong>内核文本/核心数据常驻物理内存</strong>（<code class="c">_text.._end</code> 永久 resident）；换出机制是为用户页发明的，内核页直接豁免。代价：内核内存泄漏<strong>无法靠重启进程治愈</strong>，只能重启机器——这也是"内存泄漏在服务器上比在桌面更致命"的内核侧根源。</p>
+<h4>地址空间布局：内核与用户怎么分家</h4>
+<pre class="code" data-label="code"><code class="c">32 位经典（LKD3rd 时代，3:1 split）：
+ 0x00000000 ┌──────────────┐
+            │  用户空间 3GB │  每进程独立
+ 0xBFFFFFFF ├──────────────┤
+            │  内核空间 1GB │  所有进程共享同一份映射
+ 0xFFFFFFFF └──────────────┘
+              ↑ 直接映射区（PAGE_OFFSET 起）：物理内存线性映进来
+              ↑ vmalloc 区 / kmap 区（HIGHMEM 时代的伤疤）
+
+64 位（x86-64 现行）：
+ 0xFFFF8000_00000000 起 = 内核空间（128TB）
+   ├ 直接映射区 page_offset_base
+   ├ vmalloc/modules/bpf 区……
+ 用户空间可达 128TB —— HIGHMEM 概念整体作废（12.9 节的历史包袱）
+</code></pre>
+<blockquote>
+<p><code class="c">HIGHMEM</code>（12.9 节）只在 32 位有意义：1GB 内核窗口装不下几十 GB 物理内存，才需要 <code class="c">kmap</code> 临时映射。64 位上直接映射区大到覆盖全部物理内存——<strong>读 12.9 时把它当历史课</strong>。</p>
+</blockquote>
 <h4>本章 API 地图（先览）</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -614,6 +701,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>1) 内核不能用 malloc，用 kmalloc/vmalloc；2) 内核分配受 gfp_mask 约束（能否阻塞、能否等待 IO）；3) 内核分配失败不能返回 NULL 给用户（要正确处理 ENOMEM）；4) 内核分配在中断上下文中不能睡眠（GFP_ATOMIC）；5) 内核内存需要考虑 DMA 约束（物理连续、32 位地址限制）。</p>
+</details>
+<p><strong>Q2.</strong> 内核页为什么不能被换出（swap）？</p>
+<details>
+<summary>答案</summary>
+<p>自举死锁：换出需要写 swap 设备（I/O），执行 I/O 的内核代码自身必须在物理内存中；若内核页被换出，取回它的换入代码同样在（可能被换出的）内核页里——鸡生蛋死锁。所以内核文本与核心数据常驻物理内存，<code class="c">_text.._end</code> 区间永久 resident。推论：内核内存泄漏无法通过杀进程回收（不像用户进程退出即回收 VMA），只能重启机器。</p>
+</details>
+<p><strong>Q3.</strong> 中断处理程序里 <code class="c">kmalloc(size, GFP_KERNEL)</code> 会怎样？应该用什么？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">GFP_KERNEL</code> 允许睡眠（直接回收可能等 I/O），而中断上下文无"当前进程"可挂起——睡眠 = panic/调度 bug。必须用 <code class="c">GFP_ATOMIC</code>：只从紧急预留水位分配、绝不睡眠；代价是高负载下更容易返回 NULL，调用者必须检查。若中断里频繁分配失败，正确解法通常不是调大预留，而是<strong>把分配挪出中断</strong>（softirq/workqueue 里用 GFP_KERNEL 分配，中断上半部只入队）。</p>
 </details>
 </details>
 <hr />

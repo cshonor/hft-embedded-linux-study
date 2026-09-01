@@ -900,7 +900,106 @@ mutex（本 CPU 持锁且睡眠）：
         └─ sleep 唤醒后的竞争者 ────┘
 </code></pre>
 <p><strong>内核开发者：</strong> 写每一行访问共享数据时，问：<strong>五种来源里谁会同时碰到这里？</strong></p>
-<p>→ 01 Day 14 临界区</p>
+<h4>真伪并发教学例</h4>
+<pre class="code" data-label="code"><code class="c">真并发（SMP）：
+  CPU0: 中断处理程序改 dev-&gt;stats        CPU1: 进程上下文读 dev-&gt;stats
+  ───────────── 同一纳秒 ─────────────►  两者物理同时进行
+
+伪并发（单 CPU）：
+  进程 A: stats.count++（已读入寄存器，还没写回）
+      ▲ 被中断打断
+      └──► IRQ handler: stats.count++（完整读-改-写）
+  中断返回，A 写回寄存器旧值 + 1      ←── handler 的更新被覆盖丢失
+</code></pre>
+<p><strong>关键</strong>：<code class="c">count++</code> 在 CPU 眼里是 load/add/store 三条指令——<strong>任何两条指令之间都可能切走</strong>。伪并发丢更新与真并发丢更新的<strong>结果一模一样</strong>，所以单核机器同样需要同步（这是"单核不需要锁"这个流传甚广误解的来源——错在忘了中断）。</p>
+<h4>历史视角：并发源是逐个冒出来的</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时期</th>
+<th>存在的并发源</th>
+<th>当时的同步压力</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期单核 Linux（1.x）</td>
+<td>只有 <strong>中断</strong></td>
+<td>主要防 IRQ：<code class="c">cli/sti</code>（关中断即万事大吉）</td>
+</tr>
+<tr>
+<td>2.x 加入 <strong>SMP</strong></td>
+<td>+ 真并发</td>
+<td>自旋锁登场（关中断不够了——别的 CPU 照跑）</td>
+</tr>
+<tr>
+<td>2.6 加入<strong>内核抢占</strong></td>
+<td>+ 抢占</td>
+<td>单核上进程上下文之间也会交错</td>
+</tr>
+<tr>
+<td>现代 + threaded IRQ / softirq 繁荣</td>
+<td>五源齐备</td>
+<td>分层锁、per-CPU、无锁结构</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>LKD3rd 强调：<strong>"two tasks can be concurrently executing in this manner"（伪并发）这句话定义了为什么单处理器系统也需要同步</strong>——不是历史遗迹，是每一代新人必踩的坑。</p>
+</blockquote>
+<h4>「谁防谁」速查矩阵（Ch 10 预习）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>同步手段</th>
+<th style="text-align: center;">防 SMP</th>
+<th style="text-align: center;">防硬中断</th>
+<th style="text-align: center;">防 softirq</th>
+<th style="text-align: center;">防抢占</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">preempt_disable()</code></td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code class="c">local_irq_disable()</code></td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓（本 CPU）</td>
+<td style="text-align: center;">✓（本 CPU）</td>
+<td style="text-align: center;">✓（顺带，关中断期间不会调度）</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock()</code></td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓（spinlock 隐含禁抢占）</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock_irqsave()</code></td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code class="c">local_bh_disable()</code></td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓（本 CPU）</td>
+<td style="text-align: center;">✓</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>记忆锚点：<strong><code class="c">spin_lock</code> 只防"人"，不防"异步"</strong>——中断/软中断不属于任何进程，抢占计数对它们无效。所以中断处理程序会碰的数据必须 <code class="c">spin_lock_irqsave</code>。</p>
+</blockquote>
+<p>→ 01 Day 14 临界区 · <a href="chapter-10.html#ch-10">Ch 10 各锁详解</a></p>
 <h3>常见陷阱</h3>
 <ol>
 <li>以为只有多 CPU 才有并发——中断、抢占、softirq 都是并发来源</li>
@@ -924,6 +1023,11 @@ mutex（本 CPU 持锁且睡眠）：
 <details>
 <summary>答案</summary>
 <p>用户态并发来源：① 多线程（pthread）。② 信号处理函数。③ atexit/fork handlers。④ 多进程共享内存。用户态不能禁中断/禁抢占（需要 root + 内核模块），所以用：① <code class="c">std::atomic</code> 无锁同步。② <code class="c">std::mutex</code>（futex）。③ <code class="c">pthread_cancel</code> 屏蔽。④ 共享内存 + 原子操作。HFT 热路径只用无锁设计。</p>
+</details>
+<p><strong>Q4.</strong> 数据只被本 CPU 的进程上下文和硬中断共享（无 SMP 情况、softirq 不碰它），最小开销的正确保护是什么？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">spin_lock_irqsave()</code>（或更精细：仅在进程上下文与 IRQ 都会碰的那一小段用 <code class="c">local_irq_disable()</code> + 数据自身无需锁——单 CPU 上关中断后中断与抢占都进不来）。错误答案 <code class="c">spin_lock()</code>：spinlock 防不了硬中断——持锁进程被中断打断，IRQ handler 再去 <code class="c">spin_lock()</code> 同一把锁 = <strong>在持锁者暂停期间自旋等自己</strong>，单核死锁。这正是"spin_lock 只防人不防异步"的典型翻车现场。</p>
 </details>
 </details>
 <hr />
