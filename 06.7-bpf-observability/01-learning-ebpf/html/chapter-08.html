@@ -353,8 +353,99 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>TC 收到的是 <code class="c">sk_buff</code></strong>：内核已解析过包头，含元数据（mark、优先级等），改动更方便但位置更靠后、开销更大</li>
 <li>同一功能往往两层都能做：DDoS 丢包放 XDP（早丢省 CPU），精细策略放 TC（信息全）</li>
 </ul>
+<h3>从 DMA 到 XDP：一个包的完整前置链路与分工</h3>
+<p>无论普通路径还是 XDP 路径，<strong>物理上都以同一步开头：网卡 DMA 把包写进内存</strong>。XDP 改变的不是搬运方式（那是 DMA 的活），而是<strong>决策位置</strong>：</p>
+<pre class="code" data-label="code"><code class="c">【普通路径】                     【XDP 路径（native）】
+网卡 DMA 写内存（RX 环缓冲区）    网卡 DMA 写内存（相同）
+        ↓                                ↓
+中断 → 内核收包                   NAPI poll 读 RX 环描述符
+        ↓                                ↓
+分配 sk_buff（封装+元数据）         构造 xdp_buff（栈上，零分配）
+        ↓                                ↓
+协议栈逐层解析（tc/iptables 等）   ★ XDP 程序决策 ← 就在这
+        ↓                                │
+     应用                        PASS → 建 sk_buff → 协议栈
+                                 DROP/其他 → skb 从未存在
+</code></pre>
+<p><strong>DMA 与 XDP 的分工</strong>（本仓库两条线的接口）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>职责</th>
+<th>不管什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>DMA</strong>（硬件 + 驱动配置）</td>
+<td>把数据从网卡<strong>搬进内存</strong>（数据搬运）</td>
+<td>不做任何内容决策</td>
+</tr>
+<tr>
+<td><strong>XDP</strong>（eBPF 程序）</td>
+<td>数据<strong>已在内存后</strong>的第一个可编程决策点</td>
+<td>不配置/不触发 DMA——那是驱动初始化的活</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>XDP 不会帮网卡配 DMA：RX 环、缓冲区、DMA 地址注册都是驱动的事（详见
+  <a href="../../../09-device-drivers-dt/modern-driver-practice/html/chapter-12.html#s-12-0">09-device-drivers-dt Ch12 DMA</a>）</li>
+<li><strong>"XDP 快"是两个省法叠乘</strong>：DMA 让 CPU 不搬运 + XDP 让无关包不建 skb 不进协议栈——
+  HFT 收行情链路的延迟与 CPU 占用从这两处一起省</li>
+</ul>
 <hr />
 <h2>8.2 XDP（eXpress Data Path）</h2>
+<h3>2.0 概览：定义、三种运行模式与"它不是事件源"</h3>
+<p><strong>XDP（eBPF eXpress Data Path）= 挂在网卡收包路径最早点的 eBPF 程序</strong>，
+Linux <strong>4.8</strong> 引入（v4.8 <code class="c">include/uapi/linux/bpf.h:97</code> 已有 <code class="c">BPF_PROG_TYPE_XDP</code>，已核对）。
+同一程序类型有三种运行模式，<strong>本质区别就一条：程序在 sk_buff 创建之前还是之后运行</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>挂载点</th>
+<th>sk_buff 创建时机</th>
+<th>性能</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Native（DRV）</strong></td>
+<td>驱动收包路径（NAPI poll 内）</td>
+<td>XDP <strong>之后</strong>（PASS 才建）</td>
+<td>快，生产目标</td>
+<td>生产环境</td>
+</tr>
+<tr>
+<td><strong>Generic（SKB）</strong></td>
+<td><code class="c">__netif_receive_skb_core()</code>（dev.c:5373）</td>
+<td>XDP <strong>之前</strong>（已建好）</td>
+<td>慢，可能补拷贝</td>
+<td>功能验证；驱动不支持时</td>
+</tr>
+<tr>
+<td><strong>Offloaded（HW）</strong></td>
+<td>网卡固件内（2.6 节）</td>
+<td>包不进主机内存</td>
+<td>最快 + 零 CPU</td>
+<td>SmartNIC</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>native 之前 → 省 skb + 省协议栈；generic 之后 → 什么都不省，只是多了个决策点</li>
+<li>⚠️ <strong>加载时不指定模式可能静默降级到 generic</strong>：程序照跑、性能归零。加载后必须确认
+  实际模式（模式选择与排障详见
+  <a href="../../../12.5-modern-networking/html/chapter-15.html#s-01">12.5-modern-networking Ch05/01</a>）</li>
+</ul>
+<p><strong>XDP 不是"第 6 种事件源"</strong>：tracepoint/kprobe/uprobe 等是<strong>事件源</strong>——内核某处发生了一件事，
+通知挂着的程序（第 7 章 attach 类型）；XDP 是<strong>数据路径</strong>上的独立程序类型
+（<code class="c">BPF_PROG_TYPE_XDP</code>，区别于 <code class="c">BPF_PROG_TYPE_TRACEPOINT/KPROBE</code>）。语义差异：
+事件可订阅可不订阅，而挂了 XDP 程序的接口<strong>每个包必经一次决策</strong>——
+它响应的不是"某事件发生了"，而是"每来一个包"。</p>
 <h3>2.1 五种返回码</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -387,13 +478,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tbody>
 </table></div>
 <h3>2.2 上下文：<code class="c">struct xdp_md</code></h3>
-<pre class="code" data-label="C"><code class="c">struct xdp_md {
+<pre class="code" data-label="C"><code class="c">struct xdp_md {             /* v6.6 共 6 个字段（已核对 uapi bpf.h） */
     __u32 data;         // 包数据起始（以太网头开始）
     __u32 data_end;     // 包数据结束
     __u32 data_meta;    // 包前可写的元数据区，供后续层（如 TC）读取
     __u32 ingress_ifindex;
+    __u32 rx_queue_index;   // 收包硬件队列号（每队列过滤/统计）
+    __u32 egress_ifindex;   // 发出网口（XDP_TX 场景）
 };
 </code></pre>
+<p>（原笔记只列了前 4 个字段；按 v6.6 <code class="c">include/uapi/linux/bpf.h</code> 补全后两个。）</p>
 <p>没有 <code class="c">len</code> 字段——长度就是 <code class="c">data_end - data</code>。</p>
 <h3>2.3 包解析范式（边界检查是验证器硬性要求）</h3>
 <pre class="code" data-label="C"><code class="c">unsigned char lookup_protocol(struct xdp_md *ctx) {
@@ -455,6 +549,57 @@ return XDP_TX;
 <li>效果：主机 CPU 零开销——包在进入主机内存之前就被处理/丢弃</li>
 <li>限制：能用的 helper 子集更小；某些返回码（如涉及 map 重定向的操作）取决于驱动支持</li>
 </ul>
+<h3>2.7 XDP vs DPDK：HFT 选型速览</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>XDP</th>
+<th>DPDK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行位置</td>
+<td>内核态，但极早（skb 之前）</td>
+<td>用户态，完全旁路</td>
+</tr>
+<tr>
+<td>网络栈</td>
+<td><strong>仍用内核栈</strong>（PASS 的包走协议栈）</td>
+<td><strong>绕过</strong>，自己实现一切</td>
+</tr>
+<tr>
+<td>网卡归属</td>
+<td>内核保留（与其他功能共存）</td>
+<td>独占（UIO/VFIO 绑定）</td>
+</tr>
+<tr>
+<td>包处理</td>
+<td>挂了程序就每包必经</td>
+<td>用户态全权</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>高（generic 模式不省）</td>
+<td>极限延迟最低</td>
+</tr>
+<tr>
+<td>编程</td>
+<td>eBPF + verifier 约束</td>
+<td>C 生态，自由但维护重</td>
+</tr>
+<tr>
+<td>HFT 场景</td>
+<td>中低频、需共存、渐进改造</td>
+<td>超低延迟、co-location、独占网卡</td>
+</tr>
+</tbody>
+</table></div>
+<p>一句话：<strong>分界是"谁拥有网卡"，不是"谁更快"</strong>。
+详细对比见 <a href="../../../12.5-modern-networking/html/chapter-15.html#s-02">12.5-modern-networking Ch07</a>；
+HFT 的折中路线是 <strong>AF_XDP</strong>——<code class="c">XDP_REDIRECT</code> 把行情包零拷贝送用户态
+（<a href="../../../12.5-modern-networking/html/chapter-15.html#s-01">12.5-modern-networking Ch06</a>）。</p>
 <hr />
 <h2>8.3 TC（Traffic Control）层</h2>
 <h3>3.1 与 XDP 的对照</h3>
@@ -703,6 +848,9 @@ int BPF_KPROBE(ssl_read_exit) {
 <li>2 万 Service 时 iptables 全量重写要 5 小时，eBPF 方案为什么是秒级？</li>
 <li>Cilium 在一台节点上分别在哪些层挂了程序、各负责什么？</li>
 <li>Cilium NetworkPolicy 比 K8s 原生策略强在哪三点？</li>
+<li>Native 与 Generic 模式的本质区别是什么？为什么 Generic 只能验证功能、不能测性能？</li>
+<li>按顺序描述一个包从"网卡收到"到"XDP 程序执行"的完整链路（含 DMA 与 RX 环描述符；XDP 程序本身会配置 DMA 吗？）。</li>
+<li>XDP 程序与 tracepoint/kprobe 程序在挂点语义上的本质区别是什么？</li>
 </ol>
       </section>
 
