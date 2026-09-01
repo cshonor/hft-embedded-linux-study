@@ -15,6 +15,8 @@
 | PMC（硬件计数器） | 硬件 | 采样/计数 | 稳定 | 2.12 |
 | perf_events | 内核框架 | 汇聚层 | 稳定 | 2.13 |
 
+perf 侧视角还有两类补充事件源：**software 软件计数器**（缺页、上下文切换等内核统计事件，bpftrace 写作 `software:page-fault`）与**定时器**（`profile:` 探针的定时采样）。两套视角合起来才是完整答案：eBPF 视角六源（表中），perf 视角再加 software/timer。
+
 这张表有两个正交维度，值得显式拆开：
 
 ```text
@@ -29,6 +31,46 @@
 - **事件/采样**决定开销模型（∝ 事件率 vs ∝ 采样率）
 
 任何观测需求都能在这 3×3 网格里定位：先问"问题发生在哪个态"，再问"该态有没有静态点"，最后问"逐事件太贵要不要改采样"。
+
+## 术语辨析：事件源 vs 事件域（易混，面试高频）
+
+**事件源（event source）** = 底层机制大类，回答"你靠什么抓到事件"。上面表里的全部条目都是事件源，eBPF、perf、ftrace 复用同一套。
+
+**事件域（event category / provider）** = **tracepoint 专属**的子系统分类——`域:事件名` 冒号前面那部分。回答"事件属于哪个子系统"。
+
+| 术语 | 归属 | 例 | 回答的问题 |
+|---|---|---|---|
+| 事件源 | 所有插桩机制 | tracepoint / kprobe / uprobe / PMC | 靠什么抓到事件？ |
+| 事件域 | **仅 tracepoint** | sched / syscalls / net / block | 事件属于哪个子系统？ |
+| 事件名 | 域下面具体一点 | sched_switch | 具体是哪一个点？ |
+
+**为什么只有 tracepoint 有域**：域是内核开发者在埋静态点时显式起的子系统名（源码中 `TRACE_EVENT` 宏配套的 `TRACE_SYSTEM`），属于静态命名空间的一部分；kprobe/uprobe 是运行时对任意函数符号动态挂探针，没有人为分类，自然没有域。bpftrace 语法直接体现了这一点：
+
+```text
+tracepoint:sched:sched_switch   三段式：源类型 : 域 : 事件名
+kprobe:vfs_read                 两段式：源类型 : 函数符号（无域）
+uprobe:/usr/bin/app:func        路径占的是域的位置，但那是文件路径，不是分类
+```
+
+事件域的物理形态就是 tracefs 目录树：
+
+```text
+/sys/kernel/tracing/events/
+ ├─ sched/                  ← 事件域 sched
+ │   ├─ sched_switch/
+ │   │   └─ format          ← 自描述字段（见 1.7）
+ │   └─ sched_wakeup/
+ ├─ syscalls/               ← 事件域 syscalls
+ └─ net/                    ← 事件域 net
+```
+
+> 陷阱注：ftrace 的 kprobe_events 动态事件会出现在 `events/kprobes/` 目录下，看起来像"kprobe 也有域"——那只是 ftrace 把用户创建的动态事件归档的伪目录，不是 kprobe 的固有概念。bpftrace/perf 语境下"kprobe 无域"依然成立。
+
+**易错点两条**：
+
+- ❌ "kprobe 也有事件域" → 域是静态命名空间；动态探针直接写函数符号
+- ❌ 把 strace 当事件源 → strace 底层是 **ptrace**，完全独立的调试机制，不在 eBPF 事件源体系内。走 `syscalls:` 域 tracepoint 的是 **perf trace**——同样看系统调用，开销比 strace 低一个量级以上
+
 
 ## 选型原则（贯穿全书的纪律）
 
@@ -70,4 +112,10 @@ tracepoint ≈ USDT（静态、有 API 承诺）> kprobe ≈ uprobe（动态、�
 <summary>4. 事件率 500k/s 的函数想看耗时分布，逐事件挂探针为什么不行？正确的替代是什么？</summary>
 
 逐事件开销 ∝ 事件率：µs 级单次成本 × 500k/s = 数十秒 CPU 秒/分钟，观测税不可接受。替代：保持逐事件但只做内核态聚合（直方图 map，输出与事件率解耦）；或放弃该函数改采样（PMC/定时采样画火焰图）。
+</details>
+
+<details>
+<summary>5. "kprobe:schedule 里的 schedule 是事件域吗？perf trace 和 strace 底层机制有何区别？</summary>
+
+不是。schedule 是被插桩的内核函数符号，kprobe 是动态事件源，没有事件域——域（category）是 tracepoint 专属概念，来自源码 `TRACE_SYSTEM` 的静态命名空间（如 `tracepoint:sched:sched_switch` 的 sched）。perf trace 底层走 `syscalls:` 域的 tracepoint 事件源；strace 底层是 ptrace，独立调试机制，不在 eBPF 事件源体系内，开销高一个量级以上。
 </details>
