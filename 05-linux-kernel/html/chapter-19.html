@@ -460,20 +460,266 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
-<p>| 历史 | 始于 <strong>i386</strong> → <strong>Alpha、MIPS、SPARC、ARM、PowerPC…</strong>（20+ 架构） |</p>
+<p>| 历史 | 始于 <strong>i386</strong> → <strong>Alpha、MIPS、SPARC、ARM、PowerPC…</strong> |</p>
+<p><strong>v6.6 实测：22 个架构目录</strong>（<code class="c">arch/</code> 下直接子目录）：</p>
+<pre class="code" data-label="code"><code class="c">alpha  arc  arm  arm64  csky  hexagon  ia64  loongarch  m68k  microblaze
+mips  nios2  openrisc  parisc  powerpc  riscv  s390  sh  sparc  um  x86  xtensa
+</code></pre>
+<blockquote>
+<p><strong>版本冷知识：v6.7 删掉了 <code class="c">ia64</code></strong>（Itanium，代码量大而硬件已停售）→ 变成 21 个。
+这是理解内核演进的好例子：<strong>维护成本 &gt; 硬件存量时，架构会被移除</strong>，没有"永远支持"这回事。</p>
+</blockquote>
+<hr />
+<h3>三层抽象：通用 → asm-generic → 特化</h3>
+<p>可移植性不是"每个架构各写一遍"，而是<strong>三层复用</strong>：</p>
+<pre class="code" data-label="code"><code class="c">第 1 层：通用代码（mm/ fs/ net/ drivers/…）
+              │  用 &lt;asm/xxx.h&gt; 里的接口
+              ▼
+第 2 层：include/asm-generic/     ← 用**纯 C** 写的&quot;默认实现&quot;
+              │  某个架构不覆盖就用这版
+              ▼
+第 3 层：arch/&lt;arch&gt;/include/asm/ ← 架构特化（内联汇编/专用指令）
+</code></pre>
+<pre class="code" data-label="make"><code class="c"># arch/xxx/include/asm/&lt;头文件&gt; 存在 → 用它
+# 不存在 → 回落到 include/asm-generic/&lt;头文件&gt;
+</code></pre>
+<blockquote>
+<p>现在的移植工作大部分是：<strong>先什么都不写，用 asm-generic 的默认版跑起来</strong>，
+再挑真正值得优化的几个（原子操作、自旋锁、页表遍历）用内联汇编重写。</p>
+</blockquote>
+<hr />
+<h3><code class="c">arch/</code> 到底隔离了什么</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>具体内容</th>
+<th>为什么不能通用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>启动与初始化</strong></td>
+<td>解压内核、解析固件表（DT/ACPI）、建初始页表</td>
+<td>硬件复位后的状态各架构完全不同</td>
+</tr>
+<tr>
+<td><strong>内存管理</strong></td>
+<td>页表格式（x86 4 级 / arm64 可配 3-4 级）、TLB 刷新指令、缺页入口</td>
+<td>页表<strong>格式是硬件规定的</strong></td>
+</tr>
+<tr>
+<td><strong>中断与异常</strong></td>
+<td>IDT/向量表、中断入口汇编、EOI</td>
+<td>中断控制器与入口约定不同</td>
+</tr>
+<tr>
+<td><strong>原子与屏障</strong></td>
+<td><code class="c">cmpxchg</code>、<code class="c">atomic_*</code>、内存屏障指令</td>
+<td>指令集不同（lock 前缀 vs ldaxr/stlxr）</td>
+</tr>
+<tr>
+<td><strong>上下文切换</strong></td>
+<td><code class="c">switch_to()</code>、保存/恢复哪些寄存器、TLS 怎么切</td>
+<td>寄存器文件不同</td>
+</tr>
+<tr>
+<td><strong><code class="c">current</code> 宏</strong></td>
+<td>怎么拿到当前进程的 <code class="c">task_struct</code></td>
+<td>x86 用 <code class="c">percpu</code> 读 <code class="c">current_task</code>；有些架构用 sp 掩码（栈底放 thread_info）</td>
+</tr>
+<tr>
+<td><strong>系统调用入口</strong></td>
+<td><code class="c">syscall</code>/<code class="c">sysenter</code>/<code class="c">svc</code> 指令与派发表</td>
+<td>陷入指令不同</td>
+</tr>
+<tr>
+<td><strong>cache 维护</strong></td>
+<td>指令/数据 cache 一致性（自修改代码、DMA）</td>
+<td>x86 硬件自动一致；arm64 需要显式 <code class="c">dc/ic</code> 指令</td>
+</tr>
+<tr>
+<td><strong>字节序</strong></td>
+<td><code class="c">__BIG_ENDIAN</code> / <code class="c">__LITTLE_ENDIAN</code></td>
+<td>硬件可配（arm64 双端）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">current</code> 是个很好的例子：<strong>同一个宏，在 x86 和 arm64 上实现完全不同</strong>，
+但 <code class="c">mm/</code>、<code class="c">fs/</code> 里的代码完全不关心——这就是抽象层的价值。</p>
+</blockquote>
+<hr />
+<h3>现代的"一次编译，多平台运行"</h3>
+<p>LKD 时代每个 ARM 板子要单独编译一个内核。现在：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>设备树（Device Tree）</strong></td>
+<td>硬件信息从<strong>数据</strong>里读，不再硬编码进内核 → 一个内核镜像跑所有同架构板子</td>
+</tr>
+<tr>
+<td><strong>ACPI</strong></td>
+<td>x86 服务器的标准固件表</td>
+</tr>
+<tr>
+<td><strong><code class="c">fwnode</code> 统一抽象</strong></td>
+<td>驱动代码不关心自己拿到的是 DT 还是 ACPI 节点（见 <a href="chapter-17.html#s-17-2">Ch 17.2</a>）</td>
+</tr>
+<tr>
+<td><strong>CONFIG_ARCH_MULTIPLATFORM</strong></td>
+<td>一个 <code class="c">defconfig</code> 覆盖多家 SoC</td>
+</tr>
+</tbody>
+</table></div>
 <pre class="code" data-label="code"><code class="c">通用内核代码（mm/ fs/ net/…）
         │
         ▼
 arch/arm64/  arch/x86/  …  — 启动、页表、原子、屏障实现
+        │
+        ▼
+  DT / ACPI   — 这一次具体的机器长什么样（数据，不是代码）
 </code></pre>
+<hr />
+<h3>HFT 需要关心的架构差异（x86_64 vs ARM64）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>x86_64</th>
+<th>ARM64</th>
+<th>对 HFT 代码的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>内存模型</strong></td>
+<td>TSO（较强）</td>
+<td><strong>弱序</strong></td>
+<td>无锁代码在 ARM64 上要多插屏障（见 19.7）</td>
+</tr>
+<tr>
+<td><strong>cache line</strong></td>
+<td>64 B</td>
+<td>64 B（多数实现）</td>
+<td>false sharing 规避手法通用</td>
+</tr>
+<tr>
+<td><strong>页大小</strong></td>
+<td>4KB / 2MB / 1GB</td>
+<td><strong>4KB / 16KB / 64KB</strong> + 2MB/32MB/1GB</td>
+<td>不能硬编码 4096</td>
+</tr>
+<tr>
+<td><strong>字节序</strong></td>
+<td>小端</td>
+<td>双端（<strong>服务器几乎都是小端</strong>）</td>
+<td>线上格式仍要显式转换</td>
+</tr>
+<tr>
+<td><strong>TSC</strong></td>
+<td>有稳定 TSC（<code class="c">rdtsc</code>）</td>
+<td>用 <code class="c">cntvct_el0</code>，频率可能随调频变</td>
+<td>时间戳源要抽象</td>
+</tr>
+<tr>
+<td><strong><code class="c">long</code> 宽度</strong></td>
+<td>64</td>
+<td>64（LP64）</td>
+<td>一致，但不要依赖</td>
+</tr>
+<tr>
+<td><strong><code class="c">char</code> 符号性</strong></td>
+<td>signed</td>
+<td><strong>unsigned</strong></td>
+<td>拿 char 做数组下标/比较时会踩坑（见 19.3）</td>
+</tr>
+</tbody>
+</table></div>
 <p>→ <strong>Ch 2</strong> <code class="c">arch/</code> 目录 · <strong>Ch 12</strong> per-arch 页大小</p>
-<p><strong>HFT 对照：</strong> 用户态协议解码（行情二进制）同样 <strong>显式字节序、固定宽度类型</strong> — 与内核规则同构。</p>
+<p><strong>HFT 对照：</strong> 用户态协议解码（行情二进制）同样 <strong>显式字节序、固定宽度类型</strong> — 与内核规则同构。
+内核靠 <code class="c">arch/</code> 隔离差异，用户态靠 <strong><code class="c">stdint.h</code> + 显式 hton/ntoh + 不假设对齐</strong>，
+本质是同一条纪律：<strong>把"依赖具体实现的东西"显式化，而不是藏在默认行为里。</strong></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> Linux 能移植到不同架构的关键设计是什么？</p>
 <details>
 <summary>答案</summary>
 <p>1) arch/ 目录隔离架构相关代码（中断入口/页表/原子操作/字节序）；2) 可移植类型（u32/s64 不依赖 int/long 大小）；3) 宏抽象（__raw_readl → 各架构实现）；4) 构建系统按架构选择正确代码。用户态代码移植性靠 ABI 兼容层；内核移植性靠 arch/ 层。HFT 代码从 x86 迁到 ARM64 需要关注字节序/对齐/cache line 大小差异。</p>
+</details>
+<p><strong>Q2.</strong> 移植一个新架构，是不是要把 <code class="c">arch/</code> 下的东西全写一遍？</p>
+<details>
+<summary>答案</summary>
+<p>不用。现代 Linux 的移植策略是 <strong><code class="c">asm-generic</code> 优先</strong>：</p>
+<pre class="code" data-label="code"><code class="c">include/asm-generic/     ← 纯 C 写的默认实现（大部分头文件）
+arch/&lt;新架构&gt;/include/asm/  ← 只放你**特地要覆盖**的那几个
+</code></pre>
+<p>内核的构建规则是：如果某个 <code class="c">asm/xxx.h</code> 在新架构下不存在，就<strong>自动回落</strong>到 <code class="c">asm-generic/xxx.h</code>。
+所以一个最小可启动的移植，<strong>只需要提供</strong>：</p>
+<ol>
+<li><strong>启动入口与早期初始化</strong>（解压、建初始页表、解析 DT/ACPI）；</li>
+<li><strong>中断/异常入口</strong>（汇编部分，跳到通用 C 处理函数）；</li>
+<li><strong>页表操作</strong>（格式是硬件规定的，无法通用）；</li>
+<li><strong><code class="c">switch_to()</code> 上下文切换</strong> + 寄存器保存约定；</li>
+<li><strong><code class="c">current</code> 宏的取法</strong>（x86 用 percpu 变量，某些架构用栈指针掩码）；</li>
+<li>少量原子/屏障（可以先用关中断的<strong>最朴素实现</strong>跑通，之后再优化）。</li>
+</ol>
+<p>其余全部先用 <code class="c">asm-generic</code> 的默认版。Linux 内核社区移植 RISC-V 时就是这么推进的：
+先让它<strong>能启动能跑</strong>，再逐个把热点换成指令级优化版本。</p>
+<p><strong>这条方法论对工程实践也有启发</strong>：抽象层的设计目标应该是"<strong>默认可跑，按需特化</strong>"，
+而不是"每个实现都必须自己写一遍"。后者会极大抬高接入成本。</p>
+<p>顺带一个真实案例：<code class="c">ia64</code>（Itanium）因为在 v6.7 时维护成本超过硬件存量，
+被<strong>整体移除</strong>——架构支持不是永久的，这是内核对待"没人用的代码"的一贯态度。</p>
+</details>
+<p><strong>Q3.</strong> 都说"Linux 可移植"，那为什么驱动还是经常换个板子就跑不了？</p>
+<details>
+<summary>答案</summary>
+<p>因为"可移植"分<strong>三个层次</strong>，Linux 只保证第一层，后两层靠数据描述和生态：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>谁保证</th>
+<th>v6.6 的现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>内核核心（mm/fs/net/sched）</strong></td>
+<td>内核抽象层</td>
+<td>✅ 真正可移植，换架构编译即可</td>
+</tr>
+<tr>
+<td><strong>硬件拓扑描述</strong></td>
+<td><strong>设备树 / ACPI（数据）</strong></td>
+<td>⚠️ 需要针对具体板子提供正确的 DT/ACPI 表</td>
+</tr>
+<tr>
+<td><strong>具体设备的驱动</strong></td>
+<td>是否有人写过</td>
+<td>❌ 没有驱动就是没有</td>
+</tr>
+</tbody>
+</table></div>
+<p>驱动跑不了通常卡在<strong>第二、三层</strong>，不是抽象层的问题：</p>
+<ol>
+<li><strong>硬件信息缺失</strong>：同一颗 SoC 在不同板子上的 GPIO 编号、供电（regulator）、时钟（clock）、
+   引脚复用（pinctrl）全都不一样。这些信息<strong>不在驱动代码里</strong>，在 DT 里。
+   DT 写错 → 驱动 probe 返回 <code class="c">-EPROBE_DEFER</code> 或直接失败（见 Ch 17.2）。</li>
+<li><strong>驱动根本不存在</strong>：一颗新网卡芯片没人写驱动，它就是不工作，跟可移植性无关。</li>
+<li><strong>闭源/用户态依赖</strong>：有些硬件需要厂商提供的固件（firmware blob）或用户态库，
+   内核这边抽象得再好也无能为力。</li>
+</ol>
+<p><strong>所以更准确的说法是</strong>：Linux 让"<strong>写一个可移植的驱动</strong>"变得容易（设备模型 + 统一接口），
+但不能让"<strong>没写过的驱动凭空出现</strong>"。</p>
+<p>对 HFT 的启示：选硬件时<strong>先看内核有没有主线驱动</strong>、驱动是否在你要用的 LTS 版本里，
+比看硬件参数更重要。自研加速卡最贵的往往不是卡，是驱动和维护它的人。</p>
 </details>
 </details>
 <hr />
@@ -518,33 +764,91 @@ arch/arm64/  arch/x86/  …  — 启动、页表、原子、屏障实现
 </tbody>
 </table></div>
 <h4>数据模型</h4>
+<p>C 语言只保证 <code class="c">sizeof(char) ≤ sizeof(short) ≤ sizeof(int) ≤ sizeof(long) ≤ sizeof(long long)</code>，
+<strong>具体多宽交给实现</strong>。于是历史上出现了几种"约定"：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>模型</th>
-<th>架构</th>
+<th>代表平台</th>
 <th><code class="c">int</code></th>
 <th><code class="c">long</code></th>
 <th>指针</th>
+<th><code class="c">long long</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>ILP32</strong></td>
-<td>32 位</td>
+<td>32 位 x86、ARM32</td>
 <td>32</td>
 <td>32</td>
 <td>32</td>
+<td>64</td>
 </tr>
 <tr>
 <td><strong>LP64</strong></td>
-<td>64 位</td>
+<td><strong>x86_64、ARM64（Linux/macOS）</strong></td>
 <td>32</td>
+<td><strong>64</strong></td>
+<td>64</td>
+<td>64</td>
+</tr>
+<tr>
+<td><strong>LLP64</strong></td>
+<td><strong>Windows x64（MSVC）</strong></td>
+<td>32</td>
+<td><strong>32</strong></td>
+<td>64</td>
+<td>64</td>
+</tr>
+<tr>
+<td><strong>SILP64</strong></td>
+<td>早期 Cray 等</td>
+<td>64</td>
+<td>64</td>
 <td>64</td>
 <td>64</td>
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p><strong>LP64 vs LLP64 是跨 Linux / Windows 移植最经典的坑</strong>：
+同一句 <code class="c">long x = ptr;</code> 在 Linux 64 位上安全，在 Windows 64 位上<strong>截断</strong>（long 只有 32 位）。
+这解释了为什么跨平台代码一律用 <code class="c">uintptr_t</code> 或 <code class="c">intptr_t</code>——<strong>它们是唯一保证"能装下指针的整数"</strong>。</p>
+</blockquote>
+<p><strong>为什么 <code class="c">long</code> 要跟着字长变（LP64 而不是 LLP64）？</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>理由</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>历史</td>
+<td>早期 <code class="c">long</code> 就是"机器字长"的同义词（PDP-11 上 <code class="c">long</code> = 32 位 = 字长）</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>让"最常用的整数类型"与寄存器同宽，避免零扩展/符号扩展指令</td>
+</tr>
+<tr>
+<td>简化</td>
+<td><code class="c">sizeof(long) == sizeof(void *)</code> 让"用整数装指针"这个常见技巧变成可能</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这个决定在 1990 年代是合理的，今天则被视为历史包袱——
+它导致 Linux 上 <code class="c">long</code> 的宽度<strong>依赖架构</strong>，所以内核才要强制用 u32/u64。</p>
+</blockquote>
+<h4>内核的探测宏</h4>
+<pre class="code" data-label="C"><code class="c">BITS_PER_LONG       /* 32 或 64 —— 编译期常量 */
+__SIZEOF_POINTER__  /* 编译器内置的指针大小 */
+sizeof(long) == sizeof(void *)   /* LP64 平台上的不变量 */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -568,7 +872,111 @@ int x = (int)ptr;
 
 /* 对：内核风格 */
 unsigned long x = (unsigned long)ptr;
+
+/* 更对：明确&quot;我就是要装指针&quot; */
+uintptr_t x = (uintptr_t)ptr;
 </code></pre>
+<h4>陷阱清单（按踩坑频率排序）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>陷阱</th>
+<th>后果</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>指针装进 int</strong></td>
+<td>LP64 上高 32 位丢失</td>
+<td><code class="c">uintptr_t</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>打印格式不匹配</strong></td>
+<td><code class="c">printf("%d", sizeof(x))</code> 是 UB</td>
+<td>用 <code class="c">%zu</code>（size_t）、<code class="c">%p</code>（指针）、<code class="c">PRIu64</code>（u64）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>移位溢出</strong></td>
+<td><code class="c">1 &lt;&lt; 40</code> 在 <code class="c">int</code> 上是 UB</td>
+<td><code class="c">1UL &lt;&lt; 40</code> 或 <code class="c">BIT_ULL(40)</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>结构体成员顺序依赖</strong></td>
+<td>不同模型下 <code class="c">sizeof</code> 不同 → 线上格式不兼容</td>
+<td>固定宽度类型 + 显式序列化</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>有符号/无符号比较</strong></td>
+<td><code class="c">-1 &lt; sizeof(x)</code> 恒为 false</td>
+<td>统一符号性</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>位掩码常量</strong></td>
+<td><code class="c">0xFFFFFFFF</code> 是 <code class="c">unsigned int</code>，与 u64 运算要小心</td>
+<td><code class="c">U64_MAX</code> / <code class="c">GENMASK_ULL</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>内核里这些坑有专门的检查：构建时开 <strong><code class="c">make C=1</code>（sparse）</strong> 会警告 <code class="c">__bitwise</code> 类型混用、
+用户指针未标注 <code class="c">__user</code> 等问题；<code class="c">W=1</code> 会打开额外编译告警。</p>
+</blockquote>
+<h4>内核类型 ↔ 用户态类型对照</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核</th>
+<th>用户态（<code class="c">&lt;stdint.h&gt;</code>）</th>
+<th>位宽</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">u8</code> / <code class="c">s8</code></td>
+<td><code class="c">uint8_t</code> / <code class="c">int8_t</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="c">u16</code> / <code class="c">s16</code></td>
+<td><code class="c">uint16_t</code> / <code class="c">int16_t</code></td>
+<td>16</td>
+</tr>
+<tr>
+<td><code class="c">u32</code> / <code class="c">s32</code></td>
+<td><code class="c">uint32_t</code> / <code class="c">int32_t</code></td>
+<td>32</td>
+</tr>
+<tr>
+<td><code class="c">u64</code> / <code class="c">s64</code></td>
+<td><code class="c">uint64_t</code> / <code class="c">int64_t</code></td>
+<td>64</td>
+</tr>
+<tr>
+<td><code class="c">size_t</code></td>
+<td><code class="c">size_t</code></td>
+<td>字长</td>
+</tr>
+<tr>
+<td><code class="c">uintptr_t</code></td>
+<td><code class="c">uintptr_t</code></td>
+<td>字长</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 纪律：</strong> 订单号、价格、时间戳、序号这些<strong>有明确位宽语义</strong>的字段，
+一律用 <code class="c">uint64_t</code>/<code class="c">int64_t</code>，<strong>永远不要</strong>用 <code class="c">unsigned long</code>。
+前者在所有平台上都是 64 位，后者在 32 位平台（或 Windows）上会悄悄变窄——
+而这类 bug 只在极端值下暴露，上线后极难查。</p>
+</blockquote>
 <p>→ <a href="../../02-computer-systems/html/index.html">02-CSAPP 数据表示</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -581,6 +989,44 @@ unsigned long x = (unsigned long)ptr;
 <details>
 <summary>答案</summary>
 <p>size_t = 无符号大小（unsigned），ssize_t = 有符号大小（signed）。syscall 如 read() 返回 ssize_t：正数=读取字节数，0=EOF，-1=错误。如果返回 size_t，-1 会被解释为 0xFFFFFFFFFFFFFFFF（巨大正数），无法区分错误。HFT 代码中处理 IO 返回值必须检查 &lt; 0 而非 == 0xFFFFFFFF。</p>
+</details>
+<p><strong>Q3.</strong> 64 位 Linux 上 <code class="c">long</code> 是 64 位，Windows 上是 32 位——这段代码跨平台有什么问题？怎么改？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">/* 有问题的写法 */
+unsigned long id = (unsigned long)ptr;          /* Windows x64 上截断！ */
+printf(&quot;size = %d\n&quot;, sizeof(buf));             /* %d 配 size_t 是 UB  */
+uint64_t mask = 1 &lt;&lt; 40;                        /* 1 是 int，移位溢出 = UB */
+</code></pre>
+<p>逐个说：</p>
+<p><strong>① <code class="c">unsigned long</code> 装指针</strong></p>
+<pre class="code" data-label="C"><code class="c">uintptr_t id = (uintptr_t)ptr;    /* C99 起保证&quot;能无损装下指针的整数&quot; */
+</code></pre>
+<p><code class="c">uintptr_t</code> 的存在就是为了解决这个跨模型问题——它在 LP64 上是 64 位，在 ILP32 上是 32 位，<strong>永远刚好</strong>。
+<code class="c">unsigned long</code> 只在 LP64 上碰巧够用。</p>
+<p><strong>② 打印格式</strong>
+| 类型 | 正确格式 | 错误 |
+|------|---------|------|
+| <code class="c">size_t</code> | <code class="c">%zu</code> | <code class="c">%d</code> / <code class="c">%lu</code> |
+| 指针 | <code class="c">%p</code>（且要转 <code class="c">void *</code>） | <code class="c">%x</code> / <code class="c">%lu</code> |
+| <code class="c">uint64_t</code> | <code class="c">PRIu64</code>（<code class="c">&lt;inttypes.h&gt;</code>） | <code class="c">%llu</code>（平台相关） |
+| <code class="c">ptrdiff_t</code> | <code class="c">%td</code> | <code class="c">%d</code> |</p>
+<p>格式串不匹配是<strong>未定义行为</strong>，不是"打印出来不好看"——编译器优化后可能打印出完全错误的值。</p>
+<p><strong>③ 移位</strong></p>
+<pre class="code" data-label="C"><code class="c">uint64_t mask = 1UL &lt;&lt; 40;      /* 但 1UL 在 Windows 上仍是 32 位！ */
+uint64_t mask = UINT64_C(1) &lt;&lt; 40;   /* 最稳：显式 64 位常量 */
+uint64_t mask = (uint64_t)1 &lt;&lt; 40;   /* 等效写法 */
+</code></pre>
+<p><code class="c">1</code> 的类型是 <code class="c">int</code>（32 位）。左移 40 位 = <strong>未定义行为</strong>，在 x86 上表现为
+"移位量对 32 取模" → 实际移了 8 位，得到 <code class="c">0x100</code> 而不是 <code class="c">0x10000000000</code>。
+这类 bug 静默发生，是位掩码类错误的经典来源。</p>
+<p><strong>④ HFT 具体建议</strong>
+- 订单 ID、成交号、序号：<strong><code class="c">uint64_t</code></strong> 显式固定；
+- 价格：定点化后用 <code class="c">int64_t</code>（不要用 <code class="c">long</code>，也不要用 double）；
+- 时间戳：<strong><code class="c">uint64_t</code></strong> 纳秒（或 <code class="c">int64_t</code>）；
+- 哈希、位图：<code class="c">uint64_t</code> + <code class="c">UINT64_C()</code> 常量；
+- 构建时开 <code class="c">-Wall -Wextra -Wconversion</code>，并<strong>在 CI 里同时跑 x86_64 和 ARM64</strong>（或至少跑一次 32 位交叉编译），
+  让模型差异在编译期就暴露，而不是在生产环境靠溢出暴露。</p>
 </details>
 </details>
 <hr />
@@ -603,6 +1049,109 @@ unsigned long x = (unsigned long)ptr;
 </tbody>
 </table></div>
 <p>| 规则 | 不假设大小 · <strong>不</strong> 强转为 <code class="c">int</code>/<code class="c">long</code> 乱用 |</p>
+<p><strong>完整清单（v6.6 常用）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>含义</th>
+<th>底层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pid_t</code></td>
+<td>进程 ID</td>
+<td><code class="c">int</code></td>
+</tr>
+<tr>
+<td><code class="c">uid_t</code> / <code class="c">gid_t</code></td>
+<td>用户/组 ID</td>
+<td><code class="c">unsigned int</code></td>
+</tr>
+<tr>
+<td><code class="c">dev_t</code></td>
+<td>设备号</td>
+<td><code class="c">u32</code>（主 12 + 次 20，见 Ch 17.1）</td>
+</tr>
+<tr>
+<td><code class="c">sector_t</code></td>
+<td>磁盘扇区号</td>
+<td><code class="c">u64</code> 或 <code class="c">unsigned long</code>（<code class="c">CONFIG_LBDAF</code>）</td>
+</tr>
+<tr>
+<td><code class="c">blkcnt_t</code></td>
+<td>块计数</td>
+<td><code class="c">u64</code></td>
+</tr>
+<tr>
+<td><code class="c">loff_t</code></td>
+<td>文件偏移（<strong>总是 64 位</strong>，哪怕 32 位系统）</td>
+<td><code class="c">long long</code></td>
+</tr>
+<tr>
+<td><code class="c">gfp_t</code></td>
+<td>分配标志</td>
+<td><code class="c">unsigned int</code></td>
+</tr>
+<tr>
+<td><code class="c">ktime_t</code></td>
+<td>内核时间（纳秒）</td>
+<td><code class="c">s64</code></td>
+</tr>
+<tr>
+<td><code class="c">cycles_t</code></td>
+<td>TSC 周期计数</td>
+<td><code class="c">u64</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic_t</code> / <code class="c">atomic64_t</code></td>
+<td>原子计数器</td>
+<td>结构体（内含 <code class="c">int</code>/<code class="c">s64</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">refcount_t</code></strong></td>
+<td><strong>引用计数</strong>（v4.11+）</td>
+<td>结构体（内含 <code class="c">unsigned int</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">atomic_t</code> 与 <code class="c">refcount_t</code> 的分家（v4.11+）</strong> 是一个值得记住的演进：</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">atomic_t</code></th>
+<th><code class="c">refcount_t</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用途</td>
+<td>通用原子计数</td>
+<td><strong>专门做"对象引用计数"</strong></td>
+</tr>
+<tr>
+<td>溢出行为</td>
+<td><strong>回绕</strong>（<code class="c">INT_MAX + 1</code> → <code class="c">INT_MIN</code>）</td>
+<td><strong>饱和 + 警告</strong>（永远停在 <code class="c">UINT_MAX</code>，并 <code class="c">WARN</code>）</td>
+</tr>
+<tr>
+<td>释放语义</td>
+<td>无</td>
+<td>归零时<strong>明确语义</strong>（<code class="c">refcount_dec_and_test</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>为什么分家？因为"引用计数归零就释放对象"这个模式太常见，
+而 <code class="c">atomic_t</code> 的<strong>回绕</strong>会让计数从 0 跳回 <code class="c">UINT_MAX</code> → 对象<strong>永不释放</strong>，或更糟：
+计数回绕成 1 后又被减到 0 → <strong>二次释放（use-after-free）</strong>。
+<code class="c">refcount_t</code> 用饱和语义把这类漏洞变成一次 <code class="c">WARN</code> + 拒绝，是<strong>把一类安全漏洞变成可观测错误</strong>的设计。</p>
+<p><strong>规则：</strong> 只要是"引用计数"，用 <code class="c">refcount_t</code>；只有真正的通用原子计数才用 <code class="c">atomic_t</code>。</p>
+</blockquote>
 <h4>明确大小的类型</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -619,6 +1168,12 @@ unsigned long x = (unsigned long)ptr;
 </tbody>
 </table></div>
 <p>| 导出到用户空间 | <strong><code class="c">__u32</code></strong> 等 <strong>双下划线</strong> 前缀 — 避免与用户头文件 <strong>命名冲突</strong> |</p>
+<blockquote>
+<p><strong>为什么 UAPI 头要加双下划线？</strong> 因为 <code class="c">include/uapi/linux/*.h</code> 会被<strong>用户态程序</strong>直接 <code class="c">#include</code>。
+如果它定义了无前缀的 <code class="c">u32</code>，就可能和用户程序自己的 typedef 撞名（"redefinition" 编译错误）。
+所以内核内部用 <code class="c">u32</code>，<strong>暴露给用户态的用 <code class="c">__u32</code></strong>（<code class="c">typedef unsigned int __u32;</code>）。
+这是"命名空间卫生"的一个具体体现。</p>
+</blockquote>
 <h4><code class="c">char</code> 的符号性</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -633,18 +1188,214 @@ unsigned long x = (unsigned long)ptr;
 <td>通常 <strong>signed char</strong></td>
 </tr>
 <tr>
-<td>ARM 等</td>
+<td>ARM / ARM64 / PowerPC</td>
 <td>通常 <strong>unsigned char</strong></td>
 </tr>
 </tbody>
 </table></div>
 <p>| 要求 | 用 <strong><code class="c">signed char</code></strong> 或 <strong><code class="c">unsigned char</code></strong> 明示 |</p>
+<p><strong>这个差异会怎样咬人：</strong></p>
+<pre class="code" data-label="C"><code class="c">char c = 0xFF;              /* x86: 值 = -1      ARM: 值 = 255  */
+if (c == 0xFF) { ... }      /* x86: false!  ARM: true  */
+
+char buf[256];
+int i = buf[0];             /* x86: 可能是负数（符号扩展）→ 越界下标 */
+
+/* 用 char 做查找表下标 */
+static int table[256];
+int v = table[c];           /* x86 上 c &lt; 0 → 下标越界，读到 table[-1] 之前的内存 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>必须写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>字节数据 / 缓冲区</td>
+<td><strong><code class="c">unsigned char *</code></strong> 或 <code class="c">u8 *</code></td>
+</tr>
+<tr>
+<td>小整数（可能为负）</td>
+<td><strong><code class="c">signed char</code></strong> 或 <code class="c">s8</code></td>
+</tr>
+<tr>
+<td>字符处理</td>
+<td><code class="c">char</code>（但要 <code class="c">isalpha((unsigned char)c)</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>C 标准库也有这个坑</strong>：<code class="c">isalpha()</code>、<code class="c">tolower()</code> 等函数的参数类型是 <code class="c">int</code>，
+但要求值必须在 <code class="c">unsigned char</code> 范围内<strong>或</strong>是 EOF。
+直接传一个 <code class="c">signed char</code>（值为负）是<strong>未定义行为</strong>——glibc 里表现为"跳表越界读"。
+所以标准写法是 <code class="c">isalpha((unsigned char)c)</code>。</p>
+</blockquote>
+<h4>还有两个容易忽略的</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">bool</code></strong></td>
+<td>内核用 <code class="c">bool</code> + <code class="c">true/false</code>（来自 <code class="c">&lt;stdbool.h&gt;</code>），但 ABI 上仍是 <code class="c">int</code>（<code class="c">_Bool</code> → 1 字节）。<strong>不要</strong>假设 <code class="c">sizeof(bool) == 1</code> 用于结构体布局</td>
+</tr>
+<tr>
+<td><strong><code class="c">void *</code> 算术</strong></td>
+<td><code class="c">ptr + 1</code> 是 GCC 扩展，标准不支持；可移植写法是 <code class="c">(char *)ptr + 1</code> 或用 <code class="c">uintptr_t</code></td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 内核中的不透明类型有哪些？为什么不直接用底层类型？</p>
 <details>
 <summary>答案</summary>
 <p>不透明类型：pid_t（进程ID）、gid_t（组ID）、uid_t（用户ID）、dev_t（设备号）。不直接用 int 是因为：不同架构/内核版本可能改变底层类型大小（pid_t 可能是 int 或 unsigned int）。用 typedef 隔离，代码不依赖具体类型大小。HFT 代码中传递这些值时也应该用对应类型而非 int。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">atomic_t</code> 和 <code class="c">refcount_t</code> 都能做计数，什么时候必须用后者？</p>
+<details>
+<summary>答案</summary>
+<p><strong>只要是"引用计数"（计数归零就释放对象），就用 <code class="c">refcount_t</code>。</strong></p>
+<p>核心差别在<strong>溢出时的行为</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">atomic_t</code></th>
+<th><code class="c">refcount_t</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计数从 0 再减</td>
+<td><strong>回绕</strong>成 <code class="c">UINT_MAX</code></td>
+<td><strong>饱和</strong>在 0，并 <code class="c">WARN</code> 一次</td>
+</tr>
+<tr>
+<td>计数加到溢出</td>
+<td>回绕成 0</td>
+<td>停在 <code class="c">UINT_MAX</code>，<code class="c">WARN</code></td>
+</tr>
+<tr>
+<td>归零释放语义</td>
+<td>要自己 <code class="c">atomic_dec_and_test</code></td>
+<td><code class="c">refcount_dec_and_test</code>（语义明确）</td>
+</tr>
+<tr>
+<td>引入版本</td>
+<td>一直有</td>
+<td><strong>v4.11+</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么这个差别是安全问题：</strong></p>
+<pre class="code" data-label="code"><code class="c">场景：一个对象 refcount = 1
+  ① 代码多减了一次（bug）
+  ② atomic_t:  1 → 0 → 对象被释放 → 再减 → 0 → UINT_MAX（回绕）
+     之后任何一次&quot;加 1&quot;都让它变成 0 → 又触发一次释放 → **double free / UAF**
+  ③ refcount_t: 1 → 0 → 释放 → 再减 → 检测到已经是 0 → **WARN + 停在 0**
+     攻击/ bug 无法把计数推回非零 → 无法触发第二次释放
+</code></pre>
+<p>历史上 <code class="c">atomic_t</code> 的回绕被反复利用于内核漏洞利用（先 UAF 再二次释放）。
+<code class="c">refcount_t</code> 把这个"可利用的原语"降级成一次内核警告——<strong>把一类安全漏洞变成可观测错误</strong>，
+这是内核安全加固里非常典型的一类思路。</p>
+<p><strong>实用的选择规则：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对象引用计数（归零释放）</td>
+<td><strong><code class="c">refcount_t</code></strong></td>
+</tr>
+<tr>
+<td>统计计数（包数、错误数，允许回绕/无所谓）</td>
+<td><code class="c">atomic_t</code> / <code class="c">atomic64_t</code></td>
+</tr>
+<tr>
+<td>需要"减到 0 就做事"</td>
+<td><code class="c">refcount_dec_and_test()</code></td>
+</tr>
+<tr>
+<td>位操作、CAS 循环</td>
+<td><code class="c">atomic_t</code></td>
+</tr>
+<tr>
+<td>per-CPU 计数</td>
+<td><code class="c">local_t</code> / <code class="c">percpu_counter</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>用户态对照</strong>：C++ 里 <code class="c">std::shared_ptr</code> 的引用计数也是 <code class="c">size_t</code> 的原子增减，
+理论上同样能溢出（虽然需要 2^64 次，不现实）。真正对应 <code class="c">refcount_t</code> 饱和语义的是
+Rust 的 <code class="c">Arc</code>——它在溢出时直接 <code class="c">abort()</code>，同样是"宁可崩，不要 UAF"的思路。</p>
+</details>
+<p><strong>Q3.</strong> 一段代码在 x86 上跑得好好的，迁到 ARM64 上出现数组越界，查下来是 <code class="c">char</code> 的问题——具体是怎么回事？</p>
+<details>
+<summary>答案</summary>
+<p>典型写法：</p>
+<pre class="code" data-label="C"><code class="c">static const int price_table[256];       /* 用字节值当下标 */
+
+unsigned char *p = (unsigned char *)buf; /* 看着没问题 */
+char c = *p;                             /* ← 这里！ */
+int v = price_table[c];                  /* x86: c 可能是负数 → 下标越界 */
+</code></pre>
+<p><strong>根因：</strong> C 标准<strong>没有规定</strong> <code class="c">char</code> 默认是有符号还是无符号，这是 <strong>implementation-defined</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>平台</th>
+<th><code class="c">char</code> 默认</th>
+<th><code class="c">char c = 0xFF</code> 的值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86 / x86_64 (GCC/Clang)</td>
+<td><strong>signed</strong></td>
+<td><strong>-1</strong></td>
+</tr>
+<tr>
+<td><strong>ARM / ARM64 / PowerPC</strong></td>
+<td><strong>unsigned</strong></td>
+<td><strong>255</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>代码在 x86 上开发测试时，<code class="c">c = 0xFF</code> 变成 <code class="c">-1</code>，于是 <code class="c">price_table[-1]</code> —— 读到了数组<strong>前面</strong>的内存。
+在 x86 上那块内存恰好没映射或内容无害，看起来"没事"；
+到了 ARM64 上 <code class="c">c = 255</code>，<code class="c">price_table[255]</code> 是合法访问，<strong>反而正常</strong>。</p>
+<p>等等，那为什么是 ARM64 上出问题？因为<strong>方向相反</strong>的情形更常见：</p>
+<pre class="code" data-label="C"><code class="c">/* 另一类：用 char 存小数值并比较 */
+char c = get_byte();
+if (c == 0xFF) { ... }      /* x86: -1 == 255 → false（永远进不来！）
+                               ARM: 255 == 255 → true */
+</code></pre>
+<p>这种 bug 在 x86 上表现为"这个分支永远不生效"，在 ARM64 上突然生效 → 行为不一致。</p>
+<p><strong>还有一类更危险：用 <code class="c">char</code> 做循环/比较后当无符号用</strong></p>
+<pre class="code" data-label="C"><code class="c">char c = 0x80;                     /* x86: -128 */
+while (c &lt; 200) { ...; c++; }      /* x86: -128...127 → 到 127 后溢出成 -128 → **死循环**
+                                      ARM: 128...255 → 正常结束 */
+</code></pre>
+<p><strong>三条防御规则：</strong>
+1. <strong>字节数据一律 <code class="c">unsigned char</code> 或 <code class="c">u8</code></strong>，不要用 <code class="c">char</code>；
+2. 编译器开 <strong><code class="c">-Wchar-subscripts</code></strong>（GCC/Clang 都支持，专门抓"用 char 做下标"）；
+3. 跨平台 CI：<strong>至少在 x86_64 和 aarch64 上都跑一遍测试</strong>。符号性差异不会在单平台上暴露。</p>
+<blockquote>
+<p>补充：C 标准库的 <code class="c">isalpha()/tolower()</code> 系列同样要求传 <code class="c">unsigned char</code> 范围内的值或 EOF，
+传负数是 UB。正确写法 <code class="c">isalpha((unsigned char)c)</code>。</p>
+</blockquote>
 </details>
 </details>
 <hr />
@@ -681,6 +1432,54 @@ unsigned long x = (unsigned long)ptr;
 </tr>
 </tbody>
 </table></div>
+<p><strong>一个具体例子：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 差：24 字节（有 6 字节填充） */
+struct bad {
+    char  a;    /* 0 */
+                /* 1-3 填充 */
+    int   b;    /* 4-7 */
+    char  c;    /* 8 */
+                /* 9-15 填充（因为下面要对齐 8） */
+    void *d;    /* 16-23 */
+};
+
+/* 好：16 字节（无浪费） */
+struct good {
+    void *d;    /* 0-7   ← 按对齐从大到小排 */
+    int   b;    /* 8-11 */
+    char  a;    /* 12 */
+    char  c;    /* 13 */
+                /* 14-15 尾部填充（结构体整体要 8 字节对齐） */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>成员对齐</td>
+<td>每个成员的地址必须是<strong>其自身大小</strong>的倍数</td>
+</tr>
+<tr>
+<td>结构体整体对齐</td>
+<td>= <strong>最大成员</strong>的对齐要求</td>
+</tr>
+<tr>
+<td>结构体大小</td>
+<td>必须是整体对齐的<strong>整数倍</strong>（尾部可能补字节）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>实践工具：</strong> <code class="c">pahole</code>（来自 dwarves 包）能直接打印每个结构体的空洞在哪：
+<code class="c">bash
+pahole -C task_struct vmlinux    # 看内核结构体的真实布局
+pahole -C my_struct ./a.out      # 看自己程序的结构体</code></p>
+</blockquote>
 <p>| 陷阱 | 结构体 <strong>原样</strong> 发网络/写盘 — <strong>不同架构 padding 不同</strong> → <strong>不兼容</strong> |</p>
 <pre class="code" data-label="C"><code class="c">/* 协议/on-wire 布局：用 packed 或显式 u8 数组 — 慎用手搓 */
 struct hdr {
@@ -688,7 +1487,179 @@ struct hdr {
     __be16 len;
 } __packed;
 </code></pre>
+<blockquote>
+<p><strong>更稳妥的 on-wire 做法</strong>是<strong>序列化/反序列化函数</strong>（手工按字节偏移读写），
+而不是给结构体加 <code class="c">__packed</code> 然后直接 <code class="c">memcpy</code>。原因见下。</p>
+</blockquote>
+<hr />
+<h3><code class="c">__packed</code> 的三项真实代价</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代价</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>① 非对齐访问</strong></td>
+<td>x86 上硬件自动处理（有性能损失）；ARM 老版本<strong>直接异常</strong>；ARM64 普通 load/store 支持非对齐，但<strong>原子操作不支持</strong></td>
+</tr>
+<tr>
+<td><strong>② 不能做原子操作</strong></td>
+<td><code class="c">atomic_t</code>、<code class="c">refcount_t</code>、位操作落在非对齐地址上是未定义的（ARM 上直接 fault）</td>
+</tr>
+<tr>
+<td><strong>③ 编译器生成"字节拼接"代码</strong></td>
+<td>读一个 <code class="c">u32</code> 可能变成 4 次 <code class="c">ldrb</code> + 移位或运算，<strong>比对齐读慢数倍</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>更要命的是：<strong>编译器不知道你的 packed 结构体是非对齐的</strong>。
+如果你把它传给一个期待 <code class="c">u32 *</code> 的函数，编译器会假设指针对齐并可能用 SIMD 指令 → 崩溃。
+ARM64 上这类 bug 表现为偶发 <code class="c">SIGBUS</code>。</p>
+</blockquote>
+<hr />
+<h3>缓存行对齐：内核的宏与 HFT 的用法</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/cache.h — v6.6 原文 */
+#define SMP_CACHE_BYTES L1_CACHE_BYTES              /* :13  通常 64 */
+#define ____cacheline_aligned __attribute__((__aligned__(SMP_CACHE_BYTES)))   /* :41 */
+
+#ifdef CONFIG_SMP
+#define ____cacheline_aligned_in_smp ____cacheline_aligned   /* :46 */
+#else
+#define ____cacheline_aligned_in_smp                          /* :48  UP 下为空！ */
+#endif
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>用途</th>
+<th>UP 上行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__cacheline_aligned</code></td>
+<td>放到 <code class="c">.data..cacheline_aligned</code> 段，<strong>总是</strong>对齐</td>
+<td>仍对齐</td>
+</tr>
+<tr>
+<td><code class="c">__cacheline_aligned_in_smp</code></td>
+<td><strong>只在 SMP 上</strong>对齐</td>
+<td><strong>UP 上什么都不做</strong>（省内存）</td>
+</tr>
+<tr>
+<td><code class="c">____cacheline_aligned</code>（四个下划线）</td>
+<td>只加对齐属性，<strong>不改段</strong></td>
+<td>仍对齐</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>UP/SMP 区分的细节很值得学：</strong> 单核机器上不存在"别的核来抢缓存行"这回事，
+所以对齐纯属浪费内存。内核用条件编译在 UP 上<strong>自动省掉</strong>这些填充——
+这是"不为不存在的场景付费"的典型体现。</p>
+</blockquote>
+<hr />
+<h3>热冷分离：把最热的字段放进第一缓存行</h3>
+<p>内核结构体普遍遵守的一个<strong>非书面约定</strong>：<strong>第一缓存行放最热的字段。</strong></p>
+<p>回头看 <a href="chapter-15.html#s-15-4">Ch 15 里 <code class="c">vm_area_struct</code> 的注释</a>：</p>
+<pre class="code" data-label="C"><code class="c">struct vm_area_struct {
+    /* The first cache line has the info for VMA tree walking. */
+    unsigned long vm_start;    /* Our start address within vm_mm. */
+    unsigned long vm_end;      /* The first byte after our end address ... */
+    struct mm_struct *vm_mm;   /* The address space we belong to. */
+    ...
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>为什么这么做</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>缺页/查找路径必定访问前几个字段</strong></td>
+<td>maple tree 遍历就是要 <code class="c">vm_start</code>/<code class="c">vm_end</code>/<code class="c">vm_mm</code></td>
+</tr>
+<tr>
+<td><strong>一次缓存行预取就能拿到</strong></td>
+<td>如果它们散落在 3 个缓存行里 = 3 次可能的 cache miss</td>
+</tr>
+<tr>
+<td>冷字段（统计、调试、链表节点）往后放</td>
+<td>只有慢路径才访问</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 平移到订单簿条目：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 好：一次 cache line 拿全热字段 */
+struct order_hot {
+    uint64_t price;        /* 8  热：撮合必读 */
+    uint32_t qty;          /* 4  热 */
+    uint32_t seq;          /* 4  热 */
+    uint64_t ts_ns;        /* 8  热 */
+    /* 到此 24 字节 */
+} __attribute__((aligned(64)));
+
+/* 冷数据单独一张表，按 order_id 索引 */
+struct order_cold {
+    char     symbol[16];
+    uint32_t account;
+    uint32_t flags;
+    uint64_t parent_id;
+    ...
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>拆分的收益</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次缓存行能装更多热条目</td>
+<td>扫描订单簿时 miss 次数下降</td>
+</tr>
+<tr>
+<td>更新冷字段不污染热行</td>
+<td>改 account 不会把相邻的 price 踢出 L1</td>
+</tr>
+<tr>
+<td>与无锁队列天然契合</td>
+<td>热结构小 → 拷贝/入队成本低</td>
+</tr>
+</tbody>
+</table></div>
 <p><strong>HFT：</strong> 交易所报文 <strong>固定布局 + ntoh/hton</strong> — 与内核 <strong><code class="c">cpu_to_be32</code></strong> 同一纪律。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>false sharing 速查</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>症状</td>
+<td>多线程各自改自己的变量，但<strong>加得越多越慢</strong></td>
+</tr>
+<tr>
+<td>诊断</td>
+<td><code class="c">perf c2c</code>（cache-to-cache），看 HITM 事件落在哪一行</td>
+</tr>
+<tr>
+<td>修法</td>
+<td><code class="c">__attribute__((aligned(64)))</code> 或插入 64 字节填充；<strong>只读的共享数据</strong>反而要<strong>挤在一起</strong>（共享一行更省）</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 结构体对齐规则是什么？如何强制 packed？有什么代价？</p>
@@ -700,6 +1671,66 @@ struct hdr {
 <details>
 <summary>答案</summary>
 <p>CPU cache line 64 字节。如果两个变量在同一 cache line 且分别被不同 CPU 核频繁写 → false sharing（缓存行 bouncing）。<code class="c">__attribute__((aligned(64)))</code> 强制变量独占 cache line。HFT 交易线程和风控线程各自计数器必须 cache line 对齐，否则每秒万次写 → L1 cache 反复 invalidate → 性能下降 10x+。</p>
+</details>
+<p><strong>Q3.</strong> 为什么内核结构体普遍把"最热的字段"放在第一缓存行？这个技巧怎么用到订单簿上？</p>
+<details>
+<summary>答案</summary>
+<p>因为<strong>缓存行是内存访问的最小粒度</strong>（64 字节），一次 miss 会把整行拉进 cache。
+如果热路径要访问的字段散落在 3 个缓存行里，就要承受 3 次可能的 miss；
+把它们塞进同一行，就只要 1 次。</p>
+<p>内核里的现成例子（<a href="chapter-15.html#s-15-4">Ch 15</a> 里引过）：</p>
+<pre class="code" data-label="C"><code class="c">struct vm_area_struct {
+    /* The first cache line has the info for VMA tree walking. */
+    unsigned long vm_start;
+    unsigned long vm_end;
+    struct mm_struct *vm_mm;
+    ...
+</code></pre>
+<p>缺页处理和 VMA 查找<strong>必定</strong>要读 <code class="c">vm_start</code>/<code class="c">vm_end</code>——这是最热的字段，所以放在最前面。</p>
+<p><strong>平移到订单簿：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 热：撮合每次都要读，24 字节，一行装得下 */
+struct order_hot {
+    uint64_t price;   uint32_t qty;
+    uint32_t seq;     uint64_t ts_ns;
+};
+
+/* 冷：成交回报、日志才用，单独一张表 */
+struct order_cold {
+    char symbol[16];  uint32_t account;  ...
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>收益</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>扫描订单簿时 miss 更少</td>
+<td>一个 64B 行能装 2 个以上热条目</td>
+</tr>
+<tr>
+<td>改冷字段不污染热行</td>
+<td>改 account 不会把相邻 price 踢出 L1</td>
+</tr>
+<tr>
+<td>无锁队列拷贝成本更低</td>
+<td>入队只需拷 24 字节而非整个结构</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三条实操要点：</strong></p>
+<ol>
+<li><strong>先测再优化</strong>。用 <code class="c">perf stat -e cache-misses,cache-references</code> 看 miss 率，
+   或者 <code class="c">perf c2c</code> 精确找 false sharing（看 HITM 事件落在哪个地址）。没有数据支撑的"优化"常常是负优化。</li>
+<li><strong>只读共享数据反而要挤在一起</strong>。false sharing 只对<strong>多核写</strong>成立——
+   如果数据只被一个核写、多核读，那它<strong>共享一行更好</strong>（省缓存容量、省预取带宽）。
+   典型如：策略线程写的行情快照，多个下游线程只读 → 打包在一行里。</li>
+<li><strong>别把填充用过头</strong>。给 100 万个订单条目各加 64 字节填充 = 多占 40MB 内存，
+   L2/L3 装不下反而更慢。热冷分离是<strong>结构性</strong>优化，比无脑加 padding 更有效。</li>
+</ol>
 </details>
 </details>
 <hr />
@@ -724,36 +1755,255 @@ struct hdr {
 </tr>
 </tbody>
 </table></div>
-<p>| 架构 | x86 = <strong>小端</strong> · 许多其他架构 = <strong>大端</strong> |</p>
+<p>| 架构 | x86 / x86_64 = <strong>小端</strong> · ARM64 = <strong>双端</strong>（服务器几乎全配成小端） |</p>
 <p>| 规则 | <strong>绝不</strong> 在代码里假设本机序 |</p>
+<h3>内核的杀手锏：<code class="c">__bitwise</code> 让编译器帮你抓错</h3>
+<p>这是内核比用户态 <code class="c">htons/ntohl</code> 强的地方——<strong>字节序被编码进了类型系统</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/types.h — v6.6 原文 */
+#define __bitwise   __attribute__((bitwise))    /* :28 */
+
+typedef __u32 __bitwise __le32;                  /* :38 */
+typedef __u32 __bitwise __be32;                  /* :39 */
+typedef __u64 __bitwise __le64;
+typedef __u64 __bitwise __be64;
+</code></pre>
+<pre class="code" data-label="C"><code class="c">__le32 a;   /* 小端 32 位 */
+__be32 b;   /* 大端 32 位 */
+u32    c;   /* 本机序 32 位 */
+
+b = a;      /* ⚠️ sparse 报错：不能把 __le32 赋给 __be32 */
+c = a;      /* ⚠️ sparse 报错：不能把 __le32 当 u32 用 */
+c = le32_to_cpu(a);   /* ✅ 正确：显式转换 */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>宏（示例）</th>
-<th>作用</th>
+<th>机制</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">cpu_to_be32(x)</code></strong></td>
-<td>CPU 序 → <strong>大端</strong></td>
+<td><code class="c">__attribute__((bitwise))</code></td>
+<td>告诉 sparse："这个 typedef 是一个<strong>独立的整数类型</strong>，与其他整数类型不可混用"</td>
 </tr>
 <tr>
-<td><strong><code class="c">le32_to_cpu(x)</code></strong></td>
-<td><strong>小端</strong> → CPU 序</td>
+<td>编译器视角</td>
+<td>GCC/Clang <strong>忽略</strong>这个属性 → 零运行时开销，代码照常生成</td>
+</tr>
+<tr>
+<td>sparse 视角</td>
+<td>把它当成一个新类型 → 混用时<strong>报错</strong></td>
+</tr>
+<tr>
+<td>检查命令</td>
+<td><code class="c">make C=1</code>（编译 + sparse）或 <code class="c">sparse file.c</code></td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">hdr-&gt;len = cpu_to_be16(len);      /* 线上大端 */
-val = be32_to_cpu(hdr-&gt;magic);
+<blockquote>
+<p><strong>这是"零成本抽象"的典范</strong>：类型安全在<strong>检查期</strong>生效，在<strong>运行期</strong>完全消失。
+用户态 C 代码没有这个福利（<code class="c">uint32_t</code> 大端小端都是它），所以<strong>只能靠命名约定</strong>
+（如 <code class="c">xxx_be</code> 后缀）和 code review。</p>
+<p><strong>实践建议：</strong> HFT 项目可以在自己代码里如法炮制——
+定义 <code class="c">typedef uint32_t price_t;</code> 这类<strong>强类型别名</strong>配合 <code class="c">-Wconversion</code> 或使用
+C++ 的 <code class="c">enum class</code> / 单字段 <code class="c">struct</code> 包装，把"价格/数量/时间戳"在类型层面区分开，
+让"把价格赋给数量"这种错误在编译期就暴露。</p>
+</blockquote>
+<h3>转换宏全景</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>宏</th>
+<th>对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU → 大端</td>
+<td><code class="c">cpu_to_be16/32/64()</code></td>
+<td><code class="c">htons/htonl/htonll</code></td>
+</tr>
+<tr>
+<td>大端 → CPU</td>
+<td><code class="c">be16/32/64_to_cpu()</code></td>
+<td><code class="c">ntohs/ntohl/ntohll</code></td>
+</tr>
+<tr>
+<td>CPU → 小端</td>
+<td><code class="c">cpu_to_le16/32/64()</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>小端 → CPU</td>
+<td><code class="c">le16/32/64_to_cpu()</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>不带转换</strong>（同构）</td>
+<td><code class="c">__cpu_to_be32()</code> / <code class="c">__be32_to_cpu()</code></td>
+<td>用于<strong>已知</strong>两端同序的场景（如给 BE 设备填 DMA 描述符），<strong>双下划线表示"我真的不需要转换"</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">hdr-&gt;len   = cpu_to_be16(len);        /* 线上大端 */
+val        = be32_to_cpu(hdr-&gt;magic);
 </code></pre>
-<p>→ 用户态：<code class="c">htons</code>/<code class="c">ntohl</code>（同一数学）</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命名速记</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">cpu_to_beXX</code></td>
+<td>"<strong>我</strong>的话翻译成<strong>对方</strong>（大端）的话"</td>
+</tr>
+<tr>
+<td><code class="c">beXX_to_cpu</code></td>
+<td>"对方的话翻译成<strong>我</strong>的话"</td>
+</tr>
+<tr>
+<td><strong>谁在前，就是"从谁出发"</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>优美性质：</strong> 在小端机器上 <code class="c">cpu_to_le32</code> 是<strong>空操作</strong>（编译期展开为恒等）；
+在大端机器上 <code class="c">cpu_to_be32</code> 才是空操作。所以写对一端，另一端自动免费。</p>
+</blockquote>
+<h3>两个进阶陷阱</h3>
+<p><strong>① 位域（bitfield）的字节序</strong></p>
+<pre class="code" data-label="C"><code class="c">struct flags {
+    __u8 a:1;
+    __u8 b:1;
+    __u8 c:6;
+} __packed;
+</code></pre>
+<p>位域在内存中的<strong>排列顺序由 ABI 规定</strong>（不是 C 标准），x86 从低位往高位排，
+大端机器常常反过来。<strong>协议里的位域必须用显式掩码手搓</strong>，不要用 C 位域。</p>
+<p><strong>② 浮点数</strong></p>
+<p>浮点也有字节序问题，而且<strong>不能</strong>用 <code class="c">cpu_to_be32</code> 转换——那会做整数转换。
+正确做法是按 <code class="c">u32</code>/<code class="c">u64</code> <strong>原样复制位</strong>（<code class="c">memcpy</code>）再转字节序。</p>
+<blockquote>
+<p>HFT 里几乎不用浮点传行情（都是定点整数），这个问题反而避开了——
+这也是为什么交易所协议普遍用<strong>定点数</strong>（价格 × 10000 存 int64）。</p>
+</blockquote>
+<p>→ 用户态：<code class="c">htons</code>/<code class="c">ntohl</code>（同一数学） · <a href="#s-19-4">Ch 19.4 对齐与填充</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 大端和小端的区别？网络字节序是什么？x86 和 ARM64 分别是什么？</p>
 <details>
 <summary>答案</summary>
 <p>小端：最低地址存最低字节（0x1234 → [34][12]）。大端：最低地址存最高字节（0x1234 → [12][34]）。网络字节序 = 大端（BSD 遗产）。x86/x86_64 = 小端。ARM64 = 双端（默认小端，可配置大端）。HFT 协议解析必须处理字节序：<code class="c">ntohl/htonl</code> 转换网络序。FPGA 可能用大端，与 CPU 交互时要注意转换。</p>
+</details>
+<p><strong>Q2.</strong> 内核的 <code class="c">__le32</code> 和普通的 <code class="c">u32</code> 在机器层面完全一样，为什么要多此一举定义两个类型？</p>
+<details>
+<summary>答案</summary>
+<p>为了<strong>让工具在编译期抓出字节序错误</strong>，同时<strong>不付出任何运行时代价</strong>。</p>
+<p>机制在 <code class="c">include/uapi/linux/types.h</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define __bitwise   __attribute__((bitwise))    /* :28 */
+typedef __u32 __bitwise __le32;                  /* :38 */
+typedef __u32 __bitwise __be32;                  /* :39 */
+</code></pre>
+<p><code class="c">__attribute__((bitwise))</code> 是给静态检查工具 <strong>sparse</strong> 看的：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>视角</th>
+<th>如何看待 <code class="c">typedef __u32 __bitwise __le32;</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>GCC / Clang</strong></td>
+<td>完全<strong>忽略</strong>这个属性 → <code class="c">__le32</code> 就是 <code class="c">u32</code>，生成的代码一模一样，<strong>零开销</strong></td>
+</tr>
+<tr>
+<td><strong>sparse</strong></td>
+<td>把它当成一个<strong>全新的整数类型</strong>，与 <code class="c">u32</code>、<code class="c">__be32</code> 之间<strong>不可隐式转换</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>于是：</p>
+<pre class="code" data-label="C"><code class="c">__le32 a;  __be32 b;  u32 c;
+
+b = a;               /* sparse: 错误（le → be 未转换） */
+c = a;               /* sparse: 错误（le 当本机序用） */
+c = le32_to_cpu(a);  /* ✅ 通过 */
+</code></pre>
+<p><strong>对比用户态的困境：</strong> <code class="c">uint32_t</code> 无法区分"这个数是大端的还是小端的"，
+只能靠命名约定（<code class="c">xxx_be</code> 后缀）和人工 review。这就是为什么内核代码的字节序 bug
+远少于同规模的普通 C 项目——<strong>它把约定变成了机器可检查的类型</strong>。</p>
+<p>检查方式：</p>
+<pre class="code" data-label="shell"><code class="c">make C=1        # 编译时跑 sparse（C=2 表示强制全部重查）
+sparse file.c   # 单独跑
+</code></pre>
+<p><strong>HFT 可以照抄这个思路</strong>（哪怕在用户态 C++ 里）：
+- C++：<code class="c">struct Price { int64_t v; };</code> 这种<strong>单字段包装</strong>（或 <code class="c">enum class</code>）让不同类型不可互转；
+- C：用 typedef 别名 + 严格 review + 命名后缀；
+- 无论如何，<strong>线上格式转换集中在一处</strong>（编解码函数），不要散落在业务逻辑里。</p>
+</details>
+<p><strong>Q3.</strong> 解析交易所二进制行情时，用 <code class="c">__attribute__((packed))</code> 结构体直接 <code class="c">memcpy</code> 快，还是手工按偏移解码好？</p>
+<details>
+<summary>答案</summary>
+<p><strong>手工按偏移解码（或生成的编解码函数）更好。</strong> 直接 <code class="c">memcpy</code> 到 packed 结构体的问题不是"慢"，而是<strong>脆弱</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>风险</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>非对齐访问</strong></td>
+<td>报文里字段常常未按自然对齐排布（比如 u16 在奇数偏移）。x86 上性能损失，ARM 上老核心直接异常；<strong>原子操作则完全不能用</strong></td>
+</tr>
+<tr>
+<td><strong>编译器可能用 SIMD 读 u32</strong></td>
+<td>编译器假设指针对齐，看到 <code class="c">u32 *</code> 就可能生成 <code class="c">movdq</code>/<code class="c">ldp</code>，遇到非对齐指针直接 <code class="c">SIGBUS</code></td>
+</tr>
+<tr>
+<td><strong>packed 结构体传参会丢属性</strong></td>
+<td><code class="c">void f(u32 *x)</code> 收下 packed 成员的地址后，编译器<strong>不再知道</strong>它非对齐 → 生成对齐假设的代码</td>
+</tr>
+<tr>
+<td><strong>位域排列不可移植</strong></td>
+<td>位域的位序由 ABI 定，x86 与大端机器相反</td>
+</tr>
+<tr>
+<td><strong>协议演进难</strong></td>
+<td>加一个字段要改结构体，padding 位置变了就得全量回归</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>正确做法：解码函数 + 显式字节序转换</strong></p>
+<pre class="code" data-label="C"><code class="c">/* 一次解析，产出&quot;本机序、自然对齐&quot;的结构体给业务用 */
+static inline int decode_snap(const uint8_t *p, size_t n, struct snapshot *out)
+{
+    if (n &lt; SNAP_MIN_LEN) return -1;
+    out-&gt;seq    = be64_to_cpu(*(const uint64_t *)(p + 0));  /* 仍要求对齐！ */
+    ...
+}
+</code></pre>
+<p>更稳的写法（<strong>完全不依赖对齐</strong>）：</p>
+<pre class="code" data-label="C"><code class="c">static inline uint32_t rd_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] &lt;&lt; 24) | ((uint32_t)p[1] &lt;&lt; 16) |
+           ((uint32_t)p[2] &lt;&lt;  8) | ((uint32_t)p[3]);
+}
+</code></pre>
+<p>现代编译器（GCC 8+/Clang）会把这个"字节拼接"<strong>自动识别并优化成一条 <code class="c">bswap</code> 指令</strong>，
+所以<strong>手写解码并不比 memcpy 慢</strong>——甚至更快，因为编译器知道一切。</p>
+<p><strong>性能上的真实结论：</strong>
+- 解码本身通常不是瓶颈，<strong>系统调用和内核网络栈</strong>才是；
+- 真要极致优化：用 <code class="c">AF_XDP</code>/DPDK 拿到连续的包缓冲后<strong>批量</strong>解码（提高 I-cache 和分支预测命中）；
+- 用<strong>生成的编解码代码</strong>（如 SBE / FlatBuffers / Simple Binary Encoding）——
+  这些方案天生处理了字节序、对齐和版本演进，比手搓结构体可靠得多。</p>
 </details>
 </details>
 <hr />
@@ -765,7 +2015,7 @@ val = be32_to_cpu(hdr-&gt;magic);
 <thead>
 <tr>
 <th>事实</th>
-<th><strong><code class="c">HZ</code></strong> 因架构/配置而异</th>
+<th><strong><code class="c">HZ</code></strong> 因架构/配置而异（100 / 250 / 1000 三档可选）</th>
 </tr>
 </thead>
 <tbody>
@@ -779,13 +2029,153 @@ val = be32_to_cpu(hdr-&gt;magic);
 </tr>
 </tbody>
 </table></div>
+<pre class="code" data-label="C"><code class="c">unsigned long timeout = jiffies + 3 * HZ;              /* 可以，但别手写 */
+unsigned long timeout = jiffies + msecs_to_jiffies(3000);  /* 更好：意图明确 */
+unsigned long timeout = jiffies + secs_to_jiffies(3);      /* v5.9+ 有这个宏 */
+</code></pre>
+<h4>陷阱：<code class="c">jiffies</code> 在 32 位架构上只有 32 位</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/jiffies.h:85 — v6.6 原文 */
+extern u64 __cacheline_aligned_in_smp jiffies_64;
+extern unsigned long volatile __cacheline_aligned_in_smp __jiffy_arch_data jiffies;
+</code></pre>
+<p><code class="c">jiffies</code> 的类型是 <code class="c">unsigned long</code>——<strong>32 位系统上就是 32 位</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>HZ</th>
+<th>32 位 <code class="c">jiffies</code> 回绕周期</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>100</td>
+<td>~497 天</td>
+</tr>
+<tr>
+<td>250</td>
+<td>~199 天</td>
+</tr>
+<tr>
+<td><strong>1000</strong></td>
+<td><strong>~49.7 天</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* include/linux/jiffies.h:74 — v6.6 原文注释 */
+/*
+ * The 64-bit value is not atomic on 32-bit systems - you MUST NOT read it
+ * without sampling the sequence number in jiffies_lock.
+ * get_jiffies_64() will do this for you as appropriate.
+ */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>32 位上直接读 <code class="c">jiffies_64</code></td>
+<td>❌ <strong>非原子</strong>（要读两个 32 位半字，中间可能进位）</td>
+</tr>
+<tr>
+<td>必须读 64 位时</td>
+<td>✅ 用 <strong><code class="c">get_jiffies_64()</code></strong>（内部用 seqlock 保护）</td>
+</tr>
+<tr>
+<td>比较时间</td>
+<td>✅ 用 <code class="c">time_after(a,b)</code> / <code class="c">time_before()</code> 宏——<strong>它们对回绕是安全的</strong>（转成有符号差值比较）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">time_after</code> 为什么对回绕安全？</strong>
+```c</p>
+<h1>define time_after(a,b) ((long)((b) - (a)) &lt; 0)</h1>
+<p><code class="c">``
+把差值转成</code>long<code class="c">（有符号）再判正负：即使</code>a<code class="c">刚回绕成 0、</code>b<code class="c">还是</code>UINT_MAX<code class="c">，</code>(long)(b - a)` 也是一个<strong>很小的正数</strong>。这是经典的"环形计数器比较"技巧，
+和 TCP 序号、<a href="chapter-06.html#s-6-3">Ch 6.3 kfifo 的 head/tail 回绕</a>是<strong>同一个数学</strong>。</p>
+</blockquote>
+<h4>现代内核的时间 API（HFT 该用这些）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>内核接口</th>
+<th>用户态对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>单调时间（纳秒）</strong></td>
+<td><code class="c">ktime_get_ns()</code> / <code class="c">ktime_get_mono_fast_ns()</code></td>
+<td><code class="c">clock_gettime(CLOCK_MONOTONIC)</code></td>
+</tr>
+<tr>
+<td>实时钟（wall time）</td>
+<td><code class="c">ktime_get_real_ns()</code></td>
+<td><code class="c">clock_gettime(CLOCK_REALTIME)</code></td>
+</tr>
+<tr>
+<td><strong>原始单调（不受 NTP 调整）</strong></td>
+<td><code class="c">ktime_get_raw_ns()</code></td>
+<td><code class="c">CLOCK_MONOTONIC_RAW</code></td>
+</tr>
+<tr>
+<td>高精度定时器</td>
+<td><code class="c">hrtimer_start()</code>（纳秒精度）</td>
+<td><code class="c">timerfd</code> / <code class="c">clock_nanosleep</code></td>
+</tr>
+<tr>
+<td>调度延迟测量</td>
+<td><code class="c">sched_clock()</code>（架构相关，最快）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">jiffies</code> 的精度是 1/HZ（1~10 ms），而 HFT 需要纳秒。</strong>
+所以 <code class="c">jiffies</code> 只适合"粗粒度超时"（如"30 秒内重试一次"），
+<strong>绝不能用于延迟测量</strong>——那要用 <code class="c">ktime_get_ns()</code> 或 TSC。</p>
+</blockquote>
+<h4>NO_HZ：idle CPU 上的 jiffies 不推进</h4>
+<p>现代内核默认开 <strong><code class="c">CONFIG_NO_HZ_IDLE</code></strong>（动态时钟）：</p>
+<pre class="code" data-label="code"><code class="c">旧模型：不管忙不忙，每个 CPU 每 1/HZ 秒收一次时钟中断 → jiffies++
+
+NO_HZ：CPU 进入 idle 后**停掉周期时钟中断** → 省电
+       代价：这颗 CPU 上的 jiffies 在 idle 期间**不推进**
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>影响</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用途受限</td>
+<td>不能用 jiffies 做"跨 idle 的墙钟计时"</td>
+</tr>
+<tr>
+<td>正确做法</td>
+<td>需要真实时间用 <code class="c">ktime_get_*()</code>（基于 clocksource，不受 NO_HZ 影响）</td>
+</tr>
+<tr>
+<td>HFT 相关</td>
+<td>交易进程频繁唤醒的 CPU 基本不会进 idle，影响不大；但<strong>监控脚本</strong>要注意</td>
+</tr>
+</tbody>
+</table></div>
 <p>→ <strong>Ch 11</strong> <code class="c">HZ</code> · <code class="c">time_after</code></p>
 <h4>PAGE_SIZE</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>事实</th>
-<th><strong>不固定</strong> — x86-32 常 4KB，其他或 <strong>8/16/64KB</strong></th>
+<th><strong>不固定</strong> — x86-64/ARM64 默认 <strong>4KB</strong>，ARM64 还可配 <strong>16KB / 64KB</strong></th>
 </tr>
 </thead>
 <tbody>
@@ -795,10 +2185,44 @@ val = be32_to_cpu(hdr-&gt;magic);
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">order = get_order(size);
-alloc_pages(GFP_KERNEL, order);
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>可配置页大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86_64</td>
+<td>4KB（+ 2MB / 1GB 大页）</td>
+</tr>
+<tr>
+<td><strong>ARM64</strong></td>
+<td><strong>4KB / 16KB / 64KB</strong>（<code class="c">CONFIG_ARM64_4K_PAGES</code> 等，构建时选择）+ 2MB/32MB/1GB 大页</td>
+</tr>
+<tr>
+<td>PowerPC</td>
+<td>4KB / 64KB</td>
+</tr>
+<tr>
+<td>RISC-V</td>
+<td>4KB（+ Svpbmt 等扩展）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">order = get_order(size);              /* 把字节数转成 alloc_pages 的 order */
+pages = alloc_pages(GFP_KERNEL, order);
 </code></pre>
-<p>→ <strong>Ch 12</strong> 页分配 · <strong>Ch 15</strong> 映射</p>
+<blockquote>
+<p><strong>页大小差异的实际影响：</strong>
+- <strong>mmap 粒度</strong>：映射的最小单位是一页；
+- <strong>TLB 覆盖</strong>：64KB 页用同样的 TLB 条目数能覆盖 16 倍的地址空间（大内存机器上有优势）；
+- <strong>内存浪费</strong>：64KB 页下，只写 100 字节也要占 64KB；
+- <strong>HFT 大页</strong>：<code class="c">madvise(MADV_HUGEPAGE)</code> 或 hugetlbfs，减少 TLB miss（2MB 页在大数据集上收益显著）。</p>
+</blockquote>
+<p><strong>HFT：</strong> 用户态也一样——<strong>永远用 <code class="c">sysconf(_SC_PAGESIZE)</code> 或 <code class="c">getpagesize()</code>，别写 4096。</strong></p>
+<p>→ <strong>Ch 12</strong> 页分配 · <strong>Ch 15</strong> 映射 · <a href="#s-19-1">Ch 19.1 架构差异表</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> jiffies 和 HZ 的关系？为什么 HFT 不能用 jiffies 做精确计时？</p>
@@ -810,6 +2234,52 @@ alloc_pages(GFP_KERNEL, order);
 <details>
 <summary>答案</summary>
 <p>x86/ARM64 默认 4KB。ARM64 支持 16KB/64KB（CONFIG_ARM64_64K_PAGES）。某些架构支持多种页大小。HFT 应避免硬编码 4096，用 PAGE_SIZE 宏。Huge Page 大小也随架构变化：x86 = 2MB/1GB，ARM64 = 2MB/32MB/512MB/1GB。跨架构移植时页大小差异影响 mmap 粒度和 TLB 效率。</p>
+</details>
+<p><strong>Q3.</strong> 用 <code class="c">jiffies</code> 测量一段代码跑了多久，为什么在 32 位 ARM 上过一段时间会算出荒谬的值？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <strong><code class="c">jiffies</code> 在 32 位架构上只有 32 位</strong>（<code class="c">include/linux/jiffies.h:86</code>）：</p>
+<pre class="code" data-label="C"><code class="c">extern unsigned long volatile __cacheline_aligned_in_smp __jiffy_arch_data jiffies;
+</code></pre>
+<p><code class="c">unsigned long</code> 在 32 位平台 = 32 位。HZ=1000 时，<strong>约 49.7 天回绕一次</strong>。</p>
+<p>回绕会带来两个后果：</p>
+<p><strong>① 直接相减可能得到负数/巨大值</strong></p>
+<pre class="code" data-label="C"><code class="c">unsigned long t0 = jiffies;
+do_work();
+unsigned long dt = jiffies - t0;   /* 回绕后变成巨大的无符号数 */
+</code></pre>
+<p>如果 <code class="c">t0</code> 接近 <code class="c">UINT_MAX</code> 而结束时已回绕到很小的值，
+无符号减法<strong>仍然得到正确的差值</strong>（模运算的性质），所以<strong>这一步其实安全</strong>。</p>
+<p><strong>② 但直接比较、直接读 64 位就不安全了</strong></p>
+<pre class="code" data-label="C"><code class="c">u64 t = jiffies_64;    /* ❌ 32 位上这是两次 32 位读，非原子 */
+                       /*    可能读到 &quot;低位已进位、高位还没更新&quot; 的中间态 */
+</code></pre>
+<p>源码注释说得很清楚（<code class="c">jiffies.h:74</code>）：</p>
+<blockquote>
+<p>"The 64-bit value is not atomic on 32-bit systems - you MUST NOT read it
+without sampling the sequence number in <strong>jiffies_lock</strong>.
+<strong>get_jiffies_64()</strong> will do this for you as appropriate."</p>
+</blockquote>
+<p><strong>正确做法：</strong>
+| 需求 | 用法 |
+|------|------|
+| 比较先后 | <code class="c">time_after(a, b)</code> / <code class="c">time_before(a, b)</code>（<strong>回绕安全</strong>） |
+| 读 64 位 | <code class="c">get_jiffies_64()</code>（内部用 seqlock） |
+| 测耗时 | <strong>不要用 jiffies</strong> —— 用 <code class="c">ktime_get_ns()</code> |
+| 设超时 | <code class="c">jiffies + msecs_to_jiffies(ms)</code> |</p>
+<p><strong>更重要的是：jiffies 根本不该用来测耗时。</strong> 它的精度是 1/HZ = 1~10 ms，
+而 HFT 关心的是<strong>微秒/纳秒级</strong>。这段代码的正确写法是：</p>
+<pre class="code" data-label="C"><code class="c">u64 t0 = ktime_get_ns();
+do_work();
+u64 dt_ns = ktime_get_ns() - t0;      /* 纳秒，单调，不回绕（几百年） */
+</code></pre>
+<p>用户态对应：<code class="c">clock_gettime(CLOCK_MONOTONIC, &amp;ts)</code>，
+且现代 glibc 通过 <strong>vDSO</strong> 把它变成<strong>纯用户态调用</strong>（不进内核，~20ns），
+比 <code class="c">rdtsc</code> 更可移植且不受 CPU 迁移/变频影响。</p>
+<blockquote>
+<p><strong>结论：</strong> jiffies 是"粗粒度超时"的工具（"30 秒后重试"这种），
+不是"计时"的工具。混淆这两者是嵌入式/驱动代码里的经典错误。</p>
+</blockquote>
 </details>
 </details>
 <hr />
@@ -831,29 +2301,220 @@ alloc_pages(GFP_KERNEL, order);
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p><strong>两层重排，都要防：</strong>
+<code class="c">① 编译器重排（编译期）—— 优化器认为无关就换顺序   → 用 barrier() / volatile / READ_ONCE
+② CPU 重排（运行期）  —— 弱序 CPU 真的乱序执行     → 用 smp_mb() / dmb / mfence</code></p>
+</blockquote>
+<hr />
+<h3><code class="c">mb()</code> vs <code class="c">smp_mb()</code>：一个字之差，语义完全不同</h3>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/barrier.h — v6.6 原文 */
+
+/* 硬件屏障：总是生效（用于 MMIO / 设备） */
+#define mb()    do { kcsan_mb(); __mb(); } while (0)      /* :30 */
+#define rmb()   do { kcsan_rmb(); __rmb(); } while (0)    /* :34 */
+#define wmb()   do { kcsan_wmb(); __wmb(); } while (0)    /* :38 */
+
+/* SMP 屏障：只在多核时生效 */
+#define smp_mb()    do { kcsan_mb(); __smp_mb(); } while (0)   /* :99 */
+
+/* ↓↓↓ 关键：单核（!CONFIG_SMP）下的定义 ↓↓↓ */
+#else   /* !CONFIG_SMP */
+#ifndef smp_mb
+#define smp_mb()    barrier()      /* ← 只剩编译器屏障，没有指令！ */
+#endif
+#ifndef smp_rmb
+#define smp_rmb()   barrier()
+#endif
+#ifndef smp_wmb
+#define smp_wmb()   barrier()
+#endif
+#endif  /* CONFIG_SMP */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>宏</th>
+<th>SMP 上</th>
+<th>UP 上</th>
 <th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">rmb()</code></strong></td>
-<td>读顺序</td>
+<td><strong><code class="c">mb()</code> / <code class="c">rmb()</code> / <code class="c">wmb()</code></strong></td>
+<td>真指令（<code class="c">mfence</code>/<code class="c">dmb</code>）</td>
+<td><strong>仍是真指令</strong></td>
+<td><strong>设备 MMIO</strong>、与硬件交互</td>
 </tr>
 <tr>
-<td><strong><code class="c">wmb()</code></strong></td>
-<td>写顺序</td>
-</tr>
-<tr>
-<td><strong><code class="c">mb()</code></strong></td>
-<td>读写</td>
+<td><strong><code class="c">smp_mb()</code> / <code class="c">smp_rmb()</code> / <code class="c">smp_wmb()</code></strong></td>
+<td>真指令</td>
+<td><strong>仅 <code class="c">barrier()</code></strong>（编译器屏障）</td>
+<td><strong>CPU 之间</strong>的顺序（普通内存）</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ SMP 可见性 · 设备 MMIO</p>
+<blockquote>
+<p><strong>为什么这么分？</strong> 单核上不存在"另一个核看到乱序"的问题——
+唯一的观察者就是这个 CPU，而它自己看到的结果<strong>逻辑上一定与程序序一致</strong>（自一致性保证）。
+所以 SMP 屏障在 UP 上退化成编译器屏障就够了，<strong>省下几十个周期的 fence 指令</strong>。</p>
+<p><strong>排障启示：</strong> 一个只在 SMP 上暴露的并发 bug，在单核编译的内核上<strong>完全看不出来</strong>。
+这也是"按最坏情况写"的又一个例证。</p>
+</blockquote>
+<hr />
+<h3>屏障工具箱（从强到弱）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>作用</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">smp_mb()</code></strong></td>
+<td>全屏障（读写都不跨）</td>
+<td>最贵（x86 上 <code class="c">mfence</code>，~20-100 周期）</td>
+</tr>
+<tr>
+<td><code class="c">smp_rmb()</code></td>
+<td>只保证<strong>读</strong>不越过</td>
+<td>读侧较便宜</td>
+</tr>
+<tr>
+<td><code class="c">smp_wmb()</code></td>
+<td>只保证<strong>写</strong>不越过</td>
+<td><strong>最便宜</strong>（x86 上甚至无指令）</td>
+</tr>
+<tr>
+<td><strong><code class="c">smp_store_release(&amp;x, v)</code></strong></td>
+<td>写 + 之前的所有读写不能越过它</td>
+<td>与 <code class="c">acquire</code> 配对</td>
+</tr>
+<tr>
+<td><strong><code class="c">smp_load_acquire(&amp;x)</code></strong></td>
+<td>读 + 之后的所有读写不能越过它</td>
+<td>与 <code class="c">release</code> 配对</td>
+</tr>
+<tr>
+<td><strong><code class="c">READ_ONCE(x)</code> / <code class="c">WRITE_ONCE(x, v)</code></strong></td>
+<td><strong>不是屏障</strong>，只保证"一次性读/写+不优化掉"</td>
+<td>几乎免费</td>
+</tr>
+<tr>
+<td><code class="c">barrier()</code></td>
+<td>只挡<strong>编译器</strong>重排</td>
+<td>零指令</td>
+</tr>
+<tr>
+<td><code class="c">dma_rmb()</code> / <code class="c">dma_wmb()</code></td>
+<td>设备与 CPU 之间（弱序架构上弱于 <code class="c">mb</code>）</td>
+<td>中等</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推荐用法：优先 acquire/release，而不是裸 smp_mb。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对比</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">smp_mb()</code> 双向挡</td>
+<td>两侧都挡 → 最保守，也最贵</td>
+</tr>
+<tr>
+<td><code class="c">release</code> / <code class="c">acquire</code> <strong>单向</strong>挡</td>
+<td>只挡"生产者在写之前完成所有准备"和"消费者在读之后才用数据" → <strong>语义精确、开销小</strong>（ARM64 上用 <code class="c">stlr</code>/<code class="c">ldar</code>，x86 上几乎免费）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>x86 (TSO) vs ARM64 (弱序)：哪些重排被允许</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>重排类型</th>
+<th>x86 (TSO)</th>
+<th>ARM64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Load → Load</td>
+<td>❌ 不允许</td>
+<td>✅ <strong>允许</strong></td>
+</tr>
+<tr>
+<td>Load → Store</td>
+<td>❌ 不允许</td>
+<td>✅ <strong>允许</strong></td>
+</tr>
+<tr>
+<td><strong>Store → Store</strong></td>
+<td>❌ 不允许</td>
+<td>✅ <strong>允许</strong></td>
+</tr>
+<tr>
+<td><strong>Store → Load</strong></td>
+<td>✅ <strong>允许</strong>（唯一漏洞）</td>
+<td>✅ <strong>允许</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论：x86 上只有 Store-Load 一种重排</strong>，所以绝大多数无锁代码在 x86 上"碰巧正确"。
+迁到 ARM64 后四类重排全部可能发生，<strong>那些"碰巧正确"的代码就开始出错</strong>。
+这就是为什么同一份无锁队列代码在 x86 上跑几个月没事，到 ARM64（如 AWS Graviton、树莓派 5）上就崩。</p>
+<p><strong>Store-Load 是 x86 上唯一需要 <code class="c">smp_mb()</code> 的场景</strong>，也就是经典的
+<a href="chapter-09.html#s-9-3">Dekker / Peterson 互斥算法</a> 会失败的原因。</p>
+</blockquote>
+<hr />
+<h3>实战：SPSC 无锁队列的正确写法</h3>
+<p>这正是 <a href="chapter-06.html#s-6-3">Ch 6.3 讲的 kfifo</a> 背后的模式：</p>
+<pre class="code" data-label="C"><code class="c">/* 生产者（单写者） */
+WRITE_ONCE(slot[tail].data, value);
+smp_wmb();                            /* ① 保证数据先于索引可见 */
+WRITE_ONCE(q-&gt;tail, tail + 1);        /* ② 发布（publish）        */
+
+/* 消费者（单读者） */
+tail = READ_ONCE(q-&gt;tail);
+if (tail != head) {
+    smp_rmb();                        /* ③ 保证索引先于数据被读 */
+    value = READ_ONCE(slot[head].data);
+    WRITE_ONCE(q-&gt;head, head + 1);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>屏障</th>
+<th>缺了会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <code class="c">smp_wmb()</code>（生产者侧）</td>
+<td>ARM64 上"索引先更新、数据还没写完"→ 消费者读到<strong>半截数据</strong></td>
+</tr>
+<tr>
+<td>③ <code class="c">smp_rmb()</code>（消费者侧）</td>
+<td>ARM64 上"先去读数据、后读索引"→ 读到<strong>旧数据/未完成的数据</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>用 acquire/release 写更简洁（且在现代 ISA 上更高效）：
+<code class="c">c
+smp_store_release(&amp;q-&gt;tail, tail + 1);      /* 生产者发布 */
+tail = smp_load_acquire(&amp;q-&gt;tail);          /* 消费者获取 */</code></p>
+</blockquote>
+<p>→ SMP 可见性 · 设备 MMIO · <a href="chapter-10.html#s-10-10">Ch 10.10 排序和屏障</a> · <a href="chapter-06.html#s-6-3">Ch 6.3 队列</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> x86 和 ARM64 的内存排序模型有什么区别？对 HFT 有什么影响？</p>
@@ -861,66 +2522,939 @@ alloc_pages(GFP_KERNEL, order);
 <summary>答案</summary>
 <p>x86 = TSO（Total Store Order）：store-store 不重排，load-store 不重排，但 store-load 可重排。ARM64 = 弱排序：所有 load/store 都可能重排。影响：ARM64 上需要更多内存屏障（dmb 指令）。HFT 代码用 <code class="c">smp_store_release/smp_load_acquire</code>（自带屏障）比裸 <code class="c">READ_ONCE/WRITE_ONCE</code> 更安全。跨平台无锁代码必须正确使用屏障。</p>
 </details>
+<p><strong>Q2.</strong> <code class="c">mb()</code> 和 <code class="c">smp_mb()</code> 有什么区别？为什么在单核（<code class="c">!CONFIG_SMP</code>）内核上 <code class="c">smp_mb()</code> 退化成 <code class="c">barrier()</code> 是<strong>正确</strong>的而不是偷懒？</p>
+<details>
+<summary>答案</summary>
+<p>源码（<code class="c">include/asm-generic/barrier.h</code>，v6.6）：</p>
+<pre class="code" data-label="C"><code class="c">#define mb()      do { kcsan_mb(); __mb(); } while (0)      /* :30 总是真指令 */
+#ifdef CONFIG_SMP
+#define smp_mb()  do { kcsan_mb(); __smp_mb(); } while (0)  /* :99 */
+#else
+#define smp_mb()  barrier()                                 /* :113 只剩编译器屏障 */
+#endif
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>保证对象</th>
+<th>UP 上是否发指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mb()</code></td>
+<td><strong>CPU ↔ 设备（MMIO / DMA）</strong></td>
+<td><strong>是</strong>（设备不受"只有一颗 CPU"影响）</td>
+</tr>
+<tr>
+<td><code class="c">smp_mb()</code></td>
+<td><strong>CPU ↔ CPU</strong></td>
+<td><strong>否</strong>，只剩 <code class="c">barrier()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>UP 上退化的正确性论证：单核只有一个执行流在做乱序发射，而乱序执行的<strong>硬件承诺</strong>是"单核语义不被破坏"——CPU 自己看自己的读写顺序永远是程序序（self-consistency）。所以 UP 上唯一还能打乱可观测顺序的是<strong>编译器</strong>把它重排到寄存器分配/指令调度之后，而 <code class="c">barrier()</code> 恰好只管这一层。<strong>不为不存在的场景付费</strong>：SMP 屏障（x86 的 <code class="c">mfence</code> 约 20~30 周期）在 UP 上是纯浪费。</p>
+<p>三个实践结论：
+1. 写<strong>驱动</strong>（访问 MMIO 寄存器）必须用 <code class="c">mb()</code> / <code class="c">dma_wmb()</code>，<strong>不能</strong>用 <code class="c">smp_mb()</code> —— 否则在 UP 内核上设备会看到乱序的寄存器写，这是极难复现的 bug。
+2. 写<strong>无锁数据结构</strong>（CPU 之间）用 <code class="c">smp_mb()</code> 系列 —— 在 UP 上自动免费，在 SMP 上自动生效。
+3. 不要因为"我机器是多核"就以为 <code class="c">smp_mb()</code> 一定发指令：编译内核时 <code class="c">CONFIG_SMP=n</code> 就全部消失，这正是<strong>测试环境和生产环境配置不一致</strong>导致的经典事故。</p>
+</details>
+<p><strong>Q3.</strong> 团队把一个 SPSC 无锁队列从 x86_64 迁到 ARM64，压测几个月都正常，上 ARM64 后立刻偶发数据损坏。代码是：</p>
+<pre class="code" data-label="C"><code class="c">/* 生产者 */
+slot[tail].data = value;
+WRITE_ONCE(q-&gt;tail, tail + 1);        /* 缺了 smp_wmb() */
+/* 消费者 */
+tail = READ_ONCE(q-&gt;tail);
+if (tail != head) {
+    value = slot[head].data;          /* 缺了 smp_rmb() */
+    WRITE_ONCE(q-&gt;head, head + 1);
+}
+</code></pre>
+<p>请用 x86 TSO 与 ARM64 弱排序的差异解释"为什么 x86 上碰巧正确"，并给出最小修法。</p>
+<details>
+<summary>答案</summary>
+<p><strong>为什么 x86 上碰巧正确</strong></p>
+<p>x86 的 TSO 只开放<strong>一类</strong>重排：<strong>Store→Load</strong>（写缓冲导致的"自己的写还没被别人看到，就先读了别人的值"）。而这段代码的危险重排是：</p>
+<ul>
+<li>生产者侧：<code class="c">store data</code> 与 <code class="c">store tail</code> 两条 <strong>Store→Store</strong> —— TSO <strong>禁止</strong>重排 → 消费者看到新 tail 时，data 一定已经进 store buffer 并对其他核可见 → 正确。</li>
+<li>消费者侧：<code class="c">load tail</code> 与 <code class="c">load data</code> 两条 <strong>Load→Load</strong> —— TSO <strong>禁止</strong>重排 → 看到新 tail 后不会去读旧 data → 正确。</li>
+</ul>
+<p>也就是说，<strong>这段代码恰好只依赖 x86 不重排的那三类</strong>，唯一被 x86 放开的 Store→Load 组合它没用到。所以 x86 上缺屏障也"一直没问题"——这正是最危险的一类 bug：<strong>正确性依赖平台，而不是依赖代码</strong>。</p>
+<blockquote>
+<p>反例：把消费者改成"先写 <code class="c">head</code> 再读 <code class="c">tail</code>"（Store→Load），x86 上立刻就崩。</p>
+</blockquote>
+<p><strong>ARM64 上为什么崩</strong></p>
+<p>ARM64 是弱排序，四类重排（Load-Load / Load-Store / Store-Store / Store-Load）<strong>全部允许</strong>（只要不碰地址依赖）。于是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>缺失的屏障</th>
+<th>ARM64 上允许的重排</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>生产者 <code class="c">smp_wmb()</code></td>
+<td>Store-Store 重排：<code class="c">tail</code> 先于 <code class="c">data</code> 可见</td>
+<td>消费者读到<strong>未初始化的槽位</strong>（半截数据 / 全 0 / 上一个消息的残留）</td>
+</tr>
+<tr>
+<td>消费者 <code class="c">smp_rmb()</code></td>
+<td>Load-Load 重排：先投机读 <code class="c">data</code> 再读 <code class="c">tail</code></td>
+<td>读到<strong>旧值</strong>，然后 head 前进 → 消息重复或错序</td>
+</tr>
+</tbody>
+</table></div>
+<p>两者都是<strong>概率性</strong>的（取决于 store buffer 排空时机、乱序窗口宽度），所以表现为"偶发损坏、压力越大越频繁"——最难查的那一类。</p>
+<p><strong>最小修法（两种，推荐后者）</strong></p>
+<ol>
+<li>
+<p>补裸屏障：
+   <code class="c">c
+   /* 生产者 */ slot[tail].data = value;
+   smp_wmb();                              /* 数据先于索引可见 */
+   WRITE_ONCE(q-&gt;tail, tail + 1);
+   /* 消费者 */ tail = READ_ONCE(q-&gt;tail);
+   if (tail != head) {
+       smp_rmb();                          /* 索引先于数据被读 */
+       value = slot[head].data;
+       WRITE_ONCE(q-&gt;head, head + 1);
+   }</code></p>
+</li>
+<li>
+<p><strong>推荐</strong>：改用 acquire/release，语义更明确且在 ARM64 上只生成单向屏障（比全向 <code class="c">dmb ish</code> 便宜）：
+   <code class="c">c
+   smp_store_release(&amp;q-&gt;tail, tail + 1);  /* 生产者：release，前面的写不会越过它 */
+   tail = smp_load_acquire(&amp;q-&gt;tail);      /* 消费者：acquire，后面的读不会越过它 */</code></p>
+</li>
+</ol>
+<p><strong>给 HFT 的教训</strong>：无锁代码的正确性必须来自<strong>代码里的屏障</strong>，不能来自"某平台上跑过"。可移植的做法是
+① 一律用 <code class="c">smp_store_release/smp_load_acquire</code> 表达"发布/消费"关系；
+② 用 <code class="c">READ_ONCE/WRITE_ONCE</code> 消灭编译器优化引起的撕裂；
+③ 在 CI 里<strong>同时</strong>跑 x86_64 和 ARM64（或用 <code class="c">herd7</code>/<code class="c">litmus</code> 做内存模型形式化验证），而不是只在一个平台上压测。</p>
+</details>
 </details>
 <hr />
       </section>
       <section class="section" id="s-19-8">
         <div class="sec-head"><div class="sec-no">19.8</div><h2>section-19.8-SMP内核抢占与高端内存</h2></div>
 <p>可移植 ≠ 只换 CPU — 还要兼容 <strong>内核配置</strong>。</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>配置</th>
-<th>编写假设</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>SMP</strong></td>
-<td><strong>始终</strong> 可能真并发 — <strong>锁 / per-CPU</strong></td>
-</tr>
-<tr>
-<td><strong>内核抢占</strong></td>
-<td>临界区可被插 — <strong>短临界区</strong> · <code class="c">preempt_disable</code> 仅当合理</td>
-</tr>
-<tr>
-<td><strong>HIGHMEM</strong></td>
-<td>可能需 <strong><code class="c">kmap</code>/<code class="c">kmap_atomic</code></strong> — 勿假设线性映射</td>
-</tr>
-</tbody>
-</table></div>
+<p>同一份驱动源码，会被编译进<strong>上千种配置组合</strong>的内核：单核路由器、128 核服务器、跑 RT 的工控机、32 位老 ARM。
+LKD 这一节的核心主张只有一句：</p>
 <blockquote>
 <p><strong>原则：按「最坏情况」写</strong> — 单核 UP、关抢占、无 HIGHMEM 的「侥幸」代码 <strong>迟早炸</strong>。</p>
 </blockquote>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>章节回溯</th>
-<th></th>
+<th>配置维度</th>
+<th>编写时必须做的假设</th>
+<th>违反后症状</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>SMP/锁</td>
-<td><strong>Ch 9–10</strong></td>
+<td><strong>SMP</strong></td>
+<td><strong>始终</strong>可能真并发 → <strong>锁 / per-CPU / READ_ONCE</strong></td>
+<td>只在多核上偶发的数据损坏</td>
 </tr>
 <tr>
-<td>抢占</td>
-<td><strong>Ch 4</strong></td>
+<td><strong>内核抢占</strong></td>
+<td>临界区随时可能被插 → <strong>短临界区</strong>，<code class="c">preempt_disable()</code> 仅当真有理由</td>
+<td>只在抢占内核上出现的竞态</td>
 </tr>
 <tr>
-<td>HIGHMEM</td>
-<td><strong>Ch 12</strong></td>
+<td><strong>HIGHMEM</strong></td>
+<td>页可能<strong>没有</strong>内核线性映射 → 用 <strong>kmap 家族</strong>取临时映射</td>
+<td>只在 32 位大内存机器上崩溃</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 用户态也要 <strong>按多核+弱序</strong> 写无锁结构 — <code class="c">memory_order</code>、对齐、false sharing。</p>
+<p><strong>三个维度的共同点</strong>：出错的都是"在我的机器上跑得好好的"——
+因为它们全是<strong>配置相关</strong>的，而你的开发机只有一种配置。</p>
+<hr />
+<h2>一、SMP：把"可能并发"当既定事实</h2>
+<h3>1.1 <code class="c">CONFIG_SMP</code> 到底改变了什么</h3>
+<p>不是"多了几个 CPU"这么简单，它会在<strong>编译期</strong>改掉一批基础设施的语义：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th><code class="c">CONFIG_SMP=y</code></th>
+<th><code class="c">CONFIG_SMP=n</code></th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">smp_mb()</code></td>
+<td>真屏障指令（<code class="c">mfence</code> / <code class="c">dmb ish</code>）</td>
+<td><strong>退化为 <code class="c">barrier()</code></strong>（只剩编译器屏障）</td>
+<td><code class="c">include/asm-generic/barrier.h:99 / :113</code></td>
+</tr>
+<tr>
+<td><code class="c">smp_processor_id()</code></td>
+<td>读 per-CPU 的 cpu 号</td>
+<td>常量 0</td>
+<td>—</td>
+</tr>
+<tr>
+<td>per-CPU 变量</td>
+<td>每 CPU 一份副本</td>
+<td>只有一份</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">spinlock</code></td>
+<td>真自旋</td>
+<td>退化（UP 上不可能有第二个持有者）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这就是 <a href="#s-19-7">19.7 处理器排序</a> 里 <code class="c">smp_mb()</code> 在 UP 上"消失"的同一条逻辑：
+<strong>内核用编译期开关为不存在的场景免单</strong>。你写驱动时不需要关心，但你<strong>依赖</strong>它们的语义。</p>
+</blockquote>
+<h3>1.2 三条写法规律</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>正确写法</th>
+<th>错误写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>共享计数器</td>
+<td><code class="c">this_cpu_inc()</code> / per-CPU 聚合</td>
+<td><code class="c">counter++</code>（撕裂 + 缓存行乒乓）</td>
+</tr>
+<tr>
+<td>共享链表</td>
+<td><code class="c">spin_lock</code> / <code class="c">rcu</code> + <code class="c">list_for_each_entry_rcu()</code></td>
+<td>裸 <code class="c">list_add</code></td>
+</tr>
+<tr>
+<td>只被读一次的指针/标志</td>
+<td><code class="c">READ_ONCE()</code> / <code class="c">WRITE_ONCE()</code></td>
+<td>直接读写（可能被编译器优化成重复读/合并写）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>1.3 让内核替你验：三把"配置无关的尺子"</h3>
+<p>SMP 类 bug 之所以难，是因为<strong>跑不出来</strong>。内核提供了三个开关，把概率性竞态变成必现告警：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开关</th>
+<th>抓什么</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">CONFIG_PROVE_LOCKING</code>（lockdep）</td>
+<td>锁序反转、错误的加锁上下文（在中断里拿非 irq-safe 锁）</td>
+<td>启动/首轮运行时开销，生产一般不</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_DEBUG_PREEMPT</code></td>
+<td>在原子上下文里调用可睡眠函数</td>
+<td>小</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code></td>
+<td><code class="c">might_sleep()</code> 违规（如持有自旋锁时 <code class="c">kmalloc(GFP_KERNEL)</code>）</td>
+<td>小</td>
+</tr>
+<tr>
+<td>KCSAN（<code class="c">CONFIG_KCSAN</code>）</td>
+<td><strong>数据竞争</strong>（并发访问同一地址且无同步）</td>
+<td>很大（10x+），只用于测试</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">might_sleep()</code> / <code class="c">might_resched()</code></strong> 是给"按最坏情况写"准备的主动自检宏：
+把它们放在任何<strong>不该睡眠</strong>的函数开头，<code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 开着时一旦被抢占上下文调用立刻 <code class="c">WARN</code>。
+这是把"假设"变成"断言"的标准做法。</p>
+</blockquote>
+<hr />
+<h2>二、内核抢占：LKD 时代 3 档，现在是 4 档 + 运行时可切</h2>
+<h3>2.1 v6.6 实证：<code class="c">choice</code> 里就是四档</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/Kconfig.preempt —— v6.6 原文（行号为该文件内行号） */
+choice
+    prompt &quot;Preemption Model&quot;
+    default PREEMPT_NONE                       /* :16 ← 默认是&quot;不抢占&quot; */
+
+config PREEMPT_NONE                            /* :18 */
+    bool &quot;No Forced Preemption (Server)&quot;
+    help
+      ... the traditional Linux preemption model ...
+      throughput ...  server, scientific, and similar workloads
+
+config PREEMPT_VOLUNTARY                       /* :32 */
+    bool &quot;Voluntary Kernel Preemption (Desktop)&quot;
+    depends on !ARCH_NO_PREEMPT
+
+config PREEMPT                                 /* :51 */
+    bool &quot;Preemptible Kernel (Low-Latency Desktop)&quot;
+    depends on !ARCH_NO_PREEMPT
+    help
+      ... makes all kernel code (that is not executing in a
+      critical section) preemptible ... at the cost of slightly
+      lower throughput ...                     /* :60-62 原文 */
+
+config PREEMPT_RT                              /* :70 */
+    bool &quot;Fully Preemptible Kernel (Real-Time)&quot;
+    depends on EXPERT &amp;&amp; ARCH_SUPPORTS_RT       /* :72 ← 门槛在这里 */
+    select PREEMPTION
+    help
+      This option turns the kernel into a real-time kernel by replacing
+      various locking primitives (spinlocks, rwlocks, etc.) with
+      preemptible priority-inheritance aware variants, enforcing
+      interrupt threading and introducing mechanisms to break up long
+      non-preemptible sections. This makes the kernel, except for very
+      low level and critical code paths (entry code, scheduler, low
+      level interrupt handling) fully preemptible ...   /* :75-80 原文 */
+
+endchoice                                      /* :87 */
+</code></pre>
+<blockquote>
+<p><strong>⚠️ 更正一个常见误解</strong>：<code class="c">config PREEMPT_RT</code> 这个 Kconfig 选项<strong>早就在主线里</strong>（v6.6 就有，见 :70），
+并不是 v6.12 才"出现"。v6.12 的意义是 <strong>RT 最后一批基础设施合入、<code class="c">ARCH_SUPPORTS_RT</code> 铺开</strong>，
+从此 RT 不再是"树外补丁 + 少数架构"，而是主线一等公民。
+换句话说：<strong>选项早就存在，能用才是 v6.12 的事</strong>。</p>
+</blockquote>
+<h3>2.2 四档语义对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>档位</th>
+<th>内核态能否被抢占</th>
+<th>关键差异</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PREEMPT_NONE</code></td>
+<td>只在<strong>返回用户态 / 显式调度点</strong></td>
+<td>吞吐最高，延迟最差</td>
+<td>服务器 / HPC（<strong>多数发行版 server 内核默认值</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_VOLUNTARY</code></td>
+<td>额外在 <code class="c">might_resched()</code> 埋点上可让出</td>
+<td>折中</td>
+<td>桌面发行版（Fedora/Ubuntu desktop 常用）</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT</code></td>
+<td><strong>任意非临界区</strong>可被抢占（"Low-Latency Desktop"）</td>
+<td>延迟低，吞吐略降</td>
+<td>桌面 / 软实时 / 音视频</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_RT</code></td>
+<td><strong>几乎全部</strong>（含大部分临界区）</td>
+<td>自旋锁变成<strong>可抢占的 PI-aware mutex</strong>，中断<strong>线程化</strong></td>
+<td>硬实时 / 工控 / 低延迟交易</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">PREEMPT_RT</code> 做了三件结构性的事</strong>（help 原文点名）：</p>
+<ol>
+<li><strong>spinlock / rwlock → 可抢占、带优先级继承（priority inheritance）的变体</strong>
+   → 直接消灭"优先级反转"，但也意味着<strong>自旋锁里不能睡眠"的旧规则不再靠"禁止抢占"来保证</strong>。</li>
+<li><strong>中断线程化</strong>（interrupt threading）→ 大部分 ISR 变成可调度的内核线程，能被实时任务抢占。</li>
+<li><strong>打散长临界区</strong>（break up long non-preemptible sections）→ 把原本一大段不可抢占的代码切开。</li>
+</ol>
+<blockquote>
+<p>例外（help 原文）：<strong>entry code、scheduler、底层中断处理</strong>仍然不可抢占 —— 这三处是"实时性的地板"。</p>
+</blockquote>
+<h3>2.3 v6.13 的结构性变化：RT 独立 + 新增 LAZY</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/Kconfig.preempt —— v6.13 原文 */
+config ARCH_HAS_PREEMPT_LAZY                   /* :14 新增：架构能力宏 */
+choice
+config PREEMPT_NONE                            /* :21 */
+    depends on !PREEMPT_RT                     /* :23 ← 新增依赖 */
+config PREEMPT_VOLUNTARY                       /* :36 */
+    depends on !PREEMPT_RT                     /* :39 ← 新增依赖 */
+config PREEMPT
+config PREEMPT_LAZY                            /* :75 新增第四档 */
+    bool &quot;Scheduler controlled preemption model&quot;
+    depends on ARCH_HAS_PREEMPT_LAZY
+    help
+      ... fundamentally similar to full preemption, but is less
+      eager to preempt SCHED_NORMAL tasks in an attempt to
+      reduce lock holder preemption and recover some of the
+      performance gains seen from using Voluntary preemption.
+endchoice                                      /* :87 */
+config PREEMPT_RT                              /* :89 ← 移出 choice！ */
+    depends on EXPERT &amp;&amp; ARCH_SUPPORTS_RT &amp;&amp; !COMPILE_TEST
+config PREEMPT_DYNAMIC                         /* :113 */
+    depends on HAVE_PREEMPT_DYNAMIC             /* ← v6.6 这里是 &amp;&amp; !PREEMPT_RT */
+</code></pre>
+<p>三个变化各自的意义：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变化</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PREEMPT_RT</code> <strong>移出 choice</strong></td>
+<td>RT 从"四选一的一档"变成<strong>正交开关</strong>：可以和 dynamic 共存</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_DYNAMIC</code> 去掉 <code class="c">!PREEMPT_RT</code></td>
+<td>同一个内核二进制可以<strong>运行时</strong>在 RT / 非 RT 之间切</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_LAZY</code> 新增</td>
+<td>折中：对 <code class="c">SCHED_NORMAL</code> 任务<strong>不那么急着抢</strong>（减少"抢到锁的持有者"被抢，即 lock holder preemption），只为 RT 任务抢 → 既拿 RT 延迟又尽量保吞吐</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>LAZY 的思想值得单独记</strong>：真正的延迟杀手往往不是"抢占不及时"，而是"抢占太及时"——
+你刚把一个持有锁的任务换下，另一个任务上来就撞在这把锁上空转。
+所以<strong>调度器驱动</strong>的抢占（知道"现在该不该抢"）优于"见缝就抢"。</p>
+</blockquote>
+<h3>2.4 <code class="c">PREEMPT_DYNAMIC</code>：一个二进制，三种行为</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/Kconfig.preempt —— v6.6 :96 */
+config PREEMPT_DYNAMIC
+    bool &quot;Preemption behaviour defined on boot&quot;
+    depends on HAVE_PREEMPT_DYNAMIC &amp;&amp; !PREEMPT_RT
+    select JUMP_LABEL if HAVE_PREEMPT_DYNAMIC_KEY
+    default y if HAVE_PREEMPT_DYNAMIC_CALL
+    help
+      ... allows to define the preemption model on the kernel
+      command line parameter ...
+      The runtime overhead is negligible with HAVE_STATIC_CALL_INLINE
+      enabled ...                               /* :104-110 原文 */
+</code></pre>
+<ul>
+<li>启动参数：<strong><code class="c">preempt=none</code> / <code class="c">preempt=voluntary</code> / <code class="c">preempt=full</code></strong></li>
+<li>实现靠 <strong>static call / jump label</strong>：抢占点被编译成"间接调用桩"，启动时二进制改写成一个 nop 或一条 jump
+  → help 原文说开销 "negligible"，这正是"零成本抽象"在抢占模型上的应用。</li>
+<li>主打用户是<strong>发行版</strong>："同一个内核包同时服务 Server 和 Desktop"。</li>
+</ul>
+<h3>2.5 对驱动作者的三条硬约束</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>约束</th>
+<th>说明</th>
+<th>违反后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>临界区要短</strong></td>
+<td>抢占内核上，持锁时间长 → 直接变成别任务的延迟</td>
+<td>RT 上延迟尖刺 / <code class="c">lockdep</code> 报警</td>
+</tr>
+<tr>
+<td><strong><code class="c">preempt_disable()</code> 不是万能锤</strong></td>
+<td>它只保证"不被同 CPU 上的任务抢占"，<strong>不防中断、不防其他 CPU</strong></td>
+<td>以为关了抢占就安全 → 仍被 IRQ/其他核并发</td>
+</tr>
+<tr>
+<td><strong><code class="c">in_atomic()</code> 只用于断言</strong></td>
+<td>它读 <code class="c">preempt_count()</code>；在 <code class="c">PREEMPT_NONE</code> 上恒为 0，用它做<strong>逻辑分支</strong>会写出配置相关的代码</td>
+<td>代码行为随内核配置变化</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>配套自检宏：<code class="c">might_sleep()</code>（会睡？）、<code class="c">might_resched()</code>（会让出？）、<code class="c">WARN_ON_ONCE(in_atomic())</code>。</p>
+</blockquote>
+<hr />
+<h2>三、HIGHMEM：一段需要知道、但 64 位上已经作废的历史</h2>
+<h3>3.1 为什么历史上必须有 HIGHMEM</h3>
+<p>32 位内核的虚拟地址空间只有 <strong>4GB</strong>，还要按 <code class="c">VMSPLIT_3G</code>（用户 3G / 内核 1G）切分
+（<code class="c">arch/x86/Kconfig:1401</code> <code class="c">choice "Memory split"</code>）。
+内核那 <strong>1GB</strong> 里还要塞下：</p>
+<ul>
+<li><strong>直接映射（lowmem）</strong>：全部物理内存的线性映射 —— 这部分是 <code class="c">virt_to_phys()</code> / <code class="c">page_address()</code> 成立的前提</li>
+<li>vmalloc 区、kmap 区、模块区、fixmap…</li>
+</ul>
+<p>1GB 扣掉其他区域后，能直接映射的物理内存大约只剩 <strong>~896MB</strong>。
+<strong>超过 896MB 的物理页就叫 highmem（高端内存）—— 它们没有固定的内核虚拟地址</strong>，想访问必须先"临时映射"。</p>
+<h3>3.2 v6.6 实证：HIGHMEM 是纯 32 位现象</h3>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/Kconfig —— v6.6 */
+config X86_32                                  /* :10 */
+    def_bool y
+    depends on !64BIT
+    select KMAP_LOCAL                          /* :19 ← 只有 32 位才 select */
+    ...
+choice
+    prompt &quot;High Memory Support&quot;
+config HIGHMEM4G                               /* :1385 */
+    bool &quot;4GB&quot;
+    help
+      Select this if you have a 32-bit processor and between 1 and 4
+      gigabytes of physical RAM.
+config HIGHMEM64G                              /* :1391 */
+    bool &quot;64GB&quot;
+    select X86_PAE                             /* :1394 64G 需要 PAE */
+endchoice                                      /* :1399 */
+</code></pre>
+<p>而 <strong><code class="c">arch/arm64/Kconfig</code> 里根本没有 <code class="c">config HIGHMEM</code></strong>（v6.6 全文搜不到），只有虚拟地址宽度：</p>
+<pre class="code" data-label="C"><code class="c">config ARM64_VA_BITS                           /* :1322 */
+    int
+    default 48 if ARM64_VA_BITS_48             /* 另有 36/39/42/47/52 可选 */
+</code></pre>
+<p><strong>为什么 64 位不需要 HIGHMEM</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>虚拟地址宽度</th>
+<th>地址空间</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86_64（4 级页表）</td>
+<td>48 bit</td>
+<td><strong>256 TB</strong></td>
+<td>≫ 任何现有物理内存</td>
+</tr>
+<tr>
+<td>x86_64（5 级，<code class="c">CONFIG_X86_5LEVEL</code>，x86/Kconfig:1459）</td>
+<td>57 bit</td>
+<td><strong>128 PB</strong>（help 原文）</td>
+<td>更不可能用完</td>
+</tr>
+<tr>
+<td>ARM64（VA_BITS=48，默认）</td>
+<td>48 bit</td>
+<td>256 TB</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>地址空间是"容器"，物理内存是"内容"。容器比内容大好几个数量级时，<strong>"装不下"这个问题根本不存在</strong>，
+于是"临时映射"这一整套机制（槽位、全局锁、kmap 区）连同它的复杂度一起消失。
+这就是架构演进<strong>删除整类问题</strong>的例子——不是优化了 HIGHMEM，而是让它变得没有意义。</p>
+</blockquote>
+<h3>3.3 API 断崖：<code class="c">kmap_atomic()</code> 已被明确废弃</h3>
+<p>LKD 教的是 <code class="c">kmap()</code> + <code class="c">kmap_atomic()</code>。v6.6 的 <code class="c">include/linux/highmem.h</code> 里，<strong><code class="c">kmap_atomic</code> 的注释已经写明不要再用</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/highmem.h —— v6.6 原文 */
+
+/* ① 老式 kmap：会阻塞                                            :37 */
+static inline void *kmap(struct page *page);
+ * For highmem pages on 32bit systems this can be slow as the mapping space
+ * is limited and protected by a global lock. In case that there is no
+ * mapping slot available the function blocks until a slot is released via
+ * kunmap().                                                    /* :32-35 */
+
+/* ② kmap_local_page：现代首选                                     :96 */
+ * On CONFIG_HIGHMEM=n kernels and for low memory pages this returns the
+ * virtual address of the direct mapping. Only real highmem pages are
+ * temporarily mapped.                                          /* :85-87 */
+ * While kmap_local_page() is significantly faster than kmap() for the
+ * highmem case it comes with restrictions about the pointer validity. :89-90
+ * On HIGHMEM enabled systems mapping a highmem page has the side effect of
+ * disabling migration in order to keep the virtual address stable across
+ * preemption. No caller of kmap_local_page() can rely on this side
+ * effect.                                                      /* :92-94 */
+static inline void *kmap_local_page(struct page *page);
+static inline void *kmap_local_folio(struct folio *folio, size_t offset);  /* :132 */
+
+/* ③ kmap_atomic：已废弃                                          :179 */
+ * In fact a wrapper around kmap_local_page() which also disables pagefaults
+ * and, depending on PREEMPT_RT configuration, also CPU migration and
+ * preemption. Therefore users should not count on the latter two side
+ * effects.                                                     /* :140-143 */
+ * Do not use in new code. Use kmap_local_page() instead.        /* :146 ★ */
+</code></pre>
+<p>三代 API 对照：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>是否可睡眠</th>
+<th>副作用</th>
+<th>现代建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kmap()</code> / <code class="c">kunmap()</code></td>
+<td><strong>可以睡</strong>（槽位耗尽时阻塞等全局锁，:32-35）</td>
+<td>全局锁竞争，慢</td>
+<td>仍可用于进程上下文，但优先 <code class="c">kmap_local_page()</code></td>
+</tr>
+<tr>
+<td><code class="c">kmap_atomic()</code></td>
+<td>不可睡</td>
+<td><strong>禁用页错误</strong>；依 <code class="c">PREEMPT_RT</code> 配置还会禁迁移和抢占（:140-142）</td>
+<td>❌ <strong>别在新代码里用</strong>（:146）</td>
+</tr>
+<tr>
+<td><code class="c">kmap_local_page()</code> / <code class="c">kunmap_local()</code></td>
+<td>不可睡</td>
+<td>HIGHMEM 上会顺带禁迁移，<strong>但调用者不得依赖</strong>（:94 原文 "No caller ... can rely on this side effect"）</td>
+<td>✅ <strong>新代码用这个</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>要点：</p>
+<ul>
+<li><code class="c">kmap_local_page()</code> 在 64 位 / lowmem 页上<strong>直接返回直接映射地址，零开销</strong>（:85-87），所以它现在是<strong>无条件安全</strong>的写法，不需要 <code class="c">#ifdef CONFIG_HIGHMEM</code>。</li>
+<li>它的代价是<strong>指针有效期只到 <code class="c">kunmap_local()</code></strong>（且不能跨调度点传递）——这恰恰是"按最坏情况写"的约束，比 <code class="c">kmap()</code> 的"全局锁 + 可以一直拿着"更严格，因此也更快。</li>
+<li>配套：<code class="c">memcpy_to_page()</code> / <code class="c">memcpy_from_page()</code> / <code class="c">memset_page()</code>（highmem.h :404 附近已全部用 <code class="c">kmap_local_page</code> 实现）→ <strong>能用这些就别自己 kmap</strong>。</li>
+</ul>
+<h3>3.4 写代码时的唯一纪律</h3>
+<blockquote>
+<p><strong>不要假设页有内核线性映射，但也不要以为必须 kmap。</strong>
+正确做法：一律走 <code class="c">kmap_local_page()</code>（或更好的 <code class="c">memcpy_{to,from}_page()</code>），
+让它在 64 位上退化成 <code class="c">page_address()</code>、在 32 位 highmem 上退化成临时映射。</p>
+</blockquote>
+<p>反面教材（LKD 时代常见、现在仍能在老驱动里看到）：</p>
+<pre class="code" data-label="C"><code class="c">/* ❌ 错：假设低端页一定有线性地址，直接算偏移 */
+char *p = page_address(page);        /* highmem 页返回 NULL！ */
+p[0] = 'x';                          /* 空指针解引用 */
+
+/* ✅ 对 */
+char *p = kmap_local_page(page);
+p[0] = 'x';
+kunmap_local(p);
+</code></pre>
+<hr />
+<h2>四、"按最坏情况写"的四条具体纪律</h2>
+<p>LKD 只给了原则。落到日常编码，可以拆成四条可检查的规则：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>纪律</th>
+<th>具体做法</th>
+<th>违反后在哪炸</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>并发当作既定事实</strong></td>
+<td>共享数据必有锁 / per-CPU / <code class="c">READ_ONCE</code>；开 <code class="c">lockdep</code> + <code class="c">KCSAN</code> 跑一遍</td>
+<td>SMP</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>临界区可随时被插</strong></td>
+<td>短临界区；<code class="c">preempt_disable()</code> 只在真的需要时；<code class="c">might_sleep()</code> 标记不可睡函数</td>
+<td><code class="c">CONFIG_PREEMPT*</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>不假设线性映射</strong></td>
+<td>统一走 <code class="c">kmap_local_page()</code> / <code class="c">memcpy_*_page()</code></td>
+<td>32 位 + 大内存</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>用断言替假设</strong></td>
+<td><code class="c">might_sleep()</code>、<code class="c">WARN_ON_ONCE(in_atomic())</code>、<code class="c">lockdep_assert_held()</code></td>
+<td>让 bug 从"偶发"变"必现 WARN"</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>四条的共同思路：<strong>把"我的机器上没问题"换成"内核替我验证过"</strong>。
+可移植代码的成本不在写的时候，而在<strong>能不能用工具证明它对</strong>。</p>
+</blockquote>
+<hr />
+<h2>五、HFT 视角</h2>
+<p><strong>用户态同样面临这三条</strong>，只是换了名字：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核侧</th>
+<th>用户态对应</th>
+<th>HFT 中的具体手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SMP 并发</td>
+<td><code class="c">std::atomic</code> / <code class="c">std::memory_order</code></td>
+<td>SPSC 环形队列 + acquire/release（见 <a href="#s-19-7">19.7</a>）</td>
+</tr>
+<tr>
+<td>伪共享</td>
+<td>缓存行对齐</td>
+<td><code class="c">alignas(64)</code> + 热冷分离（见 <a href="#s-19-4">19.4</a>）</td>
+</tr>
+<tr>
+<td>抢占延迟</td>
+<td><strong>核隔离 + 实时优先级</strong></td>
+<td><code class="c">isolcpus</code> + <code class="c">SCHED_FIFO</code> + 无锁忙轮询</td>
+</tr>
+<tr>
+<td>内存映射</td>
+<td><code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code></td>
+<td>杜绝缺页（见 <a href="chapter-16.html#s-16-2">16.2</a>）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>关于"HFT 该不该上 PREEMPT_RT"—— 一个需要拆开的判断</h3>
+<p>流传的说法是"HFT 都用 RT 内核"，<strong>这只对一半</strong>。真实的选择是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>调度延迟</th>
+<th>吞吐</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>通用内核 + <strong>核隔离</strong>（<code class="c">isolcpus</code> / <code class="c">nohz_full</code>）+ <code class="c">SCHED_FIFO</code> 忙轮询</td>
+<td><strong>已可做到 &lt; 10μs</strong> 抖动</td>
+<td><strong>最高</strong></td>
+<td><strong>主流做法</strong>：交易线程独占核，根本不进内核、不被调度</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_RT</code></td>
+<td>更确定的<strong>最坏情况</strong>延迟</td>
+<td>损失（自旋锁变 mutex、中断线程化有额外上下文切换）</td>
+<td>需要<strong>硬保证</strong>的场景（风控看门狗、外设在内核态有实时要求）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键洞察</strong>：如果交易线程已经<strong>独占一个隔离核、全程用户态忙轮询、内存全 mlock</strong>，
+那么内核抢占模型的差异<strong>对它几乎不可见</strong>——因为它压根不进内核，也没有别的任务跟它抢这个核。
+PREEMPT_RT 真正改善的是<strong>尾巴</strong>（偶发的、由内核活动引入的长延迟），而不是平均值。
+所以正确的决策顺序是：</p>
+<ol>
+<li>先把<strong>架构</strong>做对（核隔离 + 忙轮询 + mlock + 无锁 + 预分配），这一步的收益远大于换内核；</li>
+<li>若仍有无法解释的<strong>尾延迟尖刺</strong>（用 <code class="c">perf</code> / <code class="c">ftrace</code> 的 <code class="c">wakeup_rt</code> tracer 定位到是内核临界区），再考虑 RT；</li>
+<li>上 RT 前先量吞吐代价——RT 把自旋锁换成 PI mutex 后，<strong>内核网络栈</strong>这段路径可能变慢。</li>
+</ol>
+<blockquote>
+<p>一句话：<strong>核隔离解决的是"没人跟我抢"，RT 解决的是"内核不让我等"。
+前者是免费的（配置一下就行），后者是有代价的。先把免费的拿满。</strong></p>
+</blockquote>
+<h3>可移植性纪律在 HFT 代码里的落地</h3>
+<ul>
+<li>时间戳：不要 <code class="c">rdtsc</code>（x86 专用）→ 用 <code class="c">clock_gettime(CLOCK_MONOTONIC)</code>（vDSO 加速，见 <a href="#s-19-6">19.6</a>）</li>
+<li>字节序：不要直接 <code class="c">memcpy</code> 网络报文到结构体 → 用 <code class="c">__le32</code> + <code class="c">le32_to_cpu</code>（sparse 能抓错，见 <a href="#s-19-5">19.5</a>）</li>
+<li>整数宽度：不要 <code class="c">long</code>（LP64/LLP64 分歧）→ 用 <code class="c">int64_t</code> / <code class="c">uintptr_t</code>（见 <a href="#s-19-2">19.2</a>）</li>
+<li>无锁：不要依赖"x86 上跑过" → 用 acquire/release + 在 ARM64 上同步压测（见 <a href="#s-19-7">19.7</a>）</li>
+</ul>
+<hr />
+<h3>章节回溯</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>章节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SMP / 锁 / 无锁</td>
+<td><strong>Ch 9–10</strong></td>
+</tr>
+<tr>
+<td>抢占与调度</td>
+<td><strong>Ch 4</strong>（进程调度）· 本节补充 v6.6/v6.13 演进</td>
+</tr>
+<tr>
+<td>HIGHMEM / 内存 zone</td>
+<td><strong>Ch 12</strong>（内存管理）</td>
+</tr>
+<tr>
+<td>内存屏障</td>
+<td><strong><a href="#s-19-7">19.7 处理器排序</a></strong></td>
+</tr>
+<tr>
+<td>页缓存中的 kmap 使用者</td>
+<td><a href="chapter-16.html#s-16-4">16.4 缓冲区高速缓存</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <details>
 <summary>自测题（点击展开）</summary>
-<p><strong>Q1.</strong> CONFIG_PREEMPT 和 CONFIG_PREEMPT_NONE 对 HFT 有什么影响？</p>
+<p><strong>Q1.</strong> <code class="c">CONFIG_PREEMPT_NONE</code>、<code class="c">PREEMPT_VOLUNTARY</code>、<code class="c">PREEMPT</code>、<code class="c">PREEMPT_RT</code> 四档有什么区别？对 HFT 该怎么选？</p>
 <details>
 <summary>答案</summary>
-<p>PREEMPT_NONE：内核态不可抢占（syscall 执行完才调度）→ 延迟高但吞吐好。PREEMPT（ voluntary）：内核态可自愿抢占点 → 平衡。PREEMPT_RT（实时）：几乎所有内核代码可抢占 + 自旋锁转 mutex → 延迟最小但吞吐损失。HFT 通常用 PREEMPT_RT 补丁内核，保证交易线程的调度延迟 &lt; 100μs。</p>
+<p><strong>四档语义</strong>（v6.6 <code class="c">kernel/Kconfig.preempt</code> 实证 <code class="c">:18/:32/:51/:70</code>，<code class="c">endchoice</code> 在 <code class="c">:87</code>，<code class="c">default PREEMPT_NONE</code> 在 <code class="c">:16</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>档位</th>
+<th>内核态何时可被抢占</th>
+<th>代价</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PREEMPT_NONE</code></td>
+<td>只在返回用户态 / 显式调度点</td>
+<td>延迟最差，吞吐最高</td>
+<td>服务器 / HPC（多数发行版 server 默认）</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_VOLUNTARY</code></td>
+<td>额外在 <code class="c">might_resched()</code> 埋点</td>
+<td>折中</td>
+<td>桌面发行版</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT</code></td>
+<td><strong>任意非临界区</strong>（"Low-Latency Desktop"）</td>
+<td>吞吐略降（help 原文 "slightly lower throughput"）</td>
+<td>桌面 / 软实时</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT_RT</code></td>
+<td><strong>几乎全部</strong>（自旋锁 → 可抢占 PI mutex；中断线程化）</td>
+<td>吞吐损失最大</td>
+<td>硬实时 / 工控</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>⚠️ 更正</strong>：<code class="c">config PREEMPT_RT</code> 在 <strong>v6.6 主线 Kconfig 里就存在</strong>（:70，但 <code class="c">depends on EXPERT &amp;&amp; ARCH_SUPPORTS_RT</code>）。
+<strong>v6.12</strong> 的意义是 RT 基础设施<strong>完全合入</strong>、架构支持铺开，从此不需要树外补丁。
+所以准确说法是"选项早有，v6.12 起才真正可用"，而不是"v6.12 才加入"。
+另外 <strong>v6.13</strong> 又做了两处结构性调整：<code class="c">PREEMPT_RT</code> 移出 <code class="c">choice</code>（:89）、新增 <code class="c">PREEMPT_LAZY</code> 档（:75）。</p>
+</blockquote>
+<p><strong>HFT 怎么选</strong>（这一步常被简化成"上 RT"，其实应该分层看）：</p>
+<ol>
+<li><strong>先做架构层，收益最大且免费</strong>：
+   核隔离（<code class="c">isolcpus</code> + <code class="c">nohz_full</code>）+ <code class="c">SCHED_FIFO</code> + 用户态忙轮询 + <code class="c">mlockall(MCL_CURRENT|MCL_FUTURE)</code> + 内存预分配 + 无锁队列。
+   做到这一步，交易线程<strong>根本不进内核、也不与任何任务共享核</strong>，调度延迟抖动已经可以压到 10μs 量级。</li>
+<li><strong>再做内核层</strong>：如果 <code class="c">ftrace</code> 的 <code class="c">wakeup_rt</code> / <code class="c">perf sched latency</code> 显示尖刺来自<strong>内核临界区</strong>，才考虑 RT。</li>
+<li><strong>RT 的代价要量</strong>：自旋锁变成 PI mutex、中断线程化都会增加上下文切换，
+   <strong>内核网络栈路径可能变慢</strong>——所以"上 RT"不是免费的胜利，是"用吞吐换最坏情况延迟的确定性"。</li>
+</ol>
+<p>一句话：<strong>核隔离解决"没人跟我抢"，RT 解决"内核不让我等"。前者免费，后者有代价，先把免费的拿满。</strong></p>
+<p>另外还有一个<strong>不用重编内核</strong>的选项：<code class="c">CONFIG_PREEMPT_DYNAMIC</code>（:96）允许用启动参数
+<code class="c">preempt=none|voluntary|full</code> 在<strong>同一个二进制</strong>上切换，且因 static call / jump label 实现，
+help 原文说开销 "negligible"（:110）—— 这正是发行版"一个内核包服务多种场景"的做法，也适合做 A/B 对比测试。</p>
+</details>
+<p><strong>Q2.</strong> 老驱动里有 <code class="c">kmap_atomic()</code>，能直接改成 <code class="c">kmap_local_page()</code> 吗？为什么 <code class="c">kmap_local_page()</code> 在 64 位上是零开销的？</p>
+<details>
+<summary>答案</summary>
+<p><strong>能改，而且应该改</strong>——<code class="c">include/linux/highmem.h</code> 的注释已经明说（v6.6 <code class="c">:146</code>）：</p>
+<blockquote>
+<p><em>"Do not use in new code. Use kmap_local_page() instead."</em></p>
+</blockquote>
+<p><strong>两者的关键差别在副作用，不在返回值</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">kmap_atomic()</code></th>
+<th><code class="c">kmap_local_page()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>实现</td>
+<td>是 <code class="c">kmap_local_page()</code> 的包装（<code class="c">:140</code> 原文 "In fact a wrapper around kmap_local_page()"）</td>
+<td>本体</td>
+</tr>
+<tr>
+<td>禁用页错误</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td>禁用迁移 / 抢占</td>
+<td><strong>依 <code class="c">PREEMPT_RT</code> 配置而定</strong>（<code class="c">:141-142</code>），注释明确说 <em>"users should not count on the latter two side effects"</em></td>
+<td>HIGHMEM 上会顺带禁迁移，但注释同样警告 <em>"No caller of kmap_local_page() can rely on this side effect"</em>（<code class="c">:94</code>）</td>
+</tr>
+<tr>
+<td>指针有效期</td>
+<td>到 <code class="c">kunmap_atomic()</code></td>
+<td>到 <code class="c">kunmap_local()</code>，<strong>不能跨调度点</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>迁移步骤</strong>：
+1. <code class="c">kmap_atomic(page)</code> → <code class="c">kmap_local_page(page)</code>，<code class="c">kunmap_atomic(addr)</code> → <code class="c">kunmap_local(addr)</code>；
+2. 检查这段代码<strong>是否原本偷偷依赖了"禁止抢占/禁止页错误"</strong>——比如中间调了会睡的函数、或者跨越了很长的临界区。
+   如果依赖了，得显式补 <code class="c">preempt_disable()</code>/<code class="c">pagefault_disable()</code>（但要重新审视这么长的临界区是否合理）。
+3. 能用 <code class="c">memcpy_to_page()</code> / <code class="c">memcpy_from_page()</code> / <code class="c">memset_page()</code> 就别自己 kmap —— 它们内部已经全部改用 <code class="c">kmap_local_page()</code> 了（highmem.h <code class="c">:404</code> 附近），语义更清楚。</p>
+<p><strong>为什么 64 位上零开销</strong>（<code class="c">:85-87</code> 原文）：</p>
+<blockquote>
+<p><em>"On CONFIG_HIGHMEM=n kernels and for low memory pages this returns the virtual address of the direct mapping. Only real highmem pages are temporarily mapped."</em></p>
+</blockquote>
+<p>即：在 <code class="c">CONFIG_HIGHMEM=n</code>（<strong>所有 64 位架构</strong>都是，见下）或页本身是 lowmem 时，
+它<strong>直接返回直接映射区的地址</strong>，就是一次加法，不建立任何页表项、不占 kmap 槽位、不碰全局锁。
+只有真正的 highmem 页才走临时映射路径。</p>
+<p><strong>为什么 64 位没有 HIGHMEM</strong>：<code class="c">arch/x86/Kconfig</code> 的 <code class="c">HIGHMEM4G</code>(:1385)/<code class="c">HIGHMEM64G</code>(:1391) 挂在 32 位的
+<code class="c">config X86_32</code>(:10) 下；而 <code class="c">arch/arm64/Kconfig</code> <strong>根本没有 <code class="c">config HIGHMEM</code></strong>（只有 <code class="c">ARM64_VA_BITS</code>，:1322，默认 48）。
+原因是地址空间够大：x86_64 四级页表 256TB、五级（<code class="c">CONFIG_X86_5LEVEL</code>，:1459）128PB，
+都远远超过任何机器的物理内存——<strong>"装不下"这个前提不存在，整套临时映射机制连同它的复杂度一起消失</strong>。</p>
+</details>
+<p><strong>Q3.</strong> 团队说"我们的驱动在 4 核 x86 开发机上跑了一年没事，可以发布"。从 SMP / 抢占 / HIGHMEM 三个维度各举一个"开发机配置掩盖了 bug"的具体例子，并说明怎么提前发现。</p>
+<details>
+<summary>答案</summary>
+<p>这三个维度的共同点是：<strong>bug 只在特定配置下存在，而开发机只有一种配置</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>开发机掩盖了什么</th>
+<th>具体例子</th>
+<th>怎么提前发现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SMP</strong></td>
+<td>开发机虽然 4 核，但<strong>压测没跑满并发窗口</strong>；或 <code class="c">CONFIG_SMP</code> 与生产不同</td>
+<td>两个 CPU 同时进入 <code class="c">probe</code> 里的初始化路径，<code class="c">if (!drv-&gt;init_done) { setup(); drv-&gt;init_done = 1; }</code> 无锁 → 偶发重复初始化 / 半初始化</td>
+<td>开 <strong><code class="c">CONFIG_PROVE_LOCKING</code>（lockdep）</strong> 跑一遍；更强的上 <strong><code class="c">CONFIG_KCSAN</code></strong>（数据竞争检测器），它能抓"并发访问同一地址且无同步"，哪怕竞态窗口从未真的命中</td>
+</tr>
+<tr>
+<td><strong>抢占</strong></td>
+<td>开发机是 <code class="c">PREEMPT_NONE</code>（服务器默认 :16），生产是 <code class="c">PREEMPT_RT</code> 或 <code class="c">PREEMPT</code></td>
+<td>驱动持有自旋锁期间调用了一个<strong>会睡</strong>的函数（如 <code class="c">kmalloc(GFP_KERNEL)</code> / <code class="c">msleep()</code> / 用户拷贝）。<code class="c">PREEMPT_NONE</code> 下临界区本来就不被抢，"自旋锁里不能睡"这条<strong>恰好没被违反</strong>；换到抢占内核立刻 <code class="c">BUG: scheduling while atomic</code></td>
+<td>开 <strong><code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code></strong> —— 它让 <code class="c">might_sleep()</code> 在原子上下文显式 <code class="c">WARN</code>，把"碰巧没事"变成"必现告警"。同时在每个<strong>不该睡眠</strong>的函数开头主动放 <code class="c">might_sleep()</code> / <code class="c">lockdep_assert_held()</code></td>
+</tr>
+<tr>
+<td><strong>HIGHMEM</strong></td>
+<td>开发机是 64 位（<code class="c">CONFIG_HIGHMEM=n</code>），生产是 32 位 + 2GB 内存</td>
+<td><code class="c">page_address(page)</code> <strong>对 highmem 页返回 NULL</strong>，直接解引用 → 空指针崩溃。64 位上所有页都有线性映射，这个错误路径<strong>永远不会被执行</strong></td>
+<td>① 一律用 <code class="c">kmap_local_page()</code>（64 位上退化成取直接映射地址，零开销，:85-87），<strong>不要</strong>用 <code class="c">page_address()</code> 除非你确定页来自 <code class="c">GFP_DMA</code>/lowmem；② 在 CI 里<strong>加一个 32 位 + <code class="c">CONFIG_HIGHMEM64G</code> 的交叉编译 + QEMU 跑测</strong>配置</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>方法论</strong>（对应本节"按最坏情况写"）：</p>
+<ul>
+<li><strong>别用"跑过"证明正确，用工具证明</strong>：lockdep / KCSAN / <code class="c">DEBUG_ATOMIC_SLEEP</code> / <code class="c">DEBUG_PREEMPT</code> 这四个开关的组合，
+  能把三个维度的概率性 bug 全部变成<strong>必现 WARN</strong>。</li>
+<li><strong>CI 至少覆盖三种配置</strong>：<code class="c">allmodconfig</code>(SMP+PREEMPT) / <code class="c">PREEMPT_RT</code> / 32 位 <code class="c">HIGHMEM64G</code>。
+  不需要都跑性能，只要能启动 + 跑冒烟测试，就能拦住绝大多数"配置相关"的崩溃。</li>
+<li><strong>主动埋断言</strong>：<code class="c">might_sleep()</code>、<code class="c">WARN_ON_ONCE(in_atomic())</code>、<code class="c">lockdep_assert_held(&amp;x)</code>。
+  断言是零成本的自检——它在正确配置下什么都不做，在错误配置下立刻喊。</li>
+</ul>
+<blockquote>
+<p>最后呼应 <a href="#s-19-1">19.1</a> 的教训：
+可移植性不是"代码能在多个平台上编译过"，而是<strong>"代码不依赖某个特定配置的偶然性质"</strong>。
+编译过 ≠ 正确，跑过 ≠ 可移植。</p>
+</blockquote>
 </details>
 </details>
 <hr />
