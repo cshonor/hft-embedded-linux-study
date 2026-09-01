@@ -801,6 +801,138 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tbody>
 </table></div>
 <p><code class="c">alloc_pages(gfp, order)</code> 从 <strong>合适 order</strong> 链表取块；释放时 <strong>尝试合并 buddy</strong> 减碎片。</p>
+<h4>伙伴系统的阶有上限（v6.6 实证）</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/mmzone.h:28 */
+#ifndef CONFIG_ARCH_FORCE_MAX_ORDER
+#define MAX_ORDER 10            /* v6.6 默认，注意不是 11 */
+#endif
+#define MAX_ORDER_NR_PAGES (1 &lt;&lt; MAX_ORDER)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶</th>
+<th>连续物理页</th>
+<th>大小（4KB 页）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>order 0</td>
+<td>1</td>
+<td>4 KB</td>
+</tr>
+<tr>
+<td>order 1</td>
+<td>2</td>
+<td>8 KB</td>
+</tr>
+<tr>
+<td>order 5</td>
+<td>32</td>
+<td>128 KB</td>
+</tr>
+<tr>
+<td><strong>order 10（上限）</strong></td>
+<td><strong>1024</strong></td>
+<td><strong>4 MB</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>单次 <code class="c">alloc_pages(gfp, order)</code> 最多只能要 4MB 物理连续内存</strong>——
+这是伙伴分配器的硬上限（架构可以用 <code class="c">CONFIG_ARCH_FORCE_MAX_ORDER</code> 改，但改大反而更容易失败）。
+要更大的连续块，路径是 <strong>启动时预留 / CMA / hugetlb</strong>，不是运行时分配。</p>
+</blockquote>
+<h4>反碎片：order 之外还有「迁移类型」</h4>
+<p>伙伴系统的 free list 是<strong>二维</strong>的：每个 order 再按 <strong>迁移类型</strong> 分链表
+（<code class="c">struct free_area</code> 里是 <code class="c">free_list[MIGRATE_TYPES]</code>，<code class="c">mmzone.h:112</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>放什么</th>
+<th>能否搬移</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MIGRATE_UNMOVABLE</code></td>
+<td>内核核心数据（不可移动）</td>
+<td>✗</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_MOVABLE</code></td>
+<td>用户态匿名页、页缓存</td>
+<td>✓</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_RECLAIMABLE</code></td>
+<td>可回收（如 inode/dentry 缓存）</td>
+<td>可回收</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_HIGHATOMIC</code></td>
+<td>高阶原子分配的紧急储备</td>
+<td>✗</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_CMA</code></td>
+<td>CMA 预留区（<code class="c">CONFIG_CMA</code>）</td>
+<td>仅可移动页</td>
+</tr>
+<tr>
+<td><code class="c">MIGRATE_ISOLATE</code></td>
+<td>隔离中（热插拔/CMA 迁移时）</td>
+<td>不可分配</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>回落表</strong>（<code class="c">page_alloc.c:1597</code> 实证）—— 要的类型没页时，按这个顺序偷：</p>
+<pre class="code" data-label="C"><code class="c">static int fallbacks[MIGRATE_TYPES][MIGRATE_PCPTYPES - 1] = {
+    [MIGRATE_UNMOVABLE]   = { MIGRATE_RECLAIMABLE, MIGRATE_MOVABLE   },
+    [MIGRATE_MOVABLE]     = { MIGRATE_RECLAIMABLE, MIGRATE_UNMOVABLE },
+    [MIGRATE_RECLAIMABLE] = { MIGRATE_UNMOVABLE,   MIGRATE_MOVABLE   },
+};
+</code></pre>
+<blockquote>
+<p>设计意图：把<strong>可移动的页聚在一起</strong>，让 <code class="c">MIGRATE_MOVABLE</code> 区域始终保持大块连续，
+需要时通过迁移腾出连续空间（CMA、内存热拔、THP 都靠它）。
+这就是"长时间运行后高阶分配失败"的真正解药——<strong>不是靠运气，是靠分类隔离</strong>。</p>
+</blockquote>
+<h4>现代演进：<code class="c">struct page</code> → <code class="c">folio</code></h4>
+<p>LKD 时代一切以 <code class="c">struct page</code> 为中心。v5.16 起引入 <strong><code class="c">struct folio</code></strong>，
+v6.6 的内存管理主体代码（页缓存、回写、LRU）已大量改用 folio（详见 <a href="chapter-16.html#ch-16">Ch 16</a>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">struct page</code></th>
+<th><code class="c">struct folio</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语义</td>
+<td><strong>一片</strong>页（compound page 的 tail 页也是 page）</td>
+<td><strong>一组</strong>物理连续的页（头页即 folio）</td>
+</tr>
+<tr>
+<td>问题</td>
+<td>传一个 <code class="c">page*</code> 不知道它是整个大页还是其中一片</td>
+<td>类型层面消除歧义</td>
+</tr>
+<tr>
+<td>现状</td>
+<td>仍是底层元数据，页表/伙伴层仍用</td>
+<td>高层（页缓存、回写、LRU）逐步 folio 化</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意</strong>：<code class="c">struct page</code> 的数量没变——4GB 内存 / 4KB = 100 万个 page 描述符。
+folio 是<strong>同一块内存之上的另一种视图</strong>（头页复用），不是新增元数据。</p>
+</blockquote>
 <h4>嵌入式 / ARM 注意</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -820,11 +952,19 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 <tr>
 <td><strong>CMA</strong></td>
-<td><strong>Contiguous Memory Allocator</strong> — 给 DMA 预留 <strong>连续</strong> 大块</td>
+<td><strong>Contiguous Memory Allocator</strong> — 给 DMA 预留 <strong>连续</strong> 大块；在伙伴系统里以 <code class="c">MIGRATE_CMA</code> 实现（见上表）</td>
 </tr>
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> 用户态 <strong><code class="c">mmap</code> + hugepage</strong> 也按 <strong>页框</strong> 粒度映射 — <strong>TLB 条目数</strong> ∝ 覆盖 VA / page size。内核 <strong><code class="c">__get_free_pages(order)</code></strong> 要 <strong>物理连续</strong> — 长时间运行 <strong>碎片化</strong> 后 <strong>大块 order 失败</strong> 类似用户态 <strong>hugetlb 池耗尽</strong>。</p>
+<blockquote>
+<p><strong>HFT 补充：THP 不是免费的。</strong>
+Transparent Huge Page 由 <code class="c">khugepaged</code> 内核线程在后台<strong>扫描并合并</strong> 4KB 页成 2MB 页，
+合并过程需要<strong>暂时冻结进程页表并做迁移</strong>——表现为<strong>几百微秒到毫秒级</strong>的意外停顿。
+追求尾延迟稳定的系统通常：① <strong>静态预分配 hugetlb 池</strong>并在启动时用掉（避免运行时 compaction 抖动）；
+② 或把 THP 设为 <code class="c">madvise</code> 模式，只对明确标记的区域生效（<code class="c">/sys/kernel/mm/transparent_hugepage/enabled</code>）。
+<strong>"开启 THP 就一定更快"是错的</strong>——它用平均延迟换尾延迟。</p>
+</blockquote>
 <p>→ <a href="../../06-linux-mm/html/chapter-14.html#s-3">06 Gorman Ch2 页框</a> · <a href="chapter-15.html#ch-15">Ch 15 用户页表映射</a></p>
 <blockquote>
 <p>↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-2">ULK Ch8 §2 页框管理</a></p>
@@ -841,39 +981,105 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <summary>答案</summary>
 <p>struct page 是内核管理物理页的元数据（flags/引用计数/映射计数/所属zone）。每个物理页一个，4GB 内存 = 1M 页 × 64 字节/page = 64MB page 数组。这是内核固定开销。page 结构体不包含页内数据，数据在物理地址对应的空间。</p>
 </details>
+<p><strong>Q3.</strong> v6.6 里单次 <code class="c">alloc_pages()</code> 最大能要多少？想要 16MB 物理连续内存该怎么办？</p>
+<details>
+<summary>答案</summary>
+<p>上限是 <strong>4MB</strong>：<code class="c">include/linux/mmzone.h:28</code> 里 <code class="c">MAX_ORDER</code> 默认为 <strong>10</strong>（<code class="c">!CONFIG_ARCH_FORCE_MAX_ORDER</code> 时），<code class="c">MAX_ORDER_NR_PAGES = 1 &lt;&lt; 10 = 1024</code> 页 × 4KB = 4MB。想要更大的<strong>物理连续</strong>内存，不能靠运行时的高阶分配（长时间运行后必然碎片化），正确路径是：① 启动时用 <code class="c">hugetlb</code>/<code class="c">memblock</code> 预留；② 用 <strong>CMA</strong> 预留区（运行时由驱动申请，不用时仍可被可移动页借用）；③ 重审需求——若只是要<strong>虚拟连续</strong>，<code class="c">vmalloc()</code> 即可（见 12.6）。</p>
+</details>
+<p><strong>Q4.</strong> 什么是迁移类型（migratetype）？它怎么解决碎片化？</p>
+<details>
+<summary>答案</summary>
+<p>伙伴系统的每个 order 空闲链表又按 <code class="c">migratetype</code> 细分（<code class="c">free_list[MIGRATE_TYPES]</code>），把"可移动的页"（用户态匿名页、页缓存，<code class="c">MIGRATE_MOVABLE</code>）与"不可移动的页"（内核数据，<code class="c">MIGRATE_UNMOVABLE</code>）隔离存放，另有 RECLAIMABLE、HIGHATOMIC、CMA、ISOLATE。要的类型没页时按回落表偷（<code class="c">page_alloc.c:1597</code>：UNMOVABLE→RECLAIMABLE→MOVABLE）。效果是让可移动页聚成大块连续区，需要连续物理内存时通过<strong>迁移</strong>腾出空间（CMA、内存热拔、THP 都依赖它）。这是"长时间运行后高阶分配失败"的结构性解药，而不是靠运气。</p>
+</details>
 </details>
 <hr />
       </section>
       <section class="section" id="s-12-3">
         <div class="sec-head"><div class="sec-no">12.3</div><h2>section-12.3-区</h2></div>
 <p>并非所有 <strong>物理页</strong> 对内核都 <strong>同等可访问</strong> — <strong>区（zone）</strong> 按 <strong>地址能力</strong> 与 <strong>用途</strong> 划分 <strong>伙伴系统 free list</strong>。</p>
-<h4>四类区（x86 典型）</h4>
+<h4>完整的区列表（v6.6 <code class="c">mmzone.h</code> 实证）</h4>
+<p>区是按<strong>条件编译</strong>拼出来的枚举，不是固定四个：</p>
+<pre class="code" data-label="C"><code class="c">enum zone_type {
+#ifdef CONFIG_ZONE_DMA
+    ZONE_DMA,          /* 老 ISA DMA（&lt;16MB） */
+#endif
+#ifdef CONFIG_ZONE_DMA32
+    ZONE_DMA32,        /* 32 位 DMA 掩码设备（&lt;4GB） */
+#endif
+    ZONE_NORMAL,
+#ifdef CONFIG_HIGHMEM
+    ZONE_HIGHMEM,
+#endif
+    ZONE_MOVABLE,      /* 只放可移动页，便于热拔与反碎片 */
+#ifdef CONFIG_ZONE_DEVICE
+    ZONE_DEVICE,       /* 设备内存（持久内存 pmem、GPU 显存等），不是普通 RAM */
+#endif
+    __MAX_NR_ZONES
+};
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>区</th>
 <th>用途</th>
+<th>64 位服务器上是否常见</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>ZONE_DMA</strong></td>
-<td><strong>ISA 时代</strong> DMA 只能寻址 <strong>低 16MB</strong> 物理 — 老设备</td>
+<td><strong>ISA 时代</strong> DMA 只能寻址 <strong>低 16MB</strong> 物理</td>
+<td>少数老设备驱动需要</td>
 </tr>
 <tr>
 <td><strong>ZONE_DMA32</strong></td>
 <td><strong>32 位 DMA 掩码</strong> 设备 — 可访问 <strong>&lt; 4GB</strong> 物理</td>
+<td>✅ 常见</td>
 </tr>
 <tr>
 <td><strong>ZONE_NORMAL</strong></td>
 <td>可 <strong>永久映射</strong> 进内核 <strong>线性地址空间</strong> 的页</td>
+<td>✅ 主力</td>
 </tr>
 <tr>
 <td><strong>ZONE_HIGHMEM</strong></td>
-<td><strong>物理存在</strong> 但 <strong>无永久内核线性映射</strong>（典型：<strong>x86 32 位</strong> 896MB 以上）</td>
+<td>无永久内核线性映射（<strong>x86 32 位</strong> 896MB 以上）</td>
+<td>❌ 64 位无</td>
+</tr>
+<tr>
+<td><strong>ZONE_MOVABLE</strong></td>
+<td>只放可移动页；<strong>热拔 + 反碎片</strong></td>
+<td>按需开</td>
+</tr>
+<tr>
+<td><strong>ZONE_DEVICE</strong></td>
+<td><strong>设备私有内存</strong>（pmem / DAX / GPU），<strong>不是普通 RAM</strong></td>
+<td>有持久内存时</td>
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p><strong>LKD 时代只有前四个。</strong> <code class="c">ZONE_MOVABLE</code> 与 <code class="c">ZONE_DEVICE</code> 是两个现代扩展，
+作用完全不同：MOVABLE 是<strong>逻辑策略</strong>（让这片的页都可迁移，便于腾出连续空间），
+DEVICE 是<strong>物理介质</strong>（页根本不在系统 RAM 里，由设备驱动管理生命周期）。</p>
+</blockquote>
+<h4>层级：node → zone → free_area</h4>
+<pre class="code" data-label="code"><code class="c">NUMA 节点（struct pglist_data，mmzone.h:1261）
+   │  node_zones[MAX_NR_ZONES]
+   ▼
+zone（struct zone）  ── 水位线 _watermark[NR_WMARK] / watermark_boost
+   │  free_area[MAX_ORDER]
+   ▼
+free_area（每个 order 一个）
+   │  free_list[MIGRATE_TYPES]     ← 12.2 讲的迁移类型
+   ▼
+伙伴链表
+</code></pre>
+<blockquote>
+<p><strong><code class="c">ZONE_NORMAL</code> 不够时会怎样</strong>：跨 node / 跨 zone 的分配顺序由 <strong>zonelist</strong> 决定
+（<code class="c">node_zonelists</code>，按 node 距离排序 + zone 优先级），而不是随便挑。
+这就是 NUMA 机器上"本节点内存不够 → 去远端节点借页 → 延迟变高"的机制来源。</p>
+</blockquote>
 <pre class="code" data-label="code"><code class="c">物理地址升高 ──────────────────────────────────────►
 
   ZONE_DMA   │  ZONE_DMA32  │     ZONE_NORMAL      │  ZONE_HIGHMEM
@@ -899,11 +1105,49 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <td>内核 <strong>直接映射窗口</strong> 固定 — 超出部分 = <strong>HIGHMEM</strong></td>
 </tr>
 <tr>
-<td><strong>水位（watermark）</strong></td>
-<td>每 zone <strong>min/low/high</strong> — 低于阈值 <strong>直接回收 / kswapd</strong>（Ch 16 方向）</td>
+<td>#### 水位线：每 zone 三档（v6.6 实证）</td>
+<td></td>
 </tr>
 </tbody>
 </table></div>
+<pre class="code" data-label="C"><code class="c">/* include/linux/mmzone.h:653 */
+enum zone_watermarks {
+    WMARK_MIN,
+    WMARK_LOW,
+    WMARK_HIGH,
+    NR_WMARK
+};
+/* 取值要加 watermark_boost： */
+#define min_wmark_pages(z)  (z-&gt;_watermark[WMARK_MIN]  + z-&gt;watermark_boost)
+#define low_wmark_pages(z)  (z-&gt;_watermark[WMARK_LOW]  + z-&gt;watermark_boost)
+#define high_wmark_pages(z) (z-&gt;_watermark[WMARK_HIGH] + z-&gt;watermark_boost)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>档位</th>
+<th>触发什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>低于 LOW</strong></td>
+<td>唤醒 <strong>kswapd</strong> 后台异步回收</td>
+</tr>
+<tr>
+<td><strong>低于 MIN</strong></td>
+<td>分配进入<strong>同步直接回收</strong>（<code class="c">__GFP_DIRECT_RECLAIM</code> 时）；或<strong>失败</strong>（<code class="c">GFP_ATOMIC</code> 等不允许回收的标志）</td>
+</tr>
+<tr>
+<td><strong>高于 HIGH</strong></td>
+<td>kswapd 认为够了，<strong>停止回收</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">watermark_boost</code> 是一个可叠加的临时抬升</strong>（碎片事件后短时抬高水位，迫使回收更激进以制造连续块）。
+它解释了"为什么 <code class="c">cat /proc/zoneinfo</code> 里看到的 min 与理论值对不上"。</p>
+</blockquote>
 <h4>64 位与嵌入式</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -919,7 +1163,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 <tr>
 <td><strong>ARM32 3:1 分割</strong></td>
-<td>可能有 <strong>HIGHMEM</strong> — 驱动访问高端页用 <strong><code class="c">kmap_atomic</code></strong></td>
+<td>可能有 <strong>HIGHMEM</strong> — 驱动访问高端页用 <strong><code class="c">kmap_local_page()</code></strong></td>
 </tr>
 <tr>
 <td><strong>SoC 小 RAM</strong></td>
@@ -927,6 +1171,14 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p>⚠️ <strong>版本更新：别再用 <code class="c">kmap_atomic()</code>。</strong>
+v6.6 <code class="c">include/linux/highmem.h:135</code> 的注释已经把它标为 <strong>Deprecated</strong>：
+<em>"In fact a wrapper around kmap_local_page() which also disables pagefaults.
+Do not use in new code. Use kmap_local_page() instead."</em>
+新代码一律用 <strong><code class="c">kmap_local_page()</code> / <code class="c">kunmap_local()</code></strong>（配对、可嵌套、不需要禁抢占）。
+详见 <a href="#s-12-9">12.9</a>。</p>
+</blockquote>
 <h4><code class="c">gfp_zone()</code> 与分配回落</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -951,6 +1203,16 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> 用户态 <strong>DMA-BUF / RDMA</strong> 注册内存时，驱动在内核 <strong><code class="c">dma_alloc_coherent</code></strong> 从 <strong>合适 zone</strong> 拿 <strong>物理连续 + 设备可见</strong> 的页 — 懂 zone 才懂 <strong><code class="c">swiotlb</code> bounce buffer</strong>（物理页不在设备掩码内时 <strong>拷贝</strong>）。</p>
+<blockquote>
+<p><strong>HFT 补充：zone 与 NUMA 的交集才是尾延迟杀手。</strong>
+分配时先走<strong>本地 node 的 zonelist</strong>，本地不够才会去<strong>远端 node 借页</strong>
+——跨 socket 访问（Intel UPI / AMD Infinity Fabric）单次多出几十到上百纳秒。
+表现是"内存还很充足，但延迟周期性变差"。对策：
+① 绑核 + <code class="c">numactl --membind</code>（或 <code class="c">mbind(MPOL_BIND)</code>）把数据与线程锁在同 node；
+② 关键数据结构<strong>预分配</strong>并 <code class="c">mlock</code>，避免运行中跨 node 分配；
+③ 观察 <code class="c">/proc/zoneinfo</code> 的 free 与 <code class="c">numastat</code> 的 <code class="c">other_node</code> 指标——
+<code class="c">other_node</code> 持续上涨就是跨节点分配在发生。</p>
+</blockquote>
 <p>→ <a href="../../06-linux-mm/html/chapter-14.html#s-2">06 Gorman Ch2 内存区域</a> · <a href="#s-12-9">Ch 12.9 HIGHMEM</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -963,6 +1225,21 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>GFP_DMA 保证物理地址 &lt; 16MB（ISA 设备只能寻址 24 位地址）。GFP_KERNEL 无地址限制，优先从 ZONE_NORMAL 分配（直接映射，速度快）。如果 ZONE_NORMAL 不足，buddy 系统会从 ZONE_DMA 挪页（fallback），但会保留 DMA 备用页防止饿死。</p>
+</details>
+<p><strong>Q3.</strong> v6.6 的 zone 枚举里，LKD 没提到的两个区是什么？各自解决什么问题？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">ZONE_MOVABLE</code> 和 <code class="c">ZONE_DEVICE</code>。<code class="c">ZONE_MOVABLE</code> 是<strong>逻辑策略</strong>：只放可移动页，让这片区域始终保持可迁移，用于内存热拔和制造连续物理空间（配合 12.2 的 migratetype，注意 <code class="c">alloc_contig_range()</code> 迁移也可能失败——如果页被长期 pin 住）。<code class="c">ZONE_DEVICE</code> 是<strong>物理介质</strong>：页根本不在系统 RAM 里，而是设备私有内存（持久内存 pmem/DAX、GPU 显存），生命周期由设备驱动管理而非伙伴系统。两者性质完全不同，一个管策略、一个管介质。</p>
+</details>
+<p><strong>Q4.</strong> zone 的三档水位线各自触发什么？为什么 <code class="c">/proc/zoneinfo</code> 里看到的 min 与计算值对不上？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">mmzone.h:653</code> 定义 <code class="c">WMARK_MIN / WMARK_LOW / WMARK_HIGH</code>：低于 <strong>LOW</strong> 唤醒 <strong>kswapd</strong> 异步回收；低于 <strong>MIN</strong> 进入同步直接回收（允许回收的 gfp 标志）或直接失败（<code class="c">GFP_ATOMIC</code> 等不允许回收时）；高于 <strong>HIGH</strong> kswapd 停止。对不上的原因是取值宏都加了 <code class="c">watermark_boost</code>：<code class="c">min_wmark_pages(z) = z-&gt;_watermark[WMARK_MIN] + z-&gt;watermark_boost</code>。<code class="c">watermark_boost</code> 是碎片事件后的<strong>临时抬升</strong>，用来迫使回收更激进以制造连续块，所以是动态值。</p>
+</details>
+<p><strong>Q5.</strong> 为什么新代码不该再使用 <code class="c">kmap_atomic()</code>？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/highmem.h:135</code> 已把它标记为 <strong>Deprecated</strong>，注释原文说它"实际上只是 <code class="c">kmap_local_page()</code> 的包装，额外关掉 pagefault"，并明确要求"Do not use in new code. Use kmap_local_page() instead."。新代码用 <code class="c">kmap_local_page()</code> / <code class="c">kunmap_local()</code>：配对使用、可以嵌套（严格后进先出）、且<strong>不需要禁用抢占</strong>，语义更清晰、开销更低。</p>
 </details>
 </details>
 <hr />
@@ -1045,7 +1322,149 @@ __free_pages(pg, 3);
 </tr>
 </tbody>
 </table></div>
-<h4><code class="c">gfp_mask</code> 在此层的含义</h4>
+<h4>快路径：per-CPU 页集合（pcp）</h4>
+<p><strong>order-0（单页）分配不走 <code class="c">zone-&gt;lock</code></strong>，而是先打本 CPU 的私有页集合（v6.6 实证）：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/mmzone.h:679 */
+struct per_cpu_pages {
+    spinlock_t lock;    /* Protects lists field */
+    int count;      /* number of pages in the list */
+    int high;       /* high watermark, emptying needed */
+    int batch;      /* chunk size for buddy add/remove */
+    short free_factor;  /* batch scaling factor during free */
+#ifdef CONFIG_NUMA
+    short expire;       /* When 0, remote pagesets are drained */
+#endif
+    /* Lists of pages, one per migrate type stored on the pcp-lists */
+    struct list_head lists[NR_PCP_LISTS];
+} ____cacheline_aligned_in_smp;
+</code></pre>
+<pre class="code" data-label="code"><code class="c">alloc_pages(GFP_KERNEL, 0)
+   │
+   ├─ 快路径 rmqueue_pcplist：只锁「本 CPU 的 pcp-&gt;lock」
+   │     命中 → 取一个页，返回                     ← 无全局锁，几十纳秒级
+   │     落空 → 一次向 buddy 拉 batch 个页进 pcp   ← 摊薄后续分配成本
+   │
+   └─ 慢路径：持 zone-&gt;lock 从 free_list 取，必要时拆分高阶块
+</code></pre>
+<p>释放是对称的：先放进 pcp，<strong><code class="c">count &gt; high</code> 时一次归还 <code class="c">batch</code> 个</strong>给伙伴系统。</p>
+<blockquote>
+<p><strong>三个实战含义</strong>：
+① <code class="c">____cacheline_aligned_in_smp</code> —— pcp 结构体<strong>按缓存行对齐</strong>，避免本 CPU 的计数器和邻居 CPU 的互相伪共享（呼应 <a href="chapter-19.html#s-19-4">19.4</a> 的 false sharing）；
+② <code class="c">batch</code> 是<strong>批量摊薄</strong>的关键：一次锁 zone 换 N 个页，把全局锁的开销除以 N；
+③ <strong>跨 CPU 释放有代价</strong>——页回到<strong>释放者</strong>的 pcp，而不是分配者的。
+高频"CPU A 分配、CPU B 释放"会让两侧 pcp 反复触及 high 水位、频繁批量归还/借出。</p>
+</blockquote>
+<h4>慢路径：四级降级</h4>
+<pre class="code" data-label="code"><code class="c">① pcp（本 CPU，无全局锁）
+     ↓ 空
+② 伙伴系统（持 zone-&gt;lock，拆分高阶块）
+     ↓ 该 zone 水位不足
+③ 回收与整理：唤醒 kswapd → 直接回收（direct reclaim）→ compaction 迁移整理
+     ↓ 仍失败
+④ OOM killer（或返回 NULL，取决于 gfp 是否允许重试）
+</code></pre>
+<blockquote>
+<p><strong>步骤 ③ 是延迟毛刺的主要来源</strong>：直接回收可能要<strong>等待脏页写回</strong>（磁盘 I/O），
+compaction 要<strong>迁移页面并冻结页表</strong>。所以 <strong><code class="c">GFP_KERNEL</code> 在中断上下文/自旋锁内是禁用的</strong>
+——它可能睡眠，且睡眠时长<strong>不可预测</strong>。</p>
+</blockquote>
+<h4><code class="c">gfp_mask</code>：v6.6 定义已拆到 <code class="c">gfp_types.h</code></h4>
+<p>⚠️ 版本变化：<code class="c">include/linux/gfp.h</code> 现在<strong>只有函数声明和辅助函数</strong>，
+所有标志定义搬到了 <strong><code class="c">include/linux/gfp_types.h</code></strong>。查标志别找错文件。</p>
+<p>常用组合（<code class="c">gfp_types.h:325-333</code> 实证，逐字）：</p>
+<pre class="code" data-label="C"><code class="c">#define GFP_ATOMIC  (__GFP_HIGH|__GFP_KSWAPD_RECLAIM)
+#define GFP_KERNEL  (__GFP_RECLAIM | __GFP_IO | __GFP_FS)
+#define GFP_KERNEL_ACCOUNT (GFP_KERNEL | __GFP_ACCOUNT)
+#define GFP_NOWAIT  (__GFP_KSWAPD_RECLAIM)
+#define GFP_NOIO    (__GFP_RECLAIM)
+#define GFP_NOFS    (__GFP_RECLAIM | __GFP_IO)
+#define GFP_USER    (__GFP_RECLAIM | __GFP_IO | __GFP_FS | __GFP_HARDWALL)
+#define GFP_DMA     __GFP_DMA
+#define GFP_DMA32   __GFP_DMA32
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组合</th>
+<th>能睡眠？</th>
+<th>能回收？</th>
+<th>能 I/O？</th>
+<th>能用紧急储备？</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">GFP_KERNEL</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>进程上下文的默认选择</td>
+</tr>
+<tr>
+<td><code class="c">GFP_ATOMIC</code></td>
+<td>❌</td>
+<td>❌（只唤醒 kswapd）</td>
+<td>❌</td>
+<td>✅ <code class="c">__GFP_HIGH</code></td>
+<td>中断/自旋锁内</td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOWAIT</code></td>
+<td>❌</td>
+<td>❌（只唤醒 kswapd）</td>
+<td>❌</td>
+<td>❌</td>
+<td>不想睡眠，也不该动用储备</td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOIO</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>块设备/存储栈内，防止回收递归触发 I/O</td>
+</tr>
+<tr>
+<td><code class="c">GFP_NOFS</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ 但禁文件系统</td>
+<td>❌</td>
+<td>文件系统内，防止回收递归进 FS</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>最容易被说错的一条</strong>：<code class="c">GFP_ATOMIC</code> <strong>不等于"完全不回收"</strong>——
+它是 <code class="c">__GFP_HIGH | __GFP_KSWAPD_RECLAIM</code>，即<strong>能碰紧急储备</strong>且<strong>会唤醒 kswapd</strong>，
+只是<strong>不会自己直接回收</strong>（因为直接回收可能睡眠）。
+真正"什么都不做、试一次就走"的是 <code class="c">GFP_NOWAIT</code>。</p>
+</blockquote>
+<p><strong>失败语义三档</strong>（重试力度从强到弱）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>默认</strong></td>
+<td>尽全力：回收 + compaction + 可能触发 OOM</td>
+</tr>
+<tr>
+<td><strong><code class="c">__GFP_RETRY_MAYFAIL</code></strong></td>
+<td>会重试，但<strong>放弃 OOM</strong>，且不重试 compaction</td>
+</tr>
+<tr>
+<td><strong><code class="c">__GFP_NORETRY</code></strong></td>
+<td><strong>一次失败即返回 NULL</strong>，不做激进尝试（<code class="c">gfp_types.h:180</code> 有详细说明）</td>
+</tr>
+</tbody>
+</table></div>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1074,6 +1493,10 @@ __free_pages(pg, 3);
 <td><strong><code class="c">__GFP_NORETRY</code></strong></td>
 <td>失败 <strong>不重试</strong> 更激进路径</td>
 </tr>
+<tr>
+<td><strong><code class="c">__GFP_NOWARN</code></strong></td>
+<td>失败时<strong>不打印</strong>分配失败告警（自己能处理失败的路径应加）</td>
+</tr>
 </tbody>
 </table></div>
 <h4>与 <code class="c">kmalloc</code> 的关系</h4>
@@ -1087,14 +1510,48 @@ __free_pages(pg, 3);
 <tbody>
 <tr>
 <td><strong><code class="c">kmalloc</code> 内部</strong></td>
-<td>小对象常从 <strong>Slab</strong>；较大可能 <strong>直接 <code class="c">alloc_pages</code></strong></td>
+<td>≤ 8KB 从 <strong>Slab/SLUB</strong> 缓存；<strong>&gt; 8KB 直接 <code class="c">alloc_pages</code></strong></td>
 </tr>
 <tr>
 <td><strong><code class="c">KMALLOC_MAX_SIZE</code></strong></td>
-<td>架构相关上限 — 再大须 <strong><code class="c">vmalloc</code> 或页 API</strong></td>
+<td>v6.6 = <strong>4MB</strong>（由 <code class="c">MAX_ORDER=10</code> 决定） — 再大须 <strong><code class="c">vmalloc</code> 或页 API</strong></td>
 </tr>
 </tbody>
 </table></div>
+<h5>v6.6 实证的分界线</h5>
+<pre class="code" data-label="C"><code class="c">/* include/linux/slab.h（SLUB 分支） */
+#define KMALLOC_SHIFT_HIGH  (PAGE_SHIFT + 1)              /* 13 */
+#define KMALLOC_SHIFT_MAX   (MAX_ORDER + PAGE_SHIFT)      /* 10 + 12 = 22 */
+#define KMALLOC_MAX_SIZE    (1UL &lt;&lt; KMALLOC_SHIFT_MAX)        /* 4 MB */
+#define KMALLOC_MAX_CACHE_SIZE  (1UL &lt;&lt; KMALLOC_SHIFT_HIGH)   /* 8 KB */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>请求大小</th>
+<th>实际走哪条路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>≤ 8KB</strong></td>
+<td>SLUB 缓存（<code class="c">kmalloc_caches[]</code> 按 size index 分档）</td>
+</tr>
+<tr>
+<td><strong>&gt; 8KB</strong></td>
+<td><strong><code class="c">kmalloc_large()</code> → 直接页分配器</strong>（<code class="c">slab.h:595</code>：<code class="c">if (size &gt; KMALLOC_MAX_CACHE_SIZE) return kmalloc_large(size, flags);</code>）</td>
+</tr>
+<tr>
+<td><strong>&gt; 4MB</strong></td>
+<td><code class="c">kmalloc</code> 直接失败</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>也就是说 <strong><code class="c">kmalloc(64KB)</code> 本质上就是 <code class="c">alloc_pages(order=4)</code></strong>，
+只是多了"按大小选 order + 记账"的包装。
+<strong>"slab 碎片"只对 ≤8KB 的请求成立</strong>；超过 8KB 之后你面对的是<strong>伙伴系统的碎片</strong>问题。</p>
+</blockquote>
 <h4>释放纪律</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1119,18 +1576,46 @@ __free_pages(pg, 3);
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> 网卡驱动 <strong>RX ring</strong> 的 <strong>descriptor + 包缓冲</strong> 常用 <strong>页分配或 dma_pool</strong> — 启动时 <strong>一次性</strong> <code class="c">alloc_pages</code>，运行期 <strong>GFP_ATOMIC 零分配</strong>。用户态 <strong>hugepage 池</strong> 同理：<strong>启动预占</strong>，盘中 <strong>不再向内核要连续 2MB</strong>。</p>
+<blockquote>
+<p><strong>HFT 补充：把"分配失败"当正常分支处理。</strong>
+慢路径可能走到直接回收与 compaction，<strong>耗时不可预测</strong>——在热路径上就是尾延迟。三条硬规则：
+① <strong>热路径零分配</strong>：RX/TX ring、订单簿槽位在启动/建连阶段一次分配好，数据路径只读写；
+② 中断与自旋锁内<strong>只能 <code class="c">GFP_ATOMIC</code></strong>，且必须<strong>处理返回 NULL</strong>（它本来就容易失败）；
+③ 能优雅降级的路径加 <strong><code class="c">__GFP_NOWARN</code></strong>，避免一次可预期的失败刷满 dmesg
+（dmesg 有全局锁，高频打印会污染<strong>所有</strong> CPU 的延迟）。</p>
+</blockquote>
 <p>→ <a href="../../06-linux-mm/html/chapter-06.html#ch-6">06 Gorman Ch6 物理页分配</a> · <a href="#s-12-5">Ch 12.5 kmalloc</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> alloc_pages(gfp, order) 中 order 是什么？最大能分配多少？</p>
 <details>
 <summary>答案</summary>
-<p>order 是 2 的幂次方页数。alloc_pages(gfp, 0) = 1 页(4KB)，order=1 = 2 页(8KB)... MAX_ORDER 通常=10(或11) = 1024 页 = 4MB。超过 4MB 需用 vmalloc 或 CMA。HFT 内核驱动分配大块 DMA buffer 用 alloc_pages 而非 kmalloc（避免 slab 碎片）。</p>
+<p>order 是 2 的幂次方页数。alloc_pages(gfp, 0) = 1 页(4KB)，order=1 = 2 页(8KB)... v6.6 的 <code class="c">MAX_ORDER</code> 默认 = <strong>10</strong>（<code class="c">mmzone.h:28</code>，<code class="c">!CONFIG_ARCH_FORCE_MAX_ORDER</code> 时）= 1024 页 = <strong>4MB</strong>。超过 4MB 需用 vmalloc 或 CMA。HFT 内核驱动分配大块 DMA buffer 用 alloc_pages 而非 kmalloc（避免 slab 碎片）。</p>
+<blockquote>
+<p><strong>订正</strong>：常见说法「MAX_ORDER 通常 = 10 或 11」在 v6.6 是<strong>确定的 10</strong>（v6.5 也是 10）。
+架构可用 <code class="c">CONFIG_ARCH_FORCE_MAX_ORDER</code> 覆盖，但改大只会让<strong>高阶分配更容易失败</strong>
+——需要的连续页数翻倍了。</p>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> __get_free_pages 和 alloc_pages 的关系？</p>
 <details>
 <summary>答案</summary>
 <p>__get_free_pages(gfp, order) = alloc_pages(gfp, order) + page_address()。即分配页并返回虚拟地址。但只能用于 ZONE_NORMAL/ZONE_DMA（有直接映射地址），HIGHMEM 页用 kmap 获取地址。现代内核推荐直接用 alloc_pages + page_address。</p>
+</details>
+<p><strong>Q3.</strong> order-0 的页分配为什么不抢 <code class="c">zone-&gt;lock</code>？per-CPU pageset 是怎么工作的？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">mmzone.h:679</code> 的 <code class="c">struct per_cpu_pages</code>（pcp）为每个 CPU、每个 zone 维护私有页链表（按迁移类型分 <code class="c">lists[NR_PCP_LISTS]</code>，结构本身 <code class="c">____cacheline_aligned_in_smp</code> 防伪共享）。分配 order-0 先走 <code class="c">rmqueue_pcplist</code>，只锁<strong>本 CPU 的 <code class="c">pcp-&gt;lock</code></strong>；落空才一次向伙伴系统批量拉 <code class="c">batch</code> 个页。释放对称：先放入 pcp，<code class="c">count &gt; high</code> 时一次归还 <code class="c">batch</code> 个给 buddy。用<strong>批量摊薄</strong>把全局 <code class="c">zone-&gt;lock</code> 的开销除以 batch。两个后果：① 高频「CPU A 分配、CPU B 释放」会让两侧 pcp 频繁触及 high 水位；② <code class="c">batch</code> 会随 <code class="c">free_factor</code> 缩放，NUMA 上还有 <code class="c">expire</code> 定期排空远端 pageset。</p>
+</details>
+<p><strong>Q4.</strong> <code class="c">GFP_ATOMIC</code> 真的完全不做回收吗？它和 <code class="c">GFP_NOWAIT</code> 有什么区别？</p>
+<details>
+<summary>答案</summary>
+<p>不完全是。v6.6 <code class="c">gfp_types.h:325</code> 实证：<code class="c">#define GFP_ATOMIC (__GFP_HIGH|__GFP_KSWAPD_RECLAIM)</code>——它能<strong>动用紧急储备</strong>（<code class="c">__GFP_HIGH</code>）且<strong>会唤醒 kswapd</strong>（<code class="c">__GFP_KSWAPD_RECLAIM</code>），只是<strong>不会自己直接回收</strong>（直接回收可能睡眠）。而 <code class="c">GFP_NOWAIT</code> 只有 <code class="c">__GFP_KSWAPD_RECLAIM</code>，<strong>既不能睡眠也不能碰紧急储备</strong>。所以：需要「不睡眠但希望尽力拿到内存」用 GFP_ATOMIC（中断/自旋锁内）；需要「试一下就走、不许动用储备」用 GFP_NOWAIT。两者都必须处理返回 NULL。</p>
+</details>
+<p><strong>Q5.</strong> <code class="c">kmalloc(64KB)</code> 到底走了哪条路？</p>
+<details>
+<summary>答案</summary>
+<p>走<strong>页分配器</strong>，不走 slab。v6.6 <code class="c">slab.h</code> 实证：<code class="c">KMALLOC_MAX_CACHE_SIZE = 1UL &lt;&lt; (PAGE_SHIFT + 1)</code> = <strong>8KB</strong>，而 <code class="c">kmalloc()</code> 的实现里有 <code class="c">if (size &gt; KMALLOC_MAX_CACHE_SIZE) return kmalloc_large(size, flags);</code>。所以 ≤8KB 走 SLUB 的 <code class="c">kmalloc_caches[]</code> 分档缓存，&gt;8KB 直接 <code class="c">alloc_pages()</code>（本质是按大小算出 order）。推论：<strong>「slab 碎片」只对 ≤8KB 的请求成立</strong>，超过 8KB 面对的是伙伴系统的碎片问题；而 <code class="c">kmalloc</code> 的绝对上限 <code class="c">KMALLOC_MAX_SIZE = 1UL &lt;&lt; (MAX_ORDER + PAGE_SHIFT)</code> = 4MB。</p>
 </details>
 </details>
 <hr />
@@ -1311,6 +1796,14 @@ kfree(ptr);
       <section class="section" id="s-12-6">
         <div class="sec-head"><div class="sec-no">12.6</div><h2>section-12.6-vmalloc</h2></div>
 <p><strong>虚拟连续、物理可不连续</strong> — 用 <strong>改页表</strong> 把零散物理页拼成 <strong>连续 VA 区间</strong>，适合 <strong>大块</strong>、<strong>非 DMA</strong>、<strong>非性能关键</strong> 的内核分配。</p>
+<pre class="code" data-label="code"><code class="c">kmalloc 路径:
+  [ 物理连续 4KB×N ] ──direct map──► 连续 VA  （快，页表早已建好）
+
+vmalloc 路径:
+  物理页 A   物理页 C   物理页 F  （分散，各自 order-0 从 buddy 取）
+     │          │          │
+     └──── 改页表拼接 ──► [ VA: v .. v+size )  连续，但 PTE 逐页新填
+</code></pre>
 <h4>保证与代价</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1332,6 +1825,10 @@ kfree(ptr);
 <td></td>
 <td><strong>适合 DMA</strong></td>
 </tr>
+<tr>
+<td></td>
+<td><strong>可安全在原子上下文分配</strong></td>
+</tr>
 </tbody>
 </table></div>
 <div class="tbl-wrap"><table>
@@ -1344,50 +1841,686 @@ kfree(ptr);
 <tbody>
 <tr>
 <td><strong>比 kmalloc 慢</strong></td>
-<td>需 <strong>建立页表项</strong>、可能 <strong>缺页</strong> 填 PTE</td>
+<td>需 <strong>逐页建页表项</strong>（<code class="c">vmap_pages_range</code>），不是简单的 direct-map 偏移</td>
 </tr>
 <tr>
 <td><strong>TLB 压力</strong></td>
-<td>每页一项 — <strong>miss 多</strong></td>
+<td>每页一项 — 4KB 粒度，<strong>miss 多</strong>；释放还要 flush 内核 TLB</td>
 </tr>
 <tr>
 <td><strong>更碎片化物理</strong></td>
-<td>从 buddy 逐页凑</td>
+<td>从 buddy <strong>逐页</strong>凑，拿不到高阶块</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">kmalloc 路径:
-  [ 物理连续 4KB×N ] ──direct map──► 连续 VA  （快）
-
-vmalloc 路径:
-  物理页 A   物理页 C   物理页 F  （分散）
-     │          │          │
-     └──── 页表拼接 ────► [ VA: v .. v+size )  连续
+<blockquote>
+<p><strong>LKD 只说了"要不要用"，没说"为什么慢"。</strong> 慢在三件互不相干的事上：
+① <strong>找 VA 空隙</strong>（红黑树，见下节）；② <strong>逐页建 PTE</strong>（页表层数 × 页数）；
+③ <strong>页表同步</strong>（x86_64 上其他进程的顶层页表靠缺页异常按需回抄，见第 7 节）。
+这三项都不在 <code class="c">kmalloc</code> 的路径上 —— <code class="c">kmalloc</code> 返回的是 <strong>早已映射好的 direct map 地址</strong>，只差 slab 记账。</p>
+</blockquote>
+<hr />
+<h4>【v6.6 实证】三层数据结构</h4>
+<p>vmalloc 的"元数据"和"地址区间"是<strong>分开管理的两个对象</strong>，这点 LKD 没讲：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/vmalloc.h:49 —— 描述符，回答&quot;这块是什么&quot; */
+struct vm_struct {
+    struct vm_struct    *next;
+    void            *addr;
+    unsigned long       size;
+    unsigned long       flags;
+    struct page     **pages;    /* 物理页指针数组 */
+#ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
+    unsigned int        page_order; /* 用大页时记录阶数 */
+#endif
+    unsigned int        nr_pages;
+    phys_addr_t     phys_addr;
+    const void      *caller;    /* 分配点 —— /proc/vmallocinfo 的来源 */
+};
 </code></pre>
-<h4>API（概念）</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/vmalloc.h:63 —— 区间，回答&quot;这块在哪&quot; */
+struct vmap_area {
+    unsigned long va_start;
+    unsigned long va_end;
+
+    struct rb_node   rb_node;   /* 按地址排序的红黑树节点 */
+    struct list_head list;      /* 按地址排序的双向链表节点 */
+
+    /*
+     * 这两个变量可以共用内存，因为一个 vmap_area 只能处于两种状态之一：
+     *    1) 在 free 树里（根是 free_vmap_area_root）
+     *    2) 或在 busy 树里（根是 vmap_area_root）
+     */
+    union {
+        unsigned long subtree_max_size; /* 在 free 树中：子树最大空闲块 */
+        struct vm_struct *vm;           /* 在 busy 树中：指向描述符 */
+    };
+    unsigned long flags;
+};
+</code></pre>
+<blockquote>
+<p><strong>注意那个 <code class="c">union</code></strong>：同一块内存，在空闲树上存"我子树里最大能给你多少"，在忙树上存"我属于哪个 vm_struct"。
+因为一个区间不可能同时又空闲又忙碌，内核把两个字段<strong>叠在一起</strong>省 8 字节。
+这是内核里典型的"用生命周期互斥换内存"手法 —— 和 <a href="chapter-19.html#s-19-4">19.4</a> 的结构体布局优化同源。</p>
+</blockquote>
+<p><strong>为什么要两套索引（树 + 链表）？</strong></p>
+<pre class="code" data-label="code"><code class="c">free_vmap_area_root  (红黑树)        free_vmap_area_list  (双向链表)
+   —— 查找 O(log n)                    —— 合并 O(1)
+
+   [va 1000-2000]                    A ⇄ B ⇄ C ⇄ D
+      ╱        ╲                     ↑ 插入/删除要动邻居
+  [100-500]  [3000-4000]             树里找邻居是 O(log n)，
+                                     链表里 prev/next 是 O(1)
+</code></pre>
+<p><code class="c">mm/vmalloc.c:750</code> 的注释原文：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:750 */
+/*
+ * This linked list is used in pair with free_vmap_area_root.
+ * It gives O(1) access to prev/next to perform fast coalescing.
+ */
+static LIST_HEAD(free_vmap_area_list);
+</code></pre>
+<h4>VA 空隙查找：augmented rbtree</h4>
+<p>普通红黑树只能回答"有没有"，不能高效回答"<strong>哪块够大</strong>"。v6.6 的空闲树是 <strong>增强红黑树</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:756 */
+/*
+ * This augment red-black tree represents the free vmap space.
+ * All vmap_area objects in this tree are sorted by va-&gt;va_start
+ * address. It is used for allocation and merging when a vmap
+ * object is released.
+ *
+ * Each vmap_area node contains a maximum available free block
+ * of its sub-tree, right or left. Therefore it is possible to
+ * find a lowest match of free area.
+ */
+static struct rb_root free_vmap_area_root = RB_ROOT;
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:790 */
+RB_DECLARE_CALLBACKS_MAX(static, free_vmap_area_rb_augment_cb,
+    struct vmap_area, rb_node, unsigned long, subtree_max_size, va_size)
+</code></pre>
+<pre class="code" data-label="code"><code class="c">每个节点额外维护 subtree_max_size = max(自身大小, 左子树最大, 右子树最大)
+
+要 1MB：从根往下走，若左子树的 max &lt; 1MB 就根本不进左子树
+        → 一次下降就能定位&quot;最低地址且够大&quot;的空隙，O(log n)
+</code></pre>
+<blockquote>
+<p><strong>版本断崖（实测）</strong>：这个结构 <strong>不是一直有的</strong>。
+我抓了五个版本的 <code class="c">mm/vmalloc.c</code> 数 <code class="c">subtree_max_size</code> 出现次数：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">subtree_max_size</code> 次数</th>
+<th><code class="c">free_vmap_area_root</code></th>
+<th>找空隙复杂度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.19</td>
+<td>0</td>
+<td>无</td>
+<td><strong>O(n)</strong> 沿树线性扫</td>
+</tr>
+<tr>
+<td>v4.20</td>
+<td>0</td>
+<td>无</td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td>v5.0</td>
+<td>0</td>
+<td>无</td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td>v5.1</td>
+<td>0</td>
+<td>无</td>
+<td>O(n)</td>
+</tr>
+<tr>
+<td><strong>v5.2</strong></td>
+<td><strong>23</strong></td>
+<td><strong>有</strong></td>
+<td><strong>O(log n)</strong></td>
+</tr>
+<tr>
+<td>v5.10</td>
+<td>19</td>
+<td>有</td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>v6.6</td>
+<td>—</td>
+<td>有</td>
+<td>O(log n)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>即 v5.2 是分界线</strong>（commit 系列把 free 与 busy 拆成两棵树、引入增强回调）。
+老资料里"vmalloc 分配是线性扫描、区域多时慢"的说法，在 v5.2 之后<strong>已不成立</strong>。
+同一批改动还带来 <code class="c">ne_fit_preload_node</code>（<code class="c">mm/vmalloc.c:773</code>）：
+per-CPU 预载一个 <code class="c">vmap_area</code> 对象，专门服务于"正好劈开一个空闲块"的 no-edge 分裂情形，
+目的写在注释里 —— <em>"get rid of allocations from the atomic context, thus to use more permissive allocation masks"</em>。</p>
+</blockquote>
+<hr />
+<h4>API 全表（v6.6 行号锚点）</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>API</th>
+<th>文件:行</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">vmalloc(size)</code></strong></td>
-<td>分配 <strong>size</strong> 字节虚连续区</td>
+<td><code class="c">mm/vmalloc.c:3416</code></td>
+<td>底层固定 <code class="c">GFP_KERNEL</code></td>
 </tr>
 <tr>
 <td><strong><code class="c">vzalloc(size)</code></strong></td>
-<td>+ 清零</td>
+<td><code class="c">:3456</code></td>
+<td><code class="c">vmalloc \| __GFP_ZERO</code></td>
 </tr>
 <tr>
 <td><strong><code class="c">vmalloc_user(size)</code></strong></td>
-<td>可 <strong>mmap 到用户态</strong> 的特殊区</td>
+<td><code class="c">:3472</code></td>
+<td>清零 + <code class="c">VM_USERMAP</code>，可 <code class="c">remap_vmalloc_range</code> 给用户态</td>
+</tr>
+<tr>
+<td><strong><code class="c">vmalloc_node(size, node)</code></strong></td>
+<td><code class="c">:3494</code></td>
+<td>指定 NUMA 节点</td>
+</tr>
+<tr>
+<td><strong><code class="c">__vmalloc(size, gfp)</code></strong></td>
+<td><code class="c">:3397</code></td>
+<td>自定义 gfp</td>
+</tr>
+<tr>
+<td><strong><code class="c">vmalloc_huge(size, gfp)</code></strong></td>
+<td><strong><code class="c">:3435</code></strong></td>
+<td><strong>v6.6 新增，允许用大页</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">vmap(pages[], n, flags, prot)</code></strong></td>
+<td><code class="c">:2894</code></td>
+<td>把<strong>已有</strong>的页数组映射成连续 VA</td>
+</tr>
+<tr>
+<td><strong><code class="c">vmap_pfn(pfns[], n, prot)</code></strong></td>
+<td><code class="c">:2968</code></td>
+<td>按 <strong>PFN 数组</strong>映射（不要求有 <code class="c">struct page</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">vm_map_ram(pages[], n, node)</code></strong></td>
+<td><code class="c">include/linux/vmalloc.h:131</code></td>
+<td>小批量、不走 vm_struct 的轻量映射</td>
 </tr>
 <tr>
 <td><strong><code class="c">vfree(addr)</code></strong></td>
-<td>释放 — <strong>必须配对</strong></td>
+<td><code class="c">:2807</code></td>
+<td>释放；<strong>中断上下文自动降级</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">vfree_atomic(addr)</code></strong></td>
+<td><code class="c">:2773</code></td>
+<td>显式走延迟释放，<strong>NMI 里仍不可用</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">vcalloc(n, size)</code></strong></td>
+<td><code class="c">include/linux/vmalloc.h:159</code></td>
+<td>带溢出检查的数组版 <code class="c">vzalloc</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">vmalloc_array(n, size)</code></strong></td>
+<td><code class="c">include/linux/vmalloc.h:157</code></td>
+<td>带溢出检查的数组版</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">vm_struct-&gt;flags</code> 位（v6.6 <code class="c">include/linux/vmalloc.h:19</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">VM_IOREMAP</code></td>
+<td><code class="c">0x01</code></td>
+<td><code class="c">ioremap()</code> 及其变体</td>
+</tr>
+<tr>
+<td><code class="c">VM_ALLOC</code></td>
+<td><code class="c">0x02</code></td>
+<td><code class="c">vmalloc()</code> — <strong>可 <code class="c">vfree</code> 释放物理页</strong></td>
+</tr>
+<tr>
+<td><code class="c">VM_MAP</code></td>
+<td><code class="c">0x04</code></td>
+<td><code class="c">vmap()</code></td>
+</tr>
+<tr>
+<td><code class="c">VM_USERMAP</code></td>
+<td><code class="c">0x08</code></td>
+<td>可 <code class="c">remap_vmalloc_range</code></td>
+</tr>
+<tr>
+<td><code class="c">VM_NO_GUARD</code></td>
+<td><code class="c">0x40</code></td>
+<td><code class="c">***DANGEROUS***</code> 不加保护页</td>
+</tr>
+<tr>
+<td><strong><code class="c">VM_FLUSH_RESET_PERMS</code></strong></td>
+<td><code class="c">0x100</code></td>
+<td>解除映射时要重置 direct map 权限 + flush TLB，<strong>不能在原子上下文释放</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">VM_ALLOW_HUGE_VMAP</code></strong></td>
+<td><code class="c">0x400</code></td>
+<td>允许用大页（见下节）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>保护页细节</strong>：默认 vmalloc 区域<strong>尾部多带一个 guard page</strong>，
+<code class="c">get_vm_area_size()</code>（<code class="c">:196</code>）算可用大小时要 <code class="c">area-&gt;size - PAGE_SIZE</code>。
+所以越界写一个字节不会立刻踩到别人的数据 —— 但<strong>只有下溢方向</strong>有保护。</p>
+</blockquote>
+<h4>分配路径五步</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:3235 */
+void *__vmalloc_node_range(unsigned long size, unsigned long align,
+            unsigned long start, unsigned long end, gfp_t gfp_mask,
+            pgprot_t prot, unsigned long vm_flags, int node,
+            const void *caller)
+{
+    /* ① 硬上限：请求的页数不能超过系统总页数 */
+    if ((size &gt;&gt; PAGE_SHIFT) &gt; totalram_pages()) {     /* :3250 */
+        warn_alloc(gfp_mask, NULL,
+            &quot;vmalloc error: size %lu, exceeds total pages&quot;, real_size);
+        return NULL;
+    }
+    ...
+again:
+    /* ② 在 [start,end) 里找 VA 空隙 —— 这里会 might_sleep() */
+    area = __get_vm_area_node(real_size, align, shift, VM_ALLOC |
+                  VM_UNINITIALIZED | vm_flags, start, end, node,
+                  gfp_mask, caller);                      /* :3280 */
+    ...
+    /* ③ 逐页从 buddy 取页 + ④ 填页表 + ⑤ KASAN unpoison */
+}
+</code></pre>
+<p>第 ② 步内部（<code class="c">mm/vmalloc.c:1600</code>）是<strong>上下文约束的真正来源</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:1600 */
+    might_sleep();
+    gfp_mask = gfp_mask &amp; GFP_RECLAIM_MASK;
+
+    va = kmem_cache_alloc_node(vmap_area_cachep, gfp_mask, node);
+</code></pre>
+<blockquote>
+<p>两行都是硬约束：
+- <code class="c">might_sleep()</code> —— 原子上下文调用会触发 <code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 告警；
+- <code class="c">gfp_mask &amp; GFP_RECLAIM_MASK</code> —— <strong>剥掉 <code class="c">__GFP_HIGH</code> / <code class="c">__GFP_KSWAPD_RECLAIM</code> 等回收位</strong>。
+  也就是说<strong>即使你传 <code class="c">GFP_ATOMIC</code> 给 <code class="c">__vmalloc()</code>，也会被这里洗成可睡眠的</strong>。
+  想"传个原子标志就能在中断里 vmalloc"是<strong>行不通的</strong>。</p>
+</blockquote>
+<hr />
+<h4>【断崖】<code class="c">vmalloc_huge()</code>：vmalloc 也能用大页了</h4>
+<p>LKD 时代（2.6 / 3.x）的定论是"<strong>vmalloc 一定是 4KB 粒度，TLB 压力天然大</strong>"。
+<strong>v6.6 已经打破了这个定论</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:3423 —— v6.6 原文 */
+/**
+ * vmalloc_huge - allocate virtually contiguous memory, allow huge pages
+ * @size:      allocation size
+ * @gfp_mask:  flags for the page level allocator
+ *
+ * Allocate enough pages to cover @size from the page level
+ * allocator and map them into contiguous kernel virtual space.
+ * If @size is greater than or equal to PMD_SIZE, allow using
+ * huge pages for the memory
+ */
+void *vmalloc_huge(unsigned long size, gfp_t gfp_mask)
+{
+    return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+                    gfp_mask, PAGE_KERNEL, VM_ALLOW_HUGE_VMAP,
+                    NUMA_NO_NODE, __builtin_return_address(0));
+}
+EXPORT_SYMBOL_GPL(vmalloc_huge);
+</code></pre>
+<p>生效条件（<code class="c">mm/vmalloc.c:3257</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    if (vmap_allow_huge &amp;&amp; (vm_flags &amp; VM_ALLOW_HUGE_VMAP)) {
+        size_per_node = size;
+        if (node == NUMA_NO_NODE)
+            size_per_node /= num_online_nodes();     /* NUMA 上按节点数摊 */
+        if (arch_vmap_pmd_supported(prot) &amp;&amp; size_per_node &gt;= PMD_SIZE)
+            shift = PMD_SHIFT;                        /* 2MB 大页 */
+        else
+            shift = arch_vmap_pte_supported_shift(size_per_node);
+
+        align = max(real_align, 1UL &lt;&lt; shift);
+        size = ALIGN(real_size, 1UL &lt;&lt; shift);
+    }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>不满足的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vmap_allow_huge</code> 为真（默认 true，可被 <code class="c">nohugevmalloc</code> 启动参数关掉，<code class="c">mm/vmalloc.c:66~75</code>）</td>
+<td>完全不尝试大页</td>
+</tr>
+<tr>
+<td>调用者传 <code class="c">VM_ALLOW_HUGE_VMAP</code></td>
+<td>普通 <code class="c">vmalloc()</code> <strong>不会</strong>用大页</td>
+</tr>
+<tr>
+<td><code class="c">prot</code> 支持 PMD 映射且 <code class="c">size/nr_nodes &gt;= PMD_SIZE</code>（2MB）</td>
+<td>退到 <code class="c">arch_vmap_pte_supported_shift()</code>（x86 仍是 4KB）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>为什么普通 <code class="c">vmalloc()</code> 不默认开大页？</strong> 源码注释给了答案（<code class="c">mm/vmalloc.c:3260</code>）：
+<em>"Only try for PAGE_KERNEL allocations, others like modules don't yet expect huge pages in their allocations due to <code class="c">apply_to_page_range</code> not supporting them."</em>
+即：<strong>大页映射会让 <code class="c">apply_to_page_range()</code> 一族失效</strong>，模块加载等依赖逐页遍历的路径会炸。
+所以是"按需开"，不是"默认开"。</p>
+</blockquote>
+<h4>x86_64 上 vmalloc 有多大</h4>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/pgtable_64_types.h:124 */
+#define __VMALLOC_BASE_L4   0xffffc90000000000UL
+#define __VMALLOC_BASE_L5   0xffa0000000000000UL
+
+#define VMALLOC_SIZE_TB_L4  32UL        /* 4 级页表：32 TB */
+#define VMALLOC_SIZE_TB_L5  12800UL     /* 5 级页表：12800 TB */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>起始地址</th>
+<th>大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4 级页表（常见）</td>
+<td><code class="c">0xffffc90000000000</code></td>
+<td><strong>32 TB</strong></td>
+</tr>
+<tr>
+<td>5 级页表</td>
+<td><code class="c">0xffa0000000000000</code></td>
+<td><strong>12800 TB</strong></td>
+</tr>
+<tr>
+<td>开 KMSAN</td>
+<td>同上起点</td>
+<td>只取 <strong>1/4</strong>（<code class="c">VMALLOC_QUARTER_SIZE</code>，<code class="c">:169</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>对比 <code class="c">VMALLOC_TOTAL = VMALLOC_END - VMALLOC_START</code>（<code class="c">include/linux/vmalloc.h:284</code>）——
+<strong>VA 几乎不是瓶颈，物理内存和 TLB 才是</strong>。</p>
+<hr />
+<h4>释放路径：lazy purge（v6.6 与教科书最大的差别）</h4>
+<p>教科书说"<strong>vfree 要 flush 内核 TLB，很贵</strong>"。v6.6 的实际情况是：<strong>不立即 flush</strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:1817 —— 解除映射后，只把区间挂进 purge 列表 */
+static void free_vmap_area_noflush(struct vmap_area *va)
+{
+    nr_lazy = atomic_long_add_return((va-&gt;va_end - va-&gt;va_start) &gt;&gt;
+                PAGE_SHIFT, &amp;vmap_lazy_nr);
+
+    spin_lock(&amp;purge_vmap_area_lock);
+    merge_or_add_vmap_area(va, &amp;purge_vmap_area_root, &amp;purge_vmap_area_list);
+    spin_unlock(&amp;purge_vmap_area_lock);
+    ...
+}
+</code></pre>
+<p>攒够了才一次性 flush：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:1700 */
+static unsigned long lazy_max_pages(void)
+{
+    unsigned int log;
+
+    log = fls(num_online_cpus());
+
+    return log * (32UL * 1024 * 1024 / PAGE_SIZE);
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:1749 —— 真正的 flush 只在这里发生一次 */
+    flush_tlb_kernel_range(start, end);
+</code></pre>
+<pre class="code" data-label="code"><code class="c">vfree(A); vfree(B); vfree(C);            ← 三次都只改页表 + 挂 purge 列表，不 flush
+        │
+        └─► vmap_lazy_nr 累加，超过 lazy_max_pages()
+                 │
+                 └─► __purge_vmap_area_lazy():
+                       flush_tlb_kernel_range(min_start, max_end)   ← 一次搞定
+                       把区间真正还给 free 树
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>CPU 数</th>
+<th><code class="c">fls(nr_cpus)</code></th>
+<th><code class="c">lazy_max_pages</code></th>
+<th>折合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>1</td>
+<td>8192 页</td>
+<td>32 MB</td>
+</tr>
+<tr>
+<td>4</td>
+<td>3</td>
+<td>24576 页</td>
+<td>96 MB</td>
+</tr>
+<tr>
+<td>8</td>
+<td>4</td>
+<td>32768 页</td>
+<td>128 MB</td>
+</tr>
+<tr>
+<td>64</td>
+<td>7</td>
+<td>57344 页</td>
+<td>224 MB</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注释里那句"less aggressive log scale"值得读懂</strong>（<code class="c">mm/vmalloc.c:1694</code>）：
+阈值<strong>按 CPU 数取对数缩放</strong>而不是线性。理由很工程 —— 核数翻倍不代表 vmap 活跃度翻倍，
+而且在大系统上一次 purge 太大会引入长延迟。<strong>用对数换"可预测的尾延迟"</strong>。
+这个取向和 HFT 的取舍完全一致：<strong>宁可平均成本高一点，也不要偶发的巨大停顿</strong>。</p>
+</blockquote>
+<h4><code class="c">vfree()</code> 的上下文降级</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:2807 —— v6.6 原文 */
+void vfree(const void *addr)
+{
+    struct vm_struct *vm;
+    int i;
+
+    if (unlikely(in_interrupt())) {
+        vfree_atomic(addr);
+        return;
+    }
+
+    BUG_ON(in_nmi());
+    kmemleak_free(addr);
+    might_sleep();
+    ...
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:2773 */
+void vfree_atomic(const void *addr)
+{
+    struct vfree_deferred *p = raw_cpu_ptr(&amp;vfree_deferred);
+
+    BUG_ON(in_nmi());
+    kmemleak_free(addr);
+
+    /*
+     * Use raw_cpu_ptr() because this can be called from preemptible
+     * context. Preemption is absolutely fine here, because the llist_add()
+     * implementation is lockless, so it works even if we are adding to
+     * another cpu's list. schedule_work() should be fine with this too.
+     */
+    if (addr &amp;&amp; llist_add((struct llist_node *)addr, &amp;p-&gt;list))
+        schedule_work(&amp;p-&gt;wq);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vfree()</code> <strong>在中断里可以直接调</strong></td>
+<td>内部 <code class="c">in_interrupt()</code> 时自动转 <code class="c">vfree_atomic</code></td>
+</tr>
+<tr>
+<td>这个降级 <strong>不是新特性</strong></td>
+<td>实测 v4.19 <code class="c">:1590</code> 就已经是 <code class="c">if (unlikely(in_interrupt())) __vfree_deferred(addr);</code></td>
+</tr>
+<tr>
+<td>降级机制 <strong>换代了</strong></td>
+<td>v4.19 用<strong>全局</strong> <code class="c">vmap_purge_list</code>（单个 llist，多核竞争）；v6.6 用 <strong>per-CPU <code class="c">vfree_deferred</code> + per-CPU llist + <code class="c">schedule_work</code></strong>，靠 <code class="c">llist_add</code> 的 lockless 特性免锁</td>
+</tr>
+<tr>
+<td><strong>NMI 里绝对不行</strong></td>
+<td><code class="c">BUG_ON(in_nmi())</code> —— NMI 不能 <code class="c">schedule_work</code></td>
+</tr>
+<tr>
+<td><strong>带 <code class="c">VM_FLUSH_RESET_PERMS</code> 的区域不能在原子上下文释放</strong></td>
+<td>见 <code class="c">include/linux/vmalloc.h:28</code> 注释原文</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>易错点</strong>：很多人记成"vfree 和 vmalloc 一样不能进中断"。<strong>反了</strong>。
+准确说法是：<strong>分配不能进原子上下文，释放可以（会自动延迟）</strong>。
+但释放被延迟意味着 —— <strong>中断里 <code class="c">vfree</code> 之后，那块地址可能还没真正解除映射</strong>，
+页表和 TLB 的清理要等工作队列跑。这在审计"释放后立刻重新分配同地址"的代码时是个坑。</p>
+</blockquote>
+<hr />
+<h4>上下文约束速查</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th><code class="c">kmalloc(GFP_KERNEL)</code></th>
+<th><code class="c">kmalloc(GFP_ATOMIC)</code></th>
+<th><code class="c">vmalloc()</code></th>
+<th><code class="c">vfree()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程上下文，可睡眠</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>持有 <code class="c">spinlock</code></td>
+<td>❌</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅（延迟）</td>
+</tr>
+<tr>
+<td>硬中断 handler</td>
+<td>❌</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅（延迟）</td>
+</tr>
+<tr>
+<td>NMI</td>
+<td>❌</td>
+<td>✅（仅部分架构）</td>
+<td>❌</td>
+<td>❌ <code class="c">BUG_ON</code></td>
+</tr>
+<tr>
+<td>可能直接回收内存</td>
+<td>✅</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">vmalloc</code> 那一列全是 ❌ 的根本原因就在 <code class="c">mm/vmalloc.c:1600</code> 的 <code class="c">might_sleep()</code> + <code class="c">GFP_RECLAIM_MASK</code> 掩码。</p>
+</blockquote>
+<h4>决策：什么时候选谁</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>选</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>&lt; 8 KB</strong>，高频</td>
+<td><strong><code class="c">kmalloc</code></strong></td>
+<td>slab 缓存，无页表操作（v6.6 <code class="c">KMALLOC_MAX_CACHE_SIZE = 8KB</code>）</td>
+</tr>
+<tr>
+<td><strong>8 KB ~ 4 MB</strong>，要物理连续</td>
+<td><strong><code class="c">kmalloc</code> / <code class="c">alloc_pages</code></strong></td>
+<td>走 buddy 高阶块，<code class="c">MAX_ORDER=10</code> 上限 4MB</td>
+</tr>
+<tr>
+<td><strong>&gt; 4 MB</strong>，或不要物理连续</td>
+<td><strong><code class="c">vmalloc</code></strong></td>
+<td>buddy 给不了，<code class="c">vmalloc</code> 能拼</td>
+</tr>
+<tr>
+<td>大块 + <strong>热访问</strong></td>
+<td><strong><code class="c">vmalloc_huge</code></strong> 或 hugetlb</td>
+<td>2MB 大页降 TLB 压力</td>
+</tr>
+<tr>
+<td><strong>DMA</strong></td>
+<td><strong><code class="c">dma_alloc_coherent</code></strong></td>
+<td>需要设备可见的物理地址</td>
+</tr>
+<tr>
+<td><strong>MMIO 寄存器</strong></td>
+<td><strong><code class="c">ioremap</code></strong></td>
+<td>非 RAM，不能走 <code class="c">vmalloc</code></td>
+</tr>
+<tr>
+<td>已有 <code class="c">struct page[]</code> 想拼成连续 VA</td>
+<td><strong><code class="c">vmap</code></strong></td>
+<td>不重新分配物理页</td>
 </tr>
 </tbody>
 </table></div>
@@ -1402,7 +2535,7 @@ vmalloc 路径:
 <tbody>
 <tr>
 <td><strong>内核模块加载</strong></td>
-<td>代码/数据 <strong>大块</strong>、加载期一次</td>
+<td>代码/数据 <strong>大块</strong>、加载期一次 —— 但注意模块<strong>不开</strong>大页</td>
 </tr>
 <tr>
 <td><strong>大表 / debug</strong></td>
@@ -1412,24 +2545,9 @@ vmalloc 路径:
 <td><strong>filesystem 元数据</strong></td>
 <td>非热路径大结构</td>
 </tr>
-</tbody>
-</table></div>
-<h4>与 <code class="c">ioremap</code></h4>
-<div class="tbl-wrap"><table>
-<thead>
 <tr>
-<th>API</th>
-<th>对象</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">vmalloc</code></strong></td>
-<td><strong>物理 RAM</strong> 页</td>
-</tr>
-<tr>
-<td><strong><code class="c">ioremap</code></strong></td>
-<td><strong>MMIO 设备寄存器</strong> — 非 RAM</td>
+<td><strong>BPF map 的大值区</strong></td>
+<td>远超 4MB 时只能在 VA 层面拼</td>
 </tr>
 </tbody>
 </table></div>
@@ -1438,7 +2556,7 @@ vmalloc 路径:
 <thead>
 <tr>
 <th>场景</th>
-<th>应用</th>
+<th>改用</th>
 </tr>
 </thead>
 <tbody>
@@ -1452,12 +2570,74 @@ vmalloc 路径:
 </tr>
 <tr>
 <td><strong>中断上下文频繁 alloc</strong></td>
-<td><strong>Slab cache 预建</strong></td>
+<td><strong>Slab cache 预建</strong>（初始化时 <code class="c">kmem_cache_create</code>，运行时只 <code class="c">kmem_cache_alloc</code>）</td>
+</tr>
+<tr>
+<td><strong>持自旋锁期间</strong></td>
+<td>提前在锁外分配好，或改 <code class="c">GFP_ATOMIC</code> 的 <code class="c">kmalloc</code></td>
+</tr>
+<tr>
+<td><strong>延迟有硬上限的路径</strong></td>
+<td>预分配 + 复用，任何分配都不做</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 用户态 <strong><code class="c">mmap</code> 大块匿名区</strong> 与 <strong><code class="c">vmalloc</code> 思想类似 — </strong>虚连续<strong>。但 </strong>策略 ring<strong> 还要 </strong><code class="c">mlock</code> + hugepage<strong> 保证 </strong>物理稳定 + TLB 友好<strong> — 内核 </strong><code class="c">vmalloc</code> 无 hugepage 语义<strong>，热路径 </strong>禁用**。</p>
-<p>→ <a href="../../06-linux-mm/html/chapter-07.html#ch-7">06 Gorman Ch7 非连续分配</a> · <a href="chapter-15.html#ch-15">Ch 15 mmap 用户视角</a> · <a href="../../02-computer-systems/html/chapter-09.html#ch-9">01 CSAPP Ch9</a></p>
+<p><strong>HFT：</strong> 用户态 <strong><code class="c">mmap</code> 大块匿名区</strong> 与 <strong><code class="c">vmalloc</code></strong> 思想类似 —— <strong>虚连续</strong>。
+但 <strong>策略 ring</strong> 还要 <strong><code class="c">mlock</code> + hugepage</strong> 保证 <strong>物理稳定 + TLB 友好</strong>。
+普通 <strong><code class="c">vmalloc</code> 无 hugepage 语义</strong>（<code class="c">vmalloc_huge</code> 才有），热路径 <strong>禁用</strong>。</p>
+<blockquote>
+<p><strong>给策略引擎的三条硬规则</strong>：
+① 热路径<strong>一次都不分配</strong> —— 用初始化阶段建好的 pool / slab cache；
+② 非用大块不可时，用 <strong><code class="c">vmalloc_huge</code> + 一次性分配</strong>，绝不放进 per-packet 路径；
+③ 警惕 <strong>lazy purge 的长尾</strong> —— 内核里如果有人高频 <code class="c">vfree</code>，
+达到 <code class="c">lazy_max_pages</code> 时会来一次 <code class="c">flush_tlb_kernel_range()</code>，
+这是<strong>内核态的全局 TLB shootdown</strong>，同一时刻其他核上的策略线程也会被 IPI 打断。
+"我们没调 vmalloc"不代表你能躲开——<strong>同机器的内核模块在调就行</strong>。</p>
+</blockquote>
+<hr />
+<h4>观测与调试</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>能看到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">/proc/vmallocinfo</code></strong></td>
+<td>每条 <code class="c">vm_struct</code>：<strong>VA 范围 / 大小 / 调用者（<code class="c">caller</code> 字段）/ flags / 物理页</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">/proc/meminfo</code> → <code class="c">VmallocUsed</code></strong></td>
+<td>已用 vmalloc 页数（来自 <code class="c">nr_vmalloc_pages</code> / <code class="c">vmap_lazy_nr</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">VMALLOC_TOTAL</code></strong></td>
+<td>VA 总量（<code class="c">include/linux/vmalloc.h:284</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">/proc/vmallocinfo \| sort -k2 -n</code></strong></td>
+<td>按大小排序找"谁在吃 VA"</td>
+</tr>
+<tr>
+<td><strong><code class="c">kasan</code> + <code class="c">CONFIG_KASAN_VMALLOC</code></strong></td>
+<td>vmalloc 越界检测（v6.6 里 <code class="c">__vmalloc_node_range</code> 有 <code class="c">kasan_unpoison_vmalloc</code> 分支）</td>
+</tr>
+<tr>
+<td><strong>tracepoint</strong></td>
+<td><code class="c">trace_purge_vmap_area_lazy</code>（<code class="c">:1782</code>）、<code class="c">trace_alloc_vmap_area</code>（<code class="c">:1619</code>）、<code class="c">trace_free_vmap_area_noflush</code>（<code class="c">:1837</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 谁在吃 vmalloc 空间，按大小倒序
+awk '{print $2, $3, $0}' /proc/vmallocinfo | sort -rn | head -20
+
+# 观察 lazy purge 是否被触发（阈值 = fls(nr_cpu) * 32MB）
+perf trace -e vmm:purge_vmap_area_lazy
+</code></pre>
+<hr />
+<p>→ <a href="../../06-linux-mm/html/chapter-07.html#ch-7">06 Gorman Ch7 非连续分配</a> · <a href="chapter-15.html#ch-15">Ch 15 mmap 用户视角</a> · <a href="../../02-computer-systems/html/chapter-09.html#ch-9">01 CSAPP Ch9</a> · <a href="#s-12-4">12.4 获得页</a> · <a href="#s-12-5">12.5 kmalloc</a></p>
 <blockquote>
 <p>↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-4">ULK Ch8 §4 非连续内存与vmalloc</a></p>
 </blockquote>
@@ -1467,11 +2647,125 @@ vmalloc 路径:
 <details>
 <summary>答案</summary>
 <p>vmalloc 需要：1) 从 buddy 分配零散物理页；2) 修改页表把散页映射到连续虚拟地址；3) flush TLB（其他 CPU 上的 TLB 也要 IPI flush）。kmalloc 从 slab 直接返回已映射的连续物理内存。vmalloc 的 TLB flush 是主要开销，在多核系统上尤其昂贵。</p>
+<blockquote>
+<p><strong>按 v6.6 精确化（补充，不推翻原答案）</strong>：
+① <strong>分配侧</strong>的页表开销确实存在（逐页 <code class="c">vmap_pages_range</code>），但"每次都 flush TLB"只在<strong>释放侧</strong>，
+而且释放走 <strong>lazy purge</strong> —— 攒到 <code class="c">lazy_max_pages() = fls(nr_cpus) × 32MB</code> 才 flush 一次（<code class="c">mm/vmalloc.c:1749</code>）。
+所以"慢"的主因更准确说是：<strong>逐页建 PTE + TLB miss 率高（4KB 粒度）</strong>，而不是"每次都全局 flush"。
+② <code class="c">kmalloc</code> 也不是"从 slab 直接返回"那么简单 —— <strong>&gt; 8KB 会走 <code class="c">kmalloc_large()</code> 直连 buddy</strong>
+（<code class="c">include/linux/slab.h:595</code>）。"slab 快"只对 ≤ 8KB 成立。
+③ x86_64 上其他进程的顶层页表<strong>不主动同步</strong>，靠缺页异常 <code class="c">vmalloc_fault()</code> 从 reference pgd 回抄
+（<code class="c">arch/x86/mm/fault.c:231</code>），这又是一笔按需成本。</p>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> vmalloc 分配的内存能用于 DMA 吗？为什么？</p>
 <details>
 <summary>答案</summary>
 <p>不能直接用于 DMA。vmalloc 内存物理不连续，DMA 设备需要物理连续地址（或需要 scatter-gather 支持）。如果要用 vmalloc 内存做 DMA，需要逐页映射：<code class="c">for each page: dma_map_page()</code>，性能差且复杂。DMA buffer 应该用 kmalloc 或 alloc_pages。</p>
+<blockquote>
+<p><strong>按 v6.6 补充</strong>：<code class="c">struct vm_struct</code> 里有 <code class="c">struct page **pages</code>（<code class="c">include/linux/vmalloc.h:54</code>），
+所以技术上<strong>可以</strong>遍历出来逐页 <code class="c">dma_map_page()</code>。但注意：
+- 若这块是用 <code class="c">vmalloc_huge()</code> 分的，<code class="c">pages[]</code> 里存的是<strong>复合页的头页</strong>，
+  要用 <code class="c">page_order</code> 判断实际阶数，否则 scatter-gather 列表会算错长度；
+- 更根本的问题是 <strong><code class="c">vmalloc</code> 出来的页不保证来自 <code class="c">ZONE_DMA/DMA32</code></strong>，
+  设备的寻址位宽限制（32 位设备）同样过不去。
+结论不变：<strong>DMA 用 <code class="c">dma_alloc_coherent()</code></strong>。</p>
+</blockquote>
+</details>
+<p><strong>Q3.</strong> 驱动在 <code class="c">spin_lock</code> 保护的数据路径里想分配 2MB 的临时缓冲，用 <code class="c">vmalloc(2*1024*1024)</code> 会怎样？正确做法是什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>会出问题。</strong> <code class="c">vmalloc</code> 走到 <code class="c">__get_vm_area_node()</code>（<code class="c">mm/vmalloc.c:1600</code>）时有 <code class="c">might_sleep()</code>；
+开了 <code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 会在持锁期间打印 "BUG: sleeping function called from invalid context"。
+即使没开调试选项，<code class="c">kmem_cache_alloc_node(vmap_area_cachep, ...)</code> 也可能真的睡眠 ——
+<strong>持自旋锁睡眠是死锁风险</strong>（别的 CPU 等着这把锁，唤醒者可能正是等锁者）。</p>
+<p><strong>更隐蔽的一点</strong>：传 <code class="c">GFP_ATOMIC</code> 给 <code class="c">__vmalloc()</code> 也救不了你 —— <code class="c">:1601</code> 的
+<code class="c">gfp_mask = gfp_mask &amp; GFP_RECLAIM_MASK</code> 会把 <code class="c">__GFP_HIGH</code>/<code class="c">__GFP_KSWAPD_RECLAIM</code> 等回收位<strong>全部剥掉</strong>，
+<code class="c">might_sleep()</code> 依然在。</p>
+<p><strong>正确做法</strong>（按优先级）：
+1. <strong>初始化阶段就分好</strong> —— probe/初始化时 <code class="c">vmalloc</code> 或 <code class="c">kmalloc</code> 一块，运行时只复用；
+2. 非要运行时分配且必须持锁 → 改成 <strong><code class="c">kmem_cache_alloc(..., GFP_ATOMIC)</code></strong>（≤8KB）或
+   <strong><code class="c">alloc_pages(GFP_ATOMIC, order)</code></strong>；
+3. 2MB 已超过 buddy 单次上限的一半，且 <code class="c">GFP_ATOMIC</code> 拿 2MB 连续页成功率很低 ——
+   最稳的是<strong>启动时预留 + 自己管池子</strong>，这正是 HFT/网络驱动的通行做法。</p>
+</details>
+<p><strong>Q4.</strong> 中断 handler 里 <code class="c">vfree(ptr)</code> 之后，立刻检查这段地址是否已经解除映射，会看到什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>映射可能还在。</strong> <code class="c">vfree()</code> 在 <code class="c">in_interrupt()</code> 为真时<strong>自动降级</strong>为 <code class="c">vfree_atomic()</code>（<code class="c">mm/vmalloc.c:2812</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    if (unlikely(in_interrupt())) {
+        vfree_atomic(addr);
+        return;
+    }
+</code></pre>
+<p><code class="c">vfree_atomic()</code> 只做两件事：把地址 <code class="c">llist_add</code> 进本 CPU 的 <code class="c">vfree_deferred.list</code>，
+然后 <code class="c">schedule_work()</code>。真正的解除映射 + 归还页表要等<strong>工作队列在进程上下文跑起来</strong>之后。</p>
+<p>所以中断返回后立刻读这段地址：
+- 页表大概率<strong>还没清</strong>，读写不会 fault（但这是 use-after-free，KASAN 会抓）；
+- 物理页的释放同样被推迟；
+- 如果这段带 <code class="c">VM_FLUSH_RESET_PERMS</code>，那它<strong>根本不该</strong>在原子上下文释放（<code class="c">include/linux/vmalloc.h:28</code>）。</p>
+<p><strong>实践结论</strong>：中断里可以 <code class="c">vfree</code>，但"释放"是<strong>异步</strong>的。
+任何依赖"释放即刻生效"的逻辑（比如释放后立刻重新分配并期望拿到同一地址）在中断路径上都是错的。</p>
+</details>
+<p><strong>Q5.</strong> 一台 8 核机器上，内核模块每秒 <code class="c">vmalloc/vfree</code> 几千次小区域（各 64KB）。为什么其他核上的延迟线程偶发尖刺？怎么定位？</p>
+<details>
+<summary>答案</summary>
+<p><strong>根因是 lazy purge 的批量 TLB flush。</strong></p>
+<p><code class="c">vfree</code> 不立即 flush，只累加 <code class="c">vmap_lazy_nr</code>。当
+<code class="c">vmap_lazy_nr &gt; lazy_max_pages() = fls(8) × 32MB = 4 × 32MB = 128MB</code>（折合 32768 页）时，
+<code class="c">__purge_vmap_area_lazy()</code> 触发一次 <code class="c">flush_tlb_kernel_range(start, end)</code>（<code class="c">mm/vmalloc.c:1749</code>）。</p>
+<p><code class="c">flush_tlb_kernel_range</code> 是<strong>跨核 TLB shootdown</strong>：向所有 CPU 发 IPI，每个 CPU 在中断上下文
+执行 <code class="c">flush</code> 并回复，发起方等全部 ACK。8 核上一次几十微秒量级，<strong>每个参与核都被打断</strong>。
+每秒几千次 × 64KB = 每秒几百 MB，意味着<strong>每秒会触发好几次全局 shootdown</strong> ——
+延迟线程被自己没干过的事拖累，这就是"尖刺"的来源。</p>
+<p><strong>定位步骤</strong>：</p>
+<pre class="code" data-label="shell"><code class="c"># 1. 确认 purge 频率
+perf trace -e vmm:purge_vmap_area_lazy      # tracepoint 在 mm/vmalloc.c:1782
+
+# 2. 看 vmalloc 用量与调用者
+awk '{print $2, $3}' /proc/vmallocinfo | sort -rn | head
+
+# 3. 对比：尖刺时刻是否和 purge trace 对齐
+perf record -e vmm:purge_vmap_area_lazy -a -- sleep 10
+</code></pre>
+<p><strong>缓解</strong>：
+- 让那个模块<strong>复用</strong>分配（池化），把 <code class="c">vfree</code> 频率降下来；
+- 或者改用 <code class="c">kmalloc</code> / slab cache（≤8KB 场景），完全绕开 vmalloc 的页表与 flush 路径；
+- 大块场景用 <code class="c">vmalloc_huge()</code> —— 2MB 粒度让 PTE 数量除以 512，purge 时遍历的区间也少得多；
+- 不要试图调 <code class="c">lazy_max_pages</code> —— 它是 <code class="c">static</code>，只为<strong>减小</strong> purge 的<strong>频率</strong>而设计，
+  调大只会让单次停顿更长。</p>
+</details>
+<p><strong>Q6.</strong> <code class="c">vmalloc_huge()</code> 已经能用 2MB 大页了，为什么普通 <code class="c">vmalloc()</code> 不默认开？</p>
+<details>
+<summary>答案</summary>
+<p>源码注释直接给了理由（<code class="c">mm/vmalloc.c:3260</code>）：</p>
+<pre class="code" data-label="C"><code class="c">        /*
+         * Try huge pages. Only try for PAGE_KERNEL allocations,
+         * others like modules don't yet expect huge pages in
+         * their allocations due to apply_to_page_range not
+         * supporting them.
+         */
+</code></pre>
+<p>三个层次的原因：</p>
+<ol>
+<li>
+<p><strong><code class="c">apply_to_page_range()</code> 一族不支持大页映射</strong>。
+   内核里大量代码靠它做"遍历 vmalloc 区域的每一页"（改权限、做 KASAN  poisoning、
+   <code class="c">set_memory_ro/rw/nx</code> 等）。一旦底层是 PMD 大页，这些遍历的语义就变了 ——
+   老代码会静默出错。所以只能让<strong>明确知道自己要什么</strong>的调用者开。</p>
+</li>
+<li>
+<p><strong>只有 <code class="c">PAGE_KERNEL</code> 才考虑大页</strong>（<code class="c">:3261</code>）。<code class="c">ioremap</code>、模块加载等用的是其他 <code class="c">prot</code>，
+   它们的映射语义和缓存属性不与大页兼容。</p>
+</li>
+<li>
+<p><strong>大页会放大内部碎片</strong>。<code class="c">__vmalloc_node_range</code> 里 <code class="c">size = ALIGN(real_size, 1UL &lt;&lt; shift)</code>（<code class="c">:3276</code>），
+   申请 2MB + 1 字节会<strong>对齐到 4MB</strong>（两个 PMD）。对"就要一大块"的调用者无所谓，
+   对"要几千个小块"的调用者是灾难。</p>
+</li>
+</ol>
+<p>所以设计成 <strong>opt-in</strong>：<code class="c">vmalloc_huge()</code> 传 <code class="c">VM_ALLOW_HUGE_VMAP</code>（<code class="c">include/linux/vmalloc.h:30</code>），
+且 <code class="c">EXPORT_SYMBOL_GPL</code> —— <strong>只有 GPL 模块能用</strong>，进一步收窄爆炸半径。</p>
 </details>
 </details>
 <hr />
@@ -1479,7 +2773,43 @@ vmalloc 路径:
       <section class="section" id="s-12-7">
         <div class="sec-head"><div class="sec-no">12.7</div><h2>section-12.7-Slab-层</h2></div>
 <p>内核 <strong>大量固定大小对象</strong>（<code class="c">task_struct</code>、<code class="c">inode</code>、<code class="c">dentry</code>…）若每次走 <strong>通用页分配器</strong>，会 <strong>慢</strong> 且 <strong>外部碎片</strong> 严重 — <strong>Slab 分配器</strong> 在 <strong>页之上</strong> 做 <strong>对象缓存</strong>。</p>
-<h4>三层结构（心智模型）</h4>
+<blockquote>
+<p><strong>版本前提</strong>：本节的机制描述全部基于 <strong>v6.6 源码实证</strong>（<code class="c">mm/slub.c</code>、<code class="c">mm/slab_common.c</code>、<code class="c">mm/slab.h</code>、<code class="c">include/linux/slub_def.h</code>）。
+v6.6 里 <strong>SLOB 已被删除</strong>、<strong>SLAB 已标记弃用</strong>（v6.8 彻底删除），所以下文「Slab 层」<strong>默认指 SLUB</strong>。</p>
+</blockquote>
+<h4>1. 为什么页分配器不够用</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>页分配器（buddy）</th>
+<th>Slab 的解法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>外部碎片</strong></td>
+<td>反复分配/释放不同大小 → 空闲页被切碎，高阶分配失败</td>
+<td>按 <strong>固定大小分档</strong>，同档对象在同一批 slab 页里周转</td>
+</tr>
+<tr>
+<td><strong>初始化摊销</strong></td>
+<td>每次拿到裸页都要走一遍初始化</td>
+<td>cache 记 <strong>ctor</strong>，对象<strong>只在 slab 首次创建时构造</strong>，之后复用即已初始化状态</td>
+</tr>
+<tr>
+<td><strong>缓存行冲突</strong></td>
+<td>同类型对象可能挤在同一缓存行/同一组</td>
+<td><strong>着色（slab coloring）</strong> + <code class="c">SLAB_HWCACHE_ALIGN</code> 对齐</td>
+</tr>
+<tr>
+<td><strong>锁竞争</strong></td>
+<td>分配要碰 <code class="c">zone-&gt;lock</code></td>
+<td><strong>per-CPU freelist</strong>：快路径 <strong>一条原子指令，无锁</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h4>2. 三层结构（心智模型）</h4>
 <pre class="code" data-label="code"><code class="c">kmem_cache（一种对象类型）
     │
     ├── slab 1  [满]  无空槽
@@ -1510,29 +2840,506 @@ vmalloc 路径:
 </tr>
 </tbody>
 </table></div>
-<h4>分配策略</h4>
+<p>⚠️ <strong>上面是"经典 SLAB"的画法</strong>。v6.6 的 <strong>SLUB</strong> 已经没有"满/半满/空三条链表"了，
+它把<strong>队列压到了两级</strong>（per-CPU + per-node），slab 页只在 <strong>frozen / partial / 无主</strong> 三种状态间流动：</p>
+<pre class="code" data-label="code"><code class="c">                        ┌──────────────────────── per-CPU（无锁）────────────────────────┐
+kmem_cache_alloc() ──►  │ c-&gt;slab  （当前正在分配的 slab，frozen：只有本 CPU 能取对象）    │
+                        │    └─ c-&gt;freelist：单链表，头指针 + tid 打包成 128 位原子更新   │
+                        │ c-&gt;partial（本 CPU 的半满 slab 链，上限 cpu_partial_slabs 个）  │
+                        └───────────────────────────────────────────────────────────────┘
+                              │ 空                              │ 满/超限
+                              ▼                                 ▼
+                   ┌──── per-node（持 n-&gt;list_lock）────┐        直接换一块新 slab
+                   │ n-&gt;partial：半满 slab 链表         │
+                   │ 受 s-&gt;min_partial 控制保底数量     │
+                   └───────────────────────────────────┘
+                              │ 空
+                              ▼
+                   buddy 分配器 new_slab() → alloc_pages(order = oo_order)
+</code></pre>
+<blockquote>
+<p><strong>frozen slab 是 SLUB 无锁的关键</strong>：一块 slab 一旦被某 CPU "冻结"，
+<strong>只有该 CPU 能从它的 freelist 取对象</strong>；其他 CPU <strong>只能往里还对象</strong>（free 走慢路径）。
+于是"取"这个动作天然无竞争，不需要 slab 锁。</p>
+</blockquote>
+<h4>3. 实证：v6.6 的 per-CPU 结构</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/slub_def.h:48 —— 改布局时必须保证 freelist 与 tid
+ * 仍满足 this_cpu_cmpxchg_double() 的对齐要求 */
+struct kmem_cache_cpu {
+    union {
+        struct {
+            void **freelist;    /* Pointer to next available object */
+            unsigned long tid;  /* Globally unique transaction id */
+        };
+        freelist_aba_t freelist_tid;    /* 128 位整体，供 cmpxchg16b 用 */
+    };
+    struct slab *slab;  /* The slab from which we are allocating */
+#ifdef CONFIG_SLUB_CPU_PARTIAL
+    struct slab *partial;   /* Partially allocated frozen slabs */
+#endif
+    local_lock_t lock;  /* Protects the fields above */
+#ifdef CONFIG_SLUB_STATS
+    unsigned stat[NR_SLUB_STAT_ITEMS];
+#endif
+};
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>步骤</th>
-<th>行为</th>
+<th>字段</th>
+<th>作用</th>
+<th>为什么要这样设计</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>1</td>
-<td>找 <strong>半满 slab</strong> 的空槽 — <strong>O(1) 常见</strong></td>
+<td><code class="c">freelist</code> + <code class="c">tid</code> <strong>同一 union</strong></td>
+<td>打包成一个 <strong>16 字节对齐的整体</strong></td>
+<td>一次 <code class="c">cmpxchg16b</code>（<code class="c">this_cpu_cmpxchg_double</code>）<strong>同时</strong>更新指针和版本号</td>
 </tr>
 <tr>
-<td>2</td>
-<td>无半满 → 从 <strong>空 slab</strong> 或 <strong>向 buddy 要新页</strong> 建 slab</td>
+<td><code class="c">tid</code></td>
+<td>每次成功操作 <code class="c">next_tid(tid)</code></td>
+<td>防 <strong>ABA</strong>：见下节</td>
 </tr>
 <tr>
-<td>3</td>
-<td>释放 → 槽回 slab；全空 slab <strong>可归还 buddy</strong></td>
+<td><code class="c">slab</code></td>
+<td>当前 slab</td>
+<td>决定 fast/slow path 的分支点</td>
+</tr>
+<tr>
+<td><code class="c">partial</code></td>
+<td>per-CPU 半满链（<code class="c">CONFIG_SLUB_CPU_PARTIAL</code>，默认 y）</td>
+<td>让"本 CPU 刚释放的对象"能<strong>不进全局锁</strong>就被再次分配</td>
+</tr>
+<tr>
+<td><code class="c">local_lock</code></td>
+<td>只保护<strong>慢路径</strong></td>
+<td>非 RT 上它只关抢占；快路径压根不碰它</td>
 </tr>
 </tbody>
 </table></div>
+<h4>4. 分配快路径：无锁 cmpxchg_double</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/slub.c:3329 节选 */
+    c = raw_cpu_ptr(s-&gt;cpu_slab);
+    tid = READ_ONCE(c-&gt;tid);
+    barrier();              /* 必须先读 tid，再读 freelist/slab */
+    object = c-&gt;freelist;
+    slab   = c-&gt;slab;
+
+    if (!USE_LOCKLESS_FAST_PATH() ||
+        unlikely(!object || !slab || !node_match(slab, node))) {
+        object = __slab_alloc(s, gfpflags, node, addr, c, orig_size);  /* 慢路径 */
+    } else {
+        void *next_object = get_freepointer_safe(s, object);
+        if (unlikely(!__update_cpu_freelist_fast(s, object, next_object, tid))) {
+            note_cmpxchg_failure(&quot;slab_alloc&quot;, s, tid);
+            goto redo;      /* 被抢占/中断插队 → 重来，不是加锁 */
+        }
+        prefetch_freepointer(s, next_object);
+        stat(s, ALLOC_FASTPATH);
+    }
+</code></pre>
+<p><strong><code class="c">tid</code> 解决的 ABA 问题</strong>（这是 Slab 层最精妙的一处设计）：</p>
+<pre class="code" data-label="code"><code class="c">本 CPU 读到 freelist = A，tid = 7
+        │
+        ├── 被中断/抢占 ──► 中断里 free 一个对象：freelist 变 B，tid 变 8
+        │                    再 alloc 一次：      freelist 又变回 A，tid 变 9
+        ▼
+回到原路径：cmpxchg_double 期望 (A,7)，实际 (A,9) → 失败 → goto redo
+</code></pre>
+<blockquote>
+<p><strong>关键认知</strong>：<code class="c">freelist</code> 的值<strong>回到了 A</strong>，肉眼看上去"没变过"——
+但期间对象 B 已被取走又归还。<strong>只比较指针的 CAS 会误判成功</strong>（经典 ABA）。
+<code class="c">tid</code> 把"这段时间内发生过几次操作"编码进去，让 CAS 变成 <strong>指针 + 版本号</strong> 双校验。</p>
+</blockquote>
+<p><strong>"重来"而不是"加锁"</strong>：<code class="c">goto redo</code> 是 SLUB 的核心取舍——
+被抢占/中断打断时<strong>不退化成锁</strong>，而是<strong>重新读一次再试</strong>。
+代价是最坏情况下多转几圈，收益是<strong>常态下一条原子指令</strong>完成分配。</p>
+<h4>5. 释放快路径：也靠同一个 <code class="c">tid</code> 校验</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/slub.c do_slab_free() 节选 */
+    c = raw_cpu_ptr(s-&gt;cpu_slab);
+    tid = READ_ONCE(c-&gt;tid);
+    barrier();
+
+    if (unlikely(slab != c-&gt;slab)) {    /* 不是本 CPU 当前 slab */
+        __slab_free(s, slab, head, tail_obj, cnt, addr);   /* 慢路径：可能跨 CPU 释放 */
+        return;
+    }
+    if (USE_LOCKLESS_FAST_PATH()) {
+        freelist = READ_ONCE(c-&gt;freelist);
+        set_freepointer(s, tail_obj, freelist);
+        if (unlikely(!__update_cpu_freelist_fast(s, freelist, head, tid)))
+            goto redo;
+    } else {                /* PREEMPT_RT：走 local_lock */
+        local_lock(&amp;s-&gt;cpu_slab-&gt;lock);
+        ...
+    }
+    stat(s, FREE_FASTPATH);
+</code></pre>
+<blockquote>
+<p><strong>实战含义</strong>：<code class="c">slab != c-&gt;slab</code> 这一个判断决定了你是 30 ns 还是 300 ns。
+<strong>"CPU A 分配、CPU B 释放"</strong> 会让释放<strong>必然</strong>走慢路径（要碰 <code class="c">slab_lock</code> 与 node 链表），
+这与 <a href="#s-12-4">12.4 页分配器 pcp</a> 的跨 CPU 释放代价是<strong>同一个病的两种表现</strong>。</p>
+</blockquote>
+<h4>6. 队列容量：v6.6 的实际数字</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/slub.c:4335 set_cpu_partial() */
+    if (!kmem_cache_has_cpu_partial(s))   nr_objects = 0;
+    else if (s-&gt;size &gt;= PAGE_SIZE)        nr_objects = 6;
+    else if (s-&gt;size &gt;= 1024)             nr_objects = 24;
+    else if (s-&gt;size &gt;= 256)              nr_objects = 52;
+    else                                  nr_objects = 120;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对象大小</th>
+<th><code class="c">cpu_partial</code>（按对象数）</th>
+<th>实际限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt; 256 B</td>
+<td><strong>120</strong></td>
+<td>转成 <code class="c">cpu_partial_slabs = DIV_ROUND_UP(nr*2, oo_objects)</code>，即<strong>按 slab 数</strong>限流</td>
+</tr>
+<tr>
+<td>≥ 256 B</td>
+<td><strong>52</strong></td>
+<td>同上（源码注释：为了兼容保留了"对象数"语义，实际按页限流）</td>
+</tr>
+<tr>
+<td>≥ 1 KB</td>
+<td><strong>24</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>≥ PAGE_SIZE</td>
+<td><strong>6</strong></td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">min_partial</code>（<strong>per-node</strong> 半满 slab 的保底数量，<code class="c">mm/slub.c:4542</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    s-&gt;min_partial = min_t(unsigned long, MAX_PARTIAL, ilog2(s-&gt;size) / 2);
+    s-&gt;min_partial = max_t(unsigned long, MIN_PARTIAL, s-&gt;min_partial);
+    /* MIN_PARTIAL = 5, MAX_PARTIAL = 10（CONFIG_SLUB_TINY 时为 0） */
+</code></pre>
+<blockquote>
+<p><strong>两个数字说的是不同的事</strong>：<code class="c">cpu_partial</code> 控制 <strong>per-CPU 缓存的上限</strong>（防止无限膨胀），
+<code class="c">min_partial</code> 控制 <strong>per-node 半满链的保留下限</strong>（空了也不立刻还 buddy，防抖动）。
+二者都可经 sysfs 读写（见 §10）。</p>
+</blockquote>
+<h4>7. ⚠️ 版本断崖：三种实现的兴亡（源码逐版本核对）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>事实</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>v6.3</strong></td>
+<td>三种并存：<code class="c">SLAB</code> / <code class="c">SLUB</code> / <code class="c">SLOB_DEPRECATED</code>+<code class="c">SLOB</code></td>
+<td><code class="c">mm/Kconfig</code> v6.3 choice 内三个成员</td>
+</tr>
+<tr>
+<td><strong>v6.4</strong></td>
+<td><strong>SLOB 被删除</strong>（此前已先标 <code class="c">SLOB_DEPRECATED</code>）</td>
+<td>v6.5 Kconfig 已无 <code class="c">config SLOB</code></td>
+</tr>
+<tr>
+<td><strong>v6.5</strong></td>
+<td><strong>SLAB 被弃用</strong>：新增 <code class="c">config SLAB_DEPRECATED</code>（且 <code class="c">depends on !PREEMPT_RT</code>），<code class="c">config SLAB</code> 挂在它下面</td>
+<td>v6.5 Kconfig:237</td>
+</tr>
+<tr>
+<td><strong>v6.6</strong></td>
+<td>SLUB 是 <code class="c">choice</code> 的 <strong>default</strong>；SLAB 仍在但已弃用</td>
+<td><code class="c">mm/Kconfig:230-266</code></td>
+</tr>
+<tr>
+<td><strong>v6.8</strong></td>
+<td><strong>SLAB 被彻底删除</strong>：<code class="c">config SLUB</code> 变成 <code class="c">def_bool y</code>，不再有 choice</td>
+<td>v6.8 Kconfig:245</td>
+</tr>
+<tr>
+<td>v6.4 起</td>
+<td>新增 <strong><code class="c">CONFIG_SLUB_TINY</code></strong> — 专给"原本用 SLOB 的最小系统"，牺牲可扩展性换内存</td>
+<td><code class="c">SLUB_TINY</code> 会关掉 per-CPU <code class="c">cpu_slab</code>、cpu partial、KMALLOC_DMA/CGROUP 分档</td>
+</tr>
+<tr>
+<td><strong>v6.6 新增</strong></td>
+<td><strong><code class="c">CONFIG_RANDOM_KMALLOC_CACHES</code></strong>（默认 <code class="c">n</code>）：为普通 kmalloc <strong>建 15 份副本 cache</strong>，按<strong>调用点地址 hash</strong> 随机选一份</td>
+<td>v6.5 源码 0 处引用、v6.6 <code class="c">mm/slab.h:349</code> 出现；<code class="c">kmalloc_type()</code> 里 <code class="c">hash_64(caller ^ random_kmalloc_seed, ilog2(15+1))</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>这本书（LKD）写作时是三种并存的年代</strong>。今天的结论只剩一句：<strong>SLUB 是唯一实现。</strong>
+书上"SLOB 适合嵌入式"的说法在 v6.6 上已<strong>无从选择</strong>——嵌入式极小系统的对应物是 <code class="c">CONFIG_SLUB_TINY</code>。</p>
+</blockquote>
+<p><strong><code class="c">RANDOM_KMALLOC_CACHES</code> 是什么思路</strong>：同一大小的 <code class="c">kmalloc-128</code> <strong>复制 15 份</strong>，
+分配时按<strong>调用点代码地址</strong>（<code class="c">caller</code>）hash 决定用哪份。这样攻击者想做
+<strong>堆喷（heap spray）</strong> 时，无法保证自己可控的对象与目标漏洞对象落在同一条 cache 里——
+<strong>把 UAF/溢出利用的确定性打散</strong>。代价：cache 数量 ×16，内存占用与 TLB/cold cache 上升。</p>
+<h4>8. <code class="c">kmalloc</code> 分档：不只有 2 的幂</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/slab_common.c:823 kmalloc_info[]（v6.6 逐字） */
+const struct kmalloc_info_struct kmalloc_info[] __initconst = {
+    INIT_KMALLOC_INFO(0, 0),
+    INIT_KMALLOC_INFO(96, 96),      /* ← 非 2 的幂 */
+    INIT_KMALLOC_INFO(192, 192),        /* ← 非 2 的幂 */
+    INIT_KMALLOC_INFO(8, 8),
+    INIT_KMALLOC_INFO(16, 16),
+    ... 32 / 64 / 128 / 256 / 512 / 1k / 2k / 4k / 8k ...
+    INIT_KMALLOC_INFO(2097152, 2M)      /* 最后一项 */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>请求大小</th>
+<th>落到的 cache</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1~8 B</td>
+<td><code class="c">kmalloc-8</code></td>
+<td><code class="c">KMALLOC_SHIFT_LOW = 3</code>（SLUB）→ <code class="c">KMALLOC_MIN_SIZE = 8</code></td>
+</tr>
+<tr>
+<td>65~96 B</td>
+<td><strong><code class="c">kmalloc-96</code></strong></td>
+<td>补档：72/80/88/96 都挤进 <code class="c">-128</code> 太浪费</td>
+</tr>
+<tr>
+<td>129~192 B</td>
+<td><strong><code class="c">kmalloc-192</code></strong></td>
+<td>同上，省下 64 B/对象</td>
+</tr>
+<tr>
+<td>193~256 B</td>
+<td><code class="c">kmalloc-256</code></td>
+<td>之后回到 2 的幂</td>
+</tr>
+<tr>
+<td>≤ 8192 B</td>
+<td><code class="c">kmalloc-8k</code></td>
+<td><code class="c">KMALLOC_MAX_CACHE_SIZE = 1UL &lt;&lt; (PAGE_SHIFT+1)</code></td>
+</tr>
+<tr>
+<td><strong>&gt; 8192 B</strong></td>
+<td><strong>不进 slab</strong>，直接 <code class="c">alloc_pages()</code></td>
+<td>呼应 <a href="#s-12-4">12.4 Q5</a></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>源码注释说得很清楚：<code class="c">kmalloc_info[]</code> 存在的<strong>主要目的</strong>是让
+<strong><code class="c">slub_debug=,kmalloc-xx</code></strong> 这样的<strong>内核启动参数</strong>能被解析——
+所以表一直列到 <code class="c">kmalloc-2M</code>（<code class="c">kmalloc_index()</code> 支持到 2^21），
+但 <strong>16k 以上那些名字并不会真的建 cache</strong>。</p>
+</blockquote>
+<p><strong>cache 的四个"类型维度"</strong>（<code class="c">mm/slab.h:362</code>，<code class="c">kmalloc_caches[NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH + 1]</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>触发 gfp 标志</th>
+<th>sysfs 里的名字前缀</th>
+<th>条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">KMALLOC_NORMAL</code></td>
+<td>无特殊标志（<strong>最常见</strong>）</td>
+<td><code class="c">kmalloc-N</code></td>
+<td>总是存在</td>
+</tr>
+<tr>
+<td><code class="c">KMALLOC_DMA</code></td>
+<td><code class="c">__GFP_DMA</code></td>
+<td><strong><code class="c">dma-kmalloc-N</code></strong></td>
+<td><code class="c">CONFIG_ZONE_DMA</code></td>
+</tr>
+<tr>
+<td><code class="c">KMALLOC_CGROUP</code></td>
+<td><code class="c">__GFP_ACCOUNT</code>（memcg 计费）</td>
+<td><strong><code class="c">kmalloc-cg-N</code></strong></td>
+<td><code class="c">CONFIG_MEMCG_KMEM</code></td>
+</tr>
+<tr>
+<td><code class="c">KMALLOC_RECLAIM</code></td>
+<td><code class="c">__GFP_RECLAIMABLE</code></td>
+<td><strong><code class="c">kmalloc-rcl-N</code></strong></td>
+<td>非 <code class="c">SLUB_TINY</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>优先级写在 <code class="c">kmalloc_type()</code> 里：<strong><code class="c">__GFP_DMA</code> &gt; <code class="c">__GFP_RECLAIMABLE</code> &gt; <code class="c">__GFP_ACCOUNT</code></strong>。
+且最前面有一句 <code class="c">if (likely((flags &amp; KMALLOC_NOT_NORMAL_BITS) == 0))</code> —— <strong>最热的那条路只判一次位掩码</strong>。</p>
+</blockquote>
+<h4>9. <code class="c">kfree()</code> 怎么知道这块内存属于哪个 cache？</h4>
+<p><code class="c">kmem_cache_free(cache, obj)</code> 需要显式传 cache，但 <strong><code class="c">kfree(ptr)</code> 什么都不传</strong>。
+v6.6 的做法是<strong>从页反查</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/slab_common.c:1056 */
+void kfree(const void *object)
+{
+    struct folio *folio;
+    struct slab *slab;
+    struct kmem_cache *s;
+
+    trace_kfree(_RET_IP_, object);
+    if (unlikely(ZERO_OR_NULL_PTR(object)))
+        return;
+
+    folio = virt_to_folio(object);
+    if (unlikely(!folio_test_slab(folio))) {    /* 不是 slab 页！ */
+        free_large_kmalloc(folio, (void *)object);   /* 当初走的是 buddy */
+        return;
+    }
+    slab = folio_slab(folio);
+    s = slab-&gt;slab_cache;
+    __kmem_cache_free(s, (void *)object, _RET_IP_);
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">kfree(ptr)
+   │
+   ├─ virt_to_folio(ptr) ─► folio_test_slab()?
+   │        │
+   │        ├─ 是 ─► folio_slab(folio)-&gt;slab_cache ─► __kmem_cache_free()   （≤8KB 路径）
+   │        │
+   │        └─ 否 ─► free_large_kmalloc()  → __free_pages()                （&gt;8KB 路径）
+</code></pre>
+<blockquote>
+<p><strong>这是个漂亮的对称设计</strong>：分配时靠<strong>大小</strong>决定走 slab 还是 buddy，
+释放时靠<strong>页上的标志位</strong>反推回去——<strong>调用者完全不需要知道</strong>。
+代价是 <code class="c">kfree()</code> 比 <code class="c">kmem_cache_free()</code> 多一次 <code class="c">virt_to_folio</code> + 标志位检查
+（约一次地址换算 + 一次位测试），所以对<strong>超热路径的固定类型对象</strong>，
+用专用 cache + <code class="c">kmem_cache_free()</code> 仍是有意义的微优化。</p>
+</blockquote>
+<h4>10. 观测手段</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>看什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">cat /proc/slabinfo</code></strong></td>
+<td>每条 cache 的 <code class="c">active_objs / num_objs / objsize / objperslab / pagesperslab</code>；<code class="c">slabtop</code> 是它的实时版</td>
+</tr>
+<tr>
+<td><strong><code class="c">/sys/kernel/slab/&lt;cache&gt;/</code></strong></td>
+<td>每个 cache 一个目录。v6.6 的属性（源码 <code class="c">slab_attrs[]</code>）：<code class="c">object_size</code> <code class="c">objs_per_slab</code> <code class="c">order</code> <strong><code class="c">min_partial</code></strong> <strong><code class="c">cpu_partial</code></strong> <code class="c">partial</code> <code class="c">cpu_slabs</code> <code class="c">objects_partial</code> <code class="c">align</code> <code class="c">hwcache_align</code> <code class="c">aliases</code> <code class="c">ctor</code> <code class="c">shrink</code>（可向 <code class="c">shrink</code> 写 1 触发回收）</td>
+</tr>
+<tr>
+<td><strong><code class="c">slub_debug=FZPU</code></strong> 启动参数</td>
+<td>F=一致性检查、Z=red zone、P=poison、U=记录分配/释放者（还有 T=trace、A=failslab、O=关掉"会抬高最小 order"的 cache、<code class="c">-</code>=全关）。<strong>只给指定 cache 开</strong>：<code class="c">slub_debug=FZ,dentry</code>；也可<strong>按块</strong>给不同 cache 不同选项：<code class="c">slub_debug=Z,dentry;U,kmalloc-*</code>；还可以"全开但排除"：<code class="c">slub_debug=FZ;-,zs_handle,zspage</code>（<code class="c">kmalloc_info[]</code> 的名字就是为此存在）。详见 <strong>v6.6 <code class="c">Documentation/mm/slub.rst</code></strong>（⚠️ 已不在 <code class="c">Documentation/vm/</code> 下）</td>
+</tr>
+<tr>
+<td><strong><code class="c">CONFIG_SLUB_STATS=y</code></strong></td>
+<td>打开 <code class="c">struct kmem_cache_cpu.stat[]</code> 计数，暴露 <strong>快/慢路径命中率</strong>（见下表）</td>
+</tr>
+<tr>
+<td><code class="c">trace_kmalloc</code> / <code class="c">trace_kfree</code></td>
+<td>tracepoint，可挂 BPF 做<strong>按调用点</strong>的分配画像</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">CONFIG_SLUB_STATS</code> 暴露的计数器（<code class="c">enum stat_item</code>，<code class="c">slub_def.h:13</code>）里最值得盯的四个：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>计数器</th>
+<th>含义</th>
+<th>读法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ALLOC_FASTPATH</code></td>
+<td>从 <code class="c">c-&gt;slab</code> 直接取到</td>
+<td><strong>这个数占比低 = 你的分配有问题</strong></td>
+</tr>
+<tr>
+<td><code class="c">ALLOC_SLOWPATH</code></td>
+<td>需要换 slab / 向 buddy 要页</td>
+<td>上升 = 分配压力或 cache 太小</td>
+</tr>
+<tr>
+<td><code class="c">CMPXCHG_DOUBLE_FAIL</code></td>
+<td>原子操作失败重来</td>
+<td>上升 = <strong>抢占/中断打断频繁</strong>（RT 上恒为 0，因为根本不用快路径）</td>
+</tr>
+<tr>
+<td><code class="c">CPU_PARTIAL_DRAIN</code></td>
+<td>per-CPU partial 被排空回 node</td>
+<td>频繁发生 = 跨 CPU 分配释放模式</td>
+</tr>
+</tbody>
+</table></div>
+<h4>11. 安全硬化四件套（都在 kmalloc 的关键路径上）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>配置</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>freelist 随机化</strong></td>
+<td><code class="c">CONFIG_SLAB_FREELIST_RANDOM</code></td>
+<td><strong>打乱 slab 内对象的初始顺序</strong>，让"连续分配的两个对象"不再相邻</td>
+</tr>
+<tr>
+<td><strong>freelist 指针混淆</strong></td>
+<td><code class="c">CONFIG_SLAB_FREELIST_HARDENED</code></td>
+<td>空闲对象的 next 指针与 <code class="c">s-&gt;random ^ 对象地址</code> <strong>异或后存储</strong>，溢出覆盖它也无法可靠劫持</td>
+</tr>
+<tr>
+<td><strong>分配/释放即清零</strong></td>
+<td><code class="c">CONFIG_INIT_ON_ALLOC_DEFAULT_ON</code> / <code class="c">init_on_free=1</code></td>
+<td><code class="c">slab_want_init_on_alloc()</code> 在 <code class="c">slab_post_alloc_hook</code> 里清零；<strong>有成本</strong>（大对象 memset）</td>
+</tr>
+<tr>
+<td><strong>KFENCE</strong></td>
+<td><code class="c">CONFIG_KFENCE=y</code></td>
+<td>在 <code class="c">slab_alloc_node()</code> 里<strong>先</strong>调 <code class="c">kfence_alloc()</code>：以极低概率把请求<strong>劫持</strong>到带 guard page 的采样池，检测越界/UAF</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>注意 <code class="c">kmem_cache</code> 结构体里的 <code class="c">unsigned long random;</code> 字段——
+它就挂在 <code class="c">CONFIG_SLAB_FREELIST_HARDENED</code> 下面，是上面第二个机制的密钥。</p>
+</blockquote>
+<h4>12. ⚠️ PREEMPT_RT 上快路径是关掉的</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/slub.c:173 */
+#ifndef CONFIG_PREEMPT_RT
+#define USE_LOCKLESS_FAST_PATH()    (true)
+#else
+#define USE_LOCKLESS_FAST_PATH()    (false)     /* RT：一律走 local_lock 慢路径 */
+#endif
+</code></pre>
+<p>原因写在文件头部注释里：RT 上 <code class="c">local_lock</code> <strong>既不关中断也不关抢占</strong>，
+快路径的 lockless 操作会与正在进行的慢路径操作<strong>互相干扰</strong>，
+所以 RT 内核<strong>放弃 lockless 快路径</strong>，改为始终持 <code class="c">local_lock</code>
+（但<strong>仍在用 freelist</strong>，不是退回到加锁遍历）。</p>
+<blockquote>
+<p><strong>对 RT 用户的直接结论</strong>：<code class="c">CONFIG_PREEMPT_RT</code> 上 slab 分配的<strong>确定性更好</strong>（无重试循环），
+但<strong>单次开销更高</strong>（要拿锁）。做实时/低抖动评估时，这是必须纳入模型的差异。</p>
+</blockquote>
 <h4>主要 API</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1544,7 +3351,11 @@ vmalloc 路径:
 <tbody>
 <tr>
 <td><strong><code class="c">kmem_cache_create(name, size, align, flags, ctor)</code></strong></td>
-<td>建 <strong>专用 cache</strong></td>
+<td>建 <strong>专用 cache</strong>（v6.6 签名实证：<code class="c">(const char *, unsigned int, unsigned int, slab_flags_t, void (*)(void *))</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">kmem_cache_create_usercopy(...)</code></strong></td>
+<td>额外声明<strong>可拷贝给用户态的区间</strong> <code class="c">useroffset/usersize</code>，其余区域不允许 <code class="c">copy_to_user</code></td>
 </tr>
 <tr>
 <td><strong><code class="c">kmem_cache_destroy(cache)</code></strong></td>
@@ -1556,7 +3367,11 @@ vmalloc 路径:
 </tr>
 <tr>
 <td><strong><code class="c">kmem_cache_free(cache, obj)</code></strong></td>
-<td>归还</td>
+<td>归还（比 <code class="c">kfree</code> 少一次 folio 反查）</td>
+</tr>
+<tr>
+<td><strong><code class="c">kmem_cache_shrink(cache)</code></strong></td>
+<td>把空 slab 还给 buddy（<code class="c">min_partial</code> 以下的会被<strong>保留</strong>）</td>
 </tr>
 <tr>
 <td><strong>通用 Slab</strong></td>
@@ -1564,56 +3379,78 @@ vmalloc 路径:
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">struct kmem_cache *my_cache;
-
-my_cache = kmem_cache_create(&quot;my_obj&quot;, sizeof(struct my_obj),
-                             0, SLAB_HWCACHE_ALIGN, NULL);
-struct my_obj *o = kmem_cache_alloc(my_cache, GFP_KERNEL);
-kmem_cache_free(my_cache, o);
-</code></pre>
-<h4>Slab 变体（书外名词）</h4>
+<p>常用 <code class="c">slab_flags_t</code>（<code class="c">include/linux/slab.h</code> 实证）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>名称</th>
-<th>特点</th>
+<th>标志</th>
+<th>效果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>SLUB</strong></td>
-<td>现代默认 — <strong>per-CPU partial list</strong>，少锁</td>
+<td><code class="c">SLAB_HWCACHE_ALIGN</code></td>
+<td>按缓存行对齐对象（<strong>防 false sharing</strong>，代价是内部碎片）</td>
 </tr>
 <tr>
-<td><strong>SLAB</strong></td>
-<td>经典三路 slab 链表</td>
+<td><code class="c">SLAB_POISON</code></td>
+<td>调试：对象用毒值填充，捕获"未初始化就使用"</td>
 </tr>
 <tr>
-<td><strong>SLOB</strong></td>
-<td>嵌入式 <strong>极简</strong> — 省内存、慢</td>
+<td><code class="c">SLAB_RED_ZONE</code></td>
+<td>调试：对象前后插入 red zone，捕获越界写</td>
+</tr>
+<tr>
+<td><code class="c">SLAB_CACHE_DMA</code> / <code class="c">SLAB_CACHE_DMA32</code></td>
+<td>从 DMA 区取页</td>
+</tr>
+<tr>
+<td><code class="c">SLAB_TYPESAFE_BY_RCU</code></td>
+<td><strong>RCU 安全复用</strong>：延迟归还 <strong>slab 页</strong>（注意：<strong>不是</strong>延迟对象复用！）</td>
+</tr>
+<tr>
+<td><code class="c">SLAB_RECLAIM_ACCOUNT</code>（= <code class="c">SLAB_TEMPORARY</code>）</td>
+<td>标记为可回收（如 <code class="c">dentry</code>/<code class="c">inode</code>），走 <code class="c">kmalloc-rcl-*</code></td>
+</tr>
+<tr>
+<td><code class="c">SLAB_NO_MERGE</code></td>
+<td>禁止与其他 cache 合并（调试时保留独立可见性）</td>
+</tr>
+<tr>
+<td><code class="c">SLAB_SKIP_KFENCE</code></td>
+<td>不参与 KFENCE 采样（sysfs 可运行时开关）</td>
 </tr>
 </tbody>
 </table></div>
-<h4>与 <code class="c">kmalloc</code> 栈</h4>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路径</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">kmalloc(128, gfp)</code></strong></td>
-<td>命中 <strong><code class="c">kmalloc-128</code></strong> general cache</td>
-</tr>
-<tr>
-<td><strong>专用 cache</strong></td>
-<td>驱动 <strong>固定结构</strong> — 比裸 <code class="c">kmalloc</code> <strong>更可预测</strong></td>
-</tr>
-</tbody>
-</table></div>
+<blockquote>
+<p><strong><code class="c">SLAB_TYPESAFE_BY_RCU</code> 是最大的误解高发区</strong>（源码警告原文）：
+它 <strong>只延迟"slab 页"的释放</strong>，<strong>不延迟对象复用</strong>。
+<code class="c">kmem_cache_free()</code> 之后，<strong>那个地址随时可能被别的对象占用</strong>。
+它保证的是"你手里的指针所在的页不会被立刻还给 buddy 导致访问时缺页"，
+而不是"对象内容还在"。RCU 读者必须<strong>先拿引用再上锁</strong>（参见 <code class="c">include/linux/slab.h:48-96</code> 的长注释）。</p>
+</blockquote>
+<h4>Cache 合并（为什么 <code class="c">slabinfo</code> 里名字对不上号）</h4>
+<p><code class="c">CONFIG_SLAB_MERGE_DEFAULT</code> <strong>默认 = y</strong>：<code class="c">kmem_cache_create()</code> 时若发现
+已有 cache 的 <strong>size / align / flags</strong> 足够接近，就<strong>直接复用</strong>那条已有 cache，
+只在 sysfs 里留下一个 <strong>alias</strong>。所以：</p>
+<ul>
+<li><code class="c">cat /proc/slabinfo</code> 里看到的条目数 <strong>远少于</strong> 内核里 <code class="c">kmem_cache_create</code> 的调用数；</li>
+<li>想让调试对象<strong>独立可见</strong>（不被合并掉别人也看不出是谁），建 cache 时加 <strong><code class="c">SLAB_NO_MERGE</code></strong>；</li>
+<li>sysfs 的 <strong><code class="c">aliases</code></strong> 属性能看到"这条 cache 被谁共用了"。</li>
+</ul>
 <p><strong>HFT：</strong> 用户态 <strong>typed object pool</strong>（订单对象、事件 struct）= <strong><code class="c">kmem_cache_*</code> 用户版</strong>。内核 <strong>网络栈 <code class="c">sk_buff</code></strong> 等有 <strong>专用 cache</strong> — <strong>NAPI poll</strong> 路径 <strong>复用 skb</strong> 而非每次 <code class="c">alloc_pages</code>。实盘：<strong>池化 + 复用</strong> 减 <strong>allocator 锁竞争</strong> 与 <strong>TLB 抖动</strong>。</p>
+<blockquote>
+<p><strong>落到 HFT/低延迟上的四条硬结论</strong>：
+① <strong>同一个 CPU 上"刚 free 就 alloc"是最快的</strong>（命中 <code class="c">c-&gt;slab</code> 的 freelist 头，热在 L1）——
+  所以<strong>每 CPU 一份对象池 + 单线程绑核</strong>的收益，与 SLUB 的设计完全同构；
+② <strong>跨 CPU 释放会打掉快路径</strong>（<code class="c">slab != c-&gt;slab</code> → <code class="c">__slab_free</code>），
+  这与 12.4 页分配器的 pcp 跨 CPU 释放是<strong>同一类病</strong>：分配/释放必须<strong>同核</strong>；
+③ <strong>热路径零分配</strong>：SLUB 快路径再快也要一次 <code class="c">cmpxchg16b</code>，而且<strong>可能被抢占打断后重来</strong>，
+  <code class="c">ALLOC_SLOWPATH</code> 一旦出现就可能是<strong>微秒级</strong>（<code class="c">new_slab</code> → <code class="c">alloc_pages</code>）。
+  实盘驱动：probe 阶段把 ring 建好，数据路径只读写；
+④ <strong><code class="c">cpu_partial</code> 是尾延迟的隐形来源</strong>：per-CPU partial 超限时<strong>批量排空回 node</strong>（要持 <code class="c">n-&gt;list_lock</code>），
+  表现为偶发尖刺。用 <code class="c">CONFIG_SLUB_STATS</code> 盯 <code class="c">CPU_PARTIAL_DRAIN</code> 能验证这一点。</p>
+</blockquote>
 <p>→ <a href="../../06-linux-mm/html/chapter-08.html#ch-8">06 Gorman Ch8 Slab</a> · <a href="chapter-03.html#ch-3">Ch 3 task_struct Slab</a> · <a href="#s-12-10">Ch 12.10 per-CPU</a></p>
 <blockquote>
 <p>↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-3">ULK Ch8 §3 Slab分配器</a></p>
@@ -1624,11 +3461,117 @@ kmem_cache_free(my_cache, o);
 <details>
 <summary>答案</summary>
 <p>Slab &gt; Slub（现代默认）&gt; Slob（嵌入式）。以 Slub 为例：每个 CPU 有 per-CPU partial 页，分配时从当前 CPU 的 partial 页上取空闲对象，无需锁、无需 buddy 调用。释放时放回 per-CPU partial。只有 partial 耗尽才向 buddy 申请新页。这就是为什么内核频繁分配/释放 task_struct 不会变慢。</p>
+<blockquote>
+<p><strong>按 v6.6 修订（重要）</strong>："Slab &gt; Slub &gt; Slob"<strong>不是层级关系</strong>，而是<strong>三种可替换的实现</strong>
+（同一组 API <code class="c">kmem_cache_*</code> 的不同后端）。现状是：
+<strong>SLOB 在 v6.4 被删除、SLAB 在 v6.5 被弃用并在 v6.8 被删除</strong>，
+所以 v6.6 的默认（也是 v6.8+ 的唯一）实现是 <strong>SLUB</strong>。
+上面答案里"每个 CPU 有 per-CPU partial 页"的说法也需要细化：
+真正承担分配的不是 partial 链，而是 <strong><code class="c">c-&gt;slab</code>（当前 frozen slab）+ <code class="c">c-&gt;freelist</code></strong>；
+per-CPU partial 只是"备胎池"。另外"无需锁"的准确说法是
+<strong>一次 <code class="c">this_cpu_cmpxchg_double()</code>（freelist + tid 打包）</strong>，
+失败则 <code class="c">goto redo</code> 重试——<strong>不是加锁，但也不是一次必成</strong>。</p>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> kmalloc-128 和 kmalloc-256 是什么？为什么有这么多 slab cache？</p>
 <details>
 <summary>答案</summary>
 <p>内核为每个 2 的幂大小（8/16/32/64/128/256/512/1024/2048/4096/8192）预创建专用 slab cache。kmalloc(100) 会在 kmalloc-128 中分配（向上取整到 128）。这样不同大小的对象不会互相碎片化，且每个 cache 的对象大小一致、对齐一致，cache 友好。</p>
+<blockquote>
+<p><strong>按 v6.6 修订</strong>：分档<strong>不全是 2 的幂</strong>——还有 <strong><code class="c">kmalloc-96</code></strong> 和 <strong><code class="c">kmalloc-192</code></strong>
+（<code class="c">mm/slab_common.c:823</code> 逐字）。所以 <strong><code class="c">kmalloc(100)</code> 落在 <code class="c">kmalloc-128</code></strong> 是对的，
+但 <code class="c">kmalloc(80)</code> 落在 <strong><code class="c">kmalloc-96</code></strong> 而不是 <code class="c">-128</code>，<code class="c">kmalloc(150)</code> 落在 <strong><code class="c">kmalloc-192</code></strong>。
+另外 cache 的数量还要再乘一个维度：v6.6 有
+<strong><code class="c">kmalloc-N</code> / <code class="c">dma-kmalloc-N</code> / <code class="c">kmalloc-cg-N</code> / <code class="c">kmalloc-rcl-N</code></strong> 四类（按 gfp 标志选），
+若开 <code class="c">CONFIG_RANDOM_KMALLOC_CACHES</code> 还会再复制 <strong>15 份</strong>（<code class="c">kmalloc-rnd-01-N</code> … <code class="c">kmalloc-rnd-15-N</code>）。
+还有一个上限：<strong>&gt; 8 KB 根本不进 slab</strong>，直接走 <code class="c">alloc_pages()</code>。</p>
+</blockquote>
+</details>
+<p><strong>Q3.</strong> SLUB 的快路径为什么不直接 CAS 替换 <code class="c">freelist</code> 指针，非要带上一个 <code class="c">tid</code>？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <strong>ABA 问题</strong>。<code class="c">struct kmem_cache_cpu</code> 把 <code class="c">freelist</code> 和 <code class="c">tid</code> 放在同一个 union 里
+（<code class="c">freelist_aba_t freelist_tid</code>），满足 <code class="c">this_cpu_cmpxchg_double()</code> 的 16 字节对齐要求，
+一次原子指令<strong>同时</strong>比较并替换"指针 + 版本号"。</p>
+<p>场景：本 CPU 读到 <code class="c">freelist=A, tid=7</code> → 被中断，中断里 free 一个对象（freelist=B, tid=8）
+再 alloc 一次（freelist 又变回 <strong>A</strong>, tid=<strong>9</strong>）→ 回到原路径。
+<strong>只比指针的话 A==A 会误判"期间无人动过"</strong>，但事实上 B 已被取走又归还，
+本 CPU 手里的 <code class="c">next_object</code> 等派生数据已经失效。<code class="c">tid</code> 每次操作 <code class="c">next_tid()</code>，
+把"发生过几次操作"编码进去，CAS 因此失败 → <code class="c">goto redo</code> 重读重试。
+这就是为什么源码里 <code class="c">barrier()</code> 前的注释强调 <strong>tid 必须在 freelist/slab 之前读</strong>。</p>
+</details>
+<p><strong>Q4.</strong> 为什么 <code class="c">kfree(ptr)</code> 不需要传 cache 指针？它怎么分辨"这块是 slab 对象还是大块 buddy 分配"？</p>
+<details>
+<summary>答案</summary>
+<p>靠<strong>从 folio 反查</strong>（<code class="c">mm/slab_common.c:1056</code>）：</p>
+<pre class="code" data-label="C"><code class="c">folio = virt_to_folio(object);
+if (unlikely(!folio_test_slab(folio))) {
+        free_large_kmalloc(folio, (void *)object);   /* 当初 &gt;8KB，走的是 buddy */
+        return;
+}
+slab = folio_slab(folio);
+s = slab-&gt;slab_cache;
+__kmem_cache_free(s, (void *)object, _RET_IP_);
+</code></pre>
+<p>即：<strong>分配时按大小选路（≤8KB 进 slab，&gt;8KB 走 <code class="c">alloc_pages</code>），释放时靠页上的 slab 标志位反推</strong>，
+调用者完全无感。推论：
+① <code class="c">kfree()</code> 比 <code class="c">kmem_cache_free()</code> 多一次 <code class="c">virt_to_folio</code> + 位测试，超热路径上用专用 cache 仍值得；
+② 反过来说明 <strong><code class="c">kfree()</code> 不能用于非 kmalloc/kmem_cache_alloc 得到的指针</strong>（比如 <code class="c">vmalloc</code> 的返回值）——
+它的 folio 没有 slab 标志，会被当成"大块 kmalloc"错误处理。</p>
+</details>
+<p><strong>Q5.</strong> <code class="c">SLAB_TYPESAFE_BY_RCU</code> 能保证"free 之后对象内容还在"吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不能。这是最常见的误解。</strong> 源码注释（<code class="c">include/linux/slab.h:48-96</code>）明确警告：
+它<strong>只延迟 slab 页的释放</strong>（delay freeing the SLAB page by a grace period），<strong>不延迟对象复用</strong>
+（does NOT delay object freeing）。<code class="c">kmem_cache_free()</code> 之后，
+那块地址<strong>随时可能被另一个对象占用</strong>——即使在同一个 RCU grace period 内。</p>
+<p>它真正保证的是：<strong>指针所在的页不会立刻被还给 buddy</strong>，所以 RCU 读者
+<strong>解引用这个地址不会踩到已解除映射的内存</strong>（不会缺页/不会读到被复用给别处的页），
+但<strong>读到的内容可能是新对象</strong>。因此正确用法是：
+<code class="c">rcu_read_lock()</code> → 读指针 → <strong>先拿对象引用</strong> → 拿到后校验对象身份 → 才上对象内部的锁。
+注释里点名了三个真实用户：<code class="c">__i915_request_ctor()</code>、<code class="c">sighand_ctor()</code>、<code class="c">anon_vma_ctor()</code>。</p>
+</details>
+<p><strong>Q6.</strong> 在 <code class="c">CONFIG_PREEMPT_RT</code> 内核上，SLUB 的分配路径有什么不同？为什么？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">USE_LOCKLESS_FAST_PATH()</code> 在 RT 上被定义为 <strong><code class="c">false</code></strong>（<code class="c">mm/slub.c:173</code>），
+于是所有分配/释放都走 <code class="c">local_lock(&amp;s-&gt;cpu_slab-&gt;lock)</code> 保护的分支，<strong>不再用 cmpxchg_double 快路径</strong>。</p>
+<p>原因：RT 上 <code class="c">local_lock</code> <strong>既不禁抢占也不禁中断</strong>，
+lockless 快路径的读写会与<strong>正在进行的慢路径操作</strong>互相干扰（数据竞争），
+所以干脆放弃快路径、始终持锁。注意两点：</p>
+<ol>
+<li>它<strong>仍然在使用 freelist</strong>（<code class="c">c-&gt;freelist</code> / <code class="c">c-&gt;slab</code> 照旧），
+   不是退化成"每次都去 node 链表找"，所以<strong>不是数量级的退化</strong>；</li>
+<li>RT 上 <code class="c">CMPXCHG_DOUBLE_FAIL</code> 计数<strong>恒为 0</strong>（根本没有重试循环），
+   代价是<strong>单次开销更高、但更可预测</strong>。做实时抖动预算时必须把这个差异建模进去。</li>
+</ol>
+</details>
+<p><strong>Q7.</strong> 想给某个特定 cache（比如 <code class="c">dentry</code>）单独开 slub_debug，而不影响其他 cache 的性能，怎么做？为什么能这样做？</p>
+<details>
+<summary>答案</summary>
+<p>启动参数：<strong><code class="c">slub_debug=FZ,dentry</code></strong>（<code class="c">F</code>=sanity checks、<code class="c">Z</code>=red zoning）。
+v6.6 <code class="c">Documentation/mm/slub.rst</code> 给了完整语法：</p>
+<pre class="code" data-label="code"><code class="c">slub_debug=&lt;Options&gt;                        # 全部 cache（不写选项 = 全功能调试）
+slub_debug=&lt;Options&gt;,&lt;slab1&gt;,&lt;slab2&gt;,...    # 只给指定 cache（逗号后不加空格）
+slub_debug=&lt;Options&gt;,&lt;name&gt;;&lt;Options&gt;,&lt;name&gt;   # 多个块，用 ; 分隔
+slub_debug=FZ;-,zs_handle,zspage            # 全部开，但排除这两个（性能关键）
+slub_debug=P,kmalloc-*,dentry               # 名字支持 * 前缀通配
+</code></pre>
+<p>选项表：<code class="c">F</code>=sanity checks、<code class="c">Z</code>=red zoning、<code class="c">P</code>=poison、<code class="c">U</code>=user tracking（记录 alloc/free）、
+<code class="c">T</code>=trace（<strong>只应在单条 cache 上用</strong>）、<code class="c">A</code>=failslab 标记、<code class="c">O</code>=给"会因调试抬高最小 order"的 cache 关掉调试、
+<code class="c">-</code>=全关（配合 <code class="c">CONFIG_SLUB_DEBUG_ON</code> 使用）。
+多个块时：<strong>最后一个"全局块"作用于除匹配块以外的所有 cache；cache 只会命中第一个匹配的块。</strong></p>
+<p><strong>为什么能用名字定位</strong>：内核在 <code class="c">__init</code> 阶段建了一张
+<strong><code class="c">kmalloc_info[]</code> / cache name 对照表</strong>（<code class="c">mm/slab_common.c:823</code>），
+源码注释直说了这张表的存在意义就是
+"<strong>to make <code class="c">slub_debug=,kmalloc-xx</code> option work at boot time</strong>"。
+所以表里才会一直列到 <code class="c">kmalloc-2M</code>——<strong>用于启动参数解析</strong>，而不是真的建了这么多 cache。</p>
+<p>两个实践提醒：
+① 开了 debug 的 cache，源码注释明说 <strong>"For debug caches, all allocations are forced to go through a list_lock protected region"</strong>——
+即<strong>强制走慢路径并加锁</strong>，性能会明显下降，别在生产上给热 cache 开；
+② 若目标 cache 被<strong>合并</strong>（<code class="c">CONFIG_SLAB_MERGE_DEFAULT=y</code>），名字可能对不上——
+先到 <code class="c">/sys/kernel/slab/&lt;name&gt;/aliases</code> 确认，或建 cache 时加 <code class="c">SLAB_NO_MERGE</code>。</p>
 </details>
 </details>
 <hr />
@@ -1636,39 +3579,157 @@ kmem_cache_free(my_cache, o);
       <section class="section" id="s-12-8">
         <div class="sec-head"><div class="sec-no">12.8</div><h2>section-12.8-在栈上的静态分配</h2></div>
 <p>内核 <strong>同样用 C 栈</strong> 放局部变量，但栈 <strong>极小、不可增长、溢出即灾难</strong> — 规则比用户态 <strong>硬得多</strong>。</p>
-<h4>内核栈大小</h4>
+<blockquote>
+<p><strong>版本前提</strong>：本节数值基于 <strong>v6.6 源码实证</strong>
+（<code class="c">arch/x86/include/asm/page_64_types.h</code>、<code class="c">arch/arm64/include/asm/memory.h</code>、
+<code class="c">arch/Kconfig</code>、<code class="c">lib/Kconfig.debug</code>、<code class="c">kernel/trace/Kconfig</code>、<code class="c">scripts/checkstack.pl</code>）。
+⚠️ 书上"8KB 两页"的说法在 <strong>x86_64/arm64 上已经不对了</strong>（16KB），
+且"溢出会破坏 <code class="c">thread_info</code>"在启用了 <code class="c">THREAD_INFO_IN_TASK</code> 的现代配置下也<strong>不成立</strong>。</p>
+</blockquote>
+<h4>内核栈大小（v6.6 实证）</h4>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/page_64_types.h:8-22 */
+#ifdef CONFIG_KASAN
+#define KASAN_STACK_ORDER 1
+#else
+#define KASAN_STACK_ORDER 0
+#endif
+
+#define THREAD_SIZE_ORDER   (2 + KASAN_STACK_ORDER)
+#define THREAD_SIZE     (PAGE_SIZE &lt;&lt; THREAD_SIZE_ORDER)
+
+#define EXCEPTION_STACK_ORDER   (1 + KASAN_STACK_ORDER)
+#define EXCEPTION_STKSZ (PAGE_SIZE &lt;&lt; EXCEPTION_STACK_ORDER)
+
+#define IRQ_STACK_ORDER     (2 + KASAN_STACK_ORDER)
+#define IRQ_STACK_SIZE      (PAGE_SIZE &lt;&lt; IRQ_STACK_ORDER)
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* arch/arm64/include/asm/memory.h:77-112 */
+#define MIN_THREAD_SHIFT    (14 + KASAN_THREAD_SHIFT)   /* KASAN_THREAD_SHIFT = 1 with KASAN */
+#if defined(CONFIG_VMAP_STACK) &amp;&amp; (MIN_THREAD_SHIFT &lt; PAGE_SHIFT)
+#define THREAD_SHIFT        PAGE_SHIFT
+#else
+#define THREAD_SHIFT        MIN_THREAD_SHIFT
+#endif
+#define THREAD_SIZE     (UL(1) &lt;&lt; THREAD_SHIFT)
+
+#define IRQ_STACK_SIZE      THREAD_SIZE
+#define OVERFLOW_STACK_SIZE SZ_4K
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>配置</th>
-<th>典型大小</th>
+<th>内核栈大小</th>
+<th>依据</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>传统 x86</strong></td>
-<td><strong>2 页 = 8KB</strong>（<code class="c">THREAD_SIZE</code>）</td>
+<td><strong>x86_64（4KB 页）</strong></td>
+<td><strong>16 KB</strong>（order 2）</td>
+<td><code class="c">page_64_types.h:16</code></td>
 </tr>
 <tr>
-<td><strong>4KB 内核栈</strong></td>
-<td>单页 — <strong>更紧张</strong></td>
+<td><strong>x86_64 + KASAN</strong></td>
+<td><strong>32 KB</strong>（order 3）</td>
+<td><code class="c">KASAN_STACK_ORDER = 1</code></td>
 </tr>
 <tr>
-<td><strong>中断栈</strong></td>
-<td>部分 arch <strong>独立中断栈</strong> — 不与进程内核栈混用（Ch 7）</td>
+<td><strong>arm64（4KB 页）</strong></td>
+<td><strong>16 KB</strong>（shift 14）</td>
+<td><code class="c">memory.h:83</code></td>
 </tr>
 <tr>
-<td><strong>vmap 栈</strong></td>
-<td>guard page — <strong>溢出触发 fault</strong> 而非 silent corrupt</td>
+<td><strong>arm64 + KASAN</strong></td>
+<td><strong>32 KB</strong>（shift 15）</td>
+<td><code class="c">KASAN_THREAD_SHIFT = 1</code></td>
+</tr>
+<tr>
+<td><strong>传统 x86 32 位</strong></td>
+<td>8 KB（两页）</td>
+<td>书上说的年代</td>
+</tr>
+<tr>
+<td><strong>x86_64 中断栈</strong></td>
+<td><strong>16 KB</strong>（<code class="c">IRQ_STACK_SIZE</code>，独立分配）</td>
+<td><code class="c">page_64_types.h:22</code></td>
+</tr>
+<tr>
+<td><strong>x86_64 异常栈</strong></td>
+<td><strong>8 KB</strong>（<code class="c">EXCEPTION_STKSZ</code>，NMI/DF/MCE 等）</td>
+<td><code class="c">page_64_types.h:19</code></td>
+</tr>
+<tr>
+<td><strong>arm64 溢出栈</strong></td>
+<td><strong>4 KB</strong>（<code class="c">OVERFLOW_STACK_SIZE</code>，专供栈溢出后打印）</td>
+<td><code class="c">memory.h:114</code></td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">每个 task_struct
-    └── thread_info / 内核栈（固定 4~8KB）
-            ├── 函数调用帧
-            ├── 局部变量  ← 必须小
-            └── 中断嵌套时同一栈（无 vmap 时）
+<h4>⚠️ 三个栈是分开的（修正"中断嵌套时同一栈"的说法）</h4>
+<pre class="code" data-label="code"><code class="c">进程内核栈（thread stack，16KB）
+    ├── 系统调用 / 内核线程的函数调用链
+    │
+硬中断栈（x86_64：16KB，独立）        ← 硬中断**不**用进程栈
+    ├── ISR 函数链
+    │
+异常栈（x86_64：8KB × N）             ← NMI / Double Fault / MCE 各有独立栈
+    ├── 连&quot;栈本身坏了&quot;的情况都能处理
+
+软中断：CONFIG_SOFTIRQ_ON_OWN_STACK = HAVE_SOFTIRQ_ON_OWN_STACK &amp;&amp; !PREEMPT_RT
+        （arch/Kconfig:986）—— RT 上软中断线程化，跑在自己的线程栈上
 </code></pre>
+<blockquote>
+<p><strong>实践含义</strong>：硬中断<strong>不再</strong>叠加到进程栈上（这是 x86_64 的做法），
+所以"深调用链 + 来个中断就爆栈"的风险比 32 位年代<strong>小很多</strong>。
+但<strong>软中断/下半部</strong>在部分架构上仍跑在被中断的栈上（或 RT 上跑线程栈），
+且 <strong>NMI 可以打断正在处理 NMI 的路径</strong>——所以"栈要留余量"这条纪律没有过时。</p>
+</blockquote>
+<h4>溢出保护：VMAP_STACK（默认 y）与 guard page</h4>
+<pre class="code" data-label="C"><code class="c">/* arch/Kconfig:1237 */
+config VMAP_STACK
+    default y
+    bool &quot;Use a virtually-mapped stack&quot;
+    depends on HAVE_ARCH_VMAP_STACK
+    depends on !KASAN || KASAN_HW_TAGS || KASAN_VMALLOC
+    help
+      Enable this if you want the use virtually-mapped kernel stacks
+      with guard pages.  This causes kernel stack overflows to be
+      caught immediately rather than causing difficult-to-diagnose
+      corruption.
+</code></pre>
+<pre class="code" data-label="code"><code class="c">非 VMAP_STACK：                        VMAP_STACK（v6.6 默认）：
+  [ task_struct 附近 ]                   vmalloc 区里一段虚拟地址
+  [  内核栈 16KB    ]                    [ guard page ── 未映射 ]
+  [ STACK_END_MAGIC ]                    [  内核栈 16KB        ]
+       ↓ 溢出                            [ guard page ── 未映射 ]
+  静默踩坏邻居（可能毫无症状）                 ↓ 溢出
+                                       立即触发 page fault → 可诊断
+</code></pre>
+<p>arm64 还加了一层<strong>廉价检测</strong>（<code class="c">memory.h:101-110</code> 注释逐字）：</p>
+<pre class="code" data-label="code"><code class="c">By aligning VMAP'd stacks to 2 * THREAD_SIZE, we can detect overflow by
+checking sp &amp; (1 &lt;&lt; THREAD_SHIFT), which we can do cheaply in the entry
+assembly.
+</code></pre>
+<blockquote>
+<p>即：<strong>把 vmap 栈按 2×栈大小对齐</strong>，于是"判断当前 sp 是不是溢出到相邻区"
+退化成一次 <strong>按位与</strong>——可以在<strong>异常处理入口的汇编里</strong>直接查。</p>
+</blockquote>
+<h4><code class="c">thread_info</code> 已经不在栈底了（修正书上的说法）</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/thread_info.h:17 —— v6.6 仍在，但 x86_64/arm64 都会选上 */
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+#define current_thread_info() ((struct thread_info *)current)
+#endif
+</code></pre>
+<blockquote>
+<p>书上（以及本笔记原稿）说"栈溢出会覆盖 <code class="c">thread_info</code>"——
+那是 <code class="c">thread_info</code> 还放在<strong>栈底</strong>的年代。现代配置下
+<strong><code class="c">thread_info</code> 是 <code class="c">task_struct</code> 的第一个成员</strong>（<code class="c">current_thread_info()</code> 就是 <code class="c">current</code>），
+栈溢出<strong>不会</strong>直接破坏它。
+溢出破坏的是栈<strong>上方</strong>（低地址）邻接着的东西——
+在 <code class="c">VMAP_STACK=y</code> 时是 <strong>guard page</strong>，所以表现为 <strong>fault</strong>；
+在 <code class="c">VMAP_STACK=n</code> 时才是静默踩内存。</p>
+</blockquote>
 <h4>禁止模式</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1680,19 +3741,23 @@ kmem_cache_free(my_cache, o);
 <tbody>
 <tr>
 <td><strong><code class="c">char buf[65536]</code> 局部数组</strong></td>
-<td><strong>栈溢出</strong> — 覆盖 <strong>thread_info</strong>、返回地址</td>
+<td><strong>栈溢出</strong> — 触发 guard page fault（<code class="c">VMAP_STACK</code>）或静默破坏</td>
 </tr>
 <tr>
 <td><strong>大 <code class="c">struct</code> 值拷贝进栈</strong></td>
-<td>同样危险</td>
+<td>同样危险（且拷贝本身有开销）</td>
 </tr>
 <tr>
-<td><strong>无限递归</strong></td>
+<td><strong>无限递归 / 不受控深递归</strong></td>
 <td>瞬间耗尽</td>
 </tr>
 <tr>
-<td><strong><code class="c">alloca</code> 大块</strong></td>
-<td>等价于栈上大数组</td>
+<td><strong><code class="c">alloca</code> / VLA（变长数组）</strong></td>
+<td>等价于栈上大数组，且<strong>大小运行时才确定</strong> → 编译期检查完全失效（内核已全面清除 VLA 用法）</td>
+</tr>
+<tr>
+<td><strong>深调用链 + 每层几百字节</strong></td>
+<td>单帧不超限，但<strong>累计</strong>会超。这是最隐蔽的一种</td>
 </tr>
 </tbody>
 </table></div>
@@ -1707,11 +3772,11 @@ kmem_cache_free(my_cache, o);
 <tbody>
 <tr>
 <td><strong>几 KB 临时缓冲</strong></td>
-<td><strong><code class="c">kmalloc(..., GFP_KERNEL)</code></strong> — 进程上下文</td>
+<td><strong><code class="c">kmalloc(..., GFP_KERNEL)</code></strong> — 进程上下文（见 <a href="#s-12-5">12.5</a>）</td>
 </tr>
 <tr>
 <td><strong>中断里小缓冲</strong></td>
-<td><strong>静态 per-CPU 缓冲</strong> 或 <strong>预分配 pool</strong></td>
+<td><strong>静态 per-CPU 缓冲</strong> 或 <strong>预分配 pool</strong>（见 <a href="#s-12-10">12.10</a>）</td>
 </tr>
 <tr>
 <td><strong>固定类型高频</strong></td>
@@ -1721,11 +3786,15 @@ kmem_cache_free(my_cache, o);
 <td><strong>编译期常量表</strong></td>
 <td><strong><code class="c">static const</code></strong> 放 <strong>.rodata</strong></td>
 </tr>
+<tr>
+<td><strong>大块、只要求虚拟连续</strong></td>
+<td><strong><code class="c">vmalloc</code></strong>（见 <a href="#s-12-6">12.6</a>，注意不能用于中断/DMA）</td>
+</tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="C"><code class="c">/* 坏 */
 void bad(void) {
-    char tmp[8192];  /* 可能已超过整栈 */
+    char tmp[8192];  /* 单帧就吃掉 16KB 栈的一半，还只是这一个函数 */
 }
 
 /* 好 */
@@ -1735,6 +3804,59 @@ void good(void) {
     /* ... */
     kfree(tmp);
 }
+
+/* 更好（热路径）：per-CPU 预分配，零分配零释放 */
+DEFINE_PER_CPU(unsigned char[512], tmp_buf);
+void hot(void) {
+    unsigned char *tmp = this_cpu_ptr(tmp_buf);   /* 只有 512 字节，栈上一个指针 */
+}
+</code></pre>
+<h4>怎么量：栈使用量的检测工具箱</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>粒度</th>
+<th>怎么用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">CONFIG_FRAME_WARN</code></strong>（默认 <strong>2048</strong> @64bit / <strong>1024</strong> @32bit，<code class="c">lib/Kconfig.debug:434</code>）</td>
+<td><strong>单帧</strong></td>
+<td>编译期警告："stack frame larger than N bytes"。<strong>只管单个函数</strong>，管不了调用链累计</td>
+</tr>
+<tr>
+<td><strong><code class="c">scripts/checkstack.pl</code></strong></td>
+<td><strong>单帧</strong></td>
+<td><code class="c">objdump -d vmlinux \| scripts/checkstack.pl [arch]</code> —— 列出栈用量最大的函数（v6.6 仓库内确有其脚本）</td>
+</tr>
+<tr>
+<td><strong><code class="c">CONFIG_DEBUG_STACK_USAGE</code></strong></td>
+<td><strong>累计（历史最低水位）</strong></td>
+<td>记录每个任务<strong>曾经</strong>剩下的最少栈量，在 <strong>sysrq-T / sysrq-P</strong> 输出里显示。代价：创建进程变慢</td>
+</tr>
+<tr>
+<td><strong><code class="c">CONFIG_SCHED_STACK_END_CHECK</code></strong>（默认 <strong>n</strong>）</td>
+<td>溢出检测</td>
+<td>在 <code class="c">schedule()</code> 时检查栈底的 magic 是否被改写，被改就 <strong>panic</strong>（"corrupted region can no longer be trusted"）</td>
+</tr>
+<tr>
+<td><strong><code class="c">CONFIG_STACK_TRACER</code></strong></td>
+<td><strong>累计（全系统峰值）</strong></td>
+<td>ftrace 的栈追踪器，<strong>挂钩每个函数调用</strong>记录最大栈占用，结果看 <strong><code class="c">/sys/kernel/tracing/stack_trace</code></strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">/proc/&lt;pid&gt;/stack</code></strong></td>
+<td>瞬时</td>
+<td>看某个任务当前的<strong>内核栈回溯</strong>（需 <code class="c">CONFIG_STACKTRACE</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">分层理解（判据）：
+  单帧 &gt; FRAME_WARN(2048)        → 编译期就能抓（FRAME_WARN / checkstack.pl）
+  单帧不超但调用链累计超          → 只能靠运行时（DEBUG_STACK_USAGE / STACK_TRACER）
+  真溢出了                       → VMAP_STACK 的 guard page 立刻 fault（最好情况）
 </code></pre>
 <h4>与用户栈对比</h4>
 <div class="tbl-wrap"><table>
@@ -1749,12 +3871,17 @@ void good(void) {
 <tr>
 <td>默认大小</td>
 <td><strong>~8MB</strong>（可调 <code class="c">ulimit</code>）</td>
-<td><strong>8KB 量级</strong></td>
+<td><strong>16KB 量级</strong>（x86_64/arm64）</td>
 </tr>
 <tr>
 <td>溢出</td>
 <td>SIGSEGV（常）</td>
-<td><strong>破坏内核</strong> — panic / 难查</td>
+<td><strong>guard page fault</strong> 或 <strong>破坏内核</strong> — 难查</td>
+</tr>
+<tr>
+<td>可增长</td>
+<td>✅ 缺页异常里自动扩</td>
+<td>❌ 内核自己的缺页处理也要用栈，无法自举</td>
 </tr>
 <tr>
 <td>大数组</td>
@@ -1764,6 +3891,21 @@ void good(void) {
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> 用户态 <strong>策略栈</strong> 也不放大数组 — <strong><code class="c">thread_local</code> ring + mmap</strong> 放堆/映射区。内核 <strong>NAPI</strong> 处理函数 <strong>栈帧要浅</strong> — 深调用链 + 局部变量 = <strong>隐性 latency</strong>（cache miss + 栈 touch）。</p>
+<blockquote>
+<p><strong>HFT 补充（栈为什么影响延迟）</strong>：
+① <strong>栈的"冷启动"成本</strong>：内核栈是 <strong>per-task</strong> 的，每次上下文切换到新任务，
+栈顶附近几乎肯定 <strong>不在 L1/L2</strong> —— 深的调用链意味着<strong>每层都要触碰新的栈页</strong>（cache miss）。
+浅调用链 + 紧凑栈帧 = 更少的 cache miss；
+② <strong><code class="c">CONFIG_FRAME_WARN</code> 是免费的静态检查</strong>：把大缓冲挪出栈，
+同时也就顺手消除了上面这笔 cache 成本，一举两得；
+③ <strong>绑核 + 单线程模型下，栈是"热"的</strong>：同一个任务反复在同一核上跑，
+栈顶区域稳定留在 L1——这也是 HFT 里"每核一个线程、避免迁移"的收益之一
+（与 <a href="#s-12-10">12.10 per-CPU</a> 是同一个道理）；
+④ <strong>量化方法</strong>：开 <code class="c">CONFIG_STACK_TRACER</code> 跑真实负载，读
+<code class="c">/sys/kernel/tracing/stack_trace</code> 看<strong>峰值调用链</strong>；
+用 <code class="c">CONFIG_DEBUG_STACK_USAGE</code> + <strong>sysrq-T</strong> 看<strong>每个任务的历史最低水位</strong>，
+比拍脑袋安全得多。</p>
+</blockquote>
 <p>→ Ch 2 内核栈 · <a href="chapter-07.html#ch-7">Ch 7 中断栈</a> · <a href="#s-12-5">Ch 12.5 kmalloc</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -1771,19 +3913,146 @@ void good(void) {
 <details>
 <summary>答案</summary>
 <p>x86_64 内核栈通常 8KB（或 16KB with CONFIG_THREAD_INFO_IN_TASK）。8KB 栈意味着函数调用链不能太深、不能有大的局部数组。递归会迅速耗尽栈 → stack overflow → oops/panic。内核代码规则：避免递归、局部数组 &lt; 1KB、大缓冲用 kmalloc。</p>
+<blockquote>
+<p><strong>按 v6.6 修订</strong>：现在的数字是<strong>确定的 16KB，不是 8KB</strong>：
+- x86_64：<code class="c">THREAD_SIZE_ORDER = 2 + KASAN_STACK_ORDER</code> → <code class="c">THREAD_SIZE = PAGE_SIZE &lt;&lt; 2</code> = <strong>16KB</strong>（开 KASAN 时 order 3 = 32KB）；
+- arm64：<code class="c">MIN_THREAD_SHIFT = 14 + KASAN_THREAD_SHIFT</code> → <strong>16KB</strong>（开 KASAN 时 32KB）。</p>
+<p>另外 8KB 是<strong>32 位 x86</strong> 的年代。而且"或 16KB with CONFIG_THREAD_INFO_IN_TASK"这个条件说反了——
+<code class="c">THREAD_INFO_IN_TASK</code> 管的是 <strong><code class="c">thread_info</code> 放在哪里</strong>（<code class="c">task_struct</code> 内 vs 栈底），
+<strong>和栈大小无关</strong>。它带来的是另一条修正：<strong>栈溢出不再会直接破坏 <code class="c">thread_info</code></strong>。</p>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> 为什么内核栈不能自动增长？</p>
 <details>
 <summary>答案</summary>
 <p>用户态栈可以自动扩展（page fault handler 检测到栈生长 → 分配新页）。内核态没有这个机制：page fault handler 本身也用内核栈，如果栈溢出时再触发 page fault 会无限递归。所以内核栈溢出直接 oops。8KB 是硬限制，开发者必须小心。</p>
+<blockquote>
+<p><strong>按 v6.6 补充：溢出后的表现取决于 <code class="c">CONFIG_VMAP_STACK</code>。</strong>
+这个选项在 v6.6 是 <strong>default y</strong>（依赖 <code class="c">HAVE_ARCH_VMAP_STACK</code>），
+它的帮助文本直说目的是 <strong>"causes kernel stack overflows to be caught immediately rather than
+causing difficult-to-diagnose corruption"</strong>：
+栈被分配在 <strong>vmalloc 区</strong>并<strong>两侧带 guard page</strong>，
+所以溢出<strong>立刻触发一次 page fault</strong>（可诊断），而不是静默踩坏邻近内存。</p>
+<p>arm64 还额外把 vmap 栈 <strong>按 2×THREAD_SIZE 对齐</strong>，
+于是"是否溢出"可以用 <strong><code class="c">sp &amp; (1 &lt;&lt; THREAD_SHIFT)</code></strong> 一次按位与判断——
+在<strong>异常处理入口的汇编里</strong>就能查（<code class="c">memory.h:101</code> 注释）。</p>
+<p>关掉 VMAP_STACK 时，兜底的是 <code class="c">CONFIG_SCHED_STACK_END_CHECK</code>（<strong>默认 n</strong>）：
+在 <code class="c">schedule()</code> 里检查栈底 magic，<strong>被改写就 panic</strong>——
+注意这是"事后检测"（等调度到才发现），不如 guard page 即时。</p>
+</blockquote>
+</details>
+<p><strong>Q3.</strong> <code class="c">CONFIG_FRAME_WARN</code> 报了警告，是不是就说明我的调用链一定不会爆栈？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不是——它只看"单个函数的栈帧"，不看调用链的累计值。</strong></p>
+<p><code class="c">lib/Kconfig.debug:434</code> 的定义是 <code class="c">int "Warn for stack frames larger than"</code>，
+默认 <strong>2048（64 位）/ 1024（32 位）</strong>（KASAN 32 位 1280、PARISC 2048 等有特例）。
+它传给编译器的是 <code class="c">-Wframe-larger-than=</code>，所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情况</th>
+<th>FRAME_WARN 能抓吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单个函数里 <code class="c">char buf[4096]</code></td>
+<td>✅ 能抓（编译期）</td>
+</tr>
+<tr>
+<td>20 个函数各用 800 字节，累计 16KB</td>
+<td>❌ <strong>抓不到</strong></td>
+</tr>
+<tr>
+<td>递归深度取决于运行时输入</td>
+<td>❌ 抓不到</td>
+</tr>
+</tbody>
+</table></div>
+<p>要量"累计"必须上运行时手段：
+- <strong><code class="c">CONFIG_STACK_TRACER</code></strong>：ftrace 栈追踪器，挂钩每个函数调用记录<strong>全系统最大栈占用</strong>，
+  结果在 <strong><code class="c">/sys/kernel/tracing/stack_trace</code></strong>；
+- <strong><code class="c">CONFIG_DEBUG_STACK_USAGE</code></strong>：记录<strong>每个任务</strong>历史最低剩余栈，通过 <strong>sysrq-T / sysrq-P</strong> 输出；
+- <strong><code class="c">scripts/checkstack.pl</code></strong>：对 <code class="c">objdump -d vmlinux</code> 做静态分析，列出栈帧最大的函数（仍是单帧粒度，但能全量排序）。</p>
+</details>
+<p><strong>Q4.</strong> 硬中断处理函数用的栈，和系统调用路径用的栈是同一块吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>在 x86_64 上不是</strong>——这是本笔记原稿"中断嵌套时同一栈"需要更新的地方。</p>
+<p>v6.6 实证（<code class="c">arch/x86/include/asm/page_64_types.h</code>）：
+- <strong><code class="c">IRQ_STACK_SIZE = PAGE_SIZE &lt;&lt; (2 + KASAN_STACK_ORDER)</code> = 16KB</strong>，硬中断跑在<strong>独立的中断栈</strong>上；
+- <strong><code class="c">EXCEPTION_STKSZ = PAGE_SIZE &lt;&lt; (1 + KASAN_STACK_ORDER)</code> = 8KB</strong>，
+  <strong>NMI / Double Fault / Machine Check</strong> 各有<strong>专属异常栈</strong>（连"栈本身坏了"都能继续处理）；
+- 进程自己的 <strong><code class="c">THREAD_SIZE</code> = 16KB</strong> 栈只承载系统调用与内核线程的调用链。</p>
+<p>软中断的位置由 <code class="c">arch/Kconfig:986</code> 决定：
+<strong><code class="c">config SOFTIRQ_ON_OWN_STACK</code> = <code class="c">HAVE_SOFTIRQ_ON_OWN_STACK &amp;&amp; !PREEMPT_RT</code></strong>
+——非 RT 上可以有独立的软中断栈，而 <strong>RT 上软中断被线程化，跑在各自的线程栈上</strong>。</p>
+<blockquote>
+<p>结论：硬中断<strong>不再</strong>叠加到进程栈上，所以"深调用链 + 来个中断就爆栈"的风险比 32 位年代小得多。
+但 NMI 可以打断 NMI 处理、软中断/下半部在部分架构上仍用被中断的栈，
+所以<strong>留栈余量</strong>这条纪律依然成立。</p>
+</blockquote>
+</details>
+<p><strong>Q5.</strong> 我在中断处理里需要一个 2KB 的临时缓冲，有哪些做法？各自代价是什么？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>做法</th>
+<th>可行？</th>
+<th>代价 / 风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>局部数组 <code class="c">char buf[2048]</code></strong></td>
+<td>⚠️ 编译能过</td>
+<td>单帧就吃掉 16KB 栈的 1/8，且<strong>超过 <code class="c">FRAME_WARN</code>(2048) 的边界</strong>；若 ISR 里还调用其他函数，累计风险陡增。<strong>不推荐</strong></td>
+</tr>
+<tr>
+<td><strong>中断里 <code class="c">kmalloc(..., GFP_ATOMIC)</code></strong></td>
+<td>✅ 能跑</td>
+<td><strong>会失败</strong>（必须判 NULL），且 <code class="c">GFP_ATOMIC</code> 走紧急储备；<strong>热路径上每次分配都是尾延迟来源</strong>（见 <a href="#s-12-5">12.5</a>）。<strong>不推荐用于每包路径</strong></td>
+</tr>
+<tr>
+<td><strong>per-CPU 静态缓冲</strong></td>
+<td>✅ <strong>推荐</strong></td>
+<td>零分配、零释放、本 CPU 独占无锁。注意两点：① 访问期间<strong>不能被抢占到别的核</strong>（用 <code class="c">this_cpu_ptr()</code> 或 <code class="c">preempt_disable()</code>）；② 若中断可能<strong>嵌套</strong>进来（如 NMI 打断普通中断），需要<strong>双份缓冲</strong>或禁中断</td>
+</tr>
+<tr>
+<td><strong>预分配 pool + 无锁 ring</strong></td>
+<td>✅ 推荐（大数据块）</td>
+<td>启动时分配好，运行时只取/还。最贴近 HFT 的做法</td>
+</tr>
+<tr>
+<td><strong><code class="c">kmem_cache_alloc</code></strong></td>
+<td>✅ 固定类型时</td>
+<td>比 <code class="c">kfree()</code> 路径短（少一次 folio 反查），见 <a href="#s-12-7">12.7</a></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>判据一句话：<strong>中断里不要分配内存，要"预先分配好、运行时零分配"</strong>。
+需要多大的缓冲，就把它变成<strong>静态/per-CPU 的容量</strong>，而不是运行时的分配请求。</p>
+</blockquote>
 </details>
 </details>
 <hr />
       </section>
       <section class="section" id="s-12-9">
         <div class="sec-head"><div class="sec-no">12.9</div><h2>section-12.9-高端内存的映射</h2></div>
-<p>在 <strong>HIGHMEM zone</strong> 分配的页 <strong>没有</strong> 永久 <strong>内核线性映射地址</strong> — CPU 要访问页内数据，必须先 <strong>临时映射</strong> 到 <strong>fixmap / kmap 槽</strong>。</p>
-<h4>问题从哪来（x86 32 位典型）</h4>
+<p>在 <strong>HIGHMEM zone</strong> 分配的页 <strong>没有</strong> 永久 <strong>内核线性映射地址</strong> — CPU 要访问页内数据，必须先 <strong>临时映射</strong> 到 <strong>PKMAP / fixmap 槽</strong>。</p>
+<blockquote>
+<p><strong>版本前提</strong>：本节机制基于 <strong>v6.6 源码实证</strong>
+（<code class="c">include/linux/highmem.h</code>、<code class="c">mm/highmem.c</code>、<code class="c">include/linux/mmzone.h</code>、
+<code class="c">arch/x86/include/asm/{highmem,fixmap,pgtable_32_areas}.h</code>、<code class="c">include/asm-generic/kmap_size.h</code>、
+<code class="c">arch/x86/Kconfig</code>、<code class="c">arch/arm64/Kconfig</code>）。
+⚠️ <strong>最大的认知更新</strong>：<code class="c">kmap_atomic()</code> 在 v6.6 已<strong>明确废弃</strong>，
+现代替代品是 <strong><code class="c">kmap_local_page()</code></strong>（v5.11 引入）。书上（LKD 3rd）的 <code class="c">kmap_atomic</code> 用法今天应改写。</p>
+</blockquote>
+<h4>1. 问题从哪来（x86 32 位典型）</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1802,80 +4071,335 @@ void good(void) {
 </tr>
 <tr>
 <td>64 位</td>
-<td>通常 <strong>全 direct map</strong> — 本节作 <strong>概念 + ARM32</strong> 参考</td>
+<td>通常 <strong>全 direct map</strong> — 本节作 <strong>概念 + ARM32 / x86_32</strong> 参考</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">32-bit 内核 VA 布局（简化）
-
-  0xC0000000 ───────── direct map ─────────► 最多 ~896MB 物理
-  0xFFFFFFFF ───────── fixmap / pkmap 窗口（临时映射槽）
-</code></pre>
-<h4>映射 API</h4>
+<p><strong>谁真的有 HIGHMEM（v6.6 Kconfig 实证）</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>方式</th>
-<th>API</th>
-<th>上下文</th>
-<th>特点</th>
+<th>架构</th>
+<th>有 <code class="c">ZONE_HIGHMEM</code>？</th>
+<th>证据</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>永久映射（有限槽）</strong></td>
+<td><strong>x86_32</strong></td>
+<td>✅</td>
+<td><code class="c">arch/x86/Kconfig:1444</code> — <code class="c">config HIGHMEM</code> / <code class="c">depends on X86_32 &amp;&amp; (HIGHMEM64G \|\| HIGHMEM4G)</code>，默认 <code class="c">HIGHMEM4G</code></td>
+</tr>
+<tr>
+<td><strong>x86_64</strong></td>
+<td>❌</td>
+<td>同上 <code class="c">depends on X86_32</code>，64 位根本不进这个分支</td>
+</tr>
+<tr>
+<td><strong>arm64</strong></td>
+<td>❌</td>
+<td><code class="c">arch/arm64/Kconfig</code> 全文 <strong>没有任何 HIGHMEM 条目</strong></td>
+</tr>
+<tr>
+<td><strong>ARM32</strong></td>
+<td>✅</td>
+<td>32 位 ARM 支持 <code class="c">CONFIG_HIGHMEM</code>（LPAE 下同样需要）</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">ZONE_HIGHMEM</code> 在通用代码里也是<strong>条件编译</strong>的（<code class="c">mmzone.h:743</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef CONFIG_HIGHMEM
+    /*
+     * A memory area which is only addressable by the kernel through
+     * mapping portions into its own address space. ...
+     * (i386 上内核会为它要访问的每一页建立专门映射)
+     */
+    ZONE_HIGHMEM,
+#endif
+</code></pre>
+<h4>2. 两套映射窗口：PKMAP（持久）vs fixmap（临时）</h4>
+<p>原笔记把两者笼统写成"fixmap / kmap 槽"，v6.6 上它们<strong>是两个完全不同的区域</strong>。
+<code class="c">arch/x86/include/asm/highmem.h</code> 里的布局注释（逐字）：</p>
+<pre class="code" data-label="code"><code class="c">high memory on:                      high memory off:
+   FIXADDR_TOP                          FIXADDR_TOP
+       fixed addresses                      fixed addresses
+   FIXADDR_START                       FIXADDR_START
+       temp fixed addresses /            VMALLOC_END
+       persistent kmap area                 temp fixed addresses / vmalloc area
+   PKMAP_BASE                          VMALLOC_START
+   VMALLOC_END                             vmalloc area
+       vmalloc area                    high_memory
+   VMALLOC_START
+   high_memory
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>窗口</th>
+<th>服务对象</th>
+<th>槽位数（v6.6 实证）</th>
+<th>生命周期</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PKMAP</strong>（持久映射区）</td>
 <td><strong><code class="c">kmap()</code> / <code class="c">kunmap()</code></strong></td>
-<td><strong>进程上下文，可睡眠</strong></td>
-<td><strong>PKMAP 区</strong> 槽位有限 — 耗尽则睡</td>
+<td><code class="c">LAST_PKMAP</code> = <strong>512</strong>（<code class="c">CONFIG_X86_PAE</code>）或 <strong>1024</strong>（非 PAE） —— <code class="c">pgtable_32_areas.h:22</code></td>
+<td><strong>全局</strong>，跨上下文有效，直到 <code class="c">kunmap()</code></td>
 </tr>
 <tr>
-<td><strong>原子临时映射</strong></td>
-<td><strong><code class="c">kmap_atomic()</code> / <code class="c">kunmap_atomic()</code></strong></td>
-<td><strong>中断、原子上下文</strong></td>
-<td><strong>关抢占</strong> + <strong>固定 per-CPU 槽</strong> — <strong>必须配对</strong></td>
-</tr>
-<tr>
-<td><strong>HIGHMEM + <code class="c">__get_free_pages</code></strong></td>
-<td>需 <strong><code class="c">__GFP_HIGHMEM</code></strong></td>
-<td>访问前 kmap</td>
-<td>否则 <strong>无法</strong> 读写在页</td>
+<td><strong>fixmap / KMAP_LOCAL</strong>（临时固定映射）</td>
+<td><strong><code class="c">kmap_local_page()</code>、<code class="c">kmap_atomic()</code></strong></td>
+<td><strong><code class="c">KM_MAX_IDX * NR_CPUS</code></strong>：<code class="c">KM_MAX_IDX</code> = <strong>16</strong>（<code class="c">CONFIG_DEBUG_KMAP_LOCAL</code> 时为 <strong>33</strong>，多出的用于 guard page） —— <code class="c">kmap_size.h</code>；槽位范围 <code class="c">FIX_KMAP_END = FIX_KMAP_BEGIN + (KM_MAX_IDX * NR_CPUS) - 1</code>（<code class="c">fixmap.h:103</code>）</td>
+<td><strong>栈式</strong>，per-CPU，函数内临时</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">/* 原子上下文读 HIGHMEM 页 */
-void *vaddr;
-vaddr = kmap_atomic(page);
-/* 读写 *vaddr */
-kunmap_atomic(vaddr);
+<pre class="code" data-label="code"><code class="c">PKMAP 区（全局共享，kmap 用）          fixmap KMAP 区（每 CPU 一段，kmap_local 用）
+┌──┬──┬──┬──┬──┬──┬──┐             ┌──────────┬──────────┬──────────┐
+│ 0│ 1│ 2│ 3│..│  │51│             │ CPU0 ×16 │ CPU1 ×16 │ CPU2 ×16 │
+└──┴──┴──┴──┴──┴──┴──┘             └──────────┴──────────┴──────────┘
+   ↓ 一个全局自旋锁 kmap_lock          ↓ 无锁：每 CPU 有自己的 16 个栈槽
+   耗尽 → 睡眠等待（可能阻塞！）        耗尽 → BUG（映射深度超限，说明代码写错了）
 </code></pre>
-<h4>与 LOWMEM 对比</h4>
+<h4>3. 三代 API：kmap → kmap_atomic → kmap_local_page</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th></th>
-<th>LOWMEM（direct map）</th>
-<th>HIGHMEM</th>
+<th>API</th>
+<th>引入</th>
+<th>上下文</th>
+<th>睡眠？</th>
+<th>指针能跨上下文传？</th>
+<th>现状</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">page_address(page)</code></strong></td>
-<td>直接可用</td>
-<td><strong>NULL</strong> — 须 kmap</td>
+<td><strong><code class="c">kmap()</code></strong></td>
+<td>最早</td>
+<td><strong>只能可抢占的任务上下文</strong></td>
+<td><strong>可能睡眠</strong>（槽位耗尽时）</td>
+<td>✅ <strong>全局可见</strong>，可交给别的上下文</td>
+<td>仍在，但仅限进程上下文</td>
 </tr>
 <tr>
-<td><strong>中断里访问</strong></td>
-<td>安全（VA 固定）</td>
-<td><strong><code class="c">kmap_atomic</code> 仅</strong></td>
+<td><strong><code class="c">kmap_atomic()</code></strong></td>
+<td>老接口</td>
+<td>任何上下文（含中断）</td>
+<td>❌</td>
+<td>❌</td>
+<td>⚠️ <strong>已废弃</strong>（v5.11 起）</td>
 </tr>
 <tr>
-<td><strong>性能</strong></td>
-<td>快</td>
-<td><strong>映射/解映射开销</strong></td>
+<td><strong><code class="c">kmap_local_page()</code></strong></td>
+<td><strong>v5.11</strong></td>
+<td><strong>任何上下文，包括中断</strong></td>
+<td>❌</td>
+<td>❌ 只在调用者上下文有效</td>
+<td>✅ <strong>新代码应使用它</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h4>嵌入式 ARM32</h4>
+<p><strong>v6.6 <code class="c">include/linux/highmem.h</code> 的原文要点</strong>（逐条对照源码注释）：</p>
+<p><code class="c">kmap()</code>（:22-34）：</p>
+<blockquote>
+<p>"Can only be invoked from <strong>preemptible task context</strong> because on 32bit systems with
+CONFIG_HIGHMEM enabled this function <strong>might sleep</strong>." …
+"For highmem pages on 32bit systems this can be <strong>slow</strong> as the mapping space is
+<strong>limited and protected by a global lock</strong>. In case that there is no mapping slot
+available the function <strong>blocks until a slot is released</strong> via <code class="c">kunmap()</code>."</p>
+</blockquote>
+<p><code class="c">kmap_local_page()</code>（:74-95）：</p>
+<blockquote>
+<p>"Can be invoked from <strong>any context, including interrupts</strong>." …
+"Requires careful handling when <strong>nesting multiple mappings because the map management
+is stack based</strong>. The unmap has to be in the <strong>reverse order</strong>." …
+"the mapping is only valid <strong>in the context of the caller</strong> and <strong>cannot be handed to
+other contexts</strong>." …
+"On HIGHMEM enabled systems mapping a highmem page has the side effect of
+<strong>disabling migration</strong> … <strong>No caller of kmap_local_page() can rely on this side effect.</strong>"</p>
+</blockquote>
+<p><code class="c">kmap_atomic()</code>（:146-149）—— 这就是"废弃"的实锤：</p>
+<blockquote>
+<p>"<strong>Atomically map a page for temporary usage - Deprecated!</strong> …
+In fact a <strong>wrapper around kmap_local_page()</strong> which also <strong>disables pagefaults</strong> and,
+depending on PREEMPT_RT configuration, also CPU migration and preemption. …
+<strong>Do not use in new code. Use kmap_local_page() instead.</strong>"</p>
+</blockquote>
+<pre class="code" data-label="code"><code class="c">调用关系（v6.6）
+    kmap_atomic(page)  ──►  kmap_local_page(page)  + pagefault_disable()
+                            （RT 上还 migrate_disable()/preempt_disable()）
+</code></pre>
+<blockquote>
+<p><strong>一个常见误解的纠正</strong>：很多人以为 <code class="c">kmap_atomic</code> 里的 "atomic" 是指"原子指令"。
+源码注释说得很清楚——它只是 <strong><code class="c">kmap_local_page()</code> 外面套一层"关页错误"</strong>。
+真正的"原子性"来自 <strong>关抢占/关迁移</strong> 这个副作用，而这个副作用
+<strong>在 PREEMPT_RT 上才会出现</strong>（非 RT 上只关 pagefault），<strong>所以任何代码都不该依赖它</strong>。</p>
+</blockquote>
+<h4>4. <code class="c">kmap()</code> 的槽位耗尽路径（PKMAP 的三态计数）</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/highmem.c:44-50 注释逐字 */
+ * Virtual_count is not a pure &quot;count&quot;.
+ *  0 means that it is not mapped, and has not been mapped
+ *    since a TLB flush - it is usable.
+ *  1 means that there are no users, but it has been mapped
+ *    since the last TLB flush - so we can't use it.
+ *  n means that there are (n-1) current users of it.
+static int pkmap_count[LAST_PKMAP];
+static  __cacheline_aligned_in_smp DEFINE_SPINLOCK(kmap_lock);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">pkmap_count[i]</code></th>
+<th>含义</th>
+<th>能立刻复用吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td>未映射，且自上次 TLB flush 起没被用过</td>
+<td>✅ 可用</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td><strong>没人用了，但自上次 flush 起被映射过</strong>（TLB 里可能还有残留项）</td>
+<td>❌ 得先 flush</td>
+</tr>
+<tr>
+<td><strong>n (&gt;1)</strong></td>
+<td>有 <strong>n-1</strong> 个当前用户</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">map_new_virtual()</code>（:234）的完整流程：</p>
+<pre class="code" data-label="code"><code class="c">扫描 LAST_PKMAP 个槽找 pkmap_count == 0
+   │
+   ├─ 绕回 nr == 0（no_more_pkmaps）→ flush_all_zero_pkmaps()
+   │        └─ 对所有 count==1 的槽：清 PTE → flush_tlb_kernel_range(PKMAP_ADDR(0),
+   │                                          PKMAP_ADDR(LAST_PKMAP)) → count 归 0
+   │
+   ├─ 仍找不到 → 睡！DECLARE_WAITQUEUE + TASK_UNINTERRUPTIBLE + schedule()
+   │        └─ 醒来后先检查 page_address(page)（可能别人已经映射好了）→ 否则 goto start
+   │
+   └─ 找到 → set_pte_at(pkmap_page_table[nr], mk_pte(page, kmap_prot))
+             + set_page_address(page, vaddr)，count = 1
+</code></pre>
+<blockquote>
+<p><strong>这就是 <code class="c">kmap()</code> 会睡眠、且"慢"的全部原因</strong>：
+一个 <strong>全局自旋锁 <code class="c">kmap_lock</code></strong> + 一个<strong>有限槽位池</strong> + 一条<strong>可能挂起等待</strong>的路径。
+书上说的"kmap 可能阻塞"，机制就在这里。</p>
+</blockquote>
+<h4>5. 使用规则（栈式 + 逆序 + 传返回值）</h4>
+<pre class="code" data-label="C"><code class="c">/* ✅ 现代写法（v5.11+ 推荐） */
+void *vaddr = kmap_local_page(page);
+memcpy(vaddr, src, PAGE_SIZE);
+kunmap_local(vaddr);                 /* 传的是 kmap 的返回值 */
+
+/* 需要映射两页时：严格嵌套，逆序释放 */
+void *v1 = kmap_local_page(page1);
+void *v2 = kmap_local_page(page2);
+memcpy(v1, v2, PAGE_SIZE);
+kunmap_local(v2);                    /* 后映射的先释放 */
+kunmap_local(v1);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>违反后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>必须逆序 unmap</strong>（栈式管理）</td>
+<td>"Unmapping addr1 before addr2 is invalid and causes <strong>malfunction</strong>"（源码原话）</td>
+</tr>
+<tr>
+<td><strong><code class="c">kunmap_local/atomic</code> 传返回值，不是 page</strong></td>
+<td>源码专门提醒："the <code class="c">kunmap_atomic()</code> call takes the <strong>result of</strong> the <code class="c">kmap_atomic()</code> call, <strong>not the argument</strong>"</td>
+</tr>
+<tr>
+<td><strong>映射指针不能传给别人</strong>（线程/下半部/别的结构体长期持有）</td>
+<td><code class="c">kmap_local_page</code> 的映射<strong>只在调用者上下文有效</strong></td>
+</tr>
+<tr>
+<td><strong>映射期间不能睡眠</strong>（<code class="c">kmap_local_page</code> 虽不禁止，但语义上是临时映射）</td>
+<td>睡眠期间该槽被抢占者复用 → 地址失效</td>
+</tr>
+<tr>
+<td><strong>映射深度 ≤ <code class="c">KM_MAX_IDX</code>（16）</strong></td>
+<td>超过就是 BUG（<code class="c">CONFIG_DEBUG_KMAP_LOCAL</code> 用 guard page 帮你抓）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>6. 谁能拿到 HIGHMEM 页</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分配标志</th>
+<th>会从 HIGHMEM 取页吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">GFP_KERNEL</code></td>
+<td>❌ <strong>不会</strong> —— 内核自身数据结构要能直接寻址</td>
+</tr>
+<tr>
+<td><code class="c">__GFP_HIGHMEM</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">GFP_HIGHUSER</code> / <code class="c">GFP_HIGHUSER_MOVABLE</code></td>
+<td>✅ —— <strong>用户态页</strong>才是 HIGHMEM 的主要客户（页缓存、匿名页）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>推论</strong>：高端内存<strong>不是给内核数据结构用的</strong>，是给<strong>用户态页和页缓存</strong>用的。
+内核代码里几乎只有在<strong>处理用户页内容</strong>（页缓存读写、clear_page、copy_page、加解密等）
+时才会碰到 highmem 页，于是才需要 <code class="c">kmap_local_page()</code> 临时映射一下。
+这也解释了为什么 <code class="c">highmem.h</code> 里那一大堆 <code class="c">*_user_highpage</code> / <code class="c">copy_highpage</code> 辅助函数
+内部清一色是 <code class="c">kmap_local_page()</code> + 操作 + <code class="c">kunmap_local()</code>。</p>
+</blockquote>
+<h4>7. 64 位 / <code class="c">CONFIG_HIGHMEM=n</code> 上是空操作</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th><code class="c">kmap()</code></th>
+<th><code class="c">kmap_local_page()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">CONFIG_HIGHMEM=n</code>（x86_64、arm64）</td>
+<td>直接返回 <code class="c">page_address(page)</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_HIGHMEM=y</code> 但页在 lowmem</td>
+<td>同样直接返回直接映射地址</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_HIGHMEM=y</code> 且页在 highmem</td>
+<td>走 PKMAP 槽（可能睡眠）</td>
+<td>走 fixmap 槽（栈式，无锁）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>源码原话："For systems with <strong>CONFIG_HIGHMEM=n</strong> and for pages in the <strong>low memory area</strong>
+this returns the virtual address of the <strong>direct kernel mapping</strong>."
+所以 <strong><code class="c">kmap_local_page()</code> 在 64 位上基本是零成本</strong>——可以放心把它当成
+"面向页的通用访问接口"来写可移植代码，代价为零。</p>
+</blockquote>
+<h4>8. 嵌入式 ARM32</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1886,19 +4410,34 @@ kunmap_atomic(vaddr);
 <tbody>
 <tr>
 <td><strong>小 RAM SoC</strong></td>
-<td>可能 <strong>全 LOWMEM</strong></td>
+<td>可能 <strong>全 LOWMEM</strong>（闪存/内存都小，直接映射窗口够用）</td>
 </tr>
 <tr>
-<td><strong>&gt;896MB 物理 @ 32-bit kernel</strong></td>
-<td>驱动 <strong>DMA / 帧缓冲</strong> 在 HIGHMEM — <strong>必须 kmap_atomic 短访问</strong></td>
+<td><strong>&gt; 直接映射窗口的物理 @ 32-bit kernel</strong></td>
+<td>驱动 <strong>DMA / 帧缓冲 / 大块用户缓冲</strong> 落在 HIGHMEM — 访问前必须 <code class="c">kmap_local_page()</code>，<strong>访问窗口要短</strong></td>
 </tr>
 <tr>
 <td><strong>推荐</strong></td>
-<td>新设计用 <strong>64-bit kernel</strong> 避 HIGHMEM</td>
+<td>新设计直接上 <strong>arm64 / 64 位内核</strong>，HIGHMEM 整套机制用不上（arm64 Kconfig 无此项）</td>
+</tr>
+<tr>
+<td><strong>已存在的 32 位代码</strong></td>
+<td>批量把 <code class="c">kmap_atomic()</code> 改成 <code class="c">kmap_local_page()</code> —— 语义更清楚、开销更低，且<strong>不再依赖"关抢占"这个副作用</strong></td>
 </tr>
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> 现代 <strong>x86-64 / arm64 交易服务器</strong> 几乎 <strong>碰不到 HIGHMEM</strong> — 但 <strong><code class="c">kmap_atomic</code> 思想</strong> 同构于 <strong>「短临界区访问临时缓冲」</strong>。用户态等价：<strong>mmap 大池 + 指针</strong> 即可；内核 HIGHMEM 是 <strong>VA 不够</strong> 时的 <strong>历史包袱</strong>。</p>
+<blockquote>
+<p><strong>HFT 补充（把 HIGHMEM 的思想提炼出来）</strong>：
+① HIGHMEM 的教训是 <strong>"地址空间不够 → 引入映射间接层 → 每次访问多一次映射/解映射 + TLB 失效"</strong>。
+用户态大内存方案（mmap 巨型池、hugetlb、DAX）本质是<strong>反过来做</strong>：
+一次性建立映射并<strong>长期持有</strong>，把映射成本<strong>摊销到零</strong>；
+② <code class="c">kunmap_local()</code> 要<strong>逆序</strong>释放这个约束，和 <strong>栈式/arena 分配器</strong>（12.8 的 alloca 类比、
+<a href="#s-12-6">12.6 vmalloc</a> 的 vmap 栈）是同一种"栈式资源管理"思维；
+③ 最实际的迁移建议：手上有 32 位内核驱动代码在做 <code class="c">kmap_atomic</code> 时，
+换成 <code class="c">kmap_local_page()</code>，因为前者在 <strong>PREEMPT_RT 上会关迁移与抢占</strong>——
+在低抖动场景下，这等于<strong>无谓地牺牲调度自由度</strong>。</p>
+</blockquote>
 <p>→ <a href="../../06-linux-mm/html/chapter-09.html#ch-9">06 Gorman Ch9 高端内存</a> · <a href="#s-12-3">Ch 12.3 Zones</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -1906,11 +4445,122 @@ kunmap_atomic(vaddr);
 <details>
 <summary>答案</summary>
 <p>kmap：可睡眠、用全局锁保护 fixmap 槽、可能阻塞。kmap_atomic：不可睡眠、per-CPU fixmap 槽、无需锁、极快。高频场景用 kmap_atomic（如网络包处理中映射 HIGHMEM 页到内核地址）。x86_64 没有 HIGHMEM，这两个函数是空操作（直接返回 page_address）。</p>
+<blockquote>
+<p><strong>按 v6.6 修订</strong>：三处需要更新。
+① <strong><code class="c">kmap_atomic()</code> 已废弃</strong>（<code class="c">include/linux/highmem.h:146</code> 正文标题就写着 "Deprecated!"，
+"Do not use in new code. Use <strong><code class="c">kmap_local_page()</code></strong> instead"）。
+它现在只是 <code class="c">kmap_local_page()</code> + <code class="c">pagefault_disable()</code> 的包装。
+② <strong>"用全局锁保护 fixmap 槽"说错了窗口</strong>：<code class="c">kmap()</code> 用的是 <strong>PKMAP 区</strong>
+（<code class="c">LAST_PKMAP</code> 个全局槽，x86 PAE 下 512，非 PAE 下 1024），
+而临时映射用的是 <strong>fixmap 的 FIX_KMAP 区</strong>（<code class="c">KM_MAX_IDX × NR_CPUS</code> 个 per-CPU 槽，KM_MAX_IDX=16）。
+两个区域、两套机制，不能混说。
+③ "x86_64 上是空操作"是对的，但<strong>建议照写 <code class="c">kmap_local_page()</code></strong>——
+源码保证 <code class="c">CONFIG_HIGHMEM=n</code> 或 lowmem 页时直接返回直接映射地址，<strong>零成本</strong>，
+换来的是同一份代码在 32 位上也能编译通过。</p>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> 为什么 x86_64 不需要高端内存？</p>
 <details>
 <summary>答案</summary>
 <p>x86_64 有 48 位虚拟地址空间（256TB），而物理内存通常 &lt; 256TB。内核直接映射区（PAGE_OFFSET 开始）可以覆盖所有物理内存，不需要临时映射。高端内存是 32 位系统的限制：32 位内核只有 896MB 直接映射区，超过部分需要 HIGHMEM 机制。</p>
+<blockquote>
+<p><strong>按 v6.6 补充</strong>：这条可以直接用 Kconfig 坐实——
+<code class="c">arch/x86/Kconfig:1444</code> 的 <code class="c">config HIGHMEM</code> 写着 <code class="c">depends on X86_32</code>，
+所以 <strong>x86_64 的配置里这个符号根本不存在</strong>，
+<code class="c">mmzone.h:747</code> 的 <code class="c">ZONE_HIGHMEM</code> 也就被 <code class="c">#ifdef CONFIG_HIGHMEM</code> 编译掉。
+<strong>arm64 同样没有</strong>（<code class="c">arch/arm64/Kconfig</code> 全文无 HIGHMEM 条目）。
+所以真正的结论是：<strong>v6.6 上 HIGHMEM 只存在于 32 位架构（x86_32、ARM32 等）</strong>。</p>
+</blockquote>
+</details>
+<p><strong>Q3.</strong> <code class="c">kmap_local_page()</code> 返回的指针，能不能存进数据结构、等下一个中断/下半部再用？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不能。</strong> v6.6 <code class="c">include/linux/highmem.h:88</code> 的注释逐字：
+"Contrary to <code class="c">kmap()</code> mappings the mapping is <strong>only valid in the context of the caller</strong>
+and <strong>cannot be handed to other contexts</strong>."</p>
+<p>对比：<code class="c">kmap()</code> 的映射是 <strong>PKMAP 区的固定槽位</strong>，注释说 "The returned virtual address is
+<strong>globally visible</strong> and valid up to the point where it is unmapped via <code class="c">kunmap()</code>.
+The pointer <strong>can be handed to other contexts</strong>."——<strong>只有 <code class="c">kmap()</code> 的指针能跨界传递</strong>，
+代价是它可能睡眠（槽位耗尽时阻塞）且必须显式 <code class="c">kunmap()</code>。</p>
+<p>另外两个配套约束：
+① <strong>栈式管理</strong>：多个映射必须<strong>逆序</strong>释放，先 <code class="c">addr1</code> 后 <code class="c">addr2</code> 映射，就必须先 <code class="c">kunmap_local(addr2)</code>；
+② <strong>释放传返回值</strong>：<code class="c">kunmap_local(addr)</code> 的参数是 <code class="c">kmap_local_page()</code> 的<strong>返回值</strong>，不是 page 指针。</p>
+</details>
+<p><strong>Q4.</strong> <code class="c">kmap()</code> 在什么情况下会睡眠？内核是怎么处理的？</p>
+<details>
+<summary>答案</summary>
+<p>只发生在 <strong>32 位 + <code class="c">CONFIG_HIGHMEM=y</code> + 要映射的页真在 highmem</strong> 时，
+且 <strong>PKMAP 槽位被占满</strong>。路径在 <code class="c">mm/highmem.c</code> 的 <code class="c">map_new_virtual()</code>：</p>
+<ol>
+<li>线性扫描 <code class="c">pkmap_count[LAST_PKMAP]</code> 找值为 <strong>0</strong> 的槽；</li>
+<li>扫到 <code class="c">nr == 0</code>（绕回原点）时触发 <code class="c">flush_all_zero_pkmaps()</code>——
+   把所有 <code class="c">count == 1</code>（"无用户但映射过、TLB 里可能有残留"）的槽清 PTE，
+   然后 <code class="c">flush_tlb_kernel_range(PKMAP_ADDR(0), PKMAP_ADDR(LAST_PKMAP))</code>，再把这些槽的计数归 0；</li>
+<li>仍找不到 → <code class="c">DECLARE_WAITQUEUE</code> + <code class="c">__set_current_state(TASK_UNINTERRUPTIBLE)</code> +
+   <code class="c">unlock_kmap()</code> + <code class="c">schedule()</code>，<strong>睡在 <code class="c">pkmap_map_wait</code> 上等别人 <code class="c">kunmap()</code></strong>；</li>
+<li>醒来后先 <code class="c">if (page_address(page))</code> 检查（可能别人已经替你映射好了），否则 <code class="c">goto start</code> 重来。</li>
+</ol>
+<p>计数语义（<code class="c">mm/highmem.c:44-50</code> 原文）：<strong>0</strong>=未映射且 flush 过（可用）；
+<strong>1</strong>=无用户但自上次 flush 起映射过（<strong>不能直接用</strong>）；<strong>n</strong>=有 n-1 个用户。
+整条路径受<strong>全局自旋锁 <code class="c">kmap_lock</code></strong> 保护——这就是"kmap 慢且可能睡眠"的机制全貌。</p>
+</details>
+<p><strong>Q5.</strong> 为什么 <code class="c">kmap_atomic()</code> 被废弃？它和 <code class="c">kmap_local_page()</code> 到底差在哪？</p>
+<details>
+<summary>答案</summary>
+<p>源码注释（<code class="c">highmem.h:146-149</code>）说它是
+"a <strong>wrapper around kmap_local_page()</strong> which also <strong>disables pagefaults</strong> and,
+depending on <strong>PREEMPT_RT</strong> configuration, also CPU migration and preemption"。
+差异只有"副作用"这一层：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">kmap_local_page()</code></th>
+<th><code class="c">kmap_atomic()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>映射本体</td>
+<td>同一个（fixmap 栈槽）</td>
+<td>同一个</td>
+</tr>
+<tr>
+<td>关页错误</td>
+<td>❌</td>
+<td>✅ <code class="c">pagefault_disable()</code></td>
+</tr>
+<tr>
+<td>关迁移/抢占</td>
+<td>❌</td>
+<td><strong>只在 PREEMPT_RT 上</strong> ✅</td>
+</tr>
+</tbody>
+</table></div>
+<p>被废弃的理由正是这层"副作用的不确定性"：<strong>同一个 API 在不同配置下语义不同</strong>，
+于是调用者要么白白付出关 pagefault 的代价，要么（在非 RT 上）<strong>误以为</strong>自己拿到了"原子上下文"。
+源码明确写："users should <strong>not count on</strong> the latter two side effects"。</p>
+<p>对低延迟/RT 场景尤其重要：在 RT 内核上 <code class="c">kmap_atomic()</code> 会<strong>关迁移与抢占</strong>，
+等于无谓地牺牲调度自由度；换成 <code class="c">kmap_local_page()</code> 就没有这个开销。
+迁移时要检查：是否曾<strong>依赖</strong> <code class="c">kmap_atomic</code> 期间"不会被抢占"——如果依赖了，那是个 bug，要显式处理。</p>
+</details>
+<p><strong>Q6.</strong> 为什么内核自己的数据结构几乎不会分配到 HIGHMEM？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <strong>gfp 标志决定了 zone</strong>：只有带 <strong><code class="c">__GFP_HIGHMEM</code></strong> 的请求才会从 <code class="c">ZONE_HIGHMEM</code> 取页
+（用户态相关组合是 <code class="c">GFP_HIGHUSER</code> / <code class="c">GFP_HIGHUSER_MOVABLE</code>）。
+<strong><code class="c">GFP_KERNEL</code> 不含 <code class="c">__GFP_HIGHMEM</code></strong>，所以内核自身的数据结构
+（<code class="c">task_struct</code>、<code class="c">inode</code>、<code class="c">sk_buff</code> 等）<strong>永远落在可直接寻址的 lowmem</strong>。</p>
+<p>这是设计上的必然：内核代码访问自己的数据结构时<strong>必须</strong>能直接解引用，
+不可能每次访问都 kmap 一次。于是 HIGHMEM 的客户只能是<strong>"不需要内核经常看内容"的页</strong>——
+主要是<strong>用户态匿名页与页缓存</strong>。所以你在内核里看到 <code class="c">kmap_local_page()</code> 的地方，
+几乎都在<strong>处理用户页内容</strong>的路径上：<code class="c">clear_user_highpage()</code>、<code class="c">copy_highpage()</code>、
+页缓存读写、加解密等——<code class="c">highmem.h</code> 里那一大族 <code class="c">*_highpage</code> 辅助函数内部
+清一色是 <code class="c">kmap_local_page()</code> + 操作 + <code class="c">kunmap_local()</code>。</p>
+<blockquote>
+<p>反过来也解释了 <strong><code class="c">CONFIG_HIGHMEM=n</code> 时这些函数就是普通的 <code class="c">clear_page</code>/<code class="c">copy_page</code></strong>
+（源码：<code class="c">/* when CONFIG_HIGHMEM is not set these will be plain clear/copy_page */</code>）。</p>
+</blockquote>
 </details>
 </details>
 <hr />
@@ -1918,6 +4568,11 @@ kunmap_atomic(vaddr);
       <section class="section" id="s-12-10">
         <div class="sec-head"><div class="sec-no">12.10</div><h2>section-12.10-每个-CPU-的分配</h2></div>
 <p>SMP 下 <strong>全局变量 + 锁</strong> 保护计数器 → <strong>缓存行 bouncing</strong> — <strong>per-CPU 数据</strong> 给 <strong>每个 CPU 一份副本</strong>，本核 <strong>通常无锁写</strong>。</p>
+<blockquote>
+<p><strong>版本前提</strong>：本节基于 <strong>v6.6 源码实证</strong>
+（<code class="c">include/linux/percpu.h</code>、<code class="c">include/linux/percpu-defs.h</code>、<code class="c">include/linux/percpu_counter.h</code>、
+<code class="c">arch/x86/include/asm/percpu.h</code>、<code class="c">mm/percpu.c</code>、<code class="c">lib/percpu_counter.c</code>）。</p>
+</blockquote>
 <h4>动机</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1933,25 +4588,116 @@ kunmap_atomic(vaddr);
 </tr>
 <tr>
 <td><strong>锁竞争</strong></td>
-<td>本 CPU <strong>只写 <code class="c">__get_cpu_var(x)</code></strong></td>
+<td>本 CPU <strong>只写自己那份</strong></td>
 </tr>
 <tr>
 <td><strong>false sharing</strong></td>
 <td>每副本 <strong>独立 cache line</strong>（<code class="c">____cacheline_aligned_in_smp</code>）</td>
 </tr>
+<tr>
+<td><strong>cache line bouncing</strong></td>
+<td>见下图</td>
+</tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">传统:
-  CPU0 ──┐
-  CPU1 ──┼──► [ global counter ]  ← 同一 cache line 乒乓
-  CPU2 ──┘
-
-per-CPU:
-  CPU0 ──► counter[0]
-  CPU1 ──► counter[1]
-  CPU2 ──► counter[2]
+<pre class="code" data-label="code"><code class="c">传统:                                  per-CPU:
+  CPU0 ──┐                               CPU0 ──► counter[0]   （自己的 cache line）
+  CPU1 ──┼──► [ global counter ]          CPU1 ──► counter[1]
+  CPU2 ──┘     ← 同一 cache line 乒乓      CPU2 ──► counter[2]
+  每次写：先独占该行（RFO），把其他核的副本作废
+  代价：~100 个时钟周期的缓存一致性流量，且随核数恶化
 </code></pre>
-<h4>接口（2.6+ 概念）</h4>
+<h4>⭐ 三代访问原语（v6.6 实证，别再用 <code class="c">__get_cpu_var</code>）</h4>
+<p><code class="c">include/linux/percpu-defs.h</code> 里其实是<strong>三个族</strong>，语义差别很关键：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>族</th>
+<th>抢占/中断保护</th>
+<th>定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">raw_cpu_read/write/add/...</code></strong></td>
+<td><strong>完全不检查</strong></td>
+<td>注释直说"do not want to do any checks for preemptions… <strong>Unless strictly necessary, always use [__]this_cpu_*() instead</strong>"</td>
+</tr>
+<tr>
+<td><strong><code class="c">__this_cpu_*</code></strong></td>
+<td><strong>断言抢占已关</strong>（<code class="c">CONFIG_DEBUG_PREEMPT</code> 下会报）</td>
+<td>用于"我确定已经 <code class="c">preempt_disable()</code> 了"的地方</td>
+</tr>
+<tr>
+<td><strong><code class="c">this_cpu_*</code></strong></td>
+<td>✅ <strong>隐含抢占/中断保护</strong></td>
+<td>注释："Operations with <strong>implied preemption/interrupt protection</strong>. These operations can be used <strong>without worrying about preemption or interrupt</strong>" —— <strong>新代码默认用它</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>可用操作（<code class="c">percpu-defs.h:487</code> 逐字列出）：</p>
+<pre class="code" data-label="code"><code class="c">this_cpu_read / write / add / and / or / add_return / sub
+this_cpu_xchg / cmpxchg / try_cmpxchg / cmpxchg_double
+this_cpu_inc / dec / inc_return / dec_return
+</code></pre>
+<blockquote>
+<p>⚠️ <strong><code class="c">__get_cpu_var()</code> 是这一族的"老写法"</strong>（LKD 时代的接口）。
+现代代码用 <strong><code class="c">this_cpu_ptr()</code> / <code class="c">this_cpu_*()</code></strong>，<code class="c">get_cpu_var()/put_cpu_var()</code> 仍然可用
+（实现就是 <code class="c">preempt_disable()</code> + <code class="c">this_cpu_ptr()</code>）。
+另外 <code class="c">DEFINE_PER_CPU(type, name)</code> 有若干变体，用途各不相同：</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变体</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">DEFINE_PER_CPU(type, name)</code></td>
+<td>普通静态 per-CPU 变量</td>
+</tr>
+<tr>
+<td><code class="c">DEFINE_PER_CPU_SHARED_ALIGNED</code></td>
+<td>与 SMP 缓存行边界对齐（<strong>防 false sharing</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">DEFINE_PER_CPU_ALIGNED</code></td>
+<td>按 <code class="c">L1_CACHE_BYTES</code>/架构对齐要求对齐</td>
+</tr>
+<tr>
+<td><code class="c">DEFINE_PER_CPU_PAGE_ALIGNED</code></td>
+<td>页对齐</td>
+</tr>
+<tr>
+<td><code class="c">DEFINE_PER_CPU_READ_MOSTLY</code></td>
+<td>放 <code class="c">.data..read_mostly</code> 段（<strong>只读热数据</strong>避免和写热数据共享 cache line）</td>
+</tr>
+<tr>
+<td><code class="c">DEFINE_PER_CPU_FIRST</code></td>
+<td>排在该段最前面（给 <code class="c">current_task</code> 这类"必须极快"的变量）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>x86 上为什么 <code class="c">this_cpu_*</code> 是一条指令</h4>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/percpu.h:32 */
+#define __my_cpu_offset     this_cpu_read(this_cpu_off)
+
+/* :31 —— 用段前缀编译 percpu 变量访问 */
+#define __percpu_prefix     &quot;%%&quot;__stringify(__percpu_seg)&quot;:&quot;     /* &quot;%%fs:&quot; */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">C 代码：  this_cpu_add(counter, 1);
+汇编：    addq $1, %fs:counter          ← 一条指令，本 CPU 内原子
+</code></pre>
+<blockquote>
+<p><strong>关键点</strong>：x86 把 <strong>本 CPU 的 percpu 基址</strong> 放在 <code class="c">this_cpu_off</code>（一个 per-CPU 变量）里，
+变量访问靠 <strong><code class="c">%fs</code> 段前缀</strong> 直接寻址，所以 <strong>percpu 访问 = 一条普通指令，无锁、无原子前缀</strong>。
+代价是它<strong>只对"同一 CPU 上"的其他操作排他</strong>（源码注释：
+"guarantee exclusivity of access for other operations on the <strong>same</strong> processor"）——
+<strong>跨 CPU 的次序与可见性它一概不管</strong>。</p>
+</blockquote>
+<h4>接口</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1962,38 +4708,161 @@ per-CPU:
 <tbody>
 <tr>
 <td><strong><code class="c">DEFINE_PER_CPU(type, name)</code></strong></td>
-<td><strong>静态</strong> per-CPU 变量</td>
+<td><strong>静态</strong> per-CPU 变量（编译期放进 <code class="c">.data..percpu</code> 段）</td>
 </tr>
 <tr>
-<td><strong><code class="c">DECLARE_PER_CPU</code> / <code class="c">per_cpu(var, cpu)</code></strong></td>
-<td>声明 / 指定 CPU 访问</td>
+<td><strong><code class="c">per_cpu(var, cpu)</code></strong></td>
+<td>访问<strong>指定 CPU</strong> 的静态变量实例</td>
 </tr>
 <tr>
-<td><strong><code class="c">__get_cpu_var(name)</code></strong></td>
-<td><strong>当前 CPU</strong> 的实例</td>
+<td><strong><code class="c">this_cpu_ptr(ptr)</code> / <code class="c">per_cpu_ptr(ptr, cpu)</code></strong></td>
+<td>把 <code class="c">__percpu</code> 指针转成<strong>普通可解引用</strong>指针</td>
 </tr>
 <tr>
-<td><strong><code class="c">get_cpu_var</code> / <code class="c">put_cpu_var</code></strong></td>
-<td><strong>关抢占</strong> 期间安全访问</td>
+<td><strong><code class="c">get_cpu_ptr(ptr)</code> / <code class="c">put_cpu_ptr(ptr)</code></strong></td>
+<td><code class="c">preempt_disable()</code> + <code class="c">this_cpu_ptr()</code>，用于<strong>遍历期间不能被迁移</strong>的场景</td>
 </tr>
 <tr>
 <td><strong><code class="c">alloc_percpu(type)</code></strong></td>
-<td><strong>动态</strong> 分配 per-CPU 对象</td>
+<td><strong>动态</strong> 分配 per-CPU 对象（<strong>可能睡眠</strong>）</td>
 </tr>
 <tr>
-<td><strong><code class="c">free_percpu</code></strong></td>
+<td><strong><code class="c">alloc_percpu_gfp(type, gfp)</code></strong></td>
+<td>指定 gfp</td>
+</tr>
+<tr>
+<td><strong><code class="c">free_percpu(ptr)</code></strong></td>
 <td>释放</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">DEFINE_PER_CPU(unsigned long, irq_count);
+<pre class="code" data-label="C"><code class="c">/* 静态 */
+DEFINE_PER_CPU(unsigned long, irq_count);
 
 void inc_irq_count(void)
 {
-    __get_cpu_var(irq_count)++;
-    /* 读其他 CPU: per_cpu(irq_count, cpu) — 需 RCU/preempt 规则 */
+    this_cpu_inc(irq_count);        /* 一条指令，本 CPU 内原子 */
 }
+/* 读别的 CPU：per_cpu(irq_count, cpu)，但要保证那个 CPU 在线且值不会瞬变 */
+
+/* 动态 */
+struct stats __percpu *s = alloc_percpu(struct stats);
+struct stats *local = get_cpu_ptr(s);   /* preempt_disable + 取本核指针 */
+local-&gt;packets++;
+put_cpu_ptr(s);                         /* preempt_enable */
+free_percpu(s);
 </code></pre>
+<h4>分配器内部：chunk / unit / slot（v6.6 <code class="c">mm/percpu.c</code> 实证）</h4>
+<pre class="code" data-label="code"><code class="c">pcpu_alloc() 管的三层结构
+
+  ┌─ first chunk（启动时建好，含静态 DEFINE_PER_CPU 全部内容）
+  │     ├─ static area：内核 + 模块的 per-CPU 变量
+  │     ├─ reserved area：PERCPU_MODULE_RESERVE（8KB，给模块用）
+  │     └─ dynamic area：PERCPU_DYNAMIC_RESERVE（64 位 28KB）
+  │
+  ├─ reserved chunk（可选，存在时专供 reserved 请求 —— slab 起来之前的关键分配）
+  │
+  └─ dynamic chunks（后续按需新建，vmalloc 区 backing）
+        每个 chunk = nr_cpu_ids 个 unit（每 CPU 一份）+ 一张位图管槽位
+</code></pre>
+<p><strong>硬限制</strong>（<code class="c">mm/percpu.c:1752</code> 逐字）：</p>
+<pre class="code" data-label="C"><code class="c">    if (unlikely(!size || size &gt; PCPU_MIN_UNIT_SIZE || align &gt; PAGE_SIZE ||
+             !is_power_of_2(align))) {
+        WARN(do_warn, &quot;illegal size (%zu) or align (%zu) for percpu allocation\n&quot;,
+             size, align);
+        return NULL;
+    }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>常量（<code class="c">include/linux/percpu.h</code>）</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">PCPU_MIN_UNIT_SIZE</code></strong></td>
+<td><code class="c">PFN_ALIGN(32 &lt;&lt; 10)</code> = <strong>32KB</strong></td>
+<td>最小 unit 大小，<strong>同时也是单次 percpu 分配的</strong>上限</td>
+</tr>
+<tr>
+<td><strong><code class="c">PCPU_MIN_ALLOC_SIZE</code></strong></td>
+<td><code class="c">1 &lt;&lt; PCPU_MIN_ALLOC_SHIFT</code> = <strong>4 B</strong></td>
+<td>最小分配粒度（内部碎片 ≤ 3 字节）</td>
+</tr>
+<tr>
+<td><strong><code class="c">PERCPU_MODULE_RESERVE</code></strong></td>
+<td><strong>8 KB</strong>（<code class="c">CONFIG_MODULES</code>），否则 0</td>
+<td>预留给模块的静态 per-CPU 变量</td>
+</tr>
+<tr>
+<td><strong><code class="c">PERCPU_DYNAMIC_RESERVE</code></strong></td>
+<td><strong>28 KB</strong>（64 位）/ 20 KB（32 位）</td>
+<td>挂在 first chunk 上的动态区</td>
+</tr>
+<tr>
+<td><strong><code class="c">PERCPU_DYNAMIC_EARLY_SIZE</code></strong></td>
+<td><strong>20 KB</strong></td>
+<td>slab 初始化<strong>之前</strong>要保证能供应的动态量</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <strong>一处很容易被忽略的联动</strong>（<code class="c">percpu.h:36-40</code> 实证）：
+```c</p>
+<h1>ifdef CONFIG_RANDOM_KMALLOC_CACHES</h1>
+<h1>define PERCPU_DYNAMIC_SIZE_SHIFT      12      /<em> 不是 10！ </em>/</h1>
+<h1>else</h1>
+<h1>define PERCPU_DYNAMIC_SIZE_SHIFT      10</h1>
+<h1>endif</h1>
+<p><code class="c">``
+打开 12.7 讲的</code>CONFIG_RANDOM_KMALLOC_CACHES<code class="c">（v6.6 新增的反堆喷特性）后，</code>PERCPU_DYNAMIC_RESERVE<code class="c">从 **28KB 变成 112KB**（</code>28 &lt;&lt; 12`）——
+<strong>因为每 CPU 要维护的 kmalloc cache 状态变多了</strong>。
+这是个"安全特性 → 静态内存占用"的连锁反应，做内存预算时要算进去。</p>
+</blockquote>
+<h4>⚠️ <code class="c">alloc_percpu()</code> 会睡眠 —— 但有例外</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/percpu.c:1736 —— gfp 白名单与 atomic 判定（逐字） */
+    gfp = current_gfp_context(gfp);
+    pcpu_gfp = gfp &amp; (GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN);
+    is_atomic = (gfp &amp; GFP_KERNEL) != GFP_KERNEL;
+
+/* :1765 —— 拿的是 mutex，不是 spinlock */
+    if (gfp &amp; __GFP_NOFAIL) {
+        mutex_lock(&amp;pcpu_alloc_mutex);
+    } else if (mutex_lock_killable(&amp;pcpu_alloc_mutex)) { ... }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">pcpu_alloc_mutex</code> 是 mutex</strong></td>
+<td><strong><code class="c">alloc_percpu()</code> 可能睡眠</strong> → <strong>不能在中断、持 spinlock 时调用</strong></td>
+</tr>
+<tr>
+<td><strong>gfp 只有三个标志被接受</strong>（<code class="c">GFP_KERNEL</code>/<code class="c">__GFP_NORETRY</code>/<code class="c">__GFP_NOWARN</code>）</td>
+<td>其他标志<strong>被静默过滤掉</strong>，别指望传 <code class="c">GFP_ATOMIC</code> 能改变行为</td>
+</tr>
+<tr>
+<td><code class="c">is_atomic = (gfp &amp; GFP_KERNEL) != GFP_KERNEL</code></td>
+<td>传了"不完整 GFP_KERNEL"的请求被视为 atomic → <strong>此时不能建新 chunk，空间不够就直接失败</strong></td>
+</tr>
+<tr>
+<td><strong>reserved chunk 的存在理由</strong></td>
+<td>源码注释："Percpu allocator can serve percpu allocations <strong>before slab is initialized</strong> which allows <strong>slab to depend on the percpu allocator</strong>" —— 这是个<strong>启动期的先有鸡还是先有蛋</strong>问题的解法</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>实践结论</strong>：<code class="c">alloc_percpu()</code> 默认用在 <strong>初始化/热插拔路径</strong>（创建 netdev、挂载文件系统、加 CPU）；
+<strong>数据路径不要调用它</strong>。要避免"每 CPU 一份"的运行时分配，就在<strong>模块加载时</strong>一次分配好。</p>
+</blockquote>
 <h4>使用规则</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2004,12 +4873,24 @@ void inc_irq_count(void)
 </thead>
 <tbody>
 <tr>
-<td><strong>访问本 CPU 数据时禁止抢占迁移</strong>（或用 <code class="c">get_cpu_var</code>）</td>
-<td>否则 <strong>写到别核副本</strong></td>
+<td><strong>访问本 CPU 数据时禁止抢占迁移</strong>（或用 <code class="c">get_cpu_ptr</code> / <code class="c">this_cpu_*</code>）</td>
+<td>否则 <strong>读到/写到别核副本</strong>（RMW 尤其危险：并发在两核上各自加减）</td>
+</tr>
+<tr>
+<td><strong><code class="c">this_cpu_*</code> 只保证"本 CPU 内"排他</strong></td>
+<td>中断里也访问同一个 percpu 变量时，<strong>非 <code class="c">this_cpu_*</code> 的写法会被打断</strong></td>
 </tr>
 <tr>
 <td><strong>汇总全系统值</strong></td>
-<td>遍历 <strong><code class="c">for_each_possible_cpu</code></strong> — <strong>非热路径</strong></td>
+<td>遍历 <strong><code class="c">for_each_online_cpu</code></strong>（值存在）/ <strong><code class="c">for_each_possible_cpu</code></strong>（分配时），<strong>非热路径</strong>做</td>
+</tr>
+<tr>
+<td><strong>读别的 CPU 的值</strong></td>
+<td>是<strong>允许的但语义上近似</strong>：对方可能正在并发修改，需要额外的同步约定或 RCU</td>
+</tr>
+<tr>
+<td><strong>CPU 热插拔</strong></td>
+<td>变量在 <code class="c">possible</code> 的每 CPU 上都存在；<strong>下线 CPU 上的数据要显式汇总/迁移</strong></td>
 </tr>
 <tr>
 <td><strong>与 <code class="c">preempt_disable</code></strong></td>
@@ -2031,8 +4912,12 @@ void inc_irq_count(void)
 <td><strong><code class="c">softnet_data</code></strong> — 每核网络输入队列</td>
 </tr>
 <tr>
-<td><strong>Slab</strong></td>
-<td><strong>cpu partial slab list</strong></td>
+<td><strong>Slab（SLUB）</strong></td>
+<td><strong><code class="c">kmem_cache_cpu</code></strong>（见 <a href="#s-12-7">12.7</a>）：<code class="c">freelist</code>/<code class="c">tid</code>/<code class="c">partial</code></td>
+</tr>
+<tr>
+<td><strong>页分配器</strong></td>
+<td><strong><code class="c">per_cpu_pages</code></strong>（见 <a href="#s-12-4">12.4</a>）：order-0 无锁快路径</td>
 </tr>
 <tr>
 <td><strong>RCU</strong></td>
@@ -2044,7 +4929,41 @@ void inc_irq_count(void)
 </tr>
 </tbody>
 </table></div>
+<p><strong><code class="c">percpu_counter</code>：per-CPU 思想的"成品库"</strong>（v6.6 <code class="c">lib/percpu_counter.c</code> 实证）</p>
+<pre class="code" data-label="C"><code class="c">struct percpu_counter {
+    raw_spinlock_t lock;
+    s64 count;                 /* 中枢值：只在批量结算时动 */
+    s32 __percpu *counters;    /* 每 CPU 一个 s32 增量 */
+};
+int percpu_counter_batch __read_mostly = 32;
+/* compute_batch_value(): percpu_counter_batch = max(32, nr*2);  热插拔时重算 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">写（热路径）：percpu_counter_add(fbc, 1)
+      └─ 只加本 CPU 的 s32；当 |本 CPU 增量| &gt;= batch 时，才持 lock 一次性结算进 count
+
+读（快，不准）：percpu_counter_read(fbc)      → 只读 count（忽略各 CPU 上的增量）
+读（慢，准确）：percpu_counter_sum(fbc)        → 遍历所有 CPU 累加（= __percpu_counter_sum）
+</code></pre>
+<blockquote>
+<p><strong>这是"per-CPU 权衡"的标准形态</strong>：<strong>写路径 O(1) 无锁</strong>（代价是读的值不精确），
+精度靠 <code class="c">batch = max(32, 在线 CPU 数 × 2)</code> 来界定——
+误差上界约 <strong><code class="c">batch × nr_cpus</code></strong>，需要准确值就付遍历代价。
+用户态设计<strong>每核计数器</strong>时可以直接照抄这个结构（每核累加 + 周期结算 + 阈值 flush）。</p>
+</blockquote>
 <p><strong>HFT：</strong> 用户态 <strong>每核一条 SPSC ring</strong>、<strong>thread-local 订单簿缓存</strong> = <strong>per-CPU 同构</strong>。避免 <strong><code class="c">std::atomic</code> 全局 hot counter</strong> — 用 <strong><code class="c">cpu_local</code></strong> 聚合。与内核一样：<strong>读总和慢路径做</strong>，<strong>写路径本核独占</strong>。</p>
+<blockquote>
+<p><strong>HFT 补充（四条可直接落地的）</strong>：
+① <strong>绑核是 per-CPU 的前提</strong>：per-CPU 依赖"同一段代码总在同一核上跑"。
+线程在核间漂移时，per-CPU 池会<strong>跨核产生伪共享与冷 cache</strong>——
+内核自己用 <code class="c">preempt_disable()</code>/<code class="c">get_cpu_ptr()</code> 保证这一点，用户态对应 <strong><code class="c">sched_setaffinity</code> 绑核</strong>；
+② <strong>RMW 是最大的坑</strong>：<code class="c">counter++</code> 在 per-CPU 上<strong>不是</strong>"不用管"，
+被抢占后恢复在另一核上，就会<strong>在两个副本上各加一次</strong>。用 <code class="c">this_cpu_*</code> 语义（或显式禁抢占）；
+③ <strong>读的代价要提前算</strong>：per-CPU 换来的是"写免费、读昂贵"。
+如果统计值需要<strong>每次决策前</strong>读准确总和（比如风控限额），per-CPU 反而更慢——
+这种情况用 <strong>单写者 + 周期快照</strong> 或直接上 <code class="c">atomic</code>；
+④ <strong>别在热路径 <code class="c">alloc_percpu()</code></strong>：它会<strong>睡眠</strong>（mutex）、且单笔上限 <strong>32KB</strong>。
+池子、ring、簿记结构一律在<strong>启动/建连阶段</strong>分配完。</p>
+</blockquote>
 <p>→ <a href="chapter-08.html#ch-8">Ch 8 softirq per-CPU</a> · <a href="chapter-06.html#ch-6">Ch 10 preempt_disable</a> · <a href="../../06-linux-mm/html/chapter-14.html#s-5">06 Gorman Slab per-CPU cache</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -2052,11 +4971,138 @@ void inc_irq_count(void)
 <details>
 <summary>答案</summary>
 <p>per-CPU 变量给每个 CPU 一份独立副本，本核读写自己的副本无需锁。统计时累加所有 CPU 副本。局限：1) 抢占关闭期间才能安全访问本核副本（否则被迁移到其他核）；2) 累加需要遍历所有 CPU；3) 不能用于需要全局一致性的场景。网络收包计数器用 per-CPU，完美匹配单核收包模型。</p>
+<blockquote>
+<p><strong>按 v6.6 补充</strong>：三点修正。
+① "无需锁"的准确说法是 <strong><code class="c">this_cpu_*</code> 系列提供"本 CPU 内"排他</strong>
+（源码注释：exclusivity "on the <strong>same</strong> processor"），
+靠 x86 上的 <code class="c">%fs</code> 段前缀编译成<strong>单条指令</strong>实现，<strong>跨 CPU 一致性一概不管</strong>；
+② "抢占关闭期间才能安全访问"——如果只是<strong>读/写</strong>标量，被抢占到别核只是"取错副本"，
+但 <strong>RMW（如 <code class="c">counter++</code>）会导致两个副本各加一次</strong>，是真正的逻辑错误。
+<code class="c">this_cpu_*</code> 族自带"隐含抢占/中断保护"（<code class="c">percpu-defs.h:486</code> 注释），新代码应默认用它；
+③ 还有一条书上没提的局限：<strong><code class="c">alloc_percpu()</code> 会睡眠</strong>（<code class="c">pcpu_alloc_mutex</code> 是 mutex，
+<code class="c">mutex_lock_killable</code>），且<strong>单次分配上限 32KB</strong>（<code class="c">PCPU_MIN_UNIT_SIZE</code>）。</p>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> 缓存行 bouncing 是什么？per-CPU 如何解决？</p>
 <details>
 <summary>答案</summary>
 <p>多核频繁写同一全局变量（如计数器）→ 每个 CPU 的 L1 cache line 都要 invalidate → L2/L3 来回传递 cache line（bouncing）。per-CPU 给每个 CPU 独立计数器，本核写自己的 cache line 不影响其他核。只有读取总数时才汇总。这就是 <code class="c">/proc/stat</code> 的实现原理。</p>
+<blockquote>
+<p><strong>按 v6.6 补充：光有"每 CPU 一份"还不够，还要防 false sharing。</strong>
+如果 N 个 CPU 的副本<strong>挤在同一条 cache line 里</strong>（比如一个 8 字节的 <code class="c">long</code>，
+8 核的副本正好塞满 64 字节一行），那么"每核写自己的"<strong>依然会互相作废这条行</strong>——
+只是把"抢一个变量"变成了"抢一条 cache line"，<strong>bouncing 一点没少</strong>。
+所以内核提供了 <strong><code class="c">DEFINE_PER_CPU_SHARED_ALIGNED</code></strong> / <strong><code class="c">DEFINE_PER_CPU_ALIGNED</code></strong>
+强制每副本对齐到缓存行边界，以及 <a href="chapter-19.html#s-19-4"><code class="c">____cacheline_aligned_in_smp</code></a>
+用于动态结构体（12.4 的 <code class="c">per_cpu_pages</code>、12.7 的 <code class="c">kmem_cache_cpu</code> 都标了这个）。
+<strong>判据</strong>：副本大小 × CPU 数 是否超过一条 cache line——没超过就必须对齐。</p>
+</blockquote>
+</details>
+<p><strong>Q3.</strong> <code class="c">alloc_percpu()</code> 能在中断上下文调用吗？它能传 <code class="c">GFP_ATOMIC</code> 吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不能，两个都不行。</strong></p>
+<ol>
+<li><strong><code class="c">pcpu_alloc()</code> 拿的是 mutex</strong>（<code class="c">mm/percpu.c:1765</code>：<code class="c">mutex_lock_killable(&amp;pcpu_alloc_mutex)</code>，
+   <code class="c">__GFP_NOFAIL</code> 时退化为 <code class="c">mutex_lock</code>），<strong>会睡眠</strong>，因此不能在中断、softirq、持自旋锁时调用；</li>
+<li><strong>gfp 是白名单过滤的</strong>（<code class="c">:1736</code>）：<code class="c">pcpu_gfp = gfp &amp; (GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN)</code>——
+   传进去的其他标志（含 <code class="c">GFP_ATOMIC</code> 里的 <code class="c">__GFP_HIGH</code>/<code class="c">__GFP_KSWAPD_RECLAIM</code>）<strong>会被静默丢弃</strong>；</li>
+<li>反而有个"反向"效果：<code class="c">is_atomic = (gfp &amp; GFP_KERNEL) != GFP_KERNEL</code>——
+   只要你传的不是完整的 <code class="c">GFP_KERNEL</code>，就被判定为 <strong>atomic 请求</strong>，
+   此时<strong>不能新建 chunk、不能等待</strong>，空间不够就<strong>直接返回 NULL</strong>。</li>
+</ol>
+<p>实践结论：<code class="c">alloc_percpu()</code> 只在<strong>初始化 / 热插拔 / 加载模块</strong>这类可睡眠路径上用；
+数据路径上一律<strong>提前分配好</strong>，用 <code class="c">this_cpu_ptr()</code> / <code class="c">get_cpu_ptr()</code> 访问。
+另注单次分配上限 <strong><code class="c">PCPU_MIN_UNIT_SIZE</code> = 32KB</strong>。</p>
+</details>
+<p><strong>Q4.</strong> <code class="c">raw_cpu_*</code>、<code class="c">__this_cpu_*</code>、<code class="c">this_cpu_*</code> 三族有什么区别？该用哪个？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>族</th>
+<th>抢占/中断</th>
+<th>什么时候用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">raw_cpu_*</code></td>
+<td><strong>完全不检查</strong></td>
+<td>几乎不用。源码注释："do not want to do any checks for preemptions. <strong>Unless strictly necessary, always use [__]this_cpu_*() instead</strong>"</td>
+</tr>
+<tr>
+<td><code class="c">__this_cpu_*</code></td>
+<td><strong>断言抢占已关</strong>（<code class="c">__this_cpu_preempt_check("op")</code>，只在 <code class="c">CONFIG_DEBUG_PREEMPT</code> 下生效）</td>
+<td>你<strong>已经</strong> <code class="c">preempt_disable()</code> 了，想让 debug 配置帮你验证这个前提</td>
+</tr>
+<tr>
+<td><strong><code class="c">this_cpu_*</code></strong></td>
+<td>✅ <strong>隐含抢占/中断保护</strong></td>
+<td><strong>默认选择</strong>。注释："can be used <strong>without worrying about preemption or interrupt</strong>"</td>
+</tr>
+</tbody>
+</table></div>
+<p>三族共享同一套操作名（<code class="c">read/write/add/and/or/add_return/xchg/cmpxchg/cmpxchg_double/inc/dec</code>）。</p>
+<p>配套：
+- 取指针用 <strong><code class="c">this_cpu_ptr(ptr)</code></strong>；要"取到之后一直访问且不许被迁移"用 <strong><code class="c">get_cpu_ptr()</code>/<code class="c">put_cpu_ptr()</code></strong>（= <code class="c">preempt_disable()</code> + <code class="c">this_cpu_ptr()</code>）；
+- 访问<strong>别的</strong> CPU 的副本用 <strong><code class="c">per_cpu_ptr(ptr, cpu)</code></strong> / 静态变量的 <code class="c">per_cpu(var, cpu)</code>。</p>
+</details>
+<p><strong>Q5.</strong> <code class="c">percpu_counter</code> 是怎么在"写快"和"读准"之间取舍的？误差上界是多少？</p>
+<details>
+<summary>答案</summary>
+<p>结构（v6.6 <code class="c">include/linux/percpu_counter.h:22</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct percpu_counter {
+    raw_spinlock_t lock;
+    s64 count;              /* 中枢值 */
+    s32 __percpu *counters; /* 每 CPU 一个 s32 增量 */
+};
+</code></pre>
+<p><strong>写路径</strong>（<code class="c">percpu_counter_add()</code> → <code class="c">percpu_counter_add_batch(fbc, amount, percpu_counter_batch)</code>）：
+只加<strong>本 CPU 的 s32</strong>，<strong>不碰锁</strong>；只有当本 CPU 增量的绝对值 <strong>≥ batch</strong> 时，才持 <code class="c">lock</code>
+把增量一次性结算进 <code class="c">count</code> 并清零。</p>
+<p><strong>batch 值</strong>（<code class="c">lib/percpu_counter.c:221,228</code>）：<code class="c">percpu_counter_batch = max(32, num_online_cpus() * 2)</code>，
+且在 <strong>CPU 热插拔时重算</strong>（<code class="c">compute_batch_value()</code> 挂在 cpu hotplug 回调上）。</p>
+<p><strong>读路径两档</strong>：
+- <code class="c">percpu_counter_read()</code> — 只读 <code class="c">count</code>，<strong>快但不精确</strong>（忽略了各 CPU 上尚未结算的增量）；
+- <code class="c">percpu_counter_sum()</code> — 遍历所有 CPU 累加，<strong>准确但慢</strong>。</p>
+<p><strong>误差上界</strong>：每个 CPU 最多持有一个 &lt; batch 的未结算增量，
+所以总数误差 <strong>&lt; <code class="c">batch × nr_cpus</code></strong>，即 <strong>≈ <code class="c">max(32, 2×nr) × nr</code></strong>。
+例如 64 核：batch = 128，误差上界 ≈ 8192。</p>
+<blockquote>
+<p>用途上的推论：<code class="c">percpu_counter</code> 适合<strong>"阈值判断 + 偶尔精确结算"</strong>的场景
+（如 <code class="c">__percpu_counter_compare()</code> 判断是否超过水位：先用快读比，接近阈值才用 sum 精确算）；
+需要<strong>每次都读到精确值</strong>的场合（如风控硬限额），per-CPU 反而更慢——
+这时用单写者 + 原子变量更合适。</p>
+</blockquote>
+</details>
+<p><strong>Q6.</strong> 打开 <code class="c">CONFIG_RANDOM_KMALLOC_CACHES</code> 为什么会让 per-CPU 的静态内存预留涨 4 倍？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <code class="c">include/linux/percpu.h:36-40</code> 把 <code class="c">PERCPU_DYNAMIC_SIZE_SHIFT</code> 和这个配置绑在了一起：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef CONFIG_RANDOM_KMALLOC_CACHES
+#define PERCPU_DYNAMIC_SIZE_SHIFT      12
+#else
+#define PERCPU_DYNAMIC_SIZE_SHIFT      10
+#endif
+...
+#define PERCPU_DYNAMIC_EARLY_SIZE   (20 &lt;&lt; PERCPU_DYNAMIC_SIZE_SHIFT)
+#if BITS_PER_LONG &gt; 32
+#define PERCPU_DYNAMIC_RESERVE      (28 &lt;&lt; PERCPU_DYNAMIC_SIZE_SHIFT)   /* 64 位 */
+#else
+#define PERCPU_DYNAMIC_RESERVE      (20 &lt;&lt; PERCPU_DYNAMIC_SIZE_SHIFT)   /* 32 位 */
+#endif
+</code></pre>
+<p>于是 64 位内核上 <code class="c">PERCPU_DYNAMIC_RESERVE</code> 从 <strong>28KB（28&lt;&lt;10）变成 112KB（28&lt;&lt;12）</strong>。</p>
+<p><strong>为什么</strong>：这个配置（见 <a href="#s-12-7">12.7 §7</a>）为普通 kmalloc 建 <strong>15 份副本 cache</strong>，
+SLUB 的 <strong>per-CPU 状态</strong>（<code class="c">kmem_cache_cpu</code>）是按 cache 数量线性增长的，
+所以要给动态 percpu 分配<strong>预留更多空间</strong>，否则启动早期（slab 还没起来、只有 first chunk 可用）
+就会分配失败。</p>
+<p><strong>这是一条通用规律的体现</strong>：per-CPU 内存的静态开销 =
+<strong>"per-CPU 对象的种类数" × CPU 数</strong>。
+CPU 数越多、per-CPU 结构越多，<strong>启动期预留和后续 dynamic chunk 的开销越大</strong>——
+在核数很多（如 256 核）的机器上，这笔账必须算进内存预算。</p>
 </details>
 </details>
 <hr />
@@ -2064,6 +5110,12 @@ void inc_irq_count(void)
       <section class="section" id="s-12-11">
         <div class="sec-head"><div class="sec-no">12.11</div><h2>section-12.11-分配选型速查</h2></div>
 <p>内核分配 <strong>没有万能 malloc</strong> — 按 <strong>大小、连续性、上下文、性能</strong> 选型。本表作 <strong>Ch 12 总复习 + 驱动/HFT 决策树</strong>。</p>
+<blockquote>
+<p><strong>版本前提</strong>：所有分界数字与 API 行为均基于 <strong>v6.6 源码实证</strong>
+（<code class="c">mm/slab.h</code>、<code class="c">mm/util.c</code>、<code class="c">include/linux/{slab,gfp_types,sched/mm,highmem}.h</code>）。
+本页在书的基础上新增了三个 v6.6 上<strong>必须知道</strong>的现代工具：
+<strong><code class="c">kvmalloc()</code></strong>、<strong><code class="c">memalloc_*_save()</code> 作用域 API</strong>、<strong><code class="c">__GFP_NOFAIL</code> 的正确用法</strong>。</p>
+</blockquote>
 <h4>主决策表</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2095,6 +5147,11 @@ void inc_irq_count(void)
 <td>裸 <code class="c">kmalloc</code> 相同 size</td>
 </tr>
 <tr>
+<td><strong>大小不确定、可能很大</strong></td>
+<td>⭐ <strong><code class="c">kvmalloc</code> / <code class="c">kvzalloc</code> + <code class="c">kvfree</code></strong></td>
+<td>自己写"先试 kmalloc 再 vmalloc"的 if</td>
+</tr>
+<tr>
 <td><strong>大块、仅内核访问、非热点</strong></td>
 <td><strong><code class="c">vmalloc</code> / <code class="c">vzalloc</code></strong></td>
 <td>DMA 缓冲</td>
@@ -2106,21 +5163,84 @@ void inc_irq_count(void)
 </tr>
 <tr>
 <td><strong>每核私有、高频写</strong></td>
-<td><strong>per-CPU</strong></td>
+<td><strong>per-CPU</strong>（见 <a href="#s-12-10">12.10</a>）</td>
 <td>全局 <code class="c">atomic_t</code></td>
 </tr>
 <tr>
 <td><strong>HIGHMEM 页内核访问</strong></td>
-<td><strong><code class="c">kmap_atomic</code></strong>（短）/ <code class="c">kmap</code>（可睡）</td>
-<td>假设 <code class="c">page_address</code> 非 NULL</td>
+<td>⚠️ <strong><code class="c">kmap_local_page()</code></strong>（短） / <code class="c">kmap()</code>（可睡）</td>
+<td>~~<code class="c">kmap_atomic</code>~~（已废弃，见 <a href="#s-12-9">12.9</a>）</td>
+</tr>
+<tr>
+<td><strong>网络收包路径的小块临时内存</strong></td>
+<td><strong><code class="c">page_frag_alloc()</code></strong>（<code class="c">gfp.h:311</code>）</td>
+<td>每包 <code class="c">kmalloc</code></td>
 </tr>
 <tr>
 <td><strong>栈上临时</strong></td>
-<td><strong>仅几百字节内</strong></td>
+<td><strong>仅几百字节内</strong>（见 <a href="#s-12-8">12.8</a>）</td>
 <td>大数组</td>
+</tr>
+<tr>
+<td><strong>一段代码里全部禁 I/O / 禁 FS</strong></td>
+<td>⭐ <strong><code class="c">memalloc_noio_save()</code> / <code class="c">memalloc_nofs_save()</code></strong></td>
+<td>逐层函数签名里传 <code class="c">GFP_NOIO</code>/<code class="c">GFP_NOFS</code></td>
 </tr>
 </tbody>
 </table></div>
+<h4>按大小（v6.6 精确分界，不再是"经验值"）</h4>
+<pre class="code" data-label="C"><code class="c">/* mm/slab.h:309-327 */
+#define KMALLOC_SHIFT_HIGH  (PAGE_SHIFT + 1)          /* = 13 */
+#define KMALLOC_SHIFT_MAX   (MAX_ORDER + PAGE_SHIFT)  /* = 10 + 12 = 22 */
+#define KMALLOC_MAX_SIZE    (1UL &lt;&lt; KMALLOC_SHIFT_MAX)       /* 4 MB */
+#define KMALLOC_MAX_CACHE_SIZE  (1UL &lt;&lt; KMALLOC_SHIFT_HIGH)   /* 8 KB */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>请求大小</th>
+<th>实际路径</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>≤ 8 KB</strong></td>
+<td><strong>SLUB 的 <code class="c">kmalloc-N</code> 分档缓存</strong>（含 96/192 两个非 2 的幂档）</td>
+<td>走 per-CPU freelist，快路径一条原子指令</td>
+</tr>
+<tr>
+<td><strong>&gt; 8 KB</strong></td>
+<td><strong>直接 <code class="c">alloc_pages()</code></strong>（buddy），<strong>不进 slab</strong></td>
+<td>见 <a href="#s-12-4">12.4 Q5</a></td>
+</tr>
+<tr>
+<td><strong>8 KB ~ 4 MB</strong></td>
+<td><code class="c">kmalloc</code> 仍可工作（内部转 buddy），但<strong>高阶分配易失败</strong></td>
+<td>要 4MB 连续页，显式 <code class="c">alloc_pages(gfp, 10)</code> 更直白</td>
+</tr>
+<tr>
+<td><strong>&gt; 4 MB</strong></td>
+<td>只能 <strong><code class="c">vmalloc</code></strong> 或 <strong><code class="c">kvmalloc</code></strong></td>
+<td><code class="c">KMALLOC_MAX_SIZE</code> = 4MB 是硬上限（<code class="c">MAX_ORDER</code> 默认 10）</td>
+</tr>
+<tr>
+<td><strong>&gt; INT_MAX (2GB)</strong></td>
+<td><strong><code class="c">kvmalloc</code> 会 WARN 并返回 NULL</strong>（<code class="c">mm/util.c</code>）</td>
+<td>"Don't even allow crazy sizes"</td>
+</tr>
+<tr>
+<td><strong>2MB / 1GB 大页</strong></td>
+<td>用户态 <strong>hugetlb / THP</strong>；内核态 <code class="c">alloc_pages</code> 高阶或 <strong>CMA</strong></td>
+<td>内核里没有"1GB 连续分配"这种事</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <strong>订正原表</strong>：原稿写"≤512B～几 KB → Slab；~128KB～几 MB → kmalloc 上限"——
+分界线其实是<strong>确定的 8KB</strong>（<code class="c">KMALLOC_MAX_CACHE_SIZE</code>），
+而"128KB"那一档早已越过 slab 缓存，<strong>直接就是伙伴系统</strong>。</p>
+</blockquote>
 <h4>按上下文</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2144,55 +5264,231 @@ void inc_irq_count(void)
 <tr>
 <td><strong>hardirq / timer callback</strong></td>
 <td><strong><code class="c">GFP_ATOMIC</code></strong> + 预池</td>
-<td><code class="c">GFP_KERNEL</code>、<code class="c">kmap</code></td>
+<td><code class="c">GFP_KERNEL</code>、<code class="c">kmap()</code>、<code class="c">vmalloc()</code>、<code class="c">alloc_percpu()</code></td>
 </tr>
 <tr>
 <td><strong>softirq</strong></td>
 <td>同 atomic；仍须 <strong>短</strong></td>
 <td>睡眠</td>
 </tr>
+<tr>
+<td><strong>文件系统/存储栈内部</strong></td>
+<td><code class="c">GFP_NOFS</code>（或用 <strong><code class="c">memalloc_nofs_save()</code></strong> 包住整段）</td>
+<td><code class="c">GFP_KERNEL</code>（会递归回到 FS 触发死锁）</td>
+</tr>
+<tr>
+<td><strong>块设备/网络驱动回收路径</strong></td>
+<td><code class="c">GFP_NOIO</code>（或 <strong><code class="c">memalloc_noio_save()</code></strong>）</td>
+<td><code class="c">GFP_KERNEL</code>（递归触发 I/O）</td>
+</tr>
+<tr>
+<td><strong>绝不允许失败且确有失败策略</strong></td>
+<td>⚠️ 见下面 §5</td>
+<td>滥用 <code class="c">__GFP_NOFAIL</code></td>
+</tr>
 </tbody>
 </table></div>
-<h4>按大小（x86 量级，配置可变）</h4>
+<pre class="code" data-label="C"><code class="c">/* 现代写法：用&quot;作用域&quot;而不是逐层传 gfp（include/linux/sched/mm.h:320/341） */
+unsigned int flags = memalloc_nofs_save();     /* 本段内所有分配隐含 GFP_NOFS */
+    ...  这一整段里的 kmalloc/alloc_pages 都自动降级 ...
+memalloc_nofs_restore(flags);
+</code></pre>
+<blockquote>
+<p><strong>为什么这比传 <code class="c">GFP_NOFS</code> 好</strong>：<code class="c">GFP_NOFS</code> 的语义是"<strong>这个调用链上所有分配</strong>都不能进 FS"，
+但 C 语言没有"上下文继承"，你只能<strong>给每个函数加个 gfp 参数一路传下去</strong>，漏一个就是死锁。
+<code class="c">memalloc_*_save()</code> 把它变成 <strong>当前任务的一个标志位</strong>（<code class="c">PF_MEMALLOC_NOFS</code>/<code class="c">PF_MEMALLOC_NOIO</code>），
+源码注释说 "This function is safe to be used from <strong>any context</strong>"。</p>
+</blockquote>
+<h4>⭐ <code class="c">kvmalloc()</code>：先试 kmalloc，失败回落 vmalloc（v6.6 <code class="c">mm/util.c</code> 实证）</h4>
+<pre class="code" data-label="C"><code class="c">void *kvmalloc_node(size_t size, gfp_t flags, int node)
+{
+    gfp_t kmalloc_flags = flags;
+    void *ret;
+
+    if (size &gt; PAGE_SIZE) {
+        kmalloc_flags |= __GFP_NOWARN;
+        if (!(kmalloc_flags &amp; __GFP_RETRY_MAYFAIL))
+            kmalloc_flags |= __GFP_NORETRY;
+        /* nofail semantic is implemented by the vmalloc fallback */
+        kmalloc_flags &amp;= ~__GFP_NOFAIL;
+    }
+
+    ret = kmalloc_node(size, kmalloc_flags, node);
+    if (ret || size &lt;= PAGE_SIZE)
+        return ret;
+
+    /* non-sleeping allocations are not supported by vmalloc */
+    if (!gfpflags_allow_blocking(flags))
+        return NULL;
+
+    if (unlikely(size &gt; INT_MAX)) {
+        WARN_ON_ONCE(!(flags &amp; __GFP_NOWARN));
+        return NULL;
+    }
+    return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+            flags, PAGE_KERNEL, VM_ALLOW_HUGE_VMAP,
+            node, __builtin_return_address(0));
+}
+
+void kvfree(const void *addr)          /* 释放：靠地址判断当初走的是哪条路 */
+{
+    if (is_vmalloc_addr(addr)) vfree(addr);
+    else                       kfree(addr);
+}
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>大小</th>
-<th>倾向路径</th>
+<th>行为</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>≤ 512B～几 KB</strong></td>
-<td>Slab → <strong><code class="c">kmalloc</code></strong></td>
+<td><strong>先试物理连续</strong></td>
+<td>注释："attempt a large physically contiguous block first because it is <strong>less likely to fragment</strong> multiple larger blocks" —— <strong>优先 kmalloc 是为了减少长期碎片</strong></td>
 </tr>
 <tr>
-<td><strong>~128KB～几 MB</strong></td>
-<td><strong><code class="c">kmalloc</code> 上限</strong> 或 <strong><code class="c">__get_free_pages</code></strong></td>
+<td><strong>回落的 kmalloc 尝试被"弱化"</strong></td>
+<td><code class="c">&gt;PAGE_SIZE</code> 时自动加 <code class="c">__GFP_NOWARN</code> + <code class="c">__GFP_NORETRY</code>：<strong>失败了不许报警、不许死磕</strong>（因为还有 vmalloc 兜底）</td>
 </tr>
 <tr>
-<td><strong>&gt; KMALLOC_MAX</strong></td>
-<td><strong><code class="c">vmalloc</code></strong> 或多页 <code class="c">alloc_pages</code></td>
+<td><strong><code class="c">__GFP_NOFAIL</code> 被清掉</strong></td>
+<td>注释："nofail semantic is implemented by the <strong>vmalloc fallback</strong>"</td>
 </tr>
 <tr>
-<td><strong>2MB / 1GB huge</strong></td>
-<td><strong><code class="c">alloc_pages</code> high order</strong> / <strong>hugetlb</strong>（用户 Ch 15）</td>
+<td>⚠️ <strong><code class="c">GFP_ATOMIC</code> + 大块 = 必然失败</strong></td>
+<td><code class="c">if (!gfpflags_allow_blocking(flags)) return NULL;</code> —— <strong>vmalloc 要建页表，不能在原子上下文做</strong>，所以 <code class="c">kvmalloc(1MB, GFP_ATOMIC)</code> 在 kmalloc 失败后<strong>直接返回 NULL</strong></td>
+</tr>
+<tr>
+<td><code class="c">&gt;INT_MAX</code> 直接拒绝</td>
+<td>"Don't even allow crazy sizes" + <code class="c">WARN_ON_ONCE</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">kvfree()</code> 自动分派</strong></td>
+<td><code class="c">is_vmalloc_addr()</code> 判断当初走的是 slab/buddy 还是 vmalloc —— 与 <a href="#s-12-7">12.7 中 <code class="c">kfree()</code> 用 <code class="c">folio_test_slab()</code> 反查</a>是<strong>同一种"靠地址反推归属"的思路</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h4>ASCII 决策流</h4>
+<blockquote>
+<p><strong>什么时候用 <code class="c">kvmalloc</code></strong>：<strong>"大小由用户输入/配置决定，可能是 1KB 也可能是 10MB"</strong> 这类场景
+（典型的：哈希表、数组、sysfs/配置缓冲区）。
+它的价值是：小的时候拿到<strong>物理连续</strong>（快），大的时候<strong>自动降级</strong>（不失败），
+调用方<strong>不用写分支</strong>。</p>
+</blockquote>
+<h4>⚠️ <code class="c">__GFP_NOFAIL</code> 的正确用法（v6.6 文档原话）</h4>
+<pre class="code" data-label="code"><code class="c">%__GFP_NOFAIL: The VM implementation _must_ retry infinitely: the caller
+cannot handle allocation failures. The allocation could block
+indefinitely but will never return with failure. Testing for
+failure is pointless.
+New users should be evaluated carefully (and the flag should be
+used only when there is no reasonable failure policy) but it is
+definitely preferable to use the flag rather than opencode endless
+loop around allocator.
+Using this flag for costly allocations is _highly_ discouraged.
+                                        —— include/linux/gfp_types.h:198
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>说法</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"<code class="c">__GFP_NOFAIL</code> 不该用"</td>
+<td>❌ 文档说：<strong>比自己写 <code class="c">while (!ptr) ptr = kmalloc(...)</code> 循环更好</strong></td>
+</tr>
+<tr>
+<td>"<code class="c">__GFP_NOFAIL</code> 万无一失"</td>
+<td>❌ 它 <strong>可能无限阻塞</strong>，且<strong>测试返回值毫无意义</strong></td>
+</tr>
+<tr>
+<td>"大分配也能用"</td>
+<td>❌ 文档明确 <strong>"highly discouraged"</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>判据</strong>：只有<strong>小额、无替代失败策略</strong>的分配（且调用者真的无法处理 NULL）才用；
+大块分配请走 <strong><code class="c">kvmalloc</code> + 显式失败处理</strong>。</p>
+</blockquote>
+<h4>ASCII 决策流（v6.6 版）</h4>
 <pre class="code" data-label="code"><code class="c">需要分配？
     │
-    ├─ 固定类型、极高频？ ──► kmem_cache
+    ├─ 大小在编译期不定、可能很大？ ────────────► kvmalloc + kvfree
+    │                                        （注意：GFP_ATOMIC 时大块必然失败）
     │
-    ├─ 每核计数/队列？ ──► per-CPU
+    ├─ 固定类型、极高频？ ───────────────────► kmem_cache_alloc / free
+    │
+    ├─ 每核计数 / 队列 / 临时缓冲？ ──────────► per-CPU（alloc_percpu 会睡，启动时做）
     │
     ├─ 要物理连续？
-    │     ├─ 整页/ DMA？ ──► alloc_pages / dma_*
-    │     └─ 字节？ ──► kmalloc (看 gfp)
+    │     ├─ 整页 / DMA？ ─────────────────► alloc_pages / dma_alloc_coherent
+    │     └─ 字节、≤8KB？ ─────────────────► kmalloc（看 gfp；分档见 12.7）
     │
-    └─ 大块、不要求 PA 连续？ ──► vmalloc
+    ├─ 大块、不要求 PA 连续、可睡眠？ ────────► vmalloc / vzalloc
+    │
+    └─ 网络收包的小块临时内存？ ─────────────► page_frag_alloc（page_frag_cache）
 </code></pre>
+<h4>反模式检查表（写驱动时逐条过）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>反模式</th>
+<th>后果</th>
+<th>正解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断里 <code class="c">kmalloc(GFP_KERNEL)</code></td>
+<td>可能睡眠 → <strong>BUG / 死锁</strong></td>
+<td><code class="c">GFP_ATOMIC</code> 或<strong>预分配池</strong></td>
+</tr>
+<tr>
+<td>忘了检查 <code class="c">kmalloc</code> 返回 NULL</td>
+<td>空指针解引用 → panic</td>
+<td>一律判 NULL（<code class="c">GFP_ATOMIC</code> 尤其容易失败）</td>
+</tr>
+<tr>
+<td>用 <code class="c">vmalloc</code> 的返回值做 DMA</td>
+<td>vmalloc 页<strong>物理不连续</strong>，且需要 <code class="c">page_address</code> 逐页查</td>
+<td><code class="c">dma_alloc_coherent</code> / <code class="c">kmalloc</code></td>
+</tr>
+<tr>
+<td><code class="c">kvmalloc(10MB, GFP_ATOMIC)</code></td>
+<td><strong>必然返回 NULL</strong>（vmalloc 不能用于非睡眠上下文）</td>
+<td>原子上下文<strong>只能预分配</strong></td>
+</tr>
+<tr>
+<td>在 FS 栈里用 <code class="c">GFP_KERNEL</code></td>
+<td>回收路径递归回 FS → <strong>死锁</strong></td>
+<td><code class="c">GFP_NOFS</code> 或 <code class="c">memalloc_nofs_save()</code></td>
+</tr>
+<tr>
+<td>在中断里 <code class="c">alloc_percpu()</code></td>
+<td>会睡眠（mutex）</td>
+<td>初始化时分配</td>
+</tr>
+<tr>
+<td>用 <code class="c">kmap_atomic</code> 写新代码</td>
+<td>已废弃，且 RT 上会关迁移/抢占</td>
+<td><code class="c">kmap_local_page()</code></td>
+</tr>
+<tr>
+<td>栈上 <code class="c">char buf[4096]</code></td>
+<td>触发 guard page fault（或静默破坏）</td>
+<td><code class="c">kmalloc</code> / per-CPU 缓冲</td>
+</tr>
+<tr>
+<td>热路径每次 <code class="c">kmalloc</code></td>
+<td>尾延迟尖刺（慢路径可能微秒级）</td>
+<td><strong>启动时分配 + 运行时复用</strong></td>
+</tr>
+</tbody>
+</table></div>
 <h4>HFT / 低延迟清单</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2204,11 +5500,11 @@ void inc_irq_count(void)
 <tbody>
 <tr>
 <td>1</td>
-<td><strong>启动期</strong> 完成所有 <strong><code class="c">kmalloc</code> / <code class="c">alloc_pages</code> / Slab create</strong></td>
+<td><strong>启动期</strong> 完成所有 <strong><code class="c">kmalloc</code> / <code class="c">alloc_pages</code> / Slab create / <code class="c">alloc_percpu</code></strong></td>
 </tr>
 <tr>
 <td>2</td>
-<td><strong>数据面</strong> 仅 <strong>cache hit / ring pop</strong> — <strong>零 GFP_ATOMIC</strong></td>
+<td><strong>数据面</strong> 仅 <strong>cache hit / ring pop</strong> — <strong>零 <code class="c">GFP_ATOMIC</code></strong></td>
 </tr>
 <tr>
 <td>3</td>
@@ -2216,11 +5512,19 @@ void inc_irq_count(void)
 </tr>
 <tr>
 <td>4</td>
-<td><strong>测失败路径</strong> — <code class="c">GFP_ATOMIC</code> 耗尽时 <strong>丢包 vs 延迟尖刺</strong></td>
+<td><strong>测失败路径</strong> — <code class="c">GFP_ATOMIC</code> 耗尽时 <strong>丢包 vs 延迟尖刺</strong>，两者必须二选一并写进设计</td>
 </tr>
 <tr>
 <td>5</td>
 <td>用户态 <strong>mlock + hugepage</strong> 与内核 <strong>CMA/reserve</strong> 对称规划</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>分配/释放同核</strong> — 跨核释放会打掉 SLUB 与页分配器 pcp 的快路径（12.4 / 12.7）</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>收包路径</strong> 用 <code class="c">page_frag_alloc</code> / skb 复用池，避免每包一次分配器往返</td>
 </tr>
 </tbody>
 </table></div>
@@ -2231,6 +5535,140 @@ void inc_irq_count(void)
 <details>
 <summary>答案</summary>
 <p>200 字节 → kmalloc(200, GFP_KERNEL)，从 kmalloc-256 slab 分配，O(1)。4MB → alloc_pages(GFP_KERNEL, 10)（2^10=1024 页=4MB），从 buddy 系统分配，物理连续。100MB → vmalloc(100MB)，虚拟连续物理可不连续，需改页表。选型口诀：小用 kmalloc、大且连续用 alloc_pages、大且不连续用 vmalloc。</p>
+<blockquote>
+<p><strong>按 v6.6 补充</strong>：
+- <strong>200 字节</strong>：落到 <strong><code class="c">kmalloc-256</code></strong> 是对的（v6.6 的分档是
+  <code class="c">0 / 96 / 192 / 8 /16 /32 /64 /128 /256 /512 /1k /2k /4k /8k</code>，
+  200 在 193~256 区间）。注意<strong>不是</strong> <code class="c">-512</code>，因为 96 和 192 两个中间档把 200 挡在了 256；
+- <strong>4MB</strong>：<code class="c">alloc_pages(GFP_KERNEL, 10)</code> 正确，但要意识到
+  <code class="c">MAX_ORDER</code> 默认就是 <strong>10</strong>，即 <strong>4MB 是伙伴系统单次分配的理论上限</strong>，
+  而高阶分配在运行时<strong>极易失败</strong>（需要 1024 个连续空闲页）。
+  若只是"想要 4MB 内存"而不要求物理连续，<strong><code class="c">kvmalloc</code></strong> 更省心；
+- <strong>100MB</strong>：<code class="c">vmalloc</code> 正确。但如果是"大小不确定"的通用代码，直接写 <strong><code class="c">kvmalloc</code></strong> 更好——
+  它先试物理连续（碎片友好），失败才回落 vmalloc，调用方不用写分支。</p>
+<p>另附一条原答案没提的<strong>硬上限</strong>：<code class="c">kvmalloc</code> 对 <strong><code class="c">size &gt; INT_MAX</code></strong> 会
+<code class="c">WARN_ON_ONCE</code> 并返回 NULL（源码："Don't even allow crazy sizes"）。</p>
+</blockquote>
+</details>
+<p><strong>Q2.</strong> <code class="c">kvmalloc(10MB, GFP_ATOMIC)</code> 在中断上下文里能成功吗？为什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>基本不可能，而且这不是概率问题——源码里明确判掉了。</strong></p>
+<p><code class="c">mm/util.c</code> 的 <code class="c">kvmalloc_node()</code> 流程：</p>
+<ol>
+<li><code class="c">size &gt; PAGE_SIZE</code> → 给 kmalloc 尝试加上 <code class="c">__GFP_NOWARN | __GFP_NORETRY</code>，并清掉 <code class="c">__GFP_NOFAIL</code>；</li>
+<li>调 <code class="c">kmalloc_node(size, ...)</code> —— 10MB 走 buddy 高阶分配，<strong><code class="c">GFP_ATOMIC</code> 下几乎必然失败</strong>；</li>
+<li>失败后准备回落 vmalloc，但<strong>第一行就是</strong>：
+   <code class="c">c
+   /* non-sleeping allocations are not supported by vmalloc */
+   if (!gfpflags_allow_blocking(flags))
+           return NULL;</code>
+   即 <strong>非睡眠上下文不允许 vmalloc</strong>，于是<strong>直接返回 NULL</strong>。</li>
+</ol>
+<p><strong>根本原因</strong>：vmalloc 要<strong>分配页 + 建页表 + 可能的 TLB flush</strong>，
+这些操作本身<strong>需要睡眠</strong>（<code class="c">__vmalloc_node_range</code> 里要 <code class="c">GFP_KERNEL</code> 级的页表分配）。</p>
+<blockquote>
+<p><strong>实践结论</strong>：<strong>原子上下文里不存在"大块分配"这回事</strong>。
+要在中断里用 10MB 缓冲，唯一正确的做法是<strong>启动时分配好</strong>（<code class="c">vmalloc</code>/<code class="c">kvmalloc</code> + 保存指针），
+中断里只做<strong>读写</strong>。这条是本页 HFT 清单第 1、2 条的直接推论。</p>
+</blockquote>
+</details>
+<p><strong>Q3.</strong> 为什么内核提供了 <code class="c">memalloc_noio_save()</code> / <code class="c">memalloc_nofs_save()</code>，直接传 <code class="c">GFP_NOIO</code> 有什么问题？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <strong><code class="c">GFP_NOIO</code>/<code class="c">GFP_NOFS</code> 的本质是"整段调用链的约束"，而 C 的 gfp 参数只能管"这一次调用"</strong>。</p>
+<p>比如文件系统要写回一个 inode，调用链可能是
+<code class="c">ext4_writepages → ... → 某个通用库函数 → kmalloc()</code>。
+中间那一层<strong>根本不知道</strong>自己身处 FS 栈，它只会写 <code class="c">kmalloc(GFP_KERNEL)</code>——
+于是回收路径被触发 → 又要进文件系统 → <strong>死锁</strong>。</p>
+<p>传统解法是给链上每个函数都加一个 <code class="c">gfp_t</code> 参数一路传下去，
+但<strong>漏一个就是死锁</strong>，而且污染了一堆无关函数的签名。</p>
+<p>现代解法（<code class="c">include/linux/sched/mm.h:320/341</code>）把它变成<strong>当前任务的一个标志位</strong>：</p>
+<pre class="code" data-label="C"><code class="c">unsigned int flags = memalloc_nofs_save();   /* 设 current-&gt;PF_MEMALLOC_NOFS */
+    ...  /* 这一整段里所有分配都自动隐含 GFP_NOFS，无需改任何函数签名 */
+memalloc_nofs_restore(flags);
+</code></pre>
+<p>源码注释："Marks <strong>implicit</strong> GFP_NOFS allocation scope… This function is <strong>safe to be used from any context</strong>."
+<code class="c">memalloc_noio_save()</code> 对应 <code class="c">PF_MEMALLOC_NOIO</code>（块设备/存储栈同理）。</p>
+<blockquote>
+<p>适用判据：<strong>约束来自"我在哪段代码里"，而不是"我这次要分配什么"</strong> 时，用作用域 API；
+只是一次孤立分配需要特殊 gfp，直接传标志即可。</p>
+</blockquote>
+</details>
+<p><strong>Q4.</strong> 什么时候该用 <code class="c">__GFP_NOFAIL</code>？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/gfp_types.h:198</code> 的文档说得很完整，核心四句：</p>
+<ol>
+<li><strong>语义</strong>："The VM implementation <em>must</em> <strong>retry infinitely</strong>… The allocation could
+   <strong>block indefinitely</strong> but will <strong>never return with failure</strong>. <strong>Testing for failure is pointless</strong>."</li>
+<li><strong>准入门槛</strong>："New users should be <strong>evaluated carefully</strong> (and the flag should be used
+   <strong>only when there is no reasonable failure policy</strong>)."</li>
+<li><strong>反直觉的一条</strong>：它"is <strong>definitely preferable</strong> to use the flag rather than
+   <strong>opencode endless loop</strong> around allocator" —— 也就是说，
+   与其自己写 <code class="c">while (!(p = kmalloc(...)));</code> 这种死循环，<strong>不如用这个标志</strong>；</li>
+<li><strong>禁区</strong>："Using this flag for <strong>costly allocations</strong> is <em>highly</em> discouraged."</li>
+</ol>
+<p><strong>判据</strong>：
+- ✅ <strong>小额</strong>（页级以内）+ <strong>调用者确实无法处理 NULL</strong>（无处返回错误码的上下文）；
+- ❌ <strong>大块分配</strong>——大块本来就难以满足，"无限重试"可能真的<strong>无限</strong>；
+- ❌ <strong>有替代路径时</strong>——能降级、能丢包、能返回 <code class="c">-ENOMEM</code> 就别用；
+- 💡 想要"尽量成功但有兜底"，用 <strong><code class="c">kvmalloc</code> + 显式判 NULL</strong>，
+  它在内部处理了"先试连续、再回落 vmalloc"的逻辑。</p>
+</details>
+<p><strong>Q5.</strong> 网络驱动收包路径要一块 1.5KB 的临时缓冲，有哪几种做法？延迟上怎么排？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>做法</th>
+<th>延迟特征</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">page_frag_alloc(&amp;nc, 1536, gfp)</code></strong></td>
+<td><strong>最快</strong>：从 per-CPU 的 <code class="c">page_frag_cache</code> 里<strong>切一段</strong>，绝大多数情况下<strong>连分配器都不进</strong>（只是挪一个 offset）</td>
+<td>✅ <strong>网络收包首选</strong>（<code class="c">gfp.h:311</code>；<code class="c">sk_buff</code> 的头部数据就是这么来的）</td>
+</tr>
+<tr>
+<td><strong>skb 复用 / napi 回收环</strong></td>
+<td>快：对象池命中</td>
+<td>✅ 驱动与协议栈的常规做法</td>
+</tr>
+<tr>
+<td><strong><code class="c">kmem_cache_alloc(cache, GFP_ATOMIC)</code></strong></td>
+<td>中：SLUB 快路径一条 <code class="c">cmpxchg16b</code>（命中 <code class="c">c-&gt;slab</code> 时）；<strong>跨 CPU 释放会退化到慢路径</strong></td>
+<td>✅ 固定类型的专用 cache</td>
+</tr>
+<tr>
+<td><strong><code class="c">kmalloc(1536, GFP_ATOMIC)</code></strong></td>
+<td>中：同上（走 <code class="c">kmalloc-2k</code> 档）</td>
+<td>⚠️ 可以，但每包都做就是尾延迟源</td>
+</tr>
+<tr>
+<td><strong>局部数组 <code class="c">char buf[1600]</code></strong></td>
+<td>最快（零分配）<strong>但很危险</strong>：吃掉 16KB 内核栈的 10%</td>
+<td>❌ 别在深调用链里用（见 12.8）</td>
+</tr>
+<tr>
+<td><strong><code class="c">vmalloc</code> / <code class="c">kvmalloc</code></strong></td>
+<td>极慢且 <strong><code class="c">GFP_ATOMIC</code> 下直接失败</strong></td>
+<td>❌ 完全不适用</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>排序背后的原理</strong>：<code class="c">page_frag_alloc</code> 赢在它<strong>根本不碰分配器</strong>——
+它把一页（或一个高阶块）切成若干 frag，per-CPU 缓存，<strong>取一段只是指针运算</strong>。
+只有在 <strong>frag cache 耗尽</strong>时才真的走一次 <code class="c">alloc_pages</code>。
+这就是"<strong>批分配 + 切分</strong>"的威力，与 12.4 页分配器的 pcp、
+12.7 的 SLUB per-CPU freelist 是<strong>同一个思想的不同尺度</strong>：
+<strong>把昂贵的全局操作批量化，让热路径只做 O(1) 的本地操作</strong>。</p>
+<p>HFT 上完全可以直接照搬：<strong>每核预取一大块内存，热路径上只挪 offset</strong>。</p>
+</blockquote>
 </details>
 </details>
 <hr />
