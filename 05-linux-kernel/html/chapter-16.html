@@ -439,41 +439,163 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tr>
 <th>策略</th>
 <th>行为</th>
+<th>谁在用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td><strong>no-write</strong></td>
+<td>写直接穿透，不进缓存</td>
+<td>极罕见（某些 DMA 设备映射）</td>
+</tr>
+<tr>
+<td><strong>write-through</strong></td>
+<td>每次写<strong>同时</strong>更缓存与磁盘</td>
+<td>部分带电池保护的 RAID 卡缓存策略</td>
+</tr>
+<tr>
 <td><strong>write-back</strong></td>
-<td>写先进入 <strong>页高速缓存</strong> → 页标 <strong>脏（dirty）</strong> → 入 <strong>脏页链表</strong> → <strong>定期写回磁盘</strong> → 清脏</td>
+<td>写只进缓存 → 标脏 → <strong>异步</strong>写回</td>
+<td><strong>Linux 页缓存的默认策略</strong></td>
 </tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="code"><code class="c">应用 write()
     ▼
-页缓存（内存）— 立即返回（通常）
+页缓存（内存）— 通常立即返回，不碰磁盘
     ▼
-（稍后）flusher 写回磁盘
+（稍后）flusher 线程写回 ──► bio（Ch 14）──► 设备
 </code></pre>
+<blockquote>
+<p><strong>关键认知：</strong> write-back 下 <code class="c">write()</code> 返回 ≠ 数据落盘。返回只意味着"内核已经把你的数据抄进页缓存"。
+崩溃时<strong>未回写的脏页全部丢失</strong>；只有 <code class="c">fsync</code>/<code class="c">fdatasync</code>/<code class="c">O_SYNC</code> 才提供落盘保证。</p>
+</blockquote>
+<hr />
+<h3>脏页住在哪里？—— 版本断崖</h3>
+<p>LKD3rd 的讲法是「脏页挂在 <code class="c">address_space</code> 的 dirty 链表上」。<strong>v6.6 已经不是这样</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/fs.h — v6.6 struct address_space（节选） */
+struct address_space {
+    struct inode        *host;
+    struct xarray       i_pages;      /* ← 存页的地方（详见 16.3） */
+    struct rw_semaphore invalidate_lock;
+    struct rb_root_cached   i_mmap;       /* 映射了该文件的 VMA 们 */
+    unsigned long       nrpages;
+    pgoff_t         writeback_index;
+    const struct address_space_operations *a_ops;
+    errseq_t        wb_err;       /* fsync 返回错误靠它 */
+    ...
+};
+</code></pre>
+<p><code class="c">struct address_space</code> 里<strong>根本没有任何链表字段</strong>。脏页的「在哪儿」变成了两层：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>对比</th>
-<th></th>
+<th>层次</th>
+<th>机制</th>
+<th>源码位置</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>write-through</strong></td>
-<td>每次写都落盘 — 慢、一致性强</td>
+<td><strong>页级标记</strong></td>
+<td>xarray 的 3 个 tag 位：<code class="c">PAGECACHE_TAG_DIRTY</code>(=<code class="c">XA_MARK_0</code>)、<code class="c">_WRITEBACK</code>(=<code class="c">XA_MARK_1</code>)、<code class="c">_TOWRITE</code>(=<code class="c">XA_MARK_2</code>)</td>
+<td><code class="c">include/linux/fs.h</code>（address_space 之后紧接定义）</td>
 </tr>
 <tr>
-<td><strong>write-back</strong></td>
-<td>批量异步写 — <strong>快</strong> · 崩溃可能丢未回写数据</td>
+<td><strong>inode 级排队</strong></td>
+<td>脏 inode 挂到 <code class="c">bdi_writeback</code> 的 <code class="c">b_dirty</code> / <code class="c">b_io</code> / <code class="c">b_more_io</code> / <code class="c">b_dirty_time</code> 四条链表</td>
+<td><code class="c">include/linux/backing-dev-defs.h</code></td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>为什么这么改？</strong> 链表藏在 xarray 里意味着「这页脏不脏」是<strong>页的属性</strong>，而不再是「这个文件的私有链表成员」。好处是 <code class="c">mapping_tagged()</code> 可以 O(1) 回答「这个文件有没有脏页」，不必扫链表；代价是理解成本上升。</p>
+<hr />
+<h3>四个旋钮（v6.6 数值，与 LKD 时代完全一致）</h3>
+<pre class="code" data-label="C"><code class="c">/* mm/page-writeback.c — v6.6 原文 */
+static int dirty_background_ratio = 10;           /* :74  */
+static int vm_dirty_ratio = 20;                   /* :91  */
+unsigned int dirty_writeback_interval = 5 * 100;  /* :102 厘秒 → 5 秒   */
+unsigned int dirty_expire_interval = 30 * 100;    /* :109 厘秒 → 30 秒  */
+static long ratelimit_pages = 32;                 /* :68  */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>sysctl</th>
+<th>默认</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vm.dirty_background_ratio</code></td>
+<td><strong>10%</strong></td>
+<td>脏页占比超此值 → <strong>后台</strong>唤醒 flusher（不阻塞写者）</td>
+</tr>
+<tr>
+<td><code class="c">vm.dirty_ratio</code></td>
+<td><strong>20%</strong></td>
+<td>脏页占比超此值 → <strong>前台限速</strong>（见下，会阻塞写者）</td>
+</tr>
+<tr>
+<td><code class="c">vm.dirty_writeback_centisecs</code></td>
+<td><strong>500</strong>（5s）</td>
+<td>flusher 线程被唤醒的周期</td>
+</tr>
+<tr>
+<td><code class="c">vm.dirty_expire_centisecs</code></td>
+<td><strong>3000</strong>（30s）</td>
+<td>脏页超过这个年纪<strong>必须</strong>写回</td>
+</tr>
+<tr>
+<td><code class="c">ratelimit_pages</code>（非 sysctl）</td>
+<td><strong>32</strong></td>
+<td>每个 CPU 脏了 32 页才去检查一次阈值（摊薄开销）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 最该记住的一条：</strong> 后台阈值（10%）只是唤醒，前台阈值（20%）才是<strong>把你自己的写线程按在原地</strong>。
+<code class="c">balance_dirty_pages_ratelimited_flags()</code>（<code class="c">page-writeback.c:1992</code>）会在脏页逼近上限时主动让当前写进程<strong>睡眠等写回</strong>，
+这是 <code class="c">write()</code> 偶发长尾的一个经典来源——看起来是"内存写"，实际在等磁盘。</p>
+</blockquote>
 <p><strong>HFT：</strong> tick 路径 <strong>不应依赖</strong> 写回完成；关键持久化用 <strong><code class="c">fsync</code></strong> / 独立日志盘 / <strong><code class="c">O_DIRECT</code></strong> 自管缓存。</p>
-<p>→ <a href="../../06.6-systems-performance/html/chapter-08.html#ch-8">06.6 SysPerf Ch8 FS</a> · <a href="../../06.6-systems-performance/html/chapter-07.html#s-7-6">Ch7 <code class="c">vm.dirty_*</code></a></p>
+<h4>落盘保证的四种写法（语义严格递增）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>语义</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">write()</code></td>
+<td>只保证进页缓存</td>
+<td>最快，崩溃丢数据</td>
+</tr>
+<tr>
+<td><code class="c">fdatasync(fd)</code></td>
+<td>该文件的<strong>数据</strong>脏页落盘（不保证元数据如 mtime）</td>
+<td>一次写盘</td>
+</tr>
+<tr>
+<td><code class="c">fsync(fd)</code></td>
+<td>数据 <strong>+ 元数据</strong>都落盘</td>
+<td>比 fdatasync 多一次元数据 IO</td>
+</tr>
+<tr>
+<td><code class="c">O_SYNC</code>（open 时）</td>
+<td>每次 <code class="c">write</code> 自带 fdatasync 语义</td>
+<td>每次写都等盘，<strong>最慢</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>注意 <code class="c">sync()</code> 是<strong>全系统</strong>刷盘，会把其他文件、其他盘的脏页一起带下去——HFT 里误用 <code class="c">sync()</code> 能造成<strong>几百毫秒级</strong>的长尾，绝不能进热路径。</p>
+</blockquote>
+<p>→ <a href="../../06.6-systems-performance/html/chapter-08.html#ch-8">06.6 SysPerf Ch8 FS</a> · <a href="../../06.6-systems-performance/html/chapter-07.html#s-7-6">Ch7 <code class="c">vm.dirty_*</code></a> · <a href="chapter-14.html#ch-14">Ch 14 块 I/O</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> write-back 和 write-through 的区别？Linux 为什么选 write-back？</p>
@@ -481,31 +603,118 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <summary>答案</summary>
 <p>write-through：写同时更新缓存和磁盘 → 数据安全但慢。write-back：只写缓存，标记脏页，后台异步写回磁盘 → 快但断电可能丢数据。Linux 选 write-back 因为：1) 多次写合并为一次 IO（减少磁盘操作）；2) 延迟写让 IO 调度器合并排序。HFT 交易日志不能丢数据 → 用 O_SYNC 或 fsync() 强制写回。</p>
 </details>
+<p><strong>Q2.</strong> 进程调用 <code class="c">write()</code> 成功返回后立刻断电，数据会丢吗？如果会，最多丢多少？</p>
+<details>
+<summary>答案</summary>
+<p>会丢。<code class="c">write()</code> 返回只表示数据已进入<strong>页缓存</strong>，脏页要到 flusher 线程写回后才真正落盘。最坏情况下丢失窗口 = <code class="c">vm.dirty_expire_centisecs</code>（默认 30 秒）——这是脏页被强制写回的最长停留时间；若脏页总量一直没超过 10% 后台阈值，就全靠这 30 秒的过期机制兜底。</p>
+<p>要消除这个窗口只能显式同步：<code class="c">fdatasync()</code>（只要数据）、<code class="c">fsync()</code>（数据+元数据）或打开时带 <code class="c">O_SYNC</code>。代价是每次调用都要等一次真实磁盘 IO（NVMe ~50-100μs，SATA SSD ~1ms，机械盘 ~10ms）。</p>
+<p>反过来，如果<strong>接受</strong>丢最后若干秒（例如行情快照文件，重算比保数据便宜），那就让 write-back 自己去跑，避免同步开销。这是 HFT 里「持久化成本 vs 数据价值」的具体权衡点。</p>
+</details>
+<p><strong>Q3.</strong> 已经把 <code class="c">vm.dirty_background_ratio</code> 调大了，为什么业务线程还是会被 <code class="c">write()</code> 卡住？</p>
+<details>
+<summary>答案</summary>
+<p>因为<strong>卡人的不是后台阈值，是前台阈值</strong>。<code class="c">dirty_background_ratio</code>（10%）只负责唤醒 flusher 线程在后台写回，完全不阻塞写者；真正会阻塞的是 <code class="c">vm.dirty_ratio</code>（20%）——脏页占比一旦突破它，<code class="c">balance_dirty_pages_ratelimited_flags()</code>（<code class="c">mm/page-writeback.c:1992</code>）会让<strong>正在写脏页的进程直接进入睡眠</strong>，等写回腾出额度再醒。</p>
+<p>所以调大 background 反而会让脏页攒得更多、更快撞上前台阈值，卡得更狠。</p>
+<p>正确做法：
+1. <strong>调小</strong> <code class="c">vm.dirty_ratio</code>（如 5%~10%）让前台限速更早介入，把"一次性大停顿"摊成"多次小停顿"，降低 p99；
+2. 或者<strong>在写者侧主动 <code class="c">fsync</code></strong>，把节奏拿回自己手里；
+3. 更好的办法是让脏页根本产生不了那么多——<code class="c">O_DIRECT</code> 或 <code class="c">io_uring</code> 直接提交 IO，绕开页缓存写路径。
+4. 观测确认：<code class="c">/proc/vmstat</code> 里 <code class="c">nr_dirty</code>、<code class="c">nr_writeback</code> 两个计数器，配合 <code class="c">bcc/biosnoop</code> 看是不是真的在等盘。</p>
+</details>
 </details>
 <hr />
       </section>
       <section class="section" id="s-16-2">
         <div class="sec-head"><div class="sec-no">16.2</div><h2>section-16.2-缓存回收与双链表策略</h2></div>
 <p>内存紧张时需 <strong>驱逐缓存页</strong> — 优先换出 <strong>干净</strong> 页。</p>
-<p>Linux 使用修改版 <strong>LRU</strong> — <strong>双链表</strong>：</p>
+<h4>版本断崖：双链表从一个「文件级」结构变成 per-node 的<strong>五</strong>条链表</h4>
+<p>LKD 描述的是 <code class="c">address_space</code> 里那两条链表。现代内核把它搬到了<strong>内存节点层</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/mmzone.h — v6.6 */
+enum lru_list {
+    LRU_INACTIVE_ANON = LRU_BASE,                 /* 匿名页·冷 */
+    LRU_ACTIVE_ANON   = LRU_BASE + LRU_ACTIVE,    /* 匿名页·热 */
+    LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,      /* 文件页·冷 ← 页缓存在这 */
+    LRU_ACTIVE_FILE   = LRU_BASE + LRU_FILE + LRU_ACTIVE,  /* 文件页·热 */
+    LRU_UNEVICTABLE,                              /* mlock 住的、不可回收 */
+    NR_LRU_LISTS
+};
+
+struct lruvec {
+    struct list_head    lists[NR_LRU_LISTS];
+    spinlock_t      lru_lock;      /* 每 lruvec 一把锁 */
+    unsigned long       anon_cost;     /* 记录换出代价，动态平衡扫描比例 */
+    unsigned long       file_cost;
+    ...
+};
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>链表</th>
-<th>含义</th>
+<th>变化</th>
+<th>旧（LKD 时代）</th>
+<th>现代 v6.6</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>active（活跃）</strong></td>
-<td><strong>热数据</strong> — <strong>不会被回收</strong></td>
+<td>链表归属</td>
+<td><code class="c">address_space</code> 内</td>
+<td><strong>每个 NUMA 节点 / 每个 memcg 各自一套 <code class="c">lruvec</code></strong></td>
 </tr>
 <tr>
-<td><strong>inactive（非活跃）</strong></td>
-<td><strong>可回收候选</strong></td>
+<td>链表数量</td>
+<td>2（active / inactive）</td>
+<td><strong>5</strong>（anon/file 各冷热 + unevictable）</td>
+</tr>
+<tr>
+<td>锁</td>
+<td>全局或 per-zone</td>
+<td><strong>per-lruvec <code class="c">lru_lock</code></strong>，NUMA 多节点天然分片</td>
+</tr>
+<tr>
+<td>冷热判定</td>
+<td>简单二次机会</td>
+<td>二次机会 + refault distance + 可选 MGLRU</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>为什么把 anon 和 file 分开？</strong> 因为二者的<strong>回收代价完全不同</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>回收时要做什么</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>file 干净页</strong></td>
+<td>直接丢弃（数据已在盘上）</td>
+<td>~0</td>
+</tr>
+<tr>
+<td><strong>file 脏页</strong></td>
+<td>先写回再丢弃</td>
+<td>一次磁盘 IO</td>
+</tr>
+<tr>
+<td><strong>anon 页</strong></td>
+<td>必须写入 swap 才能丢弃</td>
+<td>一次磁盘 IO + swap 占用</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">lruvec</code> 里的 <code class="c">anon_cost</code> / <code class="c">file_cost</code> 就是用来<strong>动态权衡</strong>"这次该多扫 anon 还是多扫 file"的经验值。</p>
+<hr />
+<h4>双链表到底解决了什么（LKD 的"一次扫描污染"问题）</h4>
+<pre class="code" data-label="code"><code class="c">假设单链表 LRU，你跑了一次 find / 扫了 20 万个文件：
+
+  旧 LRU：  [热: 策略代码页] ← 被 20 万个一次性的页从尾部挤出去
+  双链表：  一次性页进 inactive 尾部，访问第二次才升 active
+           → 扫描一遍不会污染 active 里的真热数据
+</code></pre>
+<p><strong>核心规则只有两条：</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -515,26 +724,120 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </thead>
 <tbody>
 <tr>
-<td>页在 inactive 被 <strong>再次访问</strong></td>
-<td>提升到 <strong>active</strong></td>
+<td>页在 inactive 被<strong>再次访问</strong></td>
+<td>提升到 active（"二次机会"）</td>
 </tr>
 <tr>
-<td>仅 inactive 上 <strong>干净页</strong> 可被回收</td>
-<td></td>
+<td>回收只从 <strong>inactive 尾部</strong>取</td>
+<td>干净 file 页优先（零代价），脏页要等写回</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">解决什么问题？
-  一次性顺序读大文件 — 若传统 LRU，会冲掉真正热的缓存
-  双链表：一次扫描的页留在 inactive，不挤 active 热页
-</code></pre>
-<p>→ <strong>Ch 12</strong> 物理页回收</p>
+<blockquote>
+<p><strong>这里的"访问"怎么检测？</strong> 靠<strong>页表项的 Accessed 位</strong>：回收扫描时清位，过一段时间再看谁被重新置位（年轻位）。
+这也是为什么老内核的 swap 行为在 NUMA 上很微妙——扫描和置位可能跨节点。</p>
+</blockquote>
+<hr />
+<h4>MGLRU：可选的第三代（v6.1+）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>传统 LRU</th>
+<th>Multi-Gen LRU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>配置</td>
+<td>默认</td>
+<td><code class="c">CONFIG_LRU_GEN</code>（<code class="c">mm/Kconfig:1220</code>，<strong>无 <code class="c">default y</code></strong>）</td>
+</tr>
+<tr>
+<td>顺序维护</td>
+<td>靠链表搬移</td>
+<td>靠<strong>世代编号</strong>（folio 上记 generation，不搬链表）</td>
+</tr>
+<tr>
+<td>热点判定</td>
+<td>Accessed 位 + 扫描</td>
+<td>世代 + <strong>多次访问加权</strong>，抗"只摸一次"的干扰</td>
+</tr>
+<tr>
+<td>开关</td>
+<td>—</td>
+<td><code class="c">/sys/kernel/mm/lru_gen/enabled</code>（需 <code class="c">CONFIG_LRU_GEN_ENABLED</code>，<code class="c">mm/Kconfig:1229</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>现实提醒：</strong> 主流 x86 发行版内核多数<strong>没有打开</strong> MGLRU（Kconfig 里 LRU_GEN 不带 default y），
+它主要活跃在 Android 和部分云厂商的定制内核上。排障前先 <code class="c">cat /sys/kernel/mm/lru_gen/enabled</code> 确认你在哪一套上。</p>
+</blockquote>
+<hr />
+<p><strong>HFT 视角：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code></strong></td>
+<td>把策略进程整个地址空间钉死，页直接进 <code class="c">LRU_UNEVICTABLE</code>，永不参与回收</td>
+</tr>
+<tr>
+<td><strong><code class="c">mlock</code> / <code class="c">mlock2</code> 关键区</strong></td>
+<td>只钉行情解码表、订单簿这类最热的几 MB</td>
+</tr>
+<tr>
+<td><strong><code class="c">madvise(MADV_DONTNEED)</code></strong></td>
+<td>主动丢弃一次性大块数据（回放完的历史行情），避免把热页挤出 active</td>
+</tr>
+<tr>
+<td><strong><code class="c">echo 3 &gt; drop_caches</code></strong></td>
+<td>只在<strong>维护窗口</strong>用——它会清空整个页缓存，紧接着必然是缓存冷启动的批量 IO</td>
+</tr>
+<tr>
+<td><strong>cgroup <code class="c">memory.low</code></strong></td>
+<td>给交易进程留保护水位，让回收录入优先从同 cgroup 的日志/回放进程身上拿</td>
+</tr>
+</tbody>
+</table></div>
+<p>→ <strong>Ch 12</strong> 物理页回收 · <a href="chapter-17.html#ch-17">Ch 17 页/dcache 回收 slab 视角</a> · <a href="../../06.6-systems-performance/html/chapter-07.html#s-7-6">06.6 Ch7 内存调优</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> Linux 页面回收的 LRU 双链表策略是什么？</p>
 <details>
 <summary>答案</summary>
 <p>active_list（活跃页）和 inactive_list（不活跃页）。新页进 inactive 尾部。被再次访问时从 inactive 提升到 active。回收从 inactive 尾部开始。这比单链表 LRU 更好：防止「一次扫描污染」（如 find / 扫描大量文件后不立即驱逐活跃数据）。HFT 用 mlock 锁页不参与回收。</p>
+</details>
+<p><strong>Q2.</strong> 现代内核的 LRU 链表挂在哪里？为什么比 LKD 描述的多出三条？</p>
+<details>
+<summary>答案</summary>
+<p>挂在 <strong><code class="c">struct lruvec</code></strong> 上（<code class="c">include/linux/mmzone.h</code>），而 <code class="c">lruvec</code> 是<strong>每个 NUMA 节点、每个 memcg 各一份</strong>，不是每个文件一份。</p>
+<p>链表从 2 条变成 5 条（<code class="c">enum lru_list</code>）：
+- <code class="c">LRU_INACTIVE_ANON</code> / <code class="c">LRU_ACTIVE_ANON</code> —— 匿名页（进程堆栈、malloc 的堆）
+- <code class="c">LRU_INACTIVE_FILE</code> / <code class="c">LRU_ACTIVE_FILE</code> —— 文件页（<strong>页缓存住在这里</strong>）
+- <code class="c">LRU_UNEVICTABLE</code> —— <code class="c">mlock</code> 钉住的页，回收扫描直接跳过</p>
+<p>多出来的三条各有用处：
+1. <strong>anon / file 分开</strong>：回收代价不同（file 干净页可零代价丢弃，anon 必须写 swap），<code class="c">lruvec</code> 用 <code class="c">anon_cost</code>/<code class="c">file_cost</code> 动态决定"这轮多扫哪边"；
+2. <strong>UNEVICTABLE 独立</strong>：钉住的页不必每次扫描都被检查一遍，直接整链表跳过。</p>
+<p>这个拆分同时解决了 NUMA 扩展性——每个节点有自己的 <code class="c">lru_lock</code>，多节点并行回收时不再抢同一把全局锁。</p>
+</details>
+<p><strong>Q3.</strong> HFT 策略进程已经 <code class="c">mlockall</code> 了，为什么有时候还是观测到缺页延迟尖刺？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">mlockall</code> 保证的是<strong>页不会被回收出内存</strong>，但不等于"不会发生缺页"。几种常见漏网：</p>
+<ol>
+<li><strong>mlockall 之后才映射的内存</strong>没被覆盖。<code class="c">mlockall(MCL_FUTURE)</code> 才能把未来映射也钉住，只给 <code class="c">MCL_CURRENT</code> 的话，之后 <code class="c">mmap</code> 的历史行情文件、<code class="c">dlopen</code> 的库、新 <code class="c">malloc</code> 的堆都还躺在回收候选中。</li>
+<li><strong>文件页被 <code class="c">truncate</code>/<code class="c">ftruncate</code> 或 <code class="c">invalidate</code></strong> 时会被强制踢出页缓存，mlock 管不住别的进程动文件。</li>
+<li><strong>NUMA 平衡（numa balancing）</strong>会跨节点迁移页，迁移瞬间目标节点要重新建页表，产生一次可观测的停顿。策略进程一般应该 <code class="c">numactl --membind</code> + 关闭 <code class="c">kernel.numa_balancing</code>。</li>
+<li><strong>THP 在缺页时的压缩/分配</strong>：透明大页缺页路径要走一次 2MB 连续内存分配，内存碎片化时会触发 compaction（直接回收+搬迁），这是毫秒级的。HFT 常用 <code class="c">madvise(MADV_HUGEPAGE)</code> 预铺好，或直接关 THP 改用 4K 页求确定性。</li>
+</ol>
+<p>验证手段：<code class="c">perf record -e page-faults,major-faults -p &lt;pid&gt;</code> 看是否还有 major fault（需要 IO 的缺页）；<code class="c">/proc/&lt;pid&gt;/numa_maps</code> 看页是否真的都在本地节点。</p>
 </details>
 </details>
 <hr />
@@ -560,34 +863,185 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
-<h4>基数树 · Radix Tree</h4>
+<h4>版本断崖：radix tree 已被 <strong>xarray</strong> 取代（v4.20）</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/fs.h — v6.6 struct address_space（节选，逐字段注释） */
+struct address_space {
+    struct inode        *host;          /* 宿主 inode（swap 时可能指别人） */
+    struct xarray       i_pages;       /* ← 2.6 时代是 radix tree，现在是 xarray */
+    struct rw_semaphore invalidate_lock; /* 截断 vs 缺页的互斥门 */
+    gfp_t           gfp_mask;       /* 该文件页的分配掩码（如 GFP_NOFS） */
+    atomic_t        i_mmap_writable;/* 有多少个可写映射（&gt;0 说明可能被用户态改脏） */
+    struct rb_root_cached   i_mmap;         /* 映射了本文件的所有 VMA（红黑树） */
+    unsigned long       nrpages;        /* 缓存页数 */
+    pgoff_t         writeback_index;/* 上次写回到哪儿了（循环写回游标） */
+    const struct address_space_operations *a_ops; /* 文件系统填的操作表 */
+    errseq_t        wb_err;         /* 写回错误的&quot;代&quot;，fsync 靠它判断有没有新错误 */
+    spinlock_t      private_lock;
+    struct list_head    private_list;   /* 文件系统私有（如 ext4 的 io_end） */
+    void            *private_data;
+};
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>用途</th>
-<th>按 <strong>文件偏移</strong> 快速查 <strong>缓存页是否在内存</strong></th>
+<th>代际</th>
+<th>结构</th>
+<th>内核版本</th>
+<th>淘汰原因</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>替代</td>
-<td>2.6 前 <strong>全局哈希</strong> — 锁争用、开销大</td>
+<td>1</td>
+<td><strong>全局哈希表</strong></td>
+<td>&lt;2.4</td>
+<td>一把全局锁，多文件并发读写时严重争用</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>radix tree</strong></td>
+<td>2.4 → v4.19</td>
+<td>无全局锁、支持 tag，但 API 别扭（多槽位/预分配语义混乱）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>xarray</strong></td>
+<td><strong>v4.20+（现役）</strong></td>
+<td>自带 <code class="c">xa_lock</code>、API 干净、支持 multi-index 条目（为 THP/folio 铺路）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">address_space
-    └── radix tree: offset ──► struct page *
+<p><strong>语义没变</strong>：仍然是「文件偏移 → 内存页」的索引。变的只是实现和 API 名字。</p>
+<hr />
+<h4>三个 tag 位：为什么 xarray 比"树 + 链表"更合适</h4>
+<p>xarray 给<strong>每个条目</strong>留了 3 个标记位，页缓存正好用来记状态：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/fs.h — v6.6 */
+#define PAGECACHE_TAG_DIRTY XA_MARK_0   /* 这页脏了，需要写回 */
+#define PAGECACHE_TAG_WRITEBACK XA_MARK_1   /* 正在写回中（别碰） */
+#define PAGECACHE_TAG_TOWRITE   XA_MARK_2   /* 本轮待写（防止活锁） */
+
+static inline bool mapping_tagged(struct address_space *mapping, xa_mark_t tag)
+{
+    return xa_marked(&amp;mapping-&gt;i_pages, tag);   /* O(1) 回答「有没有」 */
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>好处</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>O(1) 判断"有没有脏页"</strong></td>
+<td><code class="c">mapping_tagged(mapping, PAGECACHE_TAG_DIRTY)</code> —— 老设计要遍历 dirty 链表</td>
+</tr>
+<tr>
+<td><strong>状态跟着页走</strong></td>
+<td>页被回收、迁移、拆分时状态自动跟随，不用额外维护链表成员</td>
+</tr>
+<tr>
+<td><strong>批量扫描高效</strong></td>
+<td><code class="c">xa_find_tagged()</code> 直接跳到下一个带 tag 的条目，跳过中间所有干净页</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这解释了 16.1 的版本断崖：既然 tag 已经是"页的属性"，就没必要再在 <code class="c">address_space</code> 里维护 <code class="c">dirty_pages</code> 链表了——<strong>链表被 tag 取代</strong>，剩下的"哪些 inode 是脏的"才需要链表，于是挪到了 <code class="c">bdi_writeback</code>。</p>
+</blockquote>
+<hr />
+<h4>struct page → struct folio（v5.16+，v6.6 页缓存已全面 folio 化）</h4>
+<p>LKD 通篇讲 <code class="c">struct page</code>。现代页缓存代码里你看到的是 <strong>folio</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">struct page</code></th>
+<th><code class="c">struct folio</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语义</td>
+<td>一个 4KB 页</td>
+<td><strong>一组物理连续的页</strong>（1 页 / 2 / 4 / … / THP）</td>
+</tr>
+<tr>
+<td>复合页处理</td>
+<td>要判断 <code class="c">PageHead</code>/<code class="c">PageTail</code>，极易写错</td>
+<td>folio 天然就是"整体"，head/tail 细节被藏起来</td>
+</tr>
+<tr>
+<td>页缓存 API</td>
+<td><code class="c">find_get_page()</code></td>
+<td><code class="c">filemap_get_folio()</code> / <code class="c">mapping_get_folios()</code></td>
+</tr>
+<tr>
+<td>批量传递</td>
+<td>无</td>
+<td><code class="c">struct folio_batch</code>（一次搬 15~31 个 folio）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* mm/filemap.c:2617 — v6.6 现代读路径的骨架 */
+ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter, ssize_t already_read)
+{
+    struct folio_batch fbatch;          /* ← 批量容器，不是单个 page */
+    ...
+    folio_batch_init(&amp;fbatch);
+    ...
+    error = filemap_get_pages(iocb, iter-&gt;count, &amp;fbatch, false);
 </code></pre>
 <blockquote>
-<p>新内核中部分实现演进为 <strong>xarray</strong> — 语义仍为 <strong>索引 → page</strong>。</p>
+<p><strong>读代码时的实用技巧：</strong> 看到 <code class="c">folio</code> 先当成"一个页"读，不会错到哪去；只有碰到 <code class="c">nr_pages</code>、THP、large folio 相关逻辑时才需要展开。</p>
 </blockquote>
-<p>→ <strong>Ch 15</strong> VMA · <strong>Ch 13</strong> inode</p>
+<hr />
+<pre class="code" data-label="code"><code class="c">address_space
+    ├── i_pages (xarray):  offset ──► folio *      [3 个 tag 位记脏/回写/待写]
+    ├── i_mmap  (rbtree):  ──────────► VMA 们      [谁 mmap 了这个文件]
+    └── a_ops:             ──────────► read_folio / writepages / dirty_folio ...
+</code></pre>
+<blockquote>
+<p><strong>一个容易踩的点：</strong> <code class="c">i_mapping</code> 和 <code class="c">i_data</code> 是<strong>两个</strong>字段。
+普通文件两者相同（<code class="c">i_mapping == &amp;inode-&gt;i_data</code>）；但<strong>块设备</strong>走 <code class="c">bdev-&gt;bd_inode-&gt;i_mapping</code>，
+而 swap/某些特殊文件会让 <code class="c">i_mapping</code> 指向别人的 <code class="c">address_space</code>。写代码时一律用 <code class="c">inode-&gt;i_mapping</code>，别直接用 <code class="c">&amp;inode-&gt;i_data</code>。</p>
+</blockquote>
+<p>→ <strong>Ch 15</strong> VMA · <strong>Ch 13</strong> inode · <a href="#s-16-1">Ch 16.1 脏页住哪</a> · <a href="chapter-06.html#s-6-4">Ch 6.4 映射（xarray 全景）</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> address_space 和 page cache 的关系？</p>
 <details>
 <summary>答案</summary>
 <p>address_space 是 page cache 的管理单位：每个 inode（文件）对应一个 address_space，其中包含该文件所有缓存页的基数树（radix tree / xarray）。查找文件 offset 对应的缓存页：address_space → xarray → page。mmap 文件时，VMA 的 vm_ops-&gt;fault 回调从 address_space 取页。</p>
+</details>
+<p><strong>Q2.</strong> 内核怎么在不遍历整棵树的前提下，知道"这个文件有没有脏页"？</p>
+<details>
+<summary>答案</summary>
+<p>靠 xarray 的 <strong>tag 位</strong>。每个页缓存条目带 3 个标记位（<code class="c">include/linux/fs.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define PAGECACHE_TAG_DIRTY XA_MARK_0   /* 脏 */
+#define PAGECACHE_TAG_WRITEBACK XA_MARK_1   /* 写回中 */
+#define PAGECACHE_TAG_TOWRITE   XA_MARK_2   /* 本轮待写 */
+</code></pre>
+<p>判断有没有脏页：<code class="c">mapping_tagged(mapping, PAGECACHE_TAG_DIRTY)</code> → 内部是 <code class="c">xa_marked()</code>，xarray 在每一层节点上<strong>汇总</strong>了子树里是否有带该 tag 的条目，所以是 <strong>O(1)</strong>（准确说是 O(树高) 且常态第一步就返回）。</p>
+<p>要<strong>找出</strong>所有脏页时，用 <code class="c">xa_find_tagged()</code> 从上次位置继续，直接跳到下一个带 tag 的条目，中间的干净页全部跳过，不进缓存行。</p>
+<p>这就是把"脏页链表"从 <code class="c">address_space</code> 里拿掉的底气：链表的核心能力（有没有 / 下一个是谁）tag 都能提供，而且天然跟着页走，不会出现"页已经回收了但链表节点还在"这类不一致。</p>
+</details>
+<p><strong>Q3.</strong> 读现代内核源码时到处是 <code class="c">folio</code>，它和 <code class="c">struct page</code> 是什么关系？为什么要引入？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">struct folio</code> 表示<strong>一组物理连续的页</strong>（可以是 1 页，也可以是 THP 的 512 页）。设计动机是<strong>消灭复合页的 head/tail 陷阱</strong>：</p>
+<ul>
+<li>旧代码里 <code class="c">struct page</code> 可能是复合页的 head、tail、或普通单页，几乎每个操作前都要先判断，<code class="c">PageHead()</code>/<code class="c">PageTail()</code>/<code class="c">compound_head()</code> 满天飞，写错就是内存破坏；</li>
+<li>folio 被定义为"所见即整体"——拿到 folio 就是拿到整组页，<code class="c">folio-&gt;page</code> 才是第 0 页的 <code class="c">struct page</code>。</li>
+</ul>
+<p>对页缓存的意义：支持 <strong>large folio</strong>（一次缓存 64KB 甚至 2MB 的连续块），减少 xarray 条目数、减少缺页次数、提高预读和 DMA 的效率。</p>
+<p>迁移对照（v6.6 常用 API）：
+- <code class="c">find_get_page()</code> → <code class="c">filemap_get_folio()</code>
+- <code class="c">page_cache_release()</code> → <code class="c">folio_put()</code>
+- <code class="c">SetPageDirty()</code> → <code class="c">folio_mark_dirty()</code>
+- 批量传递：<code class="c">struct folio_batch</code>（默认 15 个条目，<code class="c">mm/filemap.c</code> 读路径里用它一次搬一批）</p>
+<p>阅读技巧：先按"一个 folio ≈ 一个页"理解，不影响把握算法；只有碰到 <code class="c">nr_pages</code> 和 THP 相关分支时才需要展开成多页。</p>
 </details>
 </details>
 <hr />
@@ -612,8 +1066,160 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">今天：read 文件块 ──► 页缓存中的一页 ──► 需要时 bio 写盘（Ch 14）
+<pre class="code" data-label="code"><code class="c">今天：read 文件块 ──► 页缓存中的一页（或 folio）──► 需要时用 bh/bio 描述块偏移 ──► 写盘（Ch 14）
 </code></pre>
+<hr />
+<h3>"buffer cache 没了"是对的吗？—— 一半对</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层面</th>
+<th>现状</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>独立的 buffer cache</strong></td>
+<td>✅ 确实没了</td>
+<td>2.4 起不再有按磁盘块（512B）单独组织的一套缓存</td>
+</tr>
+<tr>
+<td><strong><code class="c">struct buffer_head</code></strong></td>
+<td>❌ <strong>还在，且仍是主力</strong></td>
+<td><code class="c">fs/buffer.c</code> 里活得好好的，元数据 IO 全靠它</td>
+</tr>
+<tr>
+<td><strong>块设备的页缓存</strong></td>
+<td>❌ <strong>还在</strong></td>
+<td><code class="c">/dev/sda</code> 也有 <code class="c">inode-&gt;i_mapping</code>，元数据读写走的就是它</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两者的分工：</strong></p>
+<pre class="code" data-label="code"><code class="c">                     ┌──── 数据路径 ──────────────────────────────────┐
+                     │  文件内容 → 页缓存（folio）→ iomap / bio      │
+   一次磁盘访问      │                                              │
+                     ├──── 元数据路径 ────────────────────────────────┤
+                     │  superblock / inode bitmap / 间接块           │
+                     │    → 块设备页缓存 + buffer_head（sb_bread）   │
+                     └───────────────────────────────────────────────┘
+</code></pre>
+<blockquote>
+<p><strong>为什么元数据还用 bh？</strong> 因为元数据是<strong>小块、随机、强一致</strong>的：一次改一个 inode 位图里的几个字节，
+用 buffer_head 描述"这一页里的第 N 个 1KB 块"最直接，而且提交时要求顺序精确（journaling 依赖这个）。
+反过来，数据路径追求<strong>大块、顺序、高吞吐</strong>，用 folio + iomap 直接映射整段更划算。</p>
+</blockquote>
+<hr />
+<h3>什么时候一个页会挂多个 buffer_head</h3>
+<p>当<strong>块大小 &lt; 页大小</strong>时（例如 4KB 页 + 1KB 文件系统块），一个页被切成 4 份，每份一个 bh：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/buffer_head.h — v6.6（节选） */
+struct buffer_head {
+    unsigned long b_state;        /* BH_Uptodate / BH_Dirty / BH_Lock / BH_Mapped ... */
+    struct buffer_head *b_this_page;  /* ← 同一页内的下一个 bh，环形链表 */
+    struct page *b_page;              /* 所属的页 */
+    sector_t b_blocknr;               /* 逻辑块号 */
+    size_t b_size;                    /* 块大小 */
+    char *b_data;                     /* 数据在页内的位置 */
+    struct block_device *b_bdev;
+    bh_end_io_t *b_end_io;
+    ...
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>常见组合</th>
+<th>一个页挂几个 bh</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4KB 页 + 4KB 块（<strong>最常见，ext4/xfs 默认</strong>）</td>
+<td><strong>1 个</strong>（<code class="c">b_this_page</code> 指向自己）</td>
+</tr>
+<tr>
+<td>4KB 页 + 1KB 块（小文件或老 FS）</td>
+<td>4 个</td>
+</tr>
+<tr>
+<td>4KB 页 + 512B 块（FAT/老式）</td>
+<td>8 个</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这也是 <code class="c">/proc/meminfo</code> 里那个 <code class="c">Buffers:</code> 字段的由来（<code class="c">fs/proc/meminfo.c</code> 里 <code class="c">show_val_kb(m, "Buffers: ", i.bufferram)</code>）——
+它统计的就是这类"作为块缓冲区被映射着的页"。在只有 ext4/xfs 且块大小=页大小的现代服务器上，这个值通常<strong>很小</strong>。</p>
+</blockquote>
+<hr />
+<h3>观测</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>怎么看</th>
+<th>健康值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">Buffers</code></td>
+<td><code class="c">grep ^Buffers /proc/meminfo</code></td>
+<td>现代 ext4/xfs 服务器上通常只有几十 MB</td>
+</tr>
+<tr>
+<td><code class="c">Cached</code></td>
+<td><code class="c">grep ^Cached /proc/meminfo</code></td>
+<td>这是页缓存主体（<strong>不含</strong> SwapCached）</td>
+</tr>
+<tr>
+<td><code class="c">free</code> 的 <code class="c">buff/cache</code> 列</td>
+<td>上面两者<strong>之和</strong></td>
+<td>高不代表有问题——页缓存本来就该吃满空闲内存</td>
+</tr>
+<tr>
+<td>bh 用量</td>
+<td><code class="c">slabtop \| grep buffer_head</code></td>
+<td>元数据密集操作（大量 create/unlink）时会涨</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 实操提示：</strong> 看到 <code class="c">buff/cache</code> 很大不要慌，那是内核在用空闲内存做缓存，不是泄漏。
+真正要关心的是 <code class="c">MemAvailable</code>（已扣除不可回收部分）。只有在确认缓存命中率暴跌
+（<code class="c">cachestat</code>/<code class="c">cachetop</code>）时，缓存才值得调优。</p>
+</blockquote>
+<hr />
+<h3>第二代改造：iomap</h3>
+<p><code class="c">buffer_head</code> 的问题是<strong>页与块的耦合</strong>。iomap 把"文件偏移 → 磁盘偏移"抽成一层映射查询：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>老方式（bh）</th>
+<th>iomap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文件系统要提供</td>
+<td><code class="c">get_block()</code> 逐块回调</td>
+<td><code class="c">iomap_begin()</code> 返回一整段 <strong>extent</strong></td>
+</tr>
+<tr>
+<td>大文件顺序 IO</td>
+<td>每块回调一次</td>
+<td>一次映射覆盖 MB 级</td>
+</tr>
+<tr>
+<td>用户</td>
+<td>ext2/minix/老 ext3</td>
+<td><strong>XFS（全部）、ext4（部分路径）、btrfs、gfs2</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>→ 详见 <a href="chapter-14.html#s-14-3">Ch 14.3 buffer_head</a> 的字段解剖与状态位表</p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> buffer cache 和 page cache 的关系？现代内核还有 buffer cache 吗？</p>
@@ -621,52 +1227,276 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <summary>答案</summary>
 <p>2.4 之前 buffer cache 缓存磁盘块（512B），page cache 缓存文件页（4KB），两者重复缓存同一数据。2.4 后统一：buffer cache 合并到 page cache 中，buffer_head 只作为页内块偏移的描述符。<code class="c">free</code> 命令中的 "buff/cache" 就是 page cache（含 buffer）。现代内核已无独立 buffer cache。</p>
 </details>
+<p><strong>Q2.</strong> 既然 buffer cache 已经合并进 page cache，为什么 <code class="c">struct buffer_head</code> 还活着？</p>
+<details>
+<summary>答案</summary>
+<p>因为合并掉的是<strong>独立的缓存实体</strong>，不是 <code class="c">buffer_head</code> 这个<strong>描述符</strong>。</p>
+<ul>
+<li><strong>消失的</strong>：一套按 512B/1KB 磁盘块单独组织的缓存，与页缓存重复存放同一份数据（双重内存占用 + 双重拷贝 + 一致性维护）。</li>
+<li><strong>留下的</strong>：<code class="c">struct buffer_head</code> 作为"这一页里第 N 个块"的描述符，被文件系统用来读写<strong>元数据</strong>。</li>
+</ul>
+<p>元数据路径为什么还离不开 bh：
+1. 元数据是<strong>小而随机</strong>的改动（改一个 inode 位图里的几字节），bh 的"页内某块"语义最直接；
+2. 日志（journaling）要求写入顺序严格可控，bh 的 <code class="c">BH_Dirty</code>/<code class="c">BH_Lock</code>/<code class="c">BH_Uptodate</code> 状态机提供了这种精确控制；
+3. 块设备本身（<code class="c">/dev/sda</code>）也有 <code class="c">bd_inode-&gt;i_mapping</code>，<code class="c">sb_bread()</code> 就是"读块设备的那一页 + 取对应 bh"。</p>
+<p>所以现代分工是：<strong>数据路径走页缓存 + iomap/bio，元数据路径走块设备页缓存 + buffer_head</strong>。
+在 ext4/xfs 且块大小 = 页大小的典型配置下，一个页只挂 1 个 bh，<code class="c">Buffers</code> 字段也就很小。</p>
+</details>
+<p><strong>Q3.</strong> 一台服务器上 <code class="c">free</code> 显示 buff/cache 占了 40GB，是不是内存泄漏？要不要清？</p>
+<details>
+<summary>答案</summary>
+<p><strong>大概率不是泄漏，不要清。</strong></p>
+<p>页缓存的设计原则就是"空闲内存不闲着"——进程不用它就拿来做磁盘缓存，需要时（内存压力）通过 LRU 回收，不会真的把进程挤死。判断内存是否紧张的指标是 <strong><code class="c">MemAvailable</code></strong>，不是 <code class="c">free</code> 那列。</p>
+<p>真正需要怀疑缓存的场景，看这三个信号：
+1. <code class="c">MemAvailable</code> 持续很低 + <code class="c">pgscan</code>/<code class="c">pgsteal</code> 一直在涨（<code class="c">/proc/vmstat</code>）→ 说明确实在频繁回收；
+2. <strong>缓存命中率暴跌</strong>（<code class="c">cachestat</code> 看 ratio，或 <code class="c">cachetop</code> 按进程看 HITS/MISSES）→ 说明工作集大于可用缓存，或有"一次扫描"在污染（见 16.2）；
+3. <code class="c">Buffers</code> 异常大（几 GB 级）→ 说明有大量块设备直读或元数据密集操作，值得用 <code class="c">slabtop</code> 看 <code class="c">buffer_head</code> slab。</p>
+<p>清除缓存（<code class="c">echo 3 &gt; /proc/sys/vm/drop_caches</code>）只应该在<strong>基准测试前</strong>做——它保证每次测量都从冷缓存开始，结果可复现。生产环境清缓存的代价是随后必然的批量冷启动 IO，对延迟敏感的系统是负面操作。</p>
+<p>HFT 的正确做法不是清缓存，而是<strong>控制工作集</strong>：<code class="c">mlockall</code> 钉住策略进程、给回放/日志进程单独 cgroup、对一次性大文件读完后 <code class="c">madvise(MADV_DONTNEED)</code>。</p>
+</details>
 </details>
 <hr />
       </section>
       <section class="section" id="s-16-5">
         <div class="sec-head"><div class="sec-no">16.5</div><h2>section-16.5-flusher-线程</h2></div>
 <p><strong>内核线程组</strong> — 负责 <strong>脏页写回</strong>。</p>
-<h4>三种触发条件</h4>
+<blockquote>
+<p><strong>版本订正：</strong> LKD 说"每个磁盘主轴（spindle）一个 flusher 线程"。现代表述是
+<strong>每个 <code class="c">backing_dev_info</code>（bdi）一个 <code class="c">bdi_writeback</code></strong>——bdi 大致对应"一个块设备"，
+与主轴不再是一一对应（一个 NVMe 设备可能有多个队列，却只有一个 bdi；而 cgroup writeback 又能从一个 bdi 分裂出多个 wb）。</p>
+</blockquote>
+<h4>三种触发条件（附 v6.6 精确阈值）</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>#</th>
 <th>触发</th>
-<th>配置/接口</th>
+<th>配置</th>
+<th>v6.6 默认值</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
 <td><strong>可用内存低于阈值</strong></td>
-<td><code class="c">dirty_background_ratio</code> 等 — 必须写回释内存</td>
+<td><code class="c">vm.dirty_background_ratio</code>（后台，不阻塞）<br><code class="c">vm.dirty_ratio</code>（<strong>前台，阻塞写者</strong>）</td>
+<td><strong>10%</strong> / <strong>20%</strong></td>
 </tr>
 <tr>
 <td>2</td>
 <td><strong>脏页停留超时</strong></td>
-<td><code class="c">dirty_expire_interval</code> — 防崩溃丢太多</td>
+<td><code class="c">vm.dirty_expire_centisecs</code></td>
+<td><strong>3000</strong>（30 秒）</td>
 </tr>
 <tr>
 <td>3</td>
 <td><strong>用户显式同步</strong></td>
-<td><strong><code class="c">sync()</code></strong> · <strong><code class="c">fsync()</code></strong> / <code class="c">fdatasync</code></td>
+<td><code class="c">sync()</code> / <code class="c">fsync()</code> / <code class="c">fdatasync()</code> / <code class="c">syncfs()</code></td>
+<td>—</td>
 </tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="code"><code class="c">脏页积累
-    ├─ 内存压力 ──► flusher 后台写回
-    ├─ 时间到期 ──► 周期性写回
-    └─ fsync()   ──► 该文件脏页刷盘（可能阻塞）
+    ├─ 超过 10% ────► 后台唤醒 wb 的 dwork（写者无感）
+    ├─ 超过 20% ────► 前台限速：写者被 balance_dirty_pages 睡住
+    ├─ 脏页 &gt;30s ───► 周期性强制写回（dirty_expire）
+    └─ fsync()   ───► 该文件脏页刷盘 + 设备 cache flush（阻塞）
 </code></pre>
-<p>| 观测 | <strong><code class="c">cachestat</code></strong> 命中率 · <strong><code class="c">ext4slower</code></strong> 慢 fsync |</p>
+<hr />
+<h3>bdi_writeback：写回的组织者</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/backing-dev-defs.h — v6.6（节选） */
+struct bdi_writeback {
+    struct backing_dev_info *bdi;
+    unsigned long state;
+    unsigned long last_old_flush;
+
+    struct list_head b_dirty;      /* ① 脏 inode（还没开始写） */
+    struct list_head b_io;         /* ② 本轮正在写回的 inode */
+    struct list_head b_more_io;    /* ③ 本轮没写完的 inode（下轮优先） */
+    struct list_head b_dirty_time; /* ④ 只有时间戳脏的 inode（atime/mtime） */
+    spinlock_t list_lock;          /* 保护上面四条链表 */
+
+    atomic_t writeback_inodes;     /* 正在写回的 inode 数 */
+
+    unsigned long write_bandwidth;      /* 本设备估算写带宽 */
+    unsigned long avg_write_bandwidth;  /* 平滑后的写带宽 */
+    unsigned long dirty_ratelimit;      /* 本设备被分配的脏页速率额度 */
+    unsigned long balanced_dirty_ratelimit;
+
+    spinlock_t work_lock;
+    struct list_head work_list;
+    struct delayed_work dwork;     /* ← flusher 就是跑这个 workqueue item */
+    struct delayed_work bw_dwork;  /* 带宽估算定时器（每 200ms） */
+    ...
+};
+</code></pre>
+<p><strong>四条 inode 链表为什么是四条？</strong> 这是防<strong>活锁</strong>的关键：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>链表</th>
+<th>含义</th>
+<th>为什么要单独一条</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">b_dirty</code></td>
+<td>脏了但本轮还没轮到</td>
+<td>与"正在写"的分开，避免新脏的 inode 插队</td>
+</tr>
+<tr>
+<td><code class="c">b_io</code></td>
+<td>本轮挑出来要写的</td>
+<td>一轮写回的"工作集"</td>
+</tr>
+<tr>
+<td><code class="c">b_more_io</code></td>
+<td><strong>本轮没写完</strong>的（被限速打断 / 页太多）</td>
+<td>下一轮<strong>优先</strong>处理它们 → 保证每个脏 inode 最终都能写完，不会被新来的活生生饿死</td>
+</tr>
+<tr>
+<td><code class="c">b_dirty_time</code></td>
+<td>只有 atime/ctime 变了，数据没变</td>
+<td>这类"脏"只需更新时间戳，优先级更低，可以攒更久</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>对应到 <code class="c">struct writeback_control</code>（<code class="c">include/linux/writeback.h</code>）里的 <code class="c">tagged_writepages</code> 标志位——
+注释原文就是 "tag-and-write to avoid livelock"，与 <code class="c">PAGECACHE_TAG_TOWRITE</code> 配合使用。</p>
+</blockquote>
+<hr />
+<h3>fsync 到底做了几件事（为什么它比"写一次磁盘"贵）</h3>
+<pre class="code" data-label="code"><code class="c">fsync(fd)
+  1. 把该文件的所有脏页写回            （数据 IO）
+  2. 把该文件的元数据 inode 写回        （元数据 IO，fsync 有、fdatasync 无）
+  3. 等所有 IO 完成                      （等中断/完成队列）
+  4. 发 FLUSH/FUA 命令刷设备的易失缓存  （REQ_PREFLUSH / REQ_FUA，见 Ch 14.4）
+  5. 返回，并更新 address_space-&gt;wb_err （错误只报一次，见下）
+</code></pre>
+<blockquote>
+<p><strong><code class="c">wb_err</code> 的坑：</strong> 写回错误是通过 <code class="c">address_space-&gt;wb_err</code> 这个<strong>带代号的 seqcount</strong> 报告的。
+一次错误只会被"消费"一次——<code class="c">fsync</code> 返回的 <code class="c">-EIO</code> 只会给<strong>第一个</strong>来问的调用者，后来的调用者看到 <code class="c">wb_err</code> 没变，就认为"没事"。
+多进程共享一个日志文件时，这意味着<strong>错误可能被别的进程吃掉</strong>。日志系统最好自己维护持久化位点。</p>
+</blockquote>
+<hr />
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>观测</th>
+<th>看什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">cachestat</code></strong>（BCC）</td>
+<td>页缓存命中率</td>
+</tr>
+<tr>
+<td><strong><code class="c">ext4slower</code></strong>（BCC）</td>
+<td>慢于阈值的 ext4 操作（含 fsync）</td>
+</tr>
+<tr>
+<td><strong><code class="c">biosnoop</code></strong>（BCC）</td>
+<td>每次块 IO 的延迟与进程归属</td>
+</tr>
+<tr>
+<td><strong><code class="c">/proc/meminfo</code></strong></td>
+<td><code class="c">Dirty:</code> / <code class="c">Writeback:</code> 两项实时脏页量</td>
+</tr>
+<tr>
+<td><strong><code class="c">/proc/vmstat</code></strong></td>
+<td><code class="c">nr_dirty</code> / <code class="c">nr_writeback</code> / <code class="c">pgscan_*</code></td>
+</tr>
+</tbody>
+</table></div>
 <p><strong>HFT：</strong> 突发 <strong><code class="c">fsync</code> 日志</strong> 仍可能造成 <strong>P99 尖刺</strong> — 与策略核隔离、异步批量、专用盘。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>降低 fsync 痛感的四种办法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>批量</strong>：多条日志攒一次 fsync</td>
+<td>丢数据窗口变大</td>
+</tr>
+<tr>
+<td><strong>专用盘</strong>：日志盘与策略/回放盘物理分离</td>
+<td>硬件成本</td>
+</tr>
+<tr>
+<td><strong>挪线程</strong>：fsync 放到 IO 线程，策略线程只投递</td>
+<td>架构复杂度（需无锁队列）</td>
+</tr>
+<tr>
+<td><strong><code class="c">O_DIRECT</code> + 自管缓冲</strong>：完全绕开页缓存</td>
+<td>必须自己对齐（见 Ch 14.2），丢内核预读/合并</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> flusher 线程什么时候触发写回？HFT 如何控制？</p>
 <details>
 <summary>答案</summary>
 <p>触发条件：1) 脏页比例超阈值（vm.dirty_ratio 默认 20%）；2) 脏页存活超时（vm.dirty_expire_centisecs 默认 30s）；3) 用户调用 sync/fsync。HFT 控制：调小 vm.dirty_ratio 减少突发写回；交易日志用 O_SYNC 或 fsync 保证即时落盘。flusher 是后台线程，不影响前台交易线程（除非内存回收时阻塞）。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">bdi_writeback</code> 为什么要维护 4 条 inode 链表，而不是 1 条？</p>
+<details>
+<summary>答案</summary>
+<p>4 条链表（<code class="c">include/linux/backing-dev-defs.h</code>）各自解决一个具体问题：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>链表</th>
+<th>装什么</th>
+<th>为什么必须独立</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">b_dirty</code></td>
+<td>脏了但本轮还没轮到的 inode</td>
+<td>让"新脏的"和"正在写的"分开，防止新任务插队到老任务前面</td>
+</tr>
+<tr>
+<td><code class="c">b_io</code></td>
+<td>本轮挑出来要写的 inode</td>
+<td>一轮写回的工作集，写完后要么清空要么挪走</td>
+</tr>
+<tr>
+<td><code class="c">b_more_io</code></td>
+<td>本轮<strong>没写完</strong>的 inode</td>
+<td><strong>防活锁的关键</strong>：下一轮优先处理它们，保证"写不完的 inode"最终一定写得完，不会被源源不断的新脏页饿死</td>
+</tr>
+<tr>
+<td><code class="c">b_dirty_time</code></td>
+<td>只有 atime/mtime 变了、数据没脏</td>
+<td>时间戳的"脏"不占数据风险，可以攒更久，降级处理</td>
+</tr>
+</tbody>
+</table></div>
+<p>如果只有 1 条链表，一个持续被追加写的大日志文件会永远待在链表头部附近——每次挑 inode 都挑到它，其他文件的脏页<strong>永远轮不到写回</strong>。这就是活锁。</p>
+<p>配合 <code class="c">PAGECACHE_TAG_TOWRITE</code>（xarray 第 3 个 tag 位）标记"本轮已挑中"，下一轮扫描会跳过已标记条目，从剩下的继续——这就是 <code class="c">struct writeback_control</code> 里 <code class="c">tagged_writepages</code> 标志位注释写的 "tag-and-write to avoid livelock"。</p>
+</details>
+<p><strong>Q3.</strong> 多线程共写一个日志文件，某次 <code class="c">fsync</code> 返回 <code class="c">-EIO</code>，其他线程调用 <code class="c">fsync</code> 却返回成功，为什么？</p>
+<details>
+<summary>答案</summary>
+<p>因为写回错误是通过 <code class="c">address_space-&gt;wb_err</code> 这个 <strong>errseq_t（带代号的序列号）</strong> 上报的，语义是<strong>一次性消费</strong>。</p>
+<p>机制：
+1. 写回失败时，内核递增 <code class="c">mapping-&gt;wb_err</code>（这是一个 seqcount，低 2 位是"错误标志"，高位是"代号"）；
+2. <code class="c">fsync</code> 调用者在<strong>打开文件/首次同步时</strong>记下当时的 <code class="c">wb_err</code> 值（保存在 <code class="c">file-&gt;f_wb_err</code>）；
+3. 每次 <code class="c">fsync</code> 比较"当前 wb_err" 和"我上次记的"，不同则报告错误并更新自己记的值，<strong>相同则返回成功</strong>。</p>
+<p>结果：<strong>第一次</strong>问的调用者拿到 <code class="c">-EIO</code>，之后问的调用者因为值已经"被消费"过，看到没变化就认为一切正常——错误被静默吞掉。</p>
+<p>对 HFT 日志系统的影响与对策：
+- 不要依赖 <code class="c">fsync</code> 的返回值作为唯一持久化判据；
+- 自己维护一个<strong>单调递增的持久化位点</strong>（写成功后更新共享内存/单独的小文件），由<strong>单一线程</strong>负责 fsync 并检查结果；
+- 或者干脆用 <code class="c">O_SYNC</code> 打开，让每次 <code class="c">write</code> 的返回值直接暴露错误（<code class="c">write</code> 返回短写/错误，语义更直观）；
+- 监控上要盯 <code class="c">/proc/meminfo</code> 的 <code class="c">Writeback:</code> 异常残留和设备 <code class="c">dmesg</code> 里的 IO error，而不是只看应用日志。</p>
 </details>
 </details>
 <hr />
@@ -688,12 +1518,234 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tbody>
 </table></div>
 <p>| 场景 | 笔记本 · 非 HFT 实盘常态 — 了解即可 |</p>
+<hr />
+<h3>机制：三个钩子（v6.6 源码逐条）</h3>
+<p>这个功能<strong>没有独立子系统</strong>，就是在页缓存写回路径上打了三处补丁：</p>
+<p><strong>① 关掉后台写回的"低阈值"唤醒</strong></p>
+<pre class="code" data-label="C"><code class="c">/* mm/page-writeback.c:1752 — v6.6 原文注释 + 代码 */
+/*
+ * In laptop mode, we wait until hitting the higher threshold
+ * before starting background writeout, and then write out all
+ * the way down to the lower threshold.  So slow writers cause
+ * minimal disk activity.
+ */
+if (!laptop_mode &amp;&amp; nr_reclaimable &gt; gdtc-&gt;bg_thresh &amp;&amp;
+    !writeback_in_progress(wb))
+    wb_start_background_writeback(wb);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>普通模式</th>
+<th>laptop mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>后台写回起点</td>
+<td>脏页刚过 <strong>低阈值</strong>（10%）就写</td>
+<td><strong>忍住不写</strong>，一路攒到高阈值（20%）</td>
+</tr>
+<tr>
+<td>写回量</td>
+<td>少量多次</td>
+<td><strong>一次写到底</strong>，一路降到低阈值</td>
+</tr>
+<tr>
+<td>磁盘动作</td>
+<td>频繁被唤醒</td>
+<td>长时间停转</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>② IO 完成后挂一个"延期全刷"定时器 —— 这就是 LKD 说的"搭便车"</strong></p>
+<pre class="code" data-label="C"><code class="c">/* mm/page-writeback.c:2166 — v6.6 原文注释 + 代码 */
+/*
+ * We've spun up the disk and we're in laptop mode: schedule writeback
+ * of all dirty data a few seconds from now.  If the flush is already
+ * scheduled then push it back - the user is still using the disk.
+ */
+void laptop_io_completion(struct backing_dev_info *info)
+{
+    mod_timer(&amp;info-&gt;laptop_mode_wb_timer, jiffies + laptop_mode);
+}
+
+/* 定时器到期 → 把这台设备的所有脏数据一起写回 */
+void laptop_mode_timer_fn(struct timer_list *t)
+{
+    struct backing_dev_info *backing_dev_info =
+        from_timer(backing_dev_info, t, laptop_mode_wb_timer);
+    wakeup_flusher_threads_bdi(backing_dev_info, WB_REASON_LAPTOP_TIMER);
+}
+</code></pre>
+<p>关键在于 <code class="c">mod_timer</code> 的 <strong>"推后"语义</strong>：每次有 IO 完成，就把定时器<strong>重新推后</strong> <code class="c">laptop_mode</code> 秒。</p>
+<pre class="code" data-label="code"><code class="c">有 IO 活动   有 IO 活动   有 IO 活动      安静 5 秒
+    │            │            │              │
+    ▼            ▼            ▼              ▼
+ [重置5s]    [重置5s]    [重置5s]      定时器到期 → 全量写回
+ ────────────────────────────────────────────────────►
+          磁盘转着，脏页一直不写（搭便车）
+</code></pre>
+<p><strong>"盘都转着呢，不写白不写"</strong> —— 只要磁盘因为别的原因在转，就一直延后；等它真要停了，才一次性把所有脏页写下去。</p>
+<p><strong>③ 数值语义：<code class="c">laptop_mode</code> 既是开关也是时长</strong></p>
+<pre class="code" data-label="C"><code class="c">/* mm/page-writeback.c:115 */
+/*
+ * Flag that puts the machine in &quot;laptop mode&quot;. Doubles as a timeout in jiffies:
+ * a full sync is triggered after this time elapses without any disk activity.
+ */
+int laptop_mode;
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* mm/page-writeback.c:2288 — sysctl 表项 */
+{ .procname = &quot;laptop_mode&quot;, .data = &amp;laptop_mode,
+  .mode = 0644, .proc_handler = proc_dointvec_jiffies },
+</code></pre>
+<p><code class="c">proc_dointvec_jiffies</code> 意味着你写进去的<strong>秒数</strong>会被换算成 jiffies 存起来 —— 所以
+<code class="c">echo 5 &gt; /proc/sys/vm/laptop_mode</code> = 开关打开 + 静默 5 秒后全量写回；<code class="c">echo 0</code> = 关闭。</p>
+<hr />
+<h3>现代评价：为什么它基本已成历史</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>机械硬盘时代</th>
+<th>NVMe / SSD 时代</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>停转省电</td>
+<td><strong>核心收益</strong>（启动电机 ~1-2W·秒级）</td>
+<td><strong>不存在</strong>——没有机械部件，空闲功耗本来就极低</td>
+</tr>
+<tr>
+<td>延迟写回的收益</td>
+<td>避免反复启动电机</td>
+<td>无</td>
+</tr>
+<tr>
+<td>延迟写回的代价</td>
+<td>掉电丢失窗口变大</td>
+<td><strong>一样大</strong>，且写回突发更陡</td>
+</tr>
+<tr>
+<td>尾延迟影响</td>
+<td>一次大 flush 造成卡顿</td>
+<td><strong>一样卡</strong>，甚至更明显（NVMe 快但队列被突发塞满）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论：</strong> laptop mode 在 v6.6 里<strong>代码还在</strong>（<code class="c">page-writeback.c</code> 的 115 / 1752 / 2158 行），
+主流发行版默认 <code class="c">0</code>。NVMe 服务器上打开它<strong>没有任何收益，只有更大的数据丢失窗口和更差的尾延迟</strong>——不要开。</p>
+</blockquote>
+<h3>但"攒批写回"的思想活了下来</h3>
+<p>laptop mode 死了，它背后的<strong>"把多次小写合并成一次大写"</strong>到处都是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现代继承者</th>
+<th>作用层</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>blk-mq plugging</strong></td>
+<td>块层</td>
+<td>攒一批 request 再一次性提交给驱动（见 Ch 14.5）</td>
+</tr>
+<tr>
+<td><strong>io_uring 批量提交</strong></td>
+<td>系统调用</td>
+<td>一次 <code class="c">io_uring_enter</code> 提交 N 个 SQE，摊薄系统调用开销</td>
+</tr>
+<tr>
+<td><strong>journal commit interval</strong></td>
+<td>文件系统</td>
+<td>ext4 默认 5s 提交一次事务（<code class="c">commit=</code> 挂载参数）</td>
+</tr>
+<tr>
+<td><strong><code class="c">dirty_expire_centisecs</code></strong></td>
+<td>页缓存</td>
+<td>让脏页攒 30 秒再写（<strong>这其实就是"温和版 laptop mode"</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>与 HFT 的关系</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>不要做</strong></td>
+<td>为省 IO 次数而延迟写回关键日志——掉电就丢</td>
+</tr>
+<tr>
+<td><strong>可以做</strong></td>
+<td>非关键数据（行情快照、回放缓存）允许攒批，接受丢失</td>
+</tr>
+<tr>
+<td><strong>必须做</strong></td>
+<td>把 fsync/写回<strong>移出策略线程</strong>，让攒批的代价不落在 tick 路径上</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> Laptop Mode 对 HFT 有什么启发？</p>
 <details>
 <summary>答案</summary>
 <p>Laptop Mode 通过延迟写回让磁盘长时间停转省电。HFT 启发：1) 如果交易日志用 NVMe（无机械部件），Laptop Mode 无意义；2) 但原理可借鉴——批量写回减少 IO 次数。HFT 可以调高 vm.dirty_writeback_centisecs 让 flusher 少运行，减少对交易线程的干扰。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">echo 5 &gt; /proc/sys/vm/laptop_mode</code> 里的 5 是什么意思？为什么这个变量"既当开关又当时长"？</p>
+<details>
+<summary>答案</summary>
+<p>这个 <code class="c">5</code> 是<strong>秒数</strong>，而且它同时承担两个职责：</p>
+<ol>
+<li><strong>开关</strong>：非 0 就是启用 laptop mode，0 就是关闭；</li>
+<li><strong>时长</strong>：磁盘静默多少秒后触发全量写回。</li>
+</ol>
+<p>原因是内核把它存成了 <strong>jiffies</strong>（<code class="c">proc_dointvec_jiffies</code> 处理，用户按秒写、内核按 jiffies 存）。源码注释写得很清楚（<code class="c">mm/page-writeback.c:115</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Flag that puts the machine in &quot;laptop mode&quot;. Doubles as a timeout in jiffies:
+ * a full sync is triggered after this time elapses without any disk activity.
+ */
+int laptop_mode;
+</code></pre>
+<p>运行时它被用在 <code class="c">laptop_io_completion()</code>（<code class="c">page-writeback.c:2173</code>）：</p>
+<pre class="code" data-label="C"><code class="c">mod_timer(&amp;info-&gt;laptop_mode_wb_timer, jiffies + laptop_mode);
+</code></pre>
+<p>每次有 IO 完成就把定时器<strong>推后</strong> <code class="c">laptop_mode</code> 秒，直到真的静默了才到期，触发
+<code class="c">WB_REASON_LAPTOP_TIMER</code> 的全量写回。</p>
+<p>这种"一个变量兼职开关和参数"的写法在内核里不算罕见（省一个变量），但对使用者的心智负担是要记住"0 这个值是保留的"。</p>
+</details>
+<p><strong>Q3.</strong> 有同事建议在交易服务器上把 <code class="c">vm.dirty_expire_centisecs</code> 调大到 300（5 分钟）"减少写回次数、降低 IO 干扰"。评价这个方案。</p>
+<details>
+<summary>答案</summary>
+<p>这是把 laptop mode 的思路搬到了不该搬的地方。<strong>方向对，剂量错，风险被低估。</strong></p>
+<p><strong>表面收益</strong>：脏页攒更久 → 更多写合并 → 写回次数下降。在持续覆盖同一批页的场景（不断重写一个热文件）确实有效。</p>
+<p><strong>三个真实代价</strong>：</p>
+<ol>
+<li>
+<p><strong>数据丢失窗口从 30 秒拉到 5 分钟</strong>。这不是"可能丢 30 秒"变成"可能丢 5 分钟"——对交易日志来说是灾难级。哪怕是行情快照，也要先确认"重建成本 &lt; 丢失成本"。</p>
+</li>
+<li>
+<p><strong>尾延迟会变差而不是变好</strong>。攒 5 分钟的脏页一次性写回，是一次<strong>巨大的突发 IO</strong>：页缓存要扫出几 GB 脏页，块层队列被塞满，<code class="c">fsync</code>、甚至不相关的读 IO 都排在后面。结果是 p50 略降、<strong>p99/p999 明显恶化</strong>——HFT 最在意的恰恰是尾部。</p>
+</li>
+<li>
+<p><strong>前台限速反而更早触发</strong>。<code class="c">dirty_expire</code> 只管"年纪"，不管"总量"。攒得越久，<code class="c">nr_dirty</code> 越容易撞上 <code class="c">vm.dirty_ratio</code>（20%）的前台限速，到时候<strong>写者自己被睡住</strong>等写回，延迟直接落在策略线程上。</p>
+</li>
+</ol>
+<p><strong>正确做法</strong>（按优先级）：
+1. <strong>关键日志</strong>：不要省，<code class="c">fsync</code> 正常做，但<strong>挪到独立的 IO 线程</strong>，策略线程只往无锁队列里投递；
+2. <strong>物理隔离</strong>：日志盘与行情/回放盘分开，写回突发不互相影响；
+3. <strong>真想减少合并损失</strong>：调 <code class="c">vm.dirty_background_ratio</code> 让后台更早开始写（<strong>更早</strong>，不是更晚），摊平突发；
+4. <strong>非关键的大块数据</strong>：直接 <code class="c">O_DIRECT</code> 或写完 <code class="c">madvise(MADV_DONTNEED)</code>，根本不产生脏页，比调参数干净得多。</p>
+<p>衡量标准始终是尾部延迟分布（<code class="c">biolatency</code> 直方图），不是平均 IO 次数。</p>
 </details>
 </details>
 <hr />
@@ -705,24 +1757,43 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tr>
 <th>时代</th>
 <th>机制</th>
+<th>致命缺陷</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>早期</td>
-<td><strong><code class="c">bdflush</code></strong> · <strong><code class="c">kupdated</code></strong> — 单线程后台写</td>
+<td>早期（2.4 及以前）</td>
+<td><strong><code class="c">bdflush</code></strong>（后台写回）+ <strong><code class="c">kupdated</code></strong>（定期打时间戳/回写）</td>
+<td>两个线程各管一段，<code class="c">bdflush</code> 忙起来 <code class="c">kupdated</code> 的功能就没人做</td>
 </tr>
 <tr>
-<td>2.6</td>
-<td><strong><code class="c">pdflush</code></strong> — 按 <strong>系统负载</strong> 动态扩展线程数</td>
+<td>2.6.6 ~ 2.6.31</td>
+<td><strong><code class="c">pdflush</code></strong> — 线程池，按负载动态扩缩（2~8 个）</td>
+<td><strong>全局池</strong>：一个设备拥塞 → 线程全被拖死 → 其他设备也写不出去</td>
 </tr>
 <tr>
-<td><strong>2.6.32+</strong></td>
-<td><strong>flusher 线程</strong> — 取代 pdflush</td>
+<td><strong>2.6.32 起（现役）</strong></td>
+<td><strong>flusher 线程 / <code class="c">bdi_writeback</code></strong> — 每个 bdi 一个</td>
+<td>—</td>
 </tr>
 </tbody>
 </table></div>
-<h4>flusher 改进</h4>
+<h4>pdflush 到底怎么死的：拥塞传染</h4>
+<pre class="code" data-label="code"><code class="c">pdflush 模型（线程池，谁有活谁接）：
+
+  盘 A（慢机械盘，队列塞满）
+     │
+     ├─ pdflush/0 ──► 阻塞在盘 A 的 request_queue 上（等待队列有空位）
+     ├─ pdflush/1 ──► 同样阻塞在盘 A
+     ├─ pdflush/2 ──► 同样阻塞在盘 A
+     └─ ...
+
+  盘 B（空闲 NVMe，有大量脏页等着写）
+     └─ ❌ 没有线程可用 —— 池子里的线程全被盘 A 占着
+</code></pre>
+<p><strong>根因：</strong> pdflush 线程是<strong>全局共享资源</strong>，而"阻塞在某一个设备的队列上"是<strong>设备局部事件</strong>。
+局部事件耗尽全局资源，这就是典型的<strong>拥塞传染（congestion propagation）</strong>。</p>
+<h4>flusher 的解法：把线程按设备私有化</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -732,22 +1803,189 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </thead>
 <tbody>
 <tr>
-<td><strong>每个磁盘主轴（spindle）一个专属 flusher 线程</strong></td>
-<td><strong>同步回写</strong> 各盘</td>
+<td><strong>每个 <code class="c">backing_dev_info</code> 一个 <code class="c">bdi_writeback</code></strong></td>
+<td>盘 A 的 wb 阻塞，与盘 B 的 wb <strong>完全无关</strong></td>
 </tr>
 <tr>
-<td>避免</td>
-<td>所有写回 <strong>堵在同一拥塞设备队列</strong></td>
+<td>每个 wb 有自己的 <code class="c">delayed_work dwork</code></td>
+<td>写回是 per-bdi 排队，不抢全局线程池</td>
 </tr>
 <tr>
-<td>结果</td>
-<td>多盘系统 <strong>整体 I/O 吞吐</strong> 更好</td>
+<td>每个 wb 有独立的 4 条链表</td>
+<td>脏 inode 归属明确，无跨设备锁争用</td>
+</tr>
+<tr>
+<td><code class="c">b_more_io</code> 链表</td>
+<td>保证"写不完的 inode"不被饿死（详见 16.5）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">旧：一个 pdflush 线程 ──► 盘 A 拥塞 ──► 盘 B 写回也被拖死
-新：flusher-A / flusher-B ──► 各管各队列
+<pre class="code" data-label="code"><code class="c">旧：一个 pdflush 全局池 ──► 盘 A 拥塞 ──► 盘 B 写回也被拖死
+新：wb-A（自己的 dwork/链表）  wb-B（自己的 dwork/链表） ──► 互不影响
 </code></pre>
+<hr />
+<h3>现代还多做了一件事：按带宽公平分配</h3>
+<p>光"独立"还不够——如果两个设备共享同一条总线（比如挂在同一 HBA 上的多块盘），
+各自狂写仍会互相抢带宽。v6.6 的 <code class="c">bdi_writeback</code> 里带一组<strong>带宽估计</strong>字段：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/backing-dev-defs.h — v6.6 */
+unsigned long bw_time_stamp;          /* 上次更新写带宽的时刻 */
+unsigned long written_stamp;          /* 那个时刻已写的页数 */
+unsigned long write_bandwidth;        /* 瞬时估算写带宽 */
+unsigned long avg_write_bandwidth;    /* 平滑后的写带宽，&gt; 0 */
+
+/*
+ * The base dirty throttle rate, re-calculated on every 200ms.
+ * All the bdi tasks' dirty rate will be curbed under it.
+ */
+unsigned long dirty_ratelimit;
+unsigned long balanced_dirty_ratelimit;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>每 200ms 重算一次</strong></td>
+<td>由 <code class="c">bw_dwork</code>（带宽估算定时器）驱动</td>
+</tr>
+<tr>
+<td><strong>估算每个 bdi 的写带宽</strong></td>
+<td>用"这段时间写了多少页"除以耗时</td>
+</tr>
+<tr>
+<td><strong>据此给每个 bdi 分配脏页速率额度</strong></td>
+<td><code class="c">dirty_ratelimit</code> —— 慢设备额度小，快设备额度大</td>
+</tr>
+<tr>
+<td><strong>结果</strong></td>
+<td>一个慢盘不会被塞给它消化不了的脏页，快盘也不会被慢盘拖着走</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这是从"<strong>避免互相堵塞</strong>"（pdflush 时代的目标）进化到"<strong>按比例公平分配</strong>"。</p>
+</blockquote>
+<hr />
+<h3>再下一层：cgroup writeback（v4.2+）</h3>
+<p><code class="c">CONFIG_CGROUP_WRITEBACK</code> 打开后，一个 bdi 可以分裂出<strong>多个</strong> wb：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/backing-dev-defs.h — v6.6 struct bdi_writeback 尾部 */
+#ifdef CONFIG_CGROUP_WRITEBACK
+    struct percpu_ref refcnt;
+    struct cgroup_subsys_state *memcg_css;   /* 归属哪个 memcg */
+    struct cgroup_subsys_state *blkcg_css;   /* 归属哪个 blkcg */
+    struct list_head b_attached;
+    ...
+#endif
+</code></pre>
+<pre class="code" data-label="code"><code class="c">                    bdi（块设备）
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+   root wb         wb@memcg-A      wb@memcg-B
+ （宿主机）      （容器 A 的脏页）  （容器 B 的脏页）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>解决什么</th>
+<th>容器/多租户下，写回的<strong>归属与限速</strong>：A 容器疯狂写脏页，不能让 B 容器的 fsync 变慢</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT 用途</td>
+<td>把<strong>日志/回放进程</strong>关进一个 cgroup、<code class="c">memory.high</code> 限住，它们的写回突发就不会污染策略进程所在 cgroup</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>化石：源码里还留着的历史痕迹</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/backing-dev-defs.h:48 — v6.6 原文注释 */
+enum wb_reason {
+    ...
+    /*
+     * There is no bdi forker thread any more and works are done
+     * by emergency worker, however, this is TPs userland visible
+     * and we'll be exposing exactly the same information,
+     * so it has a mismatch name.
+     */
+    WB_REASON_FORKER_THREAD,
+    ...
+};
+</code></pre>
+<blockquote>
+<p>曾经的 <code class="c">bdi_forker_thread</code>（负责按需派生/销毁 flusher 线程的守护线程）<strong>已经不存在了</strong>，
+活儿交给了 workqueue 的 emergency worker。但 <code class="c">WB_REASON_FORKER_THREAD</code> 这个枚举值被保留下来，
+理由是 <strong>tracepoint 对外可见</strong>——改名会破坏用户态工具（tracefs/perf 脚本）的兼容。</p>
+<p><strong>这是一条通用铁律：tracepoint、sysfs、/proc 的字段一旦发布就是 ABI，宁可留着错误的名字也不能改。</strong>
+（与 <a href="chapter-05.html#s-5-6">Ch 5.6 系统调用 ABI 永久性</a> 是同一条原则的两个实例。）</p>
+</blockquote>
+<h3>完整写回原因枚举（排障时 tracepoint 会打印）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">WB_REASON_*</code></th>
+<th>触发者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">BACKGROUND</code></td>
+<td>脏页比例过后台阈值</td>
+</tr>
+<tr>
+<td><code class="c">VMSCAN</code></td>
+<td>内存回收路径（直接回收时发现脏页）</td>
+</tr>
+<tr>
+<td><code class="c">SYNC</code></td>
+<td><code class="c">sync()</code> / <code class="c">syncfs()</code></td>
+</tr>
+<tr>
+<td><code class="c">PERIODIC</code></td>
+<td><code class="c">dirty_writeback_centisecs</code> 周期性唤醒</td>
+</tr>
+<tr>
+<td><code class="c">LAPTOP_TIMER</code></td>
+<td>laptop mode 定时器（见 16.6）</td>
+</tr>
+<tr>
+<td><code class="c">FS_FREE_SPACE</code></td>
+<td>文件系统空间不足，催促写回</td>
+</tr>
+<tr>
+<td><code class="c">FOREIGN_FLUSH</code></td>
+<td>帮助其他 cgroup wb 刷页</td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>排障命令</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tracefs /sys/kernel/tracing</code> 的 <code class="c">writeback:*</code> tracepoint</td>
+<td>看每次写回的 reason、设备、写了多少页</td>
+</tr>
+<tr>
+<td><code class="c">bcc/writeback</code> 工具</td>
+<td>直接打印写回事件的直方图</td>
+</tr>
+<tr>
+<td><code class="c">cat /proc/vmstat \| grep nr_</code></td>
+<td><code class="c">nr_dirty</code> / <code class="c">nr_writeback</code> 实时量</td>
+</tr>
+</tbody>
+</table></div>
+<p>→ <strong>Ch 14</strong> request_queue · <strong>NVMe 多队列</strong> 时代思想仍相关 · <a href="#s-16-5">Ch 16.5 flusher 线程</a></p>
 <p>→ <strong>Ch 14</strong> request_queue · <strong>NVMe 多队列</strong> 时代思想仍相关</p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -755,6 +1993,38 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>pdflush（2.6.6+）：全局线程池，多设备竞争同一池 → 锁竞争。flusher（2.6.32+）：每块设备一个线程（bdi_writeback），无跨设备竞争。NVMe 的 multi-queue 进一步：每 CPU 一个提交队列。演进方向：减少锁竞争、提高并行度。这就是为什么 NVMe + multi-queue 比 SATA 快——不仅是带宽，更是架构并行度。</p>
+</details>
+<p><strong>Q2.</strong> pdflush 的失败不是"锁竞争"那么简单，它真正的结构性缺陷是什么？flusher 又是怎么根治的？</p>
+<details>
+<summary>答案</summary>
+<p>真正的缺陷是 <strong>局部事件耗尽全局资源</strong>：</p>
+<p>pdflush 是一个<strong>全局线程池</strong>（2~8 个线程，按负载动态扩缩），任何设备的写回任务都由池子里空闲的线程接。问题是——"写回"这个动作会<strong>阻塞在设备的 request_queue 上</strong>（等队列腾出槽位）。</p>
+<p>于是：一块慢盘/拥塞盘把它的写回任务派给线程，线程阻塞；再来任务，再派一个线程，又阻塞……池子很快被这一块盘占满。此时其他<strong>完全空闲</strong>的设备有大量脏页等着写，却<strong>分不到任何线程</strong>——因为线程池是全局共享的。</p>
+<p>这是典型的<strong>拥塞传染</strong>：一个设备的问题扩散成整个系统的写回停滞。锁竞争只是表象。</p>
+<p>flusher 的根治办法是<strong>把线程按设备私有化</strong>：
+- 每个 <code class="c">backing_dev_info</code> 拥有自己的 <code class="c">struct bdi_writeback</code>，里面有独立的 <code class="c">delayed_work dwork</code>；
+- 写回任务是 per-bdi 排队的，盘 A 的 wb 阻塞丝毫不影响盘 B 的 wb；
+- 脏 inode 挂在各自的 4 条链表上（<code class="c">b_dirty</code>/<code class="c">b_io</code>/<code class="c">b_more_io</code>/<code class="c">b_dirty_time</code>），连锁都是各 wb 自己的 <code class="c">list_lock</code>。</p>
+<p>结构上就是：<strong>共享变私有，全局变分片</strong>。这和 Ch 14 讲的块层从单队列演进到 blk-mq（per-CPU 软件队列 + per-硬件队列）是<strong>同一个思路在两层的各自实现</strong>。</p>
+<p>现代还更进一步：v6.6 的 wb 里有 <code class="c">write_bandwidth</code>/<code class="c">avg_write_bandwidth</code>/<code class="c">dirty_ratelimit</code> 一组字段，每 200ms 估算一次设备的真实写带宽，据此给每个 wb <strong>分配脏页速率额度</strong>——从"别互相堵"进化到"按比例公平分"。</p>
+</details>
+<p><strong>Q3.</strong> 源码里 <code class="c">WB_REASON_FORKER_THREAD</code> 这个枚举值的注释说"已经没有 bdi forker thread 了"，为什么不直接删掉？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <strong>tracepoint 对外可见，属于用户态 ABI</strong>。</p>
+<p><code class="c">include/linux/backing-dev-defs.h:48</code> 的原文注释：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * There is no bdi forker thread any more and works are done
+ * by emergency worker, however, this is TPs userland visible
+ * and we'll be exposing exactly the same information,
+ * so it has a mismatch name.
+ */
+WB_REASON_FORKER_THREAD,
+</code></pre>
+<p>历史是这样的：早期有个 <code class="c">bdi_forker_thread</code> 守护线程，负责按需<strong>派生/销毁</strong>各设备的 flusher 线程（设备有活就派生，闲下来就销毁）。后来这套被 workqueue 的 emergency worker 取代了，线程本身没了。</p>
+<p>但 <code class="c">WB_REASON_FORKER_THREAD</code> 这个值是 <code class="c">writeback</code> tracepoint 输出的字段之一，用户态工具（perf script、BCC 脚本、trace-cmd 报表）会按枚举值解析。改名或删除会让这些工具<strong>静默地解析错误</strong>——比直接报错更糟。</p>
+<p>所以内核的选择是：<strong>保留枚举值，只在注释里说明名字已经名不副实</strong>。</p>
+<p>这是内核开发的一条通用铁律：<strong>tracepoint / sysfs / /proc / 系统调用号一旦发布就是 ABI，宁可留着错误的名字，也不能改。</strong> Ch 5.6 讲的系统调用"刻在石头上"是同一条原则——只不过那里是 ABI 兼容性，这里是观测接口的兼容性。对我们读代码的人来说，教训是：<strong>看到名字和注释对不上时，信注释不信名字</strong>。</p>
 </details>
 </details>
 <hr />
@@ -771,13 +2041,341 @@ write(path)
     ▼
 页缓存（可能 COW，Ch 3/15）─► 标脏 ──► flusher 异步写回
 </code></pre>
-<p>| 绕过页缓存 | <strong><code class="c">O_DIRECT</code></strong> — DB/自管缓冲 · HFT 大数据文件有时 mmap + mlock |</p>
+<hr />
+<h3>读路径：v6.6 真实函数链</h3>
+<p>LKD 时代的 <code class="c">generic_file_buffered_read()</code> <strong>在 v6.6 已经不存在了</strong>，换成 <code class="c">filemap_read()</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/filemap.c:2617 — v6.6 */
+ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter, ssize_t already_read)
+{
+    struct folio_batch fbatch;      /* ← 批量容器，不是单个 page */
+    ...
+    folio_batch_init(&amp;fbatch);
+    do {
+        ...
+        error = filemap_get_pages(iocb, iter-&gt;count, &amp;fbatch, false);
+        /* 然后逐 folio copy 到用户态 iter */
+    } while (...);
+</code></pre>
+<p><strong>关键在 <code class="c">filemap_get_pages()</code>（<code class="c">filemap.c:2534</code>）的四步决策：</strong></p>
+<pre class="code" data-label="C"><code class="c">retry:
+    /* ① 先批量从 xarray 里捞，能捞几个算几个 */
+    filemap_get_read_batch(mapping, index, last_index - 1, fbatch);
+
+    if (!folio_batch_count(fbatch)) {          /* ② 一个都没捞到 = 缓存 miss */
+        if (iocb-&gt;ki_flags &amp; IOCB_NOIO)
+            return -EAGAIN;                /*    ← 不允许发起 IO，直接返回 */
+        page_cache_sync_readahead(mapping, ra, filp, index,
+                      last_index - index);   /* 同步预读（会读盘） */
+        filemap_get_read_batch(mapping, index, last_index - 1, fbatch);  /* 再捞一次 */
+    }
+    if (!folio_batch_count(fbatch)) {          /* ③ 还是没有（预读被限流/失败） */
+        if (iocb-&gt;ki_flags &amp; (IOCB_NOWAIT | IOCB_WAITQ))
+            return -EAGAIN;                /*    ← 不等待，交给 io_uring 异步重试 */
+        err = filemap_create_folio(filp, mapping,
+                       iocb-&gt;ki_pos &gt;&gt; PAGE_SHIFT, fbatch);  /* 分配页并发 IO */
+        ...
+    }
+    /* ④ 捞到了 → 顺手异步预读下一批（filemap_readahead → page_cache_async_ra） */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>函数</th>
+<th>是否阻塞</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 批量捞缓存</td>
+<td><code class="c">filemap_get_read_batch()</code></td>
+<td>否（xarray 查询）</td>
+</tr>
+<tr>
+<td>② miss → <strong>同步预读</strong></td>
+<td><code class="c">page_cache_sync_readahead()</code>（<code class="c">filemap.c:2556</code>）</td>
+<td><strong>是</strong>（要等盘）</td>
+</tr>
+<tr>
+<td>③ 兜底建页发 IO</td>
+<td><code class="c">filemap_create_folio()</code></td>
+<td>是</td>
+</tr>
+<tr>
+<td>④ 命中 → <strong>异步预读</strong></td>
+<td><code class="c">page_cache_async_ra()</code>（<code class="c">filemap.c:2529</code>）</td>
+<td><strong>否</strong>（只提交，不等）</td>
+</tr>
+<tr>
+<td>⑤ 拷贝到用户态</td>
+<td><code class="c">copy_folio_to_iter()</code> 一族</td>
+<td>否</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">IOCB_NOWAIT</code> / <code class="c">IOCB_NOIO</code> 这两条 <code class="c">-EAGAIN</code> 分支是 io_uring 的灵魂</strong>：
+带 <code class="c">RWF_NOWAIT</code> 的读如果会阻塞（缓存 miss），内核<strong>不阻塞而是返回 <code class="c">-EAGAIN</code></strong>，
+io_uring 收到后把它交给<strong>异步 worker 线程</strong>去做。策略线程因此<strong>永不因缺页而卡在磁盘上</strong>。
+这是 HFT 里"读文件但不让 tick 线程停下"的标准做法。</p>
+</blockquote>
+<hr />
+<h3>预读（readahead）：读多少由谁定</h3>
+<pre class="code" data-label="C"><code class="c">/* mm/readahead.c:141 — v6.6 */
+ra-&gt;ra_pages = inode_to_bdi(mapping-&gt;host)-&gt;ra_pages;   /* 默认值来自块设备 */
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* mm/readahead.c:337 — v6.6 原文注释，初始窗口的放大规则 */
+/*
+ * Set the initial window size, round to next power of 2 and square
+ * for small size, x 4 for medium, and x 2 for large
+ * for 128k (32 page) max ra
+ * 1-2 page = 16k, 3-4 page 32k, 5-8 page = 64k, &gt; 8 page = 128k initial
+ */
+static unsigned long get_init_ra_size(unsigned long size, unsigned long max)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>你的请求大小</th>
+<th>内核实际预读的初始窗口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1~2 页</td>
+<td>16 KB</td>
+</tr>
+<tr>
+<td>3~4 页</td>
+<td>32 KB</td>
+</tr>
+<tr>
+<td>5~8 页</td>
+<td>64 KB</td>
+</tr>
+<tr>
+<td>&gt; 8 页</td>
+<td>128 KB（封顶于 <code class="c">ra_pages</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>行为：</strong> 顺序读被识别后，预读窗口会<strong>逐次放大</strong>（16K → 32K → 64K → 128K），直到封顶；
+一旦检测到<strong>随机访问</strong>（连续两次读不相邻），窗口<strong>立即收缩</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调优</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">blockdev --setra N /dev/nvme0n1</code></td>
+<td>顺序扫描为主的行情回放，可放大到 512~1024 页</td>
+</tr>
+<tr>
+<td><code class="c">posix_fadvise(POSIX_FADV_SEQUENTIAL)</code></td>
+<td>明确告诉内核"我要顺序读"，直接把窗口拉满</td>
+</tr>
+<tr>
+<td><code class="c">posix_fadvise(POSIX_FADV_RANDOM)</code></td>
+<td>明确"随机读"，<strong>关掉预读</strong>（避免读无用的页浪费带宽）</td>
+</tr>
+<tr>
+<td><code class="c">posix_fadvise(POSIX_FADV_DONTNEED)</code></td>
+<td>读完就扔，不污染页缓存（回放场景必用）</td>
+</tr>
+<tr>
+<td><code class="c">readahead()</code> / <code class="c">madvise(MADV_WILLNEED)</code></td>
+<td>提前把数据拉进缓存（<strong>启动预热</strong>用）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>写路径：从 <code class="c">write()</code> 到磁盘的完整链条</h3>
+<pre class="code" data-label="code"><code class="c">write(fd, buf, n)
+  │
+  ├─ ① 在页缓存里找到/分配页，把用户数据拷进去
+  ├─ ② folio_mark_dirty()  →  设置 xarray 的 PAGECACHE_TAG_DIRTY 标记
+  ├─ ③ __mark_inode_dirty()  (fs/fs-writeback.c:2403)
+  │       └─ 把 inode 挂到 bdi_writeback-&gt;b_dirty 链表
+  ├─ ④ 返回（此时数据只在内存）
+  │
+  ╎  …… 稍后（后台阈值 / 30 秒过期 / fsync）……
+  │
+  ├─ ⑤ flusher 唤醒 → b_dirty 的 inode 挪到 b_io
+  ├─ ⑥ mapping-&gt;a_ops-&gt;writepages()  ← 文件系统干活（ext4 要写 journal）
+  ├─ ⑦ 构造 bio（Ch 14.4）→ submit_bio → blk-mq → 驱动
+  └─ ⑧ IO 完成 → 清 dirty tag → 页变干净（可回收）
+</code></pre>
+<hr />
+<h3>成本量级对照（NVMe 服务器，4KB 读）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>大致延迟</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页缓存<strong>命中</strong></td>
+<td><strong>~1-5 μs</strong></td>
+<td>xarray 查找 + <code class="c">copy_to_user</code></td>
+</tr>
+<tr>
+<td>页缓存 miss，需要读盘</td>
+<td><strong>~50-100 μs</strong></td>
+<td>走 bio → NVMe → 中断 → 完成</td>
+</tr>
+<tr>
+<td>页缓存 miss + <strong>队列拥塞</strong></td>
+<td><strong>~1-10 ms</strong></td>
+<td>排队等盘，尾延迟主来源</td>
+</tr>
+<tr>
+<td>mmap 缺页（首次访问）</td>
+<td>同上 + 建页表开销</td>
+<td>之后访问就是纯内存</td>
+</tr>
+<tr>
+<td><code class="c">fsync</code>（NVMe）</td>
+<td><strong>~100-500 μs</strong></td>
+<td>数据 + 元数据 + FLUSH 命令</td>
+</tr>
+<tr>
+<td><code class="c">fsync</code>（机械盘）</td>
+<td><strong>~5-20 ms</strong></td>
+<td>寻道 + 旋转</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>相差 10~1000 倍。</strong> 这就是为什么"能不能让数据待在页缓存里"是 HFT 存储的第一性问题。</p>
+</blockquote>
+<hr />
+<h3>四种"绕开"手段的真实作用点（常被混为一谈）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>作用层</th>
+<th>真实效果</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">mmap</code></strong></td>
+<td>省掉 <code class="c">copy_to_user</code></td>
+<td>仍走页缓存、仍会缺页</td>
+<td>缺页延迟不可控（需 <code class="c">mlock</code> 预热）</td>
+</tr>
+<tr>
+<td><strong><code class="c">O_DIRECT</code></strong></td>
+<td><strong>跳过页缓存</strong></td>
+<td>用户缓冲直接 DMA，无脏页、无 flusher</td>
+<td>必须<strong>三对齐</strong>（偏移/长度/缓冲，见 Ch 14.2）；丢预读与合并</td>
+</tr>
+<tr>
+<td><strong><code class="c">O_SYNC</code></strong></td>
+<td>不跳页缓存</td>
+<td>每次 write 自带落盘语义</td>
+<td>每次都等盘，<strong>最慢</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">io_uring</code> + <code class="c">RWF_NOWAIT</code></strong></td>
+<td>不跳页缓存</td>
+<td>miss 时返回 <code class="c">-EAGAIN</code> 转异步，<strong>调用线程不阻塞</strong></td>
+<td>需要异步编程模型</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意：</strong> <code class="c">O_DIRECT</code> 和 <code class="c">io_uring</code> <strong>都不绕过块层</strong>（Ch 14.7 已澄清）。
+想真正绕过内核块层要上 SPDK/用户态驱动，代价是<strong>独占整块设备</strong>、失去文件系统。</p>
+</blockquote>
+<h3>HFT 组合拳（按场景）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐组合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>盘前加载历史行情</td>
+<td><code class="c">mmap</code> + <code class="c">madvise(WILLNEED)</code> 预热 → <code class="c">mlock</code> 钉住 → 之后读是纯内存</td>
+</tr>
+<tr>
+<td>一次性大文件回放</td>
+<td><code class="c">posix_fadvise(SEQUENTIAL)</code> 放大预读 + 读完 <code class="c">DONTNEED</code> 丢弃</td>
+</tr>
+<tr>
+<td>交易日志落盘</td>
+<td>独立 IO 线程 + <code class="c">fsync</code>（或 <code class="c">O_DIRECT</code> + 自管缓冲） + 专用 NVMe 盘</td>
+</tr>
+<tr>
+<td>低延迟配置读取</td>
+<td>启动时全量读进内存，运行时<strong>只读内存</strong>，永不碰文件</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> read() 命中 page cache 和 miss 的性能差异有多大？</p>
 <details>
 <summary>答案</summary>
 <p>Hit：page cache → copy_to_user → ~1-5μs。Miss：page cache 未命中 → bio → IO 调度 → 磁盘 → DMA → page cache → copy_to_user → NVMe ~50-100μs，SATA ~1-10ms。HFT 启发：1) 预读（readahead/madvise WILLNEED）让数据提前进 cache；2) mmap 零拷贝跳过 copy_to_user；3) O_DIRECT 绕过 page cache（自管理 buffer）。</p>
+</details>
+<p><strong>Q2.</strong> io_uring 的 <code class="c">RWF_NOWAIT</code> 是怎么做到"读文件却不让调用线程阻塞"的？</p>
+<details>
+<summary>答案</summary>
+<p>靠页缓存读路径里的两条 <strong><code class="c">return -EAGAIN</code></strong> 分支（<code class="c">mm/filemap.c</code> 的 <code class="c">filemap_get_pages()</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* 缓存 miss 时 */
+if (!folio_batch_count(fbatch)) {
+    if (iocb-&gt;ki_flags &amp; IOCB_NOIO)
+        return -EAGAIN;                 /* ① 不允许发起 IO */
+    page_cache_sync_readahead(...);
+    filemap_get_read_batch(...);
+}
+if (!folio_batch_count(fbatch)) {
+    if (iocb-&gt;ki_flags &amp; (IOCB_NOWAIT | IOCB_WAITQ))
+        return -EAGAIN;                 /* ② 允许 IO 但不允许等待 */
+    ...
+}
+</code></pre>
+<p>逻辑很清楚：
+1. 先尝试<strong>不阻塞</strong>地从 xarray 批量捞页（<code class="c">filemap_get_read_batch</code>）；
+2. 捞到了 → 直接拷贝返回，全程内存操作；
+3. <strong>一个都没捞到</strong>（缓存 miss，必须读盘）→ 如果调用者带了 <code class="c">RWF_NOWAIT</code>/<code class="c">IOCB_NOIO</code>，<strong>不阻塞，直接返回 <code class="c">-EAGAIN</code></strong>；
+4. io_uring 收到 <code class="c">-EAGAIN</code> 后，把这个请求转交给<strong>内核的异步 worker 线程池</strong>去做，调用线程立刻返回去干别的，之后通过 CQ（完成队列）拿结果。</p>
+<p><strong>对 HFT 的价值：</strong> 这是"文件 IO 不进 tick 路径"的标准解法。策略线程发起读请求后继续执行策略逻辑，数据在 CQ 里等它，永远不会因为一次缺页被钉在磁盘 IO 上。</p>
+<p><strong>注意它的局限：</strong> <code class="c">-EAGAIN</code> 本身不是免费的——如果<strong>大部分读都 miss</strong>，请求会频繁走"提交 → EAGAIN → 转 worker"这条路径，反而比直接阻塞读更慢。所以它适合"<strong>绝大多数命中缓存，偶发 miss</strong>"的场景。如果 miss 率本来就高，应该先解决缓存问题（预热、mlock、放大预读）。</p>
+</details>
+<p><strong>Q3.</strong> 顺序读一个 200MB 的历史行情文件做回测，读完后发现系统里其他热数据被挤出了缓存，怎么办？</p>
+<details>
+<summary>答案</summary>
+<p>这是 16.2 讲的"一次扫描污染"问题，在页缓存层面的标准解法是 <strong><code class="c">posix_fadvise</code></strong> 三连：</p>
+<pre class="code" data-label="C"><code class="c">int fd = open(&quot;history.bin&quot;, O_RDONLY);
+
+/* 1. 告诉内核这是顺序访问，把预读窗口拉满（默认最大 128KB 起步，会浪费在起始阶段） */
+posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+/* 2. 每读完一个区块（比如 64MB），立刻声明&quot;这段我不要了&quot; */
+posix_fadvise(fd, offset, len, POSIX_FADV_DONTNEED);
+
+/* 3. 若只扫一遍，还可以用 FADV_NOREUSE 提示&quot;不会有二次访问&quot; */
+posix_fadvise(fd, 0, 0, POSIX_FADV_NOREUSE);
+</code></pre>
+<p><code class="c">POSIX_FADV_DONTNEED</code> 的作用是把指定范围的页<strong>从页缓存里剔除</strong>（干净页直接丢弃，脏页先写回），这样 200MB 的扫描数据就不会把策略进程的真热数据挤出 active 链表。</p>
+<p>另外三个可选手段：
+1. <strong>放大设备预读</strong>：<code class="c">blockdev --setra 1024 /dev/nvme0n1</code>（默认通常 128~256 个扇区），顺序扫描时减少 IO 次数；
+2. <strong><code class="c">O_DIRECT</code> 直接绕开页缓存</strong>：最彻底，但要自己做对齐（偏移、长度、缓冲区都按块大小对齐，见 Ch 14.2），且丢掉预读和合并收益——<strong>回测这类吞吐优先、延迟不敏感的场景其实很合适</strong>；
+3. <strong>cgroup 隔离</strong>：把回测进程关进单独的 memory cgroup 并设 <code class="c">memory.high</code>，让它的缓存增长受限，回收压力落在自己身上。</p>
+<p>验证效果：用 <code class="c">cachestat</code>（BCC）看命中率是否维持在预期水平，或 <code class="c">cachetop</code> 按进程看 HITS/MISSES 分布，别只看总缓存量。</p>
 </details>
 </details>
 <hr />
