@@ -37,3 +37,10 @@ BPF 工具空间正在迅速增长，并将开发出更多工具和功能。本�
 2. "无状态观察"与"持续轮询存储"两种模式各适合什么场景？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. ① Vector：浏览器 → pmwebd(REST) → pmcd → BCC PMDA → BPF/Perf 缓冲区（状态在浏览器）；② Grafana+PCP：同一 pmcd 链路，live 插件（浏览器存短暂历史）或 redis 插件（pmseries→Redis 持久化）；③ ebpf_exporter：BPF 程序 → 9435 端口 HTTP 暴露 → Prometheus 周期抓取存储 → Grafana 查询。kubectl-trace 不是图形工具，是 K8s 的 bpftrace 命令行前端。
+2. 无状态观察：**不看不花**——适合生产节点平时零开销、出事时临时接入深入排查；持续轮询存储：一直花但换来**历史回溯、跨主机聚合、告警**——适合容量规划、事后复盘（T+1 分析昨晚的延迟事件）与需要自动告警的场景。
+
+</details>

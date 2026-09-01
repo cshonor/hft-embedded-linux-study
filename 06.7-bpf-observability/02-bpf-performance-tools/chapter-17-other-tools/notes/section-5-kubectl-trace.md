@@ -126,3 +126,11 @@ pod 级别的 vfs 操作比节点级别**少得多**——对大多空闲的 Web
 3. `kubectl trace run --node=... -f xxx.bt` 的完整生命周期有哪四条命令？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. **整个节点上的所有应用**（不只某个 pod）。因为 bpftrace 程序运行在**主机上下文**——插桩的是内核函数/跟踪点，天然覆盖节点上所有进程的内核活动；不带过滤时看到的是全节点统计。
+2. **主机 PID 命名空间**下容器 root 进程的 PID。限制：它只指向容器的"1 号进程"（或入口进程）——容器内跑 init/派生多个子进程时，需要在脚本里自己把 `$container_pid` 映射到其父/子 PID，否则漏跟容器内的其他进程。
+3. `kubectl trace run`（创建）→ `kubectl trace get`（看状态）→ `kubectl trace logs -f <name>`（跟随输出）→ `kubectl trace delete <name>`（清理）。
+
+</details>

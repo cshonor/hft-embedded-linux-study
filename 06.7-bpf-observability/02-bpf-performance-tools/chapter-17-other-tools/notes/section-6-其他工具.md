@@ -26,3 +26,10 @@
 2. Cilium、Sysdig、Android eBPF、osquery eBPF 各自的主战场？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. ply 是类似 bpftrace 的命令行跟踪器，但**依赖非常少**——不需要 LLVM/BCC 那套编译栈（bpftrace 每条脚本要现编译 BPF 字节码，ply 用内置小编译器）。适合**嵌入式目标**等装不下完整工具链的环境。
+2. Cilium：容器环境的**网络数据面 + 应用安全策略**（BPF 取代 iptables）；Sysdig：容器**可观测性**扩展；Android eBPF：设备**网络使用监控与管理**；osquery eBPF：把操作系统信息以 SQL 化方式公布用于分析监控，现已支持 BPF 监控 kprobes。
+
+</details>

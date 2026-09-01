@@ -85,3 +85,11 @@ Grafana/Prometheus 信息见原书链接 9；Cloudflare eBPF 导出器见链接 
 3. `rate(ebpf_exporter_run_queue_latency_seconds_bucket[20s])` + `{{le}}` 图例各是什么含义？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. exporter = Prometheus 生态里**收集并在 HTTP 端点上公布指标**的代理程序（官方/第三方有 Linux 主机统计、JMX、Web 服务器等导出器）。Cloudflare 开源了 **ebpf_exporter**——把 BPF 程序的直方图/计数以 Prometheus 格式公开，可被 Prometheus 抓取并在 Grafana 可视化。
+2. 默认 **9435**。利用 node 服务发现的 `__address__` 标签做 relabel：`regex: (.*):10250`、`replacement: ${1}:9435`——把 kubelet 端口替换成 exporter 端口，目标不变、端口重写。
+3. `rate(..._bucket[20s])`：对直方图**桶的累计计数**取 20 秒窗口的每秒增速（直方图桶是 counter，必须用 rate 而不是裸读）；`{{le}}` 图例按"小于等于"边界给每条桶曲线命名——多条桶速率曲线叠加，视觉效果就是热图的"每层横切面"。
+
+</details>

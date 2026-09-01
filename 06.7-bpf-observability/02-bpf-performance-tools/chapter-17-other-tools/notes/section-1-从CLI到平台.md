@@ -41,3 +41,10 @@
 2. 本章介绍的四个工具分别解决什么场景？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. 云环境由**成千上万个实例**组成，命令行工具需要逐台 SSH、逐个执行、人工汇总——在规模上不可扩展。GUI 提供集中式仪表盘：跨主机对比、跨指标关联、告警集成，一次配置覆盖整个集群。
+2. ① Vector+PCP / Grafana+PCP：**远程 BPF 监控**（浏览器/large dashboard 直连目标主机的 BCC 指标）；② Cloudflare eBPF Exporter：把 BPF 指标接入 **Prometheus/Grafana 生态**（告警、长期存储）；③ kubectl-trace：在 **Kubernetes 集群**的节点/pod 上远程跑 bpftrace。
+
+</details>

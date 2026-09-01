@@ -50,3 +50,11 @@ Grafana+PCP 与整套 bcc-tools 的集成仍需大量工作；希望在以后更
 3. 在 Grafana 中把 bcc.runq.latency 画成热图需要哪三项关键配置？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. **live**：实时轮询 PCP，几分钟的短暂历史存在**浏览器**里、不持久化——不观察时零开销，适合深入实时排查；**redis**：从 PCP pmseries 数据存储读入 Redis，PCP 会持续轮询并存储——适合**跨多主机的长期时间序列**（回溯、趋势），代价是被监控侧常驻成本。
+2. 靠**客户端变量**（`_proto`/`_host`/`_port`，如 http/目标主机/7402）。live 没有任何服务端存储，所以仪表盘可以随时"重指"另一台主机——数据源本身就是可变的连接参数。
+3. ① 可视化选 **Heatmap**；② Data format 选 **Time series buckets**；③ Unit 选 **microseconds (µs)** 且 Bucket bound 选 **Upper**（桶边界取上界）。
+
+</details>

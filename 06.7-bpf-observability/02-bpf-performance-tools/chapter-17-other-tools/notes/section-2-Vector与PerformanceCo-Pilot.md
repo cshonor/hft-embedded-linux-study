@@ -113,3 +113,12 @@ Vector/PCP 与全套 BCC 工具的集成还有很多工作要做。Vector 多年
 4. Vector 预定义图表覆盖哪些 BCC 工具？BCC PMDA 的配置文件如何启用新模块？改动后要做什么？
 
 </details>
+
+<details><summary>参考答案</summary>
+
+1. **pmcd**：目标主机上的性能指标收集守护进程（PCP 核心），协调各代理；**PMDA**：PCP 托管的指标域代理，每个代理公开一类指标（procfs/xfs/kernel/……），BCC 指标必须装 **BCC PMDA**；**pmwebd**：pmcd 的 REST 网关，Vector 浏览器端通过它以 JSON(PMWEBD) 协议与 pmcd 交互。
+2. X=时间（每列一个采样间隔）、Y=延迟、Z（颜色饱和度）=落在该 (时间, 延迟) 桶内的事件数。海量 I/O 时散点图互相覆盖丢细节；热图把密度压缩进颜色通道，且可按需缩放颜色范围——**密度聚合而不是逐点绘制**。
+3. 服务器端不保存会话状态：**状态、采样频率、计算全在浏览器**；指标不跨主机聚合、不在会话外持久化。所以主机只被动应答轮询——不打开浏览器就零开销。
+4. biolatency、biotop、ext4dist、xfsdist、zfsdist、tcplife、tcptop、tcpretrans、runqlat、execsnoop。编辑 `/var/lib/pcp/pmdas/bcc/bcc.conf` 的 `[pmda] modules = ...` 列表加入模块名（各模块 `[tcplife]` 等小节可配过滤参数）；改后必须**重新 `sudo ./Install` 并重启 PMDA**，然后刷新浏览器。
+
+</details>

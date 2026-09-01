@@ -662,6 +662,37 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>用户栈比内核栈贵一倍（652 vs 336）；逐事件 printf 输出最贵之一</li>
 <li>以上是短 BPF 程序；冗长 BPF 程序成本可上微秒级。数字随系统速度/架构/负载/BPF 改进而变</li>
 </ul>
+<p><strong>机理概要：为什么 uprobe 比 kprobe 贵一个数量级以上（1287 vs 76ns）</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>探针</th>
+<th>触发路径</th>
+<th>差价来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kprobe</td>
+<td>断点指令陷阱 → 单一 trap 处理程序里跑 BPF → 继续原指令</td>
+<td>一次陷阱</td>
+</tr>
+<tr>
+<td>kretprobe</td>
+<td>入口 kprobe + 把返回地址替换成蹦床，返回时再触发一次</td>
+<td>两次事件 + 每任务实例登记</td>
+</tr>
+<tr>
+<td>uprobe</td>
+<td>断点陷阱 → 需要保证被改写的指令还能执行：把原指令拷到 <strong>XOL（out-of-line）执行槽</strong>单步执行 → 再陷阱一次恢复原位置执行</td>
+<td><strong>两次陷阱 + 指令仿真调度</strong>，且落在目标进程用户态上下文里</td>
+</tr>
+</tbody>
+</table></div>
+<p>uprobe 的开销大头不是 BPF 程序本身，而是<strong>维持"断点 + 原指令挪位执行"这套机制</strong>的固定成本——所以哪怕 BPF 体内只做一次 count()，单事件仍要 &gt;1µs。这也是原书说"已知问题，未来 Linux 版本会改进"的原因（改进方向：如内核 5.18+ 的 uretprobe 蹦床优化等持续在削这块固定成本）。</p>
+<blockquote>
+<p>注：以上为机制通识级概要（uprobe 断点 + XOL 单步是 Documentation/trace/uprobetracer 文档化行为）；<code class="c">D:\.kernel-ref</code> 缓存未含 uprobes.c，未做逐行源码核对，具体路径细节以对应内核版本源码为准。</p>
+</blockquote>
 <h2>18.1.3 自行测试</h2>
 <p>如果可以准确测量应用性能：在运行和不运行 BPF 工具时各测一次取差异。</p>
 <ul>
@@ -680,6 +711,15 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>表 18-2 中哪类探针最贵？大约多少纳秒？</li>
 <li>CPU 饱和 vs CPU 空闲系统上，BPF 开销分别表现为什么可测量差异？</li>
 <li>"可被测量到"对应百分之几？</li>
+</ol>
+</details>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>额外开销 = （事件触发频率 × 每事件执行的操作数）/ CPU 数。CPU 数和操作开销浮动约<strong>一个数量级</strong>，而事件频率可浮动<strong>几个数量级</strong>（线程睡眠 1/s 到函数调用 10⁸/s）——同一工具换个事件源，总开销就跨档了。</li>
+<li><strong>uprobe/uretprobe</strong>：1287/1931ns（对比 kprobe 76ns，差 17–25 倍）。用户态探针要维持断点 + XOL 单步执行的固定成本（见上文机理概要）。</li>
+<li>CPU 饱和系统：BPF 抢占应用周期 → 表现为<strong>请求率/吞吐下降</strong>；CPU 空闲系统：应用不受影响 → 表现为<strong>空闲率下降</strong>（iostat/mpstat 里 idle 变少）。</li>
+<li>~1%（忽略不计 &lt;0.1%、显著 &gt;5%、很高 &gt;30%、极高 &gt;300%）。</li>
 </ol>
 </details>
       </section>
@@ -743,6 +783,15 @@ s = getaddrinfo(argv[1], argv[2], &amp;hints, &amp;result);
 <li>灰鼠数字是什么？为什么选 23 而不是 17 或 10 的幂？</li>
 <li>为什么要先开发负载生成软件再写跟踪工具？</li>
 <li>tcpsnoop 教训的三条代价是什么？</li>
+</ol>
+</details>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>定时采样周期与被测软件的周期性活动<strong>整数倍对齐</strong>：应用每 10ms 醒来干 2ms（真实 20% CPU），100Hz 每 10ms 采一次——采样点要么全落进工作窗（显示 100%），要么全落进睡眠期（显示 0%）。99Hz 与 10ms 周期不对齐，采样点相对工作窗持续漂移，几秒内收敛到真值 20%。</li>
+<li>灰鼠 = 23（黄猪 = 17）。用它做注入负载的次数（230000 次），让"与负载相关的函数"以 23 的倍数计数自己浮现。选 23：① 质数，在计算中出现概率天然低，不易撞上不相关事件计数；② 与 2/10 的幂距离比 17 更远（17≈16+1 容易被 16 对齐类活动干扰）。</li>
+<li>写负载生成器的过程会<strong>逼你搞清跟踪目标的接口</strong>：哪些函数参与、请求细节存在哪个结构体字段、返回值长什么样——这些正是写探针脚本要用的信息。而且生成器可精确控制次数（230000），直接配合灰鼠技巧。</li>
+<li>① <strong>不必要的开销</strong>（跟踪了远超原始问题所需的事件）；② <strong>维护负担</strong>（kprobe/uprobe 接口不稳定，内核升级即损坏，涉及的不稳定细节越多坏得越频繁）；③ <strong>测试被放大</strong>（每个事件类型 × 每个内核版本都要测）。外加最根本的：完全忘记了"哪个进程在做 TCP I/O"这个原始问题。</li>
 </ol>
 </details>
       </section>
@@ -826,6 +875,15 @@ Performance counter stats for 'system wide':
 <li>修复帧指针的 C/C++ 和 Java 方法各是什么？ORC/DWARF/LBR 在 BPF 中的现状？</li>
 </ol>
 </details>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>perf 看得到事件而 BPF 工具看不到 → <strong>BPF 工具的问题</strong>（去修工具）；perf 和 BPF 都看不到 → <strong>事件本身没有发生</strong>（去找业务/系统侧原因，如代码路径变了）。</li>
+<li>uprobe 挂在共享库（.so）里的函数地址上；静态编译的应用把该函数<strong>拷贝进了自己的二进制</strong>，库里的那个地址根本不会被执行——插桩"成功"但永远不触发。</li>
+<li>成因：① 观测工具用<strong>帧指针</strong>遍历调用栈；② 编译器优化（-O2 默认）把 RBP 复用为通用寄存器、不留帧指针——栈上读到的是任意值。<strong>不幸运时</strong>：任意值恰好落在某个符号的地址范围内，解析出<strong>不相干的函数名</strong>——打印出一条看似合理实则错误的调用栈，比 <code class="c">[unknown]</code> 危险得多。</li>
+<li>C/C++：<code class="c">-fno-omit-frame-pointer</code> 重编译；Java：<code class="c">-XX:+PreserveFramePointer</code>。损耗通常 &lt;1%。替代技术现状（本书写作时）：<strong>DWARF/LBR 在 BPF 中不可用，ORC 只能用于内核态</strong>——所以恢复帧指针几乎是 BPF 用户态栈的唯一解。</li>
+</ol>
+</details>
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>. 常见问题二：符号缺失与函数缺失（18.9–18.10）</h2></div>
@@ -892,6 +950,15 @@ Performance counter stats for 'system wide':
 <li>JIT 运行时的符号修复方案是什么文件？</li>
 <li>尾调用优化为什么让 kretprobe 失效？内联后如何补救插桩？</li>
 <li>静态/动态链接切换如何造成 uprobe 失效？</li>
+</ol>
+</details>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>① 调用栈损坏（帧指针问题，见 18.8）；② 短命进程；③ 二进制没有可用符号表（strip 过）。短命进程：BPF 工具（用户态）要<strong>事后</strong>读它的地址空间、查符号表才能翻译地址——进程已经退出，地址空间和映射都消失，只剩无法解析的数字。</li>
+<li>JIT 运行时把<strong>动态生成的符号表</strong>写到 <strong><code class="c">/tmp/perf-&lt;PID&gt;.map</code></strong>，perf(1) 和 BCC 都认这个文件。</li>
+<li>TCO：A→B→C 且 C 是 B 的最后调用时，编译器让 C 的返回<strong>直接交给 A</strong>（复用 B 的返回地址/帧）——B 的"返回"这个事件在指令流里不存在了，kretprobe 在 B 返回地址上的插桩永远等不到。内联补救：改用<strong>指令偏移跟踪</strong>（知道内联代码在父函数里的偏移量就能插桩），或换跟父/子/邻居函数。</li>
+<li>uprobe 挂的地址解析自<strong>某个特定二进制文件</strong>（.so 或可执行文件）。应用从动态链接切成静态（或反之）后，同一个函数<strong>换文件了、地址变了</strong>——按旧文件地址下的探针指向不存在的位置。</li>
 </ol>
 </details>
       </section>
@@ -1003,6 +1070,14 @@ WARNING: 5 stack traces could not be displayed.
 <li>反馈回路的成因是什么？两种避免方法？</li>
 <li>事件被丢的两个典型溢出位置？profile(8) 默认能存多少条唯一调用栈？</li>
 <li>为什么说丢弃事件对尾延迟调查危害更大？</li>
+</ol>
+</details>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>成因：<strong>跟踪自己的跟踪</strong>——BPF 工具自身的 printf()/写文件又触发被跟踪的事件（如跟踪 vfs 写、输出又写到 vfs），事件生产自我激励、频率暴涨直到系统出问题。避免：① 谓词里<strong>排除自己的 BPF 工具</strong>（<code class="c">/pid != $$/</code>、按 comm/pid 过滤）；② <strong>只跟踪目标进程</strong>，其余一概不管。</li>
+<li>① <strong>perf 输出环形缓冲区溢出</strong>（事件输出过快、用户态读不过来）；② <strong>BPF 堆栈映射表溢出</strong>（唯一调用栈存太多）。profile(8) 默认栈映射可存 <strong>16384</strong> 条唯一调用栈，可用 <code class="c">-stack-storage-size</code> 调大。</li>
+<li>丢事件通常不是均匀随机丢——<strong>高峰/洪峰时最容易丢</strong>，而高峰期产生的那批事件恰是尾延迟的分位数所在。研究的目标样本被选择性丢弃，得到的 p99/p999 会<strong>系统性偏乐观</strong>，把人引向错误结论。所以必须盯着 WARNING 行，并在排障前预调大缓冲。</li>
 </ol>
 </details>
       </section>
