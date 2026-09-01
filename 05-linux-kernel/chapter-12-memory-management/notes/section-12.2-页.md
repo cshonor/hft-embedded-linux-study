@@ -89,7 +89,7 @@ static int fallbacks[MIGRATE_TYPES][MIGRATE_PCPTYPES - 1] = {
 #### 现代演进：`struct page` → `folio`
 
 LKD 时代一切以 `struct page` 为中心。v5.16 起引入 **`struct folio`**，
-v6.6 的内存管理主体代码（页缓存、回写、LRU）已大量改用 folio（详见 [Ch 16](../chapter-16-page-cache/)）：
+v6.6 的内存管理主体代码（页缓存、回写、LRU）已大量改用 folio（详见 [Ch 16](../../chapter-16-page-cache/)）：
 
 | | `struct page` | `struct folio` |
 |---|---|---|
