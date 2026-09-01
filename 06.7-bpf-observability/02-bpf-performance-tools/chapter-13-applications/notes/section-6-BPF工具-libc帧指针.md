@@ -4,6 +4,20 @@
 
 ## 问题：栈在 libc 处断裂
 
+```text
+用户栈（调用者方向 ↑），从内核事件点回溯:
+
+  sys_enter_recvfrom (tracepoint)          ✓ 事件点（syscall 边界）
+      ▲
+  libc: recv+94                            ✗ RBP 已被 libc 重用——链在此断
+      ▲                                    （mysqld 帧有帧指针，但回溯到不了它）
+  mysqld: my_real_read                     ✗ 不可见
+      ▲
+  mysqld: 业务调用链（真正想知道的部分）    ✗ 不可见
+```
+
+断的不是"libc 帧看不到"，而是**从 libc 再向上的全部调用者**——应用侧真正想知道的路径（哪条业务链路在读 socket）恰好在断点上方。这也是修复方法 2（跟踪 libc 接口入口）有效的原因：入口处 RBP 还没被 libc 重用，事件点上移到断点之前，链还是完整的。
+
 ioprofile(8) 输出**完整堆栈**的前提是 MySQL 运行在**编译了帧指针的 libc** 上。而现实中：
 
 - 应用程序通常**经由 libc 做 I/O 调用**

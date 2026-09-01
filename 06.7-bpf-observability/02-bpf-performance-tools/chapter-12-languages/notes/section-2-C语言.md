@@ -60,4 +60,11 @@ profile -U -F 49                                       # 49Hz 用户栈采样
 1. .dynsym 与 .symtab 的区别？strip 各损失什么？
 2. bpf_get_stackid 如何省存储？
 3. 为什么栈会断在 libc？偏移量跟踪的风险？
+
+<details><summary>参考答案</summary>
+
+1. .dynsym = 动态链接符号（导出给外部用的函数），strip 后保留（动态链接必需）；.symtab = 完整符号表（含 static 本地函数），strip 后丢失——**uprobe 能挂哪些函数取决于它**。所以 strip 过的二进制只能跟踪导出函数；静态编译 + strip 可能全盲，需 debuginfo 包或重编。
+2. 同样的栈在 map 里只存一份：第一次回溯把完整栈存进 STACKTRACE map 得到 ID，之后相同栈直接引用 ID——计数 map 的键从"整条栈"缩成一个 u64，存储与比较成本都降数量级。
+3. 栈断在 libc：发行版 libc 编译时省略帧指针，帧指针链走到 libc 函数即断（mysqld 案例与四种修复详见 [13.2.9 libc 帧指针](../../chapter-13-applications/notes/section-6-BPF工具-libc帧指针.md)）。偏移量跟踪风险：uprobe 不检查指令边界，offset 落在多字节指令中间会把断点写成半个指令，**直接破坏目标程序**；perf 用调试信息做边界检查，bpftrace 侧要靠人工核对反汇编。
+</details>
 </details>

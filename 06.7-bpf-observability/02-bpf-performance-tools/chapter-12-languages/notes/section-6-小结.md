@@ -28,4 +28,11 @@
 1. 三类语言的插桩路径各是什么？
 2. 稳定性阶梯排序及理由？
 3. 为什么方法级 USDT 探针生产禁用？
+
+<details><summary>参考答案</summary>
+
+1. 编译型（C/C++）：符号表（不 strip）+ 帧指针 → uprobe/kprobe 直达；JIT 型（Java/Node）：-XX:+PreserveFramePointer + perf-map 符号快照（60s 时效）+ 采样三件套（profile/offcputime/stackcount），方法级用 USDT；解释型（bash/Python）：uprobe 挂解释器函数 + 读解释器数据结构拿函数名/参数，栈几乎不可得（需人工栈）。
+2. USDT（探针位置与参数是运行时承诺的接口）> 采样+符号文件（符号会过期但不挂探针，最坏是翻译错）> uprobes（锚定具体函数地址，版本一变就失效/错位）。本质是**接口稳定性递减**。
+3. 方法级 USDT（method__entry/return）在每个 Java 方法进出都触发——事件率 = 调用率（每秒百万级），>10% 常驻开销 + 使用时 >10x 减速，观测税直接吃掉应用本身。生产只保留请求级/事件级（GC、线程、编译）探针。
+</details>
 </details>

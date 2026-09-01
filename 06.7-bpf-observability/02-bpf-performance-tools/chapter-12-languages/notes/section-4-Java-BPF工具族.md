@@ -71,4 +71,12 @@ bpftrace: usdt:...:class__loaded → str(arg0,arg1)           # 类加载
 2. offcputime 输出被什么淹没？两种过滤方法？
 3. 哪些 javastat 列需要 ExtendedDTraceProbes？代价？
 4. "Possibly lost N samples" 说明什么？
+
+<details><summary>参考答案</summary>
+
+1. Java 绿（JIT 编译的 Java 方法）、C++ 黄（JVM 本体，libjvm 帧）、内核橘黄（与 --color-java 配色方案对应；原生红为解释器/其他）。C2 塔过宽 = JIT 编译器本身在吃 CPU：调 -XX:CompileThreshold（降低编译门槛反而更早稳定）、Inline* 参数控制内联激进度，或 -Xcomp 实验；本质是预热期太长或热点太散。
+2. 被**空闲等待线程**（定时器、监控线程阻塞在 cond_wait）淹没——它们也产生上下文切换进 offcputime。过滤：①火焰图搜索框输入关键词高亮（如 freecol 14.6%）；②折叠栈先 `grep freecol |` 再喂 flamegraph.pl 预过滤。
+3. METHOD/OBJNEW/CLOAD 等方法级/对象级列——它们由 ExtendedDTraceProbes 探针提供（hotspot:method__entry 等）。代价：启用后 >10% 开销，方法级跟踪使用时 >10x 减速——只限实验室。
+4. BPF 缓冲跟不上事件率**主动丢事件**——这是保护机制（宁可丢样不可反压拖慢目标）。对 javaflow 这类高频流是常态信号；出现即说明当前窗口的输出是欠采样，计数类结论要打折。
+</details>
 </details>

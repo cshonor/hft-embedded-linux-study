@@ -415,6 +415,18 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>风控/网关若有 Java/Go 服务：符号快照时效（&gt;60s 不可信）与 Go uretprobe 危险是两大坑（见 section-3/5）。</li>
 <li>"六步策略"第 5 步（已知量样例验证）是所有新插桩工作的标准动作。</li>
 </ul>
+<h2>1.3.1 JIT 两大障碍的机理图</h2>
+<pre class="code" data-label="text"><code class="c">uprobe 挂载前提:               JIT 现实:
+─────────────────              ─────────────────
+① 符号→地址映射稳定            ① JIT 重编译会把函数搬到新地址
+   (uprobe 挂的是地址)            （旧地址作废，内核不知情）
+② 探针锚定在文件偏移上          ② JIT 代码在匿名私有内存
+   (inode + offset)               （没有 inode 可锚定）
+
+后果: 解除插桩时内核把&quot;保存的原指令&quot;写回已作废的地址
+      → 直接破坏用户态进程内存（不只是观测失败，是观测致害）
+</code></pre>
+<p>这也是为什么可行路径全是"绕开地址锚定"的：动态 USDT（运行时自己知道函数在哪）、基于时间的采样（不挂探针，只周期抓 PC）。</p>
 <details>
 <summary>自测题</summary>
 <ol>
@@ -423,6 +435,15 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>BPF 相比语言自带调试器的核心优势？</li>
 <li>六步分析策略是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>Java 是语言，<strong>JVM（C++ 实现）</strong>才是运行时；同一个 Java 应用同时存在三种代码——C++ 的 JVM 函数、解释执行的 Java 方法、JIT 编译的 Java 方法——插桩方式各不相同。第一步永远是问"这段代码现在以什么形态执行"。</li>
+<li>①函数会移动：JIT 重编译搬走函数不通知内核，uprobe 解除时把原指令写回错误地址 → 内存破坏；②uprobes 基于 inode+offset 锚定，JIT 代码在匿名私有内存无文件对应。</li>
+<li><strong>用户态与内核绑在同一工具里</strong>：哪些用户请求导致多少磁盘 I/O、缺页、线程阻塞，一张表/一张火焰图看清——语言调试器只看得见自己进程内的事。次要优势：无侵入（不停进程）、生产可用。</li>
+<li>弄清执行方式 → 浏览本章工具/单行 → 查已有工具 → 检查 USDT（稳定优先，没有可考虑给运行时加）→ 写已知量样例验证 → uprobes/kprobes 兜底。第 5 步"已知名字+已知延迟的样例"是所有新插桩的标准验证动作。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-2">
@@ -477,6 +498,14 @@ profile -U -F 49                                       # 49Hz 用户栈采样
 <li>bpf_get_stackid 如何省存储？</li>
 <li>为什么栈会断在 libc？偏移量跟踪的风险？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>.dynsym = 动态链接符号（导出给外部用的函数），strip 后保留（动态链接必需）；.symtab = 完整符号表（含 static 本地函数），strip 后丢失——<strong>uprobe 能挂哪些函数取决于它</strong>。所以 strip 过的二进制只能跟踪导出函数；静态编译 + strip 可能全盲，需 debuginfo 包或重编。</li>
+<li>同样的栈在 map 里只存一份：第一次回溯把完整栈存进 STACKTRACE map 得到 ID，之后相同栈直接引用 ID——计数 map 的键从"整条栈"缩成一个 u64，存储与比较成本都降数量级。</li>
+<li>栈断在 libc：发行版 libc 编译时省略帧指针，帧指针链走到 libc 函数即断（mysqld 案例与四种修复详见 <a href="chapter-17.html#s-6">13.2.9 libc 帧指针</a>）。偏移量跟踪风险：uprobe 不检查指令边界，offset 落在多字节指令中间会把断点写成半个指令，<strong>直接破坏目标程序</strong>；perf 用调试信息做边界检查，bpftrace 侧要靠人工核对反汇编。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-3">
@@ -648,6 +677,15 @@ bpftrace: usdt:...:class__loaded → str(arg0,arg1)           # 类加载
 <li>哪些 javastat 列需要 ExtendedDTraceProbes？代价？</li>
 <li>"Possibly lost N samples" 说明什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>Java 绿（JIT 编译的 Java 方法）、C++ 黄（JVM 本体，libjvm 帧）、内核橘黄（与 --color-java 配色方案对应；原生红为解释器/其他）。C2 塔过宽 = JIT 编译器本身在吃 CPU：调 -XX:CompileThreshold（降低编译门槛反而更早稳定）、Inline* 参数控制内联激进度，或 -Xcomp 实验；本质是预热期太长或热点太散。</li>
+<li>被<strong>空闲等待线程</strong>（定时器、监控线程阻塞在 cond_wait）淹没——它们也产生上下文切换进 offcputime。过滤：①火焰图搜索框输入关键词高亮（如 freecol 14.6%）；②折叠栈先 <code class="c">grep freecol |</code> 再喂 flamegraph.pl 预过滤。</li>
+<li>METHOD/OBJNEW/CLOAD 等方法级/对象级列——它们由 ExtendedDTraceProbes 探针提供（hotspot:method__entry 等）。代价：启用后 &gt;10% 开销，方法级跟踪使用时 &gt;10x 减速——只限实验室。</li>
+<li>BPF 缓冲跟不上事件率<strong>主动丢事件</strong>——这是保护机制（宁可丢样不可反压拖慢目标）。对 javaflow 这类高频流是常态信号；出现即说明当前窗口的输出是欠采样，计数类结论要打折。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-5">
@@ -754,6 +792,14 @@ bpftrace: usdt:...:class__loaded → str(arg0,arg1)           # 类加载
 <li>稳定性阶梯排序及理由？</li>
 <li>为什么方法级 USDT 探针生产禁用？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>编译型（C/C++）：符号表（不 strip）+ 帧指针 → uprobe/kprobe 直达；JIT 型（Java/Node）：-XX:+PreserveFramePointer + perf-map 符号快照（60s 时效）+ 采样三件套（profile/offcputime/stackcount），方法级用 USDT；解释型（bash/Python）：uprobe 挂解释器函数 + 读解释器数据结构拿函数名/参数，栈几乎不可得（需人工栈）。</li>
+<li>USDT（探针位置与参数是运行时承诺的接口）&gt; 采样+符号文件（符号会过期但不挂探针，最坏是翻译错）&gt; uprobes（锚定具体函数地址，版本一变就失效/错位）。本质是<strong>接口稳定性递减</strong>。</li>
+<li>方法级 USDT（method__entry/return）在每个 Java 方法进出都触发——事件率 = 调用率（每秒百万级），&gt;10% 常驻开销 + 使用时 &gt;10x 减速，观测税直接吃掉应用本身。生产只保留请求级/事件级（GC、线程、编译）探针。</li>
+</ol>
+</details>
 </details>
       </section>
 

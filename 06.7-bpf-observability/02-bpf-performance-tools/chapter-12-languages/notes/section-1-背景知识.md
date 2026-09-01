@@ -46,6 +46,22 @@ bashfunc/bashfunclat（bash）、jnistacks/javastat/javacalls/javaflow/javagc/ja
 - 风控/网关若有 Java/Go 服务：符号快照时效（>60s 不可信）与 Go uretprobe 危险是两大坑（见 section-3/5）。
 - "六步策略"第 5 步（已知量样例验证）是所有新插桩工作的标准动作。
 
+## 1.3.1 JIT 两大障碍的机理图
+
+```text
+uprobe 挂载前提:               JIT 现实:
+─────────────────              ─────────────────
+① 符号→地址映射稳定            ① JIT 重编译会把函数搬到新地址
+   (uprobe 挂的是地址)            （旧地址作废，内核不知情）
+② 探针锚定在文件偏移上          ② JIT 代码在匿名私有内存
+   (inode + offset)               （没有 inode 可锚定）
+
+后果: 解除插桩时内核把"保存的原指令"写回已作废的地址
+      → 直接破坏用户态进程内存（不只是观测失败，是观测致害）
+```
+
+这也是为什么可行路径全是"绕开地址锚定"的：动态 USDT（运行时自己知道函数在哪）、基于时间的采样（不挂探针，只周期抓 PC）。
+
 <details>
 <summary>自测题</summary>
 
@@ -53,4 +69,12 @@ bashfunc/bashfunclat（bash）、jnistacks/javastat/javacalls/javaflow/javagc/ja
 2. uprobes 不能用于 JIT 函数的两大原因？
 3. BPF 相比语言自带调试器的核心优势？
 4. 六步分析策略是什么？
+
+<details><summary>参考答案</summary>
+
+1. Java 是语言，**JVM（C++ 实现）**才是运行时；同一个 Java 应用同时存在三种代码——C++ 的 JVM 函数、解释执行的 Java 方法、JIT 编译的 Java 方法——插桩方式各不相同。第一步永远是问"这段代码现在以什么形态执行"。
+2. ①函数会移动：JIT 重编译搬走函数不通知内核，uprobe 解除时把原指令写回错误地址 → 内存破坏；②uprobes 基于 inode+offset 锚定，JIT 代码在匿名私有内存无文件对应。
+3. **用户态与内核绑在同一工具里**：哪些用户请求导致多少磁盘 I/O、缺页、线程阻塞，一张表/一张火焰图看清——语言调试器只看得见自己进程内的事。次要优势：无侵入（不停进程）、生产可用。
+4. 弄清执行方式 → 浏览本章工具/单行 → 查已有工具 → 检查 USDT（稳定优先，没有可考虑给运行时加）→ 写已知量样例验证 → uprobes/kprobes 兜底。第 5 步"已知名字+已知延迟的样例"是所有新插桩的标准验证动作。
+</details>
 </details>
