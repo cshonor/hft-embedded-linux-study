@@ -71,6 +71,46 @@ uprobe:/usr/bin/app:func        路径占的是域的位置，但那是文件路
 - ❌ "kprobe 也有事件域" → 域是静态命名空间；动态探针直接写函数符号
 - ❌ 把 strace 当事件源 → strace 底层是 **ptrace**，完全独立的调试机制，不在 eBPF 事件源体系内。走 `syscalls:` 域 tracepoint 的是 **perf trace**——同样看系统调用，开销比 strace 低一个量级以上
 
+## 事件源与内核动作：多对多关系（对"归属"的纠正）
+
+常见误区：❌"一个事件**归属于**某一个事件源"。
+
+✅ 真实模型：内核里的动作（进程切换、函数调用）是**客观存在**，事件源是我们搭上去的监听探头。**动作与探头是多对多**，两个正交维度：
+
+| 维度 | 问题 | 内核机制 | 例 |
+|---|---|---|---|
+| 同一位置挂**多型号**探头 | 不同事件源能否同时捕获同一动作？ | 各源机制独立、互不排斥 | tracepoint:sched:sched_switch 与 kprobe:schedule 同时挂调度路径，切一次两个都响 |
+| 同一型号挂**多个监听者** | 多个程序能否挂同一探针？ | tracepoint 原生回调链；kprobe 聚合探针；多工具各自 open perf event | bpftrace 和 BCC 工具同时挂 sched:sched_switch，各收各的数据 |
+
+比喻：事件源 = 报警器**型号**（tracepoint/kprobe/uprobe…），代码位置 = 房间的**门**。同一扇门可以装不同型号的报警器（门开全响），同型号也可以装多台（门开一起响）。门是客观的，报警器是后装的。
+
+三个机理层要点（多监听者为什么天然可行）：
+
+1. **tracepoint 是原生回调链**：tracepoint 本质是回调函数数组，每注册一个 probe 就追加一个——多监听者是它的设计起点，不是补丁
+2. **kprobe 同地址多 consumer**：多个使用者注册同一函数地址时，内核用**聚合探针**（aggregated kprobe）只放一个真实断点，事件到达时逐个回调——开销不随监听者数量翻倍
+3. **BPF 工具层面各开各的 fd**：每个工具独立 `perf_event_open()` 同一事件，各得一个 fd 和环形缓冲，互不干扰——这是"bpftrace 和 BCC 工具并存挂同一探针"的常态
+
+### 教学例的精确化：schedule() vs sched_switch 不完全同门
+
+"sched_switch 发生时 kprobe:schedule 和 tracepoint:sched:sched_switch 同时触发"——大方向对，但两扇门其实有偏差：
+
+- `kprobe:schedule` 挂在 **schedule() 函数入口**——每次调用都触发
+- `sched:sched_switch` 埋在 **__schedule() 内部的 context_switch 处**——只有真正发生任务切换（prev != next）才触发
+- `schedule()` 被调用但调度器仍选中当前任务时（空转）：kprobe 响、sched_switch **不响**
+
+所以两探针触发次数满足 `kprobe:schedule ≥ sched:sched_switch`，"同时触发"只在真正切换的子集上成立。这个不对称本身就是**测量口径**问题：数"切换次数"用 sched_switch（语义准），数"调度器入口压力"用 kprobe（口径宽）——同一个动作，不同探头看到的世界并不严格相同，选型时要想清楚自己数的是什么。
+
+### "老内核不支持多程序挂同一 tracepoint"的准确版本
+
+- 准确的限制是：**单个 perf event fd** 上 `PERF_EVENT_IOC_SET_BPF` 只能绑一个 BPF 程序，重复设置是替换语义（`BPF_F_REPLACE`）
+- 但每个 BPF 程序可以**自己 open 一个新的 perf event** 挂同一个 tracepoint → 多程序并存从来可行（每工具一个 fd 的代价）
+- ⚠️ `BPF_F_BEFORE` / `BPF_F_AFTER`（uapi `bpf.h` 中 1U<<3 / 1U<<4，注释 "Generic attachment flags"）的实际消费者是 **cgroup / tcX 程序链框架**（bpf_mprog），用于链上相对位置插入——**不是** tracepoint 多程序的机制。把 cgroup 的 flag 安到 tracepoint 头上是常见张冠李戴
+
+### 边界重申
+
+ptrace 依然不属于这套体系：它是"暂停进程、接管控制"的调试机制，不是挂探针监听——不能和 kprobe/tracepoint 放进同一张多对多网格里。
+
+
 
 ## 选型原则（贯穿全书的纪律）
 
@@ -118,4 +158,16 @@ tracepoint ≈ USDT（静态、有 API 承诺）> kprobe ≈ uprobe（动态、�
 <summary>5. "kprobe:schedule 里的 schedule 是事件域吗？perf trace 和 strace 底层机制有何区别？</summary>
 
 不是。schedule 是被插桩的内核函数符号，kprobe 是动态事件源，没有事件域——域（category）是 tracepoint 专属概念，来自源码 `TRACE_SYSTEM` 的静态命名空间（如 `tracepoint:sched:sched_switch` 的 sched）。perf trace 底层走 `syscalls:` 域的 tracepoint 事件源；strace 底层是 ptrace，独立调试机制，不在 eBPF 事件源体系内，开销高一个量级以上。
+</details>
+
+<details>
+<summary>6. kprobe:schedule 与 tracepoint:sched:sched_switch 同时挂载，两探针的触发次数一定相等吗？为什么？</summary>
+
+不一定。kprobe 挂 schedule() 入口，每次调用都触发；sched_switch 埋在 __schedule() 内部的 context_switch 处，只有真正发生任务切换（prev != next）才触发。schedule() 空转（调度器仍选当前任务）时 kprobe 响而 sched_switch 不响，所以 kprobe:schedule 次数 ≥ sched:sched_switch 次数。这揭示了"同一动作、不同探头"的口径差：数切换次数用 tracepoint（语义准），数调度器入口压力用 kprobe（口径宽）。
+</details>
+
+<details>
+<summary>7. 两个 BCC 工具想同时挂 sched:sched_switch，需要什么前提？BPF_F_BEFORE/AFTER 能用在这里吗？</summary>
+
+不需要特殊前提——每个工具各自 perf_event_open() 同一 tracepoint，各得一个 fd 和环形缓冲，天然并存（tracepoint 本身就是回调链，多监听者是设计起点）。BPF_F_BEFORE/AFTER 用不上：它们是 cgroup/tcX 程序链框架（bpf_mprog）的 attach flag，用于链上相对位置插入，与 tracepoint 挂载无关。真正的历史限制只是"单个 perf event fd 上 PERF_EVENT_IOC_SET_BPF 只绑一个程序、重复设置是替换"，绕过方式就是再 open 一个 event。
 </details>
