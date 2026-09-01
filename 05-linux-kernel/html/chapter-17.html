@@ -459,7 +459,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td><strong>杂项设备（misc）</strong></td>
-<td><strong>字符设备的简化</strong> — 表示简单小驱动</td>
+<td><strong>字符设备的简化</strong> — 主设备号固定 10，只用一个次设备号；省得申请主设备号</td>
 </tr>
 <tr>
 <td><strong>伪设备（pseudo）</strong></td>
@@ -477,18 +477,151 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td><strong><code class="c">/dev/null</code></strong></td>
-<td>黑洞 — 丢弃写入</td>
+<td>黑洞 — 写入丢弃，读取返回 EOF</td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/zero</code></strong></td>
+<td>读出来全是 0（分配大块零页时常用）</td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/full</code></strong></td>
+<td>写入永远返回 <code class="c">ENOSPC</code>（测试错误处理）</td>
 </tr>
 <tr>
 <td><strong><code class="c">/dev/random</code> / <code class="c">urandom</code></strong></td>
 <td>随机数</td>
 </tr>
+<tr>
+<td><strong><code class="c">/dev/ptmx</code></strong></td>
+<td>伪终端主设备（ssh/docker exec 的背后）</td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/loop*</code></strong></td>
+<td>把文件当成块设备挂（镜像文件）</td>
+</tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">「一切皆文件」：
-  block/char ──► /dev/sda、/dev/ttyS0 ──► open/read/write
-  network    ──► 打破该原则 ──► socket()
+<hr />
+<h3>设备号：dev_t 的位布局</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/kdev_t.h — v6.6 原文 */
+#define MINORBITS   20                        /* :7  */
+#define MINORMASK   ((1U &lt;&lt; MINORBITS) - 1)   /* :8  */
+#define MAJOR(dev)  ((unsigned int) ((dev) &gt;&gt; MINORBITS))   /* :10 */
+#define MKDEV(ma,mi)    (((ma) &lt;&lt; MINORBITS) | (mi))            /* :12 */
 </code></pre>
+<pre class="code" data-label="code"><code class="c"> dev_t（32 位）
+┌──────────────┬──────────────────────────────────┐
+│  主设备号 12 │        次设备号 20 位             │
+│ （驱动/类型）│      （同类设备的第几个）          │
+└──────────────┴──────────────────────────────────┘
+  8192 种            约 100 万个
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>注册方式</th>
+<th>用法</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">register_chrdev_region(dev, count, name)</code></td>
+<td><strong>静态</strong>申请指定主设备号</td>
+<td>易冲突，不推荐</td>
+</tr>
+<tr>
+<td><strong><code class="c">alloc_chrdev_region(&amp;dev, baseminor, count, name)</code></strong></td>
+<td><strong>动态</strong>分配（推荐）</td>
+<td>现代驱动的标准做法</td>
+</tr>
+<tr>
+<td><code class="c">misc_register(&amp;miscdev)</code></td>
+<td>misc 设备专用，主设备号固定 <strong>10</strong></td>
+<td>单实例小驱动最省事</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>主次设备号的唯一作用</strong>是"在 <code class="c">/dev</code> 下定位到正确的驱动"。
+看到 <code class="c">crw-rw-rw- 1 root root 1, 3 ...</code> 里的 <code class="c">1, 3</code> 就是 major=1、minor=3 → <code class="c">/dev/null</code>。</p>
+</blockquote>
+<hr />
+<h3>「一切皆文件」的边界</h3>
+<pre class="code" data-label="code"><code class="c">「一切皆文件」：
+  block/char ──► /dev/sda、/dev/ttyS0 ──► open/read/write/poll/mmap
+  network    ──► 打破该原则 ──► socket()（不走 VFS 设备节点）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>为什么网络设备例外</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>没有"可以读的字节流"</strong></td>
+<td>网络的最小单位是<strong>带地址的报文</strong>，不是字节序列</td>
+</tr>
+<tr>
+<td><strong>有独立的命名空间</strong></td>
+<td>地址是 (IP, port, proto)，装不进路径名</td>
+</tr>
+<tr>
+<td><strong>性能</strong></td>
+<td>多一次 VFS 层拷贝/查找，在 10Gbps+ 上是不可接受的</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>但网络设备<strong>并没有完全脱离内核对象体系</strong>——它在 sysfs 下有 <code class="c">/sys/class/net/eth0/</code>，
+只是<strong>不走 <code class="c">/dev</code> 节点 + VFS 读写</strong>。所以更准确的说法是：
+<strong>网络设备有对象模型，无文件接口。</strong></p>
+</blockquote>
+<h3>HFT 常用的特殊设备</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设备</th>
+<th>用途</th>
+<th>关键点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">/dev/vfio/vfio</code></strong></td>
+<td><strong>VFIO</strong> —— 安全地<strong>把 PCI 设备交给用户态</strong>（DPDK 首选）</td>
+<td>有 <strong>IOMMU</strong> 保护，用户态 DMA 被限制在自己进程的映射内</td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/uio*</code></strong></td>
+<td><strong>UIO</strong> —— 老式用户态驱动框架（igb_uio）</td>
+<td><strong>无 IOMMU 保护</strong>，用户态可 DMA 到任意物理地址，<strong>有安全风险</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/hugepages</code>（hugetlbfs）</strong></td>
+<td>大页内存，DPDK 巨页池的基础</td>
+<td>需 <code class="c">echo 1024 &gt; /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/shm</code></strong></td>
+<td>tmpfs 共享内存</td>
+<td>进程间零拷贝行情传递</td>
+</tr>
+<tr>
+<td><strong><code class="c">/dev/cpu/*/msr</code></strong></td>
+<td>读 MSR（如 <code class="c">IA32_TSC</code>、性能计数器）</td>
+<td>读 TSC 做时间戳时的替代方案</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>UIO 已被 VFIO 取代</strong>（DPDK 官方推荐 VFIO）。核心差别是 <strong>IOMMU</strong>：
+UIO 把设备的 DMA 能力直接交给用户态进程，一个 bug 或恶意程序就能 DMA 写穿整个物理内存；
+VFIO 通过 IOMMU 把设备的 DMA 地址空间<strong>限制在该进程被授予的范围内</strong>，
+性能开销极小（地址转换硬件做），安全性天差地别。</p>
+</blockquote>
 <p>→ <a href="chapter-01.html#ch-1">Ch 1</a> · <a href="chapter-13.html#ch-13">Ch 13</a> · <a href="chapter-14.html#ch-14">Ch 14</a></p>
 <p><strong>HFT：</strong> 行情路径走 <strong>网卡 + socket/DPDK</strong>；配置/调优常读 <strong><code class="c">/sys/class/net/...</code></strong>。</p>
 <details>
@@ -497,6 +630,74 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>字符设备：按字节流访问，无缓冲（串口/传感器/GPU）。块设备：按块随机访问，有 page cache（磁盘/SSD/NVMe）。网络设备：无 /dev 节点，通过 socket 接口（网卡）。HFT：网卡=网络设备（行情/订单），NVMe=块设备（历史数据/日志），FPGA=字符设备（自定义加速）。网络设备是最特殊的——不走 VFS。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">/dev/vfio/vfio</code> 和 <code class="c">/dev/uio0</code> 都能让用户态驱动网卡，为什么现代 DPDK 推荐 VFIO？</p>
+<details>
+<summary>答案</summary>
+<p>核心差别是 <strong>IOMMU 保护</strong>。</p>
+<ul>
+<li><strong>UIO（<code class="c">drivers/uio/uio.c</code>）</strong>：它做的事情本质上是"把设备的寄存器映射给用户态 + 让用户态处理中断"。但设备的 <strong>DMA 能力也被一并交了出去</strong> —— 用户态程序可以配置网卡去 DMA 读写<strong>任意物理地址</strong>，包括内核代码、其他进程的内存。这是<strong>没有任何硬件约束</strong>的，纯粹靠程序自觉。</li>
+<li><strong>VFIO（<code class="c">drivers/vfio/vfio_main.c</code> + <code class="c">vfio_iommu_type1.c</code>）</strong>：在把设备交给用户态之前，先通过 <strong>IOMMU</strong> 为这个进程建立一张<strong>独立的 DMA 地址转换表</strong>。设备发出的 DMA 地址会被 IOMMU 翻译并<strong>校验权限</strong>，越界访问直接被硬件拒绝并报错。</li>
+</ul>
+<p>所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>UIO</th>
+<th>VFIO</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DMA 安全</td>
+<td>❌ 无约束，可写穿物理内存</td>
+<td>✅ IOMMU 硬件隔离</td>
+</tr>
+<tr>
+<td>性能开销</td>
+<td>0</td>
+<td><strong>几乎 0</strong>（地址转换由 IOMMU 硬件完成，不进内核）</td>
+</tr>
+<tr>
+<td>中断</td>
+<td>支持</td>
+<td>支持</td>
+</tr>
+<tr>
+<td>设备热插拔 / 多设备</td>
+<td>弱</td>
+<td>好（有 container / group 概念）</td>
+</tr>
+<tr>
+<td>DPDK 支持</td>
+<td>保留（igb_uio）</td>
+<td><strong>默认推荐</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对 HFT 的实际意义</strong>：低延迟和安全性在这里<strong>不冲突</strong>——IOMMU 的转换是硬件并行做的，不是软件查表，实测开销几乎测不出来。所以没有理由再为了"省 IOMMU"去用 UIO。</p>
+<p>使用前需要：BIOS 打开 <code class="c">VT-d</code> / <code class="c">AMD-Vi</code>，内核启动参数带 <code class="c">intel_iommu=on</code>（或 <code class="c">amd_iommu=on</code>），然后 <code class="c">/sys/bus/pci/devices/0000:xx:00.0/driver/unbind</code> + <code class="c">vfio-bind</code>。</p>
+</details>
+<p><strong>Q3.</strong> 字符设备的 <code class="c">register_chrdev_region</code> 和 <code class="c">alloc_chrdev_region</code> 该怎么选？为什么现代驱动都用后者？</p>
+<details>
+<summary>答案</summary>
+<p>选 <strong><code class="c">alloc_chrdev_region()</code></strong>（动态分配），除非你有历史包袱。</p>
+<p>差别在于<strong>主设备号从哪来</strong>：
+- <code class="c">register_chrdev_region(dev, count, name)</code>：你<strong>指定</strong>一个主设备号（如 240），内核检查它是否空闲。问题是 240 在你这台机器上空闲，到了客户机器上可能已经被占用 → <strong>驱动加载失败</strong>。
+- <code class="c">alloc_chrdev_region(&amp;dev, baseminor, count, name)</code>：内核<strong>挑一个空闲的</strong>主设备号返回给你，你再拿它去 <code class="c">cdev_add()</code>。永不冲突。</p>
+<p>配套做法是：<strong>不要指望 <code class="c">/dev/xxx</code> 节点手工 <code class="c">mknod</code> 创建</strong>，而是在驱动里调用
+<code class="c">device_create(class, parent, devt, drvdata, "mydev%d", minor)</code> ——
+这会走设备模型，通过 <strong>uevent 通知 udev</strong>，由 udev 自动创建 <code class="c">/dev/mydev0</code> 节点（见 17.4）。
+用户态永远不需要知道主次设备号是多少。</p>
+<p>完整的现代字符设备初始化顺序是：</p>
+<pre class="code" data-label="C"><code class="c">alloc_chrdev_region(&amp;dev, 0, count, &quot;mydev&quot;);   /* 1. 动态拿设备号 */
+cdev_init(&amp;my_cdev, &amp;fops);                      /* 2. 绑定操作表  */
+cdev_add(&amp;my_cdev, dev, count);                  /* 3. 注册到内核  */
+cls = class_create(&quot;mydev&quot;);                     /* 4. 建 class    */
+device_create(cls, NULL, dev, NULL, &quot;mydev%d&quot;, minor);  /* 5. 触发 uevent 建节点 */
+</code></pre>
+<p>第 4、5 步就是"设备模型"这一章讲的机制在字符设备上的落地——<strong>没有它们，<code class="c">/dev</code> 下不会出现节点</strong>。</p>
 </details>
 </details>
 <hr />
@@ -532,6 +733,191 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<pre class="code" data-label="C"><code class="c">/* include/linux/kobject.h:64 — v6.6 原文 */
+struct kobject {
+    const char      *name;          /* 目录名 */
+    struct list_head    entry;          /* 挂到 kset-&gt;list */
+    struct kobject      *parent;        /* ← 层次结构就靠这一个指针 */
+    struct kset     *kset;
+    const struct kobj_type  *ktype;         /* 析构 + sysfs ops */
+    struct kernfs_node  *sd;            /* sysfs 目录项（已 kernfs 化，见 17.3） */
+    struct kref     kref;           /* 引用计数 */
+
+    unsigned int state_initialized:1;
+    unsigned int state_in_sysfs:1;
+    unsigned int state_add_uevent_sent:1;
+    unsigned int state_remove_uevent_sent:1;
+    unsigned int uevent_suppress:1;
+};
+</code></pre>
+<blockquote>
+<p><strong>kobject 单独使用几乎没有意义</strong>，它总是<strong>被嵌入</strong>到更大的结构里（<code class="c">struct device</code>、<code class="c">struct cdev</code>…）。
+它的全部价值就是给宿主结构带来：<strong>引用计数 + 层次结构 + sysfs 可见性 + 热插拔事件</strong>这四件事。</p>
+</blockquote>
+<hr />
+<h4>设备模型的三根支柱：bus / device / driver</h4>
+<pre class="code" data-label="C"><code class="c">/* include/linux/device.h — v6.6 struct device（节选） */
+struct device {
+    struct kobject kobj;              /* ← 嵌入，见 Ch 6.1 */
+    struct device       *parent;      /* 父设备（总线控制器） */
+    struct device_private   *p;           /* 驱动核心私有数据（见下） */
+    const char      *init_name;
+    const struct bus_type   *bus;         /* 挂在哪条总线上 */
+    struct device_driver    *driver;      /* 谁在驱动我 */
+    void            *platform_data;
+    void            *driver_data;
+    u64         bus_dma_limit;    /* DMA 约束 */
+    struct device_node  *of_node;     /* 设备树节点 */
+    struct fwnode_handle    *fwnode;      /* 固件节点（ACPI / DT 统一抽象） */
+    dev_t           devt;         /* 主次设备号 → 生成 sysfs 的 &quot;dev&quot; 文件 */
+    const struct class  *class;       /* 功能分类（net / block / ...） */
+    ...
+};
+
+/* include/linux/device/driver.h:96 — v6.6 struct device_driver（节选） */
+struct device_driver {
+    const char      *name;
+    const struct bus_type   *bus;
+    struct module       *owner;
+    bool suppress_bind_attrs;
+    enum probe_type probe_type;              /* 同步/异步 probe 策略 */
+    const struct of_device_id *of_match_table;/* 设备树匹配表 */
+    int  (*probe)  (struct device *dev);
+    int  (*remove) (struct device *dev);
+    void (*shutdown)(struct device *dev);
+    const struct attribute_group **dev_groups;/* 自动生成的 sysfs 属性 */
+    const struct dev_pm_ops *pm;
+};
+
+/* include/linux/device/bus.h:80 — v6.6 struct bus_type（节选） */
+struct bus_type {
+    const char      *name;
+    const struct attribute_group **bus_groups;
+    const struct attribute_group **dev_groups;
+    const struct attribute_group **drv_groups;
+    int (*match)(struct device *dev, struct device_driver *drv);  /* ← 匹配规则 */
+    int (*uevent)(const struct device *dev, struct kobj_uevent_env *env);
+    int (*probe)(struct device *dev);
+    ...
+};
+</code></pre>
+<pre class="code" data-label="code"><code class="c">               bus_type（如 pci_bus_type）
+                        │
+        ┌───────────────┴───────────────┐
+        │                               │
+   devices_kset                    drivers_kset
+   （总线上的设备）                （能驱动它们的驱动）
+        │                               │
+        └────────► match() 配对 ◄────────┘
+                        │
+                        ▼
+                     probe()
+                  dev-&gt;driver = drv
+</code></pre>
+<p><strong>匹配是怎么发生的（三个入口，任一触发都会重新匹配）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>触发</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新<strong>设备</strong>出现</td>
+<td>热插拔、总线扫描 → 遍历该总线的所有驱动调 <code class="c">match</code></td>
+</tr>
+<tr>
+<td>新<strong>驱动</strong>注册</td>
+<td><code class="c">insmod</code> / <code class="c">driver_register()</code> → 遍历该总线的所有设备调 <code class="c">match</code></td>
+</tr>
+<tr>
+<td><strong>手动</strong>触发</td>
+<td>写 <code class="c">/sys/bus/*/drivers_probe</code> 或 <code class="c">bind</code>/<code class="c">unbind</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">match()</code> 匹配的依据随时代变了：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时代</th>
+<th>匹配依据</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期</td>
+<td>驱动<strong>自报</strong>支持的 ID 列表（<code class="c">pci_device_id</code>）</td>
+<td>靠驱动自己列举</td>
+</tr>
+<tr>
+<td>现代（<strong>主流</strong>）</td>
+<td><strong><code class="c">of_match_table</code></strong>（设备树）/ <strong><code class="c">acpi_match_table</code></strong></td>
+<td>由<strong>固件</strong>描述"这块板子上有什么"，驱动声明"我能驱动什么样的节点"</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>后者对应 <code class="c">device-&gt;of_node</code> / <code class="c">device-&gt;fwnode</code> 两个字段：<code class="c">fwnode</code> 是设备树与 ACPI 的<strong>统一抽象层</strong>，
+让驱动代码不必关心自己跑在 DT 系统（ARM/嵌入式）还是 ACPI 系统（x86 服务器）上。</p>
+</blockquote>
+<hr />
+<h4>device_private：驱动核心的"内部管线"</h4>
+<pre class="code" data-label="C"><code class="c">/* drivers/base/base.h:108 — v6.6 原文 */
+struct device_private {
+    struct klist klist_children;      /* 子设备列表 */
+    struct klist_node knode_parent;   /* 挂到父设备的 children */
+    struct klist_node knode_driver;   /* 挂到驱动的 device 列表 */
+    struct klist_node knode_bus;      /* 挂到总线的 device 列表 */
+    struct klist_node knode_class;    /* 挂到 class 的列表 */
+    struct list_head deferred_probe;  /* ← 延迟 probe 队列 */
+    struct device_driver *async_driver;
+    char *deferred_probe_reason;      /* ← 为什么延迟？可查！ */
+    struct device *device;
+    u8 dead:1;
+};
+</code></pre>
+<p><strong>deferred probe（延迟探测）是现代设备模型的重要机制：</strong></p>
+<pre class="code" data-label="code"><code class="c">驱动 A 的 probe 需要某个资源（如 regulator、clock、GPIO）
+   ├─ 资源还没就绪（提供它的驱动 B 还没加载）
+   ▼
+返回 -EPROBE_DEFER → 设备进 deferred_probe 队列
+   ├─ 之后每当有**新驱动注册成功**，内核重新尝试一遍这个队列
+   ▼
+驱动 B 加载完 → 队列重新跑 → A probe 成功
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>排障技巧</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>看延迟原因</td>
+<td><code class="c">cat /sys/bus/platform/drivers/.../.../</code> 或直接 <code class="c">grep -r . /sys/kernel/debug/devices_deferred</code></td>
+</tr>
+<tr>
+<td>驱动可声明</td>
+<td><code class="c">probe_type = PROBE_PREFER_ASYNCHRONOUS</code> 让慢设备的 probe <strong>并行</strong>进行，加快启动</td>
+</tr>
+<tr>
+<td>反例</td>
+<td><code class="c">PROBE_FORCE_SYNCHRONOUS</code> 用于必须严格排序的设备（如某些存储控制器）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* include/linux/device/driver.h:29 — v6.6 原文注释 */
+ * @PROBE_PREFER_ASYNCHRONOUS: Drivers for &quot;slow&quot; devices which
+ *  probing order is not essential for booting the system may
+ *  ...
+ * @PROBE_DEFAULT_STRATEGY: Used by drivers that work equally well
+ *  whether probed synchronously or asynchronously.
+</code></pre>
+<hr />
 <h4>嵌入式设计（同 list_head）</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -551,13 +937,68 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     └── USB Hub kobject
             └── 鼠标 kobject    ← 关电须自底向上
 </code></pre>
-<p>→ <strong>Ch 6</strong> 嵌入结构 · <strong>Ch 12</strong> kref 与内存释放</p>
+<blockquote>
+<p>电源管理<strong>必须自底向上关、自顶向下开</strong>——先停鼠标驱动，再停 Hub，最后停控制器。
+设备模型提供了这棵树，<strong>电源管理代码才第一次有可能正确实现</strong>。这就是 2.6 引入统一设备模型的原始动机。</p>
+</blockquote>
+<p>→ <strong>Ch 6</strong> 嵌入结构 · <strong>Ch 12</strong> kref 与内存释放 · <a href="#s-17-3">Ch 17.3 sysfs</a> · <a href="chapter-06.html#s-6-1">Ch 6.1 设计原则</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> Linux 设备模型的核心是什么？kobject/kset 的作用？</p>
 <details>
 <summary>答案</summary>
 <p>设备模型用 kobject（内核对象基类）+ kset（对象集合）构建设备拓扑树。device → kobject 嵌入；bus → kset 管理同总线设备；driver → 注册到 bus。sysfs 是设备模型在用户态的投影。这套设计让电源管理、热插拔、设备发现可以自动化。HFT 网卡驱动也注册到设备模型中，ethtool/ip 通过 sysfs/netlink 操作。</p>
+</details>
+<p><strong>Q2.</strong> 一个设备插入后，内核是怎么找到"该用哪个驱动"的？</p>
+<details>
+<summary>答案</summary>
+<p>靠<strong>总线（bus_type）做中介的 match() 回调</strong>。设备和驱动都注册到同一条总线上，由总线的 <code class="c">match()</code> 判断配对：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/device/bus.h:80 */
+struct bus_type {
+    const char *name;
+    int (*match)(struct device *dev, struct device_driver *drv);
+    int (*uevent)(const struct device *dev, struct kobj_uevent_env *env);
+    int (*probe)(struct device *dev);
+    ...
+};
+</code></pre>
+<p>流程（<code class="c">match</code> 成功 → 调 <code class="c">probe</code> → 绑定 <code class="c">dev-&gt;driver = drv</code>）：</p>
+<ol>
+<li><strong>总线扫描</strong>发现新设备 → <code class="c">device_add()</code> → 遍历该总线的 <code class="c">drivers_kset</code>，逐个调 <code class="c">match</code>；</li>
+<li>或者<strong>新驱动注册</strong> → <code class="c">driver_register()</code> → 遍历该总线的 <code class="c">devices_kset</code>，逐个调 <code class="c">match</code>；</li>
+<li><code class="c">match</code> 成功 → 调用 <code class="c">drv-&gt;probe(dev)</code> → probe 成功则绑定，<strong>设备可用</strong>；</li>
+<li>probe 返回 <code class="c">-EPROBE_DEFER</code>（依赖的资源还没就绪）→ 进 <code class="c">deferred_probe</code> 队列，等下个驱动注册时重试。</li>
+</ol>
+<p><strong><code class="c">match</code> 的依据随时代变了：</strong>
+- 早期：驱动自报 ID 列表（<code class="c">pci_device_id</code>），靠驱动自己列举"我支持哪些设备"；
+- 现代主流：<strong><code class="c">of_match_table</code>（设备树）或 ACPI 表</strong>——由固件描述"板子上有什么"，
+  驱动声明"我能驱动什么样的节点"。对应 <code class="c">struct device</code> 里的 <code class="c">of_node</code> / <code class="c">fwnode</code> 字段，
+  其中 <code class="c">fwnode</code> 是设备树与 ACPI 的<strong>统一抽象层</strong>，让同一份驱动代码能跑在 ARM 嵌入式和 x86 服务器上。</p>
+<p>三个触发入口（任一都会触发重新匹配）：新设备出现、新驱动注册、手动写 <code class="c">/sys/bus/*/.../bind</code>。</p>
+</details>
+<p><strong>Q3.</strong> 驱动加载了，但设备没起来，<code class="c">dmesg</code> 里也没报错，怎么查？</p>
+<details>
+<summary>答案</summary>
+<p>最大嫌疑是 <strong>deferred probe（延迟探测）</strong>——probe 因为依赖未就绪返回了 <code class="c">-EPROBE_DEFER</code>，设备被放进等待队列，这<strong>不算错误，不会打日志</strong>。</p>
+<p>这是现代设备模型最常见的"静默失败"，查法：</p>
+<pre class="code" data-label="shell"><code class="c"># 直接看延迟探测队列（需要 debugfs）
+cat /sys/kernel/debug/devices_deferred
+# 输出示例：
+# 0000:00:14.0  i2c_designware  supplier i2c-adapter not ready
+</code></pre>
+<p><code class="c">struct device_private</code>（<code class="c">drivers/base/base.h:108</code>）里专门留了两个字段就是为了这个：</p>
+<pre class="code" data-label="C"><code class="c">struct list_head deferred_probe;
+char *deferred_probe_reason;   /* ← 记录&quot;为什么延迟&quot;，上面那条信息就来自这里 */
+</code></pre>
+<p><strong>排查顺序：</strong>
+1. <code class="c">cat /sys/kernel/debug/devices_deferred</code> —— 看是不是在等谁；
+2. <code class="c">lsmod</code> 确认依赖的驱动（regulator / clock / gpio / i2c 控制器）是否已加载。常见原因是<strong>驱动编译成模块但没放进 initramfs</strong>，加载顺序乱了；
+3. 手动重放绑定：<code class="c">echo 0000:00:14.0 &gt; /sys/bus/pci/drivers/xxx/bind</code>，看这次报什么错；
+4. 如果依赖确实无法自动解决（比如驱动 A 必须晚于驱动 B），用 <strong>module softdep</strong> 声明：
+   <code class="c">/etc/modprobe.d/xxx.conf</code> 里写 <code class="c">softdep A pre: B</code>；
+5. 想看 probe 的详细过程，开 <code class="c">dyndbg</code>：<code class="c">echo 'file drivers/base/dd.c +p' &gt; /sys/kernel/debug/dynamic_debug/control</code>。</p>
+<p><strong>HFT 相关场景</strong>：把自研 FPGA/加速卡驱动编进内核时，如果它依赖某个 regulator 或 i2c，
+一定要确认这些依赖<strong>在 initramfs 里就位</strong>，否则开机后设备静默不可用——重启一次就是几十秒的停机成本。</p>
 </details>
 </details>
 <hr />
@@ -591,6 +1032,177 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 /sys/devices/pci0000:00/...
 </code></pre>
 <p>| 用途 | 查看 <strong>拓扑</strong> · <strong>读写驱动参数</strong> · 脚本调优 |</p>
+<hr />
+<h3>版本断崖：sysfs 底层已换成 kernfs（v3.14）</h3>
+<p>LKD 讲 sysfs 基于 <code class="c">sysfs_dirent</code>。<strong>v6.6 里 sysfs 是 kernfs 的一个实例</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/sysfs.h:16 — v6.6 */
+#include &lt;linux/kernfs.h&gt;
+...
+struct kernfs_node *sysfs_break_active_protection(struct kobject *kobj,
+                          const struct attribute *attr);
+</code></pre>
+<p>而 <code class="c">struct kobject</code> 里那个 sysfs 指针的类型已经变成了 kernfs 的：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/kobject.h:71 — v6.6 */
+struct kernfs_node  *sd;    /* sysfs directory entry */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代</th>
+<th>实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sysfs 初版（2.6）</td>
+<td><code class="c">sysfs_dirent</code> 树</td>
+<td>自己实现目录项、dentry 缓存</td>
+</tr>
+<tr>
+<td><strong>v3.14+（现役）</strong></td>
+<td><strong>kernfs</strong></td>
+<td>把"内存中的目录树"抽成通用层，sysfs 与 <strong>cgroupfs</strong> 共用它</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>为什么关心这个？</strong> 因为你在 <code class="c">/sys/fs/cgroup/</code> 下看到的目录结构和 <code class="c">/sys/devices/</code> 是<strong>同一套代码</strong>渲染的。
+而且 kernfs 引入了 <strong>active reference</strong> 机制——删除一个 sysfs 文件时，会先"停活"再等所有正在进行的读写退出，
+这解决了长期存在的"rmmod 时 sysfs 回调还在跑"的竞态。</p>
+</blockquote>
+<hr />
+<h3>一文件一值：sysfs 的设计约束</h3>
+<p>sysfs 强制约定：<strong>一个文件只表达一个值</strong>，内容长度<strong>不超过一页（PAGE_SIZE，通常 4096 字节）</strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/device.h:156/179 — v6.6 */
+#define DEVICE_ATTR(_name, _mode, _show, _store) \
+    struct device_attribute dev_attr_##_name = __ATTR(_name, _mode, _show, _store)
+#define DEVICE_ATTR_RW(_name) \
+    struct device_attribute dev_attr_##_name = __ATTR_RW(_name)
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* 典型的 show/store 回调 */
+static ssize_t foo_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sysfs_emit(buf, &quot;%d\n&quot;, my_value);   /* 写进 buf，返回长度 */
+}
+static ssize_t foo_store(struct device *dev, struct device_attribute *attr,
+             const char *buf, size_t count)
+{
+    int v;
+    if (kstrtoint(buf, 0, &amp;v))      /* 从字符串解析 */
+        return -EINVAL;
+    my_value = v;
+    return count;                    /* 返回 count 表示全部吃掉 */
+}
+static DEVICE_ATTR_RW(foo);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>约束</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>一文件一值</strong></td>
+<td>想导出一张表？不行，得建目录 + 一堆文件（或改用 debugfs/netlink）</td>
+</tr>
+<tr>
+<td>≤ PAGE_SIZE</td>
+<td>超过一页的数据放不下（大块统计请走 procfs/debugfs/seq_file）</td>
+</tr>
+<tr>
+<td>文本格式</td>
+<td>每次读写都要字符串↔二进制转换，有开销（<strong>不适合高频路径</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>sysfs 不是给热路径用的。</strong> 每次 <code class="c">cat /sys/...</code> 都是一次内核回调 + 字符串格式化。
+HFT 里只在<strong>启动/配置阶段</strong>读 sysfs，绝不能放进 tick 循环。</p>
+</blockquote>
+<hr />
+<h3>/sys 的顶层布局与符号链接</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目录</th>
+<th>内容</th>
+<th>组织维度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">/sys/devices/</code></strong></td>
+<td><strong>唯一的真实设备树</strong></td>
+<td>按<strong>物理拓扑</strong>（PCI 域 → 总线 → 槽位）</td>
+</tr>
+<tr>
+<td><code class="c">/sys/class/</code></td>
+<td>按<strong>功能</strong>分类的视图</td>
+<td>全是<strong>符号链接</strong>指向 <code class="c">/sys/devices/</code></td>
+</tr>
+<tr>
+<td><code class="c">/sys/block/</code></td>
+<td>块设备的视图</td>
+<td>符号链接（<strong>遗留接口</strong>，逐步并入 class）</td>
+</tr>
+<tr>
+<td><code class="c">/sys/bus/</code></td>
+<td>按<strong>总线类型</strong>的视图</td>
+<td>每个总线下有 <code class="c">devices/</code> 和 <code class="c">drivers/</code></td>
+</tr>
+<tr>
+<td><code class="c">/sys/module/</code></td>
+<td><strong>已加载模块</strong>及其参数</td>
+<td>模块名 → <code class="c">parameters/</code>、<code class="c">holders/</code></td>
+</tr>
+<tr>
+<td><code class="c">/sys/kernel/</code></td>
+<td>内核子系统参数</td>
+<td><code class="c">mm/</code>、<code class="c">debug/</code>（kdump）、<code class="c">irq/</code></td>
+</tr>
+<tr>
+<td><code class="c">/sys/firmware/</code></td>
+<td>固件接口</td>
+<td><code class="c">acpi/</code>、<code class="c">efi/</code>、<code class="c">devicetree/</code></td>
+</tr>
+<tr>
+<td><code class="c">/sys/fs/</code></td>
+<td>各文件系统的挂载控制</td>
+<td><code class="c">cgroup/</code>、<code class="c">bpf/</code>、<code class="c">ext4/</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">/sys/class/net/eth0            （功能视图，好找）
+        │ symlink
+        ▼
+/sys/devices/pci0000:00/0000:00:1f.6/net/eth0   （物理视图，能看到真实总线位置）
+        │
+        └── device/  →  ../0000:00:1f.6        （回到 PCI 设备本身）
+               ├── numa_node                    ← HFT 关心：网卡在哪个 NUMA 节点
+               ├── local_cpulist                ← 本地 CPU 是哪些
+               └── sriov_numvfs                 ← SR-IOV 虚拟功能数量
+</code></pre>
+<blockquote>
+<p><strong>拓扑溯源技巧：</strong> 从 <code class="c">/sys/class/net/eth0</code> 出发，<code class="c">readlink -f</code> 就能得到它在 PCI 树上的<strong>真实位置</strong>，
+从而知道"这块网卡挂在哪个 CPU 的 PCIe 根复合体下"——这是绑核的依据。</p>
+</blockquote>
+<hr />
+<h3>sysfs 是 ABI：一旦发布就不能改</h3>
+<p>与 <a href="chapter-05.html#s-5-6">Ch 5.6 的系统调用 ABI</a>、
+<a href="chapter-16.html#s-16-7">Ch 16.7 的 tracepoint 化石</a>同源的一条铁律：</p>
+<pre class="code" data-label="code"><code class="c">Documentation/ABI/ 下的四个等级：
+  stable/     —— 至少保证 2 年不变，用户态可以放心依赖
+  testing/    —— 可能变，但会提前通知
+  obsolete/   —— 即将删除，有迁移路径
+  removed/    —— 已删除（保留记录供后人查询）
+</code></pre>
+<blockquote>
+<p>一个 sysfs 文件一旦被用户态工具依赖，它的<strong>路径、格式、单位</strong>就都成了契约。
+内核开发者的正确做法是：加新接口，而不是改旧接口。</p>
+</blockquote>
 <p><strong>HFT 示例：</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
@@ -608,8 +1220,64 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <td><code class="c">/sys/class/net/*/queues/...</code></td>
 <td>RSS/RPS 等（→ Rosen Ch14）</td>
 </tr>
+<tr>
+<td><strong><code class="c">/sys/class/net/*/device/numa_node</code></strong></td>
+<td>网卡在哪个 NUMA 节点 → 决定绑哪组核</td>
+</tr>
+<tr>
+<td><strong><code class="c">/sys/class/net/*/device/local_cpulist</code></strong></td>
+<td>与该网卡同节点的 CPU 列表</td>
+</tr>
+<tr>
+<td><strong><code class="c">/sys/class/net/*/queues/rx-*/rps_cpus</code></strong></td>
+<td>RPS 的 CPU 掩码</td>
+</tr>
+<tr>
+<td><strong><code class="c">/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages</code></strong></td>
+<td>预留 2MB 大页数量（DPDK 前提）</td>
+</tr>
+<tr>
+<td><code class="c">/sys/class/net/*/device/sriov_numvfs</code></td>
+<td>开启 SR-IOV 虚拟功能</td>
+</tr>
+<tr>
+<td><code class="c">/proc/irq/*/smp_affinity</code></td>
+<td>网卡中断绑核（<strong>这是 procfs 不是 sysfs</strong>）</td>
+</tr>
 </tbody>
 </table></div>
+<hr />
+<h3>三种"内核 ↔ 用户态"通道的选型</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>通道</th>
+<th>适合</th>
+<th>不适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>sysfs</strong></td>
+<td>稳定的、面向设备的<strong>配置与状态</strong>，一值一文件</td>
+<td>高频读写、批量数据、复杂命令</td>
+</tr>
+<tr>
+<td><strong>netlink</strong></td>
+<td>网络配置、事件通知（<code class="c">ip</code>/<code class="c">ss</code> 的背后）</td>
+<td>极简开关（杀鸡用牛刀）</td>
+</tr>
+<tr>
+<td><strong>debugfs</strong></td>
+<td><strong>调试用</strong>，格式随意、不做兼容承诺</td>
+<td>生产依赖（随时可能改名消失）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>Ch 5.6 讲过"添加系统调用的替代方案"——<strong>sysfs 就是那个首选替代</strong>。
+一个内核参数的读写，用 sysfs 实现比加系统调用简单一个数量级，且不侵占 ABI。</p>
+</blockquote>
 <p>→ <a href="../../06.6-systems-performance/html/chapter-09.html#s-9-4">06.6 SysPerf Ch9 scheduler</a> · <a href="chapter-05.html#ch-5">Ch 5</a> <strong>优先 sysfs 而非新 syscall</strong></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -617,6 +1285,97 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>sysfs（/sys）以目录树映射设备模型：/sys/devices/ 下按总线/层级组织设备。每个设备目录下有属性文件（uevent/numa_node/cpulist）。HFT 用 sysfs：1) 查网卡 NUMA 节点（<code class="c">cat /sys/class/net/eth0/device/numa_node</code>）确保绑同核组；2) CPU 拓扑（/sys/devices/system/cpu/）；3) 设置 smp_affinity（/proc/irq/X/smp_affinity）。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">/sys/class/net/eth0</code> 和 <code class="c">/sys/devices/pci0000:00/.../net/eth0</code> 是什么关系？为什么要分成两套？</p>
+<details>
+<summary>答案</summary>
+<p><strong><code class="c">/sys/devices/</code> 是唯一真实的树</strong>，其余都是视图（符号链接）。</p>
+<ul>
+<li><code class="c">/sys/devices/pci0000:00/0000:00:1f.6/net/eth0</code> —— <strong>按物理拓扑</strong>组织的真实位置：PCI 域 → 总线 → 设备 → 功能 → 网卡；</li>
+<li><code class="c">/sys/class/net/eth0</code> —— <strong>按功能分类</strong>的视图，本身是个 <strong>symlink</strong>，指向上面那个真实路径。</li>
+</ul>
+<p>分成两套是因为<strong>使用者关心的维度不同</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>谁用</th>
+<th>关心什么</th>
+<th>用哪个</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>驱动/电源管理</td>
+<td>父子关系、总线位置、关电顺序</td>
+<td><code class="c">/sys/devices/</code>（真实拓扑）</td>
+</tr>
+<tr>
+<td>运维/脚本</td>
+<td>"给我这台机器的所有网卡"</td>
+<td><code class="c">/sys/class/net/</code>（按功能聚合）</td>
+</tr>
+<tr>
+<td>匹配驱动</td>
+<td>这条总线上有哪些设备/驱动</td>
+<td><code class="c">/sys/bus/pci/devices/</code> + <code class="c">drivers/</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实用技巧——从网卡反查物理位置：</strong></p>
+<pre class="code" data-label="shell"><code class="c">readlink -f /sys/class/net/eth0
+# → /sys/devices/pci0000:00/0000:00:1f.6/net/eth0
+cat /sys/class/net/eth0/device/numa_node      # -1 表示无 NUMA 信息
+cat /sys/class/net/eth0/device/local_cpulist  # 与该卡同节点的 CPU
+</code></pre>
+<p>这条链路对 HFT 是<strong>绑核的依据</strong>：CPU 应当与网卡处于<strong>同一个 NUMA 节点</strong>，
+否则每个报文都要跨节点访问内存，多出几十纳秒的跨节点延迟，且占用 QPI/UPI 带宽。</p>
+<p>注意 <code class="c">/sys/block/</code> 是<strong>遗留视图</strong>（早期内核遗留），新代码应走 <code class="c">/sys/class/block/</code>；
+这也是 sysfs ABI 铁律的一个例证——即便设计上已经过时，也不能把老路径删掉。</p>
+</details>
+<p><strong>Q3.</strong> 能不能在交易主循环里读 sysfs 来监控设备状态？为什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不能。</strong> sysfs 是给配置和低频监控用的，不是给热路径用的。原因有三层：</p>
+<p><strong>1. 每次读写都是一次内核回调 + 字符串格式化</strong></p>
+<pre class="code" data-label="C"><code class="c">static ssize_t foo_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sysfs_emit(buf, &quot;%d\n&quot;, my_value);   /* 二进制 → 字符串 */
+}
+</code></pre>
+<p>你要的那个整数被格式化成 ASCII，你再解析回来。来回两次转换 + 一次 <code class="c">open/read/close</code> 三个系统调用，
+比直接读一个共享内存里的整数<strong>贵 3~4 个数量级</strong>。</p>
+<p><strong>2. 可能触发锁竞争</strong>：属性回调常常要拿设备锁、总线锁，甚至 <code class="c">device_lock()</code>。多线程同时读一个属性会串行化。</p>
+<p><strong>3. sysfs 有 active reference 语义</strong>（kernfs 引入）：删除文件时要等所有在途的读写退出。
+热路径上高频读意味着这个"等待"可能变长，与 rmmod/热插拔互相拖累。</p>
+<p><strong>正确的分层做法：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>用什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>启动期读一次（NUMA 节点、队列数、中断号）</td>
+<td>✅ sysfs，读完缓存到进程内存</td>
+</tr>
+<tr>
+<td>配置变更（调度器、RPS 掩码、大页数）</td>
+<td>✅ sysfs，运维窗口内做</td>
+</tr>
+<tr>
+<td>运行时高频指标（收发包数、丢包、队列深度）</td>
+<td>❌ sysfs —— 用 <code class="c">ethtool -S</code>（ioctl/netlink）、<code class="c">/proc/net/dev</code>、或 <strong>eBPF</strong> 在内核里聚合好后一次吐出</td>
+</tr>
+<tr>
+<td>每报文级别的打点</td>
+<td>eBPF + perf/ring buffer（见 02 模块全书）</td>
+</tr>
+</tbody>
+</table></div>
+<p>经验法则：<strong>sysfs 读取频率上限是"每秒几次"这个量级</strong>，超过就该换通道。
+HFT 系统里所有 sysfs 读取都应该集中在<strong>启动初始化阶段</strong>，之后进程只查自己的内存副本。</p>
 </details>
 </details>
 <hr />
@@ -634,27 +1393,289 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>动作字符串</td>
-<td>如 <strong><code class="c">add</code></strong>、<strong><code class="c">remove</code></strong></td>
+<td>如 <strong><code class="c">add</code></strong>、<strong><code class="c">remove</code></strong>、<strong><code class="c">change</code></strong>、<strong><code class="c">move</code></strong>、<strong><code class="c">bind</code></strong></td>
 </tr>
 <tr>
 <td>传递</td>
-<td><strong>netlink</strong> 套接字 → 用户态（<strong>udev/systemd-udevd</strong>）</td>
+<td><strong>netlink</strong> 套接字（<code class="c">NETLINK_KOBJECT_UEVENT</code>）→ 用户态（<strong>udev/systemd-udevd</strong>）</td>
 </tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="code"><code class="c">热插拔 U 盘
     ▼
-内核 kobject 注册 + uevent(&quot;add&quot;)
+内核 kobject 注册 + kobject_uevent(KOBJ_ADD)
     ▼
-udev 监听 netlink ──► 创 /dev 节点、挂载策略…
+netlink 广播 ──► udev/systemd-udevd 收到 ──► 建节点、跑规则、加载模块…
 </code></pre>
-<p>| 用户态 | <strong>udev rules</strong> — 绑 IRQ、权限、符号链接 |</p>
+<h3>uevent 消息长什么样</h3>
+<p>uevent 是<strong>纯文本的环境变量块</strong>，通过 netlink 发出：</p>
+<pre class="code" data-label="code"><code class="c">ACTION=add
+DEVPATH=/devices/pci0000:00/0000:00:14.0/usb1/1-1
+SUBSYSTEM=usb
+DEVNAME=/dev/sdb
+DEVTYPE=usb_device
+MAJOR=189
+MINOR=0
+SEQNUM=4321          ← 单调递增序号，用户态靠它检测丢事件
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ACTION</code></td>
+<td><code class="c">add</code> / <code class="c">remove</code> / <code class="c">change</code> / <code class="c">move</code> / <code class="c">bind</code> / <code class="c">unbind</code></td>
+</tr>
+<tr>
+<td><code class="c">DEVPATH</code></td>
+<td>设备在 <code class="c">/sys</code> 下的路径（<strong>用户态据此去 sysfs 查详情</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">SUBSYSTEM</code></td>
+<td>属于哪个子系统 → udev 规则靠它匹配</td>
+</tr>
+<tr>
+<td><code class="c">DEVNAME</code> + <code class="c">MAJOR</code>/<code class="c">MINOR</code></td>
+<td>有设备节点时的路径与设备号</td>
+</tr>
+<tr>
+<td><code class="c">SEQNUM</code></td>
+<td>序号，<strong>用户态发现跳号就知道丢了事件</strong>（netlink 是广播，可能丢）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>观测与手动触发：</strong></p>
+<pre class="code" data-label="shell"><code class="c">udevadm monitor --kernel --property   # 实时看 uevent
+udevadm info -q all -n /dev/sda       # 查某个设备的完整属性
+echo add &gt; /sys/bus/pci/devices/0000:00:14.0/uevent   # 手动重放一次 add 事件
+</code></pre>
+<blockquote>
+<p>每个设备目录下那个 <strong><code class="c">uevent</code> 文件</strong>是双向的：读它得到当前事件的键值，
+写 <code class="c">add</code>/<code class="c">remove</code>/<code class="c">change</code> 进去就<strong>手动触发</strong>一次 uevent——排障时判断"规则为什么不生效"非常好用。</p>
+</blockquote>
+<hr />
+<h3>版本断崖：<code class="c">/dev</code> 下的节点现在是<strong>内核</strong>创建的（devtmpfs，v2.6.32+）</h3>
+<p>LKD 写作时（2.6 中期），<code class="c">/dev</code> 节点是 <strong>udev 收到 uevent 后 <code class="c">mknod</code> 创建的</strong>。现在分工变了：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>谁创建 <code class="c">/dev/sda</code></th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期</td>
+<td><strong>udev</strong>（用户态 <code class="c">mknod</code>）</td>
+<td>早期启动阶段 udev 还没跑起来，根文件系统挂载不了</td>
+</tr>
+<tr>
+<td>现代（<strong>v2.6.32+</strong>）</td>
+<td><strong>内核的 devtmpfs</strong>（<code class="c">drivers/base/devtmpfs.c</code>，v6.6 仍在）</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">现在的两步分工：
+  ① 内核 devtmpfs：设备一注册就**自动**在 /dev 下建节点（不依赖任何用户态进程）
+  ② udev：负责**权限、所有者、符号链接、重命名**（策略层）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>devtmpfs</th>
+<th>udev</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>在内核里，启动时就挂载到 <code class="c">/dev</code></td>
+<td>用户态守护进程（systemd-udevd）</td>
+</tr>
+<tr>
+<td>只做 <code class="c">mknod</code>（名字由内核定，如 <code class="c">sda</code>）</td>
+<td>做 <code class="c">/dev/disk/by-uuid/...</code> 稳定符号链接</td>
+</tr>
+<tr>
+<td>无条件执行</td>
+<td>按 <code class="c">/etc/udev/rules.d/</code> 规则</td>
+</tr>
+<tr>
+<td>不涉及权限</td>
+<td>设 mode/owner/group（如 <code class="c">render</code> 组可访问 GPU）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>为什么这个变化重要：</strong> 早期用户态 <code class="c">mknod</code> 有鸡生蛋问题——要挂载根文件系统需要 <code class="c">/dev/root</code>，
+但创建 <code class="c">/dev/root</code> 的 udev 又在根文件系统上。devtmpfs 把"建节点"这件最小的事挪进内核，
+udev 退化成纯策略层，<strong>启动更快也更健壮</strong>。</p>
+<p>这也是与 <a href="chapter-05.html#s-5-6">Ch 5.6</a> 一致的思路：
+<strong>内核提供机制，用户态负责策略。</strong></p>
+</blockquote>
+<p>| 用户态 | <strong>udev rules</strong> — 绑 IRQ、权限、符号链接、重命名网卡 |</p>
+<h4>网卡命名：udev 最著名的策略</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时代</th>
+<th>命名</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>老</td>
+<td><code class="c">eth0</code>/<code class="c">eth1</code></td>
+<td><strong>按探测顺序</strong>，重启后可能换（多网卡机器上的噩梦）</td>
+</tr>
+<tr>
+<td>现代（systemd）</td>
+<td><strong><code class="c">enp1s0f0</code></strong></td>
+<td><strong>可预测命名</strong>：<code class="c">en</code>（以太网）+ <code class="c">p1s0</code>（PCI 1:0.0）+ <code class="c">f0</code>（功能 0）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>依据就是 sysfs 里的<strong>物理拓扑路径</strong>——所以 17.3 讲的"真实设备树"是这套命名的地基。
+HFT 服务器上建议<strong>关掉</strong>可预测命名（<code class="c">net.ifnames=0</code>）回到 <code class="c">eth0</code>，或<strong>反过来</strong>用
+<code class="c">udev</code> 按 MAC/PCI 地址固定成 <code class="c">mkt0</code>/<code class="c">ord0</code> 这类语义名——<strong>关键是不可漂移</strong>。</p>
+</blockquote>
+<hr />
+<h3>HFT 怎么用 uevent</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>感知网卡热插拔/掉线</td>
+<td>监听 netlink <code class="c">NETLINK_KOBJECT_UEVENT</code>，过滤 <code class="c">SUBSYSTEM=net</code> + <code class="c">ACTION=add/remove</code></td>
+</tr>
+<tr>
+<td>自动重建行情通道</td>
+<td>收到 <code class="c">add</code> → 重新配置 <code class="c">ethtool -C</code>/RPS/中断亲和 → 重启收包线程</td>
+</tr>
+<tr>
+<td>检测丢事件</td>
+<td>看 <code class="c">SEQNUM</code> 是否连续，跳号说明 netlink 缓冲区溢出（需调 <code class="c">net.core.*</code> 或改用主动轮询 sysfs）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意 netlink 是广播且可能丢</strong>：<code class="c">NETLINK_KOBJECT_UEVENT</code> 的接收缓冲区满时事件被丢弃，
+用户态只能靠 <code class="c">SEQNUM</code> 跳号发现。对"网卡掉了"这种关键事件，
+稳妥做法是<strong>双保险</strong>：uevent 做快速通知 + 定时轮询 <code class="c">/sys/class/net/*/operstate</code> 做兜底。</p>
+</blockquote>
+<p>→ <a href="#s-17-3">Ch 17.3 sysfs</a> · <a href="#s-17-2">Ch 17.2 统一设备模型</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 内核事件层（uevent）如何通知用户态？HFT 热插拔网卡如何感知？</p>
 <details>
 <summary>答案</summary>
 <p>内核通过 kobject_uevent 发送 uevent（ADD/REMOVE/CHANGE），经 netlink(KOBJECT_UEVENT) 广播到用户态。用户态 udev 守护进程接收 uevent → 执行规则（重命名网卡/加载驱动/配置 IP）。HFT 系统可以监听 netlink uevent 感知网卡热插拔，自动重新初始化行情通道。</p>
+</details>
+<p><strong>Q2.</strong> 现在的 <code class="c">/dev</code> 节点还是 udev 创建的吗？devtmpfs 和 udev 各负责什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不是了</strong>。<code class="c">v2.6.32</code> 起，<code class="c">/dev</code> 下的节点由<strong>内核的 devtmpfs</strong> 创建（<code class="c">drivers/base/devtmpfs.c</code>，v6.6 仍在）。</p>
+<p>现在的分工是两层：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><strong>devtmpfs</strong>（内核）</th>
+<th><strong>udev / systemd-udevd</strong>（用户态）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>干什么</td>
+<td>设备一注册就<strong>自动 <code class="c">mknod</code></strong></td>
+<td>设<strong>权限、所有者、符号链接、重命名</strong>、跑外部程序</td>
+</tr>
+<tr>
+<td>何时</td>
+<td>设备注册瞬间，不依赖任何用户态</td>
+<td>收到 netlink uevent 之后（异步）</td>
+</tr>
+<tr>
+<td>名字</td>
+<td>内核定的默认名（<code class="c">sda</code>、<code class="c">ttyUSB0</code>）</td>
+<td>可改（<code class="c">/dev/disk/by-uuid/...</code>、<code class="c">mkt0</code>）</td>
+</tr>
+<tr>
+<td>权限</td>
+<td>默认 root/root，mode 固定</td>
+<td>按 <code class="c">/etc/udev/rules.d/*.rules</code> 定制（如加到 <code class="c">render</code> 组）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么这么改？</strong> 老方案有鸡生蛋问题：
+挂载根文件系统需要 <code class="c">/dev/root</code> → 但 <code class="c">/dev/root</code> 这个节点得由 udev 创建 → 而 udev 这个用户态程序本身又住在根文件系统上。
+早期靠 initramfs 绕开，devtmpfs 则把"建节点"这件最小的事挪进内核，<strong>udev 退化成纯策略层</strong>。</p>
+<p>这正是 LKD 反复强调的 <strong>机制与策略分离</strong>（Ch 1.3）：
+- 机制（内核）：这个设备存在，它叫 sda，主次设备号 8:0 → devtmpfs 建出 <code class="c">/dev/sda</code>；
+- 策略（用户态）：谁可以访问它、该不该加个别名、要不要触发备份脚本 → udev 规则。</p>
+<p><strong>排障提示：</strong> 如果 <code class="c">/dev</code> 下节点存在但权限不对 → 是 udev 规则的问题；
+如果节点<strong>根本不存在</strong> → 去查 <code class="c">dmesg</code> 和 <code class="c">/sys/kernel/debug/devices_deferred</code>（驱动 probe 延迟，见 17.2）。</p>
+</details>
+<p><strong>Q3.</strong> 用 uevent 监控网卡状态够可靠吗？为什么需要双保险？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不够可靠</strong>——netlink 广播是<strong>尽力而为</strong>的，缓冲区满时会<strong>丢弃事件</strong>，而且用户态不会收到任何"你丢了事件"的通知。</p>
+<p>机制上：<code class="c">NETLINK_KOBJECT_UEVENT</code> 是广播型 netlink，内核往每个监听者的 socket 接收缓冲区写，
+<strong>写不进去就直接丢</strong>。用户态唯一的线索是 uevent 里的 <strong><code class="c">SEQNUM</code></strong> 字段：</p>
+<pre class="code" data-label="code"><code class="c">ACTION=add
+DEVPATH=/devices/.../net/eth0
+SUBSYSTEM=net
+SEQNUM=4321        ← 单调递增
+</code></pre>
+<p><code class="c">SEQNUM</code> 是全局递增的，你只要发现"上一个是 4319，这次是 4321"，就知道 <strong>4320 丢了</strong>。</p>
+<p><strong>为什么会丢：</strong>
+1. udev 或你的监听程序<strong>处理太慢</strong>（回调里做了阻塞操作），接收缓冲区堆积；
+2. 开机瞬间<strong>大量设备</strong>同时上报，缓冲区瞬间被打满；
+3. 监听程序<strong>重启期间</strong>的事件全部错过（netlink 没有重放机制）。</p>
+<p><strong>双保险设计（HFT 推荐）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>通道</th>
+<th>作用</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>netlink uevent</strong></td>
+<td>快速通知（毫秒级感知）</td>
+<td>可能丢，但快</td>
+</tr>
+<tr>
+<td><strong>定时轮询 <code class="c">/sys/class/net/*/operstate</code></strong></td>
+<td>兜底校验</td>
+<td>慢（秒级），但<strong>绝不丢</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 兜底轮询：operstate 只有 up/down/unknown/lowerlayerdown
+cat /sys/class/net/eth0/operstate
+# 更细的：carrier（链路层是否检测到载波）
+cat /sys/class/net/eth0/carrier
+</code></pre>
+<p><strong>实践要点：</strong>
+- uevent 回调里<strong>只做入队</strong>，不要做重活（配置网卡、重启线程都挪到工作线程）；
+- 启动时要<strong>先全量扫描一遍 sysfs</strong>（枚举现有网卡），再开始监听增量事件——否则会漏掉开机时已经存在的设备；
+- 关键链路状态（行情通道是否活着）<strong>永远不要只依赖事件</strong>，要有独立的<strong>心跳/超时检测</strong>。
+  这条原则在分布式系统里是通用的：事件通知是加速手段，不是正确性来源。</p>
 </details>
 </details>
 <hr />
@@ -1148,12 +2169,324 @@ dpdk-test                           # DPDK 兼容性
          ▲
     sysfs / uevent 暴露拓扑与配置
 </code></pre>
+<hr />
+<h3>三条路径的"货币单位"与关键对象</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>用户可见对象</th>
+<th>内核入口</th>
+<th>中间层</th>
+<th>最小单位</th>
+<th>终点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>字符设备</strong></td>
+<td><code class="c">/dev/xxx</code></td>
+<td><code class="c">file_operations</code></td>
+<td>（几乎无）</td>
+<td>字节</td>
+<td>驱动</td>
+</tr>
+<tr>
+<td><strong>块设备</strong></td>
+<td><code class="c">/dev/sdX</code></td>
+<td><code class="c">file_operations</code></td>
+<td>VFS → <strong>页缓存</strong> → 块层 → 调度器</td>
+<td>页 / <strong>bio</strong></td>
+<td>驱动</td>
+</tr>
+<tr>
+<td><strong>网络设备</strong></td>
+<td><code class="c">socket()</code></td>
+<td><code class="c">struct proto_ops</code></td>
+<td><strong>协议栈</strong>（TCP/UDP/IP）</td>
+<td><strong>skb</strong></td>
+<td>驱动</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>对照 <a href="chapter-14.html#s-14-7">Ch 14.7</a> 的"分层货币单位表"一起看：
+每一层都在做<strong>单位换算</strong>——字节 → 页 → 块 → 段 → request → 硬件命令 → 扇区。</p>
+</blockquote>
+<hr />
+<h3>内核旁路的三级阶梯（HFT 的核心话题）</h3>
+<p>旁路不是"开或者关"，而是<strong>三个层级</strong>，越往下性能越高、代价越大：</p>
+<pre class="code" data-label="code"><code class="c">第 0 级：走完整内核栈
+    socket() → TCP/UDP → IP → 驱动 → 网卡
+    延迟：~10-30 μs（含两次拷贝 + 协议处理）
+
+第 1 级：旁路协议栈（保留内核驱动与设备模型）
+    ┌ AF_XDP / AF_PACKET mmap ─┐
+    │  用户态直接读写网卡的 ring buffer，跳过 TCP/IP 与 skb 分配
+    └─┘
+    延迟：~2-5 μs        代价：要自己解析以太网帧；仍是内核管设备
+
+第 2 级：旁路内核驱动（设备交给用户态）
+    ┌ DPDK / VFIO / UIO ─┐
+    │  用户态 PMD 轮询驱动网卡，内核完全不参与数据路径
+    └─┘
+    延迟：~1 μs 以下     代价：**独占设备**（内核看不到这块网卡了）
+
+第 3 级：旁路 CPU（设备自己做）
+    ┌ RDMA / TCP Offload / FPGA ─┐
+    │  数据在网卡或 FPGA 上直接处理，CPU 只发指令
+    └─┘
+    延迟：亚微秒          代价：硬件成本高，开发周期长
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>级别</th>
+<th>代表技术</th>
+<th>内核角色</th>
+<th>设备谁管</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>AF_XDP</strong></td>
+<td>仍拥有设备，但给一条高速通道</td>
+<td>内核</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>DPDK（VFIO）</strong></td>
+<td><strong>放弃</strong>该设备</td>
+<td><strong>用户态独占</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>RDMA / 智能网卡 / FPGA</td>
+<td>只做初始化</td>
+<td>设备自治</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>AF_XDP 与 DPDK 的关键差别不是性能，是"设备归谁"：</strong>
+AF_XDP 下内核仍是设备主人，你可以同时用 <code class="c">ssh</code>、<code class="c">tcpdump</code>、<code class="c">ethtool</code>；
+DPDK 下这块网卡<strong>从内核视角消失了</strong>——你不能再 <code class="c">tcpdump eth0</code>，也不能用它跑 SSH，
+排障只能靠 DPDK 自己的工具。这是巨大的运维代价，选型时必须权衡。</p>
+</blockquote>
+<hr />
+<h3>完整 <code class="c">sendto()</code> 到网卡发包的函数链</h3>
+<pre class="code" data-label="code"><code class="c">sendto(fd, buf, len, ...)
+  │
+  ├─ ① 系统调用陷入内核                                    （Ch 5）
+  ├─ ② fd → struct file → socket → proto_ops-&gt;sendmsg     （Ch 13 VFS）
+  ├─ ③ 分配 skb，把用户数据拷进 skb（或零拷贝）             （网络子系统）
+  ├─ ④ UDP: udp_sendmsg → ip_send_skb → ...               （协议栈）
+  │     TCP: tcp_sendmsg → 拥塞控制/分段 → ...
+  ├─ ⑤ 路由查找 + 邻居解析（ARP）
+  ├─ ⑥ 排队规则 qdisc（pfifo_fast / fq_codel）
+  ├─ ⑦ dev_queue_xmit() → ndo_start_xmit()                （网卡驱动）
+  ├─ ⑧ 驱动把 skb 地址填进 TX ring，写 doorbell 寄存器
+  └─ ⑨ 网卡 DMA 取数据 → 发到线路上 → 中断（或轮询）通知完成
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>可优化的环节</th>
+<th>手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>② 系统调用开销</td>
+<td><code class="c">sendmmsg()</code> / <code class="c">io_uring</code> 批量提交</td>
+</tr>
+<tr>
+<td>③ 数据拷贝</td>
+<td><code class="c">MSG_ZEROCOPY</code> / <code class="c">AF_XDP</code> 零拷贝</td>
+</tr>
+<tr>
+<td>④ 协议处理</td>
+<td>改用 UDP 组播行情；或 <code class="c">AF_XDP</code> 全跳过</td>
+</tr>
+<tr>
+<td>⑥ qdisc 排队</td>
+<td><code class="c">tc qdisc</code> 调优；低延迟场景用 <code class="c">fq</code></td>
+</tr>
+<tr>
+<td>⑨ 中断 → 轮询</td>
+<td><code class="c">NAPI</code>（内核）/ <strong>busy polling</strong>（DPDK 的精髓）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>NAPI 是内核自己的"半轮询"</strong>：高负载时收中断后关闭中断、转入轮询，
+把"每包一中断"变成"每批一中断"。DPDK 更进一步：<strong>完全不要中断，CPU 死循环轮询</strong>。</p>
+</blockquote>
+<hr />
+<h3>与前面章节的闭环</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>本章概念</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「一切皆文件」的边界</td>
+<td><a href="chapter-01.html#s-1-1">Ch 1.1</a></td>
+</tr>
+<tr>
+<td>优先 sysfs 而非新 syscall</td>
+<td><a href="chapter-05.html#s-5-6">Ch 5.6</a></td>
+</tr>
+<tr>
+<td>嵌入结构 + container_of</td>
+<td><a href="chapter-06.html#s-6-1">Ch 6.1</a></td>
+</tr>
+<tr>
+<td>块设备的 bio / 调度器</td>
+<td><a href="chapter-14.html#ch-14">Ch 14</a></td>
+</tr>
+<tr>
+<td>页缓存与文件 IO</td>
+<td><a href="chapter-16.html#ch-16">Ch 16</a></td>
+</tr>
+<tr>
+<td>页/dentry slab 缓存</td>
+<td><a href="chapter-12.html#ch-12">Ch 12</a></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>本章的两条主线：</strong> ① <strong>对象模型</strong>（kobject 如何把设备组织成树）；② <strong>用户可见性</strong>（sysfs + uevent 如何把这棵树投影出去）。
+理解它，你才能回答"这块网卡在 PCI 树的哪个位置、归哪个 NUMA 节点、中断该绑哪组核"——HFT 低延迟调优的起点。</p>
+</blockquote>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 从用户态 write() 到网卡发包经过哪些层？</p>
 <details>
 <summary>答案</summary>
 <p>write(socket, data, len) → VFS（socket file）→ sock_write_iter → 协议栈（TCP/UDP）→ ip_push_pending_frames → 网卡驱动 ndo_start_xmit → DMA → 网卡硬件发包。HFT 优化路径：AF_XDP 绕过协议栈直接从用户态到网卡驱动；DPDK 完全在用户态驱动网卡，不经内核。</p>
+</details>
+<p><strong>Q2.</strong> AF_XDP 和 DPDK 都能做到低延迟收包，选择时真正该权衡的是什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不是性能，是"这块网卡归谁管"</strong>——这决定了你还能不能用内核的整套运维工具。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><strong>AF_XDP</strong></th>
+<th><strong>DPDK（VFIO/UIO）</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设备归属</td>
+<td><strong>内核仍是主人</strong>，只是开了一条高速通道</td>
+<td><strong>内核放弃设备</strong>，用户态独占</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>~2-5 μs</td>
+<td>~1 μs 以下</td>
+</tr>
+<tr>
+<td><code class="c">tcpdump eth0</code></td>
+<td>✅ 能抓包（配合 XDP 的通用模式）</td>
+<td>❌ <strong>抓不到</strong>（内核看不到这块网卡）</td>
+</tr>
+<tr>
+<td><code class="c">ethtool</code> / <code class="c">ip link</code></td>
+<td>✅ 正常</td>
+<td>❌ 不可用</td>
+</tr>
+<tr>
+<td>用这块网卡跑 SSH</td>
+<td>✅ 可以</td>
+<td>❌ 不行（设备已从内核消失）</td>
+</tr>
+<tr>
+<td>内核协议栈共存</td>
+<td>✅ 同一块网卡上其他流量照常走内核</td>
+<td>❌ 完全独占</td>
+</tr>
+<tr>
+<td>故障恢复</td>
+<td>进程挂了内核接管</td>
+<td>进程挂了<strong>网卡无主</strong>，需要自己复位</td>
+</tr>
+<tr>
+<td>开发成本</td>
+<td>中（XSK ring 编程模型）</td>
+<td>高（整套 PMD、大页、绑定都要管）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>决策建议：</strong>
+- 只需要<strong>行情组播收包</strong>（单一、无连接、只读）→ <strong>DPDK 值得</strong>，独占的代价可以接受；
+- 需要<strong>收发并存 + 还要跑管理流量</strong>（SSH/监控/日志）→ <strong>AF_XDP 更合适</strong>，省一台机器或一块网卡；
+- 延迟要求不是极端（5 μs 够用）→ AF_XDP，运维成本低一个数量级；
+- 已经在用 DPDK 且稳定 → 别迁，重写成本远大于收益。</p>
+<p><strong>一个常见误区</strong>：以为 DPDK 一定比 AF_XDP 快很多。实际上现代网卡 + 正确配置的 AF_XDP
+（busy poll + 大页 + 绑核）与 DPDK 的差距常常在 <strong>1-2 μs 以内</strong>，而这 1-2 μs 换来的运维能力差别很大。
+先测再选，别照抄别人的架构。</p>
+</details>
+<p><strong>Q3.</strong> 为什么 DPDK 用轮询（busy polling）而不是中断？这不是浪费 CPU 吗？</p>
+<details>
+<summary>答案</summary>
+<p>是浪费 CPU，但<strong>换掉了更贵的东西</strong>——中断带来的延迟抖动和上下文开销。</p>
+<p><strong>中断的隐藏成本（每个包都要付）：</strong>
+1. 网卡发中断 → CPU 中断控制器 → 查 IDT → 切换到中断上下文；
+2. <strong>保存/恢复寄存器</strong>（几百个周期）；
+3. 可能触发<strong>上下文切换</strong>（唤醒等待的进程）；
+4. <strong>缓存污染</strong>：中断回来后，L1/L2 里原本热的数据被打冷了，要重新从内存取（<strong>这是最贵的一项</strong>）；
+5. 中断<strong>合并（interrupt coalescing）</strong>为了减少中断数会故意延迟，反而<strong>增加延迟</strong>。</p>
+<p><strong>轮询的成本：</strong>
+- 一个 CPU 核 100% 占用，死循环读网卡的 RX ring；
+- 没有上下文切换，<strong>没有缓存污染</strong>——热数据始终在 L1/L2 里；
+- 延迟<strong>非常稳定</strong>（抖动小），这对 HFT 往往比平均延迟更重要。</p>
+<p><strong>算一笔账：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>中断模式</th>
+<th>轮询模式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每包 CPU 开销</td>
+<td>中断时高、空闲时 0</td>
+<td>恒定</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>有抖动（合并、排队）</td>
+<td><strong>稳定</strong></td>
+</tr>
+<tr>
+<td>CPU 占用</td>
+<td>随流量波动</td>
+<td><strong>恒定 100%（独占一个核）</strong></td>
+</tr>
+<tr>
+<td>缓存命中</td>
+<td>中断后 cache 被冲</td>
+<td><strong>cache 一直热</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>HFT 的取舍逻辑很直接：<strong>一个核的成本（几千美元）远小于一次尾部延迟抖动造成的损失</strong>。
+所以"浪费一个核去死循环"在经济上是划算的。</p>
+<p><strong>内核自己也在学这一招：</strong>
+- <strong>NAPI</strong>：高负载时收一次中断后<strong>关中断转入轮询</strong>，把"每包一中断"变成"每批一中断"——半轮询；
+- <strong><code class="c">SO_BUSY_POLL</code> / <code class="c">busy_read</code></strong>：socket 层忙轮询，配合 <code class="c">net.core.busy_poll</code> / <code class="c">busy_read</code> 参数；
+- <strong>io_uring 的 <code class="c">SQPOLL</code></strong>：提交队列由内核线程轮询，应用连 <code class="c">io_uring_enter</code> 系统调用都省了。</p>
+<p>所以演进方向是一致的：<strong>在低延迟场景，用 CPU 换延迟确定性是划算的买卖</strong>。</p>
 </details>
 </details>
 <hr />
