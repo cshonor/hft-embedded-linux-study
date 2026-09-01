@@ -1875,6 +1875,67 @@ PMC                  [硬件]         （LBR/DWARF 补充）         bpftool 检
 perf_events          [汇聚层]
 </code></pre>
 <p>读这张地图的正确姿势：横向三列分别是"<strong>输入-处理-输出</strong>"，任何 BPF 工具 = 三列各取一格的组合。第 2 部分的几十个工具全部落在这张组合表里，理解了地图就再没有"新工具"——只有新组合。</p>
+<h2>更大的地图：Linux 追踪全家桶（机制 vs 工具分层）</h2>
+<p>上面只画了 BPF 内部。把视野拉大到整个 Linux 追踪生态，必须分清<strong>底层机制（地基）</strong>与<strong>用户态工具（成品）</strong>两层：</p>
+<pre class="code" data-label="text"><code class="c">底层内核机制（地基）              用户态工具（成品）
+─────────────────────           ─────────────────────
+ptrace()      系统调用     →     strace / gdb
+ftrace        跟踪框架     →     （裸用 tracefs，语法繁琐）
+perf_events   事件汇聚层   →     perf（record/trace/top/stat）
+eBPF          内核虚拟机   →     bpftrace / BCC / libbpf / perf(1)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>代表工具</th>
+<th>能看什么</th>
+<th>开销</th>
+<th>一句话定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ptrace</td>
+<td>strace、gdb</td>
+<td>系统调用进出、信号、断点调试</td>
+<td><strong>极高</strong>（每次 syscall 双方停走）</td>
+<td>每事件都暂停进程切换上下文，线上禁用</td>
+</tr>
+<tr>
+<td>ftrace</td>
+<td>裸操作 tracefs</td>
+<td>内核函数、tracepoint、自带 function tracer</td>
+<td>低</td>
+<td>内核自带框架，接口繁琐一般不裸用</td>
+</tr>
+<tr>
+<td>perf_events</td>
+<td>perf</td>
+<td>采样、tracepoint、PMC</td>
+<td>低</td>
+<td>统计强、自定义逻辑弱</td>
+</tr>
+<tr>
+<td>eBPF</td>
+<td>bpftrace/BCC/libbpf</td>
+<td>全部探针 + <strong>内核内自定义计算</strong></td>
+<td>很低</td>
+<td>事件触发后在内核里跑你的代码</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关系澄清（易错，比表格本身更重要）</strong>：</p>
+<ol>
+<li><strong>ptrace 完全独立</strong>：调试机制，不在 eBPF 事件源体系内（见 <a href="chapter-17.html#s-6">2.6</a>）。gdb 依然必须依赖 ptrace——<strong>eBPF 做不了断点调试</strong>，两者不是替代关系</li>
+<li><strong>eBPF 站在探针基础设施之上，而非站在 ftrace 之上</strong>：kprobe/tracepoint 是独立内核基础设施，ftrace 和 eBPF 是<strong>并行的两个消费者</strong>；eBPF 挂 kprobe/tracepoint 走 perf_event_open（见 <a href="chapter-05.html#s-13">2.13</a>），不经过 ftrace</li>
+<li><strong>ftrace 的 function tracer 是第三种插桩机制</strong>：编译期插桩（内核编 <code class="c">-mfentry</code>/mcount，函数入口留钩子），与 kprobe 的运行期断点（int3）不同源——ftrace 能跟踪"任意内核函数"靠的是这个，不是 kprobe</li>
+<li><strong>perf trace ≠ strace</strong>：同样看系统调用，perf trace 走 <code class="c">syscalls:</code> 域 tracepoint，开销低一个量级以上；strace 每次调用都要 ptrace 停走双方</li>
+<li><strong>分层记忆法</strong>：strace（基于 ptrace）/ perf（基于 perf_events）/ bpftrace、BCC、libbpf（基于 eBPF）——工具选型时先想地基：调试用 ptrace 系、统计用 perf 系、内核内实时计算用 eBPF 系</li>
+</ol>
+<blockquote>
+<p>常见误区：<strong>"BPF 把 ptrace、ftrace 全替代了"</strong>——错。eBPF 与 ftrace 共享探针地基但互不隶属；ptrace 是另一套调试机制且不可替代（gdb）。eBPF 的增量在"事件触发后能在内核里执行自定义字节码"这一件事上，仅此而已——但这一件事改变了观测的开销模型。</p>
+</blockquote>
 <h2>选型决策树</h2>
 <ol>
 <li>有 tracepoint / USDT 吗？→ 有，用静态（稳定+零禁用开销）</li>
@@ -1974,6 +2035,10 @@ perf_events          [汇聚层]
 <details>
 <summary>4. 为什么"事件源选型、程序形态、分发方式"三类选型错误的事故性质不同？</summary>
 <p>事件源选错（高频挂动态）是性能事故——直接伤害被观测系统的吞吐/延迟；形态选错（逐事件常驻）是开销事故——观测资源随事件率失控；分发选错（BCC 跨版本）是运维事故——内核升级后工具批量失效。防御分别靠频率评估纪律、输出通道设计、CO-RE/BTF 检查。</p>
+</details>
+<details>
+<summary>5. "eBPF 复用了 ftrace 的探针，所以 eBPF 建在 ftrace 之上"？哪里错了？gdb 为什么不能用 eBPF 重写？</summary>
+<p>错在层级：kprobe/tracepoint 是独立内核基础设施，ftrace 与 eBPF 是并行的两个消费者——eBPF 挂 kprobe 走 perf_event_open（2.13 的汇聚层），不经过 ftrace 接口；ftrace 自己的 function tracer 还是独立的第三种插桩机制（编译期 -mfentry，区别于 kprobe 运行期 int3）。gdb 不能用 eBPF 重写：断点调试需要"命中即停、检查/修改进程状态、单步恢复"的完全控制语义，这是 ptrace 的能力模型；eBPF 程序由验证器保证不可暂停/阻塞被观测进程，设计目标是最小观测者效应——两套机制的目标互斥。</p>
 </details>
 <h2>交叉引用</h2>
 <ul>
