@@ -451,8 +451,113 @@ sys_read() ──► VFS（统一语义）
 </tbody>
 </table></div>
 <p>| 可共存示例 | NTFS · FAT · ext4 · 各类 Unix FS… |</p>
+<h4>「一切皆文件」的边界（VFS 不只是磁盘）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>经 VFS 的东西</th>
+<th>背后实现</th>
+<th>file_operations 提供者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通/日志文件</td>
+<td>ext4/xfs/btrfs</td>
+<td>磁盘 FS</td>
+</tr>
+<tr>
+<td><code class="c">/proc</code> <code class="c">/sys</code></td>
+<td>procfs/sysfs</td>
+<td>内核按需生成（读时现算，<strong>无页缓存</strong>）</td>
+</tr>
+<tr>
+<td>管道、FIFO</td>
+<td>pipefs</td>
+<td>内核内存环形缓冲</td>
+</tr>
+<tr>
+<td>socket</td>
+<td>sockfs</td>
+<td>协议栈（<code class="c">socket_file_ops</code>）</td>
+</tr>
+<tr>
+<td><code class="c">/dev/null</code> <code class="c">/dev/zero</code></td>
+<td>devtmpfs</td>
+<td>字符设备驱动</td>
+</tr>
+<tr>
+<td>eventfd / epoll fd / signalfd</td>
+<td>匿名 inode</td>
+<td>内核子系统各自注册</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这个表是 HFT 视角的干货：<strong>热路径上最常见的 fd——socket、eventfd、epoll、共享内存 fd——全部是 VFS 对象</strong>。<code class="c">epoll_ctl</code> 注册的就是 file<em>，<code class="c">SO_REUSEPORT</code> 的负载均衡按 file/socket 找接收者。VFS 不是"文件系统章节"，它是</em><em>用户态握住的一切内核资源的把手</em>*。</p>
+</blockquote>
+<h4>VFS 的两份「合同」</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>合同</th>
+<th>内容</th>
+<th>违约后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>对上（用户态/syscall 层）</strong></td>
+<td>语义统一：open/read/write/lseek/mmap 的参数、错误码（ENOENT/EISDIR/…）、fd 生命周期</td>
+<td>程序无需为不同 FS 写不同代码</td>
+</tr>
+<tr>
+<td><strong>对下（具体 FS）</strong></td>
+<td>接口统一：实现四张操作表（super/inode/dentry/file ops）即可接入内核</td>
+<td>新 FS 只要填表，<strong>不用改内核其余部分</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>第二份合同就是 Ch13.3 的主题——它决定了「给内核写一个新文件系统」的工程量是<strong>填一张表</strong>，而不是改上千处调用点。</p>
+</blockquote>
 <p>→ <a href="chapter-01.html#ch-1">Ch 1</a> <strong>一切皆文件</strong> · <a href="chapter-05.html#ch-5">Ch 5</a> · <a href="../../03-linux-userspace-api/html/chapter-04.html#ch-4">03-linux-userspace-api Ch4 文件 I/O</a></p>
 <p><strong>HFT：</strong> 热路径 <strong><code class="c">read</code>/<code class="c">write</code>/<code class="c">mmap</code>/<code class="c">send</code></strong> 都经 VFS 或并行子系统；排障可分层：<strong>syscall → VFS → 具体 FS/协议栈</strong>。</p>
+<h4>分层排障实操（这条链怎么用）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>先看哪层</th>
+<th>工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>read 慢，不确定卡在哪</td>
+<td>syscall 入口耗时 vs VFS 以下耗时</td>
+<td><code class="c">perf trace -p &lt;pid&gt;</code> / <code class="c">strace -T -e read</code>（分层计时）</td>
+</tr>
+<tr>
+<td>怀疑 page cache 未命中</td>
+<td>VFS 之下的块层</td>
+<td><code class="c">perf stat -e 'dtlb*'</code>、<code class="c">/proc/meminfo</code> 的 Cached/Buffers</td>
+</tr>
+<tr>
+<td>socket send 慢</td>
+<td>不是磁盘 FS——走 sockfs 的 <code class="c">socket_file_ops</code></td>
+<td><code class="c">ss -tin</code>、BPF 追 <code class="c">tcp_sendmsg</code></td>
+</tr>
+<tr>
+<td>open 风暴（配置反复重读）</td>
+<td>dcache 路径解析层</td>
+<td><code class="c">perf trace -e openat</code>、观察 dentry 增长 <code class="c">/proc/sys/fs/dentry-state</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>分层心智模型的价值：<strong>把"IO 慢"这个模糊陈述拆成 syscall 层 / VFS 层 / 具体实现层三选一</strong>，再选对工具。与 06.6 SysPerf Ch8 的 USE 方法（每层都问利用率/饱和度/错误）是同一件事。</p>
+</blockquote>
 <p>→ <a href="../../06.6-systems-performance/html/chapter-08.html#s-8-4">06.6 SysPerf Ch8 VFS 追踪</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -460,6 +565,16 @@ sys_read() ──► VFS（统一语义）
 <details>
 <summary>答案</summary>
 <p>VFS 是系统调用（open/read/write）和具体文件系统（ext4/nfs/proc）之间的抽象层。HFT 需要 VFS 因为：1) 热路径 read/write 经过 VFS；2) /proc 和 /sys 是 VFS 文件系统，用于调优（CPU 亲和性/调度策略）；3) mmap 文件时 VFS 决定 page cache 行为。理解 VFS 能在排障时分清是 syscall 层、VFS 层还是文件系统层的问题。</p>
+</details>
+<p><strong>Q2.</strong> socket 也说「一切皆文件」——socket fd 经 VFS 吗？证据是什么？</p>
+<details>
+<summary>答案</summary>
+<p>经。socket 的 inode 属于内核内部的 <strong>sockfs</strong>，accept 返回的 fd 指向一个 <code class="c">struct file</code>，其 <code class="c">f_op</code> 是 <code class="c">socket_file_ops</code>（sock_read_iter/sock_write_iter/sock_mmap…）。所以 <code class="c">read(fd)</code> 对 socket 也能用（等价 recv 默认语义），epoll 注册的也是这个 file。反过来说明「一切皆文件」的实现机制正是 VFS 操作表：<strong>任何内核对象只要实现 file_operations 并挂进 fd 表，就自动获得整套文件 API</strong>（open/close/mmap/poll/epoll 全部免费）。</p>
+</details>
+<p><strong>Q3.</strong> <code class="c">/proc/cpuinfo</code> 的 read 和 <code class="c">/data/log.txt</code> 的 read，在 VFS 层之下的开销结构有何本质区别？</p>
+<details>
+<summary>答案</summary>
+<p><strong>磁盘文件</strong>：read 命中 page cache 则内存拷贝；未命中则块层 IO（毫秒级），且首次 read 要走完整的 dcache/inode 路径。<strong>procfs</strong>：数据<strong>不落盘、也不进 page cache</strong>——每次 read 都调用该 /proc 条目注册的 seq_file 回调<strong>现场生成</strong>（比如 cpuinfo 要遍历所有 CPU 结构体格式化输出）。含义：① procfs 的 read 成本 = 内核执行回调的 CPU 时间，几乎无 IO；② 但高频读 /proc 仍是纯 CPU 开销（曾有用 /proc/stat 做监控导致软中断风暴的事故）；③ HFT 热路径绝不应有 /proc 轮询——配置读一次缓存住。</p>
 </details>
 </details>
 <hr />
@@ -525,6 +640,87 @@ sys_read() ──► VFS（统一语义）
 </tr>
 </tbody>
 </table></div>
+<h4>纯 C 怎么做 OOP：嵌入 + 操作表（与 Ch6 同源）</h4>
+<p>VFS 的对象模型和 <a href="chapter-06.html#s-6-1">Ch6.1 设计原则</a>是同一套机制，只是规模最大：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>OOP 概念</th>
+<th>C 实现</th>
+<th>内核证据（v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类 = 数据 + 方法</td>
+<td>结构体<strong>内嵌函数指针表</strong>：<code class="c">inode-&gt;i_op</code>、<code class="c">file-&gt;f_op</code>、<code class="c">dentry-&gt;d_op</code>、<code class="c">sb-&gt;s_op</code></td>
+<td><code class="c">include/linux/fs.h</code> 各结构含 <code class="c">const struct *_operations *</code></td>
+</tr>
+<tr>
+<td>继承</td>
+<td><strong>组合代替</strong>：对象持一张表指针，换表 = 换"类"</td>
+<td>同一 inode 类型可换 f_op（如 O_TMPFILE）</td>
+</tr>
+<tr>
+<td>多态调用</td>
+<td><code class="c">file-&gt;f_op-&gt;read_iter(...)</code> — 一行代码路由到任意 FS</td>
+<td><code class="c">fs/read_write.c</code> 全是这个模式</td>
+</tr>
+<tr>
+<td>接口（interface）</td>
+<td>第四张表 <code class="c">address_space_operations</code>（页缓存回调）</td>
+<td><code class="c">inode-&gt;i_mapping-&gt;a_ops</code></td>
+</tr>
+<tr>
+<td>构造/析构</td>
+<td><code class="c">alloc_inode</code>/<code class="c">destroy_inode</code>（在 super_operations 里！）</td>
+<td><strong>连"生灭"都交给子类</strong>——slab 来自各 FS 自己的缓存</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>为什么不用 C++？内核 1991 年选型时的现实约束（编译器不稳）变成了<strong>文化约束</strong>：显式的函数指针调用可 grep、可 ftrace（<code class="c">f_op-&gt;read_iter</code> 能被 kprobe 挂上）、无隐式构造/异常。代价是没有编译期类型检查拼错函数名要运行时才发现——不过操作表是静态 const 结构体，漏填的槽位是 NULL，调用处有 <code class="c">if (f_op-&gt;read_iter)</code> 守卫。</p>
+</blockquote>
+<h4>四对象 × 生命周期与缓存归属（谁管谁回收）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>诞生于</th>
+<th>缓存池</th>
+<th>回收触发</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>superblock</td>
+<td>mount 时 FS 的 <code class="c">mount()</code> 回调</td>
+<td>各 FS 自建 sb 缓存</td>
+<td>umount / 内存压力（可回收的 FS）</td>
+</tr>
+<tr>
+<td>inode</td>
+<td>首次路径解析 lookup</td>
+<td>各 FS 的 inode slab（Ch12.2）</td>
+<td>引用归零 + 缓存收缩</td>
+</tr>
+<tr>
+<td>dentry</td>
+<td>路径解析中创建</td>
+<td><strong>全局 dcache</strong>（统一 slab）</td>
+<td>引用归零后进 LRU，内存压力逐出</td>
+</tr>
+<tr>
+<td>file</td>
+<td>open 成功时（<code class="c">alloc_empty_file</code>）</td>
+<td>全局 filp slab</td>
+<td>close 最后一个引用时立即销毁（<strong>不缓存</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>注意 file 是四对象里唯一<strong>不进缓存</strong>的——它没有"重用"价值（偏移/标志都是进程私有的），close 即死。这决定了 fd 的高频 open/close 是 slab 分配器压力（Ch12），而 dcache 是全局共享的。</p>
+</blockquote>
 <p>→ <strong>Ch 16</strong> 页缓存挂在 address_space / inode 侧</p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -532,6 +728,16 @@ sys_read() ──► VFS（统一语义）
 <details>
 <summary>答案</summary>
 <p>super_block（文件系统实例）、inode（文件元数据）、dentry（目录项/路径缓存）、file（打开的文件实例）。关系：super_block → 管理该 FS 的所有 inode；inode → 对应一个文件；dentry → 构成路径树，指向 inode；file → 进程打开文件后创建，指向 dentry。一个 inode 可被多个 dentry 引用（硬链接），一个 dentry 可被多个 file 引用（多次 open）。</p>
+</details>
+<p><strong>Q2.</strong> 为什么说 VFS 的面向对象是「组合而非继承」？换掉 <code class="c">file-&gt;f_op</code> 意味着什么？</p>
+<details>
+<summary>答案</summary>
+<p>C 没有继承，VFS 用<strong>对象持有操作表指针</strong>实现"类"：方法不编译进对象，而是一张独立的 const 函数指针表。换表指针 = 运行时换"类"——典型例子是 open 一个设备文件时，<code class="c">do_dentry_open</code> 根据 inode 类型把 f_op 从 def_fifo_fops/def_chr_fops 换成具体驱动注册的表；epoll 内部也用换 f_op 实现 file 的"代理"（eventfd 被包装）。继承语义上做不到的（如让 ext4 file 同时是 pipe），组合天然支持不了的组合语义，多态反而更灵活——代价是少一层编译期保障。</p>
+</details>
+<p><strong>Q3.</strong> 四个对象里为什么只有 file 不进任何缓存、close 即销毁？</p>
+<details>
+<summary>答案</summary>
+<p>superblock/inode/dentry 都携带<strong>可复用的全局状态</strong>：sb 有 FS 元数据，inode 有文件元数据（下次 open 还要用），dentry 有路径解析结果（下次走同路径还要用）——缓存它们能省真实的 IO/查找成本。file 携带的是<strong>纯进程私有状态</strong>（f_pos 偏移、O_APPEND 等标志、属主 cred）：下一个 open 的人要的是全新状态，旧 file 对任何人都无复用价值，留着只占内存。所以 close 最后一个引用时直接回 slab。推论：高频 open/close 的成本在 slab 分配/释放 + fdtable 更新，不在"缓存查找"——想省这个成本就该长持 fd（HFT 配置文件读一次挂 forever）。</p>
 </details>
 </details>
 <hr />
@@ -577,7 +783,95 @@ struct file_operations {
     /* ... */
 };
 </code></pre>
-<p>| 多态 | VFS 调用 <code class="c">file-&gt;f_op-&gt;read(...)</code> — 实际跑到 ext4 或 pipe 或设备驱动 |</p>
+<blockquote>
+<p>⚠️ <strong>版本断崖</strong>：上面是 LKD3rd 时代的形状。v6.6 里 <code class="c">read</code>/<code class="c">write</code> 两个函数指针<strong>还在但已是遗留兼容槽</strong>，现代 FS/驱动一律实现 <code class="c">read_iter</code>/<code class="c">write_iter</code>。核对 v6.6 <code class="c">include/linux/fs.h</code>：<code class="c">vfs_read()</code> 优先走 legacy <code class="c">f_op-&gt;read</code>（若有），否则经 <code class="c">new_sync_read()</code> → <code class="c">call_read_iter()</code> → <code class="c">f_op-&gt;read_iter(&amp;kiocb, &amp;iov_iter)</code>；且内核会在 read_iter 缺失时打警告（<code class="c">!file-&gt;f_op-&gt;read_iter || file-&gt;f_op-&gt;read</code> 分支）。</p>
+</blockquote>
+<h4>为什么 read 改成 read_iter（一次接口革命的动机）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>旧 <code class="c">read</code>（缓冲区指针）</th>
+<th>新 <code class="c">read_iter</code>（iov_iter）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数形状</td>
+<td><code class="c">char __user *buf, size_t</code></td>
+<td><code class="c">struct kiocb *</code>（控制块）+ <code class="c">struct iov_iter *</code>（迭代器）</td>
+</tr>
+<tr>
+<td>分散/聚合 IO</td>
+<td>不支持——readv 要单独的 readv 槽位</td>
+<td><strong>一个回调通吃</strong> read/readv/preadv（iov_iter 抽象了"一串缓冲区"）</td>
+</tr>
+<tr>
+<td>AIO / io_uring</td>
+<td>无法表达"稍后完成"</td>
+<td>kiocb 携带完成回调——<strong>io_uring 异步读直接复用这条路径</strong></td>
+</tr>
+<tr>
+<td>内核内调用者</td>
+<td>需要 user 指针 hack</td>
+<td>splice/sendfile/copy_file_range 全部改走 iter</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这是教科书级的<strong>接口随负载演化</strong>案例：syscall 表面看着没变（read/readv 各是各的），VFS 内部却统一成一个带异步能力的迭代器接口。<strong>读 2.6 时代的资料时凡是画 <code class="c">f_op-&gt;read</code> 调用图的，都过时了</strong>——现代内核里那个槽只有极老的驱动还在用。</p>
+</blockquote>
+<h4>v6.6 file_operations 全景（真实槽位清单）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分组</th>
+<th>槽位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读写核心</td>
+<td><code class="c">llseek</code> <code class="c">read</code> <code class="c">write</code> <code class="c">read_iter</code> <code class="c">write_iter</code> <code class="c">iopoll</code> <code class="c">fadvise</code></td>
+</tr>
+<tr>
+<td>遍历/元数据</td>
+<td><code class="c">iterate_shared</code>（getdents 用）</td>
+</tr>
+<tr>
+<td>事件等待</td>
+<td><code class="c">poll</code></td>
+</tr>
+<tr>
+<td>控制</td>
+<td><code class="c">unlocked_ioctl</code> <code class="c">compat_ioctl</code> <code class="c">check_flags</code> <code class="c">flock</code> <code class="c">lock</code></td>
+</tr>
+<tr>
+<td>内存映射</td>
+<td><code class="c">mmap</code> <code class="c">get_unmapped_area</code> <code class="c">mmap_capabilities</code></td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td><code class="c">open</code> <code class="c">flush</code> <code class="c">release</code>（close 时调用——<strong>注意名字不叫 close</strong>）</td>
+</tr>
+<tr>
+<td>持久化</td>
+<td><code class="c">fsync</code> <code class="c">fasync</code> <code class="c">fallocate</code> <code class="c">setlease</code></td>
+</tr>
+<tr>
+<td>数据搬运捷径</td>
+<td><code class="c">splice_read</code> <code class="c">splice_write</code> <code class="c">splice_eof</code> <code class="c">copy_file_range</code> <code class="c">remap_file_range</code></td>
+</tr>
+<tr>
+<td>调试</td>
+<td><code class="c">show_fdinfo</code>（<code class="c">cat /proc/&lt;pid&gt;/fdinfo/&lt;fd&gt;</code> 的来源）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">show_fdinfo</code> 值得单独记：epoll fd、eventfd 都实现了它，所以你能 <code class="c">/proc/self/fdinfo/&lt;epfd&gt;</code> 直接看到注册了多少事件——<strong>VFS 接口连调试口都是标准化的</strong>。</p>
+</blockquote>
+<p>| 多态 | VFS 调用 <code class="c">file-&gt;f_op-&gt;read_iter(...)</code> — 实际跑到 ext4 或 pipe 或设备驱动 |</p>
 <p>→ <a href="chapter-05.html#ch-5">Ch 5</a> 替代 syscall：<strong>字符设备</strong> 也靠 <strong><code class="c">file_operations</code></strong></p>
 <p>→ 教学对照：01 Day 18–19 FAT（具体 FS 在 VFS 之下）</p>
 <details>
@@ -586,6 +880,16 @@ struct file_operations {
 <details>
 <summary>答案</summary>
 <p>file_operations：对已打开文件操作（read/write/mmap/ioctl/poll），每次 syscall 直接调用。inode_operations：文件系统元数据操作（create/lookup/link/unlink），路径解析和文件创建时调用。super_operations：文件系统级别操作（alloc_inode/evict_inode/write_inode），inode 生命周期管理时调用。HFT 驱动如果实现字符设备，只需提供 file_operations。</p>
+</details>
+<p><strong>Q2.</strong> 写一个现代字符设备驱动，read 回调该实现 <code class="c">read</code> 还是 <code class="c">read_iter</code>？为什么？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">read_iter</code>。v6.6 中 legacy <code class="c">read</code> 槽还在（vfs_read 优先兼容它），但：① 新代码用 legacy 槽会触发内核警告路径（read_iter 缺失检测）；② readv/preadv 会退化为多次复制调用你的 read——性能和语义都受损；③ io_uring 异步读<strong>只认 iter 接口</strong>，legacy 路径要靠同步包装，等于放弃了 io_uring 直达能力。<code class="c">read_iter</code> 的实现成本并不高：<code class="c">copy_to_iter(buf, len, to)</code> 一行替代 <code class="c">copy_to_user</code>（iov_iter API 自带 user/kernel 判断）。这也是判断一份驱动教程新旧的金标准——还在教 <code class="c">ssize_t my_read(struct file *f, char __user *buf, ...)</code> 的教程至少落后十年。</p>
+</details>
+<p><strong>Q3.</strong> <code class="c">copy_file_range</code> 和 <code class="c">remap_file_range</code> 这两个槽位是干什么的？为什么它们的存在能让「跨进程传文件数据」不走用户态？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">copy_file_range</code>：<strong>服务器端/同 FS 文件间复制</strong>，数据可完全不走用户态甚至不走 page cache 到用户再回内核（同 FS 时 ext4 可以走 extent 级 reflink/数据块引用）。<code class="c">remap_file_range</code>：即 FICLONERANGE/ioctl 路径——<strong>写时复制克隆</strong>，两个文件共享数据块，直到一方写入才分裂。它们挂在 file_operations 上意味着：syscall 层（sendfile/copy_file_range/ioctl）只是通用入口，<strong>每个 FS 自己决定能优化到什么程度</strong>（不支持就返回 -EXOPNOTSUPP，VFS 层退化为读+写的通用实现）。对 HFT：行情回放/历史数据加载用 copy_file_range/reflink 可以把 GB 级数据复制从"内存带宽问题"降为"元数据操作"。</p>
 </details>
 </details>
 <hr />
@@ -620,7 +924,69 @@ struct file_operations {
 <pre class="code" data-label="code"><code class="c">第一次 open 不存在文件 ──► 负 dentry 入缓存
 第二次同路径 open     ──► 不必再深入 FS 查找
 </code></pre>
-<p>| 观测 | <code class="c">sar -v</code> dentry/inode cache — <a href="../../06.6-systems-performance/html/chapter-08.html#s-8-6">SysPerf §8.6</a> |</p>
+<h4>v6.6 源码里负缓存的精确形态</h4>
+<p>核对 <code class="c">include/linux/dcache.h</code>：负 dentry 不是靠单独标志位，而是 <strong><code class="c">d_inode == NULL</code></strong>（第 89 行注释原话："Where the name belongs to - NULL is negative"）。判定用 <code class="c">d_is_negative(dentry)</code>。这带来一个精妙结论：<strong>「这个路径不存在」本身是一条缓存的正知识</strong>——查找在 dcache 命中负 dentry 时即可返回 ENOENT，无需惊动底层 FS。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>dentry 字段（v6.6）</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">d_flags</code> + <code class="c">d_lock</code></td>
+<td>状态位（DCACHE_REFERENCED 等）与保护锁</td>
+</tr>
+<tr>
+<td><code class="c">d_parent</code> / <code class="c">d_name</code></td>
+<td>挂在路径树的形状（<code class="c">IS_ROOT(x)</code> 判根：<code class="c">x == x-&gt;d_parent</code>）</td>
+</tr>
+<tr>
+<td><code class="c">d_inode</code></td>
+<td>NULL = 负缓存</td>
+</tr>
+<tr>
+<td><code class="c">d_lockref</code></td>
+<td><strong>锁+引用计数合体</strong>（lockref：一句话的并发优化，见下）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">lockref</code> 是 Ch6「结构自带并发协议」的 VFS 实例：传统写法是 spinlock + atomic_t 分离，lockref 把两者压进一个 64bit 字，<strong>无竞争时用一次原子 cmpxchg 同时完成加锁+加计数</strong>——dcache 是全内核最热的锁点之一，这里省下的缓存行往返是真金白银。</p>
+</blockquote>
+<h4>RCU-walk：现代路径解析的快车道（LKD 时代没有）</h4>
+<p>路径解析的性能演进分三档（核对 v6.6 <code class="c">fs/namei.c</code>，<code class="c">path_openat</code> 首选 <code class="c">flags | LOOKUP_RCU</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>持锁情况</th>
+<th>何时用/何时退</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>RCU-walk</strong></td>
+<td><strong>全程不拿任何 dentry 锁</strong>，靠 RCU 宽限期保证 dentry 不被释放，seqcount 检测中途被改</td>
+<td>快路径首选；遇到 symlink/权限不可达/并发 rename 即<strong>整个 walk 推倒重来</strong></td>
+</tr>
+<tr>
+<td><strong>ref-walk</strong>（慢速）</td>
+<td>逐级拿引用计数（dget/dput），跨 mount 点要处理</td>
+<td>RCU 失败的退路</td>
+</tr>
+<tr>
+<td><strong>旧式（LKD 描述）</strong></td>
+<td>每级 dentry 都 <code class="c">d_lock</code></td>
+<td>2.6 时代——书里讲的就是这个</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>RCU-walk 的设计哲学和 <a href="chapter-09.html#s-9-3">Ch9 per-VMA lock</a> 同宗：<strong>乐观无锁走到底，发现被改就整趟作废重走</strong>。绝大多数 walk 无人竞争，一次成功；少数冲突方退慢路，全局吞吐大幅提升。</p>
+</blockquote>
+<p>| 观测 | <code class="c">sar -v</code> dentry/inode cache — <a href="../../06.6-systems-performance/html/chapter-08.html#s-8-6">SysPerf §8.6</a>；精确数字看 <code class="c">/proc/sys/fs/dentry-state</code>（nr_dentry/nr_unused/…） |</p>
 <p><strong>HFT：</strong> 日志/配置 <strong>冷路径</strong> 才关心 dcache；热路径 <strong>已打开 fd</strong> 或 <strong><code class="c">mmap</code></strong> 绕过反复路径解析。</p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -633,6 +999,16 @@ struct file_operations {
 <details>
 <summary>答案</summary>
 <p>dentry 有引用计数：每次路径解析经过 dentry 时 +1，结束时 -1。dentry 还有 dcache LRU：即使引用计数为 0 也不立即释放（保留在 LRU 中），下次访问直接命中。内存紧张时从 LRU 尾部回收。这就是为什么 <code class="c">ls /</code> 第二次比第一次快。</p>
+</details>
+<p><strong>Q3.</strong> RCU-walk 为什么「失败就整趟推倒重走」而不是从失败点续走？</p>
+<details>
+<summary>答案</summary>
+<p>因为无锁快车道上<strong>不持有任何可"续"的状态</strong>：没拿引用计数、没持锁，唯一的信任基础是「walk 期间没人改路径树」。seqcount 检测到序列号变化，只能说明<strong>某处变了</strong>，但无法便宜地定位"从哪级开始不可信"——逐级验证的成本等于慢速路径。推倒重来的账是划算的：竞争 rename 是稀有事件，为稀有事件在快路径上逐级留验证点，等于把快路径变成慢路径。这是无锁设计的通用取舍：<strong>快路径赌不冲突，慢路径兜底</strong>——与 per-VMA lock 失败回退全局锁同一模板。</p>
+</details>
+<p><strong>Q4.</strong> 负 dentry（negative dentry）在 v6.6 源码里如何表示？它防的是什么攻击/负载？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">dentry-&gt;d_inode == NULL</code> 即负 dentry（dcache.h 注释原文），<code class="c">d_is_negative()</code> 判定。它缓存的是<strong>「此路径不存在」</strong>：后续同路径 open 在 dcache 层直接返回 ENOENT，完全不打扰底层 FS。防的负载：① 高频探测不存在的文件（程序反复按若干候选路径找配置——每次都是全链路 lookup 会打爆 inode_operations-&gt;lookup）；② <strong>负缓存也占内存</strong>——历史上有个类 DoS：海量打开随机不存在路径，dcache 被负 dentry 撑爆（现代内核对负 dentry 有专门的上限收缩机制）。对 HFT：配置探测逻辑应在启动时做一次性穷举，别在热循环里反复 open 不存在的路径——即使有负缓存，每次 open 也至少要 RCU-walk 全程 + fd 分配。</p>
 </details>
 </details>
 <hr />
@@ -663,12 +1039,92 @@ struct file_operations {
         ▼
    vfsmount（/data 上的 ext4 实例）──► superblock
 </code></pre>
+<h4>⚠️ 版本断崖：vfsmount 已被「吸收」</h4>
+<p>LKD3rd 把 <code class="c">vfsmount</code> 当作挂载实例的主角——<strong>这个讲法已过时</strong>。核对 v6.6 源码：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>v6.6 真实形态</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct vfsmount</code></td>
+<td><strong>瘦身成 4 个字段</strong>：<code class="c">mnt_root</code>（挂载树根 dentry）、<code class="c">mnt_sb</code>（superblock 指针）、<code class="c">mnt_flags</code>、<code class="c">mnt_idmap</code>（id 映射，容器用户态 UID 翻译用）</td>
+<td><code class="c">include/linux/mount.h:70</code></td>
+</tr>
+<tr>
+<td><code class="c">struct mount</code></td>
+<td><strong>真正的挂载实例</strong>：内嵌上面的 vfsmount，再加上 <code class="c">mnt_parent</code>、<code class="c">mnt_mountpoint</code>、哈希链、per-CPU 引用计数（<code class="c">mnt_pcp</code>）</td>
+<td><code class="c">fs/mount.h:39</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">struct mount {                 /* 挂载树的真实节点 */
+    struct hlist_node mnt_hash;        /* 挂载哈希（按 mountpoint 索引） */
+    struct mount      *mnt_parent;     /* 挂在哪个挂载上 */
+    struct dentry     *mnt_mountpoint; /* 挂在哪个目录上 */
+    struct vfsmount   mnt;             /* ← 被&quot;吸收&quot;的旧主角 */
+    ...
+};
+</code></pre>
+<blockquote>
+<p>为什么拆两层？挂载点查找（"这个 dentry 上有挂载吗"）要频繁做哈希查询 + 引用计数，这些<strong>热字段</strong>放进 mount；而 VFS 各处只关心 root/sb/flags 的地方传的是<strong>内嵌的 vfsmount 指针</strong>，避免暴露内部布局。这是「结构自带访问模式」的又一次现身（对照 Ch6.1）。另一个 LKD 之后的演化：<strong>idmapped mount</strong>（mnt_idmap，v5.12+）——容器里以不同 UID 身份操作文件的基础。</p>
+</blockquote>
+<h4>挂载一次的真实流程（现代内核视角）</h4>
+<pre class="code" data-label="code"><code class="c">mount(&quot;none&quot;, &quot;/data&quot;, &quot;ext4&quot;, ...)
+  ▼
+file_systems 链表按 name 找到 file_system_type
+  ▼
+调用其 -&gt;mount() 回调（ext4 自己读磁盘超级块、建 sb + root inode）
+  ▼
+分配 struct mount，填 mnt_parent/mnt_mountpoint，
+  mnt.mnt_sb = 新 sb，mnt.mnt_root = root dentry
+  ▼
+挂进全局挂载哈希 + 挂载命名空间（nsproxy-&gt;mnt_ns）
+  ▼
+（可见性）路径解析走到 /data 时查哈希发现挂载 → 切到新树的 root
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>挂载是<strong>命名空间属性</strong></td>
+<td>同一 mount 树在不同 mnt namespace 可见性不同（容器基础）</td>
+</tr>
+<tr>
+<td>同一 FS 类型可挂 N 次</td>
+<td>每次一个 superblock？<strong>不一定</strong>——同一块设备重复挂载会<strong>复用 sb</strong>（只读或同参数时）</td>
+</tr>
+<tr>
+<td>unmount ≠ 释放 sb</td>
+<td>sb 引用计数归零才回收；lazy umount（MNT_DETACH）更是先摘可见性</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> file_system_type 和 super_block 的关系？挂载文件系统时发生了什么？</p>
 <details>
 <summary>答案</summary>
 <p>每个文件系统类型（ext4/nfs/proc）注册一个 file_system_type（含 mount 函数）。mount 时内核调用该 FS 的 mount 函数 → 读取超级块 → 创建 super_block → 构建 inode 树。super_block 是挂载实例，file_system_type 是类型描述。一个 FS 类型可以挂载多次（多个 super_block）。</p>
+</details>
+<p><strong>Q2.</strong> 读了 LKD3rd 之后看 v6.6 源码，找不到"vfsmount 的 mnt_parent"——为什么？</p>
+<details>
+<summary>答案</summary>
+<p>因为 vfsmount 被<strong>降级内嵌</strong>了：v6.6 中 <code class="c">struct vfsmount</code>（include/linux/mount.h）只剩 mnt_root/mnt_sb/mnt_flags/mnt_idmap 四个字段，挂载树节点信息（mnt_parent、mnt_mountpoint、哈希、引用计数）全部上移到包裹它的 <code class="c">struct mount</code>（fs/mount.h，内核私有头）。内核代码里传 <code class="c">struct vfsmount *</code> 的地方，实际往往是某个 mount-&gt;mnt 的内嵌地址——这是「把热字段和冷字段分家、对外只暴露窄接口」的布局优化。教训与 maple tree 同款：<strong>LKD 的结构图要按版本对号入座，2.6 的形状不能直接当 6.x 用</strong>。</p>
+</details>
+<p><strong>Q3.</strong> 同一个 ext4 分区先后挂到 /a 和 /b（都只读），会有几个 superblock？一个进程在 /a 下 write 会怎样？</p>
+<details>
+<summary>答案</summary>
+<p>通常<strong>一个 superblock 被两次挂载复用</strong>：mount 时内核按 bdev+参数查找已有 sb，匹配则增加引用，不再重建。两份 struct mount（各自 mnt_parent/mountpoint 不同）共享同一个 sb 与同一批 inode——所以在 /a 和 /b 看到的是<strong>同一份文件内容</strong>（同一个 inode 缓存）。只读挂载下 write 会在权限/挂载标志层被拒（EROFS）。推论：切换挂载点 ≠ 换数据视图，<strong>inode 身份是全局的</strong>；真正要独立副本得用不同设备/快照或 idmapped mount 改身份映射。</p>
 </details>
 </details>
 <hr />
@@ -717,6 +1173,79 @@ struct file_operations {
         fs_struct    ── pwd=/opt/strategy  root=/
         namespace    ── 看到的主机挂载树
 </code></pre>
+<h4>v6.6 源码里的 fd 表（两级结构 + RCU，核对 <code class="c">include/linux/fdtable.h</code>）</h4>
+<pre class="code" data-label="C"><code class="c">struct files_struct {
+    /* read mostly part（读多写少，独占缓存行） */
+    struct fdtable __rcu *fdt;      /* 指向下面的嵌入表或扩容表 */
+    struct fdtable      fdtab;      /* 嵌入的第一级表 */
+    /* written part（写热字段，另一缓存行） */
+    spinlock_t    file_lock;
+    unsigned int  next_fd;          /* fd 分配的提示起点 */
+    unsigned long open_fds_init[1]; /* 位图：哪些 fd 打开着 */
+    struct file __rcu *fd_array[NR_OPEN_DEFAULT]; /* 64 个内嵌槽 */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计</th>
+<th>机制</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>两级表</strong></td>
+<td>前面 64 个 fd（<code class="c">NR_OPEN_DEFAULT = BITS_PER_LONG</code>）内嵌在 files_struct 里；超过才 <code class="c">kmalloc</code> 扩容一张新 fdtable，<code class="c">fdt</code> 指针原子切换</td>
+<td>绝大多数进程 &lt;64 个 fd——<strong>零分配</strong>覆盖常态；扩容是罕见路径</td>
+</tr>
+<tr>
+<td><strong>RCU 换表</strong></td>
+<td>扩容时旧 fd 数组用 <code class="c">call_rcu</code> 延迟释放；读者无锁走 <code class="c">fdget()</code></td>
+<td>dup/close 与 read 并发时，read 里拿到的 file* 依然有效（配合 file 自身引用计数）</td>
+</tr>
+<tr>
+<td><strong>读写缓存行分离</strong></td>
+<td>"read mostly part" 与 file_lock/next_fd 分列注释两侧</td>
+<td>fdget 是每次 read/write 都走的热路径——别让它和 close 抢同一缓存行</td>
+</tr>
+<tr>
+<td><strong>fd = 位图分配</strong></td>
+<td>open_fds 位图找零位 + next_fd 提示</td>
+<td>fd 分配 O(1)，且保证<strong>最小可用 fd</strong> 复现（dup2/重定向依赖这个确定性）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">fdget()</code> 的细节值得追：它不是简单读 <code class="c">fdt-&gt;fd[n]</code>——先尝试<strong>借用 files_struct 的引用计数</strong>（fast path：若 files_struct 被当前任务独占/或 fd 未被并发 close，免原子操作），失败才对 file 做 <code class="c">get_file()</code> 原子加引用。<strong>热路径 syscall 的每一次省原子操作，都是这么抠出来的</strong>（同一思想：Ch6 的 per-CPU、Ch9 的 seqlock）。</p>
+</blockquote>
+<h4>三个结构的分镜头</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>clone 时的命运</th>
+<th>典型受害者/受益者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">files_struct</code></td>
+<td>CLONE_FILES 共享（线程）或不共享（fork 复制 fd 表、每个 fd 加引用）</td>
+<td>线程共享 fd 是<strong>零成本</strong>；fork 后父子 close 互不影响（各自引用计数）</td>
+</tr>
+<tr>
+<td><code class="c">fs_struct</code></td>
+<td>CLONE_FS 共享 pwd/root——<strong>线程 chdir 全线程生效</strong></td>
+<td>多线程程序里 chdir 是隐形全局变量</td>
+</tr>
+<tr>
+<td><code class="c">mnt_ns</code></td>
+<td>unshare(CLONE_NEWNS) 才分裂</td>
+<td>容器文件视图隔离的根</td>
+</tr>
+</tbody>
+</table></div>
 <p>→ <strong>Ch 3</strong> 进程资源「打开的文件」· <strong>Ch 12</strong> inode Slab 缓存</p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -729,6 +1258,16 @@ struct file_operations {
 <details>
 <summary>答案</summary>
 <p>这是 Unix 惯例：进程启动时 fd 0/1/2 已被 shell 打开并指向终端。C 库的 stdin/stdout/stderr 是 FILE* 包装的 fd 0/1/2。重定向 <code class="c">&gt; file</code> 就是 close(1) + open(file) → fd 1 被复用为文件。这种设计让所有程序天然支持重定向而无需特殊代码。</p>
+</details>
+<p><strong>Q3.</strong> 线程 A 在 read(fd) 的同时线程 B close(同一个 fd)——为什么 read 不会拿悬空的 file 指针？</p>
+<details>
+<summary>答案</summary>
+<p>两道防线：① <strong>fd 表层</strong>：fdget 用 RCU + files_struct 引用借用来保证「读 fdt-&gt;fd[n] 得到的指针」在当前 syscall 内不被 close 后释放（close 只把槽位置空 + 调 fput 减引用）。② <strong>file 层</strong>：read 全程持有该 file 的引用（<code class="c">get_file</code>/<code class="c">fput</code> 配对），close 触发的销毁要等<strong>最后一个引用放下</strong>才发生。所以 B 的 close 立刻"成功"（fd 槽空了，后续 open 会复用），但 A 的 read 仍在旧 file 上跑完。含义：close 的语义是「从 fd 表摘除」，<strong>不是「立刻杀死进行中的操作」</strong>——这是 SO_LINGER/EINTR 之外另一个「close 返回了但 IO 还在飞」的来源。</p>
+</details>
+<p><strong>Q4.</strong> fd 表为什么内嵌 64 个槽而不是 4 个或 1024 个？扩容之后旧表怎么办？</p>
+<details>
+<summary>答案</summary>
+<p>64 = BITS_PER_LONG（v6.6 fdtable.h：<code class="c">NR_OPEN_DEFAULT = BITS_PER_LONG</code>）：位图 open_fds_init 恰好一个 unsigned long，<strong>内嵌成本与位图对齐</strong>——再大就浪费在 files_struct 本体（每个进程/线程一份）。选 4 会让多数进程被迫立刻扩容；1024 则每进程白背 8KB。扩容路径：分配新 fdtable + 新数组 + 新位图 → 复制 → <code class="c">fdt</code> 指针 RCU 原子切换 → <strong>旧数组 call_rcu 延迟释放</strong>（等所有在飞读者退出临界区）。这是「小对象内嵌、大对象外挂、指针无缝升级」的通用内核模式（对照：files_struct 之于 fdtable ≈ vmacache 之于 maple tree 的分层思路）。</p>
 </details>
 </details>
 <hr />
@@ -747,12 +1286,110 @@ VFS sys_read ──► file-&gt;f_op-&gt;read ──► ext4_file_read / …
     ▼
 （可能）页缓存 Ch 16 ──► 块层 Ch 14
 </code></pre>
+<h4>v6.6 真实函数链（核对 fs/open.c、fs/namei.c、fs/read_write.c）</h4>
+<pre class="code" data-label="code"><code class="c">open 路径：
+  SYSCALL_DEFINE3(open)
+    → do_sys_openat2()            fs/open.c:1406  从用户态拷路径串
+    → do_filp_open()              fs/open.c:1422
+        → path_openat()           fs/namei.c:3777
+             入口即 flags | LOOKUP_RCU   ← 先赌 RCU-walk
+             → link_path_walk()   逐级解析（dcache 命中则不碰 FS）
+             → 失败 → 丢掉重来走 ref-walk（拿引用的慢速版）
+        → alloc_empty_file()      新 struct file（file_cachep slab）
+        → do_dentry_open()        填 f_op（从 inode 取）、权限、调 f_op-&gt;open
+    → fd_install()                fdt-&gt;fd[fd] = file（此后用户态可见）
+
+read 路径：
+  ksys_read()
+    → vfs_read()                  fs/read_write.c:450
+        if (f_op-&gt;read)            遗留槽（老驱动）
+        else → new_sync_read()
+             → call_read_iter()
+             → f_op-&gt;read_iter()   ← 现代路径（kiocb + iov_iter）
+                  → ext4/generic_file_read_iter
+                       → 页缓存查命中（Ch16）
+                            命中：copy_page_to_iter 直拷用户态
+                            未命中：block IO（Ch14）→ 填缓存 → 再拷
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>与概念图的差异</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">f_op-&gt;read</code> 已是遗留分支</td>
+<td>现代主路径是 read_iter（见 <a href="#s-13-3">13.3</a>）</td>
+</tr>
+<tr>
+<td>walk 一开始就是 RCU 模式</td>
+<td>dcache 全命中时 open <strong>全程无锁</strong></td>
+</tr>
+<tr>
+<td>file 的 f_op 来自 inode</td>
+<td>open 时决定，read 时只查表——<strong>多态解析发生在 open，read 只是执行</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h4>这条链上每一跳的「贵」在哪（HFT 排障速查）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>桶</th>
+<th>成本量级</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>路径串拷贝 + walk</td>
+<td>亚微秒（dcache 全命中）</td>
+<td>open 的固定税；RCU 失败重走翻倍仍很快</td>
+</tr>
+<tr>
+<td>首次 lookup（dcache miss）</td>
+<td>微秒~毫秒</td>
+<td>要走 inode_operations-&gt;lookup 甚至磁盘</td>
+</tr>
+<tr>
+<td>alloc_empty_file + fd_install</td>
+<td>~百纳秒</td>
+<td>slab + fdt 位图更新</td>
+</tr>
+<tr>
+<td>read 命中 page cache</td>
+<td>~1μs 级</td>
+<td>拷贝为主</td>
+</tr>
+<tr>
+<td>read 未命中</td>
+<td>毫秒+</td>
+<td>块设备 IO——热路径上唯一「不可接受」量级</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>结论落地：<strong>热路径的正确姿势是启动时 open 一次 + mmap 或长持 fd</strong>，把上表前四行的成本全部移出热循环；剩下唯一要防的是 read 未命中（配置/行情文件 mmap 后由内核按缺页填页，慢在首次触碰）。</p>
+</blockquote>
+<p>→ 深入下一层：<a href="chapter-16.html#ch-16">Ch 16 页缓存</a> · <a href="chapter-14.html#ch-14">Ch 14 块层</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> open("/path/file", O_RDONLY) 到 read(fd, buf, n) 的完整路径是什么？</p>
 <details>
 <summary>答案</summary>
 <p>open: 1) 路径解析走 VFS dcache → 2) 找到 inode → 3) 权限检查 → 4) 分配 file 结构 → 5) fd 表中分配 fd → 返回 fd。read: 1) fd → file → file_operations-&gt;read → 2) 检查 page cache → 3) 命中则拷贝到用户态；未命中则发起磁盘 IO → 4) 数据进入 page cache → 5) 拷贝到用户 buf。HFT 用 mmap 跳过 read 的拷贝步骤。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">path_openat</code> 为什么一进来就带 <code class="c">LOOKUP_RCU</code>？如果 walk 到一半有人 rename 了目录怎么办？</p>
+<details>
+<summary>答案</summary>
+<p>先赌「无人竞争」：RCU-walk 全程不拿 dentry 锁/引用，靠 RCU 宽限期保证对象活着 + seqcount 检测一致性——最快。中途有人 rename：序列号变化被发现后<strong>不定位失败点，直接整趟作废</strong>，退回 ref-walk（逐级拿引用的慢速版）重走。赌赢是常态（路径解析极少撞上 rename），赌输也只是慢一次。这是「乐观并发 + 慢路径兜底」模板（同 per-VMA lock）。</p>
+</details>
+<p><strong>Q3.</strong> 同一个文件 open 两次得到 fd3、fd4——两个 fd 的 read 各自的偏移互不干扰，但 <code class="c">mmap</code> 同一文件两处共享页缓存。为什么？</p>
+<details>
+<summary>答案</summary>
+<p>偏移（f_pos）住在 <strong>file</strong> 对象里——每次 open 一个新 file，天然隔离；所以 fd3/fd4 各读各的。页缓存挂在 <strong>inode 的 address_space</strong>（<code class="c">inode-&gt;i_mapping</code>）上——全局一份，与谁打开无关；fd3 读入的页，fd4（甚至别的进程）read/mmap 同一区间直接命中。四对象模型直接回答这类问题：<strong>"每个 X 一份"取决于状态挂在哪个对象上</strong>——file 挂进程态（偏移/标志），inode 挂全局态（数据/元数据），dentry 挂路径态（名字）。判断任何 VFS 行为先问"状态住在哪"。</p>
 </details>
 </details>
 <hr />
