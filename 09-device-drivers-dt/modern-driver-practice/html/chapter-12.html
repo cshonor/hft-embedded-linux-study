@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#s-12-0"><span class="n">12.0</span>12.0-dma-fundamentals</a>
+          <a href="#s-12-1"><span class="n">12.1</span>缓存一致性：为什么 DMA 和 Cache 会打架</a>
+          <a href="#s-12-2"><span class="n">12.2</span>一致性 / 流式映射 API：两类映射的完整生命周期</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -312,7 +314,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">platform / DT / i2c / regmap / IIO</div>
           <h1>Ch 12 · chapter-12-dma</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt · modern-driver-practice</b></span><span>chapter <b>Ch 12</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt · modern-driver-practice</b></span><span>chapter <b>Ch 12</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -625,6 +627,447 @@ static void rx_ring_free(struct device *dev, struct rx_ring *r)
 <li>Madieu, <em>Linux Device Drivers Development</em>, Chapter 12</li>
 <li>Linux v6.6 <code class="c">Documentation/core-api/dma-api.rst</code>（本篇 API 签名与 coherent 定义均已核对）</li>
 </ul>
+      </section>
+      <section class="section" id="s-12-1">
+        <div class="sec-head"><div class="sec-no">12.1</div><h2>缓存一致性：为什么 DMA 和 Cache 会打架</h2></div>
+<blockquote>
+<p>扩展精读 · 锚定 <em>Linux Device Drivers Development</em> Ch12 §12.1<br />
+前置：<a href="#s-12-0">12.0 DMA 基础</a> · 章内摘要：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes.md">notes.md</a><br />
+源码依据：Linux v6.6 <code class="c">Documentation/core-api/dma-api{,-howto}.rst</code> · <code class="c">include/linux/dma-map-ops.h</code> · <code class="c">kernel/dma/direct.c</code> · <code class="c">arch/x86/Kconfig</code> · <code class="c">arch/x86/kernel/pci-dma.c</code>（均已核对）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><strong>Cache 是 CPU 的私有记账，DMA 绕过 CPU 直写 RAM</strong>——于是同一份数据存在两套副本（CPU cache 里一份、内存里一份），谁后写谁说了算，另一份变"过期数据"。<strong>一致性 = 保证 CPU 和设备永远看到同一份最新数据。</strong></p>
+<hr />
+<h2>要点</h2>
+<h3>问题：两个方向都会"读到旧的"</h3>
+<pre class="code" data-label="code"><code class="c">方向①  设备写 RAM，CPU cache 里是旧的
+┌────────┐ DMA 写     ┌─────────┐
+│  设备   │──────────→│ 主内存   │← 新数据在这
+└────────┘            └─────────┘
+                          ↑ 读不到
+                      ┌──────────┐
+                      │ CPU cache │← CPU 还在用旧副本（stale）
+                      └──────────┘
+
+方向②  CPU 写进 cache 未回写，设备从 RAM 读到旧的
+┌──────────┐ CPU 写    ┌─────────┐
+│ CPU cache │          │ 主内存   │← 设备读到旧数据（stale）
+└──────────┘          └─────────┘
+                          ↑ DMA 读
+                      ┌────────┐
+                      │  设备   │
+                      └────────┘
+</code></pre>
+<h3>更阴险的：cacheline 共享损坏（v6.6 文档原文实证）</h3>
+<p>即使数据本身没被 CPU 缓存，<strong>相邻变量挤在同一条 cacheline 里</strong>也会坏：</p>
+<blockquote>
+<p>The CPU could write to one word, DMA would write to a different one in the
+same cache line, and one of them could be overwritten.
+——<code class="c">dma-api-howto.rst</code></p>
+</blockquote>
+<p>即：CPU 写 word A → 该 cacheline 留在 CPU cache 里；DMA 写同 line 的 word B 直接进 RAM；CPU 回写整条 line → <strong>word B 被 RAM 里的旧值覆盖</strong>。无声数据损坏。</p>
+<p>→ 推论：DMA 缓冲区要 <strong>cacheline 对齐</strong>、不与其他数据共享 line（这也是 <code class="c">ARCH_DMA_MINALIGN</code> 存在的原因）。</p>
+<h3>两类平台：硬件一致性是"天生"还是"没有"</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>x86 / PCIe 服务器</th>
+<th>多数 ARM SoC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>硬件机制</td>
+<td>总线<strong>侦听（snoop）</strong>：设备访存穿透查询 CPU cache</td>
+<td>设备端口直连 DDR 控制器，<strong>不侦听</strong> CPU cache</td>
+</tr>
+<tr>
+<td>DMA 一致性</td>
+<td><strong>天然一致</strong></td>
+<td><strong>非一致</strong>，必须软件维护</td>
+</tr>
+<tr>
+<td><code class="c">dma_sync_*</code> 的 cache 维护</td>
+<td><strong>空操作</strong>（v6.6 实证，见下）</td>
+<td>真实的 invalidate / clean</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>v6.6 源码实证</strong>（x86 上 sync 是空操作——两层机制叠加）：</p>
+<p><strong>编译期</strong>：<code class="c">arch/x86/Kconfig</code> 从不 select <code class="c">CONFIG_ARCH_HAS_SYNC_DMA_FOR_CPU/DEVICE</code>
+（全文件 grep DMA 相关 select 只有 <code class="c">DMA_COHERENT_POOL</code>）→
+<code class="c">include/linux/dma-map-ops.h</code> 的 #else 桩生效：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/dma-map-ops.h:366-374 —— CONFIG 未定义时的 #else 桩 */
+static inline void arch_sync_dma_for_device(phys_addr_t paddr, size_t size,
+                enum dma_data_direction dir)
+{
+}                                     /* 空函数体，编译器直接消除 */
+</code></pre>
+<p><strong>运行时</strong>：x86 同样不设 <code class="c">CONFIG_ARCH_HAS_DMA_COHERENCE_H</code> →
+<code class="c">dma-map-ops.h</code> 里 <code class="c">dev_is_dma_coherent()</code> <strong>恒返回 true</strong>
+（<code class="c">#define dma_default_coherent true</code>）→ <code class="c">kernel/dma/direct.c</code> 的守卫恒假：</p>
+<pre class="code" data-label="C"><code class="c">if (!dev_is_dma_coherent(dev))      /* x86 上恒 false */
+        arch_sync_dma_for_device(paddr, sg-&gt;length, dir);  /* 不执行 */
+</code></pre>
+<p>→ 即使桩函数被换成真实现，x86 也根本走不到那行调用。<strong>空桩 + 守卫恒真，双保险。</strong>
+（x86 的 DMA 代码本体在 <code class="c">arch/x86/kernel/pci-dma.c</code>。）</p>
+<h3>两条解决路线（软件视角）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>做法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>一致分配</strong>（coherent）</td>
+<td>把 DMA 缓冲映射成 <strong>uncached / 一致属性</strong>——CPU 不缓存它，读写直通内存</td>
+<td>每次 CPU 访问都是内存延迟，吞吐低</td>
+</tr>
+<tr>
+<td><strong>流式映射 + sync</strong>（streaming）</td>
+<td>内存正常 cached；在<strong>所有权切换点</strong>显式做 invalidate / clean</td>
+<td>正确性依赖驱动按规矩调 <code class="c">dma_sync_*</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">dma_sync_*</code> 的方向语义（易混，按"谁即将访问"记）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>时机</th>
+<th>本质动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">dma_sync_single_for_cpu()</code></td>
+<td>设备写完、<strong>CPU 读之前</strong>（RX 路径）</td>
+<td><strong>invalidate</strong> CPU cache 里的旧副本，让 CPU 强制从 RAM 读新数据</td>
+</tr>
+<tr>
+<td><code class="c">dma_sync_single_for_device()</code></td>
+<td>CPU 写完、<strong>交回设备之前</strong>（TX 路径）</td>
+<td><strong>clean/writeback</strong>，把 CPU cache 里的新数据刷到 RAM</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>记法：<code class="c">for_X</code> = <strong>接下来归 X 用</strong>。for_cpu = 设备干完了换 CPU 上场（先丢旧缓存）；for_device = CPU 干完了换设备上场（先刷新缓存）。</p>
+</blockquote>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td><strong>x86 服务器天然 DMA 一致（snoop），数据面缓冲几乎不为一致性付费</strong>——收发包路径不用 uncached 内存，这是 HFT 落地 x86 的隐性基础设施红利之一</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>树莓派等 ARM SoC 非一致：描述符环用 coherent 分配（uncached），大数据缓冲用 streaming + sync；<strong>忘调 sync 是嵌入式驱动最经典的静默数据损坏来源</strong></td>
+</tr>
+<tr>
+<td>低延迟</td>
+<td>coherent 内存每次访存都是内存延迟（无 cache 命中）→ <strong>只给小而热的结构用</strong>（描述符、控制块），数据面永远走 streaming</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>前置：<a href="#s-12-0">12.0 DMA 基础</a>（两种模式的对比表在本节展开成机制）</li>
+<li>下一节：<a href="#s-12-2">12.2 一致性 / 流式映射 API</a>（本节"为什么要"，12.2 讲"怎么用"）</li>
+<li>章内摘要：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes.md">notes.md</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>参考答案</summary>
+<p><strong>Q1：为什么 cacheline 共享会导致数据损坏？</strong></p>
+<p>CPU 写 line 内 word A（line 进入 CPU cache，未回写）；DMA 写同 line 的 word B 直接落 RAM；随后 CPU 回写<strong>整条 line</strong>——RAM 里 word B 的新值被 cache 里 line 的旧 word B 覆盖。防法：DMA 缓冲区 cacheline 对齐、独占 line。</p>
+<p><strong>Q2：<code class="c">dma_sync_single_for_cpu</code> 和 <code class="c">for_device</code> 方向反了会怎样？</strong></p>
+<p>for_cpu 忘调（RX 后直接读）：CPU 可能命中<strong>自己的旧 cache 副本</strong>，读到设备写入前的数据。for_device 忘调（TX 前只写了 cache）：设备从 RAM 读到<strong>旧数据</strong>，发出错包。两者都是静默损坏，不报错。</p>
+<p><strong>Q3：为什么 x86 上 <code class="c">dma_sync_*</code> 基本是空操作，还必须写？</strong></p>
+<p>x86 硬件侦听保证 DMA 与 CPU cache 一致，软件侧双保险：不 select <code class="c">ARCH_HAS_SYNC_DMA_FOR_*</code>（空桩编译期消除）+ 不设 <code class="c">ARCH_HAS_DMA_COHERENCE_H</code>（<code class="c">dev_is_dma_coherent()</code> 恒 true，<code class="c">direct.c</code> 的守卫恒假，v6.6 实证见上文）。但驱动代码必须可移植——同一份驱动跑 ARM 上 sync 就是真实动作，写了才两平台都对。</p>
+</details>
+      </section>
+      <section class="section" id="s-12-2">
+        <div class="sec-head"><div class="sec-no">12.2</div><h2>一致性 / 流式映射 API：两类映射的完整生命周期</h2></div>
+<blockquote>
+<p>扩展精读 · 锚定 <em>Linux Device Drivers Development</em> Ch12 §12.2<br />
+前置：<a href="#s-12-1">12.1 缓存一致性</a>（本节讲"怎么用"，12.1 讲"为什么"） · 章内摘要：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes.md">notes.md</a><br />
+源码依据：Linux v6.6 <code class="c">Documentation/core-api/dma-api{,-howto}.rst</code> · <code class="c">include/linux/dma-mapping.h</code> · <code class="c">include/linux/dma-map-ops.h</code> · <code class="c">kernel/dma/{direct,mapping}.c</code>（均已核对）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>12.1 说明了 cache 一致性问题及两条软件路线（uncached 一致分配 / cached + sync）。本节把这两条路线落到<strong>具体 API 的完整生命周期</strong>：什么时候 alloc、什么时候 map、方向参数怎么填、错误怎么查、以及 v6.6 提供的"sync 能不能省"的官方接口。</p>
+<hr />
+<h2>要点</h2>
+<h3>两类映射的官方画像（v6.6 <code class="c">dma-api-howto.rst</code> 定义）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>一致映射（consistent/coherent）</th>
+<th>流式映射（streaming）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>生命周期</strong></td>
+<td>驱动<strong>初始化时映射一次</strong>、卸载时解除，长期存在</td>
+<td><strong>一次 DMA 传输一次映射</strong>，传完即 unmap（除非配 sync 循环用）</td>
+</tr>
+<tr>
+<td><strong>一致性保证</strong></td>
+<td>设备与 CPU 可<strong>并行访问</strong>，互相的更新立即可见，无需软件 flush</td>
+<td>所有权归一侧时另一侧不碰；切换点显式 sync</td>
+</tr>
+<tr>
+<td><strong>记忆口诀</strong>（文档原话）</td>
+<td>think of as "<strong>synchronous / coherent</strong>"</td>
+<td>think of as "<strong>asynchronous / outside the coherency domain</strong>"</td>
+</tr>
+<tr>
+<td><strong>典型用途</strong></td>
+<td>网卡 DMA <strong>描述符环</strong>、SCSI mailbox 命令结构、设备固件微码</td>
+<td>收发的<strong>网络数据缓冲</strong>、SCSI 读写的文件系统缓冲</td>
+</tr>
+<tr>
+<td><strong>底层代价</strong></td>
+<td>CPU 访问是 uncached（无 cache 命中）</td>
+<td>内存正常 cached，映射本身可能走 IOMMU/swiotlb</td>
+</tr>
+</tbody>
+</table></div>
+<h3>API 全景：按场景选</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>coherent 系</th>
+<th>streaming 系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>大块、长期</td>
+<td><code class="c">dma_alloc_coherent()</code> / <code class="c">dma_free_coherent()</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>小块、高频</td>
+<td><code class="c">dma_pool_create()</code> → <code class="c">dma_pool_alloc/zalloc()</code> → <code class="c">dma_pool_free()</code> → <code class="c">dma_pool_destroy()</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>已有内存、一次传输</td>
+<td>—</td>
+<td><code class="c">dma_map_single()</code> / <code class="c">dma_map_page()</code> → <code class="c">dma_unmap_single/page()</code></td>
+</tr>
+<tr>
+<td>已有内存、循环复用</td>
+<td>—</td>
+<td>map 一次 + <code class="c">dma_sync_single_for_{cpu,device}()</code> 反复切换所有权</td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">dma_alloc_coherent</code> 的 v6.6 真身</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/dma-mapping.h:423 —— 是 dma_alloc_attrs 的 inline 包装 */
+static inline void *dma_alloc_coherent(struct device *dev, size_t size,
+                dma_addr_t *dma_handle, gfp_t gfp)
+{
+        return dma_alloc_attrs(dev, size, dma_handle, gfp,
+                        (gfp &amp; __GFP_NOWARN) ? DMA_ATTR_NO_WARN : 0);
+}
+</code></pre>
+<ul>
+<li><strong>双返回值</strong>：返回值 = CPU 用的虚拟地址（失败 NULL）；<code class="c">dma_handle</code> 出参 = 写进设备寄存器的 DMA 地址</li>
+<li>细节：gfp 带 <code class="c">__GFP_NOWARN</code> 会自动转成 <code class="c">DMA_ATTR_NO_WARN</code> 属性——两套标志体系在包装层打通</li>
+<li>常见搭配：<code class="c">dma_set_coherent_mask()</code>（约束一致分配的地址范围；x86 默认落在低 32 位，但文档建议显式设置）</li>
+</ul>
+<h3><code class="c">dma_pool</code>：小而高频的一致分配</h3>
+<p>大块 coherent 一次分一整页太浪费；描述符这类<strong>定长小对象</strong>走池：</p>
+<pre class="code" data-label="C"><code class="c">struct dma_pool *dma_pool_create(const char *name, struct device *dev,
+                size_t size, size_t align, size_t alloc);
+void *dma_pool_alloc(struct dma_pool *pool, gfp_t gfp_flags,
+                dma_addr_t *dma_handle);
+void  dma_pool_free(struct dma_pool *pool, void *vaddr, dma_addr_t addr);
+void  dma_pool_destroy(struct dma_pool *pool);   /* 必须先还完再销毁 */
+</code></pre>
+<ul>
+<li><code class="c">align</code>：字节单位、<strong>必须是 2 的幂</strong>——设备对齐要求直接传给池</li>
+<li><code class="c">alloc</code>：<strong>边界限制</strong>。传 0 = 无限制；传 4096 = 每块分配不得跨 4KB 边界（老硬件常见约束）</li>
+<li><code class="c">GFP_ATOMIC</code>（不阻塞，中断上下文可用）vs <code class="c">GFP_KERNEL</code>（可阻塞）与普通分配语义一致</li>
+</ul>
+<h3><code class="c">dma_map_single</code>：一次传输一次映射</h3>
+<pre class="code" data-label="C"><code class="c">dma_addr_t dma_map_single(struct device *dev, void *cpu_addr,
+                size_t size, enum dma_data_direction direction);
+void dma_unmap_single(struct device *dev, dma_addr_t dma_addr,
+                size_t size, enum dma_data_direction direction);
+</code></pre>
+<p><strong>两条硬约束</strong>（<code class="c">dma-api.rst</code> 明文）：</p>
+<ol>
+<li><strong>物理连续</strong>：本 API 无 scatter/gather 能力，映射非物理连续内存直接失败 → 源头必须是 <code class="c">kmalloc</code>/<code class="c">dma_alloc_*</code> 这类物理连续分配；<strong><code class="c">vmalloc</code> 的内存不能 map</strong>（虚拟连续 ≠ 物理连续）。要映射散页 → 等价于 12.3 的 <code class="c">dma_map_sg()</code></li>
+<li><strong>落在 <code class="c">dma_mask</code> 内</strong>：DMA 地址与 <code class="c">dma_mask</code> 按位 AND 后必须不变（设备够得着这块地址）</li>
+</ol>
+<p><strong>方向枚举</strong>（强类型，不能乱填）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>枚举</th>
+<th>语义</th>
+<th>所有权约定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">DMA_NONE</code></td>
+<td>无方向（调试用）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">DMA_TO_DEVICE</code></td>
+<td>内存 → 设备（TX）</td>
+<td>map 后 CPU 视为<strong>只读</strong></td>
+</tr>
+<tr>
+<td><code class="c">DMA_FROM_DEVICE</code></td>
+<td>设备 → 内存（RX）</td>
+<td>map 后 CPU <strong>不得写</strong></td>
+</tr>
+<tr>
+<td><code class="c">DMA_BIDIRECTIONAL</code></td>
+<td>方向不确定</td>
+<td><strong>必须 sync 两次</strong>：交给设备前一次 + 设备用完 CPU 访问前一次</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>cacheline 对齐警告</strong>（文档明文）：映射区域应起止于 cacheline 边界，否则与相邻数据共享 line → 12.1 讲的静默损坏。<strong>懒人稳妥法：只映射起止都在页边界上的区域</strong>（页边界必是 cacheline 边界）。</p>
+<p><strong><code class="c">dma_unmap_single</code> 的参数必须与 map 时完全一致</strong>（地址、长度、方向逐项相同）——内部要用它们反查映射记录。</p>
+<h3>错误检查：<code class="c">dma_mapping_error</code></h3>
+<pre class="code" data-label="C"><code class="c">dma_addr_t dma_handle = dma_map_single(dev, addr, size, direction);
+if (dma_mapping_error(dev, dma_handle))     /* 不能只判 dma_handle == 0！ */
+        goto map_error_handling;
+</code></pre>
+<p>错误判定规则（<code class="c">dma-api-howto.rst</code> Handling Errors 节）：<code class="c">dma_alloc_coherent</code> 判 NULL；<code class="c">dma_map_sg</code> 判 0；<code class="c">dma_map_single/page</code> 判 <strong><code class="c">dma_mapping_error()</code></strong>——DMA 地址 0 可能是合法地址（映射失败也可能返回 0），不能拿它当哨兵。</p>
+<h3>完整生命周期示例：收包路径（v6.6 howto 伪代码，精简）</h3>
+<pre class="code" data-label="C"><code class="c">/* 初始化：分配 RX 缓冲并映射（DMA_FROM_DEVICE = 设备将写入） */
+cp-&gt;rx_dma = dma_map_single(cp-&gt;dev, cp-&gt;rx_buf, cp-&gt;rx_len,
+                            DMA_FROM_DEVICE);
+if (dma_mapping_error(cp-&gt;dev, cp-&gt;rx_dma))
+        goto map_error_handling;
+give_rx_buf_to_card(cp);                    /* 缓冲交给设备 */
+
+/* 中断：设备写完 RAM，CPU 读之前必须先 sync */
+my_card_interrupt_handler(int irq, void *devid, ...)
+{
+        if (read_card_status(cp) == RX_BUF_TRANSFERRED) {
+                /* ① 所有权切回 CPU：invalidate cache 里的旧副本 */
+                dma_sync_single_for_cpu(cp-&gt;dev, cp-&gt;rx_dma,
+                                        cp-&gt;rx_len, DMA_FROM_DEVICE);
+
+                /* ② 现在才能安全地读缓冲内容 */
+                hp = (struct my_card_header *)cp-&gt;rx_buf;
+                if (header_is_ok(hp)) {
+                        dma_unmap_single(cp-&gt;dev, cp-&gt;rx_dma,
+                                         cp-&gt;rx_len, DMA_FROM_DEVICE);
+                        pass_to_upper_layers(cp-&gt;rx_buf);
+                        make_and_setup_new_rx_buf(cp);
+                } else {
+                        /* ③ 拒收：CPU 没写过 FROM_DEVICE 区域，
+                         *    无需 sync 回设备，直接还给卡复用 */
+                        give_rx_buf_to_card(cp);
+                }
+        }
+}
+</code></pre>
+<p>注意 ③：文档特意注明 <code class="c">DMA_FROM_DEVICE</code> 区域 CPU 没写过就不需要 <code class="c">sync_for_device</code>——sync 不是仪式，是<strong>按所有权是否真实切换</strong>决定的。</p>
+<h3><code class="c">dma_need_sync</code>：sync 能不能省，问官方接口（v6.6）</h3>
+<p><code class="c">dma_sync_*</code> 调用的开销因平台/设备而异，v6.6 提供了官方判定接口：</p>
+<pre class="code" data-label="C"><code class="c">bool dma_need_sync(struct device *dev, dma_addr_t dma_addr);
+/* true  = 必须调 dma_sync_single_for_{device,cpu} 转移所有权
+ * false = 可以跳过 */
+</code></pre>
+<p>实现链（v6.6 实证）：</p>
+<pre class="code" data-label="C"><code class="c">/* kernel/dma/mapping.c:822 */
+bool dma_need_sync(struct device *dev, dma_addr_t dma_addr)
+{
+        if (dma_map_direct(dev, ops))
+                return dma_direct_need_sync(dev, dma_addr);   /* x86 走这 */
+        return ops-&gt;sync_single_for_cpu || ops-&gt;sync_single_for_device;
+}
+
+/* kernel/dma/direct.c:610 */
+bool dma_direct_need_sync(struct device *dev, dma_addr_t dma_addr)
+{
+        return !dev_is_dma_coherent(dev) ||                   /* x86 恒 true → 恒假 */
+               is_swiotlb_buffer(dev, dma_to_phys(dev, dma_addr));
+}
+</code></pre>
+<p><strong>x86 上 <code class="c">dma_need_sync()</code> 几乎恒 false</strong>（唯一例外：地址受限设备被迫走 SWIOTLB 的 bounce buffer）——这正是 12.1"x86 硬件侦听"论断的<strong>官方接口化</strong>。驱动热路径可以这样省分支：</p>
+<pre class="code" data-label="C"><code class="c">if (dma_need_sync(dev, dma_handle))
+        dma_sync_single_for_cpu(dev, dma_handle, len, dir);
+</code></pre>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td><strong>描述符环 = coherent pool 常驻</strong>（初始化建好，永不重建）；<strong>数据面缓冲 = map 一次 + sync 循环复用</strong>，绝不每包 map/unmap；x86 上 <code class="c">dma_need_sync</code> 为 false，连 sync 分支都省——DPDK 更进一步直接旁路这整套 API（用户态 mempool 自己管理，思想同源）</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>ARM 上 <code class="c">dma_need_sync</code> 常真，sync 是真实 cache 维护——忘调即静默损坏；描述符池用 <code class="c">dma_pool_create</code> 时 <code class="c">align</code> 传 cacheline 大小是标准做法</td>
+</tr>
+<tr>
+<td>低延迟</td>
+<td>map/unmap 不是免费操作：可能建 IOMMU 映射、可能分配 swiotlb bounce buffer（同步拷贝！）。<strong>热路径黄金律：一次映射、循环 sync（或干脆常驻 coherent），零映射开销</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>前置：<a href="#s-12-1">12.1 缓存一致性</a>（"为什么要 sync"）· <a href="#s-12-0">12.0 DMA 基础</a>（两种模式对比表）</li>
+<li>下一节：12.3 scatter/gather——<code class="c">dma_map_single</code> 的"物理连续"硬约束正是 sg 映射的存在理由（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes.md">notes.md</a> 小节状态表）</li>
+<li>章内摘要：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes.md">notes.md</a></li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>参考答案</summary>
+<p><strong>Q1：为什么不能拿 <code class="c">vmalloc</code> 返回的地址直接喂 <code class="c">dma_map_single</code>？</strong></p>
+<p><code class="c">vmalloc</code> 只保证<strong>虚拟地址连续</strong>，物理页是散的。<code class="c">dma_map_single</code> 无 scatter/gather 能力（<code class="c">dma-api.rst</code> 明文），要求底层物理连续，映射散页直接失败。两条出路：用 <code class="c">kmalloc</code>（物理连续）或改用 <code class="c">dma_map_sg()</code> / <code class="c">dma_alloc_noncontiguous()</code>。</p>
+<p><strong>Q2：<code class="c">dma_unmap_single</code> 为什么四个参数必须与 map 时逐项相同？</strong></p>
+<p>unmap 要用（地址、长度、方向）反查映射期的记录做清理（IOMMU解除映射、释放 swiotlb bounce、归还映射计数）。DMA 地址本身不含长度和方向信息，任何一个不一致，内核要么找不到记录（泄漏映射），要么清错范围。</p>
+<p><strong>Q3：coherent 映射保证"CPU 写立即可见"，为什么描述符更新还要 <code class="c">wmb()</code>？</strong></p>
+<p>coherent 解决的是<strong>可见性位置</strong>（cache vs RAM），不解决<strong>乱序</strong>。CPU 可能重排对一致内存的写：<code class="c">desc-&gt;word1 = DESC_VALID</code>（有效位）先于 <code class="c">desc-&gt;word0 = addr</code>（数据）到达内存，设备看到"有效但地址是旧的"描述符。howto 原文示例：</p>
+<pre class="code" data-label="C"><code class="c">desc-&gt;word0 = address;
+wmb();                  /* 保证 word0 先落地，再置有效位 */
+desc-&gt;word1 = DESC_VALID;
+</code></pre>
+<p>一致性 ≠ 顺序性，屏障永远归驱动管。</p>
+</details>
       </section>
 
 
