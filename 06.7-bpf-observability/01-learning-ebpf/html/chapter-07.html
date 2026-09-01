@@ -388,7 +388,39 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
-<h3>2.2 kprobe 要点</h3>
+<h3>2.2 五种挂法演示的普遍原理：动作与探头多对多</h3>
+<p>上面这张表不只是"五种写法"——它实证了一个容易搞反的模型：<strong>内核动作客观存在（execve 被调用），事件源是我们搭上去的监听探头</strong>。两者是<strong>多对多</strong>关系：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>问题</th>
+<th>内核机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同一位置挂<strong>多型号</strong>探头</td>
+<td>不同事件源能否同时捕获同一动作？</td>
+<td>各源机制独立、互不排斥——ksyscall/kprobe/fentry/tp/tp_btf 五种挂法可以同时挂 execve，一次调用全触发</td>
+</tr>
+<tr>
+<td>同一型号挂<strong>多个监听者</strong></td>
+<td>多个程序能否挂同一探针？</td>
+<td>tracepoint 原生回调链（多监听者是设计起点）；kprobe 聚合探针（一个真实断点逐个回调）；BPF 工具各自 <code class="c">perf_event_open()</code> 各得一个 fd——bpftrace 和 BCC 工具并存挂同一探针是常态</td>
+</tr>
+</tbody>
+</table></div>
+<p>两个口径陷阱（不同探头看同一动作，看到的不严格相同）：</p>
+<ol>
+<li><strong>触发条件可能不同</strong>：经典例——<code class="c">kprobe:schedule</code> 挂 schedule() 入口，每次调用都响；<code class="c">sched:sched_switch</code> 埋在 <code class="c">__schedule()</code> 内部 context_switch 处，<strong>只有真切换（prev != next）才响</strong>。schedule() 空转时 kprobe 响、tracepoint 不响，次数关系是 <code class="c">kprobe ≥ tracepoint</code>。数"切换次数"用 sched_switch（语义准），数"调度器入口压力"用 kprobe（口径宽）</li>
+<li><strong>拿到的上下文不同</strong>：同挂 do_execve，kprobe 拿 <code class="c">struct filename *</code>（内核内部结构，版本会变），fentry 拿同样参数但机制是 trampoline，tp 拿的是 format 文件映射好的稳定结构——正是上表"上下文"列的差异</li>
+</ol>
+<p>⚠️ 多程序挂同一挂载点的历史限制，准确版本是：<strong>单个 perf event fd</strong> 上 <code class="c">PERF_EVENT_IOC_SET_BPF</code> 只能绑一个程序（重复设置是替换）；但每个程序可以自己 open 一个 perf event → 多程序并存从来可行。<code class="c">BPF_F_BEFORE/AFTER</code> 是 cgroup/tcX 程序链框架的 attach flag，<strong>不是</strong> tracepoint 多程序机制——常见张冠李戴。</p>
+<blockquote>
+<p>机制层展开（聚合探针原理、schedule() 空转分叉、BPF_F_* 归属核对 v6.6 源码）见 <a href="chapter-02.html#ch-2">02-BPF性能工具 2.6</a>。</p>
+</blockquote>
+<h3>2.3 kprobe 要点</h3>
 <ul>
 <li>几乎可挂内核任何位置（黑名单除外：<code class="c">/sys/kernel/debug/kprobes/blacklist</code>）；可挂函数入口、也可挂"入口+N 条指令"的偏移处——但任意偏移在版本间极不稳定，别这么干</li>
 <li><strong>被内联的函数没有 kprobe 入口点</strong></li>
@@ -396,7 +428,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>挂普通内核函数时，参数类型要照抄内核函数签名（<code class="c">do_execve(struct filename *filename, ...)</code>）——参数按内存顺序排列，<strong>可忽略尾部参数，不能跳过前面的</strong></li>
 <li>kretprobe 挂函数返回处，只能拿到返回值 <code class="c">ret</code>，<strong>拿不到入参</strong></li>
 </ul>
-<h3>2.3 fentry/fexit（5.5 引入，x86；ARM 要 6.0）</h3>
+<h3>2.4 fentry/fexit（5.5 引入，x86；ARM 要 6.0）</h3>
 <ul>
 <li>基于 <strong>BPF trampoline</strong>，比 kprobe/kretprobe 更高效——新内核上的首选</li>
 <li><code class="c">BPF_PROG</code> 宏适用于 fentry / fexit / tracepoint</li>
@@ -408,7 +440,7 @@ int BPF_KRETPROBE(do_unlinkat_exit, long ret)                 // 只有 ret
 SEC(&quot;fexit/do_unlinkat&quot;)
 int BPF_PROG(do_unlinkat_exit, int dfd, struct filename *name, long ret)  // 全都有
 </code></pre>
-<h3>2.4 tracepoint 要点</h3>
+<h3>2.5 tracepoint 要点</h3>
 <ul>
 <li>内核代码里<strong>静态标记</strong>的位置（早于 eBPF 存在，SystemTap 也用）；版本间稳定；5.15 内核有 1400+ 个</li>
 <li>清单：<code class="c">/sys/kernel/tracing/available_events</code>；格式：<code class="c">/sys/kernel/tracing/events/&lt;子系统&gt;/&lt;事件&gt;/format</code></li>
@@ -416,7 +448,7 @@ int BPF_PROG(do_unlinkat_exit, int dfd, struct filename *name, long ret)  // 全
 <li><strong>raw_tp</strong>：跳过参数映射直接拿原始 <code class="c">__u64</code> 参数，更快但要自己做类型转换（syscall 入口参数还与架构相关）</li>
 <li><strong>tp_btf</strong>：BTF 自动提供匹配结构（<code class="c">trace_event_raw_&lt;事件名&gt;</code>，vmlinux.h 里），免手写、免版本漂移风险——首选</li>
 </ul>
-<h3>2.5 用户态挂点</h3>
+<h3>2.6 用户态挂点</h3>
 <p>uprobe / uretprobe / USDT 都用 <code class="c">BPF_PROG_TYPE_KPROBE</code> 程序类型：</p>
 <pre class="code" data-label="C"><code class="c">SEC(&quot;uprobe/usr/lib/aarch64-linux-gnu/libssl.so.3/SSL_write&quot;)
 </code></pre>
@@ -426,7 +458,7 @@ int BPF_PROG(do_unlinkat_exit, int dfd, struct filename *name, long ret)  // 全
 2. 目标机器装了什么库不可控
 3. 应用可能静态链接（共享库探针全 miss）；容器内库路径与宿主机不同
 4. <strong>语言调用约定差异</strong>：C 参数走寄存器，Go 1.17 之前参数走栈——pt_regs 取参对老 Go 二进制无效</p>
-<h3>2.6 LSM</h3>
+<h3>2.7 LSM</h3>
 <ul>
 <li><code class="c">BPF_PROG_TYPE_LSM</code> 挂 Linux Security Module API（稳定接口，原本给内核模块用）；经 <code class="c">bpf(BPF_RAW_TRACEPOINT_OPEN)</code> 附加</li>
 <li>与追踪类的本质区别：<strong>返回码影响内核行为</strong>——非零 = 安全检查不通过，内核拒绝该操作（第 9 章）</li>

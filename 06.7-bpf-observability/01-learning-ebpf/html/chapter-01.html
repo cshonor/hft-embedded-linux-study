@@ -634,6 +634,59 @@ L2:     ret     #0                 # 0 = 丢弃
 sudo bpftrace -e 'tracepoint:raw_syscalls:sys_enter { @[comm] = count(); }'  # eBPF 视角看同样的事
 </code></pre>
 <p>这两条命令看的是<strong>同一件事</strong>，但机制完全不同——strace 用 ptrace 一个进程一个进程地跟（代价：被跟踪进程慢几倍），bpftrace 在内核里对所有进程的事件计数（代价：接近零）。</p>
+<h2>全家桶分层：strace / perf / bpftrace 底下各是什么</h2>
+<p>上面这对对比放大看，是整个 Linux 追踪生态的分层问题——<strong>底层机制（地基）与用户态工具（成品）必须分开记</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>底层机制（地基）</th>
+<th>上层工具（成品）</th>
+<th>能看什么</th>
+<th>开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ptrace() 系统调用</td>
+<td>strace、gdb</td>
+<td>系统调用、信号、断点调试</td>
+<td><strong>极高</strong>（每次 syscall 双方停走，线上禁用）</td>
+</tr>
+<tr>
+<td>ftrace 框架</td>
+<td>裸操作 tracefs（语法繁琐）</td>
+<td>内核函数、tracepoint</td>
+<td>低</td>
+</tr>
+<tr>
+<td>perf_events</td>
+<td>perf（record/trace/top）</td>
+<td>采样、tracepoint、PMC</td>
+<td>低</td>
+</tr>
+<tr>
+<td><strong>eBPF 虚拟机</strong></td>
+<td><strong>bpftrace / BCC / libbpf</strong></td>
+<td>全部探针 + <strong>内核内自定义计算</strong></td>
+<td>很低</td>
+</tr>
+</tbody>
+</table></div>
+<p>三条关系澄清（比表本身更重要，易错）：</p>
+<ol>
+<li><strong>ptrace 完全独立</strong>：调试机制（暂停进程、接管控制），不在 eBPF 事件源体系内。gdb 必须依赖 ptrace——eBPF 做不了断点调试，两者不是替代关系</li>
+<li><strong>eBPF 不建在 ftrace 之上</strong>：kprobe/tracepoint 是独立内核基础设施，ftrace 和 eBPF 是<strong>并行消费者</strong>；eBPF 挂 kprobe 走 <code class="c">perf_event_open()</code>，不经过 ftrace 接口</li>
+<li><strong>perf trace ≠ strace</strong>：同样看系统调用，perf trace 走 <code class="c">syscalls:</code> 域的 tracepoint，开销低一个量级以上</li>
+</ol>
+<p><strong>顺带辨析一个第一道坎：事件源 vs 事件域</strong>（bpftrace 语法）：</p>
+<ul>
+<li><strong>事件源</strong> = 底层机制大类：tracepoint / kprobe / uprobe / PMC……回答"靠什么抓到事件"</li>
+<li><strong>事件域</strong> = <strong>tracepoint 专属</strong>的子系统分类——<code class="c">sched:sched_switch</code> 冒号前的 <code class="c">sched</code>。域来自内核源码 <code class="c">TRACE_SYSTEM</code> 的静态命名空间</li>
+<li>kprobe 没有域，语法直接体现：<code class="c">tracepoint:sched:sched_switch</code>（三段式：源:域:名）vs <code class="c">kprobe:vfs_read</code>（两段式：源:函数符号）</li>
+</ul>
+<blockquote>
+<p>机制层深挖（域的目录树、ftrace kprobe_events 伪目录陷阱、同源多监听者、<code class="c">BPF_F_BEFORE/AFTER</code> 张冠李戴辨析）见 <a href="chapter-02.html#ch-2">02-BPF性能工具 2.6 事件源</a>与 <a href="chapter-02.html#ch-2">2.14 全家桶分层图</a>——第一本书建立直觉，那两篇是对照深度版。</p>
+</blockquote>
 <h2>3. 推论：为什么内核插桩 = 看穿一切</h2>
 <ol>
 <li><strong>应用与内核的交互面 ≈ 应用的全部外部行为</strong>——读什么文件、连什么地址、花多少 CPU、被谁调度</li>
