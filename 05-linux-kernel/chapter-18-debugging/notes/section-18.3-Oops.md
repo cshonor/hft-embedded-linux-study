@@ -20,11 +20,48 @@
 | **2.6+ `kallsyms`** | `CONFIG_KALLSYMS` — 符号表编进内核 → **直接可读 backtrace** |
 
 ```
-Oops: 0000 [#1] SMP
+BUG: unable to handle kernel NULL pointer dereference
+IP: [<ffffffffa0123456>] my_drv_ioctl+0x42/0x100 [mydrv]
+PGD 0 oops: 0000 [#1] SMP
+CPU: 3 PID: 4242 Comm: mytest Tainted: G      W
+RIP: 0010:my_drv_ioctl+0x42/0x100 [mydrv]
+Code: 48 8b 7f 08 48 85 ff ...        ← 出错指令前后的机器码
 Call Trace:
- [<ffffffffa0123456>] my_drv_ioctl+0x42/0x100 [mydrv]
+ my_ioctl_handler+0x1a/0x20
+ do_vfs_ioctl+0xb9/0x620
  ...
+CR2: 0000000000000010                 ← 触发 fault 的线性地址
 ```
+
+#### Oops 解剖表（逐行读什么）
+
+| 字段 | 含义 | 用途 |
+|------|------|------|
+| `IP:`/`RIP:` | 出错指令地址 + 符号（`函数+偏移/大小`） | **第一定位点** |
+| `Code:` | 出错指令前后 ~20 字节机器码 | 无符号时手动 `objdump -d` 对齐 |
+| `Call Trace` | 调用栈（从出错点向上） | 还原"怎么走到这一步" |
+| `CR2` | 缺页线性地址（x86 控制寄存器 2） | NULL 解引用时通常是小偏移（如 0x10 = `NULL->field`）——**从偏移反推结构体字段** |
+| `[#1]` | Oops 计数（同 boot 内第几次） | 多次 Oops = 连锁损坏，只信第一次 |
+| `[mydrv]` 方括号 | 来自**模块**而非 vmlinux | `gdb vmlinux` 查不到——要用 `objdump -d mydrv.ko` / modinfo 载入地址 |
+| `Tainted: G W` | 污染标志位 | G=专有模块 W=警告过……上游报 bug 前先解释字母 |
+
+#### 定位工作流
+
+```
+1) RIP 地址 ──► gdb vmlinux
+                  (gdb) list *(my_drv_ioctl+0x42)     ← 直接给出源码行
+2) 无 CONFIG_DEBUG_INFO？──► addr2line -e vmlinux <addr>
+3) 栈里模块地址 ──► gdb mydrv.ko（配 /proc/modules 的载入基址换算）
+4) CR2=0x10 ──► 找到 my_dev 结构里偏移 0x10 的字段名──► 哪条路径会传 NULL？
+```
+
+| 时代 | 工具 |
+|------|------|
+| 早期 | **`ksymoops`** + **`System.map`** — 手动 **地址 → 符号** |
+| **2.6+ `kallsyms`** | `CONFIG_KALLSYMS` — 符号表编进内核 → **直接可读 backtrace** |
+| 现代 | kdump 落 vmcore 后用 **crash** 命令行交互分析（`bt`/`struct`/`rd`） |
+
+> kallsyms 的取舍：编进符号表让 Oops 直接可读，但暴露内核布局（绕 KASLR）——发行版默认开，安全敏感场景注意 `CONFIG_KALLSYMS_ALL` 与 kptr_restrict 的搭配。
 
 
 

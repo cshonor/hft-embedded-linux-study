@@ -462,15 +462,97 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <td>可频繁打印</td>
 <td><code class="c">printk</code> 淹没或 <strong>拖死</strong> 系统</td>
 </tr>
+<tr>
+<td>崩溃秒级重试</td>
+<td>崩溃 → <strong>重启 → 重新复现</strong>（一次数分钟）</td>
+</tr>
+<tr>
+<td>valgrind/ASan 现成</td>
+<td>只能用内核自带的调试设施</td>
+</tr>
 </tbody>
 </table></div>
-<p>→ <strong>Ch 2</strong> 无内存保护 · <strong>Ch 5</strong> 进程 vs 中断上下文</p>
+<h4>难的根源：调试器本身也是"被调试者"</h4>
+<p>用户态调试的隐含前提是<strong>调试器与被调试者隔离</strong>（ptrace 站在进程外）。内核没有"外面"——任何内核级调试工具（kgdb、kprobe、ftrace）<strong>自己就是内核代码</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>推论</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调试器有 bug → 也是内核 bug</td>
+<td>观测工具可能把系统搞挂</td>
+</tr>
+<tr>
+<td>调试器要拿锁/分配内存</td>
+<td>在被观测路径上<strong>引入新的交互</strong>（Heisenbug）</td>
+</tr>
+<tr>
+<td>打印本身走内核路径</td>
+<td>printk 洪水 = 自造 DoS（见 <a href="#s-18-8">18.8</a> 限速）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>内核调试工具栈（按侵入度排序）</h4>
+<pre class="code" data-label="code"><code class="c">低侵入 ◄──────────────────────────────────────► 高侵入
+ ftrace/eBPF → tracepoint → dynamic debug → printk → kdb/kgdb → kdump/crash
+ （事后只读   （静态埋点）  （pr_debug     （随便打,  （断点,暂停  （崩溃后取证,
+   观测）                    运行时开关）    拖慢系统）  整机)       最重但最准）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>定位</th>
+<th>对应本书</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>观测类</strong></td>
+<td>ftrace/BPF——不停机、纳秒级开销</td>
+<td>现代主线（<a href="../../05.5-modern-kernel/html/index.html">05.5-modern-kernel</a>）</td>
+</tr>
+<tr>
+<td><strong>打印类</strong></td>
+<td>printk/WARN——最朴素</td>
+<td>本章 18.2/18.5</td>
+</tr>
+<tr>
+<td><strong>断点类</strong></td>
+<td>kgdb/kdb——像 gdb 一样单步</td>
+<td>18.7</td>
+</tr>
+<tr>
+<td><strong>取证类</strong></td>
+<td>kdump/crash——崩溃后分析 vmcore</td>
+<td>18.7（现代标配）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 视角</strong>：交易系统内核问题首选<strong>观测类</strong>（ftrace/BPF 不打断执行）；断点类会让所有 CPU 停住——<strong>生产盘禁止</strong>，只用于复现环境的 lab 机器。</p>
+</blockquote>
+<p>→ <strong>Ch 2</strong> 无内存保护 · <strong>Ch 5</strong> 进程 vs 中断上下文 · <a href="#s-18-2">18.2 printk</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 内核调试比用户态难在哪？</p>
 <details>
 <summary>答案</summary>
 <p>1) 无 GDB 附加（内核崩溃 = 系统崩溃）；2) 无 core dump（oops 信息有限）；3) 并发竞争难复现（SMP + 抢占）；4) 无 libc 调试工具（valgrind/gdb 不能用）；5) 错误后果严重（数据损坏/panic）。内核调试主要靠：printk/oops 分析/kgdb/ftrace/eBPF。HFT 定制驱动调试还要考虑实时性约束。</p>
+</details>
+<p><strong>Q2.</strong> 为什么用户态调试的金标准（gdb 附加 + core dump）在内核态根本不成立？</p>
+<details>
+<summary>答案</summary>
+<p>三个前提全塌：① <strong>没有"外面"</strong>——gdb 依赖 ptrace 站在被调试进程之外，而内核就是"全部"，没有进程外的视角（kgdb 是用两台机器+串口模拟出"外面"的特例）；② <strong>没有隔离</strong>——用户态崩溃只死一个进程（core dump 是内核替你保存的现场），内核崩溃没有更底层的东西替内核存现场——只能靠 kdump 让<strong>崩溃内核跳转到备用小内核</strong>自证；③ <strong>调试器与被调试者同层</strong>——kprobe/ftrace 自身是内核代码，观测行为本身会改变被观测路径（Heisenbug）。</p>
+</details>
+<p><strong>Q3.</strong> 把调试工具按"侵入度"排序，并说明 HFT 生产环境为什么只允许低侵入端？</p>
+<details>
+<summary>答案</summary>
+<p>ftrace/eBPF（读侧观测，不停机）&lt; dynamic debug（开关打印）&lt; printk（全局锁+可能刷控制台）&lt; kdb/kgdb（断点暂停所有 CPU）&lt; kdump（崩溃一次换现场）。HFT 生产盘要求交易路径连续运行：断点类会把整机冻结（错过行情=直接资金风险），高频打印会拖慢收包路径；ftrace/BPF 纳秒级开销、不改控制流，是唯一能常驻生产的选项。kgdb/kdump 只在复现环境的 lab 机器用。</p>
 </details>
 </details>
 <hr />
@@ -507,27 +589,75 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>宏示例</th>
-<th>严重程度</th>
+<th>宏</th>
+<th>数值</th>
+<th>场景</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong><code class="c">KERN_EMERG</code></strong></td>
-<td>最高 — 系统不可用</td>
+<td>0</td>
+<td>系统不可用（panic 前）</td>
 </tr>
 <tr>
-<td><strong><code class="c">KERN_WARNING</code></strong></td>
-<td>警告</td>
+<td><code class="c">KERN_ALERT</code></td>
+<td>1</td>
+<td>立即行动（数据损坏风险）</td>
+</tr>
+<tr>
+<td><code class="c">KERN_CRIT</code></td>
+<td>2</td>
+<td>硬件/子系统级故障</td>
+</tr>
+<tr>
+<td><code class="c">KERN_ERR</code></td>
+<td>3</td>
+<td>错误（驱动 probe 失败等）</td>
+</tr>
+<tr>
+<td><code class="c">KERN_WARNING</code></td>
+<td>4</td>
+<td>警告（默认等级）</td>
+</tr>
+<tr>
+<td><code class="c">KERN_NOTICE</code></td>
+<td>5</td>
+<td>正常但值得注意</td>
+</tr>
+<tr>
+<td><code class="c">KERN_INFO</code></td>
+<td>6</td>
+<td>信息（启动横幅类）</td>
 </tr>
 <tr>
 <td><strong><code class="c">KERN_DEBUG</code></strong></td>
-<td>调试</td>
+<td>7</td>
+<td>调试细节</td>
 </tr>
 </tbody>
 </table></div>
-<p>| 行为 | 由 <strong>当前控制台日志等级</strong> 决定是否 <strong>输出到物理终端</strong> |</p>
-<p>用户态查看：<code class="c">dmesg</code> · <code class="c">/var/log/kern.log</code>（经 <strong>rsyslog/journald</strong>）</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行为</th>
+<th>由 <strong>当前控制台日志等级</strong> 决定是否 <strong>输出到物理终端</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调整</td>
+<td><code class="c">dmesg -n 3</code> / <code class="c">echo 3 &gt; /proc/sys/kernel/printk</code>——数值 ≥ 7 级制的界</td>
+</tr>
+<tr>
+<td>记住</td>
+<td><strong>缓冲区永远全收</strong>（dmesg 可看全部）；等级只过滤<strong>控制台</strong>这条慢通道</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>printk 走两条路：① 写入环形缓冲区（快，总是发生）；② 若消息等级够"响"，同步刷到<strong>串口/显卡控制台</strong>（慢，可能毫秒级）。高频 <code class="c">KERN_ERR</code> 会让系统把时间全花在刷控制台上——这是"printk 拖死系统"的主因，而不是写缓冲区本身。</p>
+</blockquote>
 <h4>记录缓冲区 · Log Buffer</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -539,7 +669,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td><strong>环形缓冲区</strong></td>
-<td>单核时代常见 <strong>~16KB</strong>（现可更大）</td>
+<td><code class="c">CONFIG_LOG_BUF_SHIFT</code> 定大小（单核时代 ~16KB；服务器内核常见 128KB~1MB）</td>
 </tr>
 <tr>
 <td>满则 <strong>覆盖最旧</strong></td>
@@ -547,12 +677,29 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 <tr>
 <td>中断里 <strong>无阻塞写</strong></td>
+<td>写入只是一段拷贝 + 移指针</td>
+</tr>
+<tr>
+<td><strong>NMI/嵌套安全</strong></td>
+<td>现代内核为 NMI 等极端上下文备了 <strong>per-CPU 安全缓冲</strong>——防止"printk 自己死锁在 printk 里"（崩溃打印触发崩溃再打印的递归）</td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用户态</th>
+<th>历史 <strong><code class="c">klogd</code></strong> + <strong><code class="c">syslogd</code></strong> 读缓冲写文件 — 现多 <strong>journald</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
 <td></td>
 </tr>
 </tbody>
 </table></div>
-<p>| 用户态 | 历史 <strong><code class="c">klogd</code></strong> + <strong><code class="c">syslogd</code></strong> 读缓冲写文件 — 现多 <strong>journald</strong> |</p>
-<p><strong>HFT：</strong> 生产内核 <strong>少 printk 热路径</strong> — 用 <strong>tracepoint/BPF</strong>（→ SysPerf Ch14/15）或 <strong>动态 debug</strong>。</p>
+<p><strong>HFT：</strong> 生产内核 <strong>少 printk 热路径</strong> — 用 <strong>tracepoint/BPF</strong>（→ SysPerf Ch14/15）或 <strong>动态 debug</strong>（<code class="c">pr_debug</code> + <code class="c">/sys/kernel/debug/dynamic_debug/control</code> 运行时开关，见 <a href="#s-18-8">18.8</a>）。<code class="c">trace_printk()</code> 写 ftrace per-CPU 缓冲——无控制台路径、无全局锁，是 printk 的<strong>热路径安全替代品</strong>。</p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> printk 和 printf 的区别？printk 的日志级别有什么用？</p>
@@ -564,6 +711,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>printk 持有 logbuf_lock 自旋锁 + console_lock。多核同时 printk → 锁竞争 + IPI flush console。每秒万次 printk 可导致系统卡顿。替代：trace_printk（per-CPU ring buffer 无锁）、ftrace（动态探针）、eBPF（可编程追踪）。HFT 调试网卡收包延迟用 trace_printk + ftrace。</p>
+</details>
+<p><strong>Q3.</strong> "缓冲区全收、控制台按等级过滤"——为什么要这样分两层，而不是打印时直接决定要不要？</p>
+<details>
+<summary>答案</summary>
+<p>两条通道的性能差 3 个数量级：写环形缓冲 ~亚微秒（拷贝+移指针）；刷控制台毫秒级（串口 115200 波特每字符 ~87µs）。打印点（可能在持锁/中断里）必须先走快通道<strong>无条件留存证据</strong>；慢通道的取舍（要不要实时显示）交给<strong>事后/旁路</strong>决定——控制台等级可以在系统运行中调整，新调高级别时缓冲里的历史仍在。若打印时就按"当前显示级别"丢弃，等于让一条慢策略挡在快路径上，且调级别前的重要消息永久丢失。</p>
 </details>
 </details>
 <hr />
@@ -623,11 +775,97 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">Oops: 0000 [#1] SMP
+<pre class="code" data-label="code"><code class="c">BUG: unable to handle kernel NULL pointer dereference
+IP: [&lt;ffffffffa0123456&gt;] my_drv_ioctl+0x42/0x100 [mydrv]
+PGD 0 oops: 0000 [#1] SMP
+CPU: 3 PID: 4242 Comm: mytest Tainted: G      W
+RIP: 0010:my_drv_ioctl+0x42/0x100 [mydrv]
+Code: 48 8b 7f 08 48 85 ff ...        ← 出错指令前后的机器码
 Call Trace:
- [&lt;ffffffffa0123456&gt;] my_drv_ioctl+0x42/0x100 [mydrv]
+ my_ioctl_handler+0x1a/0x20
+ do_vfs_ioctl+0xb9/0x620
  ...
+CR2: 0000000000000010                 ← 触发 fault 的线性地址
 </code></pre>
+<h4>Oops 解剖表（逐行读什么）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">IP:</code>/<code class="c">RIP:</code></td>
+<td>出错指令地址 + 符号（<code class="c">函数+偏移/大小</code>）</td>
+<td><strong>第一定位点</strong></td>
+</tr>
+<tr>
+<td><code class="c">Code:</code></td>
+<td>出错指令前后 ~20 字节机器码</td>
+<td>无符号时手动 <code class="c">objdump -d</code> 对齐</td>
+</tr>
+<tr>
+<td><code class="c">Call Trace</code></td>
+<td>调用栈（从出错点向上）</td>
+<td>还原"怎么走到这一步"</td>
+</tr>
+<tr>
+<td><code class="c">CR2</code></td>
+<td>缺页线性地址（x86 控制寄存器 2）</td>
+<td>NULL 解引用时通常是小偏移（如 0x10 = <code class="c">NULL-&gt;field</code>）——<strong>从偏移反推结构体字段</strong></td>
+</tr>
+<tr>
+<td><code class="c">[#1]</code></td>
+<td>Oops 计数（同 boot 内第几次）</td>
+<td>多次 Oops = 连锁损坏，只信第一次</td>
+</tr>
+<tr>
+<td><code class="c">[mydrv]</code> 方括号</td>
+<td>来自<strong>模块</strong>而非 vmlinux</td>
+<td><code class="c">gdb vmlinux</code> 查不到——要用 <code class="c">objdump -d mydrv.ko</code> / modinfo 载入地址</td>
+</tr>
+<tr>
+<td><code class="c">Tainted: G W</code></td>
+<td>污染标志位</td>
+<td>G=专有模块 W=警告过……上游报 bug 前先解释字母</td>
+</tr>
+</tbody>
+</table></div>
+<h4>定位工作流</h4>
+<pre class="code" data-label="code"><code class="c">1) RIP 地址 ──► gdb vmlinux
+                  (gdb) list *(my_drv_ioctl+0x42)     ← 直接给出源码行
+2) 无 CONFIG_DEBUG_INFO？──► addr2line -e vmlinux &lt;addr&gt;
+3) 栈里模块地址 ──► gdb mydrv.ko（配 /proc/modules 的载入基址换算）
+4) CR2=0x10 ──► 找到 my_dev 结构里偏移 0x10 的字段名──► 哪条路径会传 NULL？
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时代</th>
+<th>工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期</td>
+<td><strong><code class="c">ksymoops</code></strong> + <strong><code class="c">System.map</code></strong> — 手动 <strong>地址 → 符号</strong></td>
+</tr>
+<tr>
+<td><strong>2.6+ <code class="c">kallsyms</code></strong></td>
+<td><code class="c">CONFIG_KALLSYMS</code> — 符号表编进内核 → <strong>直接可读 backtrace</strong></td>
+</tr>
+<tr>
+<td>现代</td>
+<td>kdump 落 vmcore 后用 <strong>crash</strong> 命令行交互分析（<code class="c">bt</code>/<code class="c">struct</code>/<code class="c">rd</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>kallsyms 的取舍：编进符号表让 Oops 直接可读，但暴露内核布局（绕 KASLR）——发行版默认开，安全敏感场景注意 <code class="c">CONFIG_KALLSYMS_ALL</code> 与 kptr_restrict 的搭配。</p>
+</blockquote>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> Oops 信息中最重要的字段是什么？如何从 Oops 定位源码？</p>
@@ -658,16 +896,120 @@ Call Trace:
 <td><strong>sleep-inside-spinlock 检测</strong></td>
 <td>在 <strong>原子上下文</strong>（持 spinlock / 关抢占）<strong>非法睡眠</strong> → 抓 <strong>死锁元凶</strong></td>
 </tr>
+<tr>
+<td><code class="c">CONFIG_DEBUG_SPINLOCK</code></td>
+<td>抓<strong>未初始化/重复解锁</strong>等锁 API 误用</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code></td>
+<td>原子上下文 <code class="c">might_sleep()</code> 立即告警（对应上一行）</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_DEBUG_INFO</code></td>
+<td>vmlinux 带 DWARF 行号——Oops→源码行的前提（见 <a href="#s-18-3">18.3</a>）</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_DEBUG_OBJECTS</code></td>
+<td>对象生命周期误用检测（init/destroy 配对）</td>
+</tr>
 </tbody>
 </table></div>
 <p>→ <strong>Ch 9–10</strong> 自旋锁 vs mutex 上下文规则</p>
-<p>| 现代补充 | <strong>LOCKDEP</strong>、<strong>KASAN</strong>、<strong>KFENCE</strong> — 书中未详述，方向一致 |</p>
+<h4>现代三巨头：LOCKDEP / KASAN / KFENCE（+KCSAN）</h4>
+<p>书中只点了一句"方向一致"，实际已是内核调试的常规武器：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>机理</th>
+<th>抓什么</th>
+<th>代价</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LOCKDEP</strong>（<code class="c">CONFIG_PROVE_LOCKING</code>）</td>
+<td>运行时记录<strong>每把锁的获取顺序</strong>，构建锁依赖图</td>
+<td><strong>ABBA 死锁隐患</strong>（尚未发生就报警）、中断上下文用错锁类型</td>
+<td>开销大（锁操作慢数倍）</td>
+<td>开发/复现环境</td>
+</tr>
+<tr>
+<td><strong>KASAN</strong>（Address Sanitizer）</td>
+<td>每次内存访问查<strong>影子内存</strong>（1/8 额外内存记录每字节状态）</td>
+<td>越界读写、use-after-free（<strong>释放后立刻</strong>用才抓得到）</td>
+<td>慢 2~3 倍 + 内存 1.25 倍</td>
+<td>测试负载跑真实压力</td>
+</tr>
+<tr>
+<td><strong>KFENCE</strong></td>
+<td>低开销采样式：<strong>少量</strong>对象单独放隔离页（guard page 包围）</td>
+<td>与 KASAN 同类错误，但<strong>只覆盖被采样命中的分配</strong></td>
+<td><strong>近乎零</strong>（&lt;1%）——可常驻生产</td>
+<td>生产/长跑环境</td>
+</tr>
+<tr>
+<td>KCSAN</td>
+<td>时钟采样检测<strong>数据竞争</strong>（两次读中间见写）</td>
+<td>无锁共享的 racy 读</td>
+<td>低</td>
+<td>有并发嫌疑的子系统</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>选型读法：<strong>KASAN 是"全量精确"、KFENCE 是"抽样廉价"</strong>——同一类 bug 的两种经济学。生产 HFT 机器常驻 KFENCE 没问题；KASAN/LOCKDEP 只进 lab。
+静态对应物是<strong>sparse</strong>（<code class="c">make C=1</code>，抓 <code class="c">__user</code> 地址误用，见 <a href="chapter-05.html#s-5-4">5.4</a>）。</p>
+</blockquote>
+<h4>调试内核 ≠ 生产内核</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>调试内核</th>
+<th>生产内核</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LOCKDEP/KASAN</td>
+<td>开</td>
+<td><strong>关</strong>（慢 2~3 倍）</td>
+</tr>
+<tr>
+<td>KFENCE</td>
+<td>开</td>
+<td>可开（近零开销）</td>
+</tr>
+<tr>
+<td>DEBUG_INFO</td>
+<td>开</td>
+<td>开（符号可分离存 debuginfo 包，不占运行内存）</td>
+</tr>
+<tr>
+<td>panic_on_oops</td>
+<td>无所谓</td>
+<td><strong>常设 1</strong>（见 <a href="#s-18-3">18.3</a>）</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> CONFIG_DEBUG_INFO 有什么用？为什么 HFT 内核应该开启？</p>
 <details>
 <summary>答案</summary>
 <p>CONFIG_DEBUG_INFO 在编译时保留调试符号（DWARF），vmlinux 包含完整的函数/变量/行号信息。开启后：1) Oops 的 addr2line 能精确定位源码行；2) gdb 调试内核（kgdb）有符号信息；3) crash 工具分析 vmcore。代价：vmlinux 体积增大 ~10x（但运行时无影响）。HFT 生产内核应开启（debuginfo 分离存储，不影响运行时性能）。</p>
+</details>
+<p><strong>Q2.</strong> KFENCE 与 KASAN 抓同一类 bug，为什么内核两个都要？各自的经济模型是什么？</p>
+<details>
+<summary>答案</summary>
+<p>KASAN：<strong>全量精确</strong>——每次访存查影子内存，捕获率高但慢 2~3 倍、内存 +25%，只能进测试环境跑压力负载。KFENCE：<strong>低频抽样</strong>——只有被采样选中的少量分配进入隔离页（guard page 包围），覆盖面小但开销 &lt;1%，可以<strong>常驻生产</strong>，抓长跑才暴露的偶发越界/UAF。两者是同一类错误的两种经济学：测试期买"覆盖率"，生产期买"在线时间"。真中招时 KFENCE 的报告同样带完整栈与分配/释放历史。</p>
+</details>
+<p><strong>Q3.</strong> 为什么 sleep-inside-spinlock 检测抓的是"死锁元凶"而不是死锁本身？</p>
+<details>
+<summary>答案</summary>
+<p>死锁（ABBA）真正发生时系统已卡死，事后无从下手。该检测在<strong>非法睡眠发生的那一刻</strong>（还在持锁/原子上下文）就告警——此时还没死锁，只是"如果此时调度切走，持着的锁将无法释放"这个<strong>必要条件</strong>成立。它把"不可复现的死锁事后分析"转化为"可观测的规则违反即时报告"。LOCKDEP 同理更早一步：锁<strong>顺序图</strong>里出现环就报警，连非法睡眠都还没发生。</p>
 </details>
 </details>
 <hr />
@@ -721,12 +1063,94 @@ if (debug) dump_stack();       /* 我在哪？ */
 </tr>
 </tbody>
 </table></div>
+<h4>三者机理差异</h4>
+<pre class="code" data-label="code"><code class="c">BUG_ON(cond)  ──► 编译成陷阱指令(ud2) ──► Oops：杀当前上下文,打印栈
+WARN_ON(cond) ──► 同样走异常路径,但走 WARN 分支：打印栈 + taint 标志 W,继续跑
+dump_stack()  ──► 只是&quot;打印当前栈&quot;函数调用：不异常、不停、不 taint
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>副作用对比</th>
+<th style="text-align: center;">BUG_ON</th>
+<th style="text-align: center;">WARN_ON</th>
+<th style="text-align: center;">dump_stack</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>打印调用栈</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td>终止当前执行</td>
+<td style="text-align: center;">✓（进程被杀 / panic）</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✗</td>
+</tr>
+<tr>
+<td>打 taint 标志</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✓（Tainted: W）</td>
+<td style="text-align: center;">✗</td>
+</tr>
+<tr>
+<td>可高频调用</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✗（栈打印本身毫秒级）</td>
+<td style="text-align: center;">✗（同左）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>生产代码纪律</strong>（内核社区现行共识）：<code class="c">BUG_ON</code> 只用于"<strong>继续运行必然更糟</strong>"的不变量（状态机已损坏）；常规错误路径一律 <code class="c">WARN_ON</code> + 返回 <code class="c">-E...</code>。<code class="c">WARN_ON</code> 也要克制——它同样打印全栈，高频触发等于 printk 洪水（可配 <code class="c">panic_on_warn</code> 或 rate-limit 策略）。</p>
+<p>另有 <code class="c">might_sleep()</code>：不打印不崩溃，只在原子上下文被调用时告警——是 <code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 的探针（见 <a href="#s-18-4">18.4</a>）。</p>
+</blockquote>
+<h4>为什么 <code class="c">BUG_ON</code> 在中断上下文更致命</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>上下文</th>
+<th>BUG_ON 之后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程上下文</td>
+<td>Oops → 杀当前进程 → 内核尝试继续（若数据结构未坏）</td>
+</tr>
+<tr>
+<td><strong>中断上下文</strong></td>
+<td>Oops → <strong>无进程可杀</strong> → <code class="c">panic()</code> 整机</td>
+</tr>
+<tr>
+<td>持锁时</td>
+<td>Oops 路径不释放你持有的锁 → 即使进程被杀，等这把锁的其他 CPU 也会卡死</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>第三行是"Oops 之后系统还是挂了"的常见解释：<strong>Oops 报告的是第一现场，死因常是它留下的锁尸体</strong>。这也解释了为什么内核社区对 BUG_ON 越来越吝啬——它"终止当前操作"的承诺，在持锁路径上是兑现不了的。</p>
+</blockquote>
+<p><strong>HFT：</strong> 自研驱动的错误处理对齐同一哲学——<strong>热路径永远走错误码分支</strong>，BUG/WARN 只配初始化与控制面；实盘机器 <code class="c">panic_on_warn</code> 保持 0（避免一次可恢复警告带走整机交易）。</p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> BUG_ON() 和 WARN_ON() 的区别？HFT 驱动该用哪个？</p>
 <details>
 <summary>答案</summary>
 <p>BUG_ON(cond)：条件为真时触发 oops/panic（致命错误，不可继续）。WARN_ON(cond)：条件为真时打印调用栈但继续运行（警告，可能可恢复）。HFT 驱动规则：1) 硬件状态不一致 → BUG_ON（不可信任硬件状态）；2) 参数非法 → WARN_ON + 返回错误码（可恢复）。生产环境避免 BUG_ON 在热路径（会 panic 整个系统）。</p>
+</details>
+<p><strong>Q2.</strong> Oops 报告了第一现场，系统却还是在几十秒后彻底挂死——为什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>锁尸体</strong>：出错路径持有的锁在 Oops 后不会释放。进程上下文的 Oops 虽然杀了进程，但其他 CPU 上等这把锁的代码会永远自旋；若是中断上下文 Oops 直接 panic。类似地，被 Oops 跳过的释放路径还会泄漏引用计数、留下半初始化状态——所以"Oops 后还能敲命令"不代表系统还可救，生产纪律是尽快收集现场并重启。</p>
+</details>
+<p><strong>Q3.</strong> <code class="c">might_sleep()</code> 是干什么用的？它与 BUG_ON/WARN_ON 什么关系？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">might_sleep()</code> 是埋在可能睡眠的 API（如 <code class="c">kmalloc(GFP_KERNEL)</code>、mutex 路径）里的<strong>探针</strong>：普通内核编译成空操作，开 <code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 后变成检查——若当前处于原子上下文（持 spinlock/关抢占/中断），立刻打印栈告警。它是 WARN_ON 家族的自动化版本：不用你手写断言，睡眠函数<strong>自带</strong>"我睡了会不会出事"的自检。</p>
 </details>
 </details>
 <hr />
@@ -749,31 +1173,123 @@ if (debug) dump_stack();       /* 我在哪？ */
 </tr>
 <tr>
 <td><strong><code class="c">SysRq-u</code></strong></td>
-<td><strong>umount</strong> — 卸载 FS</td>
+<td><strong>umount</strong> — 卸载 FS（remount 只读）</td>
 </tr>
 <tr>
 <td><strong><code class="c">SysRq-b</code></strong></td>
 <td><strong>reboot</strong> — 立即重启（<strong>未 sync 会丢数据</strong>）</td>
 </tr>
+<tr>
+<td><code class="c">SysRq-c</code></td>
+<td><strong>crash</strong> — 故意 panic（<strong>配 kdump 抓 vmcore</strong> 的标准触发器）</td>
+</tr>
+<tr>
+<td><code class="c">SysRq-f</code></td>
+<td>调用 OOM killer</td>
+</tr>
+<tr>
+<td><code class="c">SysRq-m</code></td>
+<td>打印内存信息</td>
+</tr>
+<tr>
+<td><code class="c">SysRq-p</code></td>
+<td>打印寄存器</td>
+</tr>
+<tr>
+<td><code class="c">SysRq-t</code></td>
+<td>打印所有任务栈</td>
+</tr>
+<tr>
+<td><code class="c">SysRq-w</code></td>
+<td>打印阻塞（D/不可中断）任务</td>
+</tr>
 </tbody>
 </table></div>
-<p>| 救命序列（经典） | <strong><code class="c">s</code> → <code class="c">u</code> → <code class="c">b</code></strong> — 尽量安全重启 |</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>救命序列（经典）</th>
+<th><strong><code class="c">s</code> → <code class="c">u</code> → <code class="c">b</code></strong> — 尽量安全重启</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
 <pre class="code" data-label="code"><code class="c">系统无响应但 SysRq 仍通
     ▼
 s（落盘）→ u（卸盘）→ b（重启）
 </code></pre>
+<h4>触发的三条通道</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>通道</th>
+<th>写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>键盘</td>
+<td><code class="c">Alt + SysRq(PrtSc) + 字母</code></td>
+</tr>
+<tr>
+<td>串口控制台</td>
+<td><code class="c">BREAK</code> 序列（串口服务器场景——机房无显示器）</td>
+</tr>
+<tr>
+<td><strong>命令行回显</strong></td>
+<td><code class="c">echo c &gt; /proc/sysrq-trigger</code>（sshd 还活着时）</td>
+</tr>
+</tbody>
+</table></div>
+<p>开关：<code class="c">/proc/sys/kernel/sysrq</code>（0 全关 / 1 全开 / 位掩码挑功能）——<strong>发行版常默认只留 sync/reboot 几位</strong>。</p>
+<h4>它"神奇"在哪——以及边界在哪</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>是否绕过</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户空间、调度器、运行队列</td>
+<td>✓（不依赖任何进程活着）</td>
+</tr>
+<tr>
+<td>文件系统、网络栈</td>
+<td>✓</td>
+</tr>
+<tr>
+<td><strong>键盘控制器硬件中断（IRQ）</strong></td>
+<td>✗ <strong>依赖</strong>——本质仍是普通中断处理</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>SysRq 由键盘控制器的<strong>中断处理程序</strong>在内核最底层分发（串口版走串口驱动）。所以它不需要调度器、不需要进程，但它<strong>不是 NMI</strong>：如果 CPU 关中断（<code class="c">spin_lock_irqsave</code> 死循环）或中断控制器/键盘驱动本身被锁死，SysRq 同样进不来。真正中断全关的硬死锁只剩：NMI watchdog（检测并报告 soft lockup）、IPMI/BMC 带外通道、硬件复位。</p>
+</blockquote>
 <p><strong>HFT 实盘：</strong> 慎用；Prefer <strong>优雅下线</strong> — 懂即可。</p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 系统完全死锁（键盘无响应）时，SysRq 还能用吗？</p>
 <details>
 <summary>答案</summary>
-<p>能。SysRq 是键盘控制器硬件中断，直接触发 CPU NMI（不可屏蔽中断），绕过所有软件层（包括调度器/锁）。即使内核死锁在自旋锁上，NMI 中断处理仍能执行。这就是为什么 SysRq 被称为"神奇的"——它是最后的救命稻草。HFT 系统建议配置 kdump，在 SysRq+c 触发 panic 时自动保存 vmcore。</p>
+<p><strong>视死锁类型而定</strong>。SysRq 不依赖调度器/进程/文件系统（这些全挂也能通），由键盘控制器的<strong>中断处理程序</strong>在内核底层分发——调度死锁、D 状态风暴、用户空间全冻结时依然有效。但它<strong>不是 NMI</strong>：CPU 因 <code class="c">spin_lock_irqsave</code> 死循环而<strong>关中断</strong>、或键盘驱动/中断控制器本身被锁死时，SysRq 一样进不来。中断全关的硬死锁只剩 NMI watchdog（检测报告）、IPMI/BMC 带外通道、硬件复位三条路。HFT 系统建议配 kdump，<code class="c">SysRq-c</code> 触发 panic 自动保存 vmcore。</p>
 </details>
 <p><strong>Q2.</strong> 为什么 SysRq+s → u → b 的顺序很重要？</p>
 <details>
 <summary>答案</summary>
 <p>s(sync) 把脏页写回磁盘 → u(umount) 卸载文件系统标记干净 → b(reboot) 立即重启。如果跳过 s 直接 b，脏页丢失（文件系统损坏）。如果跳过 u 直接 b，文件系统标记为"未干净卸载"，重启后 fsck 检查。s→u→b 是最小化数据丢失的安全重启序列。生产环境也可以用 <code class="c">echo s &gt; /proc/sysrq-trigger</code> 通过命令行触发。</p>
+</details>
+<p><strong>Q3.</strong> 为什么不少发行版默认把 <code class="c">/proc/sys/kernel/sysrq</code> 设为 176 而不是 1？这个数字是什么意思？</p>
+<details>
+<summary>答案</summary>
+<p>sysrq 开关是<strong>位掩码</strong>不是布尔值：每一位对应一组功能的允许/禁止。176 = 0b10110000 = 允许 sync(16) + remount(32) + 信号/调试(128)，而<strong>不含</strong> reboot(2)、crash(4) 等更危险的动作——防止误触发或被本地低权用户借 <code class="c">/proc/sysrq-trigger</code> 重启机器（该文件写入权限有限制，但纵深防御）。要全开得显式 <code class="c">echo 1 &gt; /proc/sys/kernel/sysrq</code>；HFT 机器若依赖 SysRq-c 触发 kdump，必须确认 crash 位（4）在掩码里。</p>
 </details>
 </details>
 <hr />
@@ -1243,22 +1759,93 @@ else
 <tbody>
 <tr>
 <td><strong><code class="c">printk_ratelimit()</code></strong></td>
-<td>限制 <strong>同一消息</strong> 打印速率</td>
+<td>限制 <strong>同一消息</strong> 打印速率（默认每 5s 最多 10 条，超了静默并周期性补一句"suppressed N messages"）</td>
 </tr>
 <tr>
-<td><strong>发生次数限制</strong></td>
-<td>静态计数 — <strong>仅前 N 次</strong> <code class="c">printk</code></td>
+<td><strong><code class="c">printk_ratelimited()</code></strong></td>
+<td>宏把 ratelimit 检查与 printk 合一——现代代码首选</td>
+</tr>
+<tr>
+<td>发生次数限制</td>
+<td>静态计数 — <strong>仅前 N 次</strong> <code class="c">printk</code>（<code class="c">once=</code> 风格 / <code class="c">printk_once</code>）</td>
 </tr>
 </tbody>
 </table></div>
-<p>| 问题 | 高频 ISR 里 <code class="c">printk</code> → <strong>控制台洪水</strong> → <strong>系统卡死</strong> |</p>
-<p>→ <strong>Ch 7</strong> ISR 要快 · <strong>Ch 2</strong> 不要用 <code class="c">printf</code></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>高频 ISR 里 <code class="c">printk</code> → <strong>控制台洪水</strong> → <strong>系统卡死</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>频率上限怎么算：控制台刷新 ~毫秒级/条。1 万次/秒的打印 = 10 秒的串口时间——ISR 本身早超时了。<strong>ISR 里原则上零打印</strong>；确需计数用 per-CPU 计数器，退出中断后再汇总输出。</p>
+</blockquote>
+<h4>现代「条件开关」的等价物</h4>
+<p>UID 门控的思想（<strong>代码常驻、按条件激活</strong>）在现代内核有了系统化实现：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>激活方式</th>
+<th>粒度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>dynamic debug</strong>（<code class="c">pr_debug</code>/<code class="c">dev_dbg</code>）</td>
+<td><code class="c">echo 'file mydrv.c +p' &gt; /sys/kernel/debug/dynamic_debug/control</code></td>
+<td><strong>逐文件/逐行/逐模块</strong>，运行时</td>
+</tr>
+<tr>
+<td>tracepoint（静态埋点）</td>
+<td>tracefs 打开对应 event</td>
+<td>逐事件</td>
+</tr>
+<tr>
+<td>kprobe/ftrace</td>
+<td>动态插桩任意函数</td>
+<td>逐函数</td>
+</tr>
+<tr>
+<td>eBPF（kprobe 上挂程序）</td>
+<td>bpftrace 一行命令</td>
+<td>任意谓词过滤</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>演进逻辑：LKD3rd 时代"改代码加 if"→ 编译期 tracepoint → 运行期 dynamic debug → <strong>任意点动态插桩</strong>（kprobe）→ <strong>插桩上再编程</strong>（eBPF）。UID 门控在今天仍有价值——<strong>业务侧</strong>按账户/标签路由调试路径的思路与它完全同构。</p>
+</blockquote>
+<p>→ <strong>Ch 7</strong> ISR 要快 · <strong>Ch 2</strong> 不要用 <code class="c">printf</code> · <a href="#s-18-2">18.2 printk</a> · <a href="../../05.5-modern-kernel/html/index.html">05.5-modern-kernel</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 如何用条件 UID 在生产环境安全调试？</p>
 <details>
 <summary>答案</summary>
 <p>技巧：代码中加 <code class="c">if (current-&gt;uid == DEBUG_UID) printk(...)</code>。生产环境正常运行不打印，需要调试时用 <code class="c">setuid DEBUG_UID</code> 运行测试程序 → 触发调试输出。这样不影响生产流量，且不需要重新编译内核。HFT 可用类似方法在特定测试账户的交易路径上启用 trace。</p>
+</details>
+<p><strong>Q2.</strong> <code class="c">printk_ratelimit()</code> 的默认节奏是什么？为什么"静默时也要周期性补报一句"？</p>
+<details>
+<summary>答案</summary>
+<p>默认每 <strong>5 秒</strong>窗口最多 <strong>10</strong> 条（<code class="c">printk_ratelimit_state</code> 可调，<code class="c">/proc/sys/kernel/printk_ratelimit</code>）；超限后消息被吞。补报"suppressed N messages"是为了两个目的：① 告诉你<strong>还有多少</strong>被压掉了（判断问题是在恶化还是自愈）；② 防止你误以为"不打印=没问题"。没有补报的静默是最危险的调试状态——你以为修好了，其实只是消息被限流了。</p>
+</details>
+<p><strong>Q3.</strong> dynamic debug 相比"改代码加 if(uid==...)"有什么本质提升？</p>
+<details>
+<summary>答案</summary>
+<p>① <strong>零代码改动</strong>——<code class="c">pr_debug</code> 常驻源码，不需要为调试重新编译/部署内核；② <strong>粒度到行</strong>——可以只开 <code class="c">mydrv.c:342</code> 这一行、或按模块/格式串过滤；③ <strong>运行时热切换</strong>——写 sysfs 即生效，对正在复现的问题当场开火；④ <strong>默认零开销</strong>——未激活时 pr_debug 编译为 no-op（除非 <code class="c">DEBUG</code> 宏强开）。UID 门控至今胜在<strong>业务语义</strong>（按账户路由），内核侧条件调试已被 dynamic debug/tracepoint 全面接管。</p>
+</details>
+<p><strong>Q4.</strong> 高频 ISR 里为什么"原则上零打印"？per-CPU 计数器的替代方案长什么样？</p>
+<details>
+<summary>答案</summary>
+<p>打印的成本不在格式化而在<strong>控制台通道</strong>（毫秒级/条）与<strong>全局锁</strong>——ISR 里两者都会放大中断延迟，直接违反"上半部越快越好"（Ch 7）。替代：上半部只做 <code class="c">this_cpu_inc(counter)</code>（一条指令，无锁无共享 cache line）；退出中断后由 softirq/定时器把 per-CPU 计数<strong>汇总打印</strong>。需要事件细节时按发生次数抽样（前 N 条打全量，其余计数）。ftrace 侧对应手法是 per-CPU ring buffer——trace_printk 天生就是这条路线的官方实现。</p>
 </details>
 </details>
 <hr />
@@ -1285,6 +1872,84 @@ git bisect good v4.19   # 已知好标签
 # 反复：编译/测试 → git bisect good|bad
 git bisect reset
 </code></pre>
+<h4>自动化：<code class="c">git bisect run</code></h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">git bisect run ./test.sh</code></td>
+<td>脚本 exit 0 = good、非 0 = bad——<strong>全自动</strong>走到定位</td>
+</tr>
+<tr>
+<td>内核场景</td>
+<td>脚本里：<code class="c">make</code> → 装 → 跑复现负载 → 读结果；每轮 20 分钟 × 12 轮 ≈ 4 小时无人值守</td>
+</tr>
+<tr>
+<td><code class="c">git bisect log</code> / <code class="c">git bisect replay</code></td>
+<td>保存进度——中途机器崩了/换人接着 bisect</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">#!/bin/sh
+make -j$(nproc) || exit 125      # 编译失败=skip(125),别误标 good/bad
+reboot_into_new_kernel || exit 125
+run_repro &amp;&amp; exit 0              # 复现负载通过=good
+exit 1                           # 复现=bad
+</code></pre>
+<blockquote>
+<p><code class="c">exit 125</code> 是 bisect 的 <strong>skip 语义</strong>——编译挂了/测试环境抖动的轮次跳过，不污染判定。</p>
+</blockquote>
+<h4>数学与现实</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>复杂度</td>
+<td>O(log₂ n) 次测试：1 万个 commit → ~13 轮</td>
+</tr>
+<tr>
+<td>前提</td>
+<td><strong>每个 commit 都可独立构建且行为确定</strong>——内核 bisect 最大的现实成本是<strong>环境抖动</strong>（偶发 bug 复现率 90% 的机器会把二分树带歪）</td>
+</tr>
+<tr>
+<td>兜底</td>
+<td>对概率性 bug：每轮<strong>多次重复测试</strong>取多数，或用 <code class="c">git bisect skip</code></td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核特有坑</th>
+<th>对策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中间 commit 编不过（依赖外部固件/编译器版本）</td>
+<td>skip 语义（125）</td>
+</tr>
+<tr>
+<td>config 变化（新代码要新 CONFIG）</td>
+<td><code class="c">make oldconfig</code> 固定配置基线</td>
+</tr>
+<tr>
+<td>回归其实在<strong>用户态工具</strong>（内核没错）</td>
+<td>先在旧内核+新工具交叉验证，别急着 bisect 内核</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT：</strong> "性能回归"也能 bisect——测试脚本的判定从"功能对错"换成"延迟阈值"（如 p99 &lt; X µs 为 good）。这是定位<strong>哪次提交引入尾延迟劣化</strong>的唯一系统化方法，与功能 bug 二分同构。</p>
 <p>→ <strong>Ch 2</strong> <code class="c">git clone</code> 内核树 · <strong>Ch 20</strong> 补丁流程</p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -1292,6 +1957,21 @@ git bisect reset
 <details>
 <summary>答案</summary>
 <p>1) <code class="c">git bisect start</code> → 2) <code class="c">git bisect bad &lt;当前commit&gt;</code> 标记有 bug → 3) <code class="c">git bisect good &lt;旧commit&gt;</code> 标记无 bug → 4) git 自动 checkout 中间 commit → 5) 编译测试 → 6) <code class="c">git bisect good/bad</code> → 7) 重复直到定位到引入 bug 的 commit。O(log n) 次编译。内核回归 bug 通常能在 10-15 次 bisect 内定位。</p>
+</details>
+<p><strong>Q2.</strong> bisect 脚本里 <code class="c">exit 125</code> 与 <code class="c">exit 1</code> 有什么区别？为什么编译失败必须用 125？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">exit 1</code> = 判定该 commit <strong>有 bug</strong>（bad）；<code class="c">exit 125</code> = <strong>跳过</strong>（skip）该 commit，让 git 另选中点。编译失败的 commit 并非"有 bug"——把它标 bad 会把嫌疑区间整体带偏（真凶可能在被误标区间之外）。同理，测试环境抖动（复现负载偶发不触发）也该走 skip 或多次重试取多数：<strong>二分的正确性完全依赖每轮判定的可信度</strong>，一次误判就让后续所有收敛失去意义。</p>
+</details>
+<p><strong>Q3.</strong> 概率性 bug（10 次里触发 7 次）怎么 bisect？</p>
+<details>
+<summary>答案</summary>
+<p>不能单次判定——按 70% 触发率，单轮误判概率 30%，13 轮二分里几乎必有一次走错。做法：每轮<strong>重复测试 N 次</strong>（如 N=10，7+ 次触发才标 bad，0 次触发才标 good，中间态 skip），把单轮误判率压到可忽略（0.3^7 量级）；代价是每轮时间 ×N——所以概率 bug 的 bisect 要配自动化（<code class="c">git bisect run</code>）+ 并行测试机。这是"二分的数学"与"工程预算"的典型折衷。</p>
+</details>
+<p><strong>Q4.</strong> 内核 bisect 的测试脚本为什么要自己处理内核安装与重启？"当前运行的内核版本"与"当前源码版本"是什么关系？</p>
+<details>
+<summary>答案</summary>
+<p>bisect 每轮 checkout 的是一个<strong>源码版本</strong>，而判定要在<strong>编译并启动后的内核</strong>上做——脚本必须完成 make → 安装（bzImage/initramfs 拷到 /boot、更新引导项）→ 重启 → 跑负载。运行时读 <code class="c">uname -r</code>（配合本地版本号含 commit id，如 <code class="c">6.6.0-bisect-g3f2a1b</code>）确认"现在跑的确实是本轮编译的内核"——<strong>跳过这步验证是内核 bisect 最常见的翻车原因</strong>（看似测了 13 轮，其实一直在测同一个旧内核）。</p>
 </details>
 </details>
 <hr />
