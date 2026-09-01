@@ -522,131 +522,974 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="s-10-1">
         <div class="sec-head"><div class="sec-no">10.1</div><h2>section-10.1-原子操作</h2></div>
 <p><strong>其他同步机制的基础</strong> — 对共享变量的修改在指令级 <strong>不可分割</strong>：要么全做完，要么完全没做；中间状态对其它 CPU/中断不可见。</p>
-<h4>为何需要</h4>
+<blockquote>
+<p><strong>本篇分工</strong>：实体书已讲原子操作的基本概念与 API 用法。本篇<strong>不复述这些</strong>，只做三件事：
+① 讲清 <strong>v6.6 里 atomic API 的三层结构</strong>（<code class="c">arch_atomic_*</code> / <code class="c">atomic_*</code> / <code class="c">raw_atomic_*</code>，
+书上完全没有，因为这是 <strong>v5.8 才重构出来的</strong>）；
+② 给出 <strong>Linux 自己的 atomic 内存序规则</strong> —— 它和 C11 <code class="c">memory_order</code> <strong>不是一套东西</strong>，
+且这条规则在 x86 上有个非常省钱的推论；
+③ 用 v6.6 的 <code class="c">refcount.h</code> 头部注释逐字讲清 <strong>refcount_t 的"饱和"设计</strong>，
+包括那段"为何不引入 cmpxchg 循环"的工程取舍论证。</p>
+<p>所有常量与代码均核对自缓存的 v6.6 源码，行号可查。</p>
+</blockquote>
+<hr />
+<h2>1. v6.6 的 atomic API 是<strong>三层</strong>的（书上只有一层）</h2>
+<p>书的年代，<code class="c">atomic_inc()</code> 就是架构头里的一个静态内联函数。现在不是了。</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/atomic.h —— v6.6 全文骨架 */
+#include &lt;asm/atomic.h&gt;
+#include &lt;asm/barrier.h&gt;
+...
+#include &lt;linux/atomic/atomic-arch-fallback.h&gt;
+#include &lt;linux/atomic/atomic-long.h&gt;
+#include &lt;linux/atomic/atomic-instrumented.h&gt;
+</code></pre>
+<p>三个头文件各管一段：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>非原子 <code class="c">++x</code>（概念）</th>
-<th>风险</th>
+<th>层</th>
+<th>头文件</th>
+<th>命名</th>
+<th>职责</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>读 → 加 → 写 多步</td>
-<td>两 CPU 交错 → 丢更新</td>
+<td><strong>架构实现</strong></td>
+<td><code class="c">arch/x86/include/asm/atomic.h</code></td>
+<td><code class="c">arch_atomic_*</code></td>
+<td>真正的内联汇编。架构没实现的操作由下一层补</td>
 </tr>
 <tr>
-<td>编译器拆指令</td>
-<td>中间值被看到</td>
+<td><strong>通用 fallback</strong></td>
+<td><code class="c">linux/atomic/atomic-arch-fallback.h</code></td>
+<td><code class="c">arch_atomic_*</code></td>
+<td>架构没提供的操作，用已有原语拼（如用 <code class="c">cmpxchg</code> 循环模拟 <code class="c">fetch_or</code>）</td>
+</tr>
+<tr>
+<td><strong>插桩包装</strong></td>
+<td><code class="c">linux/atomic/atomic-instrumented.h</code></td>
+<td><code class="c">atomic_*</code></td>
+<td>给每个操作套上 <strong>KASAN / KCSAN</strong> 检查，再转调 <code class="c">arch_atomic_*</code></td>
 </tr>
 </tbody>
 </table></div>
-<h4>原子整数 · <code class="c">atomic_t</code> / <code class="c">atomic64_t</code></h4>
+<p>于是调用链是：</p>
+<pre class="code" data-label="code"><code class="c">atomic_inc(&amp;v)                      ← 你写的
+  └─ arch_atomic_inc(&amp;v)            ← atomic-instrumented.h（带 KCSAN 数据竞争检测）
+       └─ asm volatile(LOCK_PREFIX &quot;incl %0&quot;)   ← arch/x86/.../atomic.h
+</code></pre>
+<p>x86 的实现长这样：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/atomic.h:22-63 */
+static __always_inline int arch_atomic_read(const atomic_t *v)
+{
+    /*
+     * Note for KASAN: we deliberately don't use READ_ONCE_NOCHECK() here,
+     * it's non-inlined function that increases binary size and stack usage.
+     */
+    return __READ_ONCE((v)-&gt;counter);
+}
+
+static __always_inline void arch_atomic_set(atomic_t *v, int i)
+{
+    __WRITE_ONCE(v-&gt;counter, i);
+}
+
+static __always_inline void arch_atomic_add(int i, atomic_t *v)
+{
+    asm volatile(LOCK_PREFIX &quot;addl %1,%0&quot;
+             : &quot;+m&quot; (v-&gt;counter)
+             : &quot;ir&quot; (i) : &quot;memory&quot;);
+}
+
+static __always_inline void arch_atomic_inc(atomic_t *v)
+{
+    asm volatile(LOCK_PREFIX &quot;incl %0&quot;
+             : &quot;+m&quot; (v-&gt;counter) :: &quot;memory&quot;);
+}
+</code></pre>
+<blockquote>
+<p>注意 <code class="c">arch_atomic_read</code> 就是 <code class="c">__READ_ONCE</code>，<code class="c">arch_atomic_set</code> 就是 <code class="c">__WRITE_ONCE</code> ——
+<strong>它们是普通读写</strong>，不是原子 RMW。这与常见误解（"atomic_read 有原子性"）相反。</p>
+</blockquote>
+<h3>1.1 ⚠️ 版本断崖：这个三层结构是 <strong>v5.8</strong> 才有的</h3>
+<p>用多版本同名文件 diff 定位（skill 的标准手法）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">atomic-instrumented.h</code></th>
+<th><code class="c">atomic-arch-fallback.h</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v5.6</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>v5.7</strong></td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>v5.8</strong></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>v6.6</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>断崖在 v5.8</strong>（Peter Zijlstra 主导的 atomic 头文件重构）。</p>
+<p><strong>为什么要这么拆</strong>：
+- 以前每个架构都要把所有 atomic 操作实现一遍（有几百个），漏一个就可能静默出错
+- 现在架构<strong>只实现自己有硬件支持的</strong>，剩下的由 <code class="c">atomic-arch-fallback.h</code> 用通用原语自动拼
+- 插桩（KCSAN 检测数据竞争、KASAN 检测越界）只需要写在<strong>一层</strong>里，所有架构自动受益</p>
+<p><strong>实践含义</strong>：写驱动时用到的 <code class="c">atomic_*</code> 是<strong>带插桩的那层</strong>。
+如果在极热路径上想省掉插桩开销，可以用 <code class="c">raw_atomic_*</code>（直接到架构层）—— 但会丢掉 KCSAN 保护。</p>
+<h3>1.2 <code class="c">LOCK_PREFIX</code>：UP 机器上 lock 前缀会被<strong>运行时改成 nop</strong></h3>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/alternative.h:39-51 */
+#ifdef CONFIG_SMP
+#define LOCK_PREFIX_HERE \
+        &quot;.pushsection .smp_locks,\&quot;a\&quot;\n&quot;   \
+        &quot;.balign 4\n&quot;               \
+        &quot;.long 671f - .\n&quot; /* offset */     \
+        &quot;.popsection\n&quot;             \
+        &quot;671:&quot;
+
+#define LOCK_PREFIX LOCK_PREFIX_HERE &quot;\n\tlock; &quot;
+
+#else /* ! CONFIG_SMP */
+#define LOCK_PREFIX_HERE &quot;&quot;
+#define LOCK_PREFIX &quot;&quot;
+#endif
+</code></pre>
+<p><code class="c">LOCK_PREFIX_HERE</code> 把每条 <code class="c">lock</code> 指令的地址<strong>记进 <code class="c">.smp_locks</code> 段</strong>。
+启动时若发现是单处理器，内核会遍历这张表，把每个 <code class="c">lock</code> 前缀<strong>就地替换成 nop</strong>。</p>
+<blockquote>
+<p>与 15.1 讲的 <code class="c">alternative_io</code>（LA57 运行时判定）、15.7 的 <code class="c">pgtable_l5_enabled()</code> 是
+<strong>同一套机制的两个应用</strong>：把"启动时才知道的事"变成"零运行时分支"。</p>
+</blockquote>
+<hr />
+<h2>2. <code class="c">atomic_t</code> 的真实定义与 API 全景</h2>
+<pre class="code" data-label="C"><code class="c">/* include/linux/types.h:172-182 */
+typedef struct {
+    int counter;
+} atomic_t;
+
+#define ATOMIC_INIT(i) { (i) }
+
+#ifdef CONFIG_64BIT
+typedef struct {
+    s64 counter;
+} atomic64_t;
+#endif
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">atomic_t</code> 是 <strong><code class="c">int</code></strong>，32 位</td>
+<td>书上说"至少 32 位"，实际在 v6.6 所有架构上就是 32 位</td>
+</tr>
+<tr>
+<td><code class="c">atomic64_t</code> 是 <strong><code class="c">s64</code></strong>，有符号</td>
+<td>注意是 <code class="c">s64</code> 不是 <code class="c">u64</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic64_t</code> <strong>只在 <code class="c">CONFIG_64BIT</code> 下存在</strong></td>
+<td>32 位系统上没有这个类型</td>
+</tr>
+<tr>
+<td>包在 <code class="c">struct</code> 里</td>
+<td>为了<strong>类型安全</strong>：<code class="c">atomic_t*</code> 不能和 <code class="c">int*</code> 混用</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.1 为什么不用裸 <code class="c">int</code></h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>理由</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>类型安全</strong></td>
+<td>原子 API 只接 <code class="c">atomic_t*</code>，把裸 <code class="c">int</code> 传进 <code class="c">atomic_inc()</code> 会<strong>编译报错</strong></td>
+</tr>
+<tr>
+<td><strong>屏蔽架构差异</strong></td>
+<td>x86 用 <code class="c">lock</code> 前缀、ARM64 用 LSE 指令 / LL-SC 循环，藏在头文件后面</td>
+</tr>
+<tr>
+<td><strong>防错误优化</strong></td>
+<td>编译器不能把 <code class="c">atomic_t</code> 的访问当成普通变量随意重排或合并</td>
+</tr>
+<tr>
+<td><strong>插桩点</strong></td>
+<td>有了统一类型，KCSAN/KASAN 才能统一挂钩</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.2 API 分类（v6.6 完整分档）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>例子</th>
+<th>返回旧值？</th>
+<th>内存序</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>非 RMW</strong></td>
+<td><code class="c">atomic_read</code>、<code class="c">atomic_set</code></td>
+<td>—</td>
+<td><strong>无屏障</strong>（就是 <code class="c">READ_ONCE</code>/<code class="c">WRITE_ONCE</code>）</td>
+</tr>
+<tr>
+<td><strong>RMW（不返回）</strong></td>
+<td><code class="c">atomic_inc</code>、<code class="c">atomic_dec</code>、<code class="c">atomic_add</code>、<code class="c">atomic_sub</code>、<code class="c">atomic_and/or/xor</code></td>
+<td>❌</td>
+<td><strong>full barrier</strong></td>
+</tr>
+<tr>
+<td><strong>RMW（返回）</strong></td>
+<td><code class="c">atomic_add_return</code>、<code class="c">atomic_inc_return</code>、<code class="c">atomic_fetch_add</code>、<code class="c">atomic_dec_and_test</code>、<code class="c">atomic_inc_and_test</code>、<code class="c">atomic_add_negative</code>、<code class="c">atomic_sub_and_test</code></td>
+<td>✅</td>
+<td><strong>full barrier</strong></td>
+</tr>
+<tr>
+<td><strong>交换 / 比较交换</strong></td>
+<td><code class="c">atomic_xchg</code>、<code class="c">atomic_cmpxchg</code>、<code class="c">atomic_try_cmpxchg</code></td>
+<td>✅</td>
+<td><strong>full barrier</strong></td>
+</tr>
+<tr>
+<td><strong>显式序变体</strong></td>
+<td><code class="c">atomic_*_relaxed</code>、<code class="c">_acquire</code>、<code class="c">_release</code></td>
+<td>视基类</td>
+<td>见第 3 节</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>3. ⚠️ 订正：Linux 的 atomic 内存序规则，<strong>不是 C11 那套</strong></h2>
+<p>这是最容易踩的坑。Linux <strong>没有</strong>采用 C11 <code class="c">memory_order</code> 的六档模型，
+而是自己定义了一套以"缺省就最强"为原则的规则。</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/atomic.h:11-24 —— 注释逐字 */
+/*
+ * Relaxed variants of xchg, cmpxchg and some atomic operations.
+ *
+ * We support four variants:
+ *
+ * - Fully ordered: The default implementation, no suffix required.
+ * - Acquire: Provides ACQUIRE semantics, _acquire suffix.
+ * - Release: Provides RELEASE semantics, _release suffix.
+ * - Relaxed: No ordering guarantees, _relaxed suffix.
+ *
+ * For compound atomics performing both a load and a store, ACQUIRE
+ * semantics apply only to the load and RELEASE semantics only to the
+ * store portion of the operation. Note that a failed cmpxchg_acquire
+ * does -not- imply any memory ordering constraints.
+ */
+</code></pre>
+<p><strong>四档规则</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>语义</th>
+<th>对应 C11</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">atomic_inc(&amp;v)</code>（无后缀）</td>
+<td><strong>full barrier</strong>（前后都挡）</td>
+<td><code class="c">memory_order_seq_cst</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic_inc_return_acquire(&amp;v)</code></td>
+<td>acquire（只挡后面）</td>
+<td><code class="c">memory_order_acquire</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic_inc_return_release(&amp;v)</code></td>
+<td>release（只挡前面）</td>
+<td><code class="c">memory_order_release</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic_inc_return_relaxed(&amp;v)</code></td>
+<td><strong>无屏障</strong>，只保证原子性</td>
+<td><code class="c">memory_order_relaxed</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic_read(&amp;v)</code> / <code class="c">atomic_set()</code></td>
+<td><strong>无屏障</strong></td>
+<td><code class="c">memory_order_relaxed</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>实现方式是"在 relaxed 版本外面加显式屏障"：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/atomic.h:41-69 */
+#define __atomic_op_acquire(op, args...)                \
+({                                  \
+    typeof(op##_relaxed(args)) __ret  = op##_relaxed(args);     \
+    __atomic_acquire_fence();                   \
+    __ret;                              \
+})
+
+#define __atomic_op_release(op, args...)                \
+({                                  \
+    __atomic_release_fence();                   \
+    op##_relaxed(args);                     \
+})
+
+#define __atomic_op_fence(op, args...)                  \
+({                                  \
+    typeof(op##_relaxed(args)) __ret;               \
+    __atomic_pre_full_fence();                  \
+    __ret = op##_relaxed(args);                 \
+    __atomic_post_full_fence();                 \
+    __ret;                              \
+})
+</code></pre>
+<h3>3.1 ⭐ x86 上的重要推论：acquire/release 变体<strong>零额外开销</strong></h3>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/barrier.h:79-80 */
+#define __smp_mb__before_atomic()   do { } while (0)
+#define __smp_mb__after_atomic()    do { } while (0)
+</code></pre>
+<p><strong>在 x86 上这两个屏障是空操作。</strong></p>
+<p>原因：x86 的 <code class="c">lock</code> 前缀指令本身就是 <strong>full barrier</strong>（TSO 模型下 <code class="c">lock</code> 指令前后都不允许重排），
+所以"在 relaxed 原子操作外加屏障"这件事<strong>一件事都不用做</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th><code class="c">atomic_*_acquire</code> 的额外开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>x86-64</strong></td>
+<td><strong>零</strong>（<code class="c">__atomic_acquire_fence</code> 展开成空）</td>
+</tr>
+<tr>
+<td>ARM64</td>
+<td>需要 <code class="c">ldar</code>/<code class="c">stlr</code> 或显式 <code class="c">dmb</code>，<strong>有开销</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 含义</strong>：在 x86 上，<code class="c">atomic_*_relaxed</code> 相比普通 <code class="c">atomic_*</code> <strong>省不下屏障</strong>
+（因为 RMW 的 lock 指令本来就是 full barrier，relaxed 也一样要用 lock 指令）。
+relaxed 的收益主要体现在：① 非 x86 架构；② 让 KCSAN/稀疏检查更准确地反映你的意图；
+③ 表达设计意图给读代码的人。
+<strong>真正能省开销的是：把 RMW 换成 <code class="c">READ_ONCE</code> + <code class="c">WRITE_ONCE</code>（单生产者场景），
+或者用 <code class="c">atomic_read</code>/<code class="c">atomic_set</code> 的 relaxed 语义。</strong></p>
+</blockquote>
+<h3>3.2 x86 的 <code class="c">smp_mb()</code> 是怎么实现的</h3>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/barrier.h:57 */
+#define __smp_mb()  asm volatile(&quot;lock; addl $0,-4(%%&quot; _ASM_SP &quot;)&quot; ::: &quot;memory&quot;, &quot;cc&quot;)
+</code></pre>
+<p>用一条 <strong><code class="c">lock addl $0, -4(%rsp)</code></strong> 当屏障 —— 对栈顶下面 4 字节做无意义的加锁加法。
+选它是因为：
+1. <code class="c">lock</code> 指令天然是 full barrier
+2. 写 <code class="c">-4(%rsp)</code> 的位置是 <strong>red zone / 未使用区</strong>，不影响数据
+3. 比 <code class="c">mfence</code> 快（老 CPU 上 <code class="c">mfence</code> 更慢）</p>
+<hr />
+<h2>4. x86-64 上的真实指令</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C 代码</th>
+<th>生成的指令</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">atomic_read(&amp;v)</code></td>
+<td><code class="c">movl (%rdi), %eax</code></td>
+<td>普通读，<strong>没有 lock</strong></td>
+</tr>
+<tr>
+<td><code class="c">atomic_set(&amp;v, 1)</code></td>
+<td><code class="c">movl $1, (%rdi)</code></td>
+<td>普通写，<strong>没有 lock</strong></td>
+</tr>
+<tr>
+<td><code class="c">atomic_inc(&amp;v)</code></td>
+<td><code class="c">lock incl (%rdi)</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">atomic_add(3, &amp;v)</code></td>
+<td><code class="c">lock addl $3, (%rdi)</code></td>
+<td>注意是 <code class="c">addl</code> 不是 <code class="c">incl</code></td>
+</tr>
+<tr>
+<td><code class="c">atomic_xchg(&amp;v, n)</code></td>
+<td><code class="c">xchg %eax, (%rdi)</code></td>
+<td><code class="c">xchg</code> <strong>隐含 lock</strong>，不需前缀</td>
+</tr>
+<tr>
+<td><code class="c">atomic_cmpxchg(&amp;v, o, n)</code></td>
+<td><code class="c">lock cmpxchgl %eax, (%rdi)</code></td>
+<td>返回的是<strong>旧值</strong></td>
+</tr>
+<tr>
+<td><code class="c">smp_mb()</code></td>
+<td><code class="c">lock addl $0, -4(%rsp)</code></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">arch_atomic_add</code> 用 <code class="c">addl</code> 而 <code class="c">arch_atomic_inc</code> 用 <code class="c">incl</code> ——
+这是<strong>源码里就写死的</strong>（见 1 节的两段内联汇编），不是编译器选的。</p>
+<p><strong>开销的量级</strong>（不给死数字，给量纲）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>量级</th>
+<th>机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无争用、line 已在本地 L1</td>
+<td><strong>十几到几十 cycle</strong></td>
+<td><code class="c">lock</code> 指令本身不算慢，慢在它必须获得 cache line 的独占权（MESI 的 M 态）</td>
+</tr>
+<tr>
+<td>无争用、line 在别的核</td>
+<td>+ 一次跨核传输（<strong>几十 cycle</strong>）</td>
+<td>cache line 迁移</td>
+</tr>
+<tr>
+<td><strong>有争用</strong>（多核抢同一 line）</td>
+<td><strong>数百 cycle 起，且随争用核数非线性恶化</strong></td>
+<td>cache line ping-pong</td>
+</tr>
+<tr>
+<td>跨 NUMA 节点争用</td>
+<td>再翻一倍量级</td>
+<td>走 QPI/UPI</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 量测方法（自己机器上跑一次，比背数字有用）
+# 1) 看 cache line 争用
+perf c2c record -a -- ./your_app
+perf c2c report --stdio        # 找 HITM（Hit-Modified）热点
+
+# 2) 看原子操作占比
+perf stat -e mem_inst_retired.lock_loads ./your_app
+</code></pre>
+<hr />
+<h2>5. <code class="c">atomic64_t</code> 与 <code class="c">atomic_long_t</code></h2>
+<pre class="code" data-label="C"><code class="c">/* include/linux/types.h:178-182 */
+#ifdef CONFIG_64BIT
+typedef struct {
+    s64 counter;
+} atomic64_t;
+#endif
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>类型</th>
-<th>宽度</th>
+<th>用途</th>
+<th>32 位系统上</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">atomic_t</code></strong></td>
-<td>至少 32 位（常用 32）</td>
+<td><code class="c">atomic_t</code></td>
+<td>32 位原子</td>
+<td>存在</td>
 </tr>
 <tr>
-<td><strong><code class="c">atomic64_t</code></strong></td>
-<td>64 位</td>
+<td><code class="c">atomic64_t</code></td>
+<td>64 位原子</td>
+<td><strong>不存在</strong>（<code class="c">CONFIG_64BIT</code> 守卫）</td>
+</tr>
+<tr>
+<td><code class="c">atomic_long_t</code></td>
+<td>跟随 <code class="c">long</code> 宽度的原子</td>
+<td>存在，<code class="c">atomic-long.h</code> 把它映射到 <code class="c">atomic_t</code></td>
 </tr>
 </tbody>
 </table></div>
+<p><code class="c">include/linux/atomic/atomic-long.h</code> 做的事：64 位机上把 <code class="c">atomic_long_*</code> 全部
+<code class="c">#define</code> 成 <code class="c">atomic64_*</code>，32 位机上定义成 <code class="c">atomic_*</code>。
+<strong>写"跟指针一样宽"的计数器时用 <code class="c">atomic_long_t</code></strong>，可移植性最好。</p>
+<blockquote>
+<p>⚠️ 32 位机上 <code class="c">atomic64_t</code> 的实现曾经依赖一个<strong>全局散列表的锁</strong>（<code class="c">atomic64_lock</code>），
+代价极高。现代 32 位架构（如 ARMv7）多已实现原生的 64 位原子（LPAE / <code class="c">ldrexd</code>）。
+但<strong>能不用就别用</strong> —— 这也是为什么内核里大量用 <code class="c">unsigned long</code> + <code class="c">atomic_long_t</code> 而不是 64 位。</p>
+</blockquote>
+<hr />
+<h2>6. 原子位操作</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>用专用类型的原因</th>
-<th>说明</th>
+<th>原子版</th>
+<th>非原子版（<code class="c">__</code> 前缀）</th>
+<th>语义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>类型安全</td>
-<td>原子 API <strong>只接</strong> 这些类型，避免普通 <code class="c">int</code> 误用</td>
+<td><code class="c">set_bit(nr, addr)</code></td>
+<td><code class="c">__set_bit</code></td>
+<td>置位</td>
 </tr>
 <tr>
-<td>防错误优化</td>
-<td>访问路径不被编译器「拆坏」</td>
+<td><code class="c">clear_bit(nr, addr)</code></td>
+<td><code class="c">__clear_bit</code></td>
+<td>清零</td>
 </tr>
 <tr>
-<td>屏蔽架构差异</td>
-<td>x86 <code class="c">lock</code> 前缀 / ARM LL/SC 等藏在头文件后</td>
+<td><code class="c">change_bit(nr, addr)</code></td>
+<td><code class="c">__change_bit</code></td>
+<td>翻转</td>
+</tr>
+<tr>
+<td><code class="c">test_and_set_bit(nr, addr)</code></td>
+<td><code class="c">__test_and_set_bit</code></td>
+<td>置位并返回旧值</td>
+</tr>
+<tr>
+<td><code class="c">test_and_clear_bit(nr, addr)</code></td>
+<td><code class="c">__test_and_clear_bit</code></td>
+<td>清零并返回旧值</td>
+</tr>
+<tr>
+<td><code class="c">test_bit(nr, addr)</code></td>
+<td>—</td>
+<td>只读测试（本来就不需原子）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">atomic_t v = ATOMIC_INIT(0);
-atomic_inc(&amp;v);
-atomic_dec_and_test(&amp;v);   /* 减到 0 则返回真 — 常见于引用计数 */
-atomic_add(3, &amp;v);
-atomic_set(&amp;v, 1);
-int x = atomic_read(&amp;v);
+<p><strong>关键区别</strong>：
+- <strong>原子版</strong>带 <code class="c">lock</code> 前缀，可用于<strong>跨 CPU 共享</strong>的位图
+- <strong>非原子版</strong>（<code class="c">__</code> 前缀）是普通读改写，<strong>必须在自旋锁保护下用</strong>，
+  或用于确定只有一个 CPU 会碰的数据</p>
+<pre class="code" data-label="C"><code class="c">/* 典型用法：内核里大量位图（cpumask、page flags、futex 位） */
+if (!test_and_set_bit(PG_locked, &amp;page-&gt;flags)) {
+    /* 我是第一个设置这个位的 —— 我拿到了&quot;锁&quot; */
+}
 </code></pre>
-<h4>原子位操作</h4>
+<blockquote>
+<p><strong>HFT 含义</strong>：位图 + <code class="c">test_and_set_bit</code> 是内核里最轻量的"抢占式标志"，
+不需要分配锁对象。但要小心 <strong>false sharing</strong> —— 同一个 cache line 里的不同 bit
+被不同核原子操作，照样 ping-pong。热路径上的标志位要<strong>各自独占一个 cache line</strong>。</p>
+</blockquote>
+<hr />
+<h2>7. ⭐ <code class="c">refcount_t</code>：饱和设计（v6.6 头部注释逐字）</h2>
+<p>书的年代还没有 <code class="c">refcount_t</code>（它是 <strong>v4.11</strong> 引入的）。这是"引用计数专用"的原子类型。</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/refcount.h:115-117 */
+#define REFCOUNT_INIT(n)    { .refs = ATOMIC_INIT(n), }
+#define REFCOUNT_MAX        INT_MAX
+#define REFCOUNT_SATURATED  (INT_MIN / 2)
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>对比</th>
-<th>说明</th>
+<th>常量</th>
+<th>值</th>
+<th>十六进制</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>原子位 API</td>
-<td>对 <strong>通用内存地址</strong> 某 bit 置位/清除/测试</td>
+<td><code class="c">REFCOUNT_MAX</code></td>
+<td><code class="c">INT_MAX</code></td>
+<td><code class="c">0x7FFF_FFFF</code></td>
 </tr>
 <tr>
-<td><strong><code class="c">__</code> 前缀非原子版</strong></td>
-<td>已在锁保护下可用 — <strong>更快</strong>，勿在无保护路径用</td>
+<td><code class="c">REFCOUNT_SATURATED</code></td>
+<td><code class="c">INT_MIN / 2</code></td>
+<td><strong><code class="c">0xC000_0000</code></strong></td>
 </tr>
 </tbody>
 </table></div>
-<h4>能替代锁吗？</h4>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>可以</th>
-<th>不可以单靠原子</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>计数器、标志、引用计数</td>
-<td><strong>多字段一致更新</strong>（要事务或锁）</td>
-</tr>
-<tr>
-<td>无锁结构的 <strong>单个</strong> 状态字</td>
-<td>复杂不变式（常需屏障 + 仔细设计）</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>HFT 对照：</strong> 用户态 <code class="c">std::atomic</code> / <code class="c">__atomic_*</code> 与内核 <code class="c">atomic_t</code> 同一层；热路径 <strong>计数、序号、就绪标志</strong> 优先原子。记得 <strong>内存序</strong>（见 10.10）— 原子读写默认语义随 API/架构而变。</p>
-<p>→ <a href="#s-10-2">10.2 自旋锁</a> · <a href="#s-10-10">10.10 屏障</a> · <a href="../../02-computer-systems/html/chapter-12.html#ch-12">02-CSAPP 并发</a></p>
-<h3>常见陷阱</h3>
+<h3>7.1 设计核心：饱和，而不是阻止</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/refcount.h:7-56 —— 注释逐字（节选） */
+/*
+ * Variant of atomic_t specialized for reference counts.
+ *
+ * The interface matches the atomic_t interface (to aid in porting) but only
+ * provides the few functions one should use for reference counting.
+ *
+ * Saturation semantics
+ * ====================
+ *
+ * refcount_t differs from atomic_t in that the counter saturates at
+ * REFCOUNT_SATURATED and will not move once there. This avoids wrapping the
+ * counter and causing 'spurious' use-after-free issues. In order to avoid the
+ * cost associated with introducing cmpxchg() loops into all of the saturating
+ * operations, we temporarily allow the counter to take on an unchecked value
+ * and then explicitly set it to REFCOUNT_SATURATED on detecting that underflow
+ * or overflow has occurred. Although this is racy when multiple threads
+ * access the refcount concurrently, by placing REFCOUNT_SATURATED roughly
+ * equidistant from 0 and INT_MAX we minimise the scope for error:
+ *
+ *                             INT_MAX     REFCOUNT_SATURATED   UINT_MAX
+ *   0                          (0x7fff_ffff)    (0xc000_0000)    (0xffff_ffff)
+ *   +--------------------------------+----------------+----------------+
+ *                                     &lt;---------- bad value! ----------&gt;
+ *
+ * (in a signed view of the world, the &quot;bad value&quot; range corresponds to
+ * a negative counter value).
+ */
+</code></pre>
+<p><strong>这段注释是整个设计最精彩的地方，逐句解读</strong>：</p>
 <ol>
-<li>把原子操作当万能锁——原子操作只保证单操作原子性，多操作组合仍需锁</li>
-<li>混淆 atomic_t 和 refcount_t——refcount_t 防溢出（0 不会变 -1），atomic_t 会</li>
-<li>以为 atomic_read() 是原子操作——在 x86 上它只是普通读（volatile），不保证其他 CPU 的写入可见</li>
+<li><strong>问题</strong>：<code class="c">atomic_t</code> 从 0 再减就回绕到 <code class="c">0xFFFFFFFF</code>（有符号看是 -1），
+   再 <code class="c">atomic_dec_and_test</code> 就好几次才回到 0 —— 攻击者可以精确控制释放时机 → <strong>UAF</strong></li>
+<li><strong>朴素解法</strong>：给每个操作加 <code class="c">cmpxchg</code> 循环做饱和检查 → <strong>太慢</strong>（引用计数是极热路径）</li>
+<li><strong>内核的解法</strong>：<strong>先让它减，检测到下溢/溢出后，再显式设成饱和值</strong>
+   - 这个修复<strong>本身是 racy 的</strong>（检查与设置之间别人可能又改了）
+   - 但通过把饱和值放在 <code class="c">0xC0000000</code>（<strong>距 0 和 INT_MAX 大致等距</strong>），
+     把"逃逸出饱和区"的难度最大化</li>
+<li><strong>安全性论证</strong>（注释给的算术）：</li>
+</ol>
+<pre class="code" data-label="code"><code class="c">    (UINT_MAX+1-REFCOUNT_SATURATED) / PID_MAX_LIMIT =
+    0x40000000 / 0x400000 = 0x100 = 256
+</code></pre>
+<p>要从饱和值一路涨（或跌）回"正常值"，需要 <strong>256 次</strong>连续的竞态命中。
+   考虑到调度时序和需要连续命中，注释的结论是 "there doesn't appear to be a practical
+   avenue of attack"。</p>
+<p><strong>这就是内核典型的工程取舍</strong>：不接受"每个 refcount 操作都加 cmpxchg 循环"的性能代价，
+换一个有理论窗口但<strong>实践中不可利用</strong>的竞态，同时把故障模式从 <strong>UAF（任意代码执行）</strong>
+降级为 <strong>WARN + 内存泄漏</strong>。</p>
+<h3>7.2 五种饱和类型</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/refcount.h:119-125 */
+enum refcount_saturation_type {
+    REFCOUNT_ADD_NOT_ZERO_OVF,
+    REFCOUNT_ADD_OVF,
+    REFCOUNT_ADD_UAF,
+    REFCOUNT_SUB_UAF,
+    REFCOUNT_DEC_LEAK,
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>触发场景</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">REFCOUNT_ADD_NOT_ZERO_OVF</code></td>
+<td><code class="c">refcount_inc_not_zero</code> 时已饱和</td>
+<td>对象正在被释放，还想要引用 → <strong>漏引用</strong></td>
+</tr>
+<tr>
+<td><code class="c">REFCOUNT_ADD_OVF</code></td>
+<td><code class="c">refcount_add</code> 溢出</td>
+<td>计数爆炸</td>
+</tr>
+<tr>
+<td><code class="c">REFCOUNT_ADD_UAF</code></td>
+<td>对已释放对象增引用</td>
+<td><strong>UAF 攻击信号</strong></td>
+</tr>
+<tr>
+<td><code class="c">REFCOUNT_SUB_UAF</code></td>
+<td>对已释放对象减引用</td>
+<td><strong>UAF 攻击信号</strong></td>
+</tr>
+<tr>
+<td><code class="c">REFCOUNT_DEC_LEAK</code></td>
+<td>减到 0 以下</td>
+<td>泄漏（对象永不释放）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>7.3 <code class="c">refcount_dec</code> 的真实实现</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/refcount.h:336-361 */
+static inline void __refcount_dec(refcount_t *r, int *oldp)
+{
+    int old = atomic_fetch_sub_release(1, &amp;r-&gt;refs);
+
+    if (oldp)
+        *oldp = old;
+
+    if (unlikely(old &lt;= 1))
+        refcount_warn_saturate(r, REFCOUNT_DEC_LEAK);
+}
+
+static inline void refcount_dec(refcount_t *r)
+{
+    __refcount_dec(r, NULL);
+}
+</code></pre>
+<p>⚠️ <strong>注意</strong>：<code class="c">refcount_dec()</code> <strong>只是 WARN，并不"阻止"减到 0 以下</strong>。
+它用的是 <code class="c">atomic_fetch_sub_release</code>（无 cmpxchg 循环）。
+真正的保护是：
+- 一旦进入饱和区，值不再有意义，后续的 <code class="c">refcount_dec_and_test</code> 不会返回 true
+- 于是对象<strong>永不释放</strong> → 故障模式变成<strong>内存泄漏</strong>而不是 UAF</p>
+<p><code class="c">refcount_dec_and_test()</code> 的内存序注释值得单独看：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/refcount.h:319-334 */
+/**
+ * refcount_dec_and_test - decrement a refcount and test if it is 0
+ * @r: the refcount
+ *
+ * Similar to atomic_dec_and_test(), it will WARN on underflow and fail to
+ * decrement when saturated at REFCOUNT_SATURATED.
+ *
+ * Provides release memory ordering, such that prior loads and stores are done
+ * before, and provides an acquire ordering on success such that free()
+ * must come after.
+ */
+</code></pre>
+<p><strong>release + 成功时 acquire</strong> —— 这正是引用计数需要的：
+- 减之前的所有读写不能跑到减之后（否则别人可能看到半初始化状态）
+- 归零成功时要 acquire，保证 <code class="c">free()</code> 发生在我之前的所有访问之后</p>
+<h3>7.4 <code class="c">atomic_t</code> vs <code class="c">refcount_t</code> 对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">atomic_t</code></th>
+<th><code class="c">refcount_t</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>引入版本</td>
+<td>原始</td>
+<td><strong>v4.11</strong></td>
+</tr>
+<tr>
+<td>语义</td>
+<td>通用原子整数</td>
+<td><strong>只用于引用计数</strong></td>
+</tr>
+<tr>
+<td>0 再减</td>
+<td><strong>回绕到 -1 / UINT_MAX</strong> → 可精确控制释放 → <strong>UAF</strong></td>
+<td>饱和 + WARN → <strong>泄漏</strong></td>
+</tr>
+<tr>
+<td>溢出</td>
+<td>静默回绕</td>
+<td>饱和 + WARN</td>
+</tr>
+<tr>
+<td>API 数量</td>
+<td>几十个</td>
+<td><strong>只暴露引用计数该用的那几个</strong>（<code class="c">inc</code>/<code class="c">dec</code>/<code class="c">dec_and_test</code>/<code class="c">inc_not_zero</code>…）</td>
+</tr>
+<tr>
+<td>内存序</td>
+<td>默认 full barrier</td>
+<td><code class="c">release</code>，成功时 <code class="c">acquire</code></td>
+</tr>
+<tr>
+<td>引入版本</td>
+<td>—</td>
+<td>v4.11（2017，针对 CVE 级 refcount 溢出攻击潮）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>8. 常见陷阱（在原 3 条基础上扩充到 7 条）</h2>
+<ol>
+<li><strong>把原子操作当万能锁</strong> —— 只保证单操作原子性，多操作组合仍需锁</li>
+<li><strong>混淆 <code class="c">atomic_t</code> 和 <code class="c">refcount_t</code></strong> —— 见 7.4 对照表</li>
+<li><strong>以为 <code class="c">atomic_read()</code> 是原子 RMW</strong> —— 它<strong>就是 <code class="c">READ_ONCE</code></strong>，普通读，
+   不提供任何跨 CPU 的同步保证。它保证的只是"这次读不会被编译器拆坏/优化掉"</li>
+<li><strong>在 x86 上期待 <code class="c">_relaxed</code> 能省很多</strong> —— RMW 的 <code class="c">lock</code> 指令本来就是 full barrier，
+   relaxed 省不下 barrier（见 3.1）。真正的优化是<strong>换算法</strong>（减少共享、批处理、per-CPU）</li>
+<li><strong>忽略 false sharing</strong> —— 两个无关的原子变量落在同一 cache line，
+   照样 ping-pong。热路径变量要 <code class="c">__cacheline_aligned_in_smp</code></li>
+<li><strong>用 <code class="c">atomic_t</code> 做"标志位 + 判断 + 动作"</strong> —— <code class="c">if (atomic_read(&amp;flag) == X) do_something()</code>
+   不是原子的，读完之后状态可能已经变了。要<strong>读-改-判断</strong>一气呵成用
+   <code class="c">atomic_cmpxchg</code> / <code class="c">atomic_fetch_*</code> / <code class="c">atomic_dec_and_test</code></li>
+<li><strong>位操作的原子版与非原子版混用</strong> —— 同一位图上，一边用 <code class="c">set_bit</code> 一边用 <code class="c">__set_bit</code>，
+   等于没有原子性</li>
 </ol>
 <hr />
+<h2>9. HFT 关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热路径计数器（包数、字节数、序号）</td>
+<td><strong>per-CPU 计数 + 读时聚合</strong>，比跨核原子快 1~2 个数量级</td>
+</tr>
+<tr>
+<td>单生产者单消费者队列</td>
+<td><code class="c">WRITE_ONCE</code>/<code class="c">READ_ONCE</code> + release/acquire 就够，<strong>不需要原子 RMW</strong></td>
+</tr>
+<tr>
+<td>多生产者</td>
+<td>用 <code class="c">atomic_fetch_add</code> 一次抢占槽位，再写数据（ticket 模式）</td>
+</tr>
+<tr>
+<td>生命周期管理</td>
+<td><strong>无脑用 <code class="c">refcount_t</code></strong>，别用 <code class="c">atomic_t</code></td>
+</tr>
+<tr>
+<td>就绪标志</td>
+<td><code class="c">atomic_set</code> + <code class="c">smp_store_release</code> / <code class="c">smp_load_acquire</code>，或 <code class="c">atomic_xchg</code></td>
+</tr>
+<tr>
+<td>争用诊断</td>
+<td><code class="c">perf c2c</code> 找 HITM 热点；<code class="c">perf stat -e mem_inst_retired.lock_loads</code> 看 lock 指令密度</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* HFT 里最常见的错误优化：把原子当便宜货用 */
+atomic_t packets;                       /* ❌ 所有核都在打这个计数器 */
+atomic_inc(&amp;packets);
+
+/* 正确做法：per-CPU 累加，读的时候才汇总 */
+DEFINE_PER_CPU(unsigned long, packets); /* ✅ 无争用，纯本地 inc */
+
+static inline void count_packet(void)
+{
+    this_cpu_inc(packets);              /* 编译成单条 inc，无 lock 前缀 */
+}
+
+static unsigned long total_packets(void)
+{
+    unsigned long total = 0;
+    int cpu;
+    for_each_possible_cpu(cpu)
+        total += per_cpu(packets, cpu); /* 读路径才付出代价，且可低频调用 */
+    return total;
+}
+</code></pre>
+<blockquote>
+<p>这与 12.10（per-CPU）是同一个主题的两面：<strong>先消除共享，再谈原子</strong>。
+原子操作的代价不在指令本身，而在 <strong>cache line 的跨核迁移</strong>。</p>
+</blockquote>
+<hr />
+<p>→ <a href="#s-10-2">10.2 自旋锁</a> · <a href="#s-10-10">10.10 屏障</a> · <a href="../../02-computer-systems/html/chapter-12.html#ch-12">02-CSAPP 并发</a> · <a href="chapter-12.html#s-12-10">12.10 每个 CPU 的分配</a></p>
+<blockquote>
+<p>↔ <a href="chapter-19.html#s-19-3">19.3 特定数据类型（refcount_t 分家、内核 char 无符号）</a> · <a href="chapter-19.html#s-19-7">19.7 处理器排序</a></p>
+</blockquote>
 <details>
 <summary>自测题（点击展开）</summary>
-<p><strong>Q1.</strong> atomic_t 和 refcount_t 的区别？</p>
+<p><strong>Q1.</strong> <code class="c">atomic_t</code> 和 <code class="c">refcount_t</code> 的区别？</p>
 <details>
 <summary>答案</summary>
-<p>atomic_t：纯原子计数器，<code class="c">atomic_dec(&amp;v)</code> 可以从 0 变成 -1（UAF 漏洞）。refcount_t：引用计数专用，<code class="c">refcount_dec()</code> 在 0 时 WARN + 阻止下溢。6.x 内核中 task_struct 的 usage 已从 atomic_t 改为 refcount_t。安全代码应始终用 refcount_t 管理生命周期。</p>
+<p><code class="c">atomic_t</code>：纯原子计数器，<code class="c">atomic_dec(&amp;v)</code> 可以从 0 变成 -1（UAF 漏洞）。<code class="c">refcount_t</code>：引用计数专用，<code class="c">refcount_dec()</code> 在 0 时 WARN + 阻止下溢。6.x 内核中 <code class="c">task_struct</code> 的 usage 已从 <code class="c">atomic_t</code> 改为 <code class="c">refcount_t</code>。安全代码应始终用 <code class="c">refcount_t</code> 管理生命周期。</p>
+<blockquote>
+<p><strong>⚠️ 按 v6.6 修订/补充</strong></p>
+<ol>
+<li>
+<p><strong>"<code class="c">refcount_dec()</code> 阻止下溢"这个说法不准确</strong>。看真实实现
+   （<code class="c">include/linux/refcount.h:336</code>）：
+   <code class="c">c
+   int old = atomic_fetch_sub_release(1, &amp;r-&gt;refs);
+   if (unlikely(old &lt;= 1))
+           refcount_warn_saturate(r, REFCOUNT_DEC_LEAK);</code>
+   它是<strong>先减后检查</strong>，用的是 <code class="c">atomic_fetch_sub_release</code>——<strong>没有 cmpxchg 循环，也没有"阻止"</strong>。
+   真正的保护是<strong>饱和机制</strong>：一旦进入饱和区（值 ≈ <code class="c">REFCOUNT_SATURATED = 0xC0000000</code>），
+   值不再有意义，后续 <code class="c">refcount_dec_and_test</code> 不会返回 true，于是<strong>对象永不释放</strong>。
+   → 故障模式从 <strong>UAF（可被利用）</strong> 降级为 <strong>WARN + 内存泄漏</strong>。</p>
+</li>
+<li>
+<p><strong>为什么故意不"阻止"</strong>：注释写得很清楚 ——
+   "In order to avoid the cost associated with introducing cmpxchg() loops into all of
+   the saturating operations"。引用计数是极热路径，加 cmpxchg 循环的代价不可接受。
+   内核选择接受一个<strong>理论存在但实践中不可利用</strong>的竞态窗口，
+   并通过把饱和值放在 <code class="c">0xC0000000</code>（距 0 与 INT_MAX 大致等距）把逃逸难度拉到最大。
+   注释给出的算术：逃逸需要连续命中约 <strong>256 次</strong>竞态（<code class="c">(UINT_MAX+1-0xC0000000)/PID_MAX_LIMIT</code>）。</p>
+</li>
+<li>
+<p><strong>五种饱和类型</strong>（不只是"下溢"一种）：
+   <code class="c">REFCOUNT_ADD_NOT_ZERO_OVF</code> / <code class="c">REFCOUNT_ADD_OVF</code> / <code class="c">REFCOUNT_ADD_UAF</code> /
+   <code class="c">REFCOUNT_SUB_UAF</code> / <code class="c">REFCOUNT_DEC_LEAK</code>。</p>
+</li>
+<li>
+<p><strong><code class="c">refcount_dec_and_test()</code> 的内存序</strong>：release（减之前的操作不被重排到后面），
+   <strong>成功时额外 acquire</strong>（保证 <code class="c">free()</code> 在所有先前访问之后）。
+   这是引用计数语义的关键，单纯用 <code class="c">atomic_dec_and_test</code> 模拟需要自己加屏障。</p>
+</li>
+<li>
+<p><strong><code class="c">refcount_t</code> 是 v4.11 引入的</strong>（不是"6.x 才有"），
+   直接动因是 2016~2017 那一波 refcount 溢出 → UAF 的 CVE 潮。</p>
+</li>
+</ol>
+</blockquote>
 </details>
 <p><strong>Q2.</strong> <code class="c">atomic_inc(&amp;v)</code> 在 x86-64 上实际生成什么指令？</p>
 <details>
 <summary>答案</summary>
 <p><code class="c">lock incl (%rdi)</code>——LOCK 前缀 + incl 指令。LOCK 前缀锁 cache line（通过 MESI 协议的 Read-Modify-Write 周期），确保原子性。开销：~20-40 cycles（无争用时）。争用时 cache line bouncing，可达数百 cycles。ARM64 上生成 <code class="c">ldaxr</code>/<code class="c">stlxr</code>（独占加载/存储）循环。</p>
+<blockquote>
+<p><strong>⚠️ 按 v6.6 修订/补充</strong></p>
+<p><strong>指令部分基本正确</strong>，但有几个点要修正和补充：</p>
+<ol>
+<li>
+<p><strong>指令是源码里写死的</strong>，不是编译器选的（<code class="c">arch/x86/include/asm/atomic.h:51</code>）：
+   <code class="c">c
+   static __always_inline void arch_atomic_inc(atomic_t *v)
+   {
+           asm volatile(LOCK_PREFIX "incl %0"
+                        : "+m" (v-&gt;counter) :: "memory");
+   }</code>
+   而 <code class="c">atomic_add</code> 用的是 <code class="c">LOCK_PREFIX "addl"</code>（<code class="c">:31</code>）——<strong>两个不同的助记符</strong>。</p>
+</li>
+<li>
+<p><strong><code class="c">LOCK_PREFIX</code> 在 UP 机器上会被运行时改成 nop</strong>（<code class="c">alternative.h:47</code>）：
+   SMP 下是 <code class="c">LOCK_PREFIX_HERE "\n\tlock; "</code>，UP 下是空字符串。
+   而且 <code class="c">LOCK_PREFIX_HERE</code> 把每条 lock 指令的地址记进 <code class="c">.smp_locks</code> 段，
+   启动时可就地打补丁为 nop。所以 <strong>UP 配置下原子操作零额外开销</strong>。</p>
+</li>
+<li>
+<p><strong>"~20-40 cycles"这个数字要看作量级，且区分三种情形</strong>：
+   - 无争用、line 已在本核 L1：十几到几十 cycle
+   - 无争用、line 在别的核：+ 一次跨核传输
+   - <strong>有争用</strong>：数百 cycle 起，且随争用核数<strong>非线性</strong>恶化；跨 NUMA 再翻一倍量级</p>
+</li>
+</ol>
+<p>真正的瓶颈不是 <code class="c">lock</code> 指令本身，而是<strong>必须拿到 cache line 的独占权（MESI 的 M 态）</strong>。
+   → 别背数字，用 <code class="c">perf c2c</code> 量：
+   <code class="c">bash
+   perf c2c record -a -- ./your_app &amp;&amp; perf c2c report --stdio   # 找 HITM 热点</code></p>
+<ol start="4">
+<li>
+<p><strong>ARM64 那条要更新</strong>：现代 ARM64（<strong>ARMv8.1+ LSE</strong>）用的是<strong>单条指令</strong>
+   <code class="c">stadd</code> / <code class="c">ldadd</code> / <code class="c">swp</code> / <code class="c">cas</code>，<strong>不是</strong> LL/SC 循环。
+   <code class="c">ldaxr</code>/<code class="c">stlxr</code> 循环是<strong>没有 LSE 时的回退路径</strong>。
+   v6.6 的 ARM64 默认开 <code class="c">CONFIG_ARM64_LSE_ATOMICS</code>。</p>
+</li>
+<li>
+<p><strong>补充一个反直觉的点</strong>：<code class="c">atomic_read()</code> <strong>不生成任何 lock 指令</strong>——
+   它就是 <code class="c">__READ_ONCE((v)-&gt;counter)</code>，一条普通 <code class="c">mov</code>。</p>
+</li>
+</ol>
+</blockquote>
 </details>
 <p><strong>Q3.</strong> HFT 用户态如何高效使用原子操作？</p>
 <details>
@@ -663,6 +1506,185 @@ if (h &gt; tail.load(std::memory_order_relaxed)) {
 }
 // 关键: release/acquire 配对, 避免 seq_cst 的全屏障开销
 </code></pre>
+<blockquote>
+<p><strong>⚠️ 按 v6.6 / 现代 C++ 修订</strong></p>
+<ol>
+<li>
+<p><strong>这段代码有个真 bug</strong>：<code class="c">head.load(relaxed) + 1</code> 再 <code class="c">store(release)</code>。
+   在<strong>单生产者</strong>前提下它碰巧正确（没有别人改 head），但这是<strong>侥幸</strong>不是设计。
+   一旦有两个生产者就是丢更新。SPSC 用 <code class="c">store(release)</code> 是对的，
+   但<strong>任何"读-改-写"都应该显式用 <code class="c">fetch_add</code></strong>：
+   <code class="c">c
+   head.fetch_add(1, std::memory_order_release);   // 原子 RMW，意图明确</code>
+   在 x86 上 <code class="c">fetch_add(release)</code> 与 <code class="c">store(release)</code> 生成<strong>完全一样的指令</strong>
+   （<code class="c">lock xadd</code> vs <code class="c">mov</code> + <code class="c">mfence</code>… 实际前者更优），所以<strong>没有性能理由用手写版本</strong>。</p>
+</li>
+<li>
+<p><strong>SPSC 场景下连 release/acquire 都可能过量</strong>。
+   如果消费者用 <code class="c">acquire</code> 读 head，再用 <code class="c">relaxed</code> 读数据，是错的——
+   <strong>acquire 必须配对</strong>：生产者写数据 → <code class="c">release</code> store head；
+   消费者 <code class="c">acquire</code> load head → 才能安全读数据。
+   ```c
+   // 生产者
+   buf[slot] = data;                                  // 1. 先写数据
+   head.store(i + 1, std::memory_order_release);      // 2. release 发布</p>
+</li>
+</ol>
+<p>// 消费者
+   size_t h = head.load(std::memory_order_acquire);   // 3. acquire 获取
+   if (h &gt; t) consume(buf[t]);                        // 4. 现在读数据安全
+   ```</p>
+<ol start="3">
+<li>
+<p><strong>x86 上 release store 和 acquire load 是零开销的</strong>（编译成普通 <code class="c">mov</code>），
+   因为 x86 的 TSO 已经保证了 load-load / store-store 不重排。
+   省掉的开销是 <strong><code class="c">seq_cst</code></strong>：它在 x86 上退化成 <code class="c">xchg</code>（隐含 lock）或 <code class="c">mfence</code>。
+   所以"避免 seq_cst"这条建议<strong>在 x86 上完全成立</strong>，而且收益不小。</p>
+</li>
+<li>
+<p><strong>内核态的对应物是 <code class="c">smp_store_release</code> / <code class="c">smp_load_acquire</code></strong>，
+   以及原子操作的 <code class="c">_release</code> / <code class="c">_acquire</code> 后缀变体（见本篇第 3 节）。
+   ⚠️ 但注意：<strong>Linux 的 <code class="c">_acquire</code>/<code class="c">_release</code> 语义与 C11 略有差异</strong> ——
+   Linux 的"无后缀 = full barrier"比 C11 的 <code class="c">seq_cst</code> 更强。</p>
+</li>
+</ol>
+</blockquote>
+</details>
+<p><strong>Q4.</strong> v6.6 里 <code class="c">atomic_inc(&amp;v)</code> 的完整调用链是什么？为什么要有三层？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="code"><code class="c">atomic_inc(&amp;v)                                    ← atomic-instrumented.h
+  └─ arch_atomic_inc(&amp;v)                          ← 架构实现或通用 fallback
+       └─ asm volatile(LOCK_PREFIX &quot;incl %0&quot;)     ← arch/x86/include/asm/atomic.h:51
+</code></pre>
+<p>三层分别是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>头文件</th>
+<th>命名</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>架构实现</td>
+<td><code class="c">arch/x86/include/asm/atomic.h</code></td>
+<td><code class="c">arch_atomic_*</code></td>
+<td>内联汇编</td>
+</tr>
+<tr>
+<td>通用 fallback</td>
+<td><code class="c">linux/atomic/atomic-arch-fallback.h</code></td>
+<td><code class="c">arch_atomic_*</code></td>
+<td>架构没实现的，用 cmpxchg 等原语拼出来</td>
+</tr>
+<tr>
+<td>插桩包装</td>
+<td><code class="c">linux/atomic/atomic-instrumented.h</code></td>
+<td><code class="c">atomic_*</code></td>
+<td>套上 KASAN / KCSAN 检查</td>
+</tr>
+</tbody>
+</table></div>
+<p>顶层 <code class="c">include/linux/atomic.h</code> 的末尾按序包含这三个：</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/atomic/atomic-arch-fallback.h&gt;
+#include &lt;linux/atomic/atomic-long.h&gt;
+#include &lt;linux/atomic/atomic-instrumented.h&gt;
+</code></pre>
+<p><strong>为什么这么拆</strong>（2019~2020 年 Peter Zijlstra 的重构）：
+1. 以前每个架构要把几百个 atomic 操作全实现一遍，漏一个就静默出错
+2. 现在架构<strong>只实现自己有硬件指令支持的</strong>，其余自动由 fallback 层拼
+3. 插桩（KCSAN 数据竞争检测、KASAN 越界检测）<strong>只需写一层</strong>，所有架构自动受益</p>
+<p><strong>版本断崖</strong>：多版本 diff 定位在 <strong>v5.8</strong>（v5.7 的 <code class="c">atomic.h</code> 里没有这两个 include，
+v5.8 起有）。</p>
+<p><strong>实践推论</strong>：写驱动用的 <code class="c">atomic_*</code> 是<strong>带插桩那层</strong>。
+极热路径想省插桩开销可用 <code class="c">raw_atomic_*</code>，代价是丢掉 KCSAN 保护。</p>
+</details>
+<p><strong>Q5.</strong> 哪些 atomic 操作不带内存屏障？在 x86 上用 <code class="c">_relaxed</code> 能省多少？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不提供屏障的</strong>：
+- <code class="c">atomic_read()</code> —— 就是 <code class="c">READ_ONCE</code>，普通读
+- <code class="c">atomic_set()</code> —— 就是 <code class="c">WRITE_ONCE</code>，普通写
+- 所有带 <code class="c">_relaxed</code> 后缀的变体</p>
+<p><strong>提供 full barrier 的</strong>（无后缀的 RMW）：
+<code class="c">atomic_inc</code> / <code class="c">atomic_add</code> / <code class="c">atomic_xchg</code> / <code class="c">atomic_cmpxchg</code> /
+<code class="c">atomic_add_return</code> / <code class="c">atomic_fetch_*</code> / <code class="c">atomic_*_and_test</code> 等。</p>
+<p>四档规则（<code class="c">include/linux/atomic.h:11-24</code> 注释）：
+无后缀 = full ordered；<code class="c">_acquire</code>；<code class="c">_release</code>；<code class="c">_relaxed</code>。</p>
+<p><strong>⚠️ x86 上的关键推论：<code class="c">_relaxed</code> 省不下屏障。</strong></p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/barrier.h:79-80 */
+#define __smp_mb__before_atomic()   do { } while (0)
+#define __smp_mb__after_atomic()    do { } while (0)
+</code></pre>
+<p>这两个"屏障"在 x86 上是<strong>空操作</strong>，因为 x86 的 <code class="c">lock</code> 指令<strong>本身已经是 full barrier</strong>。
+而 <code class="c">_relaxed</code> 版的 RMW <strong>照样要发 <code class="c">lock</code> 指令</strong>（否则就没有原子性了）。</p>
+<p>所以：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>x86 上是否省开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">atomic_add</code> → <code class="c">atomic_add_relaxed</code></td>
+<td>❌ <strong>不省</strong>（都要 lock 指令）</td>
+</tr>
+<tr>
+<td><code class="c">atomic_read</code> 本身</td>
+<td>已经是普通 mov，无从再省</td>
+</tr>
+<tr>
+<td>用 <code class="c">_acquire</code>/<code class="c">_release</code> 代替无后缀</td>
+<td>❌ 不省（x86 上无额外屏障可加）</td>
+</tr>
+<tr>
+<td><strong>把 RMW 换成 <code class="c">READ_ONCE</code>+<code class="c">WRITE_ONCE</code></strong></td>
+<td>✅ <strong>省很多</strong>（去掉 lock 指令）</td>
+</tr>
+<tr>
+<td><strong>消除共享（per-CPU）</strong></td>
+<td>✅ <strong>省最多</strong>（去掉跨核迁移）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论</strong>：在 x86 上，原子操作的优化方向<strong>不是调内存序后缀</strong>，而是
+<strong>① 消除共享（per-CPU / 分片）② 把 RMW 降级为普通读写（单生产者场景）</strong>。
+<code class="c">_relaxed</code> 的真实价值在于：跨架构可移植性、表达设计意图、让 KCSAN 更准确。</p>
+</blockquote>
+</details>
+<p><strong>Q6.</strong> 为什么 <code class="c">refcount_t</code> 的饱和值选 <code class="c">0xC0000000</code>（<code class="c">INT_MIN/2</code>）？</p>
+<details>
+<summary>答案</summary>
+<p>因为要让它<strong>距 0 和 INT_MAX 的距离大致相等</strong>，从而把"逃逸出饱和区"的难度最大化。</p>
+<p>源码里的图（<code class="c">include/linux/refcount.h:21-25</code>）：</p>
+<pre class="code" data-label="code"><code class="c">                           INT_MAX     REFCOUNT_SATURATED   UINT_MAX
+0                        (0x7fff_ffff)    (0xc000_0000)    (0xffff_ffff)
++--------------------------------+----------------+----------------+
+                                  &lt;---------- bad value! ----------&gt;
+</code></pre>
+<p><strong>背景</strong>：refcount 的饱和修复<strong>是 racy 的</strong>——
+"检测到下溢"和"设为饱和值"之间，别的线程可能又改了值。
+内核为了性能<strong>故意不引入 cmpxchg 循环</strong>，于是接受了这段窗口。</p>
+<p><strong>为什么选在这个位置</strong>：
+- 从 0 往下减（下溢），要先跌到 <code class="c">0xC0000000</code> 才算进入饱和区 —— 距离 <code class="c">0x40000000</code>（约 10 亿）
+- 从 INT_MAX 往上加（溢出），也要先涨到 <code class="c">0xC0000000</code> —— 距离 <code class="c">0x40000000</code></p>
+<p>两头距离相等，所以<strong>无论从哪边逃逸，难度都一样大</strong>（不能靠选一边来削弱）。</p>
+<p><strong>量化论证</strong>（注释原文）：</p>
+<pre class="code" data-label="code"><code class="c">(UINT_MAX+1-REFCOUNT_SATURATED) / PID_MAX_LIMIT =
+0x40000000 / 0x400000 = 0x100 = 256
+</code></pre>
+<p>即从饱和值回到正常值，需要连续约 <strong>256 次</strong>成功竞态命中。
+考虑到需要精确控制调度时序并连续命中，注释的结论是
+"there doesn't appear to be a practical avenue of attack"。</p>
+<p><strong>一句话总结这个设计</strong>：内核用"把故障模式从 UAF 降级为内存泄漏"换掉了
+"每个引用计数操作都加 cmpxchg 循环"的性能代价 —— 这是内核里
+<strong>安全/性能取舍</strong>最清晰的一个范例。</p>
 </details>
 </details>
 <hr />
