@@ -1031,6 +1031,7 @@ func_c     : 2     ← 2 次深入到 func_c
 </tr>
 </tbody>
 </table></div>
+<p>perf 侧视角还有两类补充事件源：<strong>software 软件计数器</strong>（缺页、上下文切换等内核统计事件，bpftrace 写作 <code class="c">software:page-fault</code>）与<strong>定时器</strong>（<code class="c">profile:</code> 探针的定时采样）。两套视角合起来才是完整答案：eBPF 视角六源（表中），perf 视角再加 software/timer。</p>
 <p>这张表有两个正交维度，值得显式拆开：</p>
 <pre class="code" data-label="text"><code class="c">            内核态                用户态              硬件
 静态     tracepoints           USDT（+动态USDT）     ——
@@ -1043,6 +1044,61 @@ func_c     : 2     ← 2 次深入到 func_c
 <li><strong>事件/采样</strong>决定开销模型（∝ 事件率 vs ∝ 采样率）</li>
 </ul>
 <p>任何观测需求都能在这 3×3 网格里定位：先问"问题发生在哪个态"，再问"该态有没有静态点"，最后问"逐事件太贵要不要改采样"。</p>
+<h2>术语辨析：事件源 vs 事件域（易混，面试高频）</h2>
+<p><strong>事件源（event source）</strong> = 底层机制大类，回答"你靠什么抓到事件"。上面表里的全部条目都是事件源，eBPF、perf、ftrace 复用同一套。</p>
+<p><strong>事件域（event category / provider）</strong> = <strong>tracepoint 专属</strong>的子系统分类——<code class="c">域:事件名</code> 冒号前面那部分。回答"事件属于哪个子系统"。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>术语</th>
+<th>归属</th>
+<th>例</th>
+<th>回答的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>事件源</td>
+<td>所有插桩机制</td>
+<td>tracepoint / kprobe / uprobe / PMC</td>
+<td>靠什么抓到事件？</td>
+</tr>
+<tr>
+<td>事件域</td>
+<td><strong>仅 tracepoint</strong></td>
+<td>sched / syscalls / net / block</td>
+<td>事件属于哪个子系统？</td>
+</tr>
+<tr>
+<td>事件名</td>
+<td>域下面具体一点</td>
+<td>sched_switch</td>
+<td>具体是哪一个点？</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么只有 tracepoint 有域</strong>：域是内核开发者在埋静态点时显式起的子系统名（源码中 <code class="c">TRACE_EVENT</code> 宏配套的 <code class="c">TRACE_SYSTEM</code>），属于静态命名空间的一部分；kprobe/uprobe 是运行时对任意函数符号动态挂探针，没有人为分类，自然没有域。bpftrace 语法直接体现了这一点：</p>
+<pre class="code" data-label="text"><code class="c">tracepoint:sched:sched_switch   三段式：源类型 : 域 : 事件名
+kprobe:vfs_read                 两段式：源类型 : 函数符号（无域）
+uprobe:/usr/bin/app:func        路径占的是域的位置，但那是文件路径，不是分类
+</code></pre>
+<p>事件域的物理形态就是 tracefs 目录树：</p>
+<pre class="code" data-label="text"><code class="c">/sys/kernel/tracing/events/
+ ├─ sched/                  ← 事件域 sched
+ │   ├─ sched_switch/
+ │   │   └─ format          ← 自描述字段（见 1.7）
+ │   └─ sched_wakeup/
+ ├─ syscalls/               ← 事件域 syscalls
+ └─ net/                    ← 事件域 net
+</code></pre>
+<blockquote>
+<p>陷阱注：ftrace 的 kprobe_events 动态事件会出现在 <code class="c">events/kprobes/</code> 目录下，看起来像"kprobe 也有域"——那只是 ftrace 把用户创建的动态事件归档的伪目录，不是 kprobe 的固有概念。bpftrace/perf 语境下"kprobe 无域"依然成立。</p>
+</blockquote>
+<p><strong>易错点两条</strong>：</p>
+<ul>
+<li>❌ "kprobe 也有事件域" → 域是静态命名空间；动态探针直接写函数符号</li>
+<li>❌ 把 strace 当事件源 → strace 底层是 <strong>ptrace</strong>，完全独立的调试机制，不在 eBPF 事件源体系内。走 <code class="c">syscalls:</code> 域 tracepoint 的是 <strong>perf trace</strong>——同样看系统调用，开销比 strace 低一个量级以上</li>
+</ul>
 <h2>选型原则（贯穿全书的纪律）</h2>
 <p><strong>能用稳定的就用稳定的</strong>：tracepoint &gt; kprobe；USDT &gt; uprobe。动态插桩只在静态点不存在时作为兜底——因为动态点随版本漂移，工具会悄悄失效。</p>
 <p>落地成三步检查：</p>
@@ -1073,6 +1129,10 @@ func_c     : 2     ← 2 次深入到 func_c
 <details>
 <summary>4. 事件率 500k/s 的函数想看耗时分布，逐事件挂探针为什么不行？正确的替代是什么？</summary>
 <p>逐事件开销 ∝ 事件率：µs 级单次成本 × 500k/s = 数十秒 CPU 秒/分钟，观测税不可接受。替代：保持逐事件但只做内核态聚合（直方图 map，输出与事件率解耦）；或放弃该函数改采样（PMC/定时采样画火焰图）。</p>
+</details>
+<details>
+<summary>5. "kprobe:schedule 里的 schedule 是事件域吗？perf trace 和 strace 底层机制有何区别？</summary>
+<p>不是。schedule 是被插桩的内核函数符号，kprobe 是动态事件源，没有事件域——域（category）是 tracepoint 专属概念，来自源码 <code class="c">TRACE_SYSTEM</code> 的静态命名空间（如 <code class="c">tracepoint:sched:sched_switch</code> 的 sched）。perf trace 底层走 <code class="c">syscalls:</code> 域的 tracepoint 事件源；strace 底层是 ptrace，独立调试机制，不在 eBPF 事件源体系内，开销高一个量级以上。</p>
 </details>
       </section>
       <section class="section" id="s-7">
