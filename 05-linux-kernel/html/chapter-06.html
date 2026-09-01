@@ -445,6 +445,123 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<h4>泛型怎么来的：嵌入 + 宏，不是模板</h4>
+<p>C 没有 C++ 模板，内核的"泛型数据结构"靠<strong>两条腿</strong>：</p>
+<pre class="code" data-label="code"><code class="c">① 结构内嵌：把 list_head 塞进宿主对象
+   struct task_struct {
+       ...
+       struct list_head tasks;    ← 节点即成员，不是&quot;节点指向数据&quot;
+   };
+
+② container_of 反推：从成员地址算回宿主地址
+   list_entry(ptr, struct task_struct, tasks)
+       = (char*)ptr - offsetof(struct task_struct, tasks)
+</code></pre>
+<p>由此带来三个教科书级优点（LKD 逐一点名）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优点</th>
+<th>机理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>零额外分配</strong></td>
+<td>节点不是独立 malloc 的对象——挂链表不产生新内存</td>
+</tr>
+<tr>
+<td><strong>一物多挂</strong></td>
+<td>一个 task_struct 同时挂 tasks 链表和 CFS 红黑树——<strong>多个 <code class="c">list_head</code>/<code class="c">rb_node</code> 成员</strong>即可</td>
+</tr>
+<tr>
+<td><strong>类型安全（编译期）</strong></td>
+<td><code class="c">container_of</code> 里的 <code class="c">typeof</code> 编译期检查宿主类型，传错类型编不过</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>对比：glib 的 <code class="c">GList</code> 是"节点持有 <code class="c">void*</code> 数据指针"模型——每挂一个元素多一次节点分配、多一层间接寻址（cache 不友好）。内核模型把链接开销<strong>摊进宿主对象的缓存行里</strong>。</p>
+</blockquote>
+<h4>内核数据结构全家福（含现代成员）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>章节</th>
+<th>一句话</th>
+<th>现代补充</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>链表 <code class="c">list_head</code></strong></td>
+<td>6.2</td>
+<td>双向循环，遍历 O(n)</td>
+<td><code class="c">hlist</code>（哈希桶单指针头，省内存）、<code class="c">llist</code>（无锁单生产者栈）</td>
+</tr>
+<tr>
+<td><strong>队列 <code class="c">kfifo</code></strong></td>
+<td>6.3</td>
+<td>定长环形缓冲，SPSC 可无锁</td>
+<td>——</td>
+</tr>
+<tr>
+<td><strong>映射 <code class="c">idr</code></strong></td>
+<td>6.4</td>
+<td>整数 ID → 指针</td>
+<td><strong><code class="c">xarray</code></strong>（4.20+）接班：page cache 已迁移</td>
+</tr>
+<tr>
+<td><strong>红黑树 <code class="c">rbtree</code></strong></td>
+<td>6.5</td>
+<td>有序键，O(log n)</td>
+<td>CFS、epoll、VMA（→ VMA 已再改 <strong>maple tree</strong>，v6.1+，见 <a href="chapter-15.html#s-15-4">15.4</a>）</td>
+</tr>
+<tr>
+<td><strong>哈希表 <code class="c">hlist</code>+<code class="c">hash_head</code></strong></td>
+<td>—</td>
+<td>桶式 O(1)</td>
+<td>PID 查找、dentry 缓存</td>
+</tr>
+<tr>
+<td><strong>maple tree</strong></td>
+<td>—</td>
+<td>—</td>
+<td>v6.1+ VMA 专用：B-tree 特化、范围查询、缓存友好</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>趋势读法：<strong>"通用结构 + 调用方自带锁"</strong>（LKD3rd 时代的 rbtree/list）正在向<strong>自带并发协议</strong>的结构演化——xarray 内置 <code class="c">xa_lock</code>（可关）、maple tree 内置 RCU 读侧。理由：锁的粒度与数据结构的形状耦合，分开写必然写错。</p>
+</blockquote>
+<h4>与用户态的镜像</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核</th>
+<th>用户态对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">list_head</code> + <code class="c">container_of</code></td>
+<td><code class="c">intrusive::list</code>（Boost）/ 手写侵入式链表</td>
+</tr>
+<tr>
+<td><code class="c">kfifo</code></td>
+<td>DPDK <code class="c">rte_ring</code>、SPSC ring（liburcu、folly）</td>
+</tr>
+<tr>
+<td><code class="c">idr</code>/<code class="c">xarray</code></td>
+<td>句柄表（fd 的思路）、slab 分配器的 free 管理</td>
+</tr>
+<tr>
+<td>per-CPU 数据</td>
+<td>thread_local / shard 化计数器</td>
+</tr>
+</tbody>
+</table></div>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 内核为什么要提供自己的链表/队列/映射，而不直接用 C 标准库？</p>
@@ -456,6 +573,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <details>
 <summary>答案</summary>
 <p>标准链表节点包含数据指针；内核 list_head 嵌入在数据结构内部（如 struct task_struct { struct list_head tasks; }）。通过 container_of 宏从 list_head 反推宿主结构地址。优点：零额外内存分配、一个对象可挂多个链表、类型安全。</p>
+</details>
+<p><strong>Q3.</strong> 为什么说"通用结构与锁分离"正在被"结构自带并发协议"取代？举两个例子。</p>
+<details>
+<summary>答案</summary>
+<p>锁粒度与数据结构形状天然耦合，分开写容易错（该锁树的时候只锁了节点、该 RCU 的时候用了 spinlock）。例子：① <strong>xarray</strong> 内置 <code class="c">xa_lock</code>（可传 NULL 关闭），插入/删除自动处理并发，调用方不再手搓 radix tree + 自旋锁两套代码；② <strong>maple tree</strong>（v6.1+ VMA）读侧直接走 RCU、写侧 <code class="c">vma_iter_prealloc</code> 锁外预分配——并发协议封装进迭代器 API。对比 LKD3rd 时代：rbtree 是纯裸结构，锁完全靠调用方自觉。</p>
 </details>
 </details>
 <hr />
@@ -632,7 +754,101 @@ list_for_each_entry(pos, &amp;head, list) {
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 对照：</strong> 用户态网关常用 <strong>无锁 SPSC/MPSC 环</strong>；<code class="c">kfifo</code> 是内核侧 <strong>同款语义</strong> 的官方实现（锁/关中断由调用方保证）。</p>
+<h4>SPSC 无锁的机理：回绕用 unsigned 溢出</h4>
+<p>kfifo 内部 head/tail 是<strong>单调递增的 unsigned int 计数</strong>（不是 0..size-1 的索引），真实位置 = <code class="c">计数 &amp; (size-1)</code>：</p>
+<pre class="code" data-label="code"><code class="c">head（生产者写，消费者读）: 总入队字节数 —— 只增
+tail（消费者写，生产者读）: 总出队字节数 —— 只增
+              │
+              ▼ 回绕交给 unsigned 自然溢出（wraparound）
+in  = kfifo_in(...)   : 检查 head-tail &lt; size（有空间?）→ 写 &amp; (size-1) 处 → 更新 head
+out = kfifo_out(...)  : 检查 head-tail &gt; 0（有数据?）→ 读 &amp; (size-1) 处 → 更新 tail
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>性质</th>
+<th>由谁保证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>head 只被生产者<strong>写</strong>、tail 只被消费者<strong>写</strong></td>
+<td>单写者 → 无 lost update</td>
+</tr>
+<tr>
+<td>满/空判断只需读对方的计数</td>
+<td>单调计数 + unsigned 减法（溢出安全）→ 判断永远正确</td>
+</tr>
+<tr>
+<td>顺序性</td>
+<td><strong>kfifo 本身不插内存屏障</strong>——SPSC 语义正确性还需调用方在 head 更新前后加 <code class="c">smp_wmb()</code>/<code class="c">smp_rmb()</code>（官方 <code class="c">kfifo</code> 文档明示：同步由调用者负责）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>第三行是最容易翻车的：<strong>"kfifo 是无锁的"只对数据竞争成立，不对内存序成立</strong>。内核里用 kfifo 的代码常在入队后 <code class="c">smp_wmb()</code> 再触发消费者（如 wake_up），用户态 rte_ring 的 <code class="c">ENQUEUE/MEMORY BARRIER/DEQUEUE</code> 三段注释讲的是同一件事。</p>
+</blockquote>
+<h4>kfifo API 速查（现代写法）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>创建</td>
+<td><code class="c">kfifo_alloc(fifo, size, gfp)</code></td>
+<td>size 会被<strong>向下取到 2 的幂</strong></td>
+</tr>
+<tr>
+<td>声明即定义</td>
+<td><code class="c">DECLARE_KFIFO(name, type, size)</code> + <code class="c">INIT_KFIFO</code></td>
+<td>静态分配，无 GFP</td>
+</tr>
+<tr>
+<td>入队</td>
+<td><code class="c">kfifo_in(fifo, buf, n)</code></td>
+<td>返回实际写入数（可能不满 n）</td>
+</tr>
+<tr>
+<td>出队</td>
+<td><code class="c">kfifo_out(fifo, buf, n)</code></td>
+<td>返回实际读出数</td>
+</tr>
+<tr>
+<td>窥视</td>
+<td><code class="c">kfifo_peek(fifo)</code> / <code class="c">kfifo_out_peek()</code></td>
+<td>只看不取</td>
+</tr>
+<tr>
+<td>记录模式</td>
+<td><code class="c">kfifo_in_rec</code> / <code class="c">kfifo_out_rec</code></td>
+<td>变长记录（存时记长度）</td>
+</tr>
+</tbody>
+</table></div>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>历史包袱</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LKD3rd 的 <code class="c">kfifo_put/get</code></td>
+<td>老 API——接口返回值语义（bool vs 字节数）与新 API 不同，读旧代码注意</td>
+</tr>
+<tr>
+<td>"必须有锁"</td>
+<td>LKD3rd 原文按"需要上锁"教学；实际 SPSC 场景下无锁是它最大的卖点（书写作时无锁用法尚未普及）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 对照：</strong> 用户态网关常用 <strong>无锁 SPSC/MPSC 环</strong>；<code class="c">kfifo</code> 是内核侧 <strong>同款语义</strong> 的官方实现（锁/关中断由调用方保证）。MPMC 场景 rte_ring 有批量化 CAS 模式，内核侧对应 <code class="c">ptr_ring</code>（skbuff 收发路径）——<strong>先 SPSC 后通用</strong>是两条线共同的工程路径。</p>
 <p>→ <strong>Ch 8</strong> 下半部与工作队列</p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -645,6 +861,11 @@ list_for_each_entry(pos, &amp;head, list) {
 <details>
 <summary>答案</summary>
 <p>因为环形缓冲区回绕用 <code class="c">index &amp; (size - 1)</code> 而非 <code class="c">index % size</code>。位与比取模快 10x+（取模需要除法指令）。且 size 为 2^n 时 size-1 的二进制全是 1，位与等价于取模。这是内核中常见的性能优化技巧。</p>
+</details>
+<p><strong>Q3.</strong> "kfifo 是无锁的"这句话哪里不严谨？</p>
+<details>
+<summary>答案</summary>
+<p>三层限定：① 只对 <strong>SPSC</strong>（单生产者单消费者）成立——head/tail 各自单写者才无 lost update，MPSC/SPMC 仍需锁或 CAS；② <strong>无锁 ≠ 无内存序</strong>——kfifo 自身不插屏障，生产者写数据与更新 head 之间必须 <code class="c">smp_wmb()</code>，否则消费者可能先看到新 head 再看到旧数据（弱序架构上必炸，x86 强序是运气好）；③ 中断与进程共享同一侧（如都做生产者）时退化为"关中断保护"，不是无锁。</p>
 </details>
 </details>
 <hr />
@@ -694,10 +915,92 @@ list_for_each_entry(pos, &amp;head, list) {
 </tr>
 </tbody>
 </table></div>
-<p>另有查找、销毁整套 API。</p>
+<p><strong>为什么要两步——"不能失败的分配"设计</strong>：</p>
+<pre class="code" data-label="code"><code class="c">传统一步式:  idr_get_new() 内部需要扩树 → 分配节点 → 分配可能失败
+             → 调用者拿到&quot;分配到一半&quot;的中间状态，回滚麻烦
+
+两步式:      idr_pre_get()   ← 在锁外、允许失败（返回 0 = 没分到，可重试）
+             idr_get_new()   ← 在锁内、绝不分配（用预分配的存货）→ 不可能失败
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计原则</th>
+<th>体现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>锁内不做可能失败/睡眠的操作</strong></td>
+<td>与 maple tree 的 <code class="c">vma_iter_prealloc</code>（<a href="chapter-15.html#s-15-4">15.4</a>）、GFP_ATOMIC 预留水位（<a href="chapter-12.html#s-12-1">12.1</a>）<strong>同一个思想在三处出现</strong></td>
+</tr>
+<tr>
+<td>循环重试模板</td>
+<td><code class="c">while (!idr_pre_get(...)) ; /* 或 -ENOMEM 退出 */ idr_get_new(...)</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>现代内核已把这套仪式简化：<code class="c">idr_alloc()</code>（一步、内部 GFP 管理失败）直接返回 ID 或负错误码——<strong>"两步"是历史 API</strong>，但其"预分配去失败化"的思想仍是内核并发设计的通用武器。</p>
+</blockquote>
+<h4>基数树为什么适合 ID → 指针</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>性质</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>键是<strong>稀疏整数</strong></td>
+<td>ID 可能跨 0..INT_MAX，但实际只用一小撮——按位每 6~7 bit 一层，<strong>只为存在的分支分配节点</strong></td>
+</tr>
+<tr>
+<td>查找 = 位移 + 数组下标</td>
+<td><code class="c">key &gt;&gt; shift &amp; mask</code> 每层一次——<strong>没有哈希函数、没有冲突链</strong>，最坏 O(层数)</td>
+</tr>
+<tr>
+<td>键序即字典序</td>
+<td>可做 <code class="c">idr_for_each</code> 范围遍历（哈希表做不到）</td>
+</tr>
+</tbody>
+</table></div>
 <blockquote>
 <p><strong>注：</strong> 新内核中 <code class="c">idr</code> 接口有演进，并广泛使用 <strong><code class="c">xarray</code>（xa）</strong> 等结构 — 读书时抓 <strong>「整数 ID → 指针」</strong> 语义即可。</p>
 </blockquote>
+<h4>xarray：idr 的现代统一者（4.20+）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>idr（旧）</th>
+<th>xarray（新）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API 风格</td>
+<td>两步分配仪式</td>
+<td><code class="c">xa_alloc</code> / <code class="c">xa_store</code> / <code class="c">xa_load</code> 一步式，返回错误码</td>
+</tr>
+<tr>
+<td>并发</td>
+<td>调用方全权加锁</td>
+<td><strong>内置 <code class="c">xa_lock</code></strong>（初始化时可选关掉走自定义 RCU）</td>
+</tr>
+<tr>
+<td>复用</td>
+<td>与 radix tree 各一套代码</td>
+<td>统一底层数据结构——<strong>page cache 已从 radix tree 迁到 xarray</strong>（著名案例，Matthew Wilcox 主导）</td>
+</tr>
+<tr>
+<td>标记</td>
+<td>无</td>
+<td><strong>每条目 3 个 tag bit</strong>（如 page cache 的 dirty/writeback 标记直接挂在树上）——遍历时按 tag 反查极快</td>
+</tr>
+</tbody>
+</table></div>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -709,6 +1012,10 @@ list_for_each_entry(pos, &amp;head, list) {
 <tr>
 <td>小整数 fd 式句柄</td>
 <td>驱动 minor、内部 handle 表</td>
+</tr>
+<tr>
+<td><strong>page cache</strong></td>
+<td>页索引 → page 指针（tag 标脏页，回写引擎按 tag 批量扫）——与 <a href="chapter-16.html#s-16-3">Ch 16 页缓存</a>衔接</td>
 </tr>
 </tbody>
 </table></div>
@@ -723,6 +1030,11 @@ list_for_each_entry(pos, &amp;head, list) {
 <details>
 <summary>答案</summary>
 <p>xarray 是 idr 的现代替代（Linux 4.20+），API 更简洁、性能更好。<code class="c">xa_alloc()</code> 替代 <code class="c">idr_alloc()</code>，<code class="c">xa_load()</code> 替代 <code class="c">idr_find()</code>。idr 仍保留兼容但新代码推荐 xarray。page cache 已从 radix tree 迁移到 xarray。</p>
+</details>
+<p><strong>Q3.</strong> idr 的"两步分配"解决什么问题？这个思想还在哪些地方出现？</p>
+<details>
+<summary>答案</summary>
+<p>解决"<strong>持锁路径中分配可能失败</strong>"：老 API <code class="c">idr_pre_get()</code> 在锁外预分配树节点（允许失败可重试），<code class="c">idr_get_new()</code> 在锁内只消费存货、不可能失败——避免锁内回滚。同一思想的三处现代现身：① maple tree 的 <code class="c">vma_iter_prealloc()</code>（锁外预分配节点再 <code class="c">vma_iter_store</code>）；② GFP_ATOMIC 紧急预留水位（中断路径不睡眠）；③ 用户态临界区不做 malloc 的纪律。<strong>把可能失败的操作挪到锁外，锁内只剩确定成功的提交</strong>。</p>
 </details>
 </details>
 <hr />
@@ -933,10 +1245,12 @@ struct sched_entity {
 <h4>决策简图</h4>
 <pre class="code" data-label="code"><code class="c">要存内核对象？
     │
-    ├─ 主要靠「扫一遍」──────► list_head
-    ├─ 一边产一边消、FIFO ───► kfifo
-    ├─ 要小整数 handle ──────► idr
-    └─ 按键排序/最值/查找 ───► rbtree
+    ├─ 主要靠「扫一遍」─────────► list_head
+    ├─ 一边产一边消、FIFO ──────► kfifo（SPSC 无锁）
+    ├─ 要小整数 handle ─────────► idr → 现代 xarray
+    ├─ 按键排序/最值/查找 ──────► rbtree
+    ├─ 按键范围查询（区间）─────► maple tree（v6.1+）/ interval tree
+    └─ 均匀键、O(1) 点查 ───────► hlist 哈希表
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
@@ -954,8 +1268,68 @@ struct sched_entity {
 <td>kfifo + workqueue</td>
 <td>中断 <strong>in</strong>，线程 <strong>out</strong> 处理</td>
 </tr>
+<tr>
+<td>xarray + tag</td>
+<td>page cache：页索引树 + dirty/writeback 标记位</td>
+</tr>
+<tr>
+<td>maple tree + per-VMA lock</td>
+<td>VMA 管理（v6.1+/v6.4+，见 <a href="chapter-15.html#s-15-4">15.4</a>）</td>
+</tr>
 </tbody>
 </table></div>
+<h4>选型时别忘了第四个维度：并发形状</h4>
+<p>复杂度只是入场券，<strong>结构怎么被共享</strong>往往才是决定因素：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>并发形状</th>
+<th>首选</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单 CPU 独占数据</td>
+<td>任何结构——<strong>per-CPU 化</strong>直接消灭共享（<code class="c">alloc_percpu</code>，见 <a href="chapter-12.html#s-12-10">12.10</a>）</td>
+</tr>
+<tr>
+<td>SPSC 跨上下文（中断→线程）</td>
+<td>kfifo 无锁环</td>
+</tr>
+<tr>
+<td>读极多写极少</td>
+<td>RCU 保护的任何结构（读侧零开销，见 <a href="chapter-09.html#ch-9">Ch 9</a>）</td>
+</tr>
+<tr>
+<td>多写者有序键</td>
+<td>rbtree/xarray + spinlock；或 maple tree</td>
+</tr>
+</tbody>
+</table></div>
+<h4>反面教材：选错结构的代价史</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>案例</th>
+<th>教训</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期 O(n) 调度器</td>
+<td>进程一多调度延迟不可预测 → O(1) 调度器（位图）→ CFS（rbtree）→ maple 时代仍在演化（见 <a href="chapter-04.html#s-4-1">4.1</a>）</td>
+</tr>
+<tr>
+<td>2.6 VMA 链表+红黑树双簿记</td>
+<td>每次增删两份维护 → v6.1 maple tree 一份搞定（见 <a href="chapter-15.html#s-15-4">15.4</a>）</td>
+</tr>
+<tr>
+<td>radix tree + 外挂锁</td>
+<td>page cache 改 xarray：锁与 tag 进结构（见 <a href="#s-6-4">6.4</a>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT：</strong> 选型逻辑直接平移到用户态——行情网关收包→策略用 SPSC 环（对应 kfifo）；订单簿按价格有序用红黑树/跳表（对应 rbtree + <a href="#s-6-7">6.7</a> 的缓存维度）；fd 式会话句柄用稀疏数组/句柄表（对应 idr）。<strong>先想并发形状，再想复杂度，最后想缓存布局。</strong></p>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 内核中遍历所有进程用什么数据结构？查找特定 PID 用什么？</p>
@@ -1027,6 +1401,48 @@ struct sched_entity {
 </tr>
 </tbody>
 </table></div>
+<h4>Big-O 之外的三个真实维度</h4>
+<p><strong>① 缓存局部性——O(1) 不一定比 O(log n) 快</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>渐近</th>
+<th>访存模式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>链表 <code class="c">list_for_each</code></td>
+<td>O(n)</td>
+<td>节点散落堆上 → <strong>每步都 cache miss</strong>（~100ns 级）</td>
+</tr>
+<tr>
+<td>红黑树查找</td>
+<td>O(log n)</td>
+<td>每层一次可能 miss</td>
+</tr>
+<tr>
+<td>数组顺序扫</td>
+<td>O(n)</td>
+<td><strong>预取器全开</strong>——实际比链表快几十倍</td>
+</tr>
+<tr>
+<td>B-tree/maple tree</td>
+<td>O(log n)</td>
+<td>节点<strong>多条目</strong> → 树矮、每层访存摊薄——<strong>为缓存而生</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>内核教科书结论：<strong>n 小（&lt;几十）时数组/链表吊打树</strong>——分界点由 cache line（64B）与对象大小决定，不是由 Big-O 决定。<code class="c">hlist</code> 单指针头（省一半内存）也是同一逻辑：结构越小，一个缓存行装得越多。</p>
+</blockquote>
+<p><strong>② 常数因子与指令数</strong>：<code class="c">list_add</code> 与哈希插入都是"O(1)"，但前者两条指针写、后者要算哈希+探测——中断热路径上选前者的直接理由是<strong>指令数</strong>，不是复杂度记号。</p>
+<p><strong>③ 共享消除 &gt; 结构优化</strong>：per-CPU 化让每 CPU 只碰自己的数据——复杂度没变，但<strong>锁竞争与 cache line 乒乓（伪共享）同时消失</strong>。这往往是内核里最划算的一档优化（计数器从 atomic_t → per-CPU 计数 + 汇总）。</p>
+<pre class="code" data-label="code"><code class="c">优化阶梯（性价比从高到低）：
+  per-CPU 化 / RCU（消灭共享）  &gt;  换更缓存友好的结构  &gt;  改进算法复杂度
+</code></pre>
+<p><strong>HFT 对照：</strong> 用户态订单簿用 <strong>红黑树/跳表 O(log n)</strong>；内核 CFS 同理 — <strong>算法层与业务层同一套复杂度语言</strong>。加一条实操结论：改造热路径时先 <code class="c">perf c2c</code>/<code class="c">perf cache-misses</code> 看<strong>伪共享与 miss 热点</strong>，再谈换算法——多数"感觉是算法慢"的案例，最后都死在 cache line 上。</p>
 <p><strong>HFT 对照：</strong> 用户态订单簿用 <strong>红黑树/跳表 O(log n)</strong>；内核 CFS 同理 — <strong>算法层与业务层同一套复杂度语言</strong>。</p>
 <p>→ <a href="../../02-computer-systems/html/index.html">02-CSAPP 算法复杂度</a> · <a href="../../06.6-systems-performance/html/chapter-02.html#ch-2">06.6 SysPerf 方法论</a></p>
 <details>
@@ -1040,6 +1456,11 @@ struct sched_entity {
 <details>
 <summary>答案</summary>
 <p>内核 O(n) 操作在 n 很大时会导致延迟尖峰。例如早期 Linux 的 O(n) 调度器遍历所有进程找最高优先级的，1000 个进程时每次调度遍历 1000 个 task_struct → cache miss 暴增 → 延迟不可预测。O(1) 调度器和 CFS 的出现就是为了消灭 O(n)。HFT 要求确定性延迟，O(n) 是禁忌。</p>
+</details>
+<p><strong>Q3.</strong> 同是 O(n)，为什么数组顺序扫描比链表遍历快几十倍？</p>
+<details>
+<summary>答案</summary>
+<p>访存模式：数组元素连续 → CPU 预取器（prefetcher）认出顺序模式后提前把后续 cache line 载入，主存延迟被流水掩盖；链表节点散布堆中 → 每跳一次都是<strong>指针追逐（pointer chasing）</strong>，预取器无从预测，每步裸付一次 cache miss（~100ns 级）。渐近复杂度只数"步数"，不含"每步多贵"——这就是 maple tree 用多路节点压矮树高的动机：<strong>树高 = 指针追逐次数 = cache miss 次数</strong>。</p>
 </details>
 </details>
 <hr />
