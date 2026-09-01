@@ -156,7 +156,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 
 | # | 文件夹 | 定位 | Phase |
 |---|--------|------|:-----:|
-| **00** | [digital-logic-cpu](./00-digital-logic-cpu/) | 硬件底层：组合/时序/CPU 词汇 | **1** 当前 |
+| **00** | [digital-logic-cpu](./00-digital-logic-cpu/) | 硬件底层：组合/时序/CPU 词汇 | **1** |
 | **01** | [c-language](./01-c-language/) | C / 指针 / GNU-C | 2 |
 | **02** | [computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 | 2 |
 | **03** | [linux-userspace-api](./03-linux-userspace-api/) | 用户态系统编程（TLPI） | 3 |
@@ -367,9 +367,13 @@ P1 CPU 模拟器 → P2 Shell+malloc → P2.5 C 工具箱 → P3 并发 HTTP Ser
 
 ## 当前状态
 
-- **正在：** Phase1 · `00-digital-logic-cpu` + [P1 多周期 8-bit CPU](./projects/P1-cpu-simulator/)（WSL `make test`）
-- **下一站：** Phase2 · `01-c-language` → `02-computer-systems`
-- **暂不新开：** `05`/`12`/`13`/`14` 等（除非做极小对照实验）
+- **正在（多线并行）：**
+  - `03` TLPI 逐章精读笔记（主线，64 章推进中）
+  - `05` LKD 薄笔记扩写：批 A–H 已收官（Ch1/5/6/12 内存/15 进程地址空间等），剩 Ch10 同步方法 8 篇 + 散落 7 篇
+  - `09` Madieu 设备驱动 Ch12 DMA 扩展精读：12.0 基础 / 12.1 缓存一致性 / 12.2 映射 API / 12.3 scatter-gather 已完成，12.4 DMA Engine / 12.5 DTS 绑定待写
+  - `06.7` eBPF 双书笔记（Learning eBPF / BPF Performance Tools，含 ch08 XDP 增强）
+  - `01` Pointers on C（Ch7 stream model / FILE 对象）
+- **下一站：** Madieu 12.4 / 12.5 · LKD Ch10 收官 · TLPI 后续章节
 - **板卡动手清单（Pi5）：** [projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)（A→G 执行序；官方文档当工具书）
 
 ---
