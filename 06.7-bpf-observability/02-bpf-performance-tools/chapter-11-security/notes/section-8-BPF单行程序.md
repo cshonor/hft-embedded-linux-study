@@ -60,4 +60,10 @@ PID    COMM  FUNC       ...
 
 1. security_* 函数族是什么？为什么是稳定的插桩入口？
 2. pam_start 的两个参数各是什么？
+
+<details><summary>参考答案</summary>
+
+1. LSM（Linux Security Module）框架的钩子函数族，内核把每个安全敏感操作（setuid、文件权限、模块加载…）都汇聚到对应 security_* 函数裁决。稳定是因为它是 LSM 的**导出 API**（给 SELinux/AppArmor 等用的接口），改名等于改 ABI；同时天然按安全语义分类——"安全相关的全量入口清单"。
+2. arg0 = service 名（如 "sshd"、"sudo"，哪个 PAM 服务在启动会话）；arg1 = user 名。bpftrace 单行里 printf 的 `str(arg0), str(arg1)` 即输出 `sshd:bgregg` 这样的"服务:用户"对。
+</details>
 </details>

@@ -21,9 +21,24 @@
 
 交易基础设施的安全观测三板斧：**capable 建最小权限白名单、tcpconnect 守出口连接清单、bpftrace 单行做零日应急**——全部低开销可常驻管理面。
 
+## 12 个工具两层复用一览
+
+| 层 | 工具 | 来源 | 视角差异 |
+|---|---|---|---|
+| 复用性能章 | execsnoop / opensnoop / tcpconnect / tcpaccept | 第 6/8/10 章 | 问题从"慢在哪"换成"**谁干了什么**"——事件源相同，关注字段不同（UID/RET/目标地址） |
+| 本书新开发 | elfsnoop / modsnoop / shellsnoop / ttysnoop / eperm / tcpreset / capable / setuids | 第 11 章 | 性能工具不会覆盖的**安全专属语义**：ELF 身份、模块加载、会话镜像、权限拒绝、能力检查、提权 |
+
+这个"同一事件源、换关注字段"的复用模式本身就是启示：**性能工具箱的一半武器天然就是安全工具箱**——补的只是安全视角的聚合键和过滤器。
+
 <details>
 <summary>自测题</summary>
 
 1. 本章哪些工具复用自性能章节？哪些是本书新开发？
 2. BPF 安全方案必须记录什么以满足不可反悔要求？
+
+<details><summary>参考答案</summary>
+
+1. 复用：execsnoop、opensnoop、tcpconnect、tcpaccept（第 6/8/10 章工具换安全视角）。新开发：elfsnoop、modsnoop、shellsnoop、ttysnoop、eperm、tcpreset、capable、setuids——覆盖性能视角不关心的安全语义（进程身份、模块、会话、权限、能力）。
+2. **事件洪水下的丢数据记录**：BPF 的环形缓冲/map 容量有限，攻击者可用高频事件淹没观测（这是对观测工具的主动攻击）。不可反悔要求 = 缓冲溢出必须显式记录（丢了多少），计数用 per-CPU map 保证不丢——"我看到的一切都是真的，但我必须知道我漏了多少"。
+</details>
 </details>

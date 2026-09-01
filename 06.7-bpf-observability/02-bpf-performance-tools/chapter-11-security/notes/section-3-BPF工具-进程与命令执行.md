@@ -52,6 +52,19 @@ TIME      PID    COMMAND
 - **盲区**：只跟踪 bash；攻击者可装自己的 shell（如 nanoshell）躲避。
 - 发行版差异：某些 bash 用 libreadline 的 readline()——跟踪方法见 12.2.3。
 
+## 3.5 攻击者反制视角：每个工具的盲区即躲避路径
+
+安全工具的价值一半在检测、一半在**逼攻击者付出代价**。把本章工具的盲区排成表，就是攻击者的"躲避菜单"——防御方读它是为了知道自己的死角：
+
+| 工具 | 检测的路径 | 盲区（躲避方式） | 补位工具 |
+|---|---|---|---|
+| execsnoop | execve 新进程 | 注入已有进程（不经 execve）；用已有进程干坏事 | 无完美补位（这正是困难所在） |
+| elfsnoop | ELF 加载 | 脚本解释器（#! 的脚本体不经 load_elf_binary 装载恶意 ELF）；内存直接注入 | bashreadline（命令层） |
+| modsnoop | LKM 加载 | eBPF 后门、ftrace kprobe_events 滥用 | 监控 /sys/kernel/tracing 状态 |
+| bashreadline | bash readline | 换 shell（nanoshell/zsh）；非交互执行（`sh -c`）；SSH 直接 sftp | shellsnoop/ttysnoop（会话层） |
+
+方法论：**纵深防御 = 多层工具的盲区互不完全重合**。单工具可躲，全栈难躲——这是"三层审计基线"（execsnoop + bashreadline + opensnoop）的真正含义。
+
 ## HFT 关联
 
 - 三件套部署于跳板机/管理机：execsnoop（进程）+ bashreadline（命令）+ opensnoop（文件）= 管理面审计基线。
@@ -63,4 +76,11 @@ TIME      PID    COMMAND
 1. execsnoop 的检测盲区是什么？
 2. elfsnoop 为什么打印挂载点+inode？
 3. bashreadline 的探针类型与函数？两种躲避方式？
+
+<details><summary>参考答案</summary>
+
+1. 缓冲区溢出类攻击向**现存进程**注入指令执行，不创建新进程、不经 execve——execsnoop 的事件源根本不触发。它只看"新代码进场"，不看"旧进程变坏"。
+2. 路径名可伪造：攻击者可造同名文件、用控制字符伪装路径。mount+inode 是**内核对象层的唯一标识**——文件可以叫任何名字，但它是哪个物理文件（哪个挂载点上的哪个 inode）骗不了人。
+3. uretprobe 挂 `/bin/bash:readline`（返回值 = 输入的命令行，所以用 ret 而非入口探针）。躲避：①换 shell（自带的 nanoshell 等，bashreadline 的 uprobe 只认 bash 符号）；②非交互方式执行命令（脚本、`sh -c`、sftp 会话）。
+</details>
 </details>

@@ -518,6 +518,42 @@ net.core.bpf_jit_limit     = 264241152
 <li>再查可跟踪的 <strong>LSM 内核钩子</strong>（以 <code class="c">security_</code> 开头的函数）；</li>
 <li>最后用 <strong>kprobes/uprobes</strong> 插桩原始代码。</li>
 </ol>
+<h2>2.4 BPF 自身作为攻击面：三条防线（sysctl 的攻防视角）</h2>
+<p>安全章的 sysctl 不只是"性能调优"——观测工具本身也是内核攻击面，每个开关对应一类威胁：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>威胁</th>
+<th>防线</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非特权用户加载恶意 BPF（侦察/提权第一步）</td>
+<td><code class="c">unprivileged_bpf_disabled=1</code></td>
+<td>一次性开关：置 1 后运行期改回 0 被内核拒绝——管理员想临时放开都做不到，必须重启。这是刻意的防回退设计</td>
+</tr>
+<tr>
+<td>JIT 泼洒攻击（JIT 镜像中的常量被猜出后构造 ROP）</td>
+<td><code class="c">bpf_jit_harden=2</code></td>
+<td>常量盲化（每次 JIT 随机化立即数编码），代价是二次编译性能损失；折中值 1 只对非特权用户启用</td>
+</tr>
+<tr>
+<td>非特权用户灌爆 JIT 内存（DoS）</td>
+<td><code class="c">bpf_jit_limit</code></td>
+<td>到上限后非特权请求回落解释器执行——慢但不拒服务</td>
+</tr>
+<tr>
+<td>Spectre v2（BTI 注入）</td>
+<td><code class="c">CONFIG_BPF_JIT_ALWAYS_ON</code> + jit_enable=1</td>
+<td>排除解释器路径后，BPF 执行始终走可预测的 JIT 镜像</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>判断顺序：先威胁模型（谁能登录这台机器？）再定档。管理面机器 unprivileged=1 + harden=2；交易核心机 unprivileged=1 + harden=0（省每一点 CPU）。</p>
+</blockquote>
 <h2>HFT 关联</h2>
 <ul>
 <li>生产交易机基线：<code class="c">unprivileged_bpf_disabled=1</code> + <code class="c">bpf_jit_enable=1</code>（性能与 Spectre 缓解兼得）+ 视威胁模型决定 jit_harden。</li>
@@ -530,6 +566,14 @@ net.core.bpf_jit_limit     = 264241152
 <li>jit_harden 的 0/1/2 分别是什么？代价是什么？</li>
 <li>三级分析策略的顺序及理由？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><strong>一次性设置</strong>：置 1 后再写 0 被内核拒绝，运行期不可回退（需重启进内核参数）。目的是防攻击者先放开它再加载恶意 BPF。</li>
+<li>0=关闭（默认）；1=仅对非特权用户的程序启用强化；2=所有程序。机制是 JIT 常量盲化（随机化立即数编码，防 JIT 泼洒/ROP），代价是 JIT 输出变慢。注意 harden=2 时 jit_kallsyms 自动禁用（符号表会泄露盲化信息）。</li>
+<li>tracepoint/USDT（稳定、有承诺）→ LSM <code class="c">security_*</code> 钩子（安全语义内聚、比裸 kprobe 稳）→ kprobe/uprobe（任意覆盖但脆弱）。理由与性能章一致：稳定性递减、覆盖面递增，稳定优先。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-3">
@@ -578,6 +622,45 @@ net.core.bpf_jit_limit     = 264241152
 <li><strong>盲区</strong>：只跟踪 bash；攻击者可装自己的 shell（如 nanoshell）躲避。</li>
 <li>发行版差异：某些 bash 用 libreadline 的 readline()——跟踪方法见 12.2.3。</li>
 </ul>
+<h2>3.5 攻击者反制视角：每个工具的盲区即躲避路径</h2>
+<p>安全工具的价值一半在检测、一半在<strong>逼攻击者付出代价</strong>。把本章工具的盲区排成表，就是攻击者的"躲避菜单"——防御方读它是为了知道自己的死角：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>检测的路径</th>
+<th>盲区（躲避方式）</th>
+<th>补位工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>execsnoop</td>
+<td>execve 新进程</td>
+<td>注入已有进程（不经 execve）；用已有进程干坏事</td>
+<td>无完美补位（这正是困难所在）</td>
+</tr>
+<tr>
+<td>elfsnoop</td>
+<td>ELF 加载</td>
+<td>脚本解释器（#! 的脚本体不经 load_elf_binary 装载恶意 ELF）；内存直接注入</td>
+<td>bashreadline（命令层）</td>
+</tr>
+<tr>
+<td>modsnoop</td>
+<td>LKM 加载</td>
+<td>eBPF 后门、ftrace kprobe_events 滥用</td>
+<td>监控 /sys/kernel/tracing 状态</td>
+</tr>
+<tr>
+<td>bashreadline</td>
+<td>bash readline</td>
+<td>换 shell（nanoshell/zsh）；非交互执行（<code class="c">sh -c</code>）；SSH 直接 sftp</td>
+<td>shellsnoop/ttysnoop（会话层）</td>
+</tr>
+</tbody>
+</table></div>
+<p>方法论：<strong>纵深防御 = 多层工具的盲区互不完全重合</strong>。单工具可躲，全栈难躲——这是"三层审计基线"（execsnoop + bashreadline + opensnoop）的真正含义。</p>
 <h2>HFT 关联</h2>
 <ul>
 <li>三件套部署于跳板机/管理机：execsnoop（进程）+ bashreadline（命令）+ opensnoop（文件）= 管理面审计基线。</li>
@@ -590,6 +673,14 @@ net.core.bpf_jit_limit     = 264241152
 <li>elfsnoop 为什么打印挂载点+inode？</li>
 <li>bashreadline 的探针类型与函数？两种躲避方式？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>缓冲区溢出类攻击向<strong>现存进程</strong>注入指令执行，不创建新进程、不经 execve——execsnoop 的事件源根本不触发。它只看"新代码进场"，不看"旧进程变坏"。</li>
+<li>路径名可伪造：攻击者可造同名文件、用控制字符伪装路径。mount+inode 是<strong>内核对象层的唯一标识</strong>——文件可以叫任何名字，但它是哪个物理文件（哪个挂载点上的哪个 inode）骗不了人。</li>
+<li>uretprobe 挂 <code class="c">/bin/bash:readline</code>（返回值 = 输入的命令行，所以用 ret 而非入口探针）。躲避：①换 shell（自带的 nanoshell 等，bashreadline 的 uprobe 只认 bash 符号）；②非交互方式执行命令（脚本、<code class="c">sh -c</code>、sftp 会话）。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-4">
@@ -630,6 +721,18 @@ Segmentation fault
 <li>bpftrace 版：kprobe tty_write，<code class="c">$file-&gt;f_path.dentry-&gt;d_name.name</code> 与 <code class="c">$1+3</code>（跳过 "pts" 前缀）比对设备名。</li>
 <li><strong>必须指定设备</strong>：跟踪所有设备会把输出混流并与工具自身输出形成反馈回路。</li>
 </ul>
+<h2>4.3 机制：shellsnoop 的子进程覆盖怎么来的</h2>
+<p>bpftrace 两行的关键在 <code class="c">sched_process_fork</code> 维护<strong>后代集合</strong>——这是"跟踪一族进程"的通用模式：</p>
+<pre class="code" data-label="text"><code class="c">t:sched:sched_process_fork   @descendent[child_pid] = 1     ← 家谱登记
+                                       │
+t:syscalls:sys_enter_write   /@descendent[pid]/              ← 成员检查
+    printf(&quot;%s&quot;, str(args-&gt;buf, args-&gt;count))                ← 只镜像成员的写
+</code></pre>
+<ul>
+<li>fork 时孩子入册，但<strong>永不除名</strong>——PID 回收后被无关进程复用会误跟踪（细节级缺陷，实用无碍；修法：sched_process_exit 时 delete）</li>
+<li>覆盖的是"进程树"而非"TTY"：<code class="c">date</code> 的输出经 write(2) 进管道/TTY，都被镜像</li>
+<li>对照 ttysnoop：按<strong>设备</strong>过滤（tty_write + d_name 比对），按 PID 树过滤的是 shellsnoop——两个正交维度，取证时按目标选</li>
+</ul>
 <h2>HFT 关联</h2>
 <ul>
 <li>共置/托管环境下合规审计：ttysnoop 记录交易所机房驻场操作会话，满足操作留痕要求。</li>
@@ -642,6 +745,14 @@ Segmentation fault
 <li>ttysnoop 为什么必须指定设备？跟踪什么内核函数？</li>
 <li>-r 选项生成的脚本有什么用？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>sched_process_fork 维护后代 PID 集合（fork 时登记 child_pid），sys_enter_write 只放行集合内 PID——date 等 shell 子进程的 write 天然被镜像。注意这是进程树维度，与 ttysnoop 的设备维度正交。</li>
+<li>跟踪 tty_write()。不指定设备会跟踪<strong>所有</strong> TTY 的写入：①多会话输出混流不可读；②ttysnoop 自己的输出也走 TTY 写 → <strong>反馈回路</strong>（自己的输出触发自己打印，无限放大）。指定 /dev/pts/N 后两者都避免。</li>
+<li>生成 <code class="c">echo ...; sleep &lt;原始间隔&gt;</code> 序列的 shell 脚本——bash 执行它就按原始时间节奏重放整个会话，用于事后复盘操作时间线（审计/事故调查）。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-5">
@@ -675,6 +786,18 @@ Segmentation fault
 </ul>
 <h2>5.3 配合模式</h2>
 <p>opensnoop（细节）与 eperm（汇总）互补：eperm 发现异常组合 → opensnoop -x 过滤失败打开看具体路径。</p>
+<h2>5.4 机制：sys_call_table 技巧为什么值得学</h2>
+<p>eperm 的调用号→名字转换不走用户态查询表，而是直接读内核符号：</p>
+<pre class="code" data-label="text"><code class="c">kaddr(&quot;sys_call_table&quot;)              系统调用表基地址（符号解析）
+        + args-&gt;id * 8               偏移 = 调用号 × 8（64 位指针）
+        → *(kaddr)                   取该表项 = 处理函数地址
+        → ksym(...)                  地址 → 函数符号名（如 sys_openat）
+</code></pre>
+<ul>
+<li>精髓：<strong>内核自己维护的映射就是最权威的查询表</strong>——不用在用户态复制一份（复制就要随内核版本维护）</li>
+<li>代价：耦合内核布局（表项是地址不是名字，CONFIG_RETHUNK/CFI 内核上 ksym 解析可能给出别名）；跨版本工具要测</li>
+<li>这个"读内核现成数据结构代替自建映射"的手法是 bpftrace 高级单行的常见套路（对照 elfsnoop 读 <code class="c">linux_binprm</code>、capable 读 <code class="c">cap_capable</code> 参数）</li>
+</ul>
 <h2>HFT 关联</h2>
 <ul>
 <li>权限收紧回归测试：给交易进程降权（去 CAP_SYS_ADMIN 等）后跑 eperm，逐条确认无业务受阻。</li>
@@ -687,6 +810,14 @@ Segmentation fault
 <li>eperm 如何把系统调用号转成名字（不用查询表）？</li>
 <li>opensnoop 在安全分析中的两个用途？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>raw_syscalls:sys_exit——对<strong>所有</strong>系统调用的退出都触发，事件率 = 全机 syscall 率（高 I/O 机器每秒数十万）。逐事件过滤 ret 值的固定成本乘上这个频率就明显了，所以书里要求先实验室测。</li>
+<li><code class="c">ksym(*(kaddr("sys_call_table") + args-&gt;id * 8))</code>：把调用号当索引算出表项偏移，读出处理函数地址，再符号化。内核的系统调用表本身就是权威映射，无需用户态复制。</li>
+<li>①理解恶意软件行为（它打开/读写哪些文件——行为画像）；②监控敏感文件使用（如 polkitd 读 /etc/passwd + /proc/pid/status 的组合是否正常）。失败打开（ERR 列）还提供侦察行为特征——攻击者在探测文件存在性。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-6">
@@ -735,6 +866,15 @@ Segmentation fault
 <li>setuids 的入口/出口配对如何实现？</li>
 <li>setfsuid 的返回值语义与其他两个有何不同？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>kprobe cap_capable()（内核能力判定函数，所有 capable() 检查的汇聚点）。工作流：采样期跑 capable（可加 -K/-U 抓栈看调用路径）→ 汇总程序实际用到的能力集合 → 只授予这些（cap_drop ALL + cap_add 白名单），其余拒绝——最小权限从"猜"变成"测"。</li>
+<li>-V 含非审计检查（audit=0 的 capable 调用，内核热路径里大量存在、只为快速判权不写审计日志）。默认排除是因为它们噪音多、安全分析价值低——写审计日志的检查才是"值得记录的权限事件"。</li>
+<li>sys_enter_<em> 跟踪点把 uid 和参数存入以 tid 为键的 map（@uid[tid] 等），sys_exit_</em> 读出打印（含返回值），然后 delete 各键——<strong>入口存参数、出口拿结果</strong>的标准双探针模式（与 vfs_read 计时同构，见 5.17 的双探针陷阱）。</li>
+<li>setuid/setresuid 返回 0=成功；<strong>setfsuid 返回的是"之前的 fsuid"</strong>（历史 API：它原本就没有错误返回，成败要用回读 fsuid 判断）——所以 setuids 输出里 setfsuid 行的 (RET) 不是成败标志。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-7">
@@ -789,6 +929,18 @@ Segmentation fault
 </tr>
 </tbody>
 </table></div>
+<h2>7.4 机制：tcpreset 的大端翻转工作示例</h2>
+<p>网络字段按网络字节序（大端）存放在 sk_buff 里，x86/arm64 是小端机，直接读出的 16 位值是"字节交换过的"。tcpreset 源码的手工翻转：</p>
+<pre class="code" data-label="text"><code class="c">内存中 (source 字段, 2 字节):  [0x1F, 0x90]      ← 端口 8080 大端存储
+直接 u16 读取 (小端解释):       0x901F            ← 错值
+翻转: (0x901F &gt;&gt; 8) | ((0x901F &lt;&lt; 8) &amp; 0xff00)
+     = 0x0090 | 0x1F00
+     = 0x1F90                        ← 8080 ✓
+</code></pre>
+<ul>
+<li>bpftrace 早期没有 <code class="c">bswap()</code>，所以书里手写移位；现代版本可直接 <code class="c">bswap($tcp-&gt;source)</code></li>
+<li>这个例子是"从 sk_buff 手工解析头部"的缩影：定位 <code class="c">ip_hdr()</code>/<code class="c">tcp_hdr()</code>（skb-&gt;data 指针的偏移推算）+ 字节序处理 + 字段偏移——内核结构变动时全部要复核（对照 2.6 的 kprobe 脆弱性）</li>
+</ul>
 <h2>HFT 关联</h2>
 <ul>
 <li>交易机出口白名单：tcpconnect 记录所有出站连接，与预期清单（柜台/行情源）比对，越界即告警。</li>
@@ -801,6 +953,14 @@ Segmentation fault
 <li>tcpreset 检测端口扫描的原理？哪些 nmap 扫描类型可见？</li>
 <li>tcpreset 源码中如何从 sk_buff 读端口并处理字节序？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>会话（connect/accept）频率远低于包频率——繁忙网络每秒百万包但只有几百新连接。开销 ∝ 事件率，选会话事件 = 开销降 3~4 个数量级，安全信息几乎不损失（攻击总要建立会话，或在 tcpreset 这类异常信号上暴露）。</li>
+<li>扫描器把 SYN/FIN 等发到大量端口，关闭端口触发内核回 TCP RST——同一源 IP 秒级命中大量不同端口即扫描特征。SYN、FIN、NULL、Xmas 四类 nmap 扫描实测都触发 RST（关闭端口对任何无法匹配的包回 RST 是 TCP 的默认行为）。</li>
+<li>arg1 是 sk_buff 指针，按内核 ip_hdr()/tcp_hdr() 逻辑定位 TCP 头；端口字段是大端 16 位，小端机上手工移位翻转 <code class="c">(x &gt;&gt; 8) | ((x &lt;&lt; 8) &amp; 0xff00)</code>（现代 bpftrace 可用 bswap）。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-8">
@@ -859,6 +1019,13 @@ security_file_ioctl          34
 <li>security_* 函数族是什么？为什么是稳定的插桩入口？</li>
 <li>pam_start 的两个参数各是什么？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>LSM（Linux Security Module）框架的钩子函数族，内核把每个安全敏感操作（setuid、文件权限、模块加载…）都汇聚到对应 security_<em> 函数裁决。稳定是因为它是 LSM 的</em><em>导出 API</em>*（给 SELinux/AppArmor 等用的接口），改名等于改 ABI；同时天然按安全语义分类——"安全相关的全量入口清单"。</li>
+<li>arg0 = service 名（如 "sshd"、"sudo"，哪个 PAM 服务在启动会话）；arg1 = user 名。bpftrace 单行里 printf 的 <code class="c">str(arg0), str(arg1)</code> 即输出 <code class="c">sshd:bgregg</code> 这样的"服务:用户"对。</li>
+</ol>
+</details>
 </details>
       </section>
       <section class="section" id="s-9">
@@ -883,12 +1050,45 @@ security_file_ioctl          34
 </ul>
 <h2>HFT 一句话</h2>
 <p>交易基础设施的安全观测三板斧：<strong>capable 建最小权限白名单、tcpconnect 守出口连接清单、bpftrace 单行做零日应急</strong>——全部低开销可常驻管理面。</p>
+<h2>12 个工具两层复用一览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>工具</th>
+<th>来源</th>
+<th>视角差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>复用性能章</td>
+<td>execsnoop / opensnoop / tcpconnect / tcpaccept</td>
+<td>第 6/8/10 章</td>
+<td>问题从"慢在哪"换成"<strong>谁干了什么</strong>"——事件源相同，关注字段不同（UID/RET/目标地址）</td>
+</tr>
+<tr>
+<td>本书新开发</td>
+<td>elfsnoop / modsnoop / shellsnoop / ttysnoop / eperm / tcpreset / capable / setuids</td>
+<td>第 11 章</td>
+<td>性能工具不会覆盖的<strong>安全专属语义</strong>：ELF 身份、模块加载、会话镜像、权限拒绝、能力检查、提权</td>
+</tr>
+</tbody>
+</table></div>
+<p>这个"同一事件源、换关注字段"的复用模式本身就是启示：<strong>性能工具箱的一半武器天然就是安全工具箱</strong>——补的只是安全视角的聚合键和过滤器。</p>
 <details>
 <summary>自测题</summary>
 <ol>
 <li>本章哪些工具复用自性能章节？哪些是本书新开发？</li>
 <li>BPF 安全方案必须记录什么以满足不可反悔要求？</li>
 </ol>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li>复用：execsnoop、opensnoop、tcpconnect、tcpaccept（第 6/8/10 章工具换安全视角）。新开发：elfsnoop、modsnoop、shellsnoop、ttysnoop、eperm、tcpreset、capable、setuids——覆盖性能视角不关心的安全语义（进程身份、模块、会话、权限、能力）。</li>
+<li><strong>事件洪水下的丢数据记录</strong>：BPF 的环形缓冲/map 容量有限，攻击者可用高频事件淹没观测（这是对观测工具的主动攻击）。不可反悔要求 = 缓冲溢出必须显式记录（丢了多少），计数用 per-CPU map 保证不丢——"我看到的一切都是真的，但我必须知道我漏了多少"。</li>
+</ol>
+</details>
 </details>
       </section>
 

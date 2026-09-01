@@ -32,6 +32,21 @@ TIME     LADDR           LPORT  RADDR        RPORT
 | 入站暴力破解 | tcpaccept -t | 高频重试同端口 |
 | 端口扫描 | tcpreset | 同源秒级多端口 RST |
 
+## 7.4 机制：tcpreset 的大端翻转工作示例
+
+网络字段按网络字节序（大端）存放在 sk_buff 里，x86/arm64 是小端机，直接读出的 16 位值是"字节交换过的"。tcpreset 源码的手工翻转：
+
+```text
+内存中 (source 字段, 2 字节):  [0x1F, 0x90]      ← 端口 8080 大端存储
+直接 u16 读取 (小端解释):       0x901F            ← 错值
+翻转: (0x901F >> 8) | ((0x901F << 8) & 0xff00)
+     = 0x0090 | 0x1F00
+     = 0x1F90                        ← 8080 ✓
+```
+
+- bpftrace 早期没有 `bswap()`，所以书里手写移位；现代版本可直接 `bswap($tcp->source)`
+- 这个例子是"从 sk_buff 手工解析头部"的缩影：定位 `ip_hdr()`/`tcp_hdr()`（skb->data 指针的偏移推算）+ 字节序处理 + 字段偏移——内核结构变动时全部要复核（对照 2.6 的 kprobe 脆弱性）
+
 ## HFT 关联
 
 - 交易机出口白名单：tcpconnect 记录所有出站连接，与预期清单（柜台/行情源）比对，越界即告警。
@@ -43,4 +58,11 @@ TIME     LADDR           LPORT  RADDR        RPORT
 1. 为什么 tcpconnect/tcpaccept 只插桩会话事件？
 2. tcpreset 检测端口扫描的原理？哪些 nmap 扫描类型可见？
 3. tcpreset 源码中如何从 sk_buff 读端口并处理字节序？
+
+<details><summary>参考答案</summary>
+
+1. 会话（connect/accept）频率远低于包频率——繁忙网络每秒百万包但只有几百新连接。开销 ∝ 事件率，选会话事件 = 开销降 3~4 个数量级，安全信息几乎不损失（攻击总要建立会话，或在 tcpreset 这类异常信号上暴露）。
+2. 扫描器把 SYN/FIN 等发到大量端口，关闭端口触发内核回 TCP RST——同一源 IP 秒级命中大量不同端口即扫描特征。SYN、FIN、NULL、Xmas 四类 nmap 扫描实测都触发 RST（关闭端口对任何无法匹配的包回 RST 是 TCP 的默认行为）。
+3. arg1 是 sk_buff 指针，按内核 ip_hdr()/tcp_hdr() 逻辑定位 TCP 头；端口字段是大端 16 位，小端机上手工移位翻转 `(x >> 8) | ((x << 8) & 0xff00)`（现代 bpftrace 可用 bswap）。
+</details>
 </details>

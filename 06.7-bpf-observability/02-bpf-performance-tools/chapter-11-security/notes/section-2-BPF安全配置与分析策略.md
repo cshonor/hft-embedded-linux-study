@@ -45,6 +45,19 @@ net.core.bpf_jit_limit     = 264241152
 2. 再查可跟踪的 **LSM 内核钩子**（以 `security_` 开头的函数）；
 3. 最后用 **kprobes/uprobes** 插桩原始代码。
 
+## 2.4 BPF 自身作为攻击面：三条防线（sysctl 的攻防视角）
+
+安全章的 sysctl 不只是"性能调优"——观测工具本身也是内核攻击面，每个开关对应一类威胁：
+
+| 威胁 | 防线 | 说明 |
+|---|---|---|
+| 非特权用户加载恶意 BPF（侦察/提权第一步） | `unprivileged_bpf_disabled=1` | 一次性开关：置 1 后运行期改回 0 被内核拒绝——管理员想临时放开都做不到，必须重启。这是刻意的防回退设计 |
+| JIT 泼洒攻击（JIT 镜像中的常量被猜出后构造 ROP） | `bpf_jit_harden=2` | 常量盲化（每次 JIT 随机化立即数编码），代价是二次编译性能损失；折中值 1 只对非特权用户启用 |
+| 非特权用户灌爆 JIT 内存（DoS） | `bpf_jit_limit` | 到上限后非特权请求回落解释器执行——慢但不拒服务 |
+| Spectre v2（BTI 注入） | `CONFIG_BPF_JIT_ALWAYS_ON` + jit_enable=1 | 排除解释器路径后，BPF 执行始终走可预测的 JIT 镜像 |
+
+> 判断顺序：先威胁模型（谁能登录这台机器？）再定档。管理面机器 unprivileged=1 + harden=2；交易核心机 unprivileged=1 + harden=0（省每一点 CPU）。
+
 ## HFT 关联
 
 - 生产交易机基线：`unprivileged_bpf_disabled=1` + `bpf_jit_enable=1`（性能与 Spectre 缓解兼得）+ 视威胁模型决定 jit_harden。
@@ -56,4 +69,11 @@ net.core.bpf_jit_limit     = 264241152
 1. kernel.unprivileged_bpf_disabled 有什么特殊行为？
 2. jit_harden 的 0/1/2 分别是什么？代价是什么？
 3. 三级分析策略的顺序及理由？
+
+<details><summary>参考答案</summary>
+
+1. **一次性设置**：置 1 后再写 0 被内核拒绝，运行期不可回退（需重启进内核参数）。目的是防攻击者先放开它再加载恶意 BPF。
+2. 0=关闭（默认）；1=仅对非特权用户的程序启用强化；2=所有程序。机制是 JIT 常量盲化（随机化立即数编码，防 JIT 泼洒/ROP），代价是 JIT 输出变慢。注意 harden=2 时 jit_kallsyms 自动禁用（符号表会泄露盲化信息）。
+3. tracepoint/USDT（稳定、有承诺）→ LSM `security_*` 钩子（安全语义内聚、比裸 kprobe 稳）→ kprobe/uprobe（任意覆盖但脆弱）。理由与性能章一致：稳定性递减、覆盖面递增，稳定优先。
+</details>
 </details>

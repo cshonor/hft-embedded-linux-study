@@ -46,4 +46,12 @@ TIME      PID    COMM  UID   SYSCALL   ARGS(RET)
 2. -V 选项处理什么？为什么默认排除？
 3. setuids 的入口/出口配对如何实现？
 4. setfsuid 的返回值语义与其他两个有何不同？
+
+<details><summary>参考答案</summary>
+
+1. kprobe cap_capable()（内核能力判定函数，所有 capable() 检查的汇聚点）。工作流：采样期跑 capable（可加 -K/-U 抓栈看调用路径）→ 汇总程序实际用到的能力集合 → 只授予这些（cap_drop ALL + cap_add 白名单），其余拒绝——最小权限从"猜"变成"测"。
+2. -V 含非审计检查（audit=0 的 capable 调用，内核热路径里大量存在、只为快速判权不写审计日志）。默认排除是因为它们噪音多、安全分析价值低——写审计日志的检查才是"值得记录的权限事件"。
+3. sys_enter_* 跟踪点把 uid 和参数存入以 tid 为键的 map（@uid[tid] 等），sys_exit_* 读出打印（含返回值），然后 delete 各键——**入口存参数、出口拿结果**的标准双探针模式（与 vfs_read 计时同构，见 5.17 的双探针陷阱）。
+4. setuid/setresuid 返回 0=成功；**setfsuid 返回的是"之前的 fsuid"**（历史 API：它原本就没有错误返回，成败要用回读 fsuid 判断）——所以 setuids 输出里 setfsuid 行的 (RET) 不是成败标志。
+</details>
 </details>
