@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,149 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-f">
         <div class="sec-head"><div class="sec-no">F</div><h2>附录 F 物理页分配 · Physical Page Allocation</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-06.html#ch-6">./chapter-06-physical-page-allocation/</a></p>
-<!-- 走读 page_alloc.c: __alloc_pages, free_pages, buddy split/merge, gfp -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>正文 Ch6 讲了「Buddy 分配器、GFP、水位」。本附录走读 <strong><code class="c">mm/page_alloc.c</code>（189KB，mm/ 里最大文件）</strong> 的两条核心路径：<strong>分配</strong>（<code class="c">__alloc_pages</code> fast/slow path）与<strong>释放</strong>（<code class="c">free_unref_page</code> → Buddy 合并）。</p>
+<hr />
+<h2>1. 分配路径全景（fast → slow）</h2>
+<pre class="code" data-label="code"><code class="c">__alloc_pages(gfp, order, nid)                    // page_alloc.c:4390  入口
+        │
+        ▼
+get_page_from_freelist(...)                       // page_alloc.c:3048  fast path
+        │  遍历 zonelist，从 free_area 直接拿（关抢占 + per-CPU）
+        ├─ 成功 → 返回
+        │  失败（低于水位 / 没连续页）↓
+        ▼
+__alloc_pages_slowpath(...)                       // page_alloc.c:3899  slow path
+        ├─ __alloc_pages_direct_reclaim(...)      // :3640  直接回收（Ch10）
+        ├─ __alloc_pages_direct_compact(...)      // :3368  内存压缩
+        ├─ should_reclaim_retry(...)              // :3794  回收后重试判断
+        └─ __alloc_pages_may_oom(...)             // :3273  OOM 兜底（Ch13）
+</code></pre>
+<p><strong>走读要点</strong>：fast path（<code class="c">get_page_from_freelist</code>）<strong>尽量不开锁、不回收</strong>，从 per-CPU 缓存（<code class="c">pcp</code>）或 <code class="c">free_area</code> 直接拿；只有 fast path 失败才进 slow path，依次试「回收 → 压缩 → 重试 → OOM」。这解释了为什么「分配延迟」在正常情况下是纳秒级（fast path 命中），一旦进入 slow path 就变成毫秒级尖刺。</p>
+<h2>2. Buddy 拿页：<code class="c">__rmqueue_smallest</code>（:1565）</h2>
+<p>从 <code class="c">free_area[order]</code> 链表取一个空闲块，若 order 不够则<strong>向上拆分</strong>：</p>
+<pre class="code" data-label="code"><code class="c">__rmqueue_smallest(zone, order, migratetype)      // :1565
+        │  从 free_area[order] 取头
+        │  若 free_area[order] 空，向上找更大的 order
+        ▼
+expand(...)                                        // 把大块拆成小块，回填低 order 链表
+</code></pre>
+<p><strong>走读要点</strong>：这是 Buddy「分裂」的实现——要 order-0 页但只有 order-3 空闲块时，把 order-3 拆成 8 个 order-0，取 1 个、其余 7 个挂回链表。</p>
+<h2>3. 释放路径：<code class="c">free_unref_page</code> → 合并（:2397）</h2>
+<pre class="code" data-label="C"><code class="c">void free_unref_page(struct page *page, unsigned int order)   // :2397
+{
+    ... free_unref_page_prepare(page, pfn, order);            // :2307 校验
+    free_unref_page_commit(zone, pcp, page, migratetype, order);  // :2367 先入 per-CPU
+        │  pcp 满了才 flush 到 Buddy
+        ▼
+__free_one_page(page, pfn, zone, order, migratetype, ...)    // :763  Buddy 合并
+        │  与「伙伴页」检查是否都空闲 → 合并升 order，循环
+</code></pre>
+<p><strong>走读要点</strong>：释放<strong>先入 per-CPU 缓存</strong>（<code class="c">pcp</code>），攒够一批才 flush 回 Buddy，减少锁竞争（Ch2 §5 的 <code class="c">per_cpu_pages</code>）。真正的 Buddy 合并（<code class="c">__free_one_page</code>）只在 flush 时发生——与相邻空闲伙伴页<strong>递归合并升 order</strong>。</p>
+<h2>4. 三条回退路径的定位</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>行号</th>
+<th>触发条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__alloc_pages_direct_reclaim</code></td>
+<td>:3640</td>
+<td>水位过低，进程自己回收（Ch10 direct reclaim）</td>
+</tr>
+<tr>
+<td><code class="c">__alloc_pages_direct_compact</code></td>
+<td>:3368</td>
+<td>高阶分配碎片化，压缩出连续页</td>
+</tr>
+<tr>
+<td><code class="c">__alloc_pages_may_oom</code></td>
+<td>:3273</td>
+<td>前两者都失败，走 OOM（Ch13）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：这三条路径都在 <code class="c">__alloc_pages_slowpath</code> 里<strong>按顺序</strong>尝试，且受 <code class="c">gfp_mask</code> 控制（<code class="c">__GFP_DIRECT_RECLAIM</code>/<code class="c">__GFP_KSWAPD_RECLAIM</code> 决定是否允许）。HFT 里「一次分配触发了 direct reclaim」的延迟尖刺，就源自 :3640 这条路径。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fast/slow path 两段</td>
+<td>Ch6（分配流程）</td>
+</tr>
+<tr>
+<td><code class="c">__rmqueue_smallest</code> 分裂</td>
+<td>Ch6（Buddy split）</td>
+</tr>
+<tr>
+<td><code class="c">__free_one_page</code> 合并</td>
+<td>Ch6（Buddy merge）</td>
+</tr>
+<tr>
+<td>direct reclaim/compact/OOM</td>
+<td>Ch10/Ch13（回收/OOM）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>观察分配路径</td>
+<td><code class="c">perf probe __alloc_pages_slowpath</code> 统计「多少次分配进了 slow path」，是延迟尖刺的直接指标</td>
+</tr>
+<tr>
+<td>避免高阶分配</td>
+<td>order&gt;0 的分配更容易碎片化触发 compact，HFT 尽量用 order-0（4K）</td>
+</tr>
+<tr>
+<td>理解 pcp</td>
+<td>per-CPU 缓存让「释放后再分配」几乎零锁，但跨 CPU 迁移会失效</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-E.html#app-E">appendix-E-启动内存分配器.md</a></li>
 <li>下一章：<a href="appendix-G.html#app-G">appendix-G-非连续内存分配.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">__alloc_pages</code> 的 fast path 和 slow path 分别是哪个函数？</strong></p>
+<p>fast path 是 <code class="c">get_page_from_freelist</code>（:3048），slow path 是 <code class="c">__alloc_pages_slowpath</code>（:3899）。</p>
+<p><strong>Q2：fast path 为什么快？</strong></p>
+<p>尽量不开锁、不回收，从 per-CPU 缓存（pcp）或 <code class="c">free_area</code> 直接拿；只有失败才进 slow path 试回收/压缩/OOM。</p>
+<p><strong>Q3：<code class="c">__rmqueue_smallest</code> 怎么处理「order 不够」？</strong></p>
+<p>从 <code class="c">free_area[order]</code> 取头；若该 order 为空，向上找更大的空闲块，用 <code class="c">expand</code> 拆成小块、取一个、其余回填低 order 链表。</p>
+<p><strong>Q4：释放页为什么先入 per-CPU 缓存而不是直接回 Buddy？</strong></p>
+<p>减少锁竞争（攒批 flush）；真正的 Buddy 合并（<code class="c">__free_one_page</code>，:763）只在 flush 时发生，与空闲伙伴页递归合并升 order。</p>
+<p><strong>Q5：HFT 里「一次分配触发 direct reclaim」的延迟尖刺源自哪条路径？</strong></p>
+<p><code class="c">__alloc_pages_direct_reclaim</code>（:3640）——slow path 里进程自己回收内存，是毫秒级延迟尖刺的直接来源。</p>
+</details>
       </section>
 
 

@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,169 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-e">
         <div class="sec-head"><div class="sec-no">E</div><h2>附录 E 启动内存分配器 · Boot Memory Allocator</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-05.html#ch-5">./chapter-05-boot-memory-allocator/</a>（现代源码对照 <strong>memblock</strong>）</p>
-<!-- 走读 bootmem/memblock、mem_init 移交 page_alloc -->
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 E 走读 <strong>bootmem</strong>（位图分配器）。但 <strong>bootmem 已在 v4.20 删除</strong>（Ch5 已核验），v6.6 只剩 <strong>memblock</strong>（<code class="c">mm/memblock.c</code>，64KB）。本附录走读 memblock 的代码组织——它是「区间表」而非「位图」。</p>
+<hr />
+<h2>1. 三结构体（include/linux/memblock.h）</h2>
+<pre class="code" data-label="C"><code class="c">enum memblock_flags {                     // memblock.h:44
+    MEMBLOCK_NONE, MEMBLOCK_HOTPLUG, MEMBLOCK_MIRROR, MEMBLOCK_NOMAP,
+};
 
+struct memblock_region {                  // memblock.h:59  一段区间
+    phys_addr_t base;  phys_addr_t size;  // 起址 + 大小
+    enum memblock_flags flags;  int nid;  // 属性 + NUMA 节点
+};
+
+struct memblock_type {                    // memblock.h:76  一类区间集合
+    unsigned long cnt, max;               // 已用 / 容量
+    phys_addr_t total_size;               // 总大小
+    struct memblock_region *regions;      // 区间数组（可动态扩容）
+};
+
+struct memblock {                         // memblock.h:91  全局单例
+    struct memblock_type memory;          // 「可用内存」表
+    struct memblock_type reserved;        // 「已保留」表
+    phys_addr_t current_limit;            // 分配上限
+    bool bottom_up;                       // 分配方向（自低向高）
+};
+</code></pre>
+<p><strong>核心设计</strong>：内存用<strong>两表模型</strong>描述——<code class="c">memory</code>（哪些物理区间可用）+ <code class="c">reserved</code>（哪些被占用）。「可用」= <code class="c">memory</code> 减去 <code class="c">reserved</code> 的差集。</p>
+<h2>2. 核心 API：加区间与保留（mm/memblock.c）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>行号</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">memblock_add</code></td>
+<td>:727</td>
+<td>向 <code class="c">memory</code> 表加一段可用区间</td>
+</tr>
+<tr>
+<td><code class="c">memblock_add_node</code></td>
+<td>:705</td>
+<td>带 NUMA 节点的版本</td>
+</tr>
+<tr>
+<td><code class="c">memblock_reserve</code></td>
+<td>:871</td>
+<td>向 <code class="c">reserved</code> 表标记占用（保护内核/initrd/DTS）</td>
+</tr>
+<tr>
+<td><code class="c">memblock_phys_alloc</code></td>
+<td>:406</td>
+<td>分配物理地址（返回 phys_addr_t）</td>
+</tr>
+<tr>
+<td><code class="c">memblock_alloc_try_nid</code></td>
+<td>:1631</td>
+<td>分配并返回虚址（清零 + 按节点）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：<code class="c">memblock_add</code> 和 <code class="c">memblock_reserve</code> 都收敛到内部 <code class="c">memblock_add_range</code>——把新区间插入数组，<strong>相邻则合并</strong>、重叠则拆。这是「区间表」相对「位图」的优势：内存碎片少时数组很短。</p>
+<h2>3. 退役移交 Buddy：<code class="c">memblock_free_all</code>（:2174）</h2>
+<pre class="code" data-label="code"><code class="c">memblock_free_all()                       // memblock.c:2174
+        │
+        ▼
+free_low_memory_core_early()              // memblock.c:2126
+        │  遍历 memory 表的每个区间
+        ▼
+__free_pages_core(...)                    // 逐页交给 Buddy（page_alloc）
+</code></pre>
+<p><strong>走读要点</strong>：这是「启动分配器 → 运行时分配器」的<strong>移交点</strong>。移交后 memblock 不再分配，<code class="c">page_alloc.c</code> 接管。Ch5 §4 讲的「memblock 退役四步」就是这里。</p>
+<h2>4. 为什么 bootmem 被 memblock 取代</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>bootmem（已删）</th>
+<th>memblock（v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数据结构</td>
+<td>位图（每页 1 bit）</td>
+<td>区间表（base+size）</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>与总内存成正比</td>
+<td>与区间数成正比（通常远小）</td>
+</tr>
+<tr>
+<td>分配粒度</td>
+<td>页</td>
+<td>任意大小（向下对齐）</td>
+</tr>
+<tr>
+<td>删除版本</td>
+<td>v4.20（Mike Rapoport 主导）</td>
+<td>现存</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>位图的致命伤</strong>：物理内存越大、位图越大，且「查找连续空闲页」要扫描位图。区间表天然表达「连续区间」，启动阶段内存分布规整时优势明显。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>三结构体字段</td>
+<td>Ch5 §1（memblock.h:59-98 字段级）</td>
+</tr>
+<tr>
+<td>add/reserve 两表模型</td>
+<td>Ch5 §2（<code class="c">/proc/iomem</code> 观察法）</td>
+</tr>
+<tr>
+<td><code class="c">memblock_free_all</code> 移交</td>
+<td>Ch5 §4（四步退役）</td>
+</tr>
+<tr>
+<td>bootmem 删除时间线</td>
+<td>Ch5 §5（v4.20 终结）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<p><strong>嵌入式启动优化</strong>：memblock 的区间表在「内存规整」的嵌入式板子上极短，<code class="c">memblock_add</code> 的合并逻辑几乎零开销；但若 DTS 碎片化严重，<code class="c">reserved</code> 表会膨胀，启动时 <code class="c">memblock_alloc</code> 的线性扫描变慢——排查启动慢时可先看 <code class="c">/proc/iomem</code> 的 reserved 片段数。</p>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-D.html#app-D">appendix-D-进程地址空间.md</a></li>
 <li>下一章：<a href="appendix-F.html#app-F">appendix-F-物理页分配.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：memblock 用哪两个表描述内存？「可用」怎么算？</strong></p>
+<p><code class="c">memory</code>（可用区间）+ <code class="c">reserved</code>（占用区间）两表；「可用」= memory 减 reserved 的差集。</p>
+<p><strong>Q2：<code class="c">memblock_add</code> 和 <code class="c">memblock_reserve</code> 内部收敛到哪个函数？做了什么？</strong></p>
+<p>都收敛到 <code class="c">memblock_add_range</code>，把新区间插入数组，相邻合并、重叠拆。</p>
+<p><strong>Q3：<code class="c">memblock_free_all</code> 的移交点在哪？</strong></p>
+<p><code class="c">memblock_free_all</code>（:2174）→ <code class="c">free_low_memory_core_early</code>（:2126）→ <code class="c">__free_pages_core</code> 逐页交给 Buddy，之后 page_alloc 接管。</p>
+<p><strong>Q4：bootmem 位图相对 memblock 区间表的致命伤是什么？</strong></p>
+<p>位图大小与总内存成正比，且查找连续空闲页要扫描位图；区间表大小与区间数成正比（通常远小），天然表达连续性。</p>
+<p><strong>Q5：bootmem 在哪一版被删除？谁主导？</strong></p>
+<p>v4.20，Mike Rapoport 主导（Ch5 §5）。</p>
+</details>
       </section>
 
 

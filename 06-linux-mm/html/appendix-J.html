@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,173 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-j">
         <div class="sec-head"><div class="sec-no">J</div><h2>附录 J 页框回收 · Page Frame Reclamation</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6（<code class="c">mm/vmscan.c</code>，8148 行）</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-10.html#ch-10">./chapter-10-page-frame-reclamation/</a>（现代 <strong><code class="c">mm/vmscan.c</code></strong>）</p>
-<!-- 走读 vmscan.c: shrink_lruvec, balance_pgdat, kswapd -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 J 走读 <strong>LRU 链表 + kswapd + balance_pgdat</strong>。但 v6.6 发生两次换代：<strong>① 回收单位从 <code class="c">struct page</code> 全面迁移到 <code class="c">struct folio</code></strong>；<strong>② 新增 MGLRU（多代 LRU）路径，与经典 LRU 链表并存</strong>（<code class="c">lru_gen_enabled()</code> 时走新路径）。本附录走读 v6.6 的两条回收主线：<strong>后台 kswapd</strong> 与 <strong>前台 direct reclaim</strong>，并拆解经典 <code class="c">shrink_lruvec</code> 与 MGLRU 的分工。</p>
+<hr />
+<h2>1. 回收的两条腿</h2>
+<pre class="code" data-label="code"><code class="c">内存不足
+   ├─ 后台腿：kswapd 内核线程（每 NUMA 节点一个）
+   │      kswapd()                          // vmscan.c:7713
+   │        └─ balance_pgdat()              // :7391  水位检测 + 触发回收
+   │             └─ kswapd_try_to_sleep()   // :7616  水位恢复后休眠
+   │
+   └─ 前台腿：direct reclaim（分配页失败时调用方自己回收）
+          try_to_free_pages()               // :7041
+            └─ do_try_to_free_pages()       // :6823
+                 └─ shrink_node()           // :6519
+                      └─ shrink_node_memcgs()  // :6461（遍历 memcg）
+                           └─ shrink_lruvec()  // :6273  ← 核心
+</code></pre>
+<p><strong>走读要点</strong>：kswapd 是<strong>异步预防</strong>（水位低于阈值时提前回收，不阻塞分配者），direct reclaim 是<strong>同步兜底</strong>（分配者自己下场回收，会阻塞并拉长分配延迟）。这正是 HFT 最忌讳的「分配路径上的隐式回收」。</p>
+<hr />
+<h2>2. 核心结构 <code class="c">struct scan_control</code> 与 LRU 组织</h2>
+<p><strong><code class="c">struct scan_control</code></strong>（include/linux/swap.h）是回收任务的「控制块」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">nr_to_reclaim</code></td>
+<td>本轮要回收多少页</td>
+</tr>
+<tr>
+<td><code class="c">priority</code></td>
+<td>优先级（<code class="c">DEF_PRIORITY</code>=12 起，逐轮下降；越低扫得越狠）</td>
+</tr>
+<tr>
+<td><code class="c">reclaim_idx</code></td>
+<td>从哪个 zone 开始回收</td>
+</tr>
+<tr>
+<td><code class="c">may_swap</code> / <code class="c">may_writepage</code></td>
+<td>是否允许换出 / 写回脏页</td>
+</tr>
+<tr>
+<td><code class="c">swappiness</code></td>
+<td>anon 与 file 的回收倾向（0~200，默认 60）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>LRU 五链表</strong>（<code class="c">enum lru_list</code>）：<code class="c">LRU_INACTIVE_ANON</code> / <code class="c">LRU_ACTIVE_ANON</code> / <code class="c">LRU_INACTIVE_FILE</code> / <code class="c">LRU_ACTIVE_FILE</code> / <code class="c">LRU_UNEVICTABLE</code>。anon（匿名页，换出到 swap）与 file（文件页，脏则写回、干净直接丢弃）<strong>分开</strong>管理，因为回收代价不同。</p>
+<hr />
+<h2>3. 经典路径：<code class="c">shrink_lruvec</code>（:6273）</h2>
+<pre class="code" data-label="code"><code class="c">shrink_lruvec(lruvec, sc)                    // :6273
+   ├─ lru_gen_enabled() 且非 root reclaim？
+   │     └─ lru_gen_shrink_lruvec()          // :5497  ← 走 MGLRU，直接返回
+   ├─ get_scan_count(lruvec, sc, nr)         // :3025 按 swappiness 算 anon/file 各扫多少
+   ├─ while (还有待扫的链表)
+   │     └─ shrink_list(lru, nr_to_scan, lruvec, sc)   // :2844
+   │           ├─ 是 active  → shrink_active_list()    // :2688 降级到 inactive
+   │           └─ 是 inactive → shrink_inactive_list()  // :2568 真正回收
+   │                 └─ isolate_lru_folios()           // :2304 从 LRU 摘出 folio
+   │                       └─ shrink_folio_list()      // :1705 逐个写回/换出/释放
+   └─ 若 anon inactive 过低 → shrink_active_list() 再平衡
+</code></pre>
+<p><strong><code class="c">get_scan_count</code>（:3025）</strong> 是回收的「调度器」：根据 <code class="c">swappiness</code>、anon/file 比例、是否有 swap 空间，算出每个链表要扫多少页。<strong><code class="c">shrink_folio_list</code>（:1705）</strong> 是真正的终结者——对每个摘出的 folio 判断：干净 file → 直接释放；脏 file → 写回；anon → 换出到 swap；被锁/正在写回 → 放回 LRU（<code class="c">activate</code>）。</p>
+<hr />
+<h2>4. MGLRU 路径：多代 LRU（<code class="c">lru_gen_shrink_lruvec</code>）</h2>
+<p>v6.6 引入 <strong>MGLRU（Multi-Gen LRU）</strong>，用「代（generation）+ 层（tier）」替代「active/inactive 二分类 + 两次访问激活」：</p>
+<pre class="code" data-label="code"><code class="c">lru_gen_shrink_lruvec()                      // :5497
+   └─ evict_folios()                         // :5165
+        └─ scan_folios()                     // :4999
+             ├─ gen = min_seq[type]          // 从最老一代开始扫
+             ├─ sort_folio()                 // :4896 按 tier 分类
+             └─ isolate_folio()              // :4965 摘出待回收 folio
+</code></pre>
+<p><strong>核心数据 <code class="c">struct lru_gen_folio</code></strong>（<code class="c">lruvec-&gt;lrugen</code>）：每个 type（anon/file）× 每个 zone 的<strong>多代环形链表</strong> <code class="c">folios[gen][type][zone]</code>，<code class="c">min_seq</code>/<code class="c">max_seq</code> 标记代际范围。<code class="c">get_type_to_scan</code>（:5095）用 <strong>refault 控制误差</strong>（<code class="c">positive_ctrl_err</code>）动态决定先扫 anon 还是 file、扫到哪一代——比经典路径的静态 swappiness 更自适应。</p>
+<p><strong>走读要点</strong>：MGLRU 的核心洞察是 <strong>refault（缺页重新读回）是「回收错了」的信号</strong>——刚被回收又被访问的页不该那么早回收。它用 PID 控制器式反馈（tier 划分）把「容易 refault 的页」保留得更久。</p>
+<hr />
+<h2>5. 两处关键细节</h2>
+<p><strong>① <code class="c">shrink_slab</code>（:1033）</strong>：回收除了换页，还压缩 slab 缓存（dcache/icache），通过附录 H 的 <code class="c">shrinker</code> 回调 <code class="c">count_objects</code>/<code class="c">scan_objects</code>。</p>
+<p><strong>② <code class="c">reclaim_pages</code>（:2811）</strong>：批量回收一个 folio 列表的公开 API，被 madvise(MADV_PAGEOUT) 等调用——用户态可主动触发回收。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kswapd / balance_pgdat</td>
+<td>Ch10 §2（后台回收）</td>
+</tr>
+<tr>
+<td>try_to_free_pages / direct reclaim</td>
+<td>Ch10 §3（直接回收）</td>
+</tr>
+<tr>
+<td>shrink_lruvec / get_scan_count</td>
+<td>Ch10 §4（扫描调度）</td>
+</tr>
+<tr>
+<td>shrink_folio_list</td>
+<td>Ch10 §5（页终结）</td>
+</tr>
+<tr>
+<td>MGLRU</td>
+<td>Ch10 §6（版本断崖）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>避免 direct reclaim</td>
+<td>分配路径上的 <code class="c">try_to_free_pages</code> 会阻塞并引入不可预期延迟——预热内存、<code class="c">mlock</code> 关键页、预留大页</td>
+</tr>
+<tr>
+<td>kswapd 抖动</td>
+<td>观察 <code class="c">/proc/vmstat</code> 的 <code class="c">pgscan_*</code>/<code class="c">pgsteal_*</code>，kswapd 频繁唤醒说明水位设置或 workload 有问题</td>
+</tr>
+<tr>
+<td>MGLRU</td>
+<td>新内核（≥6.1）默认行为改变，升级内核后需重新验证「哪些页会被先回收」对延迟尾部的冲击</td>
+</tr>
+<tr>
+<td><code class="c">vm.swappiness</code></td>
+<td>对 HFT（大量匿名内存）调低 swappiness 减少无谓换出</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-I.html#app-I">appendix-I-高端内存管理.md</a></li>
 <li>下一章：<a href="appendix-K.html#app-K">appendix-K-交换管理.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：kswapd 和 direct reclaim 的分工？</strong></p>
+<p>kswapd 是后台内核线程，水位低于阈值时<strong>异步预防性回收</strong>（balance_pgdat :7391），不阻塞分配者；direct reclaim 是分配失败时<strong>调用者同步自己回收</strong>（try_to_free_pages :7041），会阻塞分配路径。</p>
+<p><strong>Q2：anon 和 file 页回收的区别？</strong></p>
+<p>anon（匿名页）只能换出到 swap（有 I/O 成本）；file（文件页）脏则写回、干净直接丢弃。所以两者分链表管理，回收代价不同。</p>
+<p><strong>Q3：<code class="c">get_scan_count</code>（:3025）干什么？</strong></p>
+<p>回收的「调度器」：根据 <code class="c">swappiness</code>、anon/file 比例、是否有 swap 空间，算出每个 LRU 链表本轮要扫多少页。</p>
+<p><strong>Q4：<code class="c">shrink_folio_list</code>（:1705）如何处置摘出的 folio？</strong></p>
+<p>干净 file → 直接释放；脏 file → 写回；anon → 换出到 swap；被锁或正在写回 → 放回 LRU（activate，暂不回收）。</p>
+<p><strong>Q5：MGLRU 相比经典 active/inactive LRU 的核心改进？</strong></p>
+<p>用「代 + tier + refault 反馈」替代「二分类 + 两次访问激活」。refault 被当作「回收错了」的信号，通过 PID 式控制动态决定先扫 anon/file 及扫到哪一代，比静态 swappiness 更自适应。</p>
+</details>
       </section>
 
 

@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,211 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-i">
         <div class="sec-head"><div class="sec-no">I</div><h2>附录 I 高端内存管理 · High Memory Management</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6（<code class="c">mm/highmem.c</code>）</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-09.html#ch-9">./chapter-09-high-memory-management/</a>（x86_64 多为背景）</p>
-<!-- 走读 highmem.c: kmap, bounce, 历史 emergency pools -->
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 I 走读 <strong><code class="c">kmap</code> / <code class="c">bounce buffer</code> / 历史 emergency pools</strong>。但 v6.6 已发生两次大换代：<strong>bounce buffer 被彻底删除</strong>（由 <code class="c">swiotlb</code> 接管 DMA 无法触达的内存），<strong><code class="c">kmap_atomic</code> 被 <code class="c">kmap_local_page</code> 取代</strong>。本附录走读 v6.6 <code class="c">mm/highmem.c</code>（816 行）中<strong>幸存下来的两套映射机制</strong>：老式 <code class="c">kmap_high</code>（PKMAP 固定映射）与现代 <code class="c">kmap_local</code>（per-CPU fixmap 临时映射）。</p>
+<blockquote>
+<p><strong>关键前提</strong>：高端内存是 <strong>32 位系统</strong>的产物。x86_64 上 <code class="c">CONFIG_HIGHMEM=n</code>，整个 <code class="c">#ifdef CONFIG_HIGHMEM</code> 块（highmem.c:52–448）被编译器整段删掉，只剩 <code class="c">kmap_local</code> 机制（:450 起）。所以本节对 x86_64 用户主要是「历史机制 + 为什么现代内核不再需要它」的理解；对 <strong>32 位嵌入式（ARM32）仍是活跃代码</strong>。</p>
+</blockquote>
+<hr />
+<h2>1. 为什么会有「高端内存」</h2>
+<p>32 位内核虚拟地址 4GB 按 <strong>3:1 划分</strong>：低 3GB 给用户进程，高 1GB（从 <code class="c">PAGE_OFFSET</code> 起）给内核。内核这 1GB 里，用「直接映射（direct map）」线性覆盖物理内存——但只能覆盖 ≤896MB（<code class="c">high_memory</code> 上限）。<strong>物理内存超过 896MB 的部分就是「high memory」</strong>，内核无法用固定虚拟地址直接访问，必须<strong>临时建立映射</strong>。</p>
+<pre class="code" data-label="code"><code class="c">32 位虚拟地址空间（4GB）
+┌─────────────────────────────┐ 0xFFFFFFFF
+│  内核空间 (1GB)              │
+│  ┌───────────────────────┐  │
+│  │ fixmap / PKMAP 临时映射 │  │ ← 访问 highmem 的唯一入口
+│  │ vmalloc 区域            │  │
+│  ├───────────────────────┤  │  high_memory (896MB 边界)
+│  │ direct map (≤896MB)    │  │ ← 线性映射，只能到这
+│  └───────────────────────┘  │
+├─────────────────────────────┤ PAGE_OFFSET (0xC0000000)
+│  用户空间 (3GB)              │
+└─────────────────────────────┘ 0x00000000
+</code></pre>
+<p><strong>判断入口</strong>：<code class="c">is_highmem(zone)</code> 判断一个 zone 是否属于高端区；<code class="c">__nr_free_highpages</code>（highmem.c:117）统计高端空闲页；<code class="c">_totalhigh_pages</code>（:114）记录高端页总数。</p>
+<hr />
+<h2>2. 老式映射：<code class="c">kmap_high</code> / <code class="c">kunmap_high</code>（PKMAP）</h2>
+<pre class="code" data-label="code"><code class="c">kmap(page)  →  kmap_high(page)              // highmem.c:296
+    │
+    ├─ lock_kmap()                            // 全局 kmap_lock spinlock (:131)
+    ├─ vaddr = page_address(page)             // 已映射？直接返回
+    │    └─ 未映射 → map_new_virtual(page)    // 在 PKMAP 区抢一个 slot
+    ├─ pkmap_count[PKMAP_NR(vaddr)]++         // 引用计数 +1 (:308)
+    └─ unlock_kmap()
+</code></pre>
+<p><strong>核心数据结构</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>行号</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pkmap_count[LAST_PKMAP]</code></td>
+<td>:130</td>
+<td>每个 PKMAP slot 的引用计数（含虚拟别名颜色）</td>
+</tr>
+<tr>
+<td><code class="c">kmap_lock</code></td>
+<td>:131</td>
+<td>全局自旋锁，<code class="c">__cacheline_aligned_in_smp</code></td>
+</tr>
+<tr>
+<td><code class="c">pkmap_page_table</code></td>
+<td>:133</td>
+<td>PKMAP 区对应的页表</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：</p>
+<ol>
+<li><strong>会 sleep 的 kmap</strong>。<code class="c">map_new_virtual</code> 在 PKMAP 区（<code class="c">PKMAP_ADDR(0)~PKMAP_ADDR(LAST_PKMAP)</code>）没有空闲 slot 时，会<strong>挂到等待队列 sleep</strong>，直到有人 <code class="c">kunmap</code> 腾出 slot（<code class="c">get_pkmap_wait_queue_head</code> :106 的 <code class="c">pkmap_map_wait</code>）。所以 <code class="c">kmap()</code> <strong>只能在进程上下文调用，不能在原子/中断上下文用</strong>。</li>
+<li><strong>引用计数防止「过早 flush」</strong>。<code class="c">kmap_high</code> 对同一 slot 反复 <code class="c">kmap</code> 会让 <code class="c">pkmap_count</code> 递增（:308，并 <code class="c">BUG_ON(count &lt; 2)</code> 断言）；<code class="c">kunmap_high</code>（:348）递减，减到 1 时若有等待者才 <code class="c">wake_up</code>（:387）。<strong>计数不为 0 就不会 TLB flush</strong>——保证映射被释放干净才可能回收。</li>
+<li><strong>耗尽时刷新</strong>：<code class="c">flush_all_zero_pkmaps</code>（:185）把 <code class="c">pkmap_count==0</code> 的 slot 全部做 <code class="c">flush_tlb_kernel_range</code>，腾出空间给新映射。</li>
+</ol>
+<hr />
+<h2>3. 现代映射：<code class="c">kmap_local_page</code> / <code class="c">kunmap_local</code>（fixmap）</h2>
+<p><code class="c">kmap_local_page()</code> 是 v6.6 的<strong>推荐临时映射</strong>，替代了旧的 <code class="c">kmap_atomic()</code>。核心是 <strong>per-task 的映射栈</strong> <code class="c">current-&gt;kmap_ctrl</code>，用 <code class="c">fixmap</code> 区的一段地址做临时窗口：</p>
+<pre class="code" data-label="code"><code class="c">kmap_local_page(page)
+    → __kmap_local_page_prot(page, prot)       // highmem.c:564
+         ├─ 非 highmem 页 → 直接 page_address() 返回（:573）
+         ├─ 尝试 arch_kmap_local_high_get()（:577，多数架构返回 NULL）
+         └─ __kmap_local_pfn_prot(pfn, prot)   // :538
+              ├─ migrate_disable(); preempt_disable()   // :548-549
+              ├─ idx = kmap_local_idx_push()            // 栈顶入栈 :464
+              ├─ vaddr = __fix_to_virt(FIX_KMAP_BEGIN + idx)  // :551
+              ├─ 写 PTE 建立映射（:555）
+              └─ preempt_enable()  返回 vaddr
 
+kunmap_local(vaddr)
+    → kunmap_local_indexed(vaddr)              // :585
+         ├─ pte_clear 撤销映射（:615）
+         └─ kmap_local_idx_pop()               // 栈顶出栈 :618
+</code></pre>
+<p><strong>核心数据结构 <code class="c">struct kmap_ctrl</code></strong>（per-task，include/linux/sched.h）：<code class="c">idx</code>（当前栈深）+ <code class="c">pteval[]</code>（已建映射的 PTE 缓存数组）。</p>
+<p><strong>走读要点</strong>：</p>
+<ol>
+<li><strong>不可 sleep，但可嵌套</strong>。<code class="c">kmap_local</code> 只关抢占（<code class="c">preempt_disable</code>），不拿锁、不 sleep，所以<strong>原子/中断上下文都能用</strong>；<code class="c">kmap_ctrl.idx</code> 的入栈/出栈（:464/:477）让同一个进程可以<strong>嵌套多层 kmap_local</strong>，每层占用一个递增的 fixmap slot。</li>
+<li><strong>进程切换时强制清理</strong>：<code class="c">__kmap_local_sched_out</code>（:634）在 <code class="c">switch_to</code> 前被调用，把当前进程残留的 kmap_local 映射全部清掉——因为 fixmap 是全局共享窗口，<strong>不能跨进程泄漏</strong>。</li>
+<li><strong>非 highmem 页是零开销快路径</strong>：<code class="c">__kmap_local_page_prot</code> 对 <code class="c">!PageHighMem(page)</code> 直接 <code class="c">page_address()</code> 返回（:573），<strong>根本不建立映射</strong>。这也是为什么 x86_64 上 kmap_local 几乎没成本。</li>
+</ol>
+<hr />
+<h2>4. 两个版本断崖</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>旧机制（原书附录 I）</th>
+<th>v6.6 现状</th>
+<th>替代者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">bounce buffer</code>（BLK_BOUNCE_HIGH）</td>
+<td><strong>彻底删除</strong></td>
+<td><code class="c">swiotlb</code>（软件 I/O TLB，处理 DMA 无法访问高地址内存）</td>
+</tr>
+<tr>
+<td><code class="c">kmap_atomic()</code></td>
+<td><strong>删除</strong>（<code class="c">CONFIG_KMAP_LOCAL</code>）</td>
+<td><code class="c">kmap_local_page()</code> / <code class="c">kunmap_local()</code></td>
+</tr>
+<tr>
+<td><code class="c">kmap()</code> / <code class="c">kunmap()</code></td>
+<td>仅 <code class="c">CONFIG_HIGHMEM</code>（32 位）存活</td>
+<td>x86_64 上退化为 <code class="c">page_address()</code></td>
+</tr>
+<tr>
+<td>emergency pools（紧急内存池）</td>
+<td>概念重构</td>
+<td>mempool / 其他</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>典型消费者</strong>：<code class="c">zero_user_segments</code>（:392）用 <code class="c">kmap_local_page</code> 逐页把用户页片段清零（<code class="c">memset</code>），配合 <code class="c">flush_dcache_page</code>（:438）——这是「高端内存页只能临时映射后才能访问」的经典用例。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高端内存成因（3:1 划分 + 896MB 边界）</td>
+<td>Ch9（高端内存背景）</td>
+</tr>
+<tr>
+<td><code class="c">kmap_high</code> / PKMAP</td>
+<td>Ch9 §2（固定映射）</td>
+</tr>
+<tr>
+<td><code class="c">kmap_local</code> / fixmap</td>
+<td>Ch9 §3（现代临时映射）</td>
+</tr>
+<tr>
+<td>bounce buffer → swiotlb</td>
+<td>Ch9 §4（版本断崖）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86_64 无 highmem</td>
+<td>现代 HFT 服务器（x86_64）<strong>不受高端内存限制</strong>，<code class="c">kmap_local</code> 对普通页是零开销</td>
+</tr>
+<tr>
+<td>32 位嵌入式（ARM32）</td>
+<td>仍有 <code class="c">CONFIG_HIGHMEM</code>，热路径避免对 highmem 页频繁 <code class="c">kmap</code>（会 sleep + 抢全局锁）</td>
+</tr>
+<tr>
+<td>实时性</td>
+<td>临时访问页优先用 <code class="c">kmap_local_page</code>（不可 sleep、无锁、可嵌套），而非老 <code class="c">kmap</code>（可能阻塞）</td>
+</tr>
+<tr>
+<td>零页清零</td>
+<td>大量清零用户页（如 mlock 预置、共享内存 init）走 <code class="c">zero_user_segments</code>，注意其 per-page <code class="c">kmap_local</code> 成本</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-H.html#app-H">appendix-H-Slab分配器.md</a></li>
 <li>下一章：<a href="appendix-J.html#app-J">appendix-J-页框回收.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：什么是「高端内存」？为什么 32 位系统需要它？</strong></p>
+<p>32 位内核 3:1 划分地址空间，内核只有 1GB 虚拟地址，其中 direct map 只能线性覆盖 ≤896MB 物理内存。<strong>超过 896MB 的物理内存就是 highmem</strong>，内核无法用固定虚拟地址直接访问，必须临时建立映射（kmap / kmap_local）。</p>
+<p><strong>Q2：<code class="c">kmap()</code> 和 <code class="c">kmap_local_page()</code> 的核心区别？</strong></p>
+<p><code class="c">kmap()</code>（<code class="c">kmap_high</code> :296）会 sleep——PKMAP 区无空闲 slot 时挂起等待，只能在进程上下文用；<code class="c">kmap_local_page()</code>（<code class="c">__kmap_local_page_prot</code> :564）只关抢占、不 sleep，可嵌套、可在原子上下文用，且对非 highmem 页零开销。</p>
+<p><strong>Q3：<code class="c">kmap_local</code> 为什么能在进程切换时安全清理？</strong></p>
+<p>fixmap 是全局共享的临时窗口，不能跨进程泄漏。<code class="c">__kmap_local_sched_out</code>（:634）在 <code class="c">switch_to</code> 前调用，把当前进程 <code class="c">kmap_ctrl</code> 里残留的映射全部 <code class="c">pte_clear</code>。</p>
+<p><strong>Q4：bounce buffer 在 v6.6 去哪了？</strong></p>
+<p>被彻底删除，由 <code class="c">swiotlb</code>（软件 I/O TLB）接管「DMA 设备无法访问的内存」场景。bounce buffer 曾是 highmem 时代为 32 位 DMA 限制打补丁的机制。</p>
+<p><strong>Q5：x86_64 上 <code class="c">kmap_local_page</code> 对普通页的开销是多少？</strong></p>
+<p>近乎零。<code class="c">__kmap_local_page_prot</code>（:573）对 <code class="c">!PageHighMem(page)</code> 直接 <code class="c">page_address()</code> 返回，不建立任何映射，因为 x86_64 的 direct map 覆盖了全部物理内存。</p>
+</details>
       </section>
 
 

@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,165 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-b">
         <div class="sec-head"><div class="sec-no">B</div><h2>附录 B 描述物理内存 · Describing Physical Memory</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-02.html#ch-2">./chapter-02-describing-physical-memory/</a></p>
-<!-- 按书附录逐文件走读 pg_data_t / struct zone / struct page -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>正文 Ch2 讲了「Node / Zone / Page 是什么、为什么分三层」。本附录走读<strong>这三层数据结构在 v6.6 里的真实代码组织</strong>：<code class="c">struct pglist_data</code>（mmzone.h:1261）、<code class="c">struct zone</code>（:810）、<code class="c">struct page</code>（mm_types.h:74）+ <code class="c">struct folio</code>（:293）。</p>
+<p>聚焦「代码怎么组织」，不重复 Ch2 的机制讲解。</p>
+<hr />
+<h2>1. 三层结构的「包含关系」</h2>
+<pre class="code" data-label="code"><code class="c">struct pglist_data（pg_data_t）    // mmzone.h:1261  —— 一个 NUMA 节点
+    ├─ node_zones[]                // 该节点的 ZONE_DMA/DMA32/NORMAL/MOVABLE...
+    │      └─ struct zone          // mmzone.h:810   —— 一个内存区域
+    │             └─ _watermark[]  // 四水位（Ch2）
+    ├─ node_mem_map                // 指向 struct page 数组（该节点的所有页框）
+    │      └─ struct page          // mm_types.h:74   —— 一个物理页框
+    └─ node_zonelists[]            // 回退顺序（分配时按序找 zone）
+</code></pre>
+<p><strong>核心设计</strong>：<code class="c">struct page</code> 是<strong>最底层、数量最大</strong>（每个物理页一个），所以被极致压缩——用 <strong>union 复用</strong>字段（<code class="c">struct page</code> 里 5 个 word 的 union 复用全景见 Ch2 §3）；<code class="c">struct zone</code> 和 <code class="c">pglist_data</code> 是<strong>每节点/每区域少量</strong>的元数据，字段可以铺开。</p>
+<h2>2. <code class="c">struct page</code> 的字段复用（mm_types.h:74）</h2>
+<p>v6.6 的 <code class="c">struct page</code> 用了<strong>一个巨型 union</strong>，把「不同用途的页」复用同一块内存：</p>
+<pre class="code" data-label="C"><code class="c">struct page {
+    unsigned long flags;                    // ① 页标志（PG_locked/PG_dirty...），低 bit 编码 section/node/zone
+    union {
+        struct {                            // ② 匿名页 / 普通页
+            struct address_space *mapping;  //    所属地址空间
+            pgoff_t index;                  //    文件偏移
+            ...
+        };
+        struct {                            // ③ 空闲页（Buddy）
+            unsigned long private;          //    低 bit 编码 order
+        };
+        ...
+    } _mapcount;                            // 4-word 的 union（详情见 Ch2 §3 全景图）
+    atomic_t _refcount;                     // 引用计数
+    ...
+};
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">struct page</code> 的字段几乎全是<strong>按「当前页处于什么状态」来解读的</strong>——同一块内存，Buddy 空闲时 <code class="c">private</code> 存 order，被页缓存用时 <code class="c">mapping/index</code> 存文件信息。这是「省内存」和「难读」的一体两面。</p>
+<h2>3. <code class="c">struct folio</code>：v6.6 的新抽象（mm_types.h:293）</h2>
+<pre class="code" data-label="C"><code class="c">struct folio {
+    struct page page;   // 内嵌第一个 struct page（头页）
+};
+</code></pre>
+<p><strong>为什么要 folio</strong>：原来「一页」和「一个复合页（order-N）」都用 <code class="c">struct page</code>，<code class="c">compound_head()</code> 要不停反查头页，易错。folio 把「<strong>以 page 为单位的所有权/记账</strong>」抽出来，<code class="c">struct page</code> 退化为 folio 的「物理页视图」。这是 v5.16+ 逐步推进的<strong>大重构</strong>（Ch2 §3 有全景对比）。</p>
+<h2>4. <code class="c">struct zone</code> 的关键字段（mmzone.h:810）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_watermark[NR_WMARK]</code></td>
+<td>四水位（WMARK_MIN/LOW/HIGH/PROMO，Ch2）</td>
+</tr>
+<tr>
+<td><code class="c">free_area[MAX_ORDER]</code></td>
+<td>Buddy 空闲链表数组（Ch6 分配从这里拿）</td>
+</tr>
+<tr>
+<td><code class="c">spanned_pages</code> / <code class="c">present_pages</code> / <code class="c">managed_pages</code></td>
+<td>⭐ 三计数（Ch2 详解：空洞/热插拔/可管理）</td>
+</tr>
+<tr>
+<td><code class="c">node</code></td>
+<td>回指针到 pglist_data</td>
+</tr>
+<tr>
+<td><code class="c">vm_stat[]</code></td>
+<td>per-zone 计数（配合 per-CPU 批量）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：<code class="c">_watermark</code> 和 <code class="c">free_area</code> 是<strong>分配器的直接消费者</strong>（page_alloc 看水位决定是否回收、从 free_area 拿页），所以 <code class="c">struct zone</code> 是「物理内存描述」与「分配策略」的<strong>连接点</strong>。</p>
+<h2>5. <code class="c">struct pglist_data</code> 的关键字段（mmzone.h:1261）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">node_zones[MAX_NR_ZONES]</code></td>
+<td>该节点的 zone 数组</td>
+</tr>
+<tr>
+<td><code class="c">node_zonelists[MAX_ZONELISTS]</code></td>
+<td>⭐ 回退顺序（分配失败往哪找）</td>
+</tr>
+<tr>
+<td><code class="c">node_mem_map</code></td>
+<td><code class="c">struct page</code> 数组基址</td>
+</tr>
+<tr>
+<td><code class="c">kswapd</code> / <code class="c">kswapd_wait</code></td>
+<td>每节点的回收线程（Ch10）</td>
+</tr>
+<tr>
+<td><code class="c">node_id</code></td>
+<td>节点号</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：<code class="c">node_zonelists</code> 是 NUMA 分配的核心——它决定了「本节点内存不够时，按什么顺序去别的节点找」，Ch2 的 <code class="c">numactl</code> 示例最终就落到这个字段。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct page</code> union 复用</td>
+<td>Ch2 §3（5-word 复用全景图 + PageTail bit0 借位）</td>
+</tr>
+<tr>
+<td><code class="c">struct folio</code></td>
+<td>Ch2 §3（folio 引入动机）</td>
+</tr>
+<tr>
+<td><code class="c">struct zone</code> 三计数/水位</td>
+<td>Ch2 §2（spanned/present/managed + 四水位）</td>
+</tr>
+<tr>
+<td><code class="c">pglist_data</code> / zonelist</td>
+<td>Ch2 §1（节点/回退顺序）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<p><strong>延迟定位入口</strong>：<code class="c">struct zone</code> 的 <code class="c">free_area</code> 和 <code class="c">_watermark</code> 是「分配是否会触发回收」的直接判据——HFT 里若 <code class="c">/proc/zoneinfo</code> 显示某个 zone 的 free 逼近 WMARK_MIN，说明该 node 即将进入 direct reclaim 尖刺区，应提前 <code class="c">numactl</code> 换 node 或扩容。</p>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-A.html#app-A">appendix-A-简介.md</a></li>
 <li>下一章：<a href="appendix-C.html#app-C">appendix-C-页表管理.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">struct page</code> 为什么用 union 复用字段？代价是什么？</strong></p>
+<p>因为每个物理页一个 <code class="c">struct page</code>，数量巨大，必须极致省内存；代价是「同一块内存按页状态解读」，可读性差、易错（这也是 folio 出现的原因之一）。</p>
+<p><strong>Q2：<code class="c">struct folio</code> 和 <code class="c">struct page</code> 什么关系？</strong></p>
+<p><code class="c">struct folio</code> 内嵌第一个 <code class="c">struct page</code>（头页），把「以 page 为单位的记账/所有权」抽象出来，<code class="c">struct page</code> 退化为 folio 的物理页视图。</p>
+<p><strong>Q3：<code class="c">struct zone</code> 的 <code class="c">free_area[MAX_ORDER]</code> 和 <code class="c">_watermark[]</code> 分别被谁消费？</strong></p>
+<p>都被 <code class="c">page_alloc.c</code> 消费：<code class="c">free_area</code> 是 Buddy 空闲链表（分配从这里拿页），<code class="c">_watermark</code> 决定「是否触发回收」（Ch6/Ch10）。</p>
+<p><strong>Q4：<code class="c">pglist_data</code> 的 <code class="c">node_zonelists</code> 字段是干什么的？</strong></p>
+<p>存分配失败时的<strong>回退顺序</strong>——本节点内存不够时按什么顺序去其他节点找，是 NUMA 分配策略的落点。</p>
+<p><strong>Q5：<code class="c">struct zone</code> 的三计数 <code class="c">spanned_pages</code> / <code class="c">present_pages</code> / <code class="c">managed_pages</code> 区别？</strong></p>
+<p>spanned = 覆盖的物理范围（含空洞）、present = 实际存在的页（扣除热插拔空洞）、managed = 可被 Buddy 管理的页（再扣掉预留）。详见 Ch2 §2。</p>
+</details>
       </section>
 
 

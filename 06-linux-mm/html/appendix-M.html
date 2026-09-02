@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,15 +326,142 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-m">
         <div class="sec-head"><div class="sec-no">M</div><h2>附录 M 内存耗尽管理 · Out of Memory Management</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6（<code class="c">mm/oom_kill.c</code>，1257 行）</p>
 </blockquote>
-<p>概念总览 → <a href="chapter-13.html#ch-13">./chapter-13-out-of-memory-management/</a> · 源码 <strong><code class="c">mm/oom_kill.c</code></strong></p>
-<!-- Ch 1 推荐阅读第一站 -->
-
+<p>概念总览 → <a href="chapter-13.html#ch-13">./chapter-13-out-of-memory-management/</a> · 源码 <strong><code class="c">mm/oom_kill.c</code></strong>（Ch13 推荐阅读第一站）</p>
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 M 走读 <strong>OOM killer</strong>。v6.6 相对原书（2.6 时代）发生<strong>两处断崖</strong>：<strong>① 评分函数 <code class="c">badness()</code> 被重写为 <code class="c">oom_badness()</code>（公式完全不同）</strong>；<strong>② 击杀从「SIGTERM→等 victim 退出」改为「SIGKILL + <code class="c">oom_reaper</code> 异步收割」</strong>。本附录按「触发 → 评分 → 选择 → 击杀 → 收割」主线走读。</p>
+<hr />
+<h2>1. 触发入口：<code class="c">out_of_memory</code>（:1103）</h2>
+<pre class="code" data-label="code"><code class="c">__alloc_pages_may_oom()                       // page_alloc.c:3273（附录 F 慢路径）
+   └─ out_of_memory(oc)                       // oom_kill.c:1103
+        ├─ check_panic_on_oom(oc)             // :1059 先查是否 panic
+        ├─ select_bad_process(oc)             // :364  选出 victim
+        ├─ oom_kill_process(oc, message)      // :1010 执行击杀
+        └─ schedule_timeout_killable(1)       // 若没杀成，给系统缓冲时间
+</code></pre>
+<p><strong><code class="c">struct oom_control</code></strong>（oom.h:33）携带触发上下文：<code class="c">zonelist</code>、<code class="c">nodemask</code>、<code class="c">memcg</code>、<code class="c">order</code>、<code class="c">gfp_mask</code>、<code class="c">totalpages</code>、<code class="c">chosen</code>（选中的 victim）。<code class="c">check_panic_on_oom</code>（:1059）按 <code class="c">vm.panic_on_oom</code> 分级：<strong>0</strong> 正常击杀；<strong>1</strong> 仅当约束允许时 panic；<strong>2</strong> 无条件 panic。</p>
+<hr />
+<h2>2. 评分：<code class="c">oom_badness</code>（:201）—— 版本断崖 ⭐</h2>
+<p>原书（2.6）评分：<code class="c">badness = Total VM / sqrt(CPU time) + root 用户 ÷4</code>。v6.6 彻底重写为<strong>「简单可预测」</strong>（源码注释原文 "simple and predictable"）：</p>
+<pre class="code" data-label="C"><code class="c">long oom_badness(struct task_struct *p, unsigned long totalpages)  // :201
+   points = get_mm_rss(p-&gt;mm)          // 常驻内存页数
+          + get_mm_counter(p-&gt;mm, MM_SWAPENTS)   // swap 页数
+          + mm_pgtables_bytes(p-&gt;mm) / PAGE_SIZE // 页表页数
+   points *= 1000 / totalpages          // 归一化到 0~1000
+   adj = p-&gt;signal-&gt;oom_score_adj;      // 用户可调的修正值
+   points += adj &gt; 0 ? adj * (1000 - adj) / 1000
+                    : adj * (points + 1000) / 1000;
+   return points;
+</code></pre>
+<p><strong>走读要点</strong>：新版<strong>删掉了「CPU 时间越长越不该杀」和「root 减分」两个启发式</strong>——因为它们在容器/多租户时代不再合理（一个跑很久的泄漏进程不该被豁免）。评分 = <strong>内存占用归一化 + <code class="c">oom_score_adj</code> 用户修正</strong>。<code class="c">/proc/pid/oom_score</code> 就是读这个值（fs/proc/base.c:550）。</p>
+<hr />
+<h2>3. 选择：<code class="c">select_bad_process</code>（:364）</h2>
+<pre class="code" data-label="code"><code class="c">select_bad_process(oc)                       // :364
+   └─ 遍历所有进程 → oom_evaluate_task(task, oc)  // :308
+        ├─ oom_unkillable_task()            // :162 豁免（init、内核线程、PF_MEMDIE 等）
+        ├─ points = oom_badness()           // 打分
+        └─ 记录最高分 → oc-&gt;chosen
+</code></pre>
+<p><code class="c">oom_evaluate_task</code>（:308）逐进程打分，选出 <code class="c">points</code> 最高者；<code class="c">oom_unkillable_task</code>（:162）跳过 init、内核线程、已标记 <code class="c">PF_MEMDIE</code> 的进程。<code class="c">dump_tasks</code>（:423）在杀不掉时打印全量进程表（OOM 日志里那段 <code class="c">[ pid ] uid tgid total_vm rss ...</code>）。</p>
+<hr />
+<h2>4. 击杀：<code class="c">__oom_kill_process</code>（:914）</h2>
+<pre class="code" data-label="code"><code class="c">oom_kill_process(oc, message)                // :1010（找线程、打印日志、计数）
+   └─ __oom_kill_process(victim, message)    // :914
+        ├─ 遍历 victim 的所有线程，do_send_sig_info(SIGKILL)   // 一律 SIGKILL
+        ├─ mark_oom_victim(tsk)              // :756 标记 PF_MEMDIE → TIF_MEMDIE
+        ├─ signal-&gt;oom_mm = mm               // 记录 victim 的 mm
+        └─ wake_oom_reaper(mm)               // 启动收割线程
+</code></pre>
+<p><strong>两处断崖</strong>：① <strong>击杀信号从 SIGTERM（可被忽略）改为一律 SIGKILL</strong>；② <strong><code class="c">PF_MEMDIE</code> 退化为内部标志，用户态可见的是 <code class="c">TIF_MEMDIE</code></strong>（<code class="c">mark_oom_victim</code> :756 里设置，并写 <code class="c">signal-&gt;oom_mm</code>）。</p>
+<hr />
+<h2>5. 异步收割：oom_reaper（:638）</h2>
+<p>v6.6 的 OOM 不再<strong>等 victim 自然退出</strong>，而是<strong>主动收割它的内存</strong>：</p>
+<pre class="code" data-label="code"><code class="c">wake_oom_reaper(timer)                       // :660 延迟 OOM_REAPER_DELAY(2*HZ) 启动
+   └─ oom_reaper()                           // :638 收割内核线程
+        └─ oom_reap_task(tsk)                // :607
+             └─ oom_reap_task_mm(mm)         // :566
+                  └─ __oom_reap_task_mm(mm)  // :510
+                       ├─ MMF_UNSTABLE 标记 + 加 mmap_lock
+                       └─ unmap_page_range() 主动 unmap + 释放页
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">oom_reaper</code> 用 <code class="c">unmap_page_range</code> <strong>直接撤销 victim 的页映射并回收内存</strong>，不依赖 victim 调度执行——即使 victim 卡在 D 状态（不可中断睡眠），内存也能被释放。重试上限 <strong>10 次</strong>（<code class="c">MAX_OOM_REAP_RETRIES</code>），防止无限收割。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">out_of_memory</code> 触发</td>
+<td>Ch13 §2</td>
+</tr>
+<tr>
+<td><code class="c">oom_badness</code> 重写</td>
+<td>Ch13 §3 ⭐</td>
+</tr>
+<tr>
+<td><code class="c">select_bad_process</code></td>
+<td>Ch13 §3</td>
+</tr>
+<tr>
+<td><code class="c">__oom_kill_process</code> + SIGKILL</td>
+<td>Ch13 §4</td>
+</tr>
+<tr>
+<td>oom_reaper</td>
+<td>Ch13 §4</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">oom_score_adj=-1000</code></td>
+<td>给关键交易进程打 -1000，<strong>永不被 OOM 选中</strong>（<code class="c">oom_badness</code> 直接归零）</td>
+</tr>
+<tr>
+<td>禁用 panic_on_oom</td>
+<td>HFT 服务节点设 <code class="c">vm.panic_on_oom=0</code>，宁可杀进程也不整机 panic</td>
+</tr>
+<tr>
+<td>内存预留</td>
+<td>关键路径用 <code class="c">mlock</code> 锁内存，避免进入 <code class="c">__alloc_pages_may_oom</code> 的慢路径</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-L.html#app-L">appendix-L-共享内存虚拟文件系统.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">oom_badness</code>（:201）与原书 <code class="c">badness()</code> 的两处核心差异？</strong></p>
+<p>① 删掉「CPU 时间越长越不杀」（<code class="c">sqrt(CPU time)</code>）；② 删掉「root 减分」。新版 = 内存占用（RSS + swap + 页表）归一化 + <code class="c">oom_score_adj</code> 修正，注释明确要 "simple and predictable"。</p>
+<p><strong>Q2：<code class="c">oom_score_adj</code> 如何影响评分？</strong></p>
+<p>正数按 <code class="c">adj * (1000 - adj) / 1000</code> 加到 points，负数按 <code class="c">adj * (points + 1000) / 1000</code> 扣减。设 <code class="c">-1000</code> 直接让评分归零，永不被选中。</p>
+<p><strong>Q3：击杀信号从原书到 v6.6 改了什么？</strong></p>
+<p>从 SIGTERM（可被进程忽略/处理）改为<strong>一律 SIGKILL</strong>，杜绝 victim 拒绝退出导致内存无法回收。</p>
+<p><strong>Q4：oom_reaper 解决什么问题？</strong></p>
+<p>不等 victim 自然退出，用 <code class="c">unmap_page_range</code>（__oom_reap_task_mm :510）主动撤销映射并回收内存，即使 victim 卡在 D 状态也能释放。延迟 <code class="c">OOM_REAPER_DELAY</code>（2*HZ）启动，重试上限 10 次。</p>
+<p><strong>Q5：<code class="c">check_panic_on_oom</code> 的 0/1/2 分别什么含义？</strong></p>
+<p>0 正常击杀进程；1 仅在约束允许时 panic；2 无条件 panic（<code class="c">vm.panic_on_oom</code> 对应）。</p>
+</details>
       </section>
 
 

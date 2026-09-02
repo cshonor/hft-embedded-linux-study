@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,139 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-c">
         <div class="sec-head"><div class="sec-no">C</div><h2>附录 C 页表管理 · Page Table Management</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-03.html#ch-3">./chapter-03-page-table-management/</a></p>
-<!-- 按书附录走读 pgtable.h、pte 宏、quicklist/rmap 相关源文件 -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>正文 Ch3 讲了「页表层级、PTE 位、TLB」。本附录走读<strong>页表的代码组织</strong>：缺页处理的入口 <code class="c">handle_mm_fault</code>（<code class="c">mm/memory.c</code>）、页表复制/清理（<code class="c">copy_pte_range</code> / <code class="c">zap_pte_range</code>）、反向映射（<code class="c">rmap</code> 的 <code class="c">anon_vma</code>）。</p>
+<hr />
+<h2>1. 缺页处理的三分叉（mm/memory.c）</h2>
+<p><code class="c">do_user_addr_fault</code>（arch/x86/mm/fault.c:1239，架构侧入口）→ <code class="c">handle_mm_fault</code> → <code class="c">__handle_mm_fault</code> → 按「缺的是什么页」分叉：</p>
+<pre class="code" data-label="code"><code class="c">__handle_mm_fault(mm, vma, address, flags)          // memory.c:3670 附近
+        │
+        ├─ 匿名页（首次访问，无 backing）→ do_anonymous_page()   // :107 声明
+        │       └─ 分配零页 / 按需分配，建 PTE
+        ├─ 文件映射缺页               → do_fault()              // :106 声明
+        │       └─ 从 page cache 读入 / 建立 file mapping
+        └─ 换出页缺页                 → do_swap_page()          // :3722
+                └─ 从 swap 换入（Ch11）
+</code></pre>
+<p>三个函数都返回 <code class="c">vm_fault_t</code>（一组 <code class="c">VM_FAULT_*</code> 标志），把「怎么处理这次缺页」的结果反馈给上层。</p>
+<p><strong>写时复制</strong>：<code class="c">do_wp_page()</code>（:3338）处理「进程要写一个只读页」——COW 语义下分配新页、拷贝内容、改 PTE 为可写。这是 fork 之后父子进程共享页、写时才真正分离的核心（Ch4 COW）。</p>
+<h2>2. 页表复制与清理</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>行号</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">copy_pte_range</code></td>
+<td>memory.c:1001</td>
+<td>fork 时复制父进程的 PTE（COW 下共享页、只读化）</td>
+</tr>
+<tr>
+<td><code class="c">zap_pte_range</code></td>
+<td>memory.c:1394</td>
+<td>munmap/exit 时清理 PTE、归还页框（配合 <code class="c">mmu_gather</code> 批量 TLB flush）</td>
+</tr>
+<tr>
+<td><code class="c">apply_to_page_range</code></td>
+<td>memory.c:2755</td>
+<td>遍历一段地址范围的页表，对每个 PTE 执行回调（vmalloc 建立映射也用它）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：<code class="c">copy_pte_range</code> 和 <code class="c">zap_pte_range</code> 是<strong>一对镜像</strong>——一个建（fork）、一个拆（exit/unmap）。两者都要<strong>逐级遍历 PGD→P4D→PUD→PMD→PTE</strong>，代码里是层层 <code class="c">do ... while</code> 的展开（memory.c:1001-1167 可见 PTE 级的循环）。</p>
+<h2>3. 反向映射 <code class="c">anon_vma</code>（include/linux/rmap.h:31）</h2>
+<p>正向映射是「页表 → 物理页」（通过 PTE），反向映射（rmap）是「物理页 → 所有引用它的 VMA」——回收时（Ch10 <code class="c">try_to_unmap</code>）要把所有映射这条页的 PTE 都失效。</p>
+<pre class="code" data-label="C"><code class="c">struct anon_vma {
+    struct anon_vma *root;       // 该 anon_vma 树的根
+    struct anon_vma *parent;     // 父 anon_vma
+    ...                          // 一个 anon_vma 挂一串「关联 VMA」
+};
+</code></pre>
+<p><strong>为什么用 <code class="c">anon_vma</code> 而不是直接指向 VMA</strong>：因为一个匿名页可能被 fork 后的<strong>多个进程的多个 VMA</strong> 共享，直接指向单个 VMA 无法枚举全部。<code class="c">anon_vma</code> 把「引用同一组匿名页的 VMA」串成链表，<code class="c">try_to_unmap_one</code> 遍历这条链逐个失效 PTE。</p>
+<h2>4. 页表通用层 <code class="c">pgtable-generic.c</code></h2>
+<p><code class="c">mm/pgtable-generic.c</code> 提供<strong>架构无关</strong>的页表操作（各架构 <code class="c">pgtable.h</code> 只提供底层原语）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pmd_alloc</code> / <code class="c">pte_alloc_map</code></td>
+<td>按需分配下级页表</td>
+</tr>
+<tr>
+<td><code class="c">ptep_clear_flush</code></td>
+<td>清 PTE + 刷 TLB</td>
+</tr>
+<tr>
+<td><code class="c">pagetable_alloc</code> / <code class="c">pagetable_free</code></td>
+<td>页表页的分配/释放</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：这是「架构相关 ↔ 无关」的分界——x86_64 的 5 级页表折叠（P4D 在 4 级时折叠成空操作，见 <code class="c">asmgeneric_pgtable-nop4d.h</code> 缓存）就在这一层体现。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__handle_mm_fault</code> 三分叉</td>
+<td>Ch3（页表层级）+ Ch4（缺页处理流程）</td>
+</tr>
+<tr>
+<td><code class="c">do_wp_page</code> COW</td>
+<td>Ch4（写时复制）</td>
+</tr>
+<tr>
+<td><code class="c">anon_vma</code> 反向映射</td>
+<td>Ch3（rmap）+ Ch10（try_to_unmap）</td>
+</tr>
+<tr>
+<td>P4D 折叠</td>
+<td>Ch3（4/5 级页表，<code class="c">pgtable-64_types.h</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<p><strong>COW 是延迟陷阱</strong>：<code class="c">do_wp_page</code> 的「写只读页 → 分配新页 + 拷贝」会在热路径上引入<strong>不可预期的分配延迟</strong>。HFT 里对共享内存（shmem，附录 L）的理解要特别注意 COW 时机——一旦写共享页触发 COW，可能连带一次 page_alloc + memcpy。</p>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-B.html#app-B">appendix-B-描述物理内存.md</a></li>
 <li>下一章：<a href="appendix-D.html#app-D">appendix-D-进程地址空间.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：缺页处理在 <code class="c">__handle_mm_fault</code> 里按什么三分叉？</strong></p>
+<p>匿名页（<code class="c">do_anonymous_page</code>）、文件映射缺页（<code class="c">do_fault</code>）、换出页缺页（<code class="c">do_swap_page</code>），三个函数都返回 <code class="c">vm_fault_t</code>。</p>
+<p><strong>Q2：<code class="c">do_wp_page</code> 处理什么？为什么它是延迟陷阱？</strong></p>
+<p>处理「写只读页」的写时复制（COW）——分配新页 + 拷贝内容 + 改 PTE 可写（memory.c:3338）。因为它在写那一刻才触发 page_alloc + memcpy，延迟不可预期。</p>
+<p><strong>Q3：<code class="c">copy_pte_range</code> 和 <code class="c">zap_pte_range</code> 是什么关系？</strong></p>
+<p>一对镜像：前者 fork 时复制父进程 PTE（COW 下共享页只读化），后者 munmap/exit 时清理 PTE、归还页框（配合 mmu_gather 批量 TLB flush）。</p>
+<p><strong>Q4：rmap 为什么用 <code class="c">anon_vma</code> 而不是直接指向 VMA？</strong></p>
+<p>因为一个匿名页可能被 fork 后多个进程的多个 VMA 共享，直接指向单个 VMA 无法枚举全部；<code class="c">anon_vma</code> 把「引用同一组匿名页的 VMA」串成链表供 <code class="c">try_to_unmap_one</code> 遍历。</p>
+<p><strong>Q5：<code class="c">pgtable-generic.c</code> 和架构 <code class="c">pgtable.h</code> 的分工？</strong></p>
+<p>前者提供架构无关的页表操作（pmd_alloc/ptep_clear_flush/页表页分配），后者只提供底层原语；x86_64 的 4 级页表下 P4D 折叠成空操作就在这一层体现。</p>
+</details>
       </section>
 
 

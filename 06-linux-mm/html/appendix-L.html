@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,145 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-l">
         <div class="sec-head"><div class="sec-no">L</div><h2>附录 L 共享内存虚拟文件系统 · Shared Memory Virtual Filesystem</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6（<code class="c">mm/shmem.c</code>，4932 行）</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-12.html#ch-12">./chapter-12-shared-memory-virtual-filesystem/</a>（<strong><code class="c">mm/shmem.c</code></strong>）</p>
-<!-- 走读 shmem.c: shmem_fault, shmem_mmap, SysV 路径 -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 L 走读 <strong>shmem 虚拟文件系统</strong>。shmem 是 <strong>tmpfs</strong> 的底层实现，同时也是 <strong>System V 共享内存（<code class="c">shmget</code>）与 POSIX 共享内存（<code class="c">shm_open</code>）的后端</strong>。它的核心特征是「<strong>页缓存 + swap 备份</strong>」的混合：常驻内存时是普通页缓存，内存不足时换出到 swap。本附录走读它的<strong>缺页处理</strong>、<strong>换出路径</strong>与<strong>三种创建入口</strong>。</p>
+<hr />
+<h2>1. 核心：<code class="c">shmem_get_folio_gfp</code>（:1927）</h2>
+<p>shmem 的所有页操作都汇聚到这一个函数——<strong>查找 → 命中 / 换入 / 分配</strong>三态：</p>
+<pre class="code" data-label="code"><code class="c">shmem_get_folio_gfp(inode, index, &amp;folio, sgp, gfp, ...)   // :1927
+   ├─ folio = filemap_get_entry(mapping, index)            // xarray 查找
+   ├─ xa_is_value(folio)?                                  // 是个 swap entry？
+   │     └─ shmem_swapin_folio()                           // :1813 从 swap 换入
+   ├─ folio 命中且 uptodate?                               // 直接返回
+   ├─ 否则（SGP_READ 空洞 → 返回 NULL 让调用方清零）
+   └─ shmem_alloc_folio(gfp, ...)                          // :1651 分配新页
+         └─ shmem_add_to_page_cache(folio, ...)            // :761  挂进 xarray
+</code></pre>
+<p><strong><code class="c">enum sgp_type</code></strong> 控制行为：<code class="c">SGP_CACHE</code>（页缓存读写）、<code class="c">SGP_READ</code>（只读，空洞返回 NULL）、<code class="c">SGP_WRITE</code>（写，空洞分配）、<code class="c">SGP_NOALLOC</code>（不分配）。</p>
+<p><strong>走读要点</strong>：shmem 的「未命中但 swap 有条目」是 <code class="c">xa_is_value</code> 判断的——xarray 里存的是 <code class="c">swp_entry_t</code>（值类型）而非 folio 指针，这就是「页被换出」的状态。换入走 <code class="c">shmem_swapin_folio</code>（:1813）。</p>
+<hr />
+<h2>2. 缺页处理：<code class="c">shmem_fault</code>（:2159）</h2>
+<pre class="code" data-label="code"><code class="c">do_anonymous_page 之外的共享匿名页缺页 → shmem_fault(vmf)   // :2159
+   └─ shmem_get_folio_gfp(..., SGP_CACHE, ...)              // :2227
+        └─ 命中 → vmf-&gt;page = folio_file_page(folio, pgoff) // :2232
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">shmem_fault</code> 是 <code class="c">vm_ops-&gt;fault</code> 回调，在进程访问共享内存页时被 <code class="c">__handle_mm_fault</code> 调用。它是「把共享内存页映射进 VMA」的入口，与匿名页的 <code class="c">do_anonymous_page</code> 平级。<strong>关键差异</strong>：匿名页换出后 PTE 直接存 <code class="c">swp_entry_t</code>；而 shmem 页换出后，<strong>PTE 是空，条目存在 inode 的 xarray 里</strong>——所以换入要先查 xarray 而非 PTE。</p>
+<hr />
+<h2>3. 换出路径：<code class="c">shmem_writepage</code>（:1422）</h2>
+<p>shmem 的写回<strong>只在内存回收时发生</strong>：</p>
+<pre class="code" data-label="C"><code class="c">shmem_writepage(page, wbc)                     // :1422
+   if (!wbc-&gt;for_reclaim)  goto redirty;       // 非回收场景直接 re-dirty
+   if (VM_LOCKED || noswap) goto redirty;      // mlock 或禁 swap → 不换
+   if (!total_swap_pages)   goto redirty;      // 无 swap 空间 → 不换
+   // 大页需先 split（:1453）
+   → 分配 swap entry，写回 swap（复用 page_io 路径）
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">shmem_writepage</code> 只在 <code class="c">wbc-&gt;for_reclaim</code>（回收触发）时执行，<strong>不会被 writeback 线程或 sync 触发</strong>（tmpfs 没有真实磁盘文件）。这就是 shmem「内存里是页缓存，压力大了就换 swap」的双面性。<code class="c">VM_LOCKED</code> 的共享内存页绝不换出——对应 <code class="c">mlock</code> 语义。</p>
+<hr />
+<h2>4. 三种创建入口</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>入口</th>
+<th>落点</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tmpfs mount</td>
+<td><code class="c">shmem_get_inode</code>(:2514)</td>
+<td><code class="c">mount -t tmpfs</code>，普通文件语义</td>
+</tr>
+<tr>
+<td>System V shm</td>
+<td><code class="c">shmem_file_setup</code>(:4828)</td>
+<td><code class="c">shmget()</code> 返回匿名 shmem 文件</td>
+</tr>
+<tr>
+<td>POSIX shm</td>
+<td>同上（<code class="c">shm_open</code> → tmpfs 挂载点）</td>
+<td><code class="c">/dev/shm</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">shmem_file_setup</code>（:4828）是<strong>内核内部创建匿名 shmem 文件</strong>的入口——<code class="c">ipc/shm.c</code> 的 <code class="c">shmget</code> 最终调它。<code class="c">shmem_fallocate</code>（:3026）支持 hole punch / 预分配，<code class="c">shmem_truncate_range</code>（:1112）截断并回收页。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">shmem_get_folio_gfp</code> 三态</td>
+<td>Ch12 §2（页缓存 + swap 备份）</td>
+</tr>
+<tr>
+<td><code class="c">shmem_fault</code> 缺页</td>
+<td>Ch12 §3（共享页映射）</td>
+</tr>
+<tr>
+<td><code class="c">shmem_writepage</code> 换出</td>
+<td>Ch12 §4（回收时换 swap）</td>
+</tr>
+<tr>
+<td>三种创建入口</td>
+<td>Ch12 §5（tmpfs / SysV / POSIX）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>共享内存通信</td>
+<td>HFT 进程间共享行情/订单簿用 <code class="c">shmget</code>/<code class="c">shm_open</code>——本质是 shmem，<strong>零拷贝</strong>（只映射不拷贝）</td>
+</tr>
+<tr>
+<td><code class="c">mlock</code> 共享内存</td>
+<td>换出会引入缺页延迟，关键共享段 <code class="c">mlock</code> 防 <code class="c">shmem_writepage</code> 换出</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>shmem 页计入进程 RSS 也计入 tmpfs，<code class="c">/proc/meminfo</code> 的 <code class="c">Shmem</code> 行可观察总量</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-K.html#app-K">appendix-K-交换管理.md</a></li>
 <li>下一章：<a href="appendix-M.html#app-M">appendix-M-内存耗尽管理.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：shmem 是什么的双重身份？</strong></p>
+<p>既是 tmpfs 的底层实现，也是 System V 共享内存（<code class="c">shmget</code>）和 POSIX 共享内存（<code class="c">shm_open</code>）的后端——本质是「页缓存 + swap 备份」的混合体。</p>
+<p><strong>Q2：<code class="c">shmem_get_folio_gfp</code> 的三态？</strong></p>
+<p>xarray 命中 → 返回 folio；xarray 里是 swap entry（<code class="c">xa_is_value</code>）→ <code class="c">shmem_swapin_folio</code> 换入；空洞 → 依 <code class="c">sgp_type</code> 决定分配新页还是返回 NULL。</p>
+<p><strong>Q3：shmem 页换出后，PTE 里是什么？</strong></p>
+<p>PTE 是空的（present=0 且无 swp_entry），条目存在 inode 的 xarray 里。所以换入要先查 xarray（<code class="c">filemap_get_entry</code>），这与匿名页换出后 PTE 直接存 <code class="c">swp_entry_t</code> 不同。</p>
+<p><strong>Q4：<code class="c">shmem_writepage</code> 什么时候触发？</strong></p>
+<p>只在 <code class="c">wbc-&gt;for_reclaim</code>（内存回收）时，且满足「非 VM_LOCKED、非 noswap、有 swap 空间」才真正换出。writeback 线程和 sync 都不会触发它。</p>
+<p><strong>Q5：<code class="c">shmem_file_setup</code>（:4828）被谁调用？</strong></p>
+<p><code class="c">ipc/shm.c</code> 的 <code class="c">shmget</code> 最终调用它，创建匿名 shmem 文件作为 System V 共享内存的后端。</p>
+</details>
       </section>
 
 

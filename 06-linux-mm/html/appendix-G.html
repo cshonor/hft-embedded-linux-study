@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,131 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-g">
         <div class="sec-head"><div class="sec-no">G</div><h2>附录 G 非连续内存分配 · Noncontiguous Memory Allocation</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-07.html#ch-7">./chapter-07-noncontiguous-memory-allocation/</a></p>
-<!-- 走读 vmalloc.c: get_vm_area, map_vm_area, vfree -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>正文 Ch7 讲了「vmalloc 两阶段分配、双结构双索引、三棵树释放」。本附录走读 <strong><code class="c">mm/vmalloc.c</code>（118KB）</strong> 的代码组织——重点是「<strong>先 reserve 虚址，再分配物理页</strong>」的两阶段结构，以及释放时的「懒 TLB flush」。</p>
+<hr />
+<h2>1. 两阶段分配全景（mm/vmalloc.c）</h2>
+<pre class="code" data-label="code"><code class="c">__vmalloc_node_range(size, align, start, end, gfp, ...)   // vmalloc.c:3235
+        │
+        ├─ ① __get_vm_area_node(...)                       // :2570  reserve 虚拟地址
+        │       └─ alloc_vmap_area(...)                    // :1582  从 free 树找洞
+        │               └─ 红黑树 + 双链表双索引（Ch7 §1）
+        │
+        └─ ② __vmalloc_area_node(...)                      // :3101  分配物理页 + 建映射
+                ├─ vm_area_alloc_pages(...)                // :2992  批量分配页
+                │       └─ alloc_pages_bulk_array_node(...) // 每次最多 100 页（:3020）
+                └─ vmap_pages_range(...)                   // :628   逐页建 PTE 映射
+</code></pre>
+<p><strong>走读要点</strong>：两阶段的意义是<strong>失败可回滚</strong>——先 reserve 虚址（失败就直接返回），再分配物理页（失败则释放虚址）。不会出现「物理页分配了一半、虚址却没了」的中间态。这是 vmalloc 比 kmalloc 慢、但能「虚拟连续」的核心代价。</p>
+<h2>2. <code class="c">alloc_vmap_area</code>：从 free 树找洞（:1582）</h2>
+<p><code class="c">struct vmap_area</code>（vmalloc.h:63）的 <code class="c">union</code> 复用是精髓：</p>
+<pre class="code" data-label="code"><code class="c">union {
+    unsigned long subtree_max_size;   // 在 free 树里：该子树最大空闲洞
+    struct vm_struct *vm;             // 在 busy 树里：指向区域描述符
+};
+</code></pre>
+<ul>
+<li><strong>free 树</strong>按地址排序，<code class="c">subtree_max_size</code> 加速「找第一个 ≥ size 的空洞」（从 O(n) 到 O(log n)）。</li>
+<li><strong>busy 树</strong>按地址排序，<code class="c">vm</code> 快速反查「这段地址属于哪个 vm_struct」。</li>
+</ul>
+<h2>3. 批量页分配：<code class="c">vm_area_alloc_pages</code>（:2992）</h2>
+<pre class="code" data-label="C"><code class="c">vm_area_alloc_pages(...)
+        │  order&gt;0 时 split_page 拆成 order-0，保证 pages[] 全 4K
+        ▼
+alloc_pages_bulk_array_node(...)        // 每次最多 100 页（:3020）
+        │  减少 Buddy 锁 / 关抢占次数
+</code></pre>
+<p><strong>走读要点</strong>：vmalloc 需要「物理不连续但各自 4K 对齐」的页，所以<strong>批量</strong>调 <code class="c">alloc_pages_bulk_array_node</code>（一次 100 页）而不是逐页 <code class="c">alloc_page</code>——后者每页都要抢一次 Buddy 锁，批量版本摊薄锁开销。</p>
+<h2>4. 释放路径 + 懒 TLB flush（:2807）</h2>
+<pre class="code" data-label="code"><code class="c">vfree(addr)                             // vmalloc.c:2807
+        ├─ 中断上下文 → vfree_atomic    // :2773  lockless llist_add 入队 + workqueue 兜底
+        └─ 进程上下文 ↓
+remove_vm_area(addr)                    // :2684  从 busy 树摘除 + unmap
+        │
+free_unmap_vmap_area(va)                // :1847
+        │
+free_vmap_area_noflush(va)              // :1817  先不刷 TLB，攒进 purge 树
+        │  攒到 lazy_max_pages() 才统一 flush_tlb_kernel_range
+        ▼
+lazy_max_pages()                        // :1700  = fls(CPU 数) × 8192 页
+</code></pre>
+<p><strong>走读要点</strong>：释放后<strong>不立即刷 TLB</strong>，而是把已 unmap 的区间攒进 <strong>purge 树</strong>（第三棵树），超过 <code class="c">lazy_max_pages()</code> 阈值才统一刷。这是「用少量陈旧 TLB 换大幅减少 flush 次数」的权衡——Ch7 §3 的三棵树模型（free/busy/purge）就在这里落地。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>两阶段分配</td>
+<td>Ch7 §2（reserve VA → alloc pages）</td>
+</tr>
+<tr>
+<td><code class="c">vmap_area</code> union 复用</td>
+<td>Ch7 §1（双索引 + union）</td>
+</tr>
+<tr>
+<td>批量 100 页/次</td>
+<td>Ch7 §2（<code class="c">alloc_pages_bulk_array</code>）</td>
+</tr>
+<tr>
+<td>三棵树 + 懒 flush</td>
+<td>Ch7 §3（free/busy/purge + <code class="c">lazy_max_pages</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>别用 vmalloc 做热路径</td>
+<td>vmalloc 每次都要改内核页表 + 可能 TLB flush，比 kmalloc 慢几个量级</td>
+</tr>
+<tr>
+<td><code class="c">kvmalloc</code> 智能回落</td>
+<td>大块且不要求物理连续时，<code class="c">kvmalloc</code> 先试 kmalloc 再回 vmalloc（Ch7 §4）</td>
+</tr>
+<tr>
+<td>懒 flush 的代价</td>
+<td>陈旧 TLB 会让「刚释放又立刻重映射」的地址短暂不一致——内核态高频重映射场景要留意</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-F.html#app-F">appendix-F-物理页分配.md</a></li>
 <li>下一章：<a href="appendix-H.html#app-H">appendix-H-Slab分配器.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：vmalloc 的两阶段分配是哪两步？为什么分两阶段？</strong></p>
+<p>① <code class="c">__get_vm_area_node</code> reserve 虚拟地址；② <code class="c">__vmalloc_area_node</code> 分配物理页 + 建映射。分两阶段是为了<strong>失败可整体回滚</strong>，不出现「物理页分了一半、虚址没了」的中间态。</p>
+<p><strong>Q2：<code class="c">struct vmap_area</code> 的 union 复用怎么用？</strong></p>
+<p>free 树里 <code class="c">subtree_max_size</code> 存「子树最大空闲洞」加速找洞；busy 树里 <code class="c">vm</code> 指向区域描述符快速反查。</p>
+<p><strong>Q3：<code class="c">vm_area_alloc_pages</code> 为什么批量分配、每次最多 100 页？</strong></p>
+<p>减少 Buddy 锁/关抢占次数（<code class="c">alloc_pages_bulk_array_node</code>，:3020）；order&gt;0 时先 <code class="c">split_page</code> 拆成 order-0 保证 pages[] 全 4K。</p>
+<p><strong>Q4：<code class="c">vfree</code> 在中断上下文怎么处理？</strong></p>
+<p>转 <code class="c">vfree_atomic</code>（:2773），用 lockless <code class="c">llist_add</code> 入队 + workqueue 兜底，不在中断里做可能睡眠的 unmap。</p>
+<p><strong>Q5：懒 TLB flush 的阈值 <code class="c">lazy_max_pages</code> 怎么算？</strong></p>
+<p><code class="c">fls(CPU 数) × 8192 页</code>（:1700）——CPU 越多、攒的越多才刷一次，摊薄 flush 开销。</p>
+</details>
       </section>
 
 

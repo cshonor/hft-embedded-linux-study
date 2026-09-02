@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,162 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-k">
         <div class="sec-head"><div class="sec-no">K</div><h2>附录 K 交换管理 · Swap Management</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>跳过</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6（<code class="c">mm/swapfile.c</code> + <code class="c">mm/swap_state.c</code> + <code class="c">mm/page_io.c</code>）</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-11.html#ch-11">./chapter-11-swap-management/</a></p>
-<!-- 走读 swap_state.c, swapfile.c, page_io.c -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 K 走读 <strong>swap 区激活 / slot 分配 / swap cache / 换入换出 I/O</strong>。本附录按「<strong>换出路径</strong>」和「<strong>换入路径</strong>」两条主线，走读 v6.6 的三个文件：<code class="c">swapfile.c</code>（slot 管理）、<code class="c">swap_state.c</code>（swap cache）、<code class="c">page_io.c</code>（实际 I/O）。</p>
+<hr />
+<h2>1. 换出路径：匿名页 → swap 设备</h2>
+<pre class="code" data-label="code"><code class="c">shrink_folio_list()                          // vmscan.c:1705（附录 J）
+   └─ add_to_swap(folio)                     // swap_state.c:86 写入 swap cache
+        └─ get_swap_pages(n_goal, entries)   // swapfile.c:1047  分配 slot
+             └─ scan_swap_map_slots()        // :799  扫描 slot 位图
+                  └─ swap_alloc_cluster()    // :1002 按簇分配
+   └─ swap_writepage(page)                   // page_io.c:179
+        └─ __swap_writepage(page)            // :371  ← 三路分叉（见 §3）
+</code></pre>
+<p><strong>核心数据 <code class="c">swp_entry_t</code></strong>：换出后 PTE 的 <code class="c">present=0</code>，剩余 64 位被复用为 <code class="c">{type 高5位, offset 低59位}</code>（<code class="c">SWP_TYPE_SHIFT = BITS_PER_XA_VALUE - MAX_SWAPFILES_SHIFT</code>，swapops.h:27）——<strong>offset 指向 swap 区内的第几个 slot</strong>。</p>
+<p><strong>核心数据 <code class="c">struct swap_info_struct</code></strong>（swap.h:282）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">swap_map[]</code></td>
+<td>每个 slot 的引用计数（0=空闲，&gt;0=被引用，<code class="c">SWAP_MAP_MAX</code>=换出共享页）</td>
+</tr>
+<tr>
+<td><code class="c">cluster_info</code></td>
+<td>簇位图（HDD 连续分配优化）</td>
+</tr>
+<tr>
+<td><code class="c">percpu_cluster</code></td>
+<td>per-CPU 当前簇（SSD 随机写优化）</td>
+</tr>
+<tr>
+<td><code class="c">swap_extent_root</code></td>
+<td>红黑树（swap 区在磁盘上可能非连续）</td>
+</tr>
+<tr>
+<td><code class="c">bdev</code> / <code class="c">flags</code></td>
+<td>块设备 / <code class="c">SWP_*</code> 标志</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>slot 分配按介质分叉</strong>：<code class="c">scan_swap_map_slots</code>（:799）里，HDD 用 <code class="c">SWAPFILE_CLUSTER</code>（默认 256 页，:277；开 THP_SWAP 时为 <code class="c">HPAGE_PMD_NR</code>，:273）把连续 slot 聚成簇以减少磁头寻道；SSD 则设 <code class="c">SWP_SOLIDSTATE</code>（:3081），用 <strong>per-CPU 簇</strong>（<code class="c">percpu_cluster</code>，:617）让每个 CPU 在各自簇内分配，避免跨 CPU 抢全局锁。</p>
+<hr />
+<h2>2. swap cache 与换入路径</h2>
+<pre class="code" data-label="code"><code class="c">do_swap_page()                               // 缺页时读到 swp_entry_t（mm/memory.c）
+   └─ lookup_swap_cache(entry)               // swap_state.c 命中？直接返回
+        └─ 未命中 → __read_swap_cache_async() // :412 预读 + 读入 swap cache
+   └─ swap_readpage(page, sync, plug)        // page_io.c:493 实际读盘
+</code></pre>
+<p><strong>swap cache 结构</strong>：<code class="c">swapper_spaces[MAX_SWAPFILES]</code>（swap_state.c:39）是<strong>每个 swap 区一个 <code class="c">struct address_space</code></strong>。<code class="c">add_to_swap_cache</code>（:86）把 folio 挂进 xarray（<code class="c">i_pages</code>），<code class="c">delete_from_swap_cache</code>（:233）换入完成后摘除。</p>
+<p><strong>走读要点</strong>：swap cache 的存在是为了<strong>并发换入</strong>——多个进程换入同一 swap 页时，只有一个读盘，其余等 cache 命中。<code class="c">swap_cluster_readahead</code>（:620）按簇预读、<code class="c">swap_vma_readahead</code>（:780）按 VMA 顺序预读，都是降低缺页延迟的手段。</p>
+<hr />
+<h2>3. 换出 I/O 三分支：<code class="c">__swap_writepage</code>（page_io.c:371）</h2>
+<pre class="code" data-label="C"><code class="c">__swap_writepage(page, wbc)
+   if (sis-&gt;flags &amp; SWP_FS_OPS)          // swap 文件（而非块设备）
+        → 走文件系统写回路径
+   else if (sis-&gt;flags &amp; SWP_SYNCHRONOUS_IO)  // zram / 同步 swap
+        → 同步写，不排队
+   else                                   // 普通块设备 swap
+        → 异步 bio 提交，bio-&gt;bi_opf |= REQ_SWAP
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">SWP_SYNCHRONOUS_IO</code>（:3075）是 <strong>zram</strong> 这类内存 swap 的标志——无需排队，同步完成，这也是 zram 延迟远低于磁盘 swap 的机制原因。普通 swap 则走异步 <code class="c">bio</code>，标记 <code class="c">REQ_SWAP</code>。</p>
+<hr />
+<h2>4. swap extent：磁盘非连续映射</h2>
+<p>swap 区在磁盘上可能<strong>不连续</strong>（swap 文件尤其如此），用<strong>红黑树</strong>组织：</p>
+<pre class="code" data-label="code"><code class="c">offset_to_swap_extent(sis, offset)          // swapfile.c:211  offset→extent 查询
+add_swap_extent(sis, start_page, ...)       // :2184  插入一个 extent
+destroy_swap_extents(sis)                   // :2157  销毁整棵树
+</code></pre>
+<p><code class="c">struct swap_extent</code> 记录「swap 区内 offset 范围 ↔ 磁盘 block 范围」的映射（<code class="c">swap_extent_root</code> 红黑树，:2745 初始化）。<strong>走读要点</strong>：这是 swap 区抽象与具体块设备之间的<strong>寻址翻译层</strong>，让上层 slot 分配无需关心磁盘布局。</p>
+<hr />
+<h2>5. swapon / swapoff</h2>
+<p><code class="c">__do_sys_swapon</code> → <code class="c">alloc_swap_info</code>（:2701）分配 <code class="c">swap_info_struct</code> → <code class="c">claim_swapfile</code>（:2762）声明文件 → <code class="c">setup_swap_info</code>（:2292）初始化 → <code class="c">enable_swap_info</code>（:3184）挂进全局 swap 表。<code class="c">si_swapinfo</code>（:3240）供 <code class="c">/proc/meminfo</code> 统计 <code class="c">SwapTotal</code>/<code class="c">SwapFree</code>。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">swp_entry_t</code> 位域</td>
+<td>Ch11 §1（换出 PTE 复用）</td>
+</tr>
+<tr>
+<td><code class="c">swap_info_struct</code></td>
+<td>Ch11 §2（swap 区描述符）</td>
+</tr>
+<tr>
+<td>slot 分配（HDD/SSD 分叉）</td>
+<td>Ch11 §3（簇分配）</td>
+</tr>
+<tr>
+<td>swap cache</td>
+<td>Ch11 §4（<code class="c">swapper_spaces</code>）</td>
+</tr>
+<tr>
+<td><code class="c">__swap_writepage</code> 三分支</td>
+<td>Ch11 §5（换出 I/O）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>关 swap 或用 zram</td>
+<td>HFT 禁用磁盘 swap（换出是缺页延迟的元凶），必要时用 zram（<code class="c">SWP_SYNCHRONOUS_IO</code> 同步完成）</td>
+</tr>
+<tr>
+<td>嵌入式存储寿命</td>
+<td>频繁换出会磨损 eMMC/SSD，<code class="c">SWP_SOLIDSTATE</code> + per-CPU 簇减少写放大</td>
+</tr>
+<tr>
+<td><code class="c">vm.swappiness</code></td>
+<td>调低减少匿名页换出，与附录 J 联动</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-J.html#app-J">appendix-J-页框回收.md</a></li>
 <li>下一章：<a href="appendix-L.html#app-L">appendix-L-共享内存虚拟文件系统.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">swp_entry_t</code> 如何复用 PTE？</strong></p>
+<p>换出后 PTE 的 <code class="c">present=0</code>，64 位被复用为 <code class="c">{type 高5位, offset 低59位}</code>，offset 指向 swap 区内的 slot 编号（swapops.h:27 定义 <code class="c">SWP_TYPE_SHIFT</code>）。</p>
+<p><strong>Q2：HDD 和 SSD 的 slot 分配策略有何不同？</strong></p>
+<p>HDD 用 <code class="c">SWAPFILE_CLUSTER</code>（256 页，:277）聚簇分配减少寻道；SSD 设 <code class="c">SWP_SOLIDSTATE</code>（:3081），用 per-CPU 簇（<code class="c">percpu_cluster</code>）避免跨 CPU 抢锁并减少写放大。</p>
+<p><strong>Q3：swap cache 解决什么问题？</strong></p>
+<p>并发换入。<code class="c">swapper_spaces[]</code>（swap_state.c:39）为每个 swap 区维护 <code class="c">address_space</code>，多个进程换入同一页时只有一个读盘，其余命中 cache 等待。</p>
+<p><strong>Q4：<code class="c">__swap_writepage</code> 的三路分叉？</strong></p>
+<p><code class="c">SWP_FS_OPS</code>（swap 文件）→ 文件系统写回；<code class="c">SWP_SYNCHRONOUS_IO</code>（zram 等）→ 同步写不排队；其他（普通块设备）→ 异步 bio（<code class="c">REQ_SWAP</code>）。</p>
+<p><strong>Q5：zram 为什么比磁盘 swap 快？</strong></p>
+<p>zram 是内存 swap，设 <code class="c">SWP_SYNCHRONOUS_IO</code>（:3075），写回走同步路径无需排队，且无磁盘寻道/块设备延迟。</p>
+</details>
       </section>
 
 

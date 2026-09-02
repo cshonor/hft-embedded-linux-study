@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -326,16 +326,145 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="app-d">
         <div class="sec-head"><div class="sec-no">D</div><h2>附录 D 进程地址空间 · Process Address Space</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-04.html#ch-4">./chapter-04-process-address-space/</a></p>
-<!-- 走读 mm_struct、vm_area_struct、do_page_fault、copy_*_user -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>正文 Ch4 讲了「VMA、mm_struct、缺页、COW、mlock」。本附录走读<strong>地址空间管理的代码组织</strong>：<code class="c">mm/mmap.c</code>（映射的建与拆）、<code class="c">mm/mlock.c</code>（锁页）、<code class="c">mm/gup.c</code>（用户态页的 pin）。</p>
+<hr />
+<h2>1. 映射的建立：<code class="c">do_mmap</code>（mm/mmap.c:1203）</h2>
+<p><code class="c">mmap</code>/<code class="c">brk</code>/<code class="c">mremap</code> 最终都汇聚到 <code class="c">do_mmap</code>：</p>
+<pre class="code" data-label="code"><code class="c">SYSCALL_DEFINE6(mmap_pgoff)     // mmap.c:1427  用户态入口
+        │
+SYSCALL_DEFINE1(brk)            // mmap.c:178   堆扩展入口
+        │
+        ▼
+do_mmap(file, addr, len, prot, flags, pgoff)     // mmap.c:1203
+        │
+        ├─ vma_merge(vmi, mm, ...)               // mmap.c:863  尝试合并相邻 VMA
+        ├─ vm_area_alloc(mm)                     // 分配 struct vm_area_struct
+        ├─ file-&gt;f_op-&gt;mmap(...)                 // 文件映射回调（如 shmem_mmap）
+        └─ vma_link / 插入 maple tree            // 挂进 mm-&gt;mm_mt
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">vma_merge</code>（:863）是性能关键——频繁的 mmap/munmap 若每次都新建 VMA，<code class="c">mm-&gt;mm_mt</code>（maple tree）会膨胀，所以先尝试<strong>与前后 VMA 合并</strong>（<code class="c">can_vma_merge_before/after</code>，:773/:796）。这直接决定地址空间管理的开销。</p>
+<h2>2. VMA 的存储：maple tree（v6.1+）</h2>
+<p>v6.6 的 <code class="c">struct mm_struct</code> 里，VMA 用 <strong>maple tree</strong>（<code class="c">mm-&gt;mm_mt</code>）组织，取代了老内核的红黑树 + 双向链表：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>VMA 组织</th>
+<th>查找复杂度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≤ v6.0</td>
+<td>红黑树 + 链表</td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>v6.1+</td>
+<td>maple tree（B 树变体）</td>
+<td>O(log n)，<strong>内存更省、锁更细</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">find_vma</code> / <code class="c">find_vma_prev</code>（mmap.c:1708/:1758）都是对 maple tree 的遍历。这是 Ch4 的「版本断崖」点之一。</p>
+<h2>3. 锁页：<code class="c">mlock</code> 系列（mm/mlock.c）</h2>
+<pre class="code" data-label="C"><code class="c">SYSCALL_DEFINE2(mlock, ...)     // mlock.c:622  锁一段地址
+SYSCALL_DEFINE3(mlock2, ...)    // mlock.c:627  带 flags（MCL_ONFAULT 等）
+SYSCALL_DEFINE1(mlockall, ...)  // mlock.c:705  锁整个进程
+        │
+        ▼
+mlock_fixup(vmi, vma, ...)      // mlock.c:412  给 VMA 打 VM_LOCKED
+        │
+        ▼
+mlock_vma_pages_range(vma, ...) // mlock.c:369  把已存在的页 pin 住
+</code></pre>
+<p><strong>走读要点</strong>：<code class="c">mlock</code> 分两步——① 给 VMA 设 <code class="c">VM_LOCKED</code> 标志（未来的缺页会锁住新页）；② 立即 <code class="c">mlock_vma_pages_range</code> 把<strong>当前已在</strong>的页 pin 住。这解释了为什么 <code class="c">mlock</code> 对「已经映射但还没 touch 的页」需要 <code class="c">MCL_ONFAULT</code> 才延迟锁页。</p>
+<h2>4. 用户态页 pin：<code class="c">gup.c</code></h2>
+<p><code class="c">get_user_pages</code>（GUP）把用户态虚拟地址<strong>pin 成 struct page</strong>，用于 O_DIRECT、<code class="c">process_vm_readv</code>、RDMA 等「绕过缺页、直接操作物理页」的场景：</p>
+<pre class="code" data-label="code"><code class="c">get_user_pages(...)                 // gup.c（公开入口）
+        │
+follow_page_mask(vma, addr, ...)    // gup.c:809  逐级走页表
+        │
+follow_page_pte(...)                // gup.c:579  读 PTE 拿到 struct page
+</code></pre>
+<p><strong>走读要点</strong>：GUP 与普通缺页的区别是——GUP 假设页<strong>已经存在</strong>（不做缺页处理），只「查 PTE → 拿 page → 增引用计数」。HFT 的 RDMA/用户态零拷贝路径会用到它，理解「pin 之后页不会被回收」是延迟稳定的关键。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">do_mmap</code> / <code class="c">vma_merge</code></td>
+<td>Ch4（VMA 建立/合并）</td>
+</tr>
+<tr>
+<td>maple tree 存储</td>
+<td>Ch4（版本断崖：红黑树 → maple tree）</td>
+</tr>
+<tr>
+<td><code class="c">mlock_fixup</code> 两步</td>
+<td>Ch4（mlock 语义）+ Ch13（mlock 不防 OOM）</td>
+</tr>
+<tr>
+<td>GUP</td>
+<td>Ch4（copy_*_user / 零拷贝）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code></td>
+<td>锁死 RSS，防 reclaim 延迟尖刺（Ch10/Ch13 呼应）</td>
+</tr>
+<tr>
+<td>理解 <code class="c">vma_merge</code></td>
+<td>频繁 mmap 的碎片化会拖慢地址空间查找，HFT 尽量<strong>一次性大 mmap</strong></td>
+</tr>
+<tr>
+<td>GUP pin</td>
+<td>RDMA/零拷贝路径 pin 住页，避免「使用时页被换出」</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-C.html#app-C">appendix-C-页表管理.md</a></li>
 <li>下一章：<a href="appendix-E.html#app-E">appendix-E-启动内存分配器.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">mmap</code>/<code class="c">brk</code>/<code class="c">mremap</code> 最终都汇聚到哪个函数？</strong></p>
+<p><code class="c">do_mmap</code>（mmap.c:1203），它是所有「建映射」路径的汇聚点。</p>
+<p><strong>Q2：<code class="c">vma_merge</code> 为什么是性能关键？</strong></p>
+<p>频繁 mmap/munmap 若不合并相邻 VMA，maple tree 会膨胀、查找变慢；<code class="c">vma_merge</code>（:863）先尝试与前后 VMA 合并，控制 VMA 数量。</p>
+<p><strong>Q3：v6.1 起 VMA 用什么数据结构组织？取代了什么？</strong></p>
+<p>maple tree（<code class="c">mm-&gt;mm_mt</code>），取代了老内核的红黑树 + 双向链表，内存更省、锁更细。</p>
+<p><strong>Q4：<code class="c">mlock</code> 的两步操作是什么？</strong></p>
+<p>① <code class="c">mlock_fixup</code> 给 VMA 设 <code class="c">VM_LOCKED</code>（未来缺页会锁新页）；② <code class="c">mlock_vma_pages_range</code> 立即 pin 当前已存在的页。</p>
+<p><strong>Q5：GUP（get_user_pages）和普通缺页处理的本质区别？</strong></p>
+<p>GUP 假设页已存在，只「查 PTE → 拿 page → 增引用计数」，不做缺页处理；用于 O_DIRECT/RDMA 等绕过缺页直接操作物理页的场景。</p>
+</details>
       </section>
 
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>附录 H Slab分配器 · Slab Allocator</title>
+<title>附录 H Slab 分配器 · Slab Allocator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -275,7 +275,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     </div>
     <div class="nav-label">本章</div>
     <nav class="nav">
-          <a href="#app-h"><span class="n">H</span>附录 H Slab分配器 · Slab Allocator</a>
+          <a href="#app-h"><span class="n">H</span>附录 H Slab 分配器 · Slab Allocator</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="appendix-E.html#intro"><span class="n">E</span>启动内存分配器 · Boot Memory Allocator</a>
           <a href="appendix-F.html#intro"><span class="n">F</span>物理页分配 · Physical Page Allocation</a>
           <a href="appendix-G.html#intro"><span class="n">G</span>非连续内存分配 · Noncontiguous Memory Allocation</a>
-          <a href="appendix-H.html#intro"><span class="n">H</span>Slab分配器 · Slab Allocator</a>
+          <a href="appendix-H.html#intro"><span class="n">H</span>Slab 分配器 · Slab Allocator</a>
           <a href="appendix-I.html#intro"><span class="n">I</span>高端内存管理 · High Memory Management</a>
           <a href="appendix-J.html#intro"><span class="n">J</span>页框回收 · Page Frame Reclamation</a>
           <a href="appendix-K.html#intro"><span class="n">K</span>交换管理 · Swap Management</a>
@@ -315,7 +315,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="content" style="grid-template-columns:1fr">
         <div>
           <div class="eyebrow">Mel Gorman ULVM + 附录 A–M 源码导读</div>
-          <h1>附录 H Slab分配器 · Slab Allocator</h1>
+          <h1>附录 H Slab 分配器 · Slab Allocator</h1>
           <div class="meta">
 <span>book <b>06-linux-mm</b></span><span>chapter <b>App H</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
@@ -324,18 +324,145 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     </header>
 
       <section class="section" id="app-h">
-        <div class="sec-head"><div class="sec-no">H</div><h2>附录 H Slab分配器 · Slab Allocator</h2></div>
+        <div class="sec-head"><div class="sec-no">H</div><h2>附录 H Slab 分配器 · Slab Allocator</h2></div>
 <blockquote>
-<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong></p>
+<p><strong>Code Commentary</strong> · Mel Gorman · <strong>选读</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
 <p>概念总览 → <a href="chapter-08.html#ch-8">./chapter-08-slab-allocator/</a>（现代默认 <strong>SLUB</strong>）</p>
-<!-- 走读 slub.c/slab.c: kmem_cache_alloc, kmalloc caches, shrinker -->
-
+<hr />
+<h2>本节走读什么</h2>
+<p>原书附录 H 走读 <strong>Slab</strong>，但 v6.6 的默认分配器是 <strong>SLUB</strong>（<code class="c">mm/slub.c</code>，164KB）+ 通用层（<code class="c">mm/slab_common.c</code>）。本附录走读 <strong>SLUB 的 fast/slow path</strong> 与 <strong>kmalloc 分档机制</strong>。</p>
+<hr />
+<h2>1. SLUB 分配路径（fast/slow）</h2>
+<pre class="code" data-label="code"><code class="c">kmem_cache_alloc_node(s, gfp, node)          // slub.c:3521
+        │
+slab_alloc_node(s, lru, gfp, node, ...)      // slub.c:3453  fast path
+        │  从 per-CPU freelist 直接 pop 一个对象（无锁、cmpxchg）
+        ├─ 成功 → 返回对象
+        │  失败（freelist 空）↓
+        ▼
+__slab_alloc_node(...)                       // slub.c:3329/3404
+        │
+___slab_alloc(...)                           // slub.c:3095  slow path
+        │  关抢占 → 取新 slab → 或从 node partial 找 → 或 alloc_pages 新 slab
+</code></pre>
+<p><strong>走读要点</strong>：SLUB 的核心是 <strong>per-CPU freelist</strong>——每个 CPU 缓存一个「空闲对象链表」，分配/释放都是<strong>无锁的链表头 pop/push</strong>（<code class="c">cmpxchg_double</code> 原子操作）。只有 freelist 空（分配）或满（释放）时才 fallback 到 slow path 操作 slab 页。这就是 SLUB 比老 Slab 快的原因：<strong>快路径不碰全局锁</strong>。</p>
+<h2>2. 释放路径：<code class="c">do_slab_free</code> + <code class="c">slab_free_hook</code></h2>
+<pre class="code" data-label="code"><code class="c">kmem_cache_free(s, x)
+        │
+do_slab_free(...)                            // 释放回 per-CPU freelist（无锁 push）
+        │  freelist 满 → 归还 slab 页
+        ▼
+slab_free_hook(s, x)                         // slub.c:1766  KASAN/调试钩子
+</code></pre>
+<p><strong>走读要点</strong>：释放和分配对称——优先回 per-CPU freelist，满了才 flush 回页。<code class="c">slab_free_hook</code>（:1766）是调试/KASAN 的挂钩点，生产内核里通常编译为空。</p>
+<h2>3. kmalloc 分档：<code class="c">kmalloc_caches</code>（slab_common.c:677）</h2>
+<p><code class="c">kmalloc(size)</code> 不是动态建 cache，而是<strong>查表</strong>落到预建的 <code class="c">kmalloc_caches[][]</code>：</p>
+<pre class="code" data-label="C"><code class="c">kmalloc_caches[NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH + 1]  // slab_common.c:677
+    │  第一维 = 类型（normal/dma/cgroup/random）
+    │  第二维 = 大小档（8/16/32/64... 2^n）
+    ▼
+kmalloc_slab(size, flags, caller)            // slab_common.c:728
+        │  按 size 算 index → 返回对应 kmem_cache
+</code></pre>
+<p><strong>分档表</strong> <code class="c">kmalloc_info[]</code>（slab_common.c:824）定义了 8B ~ 8MB 的几十个档位（8/16/32/64/.../4K/8K/...）。<strong>走读要点</strong>：<code class="c">kmalloc</code> 的大小必须对齐到 2 的幂档位，所以 <code class="c">kmalloc(100)</code> 实际拿 128B 的 cache——这是 SLUB 与 Buddy 的衔接点：<strong>小对象复用 cache，大对象（&gt;8KB）直接转 <code class="c">kmalloc_large</code> 走 page_alloc</strong>。</p>
+<h2>4. shrinker：Slab 与回收的衔接</h2>
+<p><code class="c">struct shrinker</code>（include/linux/shrinker.h:63）让 slab cache 在内存压力下<strong>收缩</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">count_objects</code></td>
+<td>返回「可回收对象数」</td>
+</tr>
+<tr>
+<td><code class="c">scan_objects</code></td>
+<td>实际回收</td>
+</tr>
+<tr>
+<td><code class="c">seeks</code> / <code class="c">batch</code></td>
+<td>回收代价权重 / 批量</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>走读要点</strong>：dcache、icache 等通过 shrinker 注册，Ch10 的 <code class="c">shrink_slab</code> 在回收时回调它们——这就是「内存不足时先压缩 slab 缓存（dentry/inode）再换页」的机制入口。</p>
+<hr />
+<h2>与正文对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>附录内容</th>
+<th>正文落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SLUB fast/slow path</td>
+<td>Ch8（SLUB 机制）</td>
+</tr>
+<tr>
+<td>per-CPU freelist</td>
+<td>Ch8（快路径无锁）</td>
+</tr>
+<tr>
+<td><code class="c">kmalloc_caches</code> 分档</td>
+<td>Ch8（kmalloc 分档）+ 05 模块 Ch12.7</td>
+</tr>
+<tr>
+<td>shrinker</td>
+<td>Ch10 §4（收缩缓存）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对象池 vs SLUB</td>
+<td>热路径小对象用<strong>自定义对象池</strong>（预先分配 + 无锁栈），避开 SLUB 的 slow path fallback</td>
+</tr>
+<tr>
+<td>对齐分档</td>
+<td><code class="c">kmalloc(100)</code> 拿 128B，若频繁分配 100B 会浪费 28B，考虑按 2 幂设计对象大小</td>
+</tr>
+<tr>
+<td>观察收缩</td>
+<td><code class="c">/proc/slabinfo</code> 看 shrinker 是否频繁收缩 dcache/icache，判断内存压力</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>相关章节</h2>
 <ul>
 <li>上一章：<a href="appendix-G.html#app-G">appendix-G-非连续内存分配.md</a></li>
 <li>下一章：<a href="appendix-I.html#app-I">appendix-I-高端内存管理.md</a></li>
 </ul>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：SLUB 的 fast path 为什么无锁？</strong></p>
+<p>分配/释放都是操作 <strong>per-CPU freelist</strong>（空闲对象链表）的头，用 <code class="c">cmpxchg_double</code> 原子 pop/push，不碰全局锁；只有 freelist 空/满才 fallback 到 slow path。</p>
+<p><strong>Q2：<code class="c">kmalloc(100)</code> 实际拿多大 cache？为什么？</strong></p>
+<p>128B。因为 <code class="c">kmalloc_caches</code> 按 2 的幂分档（<code class="c">kmalloc_slab</code>，slab_common.c:728），大小必须对齐到档位。</p>
+<p><strong>Q3：<code class="c">kmalloc</code> 超过多大就不再走 slab、直接转 page_alloc？</strong></p>
+<p>大于最大分档（8MB 级别）或超过 <code class="c">KMALLOC_MAX_CACHE_SIZE</code>（通常 8KB）时，走 <code class="c">kmalloc_large</code> 直接用 page_alloc 分配整页。</p>
+<p><strong>Q4：shrinker 的 <code class="c">count_objects</code> / <code class="c">scan_objects</code> 分别干什么？</strong></p>
+<p><code class="c">count_objects</code> 返回可回收对象数（用于决定是否值得收缩），<code class="c">scan_objects</code> 执行实际回收（Ch10 <code class="c">shrink_slab</code> 回调）。</p>
+<p><strong>Q5：HFT 为什么常用自定义对象池而非依赖 SLUB？</strong></p>
+<p>热路径小对象用预分配的无锁对象池，可完全避开 SLUB 的 slow path fallback（取新 slab / alloc_pages）导致的不可预期延迟。</p>
+</details>
       </section>
 
 
