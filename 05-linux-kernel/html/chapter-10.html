@@ -3108,30 +3108,646 @@ TAS 不公平，但谁能跑谁抢到，至少不空等。</p>
 </tr>
 </tbody>
 </table></div>
-<h4>偏袒读者 · Reader-biased</h4>
+<blockquote>
+<p><strong>本篇分工</strong>：实体书只讲了 rwlock 的语义和"偏袒读者"这个特性。本篇<strong>不复述</strong>语义，
+只做四件事，全部用 v6.6 源码实证：</p>
+<p>① 拆开 <code class="c">rwlock_t</code> → <code class="c">arch_rwlock_t</code> → <code class="c">struct qrwlock</code>，给出<strong>完整位布局</strong>
+（书上那个"计数器从 0x01000000 往下减"的方案在 v6.6 上<strong>已经不存在了</strong>）；
+② ⭐ <strong>订正"偏袒读者"</strong> —— v6.6 的 qrwlock 是 <strong>FIFO 公平的、写者优先</strong>的，
+靠 <code class="c">_QW_WAITING</code> 标志位 + 一把内嵌的 qspinlock 实现。原来的"写者饥饿"结论<strong>不成立</strong>；
+③ 指出<strong>唯一的"插队"例外</strong>：中断上下文的读者不排队，直接自旋（并给出它为什么必须这样）；
+④ 引 <code class="c">Documentation/locking/spinlocks.rst</code> 的官方原话：<strong>"除非读临界区很长，
+否则你不如直接用 spinlock"</strong> —— 这条和"读多写少就用 rwlock"的直觉<strong>相反</strong>。</p>
+<p>所有常量与代码均核对自缓存的 v6.6 源码，行号可查。</p>
+</blockquote>
+<hr />
+<h2>1. <code class="c">rwlock_t</code> 在 v6.6 里是 <code class="c">struct qrwlock</code>，<strong>8 个字节</strong></h2>
+<p>书的年代（v2.6）<code class="c">rwlock_t</code> 就一个 32 位计数器加 <code class="c">RW_LOCK_BIAS</code>。现在完全不同：</p>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/qrwlock_types.h —— v6.6 全文核心 */
+typedef struct qrwlock {
+    union {
+        atomic_t cnts;            /* 4 字节：读者计数 + 写者标志 */
+        struct {
+#ifdef __LITTLE_ENDIAN
+            u8 wlocked;           /* 只取 cnts 的最低 1 字节 */
+            u8 __lstate[3];
+#else
+            u8 __lstate[3];
+            u8 wlocked;
+#endif
+        };
+    };
+    arch_spinlock_t     wait_lock;    /* 4 字节：一把完整的 qspinlock！ */
+} arch_rwlock_t;
+
+#define __ARCH_RW_LOCK_UNLOCKED {       \
+    { .cnts = ATOMIC_INIT(0), },        \
+    .wait_lock = __ARCH_SPIN_LOCK_UNLOCKED, \
+}
+</code></pre>
+<p>而 x86 直接就吃这个 asm-generic 版本，<strong>没有自己的 rwlock 实现</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/spinlock_types.h —— v6.6 全文，只有 253 字节 */
+#include &lt;linux/types.h&gt;
+#include &lt;asm-generic/qspinlock_types.h&gt;
+#include &lt;asm-generic/qrwlock_types.h&gt;
+</code></pre>
+<blockquote>
+<p>顺带一个可验证的小事实：<code class="c">arch/x86/include/asm/rwlock.h</code> 在 v6.6 <strong>不存在</strong>
+（抓取返回 "Couldn't find the requested file"）。x86 的 rwlock 走
+<code class="c">arch/x86/include/asm/spinlock.h</code> 里的 <code class="c">#include &lt;asm/qrwlock.h&gt;</code>
+→ <code class="c">include/asm-generic/qrwlock.h</code>。</p>
+</blockquote>
+<h3>位布局</h3>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/qrwlock.h */
+#define _QW_WAITING 0x100       /* A writer is waiting     */
+#define _QW_LOCKED  0x0ff       /* A writer holds the lock */
+#define _QW_WMASK   0x1ff       /* Writer mask         */
+#define _QR_SHIFT   9       /* Reader count shift      */
+#define _QR_BIAS    (1U &lt;&lt; _QR_SHIFT)   /* = 512 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c"> 31                        9  8    0
+┌──────────────────────────┬─┬─────┐
+│      reader count        │W│ 写者 │   cnts (4 bytes)
+│   (23 bits, bias = 512)  │A│ 状态 │
+└──────────────────────────┴─┴─────┘
+                            │  └─ bit 0-7 : _QW_LOCKED  (0x0ff) 写者持锁
+                            └──── bit 8   : _QW_WAITING (0x100) 写者在等
+ ┌────────────────────────────────┐
+ │ arch_spinlock_t wait_lock      │   另外 4 字节，一把完整的 qspinlock
+ └────────────────────────────────┘
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>行为</th>
-<th>含义</th>
+<th>项</th>
+<th>值</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>持续有新读者进入</td>
-<td><strong>写者可能长时间拿不到锁</strong>（写者饥饿）</td>
+<td><code class="c">_QR_BIAS</code></td>
+<td><code class="c">1 &lt;&lt; 9</code> = <strong>512</strong></td>
+<td>每个读者给计数值加 512</td>
 </tr>
 <tr>
-<td>适合</td>
-<td><strong>读极多、写极少</strong>，且写可容忍延迟</td>
+<td>最大并发读者</td>
+<td><code class="c">2^23 - 1</code> = <strong>8,388,607</strong></td>
+<td>计数位有 23 位</td>
 </tr>
 <tr>
-<td>不适合</td>
-<td>写也要及时（改用 seqlock / RCU / 普通 spinlock）</td>
+<td><code class="c">_QW_LOCKED</code></td>
+<td><code class="c">0x0ff</code></td>
+<td>写者持锁标志（占满低字节）</td>
+</tr>
+<tr>
+<td><code class="c">_QW_WAITING</code></td>
+<td><code class="c">0x100</code></td>
+<td>⭐ <strong>写者在等</strong> —— 公平性的关键</td>
+</tr>
+<tr>
+<td><code class="c">_QW_WMASK</code></td>
+<td><code class="c">0x1ff</code></td>
+<td>写者掩码 = LOCKED | WAITING</td>
+</tr>
+<tr>
+<td>锁大小</td>
+<td><strong>8 字节</strong></td>
+<td>非 debug、非 RT</td>
 </tr>
 </tbody>
 </table></div>
-<h4>API 直觉</h4>
+<blockquote>
+<p>注意 <code class="c">wlocked</code> 是 <code class="c">u8</code>，和 <code class="c">struct qspinlock</code> 里 <code class="c">locked</code> 给整整一个字节是<strong>同一个套路</strong>：
+让写者解锁退化成一次<strong>单字节 store</strong>。</p>
+</blockquote>
+<hr />
+<h2>2. 快路径：读者加 512，写者一次 CAS</h2>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/qrwlock.h */
+static inline void queued_read_lock(struct qrwlock *lock)
+{
+    int cnts;
+
+    cnts = atomic_add_return_acquire(_QR_BIAS, &amp;lock-&gt;cnts);
+    if (likely(!(cnts &amp; _QW_WMASK)))
+        return;
+
+    /* The slowpath will decrement the reader count, if necessary. */
+    queued_read_lock_slowpath(lock);
+}
+
+static inline void queued_write_lock(struct qrwlock *lock)
+{
+    int cnts = 0;
+    /* Optimize for the unfair lock case where the fair flag is 0. */
+    if (likely(atomic_try_cmpxchg_acquire(&amp;lock-&gt;cnts, &amp;cnts, _QW_LOCKED)))
+        return;
+
+    queued_write_lock_slowpath(lock);
+}
+
+static inline void queued_read_unlock(struct qrwlock *lock)
+{
+    (void)atomic_sub_return_release(_QR_BIAS, &amp;lock-&gt;cnts);
+}
+
+static inline void queued_write_unlock(struct qrwlock *lock)
+{
+    smp_store_release(&amp;lock-&gt;wlocked, 0);   /* 只写 1 个字节 */
+}
+</code></pre>
+<p>三个观察：</p>
+<ol>
+<li><strong>读者是"先加后查"</strong>：<code class="c">atomic_add_return_acquire(_QR_BIAS, ...)</code> 先把计数加上去，
+   再看有没有写者。有的话慢路径会<strong>把计数减回来</strong>。这个乐观 + 回滚的模式
+   和慢路径里的 <code class="c">atomic_sub(_QR_BIAS, ...)</code> 是配对的。</li>
+<li><strong>写者快路径要求 <code class="c">cnts == 0</code></strong>（<code class="c">atomic_try_cmpxchg_acquire(&amp;cnts, &amp;0, _QW_LOCKED)</code>），
+   即"既没有读者也没有写者"。比读者的"只要没写者就行"严格得多。</li>
+<li><strong>写者解锁只写 1 字节</strong>（<code class="c">&amp;lock-&gt;wlocked</code>），而<strong>读者解锁是一次原子 RMW</strong>
+   （<code class="c">atomic_sub_return_release</code>）。这就是官方文档那句"rwlock 比 spinlock
+   需要更多原子操作"的来源 —— 见 §6。</li>
+</ol>
+<h3>trylock 也是先加后查</h3>
+<pre class="code" data-label="C"><code class="c">static inline int queued_read_trylock(struct qrwlock *lock)
+{
+    int cnts;
+
+    cnts = atomic_read(&amp;lock-&gt;cnts);
+    if (likely(!(cnts &amp; _QW_WMASK))) {
+        cnts = (u32)atomic_add_return_acquire(_QR_BIAS, &amp;lock-&gt;cnts);
+        if (likely(!(cnts &amp; _QW_WMASK)))
+            return 1;
+        atomic_sub(_QR_BIAS, &amp;lock-&gt;cnts);      /* 回滚 */
+    }
+    return 0;
+}
+</code></pre>
+<p>⚠️ 判据是 <code class="c">_QW_WMASK = 0x1ff</code>，<strong>同时覆盖 <code class="c">_QW_LOCKED</code> 和 <code class="c">_QW_WAITING</code></strong>。
+也就是说：<strong>只要有写者在等，<code class="c">read_trylock()</code> 就失败。</strong> 这是公平性的第一道闸。</p>
+<hr />
+<h2>3. ⭐ 订正：v6.6 的 rwlock <strong>不是偏袒读者</strong>，是 FIFO 公平的</h2>
+<p>旧笔记（以及书上）写的是：</p>
+<blockquote>
+<p>持续有新读者进入 → <strong>写者可能长时间拿不到锁</strong>（写者饥饿）</p>
+</blockquote>
+<p><strong>这在 v6.6 的 qrwlock 上不成立。</strong> 看两个慢路径：</p>
+<h3>写者慢路径</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/qrwlock.c */
+void __lockfunc queued_write_lock_slowpath(struct qrwlock *lock)
+{
+    int cnts;
+
+    trace_contention_begin(lock, LCB_F_SPIN | LCB_F_WRITE);
+
+    /* Put the writer into the wait queue */
+    arch_spin_lock(&amp;lock-&gt;wait_lock);            /* ① 先占住队列（那把内嵌 qspinlock） */
+
+    /* Try to acquire the lock directly if no reader is present */
+    if (!(cnts = atomic_read(&amp;lock-&gt;cnts)) &amp;&amp;
+        atomic_try_cmpxchg_acquire(&amp;lock-&gt;cnts, &amp;cnts, _QW_LOCKED))
+        goto unlock;
+
+    /* Set the waiting flag to notify readers that a writer is pending */
+    atomic_or(_QW_WAITING, &amp;lock-&gt;cnts);         /* ② ⭐ 挂出&quot;写者在等&quot;的牌子 */
+
+    /* When no more readers or writers, set the locked flag */
+    do {
+        cnts = atomic_cond_read_relaxed(&amp;lock-&gt;cnts, VAL == _QW_WAITING);  /* ③ 等读者排空 */
+    } while (!atomic_try_cmpxchg_acquire(&amp;lock-&gt;cnts, &amp;cnts, _QW_LOCKED));
+unlock:
+    arch_spin_unlock(&amp;lock-&gt;wait_lock);
+    trace_contention_end(lock, 0);
+}
+</code></pre>
+<p>关键点：<strong>写者整个等待期间一直握着 <code class="c">wait_lock</code></strong>。</p>
+<h3>读者慢路径</h3>
+<pre class="code" data-label="C"><code class="c">void __lockfunc queued_read_lock_slowpath(struct qrwlock *lock)
+{
+    /*
+     * Readers come here when they cannot get the lock without waiting
+     */
+    if (unlikely(in_interrupt())) {                 /* ⭐ 唯一例外，见 §4 */
+        atomic_cond_read_acquire(&amp;lock-&gt;cnts, !(VAL &amp; _QW_LOCKED));
+        return;
+    }
+    atomic_sub(_QR_BIAS, &amp;lock-&gt;cnts);              /* 把乐观加上的 512 还回去 */
+
+    trace_contention_begin(lock, LCB_F_SPIN | LCB_F_READ);
+
+    /* Put the reader into the wait queue */
+    arch_spin_lock(&amp;lock-&gt;wait_lock);               /* ⭐ 排队 —— 排在写者【后面】 */
+    atomic_add(_QR_BIAS, &amp;lock-&gt;cnts);              /* 重新加上 512 */
+
+    /*
+     * The ACQUIRE semantics of the following spinning code ensure
+     * that accesses can't leak upwards out of our subsequent critical
+     * section in the case that the lock is currently held for write.
+     */
+    atomic_cond_read_acquire(&amp;lock-&gt;cnts, !(VAL &amp; _QW_LOCKED));
+
+    /* Signal the next one in queue to become queue head */
+    arch_spin_unlock(&amp;lock-&gt;wait_lock);
+    trace_contention_end(lock, 0);
+}
+</code></pre>
+<h3>公平性是怎么成立的（三步连锁）</h3>
+<pre class="code" data-label="code"><code class="c">  时间线
+   ─────────────────────────────────────────────────────────────►
+  W 到达 ──► arch_spin_lock(&amp;wait_lock)   【握住队列】
+          ──► atomic_or(_QW_WAITING)      【挂牌子：写者在等】
+          ──► 自旋等 cnts == _QW_WAITING（即读者排空）
+
+  R1 到达 ─► atomic_add(512)
+          ─► cnts &amp; _QW_WMASK != 0  （WAITING 位亮了）
+          ─► 慢路径：atomic_sub(512)      【还回去】
+          ─► arch_spin_lock(&amp;wait_lock) ──► 阻塞！卡在 W 后面
+                                             ▲
+                                             └── W 正握着它
+
+  R2、R3 同理，全部排在 W 后面
+</code></pre>
+<p>三道闸门保证写者不被饿死：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>闸门</th>
+<th>位置</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <code class="c">_QW_WAITING</code> 位</td>
+<td>写者慢路径 <code class="c">atomic_or</code></td>
+<td>让<strong>新读者的快路径直接失败</strong></td>
+</tr>
+<tr>
+<td>② 读者回滚计数</td>
+<td>读者慢路径 <code class="c">atomic_sub(_QR_BIAS, ...)</code></td>
+<td>读者不再"赖"在计数里</td>
+</tr>
+<tr>
+<td>③ 读者去抢 <code class="c">wait_lock</code></td>
+<td>读者慢路径 <code class="c">arch_spin_lock(&amp;wait_lock)</code></td>
+<td>排队在写者<strong>之后</strong>（FIFO）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>源码自己的说法</h3>
+<p><code class="c">include/asm-generic/qrwlock.h</code> 头部注释逐字：</p>
+<blockquote>
+<p><em>These use generic atomic and locking routines, but </em><em>depend on a fair spinlock
+implementation in order to be fair themselves</em><em>.</em></p>
+</blockquote>
+<p>一句话点破：qrwlock 的公平性<strong>不是自己实现的，是借来的</strong> —— 借的是那把内嵌的
+<code class="c">arch_spinlock_t wait_lock</code>（qspinlock，本身是排队锁，见 10.2）。</p>
+<p><strong>工程结论</strong>：v6.6 上可以放心用 <code class="c">rwlock_t</code>，不用担心"写者饥饿"。
+（真正要担心的是 §6 的性能账。）</p>
+<hr />
+<h2>4. ⭐ 唯一的"插队"：中断上下文的读者不排队</h2>
+<p>读者慢路径开头有个特判：</p>
+<pre class="code" data-label="C"><code class="c">    if (unlikely(in_interrupt())) {
+        /*
+         * Readers in interrupt context will get the lock immediately
+         * if the writer is just waiting (not holding the lock yet),
+         * so spin with ACQUIRE semantics until the lock is available
+         * without waiting in the queue.
+         */
+        atomic_cond_read_acquire(&amp;lock-&gt;cnts, !(VAL &amp; _QW_LOCKED));
+        return;
+    }
+</code></pre>
+<h3>为什么必须这样：否则会死锁</h3>
+<p>设想一个读者<strong>不</strong>走这个特判：</p>
+<pre class="code" data-label="code"><code class="c">task 上下文:  read_lock() ──► 慢路径 ──► arch_spin_lock(&amp;wait_lock)  【握住队列】
+                    │
+              本地中断打进来
+                    │
+ISR:          read_lock() ──► 慢路径 ──► arch_spin_lock(&amp;wait_lock)
+                    │
+              ISR 自旋等 task 释放 wait_lock
+              task 永远等 ISR 返回才能继续
+                    ▼
+                  死锁
+</code></pre>
+<p>所以中断里来的读者<strong>必须绕过队列</strong>，只在 <code class="c">_QW_LOCKED</code>（写者是否<strong>真的持锁</strong>）上自旋。</p>
+<h3>这个例外带来的后果</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>允许的插队</td>
+<td>ISR 里的读者只看 <code class="c">_QW_LOCKED</code>，<strong>不看 <code class="c">_QW_WAITING</code></strong></td>
+</tr>
+<tr>
+<td>后果</td>
+<td>如果 <code class="c">wait_lock</code> 队列里有写者在等、但还没拿到锁，ISR 读者<strong>可以插进去</strong></td>
+</tr>
+<tr>
+<td>严格程度</td>
+<td>只挡"写者已持锁"，不挡"写者在等"</td>
+</tr>
+<tr>
+<td>死锁避免</td>
+<td>这是刻意的设计代价 —— 用轻微的不公平换掉一个必现死锁</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推论</strong>：如果你的 ISR 里会 <code class="c">read_lock()</code>，那么严格的 FIFO 公平性<strong>不成立</strong>，
+写者仍可能被密集的中断读者延迟。要严格公平，得让 ISR 侧的读者改成
+在进程上下文（如 tasklet/workqueue）里拿锁 —— 但那又引入了延迟。</p>
+<blockquote>
+<p>⚠️ 这也解释了 <code class="c">arch/x86/include/asm/spinlock.h</code> 里那段注释的意思：
+<code class="c">c
+ * NOTE! it is quite common to have readers in interrupts
+ * but no interrupt writers. For those circumstances we
+ * can "mix" irq-safe locks - any writer needs to get a
+ * irq-safe write-lock, but readers can get non-irqsafe
+ * read-locks.</code>
+即：读者可以不带 irqsave（因为读者之间不互斥），但<strong>写者必须带</strong> ——
+否则 ISR 里的读者会和进程上下文的写者撞上。</p>
+</blockquote>
+<hr />
+<h2>5. 版本断崖：老的 <code class="c">RW_LOCK_BIAS</code> 方案早没了</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>x86 rwlock 实现</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v3.10</td>
+<td><code class="c">RW_LOCK_BIAS</code> 计数器 + 手写汇编</td>
+<td><code class="c">arch_write_lock</code>：<code class="c">WRITE_LOCK_SUB(%1) "(%0)"</code>、<code class="c">call __write_lock_failed</code></td>
+</tr>
+<tr>
+<td>v4.1</td>
+<td><strong>已换成 qrwlock</strong></td>
+<td><code class="c">arch/x86/include/asm/spinlock.h:210</code>：<em>"On x86, we implement read-write locks using the generic qrwlock"</em></td>
+</tr>
+<tr>
+<td>v4.2</td>
+<td>x86 <code class="c">select ARCH_USE_QUEUED_RWLOCKS</code></td>
+<td><code class="c">arch/x86/Kconfig</code> 从 v4.2 起出现该符号（v4.1 计数为 0）</td>
+</tr>
+<tr>
+<td>v6.6</td>
+<td>仍为 qrwlock</td>
+<td><code class="c">asm/spinlock_types.h</code> 只有 3 行 include</td>
+</tr>
+</tbody>
+</table></div>
+<p>v3.10 老实现的形状（可验证部分）：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/spinlock.h @ v3.10 */
+static inline void arch_read_lock(arch_rwlock_t *rw)
+{
+    asm volatile(LOCK_PREFIX READ_LOCK_SIZE(dec) &quot; (%0)\n\t&quot;
+             &quot;jns 1f\n&quot;
+             &quot;call __read_lock_failed\n\t&quot;
+             &quot;1:\n&quot;
+             ::LOCK_PTR_REG (rw) : &quot;memory&quot;);
+}
+
+static inline void arch_write_lock(arch_rwlock_t *rw)
+{
+    asm volatile(LOCK_PREFIX WRITE_LOCK_SUB(%1) &quot;(%0)\n\t&quot;
+             &quot;jz 1f\n&quot;
+             &quot;call __write_lock_failed\n\t&quot;
+             &quot;1:\n&quot;
+             ::LOCK_PTR_REG (&amp;rw-&gt;write), &quot;i&quot; (RW_LOCK_BIAS)
+             : &quot;memory&quot;);
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* RW_LOCK_BIAS 定义（v3.10） */
+#define RW_LOCK_BIAS        0x00100000        /* x86_32 */
+#define RW_LOCK_BIAS        (_AC(1,L) &lt;&lt; 32)  /* x86_64 */
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>存疑标注（诚实起见）</strong>：老方案到底是不是"偏袒读者、写者会饥饿"，
+取决于 <code class="c">READ_LOCK_SIZE</code> 这个宏展开成什么后缀（<code class="c">b</code>/<code class="c">w</code>/<code class="c">l</code>/<code class="c">q</code>），
+它决定读者的 <code class="c">dec</code> 只影响哪几个字节 —— 而写者减去的是 64 位的 <code class="c">RW_LOCK_BIAS</code>。
+<strong>本次核对未定位到 <code class="c">READ_LOCK_SIZE</code> 的定义位置</strong>（v3.10 的
+<code class="c">arch/x86/include/asm/spinlock.h</code> 里只有使用处和文件末尾的 <code class="c">#undef</code>，
+定义应在 <code class="c">asm/rwlock.h</code> 或更早的 include 中）。因此<strong>不下断言</strong>。</p>
+<p>可以确定的是：① 老方案<strong>没有</strong> <code class="c">wait_lock</code> 队列，读者失败后进
+<code class="c">__read_lock_failed</code> 自旋重试，<strong>不存在"排队"概念</strong>；
+② v6.6 的 qrwlock 有明确的 <code class="c">_QW_WAITING</code> + 队列，公平性<strong>有源码可证</strong>。
+需要坐实老方案时，下一步应抓 <code class="c">arch/x86/include/asm/rwlock.h@v3.10</code> 全文。</p>
+</blockquote>
+<hr />
+<h2>6. ⭐ 官方建议：<strong>除非读临界区很长，否则别用 rwlock</strong></h2>
+<p><code class="c">Documentation/locking/spinlocks.rst</code> 的原话（Lesson 2: reader-writer spinlocks）：</p>
+<blockquote>
+<p><em>NOTE! reader-writer locks require </em><em>more atomic memory operations</em><em> than
+simple spinlocks. </em><em>Unless the reader critical section is long, you
+are better off just using spinlocks.</em>**</p>
+</blockquote>
+<p>这条和"读多写少就用 rwlock"的流行直觉<strong>相反</strong>。为什么？</p>
+<h3>算一笔原子操作账</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>普通 <code class="c">spinlock_t</code></th>
+<th><code class="c">rwlock_t</code>（读者）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加锁</td>
+<td>1 次 <code class="c">cmpxchg</code></td>
+<td>1 次 <code class="c">atomic_add_return</code>（<strong>RMW</strong>）</td>
+</tr>
+<tr>
+<td>解锁</td>
+<td>1 次 <strong>普通 store</strong>（单字节，<strong>非原子</strong>）</td>
+<td>1 次 <code class="c">atomic_sub_return</code>（<strong>RMW</strong>）</td>
+</tr>
+<tr>
+<td>争用时</td>
+<td>自旋在<strong>自己的</strong> MCS node（本地 cacheline，O(N)）</td>
+<td>回滚计数 + 抢 <code class="c">wait_lock</code> + 重新加计数</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键差异：</p>
+<ol>
+<li><strong>普通 spinlock 的解锁不是原子操作</strong>（<code class="c">smp_store_release(&amp;lock-&gt;locked, 0)</code>，
+   一次普通单字节 store）。<strong>rwlock 的读解锁是原子 RMW</strong>（<code class="c">atomic_sub_return_release</code>），
+   要独占 cacheline，多核下必然 cacheline 乒乓。</li>
+<li><strong>普通 spinlock 争用时每人自旋在自己的 MCS node</strong>（见 10.2，O(N)）；
+   rwlock 的读者争用时全都在<strong>同一把 <code class="c">wait_lock</code></strong> 上排队（虽然是 qspinlock，
+   但仍是全局竞争点，且读者是"排到写者后面"而不是"和写者并行"）。</li>
+<li>所以：<strong>读者多 ≠ 用 rwlock 划算</strong>。只有当"读临界区足够长，
+   长到多个读者并行执行省下的时间 &gt; 额外原子操作的开销"时才划算。</li>
+</ol>
+<h3>另外两条官方硬约束</h3>
+<pre class="code" data-label="rst"><code class="c">Also, you cannot &quot;upgrade&quot; a read-lock to a write-lock, so if you at _any_
+time need to do any changes (even if you don't do it every time), you have
+to get the write-lock at the very beginning.
+</code></pre>
+<blockquote>
+<p><strong>不能把读锁"升级"成写锁。</strong> 只要代码里<strong>任何一条路径</strong>可能要改数据，
+就必须<strong>从一开始就拿写锁</strong>。想"先读着，发现要改再升级"会直接死锁
+（<code class="c">write_lock()</code> 等所有读者退出，而你自己就是那个读者）。</p>
+</blockquote>
+<pre class="code" data-label="rst"><code class="c">   NOTE! RCU is better for list traversal, but requires careful
+   attention to design detail (see Documentation/RCU/listRCU.rst).
+</code></pre>
+<blockquote>
+<p>遍历链表，<strong>RCU 比 rwlock 好</strong>。</p>
+</blockquote>
+<h3>选型决策表（综合以上）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读临界区<strong>很短</strong>（几条~几十条指令）</td>
+<td><strong>普通 <code class="c">spinlock_t</code></strong></td>
+<td>官方文档原话，原子操作更少</td>
+</tr>
+<tr>
+<td>读临界区<strong>长</strong>、写极少</td>
+<td><code class="c">rwlock_t</code></td>
+<td>并发读者的收益盖过开销</td>
+</tr>
+<tr>
+<td>链表遍历、读极多</td>
+<td><strong>RCU</strong></td>
+<td>读端零原子操作，官方明确推荐</td>
+</tr>
+<tr>
+<td>写者必须<strong>立刻</strong>可见、读者极多</td>
+<td><strong>seqlock</strong>（10.8）</td>
+<td>读者无锁，靠序号重试</td>
+</tr>
+<tr>
+<td>任何路径可能要改数据</td>
+<td><strong>直接拿写锁</strong> / 换机制</td>
+<td>不能升级读锁</td>
+</tr>
+<tr>
+<td>RT 内核</td>
+<td>见 §7 —— <code class="c">rwlock_t</code> 会睡眠</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. PREEMPT_RT：<code class="c">rwlock_t</code> 也变成可睡眠锁</h2>
+<p>和 <code class="c">spinlock_t</code> 一样，RT 下 <code class="c">rwlock_t</code> 也换了实现：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/rwlock_types.h */
+#ifndef CONFIG_PREEMPT_RT
+typedef struct {
+    arch_rwlock_t raw_lock;                  /* 非 RT：struct qrwlock，8 字节 */
+#ifdef CONFIG_DEBUG_SPINLOCK
+    unsigned int magic, owner_cpu;
+    void *owner;
+#endif
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+    struct lockdep_map dep_map;
+#endif
+} rwlock_t;
+
+#define RWLOCK_MAGIC        0xdeaf1eed
+
+#else /* !CONFIG_PREEMPT_RT */
+#include &lt;linux/rwbase_rt.h&gt;
+
+typedef struct {
+    struct rwbase_rt    rwbase;
+    atomic_t        readers;
+    ...
+} rwlock_t;
+#endif
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/linux/rwbase_rt.h:11 */
+struct rwbase_rt {
+    atomic_t        readers;
+    struct rt_mutex_base    rtmutex;
+};
+
+#define __RWBASE_INITIALIZER(name)  \
+{                   \
+    .readers = ATOMIC_INIT(READER_BIAS),    \
+    .rtmutex = __RT_MUTEX_BASE_INITIALIZER(name.rtmutex),   \
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/linux/rwlock_rt.h:35,82 */
+static __always_inline void read_lock(rwlock_t *rwlock)  { rt_read_lock(rwlock); }
+static __always_inline void write_lock(rwlock_t *rwlock) { rt_write_lock(rwlock); }
+</code></pre>
+<p>对照记忆：<code class="c">SPINLOCK_MAGIC = 0xdead4ead</code>，<code class="c">RWLOCK_MAGIC = 0xdeaf1eed</code>（都是 16 进制英文彩蛋）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code class="c">read_lock()</code> / <code class="c">write_lock()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非 RT</td>
+<td>真自旋（qrwlock），不可睡眠</td>
+</tr>
+<tr>
+<td><strong>PREEMPT_RT</strong></td>
+<td><code class="c">rt_read_lock()</code> / <code class="c">rt_write_lock()</code>，<strong>可睡眠</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>和 <code class="c">spinlock_t</code> 的对应关系完全一样：想要 RT 上也不睡的 rwlock，
+需要用 <code class="c">raw_*</code> 那一族。</p>
+</blockquote>
+<hr />
+<h2>8. API 层：和 spinlock 同构</h2>
+<pre class="code" data-label="C"><code class="c">/* include/linux/rwlock_api_smp.h:147 */
+static inline void __raw_read_lock(rwlock_t *lock)
+{
+    preempt_disable();
+    rwlock_acquire_read(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_read_trylock, do_raw_read_lock);
+}
+
+static inline unsigned long __raw_read_lock_irqsave(rwlock_t *lock)
+{
+    unsigned long flags;
+    local_irq_save(flags);
+    preempt_disable();
+    rwlock_acquire_read(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_read_trylock, do_raw_read_lock);
+    return flags;
+}
+
+static inline void __raw_read_lock_bh(rwlock_t *lock)
+{
+    __local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+    rwlock_acquire_read(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_read_trylock, do_raw_read_lock);
+}
+</code></pre>
+<p>和 10.2 的 spinlock 完全同构，两点相同：</p>
+<ol>
+<li><strong><code class="c">read_lock()</code> 也是 <code class="c">preempt_disable()</code> + <code class="c">LOCK_CONTENDED(try, lock)</code></strong> ——
+   跟 <code class="c">spin_lock()</code> 一模一样的结构。</li>
+<li><strong><code class="c">read_lock_bh()</code> 没有显式 <code class="c">preempt_disable()</code></strong> —— <code class="c">__local_bh_disable_ip()</code>
+   隐含禁抢占（和 <code class="c">spin_lock_bh()</code> 同理）。</li>
+</ol>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -3141,63 +3757,592 @@ TAS 不公平，但谁能跑谁抢到，至少不空等。</p>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">read_lock</code> / <code class="c">read_unlock</code></td>
+<td><code class="c">read_lock()</code> / <code class="c">read_unlock()</code></td>
 <td>共享读</td>
 </tr>
 <tr>
-<td><code class="c">write_lock</code> / <code class="c">write_unlock</code></td>
+<td><code class="c">write_lock()</code> / <code class="c">write_unlock()</code></td>
 <td>独占写</td>
 </tr>
 <tr>
-<td><code class="c">*_irqsave</code> / <code class="c">*_bh</code></td>
-<td>与 spinlock 相同：防中断/ softirq 重入</td>
+<td><code class="c">read_trylock()</code> / <code class="c">write_trylock()</code></td>
+<td>失败立即返回，不阻塞</td>
+</tr>
+<tr>
+<td><code class="c">*_irqsave()</code> / <code class="c">*_irq()</code> / <code class="c">*_bh()</code></td>
+<td>与 spinlock 同义</td>
+</tr>
+<tr>
+<td><code class="c">read_lock_irqsave()</code></td>
+<td>读者<strong>通常</strong>不需要（读者之间不互斥）</td>
+</tr>
+<tr>
+<td><code class="c">write_lock_irqsave()</code></td>
+<td>⚠️ <strong>写者一般需要</strong> —— 见 §4 那条 x86 注释</td>
 </tr>
 </tbody>
 </table></div>
-<h4>代价</h4>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>点</th>
-<th>说明</th>
+<th>现象</th>
+<th>机制解释</th>
+<th>应对</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>缓存行乒乓</td>
-<td>读者也要改锁状态 → 多核读多时也可能不划算</td>
+<td><strong>rwlock 读多反而更慢</strong></td>
+<td>读解锁是<strong>原子 RMW</strong>，多核下 cacheline 乒乓；普通 spinlock 解锁只是普通 store</td>
+<td>读临界区短就用 spinlock（官方原话）</td>
 </tr>
 <tr>
-<td>现代趋势</td>
-<td>很多路径改用 <strong>RCU</strong>（读侧极快）或 <strong>seqlock</strong></td>
+<td><strong>写者延迟不可控</strong></td>
+<td>qrwlock 虽有 <code class="c">_QW_WAITING</code> 保公平，但<strong>中断里的读者会插队</strong></td>
+<td>ISR 里不要 <code class="c">read_lock()</code> 热路径；改 tasklet 或直接换 RCU</td>
+</tr>
+<tr>
+<td><strong>读者全部挤在 <code class="c">wait_lock</code></strong></td>
+<td>争用时读者回滚计数后统一排到内嵌 qspinlock 上</td>
+<td>高并发读用 RCU（读端零原子操作）</td>
+</tr>
+<tr>
+<td><strong>想"先读后改"会死锁</strong></td>
+<td>读锁无法升级为写锁</td>
+<td>一开始就拿写锁，或改用 seqlock / RCU</td>
+</tr>
+<tr>
+<td><strong>RT 上 rwlock 会睡</strong></td>
+<td><code class="c">rwlock_t</code> = <code class="c">rwbase_rt</code>（<code class="c">atomic_t readers</code> + <code class="c">rt_mutex_base</code>）</td>
+<td>延迟敏感路径用 raw 族</td>
+</tr>
+<tr>
+<td>行情快照 + 偶发配置更新</td>
+<td>想当然选 rwlock</td>
+<td>先看读侧临界区长度；配置更新用<strong>双缓冲 + atomic 换指针</strong>往往更好</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 行情只读快照 + 偶发配置更新 → 想 rwlock；若写必须立即可见且读者极多 → 看 <strong>seqlock（10.8）</strong> 或用户态无锁环。<strong>不要</strong> 在读锁里做长循环。</p>
-<p>→ <a href="#s-10-2">10.2 spinlock</a> · <a href="#s-10-8">10.8 seqlock</a></p>
-<h3>常见陷阱</h3>
-<ol>
-<li>以为读写锁总是比普通锁好——写多读少时读写锁退化（写者饥饿），反而更慢</li>
-<li>混淆 rwlock 和 RCU——rwlock 读端仍需原子操作（有开销），RCU 读端无开销</li>
-<li>在读写锁的读端做耗时操作——会阻塞写者（写者等所有读者退出）</li>
-</ol>
+<p><strong>嵌入式侧</strong>：<code class="c">rwlock_t</code> 在 UP 上和 <code class="c">spinlock_t</code> 一样退化成 <code class="c">preempt_disable()</code>
+（<code class="c">rwlock_api_up.h</code> 里 <code class="c">_raw_read_lock(lock)</code> → <code class="c">__LOCK(lock)</code>）。
+单核上用 rwlock <strong>没有任何并发收益</strong>（本来就不可能有两个读者真并行），
+只有额外的原子操作开销 —— <strong>UP 系统上一律用普通 spinlock</strong>。</p>
+<hr />
+<h2>实践模板</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/rwlock.h&gt;
+
+struct route_table {
+    rwlock_t        lock;
+    struct route   *head;
+    unsigned int    nr;
+};
+
+static DEFINE_RWLOCK(g_rt_lock);
+static struct route_table g_rt;
+
+static void rt_init(struct route_table *t)
+{
+    rwlock_init(&amp;t-&gt;lock);        /* 动态初始化 */
+    t-&gt;head = NULL;
+    t-&gt;nr = 0;
+}
+
+/* 读侧：临界区短的话，官方建议直接改用 spinlock */
+static struct route *rt_lookup(unsigned int key)
+{
+    struct route *r;
+    unsigned long flags;
+
+    read_lock_irqsave(&amp;g_rt_lock, flags);
+    for (r = g_rt.head; r; r = r-&gt;next) {
+        if (r-&gt;key == key)
+            break;
+    }
+    read_unlock_irqrestore(&amp;g_rt_lock, flags);
+    return r;   /* ⚠️ 出了锁指针已不受保护 —— 需要 RCU 或引用计数 */
+}
+
+/* 写侧：必须 irqsave —— ISR 里可能有读者 */
+static int rt_update(unsigned int key, struct route *new_r)
+{
+    unsigned long flags;
+    int ret = -ENOENT;
+
+    write_lock_irqsave(&amp;g_rt_lock, flags);
+    /* 一旦进写锁可以做任何修改；但注意【不能】从 read_lock 升级过来 */
+    ...
+    write_unlock_irqrestore(&amp;g_rt_lock, flags);
+    return ret;
+}
+</code></pre>
+<p><strong>易错点核对表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>❌ 错误</th>
+<th>✅ 正确</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"读多写少就用 rwlock"</td>
+<td>读<strong>临界区长度</strong>才是判据，官方原话：短临界区不如用 spinlock</td>
+</tr>
+<tr>
+<td>先 <code class="c">read_lock()</code> 再 <code class="c">write_lock()</code> 想升级</td>
+<td>死锁。要改就从一开始拿写锁</td>
+</tr>
+<tr>
+<td>认为 v6.6 上写者会饥饿</td>
+<td>qrwlock 有 <code class="c">_QW_WAITING</code> + <code class="c">wait_lock</code> 队列，是公平的</td>
+</tr>
+<tr>
+<td>ISR 里 <code class="c">read_lock()</code> 还指望严格 FIFO</td>
+<td>中断读者不排队，只看 <code class="c">_QW_LOCKED</code>（为避死锁的刻意设计）</td>
+</tr>
+<tr>
+<td>读者用 <code class="c">read_lock()</code>、写者用 <code class="c">write_lock()</code>（都不带 irq 保护）</td>
+<td>写者一般需要 <code class="c">write_lock_irqsave()</code></td>
+</tr>
+<tr>
+<td>UP 系统上用 rwlock 图"读者并行"</td>
+<td>UP 上没有真并行，rwlock 只有额外开销</td>
+</tr>
+<tr>
+<td>RT 内核上依赖 rwlock 不睡眠</td>
+<td>RT 下 <code class="c">rwlock_t</code> = <code class="c">rwbase_rt</code>，可睡眠</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<p>→ <a href="#s-10-2">10.2 spinlock</a> · <a href="#s-10-5">10.5 互斥体</a> · <a href="#s-10-8">10.8 seqlock</a> · <a href="#s-10-11">10.11 选型</a></p>
 <hr />
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 读写自旋锁（rwlock）适合什么场景？有什么缺点？</p>
 <details>
 <summary>答案</summary>
-<p>适合：读多写少（如路由表/配置表），多个读者可并发。缺点：① 写者饥饿：如果有持续的新读者进来，写者可能无限等待。② 读端仍有原子操作开销（递增 reader count）。③ 公平性：部分实现有公平性保证（防止写者饥饿），但会降低读吞吐。现代内核更推荐 RCU（读端零开销）替代 rwlock。</p>
+<p>适合：读多写少（如路由表/配置表），多个读者可并发。缺点：① 写者饥饿：如果有持续的新读者进来，
+写者可能无限等待。② 读端仍有原子操作开销（递增 reader count）。③ 公平性：部分实现有公平性保证
+（防止写者饥饿），但会降低读吞吐。现代内核更推荐 RCU（读端零开销）替代 rwlock。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>① "写者饥饿"这条在 v6.6 上不成立，需要订正。</strong></p>
+<p>v6.6 的 x86 rwlock 是 <code class="c">struct qrwlock</code>（<code class="c">asm-generic/qrwlock_types.h</code>），
+公平性靠三道闸门（详见 §3）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>闸门</th>
+<th>代码位置</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写者挂 <code class="c">_QW_WAITING</code> 位</td>
+<td><code class="c">queued_write_lock_slowpath()</code>：<code class="c">atomic_or(_QW_WAITING, &amp;lock-&gt;cnts)</code></td>
+<td>新读者的快路径直接失败</td>
+</tr>
+<tr>
+<td>读者回滚计数</td>
+<td><code class="c">queued_read_lock_slowpath()</code>：<code class="c">atomic_sub(_QR_BIAS, &amp;lock-&gt;cnts)</code></td>
+<td>读者不"赖"在计数里</td>
+</tr>
+<tr>
+<td>读者去排 <code class="c">wait_lock</code></td>
+<td><code class="c">queued_read_lock_slowpath()</code>：<code class="c">arch_spin_lock(&amp;lock-&gt;wait_lock)</code></td>
+<td>排在写者<strong>之后</strong>（FIFO）</td>
+</tr>
+</tbody>
+</table></div>
+<p>而写者<strong>整个等待期间都握着 <code class="c">wait_lock</code></strong>：</p>
+<pre class="code" data-label="C"><code class="c">    arch_spin_lock(&amp;lock-&gt;wait_lock);              /* ① 握住队列 */
+    atomic_or(_QW_WAITING, &amp;lock-&gt;cnts);           /* ② 挂牌子 */
+    do {
+        cnts = atomic_cond_read_relaxed(&amp;lock-&gt;cnts, VAL == _QW_WAITING);
+    } while (!atomic_try_cmpxchg_acquire(&amp;lock-&gt;cnts, &amp;cnts, _QW_LOCKED));
+    arch_spin_unlock(&amp;lock-&gt;wait_lock);            /* 拿到锁才放 */
+</code></pre>
+<p>源码自己的注释（<code class="c">asm-generic/qrwlock.h</code> 头部）：
+<em>"These use generic atomic and locking routines, but </em><em>depend on a fair spinlock
+implementation in order to be fair themselves</em><em>."</em> —— 公平性是"借"内嵌 qspinlock 的。</p>
+<p><strong>唯一的例外</strong>：中断上下文的读者<strong>不排队</strong>（<code class="c">if (unlikely(in_interrupt()))</code> 分支直接
+自旋在 <code class="c">_QW_LOCKED</code> 上），所以 ISR 读者仍可插队。这是为规避死锁的刻意设计（§4）。</p>
+<p><strong>② "读端有原子操作开销"这条对，但理由要说准</strong>：
+<code class="c">queued_read_lock()</code> = <code class="c">atomic_add_return_acquire(_QR_BIAS, &amp;lock-&gt;cnts)</code>，
+<code class="c">queued_read_unlock()</code> = <code class="c">atomic_sub_return_release(_QR_BIAS, &amp;lock-&gt;cnts)</code>，
+<strong>加解锁都是原子 RMW</strong>。对比普通 spinlock：<strong>解锁只是 <code class="c">smp_store_release(&amp;lock-&gt;locked, 0)</code>，
+一次普通 store，不是原子操作</strong>。这才是"rwlock 更贵"的真正来源 ——
+官方原话（§6）：<em>"reader-writer locks require more atomic memory operations than
+simple spinlocks. </em><em>Unless the reader critical section is long, you are better off
+just using spinlocks.</em><em>"</em></p>
+</details>
 </details>
 <p><strong>Q2.</strong> RCU 相比 rwlock 有什么优势？</p>
 <details>
 <summary>答案</summary>
-<p>RCU 读端：<code class="c">rcu_read_lock()</code> 只禁抢占（无原子操作，零开销）。rwlock 读端：<code class="c">read_lock()</code> 原子递增 reader count（有 cache line bouncing）。RCU 写端：复制 + 替换指针 + 等 grace period。rwlock 写端：等所有读者退出。RCU 适合：读极多写极少。rwlock 适合：读写都有但读多。RCU 缺点：写端延迟大（等 grace period）。</p>
+<p>RCU 读端：<code class="c">rcu_read_lock()</code> 只禁抢占（无原子操作，零开销）。rwlock 读端：<code class="c">read_lock()</code>
+原子递增 reader count（有 cache line bouncing）。RCU 写端：复制 + 替换指针 + 等 grace period。
+rwlock 写端：等所有读者退出。RCU 适合：读极多写极少。rwlock 适合：读写都有但读多。
+RCU 缺点：写端延迟大（等 grace period）。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>"RCU 读端无原子操作"这条在 v6.6 上需要加一句限定</strong>。
+<code class="c">rcu_read_lock()</code> 在<strong>非 PREEMPT_RCU</strong> 配置下确实是纯 <code class="c">preempt_disable()</code>（零原子操作）。
+但开 <code class="c">CONFIG_PREEMPT_RCU</code> 后它要操作 per-CPU 的 <code class="c">rcu_read_lock_nesting</code> 计数
+（<code class="c">__rcu_read_lock()</code>），虽然仍是<strong>本地 per-CPU 变量、不产生 cacheline 乒乓</strong>，
+但严格说不是"零操作"。准确的对比是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>原子操作</th>
+<th>触碰全局 cacheline</th>
+<th>阻塞写者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RCU 读端</td>
+<td>无（非 PREEMPT_RCU）</td>
+<td>❌ 不碰</td>
+<td>❌ 不阻塞</td>
+</tr>
+<tr>
+<td>rwlock 读端</td>
+<td><strong>2 次原子 RMW</strong>（加+减）</td>
+<td>✅ 碰 <code class="c">cnts</code></td>
+<td>✅ 阻塞</td>
+</tr>
+<tr>
+<td>spinlock</td>
+<td>1 次 CAS + 1 次普通 store</td>
+<td>✅ 碰 <code class="c">val</code></td>
+<td>✅ 阻塞</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>"rwlock 写端等所有读者退出"这条要精确化</strong>：v6.6 的写者等的是
+<code class="c">cnts == _QW_WAITING</code>，即"读者计数归零 <strong>且</strong> 没有别的写者持锁"。
+而且因为写者握住 <code class="c">wait_lock</code>，这期间<strong>新读者进不来</strong>，所以等待是有界的
+（只等已在临界区内的读者）。</p>
+<p><strong>RCU 的推荐是官方写进文档的</strong>：<code class="c">Documentation/locking/spinlocks.rst</code>：
+<em>"NOTE! RCU is better for list traversal, but requires careful attention to
+design detail."</em></p>
+</details>
 </details>
 <p><strong>Q3.</strong> HFT 中如何选择读写锁 vs RCU vs 无锁？</p>
 <details>
 <summary>答案</summary>
-<p>① 读极多写极少（路由表/配置）：RCU（内核）/ <code class="c">std::shared_ptr&lt;const T&gt;</code>（用户态）。② 读写都有但读多：<code class="c">std::shared_mutex</code>（用户态）/ rwlock（内核）。③ 热路径数据：无锁（SPSC 队列/per-thread 数据）。④ 配置变更：双缓冲（atomic swap pointer + 延迟释放旧版）。HFT 原则：热路径零开销，冷路径可接受锁。</p>
+<p>① 读极多写极少（路由表/配置）：RCU（内核）/ <code class="c">std::shared_ptr&lt;const T&gt;</code>（用户态）。
+② 读写都有但读多：<code class="c">std::shared_mutex</code>（用户态）/ rwlock（内核）。
+③ 热路径数据：无锁（SPSC 队列/per-thread 数据）。④ 配置变更：双缓冲（atomic swap pointer + 延迟释放旧版）。
+HFT 原则：热路径零开销，冷路径可接受锁。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>② 要加一个前置判据：读临界区的长度，而不只是读写比例。</strong></p>
+<p>官方原话（§6）是"除非<strong>读临界区很长</strong>，否则不如用 spinlock"。落到选型上：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>读临界区</th>
+<th>读写比</th>
+<th>内核推荐</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>短</strong>（几条~几十条指令）</td>
+<td>任意</td>
+<td><strong>普通 <code class="c">spinlock_t</code></strong></td>
+<td>rwlock 的原子 RMW 开销 &gt; 并发收益</td>
+</tr>
+<tr>
+<td><strong>长</strong></td>
+<td>读 &gt;&gt; 写</td>
+<td><code class="c">rwlock_t</code></td>
+<td>并发读者的并行收益盖过开销</td>
+</tr>
+<tr>
+<td>任意</td>
+<td>读 &gt;&gt;&gt; 写，且是链表遍历</td>
+<td><strong>RCU</strong></td>
+<td>读端不碰全局 cacheline</td>
+</tr>
+<tr>
+<td><strong>短</strong></td>
+<td>写者要求立即可见</td>
+<td><strong>seqlock</strong></td>
+<td>读者完全无锁，靠序号重试</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>③ 的"无锁"在内核里要区分两层</strong>：
+真正无锁（<code class="c">READ_ONCE</code>/<code class="c">WRITE_ONCE</code> + 内存屏障，或 SPSC 环形缓冲）才是零同步开销；
+<code class="c">rwlock_t</code> / <code class="c">spinlock_t</code> 都<strong>不是</strong>无锁（lock-free），它们是<strong>阻塞</strong>（blocking）同步。</p>
+<p><strong>④ 的双缓冲在内核里对应 RCU 的 <code class="c">rcu_assign_pointer()</code> + <code class="c">call_rcu()</code> 延迟释放</strong>，
+不要自己用 <code class="c">kfree</code> 直接释放旧版 —— 会有读者正在引用它。</p>
+</details>
+</details>
+<p><strong>Q4.</strong> <code class="c">struct qrwlock</code> 的位布局是怎样的？<code class="c">_QR_BIAS</code> 为什么是 512？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">typedef struct qrwlock {
+    union {
+        atomic_t cnts;          /* 4 字节 */
+        struct {
+            u8 wlocked;         /* cnts 的最低字节 */
+            u8 __lstate[3];
+        };
+    };
+    arch_spinlock_t wait_lock;      /* 4 字节，一把完整 qspinlock */
+} arch_rwlock_t;      /* 共 8 字节 */
+</code></pre>
+<p><code class="c">cnts</code> 内部（32 位）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位</th>
+<th>宏</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–7</td>
+<td><code class="c">_QW_LOCKED</code></td>
+<td><code class="c">0x0ff</code></td>
+<td>写者持锁</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code class="c">_QW_WAITING</code></td>
+<td><code class="c">0x100</code></td>
+<td>写者在等（公平性关键）</td>
+</tr>
+<tr>
+<td>9–31</td>
+<td><code class="c">_QR_BIAS</code></td>
+<td><code class="c">1U &lt;&lt; 9</code> = <strong>512</strong></td>
+<td>读者计数（每个读者 +512）</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">_QR_BIAS = 1 &lt;&lt; _QR_SHIFT</code>，而 <code class="c">_QR_SHIFT = 9</code> —— 因为低 9 位（0–8）
+被写者的 <code class="c">_QW_WMASK = 0x1ff</code> 占满了，读者计数只能从第 9 位开始。
+所以 <strong>bias 是 512 而不是 1</strong>，纯粹是位域排布的结果。</p>
+<p>最大并发读者 = <code class="c">2^23 - 1</code> = <strong>8,388,607</strong>（计数位有 31-9+1 = 23 位）。</p>
+<p><code class="c">wait_lock</code> 是一把<strong>完整的 <code class="c">arch_spinlock_t</code></strong>（即 qspinlock，4 字节）——
+这就是 qrwlock 公平性的来源（§3）。</p>
+<p><code class="c">wlocked</code> 取 <code class="c">cnts</code> 的最低 1 字节，是为了让 <code class="c">queued_write_unlock()</code>
+退化成一次单字节 store：</p>
+<pre class="code" data-label="C"><code class="c">static inline void queued_write_unlock(struct qrwlock *lock)
+{
+    smp_store_release(&amp;lock-&gt;wlocked, 0);
+}
+</code></pre>
+<p>和 <code class="c">struct qspinlock</code> 里 <code class="c">locked</code> 独占一个字节是同一个套路（10.2）。</p>
+</details>
+<p><strong>Q5.</strong> 读者快路径是"先加后查"，如果查到有写者会怎样？为什么要这样设计？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">static inline void queued_read_lock(struct qrwlock *lock)
+{
+    int cnts;
+
+    cnts = atomic_add_return_acquire(_QR_BIAS, &amp;lock-&gt;cnts);   /* 先加 512 */
+    if (likely(!(cnts &amp; _QW_WMASK)))
+        return;                                              /* 没写者 → 成功 */
+
+    /* The slowpath will decrement the reader count, if necessary. */
+    queued_read_lock_slowpath(lock);
+}
+</code></pre>
+<p>慢路径里<strong>还回去</strong>：</p>
+<pre class="code" data-label="C"><code class="c">void __lockfunc queued_read_lock_slowpath(struct qrwlock *lock)
+{
+    if (unlikely(in_interrupt())) {
+        atomic_cond_read_acquire(&amp;lock-&gt;cnts, !(VAL &amp; _QW_LOCKED));
+        return;                                              /* ⚠️ 不回滚，直接自旋 */
+    }
+    atomic_sub(_QR_BIAS, &amp;lock-&gt;cnts);                           /* 回滚 512 */
+    arch_spin_lock(&amp;lock-&gt;wait_lock);                            /* 排队 */
+    atomic_add(_QR_BIAS, &amp;lock-&gt;cnts);                           /* 重新加上 */
+    atomic_cond_read_acquire(&amp;lock-&gt;cnts, !(VAL &amp; _QW_LOCKED));
+    arch_spin_unlock(&amp;lock-&gt;wait_lock);
+}
+</code></pre>
+<p><strong>为什么不"先查后加"？</strong> 因为先查后加会有竞态窗口：查完发现没写者，
+准备加计数时写者插进来拿了锁 —— 读者就会在写者持锁期间进入临界区。
+用 <code class="c">atomic_add_return</code> 把"加"和"读回新值"合成<strong>一条原子指令</strong>，
+新值里带着"此刻有没有写者"的信息，判据才有意义。</p>
+<p>代价是失败时要一次额外的 <code class="c">atomic_sub</code> 回滚。这是典型的
+<strong>"乐观执行 + 失败回滚"</strong>（optimistic + rollback），
+和 seqlock 的"乐观读 + 序号校验重试"是同一个思想。</p>
+<p><strong>注意中断分支不回滚</strong>：ISR 读者直接自旋在 <code class="c">_QW_LOCKED</code> 上等写者走，
+计数就留在那里了 —— 这是 §4 那个"插队"的实现细节。</p>
+</details>
+<p><strong>Q6.</strong> 为什么中断上下文的读者必须"插队"？不插队会怎样？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不插队会死锁。</strong> 推演：</p>
+<pre class="code" data-label="code"><code class="c">task:  read_lock() ─► 快路径失败（有写者在等）
+                   ─► 慢路径 ─► arch_spin_lock(&amp;lock-&gt;wait_lock)  【握住队列】
+                        │
+                   本地中断打进来
+                        │
+ISR:   read_lock() ─► 快路径失败
+                   ─► 慢路径 ─► arch_spin_lock(&amp;lock-&gt;wait_lock)
+                        │
+                   ISR 自旋等 task 释放 wait_lock
+                   task 永远要等 ISR 返回才能继续
+                        ▼
+                      死锁
+</code></pre>
+<p>所以源码给了特判（<code class="c">queued_read_lock_slowpath()</code> 开头）：</p>
+<pre class="code" data-label="C"><code class="c">    if (unlikely(in_interrupt())) {
+        /*
+         * Readers in interrupt context will get the lock immediately
+         * if the writer is just waiting (not holding the lock yet),
+         * so spin with ACQUIRE semantics until the lock is available
+         * without waiting in the queue.
+         */
+        atomic_cond_read_acquire(&amp;lock-&gt;cnts, !(VAL &amp; _QW_LOCKED));
+        return;
+    }
+</code></pre>
+<p><strong>后果</strong>：ISR 读者只看 <code class="c">_QW_LOCKED</code>（写者是否<strong>真的持锁</strong>），
+<strong>不看 <code class="c">_QW_WAITING</code></strong>（写者是否在等）。所以当写者还在排队、尚未持锁时，
+ISR 读者<strong>可以插进去</strong>。</p>
+<p><strong>工程含义</strong>：如果 ISR 里会 <code class="c">read_lock()</code>，严格的 FIFO 公平性就<strong>不成立</strong>，
+写者仍可能被密集的中断读者延迟。源码选择的是
+<strong>"轻微不公平" &gt; "必现死锁"</strong>。</p>
+</details>
+<p><strong>Q7.</strong> 官方为什么说"除非读临界区很长，否则不如用 spinlock"？这笔账怎么算？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">Documentation/locking/spinlocks.rst</code> 原话（Lesson 2）：</p>
+<blockquote>
+<p><em>NOTE! reader-writer locks require more atomic memory operations than
+simple spinlocks. </em><em>Unless the reader critical section is long, you
+are better off just using spinlocks.</em>**</p>
+</blockquote>
+<p><strong>账</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>普通 <code class="c">spinlock_t</code></th>
+<th><code class="c">rwlock_t</code>（读者）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加锁</td>
+<td>1× <code class="c">cmpxchg</code>（无争用时）</td>
+<td>1× <code class="c">atomic_add_return</code>（<strong>每次都 RMW</strong>）</td>
+</tr>
+<tr>
+<td><strong>解锁</strong></td>
+<td><strong>1× 普通 store</strong>（<code class="c">smp_store_release(&amp;lock-&gt;locked, 0)</code>，单字节，<strong>非原子</strong>）</td>
+<td>1× <code class="c">atomic_sub_return</code>（<strong>RMW</strong>）</td>
+</tr>
+<tr>
+<td>争用</td>
+<td>每人自旋在<strong>自己的</strong> MCS node（本地 cacheline，O(N)）</td>
+<td>回滚 + 全挤在同一把 <code class="c">wait_lock</code> 上</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最关键的差异是解锁</strong>：普通 spinlock 的 <code class="c">queued_spin_unlock()</code> 是
+<code class="c">smp_store_release(&amp;lock-&gt;locked, 0)</code> —— 一次<strong>普通单字节 store</strong>，
+不是原子操作，不产生 cacheline 独占。
+而 rwlock 的 <code class="c">queued_read_unlock()</code> 是 <code class="c">atomic_sub_return_release()</code> ——
+<strong>原子 RMW，必须独占 cacheline</strong>，N 个读者并发解锁就是 N 次 cacheline 乒乓。</p>
+<p><strong>结论</strong>：rwlock 的收益是"多个读者的临界区<strong>并行执行</strong>"，
+成本是"每次加解锁多一次原子 RMW"。
+只有当<strong>临界区足够长</strong>，长到并行执行省下的时间 &gt; 额外原子开销，才划算。
+<strong>读写比例不是判据，临界区长度才是。</strong></p>
+</details>
+<p><strong>Q8.</strong> 为什么不能把读锁"升级"成写锁？v6.6 上这条仍然成立吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>成立，而且是结构性的，不是实现细节。</strong></p>
+<p>官方文档原话（<code class="c">Documentation/locking/spinlocks.rst</code>）：</p>
+<blockquote>
+<p><em>Also, you cannot "upgrade" a read-lock to a write-lock, so if you at <em>any</em>
+time need to do any changes (even if you don't do it every time), you have
+to get the write-lock at the very beginning.</em></p>
+</blockquote>
+<p><strong>为什么结构性不可能</strong>：</p>
+<p><code class="c">queued_write_lock()</code> 的完成条件是 <code class="c">cnts == 0</code>（快路径 CAS）
+或慢路径里 <code class="c">cnts == _QW_WAITING</code>（即<strong>读者计数归零</strong>）。
+如果调用者自己还持着读锁，<code class="c">cnts</code> 里至少有 <code class="c">_QR_BIAS = 512</code>，
+<strong>永远不可能归零</strong> —— 写者会一直等自己释放读锁，而自己在等写锁。<strong>自死锁</strong>。</p>
+<pre class="code" data-label="C"><code class="c">    /* 写者慢路径的等待条件 */
+    do {
+        cnts = atomic_cond_read_relaxed(&amp;lock-&gt;cnts, VAL == _QW_WAITING);
+    } while (!atomic_try_cmpxchg_acquire(&amp;lock-&gt;cnts, &amp;cnts, _QW_LOCKED));
+</code></pre>
+<p><code class="c">VAL == _QW_WAITING</code> 意味着"读者计数 == 0 且 WAITING 位亮着"。
+自带读锁的升级者永远等不到这个条件。</p>
+<p><strong>而且 qspinlock 也一样</strong>：自旋锁家族设计上就没有"持有者可以重入"的概念
+（per-CPU 的 4 个 MCS node 是给<strong>不同嵌套层级</strong>用的，不是给<strong>同一层级重入</strong>用的，见 10.2）。</p>
+<p><strong>正确做法</strong>：
+① 如果只有部分路径要改 → <strong>从一开始就拿写锁</strong>（官方建议）；
+② 或者先释放读锁、再拿写锁、然后<strong>重新校验</strong>条件（经典 double-check）；
+③ 或者换 seqlock / RCU —— 它们的设计前提就是"读者可能被写者打断"。</p>
+</details>
+<p><strong>Q9.</strong> RT 内核上 <code class="c">read_lock()</code> 的行为和非 RT 有什么不同？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code class="c">rwlock_t</code> 实际类型</th>
+<th><code class="c">read_lock()</code> 实现</th>
+<th>可睡眠？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非 RT</td>
+<td><code class="c">{ arch_rwlock_t raw_lock; ... }</code> = <code class="c">struct qrwlock</code>（8 字节）</td>
+<td><code class="c">queued_read_lock()</code> 真自旋</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>PREEMPT_RT</strong></td>
+<td><code class="c">{ struct rwbase_rt rwbase; atomic_t readers; }</code></td>
+<td><code class="c">rt_read_lock()</code></td>
+<td>✅ <strong>可睡眠</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* include/linux/rwbase_rt.h:11 */
+struct rwbase_rt {
+    atomic_t        readers;
+    struct rt_mutex_base    rtmutex;
+};
+
+/* include/linux/rwlock_rt.h:35,82 */
+static __always_inline void read_lock(rwlock_t *rwlock)  { rt_read_lock(rwlock); }
+static __always_inline void write_lock(rwlock_t *rwlock) { rt_write_lock(rwlock); }
+</code></pre>
+<p>和 <code class="c">spinlock_t</code> 的情况<strong>完全同构</strong>（10.2 §8）：RT 把整个"自旋"家族
+（<code class="c">spinlock_t</code> / <code class="c">rwlock_t</code>）都换成了基于 <code class="c">rt_mutex_base</code> 的可睡眠锁，
+只留 <code class="c">raw_spinlock_t</code> / <code class="c">raw_</code> 族保持真自旋。</p>
+<p><strong>记忆彩蛋</strong>：<code class="c">SPINLOCK_MAGIC = 0xdead4ead</code>，<code class="c">RWLOCK_MAGIC = 0xdeaf1eed</code>
+（都是 16 进制英文谐音），<code class="c">CONFIG_DEBUG_SPINLOCK</code> 时会塞进结构里做校验。</p>
+<p><strong>实践含义</strong>：在 RT 内核上，rwlock 临界区里可以调 <code class="c">copy_from_user()</code> /
+<code class="c">kmalloc(GFP_KERNEL)</code>；但<strong>延迟敏感的路径一定要改用 raw 族</strong>，
+否则一次意外的睡眠就会把尾延迟打到毫秒级。</p>
 </details>
 </details>
 <hr />

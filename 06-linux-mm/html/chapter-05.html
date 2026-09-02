@@ -365,12 +365,18 @@ Ch 4 运行时 fault / mmap          ← 进程用的已是 Buddy + slab 世界
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 5 §1 启动内存映射的表示 (`bootmem_data`)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 5 §1 启动内存映射的表示 (`bootmem_data` → `struct memblock`)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/memblock.h</code> / <code class="c">mm/memblock.c</code>）</p>
 </blockquote>
-<h3>1. 启动内存映射的表示 (<code class="c">bootmem_data</code>)</h3>
-<p><strong>每个内存节点 (Node)</strong> 在启动阶段用 <strong><code class="c">bootmem_data</code></strong>（或 <strong><code class="c">bootmem_data_t</code></strong>）记录分配状态：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答一个核心问题：<strong>内核启动早期，还没有 Buddy/slab，用什么数据结构记录「哪些物理内存可用、哪些被占用」？</strong></p>
+<p>原书答案是 <code class="c">bootmem_data</code>（<strong>位图</strong>，每一位对应一个页框）；但 <strong>v6.6 里 bootmem 已彻底消失，取代它的是 <code class="c">struct memblock</code>（区间表）</strong>。本节先讲原书的位图方案，再落到 v6.6 的真身——这是理解「为什么 memblock 更快」的关键。</p>
+<hr />
+<h2>1. 原书方案：<code class="c">bootmem_data</code> 位图（已删除）</h2>
+<p><strong>每个内存节点 (Node)</strong> 用 <code class="c">bootmem_data</code> 记录分配状态：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -380,119 +386,458 @@ Ch 4 运行时 fault / mmap          ← 进程用的已是 Buddy + slab 世界
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">node_bootmem_map</code></strong></td>
-<td>指向 <strong>位图 (bitmap)</strong> — <strong>每一位对应一个物理页框</strong>：空闲 / 已分配</td>
+<td><code class="c">node_bootmem_map</code></td>
+<td>指向<strong>位图</strong>——每一位对应一个物理页框：0=空闲 / 1=已分配</td>
 </tr>
 <tr>
-<td><strong><code class="c">last_pos</code></strong></td>
-<td>上次分配用到的 <strong>物理页框号 (PFN)</strong></td>
+<td><code class="c">last_pos</code></td>
+<td>上次分配用到的 PFN（bump-pointer 起点）</td>
 </tr>
 <tr>
-<td><strong><code class="c">last_offset</code></strong></td>
-<td>该页内 <strong>上次分配结束的偏移</strong></td>
+<td><code class="c">last_offset</code></td>
+<td>该页内上次分配结束的偏移</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>合并小额分配：</strong> 新的小块分配若 <strong>仍能塞进 <code class="c">last_pos</code> 那一页</strong> 的剩余空间，则 <strong>与上次同页合并</strong> — 减少 <strong>整页占用</strong>（boot 阶段内存也珍贵）。</p>
 <pre class="code" data-label="code"><code class="c">bootmem_data (per node)
     node_bootmem_map ──► [ bit per page frame: 0=free 1=used ]
     last_pos / last_offset ──►  bump-pointer 式同页续分配
 </code></pre>
-<p>→ 与 Ch 2 <strong>Node / PFN / struct page</strong> 同一套物理页框编号。</p>
+<p><strong>位图方案的本质缺陷</strong>：一个 4GB 内存的节点，位图要 4G/4K = 1M 位 = 128KB 内存，但<strong>更大的问题是「找空闲页」要线性扫位</strong>——<code class="c">last_pos</code> 只是缓解，复杂度仍是 O(n)。这在内存极大的 NUMA 机器上（几十 TB）是不可接受的。</p>
 <hr />
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 5 §2 发现与初始化 (Initializing)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>2. 发现与初始化 (Initializing)</h3>
-<h3>架构相关探测</h3>
-<p>在 <strong>arch 相关 setup</strong> 阶段，内核探测 <strong>可用物理内存边界</strong>，得到例如：</p>
+<h2>2. v6.6 真身：<code class="c">struct memblock</code>（区间表）</h2>
+<p>v6.6 里，启动分配器是 <strong>memblock</strong>，用<strong>有序区间数组</strong>取代位图（<code class="c">memblock.h:59-98</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/memblock.h */
+struct memblock_region {                 /* :59 单个区间 */
+    phys_addr_t base;                    /* 起始物理地址 */
+    phys_addr_t size;                    /* 大小 */
+    enum memblock_flags flags;           /* 属性（见下表） */
+#ifdef CONFIG_NUMA
+    int nid;                             /* 所属 NUMA 节点 */
+#endif
+};
+
+struct memblock_type {                   /* :76 一类区间的集合 */
+    unsigned long cnt;                   /* 当前区间个数 */
+    unsigned long max;                   /* regions 数组容量 */
+    phys_addr_t total_size;              /* 所有区间总大小 */
+    struct memblock_region *regions;     /* 区间数组（按 base 排序） */
+    char *name;                          /* &quot;memory&quot; / &quot;reserved&quot; */
+};
+
+struct memblock {                        /* :91 全局唯一的分配器元数据 */
+    bool bottom_up;                      /* 自底向上还是自顶向下分配 */
+    phys_addr_t current_limit;           /* 当前分配地址上限 */
+    struct memblock_type memory;         /* 可用内存区间 */
+    struct memblock_type reserved;       /* 已保留区间 */
+};
+
+extern struct memblock memblock;         /* :98 全局单例 */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>参数</th>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">memblock.memory</code></td>
+<td><strong>系统有哪些可用物理内存</strong>（firmware/e820/DT 报告后 <code class="c">add</code> 进来）</td>
+</tr>
+<tr>
+<td><code class="c">memblock.reserved</code></td>
+<td><strong>其中哪些被占用</strong>（内核代码、initrd、crashkernel、页表…）</td>
+</tr>
+<tr>
+<td><code class="c">bottom_up</code></td>
+<td>分配方向（<code class="c">true</code>=自底向上；<code class="c">false</code>=自顶向下，避 shadow/RAM 洞）</td>
+</tr>
+<tr>
+<td><code class="c">current_limit</code></td>
+<td>分配地址不能超过它（早期常限在低 4GB，DMA 可达）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键直觉：memblock 是「两表模型」。</strong> <code class="c">memory</code> 表记录「有什么」，<code class="c">reserved</code> 表记录「哪些不能给」。分配时 = 在 <code class="c">memory</code> 里找一段<strong>不在 <code class="c">reserved</code> 里</strong>的区间。这比 bootmem 的「单张全量位图」多了<strong>天然的区域语义</strong>（一段一段的区间，而非逐页的 bit）。</p>
+<hr />
+<h2>3. 区间属性：<code class="c">enum memblock_flags</code></h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志（<code class="c">memblock.h:44-48</code>）</th>
+<th>值</th>
 <th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">min_low_pfn</code></strong></td>
-<td>最低可用页框号</td>
+<td><code class="c">MEMBLOCK_NONE</code></td>
+<td><code class="c">0x0</code></td>
+<td>普通区间，无特殊要求</td>
 </tr>
 <tr>
-<td><strong><code class="c">max_low_pfn</code></strong></td>
-<td><strong>NORMAL 区</strong> 最高可用页框号</td>
+<td><code class="c">MEMBLOCK_HOTPLUG</code></td>
+<td><code class="c">0x1</code></td>
+<td><strong>可热插拔</strong>内存（firmware 标记，内存条可带电拔插）</td>
 </tr>
 <tr>
-<td><strong>高端内存 PFN 范围</strong></td>
-<td>32 位 <strong>HIGHMEM</strong> 起止（Ch 2 §4）</td>
+<td><code class="c">MEMBLOCK_MIRROR</code></td>
+<td><code class="c">0x2</code></td>
+<td><strong>镜像</strong>内存（容错，数据写两份）</td>
+</tr>
+<tr>
+<td><code class="c">MEMBLOCK_NOMAP</code></td>
+<td><code class="c">0x4</code></td>
+<td><strong>不进内核直接映射</strong>（如保留给设备的物理区间）</td>
 </tr>
 </tbody>
 </table></div>
-<h3><code class="c">init_bootmem_core()</code></h3>
+<p>这些 flag 在「区间」粒度上打标，是位图方案（只能表达 free/used 二元态）<strong>表达不了的语义</strong>。NUMA 上还有 <code class="c">nid</code> 字段，一个区间直接带上「属于哪个节点」——这也是 Ch2 §1 <code class="c">pglist_data</code> 的 <code class="c">node_start_pfn</code> 边界信息<strong>最初的来源</strong>。</p>
+<hr />
+<h2>4. 位图 vs 区间表：为什么 memblock 胜出</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>步骤</th>
-<th>做什么</th>
+<th></th>
+<th>bootmem 位图</th>
+<th>memblock 区间表</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>初始化 <strong><code class="c">bootmem_data</code></strong></td>
-<td>per-node 启动分配器状态</td>
+<td>数据结构</td>
+<td>每页 1 bit</td>
+<td>有序 <code class="c">memblock_region[]</code> 数组</td>
 </tr>
 <tr>
-<td>计算 <strong>位图大小</strong></td>
-<td>覆盖该 node 全部页框</td>
+<td>找空闲块</td>
+<td><strong>线性扫位</strong> O(n)</td>
+<td>二分/顺序遍历区间，O(区间数)</td>
 </tr>
 <tr>
-<td><strong>为位图本身分配内存</strong></td>
-<td>仍用 boot 机制（早期可能 <strong>静态/预留区</strong>）</td>
+<td>内存开销</td>
+<td>与总内存成正比（4G→128KB）</td>
+<td>与<strong>区间个数</strong>成正比（通常几十个，几 KB）</td>
 </tr>
 <tr>
-<td><strong>位图初始化为「全保留」</strong></td>
-<td>再逐步 <strong>free</strong> 可用物理范围</td>
+<td>区域语义</td>
+<td>只有 free/used</td>
+<td><code class="c">flags</code>（hotplug/mirror/nomap）+ <code class="c">nid</code></td>
+</tr>
+<tr>
+<td>大内存扩展性</td>
+<td>差（TB 级位图扫描极慢）</td>
+<td>好（区间数几乎不随内存量增长）</td>
+</tr>
+<tr>
+<td>v6.6 状态</td>
+<td><strong>已删除</strong></td>
+<td>唯一启动分配器</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>直觉：</strong> 先 <strong>假设全被占用</strong>，再把 <strong>固知空闲的物理 RAM</strong> 标成可分配 — 与 <strong>memblock reserve/free</strong> 现代逻辑同构。</p>
+<p><strong>为什么 bootmem 被废？</strong> 一句话：<strong>内存越大、NUMA 越复杂，逐页位图就越慢、越表达不了语义</strong>。memblock 的「区间 + 属性」模型天生适配大内存和 NUMA，最终在 v4.20 前后把 bootmem 彻底替换（Mike Rapoport 主导的 memblock 统一）。</p>
+<hr />
+<h2>5. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 发现与初始化</a>：<code class="c">memory</code>/<code class="c">reserved</code> 两表怎么被填满</li>
+<li>节点边界：<a href="chapter-14.html#s-1">Ch2 §1 内存节点</a>（<code class="c">node_start_pfn</code> 的来源）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：bootmem 的位图和 memblock 的区间表，最本质的区别是什么？</strong>
+A：<strong>粒度不同</strong>。位图是「每页 1 bit」的<strong>逐页</strong>表示，找空闲要线性扫位；memblock 是「一段区间」的<strong>区域</strong>表示，一段内存一个 <code class="c">{base, size, flags, nid}</code> 记录。前者内存开销随总内存线性增长，后者只随「区间个数」增长——大内存 + NUMA 下差距悬殊。</p>
+<p><strong>Q2：<code class="c">memblock.memory</code> 和 <code class="c">memblock.reserved</code> 分别回答什么问题？</strong>
+A：<code class="c">memory</code> 答「<strong>系统有什么</strong>」——firmware/e820/DT 报告的可用物理内存；<code class="c">reserved</code> 答「<strong>其中哪些不能给</strong>」——内核代码、initrd、crashkernel、页表等占用。分配 = 在 <code class="c">memory</code> 里找一段<strong>不被 <code class="c">reserved</code> 覆盖</strong>的区间。两表分离让「保留」从「打位」变成「加区间」，语义更清晰。</p>
+<p><strong>Q3：<code class="c">bottom_up</code> 分配方向有什么用？</strong>
+A：<code class="c">bottom_up = true</code> 时从低地址往高找，<code class="c">false</code> 时从高往低。早期要避开低端 DMA 区/BIOS shadow 就自顶向下；要配合某些固件把内核放低位就自底向上。它本质是<strong>分配策略的一个开关</strong>，控制 memblock 在 <code class="c">memory</code> 区间里<strong>往哪头找</strong>。</p>
+<p><strong>Q4：<code class="c">MEMBLOCK_NOMAP</code> 和「reserved」有什么不同？</strong>
+A：<code class="c">reserved</code> 表示「这段被占用，别分配给别人」；<code class="c">MEMBLOCK_NOMAP</code> 是更进一步的属性——这段内存<strong>不建立内核直接映射</strong>（<code class="c">__va</code> 访问不到），典型是保留给 PCIe 设备/特殊硬件的物理区间。两者可叠加：一段区间既 reserved 又 NOMAP。</p>
+<p><strong>Q5：为什么说 memblock 的 <code class="c">nid</code> 字段是 Ch2 <code class="c">node_start_pfn</code> 的「最初来源」？</strong>
+A：启动早期 NUMA 还没建 <code class="c">pglist_data</code>，但 firmware（ACPI SRAT / DT）已经报告了「哪段内存属于哪个节点」。memblock 在 <code class="c">add</code> 区间时把这个 nid 记下来，之后 <code class="c">free_area_init</code>（Ch2 节点/zone 初始化）就<strong>读 memblock 的区间 + nid</strong> 反推出每个节点的 <code class="c">node_start_pfn</code> / <code class="c">node_present_pages</code>。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-2">
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 5 §2 发现与初始化 (Initializing)</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/memblock.c</code> 的 <code class="c">memblock_add</code> / <code class="c">memblock_reserve</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答一个问题：<strong>内核怎么知道「这台机器有多少内存、哪些能用」？</strong></p>
+<p>原书的答案是「arch 探测 <code class="c">min_low_pfn</code>/<code class="c">max_low_pfn</code> → <code class="c">init_bootmem_core()</code> 填位图」；v6.6 的答案是「<strong>firmware 报告内存表 → <code class="c">memblock_add()</code> 填 <code class="c">memory</code> 表 → 各子系统 <code class="c">memblock_reserve()</code> 填 <code class="c">reserved</code> 表</strong>」。两表怎么被填满，就是本节内容。</p>
+<hr />
+<h2>1. 架构相关探测：内存信息从哪来</h2>
+<p>内核不会自己「摸」内存，它<strong>问 firmware</strong>。不同架构问的对象不同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>firmware 接口</th>
+<th>内存信息形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>x86_64</strong></td>
+<td>BIOS/UEFI 的 <strong>e820 表</strong></td>
+<td>一段段 <code class="c">[base, size, type]</code>（type 区分 usable/reserved/ACPI…）</td>
+</tr>
+<tr>
+<td><strong>arm64</strong></td>
+<td><strong>设备树 (DT/ACPI)</strong> 的 <code class="c">memory</code> 节点</td>
+<td><code class="c">reg = &lt;base size&gt;</code> 列表</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>EFI <strong>memory map</strong></td>
+<td>UEFI 统一的内存描述符</td>
+</tr>
+</tbody>
+</table></div>
+<p>x86_64 上，早期 <code class="c">setup_arch()</code> 把 e820 表转成 <code class="c">min_low_pfn</code>/<code class="c">max_low_pfn</code>（原书）或直接喂给 memblock（v6.6）。<strong>「探测物理内存边界」这一步没有变，变的是「探测结果存哪」——从逐 PFN 的边界变量，变成一段段 memblock 区间。</strong></p>
+<hr />
+<h2>2. v6.6：<code class="c">memblock_add()</code> 填 <code class="c">memory</code> 表</h2>
+<p>拿到 firmware 报告后，内核把每段可用内存<strong>注册进 <code class="c">memblock.memory</code></strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/memblock.c:727 */
+int __init_memblock memblock_add(phys_addr_t base, phys_addr_t size)
+{
+    phys_addr_t end = base + size - 1;
+    return memblock_add_range(&amp;memblock.memory, base, size,
+                              MAX_NUMNODES, 0);
+}
+/* NUMA 版：带节点号 */
+int __init_memblock memblock_add_node(phys_addr_t base, phys_addr_t size,
+                                      int nid, enum memblock_flags flags); /* :705 */
+</code></pre>
+<p><strong><code class="c">memblock_add_range()</code> 的职责</strong>（<code class="c">memblock.c:587</code>）：把新区间<strong>插入有序数组</strong>，并处理三种重叠情况——<strong>合并相邻区间、部分重叠则拆分、完全包含则忽略</strong>。最终 <code class="c">memory.regions[]</code> 保持「按 base 排序、互不重叠」的不变量。</p>
+<pre class="code" data-label="code"><code class="c">firmware:   [0x1000, 0x9F000) usable   [0x100000, 0x80000000) usable
+                     │                         │
+                     ▼                         ▼
+memory 表:   region[0] = {0x1000, 0x9E000}  region[1] = {0x100000, ...}
+              （排序、合并、去重叠后）
+</code></pre>
+<hr />
+<h2>3. <code class="c">memblock_reserve()</code> 填 <code class="c">reserved</code> 表</h2>
+<p>可用内存注册完，各子系统<strong>立刻开始圈地</strong>，把「这段我要用」写进 <code class="c">memblock.reserved</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/memblock.c:871 */
+int __init_memblock memblock_reserve(phys_addr_t base, phys_addr_t size)
+{
+    return memblock_add_range(&amp;memblock.reserved, base, size,
+                              MAX_NUMNODES, 0);
+}
+</code></pre>
+<p>启动早期被 reserve 的典型对象：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>保留对象</th>
+<th>谁在 reserve</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>内核镜像</strong>（text/data/bss）</td>
+<td>早期 setup</td>
+<td>内核自己占的物理页不能被分配</td>
+</tr>
+<tr>
+<td><strong>initrd/initramfs</strong></td>
+<td><code class="c">setup_arch</code></td>
+<td>解压后的临时根文件系统</td>
+</tr>
+<tr>
+<td><strong>crashkernel</strong></td>
+<td><code class="c">setup_arch</code></td>
+<td>kdump 备用内存（内核崩溃时用来抓现场）</td>
+</tr>
+<tr>
+<td><strong>页表 / <code class="c">struct page</code>(memmap)</strong></td>
+<td><code class="c">paging_init</code> 等</td>
+<td>这些<strong>元数据本身</strong>也要占物理页</td>
+</tr>
+<tr>
+<td><strong>firmware/ACPI 表</strong></td>
+<td>早期</td>
+<td>不能覆盖 firmware 的数据</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键直觉（与原书同构，但更清晰）</strong>：原书 <code class="c">init_bootmem_core()</code> 是「<strong>先全保留，再逐步 free</strong>」；memblock 是「<strong>先全加进 memory，再逐项 reserve</strong>」——两条路<strong>逻辑等价</strong>，最终都得到「可用 = memory − reserved」这个差集。memblock 的「两表相减」比「单表翻转」更直观，也更好调试。</p>
+<hr />
+<h2>4. 观察内存布局：<code class="c">/proc/iomem</code> 与 <code class="c">memblock=debug</code></h2>
+<p>这两表最终会体现在 <strong><code class="c">/proc/iomem</code></strong>（运行时）和早期日志里：</p>
+<pre class="code" data-label="code"><code class="c">$ cat /proc/iomem | head
+00000000-00000fff : Reserved          ← firmware 保留
+00100000-9d3eafff : System RAM        ← 可用（曾进 memblock.memory）
+  01000000-023fffff : Kernel code     ← 曾 reserve
+  02400000-0269ffff : Kernel rodata
+  02700000-02ffffff : Kernel data
+100000000-4a3ffffff : System RAM      ← 高段内存
+  3f8000000-3f8ffffff : Crash kernel  ← crashkernel reserve 的痕迹
+</code></pre>
+<p><strong>调试技巧</strong>：启动参数加 <code class="c">memblock=debug</code>，早期内核会打印每次 <code class="c">add</code>/<code class="c">reserve</code> 的区间和调用者（<code class="c">_RET_IP_</code>），是追「这段 reserved 是谁干的」的第一手证据。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>排查「为什么可用内存比物理内存少」</td>
+<td><code class="c">memblock_reserve</code> 圈走了 crashkernel/initrd/memmap，看 <code class="c">/proc/iomem</code> 或 <code class="c">memblock=debug</code></td>
+</tr>
+<tr>
+<td>树莓派/嵌入式裁剪 crashkernel</td>
+<td>少 reserve 一段 crashkernel 就多一段可用内存，boot 时决定</td>
+</tr>
+<tr>
+<td>理解 NUMA 节点边界从哪来</td>
+<td><code class="c">memblock_add_node(..., nid)</code> 是 <code class="c">node_start_pfn</code> 的最初来源（§1 Q5）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-3">§3 内存分配与释放</a>：两表就绪后，怎么分配</li>
+<li>物理页分配：<a href="chapter-06.html#ch-6">Ch6 物理页分配</a>（memblock 退役后的接管者）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">memblock_add()</code> 和 <code class="c">memblock_reserve()</code> 的实现几乎一模一样，区别只在操作哪张表，对吗？</strong>
+A：对。两者都调 <code class="c">memblock_add_range()</code>，区别是<strong>第一参数</strong>——<code class="c">add</code> 传 <code class="c">&amp;memblock.memory</code>，<code class="c">reserve</code> 传 <code class="c">&amp;memblock.reserved</code>。语义上 <code class="c">add</code>=「声明这里有可用内存」，<code class="c">reserve</code>=「声明这段被占用」。这正是「两表模型」的优雅之处：<strong>同一套区间管理逻辑，两张表复用</strong>。</p>
+<p><strong>Q2：<code class="c">memblock_add_range()</code> 为什么要处理「重叠」？</strong>
+A：firmware 报的内存段可能<strong>重叠或相邻</strong>（e820 常有碎段），且不同子系统可能对同一段重复 reserve。<code class="c">add_range</code> 维护「有序、互不重叠」的不变量——相邻则合并、部分重叠则拆成几段、完全包含则忽略——保证后续「找空闲」逻辑只需在干净数组上遍历。</p>
+<p><strong>Q3：原书的「先全保留再 free」和 memblock 的「先全加再 reserve」为什么等价？</strong>
+A：两条路最终都表达「可用 = 全部内存 − 被占用部分」。bootmem 从「全 1（全占用）」出发，把已知空闲的 bit 清零；memblock 从「全进 memory 表」出发，把占用段加进 reserved 表。结果一致，只是<strong>翻转的时机和数据结构不同</strong>——memblock 的差集模型更易理解和调试。</p>
+<p><strong>Q4：怎么快速定位「这段 reserved 是谁圈走的」？</strong>
+A：启动参数加 <code class="c">memblock=debug</code>，内核会打印每次 <code class="c">add</code>/<code class="c">reserve</code> 的区间和<strong>调用者地址</strong>（<code class="c">_RET_IP_</code>，<code class="c">%pS</code> 符号化后能直接看到函数名）。运行时则可看 <code class="c">/proc/iomem</code> 里各段的子区间标签（<code class="c">Kernel code</code>/<code class="c">Crash kernel</code>…）反推。</p>
+<p><strong>Q5：crashkernel 为什么要在启动早期 reserve，而不是运行时再分配？</strong>
+A：crashkernel 是给 <strong>kdump</strong> 用的——内核崩溃时，kexec 起的<strong>第二个内核</strong>需要一段<strong>物理连续、且绝不被污染</strong>的内存来抓现场。这段内存必须在<strong>常规分配器接管之前</strong>就圈死，否则早被 Buddy/slab 分掉，崩溃时就无「干净内存」可用。所以它是 <code class="c">memblock_reserve</code> 的常客。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-3">
         <div class="sec-head"><div class="sec-no">3</div><h2>Ch 5 §3 内存分配与释放 (Alloc / Free)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/memblock.c</code> 的 <code class="c">memblock_alloc_try_nid</code> / <code class="c">memblock_phys_alloc</code> / <code class="c">memblock_free</code>）</p>
 </blockquote>
-<h3>3. 内存分配与释放 (Alloc / Free)</h3>
-<h3>分配 API（UMA / NUMA 两套，语义相近）</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答两个问题：</p>
+<ol>
+<li>启动早期要分配内存（页表、<code class="c">struct page</code> 数组、临时结构），<strong>API 是什么、返回的是物理地址还是虚拟地址</strong>？</li>
+<li><code class="c">memblock_free</code> 在早期<strong>为什么几乎是「假释放」</strong>，真正的释放发生在什么时候？</li>
+</ol>
+<p>原书 API（<code class="c">alloc_bootmem*</code> / <code class="c">free_bootmem</code>）已随 bootmem 一起删除，v6.6 全换成 <code class="c">memblock_*</code>。</p>
+<hr />
+<h2>1. 分配 API：物理地址 vs 虚拟地址</h2>
+<p>memblock 的分配函数分<strong>两大类</strong>，关键区别是<strong>返回值类型</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>宏 / 函数（原书）</th>
-<th>典型用途</th>
+<th>函数（<code class="c">memblock.h</code>）</th>
+<th>返回</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">alloc_bootmem()</code></strong></td>
-<td>分配 <strong>boot 生命周期内</strong> 的内核数据结构</td>
+<td><code class="c">memblock_phys_alloc(size, align)</code></td>
+<td><code class="c">phys_addr_t</code> <strong>物理地址</strong></td>
+<td>底层，直接给物理区间</td>
 </tr>
 <tr>
-<td><strong><code class="c">alloc_bootmem_low()</code></strong></td>
-<td>倾向从 <strong>低端 / DMA 可达</strong> 物理区分配</td>
+<td><code class="c">memblock_alloc(size, align)</code></td>
+<td><code class="c">void *</code> <strong>虚拟地址</strong></td>
+<td>包装：物理分配 + <code class="c">__va()</code> 转虚拟，<strong>且清零</strong></td>
 </tr>
 <tr>
-<td><strong><code class="c">alloc_bootmem_pages()</code></strong></td>
-<td>按 <strong>整页</strong> 粒度分配</td>
+<td><code class="c">memblock_alloc_low(size, align)</code></td>
+<td><code class="c">void *</code></td>
+<td>限定在低端内存（DMA 可达）</td>
+</tr>
+<tr>
+<td><code class="c">memblock_alloc_node(size, align, nid)</code></td>
+<td><code class="c">void *</code></td>
+<td>指定 NUMA 节点分配</td>
+</tr>
+<tr>
+<td><code class="c">memblock_alloc_try_nid(size, align, min, max, nid)</code></td>
+<td><code class="c">void *</code></td>
+<td>万能入口：指定地址范围 + 节点 + 方向</td>
 </tr>
 </tbody>
 </table></div>
-<p>NUMA 变体带 <strong>node 参数</strong> — 在 <strong>指定 node</strong> 上分配。</p>
-<h3>释放的限制</h3>
-<p><strong><code class="c">free_bootmem()</code></strong> 重要约束：</p>
+<pre class="code" data-label="C"><code class="c">/* memblock.h:423 — memblock_alloc 就是&quot;物理分配 + 转虚拟 + 清零&quot; */
+static __always_inline void *memblock_alloc(phys_addr_t size, phys_addr_t align)
+{
+    return memblock_alloc_try_nid(size, align, MEMBLOCK_LOW_LIMIT,
+                                  MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
+}
+</code></pre>
+<p><strong><code class="c">memblock_alloc_try_nid()</code> 的真身</strong>（<code class="c">memblock.c:1631</code>）：</p>
+<pre class="code" data-label="C"><code class="c">void * __init memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
+                                     phys_addr_t min_addr, phys_addr_t max_addr,
+                                     int nid)
+{
+    void *ptr = memblock_alloc_internal(size, align,
+                                        min_addr, max_addr, nid, false);
+    if (ptr)
+        memset(ptr, 0, size);   /* ← 注意：分配的内存被清零 */
+    return ptr;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>返回值 <code class="c">void *</code> 是虚拟地址</strong></td>
+<td>内部用 <code class="c">__va()</code> 把物理地址转成直接映射区的虚拟地址</td>
+</tr>
+<tr>
+<td><strong>自动清零</strong></td>
+<td><code class="c">memset(ptr, 0, size)</code>——启动期数据「一拿到就是 0」，避免脏数据</td>
+</tr>
+<tr>
+<td><strong><code class="c">align</code> 对齐</strong></td>
+<td>页表要求 4K 对齐、大页要求 2M/1G，<code class="c">align</code> 参数满足</td>
+</tr>
+<tr>
+<td><strong><code class="c">min_addr</code>/<code class="c">max_addr</code></strong></td>
+<td>限定地址窗（如 <code class="c">memblock_alloc_low</code> 就是 <code class="c">max_addr = 低端上限</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">nid</code></strong></td>
+<td>NUMA 上指定节点；<code class="c">NUMA_NO_NODE</code> = 任意</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>典型用途</strong>：<code class="c">paging_init()</code> 里分配<strong>页表</strong>、<code class="c">free_area_init()</code> 里分配 <strong><code class="c">struct page</code>(memmap) 数组</strong>、<code class="c">setup_arch</code> 里分配<strong>临时 pgd</strong>——这些全是「分配一次、用一生」的元数据。</p>
+<hr />
+<h2>2. <code class="c">memblock_free</code>：早期的「假释放」</h2>
+<pre class="code" data-label="C"><code class="c">/* memblock.h:130 */
+void memblock_free(void *ptr, size_t size);
+</code></pre>
+<p><strong>关键约束</strong>（也是原书 <code class="c">free_bootmem</code> 的核心约束的延续）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -502,67 +847,271 @@ Ch 4 运行时 fault / mmap          ← 进程用的已是 Buddy + slab 世界
 </thead>
 <tbody>
 <tr>
-<td><strong>只能释放完整页</strong></td>
-<td>页内 <strong>部分占用</strong> 时，bootmem <strong>不跟踪</strong> 页内碎片</td>
+<td>早期 free 只是<strong>把区间从 <code class="c">reserved</code> 表移除/标记</strong></td>
+<td>但<strong>没有 <code class="c">struct page</code></strong>，无法进 Buddy，页仍「游离」</td>
 </tr>
 <tr>
-<td>若只「部分释放」</td>
-<td>整页仍视为 <strong>保留</strong></td>
+<td>直到 <code class="c">memblock_free_all()</code>（§4）才真正进 Buddy</td>
+<td>在此之前 free 是<strong>记账层面</strong>的</td>
+</tr>
+<tr>
+<td>页内部分占用不跟踪</td>
+<td>与 bootmem 一样，按区间/页粒度，不管理页内碎片</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>为何可接受：</strong> boot 阶段分配的内存 <strong>几乎伴随系统一生</strong>（页表、mem_map、伙伴系统元数据…）— <strong>很少真正 free</strong>，退役时 <strong>整页移交 Buddy</strong> 即可。</p>
+<p><strong>为什么可接受</strong>：启动期分配的内存<strong>几乎伴随系统一生</strong>（页表、memmap、伙伴系统元数据），<strong>很少真正 free</strong>。真正需要「还给系统」的，等 <code class="c">memblock_free_all()</code> 一次性移交 Buddy 即可。</p>
+<hr />
+<h2>3. 分配方向：top-down vs bottom-up</h2>
+<p><code class="c">memblock.bottom_up</code>（<code class="c">memblock.h:92</code>）控制分配往哪头找空闲区间：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th><code class="c">bottom_up</code></th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>自顶向下</strong></td>
+<td><code class="c">false</code>（x86 常见）</td>
+<td>从高地址往低找，<strong>避开低端 DMA/BIOS shadow</strong>，且利于固件把内核放高位</td>
+</tr>
+<tr>
+<td><strong>自底向上</strong></td>
+<td><code class="c">true</code></td>
+<td>从低地址往高找，某些嵌入式/特殊固件要求</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">内存地址低 ────────────────────────────────► 高
+  bottom_up=true:  从低往高找第一个够大的空闲区间
+  bottom_up=false: 从高往低找
+</code></pre>
+<p><strong>HFT 关联</strong>：这个方向选择决定了<strong>内核镜像、页表、memmap 落在物理内存的哪一段</strong>，进而影响后续 NUMA 节点的内存分布。虽然用户态感知不到，但它是「物理内存布局」的第一块拼图（后续 Ch6 的 zone 划分、Ch2 的 node 边界都建立在它之上）。</p>
+<hr />
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页表/<code class="c">struct page</code> 占了多少物理内存</td>
+<td>启动期 <code class="c">memblock_alloc</code> 分配，<code class="c">dmesg</code> 里 <code class="c">Memory: ...</code> 行可见</td>
+</tr>
+<tr>
+<td>物理内存布局决定 NUMA 亲和</td>
+<td><code class="c">memblock_alloc_try_nid(..., nid)</code> 让元数据<strong>就近</strong>落在所属节点</td>
+</tr>
+<tr>
+<td>嵌入式裁剪启动内存占用</td>
+<td>理解「哪些是必须 reserve 的元数据」才能做减法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>5. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-4">§4 启动内存分配器的退役</a>：free 的「假」在哪一步变「真」</li>
+<li>物理页分配：<a href="chapter-06.html#ch-6">Ch6 物理页分配</a>（Buddy 接管后的正主）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">memblock_phys_alloc</code> 和 <code class="c">memblock_alloc</code> 都「分配内存」，为什么返回类型不同？</strong>
+A：<code class="c">memblock_phys_alloc</code> 返回 <strong><code class="c">phys_addr_t</code>（物理地址）</strong>，是底层原语；<code class="c">memblock_alloc</code> 返回 <strong><code class="c">void *</code>（虚拟地址）</strong>，内部就是「物理分配 + <code class="c">__va()</code> 转虚拟 + 清零」。<strong>物理地址</strong>给「还没建映射、只能按物理地址操作」的场景（如页表项、memmap 描述）；<strong>虚拟地址</strong>给「要直接读写内存」的调用者（<code class="c">memset</code> 就得用虚拟地址）。</p>
+<p><strong>Q2：为什么 <code class="c">memblock_alloc</code> 要 <code class="c">memset(ptr, 0, size)</code> 清零？</strong>
+A：启动期的分配对象是页表、<code class="c">struct page</code> 数组这类<strong>元数据</strong>，如果不清零，残留的脏数据会导致<strong>页表里有垃圾项、<code class="c">struct page</code> 里是随机字段</strong>——后果是「未初始化的内存被当作有效状态」。启动期清零成本低（就一次），换来的确定性很高。</p>
+<p><strong>Q3：早期 <code class="c">memblock_free</code> 为什么「几乎没用」？</strong>
+A：因为此时 <strong><code class="c">struct page</code> 还没建好</strong>，没有 per-page 元数据，也就无法把这些页挂进 Buddy 的 freelist。早期 free 只是<strong>记账</strong>（从 <code class="c">reserved</code> 表移除），真正「还给系统」要等 §4 的 <code class="c">memblock_free_all()</code>。所以启动期「分配后几乎不 free」——反正 free 了也进不了 Buddy。</p>
+<p><strong>Q4：<code class="c">align</code> 参数对页表分配为什么关键？</strong>
+A：硬件页表要求<strong>物理地址按页大小对齐</strong>——4K 页表要 4K 对齐，2M 大页要 2M 对齐，1G 大页要 1G 对齐。<code class="c">memblock_alloc(size, align)</code> 的 <code class="c">align</code> 就是保证「返回的物理地址是 align 的整数倍」，否则 MMU 根本不认这段地址当页表。</p>
+<p><strong>Q5：<code class="c">memblock_alloc_try_nid</code> 里的 <code class="c">min_addr</code>/<code class="c">max_addr</code> 和 <code class="c">nid</code> 分别约束什么？</strong>
+A：<code class="c">min_addr</code>/<code class="c">max_addr</code> 约束<strong>物理地址窗口</strong>（如 <code class="c">memblock_alloc_low</code> 就设 <code class="c">max_addr</code> 为低端上限，保证 DMA 可达）；<code class="c">nid</code> 约束<strong>NUMA 节点</strong>（<code class="c">NUMA_NO_NODE</code> = 不限制）。两者是正交的两个维度：<strong>「在哪段地址」</strong> vs <strong>「在哪个节点」</strong>。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>Ch 5 §4 启动内存分配器的退役 (Retiring)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/memblock.c</code> 的 <code class="c">memblock_free_all</code> / <code class="c">free_low_memory_core_early</code>）</p>
 </blockquote>
-<h3>4. 启动内存分配器的退役 (Retiring)</h3>
-<p>当 <strong><code class="c">start_kernel()</code> 路径后期</strong> 可以安全运行 <strong>常规分配器</strong> 时，<strong>bootmem 退役</strong>：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答一个问题：<strong>memblock 什么时候、怎么把「可用内存」正式交给 Buddy（Ch6 物理页分配器）？</strong></p>
+<p>原书答案是 <code class="c">mem_init()</code> 遍历 bootmem 位图移交 Buddy；v6.6 的答案是 <strong><code class="c">memblock_free_all()</code></strong>——这是启动内存分配器<strong>退役</strong>、常规分配器<strong>接管</strong>的分水岭。</p>
+<hr />
+<h2>1. 退役的时机：<code class="c">start_kernel()</code> 后期</h2>
+<p>退役发生在 <code class="c">start_kernel()</code> 的 <code class="c">mm_init()</code> 阶段，时机有硬约束——<strong>必须等 Buddy + <code class="c">struct page</code> 都就绪</strong>：</p>
+<pre class="code" data-label="code"><code class="c">start_kernel()
+  └─ mm_init()
+       ├─ mem_init()          ← 各 arch：建立直接映射、初始化 struct page
+       │     └─ memblock_free_all()   ← 退役！把空闲页交给 Buddy
+       ├─ kmem_cache_init()   ← slab 启动（Ch8）
+       └─ ...
+</code></pre>
+<p><strong>为什么不能早？</strong> 因为移交 Buddy 需要两样东西：<strong><code class="c">struct page</code> 数组</strong>（每页的元数据，否则 Buddy 无从记账）和<strong>zone 结构</strong>（<code class="c">free_area</code> 空闲链表，Ch6）。这两样都是 <code class="c">mem_init()</code> 在退役<strong>之前</strong>建好的。</p>
+<hr />
+<h2>2. 退役的核心：<code class="c">memblock_free_all()</code></h2>
+<pre class="code" data-label="C"><code class="c">/* mm/memblock.c:2174 */
+void __init memblock_free_all(void)
+{
+    unsigned long pages;
+
+    free_unused_memmap();                 /* ① 释放没用到的 struct page 页 */
+    reset_all_zones_managed_pages();      /* ② 清空 zone 的 managed_pages 计数 */
+
+    pages = free_low_memory_core_early(); /* ③ 核心：遍历空闲区间交 Buddy */
+    totalram_pages_add(pages);            /* ④ 更新全局 totalram_pages */
+}
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>步骤</th>
-<th>说明</th>
+<th>做什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>各 arch 提供 <strong><code class="c">mem_init()</code></strong></td>
-<td>架构相关的收尾 + 调用通用逻辑</td>
+<td>① <code class="c">free_unused_memmap()</code></td>
+<td>有些 <code class="c">struct page</code> 页是<strong>空洞/保留区</strong>的，根本没对应物理页，把这段 memmap 也释放</td>
 </tr>
 <tr>
-<td><strong>遍历 bootmem 位图</strong></td>
-<td>找出 <strong>仍标记为空闲</strong> 的物理页</td>
+<td>② <code class="c">reset_all_zones_managed_pages()</code></td>
+<td>把各 zone 的 <code class="c">managed_pages</code> 归零，准备重新统计</td>
 </tr>
 <tr>
-<td><strong>清除保留标记</strong></td>
-<td>含 <strong>保存位图本身</strong> 的页 — 也还给运行时</td>
+<td>③ <code class="c">free_low_memory_core_early()</code></td>
+<td><strong>真正移交</strong>：遍历 memblock 的空闲区间，逐页挂进 Buddy</td>
 </tr>
 <tr>
-<td><strong>全部交给 Buddy</strong></td>
-<td><strong><code class="c">page_alloc.c</code></strong> 构建 <strong>zone freelist</strong> — Ch 6 正式接管</td>
+<td>④ <code class="c">totalram_pages_add()</code></td>
+<td>累加全局可用页计数</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">bootmem 位图:  used used free free used …
-                    └────────┘
-                         ↓ mem_init()
-              Buddy freelist (ZONE_NORMAL, …)
+<hr />
+<h2>3. 移交细节：<code class="c">free_low_memory_core_early()</code></h2>
+<pre class="code" data-label="C"><code class="c">/* mm/memblock.c:2126 */
+static unsigned long __init free_low_memory_core_early(void)
+{
+    unsigned long count = 0;
+    phys_addr_t start, end;
+    u64 i;
+
+    memblock_clear_hotplug(0, -1);
+    memmap_init_reserved_pages();          /* 初始化 reserved 区的 struct page */
+
+    for_each_free_mem_range(i, NUMA_NO_NODE, MEMBLOCK_NONE,
+                            &amp;start, &amp;end, NULL)   /* 遍历 memory − reserved 的空闲区间 */
+        count += __free_memory_core(start, end);  /* 逐段按 order 拆成页交 Buddy */
+
+    return count;
+}
 </code></pre>
-<p><strong>之后：</strong> <code class="c">kmalloc</code>、<code class="c">page_alloc</code>、<code class="c">mmap</code> fault 等 <strong>不再走 bootmem</strong> — 用户态进程 <strong>永远不会</strong> 触达此路径。</p>
-<p>→ <strong>下一章精读：</strong> <a href="chapter-06.html#ch-6">../../chapter-06-physical-page-allocation/</a></p>
+<p><strong>关键动作</strong>：</p>
+<pre class="code" data-label="code"><code class="c">memblock 空闲区间（memory − reserved）
+   [start ───────────────────── end)
+        │  __free_memory_core()
+        │  按 MAX_ORDER 对齐，把整段拆成 2^n 页块
+        ▼
+   __free_pages_bootmem() → memblock_free_pages()
+        │  page 已有 struct page，可进 Buddy
+        ▼
+   Buddy freelist（ZONE_NORMAL / ZONE_DMA32 … 的 free_area）
+</code></pre>
+<p><strong>与 §3「假释放」的呼应</strong>：到这里 <code class="c">struct page</code> 已经建好，<code class="c">memblock_free_pages()</code> 能把每页真正挂进 Buddy 的 <code class="c">free_area</code> 链表——<strong>「free」从记账变成现实</strong>。之前 <code class="c">memblock_free()</code> 做不到，就是因为缺 <code class="c">struct page</code>。</p>
+<hr />
+<h2>4. 退役之后：memblock 去哪了</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认</td>
+<td><code class="c">memblock_discard()</code> 把 <code class="c">memblock</code> 的静态数组<strong>释放</strong>，<code class="c">__init</code> 段的内存也回收</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_ARCH_KEEP_MEMBLOCK</code></td>
+<td>保留 memblock，供<strong>调试</strong>（<code class="c">/sys/kernel/debug/memblock</code> 导出两表）</td>
+</tr>
+<tr>
+<td>退役后还有少量分配需求</td>
+<td><code class="c">memblock_free_late()</code>（<code class="c">memblock.c:1658</code>）直接把页还 Buddy（绕过 memblock 记账）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>之后</strong>：<code class="c">kmalloc</code>、<code class="c">__alloc_pages</code>、<code class="c">mmap</code> fault 等<strong>全部走 Buddy/slab</strong>，用户态进程<strong>永远不会</strong>触达 memblock 路径——它只活在启动的几百毫秒里。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统起来后 <code class="c">free</code> 显示的可用内存</td>
+<td>就是 <code class="c">memblock_free_all()</code> 交给 Buddy 的「memory − reserved」总量</td>
+</tr>
+<tr>
+<td>启动快慢（嵌入式关键指标）</td>
+<td>退役时 <code class="c">for_each_free_mem_range</code> 的遍历 + 逐页挂链是启动耗时一部分</td>
+</tr>
+<tr>
+<td>排查「内存没全进 Buddy」</td>
+<td>看 <code class="c">memblock=debug</code> + <code class="c">dmesg</code> 的 <code class="c">Memory:</code> 行，与物理总量对账</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>下一章：<a href="chapter-06.html#ch-6">Ch6 物理页分配</a>（Buddy 接管后如何服务 <code class="c">__alloc_pages</code>）</li>
+<li>节点/zone 结构：<a href="chapter-14.html#s-1">Ch2 内存节点</a>（退役时 zone 就绪的前提）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 <code class="c">memblock_free_all()</code> 必须等 <code class="c">struct page</code> 建好才能执行？</strong>
+A：因为移交 Buddy 的本质是「把物理页挂进 zone 的 <code class="c">free_area</code> 空闲链表」，而 <code class="c">free_area</code> 里放的是<strong>指向 <code class="c">struct page</code> 的指针</strong>。没有 <code class="c">struct page</code> 数组，就没有 per-page 记账对象，Buddy 无法追踪「哪些页空闲、哪些页组成了 2^n 块」。所以 <code class="c">mem_init()</code> 要先建 <code class="c">struct page</code>，再调 <code class="c">memblock_free_all()</code>。</p>
+<p><strong>Q2：<code class="c">free_unused_memmap()</code> 释放的是什么「没用到的 memmap」？</strong>
+A：<code class="c">struct page</code> 数组（memmap）是按<strong>物理地址跨度</strong>分配的，但有些地址是<strong>空洞/保留区</strong>（物理内存没插满、firmware 保留），对应的 <code class="c">struct page</code> 永远用不到。<code class="c">free_unused_memmap()</code> 把这些「白占内存的 <code class="c">struct page</code> 页」释放掉，节省内存。</p>
+<p><strong>Q3：<code class="c">for_each_free_mem_range</code> 遍历的「空闲区间」是怎么算出来的？</strong>
+A：它就是 <strong><code class="c">memblock.memory</code> 减去 <code class="c">memblock.reserved</code></strong> 的差集。memblock 内部按地址顺序同时遍历两表，找出「在 memory 里、但不在 reserved 里」的连续段。这正是 §1「两表模型」的最终消费方式——<strong>分配和退役都用同一个差集</strong>。</p>
+<p><strong>Q4：<code class="c">memblock_free_all</code> 之后还能用 <code class="c">memblock_alloc</code> 吗？</strong>
+A：默认不能——<code class="c">memblock_discard()</code> 把 memblock 的静态存储释放了，<code class="c">memblock_alloc</code> 内部依赖的 <code class="c">memory</code>/<code class="c">reserved</code> 表已不存在。这也是为什么 memblock 的 API 都带 <code class="c">__init</code>/<code class="c">__init_memblock</code> 标记：它们只活在启动期，退役后其代码段本身也随 <code class="c">__init</code> 一起被回收。</p>
+<p><strong>Q5：<code class="c">reset_all_zones_managed_pages()</code> 为什么要把 zone 计数归零再统计？</strong>
+A：因为 zone 的 <code class="c">managed_pages</code>（受 Buddy 管理的页数）在退役<strong>之前</strong>可能已经被 <code class="c">free_area_init</code> 预填过一遍，退役时用 <code class="c">memblock_free_all</code> 重新、<strong>权威地</strong>统计一次。归零是「防止旧值累加导致 double count」——先清空，再按 memblock 的实际空闲区间重算，保证 <code class="c">managed_pages</code> 精确。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-5">
-        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 5 §5 2.6 内核的新变化</h2></div>
+        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 5 §5 2.6 内核的新变化（及 bootmem 的终结）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（bootmem 已删除，memblock 统一）</p>
 </blockquote>
-<h3>5. 2.6 内核的新变化</h3>
-<p>2.4 → 2.6 <strong>bootmem 无架构级重写</strong>，主要是 <strong>小优化</strong>：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答一个问题：<strong>原书说 2.6 对 bootmem「无架构级重写，只是小优化」，那从 2.6 到 v6.6，启动内存分配器到底发生了什么大事？</strong></p>
+<p>答案是：<strong>bootmem 从「小优化」走向了「被 memblock 彻底替换」</strong>。这才是本节真正值得带走的「新变化」。</p>
+<hr />
+<h2>1. 原书的「2.6 小优化」（历史背景）</h2>
+<p>2.4 → 2.6，bootmem 没有架构级重写，主要是一个字段：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -572,33 +1121,121 @@ Ch 4 运行时 fault / mmap          ← 进程用的已是 Buddy + slab 世界
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">last_success</code> 字段</strong>（<code class="c">bootmem_data_t</code>）</td>
-<td>记录 <strong>上次成功分配位置</strong> — 缩短后续 <strong>扫描位图找空闲位</strong> 的距离</td>
+<td><code class="c">last_success</code> 字段（<code class="c">bootmem_data_t</code>）</td>
+<td>记录上次成功分配位置，缩短后续扫描位图找空闲位的距离</td>
 </tr>
 </tbody>
 </table></div>
-<p>与 <strong><code class="c">last_pos</code> / <code class="c">last_offset</code></strong> 同类：<strong>减少 boot 路径上 O(n) 位图扫描</strong>。</p>
+<p>与 <code class="c">last_pos</code>/<code class="c">last_offset</code> 同类：<strong>减少 boot 路径上 O(n) 位图扫描</strong>。但这类优化治标不治本——位图「逐页扫描」的根子还在。</p>
 <hr />
-<h2>bootmem → Buddy 一图</h2>
-<pre class="code" data-label="code"><code class="c">        上电 / arch setup
+<h2>2. 真正的新变化：bootmem → memblock（已删除 bootmem）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时间线</th>
+<th>事件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6.26 起</td>
+<td><strong>memblock</strong> 引入（最初为 PowerPC 等架构服务）</td>
+</tr>
+<tr>
+<td>3.x</td>
+<td>memblock 逐步接管 x86/arm 等主流架构，bootmem 被弃用</td>
+</tr>
+<tr>
+<td><strong>v4.20 前后</strong></td>
+<td><strong>bootmem 彻底删除</strong>（<code class="c">mm/bootmem.c</code> 消失，Mike Rapoport 主导统一）</td>
+</tr>
+<tr>
+<td><strong>v6.6</strong></td>
+<td>只剩 memblock，<code class="c">alloc_bootmem*</code> 全族不复存在</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么 bootmem 非删不可</strong>（呼应 §1）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>驱动因素</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>大内存</strong></td>
+<td>位图逐页扫描 O(n)，TB 级内存下启动变慢</td>
+</tr>
+<tr>
+<td><strong>NUMA 复杂化</strong></td>
+<td>位图表达不了「区间属性 + 节点归属」，memblock 的 <code class="c">flags</code>/<code class="c">nid</code> 天生支持</td>
+</tr>
+<tr>
+<td><strong>统一架构</strong></td>
+<td>bootmem 在 x86/arm/PPC 各有实现分支，memblock 一套代码全架构通用</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论：原书 §5 的「小优化」只是 bootmem 的临终优化，真正的故事是 memblock 的崛起与 bootmem 的消亡。</strong></p>
+<hr />
+<h2>3. v6.6 memblock 的现代特性（相对原书的新能力）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>NUMA 感知分配</strong></td>
+<td><code class="c">memblock_alloc_try_nid(..., nid)</code> 直接在指定节点分配（§3）</td>
+</tr>
+<tr>
+<td><strong>区间 flags</strong></td>
+<td><code class="c">HOTPLUG</code>/<code class="c">MIRROR</code>/<code class="c">NOMAP</code> 表达热插拔/镜像/不映射语义（§1）</td>
+</tr>
+<tr>
+<td><strong>top-down / bottom-up</strong></td>
+<td><code class="c">memblock.bottom_up</code> 控制分配方向（§3）</td>
+</tr>
+<tr>
+<td><strong><code class="c">physmem</code> 第三表</strong></td>
+<td><code class="c">CONFIG_HAVE_MEMBLOCK_PHYS_MAP</code> 下额外维护「物理内存映射」表，区分「内存」与「内存映射」</td>
+</tr>
+<tr>
+<td><strong>debug 导出</strong></td>
+<td><code class="c">CONFIG_ARCH_KEEP_MEMBLOCK</code> 下 <code class="c">/sys/kernel/debug/memblock</code> 导出两表</td>
+</tr>
+<tr>
+<td><strong><code class="c">memblock_free_late</code></strong></td>
+<td>退役后仍可按页还 Buddy（§4）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>4. bootmem/memblock → Buddy 一图（全章收束）</h2>
+<pre class="code" data-label="code"><code class="c">        上电 / arch setup（firmware 报告 e820/DT/EFI）
               │
               ▼
-    探测 PFN 范围 (min_low_pfn, max_low_pfn, …)
+    memblock_add*  ──► memory 表（可用区间 + nid + flags）
               │
               ▼
-    init_bootmem_core · 位图 per node
+    memblock_reserve* ──► reserved 表（内核代码/initrd/crashkernel/页表…）
               │
               ▼
-    alloc_bootmem*  ──► 页表、mem_map、伙伴系统元数据 …
+    memblock_alloc* ──► 页表、struct page(memmap)、临时结构 …（清零 + 对齐）
               │
               ▼
-    mem_init() · 退役 bootmem
+    mem_init() → memblock_free_all()  ← ★ 退役分水岭
               │
               ▼
-    空闲页框 ──► Buddy (Ch 6) ──► 此后所有 runtime 分配
+    空闲页框 ──► Buddy（Ch6）──► 此后所有 runtime 分配
 </code></pre>
 <hr />
-<h2>HFT / 阅读建议</h2>
+<h2>5. HFT / 阅读建议</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -609,18 +1246,38 @@ Ch 4 运行时 fault / mmap          ← 进程用的已是 Buddy + slab 世界
 <tbody>
 <tr>
 <td><strong>HFT 工程</strong></td>
-<td><strong>可跳过正文</strong>；知道 <strong>运行时内存来自 Buddy + slab</strong>，bootmem 仅 <strong>启动 几百毫秒</strong></td>
+<td><strong>可跳过正文</strong>；知道「运行时内存来自 Buddy + slab，memblock 仅启动几百毫秒」即可</td>
 </tr>
 <tr>
 <td><strong>读内核启动 / 调试</strong></td>
-<td>理解 <strong>memblock Reserve/Allocate</strong> 与 <strong><code class="c">/proc/iomem</code></strong> 中 <strong>Kernel code / reserved</strong> 从哪来</td>
+<td>理解 <code class="c">memblock_reserve</code> 与 <code class="c">/proc/iomem</code> 中 <code class="c">Kernel code</code>/<code class="c">reserved</code> 从哪来，用 <code class="c">memblock=debug</code> 追</td>
 </tr>
 <tr>
 <td><strong>继续精读</strong></td>
-<td><a href="chapter-06.html#ch-6">Ch 6 物理页分配</a> · Ch 1 路线中的 <a href="https://elixir.bootlin.com/linux/latest/source/mm/page_alloc.c"><code class="c">page_alloc.c</code></a></td>
+<td><a href="chapter-06.html#ch-6">Ch6 物理页分配</a> · Ch1 路线的 <a href="https://elixir.bootlin.com/linux/latest/source/mm/page_alloc.c"><code class="c">page_alloc.c</code></a></td>
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>下一章：<a href="chapter-06.html#ch-6">Ch6 物理页分配</a>（Buddy 的正篇）</li>
+<li>回收闭环：<a href="chapter-10.html#ch-10">Ch10 页框回收</a>（Buddy 分配不出时反向回收）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：原书说 bootmem「无架构级重写」，但为什么它最终还是被删了？</strong>
+A：因为「无重写」恰恰是问题——bootmem 的<strong>位图逐页扫描</strong>模型在大内存 + NUMA 下根本跟不上，小优化（<code class="c">last_success</code>）治标不治本。memblock 的「区间表」模型从根子上解决了扩展性，于是 bootmem 被逐步替换，最终在 v4.20 前后删除。<strong>「没重写」不是稳定，是积重难返。</strong></p>
+<p><strong>Q2：memblock 相比 bootmem，对「NUMA 复杂化」的适配好在哪里？</strong>
+A：bootmem 位图只有「free/used」二元态，表达不了「这段内存属于哪个节点」；memblock 的 <code class="c">memblock_region</code> 带 <code class="c">nid</code> 字段（<code class="c">CONFIG_NUMA</code> 下），一个区间直接携带节点归属。分配时 <code class="c">memblock_alloc_try_nid(..., nid)</code> 就能在指定节点分配，这正是 NUMA 初始化（Ch2）需要的能力。</p>
+<p><strong>Q3：<code class="c">CONFIG_HAVE_MEMBLOCK_PHYS_MAP</code> 下的「physmem 第三表」和 <code class="c">memory</code> 表有什么区别？</strong>
+A：<code class="c">memory</code> 表记录「<strong>可用物理内存</strong>」（能分配给内核用）；<code class="c">physmem</code> 表记录「<strong>物理内存映射</strong>」（更广的、包括被设备/固件占用的物理区间）。某些架构需要区分「内存本身」和「内存的映射关系」，于是额外维护这张表。默认 x86 通常不开这个选项。</p>
+<p><strong>Q4：<code class="c">memblock_discard()</code> 释放 memblock 后，为什么它的 API 都带 <code class="c">__init</code> 标记？</strong>
+A：因为 memblock 的代码和数据只在启动期有效。<code class="c">__init</code> 把函数放进一个特殊的段，<strong>退役后这段内存被整体回收</strong>（<code class="c">free_initmem()</code>）。这样既能保证「退役后没人误用 memblock」（段都没了），又能把启动专用的几十 KB 内存还给系统。</p>
+<p><strong>Q5：为什么说「bootmem → memblock」是理解 Ch5 的「唯一主线」？</strong>
+A：因为原书五节全在讲 bootmem，而 v6.6 里 bootmem 已经不存在了。如果照本宣科背 bootmem 的 <code class="c">node_bootmem_map</code>/<code class="c">last_success</code>，读 v6.6 源码会完全对不上。正确读法：<strong>把原书的 bootmem 概念当成「历史对照」，每个概念都映射到 memblock 的对应物</strong>——bitmap→region list、init_bootmem_core→memblock_add/reserve、alloc_bootmem→memblock_alloc、mem_init 退役→memblock_free_all。</p>
+</details>
 <hr />
       </section>
 
