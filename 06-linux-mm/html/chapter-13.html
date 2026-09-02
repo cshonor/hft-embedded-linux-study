@@ -361,272 +361,1024 @@ Ch 13 out_of_memory() → select → kill
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 13 §1 检查可用内存 (`vm_enough_memory`)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 13 §1 检查可用内存（`__vm_enough_memory` → OOM 触发链）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
-<h3>1. 检查可用内存 (<code class="c">vm_enough_memory</code>)</h3>
-<p>在 <strong>可能大幅消耗 VA/RSS</strong> 的操作 <strong>之前</strong> <strong>主动检查</strong> — 尽量避免滑入 OOM：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>触发场景（例）</th>
-<th>系统调用 / 路径</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>扩展堆</td>
-<td><strong><code class="c">brk()</code></strong></td>
-</tr>
-<tr>
-<td>扩大映射</td>
-<td><strong><code class="c">mremap()</code></strong></td>
-</tr>
-</tbody>
-</table></div>
-<p><strong><code class="c">vm_enough_memory()</code></strong> 估算 <strong>潜在可用内存</strong> 是否 ≥ 本次请求：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>计入（原书）</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>页缓存</strong> 中可回收部分</td>
-<td>clean cache 等</td>
-</tr>
-<tr>
-<td><strong>空闲物理页</strong></td>
-<td>Buddy free</td>
-</tr>
-<tr>
-<td><strong>空闲 swap 槽</strong></td>
-<td>尚未承诺的 swap</td>
-</tr>
-<tr>
-<td><strong>未用 dcache / inode cache</strong></td>
-<td>可 shrink（Ch 10 §4）</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>Overcommit：</strong> 若管理员允许 <strong>内存超额分配</strong>（<strong><code class="c">vm.overcommit_memory</code></strong> 等），检查 <strong>更松</strong> — <strong>承诺的 VA</strong> 可大于 <strong>物理+swap</strong>，<strong>OOM 风险上升</strong>。</p>
-<p><strong>HFT：</strong> <strong><code class="c">overcommit_memory=2</code></strong> + 合理 <strong><code class="c">overcommit_ratio</code></strong> 更 <strong>可预测</strong> — 仍 <strong>不能替代</strong> 物理 RAM + <strong><code class="c">mlock</code></strong>。</p>
 <hr />
+<h2>本节讲什么</h2>
+<p>原书把「检查可用内存」当作 OOM 的第一道防线：在 <code class="c">brk()</code>、<code class="c">mremap()</code> 这类<strong>可能大幅消耗 VA/RSS</strong> 的操作<strong>之前</strong>主动调用 <code class="c">vm_enough_memory()</code>，尽量让系统<strong>滑不进 OOM killer</strong>。</p>
+<p>到 v6.6，这道防线依然存在，但<strong>角色已经分化</strong>成两件完全独立的事：</p>
+<ol>
+<li><strong><code class="c">__vm_enough_memory()</code>（mm/util.c:931）</strong> —— 只在 <strong>overcommit 记账</strong>层面做检查，失败直接返回 <code class="c">-ENOMEM</code> 让系统调用<strong>提前失败</strong>，<strong>根本不触发 OOM killer</strong>。</li>
+<li><strong>真正的 OOM killer 入口</strong>是 <code class="c">__alloc_pages_may_oom()</code>（page_alloc.c:3273）→ <code class="c">out_of_memory()</code>（oom_kill.c:1103）—— 在<strong>页分配器</strong>已经走完所有回收手段仍失败时才调用。</li>
+</ol>
+<p>理解这两条链的分野，是读懂 Ch13 的前提：<strong>前者是「记账前移、提前拒绝」，后者是「用尽之后、暴力止损」。</strong></p>
+<hr />
+<h2>1. overcommit 三策略（<code class="c">sysctl_overcommit_memory</code>）</h2>
+<p><code class="c">__vm_enough_memory</code> 的行为由 <code class="c">vm.overcommit_memory</code> 决定，三种取值（mm/util.c:803 起）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>取值</th>
+<th>宏</th>
+<th>语义</th>
+<th><code class="c">__vm_enough_memory</code> 的处理（:931）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">0</code></td>
+<td><code class="c">OVERCOMMIT_GUESS</code>（<strong>默认</strong>）</td>
+<td>启发式：单次请求「别太离谱」就放行</td>
+<td><code class="c">pages &gt; totalram_pages() + total_swap_pages</code> 才拒绝（:943）</td>
+</tr>
+<tr>
+<td><code class="c">1</code></td>
+<td><code class="c">OVERCOMMIT_ALWAYS</code></td>
+<td>永不拒绝</td>
+<td>直接 <code class="c">return 0</code>（:940）</td>
+</tr>
+<tr>
+<td><code class="c">2</code></td>
+<td><code class="c">OVERCOMMIT_NEVER</code></td>
+<td>严格按 <code class="c">vm_commit_limit()</code> 记账</td>
+<td><code class="c">vm_committed_as &lt; allowed</code> 才放行（:987）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>默认是 GUESS（:803）</strong>，这是关键认知——绝大多数 Linux 机器跑在「半开」的 overcommit 上，所以<strong>内存真的会被承诺过头</strong>，OOM killer 不是「理论上不该发生」而是「设计上就允许发生的兜底」。</p>
+<pre class="code" data-label="C"><code class="c">int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;   // mm/util.c:803
+int sysctl_overcommit_ratio  __read_mostly = 50;                 // :804  默认 50%
+unsigned long sysctl_overcommit_kbytes __read_mostly;            // :805  0=用 ratio 算
+unsigned long sysctl_user_reserve_kbytes  __read_mostly = 1UL &lt;&lt; 17; // :807  128MB
+unsigned long sysctl_admin_reserve_kbytes __read_mostly = 1UL &lt;&lt; 13; // :808  8MB
+</code></pre>
+<h2>2. <code class="c">vm_commit_limit()</code>：NEVER 模式的上限（mm/util.c:875）</h2>
+<pre class="code" data-label="C"><code class="c">unsigned long vm_commit_limit(void)
+{
+    unsigned long allowed;
+    if (sysctl_overcommit_kbytes)                              // 绝对 KB 优先
+        allowed = sysctl_overcommit_kbytes &gt;&gt; (PAGE_SHIFT - 10);
+    else
+        allowed = ((totalram_pages() - hugetlb_total_pages())  // 扣掉大页
+                   * sysctl_overcommit_ratio / 100);
+    allowed += total_swap_pages;                               // 加上 swap
+    return allowed;
+}
+</code></pre>
+<p>公式（<code class="c">overcommit_kbytes=0</code> 时）：</p>
+<pre class="code" data-label="code"><code class="c">commit_limit = (totalram - hugetlb) × ratio% + total_swap
+</code></pre>
+<p>默认 <code class="c">ratio=50</code> → 物理内存的一半 + 全部 swap。这就是 HFT 里常说的「<code class="c">overcommit_memory=2</code> + <code class="c">overcommit_ratio</code> 精确控额」的来源。</p>
+<h2>3. <code class="c">__vm_enough_memory()</code> 完整判断（mm/util.c:931）</h2>
+<pre class="code" data-label="C"><code class="c">int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
+{
+    long allowed;
+    vm_acct_memory(pages);                       // ① 先记账
+
+    if (sysctl_overcommit_memory == OVERCOMMIT_ALWAYS)   // ② ALWAYS 永不拒绝
+        return 0;
+    if (sysctl_overcommit_memory == OVERCOMMIT_GUESS) {  // ③ GUESS 只看单次
+        if (pages &gt; totalram_pages() + total_swap_pages)
+            goto error;
+        return 0;
+    }
+    allowed = vm_commit_limit();                 // ④ NEVER 严格记账
+    if (!cap_sys_admin)
+        allowed -= sysctl_admin_reserve_kbytes &gt;&gt; (PAGE_SHIFT - 10); // 给 root 留 8MB
+    if (mm) {
+        long reserve = sysctl_user_reserve_kbytes &gt;&gt; (PAGE_SHIFT - 10);
+        allowed -= min_t(long, mm-&gt;total_vm / 32, reserve);  // 防单进程撑爆（≤128MB）
+    }
+    if (percpu_counter_read_positive(&amp;vm_committed_as) &lt; allowed)   // ⑤ 已承诺 &lt; 上限
+        return 0;
+error:
+    pr_warn_ratelimited(... &quot;not enough memory for the allocation\n&quot;);
+    vm_unacct_memory(pages);                     // 回滚记账
+    return -ENOMEM;
+}
+</code></pre>
+<p>要点：</p>
+<ul>
+<li><strong>记账是 percpu 计数器</strong> <code class="c">vm_committed_as</code>（:886，<code class="c">____cacheline_aligned_in_smp</code>），读时用 <code class="c">percpu_counter_read_positive</code> 拿<strong>近似值</strong>（读不精确，但足够做「是否超额」判断）。</li>
+<li><strong>两道预留</strong>：<code class="c">admin_reserve_kbytes</code>（8MB）保证管理员还能登录救援；<code class="c">user_reserve_kbytes</code>（128MB，或单进程 <code class="c">total_vm/32</code> 的较小值）防止<strong>单个进程</strong>把系统吃到用户无法回收。</li>
+<li><strong><code class="c">vm_acct_memory</code> / <code class="c">vm_unacct_memory</code></strong> 成对出现：失败要<strong>回滚</strong>，否则计数器会永久虚高。</li>
+</ul>
+<h2>4. 真正的 OOM 触发链（page_alloc.c）</h2>
+<p><code class="c">__vm_enough_memory</code> 只管「承诺」，而 <strong>OOM killer 由页分配器触发</strong>：</p>
+<pre class="code" data-label="code"><code class="c">用户态 malloc/brk/mmap
+        │
+        ▼
+__alloc_pages / __alloc_pages_slowpath
+        │  依次尝试：fast path → 回收(direct reclaim) → compact → ...
+        ▼
+__alloc_pages_may_oom(gfp_mask, order, ac, &amp;did_some_progress)   // page_alloc.c:3273
+        │  关键：只在高阶分配(order&gt;0)失败、或 __GFP_NOFAIL 等场景才进
+        ▼
+out_of_memory(&amp;oc)                                               // page_alloc.c:3342 调用
+</code></pre>
+<pre class="code" data-label="C"><code class="c">// page_alloc.c:3273 附近的注释（原文）
+/*
+ * We are in an unfortunate situation where out_of_memory cannot
+ * be called ... Once filesystems are ready to handle allocation
+ * failures ... we will call out_of_memory().
+ */
+if (out_of_memory(&amp;oc) || ...)   // :3342
+</code></pre>
+<p><strong>为什么不是每次分配失败都杀</strong>：<code class="c">__alloc_pages_may_oom</code> 会先判断 <code class="c">gfp_mask</code> 是否允许直接回收（<code class="c">__GFP_DIRECT_RECLAIM</code>）、是否 <code class="c">__GFP_NORETRY</code>，<strong>只有真正走到无路可退才进 <code class="c">out_of_memory</code></strong>。这是对原书「主动检查」叙事的现代修正：<strong>检查（overcommit）与止损（OOM）是两条独立的链，别混为一谈。</strong></p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>作用</th>
+<th>边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">overcommit_memory=2</code> + 精确 <code class="c">overcommit_ratio</code></td>
+<td>把「承诺上限」卡死在物理+swap 内，<strong>消除 overcommit 超额</strong></td>
+<td>只防「承诺过度」，<strong>防不住真内存耗尽</strong>（OOM killer 仍可能触发）</td>
+</tr>
+<tr>
+<td><code class="c">mlock</code> 关键映射</td>
+<td>把热路径页<strong>锁死</strong>在物理内存</td>
+<td>只锁 RSS，不改变 overcommit 记账</td>
+</tr>
+<tr>
+<td>理解 <code class="c">vm_committed_as</code> 是近似值</td>
+<td>别拿它当精确水位线</td>
+<td>percpu counter 读的是 <code class="c">read_positive</code> 快照</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：对低延迟交易进程，<code class="c">overcommit_memory=2</code> 的意义是<strong>让失败在 <code class="c">malloc</code> 那一刻显式暴露</strong>（返回 NULL 可处理），而不是在几十毫秒后的缺页/分配路径上被 OOM killer 突然打断——<strong>可预测性 &gt; 可用性</strong>。</p>
+<hr />
+<h2>衔接</h2>
+<p>§1 讲清了「主动检查」与「OOM 止损」的分野。下一节进 OOM killer 本体：<code class="c">out_of_memory()</code> 如何判断「现在是不是真的该杀人了」。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">vm.overcommit_memory</code> 默认是几？默认策略下单次 <code class="c">malloc</code> 多大一定会被 <code class="c">__vm_enough_memory</code> 拒绝？</strong></p>
+<p>默认是 <code class="c">0</code>（<code class="c">OVERCOMMIT_GUESS</code>，mm/util.c:803）。GUESS 策略只在 <code class="c">pages &gt; totalram_pages() + total_swap_pages</code> 时拒绝（:943）——即<strong>单次请求超过物理+swap 总量</strong>才失败，否则一律放行，所以「默认是半开的」。</p>
+<p><strong>Q2：<code class="c">vm_commit_limit()</code> 在没有 <code class="c">overcommit_kbytes</code> 时怎么算？</strong></p>
+<p><code class="c">(totalram_pages - hugetlb_total_pages) × overcommit_ratio/100 + total_swap_pages</code>（mm/util.c:875-883）。默认 ratio=50，即物理内存的一半 + swap。</p>
+<p><strong>Q3：<code class="c">__vm_enough_memory</code> 里 <code class="c">admin_reserve_kbytes</code> 和 <code class="c">user_reserve_kbytes</code> 各起什么作用？</strong></p>
+<p>前者（8MB）保证<strong>管理员</strong>在系统快爆时仍能登录救援（非 root 进程的 allowed 要扣掉它）；后者（128MB，或单进程 <code class="c">total_vm/32</code> 的较小值）防止<strong>单个进程</strong>通过反复 mmap 把系统吃到连自己都回收不了。</p>
+<p><strong>Q4：<code class="c">__vm_enough_memory</code> 失败返回 <code class="c">-ENOMEM</code> 会不会触发 OOM killer？</strong></p>
+<p>不会。它只是让 <code class="c">brk</code>/<code class="c">mmap</code>/<code class="c">mremap</code> 等系统调用<strong>提前失败返回</strong>。真正的 OOM killer 入口是 <code class="c">__alloc_pages_may_oom</code>（page_alloc.c:3273）→ <code class="c">out_of_memory</code>（:3342），是<strong>页分配器</strong>在回收无果后调用的，两条链独立。</p>
+<p><strong>Q5：为什么说 <code class="c">vm_committed_as</code> 只能当近似值看？</strong></p>
+<p>它是 <code class="c">percpu_counter</code>（mm/util.c:886，<code class="c">____cacheline_aligned_in_smp</code>），各 CPU 本地累加、读时 <code class="c">percpu_counter_read_positive</code> 拿快照，有跨 CPU 的偏差。做「是否超额」这种粗粒度判断足够，当精确水位线不可靠。</p>
+</details>
       </section>
       <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 13 §2 确定 OOM 状态 (`out_of_memory`)</h2></div>
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 13 §2 确定 OOM 状态（`out_of_memory` + `oom_control`）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
-<h3>2. 确定 OOM 状态 (<code class="c">out_of_memory</code>)</h3>
-<p><strong>触发条件（概念）：</strong> 内存不足 + <strong>页面回收已在最高压力</strong> 下仍 <strong>无法释放足够页</strong> → 调用 <strong><code class="c">out_of_memory()</code></strong>。</p>
-<h3>防误杀：以下 <strong>任一</strong> 成立 → <strong>认为尚未真 OOM</strong>（暂不杀）</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §2 讲 <code class="c">out_of_memory()</code> 的「防误杀」启发式：还有 swap？距上次失败 &gt; 5s？过去 1s 无失败？过去 5s 失败 &lt; 10 次？——用来区分「I/O 慢 / 回收进行中」与「真的没人可杀了」。</p>
+<p>到 v6.6，这套<strong>时间窗启发式已被重构</strong>：判定逻辑集中到 <code class="c">struct oom_control</code>（oom.h:33）+ <code class="c">enum oom_constraint</code>（oom.h:22）四分类 + 几条<strong>硬条件</strong>上。本节把 <code class="c">out_of_memory()</code>（oom_kill.c:1103）逐段拆开。</p>
+<hr />
+<h2>1. <code class="c">struct oom_control</code>（include/linux/oom.h:33）</h2>
+<p>这是贯穿整个 OOM killer 的「上下文包」，一次 OOM 事件只创建一份，在各阶段间传递：</p>
+<pre class="code" data-label="C"><code class="c">struct oom_control {
+    struct zonelist *zonelist;        // 用于判定 cpuset 约束
+    nodemask_t *nodemask;             // 用于判定 mempolicy 约束
+    struct mem_cgroup *memcg;         // NULL = 全局 OOM，非 NULL = memcg OOM
+    const gfp_t gfp_mask;             // 触发分配时的 GFP 标志
+    const int order;                  // -1 表示 sysrq 触发，否则仅供显示
+    unsigned long totalpages;         // 本次评分的「总内存」分母
+    struct task_struct *chosen;       // 选中的受害者
+    long chosen_points;               // 受害者得分
+    enum oom_constraint constraint;   // 约束类型（见下）
+};
+</code></pre>
+<p><strong>关键字段 <code class="c">memcg</code></strong>：<code class="c">NULL</code> 是<strong>全局 OOM</strong>（系统物理内存真不够了），非 <code class="c">NULL</code> 是 <strong>cgroup OOM</strong>（只是某个 cgroup 达到 <code class="c">memory.max</code>，系统整体可能还有空闲）。<code class="c">is_memcg_oom(oc)</code> 就是 <code class="c">oc-&gt;memcg != NULL</code>，整条逻辑链据此分叉。</p>
+<h2>2. <code class="c">enum oom_constraint</code> 四约束（oom.h:22）</h2>
+<pre class="code" data-label="C"><code class="c">enum oom_constraint {
+    CONSTRAINT_NONE,            // 无约束，全局物理内存不足
+    CONSTRAINT_CPUSET,          // 受 cpuset 墙限制（只能用某几个 node）
+    CONSTRAINT_MEMORY_POLICY,   // 受 mempolicy 限制（mbind/set_mempolicy）
+    CONSTRAINT_MEMCG,           // 受 memcg 内存上限限制
+};
+</code></pre>
+<p>判定函数 <code class="c">constrained_alloc()</code>（oom_kill.c:302）的决策树：</p>
+<pre class="code" data-label="code"><code class="c">is_memcg_oom(oc)? ──是──► CONSTRAINT_MEMCG（totalpages = memcg 上限）
+        │否
+totalpages = totalram_pages() + total_swap_pages   // 默认全局
+        │
+!CONFIG_NUMA ? ──是──► CONSTRAINT_NONE
+        │否
+gfp_mask &amp; __GFP_THISNODE ? ──是──► CONSTRAINT_NONE
+        │否
+nodemask 受限（非全内存节点）? ──是──► CONSTRAINT_MEMORY_POLICY
+        │否
+cpuset 墙拦了某些 zone ? ──是──► CONSTRAINT_CPUSET
+        │否
+CONSTRAINT_NONE
+</code></pre>
+<p><strong>为什么约束重要</strong>：它决定 <code class="c">totalpages</code>（评分分母）用多大内存池。比如 cpuset 把进程锁在 1 个 node 上，即使全系统还有 100GB 空闲，OOM 评分也只按<strong>那个 node 的 present pages</strong> 来算——<strong>约束决定了「什么算内存不足」的基准</strong>。</p>
+<h2>3. <code class="c">out_of_memory()</code> 逐段拆解（oom_kill.c:1103）</h2>
+<pre class="code" data-label="C"><code class="c">bool out_of_memory(struct oom_control *oc)
+{
+    unsigned long freed = 0;
+
+    if (oom_killer_disabled)                     // ① killer 被禁用 → 直接返回
+        return false;
+
+    if (!is_memcg_oom(oc)) {                     // ② 全局 OOM：先问 notifier
+        blocking_notifier_call_chain(&amp;oom_notify_list, 0, &amp;freed);
+        if (freed &gt; 0 &amp;&amp; !is_sysrq_oom(oc))
+            return true;   // &quot;Got some memory back in the last second.&quot;
+    }
+
+    if (task_will_free_mem(current)) {           // ③ 当前进程已在退出/有 SIGKILL
+        mark_oom_victim(current);
+        queue_oom_reaper(current);
+        return true;      // 让它优先拿 reserves，别杀别人
+    }
+
+    if (!(oc-&gt;gfp_mask &amp; __GFP_FS) &amp;&amp; !is_memcg_oom(oc))  // ④ 不能做 FS 回收
+        return true;      // 全局 OOM 且无 __GFP_FS：先放弃，等可回收
+
+    oc-&gt;constraint = constrained_alloc(oc);      // ⑤ 判定约束
+    if (oc-&gt;constraint != CONSTRAINT_MEMORY_POLICY)
+        oc-&gt;nodemask = NULL;
+    check_panic_on_oom(oc);                      // ⑥ panic_on_oom 检查
+
+    if (!is_memcg_oom(oc) &amp;&amp; sysctl_oom_kill_allocating_task &amp;&amp; ...) {  // ⑦ 直接杀触发者
+        oom_kill_process(oc, &quot;Out of memory (oom_kill_allocating_task)&quot;);
+        return true;
+    }
+
+    select_bad_process(oc);                      // ⑧ 遍历评分选受害者
+    if (!oc-&gt;chosen) {                           // ⑨ 没得杀 → 死锁
+        dump_header(oc, NULL);
+        pr_warn(&quot;Out of memory and no killable processes...\n&quot;);
+        if (!is_sysrq_oom(oc) &amp;&amp; !is_memcg_oom(oc))
+            panic(&quot;System is deadlocked on memory\n&quot;);
+    }
+    if (oc-&gt;chosen &amp;&amp; oc-&gt;chosen != (void *)-1UL)
+        oom_kill_process(oc, ...);               // ⑩ 执行击杀
+    return !!oc-&gt;chosen;
+}
+</code></pre>
+<h2>4. 与原书「防误杀启发式」的对应</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书启发式（2.6）</th>
+<th>v6.6 对应机制</th>
+<th>变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>仍有 swap 空间 → 不杀</td>
+<td><code class="c">task_will_free_mem</code> + <code class="c">__GFP_FS</code> 检查（:1114/:1127）</td>
+<td>从「看 swap 余量」改为「看当前进程能不能自己退」</td>
+</tr>
+<tr>
+<td>距上次失败 &gt; 5s → 不杀</td>
+<td><code class="c">blocking_notifier_call_chain</code> 查 freed（:1108）</td>
+<td>从时间窗改为<strong>事件驱动</strong>：有人已还内存就不杀</td>
+</tr>
+<tr>
+<td>过去 1s 无失败 / 5s 失败 &lt; 10 次</td>
+<td>无直接对应，由 allocator 的 <code class="c">did_some_progress</code> 提前拦截</td>
+<td>回收进展检查上移到 page_alloc，不留在 OOM 里</td>
+</tr>
+<tr>
+<td>5s 内已杀过 → 等释放</td>
+<td><code class="c">task_will_free_mem(current)</code> + oom_reaper（:1114）</td>
+<td>受害者机制从「等待」升级为「主动收割」</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心变化</strong>：原书靠「时间窗 + 计数器」做启发式，v6.6 靠「<strong>谁正在退出、谁已经还了内存、能不能做 FS 回收</strong>」这些<strong>语义更硬</strong>的条件判断，误杀窗口更窄。</p>
+<h2>5. <code class="c">check_panic_on_oom()</code> 三级（oom_kill.c:1059）</h2>
+<pre class="code" data-label="C"><code class="c">static void check_panic_on_oom(struct oom_control *oc)
+{
+    if (likely(!sysctl_panic_on_oom)) return;         // 0：不 panic（默认）
+    if (sysctl_panic_on_oom != 2) {                   // 1：只对全局 OOM panic
+        if (oc-&gt;constraint != CONSTRAINT_NONE) return; // cpuset/mempolicy/memcg 不 panic
+    }
+    if (is_sysrq_oom(oc)) return;                     // sysrq 触发不 panic
+    dump_header(oc, NULL);
+    panic(&quot;Out of memory: %s panic_on_oom is enabled\n&quot;,
+          sysctl_panic_on_oom == 2 ? &quot;compulsory&quot; : &quot;system-wide&quot;);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">panic_on_oom</code></th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">0</code></td>
+<td>正常走 OOM killer（默认）</td>
+</tr>
+<tr>
+<td><code class="c">1</code></td>
+<td><strong>只有全局（CONSTRAINT_NONE）OOM 才 panic</strong>；cpuset/mempolicy/memcg 不 panic</td>
+</tr>
+<tr>
+<td><code class="c">2</code></td>
+<td><strong>无条件 panic</strong>（"compulsory"，含 memcg/cpuset 场景）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>建议</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">panic_on_oom</code></td>
+<td>交易主机<strong>保持 0</strong></td>
+<td>panic 是「宁可全机重启」，对低延迟系统意味着<strong>几十秒级中断</strong>，不如让 OOM killer 精准止损</td>
+</tr>
+<tr>
+<td>cgroup 隔离</td>
+<td>非关键服务放 <code class="c">memory.max</code> 限死的 cgroup</td>
+<td>触发的是 <strong>memcg OOM</strong>（<code class="c">CONSTRAINT_MEMCG</code>），只杀 cgroup 内进程，<strong>不拖垮全局</strong></td>
+</tr>
+<tr>
+<td><code class="c">oom_kill_allocating_task</code></td>
+<td>默认 0，别开</td>
+<td>开了会让「当前分配者」直接被杀，可能误杀无辜的 mmap 大额分配者</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>要点</strong>：<code class="c">out_of_memory</code> 的 <code class="c">return true</code> 分支（②③④）是<strong>「暂时不杀」</strong>的信号——它告诉分配器「这次先算了」，分配器会重试。真正的击杀只在走到 ⑩ 时发生。理解这个「返回 true ≠ 杀了人」的语义，读 OOM 日志才不会误判。</p>
+<hr />
+<h2>衔接</h2>
+<p>§2 讲了 <code class="c">out_of_memory</code> 何时「决定杀人」。下一节 §3 讲<strong>杀谁</strong>：<code class="c">select_bad_process</code> / <code class="c">oom_badness</code> 的评分算法，以及它与原书 <code class="c">badness()</code> 的根本差异。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：<code class="c">struct oom_control</code> 里 <code class="c">memcg == NULL</code> 和 <code class="c">!= NULL</code> 分别代表什么？</strong></p>
+<p><code class="c">NULL</code> 是<strong>全局 OOM</strong>（系统物理内存整体不足）；非 <code class="c">NULL</code> 是 <strong>memcg OOM</strong>（某个 cgroup 撞上 <code class="c">memory.max</code>，系统整体可能还有空闲）。<code class="c">is_memcg_oom(oc)</code> 判断这个字段，整条逻辑据此分叉。</p>
+<p><strong>Q2：<code class="c">enum oom_constraint</code> 有哪四种？各在什么条件下判定？</strong></p>
+<p><code class="c">CONSTRAINT_NONE</code>（全局）、<code class="c">CONSTRAINT_CPUSET</code>（cpuset 墙拦了某些 zone）、<code class="c">CONSTRAINT_MEMORY_POLICY</code>（nodemask 受限）、<code class="c">CONSTRAINT_MEMCG</code>（memcg 上限）。判定在 <code class="c">constrained_alloc()</code>（oom_kill.c:302）。</p>
+<p><strong>Q3：<code class="c">out_of_memory</code> 里 <code class="c">task_will_free_mem(current)</code> 命中时做了什么？为什么？</strong></p>
+<p><code class="c">mark_oom_victim(current)</code> + <code class="c">queue_oom_reaper(current)</code> 后 <code class="c">return true</code>（oom_kill.c:1114-1118）。因为当前进程<strong>已经在退出/持有 pending SIGKILL</strong>，让它优先拿到 memory reserves 快速退出释放内存，比另杀一个无辜进程更划算。</p>
+<p><strong>Q4：<code class="c">!(gfp_mask &amp; __GFP_FS)</code> 且非 memcg 时为什么直接 <code class="c">return true</code> 不杀？</strong></p>
+<p><code class="c">__GFP_FS</code> 缺失意味着这次分配<strong>不允许触发文件系统 I/O 回收</strong>（比如在回写/锁依赖路径上）。此时 OOM killer 无从判断真实内存压力，硬杀反而可能死锁，所以先放弃让分配器重试（:1127）。memcg OOM 除外，因为它必须响应。</p>
+<p><strong>Q5：<code class="c">panic_on_oom=1</code> 和 <code class="c">=2</code> 的区别？</strong></p>
+<p><code class="c">1</code>：只有<strong>全局 OOM（CONSTRAINT_NONE）</strong>才 panic，cpuset/mempolicy/memcg 不 panic；<code class="c">2</code>：<strong>无条件</strong> panic（"compulsory"）。sysrq 触发的 OOM 两者都不 panic。</p>
+</details>
+      </section>
+      <section class="section" id="s-3">
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 13 §3 选择要杀死的进程（`oom_badness` / `select_bad_process`）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 源码核验：Linux v6.6</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §3 的核心是 <code class="c">badness()</code> 打分：</p>
+<pre class="code" data-label="code"><code class="c">badness ∝ Total VM / sqrt(CPU 运行时间)     （运行久 → 分母大 → 分数低）
+</code></pre>
+<p>外加「root / <code class="c">CAP_SYS_ADMIN</code> / <code class="c">CAP_SYS_RAWIO</code> 分数 ÷4」的权限保护。</p>
+<p><strong>到 v6.6，这套算法被彻底推翻</strong>。新 <code class="c">oom_badness()</code>（oom_kill.c:201）的注释直言：</p>
+<blockquote>
+<p><em>The heuristic for determining which task to kill is made to be </em><em>as simple and predictable as possible</em><em>.</em>
+<em>The goal is to return the highest value for the task </em><em>consuming the most memory</em><em>.</em></p>
+</blockquote>
+<p><strong>「杀最占内存的」取代了「杀最可疑的」</strong>。这是 Ch13 最重要的版本断崖，本节重点拆它。</p>
+<hr />
+<h2>1. <code class="c">oom_badness()</code> 新算法（oom_kill.c:201）</h2>
+<pre class="code" data-label="C"><code class="c">long oom_badness(struct task_struct *p, unsigned long totalpages)
+{
+    long points, adj;
+
+    if (oom_unkillable_task(p))                 // ① init / 内核线程 → 不参评
+        return LONG_MIN;
+
+    p = find_lock_task_mm(p);                   // ② 取线程组里持有 mm 的那个线程
+    if (!p)
+        return LONG_MIN;
+
+    adj = (long)p-&gt;signal-&gt;oom_score_adj;       // ③ 显式调节值
+    if (adj == OOM_SCORE_ADJ_MIN ||             //    -1000：显式「别杀我」
+        test_bit(MMF_OOM_SKIP, &amp;p-&gt;mm-&gt;flags) || //    已被 reaper 收割
+        in_vfork(p)) {                          //    vfork 中（父进程等子进程）
+        task_unlock(p);
+        return LONG_MIN;
+    }
+
+    /* 评分基线 = 进程占用的真实内存 */
+    points = get_mm_rss(p-&gt;mm)                    // RSS（匿名+文件）
+           + get_mm_counter(p-&gt;mm, MM_SWAPENTS)   // 已换出的 swap 页
+           + mm_pgtables_bytes(p-&gt;mm) / PAGE_SIZE;// 页表占的页
+    task_unlock(p);
+
+    /* oom_score_adj 归一化到 totalpages 量纲 */
+    adj *= totalpages / 1000;                     // -1000~1000 → 按 totalpages 缩放
+    points += adj;
+
+    return points;
+}
+</code></pre>
+<h3>与原书算法的对比（版本断崖）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>原书 <code class="c">badness()</code>（2.6）</th>
+<th>v6.6 <code class="c">oom_badness()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分子</td>
+<td><code class="c">Total VM</code>（虚拟内存，含未用）</td>
+<td><code class="c">RSS + swapents + pgtables</code>（<strong>真实占用</strong>）</td>
+</tr>
+<tr>
+<td>分母</td>
+<td><code class="c">sqrt(CPU time)</code>（运行久 → 分低）</td>
+<td>无分母，<strong>运行时间完全不参与</strong></td>
+</tr>
+<tr>
+<td>权限保护</td>
+<td>root/<code class="c">CAP_SYS_ADMIN</code>/<code class="c">CAP_SYS_RAWIO</code> ÷4</td>
+<td>删掉，改为 <code class="c">oom_score_adj</code> 显式调节</td>
+</tr>
+<tr>
+<td>目标</td>
+<td>「杀短命暴涨的」</td>
+<td>「杀<strong>最占内存</strong>的」</td>
+</tr>
+<tr>
+<td>可预测性</td>
+<td>低（CPU 时间、cap 都动态）</td>
+<td>高（只看内存 + 显式 adj）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么推翻</strong>：原书算法里「sqrt(CPU time)」会让<strong>长期运行的 daemon 几乎免疫</strong>——但它们恰恰可能吞掉最多内存（比如泄漏的老服务）。新算法回归本质：<strong>谁占的内存最多，谁就该为内存不足负责</strong>，管理员想让谁免疫，用 <code class="c">oom_score_adj=-1000</code> <strong>显式声明</strong>，而不是靠 CPU 运行时间这种隐式代理。</p>
+<h2>2. 谁「不参评」（<code class="c">oom_unkillable_task</code> + 跳过条件）</h2>
+<pre class="code" data-label="C"><code class="c">// oom_kill.c:162
+static bool oom_unkillable_task(struct task_struct *p)
+{
+    if (is_global_init(p))       // pid 1（init/systemd）——杀了系统就崩
+        return true;
+    if (p-&gt;flags &amp; PF_KTHREAD)   // 内核线程——没有用户 mm，杀了没意义
+        return true;
+    return false;
+}
+</code></pre>
+<p><code class="c">oom_badness</code> 里返回 <code class="c">LONG_MIN</code>（负无穷，等于「永不选中」）的三种额外情况：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>条件</th>
-<th>意图</th>
+<th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>仍有 swap 空间</strong></td>
-<td>还可 <strong>swap out</strong>，不必立刻杀人</td>
+<td><code class="c">oom_score_adj == OOM_SCORE_ADJ_MIN</code>（-1000）</td>
+<td>显式声明「OOM 不可杀」</td>
 </tr>
 <tr>
-<td>距 <strong>上次 alloc 失败</strong> <strong>&gt; 5s</strong></td>
-<td>transient 故障可能已恢复</td>
+<td><code class="c">MMF_OOM_SKIP</code> 置位</td>
+<td>已被 oom_reaper 收割，杀了也白杀</td>
 </tr>
 <tr>
-<td><strong>过去 1s 内无 alloc 失败</strong></td>
-<td>避免 <strong>偶发失败</strong> 触发</td>
-</tr>
-<tr>
-<td><strong>过去 5s 内 alloc 失败 &lt; 10 次</strong></td>
-<td>失败 <strong>不够持续</strong></td>
-</tr>
-<tr>
-<td><strong>过去 5s 内已杀过 OOM 进程</strong></td>
-<td>等 <strong>受害者释放内存</strong> 生效</td>
+<td><code class="c">in_vfork(p)</code></td>
+<td>子进程 vfork 期间，父进程在等它 exec，杀了会破坏 vfork 语义</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>直觉：</strong> 区分 <strong>「I/O 慢 / 回收进行中」</strong> 与 <strong>「真的没人可杀了」</strong> — 原书 <strong>启发式</strong>，现代仍有 <strong>类似 throttle</strong>。</p>
+<h2>3. <code class="c">oom_evaluate_task</code> / <code class="c">select_bad_process</code> 遍历（oom_kill.c:308/:364）</h2>
+<pre class="code" data-label="C"><code class="c">static int oom_evaluate_task(struct task_struct *task, void *arg)
+{
+    struct oom_control *oc = arg;
+    long points;
+
+    if (oom_unkillable_task(task))          goto next;
+    if (!is_memcg_oom(oc) &amp;&amp; !oom_cpuset_eligible(task, oc))  goto next; // cpuset 不符
+    if (!is_sysrq_oom(oc) &amp;&amp; tsk_is_oom_victim(task)) {  // 已有 victim 且非 MMF_OOM_SKIP
+        if (test_bit(MMF_OOM_SKIP, &amp;task-&gt;signal-&gt;oom_mm-&gt;flags))  goto next;
+        goto abort;                          // 多个 victim 争 reserves → 中止
+    }
+    if (oom_task_origin(task)) {             // 本次分配 origin（set_current_oom_origin）
+        points = LONG_MAX;  goto select;     // 直接选中，无需评分
+    }
+    points = oom_badness(task, oc-&gt;totalpages);
+    if (points == LONG_MIN || points &lt; oc-&gt;chosen_points)  goto next;
+select:
+    ... oc-&gt;chosen = task; oc-&gt;chosen_points = points;
+    return 0;
+abort:
+    oc-&gt;chosen = (void *)-1UL;  return 1;    // 中止信号：调用方退出循环
+}
+
+static void select_bad_process(struct oom_control *oc)
+{
+    oc-&gt;chosen_points = LONG_MIN;
+    if (is_memcg_oom(oc))
+        mem_cgroup_scan_tasks(oc-&gt;memcg, oom_evaluate_task, oc);  // 只扫 cgroup 内
+    else {
+        rcu_read_lock();
+        for_each_process(p) if (oom_evaluate_task(p, oc)) break;  // 扫全系统
+        rcu_read_unlock();
+    }
+}
+</code></pre>
+<p><strong>两个亮点</strong>：</p>
+<ol>
+<li><strong><code class="c">oom_task_origin</code></strong>（oom.h:54）：<code class="c">set_current_oom_origin()</code> 可把某个进程标记为「本次 OOM 的源头」（比如 kswapd 之外的换入路径），评分直接 <code class="c">LONG_MAX</code> <strong>无条件选中</strong>，跳过所有比较。</li>
+<li><strong><code class="c">abort</code> 语义</strong>：若已经有一个 victim 正拿着 memory reserves 且未 MMF_OOM_SKIP，再选第二个会<strong>稀释 reserves</strong>，于是 <code class="c">chosen = (void *)-1UL</code> 让 <code class="c">out_of_memory</code> 放弃本次击杀。</li>
+</ol>
+<h2>4. <code class="c">oom_score_adj</code> 全貌</h2>
+<p>用户态接口（uapi/linux/oom.h:9-10）：</p>
+<pre class="code" data-label="C"><code class="c">#define OOM_SCORE_ADJ_MIN   (-1000)
+#define OOM_SCORE_ADJ_MAX   1000
+#define OOM_ADJUST_MIN      (-16)   // 旧 oom_adj 接口（废弃但保留兼容）
+#define OOM_ADJUST_MAX      15
+</code></pre>
+<ul>
+<li><strong><code class="c">/proc/&lt;pid&gt;/oom_score_adj</code></strong>：<code class="c">-1000~1000</code>，<code class="c">-1000</code> 完全免疫、<code class="c">1000</code> 极优先被杀。</li>
+<li><strong><code class="c">/proc/&lt;pid&gt;/oom_score</code></strong>：只读，<strong>动态计算</strong>的「被杀倾向」，见 fs/proc/base.c:550：</li>
+</ul>
+<pre class="code" data-label="C"><code class="c">static int proc_oom_score(...)
+{
+    totalpages = totalram_pages() + total_swap_pages;
+    badness = oom_badness(task, totalpages);
+    if (badness != LONG_MIN)
+        points = (1000 + badness * 1000 / (long)totalpages) * 2 / 3;  // 缩放到 0~2000 量程
+    seq_printf(m, &quot;%lu\n&quot;, points);
+}
+</code></pre>
+<p><strong>注意 <code class="c">/proc/pid/oom_score</code> 与 <code class="c">/proc/pid/oom_score_adj</code> 不是一回事</strong>：前者是「结果」（含 oom_score_adj 影响的实时倾向），后者是「输入」（用户显式调节的偏移量）。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>写法</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易主进程免疫</td>
+<td><code class="c">echo -1000 &gt; /proc/&lt;pid&gt;/oom_score_adj</code></td>
+<td><code class="c">oom_badness</code> 直接返回 <code class="c">LONG_MIN</code>，<strong>永不参评</strong></td>
+</tr>
+<tr>
+<td>子进程继承</td>
+<td><code class="c">systemd</code> 的 <code class="c">OOMScoreAdjust=</code></td>
+<td>让整个服务树统一免疫/优先</td>
+</tr>
+<tr>
+<td>优先牺牲辅助进程</td>
+<td><code class="c">echo 1000 &gt; .../oom_score_adj</code></td>
+<td>让日志/监控进程在 OOM 时<strong>最先被牺牲</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>边界</strong>：<code class="c">oom_score_adj=-1000</code> 只保证「<strong>不被选中杀死</strong>」，<strong>完全不防</strong> swap stall / direct reclaim 延迟尖刺（Ch10）。真正的低延迟保障靠<strong>物理 RAM + mlock + cgroup 隔离</strong>三件套，<code class="c">oom_score_adj</code> 只是最后一道「别杀错人」的保险。</p>
 <hr />
+<h2>衔接</h2>
+<p>§3 讲清了「选谁」。下一节 §4 讲「怎么杀」：<code class="c">oom_kill_process</code> / <code class="c">__oom_kill_process</code> 的信号投递顺序，以及 v6.6 新增的 <strong>oom_reaper</strong> 收割机制。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：v6.6 的 <code class="c">oom_badness</code> 评分基线由哪三部分构成？</strong></p>
+<p><code class="c">get_mm_rss()</code>（RSS，匿名+文件页）+ <code class="c">get_mm_counter(mm, MM_SWAPENTS)</code>（已换出的 swap 页）+ <code class="c">mm_pgtables_bytes(mm)/PAGE_SIZE</code>（页表占页数），三者相加（oom_kill.c:230-232）。</p>
+<p><strong>Q2：原书 <code class="c">badness() = Total VM / sqrt(CPU time)</code> 为什么被推翻？</strong></p>
+<p>「sqrt(CPU time)」让长期运行的 daemon 几乎免疫被杀，但它们可能是真正的内存泄漏大户；「Total VM」含大量未实际使用的虚拟内存，会误杀「VM 大但 RSS 小」的进程。新算法回归「谁真实占内存最多谁负责」，把保护权交给显式的 <code class="c">oom_score_adj</code>。</p>
+<p><strong>Q3：<code class="c">oom_badness</code> 返回 <code class="c">LONG_MIN</code> 的四种情况分别是什么？</strong></p>
+<p>① <code class="c">oom_unkillable_task</code>（pid 1 或内核线程）；② <code class="c">oom_score_adj == -1000</code>（显式免疫）；③ <code class="c">MMF_OOM_SKIP</code>（已被 reaper 收割）；④ <code class="c">in_vfork</code>（vfork 语义保护）。</p>
+<p><strong>Q4：<code class="c">oom_task_origin</code> 命中时评分是多少？为什么？</strong></p>
+<p><code class="c">LONG_MAX</code>，直接 <code class="c">goto select</code> 无条件选中（oom_kill.c:323-326）。它表示该进程是本次内存压力的「源头」（通过 <code class="c">set_current_oom_origin</code> 标记），优先于一切评分比较。</p>
+<p><strong>Q5：<code class="c">/proc/pid/oom_score</code> 和 <code class="c">/proc/pid/oom_score_adj</code> 的区别？</strong></p>
+<p><code class="c">oom_score_adj</code> 是<strong>输入</strong>（用户显式写 <code class="c">-1000~1000</code> 的偏移量）；<code class="c">oom_score</code> 是<strong>输出</strong>（实时计算的结果倾向，由 <code class="c">oom_badness</code> 套公式 <code class="c">(1000 + badness*1000/totalpages)*2/3</code> 缩放而来，fs/proc/base.c:550），前者影响后者。</p>
+</details>
       </section>
-      <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 13 §3 选择要杀死的进程 (`select_bad_process` / `badness`)</h2></div>
+      <section class="section" id="s-4">
+        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 13 §4 杀死选定的进程（`oom_kill_process` + oom_reaper）</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 源码核验：Linux v6.6</p>
 </blockquote>
-<h3>3. 选择要杀死的进程 (<code class="c">select_bad_process</code> / <code class="c">badness</code>)</h3>
-<p>遍历进程，<strong><code class="c">badness()</code> 打分</strong> — <strong>最高分</strong> 为牺牲品。</p>
-<h3>打分（原书算法直觉）</h3>
-<pre class="code" data-label="code"><code class="c">badness ∝  Total VM（虚拟内存占用大）
-         ─────────────────────────────
-         sqrt(CPU 运行时间)           （运行久 → 分母大 → 分数低）
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §4 讲击杀动作：通知该 task + 共享 <code class="c">mm_struct</code> 的所有线程、提优先级、设 <code class="c">PF_MEMALLOC</code> + <code class="c">PF_MEMDIE</code>、<code class="c">CAP_SYS_RAWIO</code> 用 <code class="c">SIGTERM</code> 否则 <code class="c">SIGKILL</code>。</p>
+<p>到 v6.6，这条链演变成<strong>三层</strong>：<code class="c">oom_kill_process</code>（外层，处理 memcg 群杀）→ <code class="c">__oom_kill_process</code>（信号投递 + 共享 mm 清扫）→ <strong>oom_reaper</strong>（内核线程主动收割地址空间，这是原书完全没有的新机制）。</p>
+<hr />
+<h2>1. <code class="c">oom_kill_process()</code> 外层（oom_kill.c:1010）</h2>
+<pre class="code" data-label="C"><code class="c">static void oom_kill_process(struct oom_control *oc, const char *message)
+{
+    struct task_struct *victim = oc-&gt;chosen;
+    struct mem_cgroup *oom_group;
+
+    task_lock(victim);
+    if (task_will_free_mem(victim)) {          // ① 受害者其实已在退出
+        mark_oom_victim(victim);
+        queue_oom_reaper(victim);
+        task_unlock(victim);  put_task_struct(victim);
+        return;                                 //   只给 reserves，不再补发信号
+    }
+    task_unlock(victim);
+
+    if (__ratelimit(&amp;oom_rs))
+        dump_header(oc, victim);                // ② 打日志（限速防刷屏）
+
+    oom_group = mem_cgroup_get_oom_group(victim, oc-&gt;memcg);  // ③ 是否要杀整个 cgroup
+
+    __oom_kill_process(victim, message);        // ④ 核心击杀
+
+    if (oom_group) {                            // ⑤ memory.oom.group=1：群杀
+        mem_cgroup_scan_tasks(oom_group, oom_kill_memcg_member, (void *)message);
+        mem_cgroup_put(oom_group);
+    }
+}
+</code></pre>
+<p><strong>新能力 <code class="c">oom_group</code></strong>：cgroup 可以设 <code class="c">memory.oom.group=1</code>，让 OOM 时<strong>整个 cgroup 的所有进程一起被杀</strong>（而不是只杀得分最高的一个）。这对「一组必须同生共死的服务」有用——避免杀了 A 留下 B 独活成孤儿。</p>
+<h2>2. <code class="c">__oom_kill_process()</code> 核心（oom_kill.c:914）</h2>
+<pre class="code" data-label="C"><code class="c">static void __oom_kill_process(struct task_struct *victim, const char *message)
+{
+    struct task_struct *p;  struct mm_struct *mm;
+    bool can_oom_reap = true;
+
+    p = find_lock_task_mm(victim);              // ① 找持有 mm 的线程
+    if (!p) {  /* victim 已退出，跳过 */  return; }
+    ...  mm = victim-&gt;mm;  mmgrab(mm);          // ② 安全引用 mm
+
+    count_vm_event(OOM_KILL);
+    memcg_memory_event_mm(mm, MEMCG_OOM_KILL);  // ③ 统计
+
+    do_send_sig_info(SIGKILL, SEND_SIG_PRIV, victim, PIDTYPE_TGID);  // ④ 先发信号
+    mark_oom_victim(victim);                    // ⑤ 再授予 memory reserves
+    pr_err(&quot;%s: Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, &quot;
+           &quot;file-rss:%lukB, shmem-rss:%lukB, UID:%u pgtables:%lukB oom_score_adj:%hd\n&quot;,
+           message, ...);
+
+    rcu_read_lock();
+    for_each_process(p) {                       // ⑥ 杀共享 mm 的其他线程组进程
+        if (!process_shares_mm(p, mm))  continue;
+        if (same_thread_group(p, victim))  continue;
+        if (is_global_init(p)) {  can_oom_reap = false;  set_bit(MMF_OOM_SKIP, &amp;mm-&gt;flags);  continue; }
+        if (unlikely(p-&gt;flags &amp; PF_KTHREAD))  continue;
+        do_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_TGID);
+    }
+    rcu_read_unlock();
+
+    if (can_oom_reap)
+        queue_oom_reaper(victim);               // ⑦ 排队收割
+    ...
+}
+</code></pre>
+<h3>两个必须理解的顺序</h3>
+<ol>
+<li>
+<p><strong>先 <code class="c">SIGKILL</code> 再 <code class="c">mark_oom_victim</code>（④→⑤）</strong>。注释明确说：<em>「We should send SIGKILL before granting access to memory reserves in order to prevent the OOM victim from depleting the memory reserves from the user space under its control.」</em> —— 如果先给 reserves，victim 用户态还活着时会<strong>先挥霍掉本就紧张的预留内存</strong>，所以必须先用 SIGKILL 让它走向退出，再授予 <code class="c">TIF_MEMDIE</code>。</p>
+</li>
+<li>
+<p><strong>信号一律 <code class="c">SIGKILL</code>，没有原书的 <code class="c">SIGTERM</code> 分支</strong>。原书里 <code class="c">CAP_SYS_RAWIO</code> 进程用 SIGTERM「优雅退出」的路径在 v6.6 已删除——OOM 场景下<strong>没时间等优雅退出</strong>，<code class="c">SIGKILL</code>（不可捕获、不可忽略、立即生效）是唯一选择。</p>
+</li>
+</ol>
+<h2>3. <code class="c">mark_oom_victim()</code>：从 <code class="c">PF_MEMDIE</code> 到 <code class="c">TIF_MEMDIE</code>（oom_kill.c:756）</h2>
+<pre class="code" data-label="C"><code class="c">static void mark_oom_victim(struct task_struct *tsk)
+{
+    struct mm_struct *mm = tsk-&gt;mm;
+    WARN_ON(oom_killer_disabled);
+    if (test_and_set_tsk_thread_flag(tsk, TIF_MEMDIE))  // ① 已标记则返回
+        return;
+    if (!cmpxchg(&amp;tsk-&gt;signal-&gt;oom_mm, NULL, mm))       // ② 绑定 oom_mm
+        mmgrab(tsk-&gt;signal-&gt;oom_mm);
+    __thaw_task(tsk);                                   // ③ 唤醒被 freezer 冻结的进程
+    atomic_inc(&amp;oom_victims);                           // ④ 全局受害者计数 +1
+    trace_mark_victim(tsk-&gt;pid);
+}
+</code></pre>
+<p><strong>版本断崖</strong>：原书的 <code class="c">PF_MEMDIE</code> 是 <strong>process flag</strong>，v6.6 改成了 <strong>thread flag <code class="c">TIF_MEMDIE</code></strong>，并把「受害者 mm」单独存到 <code class="c">signal-&gt;oom_mm</code>（而非复用 mm 指针）。这样<strong>同一线程组里只有被杀的那个线程</strong>带 <code class="c">TIF_MEMDIE</code>，其余共享 mm 的线程不共享这个标志，语义更精确。</p>
+<p><strong><code class="c">TIF_MEMDIE</code> 的作用</strong>：它让 <code class="c">__alloc_pages_slowpath</code> 在<strong>受害者退出路径上</strong>仍能拿到 memory reserves（<code class="c">ALLOC_OOM</code>），否则 victim 会因为「分配页也失败」而卡死在退出代码里，形成活锁。</p>
+<h2>4. oom_reaper：原书没有的收割机制（oom_kill.c:505-740）</h2>
+<p>老内核靠「受害者自然退出」释放内存，但如果 victim 卡在 <code class="c">mmap_lock</code> 上，退出会非常慢甚至死锁。v4.7 起引入 <strong>oom_reaper 内核线程</strong>，<strong>不等进程退出，主动 unmapping 受害者的地址空间</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static bool __oom_reap_task_mm(struct mm_struct *mm)   // oom_kill.c:513
+{
+    set_bit(MMF_UNSTABLE, &amp;mm-&gt;flags);   // ① 标记「地址空间已不稳定」
+    for_each_vma(vmi, vma) {
+        if (vma-&gt;vm_flags &amp; (VM_HUGETLB|VM_PFNMAP))  continue;   // ② 跳过特殊 VMA
+        if (vma_is_anonymous(vma) || !(vma-&gt;vm_flags &amp; VM_SHARED)) {  // ③ 只收匿名/私有
+            tlb_gather_mmu(&amp;tlb, mm);
+            unmap_page_range(&amp;tlb, vma, range.start, range.end, NULL);  // ④ 真释放页表
+            tlb_finish_mmu(&amp;tlb);
+        }
+    }
+    return ret;
+}
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>倾向</th>
-<th>原因</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>杀大内存、短寿命进程</strong></td>
-<td>突然 <strong>malloc 暴涨</strong> 的 <strong>更可疑</strong></td>
-</tr>
-<tr>
-<td><strong>少杀长期 daemon</strong></td>
-<td>老进程 <strong>不一定是</strong> 本次 OOM 根因</td>
-</tr>
-</tbody>
-</table></div>
-<h3>权限保护（分数 ÷ 4）</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>进程</th>
-<th>保护</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>root</strong></td>
-<td>降低被杀概率</td>
-</tr>
-<tr>
-<td><strong><code class="c">CAP_SYS_ADMIN</code></strong></td>
-<td>同上</td>
-</tr>
-<tr>
-<td><strong><code class="c">CAP_SYS_RAWIO</code></strong></td>
-<td>直接硬件访问 — <strong>更不应误杀</strong></td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>现代：</strong> <strong><code class="c">/proc/&lt;pid&gt;/oom_score_adj</code></strong>（-1000 ~ 1000）— 用户态 <strong>显式调节</strong>；<strong>cgroup</strong> 可 <strong>禁用/隔离</strong> OOM。</p>
-<p><strong>HFT：</strong> 关键进程设 <strong><code class="c">oom_score_adj=-1000</code></strong>（或 cgroup <strong>oom_kill_disable</strong>）— <strong>不能防 swap/reclaim stall</strong>，只防 <strong>被选中杀死</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 13 §4 杀死选定的进程</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>4. 杀死选定的进程</h3>
-<p>选中后：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>步骤</th>
+<th>机制</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>通知范围</strong></td>
-<td>该 <strong>task</strong> + <strong>共享同一 <code class="c">mm_struct</code> 的所有线程</strong></td>
+<td>触发方式</td>
+<td><code class="c">queue_oom_reaper(victim)</code>（:690）→ 设 <code class="c">OOM_REAPER_DELAY = 2*HZ</code> 的 timer（给 victim 2 秒自然退出时间）→ <code class="c">wake_oom_reaper</code> 入队</td>
 </tr>
 <tr>
-<td><strong>调度优先</strong></td>
-<td>提高优先级 — <strong>尽快退出释内存</strong></td>
+<td>收割内容</td>
+<td><strong>只收匿名页 + 私有映射</strong>（文件页已在回收阶段处理，且不想阻塞 exit_mmap）</td>
 </tr>
 <tr>
-<td><strong>内存标志</strong></td>
-<td><strong><code class="c">PF_MEMALLOC</code> + <code class="c">PF_MEMDIE</code></strong> — 退出路径 <strong>仍可分配</strong> 必要页（Ch 6）</td>
+<td>收割手段</td>
+<td><code class="c">unmap_page_range</code>（TLB gather 批量失效），<strong>跳过 VM_HUGETLB/VM_PFNMAP</strong></td>
 </tr>
 <tr>
-<td><strong>信号选择</strong></td>
-<td>有 <strong><code class="c">CAP_SYS_RAWIO</code></strong> → <strong><code class="c">SIGTERM</code></strong>（优雅）；否则 <strong><code class="c">SIGKILL</code></strong></td>
+<td>重试</td>
+<td><code class="c">oom_reap_task</code> 最多 <code class="c">MAX_OOM_REAP_RETRIES = 10</code> 次，每次 <code class="c">schedule_timeout_idle(HZ/10)</code></td>
+</tr>
+<tr>
+<td><code class="c">MMF_UNSTABLE</code></td>
+<td>收割期间，任何 <code class="c">get_user</code>/<code class="c">copy_from_user</code> 命中已收割页会 <code class="c">VM_FAULT_SIGBUS</code>（<code class="c">check_stable_address_space</code>，oom.h:88）</td>
+</tr>
+<tr>
+<td>兜底</td>
+<td>收不干净就设 <code class="c">MMF_OOM_SKIP</code>，让后续 OOM 轮次<strong>不再把它当候选</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>日志：</strong> dmesg 常见 <strong><code class="c">Out of memory: Kill process &lt;pid&gt; (&lt;comm&gt;) score …</code></strong> — 运维 <strong>定位谁被杀</strong>。</p>
+<p><strong>关键：<code class="c">MMF_OOM_SKIP</code> 的双重身份</strong>——既是「reaper 已收割、不再评分」的标记（§3），也是「退出路径 exit_mmap 已接管 mm、reaper 停止工作」的标记（<code class="c">oom_reap_task</code> 末尾置位）。</p>
+<h2>5. 受害者退出闭环：<code class="c">exit_oom_victim()</code>（oom_kill.c:783）</h2>
+<pre class="code" data-label="C"><code class="c">void exit_oom_victim(void)
+{
+    clear_thread_flag(TIF_MEMDIE);
+    if (!atomic_dec_return(&amp;oom_victims))
+        wake_up_all(&amp;oom_victims_wait);
+}
+</code></pre>
+<p>受害者退出路径（<code class="c">exit_mm</code> 后）调用它：清 <code class="c">TIF_MEMDIE</code>、<code class="c">oom_victims</code> 减一；当计数归零时唤醒所有等待者（<code class="c">oom_killer_disable</code> 就靠这个等待队列）。</p>
 <hr />
-      </section>
-      <section class="section" id="s-5">
-        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 13 §5 2.6 内核的新变化</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>5. 2.6 内核的新变化</h3>
+<h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>变化</th>
-<th>目的</th>
+<th>关注点</th>
+<th>建议</th>
+<th>理由</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">VM_ACCOUNT</code> VMA</strong>（Ch 12）</td>
-<td>对 <strong>shmem 等</strong> 操作 <strong>额外检查</strong> 可用内存</td>
+<td>oom_reaper</td>
+<td>别依赖 victim「快速自然退出」</td>
+<td>若交易进程被误杀，2 秒后 reaper 就强制 unmapping 它的 mm，<strong>内存回收速度不再取决于受害者自觉</strong></td>
 </tr>
 <tr>
-<td><strong>严格 overcommit 上限</strong></td>
-<td><strong><code class="c">committed_AS ≤ 总RAM × (overcommit_ratio/100) + 总swap</code></strong> — <strong>尽量不让系统走到 OOM killer</strong></td>
+<td><code class="c">MMF_UNSTABLE</code></td>
+<td>理解收割期 SIGBUS</td>
+<td>收割期间进程若继续访问私有匿名页会 <code class="c">SIGBUS</code> 而非缺页——这是 OOM 下的<strong>数据一致性最后防线</strong></td>
+</tr>
+<tr>
+<td>信号一律 SIGKILL</td>
+<td>别指望优雅收尾</td>
+<td>OOM 场景「时间就是内存」，<code class="c">SIGTERM</code> 优雅路径已删，进程收到的是不可捕获的 SIGKILL</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>哲学：</strong> <strong>记账前移</strong> — 在 <strong>承诺内存时</strong> 就拒绝，而非 <strong>用尽后杀人</strong>。</p>
+<p><strong>要点</strong>：OOM 击杀的现代设计哲学是<strong>「信号 + 主动收割双保险」</strong>——SIGKILL 负责「让进程知道自己该死」，oom_reaper 负责「进程死得慢时我来动手收内存」，两者解耦，确保内存归还<strong>不卡在受害者退出路径上</strong>。</p>
 <hr />
-<h2>OOM 决策简图</h2>
-<pre class="code" data-label="code"><code class="c">alloc / brk / mremap 大请求
-    vm_enough_memory? ──否──► 可能 early fail（视 overcommit）
-        │
-内存压力 ↑
-    kswapd + direct reclaim 尽力
-        │
-仍失败 → out_of_memory()
-    防误杀检查 ──跳过──► 返回，稍后重试
-        │
-    select_bad_process() / badness
-        │
-    SIGKILL / SIGTERM → 进程退出 → 页框归还
+<h2>衔接</h2>
+<p>§4 讲完了击杀与收割。下一节 §5 把 Ch13 所有 v6.6 变化收拢成演进全景，并给出 HFT 精读 checklist。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：为什么 <code class="c">__oom_kill_process</code> 必须「先 SIGKILL 再 mark_oom_victim」？</strong></p>
+<p>防止 victim 在用户态还活着时，先挥霍掉本就紧张的 memory reserves（oom_kill.c:944-949 的注释）。先 SIGKILL 让它进入退出路径，再授予 <code class="c">TIF_MEMDIE</code>，保证 reserves 只用于「退出时必要的分配」。</p>
+<p><strong>Q2：原书的 <code class="c">PF_MEMDIE</code> 在 v6.6 变成了什么？为什么改？</strong></p>
+<p>变成 <strong>thread flag <code class="c">TIF_MEMDIE</code></strong>（<code class="c">mark_oom_victim</code> 里 <code class="c">test_and_set_tsk_thread_flag</code>，oom_kill.c:764），受害者 mm 单独存 <code class="c">signal-&gt;oom_mm</code>。这样只有<strong>被杀的那个线程</strong>带标志，共享 mm 的其他线程不共享，语义更精确。</p>
+<p><strong>Q3：oom_reaper 收割时跳过哪些 VMA？为什么？</strong></p>
+<p>跳过 <code class="c">VM_HUGETLB</code> 和 <code class="c">VM_PFNMAP</code>（oom_kill.c:524），因为大页和 PFN 映射需要特殊处理、OOM 紧急路径上「耗不起」；只收割 <code class="c">vma_is_anonymous</code> 或非 <code class="c">VM_SHARED</code> 的 VMA（匿名/私有页释放性价比最高）。</p>
+<p><strong>Q4：<code class="c">MMF_UNSTABLE</code> 置位后，进程访问已收割页会怎样？</strong></p>
+<p><code class="c">get_user</code>/<code class="c">copy_from_user</code> 会得到 <code class="c">VM_FAULT_SIGBUS</code>（通过 <code class="c">check_stable_address_space</code>，oom.h:88），而不是正常缺页——因为页内容已被回收，返回零页会导致静默数据损坏。</p>
+<p><strong>Q5：<code class="c">oom_killer_disable</code> 是如何知道「所有受害者都退出了」的？</strong></p>
+<p>它 <code class="c">wait_event_interruptible_timeout(oom_victims_wait, !atomic_read(&amp;oom_victims), timeout)</code>（oom_kill.c:838）。而 <code class="c">exit_oom_victim</code>（:783）在每次受害者退出时 <code class="c">atomic_dec_return(&amp;oom_victims)</code>，归零时 <code class="c">wake_up_all</code> 唤醒该等待队列。</p>
+</details>
+      </section>
+      <section class="section" id="s-5">
+        <div class="sec-head"><div class="sec-no">5</div><h2>Ch 13 §5 2.6 内核的新变化（OOM 子系统演进全景）</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 源码核验：Linux v6.6</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §5 只列了两条 2.6 时代的变化：<code class="c">VM_ACCOUNT</code> VMA 记账、严格 overcommit 上限（<code class="c">committed_AS ≤ RAM×ratio + swap</code>），哲学是「<strong>记账前移，在承诺时就拒绝，而非用尽后杀人</strong>」。</p>
+<p>到 v6.6，OOM 子系统经历了一轮<strong>「从启发式到语义化」的重构</strong>。本节把 Ch13 涉及的所有断崖收拢成一张演进全景表，并落到 HFT 精读 checklist。</p>
+<hr />
+<h2>1. 演进全景表（2.6 → v6.6）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>原书（2.6）</th>
+<th>v6.6</th>
+<th>断崖性质</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>评分算法</td>
+<td><code class="c">badness = Total VM / sqrt(CPU time)</code>，root/cap ÷4</td>
+<td><code class="c">oom_badness = RSS + swapents + pgtables + oom_score_adj</code>（oom_kill.c:201）</td>
+<td><strong>重写</strong>，目标从「杀可疑的」变「杀最占内存的」</td>
+</tr>
+<tr>
+<td>调节接口</td>
+<td><code class="c">oom_adj</code>（-16~15）</td>
+<td><code class="c">oom_score_adj</code>（-1000~1000，uapi/linux/oom.h:9）</td>
+<td><strong>替换</strong>，旧接口废弃但保留兼容</td>
+</tr>
+<tr>
+<td>受害者标记</td>
+<td>进程标志 <code class="c">PF_MEMDIE</code></td>
+<td>线程标志 <code class="c">TIF_MEMDIE</code> + <code class="c">signal-&gt;oom_mm</code>（:764）</td>
+<td><strong>语义细化</strong>（精确到线程）</td>
+</tr>
+<tr>
+<td>击杀信号</td>
+<td><code class="c">SIGTERM</code>（CAP_SYS_RAWIO）/ <code class="c">SIGKILL</code></td>
+<td>一律 <code class="c">SIGKILL</code>（:943）</td>
+<td><strong>简化</strong>，删掉优雅退出</td>
+</tr>
+<tr>
+<td>内存归还</td>
+<td>靠受害者自然退出</td>
+<td>oom_reaper 主动收割（:505-740）</td>
+<td><strong>新增机制</strong></td>
+</tr>
+<tr>
+<td>约束分类</td>
+<td>无（全局一刀切）</td>
+<td><code class="c">enum oom_constraint</code> 四类（oom.h:22）</td>
+<td><strong>新增</strong>，区分 memcg/cpuset/mempolicy</td>
+</tr>
+<tr>
+<td>cgroup</td>
+<td>无</td>
+<td>memcg OOM + <code class="c">memory.oom.group</code> 群杀（:1031）</td>
+<td><strong>新增</strong></td>
+</tr>
+<tr>
+<td>panic 控制</td>
+<td>无</td>
+<td><code class="c">panic_on_oom</code> 0/1/2 三级（:1059）</td>
+<td><strong>新增</strong></td>
+</tr>
+<tr>
+<td>主动免杀</td>
+<td>无</td>
+<td><code class="c">oom_kill_allocating_task</code> sysctl（:1138）</td>
+<td><strong>新增</strong></td>
+</tr>
+<tr>
+<td>用户态收割</td>
+<td>无</td>
+<td><code class="c">process_mrelease</code> syscall（:1240，pidfd 触发）</td>
+<td><strong>新增</strong>（v5.15+，Android 低内存场景）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. 一条「记账前移」哲学的两条落点</h2>
+<p>原书哲学「<strong>承诺时就拒绝，而非用尽后杀人</strong>」在 v6.6 演变成<strong>两条独立防线</strong>：</p>
+<pre class="code" data-label="code"><code class="c">第一道防线（记账前移，§1）
+    brk/mmap/mremap ──► __vm_enough_memory()（mm/util.c:931）
+        │  overcommit=2 时：vm_committed_as &lt; commit_limit 才放行
+        │  失败：返回 -ENOMEM，用户态可处理，系统没事
+        ▼
+第二道防线（用尽止损，§2~§4）
+    页分配失败 ──► __alloc_pages_may_oom()（page_alloc.c:3273）
+        │  out_of_memory() → select_bad_process() → oom_kill_process()
+        │  失败：SIGKILL + oom_reaper，暴力止损
+        ▼
 </code></pre>
-<hr />
-<h2>HFT 精读 checklist</h2>
+<p><strong>两者的关系不是「替代」而是「分层」</strong>：第一道防的是「<strong>承诺</strong>过度」（虚拟内存超额），第二道防的是「<strong>实际</strong>耗尽」（物理页真没了）。很多 HFT 调优只关 overcommit 却忽略 OOM killer，结果就是「承诺控制住了，但物理耗尽时依然被杀」。</p>
+<h2>3. 版本断崖时间线（关键节点）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6.36</td>
+<td><code class="c">oom_score_adj</code> 取代 <code class="c">oom_adj</code>（-1000~1000）</td>
+</tr>
+<tr>
+<td>2.6.38</td>
+<td><code class="c">oom_kill_allocating_task</code> 引入</td>
+</tr>
+<tr>
+<td>3.x</td>
+<td>memcg OOM 逐步完善</td>
+</tr>
+<tr>
+<td>4.7</td>
+<td><strong>oom_reaper</strong> 内核线程引入，主动收割 victim mm</td>
+</tr>
+<tr>
+<td>4.12</td>
+<td><code class="c">oom_group</code>（memory.oom.group）群杀</td>
+</tr>
+<tr>
+<td>5.15</td>
+<td><code class="c">process_mrelease</code> syscall（pidfd 驱动的用户态收割）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. HFT 精读 checklist（更新版）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>手段</th>
 <th>目的</th>
+<th>防线</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>足够物理 RAM</strong></td>
-<td>根本 — OOM = 已 <strong>设计失败</strong></td>
+<td>足够物理 RAM + <code class="c">mlock</code> 关键映射</td>
+<td>根本：让系统<strong>走不到</strong> OOM</td>
+<td>前置</td>
 </tr>
 <tr>
-<td><strong><code class="c">mlock</code> 关键映射</strong></td>
-<td>减 <strong>RSS 被回收</strong>；<strong>不防</strong> 他进程 OOM</td>
+<td><code class="c">overcommit_memory=2</code> + 精确 <code class="c">overcommit_ratio</code></td>
+<td>承诺层面卡死上限，失败在 malloc 时显式暴露</td>
+<td>第一道</td>
 </tr>
 <tr>
-<td><strong><code class="c">oom_score_adj=-1000</code></strong></td>
-<td>降低 <strong>交易主进程</strong> 被杀概率</td>
+<td><code class="c">oom_score_adj=-1000</code>（交易进程）/ <code class="c">+1000</code>（辅助进程）</td>
+<td>明确「谁该死谁不该死」</td>
+<td>第二道</td>
 </tr>
 <tr>
-<td><strong>cgroup memory limit</strong></td>
-<td>隔离 <strong>非关键</strong> 服务，<strong>别拖全局 OOM</strong></td>
+<td>cgroup <code class="c">memory.max</code> + <code class="c">memory.oom.group=0</code></td>
+<td>隔离非关键服务，触发 memcg OOM 而非全局</td>
+<td>第二道</td>
 </tr>
 <tr>
-<td><strong>监控 dmesg / kernel oom</strong></td>
-<td>事后 <strong>comm + score</strong></td>
+<td><code class="c">panic_on_oom=0</code></td>
+<td>避免 OOM 升级成全机重启（几十秒中断）</td>
+<td>兜底</td>
 </tr>
 <tr>
-<td><strong>Ch 1 读源码</strong></td>
-<td><strong><code class="c">oom_kill.c</code></strong> 是 <strong>进 mm/ 的第一站</strong> — 串联 Ch 2 水位、Ch 10 回收、Ch 6 GFP</td>
+<td>监控 dmesg <code class="c">Killed process ... oom_score_adj</code></td>
+<td>事后定位 victim + score + adj</td>
+<td>观测</td>
+</tr>
+<tr>
+<td><strong>串联</strong>：Ch2 水位 → Ch10 回收 → Ch11 swap → <strong>Ch13 OOM</strong></td>
+<td>把「内存压力 → 回收 → 换出 → 击杀」整条因果链打通</td>
+<td>学习</td>
 </tr>
 </tbody>
 </table></div>
+<h2>5. 原书两条变化在 v6.6 的落点</h2>
+<ul>
+<li><strong><code class="c">VM_ACCOUNT</code> VMA 记账</strong>：仍存在（<code class="c">vm_flags &amp; VM_ACCOUNT</code>），作用于 shmem 等映射的 <code class="c">security_vm_enough_memory_mm</code> 检查（mm/mmap.c 多处调用，如 :1366/:1941/:3086）。它保证<strong>共享内存</strong>这种「多进程共同承诺」的内存也被纳入 overcommit 记账。</li>
+<li><strong>严格 overcommit 上限</strong>：落地为 <code class="c">vm_commit_limit()</code>（mm/util.c:875）—— <code class="c">(totalram - hugetlb) × ratio/100 + swap</code>，与 §1 完全呼应。</li>
+</ul>
 <hr />
+<h2>衔接</h2>
+<p>Ch13 至此收官。下一站是 Ch14 结束语（VM 全局交互图），把 Ch2~Ch13 的机制串成一张「内存管理全景」。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：Ch13 最重要的版本断崖是什么？为什么？</strong></p>
+<p><code class="c">badness()</code> 评分算法被重写：原书 <code class="c">Total VM / sqrt(CPU time) + root÷4</code> → v6.6 <code class="c">oom_badness = RSS + swapents + pgtables + oom_score_adj</code>（oom_kill.c:201）。因为它把「杀谁」的决策从「隐式启发式（运行时间、cap）」改成「显式语义（真实占用 + 管理员声明）」，可预测性根本性提升。</p>
+<p><strong>Q2：原书「记账前移」哲学在 v6.6 落成哪两条独立防线？</strong></p>
+<p>第一道 <code class="c">__vm_enough_memory()</code>（mm/util.c:931，overcommit 记账，失败 -ENOMEM 提前拒绝）；第二道 <code class="c">out_of_memory()</code>（oom_kill.c:1103，页分配器用尽后暴力止损）。前者防「承诺过度」，后者防「物理耗尽」，分层而非替代。</p>
+<p><strong>Q3：<code class="c">oom_score_adj</code> 什么时候取代 <code class="c">oom_adj</code>？范围分别多少？</strong></p>
+<p>2.6.36 取代。<code class="c">oom_score_adj</code> 范围 -1000~1000（uapi/linux/oom.h:9-10），旧 <code class="c">oom_adj</code> 范围 -16~15（:18-19），保留兼容但废弃。</p>
+<p><strong>Q4：<code class="c">process_mrelease</code> syscall 是干什么的？什么时候引入？</strong></p>
+<p>通过 pidfd 触发对指定进程 mm 的收割（oom_kill.c:1240），v5.15 引入，主要用于 Android 等低内存场景<strong>由用户态主动回收</strong>内存，无需等内核 OOM killer。</p>
+<p><strong>Q5：HFT 场景为什么 <code class="c">panic_on_oom</code> 应保持 0？</strong></p>
+<p><code class="c">panic_on_oom</code> 一旦命中就是<strong>全机 panic 重启</strong>，对低延迟交易系统意味着几十秒级中断与状态丢失；保持 0 让 OOM killer 精准止损（配合 <code class="c">oom_score_adj</code> 保住交易进程），代价是「单进程被杀」而非「全机停机」。</p>
+</details>
       </section>
 
 
