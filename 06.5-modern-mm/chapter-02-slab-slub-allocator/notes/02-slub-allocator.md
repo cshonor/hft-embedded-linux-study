@@ -4,6 +4,8 @@
 > **作者:** Christoph Lameter
 > **内核版本:** 2.6.23+ (默认分配器)
 > **对标旧书:** ULK3 Ch8 / LKD3 Ch12 (SLAB 描述)
+> 🔗 **LKD 章节语境**：[05-linux-kernel Ch12.7 Slab 层](../../../05-linux-kernel/chapter-12-memory-management/notes/section-12.7-Slab-层.md)
+> （v6.6 源码实证：SLOB 已删、SLAB 已弃用，默认 SLUB；本篇专注 SLUB 自身机制）
 
 ---
 

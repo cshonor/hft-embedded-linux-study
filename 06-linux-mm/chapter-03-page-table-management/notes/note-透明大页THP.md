@@ -2,6 +2,8 @@
 
 > **Understanding the Linux Virtual Memory Manager** · Mel Gorman · **精读 🔴** · 原书未专章，THP 为 2.6.38+ 机制
 > 源码核验：Linux **v6.6**（`mm/huge_memory.c`、`mm/khugepaged.c`）
+> 🔍 **本篇即 v6.6 最新状态，查 THP 以本篇为准** —— `06.5-modern-mm` 目前**没有 THP 专题**
+> （全模块仅 4 处顺带提及），原书也未专章。不用去别处找。
 
 ---
 

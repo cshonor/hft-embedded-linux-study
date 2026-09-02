@@ -4,6 +4,10 @@
 
 > **版本前提**：本节的机制描述全部基于 **v6.6 源码实证**（`mm/slub.c`、`mm/slab_common.c`、`mm/slab.h`、`include/linux/slub_def.h`）。
 > v6.6 里 **SLOB 已被删除**、**SLAB 已标记弃用**（v6.8 彻底删除），所以下文「Slab 层」**默认指 SLUB**。
+>
+> 🔗 **本篇讲「Slab 层的原理与接口」**；SLUB 的独立深度笔记（快路径 `cmpxchg_double`、
+> SLAB/SLOB 删除时间线）见 [06.5 现代 MM · SLUB 分配器](../../../06.5-modern-mm/chapter-02-slab-slub-allocator/notes/02-slub-allocator.md)
+> 与 [SLAB 移除](../../../06.5-modern-mm/chapter-02-slab-slub-allocator/notes/04-slab-removal.md)。
 
 #### 1. 为什么页分配器不够用
 

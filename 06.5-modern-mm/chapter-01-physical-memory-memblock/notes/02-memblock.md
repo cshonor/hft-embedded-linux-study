@@ -3,6 +3,9 @@
 > **原文:** [memblock: The early boot memory allocator](https://lwn.net/Articles/449283/) (LWN, 2011)
 > **内核版本:** 3.9+ (bootmem 被移除)
 > **对标旧书:** ULK3 Appendix E (bootmem 分配器)
+> 🔗 **Mel Gorman 章节语境**：[06-linux-mm Ch5 启动内存分配器](../../../06-linux-mm/chapter-05-boot-memory-allocator/README.md)
+> （旧书讲的是 bootmem —— **已被彻底移除**；该章笔记已补入 memblock 作为现代对照，
+> 属于「旧书章节的现代补充」，**完整机制以本篇为准**）
 
 ---
 
