@@ -4,7 +4,10 @@
 
 别人问「你怎么配置 rust-analyzer」，通常指：**`settings.json` 里给 rust-analyzer 开了哪些项**，让它又快又准。
 
-本仓库已在 **`.vscode/settings.json`** 放了一份**工作区推荐配置**（打开本仓库文件夹即生效）。
+> ⚠️ **本仓库不提供 `.vscode/settings.json`**（2026-09-02 核实）：
+> 仓库根 `.gitignore` 第 8 行忽略了 `.vscode/`，该文件即便本地生成也**无法提交**，
+> git 历史里从未有过任何 `.vscode/*`。
+> → **推荐配置按下节表格逐项自行添加**，作用域选「工作区」即可只对当前仓库生效。
 
 ---
 
@@ -23,7 +26,7 @@ VSCode 扩展市场搜索：**rust-analyzer**（作者 **rust-lang** / 原 matkl
 
 | 作用域 | 路径 | 说明 |
 |--------|------|------|
-| **工作区** | 本仓库 `.vscode/settings.json` | 只影响本学习仓库，可提交 git |
+| **工作区** | `Ctrl+,` → 工作区页签 → 右上角 `{ }` | 只影响当前仓库；**本仓库不预置此文件**（`.vscode/` 已被 gitignore） |
 | **用户** | `Ctrl+,` → 右上角 `{ }` | 所有项目通用 |
 
 修改后执行命令面板：**`Rust Analyzer: Restart Server`**，或重启 VSCode。
@@ -42,7 +45,7 @@ VSCode 扩展市场搜索：**rust-analyzer**（作者 **rust-lang** / 原 matkl
 | `lruCapacity` | 大项目增大缓存，减轻卡顿 |
 | `check.extraArgs: ["--all-targets"]` | 检查 tests/examples 等目标（略慢但更全） |
 
-> 不同 rust-analyzer 版本里，部分键名可能从 `checkOnSave.*` 迁移到 `check.*`；以扩展设置页的「Rust Analyzer › …」为准。本仓库 `.vscode/settings.json` 会随版本做小幅更新。
+> 不同 rust-analyzer 版本里，部分键名可能从 `checkOnSave.*` 迁移到 `check.*`；以扩展设置页的「Rust Analyzer › …」为准（本仓库不维护配置文件，需自行跟随版本调整）。
 
 ---
 

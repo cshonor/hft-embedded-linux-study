@@ -45,7 +45,7 @@ cargo clippy -- -D warnings   # 警告当错误（CI 常用）
 
 - [rust-analyzer](https://rust-analyzer.github.io/)：补全、跳转定义、内联错误、类型提示。
 - VS Code：安装 **rust-analyzer** 扩展（不要用旧版 Rust 扩展）。
-- 本仓库配置：[docs/rust-analyzer-VSCode配置.md](../../docs/rust-analyzer-VSCode配置.md)、[`.vscode/settings.json`](../../../../../.vscode/argv.json)。
+- 本仓库配置：[docs/rust-analyzer-VSCode配置.md](../../docs/rust-analyzer-VSCode配置.md)（`.vscode/` 已被 `.gitignore` 忽略，本仓库**不提供** `.vscode/settings.json`，按该文档第三节逐项自行添加）。
 
 ---
 

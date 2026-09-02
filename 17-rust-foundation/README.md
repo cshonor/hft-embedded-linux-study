@@ -134,7 +134,7 @@ cargo +nightly build
 
 - 章节目录英文命名，避免 Windows 终端乱码。
 - `target/` 已在 `.gitignore` 中忽略。
-- **VSCode + rust-analyzer**：[`docs/rust-analyzer-VSCode配置.md`](docs/rust-analyzer-VSCode配置.md) · 工作区 [`.vscode/settings.json`](../../../.vscode/argv.json)
+- **VSCode + rust-analyzer**：[`docs/rust-analyzer-VSCode配置.md`](docs/rust-analyzer-VSCode配置.md)（`.vscode/` 已被 `.gitignore` 忽略，本仓库**不提供** `.vscode/settings.json`，按该文档第三节逐项自行添加）
 
 ---
 
