@@ -388,21 +388,33 @@ Ch 4 fault：vmalloc 区访问时同步页表项
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 7 §1 描述虚拟内存区域 (`vm_struct`)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 7 §1 描述虚拟内存区域 (`vm_struct` → `vmap_area`)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/vmalloc.h</code> / <code class="c">mm/vmalloc.c</code>）</p>
 </blockquote>
-<h3>1. 描述虚拟内存区域 (<code class="c">vm_struct</code>)</h3>
-<h3>内核 vmalloc 区</h3>
-<p>内核在 <strong>虚拟地址空间</strong> 保留专用区间：</p>
-<pre class="code" data-label="code"><code class="c">    …
-    VMALLOC_START  ═══════════════════════════  vmalloc 区
-                   │  vm_struct #1            │
-                   │  (guard page)            │
-                   │  vm_struct #2            │
-                   …
-    VMALLOC_END    ═══════════════════════════
-    …
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答：<strong>内核用什么数据结构描述一段 vmalloc 区域？</strong></p>
+<p>原书答案是 <code class="c">vm_struct</code>——<strong>一个单链表</strong>，每个节点描述一段非连续分配的内核虚拟区间。但 <strong>v6.6 里已经升级成「双结构 + 双索引」</strong>：<code class="c">vm_struct</code>（区域描述符）+ <code class="c">vmap_area</code>（地址区间，同时挂在一棵<strong>红黑树</strong>和一条<strong>双向链表</strong>上）。本节先讲原书链表方案，再落到 v6.6 真身——这是理解「为什么现代 vmalloc 查找/释放是 O(log n)」的关键。</p>
+<hr />
+<h2>1. 内核 vmalloc 区：<code class="c">VMALLOC_START</code> ~ <code class="c">VMALLOC_END</code></h2>
+<p>内核在<strong>虚拟地址空间</strong>里划了一块专用窗口给非连续分配：</p>
+<pre class="code" data-label="code"><code class="c">              内核虚拟地址空间（x86_64，示意）
+    ┌──────────────────────────────────────┐ 高地址
+    │  MODULES_VADDR  (模块区，独立或并入)   │
+    ├──────────────────────────────────────┤
+    │  VMALLOC_START ═══════════════════    │
+    │   vmap_area #1  [ vm_struct A ]      │
+    │   (guard page)                       │  ◄─ 非连续分配窗口
+    │   vmap_area #2  [ vm_struct B ]      │
+    │   ...                                │
+    │  VMALLOC_END   ═══════════════════    │
+    ├──────────────────────────────────────┤
+    │  ... 固定映射 / vsyscall / 栈 ...      │
+    ├──────────────────────────────────────┤
+    │  PAGE_OFFSET (直接映射区，__va/__pa)   │
+    └──────────────────────────────────────┘ 低地址
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
@@ -414,69 +426,532 @@ Ch 4 fault：vmalloc 区访问时同步页表项
 <tbody>
 <tr>
 <td><strong><code class="c">VMALLOC_START</code> ~ <code class="c">VMALLOC_END</code></strong></td>
-<td><strong>非连续分配</strong> 专用的 <strong>内核虚拟地址窗口</strong>（与 <strong>线性映射 <code class="c">PAGE_OFFSET</code> 区</strong>、<strong>用户空间</strong> 分离）</td>
+<td>非连续分配专用的<strong>内核虚拟地址窗口</strong>，与直接映射区（<code class="c">PAGE_OFFSET</code>，物理地址+固定偏移）<strong>分离</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">is_vmalloc_addr()</code></strong></td>
+<td><code class="c">mm/vmalloc.c:82</code> —— <code class="c">return addr &gt;= VMALLOC_START &amp;&amp; addr &lt; VMALLOC_END</code>，判断一个地址是否落在 vmalloc 区（KASAN 标签要先 <code class="c">kasan_reset_tag</code> 抹掉）</td>
 </tr>
 <tr>
 <td><strong><code class="c">vm_struct</code></strong></td>
-<td>描述 <strong>一段 vmalloc 区域</strong> — <strong>不是</strong> 用户态的 <strong><code class="c">vm_area_struct</code> (VMA)</strong></td>
+<td>描述<strong>一段 vmalloc 区域</strong>的元数据——<strong>不是</strong>用户态的 <code class="c">vm_area_struct</code>（VMA，Ch4）</td>
 </tr>
 <tr>
-<td><strong>链表 <code class="c">next</code></strong></td>
-<td>各 <strong><code class="c">vm_struct</code></strong> 串成链表</td>
-</tr>
-<tr>
-<td><strong>Guard page</strong></td>
-<td>相邻区域之间 <strong>至少隔一个未映射页</strong> — 防 <strong>越界写</strong> 悄悄破坏邻区</td>
+<td><strong><code class="c">vmap_area</code></strong></td>
+<td>描述<strong>虚拟地址区间本身</strong>，是红黑树/链表里的索引节点</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong><code class="c">vm_struct</code> 管的是「内核虚拟窗口里的段」</strong>；用户进程 <strong><code class="c">mmap</code></strong> 用的是 <strong><code class="c">vm_area_struct</code></strong>（Ch 4）— <strong>两套描述符，别混</strong>。</p>
+<p><strong>关键直觉：<code class="c">vm_struct</code> 管「这段区域是什么」</strong>（映射了多少页、哪个调用者、什么用途），<strong><code class="c">vmap_area</code> 管「这段地址在哪」</strong>（起始/结束地址，参与地址排序查找）。原书只有前者，v6.6 把「地址索引」职责拆给了后者。</p>
 <hr />
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 7 §2 分配非连续区域 (Allocating)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>2. 分配非连续区域 (Allocating)</h3>
-<h3>API</h3>
+<h2>2. 原书方案：<code class="c">vm_struct</code> 单链表</h2>
+<p>原书（2.4/2.6 早期）用一条<strong>全局单链表</strong>串起所有 <code class="c">vm_struct</code>：</p>
+<pre class="code" data-label="code"><code class="c">vm_struct_list (全局单链表)
+    head ──► vm_struct A ──► vm_struct B ──► ... ──► NULL
+              (addr,size)     (addr,size)
+</code></pre>
+<ul>
+<li><strong>分配</strong>：从头到尾扫链表，找一个「足够大且不与现有区间重叠」的空隙 → O(n)。</li>
+<li><strong>释放</strong>：扫链表找到包含 <code class="c">addr</code> 的节点 → O(n)。</li>
+<li><strong><code class="c">next</code> 字段</strong>：单链表指针。</li>
+</ul>
+<p><strong>本质缺陷</strong>：所有查找都是<strong>线性遍历</strong>。区域少时无所谓，但 vmalloc 区里塞满数百个模块/驱动映射时，每次 <code class="c">vfree</code>/<code class="c">vmalloc</code> 都要扫全表——这就是 v6.6 引入红黑树的动机。</p>
+<hr />
+<h2>3. v6.6 真身：<code class="c">vm_struct</code> + <code class="c">vmap_area</code> 双索引</h2>
+<p>v6.6 里，<code class="c">vm_struct</code> 仍然存在，但它从「既是描述符又是索引节点」退化为<strong>纯描述符</strong>；地址索引的活儿交给了 <code class="c">vmap_area</code>（<code class="c">include/linux/vmalloc.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/vmalloc.h */
+struct vm_struct {                       /* :49  区域描述符 */
+    struct vm_struct *next;              /* :50  链表指针（仍保留，见下） */
+    void            *addr;               /* :51  区域起始虚拟地址 */
+    unsigned long    size;               /* :52  大小（含 guard page） */
+    unsigned long    flags;              /* :53  VM_* 标志（见 §1.4） */
+    struct page     **pages;             /* :54  物理页指针数组 */
+#ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
+    unsigned int     page_order;         /* :56  大页阶数（huge vmalloc） */
+#endif
+    unsigned int     nr_pages;           /* :58  页数 */
+    phys_addr_t      phys_addr;          /* :59  物理地址（ioremap 时用） */
+    const void      *caller;             /* :60  调用者返回地址（调试/统计） */
+};
+
+struct vmap_area {                       /* :63  地址区间 + 索引节点 */
+    unsigned long va_start;              /* :64  区间起始地址 */
+    unsigned long va_end;                /* :65  区间结束地址 */
+
+    struct rb_node rb_node;              /* :67  按地址排序的红黑树节点 */
+    struct list_head list;               /* :68  按地址排序的双向链表节点 */
+
+    /*
+     * vmap_area 同一时刻只属于两棵树之一：
+     *   1) &quot;free&quot; 树（根 free_vmap_area_root）
+     *   2) &quot;busy&quot; 树（根 vmap_area_root）
+     */
+    union {                              /* :76  两棵树复用同一存储 */
+        unsigned long subtree_max_size;  /* :77  free 树：子树最大空闲区间 */
+        struct vm_struct *vm;            /* :78  busy 树：指向 vm_struct */
+    };
+    unsigned long flags;                 /* :80  vm_map_ram 区域类型标记 */
+};
+</code></pre>
+<h3>字段速查：<code class="c">vm_struct</code>（<code class="c">vmalloc.h:49-61</code>）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>函数</th>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">next</code></td>
+<td>链表指针。v6.6 里它仍在，但<strong>主索引已换成 <code class="c">vmap_area</code> 的红黑树</strong>；这条链表主要用于早期启动（<code class="c">vm_area_add_early</code>）与部分遍历</td>
+</tr>
+<tr>
+<td><code class="c">addr</code></td>
+<td>区域起始虚拟地址（<code class="c">get_vm_area</code> 返回、<code class="c">vfree</code> 传入的入口）</td>
+</tr>
+<tr>
+<td><code class="c">size</code></td>
+<td>区域大小。<strong>注意含 guard page</strong>，取「真实可用大小」要用 <code class="c">get_vm_area_size()</code>（<code class="c">vmalloc.h:196</code>，非 <code class="c">VM_NO_GUARD</code> 时减一页）</td>
+</tr>
+<tr>
+<td><code class="c">flags</code></td>
+<td><code class="c">VM_*</code> 标志位（见 §1.4 表）</td>
+</tr>
+<tr>
+<td><code class="c">pages</code></td>
+<td>指向 <code class="c">struct page *</code> 数组。数组本身可能用 <code class="c">kmalloc</code>（≤1 页）或 <code class="c">__vmalloc_node</code>（&gt;1 页）分配</td>
+</tr>
+<tr>
+<td><code class="c">page_order</code></td>
+<td>大页阶数，仅 <code class="c">CONFIG_HAVE_ARCH_HUGE_VMALLOC</code> 存在；0 表示普通 4K 页</td>
+</tr>
+<tr>
+<td><code class="c">nr_pages</code></td>
+<td>已分配物理页数量（<code class="c">size &gt;&gt; PAGE_SHIFT</code>）</td>
+</tr>
+<tr>
+<td><code class="c">phys_addr</code></td>
+<td><code class="c">ioremap</code> 类映射（<code class="c">VM_IOREMAP</code>）的<strong>目标物理基址</strong>；纯 <code class="c">vmalloc</code> 时为 0</td>
+</tr>
+<tr>
+<td><code class="c">caller</code></td>
+<td>调用者的返回地址（<code class="c">__builtin_return_address(0)</code>），用于 <code class="c">/proc/vmallocinfo</code> 溯源</td>
+</tr>
+</tbody>
+</table></div>
+<h3>字段速查：<code class="c">vmap_area</code>（<code class="c">vmalloc.h:63-81</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">va_start</code> / <code class="c">va_end</code></td>
+<td>区间 <code class="c">[start, end)</code> 的虚拟地址范围</td>
+</tr>
+<tr>
+<td><code class="c">rb_node</code></td>
+<td>红黑树节点，<strong>按地址排序</strong>——查「哪个区间覆盖某地址」O(log n)</td>
+</tr>
+<tr>
+<td><code class="c">list</code></td>
+<td>双向链表节点，同样<strong>按地址排序</strong>——顺序遍历整个 vmalloc 区时用</td>
+</tr>
+<tr>
+<td><code class="c">union</code></td>
+<td><strong>同一时刻只属于一棵树</strong>：free 树里存 <code class="c">subtree_max_size</code>（子树内最大空闲区间，用于快速找「足够大的洞」），busy 树里存 <code class="c">vm</code>（指向已映射的 <code class="c">vm_struct</code>）</td>
+</tr>
+<tr>
+<td><code class="c">flags</code></td>
+<td>标记 <code class="c">vm_map_ram</code> 区域的类型（<code class="c">VMAP_RAM</code> / <code class="c">VMAP_BLOCK</code> 等）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>双索引：free 树 + busy 树</h3>
+<pre class="code" data-label="code"><code class="c">        free_vmap_area_root (红黑树)          vmap_area_root (红黑树)
+        ┌──────────────────────┐              ┌──────────────────────┐
+        │  subtree_max_size    │              │  vm_struct *vm       │
+        │  每个节点记「子树里     │              │  每个节点指向已映射的  │
+        │   最大的空闲洞」       │              │  区域描述符           │
+        └──────────────────────┘              └──────────────────────┘
+                ↑ 分配时查这里                        ↑ 释放/查找时查这里
+             (alloc_vmap_area)                  (find_unlink_vmap_area)
+
+        另有 vmap_area_list 双向链表贯穿全部（含 free + busy），供顺序遍历
+</code></pre>
+<ul>
+<li><strong>分配</strong>：在 <strong>free 树</strong>里用 <code class="c">subtree_max_size</code> 剪枝，O(log n) 找到足够大的洞（<code class="c">__alloc_vmap_area</code>，<code class="c">mm/vmalloc.c:1489</code>）。</li>
+<li><strong>释放</strong>：把节点从 <strong>busy 树</strong>摘下来，插回 <strong>free 树</strong>（<code class="c">free_vmap_area</code>，<code class="c">:1538</code>）。</li>
+<li><strong>查找</strong>（如 <code class="c">vfree</code> 定位区间）：在 <strong>busy 树</strong>里按地址 O(log n) 找到 <code class="c">vmap_area</code>，再取 <code class="c">union.vm</code> 拿到 <code class="c">vm_struct</code>。</li>
+</ul>
+<p><strong>为什么 union 省内存？</strong> 一个 <code class="c">vmap_area</code> 要么空闲要么在用，<code class="c">subtree_max_size</code> 和 <code class="c">vm</code> 指针<strong>永远不会同时需要</strong>，共享 8 字节存储，把红黑树节点 + 链表节点 + 附加字段压进一个紧凑结构。</p>
+<hr />
+<h2>4. <code class="c">VM_*</code> 标志（<code class="c">vmalloc.h:20-30</code>）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">VM_IOREMAP</code></td>
+<td><code class="c">0x00000001</code></td>
+<td><code class="c">ioremap()</code> 类 I/O 映射</td>
+</tr>
+<tr>
+<td><code class="c">VM_ALLOC</code></td>
+<td><code class="c">0x00000002</code></td>
+<td><code class="c">vmalloc()</code> 分配</td>
+</tr>
+<tr>
+<td><code class="c">VM_MAP</code></td>
+<td><code class="c">0x00000004</code></td>
+<td><code class="c">vmap()</code> 映射的页（页由调用者提供）</td>
+</tr>
+<tr>
+<td><code class="c">VM_USERMAP</code></td>
+<td><code class="c">0x00000008</code></td>
+<td>可通过 <code class="c">remap_vmalloc_range()</code> 映射到用户态</td>
+</tr>
+<tr>
+<td><code class="c">VM_DMA_COHERENT</code></td>
+<td><code class="c">0x00000010</code></td>
+<td><code class="c">dma_alloc_coherent()</code> 分配</td>
+</tr>
+<tr>
+<td><code class="c">VM_UNINITIALIZED</code></td>
+<td><code class="c">0x00000020</code></td>
+<td><code class="c">vm_struct</code> <strong>尚未完全初始化</strong>（分配中途标记，完成后 <code class="c">clear_vm_uninitialized_flag</code> 清掉）</td>
+</tr>
+<tr>
+<td><code class="c">VM_NO_GUARD</code></td>
+<td><code class="c">0x00000040</code></td>
+<td>⚠️ <strong>不加 guard page</strong>（危险，见 §1.5）</td>
+</tr>
+<tr>
+<td><code class="c">VM_KASAN</code></td>
+<td><code class="c">0x00000080</code></td>
+<td>已分配 KASAN shadow 内存</td>
+</tr>
+<tr>
+<td><code class="c">VM_FLUSH_RESET_PERMS</code></td>
+<td><code class="c">0x00000100</code></td>
+<td>unmap 时重置 direct map 权限并 flush TLB（不可原子上下文释放）</td>
+</tr>
+<tr>
+<td><code class="c">VM_MAP_PUT_PAGES</code></td>
+<td><code class="c">0x00000200</code></td>
+<td><code class="c">vfree</code> 时<strong>释放 pages 数组本身</strong>（<code class="c">vmap()</code> 转移所有权时置位）</td>
+</tr>
+<tr>
+<td><code class="c">VM_ALLOW_HUGE_VMAP</code></td>
+<td><code class="c">0x00000400</code></td>
+<td>允许在支持 <code class="c">HAVE_ARCH_HUGE_VMALLOC</code> 的架构上做大页映射</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">VM_NO_GUARD</code> 和 <code class="c">VM_ALLOW_HUGE_VMAP</code> 是 v6.6 里最值得注意的两个：前者关系到越界安全，后者关系到 TLB 性能（§4 详述）。</p>
+<hr />
+<h2>5. Guard page：相邻区域的隔离带</h2>
+<p><code class="c">__get_vm_area_node</code>（<code class="c">mm/vmalloc.c:2570</code>）里有一段：</p>
+<pre class="code" data-label="C"><code class="c">if (!(flags &amp; VM_NO_GUARD))        /* :2592 默认加保护页 */
+    size += PAGE_SIZE;             /* :2593 请求大小额外 +1 页 */
+</code></pre>
+<p><strong>默认每段 vmalloc 区域末尾多占一个未映射页（guard page）</strong>，作用：</p>
+<pre class="code" data-label="code"><code class="c">    vmap_area A           guard            vmap_area B
+    [addr  ...  end]      [未映射 1 页]     [addr  ...  end]
+              ↑ 越界写到这里会触发缺页，而不是悄悄改坏 B
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">vmalloc(size)</code></strong></td>
-<td>通用 — 从 <strong>NORMAL 等 zone</strong> 取散页</td>
+<td><strong>防越界</strong></td>
+<td>写越界时踩到 guard page → 页错误，立刻暴露 bug；否则会<strong>悄悄破坏相邻区域</strong>，事后极难排查</td>
 </tr>
 <tr>
-<td><strong><code class="c">vmalloc_dma()</code></strong></td>
-<td>物理页需满足 <strong>DMA 可达</strong> 约束</td>
+<td><strong>代价</strong></td>
+<td>每段多占一页虚拟地址 + 可能一页页表开销；<code class="c">get_vm_area_size()</code>（<code class="c">:196</code>）返回真实大小时要<strong>把这一页减掉</strong></td>
 </tr>
 <tr>
-<td><strong><code class="c">vmalloc_32()</code></strong></td>
-<td>物理页落在 <strong>32 位可寻址</strong> 范围（旧架构 / 设备）</td>
+<td><strong>豁免</strong></td>
+<td><code class="c">VM_NO_GUARD</code> 显式去掉（如 <code class="c">vmap()</code> 内部会警告并强制恢复，见 <code class="c">:2910</code> "Your top guard is someone else's bottom guard"）</td>
 </tr>
 </tbody>
 </table></div>
-<p>底层按 <strong>GFP / zone 策略</strong> 调用 <strong><code class="c">alloc_page()</code></strong> 等（Ch 6）— <strong>每页独立</strong>，不要求彼此物理相邻。</p>
-<h3>两步分配</h3>
+<p><strong>这段注释很精髓</strong>：<code class="c">vmap()</code> 里即使调用者传了 <code class="c">VM_NO_GUARD</code>，也会 <code class="c">WARN_ON_ONCE</code> 后强制 <code class="c">flags &amp;= ~VM_NO_GUARD</code>——因为「你的顶部 guard 是别人底部的 guard」，省掉自己这页会连带破坏相邻区域的隔离。</p>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>vmalloc 区遍历</strong></td>
+<td>驱动模块多时，<code class="c">vmap_area</code> 红黑树把 <code class="c">vfree</code>/<code class="c">find_vm_area</code> 从 O(n) 压到 O(log n)——<strong>释放热路径不随区域数线性变慢</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">/proc/vmallocinfo</code> 溯源</strong></td>
+<td>每个 <code class="c">vm_struct-&gt;caller</code> 记录了「谁分配的」，排查内核内存泄漏时直接定位到函数级（<code class="c">mm/vmalloc.c:4443</code> 注册的 seq 接口）</td>
+</tr>
+<tr>
+<td><strong>guard page 的启发</strong></td>
+<td>HFT 里用户态 <code class="c">mmap</code> 相邻映射也应留隔离带（<code class="c">MAP_FIXED</code> 时不慎相邻），思路同源</td>
+</tr>
+<tr>
+<td><strong>direct map vs vmalloc 区</strong></td>
+<td>理解「物理连续（直接映射） vs 仅虚拟连续（vmalloc）」的<strong>第一性区别</strong>——后者每页都要过页表，TLB 覆盖更差（§2/§4 展开）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 分配非连续区域</a>：free 树怎么被 <code class="c">alloc_vmap_area</code> 用起来、物理页怎么批量分配</li>
+<li>用户态对应物：<a href="chapter-14.html#s-3">Ch4 §3 内存区域</a>（<code class="c">vm_area_struct</code>，两套描述符别混）</li>
+<li>页表本身：<a href="chapter-14.html#s-1">Ch3 §1 页目录与页表项</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">vm_struct</code> 和 <code class="c">vmap_area</code> 的分工是什么？为什么 v6.6 要拆成两个？</strong>
+A：<code class="c">vm_struct</code> 管「这段区域<strong>是什么</strong>」——映射了多少页、哪个调用者、什么 <code class="c">VM_*</code> 用途；<code class="c">vmap_area</code> 管「这段<strong>地址在哪</strong>」——<code class="c">va_start/va_end</code> 区间，并作为红黑树/链表节点参与地址排序。原书只有 <code class="c">vm_struct</code> 单链表，查找/释放都是 O(n)；拆出 <code class="c">vmap_area</code> 后地址索引落到红黑树上，查找 O(log n)。本质是<strong>把「描述符」和「索引」两个职责解耦</strong>。</p>
+<p><strong>Q2：<code class="c">vmap_area</code> 的 union 为什么能同时存 <code class="c">subtree_max_size</code> 和 <code class="c">vm_struct *</code>？</strong>
+A：因为一个 <code class="c">vmap_area</code> <strong>同一时刻只属于一棵树</strong>：空闲时挂在 <code class="c">free_vmap_area_root</code>（需要 <code class="c">subtree_max_size</code> 记录子树最大洞，供快速找洞），已映射时挂在 <code class="c">vmap_area_root</code>（需要 <code class="c">vm</code> 指针指回描述符）。两个字段互斥使用，共享同一段存储省 8 字节。</p>
+<p><strong>Q3：<code class="c">vm_struct-&gt;size</code> 为什么和「真实可用大小」对不上？</strong>
+A：默认分配时 <code class="c">__get_vm_area_node</code> 会 <code class="c">size += PAGE_SIZE</code> 塞一个 guard page（除非 <code class="c">VM_NO_GUARD</code>）。所以 <code class="c">size</code> 包含保护页，真实可用大小要用 <code class="c">get_vm_area_size()</code>（非 <code class="c">VM_NO_GUARD</code> 时减一页）。这个保护页用于<strong>把越界写暴露成缺页</strong>，而非悄悄破坏相邻区域。</p>
+<p><strong>Q4：<code class="c">VM_MAP_PUT_PAGES</code> 标志解决什么问题？</strong>
+A：<code class="c">vmap()</code> 时调用者传入自己准备好的 <code class="c">pages</code> 数组；若置 <code class="c">VM_MAP_PUT_PAGES</code>，则<strong>数组所有权</strong>（连同每页一个引用）转移给 vmalloc 层，后续 <code class="c">vfree()</code> 会一并释放数组 + 每页引用。否则 <code class="c">vmap</code> 只负责映射，页和数组仍归调用者管（用 <code class="c">vunmap</code> 而非 <code class="c">vfree</code> 释放）。这区分了「谁持有物理页」。</p>
+<p><strong>Q5：<code class="c">find_vm_area()</code> 在 v6.6 里怎么实现？和原书单链表扫描有什么不同？</strong>
+A：<code class="c">find_vm_area()</code>（<code class="c">:2663</code>）调 <code class="c">find_vmap_area()</code> 在 <strong>busy 红黑树</strong>里按地址 O(log n) 找到 <code class="c">vmap_area</code>，再返回 <code class="c">va-&gt;vm</code>。原书是沿单链表线性扫描，找到第一个覆盖地址的节点。两者结果相同，但复杂度从 O(n) 降到 O(log n)。</p>
+</details>
+      </section>
+      <section class="section" id="s-2">
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 7 §2 分配非连续区域 (Allocating)</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/vmalloc.c</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答：<strong><code class="c">vmalloc()</code> 是怎么一步步把「物理上散页」拼成「虚拟上连续」的？</strong></p>
+<p>原书（2.6）已经确立了两阶段思想：先 reserve 虚拟区间、再分配物理页 + 建页表。v6.6 里这条骨架没变，但两个环节都<strong>现代化</strong>了——物理页分配从「逐个 <code class="c">alloc_page</code>」升级成「批量 <code class="c">alloc_pages_bulk_array</code>」，页表映射从「按 4K 逐页」升级成「可选 PMD 大页」。本节沿完整调用链走一遍。</p>
+<hr />
+<h2>1. API 家族</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vmalloc(size)</code></td>
+<td>通用非连续分配，<code class="c">GFP_KERNEL</code> 默认</td>
+<td><code class="c">mm/vmalloc.c:3416</code></td>
+</tr>
+<tr>
+<td><code class="c">vzalloc(size)</code></td>
+<td><code class="c">vmalloc</code> + <strong>清零</strong></td>
+<td>等价 <code class="c">__vmalloc(size, GFP_KERNEL \| __GFP_ZERO)</code></td>
+</tr>
+<tr>
+<td><code class="c">vmalloc_user(size)</code></td>
+<td>可映射到用户态（<code class="c">VM_USERMAP</code>）</td>
+<td>配 <code class="c">remap_vmalloc_range</code></td>
+</tr>
+<tr>
+<td><code class="c">vmalloc_node(size, node)</code></td>
+<td>指定 NUMA 节点</td>
+<td>物理页优先从该 node 取</td>
+</tr>
+<tr>
+<td><code class="c">vmalloc_32(size)</code></td>
+<td>物理页落在 <strong>32 位可寻址</strong>范围</td>
+<td>老设备 DMA 约束</td>
+</tr>
+<tr>
+<td><code class="c">vmalloc_huge(size, gfp)</code></td>
+<td>强制尝试大页映射</td>
+<td><code class="c">:3435</code>，仅 <code class="c">HAVE_ARCH_HUGE_VMALLOC</code></td>
+</tr>
+<tr>
+<td><code class="c">__vmalloc(size, gfp)</code></td>
+<td>自定义 <code class="c">gfp_mask</code> 的底层入口</td>
+<td><code class="c">:3397</code></td>
+</tr>
+<tr>
+<td><code class="c">vmap(pages, count, flags, prot)</code></td>
+<td>把调用者给好的页<strong>映射</strong>成虚拟连续（不分配页）</td>
+<td><code class="c">:2894</code></td>
+</tr>
+<tr>
+<td><code class="c">vmalloc_array(n, size)</code> / <code class="c">vcalloc(n, size)</code></td>
+<td>数组分配（带溢出检查）</td>
+<td><code class="c">vmalloc.h:156-159</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <strong>版本断崖</strong>：原书提到的 <code class="c">vmalloc_dma()</code> 在 v6.6 <strong>已删除</strong>。现代做法是用 <code class="c">__vmalloc_node_range()</code> 传 <code class="c">GFP_DMA</code>/<code class="c">GFP_DMA32</code> 约束页分配器（或直接用 DMA API，见 09-DMA Ch12）。不要在新代码里找 <code class="c">vmalloc_dma</code>。</p>
+</blockquote>
+<hr />
+<h2>2. 两阶段分配总览</h2>
 <pre class="code" data-label="code"><code class="c">vmalloc(size)
-    │
-    ├─ (1) get_vm_area()
-    │       在 VMALLOC_START~END 找足够大的 **空闲虚拟区间**
-    │       新建 vm_struct，链入全局链表
-    │
-    └─ (2) 建立页表映射
-            分配 PGD/PMD/PTE（Ch 3）
-            对每个虚拟页：alloc_page() → 填入 PTE
-            （2.6：见 §4 — 先攒页数组再 map_vm_area）
+  └─ __vmalloc(size, GFP_KERNEL)                     :3397
+       └─ __vmalloc_node(size, 1, gfp, NUMA_NO_NODE, caller)  :3382
+            └─ __vmalloc_node_range(...)             :3235  ★ 核心
+                 │
+                 ├─ 阶段① __get_vm_area_node()       :2570
+                 │        reserve 一段虚拟区间
+                 │        (alloc_vmap_area 从 free 树找洞 :1582)
+                 │        新建 vm_struct + vmap_area，挂 busy 树
+                 │
+                 └─ 阶段② __vmalloc_area_node()      :3101
+                          ├─ vm_area_alloc_pages()   :2992  分配散页数组
+                          │      (批量 alloc_pages_bulk_array)
+                          └─ vmap_pages_range()      :628   建页表映射
+                                 (walk pgd→pud→pmd→pte 填表)
 </code></pre>
-<h3>页表同步：<code class="c">init_mm</code> vs 当前进程</h3>
-<p><strong>关键：</strong> <code class="c">vmalloc()</code> 首先更新的是 <strong>内核参考页表 <code class="c">init_mm-&gt;pgd</code></strong> — <strong>不是</strong> 每个进程的 PGD。</p>
+<p><strong>关键：先抢地址、再填物理。</strong> 阶段①和阶段②分离，好处是：物理页分配失败时，只需把已 reserve 的虚拟区间归还（<code class="c">vfree</code>/<code class="c">free_vm_area</code>），不会留下「半映射」的脏状态。</p>
+<hr />
+<h2>3. 阶段①：<code class="c">__get_vm_area_node</code> reserve 虚拟区间</h2>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:2570 */
+static struct vm_struct *__get_vm_area_node(unsigned long size, ...)
+{
+    area = kzalloc_node(sizeof(*area), ...);      /* :2588 先分配 vm_struct */
+    if (!(flags &amp; VM_NO_GUARD))
+        size += PAGE_SIZE;                        /* :2592 默认 +1 页 guard */
+
+    va = alloc_vmap_area(size, align, start, end, ...);  /* :2595 抢地址 */
+    if (IS_ERR(va)) { kfree(area); return NULL; }
+
+    setup_vmalloc_vm(area, va, flags, caller);    /* :2601 关联 vm_struct ↔ vmap_area */
+    ...
+    return area;
+}
+</code></pre>
+<p><code class="c">alloc_vmap_area</code>（<code class="c">:1582</code>）是<strong>地址分配的真正引擎</strong>：</p>
+<pre class="code" data-label="C"><code class="c">retry:
+    addr = __alloc_vmap_area(&amp;free_vmap_area_root, &amp;free_vmap_area_list,
+                             size, align, vstart, vend);   /* :1615 红黑树找洞 */
+    ...
+    va-&gt;va_start = addr;                          /* :1628 */
+    va-&gt;va_end   = addr + size;
+    va-&gt;vm       = NULL;                          /* :1630 尚未关联 */
+
+    insert_vmap_area(va, &amp;vmap_area_root, &amp;vmap_area_list);  /* :1634 挂 busy 树 */
+    ...
+overflow:
+    reclaim_and_purge_vmap_areas();               /* :1651 空间不足先回收懒释放 */
+</code></pre>
+<p><strong>要点</strong>：
+- 用 <strong>free 树</strong> + <code class="c">subtree_max_size</code> 剪枝，O(log n) 找到满足 <code class="c">size</code> + <code class="c">align</code> 的洞（<code class="c">__alloc_vmap_area</code>，<code class="c">:1489</code>）。
+- 地址耗尽时走 <code class="c">overflow</code> 分支：先 <code class="c">reclaim_and_purge_vmap_areas()</code> 把攒着的懒释放区间真正回收，再 <code class="c">goto retry</code> 重试。
+- 找到后 <code class="c">insert_vmap_area</code> 把节点从 free 树挪到 <strong>busy 树</strong>。</p>
+<hr />
+<h2>4. 阶段②：<code class="c">__vmalloc_area_node</code> 分配物理页 + 建页表</h2>
+<pre class="code" data-label="C"><code class="c">/* mm/vmalloc.c:3101 */
+static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask, ...)
+{
+    /* 1. 先分配 pages 指针数组本身 */
+    array_size = nr_small_pages * sizeof(struct page *);
+    if (array_size &gt; PAGE_SIZE)
+        area-&gt;pages = __vmalloc_node(array_size, ...);   /* :3122 数组大，递归 vmalloc */
+    else
+        area-&gt;pages = kmalloc_node(array_size, ...);     /* :3125 数组小，直接 kmalloc */
+
+    /* 2. 批量分配物理散页 */
+    area-&gt;nr_pages = vm_area_alloc_pages(gfp_mask | __GFP_NOWARN,
+                        node, page_order, nr_small_pages, area-&gt;pages);  /* :3139 */
+
+    /* 3. 建立页表，映射到 vmalloc 区 */
+    ret = vmap_pages_range(addr, addr + size, prot, area-&gt;pages, page_shift);  /* :3182 */
+
+    return area-&gt;addr;
+fail:
+    vfree(area-&gt;addr);                            /* :3203 失败回滚 */
+    return NULL;
+}
+</code></pre>
+<p>三个步骤，两个现代升级点：</p>
+<h3>4.1 批量页分配：<code class="c">vm_area_alloc_pages</code>（<code class="c">:2992</code>）</h3>
+<p>原书是「walk 页表到 PTE 时<strong>逐个</strong> <code class="c">alloc_page</code>」；v6.6 用<strong>批量分配器</strong>：</p>
+<pre class="code" data-label="C"><code class="c">if (!order) {                                     /* :3007 order-0 走批量 */
+    while (nr_allocated &lt; nr_pages) {
+        nr_pages_request = min(100U, nr_pages - nr_allocated);  /* :3020 每次最多 100 页 */
+        nr = alloc_pages_bulk_array_node(bulk_gfp, nid,
+                                         nr_pages_request, pages + nr_allocated); /* :3033 */
+        nr_allocated += nr;
+        cond_resched();                           /* :3038 */
+        if (nr != nr_pages_request)
+            break;                                /* :3044 没拿满，退化为单页分配 */
+    }
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>批量 100 页/次</strong></td>
+<td><code class="c">alloc_pages_bulk_array</code> 一次拿一串物理页，比逐个 <code class="c">alloc_page</code> <strong>减少 Buddy 加锁/关闭抢占的次数</strong>（上限硬编码 100，防长时间 preemption off）</td>
+</tr>
+<tr>
+<td><strong>NUMA 策略</strong></td>
+<td><code class="c">nid == NUMA_NO_NODE</code> 时走 <code class="c">alloc_pages_bulk_array_mempolicy</code>（<code class="c">:3028</code>），尊重进程 mempolicy（如 interleave），避免「全落到最近节点」</td>
+</tr>
+<tr>
+<td><strong>失败回退</strong></td>
+<td>批量没拿满 → 退到 <code class="c">alloc_pages</code> 单页路径（<code class="c">:3058</code> 循环），更宽松</td>
+</tr>
+<tr>
+<td><strong>大页拆分</strong></td>
+<td><code class="c">order &gt; 0</code> 时 <code class="c">split_page(page, order)</code>（<code class="c">:3084</code>），把高阶页拆成 order-0 逐页填入数组——<strong>保证 <code class="c">vm_struct-&gt;pages[]</code> 里永远是 4K 页指针</strong>，上层 API 不感知大页</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.2 大页映射：huge vmalloc（<code class="c">vmap_allow_huge</code>）</h3>
+<p><code class="c">__vmalloc_node_range</code>（<code class="c">:3235</code>）开头有段 huge 判断：</p>
+<pre class="code" data-label="C"><code class="c">if (vmap_allow_huge &amp;&amp; (vm_flags &amp; VM_ALLOW_HUGE_VMAP)) {   /* :3257 */
+    if (arch_vmap_pmd_supported(prot) &amp;&amp; size_per_node &gt;= PMD_SIZE)
+        shift = PMD_SHIFT;                          /* :3271 用 2MB 大页映射 */
+    else
+        shift = arch_vmap_pte_supported_shift(size_per_node);
+    align = max(real_align, 1UL &lt;&lt; shift);
+    size  = ALIGN(real_size, 1UL &lt;&lt; shift);
+}
+</code></pre>
+<ul>
+<li><code class="c">vmap_allow_huge</code> 默认 true，可用内核参数 <code class="c">nohugevmalloc</code> 关闭（<code class="c">:70</code>）。</li>
+<li>满足条件时 <code class="c">shift</code> 从 <code class="c">PAGE_SHIFT</code> 升到 <code class="c">PMD_SHIFT</code>，<code class="c">vmap_pages_range</code> 会<strong>直接映射 PMD 级大页</strong>，而非一页页 PTE。</li>
+<li><strong>失败回退</strong>（<code class="c">:3352</code>）：若大页路径失败，<code class="c">shift = PAGE_SHIFT</code> 后 <code class="c">goto again</code>，用普通 4K 页重试——保证「能大则大，大不了退 4K」。</li>
+</ul>
+<hr />
+<h2>5. 页表同步：<code class="c">init_mm</code> vs 当前进程</h2>
+<p><strong>关键</strong>：<code class="c">vmap_pages_range</code> 更新的是<strong>内核参考页表 <code class="c">init_mm-&gt;pgd</code></strong>，不是每个进程自己的页表。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -487,78 +962,419 @@ Ch 4 fault：vmalloc 区访问时同步页表项
 <tbody>
 <tr>
 <td><strong>vmalloc 返回后</strong></td>
-<td>参考页表已有映射；<strong>当前进程 PGD 可能还没有</strong></td>
+<td><code class="c">init_mm</code> 里已有完整映射；<strong>其他进程/内核线程的页表可能还没有这一项</strong></td>
 </tr>
 <tr>
 <td><strong>首次访问该 VA</strong></td>
-<td><strong>缺页异常</strong> → 发现地址落在 <strong>vmalloc 区</strong> → 把 <strong><code class="c">init_mm</code> 中对应 PTE</strong> <strong>复制/同步</strong> 到 <strong>当前进程页表</strong></td>
+<td>内核态缺页 → 判断地址落在 vmalloc 区 → 从 <code class="c">init_mm</code> 把对应 PTE <strong>复制</strong>到当前页表视图</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>直觉：</strong> vmalloc 区是 <strong>内核共享资源</strong>；<strong>懒同步</strong> 到各进程（实为内核线程/用户态触达时的 <strong>内核页表视图</strong>）— 与 <strong>用户 mmap demand fault</strong> 类似，但 <strong>走内核专用 fault 分支</strong>。</p>
-<p>→ <a href="chapter-14.html#s-4">Ch 4 缺页</a> · <a href="chapter-03.html#ch-3">Ch 3 PTE</a></p>
+<p><strong>直觉</strong>：vmalloc 区是<strong>内核全局共享</strong>资源，所以只维护一份「权威」页表（<code class="c">init_mm</code>），其余进程<strong>懒同步</strong>。这与用户态 <code class="c">mmap</code> 的 demand fault 同思路，但走<strong>内核专属 fault 分支</strong>（<code class="c">vmalloc_fault</code>），不是 <code class="c">do_anonymous_page</code>。</p>
 <hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>批量分配的意义</strong></td>
+<td>HFT 里「减少系统调用/锁开销」是核心课题；内核用 <code class="c">alloc_pages_bulk_array</code> 把 N 次 Buddy 锁合并成 1 次，<strong>同类优化思路</strong></td>
+</tr>
+<tr>
+<td><strong>大页减少 TLB miss</strong></td>
+<td>huge vmalloc 用 PMD 覆盖 2MB，让 vmalloc 区的<strong>页表遍历层数少一级、TLB 覆盖更宽</strong>——大页对性能的意义与用户态 THP/hugetlb 完全同源</td>
+</tr>
+<tr>
+<td><strong>两阶段的原子性</strong></td>
+<td>「先 reserve 再填页」保证失败可整体回滚——HFT 里资源分配也应遵循「先占位、后填充、失败回滚」的模式</td>
+</tr>
+<tr>
+<td><strong>懒同步的代价</strong></td>
+<td>vmalloc 区<strong>首访会触发内核 fault</strong>，是隐蔽的延迟源；关键路径应避免「分配后立即大块读写」的冷启动抖动</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-3">§3 释放非连续区域</a>：<code class="c">vfree</code> 怎么把这一整套对称拆掉</li>
+<li>页表遍历：<a href="chapter-14.html#s-2">Ch3 §2 遍历与使用页表</a></li>
+<li>页分配器：<a href="chapter-14.html#s-2">Ch6 §2 页面分配</a>（<code class="c">alloc_pages</code> 的源头）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：v6.6 的 vmalloc 两阶段和原书 2.6 相比，哪些环节现代化了？</strong>
+A：骨架没变（先 reserve VA 再填物理页），但两处升级：① 物理页分配从「逐个 <code class="c">alloc_page</code>」变成 <code class="c">alloc_pages_bulk_array</code>（每次最多 100 页批量，减少锁/关抢占次数）；② 页表映射从「仅 4K 逐页」变成可选 PMD 大页（<code class="c">VM_ALLOW_HUGE_VMAP</code>，失败自动回退 4K）。另外地址索引从链表升级为红黑树（§1）。</p>
+<p><strong>Q2：<code class="c">vm_area_alloc_pages</code> 为什么硬编码「每次最多 100 页」？</strong>
+A：批量分配器 <code class="c">alloc_pages_bulk_array</code> 在拿一串页时会<strong>长时间关闭抢占</strong>（<code class="c">preemption off</code>）。若一次请求上千页，会让某个 CPU 长时间无法被抢占，影响调度延迟。100 页是「批量收益 vs 抢占延迟」的折中上限，注释里明确写了这一点（<code class="c">:3015-3019</code>）。</p>
+<p><strong>Q3：huge vmalloc 失败后怎么处理？会导致分配失败吗？</strong>
+A：不会直接失败。<code class="c">__vmalloc_node_range</code> 的 <code class="c">fail:</code> 标签（<code class="c">:3352</code>）判断「若 <code class="c">shift &gt; PAGE_SHIFT</code>」就 <code class="c">shift = PAGE_SHIFT</code> 后 <code class="c">goto again</code>，用普通 4K 页重试。即「能大则大，大不了退 4K」——大页只是优化，不是必需。</p>
+<p><strong>Q4：<code class="c">area-&gt;pages</code> 数组本身是怎么分配的？为什么可能递归 vmalloc？</strong>
+A：数组大小 = <code class="c">nr_small_pages * sizeof(struct page *)</code>。若它 ≤ 1 页（<code class="c">PAGE_SIZE</code>），用 <code class="c">kmalloc_node</code>；若 &gt;1 页（比如几百 MB 的 vmalloc，页指针数组本身就好几 MB），用 <code class="c">__vmalloc_node</code> <strong>递归分配</strong>。注释 <code class="c">:3120</code> 强调「这个递归严格有界」——数组大小远小于分配大小，不会无限套娃。</p>
+<p><strong>Q5：<code class="c">vmalloc()</code> 返回后，为什么别的 CPU 可能「看不到」这个映射？</strong>
+A：因为映射只写进了 <code class="c">init_mm-&gt;pgd</code>（内核参考页表），其他进程页表是<strong>懒同步</strong>的。它们首次访问该地址时触发内核 vmalloc fault，才把 <code class="c">init_mm</code> 里的 PTE 复制过来。所以 vmalloc 区存在「首访延迟」，且需要内核在 fault 路径里识别「这是 vmalloc 区」而非普通缺页。</p>
+</details>
       </section>
       <section class="section" id="s-3">
         <div class="sec-head"><div class="sec-no">3</div><h2>Ch 7 §3 释放非连续区域 (Freeing)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/vmalloc.c</code>）</p>
 </blockquote>
-<h3>3. 释放非连续区域 (Freeing)</h3>
-<p><strong><code class="c">vfree(addr)</code></strong> 大致步骤：</p>
-<pre class="code" data-label="code"><code class="c">vfree
-    → 扫描 vm_struct 链表，定位包含 addr 的 vm_struct
-    → vmfree_area_pages()
-           反向 walk 页表
-           清除 PTE 映射
-           free 每个物理页（回 Buddy）
-           释放页表页（若不再使用）
-    → 从链表移除 vm_struct，释放 guard 与描述符
-</code></pre>
-<p><strong>与 vmalloc 对称</strong> — unmap + <strong><code class="c">free_pages</code></strong> 逐页归还。</p>
 <hr />
-      </section>
-      <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 7 §4 2.6 内核的新变化</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>4. 2.6 内核的新变化</h3>
-<p>2.4 vs 2.6 <strong>架构相似</strong>，<strong>分配物理页的时机</strong> 有变：</p>
+<h2>本节讲什么</h2>
+<p>本节回答：<strong><code class="c">vfree()</code> 怎么把 §2 那一整套「虚拟区间 + 物理散页 + 页表映射」对称拆掉？</strong></p>
+<p>原书（2.6）的释放是「扫链表定位 → 反向 walk 页表 → 逐页 <code class="c">free_pages</code>」。v6.6 里骨架不变，但有两个关键升级：① 定位从 O(n) 链表扫描变成 O(log n) 红黑树查找；② TLB 刷新从「每次释放都 flush」变成「<strong>懒释放</strong>」——先把区间扔进 purge 树攒着，攒够阈值再一次性 flush。</p>
+<hr />
+<h2>1. <code class="c">vfree</code> 完整流程（<code class="c">mm/vmalloc.c:2807</code>）</h2>
+<pre class="code" data-label="C"><code class="c">void vfree(const void *addr)
+{
+    struct vm_struct *vm;
+    int i;
+
+    if (unlikely(in_interrupt())) {        /* :2812 中断上下文？ */
+        vfree_atomic(addr);                /* :2813 走原子延迟释放 */
+        return;
+    }
+    BUG_ON(in_nmi());                      /* :2817 NMI 里禁止 */
+    ...
+    vm = remove_vm_area(addr);             /* :2824 ① 摘除虚拟区间 */
+    if (unlikely(!vm)) { WARN(...); return; }
+
+    if (unlikely(vm-&gt;flags &amp; VM_FLUSH_RESET_PERMS))
+        vm_reset_perms(vm);                /* :2832 特殊：重置 direct map 权限 */
+
+    for (i = 0; i &lt; vm-&gt;nr_pages; i++) {
+        struct page *page = vm-&gt;pages[i];
+        mod_memcg_page_state(page, MEMCG_VMALLOC, -1);
+        __free_page(page);                 /* :2842 ② 逐页回 Buddy */
+        cond_resched();                    /* :2843 页多时让出 CPU */
+    }
+    atomic_long_sub(vm-&gt;nr_pages, &amp;nr_vmalloc_pages);  /* :2845 全局统计 */
+    kvfree(vm-&gt;pages);                     /* :2846 ③ 释放 pages 数组本身 */
+    kfree(vm);                             /* :2847 ④ 释放 vm_struct 描述符 */
+}
+</code></pre>
+<p>四个步骤，与 §2 严格对称：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
+<th>步骤</th>
+<th>§2 分配</th>
+<th>§3 释放</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 虚拟区间</td>
+<td><code class="c">__get_vm_area_node</code> reserve</td>
+<td><code class="c">remove_vm_area</code> 摘除</td>
+</tr>
+<tr>
+<td>② 物理页</td>
+<td><code class="c">vm_area_alloc_pages</code> 批量分配</td>
+<td><code class="c">__free_page</code> 逐页归还</td>
+</tr>
+<tr>
+<td>③ pages 数组</td>
+<td><code class="c">kmalloc</code>/<code class="c">__vmalloc_node</code> 分配</td>
+<td><code class="c">kvfree</code> 释放</td>
+</tr>
+<tr>
+<td>④ 描述符</td>
+<td><code class="c">kzalloc_node</code> 分配 <code class="c">vm_struct</code></td>
+<td><code class="c">kfree</code> 释放</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">cond_resched()</code> 的意义</strong>（<code class="c">:2843</code>）：一次 <code class="c">vfree</code> 一个 GB 级区域要释放 26 万页，若在循环里不主动让出 CPU，会长时间占着不调度——影响其他进程延迟。<code class="c">cond_resched()</code> 在 <code class="c">need_resched</code> 时主动调度。</p>
+</blockquote>
+<hr />
+<h2>2. ① 摘除虚拟区间：<code class="c">remove_vm_area</code>（<code class="c">:2684</code>）</h2>
+<pre class="code" data-label="C"><code class="c">struct vm_struct *remove_vm_area(const void *addr)
+{
+    struct vmap_area *va;
+    struct vm_struct *vm;
+
+    if (WARN(!PAGE_ALIGNED(addr), &quot;Trying to vfree() bad address (%p)\n&quot;, addr))
+        return NULL;                       /* :2691 地址必须页对齐 */
+
+    va = find_unlink_vmap_area((unsigned long)addr);  /* :2695 红黑树查找 + 摘除 */
+    if (!va || !va-&gt;vm)
+        return NULL;                       /* :2696 地址不在 vmalloc 区 */
+    vm = va-&gt;vm;                           /* :2698 union 取出 vm_struct */
+    ...
+    free_unmap_vmap_area(va);              /* :2705 unmap + 懒释放 */
+    return vm;
+}
+</code></pre>
+<p><code class="c">find_unlink_vmap_area</code>（<code class="c">:1868</code>）在 <strong>busy 红黑树</strong>里 O(log n) 找到覆盖 <code class="c">addr</code> 的 <code class="c">vmap_area</code> 并 <code class="c">unlink_va</code> 摘下来——这就是 §1 说「红黑树替代链表」的直接收益：<strong><code class="c">vfree</code> 定位不再扫全表</strong>。</p>
+<hr />
+<h2>3. 懒 TLB 刷新：三棵树模型</h2>
+<p><code class="c">free_unmap_vmap_area</code>（<code class="c">:1847</code>）里藏着一个重要设计——<strong>不是立即 flush TLB</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static void free_unmap_vmap_area(struct vmap_area *va)
+{
+    flush_cache_vunmap(va-&gt;va_start, va-&gt;va_end);      /* :1849 刷 cache */
+    vunmap_range_noflush(va-&gt;va_start, va-&gt;va_end);    /* :1850 清页表，但不 flush TLB */
+    if (debug_pagealloc_enabled_static())
+        flush_tlb_kernel_range(va-&gt;va_start, va-&gt;va_end);
+
+    free_vmap_area_noflush(va);                        /* :1854 丢进 purge 树 */
+}
+</code></pre>
+<p><code class="c">free_vmap_area_noflush</code>（<code class="c">:1817</code>）：</p>
+<pre class="code" data-label="C"><code class="c">nr_lazy = atomic_long_add_return((va-&gt;va_end - va-&gt;va_start) &gt;&gt; PAGE_SHIFT,
+                                 &amp;vmap_lazy_nr);       /* :1826 累加「懒释放页数」 */
+
+merge_or_add_vmap_area(va, &amp;purge_vmap_area_root, &amp;purge_vmap_area_list); /* :1833 */
+
+if (unlikely(nr_lazy &gt; nr_lazy_max))                   /* :1840 攒够了？ */
+    schedule_work(&amp;drain_vmap_work);                   /* :1841 触发真正的 purge */
+</code></pre>
+<p><strong>所以 v6.6 里 <code class="c">vmap_area</code> 其实横跨三棵树</strong>：</p>
+<pre class="code" data-label="code"><code class="c">  free 树           busy 树            purge 树（懒释放等待区）
+  ┌──────────┐    ┌──────────┐        ┌──────────────┐
+  │ 可分配洞  │    │ 已映射    │        │ 已 unmap 但    │
+  │ subtree_ │    │ vm_struct│        │ TLB 还没 flush │
+  │ max_size │    │ 指针     │        │ 攒着等批量处理  │
+  └──────────┘    └──────────┘        └──────────────┘
+     ↑ 分配            ↑ 查找/释放        ↑ 懒 flush 中转
+   alloc_vmap_area   find_unlink     free_vmap_area_noflush
+                     _vmap_area          ↓ 超阈值
+                                    __purge_vmap_area_lazy
+                                    (flush_tlb_kernel_range)
+</code></pre>
+<p><strong>为什么懒 flush？</strong> 全局 TLB flush（<code class="c">flush_tlb_kernel_range</code>）在<strong>多核大机器上极贵</strong>——要发 IPI 让所有 CPU 都刷 TLB。若每次 <code class="c">vfree</code> 都 flush，批量释放 N 个区域就要 N 次全局 flush。<strong>懒释放</strong>把「unmap 页表」和「flush TLB」解耦：页表立即清（安全性），TLB 攒到 <code class="c">lazy_max_pages()</code> 阈值再统一 flush（性能）。</p>
+<p><code class="c">lazy_max_pages</code>（<code class="c">:1700</code>）：</p>
+<pre class="code" data-label="C"><code class="c">log = fls(num_online_cpus());                          /* 在线 CPU 数取对数 */
+return log * (32UL * 1024 * 1024 / PAGE_SIZE);         /* = log × 8192 页 */
+</code></pre>
+<p>CPU 越多，阈值越高——因为 CPU 越多，一次全局 flush 越贵，越值得攒多点再 flush（对数增长是「保守」选择，注释 :1693-1698 明确说不想在大系统上引入大延迟）。</p>
+<hr />
+<h2>4. 中断上下文：<code class="c">vfree_atomic</code>（<code class="c">:2773</code>）</h2>
+<p><code class="c">vfree</code> 开头就判断 <code class="c">in_interrupt()</code>，中断上下文不能 sleep/做重活，于是转 <code class="c">vfree_atomic</code>：</p>
+<pre class="code" data-label="C"><code class="c">void vfree_atomic(const void *addr)
+{
+    struct vfree_deferred *p = raw_cpu_ptr(&amp;vfree_deferred);
+
+    BUG_ON(in_nmi());                                  /* :2777 NMI 仍禁止 */
+    if (addr &amp;&amp; llist_add((struct llist_node *)addr, &amp;p-&gt;list))  /* :2786 lockless 入队 */
+        schedule_work(&amp;p-&gt;wq);                         /* :2787 丢给 workqueue */
+}
+</code></pre>
+<p><strong>思路</strong>：原子上下文里只做<strong>无锁入队</strong>（<code class="c">llist_add</code>，lockless 链表），真正的释放推迟到 workqueue 上下文（能 sleep）再执行。每个 CPU 一个 <code class="c">vfree_deferred</code>，避免锁竞争。</p>
+<hr />
+<h2>5. <code class="c">vfree</code> vs <code class="c">vunmap</code>：谁持有物理页？</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">vfree(addr)</code></th>
+<th><code class="c">vunmap(addr)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>对应分配</td>
+<td><code class="c">vmalloc()</code> 家族</td>
+<td><code class="c">vmap()</code></td>
+</tr>
+<tr>
+<td>物理页来源</td>
+<td>vmalloc 自己分配的散页</td>
+<td><strong>调用者提供的页</strong></td>
+</tr>
+<tr>
+<td>释放物理页</td>
+<td>✅ 逐个 <code class="c">__free_page</code></td>
+<td>❌ 只 unmap，页仍归调用者</td>
+</tr>
+<tr>
+<td>释放 pages 数组</td>
+<td>✅（若 <code class="c">VM_MAP_PUT_PAGES</code> 则连数组一起）</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">VM_MAP_PUT_PAGES</code>（<code class="c">vmalloc.h:29</code>）是 <code class="c">vmap()</code> 的选项：置位后 pages 数组所有权转移给 vmalloc 层，此时用 <strong><code class="c">vfree</code></strong>（而非 <code class="c">vunmap</code>）释放，会连带释放数组和每页引用。不置位则用 <code class="c">vunmap</code>，页和数组都还是调用者的。</p>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>懒 flush 的权衡</strong></td>
+<td>「攒够再批处理」是通用优化：HFT 里日志落盘、订单批处理都是同构思想——<strong>用延迟换吞吐，但要设阈值保证上限</strong>（<code class="c">lazy_max_pages</code> 就是那个上限）</td>
+</tr>
+<tr>
+<td><strong><code class="c">cond_resched</code> 的启发</strong></td>
+<td>大块释放主动让出 CPU，避免长时间占用调度——低延迟系统里「长任务切分 + 主动让权」是基本素养</td>
+</tr>
+<tr>
+<td><strong>原子 vs 可睡眠</strong></td>
+<td><code class="c">vfree_atomic</code> 用「无锁入队 + workqueue 兜底」把重活移出原子上下文——HFT 内核模块在 NAPI/软中断里分配释放也要套这个模式</td>
+</tr>
+<tr>
+<td><strong>三棵树的中转</strong></td>
+<td>purge 树是「已 unmap 未 flush」的中间态——<strong>状态机分离</strong>让「安全清页表」和「昂贵 flush」解耦，是资源回收的经典设计</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-2">§2 分配非连续区域</a>：分配的四步，本节逐条反向拆</li>
+<li>下节 <a href="chapter-14.html#s-4">§4 2.6 内核的新变化</a>：红黑树/懒 flush/huge vmalloc 的演进全景</li>
+<li>页释放器：<a href="chapter-14.html#s-3">Ch6 §3 页面释放</a>（<code class="c">__free_page</code> 的落点）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">vfree</code> 的四个步骤分别对应 §2 分配的哪四个步骤？</strong>
+A：严格对称——① <code class="c">remove_vm_area</code> 摘虚拟区间（↔ <code class="c">__get_vm_area_node</code> reserve）；② <code class="c">__free_page</code> 逐页回 Buddy（↔ <code class="c">vm_area_alloc_pages</code> 批量分配）；③ <code class="c">kvfree</code> 释放 pages 数组（↔ <code class="c">kmalloc</code>/<code class="c">__vmalloc_node</code> 分配数组）；④ <code class="c">kfree</code> 释放 <code class="c">vm_struct</code> 描述符（↔ <code class="c">kzalloc_node</code> 分配）。</p>
+<p><strong>Q2：v6.6 里 <code class="c">vmap_area</code> 横跨几棵树？各自作用是什么？</strong>
+A：三棵——<strong>free 树</strong>（可分配的洞，<code class="c">subtree_max_size</code> 剪枝）；<strong>busy 树</strong>（已映射，<code class="c">vm_struct</code> 指针）；<strong>purge 树</strong>（已 unmap 但 TLB 未 flush 的懒释放中转站）。<code class="c">vfree</code> 时区间从 busy 树 → purge 树 →（攒够后）→ free 树。</p>
+<p><strong>Q3：为什么 <code class="c">free_unmap_vmap_area</code> 不立即 flush TLB？</strong>
+A：全局 TLB flush 要多核发 IPI，极贵。所以「清页表」和「flush TLB」解耦：页表立即清（保证不再访问），TLB 攒到 <code class="c">lazy_max_pages()</code> 阈值再统一 <code class="c">flush_tlb_kernel_range</code>。阈值 = <code class="c">fls(在线CPU数) × 8192 页</code>，CPU 越多阈值越高，因为 flush 越贵。</p>
+<p><strong>Q4：<code class="c">vfree_atomic</code> 为什么能用无锁链表？它和普通 <code class="c">vfree</code> 的分流条件是什么？</strong>
+A：分流条件是 <code class="c">in_interrupt()</code>——中断上下文不能 sleep、不能做 <code class="c">__free_page</code>/<code class="c">kvfree</code> 这类可能阻塞的操作。<code class="c">vfree_atomic</code> 用 <code class="c">llist_add</code>（lockless 链表实现）把地址入队，再 <code class="c">schedule_work</code> 丢给 workqueue，在<strong>可睡眠上下文</strong>里完成真正释放。NMI 里仍然禁止（<code class="c">BUG_ON(in_nmi)</code>）。</p>
+<p><strong>Q5：<code class="c">vfree</code> 和 <code class="c">vunmap</code> 都作用于 vmalloc 区地址，怎么选？</strong>
+A：看<strong>物理页谁持有</strong>。<code class="c">vmalloc</code> 分配的页归 vmalloc 层，用 <code class="c">vfree</code> 释放（连页带描述符）；<code class="c">vmap</code> 映射的页是调用者自己的，用 <code class="c">vunmap</code> 只拆映射，页仍归调用者。若 <code class="c">vmap</code> 时置了 <code class="c">VM_MAP_PUT_PAGES</code>，所有权已转移，就得用 <code class="c">vfree</code> 连数组一起释放。</p>
+</details>
+      </section>
+      <section class="section" id="s-4">
+        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 7 §4 2.6 内核的新变化 → v6.6 演进</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/vmalloc.c</code> / <code class="c">mm/util.c</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节把「2.4 → 2.6」原书讲的变化，<strong>续写到「→ v6.6」</strong>，形成一条完整演进链。</p>
+<p>原书的分水岭是「<strong>分配物理页的时机</strong>」：2.4 边 walk 页表边逐个要页，2.6 改成先攒齐页数组再统一映射。v6.6 在这个骨架上继续堆了三块：<strong>红黑树索引、批量页分配、大页映射</strong>，并催生了一个「智能回落」的兄弟 API <code class="c">kvmalloc</code>。</p>
+<hr />
+<h2>1. 原书分水岭：2.4 vs 2.6</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
 <th>2.4</th>
 <th>2.6</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>walk 页表到 PTE 时</strong> 才 <strong>逐个</strong> <code class="c">alloc_page</code></td>
-<td><strong><code class="c">vmalloc()</code> 先分配齐</strong> 全部物理页，放入 <strong>数组</strong></td>
+<td><strong>物理页分配时机</strong></td>
+<td>walk 页表到 PTE 时<strong>逐个</strong> <code class="c">alloc_page</code></td>
+<td><code class="c">vmalloc</code> <strong>先分配齐</strong>全部页，放进 <code class="c">pages[]</code> 数组</td>
 </tr>
 <tr>
+<td><strong>映射方式</strong></td>
 <td>边建表边要页</td>
-<td>一次 <strong><code class="c">map_vm_area()</code></strong> 统一插入内核页表</td>
+<td>一次 <code class="c">map_vm_area()</code>（v6.6 的 <code class="c">vmap_pages_range</code>）统一插页表</td>
+</tr>
+<tr>
+<td><strong>失败回滚</strong></td>
+<td>页表建到一半失败，状态散乱</td>
+<td>页数组先备好，失败<strong>整体回滚</strong>干净</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>效果：</strong> 映射路径 <strong>更集中</strong>；失败时 <strong>更容易整体回滚</strong>（原书动机）。现代 <code class="c">vmalloc.c</code> 仍保留 <strong>「先 reserve VA + 再 map 物理页」</strong> 两阶段思想。</p>
+<p><strong>效果</strong>：映射路径更集中，失败更容易整体回滚（原书动机）。现代 <code class="c">vmalloc.c</code> 仍保留「<strong>先 reserve VA + 再 map 物理页</strong>」的两阶段思想——§2 的 <code class="c">__get_vm_area_node</code> → <code class="c">__vmalloc_area_node</code> 就是它的直系后代。</p>
 <hr />
-<h2>vmalloc vs Buddy vs slab 一图</h2>
+<h2>2. v6.6 的三块演进</h2>
+<h3>2.1 地址索引：链表 → 红黑树</h3>
+<p>原书用 <code class="c">vm_struct</code> <strong>单链表</strong>，查找/释放 O(n)；v6.6 引入 <code class="c">vmap_area</code> 红黑树 + 双链表（§1），把 <code class="c">alloc_vmap_area</code>/<code class="c">find_vmap_area</code>/<code class="c">remove_vm_area</code> 全部压到 O(log n)。区域多时（数百模块/驱动映射）收益显著。</p>
+<h3>2.2 页分配：逐个 → 批量</h3>
+<p>原书 2.6 是「先分配齐」（但仍是循环里逐个 <code class="c">alloc_page</code>）；v6.6 用 <code class="c">alloc_pages_bulk_array</code>（§2.4.1）<strong>一次拿最多 100 页</strong>，减少 Buddy 加锁/关抢占次数。这是「分配齐」之上的又一次<strong>批量化</strong>。</p>
+<h3>2.3 映射粒度：4K → PMD 大页</h3>
+<p>原书 <code class="c">map_vm_area</code> 只按 4K PTE 映射；v6.6 的 <code class="c">VM_ALLOW_HUGE_VMAP</code> + <code class="c">vmap_allow_huge</code>（§2.4.2）让 <code class="c">vmap_pages_range</code> 在满足条件时<strong>直接映射 PMD 级 2MB 大页</strong>，减少页表层级和 TLB miss。大页失败自动回退 4K（<code class="c">goto again</code>）。</p>
+<hr />
+<h2>3. 智能回落兄弟：<code class="c">kvmalloc</code>（<code class="c">mm/util.c:585</code>）</h2>
+<p>vmalloc 是「<strong>只</strong>虚拟连续、物理不保证连续」；kmalloc 是「物理连续但受限于 Buddy 碎片」。两者之间需要一个「<strong>先试物理连续，不行再退虚拟连续</strong>」的入口——这就是 <code class="c">kvmalloc</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* mm/util.c:585 */
+void *kvmalloc_node(size_t size, gfp_t flags, int node)
+{
+    gfp_t kmalloc_flags = flags;
+    void *ret;
+
+    if (size &gt; PAGE_SIZE) {                    /* :597 大块才考虑回落 */
+        kmalloc_flags |= __GFP_NOWARN;         /* :598 失败不刷屏（有后备） */
+        if (!(kmalloc_flags &amp; __GFP_RETRY_MAYFAIL))
+            kmalloc_flags |= __GFP_NORETRY;    /* :601 不惊动 OOM killer */
+        kmalloc_flags &amp;= ~__GFP_NOFAIL;        /* :604 nofail 语义交给 vmalloc */
+    }
+
+    ret = kmalloc_node(size, kmalloc_flags, node);   /* :607 ① 先试物理连续 */
+
+    if (ret || size &lt;= PAGE_SIZE)
+        return ret;                            /* :613 成功或太小，直接返回 */
+
+    if (!gfpflags_allow_blocking(flags))       /* :617 不可阻塞则无法回落 */
+        return NULL;
+
+    return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+            flags, PAGE_KERNEL, VM_ALLOW_HUGE_VMAP,
+            node, __builtin_return_address(0));  /* :632 ② 回落 vmalloc（带大页） */
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>先物理后虚拟</strong></td>
+<td>优先 <code class="c">kmalloc</code>（物理连续 + 直接映射 + TLB 友好），失败才退 <code class="c">vmalloc</code></td>
+</tr>
+<tr>
+<td><strong>克制重试</strong></td>
+<td>大块时 <code class="c">__GFP_NORETRY</code>——因为反正有 vmalloc 后备，<strong>不值得为了物理连续去深度回收/惊动 OOM</strong></td>
+</tr>
+<tr>
+<td><strong>大页兜底</strong></td>
+<td>回落时传 <code class="c">VM_ALLOW_HUGE_VMAP</code>，让 vmalloc 也尽量用大页弥补 TLB 劣势</td>
+</tr>
+<tr>
+<td><strong>统一释放</strong></td>
+<td>配 <code class="c">kvfree()</code>（<code class="c">mm/util.c:642</code>）——它能识别是 <code class="c">kmalloc</code> 还是 <code class="c">vmalloc</code> 分配的，一条释放路径搞定</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>直觉</strong>：<code class="c">kvmalloc</code> 是现代内核里「<strong>大小不定的动态分配</strong>」的事实标准（如 BPF map、网络 buffer 等），它把「物理连续 vs 虚拟连续」的选择<strong>内化成策略</strong>，调用者不用自己判断碎片状况。</p>
+<hr />
+<h2>4. vmalloc vs Buddy vs slab 一图</h2>
 <pre class="code" data-label="code"><code class="c">需要 N 字节内核内存
         │
-        ├─ 小对象、高频？ ──► slab / kmalloc (Ch 8)
+        ├─ 小对象、高频、定长？ ──► slab / kmalloc (Ch 8)
         │
-        ├─ 物理必须连续、快？ ──► Buddy __get_free_pages (Ch 6)
-        │       └─ 失败（碎片）？
+        ├─ 物理必须连续、直接映射？ ──► Buddy __get_free_pages (Ch 6)
+        │
+        ├─ 大小不定、能接受回落？ ──► kvmalloc (mm/util.c)
+        │       先 kmalloc（物理连续），失败自动退 vmalloc
         │
         └─ 虚拟连续即可、较大块？ ──► vmalloc (Ch 7)
                 VA 连续，物理散页 + 页表拼接
                 首次 touch 可能 fault 同步 PTE
+                huge vmalloc 用 PMD 大页缓解 TLB miss
 </code></pre>
 <hr />
-<h2>HFT / 阅读建议</h2>
+<h2>5. HFT / 阅读建议</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -569,23 +1385,43 @@ Ch 4 fault：vmalloc 区访问时同步页表项
 <tbody>
 <tr>
 <td><strong>低延迟用户态堆</strong></td>
-<td><strong>物理连续 + 大页 + mlock</strong> — 不走 vmalloc</td>
+<td>物理连续 + 大页 + <code class="c">mlock</code>——<strong>不走 vmalloc</strong>（直接映射才没有首访 fault 和 TLB 抖动）</td>
 </tr>
 <tr>
 <td><strong>内核驱动大块缓冲</strong></td>
-<td>能 <strong>连续</strong> 则 Buddy；否则 <strong>vmalloc</strong> 或 <strong>CMA</strong>（现代扩展）</td>
+<td>能连续则 Buddy；碎片严重用 <code class="c">kvmalloc</code> 自动回落；明确要 DMA 可达则用 DMA API</td>
 </tr>
 <tr>
 <td><strong>理解 fault 延迟</strong></td>
-<td>vmalloc 区 <strong>首访</strong> = 页表同步 + 可能 TLB miss 链</td>
+<td>vmalloc 区<strong>首访</strong> = 页表懒同步 + 可能 TLB miss 链——冷启动抖动的隐蔽来源</td>
 </tr>
 <tr>
 <td><strong>读源码</strong></td>
-<td><a href="https://elixir.bootlin.com/linux/latest/source/mm/vmalloc.c"><code class="c">mm/vmalloc.c</code></a> + <code class="c">mm/vmalloc.h</code></td>
+<td><a href="https://elixir.bootlin.com/linux/v6.6/source/mm/vmalloc.c"><code class="c">mm/vmalloc.c</code></a> + <a href="https://elixir.bootlin.com/linux/v6.6/source/include/linux/vmalloc.h"><code class="c">include/linux/vmalloc.h</code></a> + <a href="https://elixir.bootlin.com/linux/v6.6/source/mm/util.c"><code class="c">mm/util.c</code></a>（<code class="c">kvmalloc</code>）</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-3">§3 释放非连续区域</a>：懒释放三棵树</li>
+<li>slab：<a href="chapter-14.html#s-4">Ch8 §4 尺寸缓存与 kmalloc/kfree</a>（<code class="c">kvmalloc</code> 的物理连续前身）</li>
+<li>页分配：<a href="chapter-14.html#s-2">Ch6 §2 页面分配</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：原书 2.4 → 2.6 的核心变化是什么？它在 v6.6 里还成立吗？</strong>
+A：核心变化是「<strong>分配物理页的时机</strong>」——2.4 边 walk 页表边逐个要页，2.6 先攒齐 <code class="c">pages[]</code> 数组再统一 <code class="c">map_vm_area</code>。这个「两阶段（先 reserve VA + 再 map 物理页）」骨架在 v6.6 完全保留，只是映射函数改名为 <code class="c">vmap_pages_range</code>，并在其上叠加了红黑树/批量/大页三块优化。</p>
+<p><strong>Q2：v6.6 相对 2.6 的三块演进分别解决什么问题？</strong>
+A：① <strong>红黑树</strong>（链表 → O(log n)）解决区域多时查找慢；② <strong>批量页分配</strong>（逐个 → <code class="c">alloc_pages_bulk_array</code> 100 页/次）解决 Buddy 锁/关抢占开销；③ <strong>大页映射</strong>（4K → PMD）解决页表层级深 + TLB miss 多。三者分别对应「索引结构、分配路径、映射粒度」三个层面。</p>
+<p><strong>Q3：<code class="c">kvmalloc</code> 和 <code class="c">vmalloc</code> 的区别是什么？为什么要发明它？</strong>
+A：<code class="c">vmalloc</code> 只保证虚拟连续、物理不保证；<code class="c">kmalloc</code> 保证物理连续但受碎片限制。<code class="c">kvmalloc</code> 是两者的<strong>策略封装</strong>：先 <code class="c">kmalloc</code> 试物理连续（更快、直接映射、TLB 友好），失败且块够大时回落 <code class="c">vmalloc</code>。它把「物理 vs 虚拟」的选择内化成自动决策，调用者无需自己判断碎片状况。</p>
+<p><strong>Q4：<code class="c">kvmalloc</code> 为什么在 <code class="c">size &gt; PAGE_SIZE</code> 时给 kmalloc 加 <code class="c">__GFP_NORETRY</code>？</strong>
+A：因为<strong>有 vmalloc 后备</strong>，不值得为了物理连续去触发深度回收/内存规整/惊动 OOM killer（注释 <code class="c">:590-595</code>）。<code class="c">__GFP_NORETRY</code> 让 kmalloc「尽力而为，拿不到就算了」，快速落到 vmalloc 路径，避免在内存压力下卡很久。</p>
+<p><strong>Q5：<code class="c">kvmalloc</code> 分配的内存用什么释放？为什么？</strong>
+A：用 <code class="c">kvfree()</code>（<code class="c">mm/util.c:642</code>）。它内部能<strong>识别指针来自 <code class="c">kmalloc</code> 还是 <code class="c">vmalloc</code></strong>（通过判断地址是否落在 vmalloc 区），一条路径统一释放。这是 <code class="c">kvmalloc</code> 的配套——因为调用者拿到指针时已经不知道它到底走了哪条路径。</p>
+</details>
       </section>
 
 
