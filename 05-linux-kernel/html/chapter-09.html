@@ -1450,6 +1450,10 @@ spin_lock_irqsave(&amp;dev-&gt;lock, flags);
       </section>
       <section class="section" id="s-9-6">
         <div class="sec-head"><div class="sec-no">9.6</div><h2>section-9.6-争用和可扩展性</h2></div>
+<blockquote>
+<p>承接 <a href="#s-9-5">9.5 死锁</a> 与 <a href="chapter-10.html#ch-10">Ch 10 同步方法</a>。
+本节回答：<strong>争用的真实成本是什么、内核用什么机制对抗它、以及怎么测量。</strong></p>
+</blockquote>
 <h4>锁争用（lock contention）</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1466,40 +1470,690 @@ spin_lock_irqsave(&amp;dev-&gt;lock, flags);
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> <code class="c">perf lock</code>、延迟尖刺 — <strong>高争用 mutex</strong> 在热路径上是 <strong>P99 杀手</strong>。</p>
-<h4>可扩展性（scalability）</h4>
+<hr />
+<h3>一、⭐ 争用不是"一个"问题，是三个层次</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>定义</th>
+<th>层次</th>
+<th>现象</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>无争用</strong></td>
+<td>一次原子 RMW 操作拿到锁</td>
+<td>⭐ 只有原子指令本身的开销（~20 周期量级）</td>
+</tr>
+<tr>
+<td><strong>有争用但不阻塞</strong></td>
+<td>自旋几次就拿到</td>
+<td>自旋开销 + 可能的 cacheline 传输</td>
+</tr>
+<tr>
+<td>⭐ <strong>真正有害的争用</strong></td>
+<td>多个 CPU 长时间抢同一把锁</td>
+<td>⭐ <strong>cacheline bouncing</strong> + 流水线停顿 + 公平性尾延迟</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 关键区分：<strong>"锁被频繁获取"（acquisitions 高）不等于"有争用"</strong>（contentions 高）。
+一把每秒被获取 100 万次、但从不冲突的锁，扩展性完全没问题。
+只有 <code class="c">contentions</code> 指标上升才是真问题——这正是 §7 要讲的测量方法。</p>
+</blockquote>
+<h4>Amdahl 定律的锁版本</h4>
+<p>设串行部分占比为 <code class="c">s</code>（锁保护的临界区）：</p>
+<pre class="code" data-label="code"><code class="c">  加速比 = 1 / (s + (1-s)/N)
+
+  N → ∞ 时，加速比上限 = 1/s
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>串行占比 <code class="c">s</code></th>
+<th>N=8 加速比</th>
+<th>N→∞ 上限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5%</td>
+<td>5.9×</td>
+<td><strong>20×</strong></td>
+</tr>
+<tr>
+<td>10%</td>
+<td>4.7×</td>
+<td><strong>10×</strong></td>
+</tr>
+<tr>
+<td>⭐ 20%</td>
+<td>3.3×</td>
+<td><strong>5×</strong></td>
+</tr>
+<tr>
+<td>50%</td>
+<td>1.8×</td>
+<td><strong>2×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>残酷的事实</strong>：即使只有 <strong>5%</strong> 的代码在全局锁里，加 CPU 的上限就是 <strong>20 倍</strong>——而且这还是乐观模型（没算争用本身恶化的部分）。</p>
+</blockquote>
+<h4>⭐ 现实比 Amdahl 更糟：争用会随 N 恶化</h4>
+<p>Amdahl 假设 <code class="c">s</code> 是常数。但锁争用下 <strong>N 越大、等待时间越长</strong>，<code class="c">s</code> 会<strong>随 N 增长</strong>：</p>
+<pre class="code" data-label="code"><code class="c">吞吐
+  │        ╱╲
+  │       ╱  ╲___  ← 争用区：N 越大，等待开销越大，吞吐反而下降
+  │      ╱
+  │     ╱
+  │    ╱
+  │   ╱
+  │  ╱
+  └──────────────► CPU 数 N
+     ↑
+  拐点：cacheline 开始 bouncing
+</code></pre>
+<hr />
+<h3>二、⭐ 争用的真实成本：cacheline bouncing</h3>
+<p>自旋锁是一个<strong>共享变量</strong>。每个 CPU 自旋时都在 <code class="c">LOAD</code> 它 → 缓存一致性协议（MESI）要保证所有 CPU 看到的值一致。</p>
+<pre class="code" data-label="code"><code class="c">CPU0 ──┐
+CPU1 ──┤
+CPU2 ──┼──► 同一个 cacheline（锁变量）
+CPU3 ──┤     MESI: Modified/Exclusive/Shared/Invalid
+...    ─┘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁持有者释放（写）</td>
+<td>该 cacheline 在所有其他 CPU 的副本被<strong>置为 Invalid</strong></td>
+</tr>
+<tr>
+<td>N-1 个等待者同时读</td>
+<td>⭐ 全部 cache miss → 同时发起总线请求 → <strong>N-1 次传输</strong></td>
+</tr>
+<tr>
+<td>抢锁（原子 RMW）</td>
+<td>该 cacheline 被"抢"到发起者，其他再从 Invalid 重建</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>这就是"增加 CPU 反而降低吞吐"的物理原因</strong>：N 越大，一次锁释放引发的 cacheline 传输次数越多（O(N) 甚至 O(N²)），而有效工作仍是 O(1)。</p>
+</blockquote>
+<h4>⭐ false sharing（伪共享）—— 更隐蔽的杀手</h4>
+<p>两个<strong>逻辑上无关</strong>的变量碰巧落在<strong>同一个 cacheline</strong>（64 字节）里，即使它们被不同 CPU 访问、各自有各自的锁，也会互相引发失效。</p>
+<pre class="code" data-label="code"><code class="c"> cacheline (64B)
+┌──────────────────────────────────────┐
+│ counter_A (CPU0 独占写) │ counter_B (CPU1 独占写) │
+└──────────────────────────────────────┘
+        ↑ 无关，但共享一条 cacheline → 互相失效
+</code></pre>
+<p><strong>内核的解法</strong>：<code class="c">____cacheline_aligned_in_smp</code></p>
+<pre class="code" data-label="C"><code class="c">struct foo {
+    spinlock_t  lock;
+    int     counter;
+} ____cacheline_aligned_in_smp;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">____cacheline_aligned_in_smp</code></td>
+<td>SMP 下按 cacheline 对齐，UP 下不浪费空间</td>
+</tr>
+<tr>
+<td><code class="c">__cacheline_aligned</code></td>
+<td>无条件对齐</td>
+</tr>
+<tr>
+<td><code class="c">___cacheline_aligned_in_smp</code></td>
+<td>对齐 + 归入 <code class="c">.data..cacheline_aligned</code> 段</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 内核里到处能看到这个后缀（<code class="c">futex_hash_bucket</code>、<code class="c">bit_wait_table</code>、<code class="c">zone-&gt;lock</code>…），原因就是 false sharing 在大规模机器上是<strong>实测可见的</strong>性能差异。</p>
+</blockquote>
+<hr />
+<h3>三、⭐ 硬件的回应：qspinlock（v4.2）—— 排队自旋锁</h3>
+<p>ticket spinlock 已经解决了公平性（先来先到），但<strong>所有人仍然自旋在同一个变量上</strong> → bouncing 依旧。</p>
+<p>qspinlock（基于 MCS 锁）的核心改进：<strong>让第 3 个及以后的等待者，各自自旋在自己的 per-CPU 节点上。</strong></p>
+<h4>32 位字段布局（v6.6 <code class="c">include/asm-generic/qspinlock_types.h</code>）</h4>
+<pre class="code" data-label="C"><code class="c">typedef struct qspinlock {
+    union {
+        atomic_t val;
+#ifdef __LITTLE_ENDIAN
+        struct {
+            u8  locked;
+            u8  pending;
+        };
+        struct {
+            u16 locked_pending;
+            u16 tail;
+        };
+#endif
+    };
+} arch_spinlock_t;
+</code></pre>
+<pre class="code" data-label="code"><code class="c">NR_CPUS &lt; 16K 时：
+
+ 31                    18 17 16 15   9  8  7        0
+┌──────────────────────┬─────┬────────┬─┬───────────┐
+│   tail cpu (+1)      │idx  │ 未用   │P│  locked   │
+└──────────────────────┴─────┴────────┴─┴───────────┘
+                        │              │      └─ 0-7  锁是否被持有
+                        │              └──────── 8    pending（第 2 个等待者）
+                        └─────────────────────── 16-17 tail index（0-3）
+
+NR_CPUS &gt;= 16K 时：tail idx 缩到 9-10，tail cpu 占 11-31。
+</code></pre>
+<h4>⭐⭐ 三层结构：为什么需要 <code class="c">pending</code></h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>字段</th>
+<th>谁</th>
+<th>自旋在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">locked</code> (0-7)</td>
+<td>当前持有者</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2</td>
+<td>⭐ <code class="c">pending</code> (bit 8)</td>
+<td><strong>第 2 个</strong>等待者</td>
+<td>⭐ <strong>锁变量本身</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">tail</code> (16-31)</td>
+<td>第 3 个及以后</td>
+<td>⭐ <strong>自己的 per-CPU MCS 节点</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong><code class="c">pending</code> 是 qspinlock 的独创优化</strong>：
+MCS 队列的"手递手"（handoff）有额外开销（要设置下一个节点的 <code class="c">locked</code>、要读 tail）。
+当<strong>只有 2 个竞争者</strong>时（这是绝大多数锁的实际情况！），用 <code class="c">pending</code> 位让第二个人直接在锁变量上自旋，<strong>完全跳过 MCS 队列路径</strong>。</p>
+<p>只有真的出现第 3 个竞争时，才进入完整的 MCS 队列。</p>
+</blockquote>
+<h4>⭐ 每 CPU 有 4 个 MCS 节点槽位</h4>
+<pre class="code" data-label="C"><code class="c">#define _Q_TAIL_IDX_BITS    2
+</code></pre>
+<p><code class="c">_Q_TAIL_IDX_BITS = 2</code> → 索引 0~3 → <strong>每个 CPU 有 4 个 MCS 节点</strong>。为什么是 4？因为同一 CPU 可能在不同上下文嵌套等待不同的锁：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>槽位</th>
+<th>上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>任务（task）上下文</td>
+</tr>
+<tr>
+<td>1</td>
+<td>softirq</td>
+</tr>
+<tr>
+<td>2</td>
+<td>hardirq</td>
+</tr>
+<tr>
+<td>3</td>
+<td>⭐ NMI</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>如果只有 1 个槽位，一个 CPU 在任务上下文等锁 A 时被中断、又在中断里等锁 B，就会踩自己的节点——<strong>死锁</strong>。</p>
+</blockquote>
+<h4>⭐ 官方的劝告：别急着用 qspinlock</h4>
+<p>v6.6 <code class="c">include/asm-generic/qspinlock.h:5-9</code>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * A 'generic' spinlock implementation that is based on MCS locks. For an
+ * architecture that's looking for a 'generic' spinlock, please first consider
+ * ticket-lock.h and only come looking here when you've considered all the
+ * constraints below and can show your hardware does actually perform better
+ * with qspinlock.
+ */
+</code></pre>
+<p>⭐ <strong>官方明说：架构选型时应先考虑 ticket-lock，只有在实测证明 qspinlock 更好时才用它。</strong></p>
+<p><strong>三条硬件依赖：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>依赖</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>增加 CPU 数量时，系统 <strong>性能提升程度</strong></td>
-<td>理想线性扩展很少见</td>
+<td>① <strong>RCsc 内存模型</strong></td>
+<td><code class="c">atomic_*_release()/acquire()</code> 必须是 RCsc（或 power 上至少 RCtso）——普通代码只要求 RCpc</td>
+</tr>
+<tr>
+<td>② <strong>前进性保证</strong></td>
+<td>qspinlock 用到的原子操作集合远大于普通 spinlock，每个都要有 forward progress；LL/SC 架构上的 <code class="c">cmpxchg</code> 循环未必满足</td>
+</tr>
+<tr>
+<td>③ ⭐ <strong>混合尺寸原子操作</strong></td>
+<td>需要 <code class="c">xchg16</code> 等 mixed-size atomics；LL/SC 架构要用 32 位 and+or 实现才能保前进性</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>源码还引用了一篇 POPL'17 论文讲混合尺寸原子操作：<code class="c">http://www.cl.cam.ac.uk/~pes20/popl17/mixed-size.pdf</code></p>
+<p>⭐ <strong>这解释了为什么 qspinlock 不是所有架构的默认</strong>——x86 用它是因为硬件天然满足；弱内存序架构要付出额外代价。</p>
+</blockquote>
+<h4>运行时检测争用</h4>
+<pre class="code" data-label="C"><code class="c">static __always_inline int queued_spin_is_contended(struct qspinlock *lock)
+{
+    return atomic_read(&amp;lock-&gt;val) &amp; ~_Q_LOCKED_MASK;
+}
+</code></pre>
+<p>⭐ <strong>任何非 <code class="c">locked</code> 位被设置</strong>（即 <code class="c">pending</code> 或 <code class="c">tail</code> 非空）→ 有争用。这是<strong>零成本的争用检测</strong>，被 lockref 等优化路径使用。</p>
+<p><strong>版本断崖</strong>：qspinlock 引入于 <strong>v4.2</strong>（<code class="c">include/asm-generic/qspinlock.h</code>：v4.1 = 14 字节 404 残片 / v4.2 = 4207 字节）。</p>
+<hr />
+<h3>四、⭐ 减少争用的四种武器</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>武器</th>
+<th>做法</th>
+<th>适用</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>per-CPU 化</strong></td>
+<td>每 CPU 一份副本，消灭共享</td>
+<td>读多写少、可聚合的计数/缓存</td>
+<td>需要聚合步骤；关抢占</td>
+</tr>
+<tr>
+<td><strong>分片（sharding）</strong></td>
+<td>一个结构拆 N 份，各一把锁</td>
+<td>哈希表、对象池</td>
+<td>跨片操作复杂</td>
+</tr>
+<tr>
+<td>⭐ <strong>RCU</strong></td>
+<td>读侧完全无锁</td>
+<td>读极多写极少</td>
+<td>写侧要复制 + 延迟回收</td>
+</tr>
+<tr>
+<td><strong>无锁（lock-free）</strong></td>
+<td>CAS 循环 / ring buffer</td>
+<td>特定模式（SPSC、MPMC 队列）</td>
+<td>正确性难证；ABA 问题</td>
 </tr>
 </tbody>
 </table></div>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>敌人</th>
-<th>原因</th>
+<th>并发形状</th>
+<th>首选武器</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>粗粒度大锁</strong></td>
-<td>多 CPU <strong>挤一扇门</strong> — 扩展性极差</td>
+<td>单 CPU 独占</td>
+<td>per-CPU</td>
 </tr>
 <tr>
-<td><strong>细粒度过多锁</strong></td>
-<td>无争用时 <strong>加锁开销</strong> 本身浪费</td>
+<td>SPSC 跨上下文</td>
+<td>⭐ 无锁环（kfifo）</td>
+</tr>
+<tr>
+<td>MPMC + 批量收割</td>
+<td><code class="c">llist</code></td>
+</tr>
+<tr>
+<td>读极多写极少</td>
+<td>⭐ RCU</td>
+</tr>
+<tr>
+<td>多写者有序键</td>
+<td>分片 + 细粒度锁</td>
+</tr>
+<tr>
+<td>⭐ 全局引用计数</td>
+<td>⭐ <code class="c">percpu_ref</code></td>
 </tr>
 </tbody>
 </table></div>
-<h4>锁粒度（granularity）</h4>
+<hr />
+<h3>五、⭐ <code class="c">percpu_ref</code>：把全局计数器 per-CPU 化</h3>
+<p>一个被所有 CPU 频繁 <code class="c">get/put</code> 的引用计数，是最经典的争用源。内核的解法是 <code class="c">percpu_ref</code>。</p>
+<p>v6.6 <code class="c">include/linux/percpu-refcount.h:1-48</code>（作者 Kent Overstreet, Google, 2012）：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * This implements a refcount with similar semantics to atomic_t - atomic_inc(),
+ * atomic_dec_and_test() - but percpu.
+ *
+ * There's one important difference between percpu refs and normal atomic_t
+ * refcounts; you have to keep track of your initial refcount, and then when you
+ * start shutting down you call percpu_ref_kill() _before_ dropping the initial
+ * refcount.
+ *
+ * The refcount will have a range of 0 to ((1U &lt;&lt; 31) - 1), i.e. one bit less
+ * than an atomic_t - this is because of the way shutdown works, see
+ * percpu_ref_kill()/PERCPU_COUNT_BIAS.
+ *
+ * Before you call percpu_ref_kill(), percpu_ref_put() does not check for the
+ * refcount hitting 0 - it can't, if it was in percpu mode. percpu_ref_kill()
+ * puts the ref back in single atomic_t mode, collecting the per cpu refs and
+ * issuing the appropriate barriers, and then marks the ref as shutting down so
+ * that percpu_ref_put() will check for the ref hitting 0.  After it returns,
+ * it's safe to drop the initial ref.
+ * ...
+ * Note that the free path, free_ioctx(), needs to go through explicit call_rcu()
+ * to synchronize with RCU protected lookup_ioctx().  percpu_ref operations don't
+ * imply RCU grace periods of any kind and if a user wants to combine percpu_ref
+ * with RCU protection, it must be done explicitly.
+ */
+</code></pre>
+<h4>⭐ 两阶段关闭协议（与普通 refcount 最大的不同）</h4>
+<pre class="code" data-label="code"><code class="c">  正常期（percpu 模式）           关闭期（atomic 模式）
+  ┌────────────────────┐         ┌────────────────────┐
+  │ CPU0: count[0]     │         │ 单一 atomic_t      │
+  │ CPU1: count[1]     │  kill   │ （收集所有 percpu  │
+  │ CPU2: count[2]     │ ──────► │  计数 + 屏障）     │
+  │ ...                │         │                    │
+  │ put 不检查 0       │         │ put 开始检查 0     │
+  └────────────────────┘         └────────────────────┘
+                                          │
+                                          ▼
+                                  可以 drop 初始引用
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>必须先 <code class="c">percpu_ref_kill()</code></strong></td>
+<td>然后才能 drop 初始引用</td>
+</tr>
+<tr>
+<td>⭐ <strong>kill 之前 <code class="c">put</code> 不检查 0</strong></td>
+<td>在 percpu 模式下<strong>无法</strong>检查（每个 CPU 有自己的计数）</td>
+</tr>
+<tr>
+<td>⭐ <strong>计数范围少一位</strong></td>
+<td><code class="c">0 ~ ((1U &lt;&lt; 31) - 1)</code>，因为 shutdown 机制占用一位（<code class="c">PERCPU_COUNT_BIAS</code>）</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">percpu_ref</code> 不隐含 RCU</strong></td>
+<td>原文："percpu_ref operations don't imply RCU grace periods of any kind"，需要 RCU 时必须<strong>显式</strong> <code class="c">call_rcu()</code></td>
+</tr>
+<tr>
+<td><code class="c">kill()</code> 自带 once 语义</td>
+<td>返回 true 一次，之后返回 false</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>"kill 之前 put 不检查 0"这条最反直觉</strong>：它意味着在 percpu 模式下，引用计数<strong>可能已经被减到 0 但对象不能释放</strong>。这正是"用协议换性能"的代价——把"何时能释放"的判断从热路径挪到了关闭路径。</p>
+</blockquote>
+<p><strong>典型使用者</strong>：aio 的 <code class="c">struct kioctx</code>（<code class="c">fs/aio.c</code>）、<code class="c">bdi_writeback</code>、<code class="c">io_uring</code> 的部分结构。</p>
+<hr />
+<h3>六、⭐ 案例：<code class="c">mmap_sem</code> 的三十年战争</h3>
+<p>这是内核里最著名的可扩展性战役，时间线完整展示了"如何一步步打掉全局锁"。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时间</th>
+<th>事件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期</td>
+<td><code class="c">mm-&gt;mmap_sem</code> —— <strong>一把全局读写信号量</strong>保护整个进程地址空间</td>
+</tr>
+<tr>
+<td>⭐ <strong>v5.8</strong></td>
+<td>改名 <code class="c">mmap_lock</code>（语义澄清：它不只保护 mmap）</td>
+</tr>
+<tr>
+<td>⭐ <strong>v6.1</strong></td>
+<td>VMA 存储从 rbtree+链表双簿记 → <strong>maple tree</strong>（RCU 安全读成为可能）</td>
+</tr>
+<tr>
+<td>⭐ <strong>v6.4</strong></td>
+<td>⭐ <strong>per-VMA lock</strong>：缺页处理不再需要拿整个 <code class="c">mmap_lock</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>v6.6 <code class="c">include/linux/mm_types.h:549-551, 607</code>：</p>
+<pre class="code" data-label="C"><code class="c">struct vma_lock {
+    struct rw_semaphore lock;
+};
+
+struct vm_area_struct {
+    ...
+#ifdef CONFIG_PER_VMA_LOCK
+    struct vma_lock *vm_lock;      /* ⭐ 指针，且条件编译 */
+    ...
+#endif
+};
+</code></pre>
+<h4>⭐ 三个设计细节</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>细节</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">vm_lock</code> 是指针</strong></td>
+<td>大多数 VMA 永远不会被并发访问 → <strong>按需分配</strong>，省内存</td>
+</tr>
+<tr>
+<td><strong>条件编译</strong></td>
+<td><code class="c">#ifdef CONFIG_PER_VMA_LOCK</code> —— 不需要时可完全关掉</td>
+</tr>
+<tr>
+<td><strong>依赖 maple tree</strong></td>
+<td>⭐ 必须先在 v6.1 换成 maple tree（RCU 安全读），per-VMA lock 才可能实现</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>顺序不能颠倒</strong>：per-VMA lock 的前提是"能在 RCU 读侧安全地找到 VMA"。rbtree 做不到（rebalance 改结构），所以<strong>必须先有 v6.1 的 maple tree，才有 v6.4 的 per-VMA lock</strong>。
+这就是 <a href="chapter-06.html#s-6-6">6.6 讲的</a>"数据结构选型决定并发上限"的实证。</p>
+</blockquote>
+<p><strong>版本断崖实测</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>版本</th>
+<th>判据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mmap_sem</code> → <code class="c">mmap_lock</code></td>
+<td><strong>v5.8</strong></td>
+<td><code class="c">mm_types.h</code> 中 v5.7 只有 <code class="c">mmap_sem</code>(2) / v5.8 只有 <code class="c">mmap_lock</code>(2)</td>
+</tr>
+<tr>
+<td>maple tree 管 VMA</td>
+<td><strong>v6.1</strong></td>
+<td><code class="c">include/linux/maple_tree.h</code> v6.0 = 14B 残片 / v6.1 = 23073B</td>
+</tr>
+<tr>
+<td>⭐ per-VMA lock</td>
+<td><strong>v6.4</strong></td>
+<td><code class="c">mm.h</code> 中 <code class="c">lock_vma_under_rcu</code>/<code class="c">vma_start_read</code>：v6.3 = 0 / v6.4 = 3</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>七、⭐ 怎么测量：<code class="c">perf lock</code> 与 <code class="c">/proc/lock_stat</code></h3>
+<h4><code class="c">/proc/lock_stat</code> 的 12 个字段（v6.6 <code class="c">kernel/locking/lockdep_proc.c:570-592</code>）</h4>
+<pre class="code" data-label="code"><code class="c">lock_stat version 0.4
+
+class name | con-bounces | contentions | waittime-min | waittime-max |
+waittime-total | waittime-avg | acq-bounces | acquisitions |
+holdtime-min | holdtime-max | holdtime-total | holdtime-avg
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>关注点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">contentions</code></strong></td>
+<td>需要等待的获取次数</td>
+<td>⭐ <strong>这是"争用"的直接指标</strong></td>
+</tr>
+<tr>
+<td><code class="c">con-bounces</code></td>
+<td>因争用导致的 cacheline bounce 次数</td>
+<td>反映 bouncing 严重度</td>
+</tr>
+<tr>
+<td><code class="c">waittime-min/max/total/avg</code></td>
+<td>等待时间的分布</td>
+<td>⭐ <strong><code class="c">waittime-max</code> 是尾延迟的直接证据</strong></td>
+</tr>
+<tr>
+<td><code class="c">acquisitions</code></td>
+<td>总获取次数</td>
+<td>高 ≠ 有争用</td>
+</tr>
+<tr>
+<td><code class="c">acq-bounces</code></td>
+<td>获取时的 bounce 次数</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">holdtime-min/max/total/avg</code></td>
+<td>持有时间分布</td>
+<td>⭐ 缩短它 = 减临界区</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>最该看的两个</strong>：<code class="c">contentions</code>（有没有争用）和 <strong><code class="c">waittime-max</code></strong>（最坏情况多惨）。
+对 HFT 来说，<strong><code class="c">waittime-max</code> 比 <code class="c">waittime-avg</code> 重要得多</strong>——P99 杀手藏在 max 里。</p>
+</blockquote>
+<h4>⭐ 统计本身不能成为争用源</h4>
+<p>v6.6 <code class="c">kernel/locking/lock_events.h:33-45</code>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Increment the statistical counters. use raw_cpu_inc() because of lower
+ * overhead and we don't care if we loose the occasional update.
+ */
+static inline void __lockevent_inc(enum lock_events event, bool cond)
+{
+    if (cond)
+        raw_cpu_inc(lockevents[event]);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">raw_cpu_inc()</code></strong></td>
+<td>per-CPU 裸递增，无原子、无屏障</td>
+</tr>
+<tr>
+<td>⭐ <strong>"we don't care if we loose the occasional update"</strong></td>
+<td>⭐ 允许偶尔丢更新 —— <strong>用统计精度换"测量零开销"</strong></td>
+</tr>
+<tr>
+<td><strong>未配置时是空宏</strong></td>
+<td><code class="c">#else</code> 分支里 <code class="c">#define lockevent_inc(ev)</code> 什么都不做</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>这条注释是"可扩展性"主题下最重要的设计哲学之一</strong>：
+<strong>观测手段本身不能改变被观测对象的行为，也不能成为新的瓶颈。</strong>
+一个用全局原子计数器的锁统计，会在 NUMA 机器上自己变成争用热点——所以内核选择"允许丢计数的 per-CPU 裸计数"。</p>
+</blockquote>
+<h4>常用工具</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+<th>开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">perf lock record</code> + <code class="c">perf lock report</code></td>
+<td>记录并报告锁的等待/持有时间</td>
+<td>中（tracepoint）</td>
+</tr>
+<tr>
+<td><code class="c">/proc/lock_stat</code></td>
+<td>lockdep 统计（12 个字段）</td>
+<td>依赖 <code class="c">CONFIG_LOCK_STAT</code></td>
+</tr>
+<tr>
+<td>⭐ <code class="c">bpftrace -e 'tracepoint:lock:lock_acquire {...}'</code></td>
+<td>自定义聚合</td>
+<td>⭐ 低（内核侧聚合）</td>
+</tr>
+<tr>
+<td><code class="c">perf c2c</code></td>
+<td>⭐ <strong>专门查 false sharing / cacheline bouncing</strong></td>
+<td>中高（采样 HITM）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong><code class="c">perf c2c</code> 是查 false sharing 的专用工具</strong>（HITM = Hit In The Modified，即"读到了别人改过的行"）。排查"CPU 越多越慢"的问题时，它比 <code class="c">perf lock</code> 更直接。</p>
+</blockquote>
+<hr />
+<h3>八、锁粒度（granularity）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1521,7 +2175,81 @@ spin_lock_irqsave(&amp;dev-&gt;lock, flags);
 </tr>
 </tbody>
 </table></div>
-<h4>工程建议（作者）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>粗粒度锁</th>
+<th>细粒度锁</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁数量</td>
+<td>1</td>
+<td>N</td>
+</tr>
+<tr>
+<td>无争用开销</td>
+<td>⭐ 小（一次原子操作）</td>
+<td>大（可能要拿多把锁）</td>
+</tr>
+<tr>
+<td>扩展性</td>
+<td>❌ O(N) bouncing</td>
+<td>⭐ 好</td>
+</tr>
+<tr>
+<td>死锁风险</td>
+<td>低</td>
+<td>⭐ <strong>高</strong>（多锁顺序问题，靠 lockdep 检查）</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>小</td>
+<td>大（每把锁 + 可能的 padding）</td>
+</tr>
+<tr>
+<td>典型</td>
+<td>早期 <code class="c">mmap_sem</code></td>
+<td>⭐ per-VMA lock</td>
+</tr>
+</tbody>
+</table></div>
+<h4>⭐ 中间路线：分层 / 分片</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>做法</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>快速路径 + 慢速路径</strong></td>
+<td>无争用时走无锁快路径，争用才上锁</td>
+<td>⭐ qspinlock 的 <code class="c">pending</code>、lockref</td>
+</tr>
+<tr>
+<td><strong>读侧无锁（RCU）</strong></td>
+<td>读不加锁，写持锁</td>
+<td>dentry 查找</td>
+</tr>
+<tr>
+<td><strong>分片</strong></td>
+<td><code class="c">hash(key) % N</code> 选锁</td>
+<td>⭐ <code class="c">futex_hash_bucket</code>（256 桶，各一把锁）</td>
+</tr>
+<tr>
+<td>⭐ <strong>per-CPU + 惰性聚合</strong></td>
+<td>每 CPU 本地操作，定期汇总</td>
+<td>⭐ <code class="c">percpu_ref</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>九、工程建议（作者）</h3>
 <pre class="code" data-label="code"><code class="c">从简单锁开始 ──►  profiling 见争用 ──► 再细化粒度 / per-CPU / RCU
 </code></pre>
 <div class="tbl-wrap"><table>
@@ -1542,12 +2270,73 @@ spin_lock_irqsave(&amp;dev-&gt;lock, flags);
 </tr>
 </tbody>
 </table></div>
-<p>→ <strong>Ch 10</strong> spinlock、mutex、seqlock、RCU 选型</p>
+<blockquote>
+<p>⭐ <strong>v6.6 qspinlock 的头部注释是这条建议的最好背书</strong>：官方明确要求架构维护者"先考虑 ticket-lock，只有<strong>实测证明</strong> qspinlock 更好时才用"。</p>
+<p>内核开发者的共识是：<strong>没有 profile 数据的优化 = 猜测</strong>。细粒度锁带来的死锁风险和复杂度是真实成本，只有在 contention 指标证实瓶颈时才值得付。</p>
+</blockquote>
+<hr />
+<h3>十、HFT 视角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核机制</th>
+<th>用户态对应</th>
+<th>HFT 关注点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cacheline bouncing</td>
+<td><code class="c">std::atomic</code> 共享计数器</td>
+<td>⭐ 热路径上任何被多线程写的共享变量都是 P99 杀手</td>
+</tr>
+<tr>
+<td>false sharing</td>
+<td>两个无关原子变量相邻</td>
+<td>⭐ 用 <code class="c">alignas(64)</code> 或填充到 64 字节</td>
+</tr>
+<tr>
+<td>qspinlock 的 MCS 队列</td>
+<td><code class="c">pthread_spinlock</code> 的公平性</td>
+<td>公平锁降低尾延迟，但吞吐可能下降</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">percpu_ref</code></td>
+<td>全局引用计数</td>
+<td>⭐ 改成 per-thread 计数 + 定期聚合</td>
+</tr>
+<tr>
+<td>⭐ per-VMA lock</td>
+<td>全局锁 → 细粒度</td>
+<td>⭐ "数据结构选型决定并发上限"</td>
+</tr>
+<tr>
+<td><code class="c">waittime-max</code></td>
+<td>锁等待的最大值</td>
+<td>⭐ <strong>盯 max，不要盯 avg</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实操四条：</strong></p>
+<ol>
+<li>⭐ <strong>先测量再优化</strong>。用 <code class="c">perf lock report</code> 看 <code class="c">contentions</code> 和 <code class="c">waittime-max</code>，用 <code class="c">perf c2c</code> 查 false sharing。别猜。</li>
+<li>⭐ <strong>盯尾不盯均</strong>。平均等待 1μs 但 max 5ms 的锁，对 HFT 来说是不可接受的——那 5ms 就是一次 P99.99 尖刺。</li>
+<li><strong>消灭共享优先于优化锁</strong>。per-thread 副本 + 聚合，比任何"更快的锁"都有效。</li>
+<li><strong>热路径上的原子变量单独占 cacheline</strong>。<code class="c">alignas(64)</code> 或前后各填 64 字节。</li>
+</ol>
+<hr />
+<p>→ <strong>Ch 10</strong> spinlock、mutex、seqlock、RCU 选型 · <a href="chapter-10.html#s-10-2">Ch 10.2 自旋锁</a> · <a href="chapter-06.html#s-6-6">Ch 6.6 数据结构选型</a></p>
 <h3>常见陷阱</h3>
 <ol>
 <li>以为锁的正确性就够了——锁的争用程度直接影响性能和可扩展性</li>
 <li>混淆锁持有时间和锁等待时间——持有时间是「锁住了多久」，等待时间是「等了多久才拿到」</li>
 <li>以为增加 CPU 数量总能提升性能——锁争用下，增加 CPU 反而降低吞吐（锁竞争恶化）</li>
+<li>⭐ 以为"acquisitions 高"等于"有争用"——要看 <strong><code class="c">contentions</code></strong>，一把被频繁获取但从不冲突的锁没问题</li>
+<li>⭐ 以为平均等待时间够看——<strong>HFT 要盯 <code class="c">waittime-max</code></strong>，尖刺藏在最大值里</li>
+<li>⭐ 以为 false sharing 只是理论问题——<code class="c">perf c2c</code> 在真机上经常能查到，且影响可达数量级</li>
+<li>以为 qspinlock 是"更先进的 spinlock，所有架构都该用"——⭐ <strong>官方注释要求先考虑 ticket-lock</strong>，qspinlock 对硬件有三条额外要求（RCsc、前进性、混合尺寸原子）</li>
+<li>以为细粒度锁总是更好——它带来死锁风险和内存开销，<strong>只有实测有争用时才值得</strong>（内核官方建议）</li>
+<li>⭐ 以为 <code class="c">percpu_ref</code> 只是"per-CPU 的 atomic_t"——它有<strong>两阶段关闭协议</strong>（必须先 kill 再 drop 初始引用），且 kill 前 <code class="c">put</code> 不检查 0</li>
 </ol>
 <hr />
 <details>
@@ -1556,19 +2345,680 @@ spin_lock_irqsave(&amp;dev-&gt;lock, flags);
 <details>
 <summary>答案</summary>
 <p>内核：① <code class="c">perf lock record</code> + <code class="c">perf lock report</code>：记录锁等待时间和持有时间。② <code class="c">/proc/lock_stat</code>：lockdep 统计。③ <code class="c">bpftrace -e 'tracepoint:lock:lock_acquire { ... }'</code>：追踪锁获取。用户态：① <code class="c">perf lock</code>。② <code class="c">Valgrind --tool=drd</code>。③ <code class="c">pthread_mutex</code> 的 <code class="c">trylock</code> 探测。指标：con-<N>（等待次数）、wait-total（总等待时间）、hold-total（总持有时间）。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>字段名需要修正</strong>——v6.6 <code class="c">/proc/lock_stat</code> 实际有 <strong>12 个字段</strong>（<code class="c">kernel/locking/lockdep_proc.c:570-592</code>）：</p>
+<pre class="code" data-label="code"><code class="c">lock_stat version 0.4
+
+class name | con-bounces | contentions |
+waittime-min | waittime-max | waittime-total | waittime-avg |
+acq-bounces | acquisitions |
+holdtime-min | holdtime-max | holdtime-total | holdtime-avg
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>关注点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <code class="c">contentions</code></td>
+<td>需要等待的获取次数</td>
+<td>⭐ <strong>争用的直接指标</strong></td>
+</tr>
+<tr>
+<td><code class="c">con-bounces</code></td>
+<td>争用导致的 cacheline bounce 次数</td>
+<td>bouncing 严重度</td>
+</tr>
+<tr>
+<td><code class="c">waittime-min/max/total/avg</code></td>
+<td>等待时间分布</td>
+<td>⭐ <strong><code class="c">waittime-max</code> 是尾延迟证据</strong></td>
+</tr>
+<tr>
+<td><code class="c">acquisitions</code></td>
+<td>总获取次数</td>
+<td>⭐ 高 ≠ 有争用</td>
+</tr>
+<tr>
+<td><code class="c">acq-bounces</code></td>
+<td>获取时 bounce 次数</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">holdtime-min/max/total/avg</code></td>
+<td>持有时间分布</td>
+<td>缩短它 = 减临界区</td>
+</tr>
+</tbody>
+</table></div>
+<p>（原答案写的 <code class="c">con-&lt;N&gt;</code> / <code class="c">wait-total</code> / <code class="c">hold-total</code> 不是 v6.6 的字段名，实际是 <code class="c">waittime-total</code> / <code class="c">holdtime-total</code>。）</p>
+<p><strong>补充两个工具：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">perf c2c</code></strong></td>
+<td>专门查 false sharing / cacheline bouncing（HITM = Hit In The Modified）。排查"CPU 越多越慢"时比 <code class="c">perf lock</code> 更直接</td>
+</tr>
+<tr>
+<td><code class="c">perf bench</code></td>
+<td>微基准</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>⭐ 还有一个必须知道的设计细节</strong>——统计本身不能成为争用源（<code class="c">kernel/locking/lock_events.h:33-45</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Increment the statistical counters. use raw_cpu_inc() because of lower
+ * overhead and we don't care if we loose the occasional update.
+ */
+static inline void __lockevent_inc(enum lock_events event, bool cond)
+{
+    if (cond)
+        raw_cpu_inc(lockevents[event]);
+}
+</code></pre>
+<p>内核<strong>故意</strong>用 per-CPU 裸计数（无原子、无屏障）并<strong>容忍偶尔丢更新</strong>，因为用全局原子计数器做锁统计，自己会在 NUMA 机器上变成争用热点。<code class="c">CONFIG_LOCK_EVENT_COUNTS</code> 未开时这些是空宏。</p>
+</details>
 </details>
 <p><strong>Q2.</strong> 为什么增加 CPU 在锁争用下反而降低性能？</p>
 <details>
 <summary>答案</summary>
 <p>假设一把全局锁保护共享数据。N 个 CPU 同时请求锁：① 只有 1 个拿到，其余 N-1 个 spin 等待。② N 越大，spin 浪费的 CPU 越多。③ 锁释放时 N-1 个 CPU 抢锁 → cache line bouncing。④ 吞吐随 N 增加先升后降（Amdahl's Law 的锁版本）。解决：① 减小临界区。② per-CPU 数据。③ 无锁数据结构（RCU）。</p>
+<details>
+<summary>按 v6.6 补充（物理机制 + qspinlock 的解法）</summary>
+<p>答案的机制描述是对的，补充<strong>物理层面的原因</strong>和<strong>内核的解法</strong>：</p>
+<p><strong>cacheline bouncing 的具体过程：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁持有者释放（写锁变量）</td>
+<td>该 cacheline 在所有其他 CPU 的副本被置为 <strong>Invalid</strong></td>
+</tr>
+<tr>
+<td>N-1 个等待者同时读</td>
+<td>⭐ 全部 cache miss → 同时发起总线请求 → <strong>O(N) 次传输</strong></td>
+</tr>
+<tr>
+<td>抢锁（原子 RMW）</td>
+<td>cacheline 被"抢"到发起者，其他人再从 Invalid 重建</td>
+</tr>
+</tbody>
+</table></div>
+<p>有效工作仍是 O(1)，但<strong>协调开销是 O(N) 甚至 O(N²)</strong> → N 越大越亏。</p>
+<p><strong>Amdahl 还低估了问题</strong>：它假设串行占比 <code class="c">s</code> 是常数。但争用下 <strong>N 越大、等待越久，<code class="c">s</code> 会随 N 增长</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>串行占比 <code class="c">s</code></th>
+<th>N=8 加速比</th>
+<th>N→∞ 上限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5%</td>
+<td>5.9×</td>
+<td>20×</td>
+</tr>
+<tr>
+<td>10%</td>
+<td>4.7×</td>
+<td>10×</td>
+</tr>
+<tr>
+<td>⭐ 20%</td>
+<td>3.3×</td>
+<td>5×</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>⭐ 内核的解法：qspinlock（v4.2）</strong></p>
+<p>ticket spinlock 解决了公平性，但所有人仍自旋在同一个变量上。qspinlock 让<strong>第 3 个及以后的等待者各自自旋在自己的 per-CPU MCS 节点上</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>字段</th>
+<th>自旋在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">locked</code> (0-7)</td>
+<td>—（持有者）</td>
+</tr>
+<tr>
+<td>2</td>
+<td>⭐ <code class="c">pending</code> (bit 8)</td>
+<td>锁变量本身（第 2 个等待者）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">tail</code> (16-31)</td>
+<td>⭐ 自己的 per-CPU MCS 节点</td>
+</tr>
+</tbody>
+</table></div>
+<p>于是"一次释放 → N-1 次 cacheline 传输"变成"<strong>一次释放 → 1 次定向传输给队列下一个</strong>"。</p>
+<p><strong>另外三种解法</strong>：per-CPU 化（消灭共享）、RCU（读侧无锁）、分片（<code class="c">futex_hash_bucket</code> 256 桶各一把锁）。</p>
+</details>
 </details>
 <p><strong>Q3.</strong> HFT 如何设计无锁/低争用数据结构？</p>
 <details>
 <summary>答案</summary>
 <p>① SPSC 环形队列：单生产者单消费者，<code class="c">atomic&lt;head&gt;</code> + <code class="c">atomic&lt;tail&gt;</code> + release/acquire 序。② per-thread 缓存：每线程独立操作，定期聚合。③ RCU 模式：读端无锁（<code class="c">atomic load</code> 指针），写端复制+替换+延迟回收。④ 分片锁：<code class="c">sharded_hashmap</code>，N 个 bucket 各一把锁，减少争用。⑤ <code class="c">std::shared_mutex</code>：多读单写，适合读多写少。</p>
+<details>
+<summary>按 v6.6 补充（三条内核经验）</summary>
+<p>这个答案已经覆盖了主要模式，补三条从内核可以直接抄的经验：</p>
+<p><strong>① ⭐ 警惕 false sharing——比锁本身更隐蔽</strong></p>
+<p>两个逻辑上无关的变量若落在同一 cacheline（64B），即使各自有各自的锁也会互相失效。</p>
+<pre class="code" data-label="C"><code class="c">struct foo {
+    spinlock_t  lock;
+    int     counter;
+} ____cacheline_aligned_in_smp;      /* ⭐ 内核的标准解法 */
+</code></pre>
+<p>用户态对应：<code class="c">alignas(64)</code> 或手工填充。<strong>用 <code class="c">perf c2c</code> 验证</strong>。</p>
+<p><strong>② ⭐ 引用计数用 per-thread + 惰性聚合（对应 <code class="c">percpu_ref</code>）</strong></p>
+<p>内核的 <code class="c">percpu_ref</code> 是把全局计数器 per-CPU 化的标准方案（aio 的 <code class="c">kioctx</code>、<code class="c">bdi_writeback</code>）。用户态平移：每线程一个 <code class="c">long</code>，定期汇总。</p>
+<p>⚠️ <strong>但要注意它有协议代价</strong>（热路径性能是用关闭路径的复杂度换来的）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ 必须先 <code class="c">percpu_ref_kill()</code></td>
+<td>然后才能 drop 初始引用</td>
+</tr>
+<tr>
+<td>⭐ kill 之前 <code class="c">put</code> <strong>不检查 0</strong></td>
+<td>percpu 模式下无法检查</td>
+</tr>
+<tr>
+<td>⭐ 不隐含 RCU grace period</td>
+<td>需要 RCU 时必须显式 <code class="c">call_rcu()</code></td>
+</tr>
+<tr>
+<td>计数范围少一位</td>
+<td><code class="c">0 ~ ((1U&lt;&lt;31)-1)</code>，shutdown 机制占一位</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>③ ⭐ 盯 <code class="c">waittime-max</code> 而不是 <code class="c">waittime-avg</code></strong></p>
+<p><code class="c">/proc/lock_stat</code> 同时给出 min/max/total/avg 四项。对 HFT 来说：</p>
+<ul>
+<li>平均等待 1μs 但 <strong>max 5ms</strong> 的锁 = 一次 P99.99 尖刺</li>
+<li><strong>平均值好看不代表尾延迟可接受</strong></li>
+</ul>
+<p><strong>④ 优先级：消灭共享 &gt; 优化锁</strong></p>
+<p>per-thread 副本 + 聚合，比任何"更快的锁"都有效。锁再快，也有 cacheline bouncing 的下限；没有共享，就没有 bouncing。</p>
+</details>
+</details>
+<p><strong>Q4.</strong> qspinlock 的 <code class="c">pending</code> 位是什么？为什么需要它？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/asm-generic/qspinlock_types.h</code> 的 32 位布局（<code class="c">NR_CPUS &lt; 16K</code>）：</p>
+<pre class="code" data-label="code"><code class="c"> 31                    18 17 16 15   9  8  7        0
+┌──────────────────────┬─────┬────────┬─┬───────────┐
+│   tail cpu (+1)      │idx  │ 未用   │P│  locked   │
+└──────────────────────┴─────┴────────┴─┴───────────┘
+                        │              │      └─ 0-7  locked
+                        │              └──────── 8    pending
+                        └─────────────────────── 16-17 tail index (0-3)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>字段</th>
+<th>谁</th>
+<th>自旋在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">locked</code> (0-7)</td>
+<td>当前持有者</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2</td>
+<td>⭐ <code class="c">pending</code> (bit 8)</td>
+<td><strong>第 2 个</strong>等待者</td>
+<td>⭐ 锁变量本身</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">tail</code> (16-31)</td>
+<td>第 3 个及以后</td>
+<td>⭐ 自己的 per-CPU MCS 节点</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>为什么需要 <code class="c">pending</code></strong>：</p>
+<p>MCS 队列的"手递手"（handoff）有额外开销——要设置下一个节点的 <code class="c">locked</code> 字段、要读 tail。</p>
+<p>而<strong>绝大多数锁在实际运行中只有 2 个竞争者</strong>。此时用 <code class="c">pending</code> 位让第二个人直接在锁变量上自旋，<strong>完全跳过 MCS 队列路径</strong>。</p>
+<p>只有真的出现第 3 个竞争者时，才进入完整的 MCS 队列。</p>
+<blockquote>
+<p>这是典型的"<strong>为常见情况做快路径优化</strong>"：2 竞争者是最常见形态，为它单独设计一条路径。</p>
+</blockquote>
+<p><strong>另一个细节：<code class="c">_Q_TAIL_IDX_BITS = 2</code> → 每 CPU 4 个 MCS 节点槽位</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>槽位</th>
+<th>上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>任务（task）</td>
+</tr>
+<tr>
+<td>1</td>
+<td>softirq</td>
+</tr>
+<tr>
+<td>2</td>
+<td>hardirq</td>
+</tr>
+<tr>
+<td>3</td>
+<td>⭐ NMI</td>
+</tr>
+</tbody>
+</table></div>
+<p>因为同一 CPU 可能在不同上下文嵌套等待不同的锁。若只有 1 个槽位，任务上下文等锁 A 时被中断、又在中断里等锁 B，就会踩自己的节点 → <strong>死锁</strong>。</p>
+<p><strong>版本</strong>：qspinlock 引入于 <strong>v4.2</strong>。</p>
+</details>
+<p><strong>Q5.</strong> 官方为什么说架构选型时"先考虑 ticket-lock"？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/asm-generic/qspinlock.h:5-9</code> 原文：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * A 'generic' spinlock implementation that is based on MCS locks. For an
+ * architecture that's looking for a 'generic' spinlock, please first consider
+ * ticket-lock.h and only come looking here when you've considered all the
+ * constraints below and can show your hardware does actually perform better
+ * with qspinlock.
+ */
+</code></pre>
+<p>⭐ 即：<strong>先考虑 ticket-lock，只有在实测证明 qspinlock 更好时才用它。</strong></p>
+<p><strong>三条硬件依赖：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>依赖</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <strong>RCsc 内存模型</strong></td>
+<td><code class="c">atomic_*_release()/acquire()</code> 必须是 RCsc（power 上至少 RCtso）—— 普通代码只要求 RCpc</td>
+</tr>
+<tr>
+<td>② <strong>前进性保证（forward progress）</strong></td>
+<td>qspinlock 用到的原子操作集合远大于普通 spinlock，每个都要保证前进性；LL/SC 架构上的 <code class="c">cmpxchg()</code> 循环未必满足</td>
+</tr>
+<tr>
+<td>③ ⭐ <strong>混合尺寸原子操作（mixed-size atomics）</strong></td>
+<td>需要 <code class="c">xchg16</code> 等；LL/SC 架构要用 32 位 and+or 实现才能保前进性</td>
+</tr>
+</tbody>
+</table></div>
+<p>源码还引用了一篇 POPL'17 论文专门讨论这个问题：</p>
+<blockquote>
+<p><code class="c">http://www.cl.cam.ac.uk/~pes20/popl17/mixed-size.pdf</code></p>
+</blockquote>
+<p>⭐ <strong>结论</strong>：x86 用 qspinlock 是因为硬件天然满足这三条；<strong>弱内存序架构要付出额外代价才能用</strong>。所以它不是"所有架构的默认最优解"。</p>
+<blockquote>
+<p>⭐ 这段注释也是"工程建议"一节的最佳背书：<strong>没有 profile 数据的优化 = 猜测</strong>。内核官方对"更先进"的锁都持这种态度。</p>
+</blockquote>
+</details>
+<p><strong>Q6.</strong> <code class="c">percpu_ref</code> 和普通 <code class="c">atomic_t</code> 引用计数有什么关键区别？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/percpu-refcount.h:1-48</code>（作者 Kent Overstreet, Google, 2012）。</p>
+<p>⭐⭐ <strong>最关键的区别：两阶段关闭协议。</strong></p>
+<pre class="code" data-label="code"><code class="c">  正常期（percpu 模式）           关闭期（atomic 模式）
+  ┌────────────────────┐         ┌────────────────────┐
+  │ CPU0: count[0]     │         │ 单一 atomic_t      │
+  │ CPU1: count[1]     │  kill   │ （收集所有 percpu  │
+  │ CPU2: count[2]     │ ──────► │  计数 + 屏障）     │
+  │ put 不检查 0       │         │ put 开始检查 0     │
+  └────────────────────┘         └────────────────────┘
+                                          │
+                                          ▼
+                                  可以 drop 初始引用
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>必须先 <code class="c">percpu_ref_kill()</code></strong></td>
+<td>然后才能 drop 初始引用（源码注释："you have to keep track of your initial refcount, and then when you start shutting down you call <code class="c">percpu_ref_kill()</code> <em>before</em> dropping the initial refcount"）</td>
+</tr>
+<tr>
+<td>⭐ <strong>kill 之前 <code class="c">put</code> 不检查 0</strong></td>
+<td>"it can't, if it was in percpu mode" —— 每个 CPU 有自己的计数，<strong>无法</strong>判断全局是否为 0</td>
+</tr>
+<tr>
+<td>⭐ <strong>计数范围少一位</strong></td>
+<td><code class="c">0 ~ ((1U &lt;&lt; 31) - 1)</code>，因为 shutdown 机制占用一位（<code class="c">PERCPU_COUNT_BIAS</code>）</td>
+</tr>
+<tr>
+<td>⭐ <strong>不隐含 RCU grace period</strong></td>
+<td>"percpu_ref operations don't imply RCU grace periods of any kind"——需要 RCU 时必须<strong>显式</strong> <code class="c">call_rcu()</code></td>
+</tr>
+<tr>
+<td><code class="c">kill()</code> 自带 once 语义</td>
+<td>返回 true 一次，之后返回 false</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>"kill 之前 put 不检查 0"最反直觉</strong>：它意味着 percpu 模式下引用可能已减到 0 但对象<strong>不能释放</strong>。</p>
+<p>这正是"<strong>用协议换性能</strong>"的代价：把"何时能释放"的判断从热路径（每次 put）挪到了关闭路径（kill 一次）。热路径上只剩一次 per-CPU 裸递增——无原子、无争用。</p>
+<p><strong>典型使用者</strong>：aio 的 <code class="c">struct kioctx</code>（<code class="c">fs/aio.c</code>）、<code class="c">bdi_writeback</code>、io_uring 的部分结构。</p>
+</details>
+<p><strong>Q7.</strong> 内核打掉 <code class="c">mmap_sem</code> 这把全局锁用了哪几步？</p>
+<details>
+<summary>答案</summary>
+<p>这是内核里最著名的可扩展性战役，时间线：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时间</th>
+<th>事件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早期</td>
+<td><code class="c">mm-&gt;mmap_sem</code> —— 一把全局读写信号量保护整个进程地址空间</td>
+</tr>
+<tr>
+<td>⭐ <strong>v5.8</strong></td>
+<td>改名 <code class="c">mmap_lock</code>（语义澄清：它不只保护 mmap）</td>
+</tr>
+<tr>
+<td>⭐ <strong>v6.1</strong></td>
+<td>VMA 存储从 rbtree+链表双簿记 → <strong>maple tree</strong>（RCU 安全读成为可能）</td>
+</tr>
+<tr>
+<td>⭐ <strong>v6.4</strong></td>
+<td>⭐ <strong>per-VMA lock</strong>：缺页处理不再需要拿整个 <code class="c">mmap_lock</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>v6.6 <code class="c">include/linux/mm_types.h:549-551, 607</code>：</p>
+<pre class="code" data-label="C"><code class="c">struct vma_lock {
+    struct rw_semaphore lock;
+};
+
+struct vm_area_struct {
+    ...
+#ifdef CONFIG_PER_VMA_LOCK
+    struct vma_lock *vm_lock;      /* ⭐ 指针，且条件编译 */
+    ...
+#endif
+};
+</code></pre>
+<p><strong>三个设计细节：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>细节</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <code class="c">vm_lock</code> 是<strong>指针</strong></td>
+<td>大多数 VMA 永远不会被并发访问 → <strong>按需分配</strong>，省内存</td>
+</tr>
+<tr>
+<td>条件编译</td>
+<td><code class="c">#ifdef CONFIG_PER_VMA_LOCK</code> —— 不需要时可完全关掉</td>
+</tr>
+<tr>
+<td>依赖 maple tree</td>
+<td>⭐ 必须先在 v6.1 换成 maple tree，per-VMA lock 才可能实现</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>顺序不能颠倒</strong>：per-VMA lock 的前提是"能在 RCU 读侧安全地找到 VMA"。rbtree 做不到（rebalance 会改结构，RCU 读者可能读到正在旋转的节点），所以<strong>必须先有 v6.1 的 maple tree，才有 v6.4 的 per-VMA lock</strong>。</p>
+<p>这是"<strong>数据结构选型决定并发上限</strong>"的最好实证——见 <a href="chapter-06.html#s-6-6">6.6 §7</a>。</p>
+<p><strong>版本断崖实测判据：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>版本</th>
+<th>判据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mmap_sem</code> → <code class="c">mmap_lock</code></td>
+<td><strong>v5.8</strong></td>
+<td><code class="c">mm_types.h</code>：v5.7 只有 <code class="c">mmap_sem</code>(2) / v5.8 只有 <code class="c">mmap_lock</code>(2)</td>
+</tr>
+<tr>
+<td>maple tree 管 VMA</td>
+<td><strong>v6.1</strong></td>
+<td><code class="c">maple_tree.h</code>：v6.0 = 14B 残片 / v6.1 = 23073B</td>
+</tr>
+<tr>
+<td>⭐ per-VMA lock</td>
+<td><strong>v6.4</strong></td>
+<td><code class="c">mm.h</code> 中 <code class="c">lock_vma_under_rcu</code>/<code class="c">vma_start_read</code>：v6.3 = 0 / v6.4 = 3</td>
+</tr>
+</tbody>
+</table></div>
+</details>
+<p><strong>Q8.</strong> false sharing 是什么？内核怎么解决？</p>
+<details>
+<summary>答案</summary>
+<p><strong>false sharing（伪共享）</strong>：两个<strong>逻辑上无关</strong>的变量碰巧落在<strong>同一个 cacheline</strong>（x86 上 64 字节）里。即使它们被不同 CPU 访问、各自有各自的锁，缓存一致性协议也会让它们互相失效。</p>
+<pre class="code" data-label="code"><code class="c"> cacheline (64B)
+┌──────────────────────────────────────┐
+│ counter_A (CPU0 独占写) │ counter_B (CPU1 独占写) │
+└──────────────────────────────────────┘
+        ↑ 逻辑无关，但共享一条 cacheline → 互相 Invalid
+</code></pre>
+<p>CPU0 写 <code class="c">counter_A</code> → CPU1 的整条 cacheline 失效 → CPU1 写 <code class="c">counter_B</code> 要重新加载 → 反过来再让 CPU0 失效。<strong>两个变量都不需要共享，却付了共享的代价。</strong></p>
+<p><strong>内核的解法（<code class="c">include/linux/cache.h</code>）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">____cacheline_aligned_in_smp</code></td>
+<td>SMP 下按 cacheline 对齐；<strong>UP 下不浪费空间</strong></td>
+</tr>
+<tr>
+<td><code class="c">__cacheline_aligned</code></td>
+<td>无条件对齐</td>
+</tr>
+<tr>
+<td><code class="c">___cacheline_aligned_in_smp</code></td>
+<td>对齐 + 归入 <code class="c">.data..cacheline_aligned</code> 段</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">struct foo {
+    spinlock_t  lock;
+    int     counter;
+} ____cacheline_aligned_in_smp;      /* ⭐ 常见写法 */
+</code></pre>
+<p>内核里到处能看到这个后缀——<code class="c">futex_hash_bucket</code>、<code class="c">bit_wait_table</code>、<code class="c">zone-&gt;lock</code> 等等。原因就是 false sharing 在大规模机器上是<strong>实测可见的</strong>性能差异。</p>
+<p><strong>用户态对应</strong>：<code class="c">alignas(64)</code>，或手工在成员间填充 64 字节。</p>
+<p><strong>怎么验证</strong>：⭐ <strong><code class="c">perf c2c</code></strong> —— 专门查 cacheline bouncing，报告 <strong>HITM</strong>（Hit In The Modified，即"读到了别人刚改过的行"）。排查"CPU 越多越慢"时它比 <code class="c">perf lock</code> 更直接。</p>
+</details>
+<p><strong>Q9.</strong> 内核的锁统计为什么用 <code class="c">raw_cpu_inc</code> 而不是原子操作？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">kernel/locking/lock_events.h:33-45</code>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Increment the statistical counters. use raw_cpu_inc() because of lower
+ * overhead and we don't care if we loose the occasional update.
+ */
+static inline void __lockevent_inc(enum lock_events event, bool cond)
+{
+    if (cond)
+        raw_cpu_inc(lockevents[event]);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设计</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">raw_cpu_inc()</code></strong></td>
+<td>per-CPU 裸递增，<strong>无原子、无屏障</strong></td>
+</tr>
+<tr>
+<td>⭐ <strong>"we don't care if we loose the occasional update"</strong></td>
+<td>明确容忍偶尔丢更新</td>
+</tr>
+<tr>
+<td><strong>未配置时是空宏</strong></td>
+<td><code class="c">#else</code> 分支：<code class="c">#define lockevent_inc(ev)</code>（什么都不做）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>核心理由</strong>：<strong>观测手段本身不能成为新的瓶颈。</strong></p>
+<p>如果用全局原子计数器做锁统计：
+- 每次锁获取都要一次全局原子 RMW
+- 在 NUMA 机器上，这个计数器的 cacheline 会在所有节点间 bouncing
+- <strong>统计锁争用的工具，自己变成了最大的争用源</strong>（典型的观测者效应）</p>
+<p>所以内核选择：<strong>per-CPU 裸计数（零争用）+ 容忍精度损失</strong>。</p>
+<p>⭐ <strong>设计哲学</strong>：统计的目的是发现"数量级级别"的问题（ contention 是不是瓶颈、max 等待是不是离谱），而不是精确到个位。<strong>用精度换零开销是正确的取舍。</strong></p>
+</details>
+<p><strong>Q10.</strong> 锁粒度应该怎么选？细粒度锁总是更好吗？</p>
+<details>
+<summary>答案</summary>
+<p>⭐ <strong>不是。细粒度锁有真实成本，只有实测有争用时才值得。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>粗粒度锁</th>
+<th>细粒度锁</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁数量</td>
+<td>1</td>
+<td>N</td>
+</tr>
+<tr>
+<td>无争用开销</td>
+<td>⭐ 小（一次原子操作）</td>
+<td>大（可能要拿多把锁）</td>
+</tr>
+<tr>
+<td>扩展性</td>
+<td>❌ O(N) bouncing</td>
+<td>⭐ 好</td>
+</tr>
+<tr>
+<td>⭐ 死锁风险</td>
+<td>低</td>
+<td>⭐ <strong>高</strong>（多锁顺序问题，靠 lockdep 检查）</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>小</td>
+<td>大（每把锁 + 可能的 cacheline padding）</td>
+</tr>
+<tr>
+<td>典型</td>
+<td>早期 <code class="c">mmap_sem</code></td>
+<td>⭐ per-VMA lock（v6.4）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>中间路线（通常比"一味细化"更好）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>做法</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>快速路径 + 慢速路径</td>
+<td>无争用走无锁快路径，争用才上锁</td>
+<td>⭐ qspinlock 的 <code class="c">pending</code> 位、lockref</td>
+</tr>
+<tr>
+<td>读侧无锁（RCU）</td>
+<td>读不加锁，写持锁</td>
+<td>dentry 查找</td>
+</tr>
+<tr>
+<td>分片</td>
+<td><code class="c">hash(key) % N</code> 选锁</td>
+<td>⭐ <code class="c">futex_hash_bucket</code>（256 桶各一把锁）</td>
+</tr>
+<tr>
+<td>⭐ per-CPU + 惰性聚合</td>
+<td>每 CPU 本地操作，定期汇总</td>
+<td>⭐ <code class="c">percpu_ref</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>内核官方的选型建议</strong>（<code class="c">qspinlock.h:5-9</code> 是同一精神的体现）：</p>
+<pre class="code" data-label="code"><code class="c">从简单锁开始 ──► profiling 见争用 ──► 再细化粒度 / per-CPU / RCU
+</code></pre>
+<p>即：<strong>先正确、后优化；优化必须有 profile 数据支撑。</strong></p>
+<blockquote>
+<p>⭐ 一个反例值得记住：qspinlock 虽然是"更先进"的锁，官方注释却要求架构维护者<strong>先考虑 ticket-lock</strong>，只有在"can show your hardware does actually perform better"时才用。<strong>内核对"先进性"本身是警惕的。</strong></p>
+</blockquote>
 </details>
 </details>
 <hr />
+<p>→ <a href="chapter-10.html#ch-10">Ch 10 同步方法</a> · <a href="chapter-06.html#s-6-6">Ch 6.6 数据结构选型</a> · <a href="chapter-04.html#s-4-4">Ch 4.4 休眠与唤醒</a></p>
       </section>
 
 

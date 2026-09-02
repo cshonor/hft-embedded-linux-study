@@ -2155,12 +2155,44 @@ CFS：假想完美 CPU，按 <strong>权重</strong> 瓜分时间；<code class=
       </section>
       <section class="section" id="s-4-4">
         <div class="sec-head"><div class="sec-no">4.4</div><h2>section-4.4-休眠与唤醒</h2></div>
+<blockquote>
+<p>承接 <a href="#s-4-3">4.3 调度算法</a>。
+本节回答：<strong>任务怎么睡下去、怎么被叫醒、以及为什么"顺序"错一步就丢唤醒。</strong></p>
+</blockquote>
 <p>任务不一定一直可运行：等 I/O、等锁、等事件时进入 <strong>睡眠</strong>，事件到达后 <strong>唤醒</strong> 再回运行队列。</p>
-<h4>状态直觉（与 Ch 3 呼应）</h4>
+<p>Linux 里这件事的载体叫 <strong>等待队列（wait queue）</strong>。但等待队列不是唯一答案——内核里还有 <strong>swait</strong>（为确定性砍掉一半功能）、<strong>wait_bit</strong>（哈希表复用）、以及用户态的 <strong>futex</strong>（用 plist 而非 list）。本节从源码把这几条路一次讲透。</p>
+<p>连贯顺序见本章 <a href="#intro">README 推荐阅读</a>。</p>
+<hr />
+<h3>一、任务状态位图：先看清"睡"有几种睡法</h3>
+<p>v6.6 <code class="c">include/linux/sched.h:85-127</code> 里，任务状态是 <strong>一个位图</strong>（不是枚举），因此可以被"或"起来：</p>
+<pre class="code" data-label="C"><code class="c">/* Used in tsk-&gt;__state: */
+#define TASK_RUNNING            0x00000000
+#define TASK_INTERRUPTIBLE      0x00000001
+#define TASK_UNINTERRUPTIBLE        0x00000002
+#define __TASK_STOPPED          0x00000004
+#define __TASK_TRACED           0x00000008
+/* Used in tsk-&gt;exit_state: */
+#define EXIT_DEAD           0x00000010
+#define EXIT_ZOMBIE         0x00000020
+#define EXIT_TRACE          (EXIT_ZOMBIE | EXIT_DEAD)
+/* Used in tsk-&gt;__state again: */
+#define TASK_PARKED         0x00000040
+#define TASK_DEAD           0x00000080
+#define TASK_WAKEKILL           0x00000100
+#define TASK_WAKING         0x00000200
+#define TASK_NOLOAD         0x00000400
+#define TASK_NEW            0x00000800
+#define TASK_RTLOCK_WAIT        0x00001000
+#define TASK_FREEZABLE          0x00002000
+#define __TASK_FREEZABLE_UNSAFE        (0x00004000 * IS_ENABLED(CONFIG_LOCKDEP))
+#define TASK_FROZEN         0x00008000
+#define TASK_STATE_MAX          0x00010000
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>状态</th>
+<th>值</th>
 <th>含义</th>
 <th>调度器可见？</th>
 </tr>
@@ -2168,60 +2200,638 @@ CFS：假想完美 CPU，按 <strong>权重</strong> 瓜分时间；<code class=
 <tbody>
 <tr>
 <td><strong>TASK_RUNNING</strong></td>
-<td>可运行（含正在跑）</td>
-<td>在运行队列 / 树上</td>
+<td><code class="c">0x0000</code></td>
+<td>可运行（含正在跑）。<strong>注意值是 0</strong>，不是"正在运行"</td>
+<td>在运行队列 / 红黑树上</td>
 </tr>
 <tr>
-<td><strong>可中断睡眠</strong></td>
-<td>等事件，可被信号打断</td>
+<td><strong>TASK_INTERRUPTIBLE</strong></td>
+<td><code class="c">0x0001</code></td>
+<td>等事件，<strong>可被任意信号打断</strong></td>
 <td><strong>不在</strong> 可运行集合</td>
 </tr>
 <tr>
-<td><strong>不可中断睡眠</strong></td>
-<td>等事件，信号也难打断（如部分磁盘路径）</td>
+<td><strong>TASK_UNINTERRUPTIBLE</strong></td>
+<td><code class="c">0x0002</code></td>
+<td>等事件，信号也难打断（<code class="c">kill -9</code> 无效，D 状态）</td>
 <td>同上</td>
 </tr>
 <tr>
-<td><strong>TASK_DEAD 等</strong></td>
-<td>退出路径</td>
-<td>—</td>
+<td><strong>TASK_KILLABLE</strong></td>
+<td><code class="c">0x0102</code></td>
+<td><code class="c">WAKEKILL \| UNINTERRUPTIBLE</code>：只被 <strong>致命信号</strong> 唤醒</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong>TASK_IDLE</strong></td>
+<td><code class="c">0x0402</code></td>
+<td><code class="c">UNINTERRUPTIBLE \| NOLOAD</code>：睡且<strong>不计入 loadavg</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong>TASK_STOPPED / TRACED</strong></td>
+<td><code class="c">0x0104</code> / <code class="c">0x0008</code></td>
+<td>被 <code class="c">SIGSTOP</code> / ptrace 停住</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong>TASK_RTLOCK_WAIT</strong></td>
+<td><code class="c">0x1000</code></td>
+<td>RT 锁等待专用（见下）</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong>TASK_FREEZABLE</strong></td>
+<td><code class="c">0x2000</code></td>
+<td>允许 freezer 冻结该睡眠</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong>TASK_WAKING / NEW</strong></td>
+<td><code class="c">0x0200</code> / <code class="c">0x0800</code></td>
+<td>唤醒中 / 刚创建未上队列（内部态）</td>
+<td>过渡态</td>
 </tr>
 </tbody>
 </table></div>
-<h4>等待队列 · Wait Queue</h4>
+<h4>⭐ 三个"复合宏"决定了唤醒语义</h4>
+<pre class="code" data-label="C"><code class="c">/* Convenience macros for the sake of set_current_state: */
+#define TASK_KILLABLE           (TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
+#define TASK_STOPPED            (TASK_WAKEKILL | __TASK_STOPPED)
+#define TASK_TRACED         __TASK_TRACED
+#define TASK_IDLE           (TASK_UNINTERRUPTIBLE | TASK_NOLOAD)
+
+/* Convenience macros for the sake of wake_up(): */
+#define TASK_NORMAL         (TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE)
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>概念</th>
+<th>宏</th>
+<th>组合</th>
+<th>用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">TASK_NORMAL</code></td>
+<td><code class="c">INTERRUPTIBLE \| UNINTERRUPTIBLE</code></td>
+<td><strong><code class="c">wake_up()</code> 的默认 mode</strong>——两种睡眠都叫醒</td>
+</tr>
+<tr>
+<td><code class="c">TASK_KILLABLE</code></td>
+<td><code class="c">WAKEKILL \| UNINTERRUPTIBLE</code></td>
+<td>想睡 D 状态但<strong>保留"能被 kill"的退路</strong></td>
+</tr>
+<tr>
+<td><code class="c">TASK_IDLE</code></td>
+<td><code class="c">UNINTERRUPTIBLE \| NOLOAD</code></td>
+<td>内核线程常驻睡眠，别污染 loadavg</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>关键理解</strong>：唤醒判定是 <code class="c">if (@state &amp; p-&gt;__state)</code> —— <strong>按位与</strong>。所以 <code class="c">wake_up()</code> 传 <code class="c">TASK_NORMAL</code>（<code class="c">0x3</code>）能同时命中 <code class="c">0x1</code> 和 <code class="c">0x2</code>；而 <code class="c">wake_up_interruptible()</code> 传 <code class="c">0x1</code> 就<strong>只</strong>命中可中断睡眠。这就是为什么"唤醒宏"和"睡眠宏"必须配对。</p>
+</blockquote>
+<h4>状态扩展的版本断崖（实测）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>引入版本</th>
+<th>判据（<code class="c">sched.h</code> 探测）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">TASK_KILLABLE</code></strong></td>
+<td><strong>v2.6.25</strong></td>
+<td>v2.6.24 = 0 次 / v2.6.25 = 1 次命中</td>
+</tr>
+<tr>
+<td><strong><code class="c">TASK_RTLOCK_WAIT</code></strong></td>
+<td><strong>v5.15</strong></td>
+<td>v5.14 = 0 / v5.15 = 3 次命中（文件 62510B → 66069B）</td>
+</tr>
+<tr>
+<td><strong><code class="c">TASK_FREEZABLE</code></strong></td>
+<td><strong>v6.1</strong></td>
+<td>v6.0 = 0 / v6.1 = 3 次命中（68580B → 69199B）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <code class="c">TASK_RTLOCK_WAIT</code> 出现的时间点（v5.15）与 PREEMPT_RT 主线化进程吻合——RT 上 <code class="c">spinlock_t</code> 变睡眠锁后，必须有一种"我正在等 RT 锁、别按普通睡眠处理我"的独立状态位。</p>
+</blockquote>
+<hr />
+<h3>二、等待队列的两个结构体（v6.6 <code class="c">include/linux/wait.h:20-41</code>）</h3>
+<pre class="code" data-label="C"><code class="c">struct wait_queue_entry {
+    unsigned int        flags;
+    void            *private;
+    wait_queue_func_t   func;
+    struct list_head    entry;
+};
+
+struct wait_queue_head {
+    spinlock_t      lock;
+    struct list_head    head;
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
 <th>作用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">wait_queue_head_t</code></strong></td>
-<td>某事件上「谁在等」的链表头</td>
+<td><code class="c">wait_queue_head.lock</code></td>
+<td><strong>一把 spinlock</strong> 保护整条链表——所以唤醒路径是<strong>原子上下文</strong>，不能睡眠</td>
 </tr>
 <tr>
-<td><strong>睡眠方</strong></td>
-<td>把自己挂到队列 → 设状态 → <code class="c">schedule()</code> 让出 CPU</td>
+<td><code class="c">wait_queue_head.head</code></td>
+<td>等待者双向链表头</td>
 </tr>
 <tr>
-<td><strong>唤醒方</strong></td>
-<td><code class="c">wake_up()</code> / <code class="c">wake_up_interruptible()</code> → 任务重回运行队列</td>
+<td><code class="c">wait_queue_entry.private</code></td>
+<td>通常指向等待的 <code class="c">task_struct</code>（<code class="c">current</code>）</td>
+</tr>
+<tr>
+<td><code class="c">wait_queue_entry.func</code></td>
+<td><strong>唤醒回调</strong>：<code class="c">wake_up</code> 时对每个 entry 调用它，返回 &lt;0 中止遍历</td>
+</tr>
+<tr>
+<td><code class="c">wait_queue_entry.entry</code></td>
+<td>链表节点</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">任务 A 需要事件 E
-  │
-  ├─ 把 A 加入 E 的 wait queue
-  ├─ 设 TASK_*SLEEP*
-  └─ schedule() ──► CPU 去跑别人
-         │
-事件 E 发生（中断/另一任务）
-  │
-  └─ wake_up() ──► A 变可运行 ──► 进 CFS/RT 队列 ──► 稍后真正上 CPU
+<h4>⭐ 6 个 flags（不是只有 EXCLUSIVE）</h4>
+<pre class="code" data-label="C"><code class="c">#define WQ_FLAG_EXCLUSIVE   0x01
+#define WQ_FLAG_WOKEN       0x02
+#define WQ_FLAG_BOOKMARK    0x04
+#define WQ_FLAG_CUSTOM      0x08
+#define WQ_FLAG_DONE        0x10
+#define WQ_FLAG_PRIORITY    0x20
 </code></pre>
-<h4>虚假唤醒 · Spurious Wakeup</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flag</th>
+<th>值</th>
+<th>谁用</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">WQ_FLAG_EXCLUSIVE</code></strong></td>
+<td><code class="c">0x01</code></td>
+<td>等待者</td>
+<td>独占等待——一次 <code class="c">wake_up()</code> 只唤醒 <strong>1 个</strong> exclusive；<strong>尾插</strong></td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_WOKEN</code></td>
+<td><code class="c">0x02</code></td>
+<td>唤醒路径</td>
+<td>已被"标记唤醒"，避免二次唤醒</td>
+</tr>
+<tr>
+<td><strong><code class="c">WQ_FLAG_BOOKMARK</code></strong></td>
+<td><code class="c">0x04</code></td>
+<td>唤醒路径</td>
+<td><strong>断点续扫</strong>（见 §5），长队列不长期持锁，v4.14 引入</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_CUSTOM</code></td>
+<td><code class="c">0x08</code></td>
+<td>等待者</td>
+<td><code class="c">private</code> 里不是 <code class="c">task_struct</code>，别用默认唤醒函数</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_DONE</code></td>
+<td><code class="c">0x10</code></td>
+<td>唤醒路径</td>
+<td>该 entry 已处理完</td>
+</tr>
+<tr>
+<td><strong><code class="c">WQ_FLAG_PRIORITY</code></strong></td>
+<td><code class="c">0x20</code></td>
+<td>等待者</td>
+<td>优先唤醒（配合 <code class="c">WQ_FLAG_EXCLUSIVE</code> 的排序）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>多数教材只讲 <code class="c">EXCLUSIVE</code>，但 v6.6 实际有 6 个。<code class="c">WQ_FLAG_CUSTOM</code> 常被忽略——它让"同一个等待队列上挂非 task 对象"成为可能（如 <code class="c">wait_page</code> 机制）。</p>
+</blockquote>
+<hr />
+<h3>三、⭐ 防丢唤醒的核心：<strong>先入队，后查条件</strong></h3>
+<p>这是整节最重要的一条。看 v6.6 <code class="c">include/linux/wait.h:303</code> 的 <code class="c">___wait_event</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define ___wait_event(wq_head, condition, state, exclusive, ret, cmd)   \
+({                                  \
+    __label__ __out;                        \
+    struct wait_queue_entry __wq_entry;             \
+    long __ret = ret;   /* explicit shadow */           \
+    init_wait_entry(&amp;__wq_entry, exclusive ? WQ_FLAG_EXCLUSIVE : 0);\
+    for (;;) {                          \
+        long __int = prepare_to_wait_event(&amp;wq_head, &amp;__wq_entry, state);\
+        if (condition)                      \
+            break;                      \
+        if (___wait_is_interruptible(state) &amp;&amp; __int) {     \
+            __ret = __int;                  \
+            goto __out;                 \
+        }                           \
+        cmd;                            \
+    }                               \
+    finish_wait(&amp;wq_head, &amp;__wq_entry);             \
+__out:  __ret;                              \
+})
+</code></pre>
+<p><strong>顺序是：</strong>
+1. <code class="c">prepare_to_wait_event()</code> —— <strong>入队 + 设 <code class="c">TASK_*SLEEP*</code> 状态</strong>（持 <code class="c">wq_head-&gt;lock</code>）
+2. <strong>然后</strong> 才检查 <code class="c">condition</code>
+3. 条件不成立 → <code class="c">cmd</code>（展开为 <code class="c">schedule()</code>）
+4. 条件成立 → <code class="c">finish_wait()</code> 出队、状态改回 <code class="c">TASK_RUNNING</code></p>
+<pre class="code" data-label="code"><code class="c">    ┌─ 1. prepare_to_wait_event()  ── 入队 + 设状态  ← 必须先做！
+    │
+    ├─ 2. if (condition) break      ← 后判条件
+    │
+    └─ 3. schedule()                ← 条件不成立才睡
+</code></pre>
+<h4>为什么顺序不能反？——看 futex 的官方论证</h4>
+<p>内核在用户态 futex 里写了<strong>同一段逻辑</strong>，并把理由写成了注释（v6.6 <code class="c">kernel/futex/waitwake.c:577-593</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    /*
+     * Access the page AFTER the hash-bucket is locked.
+     * Order is important:
+     *
+     *   Userspace waiter: val = var; if (cond(val)) futex_wait(&amp;var, val);
+     *   Userspace waker:  if (cond(var)) { var = new; futex_wake(&amp;var); }
+     *
+     * The basic logical guarantee of a futex is that it blocks ONLY
+     * if cond(var) is known to be true at the time of blocking, for
+     * any cond.  If we locked the hash-bucket after testing *uaddr, that
+     * would open a race condition where we could block indefinitely with
+     * cond(var) false, which would violate the guarantee.
+     *
+     * On the other hand, we insert q and release the hash-bucket only
+     * after testing *uaddr.  This guarantees that futex_wait() will NOT
+     * absorb a wakeup if *uaddr does not match the desired values
+     * while the syscall executes.
+     */
+</code></pre>
+<p><strong>两层机制的精确对照：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>内核 wait_queue</th>
+<th>用户态 futex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>保护对象</td>
+<td><code class="c">wq_head-&gt;lock</code></td>
+<td><code class="c">hb-&gt;lock</code>（futex hash bucket）</td>
+</tr>
+<tr>
+<td>先做的事</td>
+<td><code class="c">prepare_to_wait_event()</code> 入队 + 设状态</td>
+<td><code class="c">futex_q_lock()</code> 拿桶锁</td>
+</tr>
+<tr>
+<td>后做的事</td>
+<td>判 <code class="c">condition</code></td>
+<td><code class="c">futex_get_value_locked(&amp;uval, uaddr)</code> 读用户内存</td>
+</tr>
+<tr>
+<td>反了的后果</td>
+<td>判完条件、准备睡之前被唤醒 → <strong>唤醒丢失，永久睡眠</strong></td>
+<td>"block indefinitely with cond(var) false"</td>
+</tr>
+<tr>
+<td>放锁时机</td>
+<td>判完条件才放</td>
+<td>判完值才放（值不对 → <code class="c">-EWOULDBLOCK</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>这是跨层的同一个模式</strong>：先把自己挂进"可被唤醒"的集合、并处于"能被看见"的状态，<strong>然后</strong>再验证"是否真的需要睡"。验证与入队之间不能有窗口。</p>
+</blockquote>
+<h4>对照：错误的写法长什么样</h4>
+<pre class="code" data-label="C"><code class="c">/* ❌ 错误：先判条件后入队 —— 经典 lost wakeup */
+if (!data_ready) {                    /* 判条件 */
+        /* ⚠️ 这里如果发生 wake_up()，下面依然会睡下去 */
+        prepare_to_wait(&amp;wq, &amp;entry, TASK_INTERRUPTIBLE);
+        schedule();                   /* 永远没人叫醒 */
+        finish_wait(&amp;wq, &amp;entry);
+}
+
+/* ✅ 正确：交给 wait_event 宏（内部即&quot;先入队后判条件&quot;） */
+wait_event_interruptible(wq, data_ready);
+</code></pre>
+<hr />
+<h3>四、<code class="c">prepare_to_wait_event</code>：一个函数里藏了两条铁律</h3>
+<p>v6.6 <code class="c">kernel/sched/wait.c:310</code>：</p>
+<pre class="code" data-label="C"><code class="c">long prepare_to_wait_event(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state)
+{
+    unsigned long flags;
+    long ret = 0;
+
+    spin_lock_irqsave(&amp;wq_head-&gt;lock, flags);
+    if (signal_pending_state(state, current)) {
+        /*
+         * Exclusive waiter must not fail if it was selected by wakeup,
+         * it should &quot;consume&quot; the condition we were waiting for.
+         *
+         * The caller will recheck the condition and return success if
+         * we were already woken up, we can not miss the event because
+         * wakeup locks/unlocks the same wq_head-&gt;lock.
+         *
+         * But we need to ensure that set-condition + wakeup after that
+         * can't see us, it should wake up another exclusive waiter if
+         * we fail.
+         */
+        list_del_init(&amp;wq_entry-&gt;entry);
+        ret = -ERESTARTSYS;
+    } else {
+        if (list_empty(&amp;wq_entry-&gt;entry)) {
+            if (wq_entry-&gt;flags &amp; WQ_FLAG_EXCLUSIVE)
+                __add_wait_queue_entry_tail(wq_head, wq_entry);
+            else
+                __add_wait_queue(wq_head, wq_entry);
+        }
+        set_current_state(state);
+    }
+    spin_unlock_irqrestore(&amp;wq_head-&gt;lock, flags);
+
+    return ret;
+}
+</code></pre>
+<p><strong>铁律 1 —— 一头一尾的插入策略</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>等待者类型</th>
+<th>插入方式</th>
+<th>队列位置</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非 exclusive（默认）</td>
+<td><code class="c">__add_wait_queue</code></td>
+<td><strong>头部</strong></td>
+<td>共享事件，<code class="c">wake_up_all</code> 全唤醒；FIFO</td>
+</tr>
+<tr>
+<td><strong>exclusive</strong></td>
+<td><code class="c">__add_wait_queue_entry_tail</code></td>
+<td><strong>尾部</strong></td>
+<td>独占资源，一次只唤醒一个；<strong>按排队顺序</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>为什么 exclusive 尾插？因为 <code class="c">wake_up()</code> 只唤醒"遇到的第一个 exclusive"，而它从<strong>头部</strong>开始扫。尾插 = 先进先出 = 公平。</p>
+</blockquote>
+<p><strong>铁律 2 —— ⭐ 被选中的 exclusive waiter 不能因信号临阵脱逃</strong></p>
+<p>注释里那句 <em>"Exclusive waiter must not fail if it was selected by wakeup, it should 'consume' the condition we were waiting for"</em> 说的是：</p>
+<ul>
+<li>一个 exclusive waiter 已被 <code class="c">wake_up()</code> 选中（意味着"这份资源归你了"）</li>
+<li>如果它此时因为有信号 pending 就直接 <code class="c">-ERESTARTSYS</code> 返回</li>
+<li>那这份资源就被<strong>吞掉</strong>了 —— 别的 exclusive waiter 还睡着，事件丢了</li>
+</ul>
+<p>内核的解决办法：<code class="c">___wait_event</code> 里 <strong>先查 <code class="c">condition</code>，再查信号</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    if (condition)          /* ← 先：被选中了？拿走条件，正常返回 */
+        break;
+    if (___wait_is_interruptible(state) &amp;&amp; __int) { /* ← 后：才有资格谈信号 */
+        __ret = __int;
+        goto __out;
+    }
+</code></pre>
+<blockquote>
+<p>⭐ 顺序反过来的话：一个已经有信号 pending 的进程每次进 <code class="c">prepare_to_wait_event</code> 都会立刻返回 <code class="c">-ERESTARTSYS</code>，把唤醒名额白白浪费掉，队列后面的等待者被饿死。</p>
+</blockquote>
+<hr />
+<h3>五、唤醒侧：<code class="c">__wake_up_common</code> 与 BOOKMARK</h3>
+<p>v6.6 <code class="c">kernel/sched/wait.c:74</code>：</p>
+<pre class="code" data-label="C"><code class="c">static int __wake_up_common(struct wait_queue_head *wq_head, unsigned int mode,
+            int nr_exclusive, int wake_flags, void *key,
+            wait_queue_entry_t *bookmark)
+{
+    wait_queue_entry_t *curr, *next;
+    int cnt = 0;
+
+    lockdep_assert_held(&amp;wq_head-&gt;lock);
+
+    if (bookmark &amp;&amp; (bookmark-&gt;flags &amp; WQ_FLAG_BOOKMARK)) {
+        curr = list_next_entry(bookmark, entry);
+
+        list_del(&amp;bookmark-&gt;entry);
+        bookmark-&gt;flags = 0;
+    } else
+        curr = list_first_entry(&amp;wq_head-&gt;head, wait_queue_entry_t, entry);
+
+    if (&amp;curr-&gt;entry == &amp;wq_head-&gt;head)
+        return nr_exclusive;
+
+    list_for_each_entry_safe_from(curr, next, &amp;wq_head-&gt;head, entry) {
+        unsigned flags = curr-&gt;flags;
+        int ret;
+
+        if (flags &amp; WQ_FLAG_BOOKMARK)
+            continue;
+
+        ret = curr-&gt;func(curr, mode, wake_flags, key);
+        if (ret &lt; 0)
+            break;
+        if (ret &amp;&amp; (flags &amp; WQ_FLAG_EXCLUSIVE) &amp;&amp; !--nr_exclusive)
+            break;
+
+        if (bookmark &amp;&amp; (++cnt &gt; WAITQUEUE_WALK_BREAK_CNT) &amp;&amp;
+                (&amp;next-&gt;entry != &amp;wq_head-&gt;head)) {
+            bookmark-&gt;flags = WQ_FLAG_BOOKMARK;
+            list_add_tail(&amp;bookmark-&gt;entry, &amp;next-&gt;entry);
+            break;
+        }
+    }
+
+    return nr_exclusive;
+}
+</code></pre>
+<h4>⭐ 陷阱：<code class="c">wake_up_all</code> 的 <code class="c">nr_exclusive = 0</code> 表示"全部"</h4>
+<pre class="code" data-label="C"><code class="c">#define wake_up(x)          __wake_up(x, TASK_NORMAL, 1, NULL)
+#define wake_up_nr(x, nr)       __wake_up(x, TASK_NORMAL, nr, NULL)
+#define wake_up_all(x)          __wake_up(x, TASK_NORMAL, 0, NULL)   /* ← 0！ */
+#define wake_up_interruptible(x)    __wake_up(x, TASK_INTERRUPTIBLE, 1, NULL)
+#define wake_up_interruptible_all(x)    __wake_up(x, TASK_INTERRUPTIBLE, 0, NULL)
+</code></pre>
+<p>看判定 <code class="c">!--nr_exclusive</code>：从 <strong>0</strong> 开始 <code class="c">--</code> 得到 <code class="c">-1</code>，<strong>永远非 0</strong>，于是永远不 <code class="c">break</code> → 唤醒所有。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th><code class="c">nr_exclusive</code></th>
+<th>唤醒几个 exclusive</th>
+<th>唤醒几个非 exclusive</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">wake_up()</code></td>
+<td>1</td>
+<td><strong>1 个</strong></td>
+<td><strong>全部</strong></td>
+</tr>
+<tr>
+<td><code class="c">wake_up_nr(q, n)</code></td>
+<td>n</td>
+<td>n 个</td>
+<td>全部</td>
+</tr>
+<tr>
+<td><code class="c">wake_up_all()</code></td>
+<td>0</td>
+<td><strong>全部</strong></td>
+<td>全部</td>
+</tr>
+<tr>
+<td><code class="c">wake_up_interruptible()</code></td>
+<td>1</td>
+<td>1 个（且只唤醒 <code class="c">INTERRUPTIBLE</code> 态）</td>
+<td>全部</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong><code class="c">wake_up()</code> 永远唤醒所有"非 exclusive"等待者，只唤醒 1 个 exclusive</strong> —— 这是 <code class="c">WQ_FLAG_EXCLUSIVE</code> 的全部意义。</p>
+</blockquote>
+<h4>⭐ BOOKMARK：长队列不长期持锁</h4>
+<pre class="code" data-label="C"><code class="c">/* kernel/sched/wait.c:65 */
+#define WAITQUEUE_WALK_BREAK_CNT 64
+</code></pre>
+<ul>
+<li>唤醒路径<strong>持有 <code class="c">wq_head-&gt;lock</code> 且关中断</strong>（<code class="c">spin_lock_irqsave</code>）</li>
+<li>若队列上有 10 万个等待者（如热门 futex、大页锁），一次性扫完 → <strong>中断关闭时间不可控</strong></li>
+<li>解法：每扫 <strong>64 个</strong>就插一个 <code class="c">WQ_FLAG_BOOKMARK</code> 节点，放锁、开中断一轮，下次从 bookmark 后继续</li>
+</ul>
+<p><strong>版本断崖</strong>：<code class="c">WQ_FLAG_BOOKMARK</code> 在 <strong>v4.14</strong> 引入（实测：<code class="c">wait.h</code> 命中数 v4.13 = 0 / v4.14 = 1，文件 35926B → 36126B）。</p>
+<blockquote>
+<p>这跟 swait（§8）是<strong>同一个问题的两种解法</strong>：BOOKMARK 是"打断点续扫"，swait 是"换个数据结构让唤醒有界"。</p>
+</blockquote>
+<hr />
+<h3>六、<code class="c">autoremove_wake_function</code>：唤醒即出队</h3>
+<pre class="code" data-label="C"><code class="c">int autoremove_wake_function(struct wait_queue_entry *wq_entry, unsigned mode, int sync, void *key)
+{
+    int ret = default_wake_function(wq_entry, mode, sync, key);
+
+    if (ret)
+        list_del_init_careful(&amp;wq_entry-&gt;entry);
+    return ret;
+}
+</code></pre>
+<ul>
+<li><code class="c">default_wake_function</code> → 本质是 <code class="c">try_to_wake_up(entry-&gt;private, mode, wake_flags)</code></li>
+<li>成功后用 <code class="c">list_del_init_careful</code> 摘队 —— <strong><code class="c">_careful</code> 版本保证并发的遍历者不会看到半截链表</strong>（配合 <code class="c">list_for_each_entry_safe_from</code> 的安全遍历）</li>
+<li>这就是 <code class="c">DEFINE_WAIT()</code> + <code class="c">wait_event*()</code> 默认用的回调：睡醒自动出队，不用手动 <code class="c">finish_wait</code> 摘</li>
+</ul>
+<blockquote>
+<p><code class="c">finish_wait()</code> 的作用是处理"<strong>没被唤醒就退出循环</strong>"的情况（条件本来就成立），此时 entry 还在队列上，必须手动摘掉。</p>
+</blockquote>
+<hr />
+<h3>七、虚假唤醒：内核官方说"多转一圈，cond 测试会救你"</h3>
+<p><code class="c">include/linux/sched.h:175-212</code> 的注释把这件事讲透了：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * set_current_state() includes a barrier so that the write of current-&gt;__state
+ * is correctly serialised wrt the caller's subsequent test of whether to
+ * actually sleep:
+ *
+ *   for (;;) {
+ *  set_current_state(TASK_UNINTERRUPTIBLE);
+ *  if (CONDITION)
+ *     break;
+ *
+ *  schedule();
+ *   }
+ *   __set_current_state(TASK_RUNNING);
+ *
+ * If the caller does not need such serialisation (because, for instance, the
+ * CONDITION test and condition change and wakeup are under the same lock) then
+ * use __set_current_state().
+ *
+ * The above is typically ordered against the wakeup, which does:
+ *
+ *   CONDITION = 1;
+ *   wake_up_state(p, TASK_UNINTERRUPTIBLE);
+ *
+ * where wake_up_state()/try_to_wake_up() executes a full memory barrier before
+ * accessing p-&gt;__state.
+ *
+ * Wakeup will do: if (@state &amp; p-&gt;__state) p-&gt;__state = TASK_RUNNING, that is,
+ * once it observes the TASK_UNINTERRUPTIBLE store the waking CPU can issue a
+ * TASK_RUNNING store which can collide with __set_current_state(TASK_RUNNING).
+ *
+ * However, with slightly different timing the wakeup TASK_RUNNING store can
+ * also collide with the TASK_UNINTERRUPTIBLE store. Losing that store is not
+ * a problem either because that will result in one extra go around the loop
+ * and our @cond test will save the day.
+ */
+</code></pre>
+<h4>⭐ 三点关键结论</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结论</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">set_current_state()</code> 带屏障</strong></td>
+<td>保证"写状态"与"后续读 CONDITION"不乱序</td>
+</tr>
+<tr>
+<td><strong>条件与唤醒同锁时可用 <code class="c">__set_current_state()</code></strong></td>
+<td>无屏障、更快——锁已经提供了顺序</td>
+</tr>
+<tr>
+<td>⭐ <strong>丢掉一个 store 也没事</strong></td>
+<td><em>"Losing that store ... will result in one extra go around the loop and our @cond test will save the day"</em> —— <strong>内核官方承认：正确性靠循环 + cond 兜底，不靠内存序的完美</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h4>虚假唤醒的四个来源</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>信号打断</strong></td>
+<td><code class="c">TASK_INTERRUPTIBLE</code> 下任意信号都会醒</td>
+</tr>
+<tr>
+<td><strong>多人等同一队列</strong></td>
+<td><code class="c">wake_up_all</code> 全叫醒，只有第一个真正拿到条件</td>
+</tr>
+<tr>
+<td><strong>条件已变</strong></td>
+<td>醒来时条件又被别人抢走（如资源池只剩 1 个）</td>
+</tr>
+<tr>
+<td><strong>内存序的 store 冲突</strong></td>
+<td>上面的注释：两个 store 碰撞，白转一圈</td>
+</tr>
+</tbody>
+</table></div>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -2232,44 +2842,430 @@ CFS：假想完美 CPU，按 <strong>权重</strong> 瓜分时间；<code class=
 <tbody>
 <tr>
 <td>醒来后 <strong>必须再检查条件</strong></td>
-<td><code class="c">while (!condition) sleep_again;</code></td>
+<td><code class="c">while (!condition) sleep_again;</code>（内核里是 <code class="c">for(;;)</code> + <code class="c">break</code>）</td>
 </tr>
 <tr>
-<td>原因</td>
-<td>可能多人等同一队列、条件已变、被信号打断</td>
+<td>别用 <code class="c">if</code></td>
+<td><code class="c">if</code> 只判一次 → 虚假唤醒后带着错误前提往下走</td>
 </tr>
 </tbody>
 </table></div>
-<h4>睡眠禁忌（驱动 / HFT 都要命）</h4>
+<hr />
+<h3>八、swait：砍掉一半功能，换来确定性</h3>
+<p>v6.6 <code class="c">include/linux/swait.h:12-40</code> 的头部注释——<strong>这段是内核里少见的"设计取舍自白"</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Simple waitqueues are semantically very different to regular wait queues
+ * (wait.h). The most important difference is that the simple waitqueue allows
+ * for deterministic behaviour -- IOW it has strictly bounded IRQ and lock hold
+ * times.
+ *
+ * Mainly, this is accomplished by two things. Firstly not allowing swake_up_all
+ * from IRQ disabled, and dropping the lock upon every wakeup, giving a higher
+ * priority task a chance to run.
+ *
+ * Secondly, we had to drop a fair number of features of the other waitqueue
+ * code; notably:
+ *
+ *  - mixing INTERRUPTIBLE and UNINTERRUPTIBLE sleeps on the same waitqueue;
+ *    all wakeups are TASK_NORMAL in order to avoid O(n) lookups for the right
+ *    sleeper state.
+ *
+ *  - the !exclusive mode; because that leads to O(n) wakeups, everything is
+ *    exclusive. As such swake_up_one will only ever awake _one_ waiter.
+ *
+ *  - custom wake callback functions; because you cannot give any guarantees
+ *    about random code. This also allows swait to be used in RT, such that
+ *    raw spinlock can be used for the swait queue head.
+ *
+ * As a side effect of these; the data structures are slimmer albeit more ad-hoc.
+ * For all the above, note that simple wait queues should _only_ be used under
+ * very specific realtime constraints -- it is best to stick with the regular
+ * wait queues in most cases.
+ */
+
+struct swait_queue_head {
+    raw_spinlock_t      lock;
+    struct list_head    task_list;
+};
+</code></pre>
+<h4>砍掉了什么，换到了什么</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>普通 <code class="c">wait_queue_head</code></th>
+<th><code class="c">swait_queue_head</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁类型</td>
+<td><code class="c">spinlock_t</code>（RT 上变睡眠锁）</td>
+<td>⭐ <strong><code class="c">raw_spinlock_t</code>（RT 上仍是真自旋）</strong></td>
+</tr>
+<tr>
+<td>中断/持锁时间</td>
+<td>遍历唤醒期间持续持锁（靠 BOOKMARK 缓解）</td>
+<td>⭐ <strong>严格有界</strong>：每次唤醒都放一次锁</td>
+</tr>
+<tr>
+<td>混合睡眠态</td>
+<td>允许（靠 mode 位掩码过滤，O(n) 查找）</td>
+<td>❌ 只允许 <code class="c">TASK_NORMAL</code></td>
+</tr>
+<tr>
+<td>非 exclusive 模式</td>
+<td>允许</td>
+<td>❌ <strong>全部 exclusive</strong>，<code class="c">swake_up_one</code> 只醒 1 个</td>
+</tr>
+<tr>
+<td>自定义回调</td>
+<td>允许 <code class="c">func</code> 任意</td>
+<td>❌ 禁止（<em>"cannot give any guarantees about random code"</em>）</td>
+</tr>
+<tr>
+<td>队列长度</td>
+<td>可很长</td>
+<td>通常很短（1~2 个）</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td><strong>默认选择</strong></td>
+<td>⭐ <strong>仅 RT 约束下</strong>（注释原话：<em>"only ... under very specific realtime constraints"</em>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>版本断崖</strong>：<code class="c">include/linux/swait.h</code> 在 <strong>v4.6</strong> 引入（实测：v4.5 = 14 字节 404 残片 / v4.6 = 5148 字节且含 <code class="c">swait_queue_head</code> 定义 16 处命中）。</p>
+<blockquote>
+<p>⭐ <strong>为什么 RT 需要它</strong>：PREEMPT_RT 上 <code class="c">spinlock_t</code> 会变成可睡眠的 rt-mutex。若等待队列头用 <code class="c">spinlock_t</code>，唤醒路径就可能睡眠——但唤醒路径常常在原子上下文调用。用 <code class="c">raw_spinlock_t</code> 保证唤醒路径永远不睡。这就是注释里 <em>"allows swait to be used in RT"</em> 的意思。</p>
+</blockquote>
+<hr />
+<h3>九、wait_bit：一张哈希表服务所有"等某个 bit"</h3>
+<p>不想为每个 bit 都建一个 <code class="c">wait_queue_head</code>？内核用<strong>全局哈希表</strong>复用：</p>
+<p>v6.6 <code class="c">kernel/sched/wait_bit.c:8-19</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define WAIT_TABLE_BITS 8
+#define WAIT_TABLE_SIZE (1 &lt;&lt; WAIT_TABLE_BITS)
+
+static wait_queue_head_t bit_wait_table[WAIT_TABLE_SIZE] __cacheline_aligned;
+
+wait_queue_head_t *bit_waitqueue(void *word, int bit)
+{
+    const int shift = BITS_PER_LONG == 32 ? 5 : 6;
+    unsigned long val = (unsigned long)word &lt;&lt; shift | bit;
+
+    return bit_wait_table + hash_long(val, WAIT_TABLE_BITS);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>数字 / 说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>哈希表大小</td>
+<td><strong>256 个</strong> <code class="c">wait_queue_head_t</code>（<code class="c">1 &lt;&lt; 8</code>）</td>
+</tr>
+<tr>
+<td>哈希输入</td>
+<td><code class="c">(unsigned long)word &lt;&lt; shift \| bit</code>，32 位机 <code class="c">shift=5</code>、64 位机 <code class="c">shift=6</code></td>
+</tr>
+<tr>
+<td>对齐</td>
+<td><code class="c">__cacheline_aligned</code> —— 避免桶之间 false sharing</td>
+</tr>
+<tr>
+<td>使用者</td>
+<td>页回写（<code class="c">PG_writeback</code>）、folio 锁（<code class="c">PG_locked</code>）、<code class="c">wait_on_bit()</code> 系列</td>
+</tr>
+</tbody>
+</table></div>
+<h4>⭐ 哈希冲突 → 唤醒回调必须三重校验</h4>
+<pre class="code" data-label="C"><code class="c">int wake_bit_function(struct wait_queue_entry *wq_entry, unsigned mode, int sync, void *arg)
+{
+    struct wait_bit_key *key = arg;
+    struct wait_bit_queue_entry *wait_bit = container_of(wq_entry, struct wait_bit_queue_entry, wq_entry);
+
+    if (wait_bit-&gt;key.flags != key-&gt;flags ||
+            wait_bit-&gt;key.bit_nr != key-&gt;bit_nr ||
+            test_bit(key-&gt;bit_nr, key-&gt;flags))
+        return 0;
+
+    return autoremove_wake_function(wq_entry, mode, sync, key);
+}
+</code></pre>
+<p>因为不同的 <code class="c">(word, bit)</code> 可能落到同一个桶，<code class="c">wake_bit_function</code> 必须校验：</p>
+<ol>
+<li><code class="c">key.flags</code>（即 <code class="c">word</code> 地址）相同</li>
+<li><code class="c">key.bit_nr</code>（位号）相同</li>
+<li><code class="c">test_bit(bit_nr, flags)</code> 为 0 —— <strong>bit 真的被清了</strong></li>
+</ol>
+<blockquote>
+<p>第 3 条是关键：<strong>哈希冲突导致的"叫错人"不会造成错误唤醒</strong>，因为最后还要看 bit 本身。这是"用哈希换内存"必须付的正确性代价。</p>
+</blockquote>
+<p>等待侧用 <code class="c">test_bit_acquire</code> 收尾（带 acquire 语义的读，配合释放侧的 release）：</p>
+<pre class="code" data-label="C"><code class="c">    do {
+        prepare_to_wait(wq_head, &amp;wbq_entry-&gt;wq_entry, mode);
+        if (test_bit(wbq_entry-&gt;key.bit_nr, wbq_entry-&gt;key.flags))
+            ret = (*action)(&amp;wbq_entry-&gt;key, mode);
+    } while (test_bit_acquire(wbq_entry-&gt;key.bit_nr, wbq_entry-&gt;key.flags) &amp;&amp; !ret);
+</code></pre>
+<p>——<strong>又是"先入队后判条件"</strong>（§3 的老朋友）。</p>
+<hr />
+<h3>十、futex：用户态的等待队列，但不是同一个数据结构</h3>
+<p>HFT 最关心的场景（条件变量、<code class="c">pthread_mutex</code> 争用）在内核里走 futex。它<strong>不用 <code class="c">wait_queue_head</code></strong>，而是自建一套：</p>
+<p>v6.6 <code class="c">kernel/futex/futex.h:45-49, 96-110</code>：</p>
+<pre class="code" data-label="C"><code class="c">struct futex_hash_bucket {
+    atomic_t waiters;
+    spinlock_t lock;
+    struct plist_head chain;        /* ⭐ 不是 list_head */
+} ____cacheline_aligned_in_smp;
+
+struct futex_q {
+    struct plist_node list;         /* ⭐ 不是 list_head */
+    struct task_struct *task;
+    spinlock_t *lock_ptr;
+    union futex_key key;
+    struct futex_pi_state *pi_state;
+    struct rt_mutex_waiter *rt_waiter;
+    union futex_key *requeue_pi_key;
+    u32 bitset;
+    atomic_t requeue_state;
+#ifdef CONFIG_PREEMPT_RT
+    struct rcuwait requeue_wait;
+#endif
+} __randomize_layout;
+</code></pre>
+<h4>⭐⭐ 核心差异：<code class="c">plist_head</code> 是<strong>按优先级排序</strong>的链表</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对比项</th>
+<th><code class="c">wait_queue_head</code></th>
+<th><code class="c">futex_hash_bucket</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>链表</td>
+<td><code class="c">struct list_head</code>（FIFO / 尾插 exclusive）</td>
+<td>⭐ <strong><code class="c">struct plist_head</code>（优先级有序）</strong></td>
+</tr>
+<tr>
+<td>唤醒 nr=1 时叫醒谁</td>
+<td><strong>队列最前面那个</strong>（先来先到）</td>
+<td>⭐ <strong>优先级最高那个</strong></td>
+</tr>
+<tr>
+<td>能否做优先级继承</td>
+<td>不能</td>
+<td>能（配合 <code class="c">pi_state</code> / <code class="c">rt_waiter</code> 做 PI futex）</td>
+</tr>
+<tr>
+<td>额外过滤</td>
+<td>mode 位掩码</td>
+<td>⭐ <code class="c">bitset</code> 掩码 + <code class="c">futex_match(key)</code> 哈希冲突过滤</td>
+</tr>
+<tr>
+<td>缓存布局</td>
+<td>无特殊</td>
+<td><code class="c">____cacheline_aligned_in_smp</code> + <code class="c">__randomize_layout</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>看唤醒侧 v6.6 <code class="c">kernel/futex/waitwake.c:143-183</code>：</p>
+<pre class="code" data-label="C"><code class="c">    /* Make sure we really have tasks to wakeup */
+    if (!futex_hb_waiters_pending(hb))
+        return ret;         /* ⭐ 无锁快路径：atomic_t waiters == 0 直接返回 */
+
+    spin_lock(&amp;hb-&gt;lock);
+
+    plist_for_each_entry_safe(this, next, &amp;hb-&gt;chain, list) {
+        if (futex_match(&amp;this-&gt;key, &amp;key)) {        /* ⭐ 哈希冲突过滤 */
+            if (this-&gt;pi_state || this-&gt;rt_waiter) {
+                ret = -EINVAL;          /* ⭐ PI futex 不能用普通 wake 唤醒 */
+                break;
+            }
+
+            /* Check if one of the bits is set in both bitsets */
+            if (!(this-&gt;bitset &amp; bitset))
+                continue;           /* ⭐ bitset 掩码过滤 */
+
+            futex_wake_mark(&amp;wake_q, this);     /* ⭐ 只入 wake_q，不直接唤醒 */
+            if (++ret &gt;= nr_wake)
+                break;
+        }
+    }
+
+    spin_unlock(&amp;hb-&gt;lock);
+    wake_up_q(&amp;wake_q);                 /* ⭐ 放锁后才真正唤醒 */
+</code></pre>
+<h4>⭐ <code class="c">wake_q</code> 模式：把唤醒推迟到放锁之后</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>普通 wait_queue</th>
+<th>futex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>唤醒回调在哪执行</td>
+<td><strong>持锁期间</strong> <code class="c">curr-&gt;func(...)</code> 直接调</td>
+<td>持锁期间只做"摘链 + 入 <code class="c">wake_q</code>"</td>
+</tr>
+<tr>
+<td>真正唤醒</td>
+<td>锁内</td>
+<td>⭐ <strong><code class="c">spin_unlock</code> 之后</strong> <code class="c">wake_up_q()</code></td>
+</tr>
+<tr>
+<td>持锁窗口</td>
+<td>包含 <code class="c">try_to_wake_up</code>（可能触发调度决策、IPI）</td>
+<td>只有链表操作</td>
+</tr>
+<tr>
+<td>效果</td>
+<td>简单但持锁久</td>
+<td>⭐ <strong>持锁时间有界</strong>，与 swait 的目标一致</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 三种机制都在解决同一个问题——<strong>唤醒路径的延迟上界</strong>：
+- <code class="c">wait_queue</code> → BOOKMARK 断点续扫（v4.14）
+- <code class="c">swait</code> → 换 <code class="c">raw_spinlock</code> + 禁自定义回调（v4.6）
+- <code class="c">futex</code> → <code class="c">wake_q</code> 把唤醒挪到锁外</p>
+</blockquote>
+<h4>等待侧：<code class="c">futex_wait</code> 的完整形态</h4>
+<p>v6.6 <code class="c">kernel/futex/waitwake.c:632-690</code>（节选）：</p>
+<pre class="code" data-label="C"><code class="c">int futex_wait(u32 __user *uaddr, unsigned int flags, u32 val, ktime_t *abs_time, u32 bitset)
+{
+    ...
+retry:
+    ret = futex_wait_setup(uaddr, val, flags, &amp;q, &amp;hb);   /* 锁桶 + 校验 val */
+    if (ret)
+        goto out;
+
+    futex_wait_queue(hb, &amp;q, to);                          /* 睡下去 */
+
+    ret = 0;
+    if (!futex_unqueue(&amp;q))                                /* 被唤醒者会摘队 */
+        goto out;
+    ret = -ETIMEDOUT;
+    if (to &amp;&amp; !to-&gt;task)
+        goto out;
+    /*
+     * We expect signal_pending(current), but we might be
+     * the victim of a spurious wakeup as well.
+     */
+    if (!signal_pending(current))
+        goto retry;                                    /* ⭐ 虚假唤醒 → 再转一圈 */
+
+    ret = -ERESTARTSYS;
+    ...
+}
+</code></pre>
+<p>注意 <code class="c">goto retry</code> —— <strong>用户态 futex 也承认虚假唤醒的存在</strong>，处理方式与内核 <code class="c">for(;;)</code> 循环完全一致。</p>
+<hr />
+<h3>十一、睡眠禁忌（驱动 / HFT 都要命）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>禁止</th>
 <th>原因</th>
+<th>违反后果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>持 spinlock 时睡眠</strong></td>
-<td>自旋等待者空转；易死锁</td>
+<td>自旋等待者空转；RT 上 spinlock 变 rt-mutex 后更糟</td>
+<td>死锁 / 长时间关抢占</td>
 </tr>
 <tr>
 <td><strong>中断上下文睡眠</strong></td>
-<td>无「当前进程」可换下</td>
+<td>无"当前进程"可换下（<code class="c">current</code> 无意义）</td>
+<td><code class="c">BUG: scheduling while atomic</code></td>
 </tr>
 <tr>
-<td><strong>原子上下文（atomic）里睡眠</strong></td>
-<td>同 ISR / softirq 规则</td>
+<td><strong>原子上下文（softirq / 持 <code class="c">preempt_disable</code>）里睡眠</strong></td>
+<td>同 ISR 规则</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><strong>持 <code class="c">raw_spinlock</code> 时睡眠</strong></td>
+<td>raw spinlock 在 RT 上也是真自旋</td>
+<td>硬死锁，连 RT 都救不了</td>
+</tr>
+<tr>
+<td><strong>唤醒路径持 <code class="c">wq_head-&gt;lock</code> 时做重活</strong></td>
+<td>该锁是 <code class="c">spin_lock_irqsave</code>，关中断</td>
+<td>中断延迟尖峰 → <strong>HFT 尾延迟</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 用户态 <code class="c">futex</code> / 条件变量 = 同一「等事件 → 唤醒」故事；热路径若频繁睡眠，尾延迟来自 <strong>调度唤醒延迟</strong>，不是算法本身。</p>
-<p>→ <a href="#s-4-5">4.5 抢占与切换</a> · <a href="chapter-10.html#ch-10">Ch 10 mutex/completion</a></p>
+<blockquote>
+<p><strong>判定工具</strong>：内核提供 <code class="c">might_sleep()</code> / <code class="c">might_sleep_if()</code> —— 在 <code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 下，原子上下文中调用会打印警告。<strong>写驱动时，任何可能睡眠的函数入口都应放一个 <code class="c">might_sleep()</code></strong>。</p>
+</blockquote>
+<hr />
+<h3>十二、HFT 视角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核机制</th>
+<th>用户态对应</th>
+<th>HFT 关注点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">wait_queue</code> + <code class="c">schedule()</code></td>
+<td><code class="c">pthread_cond_wait</code> / <code class="c">pthread_mutex_lock</code> 争用路径</td>
+<td><strong>阻塞 = 休眠</strong>，唤醒延迟 = 调度延迟 + 可能的 CPU 迁移</td>
+</tr>
+<tr>
+<td><code class="c">wake_up()</code> 只入运行队列</td>
+<td><code class="c">futex(FUTEX_WAKE)</code></td>
+<td><strong>不保证立即运行</strong>，还差一次调度点</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_EXCLUSIVE</code></td>
+<td>mutex 的"只放一个进来"</td>
+<td>避免惊群</td>
+</tr>
+<tr>
+<td><code class="c">plist_head</code>（futex）</td>
+<td>PI mutex（<code class="c">PTHREAD_PRIO_INHERIT</code>）</td>
+<td>⭐ <strong>优先级反转的官方解法</strong>；HFT 里控制面线程不该卡住行情线程</td>
+</tr>
+<tr>
+<td><code class="c">swait</code> / <code class="c">wake_q</code> / BOOKMARK</td>
+<td>—</td>
+<td>⭐ 都是"<strong>降低唤醒路径延迟上界</strong>"，与 Ch10 的锁延迟是同一条账</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>热路径的三条实操结论：</strong></p>
+<ol>
+<li><strong>别睡。</strong> <code class="c">mutex</code> 争用 → 用无锁队列（SPSC ring buffer）；<code class="c">epoll_wait</code> → DPDK/忙轮询（用 CPU 换延迟）。</li>
+<li><strong>必须睡时，睡得可控。</strong> <code class="c">SCHED_FIFO</code> + 绑核（<code class="c">isolcpus</code>）+ 关该核的 <code class="c">NO_HZ</code>，让唤醒后无需跨核 IPI 抢 CPU。</li>
+<li>⭐ <strong>唤醒 ≠ 立即运行。</strong> <code class="c">try_to_wake_up()</code> 只是把任务放回队列，是否抢占 current 取决于 <code class="c">check_preempt_curr()</code> 与 CFS 的 <code class="c">sched_wakeup_granularity</code> 阈值。RT 任务走 <code class="c">SCHED_FIFO</code> 时才有"立即抢占"的强保证。</li>
+</ol>
+<p>→ <a href="#s-4-5">4.5 抢占与切换</a> · <a href="chapter-10.html#s-10-6">Ch 10 完成变量</a> · <a href="chapter-10.html#s-10-5">Ch 10 互斥体</a> · <a href="chapter-03.html#s-3-3">Ch 3 进程状态</a> · <a href="chapter-11.html#ch-11">Ch 11 定时器</a></p>
 <h3>常见陷阱</h3>
 <ol>
 <li>把「休眠」当浪费 CPU——休眠释放 CPU 给其他任务，是高效的资源利用</li>
-<li>混淆 <code class="c">TASK_INTERRUPTIBLE</code> 和 <code class="c">TASK_UNINTERRUPTIBLE</code>——前者可被信号唤醒，后者不可</li>
+<li>混淆 <code class="c">TASK_INTERRUPTIBLE</code> 和 <code class="c">TASK_UNINTERRUPTIBLE</code>——前者可被信号唤醒，后者不可；<strong>更微妙的是 <code class="c">TASK_KILLABLE</code>（v2.6.25+）是两者的折中</strong></li>
 <li>以为唤醒后立即运行——唤醒只是把进程放回运行队列，是否立即运行取决于调度器</li>
+<li>以为 <code class="c">wake_up_all()</code> 传的 <code class="c">nr=0</code> 表示"0 个"——<strong>它表示"全部"</strong>（<code class="c">!--nr_exclusive</code> 从 0 变 -1，永不 break）</li>
+<li>以为 <code class="c">wake_up()</code> 只唤醒一个——<strong>只唤醒 1 个 exclusive，但唤醒全部非 exclusive</strong></li>
+<li>手写 <code class="c">if (!cond) { prepare_to_wait(); schedule(); }</code>——<strong>顺序反了，会丢唤醒</strong>；必须用 <code class="c">wait_event*()</code> 宏</li>
+<li>醒来后用 <code class="c">if</code> 而不是 <code class="c">while</code> 检查条件——虚假唤醒会带着错误前提往下走</li>
+<li>以为 swait 是"更快的 wait_queue"——<strong>它是"更确定性的 wait_queue"，代价是砍掉混合睡眠态、非 exclusive 模式、自定义回调三样东西</strong>；官方明确说大多数情况该用普通等待队列</li>
 </ol>
 <hr />
 <details>
@@ -2289,8 +3285,342 @@ CFS：假想完美 CPU，按 <strong>权重</strong> 瓜分时间；<code class=
 <summary>答案</summary>
 <p>① 预分配所有资源（内存/连接/FD），避免运行时等资源。② 无锁队列代替 mutex（mutex 阻塞 = 休眠）。③ DPDK 用户态轮询代替 epoll_wait（epoll_wait 阻塞 = 休眠）。④ <code class="c">SCHED_FIFO</code> 确保唤醒后立即运行（RT 优先级 &gt; CFS）。</p>
 </details>
+<p><strong>Q4.</strong> <code class="c">wait_queue_entry</code> 有哪些 flags？各自什么作用？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/wait.h:20-25</code> 定义了 6 个：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flag</th>
+<th>值</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">WQ_FLAG_EXCLUSIVE</code></td>
+<td>0x01</td>
+<td>独占等待，一次只唤醒 1 个，<strong>尾插</strong></td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_WOKEN</code></td>
+<td>0x02</td>
+<td>已被标记唤醒，避免二次唤醒</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_BOOKMARK</code></td>
+<td>0x04</td>
+<td>唤醒遍历的断点标记（v4.14 引入）</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_CUSTOM</code></td>
+<td>0x08</td>
+<td><code class="c">private</code> 不是 <code class="c">task_struct</code>，别用默认唤醒函数</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_DONE</code></td>
+<td>0x10</td>
+<td>该 entry 已处理完</td>
+</tr>
+<tr>
+<td><code class="c">WQ_FLAG_PRIORITY</code></td>
+<td>0x20</td>
+<td>优先唤醒</td>
+</tr>
+</tbody>
+</table></div>
+<p>多数教材只提 <code class="c">EXCLUSIVE</code>，v6.6 实际有 6 个。</p>
+</details>
+<p><strong>Q5.</strong> 为什么 <code class="c">___wait_event</code> 必须"先 <code class="c">prepare_to_wait_event</code> 入队，后检查 condition"？反过来会怎样？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">___wait_event</code>（v6.6 <code class="c">wait.h:303</code>）的顺序是：</p>
+<pre class="code" data-label="C"><code class="c">long __int = prepare_to_wait_event(&amp;wq_head, &amp;__wq_entry, state);  /* 先入队+设状态 */
+if (condition)                                                     /* 后判条件 */
+    break;
+...
+cmd;   /* schedule() */
+</code></pre>
+<p><strong>原因</strong>：如果先判条件再入队，那么"判完条件（为假）→ 准备睡"之间存在窗口。唤醒者若在这个窗口里 <code class="c">wake_up()</code>，等待者还没在队列上，这次唤醒就丢了；随后等待者照常 <code class="c">schedule()</code> 睡下，<strong>再也没人叫醒它</strong> —— 这就是 lost wakeup。</p>
+<p>入队操作必须在"判条件"之前，且两者被同一把 <code class="c">wq_head-&gt;lock</code> 保护。</p>
+<p><strong>同一模式在用户态 futex 上也存在</strong>，<code class="c">kernel/futex/waitwake.c:586-592</code> 的注释是官方论证：</p>
+<blockquote>
+<p>"The basic logical guarantee of a futex is that it blocks ONLY if cond(var) is known to be true at the time of blocking... If we locked the hash-bucket after testing *uaddr, that would open a race condition where we could block indefinitely with cond(var) false."</p>
+</blockquote>
+<p><strong>结论</strong>：内核等待队列与用户态 futex 用的是<strong>完全同构</strong>的协议——先挂进"可被唤醒的集合"，再验证是否真的需要睡。</p>
+</details>
+<p><strong>Q6.</strong> exclusive 等待者被 <code class="c">wake_up()</code> 选中后，为什么不能因为有信号 pending 就直接返回 <code class="c">-ERESTARTSYS</code>？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">kernel/sched/wait.c:310</code> 的 <code class="c">prepare_to_wait_event()</code> 里有一段 12 行注释专门解释：</p>
+<blockquote>
+<p>"Exclusive waiter must not fail if it was selected by wakeup, it should <strong>'consume' the condition</strong> we were waiting for."</p>
+</blockquote>
+<p><strong>逻辑链</strong>：</p>
+<ol>
+<li><code class="c">wake_up()</code> 在队列上只唤醒 <strong>1 个</strong> exclusive waiter，意味着"这份资源/这次事件归你了"</li>
+<li>如果这个 waiter 因为有信号 pending 就直接返回 <code class="c">-ERESTARTSYS</code>，它就<strong>把这次唤醒吞掉了</strong></li>
+<li>队列后面还有别的 exclusive waiter 在睡，它们<strong>不会</strong>被唤醒（名额已经用掉）</li>
+<li>结果：<strong>事件丢失，资源无人认领，可能的永久睡眠</strong></li>
+</ol>
+<p><strong>内核的解法</strong>：<code class="c">___wait_event</code> 里<strong>先查 condition，再查信号</strong>：</p>
+<pre class="code" data-label="C"><code class="c">if (condition)                                          /* 先：被选中了？正常拿走 */
+    break;
+if (___wait_is_interruptible(state) &amp;&amp; __int) {         /* 后：才有资格谈信号 */
+    __ret = __int;
+    goto __out;
+}
+</code></pre>
+<p>即：只要条件已成立，就算有信号也算"成功消费"，不会把唤醒名额浪费掉。</p>
+</details>
+<p><strong>Q7.</strong> <code class="c">wake_up_all()</code> 传的 <code class="c">nr_exclusive = 0</code> 为什么表示"唤醒全部"而不是"0 个"？</p>
+<details>
+<summary>答案</summary>
+<p>看 <code class="c">__wake_up_common</code> 的判定：</p>
+<pre class="code" data-label="C"><code class="c">if (ret &amp;&amp; (flags &amp; WQ_FLAG_EXCLUSIVE) &amp;&amp; !--nr_exclusive)
+    break;
+</code></pre>
+<ul>
+<li><code class="c">nr_exclusive</code> 从 <strong>0</strong> 开始，<code class="c">--nr_exclusive</code> 得 <code class="c">-1</code></li>
+<li><code class="c">!(-1)</code> = <code class="c">!真</code> = <strong>假</strong> → 永远不 <code class="c">break</code></li>
+<li>于是遍历扫完整条队列 → 唤醒所有</li>
+</ul>
+<p>而 <code class="c">wake_up()</code> 传 1：<code class="c">--1 = 0</code>，<code class="c">!0 = 真</code> → 遇到<strong>第一个</strong> exclusive 就 break。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th><code class="c">nr_exclusive</code></th>
+<th>exclusive 唤醒数</th>
+<th>非 exclusive 唤醒数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">wake_up()</code></td>
+<td>1</td>
+<td>1 个</td>
+<td><strong>全部</strong></td>
+</tr>
+<tr>
+<td><code class="c">wake_up_nr(q,n)</code></td>
+<td>n</td>
+<td>n 个</td>
+<td>全部</td>
+</tr>
+<tr>
+<td><code class="c">wake_up_all()</code></td>
+<td>0</td>
+<td><strong>全部</strong></td>
+<td>全部</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ 另一个易错点：<strong><code class="c">wake_up()</code> 永远唤醒所有非 exclusive 等待者</strong>，只有 exclusive 受 <code class="c">nr</code> 限制。这是 <code class="c">WQ_FLAG_EXCLUSIVE</code> 存在的全部意义。</p>
+</details>
+<p><strong>Q8.</strong> <code class="c">WQ_FLAG_BOOKMARK</code> 解决什么问题？什么时候引入的？</p>
+<details>
+<summary>答案</summary>
+<p><strong>问题</strong>：唤醒路径持 <code class="c">wq_head-&gt;lock</code>（<code class="c">spin_lock_irqsave</code>，<strong>关中断</strong>）遍历队列。若队列上有大量等待者（热门 futex、大 folio 锁争用），一次扫完 → <strong>中断关闭时间不可控</strong>，造成调度/中断延迟尖峰。</p>
+<p><strong>解法</strong>：每扫 <code class="c">WAITQUEUE_WALK_BREAK_CNT</code>（= <strong>64</strong>，定义在 <code class="c">kernel/sched/wait.c:65</code>）个 entry，就插入一个带 <code class="c">WQ_FLAG_BOOKMARK</code> 的占位节点，放锁、开中断一轮；下次进入 <code class="c">__wake_up_common</code> 时从 bookmark 之后继续：</p>
+<pre class="code" data-label="C"><code class="c">if (bookmark &amp;&amp; (bookmark-&gt;flags &amp; WQ_FLAG_BOOKMARK)) {
+    curr = list_next_entry(bookmark, entry);
+    list_del(&amp;bookmark-&gt;entry);
+    bookmark-&gt;flags = 0;
+} else
+    curr = list_first_entry(&amp;wq_head-&gt;head, wait_queue_entry_t, entry);
+</code></pre>
+<p><strong>版本</strong>：<strong>v4.14</strong> 引入（实测 <code class="c">wait.h</code> 命中数：v4.13 = 0 / v4.14 = 1，文件 35926B → 36126B）。</p>
+<p><strong>同类思路</strong>：swait（v4.6）用换数据结构的方式解决同样的问题，futex 用 <code class="c">wake_q</code> 把唤醒推迟到放锁后。三者目标一致——<strong>让唤醒路径的延迟有界</strong>。</p>
+</details>
+<p><strong>Q9.</strong> swait 相比普通等待队列砍掉了什么？为什么要砍？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">include/linux/swait.h:12-40</code> 的头部注释是内核的"设计取舍自白"。核心目标是 <strong>"strictly bounded IRQ and lock hold times"</strong>（严格有界的中断/持锁时间）。</p>
+<p><strong>砍掉的三样：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>砍掉的东西</th>
+<th>原因（注释原文要点）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>混合 INTERRUPTIBLE/UNINTERRUPTIBLE 睡眠</td>
+<td>统一 <code class="c">TASK_NORMAL</code>，"avoid O(n) lookups for the right sleeper state"</td>
+</tr>
+<tr>
+<td>非 exclusive 模式</td>
+<td>"leads to O(n) wakeups"，全部 exclusive，<code class="c">swake_up_one</code> 只醒 1 个</td>
+</tr>
+<tr>
+<td>自定义唤醒回调 <code class="c">func</code></td>
+<td>"you cannot give any guarantees about random code"</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>换到的两样：</strong></p>
+<ol>
+<li><code class="c">struct swait_queue_head</code> 用 <strong><code class="c">raw_spinlock_t</code></strong> 而非 <code class="c">spinlock_t</code> —— RT 上 <code class="c">spinlock_t</code> 是可睡眠的 rt-mutex，而唤醒路径常在原子上下文；raw spinlock 保证唤醒路径永不睡眠</li>
+<li>每次唤醒都放一次锁，给高优先级任务运行机会</li>
+</ol>
+<p><strong>版本</strong>：<strong>v4.6</strong> 引入（实测 <code class="c">include/linux/swait.h</code>：v4.5 = 14 字节 404 残片 / v4.6 = 5148 字节且含定义）。</p>
+<p>⚠️ <strong>官方警告</strong>：注释最后明确说 <em>"simple wait queues should only be used under very specific realtime constraints — it is best to stick with the regular wait queues in most cases"</em>。<strong>swait 不是"更快的 wait_queue"，是"更确定性的 wait_queue"，默认不该用。</strong></p>
+</details>
+<p><strong>Q10.</strong> futex 为什么不用 <code class="c">wait_queue_head</code>，而要自建 <code class="c">futex_hash_bucket</code> + <code class="c">plist_head</code>？</p>
+<details>
+<summary>答案</summary>
+<p>四个原因，逐个对应源码：</p>
+<p><strong>① 优先级排序（最核心）</strong></p>
+<pre class="code" data-label="C"><code class="c">struct futex_hash_bucket {
+    atomic_t waiters;
+    spinlock_t lock;
+    struct plist_head chain;   /* ⭐ priority-sorted list */
+};
+</code></pre>
+<p><code class="c">plist_head</code> 是<strong>按优先级排序</strong>的链表。因此 <code class="c">futex_wake(..., nr_wake=1)</code> 唤醒的是<strong>优先级最高</strong>的等待者，而不是"先来先到"。这是 PI（优先级继承）futex 的基础设施——没有它就无法实现 <code class="c">PTHREAD_PRIO_INHERIT</code>。普通 <code class="c">wait_queue_head</code> 用的是 FIFO <code class="c">list_head</code>，做不到。</p>
+<p><strong>② 哈希冲突过滤</strong></p>
+<p>不同的 futex word 可能落到同一个桶（256 个桶，<code class="c">____cacheline_aligned_in_smp</code>）。唤醒时必须三重校验：</p>
+<pre class="code" data-label="C"><code class="c">if (futex_match(&amp;this-&gt;key, &amp;key)) {           /* key 匹配 */
+    if (this-&gt;pi_state || this-&gt;rt_waiter) {   /* PI futex 不能用普通 wake 唤醒 */
+        ret = -EINVAL; break;
+    }
+    if (!(this-&gt;bitset &amp; bitset))              /* bitset 掩码过滤 */
+        continue;
+    ...
+}
+</code></pre>
+<p><strong>③ bitset 支持</strong></p>
+<p>一个 futex word 上可以有多个不同 <code class="c">bitset</code> 的等待者（<code class="c">FUTEX_BITSET</code>），<code class="c">FUTEX_WAKE_BITSET</code> 按掩码选择性唤醒——相当于"一个地址上多路复用多个条件变量"。等待队列做不到。</p>
+<p><strong>④ 无锁快路径 + wake_q</strong></p>
+<pre class="code" data-label="C"><code class="c">if (!futex_hb_waiters_pending(hb))     /* atomic_t waiters == 0，连锁都不用拿 */
+    return ret;
+spin_lock(&amp;hb-&gt;lock);
+...
+    futex_wake_mark(&amp;wake_q, this);     /* 持锁期间只入队，不唤醒 */
+spin_unlock(&amp;hb-&gt;lock);
+wake_up_q(&amp;wake_q);                     /* ⭐ 放锁后才真正 wake_up_process */
+</code></pre>
+<p>对比普通等待队列在<strong>持锁期间</strong>直接调 <code class="c">curr-&gt;func()</code>（内含 <code class="c">try_to_wake_up</code>），futex 把唤醒推迟到放锁后，<strong>持锁窗口只包含链表操作</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">wait_queue_head</code></th>
+<th><code class="c">futex_hash_bucket</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>链表</td>
+<td><code class="c">list_head</code>（FIFO）</td>
+<td><code class="c">plist_head</code>（优先级有序）</td>
+</tr>
+<tr>
+<td>nr=1 唤醒谁</td>
+<td>队首（先来先到）</td>
+<td>优先级最高者</td>
+</tr>
+<tr>
+<td>唤醒执行位置</td>
+<td>锁内回调</td>
+<td>锁外 <code class="c">wake_up_q</code></td>
+</tr>
+<tr>
+<td>额外过滤</td>
+<td>mode 位掩码</td>
+<td>key 哈希匹配 + bitset</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 含义</strong>：PI futex 是用户态避免<strong>优先级反转</strong>的唯一官方手段——控制面低优先级线程持锁时，会被临时提升到等待者的优先级，不会把行情线程卡在锁上。</p>
+</details>
+<p><strong>Q11.</strong> 内核官方怎么看待"虚假唤醒"？<code class="c">set_current_state()</code> 里的屏障是必须的吗？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">include/linux/sched.h:175-212</code> 的注释给出了官方答案，三点：</p>
+<p><strong>① <code class="c">set_current_state()</code> 带屏障，保证"写 state"与"后续读 CONDITION"不乱序</strong></p>
+<pre class="code" data-label="code"><code class="c">    for (;;) {
+        set_current_state(TASK_UNINTERRUPTIBLE);
+        if (CONDITION)          /* 这个读不能被前面的写越过 */
+            break;
+        schedule();
+    }
+    __set_current_state(TASK_RUNNING);
+</code></pre>
+<p><strong>② 如果 CONDITION 判断、条件变更、唤醒都在同一把锁下，可以省掉屏障</strong></p>
+<blockquote>
+<p>"If the caller does not need such serialisation (because, for instance, the CONDITION test and condition change and wakeup are under the same lock) then use <code class="c">__set_current_state()</code>."</p>
+</blockquote>
+<p><code class="c">__set_current_state()</code> 是无屏障版本（只有 <code class="c">WRITE_ONCE</code>），更快。<strong>锁已经提供了顺序保证时用它。</strong></p>
+<p><strong>③ ⭐ 丢掉一个 store 也没事——正确性靠循环兜底，不靠内存序完美</strong></p>
+<blockquote>
+<p>"Losing that store is not a problem either because that will result in <strong>one extra go around the loop and our @cond test will save the day</strong>."</p>
+</blockquote>
+<p>这是内核最诚实的一句：<strong>内存序允许出现"白转一圈"，只要 <code class="c">cond</code> 测试存在，正确性就不受影响。</strong> 这也是为什么等待循环必须写成 <code class="c">for(;;)</code> / <code class="c">while</code>，而不能是 <code class="c">if</code>。</p>
+<p><strong>虚假唤醒的四个来源汇总：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>信号打断</td>
+<td><code class="c">TASK_INTERRUPTIBLE</code> 下任意信号都会醒</td>
+</tr>
+<tr>
+<td>多人等同一队列</td>
+<td><code class="c">wake_up_all</code> 全叫醒，只有第一个真拿到条件</td>
+</tr>
+<tr>
+<td>条件被抢占</td>
+<td>醒来时资源已被别人拿走</td>
+</tr>
+<tr>
+<td>store 冲突</td>
+<td>上面的内存序碰撞，白转一圈</td>
+</tr>
+</tbody>
+</table></div>
+</details>
+<p><strong>Q12.</strong> <code class="c">wait_bit</code> 机制为什么要哈希？哈希冲突会不会"叫错人"？</p>
+<details>
+<summary>答案</summary>
+<p><strong>为什么哈希</strong>：内核里大量地方需要"等某个字的某一位被清掉"（页回写 <code class="c">PG_writeback</code>、folio 锁 <code class="c">PG_locked</code>）。若每个 bit 都建一个 <code class="c">wait_queue_head_t</code>，内存开销不可接受。于是用<strong>全局哈希表复用</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#define WAIT_TABLE_BITS 8
+#define WAIT_TABLE_SIZE (1 &lt;&lt; WAIT_TABLE_BITS)     /* 256 个桶 */
+
+static wait_queue_head_t bit_wait_table[WAIT_TABLE_SIZE] __cacheline_aligned;
+
+wait_queue_head_t *bit_waitqueue(void *word, int bit)
+{
+    const int shift = BITS_PER_LONG == 32 ? 5 : 6;
+    unsigned long val = (unsigned long)word &lt;&lt; shift | bit;
+    return bit_wait_table + hash_long(val, WAIT_TABLE_BITS);
+}
+</code></pre>
+<p><strong>会不会叫错人</strong>：会落到同一个桶，但<strong>不会错误唤醒</strong>，因为 <code class="c">wake_bit_function</code> 做三重校验：</p>
+<pre class="code" data-label="C"><code class="c">    if (wait_bit-&gt;key.flags != key-&gt;flags ||        /* ① word 地址相同？ */
+            wait_bit-&gt;key.bit_nr != key-&gt;bit_nr ||  /* ② 位号相同？ */
+            test_bit(key-&gt;bit_nr, key-&gt;flags))      /* ③ bit 真的被清了？ */
+        return 0;                                   /* 不匹配 → 不唤醒 */
+
+    return autoremove_wake_function(wq_entry, mode, sync, key);
+</code></pre>
+<p>第 ③ 条最关键：<strong>即使哈希撞车，最后还要看 bit 本身的值</strong>。bit 仍为 1 就不唤醒 —— 这就是"用哈希换内存"必须付的正确性代价，代价形式是<strong>遍历桶内链表时的 O(n) 过滤</strong>。</p>
+<p>等待侧用 <code class="c">test_bit_acquire</code>（带 acquire 语义）收尾，与释放侧的 release 配对：</p>
+<pre class="code" data-label="C"><code class="c">    } while (test_bit_acquire(wbq_entry-&gt;key.bit_nr, wbq_entry-&gt;key.flags) &amp;&amp; !ret);
+</code></pre>
+<p>同样的 <strong>"先 <code class="c">prepare_to_wait</code> 入队、后 <code class="c">test_bit</code> 判条件"</strong> 顺序（Q5 的老朋友）。</p>
+</details>
 </details>
 <hr />
+<h2>&gt; ↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-2">ULK Ch7 §2 调度策略与抢占</a></h2>
       </section>
       <section class="section" id="s-4-5">
         <div class="sec-head"><div class="sec-no">4.5</div><h2>section-4.5-抢占与上下文切换</h2></div>

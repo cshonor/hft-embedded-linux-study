@@ -1216,6 +1216,10 @@ struct sched_entity {
       </section>
       <section class="section" id="s-6-6">
         <div class="sec-head"><div class="sec-no">6.6</div><h2>section-6.6-选择合适的数据结构</h2></div>
+<blockquote>
+<p>承接 <a href="#s-6-5">6.5 红黑树</a>（如存在）与本章前文。
+本节回答：<strong>内核提供了哪些结构、各自的实现代价是什么、以及"选型"真正的四个维度。</strong></p>
+</blockquote>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1234,7 +1238,7 @@ struct sched_entity {
 </tr>
 <tr>
 <td><strong>UID → 对象指针</strong></td>
-<td><strong>映射</strong> <code class="c">idr</code></td>
+<td><strong>映射</strong> <code class="c">idr</code>（底层已是 XArray）</td>
 </tr>
 <tr>
 <td><strong>大量数据 + 高效随机检索</strong></td>
@@ -1252,6 +1256,627 @@ struct sched_entity {
     ├─ 按键范围查询（区间）─────► maple tree（v6.1+）/ interval tree
     └─ 均匀键、O(1) 点查 ───────► hlist 哈希表
 </code></pre>
+<hr />
+<h3>一、⭐ 先理解内核容器的第一原则：<strong>侵入式（intrusive）</strong></h3>
+<p>用户态容器（<code class="c">std::list&lt;T&gt;</code>、<code class="c">Vec&lt;T&gt;</code>）是<strong>容器拥有元素</strong>；内核容器是<strong>元素拥有容器节点</strong>。</p>
+<pre class="code" data-label="C"><code class="c">struct my_object {
+    int         value;
+    struct list_head    list;      /* ⭐ 节点嵌在对象里 */
+    struct rb_node      rb;        /* ⭐ 同一个对象可挂多条结构 */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>用户态容器</th>
+<th>内核容器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁分配节点</td>
+<td>容器分配（每次 insert 一次 <code class="c">malloc</code>）</td>
+<td>⭐ <strong>零额外分配</strong> —— 节点就在对象里</td>
+</tr>
+<tr>
+<td>元素能否同时在多个容器</td>
+<td>不能（除非存指针拷贝）</td>
+<td>⭐ <strong>能</strong>（多个 <code class="c">list_head</code> 成员）</td>
+</tr>
+<tr>
+<td>从节点找回对象</td>
+<td>不需要</td>
+<td>⭐ <code class="c">container_of()</code> / <code class="c">list_entry()</code></td>
+</tr>
+<tr>
+<td>删除的复杂度</td>
+<td>O(1)（容器知道节点）</td>
+<td>O(1)（只需 <code class="c">head</code> + 节点本身）</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>每元素一次分配（含 malloc 头）</td>
+<td>⭐ 每节点 16 字节，无分配器开销</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>对 HFT 的直接意义</strong>：用户态热路径上，<code class="c">std::map&lt;K,V&gt;</code> 每次插入都 <code class="c">malloc</code> 一个节点——<strong>这点常被忽略，但它意味着不可预测的延迟尖峰和 cache 碎片</strong>。内核的侵入式思路平移过来就是"预分配对象池 + 侵入式链表"，这正是很多低延迟订单簿的做法。</p>
+</blockquote>
+<hr />
+<h3>二、<code class="c">list_head</code> vs <code class="c">hlist</code>：头的 8 字节之差</h3>
+<p>v6.6 <code class="c">include/linux/types.h</code>：</p>
+<pre class="code" data-label="C"><code class="c">struct list_head {
+    struct list_head *next, *prev;
+};
+
+struct hlist_head {
+    struct hlist_node *first;
+};
+
+struct hlist_node {
+    struct hlist_node *next, **pprev;
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">list_head</code>（双向循环）</th>
+<th><code class="c">hlist_head</code>（单指针头 + 双向节点）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>头节点大小</strong></td>
+<td>16 字节（<code class="c">next</code>+<code class="c">prev</code>）</td>
+<td>⭐ <strong>8 字节</strong>（只有 <code class="c">first</code>）</td>
+</tr>
+<tr>
+<td>节点大小</td>
+<td>16 字节</td>
+<td>16 字节（<code class="c">next</code>+<code class="c">pprev</code>）</td>
+</tr>
+<tr>
+<td>是否循环</td>
+<td>是（空表时头指向自己）</td>
+<td>否（空表 <code class="c">first == NULL</code>）</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>少量链表（进程链表、设备链表）</td>
+<td>⭐ <strong>大量桶的哈希表</strong>（PID 哈希、dentry 哈希）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 省 8 字节在小规模时无所谓，但一个 <strong>262144 桶</strong>的哈希表就是 <strong>2 MB</strong> 的差别。这就是 <code class="c">hlist</code> 存在的理由。</p>
+</blockquote>
+<h4>⭐ <code class="c">pprev</code> 为什么是<strong>二级指针</strong></h4>
+<pre class="code" data-label="C"><code class="c">struct hlist_node {
+    struct hlist_node *next, **pprev;   /* ← pprev 是 struct hlist_node ** */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节点位置</th>
+<th><code class="c">pprev</code> 指向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>桶内<strong>第一个</strong>节点</td>
+<td><code class="c">&amp;head-&gt;first</code></td>
+</tr>
+<tr>
+<td>其他节点</td>
+<td><code class="c">&amp;前一个节点-&gt;next</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>于是删除操作可以写成<strong>统一的</strong>两行，<strong>不需要判断"是不是第一个"</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static inline void __hlist_del(struct hlist_node *n)
+{
+    struct hlist_node *next = n-&gt;next;
+    struct hlist_node **pprev = n-&gt;pprev;
+
+    WRITE_ONCE(*pprev, next);              /* 前驱的&quot;指向我的字段&quot;改指 next */
+    if (next)
+        WRITE_ONCE(next-&gt;pprev, pprev);   /* next 的 pprev 接管 */
+}
+</code></pre>
+<p>对比普通双向链表必须写：</p>
+<pre class="code" data-label="C"><code class="c">if (node-&gt;prev == head) head-&gt;first = node-&gt;next;   /* 边界判断 */
+else node-&gt;prev-&gt;next = node-&gt;next;
+</code></pre>
+<blockquote>
+<p>⭐ <strong>"用二级指针消除边界判断"</strong> 是内核里反复出现的技巧（同样手法见 <code class="c">plist</code>、<code class="c">rb_node</code> 的 parent 编码、radix tree 的 slot 操作）。少一个分支 = 少一次分支预测失败。</p>
+</blockquote>
+<hr />
+<h3>三、<code class="c">llist</code>：无锁单链表的<strong>并发操作矩阵</strong></h3>
+<p>v6.6 <code class="c">include/linux/llist.h</code> 的头部注释直接给出了一张并发兼容表：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Lock-less NULL terminated single linked list
+ *
+ * Cases where locking is not needed:
+ * If there are multiple producers and multiple consumers, llist_add can be
+ * used in producers and llist_del_all can be used in consumers simultaneously
+ * without locking. ...
+ *
+ * This can be summarized as follows:
+ *
+ *           |   add    | del_first |  del_all
+ * add       |    -     |     -     |     -
+ * del_first |          |     L     |     L
+ * del_all   |          |           |     -
+ *
+ * Where, a particular row's operation can happen concurrently with a column's
+ * operation, with &quot;-&quot; being no lock needed, while &quot;L&quot; being lock is needed.
+ */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作组合</th>
+<th>需要锁？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">llist_add</code> × <code class="c">llist_add</code></td>
+<td>⭐ 否</td>
+</tr>
+<tr>
+<td><code class="c">llist_add</code> × <code class="c">llist_del_first</code></td>
+<td>⭐ 否</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">llist_add</code> × <code class="c">llist_del_all</code></strong></td>
+<td>⭐ <strong>否 → MPMC 无锁</strong></td>
+</tr>
+<tr>
+<td><code class="c">llist_del_first</code> × <code class="c">llist_del_first</code></td>
+<td><strong>是</strong></td>
+</tr>
+<tr>
+<td><code class="c">llist_del_first</code> × <code class="c">llist_del_all</code></td>
+<td><strong>是</strong></td>
+</tr>
+<tr>
+<td><code class="c">llist_del_all</code> × <code class="c">llist_del_all</code></td>
+<td>⭐ 否（各自 <code class="c">xchg</code> 拿走整条链）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>核心结论</strong>：<strong><code class="c">llist_add</code> + <code class="c">llist_del_all</code> 的组合是多生产者多消费者（MPMC）无锁的</strong>。
+这正是内核里 <code class="c">llist</code> 的典型用法——<strong>多个 CPU 往里塞（add），一个线程一次性收割（del_all）</strong>，例如 <code class="c">irq_work</code>、<code class="c">vm_area</code> 的惰性释放、<code class="c">task_struct</code> 的延迟 RCU 释放队列。</p>
+</blockquote>
+<p><strong>为什么 <code class="c">del_first</code> 需要锁</strong>（注释原文）：</p>
+<blockquote>
+<p>"llist_del_first depends on list-&gt;first-&gt;next not changing, but without lock protection, there's no way to be sure about that if a preemption happens in the middle of the delete operation..."</p>
+</blockquote>
+<p>即：<code class="c">del_first</code> 的 <code class="c">cmpxchg</code> 依赖"第一个节点的 <code class="c">next</code> 在我操作期间不变"。如果被抢占，另一个消费者可能已经改过链表，导致 <strong>ABA 问题</strong>——<code class="c">cmpxchg</code> 成功但语义错误。</p>
+<hr />
+<h3>四、<code class="c">kfifo</code>：SPSC 无锁环</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结构</td>
+<td>固定大小环形缓冲，<code class="c">in</code> / <code class="c">out</code> 两个单调递增值</td>
+</tr>
+<tr>
+<td>无锁前提</td>
+<td>⭐ <strong>严格 SPSC</strong>（单生产者 + 单消费者）</td>
+</tr>
+<tr>
+<td>为何无锁</td>
+<td>生产者只写 <code class="c">in</code>，消费者只写 <code class="c">out</code>；各自读对方的值作边界判断</td>
+</tr>
+<tr>
+<td>内存屏障</td>
+<td>需要 <code class="c">smp_store_release</code> / <code class="c">smp_load_acquire</code> 配对（见 <a href="chapter-10.html#s-10-10">Ch 10 排序和屏障</a>）</td>
+</tr>
+<tr>
+<td>大小要求</td>
+<td>容量为 <strong>2 的幂</strong>（用 <code class="c">&amp; (size-1)</code> 代替 <code class="c">%</code> 取模）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">        out                    in
+         │                      │
+    ┌────┴──────────────────────┴─────┐
+    │    │ 已消费 │   待消费数据  │ 空 │
+    └─────────────────────────────────┘
+    0                                size-1
+
+  生产者：写 buffer[in &amp; mask]，smp_store_release(&amp;in, in+1)
+  消费者：smp_load_acquire(&amp;out) 与 in 比较，读 buffer[out &amp; mask]，
+          再 smp_store_release(&amp;out, out+1)
+</code></pre>
+<blockquote>
+<p>⭐ <strong>HFT 直接对应</strong>：行情网关收包 → 策略线程，<strong>就是标准 SPSC</strong>。用户态实现（如 Disruptor / boost::lockfree::spsc_queue）与 <code class="c">kfifo</code> 是同一个模型。注意：<strong>容量必须是 2 的幂</strong>，否则取模开销会吃掉收益。</p>
+</blockquote>
+<hr />
+<h3>五、⭐ XArray：用「指针低位打标」把值直接塞进指针</h3>
+<p>XArray 是 v6.6 的<strong>默认稀疏数组/映射</strong>选择，page cache、IDR、很多子系统都用它。</p>
+<p>v6.6 <code class="c">include/linux/xarray.h:23-42</code>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * The bottom two bits of the entry determine how the XArray interprets
+ * the contents:
+ *
+ * 00: Pointer entry
+ * 10: Internal entry
+ * x1: Value entry or tagged pointer
+ *
+ * Attempting to store internal entries in the XArray is a bug.
+ *
+ * Most internal entries are pointers to the next node in the tree.
+ * The following internal entries have a special meaning:
+ *
+ * 0-62: Sibling entries
+ * 256: Retry entry
+ * 257: Zero entry
+ *
+ * Errors are also represented as internal entries, but use the negative
+ * space (-4094 to -2).  They're never stored in the slots array; only
+ * returned by the normal API.
+ */
+</code></pre>
+<h4>⭐⭐ 低位打标：一个指针位图当三种东西用</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>低 2 位</th>
+<th>含义</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">00</code></td>
+<td><strong>Pointer entry</strong></td>
+<td>普通指针（对齐保证最低 2 位为 0）</td>
+</tr>
+<tr>
+<td><code class="c">10</code></td>
+<td><strong>Internal entry</strong></td>
+<td>树节点指针 / 特殊标记（0-62 兄弟、256 retry、257 zero）</td>
+</tr>
+<tr>
+<td><code class="c">x1</code></td>
+<td>⭐ <strong>Value entry</strong></td>
+<td><strong>直接把整数存在"指针"里，零内存分配</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">#define BITS_PER_XA_VALUE   (BITS_PER_LONG - 1)     /* 64 位机上 = 63 位 */
+</code></pre>
+<blockquote>
+<p>⭐⭐ <strong>Value entry 的价值</strong>：存一个小整数（如引用计数、小 ID）时<strong>完全不需要分配节点</strong>。
+<code class="c">xa_mk_value(v)</code> 把 <code class="c">v</code> 左移 1 位并置低位 1；<code class="c">xa_to_value(e)</code> 反向。
+对于"稀疏 ID → 小整数"的场景（如 epoll 的 fd 位图、很多计数器），这省掉了<strong>每一次</strong>的内存分配。</p>
+</blockquote>
+<h4>错误码也走内部条目</h4>
+<blockquote>
+<p>"Errors are also represented as internal entries, but use the negative space (-4094 to -2). They're never stored in the slots array; only returned by the normal API."</p>
+</blockquote>
+<p>⭐ 这与 <a href="chapter-05.html#s-5-2">5.2 §5 讲过的 <code class="c">MAX_ERRNO = 4095</code></a> 是同一套编码体系：错误码用 <code class="c">-4094 ~ -2</code> 的负空间，<strong>永不存入树</strong>，只在 API 返回值里出现。</p>
+<h4>版本断崖</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">include/linux/xarray.h</code></th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.17 及更早</td>
+<td>无</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>v4.18 / v4.19</strong></td>
+<td><strong>818 字节</strong></td>
+<td>⭐ <strong>占位骨架</strong>：只有 <code class="c">xa_trylock</code> 等几个宏，<strong>没有 <code class="c">struct xarray</code></strong></td>
+</tr>
+<tr>
+<td><strong>v4.20</strong></td>
+<td><strong>45558 字节</strong>（50 处 <code class="c">struct xarray</code>）</td>
+<td>⭐ <strong>完整实现落地</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>准确说法：<strong>XArray 骨架于 v4.18 引入，完整实现在 v4.20 落地</strong>。</p>
+<hr />
+<h3>六、⭐ 一个反直觉的事实：v6.6 的 <code class="c">idr</code> 底层就是 XArray</h3>
+<p>教材常说"IDR 被 XArray 取代了"。<strong>v6.6 的实际情况更有意思</strong>——IDR 没有消失，它变成了 XArray 的薄封装。</p>
+<p>v6.6 <code class="c">include/linux/idr.h:14-24</code>：</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/radix-tree.h&gt;
+#include &lt;linux/gfp.h&gt;
+#include &lt;linux/percpu.h&gt;
+
+struct idr {
+    struct radix_tree_root  idr_rt;
+    unsigned int        idr_base;
+    unsigned int        idr_next;
+};
+</code></pre>
+<p>看起来还在用 <code class="c">radix_tree</code>？再看 v6.6 <code class="c">include/linux/radix-tree.h:10-28</code>：</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/xarray.h&gt;
+#include &lt;linux/local_lock.h&gt;
+
+/* Keep unconverted code working */
+#define radix_tree_root     xarray
+#define radix_tree_node     xa_node
+</code></pre>
+<p>⭐⭐ <strong><code class="c">radix_tree_root</code> 已经被 <code class="c">#define</code> 成 <code class="c">xarray</code> 了！</strong> 注释原文：</p>
+<blockquote>
+<p><code class="c">/* Keep unconverted code working */</code></p>
+</blockquote>
+<p>所以真实的继承链是：</p>
+<pre class="code" data-label="code"><code class="c">struct idr
+   └─ struct radix_tree_root idr_rt
+        └─ = struct xarray          （radix-tree.h 的 #define 兼容层）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>说法</th>
+<th>是否正确</th>
+<th>实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"IDR 被 XArray 取代，IDR 没了"</td>
+<td>❌</td>
+<td>IDR 的 API 仍在（<code class="c">idr_alloc</code>、<code class="c">idr_find</code>…）</td>
+</tr>
+<tr>
+<td>"IDR 和 XArray 是两套独立实现"</td>
+<td>❌</td>
+<td>⭐ IDR 底层<strong>就是</strong> XArray</td>
+</tr>
+<tr>
+<td>⭐ "IDR 是建立在 XArray 之上的薄封装"</td>
+<td>✅</td>
+<td>通过 <code class="c">radix-tree.h</code> 的 typedef 兼容层</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>为什么保留兼容层</strong>：内核里有几十个子系统用 <code class="c">radix_tree_*</code> API，一次性全改会造成巨大 churn。用 <code class="c">#define</code> 让老名字映射到新类型，<strong>新老代码可以共存</strong>，逐步迁移。这是内核处理"大规模 API 迁移"的标准手法。</p>
+</blockquote>
+<hr />
+<h3>七、⭐ Maple tree：VMA 从 rbtree 迁过来的真正理由</h3>
+<p>v6.6 <code class="c">include/linux/maple_tree.h:5-8</code>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Maple Tree - An RCU-safe adaptive tree for storing ranges
+ * Copyright (c) 2018-2022 Oracle
+ * Authors:     Liam R. Howlett, Matthew Wilcox
+ */
+</code></pre>
+<p>官方文档 <code class="c">Documentation/core-api/maple_tree.rst:11-27</code>：</p>
+<pre class="code" data-label="code"><code class="c">The Maple Tree is a B-Tree data type which is optimized for storing
+non-overlapping ranges, including ranges of size 1.  The tree was designed to
+be simple to use and does not require a user written search method.  It
+supports iterating over a range of entries and going to the previous or next
+entry in a cache-efficient manner.  The tree can also be put into an RCU-safe
+mode of operation which allows reading and writing concurrently.  Writers must
+synchronize on a lock, which can be the default spinlock, or the user can set
+the lock to an external lock of a different type.
+
+The Maple Tree maintains a small memory footprint and was designed to use
+modern processor cache efficiently.  The majority of the users will be able to
+use the normal API.  An advanced API exists for more complex scenarios.  The
+most important usage of the Maple Tree is the tracking of the virtual memory
+areas.
+</code></pre>
+<h4>⭐⭐ 三个关键词拆解</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关键词</th>
+<th>含义</th>
+<th>对比 rbtree</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>B-Tree</strong></td>
+<td>节点内是<strong>数组</strong>，分支因子高（16~31）</td>
+<td>rbtree 是<strong>二叉</strong>，每次比较一次指针追逐</td>
+</tr>
+<tr>
+<td>⭐ <strong>RCU-safe</strong></td>
+<td>⭐ <strong>读侧完全无锁</strong></td>
+<td>rbtree 的 rebalance 会改结构，RCU 读不安全</td>
+</tr>
+<tr>
+<td><strong>ranges</strong></td>
+<td>原生存区间（size-1 区间 = 点）</td>
+<td>rbtree 只存点，VMA 区间要额外簿记</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>最关键的是 B-Tree vs 二叉树的 cache 差异</strong>：
+- rbtree：深度 ≈ <code class="c">log2(n)</code>。100 万个 VMA ≈ 20 层，<strong>20 次指针追逐</strong>，每次大概率 cache miss
+- maple tree：64 位下 <code class="c">MAPLE_RANGE64_SLOTS = 16</code>，深度 ≈ <code class="c">log16(n)</code>。100 万个 ≈ <strong>5 层</strong>，且每层节点内是连续数组（可预取）</p>
+<p>这是"同样 O(log n)，常数差 4 倍 + cache 行为完全不同"的典型案例。</p>
+</blockquote>
+<h4>⭐ 节点布局：256 字节对齐带来的三个技巧</h4>
+<pre class="code" data-label="C"><code class="c">#if defined(CONFIG_64BIT) || defined(BUILD_VDSO32_64)
+/* 64bit sizes */
+#define MAPLE_NODE_SLOTS    31  /* 256 bytes including -&gt;parent */
+#define MAPLE_RANGE64_SLOTS 16  /* 256 bytes */
+#define MAPLE_ARANGE64_SLOTS    10  /* 240 bytes */
+#define MAPLE_ALLOC_SLOTS   (MAPLE_NODE_SLOTS - 1)
+#else
+/* 32bit sizes */
+#define MAPLE_NODE_SLOTS    63  /* 256 bytes including -&gt;parent */
+...
+#endif
+</code></pre>
+<p><strong>技巧 1 —— parent 指针的低位当标志位</strong></p>
+<pre class="code" data-label="C"><code class="c"> * Nodes in the tree point to their parent unless bit 0 is set.
+</code></pre>
+<p>节点 256 字节对齐 → <code class="c">parent</code> 指针的<strong>低 8 位永远是 0</strong> → 可以借用。跟 XArray 的低 2 位打标是同一套思路。</p>
+<p><strong>技巧 2 —— 已删除节点的 parent 指向自己</strong></p>
+<pre class="code" data-label="C"><code class="c"> * Removed nodes have their -&gt;parent set to point to themselves.  RCU readers
+ * check -&gt;parent before relying on the value that they loaded from the
+ * slots array.
+</code></pre>
+<p>RCU 读者在读到一个 slot 值后，检查 <code class="c">parent</code> 是否自指 —— 若是，说明节点已删除，重试。这是一个<strong>零成本的失效检测</strong>（不需要额外原子操作）。</p>
+<p><strong>技巧 3 —— ⭐ 复用 slots 数组当 RCU head</strong></p>
+<pre class="code" data-label="C"><code class="c"> * This lets us reuse the slots array for the RCU head.
+</code></pre>
+<p>节点被删除后，<code class="c">slots[]</code> 数组不再有语义。与其额外加一个 <code class="c">struct rcu_head</code> 字段（16 字节），<strong>直接把 RCU 回调链表节点覆写在 slots 数组上</strong>——节点大小一点没变。</p>
+<blockquote>
+<p>⭐ 这是内核里"复用已死字段"的经典手法：数据结构在不同生命周期阶段，同一块内存可以承载不同语义。</p>
+</blockquote>
+<h4>rbtree 其实也用了低位打标</h4>
+<pre class="code" data-label="C"><code class="c">#define rb_parent(r)   ((struct rb_node *)((r)-&gt;__rb_parent_color &amp; ~3))
+</code></pre>
+<p><code class="c">__rb_parent_color</code> 把 <strong>parent 指针 + 颜色</strong>打包在一个 word 里（低 2 位存颜色）。同样的技巧，不同的结构。</p>
+<h4>rbtree 的"无通用 API"是刻意设计</h4>
+<p>v6.6 <code class="c">include/linux/rbtree.h:6-13</code>：</p>
+<pre class="code" data-label="C"><code class="c">  To use rbtrees you'll have to implement your own insert and search cores.
+  This will avoid us to use callbacks and to drop drammatically performances.
+  I know it's not the cleaner way,  but in C (not in C++) to get
+  performances and genericity...
+</code></pre>
+<blockquote>
+<p>⭐ 内核<strong>故意不提供</strong> <code class="c">rb_insert(root, key, cmp_fn)</code> 这种带回调的通用 API —— 回调无法内联，每次比较都是间接调用。代价是每个使用者都要自己写比较逻辑，收益是<strong>零抽象开销</strong>。</p>
+</blockquote>
+<h4>对比总表</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th><code class="c">rbtree</code></th>
+<th><code class="c">maple tree</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>树型</td>
+<td>二叉搜索树</td>
+<td>⭐ <strong>B-Tree</strong>（节点内数组）</td>
+</tr>
+<tr>
+<td>分支因子</td>
+<td>2</td>
+<td>⭐ <strong>16（range64） / 31（node）</strong></td>
+</tr>
+<tr>
+<td>100 万元素深度</td>
+<td>≈ 20</td>
+<td>⭐ ≈ 5</td>
+</tr>
+<tr>
+<td>缓存行为</td>
+<td>每步一次指针追逐</td>
+<td>⭐ 节点内连续，可预取</td>
+</tr>
+<tr>
+<td>⭐ RCU 安全读</td>
+<td>❌（只有两个 RCU 变体，无通用查找）</td>
+<td>⭐ <strong>原生支持 RCU-safe 模式</strong></td>
+</tr>
+<tr>
+<td>区间语义</td>
+<td>只存点</td>
+<td>⭐ <strong>原生存区间</strong>（含 size-1）</td>
+</tr>
+<tr>
+<td>通用 API</td>
+<td>❌ 需自己写 search core</td>
+<td>⭐ 提供 <code class="c">mtree_store/load/...</code></td>
+</tr>
+<tr>
+<td>节点大小</td>
+<td>24 字节（parent+color, left, right）</td>
+<td>256 字节（对齐，低 8 位可借用）</td>
+</tr>
+<tr>
+<td>引入版本</td>
+<td>1999（Andrea Arcangeli）</td>
+<td>⭐ <strong>v6.1</strong></td>
+</tr>
+<tr>
+<td>v6.6 状态</td>
+<td>仍广泛使用（CFS、timerfd、epoll…）</td>
+<td>⭐ <strong>VMA 的主力</strong>（官方点名）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>八、其他该知道的结构</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>场景</th>
+<th>关键点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">hlist</code></strong></td>
+<td>大哈希表的桶链</td>
+<td>头节点只有 8 字节；<code class="c">pprev</code> 二级指针消除边界判断</td>
+</tr>
+<tr>
+<td><strong><code class="c">llist</code></strong></td>
+<td>多生产者批量收割</td>
+<td>⭐ <code class="c">add</code> + <code class="c">del_all</code> 是 MPMC 无锁</td>
+</tr>
+<tr>
+<td><strong><code class="c">kfifo</code></strong></td>
+<td>SPSC FIFO</td>
+<td>容量必须 2 的幂；严格 SPSC 才无锁</td>
+</tr>
+<tr>
+<td><strong><code class="c">rhashtable</code></strong></td>
+<td>需要自动扩容的哈希表</td>
+<td>免手写扩容逻辑，RCU 友好</td>
+</tr>
+<tr>
+<td><strong><code class="c">interval tree</code></strong></td>
+<td>区间重叠查询</td>
+<td>与 maple tree 用途部分重叠</td>
+</tr>
+<tr>
+<td><strong><code class="c">bitmap</code></strong></td>
+<td>密集小整数集合</td>
+<td><code class="c">alloc_percpu</code> 后每 CPU 无锁</td>
+</tr>
+<tr>
+<td><strong><code class="c">xarray</code></strong></td>
+<td>稀疏整数索引 + tag</td>
+<td>⭐ 值条目零分配；锁内置</td>
+</tr>
+<tr>
+<td><strong><code class="c">maple tree</code></strong></td>
+<td>区间 + RCU 读</td>
+<td>⭐ v6.1+，VMA 主力</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>九、组合使用</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1276,10 +1901,16 @@ struct sched_entity {
 <td>maple tree + per-VMA lock</td>
 <td>VMA 管理（v6.1+/v6.4+，见 <a href="chapter-15.html#s-15-4">15.4</a>）</td>
 </tr>
+<tr>
+<td>⭐ <code class="c">llist</code> + <code class="c">del_all</code></td>
+<td>中断/多 CPU 惰性释放队列（<code class="c">irq_work</code>、RCU 回调批处理）</td>
+</tr>
 </tbody>
 </table></div>
-<h4>选型时别忘了第四个维度：并发形状</h4>
-<p>复杂度只是入场券，<strong>结构怎么被共享</strong>往往才是决定因素：</p>
+<hr />
+<h3>十、⭐ 选型的四个维度（不只是复杂度）</h3>
+<p>复杂度只是入场券。按重要性<strong>从高到低</strong>：</p>
+<h4>维度 1：并发形状（最容易被忽略）</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1297,6 +1928,10 @@ struct sched_entity {
 <td>kfifo 无锁环</td>
 </tr>
 <tr>
+<td>⭐ <strong>MPMC + 批量收割</strong></td>
+<td><code class="c">llist</code>（<code class="c">add</code> + <code class="c">del_all</code> 无锁）</td>
+</tr>
+<tr>
 <td>读极多写极少</td>
 <td>RCU 保护的任何结构（读侧零开销，见 <a href="chapter-09.html#ch-9">Ch 9</a>）</td>
 </tr>
@@ -1304,46 +1939,791 @@ struct sched_entity {
 <td>多写者有序键</td>
 <td>rbtree/xarray + spinlock；或 maple tree</td>
 </tr>
+<tr>
+<td>⭐ <strong>需要 RCU 无锁读 + 区间</strong></td>
+<td><strong>只能</strong>是 maple tree</td>
+</tr>
 </tbody>
 </table></div>
-<h4>反面教材：选错结构的代价史</h4>
+<h4>维度 2：渐进复杂度</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>结构</th>
+<th>复杂度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全量遍历</td>
+<td>list</td>
+<td>O(n) 但常数极小</td>
+</tr>
+<tr>
+<td>点查（均匀键）</td>
+<td>哈希表</td>
+<td>O(1)</td>
+</tr>
+<tr>
+<td>有序 / 最值 / 前驱后继</td>
+<td>rbtree</td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>稀疏整数索引</td>
+<td>xarray</td>
+<td>O(log n) 但常数小</td>
+</tr>
+<tr>
+<td>区间查询</td>
+<td>maple tree</td>
+<td>O(log n)</td>
+</tr>
+</tbody>
+</table></div>
+<h4>维度 3：⭐ 缓存布局（同样 O(log n)，常数差 4 倍）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>100 万元素的查找深度</th>
+<th>每步 cache 行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rbtree</td>
+<td>≈ <strong>20</strong> 层</td>
+<td>每层一次随机指针追逐，大概率 cache miss</td>
+</tr>
+<tr>
+<td>maple tree</td>
+<td>≈ <strong>5</strong> 层</td>
+<td>节点内连续数组，可硬件预取</td>
+</tr>
+<tr>
+<td>哈希表</td>
+<td>1~2 次</td>
+<td>取决于桶是否命中（可能跨页）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 这是 <a href="#s-6-7">6.7 算法复杂度</a> 会展开的主题：<strong>大 O 相同不代表性能相同，cache miss 数量常常才是主导项。</strong></p>
+</blockquote>
+<h4>维度 4：内存开销</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>每节点开销</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">list_head</code></td>
+<td>16 字节</td>
+<td>头节点也是 16 字节</td>
+</tr>
+<tr>
+<td><code class="c">hlist_node</code></td>
+<td>16 字节</td>
+<td>⭐ 但<strong>头节点只要 8 字节</strong></td>
+</tr>
+<tr>
+<td><code class="c">rb_node</code></td>
+<td>24 字节</td>
+<td>parent+color / left / right</td>
+</tr>
+<tr>
+<td>maple 节点</td>
+<td><strong>256 字节</strong></td>
+<td>对齐，但分支因子高（摊薄下来更省）</td>
+</tr>
+<tr>
+<td>xarray 节点</td>
+<td>约 576 字节（64 槽）</td>
+<td>但值条目<strong>零分配</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>原文那句总结仍是最好的：<strong>先想并发形状，再想复杂度，最后想缓存布局。</strong>（此处补第四维：内存开销。）</p>
+</blockquote>
+<hr />
+<h3>十一、反面教材：选错结构的代价史</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>案例</th>
 <th>教训</th>
+<th>版本</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>早期 O(n) 调度器</td>
 <td>进程一多调度延迟不可预测 → O(1) 调度器（位图）→ CFS（rbtree）→ maple 时代仍在演化（见 <a href="chapter-04.html#s-4-1">4.1</a>）</td>
+<td>v2.4 → v2.6 → v2.6.23</td>
 </tr>
 <tr>
 <td>2.6 VMA 链表+红黑树双簿记</td>
 <td>每次增删两份维护 → v6.1 maple tree 一份搞定（见 <a href="chapter-15.html#s-15-4">15.4</a>）</td>
+<td>⭐ <strong>v6.1</strong></td>
 </tr>
 <tr>
 <td>radix tree + 外挂锁</td>
 <td>page cache 改 xarray：锁与 tag 进结构（见 <a href="#s-6-4">6.4</a>）</td>
+<td>⭐ <strong>v4.20</strong></td>
+</tr>
+<tr>
+<td>⭐ IDR 与 radix tree 双份实现</td>
+<td>统一到 XArray，<code class="c">radix_tree_*</code> 降级为 <code class="c">#define</code> 兼容层</td>
+<td>⭐ <strong>v4.20</strong></td>
+</tr>
+<tr>
+<td>rbtree 的 RCU 读不安全</td>
+<td>VMA 查找无法做到读侧无锁 → 成为 per-VMA lock 的瓶颈 → maple tree</td>
+<td>⭐ <strong>v6.1</strong></td>
 </tr>
 </tbody>
 </table></div>
 <p><strong>HFT：</strong> 选型逻辑直接平移到用户态——行情网关收包→策略用 SPSC 环（对应 kfifo）；订单簿按价格有序用红黑树/跳表（对应 rbtree + <a href="#s-6-7">6.7</a> 的缓存维度）；fd 式会话句柄用稀疏数组/句柄表（对应 idr）。<strong>先想并发形状，再想复杂度，最后想缓存布局。</strong></p>
+<blockquote>
+<p>⭐ <strong>用户态平移时最该抄的三条内核经验</strong>：
+1. <strong>侵入式容器</strong>（对象里嵌节点）消灭每次 insert 的 <code class="c">malloc</code>
+2. <strong>SPSC 环的容量取 2 的幂</strong>，用 <code class="c">&amp; mask</code> 代替 <code class="c">%</code>
+3. <strong>B 树优于二叉搜索树</strong>——同样的 O(log n)，深度差 4 倍，cache 行为天壤之别（这正是很多高性能 KV 存储用 B+ 树而非红黑树的原因）</p>
+</blockquote>
+<hr />
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 内核中遍历所有进程用什么数据结构？查找特定 PID 用什么？</p>
 <details>
 <summary>答案</summary>
 <p>遍历所有进程：task_struct 通过 tasks 链表串联，list_for_each 遍历。查找特定 PID：用 PID 哈希表（<code class="c">find_task_by_vpid()</code>），O(1) 查找。如果只有链表，查找 PID 需要 O(n) 遍历所有进程，系统中千个进程时太慢。</p>
+<details>
+<summary>按 v6.6 补充</summary>
+<p>补充结构层面的细节：</p>
+<p><strong>① 遍历用的是 <code class="c">list_head</code> 侵入式链表</strong></p>
+<pre class="code" data-label="C"><code class="c">struct task_struct {
+    ...
+    struct list_head    tasks;      /* 全局进程链表节点，嵌在对象里 */
+    ...
+};
+</code></pre>
+<p><code class="c">for_each_process(p)</code> 本质就是 <code class="c">list_for_each_entry(p, &amp;init_task.tasks, tasks)</code>。</p>
+<p><strong>② PID 查找用的是 <code class="c">hlist</code> 哈希表</strong>（不是 <code class="c">list_head</code>）</p>
+<p>因为哈希表有<strong>很多桶</strong>，桶头节点的 8 字节 vs 16 字节之差在大规模下很可观：</p>
+<pre class="code" data-label="C"><code class="c">struct hlist_head {
+    struct hlist_node *first;        /* 8 字节 */
+};
+struct hlist_node {
+    struct hlist_node *next, **pprev;
+};
+</code></pre>
+<p><strong>③ ⭐ 同一个 <code class="c">task_struct</code> 同时挂在多个结构上</strong> —— 这正是侵入式设计的价值：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>成员</th>
+<th>结构</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tasks</code></td>
+<td><code class="c">list_head</code></td>
+<td>全量遍历</td>
+</tr>
+<tr>
+<td><code class="c">pid_links[PIDTYPE_MAX]</code></td>
+<td><code class="c">hlist_node</code></td>
+<td>按 PID 哈希查找</td>
+</tr>
+<tr>
+<td><code class="c">sibling</code> / <code class="c">children</code></td>
+<td><code class="c">list_head</code></td>
+<td>进程树关系</td>
+</tr>
+<tr>
+<td><code class="c">run_node</code></td>
+<td><code class="c">rb_node</code></td>
+<td>CFS 红黑树</td>
+</tr>
+<tr>
+<td><code class="c">thread_group</code> 等</td>
+<td><code class="c">list_head</code></td>
+<td>线程组</td>
+</tr>
+</tbody>
+</table></div>
+<p>一个对象、零额外分配、同时属于五种结构——用户态 <code class="c">std::list&lt;Task&gt;</code> 做不到这点。</p>
+</details>
 </details>
 <p><strong>Q2.</strong> HFT 限价单簿应该用什么数据结构？</p>
 <details>
 <summary>答案</summary>
 <p>限价单簿需要：按价格排序（找最优价 O(1)）、按价格查找（O(log n)）、插入/取消订单（O(log n)）。红黑树满足：找最优价 = 最左/最右节点，插入/删除 O(log n)。补充：同一价位多笔订单用链表挂在红黑树节点上。高频场景可用数组+堆优化（完全二叉树 cache 友好）。</p>
+<details>
+<summary>按 v6.6 补充（内核视角的三条经验）</summary>
+<p>这个答案是对的，但补三条从内核数据结构能直接抄的经验：</p>
+<p><strong>① 大 O 相同不代表性能相同——要看树型和缓存</strong></p>
+<p>这正是 §7 讲的 rbtree vs maple tree 的教训：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>红黑树（二叉）</th>
+<th>B 树（maple tree 型）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>100 万档位深度</td>
+<td>≈ 20 层</td>
+<td>≈ 5 层（分支因子 16）</td>
+</tr>
+<tr>
+<td>每步 cache 行为</td>
+<td>随机指针追逐</td>
+<td>节点内连续数组，可预取</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>内核在 v6.1 把 VMA 从 rbtree 迁到 maple tree，主要理由就是这个</strong>。订单簿完全可以照抄：价格档位用 <strong>B+ 树</strong>而非红黑树，深度和 cache miss 都会大幅下降。</p>
+<p><strong>② "同一价位挂链表"就是内核的组合用法</strong></p>
+<p>与 §9 的 "list + rbtree" 组合同构——一个 price level 对象同时是 B 树节点和订单链表的头。<strong>用侵入式容器实现，零额外分配。</strong></p>
+<p><strong>③ ⭐ 取消订单要 O(1)，不能只靠树</strong></p>
+<p>订单簿的真实需求是"按 order_id 取消"，这需要<strong>第二份索引</strong>：</p>
+<pre class="code" data-label="code"><code class="c">   B 树（按价格有序）          哈希表（按 order_id）
+   ┌──────────────┐          ┌──────────────┐
+   │ price_level  │          │ order_id → 节点│
+   └──────────────┘          └──────────────┘
+           └──────── 同一个 Order 对象 ────────┘
+                    （侵入式：两个节点成员）
+</code></pre>
+<p>对应的内核手法就是 §1 讲的"一个对象嵌多个容器节点"。</p>
+<p><strong>④ 价格用整数（ticks）而非浮点</strong></p>
+<p>内核里绝不会用浮点数做树的键——原因不只是精度，还有<strong>比较开销和确定性</strong>。订单簿同理：<code class="c">price_in_ticks = round(price * 10000)</code>。</p>
+</details>
+</details>
+<p><strong>Q3.</strong> 内核容器为什么都是"侵入式"的？用户态容器有什么不同？</p>
+<details>
+<summary>答案</summary>
+<p><strong>侵入式（intrusive）</strong> = 容器节点<strong>嵌在对象里</strong>，而不是容器为元素分配节点。</p>
+<pre class="code" data-label="C"><code class="c">struct my_object {
+    int         value;
+    struct list_head    list;      /* 节点嵌在对象里 */
+    struct rb_node      rb;        /* 同一个对象可挂多条结构 */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>用户态容器（<code class="c">std::list&lt;T&gt;</code>）</th>
+<th>内核容器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁分配节点</td>
+<td>容器分配（每次 insert 一次 <code class="c">malloc</code>）</td>
+<td>⭐ <strong>零额外分配</strong></td>
+</tr>
+<tr>
+<td>元素能否同时在多个容器</td>
+<td>不能（除非存指针拷贝）</td>
+<td>⭐ <strong>能</strong>（多个节点成员）</td>
+</tr>
+<tr>
+<td>从节点找回对象</td>
+<td>不需要</td>
+<td>⭐ <code class="c">container_of()</code></td>
+</tr>
+<tr>
+<td>删除</td>
+<td>O(1)</td>
+<td>O(1)（只需 head + 节点本身）</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>每元素一次分配（含 malloc 头 16B）</td>
+<td>⭐ 每节点 16 字节，无分配器开销</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三个理由：</strong></p>
+<ol>
+<li>⭐ <strong>零分配</strong>：内核路径上很多地方不能睡眠（原子上下文），不能 <code class="c">kmalloc</code>。侵入式让 insert 变成纯指针操作。</li>
+<li>⭐ <strong>一个对象属于多个结构</strong>：见 Q1 的 <code class="c">task_struct</code>——同时挂在全局链表、PID 哈希、进程树、CFS 红黑树上。</li>
+<li>⭐ <strong>延迟可预测</strong>：没有分配器介入，insert/remove 的最坏延迟是确定的常数。</li>
+</ol>
+<p><strong>HFT 平移</strong>：<code class="c">std::map&lt;K,V&gt;</code> 每次 insert 都 <code class="c">malloc</code>——这是<strong>常被忽略的延迟尖峰来源</strong>。低延迟订单簿的标准做法是"预分配对象池 + 侵入式链表/树"。</p>
+</details>
+<p><strong>Q4.</strong> <code class="c">hlist</code> 的 <code class="c">pprev</code> 为什么是二级指针？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">struct hlist_head {
+    struct hlist_node *first;
+};
+struct hlist_node {
+    struct hlist_node *next, **pprev;   /* ← pprev 是 struct hlist_node ** */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节点位置</th>
+<th><code class="c">pprev</code> 指向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>桶内<strong>第一个</strong>节点</td>
+<td><code class="c">&amp;head-&gt;first</code></td>
+</tr>
+<tr>
+<td>其他节点</td>
+<td><code class="c">&amp;前一个节点-&gt;next</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>收益：删除操作不需要边界判断</strong></p>
+<pre class="code" data-label="C"><code class="c">static inline void __hlist_del(struct hlist_node *n)
+{
+    struct hlist_node *next = n-&gt;next;
+    struct hlist_node **pprev = n-&gt;pprev;
+
+    WRITE_ONCE(*pprev, next);              /* 前驱&quot;指向我的字段&quot;改指 next */
+    if (next)
+        WRITE_ONCE(next-&gt;pprev, pprev);   /* next 的 pprev 接管 */
+}
+</code></pre>
+<p>对比普通双向链表必须写的边界判断：</p>
+<pre class="code" data-label="C"><code class="c">if (node-&gt;prev == head) head-&gt;first = node-&gt;next;   /* 是不是第一个？ */
+else node-&gt;prev-&gt;next = node-&gt;next;
+</code></pre>
+<p>⭐ <strong>少一个分支 = 少一次分支预测失败</strong>。这是内核里反复出现的技巧（同样手法见 <code class="c">plist</code>、<code class="c">rbtree</code> 的 parent 编码、radix tree 的 slot 操作）。</p>
+<p><strong>另一个收益是头节点只要 8 字节</strong>：<code class="c">list_head</code> 的头是 16 字节（<code class="c">next</code>+<code class="c">prev</code>），<code class="c">hlist_head</code> 只有 8 字节（只有 <code class="c">first</code>）。大哈希表的桶数常常是几万到几十万，<strong>每个桶省 8 字节</strong>就是几十 KB 到几 MB。</p>
+</details>
+<p><strong>Q5.</strong> <code class="c">llist</code> 在哪些操作组合下不需要加锁？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/llist.h</code> 头部注释直接给出并发兼容矩阵：</p>
+<pre class="code" data-label="code"><code class="c">           |   add    | del_first |  del_all
+ add       |    -     |     -     |     -
+ del_first |          |     L     |     L
+ del_all   |          |           |     -
+</code></pre>
+<p>（<code class="c">-</code> = 无需加锁，<code class="c">L</code> = 需要加锁）</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作组合</th>
+<th>需要锁？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">llist_add</code> × <code class="c">llist_add</code></td>
+<td>⭐ 否</td>
+</tr>
+<tr>
+<td><code class="c">llist_add</code> × <code class="c">llist_del_first</code></td>
+<td>⭐ 否</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">llist_add</code> × <code class="c">llist_del_all</code></strong></td>
+<td>⭐ <strong>否 → MPMC 无锁</strong></td>
+</tr>
+<tr>
+<td><code class="c">llist_del_first</code> × <code class="c">llist_del_first</code></td>
+<td><strong>是</strong></td>
+</tr>
+<tr>
+<td><code class="c">llist_del_first</code> × <code class="c">llist_del_all</code></td>
+<td><strong>是</strong></td>
+</tr>
+<tr>
+<td><code class="c">llist_del_all</code> × <code class="c">llist_del_all</code></td>
+<td>⭐ 否（各自 <code class="c">xchg</code> 拿走整条链）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>核心结论</strong>：<strong><code class="c">llist_add</code> + <code class="c">llist_del_all</code> 是 MPMC 无锁的</strong>——多生产者多消费者，零锁。这是 <code class="c">llist</code> 的典型用法（<code class="c">irq_work</code>、惰性释放队列、RCU 回调批处理）。</p>
+<p><strong>为什么 <code class="c">del_first</code> 需要锁</strong>（注释原文）：</p>
+<blockquote>
+<p>"<code class="c">llist_del_first</code> depends on <code class="c">list-&gt;first-&gt;next</code> not changing, but without lock protection, there's no way to be sure about that if a preemption happens in the middle of the delete operation and on being preempted back, the <code class="c">list-&gt;first</code> is the same as before causing the <code class="c">cmpxchg</code> in <code class="c">llist_del_first</code> to succeed."</p>
+</blockquote>
+<p>即典型的 <strong>ABA 问题</strong>：<code class="c">del_first</code> 的 <code class="c">cmpxchg</code> 检查的是"头指针没变"，但被抢占期间另一个消费者可能已经改过链表——头指针看起来一样，语义却完全不同。</p>
+</details>
+<p><strong>Q6.</strong> XArray 怎么用指针的低 2 位？"值条目"有什么用？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/xarray.h:23-42</code>：</p>
+<pre class="code" data-label="code"><code class="c"> * The bottom two bits of the entry determine how the XArray interprets
+ * the contents:
+ *
+ * 00: Pointer entry
+ * 10: Internal entry
+ * x1: Value entry or tagged pointer
+ *
+ * 0-62: Sibling entries
+ * 256: Retry entry
+ * 257: Zero entry
+ *
+ * Errors are also represented as internal entries, but use the negative
+ * space (-4094 to -2).  They're never stored in the slots array; only
+ * returned by the normal API.
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>低 2 位</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">00</code></td>
+<td>普通指针（对齐保证最低 2 位为 0）</td>
+</tr>
+<tr>
+<td><code class="c">10</code></td>
+<td>内部条目：树节点指针 / 特殊标记（0-62 兄弟、256 retry、257 zero）</td>
+</tr>
+<tr>
+<td><code class="c">x1</code></td>
+<td>⭐ <strong>值条目</strong>：整数直接存在"指针"里</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>值条目的价值</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#define BITS_PER_XA_VALUE   (BITS_PER_LONG - 1)     /* 64 位机 = 63 位 */
+</code></pre>
+<p>存一个小整数时<strong>完全不需要分配节点</strong> —— <code class="c">xa_mk_value(v)</code> 把 <code class="c">v</code> 左移 1 位并置低位 1，<code class="c">xa_to_value(e)</code> 反向。</p>
+<p>对于"稀疏 ID → 小整数"的场景（计数器、标志、小 ID），这<strong>省掉每一次的内存分配</strong>。</p>
+<p><strong>错误码的编码</strong>（呼应 <a href="chapter-05.html#s-5-2">5.2 的 <code class="c">MAX_ERRNO</code></a>）：</p>
+<p>错误码用负空间 <code class="c">-4094 ~ -2</code>，与 <code class="c">MAX_ERRNO = 4095</code> 是同一套体系。且注释强调：</p>
+<blockquote>
+<p>"They're <strong>never stored</strong> in the slots array; only returned by the normal API."</p>
+</blockquote>
+<p>即错误只出现在返回值里，不会污染树的内容。</p>
+<p><strong>版本断崖</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">xarray.h</code> 大小</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.18 / v4.19</td>
+<td>818 字节</td>
+<td>占位骨架（无 <code class="c">struct xarray</code>）</td>
+</tr>
+<tr>
+<td>⭐ <strong>v4.20</strong></td>
+<td><strong>45558 字节</strong>（50 处 <code class="c">struct xarray</code>）</td>
+<td>完整实现落地</td>
+</tr>
+</tbody>
+</table></div>
+</details>
+<p><strong>Q7.</strong> v6.6 里 IDR 和 XArray 是什么关系？</p>
+<details>
+<summary>答案</summary>
+<p>⭐ <strong>反直觉的事实：IDR 没有"被取代而消失"，它底层就是 XArray。</strong></p>
+<p>v6.6 <code class="c">include/linux/idr.h:14-24</code> 看起来还在用 radix tree：</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/radix-tree.h&gt;
+...
+struct idr {
+    struct radix_tree_root  idr_rt;
+    unsigned int        idr_base;
+    unsigned int        idr_next;
+};
+</code></pre>
+<p>但看 v6.6 <code class="c">include/linux/radix-tree.h:10-28</code>：</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/xarray.h&gt;
+#include &lt;linux/local_lock.h&gt;
+
+/* Keep unconverted code working */
+#define radix_tree_root     xarray
+#define radix_tree_node     xa_node
+</code></pre>
+<p>⭐⭐ <strong><code class="c">radix_tree_root</code> 已经被 <code class="c">#define</code> 成 <code class="c">xarray</code> 了</strong>，注释原文 <code class="c">/* Keep unconverted code working */</code>。</p>
+<p>真实的继承链：</p>
+<pre class="code" data-label="code"><code class="c">struct idr
+   └─ struct radix_tree_root idr_rt
+        └─ = struct xarray          （radix-tree.h 的 #define 兼容层）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>常见说法</th>
+<th>对不对</th>
+<th>实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"IDR 被 XArray 取代，IDR 没了"</td>
+<td>❌</td>
+<td>IDR 的 API 仍在（<code class="c">idr_alloc</code>、<code class="c">idr_find</code>…）</td>
+</tr>
+<tr>
+<td>"IDR 和 XArray 是两套独立实现"</td>
+<td>❌</td>
+<td>⭐ IDR 底层<strong>就是</strong> XArray</td>
+</tr>
+<tr>
+<td>⭐ "IDR 是 XArray 之上的薄封装"</td>
+<td>✅</td>
+<td>经 <code class="c">radix-tree.h</code> 的 typedef 兼容层</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么保留兼容层</strong>：内核里有几十个子系统用 <code class="c">radix_tree_*</code> API，一次性全改会造成巨大 churn。用 <code class="c">#define</code> 让老名字映射到新类型，<strong>新老代码共存，逐步迁移</strong>。这是内核处理"大规模 API 迁移"的标准手法。</p>
+</details>
+<p><strong>Q8.</strong> 为什么内核在 v6.1 把 VMA 从红黑树迁到 maple tree？</p>
+<details>
+<summary>答案</summary>
+<p>官方文档 <code class="c">Documentation/core-api/maple_tree.rst</code> 的定义：</p>
+<blockquote>
+<p>"The Maple Tree is a <strong>B-Tree</strong> data type which is optimized for storing <strong>non-overlapping ranges</strong>... It supports iterating over a range of entries and going to the previous or next entry in a <strong>cache-efficient</strong> manner. The tree can also be put into an <strong>RCU-safe</strong> mode of operation which allows reading and writing concurrently."</p>
+<p>"<strong>The most important usage of the Maple Tree is the tracking of the virtual memory areas.</strong>"</p>
+</blockquote>
+<h4>⭐⭐ 三个核心理由</h4>
+<p><strong>① B-Tree vs 二叉树 —— 同样 O(log n)，深度差 4 倍</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>rbtree（二叉）</th>
+<th>maple tree（B-Tree）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分支因子</td>
+<td>2</td>
+<td>⭐ <strong>16</strong>（<code class="c">MAPLE_RANGE64_SLOTS</code>）</td>
+</tr>
+<tr>
+<td>100 万元素深度</td>
+<td>≈ 20 层</td>
+<td>⭐ ≈ 5 层</td>
+</tr>
+<tr>
+<td>每层 cache 行为</td>
+<td>随机指针追逐</td>
+<td>⭐ 节点内连续数组，可硬件预取</td>
+</tr>
+</tbody>
+</table></div>
+<p>节点 256 字节对齐，64 位下 <code class="c">MAPLE_RANGE64_SLOTS = 16</code>、<code class="c">MAPLE_NODE_SLOTS = 31</code>。</p>
+<p><strong>② ⭐ RCU-safe —— rbtree 的根本短板</strong></p>
+<p>rbtree 只有 <code class="c">rb_replace_node_rcu()</code> 和 <code class="c">rb_link_node_rcu()</code> 两个 RCU 变体，<strong>没有通用的 RCU 安全查找</strong>。因为 rebalance 会改变树结构，RCU 读者可能读到正在被旋转的节点。</p>
+<p>而 per-VMA lock（v6.4+）要求 <strong>VMA 查找的读侧无锁</strong>——rbtree 做不到，maple tree 原生支持。</p>
+<p><strong>③ 原生区间语义</strong></p>
+<p>VMA 是<strong>区间</strong>（<code class="c">[vm_start, vm_end)</code>），不是点。rbtree 只存点，需要额外的链表做双簿记；maple tree 原生存区间，"size 1 的区间"就是点。</p>
+<h4>⭐ 附：maple tree 的三个实现技巧</h4>
+<ol>
+<li><strong>parent 指针低位当标志</strong>：节点 256B 对齐 → <code class="c">parent</code> 低 8 位恒为 0 → bit 0 借作标志（同 XArray 的低位打标）</li>
+<li><strong>已删除节点的 parent 指向自己</strong>：RCU 读者读 slot 后检查 <code class="c">parent</code> 是否自指，若是则重试——<strong>零成本的失效检测</strong></li>
+<li>⭐ <strong>复用 slots 数组当 RCU head</strong>：节点删除后 slots 数组失去语义，直接把 <code class="c">rcu_head</code> 覆写在上面，<strong>节点大小一点没变</strong></li>
+</ol>
+<h4>补充：rbtree 其实也用了低位打标</h4>
+<pre class="code" data-label="C"><code class="c">#define rb_parent(r)   ((struct rb_node *)((r)-&gt;__rb_parent_color &amp; ~3))
+</code></pre>
+<p><code class="c">__rb_parent_color</code> 把 parent 指针 + 颜色打包进一个 word（低 2 位存颜色）。同样的技巧，不同的结构。</p>
+<p><strong>版本</strong>：maple tree 引入于 <strong>v6.1</strong>（<code class="c">include/linux/maple_tree.h</code>：v6.0 = 14 字节 404 残片 / v6.1 = 23073 字节）。</p>
+</details>
+<p><strong>Q9.</strong> 内核为什么不给 rbtree 提供带回调的通用 insert/search API？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">include/linux/rbtree.h:6-13</code> 的作者注释直接回答了：</p>
+<pre class="code" data-label="code"><code class="c">  To use rbtrees you'll have to implement your own insert and search cores.
+  This will avoid us to use callbacks and to drop drammatically performances.
+  I know it's not the cleaner way,  but in C (not in C++) to get
+  performances and genericity...
+</code></pre>
+<p>⭐ <strong>原因：回调无法内联，每次比较都是一次间接调用。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>比较成本</th>
+<th>灵活性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>通用 API + 函数指针回调</td>
+<td>每次比较 = 一次间接调用（不能被内联、不能被常量传播优化）</td>
+<td>高</td>
+</tr>
+<tr>
+<td>⭐ 内核做法：用户自己写比较逻辑</td>
+<td>比较被完全内联，编译器可跨比较优化</td>
+<td>低（每个使用者写一份）</td>
+</tr>
+</tbody>
+</table></div>
+<p>在 C++ 里这可以用模板解决（<code class="c">std::map&lt;K,V,Compare&gt;</code> 的 Compare 是编译期绑定的，可内联）。C 语言没有模板，内核选择<strong>牺牲易用性换零抽象开销</strong>。</p>
+<p><strong>代价</strong>：每个 rbtree 使用者都要自己写一份 <code class="c">search</code> / <code class="c">insert</code> 核心（内核里有几十份几乎一样的 rbtree 搜索代码）。</p>
+<p><strong>对比</strong>：新的 maple tree 提供了通用 <code class="c">mtree_store/load/...</code> API——因为它不需要用户提供的比较函数（键就是 <code class="c">unsigned long</code> 区间），<strong>回调问题根本不存在</strong>。这也是它被官方称为 "designed to be simple to use and does not require a user written search method" 的原因。</p>
+</details>
+<p><strong>Q10.</strong> 选型时应该按哪几个维度考虑？为什么"复杂度"不是第一位的？</p>
+<details>
+<summary>答案</summary>
+<p>按重要性<strong>从高到低</strong>四个维度：</p>
+<h4>维度 1：⭐ 并发形状（最容易被忽略，也最容易致命）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>并发形状</th>
+<th>首选</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单 CPU 独占</td>
+<td>per-CPU 化，直接消灭共享</td>
+</tr>
+<tr>
+<td>SPSC 跨上下文</td>
+<td><code class="c">kfifo</code> 无锁环</td>
+</tr>
+<tr>
+<td>⭐ MPMC + 批量收割</td>
+<td><code class="c">llist</code>（<code class="c">add</code> + <code class="c">del_all</code> 无锁）</td>
+</tr>
+<tr>
+<td>读极多写极少</td>
+<td>RCU 保护的结构（读侧零开销）</td>
+</tr>
+<tr>
+<td>⭐ RCU 无锁读 + 区间</td>
+<td><strong>只能</strong>是 maple tree</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么它第一</strong>：并发形状决定了"能不能无锁 / 要不要阻塞"。一个需要持锁的结构，即使 O(1)，在争用下也会退化成 O(n) 的等待；而一个无锁的 O(log n) 结构反而更快。</p>
+<h4>维度 2：渐进复杂度</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>结构</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全量遍历</td>
+<td>list（O(n) 但常数极小）</td>
+</tr>
+<tr>
+<td>点查（均匀键）</td>
+<td>哈希表 O(1)</td>
+</tr>
+<tr>
+<td>有序 / 最值</td>
+<td>rbtree O(log n)</td>
+</tr>
+<tr>
+<td>稀疏整数索引</td>
+<td>xarray O(log n) 常数小</td>
+</tr>
+<tr>
+<td>区间查询</td>
+<td>maple tree O(log n)</td>
+</tr>
+</tbody>
+</table></div>
+<h4>维度 3：⭐ 缓存布局</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>100 万元素深度</th>
+<th>每步 cache 行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rbtree</td>
+<td>≈ 20 层</td>
+<td>随机指针追逐</td>
+</tr>
+<tr>
+<td>maple tree</td>
+<td>≈ 5 层</td>
+<td>节点内连续数组，可预取</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>大 O 相同不代表性能相同</strong>——v6.1 把 VMA 从 rbtree 迁到 maple tree 就是这个维度驱动的。</p>
+<h4>维度 4：内存开销</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>每节点</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">list_head</code></td>
+<td>16 B</td>
+<td>头也是 16 B</td>
+</tr>
+<tr>
+<td><code class="c">hlist_node</code></td>
+<td>16 B</td>
+<td>⭐ <strong>头只要 8 B</strong></td>
+</tr>
+<tr>
+<td><code class="c">rb_node</code></td>
+<td>24 B</td>
+<td></td>
+</tr>
+<tr>
+<td>maple 节点</td>
+<td>256 B</td>
+<td>对齐，但分支因子高，摊薄后更省</td>
+</tr>
+<tr>
+<td>xarray 节点</td>
+<td>~576 B（64 槽）</td>
+<td>⭐ 但值条目零分配</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<p>原文那句总结仍是最好的：</p>
+<blockquote>
+<p><strong>先想并发形状，再想复杂度，最后想缓存布局。</strong></p>
+</blockquote>
+<p>（本笔记补充第四维：内存开销。）</p>
+<p><strong>HFT 平移时最该抄的三条内核经验：</strong></p>
+<ol>
+<li><strong>侵入式容器</strong>（对象里嵌节点）消灭每次 insert 的 <code class="c">malloc</code></li>
+<li><strong>SPSC 环容量取 2 的幂</strong>，用 <code class="c">&amp; mask</code> 代替 <code class="c">%</code></li>
+<li>⭐ <strong>B 树优于二叉搜索树</strong>——同样 O(log n)，深度差 4 倍，cache 行为天壤之别（这正是很多高性能 KV 存储用 B+ 树而非红黑树的原因）</li>
+</ol>
 </details>
 </details>
 <hr />
+<p>→ <a href="#s-6-7">6.7 算法复杂度</a> · <a href="chapter-09.html#ch-9">Ch 9 内核同步</a> · <a href="chapter-15.html#s-15-4">Ch 15.4 VMA 的链表与树</a> · <a href="chapter-10.html#s-10-10">Ch 10 排序和屏障</a></p>
       </section>
       <section class="section" id="s-6-7">
         <div class="sec-head"><div class="sec-no">6.7</div><h2>section-6.7-算法复杂度</h2></div>

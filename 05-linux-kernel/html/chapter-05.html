@@ -821,33 +821,56 @@ strace -e write,exit ./write_raw_syscall
       </section>
       <section class="section" id="s-5-2">
         <div class="sec-head"><div class="sec-no">5.2</div><h2>section-5.2-系统调用基础</h2></div>
+<blockquote>
+<p>承接 <a href="#s-5-1">5.1 与内核通信</a>。
+本节回答：<strong>系统调用号怎么分配、为什么永不回收、以及一次 syscall 的开销到底花在哪。</strong></p>
+</blockquote>
 <hr />
-<h3>1. 系统调用号</h3>
-<p>每一个内核提供的服务，分配一个独一无二的 <strong>数字编号（系统调用号）</strong>。</p>
-<p>示例（x86_64，号随内核/ABI 以头文件为准）：</p>
+<h3>1. 系统调用号：v6.6 x86_64 实证</h3>
+<p>每一个内核提供的服务，分配一个独一无二的 <strong>数字编号（系统调用号）</strong>。内核内部维护一张大表：<strong><code class="c">sys_call_table</code></strong>。</p>
+<p>v6.6 <code class="c">arch/x86/entry/syscalls/syscall_64.tbl</code> 前 15 行原文：</p>
+<pre class="code" data-label="code"><code class="c">0   common  read            sys_read
+1   common  write           sys_write
+2   common  open            sys_open
+3   common  close           sys_close
+4   common  stat            sys_newstat
+5   common  fstat           sys_newfstat
+6   common  lstat           sys_newlstat
+7   common  poll            sys_poll
+8   common  lseek           sys_lseek
+9   common  mmap            sys_mmap
+10  common  mprotect        sys_mprotect
+11  common  munmap          sys_munmap
+12  common  brk         sys_brk
+13  64  rt_sigaction        sys_rt_sigaction
+14  common  rt_sigprocmask      sys_rt_sigprocmask
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>符号</th>
-<th>常见号（示意）</th>
+<th>表字段</th>
+<th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">__NR_read</code></td>
-<td>0</td>
+<td>第 1 列</td>
+<td>号码</td>
 </tr>
 <tr>
-<td><code class="c">__NR_write</code></td>
-<td>1</td>
+<td>第 2 列</td>
+<td>ABI：<code class="c">common</code> / <code class="c">64</code>（仅 64 位）/ <code class="c">x32</code>（仅 x32）</td>
 </tr>
 <tr>
-<td><code class="c">__NR_open</code></td>
-<td>2</td>
+<td>第 3 列</td>
+<td>用户可见名字</td>
+</tr>
+<tr>
+<td>第 4 列</td>
+<td>内核入口符号</td>
 </tr>
 </tbody>
 </table></div>
-<p>内核内部维护一张大表：<strong><code class="c">sys_call_table</code>（系统调用表）</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -862,10 +885,95 @@ strace -e write,exit ./write_raw_syscall
 </tr>
 <tr>
 <td>数组内容</td>
-<td>= 对应内核处理函数指针 <code class="c">sys_xxx()</code></td>
+<td>= 对应内核处理函数指针</td>
 </tr>
 </tbody>
 </table></div>
+<h4>v6.6 x86_64 的精确数字</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>表中总条目</td>
+<td><strong>401</strong></td>
+</tr>
+<tr>
+<td>其中 64 位可见</td>
+<td><strong>365</strong>（<code class="c">common</code> 317 + <code class="c">64</code> 专属 48）</td>
+</tr>
+<tr>
+<td>x32 专属</td>
+<td>36</td>
+</tr>
+<tr>
+<td>最大号码</td>
+<td><strong>547</strong></td>
+</tr>
+<tr>
+<td><code class="c">__NR_syscalls</code></td>
+<td><strong>453</strong></td>
+</tr>
+<tr>
+<td>表内 <code class="c">sys_ni_syscall</code> 存根</td>
+<td><strong>1 个</strong>（156 号 <code class="c">_sysctl</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <strong>统计 syscall 数量要看条目数，不是最大号码</strong> —— 号码会跳（见下）。</p>
+</blockquote>
+<h4>表头注释里的两条硬规则</h4>
+<pre class="code" data-label="code"><code class="c"># don't use numbers 387 through 423, add new calls after the last
+# 'common' entry
+#
+# Due to a historical design error, certain syscalls are numbered differently
+# in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+# Do not add new syscalls to this range.  Numbers 548 and above are available
+# for non-x32 use.
+</code></pre>
+<h4>⭐ 号码表上的三类"洞"</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>位置</th>
+<th>成因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>x32 跳跃洞</strong></td>
+<td><strong>335–423（89 个号码）</strong></td>
+<td>为避开 x32 的 512-547 段而预留，详见 <a href="chapter-01.html#s-1-1">Ch 1.1</a></td>
+</tr>
+<tr>
+<td><strong>架构差异洞</strong></td>
+<td>各架构不同</td>
+<td>同一号码在不同架构上是不同 syscall（ABI 不统一）</td>
+</tr>
+<tr>
+<td><strong>历史移除洞</strong></td>
+<td>如 156 号</td>
+<td>填 <code class="c">sys_ni_syscall</code>，<strong>号码不回收</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>x32 洞的真正原因</strong>（v5.1 的表头注释原文，v6.6 已删除）：
+<code class="c"># x32-specific system call numbers start at 512 to avoid cache impact for native 64-bit operation.</code>
+—— syscall 表是<strong>按号索引的数组</strong>，x32 号码交错会拉大数组跨度，恶化原生 64 位路径的 cache 局部性。</p>
+</blockquote>
+<h4>⭐ 表头另一条容易被忽略的信息</h4>
+<pre class="code" data-label="code"><code class="c"># The __x64_sys_*() stubs are created on-the-fly for sys_*() system calls
+</code></pre>
+<p>表里写的是 <code class="c">sys_read</code>，但<strong>实际链接进 <code class="c">sys_call_table</code> 的符号是 <code class="c">__x64_sys_read</code></strong>。中间的包装层由 <code class="c">SYSCALL_DEFINE</code> 宏自动生成，负责 64 位参数的符号/零扩展。</p>
+<hr />
+<h3>2. <code class="c">-ENOSYS</code> 的两条不同路径</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -876,7 +984,7 @@ strace -e write,exit ./write_raw_syscall
 <tbody>
 <tr>
 <td>每个 syscall <strong>唯一编号</strong></td>
-<td>如 x86 <code class="c">__NR_read</code></td>
+<td>如 x86_64 <code class="c">__NR_read = 0</code></td>
 </tr>
 <tr>
 <td><strong>号一旦分配永不回收</strong></td>
@@ -888,40 +996,248 @@ strace -e write,exit ./write_raw_syscall
 </tr>
 </tbody>
 </table></div>
+<p>但"返回 <code class="c">-ENOSYS</code>"其实有 <strong>两条完全不同的实现路径</strong>，这是多数教材不讲的部分。</p>
+<h4>路径 A：号码被永久废弃 → 表里直填</h4>
+<p>v6.6 <code class="c">kernel/sys_ni.c:22-25</code>——整个函数就这么点：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Non-implemented system calls get redirected here.
+ */
+asmlinkage long sys_ni_syscall(void)
+{
+    return -ENOSYS;
+}
+</code></pre>
+<p>在 <code class="c">syscall_64.tbl</code> 里，全表<strong>只有一处</strong>直接引用它：</p>
+<pre class="code" data-label="code"><code class="c">156 64  _sysctl         sys_ni_syscall
+</code></pre>
+<h4>路径 B：功能未编译进来 → 弱符号在链接期填</h4>
+<pre class="code" data-label="C"><code class="c">/* kernel/sys_ni.c:26 */
+#define COND_SYSCALL(name) cond_syscall(sys_##name)
+</code></pre>
+<p><code class="c">sys_ni.c</code> 里有 <strong>217 条</strong> <code class="c">COND_SYSCALL(...)</code>，例如：</p>
+<pre class="code" data-label="C"><code class="c">COND_SYSCALL(io_uring_setup);
+COND_SYSCALL(io_uring_enter);
+COND_SYSCALL(io_uring_register);
+COND_SYSCALL(futex);
+COND_SYSCALL(clone3);
+COND_SYSCALL(epoll_pwait2);
+COND_SYSCALL(quotactl_fd);
+...
+</code></pre>
+<p><strong>机制</strong>：<code class="c">cond_syscall()</code> 展开成一个 <strong>弱符号别名</strong>指向 <code class="c">sys_ni_syscall</code>。如果真正的实现因为 <code class="c">CONFIG_*</code> 未开启而没被编译进 vmlinux，链接器就用这个弱符号兜底。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>路径 A（号码废弃）</th>
+<th>路径 B（功能未编译）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发</td>
+<td>syscall 从内核彻底消失</td>
+<td>syscall 还在，但依赖的 CONFIG 关闭</td>
+</tr>
+<tr>
+<td>位置</td>
+<td><code class="c">syscall_64.tbl</code> 表项</td>
+<td><code class="c">kernel/sys_ni.c</code> 的 <code class="c">COND_SYSCALL</code></td>
+</tr>
+<tr>
+<td>发生时机</td>
+<td>编译表时</td>
+<td><strong>链接期</strong>（弱符号解析）</td>
+</tr>
+<tr>
+<td>v6.6 数量（x86_64）</td>
+<td><strong>1 个</strong>（156 <code class="c">_sysctl</code>）</td>
+<td><strong>217 个</strong></td>
+</tr>
+<tr>
+<td>用户态可见</td>
+<td>都是 <code class="c">-ENOSYS</code></td>
+<td>都是 <code class="c">-ENOSYS</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>HFT/嵌入式含义</strong>：精简内核（关掉 io_uring、fanotify、kexec 等）不会让这些号码报错崩溃，而是优雅返回 <code class="c">-ENOSYS</code>——<strong>这层弱符号兜底正是"内核可裁剪"的基础设施</strong>。glibc 会据此退化到老实现（如 <code class="c">openat</code> 不可用时退 <code class="c">open</code>）。</p>
+</blockquote>
 <hr />
-<h3>2. 调用流程（极简版）</h3>
-<ol>
-<li>用户程序把 <strong>系统调用号、调用参数</strong> 放入 CPU 指定寄存器；</li>
-<li>触发 CPU 特权切换指令，陷入内核；</li>
-<li>内核取出调用号，查 <code class="c">sys_call_table</code>，执行对应内核函数；</li>
-<li>执行完成，把返回值放入寄存器，切回用户态继续运行。</li>
-</ol>
-<hr />
-<h3>3. 陷入指令（按架构）</h3>
+<h3>3. 陷入指令：x86_64 上三条路径并存</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>架构</th>
 <th>指令</th>
+<th>备注</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>x86_32</td>
 <td><code class="c">int 0x80</code>（软中断）</td>
+<td>最慢，走完整 IDT 查表</td>
 </tr>
 <tr>
-<td>x86_64</td>
-<td><code class="c">syscall</code> / <code class="c">sysret</code>（专用快速路径，性能更高）</td>
+<td>x86_32（新）</td>
+<td><code class="c">sysenter</code> / <code class="c">sysexit</code></td>
+<td>Intel 的快速路径</td>
+</tr>
+<tr>
+<td><strong>x86_64</strong></td>
+<td><strong><code class="c">syscall</code> / <code class="c">sysret</code></strong></td>
+<td>AMD 提出的专用快速路径，跳过 IDT</td>
 </tr>
 <tr>
 <td>ARM64</td>
 <td><code class="c">svc #0</code></td>
+<td></td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>调用流程（极简版）：</strong></p>
+<ol>
+<li>用户程序把 <strong>系统调用号、调用参数</strong> 放入 CPU 指定寄存器；</li>
+<li>触发 CPU 特权切换指令，陷入内核；</li>
+<li>内核取出调用号，查 <code class="c">sys_call_table</code>，执行对应内核函数；</li>
+<li>执行完成，把返回值放入寄存器，切回用户态继续运行。</li>
+</ol>
+<h4>x86_64 的寄存器约定</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>寄存器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统调用号</td>
+<td><code class="c">rax</code></td>
+</tr>
+<tr>
+<td>参数 1~6</td>
+<td><code class="c">rdi</code>, <code class="c">rsi</code>, <code class="c">rdx</code>, <code class="c">r10</code>, <code class="c">r8</code>, <code class="c">r9</code></td>
+</tr>
+<tr>
+<td>返回值</td>
+<td><code class="c">rax</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">syscall</code> 指令破坏的</strong></td>
+<td><code class="c">rcx</code>（存返回 RIP）、<code class="c">r11</code>（存 RFLAGS）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ 注意参数 4 是 <strong><code class="c">r10</code> 而不是 <code class="c">rcx</code></strong> —— 因为 <code class="c">syscall</code> 指令本身要用 <code class="c">rcx</code> 保存返回地址。这是 x86_64 syscall 与 System V 函数调用 ABI 的<strong>唯一差异</strong>，写内联汇编时最容易踩。</p>
+</blockquote>
+<h4>⭐ 一个安全细节：号码按 int 处理</h4>
+<p>v6.6 <code class="c">arch/x86/entry/entry_64.S:115-116</code>：</p>
+<pre class="code" data-label="asm"><code class="c">    /* Sign extend the lower 32bit as syscall numbers are treated as int */
+    movslq  %eax, %rsi
+</code></pre>
+<p>只取 <code class="c">eax</code> 的低 32 位并<strong>符号扩展</strong>成 64 位。因此负数号码会变成一个巨大的正数索引，在 <code class="c">do_syscall_64</code> 的边界检查（<code class="c">nr &lt; NR_syscalls</code>）处被拒绝，<strong>不可能索引到表外</strong>。</p>
 <hr />
-<h3>4. 返回值约定</h3>
+<h3>4. ⭐ syscall 到底贵在哪：逐步拆解 <code class="c">entry_SYSCALL_64</code></h3>
+<p>"syscall 比函数调用慢两个数量级"人人都会说，但<strong>开销具体花在哪</strong>要读汇编。以下是 v6.6 <code class="c">arch/x86/entry/entry_64.S:87-227</code> 的<strong>真实指令序列</strong>。</p>
+<h4>进入路径（:87-120）</h4>
+<pre class="code" data-label="asm"><code class="c">SYM_CODE_START(entry_SYSCALL_64)
+    UNWIND_HINT_ENTRY
+    ENDBR                                             /* ① CET：ENDBR64 着陆点 */
+
+    swapgs                                            /* ② 换 GS 基址（用户GS → 内核GS） */
+    movq    %rsp, PER_CPU_VAR(cpu_tss_rw + TSS_sp2)
+    SWITCH_TO_KERNEL_CR3 scratch_reg=%rsp             /* ③ 换页表 CR3（PTI） */
+    movq    PER_CPU_VAR(pcpu_hot + X86_top_of_stack), %rsp  /* ④ 切内核栈 */
+
+    /* Construct struct pt_regs on stack */
+    pushq   $__USER_DS                                /* ⑤ 手工构造 pt_regs（6 次 push） */
+    pushq   PER_CPU_VAR(cpu_tss_rw + TSS_sp2)
+    pushq   %r11
+    pushq   $__USER_CS
+    pushq   %rcx
+    pushq   %rax
+
+    PUSH_AND_CLEAR_REGS rax=$-ENOSYS                  /* ⑥ 全寄存器压栈 + 清零 */
+
+    movq    %rsp, %rdi
+    movslq  %eax, %rsi                                /* ⑦ 号码符号扩展为 int */
+
+    IBRS_ENTER                                        /* ⑧ Spectre v2 防护 */
+    UNTRAIN_RET                                       /* ⑨ Retbleed 防护 */
+
+    call    do_syscall_64                             /* ⑩ 真正干活 */
+</code></pre>
+<h4>返回路径（:198-227）</h4>
+<pre class="code" data-label="asm"><code class="c">syscall_return_via_sysret:
+    IBRS_EXIT                                         /* ① */
+    POP_REGS pop_rdi=0                                /* ② 全寄存器出栈 */
+
+    movq    %rsp, %rdi
+    movq    PER_CPU_VAR(cpu_tss_rw + TSS_sp0), %rsp    /* ③ 切 trampoline 栈 */
+    pushq   RSP-RDI(%rdi)
+    pushq   (%rdi)
+
+    STACKLEAK_ERASE_NOCLOBBER                         /* ④ 清空内核栈（防信息泄露） */
+    SWITCH_TO_USER_CR3_STACK scratch_reg=%rdi         /* ⑤ 换回用户页表 CR3 */
+
+    popq    %rdi
+    popq    %rsp
+    swapgs                                            /* ⑥ 换回用户 GS */
+    sysretq                                           /* ⑦ 返回用户态 */
+</code></pre>
+<h4>⭐ 开销清单</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>成本性质</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>2 次 CR3 写入</strong>（<code class="c">SWITCH_TO_KERNEL_CR3</code> / <code class="c">SWITCH_TO_USER_CR3_STACK</code>）</td>
+<td>⭐ <strong>最贵</strong>——写 CR3 可能触发 TLB 失效；这是 Meltdown 的 PTI 代价</td>
+</tr>
+<tr>
+<td><strong>2 次 <code class="c">swapgs</code></strong></td>
+<td>中段；切换 GS 段基址以访问 percpu 数据</td>
+</tr>
+<tr>
+<td><strong><code class="c">IBRS_ENTER</code> / <code class="c">IBRS_EXIT</code></strong></td>
+<td>Spectre v2 防护，间接分支预测限制</td>
+</tr>
+<tr>
+<td><strong><code class="c">UNTRAIN_RET</code></strong></td>
+<td>Retbleed 防护，返回地址的"去训练"序列</td>
+</tr>
+<tr>
+<td><strong><code class="c">PUSH_AND_CLEAR_REGS</code> / <code class="c">POP_REGS</code></strong></td>
+<td>全套通用寄存器压栈/出栈 + 清零（防 Spectre 的寄存器残留泄露）</td>
+</tr>
+<tr>
+<td><strong><code class="c">STACKLEAK_ERASE_NOCLOBBER</code></strong></td>
+<td>清空用过的内核栈（防栈内容泄露）</td>
+</tr>
+<tr>
+<td>手工构造 <code class="c">pt_regs</code>（6 次 <code class="c">pushq</code>）</td>
+<td>中段</td>
+</tr>
+<tr>
+<td>2 次栈切换（内核栈 / trampoline 栈）</td>
+<td>小段</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>关键认知</strong>：syscall 的开销<strong>主要不是"特权级切换"本身</strong>，而是 2018 年 Spectre/Meltdown 之后叠加的<strong>一整套侧信道缓解措施</strong>——PTI（双页表）、IBRS、UNTRAIN_RET、寄存器清零、栈清空。</p>
+<p>这也是为什么<strong>"少做 syscall"比"让 syscall 更快"更有效</strong>：io_uring 的收益来自<strong>批量摊薄</strong>（一次 <code class="c">io_uring_enter</code> 提交/收割多个 IO），而不是让单次陷入变快。详见 <a href="#s-5-6">5.6 添加系统调用与替代方案</a>。</p>
+</blockquote>
+<hr />
+<h3>5. 返回值约定与 ⭐ <code class="c">MAX_ERRNO = 4095</code></h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -941,8 +1257,148 @@ strace -e write,exit ./write_raw_syscall
 </tbody>
 </table></div>
 <p>libc 会把负错误码转换成全局变量 <strong><code class="c">errno</code></strong>（用户态看到的是正 errno + 函数返回 -1）。</p>
+<h4>⭐ 返回"指针"的 syscall 怎么办？</h4>
+<p>有些 syscall 成功时返回一个<strong>地址</strong>（如 <code class="c">mmap</code>）。它们没法用"负数"表示错误——<code class="c">0xFFFFFFFFFFFFF000</code> 以上的地址虽然通常是内核空间，但用户也可能合法映射。</p>
+<p>内核的解法：v6.6 <code class="c">include/linux/err.h:18-49</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define MAX_ERRNO   4095
+
+/*
+ * IS_ERR_VALUE - Detect an error pointer.
+ * ...
+ */
+#define IS_ERR_VALUE(x) unlikely((unsigned long)(void *)(x) &gt;= (unsigned long)-MAX_ERRNO)
+
+static inline long __must_check PTR_ERR(__force const void *ptr)
+{
+    return (long) ptr;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>定义</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAX_ERRNO</code></td>
+<td><code class="c">4095</code></td>
+<td>最大错误码</td>
+</tr>
+<tr>
+<td><code class="c">IS_ERR_VALUE(x)</code></td>
+<td><code class="c">(unsigned long)(x) &gt;= (unsigned long)-4095</code></td>
+<td>判断是否为错误指针</td>
+</tr>
+<tr>
+<td><code class="c">IS_ERR(p)</code></td>
+<td><code class="c">IS_ERR_VALUE((unsigned long)ptr)</code></td>
+<td>常用包装</td>
+</tr>
+<tr>
+<td><code class="c">PTR_ERR(p)</code></td>
+<td><code class="c">(long)ptr</code></td>
+<td>从错误指针取出负错误码</td>
+</tr>
+<tr>
+<td><code class="c">ERR_PTR(e)</code></td>
+<td><code class="c">(void *)(long)e</code></td>
+<td>把负错误码编码成指针</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>内存布局直觉：</strong></p>
+<pre class="code" data-label="code"><code class="c">0xFFFFFFFFFFFFFFFF  ┌─────────────────────┐
+                    │  错误指针区间        │  0xFFFFFFFFFFFFF001 ~ 0xFFFFFFFFFFFFFFFF
+0xFFFFFFFFFFFFF001  │  -1 ~ -4095         │  ← 最后一页，永不映射合法内存
+                    ├─────────────────────┤
+                    │  合法地址空间        │  ← 用户可映射的最大地址 &lt; 0xFFFFFFFFFFFFF000
+0x0000000000000000  └─────────────────────┘
+</code></pre>
+<blockquote>
+<p>⭐ <strong>为什么是 4095？</strong> 因为地址空间的<strong>最后一页</strong>永不映射（<code class="c">TASK_SIZE</code> 以下才是用户可映射范围）。把 <code class="c">-1 ~ -4095</code> 编码成"最后一页内的假指针"，就与所有合法指针天然不冲突。判断只需一次无符号比较，零成本。</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>syscall 类别</th>
+<th>成功返回</th>
+<th>失败返回</th>
+<th>用户态判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回 <code class="c">long</code> 的（read/write/...）</td>
+<td>≥ 0 的值</td>
+<td><code class="c">-errno</code></td>
+<td><code class="c">if (ret &lt; 0)</code></td>
+</tr>
+<tr>
+<td>返回指针的（mmap/...）</td>
+<td>合法地址</td>
+<td><code class="c">ERR_PTR(-errno)</code></td>
+<td><code class="c">if (IS_ERR(p))</code> / glibc 转成 <code class="c">-1</code> + <code class="c">errno=ENOMEM</code></td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<h3>内核侧命名与 ABI</h3>
+<h3>6. ⭐ <code class="c">asmlinkage</code> 的真相：x86_64 上它是<strong>空宏</strong></h3>
+<p>原文常说 <em>"<code class="c">asmlinkage</code> = 参数仅从栈取"</em>。这<strong>只对 i386 成立</strong>，在 x86_64 上是错的。</p>
+<h4>x86 的定义（v6.6 <code class="c">arch/x86/include/asm/linkage.h:19-21</code>）</h4>
+<pre class="code" data-label="C"><code class="c">#ifdef CONFIG_X86_32
+#define asmlinkage CPP_ASMLINKAGE __attribute__((regparm(0)))
+#endif /* CONFIG_X86_32 */
+</code></pre>
+<p>注意 <code class="c">#ifdef CONFIG_X86_32</code> —— <strong>64 位下这个宏根本不存在</strong>。</p>
+<h4>于是落到通用定义（v6.6 <code class="c">include/linux/linkage.h:14-22</code>）</h4>
+<pre class="code" data-label="C"><code class="c">#ifdef __cplusplus
+#define CPP_ASMLINKAGE extern &quot;C&quot;
+#else
+#define CPP_ASMLINKAGE
+#endif
+
+#ifndef asmlinkage
+#define asmlinkage CPP_ASMLINKAGE
+#endif
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构/配置</th>
+<th><code class="c">asmlinkage</code> 展开成</th>
+<th>实际效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>x86_64</strong></td>
+<td><code class="c">CPP_ASMLINKAGE</code> → <strong>空</strong></td>
+<td>⭐ <strong>毫无作用</strong>，纯历史遗迹</td>
+</tr>
+<tr>
+<td><strong>x86_32</strong></td>
+<td><code class="c">extern "C" __attribute__((regparm(0)))</code></td>
+<td>强制参数全部走栈</td>
+</tr>
+<tr>
+<td>C++ 编译</td>
+<td><code class="c">extern "C"</code></td>
+<td>关闭 name mangling</td>
+</tr>
+<tr>
+<td>多数其他架构</td>
+<td>空</td>
+<td>同 x86_64</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong><code class="c">regparm(0)</code> 是 i386 时代的产物</strong>：i386 通用寄存器太少（8 个），<code class="c">fastcall</code>/<code class="c">regparm</code> 之争最终让内核选择"参数全走栈"以简化汇编入口。x86_64 有 16 个寄存器、ABI 本来就用寄存器传参（<code class="c">rdi/rsi/rdx/...</code>），<strong>不需要也不存在这个属性</strong>。</p>
+<p>所以：<strong><code class="c">asmlinkage</code> 在现代 x86_64 内核里只是一个语义标注</strong>（告诉读者"这是从汇编入口调用的"），编译层面什么都不做。</p>
+</blockquote>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -953,77 +1409,1140 @@ strace -e write,exit ./write_raw_syscall
 <tbody>
 <tr>
 <td><strong><code class="c">asmlinkage</code></strong></td>
-<td>参数 <strong>仅从栈</strong> 取（历史 ABI 约定）</td>
+<td>x86_64 上为空宏；i386 上强制栈传参（<code class="c">regparm(0)</code>）</td>
 </tr>
 <tr>
 <td><strong><code class="c">sys_</code> 前缀</strong></td>
-<td>用户 <code class="c">bar()</code> → 内核 <strong><code class="c">sys_bar()</code></strong></td>
+<td>用户 <code class="c">bar()</code> → 内核 <code class="c">sys_bar()</code>；v6.6 实际入口符号是 <strong><code class="c">__x64_sys_bar</code></strong>（由 <code class="c">SYSCALL_DEFINE</code> 宏生成包装层）</td>
 </tr>
 </tbody>
 </table></div>
 <pre class="code" data-label="C"><code class="c">/* 概念示意 */
 asmlinkage long sys_read(unsigned int fd, char __user *buf, size_t count);
+/* v6.6 实际：SYSCALL_DEFINE3(read, ...) 展开出 __x64_sys_read()，
+   内部再调用 __se_sys_read() → __do_sys_read() */
 </code></pre>
-<p>→ 用户态查号：<code class="c">unistd.h</code> / <code class="c">asm/unistd.h</code> · <code class="c">strace</code> 可见实际号 · 下一节 <a href="#s-5-3">§5.3 入口处理</a></p>
+<hr />
+<h3>7. ⭐ vDSO：不陷入内核的"系统调用"</h3>
+<p>如果 syscall 这么贵，那像 <code class="c">clock_gettime()</code> 这种<strong>只读一个内核变量</strong>的调用，也要付出全套 PTI + IBRS 的代价吗？</p>
+<p>内核的答案：<strong>vDSO（virtual Dynamic Shared Object）</strong> —— 把一小段内核代码 + 一个数据页<strong>映射到每个进程的用户地址空间</strong>，让部分"系统调用"完全在用户态执行。</p>
+<h4>v6.6 x86_64 vDSO 导出的全部符号</h4>
+<p><code class="c">arch/x86/entry/vdso/vdso.lds.S</code> 的 VERSION 段：</p>
+<pre class="code" data-label="code"><code class="c">VERSION {
+    LINUX_2.6 {
+    global:
+        clock_gettime;
+        __vdso_clock_gettime;
+        gettimeofday;
+        __vdso_gettimeofday;
+        getcpu;
+        __vdso_getcpu;
+        time;
+        __vdso_time;
+        clock_getres;
+        __vdso_clock_getres;
+#ifdef CONFIG_X86_SGX
+        __vdso_sgx_enter_enclave;
+#endif
+    local: *;
+    };
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>导出符号</th>
+<th>作用</th>
+<th>是否真正避免陷入</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">clock_gettime</code></strong></td>
+<td>高精度时间</td>
+<td>⭐ <strong>是</strong>（<code class="c">CLOCK_MONOTONIC</code> 等纯计算时钟）</td>
+</tr>
+<tr>
+<td><strong><code class="c">gettimeofday</code></strong></td>
+<td>墙上时间</td>
+<td>⭐ <strong>是</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">clock_getres</code></strong></td>
+<td>时钟分辨率</td>
+<td>⭐ <strong>是</strong>（返回常量）</td>
+</tr>
+<tr>
+<td><strong><code class="c">time</code></strong></td>
+<td>秒级时间</td>
+<td>⭐ <strong>是</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">getcpu</code></strong></td>
+<td>当前 CPU / NUMA 节点</td>
+<td>⭐ <strong>是</strong>（读 percpu 页）</td>
+</tr>
+<tr>
+<td><code class="c">__vdso_sgx_enter_enclave</code></td>
+<td>SGX enclave 进入</td>
+<td>条件编译（<code class="c">CONFIG_X86_SGX</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>⭐ 原理：内核数据页 + 用户态计算</h4>
+<pre class="code" data-label="C"><code class="c">/* lib/vdso/gettimeofday.c:266-269 */
+static __maybe_unused int
+__cvdso_clock_gettime(clockid_t clock, struct __kernel_timespec *ts)
+{
+    return __cvdso_clock_gettime_data(__arch_get_vdso_data(), clock, ts);
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">      用户态                              内核态
+  ┌──────────────────┐              ┌──────────────────┐
+  │ glibc            │              │ 时间keeping      │
+  │ clock_gettime()  │              │ 更新 vdso_data   │
+  │   ↓              │              │  （每 tick）     │
+  │ __vdso_clock_    │   只读映射    │                  │
+  │   gettime()      │ ◄────────────┤ vdso_data 页     │
+  │   ↓ 纯算术       │              │ (seqcount 保护)  │
+  │ 读 vdso_data +   │              └──────────────────┘
+  │ 用上次的多项式   │
+  │ 插值算纳秒       │
+  └──────────────────┘
+        ↑ 全程无特权切换、无 CR3 切换
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关键点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数据来源</td>
+<td>内核把 <code class="c">vdso_data</code> 页<strong>只读</strong>映射到每个进程</td>
+</tr>
+<tr>
+<td>并发保护</td>
+<td>⭐ <strong>seqcount</strong>：用户态读序列，读到奇数序号就重试（无锁、无原子）</td>
+</tr>
+<tr>
+<td>为何安全</td>
+<td>用户态<strong>只能读</strong>，改不了内核时间</td>
+</tr>
+<tr>
+<td>glibc 透明</td>
+<td>用户调 <code class="c">clock_gettime()</code>，glibc 自动优先走 vDSO；<strong>代码零改动</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>注意不是所有时钟都走 vDSO</strong>：<code class="c">CLOCK_MONOTONIC</code>、<code class="c">CLOCK_REALTIME</code>、<code class="c">CLOCK_MONOTONIC_RAW</code>、<code class="c">CLOCK_BOOTTIME</code> 等纯计算时钟可以；涉及复杂换算或高精度硬件读的会<strong>回退到真 syscall</strong>（vDSO 内部会 <code class="c">syscall</code> 兜底）。</p>
+</blockquote>
+<hr />
+<h3>8. HFT 视角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>HFT 含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>syscall 开销</strong></td>
+<td>单次陷入含 2 次 CR3 切换 + IBRS + 寄存器清零 ≈ <strong>数百到上千 cycles</strong>，且<strong>尾延迟抖动大</strong>（TLB 失效、缓存冷）</td>
+</tr>
+<tr>
+<td>⭐ <strong>vDSO <code class="c">clock_gettime</code></strong></td>
+<td>HFT 打时间戳的<strong>唯一正确选择</strong>。走 vDSO 是 <strong>~20-30 cycles</strong>，走 syscall 是 <strong>~1000+ cycles</strong>，差 1~2 个数量级</td>
+</tr>
+<tr>
+<td><strong><code class="c">getcpu</code></strong></td>
+<td>每笔订单打 CPU 号做核绑定校验时，用 vDSO 版本零成本</td>
+</tr>
+<tr>
+<td><strong>io_uring</strong></td>
+<td>收益是<strong>批量摊薄</strong>（一次陷入处理 N 个 IO），不是"更快的 syscall"</td>
+</tr>
+<tr>
+<td><strong>errno / <code class="c">MAX_ERRNO</code></strong></td>
+<td>热路径上别用返回指针再判 <code class="c">IS_ERR</code> 的封装，直接判返回值更快</td>
+</tr>
+<tr>
+<td><strong><code class="c">-ENOSYS</code> 兜底</strong></td>
+<td>精简内核里 io_uring 等可选，glibc/应用要能优雅退化</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实操三条：</strong></p>
+<ol>
+<li>⭐ <strong>打时间戳用 <code class="c">clock_gettime(CLOCK_MONOTONIC)</code></strong>，glibc 会走 vDSO；<strong>别用 <code class="c">gettimeofday()</code></strong>（同样走 vDSO 但精度/语义更弱），<strong>更别用 <code class="c">time()</code></strong>（只到秒）。</li>
+<li><strong>批量化</strong>：写日志/投递消息攒批再 <code class="c">write()</code>；网络 IO 用 <code class="c">io_uring</code> 或 <code class="c">sendmmsg()</code> 摊薄陷入成本。</li>
+<li><strong>验证</strong>：<code class="c">strace -c -T ./prog</code> 看 syscall 的时间占比；<code class="c">perf stat -e raw_syscalls:sys_enter</code> 数陷入次数。</li>
+</ol>
+<hr />
+<p>→ 用户态查号：<code class="c">unistd.h</code> / <code class="c">asm/unistd.h</code> · <code class="c">strace</code> 可见实际号 · 下一节 <a href="#s-5-3">§5.3 入口处理</a> · <a href="#s-5-4">5.4 实现与参数验证</a> · <a href="#s-5-6">5.6 添加与替代方案</a></p>
 <blockquote>
 <p>↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-2">ULK Ch10 §2 POSIX-API与系统调用</a></p>
 </blockquote>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li>以为 syscall 号在所有架构相同——x86_64 的 <code class="c">read=0</code>，但 ARM64/MIPS 完全不同，源码可移植、二进制不可移植</li>
+<li>以为 syscall 数量等于最大号码——<strong>号码会跳</strong>，v6.6 x86_64 最大号 547 但只有 365 个 64 位 syscall</li>
+<li>⭐ 以为 <code class="c">asmlinkage</code> 在 x86_64 上是"参数走栈"——<strong>它在 x86_64 上是空宏</strong>，只有 i386 才展开成 <code class="c">regparm(0)</code></li>
+<li>⭐ 以为所有 syscall 都要陷入内核——<strong>vDSO 的 5 个符号在用户态执行</strong>，零特权切换</li>
+<li>以为 <code class="c">-ENOSYS</code> 只有一个来源——有<strong>两条路径</strong>：表内直填 <code class="c">sys_ni_syscall</code>（1 个）+ 弱符号 <code class="c">cond_syscall</code>（217 个）</li>
+<li>以为 io_uring 是"更快的 syscall"——它是<strong>更少的 syscall</strong>，收益来自批量摊薄</li>
+<li>以为所有 <code class="c">clock_gettime</code> 都走 vDSO——部分时钟会<strong>回退到真 syscall</strong></li>
+<li>写内联汇编时把第 4 个参数放进 <code class="c">rcx</code>——<strong>x86_64 syscall 第 4 参数是 <code class="c">r10</code></strong>，<code class="c">rcx</code> 被 <code class="c">syscall</code> 指令占用存返回地址</li>
+</ol>
+<hr />
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> 系统调用号存在哪里？为什么每个架构不同？</p>
 <details>
 <summary>答案</summary>
 <p>syscall 号定义在 <code class="c">arch/*/include/uapi/asm/unistd.h</code>。x86_64 的 read=0, write=1, open=2...。不同架构不同是因为历史原因（x86 用 int 0x80，ARM 用 SVC 指令）。用户态 libc 的 read() 内部根据架构填入正确的 syscall 号。这保证了源码可移植但二进制不可移植。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>补充实证数字（v6.6 <code class="c">arch/x86/entry/syscalls/syscall_64.tbl</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>表内条目总数</td>
+<td><strong>401</strong></td>
+</tr>
+<tr>
+<td>64 位可见</td>
+<td><strong>365</strong>（<code class="c">common</code> 317 + <code class="c">64</code> 专属 48）</td>
+</tr>
+<tr>
+<td>x32 专属</td>
+<td>36</td>
+</tr>
+<tr>
+<td>最大号码</td>
+<td><strong>547</strong></td>
+</tr>
+<tr>
+<td><code class="c">__NR_syscalls</code></td>
+<td>453</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>数量 ≠ 最大号码</strong>：号码表有著名的 <strong>335–423 空洞（89 个号码）</strong>，成因见 v5.1 表头注释——为避开 x32 的 512-547 段。判断"有多少 syscall"必须数条目。</p>
+<p>另外，表里第 4 列写的是 <code class="c">sys_read</code>，但<strong>实际符号是 <code class="c">__x64_sys_read</code></strong>。表头注释原文：</p>
+<blockquote>
+<p>"The <code class="c">__x64_sys_*()</code> stubs are created on-the-fly for <code class="c">sys_*()</code> system calls"</p>
+</blockquote>
+<p>这层包装由 <code class="c">SYSCALL_DEFINE</code> 宏生成，负责 64 位参数的符号/零扩展。</p>
+</details>
 </details>
 <p><strong>Q2.</strong> 为什么现代内核不鼓励新增系统调用？</p>
 <details>
 <summary>答案</summary>
 <p>新增 syscall 是永久 ABI 承诺：一旦合入 mainline 就不能删除/改语义（会破坏用户态程序）。替代方案：1) io_uring（一个 syscall 搞定任意 IO 操作）；2) eBPF（用户态程序注入内核运行）；3) /proc 或 /sys 接口（不需要新 syscall 号）。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>补充两点：</p>
+<p><strong>① 增长数据佐证"克制"</strong>：v4.9 的 64 位 syscall = 332 个，v6.6 = 365 个，<strong>7 年净增 33 个 ≈ 每年 5 个</strong>。这个增速远低于内核其他部分的扩张。</p>
+<p><strong>② "不鼓励"的机制性代价</strong>：从 §4 的 <code class="c">entry_SYSCALL_64</code> 拆解可以看到，每新增一个 syscall，就要：
+- 在 <code class="c">sys_call_table</code> 占一个永久槽位
+- 为每个架构的 <code class="c">syscall.tbl</code> 各加一行（x86_64 / x32 / arm64 / riscv / ...），漏一个就是 ABI 分裂
+- 承担永久的 <code class="c">SYSCALL_DEFINE</code> 参数校验与 compat 层维护</p>
+<p><strong>③ io_uring 的定位要说准</strong>：io_uring <strong>不是"更快的 syscall"，是"更少的 syscall"</strong>。单次陷入的开销（2 次 CR3 切换 + IBRS + 寄存器清零）并没有消失，收益来自<strong>一次 <code class="c">io_uring_enter</code> 提交/收割 N 个 IO 的摊薄</strong>。</p>
+</details>
+</details>
+<p><strong>Q3.</strong> <code class="c">-ENOSYS</code> 是怎么产生的？内核里有几种实现方式？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 有<strong>两条完全不同的路径</strong>：</p>
+<p><strong>路径 A：号码被永久废弃 → 表里直填</strong></p>
+<pre class="code" data-label="C"><code class="c">/* kernel/sys_ni.c:22-25 */
+asmlinkage long sys_ni_syscall(void)
+{
+    return -ENOSYS;
+}
+</code></pre>
+<p>x86_64 <code class="c">syscall_64.tbl</code> 里全表<strong>只有 1 处</strong>引用：</p>
+<pre class="code" data-label="code"><code class="c">156 64  _sysctl         sys_ni_syscall
+</code></pre>
+<p><strong>路径 B：功能未编译进来 → 弱符号在链接期兜底</strong></p>
+<pre class="code" data-label="C"><code class="c">/* kernel/sys_ni.c:26 */
+#define COND_SYSCALL(name) cond_syscall(sys_##name)
+</code></pre>
+<p><code class="c">sys_ni.c</code> 里有 <strong>217 条</strong> <code class="c">COND_SYSCALL(...)</code>（io_uring、futex、clone3、epoll_pwait2、quotactl_fd……）。<code class="c">cond_syscall()</code> 生成指向 <code class="c">sys_ni_syscall</code> 的<strong>弱符号别名</strong>：若真正的实现因 <code class="c">CONFIG_*</code> 关闭而没编译进 vmlinux，链接器就用弱符号填充。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>路径 A</th>
+<th>路径 B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发</td>
+<td>syscall 彻底移除</td>
+<td>syscall 存在但依赖的 CONFIG 关闭</td>
+</tr>
+<tr>
+<td>位置</td>
+<td><code class="c">syscall_64.tbl</code> 表项</td>
+<td><code class="c">kernel/sys_ni.c</code></td>
+</tr>
+<tr>
+<td>时机</td>
+<td>编译表时</td>
+<td><strong>链接期</strong></td>
+</tr>
+<tr>
+<td>v6.6 数量（x86_64）</td>
+<td><strong>1 个</strong></td>
+<td><strong>217 个</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>意义</strong>：这层弱符号兜底是"<strong>内核可裁剪</strong>"的基础设施——关掉 io_uring / fanotify / kexec 等功能不会让号码报错崩溃，而是优雅返回 <code class="c">-ENOSYS</code>，glibc 据此退化到老实现。</p>
+</details>
+<p><strong>Q4.</strong> 一次 syscall 的开销主要花在哪？为什么说"少做 syscall"比"让 syscall 更快"更有效？</p>
+<details>
+<summary>答案</summary>
+<p>读 v6.6 <code class="c">arch/x86/entry/entry_64.S:87-227</code> 的 <code class="c">entry_SYSCALL_64</code>，开销清单如下：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>指令/宏</th>
+<th>成本性质</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>换 GS 基址</td>
+<td><code class="c">swapgs</code>（×2，进出各一次）</td>
+<td>中段</td>
+</tr>
+<tr>
+<td>⭐ <strong>换页表</strong></td>
+<td><code class="c">SWITCH_TO_KERNEL_CR3</code> / <code class="c">SWITCH_TO_USER_CR3_STACK</code></td>
+<td><strong>最贵</strong>——写 CR3 可能触发 TLB 失效；Meltdown 的 PTI 代价</td>
+</tr>
+<tr>
+<td>切栈 ×2</td>
+<td><code class="c">pcpu_hot + X86_top_of_stack</code>、<code class="c">TSS_sp0</code> trampoline</td>
+<td>小段</td>
+</tr>
+<tr>
+<td>构造 <code class="c">pt_regs</code></td>
+<td>6 次 <code class="c">pushq</code></td>
+<td>中段</td>
+</tr>
+<tr>
+<td>寄存器压栈清零</td>
+<td><code class="c">PUSH_AND_CLEAR_REGS</code> / <code class="c">POP_REGS</code></td>
+<td>中段；防 Spectre 寄存器残留泄露</td>
+</tr>
+<tr>
+<td>⭐ Spectre v2 防护</td>
+<td><code class="c">IBRS_ENTER</code> / <code class="c">IBRS_EXIT</code></td>
+<td><strong>高</strong></td>
+</tr>
+<tr>
+<td>⭐ Retbleed 防护</td>
+<td><code class="c">UNTRAIN_RET</code></td>
+<td><strong>高</strong></td>
+</tr>
+<tr>
+<td>清栈</td>
+<td><code class="c">STACKLEAK_ERASE_NOCLOBBER</code></td>
+<td>中高；防栈内容泄露</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>核心认知</strong>：开销<strong>主要不是"特权级切换"本身</strong>，而是 <strong>2018 年 Spectre/Meltdown 之后叠加的一整套侧信道缓解</strong>——PTI（双页表）、IBRS、UNTRAIN_RET、寄存器清零、栈清空。这些都是<strong>固定成本</strong>，与 syscall 干什么活无关。</p>
+<p>因此：
+- <strong>"让 syscall 更快"</strong> = 削固定成本，但 ABI 兼容和安全底线下可削空间很小
+- <strong>"少做 syscall"</strong> = 摊薄固定成本，收益是线性的</p>
+<p>io_uring 走的就是第二条路：一次 <code class="c">io_uring_enter</code> 提交/收割 N 个 IO，把固定成本除以 N。</p>
+</details>
+<p><strong>Q5.</strong> vDSO 是什么？它导出了哪些符号？<code class="c">clock_gettime</code> 为什么能在用户态算出时间？</p>
+<details>
+<summary>答案</summary>
+<p><strong>vDSO（virtual Dynamic Shared Object）</strong> = 内核把一小段代码 + 一个数据页<strong>只读映射</strong>到每个进程的用户地址空间，让部分"系统调用"完全在用户态执行，<strong>零特权切换</strong>。</p>
+<p>v6.6 x86_64 导出的全部符号（<code class="c">arch/x86/entry/vdso/vdso.lds.S</code> 的 VERSION 段，<code class="c">LINUX_2.6</code> 版本节点）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">clock_gettime</code> / <code class="c">__vdso_clock_gettime</code></td>
+<td>高精度时间</td>
+</tr>
+<tr>
+<td><code class="c">gettimeofday</code> / <code class="c">__vdso_gettimeofday</code></td>
+<td>墙上时间</td>
+</tr>
+<tr>
+<td><code class="c">getcpu</code> / <code class="c">__vdso_getcpu</code></td>
+<td>当前 CPU / NUMA 节点</td>
+</tr>
+<tr>
+<td><code class="c">time</code> / <code class="c">__vdso_time</code></td>
+<td>秒级时间</td>
+</tr>
+<tr>
+<td><code class="c">clock_getres</code> / <code class="c">__vdso_clock_getres</code></td>
+<td>时钟分辨率</td>
+</tr>
+<tr>
+<td><code class="c">__vdso_sgx_enter_enclave</code></td>
+<td>条件编译（<code class="c">CONFIG_X86_SGX</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么能在用户态算出时间：</strong></p>
+<pre class="code" data-label="C"><code class="c">/* lib/vdso/gettimeofday.c:266-269 */
+__cvdso_clock_gettime(clockid_t clock, struct __kernel_timespec *ts)
+{
+    return __cvdso_clock_gettime_data(__arch_get_vdso_data(), clock, ts);
+}
+</code></pre>
+<ol>
+<li>内核的 timekeeping 代码<strong>每 tick 更新</strong>一个 <code class="c">vdso_data</code> 页（含上次更新的时刻 + 插值所需的系数）</li>
+<li>这个页<strong>只读映射</strong>到每个进程</li>
+<li>vDSO 代码读 <code class="c">vdso_data</code>，用<strong>纯算术插值</strong>算出当前纳秒数</li>
+<li>并发保护用 ⭐ <strong>seqcount</strong>：用户态读序号，若读到奇数（= 内核正在更新）就重试——<strong>无锁、无原子操作</strong></li>
+</ol>
+<p><strong>安全性</strong>：用户态只能读，改不了内核时间。</p>
+<p>⚠️ <strong>不是所有时钟都走 vDSO</strong>：<code class="c">CLOCK_MONOTONIC</code>、<code class="c">CLOCK_REALTIME</code>、<code class="c">CLOCK_BOOTTIME</code>、<code class="c">CLOCK_MONOTONIC_RAW</code> 等纯计算时钟可以；复杂的会<strong>回退到真 syscall</strong>（vDSO 内部自己发 <code class="c">syscall</code> 兜底）。</p>
+<p><strong>HFT 含义</strong>：走 vDSO ≈ <strong>20-30 cycles</strong>，走 syscall ≈ <strong>1000+ cycles</strong>，差 1~2 个数量级。打时间戳必须用 <code class="c">clock_gettime(CLOCK_MONOTONIC)</code>。</p>
+</details>
+<p><strong>Q6.</strong> <code class="c">MAX_ERRNO</code> 为什么是 4095？内核怎么区分"合法指针"和"错误码"？</p>
+<details>
+<summary>答案</summary>
+<p>有些 syscall 成功时返回<strong>地址</strong>（如 <code class="c">mmap</code>），没法用"负数"表示错误。内核的编码方案（v6.6 <code class="c">include/linux/err.h:18-49</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define MAX_ERRNO   4095
+#define IS_ERR_VALUE(x) unlikely((unsigned long)(void *)(x) &gt;= (unsigned long)-MAX_ERRNO)
+static inline long __must_check PTR_ERR(__force const void *ptr) { return (long) ptr; }
+</code></pre>
+<p><strong>原理——利用地址空间的最后一页：</strong></p>
+<pre class="code" data-label="code"><code class="c">0xFFFFFFFFFFFFFFFF  ┌─────────────────────┐
+                    │  错误指针区间        │  0xFFFFFFFFFFFFF001 ~ ...FFFF
+0xFFFFFFFFFFFFF001  │  -1 ~ -4095         │  ← 最后一页，永不映射
+                    ├─────────────────────┤
+                    │  合法地址空间        │  ← TASK_SIZE 以下才可能映射
+0x0000000000000000  └─────────────────────┘
+</code></pre>
+<ul>
+<li>错误码 <code class="c">-1 ~ -4095</code> 编码成 <code class="c">0xFFFFFFFFFFFFF001 ~ 0xFFFFFFFFFFFFFFFF</code></li>
+<li>用户态可映射的最大地址 &lt; <code class="c">0xFFFFFFFFFFFFF000</code>（最后一页永不映射）</li>
+<li>⟹ <strong>与所有合法指针天然不冲突</strong></li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">IS_ERR(p)</code></td>
+<td>判断是否为错误指针：<code class="c">(unsigned long)(p) &gt;= -4095</code></td>
+</tr>
+<tr>
+<td><code class="c">PTR_ERR(p)</code></td>
+<td>取出负错误码：<code class="c">(long)p</code></td>
+</tr>
+<tr>
+<td><code class="c">ERR_PTR(e)</code></td>
+<td>把负错误码编码成指针</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么是 4095 而不是别的数</strong>：正好等于"一页 - 1"，覆盖地址空间最后一页。判断只需<strong>一次无符号比较</strong>，零成本。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>syscall 类别</th>
+<th>失败返回</th>
+<th>用户态判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回 <code class="c">long</code>（read/write）</td>
+<td><code class="c">-errno</code></td>
+<td><code class="c">if (ret &lt; 0)</code></td>
+</tr>
+<tr>
+<td>返回指针（mmap）</td>
+<td><code class="c">ERR_PTR(-errno)</code></td>
+<td><code class="c">IS_ERR(p)</code>；glibc 转成 <code class="c">-1</code> + <code class="c">errno</code></td>
+</tr>
+</tbody>
+</table></div>
+</details>
+<p><strong>Q7.</strong> <code class="c">asmlinkage</code> 的作用是什么？它真的让参数"从栈取"吗？</p>
+<details>
+<summary>答案</summary>
+<p>⚠️ <strong>"参数从栈取"只对 i386 成立，在 x86_64 上 <code class="c">asmlinkage</code> 是空宏。</strong></p>
+<p><strong>x86 的定义</strong>（v6.6 <code class="c">arch/x86/include/asm/linkage.h:19-21</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef CONFIG_X86_32
+#define asmlinkage CPP_ASMLINKAGE __attribute__((regparm(0)))
+#endif /* CONFIG_X86_32 */
+</code></pre>
+<p>注意包在 <code class="c">#ifdef CONFIG_X86_32</code> 里 —— <strong>64 位下这个宏根本不存在</strong>，于是落到通用定义（<code class="c">include/linux/linkage.h:14-22</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef __cplusplus
+#define CPP_ASMLINKAGE extern &quot;C&quot;
+#else
+#define CPP_ASMLINKAGE
+#endif
+
+#ifndef asmlinkage
+#define asmlinkage CPP_ASMLINKAGE
+#endif
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构/配置</th>
+<th>展开结果</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>x86_64</strong></td>
+<td><strong>空</strong></td>
+<td>⭐ 毫无作用，纯历史遗迹</td>
+</tr>
+<tr>
+<td><strong>x86_32</strong></td>
+<td><code class="c">extern "C" __attribute__((regparm(0)))</code></td>
+<td>强制参数全部走栈</td>
+</tr>
+<tr>
+<td>C++ 编译</td>
+<td><code class="c">extern "C"</code></td>
+<td>关闭 name mangling</td>
+</tr>
+<tr>
+<td>多数其他架构</td>
+<td>空</td>
+<td>同 x86_64</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么 i386 需要而 x86_64 不需要</strong>：
+- i386 只有 8 个通用寄存器，<code class="c">regparm</code>/<code class="c">fastcall</code> 之争最终让内核选"参数全走栈"以简化汇编入口
+- x86_64 有 16 个寄存器，ABI 本来就用寄存器传参（<code class="c">rdi</code>/<code class="c">rsi</code>/<code class="c">rdx</code>/<code class="c">r10</code>/<code class="c">r8</code>/<code class="c">r9</code>），<strong>不需要也不存在 <code class="c">regparm(0)</code></strong></p>
+<p><strong>结论</strong>：现代 x86_64 内核里 <code class="c">asmlinkage</code> 只是<strong>语义标注</strong>（告诉读者"这个函数从汇编入口被调用"），编译层面什么都不做。</p>
+</details>
+<p><strong>Q8.</strong> x86_64 的 syscall 寄存器约定是什么？写内联汇编时最容易踩什么坑？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>寄存器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统调用号</td>
+<td><code class="c">rax</code></td>
+</tr>
+<tr>
+<td>参数 1</td>
+<td><code class="c">rdi</code></td>
+</tr>
+<tr>
+<td>参数 2</td>
+<td><code class="c">rsi</code></td>
+</tr>
+<tr>
+<td>参数 3</td>
+<td><code class="c">rdx</code></td>
+</tr>
+<tr>
+<td>⭐ <strong>参数 4</strong></td>
+<td><strong><code class="c">r10</code></strong>（不是 <code class="c">rcx</code>！）</td>
+</tr>
+<tr>
+<td>参数 5</td>
+<td><code class="c">r8</code></td>
+</tr>
+<tr>
+<td>参数 6</td>
+<td><code class="c">r9</code></td>
+</tr>
+<tr>
+<td>返回值</td>
+<td><code class="c">rax</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">syscall</code> 指令破坏</strong></td>
+<td><code class="c">rcx</code>（存返回 RIP）、<code class="c">r11</code>（存 RFLAGS）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>最常见的坑</strong>：把第 4 个参数放进 <code class="c">rcx</code>。</p>
+<p>这是 x86_64 <strong>syscall ABI 与 System V 函数调用 ABI 的唯一差异</strong>——普通函数调用第 4 参数用 <code class="c">rcx</code>，但 <code class="c">syscall</code> 指令自身要用 <code class="c">rcx</code> 保存返回地址，所以内核 ABI 改用 <code class="c">r10</code>。</p>
+<p><strong>安全性细节</strong>：v6.6 <code class="c">entry_64.S:115-116</code> 对号码做符号扩展：</p>
+<pre class="code" data-label="asm"><code class="c">    /* Sign extend the lower 32bit as syscall numbers are treated as int */
+    movslq  %eax, %rsi
+</code></pre>
+<p>只取 <code class="c">eax</code> 的低 32 位并<strong>符号扩展</strong>成 64 位。因此负数号码会变成巨大正数索引，在 <code class="c">do_syscall_64</code> 的边界检查（<code class="c">nr &lt; NR_syscalls</code>）处被拒，<strong>不可能索引到表外</strong>。</p>
+</details>
+<p><strong>Q9.</strong> 号码表上 335–423 这段空洞是怎么来的？</p>
+<details>
+<summary>答案</summary>
+<p><strong>成因</strong>：为 x32 ABI 预留。</p>
+<p>v6.6 <code class="c">syscall_64.tbl</code> 表头注释：</p>
+<pre class="code" data-label="code"><code class="c"># don't use numbers 387 through 423, add new calls after the last
+# 'common' entry
+#
+# Due to a historical design error, certain syscalls are numbered differently
+# in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+# Do not add new syscalls to this range.  Numbers 548 and above are available
+# for non-x32 use.
+</code></pre>
+<p><strong>真正原因记录在 v5.1 的表头</strong>（v6.6 已删除该句）：</p>
+<blockquote>
+<p><code class="c"># x32-specific system call numbers start at 512 to avoid cache impact for native 64-bit operation.</code></p>
+</blockquote>
+<p>即：syscall 表是<strong>按号索引的连续数组</strong>。如果 x32 的号码与原生 64 位号码交错分布，表的跨度会变大，恶化原生路径的 cache 局部性。所以给 x32 单独划了 512-547 段，中间留下 335–423 共 <strong>89 个号码的空洞</strong>。</p>
+<p><strong>版本断崖</strong>：号码跳跃发生在 <strong>v5.1</strong>（v5.0 最大号 334 <code class="c">rseq</code> → v5.1 最大号 427）。v5.1 新增的四个号码是 424–427：</p>
+<pre class="code" data-label="code"><code class="c">424 common  pidfd_send_signal
+425 common  io_uring_setup
+426 common  io_uring_enter
+427 common  io_uring_register
+</code></pre>
+<p>⭐ <strong>io_uring 是历史上第一批拿到 424+ 号码的 syscall</strong>。</p>
+<p>完整分析见 <a href="chapter-01.html#s-1-1">Ch 1.1 Unix 的历史</a>。</p>
+</details>
+<p><strong>Q10.</strong> 从 ABI 稳定性角度，v6.6 内核为了"永不破坏用户态"做了哪些兜底设计？</p>
+<details>
+<summary>答案</summary>
+<p>至少五层：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>保护什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>号码永不回收</strong></td>
+<td>废弃 syscall 的槽位填 <code class="c">sys_ni_syscall</code>（返回 <code class="c">-ENOSYS</code>），而不是让后续 syscall 前移</td>
+</tr>
+<tr>
+<td>⭐ <strong>弱符号兜底</strong></td>
+<td>217 个 <code class="c">cond_syscall</code> 让未编译的功能优雅返回 <code class="c">-ENOSYS</code>，而非链接失败</td>
+</tr>
+<tr>
+<td><strong>compat 层</strong></td>
+<td>32 位程序在 64 位内核上运行（x32 / i386 的 <code class="c">compat_sys_*</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">__x64_sys_*</code> 包装层</strong></td>
+<td><code class="c">SYSCALL_DEFINE</code> 宏自动生成参数扩展/符号扩展，屏蔽 ABI 细节</td>
+</tr>
+<tr>
+<td><strong>号码符号扩展</strong></td>
+<td><code class="c">movslq %eax, %rsi</code> 保证非法号码被边界检查拒绝</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么这么谨慎</strong>：syscall 是<strong>内核与用户态之间最强的 ABI 契约</strong>。旧二进制程序（甚至 20 年前的静态链接程序）必须能在新内核上原样运行。Linus 的名言式原则就是"We do not break userspace"——任何导致用户程序行为变化的改动，即使用户程序本身"写得不对"，也算内核 regression。</p>
+<p><strong>代价</strong>：号码表碎片化（335–423 空洞）、每个新 syscall 要改所有架构的表、废弃功能只能占位不能清理。</p>
 </details>
 </details>
 <hr />
+<h2>&gt; ↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-2">ULK Ch10 §2 POSIX-API与系统调用</a></h2>
       </section>
       <section class="section" id="s-5-3">
         <div class="sec-head"><div class="sec-no">5.3</div><h2>section-5.3-系统调用处理程序</h2></div>
-<p>重点：<strong>陷入内核之后，第一步执行的通用入口函数</strong>。<br />
+<blockquote>
+<p>承接 <a href="#s-5-2">5.2 系统调用基础</a>。
+本节回答：<strong>陷入内核之后，第一个执行的通用函数 <code class="c">do_syscall_64</code> 到底做了什么。</strong></p>
+</blockquote>
+<p>重点：<strong>陷入内核之后，第一步执行的通用入口函数。</strong>
 用户态 <strong>不能直接执行内核代码</strong> — 必须 <strong>陷入（trap）</strong> 切到内核态。</p>
 <hr />
-<h3>x86_64 <code class="c">syscall</code> 路径（概念）</h3>
-<ol>
-<li>用户执行 <strong><code class="c">syscall</code></strong> 指令<br />
-   CPU 自动切换特权级，跳转到内核预先设置好的入口 <strong><code class="c">entry_SYSCALL_64</code></strong>（汇编）</li>
-<li>汇编入口完成准备工作：
-   - <strong>保存用户态寄存器现场</strong>（保证系统调用结束后能恢复）
-   - <strong>切换内核栈</strong>（关键：每个进程拥有独立内核栈）</li>
-<li>调用通用处理函数 <strong><code class="c">do_syscall_64</code></strong></li>
-<li><code class="c">do_syscall_64</code>：
-   - 读取 <code class="c">rax</code> 里的 <strong>系统调用号</strong>，做合法性校验（不能超过表最大下标）
-   - 查表调用真正的 <code class="c">sys_*</code></li>
-<li>内核函数执行完毕，原路返回；汇编恢复寄存器，<strong><code class="c">sysret</code></strong> 回到用户态</li>
-</ol>
-<pre class="code" data-label="C"><code class="c">/* 概念示意 — 非逐字源码 */
-nr = regs-&gt;ax;
-if (nr &gt;= NR_syscalls)
-    return -ENOSYS;
-sys_call_tablenr;  // 调用真正的系统调用函数
-</code></pre>
-<p>流程总览：</p>
-<pre class="code" data-label="code"><code class="c">用户态 syscall 包装
-    │
+<h3>1. 全景：从 <code class="c">syscall</code> 指令到 <code class="c">sys_*</code></h3>
+<pre class="code" data-label="code"><code class="c">用户态：glibc 包装函数（read/write/open...）
+    │  rax = 号码, rdi/rsi/rdx/r10/r8/r9 = 参数
     ▼
 syscall 指令
-    │
+    │  CPU: 切特权级、保存 RIP→rcx、RFLAGS→r11、跳 MSR_LSTAR
     ▼
-entry_SYSCALL_64（保存现场 · 切内核栈）
-    │
+entry_SYSCALL_64（汇编，arch/x86/entry/entry_64.S:87）
+    │  swapgs → 换 CR3 → 换内核栈 → 构造 pt_regs
+    │  → PUSH_AND_CLEAR_REGS → IBRS_ENTER → UNTRAIN_RET
     ▼
-do_syscall_64 ──► sys_call_table[nr] ──► sys_*(...)
+do_syscall_64（arch/x86/entry/common.c:73）          ← 本节主角
     │
+    ├─ add_random_kstack_offset()            内核栈随机偏移
+    ├─ syscall_enter_from_user_mode(regs, nr)
+    │      └─ User Dispatch → ptrace → seccomp → 重读号码 → tracepoint → audit
+    ├─ do_syscall_x64(regs, nr)              或 do_syscall_x32(regs, nr)
+    │      └─ array_index_nospec(unr, NR_syscalls)   ← Spectre v1 防护
+    │      └─ regs-&gt;ax = sys_call_table[unr](regs)
+    └─ syscall_exit_to_user_mode(regs)
+           └─ 信号投递 → 任务抢占 → 抽下一个栈随机偏移
     ▼
-sysret ──► 回到用户态
+sysretq
 </code></pre>
+<blockquote>
+<p>⭐ 注意中间那个 <code class="c">syscall_enter_from_user_mode()</code> 是 <strong>架构无关</strong>的一层（<code class="c">kernel/entry/common.c</code>），x86 只是它众多调用者之一。这是 v5.12 之后的重大重构——把 syscall 入口的"通用工作"（ptrace / seccomp / audit）从各架构汇编里抽了出来。</p>
+</blockquote>
 <hr />
-<h3>关键概念：进程内核栈</h3>
+<h3>2. ⭐ <code class="c">do_syscall_64</code>：v6.6 真实源码</h3>
+<p><code class="c">arch/x86/entry/common.c:73-87</code> 全文：</p>
+<pre class="code" data-label="C"><code class="c">__visible noinstr void do_syscall_64(struct pt_regs *regs, int nr)
+{
+    add_random_kstack_offset();
+    nr = syscall_enter_from_user_mode(regs, nr);
+
+    instrumentation_begin();
+
+    if (!do_syscall_x64(regs, nr) &amp;&amp; !do_syscall_x32(regs, nr) &amp;&amp; nr != -1) {
+        /* Invalid system call, but still a system call. */
+        regs-&gt;ax = __x64_sys_ni_syscall(regs);
+    }
+
+    instrumentation_end();
+    syscall_exit_to_user_mode(regs);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__visible</code></td>
+<td>防止编译器认为无人引用而优化掉（因为只有汇编调用它）</td>
+</tr>
+<tr>
+<td><code class="c">noinstr</code></td>
+<td>⭐ <strong>禁止插桩</strong>——这段代码处在 Spectre 缓解的关键窗口，不能有 ftrace/kprobe 探针打断</td>
+</tr>
+<tr>
+<td><code class="c">add_random_kstack_offset()</code></td>
+<td>⭐ 内核栈随机偏移（见 §7）</td>
+</tr>
+<tr>
+<td><code class="c">syscall_enter_from_user_mode()</code></td>
+<td>⭐ 架构无关进入层，<strong>返回值可能改写 <code class="c">nr</code></strong>（见 §6）</td>
+</tr>
+<tr>
+<td><code class="c">instrumentation_begin/end()</code></td>
+<td>只有中间这段允许被插桩</td>
+</tr>
+<tr>
+<td><code class="c">nr != -1</code></td>
+<td>⭐ <code class="c">-1</code> 表示"这不是一个真的 syscall，别执行"</td>
+</tr>
+<tr>
+<td>注释 <em>"Invalid system call, but still a system call."</em></td>
+<td>⭐ 即使号码非法，audit/seccomp/tracepoint 已经记录过它了，所以仍要算作"一次 syscall"</td>
+</tr>
+<tr>
+<td><code class="c">syscall_exit_to_user_mode()</code></td>
+<td>⭐ 架构无关退出层：信号投递、抢占、栈偏移轮换</td>
+</tr>
+</tbody>
+</table></div>
+<h4>⭐ <code class="c">nr == -1</code> 从哪来？</h4>
+<p>进入层返回 <code class="c">-1L</code> 有三种情形：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">syscall_user_dispatch()</code> 拦下</td>
+<td>Syscall User Dispatch（Wine/Proton 模拟 Windows 二进制）</td>
+</tr>
+<tr>
+<td><code class="c">ptrace_report_syscall_entry()</code> 返回非 0，或开了 <code class="c">SYSCALL_EMU</code></td>
+<td>tracer 决定不执行</td>
+</tr>
+<tr>
+<td><code class="c">__secure_computing()</code> 返回 <code class="c">-1L</code></td>
+<td>seccomp BPF 判定为<strong>拒绝</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>这三种情况下<strong>内核函数一个都不执行</strong>，但 <code class="c">regs-&gt;ax</code> 已被设置成 seccomp/ptrace 指定的返回值。</p>
+<hr />
+<h3>3. ⭐ <code class="c">do_syscall_x64</code>：分派的核心，只有 6 行</h3>
+<pre class="code" data-label="C"><code class="c">static __always_inline bool do_syscall_x64(struct pt_regs *regs, int nr)
+{
+    /*
+     * Convert negative numbers to very high and thus out of range
+     * numbers for comparisons.
+     */
+    unsigned int unr = nr;
+
+    if (likely(unr &lt; NR_syscalls)) {
+        unr = array_index_nospec(unr, NR_syscalls);
+        regs-&gt;ax = sys_call_table[unr](regs);
+        return true;
+    }
+    return false;
+}
+</code></pre>
+<h4>三个细节</h4>
+<p><strong>① <code class="c">unsigned int unr = nr</code> —— 无分支的负数处理</strong></p>
+<p>注释说得很清楚："Convert negative numbers to very high and thus out of range numbers"。
+<code class="c">int nr = -1</code> → <code class="c">unsigned int unr = 0xFFFFFFFF</code> → <code class="c">unr &lt; NR_syscalls</code> 为假 → 直接返回 false。</p>
+<p><strong>省掉了一次 <code class="c">nr &gt;= 0</code> 的显式判断</strong>。</p>
+<p><strong>② ⭐ <code class="c">array_index_nospec()</code> —— Spectre v1 防护</strong></p>
+<p>这是最容易被忽略的一点。<code class="c">array_index_nospec(unr, NR_syscalls)</code> 的作用是<strong>阻止 CPU 推测执行时用越界的 <code class="c">unr</code> 去读 <code class="c">sys_call_table</code></strong>。</p>
+<p>原理：它把索引"钳制"到合法范围内，即使分支预测错误，推测路径读到的也永远是表内的地址，攻击者无法通过 cache 侧信道探测表外数据。</p>
+<blockquote>
+<p>⭐ 这也是<a href="#s-5-2">5.2 讲过的 syscall 开销</a>的一部分——<strong>每一次 syscall 都要付一次 Spectre v1 的缓解成本</strong>。</p>
+</blockquote>
+<p><strong>③ ⭐ 所有 syscall 只接受一个参数：<code class="c">struct pt_regs *</code></strong></p>
+<pre class="code" data-label="C"><code class="c">regs-&gt;ax = sys_call_table[unr](regs);
+</code></pre>
+<p>注意：<strong>不是</strong> <code class="c">sys_call_table[unr](arg1, arg2, ..., arg6)</code>，而是把整个 <code class="c">pt_regs</code> 丢进去。</p>
+<p>这是现代内核的关键设计（对应 <code class="c">CONFIG_ARCH_HAS_SYSCALL_WRAPPER</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>老式（i386 时代）</th>
+<th>现代（x86_64）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sys_call_table</code> 元素签名</td>
+<td>6 个参数，类型各异</td>
+<td>⭐ <strong>统一为 <code class="c">long (*)(const struct pt_regs *)</code></strong></td>
+</tr>
+<tr>
+<td>参数提取</td>
+<td>CPU 直接按 ABI 取</td>
+<td>由 <code class="c">SYSCALL_DEFINE</code> 宏生成的包装层从 <code class="c">pt_regs</code> 里取</td>
+</tr>
+<tr>
+<td>好处</td>
+<td>直接</td>
+<td>⭐ 统一处理符号扩展/零扩展、compat 层、tracepoint、参数复用</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>4. ⭐ <code class="c">sys_call_table</code> 是怎么生成的</h3>
+<p><code class="c">arch/x86/entry/syscall_64.c</code> <strong>全文只有 451 字节</strong>：</p>
+<pre class="code" data-label="C"><code class="c">// SPDX-License-Identifier: GPL-2.0
+/* System call table for x86-64. */
+
+#include &lt;linux/linkage.h&gt;
+#include &lt;linux/sys.h&gt;
+#include &lt;linux/cache.h&gt;
+#include &lt;linux/syscalls.h&gt;
+#include &lt;asm/syscall.h&gt;
+
+#define __SYSCALL(nr, sym) extern long __x64_##sym(const struct pt_regs *);
+#include &lt;asm/syscalls_64.h&gt;
+#undef __SYSCALL
+
+#define __SYSCALL(nr, sym) __x64_##sym,
+
+asmlinkage const sys_call_ptr_t sys_call_table[] = {
+#include &lt;asm/syscalls_64.h&gt;
+};
+</code></pre>
+<h4>四处精妙之处</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>技巧</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>X-macro</strong></td>
+<td>同一个 <code class="c">asm/syscalls_64.h</code> <strong>两次 include</strong>，每次配不同的 <code class="c">__SYSCALL</code> 定义：第一次生成 extern 声明，第二次生成数组元素</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">const</code></strong></td>
+<td><code class="c">const sys_call_ptr_t sys_call_table[]</code> —— 表本身只读，防止运行时被篡改（rootkit 常见攻击点）</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">__x64_</code> 前缀</strong></td>
+<td>与 <a href="#s-5-2">5.2</a> 呼应：表里写 <code class="c">sys_read</code>，实际符号是 <code class="c">__x64_sys_read</code></td>
+</tr>
+<tr>
+<td><strong>自动生成</strong></td>
+<td><code class="c">asm/syscalls_64.h</code> 由 <code class="c">scripts/syscalltbl.sh</code> 从 <code class="c">syscall_64.tbl</code> 生成，<strong>不在源码树里</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">syscall_64.tbl  ──(scripts/syscalltbl.sh 构建时生成)──►  asm/syscalls_64.h
+                                                            │
+                                    ┌───────────────────────┘
+                                    ▼
+                    #define __SYSCALL(nr, sym) extern long __x64_##sym(...);
+                    #include &lt;asm/syscalls_64.h&gt;      ← 声明
+                                    │
+                    #define __SYSCALL(nr, sym) __x64_##sym,
+                    const sys_call_ptr_t sys_call_table[] = {
+                    #include &lt;asm/syscalls_64.h&gt;      ← 定义
+                    };
+</code></pre>
+<blockquote>
+<p>⭐ <strong>为什么表里那 89 个空洞（335-423）不会浪费内存</strong>：表是<strong>连续数组</strong>，空洞位置由生成器填 <code class="c">__x64_sys_ni_syscall</code>，所以数组不"稀疏"。这正是 §5.2 讲的"为 x32 预留号段"所付出的代价——<strong>数组跨度变大，但元素一个不少</strong>。</p>
+</blockquote>
+<hr />
+<h3>5. ⭐ x32 分派：<code class="c">__X32_SYSCALL_BIT</code></h3>
+<p><code class="c">do_syscall_64</code> 里的第二分支：</p>
+<pre class="code" data-label="C"><code class="c">static __always_inline bool do_syscall_x32(struct pt_regs *regs, int nr)
+{
+    /*
+     * Adjust the starting offset of the table, and convert numbers
+     * &lt; __X32_SYSCALL_BIT to very high and thus out of range
+     * numbers for comparisons.
+     */
+    unsigned int xnr = nr - __X32_SYSCALL_BIT;
+
+    if (IS_ENABLED(CONFIG_X86_X32_ABI) &amp;&amp; likely(xnr &lt; X32_NR_syscalls)) {
+        xnr = array_index_nospec(xnr, X32_NR_syscalls);
+        regs-&gt;ax = x32_sys_call_table[xnr](regs);
+        return true;
+    }
+    return false;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__X32_SYSCALL_BIT</code></td>
+<td>x32 syscall 的号码 = 基础号码 <strong>加上这个位</strong></td>
+</tr>
+<tr>
+<td>判定方式</td>
+<td><code class="c">nr - __X32_SYSCALL_BIT</code> 后看是否 <code class="c">&lt; X32_NR_syscalls</code></td>
+</tr>
+<tr>
+<td>独立的表</td>
+<td><code class="c">x32_sys_call_table[]</code>（不是 <code class="c">sys_call_table[]</code>）</td>
+</tr>
+<tr>
+<td>条件编译</td>
+<td><code class="c">IS_ENABLED(CONFIG_X86_X32_ABI)</code> —— 关闭时这个分支被完全消除</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 这与 <a href="chapter-01.html#s-1-1">Ch 1.1</a> 和 <a href="#s-5-2">5.2</a> 讲的"x32 号段 512-547"是同一件事的<strong>汇编侧实现</strong>：用户态传进来的 <code class="c">rax</code> 带着 <code class="c">__X32_SYSCALL_BIT</code> 标记，内核据此分流到 x32 表。</p>
+</blockquote>
+<hr />
+<h3>6. ⭐ 架构无关的进入层：7 个 <code class="c">SYSCALL_WORK</code> 标志</h3>
+<p><code class="c">kernel/entry/common.c:50-84</code>（节选）：</p>
+<pre class="code" data-label="C"><code class="c">    long ret = 0;
+
+    /*
+     * Handle Syscall User Dispatch.  This must comes first, since
+     * the ABI here can be something that doesn't make sense for
+     * other syscall_work features.
+     */
+    if (work &amp; SYSCALL_WORK_SYSCALL_USER_DISPATCH) {
+        if (syscall_user_dispatch(regs))
+            return -1L;
+    }
+
+    /* Handle ptrace */
+    if (work &amp; (SYSCALL_WORK_SYSCALL_TRACE | SYSCALL_WORK_SYSCALL_EMU)) {
+        ret = ptrace_report_syscall_entry(regs);
+        if (ret || (work &amp; SYSCALL_WORK_SYSCALL_EMU))
+            return -1L;
+    }
+
+    /* Do seccomp after ptrace, to catch any tracer changes. */
+    if (work &amp; SYSCALL_WORK_SECCOMP) {
+        ret = __secure_computing(NULL);
+        if (ret == -1L)
+            return ret;
+    }
+
+    /* Either of the above might have changed the syscall number */
+    syscall = syscall_get_nr(current, regs);
+
+    if (unlikely(work &amp; SYSCALL_WORK_SYSCALL_TRACEPOINT))
+        trace_sys_enter(regs, syscall);
+
+    syscall_enter_audit(regs, syscall);
+
+    return ret ? : syscall;
+</code></pre>
+<h4>⭐⭐ 处理顺序是<strong>有讲究</strong>的，不是随便排的</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>步骤</th>
+<th>为什么在这个位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Syscall User Dispatch</strong></td>
+<td>注释原文：<em>"This must comes first, since the ABI here can be something that doesn't make sense for other syscall_work features"</em>（Wine 场景下的 ABI 可能不合法，先拦）</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>ptrace</strong></td>
+<td>tracer 可能修改寄存器/号码</td>
+</tr>
+<tr>
+<td>3</td>
+<td>⭐ <strong>seccomp</strong></td>
+<td>注释原文：<strong><em>"Do seccomp after ptrace, to catch any tracer changes."</em></strong> —— 必须让 seccomp 看到 tracer 改过之后的状态，否则 tracer 能绕过 seccomp 过滤</td>
+</tr>
+<tr>
+<td>4</td>
+<td>⭐ <strong>重新读号码</strong></td>
+<td>注释原文：<strong><em>"Either of the above might have changed the syscall number"</em></strong> → <code class="c">syscall = syscall_get_nr(current, regs)</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>tracepoint</td>
+<td>号码已定，可以记录</td>
+</tr>
+<tr>
+<td>6</td>
+<td>audit</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong>第 3 步的注释是安全关键</strong>：如果 seccomp 在 ptrace 之前跑，那么 tracer（拥有进程控制权）就可以先被 seccomp 检查通过，然后偷偷把 syscall 号改成危险的——<strong>seccomp 形同虚设</strong>。所以必须 ptrace 在前、seccomp 在后。</p>
+</blockquote>
+<h4>7 个标志（<code class="c">include/linux/thread_info.h:42-57</code>）</h4>
+<pre class="code" data-label="C"><code class="c">    SYSCALL_WORK_BIT_SECCOMP,
+    SYSCALL_WORK_BIT_SYSCALL_TRACEPOINT,
+    SYSCALL_WORK_BIT_SYSCALL_TRACE,
+    SYSCALL_WORK_BIT_SYSCALL_EMU,
+    SYSCALL_WORK_BIT_SYSCALL_AUDIT,
+    SYSCALL_WORK_BIT_SYSCALL_USER_DISPATCH,
+    SYSCALL_WORK_BIT_SYSCALL_EXIT_TRAP,
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>触发者</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SYSCALL_WORK_SECCOMP</code></td>
+<td><code class="c">seccomp(2)</code> / <code class="c">prctl(PR_SET_SECCOMP)</code></td>
+<td>BPF 程序过滤 syscall</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_TRACE</code></td>
+<td><code class="c">ptrace(PTRACE_SYSCALL)</code></td>
+<td><strong>strace</strong> 用的就是这个</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_EMU</code></td>
+<td>ptrace</td>
+<td>只通知 tracer，<strong>不真执行</strong> syscall</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_TRACEPOINT</code></td>
+<td>ftrace / perf / BPF</td>
+<td><code class="c">raw_syscalls:sys_enter</code> tracepoint</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_AUDIT</code></td>
+<td>auditd 规则</td>
+<td>审计日志</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_USER_DISPATCH</code></td>
+<td><code class="c">prctl(PR_SET_SYSCALL_USER_DISPATCH)</code></td>
+<td>⭐ Wine / Proton 模拟 Windows 二进制</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_EXIT_TRAP</code></td>
+<td>—</td>
+<td>退出时也陷入通知</td>
+</tr>
+</tbody>
+</table></div>
+<p>标志存在 <code class="c">thread_info-&gt;syscall_work</code> 位图里（同一头文件 <code class="c">:150-161</code> 的 <code class="c">set_bit</code> / <code class="c">test_bit</code> / <code class="c">clear_bit</code> 封装）。</p>
+<h4>⭐ 为什么"没开追踪时 syscall 几乎零额外成本"</h4>
+<p>所有检查都是 <code class="c">if (work &amp; FLAG)</code> —— <strong>一次位测试</strong>。<code class="c">work</code> 从 <code class="c">current_thread_info()-&gt;syscall_work</code> 读，通常在 cache 里。</p>
+<p>一个既不 strace、又没 seccomp、又没 audit 的进程，<code class="c">work == 0</code>，六个分支全部不命中，<strong>直接跳到分派</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>进程类型</th>
+<th>每次 syscall 的额外成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通进程</td>
+<td>⭐ <strong>零</strong>（一次位测试）</td>
+</tr>
+<tr>
+<td>开了 seccomp（如容器/Chrome 沙箱）</td>
+<td>每次跑一遍 BPF 程序</td>
+</tr>
+<tr>
+<td>被 <code class="c">strace -T</code> 跟踪</td>
+<td>⭐ 每次 syscall <strong>两次</strong>停止 + 两次 tracer 上下文切换</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 警示</strong>：<code class="c">strace</code> 的开销<strong>不是线性的</strong>，而是每次 syscall 都要把被跟踪进程停下来、唤醒 tracer、tracer 读寄存器、再恢复。<strong>热路径上每秒百万次 syscall 的程序，挂上 strace 会慢到完全不可测</strong>。生产环境用 <code class="c">perf</code> 采样或 BPF（<code class="c">bpftrace</code>）替代。</p>
+</blockquote>
+<hr />
+<h3>7. ⭐ 进程内核栈：大小、随机偏移、栈溢出防护</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1043,11 +2562,256 @@ sysret ──► 回到用户态
 </tbody>
 </table></div>
 <p>系统调用里的局部变量、函数调用栈，全部存在 <strong>内核栈</strong>。</p>
+<h4>大小（v6.6 <code class="c">arch/x86/include/asm/page_64_types.h:15-16</code>）</h4>
+<pre class="code" data-label="C"><code class="c">#define THREAD_SIZE_ORDER   (2 + KASAN_STACK_ORDER)
+#define THREAD_SIZE     (PAGE_SIZE &lt;&lt; THREAD_SIZE_ORDER)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code class="c">THREAD_SIZE_ORDER</code></th>
+<th>内核栈大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认</td>
+<td>2</td>
+<td><code class="c">4096 &lt;&lt; 2</code> = <strong>16 KB</strong></td>
+</tr>
+<tr>
+<td>开 KASAN</td>
+<td>3（<code class="c">KASAN_STACK_ORDER=1</code>）</td>
+<td><strong>32 KB</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>16KB 是很小的</strong>。内核里的递归、大局部数组（如 <code class="c">char buf[8192]</code>）都极易爆栈。这也是为什么内核编码规范<strong>禁止大局部变量和深递归</strong>。</p>
+</blockquote>
+<h4>⭐ 栈随机偏移：为什么在<strong>退出时</strong>才抽下一个？</h4>
+<p><code class="c">include/linux/randomize_kstack.h</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define KSTACK_OFFSET_MAX(x)    ((x) &amp; 0x3FF)
+
+#define add_random_kstack_offset() do {                 \
+    if (static_branch_maybe(CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT, \
+                &amp;randomize_kstack_offset)) {        \
+        u32 offset = raw_cpu_read(kstack_offset);       \
+        u8 *ptr = __kstack_alloca(KSTACK_OFFSET_MAX(offset));   \
+        /* Keep allocation even after &quot;ptr&quot; loses scope. */ \
+        asm volatile(&quot;&quot; :: &quot;r&quot;(ptr) : &quot;memory&quot;);        \
+    }                               \
+} while (0)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事实</th>
+<th>值 / 说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>熵上限</td>
+<td>⭐ <strong>10 bit</strong> = 偏移最多 <strong>1023 字节</strong>（<code class="c">KSTACK_OFFSET_MAX</code> = <code class="c">&amp; 0x3FF</code>）</td>
+</tr>
+<tr>
+<td>实现方式</td>
+<td><code class="c">alloca</code> 在栈上"浪费"一段空间</td>
+</tr>
+<tr>
+<td>开关</td>
+<td><code class="c">static_branch_maybe(...)</code> —— static key，运行时可切换，<strong>关闭时零开销</strong></td>
+</tr>
+<tr>
+<td>为何用 <code class="c">_uninitialized</code> 变体</td>
+<td>注释：<em>"Initializing the unused area on each syscall entry is expensive"</em></td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐⭐ <strong>最精彩的一段：为什么 <code class="c">choose_random_kstack_offset()</code> 在 syscall 退出时调用，而不是进入时？</strong></p>
+<p>源码注释原文：</p>
+<blockquote>
+<p><code class="c">* This should only be used during syscall exit when interrupts and
+ * preempt are disabled. This position in the syscall flow is done to
+ * frustrate attacks from userspace attempting to learn the next offset:
+ * - Maximize the timing uncertainty visible from userspace: if the
+ *   offset is chosen at syscall entry, userspace has much more control
+ *   over the timing between choosing offsets. "How long will we be in
+ *   kernel mode?" tends to be more difficult to predict than "how long
+ *   will we be in user mode?"
+ * - Reduce the lifetime of the new offset sitting in memory during
+ *   kernel mode execution. Exposure of "thread-local" memory content
+ *   (e.g. current, percpu, etc) tends to be easier than arbitrary
+ *   location memory exposure.</code></p>
+</blockquote>
+<p>翻译成人话：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>理由</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>增大计时不确定性</strong></td>
+<td>如果在<strong>进入时</strong>抽偏移，用户态能精确控制"抽偏移"到自己下一次 syscall 之间的时间；而在<strong>退出时</strong>抽，攻击者得预测"我这次进入内核会待多久"——这个难得多</td>
+</tr>
+<tr>
+<td>⭐ <strong>缩短新偏移在内存里的暴露时间</strong></td>
+<td>退出时抽完，紧接着就回用户态，新偏移在内核内存里停留的时间最短；而 <code class="c">current</code> / percpu 这类"线程局部"内存比任意内存更容易被泄露</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这是"用时序设计换安全性"的教科书级例子，且<strong>不增加任何运行时开销</strong>——只是把抽随机数的位置挪了一下。</p>
+</blockquote>
+<h4>栈溢出检测</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">CONFIG_VMAP_STACK</code></td>
+<td>内核栈用 <code class="c">vmalloc</code> 分配，前后放 <strong>guard page（不可映射页）</strong> → 栈溢出立刻触发缺页异常而非静默写坏邻居</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_SCHED_STACK_END_CHECK</code></td>
+<td>栈底放 canary，每次调度检查</td>
+</tr>
+<tr>
+<td>栈溢出症状</td>
+<td><code class="c">BUG: stack guard page was hit</code> / <code class="c">kernel stack overflow</code></td>
+</tr>
+</tbody>
+</table></div>
 <hr />
-<h3>串联：<code class="c">open()</code> 进内核后发生什么</h3>
-<p>当你调用 <code class="c">open()</code> 系统调用：<br />
-<code class="c">sys_openat</code>（等）会分配 <strong><code class="c">struct file</code></strong>，在进程 fd 表分配空闲 fd，建立映射。<br />
-细节见 <a href="chapter-03.html#s-3-8">§3.8</a> 与本章 README「串联 open」。</p>
+<h3>8. 参数是怎么传给 <code class="c">sys_*</code> 的</h3>
+<p>表项只接受 <code class="c">struct pt_regs *</code> <strong>这一个</strong>参数（见 §3），那 <code class="c">__x64_sys_read(unsigned int fd, char *buf, size_t count)</code> 的 6 个参数从哪来？</p>
+<p><strong>由 <code class="c">SYSCALL_DEFINE</code> 宏自动生成的包装层提取</strong>（<code class="c">CONFIG_ARCH_HAS_SYSCALL_WRAPPER</code>）：</p>
+<pre class="code" data-label="code"><code class="c">sys_call_table[nr](regs)
+    │
+    ▼
+__x64_sys_read(regs)                 ← 表里存的就是它，签名统一
+    │
+    ▼
+__se_sys_read(fd, buf, count)        ← 从 regs-&gt;di/si/dx 取值，做符号/零扩展
+    │
+    ▼
+__do_sys_read(fd, buf, count)        ← 你写的函数体
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__x64_sys_*</code></td>
+<td>统一签名 <code class="c">long (*)(const struct pt_regs *)</code>，供表调用</td>
+</tr>
+<tr>
+<td><code class="c">__se_sys_*</code></td>
+<td><strong>s</strong>ign <strong>e</strong>xtend：从 <code class="c">pt_regs</code> 取参数并做符号/零扩展（安全性关键）</td>
+</tr>
+<tr>
+<td><code class="c">__do_sys_*</code></td>
+<td>真正的实现</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 为什么需要 <code class="c">__se_sys_*</code> 这层？因为 C 语言的类型系统无法表达"这个 32 位参数在 64 位寄存器里"。例如 <code class="c">int fd</code> 从 <code class="c">regs-&gt;di</code> 取低 32 位时必须正确符号扩展，否则 <code class="c">-1</code> 会变成 <code class="c">0xFFFFFFFF</code>（无符号）。这层自动生成，避免手写出错。</p>
+</blockquote>
+<hr />
+<h3>9. 修正一处常见误传：原文这行代码是残的</h3>
+<p>很多教材（含本笔记旧版）写着：</p>
+<pre class="code" data-label="C"><code class="c">nr = regs-&gt;ax;
+if (nr &gt;= NR_syscalls)
+    return -ENOSYS;
+sys_call_tablenr;      /* ← 残缺行 */
+</code></pre>
+<p><strong>v6.6 的实际写法</strong>（§3）不同之处在于：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>教材版</th>
+<th>v6.6 实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">if (nr &gt;= NR_syscalls) return -ENOSYS;</code></td>
+<td><code class="c">if (likely(unr &lt; NR_syscalls)) { ... } return false;</code>（<strong>正数判断</strong>，<code class="c">likely</code> 提示分支预测）</td>
+</tr>
+<tr>
+<td>无</td>
+<td>⭐ <code class="c">array_index_nospec(unr, NR_syscalls)</code>（<strong>Spectre v1 防护</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">return -ENOSYS</code></td>
+<td><code class="c">regs-&gt;ax = __x64_sys_ni_syscall(regs)</code>（经 <code class="c">do_syscall_64</code> 的兜底分支）</td>
+</tr>
+<tr>
+<td>教材里的"逐参数调用"写法</td>
+<td>⭐ v6.6：表项<strong>只传 <code class="c">pt_regs</code> 一个参数</strong></td>
+</tr>
+<tr>
+<td>不区分 ABI</td>
+<td>⭐ 先试 <code class="c">do_syscall_x64</code>，失败再试 <code class="c">do_syscall_x32</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>10. HFT 视角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>HFT 含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">array_index_nospec</code></strong></td>
+<td>每次 syscall 都付一次 Spectre v1 缓解；这是"syscall 贵"的又一项固定成本</td>
+</tr>
+<tr>
+<td>⭐ <strong>7 个 <code class="c">SYSCALL_WORK</code> 位测试</strong></td>
+<td>干净进程上是零成本；<strong>容器（seccomp）里每次 syscall 都跑 BPF</strong> —— 这是容器化 HFT 的隐性延迟</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">strace</code></strong></td>
+<td>每次 syscall 两次进程停止 + 两次上下文切换。<strong>生产环境绝不要挂 strace</strong>，用 <code class="c">perf</code> / <code class="c">bpftrace</code></td>
+</tr>
+<tr>
+<td>⭐ <strong>内核栈 16KB</strong></td>
+<td>写内核模块 / eBPF 外的内核代码时，局部变量必须小；HFT 相关的内核旁路（如自定义字符设备）尤其注意</td>
+</tr>
+<tr>
+<td><strong>栈随机偏移 10 bit</strong></td>
+<td>每次 syscall 栈起点浮动 ≤1023 字节 → <strong>栈访问的 cache 行不固定</strong>，是 syscall 路径微小抖动的来源之一</td>
+</tr>
+<tr>
+<td><strong><code class="c">noinstr</code></strong></td>
+<td>syscall 入口段无法插 kprobe/ftrace → 想在这里埋探针只能用硬件断点或静态 tracepoint</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实操三条：</strong></p>
+<ol>
+<li><strong>热路径不要挂任何 syscall 追踪</strong>。用 <code class="c">perf record -e raw_syscalls:sys_enter</code> 采样，或用 BPF 在内核里聚合（成本在内核侧，不打断被观测进程）。</li>
+<li><strong>容器里跑 HFT 要评估 seccomp 开销</strong>：<code class="c">SECCOMP_RET_ALLOW</code> 的 BPF 程序仍有固定成本。可用 <code class="c">seccomp</code> 的 <strong>bitmap 快速路径</strong>（纯号码白名单时内核会跳过 BPF 执行）。</li>
+<li><strong>别在内核栈上开大数组</strong>。16KB 栈，一个 <code class="c">char buf[4096]</code> 就用掉四分之一，再叠几层函数调用就可能 <code class="c">stack overflow</code>。</li>
+</ol>
 <hr />
 <h3>触发方式（x86 演进）</h3>
 <div class="tbl-wrap"><table>
@@ -1072,7 +2836,11 @@ sysret ──► 回到用户态
 </tr>
 </tbody>
 </table></div>
-<h4>x86（书中 32 位约定）</h4>
+<blockquote>
+<p>v6.6 里 <code class="c">int $0x80</code> 的处理函数是 <code class="c">do_int80_syscall_32()</code>（<code class="c">arch/x86/entry/common.c:119</code>），仍完整保留——<strong>32 位兼容层从未被移除</strong>。</p>
+</blockquote>
+<h4>寄存器约定</h4>
+<p><strong>x86（书中 32 位约定）</strong></p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1092,26 +2860,556 @@ sysret ──► 回到用户态
 </tbody>
 </table></div>
 <blockquote>
-<p><strong>x86-64</strong>：号在 <strong><code class="c">rax</code></strong>，参数常用 <strong><code class="c">rdi, rsi, rdx, r10, r8, r9</code></strong> — 思想相同：<strong>寄存器传号与参</strong>。</p>
+<p><strong>x86-64</strong>：号在 <strong><code class="c">rax</code></strong>，参数常用 <strong><code class="c">rdi, rsi, rdx, r10, r8, r9</code></strong> — 思想相同：<strong>寄存器传号与参</strong>。
+⚠️ 第 4 参数是 <strong><code class="c">r10</code> 不是 <code class="c">rcx</code></strong>（<code class="c">rcx</code> 被 <code class="c">syscall</code> 指令占用存返回地址），详见 <a href="#s-5-2">5.2 §3</a>。</p>
 </blockquote>
-<p>→ 教学对照：01 Day 20 INT 0x40 API · 下一节 <a href="#s-5-4">§5.4 参数验证</a></p>
+<hr />
+<p>→ 下一节 <a href="#s-5-4">§5.4 参数验证</a> · <a href="#s-5-5">5.5 系统调用上下文</a> · <a href="#s-5-6">5.6 添加与替代方案</a></p>
 <blockquote>
 <p>↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-3">ULK Ch10 §3 分派表与服务例程</a></p>
 </blockquote>
+<hr />
+<h3>常见陷阱</h3>
+<ol>
+<li>以为 <code class="c">sys_call_table[nr]</code> 直接传 6 个参数——<strong>v6.6 只传 <code class="c">struct pt_regs *</code> 一个</strong>，参数由 <code class="c">SYSCALL_DEFINE</code> 生成的 <code class="c">__se_sys_*</code> 层提取</li>
+<li>以为 <code class="c">do_syscall_64</code> 只查一张表——它<strong>先试 64 位表，失败再试 x32 表</strong>，两张独立的表</li>
+<li>以为"号码非法就返回 -ENOSYS"这么简单——<strong>注释明确说 "Invalid system call, but still a system call"</strong>，audit/seccomp/tracepoint 已经记录过它了</li>
+<li>以为 seccomp 在 ptrace 之前跑——⭐ <strong>seccomp 必须在 ptrace 之后</strong>，否则 tracer 可绕过过滤（源码注释明文）</li>
+<li>以为内核栈很大——<strong>x86_64 默认只有 16KB</strong>（开 KASAN 才 32KB），大局部数组和深递归会爆栈</li>
+<li>以为 <code class="c">strace</code> 只是"慢一点"——它让<strong>每次 syscall 两次进程停止 + 两次上下文切换</strong>，热路径上会慢到完全不可测</li>
+<li>以为内核栈随机偏移在 syscall 进入时抽——⭐ <strong>在退出时抽</strong>，目的是增大计时不确定性、缩短偏移在内存中的暴露时间</li>
+<li>以为 <code class="c">do_syscall_64</code> 全程可插桩——它标了 <strong><code class="c">noinstr</code></strong>，只有 <code class="c">instrumentation_begin/end()</code> 之间的部分可以插探针</li>
+</ol>
+<hr />
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> syscall 指令和 int 0x80 的区别？为什么现代 x86 用 syscall？</p>
 <details>
 <summary>答案</summary>
 <p>int 0x80 是软件中断，需要查 IDT → 中断门 → 权限检查，开销约 200-400ns。syscall 是专门为快速系统调用设计的指令：不查 IDT、直接跳到 MSRs 指定的入口（LSTAR），开销约 50-100ns。现代内核默认用 syscall，int 0x80 仅保留兼容。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>机制层面的描述是对的，但<strong>具体 ns 数字取决于硬件与缓解措施的开关状态</strong>，不同机器上差异可达数倍，不宜当作定值引用。</p>
+<p><strong>v6.6 实证补充：</strong></p>
+<ol>
+<li><code class="c">int $0x80</code> 的处理函数 <code class="c">do_int80_syscall_32()</code> 仍完整存在于 <code class="c">arch/x86/entry/common.c:119</code>，<strong>32 位兼容层从未被移除</strong>：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">__visible noinstr void do_int80_syscall_32(struct pt_regs *regs)
+{
+    int nr = syscall_32_enter(regs);
+    add_random_kstack_offset();
+    nr = syscall_enter_from_user_mode(regs, nr);
+    instrumentation_begin();
+    do_syscall_32_irqs_on(regs, nr);
+    instrumentation_end();
+    syscall_exit_to_user_mode(regs);
+}
+</code></pre>
+<ol start="2">
+<li>
+<p><code class="c">syscall</code> 指令的"快"体现在：CPU 硬件直接把返回地址存进 <code class="c">rcx</code>、RFLAGS 存进 <code class="c">r11</code>，并跳到 <code class="c">MSR_LSTAR</code> 指定的地址，<strong>完全绕过 IDT 查表和中断门权限检查</strong>。</p>
+</li>
+<li>
+<p>⭐ <strong>但两者的"后半程"完全一样</strong>：都要 <code class="c">add_random_kstack_offset()</code> → <code class="c">syscall_enter_from_user_mode()</code> → 分派 → <code class="c">syscall_exit_to_user_mode()</code>。所以差异<strong>只在陷入的那几十条指令</strong>，不在后续流程。</p>
+</li>
+<li>
+<p>⭐ 现代系统上，陷入指令本身的差异已经被<strong>缓解措施的固定成本淹没</strong>：PTI 的 2 次 CR3 切换 + IBRS + UNTRAIN_RET 的开销远大于"查不查 IDT"。这也是为什么<a href="#s-5-2">5.2 §4</a> 强调"syscall 贵主要贵在缓解措施"。</p>
+</li>
+</ol>
+</details>
 </details>
 <p><strong>Q2.</strong> 系统调用处理程序为什么要检查 user_mode？</p>
 <details>
 <summary>答案</summary>
 <p>内核需要验证请求来自用户态（而非内核态直接调用），防止内核代码绕过安全检查。<code class="c">access_ok()</code> 验证用户态指针不会访问内核地址。如果内核代码能直接调 sys_read 传入内核指针，就绕过了所有安全检查。这是 Linux 安全模型的基础。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>补充一点：<strong>v6.6 的入口函数命名本身就编码了这个约束</strong>——它叫 <code class="c">syscall_enter_**from_user_mode**()</code>。</p>
+<pre class="code" data-label="C"><code class="c">noinstr long syscall_enter_from_user_mode(struct pt_regs *regs, long syscall)
+{
+    long ret;
+    __enter_from_user_mode(regs);
+    instrumentation_begin();
+    local_irq_enable();
+    ret = __syscall_enter_from_user_work(regs, syscall);
+    instrumentation_end();
+    return ret;
+}
+</code></pre>
+<p><code class="c">__enter_from_user_mode(regs)</code> 负责：
+- 标记退出 <code class="c">noinstr</code> / 上下文跟踪（RCU、lockdep、tracing）的状态切换
+- 确保后续 <code class="c">local_irq_enable()</code> 是安全的</p>
+<p><strong>"内核态直接调 sys_read"会怎样？</strong> 这正是内核里的经典 bug 模式：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__user</code> 指针标注失效</td>
+<td>传入内核指针时 <code class="c">access_ok()</code> 本该返回 false，但直接调用绕过了入口检查</td>
+</tr>
+<tr>
+<td>内核页表可写</td>
+<td>用户指针检查形同虚设，可读写任意内核内存</td>
+</tr>
+<tr>
+<td><code class="c">copy_from_user</code> 的缺页处理</td>
+<td>内核地址缺页会 Oops 而不是返回 <code class="c">-EFAULT</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>因此内核规范：<strong>内核代码要调用 syscall 实现时，必须走内核内部函数（如 <code class="c">kernel_read()</code>），不能调 <code class="c">sys_read()</code></strong>。静态检查器（sparse）会对 <code class="c">__user</code> 标注做检查。</p>
+</details>
+</details>
+<p><strong>Q3.</strong> <code class="c">do_syscall_64</code> 里那句 <code class="c">nr != -1</code> 是什么意思？<code class="c">-1</code> 从哪来？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">    if (!do_syscall_x64(regs, nr) &amp;&amp; !do_syscall_x32(regs, nr) &amp;&amp; nr != -1) {
+        /* Invalid system call, but still a system call. */
+        regs-&gt;ax = __x64_sys_ni_syscall(regs);
+    }
+</code></pre>
+<p><code class="c">nr == -1</code> 表示"<strong>这不是一个需要执行的 syscall，别调内核函数</strong>"。它由 <code class="c">syscall_enter_from_user_mode()</code> 返回，有三种来源：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">syscall_user_dispatch(regs)</code> 返回真</td>
+<td>Syscall User Dispatch（Wine/Proton 模拟 Windows 二进制）</td>
+</tr>
+<tr>
+<td><code class="c">ptrace_report_syscall_entry()</code> 返回非 0，或开了 <code class="c">SYSCALL_WORK_SYSCALL_EMU</code></td>
+<td>tracer 决定不执行</td>
+</tr>
+<tr>
+<td><code class="c">__secure_computing()</code> 返回 <code class="c">-1L</code></td>
+<td>seccomp BPF 判定拒绝</td>
+</tr>
+</tbody>
+</table></div>
+<p>此时<strong>内核函数一个都不执行</strong>，但 <code class="c">regs-&gt;ax</code> 已被 seccomp/ptrace 设置为指定的返回值（如 <code class="c">SECCOMP_RET_ERRNO</code> 指定的 errno）。</p>
+<p>⭐ <strong>注释 "Invalid system call, but still a system call" 的含义</strong>：即使号码非法（<code class="c">do_syscall_x64</code> 和 <code class="c">do_syscall_x32</code> 都返回 false），仍然要算作"发生了一次 syscall"——因为前面的 tracepoint / audit / seccomp 已经记录过它了。所以执行 <code class="c">__x64_sys_ni_syscall(regs)</code>（返回 <code class="c">-ENOSYS</code>）而不是静默跳过。</p>
+</details>
+<p><strong>Q4.</strong> <code class="c">array_index_nospec</code> 是干什么的？为什么每次 syscall 都要调它？</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">    if (likely(unr &lt; NR_syscalls)) {
+        unr = array_index_nospec(unr, NR_syscalls);
+        regs-&gt;ax = sys_call_table[unr](regs);
+        return true;
+    }
+</code></pre>
+<p><strong>作用</strong>：防 <strong>Spectre v1</strong>（边界检查绕过 / bounds-check bypass）。</p>
+<p><strong>攻击原理</strong>：CPU 推测执行时，即使 <code class="c">unr &lt; NR_syscalls</code> 这个分支判断还没算出结果，也会<strong>推测性地</strong>用恶意的 <code class="c">unr</code> 去读 <code class="c">sys_call_table[unr]</code>，把表外数据加载进 cache。随后分支判断失败、推测回滚，但<strong>cache 里的痕迹留下来了</strong>，攻击者可用侧信道（Flush+Reload 等）逐字节读出内核内存。</p>
+<p><strong>防护原理</strong>：<code class="c">array_index_nospec(idx, sz)</code> 把索引<strong>钳制</strong>到 <code class="c">[0, sz)</code> 范围内（用掩码或条件传送实现，不引入分支）。这样即使推测执行，读到的也永远是表内的合法地址，攻击者无法越界探测。</p>
+<p><strong>为什么每次 syscall 都要</strong>：因为 <code class="c">sys_call_table</code> 是<strong>按用户可控的号码索引</strong>的数组——这正是 Spectre v1 的经典攻击面。每一次 syscall 都要付这个（很小的）成本。</p>
+<blockquote>
+<p>这也是 <a href="#s-5-2">5.2 §4</a> 拆解的 syscall 开销的一部分：<strong>缓解措施叠加</strong>。</p>
+</blockquote>
+</details>
+<p><strong>Q5.</strong> 为什么 seccomp 必须在 ptrace 之后执行？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">kernel/entry/common.c:71</code> 的源码注释直接给出了答案：</p>
+<pre class="code" data-label="C"><code class="c">    /* Do seccomp after ptrace, to catch any tracer changes. */
+    if (work &amp; SYSCALL_WORK_SECCOMP) {
+        ret = __secure_computing(NULL);
+        if (ret == -1L)
+            return ret;
+    }
+</code></pre>
+<p><strong>理由</strong>：ptrace tracer 可以在 <code class="c">ptrace_report_syscall_entry()</code> 里<strong>修改被跟踪进程的寄存器</strong>，包括 syscall 号码和参数。</p>
+<p>如果顺序反过来（先 seccomp 后 ptrace）：</p>
+<pre class="code" data-label="code"><code class="c">❌ 恶意顺序：
+  1. 用户态发起 syscall A（无害，seccomp 白名单内）
+  2. seccomp 检查 A → 通过
+  3. ptrace tracer 把号码改成 B（危险，如 kexec_load）
+  4. 执行 B  →  seccomp 形同虚设
+</code></pre>
+<pre class="code" data-label="code"><code class="c">✅ 正确顺序（v6.6）：
+  1. 用户态发起 syscall A
+  2. ptrace tracer 把号码改成 B
+  3. seccomp 检查 B → 拒绝
+  4. 不执行
+</code></pre>
+<p>所以 <strong>"to catch any tracer changes"</strong> = 让 seccomp 看到 tracer 改过之后的最终状态。</p>
+<p>⭐ <strong>紧接着的一行同样关键</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    /* Either of the above might have changed the syscall number */
+    syscall = syscall_get_nr(current, regs);
+</code></pre>
+<p>ptrace 或 seccomp 都可能改写号码（seccomp 的 <code class="c">SECCOMP_RET_ERRNO</code>/<code class="c">SECCOMP_USER_NOTIF</code> 也会），所以必须<strong>重新读一次</strong>号码，然后才交给 tracepoint 和 audit 记录。</p>
+</details>
+<p><strong>Q6.</strong> v6.6 有哪 7 个 <code class="c">SYSCALL_WORK</code> 标志？它们存在哪？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">include/linux/thread_info.h:42-57</code>：</p>
+<pre class="code" data-label="C"><code class="c">    SYSCALL_WORK_BIT_SECCOMP,
+    SYSCALL_WORK_BIT_SYSCALL_TRACEPOINT,
+    SYSCALL_WORK_BIT_SYSCALL_TRACE,
+    SYSCALL_WORK_BIT_SYSCALL_EMU,
+    SYSCALL_WORK_BIT_SYSCALL_AUDIT,
+    SYSCALL_WORK_BIT_SYSCALL_USER_DISPATCH,
+    SYSCALL_WORK_BIT_SYSCALL_EXIT_TRAP,
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>触发者</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SYSCALL_WORK_SECCOMP</code></td>
+<td><code class="c">seccomp(2)</code> / <code class="c">prctl(PR_SET_SECCOMP)</code></td>
+<td>BPF 程序过滤 syscall</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_TRACE</code></td>
+<td><code class="c">ptrace(PTRACE_SYSCALL)</code></td>
+<td><strong>strace 用的就是这个</strong></td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_EMU</code></td>
+<td>ptrace</td>
+<td>只通知 tracer，<strong>不真执行</strong></td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_TRACEPOINT</code></td>
+<td>ftrace / perf / BPF</td>
+<td><code class="c">raw_syscalls:sys_enter</code></td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_AUDIT</code></td>
+<td>auditd 规则</td>
+<td>审计日志</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_USER_DISPATCH</code></td>
+<td><code class="c">prctl(PR_SET_SYSCALL_USER_DISPATCH)</code></td>
+<td>Wine / Proton 模拟 Windows 二进制</td>
+</tr>
+<tr>
+<td><code class="c">SYSCALL_WORK_SYSCALL_EXIT_TRAP</code></td>
+<td>—</td>
+<td>退出时陷入通知</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>存在哪</strong>：<code class="c">current_thread_info()-&gt;syscall_work</code> 位图（同文件 <code class="c">:150-161</code> 提供 <code class="c">set_bit</code> / <code class="c">test_bit</code> / <code class="c">clear_bit</code> 封装）。</p>
+<p>⭐ <strong>性能含义</strong>：所有检查都是 <code class="c">if (work &amp; FLAG)</code> 一次位测试。一个既不 strace、又没 seccomp、又没 audit 的进程，<code class="c">work == 0</code>，<strong>六个分支全部不命中，零额外成本</strong>。</p>
+<p>反之：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>进程类型</th>
+<th>每次 syscall 额外成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通进程</td>
+<td>零</td>
+</tr>
+<tr>
+<td>开了 seccomp（容器 / 沙箱）</td>
+<td>跑一遍 BPF 程序</td>
+</tr>
+<tr>
+<td>被 <code class="c">strace</code> 跟踪</td>
+<td>⭐ 两次进程停止 + 两次 tracer 上下文切换</td>
+</tr>
+</tbody>
+</table></div>
+</details>
+<p><strong>Q7.</strong> 内核栈有多大？<code class="c">add_random_kstack_offset</code> 的偏移为什么在 syscall <strong>退出时</strong>才抽取？</p>
+<details>
+<summary>答案</summary>
+<p><strong>大小</strong>（v6.6 <code class="c">arch/x86/include/asm/page_64_types.h:15-16</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define THREAD_SIZE_ORDER   (2 + KASAN_STACK_ORDER)
+#define THREAD_SIZE     (PAGE_SIZE &lt;&lt; THREAD_SIZE_ORDER)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th>ORDER</th>
+<th>大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认</td>
+<td>2</td>
+<td><strong>16 KB</strong></td>
+</tr>
+<tr>
+<td>开 KASAN</td>
+<td>3</td>
+<td><strong>32 KB</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ 16KB 很小——这是内核编码规范<strong>禁止大局部数组和深递归</strong>的直接原因。</p>
+<p><strong>偏移上限</strong>（<code class="c">include/linux/randomize_kstack.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define KSTACK_OFFSET_MAX(x)    ((x) &amp; 0x3FF)
+</code></pre>
+<p><strong>10 bit 熵</strong> = 偏移最多 <strong>1023 字节</strong>。用 static key 控制，关闭时零开销。</p>
+<p>⭐⭐ <strong>为什么在退出时抽（而不是进入时）</strong>——源码注释的两条理由：</p>
+<blockquote>
+<p><code class="c">* This should only be used during syscall exit when interrupts and
+ * preempt are disabled. This position in the syscall flow is done to
+ * frustrate attacks from userspace attempting to learn the next offset:
+ * - Maximize the timing uncertainty visible from userspace: if the
+ *   offset is chosen at syscall entry, userspace has much more control
+ *   over the timing between choosing offsets. "How long will we be in
+ *   kernel mode?" tends to be more difficult to predict than "how long
+ *   will we be in user mode?"
+ * - Reduce the lifetime of the new offset sitting in memory during
+ *   kernel mode execution. Exposure of "thread-local" memory content
+ *   (e.g. current, percpu, etc) tends to be easier than arbitrary
+ *   location memory exposure.</code></p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>理由</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>增大计时不确定性</strong></td>
+<td>进入时抽 → 用户态能精确控制"抽偏移"到下次 syscall 的时间间隔；退出时抽 → 攻击者必须预测"这次进内核会待多久"，难得多</td>
+</tr>
+<tr>
+<td>⭐ <strong>缩短暴露窗口</strong></td>
+<td>退出时抽完立刻回用户态，新偏移在内核内存里停留时间最短；且 <code class="c">current</code> / percpu 这类"线程局部"内存比任意内存更容易被泄露</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>精妙之处</strong>：这个安全性提升<strong>不花任何运行时成本</strong>——只是把抽随机数的位置挪了一下。</p>
+<p><strong>副作用</strong>：每次 syscall 的栈起点浮动 ≤1023 字节，栈访问的 cache 行不固定，是 syscall 路径微小抖动的来源之一。</p>
+</details>
+<p><strong>Q8.</strong> <code class="c">sys_call_table</code> 是怎么生成的？为什么表里写 <code class="c">sys_read</code> 而实际符号是 <code class="c">__x64_sys_read</code>？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">arch/x86/entry/syscall_64.c</code> 全文只有 451 字节：</p>
+<pre class="code" data-label="C"><code class="c">#define __SYSCALL(nr, sym) extern long __x64_##sym(const struct pt_regs *);
+#include &lt;asm/syscalls_64.h&gt;
+#undef __SYSCALL
+
+#define __SYSCALL(nr, sym) __x64_##sym,
+
+asmlinkage const sys_call_ptr_t sys_call_table[] = {
+#include &lt;asm/syscalls_64.h&gt;
+};
+</code></pre>
+<p><strong>四处精妙：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>技巧</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>X-macro</strong></td>
+<td>同一头文件 <strong>include 两次</strong>，配不同的 <code class="c">__SYSCALL</code> 定义：第一次生成 extern 声明，第二次生成数组元素</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">const</code></strong></td>
+<td>表本身只读，防止运行时被篡改（rootkit 常见攻击点）</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">__x64_</code> 前缀</strong></td>
+<td>与<a href="#s-5-2">5.2</a>呼应：表里写 <code class="c">sys_read</code>，实际符号是 <code class="c">__x64_sys_read</code></td>
+</tr>
+<tr>
+<td><strong>自动生成</strong></td>
+<td><code class="c">asm/syscalls_64.h</code> 由 <code class="c">scripts/syscalltbl.sh</code> 在构建时从 <code class="c">syscall_64.tbl</code> 生成，<strong>不在源码树里</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么实际符号带 <code class="c">__x64_</code> 前缀</strong>（对应 <code class="c">CONFIG_ARCH_HAS_SYSCALL_WRAPPER</code>）：</p>
+<pre class="code" data-label="code"><code class="c">sys_call_table[nr](regs)
+    ▼
+__x64_sys_read(regs)               ← 表里存的，签名统一为 long (*)(const struct pt_regs *)
+    ▼
+__se_sys_read(fd, buf, count)      ← 从 regs-&gt;di/si/dx 取参数，做符号/零扩展
+    ▼
+__do_sys_read(fd, buf, count)      ← 你写的函数体
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__x64_sys_*</code></td>
+<td>统一签名，供表调用</td>
+</tr>
+<tr>
+<td><code class="c">__se_sys_*</code></td>
+<td><strong>s</strong>ign <strong>e</strong>xtend：参数提取 + 符号扩展（安全性关键）</td>
+</tr>
+<tr>
+<td><code class="c">__do_sys_*</code></td>
+<td>真正实现</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong><code class="c">__se_sys_*</code> 为什么必要</strong>：C 语言无法表达"这个 32 位参数在 64 位寄存器里"。例如 <code class="c">int fd</code> 从 <code class="c">regs-&gt;di</code> 取低 32 位时必须正确符号扩展，否则 <code class="c">-1</code> 会变成无符号的 <code class="c">0xFFFFFFFF</code>。这层由宏自动生成，避免手写出错。</p>
+</details>
+<p><strong>Q9.</strong> 教材常写的"逐参数调用"写法，与 v6.6 实际有哪些差别？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>教材版（残缺）</th>
+<th>v6.6 实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">if (nr &gt;= NR_syscalls) return -ENOSYS;</code></td>
+<td><code class="c">if (likely(unr &lt; NR_syscalls)) {...} return false;</code>（<strong>正数</strong>判断 + <code class="c">likely</code>）</td>
+</tr>
+<tr>
+<td>无</td>
+<td>⭐ <code class="c">array_index_nospec(unr, NR_syscalls)</code>（<strong>Spectre v1 防护</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">return -ENOSYS</code></td>
+<td><code class="c">regs-&gt;ax = __x64_sys_ni_syscall(regs)</code>（由 <code class="c">do_syscall_64</code> 兜底分支执行）</td>
+</tr>
+<tr>
+<td>逐参数调用（6 个参数）</td>
+<td>⭐ 表项<strong>只传 <code class="c">pt_regs</code> 一个参数</strong></td>
+</tr>
+<tr>
+<td>不区分 ABI</td>
+<td>⭐ 先试 <code class="c">do_syscall_x64</code>，失败再试 <code class="c">do_syscall_x32</code></td>
+</tr>
+<tr>
+<td>无</td>
+<td>⭐ 负数号码处理：<code class="c">unsigned int unr = nr</code> 把负数变成巨大正数，省一次显式判断</td>
+</tr>
+<tr>
+<td>无</td>
+<td>⭐ <code class="c">noinstr</code> + <code class="c">instrumentation_begin/end()</code>（禁止整段插桩）</td>
+</tr>
+<tr>
+<td>无</td>
+<td>⭐ <code class="c">add_random_kstack_offset()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>v6.6 完整实现（<code class="c">arch/x86/entry/common.c:73-87</code>）：</p>
+<pre class="code" data-label="C"><code class="c">__visible noinstr void do_syscall_64(struct pt_regs *regs, int nr)
+{
+    add_random_kstack_offset();
+    nr = syscall_enter_from_user_mode(regs, nr);
+
+    instrumentation_begin();
+
+    if (!do_syscall_x64(regs, nr) &amp;&amp; !do_syscall_x32(regs, nr) &amp;&amp; nr != -1) {
+        /* Invalid system call, but still a system call. */
+        regs-&gt;ax = __x64_sys_ni_syscall(regs);
+    }
+
+    instrumentation_end();
+    syscall_exit_to_user_mode(regs);
+}
+</code></pre>
+</details>
+<p><strong>Q10.</strong> 为什么 <code class="c">strace</code> 会让程序慢到不可测？生产环境该用什么？</p>
+<details>
+<summary>答案</summary>
+<p><strong>机制</strong>：<code class="c">strace</code> 用 <code class="c">ptrace(PTRACE_SYSCALL)</code>，这会置位 <code class="c">SYSCALL_WORK_SYSCALL_TRACE</code>。于是<strong>每一次 syscall</strong>（进入和退出各一次）：</p>
+<ol>
+<li>被跟踪进程在 <code class="c">syscall_enter_from_user_mode()</code> 里停下</li>
+<li>唤醒 tracer（strace 进程）——<strong>一次上下文切换</strong></li>
+<li>strace 用 <code class="c">PTRACE_GETREGS</code> 读寄存器——<strong>一次系统调用</strong></li>
+<li>strace 恢复被跟踪进程——<strong>又一次上下文切换</strong></li>
+<li>syscall 本身执行</li>
+<li><strong>退出时再来一遍</strong>（步骤 1-4）</li>
+</ol>
+<p>即：<strong>每次 syscall = 至少 4 次上下文切换 + 若干次 ptrace 调用</strong>。</p>
+<p>对比干净路径：只是 <code class="c">if (work &amp; SYSCALL_WORK_SYSCALL_TRACE)</code> 一次位测试，不命中。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>进程类型</th>
+<th>每次 syscall 额外成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>干净进程</td>
+<td>⭐ <strong>零</strong>（一次位测试）</td>
+</tr>
+<tr>
+<td>被 <code class="c">strace</code> 跟踪</td>
+<td>⭐ 4+ 次上下文切换</td>
+</tr>
+</tbody>
+</table></div>
+<p>一个热路径上每秒百万次 syscall 的程序（HFT 行情处理、数据库），挂上 <code class="c">strace</code> <strong>会慢到完全无法反映真实行为</strong>，且测出的延迟分布完全失真。</p>
+<p><strong>生产环境替代方案：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>机制</th>
+<th>开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">perf record -e raw_syscalls:sys_enter</code></strong></td>
+<td>tracepoint + 采样/聚合在内核侧</td>
+<td>只在采样点付费</td>
+</tr>
+<tr>
+<td>⭐ <strong><code class="c">bpftrace</code> / BCC</strong></td>
+<td>BPF 程序在内核里聚合，只把结果传回用户态</td>
+<td>每 syscall 微秒级以下</td>
+</tr>
+<tr>
+<td><code class="c">strace -c</code></td>
+<td>只统计不逐条打印</td>
+<td>仍是 ptrace，只是减少了输出开销</td>
+</tr>
+<tr>
+<td><code class="c">ltrace</code></td>
+<td>库函数级</td>
+<td>同 ptrace 问题</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>关键区别</strong>：<code class="c">perf</code> / BPF 是<strong>内核侧聚合</strong>，不把控制权交回用户态 tracer；<code class="c">strace</code> 是<strong>用户态 tracer</strong>，每次都要切换过去。</p>
+</blockquote>
 </details>
 </details>
 <hr />
+<h2>&gt; ↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-3">ULK Ch10 §3 分派表与服务例程</a></h2>
       </section>
       <section class="section" id="s-5-4">
         <div class="sec-head"><div class="sec-no">5.4</div><h2>section-5.4-实现与参数验证</h2></div>

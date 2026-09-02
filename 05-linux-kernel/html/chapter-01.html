@@ -467,6 +467,17 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p><strong>本篇的 v6.6 实证材料</strong>（全部抓自 <code class="c">torvalds/linux@v6.6</code>）：
+<code class="c">arch/x86/entry/syscalls/syscall_64.tbl</code>（14955 B，x86_64 系统调用表全表）
+<code class="c">include/uapi/asm-generic/unistd.h</code>（30495 B）
+<code class="c">arch/x86/Kconfig</code> / <code class="c">kernel/Kconfig.preempt</code> 的 <strong>v6.6 / v6.11 / v6.12 / v6.13 / v6.14</strong> 五版
+<code class="c">rust/Makefile</code> 的 <strong>v5.19 / v6.0 / v6.1</strong> 三版
+<code class="c">Makefile</code>（v6.6）</p>
+<p>⚠️ 原笔记说「Unix 只有<strong>几百个</strong>系统调用」。这个说法对，但太模糊——
+下面的 §1 用 v6.6 的 syscall 表把它精确到个位数，并且顺带挖出
+<strong>一段内核自己写下来承认的"历史设计错误"</strong>（§2）。</p>
+</blockquote>
 <h4>时间线（考据锚点）</h4>
 <pre class="code" data-label="code"><code class="c">1969  Thompson 在 PDP-7 上写 Unix（汇编）
 1973  Ritchie 用 C 重写 —— 跨硬件移植的门被打开
@@ -529,7 +540,611 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>§1 ⭐「几百个系统调用」的精确数字（v6.6 实证）</h2>
+<p>原笔记写「仅 <strong>~几百个</strong>系统调用」。这句话是对的，但可以精确到个位数。
+直接数 <code class="c">arch/x86/entry/syscalls/syscall_64.tbl</code>（v6.6）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>表内条目总数</td>
+<td><strong>401</strong></td>
+<td>含 x32 专属</td>
+</tr>
+<tr>
+<td><strong>64 位可用</strong></td>
+<td><strong>365</strong></td>
+<td>= <code class="c">common</code> 317 + <code class="c">64</code> 专属 48</td>
+</tr>
+<tr>
+<td>x32 专属</td>
+<td>36</td>
+<td>号码 512–547</td>
+</tr>
+<tr>
+<td>最大号码</td>
+<td><strong>547</strong></td>
+<td>但中间有洞，见 §2</td>
+</tr>
+<tr>
+<td>号码空间上界</td>
+<td>0–453（64 位段）</td>
+<td><code class="c">__NR_syscalls 453</code>（<code class="c">unistd.h:827</code>）</td>
+</tr>
+<tr>
+<td><strong>号码空洞</strong></td>
+<td><strong>89 个</strong></td>
+<td>⭐ 连续一段：335–423</td>
+</tr>
+<tr>
+<td>未实现存根</td>
+<td>1 个</td>
+<td><code class="c">156 _sysctl</code> → <code class="c">sys_ni_syscall</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>所以准确的答案是：v6.6 的 x86_64 上大约 365 个 64 位系统调用。</strong></p>
+<h3>1.1 「几百个」这个量级意味着什么</h3>
+<p>做个横向对比就很直观：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>系统</th>
+<th>接口面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux v6.6（x86_64）</td>
+<td><strong>365</strong> 个 syscall</td>
+</tr>
+<tr>
+<td>一个典型 C 库（glibc）</td>
+<td>导出 <strong>2000+</strong> 个符号</td>
+</tr>
+<tr>
+<td>一个桌面应用的依赖树</td>
+<td>动辄数百个动态库、数万个符号</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>内核对用户的承诺面，比它之上的任何一层都小一个数量级。</strong>
+这就是 Unix「设计简洁」这条优势的量化表达——它不是口号，是可数的。</p>
+<h3>1.2 表本身长什么样</h3>
+<pre class="code" data-label="code"><code class="c">#
+# 64-bit system call numbers and entry vectors
+#
+# The format is:
+# &lt;number&gt; &lt;abi&gt; &lt;name&gt; &lt;entry point&gt;
+#
+# The __x64_sys_*() stubs are created on-the-fly for sys_*() system calls
+#
+# The abi is &quot;common&quot;, &quot;64&quot; or &quot;x32&quot; for this file.
+#
+0   common  read            sys_read
+1   common  write           sys_write
+2   common  open            sys_open
+3   common  close           sys_close
+...
+334 common  rseq
+424 common  pidfd_send_signal
+425 common  io_uring_setup
+426 common  io_uring_enter
+427 common  io_uring_register
+...
+453 64  map_shadow_stack
+</code></pre>
+<p>注意 <code class="c">abi</code> 这一列有三类：
+- <strong><code class="c">common</code></strong>：64 位和 x32 共用
+- <strong><code class="c">64</code></strong>：仅 64 位（如 <code class="c">453 map_shadow_stack</code>）
+- <strong><code class="c">x32</code></strong>：仅 x32 ABI</p>
+<hr />
+<h2>§2 ⭐⭐ 号码表里的历史化石：335–423 那 89 个空洞</h2>
+<p>这是本篇最有意思的发现——<strong>Unix/Linux 的历史债，在系统调用号码表上留下了肉眼可见的疤痕，
+而且内核开发者把原因直接写在了表里。</strong></p>
+<h3>2.1 空洞的形状</h3>
+<p>把 0–453 全扫一遍，缺失的号码<strong>只有一段连续的</strong>：</p>
+<pre class="code" data-label="code"><code class="c">  0 ────────────── 334    335 ────────────── 423     424 ──────── 453
+  ┌───────────────────┐   ┌─────────────────────┐   ┌───────────────┐
+  │  全部在用          │   │  89 个号码，空的      │   │  全部在用      │
+  │  最后一个是 rseq   │   │  （注释禁止使用）     │   │  从 pidfd 起  │
+  └───────────────────┘   └─────────────────────┘   └───────────────┘
+</code></pre>
+<h3>2.2 内核自己写的注释（v6.6 原文）</h3>
+<pre class="code" data-label="C"><code class="c"># don't use numbers 387 through 423, add new calls after the last
+# 'common' entry
+#
+# Due to a historical design error, certain syscalls are numbered differently
+# in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+# Do not add new syscalls to this range.  Numbers 548 and above are available
+# for non-x32 use.
+#
+# This is the end of the legacy x32 range.  Numbers 548 and above are
+# not special and are not to be used for x32-specific syscalls.
+</code></pre>
+<p>⭐⭐ 三条信息，逐条读：</p>
+<p><strong>① "Due to a historical design error"</strong>
+内核源码<strong>明文承认这是一个历史设计错误</strong>。x32 ABI 里有一批 syscall 的号码
+与原生 x86_64 不同，被塞在 512–547。这是 Linux 源码里少见的、直接自嘲的注释。</p>
+<p><strong>② "don't use numbers 387 through 423"</strong>
+明确划为禁区。注意注释只提 387–423，<strong>但实际空洞从 335 就开始了</strong>
+（335–386 这段的差异注释没解释，属于"注释与事实不完全对齐"的情况，
+判断时以表的实际内容为准）。</p>
+<p><strong>③ "Numbers 548 and above are available"</strong>
+548 以上才是干净的、不带历史包袱的新号码空间。</p>
+<h3>2.3 ⭐ 为什么 x32 要从 512 开始？——一个纯粹的 cache 决策</h3>
+<p>v5.1 的表里有一句更详细的注释（v6.6 版本已精简掉）：</p>
+<pre class="code" data-label="C"><code class="c"># x32-specific system call numbers start at 512 to avoid cache impact
+# for native 64-bit operation. The __x32_compat_sys stubs are created
+# on-the-fly for compat_sys_*() compatibility system calls if X86_X32
+</code></pre>
+<p>⭐⭐ <strong>"to avoid cache impact for native 64-bit operation"</strong></p>
+<p>系统调用表在内核里是一个<strong>按号码索引的数组</strong>。如果 x32 的号码和 64 位的号码
+交错排布，表的有效跨度就会变大，原生 64 位进程访问表时的 <strong>cache 局部性会变差</strong>。
+把 x32 整体推到 512 以上，原生路径就只触碰 0–334 这一小段热区。</p>
+<p>这是 Unix「简单原语」哲学的延续——<strong>连号码怎么分配都要算 cache</strong>。
+335–423 那段就是当年"考虑过但最终放弃"的中间方案留下的空档。</p>
+<h3>2.4 版本断崖：跳跃发生在 v5.1</h3>
+<p>用「最大号码」追踪：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th>最大号码</th>
+<th>64 位条目数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.9</td>
+<td>331</td>
+<td>332</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>v5.0</strong></td>
+<td><strong>334</strong></td>
+<td>335</td>
+<td>最后一个是 <code class="c">rseq</code></td>
+</tr>
+<tr>
+<td><strong>v5.1</strong></td>
+<td><strong>427</strong></td>
+<td>339</td>
+<td>⭐ <strong>跳过 335–423，从 424 起</strong></td>
+</tr>
+<tr>
+<td>v5.10</td>
+<td>440</td>
+<td>352</td>
+<td></td>
+</tr>
+<tr>
+<td>v6.0</td>
+<td>450</td>
+<td>362</td>
+<td></td>
+</tr>
+<tr>
+<td>v6.6</td>
+<td>453</td>
+<td>365</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>v5.0 → v5.1 是一次性跳过去的。</strong> 而 v5.1 新增的那批恰好是：</p>
+<pre class="code" data-label="code"><code class="c">424 common  pidfd_send_signal
+425 common  io_uring_setup      ⭐
+426 common  io_uring_enter      ⭐
+427 common  io_uring_register   ⭐
+</code></pre>
+<p><strong>io_uring 是历史上第一批拿到 424+ 号码的系统调用。</strong></p>
+<p>这个巧合很有意味：io_uring 是「对 Unix 抽象税的反叛」（见 §6），
+而它在号码表上的位置正好标志着<strong>新旧时代的分界线</strong>——
+334 及以前是"Unix 遗产"那一侧，424 及以后是"后 io_uring"那一侧。</p>
+<blockquote>
+<p>⚠️ 注意读法：v5.1 的"最大号码"从 334 跳到 427 <strong>不代表新增了 93 个 syscall</strong>。
+64 位条目数只从 335 涨到 339（+4，就是上面那四个）。
+<strong>号码会跳，条目数才是真实数量</strong>——统计 syscall 数量时一定看条目数。</p>
+</blockquote>
+<hr />
+<h2>§3 ⭐ 「少而稳」的量化：每年新增约 5 个</h2>
+<p>把各版本的 64 位条目数排成曲线：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th>发布年份</th>
+<th>64 位 syscall 数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.9</td>
+<td>2016</td>
+<td>332</td>
+</tr>
+<tr>
+<td>v5.0</td>
+<td>2019</td>
+<td>335</td>
+</tr>
+<tr>
+<td>v5.1</td>
+<td>2019</td>
+<td>339</td>
+</tr>
+<tr>
+<td>v5.10</td>
+<td>2020</td>
+<td>352</td>
+</tr>
+<tr>
+<td>v6.0</td>
+<td>2022</td>
+<td>362</td>
+</tr>
+<tr>
+<td>v6.6</td>
+<td>2023</td>
+<td><strong>365</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>v4.9 → v6.6（约 7 年）：332 → 365，净增 33 个，平均每年约 5 个。</strong></p>
+<p>⭐ 这就是「接口少而稳」的硬证据。对比一下其它软件层的接口膨胀速度，
+内核 syscall 表的增长慢得不可思议——<strong>因为每加一个 syscall 都是永久承诺</strong>
+（用户空间一旦依赖，就再也不能改语义或删掉）。</p>
+<p><strong>这也解释了为什么新特性越来越倾向于"不加 syscall"</strong>：
+- <code class="c">io_uring</code>：3 个 syscall 撑起上百种操作（而不是加 100 个 syscall）
+- <code class="c">eBPF</code>：1 个 <code class="c">bpf()</code> syscall 承载整个子系统
+- <code class="c">prctl</code> / <code class="c">setsockopt</code> / <code class="c">fcntl</code>：老牌"万能入口"，靠参数扩展而非新号</p>
+<p><strong>HFT 关联</strong>：这条对网关开发是<strong>好消息</strong>——
+内核 ABI 稳定意味着多年积累的 syscall 层调优经验不会轻易作废；
+同时也意味着<strong>不要指望靠"等内核加新接口"来解决延迟问题</strong>，
+新接口来得很慢，且往往先服务于通用场景而非极致延迟。</p>
+<hr />
+<h2>§4 x32 ABI：一个正在退场的历史角色</h2>
+<p>§2 提到的那个"historical design error"，主角就是 <strong>x32 ABI</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>是什么</td>
+<td>x86_64 的 <strong>ILP32</strong> 变体：跑 64 位指令，但 <code class="c">long</code>/指针是 32 位</td>
+</tr>
+<tr>
+<td>图什么</td>
+<td>省掉 64 位指针的内存开销（缓存占用、内存带宽）</td>
+</tr>
+<tr>
+<td>代价</td>
+<td>号码空间要单独划一段（512–547），且有一批 syscall 号码与原生不同</td>
+</tr>
+<tr>
+<td>现状</td>
+<td>v6.6 仍保留 36 个 x32 专属条目，但<strong>注释明确写着"Do not add new syscalls to this range"</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>从 <code class="c">syscall_64.tbl</code> 的三类 ABI 计数也能看出它的边缘地位：</p>
+<pre class="code" data-label="code"><code class="c">     48 64          ← 仅 64 位可用
+    317 common      ← 共用（主力）
+     36 x32         ← 仅 x32 可用（不到十分之一）
+</code></pre>
+<p><strong>教训</strong>：x32 是"用复杂度换内存"的尝试，在指针普遍 64 位、
+内存不再那么贵的今天，这笔交易不再划算，于是它成了号码表上
+一块<strong>被冻结的化石区</strong>——留着兼容，但不再生长。</p>
+<hr />
+<h2>§5 现代演进的三个时间节点（v6.6 视角的定位）</h2>
+<p>原笔记的「五条优势」表里有两处现代演化结论，这里给出版本实证。</p>
+<h3>5.1 Rust 进内核：<strong>v6.1</strong></h3>
+<p>二分证据（<code class="c">rust/Makefile</code> 的字节数）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th><code class="c">rust/Makefile</code></th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v5.19</td>
+<td>66 B（404 残片）</td>
+<td>不存在</td>
+</tr>
+<tr>
+<td><strong>v6.0</strong></td>
+<td><strong>66 B（404 残片）</strong></td>
+<td><strong>不存在</strong></td>
+</tr>
+<tr>
+<td><strong>v6.1</strong></td>
+<td><strong>16256 B</strong></td>
+<td>⭐ <strong>引入</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>所以原笔记写的「+少量 Rust，<strong>6.1+</strong>」是准确的。
+但要注意 v6.6 时 Rust 的<strong>实际覆盖面</strong>：主要用于<strong>驱动和部分子系统</strong>，
+核心路径（调度器、内存管理、网络栈）仍全是 C。
+「用 Rust 重写内核」在可见的未来不会发生——它是<strong>增量补充</strong>不是替代。</p>
+<h3>5.2 ⭐ PREEMPT_RT 合入主线：<strong>v6.12</strong></h3>
+<p>这是比 Rust 更重要的一个节点，尤其对 HFT。
+判据用 <code class="c">arch/x86/Kconfig</code> 里的 <code class="c">select ARCH_SUPPORTS_RT</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th><code class="c">ARCH_SUPPORTS_RT</code>（x86）</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v6.6</td>
+<td><strong>0</strong></td>
+<td>需要打 RT 补丁</td>
+</tr>
+<tr>
+<td>v6.11</td>
+<td><strong>0</strong></td>
+<td>仍需补丁</td>
+</tr>
+<tr>
+<td><strong>v6.12</strong></td>
+<td><strong>1</strong></td>
+<td>⭐ <strong>RT 进入主线</strong></td>
+</tr>
+<tr>
+<td>v6.13</td>
+<td>1</td>
+<td></td>
+</tr>
+<tr>
+<td>v6.14</td>
+<td>1</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>v6.12 之前，要跑真正的实时内核必须打 out-of-tree 的 PREEMPT_RT 补丁；
+v6.12 起，主线内核原生支持。</strong></p>
+<p>这直接改变了 Ch10 全部选型结论的适用范围——Ch10.9 讲过
+<code class="c">spinlock_t</code> 在 RT 上会变成睡眠锁，而以前这需要额外打补丁才能遇到，
+现在<strong>升级内核就可能遇到</strong>。</p>
+<h3>5.3 ⭐ PREEMPT_LAZY：<strong>v6.13</strong> 新增的第五个抢占模型</h3>
+<p>Ch10.9 讲过四个抢占模型（<code class="c">PREEMPT_NONE</code> / <code class="c">VOLUNTARY</code> / <code class="c">PREEMPT</code> / <code class="c">PREEMPT_RT</code>）。
+<strong>v6.13 加了第五个</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th><code class="c">ARCH_HAS_PREEMPT_LAZY</code>（x86）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v6.12</td>
+<td>0</td>
+</tr>
+<tr>
+<td><strong>v6.13</strong></td>
+<td><strong>1</strong> ⭐ 引入</td>
+</tr>
+<tr>
+<td>v6.14</td>
+<td>1</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">kernel/Kconfig.preempt</code>（v6.13）里的定义：</p>
+<pre class="code" data-label="code"><code class="c">config PREEMPT_LAZY
+    bool &quot;Scheduler controlled preemption model&quot;
+    depends on !ARCH_NO_PREEMPT
+    depends on ARCH_HAS_PREEMPT_LAZY
+    select PREEMPT_BUILD if !PREEMPT_DYNAMIC
+    help
+      This option provides a scheduler driven preemption model that
+      is fundamentally similar to full preemption, but is less
+      eager to preempt SCHED_NORMAL tasks in an attempt to
+      reduce lock holder preemption and recover some of the performance
+      gains seen from using Voluntary preemption.
+</code></pre>
+<p>拆成三句：</p>
+<ol>
+<li><strong>"fundamentally similar to full preemption"</strong> —— 本质上接近 <code class="c">PREEMPT</code>（完全抢占）</li>
+<li><strong>"but is less eager to preempt SCHED_NORMAL tasks"</strong> —— 但不那么急于抢占<strong>普通任务</strong></li>
+<li>目的：<strong>"to reduce lock holder preemption"</strong> —— 减少<strong>持锁者被抢占</strong></li>
+</ol>
+<p>⭐⭐ 第 3 句是关键，它直指 Ch10 反复出现的那个痛点：
+<strong>持锁者被抢占 = 优先级反转的根源</strong>。
+- Ch10.5：mutex 有乐观自旋（OSQ），就是为了让等待者"等一等"而不是立刻睡，
+  赌持锁者马上放锁
+- Ch10.8：seqlock 在 RT 上写者会被低优先级读者饿死——同一个问题的另一面
+- Ch10.11 §3.6：rwlock 在 RT 上的写者饥饿</p>
+<p><code class="c">PREEMPT_LAZY</code> 的思路是：<strong>对 <code class="c">SCHED_NORMAL</code> 任务"懒一点"再抢占</strong>，
+让持锁者有机会跑完临界区，同时保留对 RT 任务的立即抢占。
+这是对"完全抢占导致大量持锁抢占"这个副作用的一次定向修补。</p>
+<p><strong>HFT 关联</strong>：如果你的负载是「少数 RT 任务 + 大量普通任务」，
+<code class="c">PREEMPT_LAZY</code> 可能是比 <code class="c">PREEMPT</code> 或 <code class="c">PREEMPT_RT</code> 更合适的第三选项——
+它既保住了 RT 任务的低延迟，又减少了普通任务持锁被打断造成的抖动。</p>
+<h3>5.4 v6.6 的时代定位</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事项</th>
+<th>v6.6（本笔记基准）的状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rust</td>
+<td>✅ 已引入（v6.1），覆盖驱动层</td>
+</tr>
+<tr>
+<td>PREEMPT_RT</td>
+<td>❌ <strong>尚未合入主线</strong>（v6.12 才合）</td>
+</tr>
+<tr>
+<td>PREEMPT_LAZY</td>
+<td>❌ 不存在（v6.13 才有）</td>
+</tr>
+<tr>
+<td>内核代号</td>
+<td><code class="c">NAME = Hurr durr I'ma ninja sloth</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>（v6.6 的代号出自 <code class="c">Makefile</code>，Linus 一贯的无厘头命名传统，
+每个稳定版都有一个——这也是 Unix 文化的一部分。）</p>
+<hr />
+<h2>§6 「Unix 抽象税」与三条逃税路线（syscall 视角）</h2>
+<p>原笔记说「先懂税再谈逃税」。从 §1–§3 的数据看，这笔税具体是什么？</p>
+<h3>6.1 税在哪</h3>
+<p>一次 <code class="c">read()</code> 要经过：</p>
+<pre class="code" data-label="code"><code class="c">用户态 ──syscall 指令──► entry_SYSCALL_64
+                          ├─ 切到内核栈、保存寄存器
+                          ├─ 从 syscall 表按号查函数      ← §2 那张表
+                          ├─ 参数检查、fd → struct file
+                          ├─ VFS：file_operations.read
+                          ├─ 具体文件系统 / socket 层
+                          ├─ 拷贝到用户缓冲区             ← 最容易忽略的一笔
+                          └─ 返回用户态、恢复寄存器
+</code></pre>
+<p>其中<strong>两笔最贵的税</strong>：
+1. <strong>模式切换本身</strong>（syscall / return，各约几十到上百周期，含 TLB/缓存污染）
+2. <strong>数据拷贝</strong>（内核缓冲区 → 用户缓冲区）</p>
+<h3>6.2 三条逃税路线</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>绕掉什么</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">mmap</code></strong></td>
+<td>拷贝（共享页，不 copy）</td>
+<td>仍然要走 VFS；缺页异常是新的延迟源</td>
+</tr>
+<tr>
+<td><strong><code class="c">io_uring</code></strong></td>
+<td><strong>模式切换的批量化</strong>（一次 syscall 提交/收割多笔 IO）</td>
+<td>仍是 fd 抽象；需要新学一套编程模型</td>
+</tr>
+<tr>
+<td><strong>DPDK / AF_XDP</strong></td>
+<td><strong>整个内核网络栈 + VFS</strong>（用户态直接轮询网卡）</td>
+<td>独占网卡（或队列）；失去内核所有协议栈功能</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ 注意 <code class="c">io_uring</code> 的位置很特殊：它<strong>没有绕开 Unix 抽象</strong>（还是 fd、还是 syscall），
+它只是把<strong>每次操作的固定开销摊薄</strong>了。而 DPDK/AF_XDP 是<strong>真的绕开</strong>——
+用「放弃内核协议栈」换「零拷贝 + 零模式切换 + 轮询代替中断」。</p>
+<p><strong>判据</strong>：
+- 能接受 fd 抽象、只是嫌 syscall 太频繁 → <strong>io_uring</strong>
+- 连内核协议栈都嫌慢、且网卡可以独占 → <strong>AF_XDP</strong> / <strong>DPDK</strong></p>
+<h3>6.3 一个容易搞反的点</h3>
+<p>⚠️ <strong>io_uring 不是"更快的 syscall"，是"更少的 syscall"。</strong>
+单次操作的延迟它未必比 <code class="c">read()</code> 低（甚至可能略高，因为多了队列操作），
+它的收益来自<strong>批量化后的摊薄</strong>——
+把 N 次 syscall 的固定开销变成约 1 次。</p>
+<p>所以评估 io_uring 收益时，看的是<strong>吞吐和尾延迟的分布</strong>，
+不是单次操作的最小时延。</p>
+<hr />
+<h2>§7 HFT  Checklist：从 Unix 遗产里该拿什么、该躲什么</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>遗产</th>
+<th>拿</th>
+<th>躲</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>少 syscall</td>
+<td>热路径只用十几个 syscall，审计面小</td>
+<td>冷路径也无所谓，别过度优化</td>
+</tr>
+<tr>
+<td>一切皆文件</td>
+<td><code class="c">epoll</code> 统一管理 fd 是成熟方案</td>
+<td>⚠️ 每个 fd 都是一次 VFS 跳转；万级 fd 时 epoll 本身成为瓶颈</td>
+</tr>
+<tr>
+<td><code class="c">fork</code> + COW</td>
+<td>进程隔离好，崩溃不扩散</td>
+<td>热路径上 fork 是禁区（页表复制 + TLB 刷新）</td>
+</tr>
+<tr>
+<td>C 实现</td>
+<td>与内核同语言，无 FFI 开销</td>
+<td>内存安全全靠自己（Rust 目前救不了核心路径）</td>
+</tr>
+<tr>
+<td>POSIX</td>
+<td>代码可移植，换发行版成本低</td>
+<td>⚠️ POSIX 保证的是<strong>语义</strong>不是<strong>延迟</strong>，别指望它保证实时性</td>
+</tr>
+</tbody>
+</table></div>
+<h3>版本选择的实际建议</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>要真实时、能接受新内核</td>
+<td><strong>≥ v6.12</strong>（RT 已进主线，不用打补丁）</td>
+</tr>
+<tr>
+<td>要「RT 任务 + 普通任务」混合负载</td>
+<td><strong>≥ v6.13</strong>（可试 <code class="c">PREEMPT_LAZY</code>）</td>
+</tr>
+<tr>
+<td>保守生产环境</td>
+<td>v6.6 这类 LTS + 官方 RT 补丁（如果确实需要 RT）</td>
+</tr>
+<tr>
+<td>只看 syscall 表</td>
+<td>各版本差异不大（每年 +5），不是选型依据</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <p><strong>HFT 对照：</strong> 网关仍活在 <strong>「少 syscall、少拷贝、快 fork/线程」</strong> 的 Unix 遗产里 — 热路径 <strong><code class="c">read</code>/<code class="c">send</code>/<code class="c">mmap</code></strong> 皆是「一切皆文件」后代；而绕开它的两条路（DPDK 用户态轮询、io_uring 直投队列）本质都是<strong>对 Unix 抽象税的 revolt</strong>——先懂税再谈逃税。</p>
+<p><strong>本篇补充的 HFT 视角</strong>：
+- ⭐ <strong>syscall 表的 89 个空洞</strong>（§2）说明：内核连号码分配都在算 cache。
+  这不是"历史八卦"，是<strong>内核设计的一贯取向</strong>——你在自己代码里做的每一个
+  数据结构布局决策，都应该有同样的自觉。
+- ⭐ <strong>RT 进主线（v6.12）</strong> 意味着 Ch10 全部「RT 上会怎样」的推理
+  从"特殊情况"变成了"默认可能"。<strong>升级内核时要重测。</strong>
+- ⭐ <strong>PREEMPT_LAZY（v6.13）</strong> 是「混合负载」场景的新选项，
+  它针对的正是 Ch10 反复讨论的<strong>持锁者被抢占</strong>问题。</p>
 <p>→ <a href="../../03-linux-userspace-api/html/index.html">03-linux-userspace-api</a> · <a href="../../02-computer-systems/html/chapter-08.html#ch-8">02-CSAPP Ch8</a></p>
 <details>
 <summary>自测题（点击展开）</summary>
@@ -538,17 +1153,436 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <summary>答案</summary>
 <p>系统调用少意味着 syscall 入口审计面小、热路径可预测。HFT 网关热路径只用 read/write/mmap/send 等十几个 syscall，减少调度器与 VFS 层分支。少而稳的接口 = 内核版本升级时 ABI 兼容性好。</p>
 </details>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>结论对，但「几百个」可以精确化（§1）。</strong> v6.6 的 x86_64 上：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>表内条目总数</td>
+<td>401（含 x32）</td>
+</tr>
+<tr>
+<td><strong>64 位实际可用</strong></td>
+<td><strong>365</strong></td>
+</tr>
+<tr>
+<td>号码空间</td>
+<td>0–453，中间有 <strong>89 个洞</strong>（335–423）</td>
+</tr>
+<tr>
+<td><code class="c">__NR_syscalls</code></td>
+<td>453（<code class="c">unistd.h:827</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这个数量级的意义要靠对比才看得出来</strong>：内核对用户的承诺面（365 个 syscall）
+比它之上的任何一层都小一个数量级——glibc 导出 2000+ 个符号，
+一个桌面应用的依赖树动辄数万个符号。</p>
+<p><strong>而「稳」这一点也有硬数据（§3）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th>年份</th>
+<th>64 位 syscall 数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.9</td>
+<td>2016</td>
+<td>332</td>
+</tr>
+<tr>
+<td>v6.6</td>
+<td>2023</td>
+<td>365</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>7 年净增 33 个，平均每年约 5 个。</strong> 内核 syscall 表的膨胀慢得不可思议，
+因为<strong>每加一个 syscall 都是永久承诺</strong>（用户空间一旦依赖就再也不能改语义）。</p>
+<p>这也导致了一个重要的设计趋势：<strong>新特性越来越倾向于不加 syscall</strong>——
+- <code class="c">io_uring</code>：3 个 syscall 撑起上百种操作
+- <code class="c">eBPF</code>：1 个 <code class="c">bpf()</code> 承载整个子系统
+- <code class="c">prctl</code> / <code class="c">setsockopt</code>：靠参数扩展而非新增号码</p>
+<p><strong>HFT 推论</strong>：内核 ABI 稳定 → 你多年积累的 syscall 层调优经验不会轻易作废；
+但也 → <strong>不要指望"等内核加新接口"来解决延迟问题</strong>，新接口来得很慢，
+且往往先服务通用场景而非极致延迟。</p>
+</details>
 <p><strong>Q2.</strong> Unix「一切皆文件」设计哲学对现代网络编程有什么局限？</p>
 <details>
 <summary>答案</summary>
 <p>一切皆文件让 socket/fd 统一接口，但网络包仍需从内核拷贝到用户态（除非用 zero-copy）。HFT 用 AF_XDP/DPDK 绕过 VFS 直接从网卡取包，就是因为「文件抽象」对纳秒级延迟仍有开销。</p>
+</details>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>结论对，但「拷贝」只是两笔税里的一笔（§6.1）。</strong>
+一次 <code class="c">read()</code> 的完整成本可以拆成两大块：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>税种</th>
+<th>内容</th>
+<th>大致位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>模式切换</strong></td>
+<td>syscall + return，切栈/存寄存器/TLB 与缓存污染</td>
+<td>每次 syscall 固定付</td>
+</tr>
+<tr>
+<td><strong>数据拷贝</strong></td>
+<td>内核缓冲区 → 用户缓冲区</td>
+<td>按数据量付</td>
+</tr>
+</tbody>
+</table></div>
+<p>原答案只提到了第二笔，<strong>第一笔（模式切换）在高频小包场景下往往才是大头</strong>——
+因为小包的拷贝量很小，但模式切换的开销是固定的。</p>
+<p><strong>因此三条逃税路线要按"绕掉了什么"来区分（§6.2）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>绕掉</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mmap</code></td>
+<td><strong>拷贝</strong></td>
+<td>仍走 VFS；缺页异常是新延迟源</td>
+</tr>
+<tr>
+<td><code class="c">io_uring</code></td>
+<td><strong>模式切换的批量化</strong></td>
+<td>仍是 fd 抽象；要学新编程模型</td>
+</tr>
+<tr>
+<td>DPDK / AF_XDP</td>
+<td><strong>整个内核网络栈 + VFS</strong></td>
+<td>独占网卡/队列；失去协议栈</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>一个容易搞反的点（§6.3）</strong>：
+<strong><code class="c">io_uring</code> 不是"更快的 syscall"，是"更少的 syscall"。</strong>
+单次操作延迟它未必比 <code class="c">read()</code> 低（甚至略高，多了队列操作），
+收益来自<strong>批量化后的摊薄</strong>——把 N 次 syscall 的固定开销变成约 1 次。</p>
+<p>所以评估 io_uring 时应该看<strong>吞吐和尾延迟分布</strong>，而不是单次操作的最小时延。
+这个误判很常见：拿单次 <code class="c">read()</code> 和单次 io_uring 提交比，发现后者更慢，
+就断定 io_uring 没用——<strong>比错了维度</strong>。</p>
+<p><strong>判据</strong>：能接受 fd 抽象、只是嫌 syscall 太频繁 → io_uring；
+连内核协议栈都嫌慢且网卡可独占 → AF_XDP / DPDK。</p>
 </details>
 <p><strong>Q3.</strong> fork() 的「独特」体现在哪？它的性能问题后来是怎么被逐步修补的？</p>
 <details>
 <summary>答案</summary>
 <p>独特在<strong>复制整个地址空间的语义</strong>（子进程获得父进程的完整副本）——比 spawn（传可执行路径重新加载）语义强大得多：可以在 fork 后、exec 前对副本做任意操作（重定向、改环境）。修补史：① <strong>vfork</strong>（BSD）——不复制，父挂起等 exec，过渡方案；② <strong>COW</strong>（现代 fork）——只复制页表不复制页，写时才拷——fork 成本从 O(内存) 降到 O(页表)；③ <strong>posix_spawn</strong>——COW 时代仍有场景省 fork（单页进程池）；④ <strong>线程</strong>（clone 共享地址空间）——彻底绕开复制语义。链条读法：语义的优雅先用，性能的账慢慢还。</p>
 </details>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>这条修补链条讲得很完整，补一个<strong>量级感和一条 HFT 禁区</strong>：</p>
+<p><strong>① COW 到底把成本降到了哪里</strong>
+- 无 COW：<code class="c">fork</code> 要复制<strong>整个地址空间</strong>的内存页 → O(内存量)
+- 有 COW：只复制<strong>页表</strong> → O(页表项数)</p>
+<p>对一个占用 1 GB 的进程，页表可能只有几 MB——<strong>降了约两个数量级</strong>。
+但注意它<strong>不是免费的</strong>：页表本身要分配和拷贝，
+而且之后父子进程每次写页都会触发<strong>缺页异常 + 实际拷贝</strong>（写时拷贝的"写"）。</p>
+<p><strong>② HFT 禁区：热路径上不要 fork</strong>
+即便有 COW，<code class="c">fork</code> 仍然会：
+- 分配并复制页表（GB 级进程是 MB 级拷贝）
+- <strong>刷新/污染 TLB</strong>
+- 走一遍调度器（新 task 入队）
+- 如果之后真的写内存，还会有大量 COW 缺页</p>
+<p>→ 这些全是<strong>不可预测的延迟源</strong>。热路径上要用<strong>预先创建好的进程/线程池</strong>，
+或者干脆用线程（<code class="c">clone</code> 共享地址空间，连页表都不复制）。</p>
+<p><strong>③ "语义的优雅先用，性能的账慢慢还"这条读法可以推广</strong>
+它不只是 fork 的故事，是<strong>整个 Unix 设计史的重复模式</strong>：
+- 「一切皆文件」→ 优雅，后来用 io_uring / AF_XDP 还账
+- 「进程即资源容器」→ 优雅，后来用线程 / <code class="c">posix_spawn</code> 还账
+- <code class="c">x32</code> ABI → 想省内存（优雅的目标），结果<strong>号码表上留下 89 个洞</strong>（§2），
+  成了内核自己承认的 "historical design error"</p>
+<p>⭐ 第三条的教训最直接：<strong>为性能做的妥协，往往会在别处留下永久疤痕。</strong>
+x32 当年省下的那点指针内存，代价是号码表上永远冻结的 335–423 和 512–547 两段。</p>
 </details>
+<p><strong>Q4.</strong> v6.6 的 x86_64 上到底有多少个系统调用？号码 335–423 为什么是空的？</p>
+<details>
+<summary>答案</summary>
+<p><strong>数量（数 <code class="c">arch/x86/entry/syscalls/syscall_64.tbl</code> 得来）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>表内条目总数</td>
+<td><strong>401</strong>（含 x32）</td>
+</tr>
+<tr>
+<td>64 位可用</td>
+<td><strong>365</strong>（<code class="c">common</code> 317 + <code class="c">64</code> 专属 48）</td>
+</tr>
+<tr>
+<td>x32 专属</td>
+<td>36（号码 512–547）</td>
+</tr>
+<tr>
+<td>最大号码</td>
+<td>547</td>
+</tr>
+<tr>
+<td>空洞</td>
+<td><strong>89 个，全在 335–423 这一段</strong></td>
+</tr>
+<tr>
+<td>未实现存根</td>
+<td>1 个：<code class="c">156 _sysctl</code> → <code class="c">sys_ni_syscall</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>统计 syscall 数量要看"条目数"不是"最大号码"</strong>——号码会跳，
+v5.1 时最大号从 334 直接跳到 427，但条目只多了 4 个。</p>
+<p><strong>空洞的原因（表内注释原文，v6.6）</strong>：</p>
+<pre class="code" data-label="C"><code class="c"># don't use numbers 387 through 423, add new calls after the last
+# 'common' entry
+#
+# Due to a historical design error, certain syscalls are numbered differently
+# in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+# Do not add new syscalls to this range.  Numbers 548 and above are available
+# for non-x32 use.
+</code></pre>
+<p>而 v5.1 的表里有一句更详细的说明：</p>
+<pre class="code" data-label="C"><code class="c"># x32-specific system call numbers start at 512 to avoid cache impact
+# for native 64-bit operation.
+</code></pre>
+<p>⭐⭐ <strong>根因是 cache</strong>：系统调用表是按号码索引的数组。
+如果 x32 和 64 位号码交错，表的有效跨度变大，
+原生 64 位路径访问表时的 <strong>cache 局部性变差</strong>。
+所以把 x32 整体推到 512+，让原生路径只触碰 0–334 这一小段热区。</p>
+<p><strong>版本断崖</strong>：跳跃发生在 <strong>v5.1</strong>——</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th>最大号码</th>
+<th>64 位条目</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v5.0</td>
+<td>334（<code class="c">rseq</code>）</td>
+<td>335</td>
+</tr>
+<tr>
+<td><strong>v5.1</strong></td>
+<td><strong>427</strong></td>
+<td>339</td>
+</tr>
+</tbody>
+</table></div>
+<p>而 v5.1 新增的四个恰好是号码 424–427：</p>
+<pre class="code" data-label="code"><code class="c">424 common  pidfd_send_signal
+425 common  io_uring_setup
+426 common  io_uring_enter
+427 common  io_uring_register
+</code></pre>
+<p><strong>io_uring 是历史上第一批拿到 424+ 号码的 syscall。</strong></p>
+</details>
+<p><strong>Q5.</strong> PREEMPT_RT 和 PREEMPT_LAZY 分别是在哪个版本进入主线 x86 的？它们是什么关系？</p>
+<details>
+<summary>答案</summary>
+<p><strong>PREEMPT_RT：v6.12 合入主线（x86）</strong></p>
+<p>判据是 <code class="c">arch/x86/Kconfig</code> 里的 <code class="c">select ARCH_SUPPORTS_RT</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th>x86 的 <code class="c">ARCH_SUPPORTS_RT</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v6.6</td>
+<td><strong>0</strong>（要打 out-of-tree RT 补丁）</td>
+</tr>
+<tr>
+<td>v6.11</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td><strong>v6.12</strong></td>
+<td><strong>1</strong> ⭐ 合入主线</td>
+</tr>
+<tr>
+<td>v6.13 / v6.14</td>
+<td>1</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ 意义：<strong>v6.12 之前要跑真正的实时内核必须打补丁；v6.12 起主线原生支持。</strong>
+这让 Ch10 全部「RT 上会怎样」的推理（spinlock 变睡眠锁、
+rwlock 写者饥饿反转、local_lock 变 per-CPU spinlock）
+从"特殊情况"变成"默认可能"——<strong>升级内核时要重测</strong>。</p>
+<p><strong>PREEMPT_LAZY：v6.13 新增（第五个抢占模型）</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>tag</th>
+<th>x86 的 <code class="c">ARCH_HAS_PREEMPT_LAZY</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v6.12</td>
+<td>0</td>
+</tr>
+<tr>
+<td><strong>v6.13</strong></td>
+<td><strong>1</strong> ⭐ 引入</td>
+</tr>
+<tr>
+<td>v6.14</td>
+<td>1</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ch10.9 讲过四个抢占模型（<code class="c">NONE</code> / <code class="c">VOLUNTARY</code> / <code class="c">PREEMPT</code> / <code class="c">RT</code>），
+v6.13 加了第五个。<code class="c">kernel/Kconfig.preempt</code>（v6.13）的定义：</p>
+<pre class="code" data-label="code"><code class="c">config PREEMPT_LAZY
+    bool &quot;Scheduler controlled preemption model&quot;
+    depends on ARCH_HAS_PREEMPT_LAZY
+    help
+      This option provides a scheduler driven preemption model that
+      is fundamentally similar to full preemption, but is less
+      eager to preempt SCHED_NORMAL tasks in an attempt to
+      reduce lock holder preemption and recover some of the performance
+      gains seen from using Voluntary preemption.
+</code></pre>
+<p>三句话拆开：
+1. 本质上接近 <code class="c">PREEMPT</code>（完全抢占）
+2. 但<strong>不那么急于抢占 <code class="c">SCHED_NORMAL</code> 任务</strong>
+3. 目的是 <strong>"reduce lock holder preemption"</strong>——减少持锁者被抢占</p>
+<p><strong>两者的关系</strong>：不是替代关系，是<strong>互补的两个维度</strong>。
+- <code class="c">PREEMPT_RT</code> 解决的是"<strong>能不能</strong>抢占"（把更多内核路径变成可抢占的）
+- <code class="c">PREEMPT_LAZY</code> 解决的是"<strong>该不该这么急着</strong>抢占"（对普通任务懒一点，
+  让持锁者有机会跑完临界区，同时保留对 RT 任务的立即抢占）</p>
+<p>⭐ 第 3 句直指 Ch10 反复出现的痛点：<strong>持锁者被抢占 = 优先级反转的根源</strong>。
+Ch10.5 的 mutex 乐观自旋（OSQ）、Ch10.8 的 seqlock RT 活锁、
+Ch10.11 §3.6 的 rwlock RT 写者饥饿，全是同一个问题的不同侧面。</p>
+<p><strong>HFT 关联</strong>：负载是「少数 RT 任务 + 大量普通任务」时，
+<code class="c">PREEMPT_LAZY</code>（≥ v6.13）可能是比 <code class="c">PREEMPT</code> 或 <code class="c">PREEMPT_RT</code> 更合适的第三选项——
+既保住 RT 任务的低延迟，又减少普通任务持锁被打断造成的抖动。</p>
+</details>
+<p><strong>Q6.</strong> 从「历史化石」的角度，举一个 v6.6 源码里能看到的「当年的妥协留下的永久疤痕」。</p>
+<details>
+<summary>答案</summary>
+<p><strong>首选答案：x32 ABI 在系统调用号码表上留下的两段冻结区（本篇 §2、§4）。</strong></p>
+<p>疤痕长这样：</p>
+<pre class="code" data-label="code"><code class="c">  0 ──────────── 334    335 ────────── 423    424 ─── 453    512 ─── 547
+  ┌──────────────────┐  ┌──────────────────┐  ┌────────────┐  ┌──────────┐
+  │ 原生 64 位在用    │  │ 89 个空号（禁区）  │  │ 后用区      │  │ x32 专属  │
+  └──────────────────┘  └──────────────────┘  └────────────┘  └──────────┘
+</code></pre>
+<p>三条证据：</p>
+<ol>
+<li>
+<p><strong>内核自己承认错误</strong>（v6.6 表内注释原文）：</p>
+<blockquote>
+<p><strong>"Due to a historical design error"</strong>, certain syscalls are numbered
+differently in x32 as compared to native x86_64.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>退场声明</strong>：</p>
+<blockquote>
+<p>Do not add new syscalls to this range. <strong>Numbers 548 and above are available</strong>.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>x32 的边缘地位</strong>（三类 ABI 计数）：
+   <code class="c">48 64
+       317 common      ← 主力
+        36 x32         ← 不到十分之一，且不再生长</code></p>
+</li>
+</ol>
+<p><strong>完整因果链</strong>：
+x32 想用 ILP32（64 位指令 + 32 位指针）省内存带宽 →
+需要单独的 syscall 号码 → 为了<strong>不污染原生 64 位的 cache 局部性</strong>
+把它们推到 512+（v5.1 注释：<code class="c">to avoid cache impact for native 64-bit operation</code>）
+→ 中间 335–423 成了"考虑过但放弃"的空档 → 号码表上永远留下 89 个洞。</p>
+<p><strong>教训（可以推广的一条）</strong>：
+⭐ <strong>为性能做的妥协，往往会在别处留下永久疤痕。</strong>
+x32 当年省下的那点指针内存，代价是号码表上永远冻结的两段区间，
+外加一句"这是一个历史设计错误"的注释。这正是 Unix 那条
+「语义的优雅先用，性能的账慢慢还」的镜像版本——
+这次是<strong>性能的优化先用，语义的债慢慢还</strong>。</p>
+<p><strong>其它可选答案</strong>（同样成立）：
+- <strong><code class="c">156 _sysctl</code> → <code class="c">sys_ni_syscall</code></strong>：整个表里唯一的"未实现存根"。
+  <code class="c">sysctl()</code> 系统调用被 <code class="c">/proc/sys</code> 取代后，号码<strong>永远不能回收</strong>
+  （用户空间可能有代码在调），只能留一个返回 <code class="c">-ENOSYS</code> 的桩。
+- <strong><code class="c">sys_open</code> 还在，但新代码都用 <code class="c">openat</code></strong>：<code class="c">open</code> 的 TOCTOU 问题
+  无法在保持语义的前提下修复，于是加了一族 <code class="c">*at()</code> 而不是改 <code class="c">open</code>。</p>
+</details>
+</details>
+<hr />
+<h3>本篇与其它章节的交叉引用</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>本篇主题</th>
+<th>交叉点</th>
+<th>详见</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>syscall 表的 cache 考量</td>
+<td>数据结构布局的 cache 自觉</td>
+<td>—</td>
+</tr>
+<tr>
+<td>io_uring 批量化</td>
+<td>与「少 syscall」哲学的关系</td>
+<td><a href="chapter-13.html#ch-13">Ch13 VFS</a></td>
+</tr>
+<tr>
+<td>syscall 进入内核的路径</td>
+<td>本章 §6.1 的调用链</td>
+<td><a href="chapter-05.html#ch-5">Ch5 系统调用</a></td>
+</tr>
+<tr>
+<td>PREEMPT_RT / LAZY</td>
+<td>⭐ 与 Ch10 全部锁语义相关</td>
+<td><a href="chapter-10.html#s-10-9">Ch10.9 禁止抢占</a></td>
+</tr>
+<tr>
+<td>持锁者被抢占</td>
+<td>⭐ 优先级反转的根源</td>
+<td><a href="chapter-10.html#s-10-5">Ch10.5 互斥体</a></td>
+</tr>
+<tr>
+<td>RT 上的 seqlock / rwlock</td>
+<td>RT 进主线后的适用范围</td>
+<td><a href="chapter-10.html#s-10-11">Ch10.11 选型速查</a></td>
+</tr>
+</tbody>
+</table></div>
 <hr />
       </section>
       <section class="section" id="s-1-2">

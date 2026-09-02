@@ -722,161 +722,2140 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       </section>
       <section class="section" id="s-18-3">
         <div class="sec-head"><div class="sec-no">18.3</div><h2>section-18.3-Oops</h2></div>
-<p><strong>Oops</strong> = 内核报告 <strong>无法处理的异常</strong>（如 <strong>空指针解引用</strong>）。</p>
+<blockquote>
+<p>承接 <a href="#s-18-2">18.2 通过打印调试</a>，下接 <a href="#s-18-4">18.4 内核调试选项</a>。
+本节回答：<strong>内核态出错时到底发生了什么、那一大坨输出每个字段是什么意思、怎么从它反推到源码行。</strong></p>
+</blockquote>
+<h4>Oops 的一句话定义</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>输出内容</th>
-<th>错误信息 · <strong>寄存器</strong> · <strong>调用栈 backtrace</strong></th>
+<th></th>
+<th></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td></td>
-<td></td>
+<td><strong>Oops</strong></td>
+<td>内核检测到<strong>自己</strong>犯了无法在本地修复的错误（空指针解引用、非法指令、页表损坏…），<strong>打印现场</strong>并<strong>终止当前上下文</strong></td>
+</tr>
+<tr>
+<td>⚠️ <strong>不是什么</strong></td>
+<td>不是"用户态 segfault 的内核版"。用户态缺页走 <code class="c">do_user_addr_fault()</code> 发信号，<strong>压根不进 Oops 路径</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h4>致命程度</h4>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>发生位置</th>
-<th>后果</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>中断上下文</strong>、<strong>idle (pid 0)</strong>、<strong>init (pid 1)</strong></td>
-<td>无法继续 → <strong><code class="c">panic()</code></strong> · <strong>整机挂死</strong></td>
-</tr>
-<tr>
-<td><strong>普通用户进程</strong> 上下文</td>
-<td>通常 <strong>杀死该进程</strong> · 内核 <strong>尝试继续</strong></td>
-</tr>
-</tbody>
-</table></div>
-<h4>解码 Oops</h4>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>时代</th>
-<th>工具</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>早期</td>
-<td><strong><code class="c">ksymoops</code></strong> + <strong><code class="c">System.map</code></strong> — 手动 <strong>地址 → 符号</strong></td>
-</tr>
-<tr>
-<td><strong>2.6+ <code class="c">kallsyms</code></strong></td>
-<td><code class="c">CONFIG_KALLSYMS</code> — 符号表编进内核 → <strong>直接可读 backtrace</strong></td>
-</tr>
-</tbody>
-</table></div>
-<pre class="code" data-label="code"><code class="c">BUG: unable to handle kernel NULL pointer dereference
-IP: [&lt;ffffffffa0123456&gt;] my_drv_ioctl+0x42/0x100 [mydrv]
-PGD 0 oops: 0000 [#1] SMP
-CPU: 3 PID: 4242 Comm: mytest Tainted: G      W
-RIP: 0010:my_drv_ioctl+0x42/0x100 [mydrv]
-Code: 48 8b 7f 08 48 85 ff ...        ← 出错指令前后的机器码
-Call Trace:
- my_ioctl_handler+0x1a/0x20
- do_vfs_ioctl+0xb9/0x620
- ...
-CR2: 0000000000000010                 ← 触发 fault 的线性地址
+<p><strong>HFT：</strong> 自研低延迟驱动 / 内核模块 Oops 一次 = 一次交易中断。<strong>看不懂 Oops = 排障全靠猜</strong>。</p>
+<hr />
+<h3>一、⭐ 内核态缺页 ≠ Oops：Oops 之前有三道拦截网</h3>
+<p>这是最常被跳过的一层。很多人以为"内核里踩了坏地址就 Oops"——<strong>不成立</strong>。</p>
+<p>v6.6 <code class="c">arch/x86/mm/fault.c</code> 的 <code class="c">kernelmode_fixup_or_oops()</code> 是内核态缺页的总入口：</p>
+<pre class="code" data-label="C"><code class="c">static noinline void
+kernelmode_fixup_or_oops(struct pt_regs *regs, unsigned long error_code,
+             unsigned long address, int signal, int si_code,
+             u32 pkey)
+{
+    WARN_ON_ONCE(user_mode(regs));
+
+    /* Are we prepared to handle this kernel fault? */
+    if (fixup_exception(regs, X86_TRAP_PF, error_code, address)) {
+        /*
+         * Any interrupt that takes a fault gets the fixup. This makes
+         * the below recursive fault logic only apply to a faults from
+         * task context.
+         */
+        if (in_interrupt())
+            return;
+        ...
+        /* Barring that, we can do the fixup and be happy. */
+        return;
+    }
+
+    /*
+     * AMD erratum #91 manifests as a spurious page fault on a PREFETCH
+     * instruction.
+     */
+    if (is_prefetch(regs, error_code, address))
+        return;
+
+    page_fault_oops(regs, error_code, address);
+}
 </code></pre>
-<h4>Oops 解剖表（逐行读什么）</h4>
+<p>三条出口：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>机制</th>
+<th>命中条件</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td>⭐ <strong>exception table</strong>（<code class="c">fixup_exception()</code>）</td>
+<td>出错指令地址在 <code class="c">__ex_table</code> 段里有登记</td>
+<td><strong>跳到修复代码继续执行，完全不 Oops</strong></td>
+</tr>
+<tr>
+<td>②</td>
+<td><code class="c">is_prefetch()</code></td>
+<td>出错指令是 <code class="c">PREFETCH</code>（<strong>AMD erratum #91</strong> 伪缺页）</td>
+<td>直接忽略返回</td>
+</tr>
+<tr>
+<td>③</td>
+<td><code class="c">page_fault_oops()</code></td>
+<td>以上都不命中</td>
+<td><strong>这才是 Oops</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong><code class="c">copy_from_user()</code> / <code class="c">get_user()</code> 为什么不会 Oops？</strong> 答案就在 ①。
+编译器为每条用户态访问指令在 <code class="c">__ex_table</code> 里登记一条「出错地址 → 修复标号」，
+<code class="c">fixup_exception()</code> 查表命中后直接改 <code class="c">regs-&gt;ip</code>，跳到 <code class="c">.Lbad_...</code> 标号返回 <code class="c">-EFAULT</code>。
+<strong>这是"内核能安全地碰用户指针"的全部基础</strong>，也是第 5 章里系统调用取参不会崩的原因。</p>
+</blockquote>
+<h4><code class="c">page_fault_oops()</code> 内部还有两道</h4>
+<pre class="code" data-label="C"><code class="c">page_fault_oops(struct pt_regs *regs, unsigned long error_code, unsigned long address)
+{
+    ...
+    if (user_mode(regs))
+        goto oops;              /* 隐式内核访问：跳过栈溢出 / EFI 特例 */
+
+#ifdef CONFIG_VMAP_STACK
+    /* Stack overflow? ... */
+    if (is_vmalloc_addr((void *)address) &amp;&amp;
+        get_stack_guard_info((void *)address, &amp;info)) {
+        /*
+         * We're likely to be running with very little stack space
+         * left. It's plausible that we'd hit this condition but
+         * double-fault even before we get this far, in which case
+         * we're fine: the double-fault handler will deal with it.
+         *
+         * We don't want to make it all the way into the oops code
+         * and then double-fault, though, because we're likely to
+         * break the console driver and lose most of the stack dump.
+         */
+        call_on_stack(__this_cpu_ist_top_va(DF) - sizeof(void*),
+                  handle_stack_overflow, ASM_CALL_ARG3,
+                  , [arg1] &quot;r&quot; (regs), [arg2] &quot;r&quot; (address), [arg3] &quot;r&quot; (&amp;info));
+        unreachable();
+    }
+#endif
+    /* Buggy firmware could access regions which might page fault. */
+    if (IS_ENABLED(CONFIG_EFI))
+        efi_crash_gracefully_on_page_fault(address);
+
+    /* Only not-present faults should be handled by KFENCE. */
+    if (!(error_code &amp; X86_PF_PROT) &amp;&amp;
+        kfence_handle_page_fault(address, error_code &amp; X86_PF_WRITE, regs))
+        return;
+
+oops:
+    flags = oops_begin();
+
+    show_fault_oops(regs, error_code, address);
+
+    if (task_stack_end_corrupted(current))
+        printk(KERN_EMERG &quot;Thread overran stack, or stack corrupted\n&quot;);
+
+    sig = SIGKILL;
+    if (__die(&quot;Oops&quot;, regs, error_code))
+        sig = 0;
+
+    /* Executive summary in case the body of the oops scrolled away */
+    printk(KERN_DEFAULT &quot;CR2: %016lx\n&quot;, address);
+
+    oops_end(flags, regs, sig);
+}
+</code></pre>
+<p>⭐⭐ <strong>栈溢出时先换栈、再打印</strong> —— 全篇最"工程师"的一段代码：</p>
+<blockquote>
+<p>内核栈（v6.6 默认 16KB）已经踩穿了，<code class="c">page_fault_oops()</code> 自己再压几个栈帧就会 <strong>double fault</strong>。
+所以源码先检测 <code class="c">is_vmalloc_addr() &amp;&amp; get_stack_guard_info()</code>（命中 guard page），
+再用 <code class="c">call_on_stack()</code> <strong>把执行切到 Double-Fault 的 IST 栈</strong>（<code class="c">__this_cpu_ist_top_va(DF)</code>）上打印。
+注释原话：<em>"We don't want to make it all the way into the oops code and then double-fault,
+because we're likely to break the console driver and lose most of the stack dump."</em></p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>拦截网</th>
+<th>引入版本</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>exception table</td>
+<td>史前（v0.x）</td>
+<td>用户访问 / 可恢复故障</td>
+</tr>
+<tr>
+<td><code class="c">is_prefetch</code></td>
+<td>—</td>
+<td>AMD erratum #91 伪缺页</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">CONFIG_VMAP_STACK</code> 栈溢出换栈</td>
+<td>v4.9（x86）</td>
+<td>踩穿栈也能打出 backtrace</td>
+</tr>
+<tr>
+<td>⭐ <strong>KFENCE</strong></td>
+<td>v5.12</td>
+<td>采样式内存错误检测，<strong>抢在 Oops 之前</strong>把 use-after-free / 越界变成结构化报告</td>
+</tr>
+<tr>
+<td>EFI 特殊路径</td>
+<td>—</td>
+<td>固件踩坏地址时优雅降级</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3>二、Oops 的三段式协议：<code class="c">oops_begin</code> → <code class="c">__die</code> → <code class="c">oops_end</code></h3>
+<p>v6.6 <code class="c">arch/x86/kernel/dumpstack.c</code> 里 <code class="c">die()</code> 全文只有 <strong>9 行</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * This is gone through when something in the kernel has done something bad
+ * and is about to be terminated:
+ */
+void die(const char *str, struct pt_regs *regs, long err)
+{
+    unsigned long flags = oops_begin();
+    int sig = SIGSEGV;
+
+    if (__die(str, regs, err))
+        sig = 0;
+    oops_end(flags, regs, sig);
+}
+</code></pre>
+<h4>第一段：<code class="c">oops_begin()</code> — 抢锁、防嵌套、开控制台</h4>
+<pre class="code" data-label="C"><code class="c">static arch_spinlock_t die_lock = __ARCH_SPIN_LOCK_UNLOCKED;
+static int die_owner = -1;
+static unsigned int die_nest_count;
+
+unsigned long oops_begin(void)
+{
+    int cpu;
+    unsigned long flags;
+
+    oops_enter();
+
+    /* racy, but better than risking deadlock. */
+    raw_local_irq_save(flags);
+    cpu = smp_processor_id();
+    if (!arch_spin_trylock(&amp;die_lock)) {
+        if (cpu == die_owner)
+            /* nested oops. should stop eventually */;
+        else
+            arch_spin_lock(&amp;die_lock);
+    }
+    die_nest_count++;
+    die_owner = cpu;
+    console_verbose();
+    bust_spinlocks(1);
+    return flags;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>动作</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">oops_enter()</code></td>
+<td>架构无关部分（见下）</td>
+</tr>
+<tr>
+<td><code class="c">raw_local_irq_save()</code></td>
+<td>打印期间禁本地中断，避免输出交错</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">arch_spin_trylock</code> + <code class="c">die_owner</code></td>
+<td><strong>嵌套 Oops 检测</strong>：若持锁者就是本 CPU，说明打印过程中又炸了一次 → <strong>不再</strong> <code class="c">arch_spin_lock</code>（否则死锁）。注释：<code class="c">/* nested oops. should stop eventually */</code></td>
+</tr>
+<tr>
+<td>⭐ <code class="c">die_nest_count++</code></td>
+<td>嵌套计数，<strong>只有归零才真正放锁</strong></td>
+</tr>
+<tr>
+<td><code class="c">console_verbose()</code></td>
+<td>把 console loglevel 拉到最高，保证 Oops 真能打出来</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">bust_spinlocks(1)</code></td>
+<td>见下</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">oops_enter()</code> 是架构无关部分（<code class="c">kernel/panic.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">void oops_enter(void)
+{
+    tracing_off();
+    /* can't trust the integrity of the kernel anymore: */
+    debug_locks_off();
+    do_oops_enter_exit();
+
+    if (sysctl_oops_all_cpu_backtrace)
+        trigger_all_cpu_backtrace();
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>动作</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <code class="c">tracing_off()</code></td>
+<td><strong>先关 ftrace</strong>——否则 Oops 打印本身会被 trace，可能递归</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">debug_locks_off()</code></td>
+<td>注释原话 <em>"can't trust the integrity of the kernel anymore"</em>：内核状态已损坏，lockdep 再报锁问题只会是噪音</td>
+</tr>
+<tr>
+<td><code class="c">do_oops_enter_exit()</code></td>
+<td><code class="c">pause_on_oops</code> 串行化（见下）</td>
+</tr>
+<tr>
+<td><code class="c">sysctl_oops_all_cpu_backtrace</code></td>
+<td><code class="c">/proc/sys/kernel/oops_all_cpu_backtrace=1</code> → 顺便打<strong>所有 CPU</strong> 的栈</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <code class="c">bust_spinlocks(1)</code>：<strong>"if a spinlock is held, break it"</strong>。
+Oops 要往控制台打印，而控制台自己有自旋锁——如果正好崩在持有 console 锁的路径上，
+打印就会死锁。所以 <code class="c">bust_spinlocks()</code> 让 console 层的锁超时后<strong>强行放行</strong>。
+<code class="c">oops_end()</code> 里用 <code class="c">bust_spinlocks(0)</code> 恢复。</p>
+</blockquote>
+<h4><code class="c">pause_on_oops</code>：多 CPU 同时 Oops 时只让第一个打印</h4>
+<pre class="code" data-label="C"><code class="c">static void do_oops_enter_exit(void)
+{
+    unsigned long flags;
+    static int spin_counter;
+
+    if (!pause_on_oops)
+        return;
+
+    spin_lock_irqsave(&amp;pause_on_oops_lock, flags);
+    if (pause_on_oops_flag == 0) {
+        /* This CPU may now print the oops message */
+        pause_on_oops_flag = 1;
+    } else {
+        /* We need to stall this CPU */
+        ...
+    }
+    spin_unlock_irqrestore(&amp;pause_on_oops_lock, flags);
+}
+
+bool oops_may_print(void)
+{
+    return pause_on_oops_flag == 0;
+}
+</code></pre>
+<p><code class="c">oops_may_print()</code> 就是<strong>拦截点</strong>——<code class="c">show_fault_oops()</code> 第一行便是 <code class="c">if (!oops_may_print()) return;</code>。</p>
+<blockquote>
+<p>⭐ 设计目的（<code class="c">oops_enter</code> 上方注释原话）：
+<strong>"We do all this to ensure that oopses don't scroll off the screen."</strong>
+八核同时炸，八个 backtrace 交错输出 = 什么也看不清。所以第一个 CPU 打印，
+其他 CPU <strong>空转等待</strong> <code class="c">pause_on_oops</code> 秒。命令行：<code class="c">pause_on_oops=&lt;秒数&gt;</code>。</p>
+<p>源码还有一句诚实的吐槽："It turns out that the CPU which is allowed to print ends up
+pausing for the right duration, whereas all the other CPUs pause for <strong>twice as long</strong>:
+once in <code class="c">oops_enter()</code>, once in <code class="c">oops_exit()</code>."</p>
+</blockquote>
+<h4>第二段：<code class="c">__die()</code> — 真正打印</h4>
+<pre class="code" data-label="C"><code class="c">int __die(const char *str, struct pt_regs *regs, long err)
+{
+    __die_header(str, regs, err);
+    return __die_body(str, regs, err);
+}
+
+static void __die_header(const char *str, struct pt_regs *regs, long err)
+{
+    const char *pr = &quot;&quot;;
+
+    /* Save the regs of the first oops for the executive summary later. */
+    if (!die_counter)
+        exec_summary_regs = *regs;
+
+    if (IS_ENABLED(CONFIG_PREEMPTION))
+        pr = IS_ENABLED(CONFIG_PREEMPT_RT) ? &quot; PREEMPT_RT&quot; : &quot; PREEMPT&quot;;
+
+    printk(KERN_DEFAULT
+           &quot;%s: %04lx [#%d]%s%s%s%s%s\n&quot;, str, err &amp; 0xffff, ++die_counter,
+           pr,
+           IS_ENABLED(CONFIG_SMP)     ? &quot; SMP&quot;             : &quot;&quot;,
+           debug_pagealloc_enabled()  ? &quot; DEBUG_PAGEALLOC&quot; : &quot;&quot;,
+           IS_ENABLED(CONFIG_KASAN)   ? &quot; KASAN&quot;           : &quot;&quot;,
+           IS_ENABLED(CONFIG_PAGE_TABLE_ISOLATION) ?
+           (boot_cpu_has(X86_FEATURE_PTI) ? &quot; PTI&quot; : &quot; NOPTI&quot;) : &quot;&quot;);
+}
+
+static int __die_body(const char *str, struct pt_regs *regs, long err)
+{
+    show_regs(regs);
+    print_modules();
+
+    if (notify_die(DIE_OOPS, str, regs, err,
+            current-&gt;thread.trap_nr, SIGSEGV) == NOTIFY_STOP)
+        return 1;
+
+    return 0;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关键点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">%04lx</code></td>
+<td><code class="c">err &amp; 0xffff</code> = 硬件 <strong>error code</strong>，就是 <code class="c">Oops: 0002 [#1]</code> 里的 <code class="c">0002</code></td>
+</tr>
+<tr>
+<td><code class="c">[#%d]</code></td>
+<td><strong>同一次 boot 内的 Oops 计数</strong>（<code class="c">++die_counter</code>）。<code class="c">[#1]</code> = 第一次</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">exec_summary_regs</code></td>
+<td><strong>只存第一次 Oops 的寄存器</strong>（<code class="c">if (!die_counter)</code>），供 <code class="c">oops_end()</code> 末尾的 "executive summary" 用</td>
+</tr>
+<tr>
+<td><code class="c">PREEMPT</code> / <code class="c">PREEMPT_RT</code></td>
+<td>抢占模型标记（<strong>HFT 必看</strong>：RT 内核行为完全不同）</td>
+</tr>
+<tr>
+<td><code class="c">PTI</code> / <code class="c">NOPTI</code></td>
+<td>页表隔离是否真的生效（Meltdown 缓解）</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">notify_die(DIE_OOPS, ...)</code></td>
+<td><strong>kprobe / kgdb / kdump 的挂钩点</strong>。返回 <code class="c">NOTIFY_STOP</code> → <code class="c">__die()</code> 返回 1 → <code class="c">die()</code> 里 <code class="c">sig = 0</code> → <code class="c">oops_end()</code> <strong>直接 return 不杀进程</strong>（调试器接管了）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>第三段：<code class="c">oops_end()</code> — 收尾与三种下场</h4>
+<pre class="code" data-label="C"><code class="c">void oops_end(unsigned long flags, struct pt_regs *regs, int signr)
+{
+    if (regs &amp;&amp; kexec_should_crash(current))
+        crash_kexec(regs);
+
+    bust_spinlocks(0);
+    die_owner = -1;
+    add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
+    die_nest_count--;
+    if (!die_nest_count)
+        /* Nest count reaches zero, release the lock. */
+        arch_spin_unlock(&amp;die_lock);
+    raw_local_irq_restore(flags);
+    oops_exit();
+
+    /* Executive summary in case the oops scrolled away */
+    __show_regs(&amp;exec_summary_regs, SHOW_REGS_ALL, KERN_DEFAULT);
+
+    if (!signr)
+        return;
+    if (in_interrupt())
+        panic(&quot;Fatal exception in interrupt&quot;);
+    if (panic_on_oops)
+        panic(&quot;Fatal exception&quot;);
+
+    /*
+     * We're not going to return, but we might be on an IST stack or
+     * have very little stack space left.  Rewind the stack and kill
+     * the task.
+     * Before we rewind the stack, we have to tell KASAN that we're going to
+     * reuse the task stack and that existing poisons are invalid.
+     */
+    kasan_unpoison_task_stack(current);
+    rewind_stack_and_make_dead(signr);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <code class="c">crash_kexec(regs)</code></td>
+<td><strong>kdump 的入口</strong>——<code class="c">kexec_should_crash(current)</code> 判定（可用 <code class="c">CRASH_*</code> 标志限制只在特定进程/中断上下文触发）</td>
+</tr>
+<tr>
+<td><code class="c">bust_spinlocks(0)</code></td>
+<td>恢复 console 锁语义</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">add_taint(TAINT_DIE, ...)</code></td>
+<td><strong>Oops 之后内核被标记 <code class="c">D</code> 污染</strong>——这是后面 <code class="c">panic()</code> 决定要不要再打一次栈的依据</td>
+</tr>
+<tr>
+<td><code class="c">die_nest_count--</code></td>
+<td>归零才放 <code class="c">die_lock</code></td>
+</tr>
+<tr>
+<td><code class="c">oops_exit()</code></td>
+<td>见下</td>
+</tr>
+<tr>
+<td>⭐ 二次打印 <code class="c">exec_summary_regs</code></td>
+<td>注释：<code class="c">Executive summary in case the oops scrolled away</code> —— <strong>正文被刷屏冲掉后，末尾还有一份精简版</strong></td>
+</tr>
+<tr>
+<td>⭐ <code class="c">rewind_stack_and_make_dead()</code></td>
+<td><strong>不是普通 <code class="c">do_exit()</code></strong>！注释解释：此时可能站在 <strong>IST 栈</strong>上或栈所剩无几，必须先"回卷栈"再杀进程</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">void oops_exit(void)
+{
+    do_oops_enter_exit();
+    print_oops_end_marker();   /* pr_warn(&quot;---[ end trace %016llx ]---\n&quot;, 0ULL); */
+    kmsg_dump(KMSG_DUMP_OOPS);
+}
+</code></pre>
+<blockquote>
+<p>⭐⭐ <code class="c">kmsg_dump(KMSG_DUMP_OOPS)</code> 是 <strong>pstore / ramoops / netconsole 的落盘点</strong>。
+没有它，Oops 只存在于 dmesg 里——<strong>重启即失</strong>。
+嵌入式设备没有串口控制台时，配 <code class="c">pstore</code> + <code class="c">ramoops</code> 是抓 Oops 的唯一办法。</p>
+</blockquote>
+<h4>Oops 之后进程的三种下场</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>结果</th>
+<th>源码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">signr == 0</code>（调试器 <code class="c">NOTIFY_STOP</code>）</td>
+<td><strong>不杀进程，继续跑</strong></td>
+<td><code class="c">if (!signr) return;</code></td>
+</tr>
+<tr>
+<td>⭐ <code class="c">in_interrupt()</code></td>
+<td><strong><code class="c">panic("Fatal exception in interrupt")</code></strong></td>
+<td>中断上下文没有"当前进程"可杀</td>
+</tr>
+<tr>
+<td><code class="c">panic_on_oops</code> 非 0</td>
+<td><strong><code class="c">panic("Fatal exception")</code></strong></td>
+<td>生产环境常见配置</td>
+</tr>
+<tr>
+<td>都不满足</td>
+<td>⭐ <strong><code class="c">rewind_stack_and_make_dead(signr)</code></strong></td>
+<td>杀掉当前进程，内核继续</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ 常见误解：<strong>"Oops 在普通进程上下文就不会 panic"</strong>——准确说法是"不会<strong>立刻</strong> panic"。
+内核数据结构可能已被破坏（比如崩在持有某把锁的临界区里），
+后续会出现<strong>症状与根因分离的二次故障</strong>。所以 HFT/生产环境普遍设 <code class="c">panic_on_oops=1</code>。</p>
+</blockquote>
+<hr />
+<h3>三、Oops 输出逐行解剖（v6.6 真实格式）</h3>
+<h4>完整样例（v6.6 实际会打印的形状）</h4>
+<pre class="code" data-label="code"><code class="c">BUG: kernel NULL pointer dereference, address: 0000000000000010
+#PF: supervisor write access in kernel mode
+#PF: error_code(0x0002) - not-present page
+PGD 0 P4D 0
+Oops: 0002 [#1] PREEMPT SMP PTI
+CPU: 3 PID: 4242 Comm: mytest Tainted: G                  D      6.6.0 #1
+Hardware name: ...
+RIP: 0010:my_drv_ioctl+0x42/0x100 [mydrv]
+Code: 48 8b 7f 08 48 85 ff 74 0a 48 8b 07 c3 90 &lt;48&gt; 89 78 10 31 c0 c3 90 90 66 2e ...
+RSP: 0018:ffffc90000123d50 EFLAGS: 00010286
+RAX: 0000000000000000 RBX: ffff888012345678 RCX: 0000000000000000
+RDX: 0000000000000000 RSI: 0000000000000000 RDI: 0000000000000000
+...
+CR2: 0000000000000010
+---[ end trace 0000000000000000 ]---
+</code></pre>
+<h4>3.1 第一行 <code class="c">BUG:</code> —— 而且 v5.2 换过格式</h4>
+<p>v6.6 <code class="c">show_fault_oops()</code>：</p>
+<pre class="code" data-label="C"><code class="c">    if (address &lt; PAGE_SIZE &amp;&amp; !user_mode(regs))
+        pr_alert(&quot;BUG: kernel NULL pointer dereference, address: %px\n&quot;,
+            (void *)address);
+    else
+        pr_alert(&quot;BUG: unable to handle page fault for address: %px\n&quot;,
+            (void *)address);
+</code></pre>
+<blockquote>
+<p>⭐⭐ <strong>判定条件是 <code class="c">address &lt; PAGE_SIZE</code>（4096），不是 <code class="c">address == 0</code></strong>！
+所以 <code class="c">CR2: 0000000000000010</code> 也会报 <strong>"kernel NULL pointer dereference"</strong>。
+这是<strong>有意的设计</strong>：<code class="c">NULL-&gt;field</code> 是最常见的错误模式，小偏移一律按空指针归类。</p>
+</blockquote>
+<p><strong>版本断崖（实测）：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>输出格式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≤ <strong>v5.1</strong></td>
+<td><code class="c">BUG: unable to handle kernel %s at %px</code>，其中 <code class="c">%s</code> = <code class="c">"NULL pointer dereference"</code> / <code class="c">"paging request"</code>，后面跟 <code class="c">[PROT][WRITE][USER][RSVD]</code> 方括号标记</td>
+</tr>
+<tr>
+<td>⭐ <strong>≥ v5.2</strong></td>
+<td><code class="c">BUG: kernel NULL pointer dereference, address: %px</code> <strong>或</strong> <code class="c">BUG: unable to handle page fault for address: %px</code>；错误码改由下面的 <code class="c">#PF: error_code(...)</code> 行承担</td>
+</tr>
+</tbody>
+</table></div>
+<p>老格式那套方括号标记的实现（v5.0 <code class="c">fault.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    pr_alert(&quot;BUG: unable to handle kernel %s at %px\n&quot;,
+         address &lt; PAGE_SIZE ? &quot;NULL pointer dereference&quot; : &quot;paging request&quot;,
+         (void *)address);
+
+    err_txt[0] = 0;
+
+    /*
+     * Note: length of these appended strings including the separation space and the
+     * zero delimiter must fit into err_txt[].
+     */
+    err_str_append(error_code, err_txt, X86_PF_PROT,  &quot;[PROT]&quot; );
+    err_str_append(error_code, err_txt, X86_PF_WRITE, &quot;[WRITE]&quot;);
+    err_str_append(error_code, err_txt, X86_PF_USER,  &quot;[USER]&quot; );
+    err_str_append(error_code, err_txt, X86_PF_RSVD,  &quot;[RSVD]&quot; );
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>排障提示</strong>：网上大量 Oops 教程用的是 <strong>v5.1 及以前</strong>的格式。
+看到 <code class="c">unable to handle kernel NULL pointer dereference at 0000000000000010</code>
+（没有逗号 + <code class="c">address:</code>）说明那台机器跑的是 <strong>5.1 之前</strong>的内核——字段位置完全不同，别套错模板。</p>
+<p>顺带一提：<code class="c">address &lt; PAGE_SIZE</code> 这个<strong>判定逻辑从 v5.0 到 v6.6 一字未改</strong>，只是换了措辞。</p>
+</blockquote>
+<h4>3.2 <code class="c">#PF:</code> 两行 + error_code 位表</h4>
+<pre class="code" data-label="C"><code class="c">    pr_alert(&quot;#PF: %s %s in %s mode\n&quot;,
+         (error_code &amp; X86_PF_USER)  ? &quot;user&quot; : &quot;supervisor&quot;,
+         (error_code &amp; X86_PF_INSTR) ? &quot;instruction fetch&quot; :
+         (error_code &amp; X86_PF_WRITE) ? &quot;write access&quot; :
+                           &quot;read access&quot;,
+                 user_mode(regs) ? &quot;user&quot; : &quot;kernel&quot;);
+    pr_alert(&quot;#PF: error_code(0x%04lx) - %s\n&quot;, error_code,
+         !(error_code &amp; X86_PF_PROT) ? &quot;not-present page&quot; :
+         (error_code &amp; X86_PF_RSVD)  ? &quot;reserved bit violation&quot; :
+         (error_code &amp; X86_PF_PK)    ? &quot;protection keys violation&quot; :
+                           &quot;permissions violation&quot;);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位</th>
+<th>名字</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">0x01</code></td>
+<td><code class="c">X86_PF_PROT</code></td>
+<td>0 = <strong>页不存在</strong>，1 = <strong>权限违规</strong></td>
+</tr>
+<tr>
+<td><code class="c">0x02</code></td>
+<td><code class="c">X86_PF_WRITE</code></td>
+<td>0 = 读，1 = <strong>写</strong></td>
+</tr>
+<tr>
+<td><code class="c">0x04</code></td>
+<td><code class="c">X86_PF_USER</code></td>
+<td>0 = supervisor（内核），1 = user</td>
+</tr>
+<tr>
+<td><code class="c">0x08</code></td>
+<td><code class="c">X86_PF_RSVD</code></td>
+<td><strong>保留位被置位</strong>（页表项里有非法位）→ 页表被写坏</td>
+</tr>
+<tr>
+<td><code class="c">0x10</code></td>
+<td><code class="c">X86_PF_INSTR</code></td>
+<td><strong>取指</strong>（执行）时缺页</td>
+</tr>
+<tr>
+<td><code class="c">0x20</code></td>
+<td><code class="c">X86_PF_PK</code></td>
+<td><strong>保护键（MPK）</strong> 违规</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ <strong>诊断速查</strong>：
+<code class="c">error_code(0x0002)</code> = 写 + 页不存在 = <strong>写空指针</strong>（最常见）
+<code class="c">error_code(0x0000)</code> = 读 + 页不存在 = <strong>读空指针</strong>
+<code class="c">error_code(0x0009)</code> = 页不存在 + <strong>保留位置位</strong> = ⚠️ <strong>页表已被破坏</strong>，通常不是这个 Oops 的锅，要往前找</p>
+</blockquote>
+<h4>3.3 安全告警：NX / SMEP 检测</h4>
+<p><code class="c">show_fault_oops()</code> 开头还有一段<strong>攻击检测</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    if (error_code &amp; X86_PF_INSTR) {
+        pgd = __va(read_cr3_pa());
+        pgd += pgd_index(address);
+        pte = lookup_address_in_pgd(pgd, address, &amp;level);
+
+        if (pte &amp;&amp; pte_present(*pte) &amp;&amp; !pte_exec(*pte))
+            pr_crit(&quot;kernel tried to execute NX-protected page - exploit attempt? (uid: %d)\n&quot;,
+                from_kuid(&amp;init_user_ns, current_uid()));
+        if (pte &amp;&amp; pte_present(*pte) &amp;&amp; pte_exec(*pte) &amp;&amp;
+                (pgd_flags(*pgd) &amp; _PAGE_USER) &amp;&amp;
+                (__read_cr4() &amp; X86_CR4_SMEP))
+            pr_crit(&quot;unable to execute userspace code (SMEP?) (uid: %d)\n&quot;,
+                from_kuid(&amp;init_user_ns, current_uid()));
+    }
+</code></pre>
+<blockquote>
+<p>⭐ 只在 <code class="c">X86_PF_INSTR</code>（取指缺页）时检查。看到这两行 = <strong>不是普通 bug，是疑似漏洞利用</strong>，优先级拉满。</p>
+</blockquote>
+<h4>3.4 <code class="c">Oops: 0002 [#1] PREEMPT SMP PTI</code> 行</h4>
+<p>即 <code class="c">__die_header()</code> 的输出。结构：</p>
+<pre class="code" data-label="code"><code class="c">&lt;str&gt;: &lt;error_code 低 16 位&gt; [#&lt;第几次 Oops&gt;] &lt;抢占模型&gt; &lt;SMP&gt; &lt;DEBUG_PAGEALLOC&gt; &lt;KASAN&gt; &lt;PTI/NOPTI&gt;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>后缀</th>
+<th>来源</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PREEMPT</code> / <code class="c">PREEMPT_RT</code></td>
+<td><code class="c">CONFIG_PREEMPTION</code></td>
+<td>抢占模型</td>
+</tr>
+<tr>
+<td><code class="c">SMP</code></td>
+<td><code class="c">CONFIG_SMP</code></td>
+<td>对称多处理</td>
+</tr>
+<tr>
+<td><code class="c">DEBUG_PAGEALLOC</code></td>
+<td><code class="c">debug_pagealloc_enabled()</code></td>
+<td>页分配调试</td>
+</tr>
+<tr>
+<td><code class="c">KASAN</code></td>
+<td><code class="c">CONFIG_KASAN</code></td>
+<td>内存错误检测</td>
+</tr>
+<tr>
+<td><code class="c">PTI</code> / <code class="c">NOPTI</code></td>
+<td><code class="c">CONFIG_PAGE_TABLE_ISOLATION</code> + <code class="c">X86_FEATURE_PTI</code></td>
+<td>页表隔离实际是否生效</td>
+</tr>
+</tbody>
+</table></div>
+<h4>3.5 <code class="c">Code:</code> 行 —— ⭐ 尖括号里那个字节就是凶手</h4>
+<pre class="code" data-label="C"><code class="c">#define PROLOGUE_SIZE 42
+#define EPILOGUE_SIZE 21
+#define OPCODE_BUFSIZE (PROLOGUE_SIZE + 1 + EPILOGUE_SIZE)   /* 64 */
+
+void show_opcodes(struct pt_regs *regs, const char *loglvl)
+{
+    u8 opcodes[OPCODE_BUFSIZE];
+    unsigned long prologue = regs-&gt;ip - PROLOGUE_SIZE;
+
+    switch (copy_code(regs, opcodes, prologue, sizeof(opcodes))) {
+    case 0:
+        printk(&quot;%sCode: %&quot; __stringify(PROLOGUE_SIZE) &quot;ph &lt;%02x&gt; %&quot;
+               __stringify(EPILOGUE_SIZE) &quot;ph\n&quot;, loglvl, opcodes,
+               opcodes[PROLOGUE_SIZE], opcodes + PROLOGUE_SIZE + 1);
+        break;
+    case -EPERM:
+        /* No access to the user space stack of other tasks. Ignore. */
+        break;
+    default:
+        printk(&quot;%sCode: Unable to access opcode bytes at 0x%lx.\n&quot;,
+               loglvl, prologue);
+        break;
+    }
+}
+</code></pre>
+<p>⭐⭐ <strong><code class="c">Code:</code> 行 = 42 字节前缀 + <code class="c">&lt;出错字节&gt;</code> + 21 字节后缀。尖括号包住的那一个字节，就是 RIP 指向的指令首字节。</strong></p>
+<p>为什么是 42/21 这种奇怪比例？源码注释（courtesy of Linus）：</p>
+<blockquote>
+<ul>
+<li>没有精确内核映像时，更大的前缀便于<strong>跨 toolchain 比对代码</strong></li>
+<li>帮助<strong>重建出错内核的寄存器分配</strong></li>
+<li>⭐ 最重要的是：x86 是<strong>变长指令</strong>架构，需要足够长的前缀让反汇编器 <strong>"sync up properly and find instruction boundaries"</strong></li>
+<li>收尾一句很坦白：<em>"the 2/3rds prologue and 64 byte OPCODE_BUFSIZE is just a </em><em>random guesstimate</em><em>"</em></li>
+</ul>
+<p>⭐ 实操：把 <code class="c">Code:</code> 行的字节（去掉尖括号）喂给
+<code class="c">objdump -D -b binary -m i386:x86-64</code> 就能反汇编，
+找到 <code class="c">&lt;xx&gt;</code> 那个字节对应的指令 = 出错指令。<strong>没有 vmlinux 时这是唯一线索。</strong></p>
+</blockquote>
+<h4>3.6 <code class="c">show_regs()</code> / <code class="c">__show_regs()</code> 完整字段</h4>
+<pre class="code" data-label="C"><code class="c">void show_regs(struct pt_regs *regs)
+{
+    enum show_regs_mode print_kernel_regs;
+
+    show_regs_print_info(KERN_DEFAULT);
+
+    print_kernel_regs = user_mode(regs) ? SHOW_REGS_USER : SHOW_REGS_ALL;
+    __show_regs(regs, print_kernel_regs, KERN_DEFAULT);
+
+    /*
+     * When in-kernel, we also print out the stack at the time of the fault..
+     */
+    if (!user_mode(regs))
+        show_trace_log_lvl(current, regs, NULL, KERN_DEFAULT);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>触发</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SHOW_REGS_SHORT</code></td>
+<td>内部调用</td>
+<td>只打通用寄存器</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">SHOW_REGS_USER</code></td>
+<td><code class="c">user_mode(regs)</code></td>
+<td>通用寄存器 + FS/GS（<strong>不读控制寄存器</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">SHOW_REGS_ALL</code></td>
+<td>内核态 Oops</td>
+<td>通用寄存器 + 段寄存器 + <strong>CR0/CR2/CR3/CR4</strong> + DR0-7 + PKRU</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">__show_regs()</code> 的细节（<code class="c">arch/x86/kernel/process_64.c</code>）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>字段</th>
-<th>含义</th>
+<th>打印条件</th>
 <th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">IP:</code>/<code class="c">RIP:</code></td>
-<td>出错指令地址 + 符号（<code class="c">函数+偏移/大小</code>）</td>
-<td><strong>第一定位点</strong></td>
+<td>⭐ <code class="c">ORIG_RAX</code></td>
+<td><strong>只在 <code class="c">!= -1</code> 时打印</strong></td>
+<td>⭐ <strong>系统调用号</strong>！非系统调用上下文是 -1（呼应 5.3 节）</td>
 </tr>
 <tr>
-<td><code class="c">Code:</code></td>
-<td>出错指令前后 ~20 字节机器码</td>
-<td>无符号时手动 <code class="c">objdump -d</code> 对齐</td>
+<td><code class="c">RIP</code> + <code class="c">CS</code></td>
+<td>总是</td>
+<td>出错指令</td>
 </tr>
 <tr>
-<td><code class="c">Call Trace</code></td>
-<td>调用栈（从出错点向上）</td>
-<td>还原"怎么走到这一步"</td>
+<td><code class="c">RSP</code> + <code class="c">SS</code> + <code class="c">EFLAGS</code></td>
+<td>总是</td>
+<td>栈与标志位</td>
 </tr>
 <tr>
 <td><code class="c">CR2</code></td>
-<td>缺页线性地址（x86 控制寄存器 2）</td>
-<td>NULL 解引用时通常是小偏移（如 0x10 = <code class="c">NULL-&gt;field</code>）——<strong>从偏移反推结构体字段</strong></td>
+<td><code class="c">SHOW_REGS_ALL</code></td>
+<td>⭐ <strong>触发缺页的线性地址</strong></td>
 </tr>
 <tr>
-<td><code class="c">[#1]</code></td>
-<td>Oops 计数（同 boot 内第几次）</td>
-<td>多次 Oops = 连锁损坏，只信第一次</td>
+<td><code class="c">CR3</code></td>
+<td>同上</td>
+<td>当前页表基址（<strong>KASLR / PTI 排查用</strong>）</td>
 </tr>
 <tr>
-<td><code class="c">[mydrv]</code> 方括号</td>
-<td>来自<strong>模块</strong>而非 vmlinux</td>
-<td><code class="c">gdb vmlinux</code> 查不到——要用 <code class="c">objdump -d mydrv.ko</code> / modinfo 载入地址</td>
+<td>⭐ <code class="c">DR0</code>-<code class="c">DR7</code></td>
+<td><strong>只在非默认状态时打印</strong></td>
+<td>源码：<code class="c">if (!((d0==0) &amp;&amp; ... &amp;&amp; (d6==DR6_RESERVED) &amp;&amp; (d7==0x400)))</code> —— 有硬件断点时才会出现</td>
 </tr>
 <tr>
-<td><code class="c">Tainted: G W</code></td>
-<td>污染标志位</td>
-<td>G=专有模块 W=警告过……上游报 bug 前先解释字母</td>
+<td>⭐ <code class="c">PKRU</code></td>
+<td>只在 <code class="c">X86_FEATURE_OSPKE</code></td>
+<td>保护键寄存器（MPK）</td>
 </tr>
 </tbody>
 </table></div>
-<h4>定位工作流</h4>
-<pre class="code" data-label="code"><code class="c">1) RIP 地址 ──► gdb vmlinux
-                  (gdb) list *(my_drv_ioctl+0x42)     ← 直接给出源码行
-2) 无 CONFIG_DEBUG_INFO？──► addr2line -e vmlinux &lt;addr&gt;
-3) 栈里模块地址 ──► gdb mydrv.ko（配 /proc/modules 的载入基址换算）
-4) CR2=0x10 ──► 找到 my_dev 结构里偏移 0x10 的字段名──► 哪条路径会传 NULL？
+<pre class="code" data-label="C"><code class="c">    /* Only print out debug registers if they are in their non-default state. */
+    if (!((d0 == 0) &amp;&amp; (d1 == 0) &amp;&amp; (d2 == 0) &amp;&amp; (d3 == 0) &amp;&amp;
+        (d6 == DR6_RESERVED) &amp;&amp; (d7 == 0x400))) {
+        printk(&quot;%sDR0: %016lx DR1: %016lx DR2: %016lx\n&quot;, log_lvl, d0, d1, d2);
+        printk(&quot;%sDR3: %016lx DR6: %016lx DR7: %016lx\n&quot;, log_lvl, d3, d6, d7);
+    }
 </code></pre>
+<blockquote>
+<p>⭐⭐ <strong><code class="c">CR2</code> 是最有价值的字段之一</strong>：
+<code class="c">CR2 = 0x10</code> + <code class="c">RIP = my_drv_ioctl+0x42</code> ⇒ 在 <code class="c">my_drv_ioctl</code> 里访问了某结构体偏移 <code class="c">0x10</code> 的成员，而该结构体指针是 NULL。
+用 <code class="c">pahole -C my_dev mydrv.ko</code> 或 gdb 的 <code class="c">p &amp;((struct my_dev *)0)-&gt;xxx</code> 就能<strong>反推是哪个字段</strong>，
+进而倒查"哪条路径会传 NULL 进来"。</p>
+</blockquote>
+<h4>3.7 <code class="c">Call Trace</code></h4>
+<p>由 <code class="c">show_trace_log_lvl()</code> 打印。v6.6 默认用 <strong>ORC unwinder</strong>（<code class="c">CONFIG_UNWINDER_ORC</code>），不再依赖 frame pointer——
+所以<strong>不需要</strong>为了拿到完整调用栈而关掉 <code class="c">-fomit-frame-pointer</code>（这是 v4.x 时代的常见建议，已过时）。</p>
+<hr />
+<h3>四、⭐ Tainted 完整字母表（v6.6 共 19 位）</h3>
+<p>原笔记写的 "G = 专有模块" 是<strong>反的</strong>。看源码：</p>
+<pre class="code" data-label="C"><code class="c">const struct taint_flag taint_flags[TAINT_FLAGS_COUNT] = {
+    [ TAINT_PROPRIETARY_MODULE ]    = { 'P', 'G', true },
+    [ TAINT_FORCED_MODULE ]     = { 'F', ' ', true },
+    [ TAINT_CPU_OUT_OF_SPEC ]   = { 'S', ' ', false },
+    [ TAINT_FORCED_RMMOD ]      = { 'R', ' ', false },
+    [ TAINT_MACHINE_CHECK ]     = { 'M', ' ', false },
+    [ TAINT_BAD_PAGE ]      = { 'B', ' ', false },
+    [ TAINT_USER ]          = { 'U', ' ', false },
+    [ TAINT_DIE ]           = { 'D', ' ', false },
+    [ TAINT_OVERRIDDEN_ACPI_TABLE ] = { 'A', ' ', false },
+    [ TAINT_WARN ]          = { 'W', ' ', false },
+    [ TAINT_CRAP ]          = { 'C', ' ', true },
+    [ TAINT_FIRMWARE_WORKAROUND ]   = { 'I', ' ', false },
+    [ TAINT_OOT_MODULE ]        = { 'O', ' ', true },
+    [ TAINT_UNSIGNED_MODULE ]   = { 'E', ' ', true },
+    [ TAINT_SOFTLOCKUP ]        = { 'L', ' ', false },
+    [ TAINT_LIVEPATCH ]     = { 'K', ' ', true },
+    [ TAINT_AUX ]           = { 'X', ' ', true },
+    [ TAINT_RANDSTRUCT ]        = { 'T', ' ', true },
+    [ TAINT_TEST ]          = { 'N', ' ', true },
+};
+
+const char *print_tainted(void)
+{
+    static char buf[TAINT_FLAGS_COUNT + sizeof(&quot;Tainted: &quot;)];
+
+    BUILD_BUG_ON(ARRAY_SIZE(taint_flags) != TAINT_FLAGS_COUNT);
+
+    if (tainted_mask) {
+        char *s;
+        int i;
+
+        s = buf + sprintf(buf, &quot;Tainted: &quot;);
+        for (i = 0; i &lt; TAINT_FLAGS_COUNT; i++) {
+            const struct taint_flag *t = &amp;taint_flags[i];
+            *s++ = test_bit(i, &amp;tainted_mask) ?
+                    t-&gt;c_true : t-&gt;c_false;
+        }
+        *s = 0;
+    } else
+        snprintf(buf, sizeof(buf), &quot;Not tainted&quot;);
+
+    return buf;
+}
+</code></pre>
+<p>⭐⭐ <strong>输出是 19 个固定槽位，不是紧凑拼接。每一位对应一个固定位置；未置位打 <code class="c">c_false</code>（大部分是空格）。</strong></p>
+<p>所以 <code class="c">Tainted: G...</code> 里位置 0 的 <code class="c">G</code> 含义是：<strong>「没有加载专有模块」</strong>（<code class="c">c_false</code>）。
+<strong><code class="c">P</code> 才表示加载了专有模块</strong>（<code class="c">c_true</code>）。原笔记说反了。</p>
+<h4>全 19 位对照表</h4>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>时代</th>
-<th>工具</th>
+<th>#</th>
+<th>宏</th>
+<th>置位</th>
+<th>未置位</th>
+<th>含义</th>
+<th>per-module</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>早期</td>
-<td><strong><code class="c">ksymoops</code></strong> + <strong><code class="c">System.map</code></strong> — 手动 <strong>地址 → 符号</strong></td>
+<td>0</td>
+<td><code class="c">TAINT_PROPRIETARY_MODULE</code></td>
+<td>⭐ <strong>P</strong></td>
+<td><strong>G</strong></td>
+<td>加载了专有（非 GPL）模块</td>
+<td>✅</td>
 </tr>
 <tr>
-<td><strong>2.6+ <code class="c">kallsyms</code></strong></td>
-<td><code class="c">CONFIG_KALLSYMS</code> — 符号表编进内核 → <strong>直接可读 backtrace</strong></td>
+<td>1</td>
+<td><code class="c">TAINT_FORCED_MODULE</code></td>
+<td>F</td>
+<td>空格</td>
+<td>用 <code class="c">--force</code> 强载模块</td>
+<td>✅</td>
 </tr>
 <tr>
-<td>现代</td>
-<td>kdump 落 vmcore 后用 <strong>crash</strong> 命令行交互分析（<code class="c">bt</code>/<code class="c">struct</code>/<code class="c">rd</code>）</td>
+<td>2</td>
+<td><code class="c">TAINT_CPU_OUT_OF_SPEC</code></td>
+<td>S</td>
+<td>空格</td>
+<td>CPU 跑在规格外（超频 / 过热）</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">TAINT_FORCED_RMMOD</code></td>
+<td>R</td>
+<td>空格</td>
+<td>强制卸载模块</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">TAINT_MACHINE_CHECK</code></td>
+<td>M</td>
+<td>空格</td>
+<td>发生过 <strong>MCE</strong></td>
+<td>❌</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">TAINT_BAD_PAGE</code></td>
+<td>B</td>
+<td>空格</td>
+<td>释放了坏页 / 页表异常</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code class="c">TAINT_USER</code></td>
+<td>U</td>
+<td>空格</td>
+<td>用户<strong>主动</strong>写 <code class="c">/proc/sys/kernel/tainted</code></td>
+<td>❌</td>
+</tr>
+<tr>
+<td>7</td>
+<td>⭐ <code class="c">TAINT_DIE</code></td>
+<td><strong>D</strong></td>
+<td>空格</td>
+<td><strong>发生过 Oops</strong>（<code class="c">oops_end()</code> 里加的）</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code class="c">TAINT_OVERRIDDEN_ACPI_TABLE</code></td>
+<td>A</td>
+<td>空格</td>
+<td>ACPI 表被覆盖</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code class="c">TAINT_WARN</code></td>
+<td><strong>W</strong></td>
+<td>空格</td>
+<td>触发过 <code class="c">WARN()</code></td>
+<td>❌</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code class="c">TAINT_CRAP</code></td>
+<td>C</td>
+<td>空格</td>
+<td>加载了 <strong>staging</strong> 驱动</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code class="c">TAINT_FIRMWARE_WORKAROUND</code></td>
+<td>I</td>
+<td>空格</td>
+<td>绕过了固件 bug</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code class="c">TAINT_OOT_MODULE</code></td>
+<td>O</td>
+<td>空格</td>
+<td>加载了<strong>树外</strong>模块</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code class="c">TAINT_UNSIGNED_MODULE</code></td>
+<td>E</td>
+<td>空格</td>
+<td>加载了<strong>未签名</strong>模块</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code class="c">TAINT_SOFTLOCKUP</code></td>
+<td>L</td>
+<td>空格</td>
+<td>发生过 <strong>soft lockup</strong></td>
+<td>❌</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code class="c">TAINT_LIVEPATCH</code></td>
+<td>K</td>
+<td>空格</td>
+<td>打过 <strong>livepatch</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code class="c">TAINT_AUX</code></td>
+<td>X</td>
+<td>空格</td>
+<td>辅助标记（供外部工具）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code class="c">TAINT_RANDSTRUCT</code></td>
+<td>T</td>
+<td>空格</td>
+<td>启用了 <code class="c">CONFIG_RANDSTRUCT</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code class="c">TAINT_TEST</code></td>
+<td>N</td>
+<td>空格</td>
+<td>加载了<strong>测试用</strong>模块</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">#define TAINT_FLAGS_COUNT       19
+#define TAINT_FLAGS_MAX         ((1UL &lt;&lt; TAINT_FLAGS_COUNT) - 1)
+</code></pre>
+<blockquote>
+<p>⭐ <strong>上游报 bug 的规矩</strong>：tainted 的内核，maintainer <strong>有权直接忽略</strong>。
+报之前先解释每个字母从哪来。</p>
+<p>⭐⭐ 特别注意 <strong><code class="c">D</code></strong>：打 <code class="c">D</code> 说明<strong>这台机器之前已经 Oops 过一次</strong>——
+那个<strong>第一次</strong> Oops 才是根因，后面的都可能是连锁反应。
+这也正是 <code class="c">__die_header()</code> 里 <code class="c">if (!die_counter) exec_summary_regs = *regs;</code> 只存第一次的原因。</p>
+</blockquote>
+<hr />
+<h3>五、Oops → panic：<code class="c">panic()</code> 的 14 步</h3>
+<h4>5.1 什么时候 Oops 变 panic</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>触发点</th>
+<th>源码位置</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">in_interrupt()</code></td>
+<td><code class="c">oops_end()</code></td>
+<td><strong>中断上下文没有进程可杀</strong></td>
+</tr>
+<tr>
+<td><code class="c">panic_on_oops</code> 非 0</td>
+<td><code class="c">oops_end()</code></td>
+<td>命令行 <code class="c">oops=panic</code></td>
+</tr>
+<tr>
+<td><code class="c">pgtable_bad()</code></td>
+<td><code class="c">fault.c</code></td>
+<td>页表损坏：<code class="c">sig = SIGKILL</code> + <code class="c">__die("Bad pagetable")</code></td>
+</tr>
+<tr>
+<td>关键进程</td>
+<td>—</td>
+<td>idle (pid 0) / init (pid 1) 崩了无法继续</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">static int __init oops_setup(char *s)
+{
+    if (!s)
+        return -EINVAL;
+    if (!strcmp(s, &quot;panic&quot;))
+        panic_on_oops = 1;
+    return 0;
+}
+early_param(&quot;oops&quot;, oops_setup);
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>实测纠正</strong>：<code class="c">panic_on_oops</code> 的原型是 <code class="c">int</code>（不是 bool），
+但 <strong><code class="c">oops_setup()</code> 只认 <code class="c">"panic"</code> 一个字符串，只设成 1</strong>。
+网上流传的 <code class="c">oops=3</code>（Oops 3 次后 panic）<strong>在 v6.6 不存在</strong>。
+类似的计数机制只有 <strong><code class="c">kernel.warn_limit</code></strong>（v6.2 引入），而且它作用于 <code class="c">WARN()</code> 而非 Oops：
+```c
+void check_panic_on_warn(const char *origin)
+{
+  unsigned int limit;</p>
+<p>if (panic_on_warn)
+      panic("%s: panic_on_warn set ...\n", origin);</p>
+<p>limit = READ_ONCE(warn_limit);
+  if (atomic_inc_return(&amp;warn_count) &gt;= limit &amp;&amp; limit)
+      panic("%s: system warned too often (kernel.warn_limit is %d)",
+            origin, limit);
+}
+```</p>
+</blockquote>
+<h4>5.2 <code class="c">panic()</code> 主流程（v6.6 <code class="c">kernel/panic.c</code>）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步</th>
+<th>动作</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">local_irq_disable()</code> + <code class="c">preempt_disable_notrace()</code></td>
+<td>防止在设置 <code class="c">panic_cpu</code> 之后被中断再次 <code class="c">panic()</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>⭐ <code class="c">atomic_cmpxchg(&amp;panic_cpu, PANIC_CPU_INVALID, this_cpu)</code></td>
+<td><strong>只有第一个 CPU 执行 panic 主体</strong>，其他 <code class="c">panic_smp_self_stop()</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">console_verbose()</code> + <code class="c">bust_spinlocks(1)</code></td>
+<td>保证能打印</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">pr_emerg("Kernel panic - not syncing: %s\n", buf)</code></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>⭐ <code class="c">if (!test_taint(TAINT_DIE) &amp;&amp; oops_in_progress &lt;= 1) dump_stack();</code></td>
+<td><strong>避免重复打栈</strong>：Oops→panic 时栈已打过</td>
+</tr>
+<tr>
+<td>6</td>
+<td>⭐ <code class="c">kgdb_panic(buf)</code></td>
+<td>注释：<em>"give it a chance to run before we stop all the other CPUs"</em>——否则其他 CPU 上的进程没法调试</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code class="c">if (!_crash_kexec_post_notifiers) __crash_kexec(NULL)</code></td>
+<td>kdump 默认<strong>尽早</strong>接管</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code class="c">panic_other_cpus_shutdown()</code></td>
+<td><code class="c">panic_print &amp; PANIC_PRINT_ALL_CPU_BT</code> → <code class="c">trigger_all_cpu_backtrace()</code>，然后 <code class="c">smp_send_stop()</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td><code class="c">atomic_notifier_call_chain(&amp;panic_notifier_list, ...)</code></td>
+<td>第三方 panic handler</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code class="c">panic_print_sys_info(false)</code></td>
+<td>按位掩码打 task / mem / timer / lock / ftrace</td>
+</tr>
+<tr>
+<td>11</td>
+<td>⭐ <code class="c">kmsg_dump(KMSG_DUMP_PANIC)</code></td>
+<td><strong>pstore 落盘</strong></td>
+</tr>
+<tr>
+<td>12</td>
+<td><code class="c">if (_crash_kexec_post_notifiers) __crash_kexec(NULL)</code></td>
+<td>延迟 kdump</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code class="c">console_flush_on_panic(CONSOLE_FLUSH_PENDING)</code></td>
+<td>⭐ 注释解释：可能<strong>停掉了持有 console 锁的 CPU</strong>，所以要抢锁再释放，把缓冲区吐出来</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code class="c">panic_timeout</code> 三态</td>
+<td>见下</td>
+</tr>
+</tbody>
+</table></div>
+<p>第 5 步的源码：</p>
+<pre class="code" data-label="C"><code class="c">    pr_emerg(&quot;Kernel panic - not syncing: %s\n&quot;, buf);
+#ifdef CONFIG_DEBUG_BUGVERBOSE
+    /*
+     * Avoid nested stack-dumping if a panic occurs during oops processing
+     */
+    if (!test_taint(TAINT_DIE) &amp;&amp; oops_in_progress &lt;= 1)
+        dump_stack();
+#endif
+</code></pre>
+<blockquote>
+<p>⭐ <code class="c">test_taint(TAINT_DIE)</code> 就是 <strong>§4 里那个 <code class="c">D</code></strong>——Oops 打过栈了，panic 就不再重复打。
+两个机制的联动点就在这里。</p>
+</blockquote>
+<h4>⭐ kdump 的两难：<code class="c">crash_kexec_post_notifiers</code></h4>
+<pre class="code" data-label="code"><code class="c">默认（=0）：__crash_kexec  ──►  停其他 CPU  ──►  panic notifiers  ──►  kmsg_dump
+             └ 尽早抓 vmcore，最可靠
+
+=1        ：停其他 CPU  ──►  panic notifiers  ──►  kmsg_dump  ──►  __crash_kexec
+             └ 先拿到 dmesg / notifier 信息，但 notifier 可能让内核更不稳 → kdump 失败风险上升
+</code></pre>
+<p>源码注释原话：</p>
+<blockquote>
+<p><em>"If you doubt kdump always works fine in any situation, <code class="c">crash_kexec_post_notifiers</code>
+offers you a chance to run panic_notifiers and dumping kmsg before kdump.
+Note: since some panic_notifiers can make crashed kernel more unstable,
+it can increase risks of the kdump failure too."</em></p>
+</blockquote>
+<h4><code class="c">panic_timeout</code> 的三态语义</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>值</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">&gt; 0</code></td>
+<td>打印 <code class="c">Rebooting in %d seconds..</code>，<code class="c">mdelay</code> 循环等待后 <code class="c">emergency_restart()</code></td>
+</tr>
+<tr>
+<td><code class="c">&lt; 0</code></td>
+<td><strong>跳过等待，直接</strong> <code class="c">emergency_restart()</code>（因为 <code class="c">panic_timeout != 0</code>）</td>
+</tr>
+<tr>
+<td><code class="c">= 0</code></td>
+<td>⭐ <strong>不重启</strong>：<code class="c">suppress_printk = 1</code> + 无限 <code class="c">mdelay(100)</code> + <code class="c">panic_blink()</code>（键盘灯闪烁）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">    /* Do not scroll important messages printed above */
+    suppress_printk = 1;
+    local_irq_enable();
+    for (i = 0; ; i += PANIC_TIMER_STEP) {
+        touch_softlockup_watchdog();
+        if (i &gt;= i_next) {
+            i += panic_blink(state ^= 1);
+            i_next = i + 3600 / PANIC_BLINK_SPD;
+        }
+        mdelay(PANIC_TIMER_STEP);
+    }
+</code></pre>
+<blockquote>
+<p>⭐ <code class="c">suppress_printk = 1</code> 的作用：源码注释 <em>"Do not scroll important messages printed above"</em>——
+panic 之后不再接受新打印，<strong>把现场锁在屏幕上</strong>。想重启只能人工按复位键或配 watchdog。</p>
+<p><code class="c">PANIC_TIMER_STEP 100</code>（ms）、<code class="c">PANIC_BLINK_SPD 18</code>（每 200ms 翻一次 blink 状态）。</p>
+</blockquote>
+<h4><code class="c">panic_print</code> 位掩码（7 位）</h4>
+<pre class="code" data-label="C"><code class="c">#define PANIC_PRINT_TASK_INFO       0x00000001
+#define PANIC_PRINT_MEM_INFO        0x00000002
+#define PANIC_PRINT_TIMER_INFO      0x00000004
+#define PANIC_PRINT_LOCK_INFO       0x00000008
+#define PANIC_PRINT_FTRACE_INFO     0x00000010
+#define PANIC_PRINT_ALL_PRINTK_MSG  0x00000020
+#define PANIC_PRINT_ALL_CPU_BT      0x00000040
+</code></pre>
+<p>用法：<code class="c">panic_print=&lt;掩码&gt;</code> 内核参数。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位</th>
+<th>效果</th>
+<th>什么时候加</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">0x01</code> TASK</td>
+<td><code class="c">show_state()</code> — 所有进程状态</td>
+<td>怀疑某进程卡死</td>
+</tr>
+<tr>
+<td><code class="c">0x02</code> MEM</td>
+<td><code class="c">show_mem()</code></td>
+<td>怀疑内存耗尽 / 泄漏</td>
+</tr>
+<tr>
+<td><code class="c">0x04</code> TIMER</td>
+<td><code class="c">sysrq_timer_list_show()</code></td>
+<td>怀疑定时器问题</td>
+</tr>
+<tr>
+<td><code class="c">0x08</code> LOCK</td>
+<td><code class="c">debug_show_all_locks()</code></td>
+<td>⭐ <strong>怀疑死锁</strong></td>
+</tr>
+<tr>
+<td><code class="c">0x10</code> FTRACE</td>
+<td><code class="c">ftrace_dump(DUMP_ALL)</code></td>
+<td>需要完整 trace</td>
+</tr>
+<tr>
+<td><code class="c">0x20</code> ALL_PRINTK</td>
+<td><code class="c">console_flush_on_panic(CONSOLE_REPLAY_ALL)</code></td>
+<td>⭐ <strong>串口太慢丢日志时</strong></td>
+</tr>
+<tr>
+<td><code class="c">0x40</code> ALL_CPU_BT</td>
+<td><code class="c">trigger_all_cpu_backtrace()</code></td>
+<td>需要其他 CPU 的现场</td>
 </tr>
 </tbody>
 </table></div>
 <blockquote>
-<p>kallsyms 的取舍：编进符号表让 Oops 直接可读，但暴露内核布局（绕 KASLR）——发行版默认开，安全敏感场景注意 <code class="c">CONFIG_KALLSYMS_ALL</code> 与 kptr_restrict 的搭配。</p>
+<p>⭐ <code class="c">panic_print_sys_info()</code> 会被调用<strong>两次</strong>（<code class="c">false</code> / <code class="c">true</code>）。
+第二次带 <code class="c">console_flush=true</code>，<strong>只处理 <code class="c">ALL_PRINTK_MSG</code></strong>——
+因为那时 CPU 已停，可以安全地全量重放 printk 缓冲。</p>
+<p><code class="c">c
+static void panic_print_sys_info(bool console_flush)
+{
+  if (console_flush) {
+      if (panic_print &amp; PANIC_PRINT_ALL_PRINTK_MSG)
+          console_flush_on_panic(CONSOLE_REPLAY_ALL);
+      return;
+  }
+  if (panic_print &amp; PANIC_PRINT_TASK_INFO)  show_state();
+  if (panic_print &amp; PANIC_PRINT_MEM_INFO)   show_mem();
+  if (panic_print &amp; PANIC_PRINT_TIMER_INFO) sysrq_timer_list_show();
+  if (panic_print &amp; PANIC_PRINT_LOCK_INFO)  debug_show_all_locks();
+  if (panic_print &amp; PANIC_PRINT_FTRACE_INFO) ftrace_dump(DUMP_ALL);
+}</code></p>
 </blockquote>
+<hr />
+<h3>六、解码工具链：ksymoops → kallsyms → decode_stacktrace.sh</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时代</th>
+<th>做法</th>
+<th>痛点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.4 及以前</td>
+<td><strong><code class="c">ksymoops</code></strong> + <code class="c">System.map</code> 手工比对</td>
+<td>要人工喂 <code class="c">System.map</code> 和模块加载地址</td>
+</tr>
+<tr>
+<td>⭐ 2.6+</td>
+<td><strong><code class="c">CONFIG_KALLSYMS</code></strong> — 符号表编进内核</td>
+<td>Oops <strong>直接可读</strong></td>
+</tr>
+<tr>
+<td>现代</td>
+<td><strong><code class="c">scripts/decode_stacktrace.sh</code></strong></td>
+<td>一键把整份 Oops 转成「文件:行号」</td>
+</tr>
+<tr>
+<td>重度</td>
+<td><strong>kdump + crash</strong></td>
+<td>交互式 <code class="c">bt</code> / <code class="c">struct</code> / <code class="c">rd</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">decode_stacktrace.sh</code>（v6.6）的能力：</p>
+<pre class="code" data-label="shell"><code class="c"># 用法
+./scripts/decode_stacktrace.sh -r 6.6.0                     # 自动找 vmlinux
+./scripts/decode_stacktrace.sh vmlinux &lt;base path&gt; &lt;modpath&gt;
+# 典型
+dmesg | ./scripts/decode_stacktrace.sh vmlinux auto /lib/modules/$(uname -r)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-r &lt;release&gt;</code></td>
+<td>自动在 <code class="c">/usr/lib/debug/boot/</code>、<code class="c">/lib/modules/&lt;rel&gt;{,/build}/</code> 里找 vmlinux</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">debuginfod-find</code></td>
+<td>联网自动拉 debuginfo</td>
+</tr>
+<tr>
+<td>⭐ <strong>Rust demangler</strong></td>
+<td>优先 <code class="c">llvm-cxxfilt</code>，退化 <code class="c">c++filt -i</code>（v6.6 内核里已有 Rust 代码）</td>
+</tr>
+<tr>
+<td>模块符号</td>
+<td>需要 <code class="c">&lt;modules path&gt;</code>，否则打印 <code class="c">WARNING! Modules path isn't set, but is needed to parse this symbol</code></td>
+</tr>
+<tr>
+<td>地址格式</td>
+<td>认 <code class="c">[&lt;addr&gt;]</code>（老格式）也认 <code class="c">func+0x42/0x100</code>（新格式）</td>
+</tr>
+<tr>
+<td><code class="c">basepath=auto</code></td>
+<td>用 <code class="c">kernel_init</code> 符号自动推断源码根路径</td>
+</tr>
+</tbody>
+</table></div>
+<h4>kallsyms 的取舍</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开</th>
+<th>关</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Oops 直接可读、无需额外文件</td>
+<td>符号表进内核映像（体积 +）</td>
+</tr>
+<tr>
+<td><code class="c">perf</code> / ftrace 能解析符号</td>
+<td>⭐ <strong>暴露内核布局，削弱 KASLR</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 安全敏感场景的三件套：<code class="c">CONFIG_KALLSYMS_ALL</code>、<code class="c">kernel.kptr_restrict</code>、<code class="c">kernel.dmesg_restrict</code>。
+但要注意：<strong>关掉 kallsyms 会让 Oops 变成一堆裸地址</strong>，排障成本急剧上升。
+HFT 交易机这种"不出网、不接待不可信用户"的场景，<strong>开 kallsyms 的收益远大于风险</strong>。</p>
+</blockquote>
+<hr />
+<h3>七、Oops 与 kdump / pstore / kgdb 的衔接点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>挂钩位置</th>
+<th>时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>kdump</strong></td>
+<td><code class="c">oops_end()</code> → <code class="c">crash_kexec(regs)</code></td>
+<td>Oops 时（<code class="c">kexec_should_crash()</code> 判定）</td>
+</tr>
+<tr>
+<td>kdump（panic 路径）</td>
+<td><code class="c">panic()</code> → <code class="c">__crash_kexec(NULL)</code></td>
+<td>panic 时（步 7 或步 12）</td>
+</tr>
+<tr>
+<td>⭐ <strong>pstore / ramoops</strong></td>
+<td><code class="c">oops_exit()</code> → <code class="c">kmsg_dump(KMSG_DUMP_OOPS)</code></td>
+<td>Oops 结束时</td>
+</tr>
+<tr>
+<td>pstore（panic 路径）</td>
+<td><code class="c">panic()</code> → <code class="c">kmsg_dump(KMSG_DUMP_PANIC)</code></td>
+<td>panic 中（步 11）</td>
+</tr>
+<tr>
+<td>⭐ <strong>kgdb / kdb</strong></td>
+<td><code class="c">panic()</code> → <code class="c">kgdb_panic(buf)</code></td>
+<td><strong>停其他 CPU 之前</strong>（步 6）</td>
+</tr>
+<tr>
+<td>kprobe / 其他 notifier</td>
+<td><code class="c">__die_body()</code> → <code class="c">notify_die(DIE_OOPS, ...)</code></td>
+<td>打印之后、<code class="c">oops_end()</code> 之前</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐⭐ <strong><code class="c">notify_die(DIE_OOPS)</code> 返回 <code class="c">NOTIFY_STOP</code> 会让 Oops 不杀进程</strong>——
+这是 kdb 能"接住" Oops 让你现场调试的机制：
+<code class="c">die()</code> 里 <code class="c">if (__die(...)) sig = 0;</code> → <code class="c">oops_end()</code> 里 <code class="c">if (!signr) return;</code></p>
+</blockquote>
+<hr />
+<h3>八、现代内核演进（实测版本断崖）</h3>
+<p>方法：逐版本拉 <code class="c">kernel/panic.c</code> / <code class="c">arch/x86/mm/fault.c</code> / <code class="c">arch/x86/kernel/dumpstack.c</code> 做特征计数。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>引入版本</th>
+<th>实测判据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">CONFIG_KALLSYMS</code></td>
+<td>v2.5 / v2.6</td>
+<td>Oops 直接可读</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_VMAP_STACK</code>（x86）</td>
+<td>v4.9</td>
+<td>栈溢出换 DF 栈</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">panic_print</code></td>
+<td><strong>v5.0</strong></td>
+<td>v4.20 <code class="c">panic.c</code> 0 处 → v5.0 9 处</td>
+</tr>
+<tr>
+<td>⭐ <strong>Oops <code class="c">BUG:</code> 行新格式</strong></td>
+<td><strong>v5.2</strong></td>
+<td>v5.1 仍是 <code class="c">unable to handle kernel %s at %px</code></td>
+</tr>
+<tr>
+<td><code class="c">PANIC_PRINT_ALL_CPU_BT</code></td>
+<td>v5.16~v5.19</td>
+<td>v5.15 0 处 → v5.19 2 处</td>
+</tr>
+<tr>
+<td>KFENCE 抢在 Oops 前</td>
+<td>v5.12</td>
+<td><code class="c">kfence_handle_page_fault()</code></td>
+</tr>
+<tr>
+<td>⭐ <code class="c">kernel.warn_limit</code></td>
+<td><strong>v6.2</strong></td>
+<td>v6.1 0 处 → v6.2 6 处</td>
+</tr>
+<tr>
+<td>⚠️ <code class="c">kernel.oops_limit</code></td>
+<td><strong>从未进 mainline</strong></td>
+<td>v5.19 / v6.0 / v6.6 的 <code class="c">panic.c</code> 均为 <strong>0 处</strong></td>
+</tr>
+<tr>
+<td><code class="c">TAINT_FLAGS_COUNT</code> = 19</td>
+<td>v6.6</td>
+<td>逐版本增长（早期只有 ~10 位）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <strong>记忆纠错</strong>：我原本以为 <code class="c">oops_limit</code> 与 <code class="c">warn_limit</code> 是 v5.19 一起加的。
+实测结果是 <strong><code class="c">oops_limit</code> 从未进 mainline</strong>，<code class="c">warn_limit</code> 是 <strong>v6.2</strong> 才有的。
+网上部分教程提到的 <code class="c">kernel.oops_limit</code> sysctl 属于<strong>第三方补丁或文档错误</strong>。</p>
+</blockquote>
+<hr />
+<h3>九、HFT / 嵌入式视角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关注点</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong><code class="c">panic_on_oops=1</code></strong></td>
+<td>交易机上 Oops 后继续跑 = 拿损坏的内核继续下单。宁可重启切备机</td>
+</tr>
+<tr>
+<td><code class="c">panic=&lt;秒&gt;</code></td>
+<td>配正数让 panic 后自动重启；<strong>负值立即重启</strong>；<code class="c">0</code> 会挂死等人工</td>
+</tr>
+<tr>
+<td>⭐ <strong>pstore + ramoops</strong></td>
+<td>无串口的嵌入式设备抓 Oops 的唯一手段；Oops 走 <code class="c">KMSG_DUMP_OOPS</code></td>
+</tr>
+<tr>
+<td><code class="c">panic_print=0x28</code></td>
+<td><code class="c">0x20</code>（全量 printk）+ <code class="c">0x08</code>（锁信息）—— 串口慢导致丢日志时的组合</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">softlockup_panic=1</code></td>
+<td>配合 <code class="c">TAINT_SOFTLOCKUP</code>（<code class="c">L</code>）：spinlock 死循环比 Oops 更隐蔽</td>
+</tr>
+<tr>
+<td><code class="c">oops_all_cpu_backtrace=1</code></td>
+<td>多核并发故障时一次拿到所有 CPU 的栈</td>
+</tr>
+<tr>
+<td><code class="c">pause_on_oops=&lt;秒&gt;</code></td>
+<td>多核同时炸时防止 backtrace 交错；<strong>串口日志场景必配</strong></td>
+</tr>
+<tr>
+<td>⭐ 模块符号</td>
+<td>出 Oops 的往往是自研 <code class="c">.ko</code>，<strong>必须保留带 debuginfo 的 <code class="c">.ko</code> 副本</strong>，否则 <code class="c">Code:</code> 行成了唯一线索</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_PREEMPT_RT</code></td>
+<td>Oops 头会打 <code class="c">PREEMPT_RT</code>；RT 内核锁语义不同，排障思路也不同</td>
+</tr>
+<tr>
+<td>复现成本</td>
+<td>低延迟场景的 bug 常与时间相关，<code class="c">KFENCE</code> + <code class="c">KASAN</code> 的采样开关能在生产上留一道网</td>
+</tr>
+<tr>
+<td>⭐ <code class="c">CR2</code> 反推字段</td>
+<td>自研驱动的 Oops 里，<code class="c">CR2</code> 偏移 + <code class="c">pahole -C</code> 是最快的定性手段</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> Oops 信息中最重要的字段是什么？如何从 Oops 定位源码？</p>
 <details>
 <summary>答案</summary>
-<p>关键字段：1) RIP（出错指令地址）→ addr2line 或 objdump 定位源码行；2) Call Trace（调用栈）→ 定位调用链；3) Code:（出错指令前后的十六进制）→ 反汇编。<code class="c">addr2line -e vmlinux &lt;RIP地址&gt;</code> 定位源码行。<code class="c">gdb vmlinux</code> + <code class="c">list *(RIP地址)</code> 查看源码。HFT 驱动 Oops 分析是最基本的内核排障技能。</p>
+<p>关键字段：1) RIP（出错指令地址）→ addr2line 或 objdump 定位源码行；2) Call Trace（调用栈）→ 定位调用链；3) <code class="c">Code:</code>（出错指令前后的十六进制）→ 反汇编。<code class="c">addr2line -e vmlinux &lt;RIP地址&gt;</code> 定位源码行。<code class="c">gdb vmlinux</code> + <code class="c">list *(RIP地址)</code> 查看源码。HFT 驱动 Oops 分析是最基本的内核排障技能。</p>
+</details>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>优先级要重排，v6.6 的 <strong><code class="c">CR2</code> 比 <code class="c">Code:</code> 更值得先看</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⭐ <strong>CR2</strong></td>
+<td>触发缺页的线性地址。<strong><code class="c">CR2 = 0x10</code> + <code class="c">RIP = f+0x42</code> ⇒ 访问了某结构体偏移 0x10 的成员而指针是 NULL</strong>。用 <code class="c">pahole -C &lt;type&gt; &lt;mod&gt;.ko</code> 直接反推字段名，一步定性</td>
+</tr>
+<tr>
+<td><code class="c">RIP</code></td>
+<td>出错指令。<code class="c">func+0x42/0x100</code> 的分母 <code class="c">0x100</code> 是<strong>函数总长度</strong>，可用于判断偏移是否合理</td>
+</tr>
+<tr>
+<td><code class="c">#PF: error_code(0x…)</code></td>
+<td>区分读/写/取指 + 页不存在/权限违规/保留位。<code class="c">0x0002</code> = 写空指针</td>
+</tr>
+<tr>
+<td><code class="c">Oops: … [#N]</code></td>
+<td><code class="c">N &gt; 1</code> 说明<strong>之前已 Oops 过</strong>，看第一次的</td>
+</tr>
+<tr>
+<td><code class="c">Tainted:</code></td>
+<td>有 <code class="c">D</code> = 已 Oops 过；有 <code class="c">P</code>/<code class="c">O</code>/<code class="c">E</code> = 加载了非主线模块</td>
+</tr>
+<tr>
+<td><code class="c">Call Trace</code></td>
+<td>ORC unwinder，<strong>v6.6 不再需要 frame pointer</strong></td>
+</tr>
+<tr>
+<td><code class="c">Code:</code></td>
+<td>⭐ <strong>尖括号 <code class="c">&lt;xx&gt;</code> 里那个字节就是出错指令首字节</strong>。无 vmlinux 时的唯一线索</td>
+</tr>
+</tbody>
+</table></div>
+<p>现代一键解码（不用手工 addr2line）：</p>
+<pre class="code" data-label="shell"><code class="c">dmesg | ./scripts/decode_stacktrace.sh vmlinux auto /lib/modules/$(uname -r)
+</code></pre>
+<p>补两条原答案没提的：
+- <code class="c">ORIG_RAX</code> <strong>只在非 -1 时才打印</strong>，那个值就是<strong>系统调用号</strong>（呼应 5.3）
+- <code class="c">DR0</code>-<code class="c">DR7</code> <strong>只在非默认状态才出现</strong>，说明当时挂了硬件断点</p>
 </details>
 <p><strong>Q2.</strong> Oops 和 panic 的区别？什么时候 Oops 不会变成 panic？</p>
 <details>
 <summary>答案</summary>
 <p>Oops = 杀死出错进程/线程，系统可能继续运行（如果损坏不严重）。panic = 系统停止，不可恢复。Oops → panic 的条件：1) 在中断上下文中出错（无进程可杀）；2) 损坏关键内核数据结构；3) panic_on_oops 设置为 1。生产 HFT 系统通常设 panic_on_oops=1（损坏的内核不安全，宁可重启）。</p>
+</details>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><code class="c">oops_end()</code> 里<strong>实际只有两个显式判定</strong>，原答案的第 2 条（"损坏关键内核数据结构"）在源码里<strong>没有对应分支</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    if (!signr)
+        return;
+    if (in_interrupt())
+        panic(&quot;Fatal exception in interrupt&quot;);
+    if (panic_on_oops)
+        panic(&quot;Fatal exception&quot;);
+    kasan_unpoison_task_stack(current);
+    rewind_stack_and_make_dead(signr);
+</code></pre>
+<p>所以完整下场是 <strong>四种</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">signr == 0</code>（<code class="c">notify_die</code> 返回 <code class="c">NOTIFY_STOP</code>，调试器接管）</td>
+<td><strong>不杀进程，继续跑</strong></td>
+</tr>
+<tr>
+<td><code class="c">in_interrupt()</code></td>
+<td><code class="c">panic("Fatal exception in interrupt")</code></td>
+</tr>
+<tr>
+<td><code class="c">panic_on_oops</code> 非 0</td>
+<td><code class="c">panic("Fatal exception")</code></td>
+</tr>
+<tr>
+<td>都不成立</td>
+<td>⭐ <code class="c">rewind_stack_and_make_dead(signr)</code> —— <strong>不是普通 <code class="c">do_exit()</code></strong>，要先回卷栈（可能站在 IST 栈上）</td>
+</tr>
+</tbody>
+</table></div>
+<p>"损坏关键数据结构"之所以常常导致 panic，是因为<strong>后续会再次 Oops 并命中上面两条之一</strong>，或干脆 hard lockup——属于<strong>间接后果</strong>，不是直接判定。</p>
+<p>另外：
+- 命令行写法只有 <code class="c">oops=panic</code> 一个值生效（<code class="c">oops_setup()</code> 里 <code class="c">!strcmp(s, "panic")</code>）
+- <code class="c">panic_on_oops</code> 原型是 <code class="c">int</code> 但<strong>没有 <code class="c">oops=N</code> 计数语义</strong>；计数只在 <code class="c">WARN()</code> 侧有 <code class="c">kernel.warn_limit</code>（v6.2+）
+- 页表损坏走另一条路：<code class="c">pgtable_bad()</code> 直接 <code class="c">__die("Bad pagetable")</code> + <code class="c">SIGKILL</code></p>
+</details>
+<p><strong>Q3.</strong> 内核态踩了坏地址，一定会 Oops 吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不会。</strong> v6.6 <code class="c">kernelmode_fixup_or_oops()</code> 里 Oops 之前有三道拦截：</p>
+<ol>
+<li>⭐ <strong><code class="c">fixup_exception()</code></strong> —— 查 exception table（<code class="c">__ex_table</code> 段）。命中就改 <code class="c">regs-&gt;ip</code> 跳到修复标号，<strong>完全不 Oops</strong>。这正是 <code class="c">copy_from_user()</code> / <code class="c">get_user()</code> 能安全碰用户指针、返回 <code class="c">-EFAULT</code> 而不是崩溃的全部基础</li>
+<li><strong><code class="c">is_prefetch()</code></strong> —— 出错指令是 <code class="c">PREFETCH</code> 时直接忽略，注释：<em>"AMD erratum #91 manifests as a spurious page fault on a PREFETCH instruction"</em></li>
+<li><strong><code class="c">page_fault_oops()</code></strong> —— 前两条都不命中才 Oops</li>
+</ol>
+<p><code class="c">page_fault_oops()</code> 内部还有两道：
+- <strong>KFENCE</strong>（v5.12+）：<code class="c">kfence_handle_page_fault()</code> 命中就 <code class="c">return</code>，把 use-after-free / 越界变成结构化报告
+- <strong>EFI</strong>：<code class="c">efi_crash_gracefully_on_page_fault(address)</code> 让坏固件优雅降级</p>
+<blockquote>
+<p>⭐ 推论：如果你在驱动里看到"访问了明显非法的地址却没 Oops"，先怀疑是不是<strong>命中了 ex_table 修复路径</strong>——那通常意味着有个 <code class="c">copy_*_user()</code> 的调用约定被用错了。</p>
+</blockquote>
+</details>
+<p><strong>Q4.</strong> 内核栈已经踩穿了，Oops 为什么还能打印出 backtrace？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <code class="c">page_fault_oops()</code> 在 Oops 之前<strong>先换了栈</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    if (is_vmalloc_addr((void *)address) &amp;&amp;
+        get_stack_guard_info((void *)address, &amp;info)) {
+        call_on_stack(__this_cpu_ist_top_va(DF) - sizeof(void*),
+                  handle_stack_overflow, ASM_CALL_ARG3, ...);
+        unreachable();
+    }
+</code></pre>
+<ul>
+<li><code class="c">CONFIG_VMAP_STACK</code> 让内核栈在 vmalloc 区，并带 <strong>guard page</strong></li>
+<li>踩到 guard page 时 <code class="c">get_stack_guard_info()</code> 命中</li>
+<li>⭐ 用 <code class="c">call_on_stack()</code> 把执行切到 <strong>Double-Fault 的 IST 栈</strong>（<code class="c">__this_cpu_ist_top_va(DF)</code>）再打印</li>
+</ul>
+<p>源码注释解释得极清楚：</p>
+<blockquote>
+<p><em>"We don't want to make it all the way into the oops code and then double-fault, though,
+because we're likely to break the console driver and lose most of the stack dump."</em></p>
+</blockquote>
+<p>即：<strong>不换栈的话，打印到一半就 double fault，反而什么都留不下</strong>。</p>
+</details>
+<p><strong>Q5.</strong> <code class="c">Code:</code> 行那一串十六进制怎么读？为什么是 42 + 1 + 21？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 <code class="c">show_opcodes()</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define PROLOGUE_SIZE 42
+#define EPILOGUE_SIZE 21
+    printk(&quot;%sCode: %42ph &lt;%02x&gt; %21ph\n&quot;, ..., opcodes,
+           opcodes[PROLOGUE_SIZE], opcodes + PROLOGUE_SIZE + 1);
+</code></pre>
+<p>⭐⭐ <strong>尖括号包住的那一个字节，就是 RIP 指向的出错指令首字节。</strong></p>
+<p>42/21 这个怪比例的理由（源码注释，courtesy of Linus）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>理由</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>跨 toolchain 比对</td>
+<td>没有精确 vmlinux 时，更长前缀便于与不同编译器产出的代码对齐</td>
+</tr>
+<tr>
+<td>重建寄存器分配</td>
+<td>更多上下文帮助理解寄存器状态</td>
+</tr>
+<tr>
+<td>⭐ <strong>变长指令同步</strong></td>
+<td>x86 是变长指令架构，需要足够长的前缀让反汇编器 <strong>"sync up properly and find instruction boundaries"</strong></td>
+</tr>
+<tr>
+<td>坦白</td>
+<td><em>"just a random guesstimate"</em></td>
+</tr>
+</tbody>
+</table></div>
+<p>实操（无 vmlinux 时）：</p>
+<pre class="code" data-label="shell"><code class="c"># 把 Code: 行字节（去掉尖括号）存成二进制再反汇编
+objdump -D -b binary -m i386:x86-64 code.bin
+</code></pre>
+<p>然后找到 <code class="c">&lt;xx&gt;</code> 那一字节对应的指令即可。</p>
+</details>
+<p><strong>Q6.</strong> Oops 里 <code class="c">Tainted: G</code> 是什么意思？<code class="c">P</code> 呢？</p>
+<details>
+<summary>答案</summary>
+<p>⭐ <strong><code class="c">G</code> 恰恰表示「没有加载专有模块」</strong>——它是 <code class="c">taint_flags[TAINT_PROPRIETARY_MODULE]</code> 的 <strong><code class="c">c_false</code></strong>：</p>
+<pre class="code" data-label="C"><code class="c">    [ TAINT_PROPRIETARY_MODULE ]    = { 'P', 'G', true },
+                                      /* ↑c_true ↑c_false */
+</code></pre>
+<ul>
+<li>置位 → 打印 <strong><code class="c">P</code></strong>（加载了专有 / 非 GPL 模块）</li>
+<li>未置位 → 打印 <strong><code class="c">G</code></strong>（全是 GPL 模块，干净）</li>
+</ul>
+<p>⭐ 另一个关键点：<strong>输出是 19 个固定槽位，不是紧凑拼接</strong>：</p>
+<pre class="code" data-label="C"><code class="c">    for (i = 0; i &lt; TAINT_FLAGS_COUNT; i++) {
+        const struct taint_flag *t = &amp;taint_flags[i];
+        *s++ = test_bit(i, &amp;tainted_mask) ? t-&gt;c_true : t-&gt;c_false;
+    }
+</code></pre>
+<p>所以 <code class="c">Tainted:</code> 后面那串字符的<strong>位置本身就编码了含义</strong>（位置 0 = 专有模块，位置 7 = 已 Oops 过，位置 9 = 触发过 WARN……），未置位打空格。全干净时输出 <code class="c">Not tainted</code>。</p>
+<p>⚠️ 常见误读：把 <code class="c">Tainted: G</code> 当成"有专有模块"。<strong>反了。</strong></p>
+</details>
+<p><strong>Q7.</strong> 想让机器"Oops 若干次后再 panic"，能配 <code class="c">oops=3</code> 吗？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不能。</strong> 实测 v6.6 <code class="c">kernel/panic.c</code>：</p>
+<pre class="code" data-label="C"><code class="c">static int __init oops_setup(char *s)
+{
+    if (!s)
+        return -EINVAL;
+    if (!strcmp(s, &quot;panic&quot;))
+        panic_on_oops = 1;
+    return 0;
+}
+early_param(&quot;oops&quot;, oops_setup);
+</code></pre>
+<ul>
+<li><code class="c">panic_on_oops</code> 原型是 <code class="c">int</code>（不是 bool）</li>
+<li>但 <strong><code class="c">oops_setup()</code> 只认 <code class="c">"panic"</code> 一个字符串</strong>，且只设成 <code class="c">1</code></li>
+<li>⚠️ <code class="c">kernel.oops_limit</code> sysctl <strong>从未进 mainline</strong>（v5.19 / v6.0 / v6.6 的 <code class="c">panic.c</code> 里均为 0 处匹配）</li>
+</ul>
+<p>真正存在的计数机制只有 <strong><code class="c">kernel.warn_limit</code></strong>（<strong>v6.2</strong> 引入），而且作用于 <strong><code class="c">WARN()</code> 不是 Oops</strong>：</p>
+<pre class="code" data-label="C"><code class="c">void check_panic_on_warn(const char *origin)
+{
+    if (panic_on_warn)
+        panic(&quot;%s: panic_on_warn set ...\n&quot;, origin);
+
+    limit = READ_ONCE(warn_limit);
+    if (atomic_inc_return(&amp;warn_count) &gt;= limit &amp;&amp; limit)
+        panic(&quot;%s: system warned too often (kernel.warn_limit is %d)&quot;, origin, limit);
+}
+</code></pre>
+<blockquote>
+<p>想要"第 N 次异常才 panic"的效果，得自己挂 <code class="c">panic_notifier_list</code> 或用 <code class="c">panic_on_taint</code>。</p>
+</blockquote>
+</details>
+<p><strong>Q8.</strong> Oops 末尾为什么要再打一遍寄存器？</p>
+<details>
+<summary>答案</summary>
+<p>两处"executive summary"设计，都是为了防止 <strong>Oops 正文被刷屏冲掉</strong>：</p>
+<ol>
+<li><code class="c">__die_header()</code> 里<strong>只存第一次</strong> Oops 的寄存器：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">    /* Save the regs of the first oops for the executive summary later. */
+    if (!die_counter)
+        exec_summary_regs = *regs;
+</code></pre>
+<ol start="2">
+<li><code class="c">oops_end()</code> 末尾再打一遍：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">    /* Executive summary in case the oops scrolled away */
+    __show_regs(&amp;exec_summary_regs, SHOW_REGS_ALL, KERN_DEFAULT);
+</code></pre>
+<ol start="3">
+<li><code class="c">page_fault_oops()</code> 里还单独补了一行 CR2：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">    /* Executive summary in case the body of the oops scrolled away */
+    printk(KERN_DEFAULT &quot;CR2: %016lx\n&quot;, address);
+</code></pre>
+<p>⭐ 实践意义：
+- <strong>只存第一次</strong>——因为第一次才是根因，后续都是连锁
+- 串口日志被大量其它 printk 冲掉时，<strong>末尾这份精简版是最后防线</strong>
+- 排查"连锁 Oops"时，<strong>直接翻到末尾看 exec summary</strong>，比在正文里找 <code class="c">[#1]</code> 快</p>
+</details>
+<p><strong>Q9.</strong> <code class="c">crash_kexec_post_notifiers</code> 该不该开？</p>
+<details>
+<summary>答案</summary>
+<p>两难，源码注释给了明确取舍：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>值</th>
+<th>顺序</th>
+<th>优点</th>
+<th>风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong>（默认）</td>
+<td><code class="c">__crash_kexec</code> → 停 CPU → notifiers → kmsg_dump</td>
+<td><strong>尽早抓 vmcore，最可靠</strong></td>
+<td>panic notifier 收集不到信息</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>停 CPU → notifiers → kmsg_dump → <code class="c">__crash_kexec</code></td>
+<td>能先拿到 dmesg / notifier 信息</td>
+<td>⭐ notifier 可能让崩溃内核更不稳，<strong>kdump 失败风险上升</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>源码原话：</p>
+<blockquote>
+<p><em>"since some panic_notifiers can make crashed kernel more unstable,
+it can increase risks of the kdump failure too."</em></p>
+</blockquote>
+<p><strong>建议</strong>：
+- 默认 <strong>0</strong>，除非你确实依赖某个 panic notifier（比如自定义的上报 / 掉电保存）
+- 如果主要是想留 dmesg，<strong>优先配 pstore/ramoops</strong>（走 <code class="c">kmsg_dump(KMSG_DUMP_PANIC)</code>），而不是开这个开关
+- HFT 场景：vmcore 的价值通常高于 notifier 信息，<strong>保持 0</strong></p>
+</details>
+<p><strong>Q10.</strong> 怎么用 <code class="c">CR2</code> 从 Oops 直接定位到结构体字段？</p>
+<details>
+<summary>答案</summary>
+<p>思路：<code class="c">CR2</code> = 触发缺页的线性地址。空指针解引用时，它等于 <strong>结构体内的偏移</strong>。</p>
+<pre class="code" data-label="code"><code class="c">CR2: 0000000000000010
+RIP: 0010:my_drv_ioctl+0x42/0x100 [mydrv]
+</code></pre>
+<p>⇒ 在 <code class="c">my_drv_ioctl</code> 里访问了某结构体<strong>偏移 0x10</strong> 的成员，而该结构体指针是 NULL。</p>
+<p>三种反推手段：</p>
+<pre class="code" data-label="shell"><code class="c"># 1) pahole（最方便，来自 dwarves 包）
+pahole -C my_dev mydrv.ko
+
+# 2) gdb（有 debuginfo 时）
+gdb mydrv.ko
+(gdb) p &amp;((struct my_dev *)0)-&gt;field_name
+(gdb) ptype /o struct my_dev        # 带偏移打印
+
+# 3) crash（有 vmcore 时）
+crash&gt; struct my_dev -o
+</code></pre>
+<p>然后倒查：<strong>哪条代码路径会把这个指针留成 NULL？</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>典型根因</th>
+<th>特征</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配失败未检查</td>
+<td><code class="c">kmalloc</code> 返回 NULL 直接用了</td>
+</tr>
+<tr>
+<td><code class="c">container_of</code> 用错</td>
+<td>偏移正好落在结构体后段</td>
+</tr>
+<tr>
+<td>生命周期问题</td>
+<td>对象已释放（<strong>KFENCE/KASAN 能抓到这类</strong>）</td>
+</tr>
+<tr>
+<td>并发竞态</td>
+<td>另一 CPU 置空了（看 <code class="c">panic_print=0x40</code> 拿其他 CPU 栈）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 这个技巧对<strong>自研驱动</strong>最有效——内核主线的结构体你还得查头文件，
+自研的 <code class="c">.ko</code> 只要保留一份带 debuginfo 的副本，<code class="c">pahole</code> 一跑就知道是哪个字段。</p>
+</blockquote>
+</details>
+<p><strong>Q11.</strong> 八个 CPU 同时 Oops，日志会变成什么样子？</p>
+<details>
+<summary>答案</summary>
+<p>不处理的话：<strong>八个 backtrace 交错输出，什么也看不清</strong>。</p>
+<p>v6.6 用 <code class="c">pause_on_oops</code> 串行化。核心是全局标志 <code class="c">pause_on_oops_flag</code>：</p>
+<pre class="code" data-label="C"><code class="c">    if (pause_on_oops_flag == 0) {
+        /* This CPU may now print the oops message */
+        pause_on_oops_flag = 1;
+    } else {
+        /* We need to stall this CPU */
+        ...
+    }
+</code></pre>
+<p>配合拦截点：</p>
+<pre class="code" data-label="C"><code class="c">bool oops_may_print(void) { return pause_on_oops_flag == 0; }
+</code></pre>
+<p><code class="c">show_fault_oops()</code> 第一行就是：</p>
+<pre class="code" data-label="C"><code class="c">    if (!oops_may_print())
+        return;
+</code></pre>
+<p>效果：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>角色</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第一个 Oops 的 CPU</td>
+<td>打印完整 Oops</td>
+</tr>
+<tr>
+<td>其他 CPU</td>
+<td>在 <code class="c">do_oops_enter_exit()</code> 里<strong>空转等待</strong> <code class="c">pause_on_oops</code> 秒</td>
+</tr>
+</tbody>
+</table></div>
+<p>配置：<code class="c">pause_on_oops=&lt;秒数&gt;</code>（内核参数）。</p>
+<blockquote>
+<p>⭐ 源码还有一句诚实吐槽：<em>"the CPU which is allowed to print ends up pausing for the right duration,
+whereas all the other CPUs pause for </em><em>twice as long</em><em>: once in <code class="c">oops_enter()</code>, once in <code class="c">oops_exit()</code>."</em>
+—— 因为 <code class="c">do_oops_enter_exit()</code> 被 enter 和 exit 各调一次。</p>
+<p>串口日志 / 慢控制台场景<strong>必配</strong>；默认值 0 表示不串行化。</p>
+</blockquote>
+</details>
+<p><strong>Q12.</strong> <code class="c">panic_cpu</code> 这个全局变量是干什么的？</p>
+<details>
+<summary>答案</summary>
+<p><strong>保证 panic 主体只被一个 CPU 执行一次。</strong></p>
+<pre class="code" data-label="C"><code class="c">    this_cpu = raw_smp_processor_id();
+    old_cpu  = atomic_cmpxchg(&amp;panic_cpu, PANIC_CPU_INVALID, this_cpu);
+
+    if (old_cpu != PANIC_CPU_INVALID &amp;&amp; old_cpu != this_cpu)
+        panic_smp_self_stop();
+</code></pre>
+<p>语义：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">old_cpu</code></th>
+<th>含义</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PANIC_CPU_INVALID</code> (-1)</td>
+<td>第一个进来的</td>
+<td>继续执行 panic 主体</td>
+</tr>
+<tr>
+<td><code class="c">== this_cpu</code></td>
+<td>从 <code class="c">nmi_panic()</code> 进来（它已把 <code class="c">panic_cpu</code> 设成本 CPU）</td>
+<td>也视为第一个，继续</td>
+</tr>
+<tr>
+<td>其他 CPU 号</td>
+<td>已经有别的 CPU 在 panic</td>
+<td>⭐ <code class="c">panic_smp_self_stop()</code> —— 停自己</td>
+</tr>
+</tbody>
+</table></div>
+<p>注释原话：</p>
+<blockquote>
+<p><em>"Only one CPU is allowed to execute the panic code from here. For multiple parallel
+invocations of panic, all other CPUs either stop themself or will wait until they are
+stopped by the 1st CPU with <code class="c">smp_send_stop()</code>."</em></p>
+</blockquote>
+<p>配套的第 1 步也很关键：</p>
+<pre class="code" data-label="C"><code class="c">    /*
+     * Disable local interrupts. This will prevent panic_smp_self_stop
+     * from deadlocking the first cpu that invokes the panic, since
+     * there is nothing to prevent an interrupt handler (that runs
+     * after setting panic_cpu) from invoking panic() again.
+     */
+    local_irq_disable();
+    preempt_disable_notrace();
+</code></pre>
+<blockquote>
+<p>⭐ 注意顺序：<strong>先关中断，再 cmpxchg <code class="c">panic_cpu</code></strong>。
+否则可能出现"设了 <code class="c">panic_cpu</code> 之后被中断打断，中断处理里又 <code class="c">panic()</code>"的死锁。</p>
+</blockquote>
 </details>
 </details>
 <hr />
