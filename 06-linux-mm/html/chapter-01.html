@@ -373,128 +373,620 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="s-1">
         <div class="sec-head"><div class="sec-no">1</div><h2>Ch 1 §1 入门指南 (Getting Started)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（顶层 <code class="c">Makefile</code> / <code class="c">Documentation/process/</code>）</p>
 </blockquote>
-<h3>1. 入门指南 (Getting Started)</h3>
-<h3>配置与编译</h3>
-<p>拿到内核源码后的典型第一步：</p>
-<pre class="code" data-label="shell"><code class="c">make config          # 交互式回答 Kconfig 选项（旧书时代常用）
-make bzImage         # 编译可引导内核镜像
-make modules         # 编译可加载模块
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答三个问题：</p>
+<ol>
+<li>拿到内核源码后，「配置 → 编译 → 出镜像」这条链在现代（v6.6）到底怎么走？</li>
+<li><code class="c">vmlinux</code>、<code class="c">bzImage</code>、<code class="c">Image</code> 这些编译产物<strong>各自是什么、区别在哪</strong>？</li>
+<li>有哪些<strong>信息获取渠道</strong>是内核开发者真正在用的？</li>
+</ol>
+<p>原书（2.4/2.6 时代）的 <code class="c">make config</code> / <code class="c">make bzImage</code> 命令名已经过时，但「<strong>先配置、再编内核+模块</strong>」这条主流程 20 年没变。本节把命令<strong>对齐到 v6.6</strong>。</p>
+<hr />
+<h2>1. 配置：从 <code class="c">.config</code> 到 autoconf</h2>
+<p>内核一切功能开关都收敛到一个文件：<strong><code class="c">.config</code></strong>。它不是给编译器看的，而是<strong>给 Kbuild 生成头文件用的输入</strong>。</p>
+<pre class="code" data-label="shell"><code class="c">make menuconfig      # 交互式 ncurses 菜单，最常用
+make olddefconfig    # 用现有 .config，新符号取默认值（脚本化/升级用）
+make defconfig       # 架构默认配置（arch/x86/configs/x86_64_defconfig）
+make localmodconfig  # 只启用当前已加载的模块（快速构建/嵌入式瘦身神器）
+make allyesconfig    # 全开（压测/API 覆盖率用，别拿来跑生产）
 </code></pre>
-<p>现代树更多用 <code class="c">make menuconfig</code> / <code class="c">make olddefconfig</code>；<strong>本书成书较早</strong>，命令名以原书为准，<strong>流程不变</strong>：<strong>先配置 → 再编内核 + 模块</strong>。</p>
-<h3>信息获取渠道</h3>
+<p><code class="c">make *config</code> 的实际动作（<code class="c">scripts/kconfig/</code>）：</p>
+<pre class="code" data-label="code"><code class="c">.config ──&gt; scripts/kconfig/conf ──&gt; include/generated/autoconf.h   （#define CONFIG_XXX）
+                                  ──&gt; include/config/auto.conf       （Makefile 用）
+                                  ──&gt; include/config/                （每个符号一个空文件，依赖追踪）
+</code></pre>
+<p>关键直觉：<strong><code class="c">CONFIG_XXX</code> 不是魔法，就是 <code class="c">autoconf.h</code> 里的 <code class="c">#define</code></strong>。源码里 <code class="c">#ifdef CONFIG_HIGHMEM</code> 之所以能在 x86_64 上消失，就是因为 x86_64 的 defconfig 没开这项 → <code class="c">autoconf.h</code> 里没有这个宏（Ch2 §4 高端内存那节的实证根源就在这）。</p>
+<hr />
+<h2>2. 编译：<code class="c">vmlinux</code> vs <code class="c">bzImage</code> vs <code class="c">Image</code></h2>
+<p>这是最容易被一句「<code class="c">make bzImage</code>」带过、但其实最该搞清楚的地方。<strong>产物层级</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>产物</th>
+<th>是什么</th>
+<th>格式</th>
+<th>谁来用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vmlinux</code></td>
+<td><strong>未压缩的完整内核镜像</strong></td>
+<td>ELF（带符号表，可 <code class="c">gdb</code>/<code class="c">objdump</code>/<code class="c">nm</code>）</td>
+<td>调试、反汇编、<code class="c">crash</code> 分析</td>
+</tr>
+<tr>
+<td><code class="c">vmlinux.bin</code></td>
+<td><code class="c">vmlinux</code> 去掉 ELF 头/符号的<strong>裸二进制</strong></td>
+<td>raw binary</td>
+<td><code class="c">objcopy</code> 中间产物</td>
+</tr>
+<tr>
+<td><code class="c">bzImage</code>（x86）</td>
+<td><strong>自解压的引导镜像</strong> = <code class="c">setup.bin</code> + 压缩内核</td>
+<td>引导器可加载</td>
+<td>交给 bootloader / <code class="c">qemu -kernel</code></td>
+</tr>
+<tr>
+<td><code class="c">Image</code>（arm64）</td>
+<td>未压缩裸内核</td>
+<td>raw binary</td>
+<td>arm64 引导（无自解压）</td>
+</tr>
+<tr>
+<td><code class="c">zImage</code>/<code class="c">uImage</code>（arm）</td>
+<td>压缩镜像 / 带 u-boot 头</td>
+<td>引导器可加载</td>
+<td>树莓派等老 arm</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">bzImage</code> 的生成链</strong>（<code class="c">arch/x86/boot/Makefile</code>）：</p>
+<pre class="code" data-label="code"><code class="c">vmlinux
+  └─ objcopy → vmlinux.bin                  # 去 ELF 头
+        └─ gzip   → vmlinux.bin.gz          # 压缩
+              └─ 嵌入 piggy.S → compressed/vmlinux   # 自解压 stub 把压缩内核&quot;背&quot;在身上
+                    └─ + setup.bin（实模式 setup 代码）
+                          └─ bzImage        # 引导器只需加载这一个文件
+</code></pre>
+<p>「bz」= <strong>b</strong>ig <strong>z</strong>Image（突破早期 zImage 的 512KB 上限，用<strong>分段加载</strong>）。bootloader 加载 bzImage 后，CPU 先跑实模式 <code class="c">setup.bin</code>（探测内存、进保护模式），再跳到保护模式下的自解压 stub，把 <code class="c">vmlinux.bin.gz</code> 解到 <code class="c">_text</code> 处开跑。</p>
+<p><strong>为什么 <code class="c">vmlinux</code> 要单独留一份？</strong> 因为它带符号表。<code class="c">crash</code> / <code class="c">gdb vmlinux</code> / <code class="c">objdump -dS</code> 全靠它定位函数和行号——<strong>读 <code class="c">mm/</code> 源码、追 oops 时的 <code class="c">EIP</code> 都要先有 vmlinux</strong>。这正是 Ch1 全书方法论（读代码、跟调用链）的物理前提。</p>
+<pre class="code" data-label="shell"><code class="c">make -j$(nproc)         # 并行编译（默认目标 = vmlinux + modules）
+make bzImage            # 只编引导镜像
+make modules            # 只编可加载模块（.ko）
+make modules_install    # 装到 /lib/modules/$(uname -r)/
+make install            # 装内核 + initramfs + 更新引导
+</code></pre>
+<hr />
+<h2>3. 交叉编译与嵌入式瘦身</h2>
+<p>嵌入式（树莓派 5 / 各种 SoC）和 HFT 网关机的两条实用路径：</p>
+<pre class="code" data-label="shell"><code class="c"># 交叉编译（x86 宿主机 → aarch64 目标）
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig   # 树莓派用 bcm2712_defconfig
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image modules
+
+# 瘦身：只保留&quot;当前机器正在用的&quot;模块，编译时间从小时级降到分钟级
+make localmodconfig      # 读 lsmod，自动裁剪 CONFIG
+</code></pre>
+<p><strong>HFT 关联</strong>：延迟敏感环境里，内核功能越少越省——少一个 <code class="c">CONFIG_XXX</code> 就少一段初始化、少一个可能抢 CPU 的中断/定时器。但<strong>剪配置要克制</strong>：<code class="c">localmodconfig</code> 会按「当前插着哪些硬件」裁剪，换网卡/换 CPU 后可能缺驱动。生产机的正确姿势是<strong>固化一份最小 defconfig 进版本库</strong>，而不是每次 <code class="c">localmodconfig</code>。</p>
+<hr />
+<h2>4. 信息获取渠道</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>资源</th>
+<th>定位</th>
 <th>用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>源码顶层 <strong><code class="c">README</code></strong></td>
-<td>版本说明、最简编译提示</td>
+<td>源码顶层 <code class="c">README</code></td>
+<td>版本、最简编译提示</td>
+<td>快速确认"这棵树能不能编"</td>
 </tr>
 <tr>
-<td><strong><code class="c">Documentation/</code></strong></td>
-<td>官方文档树（含 <code class="c">CodingStyle</code>、<code class="c">SubmittingPatches</code>）</td>
+<td><code class="c">Documentation/process/</code></td>
+<td>官方流程文档（<code class="c">coding-style.rst</code>、<code class="c">submitting-patches.rst</code>）</td>
+<td>提交补丁前必读（§5）</td>
 </tr>
 <tr>
-<td><a href="https://lwn.net/">LWN.net</a> <strong>Kernel Page</strong></td>
-<td>内核动向、深度文章</td>
+<td><code class="c">Documentation/</code> 其余</td>
+<td>各子系统文档（含 <code class="c">admin-guide/mm/</code>）</td>
+<td>查 NUMA / THP / swap 的行为语义</td>
 </tr>
 <tr>
-<td><strong>Kernelnewbies</strong></td>
-<td>新手向 FAQ、术语</td>
+<td><a href="https://lwn.net/">LWN.net</a></td>
+<td>深度技术文 + 内核动向</td>
+<td><strong>mm 方向必读</strong>，很多内核设计动机只有 LWN 讲得透</td>
 </tr>
 <tr>
-<td><strong>LKML</strong>（Linux Kernel Mailing List）</td>
+<td>Kernelnewbies</td>
+<td>新手 FAQ、术语表</td>
+<td>查术语、查历史</td>
+</tr>
+<tr>
+<td>LKML</td>
 <td>补丁讨论主战场</td>
+<td>看某个补丁<strong>为什么被拒/怎么改</strong></td>
 </tr>
 <tr>
-<td><strong>Kernel Traffic</strong>（及类似摘要站）</td>
-<td>邮件列表摘要，降低订阅全量 LKML 的成本</td>
+<td><a href="https://lore.kernel.org/">lore.kernel.org</a></td>
+<td>LKML 归档（现代替代）</td>
+<td>按 Message-ID 查完整讨论线程</td>
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p>原书提的 <strong>Kernel Traffic</strong> 早已停更，现代等价物是 <strong>LWN + lore.kernel.org 归档</strong>——这条要更新认知，别去搜 Kernel Traffic。</p>
+</blockquote>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>追 oops 栈回溯</td>
+<td>需要带符号的 <code class="c">vmlinux</code> 才能把地址翻译成函数+行号</td>
+</tr>
+<tr>
+<td>网关机启动要快、内存要省</td>
+<td><code class="c">localmodconfig</code> 裁剪 + 固化最小 defconfig</td>
+</tr>
+<tr>
+<td>交叉编译到 arm64 网关/采集卡</td>
+<td><code class="c">CROSS_COMPILE=aarch64-linux-gnu-</code> + <code class="c">Image</code>（非 x86 的 bzImage）</td>
+</tr>
+<tr>
+<td>读 <code class="c">mm/</code> 源码前</td>
+<td>先有个能编译的树 + vmlinux + Elixir（§3），缺一不可</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 源码管理</a>：补丁怎么生成、怎么管理</li>
+<li><a href="chapter-14.html#s-3">§3 浏览代码</a>：拿什么工具读这棵编译好的树</li>
+<li>高端内存实证：<a href="chapter-14.html#s-4">Ch2 §4 高端内存</a>（<code class="c">CONFIG_HIGHMEM</code> 由 defconfig 决定）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">make olddefconfig</code> 和 <code class="c">make defconfig</code> 差在哪？</strong>
+A：<code class="c">defconfig</code> 从<strong>架构默认配置</strong>开始（忽略你当前的 <code class="c">.config</code>）；<code class="c">olddefconfig</code> 基于<strong>你现有的 <code class="c">.config</code></strong>，只对新出现的 CONFIG 符号取默认值。升级内核版本时用 <code class="c">olddefconfig</code> 能<strong>保留你之前的所有定制</strong>，用 <code class="c">defconfig</code> 会全部丢掉。</p>
+<p><strong>Q2：<code class="c">vmlinux</code> 和 <code class="c">bzImage</code> 到底哪个能直接跑？</strong>
+A：都「能跑」，但场景不同。<code class="c">bzImage</code> 是<strong>引导器能加载</strong>的格式（自解压 + setup 代码），<code class="c">qemu -kernel bzImage</code> 直接起。<code class="c">vmlinux</code> 是<strong>完整 ELF</strong>，引导器不认，但它是<strong>调试的根</strong>——<code class="c">gdb</code>、<code class="c">crash</code>、<code class="c">objdump</code> 都用它。一句话：<strong>跑用 bzImage，看用 vmlinux</strong>。</p>
+<p><strong>Q3：为什么 <code class="c">localmodconfig</code> 能大幅缩短编译时间？</strong>
+A：普通 <code class="c">defconfig</code> 几乎全开，会编进海量<strong>你永远用不到的驱动</strong>（几百个网卡、声卡、文件系统模块）。<code class="c">localmodconfig</code> 读 <code class="c">/proc/modules</code>（<code class="c">lsmod</code> 的数据源），只保留「当前已加载」的模块对应的 CONFIG，把几千个模块砍到几十个，编译量断崖式下降。</p>
+<p><strong>Q4：<code class="c">.config</code> 里改一个符号，重新 <code class="c">make</code> 会怎样？</strong>
+A：Kbuild 用 <code class="c">include/config/</code> 下每个符号一个空文件做<strong>依赖追踪</strong>，<code class="c">.config</code> 变了会<strong>只重编受影响的目标</strong>（增量编译），不是全量重来。但如果改了影响面极大的符号（如 <code class="c">CONFIG_SMP</code>），几乎所有文件都会重编——这就是为什么改这类符号后要预留编译时间。</p>
+<p><strong>Q5：嵌入式交叉编译为什么要 <code class="c">ARCH=arm64</code> 而不是直接 <code class="c">make</code>？</strong>
+A：<code class="c">ARCH</code> 决定 Kbuild 进哪个 <code class="c">arch/</code> 目录、用哪套 <code class="c">arch/arm64/Makefile</code> 规则和 defconfig；<code class="c">CROSS_COMPILE</code> 前缀把工具链从 <code class="c">gcc</code> 换成 <code class="c">aarch64-linux-gnu-gcc</code>。漏了任何一个，都会编出「宿主机的 x86 内核」而不是目标板能跑的内核——这错误新手极常见。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-2">
         <div class="sec-head"><div class="sec-no">2</div><h2>Ch 1 §2 源码管理 (Managing the Source)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">git format-patch</code> / <code class="c">git am</code> / <code class="c">git send-email</code> 工作流）</p>
 </blockquote>
-<h3>2. 源码管理 (Managing the Source)</h3>
-<p>内核协作以 <strong>补丁 (patch)</strong> 为主——比传整份源码 <strong>小、可审、可叠加</strong>。</p>
-<h3><code class="c">diff</code> / <code class="c">patch</code></h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答三个问题：</p>
+<ol>
+<li>一个补丁文件到底<strong>长什么样</strong>——unified diff 的每个字段是干嘛的？</li>
+<li>原书的 <code class="c">diff</code>/<code class="c">patch</code>/PatchSet 在现代 git 工作流里的<strong>等价物</strong>是什么？</li>
+<li>为什么说「可复现的内核树 = base + ordered patches + config」这个思路至今不过时？</li>
+</ol>
+<p>内核协作以<strong>补丁 (patch)</strong> 为单位——比传整份源码<strong>小、可审、可叠加</strong>。理解补丁的物理形态，是后面「读代码、提交补丁」两件事的共同地基。</p>
+<hr />
+<h2>1. unified diff 解剖</h2>
+<p><code class="c">diff -u old.c new.c</code> 输出的就是补丁文件。逐字段拆开看：</p>
+<pre class="code" data-label="code"><code class="c">--- a/mm/page_alloc.c  2026-01-01 00:00:00.000000000 +0000   ← 旧文件（---）
++++ b/mm/page_alloc.c  2026-01-01 00:00:00.000000000 +0000   ← 新文件（+++）
+@@ -1200,7 +1200,8 @@ void __alloc_pages(...)    ← hunk 头：旧 1200 起 7 行 / 新 1200 起 8 行
+         gfp_mask &amp;= gfp_allowed_mask;        ← 上下文行（空格开头，定位用）
+-        return NULL;                         ← 删除行（- 开头）
++        if (unlikely(!node_online(nid)))     ← 新增行（+ 开头）
++                return NULL;
+         page = get_page_from_freelist(...);  ← 上下文行
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>工具</th>
-<th>作用</th>
+<th>字段</th>
+<th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">diff</code></strong></td>
-<td>生成 <strong>unified diff</strong> 格式的差异文件</td>
+<td><code class="c">---</code> / <code class="c">+++</code></td>
+<td>旧/新文件的路径（<code class="c">a/</code>、<code class="c">b/</code> 前缀是 git 的惯例）</td>
 </tr>
 <tr>
-<td><strong><code class="c">patch</code></strong></td>
-<td>把 diff <strong>应用到</strong> 源码树</td>
+<td><code class="c">@@ -L,C +L,C @@</code></td>
+<td><strong>hunk 头</strong>：旧文件从第 L 行起 C 行、新文件从第 L 行起 C 行；后面跟<strong>所在函数名</strong>（<code class="c">-p</code> 开启）</td>
+</tr>
+<tr>
+<td>空格开头</td>
+<td><strong>上下文行</strong>，两版都有，帮助 <code class="c">patch</code> 定位</td>
+</tr>
+<tr>
+<td><code class="c">-</code> 开头</td>
+<td>旧文件有、要删掉的行</td>
+</tr>
+<tr>
+<td><code class="c">+</code> 开头</td>
+<td>新文件有、要加上的行</td>
 </tr>
 </tbody>
 </table></div>
-<p>日常习惯：<code class="c">diff -u old new &gt; fix.patch</code>，在干净树里 <code class="c">patch -p1 &lt; fix.patch</code>。</p>
-<h3>PatchSet（书中工具 · 概念仍有用）</h3>
-<p><strong>PatchSet</strong>：用一份 <strong>规范文件</strong> 声明——基于 <strong>哪一版内核</strong>、<strong>依次打哪些补丁</strong>、用 <strong>哪份 <code class="c">.config</code></strong>，减少手工 <code class="c">patch</code> 链。</p>
-<blockquote>
-<p>今天等价物：<strong>git</strong> 分支 / <code class="c">git am</code> 系列、<code class="c">quilt</code>、发行版 <strong>patch 队列</strong>。本书工具可能过时，<strong>「可复现的内核树 = base + ordered patches + config」</strong> 思路不过时。</p>
-</blockquote>
+<p><strong>关键直觉：补丁是「按行做差」的结果，不是「整文件替换」。</strong> 所以它小、能审、能叠加——同一个函数里不同人改不同行，补丁之间互不冲突。这就是为什么内核能用「邮件发补丁」协作几十年。</p>
+<pre class="code" data-label="shell"><code class="c">diff -u old.c new.c &gt; fix.patch      # 生成
+patch -p1 &lt; fix.patch                # 应用（-p1 剥掉 a/ b/ 前缀）
+patch -p1 --dry-run &lt; fix.patch      # 只测试能否干净打上，不改文件
+patch -p1 -R &lt; fix.patch             # 反向撤销（revert）
+</code></pre>
+<hr />
+<h2>2. git 时代的等价物</h2>
+<p>原书的 <code class="c">diff</code>/<code class="c">patch</code> 手工流，在 git 里有更稳的对应物：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书</th>
+<th>git 等价物</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">diff -u</code></td>
+<td><code class="c">git diff</code> / <code class="c">git format-patch</code></td>
+<td><code class="c">git diff</code> 看未提交改动；<code class="c">format-patch</code> 把提交转成<strong>带 commit message 的补丁</strong></td>
+</tr>
+<tr>
+<td><code class="c">patch -p1</code></td>
+<td><code class="c">git apply</code> / <code class="c">git am</code></td>
+<td><code class="c">apply</code> 只打内容不打提交历史；<code class="c">am</code> 连提交信息一起还原</td>
+</tr>
+<tr>
+<td>PatchSet（规范文件）</td>
+<td><code class="c">git branch</code> + <code class="c">.config</code> 进版本库</td>
+<td>一个分支 = 一条补丁链</td>
+</tr>
+<tr>
+<td>手工邮件</td>
+<td><code class="c">git send-email</code></td>
+<td>把 <code class="c">format-patch</code> 产出的补丁直接发到列表</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">format-patch</code> → <code class="c">am</code> 的完整闭环：</strong></p>
+<pre class="code" data-label="shell"><code class="c">git format-patch -3                     # 把最近 3 个提交转成 0001/0002/0003 三个 .patch
+git format-patch -o patches/ main..HEAD # 导出 main 之后的所有提交
+git am patches/*.patch                  # 在另一棵树/另一个人那里按序还原，保留 commit message + author
+</code></pre>
+<p><code class="c">format-patch</code> 产出的补丁是 <strong>mbox 格式</strong>：一个文件里多个邮件，每个以 <code class="c">From &lt;sha1&gt; Mon Sep 17...</code> 开头，<code class="c">Subject:</code> 是提交标题，正文是 diff。所以它<strong>既能 <code class="c">git am</code> 应用，也能直接 <code class="c">git send-email</code> 发出</strong>——补丁和邮件在此合二为一，这是理解「内核=邮件列表驱动」的关键。</p>
+<hr />
+<h2>3. PatchSet 的现代转世：quilt 与 patch 队列</h2>
+<p>原书的 <strong>PatchSet</strong> 用一份规范文件声明「基于哪版内核 + 依次打哪些补丁 + 用哪份 config」，本质是<strong>把一条补丁链变成可复现的构建</strong>。今天的等价物：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>机制</th>
+<th>谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>quilt</strong></td>
+<td><code class="c">series</code> 文件列补丁顺序，<code class="c">push</code>/<code class="c">pop</code> 进栈出栈</td>
+<td>Debian 内核包维护</td>
+</tr>
+<tr>
+<td><strong>git 分支</strong></td>
+<td>每个补丁一个 commit，历史即补丁链</td>
+<td>主流</td>
+</tr>
+<tr>
+<td><strong>发行版 src.rpm / deb</strong></td>
+<td>base 源码 + <code class="c">.patch</code> 队列 + config</td>
+<td>红帽/Debian</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">quilt new fix-vmalloc.patch   # 新建一个补丁
+quilt add mm/vmalloc.c        # 声明要改的文件
+# ... 编辑文件 ...
+quilt refresh                 # 把改动收进当前补丁
+quilt series                  # 看整条补丁链的顺序
+</code></pre>
+<p><strong>核心思路不过时的部分</strong>：「<strong>可复现的内核树 = base 版本 + 有序补丁 + 一份 config</strong>」。无论 git 还是 quilt，本质都是把这三个要素固化下来，让任何人能<strong>从同一 base 重建出逐位一致的内核</strong>。</p>
+<hr />
+<h2>4. 嵌入式 / HFT 关联：vendor BSP 补丁链</h2>
+<p>这条链在嵌入式里是<strong>日常刚需</strong>，不是理论：</p>
+<pre class="code" data-label="code"><code class="c">上游 v6.6 (torvalds/linux)
+  ├─ SoC 厂商补丁（树莓派 bcm2712、NXP i.MX、瑞芯微 rk...）
+  │     └─ 有时几百个补丁，vendor 用 quilt/git 维护
+  ├─ 板级 BSP 补丁（网卡/电源/时钟的 out-of-tree 改动）
+  └─ 自己的性能补丁（锁优化、中断亲和、大页策略）
+        └─ 最终出厂的 defconfig
+</code></pre>
+<p><strong>HFT 关联</strong>：你的网关机/采集卡内核，通常就是「上游 + vendor 补丁 + 自己的延迟优化补丁」这条链。<strong>把这条链版本化</strong>（git 分支 + defconfig 入库）后，才能：
+1. 上游升版时<strong>逐补丁 rebase</strong>，快速定位「哪个 vendor 补丁和 6.7 冲突了」；
+2. <strong>回归定位</strong>——延迟突然变差时，二分这条补丁链，找出是哪一笔引入的。</p>
+<p>这正是「可复现内核树」在 HFT 里的直接价值：<strong>性能可复现，才能性能可调试</strong>。</p>
+<hr />
+<h2>5. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-3">§3 浏览代码</a>：拿到可复现的树后，怎么高效读它</li>
+<li><a href="chapter-14.html#s-5">§5 提交补丁</a>：<code class="c">format-patch</code> 产出的补丁怎么发、怎么过审</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">git apply</code> 和 <code class="c">git am</code> 到底差在哪？</strong>
+A：<code class="c">git apply</code> 只把 diff <strong>内容</strong>打到工作区，<strong>不产生提交</strong>（等价于 <code class="c">patch -p1</code>，但更严格、支持二进制）。<code class="c">git am</code> 把 mbox 格式的补丁<strong>连提交信息、作者、时间一起</strong>还原成 commit。发来的补丁要保留提交链用 <code class="c">am</code>，只想看改动效果用 <code class="c">apply</code>。</p>
+<p><strong>Q2：hunk 头 <code class="c">@@ -1200,7 +1200,8 @@</code> 里的数字错了会怎样？</strong>
+A：<code class="c">patch</code> 靠这些数字<strong>定位</strong>，不是硬性要求——有上下文行兜底，稍有偏移也能<strong>模糊匹配</strong>打上。数字严重对不上时会输出 <code class="c">Hunk #1 FAILED</code> 并生成 <code class="c">.rej</code> 文件，让开发者手工处理冲突。这就是为什么补丁要打在<strong>干净的、版本一致的 base</strong> 上。</p>
+<p><strong>Q3：为什么补丁要 <code class="c">-p1</code> 而不是 <code class="c">-p0</code>？</strong>
+A：git 的补丁路径带 <code class="c">a/</code>、<code class="c">b/</code> 前缀（<code class="c">a/mm/page_alloc.c</code>）。<code class="c">-p1</code> 剥掉第一层目录（<code class="c">a/</code>），得到真实路径 <code class="c">mm/page_alloc.c</code>；<code class="c">-p0</code> 不剥，会把文件打到 <code class="c">a/mm/...</code> 这种不存在的路径。手工 <code class="c">diff -u</code> 生成的补丁没有 <code class="c">a/</code> 前缀，用 <code class="c">-p0</code>。</p>
+<p><strong>Q4：<code class="c">git format-patch</code> 和 <code class="c">git diff &gt; x.patch</code> 有什么本质区别？</strong>
+A：<code class="c">git diff &gt; x.patch</code> 只是<strong>裸 diff</strong>，没有提交标题、作者、commit message，别人 <code class="c">am</code> 时不知道「这是谁、为什么改」。<code class="c">format-patch</code> 把<strong>整个提交（含 message + author + 时间）</strong>序列化成邮件格式，是发给上游评审的<strong>正确形态</strong>。</p>
+<p><strong>Q5：vendor 的几百个补丁，为什么不能直接 rebase 到新内核？</strong>
+A：vendor 补丁经常<strong>依赖特定 base 版本的内部函数/结构体</strong>，上游一改就冲突。所以嵌入式升级是「<strong>逐补丁 rebase</strong>」——一个个 cherry-pick 上去，冲突的重新适配，而不是整条链硬 rebase。这也是为什么「base + ordered patches」要<strong>显式记录顺序和 base 版本</strong>。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-3">
         <div class="sec-head"><div class="sec-no">3</div><h2>Ch 1 §3 浏览代码 (Browsing the Code)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">cscope</code> / <code class="c">ctags</code> / <code class="c">scripts/clang-tools/gen_compile_commands.py</code>）</p>
 </blockquote>
-<h3>3. 浏览代码 (Browsing the Code)</h3>
-<p>内核函数常 <strong>跨文件、跨 <code class="c">arch/</code></strong>，纯文本搜索容易迷路。原书推荐：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答三个问题：</p>
+<ol>
+<li>内核函数<strong>跨文件、跨 <code class="c">arch/</code>、跨宏展开</strong>，纯 <code class="c">grep</code> 为什么不够、会漏什么？</li>
+<li><code class="c">cscope</code> / <code class="c">ctags</code> / clangd 三套工具<strong>各自解决什么问题、命令怎么用</strong>？</li>
+<li>什么是<strong>调用图 (call graph)</strong>，什么时候才需要它？</li>
+</ol>
+<p>「会找定义、能跟调用链」是读 <code class="c">mm/</code> 的元能力——没有它，后面 Ch2 起的所有源码都读不动。</p>
+<hr />
+<h2>1. 为什么 <code class="c">grep</code> 不够</h2>
+<p>内核里同一个符号常有<strong>多个定义</strong>（宏 + 内联函数 + 不同 <code class="c">arch/</code> 的弱符号），<code class="c">grep</code> 只能告诉你「这名字在哪出现」，分不清<strong>定义 vs 引用 vs 宏展开</strong>：</p>
+<pre class="code" data-label="C"><code class="c">// mm/page_alloc.c 里想找 __alloc_pages 的所有&quot;调用者&quot;
+grep -rn &quot;__alloc_pages&quot; mm/ | wc -l    # 可能几百行，混着定义、注释、文档、不同重载
+</code></pre>
+<p>真正的需求是：<strong>点一下符号 → 跳到唯一定义；再查 → 列出所有真引用</strong>。这就是交叉引用工具干的事。</p>
+<hr />
+<h2>2. 三套工具的分工</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>工具</th>
-<th>做什么</th>
-<th>今日常用替代</th>
+<th>定位</th>
+<th>擅长</th>
+<th>局限</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>LXR</strong> (Linux Cross Referencing)</td>
-<td>Web 上浏览源码；标识符 <strong>超链接</strong> 到定义/引用</td>
-<td><a href="https://elixir.bootlin.com/linux/latest/source">elixir.bootlin.com</a> · IDE <strong>LSP/clangd</strong> · <code class="c">cscope</code>/<code class="c">ctags</code></td>
+<td><strong>cscope</strong></td>
+<td>本地交叉引用数据库</td>
+<td>找「谁调用了我、我调用了谁」、找符号<strong>所有引用</strong></td>
+<td>纯文本匹配，不理解类型/宏展开</td>
 </tr>
 <tr>
-<td><strong>CodeViz</strong>（作者为写书开发）</td>
-<td>生成 <strong>函数调用图 (call graph)</strong>，一眼看子系统结构</td>
-<td><strong>Doxygen Graph</strong> · <strong>CodeCompass</strong> · 手工 <code class="c">grep</code> + 画图</td>
+<td><strong>ctags</strong></td>
+<td>标签跳转</td>
+<td><code class="c">vim</code> 里 <code class="c">Ctrl-]</code> 秒跳<strong>定义</strong></td>
+<td>只索引定义，查引用弱</td>
+</tr>
+<tr>
+<td><strong>clangd / LSP</strong></td>
+<td>语义级 IDE 后端</td>
+<td><strong>类型感知</strong>：跳定义、找引用、补全、宏展开、诊断</td>
+<td>需要 <code class="c">compile_commands.json</code>，首次建库慢</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>第一次读 <code class="c">mm/</code>：</strong> 先能在浏览器里 <strong>点函数名跳转</strong>，比硬啃 <code class="c">vim</code> 省一半时间。</p>
+<hr />
+<h2>3. cscope / ctags 实战</h2>
+<pre class="code" data-label="shell"><code class="c"># 建索引（在源码树根）
+cscope -R -b            # 递归扫 .c/.h/.S，生成 cscope.out 数据库
+ctags -R .              # 生成 tags 文件
+
+# cscope 查询（-d 免重建、-L 行模式、数字=查询类型）
+cscope -d -L3 __alloc_pages      # 3=找所有引用
+cscope -d -L0 __alloc_pages      # 0=找定义
+cscope -d -L2 __alloc_pages      # 2=找被本符号调用的函数
+cscope -d -L1 free_pages         # 1=找调用本符号的函数
+
+# vim 里 ctags 跳转
+vim mm/page_alloc.c
+# 光标停在 __alloc_pages 上，Ctrl-] 跳到定义，Ctrl-T 跳回
+</code></pre>
+<p>查询类型速查（<code class="c">cscope -d</code> 交互界面也有对应菜单）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th style="text-align: center;">编号</th>
+<th>查询</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">0</td>
+<td>Find this C symbol</td>
+<td>找定义</td>
+</tr>
+<tr>
+<td style="text-align: center;">1</td>
+<td>Find functions called by this function</td>
+<td>找「我调谁」（下钻）</td>
+</tr>
+<tr>
+<td style="text-align: center;">2</td>
+<td>Find functions calling this function</td>
+<td>找「谁调我」（上溯）</td>
+</tr>
+<tr>
+<td style="text-align: center;">3</td>
+<td>Find this text string / all references</td>
+<td>找所有出现</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>4. clangd：类型感知的现代路线</h2>
+<p><code class="c">cscope</code> 是<strong>文本匹配</strong>，遇到宏、重载、<code class="c">static inline</code> 多个同名函数会「傻」。clangd 用<strong>编译器前端</strong>做语义分析，理解类型、宏展开、<code class="c">#ifdef</code> 生效分支：</p>
+<pre class="code" data-label="shell"><code class="c"># 第一步：生成 compile_commands.json（关键！没有它 clangd 是瞎子）
+scripts/clang-tools/gen_compile_commands.py   # 从 .cmd 文件重建每个编译单元的精确命令
+
+# 第二步：clangd 读到 compile_commands.json 后
+#   - 跳定义：精确到&quot;此刻生效的那个定义&quot;（不是 grep 命中的第一个）
+#   - 找引用：只列&quot;真的会执行到&quot;的引用
+#   - 宏展开：CONFIG_HIGHMEM 到底是 1 还是 0，直接看展开结果
+</code></pre>
+<p><strong>为什么需要 <code class="c">compile_commands.json</code>？</strong> 内核每个 <code class="c">.c</code> 的编译命令都不同（不同 <code class="c">-D</code>、<code class="c">-I</code>、<code class="c">arch</code> 下不同头文件）。clangd 必须知道「这个文件是按哪条命令编的」，才能还原出<strong>正确的宏环境和头文件路径</strong>。<code class="c">gen_compile_commands.py</code> 就是把这信息从 <code class="c">make</code> 留下的 <code class="c">.cmd</code> 文件里挖出来。</p>
+<p><strong>实际搭配建议</strong>：日常用 <strong>Elixir（在线）+ clangd（本地）</strong> 双轨——Elixir 零配置、随时查；clangd 做<strong>深挖调用链 + 看宏展开</strong>。<code class="c">cscope</code> 留着做「快速全仓引用」的兜底。</p>
+<hr />
+<h2>5. 调用图：什么时候才需要</h2>
+<p>原书的 <strong>CodeViz</strong>（作者为写书开发）生成<strong>函数调用图</strong>，一眼看子系统结构。它已经停止维护，现代替代：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>输出</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>clangd call hierarchy</strong></td>
+<td>编辑器里展开「谁调我/我调谁」树</td>
+<td>日常跟链</td>
+</tr>
+<tr>
+<td><strong>Doxygen + Graphviz</strong></td>
+<td>静态调用图（有向图）</td>
+<td>出文档、画架构</td>
+</tr>
+<tr>
+<td><strong>手工 <code class="c">grep</code> + ASCII 图</strong></td>
+<td>精简版调用链</td>
+<td><strong>本仓库笔记的标准做法</strong></td>
+</tr>
+<tr>
+<td><strong>ftrace / perf</strong></td>
+<td><strong>运行时</strong>真调用图</td>
+<td>调性能、找热路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键判断</strong>：静态调用图在<strong>「理解结构」</strong>时有用，但内核调用链<strong>运行时才定型</strong>（函数指针、回调、per-CPU 路径），静态图常画出「不会发生的边」。所以<strong>调性能时信 <code class="c">ftrace</code>/<code class="c">perf</code>，不信静态图</strong>——这条对 HFT 尤其重要。</p>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>追一条延迟尖刺的完整路径</td>
+<td>clangd call hierarchy 下钻 + <code class="c">ftrace</code> 运行时验证</td>
+</tr>
+<tr>
+<td>判断 <code class="c">CONFIG_XXX</code> 到底开没开</td>
+<td>clangd 宏展开（比翻 <code class="c">.config</code> 更直接看生效分支）</td>
+</tr>
+<tr>
+<td>快速定位「谁调了 <code class="c">__alloc_pages</code> 导致页分配抖动」</td>
+<td><code class="c">cscope -d -L2 __alloc_pages</code> 全仓上溯</td>
+</tr>
+<tr>
+<td>理解 <code class="c">mm/</code> 一个函数的作用</td>
+<td>先 Elixir 跳定义，再查引用，别硬啃单个文件</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-4">§4 阅读代码的策略</a>：工具备齐了，从哪个 FILE 开始读</li>
+<li>源码管理：<a href="chapter-14.html#s-2">§2 源码管理</a>（读的这棵树是怎么来的）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">cscope</code> 和 <code class="c">ctags</code> 都是「跳转」，为什么要两个？</strong>
+A：分工不同。<code class="c">ctags</code> 只做<strong>「跳定义」</strong>这一件事，轻量、快；<code class="c">cscope</code> 做<strong>「交叉引用」</strong>——找谁调我、我调谁、所有引用。读内核「跟调用链」靠 cscope，vim 里日常「跳到函数定义」靠 ctags 更顺手。</p>
+<p><strong>Q2：clangd 为什么必须要有 <code class="c">compile_commands.json</code>，而 cscope 不用？</strong>
+A：clangd 是<strong>语义分析</strong>，必须知道每个文件的确切编译参数（宏定义、头文件路径、<code class="c">arch</code>）才能还原真实代码，否则连 <code class="c">#ifdef CONFIG_XXX</code> 都判断不了。cscope 是<strong>纯文本匹配</strong>，不需要编译上下文，但代价是不懂类型和宏。</p>
+<p><strong>Q3：<code class="c">cscope -d -L2</code> 和 <code class="c">-L1</code> 查出来的方向相反，容易记混，怎么记？</strong>
+A：想象箭头。<code class="c">-L2</code> = 「本函数<strong>调用</strong>了谁」→ 从本函数<strong>出发往下</strong>找；<code class="c">-L1</code> = 「谁<strong>调用</strong>了本函数」→ <strong>往上</strong>找调用者。追「这函数被谁触发」用 1，追「这函数内部会走到哪」用 2。</p>
+<p><strong>Q4：静态调用图（Doxygen 之类）为什么可能画出「不会发生的边」？</strong>
+A：因为很多调用是<strong>函数指针 / 回调 / per-CPU 分派</strong>，静态分析只能看到「这里有个指针可能指向 A、B、C」，于是把三条边都画出来，但运行时只有一条真发生。所以结构理解可以看静态图，<strong>性能结论必须用 <code class="c">ftrace</code>/<code class="c">perf</code> 的运行时图验证</strong>。</p>
+<p><strong>Q5：读 <code class="c">mm/</code> 时，Elixir 和本地 clangd 各什么时候用？</strong>
+A：<strong>快速查一个符号</strong>（「这个函数在哪定义」）用 Elixir，零配置、开网页即用；<strong>深挖一条调用链、看宏展开、确认 <code class="c">CONFIG</code> 分支</strong>用本地 clangd，因为它有完整的编译上下文。两者不是替代关系，是「速查 vs 深挖」的分层。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>Ch 1 §4 阅读代码的策略 (Reading the Code)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/oom_kill.c</code> / <code class="c">mm/vmalloc.c</code> / <code class="c">mm/page_alloc.c</code> / <code class="c">mm/mmap.c</code>）</p>
 </blockquote>
-<h3>4. 阅读代码的策略 (Reading the Code)</h3>
-<h3>为什么不从「初始化代码」读起</h3>
-<p>很多老手建议从 <strong>boot / init</strong> 读，但作者认为 <strong>对 VM 不优</strong>——初始化 <strong>高度依赖架构</strong>（<code class="c">arch/x86/</code>、<code class="c">setup_arch</code>…），容易陷进硬件细节。</p>
-<h3>作者推荐的 VM 阅读路线（由简入深）</h3>
-<p>掌握下面四块后，<code class="c">mm/</code> 里反复出现的模式会清晰很多：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答一个核心问题：<strong>第一次打开 <code class="c">mm/</code>，从哪个文件开始读？</strong></p>
+<p>作者给出了一条「由简入深」的路线，并明确反对从初始化代码读起。理解「为什么是这个顺序」，比记住「先读哪个文件」重要得多——因为它揭示的是<strong>每个子系统的耦合度与独立性</strong>。</p>
+<hr />
+<h2>1. 为什么不从「初始化代码」读起</h2>
+<p>很多老手建议从 boot / init 读（<code class="c">start_kernel()</code> → <code class="c">setup_arch()</code> → <code class="c">paging_init()</code>），但作者认为<strong>对 VM 不优</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>从 init 读</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">arch/x86/kernel/setup.c</code> 的 <code class="c">setup_arch()</code></td>
+<td>高度依赖架构，<code class="c">EFI</code>、<code class="c">e820</code>、<code class="c">SRAT</code>（NUMA 表）混在一起</td>
+</tr>
+<tr>
+<td><code class="c">paging_init()</code></td>
+<td>依赖页表、<code class="c">memblock</code>、内存模型的<strong>前置知识</strong>，而这些恰恰是你还没读的</td>
+</tr>
+<tr>
+<td>早期分配</td>
+<td>会撞上 <code class="c">memblock</code>（Ch5）这种<strong>临时分配器</strong>，不是最终 VM 的常态</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心判断：init 代码是「所有子系统第一次协同」的现场，耦合度最高。</strong> 新手一头扎进去，会被架构细节和「还没建立的概念」同时淹没。作者的选择是<strong>先读耦合度低、独立性强的子系统</strong>，把基础概念逐个点亮，再回头去看 init 怎么把它们串起来。</p>
+<hr />
+<h2>2. 作者推荐的 VM 阅读路线（由简入深）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -502,37 +994,37 @@ make modules         # 编译可加载模块
 <th>主题</th>
 <th>源码入口</th>
 <th>全书章节</th>
-<th>为什么先读它</th>
+<th>为什么先读它（耦合度视角）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td style="text-align: center;"><strong>1</strong></td>
-<td><strong>OOM（内存耗尽）管理器</strong></td>
+<td><strong>OOM 管理器</strong></td>
 <td><code class="c">mm/oom_kill.c</code></td>
 <td><a href="chapter-13.html#ch-13">Ch 13</a></td>
-<td>牵涉面广但逻辑相对 <strong>温和</strong>，是窥见 VM 一角的好入口</td>
+<td>牵涉面广但逻辑<strong>温和</strong>：不碰页表、不碰 slab，只做「选一个进程杀掉」，是窥见 VM 一角的低门槛入口</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>2</strong></td>
 <td><strong>非连续内存分配器</strong></td>
 <td><code class="c">mm/vmalloc.c</code></td>
 <td><a href="chapter-07.html#ch-7">Ch 7</a></td>
-<td>功能 <strong>基本封装在一个文件</strong>，较独立</td>
+<td>功能<strong>基本封装在一个文件</strong>，独立性强，且会用页表（学完 Ch3 可回头深化）</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>3</strong></td>
 <td><strong>物理页分配器</strong></td>
 <td><code class="c">mm/page_alloc.c</code></td>
 <td><a href="chapter-06.html#ch-6">Ch 6</a></td>
-<td>代码 <strong>相对集中</strong>；伙伴系统 / zone 都在这里</td>
+<td>代码<strong>相对集中</strong>：伙伴系统、zone、水位都在这里，是 VM 的「供血心脏」</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>4</strong></td>
 <td><strong>VMA 与进程内存区域</strong></td>
 <td><code class="c">mm/mmap.c</code> 等</td>
 <td><a href="chapter-04.html#ch-4">Ch 4</a></td>
-<td>与用户态 <code class="c">mmap</code>、进程地址空间直接相关</td>
+<td>与用户态 <code class="c">mmap</code>、进程地址空间直接相关，<strong>贯通 syscall 到页表</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -541,9 +1033,53 @@ make modules         # 编译可加载模块
   oom_kill.c  →  vmalloc.c  →  page_alloc.c  →  mmap / VMA (Ch 4)
        │              │              │                    │
      Ch 13          Ch 7           Ch 6                 Ch 4
+     &quot;温和入口&quot;    &quot;单文件独立&quot;   &quot;供血心脏&quot;          &quot;贯通用户态&quot;
 </code></pre>
-<h3>与本仓库 HFT 精读捷径的对照</h3>
-<p><a href="#intro">README · HFT 精读捷径</a> 按 <strong>性能相关</strong> 排序：</p>
+<p><strong>为什么这个顺序「由简入深」成立？</strong> 四个子系统逐个看：</p>
+<ol>
+<li><strong>OOM</strong> 只做「选进程 → 杀进程」，几乎不依赖你还没读的页表/slab，<strong>概念成本最低</strong>；</li>
+<li><strong>vmalloc</strong> 是「分配一段虚拟连续、物理不连续的地址」，<strong>把物理页分配器当黑盒用</strong>，正好卡在「已懂 OOM、还没懂 page_alloc」之间；</li>
+<li><strong>page_alloc</strong> 是真正的<strong>物理页供应者</strong>，读完它，前面 vmalloc「黑盒」就打开了；</li>
+<li><strong>VMA/mmap</strong> 把<strong>用户态请求</strong>一路连到 page_alloc，是「全貌」的收口。</li>
+</ol>
+<hr />
+<h2>3. 每个入口点各自揭示什么</h2>
+<p>这条路线不只是「读四个文件」，每个入口点会<strong>带出下一层概念</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>入口</th>
+<th>读它时点亮的概念</th>
+<th>通往</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">oom_kill.c</code></td>
+<td><code class="c">oom_score</code>/<code class="c">oom_score_adj</code>、内存压力分级</td>
+<td>Ch13 OOM 全貌</td>
+</tr>
+<tr>
+<td><code class="c">vmalloc.c</code></td>
+<td>虚拟地址空间 vs 物理页分离、<code class="c">vm_struct</code> 区间树</td>
+<td>Ch7 + Ch9（kmap）</td>
+</tr>
+<tr>
+<td><code class="c">page_alloc.c</code></td>
+<td>伙伴系统、<code class="c">struct zone</code> 水位、<code class="c">per_cpu_pages</code></td>
+<td>Ch2（节点/区域）+ Ch6</td>
+</tr>
+<tr>
+<td><code class="c">mmap.c</code></td>
+<td><code class="c">vm_area_struct</code>、<code class="c">mm_struct</code>、缺页路径</td>
+<td>Ch4 地址空间 + Ch3 页表</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>读法要点：第一遍不求全懂，求「建立地图」。</strong> 每个文件先抓「入口函数 → 核心数据结构 → 出口」三件事，细节留给对应章节精读。这正是本书「先读方法论、再逐章深入」的意图。</p>
+<hr />
+<h2>4. 与本仓库 HFT 精读捷径的对照</h2>
+<p><a href="#intro">README · HFT 精读捷径</a> 按 <strong>性能相关度</strong> 排序：</p>
 <pre class="code" data-label="code"><code class="c">Ch 2 → Ch 3 (+ THP) → Ch 8 → Ch 4 → Ch 10
 </code></pre>
 <div class="tbl-wrap"><table>
@@ -558,7 +1094,7 @@ make modules         # 编译可加载模块
 <tr>
 <td>目标</td>
 <td>第一次 <strong>读源码</strong> 不迷路</td>
-<td><strong>NUMA / 大页 / slab / 布局</strong> 理论依据</td>
+<td><strong>NUMA / 大页 / slab / 布局</strong> 的理论依据</td>
 </tr>
 <tr>
 <td>起点</td>
@@ -566,57 +1102,236 @@ make modules         # 编译可加载模块
 <td>物理内存描述 → 页表 → slab</td>
 </tr>
 <tr>
+<td>排序依据</td>
+<td><strong>耦合度</strong>（由简入深）</td>
+<td><strong>性能影响</strong>（谁最影响延迟）</td>
+</tr>
+<tr>
 <td>关系</td>
-<td>补 <strong>「打开 <code class="c">mm/</code> 从哪 FILE 开始」</strong></td>
-<td>补 <strong>「为什么 HFT 要 mlock / 大页 / 绑 NUMA」</strong></td>
+<td>补「打开 <code class="c">mm/</code> 从哪 FILE 开始」</td>
+<td>补「为什么 HFT 要 mlock / 大页 / 绑 NUMA」</td>
 </tr>
 </tbody>
 </table></div>
-<p>两条路 <strong>不矛盾</strong>：可按 HFT 捷径读 <strong>章节</strong>；读 <strong>源码</strong> 时按上表四个 FILE 切入。</p>
-<p>→ 用户态 API：<a href="../../03-linux-userspace-api/html/index.html">03-linux-userspace-api</a> · 内核总览：<a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a> · <a href="../../16-linux-kernel-deep/html/index.html">16-linux-kernel-deep</a> Ch 8–9</p>
+<p>两条路<strong>不矛盾</strong>，是两个正交的维度：</p>
+<ul>
+<li><strong>作者路线</strong>答「<strong>怎么读</strong>」——按<strong>耦合度</strong>从独立子系统切入，建立地图；</li>
+<li><strong>HFT 捷径</strong>答「<strong>读什么</strong>」——按<strong>性能影响</strong>挑高价值章节精读。</li>
+</ul>
+<p><strong>实际操作</strong>：用 HFT 捷径挑<strong>章节</strong>，用作者路线决定<strong>打开源码时从哪个 FILE 入手</strong>。例如你要精读 Ch2（物理内存描述），先按作者路线快速扫一眼 <code class="c">page_alloc.c</code> 建地图，再回头啃 <code class="c">mmzone.h</code> 的 <code class="c">struct zone</code> 字段。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>延迟尖刺追到「内存分配」这一层</td>
+<td>作者路线的 page_alloc 是必经之地，先读它才能理解分配抖动</td>
+</tr>
+<tr>
+<td>内存压力下进程被杀</td>
+<td>OOM 入口（<code class="c">oom_kill.c</code>）是定位「谁被选中、为什么」的起点</td>
+</tr>
+<tr>
+<td>大页 / mlock 的底层依据</td>
+<td>HFT 捷径的 Ch3（THP）/ Ch8（slab）按性能影响优先精读</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>用户态 API：<a href="../../03-linux-userspace-api/html/index.html">03-linux-userspace-api</a></li>
+<li>内核总览：<a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a> · <a href="../../16-linux-kernel-deep/html/index.html">16-linux-kernel-deep</a> Ch 8–9</li>
+<li>下一站正文：<a href="chapter-02.html#ch-2">Ch2 描述物理内存</a>（两条路线在此汇合）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么作者把 OOM 排在第一位，而不是「最重要」的 page_alloc？</strong>
+A：因为排序依据是<strong>耦合度/概念成本</strong>，不是重要性。OOM 逻辑<strong>温和且独立</strong>——不依赖页表、slab 这些你还没读的概念，先把「VM 里有哪些角色、内存压力怎么衡量」建立起来，再读耦合度更高的 page_alloc 就不慌。这跟「先学会走路再学跑」同理。</p>
+<p><strong>Q2：<code class="c">vmalloc</code> 为什么被描述为「把物理页分配器当黑盒」？</strong>
+A：<code class="c">vmalloc</code> 的目标是「分配<strong>虚拟连续</strong>的地址」，它内部<strong>调用</strong> <code class="c">__alloc_pages()</code> 拿物理页、再建页表映射，但它<strong>不关心</strong>这些页怎么来、伙伴系统怎么运作。所以你可以先把它当一个「能给我一段虚拟内存」的黑盒读，等读了 page_alloc 再回头打开这个黑盒。</p>
+<p><strong>Q3：「从 init 读」错在哪，具体会卡在什么？</strong>
+A：<code class="c">setup_arch()</code> / <code class="c">paging_init()</code> 是<strong>所有子系统第一次协同</strong>的地方，同时依赖 EFI/e820/SRAT（架构）、memblock（临时分配器）、页表——<strong>三个前置概念你都没读</strong>。读 init 等于「一上来就做综合题」，而作者路线是「先做分项题」。</p>
+<p><strong>Q4：作者路线和 HFT 捷径的「排序依据」本质区别是什么？</strong>
+A：作者路线按<strong>耦合度</strong>（谁独立先读谁），目的是<strong>建立地图、不迷路</strong>；HFT 捷径按<strong>性能影响</strong>（谁最影响延迟先读谁），目的是<strong>快速拿到 HFT 需要的理论依据</strong>。一个是「怎么读」，一个是「读什么」，正交不冲突。</p>
+<p><strong>Q5：读 <code class="c">page_alloc.c</code> 时，作者建议「第一遍只抓入口→数据结构→出口」，为什么？</strong>
+A：因为 <code class="c">page_alloc.c</code> 是几千行的大文件，第一遍求全懂会陷进去。先抓三件事——<strong>入口函数</strong>（<code class="c">__alloc_pages</code>）、<strong>核心数据结构</strong>（<code class="c">struct zone</code>、<code class="c">free_area</code>）、<strong>出口</strong>（返回 <code class="c">struct page*</code>），建立「这个文件干什么」的骨架，细节留给 Ch2/Ch6 精读时再逐字段展开。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">5</div><h2>Ch 1 §5 提交补丁 (Submitting Patches)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">scripts/checkpatch.pl</code> / <code class="c">scripts/get_maintainer.pl</code> / <code class="c">Documentation/process/</code>）</p>
 </blockquote>
-<h3>5. 提交补丁 (Submitting Patches)</h3>
-<p>把改动合入 <strong>主线 (mainline)</strong> 的要点：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答三个问题：</p>
+<ol>
+<li>改完内核代码后，<strong>提交前要过哪些「门」</strong>——风格、检查工具、changelog 各是什么？</li>
+<li><code class="c">Signed-off-by</code> 到底签的是什么，为什么它比「同意合并」更严肃？</li>
+<li>一个补丁从本地到合入 Linus 主线，<strong>完整生命周期</strong>长什么样？</li>
+</ol>
+<p>原书的 <code class="c">Documentation/CodingStyle</code> / <code class="c">Documentation/SubmittingPatches</code> 在 v6.6 已移到 <code class="c">Documentation/process/</code> 下并改成 <code class="c">.rst</code>，但<strong>规则精神没变</strong>。</p>
+<hr />
+<h2>1. 风格门：Coding Style + checkpatch</h2>
+<p>内核风格的核心规则（<code class="c">Documentation/process/coding-style.rst</code>）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>必须</th>
-<th>说明</th>
+<th>规则</th>
+<th>内容</th>
+<th>为什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">Documentation/CodingStyle</code></strong></td>
-<td>缩进、命名、注释风格</td>
+<td><strong>缩进 = Tab（8 列）</strong></td>
+<td>用 Tab 不用空格；Tab 宽 = 8</td>
+<td>8 列缩进<strong>逼你控制嵌套深度</strong>——超过 3 层就该拆函数了</td>
 </tr>
 <tr>
-<td><strong><code class="c">Documentation/SubmittingPatches</code></strong></td>
-<td>补丁格式、changelog、<code class="c">Signed-off-by</code></td>
+<td><strong>行长 ≤ 80 列</strong></td>
+<td>尽量 80，可略超但要「拆得合理」</td>
+<td>终端审查友好</td>
 </tr>
 <tr>
-<td><strong>发对邮件列表</strong></td>
-<td><strong>尽早、频繁</strong> 发到 <strong>子系统列表</strong>（VM 相关补丁 → <strong>linux-mm</strong> 等），常 <strong>Cc LKML</strong> 引发讨论</td>
+<td><strong>大括号</strong></td>
+<td>函数的大括号<strong>独占一行</strong>；<code class="c">if/for/switch</code> 的跟在语句后</td>
+<td>K&amp;R 风格，且函数独占一行是「函数的特权」</td>
 </tr>
 <tr>
-<td><strong>维护者层级</strong></td>
-<td>子系统 <strong>maintainer / lieutenant</strong> 审查 → <strong>推荐给 Linus</strong> 合入</td>
+<td><strong>命名</strong></td>
+<td>局部变量短名（<code class="c">i</code>、<code class="c">tmp</code>），全局函数<strong>描述性</strong></td>
+<td>全局名要跨文件可读</td>
+</tr>
+<tr>
+<td><strong>少 typedef</strong></td>
+<td>尽量不造新类型别名，直接用 <code class="c">struct</code></td>
+<td><code class="c">typedef</code> 掩盖真实类型，坏处 &gt; 好处</td>
+</tr>
+<tr>
+<td><strong>指针 <code class="c">*</code> 靠变量</strong></td>
+<td><code class="c">char *s</code>，不是 <code class="c">char* s</code></td>
+<td>与声明语义对齐</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>文化：</strong> 内核是 <strong>邮件列表驱动</strong> 的；补丁是 <strong>对话的单位</strong>，不是只扔一个 PR 就结束（现代部分子系统也接受 <strong>GitLab/GitHub</strong> 镜像，但 mm 传统仍以列表为主）。</p>
+<p><strong>但没人靠肉眼背规则</strong>——内核有自动检查器 <strong><code class="c">checkpatch.pl</code></strong>，这是提交前的<strong>第一道硬门</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">scripts/checkpatch.pl --strict 0001-my-fix.patch   # 检查补丁（会报 warning/error）
+scripts/checkpatch.pl --strict -f mm/vmalloc.c       # 检查整个文件
+scripts/checkpatch.pl --types=SPACING ...            # 只看某类问题
+scripts/checkpatch.pl --ignore=COMMIT_LOG_LONG_LINE ... # 忽略某类
+</code></pre>
+<p><code class="c">checkpatch</code> 报的是<strong>风格 + 常见 bug 模式</strong>（如 <code class="c">malloc</code> 返回值没判空、<code class="c">//</code> 注释、行尾空格）。<strong>error 级必须清零，warning 要逐条看</strong>——它也会误报，但每个 warning 你都得能说清「为什么可接受」。这条纪律正是内核「宁可慢、不可乱」文化在工具层的体现。</p>
 <hr />
-<h2>本章带走的三句话</h2>
+<h2>2. 提交门：changelog 与 <code class="c">Signed-off-by</code></h2>
+<p>补丁的 <strong>changelog（提交说明）</strong> 是评审者第一眼看到的东西，格式有硬约定：</p>
+<pre class="code" data-label="code"><code class="c">mm: fix use-after-free in __alloc_pages fast path        ← 标题：subsystem: 一句话（祈使句，≤75 字符）
+
+&lt;空行&gt;
+正文：为什么改、改了什么、怎么验证。正文里要写清：
+  - 触发 bug 的条件 / 观察到的现象
+  - 根因（root cause）
+  - 修复思路 + 关键权衡
+  - Fixes: &lt;12-char sha&gt; (&quot;subject&quot;)   ← 修 bug 必须带
+  - Reported-by: / Suggested-by: / Tested-by: ...
+
+&lt;空行&gt;
+Signed-off-by: Your Name &lt;you@example.org&gt;               ← 见下方 DCO
+
+---
+（`---` 分隔线之后：不进入 changelog 的备注，如&quot;v2 相对 v1 改了什么&quot;）
+</code></pre>
+<p><strong><code class="c">Signed-off-by</code>（SoB）签的到底是什么？</strong> 它不是「我同意合并」，而是对 <strong>Developer's Certificate of Origin (DCO) 1.1</strong> 的声明——大意为：</p>
+<blockquote>
+<p>我证明：我有权提交此改动；它基于的代码要么是我原创、要么来源合规；我知晓它会作为开源发布。</p>
+</blockquote>
+<p>SoB 的<strong>传递链</strong>记录了补丁的「路径」：作者 SoB → 子系统维护者 SoB → Linus SoB。<strong>每个实际「经手」的人都要加一行</strong>，<code class="c">git commit -s</code> 自动加。这比「同意」严肃——它是在对<strong>知识产权来源</strong>作担保，出了版权纠纷靠这条链追责。</p>
+<hr />
+<h2>3. 发给谁：get_maintainer.pl</h2>
+<p>「发对邮件列表」是最容易翻车的一步。手动猜 <code class="c">linux-mm</code>、<code class="c">linux-kernel</code> 会漏人，内核提供 <strong><code class="c">get_maintainer.pl</code></strong> 从 <code class="c">MAINTAINERS</code> 文件自动解析：</p>
+<pre class="code" data-label="shell"><code class="c">scripts/get_maintainer.pl 0001-my-fix.patch          # 针对补丁，列出应 Cc 的人/列表
+scripts/get_maintainer.pl -f mm/vmalloc.c            # 针对文件
+scripts/get_maintainer.pl --nogit -f mm/page_alloc.c # 只看 MAINTAINERS，不看 git 历史
+scripts/get_maintainer.pl --subsystem --scm -f mm/    # 加子系统名 + 所属 git 树
+</code></pre>
+<p><code class="c">MAINTAINERS</code> 文件按<strong>子系统</strong>组织，每条含：维护者（<code class="c">M:</code>）、邮件列表（<code class="c">L:</code>）、相关文件（<code class="c">F:</code>）、git 树（<code class="c">T:</code>）。<code class="c">get_maintainer.pl</code> 会把<strong>改动的文件</strong>匹配到对应子系统，输出一长串 <code class="c">To:</code> / <code class="c">Cc:</code> 地址。<strong>VM 补丁 → <code class="c">linux-mm</code> 列表 + Andrew Morton（<code class="c">-mm</code> 树的守护者）</strong>，这是 mm 补丁的标准去处。</p>
+<hr />
+<h2>4. 补丁的完整生命周期</h2>
+<pre class="code" data-label="code"><code class="c">本地改代码
+  └─ checkpatch.pl 清 error、消 warning
+       └─ git commit -s（写好 changelog + SoB）
+            └─ git format-patch -1 → 0001-xxx.patch
+                 └─ get_maintainer.pl 拿收件人
+                      └─ git send-email --to=... --cc=... 0001-xxx.patch
+                           └─ 列表/维护者评审（来回改 v2/v3/v4）
+                                └─ maintainer 收进自己的 git 树（linux-mm → -mm → Linus）
+                                     └─ 合入 mainline，出现在下一个 merge window / -rc
+</code></pre>
+<p><strong>关键文化认知</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书时代的直觉</th>
+<th>现代（v6.6）的修正</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>补丁直接发邮件</td>
+<td>仍是主流，但<strong>用 <code class="c">git send-email</code></strong> 而非手工附件</td>
+</tr>
+<tr>
+<td>只有邮件列表</td>
+<td>部分子系统有 GitLab/GitHub 镜像，但 <strong>mm 传统仍是列表 + <code class="c">-mm</code> 树</strong></td>
+</tr>
+<tr>
+<td>发一次就等合并</td>
+<td><strong>迭代是常态</strong>——大补丁发 v2/v3/v4 很常见，<code class="c">---</code> 分隔线后写版本变更</td>
+</tr>
+<tr>
+<td>Kernel Traffic 看摘要</td>
+<td>用 <strong>lore.kernel.org</strong> 归档 + <strong>patchwork</strong> 跟踪补丁状态</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对 HFT / 嵌入式</strong>：你大概率<strong>不直接给上游发补丁</strong>，而是改 vendor 树、发内部评审。但 <code class="c">checkpatch</code> + changelog + SoB 这套纪律<strong>照样适用</strong>——它保证你的内核改动<strong>可追溯、可审查、可回归</strong>，这恰是「性能可复现」的前提（呼应 §2 的 vendor 补丁链）。</p>
+<hr />
+<h2>5. 本章带走的三句话</h2>
 <ol>
-<li><strong>工具：</strong> <code class="c">diff</code>/<code class="c">patch</code>（或 git）+ 在线交叉引用（Elixir/LXR）+ 必要时 call graph。  </li>
-<li><strong>读 <code class="c">mm/</code>：</strong> 别从 arch init 硬啃；<strong>OOM → vmalloc → page_alloc → VMA</strong> 由简入深。  </li>
-<li><strong>改内核：</strong> 先 <code class="c">CodingStyle</code> + <code class="c">SubmittingPatches</code>，补丁发到 <strong>对的 mm 列表</strong>。</li>
+<li><strong>工具：</strong> <code class="c">git format-patch</code>/<code class="c">git am</code> 管理补丁 + Elixir/clangd 交叉引用 + 必要时 call graph。  </li>
+<li><strong>读 <code class="c">mm/</code>：</strong> 别从 arch init 硬啃；<strong>OOM → vmalloc → page_alloc → VMA</strong> 由简入深建立地图。  </li>
+<li><strong>改内核：</strong> 先 <code class="c">checkpatch</code> + changelog + <code class="c">Signed-off-by</code>，用 <code class="c">get_maintainer.pl</code> 发到<strong>对的列表</strong>。</li>
 </ol>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>本章到此结束，正文从 <a href="chapter-02.html#ch-2">Ch2 描述物理内存</a> 开始</li>
+<li>工具链回顾：<a href="chapter-14.html#s-1">§1 入门指南</a>（编译）· <a href="chapter-14.html#s-2">§2 源码管理</a>（补丁）· <a href="chapter-14.html#s-3">§3 浏览代码</a>（读码）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">checkpatch.pl</code> 报的 <code class="c">error</code> 和 <code class="c">warning</code> 有什么区别，怎么对待？</strong>
+A：<code class="c">error</code> 是<strong>硬规则</strong>（如缺失空格、行尾空白、明显 bug 模式），提交前<strong>必须清零</strong>；<code class="c">warning</code> 是<strong>风格建议</strong>，可能误报，但要<strong>逐条判断</strong>——能改就改，改不了要在 changelog 或回复里说清理由。内核社区对「无视 checkpatch 结果」零容忍。</p>
+<p><strong>Q2：<code class="c">Signed-off-by</code> 和 <code class="c">Acked-by</code> 有什么本质区别？</strong>
+A：<code class="c">Signed-off-by</code> 是 <strong>DCO 声明</strong>——签署者保证「有权提交、来源合规」，是<strong>法律/归属</strong>层面的担保，每个经手人都要加。<code class="c">Acked-by</code> 是<strong>技术认可</strong>——维护者说「我看了，同意这个改动的方向」，是<strong>评审</strong>层面的记录。SoB 不能替代 review，Ack 不能替代 SoB。</p>
+<p><strong>Q3：changelog 里的 <code class="c">---</code> 分隔线是干嘛的？</strong>
+A：<code class="c">git format-patch</code>/<code class="c">send-email</code> 时，<code class="c">---</code> 之前的进入<strong>正式 commit message</strong>，之后的内容<strong>只出现在邮件正文里、不进入 git 历史</strong>。所以「v2 相对 v1 改了什么」「这个补丁依赖哪个前置补丁」这类<strong>评审辅助信息</strong>写 <code class="c">---</code> 之后，合入后不会污染历史。</p>
+<p><strong>Q4：<code class="c">get_maintainer.pl</code> 输出一堆地址，怎么确定「发到哪个列表」？</strong>
+A：<code class="c">get_maintainer.pl</code> 从 <code class="c">MAINTAINERS</code> 的 <code class="c">F:</code>（文件匹配）找到你改动所属子系统，输出它的 <code class="c">M:</code>（维护者）和 <code class="c">L:</code>（列表）。<strong>列表用 <code class="c">--to</code>，维护者用 <code class="c">--cc</code></strong>。mm 补丁的惯例是发 <code class="c">linux-mm@kvack.org</code> + Cc <code class="c">akpm</code>（Andrew Morton，<code class="c">-mm</code> 树维护者）和 <code class="c">linux-kernel</code>。</p>
+<p><strong>Q5：为什么 mm 补丁走「-mm 树」而不是直接进 Linus 的树？</strong>
+A：Linus 的 <code class="c">torvalds/linux</code> 是最终汇合点，但<strong>每个子系统有自己的中间树</strong>做缓冲和集中评审。mm 的中间树是 Andrew Morton 维护的 <code class="c">-mm</code>（现在也叫 <code class="c">mm</code> 树），补丁先在这里集成、测试、再在 merge window 批量进 Linus 树。这是「分级维护」——子系统维护者（lieutenant）先审，再推荐给 Linus。</p>
+</details>
 <hr />
       </section>
 
