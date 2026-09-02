@@ -1311,7 +1311,9 @@ mutex：① 有归属（owner 字段），只有持锁者能 unlock。② 支持
 
 ① 限制并发数：如限制同时打开的文件数（初始值=最大并发数）。② 生产者-消费者：semaphore 计数 = 队列中可用元素数，消费者 down() 取数据，生产者 up() 放数据。③ 资源池：初始值=池大小，获取资源 down()，释放 up()。但在内核中，这些场景更常用 kfifo + waitqueue 或 mempool。
 
-**按 v6.6 补充**：这三条里，只有 **① 限制并发数 / 资源池** 是 semaphore 在内核里的
+<details><summary>按 v6.6 修订/补充</summary>
+
+这三条里，只有 **① 限制并发数 / 资源池** 是 semaphore 在内核里的
 正当用途。②③ 在**内核里**通常有更好的选择（kfifo + waitqueue、mempool），
 但在**用户态**（HFT 的进程间通信）里 ②③ 依然是标准做法。
 
@@ -1328,6 +1330,7 @@ from any context and even by tasks which have never called down()"*。
 这就是"进程上下文 `down_interruptible()` 等硬件、ISR 里 `up()` 通知"这个模式成立的原因。
 
 </details>
+</details>
 
 **Q3.** HFT 中 semaphore 的用户态对应物？
 
@@ -1335,7 +1338,9 @@ from any context and even by tasks which have never called down()"*。
 
 ① `std::counting_semaphore<N>`（C++20）：计数信号量。② `sem_t`（POSIX）：进程间或线程间信号量。③ `std::binary_semaphore` = mutex 的近似。HFT 热路径避免 semaphore（有 futex 开销），用无锁队列代替生产者-消费者模式。非热路径可以用 semaphore 做资源限流。
 
-**按 v6.6 补充（本节 §9 / HFT 关联章节）**：补一个可量化的判据。
+<details><summary>按 v6.6 修订/补充</summary>
+
+补一个可量化的判据。
 内核态和用户态的结论是一致的 —— **信号量的争用代价不是锁本身的开销，
 而是两次调度器往返**（切换出去 + 切换回来，中间还要等调度器选中自己）。
 量级是 **数 µs 且方差极大**，和 HFT 的 P99 尾延迟预算（通常 < 10 µs）同一量级。
@@ -1356,6 +1361,7 @@ from any context and even by tasks which have never called down()"*。
 热路径的替代品是 **SPSC 无锁环形队列**（`memory_order_acquire/release` 的
 `head`/`tail` 分离读写，无 RMW 竞争）。
 
+</details>
 </details>
 
 **Q4.** 为什么 `struct semaphore` 内部的锁是 `raw_spinlock_t` 而不是 `spinlock_t`？
