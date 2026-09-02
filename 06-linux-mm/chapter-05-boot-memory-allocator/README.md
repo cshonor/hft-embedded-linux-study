@@ -1,16 +1,16 @@
 # Ch 5 启动内存分配器 · Boot Memory Allocator
 
 > **Understanding the Linux Virtual Memory Manager** · Mel Gorman · **跳过 ⚪**
->
-> 🔗 **现代替代**：书中讲的 bootmem 已在 v4.x 后**彻底移除**，取代它的 `memblock` 见
-> [06.5 现代 MM · memblock](../../06.5-modern-mm/chapter-01-physical-memory-memblock/notes/02-memblock.md)。
-> 本章 5 篇笔记里出现的 memblock 内容属于「旧书章节的现代补充」，**完整机制以 06.5 为准**。
 
 ---
 
 ## 本章概述
 
 > **Understanding the Linux Virtual Memory Manager** · Mel Gorman · **跳过**（HFT 热路径 **不经过** bootmem；读作 **boot → 伙伴系统**  handoff 背景即可）
+>
+> 🔗 **现代替代**：书中讲的 bootmem 已在 v4.x 后**彻底移除**，取代它的 `memblock` 见
+> [06.5 现代 MM · memblock](../../06.5-modern-mm/chapter-01-physical-memory-memblock/notes/02-memblock.md)。
+> 本章 5 篇笔记里出现的 memblock 内容属于「旧书章节的现代补充」，**完整机制以 06.5 为准**。
 
 ## 本章解决什么问题
 
