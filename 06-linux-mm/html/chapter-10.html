@@ -363,168 +363,689 @@ Ch 11 swap：匿名页换出细节
       <section class="section" id="s-1">
         <div class="sec-head"><div class="sec-no">1</div><h2>Ch 10 §1 页面替换策略 (Page Replacement Policy)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mmzone.h</code> 的 <code class="c">enum lru_list</code>、<code class="c">mm/vmscan.c</code>）</p>
 </blockquote>
-<h3>1. 页面替换策略 (Page Replacement Policy)</h3>
-<p>Linux <strong>不用纯 LRU</strong>，而用 <strong>双链表</strong> 近似 <strong>LRU 2Q + clock</strong>：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>回收的第一步是「<strong>选谁当 victim</strong>」。本节回答：</p>
+<ol>
+<li>Linux 为什么不用教科书上的纯 LRU？</li>
+<li>现代内核的 LRU 到底分几条链？——比原书「active/inactive 双链」多出什么？</li>
+<li>扫描时「扫匿名页还是文件页、扫多少」由谁决定？</li>
+</ol>
+<p>原书以 2.4/2.6 的「<code class="c">active_list</code> + <code class="c">inactive_list</code>」双链叙述；v6.6 的 <code class="c">enum lru_list</code>（<code class="c">mmzone.h:263</code>）是<strong>四象限 + unevictable 共 5 条</strong>，且比例决策交给了基于 <code class="c">anon_cost/file_cost</code> 的 <code class="c">get_scan_count()</code>。</p>
+<hr />
+<h2>1. 为什么不用纯 LRU</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>链表</th>
-<th>角色</th>
+<th>纯 LRU 的问题</th>
+<th>Linux 的折中</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">active_list</code></strong></td>
-<td><strong>工作集</strong> — 近期频繁访问的页</td>
+<td>每次访问都要把页移到链表头 → <strong>热路径锁争用</strong></td>
+<td>用 <code class="c">PG_referenced</code>/<code class="c">PG_active</code> 标志做「<strong>二次机会</strong>」，不每次动链</td>
 </tr>
 <tr>
-<td><strong><code class="c">inactive_list</code></strong></td>
-<td><strong>回收候选</strong> — 适合被踢出</td>
+<td>全局一条链 → 多核大锁</td>
+<td>LRU 按 <strong>lruvec（node × memcg）</strong> 分片，锁粒度极小</td>
+</tr>
+<tr>
+<td>不知道「匿名页 vs 文件页」谁更该踢</td>
+<td>分 <strong>anon / file 两条</strong>，用成本模型决定扫描比例</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>目标：</strong> active 容纳 <strong>各进程工作集</strong>；inactive 供 <strong>扫描回收</strong> — 在 <strong>近似 LRU</strong> 与 <strong>实现开销</strong> 之间折中。</p>
-<p>→ <a href="chapter-14.html#s-5">Ch 2 §2.6 LRU 本地化</a> — <strong>2.6 起 per-zone active/inactive</strong>（非全局一条链）。</p>
-<p><strong><code class="c">PG_active</code> / <code class="c">PG_referenced</code> / accessed 位</strong>（Ch 2 page flags · Ch 3 PTE young）— 驱动 <strong>在 active ↔ inactive 间迁移</strong>。</p>
+<p>所以 Linux 用的是「<strong>带二次机会的近似 LRU</strong>」——<code class="c">struct page/folio</code> 上的 <code class="c">PG_referenced</code> 位相当于 clock 算法的引用位，<code class="c">PG_active</code> 位决定它在 active 还是 inactive 链上。</p>
+<hr />
+<h2>2. v6.6 的 LRU：四象限 + unevictable（<code class="c">mmzone.h:263</code>）</h2>
+<pre class="code" data-label="C"><code class="c">enum lru_list {
+    LRU_INACTIVE_ANON = LRU_BASE,
+    LRU_ACTIVE_ANON   = LRU_BASE + LRU_ACTIVE,
+    LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,
+    LRU_ACTIVE_FILE   = LRU_BASE + LRU_FILE + LRU_ACTIVE,
+    LRU_UNEVICTABLE,          /* ← mlock 的页住这里 */
+    NR_LRU_LISTS
+};
+</code></pre>
+<pre class="code" data-label="code"><code class="c">              anon（匿名页）          file（文件页）
+   active    LRU_ACTIVE_ANON      LRU_ACTIVE_FILE     ← 工作集
+   inactive  LRU_INACTIVE_ANON    LRU_INACTIVE_FILE   ← 回收候选
+                        LRU_UNEVICTABLE               ← mlock / 不可回收
+</code></pre>
+<p><strong>为什么 anon 和 file 必须分开？</strong> 回收成本完全不同：文件页脏了要 writeback（成本高但可再读回），匿名页要 swap out（成本最高，要写 swap 设备）。分开后内核能<strong>按成本模型</strong>决定先扫哪边，而不是把两类混在一起盲扫。</p>
+<p><strong><code class="c">LRU_UNEVICTABLE</code> 是 HFT 的关键：</strong> <code class="c">mlock()</code> 钉住的页就挂这条链，<strong>回收扫描根本不碰它</strong>。这是 <code class="c">mlock</code> 防换出的机制落点——不是「标记成不可回收」，而是「物理上不在可回收链表里」。</p>
+<hr />
+<h2>3. 扫描比例：<code class="c">get_scan_count()</code> 与成本模型</h2>
+<p><code class="c">shrink_lruvec()</code>（<code class="c">vmscan.c:6273</code>）里先调 <code class="c">get_scan_count(lruvec, sc, nr)</code>，算出每条 LRU 该扫多少页。v6.6 的决策基于 <code class="c">struct lruvec</code>（<code class="c">mmzone.h:614</code>）里的两个字段：</p>
+<pre class="code" data-label="C"><code class="c">struct lruvec {
+    struct list_head lists[NR_LRU_LISTS];  /* 5 条链表 */
+    spinlock_t lru_lock;
+    unsigned long anon_cost;   /* 回收一个匿名页的平均成本 */
+    unsigned long file_cost;   /* 回收一个文件页的平均成本 */
+    atomic_long_t nonresident_age;
+    unsigned long refaults[ANON_AND_FILE];  /* 工作集 refault 检测 */
+};
+</code></pre>
+<p><strong>直觉：</strong> 哪边回收便宜（cost 低），就多扫哪边。<code class="c">swappiness</code>（<code class="c">/proc/sys/vm/swappiness</code>）就是在这里影响 anon/file 的倾向——<code class="c">swappiness=0</code> 表示「尽量别 swap 匿名页，先回收文件页」。这比原书「active 恒占 2/3」的固定比例<strong>动态得多</strong>。</p>
+<hr />
+<h2>4. active ↔ inactive 迁移（二次机会）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>事件</th>
+<th>迁移</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>页被访问（PTE accessed 位置位）</td>
+<td>inactive → active（被「救」回工作集）</td>
+</tr>
+<tr>
+<td>active 尾部页长时间未访问</td>
+<td>active → inactive（<code class="c">shrink_active_list</code>，<code class="c">vmscan.c:2688</code>）</td>
+</tr>
+<tr>
+<td>页被 <code class="c">mlock</code></td>
+<td>任何链 → <code class="c">LRU_UNEVICTABLE</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>二次机会机制：</strong> <code class="c">PG_referenced</code> 是「最近被访问过」的信号。回收扫描时，若页有 <code class="c">PG_referenced</code>，先清掉标志、把页<strong>放回</strong>（给它第二次机会），下次扫到还没被访问才真正回收。这正是 clock 算法的思想内核。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mlock</code> 防换出</td>
+<td>页进 <code class="c">LRU_UNEVICTABLE</code>，扫描根本不碰</td>
+</tr>
+<tr>
+<td><code class="c">vm.swappiness=0</code></td>
+<td><code class="c">get_scan_count()</code> 里 anon/file 比例极偏文件页</td>
+</tr>
+<tr>
+<td>回收抖动</td>
+<td>回收器误踢工作集 → refault → 再读回，二次抖动</td>
+</tr>
+<tr>
+<td>工作集保护</td>
+<td><code class="c">refaults[]</code> 检测「刚回收又被 fault 回来」，动态调大 active</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 页缓存</a>：file 链上挂的到底是什么</li>
+<li><a href="chapter-14.html#s-3">§3 LRU 链表管理</a>：隔离、回收、放回的三步实现</li>
+<li><a href="chapter-11.html#s-6">§6 kswapd</a>：谁在驱动这套扫描</li>
+<li>前置：<a href="chapter-14.html#s-2">Ch 2 §2 水位</a>（扫描的触发条件）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 anon 和 file 页要分到不同的 LRU？</strong>
+A：回收成本不同。文件页脏了 writeback 到文件系统即可，干净的直接丢；匿名页没有后备存储，必须写 swap 设备（更慢、还要占 swap 空间）。分开后 <code class="c">get_scan_count()</code> 能按 <code class="c">anon_cost/file_cost</code> 决定先扫便宜的，避免「为了回收一个匿名页而放过十个可轻松回收的文件页」。</p>
+<p><strong>Q2：<code class="c">LRU_UNEVICTABLE</code> 和「标记页不可回收」是一回事吗？</strong>
+A：机制上更强。不是打标记，而是把页<strong>从可回收链表物理移除</strong>，挂到一条扫描路径根本不会遍历的链上。<code class="c">mlock</code> 的页、以及某些驱动 pin 住的页都在这。所以回收器的 for 循环里压根见不到它们。</p>
+<p><strong>Q3：<code class="c">PG_referenced</code> 和 <code class="c">PG_active</code> 两个标志什么区别？</strong>
+A：<code class="c">PG_referenced</code> 是<strong>瞬态信号</strong>（「最近被访问过」，类似 clock 引用位，扫描时消费）；<code class="c">PG_active</code> 是<strong>状态归属</strong>（「我住在 active 链还是 inactive 链」）。referenced 累积到一定程度才触发 inactive→active 迁移。</p>
+<p><strong>Q4：<code class="c">swappiness</code> 具体怎么影响扫描？</strong>
+A：它是 <code class="c">get_scan_count()</code> 计算 anon/file 扫描比例的输入之一。<code class="c">swappiness=0</code> 时（现代语义），内核几乎只扫 file 链、尽量不 swap 匿名页；<code class="c">swappiness=100</code> 时 anon 和 file 同等对待。注意：它只是<strong>倾向</strong>，不是硬约束——内存极度紧张时仍可能 swap。</p>
+<p><strong>Q5：为什么 LRU 要按 lruvec（node × memcg）分片，而不是全局一条？</strong>
+A：两个原因。① NUMA：每个 node 的回收应独立，避免跨 socket 锁竞争；② memcg：容器/进程组的<strong>内存限额</strong>要靠 per-memcg 的 LRU 来实现「谁超限回收谁」，全局一条链做不到。分片后每个 lruvec 一把小锁，热路径争用降到最低。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-2">
         <div class="sec-head"><div class="sec-no">2</div><h2>Ch 10 §2 页缓存 (Page Cache)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/fs.h</code> 的 <code class="c">struct address_space</code>、<code class="c">include/linux/mm_types.h</code> 的 <code class="c">struct folio</code>）</p>
 </blockquote>
-<h3>2. 页缓存 (Page Cache)</h3>
-<p><strong>目的：</strong> 避免 <strong>重复读盘</strong> — 磁盘数据 <strong>缓存于 RAM</strong>。</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>file 链上挂的页，绝大多数来自<strong>页缓存</strong>。本节回答：</p>
+<ol>
+<li>页缓存靠什么索引「同一文件同一偏移」的页？</li>
+<li>v6.6 的索引结构从原书的「哈希表」换成了什么？</li>
+<li>页缓存和进程 RSS 为什么是两笔账？</li>
+</ol>
+<hr />
+<h2>1. 页缓存的本质</h2>
+<p>磁盘数据在 RAM 里的缓存，避免重复读盘。<strong>页缓存是「按文件组织」的</strong>——每个文件（inode）对应一个 <code class="c">struct address_space</code>，文件内每个偏移对应一个 folio（页）。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>页缓存中的页类型（原书）</th>
+<th>页缓存中的页</th>
 <th>来源</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>文件 mmap 缺页</strong></td>
+<td>文件 mmap 缺页</td>
 <td>映射文件读入</td>
 </tr>
 <tr>
-<td><strong>块设备缓冲</strong></td>
-<td><code class="c">read()</code> / buffer head 路径</td>
+<td><code class="c">read()</code> 路径</td>
+<td>预读（readahead）批量读入</td>
 </tr>
 <tr>
-<td><strong>Swap cache 匿名页</strong></td>
-<td>已换出或换出过程中的匿名页</td>
+<td>swap cache 匿名页</td>
+<td>换出/换入过程中的匿名页</td>
 </tr>
 <tr>
-<td><strong>共享内存页</strong></td>
-<td>shm / mmap shared</td>
+<td>共享内存页</td>
+<td>shm / mmap shared（tmpfs 背后也是页缓存）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>索引：</strong> <strong><code class="c">struct address_space</code> + 文件内 offset</strong> → <strong>哈希表</strong> 快速定位 <strong>同一文件同一偏移</strong> 的 <code class="c">struct page</code>。</p>
-<p><strong>HFT：</strong> 大 <strong>内存映射行情文件</strong> 会占 <strong>page cache</strong> — 与 <strong>进程 RSS</strong> 分开统计；<strong>drop_caches</strong> 可回收 <strong>clean page cache</strong>，<strong>不</strong> 换出 <strong>mlock 页</strong>。</p>
+<hr />
+<h2>2. 索引结构：<code class="c">struct address_space</code>（v6.6 <code class="c">fs.h:470</code>）</h2>
+<pre class="code" data-label="C"><code class="c">struct address_space {
+    struct inode *host;                 /* 归属哪个文件 */
+    struct xarray i_pages;              /* ⭐ 页缓存索引：xarray */
+    atomic_t i_mmap_writable;
+    struct rb_root_cached i_mmap;       /* 映射此文件的所有 VMA（rmap 前向索引） */
+    unsigned long nrpages;              /* 页数 */
+    pgoff_t writeback_index;            /* 写回游标（循环写回脏页） */
+    const struct address_space_operations *a_ops;  /* readpage/writepage 等回调 */
+    /* ... */
+} __attribute__((aligned(sizeof(long)))) __randomize_layout;
+
+/* 页缓存的 dirty/writeback 标记，复用 XArray tags */
+#define PAGECACHE_TAG_DIRTY     XA_MARK_0
+#define PAGECACHE_TAG_WRITEBACK XA_MARK_1
+</code></pre>
+<p><strong>关键：索引从「哈希表」换成了 xarray。</strong> 原书（2.4/2.6）用哈希表 + 桶定位页；现代内核（v4.20 起）用 <strong>xarray</strong>（<code class="c">i_pages</code>）——一种按「文件内偏移（pgoff）」稀疏存储的基数树，支持<strong>范围操作</strong>和 <strong>tags</strong>。dirty/writeback 页直接打 xarray tag（<code class="c">PAGECACHE_TAG_DIRTY</code>），回收器遍历脏页时<strong>不用线性扫描整棵树</strong>，按 tag 就能抓出来。</p>
+<p><strong><code class="c">i_mmap</code> 红黑树：</strong> 反过来，从「文件」找「所有映射了它的 VMA」——这是 rmap（§5）做「解映射」的前向索引，与 <code class="c">struct page</code> 上的反向索引互补。</p>
+<hr />
+<h2>3. 页缓存的单元：folio</h2>
+<p>v6.6 里页缓存的单位从 <code class="c">struct page</code> 迁到了 <code class="c">struct folio</code>（<code class="c">mm_types.h:293</code>）。大文件顺序读写时，一个 folio 可能覆盖多个连续页（order-2 = 8 页），减少 <code class="c">mapping/index</code> 的重复管理开销。THP（透明大页）映射的文件页也是 folio。</p>
+<hr />
+<h2>4. 读路径与预读（readahead）</h2>
+<pre class="code" data-label="code"><code class="c">read(fd, buf, n)
+  → 查 i_pages 命中？ 返回
+  → miss → readahead 按顺序预读一批页进页缓存（folio）
+  → 命中后续读 → 全内存，不碰盘
+</code></pre>
+<p>预读是页缓存性能的关键：顺序读时<strong>提前把后面的页读进来</strong>，把磁盘延迟摊薄。这也是为什么「大文件顺序读」比「随机读」快一个数量级。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>大行情文件 mmap 只读</td>
+<td>占的是<strong>页缓存</strong>（file 链），与进程 RSS 分开统计</td>
+</tr>
+<tr>
+<td><code class="c">echo 3 &gt; drop_caches</code></td>
+<td>回收<strong>干净</strong>页缓存，不碰 dirty（要先 writeback）和 mlock 页</td>
+</tr>
+<tr>
+<td>内存看似被"吃满"</td>
+<td><code class="c">free</code> 里 buff/cache 就是页缓存——<strong>可回收</strong>，不是泄漏</td>
+</tr>
+<tr>
+<td>回放引擎随机读</td>
+<td>随机读打不中预读，页缓存命中率低 → 延迟高</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-1">§1 页面替换策略</a>：页缓存页住在 file 链</li>
+<li><a href="chapter-14.html#s-3">§3 LRU 链表管理</a>：file 链怎么被扫描</li>
+<li><a href="chapter-14.html#s-5">§5 换出进程页面</a>：文件页回收 vs 匿名页 swap</li>
+<li>前置：<a href="chapter-14.html#s-3">Ch 2 §3 struct page</a>（folio/mapping）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么页缓存索引从哈希表换成了 xarray？</strong>
+A：哈希表按偏移散列，做不了<strong>高效的范围操作</strong>（「把 offset 100~200 的页全清掉」要逐项哈希）；xarray 按偏移有序稀疏存储，天然支持范围查询、范围失效（<code class="c">invalidate_mapping_pages</code>）、以及用 tags 快速标记/查找 dirty 页。回收器要「找所有脏页」，xarray tag 扫一遍即可，不用遍历全部页。</p>
+<p><strong>Q2：<code class="c">i_pages</code>（xarray）和 <code class="c">i_mmap</code>（红黑树）分别索引什么？</strong>
+A：<code class="c">i_pages</code> 索引「文件偏移 → folio」（<strong>正向</strong>：从文件找数据页）；<code class="c">i_mmap</code> 索引「文件 → 映射它的所有 VMA」（<strong>反向</strong>：从文件找谁映射了我）。回收时要解映射，先走 <code class="c">i_mmap</code> 找到所有 VMA，再逐个清 PTE。两者配合才构成完整的文件页回收链路。</p>
+<p><strong>Q3：页缓存「吃满内存」是坏事吗？</strong>
+A：不是。<code class="c">free</code> 里的 buff/cache 是<strong>可回收</strong>的页缓存——内存紧张时回收器优先踢干净的文件页。真正该警惕的是<strong>匿名页</strong>（RSS）膨胀和 <strong>dirty 页积压</strong>（要 writeback 才能回收，且写回慢）。HFT 里大 mmap 文件吃页缓存是正常的，别误判成泄漏去 <code class="c">drop_caches</code>（那反而触发后续读盘抖动）。</p>
+<p><strong>Q4：<code class="c">drop_caches</code> 能回收所有页缓存吗？</strong>
+A：不能。它只回收<strong>干净</strong>页（<code class="c">echo 3</code> 还包含 reclaimable slab）。dirty 页要先经过 writeback 才能清；被 mlock 的页在 unevictable 链上，<code class="c">drop_caches</code> 也碰不到。所以 <code class="c">drop_caches</code> 不是「一键清空」，而是「清掉可安全丢弃的部分」。</p>
+<p><strong>Q5：为什么页缓存用 folio 而不是单个 <code class="c">struct page</code>？</strong>
+A：大文件顺序读/写时，连续 8 页（甚至更多）共享同一个 <code class="c">mapping</code>、<code class="c">index</code> 等信息。folio 把这些元数据<strong>只存一份</strong>，<code class="c">struct page</code> 瘦身成薄包装，省内存、也减少 <code class="c">mapping/index</code> 的重复读写。THP 映射的文件也是 folio，一个 order-9 folio 代表 2MiB。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-3">
         <div class="sec-head"><div class="sec-no">3</div><h2>Ch 10 §3 LRU 链表管理</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/vmscan.c</code> 的 <code class="c">shrink_inactive_list</code>、<code class="c">mm/swap.c</code> 的 <code class="c">lru_add_fn</code>）</p>
 </blockquote>
-<h3>3. LRU 链表管理</h3>
-<p>除 <strong>Slab 占用的页</strong> 外，<strong>在用页</strong> 多挂在 <strong>LRU</strong> 上供扫描。</p>
-<h3><code class="c">refill_inactive()</code></h3>
-<p>定期把页从 <strong>active 尾部</strong> 移到 <strong>inactive</strong> — 保持 <strong>active ≈ 总页缓存的 ~2/3</strong>（原书比例），<strong>inactive</strong> 供 <strong>shrink</strong> 扫描。</p>
-<h3><code class="c">shrink_cache()</code>（现代 <code class="c">shrink_page_list</code> 等）</h3>
-<p>从 <strong>inactive 尾部</strong> 取 victim，按状态分支：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>策略（§1）决定「扫哪条链」，本节讲「<strong>具体怎么扫、怎么回收、怎么放回</strong>」。核心是 v6.6 <code class="c">shrink_inactive_list()</code>（<code class="c">vmscan.c:2568</code>）的<strong>三步走</strong>。</p>
+<p>原书函数 <code class="c">refill_inactive()</code> / <code class="c">shrink_cache()</code> 已不在 v6.6——现代实现是 <code class="c">isolate_lru_folios()</code> → <code class="c">shrink_folio_list()</code> → <code class="c">move_folios_to_lru()</code>。</p>
+<hr />
+<h2>1. 三步走：isolate → shrink → move back</h2>
+<pre class="code" data-label="C"><code class="c">static unsigned long shrink_inactive_list(unsigned long nr_to_scan,
+        struct lruvec *lruvec, struct scan_control *sc, enum lru_list lru)
+{
+    LIST_HEAD(folio_list);
+    /* ① 隔离：从 LRU 摘下一批 victim 到临时列表 */
+    spin_lock_irq(&amp;lruvec-&gt;lru_lock);
+    nr_taken = isolate_lru_folios(nr_to_scan, lruvec, &amp;folio_list,
+                                  &amp;nr_scanned, sc, lru);   /* vmscan.c:2304 */
+    spin_unlock_irq(&amp;lruvec-&gt;lru_lock);
+
+    /* ② 收缩：逐个 folio 决策——丢 / 写回 / swap */
+    nr_reclaimed = shrink_folio_list(&amp;folio_list, pgdat, sc, &amp;stat, false);
+
+    /* ③ 放回：幸存者（没被回收的）放回 LRU，回收的释放 */
+    spin_lock_irq(&amp;lruvec-&gt;lru_lock);
+    move_folios_to_lru(lruvec, &amp;folio_list);
+    spin_unlock_irq(&amp;lruvec-&gt;lru_lock);
+    free_unref_page_list(&amp;folio_list);   /* 归还 Buddy */
+    return nr_reclaimed;
+}
+</code></pre>
+<p><strong>为什么先隔离再处理？</strong> 隔离（isolate）阶段只持 <code class="c">lru_lock</code> 极短时间，把 victim 摘到<strong>进程私有临时列表</strong>后立刻放锁；真正费时的「逐个 folio 决策」（可能要写盘、等 I/O）在<strong>锁外</strong>做。这避免了「一边扫描一边写盘还占着大锁」。</p>
+<hr />
+<h2>2. per-folio 决策：<code class="c">shrink_folio_list()</code></h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>页状态</th>
-<th>典型动作</th>
+<th>folio 状态</th>
+<th>动作</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>干净 + 无映射 / 可丢</strong></td>
-<td>直接 <strong>free</strong> 回 Buddy</td>
+<td>干净文件页、无映射</td>
+<td>直接 free 回 Buddy</td>
 </tr>
 <tr>
-<td><strong>脏页 (PG_dirty)</strong></td>
-<td><strong>写回</strong> 磁盘再释放</td>
+<td>脏文件页（<code class="c">PG_dirty</code>）</td>
+<td>writeback 写回，完成后 free</td>
 </tr>
 <tr>
-<td><strong>仍被映射</strong></td>
-<td>需 <strong>解 PTE</strong> — 文件页可丢映射；<strong>匿名页</strong> → <strong>swap</strong>（§5）</td>
+<td>匿名页</td>
+<td>rmap 解映射 → swap out（§5）</td>
 </tr>
 <tr>
-<td><strong>仍被 pin / 锁定</strong></td>
-<td><strong>跳过</strong></td>
+<td>仍被引用（<code class="c">PG_referenced</code>）</td>
+<td>放回 LRU，给二次机会</td>
+</tr>
+<tr>
+<td>mlocked / pin 住</td>
+<td>跳过（或移 unevictable）</td>
 </tr>
 </tbody>
 </table></div>
+<p>这就是回收器最核心的分支——<strong>每种页状态对应一个处置动作</strong>，最终目标都是「把物理页安全地还给 Buddy」。</p>
+<hr />
+<h2>3. <code class="c">lru_add_drain()</code>：per-CPU 攒批</h2>
+<p>页加入 LRU 不是「每页一次抢锁」，而是<strong>先攒在 per-CPU 缓存里</strong>（<code class="c">mm/swap.c:163</code> 的 <code class="c">lru_add_fn()</code>），攒够一批再一次性链入 <code class="c">lruvec-&gt;lists[]</code>。</p>
+<pre class="code" data-label="C"><code class="c">/* mm/swap.c:163 —— folio 真正链入 LRU 的落点 */
+static void lru_add_fn(struct lruvec *lruvec, struct folio *folio)
+</code></pre>
+<p>回收扫描前必须 <code class="c">lru_add_drain()</code>，把各 CPU 缓存里<strong>还没入链的页先排干</strong>——否则这些页「游离在 LRU 之外」，扫描会漏掉它们。这和 Ch 2 §5 讲的 per-CPU pageset 是同一套「批处理降锁争用」思想。</p>
+<hr />
+<h2>4. active → inactive 的降级</h2>
+<p><code class="c">shrink_active_list()</code>（<code class="c">vmscan.c:2688</code>）做反向操作——扫描 active 尾部，把<strong>长期未被引用</strong>的页降级到 inactive：</p>
+<pre class="code" data-label="code"><code class="c">active 尾部页
+  ├─ 近期被引用（folio_referenced 真）→ 保留 active（移到链头）
+  └─ 长期未引用 → 降到 inactive（成为回收候选）
+</code></pre>
+<p><strong>活跃度判定</strong>走 <code class="c">folio_referenced()</code>（rmap 遍历）：它把各进程 PTE 里的 accessed 位<strong>聚合</strong>起来，判断这个页「到底还有没有人在用」。这是 rmap（Ch 3 §7）在回收里的第二个用武之地。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>回收不卡大锁</td>
+<td>isolate 快进快出，写盘在锁外</td>
+</tr>
+<tr>
+<td>页游离 LRU 之外</td>
+<td><code class="c">lru_add_drain()</code> 先排干 per-CPU 缓存，扫描不遗漏</td>
+</tr>
+<tr>
+<td>工作集保护</td>
+<td><code class="c">shrink_folio_list</code> 里 referenced 页放回，给二次机会</td>
+</tr>
+<tr>
+<td>批量回收</td>
+<td><code class="c">SWAP_CLUSTER_MAX</code> 分批扫描，回收有节奏不阻塞</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-2">§2 页缓存</a>：file 链上挂的页</li>
+<li><a href="chapter-14.html#s-4">§4 收缩各类缓存</a>：非 LRU 页（slab/dcache）的回收</li>
+<li><a href="chapter-14.html#s-5">§5 换出进程页面</a>：匿名页 swap out 细节</li>
+<li>前置：<a href="chapter-14.html#s-5">Ch 2 §5 per-CPU</a>（同款批处理思想）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 <code class="c">shrink_inactive_list</code> 要把 victim 隔离到临时列表再处理？</strong>
+A：为了<strong>锁外做慢活</strong>。<code class="c">isolate_lru_folios()</code> 只在持 <code class="c">lru_lock</code> 时把页从 LRU 摘下（快操作），然后立刻放锁；后续「写回脏页、swap out」这些可能阻塞甚至等 I/O 的操作，都在<strong>无锁</strong>的临时列表上做。如果边持锁边写盘，其他 CPU 的分配/回收全被堵住。</p>
+<p><strong>Q2：<code class="c">lru_add_drain()</code> 为什么要在扫描前调用？</strong>
+A：页加入 LRU 是<strong>先攒在 per-CPU 缓存</strong>、后批量入链。如果直接扫描，那些还躺在各 CPU 缓存里、没正式入链的页会被<strong>漏扫</strong>。<code class="c">lru_add_drain()</code> 先把它们排干、正式链入 LRU，保证扫描看到的是一致视图。</p>
+<p><strong>Q3：<code class="c">shrink_folio_list</code> 回收失败（页放回 LRU）的常见原因有哪些？</strong>
+A：① 页还有 <code class="c">PG_referenced</code>（近期被访问，给二次机会）；② 页被 pin（<code class="c">_refcount</code> 异常，比如 DMA 中）；③ 页正在 writeback（要等 I/O 完成）；④ mlocked（直接跳去 unevictable）。回收器对每类都有专门处理，不是「扫到就硬踢」。</p>
+<p><strong>Q4：active 降级和 inactive 回收怎么配合？</strong>
+A：<code class="c">shrink_active_list</code> 把长期不用的 active 页降级到 inactive，扩大回收候选池；<code class="c">shrink_inactive_list</code> 从 inactive 里实际回收。两者交替驱动，让「工作集」（active）和「回收池」（inactive）动态平衡——这正是 §1 说的「active 容纳工作集、inactive 供回收」。</p>
+<p><strong>Q5：<code class="c">folio_referenced()</code> 为什么要走 rmap 遍历 PTE？</strong>
+A：因为「页是否被访问」的信息散落在<strong>每个映射它的进程的 PTE accessed 位</strong>里，<code class="c">struct page/folio</code> 上没有单一权威位。<code class="c">folio_referenced()</code> 通过 rmap 找到所有映射这个 folio 的 PTE，聚合它们的 accessed 位，才能准确判断「到底还有没有人在用」。这就是 rmap 反向映射存在的核心价值之一。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>Ch 10 §4 收缩各类缓存 (`shrink_caches`)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/shrinker.h</code> 的 <code class="c">struct shrinker</code>）</p>
 </blockquote>
-<h3>4. 收缩各类缓存 (<code class="c">shrink_caches</code>)</h3>
-<p>内存告急时 <strong>不只缩 page cache</strong>：</p>
-<pre class="code" data-label="code"><code class="c">shrink_caches (概念)
-    ├─ Slab shrinker（Ch 8 set_shrinker）
-    ├─ dcache（目录项）
-    ├─ icache（inode）
-    └─ dqcache（磁盘配额）
+<hr />
+<h2>本节讲什么</h2>
+<p>回收不止缩 page cache 和匿名页——<strong>slab、dentry、inode</strong> 这些「非 LRU」缓存也得缩。本节讲：</p>
+<ol>
+<li>shrinker 回调机制是什么？谁注册、谁调用？</li>
+<li><code class="c">struct shrinker</code> 的 <code class="c">seeks</code> 字段为什么决定了回收优先级？</li>
+<li>「级联效应」——回收小对象为什么能腾出大内存？</li>
+</ol>
+<hr />
+<h2>1. 内存告急时不止缩 page cache</h2>
+<pre class="code" data-label="code"><code class="c">shrink_node (概念)
+    ├─ shrink_lruvec → 缩 page cache / 匿名页（LRU 链，§1-§3）
+    └─ shrink_slab → 缩 slab / dcache / icache（shrinker 回调，本节）
 </code></pre>
-<p><strong>级联效应：</strong> dentry/inode <strong>对象本身小</strong>，但释放后 <strong>关联的 buffer / page cache 页</strong> 可 <strong>大量回落</strong> — <strong>间接腾页</strong>。</p>
+<p>LRU 链只覆盖「用户可见的页」（文件页、匿名页）。但内核还有大量<strong>内核自己分配</strong>的内存——slab 对象、目录项缓存（dcache）、inode 缓存（icache）、磁盘配额缓存（dqcache）。它们不进 LRU，回收走另一条路：<strong>shrinker 回调</strong>。</p>
+<hr />
+<h2>2. <code class="c">struct shrinker</code> 真身（v6.6 <code class="c">shrinker.h:63</code>）</h2>
+<pre class="code" data-label="C"><code class="c">struct shrinker {
+    unsigned long (*count_objects)(struct shrinker *,
+                                   struct shrink_control *sc);
+    unsigned long (*scan_objects)(struct shrinker *,
+                                  struct shrink_control *sc);
+    long batch;   /* 回收批量，0 = 默认 */
+    int seeks;    /* 重建一个对象的代价（seek 次数） */
+    unsigned flags;
+    atomic_long_t *nr_deferred;  /* per-node 延迟删除计数 */
+};
+</code></pre>
+<ul>
+<li><strong><code class="c">count_objects()</code></strong>：报告「当前有多少对象可回收」（廉价计数）</li>
+<li><strong><code class="c">scan_objects()</code></strong>：实际回收对象（真正干活）</li>
+<li><strong><code class="c">seeks</code></strong>：重建这个对象的<strong>代价</strong>，用「磁盘 seek 次数」度量</li>
+</ul>
+<p>各缓存子系统启动时 <code class="c">register_shrinker()</code> 注册自己的 shrinker：dcache 注册 dentry shrinker、icache 注册 inode shrinker、slab 各 cache 注册 slab shrinker。回收器在 <code class="c">shrink_slab()</code> 里遍历所有已注册的 shrinker，逐个问「能收多少、收给我看」。</p>
+<hr />
+<h2>3. <code class="c">seeks</code> 决定优先级</h2>
+<p>回收是「<strong>用最小代价腾最多内存</strong>」。<code class="c">seeks</code> 量化「踢掉这个对象后再要用它，得付出多大代价」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">seeks</code></th>
+<th>含义</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小（如 1）</td>
+<td>重建便宜，优先回收</td>
+<td>dentry（再 lookup 一次就行）</td>
+</tr>
+<tr>
+<td>大（如 16）</td>
+<td>重建贵，尽量留</td>
+<td>某些需重算的 slab 对象</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">shrink_slab()</code> 里用 <code class="c">seeks</code> 加权，让「便宜重建」的缓存多收、「昂贵重建」的少收——<strong>按重建成本排序的回收</strong>。</p>
+<hr />
+<h2>4. 级联效应：小对象腾大内存</h2>
+<p>dentry / inode <strong>对象本身很小</strong>（几十到几百字节），但释放它们会<strong>连带</strong>释放其关联的 buffer head、page cache 页：</p>
+<pre class="code" data-label="code"><code class="c">回收一个 dentry（~200B）
+    → 触发其 inode 释放
+        → 触发其关联的 page cache 页释放（每页 4KiB）
+            → 物理页大量回落 Buddy
+</code></pre>
+<p>所以「回收小对象」的价值不在对象本身，而在<strong>间接腾出的大页</strong>。这也是为什么内存压力下 dcache/icache 常被先扫。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>频繁 open/close 文件</td>
+<td>dcache/icache 累积，压力下被 shrink，下次 open 重新 lookup（延迟）</td>
+</tr>
+<tr>
+<td>回收风暴</td>
+<td>slab shrinker 被大量调用，<code class="c">count_objects/scan_objects</code> 频繁执行</td>
+</tr>
+<tr>
+<td>内核态内存压力</td>
+<td>slab 不可直接 free，只能靠 shrinker 有选择地收</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-3">§3 LRU 链表管理</a>：LRU 链的回收</li>
+<li><a href="chapter-14.html#s-5">§5 换出进程页面</a>：匿名页 swap out</li>
+<li>前置：<a href="chapter-08.html#ch-8">Ch 8 Slab 分配器</a>（slab shrinker 的注册方）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么 slab/dcache 不走 LRU，而要单独搞 shrinker？</strong>
+A：LRU 是给「用户可见的页」设计的（按访问热度排队）。slab 对象、dentry 没有「访问热度」的简单概念，也不按页组织——它们按各自的数据结构管理。所以用<strong>回调</strong>让各子系统自己决定「收什么、收多少」，而不是内核统一排队。</p>
+<p><strong>Q2：<code class="c">count_objects</code> 和 <code class="c">scan_objects</code> 为什么要分开？</strong>
+A：<code class="c">count_objects</code> 是<strong>廉价计数</strong>（回答「能收多少」），<code class="c">scan_objects</code> 是<strong>昂贵回收</strong>（真的去删）。回收器先问 count 决定「要不要让你收、让你收多少」，再调 scan 执行。分开后，count 可以被频繁调用（决策用），scan 只在真正需要时调。</p>
+<p><strong>Q3：<code class="c">seeks</code> 字段为什么用「seek 次数」而不是「字节数」度量？</strong>
+A：因为重建一个对象的代价，<strong>主要不在 CPU/内存，而在磁盘 I/O</strong>。dentry 重建 = 一次路径 lookup（可能 1 次磁盘 seek），某些 slab 对象重建 = 多次随机读（16 次 seek）。用 seek 次数能直接反映「踢掉它，之后要用它时有多痛」。</p>
+<p><strong>Q4：<code class="c">nr_deferred</code> 是干嘛的？</strong>
+A：<strong>延迟删除</strong>。有些对象回收要等 I/O 完成（如 inode 正在 writeback），不能立刻删。这些对象被记进 per-node 的 <code class="c">nr_deferred</code>，等条件满足后再删。它让 shrinker 不必在回收路径上阻塞等 I/O。</p>
+<p><strong>Q5：为什么说回收 dcache 是「级联腾内存」？</strong>
+A：dentry 本身才几百字节，但它引用 inode，inode 引用 page cache 页。删一个 dentry 可能触发 inode 释放，进而让关联的<strong>一整片 page cache 页</strong>（每页 4KiB）回落 Buddy。所以账面上「收了几百字节」，实际可能腾出几十 KB 到几 MB。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">5</div><h2>Ch 10 §5 换出进程页面 (Swapping Out)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/rmap.h</code> 的 <code class="c">try_to_unmap</code>、<code class="c">mm/vmscan.c</code> 的 <code class="c">shrink_folio_list</code>）</p>
 </blockquote>
-<h3>5. 换出进程页面 (Swapping Out)</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>匿名页没有后备存储，回收它必须先「<strong>写出去</strong>」。本节回答：</p>
+<ol>
+<li>文件页和匿名页的回收路径差在哪？</li>
+<li>rmap 反向映射怎么解决「从页找到所有 PTE」？</li>
+<li>换出之后页去哪了、怎么还能换回来？</li>
+</ol>
+<hr />
+<h2>1. 文件页 vs 匿名页：回收路径分叉</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>页类型</th>
 <th>回收方式</th>
+<th>能否再读回</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>文件页 / 块缓冲</strong></td>
-<td>干净则 <strong>直接丢</strong>（仍可从文件再读）；脏则 <strong>writeback</strong></td>
+<td>文件页（干净）</td>
+<td>直接 free（数据还在文件里）</td>
+<td>缺页时从文件重读</td>
 </tr>
 <tr>
-<td><strong>匿名页（进程堆栈堆 mmap 私有）</strong></td>
-<td>必须 <strong>写入 swap</strong> 才能腾物理页</td>
+<td>文件页（脏）</td>
+<td>writeback 写回文件再 free</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>匿名页（堆栈堆、私有 mmap）</td>
+<td>必须<strong>写 swap 设备</strong>才能腾物理页</td>
+<td>缺页时从 swap 读回</td>
 </tr>
 </tbody>
 </table></div>
-<h3>2.4 痛点：<code class="c">swap_out()</code> 扫全局页表</h3>
-<p><strong>无法</strong> 从 <strong><code class="c">struct page</code> 快速找所有 PTE</strong> → <strong>线性扫描各进程页表</strong> 解绑 — <strong>极慢</strong>。</p>
-<h3>2.6+ rmap（Ch 3）</h3>
-<p><strong><code class="c">struct page</code> → PTE 链表</strong> — <strong>直接 unmap 所有映射</strong> → 页进 <strong>Swap Cache</strong>，引用归零后 <strong>真正 free</strong>。</p>
-<pre class="code" data-label="code"><code class="c">匿名页 swap out
-    unmap PTEs (rmap)
-    → swap cache
-    → 写 swap 设备
-    → 物理页归还 Buddy
+<p>匿名页的麻烦在于：它<strong>只存在于内存里</strong>，没有文件可回退。要回收它，就得先把它写进 swap 区（Ch 11 详述），换出后 PTE 里留下一个 <strong>swap entry</strong> 指向「它躺在 swap 区的哪个槽位」。</p>
+<hr />
+<h2>2. 反向映射 rmap：从页找到所有 PTE</h2>
+<p>回收一个匿名页，第一步是<strong>解除所有进程对它的映射</strong>（unmap）。问题是：一个物理页可能被多个进程映射（fork 后共享、多进程共享内存），怎么从 <code class="c">struct page</code> 反查所有 PTE？</p>
+<p><strong>2.4 的痛：</strong> 没有 rmap，只能<strong>线性扫描所有进程的页表</strong>找谁映射了这个页——<code class="c">swap_out()</code> 极慢。</p>
+<p><strong>2.6+ rmap：</strong> 在 <code class="c">struct page/folio</code> 上维护<strong>反向映射</strong>，能直接定位所有 PTE。v6.6 的接口（<code class="c">rmap.h:372</code>）：</p>
+<pre class="code" data-label="C"><code class="c">void try_to_unmap(struct folio *folio, enum ttu_flags flags);
 </code></pre>
-<p>→ 详 <a href="chapter-11.html#ch-11">Ch 11 交换管理</a></p>
+<p><code class="c">try_to_unmap()</code> 遍历 folio 的所有映射（通过 <code class="c">i_mmap</code> 红黑树找 VMA，再定位 PTE），逐个清除 PTE 的 present 位、替换成 swap entry。<strong>解映射后，物理页的引用才归零，才能真正 free</strong>。</p>
+<hr />
+<h2>3. swap out 完整流程</h2>
+<pre class="code" data-label="code"><code class="c">匿名页回收（shrink_folio_list 里）
+    ├─ try_to_unmap(folio)      # rmap 解所有 PTE，PTE 变 swap entry
+    ├─ folio 加入 swap cache    # 防止「换出过程中又被 fault 回来」造成双写
+    ├─ 写 swap 设备（swap_writepage）
+    ├─ 物理页归还 Buddy
+    └─ PTE 里留着 swap entry → 下次访问触发缺页 → 从 swap 读回
+</code></pre>
+<p><strong>swap cache 的作用：</strong> 换出还没写完时，如果进程又访问这个页（fault），内核会先查 swap cache——命中说明「正在换出」，就等它写完再从 swap 读回，避免「一边写、一边又建新映射」导致数据撕裂。</p>
+<hr />
+<h2>4. 工作集 refault 检测</h2>
+<p>回收不是「踢掉就完了」。v6.6 的 <code class="c">lruvec-&gt;refaults[]</code>（§1）持续统计：<strong>被回收的页，多久之后又被 fault 回来？</strong></p>
+<pre class="code" data-label="code"><code class="c">回收页 → 一段时间后又被访问（refault）
+    ├─ refault 频繁 → 说明回收误踢了工作集 → 调大 active，保护工作集
+    └─ refault 稀少 → 回收正确，继续
+</code></pre>
+<p>这是「回收器自我纠错」的反馈回路——通过观察 refault 频率，动态调整回收激进程度。原书（2.6）没有这个机制。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>swap 是最大延迟源</td>
+<td>匿名页换出换入要碰磁盘，比 page cache 回收慢一个量级</td>
+</tr>
+<tr>
+<td><code class="c">mlock</code> 防换出</td>
+<td>页进 unevictable，<code class="c">try_to_unmap</code> 根本不会被调用</td>
+</tr>
+<tr>
+<td>频繁 refault</td>
+<td>回收误踢工作集 → 二次抖动，监控 <code class="c">/proc/vmstat</code> 的 <code class="c">workingset_refault</code></td>
+</tr>
+<tr>
+<td><code class="c">vm.swappiness=0</code></td>
+<td>让回收器尽量先回收文件页、别碰匿名页</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-4">§4 收缩各类缓存</a></li>
+<li><a href="chapter-11.html#s-6">§6 kswapd</a>：谁在驱动 swap out</li>
+<li>详 <a href="chapter-11.html#ch-11">Ch 11 交换管理</a>（swap 槽位、swap cache 细节）</li>
+<li>前置：<a href="chapter-14.html#s-4">Ch 4 §4 缺页</a>（swap entry 触发的缺页）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么匿名页回收前必须先 <code class="c">try_to_unmap</code>？</strong>
+A：物理页只有在<strong>没有任何 PTE 指向它</strong>、引用计数归零时，才能安全 free。<code class="c">try_to_unmap</code> 解除所有映射、把 PTE 换成 swap entry，是把页「从所有进程的地址空间里摘出来」的必要一步。不 unmap 就 free，等于留下悬空 PTE，之后访问就是 use-after-free。</p>
+<p><strong>Q2：swap cache 和 page cache 什么关系？</strong>
+A：swap cache 是 page cache 的一种特殊形态——它缓存「正在换出/已换出的匿名页」。作用是保证换出换入的<strong>原子性</strong>：换出写盘期间，若页又被 fault，先查 swap cache，避免同时有两个路径操作同一页造成数据撕裂。Ch 11 会详讲它的 <code class="c">swp_entry_t</code> 编码。</p>
+<p><strong>Q3：rmap 是「页 → PTE」的反向映射，正向是谁？</strong>
+A：正向是页表（VA → PA），以及 <code class="c">address_space-&gt;i_mmap</code>（文件 → 所有映射它的 VMA）。rmap 补上了「PA → 所有映射它的 PTE」这一环，让回收器能从物理页出发，反向找到并解除所有虚拟映射。正向查表、反向 unmap，两条路配合。</p>
+<p><strong>Q4：swap out 之后，物理页还在内存里吗？</strong>
+A：不在了，已经归还 Buddy。留在内存里的只是 PTE 里的 <strong>swap entry</strong>（一个编码了 swap 区槽位的值）。进程下次访问这个地址，触发缺页，内核从 swap entry 解码出槽位，从 swap 设备读回数据，重新建立映射。</p>
+<p><strong>Q5：refault 检测怎么帮助减少「回收抖动」？</strong>
+A：如果回收器误踢了工作集里的热页，这些页很快会被再次访问（refault），造成「回收 → 读回 → 又回收」的抖动。<code class="c">lruvec-&gt;refaults[]</code> 统计 refault 频率，频率高就<strong>调大 active 链</strong>（保护更多页不降级），让回收器更保守，减少误踢。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-6">
         <div class="sec-head"><div class="sec-no">6</div><h2>Ch 10 §6 页面换出守护进程 (`kswapd`)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/vmscan.c</code> 的 <code class="c">kswapd</code>、<code class="c">balance_pgdat</code>、<code class="c">try_to_free_pages</code>）</p>
 </blockquote>
-<h3>6. 页面换出守护进程 (<code class="c">kswapd</code>)</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>回收有两条路：<strong>后台的 kswapd</strong> 和 <strong>前台的 direct reclaim</strong>。本节回答：</p>
+<ol>
+<li>kswapd 是一个进程还是每节点一个？它怎么睡、怎么醒？</li>
+<li>direct reclaim 是什么？为什么它是 HFT 延迟尖刺的元凶？</li>
+<li>两者怎么配合，避免「要么不回收、要么卡死」？</li>
+</ol>
+<hr />
+<h2>1. kswapd：per-node 后台回收线程（v6.6 <code class="c">vmscan.c:7713</code>）</h2>
+<pre class="code" data-label="C"><code class="c">static int kswapd(void *p)
+{
+    pg_data_t *pgdat = (pg_data_t *)p;
+    const struct cpumask *cpumask = cpumask_of_node(pgdat-&gt;node_id);
+
+    if (!cpumask_empty(cpumask))
+        set_cpus_allowed_ptr(tsk, cpumask);   /* 绑定到本 node 的 CPU */
+
+    tsk-&gt;flags |= PF_MEMALLOC | PF_KSWAPD;    /* 防止递归回收 */
+    set_freezable();
+
+    for ( ; ; ) {
+kswapd_try_sleep:
+        kswapd_try_to_sleep(pgdat, alloc_order, reclaim_order, highest_zoneidx);
+        /* ... 读新的 order / zoneidx ... */
+        reclaim_order = balance_pgdat(pgdat, alloc_order, highest_zoneidx);
+        if (reclaim_order &lt; alloc_order)
+            goto kswapd_try_sleep;
+    }
+}
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -534,77 +1055,227 @@ Ch 11 swap：匿名页换出细节
 </thead>
 <tbody>
 <tr>
-<td><strong>创建时机</strong></td>
-<td>系统启动</td>
+<td>数量</td>
+<td><strong>每个 NUMA 节点一个</strong>（<code class="c">pgdat-&gt;kswapd</code>，Ch 2 §1）</td>
 </tr>
 <tr>
-<td><strong>平时</strong></td>
-<td><strong>睡眠</strong></td>
+<td>亲和性</td>
+<td>绑在本 node 的 CPU 上（<code class="c">set_cpus_allowed_ptr</code>）</td>
 </tr>
 <tr>
-<td><strong>唤醒</strong></td>
-<td>某 zone 空闲页 <strong>&lt; <code class="c">pages_low</code></strong>（Ch 2 水位）</td>
+<td>平时</td>
+<td>睡在 <code class="c">kswapd_wait</code> 等待队列（<code class="c">kswapd_try_to_sleep</code>，<code class="c">vmscan.c:7616</code>）</td>
 </tr>
 <tr>
-<td><strong>工作</strong></td>
-<td>回收直到 free <strong>回到 ~<code class="c">pages_high</code></strong></td>
+<td>唤醒</td>
+<td>某 zone 空闲跌破 <code class="c">WMARK_LOW</code>（<code class="c">wakeup_kswapd()</code>）</td>
 </tr>
 <tr>
-<td><strong>同步路径</strong></td>
-<td>极端压力下，<strong>普通分配路径</strong>（<code class="c">GFP_KERNEL</code>）<strong>同步执行部分 reclaim</strong> — <strong>direct reclaim</strong></td>
+<td>工作</td>
+<td><code class="c">balance_pgdat()</code>（<code class="c">vmscan.c:7391</code>）回收直到回 <code class="c">WMARK_HIGH</code></td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">free pages
-    high ─── 正常
-     low ─── wake kswapd（异步）
-     min ─── alloc 路径同步 reclaim（调用方阻塞）
+<p><strong><code class="c">PF_MEMALLOC</code> 标志：</strong> kswapd 自己分配内存时（比如要写回页需要 buffer），<strong>绕过回收逻辑</strong>、优先拿到内存——否则「回收内存的过程中又需要内存」会死锁或递归回收。</p>
+<hr />
+<h2>2. direct reclaim：分配路径上的同步回收</h2>
+<p>当空闲页跌破 <code class="c">WMARK_MIN</code>，kswapd 已经<strong>来不及</strong>了——<code class="c">__alloc_pages()</code> 会在<strong>调用方的上下文中同步回收</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* vmscan.c:7041 —— direct reclaim 入口 */
+unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
+                                gfp_t gfp_mask, nodemask_t *nodemask)
+{
+    struct scan_control sc = {
+        .nr_to_reclaim = SWAP_CLUSTER_MAX,
+        .priority = DEF_PRIORITY,
+        .may_writepage = !laptop_mode,
+        .may_unmap = 1,
+        .may_swap = 1,
+    };
+    /* ... */
+    nr_reclaimed = do_try_to_free_pages(zonelist, &amp;sc);
+    return nr_reclaimed;
+}
 </code></pre>
-<p><strong>HFT：</strong> 监控 <strong><code class="c">allocstall</code>、<code class="c">pgscan_*</code>、<code class="c">kswapd_*</code></strong>（<code class="c">/proc/vmstat</code>）；latency 尖刺常与 <strong>direct reclaim + 写盘</strong> 同现。</p>
-<p>→ <a href="chapter-14.html#s-4">Ch 6 GFP_KERNEL</a> · <a href="chapter-13.html#ch-13">Ch 13 OOM</a></p>
+<p><strong>这就是延迟尖刺的来源：</strong> 一个普通的 <code class="c">malloc</code>（<code class="c">GFP_KERNEL</code>），如果赶上内存紧张，会在<strong>调用线程里</strong>同步走完「扫描 LRU → 写回脏页 → 可能 swap」的整条回收链。原本微秒级的分配，变成<strong>毫秒到秒级</strong>的停顿——而且调用方毫无感知，<code class="c">perf</code> 里看到的就是某个 <code class="c">__alloc_pages</code> 突然拖了个长尾巴。</p>
+<hr />
+<h2>3. 两条路的配合</h2>
+<pre class="code" data-label="code"><code class="c">free pages
+  HIGH ──────────────  正常
+   LOW ──────────────  wakeup_kswapd() 唤醒后台回收（异步，不阻塞调用方）
+   MIN ──────────────  __alloc_pages 同步 direct reclaim（调用方阻塞）
+</code></pre>
+<ul>
+<li><strong>kswapd 是「预防」</strong>：水位刚跌破 LOW 就提前后台回收，尽量别让水位掉到 MIN。</li>
+<li><strong>direct reclaim 是「兜底」</strong>：kswapd 没跟上（突发分配、回收太慢），调用方自己动手。</li>
+</ul>
+<p><strong>HFT 的关键判断：</strong> 只要看到 <code class="c">/proc/vmstat</code> 里 <code class="c">allocstall</code>（direct reclaim 次数）增长，就说明系统已经进入「分配路径同步回收」的危险区——延迟尖刺必然随之而来。</p>
+<hr />
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>延迟尖刺</td>
+<td><code class="c">allocstall</code> 增长 = direct reclaim 发生，<code class="c">malloc</code> 里藏了回收</td>
+</tr>
+<tr>
+<td>监控指标</td>
+<td><code class="c">/proc/vmstat</code> 的 <code class="c">allocstall</code>、<code class="c">pgscan_direct</code>、<code class="c">pgsteal_direct</code>、<code class="c">kswapd_*</code></td>
+</tr>
+<tr>
+<td>预防手段</td>
+<td>足够 RAM + 预分配 + <code class="c">mlock</code> + 控制内存水位（<code class="c">vm.min_free_kbytes</code>）</td>
+</tr>
+<tr>
+<td>内核线程 CPU 占用</td>
+<td><code class="c">kswapd</code> 高频运转 = 持续内存压力，看 <code class="c">top</code> 里的 kswapd</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>5. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-5">§5 换出进程页面</a>：kswapd/direct reclaim 驱动的 swap out</li>
+<li><a href="chapter-11.html#s-7">§7 2.6 内核的新变化</a>：本章收尾</li>
+<li>前置：<a href="chapter-14.html#s-2">Ch 2 §2 水位</a>（触发条件）</li>
+<li>下游：<a href="chapter-13.html#ch-13">Ch 13 OOM</a>（回收都救不回来时的最后手段）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：kswapd 是全局一个还是每节点一个？为什么？</strong>
+A：<strong>每 NUMA 节点一个</strong>（<code class="c">pgdat-&gt;kswapd</code>），且绑在本 node 的 CPU 上。原因：回收要按 node 局部做（回收本 node 的页、满足本 node 的分配），全局一个线程会跨 socket 抢锁、也无法针对性平衡各 node 水位。</p>
+<p><strong>Q2：<code class="c">PF_MEMALLOC</code> 为什么对 kswapd 至关重要？</strong>
+A：kswapd 回收时要写回脏页、可能要分配 buffer 等内存。如果它自己分配内存时又触发回收，就会「回收内存的过程中又需要回收内存」——递归乃至死锁。<code class="c">PF_MEMALLOC</code> 让 kswapd 的分配绕过正常回收路径，优先拿内存，打破这个循环。</p>
+<p><strong>Q3：direct reclaim 和 kswapd 都在收，怎么不打架？</strong>
+A：它们共享同一套回收代码（<code class="c">shrink_node</code>/<code class="c">shrink_lruvec</code>），靠 <code class="c">struct scan_control</code> 里的 <code class="c">current_is_kswapd()</code> 区分身份，并用 <code class="c">too_many_isolated()</code> + <code class="c">reclaim_throttle()</code> 做<strong>并发节流</strong>——同一时刻被隔离（isolate）的页过多时，后来的回收者会等一等，避免多路回收互相踩踏。</p>
+<p><strong>Q4：怎么判断一次延迟尖刺是 direct reclaim 引起的？</strong>
+A：三查：① <code class="c">/proc/vmstat</code> 的 <code class="c">allocstall</code> / <code class="c">pgscan_direct</code> 有没有跳增；② <code class="c">perf</code> 火焰图里调用栈有没有 <code class="c">__alloc_pages → try_to_free_pages → shrink_node</code>；③ <code class="c">top</code> 里 kswapd CPU 是否飙升。三者齐了基本可断定是回收导致的抖动。</p>
+<p><strong>Q5：<code class="c">vm.min_free_kbytes</code> 调大能避免 direct reclaim 吗？</strong>
+A：能<strong>推迟</strong>，不能根治。它抬高 <code class="c">WMARK_MIN</code>，让内核更早、更激进地后台回收，给 direct reclaim 留缓冲。但若应用内存需求持续超过物理内存，水位再高也扛不住，最终还是会进 direct reclaim 甚至 OOM。根治靠<strong>容量规划</strong>（预留足够 RAM）+ 预分配 + mlock。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-7">
-        <div class="sec-head"><div class="sec-no">7</div><h2>Ch 10 §7 2.6 内核的新变化</h2></div>
+        <div class="sec-head"><div class="sec-no">7</div><h2>Ch 10 §7 2.6 内核的新变化 (What&#x27;s New in 2.6)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>选读 🟡</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/vmscan.c</code> 的 <code class="c">lru_gen_shrink_lruvec</code>、<code class="c">mm/swap.c</code> 的 <code class="c">lru_add_drain</code>）</p>
 </blockquote>
-<h3>7. 2.6 内核的新变化</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书总结 2.6 相对 2.4 的三点变化，本节：</p>
+<ol>
+<li>讲清这三点各自解决什么</li>
+<li>用 v6.6 源码把每点做实</li>
+<li>补一条「从 2.6 到 v6.6 回收器又进化了什么」</li>
+</ol>
+<hr />
+<h2>1. 原书三变化（2.4 → 2.6）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>改进</th>
-<th>说明</th>
+<th>解决什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>LRU 按 Zone 维护</strong></td>
-<td>2.4 <strong>全局</strong> active/inactive → 2.6 <strong>每 <code class="c">struct zone</code> 一套</strong> — 与 NUMA/多 zone 回收平衡</td>
+<td>2.4 全局一条 active/inactive，回收顺序全局竞争 → 2.6 每 <code class="c">struct zone</code> 一套，按 zone 局部回收</td>
 </tr>
 <tr>
 <td><strong>Pageout pressure 衰减平均</strong></td>
-<td>不用简单 <strong>priority 跳变</strong> — <strong>decaying average</strong> 控制 <strong>扫描强度</strong> — 回收 <strong>更平滑</strong>、少 <strong>突发</strong></td>
+<td>不用简单 priority 跳变 → <strong>decaying average</strong> 控制扫描强度，回收更平滑、少突发</td>
 </tr>
 <tr>
 <td><strong><code class="c">pagevec</code> 批量 LRU</strong></td>
-<td>2.4 每次改 LRU <strong>抢全局锁</strong> → 2.6 <strong>局部向量攒批</strong> 再 <strong>一次性</strong> 链入/链出 — <strong>降锁争用</strong></td>
+<td>2.4 每次改 LRU 抢全局锁 → 2.6 局部向量攒批，一次性链入/链出，降锁争用</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 镜像：</strong> <strong>batch 更新共享结构</strong>（pagevec）≈ 用户态 <strong>批量提交 ring buffer</strong>，少 <strong>跨核锁</strong>。</p>
 <hr />
-<h2>回收决策简图</h2>
-<pre class="code" data-label="code"><code class="c">shrink 扫描 inactive 尾部 page
+<h2>2. v6.6 里这三点的现状</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>2.6 的做法</th>
+<th>v6.6 的演进</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LRU 按 zone 维护</td>
+<td>进一步下沉到 <strong>lruvec（node × memcg）</strong>，粒度更细、锁更小</td>
+</tr>
+<tr>
+<td>decaying average 控制扫描</td>
+<td>升级为 <code class="c">anon_cost/file_cost</code> <strong>成本模型</strong>（§1），比例动态</td>
+</tr>
+<tr>
+<td><code class="c">pagevec</code> 批量 LRU</td>
+<td>演化为 <code class="c">lru_add_drain()</code>（<code class="c">mm/swap.c:646</code>）的 <strong>per-CPU 攒批 + 批量排干</strong>（§3）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>3. 从 2.6 到 v6.6：回收器的新武器</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>新特性</th>
+<th>作用</th>
+<th>源码落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>folio 化</strong></td>
+<td>多页 folio 替代单页，减少元数据开销</td>
+<td><code class="c">shrink_folio_list</code>（<code class="c">vmscan.c</code>）</td>
+</tr>
+<tr>
+<td><strong>lru_gen（多代 LRU）</strong></td>
+<td>把页按「世代」分层，近似最优 LRU，取代二次机会近似</td>
+<td><code class="c">lru_gen_shrink_lruvec</code>（<code class="c">vmscan.c:5497</code>）</td>
+</tr>
+<tr>
+<td><strong>workingset refault</strong></td>
+<td>统计「回收后又被 fault 回来」的频率，动态纠错</td>
+<td><code class="c">lruvec-&gt;refaults[]</code>（§5）</td>
+</tr>
+<tr>
+<td><strong>dirty/writeback tag</strong></td>
+<td>xarray tag 快速定位脏页，不必线性扫描</td>
+<td><code class="c">PAGECACHE_TAG_DIRTY</code>（§2）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>lru_gen 值得单说一句：</strong> 传统的 active/inactive + 二次机会是「近似 LRU」，有精度损失。<code class="c">CONFIG_LRU_GEN</code>（v6.1 起默认开启）把页按<strong>世代（generation）</strong>组织，老化（aging）时推进世代、回收时踢最老世代——<strong>更接近真正的 LRU</strong>，代价是实现复杂度高。</p>
+<hr />
+<h2>4. 回收决策简图（v6.6 版）</h2>
+<pre class="code" data-label="code"><code class="c">__alloc_pages 需要 free 页
         │
-        ├─ Slab / 非 LRU 页？ → 跳过（Slab 自有 shrinker）
-        ├─ mlocked？ → 跳过
-        ├─ 文件页：干净 → free；脏 → writeback → free
-        ├─ 匿名页：→ swap out（rmap unmap → swap cache）
-        └─ 仍被频繁引用？ → 可能 rotate 回 active
+        ├─ 水位 &gt; LOW？ → 直接分，无回收
+        │
+        ├─ 水位 &lt; LOW → wakeup_kswapd()（后台）
+        │        kswapd → balance_pgdat → shrink_node
+        │                    ├─ shrink_lruvec → get_scan_count 定比例
+        │                    │     ├─ shrink_inactive_list（isolate→shrink→放回）
+        │                    │     │     └─ shrink_folio_list：丢/写回/swap
+        │                    │     └─ shrink_active_list（降级）
+        │                    └─ shrink_slab → slab/dcache/icache shrinker
+        │
+        └─ 水位 &lt; MIN → __alloc_pages 同步 direct reclaim（调用方阻塞）
+                          try_to_free_pages → do_try_to_free_pages
 </code></pre>
 <hr />
-<h2>HFT 精读 checklist</h2>
+<h2>5. HFT 精读 checklist</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -614,32 +1285,53 @@ Ch 11 swap：匿名页换出细节
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">mlock</code> / <code class="c">mlockall</code></strong></td>
-<td>进程 <strong>匿名/文件映射 RSS</strong> 不被 swap、减少 <strong>被 shrink 踢出</strong></td>
+<td><code class="c">mlock</code> / <code class="c">mlockall</code></td>
+<td>进程页进 unevictable，不被 swap、不被回收</td>
 </tr>
 <tr>
-<td><strong>足够物理 RAM</strong></td>
-<td>避免 <strong>kswapd / direct reclaim</strong> 常转</td>
+<td>足够物理 RAM</td>
+<td>避免 kswapd / direct reclaim 常转</td>
 </tr>
 <tr>
-<td><strong><code class="c">vm.swappiness=0</code></strong> 等</td>
-<td>降低 <strong>匿名页 swap 倾向</strong>（不替代 mlock）</td>
+<td><code class="c">vm.swappiness=0</code></td>
+<td>回收时倾向文件页、少 swap 匿名页（不替代 mlock）</td>
 </tr>
 <tr>
-<td><strong>监控 vmstat</strong></td>
-<td><code class="c">pgmajfault</code>、<code class="c">allocstall</code>、<code class="c">pgscan_direct</code></td>
+<td>监控 vmstat</td>
+<td><code class="c">allocstall</code>、<code class="c">pgscan_direct</code>、<code class="c">pgmajfault</code>、<code class="c">workingset_refault</code></td>
 </tr>
 <tr>
-<td><strong>避免热路径 <code class="c">GFP_KERNEL</code> 大分配</strong></td>
-<td>减少 <strong>分配触发的同步 reclaim</strong></td>
+<td>避免热路径大分配</td>
+<td>减少分配触发的同步 direct reclaim</td>
 </tr>
 <tr>
-<td><strong>理解 page cache</strong></td>
-<td>行情 <strong>mmap 只读</strong> 可被 drop；<strong>私有 dirty</strong> 要 writeback</td>
+<td>理解 page cache</td>
+<td>mmap 只读行情文件可被回收；私有 dirty 要 writeback</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>Gorman HFT 捷径终点：</strong> Ch 2 → 3 → 8 → 4 → <strong>Ch 10</strong> — 「<strong>内存为什么会抖</strong>」的 <strong>内核侧答案</strong> 在本章与 Ch 6 水位、Ch 4 fault <strong>闭合</strong>。</p>
+<p><strong>Gorman HFT 捷径终点：</strong> Ch 2 → 3 → 8 → 4 → <strong>Ch 10</strong>——「内存为什么会抖」的内核侧答案，在本章与 Ch 2 水位、Ch 4 fault、Ch 6 分配<strong>闭合</strong>。</p>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-11.html#s-6">§6 kswapd</a></li>
+<li>下章：<a href="chapter-11.html#ch-11">Ch 11 交换管理</a>（swap 槽位、swap cache 细节）</li>
+<li>前置：<a href="chapter-14.html#s-5">Ch 2 §5 2.6 新变化</a>（同源的多核优化脉络）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：LRU 从「全局」到「zone」再到「lruvec」，每次细化的动机是什么？</strong>
+A：都是<strong>缩小锁的半径</strong>。全局一条链 = 一把大锁 + 跨 NUMA 竞争；per-zone = 每 zone 独立回收；lruvec（node × memcg）= 锁细到「某节点某 cgroup」，热路径争用降到最低，同时支持 memcg 限额回收。</p>
+<p><strong>Q2：lru_gen（多代 LRU）和传统 active/inactive 二次机会差在哪？</strong>
+A：传统是「两桶 + 引用位」的近似 LRU，精度有限（页可能长期卡在中间态）。lru_gen 按<strong>世代</strong>组织：aging 把页推到新世代，回收踢最老世代，<strong>更接近真正 LRU 的「越久没访问越该被踢」</strong>。代价是实现复杂、内存开销略高。</p>
+<p><strong>Q3：<code class="c">lru_add_drain</code> 和 2.6 的 <code class="c">pagevec</code> 是什么关系？</strong>
+A：一脉相承。<code class="c">pagevec</code> 是 2.6 引入的「批量操作 LRU 的向量」；v6.6 的 per-CPU lru 缓存 + <code class="c">lru_add_drain()</code> 是它的现代形态——页先攒在 per-CPU，攒够批量入链，扫描前排干。思想完全一致：<strong>批处理换锁</strong>。</p>
+<p><strong>Q4：workingset refault 检测解决什么问题？</strong>
+A：解决「回收器不知道自己是收对了还是收错了」。传统回收器踢完就完事，误踢工作集会导致「回收→读回」抖动。refault 统计「回收后多久又被 fault 回来」，频繁 refault 就调保守，形成<strong>自我纠错闭环</strong>。</p>
+<p><strong>Q5：dirty tag 比传统「线性扫 LRU 找脏页」快在哪？</strong>
+A：传统做法要遍历整条 LRU 逐页看 <code class="c">PG_dirty</code> 位。xarray tag（<code class="c">PAGECACHE_TAG_DIRTY</code>）在页<strong>变脏的那一刻</strong>就打了标记，回收器 <code class="c">xa_marked()</code> 一问就知道「有没有脏页」，再按 tag 遍历只碰脏页——<strong>从 O(全链) 降到 O(脏页数)</strong>。</p>
+</details>
 <hr />
       </section>
 
