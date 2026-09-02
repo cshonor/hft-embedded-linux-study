@@ -362,197 +362,760 @@ Ch 6 page_alloc / Ch 10 回收：在这些 Zone 上分配与回收
       <section class="section" id="s-1">
         <div class="sec-head"><div class="sec-no">1</div><h2>Ch 2 §1 内存节点 (Nodes)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mmzone.h</code>）</p>
 </blockquote>
-<h3>1. 内存节点 (Nodes)</h3>
-<h3>NUMA 与 UMA</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>内存管理的<strong>顶层容器</strong>。本节回答三个问题：</p>
+<ol>
+<li>NUMA / UMA 到底差在哪，为什么内核要抽象出「节点」这一层？</li>
+<li>一个节点用什么数据结构描述——<code class="c">pglist_data</code> 的字段级真身是什么？</li>
+<li>分配内存时，内核怎么在<strong>多个节点之间</strong>选（zonelist 回退顺序）？</li>
+</ol>
+<p>原书以 2.4/2.6 语境的 <code class="c">pg_data_t</code> 叙述；v6.6 中它是 <code class="c">typedef struct pglist_data</code>（<code class="c">mmzone.h:1261</code>），字段已随 NUMA、内存热插拔、延迟初始化大幅演进，但「Node → Zone → Page」三层直觉不变。</p>
+<hr />
+<h2>1. NUMA 与 UMA</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>架构</th>
+<th>全称</th>
 <th>含义</th>
 <th>访问特性</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>NUMA</strong>（Non-Uniform Memory Access）</td>
-<td>大型机器上内存分 <strong>多个 Bank/节点</strong></td>
-<td>CPU 访问 <strong>本地节点</strong> 快，<strong>远端节点</strong> 慢（距离不同）</td>
+<td><strong>NUMA</strong></td>
+<td>Non-Uniform Memory Access</td>
+<td>大型机上内存按 CPU/socket 分<strong>多个节点（Bank）</strong></td>
+<td>CPU 访问<strong>本地节点</strong>快，<strong>远端节点</strong>慢（跨 socket 走互联总线，如 Intel UPI / AMD Infinity Fabric）</td>
 </tr>
 <tr>
-<td><strong>UMA</strong>（Uniform Memory Access）</td>
+<td><strong>UMA</strong></td>
+<td>Uniform Memory Access</td>
 <td>传统 PC / 小服务器</td>
-<td>视为 <strong>单一节点</strong>，访问成本一致</td>
+<td>整片内存视为<strong>单一节点</strong>，访问成本一致</td>
 </tr>
 </tbody>
 </table></div>
-<p>VM 子系统把 <strong>每个内存组</strong> 称为一个 <strong>节点 (Node)</strong>。</p>
-<h3><code class="c">pg_data_t</code></h3>
-<p>内核用 <strong><code class="c">pg_data_t</code></strong>（现代树中常与 <strong><code class="c">struct pglist_data</code></strong> 对应）描述一个节点：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>UMA 系统</th>
-<th>NUMA 系统</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>整片物理内存 ≈ <strong>一个节点</strong></td>
-<td>多个 <code class="c">pg_data_t</code>，各有 zone、页框</td>
-</tr>
-<tr>
-<td>传统名 <strong><code class="c">contig_page_data</code></strong></td>
-<td>每 socket / 每 NUMA node 一个</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>节点是物理内存的顶层容器</strong> — 其下再划 Zone，再落到 <code class="c">struct page</code>。</p>
-<p>→ HFT：<strong><code class="c">numactl --membind</code> / <code class="c">mbind()</code></strong> 就是在 <strong>指定 Node 上分配</strong> — 跨 node 访问 = 额外延迟与带宽争用（→ <a href="../../06.6-systems-performance/html/chapter-07.html#ch-7">06.6-Systems-Performance Ch7</a> · Hennessy 内存层次）。</p>
+<p>VM 子系统把每个这样的内存组称为一个 <strong>节点 (Node)</strong>，用 <code class="c">pglist_data</code> 描述。UMA 机器上只有一个节点（传统名 <code class="c">contig_page_data</code>）；NUMA 机器每个 socket/内存控制器一个节点。</p>
+<p><strong>为什么本地快、远端慢？</strong> 现代 x86_64 每个 socket 有独立内存控制器，CPU 访问挂在自己 socket 下的 DIMM 走<strong>本地内存控制器</strong>，访问别的 socket 的内存要经过<strong>跨 socket 互联链路</strong>——多一跳、共享带宽、延迟更高。这正是 <code class="c">numactl</code> 里 <code class="c">node distances</code> 表（如 <code class="c">10 / 21</code>）量化的东西。</p>
 <hr />
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 2 §2 内存区域 (Zones)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
-</blockquote>
-<h3>2. 内存区域 (Zones)</h3>
-<p>每个 <strong>Node</strong> 再划分为多个 <strong>区域 (Zone)</strong>。典型 x86 32 位划分：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>Zone</th>
-<th>用途（简）</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">ZONE_DMA</code></strong></td>
-<td>低端物理地址，供 <strong>ISA DMA</strong> 等必须落在有限物理范围的设备</td>
-</tr>
-<tr>
-<td><strong><code class="c">ZONE_NORMAL</code></strong></td>
-<td>内核 <strong>直接线性映射</strong> 可常态访问的「普通」物理页</td>
-</tr>
-<tr>
-<td><strong><code class="c">ZONE_HIGHMEM</code></strong></td>
-<td><strong>32 位</strong> 上超出内核直接映射窗口的物理内存（见 §4）</td>
-</tr>
-</tbody>
-</table></div>
-<p>每个 Zone 由 <strong><code class="c">zone_t</code></strong>（2.6 起 <strong><code class="c">struct zone</code></strong>）描述。</p>
-<h3>区域水位线 (Zone Watermarks)</h3>
-<p>页面 <strong>分配</strong> 与 <strong>回收</strong> 的触发器 — 每个 Zone 有三个关键水位：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>水位</th>
-<th>含义</th>
-<th>典型后果</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong><code class="c">pages_high</code></strong></td>
-<td>空闲页较多</td>
-<td>正常分配</td>
-</tr>
-<tr>
-<td><strong><code class="c">pages_low</code></strong></td>
-<td>空闲页偏少</td>
-<td>唤醒 <strong><code class="c">kswapd</code></strong> 后台回收</td>
-</tr>
-<tr>
-<td><strong><code class="c">pages_min</code></strong></td>
-<td>空闲页紧张</td>
-<td>分配路径上 <strong>同步回收</strong>（<strong>direct reclaim</strong>）— 调用方可能被拖慢</td>
-</tr>
-</tbody>
-</table></div>
-<pre class="code" data-label="code"><code class="c">空闲页数量
-    high ─────────────────  正常
-     low ─────────────────  kswapd 开始干活
-     min ─────────────────  分配器同步回收（延迟尖刺）
+<h2>2. <code class="c">struct pglist_data</code> 真身（v6.6 <code class="c">mmzone.h:1261</code>）</h2>
+<pre class="code" data-label="C"><code class="c">typedef struct pglist_data {
+    /* 本节点的 zone 数组（不含别的节点），可能部分未填充 */
+    struct zone node_zones[MAX_NR_ZONES];
+
+    /* 跨【所有节点的所有 zone】的引用表：分配时的回退顺序 */
+    struct zonelist node_zonelists[MAX_ZONELISTS];
+
+    int nr_zones;               /* 本节点实际填充的 zone 数 */
+#ifdef CONFIG_FLATMEM
+    struct page *node_mem_map;  /* 本节点 struct page 数组起点（FLATMEM） */
+#endif
+    unsigned long node_start_pfn;      /* 本节点第一个物理页框号 */
+    unsigned long node_present_pages;  /* 实际存在的物理页总数（不含空洞） */
+    unsigned long node_spanned_pages;  /* 地址范围跨度（含空洞） */
+    int node_id;
+    wait_queue_head_t kswapd_wait;     /* kswapd 回收守护进程的等待队列 */
+    struct task_struct *kswapd;        /* 本节点的回收守护进程（Ch 10） */
+    unsigned long totalreserve_pages;  /* 本节点保留、不给用户态分配的页 */
+    struct lruvec __lruvec;            /* LRU 链表向量（Ch 10 回收的地基） */
+    /* ... */
+} pg_data_t;
 </code></pre>
-<p><strong>HFT 关联：</strong> 即使用 <code class="c">mlock</code>，系统其他部分仍可能因 <strong>全局内存压力</strong> 触发回收路径；绑 NUMA + 预分配 + 监控 <strong>direct reclaim</strong>（<code class="c">/proc/vmstat</code> 等）是常见调优项。</p>
-<h3>等待队列表 (Wait Queue Table)</h3>
-<p>页在进行 <strong>I/O</strong>（换入/换出、块设备读写）时会被 <strong>锁定</strong>（<code class="c">PG_locked</code>）。等该页的进程需 <strong>睡眠</strong>。</p>
-<ul>
-<li><strong>不为每个 page 单独建等待队列</strong>（太费内存）</li>
-<li>在 <strong>Zone</strong> 里维护 <strong>哈希形式的 wait queue table</strong> — 多个 page 共享桶式等待结构</li>
-</ul>
-<p>→ 读回收 / swap 时会反复碰到：<strong>页 locked → 在 zone 等待队列上 sleep → I/O 完成唤醒</strong>。</p>
-<hr />
-      </section>
-      <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 2 §3 物理页框 (Pages)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
-</blockquote>
-<h3>3. 物理页框 (Pages)</h3>
-<p>系统中 <strong>每个物理页框</strong> 对应一个 <strong><code class="c">struct page</code></strong> — 内核用它 <strong>持续跟踪</strong> 该页框状态（无论是否已映射到用户空间）。</p>
-<h3>核心字段（原书强调）</h3>
+<p>字段分三组看：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>字段</th>
+<th>组</th>
 <th>作用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">mapping</code></strong></td>
-<td>若页属于 <strong>文件映射</strong>，指向该文件的 <strong>address space</strong>；匿名页 / slab 等另有用法</td>
+<td><code class="c">node_zones[]</code> / <code class="c">nr_zones</code></td>
+<td><strong>结构</strong></td>
+<td>本节点到底有哪些 zone、有几个</td>
 </tr>
 <tr>
-<td><strong><code class="c">count</code></strong></td>
-<td><strong>引用计数</strong>；<code class="c">0</code> → 可释放；<code class="c">&gt;0</code> → 正被进程或内核使用</td>
+<td><code class="c">node_zonelists[]</code></td>
+<td><strong>分配</strong></td>
+<td>分配内存时按什么顺序找 zone（跨节点回退）</td>
 </tr>
 <tr>
-<td><strong><code class="c">flags</code></strong></td>
-<td>描述页当前状态的 <strong>标志位集合</strong></td>
+<td><code class="c">node_start_pfn</code> / <code class="c">node_present_pages</code> / <code class="c">node_spanned_pages</code></td>
+<td><strong>边界</strong></td>
+<td>本节点管辖的物理地址范围（有空洞时 spanned &gt; present）</td>
+</tr>
+<tr>
+<td><code class="c">node_mem_map</code></td>
+<td><strong>页数组</strong></td>
+<td>FLATMEM 下本节点 <code class="c">struct page</code> 数组首指针</td>
+</tr>
+<tr>
+<td><code class="c">kswapd</code> / <code class="c">kswapd_wait</code> / <code class="c">__lruvec</code></td>
+<td><strong>回收</strong></td>
+<td>每个节点一个回收线程 + 自己的 LRU，与 Ch 10 直接挂钩</td>
+</tr>
+<tr>
+<td><code class="c">totalreserve_pages</code></td>
+<td><strong>保留</strong></td>
+<td>系统应急页，用户态拿不到，防止 OOM 时无米下锅</td>
 </tr>
 </tbody>
 </table></div>
-<h3>页面状态标志 (Page Flags) — 示例</h3>
+<p><strong>关键直觉：节点是「结构 + 分配策略 + 回收」三合一的自洽单元。</strong> 它不仅描述物理内存长什么样，还决定了从哪分配、由谁回收。</p>
+<hr />
+<h2>3. 节点寻址：<code class="c">NODE_DATA()</code> 与边界宏</h2>
+<p>内核用 <code class="c">NODE_DATA(nid)</code> 拿节点指针（架构相关：x86_64 是 <code class="c">node_data[]</code> 数组，UMA 折叠为 <code class="c">&amp;contig_page_data</code>）。配套的边界宏（<code class="c">mmzone.h:1393-1399</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define node_present_pages(nid) (NODE_DATA(nid)-&gt;node_present_pages)
+#define node_spanned_pages(nid) (NODE_DATA(nid)-&gt;node_spanned_pages)
+#define node_start_pfn(nid)     (NODE_DATA(nid)-&gt;node_start_pfn)
+#define node_end_pfn(nid)       pgdat_end_pfn(NODE_DATA(nid))  /* start + spanned */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">物理地址空间（PFN 递增）
+├─ Node 0 ──────────────┬─ Node 1 ──────────────
+│  node_start_pfn=0      │  node_start_pfn=0x100000
+│  spanned = 0x100000    │  spanned = 0x100000
+│  present = 0xFE000     │  present = 0xFF800
+│  （有内存空洞）          │
+└───────────────────────┴───────────────────────
+    每 node 内部再分 Zone（见 §2）
+</code></pre>
+<hr />
+<h2>4. <code class="c">node_zonelists</code>：分配时的跨节点回退</h2>
+<p>这是最容易混淆的一对字段：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>标志</th>
+<th></th>
+<th><code class="c">node_zones[]</code></th>
+<th><code class="c">node_zonelists[]</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内容</td>
+<td><strong>本节点自己</strong>的 zone</td>
+<td>引用<strong>所有节点</strong>的 zone 的<strong>顺序表</strong></td>
+</tr>
+<tr>
+<td>谁在维护</td>
+<td>启动/热插拔时填充</td>
+<td><code class="c">build_all_zonelists()</code>（<code class="c">mmzone.h:1424</code> 声明）构建</td>
+</tr>
+<tr>
+<td>干什么用</td>
+<td>描述「我有哪些内存」</td>
+<td>描述「分配时先找谁、再找谁」</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">build_all_zonelists()</code> 按 <strong>NUMA 距离（node distance）</strong> 排序：本节点的 zone 排最前，距离越远的节点排越后。于是 <code class="c">__alloc_pages()</code> 的默认行为天然是 <strong>本地优先、远端兜底</strong>：</p>
+<pre class="code" data-label="code"><code class="c">Node 0 上某 CPU 请求页 → 查 node_zonelists[0]
+    ├─ ① Node 0 的 ZONE_NORMAL / DMA32 ...（本地，先试）
+    ├─ ② Node 1 的 ZONE_NORMAL ...          （距离 21，次选）
+    └─ ③ ...                                 （更远节点）
+</code></pre>
+<p><strong>HFT 直接相关：</strong> 一旦本地 zone 水位告急，分配会「静默」落到远端节点——之后每次访问都吃跨 socket 延迟。这就是为什么延迟敏感程序要 <code class="c">numactl --membind</code> <strong>强制绑死本地节点</strong>（而不是默认的 <code class="c">--interleave</code> 或 localonly 回退）。</p>
+<hr />
+<h2>5. 代码示例</h2>
+<p><strong>① 看机器有几个节点、距离多少：</strong></p>
+<pre class="code" data-label="shell"><code class="c">$ numactl --hardware
+available: 2 nodes (0-1)
+node 0 cpus: 0 1 2 3
+node 1 cpus: 4 5 6 7
+node distances:
+node   0   1
+  0:  10  21     # 本地 10，跨 socket 21
+  1:  21  10
+</code></pre>
+<p><strong>② 节点在 sysfs 下的真实形态：</strong></p>
+<pre class="code" data-label="shell"><code class="c">$ ls /sys/devices/system/node/
+node0  node1  online  possible  has_cpu  has_memory
+
+$ cat /sys/devices/system/node/node0/meminfo
+Node 0 MemTotal:       32768000 kB
+Node 0 MemFree:        16384000 kB
+</code></pre>
+<p><strong>③ 用户态强制本地分配：</strong></p>
+<pre class="code" data-label="C"><code class="c">#include &lt;numa.h&gt;
+/* 把本线程后续内存分配绑到 node 0，禁止回退 */
+numa_set_preferred(0);          /* 首选，可回退 */
+numa_set_membind(numa_no_nodes_ptr ? 0 : 0);  /* 强制，无回退（需 numa_bind） */
+</code></pre>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>跨 socket 访问延迟翻倍</td>
+<td>node distance <code class="c">10 vs 21</code>；<code class="c">numactl --membind</code> 把分配钉死本地</td>
+</tr>
+<tr>
+<td>订单簿内存池「绑核绑内存」</td>
+<td>每核的数据结构分配到<strong>该核所在 node</strong>，避免远端访存</td>
+</tr>
+<tr>
+<td>NIC 收包缓冲与 CPU 不在同 node</td>
+<td>网络栈收包页落在 NIC 所在 node，处理它的 CPU 若在别的 node 则全程跨 socket</td>
+</tr>
+<tr>
+<td><code class="c">mlock</code> 后仍可能抖动</td>
+<td><code class="c">mlock</code> 防换出，但<strong>不防</strong>本地 zone 告急触发回退到远端 node</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 内存区域</a>：节点内部再分 Zone 与水位</li>
+<li><a href="chapter-14.html#s-3">§3 物理页框</a>：<code class="c">node_mem_map</code> 里的 <code class="c">struct page</code></li>
+<li>回收：<a href="chapter-10.html#ch-10">Ch 10 页框回收</a>（<code class="c">kswapd</code> 落地处）</li>
+<li>现代演进：<a href="../../06.5-modern-mm/html/chapter-01.html#ch-1">06.5/ch01 物理内存与 memblock</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：UMA 机器上也有 <code class="c">pglist_data</code> 吗？</strong>
+A：有。UMA 退化为<strong>只有一个节点</strong>（<code class="c">contig_page_data</code>），<code class="c">NODE_DATA(0)</code> 就是它。整个 NUMA 抽象在 UMA 上仍然成立，只是「多节点」退化成「单节点」，跨节点回退逻辑从不触发。这跟「单 CPU 机器也有 per-CPU 变量」是同一类设计——<strong>抽象不因硬件退化而消失</strong>。</p>
+<p><strong>Q2：<code class="c">node_spanned_pages</code> 和 <code class="c">node_present_pages</code> 为什么是两个数？</strong>
+A：物理地址空间可能有<strong>空洞</strong>（内存条没插满、BIOS 保留、内存热插拔留下间隙）。<code class="c">spanned</code> 是地址范围跨度（含洞），<code class="c">present</code> 是实际存在的物理页（不含洞）。回收器/分配器用 <code class="c">present</code>，边界计算用 <code class="c">spanned</code>。</p>
+<p><strong>Q3：分配内存时内核「静默回退到远端节点」，怎么观察到？</strong>
+A：<code class="c">numastat</code> 看每个节点的 <code class="c">numa_hit</code> / <code class="c">numa_miss</code> / <code class="c">numa_foreign</code> 计数。<code class="c">numa_miss</code> 增长说明有分配落在非本节点；也可以 <code class="c">cat /sys/devices/system/node/node*/numastat</code>。</p>
+<p><strong>Q4：<code class="c">numactl --membind</code> 和 <code class="c">mbind()</code> 系统调用什么关系？</strong>
+A：<code class="c">numactl</code> 是用户态工具，底层调 <code class="c">set_mempolicy()</code> / <code class="c">mbind()</code>（前者改当前线程的默认策略，后者改一段已分配内存的归属）。<code class="c">--membind</code> 对应 <code class="c">MPOL_BIND</code>——<strong>严格绑定</strong>，不允许回退，若该节点内存不够则分配失败，而不是静默落到远端。</p>
+<p><strong>Q5：为什么 <code class="c">node_zonelists</code> 是「所有节点的 zone 的引用」而不是每个节点各维护一份自己的？</strong>
+A：分配发生在<strong>任意 CPU</strong>上，而该 CPU 需要知道「整个系统」的可用 zone 按距离排序后的顺序。把回退顺序<strong>冗余存储在每个节点的 <code class="c">pglist_data</code> 里</strong>，分配路径只查自己节点的 <code class="c">node_zonelists</code>，不必跨节点读别的节点的数据结构——<strong>省一次跨 socket 访存</strong>，也避免锁竞争。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-2">
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 2 §2 内存区域 (Zones)</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mmzone.h</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>节点太粗——一个 NUMA 节点里可能混着「只有 ISA 设备能 DMA 的低端内存」和「普通内存」。内核把节点再切成 <strong>Zone</strong>，本节回答：</p>
+<ol>
+<li>为什么分 zone？现代内核有哪些 zone 类型？</li>
+<li><code class="c">struct zone</code> 的字段级真身——尤其是<strong>三个 page 计数</strong>和水位数组？</li>
+<li>水位怎么触发回收（这是 HFT 抖动的地基）？</li>
+</ol>
+<p>原书 2.4/2.6 语境讲 <code class="c">ZONE_DMA / ZONE_NORMAL / ZONE_HIGHMEM</code> 三件套；v6.6 的 <code class="c">enum zone_type</code>（<code class="c">mmzone.h:715</code>）已扩到六个，且<strong>全部由 CONFIG 开关决定是否编译进枚举</strong>。</p>
+<hr />
+<h2>1. 为什么分 zone + v6.6 的 zone 类型</h2>
+<p>根本原因：<strong>不是所有物理内存对所有用途都平等</strong>。有的设备 DMA 只能寻址低 16MiB，有的 32 位内核线性映射窗口只有 ~896MiB。</p>
+<pre class="code" data-label="C"><code class="c">enum zone_type {            /* mmzone.h:715 */
+#ifdef CONFIG_ZONE_DMA
+    ZONE_DMA,               /* 低 16MiB：老式 ISA DMA 设备专用 */
+#endif
+#ifdef CONFIG_ZONE_DMA32
+    ZONE_DMA32,             /* 32 位 DMA 可寻址（x86_64 上通常 0~4GiB） */
+#endif
+    ZONE_NORMAL,            /* 内核线性映射可直接覆盖的「普通」内存 */
+#ifdef CONFIG_HIGHMEM
+    ZONE_HIGHMEM,           /* 32 位内核线性映射窗口之外的内存（§4） */
+#endif
+    ZONE_MOVABLE,           /* 可迁移页：内存热拔/大页/离线更易成功 */
+#ifdef CONFIG_ZONE_DEVICE
+    ZONE_DEVICE,            /* 非易失内存/设备内存（pmem、HBM、GPU） */
+#endif
+    __MAX_NR_ZONES
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>Zone</th>
+<th>典型用途</th>
+<th>x86_64 上是否存在</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ZONE_DMA</code></td>
+<td>ISA DMA 设备</td>
+<td>通常<strong>没有</strong>（现代 x86_64 用 DMA32 覆盖）</td>
+</tr>
+<tr>
+<td><code class="c">ZONE_DMA32</code></td>
+<td>只能 32 位 DMA 的设备</td>
+<td><strong>有</strong>（0~4GiB）</td>
+</tr>
+<tr>
+<td><code class="c">ZONE_NORMAL</code></td>
+<td>通用</td>
+<td><strong>有</strong>（主体）</td>
+</tr>
+<tr>
+<td><code class="c">ZONE_HIGHMEM</code></td>
+<td>32 位内核补丁</td>
+<td><strong>没有</strong>（<code class="c">CONFIG_HIGHMEM</code> 未定义）</td>
+</tr>
+<tr>
+<td><code class="c">ZONE_MOVABLE</code></td>
+<td>可迁移页（内存热拔/大页）</td>
+<td>视 <code class="c">kernelcore/movablecore</code> 启动参数</td>
+</tr>
+<tr>
+<td><code class="c">ZONE_DEVICE</code></td>
+<td>pmem/HBM/GPU</td>
+<td>视 <code class="c">CONFIG_ZONE_DEVICE</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键：zone 类型是「按能力分层」，不是「按用途分类」。</strong> <code class="c">ZONE_DMA32</code> 和 <code class="c">ZONE_NORMAL</code> 可能物理上重叠——一块 2GiB 的内存，低 4GiB 部分同时属于 <code class="c">ZONE_DMA32</code> 和 <code class="c">ZONE_NORMAL</code> 候选，分配时按 <code class="c">gfp_mask</code> 里的 <code class="c">GFP_DMA32</code> 等标志决定走哪个 zone。</p>
+<hr />
+<h2>2. <code class="c">struct zone</code> 真身（v6.6 <code class="c">mmzone.h:810</code>）</h2>
+<pre class="code" data-label="C"><code class="c">struct zone {
+    /* 只读字段 */
+    unsigned long _watermark[NR_WMARK];   /* 4 个水位：MIN/LOW/HIGH/PROMO */
+    unsigned long watermark_boost;        /* 临时抬高的水位（内存碎片化防御） */
+    unsigned long nr_reserved_highatomic; /* 保留给原子分配的高位内存 */
+    long lowmem_reserve[MAX_NR_ZONES];    /* 低端 zone 的应急保留（防 OOM） */
+
+    int node;                             /* 所属节点 id（CONFIG_NUMA） */
+    struct pglist_data *zone_pgdat;       /* 反指所属节点 */
+    struct per_cpu_pages __percpu *per_cpu_pageset;  /* 每 CPU 页缓存（§5） */
+
+    unsigned long zone_start_pfn;         /* zone 起始页框号 */
+
+    atomic_long_t managed_pages;          /* buddy 真正管理的页 */
+    unsigned long spanned_pages;          /* 跨度（含空洞） */
+    unsigned long present_pages;          /* 实际存在（不含空洞） */
+
+    const char *name;                     /* &quot;Normal&quot;/&quot;DMA32&quot;/... */
+
+    /* 写密集字段（页分配器用） */
+    CACHELINE_PADDING(_pad1_);
+    struct free_area free_area[MAX_ORDER + 1];  /* buddy 空闲链表（Ch 6） */
+    unsigned long flags;
+    spinlock_t lock;                      /* 保护 free_area 的自旋锁 */
+
+    CACHELINE_PADDING(_pad2_);
+    /* 压缩（compaction）与 vmstat 字段 ... */
+    CACHELINE_PADDING(_pad3_);
+    atomic_long_t vm_stat[NR_VM_ZONE_STAT_ITEMS];  /* zone 统计计数 */
+} ____cacheline_internodealigned_in_smp;
+</code></pre>
+<p>三个 page 计数是本节最容易被问倒的细节（源码注释讲得极清楚）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>计数</th>
+<th>公式</th>
 <th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">PG_active</code></strong></td>
-<td><strong>热页</strong> — 在 <strong>active LRU</strong> 链上，近期被访问</td>
+<td><code class="c">spanned_pages</code></td>
+<td><code class="c">zone_end_pfn - zone_start_pfn</code></td>
+<td>地址跨度，<strong>含空洞</strong></td>
 </tr>
 <tr>
-<td><strong><code class="c">PG_dirty</code></strong></td>
-<td>页内容已改，需 <strong>写回</strong> 磁盘</td>
+<td><code class="c">present_pages</code></td>
+<td><code class="c">spanned - 空洞</code></td>
+<td>实际存在的物理页</td>
 </tr>
 <tr>
-<td><strong><code class="c">PG_locked</code></strong></td>
-<td>正被 <strong>I/O 锁定</strong></td>
-</tr>
-<tr>
-<td><strong><code class="c">PG_uptodate</code></strong></td>
-<td>已从磁盘 <strong>成功读入</strong>，内容有效</td>
+<td><code class="c">managed_pages</code></td>
+<td><code class="c">present - reserved</code></td>
+<td><strong>buddy 系统真正能分配的页</strong>（扣掉 bootmem 保留等）</td>
 </tr>
 </tbody>
 </table></div>
-<p>LRU、dirty、locked 等标志与 <strong>Ch 10 页框回收</strong>、<strong>swap</strong> 直接相连 — 回收器决定 <strong>踢哪一页</strong>，就是看 <strong>哪个 zone 的哪条 LRU、什么 flags</strong>。</p>
-<p>→ 用户态 <code class="c">mmap</code> 的文件页、匿名页，最终都落实为 <strong><code class="c">struct page</code> + 引用计数 + flags</strong>（→ <a href="../../03-linux-userspace-api/html/index.html">03-linux-userspace-api</a> · <a href="../../05-linux-kernel/html/chapter-12.html#ch-12">05-linux-kernel Ch12</a>）。</p>
+<p><strong>HFT 直觉：</strong> <code class="c">/proc/meminfo</code> 的 <code class="c">MemFree</code> 之类，对应的是 <code class="c">managed_pages</code> 里空闲的部分。<code class="c">managed_pages</code> 才是页分配器和回收器算水位、算阈值的基数——所以看内存「够不够」，认准 managed 口径。</p>
+<hr />
+<h2>3. 水位线：<code class="c">enum zone_watermarks</code>（v6.6 <code class="c">mmzone.h:652</code>）</h2>
+<pre class="code" data-label="C"><code class="c">enum zone_watermarks {
+    WMARK_MIN,
+    WMARK_LOW,
+    WMARK_HIGH,
+    WMARK_PROMO,     /* v6.6 新增：NUMA promotion 水位 */
+    NR_WMARK
+};
+/* 取水位必须走宏，因为还要叠加 watermark_boost */
+#define wmark_pages(z, i)  (z-&gt;_watermark[i] + z-&gt;watermark_boost)
+#define low_wmark_pages(z) (z-&gt;_watermark[WMARK_LOW]  + z-&gt;watermark_boost)
+</code></pre>
+<pre class="code" data-label="code"><code class="c">空闲页数量
+  HIGH ────────────────  正常分配
+   LOW ────────────────  kswapd 被唤醒，后台异步回收
+   MIN ────────────────  分配器【同步】回收（direct reclaim，延迟尖刺）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>水位</th>
+<th>触发</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">WMARK_HIGH</code></td>
+<td>空闲充足</td>
+<td>无</td>
+</tr>
+<tr>
+<td><code class="c">WMARK_LOW</code></td>
+<td>空闲跌破</td>
+<td>唤醒 <code class="c">kswapd</code>（<code class="c">wakeup_kswapd()</code>，<code class="c">mmzone.h:1424</code> 声明）后台回收</td>
+</tr>
+<tr>
+<td><code class="c">WMARK_MIN</code></td>
+<td>空闲告急</td>
+<td>分配路径<strong>同步回收</strong>——调用进程被拖慢</td>
+</tr>
+<tr>
+<td><code class="c">WMARK_PROMO</code></td>
+<td>NUMA 下</td>
+<td>触发跨节点<strong>页迁移（promotion）</strong>，把远端页迁回本地</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 关联（原笔记已有，这里点透机制）：</strong> <code class="c">direct reclaim</code> 慢在哪——分配路径里同步扫描 LRU、写回脏页、可能还要等 I/O，<strong>一次 <code class="c">malloc</code> 背后可能藏几毫秒到几十毫秒的停顿</strong>。<code class="c">mlock</code> 只防自己的页被换出，防不了<strong>全局</strong>跌破 <code class="c">WMARK_MIN</code> 触发 direct reclaim。所以 HFT 要监控 <code class="c">/proc/vmstat</code> 的 <code class="c">allocstall_*</code> / <code class="c">pgscan_*</code> 计数。</p>
+<hr />
+<h2>4. 等待队列表 (Wait Queue Table)</h2>
+<p>页做 I/O（换入/换出、块设备读写）时被锁（<code class="c">PG_locked</code>），等它的进程要睡。<strong>不为每个 page 单独建等待队列</strong>（内存开销太大），而是在 <strong>zone 级别</strong>维护哈希桶式等待结构，多个 page 共享。回收/swap 路径会反复碰到：<code class="c">PG_locked</code> → 在 zone 等待队列上 sleep → I/O 完成唤醒。</p>
+<hr />
+<h2>5. 代码示例：<code class="c">/proc/zoneinfo</code></h2>
+<pre class="code" data-label="shell"><code class="c">$ cat /proc/zoneinfo | head -30
+Node 0, zone      DMA
+  per-node stats
+      nr_inactive_anon 0
+      nr_active_anon 0
+  pages free     3975          # 空闲页
+        min      10            # WMARK_MIN
+        low      24            # WMARK_LOW
+        high     38            # WMARK_HIGH
+        spanned  4095          # 跨度
+        present  3998          # 实际存在
+        managed  3975          # buddy 管理
+        protection: (0, 1024, 1024, 1024, ...)   # lowmem_reserve
+</code></pre>
+<p>三个计数 <code class="c">spanned/present/managed</code> 在这里直接可见，水位 <code class="c">min/low/high</code> 也一一对应枚举。</p>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存「够」却偶发停顿</td>
+<td>跌破 <code class="c">WMARK_MIN</code> → direct reclaim 同步回收</td>
+</tr>
+<tr>
+<td>绑 NUMA 仍可能回退</td>
+<td>本地 zone 水位告急 → 回退远端 node（§1 zonelist）</td>
+</tr>
+<tr>
+<td>大页分配失败</td>
+<td><code class="c">ZONE_MOVABLE</code> 不足 + 碎片化 → compaction 失败（<code class="c">compact_stall</code>）</td>
+</tr>
+<tr>
+<td>原子上下文分配不能睡</td>
+<td><code class="c">nr_reserved_highatomic</code> 为 <code class="c">GFP_ATOMIC</code> 保留应急页</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-1">§1 内存节点</a>：节点内部再分 zone</li>
+<li>下节 <a href="chapter-14.html#s-3">§3 物理页框</a>：<code class="c">free_area[]</code> 里的 <code class="c">struct page</code></li>
+<li><a href="chapter-14.html#s-4">§4 高端内存</a>：<code class="c">ZONE_HIGHMEM</code> 专讲</li>
+<li>分配落地：<a href="chapter-06.html#ch-6">Ch 6 物理页分配</a>（<code class="c">free_area</code> buddy 系统）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：x86_64 上 <code class="c">ZONE_DMA</code> 为什么通常不存在？</strong>
+A：<code class="c">enum zone_type</code> 里 <code class="c">ZONE_DMA</code> 被 <code class="c">#ifdef CONFIG_ZONE_DMA</code> 包着，而 x86_64 不定义 <code class="c">CONFIG_ZONE_DMA</code>（它用 <code class="c">ZONE_DMA32</code> 覆盖 0~4GiB）。所以 64 位机器上 <code class="c">ZONE_DMA</code> 这个名字干脆<strong>不编译进枚举</strong>，<code class="c">/proc/zoneinfo</code> 里也看不到它。</p>
+<p><strong>Q2：<code class="c">present_pages</code> 和 <code class="c">managed_pages</code> 差的那部分去哪了？</strong>
+A：被 <code class="c">bootmem</code>/<code class="c">memblock</code> 早期分配、内核镜像、<code class="c">struct page</code> 数组本身、CMA 保留区等<strong>预留</strong>掉了。<code class="c">managed = present - reserved</code>，buddy 只能从 managed 里往外发页。所以一台 32GiB 机器 <code class="c">MemTotal</code> 常常略小于 32GiB。</p>
+<p><strong>Q3：为什么取水位要走 <code class="c">wmark_pages()</code> 宏而不是直接读 <code class="c">_watermark[]</code>？</strong>
+A：还要叠加 <code class="c">watermark_boost</code>。内存在碎片化时内核会临时「抬高」水位（boost），逼回收器更早介入、留出更多连续空闲页。直接读数组会拿到未加 boost 的裸值，和真实判断不一致。</p>
+<p><strong>Q4：<code class="c">WMARK_PROMO</code> 是干什么的？和前三者有什么本质不同？</strong>
+A：前三者（MIN/LOW/HIGH）管的是<strong>回收</strong>（内存不够就踢页），<code class="c">PROMO</code> 管的是<strong>NUMA 迁移</strong>（内存够但页在远端，把它迁回本地）。它解决的是「本地慢/远端慢」的<strong>延迟</strong>问题，不是「内存不足」的<strong>容量</strong>问题。</p>
+<p><strong>Q5：<code class="c">struct zone</code> 里为什么有这么多 <code class="c">CACHELINE_PADDING</code>？</strong>
+A：<code class="c">free_area[]</code>、<code class="c">lock</code> 这些是<strong>写密集</strong>字段，<code class="c">_watermark[]</code> 等是<strong>读密集</strong>字段。把它们用 padding 隔到不同 cache line，避免读锁的 CPU 和写 free_area 的 CPU 互相打爆对方的 cache line（false sharing）。这与 §5 讲的 2.6 引入 padding 是同一件事，v6.6 用 <code class="c">CACHELINE_PADDING(_pad1_/2_/3_)</code> 宏固化了下来。</p>
+</details>
+<hr />
+      </section>
+      <section class="section" id="s-3">
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 2 §3 物理页框 (Pages)</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mm_types.h</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>物理内存的最小管理单元是<strong>页框（page frame）</strong>，每个页框对应一个 <code class="c">struct page</code>。本节回答：</p>
+<ol>
+<li><code class="c">struct page</code> 为什么是内核里<strong>最省内存的结构</strong>——字段复用怎么玩？</li>
+<li>v6.6 里 <code class="c">struct page</code> 真身长什么样，和 <code class="c">struct folio</code> 什么关系？</li>
+<li>页标志（page flags）怎么和回收/写回/swap 联动？</li>
+</ol>
+<p>原书 2.6 语境强调 <code class="c">mapping / count / flags</code> 三字段；v6.6 的 <code class="c">struct page</code>（<code class="c">mm_types.h:74</code>）已大量瘦身，把字段搬进 <code class="c">struct folio</code>，但「一页一描述、字段复用、低位借位」三大技巧完全保留。</p>
+<hr />
+<h2>1. 为什么 <code class="c">struct page</code> 必须极致省内存</h2>
+<p>一台 32GiB 机器、4KiB 页框 → <strong>800 万个页框</strong>，每个都要一份 <code class="c">struct page</code>。<code class="c">struct page</code> 每增大 1 字节，全系统多耗 8MiB 内存（而且是从「内存」里扣内存，讽刺的自我吞噬）。所以内核让它：</p>
+<ol>
+<li><strong>字段按用途复用</strong>（一个 union 塞进 page cache 页、匿名页、slab 页、网络页池……多种身份）</li>
+<li><strong>低位借位</strong>（指针/整型没用的低位拿来存标志）</li>
+</ol>
+<p>这与 <a href="../../09-device-drivers-dt/modern-driver-practice/html/chapter-12.html#s-12-3">09-DMA §12.3 <code class="c">scatterlist.page_link</code> 低 2 位复用</a> 是<strong>同一族技巧</strong>。</p>
+<hr />
+<h2>2. <code class="c">struct page</code> 真身（v6.6 <code class="c">mm_types.h:74</code>）</h2>
+<pre class="code" data-label="C"><code class="c">struct page {
+    unsigned long flags;    /* 原子标志，部分可被异步更新 */
+
+    /* 5 个 word（20/40 字节）的复用 union —— 核心 */
+    union {
+        struct {            /* ① page cache / 匿名页 */
+            union {
+                struct list_head lru;         /* active/inactive LRU 链 */
+                struct list_head buddy_list;  /* 空闲时挂 buddy 链表 */
+                struct list_head pcp_list;    /* 空闲时挂 per-CPU 链 */
+            };
+            struct address_space *mapping;    /* 所属文件 / anon_vma */
+            union {
+                pgoff_t index;                /* 文件内偏移（页单位） */
+                unsigned long share;          /* fsdax 共享计数 */
+            };
+            unsigned long private;            /* buffer_head / swp_entry / buddy order */
+        };
+        struct {            /* ② 网络栈 page_pool */
+            unsigned long pp_magic;
+            struct page_pool *pp;
+            unsigned long dma_addr;           /* 页的 DMA 地址 */
+        };
+        struct {            /* ③ 复合页的尾页 */
+            unsigned long compound_head;      /* bit0 = 1 表示是尾页 */
+        };
+        struct {            /* ④ ZONE_DEVICE */
+            struct dev_pagemap *pgmap;
+            void *zone_device_data;
+        };
+        struct rcu_head rcu_head;             /* ⑤ RCU 释放 */
+    };
+
+    union {                 /* 4 字节 */
+        atomic_t _mapcount;        /* 被用户页表引用的次数 */
+        unsigned int page_type;    /* 非映射页的类型（PageSlab 等） */
+    };
+
+    atomic_t _refcount;    /* 引用计数，勿直接用，走 page_ref_*() */
+    /* ... */
+} _struct_page_alignment;
+</code></pre>
+<p><strong>关键注释（<code class="c">mm_types.h:80</code>）：union 第一个 word 的 bit0 被 <code class="c">PageTail()</code> 占用，其他成员一律不得用 bit0</strong>——避免和「复合页尾页判定」冲突。这就是「低位借位」的活例。</p>
+<hr />
+<h2>3. 字段复用全景图</h2>
+<p>同一块内存，<code class="c">struct page</code> 在不同「身份」下读出完全不同的字段：</p>
+<pre class="code" data-label="code"><code class="c">                    struct page（同一个）
+                          │
+        ┌─────────────────┼──────────────────────┬──────────────────┐
+        ▼                 ▼                       ▼                  ▼
+ ① 文件/匿名页      ② 网络页池(page_pool)    ③ 复合页尾页       ④ ZONE_DEVICE
+  lru/mapping        pp_magic/pp/dma_addr     compound_head       pgmap
+  index/private                                    (bit0=1)
+        │
+        ▼
+  空闲时又变回 buddy_list / pcp_list（挂在 free_area 或 per-CPU 链）
+</code></pre>
+<p><strong>什么时候是谁，由 <code class="c">flags</code> 和上下文决定</strong>：<code class="c">PageBuddy()</code> 看 <code class="c">private</code> 里的 order，<code class="c">PageSlab()</code> 看 <code class="c">page_type</code>，<code class="c">PageTail()</code> 看 <code class="c">compound_head</code> 的 bit0。没有多余的「type 字段」——<strong>身份编码在 flags + 复用字段 + 低位 bit 里</strong>。</p>
+<hr />
+<h2>4. <code class="c">struct folio</code>：v6.6 的「新内存单元」</h2>
+<pre class="code" data-label="C"><code class="c">/* mm_types.h:293 */
+struct folio { ... };
+</code></pre>
+<p><strong>背景：</strong> 内核越来越频繁地管理<strong>多个连续页</strong>（透明大页 THP、页缓存大块读写）。旧内核用「compound page」——首页 + 一串尾页，<code class="c">PageTail()</code> 标记尾页。这套东西到处是 <code class="c">PageHead/PageTail/PageCompound</code> 判断，容易错。</p>
+<p><strong>folio 的解法：</strong> 把「一小组连续页」当作<strong>一个一等公民</strong>，<code class="c">struct folio</code> 拥有原来散在 <code class="c">struct page</code> 里的 <code class="c">flags/lru/mapping/index/_refcount</code> 等字段；<code class="c">struct page</code> 瘦身成「folio 的薄包装」。THP 就是「一个 order-9 的 folio」。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>旧（compound page）</th>
+<th>新（folio）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>大页表示</td>
+<td>首页 + N 个尾页（PageTail 链）</td>
+<td>一个 folio，<code class="c">folio_nr_pages()</code> 给出页数</td>
+</tr>
+<tr>
+<td>引用计数</td>
+<td>首页 <code class="c">_refcount</code> 代表整组</td>
+<td><code class="c">folio-&gt;_refcount</code></td>
+</tr>
+<tr>
+<td>判断大页</td>
+<td><code class="c">PageCompound()</code></td>
+<td><code class="c">folio_test_large()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对读原书的影响：</strong> Gorman 原书没有 folio（2004 年），但你读 v6.6 源码时，页缓存、回收、THP 的入口基本都换成 folio 了。<strong>概念层 <code class="c">struct page</code> 的直觉不变，落地层记住「多页操作走 folio」即可。</strong></p>
+<hr />
+<h2>5. 页标志（Page Flags）与回收/写回联动</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>含义</th>
+<th>谁置位/清除</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PG_locked</code></td>
+<td>正被 I/O 锁定</td>
+<td>I/O 发起/完成</td>
+</tr>
+<tr>
+<td><code class="c">PG_dirty</code></td>
+<td>内容已改，需写回</td>
+<td>写后置位，写回完成清除</td>
+</tr>
+<tr>
+<td><code class="c">PG_active</code> / <code class="c">PG_referenced</code></td>
+<td>热页 / 被访问过</td>
+<td>LRU 活跃度跟踪</td>
+</tr>
+<tr>
+<td><code class="c">PG_uptodate</code></td>
+<td>已从磁盘读入，内容有效</td>
+<td>读完成置位</td>
+</tr>
+<tr>
+<td><code class="c">PG_slab</code></td>
+<td>属于 slab 分配器（不是普通页）</td>
+<td>slab 分配时</td>
+</tr>
+<tr>
+<td><code class="c">PG_compound</code> / <code class="c">PageTail</code></td>
+<td>复合页首页 / 尾页</td>
+<td>大页分配时</td>
+</tr>
+</tbody>
+</table></div>
+<p>回收器决定<strong>踢哪一页</strong>，就是看哪个 zone 的哪条 LRU、什么 flags——<code class="c">PG_dirty</code> 要先写回、<code class="c">PG_locked</code> 要等 I/O、<code class="c">PG_referenced</code> 决定活跃度。Ch 10 回收、Ch 11 swap 全部建立在这些 bit 上。</p>
+<hr />
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">/* PFN 与 struct page 互转（FLATMEM 下就是指针算术） */
+struct page *p = pfn_to_page(pfn);
+unsigned long pfn = page_to_pfn(p);
+
+/* 复合页：尾页 -&gt; 首页 */
+struct page *head = compound_head(page);
+
+/* 引用计数：禁止直接 ++_refcount，走封装 */
+get_page(page);   /* 引用 +1 */
+put_page(page);   /* 引用 -1，归零触发释放 */
+</code></pre>
+<hr />
+<h2>7. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DPDK/网络栈收包页</td>
+<td><code class="c">struct page</code> 的 <code class="c">② page_pool</code> 分支——同一结构为网络栈存 <code class="c">dma_addr</code>，收包零拷贝的底座</td>
+</tr>
+<tr>
+<td>大页/THP 内存池</td>
+<td>folio 表示 order-N 连续页，<code class="c">mlock</code> 大页是钉住整个 folio</td>
+</tr>
+<tr>
+<td>slab 对象池</td>
+<td><code class="c">PageSlab</code> 把页标记为「归 slab 管」，<code class="c">page_type</code> 记录是哪个 slab cache</td>
+</tr>
+<tr>
+<td>伪共享/缓存行</td>
+<td>页本身 <code class="c">_struct_page_alignment</code> 对齐，配合 §5 的 zone padding 同族优化</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>8. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-2">§2 内存区域</a>：<code class="c">struct page</code> 挂在 zone 的 <code class="c">free_area[]</code> 里</li>
+<li><a href="chapter-14.html#s-4">§4 高端内存</a>：32 位下部分页不能被内核直接寻址</li>
+<li>分配/回收：<a href="chapter-06.html#ch-6">Ch 6 物理页分配</a> · <a href="chapter-10.html#ch-10">Ch 10 页框回收</a></li>
+<li>字段复用同族技巧：<a href="../../09-device-drivers-dt/modern-driver-practice/html/chapter-12.html#s-12-3">09-DMA 12.3 scatterlist</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">struct page</code> 一个 union 塞 5 种身份，内核怎么知道当前是哪种？</strong>
+A：靠 <code class="c">flags</code> + <code class="c">page_type</code> + 复用字段里的特殊编码综合判断。例如 <code class="c">PageBuddy()</code> 检查 <code class="c">page_type</code> 是否为 buddy 类型且 <code class="c">private</code> 存的是 order；<code class="c">PageTail()</code> 直接看 union 第一个 word 的 bit0。没有单一「type 字段」，判定分散在 <code class="c">page-flags.h</code> 的一组 <code class="c">PageXXX()</code> 宏里。</p>
+<p><strong>Q2：为什么 union 第一个 word 的 bit0 不许别人用？</strong>
+A：<code class="c">PageTail()</code> 用 <code class="c">compound_head &amp; 1</code> 判尾页，而 <code class="c">lru.next</code>、<code class="c">mapping</code> 这些指针按对齐保证低几位恒为 0。一旦有人用了 bit0，就会和尾页判定冲突，把普通页误判成复合页尾页。这和 scatterlist 的 <code class="c">page_link</code> 用低 2 位存 <code class="c">SG_CHAIN/SG_END</code> 是同一个「对齐白送低位」的玩法。</p>
+<p><strong>Q3：<code class="c">_refcount</code> 注释说「不要直接用」，为什么？</strong>
+A：引用计数在 hot path 被频繁增减，直接 <code class="c">atomic_inc</code> 会在多核上产生锁总线/cache line 争用。<code class="c">page_ref_*()</code> 封装在 <code class="c">CONFIG_DEBUG_PAGE_REF</code> 下加了溢出检查，正常路径用 per-cpu 偏置计数（<code class="c">page_ref_unfreeze</code> 等）降低争用。</p>
+<p><strong>Q4：folio 和 compound page 是同一回事吗？</strong>
+A：概念等价（都是「一组连续页」），但 folio 是<strong>重构后的表示</strong>：把 <code class="c">struct page</code> 里的核心字段提升到 <code class="c">struct folio</code>，<code class="c">struct page</code> 退化为薄包装。THP 就是 order-9 的 folio，<code class="c">folio_nr_pages()</code> 返回页数。读 v6.6 源码时页缓存/回收入口大多已是 folio。</p>
+<p><strong>Q5：一个物理页同时被两个进程映射（如 fork 后未 COW），有几个 <code class="c">struct page</code>？几个 <code class="c">_mapcount</code>？</strong>
+A：<strong>一个</strong> <code class="c">struct page</code>（物理页全局唯一），但 <code class="c">_mapcount</code> 记录的是「被多少个用户页表项引用」——这里会是 2（两个进程的 PTE 都指它）。<code class="c">_refcount</code> 则记录「内核有多少处持有它」（页缓存、rmap 等）。<code class="c">_mapcount</code> 和 <code class="c">_refcount</code> 是两个不同维度：前者是映射数，后者是引用数。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>Ch 2 §4 高端内存 (High Memory)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">enum zone_type</code> 中的 <code class="c">CONFIG_HIGHMEM</code> 条件分支）</p>
 </blockquote>
-<h3>4. 高端内存 (High Memory)</h3>
-<p><strong>32 位 x86</strong> 上，内核 <strong>直接映射</strong> 的虚拟地址窗口有限（<code class="c">ZONE_NORMAL</code> 能覆盖的物理范围有顶）。</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>一个<strong>纯 32 位时代</strong>的问题，但理解它才能看懂大量历史代码。本节回答：</p>
+<ol>
+<li>32 位内核为什么「看得见装不下」——highmem 怎么来的？</li>
+<li><code class="c">kmap()/kunmap()</code> 到底在干什么？</li>
+<li>为什么 x86_64 上 <code class="c">ZONE_HIGHMEM</code> 干脆消失了？</li>
+</ol>
+<hr />
+<h2>1. 32 位内核的地址空间困境</h2>
+<p>32 位内核只有 <strong>4GiB 虚拟地址空间</strong>，默认按 <strong>3:1 分割</strong>：低 3GiB 给用户态，高 1GiB 给内核。内核的 1GiB 里，通常拿 <strong>~896MiB 做「线性直接映射」</strong>（<code class="c">PAGE_OFFSET + 物理地址</code> 就是虚拟地址），剩下 ~128MiB 留给 vmalloc、临时映射等。</p>
+<pre class="code" data-label="code"><code class="c">32 位 x86 内核地址空间（4GiB 总）
+┌──────────────────────────────┬──────────────────────────────┐
+│  低 3GiB：用户态              │  高 1GiB：内核态              │
+│  （进程私有，随 CR3 切换）      │  ┌────────────────────────┐ │
+│                              │  │ 直接映射 ~896MiB          │ │
+│                              │  │ (PAGE_OFFSET + PA)        │ │ ← ZONE_NORMAL
+│                              │  ├────────────────────────┤ │
+│                              │  │ vmalloc / 临时映射 ~128MiB │ │ ← kmap 区域
+│                              │  └────────────────────────┘ │
+└──────────────────────────────┴──────────────────────────────┘
+</code></pre>
+<p><strong>困境：</strong> 如果机器装了 4GiB 甚至更多物理内存，内核那 896MiB 直接映射窗口<strong>盖不住</strong>所有物理页。盖不住的部分就叫 <strong><code class="c">ZONE_HIGHMEM</code></strong>。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -562,27 +1125,128 @@ Ch 6 page_alloc / Ch 10 回收：在这些 Zone 上分配与回收
 </thead>
 <tbody>
 <tr>
-<td>物理内存在 <strong>1GiB–4GiB</strong>（甚至 <strong>PAE 下更大</strong>，如 64GiB）</td>
-<td>落在 <strong><code class="c">ZONE_HIGHMEM</code></strong></td>
+<td>物理内存超过直接映射窗口（1GiB–64GiB，PAE 下更大）</td>
+<td>落在 <code class="c">ZONE_HIGHMEM</code></td>
 </tr>
 <tr>
-<td>内核不能随时用「线性偏移」访问</td>
-<td>需 <strong><code class="c">kmap()</code></strong> 等 <strong>临时映射</strong> 到 <code class="c">ZONE_NORMAL</code> 可访问的虚拟地址，用完 <strong><code class="c">kunmap()</code></strong></td>
+<td>内核不能随时用「<code class="c">PAGE_OFFSET + PA</code>」访问它</td>
+<td>需 <code class="c">kmap()</code> <strong>临时映射</strong>进那 128MiB 窗口，用完 <code class="c">kunmap()</code></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>64 位</strong> 桌面/服务器上 <strong>HIGHMEM 常不存在或为空</strong> — 但 <strong>「并非所有物理页都能零成本直接 touch」</strong> 的思想仍在（IO 映射、特殊区域等）。</p>
-<p>→ 与 <a href="chapter-09.html#ch-9">Ch 9 高端内存管理</a>（原书专章，现代 x86_64 可读作背景）。</p>
+<p><strong>关键：highmem 页不是「不能访问」，而是「不能一直映射着」</strong>——内核要临时把它钉进有限的虚拟地址窗口，用完立刻还。</p>
+<hr />
+<h2>2. <code class="c">kmap()</code> / <code class="c">kunmap()</code>：临时映射</h2>
+<pre class="code" data-label="C"><code class="c">void *kmap(struct page *page);    /* 把 highmem 页临时映射进内核地址空间 */
+void kunmap(struct page *page);   /* 解除映射 */
+
+void *kmap_atomic(struct page *page);  /* 原子上下文变体（per-CPU 固定槽） */
+void kunmap_atomic(void *addr);
+</code></pre>
+<ul>
+<li><code class="c">kmap()</code>：可睡眠，映射进全局临时映射区，<strong>并发有限</strong>（槽位是全局共享的，用多了要等）</li>
+<li><code class="c">kmap_atomic()</code>：<strong>原子上下文专用</strong>（中断/持锁时不能睡），用 <strong>per-CPU 固定槽</strong>，无竞争但要立刻 <code class="c">kunmap_atomic()</code></li>
+<li>访问期间若页被换出/迁移，映射会失效——所以 highmem 页 + swap 是老内核里一堆 bug 的来源</li>
+</ul>
+<p><strong>v6.6 现实：</strong> x86_64 上 <code class="c">kmap()</code> 基本退化为 <code class="c">page_address()</code>（所有物理页都在直接映射里，虚拟地址 = <code class="c">PAGE_OFFSET + PFN * PAGE_SIZE</code>）。真正需要临时映射的只剩 32 位 highmem 架构和 <code class="c">ZONE_DEVICE</code> 之类特殊内存。</p>
+<hr />
+<h2>3. 为什么 x86_64 上 highmem 消失了</h2>
+<p>回到 §2 的 <code class="c">enum zone_type</code>（<code class="c">mmzone.h:715</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef CONFIG_HIGHMEM
+    ZONE_HIGHMEM,
+#endif
+</code></pre>
+<p><code class="c">ZONE_HIGHMEM</code> 被 <code class="c">CONFIG_HIGHMEM</code> 包着，而 <strong>x86_64 不定义 <code class="c">CONFIG_HIGHMEM</code></strong>——因为 64 位内核地址空间大到（48-bit VA = 256TiB，5 级 paging 下 128PiB）可以<strong>把全部物理内存都直接映射</strong>，根本不存在「盖不住」的问题。于是 <code class="c">ZONE_HIGHMEM</code> 这个名字在 64 位机器上<strong>不编译进枚举</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th><code class="c">CONFIG_HIGHMEM</code></th>
+<th><code class="c">ZONE_HIGHMEM</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>32 位 x86（i386）</td>
+<td>可选定义</td>
+<td>有（默认 3:1 分割）</td>
+</tr>
+<tr>
+<td>x86_64 / ARM64</td>
+<td>不定义</td>
+<td><strong>无</strong></td>
+</tr>
+<tr>
+<td>32 位 ARM（部分）</td>
+<td>定义</td>
+<td>有</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>现代 x86_64 服务器基本与 highmem 无关</td>
+<td><code class="c">kmap()</code> 退化为 <code class="c">page_address()</code>，无临时映射开销</td>
+</tr>
+<tr>
+<td>嵌入式 32 位 SoC 仍可能踩到</td>
+<td>32 位 ARM 上 highmem 还在，<code class="c">kmap_atomic</code> 的 per-CPU 槽位有限</td>
+</tr>
+<tr>
+<td>「非直接映射」思想仍在</td>
+<td><code class="c">vmalloc</code> 区、<code class="c">ioremap</code>、<code class="c">ZONE_DEVICE</code> 都是「不能一直直接映射」的现代翻版</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 结论：</strong> 纯 x86_64 低延迟场景可以把 highmem 当历史课；但要读老驱动、或做 32 位嵌入式时，<code class="c">kmap/kunmap</code> 与 per-CPU 槽位的概念必须清楚。</p>
+<hr />
+<h2>5. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-3">§3 物理页框</a>：<code class="c">struct page</code> 的 <code class="c">virtual</code> 字段（<code class="c">WANT_PAGE_VIRTUAL</code> 时）就是给 kmap 存临时地址用的</li>
+<li><a href="chapter-14.html#s-5">§5 2.6 内核的新变化</a>：本章收尾</li>
+<li>专章：<a href="chapter-09.html#ch-9">Ch 9 高端内存管理</a>（原书专章，x86_64 可当背景读）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：highmem 页是「内核访问不了」吗？</strong>
+A：不是「访问不了」，是「不能一直直接映射」。内核得临时 <code class="c">kmap()</code> 把它钉进有限的虚拟窗口，用完 <code class="c">kunmap()</code>。真正的限制是<strong>同时能映射的 highmem 页数量</strong>受窗口大小约束，而不是单个页不可达。</p>
+<p><strong>Q2：<code class="c">kmap()</code> 和 <code class="c">kmap_atomic()</code> 什么时候用哪个？</strong>
+A：能睡的上下文（进程上下文、未持自旋锁）用 <code class="c">kmap()</code>；<strong>原子上下文</strong>（中断 handler、持自旋锁、preempt disabled）必须用 <code class="c">kmap_atomic()</code>，因为它用 per-CPU 固定槽、绝不睡眠。混用会导致死锁或「睡在原子上下文」的 BUG。</p>
+<p><strong>Q3：x86_64 上 <code class="c">kmap()</code> 为什么能退化成 <code class="c">page_address()</code>？</strong>
+A：因为 64 位内核地址空间足够大，<strong>所有物理内存都进了直接映射区</strong>，任何页的虚拟地址都能用 <code class="c">PAGE_OFFSET + PFN * PAGE_SIZE</code> 算出来，无需临时映射。<code class="c">page_address(page)</code> 直接返回这个地址，<code class="c">kmap()</code> 变成一行。</p>
+<p><strong>Q4：<code class="c">struct page</code> 里那个 <code class="c">virtual</code> 字段是干嘛的，为什么 <code class="c">#if defined(WANT_PAGE_VIRTUAL)</code>？</strong>
+A：在没有全量直接映射的架构（highmem 架构）上，内核需要一个地方存「这个页当前被 kmap 到哪个虚拟地址」。有全量直接映射的架构（x86_64）定义 <code class="c">WANT_PAGE_VIRTUAL</code> 为假，省掉这 8 字节——<strong>又一处按架构裁剪 <code class="c">struct page</code> 体积</strong>。</p>
+<p><strong>Q5：为什么说 highmem + swap 是老内核 bug 温床？</strong>
+A：页被 <code class="c">kmap()</code> 映射后，如果它在换出/迁移中被回收，映射就指向了失效内容。老内核要在映射期间<strong>钉住引用计数</strong>（<code class="c">get_page</code>）防止回收，漏了就是 use-after-free 或读脏数据。现代内核靠 folio + 严格的 pin 语义把这些坑堵上了。</p>
+</details>
 <hr />
       </section>
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">5</div><h2>Ch 2 §5 2.6 内核的新变化 (What&#x27;s New in 2.6)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>精读 🔴</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/mmzone.h</code> 的 <code class="c">per_cpu_pages</code>、<code class="c">CACHELINE_PADDING</code>）</p>
 </blockquote>
-<h3>5. 2.6 内核的新变化 (What's New in 2.6)</h3>
-<p>原书末尾强调 2.6 相对 2.4 的三点 — <strong>对多核性能理解仍有用</strong>：</p>
-<h3>LRU 链表本地化</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书末尾总结 2.6 相对 2.4 的三大变化，本质都是<strong>「多核下减少全局锁争用」</strong>。本节：</p>
+<ol>
+<li>讲清这三点各自解决什么争用</li>
+<li>用 v6.6 源码把每一点做实</li>
+<li>顺带补一条「从 2.6 到 v6.6 又变了什么」的演进视角</li>
+</ol>
+<hr />
+<h2>1. LRU 链表本地化（2.4 → 2.6）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -592,91 +1256,140 @@ Ch 6 page_alloc / Ch 10 回收：在这些 Zone 上分配与回收
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">active_list</code> / <code class="c">inactive_list</code> 全局</strong></td>
-<td>LRU 链 <strong>移入各 <code class="c">struct zone</code> 内部</strong> 维护</td>
+<td><code class="c">active_list</code> / <code class="c">inactive_list</code> <strong>全局各一条</strong></td>
+<td>LRU 链<strong>移入每个 <code class="c">struct zone</code></strong> 内部维护</td>
 </tr>
 <tr>
-<td>回收顺序全局竞争</td>
-<td><strong>按 zone 局部</strong> 决定回收 — 更贴合 NUMA / 多 zone 现实</td>
+<td>回收顺序全局竞争（一把大锁）</td>
+<td><strong>按 zone 局部</strong>决定回收，更贴合 NUMA / 多 zone</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ 接 <a href="chapter-10.html#ch-10">Ch 10 页框回收</a>。</p>
-<h3>每 CPU 页面集合 (Per-CPU Page Lists · <code class="c">pageset</code>)</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>问题</th>
-<th>2.6 做法</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>多 CPU <strong>同时</strong> 从 zone  freelist 取页 → <strong><code class="c">zone-&gt;lock</code> 争用</strong></td>
-<td>在 <strong><code class="c">struct zone</code></strong> 里为 <strong>每个 CPU</strong> 维护 <strong>热/冷页缓存</strong>（<code class="c">pageset</code>）</td>
-</tr>
-<tr>
-<td>频繁自旋锁</td>
-<td>多数分配 <strong>先命中 per-CPU 列表</strong>，减少锁竞争</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>HFT 关联：</strong> 与 <strong>per-CPU 变量、无锁热路径</strong> 同一思路 — 把 <strong>共享锁上的操作</strong> 变成 <strong>本地缓存 + 批量 refill</strong>（→ DPDK mempool、订单簿 per-core 分配区）。</p>
-<h3>结构体填充 (Padding · 缓存行隔离)</h3>
-<p>2.6 在 <strong><code class="c">struct zone</code></strong> 中增加 <strong>padding</strong>，使 <strong><code class="c">zone-&gt;lock</code></strong> 与 <strong><code class="c">zone-&gt;lru_lock</code></strong> 等 <strong>高频成对访问的锁</strong> 落在 <strong>不同 cache line</strong> 上。</p>
-<p>→ <strong>false sharing / 缓存一致性流量</strong> — 与 <a href="../../15-computer-architecture/html/chapter-02.html#ch-2">Hennessy Ch2</a> · HFT <strong>订单簿/cache line 对齐</strong> 同构。</p>
+<p><strong>v6.6 现状：</strong> LRU 已经进一步下沉——<code class="c">struct pglist_data</code> 里有 <code class="c">struct lruvec __lruvec</code>（<code class="c">mmzone.h:1383</code>），LRU 以 <strong>node + memcg</strong> 为粒度组织（<code class="c">mem_cgroup_lruvec()</code>）。粒度从「全局」→「zone」→「node×memcg」，每一层都在缩小锁的半径。回收细节见 <a href="chapter-10.html#ch-10">Ch 10</a>。</p>
 <hr />
-<h2>三层结构一图</h2>
-<pre class="code" data-label="code"><code class="c">                    ┌─────────────────────────────────┐
-                    │  Node (pg_data_t)               │
-                    │  NUMA node 0, 1, …              │
-                    └───────────────┬─────────────────┘
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              ▼                     ▼                     ▼
-        ┌───────────┐       ┌───────────┐       ┌───────────┐
-        │ ZONE_DMA  │       │ZONE_NORMAL│       │ZONE_HIGHMEM│
-        │ watermarks│       │ LRU lists │       │ (32-bit)  │
-        │ wait table│       │ pageset   │       └───────────┘
-        └─────┬─────┘       └─────┬─────┘
-              │                   │
-              └─────────┬─────────┘
-                        ▼
-              每个物理页框 → struct page
-              (mapping, count, flags: active/dirty/locked/…)
+<h2>2. 每 CPU 页缓存（per-CPU pageset）→ v6.6 <code class="c">per_cpu_pages</code></h2>
+<p><strong>问题：</strong> 多 CPU 同时从 zone 的 freelist 取页，抢同一把 <code class="c">zone-&gt;lock</code> 自旋锁。</p>
+<p><strong>2.6 做法：</strong> 在 <code class="c">struct zone</code> 里给<strong>每个 CPU</strong> 维护热/冷页缓存（pageset），多数分配先命中 per-CPU 列表，减少锁竞争。</p>
+<p><strong>v6.6 真身（<code class="c">mmzone.h:679</code>）：</strong></p>
+<pre class="code" data-label="C"><code class="c">struct per_cpu_pages {
+    spinlock_t lock;        /* 保护本 CPU 列表（本地锁，争用极小） */
+    int count;              /* 列表里的页数 */
+    int high;               /* 高水位：超过就回灌 buddy（bulk free） */
+    int batch;              /* 从 buddy 批量取/还的块大小 */
+    short free_factor;      /* 释放路径的批量缩放因子 */
+    struct list_head lists[NR_PCP_LISTS];  /* 按 migrate type 分的页链表 */
+} ____cacheline_aligned_in_smp;
 </code></pre>
+<p><strong>机制：</strong> 分配时先取本 CPU 的 <code class="c">per_cpu_pages</code>，空了才以 <code class="c">batch</code> 为单位从 buddy 批量 refill（拿一次锁换一批页）；释放时先攒在本 CPU 列表，攒够 <code class="c">high</code> 再批量还 buddy。<strong>把「每页一次锁」变成「每批一次锁」</strong>。</p>
 <hr />
-<h2>HFT 精读 checklist</h2>
+<h2>3. 结构体填充（Padding）：锁/热字段分 cache line</h2>
+<p>2.6 在 <code class="c">struct zone</code> 里加 padding，让 <code class="c">zone-&gt;lock</code> 和 <code class="c">zone-&gt;lru_lock</code> 这类<strong>高频成对访问的锁</strong>落在不同 cache line，避免 false sharing。</p>
+<p><strong>v6.6 真身：</strong> <code class="c">struct zone</code> 里三段 <code class="c">CACHELINE_PADDING(_pad1_/_pad2_/_pad3_)</code>（<code class="c">mmzone.h:945/985/1001</code> 附近），把「读密集字段（水位）」「写密集字段（free_area + lock）」「统计字段」物理隔开：</p>
+<pre class="code" data-label="C"><code class="c">struct zone {
+    /* 只读字段：水位、计数 ... */
+    CACHELINE_PADDING(_pad1_);              /* 隔开读写 */
+    struct free_area free_area[MAX_ORDER + 1];  /* 写密集 */
+    spinlock_t lock;                        /* 高频锁 */
+    CACHELINE_PADDING(_pad2_);
+    /* compaction/vmstat ... */
+    CACHELINE_PADDING(_pad3_);
+    atomic_long_t vm_stat[NR_VM_ZONE_STAT_ITEMS];  /* 每 CPU 会碰的统计 */
+} ____cacheline_internodealigned_in_smp;
+</code></pre>
+<p><code class="c">____cacheline_internodealigned_in_smp</code> 还保证整个 <code class="c">struct zone</code> 在 NUMA 下按<strong>跨节点 cache line</strong> 对齐。</p>
+<hr />
+<h2>4. 从 2.6 到 v6.6：又变了什么</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>概念</th>
-<th>落地</th>
+<th>主题</th>
+<th>2.6（原书）</th>
+<th>v6.6</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Node</strong></td>
-<td>进程/线程 <strong>绑 NUMA node</strong> 分配；订单簿 <strong>与 NIC 同 node</strong></td>
+<td>大页表示</td>
+<td>compound page（首页+尾页）</td>
+<td><strong>folio</strong>（<code class="c">mm_types.h:293</code>）一等公民</td>
 </tr>
 <tr>
-<td><strong>Zone watermarks</strong></td>
-<td>监控 <strong>direct reclaim</strong>；避免与延迟敏感线程争用内存</td>
+<td>LRU 粒度</td>
+<td>per-zone</td>
+<td><strong>node × memcg</strong>（<code class="c">lruvec</code>）</td>
 </tr>
 <tr>
-<td><strong><code class="c">struct page</code> / LRU</strong></td>
-<td>理解 <strong>mlock</strong> 钉住的是哪些页；THP 是 <strong>compound page</strong> 叠加在此之上</td>
+<td>页缓存单元</td>
+<td><code class="c">struct page</code></td>
+<td>逐渐迁到 <strong>folio</strong>（大块读写按 folio 操作）</td>
 </tr>
 <tr>
-<td><strong>per-CPU pageset</strong></td>
-<td>内核侧「<strong>每核缓存减少锁</strong>」— 用户态 mempool 设计的内核版镜像</td>
+<td>新 zone 类型</td>
+<td>DMA/NORMAL/HIGHMEM</td>
+<td>+ <code class="c">ZONE_DMA32</code> / <code class="c">ZONE_MOVABLE</code> / <code class="c">ZONE_DEVICE</code></td>
 </tr>
 <tr>
-<td><strong>zone padding</strong></td>
-<td><strong>锁/热字段分 cache line</strong> — 用户态结构体同样要做</td>
+<td>水位</td>
+<td>MIN/LOW/HIGH</td>
+<td>+ <code class="c">WMARK_PROMO</code>（NUMA 迁移）</td>
+</tr>
+<tr>
+<td>bootmem</td>
+<td>bootmem 分配器</td>
+<td><strong>memblock</strong> 接管（Ch 5）</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>时代说明贯穿本章：</strong> 三层结构（Node → Zone → Page）的<strong>骨架没变</strong>，但每一层的字段、粒度、配套机制都在演进。读原书抓骨架，读 v6.6 抓真身。</p>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>per-CPU pageset</td>
+<td>内核版「每核缓存减少锁」——用户态 mempool 设计的内核镜像</td>
+</tr>
+<tr>
+<td>zone padding</td>
+<td>锁/热字段分 cache line——用户态结构体同样要做（订单簿、计数器）</td>
+</tr>
+<tr>
+<td><code class="c">batch</code> 批量 refill</td>
+<td>「拿一次锁换一批」的批处理思想，与 DPDK mempool 批量出队同构</td>
+</tr>
+<tr>
+<td>false sharing</td>
+<td><code class="c">____cacheline_aligned_in_smp</code> 与 <code class="c">____cacheline_internodealigned_in_smp</code> 是内核侧的 cache line 对齐工具</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-4">§4 高端内存</a></li>
+<li>下章：<a href="chapter-03.html#ch-3">Ch 3 页表管理</a>（虚拟地址怎么落到这些页框）</li>
+<li>回收落地：<a href="chapter-10.html#ch-10">Ch 10 页框回收</a>（LRU、kswapd 详解）</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：per-CPU pageset 的「热页/冷页」是什么意思？</strong>
+A：指<strong>缓存亲和性</strong>。热页是「刚刚被本 CPU 用过、大概率还在本 CPU 的 L1/L2 cache 里」的页，冷页则相反。2.6 时代把 pageset 分热/冷两区，让 CPU 优先复用自己 cache 里的页。v6.6 里这个概念弱化了（分配器更关注 migrate type），但「per-CPU 缓存减少锁」的核心不变。</p>
+<p><strong>Q2：<code class="c">high</code> 和 <code class="c">batch</code> 两个参数分别控制什么？</strong>
+A：<code class="c">batch</code> 是「从 buddy 批量取/还的块大小」——一次拿锁换多少页；<code class="c">high</code> 是「per-CPU 列表的触发回灌水位」——攒到这么多就批量还 buddy。<code class="c">batch</code> 定粒度，<code class="c">high</code> 定上限，两者一起决定「锁被拿得多频繁」和「每 CPU 最多囤多少页」。</p>
+<p><strong>Q3：为什么 padding 能消除 false sharing？</strong>
+A：CPU 以 <strong>cache line（通常 64B）</strong> 为单位加载/失效缓存。两个被不同 CPU 频繁写、却落在同一 cache line 的字段，会互相把对方的 cache line 打失效，造成跨核缓存一致性流量。用 padding 把它们推到不同 cache line，就切断了这种「假共享」。<code class="c">CACHELINE_PADDING</code> 宏就是干这个的。</p>
+<p><strong>Q4：<code class="c">____cacheline_internodealigned_in_smp</code> 和 <code class="c">____cacheline_aligned_in_smp</code> 差在哪？</strong>
+A：前者按<strong>跨 NUMA 节点</strong>的 cache line 大小对齐（避免跨 socket 的一致性流量，代价是更大的对齐填充），后者按<strong>本节点内</strong> cache line 对齐。<code class="c">struct zone</code> 这类跨节点共享的结构用 internode 版本，<code class="c">per_cpu_pages</code> 这种每 CPU 私有的用普通版本。</p>
+<p><strong>Q5：folio 出现后，<code class="c">struct page</code> 是不是变小了？</strong>
+A：是。核心字段（flags/lru/mapping/index/_refcount 等）提升到 <code class="c">struct folio</code>，<code class="c">struct page</code> 瘦身成薄包装。这也缓解了 §3 讲的「<code class="c">struct page</code> 每大 1 字节全系统多耗几 MiB」的自我吞噬问题——字段按需住在 folio 里，而不是每个页都背上全套。</p>
+</details>
 <hr />
       </section>
 
