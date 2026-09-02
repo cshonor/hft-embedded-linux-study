@@ -344,95 +344,499 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="s-1">
         <div class="sec-head"><div class="sec-no">1</div><h2>Ch 14 §1 复杂性与理论落地的困难</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 收尾章</p>
 </blockquote>
-<h3>1. 复杂性与理论落地的困难</h3>
-<p>内存管理 <strong>庞大、复杂、耗时</strong> — 且 <strong>很难把理论直接搬进真实内核</strong>：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §1 点出内存管理「庞大、复杂、耗时，且理论很难直接搬进真实内核」，核心障碍是<strong>多道程序环境</strong>与<strong>建模困难</strong>。</p>
+<p>本节把这句判断展开成三层剖析，并用 Ch2–Ch13 已核验的 v6.6 具体机制做佐证——把「为什么复杂」落到「复杂在哪一行代码」。</p>
+<hr />
+<h2>1. 复杂度从哪来：三层来源</h2>
+<pre class="code" data-label="code"><code class="c">                ┌─────────────────────────────────────┐
+  第 1 层        │  workload 多样性（没法用一种策略通吃）  │
+                └─────────────────────────────────────┘
+                ┌─────────────────────────────────────┐
+  第 2 层        │  子系统间耦合（一处改动牵动全局）        │
+                └─────────────────────────────────────┘
+                ┌─────────────────────────────────────┐
+  第 3 层        │  硬件异构（NUMA/大页/TLB/CPU 拓扑）     │
+                └─────────────────────────────────────┘
+</code></pre>
+<h3>第 1 层：workload 多样性</h3>
+<p>理论上「最优页面替换」有 Belady 最优解，但它要求<strong>预知未来访问序列</strong>，真实系统做不到。于是内核只能靠<strong>启发式</strong>，而启发式注定<strong>在某些 workload 下是错的</strong>。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>难点</th>
-<th>说明</th>
+<th>理论理想</th>
+<th>内核现实（已核验）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>多道程序环境</strong></td>
-<td>调度、分页、<strong>多进程交互</strong> 同时发生</td>
+<td>Belady 最优替换（预知未来）</td>
+<td>LRU 近似 + active/inactive 双链表（Ch10 <code class="c">enum lru_list</code>，mmzone.h:263 四象限 + UNEVICTABLE）</td>
 </tr>
 <tr>
-<td><strong>建模困难</strong></td>
-<td>难以 <strong>精确预测</strong> 真实系统行为（workload 一变，结论就变）</td>
+<td>「一个全局策略」</td>
+<td>按介质/场景分叉：HDD 顺序簇 vs SSD per-CPU 簇（Ch11 <code class="c">scan_swap_map_slots</code>，swapfile.c:799）</td>
+</tr>
+<tr>
+<td>「回收就是回收」</td>
+<td>成本模型权衡：<code class="c">get_scan_count</code> 按 anon/file 成本分配扫描量（Ch10 <code class="c">shrink_lruvec</code>）</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT 启示：</strong> 论文里的 <strong>最优替换策略</strong> 在你的 <strong>订单簿 + 绑核 + mlock</strong> workload 上 <strong>未必最优</strong> — 必须 <strong>测量</strong>（延迟分位数、vmstat、perf），不能 <strong>只信公式</strong>。</p>
+<h3>第 2 层：子系统间耦合</h3>
+<p>内存管理不是孤岛——一次 <code class="c">malloc</code> 可能同时牵动 <strong>Buddy 分配、LRU 回收、swap、OOM</strong> 四条链，任何一环的改动都会传导到其他环。</p>
+<pre class="code" data-label="code"><code class="c">        mmap/brk
+           │
+   Ch6 Buddy 分配 ──失败──► Ch10 direct reclaim ──仍失败──► Ch11 swap out
+           ▲                                                    │
+           │                                              Ch13 OOM killer
+           └────────────── 页归还（victim 退出 / reaper 收割）◄──┘
+</code></pre>
+<p><strong>耦合的代价</strong>：<code class="c">__alloc_pages_slowpath</code> 里要同时处理 compaction、reclaim、OOM 三条回退路径，每条路径都有「重试 / 放弃 / 换策略」的判断——这正是原书说的「耗时」，因为它必须在<strong>锁与关抢占</strong>的约束下快速收敛。</p>
+<h3>第 3 层：硬件异构</h3>
+<p>同一份代码要在 NUMA 服务器、手机、嵌入式上正确且高效地跑：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>硬件维度</th>
+<th>内核应对（已核验）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NUMA 拓扑</td>
+<td><code class="c">pglist_data</code> per-node + zonelist 回退顺序（Ch2 <code class="c">node_zonelists</code>）</td>
+</tr>
+<tr>
+<td>大页差异</td>
+<td>THP 三态 always/madvise/never + khugepaged（Ch3）；huge vmalloc 按 PMD 映射（Ch7 <code class="c">VM_ALLOW_HUGE_VMAP</code>）</td>
+</tr>
+<tr>
+<td>TLB 规模</td>
+<td>懒 TLB flush 攒批（Ch7 <code class="c">lazy_max_pages</code>，vmalloc.c:1700）</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
+<h2>2. 20 年间的复杂度膨胀（2.6 → v6.6）</h2>
+<p>原书写于 2.6 早期，20 年间内存管理<strong>不是变简单，而是加了更多机制</strong>——每条新机制都在解决一个真实问题，但<strong>叠加起来就是复杂度本身</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>新机制</th>
+<th>解决什么</th>
+<th>引入的复杂度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cgroup v2（memory.max / memory.high）</td>
+<td>容器化隔离</td>
+<td>memcg OOM 独立于全局 OOM（Ch13 <code class="c">CONSTRAINT_MEMCG</code>）</td>
+</tr>
+<tr>
+<td>THP / khugepaged</td>
+<td>大页降低 TLB miss</td>
+<td>三态切换 + 后台扫描线程</td>
+</tr>
+<tr>
+<td>compaction</td>
+<td>高阶分配碎片</td>
+<td>直接压缩 vs 后台压缩两条路径</td>
+</tr>
+<tr>
+<td>multi-gen LRU（可选）</td>
+<td>老化扫描更准</td>
+<td>与 active/inactive 并行的一套逻辑</td>
+</tr>
+<tr>
+<td>folio（v6.0+）</td>
+<td>统一 page/compound 页</td>
+<td><code class="c">struct folio</code> 与 <code class="c">struct page</code> 的语义划分（Ch2 mm_types.h:293）</td>
+</tr>
+<tr>
+<td>oom_reaper</td>
+<td>受害者退出慢时主动收割</td>
+<td>新内核线程 + MMF_UNSTABLE 语义（Ch13 oom_kill.c:513）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：原书说的「复杂度」在 2026 年<strong>不是历史包袱，而是持续累积的现状</strong>。理解它不是靠背 API，而是靠<strong>把每条机制的「为什么存在」串成因果链</strong>。</p>
+<hr />
+<h2>3. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>启示</th>
+<th>落地</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>论文策略 ≠ 你的 workload 最优</td>
+<td>订单簿 + 绑核 + mlock 下，必须<strong>实测</strong>延迟分位数，不能照搬「最优替换算法」结论</td>
+</tr>
+<tr>
+<td>复杂度 = 延迟风险</td>
+<td>每一条「自动机制」（THP、compaction、reclaim）都是<strong>潜在的延迟尖刺源</strong>，HFT 的思路是<strong>用配置把它们关进可预测范围</strong>（<code class="c">madvise</code> 大页、<code class="c">mlock</code>、关 swap）</td>
+</tr>
+<tr>
+<td>分层定位问题</td>
+<td>延迟抖动先判断落在哪条链：Buddy？reclaim？swap？OOM？——对应 Ch6/10/11/13，<strong>先定位再动手</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<p>§1 讲「为什么复杂」。§2 讲「复杂之下怎么动手」：直觉、模拟、调优三件套的现代工具链。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：内存管理复杂度分哪三层来源？</strong></p>
+<p>① workload 多样性（启发式无法通吃）；② 子系统间耦合（Buddy/reclaim/swap/OOM 一条链传导）；③ 硬件异构（NUMA/大页/TLB/CPU 拓扑）。</p>
+<p><strong>Q2：为什么理论上 Belady 最优替换策略在真实内核里用不了？</strong></p>
+<p>它要求<strong>预知未来访问序列</strong>，真实系统做不到，所以内核只能用 active/inactive 双链表这种 LRU 近似（Ch10 <code class="c">enum lru_list</code>，mmzone.h:263）。</p>
+<p><strong>Q3：一次 malloc 失败可能牵动哪四条链？按什么顺序？</strong></p>
+<p>Buddy 分配（Ch6）→ direct reclaim（Ch10）→ swap out（Ch11）→ OOM killer（Ch13），逐级兜底。</p>
+<p><strong>Q4：2.6 到 v6.6 之间内存管理新增了哪些「复杂度来源」机制？举四个。</strong></p>
+<p>cgroup v2/memcg OOM、THP+khugepaged、compaction、folio 抽象、multi-gen LRU、oom_reaper（任举四个即可）。</p>
+<p><strong>Q5：为什么说 HFT 场景下「每一条自动机制都是潜在延迟尖刺源」？</strong></p>
+<p>THP 的缺页时大页分配、compaction 的迁移扫描、direct reclaim 的直接回收，都可能在热路径上引入毫秒级停顿。HFT 的思路是用配置把它们关进可预测范围（madvise 大页、mlock、关 swap），而非指望它们「刚好不触发」。</p>
+</details>
       </section>
       <section class="section" id="s-2">
         <div class="sec-head"><div class="sec-no">2</div><h2>Ch 14 §2 实践：直觉、模拟与调优</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 收尾章</p>
 </blockquote>
-<h3>2. 实践：直觉、模拟与调优</h3>
-<p>理论不够用时，内核开发者靠：</p>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §2 说理论不够用时，内核开发者靠三件套：<strong>直觉（先做什么结构）、workload 模拟（验证算法）、管理员调优（sysctl/swap/overcommit/cgroup）</strong>。</p>
+<p>本节把这三件套<strong>翻译成 2026 年的可执行工具链</strong>——每一条都配具体命令，让你读完就能在交易主机 / 嵌入式板子上动手验证，而不是停留在「要测量」的口号。</p>
+<hr />
+<h2>1. 直觉（intuition）→ 建立心智模型</h2>
+<p>「直觉」不是玄学，是<strong>对因果链的心智模型</strong>：看到某个观测值，能反推是哪条链在动。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>手段</th>
-<th>作用</th>
+<th>观测现象</th>
+<th>心智模型指向</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>直觉 (intuition)</strong></td>
-<td>指导 <strong>先做什么结构</strong></td>
+<td><code class="c">kswapd</code> CPU 高 + <code class="c">allocstall</code> 上升</td>
+<td>direct reclaim 介入，进程自己回收（Ch10）</td>
 </tr>
 <tr>
-<td><strong>Workload 模拟</strong></td>
-<td>在 <strong>特定负载</strong> 下验证算法（如 page replacement）</td>
+<td><code class="c">si/so</code>（swap in/out）非零</td>
+<td>匿名页被换出，延迟会暴涨（Ch11）</td>
 </tr>
 <tr>
-<td><strong>管理员调优</strong></td>
-<td><strong><code class="c">sysctl</code>、swap、overcommit、cgroup</strong> — 适应 <strong>不同部署</strong></td>
+<td><code class="c">compact_stall</code> 高</td>
+<td>高阶分配碎片化，compaction 频繁（Ch6/Ch7）</td>
+</tr>
+<tr>
+<td>dmesg 出现 <code class="c">Killed process ... oom_score_adj</code></td>
+<td>已触发 OOM，看 score 判断谁被杀（Ch13）</td>
+</tr>
+<tr>
+<td><code class="c">/proc/zoneinfo</code> 的 <code class="c">pages_scanned</code> 涨</td>
+<td>回收扫描在加压</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>页面替换</strong> 是研究最多的领域之一，却 <strong>只在某些 workload 下可证「好」</strong> — <strong>算法 + 运维</strong> 缺一不可。</p>
-<p>→ 对应本书 <strong>Ch 10 LRU/active-inactive</strong> — 工程折中，非教科书 LRU。</p>
+<p><strong>建立直觉的唯一路径</strong>：读源码时<strong>带着「这段代码在什么观测值上体现」的问题</strong>，而不是只背函数名。本仓库 Ch1 的源码阅读路线（<code class="c">oom_kill.c</code> → <code class="c">vmalloc.c</code> → <code class="c">page_alloc.c</code> → <code class="c">mmap.c</code>）就是为此设计的。</p>
+<h2>2. 模拟（simulation）→ 可复现的量测</h2>
+<p>「模拟」的本质是<strong>构造一个可控 workload，隔离单变量</strong>。现代工具链：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+<th>典型命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">usemem</code> / <code class="c">stress-ng</code></td>
+<td>制造内存压力</td>
+<td><code class="c">stress-ng --vm 4 --vm-bytes 80% --timeout 60s</code></td>
+</tr>
+<tr>
+<td><code class="c">mmtests</code>（内核社区标准）</td>
+<td>可复现 benchmark 套件</td>
+<td>Mel Gorman 本人在用，配置化跑多轮取中位数</td>
+</tr>
+<tr>
+<td><code class="c">damon</code> + <code class="c">damo</code>（v5.15+）</td>
+<td>数据访问模式监测</td>
+<td><code class="c">damo record</code> / <code class="c">damo report</code>，看真实热区</td>
+</tr>
+<tr>
+<td><code class="c">perf mem</code> / <code class="c">perf c2c</code></td>
+<td>内存访问延迟 / cacheline 竞争</td>
+<td><code class="c">perf c2c record</code> 找伪共享</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 可复现量测范式</strong>（本仓库反复强调的）：</p>
+<pre class="code" data-label="shell"><code class="c"># 延迟分位数：别只看平均
+sudo perf stat -e page-faults,major-faults,kmem:mm_page_alloc \
+     taskset -c 2 ./trading_bench
+
+# 缺页来源拆分：minor（新映射）vs major（磁盘/swap 换入）
+grep -E '^(Min|Maj|File|Anon)' /proc/$(pgrep trading_bench)/status
+
+# 内存布局：NUMA 是否跨 node
+numastat -p $(pgrep trading_bench)
+</code></pre>
+<p><strong>原则</strong>：结论必须<strong>能复现</strong>（同一 workload 跑 N 次取分位数），而不是「某次跑出来 200µs」。</p>
+<h2>3. 调优（tuning）→ 分层旋钮清单</h2>
+<p>管理员能拧的旋钮，按本书章节归类：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th style="text-align: center;">章</th>
+<th>旋钮</th>
+<th>作用</th>
+<th>HFT 倾向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">Ch2/Ch6</td>
+<td><code class="c">vm.zone_reclaim_mode</code>、<code class="c">numactl --membind</code></td>
+<td>NUMA 放置</td>
+<td>绑 node，避免跨 socket</td>
+</tr>
+<tr>
+<td style="text-align: center;">Ch3</td>
+<td><code class="c">madvise(MADV_HUGEPAGE)</code>、<code class="c">/sys/.../transparent_hugepage</code></td>
+<td>大页</td>
+<td>显式 madvise，别全局 always</td>
+</tr>
+<tr>
+<td style="text-align: center;">Ch4</td>
+<td><code class="c">mlock</code>、<code class="c">mlockall</code></td>
+<td>锁 RSS</td>
+<td>关键映射锁死</td>
+</tr>
+<tr>
+<td style="text-align: center;">Ch10</td>
+<td><code class="c">vm.swappiness</code>、<code class="c">vm.vfs_cache_pressure</code></td>
+<td>回收倾向</td>
+<td>swapiness 调低（如 1）</td>
+</tr>
+<tr>
+<td style="text-align: center;">Ch11</td>
+<td>关 swap（<code class="c">swapoff</code>）/ zram</td>
+<td>换出</td>
+<td>交易主机常关 swap</td>
+</tr>
+<tr>
+<td style="text-align: center;">Ch12</td>
+<td>tmpfs <code class="c">size=</code> 挂载</td>
+<td>共享内存</td>
+<td>明确 size 上限</td>
+</tr>
+<tr>
+<td style="text-align: center;">Ch13</td>
+<td><code class="c">overcommit_memory=2</code>、<code class="c">oom_score_adj</code></td>
+<td>OOM 防护</td>
+<td>严格记账 + 交易进程 -1000</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>调优的铁律</strong>：<strong>一次只改一个旋钮</strong>，改完量测，确认方向对了再改下一个。多旋钮同时拧 = 把「模拟」的可控性彻底毁掉，回到「拍脑袋」。</p>
 <hr />
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>落地</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>三件套的顺序</td>
+<td><strong>先直觉（建模型）→ 再模拟（验证）→ 最后调优（落地）</strong>，别倒着来</td>
+</tr>
+<tr>
+<td>延迟目标</td>
+<td>用 <code class="c">perf stat</code> + <code class="c">/proc/status</code> 把「缺页/换入/分配」拆到具体事件，而非只看总延迟</td>
+</tr>
+<tr>
+<td>嵌入式差异</td>
+<td>板子上没有 <code class="c">perf</code> 就用 <code class="c">/proc/vmstat</code>、<code class="c">/proc/zoneinfo</code>、<code class="c">free</code>、<code class="c">smaps</code> 这些<strong>零依赖</strong>的 proc 接口</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>要点</strong>：原书的三件套放到今天，本质是<strong>「观测驱动」</strong>——直觉给假设，模拟给证据，调优给手段，三者闭环。HFT 里最忌讳的就是「看了一篇讲最优替换的论文，直接改 swappiness」，那是跳过模拟、只有直觉的典型反模式。</p>
+<hr />
+<h2>衔接</h2>
+<p>§2 讲「怎么动手」。§3 回到本书本身的定位：Mel Gorman 到底想弥合哪条鸿沟。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：原书「直觉、模拟、调优」三件套对应今天的什么？</strong></p>
+<p>直觉 = 建立「观测值 → 哪条链在动」的心智模型；模拟 = 用 usemem/stress-ng/mmtests/damon 构造可控 workload 验证；调优 = 分层旋钮（swappiness/overcommit/oom_score_adj/大页）逐个试。</p>
+<p><strong>Q2：看到 <code class="c">kswapd</code> CPU 高 + <code class="c">allocstall</code> 上升，指向哪条链？</strong></p>
+<p>direct reclaim 介入（Ch10）——进程在分配路径上自己触发回收，说明后台 kswapd 跟不上分配速度。</p>
+<p><strong>Q3：minor fault 和 major fault 的区别？各自对应什么场景？</strong></p>
+<p>minor = 页已在内存、只需建页表映射（新映射/COW）；major = 需要从磁盘或 swap 换入，会阻塞等待 I/O，是延迟尖刺的主要来源。</p>
+<p><strong>Q4：HFT 里为什么「一次只改一个调优旋钮」是铁律？</strong></p>
+<p>因为调优要配合「模拟」保持可控性，多旋钮同时拧会让观测结果无法归因，退化成拍脑袋。改一个 → 量测 → 确认方向 → 再改下一个。</p>
+<p><strong>Q5：嵌入式板子上没有 perf 时，用哪些零依赖接口观测内存？</strong></p>
+<p><code class="c">/proc/vmstat</code>、<code class="c">/proc/zoneinfo</code>、<code class="c">free</code>、<code class="c">/proc/&lt;pid&gt;/smaps</code>、<code class="c">/proc/&lt;pid&gt;/status</code>——都是内核直接暴露的 proc 接口，无需额外工具。</p>
+</details>
       </section>
       <section class="section" id="s-3">
         <div class="sec-head"><div class="sec-no">3</div><h2>Ch 14 §3 本书的核心目的</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 收尾章</p>
 </blockquote>
-<h3>3. 本书的核心目的</h3>
-<p>Mel Gorman 写本书是为了 <strong>弥合鸿沟</strong>：</p>
-<pre class="code" data-label="code"><code class="c">内存管理理论  ←—— 本书 ——→  Linux VM 真实代码
-                    │
-            尽量架构无关地讲清机制
+<hr />
+<h2>本节讲什么</h2>
+<p>原书 §3 讲 Mel Gorman 的写作动机：<strong>弥合「内存管理理论」与「Linux VM 真实代码」之间的鸿沟</strong>。本书前半（Ch1–14）讲理论，后半（附录 A–M Code Commentary）做源码走读，且尽量<strong>架构无关</strong>地讲清机制。</p>
+<p>本节把这条「弥合鸿沟」的意图，放到<strong>现代资料生态</strong>里重新定位，并说明本仓库笔记在其中的位置。</p>
+<hr />
+<h2>1. 那条鸿沟还在，而且更宽了</h2>
+<pre class="code" data-label="code"><code class="c">   内存管理理论                     Linux VM 真实代码
+  （教科书/Belady/                 （v6.6 的 mm/*.c，
+    工作集模型）        ←鸿沟→       100+ 源文件、机制层层叠加）
 </code></pre>
+<p>原书（2004）弥合的鸿沟，到 2026 年<strong>只增不减</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>读者收获</th>
-<th>内容</th>
+<th>鸿沟的表现</th>
+<th>具体例子</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>理论部分（Ch 1–14）</strong></td>
-<td>Node/Zone/Page、页表、VMA、Buddy、Slab、回收、Swap、shmem、OOM</td>
+<td>理论教材停在上世纪</td>
+<td>讲 LRU，但不讲 active/inactive 双链表（Ch10）、multi-gen LRU</td>
 </tr>
 <tr>
-<td><strong>Code Commentary（附录 A–M）</strong></td>
-<td>与正文对应的 <strong>源码走读</strong></td>
+<td>内核代码演进飞快</td>
+<td>v6.6 已删 HIGHMEM（Ch9）、bootmem→memblock（Ch5）、<code class="c">rw_swap_page</code> 拆两入口（Ch11）</td>
+</tr>
+<tr>
+<td>文档碎片化</td>
+<td><code class="c">Documentation/mm/</code>、<code class="c">admin-guide/</code>、LWN 文章分散各处，无统一入口</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>本仓库笔记：</strong> 各章 <code class="c">chapter-*.md</code> 已按 <strong>HFT 落地</strong>（NUMA、mlock、对象池、延迟）加注；附录正文多 <strong>待走读</strong>。</p>
+<p><strong>本书的价值</strong>在于它示范了一种<strong>读内核的方法论</strong>（理论章节 ↔ 代码注释章节一一对应），这套方法论到今天依然有效——<strong>只是代码本身得重新核对了</strong>（这正是本仓库「每章下沉到 v6.6 源码 + 行号」的由来）。</p>
+<h2>2. 现代资料生态对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>资料</th>
+<th>定位</th>
+<th>与本书关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mel Gorman 本书</td>
+<td>理论 + 代码一一对应的方法论范本</td>
+<td>骨架（本仓库主体）</td>
+</tr>
+<tr>
+<td>LKD3rd（Robert Love）</td>
+<td>面面俱到的内核概览</td>
+<td>广度补充（05-linux-kernel 模块在啃）</td>
+</tr>
+<tr>
+<td><code class="c">Documentation/mm/*.rst</code></td>
+<td>官方最新机制说明</td>
+<td>权威事实源（本仓库已抓取多篇）</td>
+</tr>
+<tr>
+<td>elixir.bootlin.com</td>
+<td>带交叉引用的在线源码</td>
+<td>走读工具（附录 A–M 靠它）</td>
+</tr>
+<tr>
+<td>LWN.net / lore</td>
+<td>机制合入前的动机讨论</td>
+<td>理解「为什么这么设计」</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>本仓库笔记的定位</strong>：以本书为骨架，用 <strong>v6.6 源码 + 行号</strong> 逐章校准，并<strong>额外加一条 HFT/嵌入式 关联线</strong>——这是原书没有、但对振鹏最有价值的一维。</p>
+<h2>3. 本书的局限（诚实评估）</h2>
+<p>「尽量架构无关」是本书的优点，<strong>也是它的代价</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>局限</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写于 2.6 早期</td>
+<td>大量机制已删除/重写（HIGHMEM、bootmem、<code class="c">badness()</code> 算法、<code class="c">PF_MEMDIE</code>）</td>
+</tr>
+<tr>
+<td>架构无关</td>
+<td>不讲 x86_64 的 5 级页表、PCID、TSO 等<strong>具体架构优化</strong></td>
+</tr>
+<tr>
+<td>无 HFT 视角</td>
+<td>不关心「回收/换出/THP 对低延迟意味着什么」</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>所以</strong>：把本书当<strong>方法论</strong>读（它教你「理论怎么落到代码」），别当<strong>事实源</strong>读（事实以 v6.6 源码为准）。本仓库每章开头标注「源码核验：Linux v6.6」正是为了守住这条边界。</p>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>落地</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读法</td>
+<td>理论章（Ch1–14）建立因果链，附录 A–M 验证具体实现，<strong>两者必须对读</strong></td>
+</tr>
+<tr>
+<td>版本意识</td>
+<td>任何「原书说的」都要过一遍 v6.6 核对，别把 2004 的结论当 2026 的事实</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>每篇笔记的 HFT 关联，是把「机制」翻译成「对低延迟意味着什么」——这是本书没做、但 HFT 工程最需要的一步</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
+<h2>衔接</h2>
+<p>§3 讲清本书定位与本仓库的补强思路。§4（已详实）是 VM 全局交互图，之后 §5 给出后续学习路径。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：原书「弥合鸿沟」指的是哪条鸿沟？用什么结构弥合？</strong></p>
+<p>「内存管理理论」与「Linux VM 真实代码」之间的鸿沟。结构是前半（Ch1–14）讲理论 + 后半（附录 A–M）做与正文一一对应的源码走读（Code Commentary）。</p>
+<p><strong>Q2：为什么说这条鸿沟到 2026 年「只增不减」？举三个具体表现。</strong></p>
+<p>① 理论教材停在上世纪（讲 LRU 不讲 active/inactive、multi-gen LRU）；② 内核代码演进飞快（v6.6 已删 HIGHMEM、bootmem→memblock、rw_swap_page 拆两入口）；③ 文档碎片化（Documentation/mm、admin-guide、LWN 分散）。</p>
+<p><strong>Q3：本书「尽量架构无关」的代价是什么？</strong></p>
+<p>不讲 x86_64 的 5 级页表、PCID、TSO 等具体架构优化；且写于 2.6 早期，大量机制已删除/重写。所以当方法论读，别当事实源读。</p>
+<p><strong>Q4：本仓库笔记相对原书多了哪一条价值线？</strong></p>
+<p>额外加了一条 <strong>HFT/嵌入式关联线</strong>（每个机制翻译成「对低延迟意味着什么」），并用 v6.6 源码 + 行号逐章校准，这是原书没有的一维。</p>
+<p><strong>Q5：读本书的正确姿势是什么？</strong></p>
+<p>当<strong>方法论</strong>读（它教你「理论怎么落到代码」），事实以 v6.6 源码为准；理论章与附录 A–M 必须对读，任何「原书说的」都要过一遍 v6.6 核对。</p>
+</details>
       </section>
       <section class="section" id="s-4">
         <div class="sec-head"><div class="sec-no">4</div><h2>Ch 14 §4 VM 子系统交互全局概览（对应原书图 14.1）</h2></div>
@@ -574,20 +978,115 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">5</div><h2>Ch 14 §5 作者期许与后续</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong> · 收尾章</p>
 </blockquote>
-<h3>5. 作者期许与后续</h3>
-<ul>
-<li>读完 <strong>理论（Ch 1–14）</strong> 再进 <strong>附录 Code Commentary</strong> — 应对 <strong>VM 子系统更有信心</strong>。</li>
-<li>鼓励社区为 <strong>其他内核子系统</strong> 写同类 <strong>理论 + 代码</strong> 著作。</li>
-</ul>
-<p><strong>你这边下一步（可选）：</strong></p>
-<ol>
-<li><strong>附录 A–M</strong> — 按 Elixir 走读 <code class="c">mm/*.c</code>，与正文章节对照。  </li>
-<li><strong>HFT 落地</strong> — <a href="../../02-computer-systems/html/chapter-09.html#ch-9">02-CSAPP Ch9</a> · <a href="../../03-linux-userspace-api/html/index.html">03-linux-userspace-api</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk/">13-DPDK 大页</a> · <code class="c">numactl</code> / <code class="c">mlock</code> / <code class="c">perf</code>。  </li>
-<li><strong>交叉</strong> — <a href="../../05-linux-kernel/html/index.html">05-linux-kernel Ch12/15</a> · <a href="../../16-linux-kernel-deep/html/index.html">16-linux-kernel-deep Ch8–9</a></li>
-</ol>
 <hr />
+<h2>本节讲什么</h2>
+<p>原书 §5 是作者期许：读完理论（Ch1–14）再进附录 Code Commentary，并鼓励社区为其他内核子系统写同类「理论 + 代码」著作。</p>
+<p>本节把「期许」落成<strong>振鹏自己的后续路线图</strong>——结合本仓库已铺开的模块，给出从「内存管理」到「HFT 系统编程」的完整进阶路径。</p>
+<hr />
+<h2>1. 原书期许 → 现代落点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原书期许</th>
+<th>现代落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读完理论再进 Code Commentary</td>
+<td>本仓库附录 A–M 用 <strong>elixir.bootlin.com + v6.6 缓存源码</strong> 走读 <code class="c">mm/*.c</code></td>
+</tr>
+<tr>
+<td>为其他子系统写「理论+代码」著作</td>
+<td>LKD3rd（05-linux-kernel）+ 内核官方 <code class="c">Documentation/*.rst</code> 已承接这个角色</td>
+</tr>
+<tr>
+<td>尽量架构无关</td>
+<td>补一条「架构相关」支线：x86_64 5 级页表 / arm64（07-arm-architecture）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. 本仓库后续路线（按依赖顺序）</h2>
+<pre class="code" data-label="code"><code class="c">                    ┌────────────────────────────┐
+ 第 0 步（本模块）   │  06-linux-mm：附录 A–M 走读   │  ← 收尾当前主线
+                    └────────────────────────────┘
+                    ┌────────────────────────────┐
+ 第 1 步（向下）     │  05-linux-kernel：LKD3rd 对照  │  ← 广度（进程/调度/同步）
+                    └────────────────────────────┘
+                    ┌────────────────────────────┐
+ 第 2 步（向上）     │  03-linux-userspace-api：TLPI │  ← 系统调用面（HFT 应用层）
+                    └────────────────────────────┘
+                    ┌────────────────────────────┐
+ 第 3 步（架构）     │  07-arm-architecture / 15-arch │  ← 具体 CPU 的 MMU/TLB
+                    └────────────────────────────┘
+                    ┌────────────────────────────┐
+ 第 4 步（落地）     │  13-dpdk（大页）+ 14-hft-eng    │  ← 把内存知识变成延迟优势
+                    └────────────────────────────┘
+</code></pre>
+<h3>各步与内存管理的衔接点</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>与本书的直接衔接</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>附录 A–M</td>
+<td>验证 Ch2–13 每个结论在 <code class="c">mm/*.c</code> 的真实实现</td>
+</tr>
+<tr>
+<td>05-linux-kernel</td>
+<td><code class="c">struct mm_struct</code>/<code class="c">task_struct</code>（Ch4）、调度对内存回收的触发（Ch10 kswapd 绑 CPU）</td>
+</tr>
+<tr>
+<td>03-linux-userspace-api</td>
+<td><code class="c">mmap</code>/<code class="c">mlock</code>/<code class="c">madvise</code>/<code class="c">brk</code> 的系统调用面（Ch4 的入口）</td>
+</tr>
+<tr>
+<td>架构线</td>
+<td>页表结构（Ch3）在 arm64/x86_64 的具体差异、TLB 刷新的架构指令</td>
+</tr>
+<tr>
+<td>落地线</td>
+<td>DPDK 大页 = Ch3 THP + Ch6 高阶分配 + Ch4 mlock 的工程组合</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 具体行动清单</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 附录 A–M 走读（下一步）
+#    用 D:\.kernel-ref\ 缓存 + elixir 对照，每篇一个 mm/*.c 文件
+
+# 2. HFT 落地验证三件套
+numactl --membind=0 --cpunodebind=0 ./trading_bench   # NUMA 绑定
+mlockall(MCL_CURRENT | MCL_FUTURE)                      # 锁 RSS
+echo -1000 &gt; /proc/self/oom_score_adj                   # OOM 免疫
+
+# 3. 观测闭环
+watch -n1 &quot;grep -E 'pswpin|pswpout|pgalloc|pgmajfault' /proc/vmstat&quot;
+</code></pre>
+<h2>4. 一句话收尾</h2>
+<p>原书的价值不在「结论」（结论已被 v6.6 推翻一半），而在<strong>「理论怎么落到代码」的方法论</strong>。把这个方法论接上 <strong>v6.6 源码核验 + HFT 落地</strong>，就是本仓库 06-linux-mm 模块做完之后该有的样子。</p>
+<hr />
+<h2>衔接</h2>
+<p>Ch14 收官，意味着 <strong>06-linux-mm 正文（Ch1–14）补强全部完成</strong>。剩下最后一块拼图：附录 A–M 的代码走读（13 个空占位）。</p>
+<hr />
+<details>
+<summary>自测 5 问（点开看答案）</summary>
+<p><strong>Q1：本书作者 Mel Gorman 的两条期许是什么？</strong></p>
+<p>① 读者读完理论（Ch1–14）再进附录 Code Commentary，应对 VM 子系统更有信心；② 鼓励社区为其他内核子系统写同类「理论 + 代码」著作。</p>
+<p><strong>Q2：本仓库后续路线的依赖顺序是什么？</strong></p>
+<p>附录 A–M（收尾当前模块）→ 05-linux-kernel（LKD3rd 广度）→ 03-linux-userspace-api（TLPI 系统调用面）→ 架构线（arm64/x86_64）→ 落地线（DPDK 大页 + HFT 工程）。</p>
+<p><strong>Q3：DPDK 大页是本书哪些章节的工程组合？</strong></p>
+<p>Ch3 THP/大页映射 + Ch6 高阶分配（Buddy order&gt;0）+ Ch4 mlock 锁页，三者组合成「固定物理地址 + 稳定 TLB + 免缺页」的 I/O 加速方案。</p>
+<p><strong>Q4：HFT 落地验证的「三件套」是什么？</strong></p>
+<p>NUMA 绑定（numactl --membind/--cpunodebind）、锁 RSS（mlockall）、OOM 免疫（oom_score_adj=-1000）。</p>
+<p><strong>Q5：用一句话概括本书对振鹏的价值？</strong></p>
+<p>不在「结论」（已被 v6.6 推翻一半），而在「理论怎么落到代码」的方法论；把这个方法论接上 v6.6 源码核验 + HFT 落地，才是本模块做完后该有的样子。</p>
+</details>
       </section>
 
 
