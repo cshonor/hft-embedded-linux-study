@@ -19,6 +19,10 @@
 > **开了 PARAVIRT 时慢路径默认会被劫持成 test-and-set**；
 > ④ 给出 **PREEMPT_RT 下 `spin_lock()` 会睡眠**的实证 —— 书上那句"自旋锁绝不睡眠"在 RT 内核上是错的。
 >
+>
+> 🔗 **qspinlock 的独立深度笔记**（MCS 队列、pending 位、三级优化演进）见
+> [05.5 现代内核 · qspinlock 设计](../../../05.5-modern-kernel/chapter-04-synchronization/notes/02-qspinlock-design.md)。
+>
 > 所有常量与代码均核对自缓存的 v6.6 源码，行号可查。
 
 ---

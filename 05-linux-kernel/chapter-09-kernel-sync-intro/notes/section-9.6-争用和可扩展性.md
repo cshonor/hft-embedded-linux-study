@@ -2,6 +2,10 @@
 
 > 承接 [9.5 死锁](./section-9.5-死锁.md) 与 [Ch 10 同步方法](../../chapter-10-sync-methods/)。
 > 本节回答：**争用的真实成本是什么、内核用什么机制对抗它、以及怎么测量。**
+>
+> 🔗 **本篇只讲「争用成本与测量」**；两个机制各有独立深度笔记——
+> qspinlock 的队列设计见 [05.5 现代内核 · qspinlock 设计](../../../05.5-modern-kernel/chapter-04-synchronization/notes/02-qspinlock-design.md)，
+> per-VMA lock 依赖的 maple tree 见 [06.5 现代 MM · Maple Tree](../../../06.5-modern-mm/chapter-05-vm-address-space-maple-tree/notes/02-maple-tree.md)。
 
 #### 锁争用（lock contention）
 

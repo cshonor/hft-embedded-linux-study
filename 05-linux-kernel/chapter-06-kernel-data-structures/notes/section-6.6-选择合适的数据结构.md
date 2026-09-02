@@ -2,6 +2,10 @@
 
 > 承接 [6.5 红黑树](./section-6.5-二叉树.md)（如存在）与本章前文。
 > 本节回答：**内核提供了哪些结构、各自的实现代价是什么、以及"选型"真正的四个维度。**
+>
+> 🔗 **本篇只讲「选型维度」**：XArray / maple tree 的完整机制（B-Tree 节点布局、
+> RCU 安全读、per-VMA lock 为什么必须依赖它）见
+> [06.5 现代 MM · Maple Tree](../../../06.5-modern-mm/chapter-05-vm-address-space-maple-tree/notes/02-maple-tree.md)。
 
 | 主要需求 | 选用 |
 |----------|------|

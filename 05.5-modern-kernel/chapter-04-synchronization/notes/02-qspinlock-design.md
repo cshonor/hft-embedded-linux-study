@@ -3,6 +3,9 @@
 > 原文: LWN Queued Spinlocks (2014)
 > 内核版本: 4.x+ (x86), 5.x+ (ARM64)
 > 对标旧书: ULK3 Ch5 (ticket spinlock 已过时)
+> 🔗 **LKD 章节语境（本书精读笔记）**：[Ch10.2 自旋锁](../../../05-linux-kernel/chapter-10-sync-methods/notes/section-10.2-自旋锁.md)
+> （v6.6 三层类型 + 32 位字布局）· [Ch9.6 争用和可扩展性](../../../05-linux-kernel/chapter-09-kernel-sync-intro/notes/section-9.6-争用和可扩展性.md)
+> （pending 位的争用意义 + `/proc/lock_stat` 怎么量）
 
 ---
 

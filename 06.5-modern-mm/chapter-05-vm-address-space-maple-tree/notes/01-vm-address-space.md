@@ -3,6 +3,9 @@
 > 笨叔《奔跑吧 Linux 内核》读书笔记
 > 对应旧书: ULK3 / LKD3 (Linux 2.6)
 > 对应现代内核: Linux 5.x / 6.x
+> 🔗 **LKD 章节语境（本书精读笔记）**：[Ch15 进程地址空间](../../../05-linux-kernel/chapter-15-process-address-space/README.md)
+> · [Ch9.6 争用和可扩展性](../../../05-linux-kernel/chapter-09-kernel-sync-intro/notes/section-9.6-争用和可扩展性.md)
+> （per-VMA lock 为什么必须依赖 maple tree：顺序不能颠倒）
 
 ---
 

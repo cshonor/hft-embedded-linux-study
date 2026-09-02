@@ -4,6 +4,8 @@
 > **作者:** Liam Howlett
 > **内核版本:** 6.1+ (替换 VMA 红黑树)
 > **对标旧书:** ULK3 Ch9 / LKD3 Ch15 (VMA 红黑树管理)
+> 🔗 **LKD 章节语境（本书精读笔记）**：[Ch6.6 选择合适的数据结构](../../../05-linux-kernel/chapter-06-kernel-data-structures/notes/section-6.6-选择合适的数据结构.md)
+> （B-Tree vs rbtree 的层数对比 + 指针低位打标）· [Ch15 进程地址空间](../../../05-linux-kernel/chapter-15-process-address-space/README.md)
 
 ---
 
