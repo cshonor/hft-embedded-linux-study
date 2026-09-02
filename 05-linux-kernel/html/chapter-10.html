@@ -1714,46 +1714,758 @@ v5.8 起有）。</p>
 </tr>
 </tbody>
 </table></div>
-<h4>适用 vs 不适用</h4>
+<blockquote>
+<p><strong>本篇分工</strong>：实体书把自旋锁当作「一个 <code class="c">spinlock_t</code> + <code class="c">spin_lock()</code>」来讲，实现细节停在
+ticket lock。本篇<strong>不复述</strong>适用/不适用、不可递归、与中断配合这些（下面保留速查表），只做四件事：</p>
+<p>① 拆开 <strong>v6.6 的三层类型</strong>（<code class="c">spinlock_t</code> → <code class="c">raw_spinlock_t</code> → <code class="c">arch_spinlock_t</code>），
+讲清 <strong>为什么要有 <code class="c">raw_*</code> 这一层</strong>；
+② 逐字讲 <strong>qspinlock 的 32 位字布局与慢路径状态机</strong>（这是 v4.2 就取代 ticket lock 的东西，
+书上是 v2.6 年代，完全没有）；
+③ 订正三个凭记忆会写错的点：<strong>qspinlock 并不严格 FIFO</strong>、<strong>UP 上 <code class="c">spin_trylock()</code> 恒返回 1</strong>、
+<strong>开了 PARAVIRT 时慢路径默认会被劫持成 test-and-set</strong>；
+④ 给出 <strong>PREEMPT_RT 下 <code class="c">spin_lock()</code> 会睡眠</strong>的实证 —— 书上那句"自旋锁绝不睡眠"在 RT 内核上是错的。</p>
+<p>所有常量与代码均核对自缓存的 v6.6 源码，行号可查。</p>
+</blockquote>
+<hr />
+<h2>1. v6.6 的自旋锁是<strong>三层类型</strong>，不是一层</h2>
+<p>书的年代 <code class="c">spinlock_t</code> 就是全部。现在它是个套娃：</p>
+<pre class="code" data-label="code"><code class="c">spin_lock(&amp;my_lock)
+      │
+      ▼
+┌─────────────────────────────────────────────────────────┐
+│ spinlock_t          include/linux/spinlock_types.h      │
+│   ├─ union { raw_spinlock rlock; ...dep_map }           │  ← 非 RT
+│   └─ struct rt_mutex_base lock;                         │  ← PREEMPT_RT
+└─────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────────┐
+│ raw_spinlock_t      include/linux/spinlock_types_raw.h  │
+│   ├─ arch_spinlock_t raw_lock;                          │
+│   ├─ [DEBUG_SPINLOCK] unsigned int magic, owner_cpu;    │
+│   ├─ [DEBUG_SPINLOCK] void *owner;                      │
+│   └─ [DEBUG_LOCK_ALLOC] struct lockdep_map dep_map;     │
+└─────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────────┐
+│ arch_spinlock_t  ==  struct qspinlock                   │
+│   asm-generic/qspinlock_types.h                         │
+│   一个 32 位字：locked(8) + pending(8) + tail(16)        │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>为什么需要 <code class="c">raw_spinlock_t</code> 这一层</h3>
+<p>因为 <strong>PREEMPT_RT 把 <code class="c">spinlock_t</code> 变成了可睡眠锁</strong>（见 §8）。但内核里确实存在
+<strong>连 RT 都不能睡眠</strong>的地方 —— 调度器、时钟、中断底层、真正的硬件临界区。
+这些地方必须用 <code class="c">raw_spinlock_t</code>，它在 RT 上<strong>仍然真自旋</strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_types.h —— 同一个 typedef，两个完全不同的实现 */
+
+#ifndef CONFIG_PREEMPT_RT
+/* Non PREEMPT_RT kernels map spinlock to raw_spinlock */
+typedef struct spinlock {
+    union {
+        struct raw_spinlock rlock;
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#define LOCK_PADSIZE (offsetof(struct raw_spinlock, dep_map))
+        struct {
+            u8 __padding[LOCK_PADSIZE];
+            struct lockdep_map dep_map;
+        };
+#endif
+    };
+} spinlock_t;
+#else /* !CONFIG_PREEMPT_RT */
+/* PREEMPT_RT kernels map spinlock to rt_mutex */
+typedef struct spinlock {
+    struct rt_mutex_base    lock;
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+    struct lockdep_map  dep_map;
+#endif
+} spinlock_t;
+#endif /* CONFIG_PREEMPT_RT */
+</code></pre>
+<blockquote>
+<p>注意非 RT 那个 <code class="c">union</code> 里 <code class="c">__padding[LOCK_PADSIZE]</code> 的写法：
+它让 <code class="c">spinlock_t</code> 和 <code class="c">raw_spinlock_t</code> 的 <code class="c">dep_map</code> 落在<strong>同一偏移</strong>，
+这样 <code class="c">spin_lock()</code> 只是一次 <code class="c">&amp;lock-&gt;rlock</code> 的取地址，零开销。</p>
+</blockquote>
+<hr />
+<h2>2. 一个自旋锁<strong>只有 4 个字节</strong>：qspinlock 的位布局</h2>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/qspinlock_types.h */
+typedef struct qspinlock {
+    union {
+        atomic_t val;
+#ifdef __LITTLE_ENDIAN
+        struct {
+            u8  locked;      /* bit  0- 7  锁是否被持有 */
+            u8  pending;     /* bit  8-15  是否有人在&quot;预备&quot;抢锁 */
+        };
+        struct {
+            u16 locked_pending;
+            u16 tail;        /* bit 16-31  队列尾 */
+        };
+#else
+        /* 大端机器反过来，此处略 */
+#endif
+    };
+} arch_spinlock_t;
+</code></pre>
+<p>位域划分（源码注释逐字）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>适合</th>
-<th>不适合</th>
+<th>位</th>
+<th>字段</th>
+<th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>持有时间极短</strong>（几条～几十条指令级）</td>
-<td>长临界区（浪费多核空转）</td>
+<td>0–7</td>
+<td><strong>locked byte</strong></td>
+<td>锁持有标志。<code class="c">0</code> = 没人持锁</td>
 </tr>
 <tr>
-<td><strong>不能睡眠</strong> 的上下文</td>
-<td>需要 <code class="c">copy_from_user</code>、等 I/O、拿 mutex</td>
+<td>8</td>
+<td><strong>pending</strong></td>
+<td>有 CPU 正在"排队前的最后一次乐观自旋"</td>
 </tr>
 <tr>
-<td>保护共享数据结构的瞬间更新</td>
-<td>「大段业务逻辑」</td>
+<td>9–15</td>
+<td><em>(未用)</em></td>
+<td>当 <code class="c">CONFIG_NR_CPUS &lt; 16K</code> 时整字节给 pending，浪费 7 位换字节写性能</td>
+</tr>
+<tr>
+<td>16–17</td>
+<td><strong>tail index</strong></td>
+<td>嵌套层级：0=task, 1=softirq, 2=hardirq, 3=NMI</td>
+</tr>
+<tr>
+<td>18–31</td>
+<td><strong>tail cpu (+1)</strong></td>
+<td>队尾 CPU 号</td>
 </tr>
 </tbody>
 </table></div>
-<h4>不可递归</h4>
+<p><code class="c">NR_CPUS &gt;= 16K</code> 时布局会变（pending 只占 1 位，tail idx 挪到 9–10，tail cpu 占 11–31），
+所以<strong>别硬编码位偏移</strong>，一律用 <code class="c">_Q_LOCKED_MASK</code> / <code class="c">_Q_PENDING_VAL</code> / <code class="c">_Q_TAIL_MASK</code> 这套宏。</p>
+<h3>为什么 <code class="c">pending</code> 要给<strong>整整一个字节</strong></h3>
+<p>源码注释说得很直白：</p>
+<blockquote>
+<p><em>By using the whole 2nd least significant byte for the pending bit, we can allow
+better optimization of the lock acquisition for the pending bit holder.</em></p>
+</blockquote>
+<p>以及：</p>
+<blockquote>
+<p><em>Even though we only need 1 bit for the lock, we extend it to a full byte
+to achieve better performance for architectures that support atomic byte write.</em></p>
+</blockquote>
+<p>解锁时只写 <code class="c">lock-&gt;locked</code> 一个字节（<code class="c">smp_store_release(&amp;lock-&gt;locked, 0)</code>），
+不需要动 <code class="c">pending</code> 和 <code class="c">tail</code> —— 这是一次 <strong>单字节 store</strong>，比读-改-写整个 32 位字便宜得多。</p>
+<h3>为什么 tail 里的 CPU 号要 <code class="c">+1</code></h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/qspinlock.c:107 */
+/*
+ * We must be able to distinguish between no-tail and the tail at 0:0,
+ * therefore increment the cpu number by one.
+ */
+static inline __pure u32 encode_tail(int cpu, int idx)
+{
+    u32 tail;
+    tail  = (cpu + 1) &lt;&lt; _Q_TAIL_CPU_OFFSET;
+    tail |= idx &lt;&lt; _Q_TAIL_IDX_OFFSET; /* assume &lt; 4 */
+    return tail;
+}
+</code></pre>
+<p>CPU 0 的 task 层（idx=0）编码出来是 <code class="c">0</code>，会和「没有队尾」撞车。所以 <code class="c">+1</code> 把 0 让出来当哨兵。
+<code class="c">decode_tail()</code> 再 <code class="c">-1</code> 还原。</p>
+<hr />
+<h2>3. 快路径：就一条 CAS</h2>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/qspinlock.h */
+static __always_inline void queued_spin_lock(struct qspinlock *lock)
+{
+    int val = 0;
+    if (likely(atomic_try_cmpxchg_acquire(&amp;lock-&gt;val, &amp;val, _Q_LOCKED_VAL)))
+        return;
+
+    queued_spin_lock_slowpath(lock, val);
+}
+
+static __always_inline void queued_spin_unlock(struct qspinlock *lock)
+{
+    /* unlock() needs release semantics: */
+    smp_store_release(&amp;lock-&gt;locked, 0);   /* 只写 1 个字节 */
+}
+
+static __always_inline int queued_spin_trylock(struct qspinlock *lock)
+{
+    int val = atomic_read(&amp;lock-&gt;val);
+    if (unlikely(val))
+        return 0;                            /* ⚠️ 有任何一位非 0 就直接放弃 */
+    return likely(atomic_try_cmpxchg_acquire(&amp;lock-&gt;val, &amp;val, _Q_LOCKED_VAL));
+}
+</code></pre>
+<p>三件事值得注意：</p>
+<ol>
+<li><strong>无争用时加锁 = 一条带 LOCK 前缀的 <code class="c">cmpxchg</code></strong>，解锁 = 一条<strong>普通 store</strong>（x86 TSO 下 release 免费）。</li>
+<li><code class="c">queued_spin_trylock()</code> 判的是<strong>整个 32 位字</strong> <code class="c">val != 0</code>，不是只看 locked byte。
+   所以队列里只要还有人等着（tail != 0），<code class="c">trylock</code> 就<strong>一定失败</strong> —— 这是 qspinlock
+   比朴素 TAS 公平得多的一面。</li>
+<li><code class="c">queued_spin_unlock()</code> 写的是 <code class="c">&amp;lock-&gt;locked</code>（union 的 u8 成员），<strong>只碰第一个字节</strong>。</li>
+</ol>
+<hr />
+<h2>4. 慢路径：先"乐观自旋"一次，失败才排 MCS 队列</h2>
+<p>qspinlock 的精髓是：<strong>真正的 MCS 队列是最后手段</strong>。中间插了一层 <code class="c">pending</code> 位，
+让「第二个到达者」不必入队，只需盯着 locked byte 自旋。</p>
+<h3>状态机（源码注释原图，逐字）</h3>
+<pre class="code" data-label="code"><code class="c"> *              fast     :    slow                                  :    unlock
+ *                       :                                          :
+ * uncontended  (0,0,0) -:--&gt; (0,0,1) ------------------------------:--&gt; (*,*,0)
+ *                       :       | ^--------.------.             /  :
+ *                       :       v           \      \            |  :
+ * pending               :    (0,1,1) +--&gt; (0,1,0)   \           |  :
+ *                       :       | ^--'              |           |  :
+ *                       :       v                   |           |  :
+ * uncontended           :    (n,x,y) +--&gt; (n,0,0) --'           |  :
+ *   queue               :       | ^--'                          |  :
+ *                       :       v                               |  :
+ * contended             :    (*,x,y) +--&gt; (*,0,0) ---&gt; (*,0,1) -'  :
+ *   queue               :         ^--'                             :
+</code></pre>
+<p>三元组是 <code class="c">(tail, pending, locked)</code>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>规则</th>
-<th>后果</th>
+<th>状态</th>
+<th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>同一 spinlock 不能二次 acquire</strong></td>
-<td><strong>自死锁</strong> — 永远等自己</td>
+<td><code class="c">(0,0,0)</code></td>
+<td>空闲。快路径 CAS 直接拿走</td>
+</tr>
+<tr>
+<td><code class="c">(0,1,1)</code></td>
+<td>有人持锁，第二个到达者已占住 pending 位，正在自旋</td>
+</tr>
+<tr>
+<td><code class="c">(0,1,0)</code></td>
+<td>持锁者释放，pending 者即将接手</td>
+</tr>
+<tr>
+<td><code class="c">(n,x,y)</code></td>
+<td>队列里有人（tail = n），新来者一律入队</td>
+</tr>
+<tr>
+<td><code class="c">(*,0,1)</code></td>
+<td>队列头拿到锁，但队尾还有人 —— 持锁者还得把锁"传"给下一个</td>
 </tr>
 </tbody>
 </table></div>
-<p>嵌套多把锁必须 <strong>全局固定加锁顺序</strong>（Ch 9 死锁）。</p>
-<h4>与中断配合（必背）</h4>
+<h3>慢路径代码（v6.6 实测，节选关键分支）</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/qspinlock.c:316 */
+void __lockfunc queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
+{
+    struct mcs_spinlock *prev, *next, *node;
+    u32 old, tail;
+    int idx;
+
+    BUILD_BUG_ON(CONFIG_NR_CPUS &gt;= (1U &lt;&lt; _Q_TAIL_CPU_BITS));
+
+    if (pv_enabled())
+        goto pv_queue;
+    if (virt_spin_lock(lock))       /* ⚠️ 见 §10：虚拟机上可能在这里直接被劫持走 */
+        return;
+
+    /* ① 有人正在做 pending-&gt;locked 交接，有限次等它交接完（保证前进） */
+    if (val == _Q_PENDING_VAL) {
+        int cnt = _Q_PENDING_LOOPS;
+        val = atomic_cond_read_relaxed(&amp;lock-&gt;val,
+                           (VAL != _Q_PENDING_VAL) || !cnt--);
+    }
+
+    /* ② 只要看到 tail 或 pending 有值 —— 已经有队了，别抢，去排队 */
+    if (val &amp; ~_Q_LOCKED_MASK)
+        goto queue;
+
+    /* ③ 否则去占 pending 位（0,0,* -&gt; 0,1,*），这是&quot;最后一次乐观自旋&quot; */
+    val = queued_fetch_set_pending_acquire(lock);
+
+    /* ④ 占 pending 的过程中若发现有别人也来了，撤销 pending，老实排队 */
+    if (unlikely(val &amp; ~_Q_LOCKED_MASK)) {
+        if (!(val &amp; _Q_PENDING_MASK))
+            clear_pending(lock);
+        goto queue;
+    }
+
+    /* ⑤ 我是 pending 者，等持锁者走开；必须 load-acquire 配 store-release */
+    if (val &amp; _Q_LOCKED_MASK)
+        smp_cond_load_acquire(&amp;lock-&gt;locked, !VAL);
+
+    /* ⑥ 接手：清 pending，置 locked（0,1,0 -&gt; 0,0,1） */
+    clear_pending_set_locked(lock);
+    lockevent_inc(lock_pending);
+    return;
+
+queue:
+    lockevent_inc(lock_slowpath);
+pv_queue:
+    /* ⑦ 真排队：取本 CPU 的 MCS node */
+    node = this_cpu_ptr(&amp;qnodes[0].mcs);
+    idx  = node-&gt;count++;
+    tail = encode_tail(smp_processor_id(), idx);
+    ...
+    /* ⑧ 超过 4 层嵌套（极端情况）就退化成裸自旋，不用 node */
+    if (unlikely(idx &gt;= MAX_NODES)) {
+        lockevent_inc(lock_no_node);
+        while (!queued_spin_trylock(lock))
+            cpu_relax();
+        goto release;
+    }
+    node = grab_mcs_node(node, idx);
+
+    /* ⑨ 初始化 node，然后再 trylock 一次（碰碰运气） */
+    barrier();
+    node-&gt;locked = 0;
+    node-&gt;next   = NULL;
+    if (queued_spin_trylock(lock))
+        goto release;
+
+    /* ⑩ 发布 tail，把自己挂进队列 */
+    smp_wmb();
+    old = xchg_tail(lock, tail);
+    next = NULL;
+    if (old &amp; _Q_TAIL_MASK) {
+        prev = decode_tail(old);
+        WRITE_ONCE(prev-&gt;next, node);            /* 挂到前驱后面 */
+        pv_wait_node(node, prev);
+        arch_mcs_spin_lock_contended(&amp;node-&gt;locked);  /* 自旋在【自己的 node】上 */
+        next = READ_ONCE(node-&gt;next);
+        if (next)
+            prefetchw(next);                 /* 提前把后继的 cacheline 拉来写 */
+    }
+    ...
+locked:
+    /* ⑪ 轮到我了：如果我是唯一的等待者（val 的 tail == 我的 tail），
+           一次 CAS 把整个字换成 (0,0,1)，直接走人 */
+    if ((val &amp; _Q_TAIL_MASK) == tail) {
+        if (atomic_try_cmpxchg_relaxed(&amp;lock-&gt;val, &amp;val, _Q_LOCKED_VAL))
+            goto release; /* No contention */
+    }
+    /* ⑫ 否则只置 locked 位，然后把锁传给 next */
+    set_locked(lock);
+    if (!next)
+        next = smp_cond_load_relaxed(&amp;node-&gt;next, (VAL));
+    arch_mcs_spin_unlock_contended(&amp;next-&gt;locked);
+    pv_kick_node(lock, next);
+release:
+    __this_cpu_dec(qnodes[0].mcs.count);
+}
+</code></pre>
+<h3>关键设计点：每个等待者自旋在<strong>自己 CPU 的本地变量</strong>上</h3>
+<p>这是 MCS 锁相对 test-and-set 的核心优势。经典 MCS 锁每人一个 node，
+自旋在 <code class="c">node-&gt;locked</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/mcs_spinlock.h */
+struct mcs_spinlock {
+    struct mcs_spinlock *next;
+    int locked; /* 1 if lock acquired */
+    int count;  /* nesting count, see qspinlock.c */
+};
+
+#define arch_mcs_spin_lock_contended(l)     \
+do {                        \
+    smp_cond_load_acquire(l, VAL);      \
+} while (0)
+
+#define arch_mcs_spin_unlock_contended(l)   \
+    smp_store_release((l), 1)
+</code></pre>
+<p>对比 TAS：<code class="c">N</code> 个 CPU 同时对一个全局 cacheline 做 <code class="c">cmpxchg</code>，每次成功写都会让其余 <code class="c">N-1</code> 个
+CPU 的 cacheline 副本失效 —— <strong>O(N²) 的 cacheline 乒乓</strong>。MCS 下每人盯自己的私有 cacheline，
+前驱释放时只失效后驱<strong>一条</strong> line —— <strong>O(N)</strong>。</p>
+<blockquote>
+<p>⚠️ 一个<strong>反直觉但重要</strong>的例外：<code class="c">node</code> 是 <code class="c">DEFINE_PER_CPU_ALIGNED</code> 的，
+但 <strong><code class="c">node-&gt;next</code> 是被别人写的</strong>。所以 §4 第 ⑩ 步里那个 <code class="c">prefetchw(next)</code> 是在
+"预取后继 node 的 cacheline 到本 CPU 并置为可写态"，省掉后面传递锁时的一次 cache miss。</p>
+</blockquote>
+<hr />
+<h2>5. 为什么 per-CPU 只有 <strong>4 个</strong> node</h2>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/qspinlock.c:70 */
+static DEFINE_PER_CPU_ALIGNED(struct qnode, qnodes[MAX_NODES]);
+</code></pre>
+<p><code class="c">#define MAX_NODES 4</code></p>
+<p>源码注释逐字：</p>
+<blockquote>
+<p><em>Since a spinlock disables recursion of its own context and there is a limit
+to the contexts that can nest; namely: </em><em>task, softirq, hardirq, nmi</em><em>.
+As there are at most 4 nesting levels, it can be encoded by a 2-bit number.</em></p>
+</blockquote>
+<p>于是 tail 里的 <strong>2 位 tail index</strong> 就是这么来的：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>idx</th>
+<th>上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>进程上下文（task）</td>
+</tr>
+<tr>
+<td>1</td>
+<td>softirq 打断了 task</td>
+</tr>
+<tr>
+<td>2</td>
+<td>hardirq 打断了 softirq</td>
+</tr>
+<tr>
+<td>3</td>
+<td>NMI 打断了 hardirq</td>
+</tr>
+</tbody>
+</table></div>
+<p>每个 CPU 最多同时"等在 4 把不同的锁上"（每层一把），所以 4 个 node 够用。</p>
+<p><strong>超过 4 层怎么办？</strong> 源码明确说这是个「不优雅但够简单」的兜底：</p>
+<pre class="code" data-label="C"><code class="c">    /*
+     * 4 nodes are allocated based on the assumption that there will
+     * not be nested NMIs taking spinlocks. That may not be true in
+     * some architectures even though the chance of needing more than
+     * 4 nodes will still be extremely unlikely. When that happens,
+     * we fall back to spinning on the lock directly without using
+     * any MCS node. This is not the most elegant solution, but is
+     * simple enough.
+     */
+    if (unlikely(idx &gt;= MAX_NODES)) {
+        lockevent_inc(lock_no_node);
+        while (!queued_spin_trylock(lock))
+            cpu_relax();
+        goto release;
+    }
+</code></pre>
+<p><strong>大小刚好一条 cacheline</strong>：64 位下 <code class="c">struct mcs_spinlock</code> 是 16 字节（指针 8 + int 4 + int 4），
+4 个 = 64 字节 = 一条 cacheline。开 <code class="c">CONFIG_PARAVIRT_SPINLOCKS</code> 时 node 膨胀到 32 字节，
+4 个 = 128 字节（两条 line）—— 源码承认这是为 PV 付的代价：</p>
+<blockquote>
+<p><em>We don't want to penalize pvqspinlocks to optimize for a rare case in
+native qspinlocks.</em></p>
+</blockquote>
+<hr />
+<h2>6. 版本断崖：<strong>qspinlock 取代 ticket lock 在 v4.2</strong></h2>
+<p>这是本篇最值钱的一条 —— 书上（LKD3rd，v2.6 年代）和大量中文资料讲的都是 <strong>ticket lock</strong>，
+而主线上它早就没了。</p>
+<p>用「抓多版本同名文件比大小」的手法实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">include/asm-generic/qspinlock.h</code> 大小</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v3.19</td>
+<td>84 B（404 占位页）</td>
+<td>文件不存在</td>
+</tr>
+<tr>
+<td>v4.0</td>
+<td>84 B</td>
+<td>文件不存在</td>
+</tr>
+<tr>
+<td>v4.1</td>
+<td>84 B</td>
+<td>文件不存在</td>
+</tr>
+<tr>
+<td><strong>v4.2</strong></td>
+<td><strong>4207 B</strong></td>
+<td>⭐ <strong>qspinlock 合入</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>同时看 v4.1 的 x86 实现，确认它当时还是 ticket lock：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/spinlock.h @ v4.1:18 */
+ * These are fair FIFO ticket locks, which support up to 2^16 CPUs.
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/spinlock.h @ v4.1:47 */
+static inline void __ticket_enter_slowpath(arch_spinlock_t *lock)
+</code></pre>
+<h3>⚠️ 顺手抓到一处<strong>过时源码注释</strong></h3>
+<p><code class="c">arch/x86/include/asm/spinlock.h</code> 在 <strong>v6.6</strong> 里居然还留着 ticket lock 时代的注释：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/spinlock.h @ v6.6:17-22 */
+/*
+ * Your basic SMP spinlocks, allowing only a single CPU anywhere
+ *
+ * Simple spin lock operations.  There are two variants, one clears IRQ's
+ * on the local processor, one does not.
+ *
+ * These are fair FIFO ticket locks, which support up to 2^16 CPUs.   ← ❌ 错的
+ *
+ * (the type definitions are in asm/spinlock_types.h)                 ← ❌ 也不对，
+ */                                                                      类型在 asm/qspinlock.h
+</code></pre>
+<p>v6.6 的 x86 默认走 <code class="c">#include &lt;asm/qspinlock.h&gt;</code>，跟 FIFO ticket 没关系了。
+<strong>又一次印证：要数字看定义，别看注释。</strong></p>
+<hr />
+<h2>7. ⭐ 订正：qspinlock <strong>不是严格 FIFO</strong>，pending 位就是"插队"机制</h2>
+<p>书上（以及很多资料）的说法是「ticket lock / qspinlock 是公平锁，先到先得」。
+<strong>这话只对了后半段。</strong></p>
+<h3>插队点一：<code class="c">pending</code> 位</h3>
+<p>看慢路径 ②③ 步：新来者只要看到 <code class="c">val &amp; ~_Q_LOCKED_MASK == 0</code>（即 tail 和 pending 都为空），
+就去<strong>占 pending 位</strong>，然后在 locked byte 上自旋等持锁者释放。</p>
+<p>也就是说：<strong>即便队列里已经有 1 个人在排，只要那个 pending 位还空着，新来者仍然可以插到队列前面。</strong></p>
+<p>这是刻意的性能设计 —— 缓存局部性：让"第二个到达者"在本地自旋，比让它去走一整套
+MCS 入队/出队便宜得多。代价就是<strong>轻微的不公平</strong>。</p>
+<h3>插队点二：PV 模式下明确的 "lock stealing"</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/qspinlock_paravirt.h:403 */
+    /*
+     * Set the pending bit in the active lock spinning loop to
+     * disable lock stealing before attempting to acquire the lock.
+     */
+    set_pending(lock);
+    for (loop = SPIN_THRESHOLD; loop; loop--) {
+        if (trylock_clear_pending(lock))
+            goto gotlock;
+        cpu_relax();
+    }
+    clear_pending(lock);
+</code></pre>
+<p>注释里直接用了 <strong>"lock stealing"（偷锁）</strong> 这个词。<code class="c">SPIN_THRESHOLD = (1 &lt;&lt; 15) = 32768</code>
+次自旋，偷不到才老实排队。而且 <code class="c">qspinlock_paravirt.h</code> 的设计注释写明了原因：</p>
+<blockquote>
+<p><em>A queue node vCPU will stop spinning if the vCPU in the previous node is
+not running. </em><em>The one lock stealing attempt allowed at slowpath entry
+mitigates the slight slowdown for non-overcommitted guest</em><em> with this
+aggressive wait-early mechanism.</em></p>
+</blockquote>
+<p>（虚拟机的持锁 vCPU 可能被宿主调度走，严格 FIFO 会导致整条队列干等 —— 所以允许偷。）</p>
+<h3>结论表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>公平性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无争用</td>
+<td>快路径 CAS，谁先谁拿 —— <strong>但这是真并发，谈不上公平不公平</strong></td>
+</tr>
+<tr>
+<td>2 个竞争者</td>
+<td>pending 位保证了<strong>大致</strong> FIFO</td>
+</tr>
+<tr>
+<td>≥3 个竞争者（native）</td>
+<td>MCS 队列 FIFO，<strong>但 pending 位可被新来者抢占</strong></td>
+</tr>
+<tr>
+<td>≥2 个竞争者（PV guest）</td>
+<td>明确的 lock stealing，<strong>可能饿死队头</strong></td>
+</tr>
+<tr>
+<td>TAS / <code class="c">virt_spin_lock</code></td>
+<td>完全不公平，纯抢</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 推论</strong>：别把 <code class="c">spinlock_t</code> 当公平队列用。需要严格 FIFO 时用 <code class="c">queued_spinlock</code> 之外的
+机制（比如 MCS 手写，或业务层自己排队）。</p>
+<hr />
+<h2>8. ⭐ 订正：PREEMPT_RT 上 <code class="c">spin_lock()</code> <strong>会睡眠</strong></h2>
+<p>书上那句「自旋锁绝不睡眠」在非 RT 内核成立。开了 <code class="c">CONFIG_PREEMPT_RT</code> 就不成立了：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_rt.h:43 */
+static __always_inline void spin_lock(spinlock_t *lock)
+{
+    rt_spin_lock(lock);
+}
+</code></pre>
+<p>配合 §1 的类型定义 —— RT 下 <code class="c">spinlock_t</code> 里装的是 <code class="c">struct rt_mutex_base</code>。
+于是：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>配置</th>
+<th><code class="c">spin_lock()</code> 的行为</th>
+<th>临界区里能睡眠吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非 RT</td>
+<td>真自旋 + <code class="c">preempt_disable()</code></td>
+<td>❌ 不能 —— <code class="c">BUG: scheduling while atomic</code></td>
+</tr>
+<tr>
+<td><strong>PREEMPT_RT</strong></td>
+<td>走 rt_mutex，<strong>可睡眠</strong></td>
+<td>✅ 能</td>
+</tr>
+<tr>
+<td>任意配置下的 <code class="c">raw_spin_lock()</code></td>
+<td>真自旋</td>
+<td>❌ 不能</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 RT 内核里「持 spinlock 时不能调 <code class="c">copy_from_user()</code> / <code class="c">kmalloc(GFP_KERNEL)</code>」
+这条铁律<strong>失效了</strong>，但「持 <code class="c">raw_spinlock</code> 时不能」依然成立。</p>
+<blockquote>
+<p>这正是 <code class="c">raw_spinlock_t</code> 存在的全部理由：<strong>给 RT 内核里那些真的不能睡的地方留一把真自旋锁。</strong></p>
+</blockquote>
+<h3>非 RT 上的睡眠检查实证</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/sched/core.c:5904 */
+static noinline void __schedule_bug(struct task_struct *prev)
+{
+    /* Save this before calling printk(), since that will clobber it */
+    unsigned long preempt_disable_ip = get_preempt_disable_ip(current);
+
+    if (oops_in_progress)
+        return;
+
+    printk(KERN_ERR &quot;BUG: scheduling while atomic: %s/%d/0x%08x\n&quot;,
+        prev-&gt;comm, prev-&gt;pid, preempt_count());
+
+    debug_show_held_locks(prev);
+    ...
+}
+</code></pre>
+<p>判据就是 <strong><code class="c">preempt_count() != 0</code></strong>。<code class="c">spin_lock()</code> 里的 <code class="c">preempt_disable()</code> 会让
+<code class="c">preempt_count</code> 自增，所以一旦在临界区里触发调度，这条 <code class="c">printk</code> 就会打出来。
+注意它还会调 <code class="c">debug_show_held_locks()</code> 把当前持有的锁全打出来 —— 这是排查时的第一手线索。</p>
+<hr />
+<h2>9. UP vs SMP：宏展开完全不是一回事</h2>
+<p><code class="c">spin_lock()</code> 在 UP 上<strong>根本不产生任何原子指令</strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_api_up.h:30 */
+#define __LOCK(lock) \
+  do { preempt_disable(); ___LOCK(lock); } while (0)
+
+#define __LOCK_BH(lock) \
+  do { __local_bh_disable_ip(_THIS_IP_, SOFTIRQ_LOCK_OFFSET); ___LOCK(lock); } while (0)
+
+#define __LOCK_IRQ(lock) \
+  do { local_irq_disable(); __LOCK(lock); } while (0)
+
+#define __LOCK_IRQSAVE(lock, flags) \
+  do { local_irq_save(flags); __LOCK(lock); } while (0)
+</code></pre>
+<p>而 <code class="c">___LOCK</code> 在非 debug 下是个<strong>空操作</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_api_up.h:28 */
+#define ___LOCK(lock) \
+  do { __acquire(lock); (void)(lock); } while (0)
+</code></pre>
+<p><code class="c">__acquire()</code> 只给 sparse 做 annotation，编译出来什么都没有。</p>
+<h3>⭐ 订正：<code class="c">spin_trylock()</code> 在 UP 上<strong>恒返回 1</strong></h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_api_up.h:72 */
+#define _raw_spin_trylock(lock)         ({ __LOCK(lock); 1; })
+#define _raw_read_trylock(lock)         ({ __LOCK(lock); 1; })
+#define _raw_write_trylock(lock)        ({ __LOCK(lock); 1; })
+#define _raw_spin_trylock_bh(lock)      ({ __LOCK_BH(lock); 1; })
+</code></pre>
+<p><strong>永远是 1（成功）</strong>。这意味着：</p>
+<blockquote>
+<p>在 UP 内核上，所有 <code class="c">if (!spin_trylock(&amp;l)) { ...失败分支... }</code> 里的失败分支
+<strong>是死代码</strong>，编译器会直接优化掉。而 SMP 上它会正常执行。
+→ 任何依赖 trylock 失败路径做「降级 / 统计 / 回退」的逻辑，<strong>必须 SMP + UP 双编译验证</strong>，
+否则 UP 编译能过、SMP 上炸，或者反过来。</p>
+</blockquote>
+<h3>SMP 侧的展开</h3>
+<p>x86_64 没开 <code class="c">CONFIG_GENERIC_LOCKBREAK</code>，所以走 <code class="c">spinlock_api_smp.h</code> 的内联版：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_api_smp.h:121 */
+static inline void __raw_spin_lock(raw_spinlock_t *lock)
+{
+    preempt_disable();
+    spin_acquire(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+
+static inline unsigned long __raw_spin_lock_irqsave(raw_spinlock_t *lock)
+{
+    unsigned long flags;
+    local_irq_save(flags);
+    preempt_disable();
+    spin_acquire(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+    return flags;
+}
+
+static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)
+{
+    __local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+    spin_acquire(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+</code></pre>
+<p>两点观察：</p>
+<ol>
+<li><strong><code class="c">LOCK_CONTENDED(lock, try, lock)</code> 是先 trylock 再退化为 spin</strong>。
+   所以无争用时 <code class="c">spin_lock()</code> = <code class="c">preempt_disable()</code> + 一次 <code class="c">cmpxchg</code>，没有多余的读。</li>
+<li><strong><code class="c">spin_lock_bh()</code> 里没有显式的 <code class="c">preempt_disable()</code></strong> —— 因为
+   <code class="c">__local_bh_disable_ip()</code> 通过增加 <code class="c">preempt_count</code> 的 softirq 域<strong>隐含</strong>禁了抢占。
+   这是很多人的困惑点：<code class="c">spin_lock()</code> 有 <code class="c">preempt_disable</code>，<code class="c">spin_lock_bh()</code> 没有，
+   但两者都禁抢占。</li>
+</ol>
+<p><code class="c">do_raw_spin_lock()</code> 在非 debug 下就是架构锁加个 MMIO 写屏障：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock.h:184 */
+static inline void do_raw_spin_lock(raw_spinlock_t *lock) __acquires(lock)
+{
+    __acquire(lock);
+    arch_spin_lock(&amp;lock-&gt;raw_lock);
+    mmiowb_spin_lock();
+}
+</code></pre>
+<p><code class="c">mmiowb_spin_lock()</code> 是为 MMIO 写乱序架构（部分 PowerPC / IA64）准备的，x86 上是空操作。</p>
+<hr />
+<h2>10. ⭐ 订正：虚拟机上慢路径默认被"劫持"成 test-and-set</h2>
+<p>这是本篇最反直觉的一条。<code class="c">arch/x86/include/asm/qspinlock.h</code> 里有这么一段：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/qspinlock.h —— CONFIG_PARAVIRT 下 */
+DECLARE_STATIC_KEY_TRUE(virt_spin_lock_key);
+
+#define virt_spin_lock virt_spin_lock
+static inline bool virt_spin_lock(struct qspinlock *lock)
+{
+    if (!static_branch_likely(&amp;virt_spin_lock_key))
+        return false;
+
+    /*
+     * On hypervisors without PARAVIRT_SPINLOCKS support we fall
+     * back to a Test-and-Set spinlock, because fair locks have
+     * horrible lock 'holder' preemption issues.
+     */
+
+    do {
+        while (atomic_read(&amp;lock-&gt;val) != 0)
+            cpu_relax();
+    } while (atomic_cmpxchg(&amp;lock-&gt;val, 0, _Q_LOCKED_VAL) != 0);
+
+    return true;
+}
+</code></pre>
+<p>三个要点：</p>
+<ol>
+<li><strong><code class="c">virt_spin_lock_key</code> 是 <code class="c">STATIC_KEY_TRUE</code></strong> —— <strong>默认打开</strong>。
+   原生机器（native）和「vCPU 已绑定的 PV guest」会在初始化时关掉它。</li>
+<li>打开时，慢路径<strong>第一步</strong>就调 <code class="c">virt_spin_lock()</code>，中了就直接 <code class="c">return</code> ——
+   <strong>整个 qspinlock 逻辑（pending + MCS）都不执行</strong>，退化成最朴素的 TAS。</li>
+<li>理由是注释里那句话：<strong>fair locks have horrible lock 'holder' preemption issues</strong>。
+   在虚拟机里，持锁的 vCPU 可能被宿主调度走，队列里所有人干等到它被调度回来 ——
+   公平锁反而把延迟放大到调度粒度（毫秒级）。TAS 虽然不公平，但至少谁能跑谁就抢到。</li>
+</ol>
+<h3>HFT 直接结论</h3>
+<blockquote>
+<p><strong>在云主机 / 容器上跑低延迟负载时，默认的自旋锁可能是 TAS 而非 qspinlock。</strong>
+想确认：查 <code class="c">/proc/lock_stat</code> 与 <code class="c">kernel/locking/qspinlock.c</code> 的 lockevent，
+或者用 <code class="c">nopvspin</code> 启动参数 + 确保 <code class="c">virt_spin_lock_key</code> 被关（vCPU pinning 的场景）。
+更彻底的：<strong>别在 VM 上跑延迟敏感的自旋路径</strong>，独占物理核是唯一可靠的答案。</p>
+</blockquote>
+<hr />
+<h2>11. 与中断配合（速查）</h2>
 <p>进程上下文持锁时若被中断，ISR 再抢 <strong>同一把锁</strong> → 死锁：</p>
 <pre class="code" data-label="code"><code class="c">进程: spin_lock(L) ──► 临界区中
          │
@@ -1767,63 +2479,613 @@ ISR:  spin_lock(L) ──► 自旋等进程释放
 <thead>
 <tr>
 <th>API</th>
-<th>作用</th>
+<th>抢占</th>
+<th>本地中断</th>
+<th>softirq</th>
+<th>展开（SMP）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">spin_lock()</code> / <code class="c">spin_unlock()</code></strong></td>
-<td>仅加锁；假设中断不会碰这把锁</td>
+<td><code class="c">spin_lock()</code></td>
+<td><strong>禁</strong></td>
+<td>不管</td>
+<td>不管</td>
+<td><code class="c">preempt_disable()</code> + <code class="c">LOCK_CONTENDED</code></td>
 </tr>
 <tr>
-<td><strong><code class="c">spin_lock_irqsave()</code> / <code class="c">spin_unlock_irqrestore()</code></strong></td>
-<td><strong>关本地中断 + 加锁</strong>；<code class="c">flags</code> 保存/恢复</td>
+<td><code class="c">spin_lock_irq()</code></td>
+<td><strong>禁</strong></td>
+<td><strong>关</strong>（无保存）</td>
+<td>关</td>
+<td><code class="c">local_irq_disable()</code> + <code class="c">preempt_disable()</code> + ...</td>
 </tr>
 <tr>
-<td><strong><code class="c">spin_lock_bh()</code> / <code class="c">spin_unlock_bh()</code></strong></td>
-<td>禁 softirq（bottom half）+ 加锁</td>
+<td><code class="c">spin_lock_irqsave()</code></td>
+<td><strong>禁</strong></td>
+<td><strong>关 + 保存 flags</strong></td>
+<td>关</td>
+<td><code class="c">local_irq_save(flags)</code> + <code class="c">preempt_disable()</code> + ...</td>
 </tr>
 <tr>
-<td><strong><code class="c">spin_trylock()</code></strong></td>
-<td>拿不到立即失败 — 不自旋</td>
+<td><code class="c">spin_lock_bh()</code></td>
+<td><strong>禁</strong>（隐含）</td>
+<td>不管</td>
+<td><strong>禁</strong></td>
+<td><code class="c">__local_bh_disable_ip()</code> + <code class="c">LOCK_CONTENDED</code></td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">unsigned long flags;
-spin_lock_irqsave(&amp;lock, flags);
-/* 临界区：短！不可睡眠 */
-spin_unlock_irqrestore(&amp;lock, flags);
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用哪个</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁只被进程上下文碰</td>
+<td><code class="c">spin_lock()</code></td>
+</tr>
+<tr>
+<td>锁也被 <strong>hard IRQ</strong> 碰</td>
+<td><code class="c">spin_lock_irqsave()</code> / <code class="c">spin_lock_irq()</code></td>
+</tr>
+<tr>
+<td>锁被 <strong>softirq/tasklet</strong> 碰，但 hard IRQ 不碰</td>
+<td><code class="c">spin_lock_bh()</code></td>
+</tr>
+<tr>
+<td><strong>拿不准</strong></td>
+<td><code class="c">spin_lock_irqsave()</code>（最保守，代价是一条 <code class="c">pushf</code>/<code class="c">popf</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong><code class="c">spin_lock_irq()</code> 和 <code class="c">spin_unlock_irq()</code> 是无条件开关中断</strong>，不看调用前的状态。
+如果调用前中断<strong>本来就关着</strong>，<code class="c">spin_unlock_irq()</code> 会<strong>把中断打开</strong> —— 这是个隐蔽的坑，
+所以用 <code class="c">irqsave</code>/<code class="c">irqrestore</code> 更安全。</p>
+<hr />
+<h2>12. 调试与观测</h2>
+<h3><code class="c">CONFIG_DEBUG_SPINLOCK</code> 会往锁里塞字段</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_types_raw.h */
+typedef struct raw_spinlock {
+    arch_spinlock_t raw_lock;
+#ifdef CONFIG_DEBUG_SPINLOCK
+    unsigned int magic, owner_cpu;
+    void *owner;
+#endif
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+    struct lockdep_map dep_map;
+#endif
+} raw_spinlock_t;
+
+#define SPINLOCK_MAGIC      0xdead4ead
+#define SPINLOCK_OWNER_INIT ((void *)-1L)
 </code></pre>
-<h4>现代内核：<code class="c">spinlock_t</code> 与 ticket / queued</h4>
-<p>实现随版本演进（ticket lock、qspinlock）— <strong>语义不变</strong>：短、不睡、注意 IRQ。</p>
-<p><strong>HFT：</strong> 热路径用户态自旋锁同理；内核里 <strong>spinlock 持有时间 ≈ 抖动预算</strong>。<code class="c">perf lock</code> / lockstat 看争用。驱动共享缓冲：进程侧与 NAPI/softirq 共享时常用 <strong><code class="c">spin_lock_bh</code> 或 irqsave</strong>。</p>
-<p>→ <strong>Ch 7–8</strong> · <a href="#s-10-3">10.3 rwlock</a> · <a href="#s-10-11">10.11 选型</a></p>
-<h3>常见陷阱</h3>
-<ol>
-<li>在持 spinlock 时调用睡眠函数——会 BUG: scheduling while atomic panic</li>
-<li>混淆 spin_lock() 和 spin_lock_irqsave()——前者不关中断，后者保存+关</li>
-<li>以为 spinlock 有公平性保证——spinlock 不保证公平，可能饿死某些等待者</li>
-</ol>
+<p>开启后 <code class="c">spinlock_t</code> 从 <strong>4 字节</strong>膨胀到几十字节，<code class="c">spin_lock()</code> 会做 magic 校验和
+owner 记录。<strong>别在生产内核上开</strong>——体积和路径长度都受影响，而且会改变 cacheline 布局，
+掩盖真正的问题。</p>
+<h3>lockdep 的 wait_type 标注</h3>
+<pre class="code" data-label="C"><code class="c"># define RAW_SPIN_DEP_MAP_INIT(lockname)        \
+    .dep_map = {                    \
+        .name = #lockname,          \
+        .wait_type_inner = LD_WAIT_SPIN,    \
+    }
+# define SPIN_DEP_MAP_INIT(lockname)            \
+    .dep_map = {                    \
+        .name = #lockname,          \
+        .wait_type_inner = LD_WAIT_CONFIG,  \
+    }
+</code></pre>
+<p><strong><code class="c">raw_spinlock</code> 用 <code class="c">LD_WAIT_SPIN</code></strong>，<strong><code class="c">spinlock</code> 用 <code class="c">LD_WAIT_CONFIG</code></strong>。
+<code class="c">LD_WAIT_CONFIG</code> 的意思是「这个锁在不同配置下等待语义不同（非 RT 自旋 / RT 睡眠）」——
+lockdep 据此判断「在持 X 锁时睡眠」是否合法。<strong>这就是为什么 RT 上 <code class="c">spin_lock</code> 能睡而
+<code class="c">raw_spin_lock</code> 不能睡，lockdep 还能正确报错。</strong></p>
+<h3>观测手段</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>看什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">perf lock</code> / <code class="c">/proc/lock_stat</code></td>
+<td>每把锁的争用次数、等待时间（<code class="c">CONFIG_LOCK_STAT</code>）</td>
+</tr>
+<tr>
+<td><code class="c">qspinlock_stat.h</code> 的 lockevent</td>
+<td><code class="c">lock_pending</code> / <code class="c">lock_slowpath</code> / <code class="c">lock_no_node</code> / <code class="c">lock_use_node2..4</code>，需 <code class="c">CONFIG_LOCK_EVENT_COUNTS</code></td>
+</tr>
+<tr>
+<td><code class="c">lockdep</code></td>
+<td>加锁顺序、IRQ-safety、睡眠违规</td>
+</tr>
+<tr>
+<td>lockevent 计数</td>
+<td><code class="c">lock_slowpath</code> 高 = 排队多；<code class="c">lock_no_node</code> 非 0 = 有 &gt;4 层嵌套（异常）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>13. <code class="c">_Q_PENDING_LOOPS</code>：一个架构可覆盖的启发式</h2>
+<pre class="code" data-label="C"><code class="c">/* kernel/locking/qspinlock.c:96 —— 通用默认值 */
+#ifndef _Q_PENDING_LOOPS
+#define _Q_PENDING_LOOPS    1
+#endif
+
+/* arch/x86/include/asm/qspinlock.h:11 —— x86 覆盖为 512 */
+#define _Q_PENDING_LOOPS    (1 &lt;&lt; 9)
+</code></pre>
+<p>注释解释了为什么<strong>不能无限等</strong>：</p>
+<blockquote>
+<p><em>This heuristic is used to limit the number of lockword accesses made by
+<code class="c">atomic_cond_read_relaxed</code> when waiting for the lock to transition out of the
+"== <code class="c">_Q_PENDING_VAL</code>" state. </em><em>We don't spin indefinitely because there's no
+guarantee that we'll make forward progress.</em>**</p>
+</blockquote>
+<p>x86 敢给 512 是因为它的 <code class="c">cmpxchg</code> 延迟已知且低；通用值 1 是保守兜底。
+<strong>这是个典型的「理论 vs 工程」折中</strong>：理论上等 pending 交接完最省事，
+但没人保证对方不会被调度走，所以给个上限。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>机制解释</th>
+<th>应对</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>自旋锁的"公平"反而拖慢尾延迟</strong></td>
+<td>PV guest 上持锁 vCPU 被宿主调度走 → 队列干等</td>
+<td>独占物理核；或 <code class="c">nopvspin</code> + 关 <code class="c">virt_spin_lock_key</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">spin_trylock()</code> 在 UP 上恒真</strong></td>
+<td><code class="c">spinlock_api_up.h:72</code> 硬编码 <code class="c">1</code></td>
+<td>业务回退逻辑必须 SMP/UP 双编译验证</td>
+</tr>
+<tr>
+<td><strong>无争用 path 只有一条 <code class="c">cmpxchg</code></strong></td>
+<td><code class="c">queued_spin_lock()</code> 快路径</td>
+<td>临界区做到几条指令级，争用概率压到最低</td>
+</tr>
+<tr>
+<td><strong>解锁只写 1 字节</strong></td>
+<td><code class="c">smp_store_release(&amp;lock-&gt;locked, 0)</code></td>
+<td>和 <code class="c">pending</code>/<code class="c">tail</code> 不冲突，少一次 RMW</td>
+</tr>
+<tr>
+<td><strong>MCS 的 O(N) vs TAS 的 O(N²)</strong></td>
+<td>每人自旋在自己 node 上</td>
+<td>高并发下 qspinlock 的扩展性来源</td>
+</tr>
+<tr>
+<td><strong>RT 上 <code class="c">spin_lock()</code> 会睡</strong></td>
+<td><code class="c">spinlock_t</code> = <code class="c">rt_mutex_base</code></td>
+<td>延迟敏感路径必须改用 <code class="c">raw_spinlock_t</code></td>
+</tr>
+<tr>
+<td><strong>核数 &gt; 队列深度时退化</strong></td>
+<td>4 个 node 上限，<code class="c">lock_no_node</code> 兜底</td>
+<td>看 lockevent 确认没打到兜底路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>嵌入式侧</strong>：单核（UP）系统上 <code class="c">spinlock_t</code> 就是 <code class="c">preempt_disable()</code>，零成本。
+但要注意<strong>中断延迟</strong> —— <code class="c">spin_lock_irqsave()</code> 关中断的时长直接等于最长关中断时间，
+硬实时要求下必须测 <code class="c">cyclictest</code> 的最坏关中断窗口。</p>
+<hr />
+<h2>实践模板</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/spinlock.h&gt;
+
+struct ring {
+    spinlock_t      lock;      /* 4 字节（非 debug、非 RT） */
+    unsigned int    head, tail;
+    unsigned char   buf[SIZE];
+};
+
+static DEFINE_SPINLOCK(g_ring_lock);      /* 静态 */
+static struct ring g_ring;
+
+static void ring_init(struct ring *r)
+{
+    spin_lock_init(&amp;r-&gt;lock);            /* 动态 */
+    r-&gt;head = r-&gt;tail = 0;
+}
+
+/* 场景 A：只被进程上下文访问 */
+static int ring_push(struct ring *r, unsigned char c)
+{
+    unsigned long flags;
+    int ret = -1;
+
+    /* 不确定会不会被中断碰 → 用 irqsave */
+    spin_lock_irqsave(&amp;r-&gt;lock, flags);
+    if (((r-&gt;head + 1) &amp; (SIZE - 1)) != r-&gt;tail) {
+        r-&gt;buf[r-&gt;head] = c;
+        r-&gt;head = (r-&gt;head + 1) &amp; (SIZE - 1);
+        ret = 0;
+    }
+    spin_unlock_irqrestore(&amp;r-&gt;lock, flags);   /* 必须传同一个 flags */
+    return ret;
+}
+
+/* 场景 B：NAPI poll（softirq）与进程共享 → _bh 就够 */
+static int ring_pop_bh(struct ring *r, unsigned char *c)
+{
+    spin_lock_bh(&amp;r-&gt;lock);              /* 隐含禁抢占，禁 softirq，但不管 hard IRQ */
+    if (r-&gt;head != r-&gt;tail) {
+        *c = r-&gt;buf[r-&gt;tail];
+        r-&gt;tail = (r-&gt;tail + 1) &amp; (SIZE - 1);
+        spin_unlock_bh(&amp;r-&gt;lock);
+        return 0;
+    }
+    spin_unlock_bh(&amp;r-&gt;lock);
+    return -1;
+}
+
+/* 场景 C：硬实时 / 调度器路径 → raw_spinlock，RT 上也不睡 */
+static raw_spinlock_t g_raw_lock;
+static void critical_no_sleep(void)
+{
+    unsigned long flags;
+    raw_spin_lock_irqsave(&amp;g_raw_lock, flags);
+    /* 这里连 RT 内核都不能睡眠 */
+    raw_spin_unlock_irqrestore(&amp;g_raw_lock, flags);
+}
+</code></pre>
+<p><strong>易错点核对表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>❌ 错误</th>
+<th>✅ 正确</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spin_lock()</code> 保护一个会被 ISR 碰的数据</td>
+<td>用 <code class="c">spin_lock_irqsave()</code></td>
+</tr>
+<tr>
+<td><code class="c">spin_unlock_irq()</code> 与 <code class="c">spin_lock_irqsave()</code> 混用</td>
+<td>配对使用：<code class="c">irqsave</code>↔<code class="c">irqrestore</code>，<code class="c">irq</code>↔<code class="c">irq</code></td>
+</tr>
+<tr>
+<td>临界区里 <code class="c">copy_from_user()</code> / <code class="c">kmalloc(GFP_KERNEL)</code></td>
+<td>非 RT 上会 <code class="c">BUG: scheduling while atomic</code></td>
+</tr>
+<tr>
+<td>递归拿同一把 <code class="c">spinlock_t</code></td>
+<td>自死锁；qspinlock 连检测都不做（4 个 node ≠ 递归深度）</td>
+</tr>
+<tr>
+<td>拿 <code class="c">spinlock_t</code> 当公平队列</td>
+<td>pending 位 + PV lock stealing 都可能插队</td>
+</tr>
+<tr>
+<td>虚拟机上默认认为在用 qspinlock</td>
+<td><code class="c">virt_spin_lock_key</code> 默认 TRUE，实际是 TAS</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<p>→ <strong>Ch 7–8</strong> · <a href="#s-10-1">10.1 原子操作</a> · <a href="#s-10-3">10.3 rwlock</a> · <a href="#s-10-5">10.5 互斥体</a> · <a href="#s-10-11">10.11 选型</a></p>
+<blockquote>
+<p>↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-4">ULK Ch5 §4 自旋锁</a></p>
+</blockquote>
 <hr />
 <details>
 <summary>自测题（点击展开）</summary>
-<p><strong>Q1.</strong> spin_lock() / spin_lock_irqsave() / spin_lock_bh() 什么时候用哪个？</p>
+<p><strong>Q1.</strong> <code class="c">spin_lock()</code> / <code class="c">spin_lock_irqsave()</code> / <code class="c">spin_lock_bh()</code> 什么时候用哪个？</p>
 <details>
 <summary>答案</summary>
-<p>spin_lock()：进程上下文 + 确认无中断/softirq 访问同一锁。spin_lock_irqsave(flags)：中断也可能访问同一锁。spin_lock_bh()：softirq 可能访问但 hard IRQ 不会。如果不确定 → 用 spin_lock_irqsave()（最安全）。UP 上 spin_lock() 退化为 preempt_disable()，spin_lock_irqsave() 退化为 local_irq_save()。</p>
+<p><code class="c">spin_lock()</code>：进程上下文 + 确认无中断/softirq 访问同一锁。<code class="c">spin_lock_irqsave(flags)</code>：
+中断也可能访问同一锁。<code class="c">spin_lock_bh()</code>：softirq 可能访问但 hard IRQ 不会。
+如果不确定 → 用 <code class="c">spin_lock_irqsave()</code>（最安全）。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>原文说的"UP 上 <code class="c">spin_lock()</code> 退化为 <code class="c">preempt_disable()</code>，<code class="c">spin_lock_irqsave()</code> 退化为
+<code class="c">local_irq_save()</code>"是对的，但<strong>不完整</strong>。v6.6 的准确展开是：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/spinlock_api_up.h:30 */
+#define __LOCK(lock)            do { preempt_disable(); ___LOCK(lock); } while (0)
+#define __LOCK_BH(lock)         do { __local_bh_disable_ip(_THIS_IP_, SOFTIRQ_LOCK_OFFSET); ___LOCK(lock); } while (0)
+#define __LOCK_IRQ(lock)        do { local_irq_disable(); __LOCK(lock); } while (0)
+#define __LOCK_IRQSAVE(lock, flags) do { local_irq_save(flags); __LOCK(lock); } while (0)
+</code></pre>
+<p>三点补充：</p>
+<ol>
+<li><code class="c">spin_lock_irqsave()</code> 是 <code class="c">local_irq_save(flags)</code> <strong>外加</strong> <code class="c">__LOCK(lock)</code>，
+   而 <code class="c">__LOCK</code> 里还有 <code class="c">preempt_disable()</code>。所以它是 <strong>关中断 + 禁抢占</strong>，两件事都做。</li>
+<li><code class="c">spin_lock_bh()</code> <strong>没有显式的 <code class="c">preempt_disable()</code></strong> —— <code class="c">__local_bh_disable_ip()</code>
+   通过增加 <code class="c">preempt_count</code> 的 softirq 域隐含禁了抢占。这是最容易记错的一点。</li>
+<li>UP 上 <code class="c">___LOCK(lock)</code> 展开为 <code class="c">do { __acquire(lock); (void)(lock); } while (0)</code>，
+   <code class="c">__acquire()</code> 只给 sparse 做标注，<strong>编译出来是空的</strong>。所以 UP 上 <code class="c">spin_lock()</code>
+   = 纯 <code class="c">preempt_disable()</code>，一条指令都不碰锁变量。</li>
+</ol>
+</details>
 </details>
 <p><strong>Q2.</strong> 持 spinlock 时为什么不能睡眠？</p>
 <details>
 <summary>答案</summary>
-<p>Spinlock 假设等待者会忙等（spin）。如果持锁者睡眠（schedule()）：① 等待者无限 spin 浪费 CPU。② schedule() 检查 preempt_count &gt; 0 → BUG: scheduling while atomic → panic。③ 如果切换到的进程也请求同一锁 → 死锁。RT 内核把 spinlock 变成可睡眠锁后这个限制不成立。</p>
+<p>Spinlock 假设等待者会忙等（spin）。如果持锁者睡眠（<code class="c">schedule()</code>）：① 等待者无限 spin 浪费 CPU。
+② <code class="c">schedule()</code> 检查 <code class="c">preempt_count &gt; 0</code> → <code class="c">BUG: scheduling while atomic</code> → panic。
+③ 如果切换到的进程也请求同一锁 → 死锁。RT 内核把 spinlock 变成可睡眠锁后这个限制不成立。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p><strong>② 的具体判据有源码</strong>：<code class="c">kernel/sched/core.c:5904</code> 的 <code class="c">__schedule_bug()</code> 打的是
+<code class="c">preempt_count()</code> 的值，非零即触发。</p>
+<p><strong>③ 要加一句限定</strong>：RT 上限制解除，但<strong>只对 <code class="c">spinlock_t</code></strong>。<code class="c">raw_spinlock_t</code>
+在 RT 上仍然真自旋，持有时睡眠照样炸。RT 的类型定义在
+<code class="c">include/linux/spinlock_types.h</code>：</p>
+<pre class="code" data-label="C"><code class="c">#else /* !CONFIG_PREEMPT_RT */
+/* PREEMPT_RT kernels map spinlock to rt_mutex */
+typedef struct spinlock {
+    struct rt_mutex_base    lock;
+    ...
+} spinlock_t;
+</code></pre>
+<p><code class="c">include/linux/spinlock_rt.h:43</code>：</p>
+<pre class="code" data-label="C"><code class="c">static __always_inline void spin_lock(spinlock_t *lock)
+{
+    rt_spin_lock(lock);
+}
+</code></pre>
+<p><strong>lockdep 能区分这两者</strong>：<code class="c">raw_spinlock</code> 的 dep_map 用 <code class="c">LD_WAIT_SPIN</code>，
+<code class="c">spinlock</code> 用 <code class="c">LD_WAIT_CONFIG</code>（<code class="c">spinlock_types_raw.h</code>）。所以 RT 上
+「持 <code class="c">spin_lock</code> 睡眠」合法、「持 <code class="c">raw_spin_lock</code> 睡眠」违规，lockdep 都能报对。</p>
+</details>
 </details>
 <p><strong>Q3.</strong> HFT 用户态的 spinlock 和内核有什么不同？</p>
 <details>
 <summary>答案</summary>
-<p>用户态没有真正的 spinlock（不关中断/不禁抢占）。<code class="c">std::atomic_flag</code> + test_and_set 自旋是最接近的。区别：① 用户态 spinlock 被调度器抢占后仍 spin（浪费 CPU 时间片）。② 不能关中断防止抢占。③ <code class="c">sched_yield()</code> 可以让出 CPU 但不释放锁。HFT 用户态 spinlock 应限制在 &lt;100ns 临界区，超时改用 futex/mutex。</p>
+<p>用户态没有真正的 spinlock（不关中断/不禁抢占）。<code class="c">std::atomic_flag</code> + test_and_set 自旋是最接近的。
+区别：① 用户态 spinlock 被调度器抢占后仍 spin（浪费 CPU 时间片）。② 不能关中断防止抢占。
+③ <code class="c">sched_yield()</code> 可以让出 CPU 但不释放锁。HFT 用户态 spinlock 应限制在 &lt;100ns 临界区，
+超时改用 futex/mutex。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>内核 spinlock 比用户态多三样东西，这三样正是它能安全自旋的前提：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
+<th>用户态</th>
+<th>内核 <code class="c">spin_lock()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>禁止本 CPU 抢占</td>
+<td>❌ 做不到</td>
+<td>✅ <code class="c">preempt_disable()</code></td>
+</tr>
+<tr>
+<td>关闭本地中断</td>
+<td>❌ 做不到</td>
+<td>✅ <code class="c">spin_lock_irqsave()</code> 可选</td>
+</tr>
+<tr>
+<td>知道自己被"调度走"了吗</td>
+<td>❌</td>
+<td>✅（<code class="c">preempt_count</code> / PV 的 <code class="c">vcpu_is_preempted</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>第三点特别关键：内核在虚拟化下能感知「持锁的 vCPU 是不是被宿主调度走了」
+（<code class="c">arch/x86/include/asm/qspinlock.h</code> 的 <code class="c">vcpu_is_preempted()</code>），
+所以才能做 PV 的 wait-early / lock stealing。用户态<strong>完全没有这个信息</strong>，
+这也是为什么用户态自旋锁在超线程/超售 VM 上尾延迟会爆炸。</p>
+<p>HFT 结论：<strong>用户态自旋锁只在"持锁者几乎不会在临界区被抢占"时才成立</strong> ——
+这需要 <code class="c">isolcpus</code> + <code class="c">NO_HZ_FULL</code> + RT 优先级 + 绑核共同保证，缺一个都不行。</p>
 </details>
 </details>
-<h2>&gt; ↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-4">ULK Ch5 §4 自旋锁</a></h2>
+<p><strong>Q4.</strong> qspinlock 的 32 位字是怎么划分的？为什么 <code class="c">pending</code> 要给整整一个字节？</p>
+<details>
+<summary>答案</summary>
+<p>划分（<code class="c">NR_CPUS &lt; 16K</code> 时）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位</th>
+<th>字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–7</td>
+<td>locked byte</td>
+</tr>
+<tr>
+<td>8</td>
+<td>pending</td>
+</tr>
+<tr>
+<td>9–15</td>
+<td>未用（被 pending 那 8 位吃掉）</td>
+</tr>
+<tr>
+<td>16–17</td>
+<td>tail index（嵌套层级 0–3）</td>
+</tr>
+<tr>
+<td>18–31</td>
+<td>tail cpu（<strong>+1 存储</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">pending</code> 占整字节的理由（<code class="c">asm-generic/qspinlock_types.h</code> 注释逐字）：
+<em>"By using the whole 2nd least significant byte for the pending bit, we can allow
+better optimization of the lock acquisition for the pending bit holder."</em></p>
+<p>连带好处是解锁只写 <code class="c">&amp;lock-&gt;locked</code> 这一个 u8：</p>
+<pre class="code" data-label="C"><code class="c">static __always_inline void queued_spin_unlock(struct qspinlock *lock)
+{
+    smp_store_release(&amp;lock-&gt;locked, 0);   /* 单字节 store，不碰 pending/tail */
+}
+</code></pre>
+<p>同理 locked 也扩成一个字节：<em>"Even though we only need 1 bit for the lock, we extend
+it to a full byte to achieve better performance for architectures that support atomic
+byte write."</em></p>
+<p><code class="c">NR_CPUS &gt;= 16K</code> 时布局会变（pending 缩到 1 位，tail idx 挪到 9–10，tail cpu 占 11–31），
+所以必须走 <code class="c">_Q_*_MASK</code> 宏，别硬编码偏移。</p>
+<p><strong>tail cpu 为什么要 +1</strong>：CPU 0 的 task 层（idx=0）编码为 0，会和"没有队尾"撞车，
+<code class="c">encode_tail()</code> 里 <code class="c">(cpu + 1) &lt;&lt; _Q_TAIL_CPU_OFFSET</code> 把 0 让出来当哨兵。</p>
+</details>
+<p><strong>Q5.</strong> 为什么 per-CPU 只有 <strong>4 个</strong> MCS node？超过 4 层嵌套会怎样？</p>
+<details>
+<summary>答案</summary>
+<p>因为上下文最多嵌套 4 层：<strong>task → softirq → hardirq → NMI</strong>。
+源码注释：<em>"there is a limit to the contexts that can nest; namely: task, softirq,
+hardirq, nmi. As there are at most 4 nesting levels, it can be encoded by a 2-bit number."</em>
+这 2 位就是 tail index。</p>
+<p>大小也刚好：64 位下 <code class="c">struct mcs_spinlock</code> 16 字节 × 4 = 64 字节 = 一条 cacheline
+（<code class="c">DEFINE_PER_CPU_ALIGNED</code> 保证对齐）。开 PV 时 node 膨胀到 32 字节，占两条 line。</p>
+<p><strong>超过 4 层的兜底</strong>（源码自称"不优雅但够简单"）：</p>
+<pre class="code" data-label="C"><code class="c">if (unlikely(idx &gt;= MAX_NODES)) {
+    lockevent_inc(lock_no_node);
+    while (!queued_spin_trylock(lock))
+        cpu_relax();
+    goto release;
+}
+</code></pre>
+<p>即<strong>退化成裸 TAS 自旋</strong>，不用任何 MCS node。注释明确说这是针对"某些架构上 NMI
+也可能嵌套拿锁"的极端情况。观测手段就是 lockevent 里的 <code class="c">lock_no_node</code> 计数。</p>
+</details>
+<p><strong>Q6.</strong> qspinlock 是严格 FIFO 吗？如果不是，"插队"发生在哪里？</p>
+<details>
+<summary>答案</summary>
+<p><strong>不是。</strong> 有两处插队：</p>
+<p><strong>① pending 位（native 也有）</strong> —— 慢路径第 ②③ 步：新来者只要看到
+<code class="c">val &amp; ~_Q_LOCKED_MASK == 0</code>（tail 和 pending 都空），就去占 pending 位，
+在 locked byte 上自旋。所以<strong>即便队列已有 1 人，新来者只要抢到 pending 位就能插到前面</strong>。</p>
+<p><strong>② lock stealing（PV 专属，明写）</strong> —— <code class="c">qspinlock_paravirt.h:403</code> 的
+<code class="c">pv_wait_head_or_lock()</code>：</p>
+<pre class="code" data-label="C"><code class="c">    /*
+     * Set the pending bit in the active lock spinning loop to
+     * disable lock stealing before attempting to acquire the lock.
+     */
+    set_pending(lock);
+    for (loop = SPIN_THRESHOLD; loop; loop--) {
+        if (trylock_clear_pending(lock))
+            goto gotlock;
+        cpu_relax();
+    }
+</code></pre>
+<p><code class="c">SPIN_THRESHOLD = (1 &lt;&lt; 15) = 32768</code>（<code class="c">arch/x86/include/asm/spinlock.h:25</code>）。
+设计注释给出理由：<em>"A queue node vCPU will stop spinning if the vCPU in the previous
+node is not running. The one lock stealing attempt allowed at slowpath entry mitigates
+the slight slowdown for non-overcommitted guest."</em></p>
+<p><strong>工程结论</strong>：别把 <code class="c">spinlock_t</code> 当公平队列。要严格 FIFO 得业务层自己排。</p>
+</details>
+<p><strong>Q7.</strong> 为什么说"虚拟机上的自旋锁可能根本不是 qspinlock"？</p>
+<details>
+<summary>答案</summary>
+<p>因为 <code class="c">CONFIG_PARAVIRT</code> 下有个默认打开的 static key 会劫持整个慢路径：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/qspinlock.h */
+DECLARE_STATIC_KEY_TRUE(virt_spin_lock_key);    /* ← 默认 TRUE */
+
+static inline bool virt_spin_lock(struct qspinlock *lock)
+{
+    if (!static_branch_likely(&amp;virt_spin_lock_key))
+        return false;
+
+    /*
+     * On hypervisors without PARAVIRT_SPINLOCKS support we fall
+     * back to a Test-and-Set spinlock, because fair locks have
+     * horrible lock 'holder' preemption issues.
+     */
+    do {
+        while (atomic_read(&amp;lock-&gt;val) != 0)
+            cpu_relax();
+    } while (atomic_cmpxchg(&amp;lock-&gt;val, 0, _Q_LOCKED_VAL) != 0);
+
+    return true;
+}
+</code></pre>
+<p>而慢路径第一步就调它：</p>
+<pre class="code" data-label="C"><code class="c">    if (pv_enabled())
+        goto pv_queue;
+    if (virt_spin_lock(lock))
+        return;                 /* ← 中了就直接返回，pending + MCS 全部跳过 */
+</code></pre>
+<p>理由就是注释那句：<strong>公平锁在持锁者可能被宿主调度走的环境下，会把延迟放大到调度粒度</strong>。
+TAS 不公平，但谁能跑谁抢到，至少不空等。</p>
+<p><strong>HFT 含义</strong>：在云主机/容器上，<code class="c">spinlock_t</code> 的争用行为与裸机上<strong>完全不同</strong> ——
+是 O(N²) 的 cacheline 乒乓，不是 MCS 的 O(N)。要确认就查 lockevent /
+<code class="c">/proc/lock_stat</code>，或者 <code class="c">nopvspin</code> + vCPU pinning 让 native 初始化关掉这个 key。</p>
+</details>
+<p><strong>Q8.</strong> <code class="c">spin_trylock()</code> 在 UP 内核上返回什么？这会带来什么坑？</p>
+<details>
+<summary>答案</summary>
+<p><strong>恒返回 1（成功）。</strong> <code class="c">include/linux/spinlock_api_up.h:72</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define _raw_spin_trylock(lock)         ({ __LOCK(lock); 1; })
+#define _raw_read_trylock(lock)         ({ __LOCK(lock); 1; })
+#define _raw_write_trylock(lock)        ({ __LOCK(lock); 1; })
+#define _raw_spin_trylock_bh(lock)      ({ __LOCK_BH(lock); 1; })
+</code></pre>
+<p><strong>坑</strong>：所有形如</p>
+<pre class="code" data-label="C"><code class="c">if (!spin_trylock(&amp;l)) {
+    stats-&gt;contended++;      /* UP 上这是死代码 */
+    return -EAGAIN;
+}
+</code></pre>
+<p>的失败分支，在 UP 编译下会被编译器<strong>整体优化掉</strong>。后果：</p>
+<ul>
+<li>依赖 trylock 失败做<strong>降级/回退</strong>的逻辑，UP 上永远走不到 —— 行为与 SMP 不一致；</li>
+<li>依赖 trylock 失败做<strong>统计</strong>的计数器，UP 上永远是 0；</li>
+<li>更隐蔽的：某些 trylock 失败路径里会做<strong>资源清理</strong>，UP 上不会执行，
+  如果 SMP 路径依赖这个清理的副作用，就会出现"只在 UP 上"的诡异 bug。</li>
+</ul>
+<p><strong>对策</strong>：任何用到 <code class="c">spin_trylock()</code> 的代码，<strong>必须 SMP 和 UP 各编译一次</strong>做验证。
+内核的 <code class="c">CONFIG_SMP=n</code> 编译（比如 <code class="c">allnoconfig</code> 系列）就是抓这类问题的。</p>
+</details>
+<p><strong>Q9.</strong> 为什么 v6.6 的 <code class="c">arch/x86/include/asm/spinlock.h</code> 注释是错的？怎么避免被它误导？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 的这个文件还在：</p>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/spinlock.h @ v6.6:17-22 */
+ * These are fair FIFO ticket locks, which support up to 2^16 CPUs.   ← ❌
+ * (the type definitions are in asm/spinlock_types.h)                 ← ❌
+</code></pre>
+<p>两处都错：x86 从 <strong>v4.2</strong> 起默认走 <code class="c">#include &lt;asm/qspinlock.h&gt;</code>，类型是
+<code class="c">struct qspinlock</code>（4 字节），跟 2^16 CPU 的 FIFO ticket lock 没关系；
+而且类型定义在 <code class="c">asm/qspinlock.h</code> → <code class="c">asm-generic/qspinlock_types.h</code>，
+不是 <code class="c">asm/spinlock_types.h</code>。</p>
+<p>用版本比对可以坐实这个断崖：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">asm-generic/qspinlock.h</code></th>
+<th><code class="c">arch/x86/.../spinlock.h</code> 类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.1</td>
+<td>不存在（404）</td>
+<td><code class="c">__ticket_enter_slowpath()</code> — ticket lock</td>
+</tr>
+<tr>
+<td><strong>v4.2</strong></td>
+<td><strong>4207 字节</strong></td>
+<td>qspinlock 合入</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>避免被误导的通用做法</strong>：注释会腐化，定义不会。要数字/行为，一律
+① 抓当前版本源码看<strong>定义</strong>，② 用多版本同名文件比对坐实<strong>断崖点</strong>，
+③ 注释和定义冲突时<strong>信定义</strong>，并把冲突记在笔记里。
+（本仓库前几节已用同样的手法抓到过 khugepaged 的 "30 second"（实为 10000ms）
+和 elf.h 的 "1GB"（实为 16GB）两处过时注释。）</p>
+</details>
+<hr />
       </section>
       <section class="section" id="s-10-3">
         <div class="sec-head"><div class="sec-no">10.3</div><h2>section-10.3-读-写自旋锁</h2></div>
