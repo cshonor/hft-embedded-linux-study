@@ -4400,7 +4400,7 @@ static __always_inline void write_lock(rwlock_t *rwlock) { rt_write_lock(rwlock)
 任务 B down → 1
 任务 C down → 0
 任务 D down → 睡眠……
-A 用完 up → 1，唤醒 D
+A 用完 up → 1，唤醒 D     ← ⚠️ 见 §8：真实实现里这里 count **不加**
 </code></pre>
 <h4>与 mutex 的关系</h4>
 <div class="tbl-wrap"><table>
@@ -4429,34 +4429,2067 @@ A 用完 up → 1，唤醒 D
 </tr>
 </tbody>
 </table></div>
-<p><strong>驱动场景：</strong> 限制同时进入某慢路径的任务数、等待硬件「有空槽」。</p>
-<p><strong>HFT：</strong> 用户态 <code class="c">sem_wait</code> 同类；热路径 <strong>避免</strong> 睡眠锁 — 唤醒延迟直接进尾延迟。控制面、初始化、错误路径可以用。</p>
-<p>→ <a href="#s-10-5">10.5 mutex</a> · <a href="chapter-04.html#s-4-4">4.4 休眠唤醒</a></p>
-<h3>常见陷阱</h3>
+<hr />
+<blockquote>
+<p><strong>本篇分工</strong>：上面的速查表<strong>原样保留</strong>，它是"30 秒回忆"用的。本篇往下<strong>不复述</strong>这些语义，
+只做六件事，全部用 v6.6 源码实证：</p>
+<p>① 拆开 <code class="c">struct semaphore</code>（<strong>24 字节、三个字段</strong>），并回答一个书上不会讲的问题：
+<strong>为什么它内部那把锁是 <code class="c">raw_spinlock_t</code> 而不是 <code class="c">spinlock_t</code></strong>（答案在 §1，可推广成一条规律）；
+② ⭐ <strong>订正一：<code class="c">down()</code> 在 v6.6 已被 kernel-doc 显式标记废弃</strong>，
+理由是它睡在 <code class="c">TASK_UNINTERRUPTIBLE</code> 上 → <code class="c">D</code> 状态进程 → <code class="c">kill -9</code> 都杀不掉；
+③ ⭐ <strong>订正二：<code class="c">down_trylock()</code> 的返回值是反的</strong>（0 = 成功），源码里有专门的警告注释；
+④ ⭐ <strong>订正三：<code class="c">DEFINE_SEMAPHORE</code> 从 v6.4 起要两个参数</strong>（附 v4.19~v6.6 的实测版本断崖）；
+⑤ ⭐ <strong>反直觉：<code class="c">up()</code> 在有等待者时根本不 <code class="c">count++</code></strong>，而是直接"传令牌"给队首 —— 为了保 FIFO；
+⑥ 用 <code class="c">Documentation/locking/mutex-design.rst</code> 的官方原话回答"为什么新代码一律用 mutex"，
+并给出<strong>真正的理由不是性能、而是可调试性</strong>（mutex 有 9 条强制语义 + 5 项 debug 能力，
+semaphore 一条都没有）。额外指出：<strong>mutex 有乐观自旋、semaphore 没有</strong>，
+所以信号量的获取延迟是<strong>调度器级</strong>的。</p>
+<p>所有常量与代码均核对自缓存的 v6.6 源码，行号可查。</p>
+</blockquote>
+<hr />
+<h2>1. <code class="c">struct semaphore</code> 在 v6.6 里只有 <strong>24 字节、三个字段</strong></h2>
+<p><code class="c">include/linux/semaphore.h</code> 全文才 51 行，结构体本体就更短了：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/semaphore.h —— v6.6 原文 */
+/* Please don't access any members of this structure directly */
+struct semaphore {
+    raw_spinlock_t      lock;
+    unsigned int        count;
+    struct list_head    wait_list;
+};
+</code></pre>
+<p>逐个字段：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>大小（x86-64）</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">raw_spinlock_t lock</code></td>
+<td>4 B</td>
+<td>保护另外两个字段的<strong>内部锁</strong>（不是给用户用的）</td>
+</tr>
+<tr>
+<td><code class="c">unsigned int count</code></td>
+<td>4 B</td>
+<td>还能被多少任务获取。为 0 时<strong>wait_list 上可能有人</strong></td>
+</tr>
+<tr>
+<td><code class="c">struct list_head wait_list</code></td>
+<td>16 B</td>
+<td>等待者 FIFO 队列，串的是 <code class="c">struct semaphore_waiter</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>合计 4 + 4 + 16 = <strong>24 字节</strong>。</p>
+<h3>官方给的大小对照（含 mutex / rwsem）</h3>
+<p><code class="c">Documentation/locking/mutex-design.rst</code> 的 "Disadvantages" 一节原话：</p>
+<blockquote>
+<p>Unlike its original design and purpose, 'struct mutex' is among the largest
+locks in the kernel. E.g: on x86-64 it is 32 bytes, where 'struct semaphore'
+is 24 bytes and rw_semaphore is 40 bytes. Larger structure sizes mean more CPU
+cache and memory footprint.</p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>睡眠锁</th>
+<th>x86-64 大小</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct semaphore</code></td>
+<td><strong>24 B</strong></td>
+<td>最小</td>
+</tr>
+<tr>
+<td><code class="c">struct mutex</code></td>
+<td><strong>32 B</strong></td>
+<td>多了 <code class="c">osq</code>（乐观自旋队列）+ debug 字段</td>
+</tr>
+<tr>
+<td><code class="c">struct rw_semaphore</code></td>
+<td><strong>40 B</strong></td>
+<td>最大</td>
+</tr>
+</tbody>
+</table></div>
+<p>有意思的是官方文档把 mutex 更大这件事写进了 <strong>"Disadvantages"（缺点）</strong> 一节 —— 也就是说，
+社区承认 mutex 的代价是<strong>更大的 cache/内存占位</strong>，但仍然推荐它。这本身就是个很强的信号：
+<strong>推荐 mutex 的理由不在省内存，而在别处</strong>（见 §9）。</p>
+<hr />
+<h3>⭐ 为什么内部锁是 <code class="c">raw_spinlock_t</code> 而不是 <code class="c">spinlock_t</code></h3>
+<p>这是本篇最值得记住的一条。书上不会讲，但一旦想通了可以推广成规律。</p>
+<p>回忆 10.2 的结论：在 <code class="c">CONFIG_PREEMPT_RT</code> 下，<code class="c">spinlock_t</code> 会被替换成 <code class="c">rt_mutex_base</code>，
+<strong>它会睡眠</strong>；而 <code class="c">raw_spinlock_t</code> 在任何配置下都是真自旋。</p>
+<p>现在看信号量的慢路径在干什么（<code class="c">kernel/locking/semaphore.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static inline int __sched ___down_common(struct semaphore *sem, long state,
+                                long timeout)
+{
+    struct semaphore_waiter waiter;
+
+    list_add_tail(&amp;waiter.list, &amp;sem-&gt;wait_list);
+    waiter.task = current;
+    waiter.up = false;
+
+    for (;;) {
+        if (signal_pending_state(state, current))
+            goto interrupted;
+        if (unlikely(timeout &lt;= 0))
+            goto timed_out;
+        __set_current_state(state);
+        raw_spin_unlock_irq(&amp;sem-&gt;lock);     /* ① 放锁 */
+        timeout = schedule_timeout(timeout); /* ② 睡眠 */
+        raw_spin_lock_irq(&amp;sem-&gt;lock);       /* ③ 醒来后重新拿锁 */
+        if (waiter.up)
+            return 0;
+    }
+    /* ... */
+}
+</code></pre>
+<p>注意 ①②③ 这三步 —— 这是一个<strong>手工编排的"放锁 → 睡 → 拿锁"序列</strong>：</p>
+<ul>
+<li>它在<strong>持有锁的状态下</strong>调用 <code class="c">schedule_timeout()</code> 之前，先自己把锁放了；</li>
+<li>睡醒之后，它又自己把锁拿回来；</li>
+<li>整个过程<strong>没有任何内核通用的锁框架在帮它兜底</strong>，全是手写。</li>
+</ul>
+<p><strong>如果 <code class="c">sem-&gt;lock</code> 是一把会睡眠的锁（<code class="c">spinlock_t</code> on RT），这段代码的正确性就没法保证了</strong>：
+<code class="c">raw_spin_lock_irq()</code> 在拿不到锁时是自旋等待，而自旋等待在"刚被唤醒、马上要重新检查
+<code class="c">waiter.up</code>"这条路径上是必需的 —— 因为它同时还要关中断，而 RT 的睡眠锁不允许在关中断
+的临界区里睡眠。</p>
+<p>所以结论很简单：</p>
+<blockquote>
+<p><strong>所有"自己实现睡眠逻辑"的内核原语，内部锁一律用 <code class="c">raw_spinlock_t</code>。</strong></p>
+</blockquote>
+<p>这条规律可以直接推广，去看一眼就明白：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>内部锁类型</th>
+<th>是否自己编排睡眠</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct semaphore</code></td>
+<td><code class="c">raw_spinlock_t lock</code></td>
+<td>✅ 是（<code class="c">___down_common</code>）</td>
+</tr>
+<tr>
+<td><code class="c">struct mutex</code></td>
+<td><code class="c">raw_spinlock_t wait_lock</code></td>
+<td>✅ 是（<code class="c">__mutex_lock_common</code>）</td>
+</tr>
+<tr>
+<td><code class="c">struct rw_semaphore</code></td>
+<td><code class="c">raw_spinlock_t wait_lock</code></td>
+<td>✅ 是（<code class="c">rwsem_down_write_slowpath</code>）</td>
+</tr>
+<tr>
+<td><code class="c">struct completion</code></td>
+<td><code class="c">raw_spinlock_t wait.lock</code>（swait）</td>
+<td>✅ 是（<code class="c">wait_for_completion*</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>（completion 的字段在 v6.6 里是 <code class="c">struct swait_queue_head wait</code>，其内部是 <code class="c">raw_spinlock_t lock</code>，
+见 10.6。）</p>
+<p><strong>反过来</strong>：<code class="c">spinlock_t</code> / <code class="c">rwlock_t</code> 这种<strong>不睡眠</strong>的原语，本身就用不着这层考虑 ——
+它们要么直接是 <code class="c">raw_spinlock_t</code>（非 RT），要么在 RT 上被整体替换成可睡眠的 <code class="c">rt_mutex_base</code>。</p>
+<hr />
+<h2>2. 为什么内部锁用 <strong>irqsave</strong> 变体（源码注释逐字）</h2>
+<p><code class="c">down()</code> 一上来就是 <code class="c">raw_spin_lock_irqsave()</code>，而不是 <code class="c">raw_spin_lock()</code>。
+<code class="c">kernel/locking/semaphore.c</code> 开头有一段注释专门解释这件事，值得逐字读完：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Some notes on the implementation:
+ *
+ * The spinlock controls access to the other members of the semaphore.
+ * down_trylock() and up() can be called from interrupt context, so we
+ * have to disable interrupts when taking the lock.  It turns out various
+ * parts of the kernel expect to be able to use down() on a semaphore in
+ * interrupt context when they know it will succeed, so we have to use
+ * irqsave variants for down(), down_interruptible() and down_killable()
+ * too.
+ *
+ * The -&gt;count variable represents how many more tasks can acquire this
+ * semaphore.  If it's zero, there may be tasks waiting on the wait_list.
+ */
+</code></pre>
+<p>拆成三层：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>内容</th>
+<th>推论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第一层（正常）</td>
+<td><code class="c">down_trylock()</code> 和 <code class="c">up()</code> <strong>可以</strong>在中断上下文调</td>
+<td>所以必须关中断再拿内部锁，否则 ISR 打断后会死锁</td>
+</tr>
+<tr>
+<td>第二层（奇怪）</td>
+<td>"内核里有代码指望<strong>在知道自己会成功时</strong>能在中断里调 <code class="c">down()</code>"</td>
+<td>所以 <code class="c">down()</code> 系列<strong>也</strong>得用 irqsave</td>
+</tr>
+<tr>
+<td>第三层（语义）</td>
+<td><code class="c">count == 0</code> 不代表没人等，只代表<strong>可能有</strong>人在 <code class="c">wait_list</code> 上</td>
+<td>见 §8</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>第二层是纯历史包袱，不要模仿。</strong> 它的意思是"有些老代码在中断里调 <code class="c">down()</code>，
+赌 <code class="c">count &gt; 0</code> 一定能成功" —— 这个赌注极其脆弱：一旦 <code class="c">count</code> 恰好是 0，
+ISR 里就会调用 <code class="c">schedule_timeout()</code>，直接 <code class="c">BUG: scheduling while atomic</code>。</p>
+<p><strong>正确写法</strong>：中断上下文里<strong>只</strong>用 <code class="c">down_trylock()</code>。这一点在 <code class="c">down_trylock</code> 的
+kernel-doc 里也被再次确认：</p>
+<pre class="code" data-label="C"><code class="c">/**
+ * down_trylock - try to acquire the semaphore, without waiting
+ * @sem: the semaphore to be acquired
+ *
+ * Try to acquire the semaphore atomically.  Returns 0 if the semaphore has
+ * been acquired successfully or 1 if it cannot be acquired.
+ *
+ * NOTE: This return value is inverted from both spin_trylock and
+ * mutex_trylock!  Be careful about this when converting code.
+ *
+ * Unlike mutex_trylock, this function can be used from interrupt context,
+ * and the semaphore can be released by any task or interrupt.
+ */
+</code></pre>
+<hr />
+<h2>3. 六个 API 的完整对照</h2>
+<p><code class="c">include/linux/semaphore.h</code> 只导出了 6 个函数。注意 <code class="c">down_interruptible</code> /
+<code class="c">down_killable</code> / <code class="c">down_trylock</code> / <code class="c">down_timeout</code> 都带 <code class="c">__must_check</code>：</p>
+<pre class="code" data-label="C"><code class="c">extern void down(struct semaphore *sem);
+extern int __must_check down_interruptible(struct semaphore *sem);
+extern int __must_check down_killable(struct semaphore *sem);
+extern int __must_check down_trylock(struct semaphore *sem);
+extern int __must_check down_timeout(struct semaphore *sem, long jiffies);
+extern void up(struct semaphore *sem);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>睡眠状态</th>
+<th>成功返回</th>
+<th>失败返回</th>
+<th>可中断上下文</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">down()</code></td>
+<td><code class="c">TASK_UNINTERRUPTIBLE</code></td>
+<td>（void）</td>
+<td>—</td>
+<td>❌</td>
+<td>⚠️ <strong>v6.6 已废弃</strong>，见 §4</td>
+</tr>
+<tr>
+<td><code class="c">down_interruptible()</code></td>
+<td><code class="c">TASK_INTERRUPTIBLE</code></td>
+<td><code class="c">0</code></td>
+<td><code class="c">-EINTR</code></td>
+<td>❌</td>
+<td><strong>最常用</strong></td>
+</tr>
+<tr>
+<td><code class="c">down_killable()</code></td>
+<td><code class="c">TASK_KILLABLE</code></td>
+<td><code class="c">0</code></td>
+<td><code class="c">-EINTR</code></td>
+<td>❌</td>
+<td>只被<strong>致命信号</strong>打断</td>
+</tr>
+<tr>
+<td><code class="c">down_timeout()</code></td>
+<td><code class="c">TASK_UNINTERRUPTIBLE</code></td>
+<td><code class="c">0</code></td>
+<td><code class="c">-ETIME</code></td>
+<td>❌</td>
+<td>有超时，但仍不可被信号叫醒</td>
+</tr>
+<tr>
+<td><code class="c">down_trylock()</code></td>
+<td><strong>不睡</strong></td>
+<td><strong><code class="c">0</code></strong></td>
+<td><strong><code class="c">1</code></strong></td>
+<td>✅</td>
+<td>⚠️ <strong>返回值是反的</strong>，见 §5</td>
+</tr>
+<tr>
+<td><code class="c">up()</code></td>
+<td><strong>不睡</strong></td>
+<td>（void）</td>
+<td>—</td>
+<td>✅</td>
+<td>无归属，谁都能调</td>
+</tr>
+</tbody>
+</table></div>
+<p>这四行是它们的全部实现差异 —— 只有 <code class="c">state</code> 和 <code class="c">timeout</code> 两个参数不同：</p>
+<pre class="code" data-label="C"><code class="c">static noinline void __sched __down(struct semaphore *sem)
+{
+    __down_common(sem, TASK_UNINTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+}
+
+static noinline int __sched __down_interruptible(struct semaphore *sem)
+{
+    return __down_common(sem, TASK_INTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+}
+
+static noinline int __sched __down_killable(struct semaphore *sem)
+{
+    return __down_common(sem, TASK_KILLABLE, MAX_SCHEDULE_TIMEOUT);
+}
+
+static noinline int __sched __down_timeout(struct semaphore *sem, long timeout)
+{
+    return __down_common(sem, TASK_UNINTERRUPTIBLE, timeout);
+}
+</code></pre>
+<p>源码注释解释了这个写法（<code class="c">___down_common</code> 上方）：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * Because this function is inlined, the 'state' parameter will be
+ * constant, and thus optimised away by the compiler.  Likewise the
+ * 'timeout' parameter for the cases without timeouts.
+ */
+</code></pre>
+<p><strong>这是内核里一个很典型的优化手法</strong>：用 <code class="c">static inline</code> + 常量参数，
+让编译器为每个调用点<strong>生成一份专属的、常量已折叠的副本</strong>。四个 <code class="c">noinline</code> 包装函数
+各占一份代码（所以是 <code class="c">noinline</code>，避免代码膨胀失控），但每份内部的 <code class="c">state</code> / <code class="c">timeout</code>
+判断都被优化掉了。</p>
+<p>三个睡眠状态的区别（<code class="c">include/linux/sched.h</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>状态</th>
+<th>组成</th>
+<th>谁能叫醒</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">TASK_INTERRUPTIBLE</code></td>
+<td>—</td>
+<td><strong>任意信号</strong> + 显式唤醒</td>
+</tr>
+<tr>
+<td><code class="c">TASK_KILLABLE</code></td>
+<td><code class="c">TASK_WAKEKILL \| TASK_UNINTERRUPTIBLE</code></td>
+<td><strong>只有致命信号</strong>（SIGKILL 等）+ 显式唤醒</td>
+</tr>
+<tr>
+<td><code class="c">TASK_UNINTERRUPTIBLE</code></td>
+<td>—</td>
+<td><strong>只有显式唤醒</strong>。信号来了也只是记下 pending，不唤醒</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">TASK_KILLABLE</code> 是个很好的折中：既能被 <code class="c">kill -9</code> 兜底（不会留下杀不死的 <code class="c">D</code> 状态进程），
+又不会被随便一个 <code class="c">SIGCHLD</code>/<code class="c">SIGWINCH</code> 之类的非致命信号打断业务逻辑。
+<strong>驱动里写"等待硬件就绪"时，<code class="c">down_killable()</code> 通常比 <code class="c">down_interruptible()</code> 更省心</strong> ——
+不用处理"被无关信号打断后返回 <code class="c">-EINTR</code>"的分支。</p>
+<hr />
+<h2>4. ⭐ 订正一：<code class="c">down()</code> 在 v6.6 已被<strong>显式标记废弃</strong></h2>
+<p>这是本次核对里最该记住的一条。翻开 <code class="c">kernel/locking/semaphore.c</code> 的 <code class="c">down()</code> kernel-doc：</p>
+<pre class="code" data-label="C"><code class="c">/**
+ * down - acquire the semaphore
+ * @sem: the semaphore to be acquired
+ *
+ * Acquires the semaphore.  If no more tasks are allowed to acquire the
+ * semaphore, calling this function will put the task to sleep until the
+ * semaphore is released.
+ *
+ * Use of this function is deprecated, please use down_interruptible() or
+ * down_killable() instead.
+ */
+void __sched down(struct semaphore *sem)
+{
+    unsigned long flags;
+
+    might_sleep();
+    raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+    if (likely(sem-&gt;count &gt; 0))
+        sem-&gt;count--;
+    else
+        __down(sem);
+    raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+}
+EXPORT_SYMBOL(down);
+</code></pre>
+<p>最后那句 <strong>"Use of this function is deprecated"</strong> 是 v6.6 官方文档里的原话。</p>
+<h3>为什么废弃</h3>
+<p><code class="c">__down()</code> 睡在 <code class="c">TASK_UNINTERRUPTIBLE</code> 上，后果链条：</p>
+<pre class="code" data-label="code"><code class="c">down() 拿不到 → __down(sem, TASK_UNINTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT)
+             → 进程进入 D 状态（uninterruptible sleep）
+             → 信号来了也只记 pending，不唤醒
+             → kill -9 无效（SIGKILL 也只是个信号）
+             → ps 里看到一个杀不死的 D 状态进程
+             → 只能重启
+</code></pre>
+<p>注意 <code class="c">MAX_SCHEDULE_TIMEOUT</code>（= <code class="c">LONG_MAX</code>）意味着<strong>没有超时</strong>。所以严格来说：
+<strong>一个卡在 <code class="c">down()</code> 里的进程，唯一的出路就是有人调 <code class="c">up()</code></strong>。
+如果那个 <code class="c">up()</code> 永远不会来（比如硬件挂了、对端驱动有 bug），这个进程就永久卡死。</p>
+<p>在生产环境 / 嵌入式设备上的后果尤其严重：<code class="c">D</code> 状态进程<strong>不响应任何信号</strong>，
+<code class="c">kill -9</code> 打上去毫无反应，<code class="c">ps aux</code> 里 <code class="c">STAT</code> 列显示 <code class="c">D</code>，连 <code class="c">SIGKILL</code> 都救不回来。
+运维只能重启设备。这就是为什么内核社区把 <code class="c">down()</code> 标成 deprecated —— 它把
+"能不能被杀"这个决定权从运维手里拿走了。</p>
+<p><strong>替换规则</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原写法</th>
+<th>改成</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">down(&amp;sem)</code></td>
+<td><code class="c">down_interruptible(&amp;sem)</code></td>
+<td>需要处理 <code class="c">-EINTR</code>（最常见）</td>
+</tr>
+<tr>
+<td><code class="c">down(&amp;sem)</code></td>
+<td><code class="c">down_killable(&amp;sem)</code></td>
+<td>只让 <code class="c">SIGKILL</code> 打断，分支更少</td>
+</tr>
+<tr>
+<td><code class="c">down(&amp;sem)</code></td>
+<td><code class="c">down_timeout(&amp;sem, HZ)</code></td>
+<td>有明确上界；但仍不可被信号叫醒，小心</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>注意改写的代价</strong>：<code class="c">down()</code> 返回 <code class="c">void</code>，改成 <code class="c">down_interruptible()</code> 后<strong>必须</strong>
+检查返回值。这是一个真实的语义变化，不是简单替换函数名：</p>
+<pre class="code" data-label="C"><code class="c">/* ❌ 错误：直接换名字，丢了返回值检查 —— 被打断后仍会进临界区 */
+- down(&amp;dev-&gt;sem);
++ down_interruptible(&amp;dev-&gt;sem);          /* 编译过，逻辑错 */
+
+/* ✅ 正确 */
+if (down_interruptible(&amp;dev-&gt;sem))
+    return -ERESTARTSYS;                 /* 或 -EINTR */
+</code></pre>
+<p><code class="c">__must_check</code> 就是 GCC 的 <code class="c">warn_unused_result</code> 属性，编译器会在你丢弃返回值时报警 ——
+但<strong>只有当你完全不接收返回值时</strong>才报。<code class="c">(void)down_interruptible(...)</code> 或者
+"接收了但不判断"它管不着。</p>
+<hr />
+<h2>5. ⭐ 订正二：<code class="c">down_trylock()</code> 的返回值是<strong>反的</strong></h2>
+<p>先完整看一遍源码：</p>
+<pre class="code" data-label="C"><code class="c">int __sched down_trylock(struct semaphore *sem)
+{
+    unsigned long flags;
+    int count;
+
+    raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+    count = sem-&gt;count - 1;
+    if (likely(count &gt;= 0))
+        sem-&gt;count = count;
+    raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+
+    return (count &lt; 0);
+}
+EXPORT_SYMBOL(down_trylock);
+</code></pre>
+<p><code class="c">return (count &lt; 0);</code> —— 拿不到（count 变成负数）时返回 <strong>1</strong>，拿到时返回 <strong>0</strong>。</p>
+<p>kernel-doc 里那句警告值得抄在显示器上：</p>
+<blockquote>
+<p><strong>NOTE: This return value is inverted from both spin_trylock and
+mutex_trylock!  Be careful about this when converting code.</strong></p>
+</blockquote>
+<h3>三家 trylock 对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>成功返回</th>
+<th>失败返回</th>
+<th>判据写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spin_trylock()</code></td>
+<td><strong>1</strong>（真）</td>
+<td><code class="c">0</code></td>
+<td><code class="c">if (spin_trylock(&amp;l))</code></td>
+</tr>
+<tr>
+<td><code class="c">mutex_trylock()</code></td>
+<td><strong>1</strong>（真）</td>
+<td><code class="c">0</code></td>
+<td><code class="c">if (mutex_trylock(&amp;m))</code></td>
+</tr>
+<tr>
+<td><code class="c">down_trylock()</code></td>
+<td><strong><code class="c">0</code></strong></td>
+<td><strong><code class="c">1</code></strong></td>
+<td><code class="c">if (down_trylock(&amp;s) == 0)</code> 或 <code class="c">if (!down_trylock(&amp;s))</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>也就是说：<strong><code class="c">spin_trylock</code> / <code class="c">mutex_trylock</code> 遵循 C 的"真值 = 成功"惯例，
+<code class="c">down_trylock</code> 遵循 errno 风格（0 = 成功）</strong>。混用必然出错，而且是那种
+"测试环境没争用所以一直走成功分支、上了生产偶发争用才炸"的隐蔽 bug。</p>
+<p>⚠️ <strong>最危险的写法</strong>：</p>
+<pre class="code" data-label="C"><code class="c">if (down_trylock(&amp;sem)) {      /* ← 语义完全反了！ */
+    /* 作者以为：拿到了信号量，进临界区 */
+    do_something();            /* 实际：这是&quot;没拿到&quot;的分支 */
+    up(&amp;sem);                  /* 凭空多释放一个令牌 */
+}
+</code></pre>
+<p>这个 bug 的恐怖之处在于：<code class="c">up()</code> 会把 <code class="c">count</code> 凭空加 1，等于<strong>伪造了一个令牌</strong>。
+后续会有多余的任务同时进入临界区，表现为偶发的数据损坏，极难复现。</p>
+<h3>一个隐蔽但关键的类型细节</h3>
+<pre class="code" data-label="C"><code class="c">struct semaphore {
+    raw_spinlock_t      lock;
+    unsigned int        count;      /* ← unsigned */
+    ...
+};
+
+int __sched down_trylock(struct semaphore *sem)
+{
+    int count;                              /* ← int（有符号）*/
+    count = sem-&gt;count - 1;                 /* unsigned - int → 提升为 unsigned? */
+    ...
+}
+</code></pre>
+<p>这里 <code class="c">sem-&gt;count</code> 是 <code class="c">unsigned int</code>，而局部变量 <code class="c">count</code> 声明成 <strong><code class="c">int</code></strong>。
+这个类型差异是<strong>刻意的</strong>：</p>
+<ul>
+<li>如果 <code class="c">count</code> 也声明成 <code class="c">unsigned int</code>，那么 <code class="c">sem-&gt;count == 0</code> 时
+  <code class="c">count = 0 - 1</code> 会绕回 <code class="c">0xFFFFFFFF</code>，<code class="c">count &gt;= 0</code> <strong>恒真</strong> —— 逻辑彻底错误；</li>
+<li>声明成 <code class="c">int</code> 后，<code class="c">sem-&gt;count - 1</code> 的结果（<code class="c">unsigned int</code>）在赋给 <code class="c">int</code> 时
+  做实现定义的转换，在 x86-64（二进制补码）上得到 <code class="c">-1</code>，<code class="c">count &gt;= 0</code> 为假 → 正确。</li>
+</ul>
+<p>同时 <code class="c">if (likely(count &gt;= 0)) sem-&gt;count = count;</code> 这一句把 <code class="c">int</code> 写回
+<code class="c">unsigned int</code> 字段也是安全的 —— 因为进这个分支时 <code class="c">count &gt;= 0</code>，值不会是负数。</p>
+<p><strong>这类"字段是无符号、局部变量是有符号"的写法在内核里是有意的设计</strong>，
+目的就是为了能判断"减完之后是不是变负了"。看到不要"顺手改成一致的"。</p>
+<hr />
+<h2>6. ⭐ 订正三：<code class="c">DEFINE_SEMAPHORE</code> 从 <strong>v6.4</strong> 起要两个参数</h2>
+<p>这条会让照着老代码/老书写的人直接编译不过。</p>
+<h3>v6.6 的签名（<code class="c">include/linux/semaphore.h</code>）</h3>
+<pre class="code" data-label="C"><code class="c">#define __SEMAPHORE_INITIALIZER(name, n)                \
+{                                   \
+    .lock       = __RAW_SPIN_LOCK_UNLOCKED((name).lock),    \
+    .count      = n,                        \
+    .wait_list  = LIST_HEAD_INIT((name).wait_list),     \
+}
+
+/*
+ * Unlike mutexes, binary semaphores do not have an owner, so up() can
+ * be called in a different thread from the one which called down().
+ * It is also safe to call down_trylock() and up() from interrupt
+ * context.
+ */
+#define DEFINE_SEMAPHORE(_name, _n) \
+    struct semaphore _name = __SEMAPHORE_INITIALIZER(_name, _n)
+
+static inline void sema_init(struct semaphore *sem, int val)
+{
+    static struct lock_class_key __key;
+    *sem = (struct semaphore) __SEMAPHORE_INITIALIZER(*sem, val);
+    lockdep_init_map(&amp;sem-&gt;lock.dep_map, &quot;semaphore-&gt;lock&quot;, &amp;__key, 0);
+}
+</code></pre>
+<p>注意：</p>
+<ul>
+<li><code class="c">DEFINE_SEMAPHORE(_name, _n)</code> 现在是<strong>两个参数</strong>：名字 + 初始计数；</li>
+<li><code class="c">sema_init(&amp;sem, val)</code> 的签名<strong>一直没变</strong>，还是两个参数。</li>
+</ul>
+<h3>版本断崖实测</h3>
+<p>逐个版本抓 <code class="c">include/linux/semaphore.h</code>，对 <code class="c">DEFINE_SEMAPHORE</code> 的签名做 diff：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th><code class="c">DEFINE_SEMAPHORE</code> 签名</th>
+<th>参数个数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v4.19</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>v5.0</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>v5.5</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>v6.0</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>v6.1</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>v6.2</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td>v6.3</td>
+<td><code class="c">DEFINE_SEMAPHORE(name)</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>v6.4</strong></td>
+<td><strong><code class="c">DEFINE_SEMAPHORE(_name, _n)</code></strong></td>
+<td><strong>2</strong> ← 断点</td>
+</tr>
+<tr>
+<td>v6.5</td>
+<td><code class="c">DEFINE_SEMAPHORE(_name, _n)</code></td>
+<td>2</td>
+</tr>
+<tr>
+<td><strong>v6.6</strong></td>
+<td><strong><code class="c">DEFINE_SEMAPHORE(_name, _n)</code></strong></td>
+<td>2</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>断点在 v6.4。</strong></p>
+<h3>迁移写法</h3>
+<pre class="code" data-label="C"><code class="c">/* ❌ v6.3 及以前 */
+static DEFINE_SEMAPHORE(my_sem);        /* 隐含 count = 1 */
+
+/* ✅ v6.4 起：必须显式给计数 */
+static DEFINE_SEMAPHORE(my_sem, 1);     /* 二值信号量（互斥）*/
+static DEFINE_SEMAPHORE(my_pool, 8);    /* 资源池：8 个槽 */
+
+/* 动态初始化：签名没变，两个参数 */
+struct semaphore sem;
+sema_init(&amp;sem, 1);
+</code></pre>
+<p>⚠️ <strong>语义陷阱</strong>：老写法 <code class="c">DEFINE_SEMAPHORE(name)</code> 隐含的是 <strong><code class="c">count = 1</code></strong>（二值）。
+迁移时如果顺手写成 <code class="c">DEFINE_SEMAPHORE(name, 0)</code>，信号量初始就是 0，
+<strong>第一个 <code class="c">down()</code> 就会直接睡死</strong>。</p>
+<p><strong>顺带记住 <code class="c">sema_init</code> 里的一个小细节</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static inline void sema_init(struct semaphore *sem, int val)
+{
+    static struct lock_class_key __key;      /* ← static！ */
+    ...
+    lockdep_init_map(&amp;sem-&gt;lock.dep_map, &quot;semaphore-&gt;lock&quot;, &amp;__key, 0);
+}
+</code></pre>
+<p><code class="c">__key</code> 是 <code class="c">static</code> 的，意味着<strong>所有通过 <code class="c">sema_init()</code> 初始化的信号量共用同一个
+lockdep class key</strong>。lockdep 因此会把它们当成"同一类锁"来检测死锁 —— 这是有意的
+（否则每个实例一个 key，key 的数量会爆炸）。代价是 lockdep <strong>无法区分</strong>
+"先拿 A 再拿 B" 和 "先拿 B 再拿 A" 这两个不同的 <code class="c">sema_init</code> 出来的信号量。
+需要区分时用 <code class="c">mutex_init</code> 的 <code class="c">nested</code> 变体或 <code class="c">lockdep_set_class()</code>。</p>
+<hr />
+<h2>7. 慢路径：<code class="c">___down_common</code> 是一个<strong>循环</strong>，不是单次等待</h2>
+<p>很多人（包括很多教材）把"睡眠等待"想成"睡一次，醒来就好了"。
+看 v6.6 的实现会发现不是 —— 它是一个 <strong><code class="c">for (;;)</code></strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct semaphore_waiter {
+    struct list_head list;
+    struct task_struct *task;
+    bool up;
+};
+
+/*
+ * Because this function is inlined, the 'state' parameter will be
+ * constant, and thus optimised away by the compiler.  Likewise the
+ * 'timeout' parameter for the cases without timeouts.
+ */
+static inline int __sched ___down_common(struct semaphore *sem, long state,
+                                long timeout)
+{
+    struct semaphore_waiter waiter;
+
+    list_add_tail(&amp;waiter.list, &amp;sem-&gt;wait_list);
+    waiter.task = current;
+    waiter.up = false;
+
+    for (;;) {
+        if (signal_pending_state(state, current))
+            goto interrupted;
+        if (unlikely(timeout &lt;= 0))
+            goto timed_out;
+        __set_current_state(state);
+        raw_spin_unlock_irq(&amp;sem-&gt;lock);
+        timeout = schedule_timeout(timeout);
+        raw_spin_lock_irq(&amp;sem-&gt;lock);
+        if (waiter.up)
+            return 0;
+    }
+
+ timed_out:
+    list_del(&amp;waiter.list);
+    return -ETIME;
+
+ interrupted:
+    list_del(&amp;waiter.list);
+    return -EINTR;
+}
+</code></pre>
+<h3>为什么必须是循环</h3>
+<p>因为<strong>醒来的原因有四种，只有一种是"真的拿到了"</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>醒来原因</th>
+<th><code class="c">waiter.up</code></th>
+<th><code class="c">schedule_timeout</code> 返回</th>
+<th>后续动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 被 <code class="c">up()</code> 传了令牌</td>
+<td><strong><code class="c">true</code></strong></td>
+<td>剩余 jiffies</td>
+<td><code class="c">return 0</code> ✅</td>
+</tr>
+<tr>
+<td>② 收到信号</td>
+<td><code class="c">false</code></td>
+<td>剩余 jiffies</td>
+<td>循环回去 → <code class="c">signal_pending_state</code> 命中 → <code class="c">-EINTR</code></td>
+</tr>
+<tr>
+<td>③ 超时</td>
+<td><code class="c">false</code></td>
+<td><code class="c">0</code></td>
+<td>循环回去 → <code class="c">timeout &lt;= 0</code> 命中 → <code class="c">-ETIME</code></td>
+</tr>
+<tr>
+<td>④ 假唤醒（spurious wakeup）</td>
+<td><code class="c">false</code></td>
+<td>剩余 jiffies</td>
+<td>循环回去 → 重新睡</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意 ② 和 ③ 都<strong>不是</strong>在 <code class="c">schedule_timeout()</code> 返回后立即判断的，而是<strong>回到循环顶部</strong>
+再判断。这个顺序很重要：</p>
+<ul>
+<li>收到信号时，<code class="c">schedule_timeout()</code> 会返回一个正的剩余时间（因为还没到点），
+  但循环顶部 <code class="c">signal_pending_state(state, current)</code> 会先命中 → <code class="c">-EINTR</code>；</li>
+<li>超时情况下，<code class="c">schedule_timeout()</code> 返回 <code class="c">0</code>，但代码并不在这里判 <code class="c">0</code>，
+  而是让循环顶部的 <code class="c">timeout &lt;= 0</code> 命中 → <code class="c">-ETIME</code>。</li>
+</ul>
+<p><strong>这是个很干净的写法</strong>：把"我为什么醒了"的所有判断集中在循环顶部，
+而不是散落在 <code class="c">schedule_timeout()</code> 返回后的各处。</p>
+<h3>成功的唯一判据是 <code class="c">waiter.up</code>，不是 <code class="c">count</code></h3>
+<p>注意循环里<strong>完全没有检查 <code class="c">sem-&gt;count</code></strong>。它只看：</p>
+<pre class="code" data-label="C"><code class="c">if (waiter.up)
+    return 0;
+</code></pre>
+<p><code class="c">waiter.up</code> 由 <code class="c">up()</code> 那一侧在 <code class="c">raw_spin_lock_irqsave</code> 保护下置 <code class="c">true</code>（见 §8）。
+这就是"传令牌"（token passing）模型：<strong><code class="c">up()</code> 不把令牌放回池子里，而是直接递给队首</strong>。</p>
+<h3><code class="c">struct semaphore_waiter</code> 是<strong>栈上变量</strong></h3>
+<pre class="code" data-label="C"><code class="c">static inline int __sched ___down_common(...)
+{
+    struct semaphore_waiter waiter;      /* ← 局部变量！在栈上 */
+    list_add_tail(&amp;waiter.list, &amp;sem-&gt;wait_list);
+    ...
+}
+</code></pre>
+<p>这看起来很危险 —— 把一个栈变量的 <code class="c">list_head</code> 挂进了全局链表里，
+函数一返回这个地址就失效了。</p>
+<p><strong>但它是对的</strong>，原因就在 <code class="c">schedule_timeout()</code> 那一行：</p>
+<pre class="code" data-label="code"><code class="c">raw_spin_unlock_irq(&amp;sem-&gt;lock);
+timeout = schedule_timeout(timeout);   /* ← 在这里切走，又在这里切回 */
+raw_spin_lock_irq(&amp;sem-&gt;lock);
+</code></pre>
+<p><code class="c">raw_spin_unlock_irq()</code> <strong>开了中断</strong>（恢复的是进入 <code class="c">down()</code> 时的 flags），
+所以 <code class="c">schedule_timeout()</code> 可以真的把当前任务切走；但 <code class="c">___down_common</code>
+这个函数<strong>没有返回</strong>，它的栈帧还完整地挂在那里。等被唤醒重新调度回来时，
+执行流从这个栈帧的下一行继续 —— <code class="c">waiter</code> 的地址依然是有效的。</p>
+<p><strong>这是内核里"用栈变量当等待节点"的通用手法</strong>（mutex、rwsem、completion 都这么干），
+它的前提是：<strong>睡眠点一定在把节点摘链之前</strong>。三条退出路径都保证了这点：</p>
+<ul>
+<li><code class="c">return 0</code>（成功）：节点已经被 <code class="c">up()</code> 侧的 <code class="c">__up()</code> 用 <code class="c">list_del</code> 摘掉了；</li>
+<li><code class="c">-ETIME</code>：<code class="c">list_del(&amp;waiter.list)</code> 后再 return；</li>
+<li><code class="c">-EINTR</code>：<code class="c">list_del(&amp;waiter.list)</code> 后再 return。</li>
+</ul>
+<p>⚠️ <strong>反面案例</strong>：如果某个睡眠锁的实现在"摘链"和"函数返回"之间又被调度走，
+或者节点所在的栈帧被提前释放，链表里就会留下一个悬垂指针 →
+下一次 <code class="c">list_first_entry()</code> 拿到的是垃圾 → 内核 oops。这也是为什么
+<strong>中断上下文绝对不能调 <code class="c">down()</code></strong> —— ISR 的栈帧生命周期和进程完全不同。</p>
+<h3>外层还包了一层 tracepoint</h3>
+<pre class="code" data-label="C"><code class="c">static inline int __sched __down_common(struct semaphore *sem, long state,
+                    long timeout)
+{
+    int ret;
+
+    trace_contention_begin(sem, 0);
+    ret = ___down_common(sem, state, timeout);
+    trace_contention_end(sem, ret);
+
+    return ret;
+}
+</code></pre>
+<p><code class="c">trace_contention_begin</code> / <code class="c">trace_contention_end</code> 出自 <code class="c">include/trace/events/lock.h</code>，
+可以用 <code class="c">perf</code> 或 <code class="c">tracefs</code> 直接观测<strong>每个信号量的争用时长</strong>：</p>
+<pre class="code" data-label="shell"><code class="c"># 观测所有锁争用事件（含 semaphore）
+perf lock record -- ./workload
+perf lock report
+
+# 或者直接抓 tracepoint
+echo 1 &gt; /sys/kernel/tracing/events/lock/contention_begin/enable
+echo 1 &gt; /sys/kernel/tracing/events/lock/contention_end/enable
+cat /sys/kernel/tracing/trace_pipe
+</code></pre>
+<p><strong>这是排查"信号量争用导致尾延迟"的直接工具</strong>。注意 tracepoint 的开销本身不低，
+生产环境上只能在采样窗口内开。</p>
+<hr />
+<h2>8. ⭐ <code class="c">up()</code> 在有等待者时<strong>根本不 <code class="c">count++</code></strong>，而是直接"传令牌"</h2>
+<p>先看源码：</p>
+<pre class="code" data-label="C"><code class="c">/**
+ * up - release the semaphore
+ * @sem: the semaphore to release
+ *
+ * Release the semaphore.  Unlike mutexes, up() may be called from any
+ * context and even by tasks which have never called down().
+ */
+void __sched up(struct semaphore *sem)
+{
+    unsigned long flags;
+
+    raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+    if (likely(list_empty(&amp;sem-&gt;wait_list)))
+        sem-&gt;count++;        /* 没人等 → 令牌放回池子 */
+    else
+        __up(sem);           /* 有人等 → 直接递过去，count 不动 */
+    raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+}
+EXPORT_SYMBOL(up);
+
+static noinline void __sched __up(struct semaphore *sem)
+{
+    struct semaphore_waiter *waiter = list_first_entry(&amp;sem-&gt;wait_list,
+                        struct semaphore_waiter, list);
+    list_del(&amp;waiter-&gt;list);
+    waiter.up = true;
+    wake_up_process(waiter-&gt;task);
+}
+</code></pre>
+<p><strong>关键观察</strong>：走 <code class="c">__up()</code> 分支时，<code class="c">sem-&gt;count</code> <strong>完全没有被修改</strong>，全程保持 0。</p>
+<h3>为什么不"既 count++ 又唤醒"</h3>
+<p>直觉上会觉得应该两步都做 —— 把令牌放回池子（<code class="c">count++</code>），再把队首唤醒。
+推演一下就会发现这会<strong>破坏 FIFO</strong>：</p>
+<pre class="code" data-label="code"><code class="c">初始：count = 0，wait_list = [A, B]（A 先来的）
+
+任务 C 出现在 CPU 上，正准备调 down()
+
+持有者调 up()：
+  ┌─ 朴素做法（错误）────────────────────────────
+  │  count++          → count = 1
+  │  wake_up(A)       → A 进入 runqueue，但还没跑到
+  │  raw_spin_unlock_irqrestore()
+  │
+  │  ⚠️ 此刻 count == 1，而 A 还在 runqueue 上没被调度到
+  │  → C 调 down()，看到 count &gt; 0，直接 count-- 拿走！
+  │  → C 插到了 A 前面（A 是先到的等待者）
+  │  → A 被唤醒后发现令牌没了，只好再次 list_add_tail 到队尾
+  │  → A 排到了 B 后面，彻底乱序
+  └───────────────────────────────────────────────
+
+  ┌─ v6.6 做法（正确）────────────────────────────
+  │  __up()：list_del(A), A-&gt;up = true, wake_up(A)
+  │  count 保持 0
+  │  raw_spin_unlock_irqrestore()
+  │
+  │  → C 调 down()，看到 count == 0 → 老实去队尾排队
+  │  → A 被调度到时，循环里看到 waiter.up == true → return 0 ✅
+  │  → FIFO 成立
+  └───────────────────────────────────────────────
+</code></pre>
+<p><strong>根本原因</strong>：<code class="c">wake_up_process()</code> 只是把任务放进 runqueue，
+<strong>它不会立刻被调度到</strong>。在"A 被唤醒"和"A 真正开始跑"之间存在一个窗口，
+朴素做法在这个窗口里让 <code class="c">count</code> 短暂为正，任何新来的任务都能合法地抢走它。</p>
+<p>v6.6 的解法是<strong>关掉这个窗口</strong>：既然 <code class="c">count</code> 一直是 0，新来的任务就无机可乘。
+令牌不是"放回池子"，而是<strong>直接绑定到 A 的 <code class="c">waiter.up</code> 标志上</strong> —— 别人拿不走。</p>
+<h3>这个设计和 mutex / rwsem 是同构的</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>释放方行为</th>
+<th>目的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>semaphore</td>
+<td><code class="c">wait_list</code> 非空时不 <code class="c">count++</code>，直接 <code class="c">waiter.up = true</code></td>
+<td>保 FIFO，防插队</td>
+</tr>
+<tr>
+<td>mutex</td>
+<td>直接把 <code class="c">owner</code> 字段移交给等待者（handoff）</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>rwsem</td>
+<td>直接把读者计数 / 写者标志移交</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这是一条通用的内核设计原则</strong>：睡眠锁的释放路径，在有等待者时
+<strong>不做"归还 + 唤醒"两步，而是做"直接移交"一步</strong>。因为两步之间必有窗口。</p>
+<h3>回到 §1 那句注释</h3>
+<p>现在可以理解 <code class="c">kernel/locking/semaphore.c</code> 开头那段注释的后半句了：</p>
+<blockquote>
+<p>The -&gt;count variable represents how many more tasks can acquire this
+semaphore.  <strong>If it's zero, there may be tasks waiting on the wait_list.</strong></p>
+</blockquote>
+<p>注意 "<strong>may be</strong>"。<code class="c">count == 0</code> 有两种完全不同的含义：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">count == 0</code> 时</th>
+<th><code class="c">wait_list</code></th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>情况一</td>
+<td><strong>空</strong></td>
+<td>令牌被某个任务持有（或池子空了），<strong>没人排队</strong></td>
+</tr>
+<tr>
+<td>情况二</td>
+<td><strong>非空</strong></td>
+<td>有人在排队，<code class="c">up()</code> 会走传令牌路径</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以<strong>绝对不能</strong>用 <code class="c">count == 0</code> 来推断"有没有人在等"。要看 <code class="c">wait_list</code>。
+（当然，用户代码本来就不该直接读 <code class="c">sem-&gt;count</code> —— 结构体上方写着
+"Please don't access any members of this structure directly"。）</p>
+<hr />
+<h2>9. 为什么内核新代码一律用 mutex（<strong>理由不是性能</strong>）</h2>
+<p>官方 <code class="c">Documentation/locking/mutex-design.rst</code> 的 "When to use mutexes" 一节，整节就一句话：</p>
+<blockquote>
+<p>Unless the strict semantics of mutexes are unsuitable and/or the critical
+region prevents the lock from being shared, <strong>always prefer them to any other
+locking primitive</strong>.</p>
+</blockquote>
+<p>翻译：<strong>除非 mutex 的严格语义不适合，或者临界区本身导致锁无法共享，
+否则永远优先用 mutex，而不是任何其他锁原语。</strong></p>
+<p>注意它的措辞是 "<strong>any other locking primitive</strong>" —— 包括 semaphore，
+也包括 spinlock、rwlock、rwsem。</p>
+<h3>理由一：mutex 有 9 条<strong>强制</strong>语义，semaphore 一条都没有</h3>
+<p><code class="c">mutex-design.rst</code> 的 "Semantics" 一节：</p>
+<blockquote>
+<p>The mutex subsystem checks and enforces the following rules:</p>
+<ul>
+<li>Only one task can hold the mutex at a time.</li>
+<li>Only the owner can unlock the mutex.</li>
+<li>Multiple unlocks are not permitted.</li>
+<li>Recursive locking/unlocking is not permitted.</li>
+<li>A mutex must only be initialized via the API (see below).</li>
+<li>A task may not exit with a mutex held.</li>
+<li>Memory areas where held locks reside must not be freed.</li>
+<li>Held mutexes must not be reinitialized.</li>
+<li>Mutexes may not be used in hardware or software interrupt
+  contexts such as tasklets and timers.</li>
+</ul>
+</blockquote>
+<p>逐条对照 semaphore：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>mutex 规则</th>
+<th>mutex 检查？</th>
+<th>semaphore 检查？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>同一时刻只有一人持有</td>
+<td>✅</td>
+<td>❌（count 可以 &gt;1，本来就允许）</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>只有持有者能解锁</strong></td>
+<td>✅</td>
+<td>❌ <strong>任何人都能 <code class="c">up()</code></strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>禁止重复解锁</td>
+<td>✅</td>
+<td>❌ <strong>多调一次 <code class="c">up()</code> 会凭空造令牌</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>禁止递归加锁</td>
+<td>✅</td>
+<td>❌ 递归 <code class="c">down()</code> 会自死锁，无人检测</td>
+</tr>
+<tr>
+<td>5</td>
+<td>只能用 API 初始化</td>
+<td>✅</td>
+<td>⚠️ 只有 <code class="c">sema_init</code> / <code class="c">DEFINE_SEMAPHORE</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>任务不能持锁退出</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>7</td>
+<td>持锁期间内存不能释放</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>8</td>
+<td>持有的锁不能重新初始化</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>9</td>
+<td>不能用于软硬件中断上下文</td>
+<td>✅</td>
+<td>⚠️ 部分（<code class="c">down_trylock</code>/<code class="c">up</code> 可以）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>semaphore 在 1~4、6~8 这七条上完全没有检查。</strong> 其中最致命的是 <strong>#2 和 #3</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* semaphore：这些错误编译器和内核都不会告诉你 */
+up(&amp;sem);
+up(&amp;sem);              /* ❌ 重复 up：count 凭空 +1，后续会有两个任务同时进临界区 */
+
+/* 线程 A down，线程 B up —— 合法但通常意味着设计错了 */
+</code></pre>
+<p>对比 mutex：</p>
+<pre class="code" data-label="C"><code class="c">mutex_unlock(&amp;m);
+mutex_unlock(&amp;m);      /* ✅ DEBUG_MUTEXES 下立刻 debug_bug 打印并可能 panic */
+</code></pre>
+<h3>理由二：<code class="c">CONFIG_DEBUG_MUTEXES</code> 的 5 项 debug 能力，semaphore 全没有</h3>
+<p><code class="c">mutex-design.rst</code>：</p>
+<blockquote>
+<p>These semantics are fully enforced when CONFIG DEBUG_MUTEXES is enabled.
+In addition, the mutex debugging code also implements a number of other
+features that make lock debugging easier and faster:</p>
+<ul>
+<li>Uses symbolic names of mutexes, whenever they are printed
+  in debug output.</li>
+<li>Point-of-acquire tracking, symbolic lookup of function names,
+  list of all locks held in the system, printout of them.</li>
+<li>Owner tracking.</li>
+<li>Detects self-recursing locks and prints out all relevant info.</li>
+<li>Detects multi-task circular deadlocks and prints out all affected
+  locks and tasks (and only those tasks).</li>
+</ul>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>debug 能力</th>
+<th>mutex</th>
+<th>semaphore</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>打印锁的<strong>符号名</strong></td>
+<td>✅</td>
+<td>❌（只能看到地址）</td>
+</tr>
+<tr>
+<td><strong>获取点追踪</strong>（在哪一行拿的锁）+ 系统内所有持锁列表</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>owner 追踪</strong></td>
+<td>✅</td>
+<td>❌ 本来就没有 owner 概念</td>
+</tr>
+<tr>
+<td><strong>自递归检测</strong></td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>多任务环形死锁检测</strong>（只打印相关锁和任务）</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这才是"用 mutex"的真正理由。</strong> 不是为了性能，是为了<strong>出了问题能查</strong>。
+一个只有地址没有符号名、不知道谁持有、检测不出环形死锁的锁，在生产环境上出问题时
+基本等于无法诊断。</p>
+<p>对比一下两份 oops 输出的信息量差异：</p>
+<pre class="code" data-label="code"><code class="c">/* mutex + DEBUG_MUTEXES 检测到自递归 */
+BUG: mutex trylock failure ...
+ showing all locks held in the system:
+ #0: ffff888012345678 (&amp;dev-&gt;lock){+.+.}-{3:3}, at: my_func+0x42/0x100 [mydrv]
+ ...
+
+/* semaphore 递归 down()：什么都不会发生，进程静静卡死在 D 状态，
+   ps 只显示 &quot;D&quot;，没有任何提示。 */
+</code></pre>
+<h3>理由三（性能）：mutex 有<strong>乐观自旋</strong>，semaphore 没有</h3>
+<p>这一条才是性能层面的差异，而且方向可能和直觉相反 —— <strong>mutex 更快</strong>。</p>
+<p><code class="c">struct mutex</code> 里有一个 semaphore 完全没有的字段：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/mutex.h —— v6.6 */
+struct mutex {
+    atomic_long_t       owner;
+    raw_spinlock_t      wait_lock;
+#ifdef CONFIG_MUTEX_SPIN_ON_OWNER
+    struct optimistic_spin_queue osq; /* Spinner MCS lock */
+#endif
+    struct list_head    wait_list;
+#ifdef CONFIG_DEBUG_MUTEXES
+    void            *magic;
+#endif
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+    struct lockdep_map  dep_map;
+#endif
+};
+</code></pre>
+<p><code class="c">mutex-design.rst</code> 描述 mutex 的三条获取路径：</p>
+<blockquote>
+<p>When acquiring a mutex, there are three possible paths that can be
+taken, depending on the state of the lock:</p>
+<p>(i) <strong>fastpath</strong>: tries to atomically acquire the lock by cmpxchg()ing
+    the owner with the current task. This only works in the uncontended
+    case (cmpxchg() checks against 0UL, so all 3 state bits above have
+    to be 0). If the lock is contended it goes to the next possible path.</p>
+<p>(ii) <strong>midpath</strong>: aka <strong>optimistic spinning</strong>, tries to spin for acquisition
+     while the lock owner is running and there are no other tasks ready
+     to run that have higher priority (need_resched). The rationale is
+     that if the lock owner is running, it is likely to release the lock
+     soon. The mutex spinners are queued up using MCS lock so that only
+     one spinner can compete for the mutex.
+     ...</p>
+<p>(iii) <strong>slowpath</strong>: last resort, if the lock is still unable to be acquired,
+     the task is added to the wait-queue and sleeps until woken up by the
+     unlock path. Under normal circumstances it blocks as TASK_UNINTERRUPTIBLE.</p>
+<p>While formally kernel mutexes are sleepable locks, it is path (ii) that
+makes them more practically a <strong>hybrid type</strong>. By simply not interrupting a
+task and busy-waiting for a few cycles instead of immediately sleeping,
+the performance of this lock has been seen to <strong>significantly improve</strong>
+a number of workloads. Note that this technique is also used for rw-semaphores.</p>
+</blockquote>
+<p><strong>三条路径对比</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>mutex</th>
+<th>semaphore</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>快路径</td>
+<td><code class="c">cmpxchg</code> owner（无争用时）</td>
+<td><code class="c">count--</code>（无争用时）</td>
+</tr>
+<tr>
+<td><strong>中路径（乐观自旋）</strong></td>
+<td>✅ <strong>有</strong>：持有者在跑时就自旋等一会儿，用 MCS 排队</td>
+<td>❌ <strong>没有</strong></td>
+</tr>
+<tr>
+<td>慢路径</td>
+<td>入队 + 睡眠</td>
+<td>入队 + 睡眠</td>
+</tr>
+</tbody>
+</table></div>
+<p>semaphore 只有两条：<strong>要么 <code class="c">count &gt; 0</code> 直接拿到，要么 <code class="c">count == 0</code> 直接
+<code class="c">__down(sem)</code> → <code class="c">schedule_timeout()</code> 睡下去</strong>。中间没有"自旋等一下"这个档位。</p>
+<p><strong>后果</strong>：</p>
+<pre class="code" data-label="code"><code class="c">信号量争用的代价 = 完整的两次上下文切换 + 调度器往返
+                ≈ 数 µs 量级，且方差极大（取决于调度器、CFS、迁移）
+
+mutex 争用的代价（持有者正在跑时）= 几个 ~ 几十个 cycle 的自旋
+                                ≈ 亚 µs 量级
+</code></pre>
+<p>所以对于"临界区很短、持有者大概率马上就放"的场景，<strong>mutex 的中路径会让它比
+semaphore 快一个数量级</strong>。这也是官方文档说 mutex "practically a hybrid type"
+（实际上是混合型）的原因。</p>
+<h3>什么时候<strong>必须</strong>用 semaphore</h3>
+<p>虽然有上面这些，semaphore 不是没用武之地。官方的豁免条款是
+"<strong>除非 mutex 的严格语义不适合</strong>"。具体是三种情况：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>为什么 mutex 不行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① <strong>计数 &gt; 1</strong>（资源池 / 限流）</td>
+<td>mutex 是二值的，语义上就是互斥</td>
+</tr>
+<tr>
+<td>② <strong>无归属释放</strong>（A 获取、B 释放）</td>
+<td>违反 mutex 规则 #2，DEBUG 下会报错</td>
+</tr>
+<tr>
+<td>③ 需要在<strong>中断上下文</strong>释放</td>
+<td>mutex 规则 #9 明确禁止 mutex 用于中断上下文；<code class="c">up()</code> 可以</td>
+</tr>
+</tbody>
+</table></div>
+<p>场景 ③ 值得展开：<code class="c">up()</code> 的 kernel-doc 明确说：</p>
+<blockquote>
+<p>Release the semaphore. Unlike mutexes, <strong>up() may be called from any
+context and even by tasks which have never called down().</strong></p>
+</blockquote>
+<p>这是个很实用的能力：<strong>进程上下文 <code class="c">down_interruptible()</code> 等硬件，ISR 里 <code class="c">up()</code> 通知</strong>。
+这个模式用 mutex 是做不到的（ISR 里不能 <code class="c">mutex_unlock</code>），用 completion（10.6）
+更好，但 semaphore 也能work。</p>
+<hr />
+<h2>10. PREEMPT_RT 上的 semaphore —— <strong>不变</strong></h2>
+<p>对照 10.2 和 10.3 的结论：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>非 RT</th>
+<th><code class="c">CONFIG_PREEMPT_RT</code></th>
+<th>是否变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spinlock_t</code></td>
+<td>真自旋</td>
+<td>→ <code class="c">struct rt_mutex_base</code>，<strong>可睡眠</strong></td>
+<td>✅ 变</td>
+</tr>
+<tr>
+<td><code class="c">rwlock_t</code></td>
+<td>真自旋</td>
+<td>→ <code class="c">struct rwbase_rt</code>，<strong>可睡眠</strong></td>
+<td>✅ 变</td>
+</tr>
+<tr>
+<td><code class="c">raw_spinlock_t</code></td>
+<td>真自旋</td>
+<td>真自旋</td>
+<td>❌ 不变</td>
+</tr>
+<tr>
+<td><strong><code class="c">struct semaphore</code></strong></td>
+<td>睡眠锁</td>
+<td><strong>睡眠锁</strong></td>
+<td>❌ <strong>不变</strong></td>
+</tr>
+<tr>
+<td><code class="c">struct completion</code></td>
+<td>睡眠锁</td>
+<td>睡眠锁</td>
+<td>❌ 不变</td>
+</tr>
+</tbody>
+</table></div>
+<p>原因很直白：<strong>semaphore 本来就是睡眠锁</strong>，RT 补丁要解决的问题是"把自旋锁变成
+可睡眠的，以免自旋者在 RT 上造成不可预测的抢占延迟"。semaphore 从来不自旋，
+所以根本没有要改的地方。</p>
+<p>它内部的 <code class="c">raw_spinlock_t</code> 也保持不变 —— 这正好印证了 §1 那条规律：
+<strong>正因为它是 <code class="c">raw_spinlock_t</code>，RT 才敢不动它</strong>。如果哪天有人"顺手"把它改成
+<code class="c">spinlock_t</code>，这个 semaphore 在 RT 内核上就会出问题。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<h3>⭐ 信号量获取延迟是<strong>调度器级</strong>的 —— 热路径禁用</h3>
+<p>这是本篇对 HFT 最重要的一条结论。把 §9 的性能分析再往具体数字上推一步：</p>
+<pre class="code" data-label="code"><code class="c">信号量争用时的一次获取：
+  ① down() 发现 count == 0
+  ② list_add_tail 挂到 wait_list
+  ③ __set_current_state() + raw_spin_unlock_irq()
+  ④ schedule_timeout()   → 上下文切换出去（保存/恢复寄存器、切换地址空间、
+                            可能触发负载均衡迁移到另一个 NUMA 节点）
+  ⑤ ... 等待持有者 up() ...
+  ⑥ wake_up_process()    → 放进 runqueue
+  ⑦ ... 等待调度器选中自己（可能被更高优先级任务插队、可能被抢占）...
+  ⑧ 上下文切换回来
+  ⑨ raw_spin_lock_irq() + 检查 waiter.up
+  ⑩ 返回
+
+代价量级：数 µs ~ 数十 µs，且 P99/P99.9 方差极大
+</code></pre>
+<p>对比：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>无争用</th>
+<th>轻争用</th>
+<th>HFT 热路径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">atomic_t</code> / <code class="c">READ_ONCE</code></td>
+<td>~1–20 cycles</td>
+<td>重试</td>
+<td>✅ 首选</td>
+</tr>
+<tr>
+<td>无锁环形队列（SPSC）</td>
+<td>~10 cycles</td>
+<td>无</td>
+<td>✅ 首选</td>
+</tr>
+<tr>
+<td><code class="c">spinlock_t</code></td>
+<td>~20–40 cycles</td>
+<td>几十 ~ 几百 cycles（qspinlock MCS 排队）</td>
+<td>⚠️ 可用，需独占核</td>
+</tr>
+<tr>
+<td><strong>mutex（中路径乐观自旋）</strong></td>
+<td>~20 cycles</td>
+<td>自旋几百 cycles（持有者在跑时）</td>
+<td>⚠️ 控制面可以</td>
+</tr>
+<tr>
+<td><strong>semaphore</strong></td>
+<td>~20 cycles</td>
+<td><strong>数 µs + 大方差</strong>（直接睡）</td>
+<td>❌ <strong>禁止</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：信号量的延迟不是"锁本身的开销"，而是<strong>两次调度器往返</strong>。
+在低延迟系统里，这个数字和 P99 尾延迟目标（通常要求 &lt; 10 µs，甚至 &lt; 1 µs）
+是同一个量级 —— 也就是说，<strong>一次信号量争用就可能直接吃掉整个尾延迟预算</strong>。</p>
+<p><strong>热路径替代方案</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>❌ 不要用</th>
+<th>✅ 用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单生产者单消费者传数据</td>
+<td>semaphore + 缓冲区</td>
+<td><strong>SPSC 无锁环形队列</strong>（<code class="c">READ_ONCE</code>/<code class="c">WRITE_ONCE</code> + acquire/release）</td>
+</tr>
+<tr>
+<td>限制并发数</td>
+<td>counting semaphore</td>
+<td><code class="c">atomic_t</code> 计数 + 重试 / 退避（或干脆不做限流，用分区）</td>
+</tr>
+<tr>
+<td>等硬件就绪（进程上下文）</td>
+<td><code class="c">down_interruptible</code></td>
+<td>可以接受（在控制面/初始化路径）</td>
+</tr>
+<tr>
+<td>统计计数器</td>
+<td>semaphore 保护</td>
+<td><code class="c">local_t</code> / per-CPU 计数 + 聚合读</td>
+</tr>
+</tbody>
+</table></div>
+<h3>独占物理核是唯一可靠答案</h3>
+<p>结合 10.2 的结论：在 VM 上 <code class="c">CONFIG_PARAVIRT</code> 会把 <code class="c">spinlock_t</code> 的慢路径
+<strong>默认劫持成裸 TAS</strong>（<code class="c">virt_spin_lock_key</code> 是 <code class="c">DECLARE_STATIC_KEY_TRUE</code>），
+争用退化成 O(N²) cacheline 乒乓，且持锁者被 hypervisor 抢占时无人能偷锁。</p>
+<p>对 HFT 的推论是分层的：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>热路径（订单发送、行情处理）</strong></td>
+<td>无锁 + 独占物理核 + 关中断绑核（Linux 侧用 <code class="c">isolcpus</code> + <code class="c">nohz_full</code>）</td>
+</tr>
+<tr>
+<td><strong>温路径（风控、仓位更新）</strong></td>
+<td><code class="c">spinlock_t</code> 或 mutex（中路径自旋），仍绑核</td>
+</tr>
+<tr>
+<td><strong>控制面（初始化、配置、错误处理）</strong></td>
+<td>semaphore / completion / mutex 都可以</td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">D</code> 状态进程的运维噩梦（嵌入式尤其严重）</h3>
+<p>§4 讲过 <code class="c">down()</code> 会睡在 <code class="c">TASK_UNINTERRUPTIBLE</code> 上，产生杀不死的 <code class="c">D</code> 状态进程。
+在嵌入式设备上这个后果被放大：</p>
+<ul>
+<li>没有运维人员能上去排查，只能靠看门狗重启；</li>
+<li>看门狗如果自己也被这个 D 状态任务阻塞（比如共享同一个锁），整个设备假死；</li>
+<li>现场复现困难 —— 可能几个月才出现一次。</li>
+</ul>
+<p><strong>规则</strong>：嵌入式驱动里<strong>永远不写 <code class="c">down()</code></strong>，用 <code class="c">down_killable()</code> 或
+<code class="c">down_timeout()</code>，并且<strong>永远给一个有限的超时</strong>。</p>
+<h3>用 tracepoint 量化争用</h3>
+<p>§7 提到的 tracepoint 是排查尾延迟的直接工具：</p>
+<pre class="code" data-label="shell"><code class="c"># 抓信号量争用（含具体地址和耗时）
+trace-cmd record -e lock:contention_begin -e lock:contention_end ./workload
+trace-cmd report | grep -A2 contention
+</code></pre>
+<p>如果 <code class="c">perf lock report</code> 里出现某个 semaphore 的 <code class="c">con-bounces</code> 很高，
+就说明它在被反复争用 —— 这往往意味着架构上该改成无锁了，而不是调参数。</p>
+<hr />
+<h2>实践模板</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;linux/semaphore.h&gt;
+#include &lt;linux/errno.h&gt;
+
+/* ---------- 模板一：资源池（计数 &gt; 1，semaphore 的正当用途） ---------- */
+
+#define POOL_SLOTS  8
+
+struct my_dev {
+    struct semaphore slots;      /* 可用槽位数，初值 = POOL_SLOTS */
+    void __iomem *base;
+};
+
+static int my_dev_probe(struct platform_device *pdev)
+{
+    struct my_dev *dev = devm_kzalloc(&amp;pdev-&gt;dev, sizeof(*dev), GFP_KERNEL);
+    if (!dev)
+        return -ENOMEM;
+
+    /* ⚠️ v6.4 起必须两个参数 */
+    sema_init(&amp;dev-&gt;slots, POOL_SLOTS);
+
+    platform_set_drvdata(pdev, dev);
+    return 0;
+}
+
+static int submit_one(struct my_dev *dev)
+{
+    /* ✅ 用 killable：只让致命信号打断，不必处理无关信号的 -EINTR */
+    if (down_killable(&amp;dev-&gt;slots))
+        return -EINTR;
+
+    /* ... 占用一个槽位干活（可以睡眠、可以做 I/O）... */
+
+    up(&amp;dev-&gt;slots);             /* 可在中断上下文调用 */
+    return 0;
+}
+
+
+/* ---------- 模板二：进程等硬件，ISR 通知（无归属释放） ---------- */
+
+static DECLARE_WAIT_QUEUE_HEAD(hw_wq);
+static DEFINE_SEMAPHORE(hw_done, 0);     /* 初值 0 = 一开始就是&quot;未就绪&quot; */
+
+static int wait_for_hw(struct my_dev *dev, unsigned int timeout_ms)
+{
+    long ret;
+
+    /* 有上界，且不可被信号打断（硬件等的就是硬件）*/
+    ret = down_timeout(&amp;dev-&gt;hw_done, msecs_to_jiffies(timeout_ms));
+    if (ret == -ETIME) {
+        dev_err(dev-&gt;dev, &quot;hardware timeout after %u ms\n&quot;, timeout_ms);
+        return -ETIMEDOUT;
+    }
+    return 0;                            /* ret == 0：拿到令牌 */
+}
+
+/* 中断上半部：只 up，不睡 */
+static irqreturn_t my_hw_isr(int irq, void *data)
+{
+    struct my_dev *dev = data;
+
+    /* ... 清中断 ... */
+    up(&amp;dev-&gt;hw_done);                   /* ✅ up() 可在中断上下文调用 */
+    return IRQ_HANDLED;
+}
+
+
+/* ---------- 模板三：中断上下文只能用 trylock ---------- */
+
+static irqreturn_t my_isr(int irq, void *data)
+{
+    struct my_dev *dev = data;
+
+    /* ✅ down_trylock 不睡，返回值是反的：0 = 成功 */
+    if (down_trylock(&amp;dev-&gt;slots)) {
+        /*
+         * 拿不到 —— 注意这里 **绝对不能** up()！
+         * 因为没拿到就不该释放，否则凭空造令牌。
+         */
+        dev-&gt;slot_starved++;
+        return IRQ_NONE;
+    }
+
+    /* ... 用槽位 ... */
+    up(&amp;dev-&gt;slots);
+    return IRQ_HANDLED;
+}
+</code></pre>
+<p>⚠️ <strong>模板三里的注释是本篇最容易踩的坑</strong>：<code class="c">down_trylock()</code> 返回 <code class="c">1</code> 表示<strong>失败</strong>，
+此时<strong>不能</strong>调 <code class="c">up()</code>。写成</p>
+<pre class="code" data-label="C"><code class="c">if (down_trylock(&amp;sem)) {   /* 语义反了 */
+    do_work();
+    up(&amp;sem);               /* 凭空造令牌 → 后续会有多个任务同时进临界区 */
+}
+</code></pre>
+<p>就是 §5 讲的那个隐蔽 bug。</p>
+<hr />
+<h2>易错点核对表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>易错点</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>用 <code class="c">down()</code></td>
+<td>❌ v6.6 已废弃。用 <code class="c">down_interruptible()</code> / <code class="c">down_killable()</code> / <code class="c">down_timeout()</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code class="c">if (down_trylock(&amp;s)) { 进临界区 }</code></td>
+<td>❌ 反了。成功返回 <strong>0</strong>。写 <code class="c">if (!down_trylock(&amp;s))</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">DEFINE_SEMAPHORE(name);</code></td>
+<td>❌ v6.4 起编译不过。写 <code class="c">DEFINE_SEMAPHORE(name, 1)</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">DEFINE_SEMAPHORE(name, 0)</code> 迁移老代码</td>
+<td>❌ 老写法隐含 <code class="c">count=1</code>。迁移时显式写 <code class="c">1</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>中断上下文调 <code class="c">down()</code></td>
+<td>❌ 会睡。只能用 <code class="c">down_trylock()</code>；释放侧 <code class="c">up()</code> 可以</td>
+</tr>
+<tr>
+<td>6</td>
+<td>用 <code class="c">count == 0</code> 推断"有人在等"</td>
+<td>❌ 可能没人等，只是令牌被持有</td>
+</tr>
+<tr>
+<td>7</td>
+<td>以为 <code class="c">up()</code> 总是 <code class="c">count++</code></td>
+<td>❌ 有等待者时 <code class="c">count</code> 不变，直接传令牌</td>
+</tr>
+<tr>
+<td>8</td>
+<td>以为 semaphore 有 owner 概念</td>
+<td>❌ 没有。任何人都能 <code class="c">up()</code>，这是官方明说的</td>
+</tr>
+<tr>
+<td>9</td>
+<td>以为 semaphore 有 lockdep 死锁检测</td>
+<td>❌ 只有 9 条 mutex 语义 + 5 项 DEBUG_MUTEXES 能力的一半都没有</td>
+</tr>
+<tr>
+<td>10</td>
+<td>以为 semaphore 快</td>
+<td>❌ 没有乐观自旋，争用即睡眠，<strong>调度器级延迟</strong></td>
+</tr>
+<tr>
+<td>11</td>
+<td>热路径用 semaphore 做生产者-消费者</td>
+<td>❌ 用 SPSC 无锁环形队列</td>
+</tr>
+<tr>
+<td>12</td>
+<td>把 <code class="c">struct semaphore</code> 里的 <code class="c">raw_spinlock_t</code> "顺手"改成 <code class="c">spinlock_t</code></td>
+<td>❌ RT 上会坏。规律见 §1</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>常见陷阱</h2>
 <ol>
-<li>混淆 semaphore 和 mutex——mutex 有归属（只有持有者能解锁），semaphore 无归属</li>
-<li>以为 counting semaphore 常用于内核——内核中大多用 mutex，semaphore 只在特殊场景</li>
-<li>在中断上下文中调用 down()——down() 会睡眠，中断只能用 down_trylock()</li>
+<li>混淆 semaphore 和 mutex —— mutex 有归属（只有持有者能解锁），semaphore 无归属</li>
+<li>以为 counting semaphore 常用于内核 —— 内核中大多用 mutex，semaphore 只在特殊场景
+   （计数 &gt;1 / 无归属释放 / 中断侧释放）</li>
+<li>在中断上下文中调用 <code class="c">down()</code> —— <code class="c">down()</code> 会睡眠，中断只能用 <code class="c">down_trylock()</code></li>
+<li><strong>（v6.6 补充）</strong> 用 <code class="c">down()</code> —— 已废弃，<code class="c">TASK_UNINTERRUPTIBLE</code> 导致 <code class="c">D</code> 状态进程</li>
+<li><strong>（v6.6 补充）</strong> 把 <code class="c">down_trylock()</code> 的返回值当布尔"成功"用 —— 它是反的</li>
+<li><strong>（v6.6 补充）</strong> 复制 v6.3 及以前的 <code class="c">DEFINE_SEMAPHORE(name)</code> —— v6.4 起要两个参数</li>
+<li><strong>（v6.6 补充）</strong> 以为 <code class="c">up()</code> 会 <code class="c">count++</code> 再唤醒 —— 实际是直接传令牌，<code class="c">count</code> 不动</li>
 </ol>
 <hr />
+<h2>自测题</h2>
 <details>
 <summary>自测题（点击展开）</summary>
 <p><strong>Q1.</strong> semaphore 和 mutex 的核心区别？</p>
 <details>
 <summary>答案</summary>
 <p>mutex：① 有归属（owner 字段），只有持锁者能 unlock。② 支持优先级继承（rt_mutex）。③ 支持 lockdep。semaphore：① 无归属，任何人可以 up()。② 初始值可 &gt;1（计数信号量）。③ 无优先级继承。内核新代码推荐 mutex，semaphore 只在需要计数语义或无归属场景使用。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>这个答案漏掉了<strong>最关键的一条</strong> —— 官方文档
+<code class="c">Documentation/locking/mutex-design.rst</code> 说"优先用 mutex"的<strong>首要理由不是性能、
+而是可调试性</strong>：mutex 有 <strong>9 条强制语义</strong>（只有持有者能解锁 / 禁止重复解锁 /
+禁止递归加锁 / 不能持锁退出 / 持锁内存不能释放 / 持有的锁不能重初始化 /
+不能用于中断上下文……），semaphore <strong>一条都不检查</strong>；<code class="c">CONFIG_DEBUG_MUTEXES</code>
+还提供 <strong>5 项 debug 能力</strong>（符号名 / 获取点追踪 / owner 追踪 / 自递归检测 /
+环形死锁检测），semaphore <strong>全都没有</strong>。</p>
+<p><strong>另外一个方向相反的补充</strong>：性能上 <strong>mutex 反而更快</strong> —— <code class="c">struct mutex</code> 里有
+<code class="c">struct optimistic_spin_queue osq</code>（<code class="c">CONFIG_MUTEX_SPIN_ON_OWNER</code>），持有者在跑时会
+<strong>乐观自旋</strong>等一会儿（midpath），semaphore 没有这个档位，一争用就直接
+<code class="c">schedule_timeout()</code> 睡下去。所以 mutex 官方称自己是 "hybrid type"（混合型），
+而信号量的争用延迟是<strong>调度器级</strong>的（数 µs，方差大）。</p>
+</details>
 </details>
 <p><strong>Q2.</strong> counting semaphore 在什么场景下有用？</p>
 <details>
 <summary>答案</summary>
 <p>① 限制并发数：如限制同时打开的文件数（初始值=最大并发数）。② 生产者-消费者：semaphore 计数 = 队列中可用元素数，消费者 down() 取数据，生产者 up() 放数据。③ 资源池：初始值=池大小，获取资源 down()，释放 up()。但在内核中，这些场景更常用 kfifo + waitqueue 或 mempool。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>这三条里，只有 <strong>① 限制并发数 / 资源池</strong> 是 semaphore 在内核里的
+正当用途。②③ 在<strong>内核里</strong>通常有更好的选择（kfifo + waitqueue、mempool），
+但在<strong>用户态</strong>（HFT 的进程间通信）里 ②③ 依然是标准做法。</p>
+<p>另外 §9 给出了 semaphore 的三个<strong>不可替代场景</strong>（mutex 语义上做不到的）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>为什么 mutex 不行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计数 &gt; 1</td>
+<td>mutex 是二值的</td>
+</tr>
+<tr>
+<td>无归属释放（A 获取、B 释放）</td>
+<td>违反 mutex 规则 #2</td>
+</tr>
+<tr>
+<td>需要在中断上下文释放</td>
+<td>mutex 规则 #9 明确禁止；<code class="c">up()</code> 可以</td>
+</tr>
+</tbody>
+</table></div>
+<p>第三条尤其实用：<code class="c">up()</code> 的 kernel-doc 原文 —— <em>"Unlike mutexes, up() may be called
+from any context and even by tasks which have never called down()"</em>。
+这就是"进程上下文 <code class="c">down_interruptible()</code> 等硬件、ISR 里 <code class="c">up()</code> 通知"这个模式成立的原因。</p>
+</details>
 </details>
 <p><strong>Q3.</strong> HFT 中 semaphore 的用户态对应物？</p>
 <details>
 <summary>答案</summary>
 <p>① <code class="c">std::counting_semaphore&lt;N&gt;</code>（C++20）：计数信号量。② <code class="c">sem_t</code>（POSIX）：进程间或线程间信号量。③ <code class="c">std::binary_semaphore</code> = mutex 的近似。HFT 热路径避免 semaphore（有 futex 开销），用无锁队列代替生产者-消费者模式。非热路径可以用 semaphore 做资源限流。</p>
+<details>
+<summary>按 v6.6 修订/补充</summary>
+<p>补一个可量化的判据。
+内核态和用户态的结论是一致的 —— <strong>信号量的争用代价不是锁本身的开销，
+而是两次调度器往返</strong>（切换出去 + 切换回来，中间还要等调度器选中自己）。
+量级是 <strong>数 µs 且方差极大</strong>，和 HFT 的 P99 尾延迟预算（通常 &lt; 10 µs）同一量级。</p>
+<p>对比表（无争用 → 轻争用）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>无争用</th>
+<th>轻争用</th>
+<th>热路径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">atomic_t</code> / <code class="c">READ_ONCE</code></td>
+<td>~1–20 cycles</td>
+<td>重试</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>SPSC 无锁环</td>
+<td>~10 cycles</td>
+<td>无</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">spinlock_t</code></td>
+<td>~20–40 cycles</td>
+<td>几十~几百 cycles</td>
+<td>⚠️ 需独占核</td>
+</tr>
+<tr>
+<td>mutex（乐观自旋）</td>
+<td>~20 cycles</td>
+<td>自旋几百 cycles</td>
+<td>⚠️ 控制面</td>
+</tr>
+<tr>
+<td><strong>semaphore</strong></td>
+<td>~20 cycles</td>
+<td><strong>数 µs + 大方差</strong></td>
+<td>❌ 禁止</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以第 ④ 点要更明确：<strong>HFT 热路径不是"避免"semaphore，是"禁止"</strong>。
+用户态的 <code class="c">sem_wait</code> 走 futex 快路径时确实不进内核（无争用时 ~20ns），
+但<strong>一旦争用就进内核 <code class="c">futex_wait</code></strong> —— 和内核 semaphore 一样是调度器级延迟。
+热路径的替代品是 <strong>SPSC 无锁环形队列</strong>（<code class="c">memory_order_acquire/release</code> 的
+<code class="c">head</code>/<code class="c">tail</code> 分离读写，无 RMW 竞争）。</p>
 </details>
 </details>
+<p><strong>Q4.</strong> 为什么 <code class="c">struct semaphore</code> 内部的锁是 <code class="c">raw_spinlock_t</code> 而不是 <code class="c">spinlock_t</code>？</p>
+<details>
+<summary>答案</summary>
+<p>因为信号量的慢路径 <code class="c">___down_common()</code> 是<strong>手工编排</strong>的"放锁 → 睡 → 拿锁"序列：</p>
+<pre class="code" data-label="C"><code class="c">__set_current_state(state);
+raw_spin_unlock_irq(&amp;sem-&gt;lock);        /* ① 自己放锁 */
+timeout = schedule_timeout(timeout);    /* ② 睡眠 */
+raw_spin_lock_irq(&amp;sem-&gt;lock);          /* ③ 醒来后自己拿回锁 */
+if (waiter.up)
+    return 0;
+</code></pre>
+<p>这段代码同时<strong>关着中断</strong>（用的是 <code class="c">irq</code> 变体）又要保证"拿锁时不能睡眠"。
+如果 <code class="c">sem-&gt;lock</code> 是 <code class="c">spinlock_t</code>，在 <code class="c">CONFIG_PREEMPT_RT</code> 下它会被替换成
+<code class="c">rt_mutex_base</code> —— <strong>会睡眠</strong>。那么在关中断的临界区里睡眠是 RT 内核明确禁止的，
+正确性无法保证。而 <code class="c">raw_spinlock_t</code> 在任何配置下都真自旋，符合要求。</p>
+<p><strong>可推广成一条规律（本节 §1）</strong>：</p>
+<blockquote>
+<p><strong>所有"自己实现睡眠逻辑"的内核原语，内部锁一律用 <code class="c">raw_spinlock_t</code>。</strong></p>
+</blockquote>
+<p>验证：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>内部锁</th>
+<th>自己编排睡眠</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct semaphore</code></td>
+<td><code class="c">raw_spinlock_t lock</code></td>
+<td>✅ <code class="c">___down_common</code></td>
+</tr>
+<tr>
+<td><code class="c">struct mutex</code></td>
+<td><code class="c">raw_spinlock_t wait_lock</code></td>
+<td>✅ <code class="c">__mutex_lock_common</code></td>
+</tr>
+<tr>
+<td><code class="c">struct rw_semaphore</code></td>
+<td><code class="c">raw_spinlock_t wait_lock</code></td>
+<td>✅ <code class="c">rwsem_down_*_slowpath</code></td>
+</tr>
+<tr>
+<td><code class="c">struct completion</code></td>
+<td><code class="c">raw_spinlock_t</code>（swait 内）</td>
+<td>✅ <code class="c">wait_for_completion*</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>反过来，这也解释了 §10 的结论：<strong>PREEMPT_RT 完全不需要改 semaphore</strong>
+—— 它本来就是睡眠锁，内部锁又是 <code class="c">raw_spinlock_t</code>，没有任何要改的地方。</p>
+</details>
+<p><strong>Q5.</strong> 为什么 <code class="c">up()</code> 在 <code class="c">wait_list</code> 非空时<strong>不</strong>执行 <code class="c">count++</code>？</p>
+<details>
+<summary>答案</summary>
+<p>源码（<code class="c">kernel/locking/semaphore.c</code>）：</p>
+<pre class="code" data-label="C"><code class="c">void __sched up(struct semaphore *sem)
+{
+    unsigned long flags;
+    raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+    if (likely(list_empty(&amp;sem-&gt;wait_list)))
+        sem-&gt;count++;        /* 没人等 → 放回池子 */
+    else
+        __up(sem);           /* 有人等 → 直接传令牌，count 不动 */
+    raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+}
+
+static noinline void __sched __up(struct semaphore *sem)
+{
+    struct semaphore_waiter *waiter = list_first_entry(&amp;sem-&gt;wait_list,
+                        struct semaphore_waiter, list);
+    list_del(&amp;waiter-&gt;list);
+    waiter.up = true;        /* ← 令牌直接绑到队首的 waiter 上 */
+    wake_up_process(waiter-&gt;task);
+}
+</code></pre>
+<p><strong>原因：为了保 FIFO，防止插队。</strong></p>
+<p><code class="c">wake_up_process()</code> 只是把任务放进 runqueue，<strong>不会立刻调度到它</strong>。
+如果采用朴素的"count++ 再唤醒"两步：</p>
+<pre class="code" data-label="code"><code class="c">count = 0，wait_list = [A, B]
+持有者 up()：count++ → count = 1；wake_up(A)（A 还在 runqueue 上没跑到）
+            unlock
+⚠️ 此刻 count == 1 → 新来的 C 调 down()，看到 count &gt; 0，直接拿走！
+            → C 插到 A（先到的等待者）前面
+            → A 醒来发现令牌没了，重新排到队尾（排到 B 后面）→ 乱序
+</code></pre>
+<p>v6.6 的做法把 <code class="c">count</code> 一直保持 0，<strong>关掉这个窗口</strong>：新来的 C 看到 <code class="c">count == 0</code>
+只能老实去队尾排队。令牌不是"放回池子"，而是<strong>绑定到 A 的 <code class="c">waiter.up</code> 标志</strong>上，
+别人拿不走。A 醒来后循环里看到 <code class="c">waiter.up == true</code> 就 <code class="c">return 0</code>。</p>
+<p><strong>这是个通用原则</strong>（mutex / rwsem 同构）：睡眠锁的释放路径在有等待者时，
+<strong>不做"归还 + 唤醒"两步，而是做"直接移交"一步</strong> —— 因为两步之间必有窗口。</p>
+</details>
+<p><strong>Q6.</strong> <code class="c">down_trylock()</code> 的返回值和其他 trylock 有什么不同？写错会怎样？</p>
+<details>
+<summary>答案</summary>
+<p><strong>它是反的：0 = 成功，1 = 失败。</strong></p>
+<pre class="code" data-label="C"><code class="c">int __sched down_trylock(struct semaphore *sem)
+{
+    int count;
+    raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+    count = sem-&gt;count - 1;
+    if (likely(count &gt;= 0))
+        sem-&gt;count = count;
+    raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+    return (count &lt; 0);          /* 拿不到 → 返回 1 */
+}
+</code></pre>
+<p>kernel-doc 的警告原文：</p>
+<blockquote>
+<p><strong>NOTE: This return value is inverted from both spin_trylock and
+mutex_trylock!  Be careful about this when converting code.</strong></p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>成功</th>
+<th>失败</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spin_trylock()</code></td>
+<td>1</td>
+<td>0</td>
+</tr>
+<tr>
+<td><code class="c">mutex_trylock()</code></td>
+<td>1</td>
+<td>0</td>
+</tr>
+<tr>
+<td><strong><code class="c">down_trylock()</code></strong></td>
+<td><strong>0</strong></td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>写错的最坏后果</strong>（这是它危险的地方）：</p>
+<pre class="code" data-label="C"><code class="c">if (down_trylock(&amp;sem)) {     /* 作者以为&quot;拿到了&quot; */
+    do_something();            /* 实际是&quot;没拿到&quot;的分支 */
+    up(&amp;sem);                  /* ❌ 凭空造了一个令牌 */
+}
+</code></pre>
+<p><code class="c">up()</code> 会让 <code class="c">count</code> 凭空 +1，等于<strong>伪造了一个资源槽位</strong>。后续会有多余的
+任务同时进入临界区，表现为<strong>偶发的数据损坏</strong>。而且这个 bug 在测试环境
+（无争用、永远走成功分支）里<strong>完全不会触发</strong>，上了生产偶发争用才炸 —— 极难复现。</p>
+<p><strong>顺带一个隐蔽细节</strong>：<code class="c">sem-&gt;count</code> 是 <code class="c">unsigned int</code>，但局部变量 <code class="c">count</code>
+声明成 <code class="c">int</code>。这是<strong>刻意</strong>的 —— 若声明成 <code class="c">unsigned</code>，<code class="c">0 - 1</code> 会绕回
+<code class="c">0xFFFFFFFF</code>，<code class="c">count &gt;= 0</code> 恒真，逻辑彻底错误。看到不要"顺手改成一致的"。</p>
+</details>
+<p><strong>Q7.</strong> <code class="c">___down_common()</code> 里为什么是 <code class="c">for (;;)</code> 而不是"睡一次就返回"？</p>
+<details>
+<summary>答案</summary>
+<p>因为<strong>醒来的原因有四种，只有一种是真的拿到了令牌</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>醒来原因</th>
+<th><code class="c">waiter.up</code></th>
+<th>后续</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 被 <code class="c">up()</code> 传令牌</td>
+<td><strong><code class="c">true</code></strong></td>
+<td><code class="c">return 0</code> ✅</td>
+</tr>
+<tr>
+<td>② 收到信号</td>
+<td><code class="c">false</code></td>
+<td>循环回顶部 → <code class="c">signal_pending_state</code> 命中 → <code class="c">-EINTR</code></td>
+</tr>
+<tr>
+<td>③ 超时</td>
+<td><code class="c">false</code></td>
+<td>循环回顶部 → <code class="c">timeout &lt;= 0</code> 命中 → <code class="c">-ETIME</code></td>
+</tr>
+<tr>
+<td>④ 假唤醒</td>
+<td><code class="c">false</code></td>
+<td>循环回顶部 → 重新睡</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">for (;;) {
+    if (signal_pending_state(state, current))
+        goto interrupted;
+    if (unlikely(timeout &lt;= 0))
+        goto timed_out;
+    __set_current_state(state);
+    raw_spin_unlock_irq(&amp;sem-&gt;lock);
+    timeout = schedule_timeout(timeout);
+    raw_spin_lock_irq(&amp;sem-&gt;lock);
+    if (waiter.up)
+        return 0;            /* ← 成功的唯一判据 */
+}
+</code></pre>
+<p>两个要点：</p>
+<p><strong>① 判断集中在循环顶部，而不是散落在 <code class="c">schedule_timeout()</code> 之后。</strong>
+收到信号时 <code class="c">schedule_timeout()</code> 会返回正的剩余时间（没到点就醒了），
+代码并不在这里判断，而是回到顶部让 <code class="c">signal_pending_state()</code> 命中。
+超时情况下 <code class="c">schedule_timeout()</code> 返回 0，同样回到顶部让 <code class="c">timeout &lt;= 0</code> 命中。</p>
+<p><strong>② 成功的判据是 <code class="c">waiter.up</code>，全程没有检查 <code class="c">sem-&gt;count</code>。</strong>
+这就是 §5 讲的"传令牌"模型 —— 令牌不在池子里，而是绑在 <code class="c">waiter.up</code> 标志上。</p>
+<p><strong>另一个值得注意的点</strong>：<code class="c">struct semaphore_waiter waiter</code> 是<strong>栈上变量</strong>，
+却把它的 <code class="c">list_head</code> 挂进了全局链表。这看起来危险，但<strong>是对的</strong>，
+因为 <code class="c">schedule_timeout()</code> 只是切走又切回<strong>同一个栈帧</strong>，<code class="c">___down_common</code>
+函数没有返回，<code class="c">waiter</code> 的地址始终有效。三条退出路径都保证了"摘链先于返回"：
+成功后节点已被 <code class="c">__up()</code> 侧 <code class="c">list_del</code>；<code class="c">-ETIME</code> / <code class="c">-EINTR</code> 两条路径都自己
+<code class="c">list_del(&amp;waiter.list)</code>。</p>
+<p>这也是内核等待队列的通用手法（mutex / rwsem / completion 都这么干），
+前提是<strong>睡眠点一定在摘链之前</strong> —— 顺便解释了为什么 ISR 里绝对不能调 <code class="c">down()</code>
+（ISR 的栈帧生命周期和进程完全不同）。</p>
+</details>
+<p><strong>Q8.</strong> 内核里 <code class="c">down()</code> 已经被标记废弃了，为什么？改成什么？</p>
+<details>
+<summary>答案</summary>
+<p>v6.6 的 kernel-doc 原文：</p>
+<blockquote>
+<p><strong>Use of this function is deprecated, please use down_interruptible() or
+down_killable() instead.</strong></p>
+</blockquote>
+<p><strong>原因</strong>：<code class="c">down()</code> 睡在 <code class="c">TASK_UNINTERRUPTIBLE</code> 上，且没有超时：</p>
+<pre class="code" data-label="C"><code class="c">static noinline void __sched __down(struct semaphore *sem)
+{
+    __down_common(sem, TASK_UNINTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+}
+</code></pre>
+<p><code class="c">TASK_UNINTERRUPTIBLE</code> 的语义是"<strong>只有显式唤醒才能叫醒</strong>" —— 信号来了也只是
+记下 pending，不唤醒任务。<code class="c">MAX_SCHEDULE_TIMEOUT</code>（= <code class="c">LONG_MAX</code>）意味着没有上界。</p>
+<p>后果链条：</p>
+<pre class="code" data-label="code"><code class="c">down() 拿不到 → 睡 TASK_UNINTERRUPTIBLE → 进程进入 D 状态
+             → 信号无效，kill -9 也只是个信号，同样无效
+             → ps 里 STAT 列显示 &quot;D&quot;，杀不死
+             → 如果那个 up() 永远不来（硬件挂了 / 驱动 bug）→ 永久卡死，只能重启
+</code></pre>
+<p>在生产/嵌入式设备上尤其严重：<code class="c">D</code> 状态进程不响应任何信号，运维只能重启设备，
+而且现场复现困难（可能几个月才一次）。</p>
+<p><strong>改法对照</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>改成</th>
+<th>返回值</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">down_interruptible()</code></td>
+<td><code class="c">0</code> / <code class="c">-EINTR</code></td>
+<td>任意信号都能打断，分支最多（最常用）</td>
+</tr>
+<tr>
+<td><code class="c">down_killable()</code></td>
+<td><code class="c">0</code> / <code class="c">-EINTR</code></td>
+<td>只有<strong>致命信号</strong>（SIGKILL）能打断，分支更少</td>
+</tr>
+<tr>
+<td><code class="c">down_timeout(&amp;s, HZ)</code></td>
+<td><code class="c">0</code> / <code class="c">-ETIME</code></td>
+<td>有上界，但仍不可被信号叫醒</td>
+</tr>
+</tbody>
+</table></div>
+<p>⚠️ <strong>改写不是简单换函数名</strong>：<code class="c">down()</code> 返回 <code class="c">void</code>，换成 <code class="c">down_interruptible()</code>
+后<strong>必须检查返回值</strong>，否则被打断时会继续执行临界区代码：</p>
+<pre class="code" data-label="C"><code class="c">/* ❌ 编译过，逻辑错 */
+down_interruptible(&amp;dev-&gt;sem);
+
+/* ✅ */
+if (down_interruptible(&amp;dev-&gt;sem))
+    return -ERESTARTSYS;
+</code></pre>
+<p><code class="c">__must_check</code> 会在你<strong>完全丢弃</strong>返回值时报警，但"接收了却不判断"它管不着。</p>
+<p><strong>嵌入式驱动的建议</strong>：用 <code class="c">down_killable()</code> 或 <code class="c">down_timeout()</code>，
+并且<strong>永远给一个有限超时</strong> —— 既能被 <code class="c">kill -9</code> 兜底，又有上界。</p>
+</details>
+<p><strong>Q9.</strong> <code class="c">struct semaphore</code> 内部锁为什么用 <code class="c">irqsave</code> 变体？（源码注释给了两层理由）</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">kernel/locking/semaphore.c</code> 开头注释原文：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * The spinlock controls access to the other members of the semaphore.
+ * down_trylock() and up() can be called from interrupt context, so we
+ * have to disable interrupts when taking the lock.  It turns out various
+ * parts of the kernel expect to be able to use down() on a semaphore in
+ * interrupt context when they know it will succeed, so we have to use
+ * irqsave variants for down(), down_interruptible() and down_killable()
+ * too.
+ */
+</code></pre>
+<p><strong>第一层（正常理由）</strong>：<code class="c">down_trylock()</code> 和 <code class="c">up()</code> 可以在中断上下文调用。
+如果在进程上下文拿内部锁时<strong>不关中断</strong>，ISR 一打断也去拿同一把锁 → 死锁。
+所以必须 <code class="c">irqsave</code>。</p>
+<p><strong>第二层（历史包袱）</strong>：<em>"内核里有代码指望在</em><em>知道自己会成功</em><em>时能在中断里调
+<code class="c">down()</code>"</em> —— 为了迁就这些老代码，<code class="c">down()</code> / <code class="c">down_interruptible()</code> /
+<code class="c">down_killable()</code> 也用了 irqsave 变体。</p>
+<p>⚠️ <strong>第二层千万不要模仿</strong>。它的意思是有老代码在 ISR 里调 <code class="c">down()</code>，
+赌 <code class="c">count &gt; 0</code> 一定成功。这个赌注极脆弱：一旦 <code class="c">count</code> 恰好为 0，
+ISR 里就会调 <code class="c">schedule_timeout()</code> → <code class="c">BUG: scheduling while atomic</code>。</p>
+<p><strong>正确写法</strong>：中断上下文<strong>只</strong>用 <code class="c">down_trylock()</code>（获取侧）和 <code class="c">up()</code>（释放侧）。
+<code class="c">down_trylock</code> 的 kernel-doc 也确认了这点：</p>
+<blockquote>
+<p>Unlike mutex_trylock, this function <strong>can be used from interrupt context</strong>,
+and the semaphore can be released by any task or interrupt.</p>
+</blockquote>
+</details>
+</details>
+<hr />
+<p>→ <a href="#s-10-5">10.5 mutex</a> · <a href="chapter-04.html#s-4-4">4.4 休眠唤醒</a></p>
 <h2>&gt; ↔ <a href="../../16-linux-kernel-deep/html/chapter-20.html#s-6">ULK Ch5 §6 信号量与完成变量</a></h2>
       </section>
       <section class="section" id="s-10-5">

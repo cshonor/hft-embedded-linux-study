@@ -379,41 +379,31 @@ Ch 11 分配 swap slot → 写盘 → PTE 改为 swap entry（not present）
 </ul>
       </section>
       <section class="section" id="s-1">
-        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 11 §1 描述交换区 (Describing the Swap Area)</h2></div>
+        <div class="sec-head"><div class="sec-no">1</div><h2>Ch 11 §1 描述交换区 (`swap_info_struct`)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/swap.h</code> / <code class="c">mm/swapfile.c</code>）</p>
 </blockquote>
-<h3>1. 描述交换区 (Describing the Swap Area)</h3>
-<p>每个 <strong>已激活</strong> 的 swap 区（<strong>分区或文件</strong>）对应一个 <strong><code class="c">swap_info_struct</code></strong>：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>字段级信息</th>
-<th>记录内容</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>状态、尺寸</td>
-<td>区有多大、是否可用</td>
-</tr>
-<tr>
-<td>优先级</td>
-<td>多 swap 区时的 <strong>使用顺序</strong></td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>全局管理：</strong> 静态数组 <strong><code class="c">swap_info[MAX_SWAPFILES]</code></strong> — 原书 <strong><code class="c">MAX_SWAPFILES = 32</code></strong>（地址空间 / 编码位数限制）。</p>
-<p><strong>用户态：</strong> <strong><code class="c">swapon</code> / <code class="c">swapoff</code></strong> · <strong><code class="c">/proc/swaps</code></strong> 查看激活列表。</p>
 <hr />
-      </section>
-      <section class="section" id="s-2">
-        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 11 §2 映射 PTE 到交换项 (PTE ↔ Swap Entry)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>2. 映射 PTE 到交换项 (PTE ↔ Swap Entry)</h3>
-<p>页 <strong>换出后</strong> 物理页框归还 Buddy — <strong>不能再靠 PFN 找页</strong>。Linux <strong>复用 PTE 位域</strong> 存 <strong>磁盘位置</strong>：</p>
+<h2>本节讲什么</h2>
+<p>本节回答：<strong>内核用什么结构描述一个已激活的 swap 区（分区或文件）？</strong></p>
+<p>原书答案是 <code class="c">swap_info_struct</code> + 静态数组 <code class="c">swap_info[MAX_SWAPFILES]</code>，这个骨架 v6.6 没变。但<strong>细节大幅演进</strong>：<code class="c">MAX_SWAPFILES</code> 不再是"恰好 32"而是"编码位宽约束下的上限"，<code class="c">swap_info_struct</code> 里塞进了 SSD 专用 cluster 结构、per-CPU 分配位置、swap extent 红黑树。本节落到 v6.6 字段级。</p>
+<hr />
+<h2>1. 全局布局：<code class="c">swap_info[]</code> 数组</h2>
+<pre class="code" data-label="C"><code class="c">/* mm/swapfile.c */
+struct swap_info_struct *swap_info[MAX_SWAPFILES];   /* 全局静态数组 */
+</code></pre>
+<ul>
+<li>每个<strong>已激活</strong> swap 区（分区或文件）占一个 <code class="c">swap_info_struct</code>，下标就是它的 <strong><code class="c">type</code></strong>（<code class="c">swap_info_struct.type</code> 字段）。</li>
+<li><code class="c">type</code> 这个"奇怪的名字"（源码注释 <code class="c">:287</code> 明说 "strange name for an index"）就是<strong>数组下标</strong>——它被编码进 <code class="c">swp_entry_t</code>（§2），所以必须全局唯一且有限。</li>
+</ul>
+<h3><code class="c">MAX_SWAPFILES</code>：从"恰好 32"到"编码约束"</h3>
+<pre class="code" data-label="C"><code class="c">/* include/linux/swap.h */
+#define MAX_SWAPFILES_SHIFT 5                       /* :50  type 只占 5 bit */
+#define MAX_SWAPFILES \
+    ((1 &lt;&lt; MAX_SWAPFILES_SHIFT) - SWP_DEVICE_NUM - \
+     SWP_MIGRATION_NUM - SWP_HWPOISON_NUM)           /* :117 减去保留类型 */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -423,59 +413,444 @@ Ch 11 分配 swap slot → 写盘 → PTE 改为 swap entry（not present）
 </thead>
 <tbody>
 <tr>
-<td><strong><code class="c">swp_entry_t</code></strong></td>
-<td>编码 <strong>type</strong>（<code class="c">swap_info</code> 数组 <strong>索引</strong> = 哪个 swap 区）+ <strong>offset</strong>（该区内 <strong>slot 编号</strong>）</td>
+<td><strong><code class="c">MAX_SWAPFILES_SHIFT = 5</code></strong></td>
+<td><code class="c">type</code> 字段<strong>最多 5 bit</strong> → 2⁵ = 32 种 type</td>
 </tr>
 <tr>
-<td><strong>PTE 状态</strong></td>
-<td><strong>not present</strong> + <strong>swap entry</strong> — MMU fault → 内核知 <strong>页在 swap 不在 RAM</strong></td>
+<td><strong>保留 type</strong></td>
+<td>32 里要<strong>扣掉</strong>几类特殊编码：<code class="c">SWP_DEVICE_*</code>（device-private 内存，4 个）、<code class="c">SWP_MIGRATION_*</code>（页迁移，2 个）、<code class="c">SWP_HWPOISON</code>（硬件坏页，1 个）</td>
+</tr>
+<tr>
+<td><strong>实际可用</strong></td>
+<td>32 − 7 = <strong>约 25 个真实 swap 区</strong>上限（不是原书说的"恰好 32 个 swap 区"）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">换出前：PTE → present → PFN → struct page
-换出后：PTE → !present → swp_entry(type, offset)
-再访问：fault → read swap slot → 新 physical page → PTE present
-</code></pre>
-<p>→ <a href="chapter-03.html#ch-3">Ch 3 PTE present / young</a></p>
+<p><strong>关键直觉</strong>：<code class="c">MAX_SWAPFILES</code> 的<strong>真正约束是 <code class="c">swp_entry_t</code> 里 <code class="c">type</code> 的位宽</strong>（5 bit），不是数组大小。因为 <code class="c">type</code> 要被打包进 PTE 的 swap entry（§2），位宽一旦定了，swap 区数量上限也就定了。</p>
 <hr />
-      </section>
-      <section class="section" id="s-3">
-        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 11 §3 分配交换槽 (Allocating Swap Slots)</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>3. 分配交换槽 (Allocating Swap Slots)</h3>
-<p>在 swap 区内找 <strong>空闲的一页大小 slot</strong>。</p>
-<h3>簇 (Cluster · <code class="c">SWAPFILE_CLUSTER</code>)</h3>
+<h2>2. <code class="c">struct swap_info_struct</code>（<code class="c">swap.h:282</code>）</h2>
+<pre class="code" data-label="C"><code class="c">struct swap_info_struct {
+    struct percpu_ref users;        /* :283 引用计数，防 swap 设备被提前释放 */
+    unsigned long     flags;        /* :284 SWP_* 标志（见 §1.3） */
+    signed short      prio;         /* :285 swap 优先级（多区时的使用顺序） */
+    struct plist_node list;         /* :286 swap_active_head 链表节点 */
+    signed char       type;         /* :287 数组下标（strange name for an index） */
+    unsigned int      max;          /* :288 swap_map 的 extent（slot 总数） */
+    unsigned char    *swap_map;     /* :289 每 slot 一个 usage count（vmalloc 分配） */
+    struct swap_cluster_info *cluster_info;   /* :290 簇信息（仅 SSD） */
+    struct swap_cluster_list free_clusters;   /* :291 空闲簇链表 */
+    unsigned int      lowest_bit;   /* :292 swap_map 里第一个空闲 slot */
+    unsigned int      highest_bit;  /* :293 最后一个空闲 slot */
+    unsigned int      pages;        /* :294 可用页总数 */
+    unsigned int      inuse_pages;  /* :295 当前已用页数 */
+    unsigned int      cluster_next; /* :296 下次分配的可能位置（HDD 顺序） */
+    unsigned int      cluster_nr;   /* :297 到下次换簇的倒计时 */
+    struct percpu_cluster __percpu *percpu_cluster;  /* :299 每 CPU 分配位置（SSD） */
+    struct rb_root    swap_extent_root;  /* :300 swap extent 红黑树（§7） */
+    struct block_device *bdev;      /* :301 块设备或 swap 文件所在 bdev */
+    struct file      *swap_file;    /* :302 swap 文件句柄 */
+    spinlock_t         lock;        /* :305 保护 swap_map/扫描相关字段 */
+    ...
+    struct plist_node avail_lists[]; /* :324 每个 NUMA 节点一个 avail 链表 */
+};
+</code></pre>
+<h3>字段速查（分类）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>动机</th>
-<th>做法</th>
+<th>分类</th>
+<th>字段</th>
+<th>作用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>磁盘 <strong>随机 seek 慢</strong></td>
-<td>尽量 <strong>连续分配</strong> 多个 slot（一 <strong>cluster</strong>）</td>
+<td><strong>身份</strong></td>
+<td><code class="c">type</code> / <code class="c">prio</code></td>
+<td>数组下标 + 优先级（决定多区使用顺序）</td>
 </tr>
 <tr>
-<td>假设</td>
-<td><strong>同时换出的页</strong> 很可能 <strong>一起换入</strong> — <strong>相邻磁盘块</strong> → <strong>顺序 I/O</strong></td>
+<td><strong>slot 状态</strong></td>
+<td><code class="c">swap_map[]</code> / <code class="c">max</code> / <code class="c">lowest_bit</code> / <code class="c">highest_bit</code></td>
+<td><strong>每 slot 一个 usage count</strong>，快速定位空闲区间</td>
+</tr>
+<tr>
+<td><strong>统计</strong></td>
+<td><code class="c">pages</code> / <code class="c">inuse_pages</code></td>
+<td>总页数 / 已用页数（<code class="c">/proc/swaps</code> 的 Size/Used 来源）</td>
+</tr>
+<tr>
+<td><strong>分配加速</strong></td>
+<td><code class="c">cluster_next</code> / <code class="c">cluster_nr</code>（HDD）/ <code class="c">percpu_cluster</code>（SSD）</td>
+<td>簇分配的位置缓存（§3）</td>
+</tr>
+<tr>
+<td><strong>映射</strong></td>
+<td><code class="c">swap_extent_root</code></td>
+<td>文件 swap 的"逻辑 slot ↔ 磁盘块"红黑树（§7）</td>
+</tr>
+<tr>
+<td><strong>设备</strong></td>
+<td><code class="c">bdev</code> / <code class="c">swap_file</code> / <code class="c">flags</code></td>
+<td>底层块设备/文件 + <code class="c">SWP_*</code> 属性</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>HFT：</strong> 若不幸发生 swap，<strong>cluster</strong> 只减轻 <strong>磁盘</strong> 侧 — 仍 <strong>远慢于 RAM</strong>。</p>
 <hr />
+<h2>3. <code class="c">SWP_*</code> 标志（<code class="c">swap.h:207-223</code>）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SWP_USED</code></td>
+<td><code class="c">1&lt;&lt;0</code></td>
+<td>该 <code class="c">swap_info[]</code> 槽位已被占用</td>
+</tr>
+<tr>
+<td><code class="c">SWP_WRITEOK</code></td>
+<td><code class="c">1&lt;&lt;1</code></td>
+<td><strong>允许写入</strong>（换出前必须置位）</td>
+</tr>
+<tr>
+<td><code class="c">SWP_DISCARDABLE</code></td>
+<td><code class="c">1&lt;&lt;2</code></td>
+<td>块设备支持 discard（TRIM）</td>
+</tr>
+<tr>
+<td><code class="c">SWP_SOLIDSTATE</code></td>
+<td><code class="c">1&lt;&lt;4</code></td>
+<td><strong>SSD</strong>——seek 廉价，分配策略走 SSD 路径</td>
+</tr>
+<tr>
+<td><code class="c">SWP_BLKDEV</code></td>
+<td><code class="c">1&lt;&lt;6</code></td>
+<td>是<strong>块设备</strong>（而非文件）</td>
+</tr>
+<tr>
+<td><code class="c">SWP_ACTIVATED</code></td>
+<td><code class="c">1&lt;&lt;7</code></td>
+<td><code class="c">swap_activate</code> 成功后置位</td>
+</tr>
+<tr>
+<td><code class="c">SWP_FS_OPS</code></td>
+<td><code class="c">1&lt;&lt;8</code></td>
+<td><strong>走文件系统 I/O</strong>（文件 swap）</td>
+</tr>
+<tr>
+<td><code class="c">SWP_STABLE_WRITES</code></td>
+<td><code class="c">1&lt;&lt;11</code></td>
+<td>不覆盖 <code class="c">PG_writeback</code> 页（避免重写）</td>
+</tr>
+<tr>
+<td><code class="c">SWP_SYNCHRONOUS_IO</code></td>
+<td><code class="c">1&lt;&lt;12</code></td>
+<td><strong>同步 I/O 更高效</strong>（如 zram）</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">SWP_SOLIDSTATE</code> 和 <code class="c">SWP_SYNCHRONOUS_IO</code> 是 v6.6 里最关键的现代标志：前者触发 SSD 的散开分配（§3），后者让 zram 这类"同步 I/O 反而更快"的设备跳过异步块层（§5）。</p>
+<hr />
+<h2>4. swap 区统计：<code class="c">/proc/swaps</code></h2>
+<pre class="code" data-label="code"><code class="c">$ cat /proc/swaps
+Filename    Type      Size       Used     Priority
+/dev/sda2   partition 2097148    0        -2
+/swapfile   file      1048576    0        -3
+</code></pre>
+<ul>
+<li><strong>Size/Used</strong> ← <code class="c">pages</code> / <code class="c">inuse_pages</code></li>
+<li><strong>Priority</strong> ← <code class="c">prio</code>（数字越大越先用；默认分区 -1，文件 -2）</li>
+</ul>
+<hr />
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">prio</code> 分级</strong></td>
+<td>多 swap 区时把<strong>快设备（NVMe/SSD）设高优先级</strong>、慢设备（HDD）设低优先级——和 HFT 里"热数据放快速介质"同构</td>
+</tr>
+<tr>
+<td><strong><code class="c">SWP_SYNCHRONOUS_IO</code> + zram</strong></td>
+<td>嵌入式/低延迟场景常用 <strong>zram（内存压缩块设备）当 swap</strong>，它同步 I/O 比异步块层更快——理解这个 flag 才能明白 zram 的性能逻辑</td>
+</tr>
+<tr>
+<td><strong><code class="c">inuse_pages</code> 监控</strong></td>
+<td><code class="c">swapoff</code> 前必须先看 <code class="c">inuse_pages</code>，非零就意味要触发昂贵的 <code class="c">try_to_unuse</code>（§6）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-2">§2 映射 PTE 到交换项</a>：<code class="c">type</code> 怎么被编码进 PTE</li>
+<li>slot 状态表 <code class="c">swap_map[]</code>：<a href="chapter-14.html#s-3">§3 分配交换槽</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">swap_info_struct.type</code> 为什么源码注释说它是 "strange name for an index"？</strong>
+A：因为它根本不是"类型"，而是 <code class="c">swap_info[]</code> 数组的<strong>下标</strong>。它必须被编码进 <code class="c">swp_entry_t</code>（§2）的 5 bit <code class="c">type</code> 字段，所以全局唯一且有限。命名有历史包袱——早期它确实表达"swap 类型"，后来简化成"数组索引"，名字却没改。</p>
+<p><strong>Q2：<code class="c">MAX_SWAPFILES</code> 真正的上限是谁决定的？为什么不是 32？</strong>
+A：是 <code class="c">swp_entry_t</code> 里 <code class="c">type</code> 字段的位宽决定的（<code class="c">MAX_SWAPFILES_SHIFT = 5</code>，即 5 bit = 32 种）。但 32 里要扣掉 <code class="c">SWP_DEVICE_*</code>（4）、<code class="c">SWP_MIGRATION_*</code>（2）、<code class="c">SWP_HWPOISON</code>（1）共 7 个保留编码，所以真实 swap 区上限约 25 个。原书说"32"只看到了位宽，没看到保留类型的分流。</p>
+<p><strong>Q3：<code class="c">swap_map[]</code> 数组存的是什么？为什么要 vmalloc 分配？</strong>
+A：每个 swap slot 一个 <code class="c">unsigned char</code>，记录该 slot 的<strong>引用计数</strong>（有几个 PTE 指向这个 slot），特殊值有 <code class="c">SWAP_MAP_MAX</code>（0x3e 最大计数）、<code class="c">SWAP_MAP_BAD</code>（0x3f 坏块）、<code class="c">SWAP_MAP_SHMEM</code>（0xbf shmem 独占）、<code class="c">SWAP_HAS_CACHE</code>（0x40 有 cache）。它大小 = slot 总数，大分区可能几百万项、远超单页，所以用 <code class="c">vmalloc</code> 分配（连续虚拟、物理散页）。</p>
+<p><strong>Q4：<code class="c">SWP_SOLIDSTATE</code> 和 <code class="c">SWP_SYNCHRONOUS_IO</code> 分别代表什么？为什么它们是"现代"标志？</strong>
+A：<code class="c">SWP_SOLIDSTATE</code> 标记 SSD——seek 廉价，于是分配策略从"顺序簇"改成"散开 + per-CPU"（§3）；<code class="c">SWP_SYNCHRONOUS_IO</code> 标记 zram 这类设备——同步 I/O 反而比异步块层快（省去排队/中断开销），写回路径走 <code class="c">swap_writepage_bdev_sync</code>（§5）。两者都是 2.6 之后才随 SSD/zram 普及出现的。</p>
+<p><strong>Q5：<code class="c">/proc/swaps</code> 里的 Size/Used/Priority 分别来自哪些字段？</strong>
+A：Size ← <code class="c">pages</code>（可用页总数），Used ← <code class="c">inuse_pages</code>（已用页数），Priority ← <code class="c">prio</code>。都是 <code class="c">swap_info_struct</code> 的直接字段，proc 接口只是把它们格式化输出。</p>
+</details>
       </section>
-      <section class="section" id="s-4">
-        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 11 §4 交换缓存 (Swap Cache) — **核心**</h2></div>
+      <section class="section" id="s-2">
+        <div class="sec-head"><div class="sec-no">2</div><h2>Ch 11 §2 映射 PTE 到交换项 (PTE ↔ Swap Entry)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/swapops.h</code> / <code class="c">include/linux/swap.h</code>）</p>
 </blockquote>
-<h3>4. 交换缓存 (Swap Cache) — <strong>核心</strong></h3>
-<p><strong>问题：</strong> <strong>共享匿名页</strong> — 多进程 PTE 指向 <strong>同一物理页</strong>；换出时 <strong>不能</strong> 低成本更新 <strong>所有 PTE</strong>（2.4 尤甚；2.6 <strong>rmap</strong> 改善 — Ch 3）。</p>
-<p><strong>Swap Cache 角色：</strong></p>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答：<strong>页换出后，PTE 里存什么？内核怎么从 PTE 反查到"数据在磁盘哪"？</strong></p>
+<p>核心是 <code class="c">swp_entry_t</code>——一个<strong>复用 PTE 位域</strong>编码 <code class="c">{type, offset}</code> 的小结构。原书讲了这个概念，v6.6 里它的<strong>位域布局</strong>更精确了：<code class="c">type</code> 放高位（5 bit）、<code class="c">offset</code> 右对齐低位，且区分"架构相关格式"与"架构无关格式"。本节落到源码。</p>
+<hr />
+<h2>1. 问题：换出后 PFN 失效</h2>
+<pre class="code" data-label="code"><code class="c">换出前：PTE → present=1 → PFN → struct page → 物理页
+换出后：物理页框已归还 Buddy，PFN 字段不再有意义
+        └─ 必须复用 PTE 的位域，改存「磁盘位置」
+</code></pre>
+<p>页一旦换出，<code class="c">struct page</code> 被回收，原来 PTE 里存的 PFN 就<strong>失效</strong>了。Linux 的做法是：把 PTE 标记为 <strong>not present</strong>，然后把原本放 PFN 的位域<strong>改存 <code class="c">swp_entry_t</code></strong>——一个指向 swap 区里某个 slot 的"指针"。</p>
+<hr />
+<h2>2. <code class="c">swp_entry_t</code>：位域布局（<code class="c">swapops.h:27-40</code>）</h2>
+<pre class="code" data-label="C"><code class="c">/* include/linux/swapops.h */
+#define SWP_TYPE_SHIFT  (BITS_PER_XA_VALUE - MAX_SWAPFILES_SHIFT)  /* :27 */
+#define SWP_OFFSET_MASK ((1UL &lt;&lt; SWP_TYPE_SHIFT) - 1)              /* :28 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">swp_entry_t.val 的位布局（64 位）：
+  ┌─────────────────────────┬──────────────────────────────────┐
+  │   type（高 5 bit）        │   offset（低 59 bit，右对齐）       │
+  └─────────────────────────┴──────────────────────────────────┘
+   ↑ SWP_TYPE_SHIFT = 59      ↑ SWP_OFFSET_MASK = (1&lt;&lt;59)-1
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>位置</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">type</code></strong></td>
+<td>高 5 bit（<code class="c">MAX_SWAPFILES_SHIFT=5</code>）</td>
+<td><code class="c">swap_info[]</code> 数组下标——哪个 swap 区</td>
+</tr>
+<tr>
+<td><strong><code class="c">offset</code></strong></td>
+<td>低 59 bit（右对齐）</td>
+<td>该 swap 区内的 <strong>slot 编号</strong>（页号）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键设计</strong>：<code class="c">offset</code> 占绝大部分位（59 bit），意味着<strong>单个 swap 区可以有 2⁵⁹ 个 slot</strong>——足够大。而 <code class="c">type</code> 只占 5 bit，所以 swap 区数量上限才被卡在 32（§1）。</p>
+<hr />
+<h2>3. 打包/解包：三个宏（<code class="c">swapops.h:86-107</code>）</h2>
+<pre class="code" data-label="C"><code class="c">/* 打包：type + offset → swp_entry_t */
+static inline swp_entry_t swp_entry(unsigned long type, pgoff_t offset)
+{
+    swp_entry_t ret;
+    ret.val = (type &lt;&lt; SWP_TYPE_SHIFT) | (offset &amp; SWP_OFFSET_MASK);  /* :90 */
+    return ret;
+}
+
+/* 解包：取出 type */
+static inline unsigned swp_type(swp_entry_t entry)
+{
+    return (entry.val &gt;&gt; SWP_TYPE_SHIFT);                             /* :100 */
+}
+
+/* 解包：取出 offset */
+static inline pgoff_t swp_offset(swp_entry_t entry)
+{
+    return (entry.val &amp; SWP_OFFSET_MASK);                             /* :107 */
+}
+</code></pre>
+<p>三个宏就是<strong>位运算</strong>：打包 = 左移 OR，解包 = 右移 / 掩码。没有运行时开销，编译器直接优化成常数操作。</p>
+<hr />
+<h2>4. 架构相关 ↔ 架构无关格式</h2>
+<pre class="code" data-label="C"><code class="c">/* PTE（架构相关格式）↔ swp_entry_t（架构无关格式） */
+static inline swp_entry_t pte_to_swp_entry(pte_t pte)       /* :133 */
+{
+    swp_entry_t arch_entry = __pte_to_swp_entry(pte);       /* 架构相关解码 */
+    return swp_entry(__swp_type(arch_entry), __swp_offset(arch_entry));
+}
+
+static inline pte_t swp_entry_to_pte(swp_entry_t entry)     /* :146 */
+{
+    swp_entry_t arch_entry = __swp_entry(swp_type(entry), swp_offset(entry));
+    return __swp_entry_to_pte(arch_entry);                  /* 架构相关编码 */
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>格式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>架构无关 <code class="c">swp_entry_t</code></strong></td>
+<td>内核逻辑层用的统一格式，<code class="c">type</code>/<code class="c">offset</code> 固定布局</td>
+</tr>
+<tr>
+<td><strong>架构相关 PTE</strong></td>
+<td>各架构（x86/arm64）在 PTE 位域里的<strong>实际摆法</strong>，由 <code class="c">__pte_to_swp_entry</code>/<code class="c">__swp_entry_to_pte</code> 转换</td>
+</tr>
+</tbody>
+</table></div>
+<p>注释 <code class="c">:25</code> 强调：<code class="c">swp_entry_t</code> <strong>从不以架构相关格式存储</strong>，只在进出 PTE 的边界做一次转换——这隔离了各架构 PTE 位域布局的差异。</p>
+<hr />
+<h2>5. folio 时代的 swap entry：<code class="c">folio-&gt;swap</code></h2>
+<p>v6.6 里 swap entry 不再只活在 PTE 里，<code class="c">struct folio</code> 也存了一份：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/swap.h:336 */
+static inline swp_entry_t page_swap_entry(struct page *page)
+{
+    struct folio *folio = page_folio(page);
+    swp_entry_t entry = folio-&gt;swap;          /* folio 里直接存 swap entry */
+    entry.val += folio_page_idx(folio, page); /* 大页时加上页内偏移 */
+    return entry;
+}
+</code></pre>
+<p><strong>为什么 folio 也要存？</strong> PTE 是"读者视角"（进程怎么找到这个页），<code class="c">folio-&gt;swap</code> 是"页本身视角"（这个页当前被换到哪了）。两者互补：swap cache 里查页、<code class="c">try_to_unuse</code> 反查 PTE、<code class="c">delete_from_swap_cache</code> 清理时，都需要"页 → swap entry"的映射，不必每次去反解 PTE。</p>
+<hr />
+<h2>6. 完整往返：换出 → 换入</h2>
+<pre class="code" data-label="code"><code class="c">换出 (swap out):
+  1. 分配 swap slot → swp_entry(type, offset)
+  2. folio-&gt;swap = entry（页记录自己的去向）
+  3. 写 swap
+  4. rmap 把每个映射此页的 PTE 改写成 !present + swp_entry_to_pte(entry)
+
+换入 (swap in):
+  1. 进程访问 VA → 缺页 fault
+  2. 内核看 PTE：present=0 且是 swap entry → pte_to_swp_entry 解出 type/offset
+  3. 从 swap_info[type] 找到 swap 区 → 读 offset 处数据
+  4. 分配新物理页 → 数据填回 → PTE 改回 present + 新 PFN
+</code></pre>
+<p><strong>PTE 的 present 位是分水岭</strong>：present=1 表示"在 RAM，看 PFN"；present=0 表示"不在 RAM，看 swap entry"。</p>
+<hr />
+<h2>7. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>位域复用的启示</strong></td>
+<td>PTE 位域在 present/swap 两态间复用，是"<strong>一个字段两种语义</strong>"的经典手法——HFT 里网络包头的 tag 位、对象头的状态位都是同构设计</td>
+</tr>
+<tr>
+<td><strong><code class="c">pgmajfault</code> 监控</strong></td>
+<td>换入（swap in fault）在 vmstat 里计入 <code class="c">pgmajfault</code>（major fault）——这是<strong>最贵的缺页类型</strong>，HFT 必须归零</td>
+</tr>
+<tr>
+<td><strong>架构无关格式</strong></td>
+<td>"逻辑格式 ↔ 物理格式"分离让 x86/arm64 共用 swap 核心逻辑——可移植性的标准手法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>8. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-3">§3 分配交换槽</a>：<code class="c">swp_entry(type, offset)</code> 的 <code class="c">offset</code> 是怎么分配的</li>
+<li>PTE 位域：<a href="chapter-14.html#s-1">Ch3 §1 页目录与页表项</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">swp_entry_t</code> 里 <code class="c">type</code> 和 <code class="c">offset</code> 各占多少位？为什么这样分配？</strong>
+A：<code class="c">type</code> 占高 5 bit（<code class="c">MAX_SWAPFILES_SHIFT=5</code>），<code class="c">offset</code> 占低 59 bit（右对齐）。这样分配的原因：① <code class="c">type</code> 只区分"哪个 swap 区"，32 种足够；② <code class="c">offset</code> 需要表达"区内的 slot 号"，越大越好，所以把绝大部分位让给它。这个布局决定了"swap 区数量受限、单个区容量几乎无限"的非对称性。</p>
+<p><strong>Q2：<code class="c">swp_type()</code> 和 <code class="c">swp_offset()</code> 的实现是什么？为什么没有运行时开销？</strong>
+A：<code class="c">swp_type</code> = <code class="c">entry.val &gt;&gt; SWP_TYPE_SHIFT</code>（右移取高位），<code class="c">swp_offset</code> = <code class="c">entry.val &amp; SWP_OFFSET_MASK</code>（掩码取低位）。都是纯位运算，编译器会内联成常数移位/掩码，零运行时开销。</p>
+<p><strong>Q3：为什么说 <code class="c">swp_entry_t</code> "从不以架构相关格式存储"？</strong>
+A：各架构（x86/arm64）在 PTE 位域里的摆法不同。内核只在 PTE 边界用 <code class="c">__pte_to_swp_entry</code>/<code class="c">__swp_entry_to_pte</code> 做一次转换，其余逻辑层（swap cache、slot 分配、<code class="c">folio-&gt;swap</code>）统一用架构无关的 <code class="c">swp_entry_t</code>。这隔离了架构差异，swap 核心逻辑可以跨架构复用。</p>
+<p><strong>Q4：folio 为什么要存一份 swap entry（<code class="c">folio-&gt;swap</code>），而不只靠 PTE？</strong>
+A：因为 PTE 是"进程视角"，<code class="c">folio-&gt;swap</code> 是"页本身视角"。很多操作需要"从页反查它在哪"而<strong>不能</strong>反解 PTE：swap cache 查页、<code class="c">delete_from_swap_cache</code> 清理、<code class="c">try_to_unuse</code> 遍历时定位 slot。存一份能让这些路径直接拿，不必扫描所有进程页表。</p>
+<p><strong>Q5：PTE 的 present 位在 swap 场景里起什么作用？</strong>
+A：它是<strong>分水岭</strong>。present=1 → PTE 其余位是 PFN（页在 RAM）；present=0 且是 swap entry → PTE 其余位是 <code class="c">swp_entry_t</code>（页在 swap）。缺页处理时，内核先看 present 位：置 1 走普通缺页，置 0 且是 swap entry 则走换入路径（swap in）。</p>
+</details>
+      </section>
+      <section class="section" id="s-3">
+        <div class="sec-head"><div class="sec-no">3</div><h2>Ch 11 §3 分配交换槽 (Allocating Swap Slots)</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/swapfile.c</code> / <code class="c">include/linux/swap.h</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答：<strong>换出时，内核怎么在 swap 区里挑一个空闲 slot？</strong></p>
+<p>原书的核心思想是 <strong>cluster（簇）</strong>——尽量连续分配多个 slot，把随机 seek 变顺序 I/O。v6.6 里这个思想还在，但<strong>按介质分裂成两条路径</strong>：HDD 走"顺序簇"，SSD 走"散开 + per-CPU"。本节沿 <code class="c">scan_swap_map_slots</code> 源码走一遍。</p>
+<hr />
+<h2>1. 簇分配总览：<code class="c">scan_swap_map_slots</code>（<code class="c">mm/swapfile.c:799</code>）</h2>
+<pre class="code" data-label="C"><code class="c">#define SWAPFILE_CLUSTER    256        /* :277 一个簇 = 256 页 = 1MB（4K 页时） */
+#define SWAP_BATCH          64         /* swap.h:35 一次最多批量分配 64 个 */
+#define LATENCY_LIMIT       256        /* :285 扫描每 256 次 cond_resched */
+</code></pre>
+<p><code class="c">scan_swap_map_slots</code> 的核心注释（<code class="c">:811-820</code>）浓缩了整个演进史：</p>
+<blockquote>
+<p>我们尝试<strong>顺序分配</strong>，一旦分配满 <code class="c">SWAPFILE_CLUSTER</code> 页就退回 first-free，开新簇——防止 swap 页散满整个分区，减少 seek。
+但现在我们会<strong>先找空簇</strong>。而且（SSD 上）让 swap 页散开——Hugh。</p>
+</blockquote>
+<pre class="code" data-label="code"><code class="c">scan_swap_map_slots(si, usage, nr, slots[])
+    │
+    ├─ SSD 路径（si-&gt;flags &amp; SWP_SOLIDSTATE + cluster_info）
+    │     scan_swap_map_try_ssd_cluster()   ← 从 per-CPU 簇取
+    │
+    ├─ HDD 路径（cluster_nr 倒计时）
+    │     cluster_nr 用尽 → 从 lowest_bit 开始找空簇
+    │     顺序填满一个 256 页的簇
+    │
+    └─ 逐 slot 分配
+          swap_map[offset] = SWAP_HAS_CACHE   ← 标记&quot;有 cache&quot;
+          slots[n_ret++] = swp_entry(type, offset)
+</code></pre>
+<hr />
+<h2>2. HDD 路径：顺序簇，减少 seek</h2>
+<pre class="code" data-label="C"><code class="c">if (unlikely(!si-&gt;cluster_nr--)) {                 /* :838 簇倒计时用尽 */
+    if (si-&gt;pages - si-&gt;inuse_pages &lt; SWAPFILE_CLUSTER) {  /* :839 空间不足 */
+        si-&gt;cluster_nr = SWAPFILE_CLUSTER - 1;
+        goto checks;
+    }
+    /* 从分区头开始，找一个 256 页的空簇 */
+    scan_base = offset = si-&gt;lowest_bit;           /* :852 */
+    last_in_cluster = offset + SWAPFILE_CLUSTER - 1;
+    for (; last_in_cluster &lt;= si-&gt;highest_bit; offset++) {
+        if (si-&gt;swap_map[offset])
+            last_in_cluster = offset + SWAPFILE_CLUSTER;  /* 跳过占用 */
+        else if (offset == last_in_cluster) {      /* 找到连续 256 空页 */
+            si-&gt;cluster_next = offset;             /* :862 记录簇起点 */
+            si-&gt;cluster_nr = SWAPFILE_CLUSTER - 1; /* :863 重置倒计时 */
+            goto checks;
+        }
+        if (unlikely(--latency_ration &lt; 0)) {      /* :866 长扫描让出 CPU */
+            cond_resched();
+            latency_ration = LATENCY_LIMIT;
+        }
+    }
+}
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -485,126 +860,931 @@ Ch 11 分配 swap slot → 写盘 → PTE 改为 swap entry（not present）
 </thead>
 <tbody>
 <tr>
-<td><strong>本质</strong></td>
-<td><strong>页缓存特例</strong> — <code class="c">address_space</code> 为 <strong><code class="c">swapper_space</code></strong></td>
+<td><strong>簇 = 256 页 = 1MB</strong>（4K 页时）</td>
+<td>一次连续写 1MB，把随机 seek 变顺序 I/O</td>
 </tr>
 <tr>
-<td><strong>换出进行中</strong></td>
-<td>页 <strong>仍在 swap cache</strong> — 防 <strong>写盘期间被修改</strong>（<strong>更新丢失</strong>）</td>
+<td><strong><code class="c">cluster_nr</code> 倒计时</strong></td>
+<td>每分配一页减一，减到 0 就换新簇</td>
 </tr>
 <tr>
-<td><strong>释放条件</strong></td>
-<td><strong>所有映射该页的 PTE</strong> 已解绑 / 已改为 swap entry → 页才 <strong>真正丢弃</strong></td>
+<td><strong>"先找空簇"</strong></td>
+<td>不是逐页散找，而是<strong>一次性圈定一个 256 页的空洞</strong>，再顺序填满</td>
+</tr>
+<tr>
+<td><strong><code class="c">LATENCY_LIMIT</code></strong></td>
+<td>大分区扫描可能很长，每 256 次 <code class="c">cond_resched</code> 让出 CPU（<code class="c">:866</code>），避免长时间占用</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="code"><code class="c">共享匿名页换出
-    rmap 解绑 / 更新 PTE → swap entry
-    页在 swap cache 中完成 write
-    引用计数归零 → free physical page
-</code></pre>
-<p>→ <a href="chapter-14.html#s-2">Ch 10 swap cache 类型</a> · <a href="chapter-03.html#ch-3">Ch 3 rmap</a></p>
+<p><strong>直觉</strong>：HDD 的 seek 极贵，所以要让"同时换出的页"落在<strong>相邻磁盘块</strong>上，换入时就能顺序读。簇就是为此设计的"批量化 + 局部化"。</p>
 <hr />
+<h2>3. SSD 路径：散开 + per-CPU，减锁竞争</h2>
+<pre class="code" data-label="C"><code class="c">if (si-&gt;flags &amp; SWP_SOLIDSTATE)                   /* :828 SSD */
+    scan_base = this_cpu_read(*si-&gt;cluster_next_cpu);  /* per-CPU 起点 */
+else
+    scan_base = si-&gt;cluster_next;                 /* HDD 全局起点 */
+</code></pre>
+<p>SSD seek 廉价，问题从"减少 seek"变成"<strong>减少锁竞争</strong>"（注释 <code class="c">:824-826</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* swap.h:250  SSD 专用的簇跟踪结构 */
+struct swap_cluster_info {
+    spinlock_t lock;              /* 保护本簇 + 对应 swap_map 元素 */
+    unsigned int data:24;         /* 空闲时=下一簇号；否则=簇使用计数 */
+    unsigned int flags:8;         /* CLUSTER_FLAG_FREE / NEXT_NULL / HUGE */
+};
+#define CLUSTER_FLAG_FREE 1       /* :260 此簇空闲 */
+
+/* swap.h:269  每 CPU 一个分配位置 */
+struct percpu_cluster {
+    struct swap_cluster_info index;  /* 当前簇 */
+    unsigned int next;               /* 簇内下一个分配 offset */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">swap_cluster_info</code></strong></td>
+<td>SSD 上每个簇一个，带<strong>自己的 spinlock</strong>——不同 CPU 分配不同簇时<strong>不争同一把锁</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">percpu_cluster</code></strong></td>
+<td>每 CPU 记"自己在哪个簇、簇内到哪了"，让 swap out 尽量<strong>各 CPU 走各的簇</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">free_clusters</code></strong></td>
+<td>空闲簇链表，取簇 O(1)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>直觉</strong>：SSD 上"散开"无害（无 seek 惩罚），但"多个 CPU 同时换出争同一把 swap 锁"有害。于是<strong>牺牲顺序性，换取 per-CPU 无锁（少锁）分配</strong>——和 §2 的 <code class="c">page_alloc</code> per-CPU 冷热页表、§1 的 percpu 思想一脉相承。</p>
+<hr />
+<h2>4. <code class="c">swap_map[]</code>：slot 的 usage count</h2>
+<p>分配 slot 时更新 <code class="c">swap_map[offset]</code>：</p>
+<pre class="code" data-label="C"><code class="c">WRITE_ONCE(si-&gt;swap_map[offset], usage);   /* :916 标记 usage = SWAP_HAS_CACHE */
+</code></pre>
+<p><code class="c">swap_map[]</code> 是<strong>每 slot 一个字节的引用计数</strong>（§1），换出路径传入的 <code class="c">usage</code> 是 <code class="c">SWAP_HAS_CACHE</code>（<code class="c">swap.h:229</code>，0x40）——表示"这个 slot 有 cache 页正在写盘"。之后随着更多 PTE 指向它、或 cache 释放，计数会增减。</p>
+<p>特殊值（<code class="c">swap.h:233-235</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SWAP_MAP_MAX</code> (0x3e)</td>
+<td>引用计数上限</td>
+</tr>
+<tr>
+<td><code class="c">SWAP_MAP_BAD</code> (0x3f)</td>
+<td><strong>坏块</strong>（跳过不分配）</td>
+</tr>
+<tr>
+<td><code class="c">SWAP_MAP_SHMEM</code> (0xbf)</td>
+<td>shmem/tmpfs 独占</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>5. 全局调度：<code class="c">get_swap_pages</code>（<code class="c">swapfile.c:1047</code>）</h2>
+<p><code class="c">scan_swap_map_slots</code> 是<strong>单个 swap 区内</strong>找 slot；<code class="c">get_swap_pages</code> 是<strong>跨多个 swap 区</strong>挑一个：</p>
+<pre class="code" data-label="C"><code class="c">int get_swap_pages(int n_goal, swp_entry_t swp_entries[], int entry_size)
+{
+    ...
+    n_goal = min3((long)n_goal, (long)SWAP_BATCH, avail_pgs);  /* :1066 最多 64 */
+
+    node = numa_node_id();                                    /* :1071 本节点 */
+    plist_for_each_entry_safe(si, next, &amp;swap_avail_heads[node], avail_lists[node]) {
+        plist_requeue(&amp;si-&gt;avail_lists[node], &amp;swap_avail_heads[node]);  /* :1074 轮转 */
+        ...
+        n_ret = scan_swap_map_slots(si, SWAP_HAS_CACHE, n_goal, swp_entries); /* :1097 */
+        if (n_ret)
+            goto check_out;
+        ...
+    }
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">swap_avail_heads[node]</code></strong></td>
+<td><strong>每个 NUMA 节点一条</strong>可用 swap 链表（<code class="c">swap.h:324</code> <code class="c">avail_lists[]</code>），就近选择</td>
+</tr>
+<tr>
+<td><strong><code class="c">prio</code> 排序</strong></td>
+<td>链表按优先级排序，<strong>高优先级先用</strong>（§1 的 <code class="c">prio</code> 落点）</td>
+</tr>
+<tr>
+<td><strong><code class="c">plist_requeue</code></strong></td>
+<td>同优先级之间<strong>轮转</strong>（round-robin），避免总压在一个区上</td>
+</tr>
+<tr>
+<td><strong><code class="c">SWAP_BATCH = 64</code></strong></td>
+<td>一次最多批量分配 64 个 slot，减少锁往返</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HDD vs SSD 分叉</strong></td>
+<td>同一份代码按介质特性分两条路——HFT 里"存储介质决定算法"是常识（列存 vs 行存、顺序 vs 随机）</td>
+</tr>
+<tr>
+<td><strong>per-CPU 减锁</strong></td>
+<td>SSD 用 per-CPU 簇把全局锁打散，是内核"<strong>用冗余换锁竞争下降</strong>"的又一例——HFT 的 per-thread 队列同构</td>
+</tr>
+<tr>
+<td><strong><code class="c">cond_resched</code> 与 LATENCY_LIMIT</strong></td>
+<td>长扫描主动让出 CPU，控制延迟尖刺——低延迟系统的基本素养</td>
+</tr>
+<tr>
+<td><strong>结论</strong></td>
+<td>即便有 cluster 优化，swap 仍是<strong>磁盘级延迟</strong>，HFT 首选 <code class="c">mlock</code> 彻底避免</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-4">§4 交换缓存</a>：slot 分配后，页怎么进 swap cache 完成写盘</li>
+<li><code class="c">swap_map</code> 字段来源：<a href="chapter-14.html#s-1">§1 描述交换区</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">SWAPFILE_CLUSTER</code> 是多少？为什么取这个值？</strong>
+A：默认 <strong>256 页 = 1MB</strong>（4K 页时；THP 开启时 = <code class="c">HPAGE_PMD_NR</code> = 512）。取 1MB 是"顺序 I/O 收益 vs 簇碎片"的折中——一次连续写 1MB 能显著摊薄 seek 成本，又不会因为簇太大导致分配粒度太粗、浪费空间。</p>
+<p><strong>Q2：HDD 和 SSD 的 slot 分配策略有什么本质区别？为什么？</strong>
+A：HDD 走<strong>顺序簇</strong>——圈定 256 页空簇后顺序填满，把随机 seek 变顺序 I/O；SSD 走<strong>散开 + per-CPU</strong>——seek 廉价，改用 per-CPU 簇减少锁竞争。本质是"<strong>优化目标随介质特性转移</strong>"：HDD 优化 seek，SSD 优化锁竞争。</p>
+<p><strong>Q3：<code class="c">struct swap_cluster_info</code> 的 <code class="c">data</code> 字段为什么是 union 语义（空闲=下一簇号 / 占用=使用计数）？</strong>
+A：和 vmalloc 的 <code class="c">vmap_area</code> union 同思路——一个簇<strong>要么空闲要么占用</strong>。空闲时 <code class="c">data</code> 存"下一个空闲簇的编号"（构成链表），占用时存"这个簇还有多少空 slot"。两个语义互斥，复用 24 bit 存储。</p>
+<p><strong>Q4：<code class="c">get_swap_pages</code> 里的 <code class="c">plist_requeue</code> 是干什么的？</strong>
+A：它把刚用过的 swap 区<strong>移到同优先级链表的末尾</strong>，实现同优先级多区之间的<strong>轮转（round-robin）</strong>。避免所有换出都压到第一个区上，让同优先级的几个区负载均衡。更高优先级的区仍优先被选。</p>
+<p><strong>Q5：<code class="c">scan_swap_map_slots</code> 里的 <code class="c">LATENCY_LIMIT</code> 解决什么问题？</strong>
+A：在 HDD 路径找空簇时，可能要扫很长一段 <code class="c">swap_map[]</code>（大分区几百万项）。若一直扫不让出 CPU，会长时间占用调度。<code class="c">LATENCY_LIMIT=256</code> 让扫描每 256 次就 <code class="c">cond_resched()</code> 一次，控制延迟尖刺——这是内核里"长循环主动让权"的标准写法。</p>
+</details>
+      </section>
+      <section class="section" id="s-4">
+        <div class="sec-head"><div class="sec-no">4</div><h2>Ch 11 §4 交换缓存 (Swap Cache) — **核心**</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/swap_state.c</code> / <code class="c">include/linux/swap.h</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答：<strong>换出/换入进行中的那个"中间态"，页放在哪、由谁管？</strong></p>
+<p>答案是 <strong>swap cache</strong>——页缓存的特殊形式，<code class="c">address_space</code> 为 <code class="c">swapper_spaces[]</code>。原书讲清了它的角色（防更新丢失），v6.6 里它变成了 <strong>folio + xarray + 每 swap type 一个 address_space</strong>。本节落到源码。</p>
+<hr />
+<h2>1. 为什么需要 swap cache？</h2>
+<p><strong>换出</strong>是个多步过程：分配 slot → 写盘 → 更新 PTE → 释放物理页。这中间存在<strong>竞态窗口</strong>：</p>
+<pre class="code" data-label="code"><code class="c">换出中：
+  T1（kswapd）: 分配 slot → 准备写盘
+  T2（进程）:   访问这个页 → 想修改它
+  ── 若 T2 直接改，T1 写盘时可能写到「改了一半」的数据 → 更新丢失 ──
+</code></pre>
+<p><strong>swap cache 的作用</strong>：换出期间把页"锁定"在 swap cache 里，其他访问者发现它在 cache 就<strong>等待写盘完成</strong>或<strong>复用同一页</strong>，而不是各自为政。</p>
+<p>换入也有对称问题：<strong>多个进程共享同一匿名页</strong>，换出后它们各自 fault 同一个 swap entry。若不缓存，每个进程都会<strong>各自读一次盘</strong>——swap cache 让它们<strong>只读一次</strong>，之后共享。</p>
+<hr />
+<h2>2. 本质：<code class="c">swapper_spaces[]</code> 的页缓存</h2>
+<pre class="code" data-label="C"><code class="c">/* mm/swap_state.c:39 */
+struct address_space *swapper_spaces[MAX_SWAPFILES] __read_mostly;
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对比</th>
+<th>普通页缓存</th>
+<th>swap cache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">address_space</code></td>
+<td>文件的 <code class="c">inode-&gt;i_mapping</code></td>
+<td><strong><code class="c">swapper_spaces[type]</code></strong>（每个 swap type 一个）</td>
+</tr>
+<tr>
+<td>索引键</td>
+<td>文件偏移（<code class="c">index</code>）</td>
+<td><strong>swap entry 的 <code class="c">offset</code></strong></td>
+</tr>
+<tr>
+<td>页来源</td>
+<td>读文件</td>
+<td>换出的匿名页</td>
+</tr>
+<tr>
+<td>标志</td>
+<td><code class="c">PG_uptodate</code> 等</td>
+<td><strong><code class="c">SwapCache</code></strong> 标志 + <code class="c">folio-&gt;swap</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键演进</strong>：原书是<strong>单一</strong> <code class="c">swapper_space</code>（全局一个）；v6.6 拆成 <code class="c">swapper_spaces[MAX_SWAPFILES]</code>——<strong>每个 swap 区一个 <code class="c">address_space</code></strong>（<code class="c">swap_state.c:39</code> 注释：<code class="c">swapper_space</code> 是"虚构的，为了简化路径保留"）。好处是并发隔离 + NUMA 局部性。</p>
+<hr />
+<h2>3. <code class="c">add_to_swap_cache</code>（<code class="c">swap_state.c:86</code>）</h2>
+<pre class="code" data-label="C"><code class="c">int add_to_swap_cache(struct folio *folio, swp_entry_t entry, gfp_t gfp, void **shadowp)
+{
+    struct address_space *address_space = swap_address_space(entry);  /* :89 */
+    pgoff_t idx = swp_offset(entry);              /* :90 索引用 offset */
+    XA_STATE_ORDER(xas, &amp;address_space-&gt;i_pages, idx, folio_order(folio));
+    ...
+    folio_ref_add(folio, nr);                     /* :101 增加引用 */
+    folio_set_swapcache(folio);                   /* :102 打 SwapCache 标记 */
+    folio-&gt;swap = entry;                          /* :103 页记录自己的去向 */
+
+    do {
+        xas_lock_irq(&amp;xas);
+        ...
+        xas_store(&amp;xas, folio);                   /* :117 存入 xarray（i_pages） */
+        address_space-&gt;nrpages += nr;             /* :120 */
+        __lruvec_stat_mod_folio(folio, NR_SWAPCACHE, nr);  /* :122 统计 */
+    } while (xas_nomem(&amp;xas, gfp));
+    ...
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>索引 = <code class="c">swp_offset(entry)</code></strong></td>
+<td>swap cache 的"页偏移"就是 slot 编号，和文件页缓存的"文件偏移"对应</td>
+</tr>
+<tr>
+<td><strong>xarray 存储</strong></td>
+<td>现代页缓存用 xarray（<code class="c">i_pages</code>）取代旧哈希表，swap cache 同款</td>
+</tr>
+<tr>
+<td><strong><code class="c">folio-&gt;swap = entry</code></strong></td>
+<td>页自己记住"我在哪个 slot"（§2.5），供后续反查</td>
+</tr>
+<tr>
+<td><strong><code class="c">NR_SWAPCACHE</code></strong></td>
+<td>专门的 vmstat 计数，<code class="c">/proc/meminfo</code> 的 <code class="c">SwapCached</code> 来源</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>4. 换出/换入中的 cache 生命周期</h2>
+<pre class="code" data-label="code"><code class="c">换出 (swap out):
+  alloc slot → swp_entry(type, offset)
+  add_to_swap_cache(folio, entry)     ← 进 cache，SWAP_HAS_CACHE 置位
+  swap_writepage()                    ← 写盘（期间页被 cache 锁定）
+  写盘完成 → 更新所有 PTE → swap entry
+  引用计数归零 → folio 释放（离开 cache）
+
+换入 (swap in):
+  fault → __read_swap_cache_async(entry)
+      ├─ cache 命中 → 复用已有 folio（不读盘！）
+      └─ cache 未命中 → 真正 swap_readpage 读盘 → add_to_swap_cache
+  返回 folio → 更新 PTE present
+</code></pre>
+<p><strong><code class="c">SWAP_HAS_CACHE</code> 位</strong>（<code class="c">swap.h:229</code>，0x40）：<code class="c">swap_map[offset]</code> 里的一个 bit，标记"这个 slot 有页在 swap cache 里"。<code class="c">scan_swap_map_slots</code> 分配新 slot 时看到这个位就知道"slot 虽占着，但可复用 cache-only 的页"（§3 <code class="c">vm_swap_full()</code> 分支）。</p>
+<hr />
+<h2>5. 共享页的去重：只读一次盘</h2>
+<p><strong>这是 swap cache 最精巧的作用</strong>——换入去重：</p>
+<pre class="code" data-label="code"><code class="c">进程 A、B 共享匿名页 P，P 被换出（PTE_A、PTE_B 都变成 swap entry）
+    A 访问 → fault → __read_swap_cache_async
+         cache 未命中 → 读盘 → folio 进 cache
+         A 的 PTE_A 改回 present + folio
+    B 访问 → fault → __read_swap_cache_async
+         cache 命中！→ 直接复用同一个 folio，不读盘
+         B 的 PTE_B 改回 present + 同一 folio
+</code></pre>
+<p><strong>没有 swap cache</strong> 的话，A、B 会各自读一次盘、各自拿一个物理页——浪费 I/O 又破坏共享。有了 cache，<strong>一个 slot 同一时刻最多读一次盘</strong>。</p>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>"中间态锁定"思想</strong></td>
+<td>swap cache 在换出期间锁定页、防更新丢失——HFT 里"订单状态机"的中间态（pending → filled）也要防并发改写的同样问题</td>
+</tr>
+<tr>
+<td><strong>换入去重</strong></td>
+<td>多消费者共享同一数据时"只取一次、缓存共享"——HFT 里多策略进程共享行情快照的广播去重同构</td>
+</tr>
+<tr>
+<td><strong><code class="c">SwapCached</code> 监控</strong></td>
+<td><code class="c">/proc/meminfo</code> 的 <code class="c">SwapCached</code> 反映"换出过但还留在内存"的页量——它高说明换出数据又被频繁访问，是内存压力信号</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="chapter-14.html#s-5">§5 交换区读写与块 I/O</a>：<code class="c">swap_writepage</code>/<code class="c">swap_readpage</code> 怎么落盘</li>
+<li>页缓存本体：<a href="chapter-14.html#s-2">Ch10 §2 页缓存</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：swap cache 和普通页缓存最本质的相同点和不同点是什么？</strong>
+A：相同点：都是 <code class="c">address_space</code> + xarray（<code class="c">i_pages</code>）组织的页集合，共用页缓存的查找/锁定/写回框架。不同点：① <code class="c">address_space</code> 是 <code class="c">swapper_spaces[type]</code>（每个 swap 区一个），不是文件的 <code class="c">inode-&gt;i_mapping</code>；② 索引键是 <strong>swap entry 的 offset</strong>，不是文件偏移；③ 页来自换出的匿名页，不是读文件。</p>
+<p><strong>Q2：v6.6 为什么把原书的单一 <code class="c">swapper_space</code> 拆成 <code class="c">swapper_spaces[MAX_SWAPFILES]</code>？</strong>
+A：原书全局一个 <code class="c">swapper_space</code>，所有 swap 区的 cache 都挤在一个 <code class="c">address_space</code> 里——并发访问争同一把锁，且没有 NUMA 局部性。拆成每 swap type 一个后，不同区的换入/换出<strong>互不争锁</strong>，也便于按节点布局（<code class="c">swap_state.c:39</code> 注释说 <code class="c">swapper_space</code> 只是"为简化路径保留的虚构"）。</p>
+<p><strong>Q3：<code class="c">add_to_swap_cache</code> 里 <code class="c">folio-&gt;swap = entry</code> 这行为什么关键？</strong>
+A：它让<strong>页自己记住"我被换到哪了"</strong>。后续 <code class="c">delete_from_swap_cache</code>（释放 cache 时）、<code class="c">try_to_unuse</code>（swapoff 反查时）、<code class="c">page_swap_entry</code>（§2.5）都靠这个字段直接拿到 swap entry，不必每次反解 PTE。这是"页 → 磁盘位置"的权威记录。</p>
+<p><strong>Q4：swap cache 怎么实现"共享页只读一次盘"？</strong>
+A：换入路径走 <code class="c">__read_swap_cache_async</code>（<code class="c">swap_state.c:412</code>），它<strong>先查 swap cache</strong>：命中就直接复用已有 folio（不读盘）；未命中才真正 <code class="c">swap_readpage</code> 读盘并 <code class="c">add_to_swap_cache</code>。这样多个进程 fault 同一 swap entry 时，第一个读盘、其余命中 cache，实现去重。</p>
+<p><strong>Q5：<code class="c">SWAP_HAS_CACHE</code> 位和 swap cache 是什么关系？</strong>
+A：<code class="c">SWAP_HAS_CACHE</code>（<code class="c">swap.h:229</code>，0x40）是 <code class="c">swap_map[offset]</code> 里的一个 bit，标记"这个 slot 有页在 swap cache 里"。它让 slot 分配器（§3）知道：即使 slot 引用计数非零，也可能只是 cache-only（写盘后已无 PTE 引用），在内存紧张时可以被 <code class="c">__try_to_reclaim_swap</code> 回收复用。</p>
+</details>
       </section>
       <section class="section" id="s-5">
         <div class="sec-head"><div class="sec-no">5</div><h2>Ch 11 §5 交换区读写与块 I/O</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/page_io.c</code> / <code class="c">mm/swapfile.c</code>）</p>
 </blockquote>
-<h3>5. 交换区读写与块 I/O</h3>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节回答：<strong>swap 的读（换入）和写（换出）到底走什么 I/O 路径？</strong></p>
+<p>原书给的统一入口是 <code class="c">rw_swap_page()</code>。v6.6 里它<strong>已改名为 <code class="c">swap_readpage</code> / <code class="c">swap_writepage</code></strong>，并且写路径按介质<strong>分裂成三条</strong>（文件系统 / 块设备同步 / 块设备异步）。本节沿 <code class="c">__swap_writepage</code> 源码走一遍。</p>
+<hr />
+<h2>1. 原书 → v6.6 的函数名映射</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>方向</th>
-<th>触发</th>
-<th>路径</th>
+<th>原书（2.6）</th>
+<th>v6.6</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>读 (swap in)</strong></td>
-<td><strong>缺页 fault</strong> — PTE 含 swap entry</td>
-<td>异步/同步读 swap → 填物理页 → 设 PTE present</td>
+<td><code class="c">rw_swap_page()</code></td>
+<td><code class="c">swap_readpage()</code> / <code class="c">swap_writepage()</code></td>
+<td>拆成读写两个独立入口</td>
 </tr>
 <tr>
-<td><strong>写 (swap out)</strong></td>
-<td><strong>shrink</strong> 选中脏/匿名 victim</td>
-<td>写 swap slot → PTE → swap entry</td>
+<td>（块层直接 bio）</td>
+<td><code class="c">__swap_writepage()</code> 三分支</td>
+<td>按 <code class="c">SWP_FS_OPS</code>/<code class="c">SWP_SYNCHRONOUS_IO</code> 分派</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>统一入口（原书）：</strong> <strong><code class="c">rw_swap_page()</code></strong> — 底层 <strong>块 I/O</strong> 栈。</p>
-<p><strong>HFT：</strong> <strong>swap in fault</strong> = <strong>磁盘延迟 + 锁 + 页表更新</strong> — <strong><code class="c">/proc/vmstat</code> 的 <code class="c">pgmajfault</code></strong> 上升时查 swap 活动。</p>
 <hr />
+<h2>2. 写路径：<code class="c">__swap_writepage</code> 三分支（<code class="c">mm/page_io.c:371</code>）</h2>
+<pre class="code" data-label="C"><code class="c">void __swap_writepage(struct page *page, struct writeback_control *wbc)
+{
+    struct swap_info_struct *sis = page_swap_info(page);
+
+    VM_BUG_ON_PAGE(!PageSwapCache(page), page);   /* 必须已在 swap cache */
+
+    if (data_race(sis-&gt;flags &amp; SWP_FS_OPS))                 /* :381 文件 swap */
+        swap_writepage_fs(page, wbc);
+    else if (sis-&gt;flags &amp; SWP_SYNCHRONOUS_IO)               /* :383 zram 等 */
+        swap_writepage_bdev_sync(page, wbc, sis);
+    else                                                    /* :385 普通块设备 */
+        swap_writepage_bdev_async(page, wbc, sis);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分支</th>
+<th>触发条件（<code class="c">SWP_*</code> 标志）</th>
+<th>场景</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">swap_writepage_fs</code></td>
+<td><code class="c">SWP_FS_OPS</code></td>
+<td><strong>文件 swap</strong></td>
+<td>走文件系统 <code class="c">a_ops-&gt;swap_rw</code>（如 btrfs）</td>
+</tr>
+<tr>
+<td><code class="c">swap_writepage_bdev_sync</code></td>
+<td><code class="c">SWP_SYNCHRONOUS_IO</code></td>
+<td><strong>zram</strong>（内存压缩块设备）</td>
+<td><code class="c">submit_bio_wait</code> 同步提交，省去异步开销</td>
+</tr>
+<tr>
+<td><code class="c">swap_writepage_bdev_async</code></td>
+<td>其他</td>
+<td><strong>普通块设备/分区</strong></td>
+<td>异步 <code class="c">submit_bio</code> + 回调 <code class="c">end_swap_bio_write</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键直觉</strong>：写路径的<strong>介质适配</strong>全靠 <code class="c">swap_info_struct-&gt;flags</code>（§1 的 <code class="c">SWP_*</code>）。zram 这类"同步反而快"的设备（无真实磁盘延迟，异步排队纯属多余）走 sync 分支；普通磁盘走 async 分支用写回队列攒批。</p>
+<hr />
+<h2>3. 读路径：<code class="c">swap_readpage</code>（<code class="c">mm/page_io.c:493</code>）</h2>
+<pre class="code" data-label="C"><code class="c">void swap_readpage(struct page *page, bool synchronous, struct swap_iocb **plug)
+{
+    ...
+    if (synchronous || (sis-&gt;flags &amp; SWP_SYNCHRONOUS_IO)) {
+        /* 同步读：submit_bio_wait 直接等待完成 */
+    } else {
+        /* 异步读：submit_bio + 回调，期间可能 plug 攒批 */
+    }
+}
+</code></pre>
+<ul>
+<li><strong>同步读</strong>：缺页 fault 上下文里，进程本来就在等这个页，直接同步读更简单。</li>
+<li><strong>异步读</strong>：预读（readahead）场景，一次提交多个 bio，用 <code class="c">plug</code> 攒批减少调度。</li>
+</ul>
+<hr />
+<h2>4. slot → 磁盘 sector：<code class="c">swap_page_sector</code>（<code class="c">swapfile.c:230</code>）</h2>
+<p>无论读写，都要把"slot 号"翻译成"磁盘扇区号"。这靠 §7 的 <code class="c">swap_extent</code>：</p>
+<pre class="code" data-label="C"><code class="c">sector_t swap_page_sector(struct page *page)
+{
+    struct swap_info_struct *sis = page_swap_info(page);
+    struct swap_extent *se;
+    pgoff_t offset;
+
+    offset = __page_file_index(page);                    /* slot 号 */
+    se = offset_to_swap_extent(sis, offset);             /* 红黑树查 extent */
+    sector = se-&gt;start_block + (offset - se-&gt;start_page); /* extent 内偏移 */
+    return sector &lt;&lt; (PAGE_SHIFT - 9);                   /* 页号 → 512B 扇区号 */
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">swap slot (页号) ── offset_to_swap_extent ──► swap_extent
+     offset                                     { start_page, nr_pages, start_block }
+        └─ sector = start_block + (offset - start_page) ──► 磁盘扇区
+</code></pre>
+<p>这就是为什么文件 swap 需要 extent：<strong>文件在磁盘上块不连续</strong>，slot 号（连续的逻辑页号）不能直接线性映射到扇区，必须查 extent 表（§7）。</p>
+<hr />
+<h2>5. 换出/换入的完整 I/O 时序</h2>
+<pre class="code" data-label="code"><code class="c">换出 (swap out):
+  kswapd/直接回收选中 folio
+    → add_to_swap_cache（§4）
+    → __swap_writepage
+        ├─ swap_page_sector：slot → sector（查 swap_extent）
+        └─ 三选一路径提交 bio
+    → bio 完成回调 end_swap_bio_write → folio 标记 clean
+    → rmap 更新 PTE → swap entry → 释放 folio
+
+换入 (swap in):
+  fault → __read_swap_cache_async（§4，先查 cache）
+    → cache 未命中 → swap_readpage
+        ├─ swap_page_sector：slot → sector
+        └─ 读盘 → folio 标记 uptodate
+    → 更新 PTE present → 进程继续
+</code></pre>
+<hr />
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">pswpin</code>/<code class="c">pswpout</code> 监控</strong></td>
+<td><code class="c">count_swpout_vm_event</code> 累计写回次数，对应 vmstat 的 <code class="c">pswpin</code>/<code class="c">pswpout</code>——<strong>这两个数非零就是 swap 活动的铁证</strong>，HFT 必须归零</td>
+</tr>
+<tr>
+<td><strong>zram 的 sync 路径</strong></td>
+<td>理解 <code class="c">SWP_SYNCHRONOUS_IO</code> 才能明白：zram 做 swap 时<strong>没有磁盘延迟</strong>，延迟来自压缩/解压 CPU 开销，不是 I/O 排队</td>
+</tr>
+<tr>
+<td><strong>swap in fault 的代价链</strong></td>
+<td>换入 = 磁盘延迟 + bio 提交 + 页表更新 + TLB miss，是<strong>毫秒级</strong>尖刺——<code class="c">pgmajfault</code> 上升要立即查</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>7. 衔接</h2>
+<ul>
+<li>下节 <a href="#s-6">§6 激活与停用交换区</a>：swapon/swapoff 怎么搭起/拆掉这套 I/O 通道</li>
+<li>slot→sector 的 extent：<a href="#s-7">§7 swap_extent</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">__swap_writepage</code> 的三条分支分别对应什么场景？判断依据是什么？</strong>
+A：依据是 <code class="c">swap_info_struct-&gt;flags</code>：① <code class="c">SWP_FS_OPS</code> → <code class="c">swap_writepage_fs</code>（文件 swap，走文件系统 <code class="c">swap_rw</code>）；② <code class="c">SWP_SYNCHRONOUS_IO</code> → <code class="c">swap_writepage_bdev_sync</code>（zram 等同步 I/O 更快的设备）；③ 其他 → <code class="c">swap_writepage_bdev_async</code>（普通块设备，异步 bio）。这是"按介质特性选 I/O 策略"的典型分派。</p>
+<p><strong>Q2：zram 为什么走 <code class="c">swap_writepage_bdev_sync</code> 而不是 async？</strong>
+A：zram 是<strong>内存压缩块设备</strong>，没有真实磁盘的 seek/旋转延迟，异步 bio 排队 + 中断回调的<strong>开销反而大于收益</strong>。<code class="c">SWP_SYNCHRONOUS_IO</code> 标记让写路径用 <code class="c">submit_bio_wait</code> 同步提交，省掉异步机制。真正的开销在压缩/解压的 CPU 时间，不在 I/O 排队。</p>
+<p><strong>Q3：<code class="c">swap_page_sector</code> 为什么不能简单用 <code class="c">offset * SECTORS_PER_PAGE</code> 算扇区？</strong>
+A：因为<strong>文件 swap 在磁盘上块不连续</strong>。slot 号是连续的逻辑页号，但文件的数据块散布在磁盘各处，必须通过 <code class="c">swap_extent</code> 红黑树查到 <code class="c">{start_page, start_block}</code>，再算 <code class="c">start_block + (offset - start_page)</code>。只有<strong>分区 swap</strong>（块连续）才是简单的线性映射。</p>
+<p><strong>Q4：原书的 <code class="c">rw_swap_page()</code> 在 v6.6 变成了什么？</strong>
+A：拆成了 <code class="c">swap_readpage()</code>（读/换入）和 <code class="c">swap_writepage()</code>（写/换出）两个独立入口，写路径进一步由 <code class="c">__swap_writepage</code> 按 <code class="c">SWP_*</code> 标志三分支。函数粒度更细、介质适配更明确，但"统一走块 I/O 栈"的本质没变。</p>
+<p><strong>Q5：<code class="c">pswpin</code>/<code class="c">pswpout</code> 和 <code class="c">pgmajfault</code> 分别衡量什么？HFT 里怎么看？</strong>
+A：<code class="c">pswpin</code>/<code class="c">pswpout</code> 是<strong>页级</strong> swap 读写计数（<code class="c">count_swpout_vm_event</code> 累计），非零说明有数据进出 swap；<code class="c">pgmajfault</code> 是<strong>major fault</strong> 计数（缺页需读盘）。HFT 里三者都应<strong>归零</strong>——任何非零都意味着关键路径上出现了磁盘级延迟，要立即排查（通常是没 mlock 或内存配置不当）。</p>
+</details>
       </section>
       <section class="section" id="s-6">
-        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 11 §6 激活与停用交换区</h2></div>
+        <div class="sec-head"><div class="sec-no">6</div><h2>Ch 11 §6 激活与停用交换区 (swapon / swapoff)</h2></div>
 <blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">mm/swapfile.c</code>）</p>
 </blockquote>
-<h3>6. 激活与停用交换区</h3>
-<h3>激活 <code class="c">sys_swapon()</code></h3>
-<p>相对 <strong>简单</strong>：</p>
-<pre class="code" data-label="code"><code class="c">打开 swap 文件/分区
-    读磁盘 superblock / 元数据
-    填充 swap_info_struct
-    按优先级加入激活列表
-</code></pre>
-<h3>停用 <code class="c">sys_swapoff()</code> — <strong>极昂贵</strong></h3>
-<pre class="code" data-label="code"><code class="c">不能丢弃 swap 里仍被 PTE 引用的数据
-    → try_to_unuse()
-        扫描 **所有进程** 页表
-        找引用该 swap 区的 PTE
-        **强制 swap in** 回物理内存
-    物理内存不够 → swapoff **失败**
-</code></pre>
-<p><strong>HFT：</strong> 生产 <strong>latency 机器</strong> 常 <strong><code class="c">swapoff -a</code></strong> 或 <strong>不配置 swap</strong> — 避免 <strong>silent swap</strong> 与 <strong>误操作 swapoff 风暴</strong>。</p>
 <hr />
-      </section>
-      <section class="section" id="s-7">
-        <div class="sec-head"><div class="sec-no">7</div><h2>Ch 11 §7 2.6 内核的新变化：`swap_extent`</h2></div>
-<blockquote>
-<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong></p>
-</blockquote>
-<h3>7. 2.6 内核的新变化：<code class="c">swap_extent</code></h3>
+<h2>本节讲什么</h2>
+<p>本节回答：<strong><code class="c">swapon</code> / <code class="c">swapoff</code> 这两个系统调用分别做了什么？为什么 <code class="c">swapoff</code> 极昂贵？</strong></p>
+<p>原书已经点出了核心：swapon 简单、swapoff 要扫全表强制换入。v6.6 里这两个系统调用的<strong>现代实现</strong>更精确了——swapon 要校验 superblock magic、建 extent；swapoff 有"内存预检查 + OOM 保护 + 失败回滚"。本节落到源码。</p>
+<hr />
+<h2>1. 激活：<code class="c">sys_swapon</code>（<code class="c">mm/swapfile.c:2978</code>）</h2>
+<pre class="code" data-label="C"><code class="c">SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
+{
+    ...
+    if (!capable(CAP_SYS_ADMIN))          /* 需要 CAP_SYS_ADMIN */
+        return -EPERM;
+
+    /* ① 打开文件/分区 */
+    swap_file = ... file_open_name(pathname, O_RDWR|O_LARGEFILE, 0);
+
+    /* ② 读 superblock：校验 magic */
+    read_swap_header(p, swap_header, swap_file);   /* :2822 */
+    /*   memcmp(&quot;SWAPSPACE2&quot;, swap_header-&gt;magic.magic, 10)  :2831 */
+
+    /* ③ 建 swap_map + swap_extent */
+    nr_extents = setup_swap_map_and_extents(p, swap_header, swap_map, ...);  /* :3126 */
+
+    /* ④ swap_activate：文件系统 hook（文件 swap 走 bmap/直接 IO） */
+    if (mapping-&gt;a_ops-&gt;swap_activate)
+        mapping-&gt;a_ops-&gt;swap_activate(sis, swap_file, span);   /* :2264 */
+
+    /* ⑤ 加入可用链表 */
+    add_to_avail_list(p);                 /* 按 prio 插入 avail_lists[node] */
+}
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>问题</th>
-<th>2.6 方案</th>
+<th>步骤</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>swap file</strong> 在磁盘上 <strong>块不连续</strong></td>
-<td><strong><code class="c">swap_extent</code></strong> — 记录 <strong>连续 swap 页范围 ↔ 连续磁盘块范围</strong> 的映射</td>
+<td><strong>① 打开</strong></td>
+<td>swap 可以是<strong>块设备</strong>或<strong>普通文件</strong>（<code class="c">SWP_BLKDEV</code> vs <code class="c">SWP_FS_OPS</code>）</td>
 </tr>
 <tr>
-<td>文件 swap 性能差</td>
-<td><strong>extent</strong> 使 I/O <strong>更顺序</strong> — 接近 <strong>分区 swap</strong> 效率</td>
+<td><strong>② 读 superblock</strong></td>
+<td>swap 区<strong>第一页</strong>存 <code class="c">swap_header</code>，开头 10 字节是 magic <code class="c">"SWAPSPACE2"</code>——<code class="c">read_swap_header</code>（<code class="c">:2831</code>）校验它，坏区直接拒</td>
+</tr>
+<tr>
+<td><strong>③ 建元数据</strong></td>
+<td><code class="c">swap_map[]</code>（每 slot 计数）+ <code class="c">swap_extent</code> 红黑树（文件 swap 的块映射）</td>
+</tr>
+<tr>
+<td><strong>④ <code class="c">swap_activate</code></strong></td>
+<td>文件系统 hook：文件 swap 要锁定文件、预分配 extents、走直接 I/O</td>
+</tr>
+<tr>
+<td><strong>⑤ 入链表</strong></td>
+<td>按 <code class="c">prio</code> 插入 <code class="c">swap_active_head</code> 和各节点的 <code class="c">avail_lists[node]</code></td>
 </tr>
 </tbody>
 </table></div>
-<p>现代 <strong>swap file</strong> 仍依赖 <strong>extent / 预分配</strong> 等优化 — <strong>文件 swap 可用但 HFT 仍不推荐</strong>。</p>
 <hr />
-<h2>Swap 全链路简图</h2>
+<h2>2. 停用：<code class="c">sys_swapoff</code>（<code class="c">mm/swapfile.c:2388</code>）</h2>
+<p>swapoff 是 <strong>swap 的逆向</strong>，但难得多——因为它要<strong>把换出去的数据全部换回来</strong>：</p>
+<pre class="code" data-label="C"><code class="c">SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
+{
+    if (!capable(CAP_SYS_ADMIN))
+        return -EPERM;
+
+    /* ① 预检查：物理内存够不够装回所有换出的页？ */
+    if (!security_vm_enough_memory_mm(current-&gt;mm, p-&gt;pages))
+        vm_unacct_memory(p-&gt;pages);
+    else {
+        err = -ENOMEM;                   /* 不够 → 直接失败 */
+        goto out_dput;
+    }
+
+    /* ② 从可用链表摘除，禁止再分配 */
+    del_from_avail_list(p);
+    p-&gt;flags &amp;= ~SWP_WRITEOK;            /* 停止换出写入 */
+
+    /* ③ 核心：强制换入所有仍被引用的页 */
+    set_current_oom_origin();            /* OOM 保护：先杀这个进程 */
+    err = try_to_unuse(p-&gt;type);         /* 扫所有进程 + 扫 swap_map */
+    clear_current_oom_origin();
+
+    if (err) {                           /* 失败 → 回滚，重新插回 */
+        reinsert_swap_info(p);
+        goto out_dput;
+    }
+
+    /* ④ 成功 → 释放 swap_map / extent / 关闭文件 */
+}
+</code></pre>
+<h3>关键：<code class="c">try_to_unuse</code>（<code class="c">:2038</code>）—— 双重扫描</h3>
+<pre class="code" data-label="C"><code class="c">static int try_to_unuse(unsigned int type)
+{
+    if (!READ_ONCE(si-&gt;inuse_pages))
+        return 0;                        /* 没人用，直接成功 */
+
+retry:
+    retval = shmem_unuse(type);          /* ① 先处理 shmem/tmpfs 的引用 */
+
+    /* ② 遍历系统所有 mm（init_mm.mmlist），强制 swap in */
+    p = &amp;init_mm.mmlist;
+    while (READ_ONCE(si-&gt;inuse_pages) &amp;&amp; !signal_pending(current) &amp;&amp;
+           (p = p-&gt;next) != &amp;init_mm.mmlist) {
+        mm = list_entry(p, struct mm_struct, mmlist);
+        retval = unuse_mm(mm, type);     /* 扫该 mm 的页表，换回引用此区的页 */
+        cond_resched();                  /* 别拖死交互 */
+    }
+
+    /* ③ 再扫 swap_map，清残留（如 swap cache 里的孤儿页） */
+    i = 0;
+    while (READ_ONCE(si-&gt;inuse_pages) &amp;&amp;
+           (i = find_next_to_unuse(si, i)) != 0) {
+        entry = swp_entry(type, i);
+        folio = filemap_get_folio(swap_address_space(entry), i);
+        folio_free_swap(folio);          /* 清 swap cache 残留 */
+    }
+
+    if (READ_ONCE(si-&gt;inuse_pages)) {    /* 还有 → 重试 */
+        if (!signal_pending(current))
+            goto retry;
+    }
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>双重扫描</strong></td>
+<td>先扫<strong>所有进程的页表</strong>（<code class="c">unuse_mm</code>→<code class="c">unuse_pte</code>），再扫 <strong><code class="c">swap_map[]</code></strong> 清 cache 残留</td>
+</tr>
+<tr>
+<td><strong>可中断</strong></td>
+<td><code class="c">signal_pending(current)</code> 检查——swapoff 可被信号打断</td>
+</tr>
+<tr>
+<td><strong>无限重试</strong></td>
+<td>注释 <code class="c">:2118-2123</code>：内存压力下换出页可能被<strong>重新插回</strong>，所以简单粗暴地 <code class="c">goto retry</code> 一直试</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>3. 为什么 swapoff 极昂贵？</h2>
+<pre class="code" data-label="code"><code class="c">代价链：
+  扫所有进程页表（mmlist 全遍历）
+    → 每个引用该区的 PTE 都要 swap in（磁盘读！）
+      → 换入需要物理内存
+        → 内存不够 → 触发回收/换出 → 死循环风险
+</code></pre>
+<p>原书说"物理内存不够 → swapoff 失败"，v6.6 的实现是<strong>前置预检查</strong>（<code class="c">security_vm_enough_memory_mm</code>，<code class="c">:2429</code>）：先算"装回 <code class="c">p-&gt;pages</code> 页需要多少内存"，不够直接 <code class="c">-ENOMEM</code>，<strong>不进入昂贵的 try_to_unuse</strong>。</p>
+<p>另外 <code class="c">set_current_oom_origin()</code>（<code class="c">:2461</code>）是<strong>OOM 保护</strong>：swapoff 过程中如果系统内存耗尽，OOM killer 会<strong>优先杀 swapoff 这个进程</strong>（它标记为 oom_origin），而不是乱杀业务进程——避免 swapoff 风暴把系统拖垮。</p>
+<hr />
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">swapoff -a</code> 与 <code class="c">mlock</code></strong></td>
+<td>生产延迟机器常 <code class="c">swapoff -a</code> 或干脆不配 swap；但要<strong>先 <code class="c">mlock</code> 再 <code class="c">swapoff</code></strong>，否则 swapoff 本身会触发换入风暴</td>
+</tr>
+<tr>
+<td><strong><code class="c">try_to_unuse</code> 的在线风险</strong></td>
+<td>它是<strong>全系统页表扫描 + 强制换入</strong>，在线执行会导致毫秒级延迟尖刺——所以"避免 swapoff 在线"是铁律</td>
+</tr>
+<tr>
+<td><strong>预检查 vs 事后失败</strong></td>
+<td><code class="c">security_vm_enough_memory_mm</code> 先算账再动手——HFT 里"先预检资源再提交"比"失败回滚"更稳</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>5. 衔接</h2>
+<ul>
+<li>上节 <a href="chapter-14.html#s-5">§5 交换区读写与块 I/O</a></li>
+<li>下节 <a href="#s-7">§7 swap_extent</a>：文件 swap 的块映射</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：swapon 校验的 <code class="c">"SWAPSPACE2"</code> 是什么？为什么需要它？</strong>
+A：它是 swap 区 superblock 的 magic 值（<code class="c">read_swap_header</code>，<code class="c">swapfile.c:2831</code> <code class="c">memcmp("SWAPSPACE2", ...)</code>），存在 swap 区第一页。swapon 用它<strong>确认"这确实是个 swap 区"</strong>，防止把普通分区/文件误当 swap 区激活（那会毁掉数据）。<code class="c">mkswap</code> 工具负责写这个 magic。</p>
+<p><strong>Q2：swapoff 的预检查 <code class="c">security_vm_enough_memory_mm</code> 解决了什么问题？</strong>
+A：它提前判断"物理内存够不够装回所有换出的页（<code class="c">p-&gt;pages</code>）"。原书只说"内存不够则失败"，v6.6 是<strong>在进入昂贵的 <code class="c">try_to_unuse</code> 之前</strong>就检查，不够直接 <code class="c">-ENOMEM</code>，避免扫完所有页表才发现装不回、白费大量 I/O。</p>
+<p><strong>Q3：<code class="c">try_to_unuse</code> 的"双重扫描"是哪两重？为什么需要两重？</strong>
+A：① 扫<strong>所有进程的页表</strong>（<code class="c">unuse_mm</code>→<code class="c">unuse_pte</code>），把引用该 swap 区的 PTE 强制换回；② 扫 <strong><code class="c">swap_map[]</code></strong>，清掉 swap cache 里的孤儿页（有 cache 但已无 PTE 引用）。两重是因为"进程页表"和"swap cache"是两处独立记录引用的地方，都得清干净才能 <code class="c">swapoff</code> 成功。</p>
+<p><strong>Q4：<code class="c">set_current_oom_origin()</code> 在 swapoff 里起什么作用？</strong>
+A：它把 swapoff 进程标记为 <strong>OOM 优先被杀目标</strong>。swapoff 过程会消耗大量内存（强制换入），若系统因此内存耗尽，OOM killer 应该先杀这个"始作俑者"（swapoff 进程），而不是误杀正常业务进程。这是对 swapoff 风暴的一种系统级保护。</p>
+<p><strong>Q5：swapoff 失败后会怎样？swap 区会丢吗？</strong>
+A：不会。<code class="c">try_to_unuse</code> 失败（或被信号打断）时，代码走 <code class="c">reinsert_swap_info(p)</code> 把 swap 区<strong>重新插回可用链表</strong>，<code class="c">goto out_dput</code> 返回错误。区还在，之前换出的数据也还在——swapoff 是原子的（要么全成、要么回滚），不会半途丢掉数据。</p>
+</details>
+      </section>
+      <section class="section" id="s-7">
+        <div class="sec-head"><div class="sec-no">7</div><h2>Ch 11 §7 2.6 内核的新变化 → v6.6：`swap_extent`</h2></div>
+<blockquote>
+<p><strong>Understanding the Linux Virtual Memory Manager</strong> · Mel Gorman · <strong>跳过 ⚪</strong>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/swap.h</code> / <code class="c">mm/swapfile.c</code>）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>本节收尾：原书 2.6 引入的 <strong><code class="c">swap_extent</code></strong>（文件 swap 的块映射），在 v6.6 里进化成了什么？</p>
+<p>答案是：<strong>一棵红黑树 + 合并逻辑 + 文件系统 hook</strong>。它解决的核心问题不变——"文件 swap 的磁盘块不连续，slot 号不能线性映射到扇区"——但实现从"简单列表"升级成"有序红黑树 + 相邻合并"。</p>
+<hr />
+<h2>1. 问题：文件 swap 的块不连续</h2>
+<pre class="code" data-label="code"><code class="c">分区 swap（/dev/sda2）：块天然连续
+    slot 0 → block 0，slot 1 → block 1，...（线性映射）
+
+文件 swap（/swapfile）：块散布在文件系统各处
+    slot 0 → block 1024，slot 1 → block 4096，slot 2 → block 4097，...
+    可能一段连续、一段跳跃，无法线性算扇区
+</code></pre>
+<p>原书 2.6 的答案是 <code class="c">swap_extent</code>——记录"<strong>连续 slot 范围 ↔ 连续磁盘块范围</strong>"的映射。v6.6 里这个结构<strong>保留并升级</strong>。</p>
+<hr />
+<h2>2. <code class="c">struct swap_extent</code>（<code class="c">swap.h:193</code>）</h2>
+<pre class="code" data-label="C"><code class="c">/* include/linux/swap.h:193 */
+struct swap_extent {
+    struct rb_node rb_node;   /* 红黑树节点（按 start_page 排序） */
+    pgoff_t   start_page;     /* 起始 slot 号（逻辑页号） */
+    pgoff_t   nr_pages;       /* 覆盖的页数 */
+    sector_t  start_block;    /* 起始磁盘块号（sector） */
+};
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">start_page</code></td>
+<td>这段连续映射的<strong>起始 slot 号</strong></td>
+</tr>
+<tr>
+<td><code class="c">nr_pages</code></td>
+<td>覆盖几个页（一个 extent 通常 1–4MB，注释 <code class="c">:2247</code>）</td>
+</tr>
+<tr>
+<td><code class="c">start_block</code></td>
+<td>对应的<strong>起始磁盘扇区号</strong></td>
+</tr>
+<tr>
+<td><code class="c">rb_node</code></td>
+<td>红黑树节点，按 <code class="c">start_page</code> 排序</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>映射公式</strong>：<code class="c">sector = start_block + (offset - start_page)</code>，<code class="c">offset</code> 是要访问的 slot 号（§5 <code class="c">swap_page_sector</code>）。</p>
+<hr />
+<h2>3. 红黑树组织 + 相邻合并（<code class="c">swapfile.c:2184</code>）</h2>
+<pre class="code" data-label="C"><code class="c">int add_swap_extent(struct swap_info_struct *sis, unsigned long start_page,
+                    unsigned long nr_pages, sector_t start_block)
+{
+    /* 按升序插入红黑树最右（调用方按 page 升序遍历） */
+    ...
+    if (parent) {
+        se = rb_entry(parent, struct swap_extent, rb_node);
+        BUG_ON(se-&gt;start_page + se-&gt;nr_pages != start_page);  /* 必须连续 */
+        if (se-&gt;start_block + se-&gt;nr_pages == start_block) {
+            se-&gt;nr_pages += nr_pages;    /* 磁盘也连续 → 合并！ */
+            return 0;
+        }
+    }
+    /* 不连续 → 新建一个 extent 节点 */
+    new_se = kmalloc(sizeof(*se), GFP_KERNEL);
+    ...
+    rb_insert_color(&amp;new_se-&gt;rb_node, &amp;sis-&gt;swap_extent_root);
+}
+</code></pre>
+<p><strong>关键设计</strong>：两个相邻的 extent，如果<strong>磁盘块也连续</strong>（<code class="c">start_block + nr_pages == 新 start_block</code>），就<strong>合并成一个</strong>——减少 extent 数量，加快查找。这是文件系统 extent（如 ext4 的 extent 树）的同款思想。</p>
+<p>查找走 <code class="c">offset_to_swap_extent</code>（标准红黑树查找）：</p>
+<pre class="code" data-label="C"><code class="c">while (rb) {
+    se = rb_entry(rb, struct swap_extent, rb_node);
+    if (offset &lt; se-&gt;start_page)
+        rb = rb-&gt;rb_left;
+    else if (offset &gt;= se-&gt;start_page + se-&gt;nr_pages)
+        rb = rb-&gt;rb_right;
+    else
+        return se;                       /* 命中 */
+}
+BUG();                                   /* 必须命中，否则是 bug */
+</code></pre>
+<hr />
+<h2>4. 块设备 vs 文件：统一成 extent</h2>
+<p><code class="c">setup_swap_extents</code>（<code class="c">:2251</code>）的注释（<code class="c">:2224-2246</code>）是整个设计的精髓：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>swap 类型</th>
+<th>extent 构建方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>块设备（S_ISBLK）</strong></td>
+<td><strong>单个 extent</strong>：<code class="c">add_swap_extent(sis, 0, sis-&gt;max, 0)</code>——块连续，从头到尾一条</td>
+</tr>
+<tr>
+<td><strong>普通文件（S_ISREG）</strong></td>
+<td>walk 文件所有块，解析成红黑树（PAGE_SIZE 块）；不对齐的杂块<strong>直接丢弃</strong>（<code class="c">:2240</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么块设备也套 extent？</strong> 注释 <code class="c">:2230-2231</code>：让 <code class="c">S_ISBLK</code> 和 <code class="c">S_ISREG</code> <strong>在 swapon 之后被完全相同地处理</strong>——主操作代码（<code class="c">swap_page_sector</code>）不需要区分"块设备还是文件"，统一查 extent 红黑树即可。</p>
+<p>另外，swapon 期间会给 inode 打 <code class="c">S_SWAPFILE</code> 标记（<code class="c">:2244</code>），<strong>阻止用户写 swap 设备</strong>（那会毁掉内存数据）。</p>
+<hr />
+<h2>5. v6.6 演进：文件系统 hook</h2>
+<p>原书 2.6 的 <code class="c">swap_extent</code> 靠"遍历文件块"构建；v6.6 进一步把构建交给文件系统：</p>
+<pre class="code" data-label="C"><code class="c">/* setup_swap_extents :2264 */
+if (mapping-&gt;a_ops-&gt;swap_activate) {
+    ret = mapping-&gt;a_ops-&gt;swap_activate(sis, swap_file, span);  /* fs 自己建 extent */
+    sis-&gt;flags |= SWP_ACTIVATED;
+    if ((sis-&gt;flags &amp; SWP_FS_OPS) &amp;&amp; sio_pool_init() != 0) {   /* 分配 swap I/O pool */
+        destroy_swap_extents(sis);
+        return -ENOMEM;
+    }
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>演进点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">swap_activate</code> hook</strong></td>
+<td>文件系统（如 btrfs/xfs）<strong>自己</strong>负责构建 extent——它们更懂自己的块布局，能预分配、能优化</td>
+</tr>
+<tr>
+<td><strong><code class="c">SWP_FS_OPS</code></strong></td>
+<td>标记"走文件系统 I/O"，触发 §5 的 <code class="c">swap_writepage_fs</code> 路径</td>
+</tr>
+<tr>
+<td><strong><code class="c">sio_pool_init</code></strong></td>
+<td>为文件 swap 预分配 swap I/O 请求池（<code class="c">swap_iocb</code>），避免 I/O 路径上临时分配</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>直觉</strong>：extent 从"内核通用代码遍历块"演进成"文件系统自己负责"——这是<strong>职责下沉</strong>：谁最懂块布局，谁建 extent。</p>
+<hr />
+<h2>6. Swap 全链路简图（收尾）</h2>
 <pre class="code" data-label="code"><code class="c">匿名页 (进程私有)
     │
     ├─ 内存充足 → 常驻 RAM
     │
-    └─ Ch 10 回收选中
-           ├─ alloc swap slot (cluster)
-           ├─ 入 swap cache → write swap
-           ├─ PTE := swp_entry(type, offset)
-           └─ free physical page
+    └─ Ch 10 回收选中（kswapd / direct reclaim）
+           ├─ alloc swap slot：get_swap_pages → scan_swap_map_slots（§3）
+           │     （HDD 顺序簇 / SSD per-CPU 簇）
+           ├─ add_to_swap_cache → swap cache（§4）
+           ├─ __swap_writepage（§5，三路径）
+           │     └─ swap_page_sector → 查 swap_extent 红黑树（§7）
+           ├─ PTE := swp_entry(type, offset)（§2）
+           └─ free physical page → 回 Buddy
 
 再次访问 VA
-    → page fault
-    → read swap → new page → PTE present
+    → page fault（PTE !present + swap entry）
+    → __read_swap_cache_async（§4，cache 命中则不读盘）
+    → swap_readpage（§5）→ 新页 → PTE present
     → 用户指令重试（毫秒级延迟）
 </code></pre>
 <hr />
-<h2>HFT 精读 checklist</h2>
+<h2>7. HFT 精读 checklist</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -615,28 +1795,45 @@ Ch 11 分配 swap slot → 写盘 → PTE 改为 swap entry（not present）
 <tbody>
 <tr>
 <td><strong><code class="c">mlock</code> / <code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code></strong></td>
-<td>匿名 RSS <strong>不被换出</strong></td>
+<td>匿名 RSS <strong>不被换出</strong>（唯一根治手段）</td>
 </tr>
 <tr>
 <td><strong>足够 RAM + 监控</strong></td>
-<td><code class="c">si/so</code>（vmstat）、<code class="c">pswpin/pswpout</code></td>
+<td><code class="c">si/so</code>（vmstat）、<code class="c">pswpin/pswpout</code>、<code class="c">pgmajfault</code></td>
 </tr>
 <tr>
 <td><strong><code class="c">vm.swappiness=1</code> 或 0</strong></td>
-<td>降低 <strong>匿名页</strong> 被 swap 倾向（<strong>不替代 mlock</strong>）</td>
+<td>降低匿名页被 swap 倾向（<strong>不替代 mlock</strong>）</td>
 </tr>
 <tr>
 <td><strong>不用 swap 作「额外内存」</strong></td>
-<td>swap 是 <strong>回收手段</strong>，不是 <strong>HFT 堆扩展</strong></td>
+<td>swap 是<strong>回收手段</strong>，不是 HFT 堆扩展</td>
 </tr>
 <tr>
 <td><strong>避免 swapoff 在线</strong></td>
-<td><code class="c">try_to_unuse</code> <strong>全表扫描</strong></td>
+<td><code class="c">try_to_unuse</code> 全表扫描 + 强制换入风暴</td>
+</tr>
+<tr>
+<td><strong>若必须用 swap 文件</strong></td>
+<td>预分配（<code class="c">fallocate</code>）+ 快设备（NVMe），别用稀疏文件</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>与 Ch 10 闭合：</strong> <strong>kswapd / direct reclaim</strong> 选中 victim → <strong>本章</strong> 完成 <strong>slot + I/O + PTE 编码</strong> → fault 路径 <strong>读回</strong>。</p>
+<p><strong>与 Ch 10 闭合</strong>：kswapd/direct reclaim 选中 victim → <strong>本章</strong>完成 slot + swap cache + I/O + PTE 编码 → fault 路径读回。整个匿名页换出/换入闭环在此合拢。</p>
 <hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">swap_extent</code> 解决的核心问题是什么？为什么分区 swap 不需要它？</strong>
+A：核心问题是<strong>文件 swap 的磁盘块不连续</strong>——slot 号是连续逻辑页号，但文件数据块散布各处，无法线性算扇区。分区 swap 的块天然连续，本来一个 extent（<code class="c">add_swap_extent(sis, 0, sis-&gt;max, 0)</code>）就够；但为了统一处理，块设备也套 extent，让 <code class="c">swap_page_sector</code> 不用区分块设备还是文件。</p>
+<p><strong>Q2：<code class="c">add_swap_extent</code> 里的合并逻辑在什么条件下触发？为什么合并？</strong>
+A：当新 extent 的 <code class="c">start_page</code> 紧接上一个 extent 末尾、且<strong>磁盘块也连续</strong>（<code class="c">start_block + nr_pages == 新 start_block</code>）时，就把 <code class="c">nr_pages</code> 累加到前一个节点上（<code class="c">:2203-2207</code>）。合并能减少红黑树节点数（extent 数量少 → 查找快、内存省），是文件系统 extent 的标准优化。</p>
+<p><strong>Q3：<code class="c">offset_to_swap_extent</code> 是标准的红黑树查找，它的比较条件是什么？</strong>
+A：<code class="c">offset &lt; start_page</code> 走左子树，<code class="c">offset &gt;= start_page + nr_pages</code> 走右子树，否则命中返回。这是"区间树"查找：每个节点不是单点而是 <code class="c">[start_page, start_page+nr_pages)</code> 区间。最后 <code class="c">BUG()</code> 表示"必然命中"，若没找到说明 swap_map/extent 数据不一致，是内核 bug。</p>
+<p><strong>Q4：v6.6 里 extent 的构建为什么下沉给文件系统（<code class="c">swap_activate</code>）？</strong>
+A：因为<strong>文件系统最懂自己的块布局</strong>。通用代码只能盲目遍历文件块；文件系统的 <code class="c">swap_activate</code> hook 能做预分配、锁定、优化 extent 布局。这是"谁最懂谁负责"的职责下沉，也让 <code class="c">SWP_FS_OPS</code> 能配套触发文件系统的 swap I/O 路径（§5 <code class="c">swap_writepage_fs</code>）。</p>
+<p><strong>Q5：<code class="c">S_SWAPFILE</code> 标记的作用是什么？</strong>
+A：swapon 期间给 swap 文件/设备的 inode 打 <code class="c">S_SWAPFILE</code> 标记（注释 <code class="c">:2244</code>），<strong>阻止用户进程写这个设备</strong>。因为 swap 设备的内容是内存的换出镜像，用户误写会<strong>直接毁掉内存数据</strong>（换入时读到脏数据）。这是 swap 生命周期内的一层保护。</p>
+</details>
       </section>
 
 
