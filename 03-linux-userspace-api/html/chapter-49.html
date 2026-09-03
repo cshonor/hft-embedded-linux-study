@@ -473,6 +473,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <td>6</td>
 <td>mmap 大文件随机访问常更省拷贝</td>
 </tr>
+<tr>
+<td>7</td>
+<td>mmap 只画区不搬数据，访问才缺页填页；设备独占靠驱动锁（非 mmap 能力）</td>
+</tr>
 </tbody>
 </table></div>
 <hr />
@@ -562,9 +566,72 @@ int main(void) {
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>生命周期：<code class="c">fork</code> 继承映射；<strong><code class="c">exec</code> / 退出</strong> 销毁全部映射。 ---</p>
+<p><strong><code class="c">mmap</code> 的本质：只在进程虚拟地址空间「画一块区域」，建立映射关系，不立刻把数据搬进内存。</strong>
+访问这块虚拟地址才会触发缺页中断，由内核把磁盘/设备数据填进物理页。所以第一件事是分清三样东西：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>是什么</th>
+<th>谁触发</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mmap</code></td>
+<td>用户态「画一块虚拟区间」，建立 虚址 ↔ 文件/设备/匿名页 的映射</td>
+<td>进程主动调用</td>
+</tr>
+<tr>
+<td>缺页中断（page fault）</td>
+<td>CPU 内存管理机制：访问未映射/未加载地址时陷入内核填页</td>
+<td>CPU 硬件，<strong>不等于 mmap</strong></td>
+</tr>
+<tr>
+<td>共享 / 私有</td>
+<td><code class="c">mmap</code> 的 <code class="c">flags</code> 控制多进程是否共用同一物理页</td>
+<td><code class="c">MAP_SHARED</code> / <code class="c">MAP_PRIVATE</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>一句话</strong>：<code class="c">mmap</code> 给进程虚拟地址画一块区域，可以映射到<strong>同一份物理内存</strong>实现多进程共享；但<strong>设备能不能让你映射，由设备驱动说了算</strong>——独占访问靠驱动锁，不是 <code class="c">mmap</code> 自带能力。</p>
+</blockquote>
+<p>生命周期：<code class="c">fork</code> 继承映射；<strong><code class="c">exec</code> / 退出</strong> 销毁全部映射。</p>
 <hr />
 <h2>要点</h2>
+<h3><code class="c">mmap</code> 的三类映射对象</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th><code class="c">fd</code> / <code class="c">offset</code></th>
+<th>缺页时内核从哪填</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>磁盘文件</strong></td>
+<td><code class="c">fd</code> + 页对齐 <code class="c">offset</code></td>
+<td>页缓存（page cache）</td>
+<td>文件共享、加载 text 段</td>
+</tr>
+<tr>
+<td><strong>设备 DMA 缓冲区</strong></td>
+<td>设备 <code class="c">fd</code></td>
+<td>驱动提供的内存页（<code class="c">remap_pfn_range</code> / <code class="c">dma_mmap_*</code>）</td>
+<td>网卡/采集卡零拷贝、帧缓冲</td>
+</tr>
+<tr>
+<td><strong>匿名内存</strong></td>
+<td><code class="c">MAP_ANONYMOUS</code>、<code class="c">fd=-1</code></td>
+<td>零页 + 首写 COW 分配</td>
+<td>malloc 一类、父子共享</td>
+</tr>
+</tbody>
+</table></div>
+<h3>四大组合</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -586,6 +653,31 @@ int main(void) {
 </tr>
 </tbody>
 </table></div>
+<h3>共享型设备 vs 独占型设备</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>设备类型</th>
+<th>例子</th>
+<th><code class="c">mmap</code> 的用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>共享型</strong></td>
+<td>共享文件、共享设备缓冲区</td>
+<td>多进程 <code class="c">MAP_SHARED</code> 映射<strong>同一份物理内存</strong>，一个改、其他进程都看得见</td>
+</tr>
+<tr>
+<td><strong>独占型</strong></td>
+<td>麦克风、独占采集卡</td>
+<td>❌ 不是给每个进程各做一份 mmap；✅ <strong>设备驱动里做独占锁</strong>，同一时刻只允许一个进程 <code class="c">mmap</code> 成功，别的进程调用 <code class="c">mmap</code> 失败/阻塞</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>关键</strong>：互斥逻辑写在<strong>设备驱动</strong>里，<code class="c">mmap</code> 只是驱动对外暴露缓冲区的手段，本身不提供任何互斥。</p>
+</blockquote>
 <p>生命周期：<code class="c">fork</code> 继承映射；<strong><code class="c">exec</code> / 退出</strong> 销毁全部映射。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
@@ -599,14 +691,17 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>四大组合 在嵌入式系统的应用场景</td>
+<td><strong>设备 DMA 缓冲区 mmap</strong>：<code class="c">/dev/mem</code>、帧缓冲（framebuffer）、网卡/采集卡寄存器——用户态直接读写设备内存，省掉 read/write 的 syscall + 一次拷贝</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>四大组合 对低延迟和性能的影响</td>
+<td><strong>低延迟零拷贝</strong>：把网卡（DPDK 大页 + mmap）的 DMA 环形缓冲区映射进用户态，报文「网卡 DMA 直写用户态页」，不经过内核协议栈拷贝；共享型设备多进程 <code class="c">MAP_SHARED</code> 看同一份行情</td>
 </tr>
 </tbody>
 </table></div>
+<blockquote>
+<p>独占设备在 HFT 里同样成立：<strong>锁在驱动</strong>。例：一个采集卡同一时刻只让一个进程 mmap，驱动用 <code class="c">mutex</code>/原子变量守卫 <code class="c">fops-&gt;mmap</code>，抢不到就返回 <code class="c">-EBUSY</code>。</p>
+</blockquote>
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
 /* 四大映射组合演示：MAP_PRIVATE vs MAP_SHARED × 文件 vs 匿名 */
@@ -650,6 +745,31 @@ int main(void) {
 }
 
 </code></pre>
+<hr />
+<h2>设备独占：锁在驱动（伪代码）</h2>
+<pre class="code" data-label="C"><code class="c">/* 驱动侧：独占设备同一时刻只允许一个进程 mmap */
+static int mic_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    /* 原子变量实现「拿得到才映射」的独占锁 */
+    if (!atomic_add_unless(&amp;mic_open, 1, 1))
+        return -EBUSY;             /* 已被别的进程独占 → mmap 失败 */
+
+    /* 把设备 DMA 缓冲区物理页映射进用户态虚拟地址 */
+    return remap_pfn_range(vma, vma-&gt;vm_start,
+                           mic_dma_paddr &gt;&gt; PAGE_SHIFT,
+                           vma-&gt;vm_end - vma-&gt;vm_start,
+                           vma-&gt;vm_page_prot);
+}
+
+static int mic_release(struct inode *i, struct file *filp)
+{
+    atomic_set(&amp;mic_open, 0);      /* 释放独占 */
+    return 0;
+}
+</code></pre>
+<blockquote>
+<p>注意：<strong>互斥逻辑完全在驱动</strong>（<code class="c">atomic_add_unless</code> + <code class="c">-EBUSY</code>），<code class="c">mmap</code> 系统调用本身不提供「独占」能力——它只是把驱动暴露的缓冲区挂到进程虚拟地址上。</p>
+</blockquote>
 <hr />
 <h2>衔接</h2>
 <ul>
