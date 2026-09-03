@@ -1069,405 +1069,1252 @@ int main(void) {
       <section class="section" id="s-3-3">
         <div class="sec-head"><div class="sec-no">3.3</div><h2>The Standard C Library; The GNU C Library (glibc)</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a></p>
+<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/err.h</code> — 内核错误返回约定）
+- 上一节：<a href="#s-3-2">3.2 Library Functions（glibc）</a>
+- 下一节：<a href="#s-3-4">3.3 错误处理（本章重中之重）</a></p>
 </blockquote>
+<hr />
 <h2>本节讲什么</h2>
-<p>glibc 是 Linux 上 C 标准库的实现，提供 POSIX API 封装、stdio、string、malloc 等。</p>
-<h2>要点</h2>
-<h3>glibc 的角色</h3>
-<ul>
-<li>实现 ISO C 标准库（printf/malloc/strcpy...）</li>
-<li>封装系统调用（open/read/write → glibc wrapper）</li>
-<li>提供 POSIX 扩展函数</li>
-</ul>
-<h3>glibc 版本</h3>
-<pre class="code" data-label="shell"><code class="c"># 查看 glibc 版本
-ldd --version
-# 或
+<p>glibc 是 Linux 上<strong>事实标准的 C 库</strong>——既实现 ISO-C 标准库，又封装 POSIX 系统调用。本节回答三个问题：</p>
+<ol>
+<li>glibc 到底提供了什么？它和「C 标准库」「POSIX」是什么关系？</li>
+<li>glibc 封装系统调用时，怎么把内核的「负错误码」翻译成 <code class="c">errno</code> + <code class="c">-1</code>？</li>
+<li>glibc 和 musl 有什么区别？<code class="c">__GLIBC_PREREQ</code> 是干嘛的？</li>
+</ol>
+<hr />
+<h2>1. glibc 的角色：一个库，三种身份</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>身份</th>
+<th>提供什么</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ISO-C 标准库实现</strong></td>
+<td>C 语言标准要求的函数</td>
+<td><code class="c">printf</code>/<code class="c">malloc</code>/<code class="c">strcpy</code>/<code class="c">qsort</code></td>
+</tr>
+<tr>
+<td><strong>POSIX 封装层</strong></td>
+<td>系统调用的薄外壳</td>
+<td><code class="c">open</code>/<code class="c">read</code>/<code class="c">write</code>/<code class="c">fork</code>/<code class="c">mmap</code></td>
+</tr>
+<tr>
+<td><strong>glibc 扩展</strong></td>
+<td>Linux 专属的非标准函数</td>
+<td><code class="c">epoll</code> 系列、<code class="c">strerror_r</code> 的 GNU 语义</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以「glibc」不是「C 标准库」的同义词——它<strong>包含</strong> C 标准库，还<strong>多出</strong> POSIX 封装和一堆 Linux 扩展。换个 C 库（如 musl），C 标准库函数还在（<code class="c">printf</code>/<code class="c">malloc</code> 都有），但扩展函数和某些行为细节会变。</p>
+<h2>2. glibc 怎么封装系统调用：<code class="c">MAX_ERRNO</code> 错误转换</h2>
+<p>glibc 的 <code class="c">open()</code> 不是把内核返回值原样传回，而是做一次<strong>错误翻译</strong>。关键在内核的错误返回约定：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/err.h:17 —— 内核错误码的取值范围 */
+#define MAX_ERRNO   4095
+</code></pre>
+<p>完整的往返流程：</p>
+<pre class="code" data-label="code"><code class="c">用户态调 open(path, flags)
+      │  glibc 包装：rax=2(syscall号), rdi=path, rsi=flags, rdx=mode
+      ▼
+syscall 指令陷入内核
+      │  内核 sys_open 干活，返回值放进 rax
+      ▼
+内核返回：成功 → rax = 新 fd（≥0）
+          失败 → rax = -errno（如 -2 = -ENOENT，落在 [-4095, -1]）
+      ▼
+glibc 包装判断：rax 是否在 [-4095, -1]？
+      ├─ 是 → errno = -rax（如 2），返回 -1
+      └─ 否 → 返回 rax（合法 fd）
+</code></pre>
+<p><strong>这就是「为什么系统调用失败返回 -1，具体原因看 <code class="c">errno</code>」的底层机制</strong>——内核返回的是 <code class="c">-errno</code>（负错误码），glibc 拆成「返回 -1 + 设 <code class="c">errno</code>」两件事。所以直接 <code class="c">syscall()</code> 拿到的返回值是<strong>负错误码</strong>（不是 -1），这就是绕过 glibc 时要自己判断的原因。</p>
+<pre class="code" data-label="C"><code class="c">long ret = syscall(SYS_open, &quot;/nonexistent&quot;, O_RDONLY);
+/* ret == -2（-ENOENT），而不是 -1！因为跳过了 glibc 的翻译层 */
+</code></pre>
+<h2>3. glibc 版本与特性检查</h2>
+<pre class="code" data-label="shell"><code class="c">ldd --version          # 查看 glibc 版本
 getconf GNU_LIBC_VERSION
 </code></pre>
-<h3>glibc vs 内核版本</h3>
+<p>编译时检查 glibc 特性用 <code class="c">__GLIBC_PREREQ</code>：</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;features.h&gt;
+#if __GLIBC_PREREQ(2, 17)
+    /* glibc &gt;= 2.17：clock_gettime 不再需要 -lrt */
+#endif
+</code></pre>
+<p><strong>glibc 版本 ≠ 内核版本</strong>：glibc 封装系统调用，但不是 1:1 映射——一个新内核特性（如 <code class="c">io_uring</code>、<code class="c">close_range</code>）要等 glibc 出新版本提供对应封装才能直接用；等不及时可以自己 <code class="c">syscall()</code> 绕过（见 3.1）。老 glibc 跑在新内核上通常没问题（ABI 向后兼容），但用不到新 syscall 的现成封装。</p>
+<h2>4. glibc vs musl</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>glibc</th>
+<th>musl</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>定位</td>
+<td>功能最全、性能最优</td>
+<td>极致精简、静态链接友好</td>
+</tr>
+<tr>
+<td>体积</td>
+<td>大（约 2MB+）</td>
+<td>小（约 500KB）</td>
+</tr>
+<tr>
+<td>扩展</td>
+<td>最多（GNU 扩展）</td>
+<td>严格 POSIX，少扩展</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>桌面/服务器/通用</td>
+<td>嵌入式、容器（Alpine 默认）、静态可移植二进制</td>
+</tr>
+<tr>
+<td>许可</td>
+<td>LGPL</td>
+<td>MIT</td>
+</tr>
+</tbody>
+</table></div>
+<p>嵌入式/HFT 若要做<strong>静态链接、跨发行版可移植</strong>的单文件二进制，常选 musl；通用场景用 glibc。注意：musl 下 <code class="c">strerror_r</code> 是 POSIX 语义（返回 int），glibc 默认是 GNU 语义（返回 char*）——这是两者可移植性差异的典型例子。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>直接 <code class="c">syscall()</code> 拿负错误码</td>
+<td>绕过 glibc 时返回值是 <code class="c">-errno</code>，须自己判断 <code class="c">[-4095,-1]</code>，不能当 -1 处理</td>
+</tr>
+<tr>
+<td>静态链接可移植二进制</td>
+<td>用 musl 静态编译，摆脱目标机 glibc 版本依赖</td>
+</tr>
+<tr>
+<td>新 syscall 没封装</td>
+<td>等不及 glibc 时用 <code class="c">syscall(SYS_xxx, ...)</code> 直接发（如早期的 <code class="c">io_uring</code>）</td>
+</tr>
+<tr>
+<td>glibc 版本兼容</td>
+<td>部署机 glibc 老于编译机会报 <code class="c">GLIBC_x.yy not found</code>，需静态链接或用容器锁定版本</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/syscall.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+
+int main(void) {
+    /* 正常路径：glibc 的 open() 返回 -1 + 设 errno */
+    int fd = open(&quot;/nonexistent&quot;, O_RDONLY);
+    if (fd == -1)
+        printf(&quot;glibc open(): errno=%d (%s)\n&quot;, errno, strerror(errno));
+
+    /* 绕过 glibc：syscall() 返回的是负错误码 */
+    long ret = syscall(SYS_open, &quot;/nonexistent&quot;, O_RDONLY);
+    printf(&quot;raw syscall: ret=%ld (就是 -ENOENT)\n&quot;, ret);
+
+    /* 手动还原成 errno 语义 */
+    if (ret &lt; 0 &amp;&amp; ret &gt;= -4095) {
+        int e = -(int)ret;
+        printf(&quot;manual: errno=%d (%s)\n&quot;, e, strerror(e));
+    }
+    return 0;
+}
+</code></pre>
+<p>运行：<code class="c">gcc -o g g.c &amp;&amp; ./g</code>。你会看到 glibc 的 <code class="c">open</code> 返回 -1 + <code class="c">errno=2</code>，而 <code class="c">syscall(SYS_open, ...)</code> 直接返回 <code class="c">-2</code>——印证了「glibc 做了错误翻译」这一层。</p>
+<h2>7. 衔接</h2>
 <ul>
-<li>glibc 封装系统调用，但不是 1:1 映射</li>
-<li>新内核特性需要新 glibc 版本支持</li>
-<li><code class="c">__GLIBC_PREREQ(major, minor)</code> 编译时检查</li>
+<li>下一节：<a href="#s-3-4">3.3 错误处理（本章重中之重）</a></li>
+<li>关联：<a href="chapter-02.html#s-2-9">2.9 共享库（Shared Libraries）</a> — glibc 也是通过动态链接加载的 <code class="c">.so</code></li>
+<li>内核视角：<a href="../../05-linux-kernel/html/chapter-05.html#s-5-1">05/Ch5.1 与内核通信</a> — libc ≠ syscall</li>
 </ul>
-<h2>自测要点</h2>
-<ul>
-<li>glibc 的作用是什么？</li>
-<li>如何查看系统的 glibc 版本？</li>
-<li>glibc 和系统调用是什么关系？</li>
-</ul>
-<h2>与后续衔接</h2>
-<ul>
-<li>全书所有示例都依赖 glibc</li>
-</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：glibc 是「C 标准库」吗？它到底提供了什么？</strong>
+A：不完全是。glibc <strong>包含</strong> C 标准库（ISO-C 要求的 <code class="c">printf</code>/<code class="c">malloc</code> 等），但还<strong>多出</strong> POSIX 系统调用封装（<code class="c">open</code>/<code class="c">read</code>/<code class="c">fork</code>）和大量 Linux/GNU 扩展（<code class="c">epoll</code>、GNU 版 <code class="c">strerror_r</code>）。换 musl 时 C 标准库函数还在，但扩展和部分行为会变。所以「glibc」是「C 库的一种具体实现」，比「C 标准库」范围大。</p>
+<p><strong>Q2：为什么系统调用失败「返回 -1 + 设 errno」，而不是直接返回错误码？</strong>
+A：这是 glibc 的<strong>错误翻译</strong>约定。内核实际返回的是 <code class="c">-errno</code>（如 <code class="c">-2</code> = <code class="c">-ENOENT</code>，落在 <code class="c">[-4095, -1]</code>，见 <code class="c">include/linux/err.h</code> 的 <code class="c">MAX_ERRNO=4095</code>）。glibc 包装检查返回值是否在这个范围：是则设 <code class="c">errno = -返回值</code> 并返回 <code class="c">-1</code>，否则当作合法值返回。所以直接 <code class="c">syscall()</code> 拿到的返回值是<strong>负错误码</strong>（<code class="c">-2</code>），不是 <code class="c">-1</code>。</p>
+<p><strong>Q3：<code class="c">__GLIBC_PREREQ</code> 是干嘛的？glibc 版本和内核版本是什么关系？</strong>
+A：<code class="c">__GLIBC_PREREQ(major, minor)</code> 是编译期检查 glibc 版本的宏，用于条件编译（如 <code class="c">clock_gettime</code> 在 glibc 2.17 起不用 <code class="c">-lrt</code>）。glibc 版本 ≠ 内核版本：glibc 封装系统调用但非 1:1——新内核特性（<code class="c">io_uring</code>、<code class="c">close_range</code>）要等 glibc 提供封装才能直接用，否则自己 <code class="c">syscall()</code> 绕过。老 glibc 跑新内核通常兼容（ABI 向后兼容），但用不到新 syscall 的现成封装。</p>
+<p><strong>Q4：glibc 和 musl 有什么区别？什么场景选 musl？</strong>
+A：glibc 功能最全、性能最优、扩展最多（LGPL）；musl 极致精简（约 500KB）、严格 POSIX 少扩展、静态链接友好（MIT）。做<strong>静态链接、跨发行版可移植</strong>的单文件二进制（嵌入式、容器如 Alpine）常选 musl；通用场景用 glibc。注意两者 <code class="c">strerror_r</code> 语义不同（musl 是 POSIX 返回 int，glibc 默认 GNU 返回 char*），是典型可移植性差异。</p>
+<p><strong>Q5：部署机报 <code class="c">GLIBC_x.yy not found</code> 是什么原因？怎么解决？</strong>
+A：编译机的 glibc 比部署机<strong>新</strong>，二进制链接了对旧 glibc 不存在的符号版本。解决：① 在部署机同版本环境编译；② 静态链接（<code class="c">-static</code>，或用 musl 静态编译）；③ 用容器（Docker）锁定编译/运行环境一致；④ 降低用到的 glibc 特性（避免新符号）。核心是「编译环境 glibc ≤ 运行环境 glibc」。</p>
+</details>
       </section>
       <section class="section" id="s-3-4">
         <div class="sec-head"><div class="sec-no">3.3</div><h2>错误处理（本章重中之重）</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
-- 上一节：<a href="#s-3-2">3.2 Library Functions（glibc）</a>
-- 下一节：<a href="#s-3-4">3.4 可移植编程（SUSv3 / POSIX）</a></p>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/err.h</code> — <code class="c">MAX_ERRNO</code> 错误返回约定）
+- 上一节：<a href="#s-3-3">3.3 The Standard C Library; The GNU C Library (glibc)</a>
+- 下一节：<a href="#s-3-5">3.5 参数传递（概念）</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>/<em> ❌ 错误：成功路径也可能留下旧 errno </em>/ open(...); if (errno != 0) { ... }</p>
+<p>系统调用和库函数<strong>失败时返回 -1 并设置 <code class="c">errno</code></strong>，正确读写 <code class="c">errno</code> 是所有系统编程的底线。本节回答三个问题：</p>
+<ol>
+<li><code class="c">errno</code> 是什么？为什么「成功不会清零它」？</li>
+<li>内核的「负错误码」怎么变成 glibc 的「-1 + errno」？</li>
+<li><code class="c">perror</code>/<code class="c">strerror</code>/<code class="c">strerror_r</code> 该怎么选？HFT 的错误处理有什么讲究？</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<h3><code class="c">errno</code>（<code class="c">&lt;errno.h&gt;</code>）</h3>
+<h2>1. <code class="c">errno</code> 机制：成功不清零、失败才赋值</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>规则</th>
-<th></th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>成功</td>
-<td><strong>不会</strong> 把 <code class="c">errno</code> 清零</td>
+<td><strong>不会</strong>把 <code class="c">errno</code> 清零（保留上一次的值）</td>
 </tr>
 <tr>
 <td>失败</td>
-<td>才被赋有意义的值</td>
+<td>才被赋为有意义的值</td>
 </tr>
 <tr>
-<td>现代 glibc</td>
-<td><strong>线程局部</strong>；多线程互不干扰</td>
+<td>线程局部</td>
+<td>现代 glibc 里 <code class="c">errno</code> 是<strong>线程局部</strong>变量（每线程独立，见 2.12）</td>
+</tr>
+<tr>
+<td>类型</td>
+<td><code class="c">int</code>（<code class="c">&lt;errno.h&gt;</code>），值是 <code class="c">E*</code> 宏（如 <code class="c">ENOENT</code>=2）</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>关键坑</strong>：不能「先调函数、再看 errno」，必须「先看返回值、失败才读 errno」：</p>
 <pre class="code" data-label="C"><code class="c">/* ❌ 错误：成功路径也可能留下旧 errno */
-open(...);
-if (errno != 0) { ... }
+open(path, O_RDONLY);
+if (errno != 0) { ... }      /* errno 可能是上一次失败留下的脏值！ */
 
-/* ✅ 先看返回值，失败再读 errno */
-fd = open(path, O_RDONLY);
+/* ✅ 正确：先看返回值，失败再读 errno */
+int fd = open(path, O_RDONLY);
 if (fd == -1) {
-    /* 此时读 errno 才有意义 */
+    /* 此时 errno 才有意义 */
+    perror(&quot;open&quot;);
 }
 </code></pre>
-<h3>打印 / 退出工具</h3>
+<p>因为成功时内核/glibc <strong>不碰 errno</strong>，它保留的是<strong>上一次</strong>失败的值。用 <code class="c">if (errno)</code> 判断成功与否是经典 bug。</p>
+<h2>2. 底层机制：<code class="c">MAX_ERRNO</code> 与负错误码</h2>
+<p>「返回 -1 + 设 errno」是 glibc 的<strong>翻译结果</strong>，内核实际返回的是 <code class="c">-errno</code>：</p>
+<pre class="code" data-label="code"><code class="c">内核返回：成功 → 返回值（fd ≥ 0 / 指针）
+          失败 → rax = -errno（落在 [-4095, -1]）
+                  ↑ MAX_ERRNO = 4095（include/linux/err.h:17）
+      │
+glibc 判断 rax ∈ [-4095, -1] ?
+      ├─ 是 → errno = -rax，返回 -1
+      └─ 否 → 返回 rax（合法值）
+</code></pre>
+<p>所以直接 <code class="c">syscall(SYS_open, ...)</code> 拿到的返回值是 <strong><code class="c">-2</code>（-ENOENT）</strong>，不是 <code class="c">-1</code>——因为你绕过了 glibc 的翻译层（见 3.3）。这也是「错误码都是小负数」的由来：<code class="c">-1 ~ -4095</code> 被内核保留给错误码，<code class="c">0</code> 以上的才是合法返回值（fd、指针、字节数）。</p>
+<h2>3. 常见错误码速查（HFT 高频）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>值</th>
+<th>含义</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EPERM</code></td>
+<td>1</td>
+<td>权限不足（无 capability）</td>
+<td>绑低端口、改系统参数</td>
+</tr>
+<tr>
+<td><code class="c">ENOENT</code></td>
+<td>2</td>
+<td>文件/目录不存在</td>
+<td>配置文件路径写错</td>
+</tr>
+<tr>
+<td><code class="c">EINTR</code></td>
+<td>4</td>
+<td>被信号打断</td>
+<td><code class="c">read</code>/<code class="c">epoll_wait</code> 被信号中断</td>
+</tr>
+<tr>
+<td><code class="c">EAGAIN</code>/<code class="c">EWOULDBLOCK</code></td>
+<td>11</td>
+<td>非阻塞操作暂无数据</td>
+<td>非阻塞 fd 读空</td>
+</tr>
+<tr>
+<td><code class="c">ENOMEM</code></td>
+<td>12</td>
+<td>内存不足</td>
+<td>分配失败</td>
+</tr>
+<tr>
+<td><code class="c">EACCES</code></td>
+<td>13</td>
+<td>权限拒绝</td>
+<td>打开无权限文件</td>
+</tr>
+<tr>
+<td><code class="c">EFAULT</code></td>
+<td>14</td>
+<td>传给内核的指针非法</td>
+<td>野指针传给 syscall</td>
+</tr>
+<tr>
+<td><code class="c">EBUSY</code></td>
+<td>16</td>
+<td>资源忙</td>
+<td>文件锁冲突、设备占用</td>
+</tr>
+<tr>
+<td><code class="c">EINVAL</code></td>
+<td>22</td>
+<td>参数无效</td>
+<td>flags 传错</td>
+</tr>
+<tr>
+<td><code class="c">EMFILE</code></td>
+<td>24</td>
+<td>进程 fd 数达上限</td>
+<td>fd 泄漏</td>
+</tr>
+<tr>
+<td><code class="c">ENOSPC</code></td>
+<td>28</td>
+<td>磁盘满</td>
+<td>写盘失败</td>
+</tr>
+<tr>
+<td><code class="c">EPIPE</code></td>
+<td>32</td>
+<td>读端已关闭的管道</td>
+<td>写已关闭的 socket</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong><code class="c">EINTR</code> 是系统编程最常被忽略的错误码</strong>：系统调用被信号打断时返回 -1 + <code class="c">EINTR</code>，这是<strong>正常情况不是错误</strong>，应重试而不是报错退出（见 Ch21 信号、Ch63 epoll）。</p>
+</blockquote>
+<h2>4. 打印 / 退出工具</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>函数</th>
 <th>作用</th>
+<th>注意</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">perror(msg)</code></td>
-<td>打印 <code class="c">msg</code> + errno 文本</td>
+<td>打印 <code class="c">msg: strerror(errno)</code> 到 stderr</td>
+<td>用当前 errno，最简单</td>
 </tr>
 <tr>
 <td><code class="c">strerror(errnum)</code></td>
-<td>错误码 → 字符串（经典版非线程安全；有 <code class="c">_r</code> 变体）</td>
+<td>错误码 → 字符串</td>
+<td><strong>非线程安全</strong>（静态缓冲区）</td>
 </tr>
 <tr>
-<td>TLPI <code class="c">errExit()</code></td>
-<td>打印并 <strong>exit</strong></td>
+<td><code class="c">strerror_r(errnum, buf, len)</code></td>
+<td>线程安全版</td>
+<td>GNU 语义返回 <code class="c">char*</code>，POSIX 语义返回 <code class="c">int</code>（musl 差异点）</td>
 </tr>
 <tr>
-<td>TLPI <code class="c">errMsg()</code></td>
+<td>TLPI <code class="c">errExit(msg)</code></td>
+<td>打印 + <code class="c">exit</code></td>
+<td>原书封装</td>
+</tr>
+<tr>
+<td>TLPI <code class="c">errMsg(msg)</code></td>
 <td>只打印不退出</td>
+<td>原书封装</td>
 </tr>
 <tr>
-<td>TLPI <code class="c">fatal()</code></td>
-<td>程序逻辑错误（非 syscall）</td>
+<td>TLPI <code class="c">fatal(msg)</code></td>
+<td>逻辑错误（非 syscall）</td>
+<td>原书封装</td>
 </tr>
 </tbody>
 </table></div>
-<h3><code class="c">tlpi_hdr.h</code></h3>
-<p>原书示例统一引入：头文件集合、错误函数、数值解析等。<br />
-清单概念：<code class="c">lib/tlpi_hdr.h</code>、<code class="c">error_functions.c</code> 等（见 man7 源码包）。</p>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+<p>TLPI 全书示例统一用 <code class="c">tlpi_hdr.h</code> + <code class="c">error_functions.c</code>（<code class="c">errExit</code>/<code class="c">errMsg</code>/<code class="c">fatal</code>/<code class="c">usageErr</code>），见 man7 源码包。核心是「错误消息带上 errno 文本」，方便定位。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EINTR</code> 打断热路径</td>
+<td><code class="c">recv</code>/<code class="c">epoll_wait</code> 被信号打断返回 EINTR，必须重试，否则漏掉行情/事件</td>
+</tr>
+<tr>
+<td>fd 泄漏排查</td>
+<td>长期运行报 <code class="c">EMFILE</code> = fd 泄漏，用 <code class="c">/proc/[pid]/fd</code> 数 fd（见 2.19）</td>
+</tr>
+<tr>
+<td>非阻塞读空</td>
+<td><code class="c">EAGAIN</code> 是「暂无数据」的正常信号，不是错误，循环里要区分处理</td>
+</tr>
+<tr>
+<td>错误日志</td>
+<td>用 <code class="c">strerror_r</code>（线程安全）+ 完整上下文（哪个 syscall、哪个参数、errno）</td>
+</tr>
+<tr>
+<td>野指针传内核</td>
+<td><code class="c">EFAULT</code> 说明把非法地址传给了 syscall，是内存 bug 而非 I/O 错误</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
 #include &lt;errno.h&gt;
 #include &lt;string.h&gt;
 #include &lt;fcntl.h&gt;
-/* 错误处理: errno + perror + strerror */
+#include &lt;unistd.h&gt;
+
 int main(void) {
-    if (open(&quot;/no/such/file&quot;, O_RDONLY) &lt; 0) {
-        perror(&quot;open failed&quot;);
-        printf(&quot;errno=%d (%s)\n&quot;, errno, strerror(errno));
+    /* 1. 标准错误处理：先返回值，失败读 errno */
+    int fd = open(&quot;/no/such/file&quot;, O_RDONLY);
+    if (fd == -1) {
+        perror(&quot;open failed&quot;);                       /* &quot;open failed: No such file...&quot; */
+        fprintf(stderr, &quot;errno=%d (%s)\n&quot;, errno, strerror(errno));
     }
+
+    /* 2. 线程安全版 strerror_r（GNU 语义返回 char*） */
+    char buf[128];
+    fprintf(stderr, &quot;thread-safe: %s\n&quot;,
+            strerror_r(ENOENT, buf, sizeof(buf)));
+
+    /* 3. EINTR 重试模式 */
+    char rbuf[16];
+    ssize_t n;
+    do {
+        n = read(STDIN_FILENO, rbuf, sizeof(rbuf));
+    } while (n == -1 &amp;&amp; errno == EINTR);   /* 被信号打断，重试 */
+    if (n == -1) perror(&quot;read&quot;);
+
     return 0;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<p>编译：<code class="c">gcc -o err err.c &amp;&amp; ./err</code>。观察 <code class="c">perror</code> 的「前缀 + errno 文本」格式，以及 <code class="c">strerror_r</code> 的线程安全用法。</p>
+<h2>7. 衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-3-2">3.2 Library Functions（glibc）</a></li>
-<li>下一节：<a href="#s-3-4">3.4 可移植编程（SUSv3 / POSIX）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-02.html#ch-2">Ch2 Fundamental Concepts</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>（第一个实战 syscall 集）</li>
+<li>下一节：<a href="#s-3-5">3.5 参数传递（概念）</a></li>
+<li>内核视角：<a href="../../05-linux-kernel/html/chapter-05.html#s-5-4">05/Ch5.4 系统调用实现与参数验证</a> — 内核侧的参数校验与错误返回</li>
+<li>TLPI 后续：<a href="chapter-04.html#intro">Ch4 通用 I/O 模型</a> — 第一个实战 syscall 集的错误处理</li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：为什么「成功不会清零 errno」？这会导致什么 bug？</strong>
+A：因为成功时内核/glibc 不去碰 <code class="c">errno</code>（省一次写），它保留的是<strong>上一次失败</strong>留下的旧值。这导致 <code class="c">if (errno != 0)</code> 判断成败是错的——可能上一次失败的脏值还在。正确做法是<strong>先看返回值</strong>（如 <code class="c">fd == -1</code>），失败后才读 <code class="c">errno</code>。</p>
+<p><strong>Q2：系统调用失败，为什么「返回 -1」而具体原因在 errno？底层机制是什么？</strong>
+A：内核实际返回的是<strong>负错误码</strong>（<code class="c">-errno</code>，如 <code class="c">-ENOENT</code>=<code class="c">-2</code>，落在 <code class="c">[-4095,-1]</code>，<code class="c">MAX_ERRNO=4095</code>）。glibc 包装判断返回值是否在这个范围：是则 <code class="c">errno = -返回值</code>、返回 <code class="c">-1</code>，否则当作合法返回值。所以「-1 + errno」是 glibc 翻译的结果——直接 <code class="c">syscall()</code> 拿到的是 <code class="c">-2</code> 不是 <code class="c">-1</code>。</p>
+<p><strong>Q3：<code class="c">EINTR</code> 是什么？为什么它不是真正的「错误」？</strong>
+A：<code class="c">EINTR</code>（=4）表示系统调用被<strong>信号</strong>打断了——某个信号处理函数执行完，被阻塞的系统调用（<code class="c">read</code>/<code class="c">epoll_wait</code> 等）返回 -1 + <code class="c">EINTR</code>。这是<strong>正常情况</strong>，不是 I/O 失败，应该<strong>重试</strong>（<code class="c">while (n==-1 &amp;&amp; errno==EINTR)</code>），而不是当作错误退出。忽略它会导致热路径偶发漏读事件。</p>
+<p><strong>Q4：<code class="c">perror</code>、<code class="c">strerror</code>、<code class="c">strerror_r</code> 有什么区别？多线程该用哪个？</strong>
+A：<code class="c">perror(msg)</code> 打印 <code class="c">msg: 错误文本</code> 到 stderr（用当前 errno，最简单）；<code class="c">strerror(errnum)</code> 把错误码转成字符串，但用<strong>静态缓冲区</strong>，<strong>非线程安全</strong>；<code class="c">strerror_r</code> 是<strong>线程安全</strong>版（写入调用者提供的 buf）。多线程程序（HFT 交易系统）必须用 <code class="c">strerror_r</code>，避免多个线程同时调 <code class="c">strerror</code> 互相覆盖缓冲区。</p>
+<p><strong>Q5：<code class="c">EAGAIN</code> 和 <code class="c">EACCES</code> 分别是什么？如何区分处理？</strong>
+A：<code class="c">EAGAIN</code>（=11，非阻塞模式下 =<code class="c">EWOULDBLOCK</code>）表示「资源暂时不可用、稍后重试」——如非阻塞 fd 读空、socket 发送缓冲满，是<strong>可恢复的暂时状态</strong>，应重试或进 epoll 等待；<code class="c">EACCES</code>（=13）表示「权限不足」，是<strong>永久性失败</strong>，重试也没用，应报错或换权限。两者本质不同：一个「等一会再来」，一个「根本没权限」。</p>
+</details>
       </section>
       <section class="section" id="s-3-5">
         <div class="sec-head"><div class="sec-no">3.5</div><h2>参数传递（概念）</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
-- 上一节：<a href="#s-3-4">3.4 可移植编程（SUSv3 / POSIX）</a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/uaccess.h</code>、<code class="c">arch/x86/entry/syscalls/syscall_64.tbl</code>）
+- 上一节：<a href="#s-3-4">3.3 错误处理（本章重中之重）</a>
+- 下一节：<a href="#s-3-6">3.4 可移植编程（SUSv3 / POSIX）</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>→ <a href="../../05-linux-kernel/html/chapter-05.html#s-5-4">LKD §5.4</a> ---</p>
+<p>系统调用的参数从用户态传到内核态，不是「直接共享内存」那么简单。本节回答三个问题：</p>
+<ol>
+<li>x86-64 上系统调用的参数怎么传？（寄存器约定）</li>
+<li>为什么内核<strong>不能直接解引用</strong>用户态传来的指针？<code class="c">copy_from_user</code> 在防什么？</li>
+<li>一个用户指针如果传错了，会发生什么（<code class="c">EFAULT</code>）？</li>
+</ol>
+<p>完整机制在 05 Ch5.4，这里建立「用户态/内核态数据传递要拷贝 + 校验」的核心心智。</p>
 <hr />
-<h2>要点</h2>
+<h2>1. 系统调用的参数传递：寄存器约定</h2>
+<p>系统调用号 + 参数都通过<strong>寄存器</strong>传（不是栈）。x86-64 约定：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th></th>
-<th></th>
+<th>寄存器</th>
+<th>内容</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>用户指针</td>
-<td>内核必须校验合法性</td>
+<td><code class="c">rax</code></td>
+<td>系统调用号（如 <code class="c">write</code>=1）</td>
 </tr>
 <tr>
-<td>拷贝</td>
-<td><code class="c">copy_from_user</code> / <code class="c">copy_to_user</code>（内核侧）</td>
+<td><code class="c">rdi</code></td>
+<td>第 1 个参数</td>
+</tr>
+<tr>
+<td><code class="c">rsi</code></td>
+<td>第 2 个参数</td>
+</tr>
+<tr>
+<td><code class="c">rdx</code></td>
+<td>第 3 个参数</td>
+</tr>
+<tr>
+<td><code class="c">r10</code></td>
+<td>第 4 个参数</td>
+</tr>
+<tr>
+<td><code class="c">r8</code></td>
+<td>第 5 个参数</td>
+</tr>
+<tr>
+<td><code class="c">r9</code></td>
+<td>第 6 个参数</td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <a href="../../05-linux-kernel/html/chapter-05.html#s-5-4">LKD §5.4</a></p>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;fcntl.h&gt;
-/* 系统调用参数约定 */
-int main(void) {
-    /* open: pathname, flags, mode */
-    int fd = open(&quot;/tmp/test.txt&quot;, O_CREAT | O_WRONLY, 0644);
-    if (fd &gt;= 0) {
-        /* write: fd, buf, count */
-        write(fd, &quot;params\n&quot;, 7);
-        close(fd);
-    }
-    return 0;
+<pre class="code" data-label="C"><code class="c">/* write(fd, buf, count) 的底层：rax=1, rdi=fd, rsi=buf, rdx=count */
+long my_write(int fd, const void *buf, size_t count) {
+    long ret;
+    asm volatile (
+        &quot;syscall&quot;
+        : &quot;=a&quot;(ret)
+        : &quot;a&quot;(1), &quot;D&quot;(fd), &quot;S&quot;(buf), &quot;d&quot;(count)   /* 1=SYS_write */
+        : &quot;rcx&quot;, &quot;r11&quot;, &quot;memory&quot;
+    );
+    return ret;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-3-4">3.4 可移植编程（SUSv3 / POSIX）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-02.html#ch-2">Ch2 Fundamental Concepts</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>（第一个实战 syscall 集）</li>
-</ul>
-      </section>
-      <section class="section" id="s-3-6">
-        <div class="sec-head"><div class="sec-no">3.4</div><h2>可移植编程（SUSv3 / POSIX）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
-- 上一节：<a href="#s-3-4">3.3 错误处理（本章重中之重）</a>
-- 下一节：<a href="#s-3-5">3.5 参数传递（概念）</a></p>
+<p>注意：系统调用最多 6 个参数（寄存器就这么多）。超过 6 个参数的系统调用很少见，必要时内核会定义结构体指针一次性传入（如 <code class="c">clone</code>、<code class="c">io_uring_setup</code>）。</p>
 </blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>须放在 <strong>所有 <code class="c">#include</code> 之前</strong>，控制 glibc 暴露哪些 API： 勿随意写死 <code class="c">int</code>/<code class="c">long</code> 当跨 32/64 位 ID/偏移。 ---</p>
-<hr />
-<h2>要点</h2>
-<h3>功能测试宏（Feature Test Macros）</h3>
-<p>须放在 <strong>所有 <code class="c">#include</code> 之前</strong>，控制 glibc 暴露哪些 API：</p>
+<p>系统调用号表（<code class="c">syscall_64.tbl</code>）决定了「号码 → 内核函数」的映射：</p>
+<pre class="code" data-label="code"><code class="c">0   read            sys_read
+1   write           sys_write
+2   open            sys_open
+9   mmap            sys_mmap
+57  fork            sys_fork
+228 clock_gettime   sys_clock_gettime
+257 openat          sys_openat
+</code></pre>
+<h2>2. 为什么内核不能直接解引用用户指针</h2>
+<p>内核拿到用户态传来的指针（如 <code class="c">write</code> 的 <code class="c">buf</code>），<strong>不能直接 <code class="c">*buf</code> 解引用</strong>。因为：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>宏</th>
-<th>含义</th>
+<th>风险</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">_POSIX_C_SOURCE</code></td>
-<td>POSIX</td>
+<td><strong>指向内核内存</strong></td>
+<td>恶意程序传一个内核地址，直接解引用 = 内核被读/写攻击</td>
 </tr>
 <tr>
-<td><code class="c">_XOPEN_SOURCE</code></td>
-<td>SUS</td>
+<td><strong>指向其他进程</strong></td>
+<td>用户指针可能指向别的进程的地址空间（内核态下无此隔离）</td>
 </tr>
 <tr>
-<td><code class="c">_GNU_SOURCE</code></td>
-<td>Linux / glibc 扩展（TLPI 示例常用）</td>
+<td><strong>未映射/已换出</strong></td>
+<td>指针指向的页可能根本不存在，解引用触发内核态缺页异常 → panic</td>
 </tr>
 </tbody>
 </table></div>
-<h3>标准 typedef（<code class="c">&lt;sys/types.h&gt;</code> 等）</h3>
+<p>所以内核必须<strong>先校验范围 + 拷贝</strong>，用 <code class="c">copy_from_user</code>/<code class="c">copy_to_user</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/linux/uaccess.h —— 用户态↔内核态数据拷贝（内部先 access_ok 校验） */
+static __always_inline __must_check unsigned long
+__copy_from_user(void *to, const void __user *from, unsigned long n);   /* :93 */
+static __always_inline __must_check unsigned long
+__copy_to_user(void __user *to, const void *from, unsigned long n);     /* :120 */
+</code></pre>
+<p>完整流程：</p>
+<pre class="code" data-label="code"><code class="c">用户态 write(fd, buf, count)
+      │  glibc：buf 是用户态指针，塞进 rsi
+      ▼
+内核 sys_write
+      │  拿到 buf（用户态指针），先 access_ok() 校验 buf 指向用户态合法范围
+      ▼
+copy_from_user(kernel_buf, buf, count)    ← 把数据从用户态拷贝到内核态缓冲区
+      │  （若拷贝失败/越界，返回剩余未拷贝字节数，syscall 报 EFAULT）
+      ▼
+内核用 kernel_buf 干活（写文件/发网络）
+</code></pre>
+<p><strong>为什么必须拷贝</strong>：内核不能信任用户指针，拷贝到内核缓冲区后，数据就在内核自己的内存里了，用户态再怎么改原指针也不影响。这就是「用户态↔内核态边界」的核心安全模型。</p>
+<h2>3. <code class="c">EFAULT</code>：用户指针传错的信号</h2>
+<p>当用户态传了一个非法指针（野指针、未映射地址、指向内核的地址）给系统调用，<code class="c">copy_from_user</code>/<code class="c">access_ok</code> 校验失败，系统调用返回 -1 + <code class="c">EFAULT</code>（=14）。</p>
+<pre class="code" data-label="C"><code class="c">char *bad = (char *)0x1;            /* 非法地址 */
+ssize_t n = write(1, bad, 10);      /* → 返回 -1，errno = EFAULT */
+perror(&quot;write&quot;);                    /* &quot;write: Bad address&quot; */
+</code></pre>
+<p><strong>关键区分</strong>：<code class="c">EFAULT</code> 是「你传的指针有问题」（内存 bug），不是「I/O 出错了」。排查时先看是不是野指针/悬空指针/缓冲区越界，别去查磁盘或网络。</p>
+<h2>4. 系统调用的参数类型：标准 typedef</h2>
+<p>系统调用的参数和返回值大量用<strong>标准 typedef</strong>（而非裸 <code class="c">int</code>/<code class="c">long</code>），保证跨平台可移植：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>类型</th>
 <th>用途</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">size_t</code></td>
+<td>无符号长度</td>
+<td><code class="c">write</code> 的 count</td>
+</tr>
+<tr>
+<td><code class="c">ssize_t</code></td>
+<td>有符号长度（可返回 -1）</td>
+<td><code class="c">read</code>/<code class="c">write</code> 返回值</td>
+</tr>
+<tr>
+<td><code class="c">off_t</code></td>
+<td>文件偏移</td>
+<td><code class="c">lseek</code></td>
+</tr>
+<tr>
+<td><code class="c">pid_t</code></td>
+<td>进程 ID</td>
+<td><code class="c">fork</code>/<code class="c">getpid</code></td>
+</tr>
+<tr>
+<td><code class="c">uid_t</code>/<code class="c">gid_t</code></td>
+<td>用户/组 ID</td>
+<td><code class="c">chown</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>别写死 <code class="c">int</code>/<code class="c">long</code> 当 ID/偏移</strong>——<code class="c">off_t</code> 在 32 位平台需 <code class="c">_FILE_OFFSET_BITS=64</code> 才是 64 位，裸 <code class="c">long</code> 会在大文件（&gt;2GB）上溢出。这是可移植编程的基础（见 3.6）。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>野指针传内核</td>
+<td><code class="c">EFAULT</code> 说明传了非法地址给 syscall，是内存 bug，先查指针生命周期</td>
+</tr>
+<tr>
+<td>大数据拷贝开销</td>
+<td><code class="c">write</code> 大缓冲时 <code class="c">copy_from_user</code> 有拷贝成本，超大块考虑 <code class="c">mmap</code> 零拷贝（见 2.8）</td>
+</tr>
+<tr>
+<td>6 参数上限</td>
+<td>系统调用最多 6 个参数，复杂调用用结构体指针（如 <code class="c">clone</code>、<code class="c">io_uring_setup</code>）</td>
+</tr>
+<tr>
+<td>内核态安全</td>
+<td>内核不信任用户指针，是「用户态崩溃不能拖垮内核」的隔离基石</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    /* 正常：buf 指向合法用户态内存 */
+    char buf[] = &quot;hello kernel\n&quot;;
+    write(STDOUT_FILENO, buf, strlen(buf));
+
+    /* 非法指针：触发 EFAULT */
+    char *bad = (char *)0x1;          /* 未映射地址 */
+    ssize_t n = write(STDOUT_FILENO, bad, 10);
+    if (n == -1)
+        printf(&quot;write(bad_ptr) → errno=%d (%s)\n&quot;, errno, strerror(errno));
+
+    /* 空指针：同样 EFAULT */
+    n = write(STDOUT_FILENO, NULL, 10);
+    if (n == -1)
+        printf(&quot;write(NULL)    → errno=%d (%s)\n&quot;, errno, strerror(errno));
+
+    return 0;
+}
+</code></pre>
+<p>运行：<code class="c">gcc -o p p.c &amp;&amp; ./p</code>。两个非法指针调用都返回 <code class="c">errno=14</code>（<code class="c">EFAULT</code>）——内核的 <code class="c">access_ok</code> 校验拦下了它们，而不是让内核去解引用非法地址。</p>
+<h2>7. 衔接</h2>
+<ul>
+<li>下一节：<a href="#s-3-6">3.4 可移植编程（SUSv3 / POSIX）</a></li>
+<li>内核视角：<a href="../../05-linux-kernel/html/chapter-05.html#s-5-4">05/Ch5.4 系统调用实现与参数验证</a> — <code class="c">copy_from_user</code>/<code class="c">access_ok</code> 深挖</li>
+<li>TLPI 后续：<a href="chapter-04.html#intro">Ch4 通用 I/O 模型</a> — <code class="c">open</code>/<code class="c">read</code>/<code class="c">write</code> 的具体参数</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：x86-64 系统调用的参数怎么传？最多几个参数？</strong>
+A：通过<strong>寄存器</strong>传（不是栈）：<code class="c">rax</code>=系统调用号，<code class="c">rdi</code>/<code class="c">rsi</code>/<code class="c">rdx</code>/<code class="c">r10</code>/<code class="c">r8</code>/<code class="c">r9</code> = 第 1~6 个参数。所以最多 <strong>6 个参数</strong>。超过 6 个参数的系统调用（如 <code class="c">clone</code>、<code class="c">io_uring_setup</code>）会改用结构体指针，一次传入所有参数。</p>
+<p><strong>Q2：为什么内核不能直接解引用用户态传来的指针？</strong>
+A：三个风险：① 恶意程序传内核地址，直接解引用 = 内核被读/写攻击；② 用户指针可能指向其他进程地址空间（内核态下无此隔离）；③ 指针指向的页可能未映射/已换出，解引用触发内核态缺页异常导致 panic。所以内核必须 <code class="c">access_ok</code> 校验 + <code class="c">copy_from_user</code> 拷贝到内核缓冲区。</p>
+<p><strong>Q3：<code class="c">copy_from_user</code> 和 <code class="c">copy_to_user</code> 分别干什么？为什么必须拷贝？</strong>
+A：<code class="c">copy_from_user</code> 把数据从<strong>用户态拷贝到内核态</strong>（如 <code class="c">write</code> 的 buf），<code class="c">copy_to_user</code> 反之（如 <code class="c">read</code> 把数据拷回用户缓冲）。必须拷贝是因为内核<strong>不信任用户指针</strong>——拷到内核缓冲区后数据就在内核自己的内存里，用户态再改原指针也不影响内核操作，这是「用户态崩溃不能拖垮内核」的隔离基石。</p>
+<p><strong>Q4：<code class="c">EFAULT</code> 是什么？它说明什么问题？</strong>
+A：<code class="c">EFAULT</code>（=14）表示传给内核的指针非法——<code class="c">access_ok</code>/<code class="c">copy_from_user</code> 校验失败（野指针、未映射地址、指向内核的地址）。它说明是<strong>用户态的内存 bug</strong>（指针生命周期/越界问题），不是 I/O 错误。排查时先查是不是野指针/悬空指针/缓冲区越界，别去查磁盘网络。</p>
+<p><strong>Q5：为什么 <code class="c">off_t</code> 不要写死成 <code class="c">long</code>？</strong>
+A：因为 <code class="c">off_t</code> 的宽度依赖平台和编译选项——32 位平台需定义 <code class="c">_FILE_OFFSET_BITS=64</code> 才让 <code class="c">off_t</code> 是 64 位，否则裸 <code class="c">long</code> 在文件 &gt;2GB 时会<strong>溢出</strong>，导致 <code class="c">lseek</code> 偏移错误。用标准 typedef（<code class="c">off_t</code>/<code class="c">pid_t</code>/<code class="c">ssize_t</code>）而不是裸 <code class="c">int</code>/<code class="c">long</code>，是跨平台可移植的基础（见 3.6）。</p>
+</details>
+      </section>
+      <section class="section" id="s-3-6">
+        <div class="sec-head"><div class="sec-no">3.4</div><h2>可移植编程（SUSv3 / POSIX）</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
+源码核验：glibc 头文件（<code class="c">&lt;features.h&gt;</code> — 功能测试宏、<code class="c">&lt;bits/types.h&gt;</code> — 标准 typedef）
+- 上一节：<a href="#s-3-5">3.5 参数传递（概念）</a>
+- 下一节：<a href="#s-3-7">3.7 Summary</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>同一份 C 代码，为什么在 Linux 能编译、换到别的 Unix 就报「未声明函数」？为什么手册里总让你在开头定义 <code class="c">_GNU_SOURCE</code>？为什么文件偏移不能写死 <code class="c">long</code>？本节回答三个问题：</p>
+<ol>
+<li>功能测试宏（<code class="c">_POSIX_C_SOURCE</code> / <code class="c">_XOPEN_SOURCE</code> / <code class="c">_GNU_SOURCE</code>）是什么？为什么必须放在<strong>所有 <code class="c">#include</code> 之前</strong>？</li>
+<li>标准 typedef（<code class="c">off_t</code> / <code class="c">pid_t</code> / <code class="c">size_t</code>）为什么比裸 <code class="c">int</code> / <code class="c">long</code> 可移植？<code class="c">_FILE_OFFSET_BITS=64</code> 解决什么？</li>
+<li>SUSv3 / POSIX 这套标准到底规定了什么？glibc 怎么用 <code class="c">features.h</code> 落实「方言切换」？</li>
+</ol>
+<hr />
+<h2>1. 可移植性到底难在哪</h2>
+<p>「可移植」不是「写一次到处跑」，真正的障碍是这三件事：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>障碍</th>
+<th>例子</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>API 存在性</strong></td>
+<td><code class="c">epoll</code> 只有 Linux；<code class="c">kqueue</code> 只有 BSD</td>
+<td>直接调用 → 别的平台编译不过</td>
+</tr>
+<tr>
+<td><strong>类型宽度</strong></td>
+<td><code class="c">long</code> 在 32 位平台是 4 字节、64 位平台是 8 字节</td>
+<td>文件偏移 / ID 溢出，ABI 不匹配</td>
+</tr>
+<tr>
+<td><strong>语义细节</strong></td>
+<td><code class="c">strerror_r</code> 返回值：glibc 是 <code class="c">char*</code>、musl 是 <code class="c">int</code></td>
+<td>同一函数不同 C 库行为不同</td>
+</tr>
+</tbody>
+</table></div>
+<p>Linux 世界解决这三件事的标准武器，就是<strong>功能测试宏</strong>（管「暴露哪些 API」）+ <strong>标准 typedef</strong>（管「类型宽度跨平台一致」）。</p>
+<h2>2. 功能测试宏（Feature Test Macros）</h2>
+<p>glibc 里藏着一大堆非标准 / 各标准版本的函数。默认情况下 glibc 只暴露<strong>最保守的一批</strong>（ISO-C + 基础 POSIX）。要解锁更多 API，得先「声明自己要用哪个标准」——这就是功能测试宏。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>取值示例</th>
+<th>解锁什么</th>
+<th>谁定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_POSIX_C_SOURCE</code></td>
+<td><code class="c">200809L</code></td>
+<td>POSIX.1-2008 标准接口</td>
+<td>POSIX</td>
+</tr>
+<tr>
+<td><code class="c">_XOPEN_SOURCE</code></td>
+<td><code class="c">700</code></td>
+<td>SUSv4（X/Open 扩展，POSIX 超集）</td>
+<td>SUS</td>
+</tr>
+<tr>
+<td><code class="c">_GNU_SOURCE</code></td>
+<td>（有定义即可）</td>
+<td>全部 + Linux/GNU 扩展（<code class="c">epoll</code>、GNU 版 <code class="c">strerror_r</code>）</td>
+<td>glibc</td>
+</tr>
+<tr>
+<td><code class="c">_DEFAULT_SOURCE</code></td>
+<td>（有定义即可）</td>
+<td>恢复 glibc 默认暴露的杂项 BSD/Linux 函数</td>
+<td>glibc</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两条铁律：</strong></p>
+<ol>
+<li><strong>必须放在所有 <code class="c">#include</code> 之前</strong>——功能测试宏在 <code class="c">&lt;features.h&gt;</code> 里被读一次就「定型」，先 <code class="c">#include</code> 了别的头再定义宏 = 无效。</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">/* ❌ 错误：宏定义太晚，前两个 include 已经按默认方言展开过了 */
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#define _GNU_SOURCE        // 到这里才定义，前面的头已经定死
+
+/* ✅ 正确：宏必须在最前面，或在编译命令里 -D_GNU_SOURCE */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+</code></pre>
+<ol start="2">
+<li><strong><code class="c">_GNU_SOURCE</code> 最省心但最不「可移植」</strong>——它解锁了所有 Linux 专属函数，代价是写出来的代码一旦用了 <code class="c">epoll</code> / GNU 版 <code class="c">strerror_r</code>，换到非 glibc 环境就可能编译不过。追求「只在 Linux 上跑」就用 <code class="c">_GNU_SOURCE</code>；追求「严格 POSIX 可移植」就只用 <code class="c">_POSIX_C_SOURCE=200809L</code>。</li>
+</ol>
+<p>编译期等价写法：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -D_GNU_SOURCE -o prog prog.c          # 等价于源码里 #define _GNU_SOURCE
+gcc -D_POSIX_C_SOURCE=200809L -o prog prog.c   # 严格 POSIX，锁掉 GNU 扩展
+</code></pre>
+<h2>3. 标准 typedef：别写死 int / long</h2>
+<p>系统调用的参数和返回值大量用<strong>标准 typedef</strong>，而不是裸 <code class="c">int</code>/<code class="c">long</code>，就是为了让类型宽度在跨平台时<strong>由头文件统一决定</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>用途</th>
+<th>定义处（glibc）</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">pid_t</code></td>
 <td>进程 ID</td>
+<td><code class="c">&lt;bits/types.h&gt;</code> → <code class="c">__pid_t</code></td>
 </tr>
 <tr>
 <td><code class="c">off_t</code></td>
-<td>文件偏移（<code class="c">lseek</code>）</td>
+<td>文件偏移</td>
+<td><code class="c">&lt;bits/types.h&gt;</code> → <code class="c">__off_t</code></td>
 </tr>
 <tr>
 <td><code class="c">size_t</code> / <code class="c">ssize_t</code></td>
-<td>长度；<code class="c">read</code>/<code class="c">write</code> 返回常用 <code class="c">ssize_t</code></td>
+<td>无符号 / 有符号长度</td>
+<td><code class="c">&lt;stddef.h&gt;</code> / <code class="c">&lt;sys/types.h&gt;</code></td>
 </tr>
 <tr>
 <td><code class="c">uid_t</code> / <code class="c">gid_t</code></td>
 <td>用户 / 组 ID</td>
+<td><code class="c">&lt;bits/types.h&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">mode_t</code></td>
+<td>文件权限位</td>
+<td><code class="c">&lt;bits/types.h&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">dev_t</code> / <code class="c">ino_t</code></td>
+<td>设备号 / inode 号</td>
+<td><code class="c">&lt;bits/types.h&gt;</code></td>
 </tr>
 </tbody>
 </table></div>
-<p>勿随意写死 <code class="c">int</code>/<code class="c">long</code> 当跨 32/64 位 ID/偏移。</p>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+<p><strong>最经典的坑是 <code class="c">off_t</code> 与大文件</strong>：32 位平台上 <code class="c">off_t</code> 默认是 32 位，<code class="c">lseek</code> 无法处理 &gt;2GB 的偏移。解决办法是定义 <code class="c">_FILE_OFFSET_BITS=64</code>，让 <code class="c">off_t</code> 变成 64 位：</p>
+<pre class="code" data-label="C"><code class="c">#define _FILE_OFFSET_BITS 64   /* 32 位平台也要能操作 &gt;2GB 大文件 */
+#include &lt;sys/types.h&gt;
 #include &lt;unistd.h&gt;
-/* SUSv3 标准: POSIX 超集 */
+
+off_t pos = lseek(fd, 0, SEEK_END);   /* 现在 off_t 是 64 位，不会溢出 */
+</code></pre>
+<p><strong>为什么别写死 <code class="c">long</code></strong>：<code class="c">long</code> 的宽度跟平台走（LP64 下 8 字节，ILP32 下 4 字节），而 <code class="c">off_t</code> 的宽度由 <code class="c">_FILE_OFFSET_BITS</code> 决定，两者可能不一致。写死 <code class="c">long</code> 当偏移，在 32 位平台 + 大文件场景下必然溢出或错位。用标准 typedef，让头文件替你管宽度。</p>
+<h2>4. SUSv3 / POSIX 标准演进</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>年份</th>
+<th>标准</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1988</td>
+<td>POSIX.1-1988</td>
+<td>第一版，系统接口 + shell</td>
+</tr>
+<tr>
+<td>1990</td>
+<td>POSIX.1-1990 (ISO 9945-1)</td>
+<td>成为 ISO 标准</td>
+</tr>
+<tr>
+<td>1996</td>
+<td>POSIX.1-1996</td>
+<td>实时扩展（信号量、时钟、调度）</td>
+</tr>
+<tr>
+<td>2001</td>
+<td><strong>POSIX.1-2001 = SUSv3</strong></td>
+<td>合并 X/Open，TLPI 全书基线</td>
+</tr>
+<tr>
+<td>2008</td>
+<td><strong>POSIX.1-2008 = SUSv4</strong></td>
+<td>当前主流，<code class="c">_POSIX_C_SOURCE=200809L</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>TLPI 全书以 <strong>SUSv3</strong> 为基线，并标注「这是 Linux 扩展」的地方。读 TLPI 时遇到「SUSv3 规定……」意味着：这是 POSIX 保证的接口，任何合规 Unix 都有；而「Linux 特有」意味着：换平台要自己找替代（如 <code class="c">epoll</code> ↔ <code class="c">kqueue</code>）。</p>
+<h2>5. glibc 怎么落实方言切换：features.h</h2>
+<p>功能测试宏的真正机制在 <code class="c">&lt;features.h&gt;</code>——所有 glibc 标准头文件开头都 <code class="c">#include &lt;features.h&gt;</code>，它读一遍功能测试宏，据此 <code class="c">#define</code> 或 <code class="c">#undef</code> 一堆 <code class="c">__USE_*</code> 内部开关，后续头文件再按这些开关决定「这个函数声明要不要露出来」。</p>
+<pre class="code" data-label="code"><code class="c">#include &lt;unistd.h&gt;
+      │  开头 #include &lt;features.h&gt;
+      ▼
+features.h 读 _GNU_SOURCE / _POSIX_C_SOURCE / _XOPEN_SOURCE ...
+      │  换算成 __USE_GNU / __USE_POSIX / __USE_XOPEN ... 内部开关
+      ▼
+后续头文件按 __USE_* 决定暴露哪些声明（如 epoll_create 只在 __USE_GNU 时声明）
+</code></pre>
+<p>这就是「功能测试宏必须在最前面」的底层原因：<code class="c">&lt;features.h&gt;</code> 只会被有效处理一次，先 include 别的头就会用「默认方言」把开关定死。</p>
+<h2>6. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>静态可移植二进制</td>
+<td>用 musl + 严格 POSIX（<code class="c">_POSIX_C_SOURCE</code>）编译，摆脱 glibc 方言依赖（见 glibc 节）</td>
+</tr>
+<tr>
+<td>大文件 / 大偏移</td>
+<td>行情回放、日志文件 &gt;2GB 时必须 <code class="c">_FILE_OFFSET_BITS=64</code>，否则 <code class="c">lseek</code> 溢出</td>
+</tr>
+<tr>
+<td>锁死 GNU 扩展</td>
+<td>用 <code class="c">epoll</code>/<code class="c">io_uring</code> 时需 <code class="c">_GNU_SOURCE</code>；这是「只在 Linux 跑」的显式声明</td>
+</tr>
+<tr>
+<td>交叉编译</td>
+<td>功能测试宏 + 标准 typedef 保证目标平台 ABI 正确，不依赖宿主机类型宽度</td>
+</tr>
+<tr>
+<td>类型宽度敏感</td>
+<td>HFT 里用 <code class="c">int64_t</code> 存时间戳/序号，别用可能 32 位的 <code class="c">long</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE            /* 1. 功能测试宏必须在最前面 */
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+
 int main(void) {
+    /* 2. 编译期查看已生效的功能测试宏 */
 #ifdef _POSIX_C_SOURCE
     printf(&quot;_POSIX_C_SOURCE = %ldL\n&quot;, (long)_POSIX_C_SOURCE);
+#else
+    printf(&quot;_POSIX_C_SOURCE 未定义\n&quot;);
 #endif
+
+#ifdef _GNU_SOURCE
+    printf(&quot;_GNU_SOURCE 已定义 → epoll 等 GNU 扩展可用\n&quot;);
+#endif
+
+    /* 3. 标准 typedef：pid_t 不写死 int */
+    pid_t pid = getpid();
+    printf(&quot;pid = %d (pid_t)\n&quot;, (int)pid);
+
+    /* 4. sysconf 查询系统限制（POSIX 保证的接口） */
     printf(&quot;sysconf(_SC_OPEN_MAX) = %ld\n&quot;, sysconf(_SC_OPEN_MAX));
     return 0;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<p>编译验证方言差异：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -o a a.c                              # 默认：GNU 扩展不可见
+gcc -D_GNU_SOURCE -o b a.c                # 解锁 GNU 扩展
+gcc -D_POSIX_C_SOURCE=200809L -o c a.c    # 严格 POSIX，锁掉 GNU 扩展
+</code></pre>
+<h2>8. 衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-3-4">3.3 错误处理（本章重中之重）</a></li>
-<li>下一节：<a href="#s-3-5">3.5 参数传递（概念）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-02.html#ch-2">Ch2 Fundamental Concepts</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>（第一个实战 syscall 集）</li>
+<li>下一节：<a href="#s-3-7">3.7 Summary</a></li>
+<li>上一节：<a href="#s-3-5">3.5 参数传递（概念）</a> — <code class="c">off_t</code> 别写死 <code class="c">long</code> 的机制根源</li>
+<li>glibc 方言差异：<a href="#s-3-3">3.3 The Standard C Library; The GNU C Library (glibc)</a> — musl vs glibc 的可移植性差异</li>
+<li>TLPI 后续：<a href="chapter-04.html#intro">Ch4 通用 I/O 模型</a> — <code class="c">open</code>/<code class="c">read</code>/<code class="c">lseek</code> 用到的 <code class="c">off_t</code>/<code class="c">mode_t</code></li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：功能测试宏为什么必须放在所有 <code class="c">#include</code> 之前？</strong>
+A：因为 glibc 的所有标准头文件开头都会 <code class="c">#include &lt;features.h&gt;</code>，它读取功能测试宏并<strong>一次性</strong>换算成 <code class="c">__USE_*</code> 内部开关。如果你先 <code class="c">#include</code> 了别的头，<code class="c">features.h</code> 已经在「默认方言」下把开关定死了，之后再 <code class="c">#define _GNU_SOURCE</code> 也不生效。所以宏必须在最前面，或编译期用 <code class="c">-D</code> 传入。</p>
+<p><strong>Q2：<code class="c">_GNU_SOURCE</code>、<code class="c">_POSIX_C_SOURCE</code>、<code class="c">_XOPEN_SOURCE</code> 分别解锁什么？</strong>
+A：<code class="c">_POSIX_C_SOURCE</code>（如 <code class="c">200809L</code>）解锁 POSIX.1-2008 标准接口；<code class="c">_XOPEN_SOURCE</code>（如 <code class="c">700</code>）解锁 SUSv4（POSIX 超集，X/Open 扩展）；<code class="c">_GNU_SOURCE</code> 解锁全部 + Linux/GNU 扩展（<code class="c">epoll</code>、GNU 版 <code class="c">strerror_r</code>）。<code class="c">_GNU_SOURCE</code> 最省心但最不「可移植」——用了 GNU 扩展的代码换到非 glibc 环境可能编译不过。</p>
+<p><strong>Q3：<code class="c">off_t</code> 为什么不能写死成 <code class="c">long</code>？<code class="c">_FILE_OFFSET_BITS=64</code> 干嘛的？</strong>
+A：<code class="c">long</code> 的宽度跟平台走（32 位 4 字节、64 位 8 字节），而 <code class="c">off_t</code> 的宽度由 <code class="c">_FILE_OFFSET_BITS</code> 决定。32 位平台上 <code class="c">off_t</code> 默认 32 位，无法处理 &gt;2GB 的文件偏移；定义 <code class="c">_FILE_OFFSET_BITS=64</code> 后 <code class="c">off_t</code> 变 64 位。写死 <code class="c">long</code> 当偏移，在 32 位 + 大文件场景必然溢出或错位。用标准 typedef，让头文件替你管宽度。</p>
+<p><strong>Q4：标准 typedef（<code class="c">pid_t</code>/<code class="c">off_t</code>/<code class="c">mode_t</code> 等）本质是什么？在哪定义的？</strong>
+A：本质是「类型宽度的跨平台抽象」——用 <code class="c">pid_t</code> 而不是 <code class="c">int</code>，让头文件根据平台决定实际宽度。glibc 里它们在 <code class="c">&lt;bits/types.h&gt;</code> 定义为 <code class="c">__pid_t</code>/<code class="c">__off_t</code> 等底层类型，再由 <code class="c">&lt;sys/types.h&gt;</code> 等标准头 <code class="c">typedef</code> 成公开名字。开发者只认公开的 <code class="c">pid_t</code>/<code class="c">off_t</code>，不关心底层是 <code class="c">int</code> 还是 <code class="c">long</code>。</p>
+<p><strong>Q5：SUSv3 和 POSIX 是什么关系？TLPI 为什么以 SUSv3 为基线？</strong>
+A：SUSv3（Single UNIX Specification v3）= POSIX.1-2001，是 POSIX 与 X/Open 标准合并后的统一标准；SUSv4 = POSIX.1-2008 是当前主流。TLPI 以 SUSv3 为基线，遇到「SUSv3 规定……」意味着这是 POSIX 保证的接口（任何合规 Unix 都有），而「Linux 特有」意味着换平台要自己找替代（如 <code class="c">epoll</code> ↔ <code class="c">kqueue</code>）。</p>
+</details>
       </section>
       <section class="section" id="s-3-7">
         <div class="sec-head"><div class="sec-no">3.7</div><h2>Summary</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a></p>
+<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
+- 上一节：<a href="#s-3-6">3.4 可移植编程（SUSv3 / POSIX）</a>
+- 下一节：<a href="#s-3-8">3.8 Exercise</a></p>
 </blockquote>
+<hr />
 <h2>本章回顾</h2>
-<h3>核心概念</h3>
+<p>第 3 章是「用户态 ↔ 内核」交互模型的总纲，<strong>不含</strong>文件读写实战（那是 Ch4）。核心是把<strong>系统调用、库函数、错误处理、参数传递、可移植性</strong>五个概念串成一条线。</p>
+<h3>核心概念速查</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>概念</th>
-<th>要点</th>
+<th>一句话</th>
+<th>关键点</th>
+<th>详细</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>系统调用</td>
-<td>用户态→内核态的受控入口，通过软中断/sysenter指令</td>
+<td>用户态进内核的受控入口</td>
+<td>编号 + 寄存器 + <code class="c">syscall</code> 指令，远贵于普通函数调用</td>
+<td><a href="#s-3-1">3.1</a></td>
 </tr>
 <tr>
 <td>库函数</td>
-<td>glibc 提供的高层封装，可能不调系统调用</td>
+<td>glibc 的高层封装</td>
+<td>纯用户态函数（<code class="c">strcpy</code>）不进内核；<code class="c">fopen</code> 内部才调 <code class="c">open</code></td>
+<td><a href="#s-3-2">3.2</a></td>
+</tr>
+<tr>
+<td>glibc</td>
+<td>一个库三种身份</td>
+<td>ISO-C 实现 + POSIX 封装 + Linux 扩展；<code class="c">MAX_ERRNO</code> 错误翻译</td>
+<td><a href="#s-3-3">3.3</a></td>
 </tr>
 <tr>
 <td>错误处理</td>
-<td>系统调用失败返回 -1，errno 记录原因</td>
+<td>失败返回 -1 + 设 <code class="c">errno</code></td>
+<td>成功不清零；<code class="c">EINTR</code> 要重试；<code class="c">strerror_r</code> 线程安全</td>
+<td><a href="#s-3-4">3.3</a></td>
+</tr>
+<tr>
+<td>参数传递</td>
+<td>寄存器传参，最多 6 个</td>
+<td><code class="c">copy_from_user</code> 校验 + 拷贝；非法指针 → <code class="c">EFAULT</code></td>
+<td><a href="#s-3-5">3.5</a></td>
 </tr>
 <tr>
 <td>可移植性</td>
-<td>SUSv3/POSIX 标准，条件编译</td>
+<td>功能测试宏 + 标准 typedef</td>
+<td>宏放 <code class="c">#include</code> 前；<code class="c">off_t</code> 别写死 <code class="c">long</code></td>
+<td><a href="#s-3-6">3.4</a></td>
 </tr>
 </tbody>
 </table></div>
-<h3>错误处理模式</h3>
-<pre class="code" data-label="C"><code class="c">fd = open(path, O_RDONLY);
-if (fd == -1) {
-    perror(&quot;open&quot;);      // 打印 &quot;open: &lt;strerror(errno)&gt;&quot;
-    exit(EXIT_FAILURE);
-}
+<h3>系统调用完整往返（本章全景）</h3>
+<pre class="code" data-label="code"><code class="c">用户态代码
+   │  调 glibc 包装（如 open/read/write/fork）
+   ▼
+glibc 包装：rax=调用号, rdi/rsi/rdx/r10/r8/r9=参数
+   │  功能测试宏决定这个包装函数是否被声明（features.h）
+   ▼
+syscall 指令陷入内核（用户态 → 内核态）
+   │  内核 sys_call_table[号] 分发到 sys_xxx
+   │  copy_from_user 校验并拷贝用户指针（防 EFAULT / 内核被攻击）
+   ▼
+内核干活，返回值放进 rax：
+   成功 → 合法返回值（fd≥0 / 指针 / 字节数）
+   失败 → -errno（落在 [-4095, -1]，MAX_ERRNO=4095）
+   ▼
+回用户态，glibc 包装判断 rax：
+   ∈[-4095,-1] → errno = -rax，返回 -1   （错误翻译）
+   否则        → 返回 rax（合法值）
+   ▼
+用户代码：先看返回值，失败才读 errno（成功不清零！）
 </code></pre>
-<h3>常用错误码</h3>
+<h3>五个必须记住的坑</h3>
+<ol>
+<li><strong>成功不清 errno</strong> → 判断成败只能看返回值，不能 <code class="c">if (errno)</code>。</li>
+<li><strong><code class="c">EINTR</code> 不是错误</strong> → 被信号打断，<code class="c">while (n==-1 &amp;&amp; errno==EINTR)</code> 重试。</li>
+<li><strong><code class="c">EFAULT</code> 是内存 bug</strong> → 传了非法指针给内核，查野指针/越界，别查 I/O。</li>
+<li><strong><code class="c">EAGAIN</code> 是暂时状态</strong> → 非阻塞「暂无数据」，重试或进 epoll，别当失败。</li>
+<li><strong>直接 <code class="c">syscall()</code> 拿负错误码</strong> → 绕过 glibc 时返回值是 <code class="c">-2</code>（-ENOENT）不是 <code class="c">-1</code>。</li>
+</ol>
+<h2>HFT / 嵌入式收束</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>errno</th>
-<th>含义</th>
+<th>路线</th>
+<th>本章的落地</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>ENOENT</td>
-<td>文件不存在</td>
+<td>HFT 低延迟</td>
+<td>少 syscall（逐字节 read = N 次陷入）；区分 glibc 包装成本 vs 真陷入；错误处理用 <code class="c">strerror_r</code>（线程安全）+ 完整上下文</td>
 </tr>
 <tr>
-<td>EACCES</td>
-<td>权限不足</td>
-</tr>
-<tr>
-<td>EBADF</td>
-<td>无效 fd</td>
-</tr>
-<tr>
-<td>EINVAL</td>
-<td>无效参数</td>
-</tr>
-<tr>
-<td>ENOMEM</td>
-<td>内存不足</td>
+<td>嵌入式</td>
+<td>严格返回值 + <code class="c">errno</code> 检查；musl 静态编译摆脱 glibc 依赖；<code class="c">_FILE_OFFSET_BITS=64</code> 处理大日志</td>
 </tr>
 </tbody>
 </table></div>
-<h2>与后续衔接</h2>
+<h2>衔接</h2>
 <ul>
-<li><strong>ch04</strong>：文件 I/O — 第一个实战系统调用</li>
+<li>下一节：<a href="#s-3-8">3.8 Exercise</a></li>
+<li>实战起点：<a href="chapter-04.html#intro">Ch4 通用 I/O 模型</a> — 把本章的 syscall 模型用到 <code class="c">open</code>/<code class="c">read</code>/<code class="c">write</code></li>
+<li>内核视角：<a href="../../05-linux-kernel/html/chapter-05.html#s-5-1">05/Ch5.1 与内核通信</a> — libc ≠ syscall</li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：用一句话串起本章五个概念。</strong>
+A：系统调用是「用户态进内核的受控入口」（编号+寄存器+陷阱指令），库函数是 glibc 在其上的高层封装（纯用户态函数不进内核）；系统调用失败返回 -1 并设 <code class="c">errno</code>（成功不清零、<code class="c">EINTR</code> 重试）；参数通过寄存器传递且内核必须 <code class="c">copy_from_user</code> 拷贝校验；跨平台靠功能测试宏 + 标准 typedef 保证 API 可见性与类型宽度一致。</p>
+<p><strong>Q2：为什么「判断成功失败要看返回值，不能看 errno」？</strong>
+A：因为成功时内核/glibc <strong>不会清零</strong> <code class="c">errno</code>，它保留的是上一次失败留下的旧值。用 <code class="c">if (errno != 0)</code> 判断成败会误判。正确姿势：<code class="c">fd = open(...); if (fd == -1) { /* 这时才读 errno */ }</code>。</p>
+<p><strong>Q3：系统调用失败，用户看到「-1 + errno」，内核实际返回了什么？</strong>
+A：内核实际返回 <code class="c">-errno</code>（负错误码，如 <code class="c">-ENOENT</code>=<code class="c">-2</code>，落在 <code class="c">[-4095,-1]</code>，<code class="c">MAX_ERRNO=4095</code>）。glibc 包装检测返回值在此范围，则设 <code class="c">errno = -返回值</code> 并返回 <code class="c">-1</code>。所以「-1 + errno」是 glibc 翻译的结果——直接 <code class="c">syscall()</code> 拿到的是 <code class="c">-2</code> 不是 <code class="c">-1</code>。</p>
+<p><strong>Q4：<code class="c">EINTR</code>、<code class="c">EAGAIN</code>、<code class="c">EFAULT</code> 三个错误码怎么区分处理？</strong>
+A：<code class="c">EINTR</code>（=4）被信号打断 → <strong>重试</strong>（<code class="c">while(n==-1 &amp;&amp; errno==EINTR)</code>）；<code class="c">EAGAIN</code>（=11）非阻塞暂时无数据 → <strong>稍后重试或进 epoll</strong>；<code class="c">EFAULT</code>（=14）传给内核的指针非法 → <strong>查内存 bug</strong>（野指针/越界），不是 I/O 错误。前两个是「可恢复的暂时状态」，最后一个是「程序 bug」。</p>
+<p><strong>Q5：<code class="c">fopen</code> 和 <code class="c">open</code> 的本质区别是什么？</strong>
+A：<code class="c">fopen</code> 是 ISO-C 标准库函数，返回带用户态缓冲的 <code class="c">FILE*</code>，跨平台（Windows 用 msvcrt 实现）；<code class="c">open</code> 是 POSIX 系统调用包装，返回内核整数 <code class="c">fd</code>，无用户态缓冲，Unix/Linux 限定。<code class="c">fopen</code> 内部最终会调用 <code class="c">open</code> 系统调用（Linux 上），但多了一层用户态缓冲管理。</p>
+</details>
       </section>
       <section class="section" id="s-3-8">
         <div class="sec-head"><div class="sec-no">3.8</div><h2>Exercise</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a></p>
+<p>本章：<a href="#intro">TLPI 第 03 章 — System Programming Concepts</a>
+- 上一节：<a href="#s-3-7">3.7 Summary</a>
+- 下一节：<a href="chapter-04.html#intro">Ch4 Universal I/O</a></p>
 </blockquote>
+<hr />
 <h2>练习题</h2>
-<p><strong>题目：</strong> 编写一个程序，使用 <code class="c">open()</code>/<code class="c">read()</code>/<code class="c">write()</code>/<code class="c">close()</code> 将源文件复制到目标文件。要求：
-1. 检查所有系统调用的返回值
-2. 使用 <code class="c">perror()</code> 报告错误
-3. 支持命令行参数：<code class="c">./copy source dest</code></p>
+<h3>题 1：文件复制（基础）</h3>
+<p>编写程序 <code class="c">./copy source dest</code>，用 <code class="c">open</code>/<code class="c">read</code>/<code class="c">write</code>/<code class="c">close</code> 复制文件，要求：</p>
+<ol>
+<li>检查所有系统调用返回值</li>
+<li>用 <code class="c">perror</code> 报告错误</li>
+<li>用标准 typedef（<code class="c">ssize_t</code>/<code class="c">mode_t</code>），不写死 <code class="c">int</code>/<code class="c">long</code></li>
+</ol>
 <details>
 <summary>参考答案</summary>
 <pre class="code" data-label="C"><code class="c">#include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
+#include &lt;sys/types.h&gt;
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         fprintf(stderr, &quot;Usage: %s source dest\n&quot;, argv[0]);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     int src = open(argv[1], O_RDONLY);
-    if (src == -1) { perror(&quot;open source&quot;); exit(1); }
+    if (src == -1) { perror(&quot;open source&quot;); exit(EXIT_FAILURE); }
 
     int dst = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (dst == -1) { perror(&quot;open dest&quot;); exit(1); }
+    if (dst == -1) { perror(&quot;open dest&quot;); exit(EXIT_FAILURE); }
 
     char buf[4096];
     ssize_t n;
     while ((n = read(src, buf, sizeof(buf))) &gt; 0) {
-        if (write(dst, buf, n) != n) {
-            perror(&quot;write&quot;); exit(1);
+        if (write(dst, buf, n) != n) {   /* 短写处理：要求写满 n 字节 */
+            perror(&quot;write&quot;); exit(EXIT_FAILURE);
         }
     }
-    if (n == -1) { perror(&quot;read&quot;); exit(1); }
+    if (n == -1) { perror(&quot;read&quot;); exit(EXIT_FAILURE); }
 
-    close(src);
-    close(dst);
+    if (close(src) == -1) perror(&quot;close src&quot;);
+    if (close(dst) == -1) perror(&quot;close dst&quot;);
     return 0;
 }
 </code></pre>
 </details>
+<h3>题 2：EINTR 重试（错误处理）</h3>
+<p>上面的 <code class="c">read</code> 没有处理 <code class="c">EINTR</code>。改写循环，让 <code class="c">read</code> 被信号打断时自动重试，而不是当作错误退出。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="C"><code class="c">#include &lt;errno.h&gt;   /* errno, EINTR */
+
+ssize_t n;
+do {
+    n = read(src, buf, sizeof(buf));
+} while (n == -1 &amp;&amp; errno == EINTR);   /* 被信号打断 → 重试 */
+
+if (n == -1) { perror(&quot;read&quot;); exit(EXIT_FAILURE); }
+/* n == 0 表示读到 EOF，正常退出循环 */
+</code></pre>
+<p>要点：<code class="c">EINTR</code> 是「被信号打断」的正常现象（见错误处理节），不是 I/O 失败。忽略它会导致热路径偶发漏读。</p>
+</details>
+<h3>题 3：直接 syscall（绕过 glibc）</h3>
+<p>不调用 <code class="c">write()</code>，用 <code class="c">syscall(SYS_write, ...)</code> 直接写 <code class="c">"raw\n"</code> 到标准输出，并解释为什么失败时返回值是负错误码而不是 <code class="c">-1</code>。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/syscall.h&gt;
+
+int main(void) {
+    long ret = syscall(SYS_write, STDOUT_FILENO, &quot;raw\n&quot;, 4);
+    if (ret &lt; 0 &amp;&amp; ret &gt;= -4095) {   /* 负错误码，需自己还原 errno */
+        int e = -(int)ret;
+        fprintf(stderr, &quot;errno=%d (%s)\n&quot;, e, strerror(e));
+    }
+    return 0;
+}
+</code></pre>
+<p>要点：<code class="c">syscall()</code> 绕过 glibc 的 <code class="c">MAX_ERRNO</code> 错误翻译层（见 glibc 节 / 错误处理节），失败时返回的是 <code class="c">-errno</code>（如 <code class="c">-2</code>=<code class="c">-ENOENT</code>），不是 <code class="c">-1</code>。要自己判断 <code class="c">[-4095,-1]</code> 并还原 <code class="c">errno</code>。</p>
+</details>
+<h3>题 4：可移植性（功能测试宏）</h3>
+<p>下面代码用到了 GNU 扩展 <code class="c">strerror_r</code> 返回 <code class="c">char*</code> 的语义。说明如何用功能测试宏声明这一方言，以及换 musl 后为什么行为会变。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE          /* 声明用 GNU 方言：strerror_r 返回 char* */
+#include &lt;string.h&gt;
+#include &lt;stdio.h&gt;
+
+int main(void) {
+    char buf[128];
+    char *p = strerror_r(ENOENT, buf, sizeof(buf));  /* GNU：返回 char* */
+    printf(&quot;%s\n&quot;, p);
+    return 0;
+}
+</code></pre>
+<p>要点：<code class="c">strerror_r</code> 在 glibc 下默认是 GNU 语义（返回 <code class="c">char*</code>），在 musl 下是 POSIX 语义（返回 <code class="c">int</code>）。换 musl 后 <code class="c">char *p = strerror_r(...)</code> 会类型不匹配——这就是「可移植性」的典型坑：同一个函数，不同 C 库语义不同（见 glibc 节 / 可移植节）。严格 POSIX 下应写成 <code class="c">int r = strerror_r(...); if (r == 0) ...</code>。</p>
+</details>
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-3-7">3.7 Summary</a></li>
+<li>下一章：<a href="chapter-04.html#intro">Ch4 Universal I/O</a> — 用 <code class="c">open</code>/<code class="c">read</code>/<code class="c">write</code>/<code class="c">lseek</code> 做真正的文件实战</li>
+</ul>
       </section>
 
 
