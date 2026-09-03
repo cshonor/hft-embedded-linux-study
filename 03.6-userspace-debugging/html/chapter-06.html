@@ -276,6 +276,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">6.1</span>perf 基础采样（record / report 定位热点函数）</a>
+          <a href="#s-02"><span class="n">6.2</span>火焰图（调用链可视化 / cache miss 初探）</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -297,7 +299,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">gdb / strace / valgrind / sanitizer / perf</div>
           <h1>Ch6 性能类：热点采样</h1>
           <div class="meta">
-<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -310,6 +312,349 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>延迟毛刺先采样别猜</strong>：某笔单延迟 250ms，perf 采样 + 火焰图直接定位热点函数，比读代码猜高效得多；</li>
 <li><strong>cache miss 是低延迟杀手</strong>：perf 的 cache 事件采样能定位「哪行代码在频繁刷缓存」，是 HFT 优化的入口；</li>
 <li><strong>边界</strong>：这里只做「定位热点」，系统级瓶颈分析（CPU/内存/IO/网络）交给 06.6。</li>
+</ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">6.1</div><h2>perf 基础采样（record / report 定位热点函数）</h2></div>
+<blockquote>
+<p>选读 · 用 perf 快速定位「CPU 花在哪个函数上」</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>perf 是 Linux 内核自带的性能分析工具，基于 <strong>PMU（Performance Monitoring Unit）</strong> 硬件计数器。性能排查的第一步永远是「<strong>采样定位热点</strong>」——先搞清楚 CPU 时间花在哪几个函数上，再谈怎么优化。本节讲 <code class="c">perf stat</code>（统计）与 <code class="c">perf record/report</code>（采样）两个核心用法，以及如何读热点报告。深入的系统级性能分析（CPU/内存/IO/网络）交给 06.6。</p>
+<h2>先看一个有热点的程序</h2>
+<pre class="code" data-label="C"><code class="c">// hot.c —— 有明显热点：slow_sqrt 被反复调用
+#include &lt;stdio.h&gt;
+
+// 热点 1：故意慢的牛顿迭代（100 次），模拟「计算密集」函数
+double slow_sqrt(double x) {
+    double r = x;
+    for (int i = 0; i &lt; 100; i++)
+        r = (r + x / r) / 2.0;
+    return r;
+}
+
+// 热点 2：字符串拼接（模拟日志/序列化开销）
+void fmt(double v, char *buf) {
+    for (int i = 0; i &lt; 10; i++)
+        buf[i] = &quot;0123456789&quot;[(int)v % 10];   // 故意低效
+    buf[10] = 0;
+}
+
+void do_work(void) {
+    double sum = 0;
+    char buf[11];
+    for (int i = 0; i &lt; 10000000; i++) {
+        sum += slow_sqrt((i % 100) + 1);
+        fmt(sum, buf);          // 每轮都调字符串，也是热点
+    }
+    printf(&quot;sum=%.2f buf=%s\n&quot;, sum, buf);
+}
+
+int main(void) {
+    do_work();
+    return 0;
+}
+</code></pre>
+<p>编译（<strong>务必带调试信息 + 关掉部分优化保证函数不被内联</strong>）：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O2 -fno-inline -o hot hot.c
+# -g        → perf report 才能显示函数名和源码行
+# -fno-inline → 防止 slow_sqrt 被内联进 do_work，保证能看到独立热点
+</code></pre>
+<h2>perf stat：先看宏观「这程序贵在哪」</h2>
+<p><code class="c">perf stat</code> 不采样，而是用硬件计数器统计<strong>整个运行期间的事件总数</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">perf stat ./hot
+# Performance counter stats for './hot':
+#
+#        1,234.56 msec task-clock          #    1.000 CPUs utilized
+#          12,345      context-switches    #   10.0 K/sec
+#           1,234      cpu-migrations      #    1.0 K/sec
+#           5,678      page-faults         #    4.6 K/sec
+#  4,123,456,789      cycles              #    3.34 GHz
+#  3,987,654,321      instructions        #    0.97 insn per cycle
+#     45,678,901      branch-misses       #    1.11% of all branches
+#
+#       1.234567890 seconds time elapsed
+</code></pre>
+<p>关键看几个数：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>含义</th>
+<th>异常信号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">task-clock</code></td>
+<td>CPU 实际执行时间</td>
+<td>远小于 wall time → 程序在等 IO/锁，不是计算密集</td>
+</tr>
+<tr>
+<td><code class="c">instructions / cycles</code>（IPC）</td>
+<td>每周期执行指令数</td>
+<td>远小于 1 → 大量 stall（cache miss/分支预测失败）</td>
+</tr>
+<tr>
+<td><code class="c">context-switches</code></td>
+<td>上下文切换</td>
+<td>极高 → 线程太多争抢 CPU</td>
+</tr>
+<tr>
+<td><code class="c">branch-misses</code></td>
+<td>分支预测失败率</td>
+<td>高 → 数据相关分支太多，考虑分支消除</td>
+</tr>
+<tr>
+<td><code class="c">page-faults</code></td>
+<td>缺页</td>
+<td>极高 → 内存访问模式差或内存不足</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code class="c">perf stat</code> 是<strong>第一眼体检</strong>：先判断「是计算密集（IPC 高）还是访存密集（IPC 低）」，决定下一步查 CPU 热点还是查 cache miss。</p>
+</blockquote>
+<h2>perf record + report：采样定位热点函数</h2>
+<p><code class="c">perf stat</code> 告诉你「贵」，但没告诉你「贵在哪个函数」。要定位热点，用 <code class="c">perf record</code> 采样：</p>
+<pre class="code" data-label="shell"><code class="c">perf record ./hot        # 周期采样，记录每次中断时的 PC + 调用栈
+# [ perf record: Woken up 1 times to write data ]
+# [ perf record: Captured and wrote 0.123 MB perf.data ]
+
+perf report              # 交互式浏览热点排行
+</code></pre>
+<p><code class="c">perf report</code> 输出（默认按采样占比降序）：</p>
+<pre class="code" data-label="text"><code class="c">Overhead  Command  Shared Object     Symbol
+  68.21%  hot      hot               [.] slow_sqrt
+  21.45%  hot      hot               [.] fmt
+   8.11%  hot      hot               [.] do_work
+   1.02%  hot      libc.so.6         [.] printf
+   0.90%  hot      hot               [.] main
+</code></pre>
+<p><strong>读法</strong>：<code class="c">Overhead</code> 是「该函数被采样命中的占比」，约等于「CPU 时间花在这个函数上的比例」。这里一眼看出 <code class="c">slow_sqrt</code> 占 68%——<strong>热点实锤</strong>，优化它收益最大。</p>
+<p>常用参数：</p>
+<pre class="code" data-label="shell"><code class="c">perf record -g ./hot       # -g 记录调用栈（callgraph），火焰图必需
+perf record -F 99 ./hot    # 采样频率 99 Hz（默认约 4000 Hz，太高开销大）
+perf report --stdio        # 非交互、纯文本输出（脚本友好）
+perf report -g graph       # 按调用图展示（看调用关系）
+perf report -n             # 显示采样次数（不只是百分比）
+</code></pre>
+<h3>perf annotate：热点函数内部逐行看</h3>
+<p>定位到 <code class="c">slow_sqrt</code> 后，想知道「这个函数里哪一行最贵」，用 annotate：</p>
+<pre class="code" data-label="shell"><code class="c">perf annotate slow_sqrt
+</code></pre>
+<pre class="code" data-label="text"><code class="c">       │    double slow_sqrt(double x) {
+       │        double r = x;
+       │        for (int i = 0; i &lt; 100; i++)
+ 87.32 │  a0:  divsd  %xmm1,%xmm0       ← 除法指令占 87% 时间
+       │            r = (r + x / r) / 2.0;
+ 12.68 │  b0:  addsd  %xmm2,%xmm0       ← 加法/乘法只占零头
+</code></pre>
+<p>一眼看到 <code class="c">divsd</code>（浮点除法）占了 87%——<strong>除法是瓶颈</strong>。优化方向立刻清晰：牛顿迭代收敛快，100 次太多，砍到 10 次或换查表法。</p>
+<h2>采样原理（为什么这么准）</h2>
+<p>perf 的 <code class="c">record</code> 是<strong>基于事件的周期采样</strong>（不是每句指令都记录）：</p>
+<pre class="code" data-label="code"><code class="c">PMU 硬件计数器在 CPU 内不断累加「事件」（默认是 cycles）
+  ↓ 每累计 N 个事件（如每 100000 个周期）
+触发一次 NMI 中断
+  ↓ 中断处理程序记录当前 PC（程序计数器）+ 调用栈
+写入 perf.data 缓冲区
+</code></pre>
+<ul>
+<li><strong>采样频率</strong>默认约 4000 Hz，意味着「CPU 在哪个函数上花的时间多，就被采样到的次数多」——这是统计规律，不是精确计数。</li>
+<li>开销低（通常 &lt;5%），可以用于接近生产的场景。</li>
+<li>局限：采样是<strong>统计近似</strong>，会有误差；超短运行的程序样本不足；某些情况下会被「优化掉」的函数看不到。</li>
+</ul>
+<h2>HFT 关联</h2>
+<ol>
+<li><strong>延迟毛刺先采样别猜</strong>：某笔单延迟突然 250ms，先 <code class="c">perf record</code> + <code class="c">perf report</code> 看这段时间 CPU 花在哪，比读代码猜「可能是这里慢」高效得多——用数据说话。</li>
+<li><strong><code class="c">instructions/cycles</code> 判访存密集</strong>：HFT 程序常是访存密集（追 cache、追内存），IPC 远小于 1。看到低 IPC 就该往 cache miss 方向查（6.2 火焰图 + cache 事件），而不是盲目优化计算。</li>
+<li><strong><code class="c">fno-inline</code> 的取舍</strong>：采样要看得见独立函数才需要关内联；但生产构建内联能减调用开销。所以是「调试构建关内联采样，生产构建保持内联」两套目标。</li>
+<li><strong>annotate 定位到指令</strong>：HFT 里热点往往收敛到某几个关键函数（订单匹配、价格计算），annotate 能精确到「哪条指令（除法？跳转？）最贵」，直接指导重构。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 场景：对撮合引擎做 10 秒采样定位热点
+perf record -F 99 -g ./matching_engine --sim data.csv &amp;
+PID=$!
+sleep 10 &amp;&amp; kill -INT $PID       # 跑 10 秒后发 SIGINT 结束采样
+perf report --stdio | head -20    # 看 Top 热点函数
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> <code class="c">perf stat</code> 和 <code class="c">perf record/report</code> 的区别？各自的用途？</p>
+<blockquote>
+<p><code class="c">perf stat</code> 用硬件计数器<strong>统计</strong>整个运行期间的事件总数（cycles、instructions、context-switches、branch-misses 等），告诉你「程序整体贵在哪」——是计算密集还是访存密集，是 CPU 忙还是等 IO。<code class="c">perf record/report</code> 是<strong>采样</strong>：周期中断记录 CPU 当前在哪个函数，统计出「各函数占用的 CPU 时间比例」，告诉你「贵在哪个函数」。一个是宏观体检，一个是热点定位。</p>
+</blockquote>
+<p><strong>Q2:</strong> 为什么 <code class="c">perf report</code> 的 <code class="c">Overhead</code> 能代表「CPU 时间占比」？</p>
+<blockquote>
+<p>因为采样是统计规律：周期中断「随机」地打断程序，记录当时的 PC。一个函数占用 CPU 时间越多，中断落在它里面的概率就越大，被采样到的次数就越多。所以「采样命中占比 ≈ CPU 时间占比」。前提是采样频率够高、运行时间够长（样本足够多），否则统计误差大。</p>
+</blockquote>
+<p><strong>Q3:</strong> IPC（instructions/cycles）远小于 1 说明什么？对优化方向有什么指导？</p>
+<blockquote>
+<p>说明 CPU 大量时间在「空转等待」——等内存（cache miss）、等分支预测失败回滚、等数据依赖。这是<strong>访存密集</strong>程序的特征（对比计算密集程序 IPC 接近 1 甚至 &gt;1 超标量）。指导：此时不该优化算术计算，而该去查 cache miss（6.2）、数据布局、内存访问模式。HFT 程序常是这种，所以低延迟优化重点在内存子系统而非 CPU 计算。</p>
+</blockquote>
+<p><strong>Q4:</strong> 采样为什么会有误差？哪些场景不适用？</p>
+<blockquote>
+<p>采样是统计近似而非精确计数：①中断是周期的，可能恰好漏掉某次短函数调用；②超短运行的程序样本不足，统计不可靠；③编译器优化（内联）会把函数「藏」进别的函数，看不到独立热点；④采样本身有开销，极端高频采样会扰动被测程序。所以采样定位「主要热点」很可靠，定位「微小开销」不可靠。</p>
+</blockquote>
+<p><strong>Q5:</strong> <code class="c">perf record -g</code> 里的 <code class="c">-g</code> 是干嘛的？什么时候必须加？</p>
+<blockquote>
+<p><code class="c">-g</code> 记录<strong>调用栈</strong>（call graph），让 perf 不只记录「当前在哪个函数」，还记录「是从哪个调用链上来的」。做<strong>火焰图</strong>（6.2）时<strong>必须加</strong> <code class="c">-g</code>，因为火焰图要完整的调用栈来画出纵轴深度。只做扁平热点排行（<code class="c">perf report</code> 默认）可以不加，加了也无妨。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-07.html#s-02">6.2 火焰图</a></li>
+<li><a href="chapter-07.html#s-02">1.2 症状 → 工具决策树</a></li>
+<li><a href="#intro">Ch6 性能类</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">6.2</div><h2>火焰图（调用链可视化 / cache miss 初探）</h2></div>
+<blockquote>
+<p>选读 · 把「谁调用了热点」画成一张图</p>
+</blockquote>
+<h2>本节要点</h2>
+<p><code class="c">perf report</code> 给的是扁平列表，能看出「哪个函数占 CPU 多」，但看不出<strong>调用关系</strong>——<code class="c">slow_sqrt</code> 是被 3 个不同上层各自调了 33%，还是被 1 个上层调了 99%？优化策略完全不同。<strong>火焰图（FlameGraph）</strong>把「调用栈 + 时间占比」画成一张可交互的 SVG 图，一眼看清热点及其调用链。本节讲火焰图的生成、读法，以及 cache miss 的初探。</p>
+<h2>火焰图长什么样</h2>
+<p>用 6.1 的 <code class="c">hot.c</code> 生成的火焰图（概念示意）：</p>
+<pre class="code" data-label="code"><code class="c">        ┌─────────────┬──────────┐
+  main  │             │          │        ← 底部 = 调用栈根部
+        └──────┬──────┴───┬──────┘
+        ┌──────▼──────┐┌──▼───────┐
+ do_work│            ││ (其它)   │
+        └──────┬──────┘└──────────┘
+        ┌──────▼──────┐
+slow_sqrt│████████████│           ← 顶部宽框 = 热点
+        └─────────────┘
+  ↑ 横轴宽度 = 该函数（含其子孙）占的总采样比例
+</code></pre>
+<ul>
+<li><strong>横轴</strong>：字母序排列，宽度 = 采样占比（CPU 时间占比）。</li>
+<li><strong>纵轴</strong>：调用栈深度，从下往上 = 从 main 到叶子函数。</li>
+<li><strong>每个框</strong>：一个函数，框越宽 = 越热。</li>
+</ul>
+<h2>生成流程（四步）</h2>
+<p>火焰图是 Brendan Gregg 的开源工具，配合 perf 使用：</p>
+<pre class="code" data-label="shell"><code class="c"># 1. 采样（必须 -g 记录调用栈）
+perf record -g -F 99 ./hot
+
+# 2. 把 perf.data 转成文本调用栈
+perf script &gt; out.perf
+
+# 3. 折叠调用栈（stackcollapse 脚本）
+stackcollapse-perf.pl out.perf &gt; out.folded
+
+# 4. 生成火焰图 SVG
+flamegraph.pl out.folded &gt; flame.svg
+</code></pre>
+<p>其中 <code class="c">stackcollapse-perf.pl</code> 和 <code class="c">flamegraph.pl</code> 来自 <a href="https://github.com/brendangregg/FlameGraph">FlameGraph</a> 仓库：</p>
+<pre class="code" data-label="shell"><code class="c">git clone https://github.com/brendangregg/FlameGraph.git
+export PATH=$PATH:$PWD/FlameGraph
+</code></pre>
+<p>生成后用浏览器打开 <code class="c">flame.svg</code>，可<strong>悬停查看</strong>每个框的函数名、采样次数、占比，可点击放大。</p>
+<h2>读火焰图的四个要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>读法</th>
+<th>含义</th>
+<th>优化启示</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>宽框</strong></td>
+<td>CPU 时间占比高</td>
+<td>首要优化目标</td>
+</tr>
+<tr>
+<td><strong>平顶（plateau）</strong></td>
+<td>某函数直接消耗大量 CPU（如 <code class="c">slow_sqrt</code> 顶部一片平）</td>
+<td>优化这个函数本身</td>
+</tr>
+<tr>
+<td><strong>塔尖（tower）</strong></td>
+<td>一个调用链层层嵌套很深</td>
+<td>优化链路中间的某层，或减少调用次数</td>
+</tr>
+<tr>
+<td><strong>底部有多个分叉</strong></td>
+<td>同一热点被多个上层调用</td>
+<td>先看哪个上层贡献大，优化调用方而非函数</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>区分「平顶」和「塔尖」是火焰图最大的价值：<strong>平顶 = 函数自身耗时（self time）高，优化函数体；塔尖 = 调用链长，优化调用关系/减少调用次数</strong>。<code class="c">perf report</code> 扁平列表分不清这两者。</p>
+</blockquote>
+<h2>cache miss 初探</h2>
+<p>6.1 提到低 IPC（访存密集）要看 cache miss。perf 用硬件事件采样 cache：</p>
+<pre class="code" data-label="shell"><code class="c"># 统计 cache 命中率
+perf stat -e cache-references,cache-misses ./hot
+#        12,345,678  cache-references
+#         1,234,567  cache-misses        # 10.0% 的 cache miss 率
+
+# 采样「哪行代码在频繁 cache miss」
+perf record -e cache-misses ./hot
+perf report
+</code></pre>
+<p>cache miss 率高（HFT 里通常 &gt;3% 就要警惕）说明数据访问模式差——常是<strong>数据结构布局</strong>问题（遍历链表而非数组、结构体字段分散、false sharing）。这是低延迟优化的重要入口，但深入交给 06.6。</p>
+<blockquote>
+<p><strong>注意</strong>：perf 的事件名因 CPU 架构而异（<code class="c">cache-misses</code> 在 x86 通用，ARM 上可能叫别的），用 <code class="c">perf list</code> 查看当前机器支持的事件。树莓派 5（aarch64）上的事件名和 x86 不完全一致。</p>
+</blockquote>
+<h2>火焰图的局限</h2>
+<ol>
+<li><strong>需要 <code class="c">-g</code> 调用栈</strong>：没记录调用栈就画不出纵深。</li>
+<li><strong>栈可能不完整</strong>：<code class="c">-fomit-frame-pointer</code>（<code class="c">-O2</code> 默认）编译的程序，perf 靠 frame pointer 回溯会丢栈；需要 <code class="c">--call-graph dwarf</code>（用 DWARF 回溯，更准但更慢）或编译加 <code class="c">-fno-omit-frame-pointer</code>。</li>
+<li><strong>采样是统计</strong>：火焰图也是采样近似，微小开销看不清。</li>
+<li><strong>只反映 CPU 采样</strong>：默认火焰图反映的是 CPU 时间，不能直接反映「锁等待」「IO 等待」（那需要 off-CPU 火焰图，进阶内容，见 06.6）。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># 栈回溯不准时，用 DWARF 回溯重新采样
+perf record -g --call-graph dwarf -F 99 ./hot
+# 或编译时保留 frame pointer
+gcc -g -O2 -fno-omit-frame-pointer -o hot hot.c
+</code></pre>
+<h2>HFT 关联</h2>
+<ol>
+<li><strong>「平顶 vs 塔尖」决定优化策略</strong>：撮合引擎热点若是「平顶」（某价格计算函数自身贵），优化函数体（换算法/查表）；若是「塔尖」（层层调用），优化调用链（减少中间层、合并函数）。选错方向白费力气。</li>
+<li><strong>cache miss 火焰图找「刷缓存」的代码</strong>：HFT 低延迟的敌人是 cache miss。<code class="c">perf record -e cache-misses</code> + 火焰图能定位「哪行代码在频繁把数据踢出缓存」，往往是遍历链表、跨 cache line 访问、false sharing 的地方。</li>
+<li><strong>火焰图是性能汇报的通用语言</strong>：给团队/上级讲「为什么慢、优化后提升多少」，一张前后对比的火焰图比一页数字有说服力得多——宽度肉眼可见地变窄。</li>
+<li><strong>frame pointer 的取舍</strong>：为了火焰图栈完整，调试构建加 <code class="c">-fno-omit-frame-pointer</code>（有 &lt;1% 开销）；生产构建权衡后通常还是保留 <code class="c">-O2</code> 默认，靠 DWARF 回溯补采样。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 场景：撮合引擎 off-CPU 前的 CPU 火焰图
+perf record -g -F 99 ./matching_engine --sim data.csv
+perf script | stackcollapse-perf.pl | flamegraph.pl &gt; engine_cpu.svg
+# 打开 svg，找最宽的那个框 = 头号优化目标
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 火焰图横轴、纵轴、每个框分别代表什么？</p>
+<blockquote>
+<p>横轴：按字母序排列的采样占比，框越宽 = 该函数（含其调用的子孙）占 CPU 时间越多。纵轴：调用栈深度，从下往上 = 从根部（main）到叶子函数。每个框：一个函数，宽度即其时间占比。整张图本质是「所有采样到的调用栈」按占比堆叠而成。</p>
+</blockquote>
+<p><strong>Q2:</strong> 「平顶」和「塔尖」有什么区别？为什么区分它们重要？</p>
+<blockquote>
+<p><strong>平顶</strong>：某个函数顶部是一大片平坦宽度，说明这个函数<strong>自身耗时（self time）高</strong>（如循环、除法），优化方向是改函数体（换算法、查表）。<strong>塔尖</strong>：一条调用链层层收窄、很高，说明耗时在<strong>调用关系</strong>上（调用次数多、链路深），优化方向是减少调用次数、合并中间层。<code class="c">perf report</code> 扁平列表只给「总占比」分不清 self time 和调用开销，火焰图能一眼区分，选错优化方向会白费力气。</p>
+</blockquote>
+<p><strong>Q3:</strong> 生成火焰图的四步流程是什么？哪一步最容易出错？</p>
+<blockquote>
+<p>① <code class="c">perf record -g</code> 采样（带调用栈）；② <code class="c">perf script &gt; out.perf</code> 转文本；③ <code class="c">stackcollapse-perf.pl out.perf &gt; out.folded</code> 折叠栈；④ <code class="c">flamegraph.pl out.folded &gt; flame.svg</code> 生成图。最容易错在第一步：忘加 <code class="c">-g</code> 就没调用栈画不出纵深；或 <code class="c">-O2</code> 默认 <code class="c">-fomit-frame-pointer</code> 导致栈回溯不完整，需改用 <code class="c">--call-graph dwarf</code> 或编译加 <code class="c">-fno-omit-frame-pointer</code>。</p>
+</blockquote>
+<p><strong>Q4:</strong> cache miss 率和程序性能什么关系？怎么定位「哪行代码在 miss」？</p>
+<blockquote>
+<p>cache miss 意味着 CPU 要访问的数据不在高速缓存里，得去慢几十倍的主存取，CPU 空等（stall），表现为低 IPC、低吞吐。cache miss 率高说明数据访问模式差。定位方法：<code class="c">perf stat -e cache-references,cache-misses</code> 看整体 miss 率；<code class="c">perf record -e cache-misses</code> + <code class="c">perf report</code>（或火焰图）定位到具体函数/代码行。HFT 里 &gt;3% 通常就要警惕。</p>
+</blockquote>
+<p><strong>Q5:</strong> CPU 火焰图和 off-CPU 火焰图的区别？什么时候需要 off-CPU？</p>
+<blockquote>
+<p>CPU 火焰图（默认）反映「CPU 时间花在哪」，只看得见「正在计算」的热点。off-CPU 火焰图反映「线程不在 CPU 上的时间花在哪」——锁等待、IO 等待、sleep 等。当程序「慢」但不是 CPU 忙（比如 <code class="c">perf stat</code> 显示 task-clock 远小于 wall time），说明瓶颈在等待而非计算，这时需要 off-CPU 火焰图才能看到「卡在哪」。它是进阶内容，深入见 06.6。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-07.html#s-01">6.1 perf 基础采样</a></li>
+<li><a href="../../06.6-systems-performance/html/index.html">06.6 Systems Performance</a></li>
+<li><a href="#intro">Ch6 性能类</a></li>
 </ul>
       </section>
 
