@@ -8,13 +8,16 @@
 
 ## 小节目录
 
+- [4.1 Overview 概览](notes/4.1-overview.md)
 - [4.2 通用 I/O 模型（核心思想）](notes/4.2-universality.md)
-- [4.3 文件描述符 FD](notes/4.3-open.md)
-- [4.4 `open()`](notes/4.3-open.md)
-- [4.5 `read()`](notes/4.4-read.md)
-- [4.6 `write()`](notes/4.5-write.md)
-- [4.7 `lseek()`](./notes/4.7-lseek.md)
-- [4.8 `ioctl()`](./notes/4.8-ioctl.md)
+- [4.3 `open()`](notes/4.3-open.md)
+- [4.4 `read()`](notes/4.4-read.md)
+- [4.5 `write()`](notes/4.5-write.md)
+- [4.6 `close()`](notes/4.6-close.md)
+- [4.7 `lseek()`](notes/4.7-lseek.md)
+- [4.8 `ioctl()`](notes/4.8-ioctl.md)
+- [4.9 Summary](notes/4.9-summary.md)
+- [4.10 Exercises](notes/4.10-exercises.md)
 
 ---
 
