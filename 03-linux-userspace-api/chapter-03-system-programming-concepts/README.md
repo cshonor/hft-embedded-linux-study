@@ -11,8 +11,10 @@
 - [3.1 System Calls 系统调用](./notes/3.1-system-calls.md)
 - [3.2 Library Functions（glibc）](notes/3.2-library-functions.md)
 - [3.3 错误处理（本章重中之重）](notes/3.4-error-handling.md)
-- [3.4 可移植编程（SUSv3 / POSIX）](notes/3.4-error-handling.md)
+- [3.4 可移植编程（SUSv3 / POSIX）](notes/3.6-portability.md)
 - [3.5 参数传递（概念）](notes/3.5-example-programs.md)
+- [3.7 Summary](notes/3.7-summary.md)
+- [3.8 Exercise](notes/3.8-exercise.md)
 
 ---
 
