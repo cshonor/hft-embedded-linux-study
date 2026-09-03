@@ -1021,6 +1021,91 @@ int *p = &amp;val;   /* p 的内容 = val 的首地址 */
 <li>SIMD（<code class="c">__m256</code>）<strong>要求 32 字节对齐</strong>，否则 <code class="c">movaps</code> 崩溃</li>
 <li><code class="c">alignof(T)</code> 查询；<code class="c">_Alignas(64)</code> / <code class="c">__attribute__((aligned(64)))</code> 强制 cache line 对齐</li>
 </ul>
+<h2>mmap：指针与后备存储（先画区、后填页）</h2>
+<p><code class="c">mmap</code> 返回的 <code class="c">void *</code>，指向的是一块<strong>被内核绑定了「后备」的虚拟地址</strong>——后备可以是磁盘文件、设备 DMA 缓冲区、或匿名页。它和 <code class="c">malloc</code> 的关键区别在「数据什么时候到位」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>返回的指针指向</th>
+<th>数据何时到位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">malloc</code></td>
+<td>虚拟地址，后备是<strong>零页 + COW</strong></td>
+<td>首次写触发缺页，分配真实页并清零</td>
+</tr>
+<tr>
+<td><code class="c">mmap</code></td>
+<td>虚拟地址，后备可显式指定（文件/设备/匿名）</td>
+<td><strong>访问</strong>时触发缺页，内核从文件/设备填页</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>先画区、后填页</strong>：<code class="c">mmap</code> 只建立「虚拟地址 ↔ 物理/磁盘」的映射关系，<strong>不立刻把数据拷进内存</strong>。解引用 <code class="c">*p</code> 才会触发<strong>缺页中断</strong>（page fault）——这是 CPU 的内存管理机制，<strong>不等于 mmap</strong>。</p>
+</blockquote>
+<h3>两个进程的指针，能否指向同一物理页？</h3>
+<p><code class="c">mmap</code> 的 <code class="c">flags</code> 决定映射关系的共享程度，本质是「两个进程的虚拟地址，翻译后落在<strong>同一块物理页</strong>，还是各自一块」：</p>
+<pre class="code" data-label="C"><code class="c">/* 共享：两个进程的 p/q 指向同一物理页 */
+void *p = mmap(NULL, sz, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);   /* 进程 A */
+void *q = mmap(NULL, sz, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);   /* 进程 B */
+/* A 写 *p，B 读 *q 立刻看到变化 —— 同一物理页 */
+
+/* 私有：各自一份副本，首写 COW */
+void *r = mmap(NULL, sz, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);  /* 进程 A */
+void *s = mmap(NULL, sz, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);  /* 进程 B */
+/* A 写 *r 触发写时复制(COW)，只改自己的物理页，B 的 *s 不变 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">flags</code></th>
+<th>物理页</th>
+<th>写语义</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAP_SHARED</code></td>
+<td>多进程<strong>同一物理页</strong></td>
+<td>一改全可见（文件映射可回盘）</td>
+<td>共享文件、设备缓冲区</td>
+</tr>
+<tr>
+<td><code class="c">MAP_PRIVATE</code></td>
+<td>每进程<strong>各自副本</strong></td>
+<td>首写 COW，互不影响</td>
+<td>加载 text 段、私有匿名分配</td>
+</tr>
+</tbody>
+</table></div>
+<h3>指针可以直接指向设备内存</h3>
+<p>设备的 DMA 缓冲区也能 <code class="c">mmap</code> 进用户态——此时指针指向的是<strong>设备内存</strong>（网卡 DMA 环形缓冲区、采集卡寄存器），访存即碰外设，省掉 read/write 的一次拷贝：</p>
+<pre class="code" data-label="C"><code class="c">/* 网卡零拷贝：报文被 DMA 直写进用户态可访问的缓冲区 */
+struct pkt_ring *ring = mmap(NULL, ring_sz, PROT_READ|PROT_WRITE,
+                             MAP_SHARED, dev_fd, 0);
+/* 直接解引用读报文，不经过内核协议栈拷贝 */
+</code></pre>
+<h3>独占设备：锁在驱动，不在 mmap</h3>
+<p><strong>独占设备</strong>（麦克风、独占采集卡）❌ 不是给每个进程各做一份 mmap；✅ 是<strong>设备驱动里做独占锁</strong>——同一时刻只允许一个进程 <code class="c">mmap</code> 成功，别的进程调用 <code class="c">mmap</code> 失败/阻塞：</p>
+<pre class="code" data-label="C"><code class="c">/* 驱动侧：独占设备同一时刻只允许一个进程映射 */
+static int mic_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+    if (!atomic_add_unless(&amp;mic_open, 1, 1))
+        return -EBUSY;             /* 已被独占 → mmap 失败 */
+    return remap_pfn_range(vma, vma-&gt;vm_start,
+                           mic_dma_paddr &gt;&gt; PAGE_SHIFT,
+                           vma-&gt;vm_end - vma-&gt;vm_start,
+                           vma-&gt;vm_page_prot);
+}
+</code></pre>
+<blockquote>
+<p><strong>关键</strong>：互斥逻辑写在<strong>设备驱动</strong>里，<code class="c">mmap</code> 只是「给指针一块能碰到设备的虚拟地址」，本身不提供任何互斥。设备能不能让你映射，由驱动说了算。</p>
+</blockquote>
 <h2>HFT / DPDK</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1079,6 +1164,10 @@ int *p = &amp;val;   /* p 的内容 = val 的首地址 */
 <td>"栈地址固定"</td>
 <td>ASLR 每次运行随机化栈/堆/库基址</td>
 </tr>
+<tr>
+<td>"mmap 会立刻把文件/设备数据搬进内存"</td>
+<td>只是建立映射；访问才触发缺页中断填页</td>
+</tr>
 </tbody>
 </table></div>
 <h2>实操</h2>
@@ -1125,6 +1214,7 @@ int main(void) {
 <li>一次 DRAM 访问大约等于多少次 L1 访问？这对链表 vs 数组的选型意味着什么？</li>
 <li>为什么 SIMD 指令常要求 32 字节对齐？不对齐会怎样？</li>
 <li>DPDK 里"虚拟地址"和"物理地址 iova"为什么要区分？网卡用哪个？</li>
+<li><code class="c">MAP_SHARED</code> 与 <code class="c">MAP_PRIVATE</code> 映射下，两个进程的指针指向的物理页有何区别？独占设备（麦克风）靠什么实现互斥？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
