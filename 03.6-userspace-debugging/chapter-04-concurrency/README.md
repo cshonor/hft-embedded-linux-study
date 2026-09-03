@@ -4,7 +4,7 @@
 
 **这一章解决什么症状**：结果偶尔出错、偶发死锁、崩溃点漂移不定——多线程程序的「竞态」类问题。并发 bug 是调试里最难的一类：它依赖线程调度时序，往往**偶发、难复现、位置漂移**。
 
-本章三个工具各管一段：gdb 多线程调试（4.1）**停下来看全线程现场**、定位死锁；TSan/Helgrind（待写）在开发期**全量检测数据竞争**；rr 可逆调试（4.2）**录像回放**复现偶发竞态。
+本章三个工具各管一段：gdb 多线程调试（4.1）**停下来看全线程现场**、定位死锁；TSan/Helgrind（4.3）在开发期**全量检测数据竞争**；rr 可逆调试（4.2）**录像回放**复现偶发竞态。
 
 ---
 
@@ -14,7 +14,7 @@
 |------|----------|
 | 4.1 多线程调试（thread / thread apply all bt / scheduler-locking / 死锁） | `notes/01-thread-debugging.md` |
 | 4.2 rr 可逆调试（record / replay / reverse-*） | `notes/02-rr-reversible-debugging.md` |
-| 4.3 TSan / Helgrind 数据竞争检测 | （待写） |
+| 4.3 TSan / Helgrind 数据竞争检测 | `notes/03-threadsanitizer.md` |
 
 ---
 

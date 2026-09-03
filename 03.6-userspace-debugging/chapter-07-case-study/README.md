@@ -10,11 +10,11 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 7.1 程序结构（多线程 / 网络 / 共享内存的 bug 埋点） | （待写） |
-| 7.2 崩溃 → coredump 回溯定位 | （待写） |
-| 7.3 竞态 → TSan / gdb 多线程定位 | （待写） |
-| 7.4 泄漏 → valgrind / ASan 定位 | （待写） |
-| 7.5 卡住 → strace 定位 | （待写） |
+| 7.1 程序结构（多线程 / 网络 / 共享内存的 bug 埋点） | `notes/01-program-structure.md` |
+| 7.2 崩溃 → coredump 回溯定位 | `notes/02-crash-coredump.md` |
+| 7.3 竞态 → TSan / gdb 多线程定位 | `notes/03-race-tsan.md` |
+| 7.4 泄漏 → valgrind / ASan 定位 | `notes/04-leak-valgrind.md` |
+| 7.5 卡住 → strace 定位 | `notes/05-hang-strace.md` |
 
 ---
 

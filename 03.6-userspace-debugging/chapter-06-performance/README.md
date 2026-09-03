@@ -10,8 +10,8 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 6.1 perf 基础采样（record / report 定位热点函数） | （待写） |
-| 6.2 火焰图（调用链可视化 / cache miss 初探） | （待写） |
+| 6.1 perf 基础采样（record / report 定位热点函数） | `notes/01-perf-basics.md` |
+| 6.2 火焰图（调用链可视化 / cache miss 初探） | `notes/02-flamegraph.md` |
 
 ---
 
