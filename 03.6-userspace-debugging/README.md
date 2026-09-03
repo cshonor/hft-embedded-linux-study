@@ -2,6 +2,7 @@
 
 > **定位：** 用户态**正确性调试** — 用户态代码崩了、错了、内存泄漏了、卡死了，怎么定位根因、怎么修
 > **形态：** 工具链实战模块（非单一书目）— 以 gdb / strace / valgrind / sanitizer / perf 官方手册为主干，辅以经典资料
+> **组织：** **问题类型驱动**（先分类问题，再选工具）— 与 [05.6 内核调试](../05.6-kernel-debugging/) 的结构范式完全对称
 > **目标平台：** x86_64（本地，主战场）+ AArch64（树莓派 5，通过 gdbserver 远程调试）
 
 > **前置：**
@@ -13,6 +14,25 @@
 > - [04-cpp](../04-cpp/)（C++，调试多态 / 模板 / STL 代码时回来查）
 > - [06.6-systems-performance](../06.6-systems-performance/)（性能分析，从"改对"转向"改快"）
 > - [06.7-bpf-observability](../06.7-bpf-observability/)（eBPF 动态追踪，从"调试"转向"可观测"）
+
+---
+
+## 为什么「按问题类型」组织
+
+调试工具本质是**滤镜**，每个工具只能观测某一类问题（strace 只看 syscall、valgrind 只看内存、TSan 只看竞态）。所以正确的学习顺序不是「背工具清单」，而是「**先分类问题 → 再选工具**」。
+
+本模块 7 章：**Ch1 方法论（怎么分诊）→ Ch2–Ch6 五大问题类型（每类配工具）→ Ch7 实战（综合）**。每章开头都先写一句「**这一章解决什么症状**」，让你从症状反查工具。
+
+## 症状 → 章节速查
+
+| 症状 | 问题类型 | 去哪章 |
+|------|----------|--------|
+| 段错误 / SIGABRT / 崩了 | 崩溃 | [Ch2 崩溃类](./chapter-02-crash/) |
+| 内存持续涨 / 偶发崩 / 值莫名变 | 内存 | [Ch3 内存类](./chapter-03-memory/) |
+| 结果时对时错 / 偶发死锁 | 并发 | [Ch4 并发类](./chapter-04-concurrency/) |
+| 卡住 / 调了不该调的 | 行为 | [Ch5 行为类](./chapter-05-behavior/) |
+| 太慢 / CPU 高 / 延迟毛刺 | 性能 | [Ch6 性能类](./chapter-06-performance/) |
+| 不知道是哪类 | —— | [Ch1 方法论](./chapter-01-methodology/) |
 
 ---
 
@@ -38,19 +58,17 @@
 
 ---
 
-## 🔁 用户态 ↔ 内核态调试工具对称表
+## 🔁 用户态 ↔ 内核态调试工具对称表（按问题类型）
 
-内核态有一套成熟的调试工具（05.6），用户态几乎一一对应——这正是本模块存在的理由：
+内核态有一套成熟的调试工具（05.6），用户态按**问题类型**一一对应：
 
-| 调试诉求 | 用户态工具 (03.6) | 内核态工具 (05.6) |
+| 问题类型 | 用户态工具 (03.6) | 内核态工具 (05.6) |
 |----------|-------------------|-------------------|
-| 源码级单步 / 断点 | **gdb** | **kgdb** |
-| 观察系统调用序列 | **strace** | **ftrace**（追踪内核函数流） |
-| 观察库函数调用 | **ltrace** | —（无直接对应） |
+| 崩溃 | **coredump + gdb** | **Oops 日志解读** |
 | 内存越界 / 泄漏 / UAF | **valgrind / ASan** | **KASAN / kmemleak / SLUB debug** |
-| 数据竞争 | **TSan / helgrind** | **KCSAN** |
-| 锁死锁 / 锁序 | **gdb thread + 死锁检测** | **LOCKDEP** |
-| 崩溃现场回溯 | **coredump + gdb bt** | **Oops 日志解读** |
+| 数据竞争 / 死锁 | **TSan / helgrind / gdb 多线程** | **KCSAN / LOCKDEP** |
+| 行为（调了什么 / 卡在哪） | **strace / ltrace** | **printk / ftrace** |
+| 源码级单步 / 断点 | **gdb** | **kgdb** |
 | CPU 热点 / cache miss | **perf** | **perf**（同一工具，内核侧视角） |
 | 动态探针 | **uprobe / USDT（bpftrace）** | **kprobe / kretprobe** |
 
@@ -70,20 +88,32 @@
 
 ---
 
-## 全书章节（8 章）
+## 全书章节（7 章 · 问题类型驱动）
 
-| 章 | 标题 | 读/跳 | 目录 |
-|----|------|-------|------|
-| 1 | gdb 基础：断点 / 单步 / 栈 / 变量 | 🔴 精读 | [chapter-01-gdb-basics](./chapter-01-gdb-basics/) |
-| 2 | gdb 进阶：多线程调试 / attach / rr 可逆调试 | 🔴 精读 | chapter-02-gdb-advanced |
-| 3 | coredump 分析：崩溃现场回溯 | 🔴 精读 | chapter-03-coredump |
-| 4 | strace / ltrace：系统调用与库调用追踪 | 🔴 精读 | chapter-04-strace-ltrace |
-| 5 | valgrind：内存越界 / 泄漏 / use-after-free | 🔴 精读 | chapter-05-valgrind |
-| 6 | sanitizer 家族：ASan / UBSan / TSan | 🔴 精读 | chapter-06-sanitizers |
-| 7 | perf 入门：采样 / 火焰图 / cache miss（深交给 06.6） | 选读 | chapter-07-perf-intro |
-| 8 | 实战：多线程 + 网络 + 共享内存迷你下单程序全流程调试 | 🔴 精读 | chapter-08-case-study |
+| 章 | 标题 | 问题类型 | 读/跳 | 目录 |
+|----|------|----------|-------|------|
+| 1 | 排错方法论与工具选型 | （元层） | 🔴 精读 | [chapter-01-methodology](./chapter-01-methodology/) |
+| 2 | 崩溃类：段错误与栈破坏 | crash | 🔴 精读 | [chapter-02-crash](./chapter-02-crash/) |
+| 3 | 内存类：越界 / 泄漏 / UAF | memory | 🔴 精读 | [chapter-03-memory](./chapter-03-memory/) |
+| 4 | 并发类：数据竞争与死锁 | concurrency | 🔴 精读 | [chapter-04-concurrency](./chapter-04-concurrency/) |
+| 5 | 行为类：系统调用与库调用追踪 | behavior | 🔴 精读 | [chapter-05-behavior](./chapter-05-behavior/) |
+| 6 | 性能类：热点采样（深交 06.6） | performance | 选读 | [chapter-06-performance](./chapter-06-performance/) |
+| 7 | 实战：下单程序全流程调试 | （综合） | 🔴 精读 | [chapter-07-case-study](./chapter-07-case-study/) |
 
-> 注：第 2–8 章目录待逐章创建（本模块按需推进）。
+> 注：Ch2–Ch7 逐章推进中（Ch2 崩溃类、Ch4 并发类、Ch5 行为类已有笔记；Ch3 内存、Ch6 性能、Ch7 实战待写）。
+
+---
+
+## HFT 关联
+
+| 场景 | 问题类型 | 相关章节 | 说明 |
+|------|----------|----------|------|
+| 交易进程段错误崩溃 | 崩溃 | Ch2 (coredump) | 线上崩溃后加载 core，`bt` 定位崩溃栈帧，反汇编定位精确指令 |
+| 长跑进程 OOM / 内存越界 | 内存 | Ch3 (valgrind / ASan) | 7×24 运行慢泄漏是致命伤；ASan 抓越界、valgrind 抓泄漏 |
+| 多线程竞态导致错单 | 并发 | Ch4 (TSan / gdb 多线程) | `thread apply all bt` 看全线程现场；TSan 开发期抓数据竞争 |
+| 系统调用阻塞 / 多余 syscall | 行为 | Ch5 (strace) | strace 看 `read`/`recv` 阻塞点、有没有本可避免的 syscall |
+| 行情处理 CPU 热点 | 性能 | Ch6 (perf) | perf 采样定位热点函数，火焰图看调用链（深入交 06.6） |
+| 嵌入式板端远程调试 | —— | Ch1–2 (gdbserver) | 树莓派 5 上 gdbserver + 本地 gdb 远程 attach |
 
 ---
 
@@ -123,16 +153,3 @@
 2. **排错思路**：《Advanced Linux Debugging》；
 3. **现代工具**：ASan / UBSan 直接看 LLVM 官方文档（书本没有）；
 4. **底层原理**：张银奎《软件调试》理解 CPU 异常、断点。
-
----
-
-## HFT 关联
-
-| 场景 | 相关章节 | 说明 |
-|------|----------|------|
-| 交易进程段错误崩溃 | Ch1 (gdb) + Ch3 (coredump) | 线上崩溃后加载 core，`bt` 定位崩溃栈帧，反汇编定位精确指令 |
-| 多线程竞态导致错单 | Ch2 (gdb 多线程) + Ch6 (TSan) | `thread apply all bt` 看全线程现场；TSan 在开发期抓数据竞争 |
-| 内存越界 / 泄漏导致长跑 OOM | Ch5 (valgrind) + Ch6 (ASan) | 交易进程 7×24 运行，慢泄漏是致命伤；ASan 抓越界、valgrind 抓泄漏 |
-| 系统调用阻塞 / 多余 syscall | Ch4 (strace) | strace 看 `read`/`recv` 阻塞点、有没有本可避免的 syscall |
-| 行情处理 CPU 热点 | Ch7 (perf) | perf 采样定位热点函数，火焰图看调用链（深入交 06.6） |
-| 嵌入式板端远程调试 | Ch1–2 (gdbserver) | 树莓派 5 上 gdbserver + 本地 gdb 远程 attach，调试 eBPF/驱动配套用户态程序 |
