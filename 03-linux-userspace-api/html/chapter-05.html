@@ -276,20 +276,20 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-5-1"><span class="n">5.1</span>内核三层结构（本章核心 · 必考）</a>
-          <a href="#s-5-2"><span class="n">5.5</span>`fcntl` — 文件控制</a>
-          <a href="#s-5-3"><span class="n">5.3</span>Open File Status Flags</a>
-          <a href="#s-5-4"><span class="n">5.4</span>Relationship Between File Descriptors and Open Files</a>
-          <a href="#s-5-5"><span class="n">5.2</span>`dup` / `dup2` / `dup3`</a>
-          <a href="#s-5-6"><span class="n">5.3</span>`pread` / `pwrite`</a>
-          <a href="#s-5-7"><span class="n">5.7</span>Scatter-Gather I/O: readv() and writev()</a>
-          <a href="#s-5-8"><span class="n">5.8</span>Truncating a File: truncate() and ftruncate()</a>
-          <a href="#s-5-9"><span class="n">5.7</span>非阻塞 `O_NONBLOCK`</a>
-          <a href="#s-5-10"><span class="n">5.8</span>大文件 LFS</a>
-          <a href="#s-5-11"><span class="n">5.9</span>`/dev/fd`（Linux）</a>
-          <a href="#s-5-12"><span class="n">5.12</span>Creating Temporary Files</a>
-          <a href="#s-5-13"><span class="n">5.13</span>Summary</a>
-          <a href="#s-5-14"><span class="n">5.14</span>Exercises</a>
+          <a href="#s-5-1"><span class="n">5.1</span>原子性与竞争条件（Atomicity and Race Conditions）</a>
+          <a href="#s-5-2"><span class="n">5.2</span>`fcntl()` — 文件控制</a>
+          <a href="#s-5-3"><span class="n">5.3</span>打开文件状态标志（Open File Status Flags）</a>
+          <a href="#s-5-4"><span class="n">5.4</span>fd 与打开文件的关系（Relationship Between File Descriptors and Open Files）</a>
+          <a href="#s-5-5"><span class="n">5.5</span>`dup` / `dup2` / `dup3` — 复制文件描述符</a>
+          <a href="#s-5-6"><span class="n">5.6</span>`pread` / `pwrite` — 指定偏移读写</a>
+          <a href="#s-5-7"><span class="n">5.7</span>`readv` / `writev` — 散布/聚集 I/O</a>
+          <a href="#s-5-8"><span class="n">5.8</span>`truncate` / `ftruncate` — 改变文件大小</a>
+          <a href="#s-5-9"><span class="n">5.9</span>非阻塞 I/O（`O_NONBLOCK`）</a>
+          <a href="#s-5-10"><span class="n">5.10</span>大文件支持（I/O on Large Files，LFS）</a>
+          <a href="#s-5-11"><span class="n">5.11</span>`/dev/fd` — 通过路径访问已打开的 fd</a>
+          <a href="#s-5-12"><span class="n">5.12</span>创建临时文件（Creating Temporary Files）</a>
+          <a href="#s-5-13"><span class="n">5.13</span>本章小结（Summary）</a>
+          <a href="#s-5-14"><span class="n">5.14</span>练习题（Exercises）</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -564,45 +564,648 @@ int main(void) {
 </ul>
       </section>
       <section class="section" id="s-5-1">
-        <div class="sec-head"><div class="sec-no">5.1</div><h2>内核三层结构（本章核心 · 必考）</h2></div>
+        <div class="sec-head"><div class="sec-no">5.1</div><h2>原子性与竞争条件（Atomicity and Race Conditions）</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/open.c:1222</code> <code class="c">build_open_flags</code>、<code class="c">:1308</code> <code class="c">O_APPEND</code>、<code class="c">:1315-1318</code> <code class="c">O_CREAT|O_EXCL</code>；<code class="c">fs/namei.c:3885</code> <code class="c">lookup_one_qstr_excl</code>、<code class="c">:3896-3897</code> <code class="c">-EEXIST</code>）
 - 上一节：本章首页
-- 下一节：5.2 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></p>
+- 下一节：<a href="#s-5-2">5.2 <code class="c">fcntl()</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>进程内相关的三层，厘清无数文件 I/O 疑难： → <code class="c">lseek</code> 改的是 <strong>打开文件描述里的偏移</strong>，不是「fd 数字本身」。 ---</p>
+<p>多进程/多线程同时操作文件时，两个「看起来没问题的操作」可能因为执行顺序交错而互相踩踏。本节回答三个问题：</p>
+<ol>
+<li>「原子性（atomicity）」到底指什么？为什么文件 I/O 里它如此关键？</li>
+<li><code class="c">O_EXCL | O_CREAT</code> 和 <code class="c">O_APPEND</code> 这两个标志，各自解决了哪类竞态？</li>
+<li>什么是 TOCTOU（time-of-check, time-of-use），以及为什么「先检查再操作」的写法几乎总是错的？</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<p>进程内相关的三层，厘清无数文件 I/O 疑难：</p>
+<h2>1. 竞态条件与原子性</h2>
+<p><strong>竞态条件（race condition）</strong>：多个进程/线程的执行结果，取决于它们指令的<strong>相对执行顺序</strong>。只要有一个交错顺序会导致错误结果，代码就是有 bug 的——哪怕它 99% 的时候都对。</p>
+<p><strong>原子性（atomicity）</strong>：一个操作「要么完全执行、要么完全不执行」，中间状态对其他进程<strong>不可见</strong>。原子操作天然免疫竞态，因为不存在「执行到一半被打断」的窗口。</p>
+<p>文件 I/O 里最常见的两类竞态，TLPI 5.1 各给了原子化解法：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>非原子（错误）写法</th>
+<th>原子（正确）写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>独占创建文件（如 PID 锁文件）</td>
+<td><code class="c">access(path)</code> 检查不存在 → <code class="c">open(O_CREAT)</code></td>
+<td><code class="c">open(path, O_CREAT \| O_EXCL)</code></td>
+</tr>
+<tr>
+<td>多进程追加日志</td>
+<td><code class="c">lseek(fd, 0, SEEK_END)</code> → <code class="c">write(fd, ...)</code></td>
+<td><code class="c">open(path, O_APPEND)</code>，直接 <code class="c">write</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>下面分别拆解。</p>
+<h2>2. <code class="c">O_EXCL | O_CREAT</code>：原子独占创建</h2>
+<h3>为什么 <code class="c">access()</code> + <code class="c">open()</code> 是错的</h3>
+<pre class="code" data-label="C"><code class="c">/* 反例：TOCTOU —— check 和 use 之间被别的进程插入 */
+if (access(path, F_OK) == -1) {         /* check：现在还不存在 */
+    fd = open(path, O_CREAT, 0644);     /* use：另一个进程可能已抢先创建 */
+}
+</code></pre>
+<p>两个进程同时执行这段代码：A 检查「不存在」，B 也检查「不存在」，然后 A、B 都去 <code class="c">open(O_CREAT)</code>。结果<strong>两个进程都以为自己独占创建成功</strong>，最后只有一个文件，两个「锁持有者」同时存在——这正是 TOCTOU：<strong>check（access）和 use（open）之间的时间窗就是竞态窗口</strong>。</p>
+<h3>内核如何做到原子</h3>
+<p><code class="c">O_EXCL</code> 的原子性不在用户态，而在内核的路径查找（namei）层——它在<strong>目录项锁保护下</strong>一次性完成「查无此文件则创建，有则失败」：</p>
+<pre class="code" data-label="code"><code class="c">用户态 open(path, O_CREAT | O_EXCL)
+      ▼
+SYSCALL_DEFINE3(open)                    fs/open.c:1441
+      ▼
+do_sys_openat2 → build_open_flags()      fs/open.c:1222
+      ├─ O_CREAT → op-&gt;intent |= LOOKUP_CREATE      :1315
+      └─ O_EXCL  → op-&gt;intent |= LOOKUP_EXCL        :1317
+                        （并附带 O_NOFOLLOW，防符号链接攻击）
+      ▼
+namei 层 lookup_one_qstr_excl()          fs/namei.c:3885
+      create_flags = LOOKUP_CREATE | LOOKUP_EXCL    :3866
+      inode_lock_nested(parent)          ← 父目录 inode 锁，串行化「查+建」
+      ├─ d_is_positive(dentry) 已存在？
+      │     └─ 是 → return -EEXIST                    :3896-3897
+      └─ 否 → 原子创建新 dentry + inode
+</code></pre>
+<p>关键在于 <code class="c">inode_lock_nested(parent)</code>：<strong>「查目录项是否存在」和「创建新目录项」发生在同一把父目录锁内</strong>，其他进程无法插入。<code class="c">O_EXCL</code> 保证「若文件已存在，<code class="c">open</code> 失败返回 <code class="c">EEXIST</code>；若成功返回，则一定是我创建的」。这就是原子性——没有中间状态可被观察。</p>
+<h3>典型用途</h3>
+<ul>
+<li><strong>PID 锁文件 / 单例守护进程</strong>：<code class="c">open("/var/run/foo.pid", O_CREAT|O_EXCL|O_WRONLY)</code> 失败即「已有实例在跑」。</li>
+<li><strong>临时唯一文件名</strong>（配合 <code class="c">O_TMPFILE</code> 或 mkstemp 的思想）。</li>
+</ul>
+<h2>3. <code class="c">O_APPEND</code>：原子追加</h2>
+<h3>为什么 <code class="c">lseek(SEEK_END)</code> + <code class="c">write()</code> 是错的</h3>
+<pre class="code" data-label="C"><code class="c">/* 反例：两个进程共享同一打开描述时（或各自打开但用 lseek 定位） */
+off_t end = lseek(fd, 0, SEEK_END);   /* A 读到末尾 = 100 */
+/* —— 此时 B 也 lseek 到 100，并 write 了 10 字节 —— */
+write(fd, buf, 20);                   /* A 从 100 写 20 字节，覆盖 B 刚写的 */
+</code></pre>
+<p><code class="c">lseek</code> 和 <code class="c">write</code> 是<strong>两个独立 syscall</strong>，中间的窗口里另一进程可能已经移动了偏移或写了数据。A 的 20 字节会<strong>覆盖</strong> B 刚写的内容，而不是接在真正的末尾。</p>
+<h3><code class="c">O_APPEND</code> 的原子语义</h3>
+<p>以 <code class="c">O_APPEND</code> 打开后，每次 <code class="c">write()</code> 前，内核会<strong>原子地</strong>把文件偏移设为「当前文件末尾」，再执行写——「定位」和「写」被合并进同一次写操作，中间没有可被抢占的窗口：</p>
+<pre class="code" data-label="code"><code class="c">open(path, O_APPEND)
+      ▼
+build_open_flags()                       fs/open.c:1308
+      O_APPEND → acc_mode |= MAY_APPEND  （LSM 据此区分 append vs write）
+      ▼
+后续每次 write：
+      file-&gt;f_flags 里保留 O_APPEND
+      → 写路径在写前原子地把 ki_pos 设为 i_size_read(inode)
+        （「原子定位 + 写」由内核在单次写操作内完成，无用户态 lseek 窗口）
+</code></pre>
+<blockquote>
+<p>注：<code class="c">O_APPEND</code> 的「写前定位到 EOF」发生在通用写路径（<code class="c">mm/filemap.c</code> 的 <code class="c">generic_file_write_iter</code> 通过 <code class="c">IOCB_APPEND</code> 标志处理，<code class="c">kiocb_set_rw_flags</code> 依据 <code class="c">file-&gt;f_flags &amp; O_APPEND</code> 设置）。缓存未收录 <code class="c">mm/filemap.c</code>，此处作架构说明；用户态语义（<code class="c">write</code> 前原子定位到 EOF）是 POSIX 明确规定、且被 <code class="c">build_open_flags</code> 的 <code class="c">MAY_APPEND</code> 与 <code class="c">f_flags</code> 保留所支撑的。</p>
+</blockquote>
+<h3>关键推论</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>追加永远接在末尾</td>
+<td>多个进程各自 <code class="c">O_APPEND</code> 打开同一文件并 <code class="c">write</code>，数据不会互相覆盖</td>
+</tr>
+<tr>
+<td>原子性边界</td>
+<td>单次 <code class="c">write()</code> 原子；若一次写 &gt; <code class="c">PIPE_BUF</code> 级别的大块，仍建议依赖 <code class="c">O_APPEND</code> 而非手动定位</td>
+</tr>
+<tr>
+<td>与偏移的关系</td>
+<td><code class="c">O_APPEND</code> 下 <code class="c">lseek</code> 基本无用——每次写都会回到末尾</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>多进程日志聚合（如多 worker 写同一 log 文件）、数据库 WAL 追加</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单实例守护进程</td>
+<td><code class="c">O_CREAT\|O_EXCL</code> 的 PID 锁文件，避免交易进程被重复拉起</td>
+</tr>
+<tr>
+<td>多 worker 聚合日志</td>
+<td><code class="c">O_APPEND</code> 让多个撮合/风控进程写同一日志而不互相覆盖，无需加锁</td>
+</tr>
+<tr>
+<td>回测结果落盘</td>
+<td>并行回测分片各自 <code class="c">O_APPEND</code> 写结果文件，天然串行化追加</td>
+</tr>
+<tr>
+<td>防 TOCTOU 安全漏洞</td>
+<td>嵌入式设备上以 root 写配置文件时，<code class="c">O_EXCL</code> 防止「检查→创建」窗口被符号链接攻击（<code class="c">O_NOFOLLOW</code> 附带生效）</td>
+</tr>
+<tr>
+<td>少一次 syscall</td>
+<td><code class="c">O_APPEND</code> 省去每次 <code class="c">lseek(SEEK_END)</code>，HFT 高频写路径更省</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;errno.h&gt;
+
+/* 5.1 原子性：O_EXCL 独占创建 + O_APPEND 原子追加 */
+int main(void) {
+    /* 1) O_EXCL|O_CREAT：独占创建，已存在则失败 */
+    int fd = open(&quot;/tmp/single.lock&quot;, O_CREAT | O_EXCL | O_WRONLY, 0644);
+    if (fd &lt; 0) {
+        if (errno == EEXIST)
+            printf(&quot;已有实例在运行（锁文件已存在）\n&quot;);
+        else
+            perror(&quot;open O_EXCL&quot;);
+        return 1;
+    }
+    printf(&quot;独占创建成功，取得锁\n&quot;);
+
+    /* 2) O_APPEND：每次 write 原子追加到末尾 */
+    int logfd = open(&quot;/tmp/app.log&quot;, O_WRONLY | O_APPEND | O_CREAT, 0644);
+    const char *line = &quot;one more line\n&quot;;
+    /* 无需 lseek(SEEK_END)，write 直接接到文件末尾 */
+    write(logfd, line, strlen(line));
+
+    close(logfd);
+    close(fd);
+    return 0;
+}
+</code></pre>
+<h2>6. 衔接</h2>
+<ul>
+<li>下一节：<a href="#s-5-2">5.2 <code class="c">fcntl()</code></a> — 文件控制与两组标志</li>
+<li>三层结构（打开描述如何被共享）见 <a href="#s-5-4">5.4 fd 与打开文件</a></li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-13.html#s-13-5"><code class="c">05/Ch13.5 VFS 数据结构</code></a> — <code class="c">struct file</code> / <code class="c">f_flags</code> / <code class="c">f_pos</code> 归属</li>
+<li>TLPI 后续：<a href="chapter-13.html#intro">Ch13 文件 I/O 缓冲</a> · <a href="chapter-55.html#intro">Ch55 文件锁</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：什么是 TOCTOU？为什么 <code class="c">access()</code> + <code class="c">open(O_CREAT)</code> 是它的典型例子？</strong>
+A：TOCTOU = time-of-check, time-of-use，即「检查」和「使用」之间存在可被其他进程插入的时间窗。<code class="c">access(path)</code> 判断「文件不存在」后、到 <code class="c">open(O_CREAT)</code> 真正创建之间，另一进程可能已抢先创建，导致两个进程都误以为自己独占成功。<code class="c">O_EXCL|O_CREAT</code> 把「检查 + 创建」合并成内核里一次原子操作，消除了这个窗口。</p>
+<p><strong>Q2：<code class="c">open(path, O_CREAT | O_EXCL)</code> 在文件已存在时返回什么？</strong>
+A：返回 <code class="c">-1</code>，<code class="c">errno = EEXIST</code>。这正是它作为「锁文件」判据的价值——失败即代表已有人创建。</p>
+<p><strong>Q3：<code class="c">O_APPEND</code> 为什么能避免 <code class="c">lseek(SEEK_END) + write</code> 的覆盖问题？</strong>
+A：<code class="c">lseek</code> 和 <code class="c">write</code> 是两个独立 syscall，中间窗口内偏移可能被其他进程改变。<code class="c">O_APPEND</code> 让内核在<strong>单次 write 操作内</strong>先原子地把偏移定位到文件末尾再写，不存在可被抢占的中间态，因此多进程追加不会互相覆盖。</p>
+<p><strong>Q4：<code class="c">O_EXCL</code> 为什么不带 <code class="c">O_CREAT</code> 就无意义？</strong>
+A：<code class="c">O_EXCL</code> 的语义是「创建时若已存在则失败」，它只约束<strong>创建</strong>这个动作。单独 <code class="c">O_EXCL</code>（不带 <code class="c">O_CREAT</code>）在多数系统上会被忽略或报错——POSIX 规定 <code class="c">O_EXCL</code> 仅与 <code class="c">O_CREAT</code> 组合使用，<code class="c">build_open_flags</code> 里也是在 <code class="c">if (flags &amp; O_CREAT)</code> 分支内才检查 <code class="c">O_EXCL</code> 并设置 <code class="c">LOOKUP_EXCL</code>。</p>
+<p><strong>Q5：<code class="c">O_EXCL | O_CREAT</code> 还有防符号链接攻击的附加作用吗？</strong>
+A：有。<code class="c">build_open_flags</code> 在设置 <code class="c">LOOKUP_EXCL</code> 的同时会附带 <code class="c">flags |= O_NOFOLLOW</code>（<code class="c">fs/open.c:1317-1318</code>），即不跟随符号链接，防止攻击者用符号链接把「独占创建」重定向到任意文件。这是独占创建安全语义的一部分。</p>
+</details>
+      </section>
+      <section class="section" id="s-5-2">
+        <div class="sec-head"><div class="sec-no">5.2</div><h2>`fcntl()` — 文件控制</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/fcntl.c:316</code> <code class="c">do_fcntl</code>、<code class="c">:441</code> <code class="c">SYSCALL_DEFINE3(fcntl)</code>、<code class="c">:465</code> <code class="c">SYSCALL_DEFINE3(fcntl64)</code>、<code class="c">:37</code> <code class="c">setfl</code>）
+- 上一节：<a href="#s-5-1">5.1 原子性与竞争条件</a>
+- 下一节：<a href="#s-5-3">5.3 打开文件状态标志</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">fcntl()</code> 是文件描述符的「万能控制开关」。本节回答三个问题：</p>
+<ol>
+<li><code class="c">fcntl()</code> 的 <code class="c">cmd</code> 有哪些，各自操作哪一层？</li>
+<li>「fd 标志」和「文件状态标志」两组标志为什么不能混？各存在哪、各用什么 <code class="c">cmd</code> 读写？</li>
+<li><code class="c">F_SETFL</code> 为什么改不了读写模式（<code class="c">O_RDONLY</code>/<code class="c">O_WRONLY</code>/<code class="c">O_RDWR</code>）？</li>
+</ol>
+<hr />
+<h2>1. 原型与内核链路</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;fcntl.h&gt;
+int fcntl(int fd, int cmd, ...);
+</code></pre>
+<pre class="code" data-label="code"><code class="c">用户态 fcntl(fd, cmd, arg)
+      ▼
+SYSCALL_DEFINE3(fcntl, fd, cmd, arg)   fs/fcntl.c:441
+      ▼
+do_fcntl(fd, cmd, arg, filp)           fs/fcntl.c:316
+      switch (cmd) {
+        F_DUPFD         → f_dupfd(argi, filp, 0)            :326
+        F_DUPFD_CLOEXEC → f_dupfd(argi, filp, O_CLOEXEC)    :329
+        F_GETFD         → get_close_on_exec(fd) ? FD_CLOEXEC : 0   :331
+        F_SETFD         → set_close_on_exec(fd, argi &amp; FD_CLOEXEC) :334
+        F_GETFL         → filp-&gt;f_flags                     :338
+        F_SETFL         → setfl(fd, filp, argi)             :342
+        ...
+      }
+</code></pre>
+<h2>2. 主要 <code class="c">cmd</code> 一览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>cmd</th>
+<th>作用</th>
+<th>操作哪一层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">F_DUPFD</code></td>
+<td>复制 fd（类似 <code class="c">dup</code>，返回 ≥ arg 的最小可用 fd）</td>
+<td>进程 fd 表</td>
+</tr>
+<tr>
+<td><code class="c">F_DUPFD_CLOEXEC</code></td>
+<td>复制 fd 并置 <code class="c">FD_CLOEXEC</code></td>
+<td>进程 fd 表</td>
+</tr>
+<tr>
+<td><code class="c">F_GETFD</code> / <code class="c">F_SETFD</code></td>
+<td>读 / 写 <strong>fd 标志</strong>（主要是 <code class="c">FD_CLOEXEC</code>）</td>
+<td>进程 fd 表项</td>
+</tr>
+<tr>
+<td><code class="c">F_GETFL</code> / <code class="c">F_SETFL</code></td>
+<td>读 / 写 <strong>文件状态标志</strong>（<code class="c">O_APPEND</code>/<code class="c">O_NONBLOCK</code>…）</td>
+<td>打开文件描述的 <code class="c">f_flags</code></td>
+</tr>
+<tr>
+<td><code class="c">F_GETLK</code> / <code class="c">F_SETLK</code> / <code class="c">F_SETLKW</code></td>
+<td>记录锁（字节范围锁）</td>
+<td>见 Ch55</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 两组标志勿混（高频考点）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>存在哪</th>
+<th>例子</th>
+<th><code class="c">dup</code> 后共享？</th>
+<th>读写 cmd</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>fd 标志</strong></td>
+<td>进程 fd 表项</td>
+<td><code class="c">FD_CLOEXEC</code></td>
+<td>每个 fd <strong>私有</strong></td>
+<td><code class="c">F_GETFD</code> / <code class="c">F_SETFD</code></td>
+</tr>
+<tr>
+<td><strong>文件状态标志</strong></td>
+<td>打开文件描述</td>
+<td><code class="c">O_APPEND</code>、<code class="c">O_NONBLOCK</code></td>
+<td><strong>共享</strong></td>
+<td><code class="c">F_GETFL</code> / <code class="c">F_SETFL</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">FD_CLOEXEC</code>：<code class="c">exec</code> 时内核自动关闭该 fd，防止句柄泄漏到子程序。</p>
+<h2>4. 常见陷阱</h2>
+<p><strong>陷阱 1：<code class="c">F_SETFL</code> 改不了访问模式</strong></p>
+<pre class="code" data-label="C"><code class="c">fcntl(fd, F_SETFL, O_WRONLY);  /* 无效！ */
+</code></pre>
+<p><code class="c">F_SETFL</code> 只能改 <code class="c">O_APPEND</code>/<code class="c">O_NONBLOCK</code>/<code class="c">O_ASYNC</code>/<code class="c">O_DIRECT</code> 等<strong>状态标志</strong>，不能改 <code class="c">O_RDONLY</code>/<code class="c">O_WRONLY</code>/<code class="c">O_RDWR</code>——访问模式在 <code class="c">open</code> 时确定，由 <code class="c">setfl()</code>（<code class="c">fs/fcntl.c:37</code>）校验，它会拒绝改变 <code class="c">f_flags</code> 中的访问模式位。</p>
+<p><strong>陷阱 2：<code class="c">F_GETFL</code> 解析访问模式要 <code class="c">O_ACCMODE</code></strong></p>
+<pre class="code" data-label="C"><code class="c">int flags = fcntl(fd, F_GETFL);
+int acc = flags &amp; O_ACCMODE;   /* 正确 */
+/* 错误：flags &amp; O_WRONLY，因为 O_RDONLY == 0，永远测不出 */
+</code></pre>
+<p><code class="c">O_RDONLY</code> 通常是 <code class="c">0</code>，<code class="c">O_WRONLY</code>=1，<code class="c">O_RDWR</code>=2，必须用 <code class="c">O_ACCMODE</code> 掩码取低 2 位判断。</p>
+<p><strong>陷阱 3：<code class="c">F_SETFL</code> 会覆盖，不是按位或</strong></p>
+<pre class="code" data-label="C"><code class="c">fcntl(fd, F_SETFL, O_NONBLOCK);   /* 覆盖了 O_APPEND 等其他标志！ */
+fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);  /* 正确：先读再或 */
+</code></pre>
+<p><strong>陷阱 4：<code class="c">open</code> + <code class="c">F_SETFD(FD_CLOEXEC)</code> 有竞态窗口</strong></p>
+<pre class="code" data-label="C"><code class="c">int fd = open(...);
+fcntl(fd, F_SETFD, FD_CLOEXEC);  /* open 与 fcntl 之间 exec 可能泄漏 fd */
+</code></pre>
+<p>多线程下另一线程可能在此间隙 <code class="c">exec</code>。用 <code class="c">open(path, O_CLOEXEC)</code> 一步到位（见 <a href="#s-5-3">5.3</a>）。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非阻塞 fd</td>
+<td><code class="c">F_SETFL</code> 设 <code class="c">O_NONBLOCK</code> 是所有事件驱动网络代码（<code class="c">epoll</code>）的前置</td>
+</tr>
+<tr>
+<td>防 exec 泄漏</td>
+<td><code class="c">F_SETFD(FD_CLOEXEC)</code> / <code class="c">O_CLOEXEC</code> 防交易子进程继承不该有的 socket/文件句柄</td>
+</tr>
+<tr>
+<td>重定向</td>
+<td><code class="c">F_DUPFD</code> 实现安全复制 fd，避免 <code class="c">dup2</code> 前 <code class="c">close</code> 的竞态</td>
+</tr>
+<tr>
+<td>设备 fd 控制</td>
+<td>嵌入式设备文件（如 <code class="c">/dev/ttyS0</code>）用 <code class="c">fcntl</code> 设波特率/标志</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+
+/* fcntl: 获取/设置 fd 属性 */
+int main(void) {
+    int fd = open(&quot;/tmp/fcntl_test.txt&quot;, O_RDWR | O_CREAT, 0644);
+
+    /* F_GETFL：读文件状态标志 */
+    int flags = fcntl(fd, F_GETFL);
+    printf(&quot;access mode: %s\n&quot;,
+           (flags &amp; O_ACCMODE) == O_RDONLY ? &quot;RDONLY&quot; :
+           (flags &amp; O_ACCMODE) == O_WRONLY ? &quot;WRONLY&quot; : &quot;RDWR&quot;);
+
+    /* F_SETFL：设 O_NONBLOCK（先读回再或，避免覆盖） */
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    printf(&quot;O_NONBLOCK set: %s\n&quot;,
+           (fcntl(fd, F_GETFL) &amp; O_NONBLOCK) ? &quot;yes&quot; : &quot;no&quot;);
+
+    /* F_GETFD：读 fd 标志 */
+    printf(&quot;FD_CLOEXEC: %s\n&quot;,
+           (fcntl(fd, F_GETFD) &amp; FD_CLOEXEC) ? &quot;yes&quot; : &quot;no&quot;);
+
+    close(fd);
+    return 0;
+}
+</code></pre>
+<h2>7. 衔接</h2>
+<ul>
+<li>上一节：<a href="#s-5-1">5.1 原子性与竞争条件</a></li>
+<li>下一节：<a href="#s-5-3">5.3 打开文件状态标志</a> — <code class="c">F_GETFL</code>/<code class="c">F_SETFL</code> 详析</li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-13.html#s-13-5"><code class="c">05/Ch13.5 VFS 数据结构</code></a> — <code class="c">f_flags</code> / <code class="c">f_mode</code> 归属</li>
+<li>TLPI 后续：<a href="chapter-55.html#intro">Ch55 文件锁</a> — <code class="c">F_SETLK</code> 记录锁</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">fcntl(fd, F_SETFL, flags)</code> 能改哪个标志？</strong>
+A：只能改<strong>文件状态标志</strong>：<code class="c">O_APPEND</code>、<code class="c">O_NONBLOCK</code>、<code class="c">O_ASYNC</code>、<code class="c">O_DIRECT</code> 等。<strong>不能</strong>改访问模式 <code class="c">O_RDONLY</code>/<code class="c">O_WRONLY</code>/<code class="c">O_RDWR</code>（<code class="c">open</code> 时确定），也不能改 <code class="c">O_CREAT</code>/<code class="c">O_EXCL</code>/<code class="c">O_TRUNC</code> 这些只在 <code class="c">open</code> 时有意义的标志。</p>
+<p><strong>Q2：<code class="c">FD_CLOEXEC</code> 是文件状态标志，存在打开文件描述里吗？</strong>
+A：不是。<code class="c">FD_CLOEXEC</code> 是 <strong>fd 标志</strong>，存在<strong>进程 fd 表项</strong>里（每个 fd 私有，<code class="c">dup</code> 不共享）。文件状态标志（<code class="c">O_APPEND</code> 等）才存在打开文件描述的 <code class="c">f_flags</code> 里。读写 <code class="c">FD_CLOEXEC</code> 用 <code class="c">F_GETFD</code>/<code class="c">F_SETFD</code>，不是 <code class="c">F_GETFL</code>/<code class="c">F_SETFL</code>。</p>
+<p><strong>Q3：<code class="c">fcntl(fd, F_SETFL, O_NONBLOCK)</code> 有什么问题？</strong>
+A：<code class="c">F_SETFL</code> 会<strong>整体覆盖</strong> <code class="c">f_flags</code>，把已有的 <code class="c">O_APPEND</code> 等其他标志一并清掉。正确做法是先 <code class="c">F_GETFL</code> 读回，再 <code class="c">| O_NONBLOCK</code>：<code class="c">fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)</code>。</p>
+<p><strong>Q4：<code class="c">F_GETFL</code> 拿到 flags 后怎么判断访问模式？</strong>
+A：用 <code class="c">flags &amp; O_ACCMODE</code> 取低 2 位，再与 <code class="c">O_RDONLY</code>(0)/<code class="c">O_WRONLY</code>(1)/<code class="c">O_RDWR</code>(2) 比较。不能直接 <code class="c">flags &amp; O_RDONLY</code>，因为 <code class="c">O_RDONLY == 0</code>，任何 flags 与它相与都是 0。</p>
+<p><strong>Q5：<code class="c">F_DUPFD</code> 和 <code class="c">dup</code> 有什么区别？</strong>
+A：<code class="c">dup(fd)</code> 返回最小可用 fd；<code class="c">F_DUPFD</code> 返回 <strong>≥ 指定参数</strong> 的最小可用 fd（可指定下限），且 <code class="c">F_DUPFD_CLOEXEC</code> 能同时设 <code class="c">FD_CLOEXEC</code>，避免了「复制 + 设标志」两步之间的竞态。</p>
+</details>
+      </section>
+      <section class="section" id="s-5-3">
+        <div class="sec-head"><div class="sec-no">5.3</div><h2>打开文件状态标志（Open File Status Flags）</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/fcntl.c:338</code> <code class="c">F_GETFL → filp-&gt;f_flags</code>、<code class="c">:342</code> <code class="c">F_SETFL → setfl</code>、<code class="c">:37</code> <code class="c">setfl</code>）
+- 上一节：<a href="#s-5-2">5.2 <code class="c">fcntl()</code></a>
+- 下一节：<a href="#s-5-4">5.4 fd 与打开文件</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>上一节讲了 <code class="c">fcntl()</code> 的 <code class="c">F_GETFL</code>/<code class="c">F_SETFL</code>，本节聚焦它们操作的对象——<strong>打开文件状态标志（open file status flags）</strong>。回答三个问题：</p>
+<ol>
+<li><code class="c">F_GETFL</code> 拿回来的 <code class="c">f_flags</code> 里到底有哪些位？怎么正确解析访问模式？</li>
+<li>哪些标志可以事后用 <code class="c">F_SETFL</code> 改，哪些只能在 <code class="c">open</code> 时定死？</li>
+<li>内核 <code class="c">setfl()</code> 在真正修改前做了哪些校验？</li>
+</ol>
+<hr />
+<h2>1. 状态标志的归属</h2>
+<p>文件状态标志存在<strong>打开文件描述</strong>（<code class="c">struct file</code> 的 <code class="c">f_flags</code> 字段）里，与 fd 标志（<code class="c">FD_CLOEXEC</code>，存进程 fd 表项）是两回事（见 <a href="#s-5-2">5.2</a>）。<code class="c">F_GETFL</code> 直接读 <code class="c">filp-&gt;f_flags</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* fs/fcntl.c:338 */
+case F_GETFL:
+    err = filp-&gt;f_flags;   /* 返回打开文件描述的状态标志 */
+    break;
+case F_SETFL:
+    err = setfl(fd, filp, argi);   /* :342 */
+    break;
+</code></pre>
+<h2>2. 获取：<code class="c">F_GETFL</code> 与访问模式解析</h2>
+<pre class="code" data-label="C"><code class="c">int flags = fcntl(fd, F_GETFL);
+if (flags &amp; O_APPEND)    /* 追加模式 */
+if (flags &amp; O_NONBLOCK)  /* 非阻塞模式 */
+
+/* 访问模式必须用 O_ACCMODE 掩码 */
+int acc = flags &amp; O_ACCMODE;   /* O_RDONLY(0) / O_WRONLY(1) / O_RDWR(2) */
+</code></pre>
+<blockquote>
+<p>陷阱：<code class="c">O_RDONLY == 0</code>，所以 <code class="c">flags &amp; O_RDONLY</code> 恒为 0，必须 <code class="c">flags &amp; O_ACCMODE</code> 再比较。</p>
+</blockquote>
+<h2>3. 设置：<code class="c">F_SETFL</code> 可改 vs 不可改</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>可修改（<code class="c">F_SETFL</code>）</th>
+<th>不可修改（只在 <code class="c">open</code> 时设定）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">O_APPEND</code></td>
+<td><code class="c">O_RDONLY</code> / <code class="c">O_WRONLY</code> / <code class="c">O_RDWR</code>（访问模式）</td>
+</tr>
+<tr>
+<td><code class="c">O_NONBLOCK</code></td>
+<td><code class="c">O_CREAT</code></td>
+</tr>
+<tr>
+<td><code class="c">O_ASYNC</code></td>
+<td><code class="c">O_TRUNC</code></td>
+</tr>
+<tr>
+<td><code class="c">O_DIRECT</code></td>
+<td><code class="c">O_EXCL</code></td>
+</tr>
+<tr>
+<td><code class="c">O_NOATIME</code>（需 owner）</td>
+<td><code class="c">O_CLOEXEC</code>（那是 <strong>fd 标志</strong>，用 <code class="c">F_SETFD</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. 内核 <code class="c">setfl()</code> 的校验链（<code class="c">fs/fcntl.c:37</code>）</h2>
+<p><code class="c">F_SETFL</code> 不是无脑赋值，内核 <code class="c">setfl()</code> 在修改前做多重校验：</p>
+<pre class="code" data-label="C"><code class="c">static int setfl(int fd, struct file *filp, unsigned int arg)
+{
+    /* 1) O_APPEND 不能被清除，若 inode 标记为 append-only（chattr +a） */
+    if (((arg ^ filp-&gt;f_flags) &amp; O_APPEND) &amp;&amp; IS_APPEND(inode))
+        return -EPERM;
+
+    /* 2) O_NOATIME 只能由 owner 或特权用户设置 */
+    if ((arg &amp; O_NOATIME) &amp;&amp; !(filp-&gt;f_flags &amp; O_NOATIME))
+        if (!inode_owner_or_capable(...))
+            return -EPERM;
+
+    /* 3) 兼容：O_NDELAY 等同 O_NONBLOCK */
+    if (O_NONBLOCK != O_NDELAY)
+        if (arg &amp; O_NDELAY)  arg |= O_NONBLOCK;
+
+    /* 4) O_DIRECT 需要底层支持 FMODE_CAN_ODIRECT */
+    if (!S_ISFIFO(inode-&gt;i_mode) &amp;&amp; (arg &amp; O_DIRECT) &amp;&amp;
+        !(filp-&gt;f_mode &amp; FMODE_CAN_ODIRECT))
+        return -EINVAL;
+
+    /* 5) 交给具体文件系统的 check_flags 钩子（若有） */
+    if (filp-&gt;f_op-&gt;check_flags)
+        error = filp-&gt;f_op-&gt;check_flags(arg);
+    ...
+}
+</code></pre>
+<p>注意：<code class="c">setfl</code> <strong>不校验访问模式位</strong>——因为 <code class="c">F_SETFL</code> 传入的 <code class="c">arg</code> 里访问模式位根本不会被应用（内核只取状态标志位，访问模式在 <code class="c">open</code> 时已固化在 <code class="c">f_mode</code> 里）。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>运行时切换非阻塞</td>
+<td><code class="c">F_SETFL</code> 动态开关 <code class="c">O_NONBLOCK</code>，网络/管道 I/O 常用（见 <a href="#s-5-9">5.9</a>）</td>
+</tr>
+<tr>
+<td><code class="c">O_APPEND</code> 追加日志</td>
+<td>打开后可用 <code class="c">F_SETFL</code> 追加 <code class="c">O_APPEND</code>（但注意 append-only 文件不可清除）</td>
+</tr>
+<tr>
+<td><code class="c">O_DIRECT</code> 绕过页缓存</td>
+<td>HFT 低延迟落盘场景，需底层设备支持 <code class="c">FMODE_CAN_ODIRECT</code>，否则 <code class="c">setfl</code> 返回 <code class="c">EINVAL</code></td>
+</tr>
+<tr>
+<td>先 <code class="c">F_GETFL</code> 再或</td>
+<td>避免 <code class="c">F_SETFL</code> 覆盖已有标志，是并发安全设置状态标志的唯一正确姿势</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+
+/* 5.3 状态标志：F_GETFL/F_SETFL 的正确用法 */
+int main(void) {
+    int fd = open(&quot;/tmp/flags.txt&quot;, O_RDWR | O_CREAT, 0644);
+
+    /* 读回状态标志，正确解析访问模式 */
+    int flags = fcntl(fd, F_GETFL);
+    printf(&quot;access mode: %d (0=RDONLY 1=WRONLY 2=RDWR)\n&quot;,
+           flags &amp; O_ACCMODE);
+
+    /* 追加 O_APPEND（先读再或，避免覆盖） */
+    fcntl(fd, F_SETFL, flags | O_APPEND);
+    printf(&quot;O_APPEND now: %s\n&quot;,
+           (fcntl(fd, F_GETFL) &amp; O_APPEND) ? &quot;yes&quot; : &quot;no&quot;);
+
+    close(fd);
+    return 0;
+}
+</code></pre>
+<h2>7. 衔接</h2>
+<ul>
+<li>上一节：<a href="#s-5-2">5.2 <code class="c">fcntl()</code></a> — <code class="c">F_GETFL</code>/<code class="c">F_SETFL</code> 在 <code class="c">do_fcntl</code> 里的位置</li>
+<li>下一节：<a href="#s-5-4">5.4 fd 与打开文件</a> — <code class="c">f_flags</code> 所在的打开文件描述如何被共享</li>
+<li>非阻塞语义详见 <a href="#s-5-9">5.9</a>；<code class="c">O_DIRECT</code> 与页缓存见 Ch13</li>
+<li>TLPI 后续：<a href="chapter-55.html#intro">Ch55 文件锁</a> — 同属 <code class="c">fcntl</code> 的记录锁命令</li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">F_GETFL</code> 拿到的 flags，怎么判断文件是以 <code class="c">O_WRONLY</code> 打开的还是 <code class="c">O_RDWR</code>？</strong>
+A：用 <code class="c">flags &amp; O_ACCMODE</code> 取低 2 位：<code class="c">0</code>→<code class="c">O_RDONLY</code>、<code class="c">1</code>→<code class="c">O_WRONLY</code>、<code class="c">2</code>→<code class="c">O_RDWR</code>。不能 <code class="c">flags &amp; O_WRONLY</code>（<code class="c">O_WRONLY</code> 恰好是 1 可以测出，但 <code class="c">O_RDONLY==0</code> 会漏判），统一用 <code class="c">O_ACCMODE</code> 最稳妥。</p>
+<p><strong>Q2：哪些标志可以用 <code class="c">F_SETFL</code> 修改？哪些只能 <code class="c">open</code> 时定死？</strong>
+A：可改：<code class="c">O_APPEND</code>、<code class="c">O_NONBLOCK</code>、<code class="c">O_ASYNC</code>、<code class="c">O_DIRECT</code>、<code class="c">O_NOATIME</code>（需 owner）。不可改：访问模式（<code class="c">O_RDONLY</code>/<code class="c">O_WRONLY</code>/<code class="c">O_RDWR</code>）、<code class="c">O_CREAT</code>、<code class="c">O_TRUNC</code>、<code class="c">O_EXCL</code>。<code class="c">O_CLOEXEC</code> 是 fd 标志，用 <code class="c">F_SETFD</code> 而非 <code class="c">F_SETFL</code>。</p>
+<p><strong>Q3：<code class="c">setfl()</code> 为什么会对「清除 <code class="c">O_APPEND</code>」返回 <code class="c">EPERM</code>？</strong>
+A：当文件被标记为 append-only（<code class="c">chattr +a</code>，即 <code class="c">IS_APPEND(inode)</code> 为真）时，内核禁止通过 <code class="c">F_SETFL</code> 把 <code class="c">O_APPEND</code> 位从 <code class="c">f_flags</code> 清掉，防止绕过强制追加语义。<code class="c">setfl</code> 检测到 <code class="c">O_APPEND</code> 位被翻转且 inode 是 append-only 时返回 <code class="c">-EPERM</code>。</p>
+<p><strong>Q4：<code class="c">F_SETFL</code> 设 <code class="c">O_DIRECT</code> 一定成功吗？</strong>
+A：不一定。<code class="c">setfl</code> 检查 <code class="c">!(filp-&gt;f_mode &amp; FMODE_CAN_ODIRECT)</code> 时返回 <code class="c">-EINVAL</code>——底层文件系统/设备不支持 direct I/O 就无法设置。<code class="c">O_DIRECT</code> 也不是「更快」的万能药，见 Ch13 对页缓存的讨论。</p>
+<p><strong>Q5：<code class="c">O_NDELAY</code> 和 <code class="c">O_NONBLOCK</code> 什么关系？</strong>
+A：两者语义相同（非阻塞），历史遗留两个名字。内核 <code class="c">setfl</code> 里有 <code class="c">if (O_NONBLOCK != O_NDELAY) if (arg &amp; O_NDELAY) arg |= O_NONBLOCK;</code>——即传 <code class="c">O_NDELAY</code> 会自动补上 <code class="c">O_NONBLOCK</code>，保证二者等价。新代码应统一用 <code class="c">O_NONBLOCK</code>。</p>
+</details>
+      </section>
+      <section class="section" id="s-5-4">
+        <div class="sec-head"><div class="sec-no">5.4</div><h2>fd 与打开文件的关系（Relationship Between File Descriptors and Open Files）</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">include/linux/fdtable.h:27</code> <code class="c">struct fdtable</code>、<code class="c">:49</code> <code class="c">struct files_struct</code>；<code class="c">include/linux/fs.h:992</code> <code class="c">struct file</code>、<code class="c">:1007</code> <code class="c">f_pos</code>）
+- 上一节：<a href="#s-5-3">5.3 打开文件状态标志</a>
+- 下一节：<a href="#s-5-5">5.5 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">lseek</code> 改的到底是「fd 数字」还是别的什么？为什么 <code class="c">dup</code> 出来的两个 fd 会互相影响偏移，而两次 <code class="c">open</code> 同一路径却互不影响？本节回答三个问题：</p>
+<ol>
+<li>内核里与「一个打开的文件」相关的三层结构分别是什么、各存什么？</li>
+<li>文件偏移（<code class="c">lseek</code> 改的那个）到底存在哪一层？</li>
+<li><code class="c">dup</code> / <code class="c">fork</code> / 两次 <code class="c">open</code> 分别导致「共享偏移」还是「独立偏移」？</li>
+</ol>
+<hr />
+<h2>1. 内核三层结构</h2>
+<p>进程里一个「打开的文件」在内核里不是一层，而是三层。这是本章所有「怪现象」的总根源：</p>
+<pre class="code" data-label="code"><code class="c">进程级                内核级                     磁盘级
+┌─────────────┐   ┌──────────────────┐   ┌──────────────┐
+│ fd 表        │   │ 打开文件描述       │   │ inode        │
+│ (files_struct│   │ (struct file)    │   │ (磁盘上的真实 │
+│  内的 fdtable)│──▶│  f_pos  偏移      │──▶│  文件元数据)   │
+│  + fd 标志    │   │  f_flags 状态标志 │   │  size/权限/块  │
+│ (FD_CLOEXEC) │   │  f_mode 访问模式  │   │  链接计数      │
+└─────────────┘   │  f_op   操作表    │   └──────────────┘
+                  └──────────────────┘
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>层</th>
-<th>谁有</th>
+<th>谁持有</th>
 <th>存什么</th>
+<th>内核结构</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>1. 进程 fd 表</strong></td>
 <td>每进程独有</td>
-<td>指向「打开文件描述」的指针 + <strong>fd 标志</strong>（主要是 <code class="c">FD_CLOEXEC</code>）</td>
+<td>指向 <code class="c">struct file</code> 的指针 + <strong>fd 标志</strong>（主要是 <code class="c">FD_CLOEXEC</code>）</td>
+<td><code class="c">files_struct</code> → <code class="c">fdtable</code>（<code class="c">include/linux/fdtable.h:49</code> / <code class="c">:27</code>）</td>
 </tr>
 <tr>
-<td><strong>2. 打开文件描述</strong>（open file description）</td>
-<td>内核全局，可被多 fd 共享</td>
-<td><strong>文件偏移</strong>（<code class="c">lseek</code> 改的就是它）、状态标志（<code class="c">O_APPEND</code>/<code class="c">O_NONBLOCK</code>…）、指向 inode</td>
+<td><strong>2. 打开文件描述</strong></td>
+<td>内核全局，可被多个 fd 共享</td>
+<td><strong>文件偏移 <code class="c">f_pos</code></strong>（<code class="c">lseek</code> 改的就是它）、状态标志（<code class="c">f_flags</code>：<code class="c">O_APPEND</code>/<code class="c">O_NONBLOCK</code>…）、访问模式（<code class="c">f_mode</code>）、操作表（<code class="c">f_op</code>）、引用计数 <code class="c">f_count</code></td>
+<td><code class="c">struct file</code>（<code class="c">include/linux/fs.h:992</code>，<code class="c">f_pos</code> 在 <code class="c">:1007</code>）</td>
 </tr>
 <tr>
 <td><strong>3. inode</strong></td>
-<td>磁盘上真实文件</td>
-<td>大小、权限、磁盘块位置、链接计数等</td>
+<td>磁盘上的真实文件</td>
+<td>大小、权限、磁盘块位置、链接计数</td>
+<td><code class="c">struct inode</code></td>
 </tr>
 </tbody>
 </table></div>
-<h3>关键推论（高频面试点）</h3>
+<blockquote>
+<p>关键结论：<strong><code class="c">lseek</code> 改的是「打开文件描述」里的 <code class="c">f_pos</code>，不是「fd 数字本身」，更不是 inode</strong>。fd 数字只是一个索引，指向打开文件描述。</p>
+</blockquote>
+<h2>2. 共享 vs 独立：偏移的关键推论（高频面试点）</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -613,310 +1216,646 @@ int main(void) {
 </thead>
 <tbody>
 <tr>
-<td>两次独立 <code class="c">open()</code> 同一路径</td>
+<td>同一进程两次独立 <code class="c">open()</code> 同一路径</td>
 <td><strong>两个</strong></td>
 <td><strong>各自独立</strong></td>
 </tr>
 <tr>
 <td><code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">fcntl(F_DUPFD)</code></td>
-<td><strong>同一个</strong></td>
+<td><strong>同一个</strong>（引用计数 +1）</td>
 <td><strong>共享</strong></td>
 </tr>
 <tr>
-<td><code class="c">fork</code> 继承</td>
-<td>通常 <strong>共享</strong> 父打开描述</td>
-<td><strong>共享</strong>（见 LKD §3.8）</td>
+<td><code class="c">fork</code> 后子进程继承</td>
+<td><strong>共享</strong>父进程的打开描述</td>
+<td><strong>共享</strong>（子进程复制 fd 表，但表项指向同一个 <code class="c">struct file</code>）</td>
 </tr>
 <tr>
 <td><code class="c">O_APPEND</code></td>
-<td>write 前内核 <strong>原子</strong> 移到 EOF 再写</td>
-<td>—</td>
+<td>写前内核原子定位到 EOF 再写</td>
+<td>见 <a href="#s-5-1">5.1 原子性</a></td>
 </tr>
 </tbody>
 </table></div>
-<p>→ <code class="c">lseek</code> 改的是 <strong>打开文件描述里的偏移</strong>，不是「fd 数字本身」。</p>
-<h2>代码示例</h2>
+<pre class="code" data-label="code"><code class="c">两次 open 同一文件：            dup / fork：
+fd3 ──▶ [struct file A] pos=0   fd4 ──┐
+fd5 ──▶ [struct file B] pos=0         ├──▶ [struct file C] pos=共享
+        （各自独立偏移）        fd6 ──┘   （lseek fd4 会影响 fd6）
+</code></pre>
+<h2>3. 为什么 <code class="c">dup</code> 共享而 <code class="c">open</code> 不共享</h2>
+<ul>
+<li><strong><code class="c">open()</code></strong>：每次调用都会 <code class="c">do_filp_open</code> 出一个<strong>新的 <code class="c">struct file</code></strong>，初始 <code class="c">f_pos = 0</code>，再挂到 fd 表。两次 <code class="c">open</code> = 两个 <code class="c">struct file</code>，偏移自然独立。</li>
+<li><strong><code class="c">dup()</code></strong>：不创建新 <code class="c">struct file</code>，只是让新 fd 表项<strong>指向同一个 <code class="c">struct file</code></strong>，并把它的 <code class="c">f_count</code> 引用计数 +1。既然指向同一个 <code class="c">struct file</code>，<code class="c">f_pos</code> 就只有一个，<code class="c">lseek</code> 通过任一 fd 都会改到它。</li>
+<li><strong><code class="c">fork()</code></strong>：子进程复制父进程的 <code class="c">files_struct</code>（fd 表），但<strong>表项指针原样复制</strong>——父子的 fd 指向<strong>同一个</strong> <code class="c">struct file</code>。所以父子共享偏移，直到一方 <code class="c">close</code>（<code class="c">close</code> 只是让 <code class="c">f_count</code> -1，减到 0 才真正释放 <code class="c">struct file</code>）。</li>
+</ul>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多线程共享 fd 的坑</td>
+<td>两个线程用同一 fd 做 <code class="c">lseek</code>+<code class="c">read</code> 会互相踩偏移，用 <code class="c">pread</code>/<code class="c">pwrite</code> 规避（见 <a href="#s-5-6">5.6</a>）</td>
+</tr>
+<tr>
+<td><code class="c">fork</code> 后父子抢日志</td>
+<td>父子共享打开描述，都会从同一 <code class="c">f_pos</code> 继续写，可能交错；必要时 <code class="c">O_APPEND</code> 或各自 <code class="c">open</code></td>
+</tr>
+<tr>
+<td>重定向不泄漏</td>
+<td><code class="c">dup2</code> 后新 fd 与旧 fd 共享描述，理解 <code class="c">f_count</code> 才能正确配对 <code class="c">close</code>（见 <a href="#s-5-5">5.5</a>）</td>
+</tr>
+<tr>
+<td>嵌入式设备 fd 紧张</td>
+<td>三层结构意味着「一个打开描述可被多个 fd 引用」，正确 <code class="c">dup</code>/<code class="c">close</code> 能复用底层资源</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 代码示例</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
 #include &lt;stdio.h&gt;
 
-/* 演示内核三层结构：dup 共享打开文件描述（含偏移） */
+/* 5.4 三层结构：dup 共享偏移，两次 open 独立偏移 */
 int main(void) {
     int fd = open(&quot;/tmp/sparse.txt&quot;, O_RDWR | O_CREAT, 0644);
     write(fd, &quot;ABCDE&quot;, 5);
 
     /* dup 后 fd 和 fd2 指向同一个打开文件描述 → 共享偏移 */
     int fd2 = dup(fd);
-    printf(&quot;fd=%d, fd2=%d\n&quot;, fd, fd2);
 
-    /* 通过 fd 读 2 字节 → 偏移变到 2 */
-    char buf[3];
     lseek(fd, 0, SEEK_SET);
-    read(fd, buf, 2);
-    printf(&quot;fd 读 2 字节后偏移: %ld\n&quot;, lseek(fd, 0, SEEK_CUR));  /* 2 */
+    char buf[3];
+    read(fd, buf, 2);                       /* fd 读 2 字节 → 偏移变 2 */
+    printf(&quot;fd  偏移: %ld\n&quot;, lseek(fd, 0, SEEK_CUR));   /* 2 */
+    printf(&quot;fd2 偏移: %ld (共享)\n&quot;, lseek(fd2, 0, SEEK_CUR)); /* 2 */
 
-    /* fd2 的偏移也是 2（共享） */
-    printf(&quot;fd2 偏移: %ld (共享)\n&quot;, lseek(fd2, 0, SEEK_CUR));    /* 2 */
-
-    /* 对比：两次独立 open → 各自独立偏移 */
+    /* 两次独立 open → 各自独立偏移 */
     int fd3 = open(&quot;/tmp/sparse.txt&quot;, O_RDONLY);
-    printf(&quot;fd3 偏移: %ld (独立)\n&quot;, lseek(fd3, 0, SEEK_CUR));    /* 0 */
+    printf(&quot;fd3 偏移: %ld (独立)\n&quot;, lseek(fd3, 0, SEEK_CUR)); /* 0 */
 
     close(fd); close(fd2); close(fd3);
     return 0;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<h2>6. 衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：5.2 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
+<li>上一节：<a href="#s-5-3">5.3 打开文件状态标志</a> — <code class="c">F_GETFL</code>/<code class="c">F_SETFL</code> 改的 <code class="c">f_flags</code> 就在本节的打开文件描述里</li>
+<li>下一节：<a href="#s-5-5">5.5 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></a> — 复制 fd 即共享打开描述</li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-13.html#s-13-5"><code class="c">05/Ch13.5 VFS 数据结构</code></a> — <code class="c">struct file</code> / <code class="c">files_struct</code> / <code class="c">fdtable</code> 归属</li>
+<li><a href="../../05-linux-kernel/html/chapter-03.html#s-3-8"><code class="c">05/Ch3.8 身份 PID 与资源 FD</code></a> — 进程如何持有 fd 资源</li>
+<li>TLPI 后续：<a href="chapter-06.html#intro">Ch6 进程</a> · <a href="chapter-24.html#intro">Ch24 进程创建（fork 语义）</a></li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">lseek</code> 修改的偏移到底存在哪一层？</strong>
+A：存在<strong>打开文件描述</strong>（<code class="c">struct file</code> 的 <code class="c">f_pos</code>，<code class="c">include/linux/fs.h:1007</code>）里，不是 fd 数字本身，也不是 inode。fd 只是指向 <code class="c">struct file</code> 的索引。所以「同一个 <code class="c">struct file</code> 被多个 fd 引用」时，<code class="c">lseek</code> 通过任一 fd 都会改到同一个 <code class="c">f_pos</code>。</p>
+<p><strong>Q2：两次 <code class="c">open()</code> 同一路径，偏移共享吗？为什么？</strong>
+A：不共享。每次 <code class="c">open</code> 都会 <code class="c">do_filp_open</code> 出一个<strong>新的 <code class="c">struct file</code></strong>（<code class="c">f_pos</code> 各自初始为 0），再挂到 fd 表。两个 <code class="c">struct file</code> = 两个独立偏移。</p>
+<p><strong>Q3：<code class="c">fork</code> 后父子进程的 fd 偏移共享吗？</strong>
+A：共享。<code class="c">fork</code> 复制的是 fd 表（<code class="c">files_struct</code>），但表项指针原样复制，父子的 fd 指向<strong>同一个</strong> <code class="c">struct file</code>，所以 <code class="c">f_pos</code> 共享。一方 <code class="c">close</code> 只是 <code class="c">f_count</code> 减 1，减到 0 才释放 <code class="c">struct file</code>。</p>
+<p><strong>Q4：<code class="c">dup</code> 出来的新 fd 和旧 fd，<code class="c">close</code> 一个会影响另一个吗？</strong>
+A：<code class="c">close</code> 只是把 <code class="c">struct file</code> 的 <code class="c">f_count</code> 减 1，并清掉该 fd 表项。只要 <code class="c">f_count</code> 未减到 0，<code class="c">struct file</code> 就还活着，另一个 fd 仍可正常读写同一打开描述（共享偏移）。</p>
+<p><strong>Q5：<code class="c">O_APPEND</code>、<code class="c">O_NONBLOCK</code> 这些状态标志存在哪一层？<code class="c">FD_CLOEXEC</code> 呢？</strong>
+A：<code class="c">O_APPEND</code>/<code class="c">O_NONBLOCK</code> 存在<strong>打开文件描述</strong>的 <code class="c">f_flags</code> 里（<code class="c">dup</code> 共享）；<code class="c">FD_CLOEXEC</code> 存在<strong>进程 fd 表项</strong>里（每个 fd 私有）。这是两组标志的归属差异，详细见 <a href="#s-5-2">5.2 <code class="c">fcntl()</code></a> 和 <a href="#s-5-3">5.3</a>。</p>
+</details>
       </section>
-      <section class="section" id="s-5-2">
-        <div class="sec-head"><div class="sec-no">5.5</div><h2>`fcntl` — 文件控制</h2></div>
+      <section class="section" id="s-5-5">
+        <div class="sec-head"><div class="sec-no">5.5</div><h2>`dup` / `dup2` / `dup3` — 复制文件描述符</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
-- 上一节：<a href="#s-5-4">5.4 原子操作</a>
-- 下一节：<a href="#s-5-6">5.6 打开标志补充（扩展 Ch4）</a></p>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/fcntl.c:316</code> <code class="c">do_fcntl</code>、<code class="c">:326</code> <code class="c">F_DUPFD → f_dupfd</code>、<code class="c">:329</code> <code class="c">F_DUPFD_CLOEXEC</code>；<code class="c">dup</code>/<code class="c">dup2</code>/<code class="c">dup3</code> 的 <code class="c">SYSCALL_DEFINE</code> 位于 <code class="c">fs/file.c</code>，缓存未收录该文件，作架构说明）
+- 上一节：<a href="#s-5-4">5.4 fd 与打开文件</a>
+- 下一节：<a href="#s-5-6">5.6 <code class="c">pread</code> / <code class="c">pwrite</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>int fcntl(int fd, int cmd, ...); <code class="c">FD_CLOEXEC</code>：<code class="c">exec</code> 时自动关该 fd，防泄漏。 Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/fcntl_nonblock.c"><code class="c">code/fcntl_nonblock.c</code></a>（管道上设 <code class="c">O_NONBLOCK</code>）</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int fcntl(int fd, int cmd, ...);
-</code></pre>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>cmd</th>
-<th>作用</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">F_DUPFD</code></td>
-<td>复制 fd（类似 dup）</td>
-</tr>
-<tr>
-<td><code class="c">F_GETFD</code> / <code class="c">F_SETFD</code></td>
-<td><strong>fd 标志</strong>（进程 fd 表）：主要 <code class="c">FD_CLOEXEC</code></td>
-</tr>
-<tr>
-<td><code class="c">F_GETFL</code> / <code class="c">F_SETFL</code></td>
-<td><strong>文件状态标志</strong>（打开描述）：可改 <code class="c">O_APPEND</code>、<code class="c">O_NONBLOCK</code>；<strong>不能</strong>改 <code class="c">O_RDONLY</code>/<code class="c">O_WRONLY</code>/<code class="c">O_RDWR</code></td>
-</tr>
-</tbody>
-</table></div>
-<h3>两组标志勿混</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th></th>
-<th>存在哪</th>
-<th>例子</th>
-<th>共享？</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>fd 标志</strong></td>
-<td>进程 fd 表项</td>
-<td><code class="c">FD_CLOEXEC</code></td>
-<td>每个 fd <strong>私有</strong></td>
-</tr>
-<tr>
-<td><strong>文件状态标志</strong></td>
-<td>打开文件描述</td>
-<td><code class="c">O_APPEND</code>、<code class="c">O_NONBLOCK</code></td>
-<td><code class="c">dup</code> 的 fd <strong>共享</strong></td>
-</tr>
-</tbody>
-</table></div>
-<p><code class="c">FD_CLOEXEC</code>：<code class="c">exec</code> 时自动关该 fd，防泄漏。<br />
-Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/fcntl_nonblock.c"><code class="c">code/fcntl_nonblock.c</code></a>（管道上设 <code class="c">O_NONBLOCK</code>）</p>
-<h2>常见陷阱</h2>
+<p><code class="c">dup</code> 家族用来「复制文件描述符」，是 shell 管道、I/O 重定向的基石。本节回答三个问题：</p>
 <ol>
-<li><strong>fd 标志 vs 文件状态标志混淆</strong></li>
+<li><code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code> 三者的区别是什么？复制后新旧 fd 共享什么？</li>
+<li>为什么 <code class="c">dup2</code> 的「先关目标再复制」是<strong>原子</strong>的，而 <code class="c">close</code> + <code class="c">fcntl(F_DUPFD)</code> 不是？</li>
+<li><code class="c">dup2</code> 复制出的 fd 为什么不继承 <code class="c">FD_CLOEXEC</code>？该怎么处理？</li>
 </ol>
-<pre class="code" data-label="C"><code class="c">/* 错误：F_SETFL 改不了访问模式 */
-fcntl(fd, F_SETFL, O_WRONLY);  /* 无效 */
-</code></pre>
-<p>F_SETFL 只能改 O_APPEND/O_NONBLOCK 等，不能改 O_RDONLY/O_WRONLY/O_RDWR。访问模式在 open 时确定。</p>
-<ol start="2">
-<li><strong>F_GETFL 解析访问模式</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">int flags = fcntl(fd, F_GETFL);
-int acc = flags &amp; O_ACCMODE;  /* O_RDONLY/O_WRONLY/O_RDWR */
-</code></pre>
-<p>不能直接用 <code class="c">flags &amp; O_WRONLY</code> 判断，因为 O_RDONLY 通常是 0。必须用 O_ACCMODE 掩码。</p>
-<ol start="3">
-<li><strong>FD_CLOEXEC 竞态</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">int fd = open(...);
-fcntl(fd, F_SETFD, FD_CLOEXEC);  /* open 和 fcntl 之间有间隙 */
-/* 多线程中 exec 可能在此间隙发生 */
-</code></pre>
-<p>open + fcntl(F_SETFD) 之间存在竞态窗口。用 O_CLOEXEC 标志一步到位。</p>
 <hr />
-<h2>自测题</h2>
-<p><strong>题目 1（选择）：</strong> <code class="c">fcntl(fd, F_SETFL, flags)</code> 可以改变以下哪个标志？
-A. O_RDONLY
-B. O_WRONLY
-C. O_NONBLOCK
-D. O_CREAT</p>
-<details>
-<summary>参考答案</summary>
-<p>C。F_SETFL 只能改 O_APPEND、O_NONBLOCK、O_ASYNC 等状态标志，不能改访问模式（O_RDONLY 等）。</p>
-</details>
-<p><strong>题目 2（判断）：</strong> <code class="c">FD_CLOEXEC</code> 是文件状态标志，存在打开文件描述中。</p>
-<details>
-<summary>参考答案</summary>
-<p>错误。FD_CLOEXEC 是 fd 标志，存在进程 fd 表中，每个 fd 私有。文件状态标志（如 O_APPEND）才在打开文件描述中。</p>
-</details>
-<p><strong>题目 3（踩坑）：</strong> 以下代码试图将文件改为非阻塞，有什么问题？</p>
-<pre class="code" data-label="C"><code class="c">fcntl(fd, F_SETFL, O_NONBLOCK);
+<h2>1. 原型与内核链路</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;unistd.h&gt;
+int dup(int oldfd);                          /* 返回最小可用编号，指向同一打开描述 */
+int dup2(int oldfd, int newfd);              /* 指定目标编号；newfd 已开则先原子 close */
+int dup3(int oldfd, int newfd, int flags);   /* Linux 特有；flags 可带 O_CLOEXEC */
 </code></pre>
-<details>
-<summary>参考答案</summary>
-<p>问题：F_SETFL 会覆盖所有状态标志。应该先 F_GETFL 取回当前标志，再 OR 上 O_NONBLOCK：
-<code class="c">fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);</code></p>
-</details>
-<p><strong>题目 4（应用）：</strong> 写代码设置 fd 为非阻塞模式。</p>
-<details>
-<summary>参考答案</summary>
-<pre class="code" data-label="C"><code class="c">int flags = fcntl(fd, F_GETFL);
-if (flags &lt; 0) return -1;
-return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+<pre class="code" data-label="code"><code class="c">用户态 dup2(oldfd, newfd)
+      ▼
+SYSCALL_DEFINE2(dup2, ...)            fs/file.c（缓存未收录，架构说明）
+      → ksys_dup3(oldfd, newfd, 0)
+      → do_dup2(oldfd, newfd, 0)      ← 关键：原子完成「关 newfd + 复制」
+      → f_dupfd / dup_fd
+
+等价路径：fcntl(oldfd, F_DUPFD / F_DUPFD_CLOEXEC, min)
+      ▼
+do_fcntl()                            fs/fcntl.c:316
+      F_DUPFD         → f_dupfd(argi, filp, 0)         :326
+      F_DUPFD_CLOEXEC → f_dupfd(argi, filp, O_CLOEXEC) :329
 </code></pre>
-</details>
-<hr />
-<h2>代码示例</h2>
+<p>复制后的新旧 fd <strong>指向同一个打开文件描述</strong>（同一个 <code class="c">struct file</code>，<code class="c">f_count</code> 引用计数 +1），因此<strong>共享文件偏移 <code class="c">f_pos</code> 和状态标志 <code class="c">f_flags</code></strong>（见 <a href="#s-5-4">5.4</a>）。</p>
+<h2>2. 三者的区别</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>目标编号</th>
+<th>已占用时</th>
+<th><code class="c">FD_CLOEXEC</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">dup(oldfd)</code></td>
+<td>最小可用</td>
+<td>—</td>
+<td>不继承（新 fd 无 <code class="c">FD_CLOEXEC</code>）</td>
+</tr>
+<tr>
+<td><code class="c">dup2(oldfd, newfd)</code></td>
+<td>指定 <code class="c">newfd</code></td>
+<td><strong>原子</strong>关闭再复制</td>
+<td>不继承</td>
+</tr>
+<tr>
+<td><code class="c">dup3(oldfd, newfd, flags)</code></td>
+<td>指定 <code class="c">newfd</code></td>
+<td>原子关闭再复制</td>
+<td>可 <code class="c">O_CLOEXEC</code> 一步设置</td>
+</tr>
+<tr>
+<td><code class="c">fcntl(F_DUPFD_CLOEXEC)</code></td>
+<td>≥ 指定下限</td>
+<td>选最小可用</td>
+<td>继承式设置 <code class="c">FD_CLOEXEC</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 典型用途：I/O 重定向</h2>
+<pre class="code" data-label="C"><code class="c">/* shell 的 `cmd &gt; file.txt` 核心 */
+int fd = open(&quot;file.txt&quot;, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+dup2(fd, STDOUT_FILENO);   /* stdout 指向 file.txt */
+close(fd);                 /* 关掉多余副本 */
+execvp(cmd, argv);         /* 新程序继承重定向后的 stdout */
+</code></pre>
+<h2>4. 常见陷阱</h2>
+<p><strong>陷阱 1：<code class="c">dup2</code> 复制出的 fd 不继承 <code class="c">FD_CLOEXEC</code></strong></p>
+<pre class="code" data-label="C"><code class="c">dup2(oldfd, newfd);   /* newfd 没有 FD_CLOEXEC */
+</code></pre>
+<p><code class="c">dup2</code> 的语义是「复制 oldfd 到 newfd」，而 <code class="c">FD_CLOEXEC</code> 是 <strong>fd 表项</strong>的标志，不会被复制。若希望 <code class="c">exec</code> 时自动关闭，需 <code class="c">dup3(oldfd, newfd, O_CLOEXEC)</code> 或事后 <code class="c">fcntl(newfd, F_SETFD, FD_CLOEXEC)</code>。</p>
+<p><strong>陷阱 2：<code class="c">dup2</code> 目标已打开会先关</strong></p>
+<pre class="code" data-label="C"><code class="c">dup2(oldfd, newfd);   /* newfd 已开 → 先 close(newfd) 再复制 */
+</code></pre>
+<p>这是<strong>原子</strong>的（内核 <code class="c">do_dup2</code> 里完成），不存在「关闭后、复制前」被信号/线程插入的窗口。若不想覆盖，用 <code class="c">fcntl(F_DUPFD)</code> 选一个空闲编号。</p>
+<p><strong>陷阱 3：共享偏移的意外</strong></p>
+<pre class="code" data-label="C"><code class="c">int fd2 = dup(fd1);
+lseek(fd1, 0, SEEK_SET);   /* fd2 的偏移也变了！ */
+</code></pre>
+<p><code class="c">dup</code> 复制的是「指向同一 <code class="c">struct file</code> 的指针」，偏移共享。想要独立偏移请用 <code class="c">open</code> 重新打开。</p>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>日志重定向</td>
+<td>交易进程 <code class="c">fork</code> 后 <code class="c">dup2</code> 把 stdout/stderr 指向日志文件</td>
+</tr>
+<tr>
+<td>管道串联</td>
+<td><code class="c">dup2(pipefd[1], STDOUT_FILENO)</code> 实现多进程流水线（见 Ch44 管道）</td>
+</tr>
+<tr>
+<td>防 exec 泄漏</td>
+<td><code class="c">dup3(..., O_CLOEXEC)</code> 或 <code class="c">F_DUPFD_CLOEXEC</code> 避免子进程继承 socket/文件句柄</td>
+</tr>
+<tr>
+<td>嵌入式串口</td>
+<td><code class="c">dup2</code> 把串口 fd 复制为标准输入输出，让程序「不感知」底层设备</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
 #include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
-/* fcntl: 获取/设置文件描述符属性 */
+
+/* dup/dup2/dup3: 复制文件描述符 */
 int main(void) {
-    int fd = open(&quot;/tmp/fcntl_test.txt&quot;, O_RDWR | O_CREAT, 0644);
+    int fd = open(&quot;/dev/null&quot;, O_WRONLY);
+    int new_fd = dup(fd);            /* 返回最小可用 fd */
+    int fd10   = dup2(fd, 10);       /* 复制到 fd=10 */
+#ifdef __linux__
+    int fd11   = dup3(fd, 11, O_CLOEXEC); /* 复制到 11 并设 CLOEXEC */
+#endif
+    printf(&quot;dup: %d, dup2(fd,10): %d\n&quot;, new_fd, fd10);
+    close(fd); close(new_fd); close(fd10);
+    return 0;
+}
+</code></pre>
+<h2>7. 衔接</h2>
+<ul>
+<li>上一节：<a href="#s-5-4">5.4 fd 与打开文件</a> — <code class="c">dup</code> 即共享打开描述</li>
+<li>下一节：<a href="#s-5-6">5.6 <code class="c">pread</code> / <code class="c">pwrite</code></a> — 不共享偏移的指定位置读写</li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-03.html#s-3-8"><code class="c">05/Ch3.8 身份 PID 与资源 FD</code></a> — 进程 fd 资源的复制</li>
+<li>TLPI 后续：<a href="chapter-44.html#intro">Ch44 管道</a> · <a href="chapter-06.html#intro">Ch6 进程</a></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">dup2(oldfd, newfd)</code> 和 <code class="c">dup(oldfd)</code> 的区别？</strong>
+A：<code class="c">dup</code> 返回<strong>最小可用</strong> fd；<code class="c">dup2</code> <strong>指定</strong>目标编号 <code class="c">newfd</code>（已占用则先原子关闭再复制）。<code class="c">dup2</code> 用于重定向（把 fd 钉在 stdin/stdout 等固定编号上），<code class="c">dup</code> 用于随便复制一个。</p>
+<p><strong>Q2：<code class="c">dup</code> 复制的 fd 有独立的文件偏移吗？</strong>
+A：没有。<code class="c">dup</code> 复制的 fd 指向<strong>同一个打开文件描述</strong>（同一个 <code class="c">struct file</code>），共享 <code class="c">f_pos</code> 和 <code class="c">f_flags</code>。<code class="c">lseek</code> 通过任一 fd 都会影响另一个。</p>
+<p><strong>Q3：以下代码在 <code class="c">exec</code> 后，stdin 指向什么？为什么？</strong></p>
+<pre class="code" data-label="C"><code class="c">int fd = open(&quot;f.txt&quot;, O_RDONLY);
+dup2(fd, STDIN_FILENO);
+execvp(&quot;cat&quot;, argv);
+</code></pre>
+<p>A：<code class="c">exec</code> 后 stdin（fd 0）仍指向 <code class="c">f.txt</code>，因为 <code class="c">dup2</code> 复制出的 fd <strong>默认没有 <code class="c">FD_CLOEXEC</code></strong>，<code class="c">exec</code> 不会关闭它。这正是 shell 重定向的原理——子程序继承被重定向的 fd。</p>
+<p><strong>Q4：<code class="c">dup2(fd, 2)</code> 和 <code class="c">close(2); fcntl(fd, F_DUPFD, 2)</code> 为什么前者更安全？</strong>
+A：<code class="c">dup2</code> 的「关 2 + 复制」在内核 <code class="c">do_dup2</code> 里<strong>原子</strong>完成，中间无窗口；<code class="c">close(2)</code> 和 <code class="c">fcntl</code> 是两步，中间可能被信号中断或另一线程抢占 fd 2，导致复制到错误位置。多线程/信号环境应优先 <code class="c">dup2</code>/<code class="c">dup3</code>。</p>
+<p><strong>Q5：想复制 fd 且 <code class="c">exec</code> 后自动关闭，有几种写法？</strong>
+A：三种：① <code class="c">dup3(oldfd, newfd, O_CLOEXEC)</code>；② <code class="c">fcntl(oldfd, F_DUPFD_CLOEXEC, min)</code>；③ <code class="c">dup2</code> 后 <code class="c">fcntl(newfd, F_SETFD, FD_CLOEXEC)</code>（但③有竞态窗口，不推荐多线程下用）。①和②是原子的。</p>
+</details>
+      </section>
+      <section class="section" id="s-5-6">
+        <div class="sec-head"><div class="sec-no">5.6</div><h2>`pread` / `pwrite` — 指定偏移读写</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/read_write.c:652</code> <code class="c">ksys_pread64</code>、<code class="c">:672</code> <code class="c">SYSCALL_DEFINE4(pread64)</code>、<code class="c">:686</code> <code class="c">ksys_pwrite64</code>、<code class="c">:706</code> <code class="c">SYSCALL_DEFINE4(pwrite64)</code>）
+- 上一节：<a href="#s-5-5">5.5 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></a>
+- 下一节：<a href="#s-5-7">5.7 <code class="c">readv</code> / <code class="c">writev</code></a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">pread</code>/<code class="c">pwrite</code> 是「在指定偏移处读写、但<strong>不改变</strong>文件当前偏移」的原子 I/O。本节回答三个问题：</p>
+<ol>
+<li><code class="c">pread</code> 和 <code class="c">lseek</code>+<code class="c">read</code> 组合到底差在哪？为什么多线程下前者安全、后者会乱？</li>
+<li>内核里 <code class="c">pread</code> 为什么能做到「用参数偏移、不碰 <code class="c">f_pos</code>」？</li>
+<li><code class="c">pread</code> 有哪些限制（哪些对象不能用）？</li>
+</ol>
+<hr />
+<h2>1. 原型与内核链路</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;unistd.h&gt;
+ssize_t pread(int fd, void *buf, size_t count, off_t offset);
+ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset);
+</code></pre>
+<pre class="code" data-label="code"><code class="c">用户态 pread(fd, buf, count, pos)
+      ▼
+SYSCALL_DEFINE4(pread64, fd, buf, count, pos)   fs/read_write.c:672
+      ▼
+ksys_pread64(fd, buf, count, pos)               fs/read_write.c:652
+      if (pos &lt; 0)  return -EINVAL;
+      f = fdget(fd);
+      ret = -ESPIPE;
+      if (f.file-&gt;f_mode &amp; FMODE_PREAD)         ← 对象必须支持「指定偏移读」
+          ret = vfs_read(f.file, buf, count, &amp;pos);   ← 传 &amp;pos，不是 f_pos！
+      fdput(f);
+</code></pre>
+<p>关键点：<code class="c">vfs_read(file, buf, count, &amp;pos)</code> 传入的是<strong>局部变量 <code class="c">pos</code> 的地址</strong>，而不是 <code class="c">file-&gt;f_pos</code> 的地址。所以读完后，<code class="c">struct file</code> 的 <code class="c">f_pos</code> <strong>原封不动</strong>——这正是 <code class="c">pread</code> 与 <code class="c">read</code> 的本质区别。<code class="c">pwrite</code> 对称（<code class="c">ksys_pwrite64</code> → <code class="c">vfs_write(..., &amp;pos)</code>）。</p>
+<h2>2. 核心语义</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>偏移来源</td>
+<td>参数 <code class="c">offset</code>，<strong>不读也不写</strong> 文件的 <code class="c">f_pos</code></td>
+</tr>
+<tr>
+<td>原子性</td>
+<td>单次调用内「定位 + 读写」原子完成</td>
+</tr>
+<tr>
+<td>与 <code class="c">lseek</code>+<code class="c">read</code> 的差异</td>
+<td><code class="c">lseek</code>+<code class="c">read</code> 是两次调用，中间 <code class="c">f_pos</code> 可能被其他线程改掉</td>
+</tr>
+<tr>
+<td>返回后偏移</td>
+<td>文件 <code class="c">f_pos</code> <strong>保持不变</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. 多线程安全：为什么 <code class="c">pread</code> 比 <code class="c">lseek</code>+<code class="c">read</code> 强</h2>
+<p>共享 fd 的偏移（<code class="c">f_pos</code>）只有一个，多线程用 <code class="c">lseek</code>+<code class="c">read</code> 会互相踩：</p>
+<pre class="code" data-label="code"><code class="c">线程 A: lseek(fd, 100, SEEK_SET)  → f_pos = 100
+线程 B: lseek(fd, 500, SEEK_SET)  → f_pos = 500   ← 覆盖了 A！
+线程 A: read(fd, buf, 10)         → 从 500 读！错误
+</code></pre>
+<p><code class="c">pread(fd, buf, 10, 100)</code> 用局部 <code class="c">pos</code>，不碰共享的 <code class="c">f_pos</code>，多线程调用互不干扰，天然线程安全。</p>
+<h2>4. 限制</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>限制</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不可用于管道/socket/终端</td>
+<td>这些对象不可 seek，没有「指定偏移」的概念，内核返回 <code class="c">-ESPIPE</code>（<code class="c">f_mode</code> 无 <code class="c">FMODE_PREAD</code>/<code class="c">FMODE_PWRITE</code>）</td>
+</tr>
+<tr>
+<td><code class="c">offset</code> 不能为负</td>
+<td><code class="c">ksys_pread64</code> 里 <code class="c">if (pos &lt; 0) return -EINVAL</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多线程回测引擎</td>
+<td>多个线程各自 <code class="c">pread</code> 同一历史数据文件的不同偏移，互不干扰</td>
+</tr>
+<tr>
+<td>并发写日志槽位</td>
+<td>按「记录号 × 记录大小」计算偏移，用 <code class="c">pwrite</code> 定点写入，无需锁偏移</td>
+</tr>
+<tr>
+<td>减少 syscall</td>
+<td><code class="c">pread</code> 一次调用替代 <code class="c">lseek</code>+<code class="c">read</code> 两次，降低陷入内核的延迟</td>
+</tr>
+<tr>
+<td>数据库页读取</td>
+<td>按页号随机 <code class="c">pread</code> 是 DB 引擎（如 SQLite/LevelDB）随机读的标准姿势</td>
+</tr>
+</tbody>
+</table></div>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
 
-    /* 获取文件状态标志 */
-    int flags = fcntl(fd, F_GETFL);
-    printf(&quot;access mode: %s\n&quot;,
-           (flags &amp; O_ACCMODE) == O_RDONLY ? &quot;RDONLY&quot; :
-           (flags &amp; O_ACCMODE) == O_WRONLY ? &quot;WRONLY&quot; : &quot;RDWR&quot;);
+/* pread/pwrite: 指定偏移读写，不改变 f_pos */
+int main(void) {
+    int fd = open(&quot;/tmp/pread_test.txt&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    write(fd, &quot;0123456789ABCDEF&quot;, 16);
 
-    /* 设置 O_NONBLOCK */
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    flags = fcntl(fd, F_GETFL);
-    printf(&quot;O_NONBLOCK set: %s\n&quot;, (flags &amp; O_NONBLOCK) ? &quot;yes&quot; : &quot;no&quot;);
+    /* pread 从偏移 5 读 3 字节，不改变 f_pos */
+    char buf[4];
+    pread(fd, buf, 3, 5);
+    buf[3] = '\0';
+    printf(&quot;pread(5,3): %s\n&quot;, buf);
 
-    /* 获取文件描述符标志 */
-    int fdflags = fcntl(fd, F_GETFD);
-    printf(&quot;FD_CLOEXEC: %s\n&quot;, (fdflags &amp; FD_CLOEXEC) ? &quot;yes&quot; : &quot;no&quot;);
+    /* f_pos 仍在 16（未被 pread 改变） */
+    printf(&quot;offset after pread: %ld (unchanged)\n&quot;,
+           (long)lseek(fd, 0, SEEK_CUR));   /* 16 */
+
+    /* pwrite 在偏移 10 处写，也不改变 f_pos */
+    pwrite(fd, &quot;XYZ&quot;, 3, 10);
+    pread(fd, buf, 3, 10);
+    buf[3] = '\0';
+    printf(&quot;pwrite(10,XYZ): %s\n&quot;, buf);
 
     close(fd);
     return 0;
 }
 </code></pre>
+<h2>7. 衔接</h2>
+<ul>
+<li>上一节：<a href="#s-5-5">5.5 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></a> — 共享偏移 vs 指定偏移</li>
+<li>下一节：<a href="#s-5-7">5.7 <code class="c">readv</code> / <code class="c">writev</code></a> — 散布/聚集 I/O（也有 <code class="c">preadv</code>/<code class="c">pwritev</code>）</li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-13.html#s-13-7"><code class="c">05/Ch13.7 从 open 到 read 的概念路径</code></a> — <code class="c">vfs_read</code> 的 <code class="c">pos</code> 参数</li>
+<li>TLPI 后续：<a href="chapter-13.html#intro">Ch13 文件 I/O 缓冲</a> · <a href="chapter-44.html#intro">Ch44 管道</a></li>
+</ul>
 <hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-5-4">5.4 原子操作</a></li>
-<li>下一节：<a href="#s-5-6">5.6 打开标志补充（扩展 Ch4）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
-</ul>
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">pread</code> 和 <code class="c">lseek(SEEK_SET)</code> + <code class="c">read</code> 的本质区别是什么？</strong>
+A：<code class="c">pread</code> 把「定位 + 读」合并成<strong>一次原子调用</strong>，用参数 <code class="c">offset</code> 定位、不修改文件 <code class="c">f_pos</code>。<code class="c">lseek</code>+<code class="c">read</code> 是两次调用，中间 <code class="c">f_pos</code> 可能被其他线程/信号打断后改变，导致读到错误位置。多线程共享 fd 时 <code class="c">pread</code> 线程安全，<code class="c">lseek</code>+<code class="c">read</code> 不安全。</p>
+<p><strong>Q2：<code class="c">pread</code> 读完后，文件的当前偏移（<code class="c">f_pos</code>）是多少？</strong>
+A：<strong>不变</strong>。内核 <code class="c">ksys_pread64</code> 调用 <code class="c">vfs_read(file, buf, count, &amp;pos)</code>，传入的是局部变量 <code class="c">pos</code> 的地址，而非 <code class="c">file-&gt;f_pos</code>。所以 <code class="c">f_pos</code> 保持 <code class="c">pread</code> 调用前的值。</p>
+<p><strong>Q3：对管道调用 <code class="c">pread</code> 会怎样？</strong>
+A：返回 <code class="c">-1</code>，<code class="c">errno = ESPIPE</code>。管道/socket/终端不可 seek，没有「指定偏移」语义。内核 <code class="c">ksys_pread64</code> 里 <code class="c">if (!(f_mode &amp; FMODE_PREAD)) return -ESPIPE</code>，普通文件才有 <code class="c">FMODE_PREAD</code>。</p>
+<p><strong>Q4：<code class="c">pread</code> 的 <code class="c">offset</code> 传负数会怎样？</strong>
+A：返回 <code class="c">-1</code>，<code class="c">errno = EINVAL</code>。<code class="c">ksys_pread64</code> 开头 <code class="c">if (pos &lt; 0) return -EINVAL</code>。偏移必须是合法非负值。</p>
+<p><strong>Q5：<code class="c">preadv</code>/<code class="c">pwritev</code> 是什么？</strong>
+A：<code class="c">pread</code>/<code class="c">pwrite</code> 的「散布/聚集」版本，一次系统调用在指定偏移处读写<strong>多个不连续缓冲区</strong>（<code class="c">struct iovec</code> 数组），内核入口 <code class="c">do_preadv</code>/<code class="c">do_pwritev</code>（<code class="c">fs/read_write.c:994/:1017</code>），结合了 <a href="#s-5-6">5.6</a> 的「指定偏移」和 <a href="#s-5-7">5.7</a> 的「多缓冲」两个特性。</p>
+</details>
       </section>
-      <section class="section" id="s-5-3">
-        <div class="sec-head"><div class="sec-no">5.3</div><h2>Open File Status Flags</h2></div>
+      <section class="section" id="s-5-7">
+        <div class="sec-head"><div class="sec-no">5.7</div><h2>`readv` / `writev` — 散布/聚集 I/O</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/read_write.c:940</code> <code class="c">do_readv</code>、<code class="c">:964</code> <code class="c">do_writev</code>、<code class="c">:905</code> <code class="c">vfs_readv</code>、<code class="c">:922</code> <code class="c">vfs_writev</code>、<code class="c">:1040</code> <code class="c">SYSCALL_DEFINE3(readv)</code>、<code class="c">:1046</code> <code class="c">SYSCALL_DEFINE3(writev)</code>）
+- 上一节：<a href="#s-5-6">5.6 <code class="c">pread</code> / <code class="c">pwrite</code></a>
+- 下一节：<a href="#s-5-8">5.8 <code class="c">truncate</code> / <code class="c">ftruncate</code></a></p>
 </blockquote>
+<hr />
 <h2>本节讲什么</h2>
-<p><code class="c">fcntl()</code> 的 <code class="c">F_GETFL</code>/<code class="c">F_SETFL</code> 可以获取和设置文件状态标志（O_APPEND/O_NONBLOCK/O_ASYNC 等）。</p>
-<h2>要点</h2>
-<h3>获取文件状态标志</h3>
-<pre class="code" data-label="C"><code class="c">int flags = fcntl(fd, F_GETFL);
-if (flags &amp; O_APPEND)    /* 追加模式 */
-if (flags &amp; O_NONBLOCK)  /* 非阻塞模式 */
+<p><code class="c">readv</code>/<code class="c">writev</code> 用<strong>一次系统调用</strong>读写<strong>多个不连续缓冲区</strong>。本节回答三个问题：</p>
+<ol>
+<li><code class="c">struct iovec</code> 是什么？「散布读（scatter）/ 聚集写（gather）」分别指什么？</li>
+<li>内核怎么把用户态的 <code class="c">iovec</code> 数组变成一次 I/O？</li>
+<li>相比循环多次 <code class="c">read</code>/<code class="c">write</code>，<code class="c">readv</code>/<code class="c">writev</code> 的优势和原子性边界在哪？</li>
+</ol>
+<hr />
+<h2>1. 原型与内核链路</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/uio.h&gt;
+struct iovec {
+    void  *iov_base;   /* 缓冲区起始地址 */
+    size_t iov_len;    /* 缓冲区长度 */
+};
+
+ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
 </code></pre>
-<h3>设置文件状态标志</h3>
-<pre class="code" data-label="C"><code class="c">int flags = fcntl(fd, F_GETFL);
-flags |= O_NONBLOCK;
-fcntl(fd, F_SETFL, flags);
+<ul>
+<li><strong>散布读（scatter read）</strong>：<code class="c">readv</code> 把一段连续数据<strong>分散</strong>到多个缓冲区。</li>
+<li><strong>聚集写（gather write）</strong>：<code class="c">writev</code> 把多个缓冲区的数据<strong>聚集</strong>成一段连续写出。</li>
+</ul>
+<pre class="code" data-label="code"><code class="c">用户态 writev(fd, iov, 3)
+      ▼
+SYSCALL_DEFINE3(writev)              fs/read_write.c:1046
+      ▼
+do_writev(fd, vec, vlen, 0)          fs/read_write.c:964
+      ├─ fdget_pos(fd)               ← 取 struct file + 偏移
+      ├─ file_ppos()                 ← 取 f_pos 指针
+      └─ vfs_writev(file, vec, vlen, ppos, flags)   fs/read_write.c:922
+           ├─ import_iovec(ITER_SOURCE, vec, ...)   ← 把用户 iovec 拷进内核
+           │     构造 iov_iter（统一迭代器）
+           └─ do_iter_writev / call_write_iter    ← 一次写完所有段
 </code></pre>
-<h3>可修改 vs 不可修改的标志</h3>
+<p><code class="c">import_iovec</code>（<code class="c">fs/read_write.c:913/:930</code>）是关键：它把用户态的 <code class="c">iovec</code> 数组拷贝到内核，构造一个 <code class="c">struct iov_iter</code>，之后底层 I/O 用统一的迭代器接口遍历所有段，<strong>一次系统调用完成多段传输</strong>。</p>
+<h2>2. 用法示例</h2>
+<pre class="code" data-label="C"><code class="c">struct iovec iov[3];
+iov[0].iov_base = buf0; iov[0].iov_len = 100;
+iov[1].iov_base = buf1; iov[1].iov_len = 200;
+iov[2].iov_base = buf2; iov[2].iov_len = 50;
+
+ssize_t n = writev(fd, iov, 3);   /* 一次聚集写出 350 字节 */
+</code></pre>
+<h2>3. 优势与原子性边界</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>可修改 (F_SETFL)</th>
-<th>不可修改（只能在 open 时设置）</th>
+<th>优势</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>O_APPEND</td>
-<td>O_RDONLY / O_WRONLY / O_RDWR</td>
+<td>减少 syscall</td>
+<td>1 次 <code class="c">writev</code> 替代 N 次 <code class="c">write</code>，降低用户态/内核态切换开销</td>
 </tr>
 <tr>
-<td>O_NONBLOCK</td>
-<td>O_CREAT</td>
+<td>单次操作完整性</td>
+<td>一次 <code class="c">writev</code> 传输的数据块，对普通文件而言不会被其他进程的 <code class="c">write</code> 从中间交错（单次调用原子）</td>
 </tr>
 <tr>
-<td>O_ASYNC</td>
-<td>O_TRUNC</td>
-</tr>
-<tr>
-<td>O_DIRECT</td>
-<td>O_EXCL</td>
+<td>协议友好</td>
+<td>固定头 + 变长体（header + payload）一次写出，天然对应协议帧格式</td>
 </tr>
 </tbody>
 </table></div>
-<h2>常见误区</h2>
+<blockquote>
+<p>⚠️ 原子性边界：<code class="c">writev</code> 的原子性是「单次调用内不与其他 <code class="c">write</code> 交错」，但<strong>返回值仍可能小于所有 <code class="c">iov_len</code> 之和</strong>（部分写/短读，需按返回值判断实际传了多少）。它<strong>不保证</strong>「要么全写、要么不写」。</p>
+</blockquote>
+<h2>4. HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>误区</th>
-<th>纠正</th>
+<th>场景</th>
+<th>本节机制的兑现</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>可以用 F_SETFL 改读写模式</td>
-<td>不可以，访问模式只能 open 时设定</td>
+<td>协议帧组装</td>
+<td><code class="c">writev</code> 一次写出「帧头 + 载荷」，避免拼大缓冲区的内存拷贝</td>
+</tr>
+<tr>
+<td>行情消息分发</td>
+<td><code class="c">readv</code> 一次读入 header + body 到不同缓冲区，省去解析时的手工切分</td>
+</tr>
+<tr>
+<td>减少上下文切换</td>
+<td>HFT 热点路径上少一次 syscall 就是少一次陷入内核的延迟</td>
+</tr>
+<tr>
+<td>与 <code class="c">sendmsg</code>/<code class="c">recvmsg</code> 同源</td>
+<td>socket 的 <code class="c">sendmsg</code>/<code class="c">recvmsg</code> 内部也用 <code class="c">iovec</code>/<code class="c">iov_iter</code>（见 Ch56-61）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>自测要点</h2>
-<ul>
-<li>如何用 fcntl 获取和设置 O_NONBLOCK？</li>
-<li>哪些标志可以用 F_SETFL 修改，哪些不能？</li>
-</ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>5.2</strong>：fcntl() 完整 API</li>
-<li><strong>5.9</strong>：非阻塞 I/O 详解</li>
-</ul>
-      </section>
-      <section class="section" id="s-5-4">
-        <div class="sec-head"><div class="sec-no">5.4</div><h2>Relationship Between File Descriptors and Open Files</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
-</blockquote>
-<h2>本节讲什么</h2>
-<p>fd 和打开文件的关系：多个 fd 可以指向同一个打开文件，共享偏移量和状态标志。</p>
-<h2>要点</h2>
-<h3>三层结构</h3>
-<pre class="code" data-label="code"><code class="c">进程级 fd 表          系统级打开文件表       inode 表
-[fd 0] ──────────→ [打开文件描述] ──────→ [inode]
-[fd 1] ──────────→ [打开文件描述] ──────→ [inode]
-[fd 3] ──────────→ [打开文件描述] ──────→ [inode]
+<h2>5. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;sys/uio.h&gt;
+#include &lt;unistd.h&gt;
+
+/* writev: 一次聚集写出 header + body */
+int main(void) {
+    int fd = open(&quot;/tmp/msg.bin&quot;, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    const char *header = &quot;HDR:&quot;;         /* 帧头 */
+    const char *body   = &quot;payload-data&quot;; /* 载荷 */
+
+    struct iovec iov[2];
+    iov[0].iov_base = (void *)header;  iov[0].iov_len = strlen(header);
+    iov[1].iov_base = (void *)body;    iov[1].iov_len = strlen(body);
+
+    ssize_t n = writev(fd, iov, 2);    /* 一次写出两段 */
+    printf(&quot;writev 写了 %zd 字节\n&quot;, n);
+
+    close(fd);
+    return 0;
+}
 </code></pre>
-<h3>共享场景</h3>
+<h2>6. 衔接</h2>
+<ul>
+<li>上一节：<a href="#s-5-6">5.6 <code class="c">pread</code> / <code class="c">pwrite</code></a> — 结合两者有 <code class="c">preadv</code>/<code class="c">pwritev</code></li>
+<li>下一节：<a href="#s-5-8">5.8 <code class="c">truncate</code> / <code class="c">ftruncate</code></a> — 改变文件大小</li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-13.html#s-13-7"><code class="c">05/Ch13.7 从 open 到 read 的概念路径</code></a> — <code class="c">iov_iter</code> 统一迭代器</li>
+<li>TLPI 后续：<a href="chapter-56.html#intro">Ch56-61 socket</a> — <code class="c">sendmsg</code>/<code class="c">recvmsg</code> 也用 <code class="c">iovec</code></li>
+</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">readv</code>/<code class="c">writev</code> 的作用是什么？「scatter」和「gather」分别指？</strong>
+A：<code class="c">readv</code> 把连续数据<strong>分散（scatter）</strong>到多个缓冲区，<code class="c">writev</code> 把多个缓冲区<strong>聚集（gather）</strong>成一次写出。两者都用一次系统调用处理多个 <code class="c">struct iovec</code>，减少 syscall 次数。</p>
+<p><strong>Q2：<code class="c">struct iovec</code> 里两个字段分别是什么？</strong>
+A：<code class="c">iov_base</code> 是缓冲区起始地址（<code class="c">void *</code>），<code class="c">iov_len</code> 是缓冲区长度（<code class="c">size_t</code>）。<code class="c">readv</code>/<code class="c">writev</code> 接收 <code class="c">iovec</code> 数组 + 数组长度 <code class="c">iovcnt</code>。</p>
+<p><strong>Q3：<code class="c">writev</code> 相比循环多次 <code class="c">write</code> 的优势？</strong>
+A：① 少 syscall（1 次 vs N 次），降低用户/内核切换开销；② 一次调用传输的数据块不会被其他进程的 <code class="c">write</code> 从中间交错；③ 天然适配「固定头 + 变长体」的协议帧，省去手工拼接缓冲区的内存拷贝。</p>
+<p><strong>Q4：<code class="c">writev</code> 保证「要么全写、要么不写」吗？</strong>
+A：不保证。<code class="c">writev</code> 的原子性是「单次调用内不与其他 <code class="c">write</code> 交错」，但返回值仍可能小于所有 <code class="c">iov_len</code> 之和（部分写）。必须检查返回值判断实际传输量，需要时循环补写。</p>
+<p><strong>Q5：内核是怎么把用户态的 <code class="c">iovec</code> 数组变成一次 I/O 的？</strong>
+A：<code class="c">vfs_readv</code>/<code class="c">vfs_writev</code>（<code class="c">fs/read_write.c:905/:922</code>）调用 <code class="c">import_iovec</code> 把用户态 <code class="c">iovec</code> 数组拷贝到内核，构造 <code class="c">struct iov_iter</code> 统一迭代器，然后底层用 <code class="c">call_read_iter</code>/<code class="c">call_write_iter</code> 遍历所有段一次完成传输。<code class="c">iov_iter</code> 是内核统一的多缓冲迭代抽象。</p>
+</details>
+      </section>
+      <section class="section" id="s-5-8">
+        <div class="sec-head"><div class="sec-no">5.8</div><h2>`truncate` / `ftruncate` — 改变文件大小</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/open.c:40</code> <code class="c">do_truncate</code>、<code class="c">:145</code> <code class="c">SYSCALL_DEFINE2(truncate)</code>、<code class="c">:157</code> <code class="c">do_sys_ftruncate</code>、<code class="c">:203</code> <code class="c">SYSCALL_DEFINE2(ftruncate)</code>、<code class="c">:217/:222</code> <code class="c">truncate64</code>/<code class="c">ftruncate64</code>）
+- 上一节：<a href="#s-5-7">5.7 <code class="c">readv</code> / <code class="c">writev</code></a>
+- 下一节：<a href="#s-5-9">5.9 非阻塞 I/O</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">truncate</code>/<code class="c">ftruncate</code> 直接设置文件大小，不经过「写数据」。本节回答三个问题：</p>
+<ol>
+<li><code class="c">truncate</code>（按路径）和 <code class="c">ftruncate</code>（按 fd）的区别是什么？各自需要什么权限？</li>
+<li>把文件「截断得更小」和「扩展得更大」分别发生什么？</li>
+<li>为什么 <code class="c">ftruncate</code> 是共享内存、稀疏文件、预分配空间的通用手段？</li>
+</ol>
+<hr />
+<h2>1. 原型与内核链路</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+int truncate(const char *path, off_t length);   /* 按路径，无需打开 */
+int ftruncate(int fd, off_t length);            /* 按 fd，需以写方式打开 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">用户态 ftruncate(fd, length)
+      ▼
+SYSCALL_DEFINE2(ftruncate, fd, length)   fs/open.c:203
+      ▼
+do_sys_ftruncate(fd, length, small)      fs/open.c:157
+      ├─ length &lt; 0                       → -EINVAL
+      ├─ fdget(fd) 失败                   → -EBADF
+      ├─ !S_ISREG(inode) 或 !(f_mode&amp;FMODE_WRITE) → -EINVAL
+      │     （必须是普通文件，且 fd 以写方式打开）
+      ├─ IS_APPEND(inode) append-only 文件 → -EPERM
+      ├─ security_file_truncate()         ← LSM 安全检查
+      └─ do_truncate(idmap, dentry, length, ...)   fs/open.c:40
+           ├─ length &lt; 0 → -EINVAL
+           ├─ newattrs.ia_size = length    ← 直接设 i_size
+           ├─ dentry_needs_remove_privs()  ← 清除 suid/sgid/capabilities
+           └─ notify_change()              ← 通知 inode 变更（含 mtime/ctime）
+</code></pre>
+<p><code class="c">truncate</code> 走 <code class="c">do_sys_truncate</code>（内部 <code class="c">user_path_at</code> 解析路径后同样落到 <code class="c">do_truncate</code>），区别只是「按路径查找 inode」vs「按 fd 取 <code class="c">struct file</code>」。</p>
+<h2>2. 行为语义</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -926,441 +1865,236 @@ fcntl(fd, F_SETFL, flags);
 </thead>
 <tbody>
 <tr>
-<td>同一进程两次 open() 同一文件</td>
-<td>两个 fd，两个打开文件描述，各自独立偏移量</td>
+<td><code class="c">length</code> &lt; 当前大小</td>
+<td><strong>截断</strong>到 <code class="c">length</code>，超出部分的数据被丢弃</td>
 </tr>
 <tr>
-<td>fork() 后子进程继承 fd</td>
-<td>父子共享同一打开文件描述，共享偏移量</td>
+<td><code class="c">length</code> &gt; 当前大小</td>
+<td><strong>扩展</strong>，新增区域填充 0（读出来是 <code class="c">\0</code>），磁盘上形成<strong>稀疏文件</strong>（空洞不占块）</td>
 </tr>
 <tr>
-<td>dup()/dup2()</td>
-<td>两个 fd 指向同一打开文件描述，共享偏移量</td>
+<td><code class="c">length</code> == 当前大小</td>
+<td>无大小变化（但可能更新 mtime）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>打开文件描述 (open file description) 包含</h3>
+<h2>3. 典型用途</h2>
 <ul>
-<li>文件偏移量 (offset)</li>
-<li>文件状态标志 (O_APPEND, O_NONBLOCK...)</li>
-<li>访问模式 (O_RDONLY...)</li>
-<li>引用计数</li>
+<li><strong>清空文件</strong>：<code class="c">ftruncate(fd, 0)</code> 等价于「删内容、保留 inode」，比 <code class="c">open(O_TRUNC)</code> 重开更直接。</li>
+<li><strong>预分配空间</strong>：先 <code class="c">ftruncate</code> 到目标大小，再随机写各槽位（配合 <code class="c">pwrite</code>），适合定长记录文件。</li>
+<li><strong>共享内存</strong>：<code class="c">ftruncate</code> 设置共享内存对象大小（SysV 共享内存 Ch48、POSIX 共享内存 Ch54）。</li>
+<li><strong>创建稀疏文件</strong>：<code class="c">ftruncate(fd, 10GB)</code> 得到一个「逻辑 10GB、物理几乎不占块」的文件。</li>
 </ul>
-<h2>常见误区</h2>
+<h2>4. HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>误区</th>
-<th>纠正</th>
+<th>场景</th>
+<th>本节机制的兑现</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>两次 open 同一文件共享偏移量</td>
-<td>不共享，各自独立</td>
+<td>定长记录文件</td>
+<td><code class="c">ftruncate</code> 预分配 N×记录大小，<code class="c">pwrite</code> 定点写槽位，随机读写无碎片</td>
 </tr>
 <tr>
-<td>fork 后父子进程有独立的偏移量</td>
-<td>共享，fork 复制 fd 表但不复制打开文件描述</td>
+<td>内存映射前定大小</td>
+<td><code class="c">mmap</code> 前 <code class="c">ftruncate</code> 把文件撑到目标大小，否则映射后写越界会 <code class="c">SIGBUS</code>（见 Ch49）</td>
+</tr>
+<tr>
+<td>共享内存</td>
+<td>进程间用 <code class="c">ftruncate</code> 设置共享内存对象大小（Ch48/Ch54）</td>
+</tr>
+<tr>
+<td>快速清空日志</td>
+<td><code class="c">ftruncate(fd, 0)</code> 秒清文件，避免反复 <code class="c">open(O_TRUNC)</code> 的开销</td>
 </tr>
 </tbody>
 </table></div>
-<h2>自测要点</h2>
-<ul>
-<li>fd 表、打开文件表、inode 表三层结构是什么？</li>
-<li>fork 后父子进程的 fd 是否共享偏移量？</li>
-<li>dup() 后两个 fd 是否共享偏移量？</li>
-</ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>5.5</strong>：dup/dup2 详解</li>
-<li><strong>ch06</strong>：fork 和进程</li>
-</ul>
-      </section>
-      <section class="section" id="s-5-5">
-        <div class="sec-head"><div class="sec-no">5.2</div><h2>`dup` / `dup2` / `dup3`</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
-- 上一节：<a href="#s-5-1">5.1 内核三层结构（本章核心 · 必考）</a>
-- 下一节：<a href="#s-5-6">5.3 <code class="c">pread</code> / <code class="c">pwrite</code></a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<h1>include <unistd.h> int dup(int oldfd);                        /<em> 最小可用编号，同一打开描述 </em>/ int dup2(int oldfd, int newfd);            /<em> newfd 已开则先 close；再复制 </em>/</h1>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;unistd.h&gt;
-int dup(int oldfd);                        /* 最小可用编号，同一打开描述 */
-int dup2(int oldfd, int newfd);            /* newfd 已开则先 close；再复制 */
-int dup3(int oldfd, int newfd, int flags); /* Linux；可带 O_CLOEXEC */
-</code></pre>
-<p>典型用途：重定向 stdin/stdout（shell 管道、<code class="c">exec</code> 前重定向）。<br />
-Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/dup_share_offset.c"><code class="c">code/dup_share_offset.c</code></a></p>
-<h2>常见陷阱</h2>
-<ol>
-<li><strong>dup2 的 close-on-exec</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">dup2(oldfd, newfd);  /* newfd 没有 CLOEXEC */
-</code></pre>
-<p>dup2 复制的 fd 不继承 close-on-exec 标志。exec 前需要手动设置，或用 dup3(fd, newfd, O_CLOEXEC)。</p>
-<ol start="2">
-<li><strong>dup2 目标已打开</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">dup2(oldfd, newfd);  /* 如果 newfd 已打开，先关闭 */
-</code></pre>
-<p>dup2 如果 newfd 已打开，会先关闭再复制。如果不希望这样，应先检查。</p>
-<ol start="3">
-<li><strong>共享偏移的意外</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">int fd2 = dup(fd1);
-/* fd1 和 fd2 共享文件偏移 */
-lseek(fd1, 0, SEEK_SET);  /* fd2 的偏移也变了! */
-</code></pre>
-<p>dup 复制的 fd 共享同一个打开文件描述（包括偏移）。lseek 通过一个 fd 会影响另一个。</p>
-<hr />
-<h2>自测题</h2>
-<p><strong>题目 1（选择）：</strong> <code class="c">dup2(oldfd, newfd)</code> 和 <code class="c">dup(oldfd)</code> 的区别？
-A. 没有区别
-B. dup2 可以指定目标 fd 编号
-C. dup2 更快
-D. dup 只能复制到 0</p>
-<details>
-<summary>参考答案</summary>
-<p>B。dup 返回最小可用 fd，dup2 可以指定目标 fd 编号 newfd。</p>
-</details>
-<p><strong>题目 2（判断）：</strong> <code class="c">dup</code> 复制的 fd 有独立的文件偏移。</p>
-<details>
-<summary>参考答案</summary>
-<p>错误。dup 复制的 fd 共享同一个打开文件描述，包括文件偏移和状态标志。</p>
-</details>
-<p><strong>题目 3（踩坑）：</strong> 以下代码在 exec 后会发生什么？</p>
-<pre class="code" data-label="C"><code class="c">int fd = open(&quot;f.txt&quot;, O_RDONLY);
-dup2(fd, STDIN_FILENO);
-execvp(&quot;cat&quot;, argv);
-</code></pre>
-<details>
-<summary>参考答案</summary>
-<p>dup2 复制的 fd 默认没有 FD_CLOEXEC，所以 exec 后 stdin 仍然指向 f.txt。这正是 shell 重定向的原理。</p>
-</details>
-<p><strong>题目 4（应用）：</strong> 写代码实现 shell 的输出重定向 <code class="c">cmd &gt; file.txt</code>。</p>
-<details>
-<summary>参考答案</summary>
-<pre class="code" data-label="C"><code class="c">int fd = open(&quot;file.txt&quot;, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-dup2(fd, STDOUT_FILENO);
-close(fd);
-execvp(cmd, argv);
-</code></pre>
-</details>
-<hr />
-<h2>代码示例</h2>
+<h2>5. 代码示例</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
 #include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
-/* dup/dup2/dup3: 复制文件描述符 */
+
+/* truncate/ftruncate: 设置文件大小 */
 int main(void) {
-    int fd = open(&quot;/dev/null&quot;, O_WRONLY);
-    int new_fd = dup(fd);          /* 返回最小可用 fd */
-    int fd10 = dup2(fd, 10);       /* 复制到 fd=10 */
-    printf(&quot;dup: %d, dup2(fd,10): %d\n&quot;, new_fd, fd10);
-    close(fd); close(new_fd); close(fd10);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-5-1">5.1 内核三层结构（本章核心 · 必考）</a></li>
-<li>下一节：<a href="#s-5-6">5.3 <code class="c">pread</code> / <code class="c">pwrite</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-5-6">
-        <div class="sec-head"><div class="sec-no">5.3</div><h2>`pread` / `pwrite`</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
-- 上一节：5.2 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code>
-- 下一节：<a href="#s-5-4">5.4 原子操作</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>ssize_t pread(int fd, void <em>buf, size_t count, off_t offset); ssize_t pwrite(int fd, const void </em>buf, size_t count, off_t offset); Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/pread_demo.c"><code class="c">code/pread_demo.c</code></a></p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">ssize_t pread(int fd, void *buf, size_t count, off_t offset);
-ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset);
-</code></pre>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>特性</th>
-<th></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>偏移</td>
-<td>用参数 <code class="c">offset</code>；<strong>不改</strong> 当前文件偏移</td>
-</tr>
-<tr>
-<td>原子性</td>
-<td>单次调用原子；<code class="c">lseek</code>+<code class="c">read</code> <strong>组合非原子</strong>（多线程会乱）</td>
-</tr>
-<tr>
-<td>场景</td>
-<td>多线程随机读写、DB 引擎</td>
-</tr>
-<tr>
-<td>限制</td>
-<td>不可用于管道/socket 等不可 seek 对象</td>
-</tr>
-</tbody>
-</table></div>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/pread_demo.c"><code class="c">code/pread_demo.c</code></a></p>
-<h2>常见陷阱</h2>
-<ol>
-<li><strong>短读未处理</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">/* 假设一次读完 */
-ssize_t n = read(fd, buf, 1024);
-/* n 可能 &lt; 1024 */
-</code></pre>
-<p>read 返回值可能小于请求字节数（short read）。网络和管道尤其常见，必须循环读。</p>
-<ol start="2">
-<li><strong>EINTR 未处理</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">/* 信号中断后 read 返回 -1, errno=EINTR */
-/* 不是错误，应重试 */
-</code></pre>
-<p>信号中断系统调用时返回 -1 且 errno=EINTR。应该重试，或用 SA_RESTART 自动重启。</p>
-<ol start="3">
-<li><strong>EOF 判断错误</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">/* 用 feof 预判 EOF → 多读一次 */
-while (!feof(fp)) { fgets(...); }
-/* 正确：检查返回值 */
-while (fgets(buf, sz, fp) != NULL) { ... }
-</code></pre>
-<p>read 返回 0 表示 EOF。不要用 feof 预判（feof 只在读取越过后才为真）。</p>
-<hr />
-<h2>自测题</h2>
-<p><strong>题目 1（选择）：</strong> <code class="c">read()</code> 返回 0 表示什么？
-A. 出错
-B. EOF
-C. 没有数据
-D. 需要重试</p>
-<details>
-<summary>参考答案</summary>
-<p>B。返回 0 表示已到达文件末尾（EOF）。返回 -1 表示出错，返回 &gt;0 表示读到的字节数。</p>
-</details>
-<p><strong>题目 2（判断）：</strong> <code class="c">read</code> 一定会读满请求的字节数。</p>
-<details>
-<summary>参考答案</summary>
-<p>错误。read 可能返回少于请求的字节数（short read），尤其在管道、socket、终端上。必须循环读。</p>
-</details>
-<p><strong>题目 3（踩坑）：</strong> 以下代码有什么问题？</p>
-<pre class="code" data-label="C"><code class="c">char buf[1024];
-read(fd, buf, sizeof(buf));
-buf[strlen(buf)] = '\0';
-</code></pre>
-<details>
-<summary>参考答案</summary>
-<p>1) read 不保证以 null 结尾；2) 没检查返回值；3) strlen 在未终止的 buf 上越界。应检查返回值并手动加 <code class="c">\0</code>。</p>
-</details>
-<p><strong>题目 4（应用）：</strong> 写一个安全的 readall 函数，确保读满 n 字节或遇到 EOF。</p>
-<details>
-<summary>参考答案</summary>
-<pre class="code" data-label="C"><code class="c">ssize_t readall(int fd, void *buf, size_t n) {
-    size_t total = 0;
-    while (total &lt; n) {
-        ssize_t r = read(fd, (char*)buf+total, n-total);
-        if (r &lt; 0 &amp;&amp; errno == EINTR) continue;
-        if (r &lt; 0) return -1;
-        if (r == 0) break; /* EOF */
-        total += r;
-    }
-    return total;
-}
-</code></pre>
-</details>
-<hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;fcntl.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;string.h&gt;
-/* pread/pwrite: 在指定偏移读写, 不改变文件偏移量 */
-int main(void) {
-    int fd = open(&quot;/tmp/pread_test.txt&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
-    write(fd, &quot;0123456789ABCDEF&quot;, 16);
+    /* ftruncate 预分配 1MB 文件（稀疏） */
+    int fd = open(&quot;/tmp/big.dat&quot;, O_RDWR | O_CREAT, 0644);
+    if (ftruncate(fd, 1024 * 1024) &lt; 0) perror(&quot;ftruncate&quot;);
+    printf(&quot;size: %ld\n&quot;, (long)lseek(fd, 0, SEEK_END));
 
-    /* pread 从偏移5读, 不改变当前偏移 */
-    char buf[4];
-    pread(fd, buf, 3, 5);
-    buf[3] = '\0';
-    printf(&quot;pread(5,3): %s\n&quot;, buf);
+    /* 清空文件 */
+    ftruncate(fd, 0);
+    printf(&quot;after ftruncate(0): %ld\n&quot;, (long)lseek(fd, 0, SEEK_END));
 
-    /* 当前偏移仍在16 */
-    off_t pos = lseek(fd, 0, SEEK_CUR);
-    printf(&quot;offset after pread: %ld (unchanged)\n&quot;, (long)pos);
-
-    /* pwrite 在指定偏移写 */
-    pwrite(fd, &quot;XYZ&quot;, 3, 10);
-
-    pread(fd, buf, 3, 10);
-    buf[3] = '\0';
-    printf(&quot;pwrite(10,XYZ): %s\n&quot;, buf);
     close(fd);
     return 0;
 }
 </code></pre>
+<h2>6. 衔接</h2>
+<ul>
+<li>上一节：<a href="#s-5-7">5.7 <code class="c">readv</code> / <code class="c">writev</code></a></li>
+<li>下一节：<a href="#s-5-9">5.9 非阻塞 I/O</a></li>
+<li>TLPI 后续：<a href="chapter-48.html#intro">Ch48 SysV 共享内存</a> · <a href="chapter-54.html#intro">Ch54 POSIX 共享内存</a> · <a href="chapter-49.html#intro">Ch49 内存映射</a></li>
+</ul>
 <hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：5.2 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></li>
-<li>下一节：<a href="#s-5-4">5.4 原子操作</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-5-7">
-        <div class="sec-head"><div class="sec-no">5.7</div><h2>Scatter-Gather I/O: readv() and writev()</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
-</blockquote>
-<h2>本节讲什么</h2>
-<p><code class="c">readv()</code>/<code class="c">writev()</code> 允许单次系统调用读写多个不连续的缓冲区。</p>
-<h2>要点</h2>
-<h3>API</h3>
-<pre class="code" data-label="C"><code class="c">struct iovec {
-    void  *iov_base;    /* 缓冲区起始地址 */
-    size_t iov_len;     /* 缓冲区大小 */
-};
-
-ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
-ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
-</code></pre>
-<h3>示例</h3>
-<pre class="code" data-label="C"><code class="c">struct iovec iov[3];
-iov[0].iov_base = buf0; iov[0].iov_len = 100;
-iov[1].iov_base = buf1; iov[1].iov_len = 200;
-iov[2].iov_base = buf2; iov[2].iov_len = 50;
-
-ssize_t n = writev(fd, iov, 3);  /* 一次写入 350 字节 */
-</code></pre>
-<h3>优势</h3>
-<ul>
-<li>减少 syscall 次数（1 次 vs N 次 write）</li>
-<li>原子性：writev 一次性写入，不会被其他进程的 write 交错</li>
-<li>适合固定头 + 变长体的协议格式</li>
-</ul>
-<h2>自测要点</h2>
-<ul>
-<li>readv/writev 的作用是什么？</li>
-<li>struct iovec 的结构？</li>
-<li>writev 相比多次 write 有什么优势？</li>
-</ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>ch57</strong>：Unix domain socket 的 sendmsg/recvmsg 也用 iovec</li>
-</ul>
-      </section>
-      <section class="section" id="s-5-8">
-        <div class="sec-head"><div class="sec-no">5.8</div><h2>Truncating a File: truncate() and ftruncate()</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
-</blockquote>
-<h2>本节讲什么</h2>
-<p><code class="c">truncate()</code>/<code class="c">ftruncate()</code> 改变文件大小，不需要打开文件（truncate）或通过 fd（ftruncate）。</p>
-<h2>要点</h2>
-<h3>API</h3>
-<pre class="code" data-label="C"><code class="c">int truncate(const char *path, off_t length);
-int ftruncate(int fd, off_t length);
-</code></pre>
-<h3>行为</h3>
-<ul>
-<li>length &lt; 当前大小：截断到 length，丢弃多余数据</li>
-<li>length &gt; 当前大小：扩展文件，新增部分填充 0（创建稀疏文件）</li>
-</ul>
-<h3>用途</h3>
-<ul>
-<li>清空文件：<code class="c">ftruncate(fd, 0)</code></li>
-<li>创建固定大小文件：先 ftruncate 到目标大小再写入</li>
-<li>共享内存：ftruncate 设置 shm 对象大小（ch48/ch54）</li>
-</ul>
-<h2>自测要点</h2>
-<ul>
-<li>truncate 和 ftruncate 的区别？</li>
-<li>截断到比当前更大的大小会怎样？</li>
-</ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>ch48</strong>：SysV 共享内存使用 ftruncate</li>
-<li><strong>ch54</strong>：POSIX 共享内存使用 ftruncate</li>
-</ul>
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">truncate</code> 和 <code class="c">ftruncate</code> 的区别？</strong>
+A：<code class="c">truncate(path, length)</code> 按<strong>路径</strong>定位文件，<strong>不需要先打开</strong>（但需要目录写权限）；<code class="c">ftruncate(fd, length)</code> 按<strong>已打开的 fd</strong> 操作，要求 fd <strong>以写方式打开</strong>（<code class="c">f_mode &amp; FMODE_WRITE</code>），且是普通文件。两者最终都落到 <code class="c">do_truncate</code>。</p>
+<p><strong>Q2：把文件 <code class="c">ftruncate</code> 到比当前更大的大小会怎样？</strong>
+A：文件被<strong>扩展</strong>，新增区域填充 0（读出来是 <code class="c">\0</code>）。若扩展幅度大，中间形成<strong>文件空洞（sparse）</strong>——逻辑大小很大，但空洞区不分配磁盘块，实际占用极小。</p>
+<p><strong>Q3：<code class="c">ftruncate</code> 一个 append-only 文件会怎样？</strong>
+A：返回 <code class="c">-1</code>，<code class="c">errno = EPERM</code>。<code class="c">do_sys_ftruncate</code> 检查 <code class="c">IS_APPEND(inode)</code>，append-only 文件（<code class="c">chattr +a</code>）禁止截断，防止绕过强制追加语义。</p>
+<p><strong>Q4：<code class="c">ftruncate</code> 需要什么权限？</strong>
+A：fd 必须<strong>以写方式打开</strong>（<code class="c">FMODE_WRITE</code>），且对象必须是<strong>普通文件</strong>（<code class="c">S_ISREG</code>），否则 <code class="c">-EINVAL</code>。此外 <code class="c">do_truncate</code> 会清除文件的 suid/sgid/capabilities（<code class="c">dentry_needs_remove_privs</code>），防止特权位残留。</p>
+<p><strong>Q5：<code class="c">mmap</code> 一个文件前为什么常先 <code class="c">ftruncate</code>？</strong>
+A：<code class="c">mmap</code> 映射的长度不能超过文件大小，否则访问映射区超出文件末尾的部分会触发 <code class="c">SIGBUS</code>。先 <code class="c">ftruncate(fd, target_size)</code> 把文件撑到目标大小，再 <code class="c">mmap</code>，映射区内才能安全读写（详见 Ch49）。</p>
+</details>
       </section>
       <section class="section" id="s-5-9">
-        <div class="sec-head"><div class="sec-no">5.7</div><h2>非阻塞 `O_NONBLOCK`</h2></div>
+        <div class="sec-head"><div class="sec-no">5.9</div><h2>非阻塞 I/O（`O_NONBLOCK`）</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
-- 上一节：<a href="#s-5-6">5.6 打开标志补充（扩展 Ch4）</a>
-- 下一节：<a href="#s-5-8">5.8 大文件 LFS</a></p>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/fcntl.c:37</code> <code class="c">setfl</code> 中 <code class="c">O_NDELAY → O_NONBLOCK</code> 归一；<code class="c">O_NONBLOCK</code> 存于 <code class="c">file-&gt;f_flags</code>，由管道/socket 的 <code class="c">read</code>/<code class="c">write</code> 实现检查）
+- 上一节：<a href="#s-5-8">5.8 <code class="c">truncate</code> / <code class="c">ftruncate</code></a>
+- 下一节：<a href="#s-5-10">5.10 大文件 LFS</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
+<p><code class="c">O_NONBLOCK</code> 让「可能阻塞」的 I/O 变成「立即返回」。本节回答三个问题：</p>
+<ol>
+<li><code class="c">O_NONBLOCK</code> 对哪些对象生效？为什么对普通磁盘文件<strong>通常无效</strong>？</li>
+<li>非阻塞读/写失败时返回什么、<code class="c">errno</code> 是什么？和真正的错误怎么区分？</li>
+<li><code class="c">O_NONBLOCK</code> 为什么<strong>不等于</strong>异步 I/O（AIO）？</li>
+</ol>
 <hr />
-<h2>要点</h2>
+<h2>1. 语义：不睡、立刻返回</h2>
+<p><code class="c">O_NONBLOCK</code> 的核心是<strong>轮询式语义</strong>：当操作无法立即完成时，内核<strong>不把进程挂起睡眠</strong>，而是立刻返回 <code class="c">-1</code> + <code class="c">errno = EAGAIN</code>/<code class="c">EWOULDBLOCK</code>，让调用方稍后重试。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>对象</th>
-<th>行为</th>
+<th>非阻塞行为</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>普通磁盘文件</strong></td>
-<td>通常 <strong>无效果</strong>（读盘一般不靠这个变「非阻塞」）</td>
+<td><strong>通常无效果</strong>——磁盘读不靠「非阻塞」变快，<code class="c">read</code> 几乎总能立即返回（页缓存命中）或短暂等待</td>
 </tr>
 <tr>
-<td>管道 / FIFO / socket / 终端</td>
-<td>无数据时 <code class="c">read</code> 立即 <code class="c">-1</code>，<code class="c">errno=EAGAIN</code>/<code class="c">EWOULDBLOCK</code></td>
+<td><strong>管道 / FIFO</strong></td>
+<td>读端无数据时 <code class="c">read</code> 立即 <code class="c">-1</code> + <code class="c">EAGAIN</code>；写端满时 <code class="c">write</code> 立即 <code class="c">-1</code> + <code class="c">EAGAIN</code></td>
+</tr>
+<tr>
+<td><strong>socket</strong></td>
+<td>无数据可读/发送缓冲满时，<code class="c">read</code>/<code class="c">write</code> 立即 <code class="c">-1</code> + <code class="c">EAGAIN</code>（<code class="c">EWOULDBLOCK</code> 同值）</td>
+</tr>
+<tr>
+<td><strong>终端</strong></td>
+<td>读不到数据时立即返回</td>
 </tr>
 </tbody>
 </table></div>
 <blockquote>
-<p><code class="c">O_NONBLOCK</code> ≠ 异步 AIO；只是「不睡、立刻返回」的轮询式语义。</p>
+<p><code class="c">O_NONBLOCK</code> ≠ 异步 AIO。它只是「不睡、立刻返回」的同步轮询语义；真正的异步是「发起请求后立即返回，完成时内核通知」（见 Ch63 epoll / POSIX AIO）。</p>
 </blockquote>
-<h2>代码示例</h2>
+<h2>2. 如何设置</h2>
+<p>两种方式，效果相同（都写进 <code class="c">file-&gt;f_flags</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* 方式 1：open 时指定 */
+int fd = open(path, O_RDWR | O_NONBLOCK);
+
+/* 方式 2：fcntl 动态切换（先读再或，避免覆盖） */
+int flags = fcntl(fd, F_GETFL);
+fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+</code></pre>
+<p>内核 <code class="c">setfl</code>（<code class="c">fs/fcntl.c:37</code>）里有 <code class="c">if (arg &amp; O_NDELAY) arg |= O_NONBLOCK;</code>——历史别名 <code class="c">O_NDELAY</code> 被归一为 <code class="c">O_NONBLOCK</code>（见 <a href="#s-5-3">5.3</a>）。</p>
+<h2>3. 非阻塞读写的返回值判断</h2>
+<pre class="code" data-label="C"><code class="c">ssize_t n = read(fd, buf, sizeof(buf));
+if (n &lt; 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+        /* 只是「现在没数据」，不是错误，稍后重试 */
+    else
+        /* 真错误 */
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">&gt; 0</code></td>
+<td>读到/写了 n 字节</td>
+</tr>
+<tr>
+<td><code class="c">0</code></td>
+<td>EOF（读端）/ 对端关闭</td>
+</tr>
+<tr>
+<td><code class="c">-1</code> + <code class="c">EAGAIN</code>/<code class="c">EWOULDBLOCK</code></td>
+<td><strong>暂时无数据/无空间</strong>，非错误，可重试</td>
+</tr>
+<tr>
+<td><code class="c">-1</code> + 其他 errno</td>
+<td>真错误</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>事件驱动网络</td>
+<td><code class="c">O_NONBLOCK</code> + <code class="c">epoll</code> 是 HFT 网络代码的标准骨架（见 Ch63）</td>
+</tr>
+<tr>
+<td>非阻塞连接</td>
+<td><code class="c">connect</code> 设 <code class="c">O_NONBLOCK</code> 可并发发起多路连接，避免串行阻塞</td>
+</tr>
+<tr>
+<td>忙轮询替代睡眠</td>
+<td>嵌入式实时采集时用非阻塞读 + 轮询，避免进程睡眠引入调度延迟</td>
+</tr>
+<tr>
+<td>避免死锁</td>
+<td>双向管道（父子双向通信）用非阻塞避免双方同时阻塞等待</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 代码示例</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
 #include &lt;errno.h&gt;
 #include &lt;stdio.h&gt;
-#include &lt;string.h&gt;
 
+/* O_NONBLOCK: 管道读端设为非阻塞 */
 int main(void) {
     int pipefd[2];
     if (pipe(pipefd) &lt; 0) { perror(&quot;pipe&quot;); return 1; }
 
-    /* 把读端设为非阻塞 */
+    /* 读端设非阻塞 */
     int flags = fcntl(pipefd[0], F_GETFL);
     fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
 
-    /* 管道里没数据 → read 立即返回 -1, errno=EAGAIN */
     char buf[64];
     ssize_t n = read(pipefd[0], buf, sizeof(buf));
     if (n &lt; 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            printf(&quot;read 返回 -1, errno=EAGAIN (无数据可读)\n&quot;);
-        } else {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            printf(&quot;read 返回 -1, errno=EAGAIN（无数据可读）\n&quot;);
+        else
             perror(&quot;read&quot;);
-        }
-    } else if (n == 0) {
-        printf(&quot;EOF\n&quot;);
-    } else {
-        printf(&quot;读到 %zd 字节\n&quot;, n);
     }
 
     /* 写入数据后非阻塞读就能拿到 */
@@ -1368,199 +2102,408 @@ int main(void) {
     n = read(pipefd[0], buf, sizeof(buf));
     printf(&quot;第二次 read: %zd 字节: %.*s\n&quot;, n, (int)n, buf);
 
-    close(pipefd[0]);
-    close(pipefd[1]);
+    close(pipefd[0]); close(pipefd[1]);
     return 0;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<h2>6. 衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-5-6">5.6 打开标志补充（扩展 Ch4）</a></li>
-<li>下一节：<a href="#s-5-8">5.8 大文件 LFS</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
+<li>上一节：<a href="#s-5-8">5.8 <code class="c">truncate</code> / <code class="c">ftruncate</code></a></li>
+<li>下一节：<a href="#s-5-10">5.10 大文件 LFS</a></li>
+<li>状态标志的读写见 <a href="#s-5-3">5.3</a>（<code class="c">F_SETFL</code>）</li>
+<li>TLPI 后续：<a href="chapter-63.html#s-63-4">Ch63 替代 I/O 模型</a> — <code class="c">O_NONBLOCK</code> + <code class="c">epoll</code> 的完整事件驱动</li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">O_NONBLOCK</code> 对普通磁盘文件有效吗？</strong>
+A：通常<strong>无效</strong>。普通文件的 <code class="c">read</code>/<code class="c">write</code> 几乎总能立即返回（页缓存命中或短暂等待），<code class="c">O_NONBLOCK</code> 主要针对<strong>可能阻塞</strong>的对象——管道/FIFO/socket/终端。磁盘 I/O 的「非阻塞」要靠 AIO/<code class="c">O_DIRECT</code> 等机制，不是 <code class="c">O_NONBLOCK</code>。</p>
+<p><strong>Q2：非阻塞 <code class="c">read</code> 返回 <code class="c">-1</code> + <code class="c">EAGAIN</code> 是错误吗？</strong>
+A：不是。<code class="c">EAGAIN</code>（与 <code class="c">EWOULDBLOCK</code> 同值）表示「<strong>现在</strong>没有数据可读」，是正常信号，调用方应稍后重试或交给 <code class="c">epoll</code> 等待。真正的错误是其他 <code class="c">errno</code>（如 <code class="c">EBADF</code>、<code class="c">EFAULT</code>）。</p>
+<p><strong>Q3：<code class="c">O_NONBLOCK</code> 和异步 I/O（AIO）是一回事吗？</strong>
+A：不是。<code class="c">O_NONBLOCK</code> 是<strong>同步</strong>语义——调用立即返回 <code class="c">EAGAIN</code>，但<strong>数据并未被读</strong>，要你自己重试；AIO 是<strong>异步</strong>语义——发起读请求后立即返回，内核在后台完成，完成时<strong>通知</strong>你。前者是「不睡」，后者是「不等」。</p>
+<p><strong>Q4：<code class="c">open(path, O_RDWR | O_NONBLOCK)</code> 和 <code class="c">fcntl(F_SETFL)</code> 设非阻塞，效果一样吗？</strong>
+A：一样，最终都写进 <code class="c">file-&gt;f_flags</code> 的 <code class="c">O_NONBLOCK</code> 位。区别是 <code class="c">open</code> 一次性、<code class="c">fcntl</code> 可运行时<strong>动态开关</strong>（配合 <code class="c">F_GETFL</code> 先读回再或）。<code class="c">fcntl</code> 方式适合「同一 fd 有时阻塞有时非阻塞」的场景。</p>
+<p><strong>Q5：双向管道父子通信为什么要用非阻塞？</strong>
+A：若父子都用阻塞模式读写同一管道，可能双方同时阻塞等待对方（父等读、子等读），造成死锁。设 <code class="c">O_NONBLOCK</code> 让「无数据时立即返回」，配合轮询或 <code class="c">select</code>/<code class="c">epoll</code> 打破死锁（详见 Ch44 管道）。</p>
+</details>
       </section>
       <section class="section" id="s-5-10">
-        <div class="sec-head"><div class="sec-no">5.8</div><h2>大文件 LFS</h2></div>
+        <div class="sec-head"><div class="sec-no">5.10</div><h2>大文件支持（I/O on Large Files，LFS）</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
-- 上一节：<a href="#s-5-7">5.7 非阻塞 <code class="c">O_NONBLOCK</code></a>
-- 下一节：<a href="#s-5-11">5.9 <code class="c">/dev/fd</code>（Linux）</a></p>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">fs/open.c:157</code> <code class="c">do_sys_ftruncate</code> 中 <code class="c">O_LARGEFILE</code>/<code class="c">MAX_NON_LFS</code> 判定、<code class="c">:217/:222</code> <code class="c">truncate64</code>/<code class="c">ftruncate64</code>；<code class="c">fs/read_write.c:672/:706</code> <code class="c">pread64</code>/<code class="c">pwrite64</code>）
+- 上一节：<a href="#s-5-9">5.9 非阻塞 I/O</a>
+- 下一节：<a href="#s-5-11">5.11 <code class="c">/dev/fd</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>历史：32 位 <code class="c">off_t</code> 约 2GB 上限。 ---</p>
+<p>「大文件」指超过 32 位偏移表示范围（约 2GB）的文件。本节回答三个问题：</p>
+<ol>
+<li>32 位 <code class="c">off_t</code> 的上限到底是多少？为什么是「约 2GB」？</li>
+<li>如何让程序支持大文件？<code class="c">_FILE_OFFSET_BITS=64</code> 做了什么？</li>
+<li>内核侧为什么有 <code class="c">*64</code> 系列 syscall 和 <code class="c">O_LARGEFILE</code>？</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<p>历史：32 位 <code class="c">off_t</code> 约 2GB 上限。</p>
+<h2>1. 问题根源：32 位 <code class="c">off_t</code></h2>
+<p>历史上 <code class="c">off_t</code> 是 32 位<strong>有符号</strong>整数，可表示范围约 <strong>−2GB ~ +2GB</strong>（精确是 −2³¹ ~ 2³¹−1 字节）。于是：</p>
+<ul>
+<li>32 位 <code class="c">off_t</code> 的文件最大只能到 <strong>2GB − 1</strong>（约 2.1 GB）；</li>
+<li>超过 2GB 的文件，<code class="c">lseek</code> 定位、<code class="c">truncate</code> 设置大小都会溢出。</li>
+</ul>
+<p>32 位平台上，老代码需要「显式开启」大文件支持（LFS，Large File Support）；64 位平台（如 x86-64/aarch64）默认 <code class="c">off_t</code> 就是 64 位，无需特别处理。</p>
+<h2>2. 开启大文件支持</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>做法</th>
-<th></th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>推荐</td>
-<td>编译 <code class="c">-D_FILE_OFFSET_BITS=64</code>，<code class="c">off_t</code> 变 64 位</td>
+<td><strong>推荐</strong>：<code class="c">-D_FILE_OFFSET_BITS=64</code></td>
+<td>编译期把 <code class="c">off_t</code> 及相关函数（<code class="c">lseek</code>→<code class="c">lseek64</code> 等）自动切到 64 位版本</td>
 </tr>
 <tr>
-<td>备选</td>
-<td><code class="c">off64_t</code> / <code class="c">open64</code> / <code class="c">lseek64</code></td>
+<td>备选：<code class="c">off64_t</code> / <code class="c">open64</code> / <code class="c">lseek64</code> / <code class="c">pread64</code></td>
+<td>显式调用 64 位版本函数</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;fcntl.h&gt;
+<pre class="code" data-label="C"><code class="c">#define _FILE_OFFSET_BITS 64   /* 或编译时 gcc -D_FILE_OFFSET_BITS=64 */
+#include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
+/* 之后 off_t 自动为 64 位，lseek 等自动映射到 64 位版本 */
+</code></pre>
+<h2>3. 内核侧：<code class="c">*64</code> syscall 与 <code class="c">O_LARGEFILE</code></h2>
+<p>内核为兼容 32 位用户态，提供了 64 位偏移的 syscall，并在 32 位进程打开大文件时要求 <code class="c">O_LARGEFILE</code> 标志：</p>
+<pre class="code" data-label="code"><code class="c">用户态 lseek(fd, huge_offset, SEEK_SET)
+      ▼  （_FILE_OFFSET_BITS=64 时 glibc 转调 lseek64）
+SYSCALL_DEFINE3(lseek)                    fs/read_write.c:311（off_t 在 64 位内核里本就是 64 位）
+
+truncate 的 LFS 版本：
+SYSCALL_DEFINE2(truncate64)               fs/open.c:217
+SYSCALL_DEFINE2(ftruncate64)              fs/open.c:222
+</code></pre>
+<p><code class="c">do_sys_ftruncate</code>（<code class="c">fs/open.c:157</code>）里的大文件判定：</p>
+<pre class="code" data-label="C"><code class="c">if (f.file-&gt;f_flags &amp; O_LARGEFILE)
+    small = 0;                          /* 以 O_LARGEFILE 打开，按大文件处理 */
+...
+if (small &amp;&amp; length &gt; MAX_NON_LFS)      /* 未开 LFS 且超 2GB → -EINVAL */
+    goto out_putf;
+</code></pre>
+<p>要点：32 位程序若不设 <code class="c">_FILE_OFFSET_BITS=64</code>（即 <code class="c">small=1</code>），<code class="c">ftruncate</code> 超过 <code class="c">MAX_NON_LFS</code>（2GB−1）会失败。设了 <code class="c">_FILE_OFFSET_BITS=64</code> 后，glibc 自动带上 <code class="c">O_LARGEFILE</code>，<code class="c">small=0</code>，即可操作大文件。</p>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>大行情/回测数据文件</td>
+<td>历史行情文件轻松超 2GB，<code class="c">_FILE_OFFSET_BITS=64</code> 是编译标配</td>
+</tr>
+<tr>
+<td>跨 32 位平台移植</td>
+<td>嵌入式 32 位 ARM 上操作大文件必须显式开 LFS，否则静默失败</td>
+</tr>
+<tr>
+<td>随机定位</td>
+<td>64 位 <code class="c">off_t</code> 保证 <code class="c">lseek</code>/<code class="c">pread</code> 到任意偏移不溢出</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#define _FILE_OFFSET_BITS 64
 #include &lt;stdio.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
 
 /* 编译: gcc -D_FILE_OFFSET_BITS=64 lfs_demo.c */
-/* 加了 _FILE_OFFSET_BITS=64 后 off_t 自动变 64 位 */
 int main(void) {
-    printf(&quot;sizeof(off_t) = %zu\n&quot;, sizeof(off_t));
+    printf(&quot;sizeof(off_t) = %zu\n&quot;, sizeof(off_t));   /* 应为 8 */
 
-    /* 创建一个大文件（用 lseek 跳到 5GB 处写 1 字节） */
     int fd = open(&quot;/tmp/bigfile.dat&quot;, O_WRONLY | O_CREAT, 0644);
-    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    off_t target = (off_t)5 * 1024 * 1024 * 1024;     /* 5 GB */
+    lseek(fd, target, SEEK_SET);
+    write(fd, &quot;x&quot;, 1);                               /* 空洞文件 */
 
-    off_t target = (off_t)5 * 1024 * 1024 * 1024;  /* 5 GB */
-    if (lseek(fd, target, SEEK_SET) &lt; 0) {
-        perror(&quot;lseek&quot;);
-        close(fd);
-        return 1;
-    }
-    write(fd, &quot;x&quot;, 1);  /* 空洞文件：实际只占 1 个磁盘块 */
-
-    /* 验证文件大小 */
     off_t size = lseek(fd, 0, SEEK_END);
     printf(&quot;文件大小: %lld bytes (%.1f GB)\n&quot;,
            (long long)size, (double)size / (1024.0 * 1024 * 1024));
-
     close(fd);
     return 0;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<h2>6. 衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-5-7">5.7 非阻塞 <code class="c">O_NONBLOCK</code></a></li>
-<li>下一节：<a href="#s-5-11">5.9 <code class="c">/dev/fd</code>（Linux）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
+<li>上一节：<a href="#s-5-9">5.9 非阻塞 I/O</a></li>
+<li>下一节：<a href="#s-5-11">5.11 <code class="c">/dev/fd</code></a></li>
+<li>相关：文件空洞（<code class="c">lseek</code> 越尾写）见 <a href="chapter-04.html#s-4-7">4.7 <code class="c">lseek()</code></a>；<code class="c">ftruncate</code> 见 <a href="#s-5-8">5.8</a></li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：32 位 <code class="c">off_t</code> 的文件大小上限是多少？</strong>
+A：约 <strong>2GB − 1 字节</strong>（精确是 2³¹−1 = 2147483647 字节）。因为 32 位有符号整数范围是 −2³¹ ~ 2³¹−1。超过此大小的文件在 32 位偏移下无法正确定位。</p>
+<p><strong>Q2：<code class="c">_FILE_OFFSET_BITS=64</code> 做了什么？</strong>
+A：编译期宏，让 <code class="c">off_t</code> 变为 64 位，并把 <code class="c">lseek</code>、<code class="c">pread</code>、<code class="c">pwrite</code>、<code class="c">truncate</code> 等函数<strong>自动映射</strong>到 64 位版本（<code class="c">lseek64</code>/<code class="c">pread64</code>/<code class="c">truncate64</code>…），同时让 <code class="c">open</code> 带上 <code class="c">O_LARGEFILE</code>。这样源码不用改，重新编译即可支持大文件。</p>
+<p><strong>Q3：<code class="c">off64_t</code> / <code class="c">open64</code> / <code class="c">lseek64</code> 和 <code class="c">_FILE_OFFSET_BITS=64</code> 是什么关系？</strong>
+A：前者是<strong>显式</strong>的 64 位 API（函数名带 <code class="c">64</code>），后者是<strong>自动映射</strong>（源码不改成 <code class="c">64</code> 名字，编译器自动切）。推荐用 <code class="c">_FILE_OFFSET_BITS=64</code>，代码可移植、无需 <code class="c">#ifdef</code>。</p>
+<p><strong>Q4：32 位程序不开 LFS，<code class="c">ftruncate</code> 超过 2GB 会怎样？</strong>
+A：返回 <code class="c">-1</code>，<code class="c">errno = EINVAL</code>。<code class="c">do_sys_ftruncate</code> 里 <code class="c">if (small &amp;&amp; length &gt; MAX_NON_LFS) goto out_putf;</code>——<code class="c">small=1</code>（未开 <code class="c">O_LARGEFILE</code>）且长度超 2GB 直接拒绝。</p>
+<p><strong>Q5：64 位平台（x86-64/aarch64）还需要 <code class="c">_FILE_OFFSET_BITS=64</code> 吗？</strong>
+A：通常<strong>不需要</strong>，64 位平台默认 <code class="c">off_t</code> 就是 64 位，<code class="c">lseek</code> 等天然支持大文件。但为了<strong>可移植性</strong>（代码可能编到 32 位平台），显式加 <code class="c">_FILE_OFFSET_BITS=64</code> 是稳妥习惯。</p>
+</details>
       </section>
       <section class="section" id="s-5-11">
-        <div class="sec-head"><div class="sec-no">5.9</div><h2>`/dev/fd`（Linux）</h2></div>
+        <div class="sec-head"><div class="sec-no">5.11</div><h2>`/dev/fd` — 通过路径访问已打开的 fd</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
-- 上一节：<a href="#s-5-8">5.8 大文件 LFS</a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">/dev/fd</code> 是 <code class="c">/proc/self/fd</code> 的符号链接；<code class="c">open("/dev/fd/N")</code> 由 procfs 魔符号链接机制解析为「复制 fd N」，实现位于 <code class="c">fs/proc/fd.c</code>，缓存未收录，作架构说明）
+- 上一节：<a href="#s-5-10">5.10 大文件 LFS</a>
+- 下一节：<a href="#s-5-12">5.12 临时文件</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><code class="c">/dev/fd/n</code> 访问约等于操作 fd <code class="c">n</code>；shell 重定向常用。 ---</p>
+<p><code class="c">/dev/fd/N</code> 让你「用路径名」去访问一个<strong>已经打开</strong>的文件描述符 N。本节回答三个问题：</p>
+<ol>
+<li><code class="c">open("/dev/fd/N")</code> 到底做了什么？和 <code class="c">dup(N)</code> 是一回事吗？</li>
+<li><code class="c">/dev/fd</code> 在 Linux 上的真实实现是什么？</li>
+<li>为什么 shell 脚本里会看到 <code class="c">cmd &lt; /dev/fd/3</code> 这种写法？</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<p><code class="c">/dev/fd/n</code> 访问约等于操作 fd <code class="c">n</code>；shell 重定向常用。</p>
-<h2>代码示例</h2>
+<h2>1. 语义：<code class="c">open("/dev/fd/N")</code> ≈ 复制 fd N</h2>
+<pre class="code" data-label="C"><code class="c">int fd = open(&quot;/dev/fd/0&quot;, O_RDONLY);   /* 约等于 dup(0)，得到 stdin 的副本 */
+</code></pre>
+<p><code class="c">open("/dev/fd/N")</code> 返回一个<strong>新的 fd</strong>，它指向与 fd N <strong>相同的打开文件描述</strong>——等价于 <code class="c">dup(N)</code> 的效果（共享偏移与状态标志，见 <a href="#s-5-4">5.4</a> / <a href="#s-5-5">5.5</a>）。</p>
+<blockquote>
+<p>⚠️ 细节差异：<code class="c">open("/dev/fd/N", flags)</code> 不是无条件等于 <code class="c">dup(N)</code>——<code class="c">open</code> 传入的 <code class="c">flags</code>（如访问模式）必须与 fd N 的打开方式<strong>兼容</strong>。例如 fd N 是只读的，<code class="c">open("/dev/fd/N", O_WRONLY)</code> 会失败。且 <code class="c">/dev/fd/N</code> 走的是路径解析（procfs 符号链接），而 <code class="c">dup</code> 直接复制 fd 表项，二者语义近似但路径不同。</p>
+</blockquote>
+<h2>2. Linux 实现：<code class="c">/dev/fd</code> → <code class="c">/proc/self/fd</code></h2>
+<p>Linux 上 <code class="c">/dev/fd</code> 本身是一个<strong>符号链接</strong>，指向 <code class="c">/proc/self/fd</code>：</p>
+<pre class="code" data-label="code"><code class="c">/dev/fd          ──(符号链接)──▶  /proc/self/fd
+/dev/fd/0        ──▶  /proc/self/fd/0   ← fd 0（stdin）的「魔符号链接」
+/dev/fd/1        ──▶  /proc/self/fd/1   ← fd 1（stdout）
+</code></pre>
+<p><code class="c">/proc/self/fd/N</code> 是 <strong>magic symlink（魔符号链接）</strong>：内核不按普通路径解析它，而是识别出「这是当前进程的 fd N」，进而把 <code class="c">open</code> 变成对 fd N 的复制（引用同一个 <code class="c">struct file</code>）。实现位于 <code class="c">fs/proc/fd.c</code>（procfs 的 <code class="c">proc_fd_link</code> / <code class="c">tid_fd_revalidate</code>）。</p>
+<h2>3. 用途</h2>
+<ul>
+<li><strong>shell 重定向</strong>：<code class="c">cmd &lt; /dev/fd/3</code> 让 <code class="c">cmd</code> 的 stdin 指向「当前 shell 的 fd 3」——常用于把已打开的文件描述符传给子进程。</li>
+<li><strong>弥补 exec 无法传 fd</strong>：<code class="c">exec</code> 只能继承 fd 0/1/2 或 <code class="c">FD_CLOEXEC</code> 未设的 fd，<code class="c">/dev/fd/N</code> 提供了一种「用路径间接引用 fd」的补充手段。</li>
+<li><strong>C 里复制 fd 的路径化写法</strong>：<code class="c">open("/dev/fd/1", O_WRONLY)</code> 得到 stdout 副本。</li>
+</ul>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>shell 编排进程</td>
+<td>交易脚本用 <code class="c">/dev/fd/N</code> 在管道间传递 fd，避免 <code class="c">dup</code> 手写</td>
+</tr>
+<tr>
+<td>调试/工具链</td>
+<td>把已打开的 socket/日志 fd 以路径形式交给子工具</td>
+</tr>
+<tr>
+<td>嵌入式脚本</td>
+<td>busybox shell 下用 <code class="c">/dev/fd/N</code> 做重定向（若无 <code class="c">/proc</code> 挂载则不可用）</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 代码示例</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
 #include &lt;stdio.h&gt;
 
+/* /dev/fd/N: 打开等价于复制 fd N */
 int main(void) {
-    /* /dev/fd/N 打开约等于操作 fd N */
-    /* 常用于 shell 重定向，C 中也可用 */
-
-    /* 打开 /dev/fd/0 相当于复制 stdin */
-    int fd = open(&quot;/dev/fd/0&quot;, O_RDONLY);
-    if (fd &lt; 0) { perror(&quot;open /dev/fd/0&quot;); return 1; }
-    printf(&quot;open(\&quot;/dev/fd/0\&quot;) = fd %d\n&quot;, fd);
-
-    /* 验证：和 stdin 指向同一个打开文件描述 */
+    /* 打开 /dev/fd/1 得到 stdout 的副本 */
     int fd2 = open(&quot;/dev/fd/1&quot;, O_WRONLY);
     if (fd2 &lt; 0) { perror(&quot;open /dev/fd/1&quot;); return 1; }
-    write(fd2, &quot;via /dev/fd/1\n&quot;, 13);
+    write(fd2, &quot;via /dev/fd/1\n&quot;, 14);
+    printf(&quot;open(\&quot;/dev/fd/1\&quot;) = fd %d\n&quot;, fd2);
 
-    close(fd);
     close(fd2);
     return 0;
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<h2>6. 衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-5-8">5.8 大文件 LFS</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-04.html#ch-4">Ch4 Universal I/O</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-06.html#ch-6">Ch6 Processes</a> · <a href="chapter-13.html#ch-13">Ch13 File I/O Buffering</a></li>
+<li>上一节：<a href="#s-5-10">5.10 大文件 LFS</a></li>
+<li>下一节：<a href="#s-5-12">5.12 临时文件</a></li>
+<li>复制 fd 的等价机制见 <a href="#s-5-5">5.5 <code class="c">dup</code> / <code class="c">dup2</code> / <code class="c">dup3</code></a>；<code class="c">/proc</code> 文件系统见 LKD/<code class="c">05-linux-kernel</code> 的 procfs 章节</li>
 </ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">open("/dev/fd/N", O_RDONLY)</code> 和 <code class="c">dup(N)</code> 是一回事吗？</strong>
+A：<strong>效果近似但不完全等价</strong>。两者都得到「指向同一打开文件描述」的新 fd（共享偏移/状态标志）。但 <code class="c">open("/dev/fd/N")</code> 走路径解析（procfs 魔符号链接），传入的 <code class="c">flags</code> 必须与 fd N 的打开方式兼容；<code class="c">dup(N)</code> 直接复制 fd 表项，无 flags 校验。<code class="c">dup</code> 更快更直接，<code class="c">/dev/fd/N</code> 主要用于「用路径引用 fd」的场景。</p>
+<p><strong>Q2：Linux 上 <code class="c">/dev/fd</code> 的真实实现是什么？</strong>
+A：<code class="c">/dev/fd</code> 是<strong>符号链接</strong>，指向 <code class="c">/proc/self/fd</code>。<code class="c">/proc/self/fd/N</code> 是「魔符号链接（magic symlink）」，内核不按普通路径解析，而是把它识别为当前进程的 fd N，把 <code class="c">open</code> 变成对 fd N 的引用复制。实现位于 <code class="c">fs/proc/fd.c</code>。</p>
+<p><strong>Q3：<code class="c">open("/dev/fd/N", O_WRONLY)</code> 在什么情况下会失败？</strong>
+A：当 fd N 不是以可写方式打开时（如 stdin 是只读的），<code class="c">open("/dev/fd/0", O_WRONLY)</code> 会失败——因为请求的访问模式与 fd N 的实际打开模式不兼容。<code class="c">dup</code> 则无此限制。</p>
+<p><strong>Q4：shell 里 <code class="c">cmd &lt; /dev/fd/3</code> 是什么意思？</strong>
+A：让 <code class="c">cmd</code> 的 stdin 指向「当前 shell 的 fd 3」。即把 shell 已打开的 fd 3 以路径方式传给子进程，等价于把 fd 3 重定向到 cmd 的 stdin（fd 0）。</p>
+<p><strong>Q5：嵌入式环境用 <code class="c">/dev/fd/N</code> 有什么前提？</strong>
+A：需要 <code class="c">/proc</code> 文件系统<strong>已挂载</strong>（因为 <code class="c">/dev/fd</code> 指向 <code class="c">/proc/self/fd</code>）。若嵌入式/busybox 环境未挂载 <code class="c">/proc</code>，<code class="c">/dev/fd/N</code> 不可用，此时应直接用 <code class="c">dup</code>/<code class="c">dup2</code> 复制 fd。</p>
+</details>
       </section>
       <section class="section" id="s-5-12">
-        <div class="sec-head"><div class="sec-no">5.12</div><h2>Creating Temporary Files</h2></div>
+        <div class="sec-head"><div class="sec-no">5.12</div><h2>创建临时文件（Creating Temporary Files）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+源码核验：<code class="c">mkstemp</code> 由 glibc 基于 <code class="c">open(template, O_CREAT|O_EXCL|O_RDWR, 0600)</code> 实现——原子性来自 <a href="#s-5-1">5.1</a> 的 <code class="c">O_EXCL</code>（<code class="c">fs/open.c:1315-1318</code>）
+- 上一节：<a href="#s-5-11">5.11 <code class="c">/dev/fd</code></a>
+- 下一节：<a href="#s-5-13">5.13 本章小结</a></p>
 </blockquote>
+<hr />
 <h2>本节讲什么</h2>
-<p>创建临时文件的 API：mkstemp()/tmpfile()。</p>
-<h2>要点</h2>
-<h3>API 对比</h3>
+<p>临时文件无处不在（编译器中间产物、日志轮转、下载缓存），但「怎么安全地建」是个经典陷阱。本节回答三个问题：</p>
+<ol>
+<li><code class="c">mkstemp</code> / <code class="c">tmpfile</code> / <code class="c">mkdtemp</code> 各自怎么用、什么场景选哪个？</li>
+<li>为什么 <code class="c">tmpnam</code> / <code class="c">mktemp</code> 是<strong>不安全的</strong>，本质缺陷是什么？</li>
+<li>如何让临时文件「关闭时自动删除」？</li>
+</ol>
+<hr />
+<h2>1. 安全 API 一览</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>函数</th>
 <th>原型</th>
-<th>特点</th>
+<th>返回</th>
+<th>删除时机</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>mkstemp()</td>
-<td><code class="c">int mkstemp(char *template);</code></td>
-<td>返回 fd，文件已创建，需手动 unlink</td>
+<td><code class="c">mkstemp</code></td>
+<td><code class="c">int mkstemp(char *template)</code></td>
+<td>fd（已创建，<code class="c">0600</code>）</td>
+<td>需手动 <code class="c">unlink</code></td>
 </tr>
 <tr>
-<td>tmpfile()</td>
-<td><code class="c">FILE *tmpfile(void);</code></td>
-<td>返回 FILE*，关闭时自动删除</td>
+<td><code class="c">tmpfile</code></td>
+<td><code class="c">FILE *tmpfile(void)</code></td>
+<td><code class="c">FILE*</code></td>
+<td><strong>关闭时自动删除</strong></td>
+</tr>
+<tr>
+<td><code class="c">mkdtemp</code></td>
+<td><code class="c">char *mkdtemp(char *template)</code></td>
+<td>目录名</td>
+<td>需手动 <code class="c">rmdir</code></td>
 </tr>
 </tbody>
 </table></div>
-<h3>mkstemp 示例</h3>
-<pre class="code" data-label="C"><code class="c">char template[] = &quot;/tmp/myappXXXXXX&quot;;
-int fd = mkstemp(template);
-if (fd == -1) { perror(&quot;mkstemp&quot;); exit(1); }
-// 文件已创建，template 被替换为实际文件名
-// 建议：立即 unlink(template) 使文件在关闭时自动删除
-unlink(template);
-// 使用 fd 读写...
-close(fd);
+<ul>
+<li><strong><code class="c">mkstemp</code></strong>：模板末尾必须是 <code class="c">XXXXXX</code>（6 个 X），函数原子地创建文件并用唯一随机串替换 X。文件权限 <code class="c">0600</code>，返回 fd。</li>
+<li><strong><code class="c">tmpfile</code></strong>：创建匿名临时文件（<code class="c">O_TMPFILE</code> 或 <code class="c">mkstemp</code>+立即 <code class="c">unlink</code> 的等价物），返回 <code class="c">FILE*</code>，关闭时自动删除。</li>
+<li><strong><code class="c">mkdtemp</code></strong>：创建唯一临时<strong>目录</strong>。</li>
+</ul>
+<h2>2. 为什么不安全：<code class="c">tmpnam</code> / <code class="c">mktemp</code> 的 TOCTOU</h2>
+<pre class="code" data-label="C"><code class="c">char *name = tmpnam(NULL);        /* 返回一个「看似可用」的文件名 */
+int fd = open(name, O_CREAT);     /* 竞态！另一进程可能已抢先创建/替换 */
 </code></pre>
-<h3>安全性</h3>
+<p><code class="c">tmpnam</code> 只返回一个<strong>可预测/未保留</strong>的文件名，<code class="c">open</code> 是<strong>独立</strong>的第二步。两步之间另一进程可能：
+- 抢先创建同名文件（你 <code class="c">open</code> 到别人的文件）；
+- 用符号链接把名字指向敏感文件（如 <code class="c">/etc/passwd</code>）。</p>
+<p>这正是 <a href="#s-5-1">5.1</a> 讲的 TOCTOU。<code class="c">mkstemp</code> 用 <code class="c">O_CREAT | O_EXCL</code> 在<strong>内核一次调用内</strong>「生成随机名 + 独占创建」，消除竞态窗口。</p>
+<h2>3. 让临时文件「关闭时自动删除」</h2>
+<p><code class="c">mkstemp</code> 创建的文件要手动删。技巧：<strong>创建后立即 <code class="c">unlink</code></strong>，利用「文件被 unlink 后仍可被已打开的 fd 访问，最后一个 fd 关闭时真正删除」的语义：</p>
+<pre class="code" data-label="C"><code class="c">char template[] = &quot;/tmp/myappXXXXXX&quot;;
+int fd = mkstemp(template);   /* 创建 + 返回 fd */
+unlink(template);             /* 立即 unlink：目录里看不到，但 fd 仍可读写 */
+/* ... 用 fd 读写 ... */
+close(fd);                    /* 最后一个引用关闭 → 文件被真正回收 */
+</code></pre>
+<p>这等价于 <code class="c">tmpfile()</code> 的行为（匿名临时文件），但用 fd 而非 <code class="c">FILE*</code>。</p>
+<h2>4. HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>本节机制的兑现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原子写配置文件</td>
+<td>先写临时文件，再 <code class="c">rename</code> 覆盖，避免进程崩溃留下半写文件</td>
+</tr>
+<tr>
+<td>多进程唯一临时名</td>
+<td><code class="c">mkstemp</code> 的 <code class="c">O_EXCL</code> 保证并发下每个进程拿到不同文件</td>
+</tr>
+<tr>
+<td>敏感数据落盘</td>
+<td><code class="c">mkstemp</code> 的 <code class="c">0600</code> 权限 + 立即 <code class="c">unlink</code>，避免临时文件被其他进程读取</td>
+</tr>
+<tr>
+<td>嵌入式 tmpfs</td>
+<td>临时文件放 <code class="c">tmpfs</code>（内存），重启自动消失，无需清理</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;string.h&gt;
+
+/* mkstemp: 安全创建临时文件 + 立即 unlink 实现自动删除 */
+int main(void) {
+    char template[] = &quot;/tmp/myappXXXXXX&quot;;
+    int fd = mkstemp(template);
+    if (fd == -1) { perror(&quot;mkstemp&quot;); return 1; }
+    printf(&quot;创建临时文件: %s\n&quot;, template);
+
+    unlink(template);          /* 立即删除目录项，关闭 fd 时自动回收 */
+
+    write(fd, &quot;temp data&quot;, 9); /* fd 仍可正常读写 */
+    close(fd);                 /* 关闭 → 文件真正被删除 */
+    return 0;
+}
+</code></pre>
+<h2>6. 衔接</h2>
 <ul>
-<li>❌ 不要用 tmpnam() — 存在 TOCTOU 竞争条件</li>
-<li>✅ 用 mkstemp() — 原子创建，文件权限 0600</li>
+<li>上一节：<a href="#s-5-11">5.11 <code class="c">/dev/fd</code></a></li>
+<li>下一节：<a href="#s-5-13">5.13 本章小结</a></li>
+<li>原子性基础见 <a href="#s-5-1">5.1 原子性与竞争条件</a>（<code class="c">O_EXCL</code>）</li>
+<li>TLPI 后续：<a href="chapter-38.html#intro">Ch38 安全编程</a> — 临时文件安全陷阱</li>
 </ul>
-<h2>自测要点</h2>
-<ul>
-<li>mkstemp() 的 template 格式是什么？</li>
-<li>为什么不能用 tmpnam()？</li>
-<li>如何创建关闭时自动删除的临时文件？</li>
-</ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>ch38</strong>：安全编程中的临时文件陷阱</li>
-</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">mkstemp</code> 的 template 格式是什么？</strong>
+A：以 <code class="c">XXXXXX</code>（恰好 6 个大写 X）<strong>结尾</strong>的字符串，如 <code class="c">"/tmp/myappXXXXXX"</code>。<code class="c">mkstemp</code> 会用唯一随机串替换这 6 个 X，并原地写回 template。注意 template 必须是<strong>可写的字符数组</strong>（<code class="c">char template[] = ...</code>），不能是字符串字面量（<code class="c">char *</code> 指向只读段会崩）。</p>
+<p><strong>Q2：为什么不能用 <code class="c">tmpnam</code>？</strong>
+A：<code class="c">tmpnam</code> 只返回一个<strong>未保留</strong>的文件名，真正创建靠后续独立的 <code class="c">open</code>，两步之间存在 TOCTOU 竞态——另一进程可能抢先创建同名文件或符号链接攻击。<code class="c">mkstemp</code> 用 <code class="c">O_CREAT|O_EXCL</code> 在单次调用内原子完成「生成名 + 独占创建」，无竞态窗口。</p>
+<p><strong>Q3：如何创建「关闭时自动删除」的临时文件？</strong>
+A：两种：① <code class="c">tmpfile()</code>（返回 <code class="c">FILE*</code>，关闭自动删除）；② <code class="c">mkstemp()</code> 后<strong>立即 <code class="c">unlink</code></strong>——文件目录项被移除，但已打开的 fd 仍可读写，最后一个 fd 关闭时内核真正回收该文件。</p>
+<p><strong>Q4：<code class="c">mkstemp</code> 创建的临时文件权限是多少？</strong>
+A：<code class="c">0600</code>（仅 owner 可读写）。这是安全设计——临时文件常含敏感数据，默认不开放给同组/其他用户。</p>
+<p><strong>Q5：<code class="c">mkstemp</code> 和 <code class="c">tmpfile</code> 怎么选？</strong>
+A：需要<strong>路径名</strong>（如后续要 <code class="c">rename</code> 成正式文件）用 <code class="c">mkstemp</code>；只需要一个<strong>匿名</strong>临时文件、用 <code class="c">FILE*</code> 流操作、关闭即删，用 <code class="c">tmpfile</code>（等价于 <code class="c">mkstemp</code>+立即 <code class="c">unlink</code>，但封装成 stdio 流）。</p>
+</details>
       </section>
       <section class="section" id="s-5-13">
-        <div class="sec-head"><div class="sec-no">5.13</div><h2>Summary</h2></div>
+        <div class="sec-head"><div class="sec-no">5.13</div><h2>本章小结（Summary）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+- 上一节：<a href="#s-5-12">5.12 创建临时文件</a>
+- 下一节：<a href="#s-5-14">5.14 练习题</a></p>
 </blockquote>
 <h2>本章回顾</h2>
 <h3>核心 API 速查</h3>
@@ -1812,9 +2755,10 @@ ssize_t n = readv(fd, iov, 2);
 </details>
       </section>
       <section class="section" id="s-5-14">
-        <div class="sec-head"><div class="sec-no">5.14</div><h2>Exercises</h2></div>
+        <div class="sec-head"><div class="sec-no">5.14</div><h2>练习题（Exercises）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a></p>
+<p>本章：<a href="#intro">TLPI 第 05 章 — File I/O: Further Details</a>
+- 上一节：<a href="#s-5-13">5.13 本章小结</a></p>
 </blockquote>
 <h2>练习题</h2>
 <h3>练习 1：dup2 vs close+fcntl</h3>
