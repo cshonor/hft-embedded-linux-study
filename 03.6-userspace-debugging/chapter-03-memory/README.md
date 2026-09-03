@@ -12,9 +12,19 @@
 
 | 小节 | 笔记文件 |
 |------|----------|
-| 3.1 valgrind memcheck（泄漏 / 越界 / UAF 精确定位） | （待写） |
-| 3.2 AddressSanitizer（ASan 快速内存错误检测） | （待写） |
-| 3.3 UndefinedBehaviorSanitizer（UBSan 未定义行为） | （待写） |
+| 3.1 valgrind memcheck（泄漏 / 越界 / UAF 精确定位） | [01-valgrind-memcheck.md](notes/01-valgrind-memcheck.md) |
+| 3.2 AddressSanitizer（ASan 快速内存错误检测） | [02-addresssanitizer.md](notes/02-addresssanitizer.md) |
+| 3.3 UndefinedBehaviorSanitizer（UBSan 未定义行为） | [03-undefinedbehaviorsanitizer.md](notes/03-undefinedbehaviorsanitizer.md) |
+
+## 工具选型速记
+
+| 工具 | 原理 | 开销 | 需重编译 | 抓什么 |
+|------|------|------|----------|--------|
+| valgrind memcheck | 动态二进制翻译 + 影子内存 | 20–50× | ❌ | 越界 / UAF / 泄漏 / 未初始化值 |
+| ASan | 编译期插桩 + 红区/隔离区 | ~2× | ✅ | 越界（含栈）/ UAF / 泄漏 |
+| UBSan | 编译期插桩 | ~1.2× | ✅ | 有符号溢出 / 移位 / 除零等 UB |
+
+> 分工口诀：ASan 管「地址」、valgrind 管「地址+值」（兜底）、UBSan 管「运算语义」。开发期默认 ASan+UBSan 全家桶，无源码二进制用 valgrind 定性。
 
 ---
 
