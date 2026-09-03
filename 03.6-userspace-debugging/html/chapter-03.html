@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-01"><span class="n">3.1</span>valgrind memcheck（泄漏 / 越界 / UAF 精确定位）</a>
+          <a href="#s-02"><span class="n">3.2</span>AddressSanitizer（ASan 快速内存错误检测）</a>
+          <a href="#s-03"><span class="n">3.3</span>UndefinedBehaviorSanitizer（UBSan 未定义行为）</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -297,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">gdb / strace / valgrind / sanitizer / perf</div>
           <h1>Ch3 内存类：越界 / 泄漏 / use-after-free</h1>
           <div class="meta">
-<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -305,11 +308,829 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<h2>工具选型速记</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>原理</th>
+<th>开销</th>
+<th>需重编译</th>
+<th>抓什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>valgrind memcheck</td>
+<td>动态二进制翻译 + 影子内存</td>
+<td>20–50×</td>
+<td>❌</td>
+<td>越界 / UAF / 泄漏 / 未初始化值</td>
+</tr>
+<tr>
+<td>ASan</td>
+<td>编译期插桩 + 红区/隔离区</td>
+<td>~2×</td>
+<td>✅</td>
+<td>越界（含栈）/ UAF / 泄漏</td>
+</tr>
+<tr>
+<td>UBSan</td>
+<td>编译期插桩</td>
+<td>~1.2×</td>
+<td>✅</td>
+<td>有符号溢出 / 移位 / 除零等 UB</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>分工口诀：ASan 管「地址」、valgrind 管「地址+值」（兜底）、UBSan 管「运算语义」。开发期默认 ASan+UBSan 全家桶，无源码二进制用 valgrind 定性。</p>
+</blockquote>
+<hr />
 <h2>HFT 关联</h2>
 <ul>
 <li><strong>7×24 长跑进程最怕慢泄漏</strong>：交易进程内存缓慢增长，几周后 OOM 崩溃，<code class="c">valgrind memcheck</code> 定位到具体分配点；</li>
 <li><strong>越界是崩溃的潜伏根因</strong>：一块内存被写坏，可能几十万次调用后才在别处崩溃，ASan 在开发期就把它钉死；</li>
 <li><strong>valgrind 定性 → ASan 复测</strong>：valgrind 慢但无需重编，先定性；确认后 ASan 重编译快速回归。</li>
+</ul>
+      </section>
+      <section class="section" id="s-01">
+        <div class="sec-head"><div class="sec-no">3.1</div><h2>valgrind memcheck（泄漏 / 越界 / UAF 精确定位）</h2></div>
+<blockquote>
+<p>🔴 精读 · 内存错误的「金标准」——慢，但准，且无需重编译</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>valgrind 是 Linux 下最权威的动态内存分析工具，其默认子工具 <strong>memcheck</strong> 能在程序运行时抓到四类内存错误：<strong>越界读写、use-after-free、内存泄漏、未初始化值</strong>。它最独特的地方是<strong>不需要重新编译</strong>——直接 <code class="c">valgrind ./prog</code> 就能对现有二进制做全量检查。代价是慢（约 20–50×），所以定位在「开发期定性」而不是「生产期测速」。本节讲清它的原理、命令、报告解读，并用贯穿示例 <code class="c">mem_bugs.c</code> 逐条对照。</p>
+<h2>先看贯穿示例</h2>
+<p>下面这个文件埋了四类内存雷（越界写 / UAF / 泄漏 / 未初始化读）+ 两个 UB 雷（溢出 / 移位，留给 3.3）。Ch3 三节都用它：</p>
+<pre class="code" data-label="C"><code class="c">// mem_bugs.c —— Ch3 贯穿示例：内存错误 + 未定义行为
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+// 雷 1：堆越界写（heap buffer overflow）
+void bug_heap_overflow(void) {
+    char *buf = malloc(8);          // 只分配 8 字节
+    strcpy(buf, &quot;0123456789ABCDEF&quot;); // 16 字节写进去 → 越界 8 字节
+    printf(&quot;buf=%s\n&quot;, buf);
+    free(buf);
+}
+
+// 雷 2：use-after-free（free 后再读）
+void bug_uaf(void) {
+    char *p = malloc(16);
+    strcpy(p, &quot;order-12345&quot;);
+    free(p);                        // 释放
+    printf(&quot;after free: %s\n&quot;, p);  // UAF：free 后再解引用
+}
+
+// 雷 3：内存泄漏（分配后从不 free）
+void bug_leak(void) {
+    for (int i = 0; i &lt; 100; i++) {
+        int *x = malloc(sizeof(int)); // 从不 free，100 次 → 慢泄漏
+        *x = i;
+    }
+}
+
+// 雷 4：未初始化读（读栈上未初始化的局部变量）
+void bug_uninit(void) {
+    int x;               // 未初始化
+    if (x &gt; 0)           // 读未初始化值 → 结果取决于垃圾值
+        printf(&quot;positive\n&quot;);
+}
+
+// 雷 5：有符号整数溢出（UB，valgrind 不报，3.3 UBSan 报）
+void bug_signed_overflow(void) {
+    int x = 2147483647;  // INT_MAX
+    int y = x + 1;       // 有符号溢出 → 未定义行为
+    printf(&quot;y=%d\n&quot;, y);
+}
+
+// 雷 6：移位越界（UB，3.3 UBSan 报）
+void bug_shift(void) {
+    int x = 1 &lt;&lt; 40;     // 移位数 &gt;= 位宽(32) → 未定义行为
+    printf(&quot;x=%d\n&quot;, x);
+}
+
+int main(void) {
+    bug_heap_overflow();
+    bug_uaf();
+    bug_leak();
+    bug_uninit();
+    bug_signed_overflow();
+    bug_shift();
+    return 0;
+}
+</code></pre>
+<p>普通编译运行，前四个雷<strong>要么不崩、要么崩得毫无线索</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -o mem_bugs mem_bugs.c
+./mem_bugs
+# buf=0123456789ABCDEF        ← 越界写「成功」了，没崩
+# after free: order-12345     ← UAF 读了已释放内存，没崩
+# y=-2147483648               ← 溢出悄悄回绕成负数，没崩
+# x=0                         ← 移位 UB 悄悄给了 0，没崩
+# (可能某次运行在这里崩，也可能不崩——这就是内存 bug 的阴险)
+</code></pre>
+<p><strong>注意：什么都没崩</strong>，但程序里埋着 6 个雷。这就是内存 bug 的可怕——它「潜伏」，等你上线几周后才在别处爆。valgrind 登场：</p>
+<pre class="code" data-label="shell"><code class="c">valgrind ./mem_bugs
+</code></pre>
+<p>下面逐段解读它的报告。</p>
+<h2>原理：影子内存（shadow memory）</h2>
+<p>valgrind 不是「插桩编译」而是「动态二进制翻译」（Dynamic Binary Instrumentation, DBI）：它把程序的机器码切成基本块，翻译成等价但<strong>额外带检查</strong>的代码，在一个「虚拟 CPU」上执行。程序自己完全不知道自己跑在 valgrind 里。</p>
+<p>memcheck 的核心是<strong>影子内存</strong>——为程序的每个 bit 维护两份元数据：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>元数据</th>
+<th>含义</th>
+<th>追踪什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A bit（addressability）</strong></td>
+<td>这个字节「可不可访问」</td>
+<td>是否已 malloc / 已 free / 越界</td>
+</tr>
+<tr>
+<td><strong>V bit（validity）</strong></td>
+<td>这个 bit 的值「有没有被初始化」</td>
+<td>未初始化值（垃圾值）传播</td>
+</tr>
+</tbody>
+</table></div>
+<p>程序每读一个字节，memcheck 检查 A bit：不可访问 → 报 <code class="c">Invalid read</code>；每读一个未初始化的 bit（V=0）→ 记下来，一旦这个值<strong>影响了控制流或系统调用</strong>就报 <code class="c">Conditional jump depends on uninitialised value</code>。</p>
+<pre class="code" data-label="code"><code class="c">应用内存     [0x40][0x41][0x42][0x43] ...   ← 你 malloc 的 8 字节
+A bit       [  1 ][  1 ][  1 ][  1 ][ 0 ][ 0 ]  ← 第 8 字节之后 = 不可访问
+V bit       [  1 ][  1 ][  0 ][  0 ] ...        ← 0 = 未初始化
+                                          ↑ 写越界到 0x48 会被 A bit 抓
+</code></pre>
+<p><strong>为什么越界写「不崩」也被抓到</strong>：因为 memcheck 不看 CPU 会不会 SIGSEGV，它看的是 A bit——只要写到一个 A=0 的地址，立刻报错，哪怕这块地址物理上恰好可写。这就是它比「等程序崩溃」强得多的原因：<strong>它抓「未遂犯罪」，而不是等「命案发生」</strong>。</p>
+<h2>四类报告逐条解读</h2>
+<h3>① 越界写：<code class="c">Invalid write</code></h3>
+<pre class="code" data-label="text"><code class="c">==1234== Invalid write of size 1
+==1234==    at 0x48C7B3E: bug_heap_overflow (mem_bugs.c:11)
+==1234==    by 0x48C7B52: main (mem_bugs.c:42)
+==1234==  Address 0x4a4a048 is 8 bytes after a block of size 8 alloc'd
+==1234==    at 0x483B7F3: malloc (vg_replace_malloc.c:393)
+==1234==    by 0x48C7B2E: bug_heap_overflow (mem_bugs.c:10)
+</code></pre>
+<p>读报告的四步法：</p>
+<ol>
+<li><strong>错误类型 + 大小</strong>：<code class="c">Invalid write of size 1</code> —— 往不可访问地址写了 1 字节（<code class="c">strcpy</code> 逐字节拷，所以报 size 1 而不是 size 16）。</li>
+<li><strong>发生位置</strong>（写方）：<code class="c">at bug_heap_overflow (mem_bugs.c:11)</code> —— 越界发生在第 11 行。</li>
+<li><strong>越界程度</strong>：<code class="c">8 bytes after a block of size 8</code> —— 写到 malloc(8) 块<strong>之后</strong> 8 字节处，即恰好写满了一倍。</li>
+<li><strong>分配位置</strong>（块归属）：<code class="c">malloc ... by bug_heap_overflow (mem_bugs.c:10)</code> —— 这块内存是第 10 行 malloc 的。</li>
+</ol>
+<blockquote>
+<p><strong>定位口诀</strong>：<code class="c">at</code> 是「谁写的」，<code class="c">alloc'd</code> 是「谁分配的」，两者夹击就能看出「某函数分配了 N 字节，却写了 N+k 字节」。</p>
+</blockquote>
+<h3>② use-after-free：<code class="c">Invalid read</code> + <code class="c">Address is on heap</code></h3>
+<pre class="code" data-label="text"><code class="c">==1234== Invalid read of size 1
+==1234==    at 0x48C7C8E: bug_uaf (mem_bugs.c:19)
+==1234==    by 0x48C7B57: main (mem_bugs.c:43)
+==1234==  Address 0x4a4a0a0 is 0 bytes inside a block of size 16 free'd
+==1234==    at 0x483C9F4: free (vg_replace_malloc.c:540)
+==1234==    by 0x48C7C80: bug_uaf (mem_bugs.c:18)
+</code></pre>
+<p>关键句 <code class="c">0 bytes inside a block of size 16 free'd</code>：读的地址在<strong>一个已 free 的 16 字节块内部</strong>（偏移 0）。最后一段 <code class="c">free ... by bug_uaf (mem_bugs.c:18)</code> 告诉你这个块是第 18 行 free 的。<strong>第 19 行读了第 18 行刚 free 的东西</strong>——UAF 实锤。</p>
+<h3>③ 泄漏：<code class="c">LEAK SUMMARY</code></h3>
+<pre class="code" data-label="text"><code class="c">==1234== HEAP SUMMARY:
+==1234==     in use at exit: 408 bytes in 101 blocks
+==1234==   total heap usage: 106 allocs, 5 frees, 8,704 bytes allocated
+==1234==
+==1234== LEAK SUMMARY:
+==1234==    definitely lost: 400 bytes in 100 blocks
+==1234==    indirectly lost: 0 bytes in 0 blocks
+==1234==      possibly lost: 0 bytes in 0 blocks
+==1234==    still reachable: 8 bytes in 1 blocks
+==1234==         suppressed: 0 bytes in 0 blocks
+==1234== Rerun with --leak-check=full to see details of leaked memory
+</code></pre>
+<p>泄漏的四种定性（<strong>必须分清</strong>，否则会误判）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>分类</th>
+<th>含义</th>
+<th>是否真泄漏</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>definitely lost</strong></td>
+<td>没有任何指针指向它，无法再访问</td>
+<td>✅ 真泄漏，必须修</td>
+</tr>
+<tr>
+<td><strong>indirectly lost</strong></td>
+<td>指针被 lost 块「间接」引用（如链表头丢了，节点也丢了）</td>
+<td>✅ 真泄漏（跟着 definitely lost 一起丢的）</td>
+</tr>
+<tr>
+<td><strong>possibly lost</strong></td>
+<td>有指针指向块「内部」而非开头（如 <code class="c">p = &amp;arr[3]</code>）</td>
+<td>⚠️ 可能泄漏，需人工判断</td>
+</tr>
+<tr>
+<td><strong>still reachable</strong></td>
+<td>程序退出时仍有有效指针指向</td>
+<td>❌ 通常不是泄漏（全局缓存/单例），但长跑进程也要看</td>
+</tr>
+</tbody>
+</table></div>
+<p>加 <code class="c">--leak-check=full --show-leak-kinds=all</code> 看每个泄漏块的分配栈：</p>
+<pre class="code" data-label="shell"><code class="c">valgrind --leak-check=full --show-leak-kinds=all ./mem_bugs
+# ==1234== 400 bytes in 100 blocks are definitely lost in loss record 1 of 2
+# ==1234==    at 0x483B7F3: malloc (vg_replace_malloc.c:393)
+# ==1234==    by 0x48C7D1E: bug_leak (mem_bugs.c:26)   ← 泄漏点：第 26 行 malloc
+# ==1234==    by 0x48C7D30: main (mem_bugs.c:44)
+</code></pre>
+<h3>④ 未初始化读：<code class="c">Conditional jump depends on uninitialised value</code></h3>
+<pre class="code" data-label="text"><code class="c">==1234== Conditional jump depends on uninitialised value(s)
+==1234==    at 0x48C7D90: bug_uninit (mem_bugs.c:33)
+==1234==    by 0x48C7D45: main (mem_bugs.c:45)
+</code></pre>
+<p>这里只告诉你「第 33 行的 if 依赖了未初始化值」，但<strong>没告诉你是谁污染了这个值</strong>。要追溯来源，加 <code class="c">--track-origins=yes</code>（代价是更慢）：</p>
+<pre class="code" data-label="shell"><code class="c">valgrind --track-origins=yes ./mem_bugs
+# ==1234== Conditional jump depends on uninitialised value(s)
+# ==1234==    at 0x...: bug_uninit (mem_bugs.c:33)
+# ==1234==  Uninitialised value was created by a stack allocation
+# ==1234==    at 0x...: bug_uninit (mem_bugs.c:30)   ← 第 30 行 int x; 是源头
+</code></pre>
+<h2>常用命令选项</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">--leak-check=full</code></td>
+<td>退出时详细报告每个泄漏块的分配栈（默认 summary 只给汇总）</td>
+</tr>
+<tr>
+<td><code class="c">--show-leak-kinds=all</code></td>
+<td>显示所有泄漏类型（默认只显示 definite + possible）</td>
+</tr>
+<tr>
+<td><code class="c">--track-origins=yes</code></td>
+<td>追溯未初始化值的来源（更慢）</td>
+</tr>
+<tr>
+<td><code class="c">--error-exitcode=1</code></td>
+<td>发现错误时让 valgrind 以退出码 1 结束（用于 CI 判失败）</td>
+</tr>
+<tr>
+<td><code class="c">--errors-for-leak-kinds=definite</code></td>
+<td>只有 definite 泄漏才算「错误」（CI 常用，忽略 still reachable）</td>
+</tr>
+<tr>
+<td><code class="c">--num-callers=20</code></td>
+<td>加大回溯栈深度（默认 12，深调用链会被截断）</td>
+</tr>
+<tr>
+<td><code class="c">--child-silent-after-fork=yes</code></td>
+<td>fork 后子进程不重复输出</td>
+</tr>
+<tr>
+<td><code class="c">--log-file=v.log</code></td>
+<td>报告写文件而非 stderr</td>
+</tr>
+<tr>
+<td><code class="c">--xml=yes --xml-file=v.xml</code></td>
+<td>XML 输出（CI 解析用）</td>
+</tr>
+</tbody>
+</table></div>
+<p>CI 里跑泄漏检查的推荐组合：</p>
+<pre class="code" data-label="shell"><code class="c">valgrind --leak-check=full --errors-for-leak-kinds=definite \
+         --error-exitcode=1 ./mem_bugs
+# 只有「确定泄漏」才导致 CI 失败，still reachable 不拦
+</code></pre>
+<h2>valgrind 的局限（必须诚实评估）</h2>
+<ol>
+<li><strong>慢</strong>：20–50× 开销，程序里跑 1 秒的路径，valgrind 下要 30 秒。<strong>绝不能拿它测延迟/吞吐</strong>（测出来的数字毫无意义，见 Ch6 性能类）。</li>
+<li><strong>只认「可执行指令」</strong>：它是 DBI，只能看到实际执行的代码路径。不执行的 <code class="c">if</code> 分支里的 bug 它看不见（所以要用测试用例覆盖到）。</li>
+<li><strong>对栈越界盲</strong>：memcheck 抓<strong>堆</strong>越界很准，但对<strong>栈</strong>数组越界（<code class="c">char buf[8]; strcpy(buf, "...")</code>）历史上抓不到，因为它没给栈变量做 redzone（ASan 能抓，见 3.2）。</li>
+<li><strong>不查数据竞争</strong>：内存错误和并发竞态是两个维度，valgrind 另有 <code class="c">helgrind</code> / <code class="c">drd</code> 子工具（Ch4 并发类），memcheck 不管。</li>
+<li><strong>对 UB 无感</strong>：有符号溢出、移位越界这些「未定义行为但不算内存错误」，memcheck 完全没反应（3.3 UBSan 的活）。</li>
+</ol>
+<h2>HFT 关联</h2>
+<ol>
+<li><strong>7×24 长跑进程的慢泄漏是头号杀手</strong>：撮合引擎、行情网关这种「永不重启」的进程，每次处理订单泄漏几十字节，几周后内存涨到 OOM 被杀。valgrind 在<strong>开发期</strong>就能把泄漏点钉到具体 malloc 行号，比上线后盯着 RSS 曲线猜强一百倍。</li>
+<li><strong>「不崩」的越界比崩溃更危险</strong>：越界写可能写坏的是<strong>相邻的订单对象</strong>（价格字段被覆盖、数量被篡改），导致的是「错单」而非崩溃——这类问题 valgrind 的 A bit 检查能抓到，而等它自然崩溃可能永远等不到。</li>
+<li><strong>定位口诀服务 HFT 场景</strong>：<code class="c">at</code>（谁写）+ <code class="c">alloc'd</code>（谁分配）夹击，能快速定位「订单对象 16 字节却拷贝了 20 字节」这类结构体大小算错的 bug。</li>
+<li><strong>CI 门禁</strong>：把 valgrind 挂到 nightly 构建（不用挂每次提交，太慢），配合 <code class="c">--error-exitcode=1 --errors-for-leak-kinds=definite</code>，专门拦截 definite 泄漏。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 场景：对撮合引擎跑一轮仿真行情，抓泄漏
+valgrind --leak-check=full --show-leak-kinds=definite \
+         --log-file=engine_leak.log ./matching_engine --sim data.csv
+grep &quot;definitely lost&quot; engine_leak.log   # 非 0 就有人泄漏
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> valgrind 为什么「不需要重新编译」就能检查？和 ASan 的本质区别是什么？</p>
+<blockquote>
+<p>valgrind 用<strong>动态二进制翻译（DBI）</strong>：运行时不改你的二进制，而是把它翻译成带检查的等价代码在虚拟 CPU 上跑，所以对任意现成二进制都能查。ASan 是<strong>编译期插桩</strong>，要在编译时加 <code class="c">-fsanitize=address</code> 把检查代码编进程序，所以必须重编译。代价：valgrind 通用但慢（20–50×），ASan 快（约 2×）但要重编译。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">definitely lost</code> 和 <code class="c">still reachable</code> 的区别？哪个才是必须修的泄漏？</p>
+<blockquote>
+<p><code class="c">definitely lost</code>：没有任何指针指向它，程序再也无法访问这块内存——这是<strong>真泄漏</strong>，必须修。<code class="c">still reachable</code>：程序退出时仍有有效指针指向它（如全局缓存、单例对象），通常<strong>不是泄漏</strong>，是「刻意持有到程序结束」。对短命进程两者都无害（进程退出时 OS 全回收），但对 7×24 长跑进程，只有 definitely lost 会真正累积。</p>
+</blockquote>
+<p><strong>Q3:</strong> <code class="c">Conditional jump depends on uninitialised value</code> 报告为什么只给「读的位置」不给「污染来源」？怎么拿到来源？</p>
+<blockquote>
+<p>因为 memcheck 默认只记录「哪个值未初始化、在哪被读」，不记录「这个未初始化值从哪来」（记录来源需要额外 shadow 开销）。加 <code class="c">--track-origins=yes</code> 后，memcheck 会额外追踪未初始化值的起源，报告末尾多一行 <code class="c">Uninitialised value was created by ...</code> 指出分配点。代价是更慢。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么 memcheck 能抓到「没崩溃的越界写」？</p>
+<blockquote>
+<p>因为它不看 CPU 是否 SIGSEGV，而看<strong>影子内存的 A bit（addressability）</strong>。只要程序写到一个 A=0 的地址（malloc 块之外、或已 free 的块），立即报 <code class="c">Invalid write</code>，哪怕那块地址物理上恰好可写、程序根本没崩。它抓的是「越界行为」本身，不是「越界后果」。这正是「未遂犯罪」和「命案发生」的区别。</p>
+</blockquote>
+<p><strong>Q5:</strong> valgrind 对栈数组越界为什么相对盲？这类问题交给谁？</p>
+<blockquote>
+<p>memcheck 主要给<strong>堆</strong>分配做红区标记，对<strong>栈</strong>上的局部数组（<code class="c">char buf[8]</code>）默认不做细粒度 redzone，所以 <code class="c">strcpy(buf, "长字符串")</code> 这种栈溢出它常抓不到。这类问题交给 <strong>ASan</strong>（3.2），ASan 在编译期给栈变量也插入了 redzone，能精确抓到栈越界。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-05.html#s-02">3.2 AddressSanitizer</a></li>
+<li><a href="chapter-05.html#s-03">3.3 UndefinedBehaviorSanitizer</a></li>
+<li><a href="chapter-02.html#s-06">2.6 深入内存分析</a></li>
+<li><a href="#intro">Ch3 内存类</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">3.2</div><h2>AddressSanitizer（ASan 快速内存错误检测）</h2></div>
+<blockquote>
+<p>🔴 精读 · 编译期插桩的「快检」——比 valgrind 快一个量级，但要重编译</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>AddressSanitizer（ASan）是 Google 出品的编译期内存错误检测器，集成在 GCC / Clang 里，加 <code class="c">-fsanitize=address</code> 即可。它和 valgrind 抓的是<strong>同一类</strong>内存错误（越界 / UAF / 泄漏 / 未初始化），但实现思路相反：<strong>编译时把检查代码插进程序</strong>，运行时靠「红区（redzone）+ 影子内存」高速判断。代价是必须重编译，换来约 <strong>2× 开销</strong>（valgrind 是 20–50×），快到可以在 CI 里每次提交都跑。本节讲原理、报错解读、与 valgrind 的取舍。</p>
+<h2>编译与运行</h2>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=address -o mem_bugs_asan mem_bugs.c
+./mem_bugs_asan
+</code></pre>
+<blockquote>
+<p>注意：<code class="c">-g</code> 必须有（报错要显示源码行号），优化建议 <code class="c">-O1</code> 而非 <code class="c">-O0</code>（ASan 官方推荐 <code class="c">-O1</code>，<code class="c">-O0</code> 下插桩代码和检查逻辑混在一起反而更慢、报告更啰嗦）。</p>
+</blockquote>
+<p>跑 3.1 那个 <code class="c">mem_bugs.c</code>，第一个雷（堆越界写）的报错：</p>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==5678==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000018 at pc 0x55c1a2b4c3e4 bp 0x7fff1234 sp 0x7fff122c
+WRITE of size 8 at 0x602000000018 thread T0
+    #0 0x55c1a2b4c3e3 in bug_heap_overflow mem_bugs.c:11
+    #1 0x55c1a2b4c4f2 in main mem_bugs.c:42
+    #2 0x7f2a3b4c5d6e in __libc_start_main
+
+0x602000000018 is located 8 bytes to the right of 8-byte region [0x602000000010,0x602000000018)
+allocated by thread T0 here:
+    #0 0x55c1a2b4a1a0 in malloc
+    #1 0x55c1a2b4c3c0 in bug_heap_overflow mem_bugs.c:10
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow mem_bugs.c:11 in bug_heap_overflow
+</code></pre>
+<p>和 valgrind 报告同构（错误类型 → 读写方栈 → 越界程度 → 分配方栈），但多了最后一段 <strong>shadow bytes 图</strong>（篇幅略），它把出问题地址附近的影子内存状态画出来，精确定位「越界了几个字节」。</p>
+<h2>原理：红区 + 影子内存</h2>
+<p>ASan 的核心是<strong>编译期插桩</strong>：编译器在<strong>每一次</strong>内存访问（load/store）指令前后，插入一段「检查目标地址是否中毒」的代码。而「中毒」由 malloc 时布下的<strong>红区</strong>标记。</p>
+<pre class="code" data-label="code"><code class="c">+---------+  redzone (0xfa，中毒)  ← 写到这里 → 报错
+|  应用块  |  8 字节，正常（0x00）
++---------+  redzone (0xfa，中毒)  ← 越界到右边也是
+</code></pre>
+<ol>
+<li><strong>红区（redzone）</strong>：malloc 返回给你的 8 字节前后，ASan 各铺一段「毒化」内存。程序任何越界访问（哪怕只越界 1 字节）都会踩进红区。</li>
+<li><strong>影子内存（shadow memory）</strong>：把每 8 字节应用内存映射到 1 字节 shadow，用编码记录「这 8 字节里哪些可访问」。检查时只需一条位运算 + 一次内存读，所以快。</li>
+<li><strong>隔离区（quarantine）</strong>：free 后的块不立刻还给 OS，而是放进 quarantine 延迟复用。这样 use-after-free 在「复用之前」就会被抓到——因为那段内存还被标着「已 free、中毒」。</li>
+</ol>
+<pre class="code" data-label="text"><code class="c">shadow 字节编码（部分）：
+0x00 = 8 字节全可访问
+0x01..0x07 = 前 N 字节可访问（部分）
+0xfa = 堆 redzone（中毒）
+0xfd = 已 free 的堆块（中毒，隔离区）
+0xf1 = 栈 redzone
+</code></pre>
+<p><strong>为什么 ASan 能抓栈越界而 valgrind 不行</strong>：编译器给<strong>栈上每个数组</strong>也插入了 redzone（<code class="c">0xf1</code>），所以 <code class="c">char buf[8]; strcpy(buf, "长字符串")</code> 这种栈溢出 ASan 精确抓到，这正是它对 valgrind 的关键补强。</p>
+<h2>报错类型一览</h2>
+<p>ASan 报错格式统一为 <code class="c">ERROR: AddressSanitizer: &lt;类型&gt; on address ...</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>报错类型</th>
+<th>对应问题</th>
+<th>触发</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">heap-buffer-overflow</code></td>
+<td>堆越界</td>
+<td>写/读 malloc 块外</td>
+</tr>
+<tr>
+<td><code class="c">stack-buffer-overflow</code></td>
+<td>栈越界</td>
+<td>写/读栈数组外（valgrind 盲区）</td>
+</tr>
+<tr>
+<td><code class="c">global-buffer-overflow</code></td>
+<td>全局越界</td>
+<td>写/读全局数组外</td>
+</tr>
+<tr>
+<td><code class="c">heap-use-after-free</code></td>
+<td>堆 UAF</td>
+<td>free 后再读写</td>
+</tr>
+<tr>
+<td><code class="c">stack-use-after-return</code></td>
+<td>栈 UAF（返回后）</td>
+<td>用了已返回函数的栈变量地址</td>
+</tr>
+<tr>
+<td><code class="c">use-after-scope</code></td>
+<td>作用域外使用</td>
+<td>用了已出作用域的变量</td>
+</tr>
+<tr>
+<td><code class="c">double-free</code></td>
+<td>重复释放</td>
+<td>同一指针 free 两次</td>
+</tr>
+<tr>
+<td><code class="c">allocation-size-too-big</code></td>
+<td>分配过大</td>
+<td>malloc 超限（往往是算错的负数转 size_t）</td>
+</tr>
+<tr>
+<td><code class="c">detected memory leaks</code></td>
+<td>泄漏</td>
+<td>退出时 LSan 报告（见下）</td>
+</tr>
+</tbody>
+</table></div>
+<p>跑 <code class="c">mem_bugs.c</code> 会依次报 <code class="c">heap-buffer-overflow</code>（雷1）、<code class="c">heap-use-after-free</code>（雷2）、<code class="c">detected memory leaks</code>（雷3）。<strong>注意雷 4 未初始化读 ASan 默认不报</strong>——那是 MemorySanitizer（MSan）的活，ASan 只管「地址合法性」不管「值合法性」。</p>
+<h2>LeakSanitizer（LSan）集成</h2>
+<p>ASan 内置 LeakSanitizer，程序退出时自动查泄漏：</p>
+<pre class="code" data-label="text"><code class="c">=================================================================
+==5678==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 400 byte(s) in 100 object(s) allocated from:
+    #0 0x... in malloc
+    #1 0x... in bug_leak mem_bugs.c:26
+
+SUMMARY: AddressSanitizer: 400 byte(s) leaked in 100 allocation(s).
+</code></pre>
+<p>只报 <strong>direct leak</strong>（和 valgrind 的 definitely lost 对应），且默认不逐个列 100 个对象，只汇总 + 给一个代表栈。要更细可设环境变量。</p>
+<h2>ASAN_OPTIONS 常用项</h2>
+<p>ASan 运行时行为通过环境变量 <code class="c">ASAN_OPTIONS</code> 调（用冒号分隔）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">abort_on_error=1</code></td>
+<td>首个错误就 abort，配合 gdb 抓现场（默认报完继续跑，可能被后续错误淹没）</td>
+</tr>
+<tr>
+<td><code class="c">halt_on_error=1</code></td>
+<td>同 abort_on_error，报错即停</td>
+</tr>
+<tr>
+<td><code class="c">detect_leaks=0</code></td>
+<td>关闭泄漏检查（只想查越界/UAF 时）</td>
+</tr>
+<tr>
+<td><code class="c">symbolize=0</code></td>
+<td>关闭符号化（栈只给地址，不转函数名，CI 里日志更小）</td>
+</tr>
+<tr>
+<td><code class="c">log_path=/tmp/asan</code></td>
+<td>报告写文件 <code class="c">/tmp/asan.&lt;pid&gt;</code></td>
+</tr>
+<tr>
+<td><code class="c">quarantine_size_mb=256</code></td>
+<td>调大隔离区，提高 UAF 检出率（默认 256MB）</td>
+</tr>
+<tr>
+<td><code class="c">handle_segv=0</code></td>
+<td>关掉 ASan 对 SIGSEGV 的接管（让程序自然崩，不用 ASan 报）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 调试场景：报错即停，交给 gdb 看现场
+ASAN_OPTIONS=abort_on_error=1 gdb ./mem_bugs_asan
+# 运行到第一个雷就 abort，gdb 停在崩溃点，可 bt 看完整栈
+</code></pre>
+<h2>valgrind vs ASan 取舍</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>valgrind memcheck</th>
+<th>ASan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>检测原理</td>
+<td>动态二进制翻译（DBI）</td>
+<td>编译期插桩 + 运行时红区</td>
+</tr>
+<tr>
+<td>是否需重编译</td>
+<td>❌ 不需要</td>
+<td>✅ 必须 <code class="c">-fsanitize=address</code></td>
+</tr>
+<tr>
+<td>性能开销</td>
+<td>20–50×</td>
+<td>约 2×</td>
+</tr>
+<tr>
+<td>栈越界</td>
+<td>弱（基本抓不到）</td>
+<td>✅ 强（栈红区）</td>
+</tr>
+<tr>
+<td>未初始化读</td>
+<td>✅ 强（V bit）</td>
+<td>❌ 默认不查（交给 MSan）</td>
+</tr>
+<tr>
+<td>数据竞争</td>
+<td>另有 helgrind/drd</td>
+<td>❌（交给 TSan）</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>现有二进制快速定性</td>
+<td>开发期每次回归、CI 常驻</td>
+</tr>
+<tr>
+<td>对第三方库</td>
+<td>直接可查</td>
+<td>需库也用 ASan 编译才查得深</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>经验法则</strong>：开发期默认用 ASan（快，可进 CI）；拿到一个<strong>没有源码/不方便重编译</strong>的二进制时，用 valgrind 兜底定性。两者不是二选一，是「快检 ASan + 兜底 valgrind」互补。</p>
+</blockquote>
+<h2>HFT 关联</h2>
+<ol>
+<li><strong>ASan 进 CI 是「内存安全的最后一道门」</strong>：撮合引擎每次提交后，用 <code class="c">-fsanitize=address</code> 编译跑一轮单元测试 + 仿真行情，约 2× 开销完全可接受，能在合入前拦截越界和 UAF。这是 HFT 团队性价比最高的内存防线。</li>
+<li><strong>栈越界是 C 字符串操作的常见雷</strong>：<code class="c">char sym[8]; sprintf(sym, "%s", ticker)</code> 这种在行情解析里很常见，valgrind 抓不到，ASan 的栈红区能精确钉死——<strong>这是选 ASan 而非 valgrind 的关键理由之一</strong>。</li>
+<li><strong>UAF 与「订单生命周期」强相关</strong>：订单对象 free 后，别的线程/回调还持有旧指针去写，是高频场景里的偶发错单根因。ASan 的 quarantine 让 UAF 在复用前就现形。</li>
+<li><strong>release 构建绝不能带 ASan</strong>：ASan 有内存开销（约 2×）和崩溃时打印大段报告的行为，线上二进制<strong>必须去掉</strong> <code class="c">-fsanitize=address</code> 重新编译。可以维护「debug-asan」和「release」两套构建目标。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 场景：CI 里对撮合引擎跑 ASan 回归
+gcc -g -O1 -fsanitize=address -o engine_asan matching_engine.c ...
+ASAN_OPTIONS=abort_on_error=1:detect_leaks=1 ./engine_asan --sim data.csv
+# 任一内存错误 → 非零退出 → CI 判失败
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> ASan 为什么比 valgrind 快一个量级？「快」的根本原因是什么？</p>
+<blockquote>
+<p>因为检查时机不同。ASan 是<strong>编译期插桩</strong>：编译器把「检查地址是否中毒」的代码直接编进程序，运行时执行的是原生机器码，检查只需「算 shadow 地址 + 读 1 字节 + 判断」几条指令。valgrind 是<strong>运行时二进制翻译</strong>：每条指令都要翻译成带检查的等价代码在虚拟 CPU 上跑，相当于多了一层解释，所以慢 20–50×。ASan 用「多花一点编译时间 + 重编译的麻烦」换来运行时近原生速度。</p>
+</blockquote>
+<p><strong>Q2:</strong> 红区（redzone）和隔离区（quarantine）分别抓什么？</p>
+<blockquote>
+<p><strong>红区</strong>抓「越界」：malloc 块前后铺毒化内存，任何越界访问（哪怕 1 字节）都踩进红区报错。<strong>隔离区</strong>抓「use-after-free」：free 的块不立即还给 OS，而是留在 quarantine 里保持「已 free、中毒」状态一段时间，这样 free 后再访问就会命中中毒块被抓住，而不是「块被复用了、越界访问写坏了别人」。两者配合覆盖了内存错误的两大类。</p>
+</blockquote>
+<p><strong>Q3:</strong> ASan 能抓「未初始化读」吗？不能的话交给谁？</p>
+<blockquote>
+<p>默认<strong>不能</strong>。ASan 只检查「地址是否可访问」（addressability），不检查「值是否已初始化」（validity）。<code class="c">int x; if (x&gt;0)</code> 这种读垃圾值，ASan 无感。未初始化读是 <strong>MemorySanitizer（MSan，<code class="c">-fsanitize=memory</code>）</strong> 的职责，MSan 维护 V bit 追踪每个 bit 的初始化状态。valgrind memcheck 也能抓（V bit 机制）。三者分工：ASan 管地址、MSan 管值、TSan 管并发。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么 release 构建绝不能带 ASan？</p>
+<blockquote>
+<p>三个原因：①性能——ASan 有约 2× 时间和内存开销，线上会拖慢撮合延迟、加大内存占用；②行为——报错时会打印大段报告并可能 abort，不适合生产；③安全——ASan 的 shadow 内存和插桩代码会改变程序内存布局，且 <code class="c">ASAN_OPTIONS</code> 环境变量可被利用。所以 ASan 只用于 debug/测试构建，release 必须去掉 <code class="c">-fsanitize=address</code> 单独编译。</p>
+</blockquote>
+<p><strong>Q5:</strong> 一个「偶发、只在压力测试下出现」的段错误，你会先上 valgrind 还是 ASan？为什么？</p>
+<blockquote>
+<p>先上 <strong>ASan</strong>。因为偶发段错误大概率是越界或 UAF（压力下分配/释放更频繁、边界条件更容易触发），ASan 快（约 2×），能在压力场景接近真实负载下复现；valgrind 慢 20–50×，压力测试根本跑不动。如果 ASan 复现不了（比如问题出在没有源码的第三方库里），再退回 valgrind 对现成二进制定性。若怀疑是并发竞态（偶发 + 多线程），则直接上 TSan（Ch4）。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-05.html#s-01">3.1 valgrind memcheck</a></li>
+<li><a href="chapter-05.html#s-03">3.3 UndefinedBehaviorSanitizer</a></li>
+<li><a href="chapter-05.html#s-02">1.2 症状 → 工具决策树</a></li>
+<li><a href="#intro">Ch3 内存类</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-03">
+        <div class="sec-head"><div class="sec-no">3.3</div><h2>UndefinedBehaviorSanitizer（UBSan 未定义行为）</h2></div>
+<blockquote>
+<p>🔴 精读 · 抓「不是内存错误、但同样致命」的未定义行为（UB）</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>valgrind 抓内存错误，ASan 抓内存地址合法性，但有一类 bug 两者都<strong>无感</strong>：<strong>未定义行为（Undefined Behavior, UB）</strong>——有符号整数溢出、移位越界、除零、空指针解引用、类型转换越界等。UB 的可怕之处在于：程序「看似正常」甚至「debug 版正常、release 版诡异」，因为编译器会基于「UB 不会发生」的假设做激进优化。UndefinedBehaviorSanitizer（UBSan，<code class="c">-fsanitize=undefined</code>）专治这类，本节讲它抓什么、怎么配、为什么 UB 是 HFT 的隐形杀手。</p>
+<h2>先看 UB 的两张「丑脸」</h2>
+<p>用 3.1 的 <code class="c">mem_bugs.c</code> 里的雷 5、雷 6：</p>
+<pre class="code" data-label="C"><code class="c">void bug_signed_overflow(void) {
+    int x = 2147483647;  // INT_MAX
+    int y = x + 1;       // 有符号溢出 → UB
+    printf(&quot;y=%d\n&quot;, y);
+}
+
+void bug_shift(void) {
+    int x = 1 &lt;&lt; 40;     // 移位数 &gt;= 位宽(32) → UB
+    printf(&quot;x=%d\n&quot;, x);
+}
+</code></pre>
+<p>普通 <code class="c">-O0</code> 编译运行，这两个雷<strong>都不报错</strong>，还给了你「看似合理」的结果：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -o mem_bugs mem_bugs.c &amp;&amp; ./mem_bugs
+# y=-2147483648   ← 溢出「回绕」成最小负数
+# x=0             ← 移位「悄悄」给了 0
+</code></pre>
+<p>问题来了：<code class="c">-O0</code> 下溢出回绕，<code class="c">-O2</code> 下编译器可能因为「UB 不可能发生」而<strong>假设 <code class="c">x+1 &gt; x</code> 恒成立</strong>，做出完全不同的优化，导致 debug/release 行为不一致。这就是 UB 的阴险——<strong>它在 <code class="c">-O0</code> 下"装没事"，在 <code class="c">-O2</code> 下"原形毕露"</strong>。</p>
+<p>UBSan 登场：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=undefined -o mem_bugs_ubsan mem_bugs.c
+./mem_bugs_ubsan
+</code></pre>
+<pre class="code" data-label="text"><code class="c">mem_bugs.c:29:34: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
+mem_bugs.c:35:15: runtime error: shift exponent 40 is too large for 32-bit type 'int'
+</code></pre>
+<p>报告直接给<strong>文件:行:列</strong> + 一句话说清 UB 是什么。比「猜为什么 y 变成负数」强太多。</p>
+<h2>UBSan 抓什么：UB 清单</h2>
+<p><code class="c">-fsanitize=undefined</code> 是一组检查的合集，GCC/Clang 支持以下子项（可单独开关）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>捕获的 UB</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">signed-integer-overflow</code></td>
+<td>有符号整数溢出</td>
+<td>价格/数量累加溢出（最常见）</td>
+</tr>
+<tr>
+<td><code class="c">shift</code></td>
+<td>移位越界（移位数 &lt;0 或 ≥位宽）</td>
+<td><code class="c">1 &lt;&lt; n</code> 里 n 算错</td>
+</tr>
+<tr>
+<td><code class="c">integer-divide-by-zero</code></td>
+<td>整数除零</td>
+<td>除数变量为 0（浮点除零不算 UB）</td>
+</tr>
+<tr>
+<td><code class="c">bounds</code></td>
+<td>数组越界（编译期可知的）</td>
+<td><code class="c">arr[i]</code> 静态数组越界</td>
+</tr>
+<tr>
+<td><code class="c">null</code></td>
+<td>空指针解引用</td>
+<td><code class="c">*p</code> 且 p=NULL（Clang 支持更好）</td>
+</tr>
+<tr>
+<td><code class="c">float-cast-overflow</code></td>
+<td>浮点↔整数转换越界</td>
+<td><code class="c">(int)1e20</code> 溢出</td>
+</tr>
+<tr>
+<td><code class="c">float-divide-by-zero</code></td>
+<td>浮点除零</td>
+<td><code class="c">1.0/0.0</code></td>
+</tr>
+<tr>
+<td><code class="c">alignment</code></td>
+<td>未对齐访问</td>
+<td>结构体指针强转后解引用</td>
+</tr>
+<tr>
+<td><code class="c">enum</code></td>
+<td>枚举值越界</td>
+<td>给 enum 赋了范围外值</td>
+</tr>
+<tr>
+<td><code class="c">bool</code></td>
+<td>bool 变量赋了 0/1 之外的值</td>
+<td>用 <code class="c">*((bool*)&amp;x)</code> 之类</td>
+</tr>
+<tr>
+<td><code class="c">vptr</code></td>
+<td>多态类型错误</td>
+<td>基类指针指向未构造对象（C++）</td>
+</tr>
+<tr>
+<td><code class="c">nonnull-attribute</code></td>
+<td>违反 <code class="c">__attribute__((nonnull))</code></td>
+<td>传 NULL 给声明 nonnull 的函数</td>
+</tr>
+<tr>
+<td><code class="c">returns-nonnull-attribute</code></td>
+<td>违反 returns-nonnull</td>
+<td>函数承诺返回非空却返 NULL</td>
+</tr>
+<tr>
+<td><code class="c">unreachable</code></td>
+<td>执行到 <code class="c">__builtin_unreachable()</code></td>
+<td>逻辑走到不该走的分支</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>完整清单看编译器手册 <code class="c">man gcc</code> 搜 <code class="c">-fsanitize</code>。核心记忆：<strong>有符号溢出 + 移位 + 除零</strong> 是最值得先查的三项，它们覆盖了 HFT 里 90% 的 UB 事故。</p>
+</blockquote>
+<h2>关键配置：让 UB「报错即停」而非「报完继续」</h2>
+<p>UBSan 默认行为是：打印报告后<strong>继续运行</strong>（可恢复）。这在「多个 UB 连锁」时会把报告淹没，也不利于 gdb 抓现场。用 <code class="c">-fno-sanitize-recover</code> 让 UB 直接终止：</p>
+<pre class="code" data-label="shell"><code class="c"># 方式 1：所有 UBSan 检查遇到 UB 就 abort
+gcc -g -O1 -fsanitize=undefined -fno-sanitize-recover=all -o mem_bugs_ubsan mem_bugs.c
+
+# 方式 2：只让「溢出」这一个检查 abort，其余照常恢复
+gcc -g -O1 -fsanitize=undefined -fno-sanitize-recover=signed-integer-overflow -o mem_bugs_ubsan mem_bugs.c
+</code></pre>
+<p>abort 后配合 gdb：</p>
+<pre class="code" data-label="shell"><code class="c">gdb ./mem_bugs_ubsan
+(gdb) run
+# Program received signal SIGABRT ...   ← 停在第一个 UB
+(gdb) bt        # 看完整调用栈，定位是哪个调用路径触发了溢出
+</code></pre>
+<h2>与 ASan 组合：<code class="c">-fsanitize=address,undefined</code></h2>
+<p>内存错误 + UB 常同时存在，两者可以一起开：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O1 -fsanitize=address,undefined -o mem_bugs_both mem_bugs.c
+./mem_bugs_both
+# 依次报 heap-buffer-overflow（ASan）→ signed integer overflow（UBSan）→ ...
+</code></pre>
+<p>这是开发期最省事的「全家桶」配置。注意：<strong>不能和 TSan 同时开</strong>（Ch4 会讲，TSan 需要独占），但 ASan+UBSan 兼容。</p>
+<h2>为什么 UB 是「隐形杀手」：编译器优化</h2>
+<p>很多人以为 UB「最多是结果不对」，低估了它的破坏力。实际上 UB 给了编译器<strong>免责声明</strong>：编译器有权假设 UB 永不发生，并基于此做「合法但反直觉」的优化。</p>
+<p>经典例子——<strong>溢出检查被优化掉</strong>：</p>
+<pre class="code" data-label="C"><code class="c">// 程序员想写的「安全加法」：检查溢出
+int safe_add(int a, int b) {
+    if (a + b &lt; a)      // 靠溢出回绕来检测溢出（错误做法）
+        return -1;      // 认为溢出了
+    return a + b;
+}
+</code></pre>
+<p><code class="c">a + b</code> 若溢出是 UB，编译器据此<strong>假设 <code class="c">a+b</code> 永不溢出 → 假设 <code class="c">a+b &gt;= a</code> 恒成立 → 把 <code class="c">if</code> 优化成恒假 → 直接删掉检查</strong>。在 <code class="c">-O2</code> 下，你精心写的「溢出保护」被编译器当死代码删了：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -O2 -S safe_add.c -o - | grep -A5 safe_add
+# 你会在汇编里看到 if 分支整个消失，只剩 return a + b
+</code></pre>
+<p><strong>这就是 debug 版正常、release 版出错的根本机制</strong>。所以：
+1. 不要「利用」UB 来做逻辑（比如用溢出回绕检测溢出）——编译器会反噬你。
+2. 要用 <code class="c">__builtin_add_overflow(a,b,&amp;r)</code> 这类编译器提供的<strong>无 UB 溢出检测</strong>内建函数。
+3. 开 UBSan 在开发期把 UB 钉死。</p>
+<h2>HFT 关联</h2>
+<ol>
+<li><strong>价格/数量的累计溢出是错单根源</strong>：<code class="c">total_qty += order.qty</code> 这种累加，一旦 qty 或累计值超出 <code class="c">int</code>/<code class="c">long</code> 范围就 UB。HFT 里价格常用定点整数（如 <code class="c">price * 10000</code> 存 <code class="c">long</code>），溢出一个 <code class="c">long</code> 就是一笔天价错单。UBSan 在仿真阶段就能抓出「哪个计算路径会溢出」。</li>
+<li><strong>移位是算掩码/位域的常见雷</strong>：<code class="c">1 &lt;&lt; bits</code> 里 <code class="c">bits</code> 若等于 32（或负）就是 UB，可能导致掩码全 0 或全 1，进而错误地清掉/置上标志位。UBSan 的 <code class="c">shift</code> 检查直接点名。</li>
+<li><strong>除零导致 NaN/Inf 传播</strong>：撮合引擎里 <code class="c">avg = total / count</code>，count 为 0 时整数除零直接 SIGFPE 崩，浮点除零产生 NaN 污染后续所有计算。UBSan 的 <code class="c">integer-divide-by-zero</code> / <code class="c">float-divide-by-zero</code> 分别在开发期拦截。</li>
+<li><strong>「debug 正常、release 错」的经典排查路径</strong>：一旦出现这种症状，第一反应就该怀疑 UB——上 UBSan 重编译跑一遍，比在 <code class="c">-O2</code> 反汇编里猜优化行为快得多。</li>
+</ol>
+<pre class="code" data-label="shell"><code class="c"># HFT 场景：定点价格累加溢出检查（正确做法，无 UB）
+#include &lt;stdbool.h&gt;
+bool add_price(long *acc, long delta) {
+    long r;
+    if (__builtin_add_overflow(*acc, delta, &amp;r))  // 编译器内建，不触发 UB
+        return false;   // 溢出，拒绝
+    *acc = r;
+    return true;
+}
+</code></pre>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> 为什么 valgrind 和 ASan 都抓不到「有符号整数溢出」？</p>
+<blockquote>
+<p>因为它们关注的是<strong>内存</strong>：valgrind 查「地址可不可访问 + 值有没有初始化」，ASan 查「地址是否在红区/已 free」。有符号溢出不涉及任何非法内存访问——<code class="c">x+1</code> 只是算出一个「错」的值，地址完全合法、值也初始化了，所以两者无感。溢出属于<strong>未定义行为</strong>而非<strong>内存错误</strong>，是 UBSan 的专属领域。三者维度不同：ASan 管地址、MSan 管值、UBSan 管「运算语义」。</p>
+</blockquote>
+<p><strong>Q2:</strong> UB 的「隐形」体现在哪？为什么 debug 版正常、release 版诡异？</p>
+<blockquote>
+<p>编译器被允许<strong>假设 UB 永不发生</strong>，并基于此做激进优化。debug（<code class="c">-O0</code>）几乎不优化，UB 表现为「回绕」等看似无害的结果；release（<code class="c">-O2</code>）下编译器利用「UB 不可能」的假设删掉它认为「不可能走到」的代码——比如把「靠溢出回绕检测溢出」的 <code class="c">if</code> 优化成恒假直接删除。于是同一个 UB，debug 版「装没事」，release 版「原形毕露」甚至删除你的保护逻辑。这是优化语义差异导致的，不是编译器 bug。</p>
+</blockquote>
+<p><strong>Q3:</strong> <code class="c">-fno-sanitize-recover=all</code> 的作用？不加会怎样？</p>
+<blockquote>
+<p>默认 UBSan 报完 UB 后<strong>继续运行</strong>（可恢复），适合「一次收集所有 UB」。加上 <code class="c">-fno-sanitize-recover=all</code> 让第一个 UB 就直接 abort，好处是①避免后续连锁 UB 淹没报告、②配合 gdb 在第一个 UB 现场停下来 <code class="c">bt</code> 抓调用栈。取舍：收集全景用默认恢复模式，定位单点用 abort 模式。</p>
+</blockquote>
+<p><strong>Q4:</strong> 为什么不能用「溢出回绕」来检测溢出（<code class="c">if (a+b &lt; a)</code>）？</p>
+<blockquote>
+<p>因为 <code class="c">a+b</code> 若真的溢出，这本身就是 UB，编译器可以假设它不发生，进而认为 <code class="c">a+b &lt; a</code> 恒为假，把整个 <code class="c">if</code> 优化掉。正确做法是用编译器内建 <code class="c">__builtin_add_overflow(a, b, &amp;r)</code>（或 <code class="c">&lt;stdckdint.h&gt;</code> 的 <code class="c">ckd_add</code>），它在内部用无 UB 的方式检测溢出并返回布尔结果，不受优化影响。</p>
+</blockquote>
+<p><strong>Q5:</strong> ASan 和 UBSan 能一起开吗？和 TSan 呢？</p>
+<blockquote>
+<p>ASan 和 UBSan <strong>可以</strong>一起开：<code class="c">-fsanitize=address,undefined</code>，两者兼容，是开发期「内存 + UB」全家桶。但<strong>不能和 TSan（ThreadSanitizer）同时开</strong>——TSan 需要独占运行时（它和 ASan 都接管内存分配/访问，会冲突），所以查并发竞态时要单独用 TSan 编译一次（见 Ch4）。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-05.html#s-01">3.1 valgrind memcheck</a></li>
+<li><a href="chapter-05.html#s-02">3.2 AddressSanitizer</a></li>
+<li><a href="chapter-04.html#intro">Ch4 并发类</a></li>
+<li><a href="#intro">Ch3 内存类</a></li>
 </ul>
       </section>
 
