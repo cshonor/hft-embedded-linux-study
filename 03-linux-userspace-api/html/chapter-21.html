@@ -542,11 +542,11 @@ int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td><code class="c">sigaction()</code> 在嵌入式系统的应用场景</td>
+<td>sigaction 是唯一可移植的注册方式，且能显式设 sa_mask/flags；SA_SIGINFO 让 handler 拿到 si_pid/si_uid/si_value，嵌入式调试时可溯源信号来源</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td><code class="c">sigaction()</code> 对低延迟和性能的影响</td>
+<td>一次性把 SIGTERM/SIGINT/SIGSEGV 注册到位、flags 显式 SA_RESTART，避免运行时反复 syscall 注册；handler 越薄越好（只置标志），重活留给主循环</td>
 </tr>
 </tbody>
 </table></div>
@@ -648,11 +648,11 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td><code class="c">sa_mask</code>（临时叠加） 在嵌入式系统的应用场景</td>
+<td>handler 期间默认阻塞本信号防重入，配合 sa_mask 可临时阻塞相关信号，保证嵌入式时序敏感的 handler「执行完前不被同族打断」</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td><code class="c">sa_mask</code>（临时叠加） 对低延迟和性能的影响</td>
+<td>sa_mask 的阻塞只持续 handler 生命周期，不改长期掩码；HFT 信号 handler 应短到微秒级，阻塞窗口越小对延迟影响越小，别在 handler 里做重活</td>
 </tr>
 </tbody>
 </table></div>
@@ -742,11 +742,11 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>常用 <code class="c">sa_flags</code> 在嵌入式系统的应用场景</td>
+<td>SA_NOCLDWAIT 让子进程退出不留僵尸、免去手动 waitpid，嵌入式多进程服务省心；SA_RESETHAND 复刻老 signal 一次性语义，需复位场景可用</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>常用 <code class="c">sa_flags</code> 对低延迟和性能的影响</td>
+<td>SA_RESTART 决定慢 syscall 被打断后是否自动重启，HFT 阻塞式 I/O 设上它可减少 EINTR 分支；SA_NODEFER 会开放重入，性能敏感但易踩雷，慎用</td>
 </tr>
 </tbody>
 </table></div>
@@ -808,11 +808,11 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td><code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code> 在嵌入式系统的应用场景</td>
+<td>慢设备 I/O（串口/网络）易被信号打断，嵌入式代码对 read/write 必须处理 EINTR 重试，否则偶发中断会静默丢数据</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td><code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code> 对低延迟和性能的影响</td>
+<td>EINTR 是延迟抖动来源之一——阻塞中的 recv/epoll_wait 被打断后返回，若未重试会漏事件；统一 <code class="c">while(ret&lt;0 &amp;&amp; errno==EINTR)</code> 重试，保证关键路径不被信号偷走时间片</td>
 </tr>
 </tbody>
 </table></div>
@@ -888,11 +888,11 @@ void handler(int sig) { (void)sig; got_sigint = 1; }
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>Async-Signal-Safe（最重要） 在嵌入式系统的应用场景</td>
+<td>handler 里 malloc/printf 可能死锁（打断正持锁的代码），嵌入式资源受限下锁竞争更常见；只用 write/_exit/sig_atomic_t 置标志，逻辑回主循环</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>Async-Signal-Safe（最重要） 对低延迟和性能的影响</td>
+<td>handler 里任何 malloc/加锁都可能引入微秒级不可预测延迟甚至死锁；HFT 的 handler 只做 sig_atomic_t 置位，让主循环在稳定上下文中处理，杜绝延迟毛刺</td>
 </tr>
 </tbody>
 </table></div>
@@ -971,11 +971,11 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td><code class="c">SIGCHLD</code> 在嵌入式系统的应用场景</td>
+<td>标准信号不排队，一次 SIGCHLD 可能对应多个子进程，嵌入式多进程服务必须 <code class="c">while(waitpid(-1,WNOHANG))</code> 收净，否则留僵尸</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td><code class="c">SIGCHLD</code> 对低延迟和性能的影响</td>
+<td>HFT 极少 fork 子进程（fork 有写时复制抖动），若用则 SA_NOCLDWAIT 让内核自动收尸、省去 handler；子进程只做隔离性重活，别在关键路径 fork</td>
 </tr>
 </tbody>
 </table></div>
@@ -1071,11 +1071,11 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td><code class="c">signal()</code> vs <code class="c">sigaction()</code> 在嵌入式系统的应用场景</td>
+<td>signal() 在各 libc 间语义漂移（是否复位、是否阻塞自身），交叉编译平台各异；sigaction 显式声明 mask/flags，是嵌入式可移植代码的唯一选择</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td><code class="c">signal()</code> vs <code class="c">sigaction()</code> 对低延迟和性能的影响</td>
+<td>用 signal() 等于把 handler 语义交给平台决定，竞态难复现；HFT 生产统一 sigaction，行为确定、延迟可测，这是低延迟系统的底线</td>
 </tr>
 </tbody>
 </table></div>
