@@ -3,7 +3,7 @@
 > **GitHub：** [github.com/cshonor/hft-embedded-linux-study](https://github.com/cshonor/hft-embedded-linux-study)  
 > **HFT 低延迟 Linux 底层** + **嵌入式 Linux 无人机飞控** 双线笔记与路线仓库。
 
-**技术板块 `00`–`19`（含 `.5` / `.6` / `.7` 模块 `03.5` / `05.5` / `05.6` / `06.5` / `06.6` / `06.7` / `11.5` / `12.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5`–`.7` = 现代补充资料或性能/可观测衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
+**技术板块 `00`–`19`（含 `.5` / `.6` / `.7` 模块 `03.5` / `03.6` / `05.5` / `05.6` / `06.5` / `06.6` / `06.7` / `11.5` / `12.5`）：** 顶层为**纯技术模块名**；**整数编号 = 学习顺序**，`.5`–`.7` = 现代补充资料或性能/可观测衔接（见 [§现代补充资料](#现代补充资料5--6-模块)）。
 
 ---
 
@@ -161,6 +161,7 @@ git clone https://github.com/cshonor/hft-embedded-linux-study.git
 | **02** | [computer-systems](./02-computer-systems/) | 程序=机器：栈/缓存/VM/并发 | 2 |
 | **03** | [linux-userspace-api](./03-linux-userspace-api/) | 用户态系统编程（TLPI） | 3 |
 | **03.5** | [unix-network-api](./03.5-unix-network-api/) | Socket API 精读（UNP — Stevens） | 3 |
+| **03.6** | [userspace-debugging](./03.6-userspace-debugging/) | 用户态调试（gdb / strace / valgrind / ASan / TSan） | 3 |
 | **04** | [cpp](./04-cpp/) | C++（Modern / 并发 / 对象模型；M5 = **C++ 网络编程** muduo·PNP） | 3 穿插 |
 | **05** | [linux-kernel](./05-linux-kernel/) | 内核入门（LKD） | 4 |
 | **05.5** | [modern-kernel](./05.5-modern-kernel/) | 现代 5.x/6.x 内核**非 MM** 资料（补 ULK/LKD 2.6 过时） | 4 |
@@ -197,7 +198,7 @@ Phase1  00 数字逻辑/CPU（当前；未完成前不正式开下一 Phase）
    ↓
 Phase2  01 C → 02 计算机系统
    ↓
-Phase3  03 用户态 API → 03.5 UNP socket → 04 C++ → M5 muduo 网络编程（04 内）
+Phase3  03 用户态 API → 03.5 UNP socket → 03.6 用户态调试 → 04 C++ → M5 muduo 网络编程（04 内）
    ↓
 Phase4  05 内核入门 → 05.5 现代内核 → 05.6 调试 → 06 MM → 06.5 现代 MM
         （16 ULK 深度可后补）
@@ -213,7 +214,7 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19 · P9(OS from scratch) ·（兴趣）
 |-------|------|--------|
 | **1** | `00` 数字逻辑/CPU（黑盒语义为主） | setup/hold、寄存器与 FIFO；不纠结门级 |
 | **2** | `01` C → `02` 计算机系统 | 指针/内存过关；流水线、Cache、VM、并发能讲通 |
-| **3** | `03` → `03.5` → 穿插 `04`（含 M5 muduo） | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo |
+| **3** | `03` → `03.5` → `03.6` → 穿插 `04`（含 M5 muduo） | 进程/线程/信号/`mmap`/`epoll`；能写小 Demo；会用 gdb/strace/valgrind 调自己的代码 |
 | **4** | `05` → `05.5` → `05.6` → `06` → `06.5` | 调度、内存、同步入门地图清晰；知道 6.x 现代实现 |
 | **5A** | `07`–`09` + P5 | 启动链、设备树、简单驱动、板级闭环 |
 | **5B** | `11`–`14`（含 `11.5` 和 `12.5`） | Socket → 协议 → 内核网 → 现代 Net → DPDK → 观测 → HFT |

@@ -59,6 +59,7 @@ BOOKS = [
     _b("03.5-unix-network-api/2_AdvancedSkill", "UNP · 卷1 进阶篇", "Unix 网络编程 · 高级 IO 与线程", "sysprog"),
     _b("03.5-unix-network-api/3_DeepMaster", "UNP · 卷1 深化篇", "Unix 网络编程 · 原始套接字与广播", "sysprog"),
     _b("03.5-unix-network-api/4_ArchitectureDesign", "UNP · 卷1 设计篇", "Unix 网络编程 · SCTP 与架构设计", "sysprog"),
+    _b("03.6-userspace-debugging", "用户态调试", "gdb / strace / valgrind / sanitizer / perf", "sysprog"),
     # ---- 网络协议 · 内核网络 ----
     _b("11-tcpip-protocols", "TCP/IP 详解", "卷一 协议 · 中文笔记", "network"),
     _b("11.5-wireshark-packet-analysis", "Wireshark 抓包分析", "包分析实践 · 全 13 章", "network"),
