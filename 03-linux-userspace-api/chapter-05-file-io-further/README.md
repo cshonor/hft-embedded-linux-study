@@ -8,15 +8,20 @@
 
 ## 小节目录
 
-- [5.1 内核三层结构（本章核心 · 必考）](notes/5.1-atomicity-race-conditions.md)
-- 5.2 `dup` / `dup2` / `dup3`
-- [5.3 `pread` / `pwrite`](notes/5.6-pread-pwrite.md)
-- [5.4 原子操作](notes/5.4-fd-and-open-files.md)
-- [5.5 `fcntl` — 文件控制](notes/5.2-fcntl.md)
-- [5.6 打开标志补充（扩展 Ch4）](notes/5.6-pread-pwrite.md)
-- [5.7 非阻塞 `O_NONBLOCK`](notes/5.7-readv-writev.md)
-- [5.8 大文件 LFS](notes/5.8-truncate-ftruncate.md)
-- [5.9 `/dev/fd`（Linux）](notes/5.11-dev-fd.md)
+- [5.1 原子性与竞争条件](notes/5.1-atomicity-race-conditions.md)
+- [5.2 `fcntl()` — 文件控制](notes/5.2-fcntl.md)
+- [5.3 打开文件状态标志](notes/5.3-open-file-status-flags.md)
+- [5.4 fd 与打开文件（内核三层结构）](notes/5.4-fd-and-open-files.md)
+- [5.5 `dup` / `dup2` / `dup3`](notes/5.5-duplicating-fds.md)
+- [5.6 `pread` / `pwrite`](notes/5.6-pread-pwrite.md)
+- [5.7 `readv` / `writev`（散布/聚集）](notes/5.7-readv-writev.md)
+- [5.8 `truncate` / `ftruncate`](notes/5.8-truncate-ftruncate.md)
+- [5.9 非阻塞 I/O（`O_NONBLOCK`）](notes/5.9-nonblocking-io.md)
+- [5.10 大文件 LFS](notes/5.10-large-files.md)
+- [5.11 `/dev/fd`（Linux）](notes/5.11-dev-fd.md)
+- [5.12 创建临时文件](notes/5.12-temporary-files.md)
+- [5.13 本章小结](notes/5.13-summary.md)
+- [5.14 练习题](notes/5.14-exercises.md)
 
 ---
 
