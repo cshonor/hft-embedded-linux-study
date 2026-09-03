@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ch4 strace / ltrace：系统调用与库调用追踪</title>
+<title>Ch4 并发类：数据竞争与死锁</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -276,16 +276,18 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-01"><span class="n">4.1</span>strace 入门（基本用法 / 输出格式 / 参数与 errno 解读）</a>
-          <a href="#s-02"><span class="n">4.2</span>strace 实战分析（-c 统计 / -f 子进程 / -p attach / 阻塞与多余 syscall 定位）</a>
-          <a href="#s-03"><span class="n">4.3</span>ltrace 库调用追踪（与 strace 对比 / malloc-free 追踪）</a>
+          <a href="#s-01"><span class="n">4.1</span>多线程调试（thread / thread apply all bt / scheduler-locking / 死锁）</a>
+          <a href="#s-02"><span class="n">4.2</span>rr 可逆调试（record / replay / reverse-*）</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
-          <a href="chapter-01.html#intro"><span class="n">01</span>Ch1 gdb 基础：断点 / 单步 / 栈 / 变量</a>
-          <a href="chapter-02.html#intro"><span class="n">02</span>Ch2 gdb 进阶：多线程调试 / attach / rr 可逆调试</a>
-          <a href="chapter-03.html#intro"><span class="n">03</span>Ch3 coredump 分析：崩溃现场回溯</a>
-          <a href="chapter-04.html#intro"><span class="n">04</span>Ch4 strace / ltrace：系统调用与库调用追踪</a>
+          <a href="chapter-01.html#intro"><span class="n">01</span>Ch1 排错方法论与工具选型</a>
+          <a href="chapter-02.html#intro"><span class="n">02</span>Ch2 崩溃类：段错误与栈破坏</a>
+          <a href="chapter-03.html#intro"><span class="n">03</span>Ch3 内存类：越界 / 泄漏 / use-after-free</a>
+          <a href="chapter-04.html#intro"><span class="n">04</span>Ch4 并发类：数据竞争与死锁</a>
+          <a href="chapter-05.html#intro"><span class="n">05</span>Ch5 行为类：系统调用与库调用追踪</a>
+          <a href="chapter-06.html#intro"><span class="n">06</span>Ch6 性能类：热点采样</a>
+          <a href="chapter-07.html#intro"><span class="n">07</span>Ch7 实战：下单程序全流程调试</a>
     </nav>
   </aside>
 
@@ -295,9 +297,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="content" style="grid-template-columns:1fr">
         <div>
           <div class="eyebrow">gdb / strace / valgrind / sanitizer / perf</div>
-          <h1>Ch4 strace / ltrace：系统调用与库调用追踪</h1>
+          <h1>Ch4 并发类：数据竞争与死锁</h1>
           <div class="meta">
-<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>3</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -306,254 +308,24 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>HFT 关联</h2>
-<p>精读。strace 是「不碰代码、不改二进制」就能看清程序行为的工具：</p>
 <ul>
-<li><strong>定位阻塞</strong>：行情/下单进程「卡住」时，strace 看它停在哪个 <code class="c">recv</code>/<code class="c">read</code>/<code class="c">futex</code>；</li>
-<li><strong>发现多余 syscall</strong>：热路径里本可避免的 <code class="c">gettimeofday</code>/<code class="c">read</code>/系统调用是延迟杀手；</li>
-<li><strong>审计网络调用</strong>：追踪 socket 建连、<code class="c">send</code>/<code class="c">recv</code> 的时序，还原下单链路。</li>
+<li><strong>偶发错单的头号嫌疑是竞态</strong>：下单结果偶发不对，先怀疑多线程共享订单状态没锁好，而不是算法逻辑错（见 1.1 分类学）；</li>
+<li><strong>死锁定位靠 <code class="c">thread apply all bt</code></strong>：交易系统卡死时，把全线程栈打出来，看谁卡在 <code class="c">pthread_mutex_lock</code> 就是死锁签名；</li>
+<li><strong>rr 复现偶发竞态</strong>：生产偶发的竞态，本地用 rr 录像回放固定时序，把「偶发」变成「可复现」（配合 1.3 最小复现）。</li>
 </ul>
       </section>
       <section class="section" id="s-01">
-        <div class="sec-head"><div class="sec-no">4.1</div><h2>strace 入门（基本用法 / 输出格式 / 参数与 errno 解读）</h2></div>
+        <div class="sec-head"><div class="sec-no">4.1</div><h2>多线程调试（thread / thread apply all bt / scheduler-locking / 死锁）</h2></div>
 <blockquote>
-<p>🔴 精读 · 系统调用追踪</p>
+<p>🔴 精读 · 交易系统调试的核心战场</p>
 </blockquote>
 <h2>本节要点</h2>
-<p>strace 是<strong>系统调用追踪器</strong>：它用 <code class="c">ptrace</code> 接管目标进程，把进程发出的<strong>每一个系统调用</strong>（名字、参数、返回值）打印出来。系统调用是用户态与内核的唯一接口——文件读写、网络收发、内存分配、进程管理全都走 syscall。所以 strace 输出是「程序到底让内核做了什么」的完整流水账，是定位「卡在哪、多做了什么、参数对不对」的第一工具。</p>
-<h2>基本用法</h2>
-<pre class="code" data-label="shell"><code class="c">strace ./prog              # 从头追踪一个程序
-strace -o trace.log ./prog # 输出写到文件（stderr 会混进程序自己的输出）
-strace -p 12345            # attach 到已运行进程
-strace -f ./prog           # 也追踪 fork/线程出来的子进程
-strace -c ./prog           # 只输出汇总统计，不逐条打印
-</code></pre>
-<pre class="code" data-label="shell"><code class="c"># 追踪 orderbook 启动过程
-strace ./orderbook 2&gt;&amp;1 | head -20
-execve(&quot;./orderbook&quot;, [&quot;./orderbook&quot;], 0x7fff...) = 0
-brk(NULL)                               = 0x555555559000
-mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f...
-access(&quot;/etc/ld.so.preload&quot;, R_OK)      = -1 ENOENT (No such file or directory)
-openat(AT_FDCWD, &quot;/etc/ld.so.cache&quot;, O_RDONLY|O_CLOEXEC) = 3
-...
-write(1, &quot;id=3 price=99.50 qty=-1\n&quot;, 22) = 22
-exit_group(0)                           = ?
-</code></pre>
-<p>一眼看到程序生命周期：<code class="c">execve</code> 加载自己 → <code class="c">brk</code>/<code class="c">mmap</code> 建堆和映射 → <code class="c">openat</code> 加载动态库 → 干活 → <code class="c">exit_group</code> 退出。</p>
-<h2>输出格式解读</h2>
-<p>每一行的结构是：</p>
-<pre class="code" data-label="code"><code class="c">syscall_name(参数...) = 返回值
-</code></pre>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>部分</th>
-<th>例子</th>
-<th>含义</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>syscall 名</td>
-<td><code class="c">openat</code></td>
-<td>系统调用名</td>
-</tr>
-<tr>
-<td>参数</td>
-<td><code class="c">(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY\|O_CLOEXEC)</code></td>
-<td>参数（已解码成可读形式）</td>
-</tr>
-<tr>
-<td>返回值</td>
-<td><code class="c">= 3</code></td>
-<td>返回值：fd、字节数、0 成功等</td>
-</tr>
-<tr>
-<td>errno</td>
-<td><code class="c">= -1 ENOENT (No such file or directory)</code></td>
-<td>失败时 <code class="c">-1</code> 后跟错误名 + 说明</td>
-</tr>
-</tbody>
-</table></div>
-<h3>返回值的含义（关键！）</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>返回值</th>
-<th>含义</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">= 3</code></td>
-<td>open 成功，返回 fd 3</td>
-</tr>
-<tr>
-<td><code class="c">= 0</code></td>
-<td>成功（如 close、成功退出）</td>
-</tr>
-<tr>
-<td><code class="c">= 22</code></td>
-<td>write 写了 22 字节</td>
-</tr>
-<tr>
-<td><code class="c">= -1 ENOENT (...)</code></td>
-<td><strong>失败</strong>，errno=ENOENT（文件不存在）</td>
-</tr>
-<tr>
-<td><code class="c">= -1 EAGAIN (...)</code></td>
-<td>失败，资源暂时不可用（非阻塞 IO 常见）</td>
-</tr>
-</tbody>
-</table></div>
-<blockquote>
-<p><strong>排查第一原则：grep 所有 <code class="c">= -1</code> 的行</strong>。失败的系统调用（尤其 <code class="c">ENOENT</code>、<code class="c">EACCES</code>、<code class="c">EAGAIN</code>、<code class="c">ECONNREFUSED</code>）往往是 bug 的直接证据。</p>
-</blockquote>
-<h3>参数解码</h3>
-<p>strace 会尽量把参数还原成人话：</p>
-<pre class="code" data-label="shell"><code class="c"># 字符串参数 → 加引号
-openat(AT_FDCWD, &quot;/etc/ld.so.cache&quot;, O_RDONLY|O_CLOEXEC) = 3
-
-# flags → 符号化（O_RDONLY 而不是 0）
-# fd → 数字，但 -y 可显示 fd 对应的路径
-strace -y -e trace=openat ./prog
-openat(AT_FDCWD, &quot;data.csv&quot;, O_RDONLY) = 3&lt;/dev/pts/0&gt;   # -y 显示 fd 3 指向终端
-</code></pre>
-<h2>常见 syscall 速览</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>类别</th>
-<th>syscall</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>进程</td>
-<td><code class="c">execve</code> / <code class="c">fork</code> / <code class="c">clone</code> / <code class="c">exit_group</code></td>
-<td>加载 / 创建 / 退出</td>
-</tr>
-<tr>
-<td>内存</td>
-<td><code class="c">brk</code> / <code class="c">mmap</code> / <code class="c">munmap</code> / <code class="c">mprotect</code></td>
-<td>堆与映射（malloc 底层）</td>
-</tr>
-<tr>
-<td>文件</td>
-<td><code class="c">openat</code> / <code class="c">read</code> / <code class="c">write</code> / <code class="c">close</code> / <code class="c">lseek</code> / <code class="c">stat</code></td>
-<td>文件 IO</td>
-</tr>
-<tr>
-<td>网络</td>
-<td><code class="c">socket</code> / <code class="c">connect</code> / <code class="c">sendto</code> / <code class="c">recvfrom</code> / <code class="c">accept</code></td>
-<td>网络</td>
-</tr>
-<tr>
-<td>同步</td>
-<td><code class="c">futex</code> / <code class="c">epoll_wait</code> / <code class="c">poll</code></td>
-<td>锁 / 事件等待</td>
-</tr>
-<tr>
-<td>时间</td>
-<td><code class="c">clock_gettime</code> / <code class="c">nanosleep</code></td>
-<td>计时 / 睡眠</td>
-</tr>
-</tbody>
-</table></div>
-<h2>时间戳：给每行 syscall 打时间</h2>
-<pre class="code" data-label="shell"><code class="c">strace -t ./prog      # 时:分:秒
-# 17:30:01 write(1, &quot;id=3...&quot;, 22) = 22
-
-strace -tt ./prog     # 加微秒
-# 17:30:01.123456 write(1, &quot;id=3...&quot;, 22) = 22
-
-strace -ttt ./prog    # unix 时间戳 + 微秒（精确、可机器处理）
-# 1725358201.123456 write(1, &quot;id=3...&quot;, 22) = 22
-</code></pre>
-<blockquote>
-<p>配合 4.2 的 <code class="c">-T</code>（每个 syscall 的耗时），时间戳能还原「哪个 syscall 之间卡了多久」。</p>
-</blockquote>
-<h2>一个完整的入门示例：追踪文件读取</h2>
-<pre class="code" data-label="C"><code class="c">// readfile.c —— 读一个文件并打印
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-int main(int argc, char **argv) {
-    FILE *f = fopen(argv[1], &quot;r&quot;);
-    if (!f) { perror(&quot;fopen&quot;); exit(1); }
-    char buf[128];
-    while (fgets(buf, sizeof(buf), f))
-        fputs(buf, stdout);
-    fclose(f);
-    return 0;
-}
-</code></pre>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -o readfile readfile.c
-echo hello &gt; /tmp/a.txt
-strace ./readfile /tmp/a.txt 2&gt;&amp;1 | tail -12
-openat(AT_FDCWD, &quot;/tmp/a.txt&quot;, O_RDONLY) = 3      # fopen → openat
-fstat(3, {st_mode=S_IFREG|0644, st_size=6, ...}) = 0
-read(3, &quot;hello\n&quot;, 4096)                     = 6   # fgets → read，读了 6 字节
-write(1, &quot;hello\n&quot;, 6)                       = 6   # fputs → write 到 stdout
-read(3, &quot;&quot;, 4096)                            = 0   # 读到 EOF
-close(3)                                     = 0
-exit_group(0)                                 = ?
-</code></pre>
-<p>关键洞察：<strong>C 的 <code class="c">fopen</code>/<code class="c">fgets</code> 都是库函数，底层要落成 <code class="c">openat</code>/<code class="c">read</code>/<code class="c">write</code> 这些 syscall</strong>。strace 让你看到库函数背后真正的内核交互——这是理解「用户态 API vs 系统调用」的绝佳视角（也是 TLPI 反复强调的分层）。</p>
-<h2>HFT 关联</h2>
-<ol>
-<li><strong>启动自检</strong>：新进程上线前 <code class="c">strace</code> 一遍，确认它打开的文件、绑定的端口、读的配置都对，<code class="c">= -1</code> 行全扫一遍，能提前暴露权限/路径/配置问题。</li>
-<li><strong>「卡住」第一刀</strong>：进程不动了，<code class="c">strace -p &lt;PID&gt;</code> 看它最后停在哪个 <code class="c">recv</code>/<code class="c">read</code>/<code class="c">futex</code>，比 gdb 更轻、无需符号。</li>
-<li><strong><code class="c">= -1 EAGAIN</code> 语义</strong>：非阻塞 socket 里 <code class="c">EAGAIN</code> 是「暂时没数据」的正常信号，不是错误；但 <code class="c">ECONNREFUSED</code>/<code class="c">ETIMEDOUT</code> 是真故障——能区分这两类是读 strace 的基本功。</li>
-</ol>
-<hr />
-<details>
-<summary>自测题（点击展开）</summary>
-<p><strong>Q1:</strong> strace 追踪的是「系统调用」还是「库函数」？<code class="c">fopen</code> 会出现在 strace 输出里吗？</p>
-<blockquote>
-<p>strace 追踪<strong>系统调用</strong>（syscall），不是库函数。<code class="c">fopen</code> 是 glibc 库函数，不会直接出现；strace 里看到的是它底层的 <code class="c">openat</code>（以及可能的 <code class="c">fstat</code> 等）。同理 <code class="c">fgets</code>→<code class="c">read</code>、<code class="c">malloc</code>→<code class="c">brk</code>/<code class="c">mmap</code>。库函数要用 ltrace 追（见 4.3）。</p>
-</blockquote>
-<p><strong>Q2:</strong> strace 输出 <code class="c">= -1 ENOENT (No such file or directory)</code> 是什么意思？</p>
-<blockquote>
-<p>系统调用<strong>失败</strong>了：返回值 -1，<code class="c">errno</code> 是 <code class="c">ENOENT</code>，即「文件或目录不存在」。排查时 grep 所有 <code class="c">= -1</code> 行，这类失败往往是 bug 或配置错误的直接证据。</p>
-</blockquote>
-<p><strong>Q3:</strong> 为什么 strace 能把参数还原成 <code class="c">O_RDONLY</code>、<code class="c">"/etc/ld.so.cache"</code> 这样的可读形式？</p>
-<blockquote>
-<p>因为 strace 内置了每个 syscall 的<strong>参数解码器</strong>：知道 <code class="c">openat</code> 第二参数字符串、第三参数是 flags 位掩码（能翻译成 <code class="c">O_RDONLY|O_CLOEXEC</code>），知道 fd 数字可配合 <code class="c">-y</code> 查 <code class="c">/proc/&lt;pid&gt;/fd</code> 还原路径。这些解码规则是 strace 按 syscall 语义硬编码的。</p>
-</blockquote>
-<p><strong>Q4:</strong> <code class="c">read(3, "hello\n", 4096) = 6</code> 里，<code class="c">4096</code> 和 <code class="c">6</code> 分别是什么？为什么不一样？</p>
-<blockquote>
-<p><code class="c">4096</code> 是<strong>请求读的缓冲区大小</strong>（第三个参数），<code class="c">6</code> 是<strong>实际读到的字节数</strong>（返回值）。文件只有 6 字节，所以返回 6，没填满 4096。<code class="c">read</code> 返回值 ≠ 请求值 是常态（尤其管道/socket），读 strace 要分清这两个数字。</p>
-</blockquote>
-<p><strong>Q5:</strong> 进程「卡住不动」，用 strace 看最后一行是 <code class="c">recvfrom(5,</code>，能得出什么结论？</p>
-<blockquote>
-<p>说明进程阻塞在<strong>等 socket fd 5 收数据</strong>——要么对端没发数据，要么网络断了但 TCP 没感知。这是「等 IO」而非「死循环/死锁」（死循环会看到大量重复 syscall，死锁会看到 <code class="c">futex</code> 等待）。strace 的最后一行往往就是卡住的位置。</p>
-</blockquote>
-</details>
-<h2>交叉引用</h2>
-<ul>
-<li><a href="#s-02">4.2 strace 实战分析</a></li>
-<li><a href="#s-03">4.3 ltrace 库调用追踪</a></li>
-<li><a href="chapter-04.html#s-02">3.2 加载 core 回溯</a></li>
-<li><a href="#intro">03.6 模块导读</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-02">
-        <div class="sec-head"><div class="sec-no">4.2</div><h2>strace 实战分析（-c 统计 / -f 子进程 / -p attach / 阻塞与多余 syscall 定位）</h2></div>
-<blockquote>
-<p>🔴 精读 · 从「流水账」到「结论」</p>
-</blockquote>
-<h2>本节要点</h2>
-<p>裸的 strace 输出是海量流水账，实战要靠一组参数把「噪声」压下去、把「信号」提出来：<code class="c">-c</code> 统计调用频次与耗时、<code class="c">-e</code> 过滤只关心某类调用、<code class="c">-f</code>/<code class="c">-p</code> 覆盖子进程与运行中进程、<code class="c">-T</code>/<code class="c">-ttt</code> 拿到精确耗时。本节讲清这些参数，并用两个实战场景——「进程卡住」和「热路径多余 syscall」——演示怎么从输出得出结论。</p>
-<h2>-c：先看统计，别陷进流水账</h2>
-<p><code class="c">-c</code> 汇总所有 syscall 的<strong>调用次数、失败次数、总耗时、占比</strong>，是「程序时间都花在哪」的第一眼：</p>
-<pre class="code" data-label="shell"><code class="c">strace -c ./orderbook 2&gt;&amp;1
-% time     seconds  usecs/call     calls    errors syscall
------- ----------- ----------- --------- --------- ----------------
- 99.98    0.000234         234         1           write
-  0.02    0.000000           0         1           execve
-  0.00    0.000000           0         1           exit_group
------- ----------- ----------- --------- --------- ----------------
-100.00    0.000234                     3                     total
+<p>单线程程序「run 到断点 → 单步 → 看变量」就够了；多线程程序却有三个新难题：① gdb 默认只盯着<strong>一个线程</strong>，其他线程在干嘛不知道；② 断点命中的线程不确定；③ 数据竞争/死锁这类 bug 只在多线程交错时才浮现，单步一个线程往往复现不了。本节讲清 gdb 的多线程命令族，并用一个「无锁共享订单簿」的竞争示例 + 一个死锁示例，演示怎么定位。</p>
+<h2>先看清：gdb 眼中的线程</h2>
+<pre class="code" data-label="gdb"><code class="c">(gdb) info threads
+  Id   Target Id                                  Frame
+* 1    Thread 0x7ffff7dca740 (LWP 12345) &quot;orderbook_mt&quot;  producer (...) at orderbook_mt.c:16
+  2    Thread 0x7ffff75c9700 (LWP 12346) &quot;orderbook_mt&quot;  consumer (...) at orderbook_mt.c:24
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
@@ -564,403 +336,409 @@ exit_group(0)                                 = ?
 </thead>
 <tbody>
 <tr>
-<td><code class="c">% time</code></td>
-<td>该 syscall 占总耗时比例（定位耗时大户）</td>
+<td><code class="c">Id</code></td>
+<td>gdb 内部线程号（<code class="c">thread N</code> 用这个）</td>
 </tr>
 <tr>
-<td><code class="c">usecs/call</code></td>
-<td>单次平均耗时（微秒）</td>
+<td><code class="c">Target Id</code> / <code class="c">LWP</code></td>
+<td>内核线程号（light-weight process，<code class="c">/proc/&lt;pid&gt;/task/&lt;tid&gt;</code> 里的 TID）</td>
 </tr>
 <tr>
-<td><code class="c">calls</code></td>
-<td>调用次数</td>
+<td><code class="c">*</code></td>
+<td>当前线程（gdb 命令默认作用于它）</td>
 </tr>
 <tr>
-<td><code class="c">errors</code></td>
-<td>失败次数</td>
+<td><code class="c">Frame</code></td>
+<td>该线程当前停在哪</td>
 </tr>
 </tbody>
 </table></div>
-<blockquote>
-<p>看到某个 syscall 的 <code class="c">calls</code> 异常高、或 <code class="c">usecs/call</code> 异常大，就顺着往下挖。<code class="c">-c</code> 是<strong>先宏观后微观</strong>的入口。</p>
-</blockquote>
-<h2>-e trace=：只关心某一类调用</h2>
-<pre class="code" data-label="shell"><code class="c">strace -e trace=file ./prog          # 只看文件相关（open/read/write/stat...）
-strace -e trace=network ./prog       # 只看网络（socket/connect/send/recv...）
-strace -e trace=process ./prog       # 只看进程（fork/exec/clone...）
-strace -e trace=read,write ./prog    # 只看指定 syscall
-strace -e trace=!futex ./prog        # 排除 futex（多线程程序巨吵）
-strace -e trace=openat,read,write -e read=3 ./prog   # 只读 fd 3 的 read
-</code></pre>
-<pre class="code" data-label="shell"><code class="c"># 追踪网络程序只看网络调用
-strace -e trace=network ./client
-socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) = 3
-connect(3, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr(&quot;127.0.0.1&quot;)}, 16) = 0
-sendto(3, &quot;hello&quot;, 5, 0, NULL, 0) = 5
-recvfrom(3, &quot;world&quot;, 4096, 0, NULL, NULL) = 5
-</code></pre>
-<h2>-f / -p：覆盖子进程与运行中进程</h2>
-<pre class="code" data-label="shell"><code class="c"># 多线程程序：clone 出来的线程也要追
-strace -f -e trace=futex ./orderbook_mt 2&gt;&amp;1 | head
-# 每个线程的 syscall 前有 [pid 12345] 前缀
-
-strace -f -p 12345       # attach 到运行中进程 + 追它 fork 的子进程
-</code></pre>
-<pre class="code" data-label="shell"><code class="c"># attach 到卡住的进程，看它卡在哪个 syscall
-strace -p $(pidof matching_engine)
-# strace: Process 12345 attached
-# futex(0x..., FUTEX_WAIT_PRIVATE, 2, NULL) = 0   ← 卡在等锁（futex）
-# ... 或
-# recvfrom(5, ...)                               ← 卡在等网络数据
+<pre class="code" data-label="gdb"><code class="c">(gdb) thread 2          # 切换到线程 2
+(gdb) bt                # 看线程 2 的调用栈（bt 默认只看当前线程！）
 </code></pre>
 <blockquote>
-<p>attach 的进程被 ptrace 接管时也会暂停，看完 <code class="c">Ctrl-C</code> 退出 strace 进程即恢复。attach 前先 <code class="c">ps -o wchan</code> 判断方向（见 2.2），再用 strace 精确定位卡在哪个 syscall、什么 fd。</p>
+<p>⚠️ 新手最容易踩的坑：<strong><code class="c">bt</code> 只显示当前线程的栈</strong>。切线程要 <code class="c">thread N</code> 再 <code class="c">bt</code>，或干脆用下面的一键全览。</p>
 </blockquote>
-<h2>-T / -ttt：拿到精确耗时</h2>
-<pre class="code" data-label="shell"><code class="c">strace -T -e trace=read,write ./prog
-# read(3, &quot;hello\n&quot;, 4096) = 6 &lt;0.000012&gt;       # &lt;耗时&gt; 12 微秒
-# write(1, &quot;hello\n&quot;, 6)   = 6 &lt;0.000045&gt;       # 45 微秒
+<h2>thread apply all bt：全线程栈全景（最常用）</h2>
+<p>一个命令打印所有线程的调用栈，是定位「某个线程卡住了 / 崩了」的第一动作：</p>
+<pre class="code" data-label="gdb"><code class="c">(gdb) thread apply all bt
 
-strace -ttt -T -e trace=recvfrom ./client
-# 1725358201.123456 recvfrom(5, &quot;world&quot;, 4096, 0, NULL, NULL) = 5 &lt;0.250123&gt;
-#        ↑ 绝对时间戳                    ↑ 这个 recvfrom 花了 250ms ← 延迟毛刺！
-</code></pre>
-<p><code class="c">-T</code> 直接标出每个 syscall 耗时，<code class="c">-ttt</code> 给出微秒级绝对时间。两者结合能还原「哪个 syscall 之间卡了 250ms」——这是 HFT 延迟溯源的原始素材。</p>
-<h2>实战一：定位「进程卡住」</h2>
-<pre class="code" data-label="shell"><code class="c"># 1. 先看进程在等什么
-ps -o pid,stat,wchan -L -p $(pidof server)
-# 12345 S  sk_wait_data     ← 卡在等 socket 数据
+Thread 2 (Thread 0x7ffff75c9700 (LWP 12346)):
+#0  0x00007ffff7e0b4a0 in __lll_lock_wait_private () ...
+#1  ... in pthread_mutex_lock ()
+#2  ... in consumer () at orderbook_mt.c:24
 
-# 2. strace attach 精确定位
-strace -p 12345 -e trace=recvfrom,read,poll,epoll_wait -T
-# recvfrom(5, ...) = -1 EAGAIN (Resource temporarily unavailable) &lt;0.000001&gt;
-# epoll_wait(3, ...) = 1 &lt;0.250000&gt;
-# recvfrom(5, ...)           ← 最后停在这，一直没返回
+Thread 1 (Thread 0x7ffff7dca740 (LWP 12345)):
+#0  producer () at orderbook_mt.c:16
+#1  ... in start_thread ()
 </code></pre>
-<p>结论：进程卡在 <code class="c">recvfrom(fd=5)</code> 等数据，对端一直不发 → 不是死锁，是网络/对端问题。若是 <code class="c">futex(...FUTEX_WAIT...)</code> 停在最后，则是锁等待（可能死锁）。</p>
-<h2>实战二：定位「热路径多余 syscall」</h2>
-<pre class="code" data-label="C"><code class="c">// tick.c —— 交易循环里每轮都调 clock_gettime（模拟&quot;误以为很便宜&quot;）
-#include &lt;time.h&gt;
-#include &lt;stdio.h&gt;
-int main(void) {
-    struct timespec ts;
-    for (int i = 0; i &lt; 1000; i++) {
-        clock_gettime(CLOCK_REALTIME, &amp;ts);   // 每轮都取时间
-        // ... 实际处理 ...
-    }
-    return 0;
-}
+<pre class="code" data-label="gdb"><code class="c">(gdb) thread apply 1 2 bt       # 只看 1、2 号线程
+(gdb) thread apply all bt full  # 全线程栈 + 每帧局部变量（信息最全）
 </code></pre>
-<pre class="code" data-label="shell"><code class="c">gcc -O2 -o tick tick.c
-strace -c ./tick 2&gt;&amp;1
-% time     seconds  usecs/call     calls    errors syscall
------- ----------- ----------- --------- --------- ----------------
- 94.12    0.004100           4      1000           clock_gettime   # ← 1000 次！
+<h2>多线程下的断点行为</h2>
+<p>断点命中时，<strong>所有线程都会停在断点处</strong>（默认 <code class="c">scheduler-locking off</code>），但 gdb 只切到<strong>触发断点的那个线程</strong>展示。要让断点只对特定线程生效：</p>
+<pre class="code" data-label="gdb"><code class="c">(gdb) break consumer thread 2   # 断点只在线程 2 命中时停
+(gdb) break orderbook_mt.c:24 thread 2
 </code></pre>
-<p><code class="c">-c</code> 立刻暴露：<code class="c">clock_gettime</code> 调了 1000 次，占总耗时 94%。但注意——<strong><code class="c">clock_gettime</code> 通常走 vDSO，不该是 syscall</strong>。若 strace 里出现了它，说明要么 vDSO 没生效，要么代码用了会陷入内核的时钟源。这就是「本可避免的 syscall」的典型。</p>
 <blockquote>
-<p>⚠️ <strong>strace 的输出本身可能误导你</strong>：vDSO 里的 <code class="c">clock_gettime</code>/<code class="c">gettimeofday</code> 正常情况下<strong>不进内核、不产生 syscall</strong>，strace 根本看不到。若 strace 显示了它，反而是线索——说明走了 syscall 路径，值得深挖（时钟源配置 / 是否禁用了 vDSO）。</p>
+<p>条件断点里引用线程号要小心：<code class="c">break ... if ...</code> 的表达式在当前线程上下文求值，多线程下用 <code class="c">$_thread</code>（gdb 内建变量，当前线程号）做过滤。</p>
 </blockquote>
-<h2>strace 的性能开销：为什么不能用于生产热路径</h2>
-<p>strace 用 ptrace，<strong>每个 syscall 都要两次上下文切换</strong>（进入时停一次、返回时停一次），对 syscall 密集的程序可放大 <strong>20×–100×</strong> 甚至更多：</p>
+<h2>scheduler-locking：单步时锁住其他线程</h2>
+<p>这是<strong>定位数据竞争的关键开关</strong>。默认 <code class="c">off</code> 时，你 <code class="c">step</code> 一步，其他线程也在跑——于是「复现竞态」时变量状态飘忽不定。锁定后，单步只走当前线程，其他线程冻结，竞态被「放大」成确定性：</p>
+<pre class="code" data-label="gdb"><code class="c">(gdb) set scheduler-locking step    # 单步/next 时锁住其他线程（最常用）
+(gdb) set scheduler-locking on      # 完全锁死其他线程（断点间也不跑）
+(gdb) set scheduler-locking off     # 默认，所有线程自由运行
+(gdb) set scheduler-locking replay  # rr replay 模式专用（见 4.2）
+(gdb) show scheduler-locking
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>场景</th>
-<th>影响</th>
+<th>取值</th>
+<th>行为</th>
+<th>适用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>syscall 稀疏的程序</td>
-<td>影响小，可接受</td>
+<td><code class="c">off</code></td>
+<td>其他线程自由运行</td>
+<td>默认、普通断点观察</td>
 </tr>
 <tr>
-<td>网络/文件密集程序</td>
-<td>明显变慢，时序被扰动</td>
+<td><code class="c">on</code></td>
+<td>其他线程全程冻结</td>
+<td>极端隔离，看单线程纯逻辑</td>
 </tr>
 <tr>
-<td>低延迟热路径</td>
-<td><strong>时序全乱</strong>，测出来的延迟不真实</td>
+<td><code class="c">step</code></td>
+<td>仅 <code class="c">step</code>/<code class="c">next</code>/<code class="c">finish</code> 期间锁其他线程</td>
+<td><strong>复现数据竞争</strong> ✅</td>
+</tr>
+<tr>
+<td><code class="c">replay</code></td>
+<td>rr 可逆调试专用</td>
+<td>配合 <code class="c">record</code> 使用</td>
 </tr>
 </tbody>
 </table></div>
-<p>所以 strace 是<strong>开发/诊断工具</strong>，不是生产观测工具。生产环境零开销的动态追踪要交给 eBPF（<code class="c">06.7</code> 模块），strace 定位「逻辑对不对」，eBPF 回答「生产环境到底多快」。</p>
+<h2>数据竞争实战：无锁共享订单簿</h2>
+<p>下面这个程序，<code class="c">producer</code> 线程不停往链表头插订单，<code class="c">consumer</code> 线程不停遍历链表——<code class="c">head</code> 和 <code class="c">o-&gt;next</code> <strong>没有任何锁保护</strong>。跑一会儿 <code class="c">consumer</code> 遍历到一半，<code class="c">producer</code> 把 <code class="c">head</code> 改了，<code class="c">p</code> 变成野指针 → 段错误：</p>
+<pre class="code" data-label="C"><code class="c">// orderbook_mt.c —— 多线程订单簿，埋数据竞争
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;pthread.h&gt;
+
+typedef struct order { int id; struct order *next; } order_t;
+order_t *head = NULL;              // 共享，无锁 ← 竞争源
+
+void *producer(void *arg) {
+    for (int i = 0; ; i++) {
+        order_t *o = malloc(sizeof(order_t));
+        o-&gt;id = i;
+        o-&gt;next = head;            // 竞争点 1
+        head = o;                  // 竞争点 2
+    }
+    return NULL;
+}
+void *consumer(void *arg) {
+    for (;;)
+        for (order_t *p = head; p; p = p-&gt;next)  // 竞争点 3：遍历时 head 被改
+            if (p-&gt;id &lt; 0) printf(&quot;corrupt!\n&quot;);
+    return NULL;
+}
+int main(void) {
+    pthread_t t1, t2;
+    pthread_create(&amp;t1, NULL, producer, NULL);
+    pthread_create(&amp;t2, NULL, consumer, NULL);
+    pthread_join(t1, NULL); pthread_join(t2, NULL);
+    return 0;
+}
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -pthread -o orderbook_mt orderbook_mt.c
+./orderbook_mt          # 跑几秒后
+# Segmentation fault (core dumped)
+</code></pre>
+<pre class="code" data-label="gdb"><code class="c">gdb ./orderbook_mt core
+(gdb) thread apply all bt
+Thread 2 (... LWP ...):
+#0  consumer (...) at orderbook_mt.c:24     # ← 崩溃线程是 consumer
+#1  ... in start_thread ()
+Thread 1 (... LWP ...):
+#0  producer (...) at orderbook_mt.c:16     # ← producer 还在拼命插单
+(gdb) thread 2
+(gdb) frame 0
+(gdb) print p
+$1 = (order_t *) 0x7ffff0001234            # ← p 是野指针，指向已 free 或乱码
+(gdb) x/2gx p
+0x7ffff0001234: 0x0000000000000000 0x0000000000000000   # 内容已被破坏
+</code></pre>
+<p>结论一目了然：<code class="c">consumer</code> 在第 24 行遍历时，<code class="c">p</code> 已被 <code class="c">producer</code> 并发改坏。修复方向 = 给链表加锁（<code class="c">pthread_mutex</code>）或改无锁结构（RCU / 不可变节点），不是 gdb 的锅。</p>
+<h2>死锁定位：两个线程卡在各自的锁上</h2>
+<p>死锁是另一种高频多线程 bug——程序不崩，但<strong>所有线程都不动了</strong>。典型场景：线程 A 先拿锁 1 再拿锁 2，线程 B 先拿锁 2 再拿锁 1，锁序相反 → 互相等待：</p>
+<pre class="code" data-label="gdb"><code class="c">(gdb) thread apply all bt
+
+Thread 2 (Thread ...):
+#0  __lll_lock_wait_private () from libc
+#1  pthread_mutex_lock ()
+#2  worker_B () at deadlock.c:42        # ← B 卡在拿 lock2
+#3  start_thread ()
+
+Thread 1 (Thread ...):
+#0  __lll_lock_wait_private () from libc
+#1  pthread_mutex_lock ()
+#2  worker_A () at deadlock.c:18        # ← A 卡在拿 lock1
+#3  start_thread ()
+</code></pre>
+<p>两个线程<strong>都卡在 <code class="c">pthread_mutex_lock</code></strong>，谁都不往前走 → 死锁实锤。进一步看锁序：</p>
+<pre class="code" data-label="gdb"><code class="c">(gdb) thread 1
+(gdb) frame 2
+(gdb) info locals
+lock = &amp;lock1      # ← A 在等 lock1，但它其实已经持有了 lock2
+(gdb) thread 2
+(gdb) frame 2
+(gdb) info locals
+lock = &amp;lock2      # ← B 在等 lock2，但它已经持有了 lock1
+</code></pre>
+<p>锁序相反（A: lock2→lock1，B: lock1→lock2）就是根因。修法：统一加锁顺序（都先 lock1 再 lock2），或用 <code class="c">pthread_mutex_trylock</code> + 超时回退。</p>
 <h2>HFT 关联</h2>
 <ol>
-<li><strong><code class="c">-c</code> 抓「多余 syscall」</strong>：热路径里每个 syscall 都是延迟成本，<code class="c">-c</code> 一眼看出哪个 syscall 被过度调用（<code class="c">gettimeofday</code>、不必要的 <code class="c">read</code>、频繁 <code class="c">futex</code>），针对性优化。</li>
-<li><strong><code class="c">-ttt -T</code> 延迟溯源</strong>：微秒时间戳 + 单 syscall 耗时，还原「哪一步卡了 250ms」，是延迟毛刺定位的原始数据。</li>
-<li><strong>attach 定位卡死</strong>：生产进程卡住先 <code class="c">strace -p</code>（轻、无需符号），区分「等锁 futex」「等 IO recvfrom」「忙循环」三类，再决定上不上 gdb。</li>
-<li><strong>⚠️ 别在热路径跑 strace 测延迟</strong>：ptrace 开销会污染时序，测出的数字不真实；生产观测用 eBPF（06.7）。</li>
+<li><strong>崩溃/卡死第一命令 = <code class="c">thread apply all bt</code></strong>：交易进程几十个线程，一眼看出「崩的是行情线程还是下单线程」「卡住的是网络线程还是风控线程」，比逐个 <code class="c">thread N; bt</code> 高效一个量级。</li>
+<li><strong><code class="c">scheduler-locking step</code> 复现竞态</strong>：偶发错单往往是竞态，单步时锁住其他线程，把「千次一现」的竞争变成「每次必现」的确定性复现，是定位的胜负手。</li>
+<li><strong>死锁 = 全线程卡 <code class="c">mutex_lock</code></strong>：<code class="c">thread apply all bt</code> 里所有线程栈顶都是 <code class="c">pthread_mutex_lock</code>，立刻判定死锁，再逐帧 <code class="c">info locals</code> 看各自持有的锁，还原锁序。</li>
+<li><strong>thread-specific breakpoint 盯单线程</strong>：只给「下单线程」打断点，不被行情线程的海量命中淹没。</li>
 </ol>
 <hr />
 <details>
 <summary>自测题（点击展开）</summary>
-<p><strong>Q1:</strong> <code class="c">-c</code> 统计里 <code class="c">% time</code> 和 <code class="c">calls</code> 分别帮你发现什么问题？</p>
+<p><strong>Q1:</strong> 为什么 <code class="c">bt</code> 在多线程程序里「看错了栈」？正确姿势是什么？</p>
 <blockquote>
-<p><code class="c">% time</code> 高 = 该 syscall 是<strong>耗时大户</strong>（可能卡在这里，如网络 read）；<code class="c">calls</code> 异常高 = 该 syscall 被<strong>过度调用</strong>（本可避免，如每轮都 gettimeofday）。前者指向「慢在哪」，后者指向「多做了什么」，两个维度不同。</p>
+<p><code class="c">bt</code> 只打印<strong>当前线程</strong>（<code class="c">info threads</code> 里带 <code class="c">*</code> 的那个）的调用栈。多线程下你以为在看崩溃线程，其实看的可能是别的线程。正确姿势：要么 <code class="c">thread N</code> 切到目标线程再 <code class="c">bt</code>，要么直接 <code class="c">thread apply all bt</code> 一次看全。</p>
 </blockquote>
-<p><strong>Q2:</strong> 多线程程序直接 <code class="c">strace ./prog</code> 能看到所有线程的 syscall 吗？</p>
+<p><strong>Q2:</strong> <code class="c">scheduler-locking</code> 的 <code class="c">on</code> 和 <code class="c">step</code> 区别？定位竞态用哪个？</p>
 <blockquote>
-<p>不能。默认 strace 只追<strong>主线程</strong>。要看所有线程，必须加 <code class="c">-f</code>（追踪 clone 出来的线程），输出里每条 syscall 前会带 <code class="c">[pid &lt;tid&gt;]</code> 前缀区分是哪个线程。</p>
+<p><code class="c">on</code> = 其他线程全程冻结（断点之间也不跑）；<code class="c">step</code> = 只在 <code class="c">step</code>/<code class="c">next</code>/<code class="c">finish</code> 单步期间冻结，断点间仍自由跑。定位竞态用 <code class="c">step</code>——它让你单步时「其他线程不捣乱」，又保留断点间正常的并发调度，最接近真实交错。</p>
 </blockquote>
-<p><strong>Q3:</strong> 进程卡住，<code class="c">strace -p</code> 最后一行是 <code class="c">futex(...FUTEX_WAIT...)</code> vs <code class="c">recvfrom(5, ...)</code>，结论有何不同？</p>
+<p><strong>Q3:</strong> 断点默认行为在多线程下有什么「坑」？</p>
 <blockquote>
-<p><code class="c">futex(FUTEX_WAIT)</code> 表示在<strong>等锁</strong>——可能是死锁或长时间持锁；<code class="c">recvfrom</code> 表示在<strong>等网络数据</strong>——对端没发/网络问题。两者分别是「同步问题」和「IO 问题」，排查方向完全不同（前者查锁序，后者查对端与网络）。</p>
+<p>任何一个线程跑到断点地址都会触发暂停，且<strong>所有线程</strong>都会停在断点处，但 gdb 只切到触发它的线程。调试时你不知道「这次是谁触发的」。要定向，用 <code class="c">break ... thread N</code> 把断点绑定到特定线程，或条件断点里用 <code class="c">$_thread</code> 过滤。</p>
 </blockquote>
-<p><strong>Q4:</strong> 为什么说 strace 不能用来测生产环境的真实延迟？</p>
+<p><strong>Q4:</strong> 死锁程序为什么 <code class="c">thread apply all bt</code> 一看就知道？</p>
 <blockquote>
-<p>strace 用 ptrace 拦截，每个 syscall 要两次上下文切换（进、出），对 syscall 密集程序放大 20–100 倍，且会<strong>扰动时序</strong>（本来并发的被串行化）。用它测延迟，数字被 ptrace 开销污染，不真实。生产零开销观测要用 eBPF。</p>
+<p>死锁的签名是「所有（或一组）线程的栈顶都卡在 <code class="c">pthread_mutex_lock</code>/<code class="c">__lll_lock_wait_private</code>，且谁的栈都不再前进」。对比正常阻塞（如 <code class="c">recv</code> 等网络数据）栈顶是别的 syscall，一眼能区分「死锁」还是「在等 IO」。</p>
 </blockquote>
-<p><strong>Q5:</strong> strace 里居然出现了 <code class="c">clock_gettime</code> syscall，为什么这本身是个「异常信号」？</p>
+<p><strong>Q5:</strong> 段错误时 <code class="c">thread apply all bt</code> 里 <code class="c">#0</code> 帧是崩溃线程，但根因可能在别的线程，为什么？</p>
 <blockquote>
-<p>因为 <code class="c">clock_gettime</code>/<code class="c">gettimeofday</code> 正常情况下走 <strong>vDSO</strong>（内核映射到用户态的只读代码页），不陷入内核、不产生 syscall。strace 能看到它，说明走了真正的 syscall 路径——要么 vDSO 被禁用/未生效，要么用了特殊时钟源。这是个值得深挖的性能线索，而非正常现象。</p>
+<p>崩溃线程只是「踩到了坏数据」的受害者，坏数据往往是<strong>另一个线程</strong>在并发写入时留下的（如本例 producer 改坏 head，consumer 崩）。所以定位多线程段错误不能只看 <code class="c">#0</code>，要结合其他线程的栈判断「谁在并发改这块内存」。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>
 <ul>
-<li><a href="#s-01">4.1 strace 入门</a></li>
-<li><a href="#s-03">4.3 ltrace 库调用追踪</a></li>
-<li><a href="chapter-04.html#s-02">2.2 attach 运行中进程</a></li>
+<li><a href="chapter-05.html#s-04">5.4 attach 运行中进程</a></li>
+<li><a href="chapter-05.html#s-02">4.2 rr 可逆调试</a></li>
+<li><a href="chapter-05.html#s-03">2.3 栈帧与回溯</a></li>
 <li><a href="#intro">03.6 模块导读</a></li>
 </ul>
       </section>
-      <section class="section" id="s-03">
-        <div class="sec-head"><div class="sec-no">4.3</div><h2>ltrace 库调用追踪（与 strace 对比 / malloc-free 追踪）</h2></div>
+      <section class="section" id="s-02">
+        <div class="sec-head"><div class="sec-no">4.2</div><h2>rr 可逆调试（record / replay / reverse-*）</h2></div>
 <blockquote>
-<p>🔴 精读 · 从「系统调用」往上一层，看「库函数」</p>
+<p>🔴 精读 · 偶发崩溃的「倒带重放」</p>
 </blockquote>
 <h2>本节要点</h2>
-<p>strace 看的是<strong>系统调用</strong>（进程让内核做什么），ltrace 看的是<strong>库函数调用</strong>（进程调了动态库里的哪个函数、传了什么参数）。两者是同一件事的两个层次：<code class="c">fopen</code> 是库函数，strace 里看不到，ltrace 里能看到；<code class="c">fopen</code> 底层落成的 <code class="c">openat</code> syscall，ltrace 里看不到，strace 里能看到。本节讲清 ltrace 的定位、与 strace 的对比，以及最实用的场景——追踪 <code class="c">malloc</code>/<code class="c">free</code> 定位内存泄漏。</p>
-<h2>ltrace 是什么</h2>
-<p>ltrace 用 <code class="c">ptrace</code> 接管进程，但拦截的是<strong>动态链接函数的调用</strong>（通过 PLT 跳转表），把「函数名 + 参数 + 返回值」打印出来。它能看到：</p>
+<p>最头疼的 bug 是<strong>偶发</strong>的：跑一百次崩一次，你设断点它就崩得恰到好处地「不崩了」。传统 gdb 只能<strong>向前</strong>走，错过了就得重跑。rr（Record &amp; Replay，Mozilla 出品）把一次运行<strong>完整录下来</strong>，之后可以像看录像一样<strong>倒退</strong>——<code class="c">reverse-continue</code> 从崩溃点倒回根因，<code class="c">reverse-next</code> 反向单步，一次都不用重跑。</p>
+<h2>可逆调试解决什么</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>能追到的</th>
-<th>例子</th>
+<th>传统 gdb</th>
+<th>rr</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>glibc 标准库函数</td>
-<td><code class="c">malloc</code>、<code class="c">free</code>、<code class="c">strcpy</code>、<code class="c">memcpy</code>、<code class="c">printf</code></td>
+<td>只能前进，错过现场要重跑</td>
+<td>录一次，前进后退随意</td>
 </tr>
 <tr>
-<td>其他动态库函数</td>
-<td><code class="c">pthread_create</code>（libpthread）、<code class="c">dlopen</code>（libdl）</td>
+<td>偶发 bug 复现靠运气</td>
+<td>录到的那一次永远可重放</td>
 </tr>
 <tr>
-<td>库函数返回值</td>
-<td><code class="c">malloc(1024) = 0x555...</code></td>
+<td>竞态「一调试就消失」（海森堡 bug）</td>
+<td>重放确定性，竞态被钉死</td>
+</tr>
+<tr>
+<td>崩溃后只能看 core 快照</td>
+<td>崩溃前后完整执行流都在</td>
 </tr>
 </tbody>
 </table></div>
-<h2>ltrace vs strace：一张表说清</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>维度</th>
-<th>strace</th>
-<th>ltrace</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>追踪对象</td>
-<td><strong>系统调用</strong>（syscall）</td>
-<td><strong>库函数调用</strong>（library call）</td>
-</tr>
-<tr>
-<td><code class="c">fopen</code> 能追到吗</td>
-<td>❌（只看到 <code class="c">openat</code>）</td>
-<td>✅（看到 <code class="c">fopen</code>）</td>
-</tr>
-<tr>
-<td><code class="c">malloc</code> 能追到吗</td>
-<td>❌（只看到 <code class="c">brk</code>/<code class="c">mmap</code>）</td>
-<td>✅（看到 <code class="c">malloc</code>/<code class="c">free</code>）</td>
-</tr>
-<tr>
-<td>依赖</td>
-<td>内核 syscall 表</td>
-<td>动态链接 PLT/GOT</td>
-</tr>
-<tr>
-<td>静态链接程序</td>
-<td>✅ 照常工作</td>
-<td>❌ 追不到（无动态链接）</td>
-</tr>
-<tr>
-<td>适用</td>
-<td>看程序与内核的交互</td>
-<td>看程序与库的交互、内存分配</td>
-</tr>
-</tbody>
-</table></div>
+<p>核心思想一句话：<strong>程序的非确定性（syscall 结果、信号时机、线程交错、时钟）是 bug 复现难的根源；rr 在 record 阶段把这些全部记下来，replay 阶段注入同样值，使重放完全确定，因此时间可以倒流。</strong></p>
+<h2>安装与基本流程</h2>
+<pre class="code" data-label="shell"><code class="c"># 安装
+apt install rr          # Debian/Ubuntu
+dnf install rr          # Fedora
+
+# 基本流程：record 录 → replay 放
+rr record ./orderbook           # 录一次运行（程序正常跑完或崩溃）
+# rr: Saving execution to trace directory ...
+
+rr replay                       # 重放，进入 gdb 界面
+</code></pre>
+<pre class="code" data-label="gdb"><code class="c"># rr replay 打开的就是一个 gdb，只是多了反向命令
+(gdb) continue                  # 正常跑到崩溃
+Program received signal SIGSEGV, Segmentation fault.
+
+(gdb) reverse-continue          # 倒回！回到崩溃前的上一个事件
+(gdb) reverse-next              # 反向单步（往回退一行）
+(gdb) reverse-step              # 反向 step（往回退，含进入函数）
+(gdb) reverse-finish            # 反向 finish（退回调用者）
+</code></pre>
+<h2>实战：orderbook 段错误倒带</h2>
+<p>用 2.1 的 <code class="c">orderbook.c</code>（<code class="c">*p = 42</code> 段错误）。传统做法是设断点逐步逼近；rr 直接从崩溃点倒回去：</p>
+<pre class="code" data-label="shell"><code class="c">rr record ./orderbook
+# id=3 price=99.50 qty=-1
+# ...
+# Segmentation fault (core dumped)
+# rr: Saving execution to trace directory ...
+
+rr replay
+(rr) continue
+Program received signal SIGSEGV, Segmentation fault.
+0x00005555555551a7 in main () at orderbook.c:28
+28          *p = 42;
+
+(rr) reverse-continue          # 倒回上一个执行事件
+# 程序停在崩溃前，比如停在 print_orders 返回处
+
+(rr) reverse-next              # 逐行往回退
+27          int *p = NULL;     # ← 退到这里，看到 p 是怎么变成 NULL 的
+
+(rr) print p
+$1 = (int *) 0x0               # 坐实：p 从未被赋值，一直是 NULL
+</code></pre>
+<p>更进一步——反向观察一个变量的值变化：</p>
+<pre class="code" data-label="gdb"><code class="c">(rr) watch -l p                # 观察 p（-l = 硬件观察点）
+(rr) reverse-continue          # 反向跑到 p 上一次被写的地方
+# 停在 p 被改成 NULL 的那一行，直接看到「谁、哪一行」把 p 写成了 NULL
+</code></pre>
 <blockquote>
-<p><strong>一句话</strong>：<code class="c">fopen</code> 是库函数，<code class="c">openat</code> 是 syscall；库函数是 syscall 的「封装层」。strace 看底层内核交互，ltrace 看上层库调用。两个工具<strong>互补</strong>，常常配合使用。</p>
+<p><code class="c">watch</code> + <code class="c">reverse-continue</code> 是 rr 的杀手锏组合：正向 watch 找「谁改坏了我」，反向 watch 找「我是什么时候被改坏的」，两条路都能走到根因。</p>
 </blockquote>
-<pre class="code" data-label="shell"><code class="c"># 同一个 readfile.c（见 4.1），ltrace 看到的是库函数
-ltrace ./readfile /tmp/a.txt
-fopen(&quot;/tmp/a.txt&quot;, &quot;r&quot;)            = 0x5555555592a0
-fgets(0x7fff..., 128, 0x5555555592a0) = 0x7fff...
-fputs(&quot;hello\n&quot;, 0x7f...)           = 1
-fclose(0x5555555592a0)              = 0
-# ↑ 全是库函数；对比 4.1 里 strace 看到的是 openat/read/write
-</code></pre>
-<h2>基本用法</h2>
-<pre class="code" data-label="shell"><code class="c">ltrace ./prog              # 从头追踪库函数
-ltrace -c ./prog           # 只输出汇总统计
-ltrace -p 12345            # attach 到运行中进程
-ltrace -f ./prog           # 也追踪线程
-ltrace -e malloc+free ./prog   # 只看 malloc 和 free
-ltrace -o trace.log ./prog     # 输出到文件
-</code></pre>
-<p>参数与 strace 高度一致（<code class="c">-c</code> 统计、<code class="c">-e</code> 过滤、<code class="c">-f</code>、<code class="c">-p</code>、<code class="c">-o</code>），因为两者都是 ptrace 家族、共用同一套设计思路。</p>
-<h2>输出格式解读</h2>
-<pre class="code" data-label="code"><code class="c">函数名(参数...) = 返回值
-</code></pre>
+<h2>rr 的原理：捕获哪些非确定性</h2>
+<p>程序重放之所以能确定，是因为 rr 在 record 阶段把<strong>所有非确定性来源</strong>记录了下来：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>部分</th>
-<th>例子</th>
-<th>含义</th>
+<th>非确定性来源</th>
+<th>rr 怎么处理</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>函数名</td>
-<td><code class="c">malloc</code></td>
-<td>库函数名</td>
+<td><strong>syscall 结果</strong>（read 返回多少、select 返回什么）</td>
+<td>record 时 ptrace 接管，记下每个 syscall 的返回值/参数副作用；replay 时直接注入记录值，不再真读</td>
 </tr>
 <tr>
-<td>参数</td>
-<td><code class="c">(1024)</code></td>
-<td>参数（字符串加引号、结构体尽量解码）</td>
+<td><strong>信号递送时机</strong></td>
+<td>记下信号何时、发给谁；replay 在相同位置重放</td>
 </tr>
 <tr>
-<td>返回值</td>
-<td><code class="c">= 0x5555555592a0</code></td>
-<td>返回指针/整数</td>
+<td><strong>共享内存竞争</strong>（多线程）</td>
+<td>record 用固定调度顺序（round-robin），把线程交错也记录；replay 按同样顺序执行</td>
+</tr>
+<tr>
+<td><strong>时钟</strong>（<code class="c">gettimeofday</code>/<code class="c">clock_gettime</code>）</td>
+<td>记下返回值，replay 时返回同样时间</td>
+</tr>
+<tr>
+<td><strong><code class="c">rdtsc</code>/CPU 计数</strong></td>
+<td>record 时被捕获或让程序读到虚拟值</td>
+</tr>
+<tr>
+<td><strong>硬件中断</strong></td>
+<td>record 阶段通过 perf 事件 + ptrace 精确控制</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="shell"><code class="c">ltrace ./orderbook 2&gt;&amp;1 | head
-malloc(1024)                      = 0x5555555592a0
-memset(0x5555555592a0, 0, 1024)   = 0x5555555592a0
-strcpy(0x5555555592a0, &quot;order&quot;)   = 0x5555555592a0
-free(0x5555555592a0)              = &lt;void&gt;
-</code></pre>
-<p>指针返回值的意义：<code class="c">malloc</code> 返回的 <code class="c">0x555...</code> 是堆上分配的地址，配合 <code class="c">free</code> 的参数能<strong>配平</strong>——同一个指针先 <code class="c">malloc</code> 后 <code class="c">free</code>，没配平就是泄漏。</p>
-<h2>实战：用 ltrace 定位内存泄漏</h2>
-<pre class="code" data-label="C"><code class="c">// leak.c —— 每次循环 malloc 但不 free（模拟泄漏）
-#include &lt;stdlib.h&gt;
-#include &lt;string.h&gt;
-void handle_order(void) {
-    char *buf = malloc(1024);        // 分配
-    strcpy(buf, &quot;buy&quot;);
-    // 忘了 free(buf)  ← 泄漏点
-}
-int main(void) {
-    for (int i = 0; i &lt; 100; i++)
-        handle_order();
-    return 0;
-}
-</code></pre>
-<pre class="code" data-label="shell"><code class="c">gcc -g -O0 -o leak leak.c
-ltrace -c -e malloc+free ./leak
-% time     seconds  usecs/call     calls      function
------- ----------- ----------- --------- ---------------
- 100.00    0.000123         123       100      malloc
-   0.00    0.000000           0         0      free
------- ----------- ----------- --------- ---------------
-</code></pre>
-<p><strong><code class="c">malloc</code> 100 次、<code class="c">free</code> 0 次</strong> —— 泄漏实锤。这正是 ltrace 相对 strace 的杀手锏：strace 里 100 次 <code class="c">malloc</code> 会变成 <code class="c">brk</code>/<code class="c">mmap</code> 若干次（glibc 有自己的内存池，不是每次 malloc 都真去问内核要），<strong>层不对，看不出 100 vs 0 的配平关系</strong>。ltrace 在「库调用」这一层，正好看清 <code class="c">malloc</code>/<code class="c">free</code> 的配对。</p>
-<blockquote>
-<p>⚠️ 更强大的内存泄漏工具是 Ch5 的 <strong>valgrind</strong>（<code class="c">memcheck</code>），它不仅能定位「漏了」，还能定位「哪一行代码漏的」。ltrace 适合<strong>快速定性</strong>（有没有泄漏、量级多大），valgrind 适合<strong>精确归因</strong>（泄漏源在哪）。两者是「定性 → 定位」的接力。</p>
-</blockquote>
-<h2>ltrace 的局限与陷阱</h2>
+<p>record 的代价：<strong>性能下降约 1.2×–2×</strong>（主要是 syscall 都要过 ptrace），内存占用上升。但对「录一次、反复倒带」的调试模式完全可接受。</p>
+<h2>局限与陷阱</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>局限</th>
 <th>说明</th>
-<th>应对</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>追不到静态链接程序</td>
-<td>无 PLT/GOT，无法拦截</td>
-<td>换 strace，或重编为动态链接</td>
+<td>需要性能计数器</td>
+<td>依赖 perf 事件，某些<strong>云 VM/容器</strong>默认禁了 perf_event_open，会报错</td>
 </tr>
 <tr>
-<td>追不到内联函数</td>
-<td>编译器把函数体内联了，没有调用</td>
-<td><code class="c">-O0 -fno-inline</code> 重编</td>
+<td>不支持某些场景</td>
+<td>io_uring、部分 GPU/驱动相关 syscall 支持不全（随版本改善）</td>
 </tr>
 <tr>
-<td>追不到自己写的静态函数</td>
-<td>编译期绑定，不走 PLT</td>
-<td>无解（用 gdb 断点）</td>
+<td>record 不能跨机 replay</td>
+<td>trace 目录与 CPU 微架构相关，通常要同机重放</td>
 </tr>
 <tr>
-<td>参数解码不如 strace 全</td>
-<td>结构体/指针解码有限</td>
-<td>配合 gdb 看现场</td>
+<td>大程序 record 慢</td>
+<td>syscall 密集的程序（如高吞吐网络）record 开销可能 &gt;2×</td>
 </tr>
 <tr>
-<td>性能开销大</td>
-<td>每个库调用都要拦截</td>
-<td>不能生产热路径使用（同 strace）</td>
-</tr>
-<tr>
-<td>高版本 glibc 变体函数</td>
-<td><code class="c">malloc</code> 可能被优化成 <code class="c">__libc_malloc</code></td>
-<td>用 <code class="c">-e malloc</code> 前缀匹配</td>
+<td>不能改程序后 replay</td>
+<td>record 和 replay 必须是同一二进制（改了代码 trace 就废了）</td>
 </tr>
 </tbody>
 </table></div>
-<blockquote>
-<p>核心机制回顾：动态链接下，程序调用库函数是<strong>间接跳转</strong>——先跳到 PLT（Procedure Linkage Table）存根，存根再查 GOT（Global Offset Table）拿到真实地址跳过去。ltrace 在 PLT 这层设陷阱，所以能拦到「调用了哪个库函数」。这也解释了为什么静态链接（无 PLT）和编译期内联（无跳转）都追不到。</p>
-</blockquote>
+<pre class="code" data-label="shell"><code class="c"># 常见报错：perf 被禁
+rr record ./prog
+# rr: error: ... perf_event_open failed: Operation not permitted
+# 解决：echo -1 &gt; /proc/sys/kernel/perf_event_paranoid 或加 CAP_SYS_ADMIN
+</code></pre>
+<h2>rr 与 scheduler-locking 的配合</h2>
+<p>rr replay 时，<code class="c">scheduler-locking replay</code> 是专有模式——它让 gdb 在反向单步时也保持 rr 的确定性调度，避免重放时线程顺序漂移：</p>
+<pre class="code" data-label="gdb"><code class="c">(rr) set scheduler-locking replay
+</code></pre>
 <h2>HFT 关联</h2>
 <ol>
-<li><strong>内存泄漏快速定性</strong>：订单/行情进程长时间运行，<code class="c">ltrace -c -e malloc+free</code> 看 <code class="c">malloc</code> 与 <code class="c">free</code> 次数是否配平——不配平就是泄漏，比肉眼读代码快一个量级。</li>
-<li><strong>库调用链还原</strong>：追踪 <code class="c">fopen</code>/<code class="c">strcpy</code>/<code class="c">memcpy</code> 等库函数，定位「配置文件读错」「字符串越界拷贝」「缓冲区操作」在<strong>哪一层</strong>出问题——这些 strace 看不见（它只看 syscall）。</li>
-<li><strong>配合 strace 分层定位</strong>：先 ltrace 看「哪个库函数行为不对」，再 strace 看「它到底让内核做了什么」，一层层下钻，把「表象（库函数）→ 机制（syscall）」串起来。</li>
-<li><strong>⚠️ 别在热路径跑 ltrace</strong>：它比 strace 开销还大（每个库调用都拦），只能开发期定性，生产观测交给 valgrind（离线）或 eBPF（06.7，在线零开销）。</li>
+<li><strong>偶发错单/崩溃的终极解法</strong>：交易系统「偶尔崩一次、复现不了」最致命，rr 录到的那一次可无限重放、倒带，把偶发 bug 变成确定性可查。</li>
+<li><strong>海森堡竞态</strong>：加了调试输出/断点竞态就消失（时序被打乱），rr 的确定性重放让竞态「钉死」，<code class="c">reverse-continue</code> + <code class="c">watch</code> 直接追到写坏数据的源头。</li>
+<li><strong>低延迟敏感的 record 成本</strong>：syscall 密集的热路径 record 开销大，可只对<strong>可疑模块</strong>的复现程序（缩小复现范围）record，而非整个交易引擎。</li>
+<li><strong>回归测试的复现载体</strong>：把 rr trace 归档，崩溃场景可反复重放验证修复是否真正生效。</li>
 </ol>
 <hr />
 <details>
 <summary>自测题（点击展开）</summary>
-<p><strong>Q1:</strong> 同样跑 <code class="c">readfile.c</code>，strace 和 ltrace 分别看到什么？为什么？</p>
+<p><strong>Q1:</strong> rr 为什么能做到「时间倒流」，而普通 gdb 不行？</p>
 <blockquote>
-<p>strace 看到 <strong>syscall</strong>：<code class="c">openat</code>/<code class="c">read</code>/<code class="c">write</code>/<code class="c">close</code>；ltrace 看到<strong>库函数</strong>：<code class="c">fopen</code>/<code class="c">fgets</code>/<code class="c">fputs</code>/<code class="c">fclose</code>。因为 <code class="c">fopen</code> 是 glibc 库函数，它内部会去调用 <code class="c">openat</code> 等 syscall——ltrace 拦在库调用层，strace 拦在 syscall 层，所以看到的是同一件事的两个层次。</p>
+<p>普通 gdb 只记录断点处的状态，没有记录「执行路径上每个非确定性事件的取值」，所以无法倒推。rr 在 record 阶段用 ptrace 把 syscall 返回值、信号时机、线程调度顺序、时钟等<strong>全部非确定性来源</strong>记成 trace；replay 时注入同样的值，执行完全确定，于是可以从任意点反向推导。</p>
 </blockquote>
-<p><strong>Q2:</strong> 定位内存泄漏，为什么 ltrace 比 strace 更直接？</p>
+<p><strong>Q2:</strong> 「海森堡 bug」是什么？rr 怎么治它？</p>
 <blockquote>
-<p>因为 <code class="c">malloc</code> 是<strong>库函数</strong>，glibc 有自己的内存池：程序 100 次 <code class="c">malloc</code>，glibc 可能只向内核要一两次 <code class="c">brk</code>/<code class="c">mmap</code>。strace 看到的 <code class="c">brk</code>/<code class="c">mmap</code> 次数和 <code class="c">malloc</code> 次数<strong>对不上</strong>，无法判断泄漏。ltrace 直接拦 <code class="c">malloc</code>/<code class="c">free</code> 库调用，能精确看到「100 次 malloc、0 次 free」的配平关系，泄漏一目了然。</p>
+<p>海森堡 bug 指「一加调试/一打断点就消失」的 bug——因为调试改变了时序，掩盖了竞态。rr 治它的关键在于：record 阶段记录的是一次<strong>真实、无调试干扰</strong>的运行（开销虽在但调度逻辑不变），replay 用确定性调度重放，竞态被忠实还原且可反复观察。</p>
 </blockquote>
-<p><strong>Q3:</strong> 为什么 ltrace 追不到静态链接的程序，也追不到 <code class="c">-O2</code> 下内联的小函数？</p>
+<p><strong>Q3:</strong> <code class="c">watch</code> + <code class="c">reverse-continue</code> 组合为什么强大？</p>
 <blockquote>
-<p>ltrace 依赖<strong>动态链接的 PLT/GOT 间接跳转</strong>来拦截。静态链接把库代码直接编进可执行文件，没有 PLT 存根，无处下陷阱；<code class="c">-O2</code> 内联把函数体直接展开到调用点，根本没有「函数调用」这个动作，自然追不到。前者换 strace 或重编动态链接，后者用 <code class="c">-O0 -fno-inline</code> 重编。</p>
+<p>正向 <code class="c">watch</code> 回答「谁把我改坏了」（往前走找下一次写），反向 <code class="c">watch</code> + <code class="c">reverse-continue</code> 回答「我是什么时候、被哪一行改成这个坏值的」（往后走找上一次写）。两者结合能从「现场」双向逼近「根因」，尤其适合「变量不知何时被写坏」这类问题。</p>
 </blockquote>
-<p><strong>Q4:</strong> <code class="c">malloc(1024) = 0x5555555592a0</code> 里，返回值 <code class="c">0x555...</code> 是什么？为什么能用来配平泄漏？</p>
+<p><strong>Q4:</strong> record 的 trace 能拷到别的机器上 replay 吗？为什么？</p>
 <blockquote>
-<p>是 <code class="c">malloc</code> 在<strong>堆上分配的地址</strong>（<code class="c">0x55...</code> 是典型堆区段）。<code class="c">free</code> 的参数就是这个指针。追踪时把每个 <code class="c">malloc</code> 返回的指针和后续 <code class="c">free</code> 的参数配平——只 <code class="c">malloc</code> 没 <code class="c">free</code> 的指针就是泄漏。ltrace 的 <code class="c">-c</code> 统计直接给出 <code class="c">malloc</code> vs <code class="c">free</code> 的次数差，快速定性。</p>
+<p>通常不能。trace 里记录了与具体 CPU 微架构相关的信息（性能计数器、指令执行细节），跨机（甚至同机不同 CPU 代际）重放可能不精确或失败。标准做法是同机 record + replay。</p>
 </blockquote>
-<p><strong>Q5:</strong> ltrace 能替代 valgrind 吗？两者在内存问题上怎么分工？</p>
+<p><strong>Q5:</strong> rr record 一个高吞吐网络程序为什么可能「慢得多」甚至失败？</p>
 <blockquote>
-<p>不能。ltrace 只能<strong>快速定性</strong>（有没有泄漏、大概多少次），它只看「调用了没配对」，看不到「哪一行代码漏的」；valgrind（memcheck）能<strong>精确归因</strong>——定位泄漏的具体分配点、未初始化读、越界写等，还能给出调用栈。分工：ltrace 定性（快、粗），valgrind 定位（慢、准），是「定性 → 定位」的接力。</p>
+<p>因为每个 syscall 都要过 ptrace 记录结果，高吞吐网络程序 syscall 密度极高，ptrace 拦截成本被放大，record 开销可能远超 2×。此外部分网络相关机制（如 io_uring）支持不全。对策：缩小复现范围，只对最小复现程序 record，而非整机全量。</p>
 </blockquote>
 </details>
 <h2>交叉引用</h2>
 <ul>
-<li><a href="#s-01">4.1 strace 入门</a></li>
-<li><a href="#s-02">4.2 strace 实战分析</a></li>
+<li><a href="chapter-05.html#s-01">4.1 多线程调试</a></li>
+<li><a href="chapter-05.html#s-04">5.4 attach 运行中进程</a></li>
+<li><a href="chapter-05.html#s-02">2.2 断点与观察点</a></li>
 <li><a href="#intro">03.6 模块导读</a></li>
 </ul>
       </section>
@@ -969,7 +747,7 @@ ltrace -c -e malloc+free ./leak
 
     <footer class="footer">
       <div class="content">
-        <p>Generated from <code class="c">03.6-userspace-debugging/chapter-04-strace-ltrace</code> · hft-embedded-linux-study</p>
+        <p>Generated from <code class="c">03.6-userspace-debugging/chapter-04-concurrency</code> · hft-embedded-linux-study</p>
       </div>
     </footer>
   </main>
