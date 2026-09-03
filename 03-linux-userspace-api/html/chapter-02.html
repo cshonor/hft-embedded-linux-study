@@ -282,7 +282,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-2-4"><span class="n">2.4</span>Single Directory Hierarchy, Directories, Links, and Files</a>
           <a href="#s-2-5"><span class="n">2.5</span>File I/O Model</a>
           <a href="#s-2-6"><span class="n">2.6</span>Programs</a>
-          <a href="#s-2-7"><span class="n">2.7</span>Processes</a>
+          <a href="#s-2-7"><span class="n">2.7</span>进程（Process）</a>
           <a href="#s-2-8"><span class="n">2.8</span>Memory Mappings</a>
           <a href="#s-2-9"><span class="n">2.9</span>Static and Shared Libraries</a>
           <a href="#s-2-10"><span class="n">2.10</span>Interprocess Communication and Synchronization</a>
@@ -1210,132 +1210,304 @@ while (1) {
 </ul>
       </section>
       <section class="section" id="s-2-7">
-        <div class="sec-head"><div class="sec-no">2.7</div><h2>Processes</h2></div>
+        <div class="sec-head"><div class="sec-no">2.7</div><h2>进程（Process）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 02 章 — Fundamental Concepts</a></p>
+<p>本章：<a href="#intro">TLPI 第 02 章 — Fundamental Concepts</a>
+源码核验：Linux <strong>v6.6</strong>（<code class="c">kernel/fork.c</code>、<code class="c">include/linux/sched.h</code>）
+- 上一节：<a href="#s-2-6">2.6 程序（Programs）</a>
+- 下一节：<a href="#s-2-8">2.8 内存映射（Memory Mappings）</a></p>
 </blockquote>
+<hr />
 <h2>本节讲什么</h2>
-<p>进程是程序运行的实例。本节介绍 PID/PPID、进程内存布局、进程状态等基本概念。</p>
-<h2>要点</h2>
-<h3>进程的基本属性</h3>
-<ul>
-<li><strong>PID</strong>：进程 ID，唯一标识一个进程</li>
-<li><strong>PPID</strong>：父进程 ID</li>
-<li>每个进程由父进程通过 <code class="c">fork()</code> 创建（init/systemd 的 PID=1 是例外）</li>
-</ul>
-<h3>进程创建</h3>
-<pre class="code" data-label="code"><code class="c">父进程 → fork() → 子进程（父进程的副本）
-                 → exec() → 加载新程序
-                 → exit() → 终止
-父进程 → wait() → 回收子进程
-</code></pre>
-<h3>进程状态</h3>
+<p>进程是「程序运行的实例」。本节回答三个问题：</p>
+<ol>
+<li>进程的基本身份是什么？PID/PPID 从哪来？</li>
+<li>进程怎么被创建？<code class="c">fork()</code> 在内核里走的是怎样一条链路？</li>
+<li>进程有哪些状态（内核视角的 <code class="c">TASK_*</code>），内存布局长什么样？</li>
+</ol>
+<p>原书以「概念」为主；本节补上内核侧的实现坐标，把「进程」这个抽象落到 <code class="c">task_struct</code> 上，为后面 Ch24（<code class="c">fork</code> 深入）、Ch6（进程详解）打底。</p>
+<hr />
+<h2>1. 进程的基本属性</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>状态</th>
-<th>说明</th>
-<th>ps 标志</th>
+<th>属性</th>
+<th>含义</th>
+<th>内核来源</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Running</td>
-<td>正在执行或等待 CPU</td>
-<td>R</td>
+<td><strong>PID</strong></td>
+<td>进程唯一标识</td>
+<td><code class="c">kernel_clone()</code> 里 <code class="c">pid_vnr(pid)</code> 取回（<code class="c">kernel/fork.c:2921-2922</code>）</td>
 </tr>
 <tr>
-<td>Sleeping</td>
-<td>可中断睡眠，等待事件</td>
-<td>S</td>
+<td><strong>PPID</strong></td>
+<td>父进程 ID</td>
+<td>复制自父进程 <code class="c">task_struct</code> 的 <code class="c">real_parent</code></td>
 </tr>
 <tr>
-<td>Disk Sleep</td>
-<td>不可中断睡眠（D 状态）</td>
-<td>D</td>
+<td><strong>TGID</strong></td>
+<td>线程组 ID（主线程 PID）</td>
+<td>同一进程的所有线程共享 TGID</td>
 </tr>
 <tr>
-<td>Stopped</td>
-<td>被信号停止</td>
-<td>T</td>
-</tr>
-<tr>
-<td>Zombie</td>
-<td>已终止但未被父进程回收</td>
-<td>Z</td>
+<td><strong>状态</strong></td>
+<td><code class="c">TASK_RUNNING</code> / <code class="c">TASK_INTERRUPTIBLE</code> 等</td>
+<td><code class="c">task_struct-&gt;__state</code>（<code class="c">sched.h:86-131</code>）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>进程内存布局</h3>
+<p>每个进程（<code class="c">init</code>/<code class="c">systemd</code> 的 PID=1 除外）都由父进程通过 <code class="c">fork()</code> 创建。PID 1 是系统启动后第一个用户态进程；PID 0 是内核的 idle 进程（swapper），不参与用户态调度（见 05 内核 Ch3.10）。</p>
+<h2>2. 进程创建：<code class="c">fork()</code> 的完整链路</h2>
+<p><code class="c">fork()</code> 不是「凭空造一个进程」，而是<strong>复制当前进程</strong>。内核侧的真实链路是：</p>
+<pre class="code" data-label="code"><code class="c">用户态 fork()                    (glibc 封装)
+      │
+      ▼
+SYSCALL_DEFINE0(fork)            kernel/fork.c:2991
+      │  args.exit_signal = SIGCHLD   (:2995)
+      ▼
+kernel_clone(args)               kernel/fork.c:2868
+      │  copy_process(NULL, trace, NUMA_NO_NODE, args)   (:2909)
+      ▼
+copy_process()                   kernel/fork.c:2240
+      │  复制 task_struct / 信号 / 文件表 / 内存描述符(mm)
+      ├─→ dup_task_struct      复制 task_struct + 内核栈
+      ├─→ copy_mm              COW 复制页表（不复制物理页）
+      ├─→ copy_files           fd 表（fork 默认共享表项、各持引用计数）
+      └─→ copy_sighand        信号处理表
+      ▼
+返回 pid：父进程拿「子进程 PID」，子进程拿 0
+</code></pre>
+<p><strong>关键源码</strong>（<code class="c">kernel/fork.c:2991</code>）：</p>
+<pre class="code" data-label="C"><code class="c">SYSCALL_DEFINE0(fork)
+{
+#ifdef CONFIG_MMU
+    struct kernel_clone_args args = {
+        .exit_signal = SIGCHLD,   /* 子进程退出时给父进程发 SIGCHLD */
+    };
+    return kernel_clone(&amp;args);
+#else
+    /* can not support in nommu mode */
+    return -EINVAL;
+#endif
+}
+</code></pre>
+<p><code class="c">fork</code> 本质是 <code class="c">clone</code> 的特例——<code class="c">fork</code> 只设了 <code class="c">exit_signal=SIGCHLD</code>，共享粒度（内存/文件表）由内核默认；<code class="c">clone(SIGCHLD, 0, ...)</code> 等价于 <code class="c">fork</code>。<code class="c">pthread_create</code> 则走 <code class="c">clone</code> 传 <code class="c">CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND</code> 实现<strong>线程</strong>（共享内存/文件表，见 Ch29）。</p>
+<h2>3. 进程状态机（内核视角）</h2>
+<p>内核用 <code class="c">task_struct-&gt;__state</code> 的一个<strong>位掩码</strong>表示状态（<code class="c">include/linux/sched.h:86-131</code>），<code class="c">ps</code>/<code class="c">top</code> 看到的单字母是它的投影：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核宏</th>
+<th>值</th>
+<th><code class="c">ps</code> 标志</th>
+<th>含义</th>
+<th>HFT 场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">TASK_RUNNING</code></td>
+<td><code class="c">0x00000000</code></td>
+<td>R</td>
+<td>正在运行或就绪排队</td>
+<td>交易主循环占满 CPU</td>
+</tr>
+<tr>
+<td><code class="c">TASK_INTERRUPTIBLE</code></td>
+<td><code class="c">0x00000001</code></td>
+<td>S</td>
+<td>可中断睡眠，等事件</td>
+<td><code class="c">recv</code> 等行情（可被信号打断）</td>
+</tr>
+<tr>
+<td><code class="c">TASK_UNINTERRUPTIBLE</code></td>
+<td><code class="c">0x00000002</code></td>
+<td>D</td>
+<td>不可中断睡眠（通常等 I/O）</td>
+<td>等磁盘/网络驱动返回，<strong>信号无法打断</strong></td>
+</tr>
+<tr>
+<td><code class="c">__TASK_STOPPED</code></td>
+<td><code class="c">0x00000004</code></td>
+<td>T</td>
+<td>被 <code class="c">SIGSTOP</code>/<code class="c">SIGTSTP</code> 停止</td>
+<td><code class="c">Ctrl+Z</code> 挂起调试</td>
+</tr>
+<tr>
+<td><code class="c">__TASK_TRACED</code></td>
+<td><code class="c">0x00000008</code></td>
+<td>t</td>
+<td>被 ptrace 跟踪（gdb）</td>
+<td>调试器单步</td>
+</tr>
+<tr>
+<td><code class="c">EXIT_ZOMBIE</code></td>
+<td><code class="c">0x00000020</code></td>
+<td>Z</td>
+<td>已终止、父进程未 <code class="c">wait</code> 收尸</td>
+<td>僵尸堆积耗尽 PID</td>
+</tr>
+<tr>
+<td><code class="c">EXIT_DEAD</code></td>
+<td><code class="c">0x00000010</code></td>
+<td>—</td>
+<td>已 <code class="c">wait</code>、资源释放前最后态</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两个组合态</strong>（源码里是位运算拼出来的）：</p>
+<pre class="code" data-label="C"><code class="c">#define TASK_KILLABLE  (TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)   /* :116 可被致命信号杀死 */
+#define TASK_STOPPED   (TASK_WAKEKILL | __TASK_STOPPED)          /* :117 */
+</code></pre>
+<blockquote>
+<p><strong>D 状态是 HFT 排查重点</strong>：进程卡在 D（<code class="c">TASK_UNINTERRUPTIBLE</code>）时，连 <code class="c">kill -9</code> 都打不断——它在等一个<strong>内核侧</strong>的 I/O 完成。交易机若发现 worker 卡 D 且 <code class="c">ps</code> 的 <code class="c">WCHAN</code> 指向磁盘/网络驱动，通常是存储或网卡驱动卡死，而非业务逻辑死锁。</p>
+</blockquote>
+<h2>4. 进程内存布局</h2>
+<p>一个进程的虚拟地址空间，从低到高：</p>
+<pre class="code" data-label="code"><code class="c">高地址 ┌──────────────────────┐
+       │      Stack（栈）      │  局部变量、函数帧，向下增长
+       │        ...           │  （运行时动态）
+       ├──────────────────────┤
+       │        ↕             │  ← 中间留空，可 mmap
+       ├──────────────────────┤
+       │      Heap（堆）       │  malloc 分配，向上增长（brk/mmap）
+       ├──────────────────────┤
+       │   BSS（未初始化全局）  │  零填充，不占磁盘
+       ├──────────────────────┤
+       │   Data（已初始化全局） │  占磁盘、加载时拷贝进内存
+       ├──────────────────────┤
+       │   Text（代码，只读）   │  可共享、只读
+低地址 └──────────────────────┘
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>段</th>
 <th>内容</th>
-<th>管理方式</th>
+<th>来源</th>
+<th>共享性</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Text</td>
-<td>代码（只读、共享）</td>
-<td>加载时确定</td>
+<td>机器指令</td>
+<td>可执行文件 <code class="c">.text</code></td>
+<td>同一程序多进程共享（只读）</td>
 </tr>
 <tr>
 <td>Data</td>
-<td>已初始化全局变量</td>
-<td>加载时确定</td>
+<td>已初始化全局/静态变量</td>
+<td><code class="c">.data</code></td>
+<td>每进程私有</td>
 </tr>
 <tr>
 <td>BSS</td>
-<td>未初始化全局变量（零填充）</td>
-<td>加载时确定</td>
+<td>未初始化全局/静态变量</td>
+<td><code class="c">.bss</code>（零填充）</td>
+<td>每进程私有</td>
 </tr>
 <tr>
 <td>Heap</td>
-<td>malloc 分配</td>
-<td>运行时动态</td>
+<td><code class="c">malloc</code> 分配</td>
+<td><code class="c">brk</code>/<code class="c">mmap</code> 动态</td>
+<td>每进程私有</td>
 </tr>
 <tr>
 <td>Stack</td>
 <td>局部变量、函数帧</td>
-<td>运行时动态</td>
+<td>内核启动时分配</td>
+<td>每进程私有（线程各自独立栈）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>常见误区</h2>
+<p><code class="c">fork</code> 后父子进程的 Text/Data/BSS 页<strong>暂时共享</strong>（COW），直到某一方写入才真正复制——所以「<code class="c">fork</code> 复制整个内存」是<strong>误区</strong>，实际只复制页表。</p>
+<h2>5. HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>误区</th>
-<th>纠正</th>
+<th>现象</th>
+<th>本节机制的兑现</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>fork() 复制整个内存</td>
-<td>COW（Copy-On-Write），只复制页表</td>
+<td>进程创建是启动延迟预算</td>
+<td><code class="c">fork</code> 要 <code class="c">dup_task_struct</code>+<code class="c">copy_mm</code> 复制页表，毫秒级；热路径应线程池预创建、避免运行时 fork</td>
 </tr>
 <tr>
-<td>僵尸进程是 bug</td>
-<td>僵尸是正常状态，父进程不 wait 才是问题</td>
+<td>COW 首写触发缺页毛刺</td>
+<td><code class="c">fork</code> 后第一次写共享页触发 page fault + 物理页复制，是「父子都活」场景的隐藏延迟</td>
+</tr>
+<tr>
+<td>僵尸进程耗尽 PID</td>
+<td>长期运行进程不 <code class="c">wait</code> 收尸 → 僵尸堆积 → <code class="c">pid_max</code> 耗尽 → 无法新建进程</td>
+</tr>
+<tr>
+<td>卡 D 状态</td>
+<td>worker 卡 <code class="c">TASK_UNINTERRUPTIBLE</code> 等 I/O，<code class="c">kill -9</code> 无效，须查 <code class="c">WCHAN</code> 定位驱动</td>
+</tr>
+<tr>
+<td>多线程 = 共享地址空间</td>
+<td><code class="c">clone(CLONE_VM)</code> 让线程共享页表，省内存但引入数据竞争（见 Ch29-30）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>自测要点</h2>
+<h2>6. 代码示例</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+/* fork: 父进程拿到子进程 PID，子进程拿到 0 */
+int main(void) {
+    pid_t pid = fork();
+
+    if (pid &lt; 0) {
+        perror(&quot;fork&quot;);
+        return 1;
+    } else if (pid == 0) {
+        /* 子进程：pid == 0 */
+        printf(&quot;child : my pid=%d, my ppid=%d\n&quot;, getpid(), getppid());
+        return 42;                        /* 退出码 42 */
+    } else {
+        /* 父进程：pid == 子进程 PID */
+        int status;
+        printf(&quot;parent: child pid=%d\n&quot;, pid);
+        wait(&amp;status);                    /* 收尸，否则子进程变僵尸 */
+        if (WIFEXITED(status))
+            printf(&quot;parent: child exited with %d\n&quot;, WEXITSTATUS(status));
+    }
+    return 0;
+}
+</code></pre>
+<p>编译运行：<code class="c">gcc -o demo fork.c &amp;&amp; ./demo</code>。注意 <code class="c">wait()</code> 必不可少——不 <code class="c">wait</code> 的子进程退出后停在 <code class="c">EXIT_ZOMBIE</code>，直到父进程退出或显式回收。</p>
+<h2>7. 衔接</h2>
 <ul>
-<li>PID 和 PPID 是什么？PID 1 是什么进程？</li>
-<li>fork() 和 exec() 分别做什么？</li>
-<li>进程有哪几种状态？僵尸进程是怎么产生的？</li>
-<li>进程的内存布局是怎样的？</li>
+<li>下一节：<a href="#s-2-8">2.8 内存映射（Memory Mappings）</a> — 进程地址空间里的 <code class="c">mmap</code> 区域</li>
+<li>内核视角（对照 LKD）：</li>
+<li><a href="../../05-linux-kernel/html/chapter-03.html#s-3-2"><code class="c">05/Ch3.2 进程描述符与任务结构</code></a> — <code class="c">task_struct</code> 全貌</li>
+<li><a href="../../05-linux-kernel/html/chapter-03.html#s-3-3"><code class="c">05/Ch3.3 进程状态</code></a> — <code class="c">TASK_*</code> 状态机与调度</li>
+<li><a href="../../05-linux-kernel/html/chapter-03.html#s-3-4"><code class="c">05/Ch3.4 进程创建与写时拷贝</code></a> — <code class="c">copy_process</code> + COW 深挖</li>
+<li>TLPI 后续：<a href="chapter-24.html#intro">Ch24 进程创建</a> · <a href="chapter-25.html#intro">Ch25 进程终止</a> · <a href="chapter-26.html#intro">Ch26 监控子进程</a></li>
 </ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>ch06</strong>：进程详解</li>
-<li><strong>ch24</strong>：fork() 深入</li>
-<li><strong>ch25</strong>：进程终止</li>
-<li><strong>ch26</strong>：等待子进程</li>
-</ul>
+<hr />
+<details>
+<summary>代码自测（Q&amp;A）</summary>
+<p><strong>Q1：<code class="c">fork()</code> 之后，父子进程谁先执行？为什么不能假设顺序？</strong>
+A：两者先后由调度器决定，不可预测。内核在 <code class="c">kernel_clone()</code> 里 <code class="c">wake_up_new_task()</code> 唤醒子进程后，父子都可能先被调度。依赖「父先执行」是经典竞态 bug——需要同步时用 <code class="c">wait</code>/管道/信号显式约定。</p>
+<p><strong>Q2：<code class="c">fork()</code> 返回两次，父进程拿到 PID、子进程拿到 0，这个「0」是怎么来的？</strong>
+A：<code class="c">copy_process()</code> 复制出的子进程，其返回路径（<code class="c">ret_from_fork</code>）会强制让 <code class="c">fork</code> 在子进程里返回 0。这是内核故意设计的「同一段代码、两个返回值」——父进程走 <code class="c">kernel_clone</code> 的 <code class="c">return nr</code>（子 PID），子进程首次被调度时从 <code class="c">ret_from_fork</code> 起步、<code class="c">rax</code> 清 0。</p>
+<p><strong>Q3：为什么说「<code class="c">fork</code> 复制整个内存」是错的？</strong>
+A：<code class="c">copy_mm</code> 只复制页表（<code class="c">dup_mm</code>→<code class="c">dup_mmap</code>），父子共享物理页，页表项标只读。任一进程写入时触发写保护缺页，内核才分配新物理页 + 复制内容（COW）。所以 <code class="c">fork</code> 成本与「内存大小」无关，只与「页表项数量」相关。</p>
+<p><strong>Q4：进程和线程在内核里到底有什么区别？</strong>
+A：几乎只有「共享粒度」的区别——<code class="c">fork</code> 默认共享最少，<code class="c">pthread_create</code> 用 <code class="c">clone(CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD)</code> 让新 task 与父共享地址空间/文件表/信号表，此时它没有独立 PID（共享 TGID），就是一个线程。内核里两者都是 <code class="c">task_struct</code>，没有独立的「线程」结构体。</p>
+<p><strong>Q5：一个进程卡在 <code class="c">ps</code> 的 D 状态，<code class="c">kill -9</code> 也杀不掉，为什么？</strong>
+A：D = <code class="c">TASK_UNINTERRUPTIBLE</code>，进程在等内核态 I/O 完成（磁盘/网络驱动），信号投递被延迟到 I/O 返回之后。<code class="c">kill -9</code> 只是置一个 pending 信号，进程从 D 转回 R 之前不会处理。排查：<code class="c">ps -o pid,stat,wchan</code> 看 <code class="c">WCHAN</code> 指向哪个驱动，通常是存储或网卡问题，而非进程本身。</p>
+</details>
       </section>
       <section class="section" id="s-2-8">
         <div class="sec-head"><div class="sec-no">2.8</div><h2>Memory Mappings</h2></div>
