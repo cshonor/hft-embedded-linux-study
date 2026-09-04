@@ -8,13 +8,22 @@
 
 ## 小节目录
 
-- [20.1 概述](notes/20.1-concepts-and-overview.md)
-- [20.2 编号与分类](notes/20.2-signal-types-and-default-actions.md)
-- [20.3 生命周期](notes/20.3-changing-signal-dispositions-signal.md)
-- [20.4 信号掩码与未决集](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
-- [20.5 `signal()` 缺陷（警示）](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
-- [20.6 发送信号](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
-- 20.7 进程组与终端（基础）
+- [20.1 概念与概述](notes/20.1-concepts-and-overview.md)
+- [20.2 信号类型与默认动作](notes/20.2-signal-types-and-default-actions.md)
+- [20.3 改变信号处置：`signal()`](notes/20.3-changing-signal-dispositions-signal.md)
+- [20.4 信号处理器简介](notes/20.4-introduction-to-signal-handlers.md)
+- [20.5 发送信号：`kill()`](notes/20.5-sending-signals-kill.md)
+- [20.6 检查进程是否存在](notes/20.6-checking-for-the-existence-of-a-process.md)
+- [20.7 其他发送信号的方式：`raise()` 与 `killpg()`](notes/20.7-other-ways-of-sending-signals-raise-and-.md)
+- [20.8 显示信号描述](notes/20.8-displaying-signal-descriptions.md)
+- [20.9 信号集（Signal Sets）](notes/20.9-signal-sets.md)
+- [20.10 信号掩码（阻塞信号传递）](notes/20.10-the-signal-mask-blocking-signal-delivery.md)
+- [20.11 待处理信号（Pending Signals）](notes/20.11-pending-signals.md)
+- [20.12 信号不排队](notes/20.12-signals-are-not-queued.md)
+- [20.13 改变信号处置：`sigaction()`](notes/20.13-changing-signal-dispositions-sigaction.md)
+- [20.14 等待信号：`pause()`](notes/20.14-waiting-for-a-signal-pause.md)
+- [20.15 本章小结](notes/20.15-summary.md)
+- [20.16 练习题](notes/20.16-exercises.md)
 
 ---
 
