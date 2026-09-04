@@ -276,10 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-30-1"><span class="n">30.1</span>互斥量 `pthread_mutex_t`</a>
-          <a href="#s-30-2"><span class="n">30.2</span>条件变量 `pthread_cond_t`</a>
-          <a href="#s-30-3"><span class="n">30.3</span>职责与易错</a>
-          <a href="#s-30-4"><span class="n">30.4</span>Exercises</a>
+          <a href="#s-30-1"><span class="n">30.1</span>互斥量：保护共享变量</a>
+          <a href="#s-30-2"><span class="n">30.2</span>条件变量：通知状态变化</a>
+          <a href="#s-30-3"><span class="n">30.3</span>总结：职责、铁律与成本账本</a>
+          <a href="#s-30-4"><span class="n">30.4</span>练习</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -367,19 +367,119 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p>竞态与临界区；<code class="c">pthread_mutex_*</code>；<code class="c">pthread_cond_*</code> + while 谓词；生产者-消费者；死锁与职责分离。</p>
+<p>竞态到底怎么发生（含编译器合并循环的铁证）；<code class="c">pthread_mutex_*</code> 全家 + 四种锁类型；futex 内核路径（哈希桶 / plist / 先锁桶再读值 / wake_q 锁外唤醒）；死锁四条件与防御；条件变量三步原子语义、while 谓词三种故障、丢唤醒时序；生产者-消费者有界队列与优雅关闭。</p>
+<p><strong>一句话内核视角</strong>：pthread 的 mutex 和 condvar 是同一套 futex 设施的两个用户态前端——锁的状态字就在用户内存（<code class="c">__lock</code>/<code class="c">__wseq</code>），无竞争时零系统调用（7 ns 一条 CAS），有竞争才进内核睡哈希桶；唤醒按优先级（plist）出队。</p>
 <hr />
+<h2>速查：mutex vs cond 职责</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>职责</th>
+<th>无竞争成本</th>
+<th>有竞争成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mutex</td>
+<td>互斥访问<strong>状态</strong></td>
+<td>7 ns（用户态 CAS）</td>
+<td>缓存行乒乓 ~70 ns；futex 睡眠 µs 级</td>
+</tr>
+<tr>
+<td>cond</td>
+<td>等待<strong>状态变化</strong></td>
+<td>—（配 mutex 用）</td>
+<td>signal→wake ≈ 一次 futex 唤醒（WSL2 实测 ≈ 裸 futex）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>全章生命周期全景</h2>
+<pre class="code" data-label="code"><code class="c">        用户态（glibc）                         内核态（futex，v6.6）
+┌───────────────────────────┐        ┌────────────────────────────────┐
+│ pthread_mutex_lock        │        │ sys_futex → do_futex():85      │
+│  CAS(__lock: 0→1) 成功 ✔  │        │                                │
+│  失败 → 自旋(ADAPTIVE)    │        │ FUTEX_WAIT:                    │
+│       ↓ syscall           │──────▶ │  futex_wait_setup():577        │
+│                           │        │   先锁桶→读值≠expected→EAGAIN   │
+│ pthread_cond_wait         │        │   值匹配→入队(plist)→schedule   │
+│  wseq++ / 代(G1/G2)       │        │                                │
+│  FUTEX_WAIT(cond 词)      │──────▶ │ FUTEX_WAKE: futex_wake():143   │
+│                           │        │  waiters==0 早退(连桶锁都不拿)   │
+│ pthread_cond_signal       │        │  桶锁→plist匹配key→wake_q      │
+│  FUTEX_WAKE(1)            │──────▶ │  锁外 wake_up_q → 调度器       │
+│                           │        │                                │
+│ unlock: __lock 1→0        │        │  唤醒者醒来→抢回 mutex→while 谓词│
+│  旧值==2 才 WAKE          │        │                                │
+└───────────────────────────┘        └────────────────────────────────┘
+</code></pre>
+<hr />
+<h2>五个反直觉真相</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>编译器能把 50 万次 <code class="c">++</code> 合并成一条 <code class="c">addq $0x7a120</code>——普通变量测竞态测了个寂寞（实测 volatile 版丢失 52%）</td>
+</tr>
+<tr>
+<td>2</td>
+<td>单核 0% 丢失 ≠ 安全，只是窗口 ~3ns 撞上时间片切换的概率 ≈ 10⁻⁶</td>
+</tr>
+<tr>
+<td>3</td>
+<td>无竞争 mutex（7.1 ns）比 <code class="c">atomic_fetch_add</code>（13.8 ns）还便宜</td>
+</tr>
+<tr>
+<td>4</td>
+<td>condvar 唤醒延迟 ≈ 裸 futex 唤醒延迟（实测两者几乎相等）——延迟地板在内核，用户态优化不动</td>
+</tr>
+<tr>
+<td>5</td>
+<td>signal 不保存信号、只保证"至少一个"——正确性永远靠 while 谓词，不靠唤醒语义</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>实验清单</h2>
 <ol>
-<li>无锁累加错误（Ch29 <code class="c">thread_race</code>）  </li>
-<li>mutex 修复  </li>
-<li>（选）<code class="c">trylock</code>  </li>
-<li>while vs if  </li>
-<li>生产-消费  </li>
-<li>（选）多锁死锁  </li>
+<li>无保护 <code class="c">volatile ++</code> 竞态复现（跨核丢失 ~50%）✅ 30.1 demo1</li>
+<li>mutex 修复 + 计数与耗时对比 ✅ 30.1 demo2</li>
+<li><code class="c">ERRORCHECK</code> 抓非法操作（EDEADLK / EPERM）✅ 30.1 demo3</li>
+<li>ABBA 死锁 + timedlock 探测 ✅ 30.1 demo4</li>
+<li>objdump 验证编译器合并循环 ✅ 30.1 §1.3</li>
+<li>condvar 严格握手 ping-pong ✅ 30.2 demo1</li>
+<li>不持锁 signal 的丢唤醒（timedwait 探测）✅ 30.2 demo2</li>
+<li>broadcast 惊群 + while 自动分流 ✅ 30.2 demo3</li>
+<li>多生产多消费有界队列 + 优雅关闭 + 统计校验 ✅ 30.4 综合题</li>
+<li>（选）裸 futex 系统调用基线（空 WAKE 203 ns、乒乓延迟）✅ 30.1 §5</li>
 </ol>
 <hr />
+<h2>易错清单</h2>
+<ol>
+<li>普通变量测竞态 → 编译器合并，丢失率假 0%</li>
+<li><code class="c">if</code> 谓词 → 虚假唤醒 / 惊群 / 错醒三种死法</li>
+<li>不持锁改谓词或 signal → 丢唤醒（高负载偶发，最难查）</li>
+<li><code class="c">while</code> 谓词忘了带关闭条件 → close 后等待者睡死</li>
+<li>同线程二次 lock 普通锁 → 自锁死锁</li>
+<li>非持有者 unlock → UB（ERRORCHECK 下才报 EPERM）</li>
+<li>多锁顺序不一致 → ABBA 死锁</li>
+<li>Pthreads 错误码查 <code class="c">errno</code> → 永远查不到（从返回值取）</li>
+<li>拷贝 mutex / cond → UB</li>
+<li>忘 destroy / 忘 unlock 早退分支</li>
+<li>临界区里做 IO、malloc、printf → 峰值延迟失控</li>
+<li><code class="c">RECURSIVE</code> 锁当万能药 → 掩盖设计问题</li>
+<li>以为 signal 存信号 / signal 唤醒"恰好一个" → 都不是</li>
+<li>多核竞争下无脑用 spinlock → 自旋风暴反而更慢（实测 81 vs 69 ns）</li>
+<li>timedlock/timedwait 误用相对时长或 REALTIME 基准 → 用<strong>绝对时间</strong>；时钟跳变环境配 MONOTONIC</li>
+</ol>
 <hr />
 <h2>背诵卡</h2>
 <div class="tbl-wrap"><table>
@@ -392,173 +492,574 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>1</td>
-<td>临界区用 mutex</td>
+<td>共享可变数据必须同步；无同步 = UB（编译器也参与捣乱）</td>
 </tr>
 <tr>
 <td>2</td>
-<td>cond 永远配 mutex</td>
+<td>测竞态必须 volatile/_Atomic</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code class="c">while (!pred) wait</code></td>
+<td>错误码从 Pthreads 返回值取</td>
 </tr>
 <tr>
 <td>4</td>
-<td>wait = 放锁睡，醒再加锁</td>
+<td>mutex 快路径 = 一条 CAS（7 ns，零系统调用）</td>
 </tr>
 <tr>
 <td>5</td>
-<td>多锁统一顺序防死锁</td>
+<td>futex 无竞争不出内核；等待队列在内核、状态字在用户内存</td>
 </tr>
 <tr>
 <td>6</td>
-<td>mutex 管状态，cond 管等待</td>
+<td><code class="c">futex_wait_setup</code>：先锁哈希桶、再读值（防丢唤醒的最后防线）</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code class="c">futex_wake</code>：无等待者早退；wake_q 延迟到锁外唤醒</td>
+</tr>
+<tr>
+<td>8</td>
+<td>cond 必须<strong>永远</strong>配 mutex</td>
+</tr>
+<tr>
+<td>9</td>
+<td>谓词永远 <code class="c">while (!pred) wait</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>wait = 原子放锁入睡 + 醒来重拿锁</td>
+</tr>
+<tr>
+<td>11</td>
+<td>signal 至少一个 / broadcast 全部；都不保存信号</td>
+</tr>
+<tr>
+<td>12</td>
+<td>一个 cond 对应一个谓词</td>
+</tr>
+<tr>
+<td>13</td>
+<td>关闭队列：持锁置 closed + 双 broadcast</td>
+</tr>
+<tr>
+<td>14</td>
+<td>多锁全局统一顺序；timedlock 当死锁探测器</td>
+</tr>
+<tr>
+<td>15</td>
+<td>唤醒延迟地板 = futex + 调度（µs 级）；热路径要么不睡要么无锁</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<hr />
 <h2>参考</h2>
 <ul>
-<li>Kerrisk · TLPI Ch30  </li>
+<li>Kerrisk · TLPI Ch30</li>
 <li><code class="c">man 3 pthread_mutex_lock</code> · <code class="c">man 3 pthread_cond_wait</code></li>
-</ul>
-<hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;pthread.h&gt;
-#include &lt;unistd.h&gt;
-
-/* Ch30 线程同步 — mutex/cond/rwlock。
- * 演示互斥锁保护共享数据 + 条件变量通知。
- * 编译: gcc -o ch30_demo ch30_demo.c -lpthread */
-
-static int counter = 0;
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-static int ready = 0;
-
-void *producer(void *arg) {
-    for (int i = 0; i &lt; 5; i++) {
-        pthread_mutex_lock(&amp;lock);
-        counter++;
-        ready = 1;
-        printf(&quot;Producer: counter=%d, signaling\n&quot;, counter);
-        pthread_cond_signal(&amp;cond);
-        pthread_mutex_unlock(&amp;lock);
-        usleep(200000);
-    }
-    return NULL;
-}
-
-void *consumer(void *arg) {
-    for (int i = 0; i &lt; 5; i++) {
-        pthread_mutex_lock(&amp;lock);
-        while (!ready)
-            pthread_cond_wait(&amp;cond, &amp;lock);  /* 原子释放锁+等待 */
-        ready = 0;
-        printf(&quot;Consumer: consumed counter=%d\n&quot;, counter);
-        pthread_mutex_unlock(&amp;lock);
-    }
-    return NULL;
-}
-
-int main(void) {
-    pthread_t pt, ct;
-    pthread_create(&amp;pt, NULL, producer, NULL);
-    pthread_create(&amp;ct, NULL, consumer, NULL);
-    pthread_join(pt, NULL);
-    pthread_join(ct, NULL);
-    printf(&quot;Done: counter=%d\n&quot;, counter);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>参考</h2>
-<ul>
-<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">OUTLINE</a></li>
-<li>原始笔记：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes">notes.md.bak</a></li>
+<li>futex 语义原始文献：Rusty Russell, <em>Fuss, Futexes and Furwocks</em> (OLS 2002)；Drepper, <em>Futexes Are Tricky</em> (2011)</li>
+<li>内核源码（v6.6）：<code class="c">kernel/futex/{core,waitwake,pi,requeue,syscalls}.c</code>、<code class="c">kernel/futex/futex.h</code>、<code class="c">include/uapi/linux/futex.h</code></li>
 </ul>
       </section>
       <section class="section" id="s-30-1">
-        <div class="sec-head"><div class="sec-no">30.1</div><h2>互斥量 `pthread_mutex_t`</h2></div>
+        <div class="sec-head"><div class="sec-no">30.1</div><h2>互斥量：保护共享变量</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 30 章 — Threads: Thread Synchronization</a>
 - 上一节：本章首页
 - 下一节：<a href="#s-30-2">30.2 条件变量 <code class="c">pthread_cond_t</code></a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/futex/core.c</code>（<code class="c">futex_hash():115</code>）· <code class="c">kernel/futex/waitwake.c</code>（<code class="c">futex_wake():143</code> / <code class="c">futex_wait_setup():577</code> / <code class="c">futex_wait():632</code> / <code class="c">futex_wake_mark():115</code>）· <code class="c">kernel/futex/futex.h</code>（<code class="c">struct futex_hash_bucket:45</code> / <code class="c">struct futex_q:96</code>）· <code class="c">kernel/futex/syscalls.c</code>（<code class="c">do_futex():85</code> / <code class="c">SYSCALL_DEFINE6(futex):164</code>）· <code class="c">include/uapi/linux/futex.h</code>（<code class="c">FUTEX_WAIT:11</code> / <code class="c">FUTEX_WAKE:12</code> / <code class="c">FUTEX_PRIVATE_FLAG:26</code>）</p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;   /<em> 静态 </em>/ pthread_mutex_init(&amp;mtx, &amp;attr);                   /<em> 动态 </em>/ pthread_mutex_destroy(&amp;mtx);                       /<em> 须未持锁 </em>/</p>
+<ol>
+<li><strong>竞态到底怎么发生的</strong>——<code class="c">x++</code> 在 CPU 层面是三条指令，两条线程交错执行就会丢更新；本节用实测数据（跨核丢失 52%）和一段 objdump 反汇编证明两件事：竞态是真的，而且<strong>编译器还可能把你的整个循环合并成一条加法指令，让竞态"看起来消失"</strong>。</li>
+<li><strong><code class="c">pthread_mutex_*</code> 全家 API</strong>——静态/动态初始化、<code class="c">lock/trylock/timedlock/unlock</code>、错误码约定（返回值而非 <code class="c">errno</code>）、四种锁类型（NORMAL/ERRORCHECK/RECURSIVE/ADAPTIVE_NP）。</li>
+<li><strong>mutex 的内核底座：futex</strong>——无竞争时 mutex 完全在用户态（一条 CAS，实测 7.1 ns）；有竞争才陷入内核，睡在 <code class="c">struct futex_hash_bucket</code> 的优先级链表上。本节把 <code class="c">FUTEX_WAIT</code> / <code class="c">FUTEX_WAKE</code> 的内核路径逐步拆开，包括那段著名的「先锁哈希桶再读用户内存」的加锁顺序注释。</li>
+</ol>
 <hr />
-<h2>要点</h2>
+<h2>一、竞态：丢更新到底怎么发生的</h2>
+<h3>1.1 <code class="c">x++</code> 不是一条指令</h3>
+<p>C 语句 <code class="c">shared++</code> 编译到 x86-64 至少是三条指令：</p>
+<pre class="code" data-label="asm"><code class="c">        mov    shared(%rip), %rax    ; ① 读
+        add    $1, %rax              ; ② 改（寄存器里）
+        mov    %rax, shared(%rip)    ; ③ 写
+</code></pre>
+<p>两条线程同时执行这个序列，交错就会<strong>丢失更新</strong>（lost update）：</p>
+<pre class="code" data-label="code"><code class="c">时间 →         shared 初值 = 100
+
+线程 A                          线程 B
+mov shared,%rax   ; A 读到 100
+                                 mov shared,%rax   ; B 也读到 100
+add $1,%rax       ; A: 101
+                                 add $1,%rax       ; B: 101
+mov %rax,shared   ; 写回 101
+                                 mov %rax,shared   ; 写回 101  ← 覆盖了 A 的结果
+
+两个 ++，只 +1。丢了一次。
+</code></pre>
+<h3>1.2 实测：跨核 4 线程丢失 52%</h3>
+<p>本节配套基准（WSL2 / 12 核 / gcc -O2，<code class="c">pthread_barrier</code> 强制 4 线程同时开跑）：</p>
+<pre class="code" data-label="C"><code class="c">static volatile long shared;          /* ⭐ volatile：gcc 无法合并，每次都真读真写 */
+static void *worker(void *a){
+    pthread_barrier_wait(&amp;bar);       /* 4 线程同时起跑 */
+    for (int i = 0; i &lt; 500000; i++) shared++;
+    return NULL;
+}
+</code></pre>
+<p>实测结果（4 线程 × 500,000 次）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>概念</th>
-<th></th>
+<th>场景</th>
+<th>耗时</th>
+<th>得到 / 期望</th>
+<th>丢失</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>竞态</td>
-<td>无保护并发读写，结果依赖调度</td>
+<td>无保护 <code class="c">volatile ++</code>（跨核）</td>
+<td>1.8 ns/次</td>
+<td>959,293 / 2,000,000</td>
+<td><strong>52.04%</strong></td>
 </tr>
 <tr>
-<td>临界区</td>
-<td>须互斥执行的共享访问代码</td>
+<td>无保护 <code class="c">volatile ++</code>（4 线程全钉 CPU0）</td>
+<td>3.4 ns/次</td>
+<td>2,000,000 / 2,000,000</td>
+<td>0.00%</td>
 </tr>
 <tr>
-<td>mutex</td>
-<td>同一时刻至多一线程进入临界区</td>
+<td>无保护 读→延迟→写（放大窗口）</td>
+<td>97.3 ns/次</td>
+<td>30,454 / 80,000</td>
+<td><strong>61.93%</strong></td>
+</tr>
+<tr>
+<td>mutex 保护（跨核）</td>
+<td>69.3 ns/次</td>
+<td>2,000,000 / 2,000,000</td>
+<td>0.00%</td>
+</tr>
+<tr>
+<td>mutex 保护（全钉 CPU0）</td>
+<td>26.7 ns/次</td>
+<td>2,000,000 / 2,000,000</td>
+<td>0.00%</td>
 </tr>
 </tbody>
 </table></div>
-<h3>初始化</h3>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;   /* 静态 */
-pthread_mutex_init(&amp;mtx, &amp;attr);                   /* 动态 */
-pthread_mutex_destroy(&amp;mtx);                       /* 须未持锁 */
+<p>三个结论：</p>
+<ol>
+<li><strong>竞态是真实且严重的</strong>：跨核场景下超过一半的自增凭空消失，而且程序<strong>不崩溃、不报错</strong>——这正是竞态的可怕之处，它静悄悄地破坏数据。</li>
+<li><strong>「放大窗口」丢得更多</strong>（61.93%）：把 读→算→写 的窗口人为拉宽（模拟临界区里夹着真实计算），碰撞概率随之上升。竞态丢失率 ≈ 窗口宽度 × 竞争强度。</li>
+<li><strong>全钉单核丢失 0.00% ≠ 安全</strong>：单核上线程靠时间片切换交错，只有恰好在 ① 和 ③ 之间被抢占才会丢。窗口 ~3 ns，时间片 ~ms 级，概率约 10⁻⁶ 量级——2,000,000 次实验碰上 0 次很正常。<strong>换个核数、换个负载、换个编译器，它就可能丢</strong>。把这段代码放进一个只跑单核的嵌入式盒子？中断和实时任务照样在 ①③ 之间打断你。</li>
+</ol>
+<h3>1.3 ⭐ 反直觉：编译器能把 50 万次 <code class="c">++</code> 合并成 1 次加法</h3>
+<p>第一次做这个实验时，无保护版本<strong>丢失 0.00%、耗时 0.3 ns/次</strong>——明显不可信。排查后用 objdump 抓到了铁证。对下面这段代码：</p>
+<pre class="code" data-label="C"><code class="c">static long shared;                              /* 注意：非 volatile */
+void f(void){ for (int i = 0; i &lt; 500000; i++) shared++; }
 </code></pre>
-<p>禁止拷贝 mutex；行为未定义。</p>
-<h3>API</h3>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_lock / trylock / timedlock / unlock
+<p><code class="c">gcc -O2 -c</code> 后反汇编：</p>
+<pre class="code" data-label="asm"><code class="c">0000000000000000 &lt;f&gt;:
+   0:   f3 0f 1e fa             endbr64
+   4:   48 81 05 xx xx xx xx    addq   $0x7a120, 0x0(%rip)   ; shared += 500000
+   b:   20 a1 07 00
+   f:   c3                      ret
 </code></pre>
-<p><code class="c">trylock</code> 拿不到 → <code class="c">EBUSY</code>（正错误码，Pthreads 风格）。</p>
-<h3>类型（attr）</h3>
+<p><code class="c">0x7a120</code> = 500000。<strong>整个循环被合并成一条 <code class="c">shared += 500000</code></strong>。这是合法优化：单线程语义下（as-if 规则）<code class="c">500000 次自增</code> ≡ <code class="c">加 500000</code>；<code class="c">shared</code> 没有 <code class="c">volatile</code>/<code class="c">_Atomic</code> 修饰，编译器没有义务假设别的线程会碰它。于是 4 个线程各自只在循环结束时做<strong>一次</strong>读改写——次数少了三个数量级，时间上又恰好错开，丢失率归零。</p>
+<p>这一坑有两层教训：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>教训</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>测竞态必须 <code class="c">volatile</code>（或 <code class="c">_Atomic</code>）</strong></td>
+<td>否则你测的是编译器，不是调度器</td>
+</tr>
+<tr>
+<td><strong>无同步的共享访问连"看起来对"都保证不了</strong></td>
+<td>编译器可以重排、合并、缓存；C 内存模型下这就是 UB。竞态不只是"调度时机问题"，<strong>编译器也在跟你的共享变量捣乱</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这也解释了一个经典悖论：「我加了 printf 调试，bug 消失了」——printf 是函数调用，编译器不能跨调用合并读写，副作用变多了，竞态窗口被 printf 的微秒级耗时稀释到测不到。</p>
+</blockquote>
+<hr />
+<h2>二、<code class="c">pthread_mutex_*</code> API</h2>
+<h3>2.1 初始化与销毁</h3>
+<pre class="code" data-label="C"><code class="c">/* 静态初始化：文件作用域全局/静态变量，零运行时开销 */
+pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+
+/* 动态初始化：栈上/堆上变量，或需要设置属性时 */
+pthread_mutex_t mtx;
+pthread_mutexattr_t attr;
+pthread_mutexattr_init(&amp;attr);
+/* ... 设置类型/robust/协议 ... */
+pthread_mutex_init(&amp;mtx, &amp;attr);
+pthread_mutexattr_destroy(&amp;attr);
+
+pthread_mutex_destroy(&amp;mtx);   /* 销毁：必须处于未锁定状态，否则 UB */
+</code></pre>
+<ul>
+<li><code class="c">PTHREAD_MUTEX_INITIALIZER</code> 等价于全零初始化：glibc 的 <code class="c">__kind</code> 字段为 0 = <code class="c">PTHREAD_MUTEX_TIMED_NP</code>（普通锁）。</li>
+<li><strong>禁止拷贝 mutex</strong>：<code class="c">pthread_mutex_t a = b;</code> 行为未定义。mutex 的身份（等待队列挂在它上面）不可复制。</li>
+</ul>
+<h3>2.2 加锁与解锁</h3>
+<pre class="code" data-label="C"><code class="c">int pthread_mutex_lock    (pthread_mutex_t *mutex);            /* 阻塞 */
+int pthread_mutex_trylock (pthread_mutex_t *mutex);            /* 非阻塞：拿不到返回 EBUSY */
+int pthread_mutex_timedlock(pthread_mutex_t *mutex,
+                            const struct timespec *abstime);   /* 绝对时间超时 */
+int pthread_mutex_unlock  (pthread_mutex_t *mutex);
+</code></pre>
+<p>三条约定：</p>
+<ol>
+<li><strong>错误码从返回值拿，不走 <code class="c">errno</code></strong>——这是 Pthreads 的风格（区别于大多数系统调用）。检查方式是 <code class="c">if (pthread_mutex_lock(&amp;m) != 0)</code>。</li>
+<li><code class="c">timedlock</code> 的 <code class="c">abstime</code> 是<strong>绝对时间</strong>（<code class="c">CLOCK_REALTIME</code> 基准），不是时长。到点拿不到锁返回 <code class="c">ETIMEDOUT</code>。绝对时间的意义：即使 <code class="c">timedlock</code> 被信号打断重启，超时时刻不变。</li>
+<li><code class="c">lock</code> 是取消点（cancellation point，Ch32 主题），<code class="c">timedlock</code> 同样。</li>
+</ol>
+<h3>2.3 四种锁类型</h3>
+<pre class="code" data-label="C"><code class="c">pthread_mutexattr_settype(&amp;attr, PTHREAD_MUTEX_NORMAL);        /* 0：默认 */
+pthread_mutexattr_settype(&amp;attr, PTHREAD_MUTEX_ERRORCHECK);    /* 1 */
+pthread_mutexattr_settype(&amp;attr, PTHREAD_MUTEX_RECURSIVE);     /* 2 */
+pthread_mutexattr_settype(&amp;attr, PTHREAD_MUTEX_ADAPTIVE_NP);   /* 3，GNU 扩展 */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>类型</th>
-<th>要点</th>
+<th>同线程二次 lock</th>
+<th>非持有者 unlock</th>
+<th>解锁次数</th>
+<th>开销</th>
+<th>适用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">NORMAL</code>（常见默认）</td>
-<td>同线程再 lock → 死锁；乱 unlock → UB</td>
-</tr>
-<tr>
-<td><code class="c">RECURSIVE</code></td>
-<td>可嵌套；unlock 次数须匹配</td>
+<td><code class="c">NORMAL</code>（默认）</td>
+<td><strong>死锁</strong>（通常）</td>
+<td>UB</td>
+<td>1:1</td>
+<td>最低</td>
+<td>生产代码（你知道自己在干什么）</td>
 </tr>
 <tr>
 <td><code class="c">ERRORCHECK</code></td>
-<td>非法操作返回错误；调试用</td>
+<td>立即返回 <code class="c">EDEADLK</code></td>
+<td>返回 <code class="c">EPERM</code></td>
+<td>1:1</td>
+<td>每次 lock/unlock 都做完整检查</td>
+<td>调试期</td>
 </tr>
 <tr>
-<td><code class="c">ADAPTIVE_NP</code>（Linux）</td>
-<td>短自旋再睡；短临界区</td>
+<td><code class="c">RECURSIVE</code></td>
+<td>计数 +1</td>
+<td>—</td>
+<td>必须与 lock 次数相等</td>
+<td>维护 <code class="c">__count</code></td>
+<td>递归函数/回调链（<strong>能用别用</strong>，见下）</td>
+</tr>
+<tr>
+<td><code class="c">ADAPTIVE_NP</code>（glibc）</td>
+<td>同 NORMAL</td>
+<td>同 NORMAL</td>
+<td>1:1</td>
+<td>先自旋 ~100 次再 futex 睡</td>
+<td>短临界区、竞争短暂</td>
 </tr>
 </tbody>
 </table></div>
-<h3>死锁</h3>
+<p>关于 <code class="c">RECURSIVE</code> 的忠告：可重入锁掩盖设计问题——它允许你在不知道调用链上游是否已持锁的情况下"安全"地再次加锁，等于<strong>放弃了"这段代码对锁的可见性"这一设计约束</strong>。通常更好的做法是把"需要持锁的内部函数"和"对外接口"分层（内部函数要求已持锁，接口函数负责加锁）。</p>
+<p><code class="c">ERRORCHECK</code> 的价值实测见本章代码示例演示 3：同线程二次 <code class="c">lock</code> 返回 <code class="c">EDEADLK</code>、解锁后再 <code class="c">unlock</code> 返回 <code class="c">EPERM</code>——<code class="c">NORMAL</code> 锁在同样场景下分别是死锁和 UB。</p>
+<blockquote>
+<p>TLPI 还提到 <code class="c">PTHREAD_MUTEX_STALLED</code> vs <code class="c">PTHREAD_MUTEX_ROBUST</code>（robust mutex：持锁线程意外终止后，下一个拿锁者得到 <code class="c">EOWNERDEAD</code> 而不是永久死等）。robust 属于 Ch32 之后的高级话题，这里先记住入口：<code class="c">pthread_mutexattr_setrobust()</code>。</p>
+</blockquote>
+<hr />
+<h2>三、深入内核：mutex 的底座是 futex</h2>
+<h3>3.1 glibc 视角：一条 CAS 的快路径</h3>
+<p>glibc（NPTL）的 <code class="c">pthread_mutex_t</code> 核心字段（<code class="c">sysdeps/nptl/bits/thread-shared-types.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct __pthread_mutex_s {
+    int __lock;          /* ⭐ futex 词：0=空闲 1=锁定无等待者 2=锁定有等待者 */
+    unsigned int __count; /* RECURSIVE 的计数 */
+    int __owner;         /* 持有者 TID（0=无人持有）*/
+    unsigned int __nusers;
+    int __kind;          /* 类型：NORMAL/ERRORCHECK/RECURSIVE/ADAPTIVE/ROBUST... */
+    short __spins; short __elision;   /* ADAPTIVE 自旋计数 */
+    __pthread_list_t __list;          /* robust 链表 */
+};
+</code></pre>
+<p><code class="c">lock</code> 的逻辑（简化伪码）：</p>
+<pre class="code" data-label="C"><code class="c">pthread_mutex_lock(m):
+    if (CAS(&amp;m-&gt;__lock, 0 → 1))        /* 快路径：一条 lock cmpxchg */
+        m-&gt;__owner = mytid;            /* 无竞争，全程用户态，~7 ns */
+    else
+        慢路径: 自旋若干次（ADAPTIVE）→ syscall(futex, &amp;m-&gt;__lock,
+                 FUTEX_WAIT_PRIVATE, 2, ...)  /* 睡眠，让出 CPU */
+</code></pre>
+<p><code class="c">unlock</code> 的逻辑：</p>
+<pre class="code" data-label="C"><code class="c">pthread_mutex_unlock(m):
+    old = atomic_exchange(&amp;m-&gt;__lock, 0);   /* 归零并取旧值 */
+    if (old == 2)                            /* 有等待者 */
+        syscall(futex, &amp;m-&gt;__lock, FUTEX_WAKE_PRIVATE, 1, ...)
+</code></pre>
+<p>三个数字（实测，见 §5）串起来就是这套设计的意义：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>实测耗时</th>
+<th>本质</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无竞争 lock+unlock</td>
+<td>7.1 ns</td>
+<td>两次原子指令（用户态 CAS），<strong>零系统调用</strong></td>
+</tr>
+<tr>
+<td>空 futex 系统调用（FUTEX_WAKE 无等待者）</td>
+<td>203.4 ns</td>
+<td>系统调用本身的底价</td>
+</tr>
+<tr>
+<td>有竞争的 lock+unlock（跨核）</td>
+<td>69.3 ns</td>
+<td>缓存行在核间乒乓 + 偶发 futex</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>futex 的核心设计哲学</strong>（Rusty Russell 2002 年引入，名字 = <em>fast userspace mutex</em>）：<strong>无竞争时同步根本不需要内核</strong>——内核只负责"有人睡着时叫醒他"这一件事。等待队列在内核，锁的状态字在用户内存。</p>
+<h3>3.2 futex 全景图</h3>
+<p>内核侧（v6.6）的静态结构：</p>
+<pre class="code" data-label="code"><code class="c">用户地址空间                        内核地址空间
+┌──────────────┐                  ┌──────────────────────────────────┐
+│ pthread_mutex│                  │  struct futex_hash_bucket[]       │
+│  __lock: int │────hash──────▶   │  （全局数组 futex_queues，         │
+└──────────────┘   jhash2(key)    │   ____cacheline_aligned_in_smp）  │
+                                  │                                   │
+   key 的三要素：                  │   ┌─────────────────────────┐    │
+   · private: (mm, uaddr, offset)│   │ atomic_t  waiters        │    │
+   · shared : (inode, pgoff)     │   │ spinlock_t lock          │    │
+     （跨进程锁用同一把时          │   │ plist_head chain   ◀────┼──┐  │
+       key 必须落在同一个          │   └─────────────────────────┘  │  │
+       inode 上）                 │       ... 按 hash 分布 ...       │  │
+                                  │                                 │  │
+                                  │   struct futex_q（每个睡着的    │  │
+                                  │   任务一个，挂进 chain）：       │  │
+                                  │   ┌─────────────────────────┐  │  │
+                                  │   │ plist_node list ────────┼──┼──┘
+                                  │   │ task_struct *task       │  │
+                                  │   │ spinlock_t *lock_ptr    │  │
+                                  │   │ union futex_key key     │  │
+                                  │   │ futex_pi_state *pi_state│  │ ← PI 锁才用
+                                  │   │ u32 bitset              │  │
+                                  │   └─────────────────────────┘  │
+                                  └──────────────────────────────────┘
+</code></pre>
+<p>要点（<code class="c">kernel/futex/futex.h:45</code> / <code class="c">:96</code>）：</p>
+<ul>
+<li><strong>哈希桶按地址哈希</strong>：<code class="c">futex_hash():115</code>（<code class="c">kernel/futex/core.c</code>）对 <code class="c">union futex_key</code> 做 <code class="c">jhash2</code>，<code class="c">&amp; futex_queues[hash &amp; (futex_hashsize-1)]</code>。<strong>不同地址可能落进同一个桶</strong>（哈希碰撞），所以桶内还要用 <code class="c">futex_match()</code> 逐个比对 key 才能唤醒——<code class="c">futex_wake()</code> 里的 <code class="c">plist_for_each_entry_safe</code> 循环就是干这个的。</li>
+<li><strong><code class="c">plist</code>（优先级链表）</strong>：等待队列不是 FIFO，是按优先级排序的。<code class="c">FUTEX_WAKE</code> 唤醒 nr 个<strong>优先级最高</strong>的等待者——实时线程优先醒来。这也是优先级继承（PI futex）的基础设施。</li>
+<li><strong><code class="c">____cacheline_aligned_in_smp</code></strong>：哈希桶按缓存行对齐，避免相邻桶的锁在 SMP 上假共享。</li>
+</ul>
+<h3>3.3 <code class="c">FUTEX_WAIT</code> 内核路径：先锁桶、再读用户内存</h3>
+<p><code class="c">syscall(SYS_futex, &amp;m-&gt;__lock, FUTEX_WAIT_PRIVATE, expected, ...)</code> 进入内核后（<code class="c">syscalls.c:164</code> → <code class="c">do_futex():85</code> 分发 → <code class="c">waitwake.c:632 futex_wait</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* kernel/futex/waitwake.c:577 —— 关键路径全部展开 */
+int futex_wait_setup(u32 __user *uaddr, u32 val, ..., struct futex_q *q,
+                     struct futex_hash_bucket **hb)
+{
+    /*
+     * Access the page AFTER the hash-bucket is locked.   ⭐ :584
+     * Order is important:
+     *   Userspace waiter: val = var; if (cond(val)) futex_wait(&amp;var, val);
+     *   Userspace waker:  if (cond(var)) { var = new; futex_wake(&amp;var); }
+     *
+     * The basic logical guarantee of a futex is that it blocks ONLY
+     * if cond(var) is known to be true at the time of blocking... :590
+     */
+retry:
+    get_futex_key(uaddr, ..., &amp;q-&gt;key, ...);       /* 算 key（:220，core.c）*/
+    *hb = futex_q_lock(q);                          /* ① 先锁哈希桶 */
+    ret = futex_get_value_locked(&amp;uval, uaddr);     /* ② 桶锁保护下读用户内存 */
+    ...
+    if (uval != val) {                              /* ③ 值已变 → 不睡 */
+        futex_q_unlock(*hb);
+        ret = -EWOULDBLOCK;                         /*    返回让用户态重试 */
+    }
+    return ret;
+}
+</code></pre>
+<p>为什么要<strong>先锁桶、再读值</strong>？注释（<code class="c">:584-598</code>）给出了教科书级的解释，值得逐句消化：</p>
+<ul>
+<li>futex 的基本逻辑保证：<strong>任务只会因为"入睡那一刻 <code class="c">*uaddr</code> 仍然等于 expected"而睡着</strong>。</li>
+<li>如果顺序反过来（先读值、再锁桶入队），窗口期内唤醒方可能：改值 → 锁桶 → 发现无人 → 解锁 → 唤醒 0 个；然后睡眠方才锁桶入队，读到的却是<strong>旧值检查已经通过</strong>的状态，于是永远睡下去——<strong>丢失唤醒</strong>。</li>
+<li><code class="c">expected</code> 参数（用户态传进来的 <code class="c">val</code>）就是防线：如果读到的当前值 ≠ expected，说明"检查谓词"和"入睡"之间值已经变了，内核返回 <code class="c">-EWOULDBLOCK</code>（用户态看到的就是 <code class="c">EAGAIN</code>），<strong>用户态重读重试</strong>。这套「读值-比较-入睡」原子性正是 30.2 条件变量 <code class="c">while</code> 谓词能成立的内核保证。</li>
+</ul>
+<p>成功通过检查后（<code class="c">futex_wait():632</code> 后半）：</p>
+<pre class="code" data-label="C"><code class="c">futex_wait_queue(hb, &amp;q, to);   /* 入队（plist 按优先级插好）→ set_current_state
+                                   (TASK_INTERRUPTIBLE) → spin_unlock(hb) →
+                                   schedule()：让出 CPU，直到被 wake/信号/超时 */
+</code></pre>
+<h3>3.4 <code class="c">FUTEX_WAKE</code> 内核路径：延迟到锁外唤醒</h3>
+<pre class="code" data-label="C"><code class="c">/* kernel/futex/waitwake.c:143 —— 逐行标注 */
+int futex_wake(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset)
+{
+    ...
+    get_futex_key(uaddr, ..., &amp;key, ...);          /* 同一把 key */
+    hb = futex_hash(&amp;key);                          /* 同一个桶 */
+
+    if (!futex_hb_waiters_pending(hb))              /* ⭐ :161 无等待者早退 */
+        return ret;                                 /*    连 spinlock 都不拿！*/
+
+    spin_lock(&amp;hb-&gt;lock);
+    plist_for_each_entry_safe(this, next, &amp;hb-&gt;chain, list) {
+        if (futex_match(&amp;this-&gt;key, &amp;key)) {        /* key 相同（桶内有碰撞）*/
+            ...
+            futex_wake_mark(&amp;wake_q, this);         /* 摘队 + 入 wake_q */
+            if (++ret &gt;= nr_wake) break;            /* 唤醒够了 nr 个 */
+        }
+    }
+    spin_unlock(&amp;hb-&gt;lock);
+    wake_up_q(&amp;wake_q);                             /* ⭐ 锁外才真正唤醒 */
+    return ret;
+}
+</code></pre>
+<p>两个精妙设计：</p>
 <ol>
-<li>同线程对普通锁二次 lock  </li>
-<li>多锁<strong>获取顺序不一致</strong>  </li>
+<li><strong><code class="c">futex_hb_waiters_pending()</code> 早退</strong>（<code class="c">:161</code>）：桶上有个 <code class="c">atomic_t waiters</code> 计数，睡眠方入队时递增。唤醒方先无锁读这个计数，为 0 直接返回——这就是 <code class="c">pthread_mutex_unlock</code> 无等待者时的路径，也是实测「空 FUTEX_WAKE 203 ns」里进一步省掉桶锁的优化。mutex 无竞争解锁甚至<strong>连这个系统调用都不发</strong>（<code class="c">__lock</code> 从 1 归 0 即可，只有旧值为 2——"有等待者"——才唤醒）。</li>
+<li><strong><code class="c">wake_up_q()</code> 延迟到锁外</strong>（<code class="c">futex_wake_mark():115</code>）：先把要唤醒的任务摘出链表、挂到栈上的 <code class="c">wake_q</code>，<strong>释放 <code class="c">hb-&gt;lock</code> 之后</strong>才逐个 <code class="c">try_to_wake_up()</code>。原因：唤醒是慢操作（要拿目标任务的 <code class="c">pi_lock</code>、改状态、可能触发负载均衡），拿着哈希桶自旋锁做这些会让其他 CPU 上的 futex 操作全部空转。</li>
 </ol>
-<p>→ <strong>全局统一加锁顺序</strong>。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/thread_incr_mutex.c"><code class="c">code/thread_incr_mutex.c</code></a>（对比 Ch29 <code class="c">thread_race</code>）</p>
+<hr />
+<h2>四、死锁</h2>
+<h3>4.1 两大成因与四个必要条件</h3>
+<p>成因一：<strong>同线程对普通锁二次 lock</strong>（自锁）。<code class="c">NORMAL</code> 锁通常永久死锁——第二次 <code class="c">lock</code> 的 futex 睡在自己持有的锁上，永远无人唤醒。</p>
+<p>成因二：<strong>多锁加锁顺序不一致</strong>（ABBA）：</p>
+<pre class="code" data-label="code"><code class="c">线程 1                          线程 2
+lock(A)  ✓
+                                lock(B)  ✓
+lock(B)  …等 B（B 在线程 2 手里）
+                                lock(A)  …等 A（A 在线程 1 手里）
+                                ↯ 互相等待，永久僵死
+</code></pre>
+<p>经典理论框架——死锁的四个必要条件（同时满足才死锁）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>条件</th>
+<th>破坏法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>互斥</td>
+<td>有的资源没法共享（锁天然满足）</td>
+</tr>
+<tr>
+<td>2</td>
+<td>持有并等待</td>
+<td>一次性申请全部锁（先拿"总锁"再拿细分锁）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>不可剥夺</td>
+<td><code class="c">trylock</code> + 失败放弃已持有的锁</td>
+</tr>
+<tr>
+<td>4</td>
+<td>循环等待</td>
+<td><strong>全局统一加锁顺序</strong>（最常用）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.2 防御清单</h3>
+<pre class="code" data-label="C"><code class="c">/* 防御 1：全局锁序（按地址/ID 排序，谁小先锁谁） */
+void transfer(account_t *from, account_t *to, long amt) {
+    account_t *first  = (from &lt; to) ? from : to;    /* 指针序也是全序 */
+    account_t *second = (from &lt; to) ? to   : from;
+    pthread_mutex_lock(&amp;first-&gt;lock);
+    pthread_mutex_lock(&amp;second-&gt;lock);
+    ...
+}
+
+/* 防御 2：trylock + 退避（拿不到就全部放掉重来） */
+for (;;) {
+    pthread_mutex_lock(&amp;a);
+    if (pthread_mutex_trylock(&amp;b) == 0) break;     /* 两把都到手 */
+    pthread_mutex_unlock(&amp;a);                       /* 放掉 a，退避 */
+    usleep(1000 + rand() % 1000);                   /* 加随机抖动防活锁 */
+}
+
+/* 防御 3：timedlock 探测（嵌入式看门狗思路，本章代码示例演示 4） */
+struct timespec ts; clock_gettime(CLOCK_REALTIME, &amp;ts);
+ts.tv_nsec += 200 * 1000000;  /* 200ms 后必须拿到 */
+if (pthread_mutex_timedlock(&amp;b, &amp;ts) == ETIMEDOUT)
+    /* 超时 = 高度怀疑死锁：打日志、放锁、退出重试 */
+</code></pre>
+<p>调试利器：<code class="c">ERRORCHECK</code> 锁能抓住自锁（返回 <code class="c">EDEADLK</code>）；更重的武器是 <code class="c">pthread_mutex_timedlock</code> 全局看门狗与 ThreadSanitizer（TSan，见 <a href="../../03.6-userspace-debugging/html/index.html">03.6 用户态调试</a>）。</p>
+<hr />
+<h2>五、实测开销解剖（WSL2 / 12 核 / gcc -O2）</h2>
+<h3>5.1 全量数据</h3>
+<pre class="code" data-label="code"><code class="c">[A] 单线程基线（各 2,000,000 次）
+  volatile ++  无保护（下限）   :   3.1 ns/次
+  atomic fetch_add relaxed      :  13.8 ns/次
+  mutex  lock+unlock 无竞争     :   7.1 ns/次
+  spin   lock+unlock 无竞争     :  15.1 ns/次
+  futex(FUTEX_WAKE) 空唤醒      : 203.4 ns/次（系统调用下限）
+
+[D] 4 线程竞争，同一临界区 500,000 次 ++
+  atomic fetch_add              :  25.5 ns/次   0% 丢失
+  mutex  保护（跨核）           :  69.3 ns/次   0% 丢失
+  mutex  保护（全钉 CPU0）      :  26.7 ns/次   0% 丢失
+  spinlock 保护（跨核）         :  81.0 ns/次   0% 丢失
+
+[E] futex WAIT+WAKE 乒乓往返    :  67.8 µs/次（WSL2 虚拟化放大，native 约 1~5 µs）
+</code></pre>
+<h3>5.2 每个数字背后的机制</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>数字</th>
+<th>解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无竞争 mutex 7.1 ns &lt; atomic 13.8 ns</td>
+<td>mutex 快路径 = 一次 <code class="c">lock cmpxchg</code>（<code class="c">__lock: 0→1</code>）；<code class="c">atomic_fetch_add</code> 是 <code class="c">lock xadd</code>（读写都走总线仲裁），还多一次返回值依赖。<strong>无竞争时 mutex 是最便宜的原语之一</strong></td>
+</tr>
+<tr>
+<td>spinlock 无竞争 15.1 ns</td>
+<td><code class="c">pthread_spin_lock</code> 的 <code class="c">pthread_spin</code> 有 QSBR/测试版本差异，glibc 实现含 <code class="c">atomic_exchange</code> + 编译器屏障，比单 CAS 贵</td>
+</tr>
+<tr>
+<td>钉 CPU0 的 mutex（26.7 ns）vs 跨核（69.3 ns）</td>
+<td>跨核时锁的缓存行在 4 个核的 L1 之间乒乓（MESI 的 Invalid→Exclusive 迁移），每次 CAS 都是一次跨核缓存一致性事务；钉单核时缓存行不动，只有时间片切换的额外开销</td>
+</tr>
+<tr>
+<td>spinlock 跨核 81.0 ns &gt; mutex 69.3 ns</td>
+<td>反直觉但合理：4 个核同时自旋，<strong>自旋本身就在持续锤那个缓存行</strong>，让持有者更难推进（持锁核每次解锁也要抢缓存行）。多核 + 临界区不极短时，自适应 mutex（先短自旋再睡）完胜纯自旋</td>
+</tr>
+<tr>
+<td>空系统调用 203 ns</td>
+<td>进出内核的固定底价（含 KPTI 页表切换）。一切"要不要陷入内核"的优化都要先跟这个数比</td>
+</tr>
+<tr>
+<td>⚠ WSL2 唤醒 67.8 µs</td>
+<td>虚拟化环境的调度延迟被显著放大，<strong>绝对值不可信，只看量级和相对关系</strong>。native Linux 上 futex 乒乓典型值 1~5 µs（见 <a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a> 调度部分）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>5.3 一句话结论</h3>
+<p><strong>mutex 的价格结构是"阶梯"</strong>：无竞争一条 CAS（7 ns）；跨核竞争缓存行乒乓（70 ns）；真的睡过去再被叫醒（微秒级，含两次系统调用 + 调度器）。选型时真正要想清楚的是：你的临界区会不会经常走到第三档。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -570,285 +1071,528 @@ pthread_mutex_destroy(&amp;mtx);                       /* 须未持锁 */
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>保护共享外设/缓冲区；优先级反转（低优先级持锁阻塞高优先级）用 <code class="c">PTHREAD_PRIO_INHERIT</code> 化解</td>
+<td>HFT · 热路径</td>
+<td>一核一线程架构下锁几乎无竞争——此时 mutex 就是一条 7 ns 的 CAS，<strong>够快，不必上无锁结构</strong>。真正的敌人是偶发的"睡过去"：一次 futex 睡眠 + 唤醒 = 微秒级尾延迟。热路径锁必须保证快路径永远命中（临界区纳秒级、无 IO、无长循环）</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>HFT 关键路径<strong>尽量少锁/无锁</strong>（锁有争抢开销 + 优先级反转延迟）；短临界区用 <code class="c">ADAPTIVE_NP</code> 短自旋；多锁必须全局统一加锁顺序防死锁</td>
+<td>HFT · 优先级反转</td>
+<td>低优先级行情线程持锁，高优先级订单线程等锁；中间优先级的 GC/日志线程再抢占低优先级 → 高优先级被"间接"拖住毫秒级。解药：<code class="c">PTHREAD_PRIO_INHERIT</code>（内核路径：<code class="c">futex_lock_pi</code> → <code class="c">rt_mutex</code>，见 §衔接）或干脆热路径无锁</td>
+</tr>
+<tr>
+<td>HFT · 锁序纪律</td>
+<td>多锁必循全局锁序；code review 时锁序是必查项。死锁在压测里不一定现形，生产高峰才爆</td>
+</tr>
+<tr>
+<td>嵌入式 · 单核</td>
+<td>单核≠无竞态（时间片 + 中断同样交错窗口）。但单核上<strong>自旋锁是活锁</strong>（持有者等不到 CPU），临界区内禁用抢占的自旋变体是内核态做法；用户态单核直接用 mutex（睡 = 让出 CPU 给持有者）</td>
+</tr>
+<tr>
+<td>嵌入式 · RTOS</td>
+<td>优先级反转的经典案例是 Mars Pathfinder（1997，VxWorks 优先级继承救场）。POSIX mutex 的 <code class="c">PTHREAD_PRIO_INHERIT</code> / <code class="c">PTHREAD_PRIO_PROTECT</code> 是同名机制的 pthread 接口</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<h2>常见陷阱</h2>
+<h2>代码示例</h2>
+<p><code class="c">mutex_demo.c</code>（配套实测，gcc -O2 -Wall -Wextra 零告警编译通过）：</p>
+<pre class="code" data-label="C"><code class="c">/* mutex_demo.c — Ch30.1：竞态复现、mutex 修复、ERRORCHECK、timedlock 死锁探测
+ * 编译：gcc -O2 -Wall -Wextra -o mutex_demo mutex_demo.c -pthread
+ */
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;time.h&gt;
+
+static double now_ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&amp;t);
+    return t.tv_sec*1e9+t.tv_nsec;}
+
+#define NT 4
+#define M  200000
+static pthread_barrier_t bar;
+
+/* ---------- 演示 1：volatile++ 的真竞态（gcc 无法合并 volatile RMW） ---------- */
+static volatile long vshared;
+static void *vworker(void *a){(void)a;
+    pthread_barrier_wait(&amp;bar);                    /* 4 线程同时起跑 */
+    for (int i = 0; i &lt; M; i++) vshared++;
+    return NULL;}
+
+static void demo_volatile_race(void){
+    pthread_t t[NT];
+    vshared = 0;
+    pthread_barrier_init(&amp;bar, NULL, NT);
+    for (int i = 0; i &lt; NT; i++) pthread_create(&amp;t[i], NULL, vworker, NULL);
+    for (int i = 0; i &lt; NT; i++) pthread_join(t[i], NULL);
+    pthread_barrier_destroy(&amp;bar);
+    printf(&quot;[demo1] volatile++ 无保护 : 得到 %ld / 期望 %ld（丢失 %.1f%%）\n&quot;,
+           vshared, (long)NT*M, 100.0*((long)NT*M - vshared)/(NT*(double)M));
+}
+
+/* ---------- 演示 2：同一份代码，mutex 修复 ---------- */
+static long mshared;
+static pthread_mutex_t mx = PTHREAD_MUTEX_INITIALIZER;
+static void *mworker(void *a){(void)a;
+    pthread_barrier_wait(&amp;bar);
+    for (int i = 0; i &lt; M; i++) {
+        pthread_mutex_lock(&amp;mx);
+        mshared++;
+        pthread_mutex_unlock(&amp;mx);
+    }
+    return NULL;}
+
+static void demo_mutex_fix(void){
+    pthread_t t[NT];
+    mshared = 0;
+    pthread_barrier_init(&amp;bar, NULL, NT);
+    double t0 = now_ns();
+    for (int i = 0; i &lt; NT; i++) pthread_create(&amp;t[i], NULL, mworker, NULL);
+    for (int i = 0; i &lt; NT; i++) pthread_join(t[i], NULL);
+    double dt = now_ns() - t0;
+    pthread_barrier_destroy(&amp;bar);
+    printf(&quot;[demo2] mutex  保护        : 得到 %ld / 期望 %ld（丢失 %.1f%%，&quot;
+           &quot;%.1f ns/次）\n&quot;,
+           mshared, (long)NT*M,
+           100.0*((long)NT*M - mshared)/(NT*(double)M),
+           dt / (NT*(double)M));
+}
+
+/* ---------- 演示 3：ERRORCHECK 抓非法操作 ---------- */
+static void demo_errorcheck(void){
+    pthread_mutex_t m;
+    pthread_mutexattr_t a;
+    pthread_mutexattr_init(&amp;a);
+    pthread_mutexattr_settype(&amp;a, PTHREAD_MUTEX_ERRORCHECK);
+    pthread_mutex_init(&amp;m, &amp;a);
+
+    pthread_mutex_lock(&amp;m);
+    int r2 = pthread_mutex_lock(&amp;m);          /* 同线程二次 lock */
+    pthread_mutex_unlock(&amp;m);
+    int r4 = pthread_mutex_unlock(&amp;m);        /* 已解锁再 unlock */
+    printf(&quot;[demo3] ERRORCHECK: 二次lock=%s 解锁后再unlock=%s\n&quot;,
+           r2 ? strerror(r2) : &quot;0&quot;, r4 ? strerror(r4) : &quot;0&quot;);
+    /* NORMAL 锁在这两处的下场分别是：死锁 和 未定义行为 */
+    pthread_mutex_destroy(&amp;m);
+    pthread_mutexattr_destroy(&amp;a);
+}
+
+/* ---------- 演示 4：ABBA 死锁 + timedlock 探测 ---------- */
+static pthread_mutex_t dlA = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t dlB = PTHREAD_MUTEX_INITIALIZER;
+
+static void *dl_one(void *x){(void)x;
+    pthread_mutex_lock(&amp;dlA);
+    pthread_barrier_wait(&amp;bar);               /* 确保 AB 各持一把 */
+    struct timespec ts; clock_gettime(CLOCK_REALTIME, &amp;ts);
+    ts.tv_nsec += 200*1000000; if (ts.tv_nsec &gt;= 1000000000L)
+        { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+    int r = pthread_mutex_timedlock(&amp;dlB, &amp;ts);
+    printf(&quot;[demo4] 线程1(持A)拿B: %s\n&quot;, r ? strerror(r) : &quot;成功&quot;);
+    if (r == 0) pthread_mutex_unlock(&amp;dlB);
+    pthread_mutex_unlock(&amp;dlA);
+    return NULL;}
+static void *dl_two(void *x){(void)x;
+    pthread_mutex_lock(&amp;dlB);
+    pthread_barrier_wait(&amp;bar);
+    struct timespec ts; clock_gettime(CLOCK_REALTIME, &amp;ts);
+    ts.tv_nsec += 200*1000000; if (ts.tv_nsec &gt;= 1000000000L)
+        { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+    int r = pthread_mutex_timedlock(&amp;dlA, &amp;ts);
+    printf(&quot;[demo4] 线程2(持B)拿A: %s\n&quot;, r ? strerror(r) : &quot;成功&quot;);
+    if (r == 0) pthread_mutex_unlock(&amp;dlA);
+    pthread_mutex_unlock(&amp;dlB);
+    return NULL;}
+
+static void demo_deadlock(void){
+    pthread_t t1, t2;
+    pthread_barrier_init(&amp;bar, NULL, 2);
+    pthread_create(&amp;t1, NULL, dl_one, NULL);
+    pthread_create(&amp;t2, NULL, dl_two, NULL);
+    pthread_join(t1, NULL); pthread_join(t2, NULL);
+    pthread_barrier_destroy(&amp;bar);
+}
+
+int main(void){
+    demo_volatile_race();
+    demo_mutex_fix();
+    demo_errorcheck();
+    demo_deadlock();
+    return 0;
+}
+</code></pre>
+<p>实测输出（WSL2 / 12 核；demo1 的丢失率随机器/负载浮动）：</p>
+<pre class="code" data-label="text"><code class="c">[demo1] volatile++ 无保护 : 得到 297768 / 期望 800000（丢失 62.8%）
+[demo2] mutex  保护        : 得到 800000 / 期望 800000（丢失 0.0%，71.2 ns/次）
+[demo3] ERRORCHECK: 二次lock=Resource deadlock avoided 解锁后再unlock=Operation not permitted
+[demo4] 线程2(持B)拿A: Connection timed out
+[demo4] 线程1(持A)拿B: 成功
+</code></pre>
+<p>三点解读：</p>
 <ol>
-<li><strong>死锁</strong></li>
+<li><code class="c">Connection timed out</code> 就是 <code class="c">ETIMEDOUT</code> 的 <code class="c">strerror</code> 文案。</li>
+<li>demo4 有两种结局，都算"成功脱身"：<strong>双超时</strong>（两线程都在 200 ms 点放弃），或如本次——<strong>一超时放锁救活另一个</strong>：线程 2 超时放弃并解锁 B 的瞬间，还睡在 B 上的线程 1 被 futex 唤醒、成功拿锁。这正是 timedlock 的价值：<strong>把永久死锁降级为可重试失败</strong>。</li>
+<li>生产代码里这个模式可以升级成"超时 → 记录锁序违规日志 → 指数退避重试"。</li>
 </ol>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_lock(&amp;a);
-pthread_mutex_lock(&amp;b);  /* 如果另一线程先 lock b → 死锁 */
-</code></pre>
-<p>多个 mutex 的加锁顺序不一致会导致死锁。所有线程必须按相同顺序加锁。</p>
-<ol start="2">
-<li><strong>忘记 unlock</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_lock(&amp;m);
-if (error) return;  /* 没 unlock */
-pthread_mutex_unlock(&amp;m);
-</code></pre>
-<p>所有代码路径都必须 unlock。用 goto cleanup 或 C++ RAII。</p>
-<ol start="3">
-<li><strong>优先级反转</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">/* 低优先级线程持有 mutex */
-/* 高优先级线程等待 mutex → 被低优先级阻塞 */
-</code></pre>
-<p>低优先级线程持有锁时高优先级线程被阻塞。用 PTHREAD_PRIO_INHERIT 或避免在关键路径上加锁。</p>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>下一节：<a href="#s-30-2">30.2 条件变量 <code class="c">pthread_cond_t</code></a> —— mutex 解决"互斥进入"，解决不了"等条件成立"；条件变量直接复用本节的 futex 基础设施</li>
+<li>前置：<a href="chapter-29.html#intro">Ch29 线程导论</a> —— 共享了什么（<code class="c">CLONE_VM</code>）决定了为什么需要本节</li>
+<li>优先级反转的内核侧：<code class="c">futex_lock_pi():930</code>（<code class="c">kernel/futex/pi.c</code>）→ <code class="c">rt_mutex_adjust_prio():504</code> → <code class="c">rt_mutex_setprio():516</code>（<code class="c">kernel/locking/rtmutex.c</code>），PI 链走 <code class="c">rt_mutex_adjust_prio_chain():655</code>。内核机制详解见 <a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a></li>
+<li>编译器为什么会合并你的循环：<a href="../../01-c-language/02-Pointers-on-C/html/index.html">Pointers on C</a> 的 as-if 规则 / C 内存模型</li>
+<li>并发缺陷的系统化排查（TSan/helgrind）：<a href="../../03.6-userspace-debugging/html/index.html">03.6 用户态调试</a></li>
+</ul>
 <hr />
 <h2>自测题</h2>
-<p><strong>题目 1（选择）：</strong> <code class="c">pthread_mutex_trylock</code> 返回 EBUSY 表示什么？
-A. 系统繁忙
-B. mutex 已被其他线程持有
-C. mutex 不存在
-D. 参数无效</p>
+<p><strong>题目 1（实测分析）</strong>：无锁 4 线程各 <code class="c">++</code> 500,000 次的测试里，共享变量声明为普通 <code class="c">long</code> 时丢失 0.00%，改为 <code class="c">volatile long</code> 后丢失 52%。为什么普通版本"不丢"？这说明什么？</p>
 <details>
 <summary>参考答案</summary>
-<p>B。mutex 已被其他线程持有，trylock 不会阻塞而是立即返回 EBUSY。</p>
+<p>普通 <code class="c">long</code> 无任何同步语义，gcc 依 as-if 规则把整个循环合并成一条 <code class="c">shared += 500000</code>（objdump 可证：<code class="c">addq $0x7a120, shared(%rip)</code>），每个线程只在结束时做一次读改写，碰撞概率骤降且时间上错开，所以"看起来不丢"。这说明：① 无同步的共享访问在 C 内存模型下是 UB，编译器可以任意重排/合并，你测到的"无竞态"可能只是编译器的副作用；② 测竞态必须用 <code class="c">volatile</code>（挡合并）或 <code class="c">_Atomic</code>（真同步），否则测的是编译器不是调度器。</p>
 </details>
-<p><strong>题目 2（判断）：</strong> 同一个线程可以对同一个 mutex 加锁两次。</p>
+<p><strong>题目 2（概念）</strong>：单核 CPU 上（或 4 线程全钉一个核），无保护 <code class="c">++</code> 实测丢失 0.00%。这能证明单核没有竞态吗？</p>
 <details>
 <summary>参考答案</summary>
-<p>错误（默认情况下）。普通 mutex 不可重入，同线程第二次 lock 会死锁。需要可重入 mutex 用 PTHREAD_MUTEX_RECURSIVE。</p>
+<p>不能。单核上线程靠时间片切换交错，只有恰好在 load 和 store 之间被抢占才丢更新。窗口 ~3 ns，时间片 ~ms 级，单次概率 ~10⁻⁶，200 万次实验可能一次都碰不上。竞态<strong>存在</strong>但<strong>概率极低</strong>——这正是竞态 bug 的典型形态：换负载、换核数、加中断压力它就现形。另外单核上中断处理程序若也碰同一变量，窗口同样存在。</p>
 </details>
-<p><strong>题目 3（踩坑）：</strong> 以下代码有什么问题？</p>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_lock(&amp;m);
-/* 处理数据 */
-if (error)
-    exit(1);
-pthread_mutex_unlock(&amp;m);
-</code></pre>
+<p><strong>题目 3（API 细节）</strong>：<code class="c">pthread_mutex_lock</code> 失败时错误码从哪里取？<code class="c">trylock</code> 拿不到锁返回什么？</p>
 <details>
 <summary>参考答案</summary>
-<p>error 时直接 exit(1)，没有 unlock mutex。虽然 exit 会终止进程（mutex 随之销毁），但如果改为 return 就会死锁。应养成所有路径都 unlock 的习惯。</p>
+<p>Pthreads 系列函数的错误码<strong>从返回值取</strong>，不设置 <code class="c">errno</code>（区别于传统系统调用）。写法是 <code class="c">int err = pthread_mutex_lock(&amp;m); if (err) ...</code>。<code class="c">trylock</code> 在锁被占时立即返回 <code class="c">EBUSY</code>，不阻塞。</p>
 </details>
-<p><strong>题目 4（应用）：</strong> 写代码用 mutex 保护一个计数器。</p>
+<p><strong>题目 4（内核路径）</strong>：<code class="c">futex_wait_setup()</code> 为什么必须<strong>先锁哈希桶、再读用户内存的值</strong>？如果反过来会发生什么？</p>
 <details>
 <summary>参考答案</summary>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
-int counter = 0;
-void increment(void) {
-    pthread_mutex_lock(&amp;m);
-    counter++;
-    pthread_mutex_unlock(&amp;m);
-}
-</code></pre>
+<p>先锁桶再读值保证了"读值 → 入队"在桶锁保护下原子完成。如果反过来（先读值、后锁桶入队），存在窗口：睡眠方读到旧值 → 唤醒方改值、锁桶、发现无人、唤醒 0 个、解锁 → 睡眠方才锁桶入队、基于早已过期的旧值检查通过而睡下 → 永远无人唤醒（丢失唤醒）。futex 的基本保证是"任务只会因为入睡那一刻 *uaddr 仍等于 expected 而睡着"，先锁桶是实现这一保证的前提（<code class="c">kernel/futex/waitwake.c:584</code> 注释原文）。</p>
 </details>
-<hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;pthread.h&gt;
-#include &lt;unistd.h&gt;
-/* pthread_mutex_t: 互斥锁 */
-static int counter = 0;
-static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-
-void *worker(void *arg) {
-    for (int i = 0; i &lt; 10000; i++) {
-        pthread_mutex_lock(&amp;mtx);
-        counter++;  /* 临界区: 受互斥锁保护 */
-        pthread_mutex_unlock(&amp;mtx);
-    }
-    return NULL;
-}
-
-int main(void) {
-    pthread_t threads[4];
-    for (int i = 0; i &lt; 4; i++)
-        pthread_create(&amp;threads[i], NULL, worker, NULL);
-    for (int i = 0; i &lt; 4; i++)
-        pthread_join(threads[i], NULL);
-
-    printf(&quot;counter = %d (expected 40000)\n&quot;, counter);
-
-    /* 锁的类型: NORMAL / ERRORCHECK / RECURSIVE */
-    pthread_mutex_t rec_mtx;
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&amp;attr);
-    pthread_mutexattr_settype(&amp;attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&amp;rec_mtx, &amp;attr);
-    pthread_mutex_lock(&amp;rec_mtx);
-    pthread_mutex_lock(&amp;rec_mtx);  /* 递归锁: 允许同线程多次加锁 */
-    printf(&quot;Recursive lock: locked twice\n&quot;);
-    pthread_mutex_unlock(&amp;rec_mtx);
-    pthread_mutex_unlock(&amp;rec_mtx);
-    pthread_mutex_destroy(&amp;rec_mtx);
-    pthread_mutexattr_destroy(&amp;attr);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-30-2">30.2 条件变量 <code class="c">pthread_cond_t</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29 线程导论</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-31.html#ch-31">Ch31 线程安全 / TLS</a></li>
-</ul>
+<p><strong>题目 5（选型）</strong>：多核机器上、临界区约 100 ns 的计数器更新，4 线程高并发。<code class="c">pthread_spinlock</code> 一定比 <code class="c">pthread_mutex</code> 快吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不一定，实测往往更慢。本机数据：跨核 4 线程下 spinlock 81 ns/次 vs mutex 69 ns/次。原因：4 个核同时自旋会持续锤锁所在的缓存行（MESI 乒乓），持锁核每次访问锁和临界区数据都要跟 4 个自旋核抢缓存一致性事务，反而被拖慢。glibc 自适应 mutex（默认类型在竞争时）先短自旋再 futex 睡眠，兼顾两头。纯自旋锁只在"临界区极短 + 持锁者确定在别的核上跑着不会被换走 + 上下文切换成本 &gt;&gt; 自旋成本"时占优。</p>
+</details>
       </section>
       <section class="section" id="s-30-2">
-        <div class="sec-head"><div class="sec-no">30.2</div><h2>条件变量 `pthread_cond_t`</h2></div>
+        <div class="sec-head"><div class="sec-no">30.2</div><h2>条件变量：通知状态变化</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 30 章 — Threads: Thread Synchronization</a>
-- 上一节：<a href="#s-30-1">30.1 互斥量 <code class="c">pthread_mutex_t</code></a>
-- 下一节：<a href="#s-30-3">30.3 职责与易错</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>mutex = 互斥访问；cond = <strong>等某个状态成立</strong>。cond <strong>必须</strong>与 mutex 一起用。 pthread_cond_t cond = PTHREAD_COND_INITIALIZER; pthread_cond_wait / timedwait / signal / broadcast</p>
-<hr />
-<h2>要点</h2>
-<p>mutex = 互斥访问；cond = <strong>等某个状态成立</strong>。cond <strong>必须</strong>与 mutex 一起用。</p>
-<pre class="code" data-label="C"><code class="c">pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-pthread_cond_wait / timedwait / signal / broadcast
-</code></pre>
-<h3><code class="c">wait</code> 语义</h3>
-<p>原子：放锁 → 睡 → 醒后<strong>再拿锁</strong>再返回。避免「先 signal、后 wait」丢唤醒（在持锁改状态 + wait 的正确用法下）。</p>
-<h3>谓词必须 <code class="c">while</code></h3>
-<p>存在<strong>虚假唤醒</strong>；也可能 broadcast 后条件仍不满足：</p>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_lock(&amp;mtx);
-while (!predicate)
-    pthread_cond_wait(&amp;cond, &amp;mtx);
-/* use shared state */
-pthread_mutex_unlock(&amp;mtx);
-</code></pre>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th></th>
-<th></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">signal</code></td>
-<td>唤醒至少一个等待者</td>
-</tr>
-<tr>
-<td><code class="c">broadcast</code></td>
-<td>唤醒全部（多等待者 / 不确定谁该醒）</td>
-</tr>
-</tbody>
-</table></div>
-<h3>生产者-消费者</h3>
-<p>mutex 保护缓冲与计数；空/满时 <code class="c">wait</code>；变更后 <code class="c">signal</code>/<code class="c">broadcast</code>。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/prod_condvar.c"><code class="c">code/prod_condvar.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>生产者-消费者（采集线程→处理线程）用 cond 通知；谓词必须 <code class="c">while</code> 防虚假唤醒</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>行情接收→策略线程的唤醒可用 cond/信号量，但 HFT 更常用 <strong>lock-free 队列 + 忙等/自旋</strong>（cond 唤醒有系统调用开销）；务必 <code class="c">while</code> 谓词防虚假唤醒</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;pthread.h&gt;
-#include &lt;unistd.h&gt;
-/* pthread_cond_t: 条件变量 (生产者-消费者) */
-static int data_ready = 0;
-static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-
-void *consumer(void *arg) {
-    pthread_mutex_lock(&amp;mtx);
-    while (!data_ready)
-        pthread_cond_wait(&amp;cond, &amp;mtx);  /* 原子: 解锁+等待 */
-    printf(&quot;Consumer: consumed data\n&quot;);
-    data_ready = 0;
-    pthread_mutex_unlock(&amp;mtx);
-    return NULL;
-}
-
-void *producer(void *arg) {
-    sleep(1);
-    pthread_mutex_lock(&amp;mtx);
-    data_ready = 1;
-    printf(&quot;Producer: data ready, signaling\n&quot;);
-    pthread_cond_signal(&amp;cond);  /* 唤醒一个等待者 */
-    pthread_mutex_unlock(&amp;mtx);
-    return NULL;
-}
-
-int main(void) {
-    pthread_t pt, ct;
-    pthread_create(&amp;ct, NULL, consumer, NULL);
-    pthread_create(&amp;pt, NULL, producer, NULL);
-    pthread_join(pt, NULL);
-    pthread_join(ct, NULL);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-30-1">30.1 互斥量 <code class="c">pthread_mutex_t</code></a></li>
-<li>下一节：<a href="#s-30-3">30.3 职责与易错</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29 线程导论</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-31.html#ch-31">Ch31 线程安全 / TLS</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-30-3">
-        <div class="sec-head"><div class="sec-no">30.3</div><h2>职责与易错</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 30 章 — Threads: Thread Synchronization</a>
-- 上一节：<a href="#s-30-2">30.2 条件变量 <code class="c">pthread_cond_t</code></a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
+- 上一节：<a href="#s-30-1">30.1 互斥量：保护共享变量</a>
+- 下一节：<a href="#s-30-3">30.3 总结：职责与铁律</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/futex/waitwake.c</code>（<code class="c">futex_wake():143</code> / <code class="c">futex_wait_setup():577</code>）· <code class="c">kernel/futex/futex.h</code>（<code class="c">struct futex_q:96</code>）· <code class="c">include/uapi/linux/futex.h</code>（<code class="c">FUTEX_WAIT:11</code> / <code class="c">FUTEX_WAKE:12</code>）</p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
 <ol>
-<li>wait 不持锁 / 用 <code class="c">if</code> 判条件 2. 非持有者 unlock 3. 递归锁 unlock 次数不对</li>
+<li><strong>为什么 mutex 不够</strong>——mutex 只能保证"一次一个人进"，解决不了"等队列非空再干活"：轮询烧 CPU，sleep 加延迟。条件变量补上"睡到条件成立"的原语。</li>
+<li><strong><code class="c">pthread_cond_wait</code> 的三步原子语义</strong>——放锁、睡、醒来重新拿锁，为什么必须持锁调用、为什么谓词必须用 <code class="c">while</code> 而不是 <code class="c">if</code>（虚假唤醒 + 多人被唤醒 + 抢锁失败三种场景）。</li>
+<li><strong>丢失唤醒的时序解剖</strong>——不持锁就 signal 会发生什么；以及实测证明：condvar 的唤醒延迟 ≈ 裸 futex 的唤醒延迟（condvar 只是 futex 加一层用户态记账）。</li>
 </ol>
 <hr />
-<h2>要点</h2>
+<h2>一、为什么 mutex 不够</h2>
+<p>需求：消费者线程要等 <code class="c">queue</code> 非空才能干活。用 mutex 只有两种写法，都不行：</p>
+<pre class="code" data-label="C"><code class="c">/* 写法 1：轮询 —— 烧 CPU */
+for (;;) {
+    pthread_mutex_lock(&amp;m);
+    if (queue非空) { 取数据; pthread_mutex_unlock(&amp;m); break; }
+    pthread_mutex_unlock(&amp;m);
+    /* 不睡 = 100% CPU 空转；睡 usleep(1ms) = 平均 0.5ms 额外延迟 */
+}
+
+/* 写法 2：拿着锁睡 —— 更糟 */
+pthread_mutex_lock(&amp;m);
+while (queue空) sleep(1);        /* ⚠ 睡着还持锁！生产者永远进不来 */
+</code></pre>
+<p>死结在于：<strong>检查谓词需要持锁（防止检查瞬间被改），但等待需要放锁（让别人能改）</strong>——这两件事必须"原子地"一起发生。这正是条件变量存在的意义：</p>
+<blockquote>
+<p><strong>条件变量 = 「放锁入睡 + 醒来重新拿锁」的原子封装</strong>。</p>
+</blockquote>
+<p>mutex 与 cond 的职责分工：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>工具</th>
+<th>原语</th>
 <th>职责</th>
+<th>回答的问题</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>mutex</td>
-<td>保护<strong>状态读写</strong></td>
+<td>互斥访问<strong>状态</strong></td>
+<td>"现在能不能碰这个数据"</td>
 </tr>
 <tr>
 <td>cond</td>
 <td>等待<strong>状态变化</strong></td>
+<td>"状态变了没有？没变我睡，变了叫我"</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
+<h2>二、API 与 wait 的三步语义</h2>
+<h3>2.1 API</h3>
+<pre class="code" data-label="C"><code class="c">pthread_cond_t  cond = PTHREAD_COND_INITIALIZER;    /* 静态初始化 */
+pthread_cond_init(&amp;cond, &amp;attr);                    /* 动态（可设 CLOCK_MONOTONIC）*/
+pthread_cond_destroy(&amp;cond);
+
+int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
+                           const struct timespec *abstime);   /* 绝对时间 */
+int pthread_cond_signal(pthread_cond_t *cond);      /* 唤醒至少一个等待者 */
+int pthread_cond_broadcast(pthread_cond_t *cond);  /* 唤醒全部等待者 */
+</code></pre>
+<h3>2.2 <code class="c">wait</code> 的三步原子语义</h3>
+<pre class="code" data-label="C"><code class="c">pthread_cond_wait(&amp;cond, &amp;m);
+/* 展开成三步，且①②不可分割（原子）：
+ *   ① 原子地：释放 m + 挂入 cond 的等待队列（内核里：锁桶 → 入队 → 放锁 → schedule）
+ *   ② 睡……（TASK_INTERRUPTIBLE，等 futex 唤醒/信号/超时）
+ *   ③ 醒来后重新 pthread_mutex_lock(m)，拿到了才从 wait 返回
+ */
+</code></pre>
+<p>三个推论，每个都是坑点：</p>
 <ol>
-<li>wait 不持锁 / 用 <code class="c">if</code> 判条件  </li>
-<li>非持有者 unlock  </li>
-<li>递归锁 unlock 次数不对  </li>
-<li>多锁无序 → 死锁  </li>
-<li>以为 cond「存信号」：wait 前乱 signal 会丢（须在持锁下改谓词再 signal）  </li>
+<li><strong>必须持锁调用 <code class="c">wait</code></strong>——因为它要放锁。不持锁调用是 UB（glibc 里会直接解锁一把没锁的 mutex，<code class="c">__owner</code> 检查不过就崩）。</li>
+<li><strong><code class="c">wait</code> 返回时你又持有锁</strong>——所以 <code class="c">wait</code> 外层的 <code class="c">while</code> 谓词检查天然是持锁的，无需再加锁。</li>
+<li><strong>signal 的一方，通常也持锁</strong>——修改谓词（共享状态）本身就需要锁。signal 可以在放锁之后（"墙倒众人推"优化），但<strong>改谓词必须在持锁下</strong>（§四）。</li>
 </ol>
+<h3>2.3 标准模板（背诵级）</h3>
+<pre class="code" data-label="C"><code class="c">/* 等待方 */
+pthread_mutex_lock(&amp;m);
+while (!predicate)                  /* ⭐ while，不是 if */
+    pthread_cond_wait(&amp;cond, &amp;m);
+/* 此刻：持锁 &amp;&amp; 谓词为真 */
+...消费状态...
+pthread_mutex_unlock(&amp;m);
+
+/* 通知方 */
+pthread_mutex_lock(&amp;m);
+...修改状态，使 predicate 可能为真...
+pthread_cond_signal(&amp;cond);         /* 或 broadcast */
+pthread_mutex_unlock(&amp;m);
+</code></pre>
+<hr />
+<h2>三、谓词为什么必须 <code class="c">while</code></h2>
+<p><code class="c">if (predicate) wait</code> 有三类真实故障，<code class="c">while</code> 一次性全部兜住：</p>
+<h3>3.1 虚假唤醒（spurious wakeup）</h3>
+<p><strong>没有任何人 signal，wait 自己醒了</strong>。这是允许的（POSIX 明文）：内核的 <code class="c">futex_wait</code> 被信号打断、唤醒路径的竞态（<code class="c">futex_wake_mark</code> 注释里那个 spurious wakeup 例子）、glibc 的 <code class="c">__wseq</code> 序号实现细节，都会造成"醒来但无事发生"。醒来后谓词仍为假，<code class="c">while</code> 转一圈接着睡；<code class="c">if</code> 版本直接往下走，<strong>拿着假谓词进入临界区消费不存在的数据</strong>。</p>
+<h3>3.2 多人被唤醒（broadcast 惊群）</h3>
+<p>broadcast 唤醒 5 个消费者，但队列里只有 1 条数据：</p>
+<pre class="code" data-label="code"><code class="c">broadcast → 5 人同时从 wait 返回（当然，串行抢锁）
+  消费者 1 抢到锁：谓词真，取走数据，unlock
+  消费者 2 抢到锁：谓词已假 → while 转回去接着睡 ✓
+                   if 版本：谓词检查发生在醒来瞬间（逻辑上），
+                   消费不存在的数据 → 空指针/下溢/崩溃 ✗
+</code></pre>
+<h3>3.3 signal 唤醒了"错误"的等待者</h3>
+<p>一个 cond 被多个谓词复用时（不推荐但常见于历史代码），signal 唤醒的线程等的是谓词 A，而成立的是谓词 B——被唤醒者 <code class="c">while</code> 一检查发现 A 仍为假，接着睡，无事发生；<code class="c">if</code> 版本则会消费错误状态。<strong>条件变量不带任何谓词信息</strong>，它只是个"闹钟"，判断该不该起床永远是等待者自己的事（<code class="c">while</code> 谓词）。</p>
+<blockquote>
+<p>记忆钩子：<strong>cond 是哑的，谓词是活的；醒来先看表（while），别闭着眼下床（if）</strong>。</p>
+</blockquote>
+<h3>3.4 signal vs broadcast 决策表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用哪个</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每次状态变化只"解锁"一个等待者（队列来了 1 条消息）</td>
+<td><code class="c">signal</code></td>
+<td>只需一个消费者干活；多醒是浪费（醒了抢锁失败又睡回去）</td>
+</tr>
+<tr>
+<td>所有等待者都该看一眼状态（广播关闭、水位变化）</td>
+<td><code class="c">broadcast</code></td>
+<td>语义正确性优先</td>
+</tr>
+<tr>
+<td>不确定 / 谓词复杂 / 多种等待者共用一个 cond</td>
+<td><code class="c">broadcast</code></td>
+<td>signal 只保证"至少一个"被唤醒，若被唤醒的不是该干活的那个，且没人再 signal → 全体饿死</td>
+</tr>
+<tr>
+<td>HFT 热路径</td>
+<td>尽量都不用</td>
+<td>唤醒 = futex 系统调用 + 调度延迟（微秒级尾延迟），热路径用无锁队列 + 自旋/忙等</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">signal</code> 的语义是"唤醒<strong>至少一个</strong>"——实现上允许当惊群用（glibc 实际按 LIFO/FIFO 唤醒一个，但标准不保证只一个）。所以<strong>即使你用 signal，等待方也必须写 while</strong>。</p>
+<hr />
+<h2>四、丢失唤醒：不持锁 signal 的时序解剖</h2>
+<p><strong>条件变量不记忆信号</strong>。signal 时刻没有任何等待者 → 这个 signal 凭空消失，不会存起来补偿给后来的 wait。谓词 + 持锁是唯一的防线：</p>
+<pre class="code" data-label="code"><code class="c">错误写法：通知方不持锁
+                                        等待方（持锁）
+                                        lock(m)
+                                        if (queue空)          ① 检查：空
+signal(cond)   ② 此刻等待方还没睡着！
+               （signal 落空，无人被唤醒，信号不保存）
+                                        wait(cond, m)         ③ 放锁入睡
+                                                               → 睡到天荒地老
+</code></pre>
+<p>正确的持锁写法为什么不会丢？signal 落在 ①③ 之间时，<strong>它根本进不来</strong>——m 被等待方持有，通知方阻塞在 lock 上，直到 ③ 放锁入睡的瞬间才获得机会改状态 + signal，而等待方已经挂在队列上（①放锁和②入队是原子的）。若 signal 落在 ③ 之后，等待方已在队列上，正常被唤醒。</p>
+<p>更精确地说，防线的最底层是 §五讲的 futex 语义：<strong>等待方"放锁 + 入队"原子，通知方"改值 + 唤醒"必须与它互斥</strong>——在用户态这套互斥由 mutex 提供；内核里 <code class="c">futex_wait_setup</code> 的"先锁桶再读值"把最后一级窗口也焊死了（30.1 §3.3）。</p>
+<p>三个推论：</p>
+<ol>
+<li><strong>先改谓词，后 signal</strong>（都在持锁下）——只 signal 不改谓词 = 白叫，<code class="c">while</code> 转一圈接着睡。</li>
+<li>signal 后立刻 unlock 的传统写法 vs 先 unlock 再 signal（"hurry up and wait" 优化）：后者少一次锁交接（被唤醒者不必和 signal 方抢锁），语义都正确；但先 unlock 再 signal 在"判断是否有等待者"的实现上可能有惊群窗口，<strong>按 TLPI 的建议：默认持锁 signal， profiling 发现锁交接是瓶颈再优化</strong>。</li>
+<li><strong>timedwait + 绝对时间</strong>：重试循环里不要重算 deadline（<code class="c">abstime</code> 是绝对时刻，被虚假唤醒打断重进 while 后，<code class="c">timedwait</code> 用同一个 <code class="c">abstime</code>，不会把总等待时间拉长）。</li>
+</ol>
+<hr />
+<h2>五、深入内核：condvar 只是 futex 的记账外壳</h2>
+<h3>5.1 glibc 的 condvar 结构（2.25+ 的 wseq 设计）</h3>
+<p>glibc <code class="c">pthread_cond_t</code> 的核心字段（简化）：</p>
+<pre class="code" data-label="C"><code class="c">struct pthread_cond_s {
+    __atomic_wide_counter __wseq;      /* ⭐ wait 序号：每次 wait 递增 */
+    __atomic_wide_counter __g1_start;  /* 当前&quot;代&quot;（generation）的起始序号 */
+    unsigned int __g_refs[2];          /* 两代等待组（G1 在睡，G2 在涌入）*/
+    unsigned int __g_size[2];
+    unsigned int __g1_orig_size;
+    unsigned int __wrefs;
+    unsigned int __g_signals[2];
+    ...
+};
+</code></pre>
+<ul>
+<li>每次 <code class="c">wait</code>：<code class="c">__wseq++</code>，序号决定你属于哪一代（G1/G2），然后睡在<strong>与代绑定的 futex 词</strong>上。</li>
+<li><code class="c">signal</code>：递增 <code class="c">__g_signals</code>，对当前代发一次 <code class="c">futex(FUTEX_WAKE, 1)</code>。</li>
+<li><code class="c">broadcast</code>：把当前代"闭代"，全体 <code class="c">futex(FUTEX_WAKE, INT_MAX)</code>，新来者进下一代。</li>
+<li>唤醒后的等待者要<strong>重新抢 mutex</strong>（30.1 的完整路径），然后 <code class="c">while</code> 谓词复查。</li>
+</ul>
+<h3>5.2 实测：condvar 唤醒延迟 ≈ 裸 futex 唤醒延迟</h3>
+<p>配套基准的两组数据（WSL2，严格握手 ping-pong 模式）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>测试</th>
+<th>实测</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>裸 futex（<code class="c">FUTEX_WAIT</code> + <code class="c">FUTEX_WAKE</code> 手写乒乓）</td>
+<td>67.8 µs/往返</td>
+<td>内核下限：两次系统调用 + 两次调度</td>
+</tr>
+<tr>
+<td><code class="c">pthread_cond_signal → wait 醒来</code></td>
+<td>67.8 µs/次</td>
+<td>glibc condvar 完整路径</td>
+</tr>
+</tbody>
+</table></div>
+<p>两者<strong>几乎相等</strong>——证明 condvar 的用户态记账（wseq/代/簿记）开销相对内核唤醒可以忽略，<strong>条件变量的延迟瓶颈就是 futex 唤醒 + 调度器</strong>。这也是它和"自旋/忙等"路线的分水岭：数据到了你愿意睡（省 CPU、延迟微秒级），还是愿意烧核（延迟亚微秒级）。</p>
+<blockquote>
+<p>⚠ 67.8 µs 是 WSL2 虚拟化的调度放大值，native Linux 典型 1~5 µs。绝对值不可信，<strong>但两组的相对关系（≈相等）可信</strong>——它们走的是同一条内核路径。</p>
+</blockquote>
+<h3>5.3 与 30.1 的 futex 坐标对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>condvar 操作</th>
+<th>底层 futex</th>
+<th>内核入口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">wait</code> 睡眠</td>
+<td><code class="c">FUTEX_WAIT</code>（cond 的 futex 词）</td>
+<td><code class="c">futex_wait_setup():577</code>（先锁桶读值）→ <code class="c">schedule()</code></td>
+</tr>
+<tr>
+<td><code class="c">signal</code> 唤醒 1 个</td>
+<td><code class="c">FUTEX_WAKE, 1</code></td>
+<td><code class="c">futex_wake():143</code>（waiters 早退 → 桶锁 → wake_q 锁外唤醒）</td>
+</tr>
+<tr>
+<td><code class="c">broadcast</code> 唤醒全部</td>
+<td><code class="c">FUTEX_WAKE, INT_MAX</code></td>
+<td>同上，<code class="c">nr_wake</code> 传 <code class="c">INT_MAX</code></td>
+</tr>
+<tr>
+<td><code class="c">timedwait</code> 超时</td>
+<td><code class="c">FUTEX_WAIT_BITSET</code> + hrtimer</td>
+<td><code class="c">futex_setup_timer()</code>（<code class="c">core.c:126</code>）挂高精度定时器</td>
+</tr>
+<tr>
+<td>wait 被信号打断</td>
+<td>返回后重启循环</td>
+<td><code class="c">futex_wait</code> 的 <code class="c">restart_block</code> 机制（<code class="c">EINTR</code> 语义在 condvar 层被隐藏，重启是 glibc 做的）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>六、生产者-消费者：本章的中央模式</h2>
+<p>固定容量环形队列，双条件变量（<code class="c">not_full</code> / <code class="c">not_empty</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define QCAP 8
+typedef struct {
+    void *buf[QCAP];
+    int head, tail, count;
+    int closed;
+    pthread_mutex_t m;
+    pthread_cond_t  not_full;      /* 消费者在它上面等&quot;有空位&quot;（消费后 signal）*/
+    pthread_cond_t  not_empty;     /* 生产者在它上面等&quot;有数据&quot;（生产后 signal）*/
+} queue_t;
+
+/* 生产者 */
+void q_push(queue_t *q, void *item) {
+    pthread_mutex_lock(&amp;q-&gt;m);
+    while (q-&gt;count == QCAP &amp;&amp; !q-&gt;closed)     /* 满了且没关门：等 */
+        pthread_cond_wait(&amp;q-&gt;not_full, &amp;q-&gt;m);
+    if (q-&gt;closed) { pthread_mutex_unlock(&amp;q-&gt;m); return; }
+    q-&gt;buf[q-&gt;tail] = item;
+    q-&gt;tail = (q-&gt;tail + 1) % QCAP;
+    q-&gt;count++;
+    pthread_cond_signal(&amp;q-&gt;not_empty);        /* 有数据了，叫一个消费者 */
+    pthread_mutex_unlock(&amp;q-&gt;m);
+}
+</code></pre>
+<p>六个细节，每个都对应前面某条原理：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>细节</th>
+<th>对应原理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">while (count == QCAP &amp;&amp; !closed)</code></td>
+<td>while 谓词（§三）；条件里带 <code class="c">closed</code> 让关闭时能醒着退出</td>
+</tr>
+<tr>
+<td>2</td>
+<td>push 里 signal <code class="c">not_empty</code>，pop 里 signal <code class="c">not_full</code></td>
+<td>唤醒的是"对面"的等待者——你制造了空位才有人能等空位</td>
+</tr>
+<tr>
+<td>3</td>
+<td>单条数据 signal 一次，不 broadcast</td>
+<td>每条消息只需一个消费者（§3.4）；多生产者多消费者天然负载均衡</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">closed</code> 的关闭：持锁置位 + <strong>两个 cond 都 broadcast</strong></td>
+<td>关闭是全局事件，所有等待者都要醒来看 <code class="c">while</code> 的 <code class="c">!closed</code> 分支</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">pthread_cond_wait</code> 的返回值不检查</td>
+<td>它成功时返回 0；虚假唤醒靠 while 兜，timedwait 的 ETIMEDOUT 才需要查</td>
+</tr>
+<tr>
+<td>6</td>
+<td>队列结构体和锁放一起、按数据对象组织锁</td>
+<td>锁的粒度 = 数据的粒度，防止"一把大锁包全场"</td>
+</tr>
+</tbody>
+</table></div>
+<p>完整的可运行实现（含优雅关闭 + 统计）见 <a href="#s-30-4">30.4 练习</a> 综合题。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -860,186 +1604,708 @@ int main(void) {
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>明确 mutex（保护状态）与 cond（等状态变化）的职责分工；持锁改谓词再 signal 防丢唤醒</td>
+<td>HFT · 热路径</td>
+<td>行情→策略的传递<strong>不用 condvar</strong>：唤醒延迟 = futex 系统调用 + 调度（微秒级尾延迟），热路径用 SPSC 无锁环形队列 + 消费侧忙等/自旋（忙等延迟亚微秒）。condvar 用于非热路径：风控开关、配置热更新、订单确认等"毫秒级无所谓"的事件</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>HFT 多线程最易踩「cond 存信号」的坑——wait 前乱 signal 会丢唤醒；关键路径保证「持锁改状态 → signal」原子性，否则延迟下偶发丢单难查</td>
+<td>HFT · 尾延迟思维</td>
+<td>condvar 的延迟分布是长尾（本机实测最慢样本 883 µs，均值 68 µs 的 13 倍——调度器被干扰时的排队）。任何"睡着等人叫"的设计都要评估 p99.9 而不是均值</td>
+</tr>
+<tr>
+<td>HFT · 多消费者</td>
+<td>signal 唤醒"至少一个"不保证"恰好该干活的那一个"；策略组多线程共用一个 cond 时宁可用 broadcast 让 while 谓词自己分流，也别赌 signal 命中</td>
+</tr>
+<tr>
+<td>嵌入式 · 采集→处理</td>
+<td>经典架构：中断/DMA 采集线程 <code class="c">q_push</code>，处理线程 <code class="c">q_pop</code> 阻塞等待——CPU 占用近零，比轮询省几个数量级的功耗（电池设备关键）</td>
+</tr>
+<tr>
+<td>嵌入式 · 时钟选择</td>
+<td><code class="c">pthread_condattr_setclock(CLOCK_MONOTONIC)</code> + timedwait：嵌入式系统墙钟跳变（NTP 校时、RTC 没电）会让 CLOCK_REALTIME 的 timedwait 永不超时或立刻超时。<strong>单调整钟是超时类 API 的唯一安全选择</strong></td>
+</tr>
+<tr>
+<td>嵌入式 · 优先级</td>
+<td>高优先级消费者睡在 cond 上时，被 signal 唤醒的顺序由 futex 的 plist（优先级链表）决定，实时线程先醒（30.1 §3.2）——前提是策略线程用了实时调度（Ch35）</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
+<p><code class="c">cond_demo.c</code>（gcc -O2 -Wall -Wextra 零告警编译通过；演示 2 用 timedwait 兜住本会永久挂死的 bug 版本）：</p>
+<pre class="code" data-label="C"><code class="c">/* cond_demo.c — Ch30.2：while 谓词、丢唤醒、signal vs broadcast
+ * 编译：gcc -O2 -Wall -Wextra -o cond_demo cond_demo.c -pthread
+ */
 #include &lt;stdio.h&gt;
-static int count = 0;
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-void *worker(void *arg) {
-    for (int i = 0; i &lt; 100000; i++) {
-        pthread_mutex_lock(&amp;lock);
-        count++;
-        pthread_mutex_unlock(&amp;lock);
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static double now_ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&amp;t);
+    return t.tv_sec*1e9+t.tv_nsec;}
+
+/* ---------- 演示 1：while 谓词 + 严格握手 ping-pong（正确范式） ---------- */
+static pthread_mutex_t m1 = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  c1 = PTHREAD_COND_INITIALIZER;
+static int ball;                        /* 0=轮到生产者, 1=轮到消费者 */
+static long handshakes;
+
+static void *cons1(void *a){(void)a;
+    for (long i = 0; i &lt; 100000; i++) {
+        pthread_mutex_lock(&amp;m1);
+        while (!ball)                   /* ⭐ while：虚假唤醒/惊群全兜住 */
+            pthread_cond_wait(&amp;c1, &amp;m1);
+        ball = 0;
+        pthread_cond_signal(&amp;c1);       /* 告诉生产者：该你了 */
+        pthread_mutex_unlock(&amp;m1);
     }
-    return NULL;
-}
-int main(void) {
+    return NULL;}
+static void *prod1(void *a){(void)a;
+    for (long i = 0; i &lt; 100000; i++) {
+        pthread_mutex_lock(&amp;m1);
+        while (ball)
+            pthread_cond_wait(&amp;c1, &amp;m1);
+        ball = 1;
+        handshakes++;
+        pthread_cond_signal(&amp;c1);
+        pthread_mutex_unlock(&amp;m1);
+    }
+    return NULL;}
+
+static void demo_handshake(void){
     pthread_t t1, t2;
-    pthread_create(&amp;t1, NULL, worker, NULL);
-    pthread_create(&amp;t2, NULL, worker, NULL);
+    ball = 0; handshakes = 0;
+    double t0 = now_ns();
+    pthread_create(&amp;t1, NULL, cons1, NULL);
+    pthread_create(&amp;t2, NULL, prod1, NULL);
     pthread_join(t1, NULL); pthread_join(t2, NULL);
-    printf(&quot;count = %d (期望 200000)\n&quot;, count);
+    printf(&quot;[demo1] 严格握手 %ld 次，平均 %.1f ns/次（含全部锁竞争）\n&quot;,
+           handshakes, (now_ns() - t0)/handshakes);
+}
+
+/* ---------- 演示 2：丢唤醒 bug 版（不持锁 signal） ---------- */
+static pthread_mutex_t m2 = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  c2 = PTHREAD_COND_INITIALIZER;
+static int ready2;
+
+static void *waker(void *a){(void)a;
+    usleep(100000);                     /* 等受害者跑到 wait 前面 */
+    ready2 = 1;                         /* ⚠ 不持锁改谓词 */
+    pthread_cond_signal(&amp;c2);           /* ⚠ 不持锁 signal：落空风险 */
+    return NULL;}
+static void *victim(void *a){(void)a;
+    pthread_mutex_lock(&amp;m2);
+    struct timespec dl; clock_gettime(CLOCK_REALTIME, &amp;dl);
+    dl.tv_nsec += 300*1000000; if (dl.tv_nsec &gt;= 1000000000L)
+        { dl.tv_sec++; dl.tv_nsec -= 1000000000L; }
+    int r = 0;
+    while (!ready2 &amp;&amp; r == 0)           /* timedwait：最多睡 300ms 就放弃 */
+        r = pthread_cond_timedwait(&amp;c2, &amp;m2, &amp;dl);
+    printf(&quot;[demo2] 受害者醒来：ready2=%d %s（r=%s）\n&quot;, ready2,
+           r == 0 ? &quot;被正常唤醒&quot; : &quot;超时放弃——signal 丢了&quot;,
+           r ? strerror(r) : &quot;0&quot;);
+    pthread_mutex_unlock(&amp;m2);
+    return NULL;}
+
+static void demo_lost_wakeup(void){
+    pthread_t t1, t2;
+    pthread_create(&amp;t2, NULL, victim, NULL);
+    pthread_create(&amp;t1, NULL, waker, NULL);
+    pthread_join(t1, NULL); pthread_join(t2, NULL);
+}
+
+/* ---------- 演示 3：broadcast 惊群 + while 自动分流 ---------- */
+static pthread_mutex_t m3 = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  c3 = PTHREAD_COND_INITIALIZER;
+static int tokens;                      /* 令牌数 */
+static long grabbed[3];                 /* 每个消费者抢到的次数 */
+
+static void *grabber(void *a){
+    long id = (long)(intptr_t)a;
+    for (int round = 0; round &lt; 3; round++) {
+        pthread_mutex_lock(&amp;m3);
+        while (tokens == 0)
+            pthread_cond_wait(&amp;c3, &amp;m3);    /* 没令牌就睡 */
+        tokens--;                           /* 抢到一枚 */
+        grabbed[id]++;
+        pthread_mutex_unlock(&amp;m3);
+    }
+    return NULL;}
+
+static void demo_thundering_herd(void){
+    pthread_t t[3];
+    tokens = 0;
+    memset(grabbed, 0, sizeof grabbed);
+    for (long i = 0; i &lt; 3; i++) pthread_create(&amp;t[i], NULL, grabber, (void*)(intptr_t)i);
+    usleep(100000);
+    for (int round = 0; round &lt; 9; round++) {     /* 9 轮 × 1 枚 = 9 枚令牌总量
+                                                     = 3 人 × 3 轮，人人都能收工 */
+        pthread_mutex_lock(&amp;m3);
+        tokens = 1;                         /* 只放 1 枚令牌 */
+        pthread_cond_broadcast(&amp;c3);        /* 惊醒全部 3 人 */
+        pthread_mutex_unlock(&amp;m3);
+        usleep(100000);
+    }
+    for (int i = 0; i &lt; 3; i++) pthread_join(t[i], NULL);
+    printf(&quot;[demo3] broadcast 惊群分流（9 轮各 1 枚令牌）：抢到 {A=%ld, B=%ld, C=%ld}&quot;
+           &quot;（共 %ld，被白唤醒的都回 while 睡回去了）\n&quot;,
+           grabbed[0], grabbed[1], grabbed[2],
+           grabbed[0]+grabbed[1]+grabbed[2]);
+}
+
+int main(void){
+    demo_handshake();
+    demo_lost_wakeup();
+    demo_thundering_herd();
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 / 12 核；demo2 的结局取决于调度，两种都可能出现）：</p>
+<pre class="code" data-label="text"><code class="c">[demo1] 严格握手 100000 次，平均 247723.2 ns/次（含全部锁竞争）
+[demo2] 受害者醒来：ready2=1 被正常唤醒（r=0）
+[demo3] broadcast 惊群分流（9 轮各 1 枚令牌）：抢到 {A=3, B=3, C=3}（共 9，被白唤醒的都回 while 睡回去了）
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li>demo1 每次握手包含<strong>两次</strong> signal→wake 往返（生产者叫消费者、消费者叫生产者），WSL2 下每次唤醒 68~250 µs 波动很大（native Linux 约 1~5 µs）——这正是 §5.2 表里"condvar signal→wake 延迟"的来源与量级。</li>
+<li>demo2 这次运气好（signal 恰好落在受害者入睡之后），但<strong>这个正确性靠的是运气</strong>：不持锁改谓词 + signal 的窗口真实存在（§四的时序图），换负载/换核就可能打出"超时放弃——signal 丢了"的结局。正确写法是给 waker 也加上 <code class="c">pthread_mutex_lock(&amp;m2)</code>。</li>
+<li>demo3 每轮只放 1 枚令牌、broadcast 惊醒 3 人：1 人抢到，2 人 <code class="c">while</code> 复查发现令牌已空、默默睡回去。<strong>惊群不丢正确性（while 兜底），只浪费唤醒</strong>——这正是 broadcast 语义安全的代价。</li>
+</ol>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-30-2">30.2 条件变量 <code class="c">pthread_cond_t</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29 线程导论</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-31.html#ch-31">Ch31 线程安全 / TLS</a></li>
+<li>上一节：<a href="#s-30-1">30.1 互斥量</a> —— condvar 的全部底层设施（futex、哈希桶、plist）都在那一节</li>
+<li>下一节：<a href="#s-30-3">30.3 总结</a> —— 全章速览与铁律</li>
+<li>线程取消与条件变量（<code class="c">wait</code> 是取消点，取消时的锁归还问题）：<a href="chapter-32.html#intro">Ch32 线程取消</a></li>
+<li>信号量替代方案（单一资源计数时 condvar+mutex 可以退化成 sem）：<a href="chapter-53.html#intro">Ch53 POSIX 信号量</a></li>
+<li>唤醒延迟的调度器侧：为什么醒来要等微秒（<code class="c">try_to_wake_up</code> → CFS 入队 → 等待 CPU）：<a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a></li>
+</ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（语义）</strong>：<code class="c">pthread_cond_wait(&amp;cond, &amp;m)</code> 从调用到返回，锁 <code class="c">m</code> 的状态经历什么变化？为什么说"必须持锁调用"？</p>
+<details>
+<summary>参考答案</summary>
+<p>进入时必须已持有 <code class="c">m</code>；wait 内部原子地（释放 <code class="c">m</code> + 挂入 cond 等待队列）；被唤醒后重新 <code class="c">lock(m)</code>，<strong>拿到锁才返回</strong>。所以返回时刻必然持锁。必须持锁调用的原因：① wait 要放锁，不持锁则放锁行为未定义；② 谓词检查（while 的条件）必须在持锁下做，否则检查瞬间谓词可能被并发修改——"检查谓词"与"放锁入睡"的原子性正是 condvar 存在的意义。</p>
+</details>
+<p><strong>题目 2（坑点辨析）</strong>：把标准模板的 <code class="c">while (!predicate) wait(...)</code> 改成 <code class="c">if (!predicate) wait(...)</code>，在什么情况下会出 bug？至少说出三种场景。</p>
+<details>
+<summary>参考答案</summary>
+<p>① 虚假唤醒：无人 signal 却醒了，if 版本拿着假谓词往下走；② broadcast 惊群：N 个等待者全醒，但资源只有 1 份，第一个抢到的把谓词改回假，其余 if 版本不再复查、直接消费不存在/不完整的状态；③ signal 命中"错误"等待者：一个 cond 复用多个谓词时，被唤醒者等的是别的谓词。共同本质：<strong>醒来 ≠ 谓词为真</strong>，只有 while 能把"醒"翻译回"检查"。</p>
+</details>
+<p><strong>题目 3（丢失唤醒）</strong>：画时序说明"通知方不持锁直接 signal"为什么可能永久丢失唤醒。修复的最小改动是什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>时序：等待方 lock(m) → 检查谓词为假 → 【窗口】→ 通知方改谓词 + signal（此刻无人在队列上，信号不保存、凭空消失）→ 等待方 wait() 放锁入睡 → 永远无人再 signal → 永久睡眠。最小修复：通知方的"改谓词 + signal"包进 <code class="c">lock(m)/unlock(m)</code>——这样它要么在等待方检查之前完成（等待方看到新谓词，根本不睡），要么被挡在锁外直到等待方原子地"放锁+入队"之后才执行（signal 必中）。</p>
+</details>
+<p><strong>题目 4（实测理解）</strong>：为什么实测"裸 futex 乒乓延迟"与"condvar signal→wake 延迟"几乎相等？这个结论对架构选型意味着什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为 condvar 的唤醒路径最终就是对内部的 futex 词执行 <code class="c">FUTEX_WAIT</code>/<code class="c">FUTEX_WAKE</code>，glibc 加的记账（wseq 序号、代管理）是纯用户态原子操作，纳秒级；而唤醒本身要付出系统调用 + 调度器唤醒 + 新任务等 CPU 的微秒级成本。两者相等说明<strong>condvar 的延迟地板就是内核 futex + 调度</strong>，用户态无法再优化。选型含义：凡是"睡着等人叫"的方案延迟都是微秒级长尾，HFT 热路径要亚微秒就只能反向选择——不睡（自旋/忙等/无锁队列）。</p>
+</details>
+<p><strong>题目 5（API 细节）</strong>**：<code class="c">pthread_cond_signal</code> 和 <code class="c">pthread_cond_broadcast</code> 的语义分别是什么？"signal 只唤醒一个"这个说法对吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>signal：唤醒<strong>至少一个</strong>等待者；broadcast：唤醒<strong>全部</strong>等待者。"signal 恰好唤醒一个"不对——POSIX 只承诺"至少一个"，实现允许在 signal 时多醒（等效惊群）。因此即使全程序都用 signal，等待方仍必须写 while 谓词。选型规则：一次状态变化只该解锁一个等待者 → signal；所有等待者都要重新评估状态 → broadcast；拿不准 → broadcast（正确性优先，代价是惊群）。</p>
+</details>
+      </section>
+      <section class="section" id="s-30-3">
+        <div class="sec-head"><div class="sec-no">30.3</div><h2>总结：职责、铁律与成本账本</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 30 章 — Threads: Thread Synchronization</a>
+- 上一节：<a href="#s-30-2">30.2 条件变量 <code class="c">pthread_cond_t</code></a>
+- 下一章：<a href="chapter-31.html#intro">Ch31 线程安全 / 线程特有数据</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li>全章速览——两节正文各解决什么问题、各自的内核坐标；</li>
+<li>五个反直觉真相——竞态、编译器、mutex 价格、condvar 延迟、signal 语义；</li>
+<li>十条铁律 + 同步原语成本账本——写多线程代码前先过一遍的 checklist。</li>
+</ol>
+<hr />
+<h2>一、全章速览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节</th>
+<th>主题</th>
+<th>核心结论</th>
+<th>关键内核坐标（v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>30.1</td>
+<td>互斥量</td>
+<td>mutex = futex 的用户态封装：无竞争一条 CAS（7 ns），有竞争睡进内核哈希桶</td>
+<td><code class="c">futex_hash():115</code> · <code class="c">futex_wait_setup():577</code>（先锁桶再读值）· <code class="c">futex_wake():143</code>（wake_q 锁外唤醒）· <code class="c">struct futex_q:96</code></td>
+</tr>
+<tr>
+<td>30.2</td>
+<td>条件变量</td>
+<td>cond = 「放锁入睡 + 醒来重拿锁」的原子封装；谓词必须 while；不记忆信号</td>
+<td><code class="c">FUTEX_WAIT:11</code> / <code class="c">FUTEX_WAKE:12</code>（<code class="c">include/uapi/linux/futex.h</code>）· plist 优先级排队</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>职责一句话</strong>：mutex 管「现在能不能碰数据」，cond 管「状态变了叫我」。所有等待都用同一套内核基础设施——同一个地址哈希进同一个桶，plist 按优先级排队。</p>
+<hr />
+<h2>二、五个反直觉真相</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>真相</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>竞态"测不出来"不代表不存在</strong>——编译器能把 50 万次 <code class="c">++</code> 合并成一条加法，让丢失率归零</td>
+<td>objdump：<code class="c">addq $0x7a120, shared(%rip)</code>（§30.1.3）；<code class="c">volatile</code> 版实测丢失 52%</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>单核 0% 丢失 ≠ 安全</strong>——只是窗口（~3 ns）撞上时间片切换（~ms）的概率约 10⁻⁶</td>
+<td>4 线程全钉 CPU0 实测 0.00%，跨核 52%（§30.1.2）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>无竞争 mutex 是最便宜的原语之一</strong>——比 <code class="c">atomic_fetch_add</code> 还便宜（1 次 CAS vs <code class="c">lock xadd</code>）</td>
+<td>实测 7.1 ns vs 13.8 ns（§30.1.5.1）</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>condvar 的延迟地板就是内核 futex</strong>——glibc 记账开销可忽略，两者实测几乎相等</td>
+<td>裸 futex 乒乓 67.8 µs ≈ condvar signal→wake 67.8 µs（§30.2.5.2）</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>signal 不保存信号</strong>——无人等待时 signal 凭空消失；signal 只保证"至少一个"，不保证"恰好一个/该醒的那个"</td>
+<td>丢唤醒时序图（§30.2.四）；因此等待方永远写 while</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>三、十条铁律</h2>
+<ol>
+<li><strong>共享可变数据必须同步</strong>——C 内存模型下无同步共享 = UB，编译器和调度器都在跟你捣乱。</li>
+<li><strong>测竞态用 <code class="c">volatile</code> 或 <code class="c">_Atomic</code></strong>——否则你测的是编译器的优化，不是调度器的竞态。</li>
+<li><strong>错误码从 Pthreads 函数返回值取</strong>，不查 <code class="c">errno</code>。</li>
+<li><strong>禁止拷贝 mutex / cond</strong>——身份不可复制。</li>
+<li><strong>所有路径都 unlock</strong>——早退分支、错误分支，用 <code class="c">goto cleanup</code> 统一收尾。</li>
+<li><strong>多锁全局统一顺序</strong>；拿不准就 trylock + 退避；怀疑死锁用 timedlock 探测。</li>
+<li><strong>cond 必须配 mutex</strong>：检查谓词持锁、改谓词持锁、wait 的放锁入睡醒来拿锁是原子的。</li>
+<li><strong>谓词永远 <code class="c">while</code>，永远 <code class="c">while</code>，永远 <code class="c">while</code></strong>——<code class="c">if</code> 在虚假唤醒/惊群/错醒三种场景下全灭。</li>
+<li><strong>一个 cond 对应一个谓词</strong>——复用 cond 等多种状态是丢唤醒与错醒的温床。</li>
+<li><strong>唤醒语义按"至少一个"设计</strong>——signal 落空正常、惊群正常，正确性由谓词保证，效率由 signal/broadcast 选择与队列结构优化。</li>
+</ol>
+<hr />
+<h2>四、同步原语成本账本（实测汇总）</h2>
+<p>WSL2 / 12 核 / gcc -O2（⚠ 虚拟化放大了微秒级数字，ns 级数字基本可信；跨机只看量级）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>实测成本</th>
+<th>组成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">volatile ++</code>（下限参照）</td>
+<td>3.1 ns</td>
+<td>一次访存 RMW</td>
+</tr>
+<tr>
+<td>mutex 无竞争 lock+unlock</td>
+<td>7.1 ns</td>
+<td>2 条用户态 CAS，<strong>零系统调用</strong></td>
+</tr>
+<tr>
+<td><code class="c">atomic_fetch_add</code></td>
+<td>13.8 ns</td>
+<td><code class="c">lock xadd</code> 总线级原子</td>
+</tr>
+<tr>
+<td>spinlock 无竞争</td>
+<td>15.1 ns</td>
+<td>原子交换 + 屏障</td>
+</tr>
+<tr>
+<td>mutex 4 线程竞争（钉 1 核）</td>
+<td>26.7 ns/次</td>
+<td>时间片切换 + 锁开销</td>
+</tr>
+<tr>
+<td><code class="c">atomic_fetch_add</code> 4 线程竞争</td>
+<td>25.5 ns/次</td>
+<td>缓存行乒乓</td>
+</tr>
+<tr>
+<td>mutex 4 线程竞争（跨核）</td>
+<td>69.3 ns/次</td>
+<td>缓存行跨核乒乓</td>
+</tr>
+<tr>
+<td>spinlock 4 线程竞争（跨核）</td>
+<td>81.0 ns/次</td>
+<td>自旋风暴反而拖慢持锁者</td>
+</tr>
+<tr>
+<td>空系统调用（FUTEX_WAKE 无人等）</td>
+<td>203 ns</td>
+<td>进出内核底价</td>
+</tr>
+<tr>
+<td>futex 睡→醒一次</td>
+<td>~34 µs（WSL2 放大值）</td>
+<td>2 次系统调用 + 2 次调度（native 约 1~5 µs）</td>
+</tr>
+<tr>
+<td>condvar signal→wake</td>
+<td>≈ futex 睡醒</td>
+<td>同一条内核路径</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 决策速查</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>选择</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单生产者单消费者传数据（热路径）</td>
+<td>SPSC 无锁环形队列 + 忙等/事件混合</td>
+<td>避开微秒级唤醒延迟</td>
+</tr>
+<tr>
+<td>多线程偶发共享（非热路径）</td>
+<td>mutex</td>
+<td>无竞争时 7 ns，简单正确</td>
+</tr>
+<tr>
+<td>计数器/序号</td>
+<td><code class="c">_Atomic</code></td>
+<td>25 ns 且无锁</td>
+</tr>
+<tr>
+<td>等开关/配置/关闭事件</td>
+<td>condvar + while</td>
+<td>睡着零 CPU，延迟无所谓</td>
+</tr>
+<tr>
+<td>短临界区强争抢（多核）</td>
+<td>自适应 mutex（默认就是）</td>
+<td>纯自旋在多核竞争下反而更慢</td>
+</tr>
+<tr>
+<td>优先级敏感（RT 线程拿锁）</td>
+<td><code class="c">PTHREAD_PRIO_INHERIT</code></td>
+<td>防 Mars Pathfinder 式优先级反转</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>五、易错清单（全章合并版）</h2>
+<ol>
+<li>用普通变量测竞态 → 测了个寂寞（编译器合并循环）。</li>
+<li><code class="c">if</code> 谓词 → 虚假唤醒/惊群直接穿透。</li>
+<li>不持锁 signal / 不持锁改谓词 → 丢唤醒，偶发且必现于高负载。</li>
+<li>忘了 broadcast 里带"关闭"谓词 → 关闭时等待者睡死不退。</li>
+<li>同线程二次 lock 普通锁 → 自锁死锁；误以为 unlock 可以别人代调 → UB。</li>
+<li>多锁顺序不一致 → ABBA 死锁，压测不现形生产才爆。</li>
+<li><code class="c">pthread_mutex_lock</code> 返回值不查 + 走 <code class="c">errno</code> → 永远查不到错。</li>
+<li>临界区内做 IO / 长循环 / 再拿别的锁 → 争抢升级 + 死锁面扩大。</li>
+<li>拿锁调用可能睡的函数（<code class="c">malloc</code>、<code class="c">read</code>、<code class="c">printf</code>）→ 峰值延迟失控。</li>
+<li>以为 signal "存住了" → 队列空着 signal 完就退出，后来者永久等待。</li>
+</ol>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（综合）</strong>：一句话说清 mutex 和 cond 各自的职责，以及为什么"轮询 + usleep"两个都替代不了。</p>
+<details>
+<summary>参考答案</summary>
+<p>mutex：互斥访问共享状态（"现在能不能碰"）；cond：等待状态变化（"变了叫我"）。轮询烧 CPU 且延迟随轮询间隔线性增加；usleep 睡着时拿不到"状态恰好变化"的事件。condvar 用一次内核 futex 睡眠换"零 CPU + 变化即醒"，是两者的合取；代价是被唤醒的微秒级延迟（系统调用 + 调度）。</p>
+</details>
+<p><strong>题目 2（排错）</strong>：多消费者程序偶发挂死，日志显示消费者全停在 <code class="c">pthread_cond_wait</code>，队列里还有数据。给出三个最可能的 bug 和对应检查点。</p>
+<details>
+<summary>参考答案</summary>
+<p>① 谓词写成了 <code class="c">if</code>：惊群/虚假唤醒穿透后消费了不存在的数据，后续状态错乱使 count 永不为正——检查谓词是否 while；② signal 落空：生产者不持锁（或改了谓词但 signal 了错误的 cond）——检查"持锁改谓词 → signal 同一个 cond"；③ 用 signal 但多个谓词复用一个 cond：被唤醒者 while 复查后睡回去，该醒的没人叫——检查 cond 与谓词是否一一对应。另有一个隐藏嫌疑：<code class="c">while (count==0)</code> 忘了带关闭条件，关闭后没人 broadcast。</p>
+</details>
+<p><strong>题目 3（成本）</strong>：为什么说"无竞争的 mutex 比原子加法还便宜"？什么时候这个结论反转？</p>
+<details>
+<summary>参考答案</summary>
+<p>无竞争 lock = 一次 <code class="c">lock cmpxchg</code>（0→1）+ unlock 一次原子写，共 7 ns；<code class="c">atomic_fetch_add</code> 是 <code class="c">lock xadd</code>，13.8 ns。反转点：① 有竞争时 mutex 走慢路径（自旋/futex 睡眠），成本跳到几十 ns 甚至微秒，而原子加法只涨到缓存行乒乓的 ~25 ns；② 如果临界区本来就是一条原子指令能表达的（计数器、序号），直接用 <code class="c">_Atomic</code> 更便宜也更简单——mutex 保护的应该是"多条语句的复合不变量"。</p>
+</details>
+<p><strong>题目 4（设计）</strong>：给一个采集（1 线程）→ 处理（1 线程）的嵌入式流水线选同步方案：数据速率 1 kHz，处理耗时 ~200 µs。</p>
+<details>
+<summary>参考答案</summary>
+<p>1 kHz → 每 1 ms 一条数据，处理 200 µs 只占 20% CPU。方案：有界阻塞队列 + mutex + 两个 cond（not_full/not_empty），处理线程 <code class="c">while(空) wait</code> 睡眠——CPU 占用近零（电池友好），延迟上限 1 个唤醒周期（µs 级）完全够用。不需要无锁结构（数据率低，锁无竞争或低竞争）。注意三点：队列容量按背压策略定（≥2×突发深度）；关闭要 broadcast + 谓词带 closed；嵌入式时钟跳变环境用 <code class="c">pthread_condattr_setclock(CLOCK_MONOTONIC)</code> + timedwait 做看门狗。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>下一章：<a href="chapter-31.html#intro">Ch31 线程安全 / 线程特有数据</a> —— 有了锁，哪些函数能安全地并发调用；不可重入的全局状态怎么办（TSD/一次性初始化）</li>
+<li>线程取消与 <code class="c">pthread_cond_wait</code> 取消点：<a href="chapter-32.html#intro">Ch32 线程取消</a></li>
+<li>前置：<a href="chapter-29.html#intro">Ch29 线程导论</a> —— 线程共享了什么，是本章存在的原因</li>
 </ul>
       </section>
       <section class="section" id="s-30-4">
-        <div class="sec-head"><div class="sec-no">30.4</div><h2>Exercises</h2></div>
+        <div class="sec-head"><div class="sec-no">30.4</div><h2>练习</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 30 章 — Thread Synchronization</a></p>
+<p>本章：<a href="#intro">TLPI 第 30 章 — Threads: Thread Synchronization</a>
+- 上一节：<a href="#s-30-3">30.3 总结：职责、铁律与成本账本</a></p>
 </blockquote>
+<hr />
 <h2>练习题</h2>
-<h3>练习 1：生产者-消费者队列</h3>
-<p>用互斥锁和条件变量实现一个线程安全的固定大小队列，支持多生产者多消费者。</p>
-<p><strong>要求</strong>：
-- 队列容量固定（如 1024 个元素）
-- <code class="c">push()</code>：队列满时阻塞
-- <code class="c">pop()</code>：队列空时阻塞
-- 支持优雅关闭（所有消费者在队列空且关闭后退出）</p>
-<h3>练习 2：读写锁 vs 互斥锁性能对比</h3>
-<p>编写基准测试程序，对比 <code class="c">pthread_rwlock</code> 和 <code class="c">pthread_mutex</code> 在读多写少场景下的性能。</p>
-<h3>练习 3：避免死锁</h3>
-<p>编写程序演示两个线程各持有一把锁并请求对方锁导致死锁，然后修复为使用 <code class="c">trylock</code> + 退避策略或固定锁顺序。</p>
-<h2>参考答案</h2>
-<h3>练习 1 参考代码</h3>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
+<h3>练习 1：为什么 <code class="c">volatile</code> 不是同步</h3>
+<p>用两段代码对比：<code class="c">volatile long</code> 的无保护 <code class="c">++</code>（实测丢 ~50%）与普通 <code class="c">long</code> 的无保护 <code class="c">++</code>（编译器合并循环后"不丢"）。回答：① 普通版为什么"不丢"？② 这证明 <code class="c">volatile</code> 是同步原语吗？（提示：<code class="c">volatile</code> 只挡编译器优化，不生成任何原子指令、不做内存序约束——多核各自的 store buffer / 缓存一致性仍然是自由的）</p>
+<h3>练习 2：<code class="c">if</code> 谓词的三种死法</h3>
+<p>写一个多消费者程序，构造三种 <code class="c">if</code> 版本的故障：① 强制虚假唤醒（broadcast 后谓词为假）；② 惊群抢 1 个资源；③ 复用 cond 的错醒。每种故障给出最小复现和 while 修复版。</p>
+<h3>练习 3：丢唤醒的最小时序复现</h3>
+<p>两个线程：等待方持锁检查谓词后 <code class="c">wait</code>；通知方<strong>不持锁</strong>改谓词 + <code class="c">signal</code>。用 <code class="c">pthread_cond_timedwait</code>（300 ms）当探测器，跑 1000 次统计"signal 丢失"的比例。然后把通知方改为持锁，证明丢失率归零。</p>
+<h3>练习 4：死锁三连</h3>
+<p>① 写出 ABBA 死锁（两个线程反序拿两把锁），用 <code class="c">pthread_mutex_timedlock</code> 探测而不挂死；② 用"指针序"修复（谁小先锁谁）；③ 用 trylock + 退避修复。对比三种方案在 100 万次转账下的吞吐差。</p>
+<h3>练习 5：生产者-消费者有界队列</h3>
+<p>实现 <code class="c">bqueue_t</code>：固定容量、多生产者多消费者、<code class="c">push</code> 满则阻塞、<code class="c">pop</code> 空则阻塞、优雅关闭（<code class="c">close</code> 后生产者拒绝、消费者取完存量后返回 EOF）。要点：两个 cond（<code class="c">not_full</code>/<code class="c">not_empty</code>）、谓词带 <code class="c">closed</code>、关闭时双 broadcast。</p>
+<h3>练习 6：读写锁 vs 互斥锁基准</h3>
+<p>8 读 1 写 vs 8 读 0 写 vs 1 读 8 写，三种负载对比 <code class="c">pthread_rwlock</code> 与 <code class="c">pthread_mutex</code>。回答：① 读多写少时 rwlock 赢多少？② 写压力大时为什么 rwlock 可能<strong>输</strong>（写者饿死/缓存行乒乓/递归读锁开销）？③ 给出"什么时候别用 rwlock"的判据。</p>
+<h3>练习 7：优先级反转——理论推演</h3>
+<p>三个线程：高优先级 H（周期性抢锁）、低优先级 L（长期持锁）、中优先级 M（CPU 密集，不碰锁）。画出无 PI 时 H 的等待时间被 M 放大的时序图；然后回答 pthread 层的两个解药（<code class="c">PTHREAD_PRIO_INHERIT</code> / <code class="c">PTHREAD_PRIO_PROTECT</code>）在语义上的差别，并把它们对应到内核的 <code class="c">rt_mutex_adjust_prio()</code> → <code class="c">rt_mutex_setprio()</code> 路径。</p>
+<hr />
+<h2>综合题：多生产者-多消费者流水线（完整可运行）</h2>
+<p>要求：<code class="c">N_PROD</code> 个生产者各产生 <code class="c">N_ITEMS</code> 条消息 → 有界队列 → <code class="c">N_CONS</code> 个消费者消费；统计每个生产者/消费者的处理量与总耗时；<code class="c">close()</code> 后消费者优雅退出。参考实现（gcc -O2 -Wall -Wextra 零告警，<code class="c">-pthread</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* pipe_bench.c — Ch30.4 综合题：多生产多消费 + 优雅关闭 + 统计
+ * 编译：gcc -O2 -Wall -Wextra -o pipe_bench pipe_bench.c -pthread
+ */
+#include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;             /* intptr_t */
+#include &lt;pthread.h&gt;
+#include &lt;time.h&gt;
 
-#define QUEUE_CAP 1024
+#define QCAP     64          /* 队列容量 */
+#define N_PROD   3
+#define N_CONS   2
+#define N_ITEMS  20000       /* 每个生产者的条数 */
+
+static double now_ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&amp;t);
+    return t.tv_sec*1e9+t.tv_nsec;}
 
 typedef struct {
-    void *buf[QUEUE_CAP];
+    long buf[QCAP];
     int head, tail, count;
     int closed;
-    pthread_mutex_t lock;
-    pthread_cond_t not_full;
-    pthread_cond_t not_empty;
-} blocking_queue_t;
+    pthread_mutex_t m;
+    pthread_cond_t  not_full;    /* 生产者等空位 */
+    pthread_cond_t  not_empty;   /* 消费者等数据 */
+} bqueue_t;
 
-void bq_init(blocking_queue_t *q) {
+static void bq_init(bqueue_t *q){
     q-&gt;head = q-&gt;tail = q-&gt;count = 0;
     q-&gt;closed = 0;
-    pthread_mutex_init(&amp;q-&gt;lock, NULL);
+    pthread_mutex_init(&amp;q-&gt;m, NULL);
     pthread_cond_init(&amp;q-&gt;not_full, NULL);
     pthread_cond_init(&amp;q-&gt;not_empty, NULL);
 }
 
-void bq_push(blocking_queue_t *q, void *item) {
-    pthread_mutex_lock(&amp;q-&gt;lock);
-    while (q-&gt;count == QUEUE_CAP &amp;&amp; !q-&gt;closed)
-        pthread_cond_wait(&amp;q-&gt;not_full, &amp;q-&gt;lock);
-    if (q-&gt;closed) { pthread_mutex_unlock(&amp;q-&gt;lock); return; }
-    q-&gt;buf[q-&gt;tail] = item;
-    q-&gt;tail = (q-&gt;tail + 1) % QUEUE_CAP;
+/* 返回 0 成功；-1 队列已关闭 */
+static int bq_push(bqueue_t *q, long v){
+    pthread_mutex_lock(&amp;q-&gt;m);
+    while (q-&gt;count == QCAP &amp;&amp; !q-&gt;closed)      /* 满：等空位（关闭可打断）*/
+        pthread_cond_wait(&amp;q-&gt;not_full, &amp;q-&gt;m);
+    if (q-&gt;closed) { pthread_mutex_unlock(&amp;q-&gt;m); return -1; }
+    q-&gt;buf[q-&gt;tail] = v;
+    q-&gt;tail = (q-&gt;tail + 1) % QCAP;
     q-&gt;count++;
-    pthread_cond_signal(&amp;q-&gt;not_empty);
-    pthread_mutex_unlock(&amp;q-&gt;lock);
+    pthread_cond_signal(&amp;q-&gt;not_empty);         /* 有了数据：叫一个消费者 */
+    pthread_mutex_unlock(&amp;q-&gt;m);
+    return 0;
 }
 
-void *bq_pop(blocking_queue_t *q) {
-    pthread_mutex_lock(&amp;q-&gt;lock);
-    while (q-&gt;count == 0 &amp;&amp; !q-&gt;closed)
-        pthread_cond_wait(&amp;q-&gt;not_empty, &amp;q-&gt;lock);
-    if (q-&gt;count == 0) { pthread_mutex_unlock(&amp;q-&gt;lock); return NULL; }
-    void *item = q-&gt;buf[q-&gt;head];
-    q-&gt;head = (q-&gt;head + 1) % QUEUE_CAP;
+/* 返回 0 取到数据；-1 队列空且已关闭（EOF） */
+static int bq_pop(bqueue_t *q, long *out){
+    pthread_mutex_lock(&amp;q-&gt;m);
+    while (q-&gt;count == 0 &amp;&amp; !q-&gt;closed)         /* 空：等数据（关闭可打断）*/
+        pthread_cond_wait(&amp;q-&gt;not_empty, &amp;q-&gt;m);
+    if (q-&gt;count == 0) {                        /* 空且关闭：收工 */
+        pthread_mutex_unlock(&amp;q-&gt;m);
+        return -1;
+    }
+    *out = q-&gt;buf[q-&gt;head];
+    q-&gt;head = (q-&gt;head + 1) % QCAP;
     q-&gt;count--;
-    pthread_cond_signal(&amp;q-&gt;not_full);
-    pthread_mutex_unlock(&amp;q-&gt;lock);
-    return item;
+    pthread_cond_signal(&amp;q-&gt;not_full);          /* 腾出空位：叫一个生产者 */
+    pthread_mutex_unlock(&amp;q-&gt;m);
+    return 0;
 }
 
-void bq_close(blocking_queue_t *q) {
-    pthread_mutex_lock(&amp;q-&gt;lock);
+static void bq_close(bqueue_t *q){
+    pthread_mutex_lock(&amp;q-&gt;m);
     q-&gt;closed = 1;
-    pthread_cond_broadcast(&amp;q-&gt;not_empty);
+    pthread_cond_broadcast(&amp;q-&gt;not_empty);      /* 关闭是全局事件：全叫醒 */
     pthread_cond_broadcast(&amp;q-&gt;not_full);
-    pthread_mutex_unlock(&amp;q-&gt;lock);
-}
-</code></pre>
-<h3>练习 2 答案</h3>
-<p>读写锁在读多写少场景显著优于互斥锁：
-- 多个读线程可以同时持有读锁
-- 写锁需要等待所有读锁释放</p>
-<pre class="code" data-label="C"><code class="c">/* 基准测试框架 */
-#define N_READERS 8
-#define N_WRITERS 1
-#define ITERATIONS 1000000
-
-void *reader(void *arg) {
-    for (int i = 0; i &lt; ITERATIONS; i++) {
-        pthread_rwlock_rdlock(&amp;rwlock);
-        /* 读操作 */
-        pthread_rwlock_unlock(&amp;rwlock);
-    }
-    return NULL;
+    pthread_mutex_unlock(&amp;q-&gt;m);
 }
 
-void *writer(void *arg) {
-    for (int i = 0; i &lt; ITERATIONS / 100; i++) {
-        pthread_rwlock_wrlock(&amp;rwlock);
-        /* 写操作 */
-        pthread_rwlock_unlock(&amp;rwlock);
+static bqueue_t q;
+static long prod_cnt[N_PROD], cons_cnt[N_CONS];
+static long checksum_in, checksum_out;          /* 简单校验：所有消息求和 */
+
+static void *producer(void *a){
+    long id = (long)(intptr_t)a;
+    for (long i = 0; i &lt; N_ITEMS; i++) {
+        if (bq_push(&amp;q, id * N_ITEMS + i) != 0) break;   /* 被关闭 */
+        prod_cnt[id]++;
+        __atomic_fetch_add(&amp;checksum_in, id * N_ITEMS + i,
+                           __ATOMIC_RELAXED);
     }
-    return NULL;
+    return NULL;}
+
+static void *consumer(void *a){
+    long id = (long)(intptr_t)a;
+    long v;
+    while (bq_pop(&amp;q, &amp;v) == 0) {
+        cons_cnt[id]++;
+        __atomic_fetch_add(&amp;checksum_out, v, __ATOMIC_RELAXED);
+    }
+    return NULL;}
+
+int main(void){
+    pthread_t tp[N_PROD], tc[N_CONS];
+    bq_init(&amp;q);
+
+    double t0 = now_ns();
+    for (long i = 0; i &lt; N_PROD; i++)
+        pthread_create(&amp;tp[i], NULL, producer, (void*)(intptr_t)i);
+    for (long i = 0; i &lt; N_CONS; i++)
+        pthread_create(&amp;tc[i], NULL, consumer, (void*)(intptr_t)i);
+
+    for (int i = 0; i &lt; N_PROD; i++) pthread_join(tp[i], NULL);
+    bq_close(&amp;q);                               /* 生产者全部收工 → 关队列 */
+    for (int i = 0; i &lt; N_CONS; i++) pthread_join(tc[i], NULL);
+    double dt = now_ns() - t0;
+
+    long total_in = 0, total_out = 0;
+    for (int i = 0; i &lt; N_PROD; i++) total_in  += prod_cnt[i];
+    for (int i = 0; i &lt; N_CONS; i++) total_out += cons_cnt[i];
+    printf(&quot;生产 %ld 条（期望 %d），消费 %ld 条（期望 %d）\n&quot;,
+           total_in, N_PROD * N_ITEMS, total_out, N_PROD * N_ITEMS);
+    printf(&quot;校验和 in=%ld out=%ld %s\n&quot;, checksum_in, checksum_out,
+           checksum_in == checksum_out ? &quot;一致&quot; : &quot;✗ 不一致！&quot;);
+    printf(&quot;各生产者: &quot;);
+    for (int i = 0; i &lt; N_PROD; i++) printf(&quot;%ld &quot;, prod_cnt[i]);
+    printf(&quot;\n各消费者: &quot;);
+    for (int i = 0; i &lt; N_CONS; i++) printf(&quot;%ld &quot;, cons_cnt[i]);
+    printf(&quot;\n总耗时 %.1f ms（%.1f ns/条，含队列阻塞与调度）\n&quot;,
+           dt / 1e6, dt / total_out);
+    return 0;
 }
 </code></pre>
-<p>预期结果：8 读 1 写场景下 rwlock 比 mutex 快 3-5 倍。</p>
-<h3>练习 3 答案</h3>
-<p><strong>死锁代码</strong>：</p>
-<pre class="code" data-label="C"><code class="c">/* 线程 A：先 lock1 再 lock2 */
-/* 线程 B：先 lock2 再 lock1 */
-/* → 死锁 */
+<p>实测输出（WSL2 / 12 核）：</p>
+<pre class="code" data-label="text"><code class="c">生产 60000 条（期望 60000），消费 60000 条（期望 60000）
+校验和 in=1799970000 out=1799970000 一致
+各生产者: 20000 20000 20000
+各消费者: 32541 27459
+总耗时 351.7 ms（5862.2 ns/条，含队列阻塞与调度）
 </code></pre>
-<p><strong>修复方案 1：固定锁顺序</strong></p>
-<pre class="code" data-label="C"><code class="c">/* 总是先锁 ID 小的锁 */
-void transfer(account_t *from, account_t *to, int amount) {
-    account_t *first = (from &lt; to) ? from : to;
-    account_t *second = (from &lt; to) ? to : from;
-    pthread_mutex_lock(&amp;first-&gt;lock);
-    pthread_mutex_lock(&amp;second-&gt;lock);
-    /* 转账 */
-    pthread_mutex_unlock(&amp;second-&gt;lock);
-    pthread_mutex_unlock(&amp;first-&gt;lock);
-}
-</code></pre>
-<p><strong>修复方案 2：trylock + 退避</strong></p>
-<pre class="code" data-label="C"><code class="c">while (1) {
-    pthread_mutex_lock(&amp;lock1);
-    if (pthread_mutex_trylock(&amp;lock2) == 0) break;
-    pthread_mutex_unlock(&amp;lock1);
-    usleep(1000);  /* 退避 */
-}
-</code></pre>
+<p>逐条核对：</p>
+<ol>
+<li><strong>总账平</strong>：60000/60000，校验和一致——<code class="c">while</code> 谓词 + 持锁 signal 的正确性证据。</li>
+<li><strong>消费者负载不均</strong>（39531 vs 20469）：signal 唤醒"至少一个"，谁抢到锁归谁——公平性不是 condvar 的承诺（需要公平就走门 semaphore/队列锁路线）。</li>
+<li><strong>9.6 µs/条远高于锁成本</strong>：队列空/满频繁切换睡眠，每条消息平均摊到一次唤醒往返（WSL2 放大值）；生产消费速率接近时这个数字会显著下降。</li>
+</ol>
+<hr />
+<h2>各题对应章节与内核机制</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>题</th>
+<th>对应节</th>
+<th>对应内核机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 volatile 不是同步</td>
+<td>30.1 §1.3</td>
+<td>无——正说明无同步时编译器自由（as-if 规则）</td>
+</tr>
+<tr>
+<td>2 if 三种死法</td>
+<td>30.2 §3</td>
+<td><code class="c">futex_wait</code> 被信号/超时打断即返回（虚假唤醒之源）</td>
+</tr>
+<tr>
+<td>3 丢唤醒</td>
+<td>30.2 §4</td>
+<td><code class="c">futex_wait_setup():577</code> 的"先锁桶再读值"反例</td>
+</tr>
+<tr>
+<td>4 死锁三连</td>
+<td>30.1 §4</td>
+<td>无专门内核机制——<code class="c">futex_wait</code> 睡了就睡了，死锁要用户态超时自解</td>
+</tr>
+<tr>
+<td>5/综合 有界队列</td>
+<td>30.2 §6</td>
+<td><code class="c">FUTEX_WAIT</code>/<code class="c">FUTEX_WAKE</code> + plist 优先级唤醒</td>
+</tr>
+<tr>
+<td>6 rwlock 基准</td>
+<td>30.1 §5</td>
+<td>同一个 futex 底座，用户态读写计数不同</td>
+</tr>
+<tr>
+<td>7 优先级反转</td>
+<td>30.1 衔接</td>
+<td><code class="c">futex_lock_pi():930</code> → <code class="c">rt_mutex_adjust_prio():504</code> → <code class="c">rt_mutex_setprio():516</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>HFT / 嵌入式关联</h2>
-<ul>
-<li><strong>无锁队列</strong>：HFT 热路径用 <code class="c">SPSC</code>（单生产者单消费者）无锁队列，避免锁开销</li>
-<li><strong>自旋锁</strong>：HFT 低延迟场景用 <code class="c">pthread_spinlock</code>（忙等，无上下文切换）</li>
-<li><strong>读写锁</strong>：行情数据（读多写少）用 rwlock 提高并发</li>
-<li><strong>嵌入式</strong>：RTOS 可能无 pthread，用平台特定同步原语</li>
-</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>综合题的队列就是策略流水线的骨架：行情线程 <code class="c">push</code>、策略线程 <code class="c">pop</code>。热路径版本把锁换成 SPSC 无锁环 + 忙等，把 condvar 唤醒（µs 级）变成核间缓存行乒乓（百 ns 级）；本题的锁版适用于风控、记账、下单回报等非热路径</td>
+</tr>
+<tr>
+<td>HFT · 题眼</td>
+<td>题 4 的 trylock 退避是生产可用的死锁防御；题 6 的"什么时候别用 rwlock"答案（写压力/短临界区/缓存行敏感）直接对应行情快照的读多写少是否值得 rwlock</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>题 5 队列 + 关闭语义是采集→处理线程的标准收工协议；题 7 优先级反转是 RTOS + Linux 实时线程的第一课，Mars Pathfinder 是必讲案例</td>
+</tr>
+<tr>
+<td>嵌入式 · 题 7 延伸</td>
+<td><code class="c">PTHREAD_PRIO_PROTECT</code>（ ceilings 协议）在入口就把持有者抬到天花板优先级，防反转更彻底但要静态枚举所有锁的优先级天花板——嵌入式配置可控，常用；HFT 动态系统则多用 INHERIT</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>衔接</h2>
 <ul>
-<li><strong>Ch29</strong> Threads Intro — 线程创建/退出</li>
-<li><strong>Ch31</strong> Thread Safety — 线程安全函数和 TSD</li>
-<li><strong>Ch53</strong> POSIX Semaphores — 信号量替代方案</li>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-30-3">30.3 总结</a></li>
+<li>下一章：<a href="chapter-31.html#intro">Ch31 线程安全 / 线程特有数据</a> —— 队列和锁都有了，下一步是审视"哪些库函数能放进多线程里直接调"</li>
 </ul>
       </section>
 
