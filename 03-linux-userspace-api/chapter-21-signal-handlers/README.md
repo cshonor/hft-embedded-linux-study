@@ -8,36 +8,39 @@
 
 ## 小节目录
 
-- [21.1 `sigaction()`](notes/21.1-designing-signal-handlers.md)
-- [21.2 `sa_mask`（临时叠加）](notes/21.2-other-methods-of-terminating-a-signal-ha.md)
-- [21.3 常用 `sa_flags`](notes/21.3-handling-a-signal-on-an-alternate-stack-.md)
-- [21.4 `EINTR` 与 `SA_RESTART`](notes/21.4-the-sa-siginfo-flag.md)
-- 21.5 Async-Signal-Safe（最重要）
-- [21.6 `SIGCHLD`](notes/21.6-summary.md)
-- [21.7 `signal()` vs `sigaction()`](notes/21.1-designing-signal-handlers.md)
+- [21.1 设计信号处理器](notes/21.1-designing-signal-handlers.md)
+- [21.2 从信号处理器终止进程](notes/21.2-other-methods-of-terminating-a-signal-ha.md)
+- [21.3 在备用栈上处理信号](notes/21.3-handling-a-signal-on-an-alternate-stack-.md)
+- [21.4 `SA_SIGINFO` 标志](notes/21.4-the-sa-siginfo-flag.md)
+- [21.5 系统调用的中断与重启](notes/21.5-interruption-and-restarting-of-system-ca.md)
+- [21.6 本章小结](notes/21.6-summary.md)
+- [21.7 练习题](notes/21.7-exercise.md)
 
 ---
 
 ## 章节目标
 
-
-用 `sigaction` 注册处理器；理解 `sa_mask` 与 `SA_*`；严守 async-signal-safe；处理 `EINTR` / `SA_RESTART`；安全处理 `SIGCHLD`。
-
----
-
+掌握 handler 设计的两条黄金法则（只设标志 + 只调异步信号安全函数）；理解 `volatile sig_atomic_t`
+两个限定符的各自作用；能用 `sigaltstack` + `SA_ONSTACK` 处理栈溢出崩溃；理解 `SA_SIGINFO` 与
+`siginfo_t` 的 union 语义；正确处理 `EINTR` 与 `SA_RESTART` 的边界。
 
 ---
 
-## 21.8 易错清单
 
+---
 
-1. `sa_mask` 叠加，不替换；退出即撤  
-2. `SA_NODEFER` → 易递归  
-3. `EINTR` 合法，别当致命  
-4. 标志用 `volatile sig_atomic_t`  
-5. handler 禁 `printf`/`malloc`  
-6. 实时信号 + `sigqueue` 需 `SA_SIGINFO`  
-7. 多线程：信号交给**未阻塞该信号**的某线程  
+## 易错清单
+
+1. `sa_mask` 叠加，不替换；退出即撤（由 `sigreturn` 自动恢复）
+2. `SA_NODEFER` → 允许自我重入，易递归
+3. `EINTR` 合法，别当致命；`SA_RESTART` 非万能（带超时调用仍返回 `EINTR`）
+4. 标志用 `volatile sig_atomic_t`——两个限定符缺一不可
+5. handler 禁 `printf`/`malloc`/`exit`
+6. 实时信号 + `sigqueue` 需 `SA_SIGINFO` 才拿得到 `si_value`
+7. 多线程：信号交给**未阻塞该信号**的某线程执行，不可预测
+8. `siginfo_t` 是 union——只读当前信号匹配的有效字段
+9. `close()` 返回 `EINTR` 时 **fd 已关闭，不要重试**
+10. handler 里要保护并恢复 `errno`
 
 ---
 
