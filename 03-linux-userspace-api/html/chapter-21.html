@@ -276,13 +276,13 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-21-1"><span class="n">21.1</span>`sigaction()`</a>
-          <a href="#s-21-2"><span class="n">21.2</span>`sa_mask`（临时叠加）</a>
-          <a href="#s-21-3"><span class="n">21.3</span>常用 `sa_flags`</a>
-          <a href="#s-21-4"><span class="n">21.4</span>`EINTR` 与 `SA_RESTART`</a>
-          <a href="#s-21-5"><span class="n">21.5</span>Async-Signal-Safe（最重要）</a>
-          <a href="#s-21-6"><span class="n">21.6</span>`SIGCHLD`</a>
-          <a href="#s-21-7"><span class="n">21.7</span>`signal()` vs `sigaction()`</a>
+          <a href="#s-21-1"><span class="n">21.1</span>设计信号处理器</a>
+          <a href="#s-21-2"><span class="n">21.2</span>从信号处理器终止进程</a>
+          <a href="#s-21-3"><span class="n">21.3</span>在备用栈上处理信号</a>
+          <a href="#s-21-4"><span class="n">21.4</span>`SA_SIGINFO` 标志</a>
+          <a href="#s-21-5"><span class="n">21.5</span>系统调用的中断与重启</a>
+          <a href="#s-21-6"><span class="n">21.6</span>本章小结</a>
+          <a href="#s-21-7"><span class="n">21.7</span>练习题</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -370,18 +370,23 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p>用 <code class="c">sigaction</code> 注册处理器；理解 <code class="c">sa_mask</code> 与 <code class="c">SA_*</code>；严守 async-signal-safe；处理 <code class="c">EINTR</code> / <code class="c">SA_RESTART</code>；安全处理 <code class="c">SIGCHLD</code>。</p>
+<p>掌握 handler 设计的两条黄金法则（只设标志 + 只调异步信号安全函数）；理解 <code class="c">volatile sig_atomic_t</code>
+两个限定符的各自作用；能用 <code class="c">sigaltstack</code> + <code class="c">SA_ONSTACK</code> 处理栈溢出崩溃；理解 <code class="c">SA_SIGINFO</code> 与
+<code class="c">siginfo_t</code> 的 union 语义；正确处理 <code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code> 的边界。</p>
 <hr />
 <hr />
-<h2>21.8 易错清单</h2>
+<h2>易错清单</h2>
 <ol>
-<li><code class="c">sa_mask</code> 叠加，不替换；退出即撤  </li>
-<li><code class="c">SA_NODEFER</code> → 易递归  </li>
-<li><code class="c">EINTR</code> 合法，别当致命  </li>
-<li>标志用 <code class="c">volatile sig_atomic_t</code>  </li>
-<li>handler 禁 <code class="c">printf</code>/<code class="c">malloc</code>  </li>
-<li>实时信号 + <code class="c">sigqueue</code> 需 <code class="c">SA_SIGINFO</code>  </li>
-<li>多线程：信号交给<strong>未阻塞该信号</strong>的某线程  </li>
+<li><code class="c">sa_mask</code> 叠加，不替换；退出即撤（由 <code class="c">sigreturn</code> 自动恢复）</li>
+<li><code class="c">SA_NODEFER</code> → 允许自我重入，易递归</li>
+<li><code class="c">EINTR</code> 合法，别当致命；<code class="c">SA_RESTART</code> 非万能（带超时调用仍返回 <code class="c">EINTR</code>）</li>
+<li>标志用 <code class="c">volatile sig_atomic_t</code>——两个限定符缺一不可</li>
+<li>handler 禁 <code class="c">printf</code>/<code class="c">malloc</code>/<code class="c">exit</code></li>
+<li>实时信号 + <code class="c">sigqueue</code> 需 <code class="c">SA_SIGINFO</code> 才拿得到 <code class="c">si_value</code></li>
+<li>多线程：信号交给<strong>未阻塞该信号</strong>的某线程执行，不可预测</li>
+<li><code class="c">siginfo_t</code> 是 union——只读当前信号匹配的有效字段</li>
+<li><code class="c">close()</code> 返回 <code class="c">EINTR</code> 时 <strong>fd 已关闭，不要重试</strong></li>
+<li>handler 里要保护并恢复 <code class="c">errno</code></li>
 </ol>
 <hr />
 <hr />
@@ -489,47 +494,279 @@ int main(void) {
 </ul>
       </section>
       <section class="section" id="s-21-1">
-        <div class="sec-head"><div class="sec-no">21.1</div><h2>`sigaction()`</h2></div>
+        <div class="sec-head"><div class="sec-no">21.1</div><h2>设计信号处理器</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：本章首页
-- 下一节：<a href="#s-21-2">21.2 <code class="c">sa_mask</code>（临时叠加）</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>（<code class="c">get_signal:2660</code> · <code class="c">signal_delivered:2915</code>）· <code class="c">include/linux/signal.h</code>
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="chapter-20.html#s-20-13">Ch20.13 <code class="c">sigaction()</code></a>
+- 下一节：<a href="#s-21-2">21.2 从信号处理器终止进程</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<h1>include <signal.h> int sigaction(int sig, const struct sigaction <em>act, struct sigaction </em>oldact); 不能用于 <code class="c">SIGKILL</code> / <code class="c">SIGSTOP</code>。<code class="c">act</code>/<code class="c">oldact</code> 可为 NULL。</h1>
+<ol>
+<li>信号处理器设计的<strong>两条黄金法则</strong>——为什么「越简单越好」不是建议而是必需</li>
+<li><code class="c">volatile sig_atomic_t</code> 为什么必须<strong>两个限定符同时用</strong>——各自解决什么问题</li>
+<li>什么是<strong>异步信号安全函数</strong>，以及 handler 与主流程交换数据的正确模式</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
-int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact);
-</code></pre>
-<p>不能用于 <code class="c">SIGKILL</code> / <code class="c">SIGSTOP</code>。<code class="c">act</code>/<code class="c">oldact</code> 可为 NULL。</p>
-<pre class="code" data-label="C"><code class="c">struct sigaction {
-    void (*sa_handler)(int);                          /* 或 */
-    void (*sa_sigaction)(int, siginfo_t *, void *); /* 需 SA_SIGINFO */
-    sigset_t sa_mask;
-    int sa_flags;
-};
-</code></pre>
+<h2>一、为什么 handler 难写</h2>
+<p>回顾 <a href="chapter-20.html#s-20-4">Ch20.4</a> 的核心事实：</p>
+<blockquote>
+<p><strong>handler 不是新线程</strong>——它在被打断线程<strong>自己的栈</strong>上执行，与被中断的代码<strong>共享全部状态</strong>。</p>
+</blockquote>
+<p>这带来三个根本困难：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>形式</th>
-<th>用途</th>
+<th>困难</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">sa_handler</code></td>
-<td>仅信号编号；可赋 <code class="c">SIG_DFL</code> / <code class="c">SIG_IGN</code></td>
+<td><strong>随时插入</strong></td>
+<td>主流程可能在<strong>任意指令边界</strong>被打断，包括"操作做到一半"的时刻</td>
 </tr>
 <tr>
-<td><code class="c">sa_sigaction</code> + <code class="c">SA_SIGINFO</code></td>
-<td><code class="c">siginfo_t</code>（pid/uid/来源/<code class="c">si_value</code> 等）；<code class="c">sigqueue</code> 传值必备</td>
+<td><strong>共享状态</strong></td>
+<td>handler 与主流程读写同一批全局变量、堆、栈，天然是数据竞争</td>
+</tr>
+<tr>
+<td><strong>锁不可靠</strong></td>
+<td>handler 与被中断代码在<strong>同一线程</strong>，加锁会导致<strong>自我死锁</strong>（锁不会被让出）</td>
 </tr>
 </tbody>
 </table></div>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/flag_handler.c"><code class="c">code/flag_handler.c</code></a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/siginfo_demo.c"><code class="c">code/siginfo_demo.c</code></a></p>
+<pre class="code" data-label="code"><code class="c">   主流程                          handler
+   ───────                         ───────
+   malloc()
+   ├─ 获取堆锁
+   ├─ 正在修改空闲链表
+   │                      ← 信号递送
+   │                         malloc()
+   │                         └─ 尝试获取堆锁 → 同一线程重入 → ❌ 死锁
+</code></pre>
+<p><strong>结论</strong>：handler 里能做的事<strong>非常有限</strong>。这不是编码风格建议，而是信号机制的本质约束。</p>
+<hr />
+<h2>二、两条黄金法则</h2>
+<h3>法则 1：handler 只做最小动作——通常是「设置一个标志」</h3>
+<pre class="code" data-label="C"><code class="c">static volatile sig_atomic_t got_sigint = 0;
+
+static void handler(int sig)
+{
+    got_sigint = 1;          /* 就这一行，最安全 */
+}
+
+/* 主循环里检查标志并做真正的处理 */
+for (;;) {
+    if (got_sigint) {
+        got_sigint = 0;
+        do_shutdown();       /* 这里可以随意调用 printf/malloc/... */
+    }
+    do_work();
+}
+</code></pre>
+<p>这是<strong>最推荐</strong>的模式：把复杂逻辑移回主流程，handler 只留下一个原子的"通知"。</p>
+<h3>法则 2：handler 里只调用异步信号安全函数</h3>
+<p><strong>异步信号安全（async-signal-safe）函数</strong> = 可以安全地在 handler 里调用的函数。判据：</p>
+<ul>
+<li>不持有锁（或持有的锁不会与主流程冲突）</li>
+<li>不使用静态/全局缓冲区（或使用时不会被重入破坏）</li>
+<li>不依赖被中断代码的中间状态</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>✅ 安全（可直接用）</th>
+<th>❌ 不安全（禁止）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">write()</code>、<code class="c">read()</code></td>
+<td><code class="c">printf()</code>、<code class="c">fprintf()</code>、<code class="c">sprintf()</code>（stdio 锁）</td>
+</tr>
+<tr>
+<td><code class="c">_exit()</code>、<code class="c">_Exit()</code></td>
+<td><code class="c">exit()</code>（flush stdio + atexit）</td>
+</tr>
+<tr>
+<td><code class="c">kill()</code>、<code class="c">raise()</code>、<code class="c">sigaction()</code>、<code class="c">sigprocmask()</code></td>
+<td><code class="c">malloc()</code>、<code class="c">free()</code>、<code class="c">calloc()</code>、<code class="c">realloc()</code>（堆锁）</td>
+</tr>
+<tr>
+<td>给 <code class="c">volatile sig_atomic_t</code> 赋值</td>
+<td><code class="c">strtok()</code>、<code class="c">gmtime()</code>、<code class="c">localtime()</code>（静态缓冲）</td>
+</tr>
+<tr>
+<td><code class="c">strlen()</code>、<code class="c">memcpy()</code>、<code class="c">memset()</code></td>
+<td>任何 <code class="c">pthread_*</code> 函数</td>
+</tr>
+<tr>
+<td><code class="c">snprintf()</code>（实践中常用，但非 POSIX 保证）</td>
+<td><code class="c">syslog()</code>、<code class="c">fopen()</code>、<code class="c">fclose()</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>权威清单</strong>：<code class="c">man 7 signal-safety</code> 给出完整的异步信号安全函数列表（POSIX + Linux 扩展）。写代码前应当查阅。</p>
+<p><strong>判断原则</strong>：如果一个函数<strong>可能加锁或分配内存</strong>，就假定它不安全。</p>
+</blockquote>
+<hr />
+<h2>三、<code class="c">volatile sig_atomic_t</code>：两个限定符各解决一个问题</h2>
+<p>handler 与主流程共享变量的标准写法：</p>
+<pre class="code" data-label="C"><code class="c">static volatile sig_atomic_t flag = 0;
+</code></pre>
+<p><strong>为什么两个限定符缺一不可？</strong></p>
+<h3><code class="c">volatile</code> —— 防止编译器优化</h3>
+<pre class="code" data-label="C"><code class="c">static sig_atomic_t flag = 0;      /* ❌ 少了 volatile */
+
+while (!flag) {                     /* 编译器认为 flag 在本循环里没被改过 */
+    do_work();                      /* → 优化成：读一次到寄存器，然后死循环 */
+}
+</code></pre>
+<p>编译器<strong>看不见</strong> handler（它是被内核调用的，不在控制流里），因此会认为 <code class="c">flag</code> 在主循环中不会改变，把它<strong>缓存到寄存器</strong>——主流程永远看不到 handler 写入的新值。</p>
+<p><code class="c">volatile</code> 告诉编译器：<strong>这个变量可能被你不知道的方式修改，每次都必须从内存重新读取</strong>。</p>
+<h3><code class="c">sig_atomic_t</code> —— 保证读写原子性</h3>
+<pre class="code" data-label="C"><code class="c">static volatile long long counter = 0;    /* ❌ 8 字节，非原子 */
+
+void handler(int sig) { counter++; }      /* 读-改-写，可能被信号打断 */
+</code></pre>
+<p>如果变量的操作不是原子的（如 64 位 <code class="c">long long</code> 在 32 位系统上，或 <code class="c">counter++</code> 这种读-改-写），信号可能在<strong>操作中间</strong>插入，导致半写状态：</p>
+<pre class="code" data-label="code"><code class="c">   counter = 0x00000000FFFFFFFF
+   handler 写入高 32 位 → 0x00000001FFFFFFFF
+                          ↑ 此时主流程读取 → 得到&quot;半新半旧&quot;的垃圾值
+   再写入低 32 位
+</code></pre>
+<p><code class="c">sig_atomic_t</code> 是 POSIX 保证<strong>读写具有原子性</strong>的整数类型（Linux 上通常是 <code class="c">int</code>），单次读写不会被信号打断。</p>
+<h3>组合效果</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>限定符</th>
+<th>解决的问题</th>
+<th>不用的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">volatile</code></td>
+<td>编译器优化（值被缓存到寄存器）</td>
+<td>主流程<strong>永远看不到</strong> handler 的修改</td>
+</tr>
+<tr>
+<td><code class="c">sig_atomic_t</code></td>
+<td>非原子操作（半写状态）</td>
+<td>主流程读到<strong>半新半旧</strong>的垃圾值</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意</strong>：<code class="c">volatile sig_atomic_t</code> <strong>只保证单次读写的原子性</strong>，不保证 <code class="c">flag++</code> 这类读-改-写的原子性。需要计数时，应让 handler 只做 <code class="c">flag = 1</code>（单次写），或用其他 IPC 机制。</p>
+</blockquote>
+<hr />
+<h2>四、与主流程交换数据的正确模式</h2>
+<p>handler 里只能设标志，那需要传递更多信息怎么办？</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>做法</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>标志变量</strong></td>
+<td><code class="c">volatile sig_atomic_t</code></td>
+<td>只需"有没有发生"</td>
+</tr>
+<tr>
+<td><strong>无锁环形队列</strong></td>
+<td>handler 写，主流程读（SPSC）</td>
+<td>需传递多条记录，且要求零锁</td>
+</tr>
+<tr>
+<td><strong>eventfd</strong></td>
+<td>handler 里 <code class="c">write(efd, &amp;one, 8)</code>，主流程 epoll 监听</td>
+<td>需计数、需接入事件循环</td>
+</tr>
+<tr>
+<td><strong>self-pipe</strong></td>
+<td>handler 写管道一字节，主流程 <code class="c">read</code></td>
+<td>经典技巧，可移植</td>
+</tr>
+<tr>
+<td><strong>signalfd</strong></td>
+<td>不用 handler，直接 <code class="c">read()</code> 信号</td>
+<td><strong>最干净</strong>，见 <a href="chapter-22.html#s-22-11">Ch22.11</a></td>
+</tr>
+<tr>
+<td><strong>sigwaitinfo</strong></td>
+<td>不用 handler，同步取</td>
+<td>多线程专用线程模型，见 <a href="chapter-22.html#s-22-10">Ch22.10</a></td>
+</tr>
+</tbody>
+</table></div>
+<h3>self-pipe 技巧（经典可移植方案）</h3>
+<pre class="code" data-label="C"><code class="c">static int pipe_fd[2];
+
+static void handler(int sig)
+{
+    char c = (char)sig;
+    write(pipe_fd[1], &amp;c, 1);       /* write 是 async-signal-safe */
+}
+
+/* 主循环用 select/poll/epoll 监听 pipe_fd[0] */
+</code></pre>
+<p>把信号变成一个<strong>字节流事件</strong>，天然接入 I/O 多路复用。HFT 与网络服务广泛使用。</p>
+<h3>更现代：signalfd</h3>
+<pre class="code" data-label="C"><code class="c">sigset_t mask;
+sigemptyset(&amp;mask);
+sigaddset(&amp;mask, SIGINT);
+sigaddset(&amp;mask, SIGTERM);
+sigprocmask(SIG_BLOCK, &amp;mask, NULL);      /* ① 必须阻塞，否则走 handler */
+
+int sfd = signalfd(-1, &amp;mask, SFD_NONBLOCK);   /* ② 信号变 fd */
+/* ③ 加入 epoll，与业务 socket 一起等待 */
+</code></pre>
+<p><strong>优势</strong>：完全没有 handler → 没有异步信号安全问题 → 处理代码里可随意 <code class="c">printf</code>/<code class="c">malloc</code>。这是 Linux 上<strong>最推荐</strong>的方案，详见 <a href="chapter-22.html#s-22-11">Ch22.11</a>。</p>
+<hr />
+<h2>五、其他设计要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>保护 <code class="c">errno</code></strong></td>
+<td>handler 若调用了可能修改 <code class="c">errno</code> 的函数，进入时保存、返回时恢复</td>
+</tr>
+<tr>
+<td><strong>不要做浮点运算</strong></td>
+<td>浮点寄存器状态在信号递送时的保存/恢复是架构相关的，handler 里用浮点可能破坏主流程的 FPU 状态</td>
+</tr>
+<tr>
+<td><strong>不要 <code class="c">longjmp</code> 出去</strong></td>
+<td><code class="c">sigsetjmp</code>/<code class="c">siglongjmp</code> 是特化版本，普通 <code class="c">longjmp</code> 会<strong>不恢复信号掩码</strong>，造成掩码泄漏</td>
+</tr>
+<tr>
+<td><strong>注意重入</strong></td>
+<td>默认情况下内核已自动阻塞同号信号（<a href="chapter-20.html#s-20-4">Ch20.4</a>），但<strong>不同</strong>信号仍可嵌套——用 <code class="c">sa_mask</code> 屏蔽相关信号</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* 保护 errno 的标准写法 */
+void handler(int sig)
+{
+    int saved_errno = errno;        /* 保存 */
+    /* ... 处理（可能调用修改 errno 的函数）... */
+    errno = saved_errno;            /* 恢复 */
+}
+</code></pre>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -542,49 +779,91 @@ int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>sigaction 是唯一可移植的注册方式，且能显式设 sa_mask/flags；SA_SIGINFO 让 handler 拿到 si_pid/si_uid/si_value，嵌入式调试时可溯源信号来源</td>
+<td>handler 必须极简——嵌入式线程栈小（8KB~64KB），复杂 handler 易溢出；且嵌入式常无调试器，handler 里的 bug 极难定位。对 <code class="c">SIGSEGV</code> 务必配 <code class="c">SA_ONSTACK</code> 备用栈（<a href="#s-21-3">21.3</a>）。诊断信息用 <code class="c">write()</code> 直写 fd，绝不用 <code class="c">printf</code></td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>一次性把 SIGTERM/SIGINT/SIGSEGV 注册到位、flags 显式 SA_RESTART，避免运行时反复 syscall 注册；handler 越薄越好（只置标志），重活留给主循环</td>
+<td>handler 会<strong>异步抢占关键路径</strong>，是延迟毛刺的经典来源。HFT 的正确策略是<strong>消灭 handler</strong>：关键路径全程屏蔽无关信号，控制信号走 signalfd 进事件循环，让"信号处理"变成同步的 <code class="c">read()</code>。若必须保留 handler，则严格遵循「只设 <code class="c">volatile sig_atomic_t</code> 标志」这一条</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+<hr />
+<h2>代码示例：从危险到安全的三种写法</h2>
+<pre class="code" data-label="C"><code class="c">/* handlerdesign.c —— 对比危险写法与安全写法
+ * 编译: gcc -D_GNU_SOURCE -o handlerdesign handlerdesign.c */
+#define _GNU_SOURCE
 #include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
 #include &lt;unistd.h&gt;
-/* sigaction: 可移植的信号注册 (替代 signal) */
-void handler(int sig, siginfo_t *info, void *ucontext) {
-    /* siginfo_t 包含详细信息 */
-    char buf[128];
-    int n = snprintf(buf, sizeof(buf),
-        &quot;signal=%d, si_code=%d, si_pid=%d, si_uid=%d\n&quot;,
-        sig, info-&gt;si_code, info-&gt;si_pid, info-&gt;si_uid);
-    write(STDOUT_FILENO, buf, n);
+#include &lt;errno.h&gt;
+
+/* ────── 写法 A（❌ 危险）：handler 里做复杂工作 ────── */
+static void bad_handler(int sig)
+{
+    printf(&quot;caught %d\n&quot;, sig);         /* ❌ printf 非 async-signal-safe */
+    char *buf = malloc(64);             /* ❌ malloc 有堆锁 */
+    if (buf) { snprintf(buf, 64, &quot;sig=%d&quot;, sig); free(buf); }
+    /* 可能死锁、破坏堆、死循环 */
 }
 
-int main(void) {
-    struct sigaction sa;
-    memset(&amp;sa, 0, sizeof(sa));
-    sa.sa_sigaction = handler;
-    sa.sa_flags = SA_SIGINFO | SA_RESTART;  /* SA_RESTART: 自动重启被中断的系统调用 */
-    sigemptyset(&amp;sa.sa_mask);
+/* ────── 写法 B（✅ 正确）：只设标志 + 保护 errno ────── */
+static volatile sig_atomic_t got_signal = 0;
+static volatile sig_atomic_t last_signo = 0;
 
-    /* 注册 SIGUSR1 处理器 */
-    if (sigaction(SIGUSR1, &amp;sa, NULL) &lt; 0)
-        perror(&quot;sigaction&quot;);
+static void good_handler(int sig)
+{
+    int saved_errno = errno;            /* ① 保护 errno */
+    got_signal = 1;                     /* ② 只做原子赋值 */
+    last_signo = sig;
+    errno = saved_errno;                /* ③ 恢复 */
+}
 
-    /* 自发信号 */
-    raise(SIGUSR1);
+/* ────── 写法 C（✅ 更好）：self-pipe，可接入事件循环 ────── */
+static int sp[2];                       /* self-pipe */
+static void pipe_handler(int sig)
+{
+    int saved_errno = errno;
+    unsigned char c = (unsigned char)sig;
+    write(sp[1], &amp;c, 1);                /* write 是 async-signal-safe */
+    errno = saved_errno;
+}
 
-    /* 从另一个进程发信号 */
-    if (fork() == 0) {
-        kill(getppid(), SIGUSR1);
-        _exit(0);
+int main(int argc, char **argv)
+{
+    int mode = (argc &gt; 1) ? atoi(argv[1]) : 2;   /* 默认用写法 B */
+
+    if (mode == 3) {
+        if (pipe(sp) == -1) { perror(&quot;pipe&quot;); return 1; }
     }
-    wait(NULL);
+
+    struct sigaction sa = {0};
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sa.sa_handler = (mode == 1) ? bad_handler
+                  : (mode == 2) ? good_handler
+                                : pipe_handler;
+    sigaction(SIGUSR1, &amp;sa, NULL);
+
+    printf(&quot;模式 %d: %s\n&quot;, mode,
+           mode == 1 ? &quot;危险（printf+malloc）&quot;
+         : mode == 2 ? &quot;安全（标志变量）&quot;
+                     : &quot;更安全（self-pipe）&quot;);
+    printf(&quot;PID=%d，请执行: kill -USR1 %d\n&quot;, getpid(), getpid());
+
+    if (mode == 3) {
+        /* 用 read 阻塞等待 pipe —— 等价于等待信号 */
+        unsigned char c;
+        ssize_t n = read(sp[0], &amp;c, 1);
+        if (n == 1) printf(&quot;通过 pipe 收到信号 %d\n&quot;, c);
+    } else {
+        /* 主循环轮询标志（真实场景应用 sigsuspend/ppoll 而非忙等） */
+        while (!got_signal) {
+            usleep(100000);             /* 演示用；生产代码用 sigsuspend */
+        }
+        printf(&quot;收到信号 %d\n&quot;, (int)last_signo);
+    }
     return 0;
 }
 </code></pre>
@@ -592,110 +871,878 @@ int main(void) {
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-21-2">21.2 <code class="c">sa_mask</code>（临时叠加）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
+<li>下一节：<a href="#s-21-2">21.2 从信号处理器终止进程</a></li>
+<li>handler 执行上下文：<a href="chapter-20.html#s-20-4">Ch20.4 信号处理器简介</a></li>
+<li>完整安全函数清单：<code class="c">man 7 signal-safety</code></li>
+<li>消灭 handler 的方案：<a href="chapter-22.html#s-22-10">Ch22.10 <code class="c">sigwaitinfo</code></a> · <a href="chapter-22.html#s-22-11">Ch22.11 signalfd</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary><b>问 1：</b>为什么 <code class="c">volatile</code> 和 <code class="c">sig_atomic_t</code> 两个限定符缺一不可？</summary>
+<p>两者解决<strong>完全不同</strong>的问题：</p>
+<p><strong><code class="c">volatile</code> —— 防止编译器优化掉内存读取</strong></p>
+<pre class="code" data-label="C"><code class="c">static sig_atomic_t flag = 0;       /* 少了 volatile */
+while (!flag) { do_work(); }        /* 编译器：flag 在本循环没被改 → 缓存到寄存器 → 死循环 */
+</code></pre>
+<p>编译器<strong>看不见</strong> handler（它由内核调用，不在程序控制流里），因此认为 <code class="c">flag</code> 不会变，把它优化进寄存器。主流程<strong>永远看不到</strong> handler 写的新值。</p>
+<p><strong><code class="c">sig_atomic_t</code> —— 保证读写是原子的</strong></p>
+<pre class="code" data-label="C"><code class="c">static volatile long long counter = 0;    /* 8 字节，非原子 */
+void handler(int sig) { counter++; }      /* 读-改-写，会被打断 */
+</code></pre>
+<p>若变量的读写不是原子操作（如 32 位系统上的 64 位整数），信号可能在<strong>操作中间</strong>插入：</p>
+<pre class="code" data-label="code"><code class="c">counter = 0x00000000FFFFFFFF
+handler 写高 32 位 → 0x00000001FFFFFFFF
+                      ↑ 主流程此时读取 → 半新半旧的垃圾值
+再写低 32 位
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>限定符</th>
+<th>解决</th>
+<th>缺少的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">volatile</code></td>
+<td>编译器缓存优化</td>
+<td>永远看不到修改</td>
+</tr>
+<tr>
+<td><code class="c">sig_atomic_t</code></td>
+<td>非原子读写</td>
+<td>读到半新半旧的垃圾值</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>注意</strong>：<code class="c">volatile sig_atomic_t</code> 只保证<strong>单次读写</strong>原子，不保证 <code class="c">flag++</code>（读-改-写）原子。需要计数请换机制（eventfd / signalfd / 无锁队列）。</p>
+</details>
+<details>
+<summary><b>问 2：</b>handler 里为什么加锁解决不了数据竞争？</summary>
+<p>因为 <strong>handler 不是新线程</strong>——它在<strong>被打断的同一个线程</strong>上执行。</p>
+<p>同一线程重入同一把<strong>非递归</strong>互斥锁，结果是<strong>死锁</strong>（不是等待）：</p>
+<pre class="code" data-label="code"><code class="c">主流程                             handler
+───────                            ───────
+pthread_mutex_lock(&amp;m)  ✅ 获得
+├─ 正在修改共享数据
+│                          ← 信号递送
+│                             pthread_mutex_lock(&amp;m)
+│                             └─ 锁的 owner 就是当前线程
+│                                └─ 非递归锁 → ❌ 死锁
+│                                   （不会&quot;让出&quot;，因为根本没别的线程持有它）
+</code></pre>
+<p><strong>即使用递归锁（recursive mutex）也不对</strong>：递归锁允许重入，于是 handler 会看到<strong>被修改到一半的共享数据</strong>——数据结构处于不一致状态，读写都会出错。</p>
+<p><strong>所以正确的思路不是"加锁"，而是"不共享复杂状态"</strong>：</p>
+<ol>
+<li>handler 只写一个 <code class="c">volatile sig_atomic_t</code>（单次原子写，无需锁）</li>
+<li>复杂数据的处理全部移回主流程</li>
+<li>或者用专门设计的<strong>无锁 SPSC 队列</strong>（handler 只做生产者，主流程只做消费者）</li>
+<li>最彻底：用 signalfd / <code class="c">sigwaitinfo</code>，<strong>完全不用 handler</strong></li>
+</ol>
+</details>
+<details>
+<summary><b>问 3：</b>handler 里调用 <code class="c">printf</code> 一定会出问题吗？</summary>
+<p><strong>不保证出错，但也不保证安全</strong>——这是最危险的一类 bug：<strong>大部分时候能跑，偶尔死锁或输出乱码</strong>。</p>
+<p><strong>出错条件</strong>：主流程<strong>恰好</strong>在 <code class="c">printf</code> 执行中（持有 stdio 锁）时信号递送，handler 再次 <code class="c">printf</code> → 同一线程重入 stdio 锁 → 死锁。</p>
+<p>由于窗口很窄，这类 bug 可能：</p>
+<ul>
+<li>开发环境跑几千次都不复现</li>
+<li>生产环境负载高、信号频繁时偶发挂起</li>
+<li>崩溃现场是"进程卡在 <code class="c">printf</code>"，看不出与信号有关</li>
+</ul>
+<p><strong>为什么是"同一线程重入"</strong>：handler 在被打断线程上执行，<code class="c">flockfile(stdout)</code> 已被该线程持有；再次 <code class="c">flockfile</code> 不会检测"是自己持有的"，而是直接死锁（stdio 锁默认非递归）。</p>
+<p><strong>正确做法</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 方案 1：用 write（async-signal-safe） */
+static void handler(int sig) {
+    const char m[] = &quot;caught\n&quot;;
+    write(STDOUT_FILENO, m, sizeof m - 1);
+}
+
+/* 方案 2：handler 只设标志，主流程输出 */
+static volatile sig_atomic_t got = 0;
+static void handler(int sig) { got = 1; }
+/* 主流程 */
+if (got) { printf(&quot;caught signal\n&quot;); got = 0; }
+
+/* 方案 3：完全不用 handler —— signalfd / sigwaitinfo */
+</code></pre>
+<p><strong>判断原则</strong>：只要一个函数<strong>可能加锁或分配内存</strong>，就假定它在 handler 里不安全。</p>
+</details>
+<details>
+<summary><b>问 4：</b>handler 与主流程需要交换较多数据时有哪些正确模式？</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>机制</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>标志变量</strong></td>
+<td><code class="c">volatile sig_atomic_t</code></td>
+<td>只能传"发生了没有"，最简单</td>
+</tr>
+<tr>
+<td><strong>self-pipe</strong></td>
+<td>handler <code class="c">write()</code> 一字节到管道，主流程 <code class="c">read</code></td>
+<td>可传信号编号，天然接入 <code class="c">select</code>/<code class="c">epoll</code>，高度可移植</td>
+</tr>
+<tr>
+<td><strong>eventfd</strong></td>
+<td>handler <code class="c">write(efd, &amp;one, 8)</code></td>
+<td>内核计数器，<strong>可累计次数</strong>，可被 epoll 监听，Linux 首选</td>
+</tr>
+<tr>
+<td><strong>无锁 SPSC 环形队列</strong></td>
+<td>handler 写、主流程读</td>
+<td>可传完整记录，<strong>零系统调用</strong>，最低延迟</td>
+</tr>
+<tr>
+<td><strong>signalfd</strong></td>
+<td>不用 handler，直接 <code class="c">read()</code></td>
+<td><strong>最干净</strong>，无异步信号安全问题</td>
+</tr>
+<tr>
+<td><strong><code class="c">sigwaitinfo</code></strong></td>
+<td>不用 handler，同步取</td>
+<td>多线程专用线程模型</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推荐优先级（Linux）</strong>：</p>
+<ol>
+<li><strong>signalfd</strong> —— 彻底消灭 handler，最安全、最易维护</li>
+<li><strong>eventfd / self-pipe</strong> —— 需要保留 handler 时，把信号转成可监听事件</li>
+<li><strong>无锁环形队列</strong> —— HFT 热路径，要求零 syscall</li>
+<li><strong>标志变量</strong> —— 只需最简单的"是否发生"</li>
+</ol>
+<p><strong>HFT 特别说明</strong>：热路径避免任何 syscall，所以用<strong>无锁环形队列</strong>；控制路径（停机、配置重载）用 signalfd 更清晰。</p>
+</details>
+<details>
+<summary><b>问 5：</b>为什么 handler 里要保护 <code class="c">errno</code>？</summary>
+<p>因为 handler 可能在主流程<strong>任意位置</strong>打断执行——包括主流程刚设置完 <code class="c">errno</code>、正准备检查它的时刻。</p>
+<p><strong>出错场景</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 主流程 */
+errno = 0;
+int fd = open(path, O_RDONLY);
+if (fd == -1) {
+    /* ← 信号在此递送，handler 调用了某个函数，把 errno 改成了别的 */
+    if (errno == ENOENT) {          /* ❌ 读到的已不是 open 设置的 errno */
+        ...
+    }
+}
+</code></pre>
+<p><strong>后果</strong>：错误判断完全错误——明明是 <code class="c">ENOENT</code> 被判成 <code class="c">EINTR</code>，或反过来。这类 bug <strong>偶发且无法复现</strong>，极难排查。</p>
+<p><strong>标准写法</strong>：</p>
+<pre class="code" data-label="C"><code class="c">void handler(int sig)
+{
+    int saved_errno = errno;       /* ① 进入时保存 */
+    /* ... 处理（可能调用修改 errno 的函数）... */
+    errno = saved_errno;           /* ② 返回前恢复 */
+}
+</code></pre>
+<p><strong>这不是可选项</strong>：即便 handler 里只调用了"看起来无害"的函数（如 <code class="c">write()</code>），失败时也会设置 <code class="c">errno</code>。所以<strong>任何</strong>调用了库函数的 handler 都应当保护 <code class="c">errno</code>。</p>
+<p><strong>同理适用于浮点状态</strong>：handler 里做浮点运算可能破坏主流程的 FPU/SIMD 寄存器状态（保存与恢复是架构相关的），所以 handler 里也应避免浮点运算。</p>
+</details>
       </section>
       <section class="section" id="s-21-2">
-        <div class="sec-head"><div class="sec-no">21.2</div><h2>`sa_mask`（临时叠加）</h2></div>
+        <div class="sec-head"><div class="sec-no">21.2</div><h2>从信号处理器终止进程</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：<a href="#s-21-1">21.1 <code class="c">sigaction()</code></a>
-- 下一节：<a href="#s-21-3">21.3 常用 <code class="c">sa_flags</code></a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>（默认动作分派 <code class="c">do_coredump:2878</code> · <code class="c">do_group_exit:2892</code> · <code class="c">sig_kernel_coredump</code> @<code class="c">include/linux/signal.h:445</code>）
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="#s-21-1">21.1 设计信号处理器</a>
+- 下一节：<a href="#s-21-3">21.3 在备用栈上处理信号</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>handler 运行期间： 1. 默认<strong>自动阻塞</strong>正在处理的那个信号（防递归） 2. <strong>额外</strong>阻塞 <code class="c">sa_mask</code></p>
-<hr />
-<h2>要点</h2>
-<p>handler 运行期间：</p>
 <ol>
-<li>默认<strong>自动阻塞</strong>正在处理的那个信号（防递归）  </li>
-<li><strong>额外</strong>阻塞 <code class="c">sa_mask</code>  </li>
-<li>handler 返回后恢复原线程掩码  </li>
+<li>为什么<strong>不能在 handler 里调用 <code class="c">exit()</code></strong>——它做的事情比你想的多</li>
+<li>从 handler 终止进程有<strong>哪几种正确方式</strong>，各自适用什么场景</li>
+<li>经典技巧「<strong>恢复默认处置后重新发信号</strong>」——为什么它能产生正确的退出状态与 core dump</li>
 </ol>
+<hr />
+<h2>一、陷阱：<code class="c">exit()</code> 不是异步信号安全的</h2>
+<pre class="code" data-label="C"><code class="c">void handler(int sig)
+{
+    printf(&quot;fatal: %d\n&quot;, sig);
+    exit(1);            /* ❌ 危险！ */
+}
+</code></pre>
+<p><code class="c">exit()</code> 在返回内核前会做一串工作：</p>
+<ol>
+<li>调用所有通过 <code class="c">atexit()</code> / <code class="c">on_exit()</code> 注册的<strong>清理函数</strong></li>
+<li><strong>flush 并关闭所有 stdio 流</strong>（<code class="c">fcloseall</code> 语义）</li>
+<li>删除 <code class="c">tmpfile()</code> 创建的临时文件</li>
+<li>最后才调用 <code class="c">_exit()</code> 进入内核</li>
+</ol>
+<p><strong>每一步都涉及全局数据结构和锁</strong>，而 handler 可能在主流程正执行其中任意一步时插进来——结果就是<strong>死锁或数据损坏</strong>。</p>
+<p><strong>经典死锁场景</strong>：</p>
+<pre class="code" data-label="code"><code class="c">   主流程                                    handler
+   ────────                                  ───────
+   exit(1)
+   ├─ 获取 stdio 锁
+   ├─ 正在 flush 缓冲区
+   │                              ← 信号递送
+   │                                 exit(1)
+   │                                 ├─ 尝试获取 stdio 锁  ← 已被主流程持有
+   │                                 └─ ❌ 死锁（同一线程重入同一把锁）
+</code></pre>
+<blockquote>
+<p><strong>关键</strong>：handler <strong>不是新线程</strong>（<a href="chapter-20.html#s-20-4">Ch20.4</a>），它在<strong>同一线程</strong>上执行。所以主流程持有的锁，handler 再次获取时<strong>不会让出</strong>，直接死锁。</p>
+</blockquote>
+<hr />
+<h2>二、四种正确方式</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>行为</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">_exit(status)</code></strong></td>
+<td>立即进入内核终止，<strong>不</strong> flush stdio、<strong>不</strong>跑 atexit</td>
+<td>最常用；handler 中标准终止手段</td>
+</tr>
+<tr>
+<td><strong><code class="c">_Exit(status)</code></strong></td>
+<td>同 <code class="c">_exit()</code>（C99 标准名）</td>
+<td>同上，可移植性更好</td>
+</tr>
+<tr>
+<td><strong><code class="c">abort()</code></strong></td>
+<td>触发 <code class="c">SIGABRT</code> → 默认产生 <strong>core dump</strong></td>
+<td>需要留下 core 供事后分析</td>
+</tr>
+<tr>
+<td><strong>恢复 <code class="c">SIG_DFL</code> 后重新 raise</strong></td>
+<td>让信号的<strong>默认动作</strong>执行</td>
+<td>需要正确的退出状态 / core（见下）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>1. <code class="c">_exit()</code> / <code class="c">_Exit()</code> —— 标准做法</h3>
+<pre class="code" data-label="C"><code class="c">void handler(int sig)
+{
+    const char msg[] = &quot;fatal signal\n&quot;;
+    write(STDERR_FILENO, msg, sizeof msg - 1);   /* write 是 async-signal-safe */
+    _exit(1);                                     /* ✅ 正确 */
+}
+</code></pre>
+<p><code class="c">_exit()</code> 直接发起 <code class="c">exit_group</code> 系统调用进入内核，跳过所有用户态清理，因此<strong>是异步信号安全的</strong>。</p>
+<h3>2. <code class="c">abort()</code> —— 留下 core dump</h3>
+<pre class="code" data-label="C"><code class="c">void handler(int sig)
+{
+    write(STDERR_FILENO, &quot;aborting\n&quot;, 9);
+    abort();            /* 触发 SIGABRT → core dump */
+}
+</code></pre>
+<p><code class="c">abort()</code> 的特殊之处：<strong>它会先解除对 <code class="c">SIGABRT</code> 的阻塞</strong>，确保即使调用者阻塞了 <code class="c">SIGABRT</code>，<code class="c">abort()</code> 也一定能终止进程。</p>
+<p>流程是：<code class="c">raise(SIGABRT)</code> → 若 handler 返回，则把 <code class="c">SIGABRT</code> 处置恢复为 <code class="c">SIG_DFL</code> → <strong>再次</strong> <code class="c">raise(SIGABRT)</code> → 默认动作执行（<code class="c">do_coredump</code> + 终止）。</p>
+<blockquote>
+<p>注意 <code class="c">abort()</code> <strong>不是</strong>严格的异步信号安全函数（POSIX 未列入清单），但 glibc 实现保证了它在 handler 中可用——因为它只调用 <code class="c">raise</code> 和 <code class="c">sigaction</code>，且刻意不触碰 stdio/堆。</p>
+</blockquote>
+<h3>3. 恢复默认处置后重新发信号（经典技巧）</h3>
+<p><strong>问题</strong>：自定义 handler 处理后调用 <code class="c">_exit(1)</code>，进程的退出状态是 <code class="c">1</code>（正常退出），而<strong>丢失了"被信号杀死"这一信息</strong>——父进程 <code class="c">wait()</code> 得到的 <code class="c">WIFSIGNALED</code> 为假，看起来像是程序自己正常退出的。</p>
+<p><strong>解法</strong>：在 handler 里把处置恢复为 <code class="c">SIG_DFL</code>，然后<strong>重新给自己发同一个信号</strong>。这次递送会走默认动作，产生正确的终止语义：</p>
+<pre class="code" data-label="C"><code class="c">void handler(int sig)
+{
+    /* 1. 做最小限度的诊断输出（用 write，不用 printf） */
+    const char m[] = &quot;caught fatal signal, re-raising\n&quot;;
+    write(STDERR_FILENO, m, sizeof m - 1);
+
+    /* 2. 恢复默认处置 */
+    struct sigaction sa = {0};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&amp;sa.sa_mask);
+    sigaction(sig, &amp;sa, NULL);
+
+    /* 3. 重新发同一个信号 → 走默认动作 */
+    raise(sig);
+
+    /* 4. 兜底：若上面未生效（如信号被阻塞），强制退出 */
+    _exit(128 + sig);
+}
+</code></pre>
+<p><strong>效果对比</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>父进程 <code class="c">wait()</code> 看到</th>
+<th>core dump</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_exit(1)</code></td>
+<td><code class="c">WIFEXITED</code>，status=1 —— <strong>看不出是被信号杀的</strong></td>
+<td>❌</td>
+</tr>
+<tr>
+<td>恢复 <code class="c">SIG_DFL</code> + <code class="c">raise(sig)</code></td>
+<td><code class="c">WIFSIGNALED</code>，<code class="c">WTERMSIG</code>=sig ✅</td>
+<td>✅（若该信号默认动作是 core）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>这是 shell 里 <code class="c">kill -9</code> 与程序自己 <code class="c">exit(137)</code> 的区别</strong>：前者 <code class="c">WIFSIGNALED</code> 为真，后者 <code class="c">WIFEXITED</code> 为真。监控系统、supervisor、CI 都依赖这个区分。</p>
+</blockquote>
+<hr />
+<h2>三、内核默认终止动作分派</h2>
+<p>恢复 <code class="c">SIG_DFL</code> 后信号再次递送时，内核在 <code class="c">get_signal()</code> 里走这条路径（<code class="c">kernel/signal.c:2861-2892</code>）：</p>
+<pre class="code" data-label="C"><code class="c">        /*
+         * Anything else is fatal, maybe with a core dump.
+         */
+        current-&gt;flags |= PF_SIGNALED;
+
+        if (sig_kernel_coredump(signr)) {          /* ① 是否产 core */
+            if (print_fatal_signals)
+                print_fatal_signal(ksig-&gt;info.si_signo);
+            proc_coredump_connector(current);
+            /*
+             * If it was able to dump core, this kills all
+             * other threads in the group and synchronizes with
+             * their demise.  ...
+             */
+            do_coredump(&amp;ksig-&gt;info);              /* :2878 */
+        }
+
+        if (current-&gt;flags &amp; PF_USER_WORKER)
+            goto out;
+
+        /*
+         * Death signals, no core dump.
+         */
+        do_group_exit(ksig-&gt;info.si_signo);         /* :2892 */
+        /* NOTREACHED */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>行号</th>
+<th>判据 / 动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><code class="c">:2866</code></td>
+<td><code class="c">sig_kernel_coredump(signr)</code> —— 该信号是否产 core</td>
+</tr>
+<tr>
+<td>②</td>
+<td><code class="c">:2878</code></td>
+<td>是 → <code class="c">do_coredump()</code> 先写 core 文件</td>
+</tr>
+<tr>
+<td>③</td>
+<td><code class="c">:2892</code></td>
+<td><code class="c">do_group_exit(signr)</code> —— 终止<strong>整个线程组</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>判据 <code class="c">sig_kernel_coredump</code></strong>（<code class="c">include/linux/signal.h:445</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define sig_kernel_coredump(sig)   siginmask(sig, SIG_KERNEL_COREDUMP_MASK)
+</code></pre>
+<p><code class="c">SIG_KERNEL_COREDUMP_MASK</code>（<code class="c">include/linux/signal.h:425</code>）覆盖 <code class="c">SIGQUIT</code>/<code class="c">SIGILL</code>/<code class="c">SIGTRAP</code>/<code class="c">SIGABRT</code>/<code class="c">SIGFPE</code>/<code class="c">SIGSEGV</code>/<code class="c">SIGBUS</code>/<code class="c">SIGSYS</code>/<code class="c">SIGXCPU</code>/<code class="c">SIGXFSZ</code>/<code class="c">SIGEMT</code>。</p>
+<blockquote>
+<p><strong>重要</strong>：<code class="c">do_group_exit</code> 终止的是<strong>整个线程组</strong>，不只是当前线程。所以多线程进程里任一线程触发致命信号，全进程一起退出。</p>
+</blockquote>
+<hr />
+<h2>四、完整对照表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>async-signal-safe</th>
+<th>flush stdio</th>
+<th>跑 atexit</th>
+<th>core dump</th>
+<th><code class="c">WIFSIGNALED</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">exit()</code></strong></td>
+<td>❌ <strong>危险</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong><code class="c">_exit()</code> / <code class="c">_Exit()</code></strong></td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong><code class="c">abort()</code></strong></td>
+<td>⚠️ 实践可用</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅（<code class="c">SIGABRT</code>）</td>
+</tr>
+<tr>
+<td><strong>恢复 <code class="c">SIG_DFL</code> + <code class="c">raise()</code></strong></td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅（视信号）</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td>嵌入式服务常在 handler 里做「紧急落盘 + 终止」，但 <code class="c">exit()</code> 会死锁——必须 <code class="c">_exit()</code>。若需要保留现场，用 <code class="c">abort()</code> 或「恢复 <code class="c">SIG_DFL</code> 后 re-raise」产生 core。注意嵌入式存储有限，需先配好 <code class="c">core_pattern</code> 与 <code class="c">RLIMIT_CORE</code>，否则 core 写不出来</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>交易进程的终止路径必须<strong>可预测且快速</strong>：<code class="c">_exit()</code> 是唯一安全的选择（无锁、无 I/O、无清理）。诊断信息应通过<strong>无锁环形队列 + 独立日志线程</strong>在平时就落盘，而不是崩溃时才写——崩溃时刻的任何 I/O 都可能因锁状态未知而死锁。终止状态用 <code class="c">WIFSIGNALED</code> 语义（re-raise 技巧），让监控能区分「被杀」与「自退」</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例：正确的终止方式</h2>
+<pre class="code" data-label="C"><code class="c">/* termdemo.c —— 对比 exit() 与 _exit()，以及 re-raise 技巧
+ * 编译: gcc -o termdemo termdemo.c
+ * 用法: ./termdemo _exit | exit | reraise */
+#define _GNU_SOURCE
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+/* ❌ 错误示范：handler 里用 exit() */
+static void bad_handler(int sig)
+{
+    const char m[] = &quot;  [bad] handler: 调用 exit()\n&quot;;
+    write(STDOUT_FILENO, m, sizeof m - 1);
+    exit(1);                        /* ❌ 不是 async-signal-safe */
+}
+
+/* ✅ 正确：_exit() */
+static void good_handler(int sig)
+{
+    const char m[] = &quot;  [good] handler: 调用 _exit()\n&quot;;
+    write(STDOUT_FILENO, m, sizeof m - 1);
+    _exit(1);                       /* ✅ 安全 */
+}
+
+/* ✅ 正确：恢复 SIG_DFL 后重新发信号（保留 WIFSIGNALED 语义） */
+static void reraise_handler(int sig)
+{
+    const char m[] = &quot;  [reraise] 恢复默认处置并重新发信号\n&quot;;
+    write(STDOUT_FILENO, m, sizeof m - 1);
+
+    struct sigaction sa = {0};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&amp;sa.sa_mask);
+    sigaction(sig, &amp;sa, NULL);
+
+    raise(sig);                     /* 走默认动作：core + 终止 */
+
+    _exit(128 + sig);               /* 兜底 */
+}
+
+static void run(const char *mode)
+{
+    pid_t p = fork();
+    if (p == 0) {
+        struct sigaction sa = {0};
+        sigemptyset(&amp;sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+
+        if (!strcmp(mode, &quot;exit&quot;))        sa.sa_handler = bad_handler;
+        else if (!strcmp(mode, &quot;_exit&quot;))  sa.sa_handler = good_handler;
+        else                              sa.sa_handler = reraise_handler;
+
+        sigaction(SIGSEGV, &amp;sa, NULL);
+        printf(&quot;子进程 %d (%s 模式) 触发 SIGSEGV...\n&quot;, getpid(), mode);
+        fflush(stdout);
+        raise(SIGSEGV);                   /* 触发 */
+        _exit(0);
+    }
+
+    int st;
+    waitpid(p, &amp;st, 0);
+    printf(&quot;  父进程观察: &quot;);
+    if (WIFSIGNALED(st))
+        printf(&quot;WIFSIGNALED=true, 终止信号=%d (WTERMSIG)\n&quot;, WTERMSIG(st));
+    else if (WIFEXITED(st))
+        printf(&quot;WIFEXITED=true, 退出码=%d （看不出是被信号杀的）\n&quot;, WEXITSTATUS(st));
+}
+
+int main(int argc, char **argv)
+{
+    const char *modes[] = { &quot;_exit&quot;, &quot;exit&quot;, &quot;reraise&quot; };
+    if (argc &gt; 1) {
+        run(argv[1]);
+    } else {
+        for (size_t i = 0; i &lt; 3; i++) {
+            printf(&quot;\n=== 模式: %s ===\n&quot;, modes[i]);
+            run(modes[i]);
+        }
+    }
+    return 0;
+}
+</code></pre>
+<p>预期输出（关键差异在第 3 种）：</p>
+<pre class="code" data-label="code"><code class="c">=== 模式: _exit ===
+  父进程观察: WIFEXITED=true, 退出码=1 （看不出是被信号杀的）
+
+=== 模式: exit ===
+  父进程观察: WIFEXITED=true, 退出码=1 （且可能死锁，视时序）
+
+=== 模式: reraise ===
+  父进程观察: WIFSIGNALED=true, 终止信号=11 (WTERMSIG)   ← 正确保留了&quot;被杀死&quot;语义
+</code></pre>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-21-1">21.1 设计信号处理器</a></li>
+<li>下一节：<a href="#s-21-3">21.3 在备用栈上处理信号</a></li>
+<li>异步信号安全函数清单：<a href="#s-21-1">21.1</a></li>
+<li>进程终止与 <code class="c">wait()</code> 状态：<a href="chapter-25.html#intro">Ch25 进程终止</a> · <a href="chapter-26.html#intro">Ch26 监控子进程</a></li>
+<li>core dump 配置：<a href="chapter-22.html#s-22-1">Ch22.1 Core Dump 文件</a></li>
+</ul>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary><b>问 1：</b>为什么不能在信号处理函数里调用 <code class="c">exit()</code>？</summary>
+<p><code class="c">exit()</code> <strong>不是异步信号安全函数</strong>——它在进入内核前会执行一串用户态清理：</p>
+<ol>
+<li>调用 <code class="c">atexit()</code> / <code class="c">on_exit()</code> 注册的所有清理函数</li>
+<li><strong>flush 并关闭所有 stdio 流</strong></li>
+<li>删除 <code class="c">tmpfile()</code> 创建的临时文件</li>
+<li>最后才调用 <code class="c">_exit()</code></li>
+</ol>
+<p>每一步都操作<strong>全局数据结构并加锁</strong>。</p>
+<p><strong>经典死锁场景</strong>：</p>
+<pre class="code" data-label="code"><code class="c">主流程 exit(1)
+  ├─ 获取 stdio 锁
+  ├─ 正在 flush 缓冲区
+  │                    ← 信号递送
+  │                       handler: exit(1)
+  │                         └─ 尝试获取 stdio 锁 → 已被持有 → 死锁
+</code></pre>
+<p><strong>关键在于</strong>：handler <strong>不是新线程</strong>，它在<strong>同一线程</strong>上执行。主流程持有的锁不会被 handler"等待让出"——同一线程重入同一把非递归锁，直接死锁。</p>
+<p><strong>正确做法</strong>：用 <code class="c">_exit()</code> / <code class="c">_Exit()</code>，它们直接发起 <code class="c">exit_group</code> 系统调用，跳过所有用户态清理，是异步信号安全的。</p>
+</details>
+<details>
+<summary><b>问 2：</b>什么是「恢复默认处置后重新发信号」技巧？解决什么问题？</summary>
+<p><strong>解决的问题</strong>：保留「进程是被信号杀死的」这一语义信息。</p>
+<p>如果 handler 里直接 <code class="c">_exit(1)</code>，父进程 <code class="c">wait()</code> 看到的是 <code class="c">WIFEXITED=true, status=1</code>——<strong>看起来像程序自己正常退出</strong>，无法区分「被 OOM killer 杀」与「业务主动退出」。</p>
+<p><strong>技巧步骤</strong>：</p>
+<pre class="code" data-label="C"><code class="c">void handler(int sig)
+{
+    /* 1. 最小诊断（用 write） */
+    write(STDERR_FILENO, &quot;fatal\n&quot;, 6);
+
+    /* 2. 恢复默认处置 */
+    struct sigaction sa = {0};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&amp;sa.sa_mask);
+    sigaction(sig, &amp;sa, NULL);
+
+    /* 3. 重新发同一个信号 → 走默认动作 */
+    raise(sig);
+
+    /* 4. 兜底 */
+    _exit(128 + sig);
+}
+</code></pre>
+<p><strong>效果</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>父进程看到</th>
+<th>core</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_exit(1)</code></td>
+<td><code class="c">WIFEXITED=true, status=1</code></td>
+<td>❌</td>
+</tr>
+<tr>
+<td>re-raise</td>
+<td><strong><code class="c">WIFSIGNALED=true, WTERMSIG=sig</code></strong></td>
+<td>✅（若默认动作是 core）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么有效</strong>：<code class="c">raise(sig)</code> 时 disposition 已是 <code class="c">SIG_DFL</code>，内核在 <code class="c">get_signal()</code> 里走致命分支——<code class="c">do_coredump()</code>（若该信号产 core）+ <code class="c">do_group_exit(signo)</code>（<code class="c">kernel/signal.c:2878</code>/<code class="c">:2892</code>）。</p>
+<p><strong>第 4 步兜底必要</strong>：若该信号在 handler 执行期间被阻塞（如 <code class="c">sa_mask</code> 里有它），<code class="c">raise</code> 只会让它 pending 而不会立即递送。此时 <code class="c">_exit(128+sig)</code> 保证进程一定退出（<code class="c">128+sig</code> 是 shell 表示"被信号 N 杀死"的惯例）。</p>
+</details>
+<details>
+<summary><b>问 3：</b><code class="c">abort()</code> 有什么特殊之处？它一定会终止进程吗？</summary>
+<p><code class="c">abort()</code> <strong>一定会终止进程</strong>——这是它的契约保证。</p>
+<p><strong>特殊机制</strong>：<code class="c">abort()</code> 会<strong>先解除对 <code class="c">SIGABRT</code> 的阻塞</strong>，确保即使调用者用 <code class="c">sigprocmask</code> 阻塞了 <code class="c">SIGABRT</code>，<code class="c">abort()</code> 也一定能生效。</p>
+<p><strong>执行流程</strong>：</p>
+<pre class="code" data-label="code"><code class="c">abort()
+  ├─ 解除对 SIGABRT 的阻塞
+  ├─ raise(SIGABRT)
+  │     ├─ 若有自定义 handler → 执行它
+  │     └─ handler 返回 → 继续
+  ├─ 把 SIGABRT 的处置恢复为 SIG_DFL
+  ├─ 再次 raise(SIGABRT)      ← 这次一定走默认动作
+  └─ 默认动作：do_coredump() + do_group_exit()  → 进程终止 + core dump
+</code></pre>
+<p><strong>关键设计</strong>：即使用户注册了 <code class="c">SIGABRT</code> handler 并且 handler 正常返回，<code class="c">abort()</code> 也会<strong>再次</strong>发信号并强制走默认动作——所以 <code class="c">abort()</code> <strong>不可能被 handler"拦截"</strong>。</p>
+<p><strong>用途</strong>：</p>
+<ul>
+<li>断言失败（<code class="c">assert()</code> 内部就是 <code class="c">abort()</code>）</li>
+<li>需要留下 core 供事后 gdb 分析</li>
+<li>「不可恢复错误」的最终手段</li>
+</ul>
+<p><strong>与 <code class="c">_exit()</code> 的对比</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th></th>
-<th><code class="c">sigprocmask</code></th>
-<th><code class="c">sa_mask</code></th>
+<th><code class="c">abort()</code></th>
+<th><code class="c">_exit()</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>时效</td>
-<td>长期（直到再改）</td>
-<td><strong>仅 handler 期间</strong></td>
+<td>core dump</td>
+<td>✅</td>
+<td>❌</td>
 </tr>
 <tr>
-<td>作用</td>
-<td>改线程掩码</td>
-<td>临时追加阻塞</td>
+<td><code class="c">WIFSIGNALED</code></td>
+<td>✅（<code class="c">SIGABRT</code>）</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>可被 handler 拦截</td>
+<td>❌（会 re-raise）</td>
+<td>不适用</td>
+</tr>
+<tr>
+<td>严格 async-signal-safe</td>
+<td>⚠️ POSIX 未列入，但 glibc 保证可用</td>
+<td>✅</td>
 </tr>
 </tbody>
 </table></div>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
+</details>
+<details>
+<summary><b>问 4：</b>内核执行「默认终止动作」时具体做了什么？</summary>
+<p>在 <code class="c">get_signal()</code> 中（<code class="c">kernel/signal.c:2861-2892</code>）：</p>
+<pre class="code" data-label="C"><code class="c">        /*
+         * Anything else is fatal, maybe with a core dump.
+         */
+        current-&gt;flags |= PF_SIGNALED;
+
+        if (sig_kernel_coredump(signr)) {          /* ① 判据 */
+            if (print_fatal_signals)
+                print_fatal_signal(ksig-&gt;info.si_signo);
+            proc_coredump_connector(current);
+            do_coredump(&amp;ksig-&gt;info);              /* ② 写 core（:2878） */
+        }
+
+        if (current-&gt;flags &amp; PF_USER_WORKER)
+            goto out;
+
+        /*
+         * Death signals, no core dump.
+         */
+        do_group_exit(ksig-&gt;info.si_signo);         /* ③ 终止（:2892） */
+        /* NOTREACHED */
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>路线</th>
-<th>要点</th>
+<th>步骤</th>
+<th>行号</th>
+<th>内容</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>handler 期间默认阻塞本信号防重入，配合 sa_mask 可临时阻塞相关信号，保证嵌入式时序敏感的 handler「执行完前不被同族打断」</td>
+<td>①</td>
+<td><code class="c">:2866</code></td>
+<td><code class="c">sig_kernel_coredump(signr)</code> 判断是否产 core</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>sa_mask 的阻塞只持续 handler 生命周期，不改长期掩码；HFT 信号 handler 应短到微秒级，阻塞窗口越小对延迟影响越小，别在 handler 里做重活</td>
+<td>②</td>
+<td><code class="c">:2878</code></td>
+<td>是 → <code class="c">do_coredump()</code> 写 core 文件</td>
+</tr>
+<tr>
+<td>③</td>
+<td><code class="c">:2892</code></td>
+<td><code class="c">do_group_exit(signo)</code> 终止<strong>整个线程组</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;stdio.h&gt;
-void handler(int sig) {
-    printf(&quot;handler: sig=%d\n&quot;, sig);
-}
-int main(void) {
-    struct sigaction sa = {0};
-    sa.sa_handler = handler;
-    sigemptyset(&amp;sa.sa_mask);
-    sigaddset(&amp;sa.sa_mask, SIGQUIT);  /* handler 期间阻塞 SIGQUIT */
-    sa.sa_flags = SA_RESTART;
-    sigaction(SIGINT, &amp;sa, NULL);
-    printf(&quot;Ctrl+C → handler 执行期间 SIGQUIT 被阻塞\n&quot;);
-    for (;;) pause();
-    return 0;
-}
+<p><strong>判据</strong>（<code class="c">include/linux/signal.h:445</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define sig_kernel_coredump(sig)  siginmask(sig, SIG_KERNEL_COREDUMP_MASK)
 </code></pre>
-<hr />
-<h2>衔接</h2>
+<p><code class="c">SIG_KERNEL_COREDUMP_MASK</code>（<code class="c">include/linux/signal.h:425</code>）覆盖：<code class="c">SIGQUIT</code>、<code class="c">SIGILL</code>、<code class="c">SIGTRAP</code>、<code class="c">SIGABRT</code>、<code class="c">SIGFPE</code>、<code class="c">SIGSEGV</code>、<code class="c">SIGBUS</code>、<code class="c">SIGSYS</code>、<code class="c">SIGXCPU</code>、<code class="c">SIGXFSZ</code>、<code class="c">SIGEMT</code>。</p>
+<p><strong>两个要点</strong>：</p>
+<ol>
+<li><strong>产 core 的信号有限</strong>——<code class="c">SIGTERM</code>/<code class="c">SIGINT</code>/<code class="c">SIGKILL</code> 等<strong>不产</strong> core，只有上表 11 个会。</li>
+<li><strong><code class="c">do_group_exit</code> 终止整个线程组</strong>——多线程进程里任一线程触发致命信号，全进程一起退出，不只是那个线程。内核注释也强调了这点："this kills all other threads in the group and synchronizes with their demise"。</li>
+</ol>
+</details>
+<details>
+<summary><b>问 5：</b><code class="c">exit()</code>、<code class="c">_exit()</code>、<code class="c">abort()</code>、re-raise 四者该怎么选？</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>async-signal-safe</th>
+<th>flush stdio</th>
+<th>atexit</th>
+<th>core</th>
+<th><code class="c">WIFSIGNALED</code></th>
+<th>何时用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">exit()</code></td>
+<td>❌ <strong>危险</strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>handler 里<strong>绝不用</strong></td>
+</tr>
+<tr>
+<td><code class="c">_exit()</code>/<code class="c">_Exit()</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>handler 中<strong>默认选择</strong>：快速、安全</td>
+</tr>
+<tr>
+<td><code class="c">abort()</code></td>
+<td>⚠️ 实践可用</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td>断言失败 / 需要 <strong>core dump</strong></td>
+</tr>
+<tr>
+<td>re-raise</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅（视信号）</td>
+<td>✅</td>
+<td>需要<strong>保留"被信号杀死"语义</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>决策流程</strong>：</p>
+<pre class="code" data-label="code"><code class="c">handler 中要终止进程？
+  ├─ 需要 core dump 供 gdb 分析？
+  │    ├─ 是，用 abort()（固定 SIGABRT + core）
+  │    └─ 是，且要保留原信号类型 → re-raise 技巧
+  └─ 不需要，只想快速退出
+       └─ _exit(status)  ← 默认选择
+</code></pre>
+<p><strong>HFT 特别建议</strong>：</p>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-21-1">21.1 <code class="c">sigaction()</code></a></li>
-<li>下一节：<a href="#s-21-3">21.3 常用 <code class="c">sa_flags</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
+<li>崩溃路径用 <strong>re-raise</strong>（保留 <code class="c">WIFSIGNALED</code>，让监控能区分「被杀」与「自退」）</li>
+<li>正常停机路径用 <code class="c">_exit()</code>（快速、无锁）</li>
+<li><strong>诊断信息平时就落盘</strong>（无锁环形队列 + 独立日志线程），不要等崩溃时才写——崩溃时刻的锁状态未知，任何 I/O 都可能死锁</li>
 </ul>
+</details>
       </section>
       <section class="section" id="s-21-3">
-        <div class="sec-head"><div class="sec-no">21.3</div><h2>常用 `sa_flags`</h2></div>
+        <div class="sec-head"><div class="sec-no">21.3</div><h2>在备用栈上处理信号</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：<a href="#s-21-2">21.2 <code class="c">sa_mask</code>（临时叠加）</a>
-- 下一节：<a href="#s-21-4">21.4 <code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code></a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>（<code class="c">do_sigaltstack:4205</code> · <code class="c">SYSCALL_DEFINE2(sigaltstack):4263</code> · <code class="c">signal_delivered:2929-2930</code> · <code class="c">signal_setup_done:2935</code>）
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="#s-21-2">21.2 从信号处理器终止进程</a>
+- 下一节：<a href="#s-21-4">21.4 <code class="c">SA_SIGINFO</code> 标志</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
+<ol>
+<li><strong>为什么需要备用栈</strong>——栈溢出时 handler 无处可跑的死局</li>
+<li><code class="c">sigaltstack()</code> 怎么用，三个标志（<code class="c">SS_ONSTACK</code> / <code class="c">SS_DISABLE</code> / <code class="c">SS_AUTODISARM</code>）各自含义</li>
+<li>内核做哪些校验，以及栈设得太小会怎样（不是简单的"失败"）</li>
+</ol>
 <hr />
-<h2>要点</h2>
+<h2>一、为什么需要备用栈</h2>
+<p>回顾 <a href="chapter-20.html#s-20-4">Ch20.4</a>：<strong>handler 在被打断线程自己的用户栈上执行</strong>，不是新线程。</p>
+<p>于是有个死局：</p>
+<pre class="code" data-label="code"><code class="c">   线程栈（8MB）
+   ┌────────────────────┐
+   │                    │
+   │   已用              │
+   │   ...              │
+   ├────────────────────┤ ← 栈指针 SP 越过了栈底
+   │  ✗ 已溢出，无空间   │
+   └────────────────────┘
+        ↓
+   无限递归 / 超大栈帧 → SIGSEGV
+        ↓
+   内核想在栈上搭 sigframe 执行 handler
+        ↓
+   ❌ 没有栈空间了 → 搭不起来 → force_sigsegv() → 进程直接死
+</code></pre>
+<p><strong>结果</strong>：段错误诊断 handler 根本没机会运行，进程裸奔崩溃，拿不到任何现场信息。</p>
+<p><strong>解法</strong>：预先分配一块<strong>独立的栈空间</strong>，告诉内核「处理信号时请用这块栈」——这就是 <strong>备用栈（alternate signal stack）</strong>。</p>
+<pre class="code" data-label="code"><code class="c">   线程栈（已溢出）          备用栈（预分配，如 64KB）
+   ┌────────────┐           ┌──────────────────┐
+   │   ✗ 溢出    │           │ sigframe         │
+   │            │   ──────▶ │ handler()        │  ← 在这里正常执行
+   │            │           │ （可打印诊断信息） │
+   └────────────┘           └──────────────────┘
+</code></pre>
+<hr />
+<h2>二、API</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
+
+typedef struct {
+    void  *ss_sp;       /* 备用栈的基地址 */
+    int    ss_flags;    /* SS_ONSTACK / SS_DISABLE / SS_AUTODISARM / 0 */
+    size_t ss_size;     /* 备用栈大小（字节） */
+} stack_t;
+
+int sigaltstack(const stack_t *ss, stack_t *old_ss);
+/* 返回：成功 0，失败 -1 */
+</code></pre>
+<h3>三个标志</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -705,31 +1752,214 @@ int main(void) {
 </thead>
 <tbody>
 <tr>
-<td><code class="c">SA_SIGINFO</code></td>
-<td>用 <code class="c">sa_sigaction</code></td>
+<td><code class="c">0</code></td>
+<td>设置（或替换）备用栈，使其<strong>可用</strong></td>
 </tr>
 <tr>
-<td><code class="c">SA_RESTART</code></td>
-<td>多数慢调用被中断后自动重启（否则常 <code class="c">EINTR</code>）</td>
+<td><code class="c">SS_ONSTACK</code></td>
+<td><strong>查询用</strong>：表示进程当前正运行在备用栈上（作为 <code class="c">ss</code> 传入时无意义）</td>
 </tr>
 <tr>
-<td><code class="c">SA_NODEFER</code></td>
-<td>不自动阻塞本信号（易重入，慎用）</td>
+<td><code class="c">SS_DISABLE</code></td>
+<td>禁用备用栈（<code class="c">ss_sp</code>/<code class="c">ss_size</code> 被忽略）</td>
 </tr>
 <tr>
-<td><code class="c">SA_RESETHAND</code></td>
-<td>一次后复位 <code class="c">SIG_DFL</code>（老 <code class="c">signal</code> 味）</td>
-</tr>
-<tr>
-<td><code class="c">SA_NOCLDSTOP</code></td>
-<td><code class="c">SIGCHLD</code>：子停/续不通知</td>
-</tr>
-<tr>
-<td><code class="c">SA_NOCLDWAIT</code></td>
-<td><code class="c">SIGCHLD</code>：子退出不留僵尸</td>
+<td><code class="c">SS_AUTODISARM</code></td>
+<td>handler 返回后<strong>自动禁用</strong>并复位（Linux 4.7+，配合 <code class="c">SA_ONSTACK</code> 可安全释放栈内存）</td>
 </tr>
 </tbody>
 </table></div>
+<h3>标准用法</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+
+static void setup_altstack(void)
+{
+    stack_t ss;
+
+    /* ① 分配备用栈空间 */
+    ss.ss_sp = malloc(SIGSTKSZ);
+    if (ss.ss_sp == NULL) { perror(&quot;malloc&quot;); exit(1); }
+    ss.ss_size = SIGSTKSZ;
+    ss.ss_flags = 0;                       /* 0 = 启用 */
+    if (sigaltstack(&amp;ss, NULL) == -1) { perror(&quot;sigaltstack&quot;); exit(1); }
+
+    /* ② 让 handler 使用备用栈 —— 关键是 SA_ONSTACK */
+    struct sigaction sa = {0};
+    sa.sa_sigaction = segv_handler;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;  /* ← SA_ONSTACK 不可少 */
+    sigaction(SIGSEGV, &amp;sa, NULL);
+}
+</code></pre>
+<blockquote>
+<p><strong>两个步骤缺一不可</strong>：<code class="c">sigaltstack()</code> 只是<strong>登记</strong>备用栈；必须再在 <code class="c">sigaction</code> 里设 <strong><code class="c">SA_ONSTACK</code></strong>，内核才会在处理该信号时切换过去。</p>
+</blockquote>
+<hr />
+<h2>三、内核校验链</h2>
+<p><code class="c">do_sigaltstack()</code>（<code class="c">kernel/signal.c:4205</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static int
+do_sigaltstack (const stack_t *ss, stack_t *oss, unsigned long sp,
+        size_t min_ss_size)
+{
+    struct task_struct *t = current;
+    int ret = 0;
+
+    if (oss) {                                        /* ① 读旧值 */
+        memset(oss, 0, sizeof(stack_t));
+        oss-&gt;ss_sp = (void __user *) t-&gt;sas_ss_sp;
+        oss-&gt;ss_size = t-&gt;sas_ss_size;
+        oss-&gt;ss_flags = sas_ss_flags(sp) |
+            (current-&gt;sas_ss_flags &amp; SS_FLAG_BITS);
+    }
+
+    if (ss) {
+        void __user *ss_sp = ss-&gt;ss_sp;
+        size_t ss_size = ss-&gt;ss_size;
+        unsigned ss_flags = ss-&gt;ss_flags;
+        int ss_mode;
+
+        if (unlikely(on_sig_stack(sp)))          /* ② 不能在备用栈上改备用栈 */
+            return -EPERM;
+
+        ss_mode = ss_flags &amp; ~SS_FLAG_BITS;
+        if (unlikely(ss_mode != SS_DISABLE &amp;&amp; ss_mode != SS_ONSTACK &amp;&amp;
+                ss_mode != 0))                  /* ③ 标志合法性 */
+            return -EINVAL;
+
+        /* ④ 无变化则提前返回 */
+        if (t-&gt;sas_ss_sp == (unsigned long)ss_sp &amp;&amp;
+            t-&gt;sas_ss_size == ss_size &amp;&amp;
+            t-&gt;sas_ss_flags == ss_flags)
+            return 0;
+
+        sigaltstack_lock();
+        if (ss_mode == SS_DISABLE) {             /* ⑤ 禁用 */
+            ss_size = 0;
+            ss_sp = NULL;
+        } else {
+            if (unlikely(ss_size &lt; min_ss_size))         /* ⑥ 太小 */
+                ret = -ENOMEM;
+            if (!sigaltstack_size_valid(ss_size))        /* ⑦ 大小非法 */
+                ret = -ENOMEM;
+        }
+        if (!ret) {                              /* ⑧ 写入 task_struct */
+            t-&gt;sas_ss_sp = (unsigned long) ss_sp;
+            t-&gt;sas_ss_size = ss_size;
+            t-&gt;sas_ss_flags = ss_flags;
+        }
+        sigaltstack_unlock();
+    }
+    return ret;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>行号</th>
+<th>检查</th>
+<th>违反后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><code class="c">:4212</code></td>
+<td>读旧值（含 <code class="c">SS_ONSTACK</code> 实时状态）</td>
+<td>—</td>
+</tr>
+<tr>
+<td>②</td>
+<td><code class="c">:4226</code></td>
+<td><strong>当前不在备用栈上</strong></td>
+<td><code class="c">-EPERM</code></td>
+</tr>
+<tr>
+<td>③</td>
+<td><code class="c">:4230</code></td>
+<td>标志只能是 <code class="c">SS_DISABLE</code>/<code class="c">SS_ONSTACK</code>/<code class="c">0</code></td>
+<td><code class="c">-EINVAL</code></td>
+</tr>
+<tr>
+<td>④</td>
+<td><code class="c">:4238</code></td>
+<td>无变化则提前返回（快速路径）</td>
+<td>返回 0</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td><code class="c">:4244</code></td>
+<td><code class="c">SS_DISABLE</code> → size=0, sp=NULL</td>
+<td>—</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td><code class="c">:4248</code></td>
+<td>不小于最小尺寸</td>
+<td><code class="c">-ENOMEM</code></td>
+</tr>
+<tr>
+<td>⑦</td>
+<td><code class="c">:4250</code></td>
+<td>大小合法</td>
+<td><code class="c">-ENOMEM</code></td>
+</tr>
+<tr>
+<td>⑧</td>
+<td><code class="c">:4253</code></td>
+<td>写入 <code class="c">task_struct.sas_ss_*</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>第 ② 条值得留意</strong>：不能在备用栈运行期间修改备用栈——典型的「鸡生蛋」约束。如果你正在备用栈上跑 handler，此时再调 <code class="c">sigaltstack()</code> 会返回 <code class="c">-EPERM</code>。</p>
+<h3><code class="c">SS_AUTODISARM</code> 的自动复位</h3>
+<p><code class="c">signal_delivered()</code> 末尾（<code class="c">kernel/signal.c:2929-2930</code>）：</p>
+<pre class="code" data-label="C"><code class="c">    if (current-&gt;sas_ss_flags &amp; SS_AUTODISARM)
+        sas_ss_reset(current);
+</code></pre>
+<p>设了 <code class="c">SS_AUTODISARM</code> 后，handler 一返回，内核立即<strong>自动禁用并复位</strong>备用栈。这让「临时分配备用栈 → 用完释放」变得安全——否则栈正在使用时被 <code class="c">free()</code> 会造成内存破坏。</p>
+<hr />
+<h2>四、栈设得太小会怎样</h2>
+<p><strong>答案不是"调用失败"，而是进程收到 <code class="c">SIGSEGV</code></strong>——因为 <code class="c">do_sigaltstack</code> 的第 ⑥⑦ 步会拦下过小的栈，但<strong>刚好通过检查却仍不足以搭建 sigframe</strong> 的情况仍然存在：</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:2935
+void signal_setup_done(int failed, struct ksignal *ksig, int stepping)
+{
+    if (failed)
+        force_sigsegv(ksig-&gt;sig);      /* 栈帧搭不起来 → 强制 SIGSEGV */
+    else
+        signal_delivered(ksig, stepping);
+}
+</code></pre>
+<blockquote>
+<p><strong>实践</strong>：备用栈必须足够大。建议 <strong>≥ 32KB</strong>，不要只用 <code class="c">MINSIGSTKSZ</code>。</p>
+<ul>
+<li><code class="c">MINSIGSTKSZ</code>：内核要求的最小值，仅够搭最简 sigframe</li>
+<li><code class="c">SIGSTKSZ</code>：glibc 推荐的默认大小（通常 8KB~32KB，随架构变化）</li>
+</ul>
+<p>注意 glibc 2.34 起 <code class="c">MINSIGSTKSZ</code>/<code class="c">SIGSTKSZ</code> 变成了<strong>运行时动态值</strong>（不再是编译期常量），所以不能用于静态数组声明或 <code class="c">switch</code> case，只可用于 <code class="c">malloc()</code>。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">/* ✅ 正确：动态分配 */
+ss.ss_sp = malloc(SIGSTKSZ);
+ss.ss_size = SIGSTKSZ;
+
+/* ❌ 错误：glibc 2.34+ 下 SIGSTKSZ 不是常量 */
+static char stack[SIGSTKSZ];
+</code></pre>
+<hr />
+<h2>五、判断当前是否在备用栈上</h2>
+<pre class="code" data-label="C"><code class="c">stack_t oss;
+sigaltstack(NULL, &amp;oss);                  /* 只查询 */
+if (oss.ss_flags &amp; SS_ONSTACK)
+    printf(&quot;正在备用栈上运行\n&quot;);
+else if (oss.ss_flags &amp; SS_DISABLE)
+    printf(&quot;备用栈已禁用\n&quot;);
+else
+    printf(&quot;备用栈已启用，当前不在其上\n&quot;);
+</code></pre>
+<p>第一个参数传 <code class="c">NULL</code> 表示只查询不修改。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -742,140 +1972,615 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>SA_NOCLDWAIT 让子进程退出不留僵尸、免去手动 waitpid，嵌入式多进程服务省心；SA_RESETHAND 复刻老 signal 一次性语义，需复位场景可用</td>
+<td>备用栈是嵌入式崩溃诊断的<strong>必备设施</strong>——无调试器的现场，靠 <code class="c">SIGSEGV</code> handler + <code class="c">SA_ONSTACK</code> + <code class="c">si_addr</code>（<a href="#s-21-4">21.4</a>）打印故障地址。嵌入式线程栈通常很小（8KB~64KB），递归或大栈帧极易溢出，备用栈要<strong>每个线程都设</strong>（它是线程属性）。栈大小建议 ≥ 32KB，用 <code class="c">MINSIGSTKSZ</code> 容易因 sigframe 搭不起来被 <code class="c">force_sigsegv</code> 打死</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>SA_RESTART 决定慢 syscall 被打断后是否自动重启，HFT 阻塞式 I/O 设上它可减少 EINTR 分支；SA_NODEFER 会开放重入，性能敏感但易踩雷，慎用</td>
+<td>交易进程应<strong>全程启用</strong>备用栈处理 <code class="c">SIGSEGV</code>/<code class="c">SIGBUS</code>，保证崩溃时能抓到现场而非裸死。但注意：备用栈上的 handler 仍会<strong>抢占关键路径</strong>并带来延迟毛刺；HFT 的正确策略是<strong>屏蔽无关信号 + 关键路径零信号</strong>，备用栈只作为兜底的诊断设施，而非依赖路径</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
+<hr />
+<h2>代码示例：栈溢出后仍能诊断</h2>
+<pre class="code" data-label="C"><code class="c">/* altstack.c —— 栈溢出后用备用栈 handler 打印现场
+ * 编译: gcc -D_GNU_SOURCE -o altstack altstack.c */
+#define _GNU_SOURCE
+#include &lt;signal.h&gt;
 #include &lt;stdio.h&gt;
-void handler(int sig) { printf(&quot;got %d\n&quot;, sig); }
-int main(void) {
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+
+static void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    (void)sig; (void)ctx;
+    /* 注意：handler 运行在备用栈上，此处栈是干净的 */
+    char buf[256];
+    const char *reason =
+        (info-&gt;si_code == SEGV_MAPERR) ? &quot;地址未映射&quot; :
+        (info-&gt;si_code == SEGV_ACCERR) ? &quot;权限不足&quot;  : &quot;其他&quot;;
+
+    int n = snprintf(buf, sizeof buf,
+        &quot;\n=== SIGSEGV 捕获成功（handler 运行在备用栈上）===\n&quot;
+        &quot;  故障地址 si_addr = %p\n&quot;
+        &quot;  原因            = %s (si_code=%d)\n&quot;
+        &quot;  进程可以继续输出诊断信息，而不是裸死\n&quot;,
+        info-&gt;si_addr, reason, info-&gt;si_code);
+    write(STDOUT_FILENO, buf, n);
+    _exit(1);                       /* 用 _exit 而非 exit（见 21.2） */
+}
+
+/* 无限递归 —— 必然栈溢出 */
+static void recurse(int depth)
+{
+    volatile char padding[4096];    /* 每层消耗 4KB，加速溢出 */
+    padding[0] = (char)depth;
+    if (depth &gt; 0) recurse(depth + 1);
+    (void)padding[0];
+}
+
+int main(void)
+{
+    /* ① 分配并登记备用栈 */
+    stack_t ss;
+    ss.ss_sp = malloc(SIGSTKSZ * 4);        /* 用 4 倍，更保险 */
+    ss.ss_size = SIGSTKSZ * 4;
+    ss.ss_flags = 0;
+    if (sigaltstack(&amp;ss, NULL) == -1) { perror(&quot;sigaltstack&quot;); return 1; }
+    printf(&quot;备用栈已启用: sp=%p size=%zu\n&quot;, ss.ss_sp, ss.ss_size);
+
+    /* ② 注册 handler，关键是 SA_ONSTACK */
     struct sigaction sa = {0};
-    sa.sa_handler = handler;
-    /* SA_RESTART: 被信号中断的系统调用自动重启 */
-    sa.sa_flags = SA_RESTART;
-    /* SA_NOCLDSTOP: 子进程暂停不产生 SIGCHLD */
-    /* SA_NODEFER: handler 期间不自动阻塞自身信号 */
-    sigaction(SIGINT, &amp;sa, NULL);
-    printf(&quot;SA_RESTART: read 被 SIGINT 中断后自动重启\n&quot;);
+    sa.sa_sigaction = segv_handler;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;   /* ← SA_ONSTACK */
+    sigaction(SIGSEGV, &amp;sa, NULL);
+
+    /* ③ 查询状态 */
+    stack_t oss;
+    sigaltstack(NULL, &amp;oss);
+    printf(&quot;当前在备用栈上? %s\n&quot;,
+           (oss.ss_flags &amp; SS_ONSTACK) ? &quot;是&quot; : &quot;否&quot;);
+
+    printf(&quot;\n--- 开始无限递归，即将栈溢出 ---\n&quot;);
+    recurse(0);                              /* 触发栈溢出 */
+
+    printf(&quot;不会执行到这里\n&quot;);
     return 0;
 }
+</code></pre>
+<p><strong>对照实验</strong>：把 <code class="c">SA_ONSTACK</code> 去掉，栈溢出时 handler 无法在已耗尽的栈上执行，内核会 <code class="c">force_sigsegv()</code>，进程直接被杀，<strong>看不到任何诊断输出</strong>。</p>
+<p>预期输出：</p>
+<pre class="code" data-label="code"><code class="c">备用栈已启用: sp=0x... size=32768
+当前在备用栈上? 否
+
+--- 开始无限递归，即将栈溢出 ---
+
+=== SIGSEGV 捕获成功（handler 运行在备用栈上）===
+  故障地址 si_addr = 0x7ffd...
+  原因            = 地址未映射 (si_code=1)
+  进程可以继续输出诊断信息，而不是裸死
 </code></pre>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-21-2">21.2 <code class="c">sa_mask</code>（临时叠加）</a></li>
-<li>下一节：<a href="#s-21-4">21.4 <code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
+<li>上一节：<a href="#s-21-2">21.2 从信号处理器终止进程</a></li>
+<li>下一节：<a href="#s-21-4">21.4 <code class="c">SA_SIGINFO</code> 标志</a></li>
+<li>handler 执行上下文：<a href="chapter-20.html#s-20-4">Ch20.4 信号处理器简介</a></li>
+<li><code class="c">si_addr</code> 诊断：<a href="#s-21-4">21.4 <code class="c">SA_SIGINFO</code></a></li>
+<li>多线程注意：备用栈是<strong>线程属性</strong>，每个线程需各自设置</li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary><b>问 1：</b>为什么需要备用栈？不用会怎样？</summary>
+<p>因为 handler 在<strong>被打断线程自己的用户栈</strong>上执行（<a href="chapter-20.html#s-20-4">Ch20.4</a>），不是新线程。</p>
+<p><strong>栈溢出场景的死局</strong>：</p>
+<ol>
+<li>无限递归 / 超大栈帧导致线程栈耗尽，触发 <code class="c">SIGSEGV</code></li>
+<li>内核想在栈上搭建 sigframe 执行 handler</li>
+<li>但<strong>栈已经没有空间了</strong></li>
+<li><code class="c">signal_setup_done()</code>（<code class="c">kernel/signal.c:2935</code>）检测到 <code class="c">failed</code>，调用 <code class="c">force_sigsegv()</code></li>
+<li><strong>进程直接被杀，handler 从未执行，拿不到任何现场信息</strong></li>
+</ol>
+<p><strong>用了备用栈</strong>：handler 在预先分配的独立栈上执行，即使原栈已毁也能正常运行，可以打印故障地址、保存诊断信息。</p>
+<p><strong>实践意义</strong>：这是无调试器环境（嵌入式现场、生产服务器）崩溃诊断的核心设施。</p>
+</details>
+<details>
+<summary><b>问 2：</b><code class="c">sigaltstack()</code> 之后还需要做什么？</summary>
+<p>还需要<strong>在 <code class="c">sigaction()</code> 里设 <code class="c">SA_ONSTACK</code></strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* ① 登记备用栈 */
+stack_t ss = { .ss_sp = buf, .ss_size = size, .ss_flags = 0 };
+sigaltstack(&amp;ss, NULL);
+
+/* ② 让 handler 使用它 —— 缺了这步，备用栈形同虚设 */
+struct sigaction sa = {0};
+sa.sa_sigaction = handler;
+sigemptyset(&amp;sa.sa_mask);
+sa.sa_flags = SA_SIGINFO | SA_ONSTACK;      /* ← SA_ONSTACK 不可少 */
+sigaction(SIGSEGV, &amp;sa, NULL);
+</code></pre>
+<p><strong>语义区分</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sigaltstack(&amp;ss, NULL)</code></td>
+<td>向内核<strong>登记</strong>「有一块备用栈可用」</td>
+</tr>
+<tr>
+<td><code class="c">sa_flags = SA_ONSTACK</code></td>
+<td>告诉内核「<strong>处理这个信号时</strong>请切换到备用栈」</td>
+</tr>
+</tbody>
+</table></div>
+<p>两者是「有资源」与「用资源」的关系。登记了但没设 <code class="c">SA_ONSTACK</code>，handler 仍在原栈上跑；设了 <code class="c">SA_ONSTACK</code> 但没登记，<code class="c">sigaltstack</code> 没调用过，内核无栈可切（会按无备用栈处理）。</p>
+<p><strong>粒度</strong>：<code class="c">SA_ONSTACK</code> 是<strong>每个信号</strong>独立的——可以只让 <code class="c">SIGSEGV</code> 用备用栈，其他信号仍在原栈执行。</p>
+</details>
+<details>
+<summary><b>问 3：</b>备用栈设得太小会发生什么？</summary>
+<p><strong>进程收到 <code class="c">SIGSEGV</code>，而不是"设置失败"</strong>。</p>
+<p>分两种情况：</p>
+<p><strong>情况 A：小到通不过内核检查</strong> → <code class="c">do_sigaltstack()</code> 返回 <code class="c">-ENOMEM</code>：</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:4248-4251
+        if (unlikely(ss_size &lt; min_ss_size))
+            ret = -ENOMEM;
+        if (!sigaltstack_size_valid(ss_size))
+            ret = -ENOMEM;
+</code></pre>
+<p>这时 <code class="c">sigaltstack()</code> 返回 -1，<code class="c">errno = ENOMEM</code>，<strong>调用方能感知</strong>。</p>
+<p><strong>情况 B：恰好通过检查，但搭不起 sigframe</strong> → 进程被 <code class="c">force_sigsegv</code>：</p>
+<p>内核搭建 sigframe 需要保存寄存器、原信号掩码、<code class="c">sigreturn</code> 蹦床地址等，实际所需空间可能超过 <code class="c">min_ss_size</code>。此时：</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:2935
+void signal_setup_done(int failed, struct ksignal *ksig, int stepping)
+{
+    if (failed)
+        force_sigsegv(ksig-&gt;sig);      /* ← 强制 SIGSEGV */
+    else
+        signal_delivered(ksig, stepping);
+}
+</code></pre>
+<p><strong>讽刺的结果</strong>：本想"优雅处理栈溢出"，反而被自己的保护机制杀死，且比不用备用栈更隐蔽（因为它发生在信号递送时刻，而非设置时刻）。</p>
+<p><strong>实践建议</strong>：</p>
+<ul>
+<li>用 <strong>≥ 32KB</strong>，不要只用 <code class="c">MINSIGSTKSZ</code></li>
+<li><code class="c">MINSIGSTKSZ</code> 只是内核的理论最小值，仅够最简 sigframe</li>
+<li>复杂 handler（有 <code class="c">snprintf</code>、局部数组）需要更多空间</li>
+</ul>
+</details>
+<details>
+<summary><b>问 4：</b>能在备用栈运行期间调用 <code class="c">free()</code> 释放它吗？<code class="c">SS_AUTODISARM</code> 解决什么？</summary>
+<p><strong>不能直接释放</strong>——handler 正在这块内存上执行，<code class="c">free()</code> 会造成内存破坏（该内存可能被 malloc 元数据或新分配占用，而 handler 还在往里写栈帧）。</p>
+<p><strong><code class="c">SS_AUTODISARM</code> 解决这个问题</strong>（Linux 4.7+）：</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:2929-2930
+    if (current-&gt;sas_ss_flags &amp; SS_AUTODISARM)
+        sas_ss_reset(current);
+</code></pre>
+<p>设了这个标志后，<strong>handler 一返回，内核立即自动禁用并复位</strong>备用栈。这样：</p>
+<pre class="code" data-label="C"><code class="c">/* 临时分配 → 使用 → 安全释放的完整流程 */
+void *buf = malloc(SIGSTKSZ * 4);
+stack_t ss = { .ss_sp = buf, .ss_size = SIGSTKSZ * 4,
+               .ss_flags = SS_AUTODISARM };
+sigaltstack(&amp;ss, NULL);
+
+/* ... handler 执行 ... */
+
+/* handler 返回后，内核已自动禁用备用栈，可以安全 free */
+free(buf);
+</code></pre>
+<p><strong>没有 <code class="c">SS_AUTODISARM</code> 时</strong>：handler 返回后备用栈仍是启用状态。如果此时 <code class="c">free(buf)</code>，下次信号递送时内核会切换到<strong>已释放的内存</strong>上——未定义行为。</p>
+<p><strong>注意</strong>：<code class="c">SS_AUTODISARM</code> 是一次性的。若希望后续信号仍用备用栈，需要在每次使用后<strong>重新设置</strong>——这适合「临时诊断」场景，不适合长期启用的生产配置。</p>
+</details>
+<details>
+<summary><b>问 5：</b>多线程程序里，备用栈需要每个线程都设置吗？</summary>
+<p><strong>是的</strong>。备用栈是<strong>线程属性</strong>（存在 <code class="c">task_struct</code> 的 <code class="c">sas_ss_sp</code>/<code class="c">sas_ss_size</code>/<code class="c">sas_ss_flags</code>），不是进程共享的。</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:4253-4257
+        if (!ret) {
+            t-&gt;sas_ss_sp = (unsigned long) ss_sp;
+            t-&gt;sas_ss_size = ss_size;
+            t-&gt;sas_ss_flags = ss_flags;
+        }
+</code></pre>
+<p>注意是 <code class="c">t</code>（= <code class="c">current</code>，即<strong>当前线程</strong>），不是 <code class="c">t-&gt;signal</code>。</p>
+<p><strong>对比其他信号属性的作用域</strong>（高频考点）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>存放位置</th>
+<th>作用域</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>掩码</td>
+<td><code class="c">task_struct.blocked</code></td>
+<td><strong>线程私有</strong></td>
+</tr>
+<tr>
+<td><strong>备用栈</strong></td>
+<td><code class="c">task_struct.sas_ss_*</code></td>
+<td><strong>线程私有</strong></td>
+</tr>
+<tr>
+<td>处置</td>
+<td><code class="c">sighand-&gt;action[]</code></td>
+<td><strong>进程共享</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实践要点</strong>：</p>
+<ol>
+<li>每个线程都要<strong>各自</strong>调用 <code class="c">sigaltstack()</code>——主线程设置不影响其他线程</li>
+<li>每个线程需要<strong>独立的栈内存</strong>（不能多个线程共用一块！否则 handler 并发执行时栈帧互相覆盖）</li>
+<li>新线程<strong>不会继承</strong>父线程的备用栈</li>
+<li>典型做法：在线程入口函数开头设置，用线程局部存储或 <code class="c">pthread_key</code> 管理栈内存</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">void *worker(void *arg)
+{
+    /* 每个线程独立设置自己的备用栈 */
+    stack_t ss = { .ss_sp = malloc(SIGSTKSZ * 4),
+                   .ss_size = SIGSTKSZ * 4, .ss_flags = 0 };
+    sigaltstack(&amp;ss, NULL);
+    ...
+}
+</code></pre>
+<p><strong>嵌入式特别注意</strong>：嵌入式线程栈本身就小（8KB~64KB），更容易溢出，备用栈对每个线程都更有必要——但也意味着<strong>内存开销 × 线程数</strong>，需要权衡。</p>
+</details>
       </section>
       <section class="section" id="s-21-4">
-        <div class="sec-head"><div class="sec-no">21.4</div><h2>`EINTR` 与 `SA_RESTART`</h2></div>
+        <div class="sec-head"><div class="sec-no">21.4</div><h2>`SA_SIGINFO` 标志</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：<a href="#s-21-3">21.3 常用 <code class="c">sa_flags</code></a>
-- 下一节：21.5 Async-Signal-Safe（最重要）</p>
+<p>源码核验：Linux v6.6 · <code class="c">include/uapi/asm-generic/siginfo.h:139-191</code>（<code class="c">siginfo_t</code> union 定义）· <code class="c">kernel/signal.c</code>（<code class="c">copy_siginfo_from_user:3401</code> · <code class="c">do_rt_sigqueueinfo</code> @<code class="c">SYSCALL_DEFINE3(rt_sigqueueinfo):4032</code>）
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="#s-21-3">21.3 在备用栈上处理信号</a>
+- 下一节：<a href="#s-21-5">21.5 系统调用的中断与重启</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>阻塞在慢系统调用时递送信号 → 跑完 handler 后： - 默认：调用失败，<code class="c">errno == EINTR</code> - <code class="c">SA_RESTART</code>：许多调用自动重启</p>
+<ol>
+<li><code class="c">SA_SIGINFO</code> 开启了什么——从 <code class="c">void(int)</code> 升级到 <code class="c">void(int, siginfo_t*, void*)</code> 能拿到哪些信息</li>
+<li><code class="c">siginfo_t</code> 的 <strong>union 语义</strong>——同一块内存按信号类型有不同解读，用错字段就是垃圾值</li>
+<li><code class="c">si_code</code> 怎么区分信号<strong>来源</strong>（用户 / 内核 / 具体原因），以及各信号对应哪些有效字段</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<p>阻塞在慢系统调用时递送信号 → 跑完 handler 后：</p>
-<ul>
-<li>默认：调用失败，<code class="c">errno == EINTR</code>  </li>
-<li><code class="c">SA_RESTART</code>：许多调用自动重启  </li>
-</ul>
-<p>⚠️ <strong>并非所有</strong>调用都可重启（<code class="c">epoll_wait</code>、部分 <code class="c">accept</code>/<code class="c">sleep</code> 等因平台而异）。<br />
-业务应<strong>统一处理 <code class="c">EINTR</code></strong>（重试或显式退出）。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/eintr_read.c"><code class="c">code/eintr_read.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>慢设备 I/O（串口/网络）易被信号打断，嵌入式代码对 read/write 必须处理 EINTR 重试，否则偶发中断会静默丢数据</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>EINTR 是延迟抖动来源之一——阻塞中的 recv/epoll_wait 被打断后返回，若未重试会漏事件；统一 <code class="c">while(ret&lt;0 &amp;&amp; errno==EINTR)</code> 重试，保证关键路径不被信号偷走时间片</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;stdio.h&gt;
-void handler(int sig) { printf(&quot;handler: %d\n&quot;, sig); }
-int main(void) {
-    struct sigaction sa = {0};
-    sa.sa_handler = handler;
-    sa.sa_flags = 0;  /* 不设 SA_RESTART → read 返回 EINTR */
-    sigaction(SIGUSR1, &amp;sa, NULL);
+<h2>一、开启 <code class="c">SA_SIGINFO</code></h2>
+<p>在 <code class="c">sigaction</code> 的 <code class="c">sa_flags</code> 里加上 <code class="c">SA_SIGINFO</code>，并把处理器装进 <code class="c">sa_sigaction</code>：</p>
+<pre class="code" data-label="C"><code class="c">void handler(int sig, siginfo_t *info, void *ucontext);
 
-    /* 对比: 设 SA_RESTART 后 read 自动重启 */
-    printf(&quot;不设 SA_RESTART: read 被 SIGUSR1 中断 → 返回 -1 errno=EINTR\n&quot;);
-    printf(&quot;设 SA_RESTART: read 自动重启\n&quot;);
-    raise(SIGUSR1);
-    return 0;
-}
+struct sigaction sa = {0};
+sa.sa_sigaction = handler;             /* ← 注意用 sa_sigaction */
+sigemptyset(&amp;sa.sa_mask);
+sa.sa_flags = SA_SIGINFO;              /* ← 必须设这个标志 */
+sigaction(SIGUSR1, &amp;sa, NULL);
 </code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-21-3">21.3 常用 <code class="c">sa_flags</code></a></li>
-<li>下一节：21.5 Async-Signal-Safe（最重要）</li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-21-5">
-        <div class="sec-head"><div class="sec-no">21.5</div><h2>Async-Signal-Safe（最重要）</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：<a href="#s-21-4">21.4 <code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code></a>
-- 下一节：<a href="#s-21-6">21.6 <code class="c">SIGCHLD</code></a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>handler 可随时打断用户态代码 → <strong>禁止</strong>非异步信号安全函数。 推荐范式： volatile sig_atomic_t got_sigint = 0;</p>
-<hr />
-<h2>要点</h2>
-<p>handler 可随时打断用户态代码 → <strong>禁止</strong>非异步信号安全函数。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>✅ 常见允许</th>
-<th>❌ 严禁</th>
+<th>参数</th>
+<th>类型</th>
+<th>内容</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">write</code>、<code class="c">_exit</code>、<code class="c">sigaction</code>、<code class="c">sigprocmask</code>、<code class="c">sigpending</code>、…（见 POSIX 列表）</td>
-<td><code class="c">printf</code>、<code class="c">malloc</code>/<code class="c">free</code>、stdio、多数锁、C++/库随意调用</td>
+<td><code class="c">sig</code></td>
+<td><code class="c">int</code></td>
+<td>信号编号</td>
+</tr>
+<tr>
+<td><code class="c">info</code></td>
+<td><code class="c">siginfo_t *</code></td>
+<td><strong>信号的详细信息</strong>（发送者 PID/UID、故障地址、附加数据…）</td>
+</tr>
+<tr>
+<td><code class="c">ucontext</code></td>
+<td><code class="c">void *</code></td>
+<td>指向 <code class="c">ucontext_t</code>，保存被中断时刻的<strong>完整 CPU 上下文</strong>（寄存器、栈指针、PC）</td>
 </tr>
 </tbody>
 </table></div>
-<p>推荐范式：</p>
-<pre class="code" data-label="C"><code class="c">volatile sig_atomic_t got_sigint = 0;
-void handler(int sig) { (void)sig; got_sigint = 1; }
+<blockquote>
+<p><strong>⚠️ 陷阱</strong>：<code class="c">sa_handler</code> 与 <code class="c">sa_sigaction</code> 在 Linux/glibc 上是 <strong>union 的同一块内存</strong>（详见 <a href="chapter-20.html#s-20-13">Ch20.13</a>）。设了 <code class="c">SA_SIGINFO</code> 就必须用 <code class="c">sa_sigaction</code>，反之亦然，<strong>绝不能同时赋值</strong>。</p>
+<p><strong><code class="c">ucontext</code> 的用途</strong>：可以读取甚至<strong>修改</strong>被中断时刻的寄存器状态。这是实现「修复故障继续执行」（如模拟 FPU 指令、处理 <code class="c">SIGSEGV</code> 后跳转）的基础。但这是高度架构相关的非可移植操作，通常用 <code class="c">(ucontext_t *)ucontext</code> 访问 <code class="c">uc_mcontext</code>。</p>
+</blockquote>
+<hr />
+<h2>二、<code class="c">siginfo_t</code> 是 union，不是 struct</h2>
+<p><strong>这是本节最关键的认知</strong>。<code class="c">siginfo_t</code> 的第三个成员是一个 <strong>union</strong>：</p>
+<pre class="code" data-label="C"><code class="c">// include/uapi/asm-generic/siginfo.h:139
+typedef struct siginfo {
+    int si_signo;         /* 信号编号，总是有效 */
+    int si_errno;         /* 通常不用（Linux 未填充） */
+    int si_code;          /* 信号来源/原因码，总是有效 */
+
+    union {
+        int _si_pad[SI_MAX_SIZE/sizeof(int)];
+        /* kill()/sigqueue()/终端 */
+        struct { pid_t _pid; uid_t _uid; } _kill;
+        /* POSIX.1b timers */
+        struct { ... } _timer;
+        /* SIGCHLD */
+        struct { pid_t _pid; uid_t _uid; int _status; clock_t _utime, _stime; } _sigchld;
+        /* SIGILL/SIGFPE/SIGSEGV/SIGBUS */
+        struct { void *_addr; short _addr_lsb; ... } _sigfault;
+        /* SIGPOLL/SIGIO */
+        struct { long _band; int _fd; } _sigpoll;
+        /* SIGSYS（seccomp） */
+        struct { void *_call_addr; int _syscall; unsigned int _arch; } _sigsys;
+        /* 实时信号 */
+        struct { pid_t _pid; uid_t _uid; union sigval _sigval; } _rt;
+    } _sifields;
+} siginfo_t;
 </code></pre>
-<p><code class="c">sig_atomic_t</code>：读写在实现上视为原子，避免撕裂。</p>
+<p>所有具体字段都是<strong>宏</strong>，映射到 union 的某个成员：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>行号</th>
+<th>映射到</th>
+<th>有效于</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">si_pid</code></td>
+<td><code class="c">:149</code></td>
+<td><code class="c">_sifields._kill._pid</code></td>
+<td><code class="c">kill</code> / <code class="c">sigqueue</code> / <code class="c">SIGCHLD</code></td>
+</tr>
+<tr>
+<td><code class="c">si_uid</code></td>
+<td><code class="c">:150</code></td>
+<td><code class="c">_sifields._kill._uid</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">si_value</code></td>
+<td><code class="c">:157</code></td>
+<td><code class="c">_sifields._rt._sigval</code></td>
+<td><code class="c">sigqueue</code> / 实时信号</td>
+</tr>
+<tr>
+<td><code class="c">si_int</code></td>
+<td><code class="c">:158</code></td>
+<td><code class="c">_sifields._rt._sigval.sival_int</code></td>
+<td>同上（<code class="c">int</code> 形态）</td>
+</tr>
+<tr>
+<td><code class="c">si_ptr</code></td>
+<td><code class="c">:159</code></td>
+<td><code class="c">_sifields._rt._sigval.sival_ptr</code></td>
+<td>同上（<code class="c">void*</code> 形态）</td>
+</tr>
+<tr>
+<td><code class="c">si_addr</code></td>
+<td><code class="c">:160</code></td>
+<td><code class="c">_sifields._sigfault._addr</code></td>
+<td><code class="c">SIGSEGV</code>/<code class="c">SIGBUS</code>/<code class="c">SIGILL</code>/<code class="c">SIGFPE</code></td>
+</tr>
+<tr>
+<td><code class="c">si_status</code></td>
+<td><code class="c">:154</code></td>
+<td><code class="c">_sifields._sigchld._status</code></td>
+<td><code class="c">SIGCHLD</code>（子进程退出状态）</td>
+</tr>
+<tr>
+<td><code class="c">si_utime</code>/<code class="c">si_stime</code></td>
+<td><code class="c">:155</code>/<code class="c">:156</code></td>
+<td><code class="c">_sifields._sigchld.*</code></td>
+<td><code class="c">SIGCHLD</code>（子进程 CPU 时间）</td>
+</tr>
+<tr>
+<td><code class="c">si_fd</code></td>
+<td><code class="c">:170</code></td>
+<td><code class="c">_sifields._sigpoll._fd</code></td>
+<td><code class="c">SIGPOLL</code>/<code class="c">SIGIO</code>（就绪 fd）</td>
+</tr>
+<tr>
+<td><code class="c">si_band</code></td>
+<td><code class="c">:169</code></td>
+<td><code class="c">_sifields._sigpoll._band</code></td>
+<td><code class="c">SIGPOLL</code>（事件类型位掩码）</td>
+</tr>
+<tr>
+<td><code class="c">si_syscall</code></td>
+<td><code class="c">:172</code></td>
+<td><code class="c">_sifields._sigsys._syscall</code></td>
+<td><code class="c">SIGSYS</code>（seccomp 拦截的系统调用号）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>核心规则</strong>：<strong>只有与当前信号类型匹配的字段才有意义</strong>。在 <code class="c">SIGSEGV</code> 的 handler 里读 <code class="c">si_pid</code> 得到的是 <code class="c">_sigfault._addr</code> 的低位——完全无意义的垃圾。</p>
+</blockquote>
+<h3>各信号的有效字段</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>信号</th>
+<th>有效字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kill()</code> / <code class="c">raise()</code> 发送的任何信号</td>
+<td><code class="c">si_pid</code>（发送者 PID）、<code class="c">si_uid</code>（发送者 real UID）</td>
+</tr>
+<tr>
+<td><code class="c">sigqueue()</code> 发送的实时信号</td>
+<td><code class="c">si_pid</code>、<code class="c">si_uid</code>、<strong><code class="c">si_value</code></strong>（<code class="c">si_int</code> / <code class="c">si_ptr</code>）</td>
+</tr>
+<tr>
+<td><code class="c">SIGCHLD</code></td>
+<td><code class="c">si_pid</code>（子进程 PID）、<code class="c">si_status</code>（退出状态/停止信号）、<code class="c">si_utime</code>、<code class="c">si_stime</code></td>
+</tr>
+<tr>
+<td><code class="c">SIGSEGV</code> / <code class="c">SIGBUS</code> / <code class="c">SIGILL</code> / <code class="c">SIGFPE</code></td>
+<td><strong><code class="c">si_addr</code></strong>（触发故障的内存地址）</td>
+</tr>
+<tr>
+<td><code class="c">SIGPOLL</code> / <code class="c">SIGIO</code></td>
+<td><code class="c">si_fd</code>（就绪的 fd）、<code class="c">si_band</code>（<code class="c">POLLIN</code>/<code class="c">POLLOUT</code>/<code class="c">POLLERR</code> 等）</td>
+</tr>
+<tr>
+<td><code class="c">SIGSYS</code>（seccomp）</td>
+<td><code class="c">si_syscall</code>（被拦截的系统调用号）、<code class="c">si_arch</code>、<code class="c">si_call_addr</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>三、<code class="c">si_code</code>：信号从哪来</h2>
+<p><code class="c">si_code</code> 描述信号的<strong>来源与具体原因</strong>。两个判据宏：</p>
+<pre class="code" data-label="C"><code class="c">// include/uapi/asm-generic/siginfo.h:190-191
+#define SI_FROMUSER(siptr)  ((siptr)-&gt;si_code &lt;= 0)
+#define SI_FROMKERNEL(siptr)    ((siptr)-&gt;si_code &gt; 0)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>判据</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SI_FROMUSER(info)</code></td>
+<td>信号来自<strong>用户进程</strong>（<code class="c">kill</code>/<code class="c">sigqueue</code>/<code class="c">raise</code>）</td>
+</tr>
+<tr>
+<td><code class="c">SI_FROMKERNEL(info)</code></td>
+<td>信号来自<strong>内核</strong>（硬件异常、终端、定时器、子进程通知…）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>常见 <code class="c">si_code</code> 值</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">si_code</code></th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SI_USER</code></td>
+<td>0</td>
+<td><code class="c">kill()</code> 发送</td>
+</tr>
+<tr>
+<td><code class="c">SI_KERNEL</code></td>
+<td>0x80</td>
+<td>内核内部产生</td>
+</tr>
+<tr>
+<td><code class="c">SI_QUEUE</code></td>
+<td>-1</td>
+<td><code class="c">sigqueue()</code> 发送</td>
+</tr>
+<tr>
+<td><code class="c">SI_TIMER</code></td>
+<td>-2</td>
+<td>POSIX 定时器到期</td>
+</tr>
+<tr>
+<td><code class="c">SI_MESGQ</code></td>
+<td>-3</td>
+<td>POSIX 消息队列状态变化</td>
+</tr>
+<tr>
+<td><code class="c">SI_ASYNCIO</code></td>
+<td>-4</td>
+<td>异步 I/O 完成</td>
+</tr>
+<tr>
+<td><code class="c">SI_SIGIO</code></td>
+<td>-5</td>
+<td>信号驱动 I/O（<code class="c">SIGIO</code>）</td>
+</tr>
+<tr>
+<td><code class="c">SI_TKILL</code></td>
+<td>-6</td>
+<td><code class="c">tgkill()</code> 发送</td>
+</tr>
+<tr>
+<td><code class="c">SEGV_MAPERR</code></td>
+<td>1</td>
+<td><code class="c">SIGSEGV</code>：地址未映射</td>
+</tr>
+<tr>
+<td><code class="c">SEGV_ACCERR</code></td>
+<td>2</td>
+<td><code class="c">SIGSEGV</code>：权限不足（如写只读页）</td>
+</tr>
+<tr>
+<td><code class="c">CLD_EXITED</code></td>
+<td>1</td>
+<td><code class="c">SIGCHLD</code>：子进程正常退出</td>
+</tr>
+<tr>
+<td><code class="c">CLD_KILLED</code></td>
+<td>2</td>
+<td><code class="c">SIGCHLD</code>：子进程被信号杀死</td>
+</tr>
+<tr>
+<td><code class="c">CLD_STOPPED</code></td>
+<td>4</td>
+<td><code class="c">SIGCHLD</code>：子进程被停止</td>
+</tr>
+<tr>
+<td><code class="c">CLD_CONTINUED</code></td>
+<td>6</td>
+<td><code class="c">SIGCHLD</code>：子进程被继续</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意 <code class="c">si_code</code> 的正负约定</strong>：用户来源 ≤ 0，内核来源 &gt; 0。所以 <code class="c">SI_USER</code> 是 0 而 <code class="c">SI_QUEUE</code> 是 -1，而 <code class="c">SEGV_MAPERR</code> 是 1（内核）。</p>
+</blockquote>
+<hr />
+<h2>四、典型用途</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>审计谁发的信号</strong></td>
+<td>读 <code class="c">si_pid</code> / <code class="c">si_uid</code>（如确认 <code class="c">SIGTERM</code> 是否来自合法运维进程）</td>
+</tr>
+<tr>
+<td><strong>诊断段错误</strong></td>
+<td>读 <code class="c">si_addr</code> 获取故障地址，配合 <code class="c">si_code</code>（<code class="c">SEGV_MAPERR</code> vs <code class="c">SEGV_ACCERR</code>）区分"野指针"与"写只读页"</td>
+</tr>
+<tr>
+<td><strong><code class="c">SIGCHLD</code> 精确处理</strong></td>
+<td>读 <code class="c">si_status</code> + <code class="c">si_code</code> 区分正常退出 / 被信号杀死 / 停止</td>
+</tr>
+<tr>
+<td><strong>实时信号传数据</strong></td>
+<td><code class="c">sigqueue()</code> 的 <code class="c">si_value</code> 携带 <code class="c">int</code> 或指针（见 <a href="chapter-22.html#s-22-8">Ch22.8</a>）</td>
+</tr>
+<tr>
+<td><strong>信号驱动 I/O</strong></td>
+<td><code class="c">SIGIO</code> 的 <code class="c">si_fd</code> / <code class="c">si_band</code> 知道哪个 fd 就绪（见 <a href="chapter-63.html#s-63-3">Ch63.3</a>）</td>
+</tr>
+<tr>
+<td><strong>seccomp 沙箱</strong></td>
+<td><code class="c">SIGSYS</code> 的 <code class="c">si_syscall</code> 得知被拦截的调用号</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -888,77 +2593,589 @@ void handler(int sig) { (void)sig; got_sigint = 1; }
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>handler 里 malloc/printf 可能死锁（打断正持锁的代码），嵌入式资源受限下锁竞争更常见；只用 write/_exit/sig_atomic_t 置标志，逻辑回主循环</td>
+<td><code class="c">SIGSEGV</code> handler 里读 <code class="c">si_addr</code> 可在无调试器的现场打印故障地址，是嵌入式崩溃诊断的核心手段。配合 <code class="c">SA_ONSTACK</code> 备用栈（<a href="#s-21-3">21.3</a>）即使栈溢出也能工作。注意 <code class="c">si_addr</code> 只在 <code class="c">SIGSEGV</code>/<code class="c">SIGBUS</code>/<code class="c">SIGILL</code>/<code class="c">SIGFPE</code> 下有效，其他信号读它是垃圾值</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>handler 里任何 malloc/加锁都可能引入微秒级不可预测延迟甚至死锁；HFT 的 handler 只做 sig_atomic_t 置位，让主循环在稳定上下文中处理，杜绝延迟毛刺</td>
+<td><code class="c">si_pid</code>/<code class="c">si_uid</code> 可审计停机信号来源——区分「运维正常停机」与「误杀/恶意信号」，是交易系统风控的一环。但注意：handler 里<strong>不能</strong>调用 <code class="c">printf</code>/<code class="c">syslog</code>（非异步信号安全），正确做法是把 <code class="c">si_pid</code>/<code class="c">si_signo</code> 存进 <code class="c">volatile sig_atomic_t</code> 或无锁队列，回主流程再落日志</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
-#include &lt;unistd.h&gt;
+<hr />
+<h2>代码示例：三种典型场景</h2>
+<pre class="code" data-label="C"><code class="c">/* siginfodemo.c —— SA_SIGINFO 的三种典型用法
+ * 编译: gcc -o siginfodemo siginfodemo.c */
+#define _GNU_SOURCE
+#include &lt;signal.h&gt;
 #include &lt;stdio.h&gt;
 #include &lt;string.h&gt;
-/* 异步信号安全函数: 可在 handler 中安全调用 */
-void handler(int sig) {
-    /* 安全: write 是 async-signal-safe */
-    const char *msg = &quot;signal!\n&quot;;
-    write(STDOUT_FILENO, msg, strlen(msg));
-    /* 不安全: printf/malloc/free 都不能在 handler 中调用! */
+#include &lt;unistd.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* 场景 1：审计信号来源（谁发的） */
+static void audit_handler(int sig, siginfo_t *info, void *ctx)
+{
+    (void)ctx;
+    char buf[256];
+    int n = snprintf(buf, sizeof buf,
+        &quot;[audit] signo=%d si_code=%d 来自 %s: si_pid=%d si_uid=%d\n&quot;,
+        sig, info-&gt;si_code,
+        SI_FROMKERNEL(info) ? &quot;内核&quot; : &quot;用户进程&quot;,
+        info-&gt;si_pid, info-&gt;si_uid);
+    write(STDOUT_FILENO, buf, n);
 }
-int main(void) {
+
+/* 场景 2：诊断段错误 */
+static void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    (void)ctx;
+    char buf[256];
+    const char *reason = &quot;未知&quot;;
+    if (sig == SIGSEGV) {
+        if (info-&gt;si_code == SEGV_MAPERR) reason = &quot;地址未映射（野指针/已释放）&quot;;
+        else if (info-&gt;si_code == SEGV_ACCERR) reason = &quot;权限不足（写只读页？）&quot;;
+    }
+    int n = snprintf(buf, sizeof buf,
+        &quot;[segv] 故障地址 si_addr=%p  原因: %s\n&quot;, info-&gt;si_addr, reason);
+    write(STDOUT_FILENO, buf, n);
+    _exit(1);                       /* 用 _exit 而非 exit（见 21.2） */
+}
+
+/* 场景 3：SIGCHLD 精确处理 */
+static void chld_handler(int sig, siginfo_t *info, void *ctx)
+{
+    (void)ctx; (void)sig;
+    char buf[256];
+    const char *how = &quot;?&quot;;
+    switch (info-&gt;si_code) {
+    case CLD_EXITED:    how = &quot;正常退出&quot;; break;
+    case CLD_KILLED:    how = &quot;被信号杀死&quot;; break;
+    case CLD_DUMPED:    how = &quot;被信号杀死并 core&quot;; break;
+    case CLD_STOPPED:   how = &quot;被停止&quot;; break;
+    case CLD_CONTINUED: how = &quot;被继续&quot;; break;
+    }
+    int n = snprintf(buf, sizeof buf,
+        &quot;[chld] 子进程 %d %s, si_status=%d\n&quot;,
+        info-&gt;si_pid, how, info-&gt;si_status);
+    write(STDOUT_FILENO, buf, n);
+}
+
+static void install(int sig, void (*h)(int, siginfo_t *, void *))
+{
     struct sigaction sa = {0};
-    sa.sa_handler = handler;
-    sigaction(SIGUSR1, &amp;sa, NULL);
-    printf(&quot;handler 中只能用 write, 不能用 printf\n&quot;);
-    raise(SIGUSR1);
+    sa.sa_sigaction = h;              /* ← 用 sa_sigaction */
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;         /* ← 必须 */
+    sigaction(sig, &amp;sa, NULL);
+}
+
+int main(void)
+{
+    install(SIGUSR1, audit_handler);
+    install(SIGSEGV, segv_handler);
+    install(SIGCHLD, chld_handler);
+
+    raise(SIGUSR1);                   /* 来自自己 → 用户来源 */
+
+    pid_t p = fork();
+    if (p == 0) _exit(42);
+    sleep(1);                         /* 等 SIGCHLD */
+
+    /* 触发段错误（最后一击） */
+    printf(&quot;\n--- 即将触发段错误 ---\n&quot;);
+    volatile int *bad = (int *)0xDEAD;
+    *bad = 1;
     return 0;
 }
+</code></pre>
+<p>预期输出：</p>
+<pre class="code" data-label="code"><code class="c">[audit] signo=10 si_code=0 来自 用户进程: si_pid=1234 si_uid=1000
+[chld] 子进程 1235 正常退出, si_status=42
+
+--- 即将触发段错误 ---
+[segv] 故障地址 si_addr=0xdead  原因: 地址未映射（野指针/已释放）
 </code></pre>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-21-4">21.4 <code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code></a></li>
-<li>下一节：<a href="#s-21-6">21.6 <code class="c">SIGCHLD</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
+<li>上一节：<a href="#s-21-3">21.3 在备用栈上处理信号</a></li>
+<li>下一节：<a href="#s-21-5">21.5 系统调用的中断与重启</a></li>
+<li><code class="c">sigaction</code> 基础：<a href="chapter-20.html#s-20-13">Ch20.13</a></li>
+<li>实时信号携带数据：<a href="chapter-22.html#s-22-8">Ch22.8</a></li>
+<li>信号驱动 I/O：<a href="chapter-63.html#s-63-3">Ch63.3</a></li>
 </ul>
-      </section>
-      <section class="section" id="s-21-6">
-        <div class="sec-head"><div class="sec-no">21.6</div><h2>`SIGCHLD`</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：21.5 Async-Signal-Safe（最重要）
-- 下一节：<a href="#s-21-1">21.7 <code class="c">signal()</code> vs <code class="c">sigaction()</code></a></p>
-</blockquote>
 <hr />
-<h2>本节讲什么</h2>
-<p>子进程退出 → 父收 <code class="c">SIGCHLD</code>。 Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/sigchld_reap.c"><code class="c">code/sigchld_reap.c</code></a> ---</p>
-<hr />
-<h2>要点</h2>
-<p>子进程退出 → 父收 <code class="c">SIGCHLD</code>。</p>
+<h2>自测题</h2>
+<details>
+<summary><b>问 1：</b><code class="c">siginfo_t</code> 为什么是 union？读错字段会怎样？</summary>
+<p><code class="c">siginfo_t</code> 的大小是固定的（<code class="c">SI_MAX_SIZE</code>），但不同信号需要携带的信息各不相同（发送者 PID、故障地址、子进程状态、fd…）。内核用 <strong>union</strong> 让同一块内存按信号类型有不同解读，从而复用同一个结构体。</p>
+<pre class="code" data-label="C"><code class="c">typedef struct siginfo {
+    int si_signo;      /* 总是有效 */
+    int si_errno;
+    int si_code;       /* 总是有效 */
+    union {
+        int _si_pad[...];
+        struct { pid_t _pid; uid_t _uid; } _kill;
+        struct { void *_addr; ... } _sigfault;
+        struct { pid_t _pid; int _status; ... } _sigchld;
+        struct { long _band; int _fd; } _sigpoll;
+        ...
+    } _sifields;
+} siginfo_t;
+</code></pre>
+<p><strong>读错字段的后果</strong>：得到<strong>垃圾值</strong>，且不会报错。</p>
+<p>例如在 <code class="c">SIGSEGV</code> 的 handler 里读 <code class="c">si_pid</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define si_pid   _sifields._kill._pid        /* union 的 _kill 分支 */
+#define si_addr  _sifields._sigfault._addr   /* union 的 _sigfault 分支 */
+</code></pre>
+<p>两者是<strong>同一块内存的不同解读</strong>。<code class="c">SIGSEGV</code> 时内核填的是 <code class="c">_sigfault._addr</code>，此时读 <code class="c">_kill._pid</code> 得到的就是 <code class="c">_addr</code> 的低 32 位——一个"看起来像 PID"的随机数。</p>
+<p><strong>规则</strong>：<strong>只读写当前信号类型对应的字段</strong>。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>做法</th>
-<th></th>
+<th>信号</th>
+<th>有效字段</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>handler 里</td>
-<td>循环 <code class="c">waitpid(-1, …, WNOHANG)</code> 收尸（标准信号不排队，一次可能对应多个子）</td>
+<td><code class="c">kill</code>/<code class="c">sigqueue</code> 来的</td>
+<td><code class="c">si_pid</code>、<code class="c">si_uid</code>、<code class="c">si_value</code></td>
 </tr>
 <tr>
-<td><code class="c">SA_NOCLDWAIT</code></td>
-<td>内核自动收，不留僵尸</td>
+<td><code class="c">SIGSEGV</code>/<code class="c">SIGBUS</code>/<code class="c">SIGILL</code>/<code class="c">SIGFPE</code></td>
+<td><code class="c">si_addr</code></td>
+</tr>
+<tr>
+<td><code class="c">SIGCHLD</code></td>
+<td><code class="c">si_pid</code>、<code class="c">si_status</code>、<code class="c">si_utime</code>/<code class="c">si_stime</code></td>
+</tr>
+<tr>
+<td><code class="c">SIGPOLL</code>/<code class="c">SIGIO</code></td>
+<td><code class="c">si_fd</code>、<code class="c">si_band</code></td>
 </tr>
 </tbody>
 </table></div>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/sigchld_reap.c"><code class="c">code/sigchld_reap.c</code></a></p>
+</details>
+<details>
+<summary><b>问 2：</b>怎么判断一个信号是用户进程发的还是内核产生的？</summary>
+<p>用 <code class="c">si_code</code> 的符号，内核提供了两个判据宏：</p>
+<pre class="code" data-label="C"><code class="c">// include/uapi/asm-generic/siginfo.h:190-191
+#define SI_FROMUSER(siptr)  ((siptr)-&gt;si_code &lt;= 0)
+#define SI_FROMKERNEL(siptr)    ((siptr)-&gt;si_code &gt; 0)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>判据</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SI_FROMUSER(info)</code>（<code class="c">si_code &lt;= 0</code>）</td>
+<td>来自<strong>用户进程</strong>（<code class="c">kill</code>/<code class="c">sigqueue</code>/<code class="c">raise</code>/<code class="c">tgkill</code>）</td>
+</tr>
+<tr>
+<td><code class="c">SI_FROMKERNEL(info)</code>（<code class="c">si_code &gt; 0</code>）</td>
+<td>来自<strong>内核</strong>（硬件异常、终端、定时器、子进程通知…）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">void handler(int sig, siginfo_t *info, void *ctx)
+{
+    if (SI_FROMUSER(info))
+        /* 来自用户进程：info-&gt;si_pid / si_uid 有效 */
+    else
+        /* 来自内核：如 SEGV_MAPERR、CLD_EXITED 等 */
+}
+</code></pre>
+<p><strong>注意正负约定</strong>：</p>
+<ul>
+<li><code class="c">SI_USER</code> = <strong>0</strong>（<code class="c">kill()</code> 发送）→ 判为用户来源</li>
+<li><code class="c">SI_QUEUE</code> = <strong>-1</strong>（<code class="c">sigqueue()</code>）→ 判为用户来源</li>
+<li><code class="c">SEGV_MAPERR</code> = <strong>1</strong>（内核的段错误）→ 判为内核来源</li>
+</ul>
+<p>所以"用户来源"包含 0 与负数，"内核来源"是正数。</p>
+<p><strong>典型用途</strong>：交易系统审计 <code class="c">SIGTERM</code> 是运维正常停机（<code class="c">SI_USER</code> + 预期 PID）还是异常来源。</p>
+</details>
+<details>
+<summary><b>问 3：</b>怎么用 <code class="c">SA_SIGINFO</code> 诊断段错误？</summary>
+<p>在 <code class="c">SIGSEGV</code> handler 里读 <code class="c">si_addr</code>（故障地址）和 <code class="c">si_code</code>（故障类型）：</p>
+<pre class="code" data-label="C"><code class="c">static void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    const char *reason = &quot;未知&quot;;
+    if (info-&gt;si_code == SEGV_MAPERR)       reason = &quot;地址未映射（野指针/已释放）&quot;;
+    else if (info-&gt;si_code == SEGV_ACCERR)  reason = &quot;权限不足（写只读页？）&quot;;
+    fprintf(stderr, &quot;SIGSEGV @ %p : %s\n&quot;, info-&gt;si_addr, reason);
+    _exit(1);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">si_code</code></th>
+<th>含义</th>
+<th>典型原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">SEGV_MAPERR</code>（1）</td>
+<td>地址<strong>未映射</strong></td>
+<td>野指针、use-after-free、数组越界到未映射区</td>
+</tr>
+<tr>
+<td><code class="c">SEGV_ACCERR</code>（2）</td>
+<td>地址已映射但<strong>权限不足</strong></td>
+<td>写只读页（如写 <code class="c">.text</code> 段、写 mmap 的 <code class="c">PROT_READ</code> 区）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两者的诊断价值</strong>：</p>
+<ul>
+<li><code class="c">SEGV_MAPERR</code> → 指针值本身是错的（未初始化、已 free、算错）</li>
+<li><code class="c">SEGV_ACCERR</code> → 指针值"对"但用法错（写只读、执行不可执行页）</li>
+</ul>
+<p><strong>必须配合 <code class="c">SA_ONSTACK</code></strong>：如果段错误是<strong>栈溢出</strong>引起的，此时栈已不可用，handler 无法在原地执行。必须用 <code class="c">sigaltstack()</code> 提供备用栈（见 <a href="#s-21-3">21.3</a>）。</p>
+<p><strong>注意</strong>：handler 里<strong>不能</strong>调用 <code class="c">printf</code>/<code class="c">malloc</code>（非异步信号安全）。上例用 <code class="c">fprintf</code> 是为可读性，生产代码应用 <code class="c">write(2)</code>，或先保存信息再 <code class="c">_exit</code>。</p>
+</details>
+<details>
+<summary><b>问 4：</b><code class="c">ucontext</code> 参数有什么用？</summary>
+<p><code class="c">ucontext</code> 指向一个 <code class="c">ucontext_t</code>，保存<strong>被中断时刻的完整 CPU 上下文</strong>（通用寄存器、栈指针、PC、浮点/SIMD 状态）。</p>
+<p><strong>两个用途</strong>：</p>
+<ol>
+<li><strong>诊断</strong>：读取被中断时的寄存器，尤其是 <strong>PC（程序计数器）</strong>——能精确定位是哪条指令触发了故障。<code class="c">si_addr</code> 告诉"访问了哪个地址"，<code class="c">ucontext</code> 的 PC 告诉"哪行代码访问的"。</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;ucontext.h&gt;
+void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    ucontext_t *uc = (ucontext_t *)ctx;
+    /* x86-64: 触发故障的指令地址 */
+    void *pc = (void *)uc-&gt;uc_mcontext.gregs[REG_RIP];
+    /* ARM64: uc-&gt;uc_mcontext.pc */
+}
+</code></pre>
+<ol start="2">
+<li><strong>修改执行流</strong>：因为 <code class="c">ucontext</code> 是内核恢复上下文的依据，<strong>修改它就能改变返回后的行为</strong>。这用于：</li>
+</ol>
+<ul>
+<li>模拟未实现的指令（如某些 FPU 陷阱）</li>
+<li><code class="c">SIGSEGV</code> 修复后跳过故障指令继续执行</li>
+<li>用户态协程/纤程（fiber）实现</li>
+<li>某些 JIT 编译器的边界检查优化</li>
+</ul>
+<p><strong>严重警告</strong>：</p>
+<ul>
+<li>这是<strong>高度架构相关</strong>的操作（<code class="c">uc_mcontext.gregs[REG_RIP]</code> 是 x86-64 专用，ARM64 是 <code class="c">uc_mcontext.pc</code>）</li>
+<li>修改上下文极易导致进程状态不一致</li>
+<li>属于专家级技巧，一般业务代码不要碰</li>
+</ul>
+</details>
+<details>
+<summary><b>问 5：</b>设了 <code class="c">SA_SIGINFO</code> 但用了 <code class="c">sa_handler</code> 会怎样？</summary>
+<p><strong>未定义行为</strong>——大概率崩溃。</p>
+<p><code class="c">sa_handler</code> 与 <code class="c">sa_sigaction</code> 在 Linux/glibc 上是 <strong>union 的同一块内存</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct sigaction {
+    union {
+        void (*sa_handler)(int);
+        void (*sa_sigaction)(int, siginfo_t *, void *);
+    } __sigaction_handler;
+    ...
+};
+</code></pre>
+<p>设了 <code class="c">SA_SIGINFO</code> 后，内核会用<strong>三参数</strong>的调用约定去调用你注册的函数指针：</p>
+<pre class="code" data-label="C"><code class="c">handler(sig, info, ucontext);      /* 传三个参数 */
+</code></pre>
+<p>但如果该函数实际是 <code class="c">void handler(int)</code>，它只会读取第一个参数、忽略另外两个——<strong>在多数 ABI 下这不会立即崩溃</strong>（多余的参数被忽略），代码"看似能跑"，但：</p>
+<ul>
+<li>你拿不到 <code class="c">siginfo_t</code></li>
+<li>依赖调用约定的优化（如寄存器分配）可能产生微妙错误</li>
+<li>换个架构（ARM64 vs x86-64）、换个编译器就可能崩</li>
+</ul>
+<p><strong>反向错误更危险</strong>：用 <code class="c">sa_sigaction</code> 装了三参数函数，但<strong>没设</strong> <code class="c">SA_SIGINFO</code>：</p>
+<pre class="code" data-label="C"><code class="c">handler(sig);                       /* 内核只传一个参数 */
+</code></pre>
+<p>此时第二个、第三个参数是<strong>寄存器里的垃圾值</strong>。函数会把垃圾当 <code class="c">siginfo_t *</code> 去解引用 → <strong>段错误</strong>。</p>
+<p><strong>规则</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">sa_flags</code></th>
+<th>用哪个成员</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>含 <code class="c">SA_SIGINFO</code></td>
+<td><code class="c">sa.sa_sigaction</code></td>
+</tr>
+<tr>
+<td>不含 <code class="c">SA_SIGINFO</code></td>
+<td><code class="c">sa.sa_handler</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>永远不要同时给两者赋值</strong>（后者覆盖前者）。</p>
+</details>
+      </section>
+      <section class="section" id="s-21-5">
+        <div class="sec-head"><div class="sec-no">21.5</div><h2>系统调用的中断与重启</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>（<code class="c">SYSCALL_DEFINE0(restart_syscall):3034</code> · <code class="c">do_no_restart_syscall:3040</code>）
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="#s-21-4">21.4 <code class="c">SA_SIGINFO</code> 标志</a>
+- 下一节：<a href="#s-21-6">21.6 本章小结</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li>阻塞在<strong>慢系统调用</strong>里的进程收到信号会怎样——<code class="c">EINTR</code> 是怎么产生的</li>
+<li><code class="c">SA_RESTART</code> 如何让内核<strong>自动重启</strong>被中断的调用，以及内核用什么机制保存现场</li>
+<li>为什么<strong>并非所有</strong>调用都能重启，以及业务代码为什么仍应统一处理 <code class="c">EINTR</code></li>
+</ol>
+<hr />
+<h2>一、慢系统调用与 <code class="c">EINTR</code></h2>
+<p><strong>慢系统调用（slow system call）</strong> = 可能<strong>无限期阻塞</strong>的系统调用。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>典型慢调用</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>终端 / 管道 / socket 的 <code class="c">read</code></td>
+<td>等对端写数据</td>
+</tr>
+<tr>
+<td>管道的 <code class="c">write</code></td>
+<td>等缓冲区有空间</td>
+</tr>
+<tr>
+<td><code class="c">open</code> 某些设备（FIFO、终端）</td>
+<td>等对端打开</td>
+</tr>
+<tr>
+<td><code class="c">wait</code> / <code class="c">waitpid</code></td>
+<td>等子进程退出</td>
+</tr>
+<tr>
+<td><code class="c">pause</code> / <code class="c">sleep</code> / <code class="c">nanosleep</code></td>
+<td>等时间</td>
+</tr>
+<tr>
+<td><code class="c">select</code> / <code class="c">poll</code> / <code class="c">epoll_wait</code></td>
+<td>等 I/O 事件</td>
+</tr>
+<tr>
+<td><code class="c">accept</code> / <code class="c">connect</code> / <code class="c">recv</code> / <code class="c">send</code></td>
+<td>等网络事件</td>
+</tr>
+<tr>
+<td><code class="c">flock</code> / <code class="c">fcntl(F_SETLKW)</code></td>
+<td>等文件锁</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">EINTR</code> 的产生</strong>：</p>
+<pre class="code" data-label="code"><code class="c">   进程阻塞在 read() 中（内核态，TASK_INTERRUPTIBLE）
+        │
+        ↓ 信号递送
+   内核唤醒进程 → 执行 handler
+        │
+        ↓ handler 返回
+   内核决定：这个 read() 怎么办？
+        ├─ 不重启 → 返回 -EINTR 给用户态
+        └─ 重启   → 重新执行 read()
+</code></pre>
+<p>不设 <code class="c">SA_RESTART</code> 时，被中断的调用返回 <code class="c">-1</code>，<code class="c">errno = EINTR</code>。内核里对应的就是不重启分支：</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:3040
+long do_no_restart_syscall(struct restart_block *param)
+{
+    return -EINTR;
+}
+</code></pre>
+<hr />
+<h2>二、<code class="c">SA_RESTART</code>：内核如何自动重启</h2>
+<p>设了 <code class="c">SA_RESTART</code> 后，被中断的慢调用会<strong>被内核自动重新执行</strong>，用户态看不到 <code class="c">EINTR</code>。</p>
+<p>内核机制是 <code class="c">task_struct.restart_block</code>——把被中断的 syscall 状态存下来，需要重启时调用其 <code class="c">fn</code> 函数指针：</p>
+<pre class="code" data-label="C"><code class="c">// kernel/signal.c:3034
+/**
+ *  sys_restart_syscall - restart a system call
+ */
+SYSCALL_DEFINE0(restart_syscall)
+{
+    struct restart_block *restart = &amp;current-&gt;restart_block;
+    return restart-&gt;fn(restart);
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">   read(fd, buf, n) 阻塞中
+        │
+        ↓ 信号中断
+   内核把 read 的参数/进度存入 current-&gt;restart_block
+   并让 restart_block.fn = 对应的重启函数
+        │
+        ↓ handler 返回后，内核检查 SA_RESTART
+   ┌────┴────┐
+   设了 → 调 restart_block.fn()  重新执行（restart_syscall 通路）
+   没设 → do_no_restart_syscall() 返回 -EINTR
+</code></pre>
+<blockquote>
+<p><strong>注意</strong>：重启是<strong>内核态</strong>行为，用户态完全无感知——<code class="c">read()</code> 的返回地址不变，C 代码里就是一次普通的 <code class="c">read()</code> 调用。这与「用户态手写 <code class="c">while (EINTR)</code> 重试循环」有本质区别：内核重启不产生额外的系统调用开销。</p>
+</blockquote>
+<hr />
+<h2>三、哪些能重启，哪些不能（关键表）</h2>
+<p><strong>这是本节最重要的实践知识</strong>：即便设了 <code class="c">SA_RESTART</code>，以下情况<strong>仍然返回 <code class="c">EINTR</code></strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>具体调用</th>
+<th>设 <code class="c">SA_RESTART</code> 后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>普通慢调用</strong></td>
+<td><code class="c">read</code>/<code class="c">write</code>（终端、管道、socket）、<code class="c">wait</code>/<code class="c">waitpid</code>、<code class="c">open</code>（FIFO/终端）、<code class="c">flock</code>、<code class="c">fcntl(F_SETLKW)</code></td>
+<td>✅ <strong>自动重启</strong></td>
+</tr>
+<tr>
+<td><strong>带超时的等待</strong></td>
+<td><code class="c">select</code>、<code class="c">poll</code>、<code class="c">epoll_wait</code>、<code class="c">epoll_pwait</code>、<code class="c">semop</code> 的 timeout、<code class="c">sigtimedwait</code></td>
+<td>❌ 返回 <code class="c">EINTR</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">connect</code></strong></td>
+<td><code class="c">connect()</code></td>
+<td>❌ 返回 <code class="c">EINTR</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">send</code>/<code class="c">sendto</code>/<code class="c">sendmsg</code></strong></td>
+<td>部分平台（尤其带 <code class="c">SO_SNDTIMEO</code>）</td>
+<td>❌ 可能返回 <code class="c">EINTR</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">recv</code> 带 <code class="c">MSG_WAITALL</code></strong></td>
+<td>已收到部分数据时</td>
+<td>❌ 返回已收字节数（非错误）</td>
+</tr>
+<tr>
+<td><strong><code class="c">nanosleep</code>/<code class="c">clock_nanosleep</code></strong></td>
+<td>被中断</td>
+<td>❌ 返回 <code class="c">EINTR</code>，<code class="c">rem</code> 中保存剩余时间</td>
+</tr>
+<tr>
+<td><strong><code class="c">ioctl</code></strong></td>
+<td>部分设备</td>
+<td>⚠️ 视驱动而定</td>
+</tr>
+<tr>
+<td><strong><code class="c">close</code></strong></td>
+<td>Linux 上</td>
+<td>❌ 返回 <code class="c">EINTR</code>，但 fd <strong>已关闭</strong>（详见陷阱）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么带超时的不能重启</strong>：重启会重置超时计时，语义就变了（原本 3 秒超时可能变成 6 秒）。所以内核选择让调用者自己决定怎么处理。</p>
+<p><strong>为什么 <code class="c">connect</code> 不能重启</strong>：<code class="c">connect</code> 是非幂等的——重启会重新发起连接，可能掩盖错误。</p>
+<hr />
+<h2>四、防御性写法</h2>
+<p><strong>规则：即便设了 <code class="c">SA_RESTART</code>，涉及 I/O 多路复用和网络的调用也应显式处理 <code class="c">EINTR</code>。</strong></p>
+<pre class="code" data-label="C"><code class="c">/* read 的防御性包装 */
+ssize_t read_retry(int fd, void *buf, size_t n)
+{
+    ssize_t ret;
+    do {
+        ret = read(fd, buf, n);
+    } while (ret == -1 &amp;&amp; errno == EINTR);
+    return ret;
+}
+
+/* write 同理（注意部分写的处理） */
+ssize_t write_retry(int fd, const void *buf, size_t n)
+{
+    ssize_t ret;
+    do {
+        ret = write(fd, buf, n);
+    } while (ret == -1 &amp;&amp; errno == EINTR);
+    return ret;
+}
+</code></pre>
+<h3><code class="c">nanosleep</code> 的剩余时间处理</h3>
+<p><code class="c">nanosleep</code> 被中断时，会在第二个参数里保存<strong>剩余未睡完的时间</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 精确的睡眠：被信号中断后继续睡剩余时间 */
+int sleep_full(const struct timespec *req)
+{
+    struct timespec rem = *req;
+    while (nanosleep(&amp;rem, &amp;rem) == -1 &amp;&amp; errno == EINTR)
+        ;                       /* rem 已被更新为剩余时间 */
+    return 0;
+}
+</code></pre>
+<blockquote>
+<p><strong>注意</strong>：<code class="c">sleep()</code> 被中断时返回<strong>剩余秒数</strong>（不是 -1），语义与 <code class="c">nanosleep</code> 不同。而 <code class="c">usleep()</code> 已被废弃。</p>
+</blockquote>
+<hr />
+<h2>五、陷阱：<code class="c">close()</code> 返回 <code class="c">EINTR</code> 时 fd 已关闭</h2>
+<p>这是 Linux 特有的一个坑：</p>
+<pre class="code" data-label="C"><code class="c">/* Linux 上：即使 close 返回 EINTR，fd 也已经被关闭了 */
+if (close(fd) == -1 &amp;&amp; errno == EINTR) {
+    close(fd);        /* ❌ 危险！可能关掉了别人刚打开的 fd */
+}
+</code></pre>
+<p>Linux 的 <code class="c">close()</code> 即使在被信号中断的情况下也会完成关闭动作。此时若重试 <code class="c">close(fd)</code>，而该 fd 号已被其他线程/代码分配给新文件，就会<strong>误关别人的 fd</strong>。</p>
+<p><strong>正确做法</strong>：在 Linux 上，<code class="c">close()</code> 返回 <code class="c">EINTR</code> 时<strong>不要重试</strong>。</p>
+<blockquote>
+<p>对比：POSIX 原本规定 <code class="c">close()</code> 返回 <code class="c">EINTR</code> 时状态未定义（fd 可能关了也可能没关），所以可移植代码需要区分平台。Linux 的行为是"已关闭"，HP-UX 等是"未关闭"。</p>
+</blockquote>
+<hr />
+<h2>六、<code class="c">EINTR</code> vs <code class="c">EAGAIN</code></h2>
+<p>两者都表示「没成功，但不一定是错误」，容易混淆：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">EINTR</code></th>
+<th><code class="c">EAGAIN</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>含义</td>
+<td>被<strong>信号</strong>中断</td>
+<td>资源暂时不可用（非阻塞 I/O 无数据）</td>
+</tr>
+<tr>
+<td>触发</td>
+<td>慢调用 + 信号递送</td>
+<td>非阻塞 fd 上 <code class="c">read</code> 无数据 / <code class="c">accept</code> 无连接</td>
+</tr>
+<tr>
+<td>处理</td>
+<td>通常<strong>重试</strong></td>
+<td>通常<strong>等下次事件通知</strong>（epoll）</td>
+</tr>
+<tr>
+<td>是否错误</td>
+<td>❌ 不是</td>
+<td>❌ 不是</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">ssize_t n = read(fd, buf, sizeof buf);
+if (n == -1) {
+    if (errno == EINTR)       /* 被信号打断 → 重试 */
+        goto retry;
+    else if (errno == EAGAIN) /* 无数据 → 返回事件循环 */
+        return 0;
+    else
+        return -1;            /* 真错误 */
+}
+</code></pre>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -971,39 +3188,82 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>标准信号不排队，一次 SIGCHLD 可能对应多个子进程，嵌入式多进程服务必须 <code class="c">while(waitpid(-1,WNOHANG))</code> 收净，否则留僵尸</td>
+<td>慢设备 I/O（串口/网络）极易被信号打断，嵌入式代码对 <code class="c">read</code>/<code class="c">write</code> <strong>必须</strong>处理 <code class="c">EINTR</code> 重试，否则偶发中断会静默丢数据——这类 bug 往往几周才复现一次，现场极难定位。设 <code class="c">SA_RESTART</code> 能从源头减少 <code class="c">EINTR</code>，但 <code class="c">select</code>/<code class="c">poll</code> 仍要显式处理</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>HFT 极少 fork 子进程（fork 有写时复制抖动），若用则 SA_NOCLDWAIT 让内核自动收尸、省去 handler；子进程只做隔离性重活，别在关键路径 fork</td>
+<td><code class="c">EINTR</code> 是延迟抖动来源之一：阻塞中的 <code class="c">recv</code>/<code class="c">epoll_wait</code> 被打断后返回，若未重试会<strong>漏掉一个事件周期</strong>；若盲目重试又可能引入额外延迟。HFT 的正确做法是：统一 <code class="c">while (ret &lt; 0 &amp;&amp; errno == EINTR)</code> 重试保证不丢事件，同时<strong>把无关信号全部屏蔽</strong>，从源头消除中断——让 <code class="c">EINTR</code> 路径成为永不触发的冷路径</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
-#include &lt;unistd.h&gt;
+<hr />
+<h2>代码示例：观察 <code class="c">SA_RESTART</code> 的效果</h2>
+<pre class="code" data-label="C"><code class="c">/* eintrdemo.c —— 对比设/不设 SA_RESTART 时 read 的行为
+ * 编译: gcc -o eintrdemo eintrdemo.c
+ * 运行: 另开终端 kill -USR1 &lt;pid&gt; 触发信号 */
+#define _GNU_SOURCE
+#include &lt;signal.h&gt;
 #include &lt;stdio.h&gt;
-#include &lt;sys/wait.h&gt;
-/* SIGCHLD: 子进程状态变化时发给父进程 */
-void handler(int sig) {
-    int status;
-    pid_t pid = waitpid(-1, &amp;status, WNOHANG);
-    if (pid &gt; 0) {
-        char buf[64];
-        int n = snprintf(buf, sizeof(buf), &quot;子进程 %d 退出\n&quot;, pid);
-        write(STDOUT_FILENO, buf, n);
-    }
-}
-int main(void) {
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;stdlib.h&gt;
+
+static volatile sig_atomic_t caught = 0;
+static void handler(int sig) { caught = 1; }
+
+/* 用 alarm 自动发信号，避免手工操作 */
+static void trial(const char *tag, int use_restart)
+{
     struct sigaction sa = {0};
     sa.sa_handler = handler;
-    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-    sigaction(SIGCHLD, &amp;sa, NULL);
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = use_restart ? SA_RESTART : 0;
+    sigaction(SIGALRM, &amp;sa, NULL);
 
-    pid_t pid = fork();
-    if (pid == 0) { _exit(0); }
-    printf(&quot;父进程: 子PID=%d, 等待 SIGCHLD\n&quot;, pid);
-    sleep(2);
+    char buf[64];
+    caught = 0;
+    alarm(2);                              /* 2 秒后发 SIGALRM */
+    ssize_t n = read(STDIN_FILENO, buf, sizeof buf);   /* 阻塞等输入 */
+
+    if (n == -1 &amp;&amp; errno == EINTR)
+        printf(&quot;%-20s read 返回 -1, errno=EINTR（被中断，未重启）\n&quot;, tag);
+    else
+        printf(&quot;%-20s read 返回 %zd（已重启/读到数据）\n&quot;, tag, n);
+
+    alarm(0);
+}
+
+/* nanosleep 的剩余时间处理演示 */
+static void nanosleep_demo(void)
+{
+    struct sigaction sa = {0};
+    sa.sa_handler = handler;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = 0;                        /* 不设 SA_RESTART */
+    sigaction(SIGALRM, &amp;sa, NULL);
+
+    struct timespec req = { .tv_sec = 3, .tv_nsec = 0 };
+    struct timespec rem = {0};
+
+    alarm(1);                               /* 1 秒后打断 3 秒的睡眠 */
+    while (nanosleep(&amp;req, &amp;rem) == -1 &amp;&amp; errno == EINTR) {
+        printf(&quot;nanosleep 被中断，剩余 %ld.%03lds，继续睡\n&quot;,
+               (long)rem.tv_sec, rem.tv_nsec / 1000000);
+        req = rem;                          /* 睡剩余时间 */
+        alarm(0);
+    }
+    printf(&quot;nanosleep 完成\n&quot;);
+}
+
+int main(void)
+{
+    printf(&quot;=== SA_RESTART 对比（请在 2 秒内不要输入，等 SIGALRM 触发）===\n&quot;);
+    trial(&quot;无 SA_RESTART:&quot;, 0);
+    trial(&quot;有 SA_RESTART:&quot;, 1);             /* 这一路会一直阻塞到真输入 */
+
+    printf(&quot;\n=== nanosleep 剩余时间处理 ===\n&quot;);
+    nanosleep_demo();
     return 0;
 }
 </code></pre>
@@ -1011,103 +3271,1295 @@ int main(void) {
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：21.5 Async-Signal-Safe（最重要）</li>
-<li>下一节：<a href="#s-21-1">21.7 <code class="c">signal()</code> vs <code class="c">sigaction()</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
+<li>上一节：<a href="#s-21-4">21.4 <code class="c">SA_SIGINFO</code> 标志</a></li>
+<li>下一节：<a href="#s-21-6">21.6 本章小结</a></li>
+<li>慢调用与等待：<a href="chapter-20.html#s-20-14">Ch20.14 <code class="c">pause()</code></a></li>
+<li>原子等待：<a href="chapter-22.html#s-22-9">Ch22.9 <code class="c">sigsuspend()</code></a></li>
+<li>事件循环：<code class="c">epoll_wait</code> 的 <code class="c">EINTR</code> 处理见 <a href="chapter-63.html#s-63-4">Ch63.4</a></li>
 </ul>
-      </section>
-      <section class="section" id="s-21-7">
-        <div class="sec-head"><div class="sec-no">21.7</div><h2>`signal()` vs `sigaction()`</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
-- 上一节：<a href="#s-21-6">21.6 <code class="c">SIGCHLD</code></a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
-</blockquote>
 <hr />
-<h2>本节讲什么</h2>
-<hr />
-<h2>要点</h2>
+<h2>自测题</h2>
+<details>
+<summary><b>问 1：</b>什么是慢系统调用？被信号中断后会发生什么？</summary>
+<p><strong>慢系统调用</strong> = 可能<strong>无限期阻塞</strong>的系统调用。</p>
+<p>典型例子：终端/管道/socket 的 <code class="c">read</code>、<code class="c">write</code> 管道、<code class="c">open</code> FIFO、<code class="c">wait</code>、<code class="c">pause</code>、<code class="c">sleep</code>、<code class="c">select</code>/<code class="c">poll</code>/<code class="c">epoll_wait</code>、<code class="c">accept</code>/<code class="c">connect</code>/<code class="c">recv</code>、<code class="c">flock</code>。</p>
+<p><strong>被信号中断后</strong>：</p>
+<ul>
+<li><strong>未设 <code class="c">SA_RESTART</code></strong> → 调用返回 <code class="c">-1</code>，<code class="c">errno = EINTR</code></li>
+<li><strong>设了 <code class="c">SA_RESTART</code></strong> → 内核<strong>自动重新执行</strong>该调用，用户态无感知</li>
+</ul>
+<p>内核里对应的两个分支：</p>
+<pre class="code" data-label="C"><code class="c">// 重启：从 restart_block 恢复并重新执行
+SYSCALL_DEFINE0(restart_syscall)              // kernel/signal.c:3034
+{
+    struct restart_block *restart = &amp;current-&gt;restart_block;
+    return restart-&gt;fn(restart);
+}
+
+// 不重启：直接返回 EINTR
+long do_no_restart_syscall(struct restart_block *param)   // :3040
+{
+    return -EINTR;
+}
+</code></pre>
+</details>
+<details>
+<summary><b>问 2：</b>设了 <code class="c">SA_RESTART</code> 就万事大吉了吗？哪些调用仍会返回 <code class="c">EINTR</code>？</summary>
+<p><strong>不可以高枕无忧</strong>。以下调用即便设了 <code class="c">SA_RESTART</code> <strong>仍然返回 <code class="c">EINTR</code></strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>例子</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>带超时</strong></td>
+<td><code class="c">select</code>、<code class="c">poll</code>、<code class="c">epoll_wait</code>、<code class="c">sigtimedwait</code>、<code class="c">semop</code>(timeout)</td>
+<td>重启会重置超时，语义被破坏</td>
+</tr>
+<tr>
+<td><strong><code class="c">connect</code></strong></td>
+<td><code class="c">connect()</code></td>
+<td>非幂等，重启会重新发起连接</td>
+</tr>
+<tr>
+<td><strong><code class="c">nanosleep</code></strong></td>
+<td><code class="c">nanosleep()</code></td>
+<td>返回 <code class="c">EINTR</code>，剩余时间存在 <code class="c">rem</code> 参数里</td>
+</tr>
+<tr>
+<td><strong><code class="c">close</code></strong></td>
+<td>Linux <code class="c">close()</code></td>
+<td>返回 <code class="c">EINTR</code>，但<strong>fd 已关闭</strong>（见陷阱）</td>
+</tr>
+<tr>
+<td>部分网络发送</td>
+<td>带 <code class="c">SO_SNDTIMEO</code> 的 <code class="c">send</code></td>
+<td>平台相关</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实践规则</strong>：</p>
+<ol>
+<li><code class="c">read</code>/<code class="c">write</code>/<code class="c">wait</code>/<code class="c">open</code>(FIFO) 等普通慢调用 → <code class="c">SA_RESTART</code> 能覆盖，但仍建议防御性重试</li>
+<li><code class="c">select</code>/<code class="c">poll</code>/<code class="c">epoll_wait</code>/<code class="c">connect</code>/<code class="c">nanosleep</code> → <strong>必须显式处理 <code class="c">EINTR</code></strong></li>
+<li><code class="c">close</code> → Linux 上<strong>不要</strong>因 <code class="c">EINTR</code> 重试</li>
+</ol>
+<p><strong>一句话</strong>：<code class="c">SA_RESTART</code> 是减少 <code class="c">EINTR</code> 的便利手段，不是免除 <code class="c">EINTR</code> 处理的理由。</p>
+</details>
+<details>
+<summary><b>问 3：</b><code class="c">close()</code> 返回 <code class="c">EINTR</code> 时应该重试吗？</summary>
+<p><strong>在 Linux 上绝对不要重试。</strong></p>
+<p>Linux 的 <code class="c">close()</code> 实现即使在被信号中断的情况下也<strong>已经完成了关闭动作</strong>。此时 fd 号已经释放，可能被其他线程或后续 <code class="c">open()</code> 分配给新文件。如果重试 <code class="c">close(fd)</code>，就会<strong>误关别人刚打开的文件</strong>——这是极难排查的隐蔽 bug。</p>
+<pre class="code" data-label="C"><code class="c">/* ❌ 危险 */
+if (close(fd) == -1 &amp;&amp; errno == EINTR)
+    close(fd);        /* 可能关掉别人刚分配的 fd！ */
+
+/* ✅ 正确：不重试 */
+close(fd);            /* 忽略 EINTR，fd 在 Linux 上已关闭 */
+</code></pre>
+<p><strong>为什么会有这种差异</strong>：</p>
+<p>POSIX 原本规定 <code class="c">close()</code> 返回 <code class="c">EINTR</code> 时 fd 状态<strong>未定义</strong>（可能关了也可能没关），所以可移植代码需要区分平台：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>平台</th>
+<th><code class="c">close</code> 返回 <code class="c">EINTR</code> 时 fd 状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Linux</strong></td>
+<td><strong>已关闭</strong>（不要重试）</td>
+</tr>
+<tr>
+<td>HP-UX 等传统 UNIX</td>
+<td>未关闭（可重试）</td>
+</tr>
+</tbody>
+</table></div>
+<p>Linux 后来明确了这个行为，并成为事实标准。<strong>写 Linux 专用代码时，<code class="c">close()</code> 一律不重试 <code class="c">EINTR</code>。</strong></p>
+</details>
+<details>
+<summary><b>问 4：</b><code class="c">nanosleep</code> 被信号打断后怎么保证睡够指定时长？</summary>
+<p><code class="c">nanosleep</code> 被中断时返回 <code class="c">-1</code>，<code class="c">errno = EINTR</code>，并在<strong>第二个参数（<code class="c">rem</code>）</strong>里写入<strong>剩余未睡完的时间</strong>。循环时用 <code class="c">rem</code> 更新请求即可：</p>
+<pre class="code" data-label="C"><code class="c">int sleep_full(const struct timespec *req)
+{
+    struct timespec rem = *req;
+    while (nanosleep(&amp;rem, &amp;rem) == -1 &amp;&amp; errno == EINTR)
+        ;                        /* 循环体为空：rem 已被内核更新为剩余时间 */
+    return 0;
+}
+</code></pre>
+<p><strong>关键点</strong>：第二个参数既是输出又是下一次的输入。上例中 <code class="c">rem</code> 在每次失败后被更新，直接复用即可。</p>
+<p><strong>对比其他睡眠接口</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>被信号中断时</th>
+<th>如何恢复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">nanosleep(&amp;req, &amp;rem)</code></td>
+<td>返回 <code class="c">-1</code>，<code class="c">errno=EINTR</code>，<code class="c">rem</code> 存剩余时间</td>
+<td>用 <code class="c">rem</code> 继续</td>
+</tr>
+<tr>
+<td><code class="c">clock_nanosleep(..., &amp;rem)</code>（不设 <code class="c">TIMER_ABSTIME</code>）</td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">clock_nanosleep(..., TIMER_ABSTIME)</code></td>
+<td>返回 <code class="c">EINTR</code>，<strong>不写 <code class="c">rem</code></strong></td>
+<td>用<strong>绝对时间</strong>重新调用（天然正确）</td>
+</tr>
+<tr>
+<td><code class="c">sleep(sec)</code></td>
+<td>返回<strong>剩余秒数</strong>（不是 -1）</td>
+<td>用返回值继续</td>
+</tr>
+<tr>
+<td><code class="c">usleep()</code></td>
+<td>返回 <code class="c">-1</code>，<code class="c">errno=EINTR</code></td>
+<td>已废弃，勿用</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推荐</strong>：需要精确时长时用 <code class="c">clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, ...)</code>——绝对时间语义下，重试天然不会累积误差，也不受 <code class="c">SA_RESTART</code> 影响。</p>
+</details>
+<details>
+<summary><b>问 5：</b><code class="c">EINTR</code> 和 <code class="c">EAGAIN</code> 有什么区别？分别该怎么处理？</summary>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th></th>
+<th><code class="c">EINTR</code></th>
+<th><code class="c">EAGAIN</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>含义</td>
+<td>被<strong>信号</strong>中断</td>
+<td>资源暂时不可用</td>
+</tr>
+<tr>
+<td>触发场景</td>
+<td>慢调用阻塞中信号递送</td>
+<td>非阻塞 fd 上 <code class="c">read</code> 无数据 / <code class="c">accept</code> 无待处理连接 / <code class="c">fork</code> 达上限</td>
+</tr>
+<tr>
+<td>本质</td>
+<td>被外部事件打断</td>
+<td>条件不满足</td>
+</tr>
+<tr>
+<td>处理</td>
+<td><strong>重试</strong></td>
+<td><strong>等下次事件通知</strong>（回到 epoll 循环）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>典型处理框架</strong>：</p>
+<pre class="code" data-label="C"><code class="c">ssize_t n = read(fd, buf, sizeof buf);
+if (n &gt;= 0) {
+    /* 成功，处理数据 */
+} else if (errno == EINTR) {
+    goto retry;                 /* 被信号打断 → 立即重试 */
+} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    return 0;                   /* 无数据 → 回事件循环，不要忙等重试！ */
+} else {
+    return -1;                  /* 真错误 */
+}
+</code></pre>
+<p><strong>关键区别在处理动作</strong>：</p>
+<ul>
+<li><strong><code class="c">EINTR</code> → 立即重试</strong>：信号已经处理完，重试大概率能继续</li>
+<li><strong><code class="c">EAGAIN</code> → 不要重试</strong>：立刻重试只会空转烧 CPU。正确做法是回到 <code class="c">epoll_wait</code> 等待下次事件通知</li>
+</ul>
+<p><strong>HFT 特别注意</strong>：把 <code class="c">EAGAIN</code> 当成 <code class="c">EINTR</code> 去重试，会在无数据时产生<strong>忙等</strong>，直接烧毁一个 CPU 核心——这是低延迟系统里常见的性能事故。</p>
+</details>
+      </section>
+      <section class="section" id="s-21-6">
+        <div class="sec-head"><div class="sec-no">21.6</div><h2>本章小结</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code> · <code class="c">include/uapi/asm-generic/siginfo.h</code>
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="#s-21-5">21.5 系统调用的中断与重启</a>
+- 下一节：<a href="#s-21-7">21.7 练习题</a></p>
+</blockquote>
+<hr />
+<h2>全章小节速览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>小节</th>
+<th>主题</th>
+<th>内核坐标 / 要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#s-21-1">21.1</a></td>
+<td>设计信号处理器</td>
+<td>两条黄金法则；<code class="c">volatile sig_atomic_t</code></td>
+</tr>
+<tr>
+<td><a href="#s-21-2">21.2</a></td>
+<td>从 handler 终止进程</td>
+<td><code class="c">do_coredump:2878</code> · <code class="c">do_group_exit:2892</code></td>
+</tr>
+<tr>
+<td><a href="#s-21-3">21.3</a></td>
+<td>备用栈 <code class="c">sigaltstack</code></td>
+<td><code class="c">do_sigaltstack:4205</code>；<code class="c">SA_ONSTACK</code></td>
+</tr>
+<tr>
+<td><a href="#s-21-4">21.4</a></td>
+<td><code class="c">SA_SIGINFO</code> 标志</td>
+<td><code class="c">siginfo.h:139-191</code>（union 语义）</td>
+</tr>
+<tr>
+<td><a href="#s-21-5">21.5</a></td>
+<td>系统调用的中断与重启</td>
+<td><code class="c">restart_syscall:3034</code> · <code class="c">do_no_restart_syscall:3040</code></td>
+</tr>
+<tr>
+<td><a href="#s-21-6">21.6</a></td>
+<td>本章小结</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="#s-21-7">21.7</a></td>
+<td>练习题</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、handler 设计的两条黄金法则</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>法则</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>handler 只做最小动作</strong>（通常只是设一个 <code class="c">volatile sig_atomic_t</code> 标志）</td>
+<td>handler 在被打断线程上执行，共享全部状态，加锁会自我死锁</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>只调用异步信号安全函数</strong></td>
+<td>非安全函数（<code class="c">printf</code>/<code class="c">malloc</code>/<code class="c">exit</code>）持锁或用静态缓冲，重入会死锁或破坏数据</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>根本原因</strong>：handler <strong>不是新线程</strong>（<a href="chapter-20.html#s-20-4">Ch20.4</a>），它在同一线程的栈上执行。所以：</p>
+<ul>
+<li>主流程持有的锁，handler 再来获取 → <strong>死锁</strong>（不是等待）</li>
+<li>主流程操作到一半的数据结构，handler 看到的是<strong>不一致状态</strong></li>
+</ul>
+<hr />
+<h2>二、异步信号安全速查</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>✅ 安全</th>
+<th>❌ 不安全</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">write()</code> / <code class="c">read()</code></td>
+<td><code class="c">printf()</code> / <code class="c">fprintf()</code> / <code class="c">sprintf()</code></td>
+</tr>
+<tr>
+<td><code class="c">_exit()</code> / <code class="c">_Exit()</code></td>
+<td><code class="c">exit()</code></td>
+</tr>
+<tr>
+<td><code class="c">kill()</code> / <code class="c">raise()</code> / <code class="c">sigaction()</code> / <code class="c">sigprocmask()</code></td>
+<td><code class="c">malloc()</code> / <code class="c">free()</code> / <code class="c">calloc()</code> / <code class="c">realloc()</code></td>
+</tr>
+<tr>
+<td>给 <code class="c">volatile sig_atomic_t</code> 赋值</td>
+<td><code class="c">strtok()</code> / <code class="c">gmtime()</code> / <code class="c">localtime()</code></td>
+</tr>
+<tr>
+<td><code class="c">strlen()</code> / <code class="c">memcpy()</code> / <code class="c">memset()</code></td>
+<td>任何 <code class="c">pthread_*</code> 函数</td>
+</tr>
+<tr>
+<td>—</td>
+<td><code class="c">syslog()</code> / <code class="c">fopen()</code> / <code class="c">fclose()</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>完整清单见 <code class="c">man 7 signal-safety</code>。判断原则：<strong>可能加锁或分配内存的函数，一律假定不安全</strong>。</p>
+</blockquote>
+<hr />
+<h2>三、从 handler 终止进程的四种方式</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>async-signal-safe</th>
+<th>core dump</th>
+<th><code class="c">WIFSIGNALED</code></th>
+<th>何时用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">exit()</code></td>
+<td>❌ <strong>危险</strong></td>
+<td>❌</td>
+<td>❌</td>
+<td><strong>绝不用</strong></td>
+</tr>
+<tr>
+<td><code class="c">_exit()</code> / <code class="c">_Exit()</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>默认选择，快速退出</td>
+</tr>
+<tr>
+<td><code class="c">abort()</code></td>
+<td>⚠️ 实践可用</td>
+<td>✅</td>
+<td>✅</td>
+<td>断言失败 / 需要 core</td>
+</tr>
+<tr>
+<td><strong>恢复 <code class="c">SIG_DFL</code> + <code class="c">raise()</code></strong></td>
+<td>✅</td>
+<td>✅（视信号）</td>
+<td>✅</td>
+<td>保留"被信号杀死"语义</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>四、备用栈要点</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>为什么需要</strong></td>
+<td>栈溢出时原栈无空间，handler 无法执行 → <code class="c">force_sigsegv</code> 直接杀进程</td>
+</tr>
+<tr>
+<td><strong>两个步骤</strong></td>
+<td>① <code class="c">sigaltstack()</code> 登记 ② <code class="c">sigaction</code> 设 <strong><code class="c">SA_ONSTACK</code></strong>（缺一不可）</td>
+</tr>
+<tr>
+<td><strong>作用域</strong></td>
+<td><strong>线程属性</strong>，每个线程需各自设置，且需独立内存</td>
+</tr>
+<tr>
+<td><strong>大小</strong></td>
+<td>建议 <strong>≥ 32KB</strong>；太小会被 <code class="c">force_sigsegv</code> 杀死</td>
+</tr>
+<tr>
+<td><strong>约束</strong></td>
+<td>不能在备用栈上运行期间修改它 → <code class="c">-EPERM</code>（<code class="c">do_sigaltstack:4226</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">SS_AUTODISARM</code></strong></td>
+<td>handler 返回后自动禁用，可安全 <code class="c">free()</code>（<code class="c">kernel/signal.c:2929</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>五、<code class="c">EINTR</code> 与 <code class="c">SA_RESTART</code></h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用类别</th>
+<th>设 <code class="c">SA_RESTART</code> 后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通慢调用（<code class="c">read</code>/<code class="c">write</code>/<code class="c">wait</code>/<code class="c">open</code>(FIFO)）</td>
+<td>✅ 自动重启</td>
+</tr>
+<tr>
+<td><strong>带超时</strong>（<code class="c">select</code>/<code class="c">poll</code>/<code class="c">epoll_wait</code>/<code class="c">sigtimedwait</code>）</td>
+<td>❌ 仍返回 <code class="c">EINTR</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">connect</code></strong></td>
+<td>❌ 返回 <code class="c">EINTR</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">nanosleep</code></strong></td>
+<td>❌ 返回 <code class="c">EINTR</code>，剩余时间写入 <code class="c">rem</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">close</code></strong>（Linux）</td>
+<td>❌ 返回 <code class="c">EINTR</code>，但 <strong>fd 已关闭——不要重试</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实践规则</strong>：<code class="c">SA_RESTART</code> 是<strong>减少</strong> <code class="c">EINTR</code> 的便利手段，不是<strong>免除</strong> <code class="c">EINTR</code> 处理的理由。I/O 多路复用与网络调用始终显式处理 <code class="c">EINTR</code>。</p>
+<hr />
+<h2>六、<code class="c">SA_SIGINFO</code> 与 <code class="c">siginfo_t</code></h2>
+<p><strong><code class="c">siginfo_t</code> 是 union</strong>——同一块内存按信号类型有不同解读，<strong>只有匹配当前信号的字段才有意义</strong>（读错字段得到垃圾值且不报错）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>信号</th>
+<th>有效字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">kill</code> / <code class="c">sigqueue</code> 来的</td>
+<td><code class="c">si_pid</code>、<code class="c">si_uid</code>、<code class="c">si_value</code></td>
+</tr>
+<tr>
+<td><code class="c">SIGSEGV</code>/<code class="c">SIGBUS</code>/<code class="c">SIGILL</code>/<code class="c">SIGFPE</code></td>
+<td><strong><code class="c">si_addr</code></strong></td>
+</tr>
+<tr>
+<td><code class="c">SIGCHLD</code></td>
+<td><code class="c">si_pid</code>、<code class="c">si_status</code>、<code class="c">si_utime</code>/<code class="c">si_stime</code></td>
+</tr>
+<tr>
+<td><code class="c">SIGPOLL</code>/<code class="c">SIGIO</code></td>
+<td><code class="c">si_fd</code>、<code class="c">si_band</code></td>
+</tr>
+<tr>
+<td><code class="c">SIGSYS</code>（seccomp）</td>
+<td><code class="c">si_syscall</code>、<code class="c">si_arch</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>来源判据</strong>（<code class="c">siginfo.h:190-191</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define SI_FROMUSER(siptr)  ((siptr)-&gt;si_code &lt;= 0)    /* 用户进程 */
+#define SI_FROMKERNEL(siptr)    ((siptr)-&gt;si_code &gt; 0)     /* 内核 */
+</code></pre>
+<hr />
+<h2>七、更根本的方案：消灭 handler</h2>
+<p>本章讲的全是"如何安全地写 handler"。但更好的思路是<strong>根本不写 handler</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>机制</th>
+<th>优势</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>signalfd</strong></td>
+<td>信号变 fd，<code class="c">read()</code> 出来</td>
+<td>无 handler → 无异步信号安全问题；可进 epoll</td>
+</tr>
+<tr>
+<td><strong><code class="c">sigwaitinfo</code></strong></td>
+<td>同步取信号</td>
+<td>多线程专用线程模型，行为可预测</td>
+</tr>
+<tr>
+<td><strong>eventfd / self-pipe</strong></td>
+<td>handler 只 <code class="c">write</code> 一字节</td>
+<td>需保留 handler 时的轻量桥接</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 视角</strong>：handler 会异步抢占关键路径、产生不可控延迟毛刺。让信号走 signalfd 进事件循环，把"异步抢占"变成"同步事件"——这才是低延迟系统的正确架构。</p>
+</blockquote>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><a href="chapter-20.html#intro">Ch20 信号基础</a> — 生命周期、掩码、pending、<code class="c">sigaction</code></li>
+<li><a href="chapter-22.html#intro">Ch22 高级信号</a> — <code class="c">sigsuspend</code> / <code class="c">sigwaitinfo</code> / signalfd / 实时信号</li>
+<li><a href="chapter-25.html#intro">Ch25 进程终止</a> — <code class="c">exit</code> vs <code class="c">_exit</code>、退出状态</li>
+<li><a href="chapter-26.html#intro">Ch26 监控子进程</a> — <code class="c">SIGCHLD</code> 与僵尸回收</li>
+</ul>
+<hr />
+<h2>自测题</h2>
+<details>
+<summary><b>问 1：</b>写出一个"教科书式"的安全信号处理器，并说明每一行为什么这么写。</summary>
+<pre class="code" data-label="C"><code class="c">static volatile sig_atomic_t got_signal = 0;      /* ① */
+
+static void handler(int sig)                       /* ② */
+{
+    int saved_errno = errno;                       /* ③ */
+    got_signal = 1;                                /* ④ */
+    errno = saved_errno;                           /* ⑤ */
+}
+
+/* 主流程 */
+for (;;) {
+    if (got_signal) {                              /* ⑥ */
+        got_signal = 0;
+        handle_shutdown();     /* 这里可随意 printf/malloc */
+    }
+    do_work();
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><code class="c">volatile</code> 防编译器缓存优化；<code class="c">sig_atomic_t</code> 保证读写原子</td>
+</tr>
+<tr>
+<td>②</td>
+<td>只有 <code class="c">int sig</code> 一个参数（未设 <code class="c">SA_SIGINFO</code>）</td>
+</tr>
+<tr>
+<td>③</td>
+<td>保护 <code class="c">errno</code>——handler 可能在主流程刚设完 <code class="c">errno</code> 时插入</td>
+</tr>
+<tr>
+<td>④</td>
+<td><strong>只做单次原子赋值</strong>，不做读-改-写，无需锁</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td>恢复 <code class="c">errno</code>，避免破坏主流程的错误判断</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td>复杂逻辑移回主流程，可自由使用任何库函数</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这个模式的关键</strong>：handler 里<strong>没有任何</strong>函数调用（除了保存/恢复 errno，那是纯寄存器操作），因此 100% 安全。所有实质工作都在主流程完成。</p>
+</details>
+<details>
+<summary><b>问 2：</b>如果必须在 handler 里输出诊断信息，怎么做才安全？</summary>
+<p><strong>用 <code class="c">write(2)</code>，不用 <code class="c">printf</code></strong>：</p>
+<pre class="code" data-label="C"><code class="c">static void handler(int sig)
+{
+    /* 方案 1：固定字符串 */
+    const char m[] = &quot;caught signal\n&quot;;
+    write(STDERR_FILENO, m, sizeof m - 1);      /* write 是 async-signal-safe */
+
+    /* 方案 2：需要格式化时，预先格式化好或用极简转换 */
+    char buf[32];
+    char *p = buf + sizeof buf - 1;
+    *p-- = '\n';
+    int n = sig;
+    do { *p-- = '0' + (n % 10); n /= 10; } while (n);
+    p++;
+    write(STDERR_FILENO, &quot;sig=&quot;, 4);
+    write(STDERR_FILENO, p, (buf + sizeof buf) - p);
+}
+</code></pre>
+<p><strong>为什么不用 <code class="c">printf</code></strong>：</p>
+<ul>
+<li><code class="c">printf</code> 内部<strong>持有 stdio 锁</strong></li>
+<li>主流程正 <code class="c">printf</code> 持锁时信号递送 → handler 再 <code class="c">printf</code> → <strong>同一线程重入同一把锁 → 死锁</strong></li>
+<li>即便不死锁，也可能破坏 stdio 缓冲区链表</li>
+</ul>
+<p><strong>注意 <code class="c">snprintf</code></strong>：很多代码在 handler 里用 <code class="c">snprintf</code> 格式化，它<strong>不在</strong> POSIX 异步信号安全清单里（glibc 实现中可能分配内存）。实践中通常可用，但严格来说不安全。</p>
+<p><strong>更稳妥的方案</strong>：</p>
+<ol>
+<li>handler 只把 <code class="c">sig</code> 存进 <code class="c">volatile sig_atomic_t</code>，主流程再格式化输出</li>
+<li>用 self-pipe / eventfd 把信号转到主流程</li>
+<li>用 signalfd，完全没有 handler</li>
+</ol>
+</details>
+<details>
+<summary><b>问 3：</b>备用栈设置好了但没设 <code class="c">SA_ONSTACK</code>，会怎样？</summary>
+<p><strong>备用栈不会被使用</strong>——handler 仍在原栈上执行，栈溢出时照样无法工作。</p>
+<p>两个步骤语义不同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sigaltstack(&amp;ss, NULL)</code></td>
+<td>向内核<strong>登记</strong>"有一块备用栈可用"</td>
+</tr>
+<tr>
+<td><code class="c">sa_flags = SA_ONSTACK</code></td>
+<td>告诉内核"<strong>处理这个信号时</strong>请切换到备用栈"</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>粒度</strong>：<code class="c">SA_ONSTACK</code> 是<strong>每个信号独立</strong>的。可以只让 <code class="c">SIGSEGV</code> 用备用栈，其他信号仍在原栈执行——这正是常见做法（只有崩溃诊断需要备用栈）。</p>
+<pre class="code" data-label="C"><code class="c">stack_t ss = { .ss_sp = buf, .ss_size = SIGSTKSZ * 4, .ss_flags = 0 };
+sigaltstack(&amp;ss, NULL);                    /* ① 登记 */
+
+struct sigaction sa = {0};
+sa.sa_sigaction = segv_handler;
+sigemptyset(&amp;sa.sa_mask);
+sa.sa_flags = SA_SIGINFO | SA_ONSTACK;     /* ② SA_ONSTACK 不可少 */
+sigaction(SIGSEGV, &amp;sa, NULL);
+</code></pre>
+<p><strong>验证方法</strong>：查询备用栈状态，或在 handler 里查询：</p>
+<pre class="code" data-label="C"><code class="c">stack_t oss;
+sigaltstack(NULL, &amp;oss);
+if (oss.ss_flags &amp; SS_ONSTACK)
+    /* 确实运行在备用栈上 */
+</code></pre>
+</details>
+<details>
+<summary><b>问 4：</b>本章讲了四种终止方式，怎么选？</summary>
+<p><strong>决策流程</strong>：</p>
+<pre class="code" data-label="code"><code class="c">handler 中要终止进程？
+  ├─ 需要 core dump 供 gdb 分析？
+  │    ├─ 是 → abort()（固定 SIGABRT + core，且无法被 handler 拦截）
+  │    └─ 是，且要保留原信号类型 → 恢复 SIG_DFL + raise(sig)
+  └─ 不需要 core，只想快速安全退出
+       └─ _exit(status)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">_exit()</code></strong></td>
+<td>默认选择。异步信号安全、无锁、无 I/O、立即退出</td>
+</tr>
+<tr>
+<td><strong><code class="c">abort()</code></strong></td>
+<td>需要 core dump。会先解除 <code class="c">SIGABRT</code> 阻塞，保证一定生效</td>
+</tr>
+<tr>
+<td><strong>re-raise</strong></td>
+<td>需要让父进程 <code class="c">wait()</code> 看到 <code class="c">WIFSIGNALED</code>（区分"被杀"与"自退"）</td>
+</tr>
+<tr>
+<td><strong><code class="c">exit()</code></strong></td>
+<td>❌ <strong>绝不用</strong>——非异步信号安全，可能死锁</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 建议</strong>：</p>
+<ul>
+<li>崩溃路径用 <strong>re-raise</strong>（<code class="c">WIFSIGNALED</code> 语义让监控能区分事故类型）</li>
+<li>正常停机用 <code class="c">_exit()</code></li>
+<li><strong>诊断信息平时就落盘</strong>（无锁环形队列 + 独立日志线程），崩溃时刻的任何 I/O 都可能因锁状态未知而死锁</li>
+</ul>
+</details>
+<details>
+<summary><b>问 5：</b>从更高层面看，本章的技巧都是在"绕开"handler 的限制。有没有根本性的解法？</summary>
+<p><strong>有——根本不用 handler。</strong> 本章讲的所有技巧（只设标志、只用安全函数、保护 errno）都是在<strong>规避</strong> handler 的固有缺陷。更好的架构是让信号根本不进入 handler：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>机制</th>
+<th>消灭了什么问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>signalfd</strong></td>
+<td>阻塞信号 + <code class="c">signalfd()</code> 拿 fd + <code class="c">epoll</code> 监听</td>
+<td>完全无 handler → 无异步信号安全、无抢占、无延迟毛刺</td>
+</tr>
+<tr>
+<td><strong><code class="c">sigwaitinfo</code></strong></td>
+<td>阻塞信号 + 专用线程同步取</td>
+<td>无 handler，且由固定线程处理，行为可预测</td>
+</tr>
+<tr>
+<td><strong>eventfd / self-pipe</strong></td>
+<td>handler 只 <code class="c">write</code> 一字节，主流程监听</td>
+<td>handler 极简化到只剩一次 <code class="c">write</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>对比</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>传统 handler</th>
+<th>signalfd</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>异步抢占关键路径</td>
+<td>✅ 会</td>
+<td>❌ 不会</td>
+</tr>
+<tr>
+<td>异步信号安全限制</td>
+<td>✅ 有</td>
+<td>❌ 无</td>
+</tr>
+<tr>
+<td>可调用 <code class="c">printf</code>/<code class="c">malloc</code></td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>能接入 epoll 事件循环</td>
+<td>❌（需 self-pipe）</td>
+<td>✅ 原生</td>
+</tr>
+<tr>
+<td>信号丢失</td>
+<td>标准信号会合并</td>
+<td>❌ 不丢（内核队列）</td>
+</tr>
+<tr>
+<td>延迟可预测性</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>HFT 结论</strong>：交易系统的关键路径应<strong>全程屏蔽</strong>无关信号，控制信号（停机、配置重载）走 signalfd 进事件循环。handler 只作为 <code class="c">SIGSEGV</code> 崩溃诊断的兜底设施，并配 <code class="c">SA_ONSTACK</code> 备用栈。</p>
+<p>详见 <a href="chapter-22.html#s-22-11">Ch22.11 signalfd</a>。</p>
+</details>
+      </section>
+      <section class="section" id="s-21-7">
+        <div class="sec-head"><div class="sec-no">21.7</div><h2>练习题</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>
+本章：<a href="#intro">TLPI 第 21 章 — Signals: Signal Handlers</a>
+- 上一节：<a href="#s-21-6">21.6 本章小结</a>
+- 下一节：<a href="chapter-22.html#intro">Ch22 高级信号</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>原书第 21 章练习题要点，围绕本章核心：<strong>handler 设计安全</strong>、<strong>异步信号安全</strong>、<strong>备用栈</strong>、<strong><code class="c">EINTR</code></strong>。</p>
+<hr />
+<h2>练习 1：<code class="c">signal()</code> vs <code class="c">sigaction()</code> —— 为什么必须弃用前者</h2>
+<p><strong>题目</strong>：下面两段代码看起来效果相同，为什么生产代码必须用后者？</p>
+<pre class="code" data-label="C"><code class="c">/* A */
+signal(SIGINT, handler);
+
+/* B */
+struct sigaction sa = {0};
+sa.sa_handler = handler;
+sigemptyset(&amp;sa.sa_mask);
+sa.sa_flags = SA_RESTART;
+sigaction(SIGINT, &amp;sa, NULL);
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong><code class="c">signal()</code> 的行为随实现而变，不可移植</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语义</th>
+<th>是否自动复位为 <code class="c">SIG_DFL</code></th>
+<th>handler 期间是否阻塞同号信号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>System V</strong></td>
+<td>✅ 复位</td>
+<td>❌ 不阻塞</td>
+</tr>
+<tr>
+<td><strong>BSD 4.3+</strong></td>
+<td>❌ 不复位</td>
+<td>✅ 阻塞</td>
+</tr>
+</tbody>
+</table></div>
+<p>两派<strong>截然相反</strong>。</p>
+<p>Linux 内核的 <code class="c">sys_signal</code> 固定采用 SVr4 风格（<code class="c">kernel/signal.c:4628</code> 硬编码 <code class="c">SA_ONESHOT | SA_NOMASK</code>），而 glibc 的 <code class="c">signal()</code> 包装却走 <code class="c">rt_sigaction</code> + <code class="c">SA_RESTART</code> 模拟 BSD——<strong>同一台 Linux 上，用不用 libc 包装结果都不一样</strong>。</p>
+<p><strong><code class="c">sigaction()</code> 额外提供的能力</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>能力</th>
 <th><code class="c">signal()</code></th>
 <th><code class="c">sigaction()</code></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">sa_mask</code> / flags</td>
-<td>❌ / 不一致</td>
-<td>✅</td>
-</tr>
-<tr>
-<td><code class="c">SA_SIGINFO</code></td>
+<td><code class="c">SA_RESTART</code>（自动重启被中断的 syscall）</td>
 <td>❌</td>
 <td>✅</td>
 </tr>
 <tr>
-<td><code class="c">SA_RESTART</code></td>
-<td>实现不一</td>
-<td>可显式设</td>
+<td><code class="c">sa_mask</code>（handler 期间额外屏蔽）</td>
+<td>❌</td>
+<td>✅</td>
 </tr>
 <tr>
-<td>生产</td>
-<td>弃用</td>
-<td><strong>首选</strong></td>
+<td><code class="c">SA_SIGINFO</code>（获取 <code class="c">siginfo_t</code>）</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">SA_ONSTACK</code>（备用栈）</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">SA_RESETHAND</code>（一次性，显式）</td>
+<td>❌</td>
+<td>✅</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>结论</strong>：<code class="c">signal()</code> 只适合 demo 或一键 <code class="c">SIG_IGN</code>；生产代码一律 <code class="c">sigaction()</code>。</p>
+</details>
 <hr />
-<h2>HFT / 嵌入式关联</h2>
+<h2>练习 2：找出这段代码里的所有问题</h2>
+<p><strong>题目</strong>：下面的信号处理器有几处错误？逐一指出并修正。</p>
+<pre class="code" data-label="C"><code class="c">int counter = 0;
+char logbuf[256];
+
+void handler(int sig) {
+    printf(&quot;received signal %d\n&quot;, sig);
+    sprintf(logbuf, &quot;sig=%d&quot;, sig);
+    int fd = open(&quot;/tmp/sig.log&quot;, O_APPEND | O_WRONLY);
+    write(fd, logbuf, strlen(logbuf));
+    close(fd);
+    counter++;
+    exit(0);
+}
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>六处问题</strong>：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>路线</th>
-<th>要点</th>
+<th>#</th>
+<th>问题</th>
+<th>原因</th>
+<th>修正</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>signal() 在各 libc 间语义漂移（是否复位、是否阻塞自身），交叉编译平台各异；sigaction 显式声明 mask/flags，是嵌入式可移植代码的唯一选择</td>
+<td>1</td>
+<td><code class="c">printf()</code></td>
+<td>非 async-signal-safe，持有 stdio 锁 → <strong>同一线程重入死锁</strong></td>
+<td>用 <code class="c">write(2)</code> 或移到主流程</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>用 signal() 等于把 handler 语义交给平台决定，竞态难复现；HFT 生产统一 sigaction，行为确定、延迟可测，这是低延迟系统的底线</td>
+<td>2</td>
+<td><code class="c">sprintf()</code></td>
+<td>同 <code class="c">printf</code>，stdio 锁</td>
+<td>不用，或手工极简转换</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">open()</code> / <code class="c">close()</code></td>
+<td>不在安全清单；<code class="c">open</code> 可能分配内存</td>
+<td>移到主流程，或预先打开 fd</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">counter++</code></td>
+<td>① 缺 <code class="c">volatile</code> → 主流程看不到修改<br>② 缺 <code class="c">sig_atomic_t</code> → 非原子<br>③ <code class="c">++</code> 是读-改-写，即便原子类型也不安全</td>
+<td><code class="c">volatile sig_atomic_t flag = 1;</code>（只做赋值）</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">exit()</code></td>
+<td>非 async-signal-safe，会 flush stdio + 跑 atexit → 死锁</td>
+<td><code class="c">_exit()</code> / <code class="c">_Exit()</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code class="c">logbuf</code> 全局数组</td>
+<td>handler 与主流程共享，无保护</td>
+<td>改为局部变量或不用</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;signal.h&gt;
-#include &lt;stdio.h&gt;
-void handler(int sig) { printf(&quot;sig=%d\n&quot;, sig); }
-int main(void) {
-    /* signal(): 行为不一致, 不推荐 */
-    /* signal(SIGINT, handler); */
+<p><strong>修正版</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static volatile sig_atomic_t got_signal = 0;
+static volatile sig_atomic_t last_signo = 0;
 
-    /* sigaction(): 行为确定, 推荐 */
+static void handler(int sig)
+{
+    int saved_errno = errno;        /* 保护 errno */
+    got_signal = 1;                 /* 只做原子赋值 */
+    last_signo = sig;
+    errno = saved_errno;
+}
+
+/* 主流程：所有复杂操作都在这里，可随意 printf/open/exit */
+int main(void)
+{
     struct sigaction sa = {0};
     sa.sa_handler = handler;
     sigemptyset(&amp;sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sigaction(SIGINT, &amp;sa, NULL);
 
-    printf(&quot;sigaction vs signal:\n&quot;);
-    printf(&quot;  signal: 不确定是否自动复位、是否阻塞自身\n&quot;);
-    printf(&quot;  sigaction: 行为明确, 可设 mask/flags\n&quot;);
-    return 0;
+    for (;;) {
+        if (got_signal) {
+            printf(&quot;received signal %d\n&quot;, (int)last_signo);   /* 安全 */
+            got_signal = 0;
+            /* open/write/close 都可以在这里做 */
+        }
+        do_work();
+    }
 }
 </code></pre>
+</details>
+<hr />
+<h2>练习 3：让进程"被信号杀死"而非"自己退出"</h2>
+<p><strong>题目</strong>：程序捕获 <code class="c">SIGTERM</code> 后想退出，但希望父进程 <code class="c">wait()</code> 时看到的是 <code class="c">WIFSIGNALED</code>（被信号杀死）而不是 <code class="c">WIFEXITED</code>。怎么做？</p>
+<details>
+<summary>参考答案</summary>
+<p>用「<strong>恢复默认处置后重新发信号</strong>」技巧：</p>
+<pre class="code" data-label="C"><code class="c">static void handler(int sig)
+{
+    /* 1. 最小诊断（用 async-signal-safe 的 write） */
+    const char m[] = &quot;caught SIGTERM, re-raising\n&quot;;
+    write(STDERR_FILENO, m, sizeof m - 1);
+
+    /* 2. 恢复默认处置 */
+    struct sigaction sa = {0};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&amp;sa.sa_mask);
+    sigaction(sig, &amp;sa, NULL);
+
+    /* 3. 重新发同一个信号 → 走默认动作 */
+    raise(sig);
+
+    /* 4. 兜底：若信号被阻塞未能立即递送，强制退出 */
+    _exit(128 + sig);
+}
+</code></pre>
+<p><strong>效果对比</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>父进程 <code class="c">wait()</code> 看到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_exit(1)</code></td>
+<td><code class="c">WIFEXITED=true, status=1</code> —— <strong>看不出是被信号杀的</strong></td>
+</tr>
+<tr>
+<td>re-raise</td>
+<td><strong><code class="c">WIFSIGNALED=true, WTERMSIG=SIGTERM</code></strong> ✅</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>原理</strong>：<code class="c">raise(sig)</code> 时 disposition 已恢复为 <code class="c">SIG_DFL</code>，内核在 <code class="c">get_signal()</code> 中走致命分支——<code class="c">do_coredump()</code>（若该信号产 core）+ <code class="c">do_group_exit(signo)</code>（<code class="c">kernel/signal.c:2878</code>/<code class="c">:2892</code>）。</p>
+<p><strong>第 4 步为什么必要</strong>：若该信号在 handler 执行期间被阻塞（例如 <code class="c">sa_mask</code> 里有它，或自身信号自动阻塞尚未解除），<code class="c">raise</code> 只会让它 pending 而不立即递送。此时 <code class="c">_exit(128+sig)</code> 保证进程一定退出——<code class="c">128+sig</code> 是 shell 表示"被信号 N 杀死"的惯例值。</p>
+</details>
+<hr />
+<h2>练习 4：<code class="c">EINTR</code> 的正确处理</h2>
+<p><strong>题目</strong>：下面两段 <code class="c">read</code> 调用，在注册了信号处理器后各有什么问题？</p>
+<pre class="code" data-label="C"><code class="c">/* A：什么都不处理 */
+ssize_t n = read(fd, buf, sizeof buf);
+if (n &lt; 0) { perror(&quot;read&quot;); return -1; }
+
+/* B：盲目重试 */
+ssize_t n;
+do {
+    n = read(fd, buf, sizeof buf);
+} while (n &lt; 0);
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>A 的问题</strong>：<code class="c">read</code> 被信号中断时返回 <code class="c">-1</code> 且 <code class="c">errno == EINTR</code>，这不是真正的错误。直接 <code class="c">perror</code> 并退出会导致<strong>偶发的、不可复现的失败</strong>——慢设备 I/O（终端、管道、socket）上尤其常见。</p>
+<p><strong>B 的问题</strong>：把所有错误都当"可重试"，包括：</p>
+<ul>
+<li><code class="c">EAGAIN</code>（非阻塞无数据）→ <strong>忙等烧 CPU</strong></li>
+<li><code class="c">EBADF</code>（fd 无效）、<code class="c">EIO</code>（硬件错误）→ <strong>无限死循环</strong></li>
+</ul>
+<p><strong>正确写法</strong>：只重试 <code class="c">EINTR</code>，其他错误区分处理：</p>
+<pre class="code" data-label="C"><code class="c">ssize_t n;
+do {
+    n = read(fd, buf, sizeof buf);
+} while (n == -1 &amp;&amp; errno == EINTR);        /* 只重试 EINTR */
+
+if (n == -1) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+        return 0;                            /* 无数据 → 回事件循环，不重试 */
+    return -1;                               /* 真错误 */
+}
+/* 处理数据 */
+</code></pre>
+<p><strong>设了 <code class="c">SA_RESTART</code> 还需要这样写吗</strong>？</p>
+<p>需要。以下调用即便设了 <code class="c">SA_RESTART</code> <strong>仍然返回 <code class="c">EINTR</code></strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>带超时</td>
+<td><code class="c">select</code>、<code class="c">poll</code>、<code class="c">epoll_wait</code>、<code class="c">sigtimedwait</code></td>
+</tr>
+<tr>
+<td>网络连接</td>
+<td><code class="c">connect</code></td>
+</tr>
+<tr>
+<td>定时</td>
+<td><code class="c">nanosleep</code>（剩余时间写入 <code class="c">rem</code>）</td>
+</tr>
+<tr>
+<td>Linux 特有</td>
+<td><code class="c">close</code>（<strong>fd 已关闭，不要重试</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">nanosleep</code> 的完整处理</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct timespec rem = req;
+while (nanosleep(&amp;rem, &amp;rem) == -1 &amp;&amp; errno == EINTR)
+    ;                       /* rem 已被更新为剩余时间，继续睡 */
+</code></pre>
+</details>
+<hr />
+<h2>练习 5：栈溢出的崩溃诊断</h2>
+<p><strong>题目</strong>：程序有无限递归的风险。希望能<strong>在崩溃时打印故障地址</strong>，而不是进程直接消失。怎么做？</p>
+<details>
+<summary>参考答案</summary>
+<p>核心是三件事：<strong>备用栈</strong> + <strong><code class="c">SA_SIGINFO</code></strong> + <strong><code class="c">si_addr</code></strong>。</p>
+<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+
+static void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    (void)sig; (void)ctx;
+    /* 运行在备用栈上，原栈已毁但这里干净 */
+    char buf[256];
+    const char *reason =
+        (info-&gt;si_code == SEGV_MAPERR) ? &quot;地址未映射（野指针/已释放）&quot; :
+        (info-&gt;si_code == SEGV_ACCERR) ? &quot;权限不足（写只读页）&quot; : &quot;其他&quot;;
+    int n = snprintf(buf, sizeof buf,
+        &quot;SIGSEGV @ %p : %s (si_code=%d)\n&quot;, info-&gt;si_addr, reason, info-&gt;si_code);
+    write(STDERR_FILENO, buf, n);
+    _exit(1);
+}
+
+int main(void)
+{
+    /* ① 登记备用栈 */
+    stack_t ss;
+    ss.ss_sp = malloc(SIGSTKSZ * 4);          /* ≥32KB，别用 MINSIGSTKSZ */
+    ss.ss_size = SIGSTKSZ * 4;
+    ss.ss_flags = 0;
+    sigaltstack(&amp;ss, NULL);
+
+    /* ② 关键：SA_ONSTACK + SA_SIGINFO */
+    struct sigaction sa = {0};
+    sa.sa_sigaction = segv_handler;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigaction(SIGSEGV, &amp;sa, NULL);
+
+    /* ③ 触发栈溢出 */
+    recurse_forever();
+}
+</code></pre>
+<p><strong>三个要点</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">sigaltstack()</code> + <code class="c">SA_ONSTACK</code></strong></td>
+<td>栈溢出时原栈无空间，handler 无法执行 → 内核 <code class="c">force_sigsegv()</code> 直接杀进程（<code class="c">kernel/signal.c:2935</code>）</td>
+</tr>
+<tr>
+<td><strong>栈要够大（≥32KB）</strong></td>
+<td>太小会通不过内核检查（<code class="c">-ENOMEM</code>）或搭不起 sigframe（→ <code class="c">force_sigsegv</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">_exit()</code> 而非 <code class="c">exit()</code></strong></td>
+<td><code class="c">exit()</code> 非 async-signal-safe，可能死锁</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么 <code class="c">snprintf</code> 可以用</strong>：严格说它不在安全清单，但运行在<strong>干净的备用栈</strong>上且不涉及 stdio 流的锁（只格式化到局部 buf），实践上可接受。更严格的做法是手工转换或直接用 <code class="c">write</code> 输出固定串。</p>
+<p><strong>对照实验</strong>：去掉 <code class="c">SA_ONSTACK</code>，栈溢出时 handler 无法执行，进程裸死，看不到任何诊断输出。</p>
+</details>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-21-6">21.6 <code class="c">SIGCHLD</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-20.html#ch-20">Ch20 信号基础</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-22.html#ch-22">Ch22 pause / sigsuspend</a> · <a href="chapter-24.html#ch-24">Ch24 进程创建 / wait</a></li>
+<li>上一节：<a href="#s-21-6">21.6 本章小结</a></li>
+<li>信号基础：<a href="chapter-20.html#intro">Ch20 信号基础</a></li>
+<li>高级主题：<a href="chapter-22.html#intro">Ch22 高级信号</a> — <code class="c">sigsuspend</code>/<code class="c">sigwaitinfo</code>/signalfd/实时信号</li>
+<li>完整安全函数清单：<code class="c">man 7 signal-safety</code></li>
 </ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>综合题：把本章所有要点串成一个"生产级"信号处理模块</summary>
+<pre class="code" data-label="C"><code class="c">/* sigmod.c —— 生产级信号处理骨架
+ * 要点：signalfd 消灭 handler + SIGSEGV 兜底诊断 + 屏蔽无关信号
+ * 编译: gcc -D_GNU_SOURCE -o sigmod sigmod.c */
+#define _GNU_SOURCE
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/signalfd.h&gt;
+#include &lt;sys/epoll.h&gt;
+
+/* ── SIGSEGV 兜底：运行在备用栈上 ── */
+static void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    (void)sig; (void)ctx;
+    char buf[128];
+    int n = snprintf(buf, sizeof buf,
+                     &quot;FATAL SIGSEGV @ %p (si_code=%d)\n&quot;,
+                     info-&gt;si_addr, info-&gt;si_code);
+    write(STDERR_FILENO, buf, n);
+    _exit(128 + SIGSEGV);          /* 兜底退出 */
+}
+
+static void setup_crash_handler(void)
+{
+    stack_t ss;
+    ss.ss_sp = malloc(SIGSTKSZ * 4);
+    ss.ss_size = SIGSTKSZ * 4;
+    ss.ss_flags = 0;
+    sigaltstack(&amp;ss, NULL);
+
+    struct sigaction sa = {0};
+    sa.sa_sigaction = segv_handler;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigaction(SIGSEGV, &amp;sa, NULL);
+    sigaction(SIGBUS,  &amp;sa, NULL);
+}
+
+int main(void)
+{
+    setup_crash_handler();                    /* ① 崩溃诊断兜底 */
+
+    /* ② 阻塞所有控制信号 —— 它们将走 signalfd，不进 handler */
+    sigset_t mask;
+    sigemptyset(&amp;mask);
+    sigaddset(&amp;mask, SIGINT);
+    sigaddset(&amp;mask, SIGTERM);
+    sigaddset(&amp;mask, SIGHUP);
+    sigprocmask(SIG_BLOCK, &amp;mask, NULL);
+
+    /* ③ 信号变 fd */
+    int sfd = signalfd(-1, &amp;mask, SFD_NONBLOCK);
+
+    /* ④ 加入 epoll，与业务 I/O 一起等待 */
+    int epfd = epoll_create1(0);
+    struct epoll_event ev = { .events = EPOLLIN, .data.fd = sfd };
+    epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &amp;ev);
+
+    printf(&quot;PID=%d — 试 kill -TERM %d 或 kill -INT %d\n&quot;,
+           getpid(), getpid(), getpid());
+
+    int running = 1;
+    while (running) {
+        struct epoll_event events[8];
+        int n = epoll_wait(epfd, events, 8, -1);
+
+        for (int i = 0; i &lt; n; i++) {
+            if (events[i].data.fd == sfd) {
+                struct signalfd_siginfo si;
+                while (read(sfd, &amp;si, sizeof si) == sizeof si) {
+                    /* 这里是普通上下文 —— 可随意 printf/malloc/写日志 */
+                    printf(&quot;收到信号 %d (来自 pid=%d)\n&quot;,
+                           si.ssi_signo, si.ssi_pid);
+                    if (si.ssi_signo == SIGTERM || si.ssi_signo == SIGINT)
+                        running = 0;
+                }
+            }
+        }
+    }
+
+    printf(&quot;优雅退出\n&quot;);
+    close(sfd);
+    close(epfd);
+    return 0;
+}
+</code></pre>
+<p><strong>这个骨架体现了本章的全部要点</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>体现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>消灭 handler</td>
+<td>控制信号走 signalfd，处理代码在普通上下文</td>
+</tr>
+<tr>
+<td>无异步信号安全问题</td>
+<td>signalfd 处理路径可随意 <code class="c">printf</code>/<code class="c">malloc</code></td>
+</tr>
+<tr>
+<td>屏蔽无关信号</td>
+<td><code class="c">sigprocmask(SIG_BLOCK)</code> 让关键路径不被抢占</td>
+</tr>
+<tr>
+<td><code class="c">SIGSEGV</code> 兜底</td>
+<td><code class="c">SA_ONSTACK</code> 备用栈 + <code class="c">si_addr</code> 诊断</td>
+</tr>
+<tr>
+<td>正确终止</td>
+<td><code class="c">_exit(128+SIGSEGV)</code> 而非 <code class="c">exit()</code></td>
+</tr>
+<tr>
+<td>事件循环集成</td>
+<td>signalfd 与业务 I/O 统一在 <code class="c">epoll_wait</code></td>
+</tr>
+</tbody>
+</table></div>
+</details>
       </section>
 
 
