@@ -784,7 +784,7 @@ static int mic_release(struct inode *i, struct file *filp)
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-1">49.1 四大组合</a>
-- 下一节：<a href="#s-49-10">49.4 文件映射</a></p>
+- 下一节：<a href="#s-49-4">49.4 文件映射</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
@@ -927,7 +927,7 @@ int main(void) {
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
 <li>上一节：<a href="#s-49-1">49.1 四大组合</a></li>
-<li>下一节：<a href="#s-49-10">49.4 文件映射</a></li>
+<li>下一节：<a href="#s-49-4">49.4 文件映射</a></li>
 <li>前置：<strong>前置</strong>：<a href="chapter-48.html#ch-48">Ch48 SysV 共享内存</a>  </li>
 <li>后置：<strong>后置</strong>：<a href="chapter-50.html#ch-50">Ch50 虚拟内存操作</a> · <a href="chapter-51.html#ch-51">Ch51 POSIX IPC</a></li>
 </ul>
@@ -1060,7 +1060,8 @@ int main(void) {
       <section class="section" id="s-49-4">
         <div class="sec-head"><div class="sec-no">49.4</div><h2>文件映射</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/memory.c</code>（<code class="c">do_wp_page():3338</code> · <code class="c">wp_page_copy():3053</code> · <code class="c">wp_page_shared():3276</code>）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-2">49.2 –49.3 <code class="c">mmap</code> / <code class="c">munmap</code></a>
 - 下一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a></p>
 </blockquote>
@@ -1088,6 +1089,48 @@ int main(void) {
 </tbody>
 </table></div>
 <p>SIGSEGV = 非法虚址；SIGBUS = 映射合法但无后备。</p>
+<h3>PRIVATE vs SHARED 文件映射：内核路径速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环节</th>
+<th><code class="c">MAP_PRIVATE</code> 文件</th>
+<th><code class="c">MAP_SHARED</code> 文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读</td>
+<td>缺页把 <strong>page cache 页直接映射进来</strong>（不复制！多进程读同一物理页）</td>
+<td>同左——共享同一 page cache 页</td>
+</tr>
+<tr>
+<td>首写</td>
+<td><code class="c">do_wp_page():3338</code> → 私有分支 → <code class="c">wp_page_copy():3053</code>：<strong>复制 page cache 页内容到私有匿名页</strong>，此后与文件脱钩</td>
+<td><code class="c">do_wp_page():3369</code> → <code class="c">wp_page_shared():3276</code>：<strong>原地改 PTE 可写 + 页标脏</strong>，写的直接就是 page cache 页</td>
+</tr>
+<tr>
+<td>其他进程可见？</td>
+<td>❌（各写各的副本）</td>
+<td>✅（page cache 即唯一真相）</td>
+</tr>
+<tr>
+<td>写回磁盘？</td>
+<td>❌ 永不</td>
+<td>✅ 脏页由回写线程异步落盘（<code class="c">msync</code> 可强制立即）</td>
+</tr>
+<tr>
+<td>零页参与？</td>
+<td>仅"映区超出文件尾"的空白部分读挂零页</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p>两条最容易被忽略的推论：</p>
+<ol>
+<li><strong>PRIVATE 读 = 零拷贝</strong>：私有文件映射的读并不是"把文件复制到我的内存"，而是多个进程的 PTE 指向同一个 page cache 物理页。PRIVATE 的"私有"只承诺<strong>写之后的私有</strong>。</li>
+<li><strong>SHARED 写 = 写 page cache</strong>：共享映射的写不经过任何进程私有内存，脏页标记后由内核回写机制（per-BDI flusher / <code class="c">msync</code>）落盘——这也是它能被其他映射者立刻看见的原因。</li>
+</ol>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1324,13 +1367,18 @@ int main(void) {
       <section class="section" id="s-49-7">
         <div class="sec-head"><div class="sec-no">49.7</div><h2>匿名映射</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
-- 上一节：<a href="#s-49-11">49.6 共享文件映射</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/memory.c</code>（<code class="c">do_anonymous_page():4067</code> · <code class="c">zero_pfn:164</code> · <code class="c">wp_page_copy():3053</code> · <code class="c">do_wp_page():3338</code> · <code class="c">copy_present_pte():923</code>）· <code class="c">mm/shmem.c</code>（SGP_READ hole 语义 <code class="c">:1993</code> · 零页映射 <code class="c">:2906</code>）深挖见 <a href="../../06-linux-mm/html/index.html">06-linux-mm</a>
+本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
+- 上一节：<a href="#s-49-6">49.6 其他 mmap 标志</a>
 - 下一节：<a href="#s-49-8">49.8 mremap</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>匿名映射 — 不关联任何文件的内存映射，用于分配初始化为零的内存或进程间共享内存。</p>
+<ol>
+<li>匿名映射怎么用（<code class="c">MAP_ANONYMOUS</code> vs <code class="c">/dev/zero</code>，PRIVATE vs SHARED）？</li>
+<li>刚 <code class="c">mmap</code> 完什么都没发生——<strong>读到的 0 从哪来</strong>（零页）？</li>
+<li>第一次写的那一下，内核到底做了什么（COW 的精确路径）？</li>
+</ol>
 <hr />
 <h2>要点</h2>
 <h3>两种匿名映射方式</h3>
@@ -1382,6 +1430,43 @@ int main(void) {
 </tr>
 </tbody>
 </table></div>
+<h3>修改可见性与回写对比速记</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flag</th>
+<th>修改其他进程可见？</th>
+<th>写回文件？</th>
+<th>零页 COW？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAP_PRIVATE</code> 匿名</td>
+<td>❌ 不可见</td>
+<td>❌ 无文件可回</td>
+<td>✅ 有（读挂零页，首写实分页）</td>
+</tr>
+<tr>
+<td><code class="c">MAP_SHARED</code> 匿名</td>
+<td>✅ 可见（同物理页）</td>
+<td>❌（无后备文件；<strong>有后备的是 swap</strong>）</td>
+<td>读 hole 也挂零页（shmem SGP_READ），<strong>仅写实分页</strong></td>
+</tr>
+<tr>
+<td><code class="c">MAP_PRIVATE</code> 文件</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅（读共享 page cache，首写复制走人）</td>
+</tr>
+<tr>
+<td><code class="c">MAP_SHARED</code> 文件</td>
+<td>✅</td>
+<td>✅ 脏页异步回写</td>
+<td>❌ 无（写直接进 page cache）</td>
+</tr>
+</tbody>
+</table></div>
 <h3>典型用法：父子进程共享内存</h3>
 <pre class="code" data-label="C"><code class="c">/* MAP_ANONYMOUS | MAP_SHARED: fork 后父子共享 */
 int *shared = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE,
@@ -1424,8 +1509,112 @@ printf(&quot;parent sees: %d\n&quot;, *shared);  /* 42 */
 <td>不保证</td>
 <td>零初始化</td>
 </tr>
+<tr>
+<td>底层</td>
+<td>小块 brk / 大块（≥128KB）mmap——<strong>全是 <code class="c">MAP_PRIVATE</code> 匿名映射</strong></td>
+<td>—</td>
+</tr>
 </tbody>
 </table></div>
+<hr />
+<h2>零页与 COW 的内核真相</h2>
+<h3>零页是什么</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>本体</td>
+<td><code class="c">ZERO_PAGE(0)</code>——内核镜像里一个特殊只读物理页，内容全 0</td>
+</tr>
+<tr>
+<td>符号</td>
+<td><code class="c">zero_pfn</code>（<code class="c">mm/memory.c:164</code>），<code class="c">init_zero_pfn():172</code> 在启动早期把它的 PFN 存进全局变量</td>
+</tr>
+<tr>
+<td>磁盘后备</td>
+<td><strong>无</strong>。开机就在内存，永不换出</td>
+</tr>
+<tr>
+<td>共享范围</td>
+<td><strong>全局所有进程</strong>——谁的匿名私有页没被写过，PTE 就指它</td>
+</tr>
+<tr>
+<td>归属</td>
+<td>不属于任何进程：<strong>RSS 都不计入它</strong>（后面实测验证）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>读路径：挂零页</h3>
+<p><code class="c">do_anonymous_page()</code>（<code class="c">mm/memory.c:4067</code>）对「读触发的缺页」：</p>
+<pre class="code" data-label="C"><code class="c">/* Use the zero-page for reads */
+if (!(vmf-&gt;flags &amp; FAULT_FLAG_WRITE) &amp;&amp;
+        !mm_forbids_zeropage(vma-&gt;vm_mm)) {          // :4086
+        entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf-&gt;address),
+                        vma-&gt;vm_page_prot));          // :4088  ← PTE 指向零页
+        ...
+        goto setpte;                                  // 只装 PTE，不分配任何页
+}
+</code></pre>
+<p>关键：<strong>分配的只有页表项，一页物理内存都没给你</strong>。之后读这页永远读零页的 0，MMU 不报错——PTE 存在、有映射，只是指向只读共享页。<code class="c">pte_mkspecial</code> 标记它"特殊"，<code class="c">vm_normal_page()</code> 会跳过它（rmap/回收不认识零页）。</p>
+<p>顺带：<code class="c">mm_forbids_zeropage()</code> 为真的场景是 KVM 等——虚拟机脏页追踪要求每页可追踪，零页共享会破坏语义，此时读也实分页。</p>
+<h3>写路径：直接分配清零新页（⚠ 精确说法）</h3>
+<p>写触发的缺页不走上面那个 if，直接（<code class="c">:4102-4104</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* Allocate our own private page. */
+if (unlikely(anon_vma_prepare(vma))) ...
+folio = vma_alloc_zeroed_movable_folio(vma, vmf-&gt;address);   // :4104
+...
+entry = mk_pte(&amp;folio-&gt;page, vma-&gt;vm_page_prot);
+if (vma-&gt;vm_flags &amp; VM_WRITE)
+        entry = pte_mkwrite(pte_mkdirty(entry), vma);        // :4121 可写+脏
+</code></pre>
+<p>所以「COW 复制零页」的<strong>精确版本</strong>是：</p>
+<blockquote>
+<p>首写匿名私有页：<strong>分配一个全新清零物理页（无 memcpy）</strong>，把 PTE 从零页改指它。逻辑上是"写时复制"，物理上零页根本没被复制——目标本来就是全 0，分配清零页等价且更省（清零有硬件优化的 <code class="c">clear_page</code>，比拷贝快）。</p>
+</blockquote>
+<p>真发生"从零页复制"判定的是 <code class="c">wp_page_copy():3072</code>——但那是 <strong>fork 之后</strong>的场景：父子共指零页 + 双方 PTE 均被写保护，一方写时 <code class="c">is_zero_pfn(pte_pfn(vmf-&gt;orig_pte))</code> 命中，同样<strong>跳过拷贝</strong>直接清零新页。</p>
+<h3>fork 的 COW：copy_present_pte 双向写保护</h3>
+<p>fork 复制页表时（<code class="c">copy_present_pte():923</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * If it's a COW mapping, write protect it both
+ * in the parent and the child
+ */
+if (is_cow_mapping(vm_flags) &amp;&amp; pte_write(pte)) {      // :960
+        ptep_set_wrprotect(src_mm, addr, src_pte);     // 父也写保护！
+        pte = pte_wrprotect(pte);                      // 子写保护
+}
+</code></pre>
+<p>三个要点：</p>
+<ol>
+<li><strong>父进程的 PTE 也被写成只读</strong>——COW 是父子双方同时进入只读态，谁先写谁触发 <code class="c">do_wp_page()</code>。</li>
+<li><code class="c">is_cow_mapping()</code> 即 <code class="c">!(flags &amp; (VM_SHARED | VM_MAYSHARE))</code>——<strong><code class="c">MAP_SHARED</code> 映射完全绕过 COW</strong>：父子直接共指同一物理页，谁写都不复制（这正是"共享"语义的内核实现，也解释了上面对比表最后一列）。</li>
+<li>写触发后的分流在 <code class="c">do_wp_page():3338</code>：
+   - <code class="c">:3369</code> <code class="c">VM_SHARED|VM_MAYSHARE</code> → <code class="c">wp_page_shared():3276</code>——<strong>原地改 PTE 可写 + 标脏</strong>，不复制；
+   - 私有映射 → 若该页确认独占（fork 后对方已写走/未共享）→ <code class="c">wp_page_reuse():3009</code> 原地复用；真共享着 → <code class="c">wp_page_copy():3053</code> 分配新页 + 复制内容（源是零页则免拷贝）。</li>
+</ol>
+<h3>匿名 SHARED：读 hole 也有零页捷径，写才实分页</h3>
+<p><code class="c">do_anonymous_page():4076</code> 开头一行挡死零页捷径：</p>
+<pre class="code" data-label="C"><code class="c">if (vma-&gt;vm_flags &amp; VM_SHARED)
+        return VM_FAULT_SIGBUS;    // 匿名共享映射不走这条路径
+</code></pre>
+<p>匿名 <code class="c">MAP_SHARED</code> 的 VMA 由 shmem（tmpfs）接管。但「共享必须实分页」只对了一半——shmem 对<strong>读 hole</strong> 同样有零页捷径（<code class="c">mm/shmem.c:1993</code> 注释原文）：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * SGP_READ: succeed on hole, with NULL folio, letting caller zero.
+ * SGP_NOALLOC: fail on hole, with NULL folio, letting caller fail.
+ */
+</code></pre>
+<p>读 fault 拿到 NULL folio 后映射全局零页（<code class="c">shmem.c:2906</code> <code class="c">.page = ZERO_PAGE(0)</code>）。这在语义上完全成立：hole 里还没人写过，读出来必然全 0，指零页和指一个清零页无法区分。一旦有任何一方<strong>写</strong>（SGP_WRITE），shmem 才分配真页放进 page cache——此后所有进程的读 fault 都命中真页，共享语义由此建立。</p>
+<p>所以精确结论是：<strong>零页优化覆盖到 shmem 读 hole；共享的“实分页”门槛只卡在写上</strong>。下面 demo 的 B 段实测验证：SHARED 匿名全量读 RSS 不涨，写一半 RSS +128MB。</p>
+<h3>malloc 与 overcommit 的会计真相</h3>
+<ul>
+<li>malloc 大块（glibc 阈值默认 128KB）→ <code class="c">mmap(MAP_PRIVATE|MAP_ANONYMOUS)</code> → 仅仅登记了 VMA，物理账上一页未付；</li>
+<li>RSS 不涨、<code class="c">/proc/meminfo</code> 的 Committed_AS 也不按全量记（默认 overcommit heuristic 只对"明显超过 RAM+swap"说不）；</li>
+<li><strong>物理页分配被推迟到每次首写的那一下缺页</strong>——所以"申请 1TB 成功"和"物理内存耗尽 OOM"可以相隔任意久。</li>
+</ul>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1438,48 +1627,142 @@ printf(&quot;parent sees: %d\n&quot;, *shared);  /* 42 */
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>匿名共享映射是父子进程 IPC 最简单方式</td>
+<td>匿名共享映射是父子进程 IPC 最简单方式；只读大数组让零页兜底，省下整个数组的 RAM</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td><code class="c">MAP_SHARED\|MAP_ANONYMOUS</code> 用于父子进程共享行情数据，零拷贝</td>
+<td><code class="c">MAP_SHARED\|MAP_ANONYMOUS</code> 用于父子共享行情数据，零拷贝；预分配 arena 但只写热区——冷区一直由零页"免费"占位，RSS 反映真实热区</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>懒分配=确定性敌人：首写延迟里藏着缺页+清零+可能的内存回收，热路径上要么启动时 <code class="c">mlock</code>+全量触碰，要么接受首次访问的毛刺</td>
 </tr>
 </tbody>
 </table></div>
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+<pre class="code" data-label="C"><code class="c">/* zero_page_demo.c — Ch49.7：零页 vs 实分页的 RSS 实测
+ * A. MAP_PRIVATE 匿名：映射后 / 全量读后 / 写一半后 三阶段观测
+ * B. MAP_SHARED 匿名（shmem）：读不占 RSS（SGP_READ hole 零页）vs 写才实分页
+ * 编译：gcc -O2 -Wall -Wextra -o zero_page_demo zero_page_demo.c
+ */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
-#include &lt;sys/wait.h&gt;
-/* 匿名共享映射: 父子进程通信 */
-int main(void) {
-    /* 分配共享内存 */
-    int *shared = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE,
-                       MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-    if (shared == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
-    *shared = 100;
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        /* 子进程: 修改共享内存 */
-        *shared += 50;
-        printf(&quot;child: shared = %d\n&quot;, *shared);
-        _exit(0);
-    }
-    wait(NULL);
-    printf(&quot;parent: shared = %d\n&quot;, *shared);  /* 150 */
+#define MB (1024UL * 1024)
+#define SIZE (256UL * MB)          /* 256MB，页大小 4KB → 65536 页 */
 
-    munmap(shared, sizeof(int));
+/* /proc/self/statm 第 2 列 = resident（单位：页） */
+static long rss_pages(void)
+{
+    long size, resident;
+    FILE *f = fopen(&quot;/proc/self/statm&quot;, &quot;r&quot;);
+    if (!f) return -1;
+    if (fscanf(f, &quot;%ld %ld&quot;, &amp;size, &amp;resident) != 2) resident = -1;
+    fclose(f);
+    return resident;
+}
+
+static void report(const char *tag, long base)
+{
+    long r = rss_pages();
+    long ps = sysconf(_SC_PAGESIZE);
+    printf(&quot;  %-28s RSS = %7.1f MB（相对 %+.1f MB）\n&quot;,
+           tag, (double)r * ps / MB, (double)(r - base) * ps / MB);
+}
+
+int main(void)
+{
+    long ps = sysconf(_SC_PAGESIZE);
+    printf(&quot;页大小 %ld B，映射 %lu MB\n&quot;, ps, SIZE / MB);
+
+    /* ========== A. MAP_PRIVATE 匿名：零页三阶段 ========== */
+    char *p = mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    long base = rss_pages();
+    report(&quot;A1 映射完成（未触碰）&quot;, base);
+
+    /* 全量只读扫描：每页都读 1 字节 → 65536 次读缺页全挂零页 */
+    for (size_t i = 0; i &lt; SIZE; i += (size_t)ps)
+        if (p[i] != 0) { printf(&quot;非零?! 破坏假设\n&quot;); return 1; }
+    report(&quot;A2 全量读一遍后&quot;, base);
+
+    /* 写前一半：32768 次写缺页 → 32768 个清零实页 */
+    memset(p, 0x5A, SIZE / 2);
+    report(&quot;A3 写前一半后&quot;, base);
+
+    printf(&quot;  解读：读 256MB → RSS 纹丝不动（零页共享不计入）；&quot;
+           &quot;写 128MB → RSS 恰好 +128MB\n&quot;);
+    munmap(p, SIZE);
+
+    /* ========== B. MAP_SHARED 匿名：shmem 对照组 ========== */
+    char *s = mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
+                   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (s == MAP_FAILED) { perror(&quot;mmap shared&quot;); return 1; }
+    long base2 = rss_pages();
+    for (size_t i = 0; i &lt; SIZE; i += (size_t)ps)
+        (void)s[i];               /* 只读不写 */
+    report(&quot;B1 SHARED 全量读一遍后&quot;, base2);
+    memset(s, 0x5A, SIZE / 2);    /* 写前一半：shmem 实分页 */
+    report(&quot;B2 SHARED 写前一半后&quot;, base2);
+    munmap(s, SIZE);
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 / 12 核，4KB 页，gcc -O2 零告警）：</p>
+<pre class="code" data-label="text"><code class="c">页大小 4096 B，映射 256 MB
+  A1 映射完成（未触碰）        RSS =     1.4 MB（相对 +0.1 MB）
+  A2 全量读一遍后              RSS =     1.4 MB（相对 +0.1 MB）
+  A3 写前一半后                RSS =   129.4 MB（相对 +128.1 MB）
+  解读：读 256MB → RSS 纹丝不动（零页共享不计入）；写 128MB → RSS 恰好 +128MB
+  B1 SHARED 全量读一遍后       RSS =     1.5 MB（相对 +0.0 MB）
+  B2 SHARED 写前一半后         RSS =   129.5 MB（相对 +128.0 MB）
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li><strong>A2 纹丝不动是零页的直接证据</strong>：65536 个 PTE 都装上了、256MB 读全成功，RSS 一页没涨——它们全指同一个全局零页。</li>
+<li><strong>A3 精确 +128MB</strong> 验证「首写才实分页」；分配的是清零新页（不是复制零页，见前文精确辨析）。</li>
+<li><strong>B1 是打破直觉的一组</strong>：SHARED 匿名全量读 RSS 也不涨——shmem 读 hole 同样挂零页（SGP_READ，<code class="c">shmem.c:1993</code>）；B2 写一半 +128MB 才实分页。「共享必须实分页」的门槛只卡在<strong>写</strong>上。</li>
+</ol>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-11">49.6 共享文件映射</a></li>
+<li>上一节：<a href="#s-49-6">49.6 其他 mmap 标志</a></li>
 <li>下一节：<a href="#s-49-8">49.8 mremap</a></li>
+<li>零页/COW 深挖（缺页处理全流程）：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
+<li>overcommit 与 MAP_NORESERVE：<a href="#s-49-9">49.9</a></li>
 </ul>
+<h2>自测题</h2>
+<p><strong>题目 1（概念）：</strong> <code class="c">mmap</code> 返回成功、也读到了全 0，物理内存分配了吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>没有（就这批被读过的页而言）。读路径的缺页由 <code class="c">do_anonymous_page():4086</code> 用零页满足：只装 PTE，不分配物理页。零页是内核全局共享的只读页，连 RSS 都不计入。真正的物理页分配推迟到首写。</p>
+</details>
+<p><strong>题目 2（精确辨析）：</strong> 「首写匿名私有页时，内核分配新页并<strong>复制零页内容</strong>」——这句话哪里不精确？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">do_anonymous_page()</code> 写路径（<code class="c">:4104</code>）直接调 <code class="c">vma_alloc_zeroed_movable_folio()</code> 分配<strong>清零</strong>新页，没有发生"从零页复制"的 memcpy——目标本来就是全 0，清零等价且更快。"从零页复制"的判定只出现在 fork 之后的 <code class="c">wp_page_copy():3072</code>（<code class="c">is_zero_pfn</code> 特判），且那里同样跳过拷贝。逻辑上叫 COW，物理上是"换页+清零"。</p>
+</details>
+<p><strong>题目 3（fork）：</strong> fork 后父子对匿名私有页各写一次，物理页从 1 页变成几页？谁的 PTE 先失去写权限？</p>
+<details>
+<summary>参考答案</summary>
+<p>2 页。<code class="c">copy_present_pte():960</code> 在 fork 复制页表时就把<strong>父子双方</strong>的 PTE 都写保护（<code class="c">ptep_set_wrprotect</code> 父 + <code class="c">pte_wrprotect</code> 子）；先写的一方走 <code class="c">wp_page_copy()</code> 分配自己的新页，后写的一方此时独占原页，走 <code class="c">wp_page_reuse()</code> 原地改回可写——所以是 1(共享) → 2(各一份)。</p>
+</details>
+<p><strong>题目 4（对比）：</strong> 匿名 <code class="c">MAP_SHARED</code> 映射首读分配物理页吗？什么时候才分配？</p>
+<details>
+<summary>参考答案</summary>
+<p>首读不分配。<code class="c">do_anonymous_page():4076</code> 开头 <code class="c">VM_SHARED → SIGBUS</code> 挡死零页捷径，匿名共享 VMA 由 shmem 接管；但 shmem 对读 hole 也有零页捷径（<code class="c">shmem.c:1993</code>「SGP_READ: succeed on hole, with NULL folio, letting caller zero」）——读 fault 拿到 NULL folio 后映射全局零页。<strong>写 fault（SGP_WRITE）才分配真页放进 page cache</strong>，此后所有映射者的读都命中真页，共享语义建立。demo 实测：SHARED 匿名全量读 RSS +0.0MB，写一半后 +128.0MB。</p>
+</details>
+<p><strong>题目 5（面试高频）：</strong> 「malloc 很大内存返回成功但物理内存没分配」完整链条是什么？三个环节各对应哪个内核机制？</p>
+<details>
+<summary>参考答案</summary>
+<p>① glibc 大块（≥128KB）走 <code class="c">mmap(MAP_PRIVATE|MAP_ANONYMOUS)</code>——只登记 VMA；② 读触发的缺页由零页满足（<code class="c">do_anonymous_page</code> 读路径）——RSS 不涨；③ 首写才分配清零实页（写路径）。overcommit 默认策略（heuristic）允许 VMA 总量超 RAM+swap，所以"申请成功"与"物理耗尽 OOM"可以相隔任意久。</p>
+</details>
       </section>
       <section class="section" id="s-49-8">
         <div class="sec-head"><div class="sec-no">49.8</div><h2>重新映射：mremap()</h2></div>
