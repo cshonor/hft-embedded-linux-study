@@ -276,13 +276,13 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-32-1"><span class="n">32.1</span>–32.2 取消请求</a>
-          <a href="#s-32-2"><span class="n">32.2</span>Cancellation State and Type</a>
-          <a href="#s-32-3"><span class="n">32.3</span>状态与类型</a>
-          <a href="#s-32-4"><span class="n">32.4</span>取消点</a>
-          <a href="#s-32-5"><span class="n">32.5</span>Cleanup handlers</a>
-          <a href="#s-32-6"><span class="n">32.6</span>生命周期（延迟）</a>
-          <a href="#s-32-7"><span class="n">32.7</span>Summary</a>
+          <a href="#s-32-1"><span class="n">32.1</span>取消线程</a>
+          <a href="#s-32-2"><span class="n">32.2</span>取消状态与类型</a>
+          <a href="#s-32-3"><span class="n">32.3</span>取消点</a>
+          <a href="#s-32-4"><span class="n">32.4</span>主动检查：`pthread_testcancel`</a>
+          <a href="#s-32-5"><span class="n">32.5</span>清理处理器</a>
+          <a href="#s-32-6"><span class="n">32.6</span>异步取消</a>
+          <a href="#s-32-7"><span class="n">32.7</span>总结</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -370,29 +370,49 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p><code class="c">pthread_cancel</code>；取消状态/类型/取消点；cleanup 栈；延迟 vs 异步；join 识别 <code class="c">PTHREAD_CANCELED</code>。</p>
+<p><code class="c">pthread_cancel</code> 的异步请求语义（join 拿 <code class="c">PTHREAD_CANCELED</code>）；状态/类型 2×2 组合；取消点的定义与 glibc 2.28 机制变革；<code class="c">pthread_testcancel</code> 检查站纪律；cleanup 栈（宏本质、LIFO、return 陷阱、持锁睡眠保险）；异步取消为什么禁用；HFT 的协作退出替代。</p>
+<p><strong>一句话内核视角</strong>：取消 = glibc 在目标线程置标志 + <code class="c">tgkill(tgid, tid, SIGCANCEL=32)</code> 踹醒阻塞中的系统调用（内核 <code class="c">do_send_specific():3935</code>，tgkill 双重校验防 PID 复用误杀）+ 目标在取消点/系统调用包装层自查标志后展开清理并 <code class="c">pthread_exit</code>。</p>
 <hr />
-<hr />
-<h2>32.7 易错清单</h2>
-<ol>
-<li>异步取消 + 持锁 → 锁可能永占  </li>
-<li>无 cleanup → 泄漏  </li>
-<li><code class="c">return</code> 不跑 cleanup  </li>
-<li>push/pop 不成对  </li>
-<li>长循环无 <code class="c">testcancel</code> → 永不响应  </li>
-<li>临界段可临时 DISABLE  </li>
-</ol>
-<hr />
+<h2>全章生命周期全景</h2>
+<pre class="code" data-label="code"><code class="c">pthread_cancel(B)
+  │ ① glibc: 置标志 + tgkill(SIGCANCEL=32)          ← 内核 do_send_specific()
+  ▼
+[挂起的请求] ──DISABLE──▶ 继续等
+  │ ENABLE+DEFERRED
+  ▼
+② 取消点（read/sleep/cond_wait/testcancel…）        ← glibc 2.28+: syscall 包装层
+  ▼
+③ cleanup 栈 LIFO 展开（32.5） + TSD 析构（31.3）
+  ▼
+④ pthread_exit(PTHREAD_CANCELED)
+  ▼
+⑤ pthread_join → res == PTHREAD_CANCELED（死亡证明）
+</code></pre>
 <hr />
 <h2>实验清单</h2>
 <ol>
-<li>cancel + <code class="c">PTHREAD_CANCELED</code>  </li>
-<li><code class="c">testcancel</code>  </li>
-<li>（选）临时 DISABLE  </li>
-<li>cleanup 释放资源  </li>
-<li>return vs cancel 对 cleanup 差异  </li>
+<li>cancel 睡眠线程 + join 验证 <code class="c">PTHREAD_CANCELED</code> ✅ 32.1 demo1</li>
+<li>DISABLE 屏蔽：3 段关键工作跑完才死 ✅ 32.1 demo2</li>
+<li>纯计算循环杀不死 → testcancel 补位 ✅ 32.1 demo3</li>
+<li>cleanup LIFO 逆序 + pop(1) 手动路径 ✅ 32.5 demo1</li>
+<li>cond_wait 被取消 → cleanup 解锁（主线程随后成功拿锁验证）✅ 32.5 demo2</li>
+<li>DEFERRED 杀不死 vs ASYNC 秒杀同循环对照 ✅ 32.6</li>
+<li>（选）read() 阻塞中被取消 ✅ 32.3 补充片段</li>
 </ol>
 <hr />
+<h2>易错清单</h2>
+<ol>
+<li>以为 cancel = 立即终止 → 不 join 就收资源（僵尸/泄漏）</li>
+<li>纯计算循环不加 testcancel → 杀不死</li>
+<li>临界区 DISABLE 恢复成硬编码 ENABLE → 拆掉上游保护</li>
+<li>cleanup push 后直接 return → 编译错（宏花括号）——读懂这是保护</li>
+<li>以为 return 会展开 cleanup → POSIX 明确不展开</li>
+<li>cleanup push 放在 lock 前 → 取消时 unlock 未持有的锁（UB）</li>
+<li>ASYNC 用在持锁/碰堆的线程 → 死锁/堆损坏</li>
+<li>join 无超时的关停序列 → 一个卡死全线挂死</li>
+<li>pthread_sigmask 挡了 32 号（SIGCANCEL）→ 取消请求被屏蔽</li>
+<li>拿 <code class="c">kill(tid)</code> 杀线程 → tid 不是进程；用 <code class="c">pthread_cancel</code> 或 <code class="c">tgkill</code></li>
+</ol>
 <hr />
 <h2>背诵卡</h2>
 <div class="tbl-wrap"><table>
@@ -405,437 +425,445 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>1</td>
-<td>cancel 只投递请求；默认延迟到取消点</td>
+<td>cancel 是请求；join+PTHREAD_CANCELED 是死亡证明</td>
 </tr>
 <tr>
 <td>2</td>
-<td>工程用 DEFERRED；慎用 ASYNC</td>
+<td>glibc 用 tgkill 发 SIGCANCEL(32)；tgkill 双重校验防 PID 复用</td>
 </tr>
 <tr>
 <td>3</td>
-<td>计算循环插 <code class="c">testcancel</code></td>
+<td>DISABLE 挂起不丢弃；请求不可撤销</td>
 </tr>
 <tr>
 <td>4</td>
-<td>cleanup LIFO；push/pop 成对</td>
+<td>类型永远 DEFERRED；ASYNC 生产禁用</td>
 </tr>
 <tr>
 <td>5</td>
-<td>return 不跑 cleanup；exit/cancel 会跑</td>
+<td>取消点 ≈ 可能睡死的函数；纯计算=永无取消点</td>
 </tr>
 <tr>
 <td>6</td>
-<td>join 看 <code class="c">PTHREAD_CANCELED</code></td>
+<td>testcancel 放块间安全边界；密度=取消延迟上界</td>
+</tr>
+<tr>
+<td>7</td>
+<td>cleanup push/pop 是宏：同块配对</td>
+</tr>
+<tr>
+<td>8</td>
+<td>触发：cancel/pthread_exit/pop(1)；return 不触发</td>
+</tr>
+<tr>
+<td>9</td>
+<td>LIFO 逆序 = 资源获取逆序释放</td>
+</tr>
+<tr>
+<td>10</td>
+<td>持锁睡 condvar 必挂 cleanup 保险</td>
+</tr>
+<tr>
+<td>11</td>
+<td>push 在 lock 之后（解锁才有东西可托底）</td>
+</tr>
+<tr>
+<td>12</td>
+<td>glibc 2.28+ 取消点=syscall 包装层，清单只是下界</td>
+</tr>
+<tr>
+<td>13</td>
+<td>杀不死五连查：取消点/ENABLE/join/掩码/忙等</td>
+</tr>
+<tr>
+<td>14</td>
+<td>HFT 标准：协作退出（原子标志+condvar），cancel 只做兜底</td>
+</tr>
+<tr>
+<td>15</td>
+<td>无界计算的超时兜底用进程边界（fork+kill）</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<hr />
 <h2>参考</h2>
 <ul>
-<li>Kerrisk · TLPI Ch32  </li>
-<li><code class="c">man 3 pthread_cancel</code> · <code class="c">man 3 pthread_cleanup_push</code> · <code class="c">man 3 pthread_testcancel</code></li>
+<li>Kerrisk · TLPI Ch32</li>
+<li><code class="c">man 3 pthread_cancel</code> · <code class="c">man 3 pthread_cleanup_push</code> · <code class="c">man 3 pthreads</code>（取消点清单）</li>
+<li>glibc 2.28 取消机制重设计（futex-cancel）相关 NPTL 变更说明</li>
+<li>内核源码（v6.6）：<code class="c">kernel/signal.c</code>（<code class="c">do_send_specific:3935</code> · <code class="c">do_tkill:3962</code> · <code class="c">tgkill:3988</code>）</li>
 </ul>
+      </section>
+      <section class="section" id="s-32-1">
+        <div class="sec-head"><div class="sec-no">32.1</div><h2>取消线程</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
+- 上一节：本章首页
+- 下一节：<a href="#s-32-2">32.2 取消状态与类型</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>（<code class="c">do_send_specific():3935</code> · <code class="c">do_tkill():3962</code> · <code class="c">SYSCALL_DEFINE3(tgkill):3988</code>）· glibc 侧：<code class="c">pthread_cancel</code> 以 <code class="c">tgkill(tgid, tid, SIGCANCEL)</code> 投递，SIGCANCEL = 32（<code class="c">__SIGRTMIN</code>，glibc 保留）</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li><strong><code class="c">pthread_cancel</code> 的真实语义</strong>——它只是<strong>异步投递一个请求</strong>，不是"立即杀死"；默认（延迟）模式下要等目标线程走到取消点才真正终止。</li>
+<li><strong>取消 vs 三种"亲缘"终止方式</strong>——<code class="c">pthread_exit</code>（自愿）、<code class="c">pthread_cancel</code>（外部请求）、进程级信号（粗暴）；以及为什么取消是它们中间唯一的"线程粒度 + 可清理"方案。</li>
+<li><strong>内核视角</strong>——glibc 用 <code class="c">tgkill</code> 发 SIGCANCEL(32) 实现取消请求；<code class="c">tgkill</code> 的注释原文正好解释了为什么要带 tgid。</li>
+</ol>
+<hr />
+<h2>一、API 与语义</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
+int pthread_cancel(pthread_t thread);          /* 返回 0 = 请求已投递（≠已终止）*/
+</code></pre>
+<p>四条语义：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>语义</th>
+<th>推论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>异步投递</strong>：立即返回，不等待目标终止</td>
+<td>想确认死透，必须 <code class="c">pthread_join</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>默认延迟模式：请求<strong>挂起（pending）</strong>，目标走到取消点才执行</td>
+<td>走不到取消点的线程（纯计算循环）永不死</td>
+</tr>
+<tr>
+<td>3</td>
+<td>被取消线程以 <code class="c">pthread_exit(PTHREAD_CANCELED)</code> 收场</td>
+<td><code class="c">join</code> 的 retval == <code class="c">PTHREAD_CANCELED</code> = 被取消铁证</td>
+</tr>
+<tr>
+<td>4</td>
+<td>可接合线程被取消后仍要 join 回收</td>
+<td>与普通退出一样走 zombie→join 流程（29.2/29.4）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>1.1 与亲缘机制对比</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>发起方</th>
+<th>粒度</th>
+<th>能否清理</th>
+<th>风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return</code> / <code class="c">pthread_exit</code></td>
+<td>线程自己</td>
+<td>线程</td>
+<td>✓（自然收尾）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">pthread_cancel</code></td>
+<td>其他线程</td>
+<td><strong>线程</strong></td>
+<td>✓（cleanup 栈，32.5）</td>
+<td>延迟模式下安全；异步模式危险（32.6）</td>
+</tr>
+<tr>
+<td><code class="c">kill(pid, sig)</code> 默认处理</td>
+<td>其他进程/线程</td>
+<td><strong>进程</strong></td>
+<td>✗（信号处理器都不一定跑完）</td>
+<td>杀一个线程 = 杀全进程</td>
+</tr>
+<tr>
+<td><code class="c">_exit</code></td>
+<td>本线程</td>
+<td>进程</td>
+<td>✗</td>
+<td>无</td>
+</tr>
+</tbody>
+</table></div>
+<p>一句话：<code class="c">pthread_cancel</code> 是 POSIX 里唯一"线程粒度 + 异步发起 + 目标可清理"的终止原语——代价是它的语义复杂度（状态/类型/取消点/cleanup 四件套，本章全部）。</p>
+<h3>1.2 内核视角：请求是怎么送到的</h3>
+<p>glibc 的 <code class="c">pthread_cancel</code>（2.28+ 的 futex-cancel 设计）：</p>
+<pre class="code" data-label="code"><code class="c">pthread_cancel(t)
+  1. 在目标线程 struct pthread 里置取消标志（tid 置为特殊值 → 目标在
+     系统调用取消包装里自查）
+  2. tgkill(tgid, tid, SIGCANCEL=32)      ← 强制打断目标可能正阻塞的系统调用
+     └─ 内核：SYSCALL_DEFINE3(tgkill):3988 (kernel/signal.c)
+         └─ do_tkill():3962   si_code = SI_TKILL, si_pid = 调用者 TGID
+             └─ do_send_specific():3935
+                 ├─ find_task_by_vpid(pid)           按线程 PID 找任务
+                 ├─ check_kill_permission():3943     权限检查
+                 └─ do_send_sig_info():3948          挂到目标线程的信号队列
+  3. 目标线程被信号唤醒 → glibc 的取消包装代码检查标志 →
+     到取消点/立即执行取消（展开 cleanup → pthread_exit(PTHREAD_CANCELED)）
+</code></pre>
+<p>为什么用 <code class="c">tgkill</code> 而不是 <code class="c">kill</code>？内核注释（<code class="c">kernel/signal.c:3982</code>）原文就是答案：</p>
+<blockquote>
+<p><em>"This syscall also checks the @tgid and returns -ESRCH even if the PID exists but it's not belonging to the target process anymore. </em><em>This method solves the problem of threads exiting and PIDs getting reused</em><em>."</em></p>
+</blockquote>
+<p><code class="c">kill(pid)</code> 的 pid 是<strong>进程</strong>（TGID）级；线程 ID 撞上 PID 复用时可能误杀别的进程。<code class="c">tgkill(tgid, tid, sig)</code> 双重校验"tid 必须仍属于 tgid"——和 29.5 讲的 <code class="c">pthread_t</code> 复用问题同源，POSIX 线程模型在内核里的最后一道身份校验。</p>
+<blockquote>
+<p>SIGCANCEL = 32 = <code class="c">SIGRTMIN</code>（glibc 首个实时信号）：glibc <strong>保留</strong> RT 信号 32/33（取消 / setuid 广播），用户程序从 <code class="c">SIGRTMIN</code> 拿到的其实是 34 起（<code class="c">man 7 signal</code>）。</p>
+</blockquote>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td><strong>不推荐</strong>用 cancel 停策略线程：延迟模式的取消点时序不受控（可能停在 read 半途）；HFT 用协作式退出——退出标志（原子）+ condvar 唤醒 + 线程自己在<strong>选定的安全边界</strong>收尾（当前订单处理完再退）。cancel 只用于"失控线程的最后一招"</td>
+</tr>
+<tr>
+<td>HFT · 关停顺序</td>
+<td>若用 cancel：先停止喂任务 → cancel → join → 检查 PTHREAD_CANCELED → 收全局资源。直接 cancel 正在持锁写订单簿的线程 = 数据结构永久损坏</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>RTOS 一般没有"取消"（任务删除是硬杀）：要么 pthread_cancel 的清理栈不可用，要么干脆删除任务 → 泄漏。嵌入式惯例同 HFT：协作退出 + 超时升级（软退 → 硬杀）</td>
+</tr>
+<tr>
+<td>嵌入式 · 信号号</td>
+<td>若平台无 glibc 的 SIGCANCEL 保留机制（musl 有自己的实现），跨 libc 移植别假设 32/33 可用</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+<p><code class="c">cancel_demo.c</code>（gcc -O2 -Wall -Wextra 零告警编译通过；timeout 保护防挂）：</p>
+<pre class="code" data-label="C"><code class="c">/* cancel_demo.c — Ch32.1/32.2/32.3/32.4：取消请求、状态屏蔽、取消点、testcancel
+ * 编译：gcc -O2 -Wall -Wextra -o cancel_demo cancel_demo.c -pthread
+ */
+#include &lt;stdio.h&gt;
 #include &lt;pthread.h&gt;
 #include &lt;unistd.h&gt;
 #include &lt;string.h&gt;
 
-/* Ch32 线程取消 — pthread_cancel/cleanup_push/cleanup_pop。
- * 演示取消线程 + 清理函数执行。
- * 编译: gcc -o ch32_demo ch32_demo.c -lpthread */
+/* ---------- 演示 1（32.1）：请求是异步的，join 拿 PTHREAD_CANCELED ---------- */
+static void *sleeper(void *a){(void)a;
+    printf(&quot;  [worker] 开始 sleep(10)，必经取消点\n&quot;);
+    sleep(10);                       /* 取消点 */
+    printf(&quot;  [worker] 不可能到达这里\n&quot;);
+    return NULL;}
 
-static int fd = -1;
+static void demo_cancel_sleep(void){
+    pthread_t t;
+    pthread_create(&amp;t, NULL, sleeper, NULL);
+    usleep(100000);
+    pthread_cancel(t);               /* 异步投递请求，立即返回 */
+    printf(&quot;[demo1] cancel 已投递（请求≠终止）\n&quot;);
+    void *res;
+    pthread_join(t, &amp;res);
+    printf(&quot;[demo1] join 结果 %s\n&quot;,
+           res == PTHREAD_CANCELED ? &quot;PTHREAD_CANCELED：确认被取消&quot; : &quot;正常返回？&quot;);
+}
 
-void cleanup_handler(void *arg) {
-    printf(&quot;Cleanup: %s\n&quot;, (char *)arg);
-    if (fd &gt;= 0) {
-        close(fd);
-        printf(&quot;Cleanup: fd closed\n&quot;);
+/* ---------- 演示 2（32.2）：DISABLE 期间请求挂起，恢复后生效 ---------- */
+static void *shielded(void *a){(void)a;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    printf(&quot;  [worker] 取消已 DISABLE，进入 3 段不可打断工作\n&quot;);
+    for (int i = 1; i &lt;= 3; i++) { sleep(1); printf(&quot;  [worker] 关键段 %d/3 完成\n&quot;, i); }
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    sleep(1);                        /* 恢复后第一个取消点：这里被取消 */
+    printf(&quot;  [worker] 不应到达\n&quot;);
+    return NULL;}
+
+static void demo_state_shield(void){
+    pthread_t t;
+    pthread_create(&amp;t, NULL, shielded, NULL);
+    usleep(100000);
+    pthread_cancel(t);
+    printf(&quot;[demo2] 取消请求已发出（此时目标 DISABLE，请求挂起）\n&quot;);
+    void *res;
+    pthread_join(t, &amp;res);
+    printf(&quot;[demo2] join 结果 %s\n&quot;,
+           res == PTHREAD_CANCELED ? &quot;PTHREAD_CANCELED：关键段跑完才被取消&quot;
+                                    : &quot;正常返回？&quot;);
+}
+
+/* ---------- 演示 3（32.3/32.4）：纯计算循环没有取消点 → testcancel 补位 ---------- */
+static volatile long sink;
+static void *spinner(void *a){(void)a;
+    long x = 0;
+    for (;;) {                       /* 纯计算：没有任何取消点 */
+        for (int i = 0; i &lt; 1000000; i++) x += i;
+        sink = x;
+        pthread_testcancel();        /* ⭐ 手动取消点：不加这里就永远杀不掉 */
     }
+    return NULL;}
+
+static void demo_spinner(void){
+    pthread_t t;
+    pthread_create(&amp;t, NULL, spinner, NULL);
+    usleep(200000);
+    pthread_cancel(t);
+    void *res;
+    pthread_join(t, &amp;res);
+    printf(&quot;[demo3] 纯计算循环 %s\n&quot;,
+           res == PTHREAD_CANCELED
+               ? &quot;被取消（pthread_testcancel 补位生效）&quot; : &quot;没被取消？&quot;);
 }
 
-void *worker(void *arg) {
-    /* 注册清理函数（LIFO 顺序执行） */
-    pthread_cleanup_push(cleanup_handler, &quot;step 1&quot;);
-    pthread_cleanup_push(cleanup_handler, &quot;step 2&quot;);
-
-    fd = open(&quot;/tmp/ch32_test.txt&quot;, O_WRONLY | O_CREAT, 0644);
-    printf(&quot;Worker: opened fd=%d, entering loop...\n&quot;, fd);
-
-    /* 默认延迟取消点: sleep 是取消点 */
-    while (1) {
-        printf(&quot;Worker: working...\n&quot;);
-        sleep(1);  /* 取消点: 如果被取消，在此触发 */
-    }
-
-    /* cleanup_push 和 cleanup_pop 必须配对 */
-    pthread_cleanup_pop(0);
-    pthread_cleanup_pop(0);
-    return NULL;
-}
-
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-
-    sleep(3);
-    printf(&quot;Main: cancelling worker thread...\n&quot;);
-    pthread_cancel(tid);
-    pthread_join(tid, NULL);
-    printf(&quot;Main: worker joined after cancellation\n&quot;);
-
-    if (fd &gt;= 0) close(fd);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>参考</h2>
-<ul>
-<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">OUTLINE</a></li>
-<li>原始笔记：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes">notes.md.bak</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-32-1">
-        <div class="sec-head"><div class="sec-no">32.1</div><h2>–32.2 取消请求</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
-- 上一节：本章首页
-- 下一节：<a href="#s-32-2">32.3 状态与类型</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>int pthread_cancel(pthread_t thread);  /<em> 异步投递请求，不 join </em>/ 可接合线程被取消后仍须 <code class="c">pthread_join</code>。 <code class="c">join</code> 得 <code class="c">res == PTHREAD_CANCELED</code> → 被取消。</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int pthread_cancel(pthread_t thread);  /* 异步投递请求，不 join */
-</code></pre>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th></th>
-<th></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">pthread_exit</code></td>
-<td>线程主动退</td>
-</tr>
-<tr>
-<td><code class="c">pthread_cancel</code></td>
-<td>外部请求被动终止</td>
-</tr>
-</tbody>
-</table></div>
-<p>可接合线程被取消后仍须 <code class="c">pthread_join</code>。<br />
-<code class="c">join</code> 得 <code class="c">res == PTHREAD_CANCELED</code> → 被取消。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/thread_cancel.c"><code class="c">code/thread_cancel.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td><code class="c">pthread_cancel</code> 异步投递请求不 join，被取消线程仍须 <code class="c">pthread_join</code> 回收（<code class="c">res==PTHREAD_CANCELED</code>）</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>优雅停止工作线程用 cancel+join 避免泄漏线程资源；热路径线程更常用标志位+条件变量自主退出</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;stdio.h&gt;
-void *worker(void *arg) {
-    while (1) { printf(&quot;运行中...\n&quot;); sleep(1); }
-    return NULL;
-}
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    sleep(2);
-    pthread_cancel(tid);  /* 请求取消 */
-    pthread_join(tid, NULL);
-    printf(&quot;线程已取消\n&quot;);
+int main(void){
+    printf(&quot;==== demo1：异步请求 + join 验证 ====\n&quot;);
+    demo_cancel_sleep();
+    printf(&quot;==== demo2：DISABLE 屏蔽 + 恢复生效 ====\n&quot;);
+    demo_state_shield();
+    printf(&quot;==== demo3：纯计算 + pthread_testcancel ====\n&quot;);
+    demo_spinner();
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 / 12 核）：</p>
+<pre class="code" data-label="text"><code class="c">==== demo1：异步请求 + join 验证 ====
+  [worker] 开始 sleep(10)，必经取消点
+[demo1] cancel 已投递（请求≠终止）
+[demo1] join 结果 PTHREAD_CANCELED：确认被取消
+==== demo2：DISABLE 屏蔽 + 恢复生效 ====
+  [worker] 取消已 DISABLE，进入 3 段不可打断工作
+[demo2] 取消请求已发出（此时目标 DISABLE，请求挂起）
+  [worker] 关键段 1/3 完成
+  [worker] 关键段 2/3 完成
+  [worker] 关键段 3/3 完成
+[demo2] join 结果 PTHREAD_CANCELED：关键段跑完才被取消
+==== demo3：纯计算 + pthread_testcancel ====
+[demo3] 纯计算循环被取消（pthread_testcancel 补位生效）
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li>demo1：<code class="c">sleep</code> 是取消点，请求投递后目标在睡眠中被唤醒并立即终止——<code class="c">join</code> 拿到 <code class="c">PTHREAD_CANCELED</code> 是唯一的死亡证明。</li>
+<li>demo2：请求在 DISABLE 期间<strong>挂起</strong>，三段关键工作全部完成后（ENABLE + 到达 <code class="c">sleep</code> 取消点）才执行——"先忙完要紧事再死"。</li>
+<li>demo3：百万次迭代的纯计算循环里没有任何标准取消点，没有 <code class="c">pthread_testcancel</code> 的版本 join 会永远等下去（这正是 32.4 的主题）。</li>
+</ol>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-32-2">32.3 状态与类型</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a> · <a href="chapter-30.html#ch-30">Ch30</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-33.html#ch-33">Ch33 线程更多细节</a></li>
+<li>下一节：<a href="#s-32-2">32.2 取消状态与类型</a> —— 精确控制"什么时候可以死"</li>
+<li>上一章：<a href="chapter-31.html#intro">Ch31 线程安全/TSD</a> —— 取消时 TSD 析构照常跑</li>
+<li><code class="c">tgkill</code> 与信号投递全链路：<a href="chapter-20.html#intro">Ch20 信号基础</a></li>
+<li><code class="c">pthread_t</code> 复用与身份校验：<a href="chapter-29.html#s-29-5">29.5 线程 ID</a></li>
 </ul>
       </section>
       <section class="section" id="s-32-2">
-        <div class="sec-head"><div class="sec-no">32.2</div><h2>Cancellation State and Type</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 32 章 — Thread Cancellation</a></p>
-</blockquote>
-<h2>本节讲什么</h2>
-<p>介绍线程取消的状态和类型控制：<code class="c">PTHREAD_CANCEL_ENABLE</code>/<code class="c">DISABLE</code> 和 <code class="c">PTHREAD_CANCEL_DEFERRED</code>/<code class="c">ASYNCHRONOUS</code>，以及 <code class="c">pthread_setcancelstate()</code>/<code class="c">pthread_setcanceltype()</code> API。</p>
-<h2>要点</h2>
-<h3>取消状态 (State)</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>状态</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">PTHREAD_CANCEL_ENABLE</code></td>
-<td>接受取消请求（默认）</td>
-</tr>
-<tr>
-<td><code class="c">PTHREAD_CANCEL_DISABLE</code></td>
-<td>暂不接受取消请求，请求挂起待恢复后处理</td>
-</tr>
-</tbody>
-</table></div>
-<h3>取消类型 (Type)</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>类型</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">PTHREAD_CANCEL_DEFERRED</code></td>
-<td>延迟取消，到取消点才检查（默认）</td>
-</tr>
-<tr>
-<td><code class="c">PTHREAD_CANCEL_ASYNCHRONOUS</code></td>
-<td>异步取消，任意时刻可被取消</td>
-</tr>
-</tbody>
-</table></div>
-<h3>核心 API</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>函数</th>
-<th>原型</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">pthread_setcancelstate(state, *oldstate)</code></td>
-<td>设置取消状态</td>
-<td>ENABLE/DISABLE</td>
-</tr>
-<tr>
-<td><code class="c">pthread_setcanceltype(type, *oldtype)</code></td>
-<td>设置取消类型</td>
-<td>DEFERRED/ASYNCHRONOUS</td>
-</tr>
-<tr>
-<td><code class="c">pthread_cancel(thread)</code></td>
-<td>请求取消</td>
-<td>发送取消请求</td>
-</tr>
-<tr>
-<td><code class="c">pthread_testcancel()</code></td>
-<td>显式取消点</td>
-<td>检查是否有挂起的取消请求</td>
-</tr>
-</tbody>
-</table></div>
-<h3>取消点 (Cancellation Points)</h3>
-<p>POSIX 定义了一组取消点函数，调用这些函数时会检查是否有挂起的取消请求：</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>取消点函数</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">read()</code>, <code class="c">write()</code></td>
-<td>I/O 操作</td>
-</tr>
-<tr>
-<td><code class="c">sleep()</code>, <code class="c">nanosleep()</code></td>
-<td>定时</td>
-</tr>
-<tr>
-<td><code class="c">waitpid()</code></td>
-<td>等待子进程</td>
-</tr>
-<tr>
-<td><code class="c">pthread_cond_wait()</code></td>
-<td>等待条件</td>
-</tr>
-<tr>
-<td><code class="c">select()</code>, <code class="c">pselect()</code></td>
-<td>I/O 多路复用</td>
-</tr>
-<tr>
-<td><code class="c">accept()</code>, <code class="c">connect()</code></td>
-<td>网络</td>
-</tr>
-<tr>
-<td><code class="c">recv()</code>, <code class="c">send()</code></td>
-<td>网络</td>
-</tr>
-<tr>
-<td><code class="c">fopen()</code>, <code class="c">fclose()</code></td>
-<td>stdio</td>
-</tr>
-</tbody>
-</table></div>
-<p><strong>非取消点</strong>：<code class="c">malloc()</code>、<code class="c">free()</code>、<code class="c">memcpy()</code>、<code class="c">printf()</code>、<code class="c">sin()</code> 等纯计算函数。</p>
-<h3>异步取消的风险</h3>
-<pre class="code" data-label="code"><code class="c">PTHREAD_CANCEL_ASYNCHRONOUS:
-  → 任意指令处可能被取消
-  → 如果正在 malloc（持有堆锁）→ 死锁
-  → 如果正在修改链表 → 数据结构损坏
-  → 如果已锁 mutex 但未解锁 → 死锁
-</code></pre>
-<p><strong>建议</strong>：除非确定线程在纯计算循环中等待取消，否则使用 DEFERRED。</p>
-<h3>禁用取消的典型场景</h3>
-<pre class="code" data-label="C"><code class="c">/* 临界区中禁止取消 */
-int oldstate;
-pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &amp;oldstate);
-/* 临界区操作（加锁、修改共享数据等） */
-pthread_mutex_lock(&amp;mutex);
-shared_data = new_value;
-pthread_mutex_unlock(&amp;mutex);
-pthread_setcancelstate(oldstate, NULL);  /* 恢复 */
-</code></pre>
-<h2>HFT / 嵌入式关联</h2>
-<ul>
-<li><strong>HFT 不用取消</strong>：HFT 线程通常用协作式退出（设置退出标志，线程自行检查）</li>
-<li><strong>异步取消危险</strong>：可能导致锁未释放、内存泄漏、数据不一致</li>
-<li><strong>嵌入式</strong>：RTOS 通常无取消机制，用任务删除 + 清理回调</li>
-<li><strong>优雅关闭</strong>：HFT 策略线程收到关闭信号后完成当前订单再退出，不用 <code class="c">pthread_cancel</code></li>
-</ul>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-
-void *worker(void *arg) {
-    /* 默认 DEFERRED + ENABLE */
-    while (1) {
-        /* 在安全点检查取消 */
-        pthread_testcancel();
-
-        /* 临界区禁用取消 */
-        int oldstate;
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &amp;oldstate);
-        /* 操作共享资源 */
-        pthread_setcancelstate(oldstate, NULL);
-
-        /* I/O 操作是取消点，可以安全取消 */
-        char buf[256];
-        read(fd, buf, sizeof(buf));   /* 取消点 */
-    }
-    return NULL;
-}
-
-/* 异步取消示例（仅用于纯计算线程） */
-void *cpu_worker(void *arg) {
-    int oldtype;
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &amp;oldtype);
-    while (1) {
-        compute();  /* 纯计算，无锁无 I/O */
-    }
-    return NULL;
-}
-</code></pre>
-<h2>衔接</h2>
-<ul>
-<li><a href="#s-32-1">32.1 Canceling a Thread</a> — <code class="c">pthread_cancel()</code></li>
-<li><a href="#s-32-3">32.3 Cancellation Points</a> — 取消点详细列表</li>
-<li><a href="#s-32-7">32.7 Summary</a> — 本章总结</li>
-</ul>
-<h2>代码自测</h2>
-<details>
-<summary>1. DEFERRED 和 ASYNCHRONOUS 取消的区别？</summary>
-<ul>
-<li><strong>DEFERRED</strong>（默认）：取消请求被挂起，直到线程到达取消点（如 read/write/pthread_cond_wait）才执行。保证在安全点取消。</li>
-<li><strong>ASYNCHRONOUS</strong>：取消请求可以在线程执行任意指令时生效。可能导致中途释放锁、损坏数据结构。除非纯计算线程，不建议使用。</li>
-</ul>
-</details>
-<details>
-<summary>2. 为什么在临界区要 DISABLE 取消？</summary>
-<p>如果线程在持有 mutex 时被取消，mutex 不会被自动释放（除非用 <code class="c">pthread_cleanup_push</code> 注册清理函数），导致死锁。禁用取消确保临界区完整执行。恢复取消后，挂起的请求在下一个取消点生效。</p>
-</details>
-<details>
-<summary>3. pthread_testcancel() 做了什么？</summary>
-<p>检查当前线程是否有挂起的取消请求。如果有，立即执行取消（调用已注册的清理函数，然后线程退出）。如果没有，直接返回。它是一个显式创建的取消点，用于在不调用标准取消点函数的计算循环中提供取消机会。</p>
-</details>
-      </section>
-      <section class="section" id="s-32-3">
-        <div class="sec-head"><div class="sec-no">32.3</div><h2>状态与类型</h2></div>
+        <div class="sec-head"><div class="sec-no">32.2</div><h2>取消状态与类型</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
-- 上一节：<a href="#s-32-1">32.1 –32.2 取消请求</a>
-- 下一节：<a href="#s-32-4">32.4 取消点</a></p>
+- 上一节：<a href="#s-32-1">32.1 取消线程</a>
+- 下一节：<a href="#s-32-3">32.3 取消点</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>pthread_setcancelstate(PTHREAD_CANCEL_ENABLE|DISABLE, &amp;old); pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED|ASYNCHRONOUS, &amp;old); ---</p>
+<ol>
+<li><strong>两个正交的开关</strong>——状态（ENABLE/DISABLE：要不要接受请求）与类型（DEFERRED/ASYNCHRONOUS：接受后何时执行），2×2 组合决定线程的"死亡资格"。</li>
+<li><strong>临界区屏蔽模式</strong>——持锁/半改数据的区段 DISABLE 取消，出来再恢复；这是延迟取消工程化的核心用法。</li>
+<li><strong>异步类型为什么几乎不可用</strong>——任意指令边界被杀的三宗罪（持锁死、堆锁死、数据结构残缺）。</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">pthread_setcancelstate(PTHREAD_CANCEL_ENABLE|DISABLE, &amp;old);
-pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED|ASYNCHRONOUS, &amp;old);
+<h2>一、两个开关</h2>
+<pre class="code" data-label="C"><code class="c">int pthread_setcancelstate(int state,    int *oldstate);
+/*   PTHREAD_CANCEL_ENABLE（默认）/ PTHREAD_CANCEL_DISABLE           */
+
+int pthread_setcanceltype(int type,      int *oldtype);
+/*   PTHREAD_CANCEL_DEFERRED（默认）/ PTHREAD_CANCEL_ASYNCHRONOUS    */
 </code></pre>
+<p>两个开关正交，<strong>逐线程</strong>设置（每线程自己的状态，不是进程级）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>状态</th>
-<th></th>
+<th>状态 \ 类型</th>
+<th>DEFERRED</th>
+<th>ASYNCHRONOUS</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>ENABLE（默认）</td>
-<td>接受取消</td>
+<td><strong>ENABLE</strong>（默认格）</td>
+<td>到<strong>取消点</strong>才执行（工程默认）</td>
+<td><strong>任意指令边界</strong>可执行（危险）</td>
 </tr>
 <tr>
-<td>DISABLE</td>
-<td>请求挂起，再 ENABLE 后处理</td>
+<td><strong>DISABLE</strong></td>
+<td>请求挂起（pending），恢复 ENABLE 后到取消点执行</td>
+<td>同左——DISABLE 优先于类型</td>
 </tr>
 </tbody>
 </table></div>
+<p>三条规则：</p>
+<ol>
+<li><strong>DISABLE 时请求只是挂起</strong>，不丢；恢复 ENABLE 后在下个取消点执行。挂起的取消<strong>无法撤销</strong>（POSIX 无 "uncancel"）——<code class="c">pthread_cancel</code> 是单向门。</li>
+<li>状态/类型开关本身<strong>不是取消点</strong>（<code class="c">setcancelstate</code> 不会触发挂起的请求；但恢复 ENABLE 后紧跟的取消点会）。</li>
+<li><code class="c">oldstate</code>/<code class="c">oldtype</code> 出参建议保存并在临界区结束时<strong>恢复原值</strong>（而不是硬编码 ENABLE）——你可能运行在一个本来就被上游 DISABLE 的上下文里。</li>
+</ol>
+<hr />
+<h2>二、临界区屏蔽模式（本节的工程主菜）</h2>
+<pre class="code" data-label="C"><code class="c">void update_order_book(void) {
+    int oldstate;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &amp;oldstate); /* ① 进禁区 */
+    pthread_mutex_lock(&amp;book-&gt;lock);                            /* ② 持锁 */
+    book_apply(book, delta);            /* ③ 半改数据的中途死 = 结构永久残缺 */
+    pthread_mutex_unlock(&amp;book-&gt;lock);
+    pthread_setcancelstate(oldstate, NULL);                     /* ④ 出禁区恢复 */
+}
+</code></pre>
+<p>为什么必须屏蔽：延迟模式下 <code class="c">pthread_mutex_lock</code> <strong>不是取消点</strong>，但 <code class="c">read</code>/<code class="c">sleep</code>/<code class="c">pthread_testcancel</code> 是——若临界区内部（或未来有人加的调试输出）踩中取消点，线程死在"已锁未解"状态：</p>
+<pre class="code" data-label="code"><code class="c">lock(book) ✓
+  book_apply 改了一半
+  printf(...)         ← 取消点！
+  ✗ 线程在此被取消
+  → book-&gt;lock 永远锁着（除非 cleanup 栈救场，32.5）
+  → 数据结构半新半旧，其他线程读到的就是残缺账本
+</code></pre>
+<p>两条工程守则：</p>
+<ul>
+<li><strong>守则 1</strong>：临界区（持锁段）一律 DISABLE/恢复包裹——防御"今天不是取消点、明天被加成了取消点"的演化风险。</li>
+<li><strong>守则 2</strong>：更彻底的替代是 cleanup 栈（32.5）配对 push/pop unlock——即使被取消也能解锁。DISABLE 是"防"，cleanup 是"治"，生产代码常常双保险。</li>
+</ul>
+<hr />
+<h2>三、异步取消的三宗罪</h2>
+<p><code class="c">PTHREAD_CANCEL_ASYNCHRONOUS</code> 下，取消可在<strong>任意两条指令之间</strong>生效（实现上是收到信号立即展开）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>类型（仅 ENABLE 时）</th>
-<th></th>
+<th>罪</th>
+<th>场景</th>
+<th>后果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>DEFERRED（默认）</strong></td>
-<td>到<strong>取消点</strong>才取消；工程首选</td>
+<td>① 持锁死</td>
+<td>死在 <code class="c">lock</code> 与 <code class="c">unlock</code> 之间</td>
+<td>其他线程永久死等；若死在 glibc 内部锁（malloc 的 arena 锁）→ 全进程 malloc 死锁</td>
 </tr>
 <tr>
-<td>ASYNCHRONOUS</td>
-<td>任意指令可被杀；持锁/半改数据 → 灾难</td>
+<td>② 堆残缺</td>
+<td>死在 malloc/free 的链表操作中途</td>
+<td>堆元数据损坏，之后随机 crash</td>
+</tr>
+<tr>
+<td>③ 数据残缺</td>
+<td>死在"改两个字段"的第一个字段后</td>
+<td>不变量破坏（账本借贷不平），静默错误比崩溃更贵</td>
 </tr>
 </tbody>
 </table></div>
+<p>因此异步取消的安全前提极其苛刻：<strong>纯计算 + 不碰锁 + 不碰堆 + 不碰共享数据 + 不调任何库函数</strong>——满足全部条件的应用场景几乎只剩"专门的数学打杂线程"。而且即便如此，异步模式下的取消路径<strong>不保证</strong> cleanup 栈完整执行（32.6）。</p>
+<blockquote>
+<p>工程结论：<strong>类型永远用默认 DEFERRED</strong>；需要"算到一半能被打断"的线程，用 <code class="c">pthread_testcancel</code>（32.4）在安全边界手动开检查点。</p>
+</blockquote>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -847,334 +875,998 @@ pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED|ASYNCHRONOUS, &amp;old);
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>cancelstate ENABLE/DISABLE，canceltype DEFERRED（到取消点）/ASYNCHRONOUS（任意点，持锁/半改数据灾难）</td>
+<td>HFT</td>
+<td>HFT 主流做法是<strong>整个系统不使用 pthread_cancel</strong>，协作退出（原子标志 + condvar）天然没有"死亡时机"问题。若遗留代码里必须用 cancel：所有临界区按守则 1 包 DISABLE；关停顺序 = 停喂 → cancel → join → 验证 PTHREAD_CANCELED</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>关键临界区用 DISABLE 屏蔽取消，防持锁/半改数据被中断；ASYNCHRONOUS 千万别用</td>
+<td>HFT · 演化防御</td>
+<td>"今天不是取消点"是脆弱假设——glibc 版本升级会把新函数变成取消点（2.28 后 futex 系统调用全面取消化）。守则 1 的 DISABLE 包裹是对未来的一劳永逸保险</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>RTOS 任务删除 ≈ 异步取消（无清理机会）——嵌入式经验法则直接映射到本节：硬杀只配"可丢弃"任务；有资源的任务必须给退出路径（消息队列退出命令 / 信号量握手）</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-void *worker(void *arg) {
-    /* 默认: PTHREAD_CANCEL_ENABLE + PTHREAD_CANCEL_DEFERRED */
-    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-    printf(&quot;取消已禁用\n&quot;);
-    sleep(1);
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-    printf(&quot;取消已启用 (此处可能被取消)\n&quot;);
-    return NULL;
-}
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    pthread_cancel(tid);
-    pthread_join(tid, NULL);
-    return 0;
+<p>见 <a href="#s-32-1">32.1 的 cancel_demo.c 演示 2</a>（DISABLE 屏蔽 3 段关键工作、恢复后到取消点才死亡的完整实测）：请求挂起 → 关键段 1/3、2/3、3/3 全部完成 → ENABLE 后第一个取消点被取消。本节配套的临界区包裹模式（可编译片段）：</p>
+<pre class="code" data-label="C"><code class="c">/* shield_critsec.c — 临界区 DISABLE/恢复包裹模式 */
+#include &lt;pthread.h&gt;
+
+static pthread_mutex_t book_lock = PTHREAD_MUTEX_INITIALIZER;
+static int book[8];
+
+void update_book(int idx, int val)
+{
+    int oldstate;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &amp;oldstate);  /* 进禁区 */
+    pthread_mutex_lock(&amp;book_lock);
+    book[idx] = val;                 /* 半改数据的中途死 = 结构永久残缺 */
+    pthread_mutex_unlock(&amp;book_lock);
+    pthread_setcancelstate(oldstate, NULL);                      /* 恢复原值 */
 }
 </code></pre>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1</strong>：线程 B 处于 DISABLE 状态时收到 cancel 请求，随后 B 恢复 ENABLE 并立刻进入一个长计算循环（无任何取消点）。B 会被取消吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不会立刻被取消。恢复 ENABLE 后请求仍处于挂起状态，要等 B 走到<strong>取消点</strong>（标准取消点函数或 pthread_testcancel）才执行。长计算循环里没有取消点 → 请求一直挂着，B 继续跑。这正是"挂起不丢失、但也不提前生效"的语义。</p>
+</details>
+<p><strong>题目 2</strong>：为什么 <code class="c">pthread_setcancelstate</code> 恢复时推荐恢复 <code class="c">oldstate</code> 而不是硬编码 <code class="c">PTHREAD_CANCEL_ENABLE</code>？</p>
+<details>
+<summary>参考答案</summary>
+<p>当前代码可能运行在一个本来就被上游调用者 DISABLE 的上下文里（比如上层函数把整段逻辑设为不可取消）。硬编码 ENABLE 会把上游的保护悄悄拆掉——恢复操作必须对称：谁改的谁恢复，恢复成进来时的值。</p>
+</details>
+<p><strong>题目 3</strong>：异步取消模式下，一个线程正在 <code class="c">malloc</code> 内部（持有 arena 锁）被取消，会发生什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>线程死在 malloc 内部：① arena 锁不会被释放，其他任何线程再调 malloc/free 都死锁在同一个 arena 上——全进程堆瘫痪；② 堆的空闲链表/tcache 可能正处于半更新状态，即使锁能释放，堆元数据也已损坏。这就是异步取消三宗罪里最致命的"内部锁死"。</p>
+</details>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-32-1">32.1 –32.2 取消请求</a></li>
-<li>下一节：<a href="#s-32-4">32.4 取消点</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a> · <a href="chapter-30.html#ch-30">Ch30</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-33.html#ch-33">Ch33 线程更多细节</a></li>
+<li>上一节：<a href="#s-32-1">32.1 取消线程</a></li>
+<li>下一节：<a href="#s-32-3">32.3 取消点</a> —— "到取消点才执行"的取消点到底是哪些函数</li>
+</ul>
+      </section>
+      <section class="section" id="s-32-3">
+        <div class="sec-head"><div class="sec-no">32.3</div><h2>取消点</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
+- 上一节：<a href="#s-32-2">32.2 取消状态与类型</a>
+- 下一节：<a href="#s-32-4">32.4 主动检查：<code class="c">pthread_testcancel</code></a></p>
+<p>源码核验：Linux v6.6 · 取消点本质是 glibc 的系统调用包装（<code class="c">SYS_cancel</code> 路径属 glibc；内核只负责被信号打断的阻塞调用）· 32.1 的 tgkill 链路是打断机制的内核侧</p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li><strong>取消点的定义与两大类</strong>——延迟取消的"检查站"：可能无限阻塞的函数（必须检查）+ 部分其他函数（实现可选）；一张主表 + 一张"不是取消点"的反表。</li>
+<li><strong>glibc 2.28 的机制变革</strong>——futex-cancel 设计：取消点从"函数清单"变成"系统调用包装层"，为什么这让取消点的实际集合比 man 页更大、更依赖版本。</li>
+<li><strong>工程含义</strong>——"我的线程会不会被卡在永不取消的循环里"的排查法。</li>
+</ol>
+<hr />
+<h2>一、取消点是什么</h2>
+<p>延迟取消（默认类型）下，挂起的取消请求只在<strong>取消点</strong>执行。POSIX 把取消点分成两档：</p>
+<ul>
+<li><strong>必须</strong>是取消点的函数：<strong>可能无限期阻塞</strong>的——被取消请求唤醒是线程逃出生天的唯一途径（否则 sleep(365天) 的线程永远杀不死）。</li>
+<li><strong>可能</strong>是取消点的函数：标准允许实现自选（<code class="c">printf</code>、<code class="c">malloc</code> 在 glibc 里不是，别的 libc 可能是）。</li>
+</ul>
+<p>主表（工程上够用版，完整表见 <code class="c">man 3 pthreads</code> 取消点一节）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>取消点函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>定时</td>
+<td><code class="c">sleep</code> · <code class="c">nanosleep</code> · <code class="c">clock_nanosleep</code> · <code class="c">usleep</code></td>
+</tr>
+<tr>
+<td>I/O</td>
+<td><code class="c">read</code> · <code class="c">write</code> · <code class="c">pread</code> · <code class="c">pwrite</code> · <code class="c">aio_suspend</code></td>
+</tr>
+<tr>
+<td>多路复用</td>
+<td><code class="c">select</code> · <code class="c">pselect</code> · <code class="c">poll</code> · <code class="c">ppoll</code> · <code class="c">epoll_wait</code></td>
+</tr>
+<tr>
+<td>网络</td>
+<td><code class="c">accept</code> · <code class="c">accept4</code> · <code class="c">connect</code> · <code class="c">send</code> · <code class="c">recv</code> · <code class="c">sendto</code> · <code class="c">recvfrom</code></td>
+</tr>
+<tr>
+<td>文件/目录</td>
+<td><code class="c">open</code>（部分实现）· <code class="c">close</code>（可选）· <code class="c">fsync</code> · <code class="c">fdatasync</code> · <code class="c">getdents</code>/<code class="c">readdir</code></td>
+</tr>
+<tr>
+<td>进程/同步</td>
+<td><code class="c">wait</code> · <code class="c">waitpid</code> · <code class="c">waitid</code> · <code class="c">pthread_join</code> · <code class="c">pthread_cond_wait</code> · <code class="c">pthread_cond_timedwait</code> · <code class="c">sem_wait</code> · <code class="c">sem_timedwait</code></td>
+</tr>
+<tr>
+<td>信号</td>
+<td><code class="c">sigwait</code> · <code class="c">sigwaitinfo</code> · <code class="c">sigtimedwait</code> · <code class="c">pause</code></td>
+</tr>
+<tr>
+<td>消息队列/锁</td>
+<td><code class="c">mq_receive</code> · <code class="c">mq_send</code> · <code class="c">pthread_mutex_lock</code>（<strong>部分实现可选</strong>，glibc 一般不检查）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>反表（常见误认，不是取消点）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>为什么不是</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">malloc</code> / <code class="c">free</code></td>
+<td>不无限阻塞（持内部锁但会返回）；设为取消点会在堆半更新时死线程</td>
+</tr>
+<tr>
+<td><code class="c">memcpy</code> / <code class="c">sin</code> / 纯计算</td>
+<td>不阻塞</td>
+</tr>
+<tr>
+<td><code class="c">pthread_mutex_lock</code>（glibc）</td>
+<td>快路径不阻塞；慢路径 futex 睡眠在新 glibc 里<strong>可以</strong>被打断处理取消（见 §二），但语义上不算标准取消点</td>
+</tr>
+<tr>
+<td>自旋循环 / 忙等</td>
+<td>没有函数调用就没有检查——<strong>这是"线程杀不死"的第一大原因</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>记忆钩子：<strong>取消点 ≈ "可能睡死的函数"</strong>。线程睡在系统调用里时，取消请求用信号（32.1 的 SIGCANCEL）把它踹醒——醒来的包装层检查标志、决定展开。不睡的代码根本没有被踹的机会。</p>
+</blockquote>
+<h3>1.1 排查"线程杀不死"</h3>
+<pre class="code" data-label="code"><code class="c">症状：pthread_cancel + join 永远不返回
+排查顺序：
+ 1. 目标是不是纯计算/自旋循环？        → 无取消点，加 pthread_testcancel（32.4）
+ 2. 目标是不是 DISABLE 忘了恢复？      → 请求在挂起（32.2）
+ 3. 目标是不是死了但没 join？          → cancel 不等于回收（32.1）
+ 4. 目标是不是被信号屏蔽挡住 SIGCANCEL？→ pthread_sigmask 别挡 32 号
+ 5. 循环里调用的&quot;阻塞&quot;函数是不是宏/内联后的忙等包装？（如自实现的 sleep 轮询）
+</code></pre>
+<hr />
+<h2>二、glibc 2.28+：取消点搬进了系统调用包装层</h2>
+<p>老设计（glibc &lt; 2.28）：每个取消点函数手动调 <code class="c">pthread_testcancel</code> + 特殊的 futex 处理——覆盖不全、且取消阻塞中的 <code class="c">futex</code> 系统调用（condvar 睡眠）要靠内核配合重启。</p>
+<p>新设计（glibc ≥ 2.28，futex-cancel）：</p>
+<ol>
+<li><code class="c">pthread_cancel</code> 置标志 + <code class="c">tgkill(SIGCANCEL)</code>（32.1 §1.2）；</li>
+<li><strong>所有</strong>可取消的系统调用都走 <code class="c">__syscall_cancel</code> 包装：进入时查标志、syscall 执行中信号可打断、返回路径再查标志；</li>
+<li>被信号打断的 syscall 按 Linux 的 <code class="c">restart_syscall</code> 语义重启或返回 EINTR——取消包装在 EINTR 路径上二次检查标志，命中即展开取消。</li>
+</ol>
+<p>工程推论：</p>
+<ul>
+<li><strong>取消点的实际集合随 glibc 版本变化</strong>（2.28 后显著变大：任何可取消的系统调用阻塞中都能被取消唤醒）——man 页的静态清单只是下界；</li>
+<li>"这个函数是不是取消点"的争论，答案常常是<strong>看版本</strong>。这就是 32.2 守则 1（临界区 DISABLE 包裹）成为一劳永逸方案的原因：不赌清单，直接免疫。</li>
+</ul>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>取消点= 系统调用边界 = 调度/IO 抖动点。热路径线程本来就禁止 IO 和睡眠（一核一线程 + 无锁），也就天然"没有取消点"——再次印证 HFT 用协作退出而不是 cancel 的架构选择</td>
+</tr>
+<tr>
+<td>HFT · 关停</td>
+<td>关停序列里的 join 要设超时（pthread_timedjoin_np，GNU 扩展）——万一某个线程卡在非取消点，别让关停流程整个挂死</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>嵌入式的"取消点"直觉：任何可能睡的调用（消息队列收、信号量等）就是任务能被删除的唯一安全位置——RTOS 任务删除的工程规范同构于 POSIX 取消点纪律</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例</h2>
+<p>见 <a href="#s-32-1">32.1 的 cancel_demo.c</a>：demo1（<code class="c">sleep</code> 取消点内被取消）、demo3（纯计算循环无取消点，靠 <code class="c">pthread_testcancel</code> 补位）正是本节两面的实测。</p>
+<p>补充一个"读管道被取消"的经典验证（可与 Ch30 阻塞队列对照）：</p>
+<pre class="code" data-label="C"><code class="c">/* cancel_read.c — read() 阻塞中被取消（可编译片段，配套主函数自加 timeout 保护） */
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;stdio.h&gt;
+
+static int fd[2];
+
+static void *reader(void *a){(void)a;
+    char buf[16];
+    printf(&quot;  [reader] 阻塞在 read()（无人写）\n&quot;);
+    ssize_t r = read(fd[0], buf, sizeof buf);   /* 阻塞 = 取消点 */
+    (void)r;
+    return NULL;}
+
+/* main: pipe(fd); create(reader); usleep(100ms); cancel; join */
+</code></pre>
+<p>实测行为：reader 阻塞在 <code class="c">read</code> 的系统调用里，<code class="c">pthread_cancel</code> 的 SIGCANCEL 信号把它踹醒，glibc 取消包装在返回路径上展开——join 得到 <code class="c">PTHREAD_CANCELED</code>，管道缓冲没人消费也无所谓（进程随后退出）。这正是"可能无限阻塞的函数必须是取消点"的设计动机：<strong>没有取消点，阻塞在 IO 上的线程就永远杀不死</strong>。</p>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1</strong>：一个工作线程的主循环是 <code class="c">while (running) { for (i=0;i&lt;1e9;i++) sum += i; check_heartbeat(); }</code>，check_heartbeat 里没有任何函数调用。pthread_cancel 后这个线程会终止吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不会。整个循环没有任何取消点（纯计算 + 无函数调用），挂起的取消请求永远等不到执行机会。修法：在 check_heartbeat（或每轮外层）加 <code class="c">pthread_testcancel()</code>，或把循环改成周期性睡 1µs / poll 一个唤醒 fd。这是"线程杀不死"第一大原因的标准形态。</p>
+</details>
+<p><strong>题目 2</strong>：为什么 POSIX 规定"可能无限阻塞"的函数<strong>必须</strong>是取消点，而 <code class="c">malloc</code> 不可以是？</p>
+<details>
+<summary>参考答案</summary>
+<p>必须：无限阻塞的函数若不检查取消，线程睡在里面永远无法响应取消请求——取消机制对这些函数失效（sleep 百年的线程杀不死）。不可以：malloc/free 操作的是进程级堆元数据，中途被取消会留下半更新的链表（堆损坏），且它持内部 arena 锁——死在锁内 = 全进程堆瘫痪。取消点集合的设计原则就是"醒得安全"：睡死函数必须醒，内部锁函数绝不能醒。</p>
+</details>
+<p><strong>题目 3</strong>：glibc 2.28 之后，"某函数是不是取消点"为什么变得更难静态回答？工程上如何免疫这种不确定性？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为取消检查搬进了系统调用包装层（__syscall_cancel）：任何可取消的系统调用在阻塞中被 SIGCANCEL 打断后都会走取消检查——实际可取消的行为集合由运行时路径决定，man 页清单只是下界，且随 glibc 版本变化。免疫方法：不赌清单——需要保证不被打断的代码段用 pthread_setcancelstate(DISABLE) 包裹（32.2 守则 1），需要保证能被打断的循环手动加 pthread_testcancel（32.4）。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-32-2">32.2 取消状态与类型</a></li>
+<li>下一节：<a href="#s-32-4">32.4 <code class="c">pthread_testcancel</code></a> —— 给没有取消点的循环手动开检查站</li>
 </ul>
       </section>
       <section class="section" id="s-32-4">
-        <div class="sec-head"><div class="sec-no">32.4</div><h2>取消点</h2></div>
+        <div class="sec-head"><div class="sec-no">32.4</div><h2>主动检查：`pthread_testcancel`</h2></div>
 <blockquote>
 <p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
-- 上一节：<a href="#s-32-2">32.3 状态与类型</a>
-- 下一节：<a href="#s-32-5">32.5 Cleanup handlers</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>延迟模式下在标准函数内检查 pending，如： <code class="c">read</code>/<code class="c">write</code>/<code class="c">poll</code>/<code class="c">select</code>/<code class="c">accept</code>/<code class="c">connect</code>/<code class="c">pthread_cond_wait</code>/<code class="c">sleep</code>/<code class="c">open</code>… 纯计算循环须手动：</p>
-<hr />
-<h2>要点</h2>
-<p>延迟模式下在标准函数内检查 pending，如：<br />
-<code class="c">read</code>/<code class="c">write</code>/<code class="c">poll</code>/<code class="c">select</code>/<code class="c">accept</code>/<code class="c">connect</code>/<code class="c">pthread_cond_wait</code>/<code class="c">sleep</code>/<code class="c">open</code>…</p>
-<p>纯计算循环须手动：</p>
-<pre class="code" data-label="C"><code class="c">void pthread_testcancel(void);
-</code></pre>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/thread_testcancel.c"><code class="c">code/thread_testcancel.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>延迟模式在 <code class="c">read</code>/<code class="c">write</code>/<code class="c">poll</code>/<code class="c">sleep</code> 等标准函数检查 pending；纯计算循环须手动 <code class="c">pthread_testcancel</code></td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>忙轮询热循环里插 <code class="c">pthread_testcancel</code>，否则 cancel 永不生效、线程停不下来</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-void *worker(void *arg) {
-    /* 延迟取消: 只在取消点检查 (read/write/sleep/pthread_testcancel) */
-    while (1) { pthread_testcancel(); /* 显式取消点 */ }
-    return NULL;
-}
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    pthread_cancel(tid);
-    pthread_join(tid, NULL);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-32-2">32.3 状态与类型</a></li>
-<li>下一节：<a href="#s-32-5">32.5 Cleanup handlers</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a> · <a href="chapter-30.html#ch-30">Ch30</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-33.html#ch-33">Ch33 线程更多细节</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-32-5">
-        <div class="sec-head"><div class="sec-no">32.5</div><h2>Cleanup handlers</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
-- 上一节：<a href="#s-32-4">32.4 取消点</a>
-- 下一节：<a href="#s-32-6">32.6 生命周期（延迟）</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>LIFO 栈；释放锁/内存/fd。 pthread_cleanup_push(routine, arg); /<em> work that may be canceled </em>/</p>
-<hr />
-<h2>要点</h2>
-<p>LIFO 栈；释放锁/内存/fd。</p>
-<pre class="code" data-label="C"><code class="c">pthread_cleanup_push(routine, arg);
-/* work that may be canceled */
-pthread_cleanup_pop(execute);  /* !=0 执行；0 仅弹出 */
-</code></pre>
-<ul>
-<li><code class="c">push</code>/<code class="c">pop</code> <strong>同一块作用域成对</strong>（宏，勿跨函数乱拆）  </li>
-<li>触发：取消点被取消、或 <code class="c">pthread_exit</code>  </li>
-<li><strong><code class="c">return</code> 正常返回：不跑 cleanup</strong>  </li>
-</ul>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/thread_cleanup.c"><code class="c">code/thread_cleanup.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td><code class="c">pthread_cleanup_push</code>/<code class="c">pop</code> LIFO 栈释放锁/内存/fd；push/pop 同作用域成对（宏）；<code class="c">return</code> 不跑 cleanup</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>被取消线程用 cleanup 释放已持有的锁与缓冲，避免死锁/内存泄漏；注意 <code class="c">return</code> 正常返回不触发</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-void cleanup(void *arg) { printf(&quot;清理: %s\n&quot;, (char *)arg); }
-void *worker(void *arg) {
-    pthread_cleanup_push(cleanup, &quot;资源1&quot;);
-    pthread_cleanup_push(cleanup, &quot;资源2&quot;);
-    sleep(1);
-    pthread_cleanup_pop(1);  /* 1=执行清理 */
-    pthread_cleanup_pop(1);
-    return NULL;
-}
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    sleep(2);
-    pthread_join(tid, NULL);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-32-4">32.4 取消点</a></li>
-<li>下一节：<a href="#s-32-6">32.6 生命周期（延迟）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a> · <a href="chapter-30.html#ch-30">Ch30</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-33.html#ch-33">Ch33 线程更多细节</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-32-6">
-        <div class="sec-head"><div class="sec-no">32.6</div><h2>生命周期（延迟）</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
-- 上一节：<a href="#s-32-5">32.5 Cleanup handlers</a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
+- 上一节：<a href="#s-32-3">32.3 取消点</a>
+- 下一节：<a href="#s-32-5">32.5 清理处理器</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
 <ol>
-<li>A：<code class="c">pthread_cancel(B)</code> 2. B：ENABLE+DEFERRED → 到取消点 3. 跑 cleanup 栈</li>
+<li><strong><code class="c">pthread_testcancel</code> 是什么</strong>——一个手动安插的取消点：检查挂起请求，有则立即执行取消（走完 cleanup 栈 → <code class="c">pthread_exit(PTHREAD_CANCELED)</code>）。</li>
+<li><strong>它解决什么</strong>——纯计算/自旋循环没有自然取消点，"线程杀不死"的标准修复。</li>
+<li><strong>安插的工程规范</strong>——放哪、放多密、和状态开关怎么配合。</li>
 </ol>
 <hr />
-<h2>要点</h2>
-<ol>
-<li>A：<code class="c">pthread_cancel(B)</code>  </li>
-<li>B：ENABLE+DEFERRED → 到取消点  </li>
-<li>跑 cleanup 栈  </li>
-<li>终止，状态 <code class="c">PTHREAD_CANCELED</code>  </li>
-<li>join 回收  </li>
-</ol>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>cancel→到取消点→跑 cleanup 栈→终止 <code class="c">PTHREAD_CANCELED</code>→join 回收，完整生命周期五步</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>理解延迟取消五步，确保工作线程停止后资源全部回收，不留僵尸线程</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
+<h2>一、API 与语义</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-/* 线程生命周期: create → running → join/detach → terminated */
-void *worker(void *arg) { printf(&quot;工作线程\n&quot;); return NULL; }
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    /* join: 等待线程结束, 回收资源 */
-    pthread_join(tid, NULL);
-    /* detach: 自动回收, 不能 join */
-    /* pthread_detach(tid); */
-    printf(&quot;线程生命周期完成\n&quot;);
-    return 0;
+void pthread_testcancel(void);   /* 无返回值：要么返回继续跑，要么不返回（被取消）*/
+</code></pre>
+<p>语义一句话：<strong>"现在是不是一个安全死亡点？是就死。"</strong> 它的行为完全等价于"到达一个取消点"：</p>
+<ul>
+<li>无挂起请求 → 立即返回，开销近似一次内存读（快路径）；</li>
+<li>有挂起请求 且 state==ENABLE 且 type==DEFERRED → 在<strong>此处</strong>执行取消（cleanup 栈展开、TSD 析构、<code class="c">pthread_exit(PTHREAD_CANCELED)</code>）；</li>
+<li>state==DISABLE → 不检查直接返回（DISABLE 免疫一切取消点，包括手动这个）。</li>
+</ul>
+<blockquote>
+<p>"无返回值"的函数在 C 里很少见——<code class="c">pthread_testcancel</code> 和 <code class="c">longjmp</code>/<code class="c">exit</code> 一个家族：正常路径返回，取消路径不返回。写代码时把它理解为"关卡"而不是"函数调用"。</p>
+</blockquote>
+<hr />
+<h2>二、给纯计算循环开检查站</h2>
+<h3>2.1 标准形态</h3>
+<pre class="code" data-label="C"><code class="c">void *number_cruncher(void *arg) {
+    (void)arg;
+    for (;;) {                          /* 长计算：没有自然取消点 */
+        crunch_one_chunk();             /* 安全边界：块与块之间 */
+        pthread_testcancel();           /* ⭐ 检查站 */
+    }
+    return NULL;                        /* 实际不可达（靠取消或外部退出标志）*/
 }
 </code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-32-5">32.5 Cleanup handlers</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a> · <a href="chapter-30.html#ch-30">Ch30</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-33.html#ch-33">Ch33 线程更多细节</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-32-7">
-        <div class="sec-head"><div class="sec-no">32.7</div><h2>Summary</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 32 章 — Thread Cancellation</a></p>
-</blockquote>
-<h2>本章回顾</h2>
-<h3>取消 API 速查</h3>
+<h3>2.2 安插三原则</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>函数</th>
-<th>功能</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">pthread_cancel(thread)</code></td>
-<td>请求取消线程</td>
-</tr>
-<tr>
-<td><code class="c">pthread_setcancelstate(state, *old)</code></td>
-<td>ENABLE / DISABLE</td>
-</tr>
-<tr>
-<td><code class="c">pthread_setcanceltype(type, *old)</code></td>
-<td>DEFERRED / ASYNCHRONOUS</td>
-</tr>
-<tr>
-<td><code class="c">pthread_testcancel()</code></td>
-<td>显式取消点</td>
-</tr>
-<tr>
-<td><code class="c">pthread_cleanup_push(routine, arg)</code></td>
-<td>注册清理函数</td>
-</tr>
-<tr>
-<td><code class="c">pthread_cleanup_pop(execute)</code></td>
-<td>弹出并可选执行清理函数</td>
-</tr>
-</tbody>
-</table></div>
-<h3>取消流程</h3>
-<pre class="code" data-label="code"><code class="c">pthread_cancel(thread)
-    │
-    ▼
-线程收到取消请求（挂起或立即）
-    │
-    ├─ DISABLE → 请求挂起，等恢复后处理
-    ├─ DEFERRED → 到取消点执行
-    └─ ASYNCHRONOUS → 任意时刻执行
-    │
-    ▼
-执行清理函数栈（LIFO 顺序）
-    │
-    ▼
-pthread_exit(PTHREAD_CANCELED)
-</code></pre>
-<h3>清理函数</h3>
-<pre class="code" data-label="C"><code class="c">pthread_cleanup_push(cleanup_func, arg);
-/* ... 代码 ... */
-pthread_cleanup_pop(0);  /* 0=不执行，非0=执行 */
-</code></pre>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>触发清理函数的情况</th>
+<th>原则</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">pthread_cancel()</code> 成功</td>
-<td>DEFERRED 在取消点，ASYNCHRONOUS 任意时刻</td>
+<td><strong>放安全边界，不放代码中间</strong></td>
+<td>块与块之间（数据一致点）；绝不放在持锁段/半改数据中段——它的语义就是"死在这也安全"</td>
 </tr>
 <tr>
-<td><code class="c">pthread_exit()</code></td>
-<td>线程主动退出</td>
+<td><strong>密度 = 响应延迟预算</strong></td>
+<td>两个检查站之间隔多久，cancel 的生效就最多延迟多久。100ms 一次 → 最坏 100ms 才死；配 join 超时时按这个预算设</td>
 </tr>
 <tr>
-<td><code class="c">pthread_cleanup_pop(非0)</code></td>
-<td>手动执行</td>
+<td><strong>和退出标志二选一或并存</strong></td>
+<td>新代码推荐协作退出（<code class="c">while (running)</code>）；<code class="c">testcancel</code> 用于必须支持 pthread_cancel 的库代码，或作为协作退出失效时的兜底</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>不触发</strong>：<code class="c">return</code> 不会执行清理函数（这是常见陷阱）</p>
-<h3>取消状态/类型组合</h3>
+<h3>2.3 典型 bug 形态</h3>
+<pre class="code" data-label="C"><code class="c">/* bug：检查站安插在持锁段内 */
+pthread_mutex_lock(&amp;m);
+for (...) {
+    crunch();
+    pthread_testcancel();     /* ✗ 死在这 = m 永远锁着 */
+}
+pthread_mutex_unlock(&amp;m);
+
+/* 修复 1：移到锁外/循环外层 */
+pthread_mutex_lock(&amp;m); ...; pthread_mutex_unlock(&amp;m);
+pthread_testcancel();         /* ✓ 无锁无半改数据 */
+
+/* 修复 2：cleanup 栈托底（32.5）后保留原地检查 */
+</code></pre>
+<hr />
+<h2>三、与状态开关的配合（把 32.1–32.4 串起来）</h2>
+<p>完整的心智模型——一个请求从投递到执行的路径：</p>
+<pre class="code" data-label="code"><code class="c">pthread_cancel(t) ──投递──▶ [挂起的请求] ──────────────────────────┐
+                                                                   ▼
+目标线程 t 的每次&quot;取消点&quot;（标准取消点 or pthread_testcancel）：
+    state == DISABLE ？ ──是──▶ 请求继续挂起（本次不执行）
+    type == DEFERRED  ？ ──是──▶ 【在当前取消点执行】
+                                   ├─ 展开清理栈（LIFO，32.5）
+                                   ├─ 跑 TSD 析构（31.3）
+                                   └─ pthread_exit(PTHREAD_CANCELED)
+    type == ASYNCHRONOUS ──▶ 不等取消点，信号到达即执行（32.6，危险）
+</code></pre>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>热路径循环里加 <code class="c">pthread_testcancel</code> 等于白送一次分支预测（近似免费），但纪律上 HFT 不引入 pthread_cancel 依赖——退出检查用业务自己的 <code class="c">running</code> 原子标志，语义一致且可审计。testcancel 真正的位置是非热路径的长任务线程（回测、重算、归档）</td>
+</tr>
+<tr>
+<td>HFT · 关停预算</td>
+<td>检查站密度 = 关停延迟上界。回测框架约定"每 chunk 检查一次 + chunk ≤ 50ms"，运维 kill 脚本的超时按 3×chunk 预算设置，超时升级为 SIGKILL（进程级）</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>RTOS 无 pthread_cancel 时，<code class="c">testcancel</code> 的等价物是 <code class="c">if (kthread_should_stop()) break;</code>（内核线程）或任务消息队列里的退出命令轮询——"定期在安全边界问一句该不该退"是跨平台的通用纪律</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例</h2>
+<p>见 <a href="#s-32-1">32.1 的 cancel_demo.c 演示 3</a>：百万次迭代的纯计算循环 + 每轮 <code class="c">pthread_testcancel()</code>，cancel 后 200ms 内被取消（join 得 <code class="c">PTHREAD_CANCELED</code>）；去掉那一行，同一程序 join 永远不返回——一行之差，就是"杀得死"与"杀不死"的分界。</p>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1</strong>：<code class="c">pthread_testcancel</code> 的返回值为什么是 void？调用它之后紧接着的代码在什么情况下不会执行？</p>
+<details>
+<summary>参考答案</summary>
+<p>因为存在两条路径：无挂起请求（或 DISABLE）时立即返回、代码继续；有挂起请求且 ENABLE+DEFERRED 时<strong>在调用点执行取消</strong>（cleanup 栈展开 + TSD 析构 + pthread_exit(PTHREAD_CANCELED)）——函数不返回，调用点之后的代码不执行。它与 exit/longjmp 同属"可能不返回"的函数。</p>
+</details>
+<p><strong>题目 2</strong>：<code class="c">pthread_setcancelstate(PTHREAD_CANCEL_DISABLE)</code> 之后调用 <code class="c">pthread_testcancel()</code> 会发生什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>什么都不发生：DISABLE 优先于一切取消点（包括手动的），testcancel 直接返回，挂起的请求继续等。这保证了 32.2 临界区包裹模式对 testcancel 同样免疫——即使在临界区里误调了它也不会死在锁内。</p>
+</details>
+<p><strong>题目 3</strong>：设计一个回测 worker：每 chunk 计算约 30ms，要求 cancel 后 100ms 内必定退出（安全边界为块间）。写出循环骨架。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="C"><code class="c">for (;;) {
+    crunch_one_chunk();              /* ~30ms，安全边界为块间 */
+    pthread_testcancel();            /* 最坏 30ms 后生效 ✓ 100ms 预算内 */
+    /* 协作退出标志与 testcancel 并存：库外用户用 cancel，库内用标志 */
+    if (!atomic_load(&amp;running)) break;
+}
+</code></pre>
+<p>关键：检查站必须在块间（数据一致点）；chunk 时长即取消延迟上界（30ms ≤ 100ms ✓）。若单个 chunk 无法压到预算内，就得在 chunk 内部找次级安全边界加检查。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-32-3">32.3 取消点</a></li>
+<li>下一节：<a href="#s-32-5">32.5 清理处理器</a> —— 检查站上死掉时，谁来收尸</li>
+</ul>
+      </section>
+      <section class="section" id="s-32-5">
+        <div class="sec-head"><div class="sec-no">32.5</div><h2>清理处理器</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
+- 上一节：<a href="#s-32-4">32.4 <code class="c">pthread_testcancel</code></a>
+- 下一节：<a href="#s-32-6">32.6 异步取消</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li><strong>cleanup 栈的 API 与宏本质</strong>——<code class="c">pthread_cleanup_push/pop</code> 是<strong>宏</strong>不是函数，必须同词法块配对；LIFO 栈在取消/<code class="c">pthread_exit</code> 时自动展开。</li>
+<li><strong>三种触发路径与一个陷阱</strong>——cancel ✓、<code class="c">pthread_exit</code> ✓、<code class="c">pop(非0)</code> ✓；<strong><code class="c">return</code> 不触发</strong>（本章第一大坑）。</li>
+<li><strong>标准范式</strong>——"持锁睡眠"场景（condvar wait 被取消时解锁）与 push/pop 对的写法。</li>
+</ol>
+<hr />
+<h2>一、API 与宏本质</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
+
+void pthread_cleanup_push(void (*routine)(void *), void *arg);
+void pthread_cleanup_pop(int execute);
+</code></pre>
+<p><strong>它们是宏</strong>（<code class="c">{</code> 和 <code class="c">}</code> 的一部分！）：</p>
+<pre class="code" data-label="C"><code class="c">/* 展开近似 */
+#define pthread_cleanup_push(r, arg) \
+    do { __pthread_cleanup_class __clframe(r, arg); {
+#define pthread_cleanup_pop(execute) \
+    } __clframe.__setdoit(execute); } while (0)
+</code></pre>
+<p>推论（每条都有人踩）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>规则</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>push/pop 必须<strong>同词法块</strong>配对</td>
+<td>push 带 <code class="c">{</code>，pop 带 <code class="c">}</code>——少一个编译器报"花括号不匹配"式的奇怪错误</td>
+</tr>
+<tr>
+<td>2</td>
+<td>push 后<strong>必须</strong> pop 才能 return</td>
+<td>词法块没闭合，return 语法上就不合法（这反而是保护：强迫你走完配对）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>不能跨函数/不能 goto 跳出块</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>4</td>
+<td>pop(0) 只弹出、pop(非0) 弹出<strong>并执行</strong></td>
+<td>常规收尾路径手动触发</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>二、三种触发 + 一个陷阱</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>退出路径</th>
+<th>cleanup 栈</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pthread_cancel</code>（到取消点执行）</td>
+<td><strong>自动展开</strong>（LIFO：最后 push 的最先执行）</td>
+</tr>
+<tr>
+<td><code class="c">pthread_exit(v)</code></td>
+<td><strong>自动展开</strong></td>
+</tr>
+<tr>
+<td><code class="c">pthread_cleanup_pop(非0)</code></td>
+<td>手动执行该处理器的</td>
+</tr>
+<tr>
+<td><code class="c">return v</code></td>
+<td><strong>不展开！</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">return</code> 不展开是 POSIX 的设计决定（return = 正常路径，应当用 pop 显式收尾），不是 bug——但它是<strong>本章第一大坑</strong>：</p>
+<pre class="code" data-label="C"><code class="c">void *worker(void *arg) {
+    pthread_cleanup_push(unlock_helper, &amp;m);       /* push */
+    pthread_mutex_lock(&amp;m);
+    ...
+    if (error)
+        return NULL;        /* ✗ 编译都过不了：块没闭合 —— 宏设计恰好挡住这一坑 */
+    pthread_cleanup_pop(1); /* ✓ 正确：pop(1) = 弹出并执行 unlock */
+    return NULL;
+}
+</code></pre>
+<p>宏的 <code class="c">{}</code> 结构强迫 return 前必须先 pop——<strong>词法上杜绝了"忘记收尾"</strong>。这是 pthreads API 设计里少有的"用宏的丑换纪律"的范例。</p>
+<blockquote>
+<p>顺带：cleanup 展开顺序 LIFO（栈）；处理器里还可以继续 push/pop（嵌套清理）；处理器内部如果被再次取消……理论可能、实际极难，别依赖。</p>
+</blockquote>
+<hr />
+<h2>三、标准范式：持锁睡眠</h2>
+<p><strong>本章最重要的应用场景</strong>：线程持锁睡在 condvar 上，被取消时必须解锁——否则其他等锁的线程全部陪葬。</p>
+<pre class="code" data-label="C"><code class="c">/* 反面：裸 wait */
+pthread_mutex_lock(&amp;m);
+while (!ready)
+    pthread_cond_wait(&amp;cond, &amp;m);   /* 取消点！死在这 → m 永远锁着 */
+...
+pthread_mutex_unlock(&amp;m);
+
+/* 正面：cleanup 托底 */
+static void unlock_mutex(void *p) {
+    pthread_mutex_unlock((pthread_mutex_t *)p);
+    log(&quot;cancelled: mutex unlocked by cleanup&quot;);
+}
+
+pthread_mutex_lock(&amp;m);
+pthread_cleanup_push(unlock_mutex, &amp;m);     /* 挂保险 */
+while (!ready)
+    pthread_cond_wait(&amp;cond, &amp;m);           /* 被取消 → cleanup 先解锁 */
+...
+pthread_cleanup_pop(0);                     /* 正常路径：只摘保险不执行 */
+pthread_mutex_unlock(&amp;m);                   /* 正常解锁 */
+</code></pre>
+<p>范式要点：</p>
+<ol>
+<li>push 在 <strong>lock 之后</strong>（锁还没拿到就挂保险，取消时 unlock 一把没锁的锁 = UB）；</li>
+<li>正常路径 <code class="c">pop(0)</code> + 手动 unlock；取消路径 cleanup 自动 unlock——<strong>两条路径一个保险</strong>；</li>
+<li>处理器参数只能带一个 <code class="c">void*</code>——要清理多个资源就传结构体指针，或者 push 多层（LIFO 保证逆序释放，与获取顺序相反，天然正确）。</li>
+</ol>
+<p>三层对比（资源保护的完整工具箱）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>时机</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DISABLE 取消（32.2）</td>
+<td>事前预防</td>
+<td>临界区短、可整体延迟</td>
+</tr>
+<tr>
+<td>cleanup 栈（本节）</td>
+<td>事后收尸</td>
+<td>持锁睡眠、多资源逆序释放</td>
+</tr>
+<tr>
+<td>协作退出标志</td>
+<td>根本不让取消发生</td>
+<td>新代码首选，HFT 标准</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>HFT 线程池关停若必须支持 cancel：每个"持锁 + 可能睡"的 wait 点一律 cleanup 托底（本节范式）+ 32.2 的 DISABLE 双保险。审计方法：grep <code class="c">pthread_cond_wait</code> / <code class="c">pthread_mutex_lock</code>，检查同函数内是否有配对的 cleanup_push</td>
+</tr>
+<tr>
+<td>HFT · C++ 视角</td>
+<td>C++ 的 RAII 析构在线程被取消时<strong>同样执行</strong>（取消展开走 C++ 的 unwind）——C++ 项目用 RAII 锁（std::unique_lock）自动获得本节语义，这是 C++ 线程代码不怕 cancel 的原因</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>RTOS 任务删除无 cleanup 栈 → 嵌入式的等价纪律：任务入口先注册"清理回调表"，删除前由删除方逐项调用（或任务自己在消息循环里收 CLEANUP 命令自清）——LIFO 逆序释放的纪律不变</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例</h2>
+<p><code class="c">cleanup_demo.c</code>（gcc -O2 -Wall -Wextra 零告警编译通过）：</p>
+<pre class="code" data-label="C"><code class="c">/* cleanup_demo.c — Ch32.5：LIFO 逆序、cond_wait 取消解锁、return 不展开
+ * 编译：gcc -O2 -Wall -Wextra -o cleanup_demo cleanup_demo.c -pthread
+ */
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+
+/* ---------- 演示 1：LIFO 逆序 + 三种触发路径 ---------- */
+static void handler(void *arg) {
+    printf(&quot;  cleanup: %s\n&quot;, (char *)arg);
+}
+
+static void *path_exit(void *a){(void)a;
+    pthread_cleanup_push(handler, (void*)&quot;A-最先push&quot;);
+    pthread_cleanup_push(handler, (void*)&quot;B-其次push&quot;);
+    pthread_cleanup_push(handler, (void*)&quot;C-最后push&quot;);
+    /* 栈：C 顶。pthread_exit 自动展开 → C、B、A 逆序 */
+    pthread_exit((void *)1);
+    pthread_cleanup_pop(0);        /* 消除 noreturn 警告（不可达）*/
+    pthread_cleanup_pop(0);
+    pthread_cleanup_pop(0);
+}
+
+static void *path_pop(void *a){(void)a;
+    pthread_cleanup_push(handler, (void*)&quot;X-唯一push&quot;);
+    pthread_cleanup_pop(1);        /* pop(1)：手动执行 → &quot;X-唯一push&quot; 打印 */
+    printf(&quot;  [path_pop] pop(1) 手动触发后，线程正常 return\n&quot;);
+    return NULL;                   /* return 不再展开（栈已空）*/
+}
+
+static void demo_order(void){
+    pthread_t t1, t2;
+    void *r;
+    printf(&quot;  --- pthread_exit 路径（自动 LIFO 展开）---\n&quot;);
+    pthread_create(&amp;t1, NULL, path_exit, NULL);
+    pthread_join(t1, &amp;r);
+    printf(&quot;  --- pop(1) 手动路径 ---\n&quot;);
+    pthread_create(&amp;t2, NULL, path_pop, NULL);
+    pthread_join(t2, &amp;r);
+    (void)r;
+}
+
+/* ---------- 演示 2：cond_wait 被取消 → cleanup 解锁救场 ---------- */
+static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  cv = PTHREAD_COND_INITIALIZER;
+static int ready;
+
+static void unlock_mutex(void *p) {
+    pthread_mutex_unlock((pthread_mutex_t *)p);
+    printf(&quot;  [cleanup] 被取消了：cleanup 已解锁 mutex\n&quot;);
+}
+
+static void *waiter(void *a){(void)a;
+    pthread_mutex_lock(&amp;m);
+    pthread_cleanup_push(unlock_mutex, &amp;m);    /* 挂保险 */
+    while (!ready)
+        pthread_cond_wait(&amp;cv, &amp;m);            /* 取消点：死在这 */
+    pthread_cleanup_pop(0);                    /* 正常路径：摘保险 */
+    pthread_mutex_unlock(&amp;m);
+    return NULL;}
+
+static void demo_cancel_wait(void){
+    pthread_t t;
+    void *res;
+    pthread_create(&amp;t, NULL, waiter, NULL);
+    usleep(100000);
+    printf(&quot;  [main] 发出取消（waiter 正持锁睡在 condvar 上）\n&quot;);
+    pthread_cancel(t);
+    pthread_join(t, &amp;res);
+    printf(&quot;  [main] join: %s\n&quot;,
+           res == PTHREAD_CANCELED ? &quot;PTHREAD_CANCELED&quot; : &quot;正常?&quot;);
+
+    /* 验证锁真的被 cleanup 释放了：主线程现在必须能拿到它 */
+    struct timespec ts = {0, 50*1000*1000};
+    printf(&quot;  [main] 尝试拿锁（若 cleanup 没解锁这里就死锁）...&quot;);
+    fflush(stdout);
+    pthread_mutex_lock(&amp;m);
+    printf(&quot;成功：锁是自由的 ✓\n&quot;);
+    pthread_mutex_unlock(&amp;m);
+    nanosleep(&amp;ts, NULL);
+}
+
+int main(void){
+    printf(&quot;==== demo1：触发路径与 LIFO 顺序 ====\n&quot;);
+    demo_order();
+    printf(&quot;==== demo2：cond_wait 取消 + cleanup 解锁 ====\n&quot;);
+    demo_cancel_wait();
+    return 0;
+}
+</code></pre>
+<p>实测输出（WSL2 / 12 核）：</p>
+<pre class="code" data-label="text"><code class="c">==== demo1：触发路径与 LIFO 顺序 ====
+  --- pthread_exit 路径（自动 LIFO 展开）---
+  cleanup: C-最后push
+  cleanup: B-其次push
+  cleanup: A-最先push
+  --- pop(1) 手动路径 ---
+  cleanup: X-唯一push
+  [path_pop] pop(1) 手动触发后，线程正常 return
+==== demo2：cond_wait 取消 + cleanup 解锁 ====
+  [main] 发出取消（waiter 正持锁睡在 condvar 上）
+  [cleanup] 被取消了：cleanup 已解锁 mutex
+  [main] join: PTHREAD_CANCELED
+  [main] 尝试拿锁（若 cleanup 没解锁这里就死锁）...成功：锁是自由的 ✓
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li>demo1：<code class="c">pthread_exit</code> 自动展开且<strong>严格 LIFO</strong>（C→B→A，与 push 顺序相反）；<code class="c">pop(1)</code> 手动执行该层处理器。正常 <code class="c">return</code> 路径栈已空——不展开。</li>
+<li>demo2：waiter 死在 <code class="c">pthread_cond_wait</code>（取消点），cleanup 处理器把 mutex 解开——主线程随后 <code class="c">pthread_mutex_lock(&amp;m)</code> 成功，证明锁确实被"死后收尸"释放。没有 cleanup 的版本，这一步就是永久死锁。</li>
+<li><code class="c">pthread_exit</code> 版本里 <code class="c">pop(0)×3</code> 不可达（exit 已发生），只用来平衡宏的花括号——<code class="c">__attribute__((noreturn))</code> 场景下的标准写法。</li>
+</ol>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1</strong>：<code class="c">pthread_cleanup_push</code> 之后直接 <code class="c">return</code>，会发生什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>编译失败。push/pop 是宏：push 展开含 <code class="c">{</code>，pop 展开含 <code class="c">}</code>——不 pop 就 return，词法块没闭合，编译器报花括号/语法错误。这个"丑"是故意的：强迫每个 return 路径都显式经过 pop（决定执行与否），从语言层面杜绝"忘记收尾"。C++ 的 RAII 析构自动覆盖所有 return 路径，是更优雅的等价物。</p>
+</details>
+<p><strong>题目 2</strong>：线程 push 了 A、B、C 三个处理器后被取消。执行顺序？如果 A 是 unlock、B 是 free、C 是 close，这个顺序为什么是正确的？</p>
+<details>
+<summary>参考答案</summary>
+<p>LIFO：C→B→A。正确性在于资源获取顺序通常是 A（lock）→ B（malloc）→ C（fd），释放必须逆序：先关 fd（不再使用内存）、再 free（脱离了临界区语义上的数据）、最后 unlock。栈结构天然编码了"逆序释放"，与 C 语言 goto cleanup 惯用法、C++ 析构顺序完全一致。</p>
+</details>
+<p><strong>题目 3</strong>：写出"持锁睡 condvar + 可被取消"的最小安全骨架，并指出保险挂在哪一步。</p>
+<details>
+<summary>参考答案</summary>
+<pre class="code" data-label="C"><code class="c">pthread_mutex_lock(&amp;m);
+pthread_cleanup_push(unlock_mutex, &amp;m);   /* 保险：lock 成功之后立刻挂 */
+while (!ready)
+    pthread_cond_wait(&amp;cv, &amp;m);           /* 取消点 */
+pthread_cleanup_pop(0);                   /* 正常路径摘保险 */
+pthread_mutex_unlock(&amp;m);
+</code></pre>
+<p>保险必须挂在 lock <strong>之后</strong>（拿到锁才有"解锁"可托底；lock 之前挂，取消时 unlock 一把未持有的锁 = UB）。while 谓词、pop(0)、手动 unlock 与 30.2 的条件变量范式完全同构——cleanup 只是给"被取消"这条异常路径加了出口。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-32-4">32.4 <code class="c">pthread_testcancel</code></a></li>
+<li>下一节：<a href="#s-32-6">32.6 异步取消</a> —— cleanup 的保证在异步模式下还成立吗</li>
+<li>条件变量标准范式（while 谓词 / 持锁改状态）：<a href="chapter-30.html#s-30-2">30.2 条件变量</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-32-6">
+        <div class="sec-head"><div class="sec-no">32.6</div><h2>异步取消</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
+- 上一节：<a href="#s-32-5">32.5 清理处理器</a>
+- 下一节：<a href="#s-32-7">32.7 总结</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li><strong>异步取消的语义与唯一合法场景</strong>——任意指令边界可被杀；只有"纯计算 + 零资源依赖"的线程配得上它。</li>
+<li><strong>实测对照</strong>——同一个无取消点的计算循环：DEFERRED 杀不死、ASYNCHRONOUS 秒杀。</li>
+<li><strong>工程结论</strong>——为什么本节的存在意义是"让你有底气永远不用它"。</li>
+</ol>
+<hr />
+<h2>一、语义回顾与深化</h2>
+<pre class="code" data-label="C"><code class="c">pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &amp;oldtype);
+</code></pre>
+<ul>
+<li>取消请求到达即执行（信号处理器路径直接展开），<strong>不等取消点</strong>；</li>
+<li>与 DISABLE 仍正交：DISABLE 时挂起（32.2 矩阵）；</li>
+<li><strong>cleanup 栈执行不保证</strong>：展开发生在任意指令边界，栈本身的状态可能不一致；处理器可能只跑了一半；</li>
+<li>TSD 析构同样不可靠。</li>
+</ul>
+<p>三宗罪（32.2 §三）在这里从"理论风险"变成"必然触发面"：任意边界 = 你迟早死在 malloc 里、死在锁里、死在半改数据的中间。</p>
+<h3>1.1 唯一合法场景的画像</h3>
+<pre class="code" data-label="code"><code class="c">async-安全线程的合同：
+  ✓ 只碰自己的栈和寄存器
+  ✓ 不 malloc/free（不碰堆）
+  ✓ 不 lock/unlock（不碰任何锁，包括 glibc 内部锁）
+  ✓ 不读写共享全局（除非用纯原子且能容忍任意截断点）
+  ✓ 不调用任何库函数（printf/memcpy 都不行——内部可能有锁）
+  ✓ 结果通过 volatile 原子变量或 pipe 交付
+</code></pre>
+<p>典型画像：无界数学搜索（素数打杂、蒙特卡洛抽样的 worker、密码学穷举）——算到哪算哪，死了就死了，结果不完整也无妨。<strong>HFT/嵌入式的业务线程没有一条满足此合同。</strong></p>
+<hr />
+<h2>二、实测对照</h2>
+<p>配套 <code class="c">async_demo.c</code>（gcc -O2 -Wall -Wextra 零告警编译通过）：</p>
+<pre class="code" data-label="C"><code class="c">/* async_demo.c — Ch32.6：同一个无取消点循环，DEFERRED 杀不死 vs ASYNC 秒杀
+ * 编译：gcc -O2 -Wall -Wextra -o async_demo async_demo.c -pthread
+ */
+#define _GNU_SOURCE             /* pthread_tryjoin_np */
+#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;time.h&gt;
+#include &lt;stdlib.h&gt;
+
+static volatile unsigned long sink;
+
+static unsigned long crunch_step(void);        /* 先声明后使用 */
+
+/* 纯计算：无任何取消点、无锁、无堆、无库调用 */
+static void *crunch_deferred(void *a){(void)a;
+    unsigned long x = 0;
+    for (;;) x += crunch_step();
+    return NULL;}                     /* 不可达 */
+
+static void *crunch_async(void *a){(void)a;
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);   /* ⭐ */
+    unsigned long x = 0;
+    for (;;) x += crunch_step();
+    return NULL;}                     /* 不可达 */
+
+static unsigned long crunch_step(void){
+    unsigned long s = 0;
+    for (int i = 1; i &lt; 200000; i++) s += (unsigned long)i * 1103515245u;
+    return s;
+}
+
+int main(void){
+    struct timespec ts100ms = {0, 100*1000*1000};
+
+    printf(&quot;== DEFERRED（默认）：无取消点 → 杀不死 ==\n&quot;);
+    pthread_t t1;
+    pthread_create(&amp;t1, NULL, crunch_deferred, NULL);
+    nanosleep(&amp;ts100ms, NULL);
+    pthread_cancel(t1);
+    int r = pthread_tryjoin_np(t1, NULL);        /* 非阻塞试探 */
+    if (r == EBUSY) {
+        printf(&quot;  cancel 已发出 100ms，线程仍在跑（没有取消点）\n&quot;);
+        printf(&quot;  演示结束——线程留在后台跑（进程退出时一并消亡）\n&quot;);
+    } else {
+        printf(&quot;  线程已死？(意外)\n&quot;);
+    }
+
+    printf(&quot;== ASYNCHRONOUS：任意边界 → 秒杀 ==\n&quot;);
+    pthread_t t2;
+    pthread_create(&amp;t2, NULL, crunch_async, NULL);
+    nanosleep(&amp;ts100ms, NULL);
+    pthread_cancel(t2);
+    void *res;
+    pthread_join(t2, &amp;res);
+    printf(&quot;  join: %s（无需取消点，指令边界即死）\n&quot;,
+           res == PTHREAD_CANCELED ? &quot;PTHREAD_CANCELED&quot; : &quot;正常?&quot;);
+
+    (void)sink;
+    return 0;
+}
+</code></pre>
+<p>实测输出（WSL2 / 12 核）：</p>
+<pre class="code" data-label="text"><code class="c">== DEFERRED（默认）：无取消点 → 杀不死 ==
+  cancel 已发出 100ms，线程仍在跑（没有取消点）
+  演示结束——线程留在后台跑（进程退出时一并消亡）
+== ASYNCHRONOUS：任意边界 → 秒杀 ==
+  join: PTHREAD_CANCELED（无需取消点，指令边界即死）
+</code></pre>
+<p>解读：<strong>同一个循环，唯一的差别是一行 <code class="c">setcanceltype</code></strong>。DEFERRED 的取消请求在无取消点的循环里永远挂起（32.3/32.4 的主题）；ASYNC 在信号到达的任意指令边界立即执行。这组对照是"类型开关决定生死时机"的最直观演示——也顺带展示了 <code class="c">pthread_tryjoin_np</code>（GNU 扩展）做非阻塞探测的用法。</p>
+<hr />
+<h2>三、工程结论：本节的正确用法是"不用"</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>如果你想…</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>杀掉卡在计算里的线程</td>
+<td>给循环加 <code class="c">pthread_testcancel</code>（32.4），保持 DEFERRED</td>
+</tr>
+<tr>
+<td>快速停止 worker</td>
+<td>协作退出标志 + 周期检查（HFT 标准）</td>
+</tr>
+<tr>
+<td>清理已死线程的资源</td>
+<td>cleanup 栈（32.5）——但 ASYNC 下它不可靠，所以又回到 DEFERRED</td>
+</tr>
+<tr>
+<td>真·不可中断的长计算</td>
+<td>fork 子进程做，超时 kill(pid)——进程边界比线程边界硬得多，内核保证全回收</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>异步取消在认真写的系统里的出场率应为零</strong>。它存在的价值：① POSIX 完整性；② 面试与考试；③ 让你理解"为什么取消机制要设计成延迟+取消点+清理栈这么复杂"——全是为了把"死亡时机"约束到安全边界，而 ASYNC 把这个约束整个扔掉了。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>明令禁止：代码规范里写死 "PTHREAD_CANCEL_ASYNCHRONOUS 禁用"（连同整个 pthread_cancel 一起，只在遗留路径开白名单）。热路径的"随时可停"用 SPSC 环 + 消费侧检查实现</td>
+</tr>
+<tr>
+<td>HFT · 回测集群</td>
+<td>唯一接近合法的场景是外包给<strong>进程</strong>：无界搜索 worker 跑在独立进程里，超时 <code class="c">kill -9</code>——硬边界 + 内核级回收，比 ASYNC 线程取消的语义干净一个数量级</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>RTOS 任务删除 ≈ ASYNC 取消且<strong>连信号投递都没有</strong>（直接调度移除）：嵌入式更早学会了同一课——可丢弃任务随便删，有资源任务必须自杀式退出</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1</strong>：为什么 ASYNC 模式下 cleanup 栈的保证不可靠？</p>
+<details>
+<summary>参考答案</summary>
+<p>cleanup 展开发生在信号到达的任意指令边界：处理器自身执行到一半可能再被打断（嵌套取消）、栈顶指针可能处于不一致状态、处理器访问的资源可能正是"当前指令正在半改"的那个。DEFERRED 的全部设计（取消点=安全边界）就是为了让展开发生在一致点——ASYNC 摧毁了这个前提，因此一切建立在"边界安全"上的保证（cleanup、TSD 析构、锁配对）同时失效。</p>
+</details>
+<p><strong>题目 2</strong>：需求："一个计算密集线程必须能被立刻停止，且它持有 8MB 堆缓冲"。给出两个方案并比较。</p>
+<details>
+<summary>参考答案</summary>
+<p>方案 A（线程内）：DEFERRED + 循环内 <code class="c">pthread_testcancel</code> + 缓冲放 TSD/局部，由 cleanup 栈释放。停止延迟=检查站间隔；资源保证完整释放。方案 B（进程边界）：fork worker 进程做计算，8MB 缓冲在子进程内，停止= kill(pid)+waitpid——立刻生效（信号打断任意指令，进程死亡由内核全回收），缓冲随地址空间消亡。比较：A 停止有延迟但零进程开销；B 即停即净但创建/通信成本高。生产常选 B（超时兜底），交互场景选 A。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-32-5">32.5 清理处理器</a></li>
+<li>下一节：<a href="#s-32-7">32.7 总结</a></li>
+<li>进程边界做超时保护的范式：<a href="chapter-26.html#intro">Ch26 监控子进程</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-32-7">
+        <div class="sec-head"><div class="sec-no">32.7</div><h2>总结</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 32 章 — Threads: Thread Cancellation</a>
+- 上一节：<a href="#s-32-6">32.6 异步取消</a>
+- 下一章：<a href="chapter-33.html#intro">Ch33 线程：更多细节</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li>全章速览与 API 速查；</li>
+<li>完整生命周期图（cancel 从投递到 join 的五步）；</li>
+<li>铁律与"杀不死"排查表。</li>
+</ol>
+<hr />
+<h2>一、全章速览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节</th>
+<th>主题</th>
+<th>一句话</th>
+<th>关键坐标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>32.1</td>
+<td>取消请求</td>
+<td>异步投递 ≠ 终止；join 拿 <code class="c">PTHREAD_CANCELED</code></td>
+<td>glibc→<code class="c">tgkill(SIGCANCEL=32)</code>；内核 <code class="c">do_send_specific():3935</code> / <code class="c">tgkill():3988</code>（防 PID 复用误杀）</td>
+</tr>
+<tr>
+<td>32.2</td>
+<td>状态与类型</td>
+<td>DISABLE 挂起；临界区 DISABLE 包裹</td>
+<td>状态×类型 2×2 矩阵</td>
+</tr>
+<tr>
+<td>32.3</td>
+<td>取消点</td>
+<td>"可能睡死的函数"必须检查；glibc 2.28 起搬进系统调用包装层</td>
+<td>man 3 pthreads 清单是下界</td>
+</tr>
+<tr>
+<td>32.4</td>
+<td>testcancel</td>
+<td>手动检查站；放安全边界；密度=取消延迟上界</td>
+<td>"可能不返回"的函数</td>
+</tr>
+<tr>
+<td>32.5</td>
+<td>cleanup 栈</td>
+<td>宏配对 + LIFO 逆序 + <strong>return 不展开</strong></td>
+<td>持锁睡眠的标准保险</td>
+</tr>
+<tr>
+<td>32.6</td>
+<td>异步取消</td>
+<td>任意边界即死；cleanup/TSD 全不可靠 → 工程上禁用</td>
+<td>纯计算线程唯一合法</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>二、完整生命周期（五步图）</h2>
+<pre class="code" data-label="code"><code class="c">  A 线程                                B 线程（目标）
+─────────                              ─────────────────────────────
+pthread_cancel(B)
+  │ glibc: 置标志 + tgkill(SIGCANCEL)
+  └─①请求投递（异步，立即返回）──────▶ [挂起的请求 pending]
+                                                  │
+                              state==DISABLE ──▶ 继续挂起（32.2）
+                                                  │ ENABLE+DEFERRED
+                              ② 到达取消点（标准取消点 / testcancel / ③ASYNC 任意边界）
+                                                  │
+                              ④ 展开清理栈（LIFO，32.5）+ TSD 析构（31.3）
+                                                  │
+                              ⑤ pthread_exit(PTHREAD_CANCELED)
+pthread_join(B, &amp;res)
+  └─ res == PTHREAD_CANCELED ──────▶ 死亡确认，资源回收完毕
+</code></pre>
+<p>状态×类型行为表：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -1187,47 +1879,96 @@ pthread_cleanup_pop(0);  /* 0=不执行，非0=执行 */
 <tr>
 <td>ENABLE</td>
 <td>DEFERRED</td>
-<td>到取消点才取消（最安全，默认）</td>
+<td>到取消点执行（默认，唯一工程推荐）</td>
 </tr>
 <tr>
 <td>ENABLE</td>
 <td>ASYNCHRONOUS</td>
-<td>任意时刻取消（危险）</td>
+<td>任意指令边界执行（危险，禁用）</td>
 </tr>
 <tr>
 <td>DISABLE</td>
 <td>任意</td>
-<td>请求挂起，不取消</td>
+<td>挂起等待（临界区保护）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>HFT / 嵌入式关联</h2>
-<ul>
-<li><strong>HFT 不用 pthread_cancel</strong>：用协作式退出（atomic flag + 循环检查）</li>
-<li><strong>嵌入式</strong>：RTOS 用任务删除 + cleanup callback</li>
-<li><strong>清理函数</strong>：用于释放锁/内存，但 return 不触发，必须用 pthread_exit</li>
-</ul>
+<hr />
+<h2>三、铁律</h2>
+<ol>
+<li><strong>cancel 是请求不是死刑</strong>：join + <code class="c">PTHREAD_CANCELED</code> 才是死亡证明。</li>
+<li>临界区（持锁段）一律 DISABLE/恢复包裹——<strong>恢复 oldstate，不硬编码</strong>。</li>
+<li>类型永远 DEFERRED；ASYNC 只配"纯计算零依赖"线程，生产代码出场率应为零。</li>
+<li>纯计算循环必加 <code class="c">pthread_testcancel</code>，放块间安全边界，密度=取消延迟预算。</li>
+<li>cleanup push/pop 是宏：同块配对、push 在 lock 后、正常路径 pop(0)+手动收尾。</li>
+<li><strong>return 不展开 cleanup</strong>——宏的 <code class="c">{}</code> 会逼你先 pop（这是保护，不是障碍）。</li>
+<li>持锁睡 condvar 必挂 cleanup 保险（32.5 范式）。</li>
+<li>新代码优先协作退出（原子标志+condvar），cancel 只做遗留/兜底。</li>
+<li>关停 join 设超时（<code class="c">pthread_tryjoin_np</code>/timedjoin_np 探测），别让关停流程挂死。</li>
+<li>杀不死排查五连：无取消点？忘了 ENABLE？没 join？SIGCANCEL 被屏蔽？忙等伪装成阻塞？</li>
+</ol>
+<hr />
+<h2>四、HFT 决策表（本章收口）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>方案</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>优雅停止策略线程</td>
+<td>协作退出：原子 running + condvar 唤醒 + 线程在安全边界自查</td>
+<td>HFT 标准</td>
+</tr>
+<tr>
+<td>遗留库必须 cancel</td>
+<td>临界区 DISABLE 包裹 + cleanup 托底 + join 验证</td>
+<td>32.2/32.5</td>
+</tr>
+<tr>
+<td>无界计算超时</td>
+<td><strong>进程</strong>边界：fork + kill + waitpid（硬回收）</td>
+<td>32.6</td>
+</tr>
+<tr>
+<td>关停兜底</td>
+<td>join 超时 → 升级 SIGTERM/SIGKILL</td>
+<td>32.4</td>
+</tr>
+<tr>
+<td>嵌入式任务删除</td>
+<td>只删可丢弃任务；有资源任务给退出命令自杀</td>
+<td>32.2/32.6</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1</strong>：复述取消的完整生命周期五步，并指出哪一步可能"永远不发生"。</p>
+<details>
+<summary>参考答案</summary>
+<p>①cancel 投递（tgkill SIGCANCEL）→ ②到达取消点（或 ASYNC 任意边界）→ ③展开 cleanup 栈 + TSD 析构 → ④pthread_exit(PTHREAD_CANCELED) → ⑤join 回收并确认。可能永远不发生的：②（无取消点的循环，32.3/32.4）以及 DISABLE 忘记恢复导致的挂起（32.2）——两者症状相同（join 挂死），排查方向不同。</p>
+</details>
+<p><strong>题目 2</strong>：同事的线程池关停代码：cancel 全部 worker → join 全部 → 关闭队列。偶发关停挂死。给出三个候选原因和对应修复。</p>
+<details>
+<summary>参考答案</summary>
+<p>① worker 主循环是纯计算/自旋（无取消点）→ 挂起的请求永不执行：加 testcancel 或改协作退出；② worker 在临界区 DISABLE 后某路径忘了恢复 → 请求一直挂起：审查所有 return 路径，用 oldstate 恢复模式；③ worker 死在持锁状态且无 cleanup → 其他 worker 等 lock 陪葬，join 挂死：持锁睡眠点挂 cleanup 保险（32.5 范式）。另外兜底：join 全部改 timedjoin/tryjoin + 超时升级进程级信号。</p>
+</details>
+<p><strong>题目 3</strong>：为什么说"glibc 2.28 的取消机制改革"反而加强了 DISABLE 包裹的必要性？</p>
+<details>
+<summary>参考答案</summary>
+<p>改革把取消检查从"函数清单"扩展到"系统调用包装层"：过去不是取消点的阻塞路径（各种 futex 睡眠）现在也可能响应取消。清单随版本变大的方向不会逆转——任何"这个函数现在不是取消点"的假设都是脆弱的。DISABLE 包裹使代码不依赖清单：无论未来哪行代码变成取消点，临界区内部都免疫取消。一劳永逸 &gt; 逐版本审计。</p>
+</details>
+<hr />
 <h2>衔接</h2>
 <ul>
-<li><strong>Ch29</strong> Threads Intro — 线程退出 <code class="c">pthread_exit</code></li>
-<li><strong>Ch30</strong> Thread Sync — 互斥锁与清理函数配合</li>
-<li><strong>Ch21</strong> Signal Handlers — 信号与取消的类比</li>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>下一章：<a href="chapter-33.html#intro">Ch33 线程：更多细节</a>（线程栈再探 / 信号与线程交互）</li>
+<li>前置：<a href="chapter-29.html#intro">Ch29 线程导论</a> · <a href="chapter-30.html#intro">Ch30 同步</a> · <a href="chapter-31.html#intro">Ch31 TSD/TLS</a></li>
 </ul>
-<h2>代码自测</h2>
-<details>
-<summary>1. 为什么 return 不会触发清理函数？</summary>
-<p>POSIX 规定 <code class="c">pthread_cleanup_push/pop</code> 必须在同一函数中成对出现（宏实现）。<code class="c">return</code> 跳过了 <code class="c">pthread_cleanup_pop</code>，清理函数不被执行。只有 <code class="c">pthread_exit()</code> 或被取消时才触发。这是一个常见的内存/锁泄漏陷阱——应确保退出路径经过 <code class="c">pthread_exit</code> 或显式 <code class="c">pop(1)</code>。</p>
-</details>
-<details>
-<summary>2. 异步取消为什么几乎总是危险的？</summary>
-<ol>
-<li>可能在持有 mutex 时被取消 → 死锁</li>
-<li>可能在 malloc 中间被取消 → 堆损坏</li>
-<li>可能在修改数据结构中间被取消 → 数据不一致</li>
-<li>清理函数本身可能也需要取消点，但异步取消下不安全</li>
-<li>任何库函数内部状态可能不一致</li>
-</ol>
-</details>
       </section>
 
 
