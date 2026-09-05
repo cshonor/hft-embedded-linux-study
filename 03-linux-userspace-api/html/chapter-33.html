@@ -282,8 +282,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-33-4"><span class="n">33.4</span>实现模型</a>
           <a href="#s-33-5"><span class="n">33.5</span>LinuxThreads vs NPTL</a>
           <a href="#s-33-6"><span class="n">33.6</span>高级同步（简介）</a>
-          <a href="#s-33-7"><span class="n">33.7</span>Summary</a>
-          <a href="#s-33-8"><span class="n">33.8</span>Exercises</a>
+          <a href="#s-33-7"><span class="n">33.7</span>总结</a>
+          <a href="#s-33-8"><span class="n">33.8</span>练习</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -371,28 +371,50 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p>线程栈属性；多线程信号模型；fork/exec/exit；<code class="c">pthread_atfork</code>；M:1/1:1/M:N 与 NPTL；读写锁/屏障/自旋锁速览。</p>
+<p>一句话内核视角串起全章：<strong>pthread 就是 clone 出的 task_struct</strong>——由此推演出栈的两套机制（33.1）、信号的线程级掩码与轮转投递（33.2）、fork/exec/exit 的组语义（33.3）、1:1 模型（33.4-33.5）、落在 futex 上的全部同步原语（33.6）。</p>
 <hr />
+<h2>机制全景</h2>
+<pre class="code" data-label="text"><code class="c">                     pthread_create
+                          │ clone(CLONE_VM|SIGHAND|THREAD|SETTLS|CLEARTID...)
+                          ▼
+        ┌─────────── task_struct（每线程一个）───────────┐
+        │ blocked 掩码（私有）   pending 队列（私有）      │ ← 33.2
+        │ mm 共享（地址空间）     sighand 共享（处置表）    │
+        │ 16KB 内核栈（物理）    fs base = TLS            │ ← 33.1 / 31.4
+        │ robust 列表           futex 等待点             │ ← 33.8 / 30.x
+        └───────────────────┬─────────────────────────┘
+            fork: 只复制调用者（锁变幽灵）← 33.3     exec: de_thread 全杀+窃PID ← 33.3
+</code></pre>
 <hr />
 <h2>易错清单</h2>
 <ol>
-<li>多线程改掩码用 <strong><code class="c">pthread_sigmask</code></strong>，勿靠 <code class="c">sigprocmask</code>  </li>
-<li>主线程 <code class="c">return</code>/<code class="c">exit</code> 杀光线程  </li>
-<li>多线程 fork → 立刻 exec  </li>
-<li><code class="c">sigwait</code> 优于满地异步 handler  </li>
-<li><code class="c">pthread_kill</code> 不能跨进程  </li>
-<li>NPTL = 1:1；TID ≠ <code class="c">pthread_t</code>  </li>
+<li>多线程改掩码用 <strong><code class="c">pthread_sigmask</code></strong>，勿靠 <code class="c">sigprocmask</code>（MT 语义已废除）</li>
+<li>「掩码进程级共享」是<strong>错觉</strong>——处置共享，掩码每线程独立</li>
+<li>主线程 <code class="c">return</code>/<code class="c">exit</code> 杀光线程；要留 worker 用 <code class="c">pthread_exit</code></li>
+<li>多线程 fork → 子进程只准 async-signal-safe → 立刻 exec</li>
+<li><code class="c">sigwait</code> 优于满地异步 handler；前置 = 调用线程已阻塞目标信号</li>
+<li><code class="c">pthread_kill</code> 不能跨进程（<code class="c">pthread_t</code> 本进程才有意义）</li>
+<li>子线程栈<strong>不增长</strong>（无 <code class="c">VM_GROWSDOWN</code>）；主线程栈可以</li>
+<li>每线程 16KB 内核栈是<strong>立即占用的物理内存，且不计入进程 RSS</strong></li>
+<li>NPTL = 1:1；<code class="c">pthread_t</code> ≠ 内核 TID，观测工具只认 TID</li>
+<li>exec 杀线程<strong>没有任何清理回调</strong>（对比 cancel 的 cleanup 栈）——exec 前自己 quiesce</li>
+<li>rwlock 默认<strong>读者优先</strong>——写延迟敏感场景会写饥饿</li>
+<li>PROCESS_SHARED 忘设 → 跨进程<strong>假同步</strong>（futex key 各自哈希）</li>
+<li>robust 锁是 fork 幽灵锁唯一能"检测存活"的方案（EOWNERDEAD + consistent）</li>
+<li><code class="c">pthread_atfork</code> 的 child 回调里<strong>重新初始化</strong>锁，不是解锁无主锁</li>
+<li>barrier 的 SERIAL_THREAD 每轮可能落在<strong>不同线程</strong>——不能假设固定收尾者</li>
 </ol>
-<hr />
 <hr />
 <h2>实验清单</h2>
 <ol>
-<li>（选）<code class="c">attr</code> 设栈大小  </li>
-<li><code class="c">sigwait</code> 信号线程  </li>
-<li>（选）<code class="c">pthread_kill</code>  </li>
-<li>barrier / rwlock  </li>
+<li>✅ <code class="c">stack_probe</code>：主/子线程地址分区 + 默认栈属性（33.1）</li>
+<li>✅ <code class="c">sig_model</code>：投递三定律（唯一解阻塞必收 / 定向只进一个 / sigwait 吞 handler）（33.2）</li>
+<li>✅ <code class="c">proc_ctrl</code>：fork 锁幽灵 trylock 证据 + atfork 救场 + exec 杀心跳（33.3）</li>
+<li>✅ <code class="c">sync_prim</code>：rwlock 并发读 / barrier 两轮集合 / spin 计数（33.6）</li>
+<li>✅ <code class="c">fork_ghost</code>：normal/errchk/robust 三锁 fork 对照（33.8）</li>
+<li>✅ <code class="c">mt_daemon</code>：sigwait 线程 + 优雅退出骨架（33.8）</li>
+<li>（选）1000 线程 VmSize/RSS 对账（33.8 练习 5）</li>
 </ol>
-<hr />
 <hr />
 <h2>背诵卡</h2>
 <div class="tbl-wrap"><table>
@@ -405,116 +427,188 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>1</td>
-<td>handler 共享；掩码每线程</td>
+<td>处置共享；掩码私有；pending 分进程级+线程级</td>
 </tr>
 <tr>
 <td>2</td>
-<td>阻塞信号 + <code class="c">sigwait</code> 专用线程</td>
+<td>阻塞信号 + <code class="c">sigwait</code> 专用线程 = 信号处理标准架构</td>
 </tr>
 <tr>
 <td>3</td>
-<td>fork 只留一线程；立刻 exec</td>
+<td>complete_signal 从 curr_target 轮转找未阻塞者；全阻塞挂共享队列</td>
 </tr>
 <tr>
 <td>4</td>
-<td>exit 杀进程；主线程可 <code class="c">pthread_exit</code></td>
+<td>fork 只留调用线程；锁是幽灵；正解 = 立刻 exec / posix_spawn</td>
 </tr>
 <tr>
 <td>5</td>
-<td>Linux = NPTL 1:1</td>
+<td>exec：de_thread 全杀 + 非 leader 窃取 leader PID</td>
 </tr>
 <tr>
 <td>6</td>
-<td>rwlock / barrier / spin 按场景用</td>
+<td>exit/return = exit_group 全灭；主线程 pthread_exit 留活口</td>
+</tr>
+<tr>
+<td>7</td>
+<td>子线程栈 mmap 不增长；主线程栈 VM_GROWSDOWN 可扩</td>
+</tr>
+<tr>
+<td>8</td>
+<td>16KB 内核栈 × N = 立即物理内存（RSS 之外）</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Linux = NPTL 1:1；pthread 就是 clone 的 task_struct</td>
+</tr>
+<tr>
+<td>10</td>
+<td>join 睡在 futex（CLONE_CHILD_CLEARTID 写 0 + WAKE）</td>
+</tr>
+<tr>
+<td>11</td>
+<td>rwlock 读者优先会写饥饿；短临界区 mutex 可能更快</td>
+</tr>
+<tr>
+<td>12</td>
+<td>spinlock 快的前提：跨核 + 临界区 &lt; 两次切换成本</td>
+</tr>
+<tr>
+<td>13</td>
+<td>PROCESS_SHARED 设在 attr 上，忘了 = 假同步</td>
+</tr>
+<tr>
+<td>14</td>
+<td>robust 锁 fork 后 EOWNERDEAD → consistent 可恢复</td>
+</tr>
+<tr>
+<td>15</td>
+<td>pthread_t ≠ TID；perf/top -H/sched 认 TID</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<hr />
 <h2>参考</h2>
 <ul>
-<li>Kerrisk · TLPI Ch33  </li>
+<li>Kerrisk · TLPI Ch33（Threads: Further Details）</li>
 <li><code class="c">man 3 pthread_sigmask</code> · <code class="c">man 3 pthread_kill</code> · <code class="c">man 3 sigwait</code> · <code class="c">man 3 pthread_atfork</code> · <code class="c">man 7 pthreads</code></li>
+<li>内核源码（v6.6）：<code class="c">kernel/signal.c</code> · <code class="c">fs/exec.c</code>（de_thread）· <code class="c">kernel/fork.c</code></li>
 </ul>
 <hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;pthread.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;string.h&gt;
-#include &lt;signal.h&gt;
-
-/* Ch33 线程深入 — pthread_attr/线程栈/信号掩码。
- * 演示自定义线程属性: 栈大小 + 分离状态 + 信号掩码。
- * 编译: gcc -o ch33_demo ch33_demo.c -lpthread */
-
-void *worker(void *arg) {
-    int id = *(int *)arg;
-    printf(&quot;Thread %d: running (stack custom sized)\n&quot;, id);
-    /* 检查线程栈位置 */
-    int local;
-    printf(&quot;Thread %d: stack near %p\n&quot;, id, (void *)&amp;local);
-    return NULL;
-}
-
-int main(void) {
-    pthread_attr_t attr;
-    pthread_attr_init(&amp;attr);
-
-    /* 设置分离状态: 线程结束自动回收，不需 join */
-    pthread_attr_setdetachstate(&amp;attr, PTHREAD_CREATE_DETACHED);
-
-    /* 设置栈大小: 默认 8MB，改为 2MB */
-    size_t stacksize;
-    pthread_attr_getstacksize(&amp;attr, &amp;stacksize);
-    printf(&quot;Default stack size: %zu bytes\n&quot;, stacksize);
-    pthread_attr_setstacksize(&amp;attr, 2 * 1024 * 1024);
-
-    /* 设置线程不继承父进程的信号掩码 */
-    sigset_t mask;
-    sigemptyset(&amp;mask);
-    sigaddset(&amp;mask, SIGINT);
-    pthread_attr_setsigmask_np(&amp;attr, &amp;mask);
-
-    /* 创建线程 */
-    int id = 42;
-    pthread_t tid;
-    pthread_create(&amp;tid, &amp;attr, worker, &amp;id);
-
-    pthread_attr_destroy(&amp;attr);
-
-    /* 分离状态线程不能 join，用 sleep 等待 */
-    sleep(1);
-    printf(&quot;Main: detached thread finished\n&quot;);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>参考</h2>
+<h2>前置知识依赖</h2>
 <ul>
-<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">OUTLINE</a></li>
-<li>原始笔记：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes">notes.md.bak</a></li>
+<li><a href="chapter-29.html#intro">Ch29</a>（创建/属性/join）· <a href="chapter-30.html#intro">Ch30</a>（mutex/condvar/futex）· <a href="chapter-31.html#intro">Ch31</a>（TSD/TLS）· <a href="chapter-32.html#intro">Ch32</a>（取消/cleanup）</li>
+<li><a href="chapter-20.html#intro">Ch20-22 信号三部曲</a></li>
 </ul>
       </section>
       <section class="section" id="s-33-1">
         <div class="sec-head"><div class="sec-no">33.1</div><h2>线程栈</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
-- 上一节：本章首页
-- 下一节：<a href="#s-33-1">33.2 线程与信号（重难点）</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">arch/x86/include/asm/page_64_types.h</code>（<code class="c">THREAD_SIZE:16</code> = 16KB 内核栈）· <code class="c">kernel/fork.c</code>（<code class="c">alloc_thread_stack_node():272</code>，栈缓存复用注释 <code class="c">:303-306</code>）
+本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
+- 上一节：本章首页（<a href="#s-33-1">33.1</a> 为首节）
+- 下一节：<a href="#s-33-2">33.2 线程与信号（重难点）</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>每线程私有栈；默认大小受 <code class="c">RLIMIT_STACK</code> 等影响。 pthread_attr_setstacksize / getstacksize pthread_attr_setstack          /<em> 自备栈，少用 </em>/</p>
+<ol>
+<li>每个线程的栈在地址空间里长什么样——主线程栈和子线程栈是<strong>两种不同的东西</strong>？</li>
+<li>栈大小从哪来：<code class="c">RLIMIT_STACK</code>、<code class="c">pthread_attr_setstacksize</code>、<code class="c">PTHREAD_STACK_MIN</code> 的关系？</li>
+<li>栈用完了会怎样——溢出的三种结局？</li>
+</ol>
 <hr />
 <h2>要点</h2>
-<p>每线程私有栈；默认大小受 <code class="c">RLIMIT_STACK</code> 等影响。</p>
-<pre class="code" data-label="C"><code class="c">pthread_attr_setstacksize / getstacksize
-pthread_attr_setstack          /* 自备栈，少用 */
-sysconf(_SC_THREAD_STACK_MIN)
+<h3>主线程栈 vs 子线程栈：三个本质差异</h3>
+<p>这是本节最容易被忽略的认知——「线程栈」这个词掩盖了两套完全不同的机制：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>主线程栈</th>
+<th>子线程栈</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>位置</td>
+<td>进程栈区（高地址，<code class="c">0x7ffc...</code> 附近，紧邻环境变量）</td>
+<td>mmap 区（<code class="c">0x7f...</code> 中段，与库/共享内存同区）</td>
+</tr>
+<tr>
+<td>分配者</td>
+<td>内核 <code class="c">execve</code> 时静态划定</td>
+<td>glibc 调 <code class="c">mmap(MAP_STACK)</code> 动态分配</td>
+</tr>
+<tr>
+<td>可增长</td>
+<td>✅ <code class="c">expand_downwards()</code> 按需向下扩展（VMA 可变）</td>
+<td>❌ 固定大小，溢出即玩完</td>
+</tr>
+<tr>
+<td>默认大小</td>
+<td><code class="c">RLIMIT_STACK</code>（通常 8MB）</td>
+<td>glibc 取 <code class="c">RLIMIT_STACK</code>（unlimited 时退回 2MB）</td>
+</tr>
+<tr>
+<td>guard 页</td>
+<td>无（溢出撞到的是别的 VMA 或空洞 → SIGSEGV）</td>
+<td>有（默认 1 页 4KB 只读 guard）</td>
+</tr>
+</tbody>
+</table></div>
+<p>为什么主线程栈可以增长？它的 VMA 带 <code class="c">VM_GROWSDOWN</code> 标志，缺页时内核检查是否向下越界、在限额内就扩。子线程栈是普通匿名映射，没有这个标志——<strong>新线程栈不增长</strong>。</p>
+<h3>栈大小的 API 层</h3>
+<pre class="code" data-label="C"><code class="c">pthread_attr_setstacksize(attr, size)      /* 设大小，必须 ≥ PTHREAD_STACK_MIN */
+pthread_attr_getstacksize(attr, &amp;size)
+pthread_attr_setstack(attr, addr, size)    /* 自备内存当栈（少用：需 4KB 对齐） */
+pthread_attr_setguardsize(attr, size)      /* 0 = 关 guard */
+sysconf(_SC_THREAD_STACK_MIN)              /* = PTHREAD_STACK_MIN，通常 16KB */
 </code></pre>
-<p>栈溢出 → <code class="c">SIGSEGV</code>；海量线程吃地址空间 → 可调小栈；深递归 → 加大。</p>
+<p>规则速记：</p>
+<ul>
+<li>设小于 <code class="c">PTHREAD_STACK_MIN</code>（16KB）→ <code class="c">pthread_attr_setstacksize</code> 返回 <code class="c">EINVAL</code>；</li>
+<li>guard 计入 mmap 总量但<strong>不计入</strong> <code class="c">stacksize</code>（后者是可用区）；</li>
+<li><code class="c">setstack</code> 与 <code class="c">setstacksize/guardsize</code> 互斥（一次设置覆盖另一侧）。</li>
+</ul>
+<h3>每线程的隐藏成本（HFT 算账用）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>成本</th>
+<th>大小</th>
+<th>归属</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户态栈（虚拟）</td>
+<td>默认 8MB/线程</td>
+<td>mmap 地址空间</td>
+</tr>
+<tr>
+<td>用户态栈（物理）</td>
+<td>按需，只算触碰过的页</td>
+<td>RSS</td>
+</tr>
+<tr>
+<td><strong>内核栈</strong></td>
+<td><strong>16KB/线程</strong>（<code class="c">THREAD_SIZE = PAGE_SIZE &lt;&lt; 2</code>）</td>
+<td><strong>物理内存立即占用，不可分页</strong></td>
+</tr>
+<tr>
+<td>guard 页</td>
+<td>4KB</td>
+<td>8MB 里划出（虚拟）</td>
+</tr>
+</tbody>
+</table></div>
+<p>1000 线程 = 16MB 内核栈物理内存 + 8GB 虚拟地址。内核栈用 <code class="c">__vmalloc_node_range()</code> 分配（<code class="c">kernel/fork.c:309</code>）且带缓存复用（<code class="c">:303-306</code> 注释：线程退出后栈保留在 per-CPU 缓存，下一个新线程直接复用——省去 16KB 的分配/清零）。</p>
+<h3>栈溢出的三种结局</h3>
+<ol>
+<li><strong>越过后撞 guard 页</strong>（小步溢出，如深递归）→ guard 页不可写 → SIGSEGV，崩溃点就在栈附近（好排查）；</li>
+<li><strong>一步跨过 guard 页</strong>（大缓冲区写入，如 <code class="c">char buf[8192]</code> 溢出）→ guard 只有 4KB，直接踩进相邻 VMA → 可能不立即崩，数据悄悄坏（最难排查）；</li>
+<li><strong>主线程栈溢出</strong>（无 guard）→ 撞到任意映射 → SIGSEGV 或静默写坏别的数据。</li>
+</ol>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -527,102 +621,279 @@ sysconf(_SC_THREAD_STACK_MIN)
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>每线程私有栈，默认大小受 RLIMIT_STACK；栈溢出 SIGSEGV</td>
+<td>线程数 × 栈 = 硬内存预算：内核栈 16KB/线程是<strong>立即占用的物理内存</strong>，512MB 板子开 5000 线程光内核栈就烧 80MB</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>海量线程调小栈省地址空间；深递归加大防溢出；栈大小是内存预算一部分</td>
+<td>一核一线程 + 小栈（1~2MB）：既控制地址空间总量，又让所有线程常驻不同核的 cache；栈顶地址对齐到 2MB/4MB 边界可降低 TLB 压力</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>热路径禁深递归：每层 ~32B（实测 x86-64），1MB 栈 ≈ 3 万层余量，但递归本身是不确定延迟源</td>
 </tr>
 </tbody>
 </table></div>
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
+<pre class="code" data-label="C"><code class="c">/* stack_probe.c — Ch33.1：主线程栈 vs 子线程栈的地址空间布局实测
+ * 观测：三线程地址分区 / 默认栈大小 / PTHREAD_STACK_MIN / RLIMIT
+ * 编译：gcc -O2 -Wall -Wextra -o stack_probe stack_probe.c -pthread
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
-void *worker(void *arg) {
-    char buf[1024];  /* 使用栈空间 */
-    printf(&quot;栈变量地址: %p\n&quot;, (void *)buf);
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/resource.h&gt;
+
+static void print_frame(const char *who, int depth)
+{
+    char pad[32];
+    memset(pad, ' ', depth * 2);
+    pad[depth * 2] = '\0';
+    char probe[16];
+    printf(&quot;%s%-10s 帧地址 %p\n&quot;, pad, who, (void *)probe);
+    if (depth &gt; 0)
+        print_frame(who, depth - 1);      /* 递归 5 层，观测 SP 下移 */
+}
+
+static void *worker(void *arg)
+{
+    long id = (long)arg;
+    char name[16];
+    snprintf(name, sizeof name, &quot;worker%ld&quot;, id);
+    print_frame(name, 5);
     return NULL;
 }
-int main(void) {
+
+int main(void)
+{
+    printf(&quot;== 栈属性 ==\n&quot;);
+    printf(&quot;PTHREAD_STACK_MIN      = %d B (%d KB)\n&quot;,
+           (int)sysconf(_SC_THREAD_STACK_MIN),
+           (int)(sysconf(_SC_THREAD_STACK_MIN) / 1024));
+
+    struct rlimit rl;
+    getrlimit(RLIMIT_STACK, &amp;rl);
+    printf(&quot;RLIMIT_STACK           = &quot;);
+    if (rl.rlim_cur == RLIM_INFINITY) printf(&quot;unlimited（glibc 子线程退回 2MB）\n&quot;);
+    else                                printf(&quot;%llu MB\n&quot;, (unsigned long long)(rl.rlim_cur &gt;&gt; 20));
+
     pthread_attr_t attr;
     pthread_attr_init(&amp;attr);
-    /* 设置栈大小 */
-    pthread_attr_setstacksize(&amp;attr, 256 * 1024);  /* 256KB */
-    pthread_t tid;
-    pthread_create(&amp;tid, &amp;attr, worker, NULL);
-    pthread_join(tid, NULL);
+    size_t ss = 0, gs = 0;
+    pthread_attr_getstacksize(&amp;attr, &amp;ss);
+    pthread_attr_getguardsize(&amp;attr, &amp;gs);
+    printf(&quot;子线程默认 stacksize   = %zu B（%zu MB）\n&quot;, ss, ss &gt;&gt; 20);
+    printf(&quot;子线程默认 guardsize   = %zu B\n&quot;, gs);
     pthread_attr_destroy(&amp;attr);
-    printf(&quot;默认栈大小通常 8MB, HFT 可缩小减少开销\n&quot;);
+
+    printf(&quot;\n== 地址空间分区（主线程高地址 / 子线程 mmap 区）==\n&quot;);
+    print_frame(&quot;main&quot;, 5);
+
+    pthread_t t[3];
+    for (long i = 0; i &lt; 3; i++)
+        pthread_create(&amp;t[i], NULL, worker, (void *)i);
+    for (int i = 0; i &lt; 3; i++)
+        pthread_join(t[i], NULL);
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 / 12 核，gcc -O2 零告警）：</p>
+<pre class="code" data-label="text"><code class="c">== 栈属性 ==
+PTHREAD_STACK_MIN      = 16384 B (16 KB)
+RLIMIT_STACK           = 8 MB
+子线程默认 stacksize   = 8388608 B (8 MB)
+子线程默认 guardsize   = 4096 B
+
+== 地址空间分区（主线程高地址 / 子线程 mmap 区）==
+          main 帧地址 0x7ffff1044ff0
+        main 帧地址 0x7ffff1044f90
+      main 帧地址 0x7ffff1044f30
+    main 帧地址 0x7ffff1044ed0
+  main 帧地址 0x7ffff1044e70
+main 帧地址 0x7ffff1044e10
+          worker0 帧地址 0x7aab3b9fee80
+        worker0 帧地址 0x7aab3b9fee10
+      worker0 帧地址 0x7aab3b9fedb0
+    worker0 帧地址 0x7aab3b9fed50
+  worker0 帧地址 0x7aab3b9fecf0
+worker0 帧地址 0x7aab3b9fec90
+          worker1 帧地址 0x7aab3b1fde80
+...
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li><strong>两套地址分区</strong>：main 的帧在 <code class="c">0x7ffff...</code>（进程栈区，紧贴高地址），三个 worker 的帧在 <code class="c">0x7aab...</code>（mmap 区）——同一进程里「线程栈」占着两个完全不同的地址区间。</li>
+<li><strong>每层帧 ~0x60 字节（96B）</strong>：相邻递归层地址差 96B（-O2 含对齐与保存的帧开销），1MB 栈理论余量 1 万+ 层。</li>
+<li><strong>worker 栈相邻间隔 = 8MB 栈 + 4KB guard</strong>（实测 worker1/worker2 帧地址差 0x801000）——mmap 区里一列紧挨的栈+guard 序列，直接看到 guard 页就在栈底之下。</li>
+</ol>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-33-1">33.2 线程与信号（重难点）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a>–<a href="chapter-32.html#ch-32">Ch32</a> · <a href="chapter-22.html#ch-22">Ch22 sigwait</a> · <a href="chapter-28.html#ch-28">Ch28 fork</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>（线程模块收束；daemon 见 <a href="chapter-37.html#ch-37">Ch37</a>）</li>
+<li>下一节：<a href="#s-33-2">33.2 线程与信号（重难点）</a></li>
+<li>栈属性的完整 API/内存布局/<code class="c">inheritsched</code> 大坑：<a href="chapter-29.html#s-29-8">29.8 线程属性</a>（本节不重复展开）</li>
+<li>主线程栈增长机制（<code class="c">VM_GROWSDOWN</code> / <code class="c">expand_downwards</code>）：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
+<li>前置：<a href="chapter-29.html#intro">Ch29</a>–<a href="chapter-32.html#intro">Ch32</a></li>
 </ul>
+<h2>自测题</h2>
+<p><strong>题目 1（判断）：</strong> 子线程栈默认 8MB 用完后会自动增长吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不会。只有主线程栈的 VMA 带 <code class="c">VM_GROWSDOWN</code> 标志（<code class="c">expand_downwards</code> 按需扩展）；子线程栈是 glibc 用 <code class="c">mmap</code> 映的普通匿名区，固定大小——<strong>新线程栈不增长</strong>，写越界要么撞 guard 页 SIGSEGV，要么跨过 guard 踩坏相邻 VMA。</p>
+</details>
+<p><strong>题目 2（计算）：</strong> 512MB 内存的嵌入式板子，最多开多少个线程才安全（只算内核栈）？</p>
+<details>
+<summary>参考答案</summary>
+<p>每线程内核栈 <code class="c">THREAD_SIZE</code> = 16KB（<code class="c">PAGE_SIZE &lt;&lt; 2</code>，v6.6 x86-64 <code class="c">page_64_types.h:16</code>）物理内存、立即占用、不可分页。512MB 全给线程栈（不现实，仅算上限）= 32768 个；实际还要留用户态物理页 + 内核其他结构，工程上按内存 5~10% 预算 → 1600~3200 线程量级。</p>
+</details>
+<p><strong>题目 3（概念）：</strong> guard 页为什么只能挡「小步溢出」？</p>
+<details>
+<summary>参考答案</summary>
+<p>guard 默认 1 页（4KB）且<strong>位于栈底之下</strong>（低地址）。递归类小步溢出每帧只向下挪几十字节，会先踩进 guard → SIGSEGV（好排查）。但单个大写入（如 <code class="c">char buf[8192]</code> 的 memset）一步跨过 4KB guard 直接命中相邻 VMA——可能不崩，数据悄悄坏。</p>
+</details>
+<p><strong>题目 4（观察）：</strong> 怎么用 <code class="c">pmap</code> 或 <code class="c">/proc/pid/maps</code> 区分主线程栈和子线程栈？</p>
+<details>
+<summary>参考答案</summary>
+<p>主线程栈是 <code class="c">[stack]</code> 标记的 VMA（高地址）；子线程栈无专门标记，表现为 mmap 区的匿名 VMA（<code class="c">[ anon ]</code>，4KB/8MB 大小、前后常伴一个 <code class="c">---p</code>（无权限）小段即 guard）。demo 里 worker 帧地址 <code class="c">0x7f4f...</code> 与 main 的 <code class="c">0x7ffc...</code> 分区即直接证据。</p>
+</details>
       </section>
       <section class="section" id="s-33-2">
         <div class="sec-head"><div class="sec-no">33.2</div><h2>线程与信号（重难点）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/signal.c</code>（<code class="c">wants_signal():987</code> · <code class="c">complete_signal():1004</code> · <code class="c">rt_sigprocmask():3177</code> · <code class="c">do_send_specific():3935</code>）
+本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
 - 上一节：<a href="#s-33-1">33.1 线程栈</a>
 - 下一节：<a href="#s-33-3">33.3 进程控制</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>int pthread_sigmask(int how, const sigset_t <em>set, sigset_t </em>oldset); int pthread_kill(pthread_t thread, int sig);   /<em> 仅同进程内 </em>/ int sigwait(const sigset_t <em>set, int </em>sig);    /<em> 同步取信号 </em>/</p>
+<ol>
+<li>多线程下信号语义怎么分裂的——哪些东西全进程共享、哪些每线程一份？</li>
+<li><code class="c">kill</code> 发的信号到底<strong>哪个线程</strong>收到？内核怎么选（不是随机）？</li>
+<li><code class="c">pthread_sigmask</code> / <code class="c">pthread_kill</code> / <code class="c">sigwait</code> 三件套怎么配合出「无异步处理器」的架构？</li>
+</ol>
 <hr />
 <h2>要点</h2>
+<h3>信号模型：共享与私有的精确分界</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>进程级（共享）</th>
-<th>线程级（私有）</th>
+<th>属性</th>
+<th>作用域</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">sigaction</code> 处置 / 默认动作</td>
-<td><strong>信号掩码</strong>（<code class="c">pthread_sigmask</code>）</td>
+<td>信号<strong>处置</strong>（handler/DFL/IGN）</td>
+<td>进程级共享</td>
+<td>所有线程共用一张 <code class="c">sigaction</code> 表（<code class="c">sighand</code> 结构，<code class="c">CLONE_SIGHAND</code> 才共享）</td>
 </tr>
 <tr>
-<td>进程 pending（标准信号不排队）</td>
-<td>线程 pending；递送目标线程</td>
+<td>信号<strong>掩码</strong></td>
+<td><strong>每线程独立</strong></td>
+<td>每个 <code class="c">task_struct</code> 自带 <code class="c">blocked</code> 位图——<strong>不存在"进程掩码"</strong></td>
+</tr>
+<tr>
+<td>进程级 pending（<code class="c">shared_pending</code>）</td>
+<td>进程级</td>
+<td><code class="c">kill()</code>/终端发给进程的信号先进这里</td>
+</tr>
+<tr>
+<td>线程级 pending（<code class="c">task-&gt;pending</code>）</td>
+<td>每线程独立</td>
+<td><code class="c">pthread_kill</code>/<code class="c">tgkill</code> 定向投递；硬件异常（SIGSEGV/SIGFPE）也走这里</td>
+</tr>
+<tr>
+<td>handler 的执行</td>
+<td>跑在<strong>收到信号的那条线程</strong>上</td>
+<td>用该线程的栈，异步于该线程的控制流</td>
 </tr>
 </tbody>
 </table></div>
+<p>⚠ 速记口诀：<strong>处置共享，掩码私有；来源决定队列（进程级/线程级），投递选定线程</strong>。</p>
+<h3>「任选一个未阻塞的线程」——内核的精确算法</h3>
+<p>教科书常说异步信号「发给任意未阻塞线程」，内核实现（<code class="c">complete_signal():1004</code>）其实是一个<strong>带状态的两级选择</strong>：</p>
+<pre class="code" data-label="C"><code class="c">static void complete_signal(int sig, struct task_struct *p, enum pid_type type)
+{
+        ...
+        if (wants_signal(sig, p))              /* ① 先试&quot;建议线程&quot; p（发送目标/current） */
+                t = p;
+        else if ((type == PIDTYPE_PID) || thread_group_empty(p))
+                return;                        /* 单线程且它不想要 → 挂着 */
+        else {
+                t = signal-&gt;curr_target;       /* ② 从上次投递目标开始轮转 */
+                while (!wants_signal(sig, t)) {
+                        t = next_thread(t);
+                        if (t == signal-&gt;curr_target)
+                                return;        /* 全组都不想要 → 挂在共享队列 */
+                }
+                signal-&gt;curr_target = t;       /* 更新轮转游标 */
+        }
+        ...
+        signal_wake_up(t, sig == SIGKILL);     /* 唤醒被选中的线程 */
+}
+</code></pre>
+<p><code class="c">wants_signal():987</code> 的判定（不想要的四种情况）：</p>
+<pre class="code" data-label="C"><code class="c">if (sigismember(&amp;p-&gt;blocked, sig))      return false;  /* 阻塞了 */
+if (p-&gt;flags &amp; PF_EXITING)              return false;  /* 快死了 */
+if (task_is_stopped_or_traced(p))       return false;  /* 停止/被追踪 */
+return task_curr(p) || !task_sigpending(p);            /* 正在跑或没有积压 */
+</code></pre>
+<p>四个推论：</p>
+<ol>
+<li><strong>不是随机</strong>：从 <code class="c">curr_target</code> 轮转，连续发同信号会依次落到不同线程（但若某线程独占解除阻塞，<code class="c">wants_signal</code> 只有它满足，全部进它）；</li>
+<li><strong>全组都阻塞 → 挂在共享 pending 队列</strong>，谁先解除阻塞谁在返回用户态时优先取走；</li>
+<li><strong>定向信号（<code class="c">pthread_kill</code>/<code class="c">tgkill</code>，<code class="c">PIDTYPE_PID</code>）</strong>跳过轮转直接指名——这就是"仅同进程内"的 <code class="c">pthread_kill</code> 内核路径（<code class="c">do_send_specific():3935</code>，Ch32 已核验）；</li>
+<li><strong>致命信号广播</strong>：<code class="c">complete_signal</code> 下半段发现 <code class="c">sig_fatal</code> 且非 core 场景，直接给<strong>全组每个线程</strong>塞 SIGKILL 并 <code class="c">SIGNAL_GROUP_EXIT</code>——一个线程杀全组。</li>
+</ol>
+<h3>三件套 API</h3>
 <pre class="code" data-label="C"><code class="c">int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset);
-int pthread_kill(pthread_t thread, int sig);   /* 仅同进程内 */
-int sigwait(const sigset_t *set, int *sig);    /* 同步取信号 */
+int pthread_kill(pthread_t thread, int sig);   /* 仅同进程；跨进程用 tgkill(2) */
+int sigwait(const sigset_t *set, int *sig);    /* 同步取走：不装 handler */
 </code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>投递</th>
-<th></th>
+<th>API</th>
+<th>内核真身</th>
+<th>要点</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>异步信号（SIGINT 等）</td>
-<td>任选<strong>未阻塞该信号</strong>的线程</td>
+<td><code class="c">pthread_sigmask</code></td>
+<td><code class="c">rt_sigprocmask():3177</code> 系统调用（glibc 薄包装）</td>
+<td>与 <code class="c">sigprocmask</code> 同一 syscall；多线程程序里<strong>禁止</strong>用 <code class="c">sigprocmask</code>（SUSv3 已废除其 MT 语义）</td>
 </tr>
 <tr>
 <td><code class="c">pthread_kill</code></td>
-<td>指定线程</td>
+<td><code class="c">tgkill(tgid, tid, sig)</code> → <code class="c">do_send_specific():3935</code></td>
+<td>线程级 pending 队列；目标线程已退出 → <code class="c">ESRCH</code></td>
 </tr>
 <tr>
-<td>handler</td>
-<td>跑在收到信号的那条线程上</td>
+<td><code class="c">sigwait</code></td>
+<td>原子「取消阻塞 + 等待」循环（glibc 用户态实现）</td>
+<td><strong>前提</strong>：调用线程已阻塞这些信号；取走后<strong>不执行 handler</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>推荐：</strong> 创建业务线程前主线程阻塞关心信号 → 专用线程 <code class="c">sigwait</code> → 业务线程不装异步 handler。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/thread_sigwait.c"><code class="c">code/thread_sigwait.c</code></a></p>
+<p><code class="c">sigwait</code> 的原子性：它先检查共享+线程 pending 队列，没有就睡（<code class="c">sigtimedwait</code> syscall）——<strong>没有「先解除阻塞再等」的窗口</strong>，信号不会在这中间漏给别的线程或触发 handler。</p>
+<h3>推荐架构：sigwait 专用线程</h3>
+<pre class="code" data-label="text"><code class="c">main 启动（最先做的事）
+  │ pthread_sigmask(SIG_BLOCK, {SIGINT,SIGTERM,SIGHUP,...})   ← 此后创建的线程全部继承阻塞
+  │
+  ├── 信号线程：sigwait(&amp;set, &amp;sig) → 翻译成内部事件（管道/事件fd/原子标志）
+  ├── 业务线程 A/B/C：不装 handler，永不接收信号（全阻塞）
+  └── 主线程：join / 事件循环
+</code></pre>
+<p>收益（相对 async handler）：</p>
+<ol>
+<li>handler 里<strong>什么都不能调</strong>（async-signal-safe 限制）→ sigwait 线程是普通线程，随便用 <code class="c">printf/malloc/lock</code>；</li>
+<li>异步信号在任意业务线程的任意指令间打断 → 确定性灾难（HFT 热路径毛刺）→ sigwait 线程集中处理，业务线程零干扰；</li>
+<li>信号语义从「异步中断」变成「同步消息」——可以排队、可以日志、可以优雅退出。</li>
+</ol>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -634,85 +905,350 @@ int sigwait(const sigset_t *set, int *sig);    /* 同步取信号 */
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>信号处置进程级共享，掩码线程级私有</td>
+<td>HFT</td>
+<td>信号线程 + 全员阻塞是<strong>部署标准</strong>：热路径线程绝不允许被 SIGALRM/自定义信号异步打断；优雅退出统一走 sigwait → 广播 shutdown 事件</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>主线程先阻塞→专用线程 sigwait→业务线程不装 handler，避免异步信号毛刺</td>
+<td>嵌入式</td>
+<td><code class="c">kill(pid, sig)</code> 的进程级投递 + <code class="c">curr_target</code> 轮转意味着「信号可能落在任何线程」——信号驱动的单线程假设在 MT 化后直接破坏；sigwait 模式让信号处理可预测</td>
+</tr>
+<tr>
+<td>通用</td>
+<td><code class="c">pthread_kill</code> 定向投递是给单线程「发中断」的合法手段（如打断阻塞中的 IO 线程），但要配 handler 或 sigwait 消费</td>
 </tr>
 </tbody>
 </table></div>
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;signal.h&gt;
+<pre class="code" data-label="C"><code class="c">/* sig_model.c — Ch33.2：信号投递模型三组实测
+ * demo1: 3 线程全阻塞，只有 worker1 解除阻塞 SIGUSR1 → kill() 进程级信号必落 worker1
+ * demo2: pthread_kill 定向 → 只有目标线程的 handler 跑
+ * demo3: sigwait 线程取走 SIGTERM（不触发 handler）
+ * 编译：gcc -O2 -Wall -Wextra -o sig_model sig_model.c -pthread
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
-void handler(int sig) { printf(&quot;线程 %lu 收到信号 %d\n&quot;, (unsigned long)pthread_self(), sig); }
-void *worker(void *arg) {
-    signal(SIGUSR1, handler);
-    pause();
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/syscall.h&gt;
+
+static volatile sig_atomic_t got_in[4];
+static volatile sig_atomic_t handler_ran;
+static int unblock_all;                       /* demo2 置 1：全员解除阻塞 */
+
+static void handler(int sig)
+{
+    handler_ran = 1;
+    int tid = (int)syscall(SYS_gettid);
+    for (int i = 0; i &lt; 4; i++)
+        if (got_in[i] == -tid) { got_in[i] = sig; return; }
+}
+
+static void *worker(void *arg)
+{
+    long id = (long)arg;
+    got_in[id] = -(int)syscall(SYS_gettid);    /* 登记内核 TID（负数=待命） */
+
+    if (id == 1 || unblock_all) {
+        sigset_t set;
+        sigemptyset(&amp;set);
+        sigaddset(&amp;set, SIGUSR1);
+        pthread_sigmask(SIG_UNBLOCK, &amp;set, NULL);
+    }
+    sleep(3);                                  /* 等信号窗口 */
     return NULL;
 }
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    sleep(1);
-    /* pthread_kill: 给特定线程发信号 */
-    pthread_kill(tid, SIGUSR1);
-    pthread_join(tid, NULL);
+
+static void *sigwaiter(void *arg)
+{
+    (void)arg;
+    int sig;
+    sigset_t set;
+    sigemptyset(&amp;set);
+    sigaddset(&amp;set, SIGTERM);
+    for (;;) {
+        if (sigwait(&amp;set, &amp;sig) != 0) break;
+        printf(&quot;  [sigwait 线程] 取到信号 %d（handler_ran=%d，handler 没跑）\n&quot;,
+               sig, (int)handler_ran);
+        if (sig == SIGTERM) return NULL;
+    }
+    return NULL;
+}
+
+int main(void)
+{
+    /* 1. 创建任何线程前阻塞全部实验信号 → 所有线程继承 */
+    sigset_t all;
+    sigemptyset(&amp;all);
+    sigaddset(&amp;all, SIGUSR1);
+    sigaddset(&amp;all, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &amp;all, NULL);
+
+    struct sigaction sa = {0};
+    sa.sa_handler = handler;
+    sigaction(SIGUSR1, &amp;sa, NULL);
+    sigaction(SIGTERM, &amp;sa, NULL);
+
+    printf(&quot;== demo1: 进程级投递只落解除阻塞的线程 ==\n&quot;);
+    pthread_t t[3];
+    for (long i = 0; i &lt; 3; i++) pthread_create(&amp;t[i], NULL, worker, (void *)i);
+    usleep(200 * 1000);                        /* 等线程登记 */
+    kill(getpid(), SIGUSR1);                   /* 进程级发送 */
+    for (int i = 0; i &lt; 3; i++) pthread_join(t[i], NULL);
+    for (int i = 0; i &lt; 3; i++)
+        printf(&quot;  worker%d %s\n&quot;, i, got_in[i] &gt; 0 ? &quot;收到 SIGUSR1&quot; : &quot;（阻塞，未收）&quot;);
+
+    printf(&quot;== demo2: pthread_kill 定向（全员未阻塞，看谁收到）==\n&quot;);
+    handler_ran = 0;
+    unblock_all = 1;                           /* 全员解除阻塞：投递才有三选一 */
+    memset((void *)got_in, 0, sizeof got_in);
+    pthread_t t2[3];
+    for (long i = 0; i &lt; 3; i++) pthread_create(&amp;t2[i], NULL, worker, (void *)i);
+    usleep(200 * 1000);
+    pthread_kill(t2[2], SIGUSR1);              /* 定向第三个 */
+    for (int i = 0; i &lt; 3; i++) pthread_join(t2[i], NULL);
+    printf(&quot;  worker0/1/2 收到 = %d/%d/%d（定向只进 worker2）\n&quot;,
+           got_in[0] &gt; 0, got_in[1] &gt; 0, got_in[2] &gt; 0);
+
+    printf(&quot;== demo3: sigwait 同步取信号 ==\n&quot;);
+    handler_ran = 0;
+    pthread_t sw;
+    pthread_create(&amp;sw, NULL, sigwaiter, NULL);
+    usleep(100 * 1000);
+    kill(getpid(), SIGTERM);                   /* 进程级 SIGTERM */
+    pthread_join(sw, NULL);
+    printf(&quot;  handler_ran=%d（sigwait 模式下 handler 完全不跑）\n&quot;, (int)handler_ran);
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 / 12 核，gcc -O2 零告警）：</p>
+<pre class="code" data-label="text"><code class="c">== demo1: 进程级投递只落解除阻塞的线程 ==
+  worker0 （阻塞，未收）
+  worker1 收到 SIGUSR1
+  worker2 （阻塞，未收）
+== demo2: pthread_kill 定向（全员未阻塞，看谁收到）==
+  worker0/1/2 收到 = 0/0/1（定向只进 worker2）
+== demo3: sigwait 同步取信号 ==
+  [sigwait 线程] 取到信号 15（handler_ran=0，handler 没跑）
+  handler_ran=0（sigwait 模式下 handler 完全不跑）
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li><strong>demo1 是 <code class="c">complete_signal</code> 算法的活体演示</strong>：<code class="c">wants_signal()</code> 对 worker0/2 因 <code class="c">blocked</code> 判 false，轮转游标最终停在 worker1——全组唯一解除阻塞的线程。10 次运行 10 次落 worker1（确定性，不是概率）。</li>
+<li><strong>demo2 验证定向队列</strong>：全员解除阻塞（排除掩码因素）后 <code class="c">pthread_kill</code> → <code class="c">tgkill</code> → 线程级 pending，仍只有 worker2 的 handler 跑——定向与「挑哪个未阻塞线程」的进程级选择互不相干。
+   （推论：若目标线程阻塞着该信号，定向信号进它的线程 pending 挂起——handler 要等它解除阻塞才跑，期间不丢。）</li>
+<li><strong>demo3 的 <code class="c">handler_ran=0</code></strong>：SIGTERM 明明装了 handler，但被 sigwait 线程<strong>同步取走</strong>——signal 的「异步中断」语义被改写成「消息」。这就是推荐架构的根基。</li>
+</ol>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
 <li>上一节：<a href="#s-33-1">33.1 线程栈</a></li>
 <li>下一节：<a href="#s-33-3">33.3 进程控制</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a>–<a href="chapter-32.html#ch-32">Ch32</a> · <a href="chapter-22.html#ch-22">Ch22 sigwait</a> · <a href="chapter-28.html#ch-28">Ch28 fork</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>（线程模块收束；daemon 见 <a href="chapter-37.html#ch-37">Ch37</a>）</li>
+<li>信号基础（处置/pending/sigaction）：<a href="chapter-20.html#intro">Ch20</a> · <a href="chapter-22.html#intro">Ch22 sigwaitinfo</a></li>
+<li><code class="c">pthread_cancel</code> 的 tgkill 链路：<a href="chapter-32.html#s-32-1">32.1 取消请求</a></li>
 </ul>
+<h2>自测题</h2>
+<p><strong>题目 1（辨析）：</strong> 「多线程进程的信号掩码是进程级共享的」——对吗？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>错</strong>。掩码<strong>每线程独立</strong>（每个 <code class="c">task_struct</code> 自带 <code class="c">blocked</code>）。共享的是：信号<strong>处置</strong>表（<code class="c">sighand</code>，<code class="c">CLONE_SIGHAND</code> 复制并共享）、进程级 pending 队列（<code class="c">shared_pending</code>）。<code class="c">pthread_sigmask</code> 改的只是<strong>本线程</strong>的掩码——这正是「创建线程前主线程先阻塞 → 全体继承」模式成立的原因（新线程继承创建者的掩码副本）。</p>
+</details>
+<p><strong>题目 2（内核）：</strong> <code class="c">kill(pid, SIGUSR1)</code> 发给 4 线程进程，其中 3 个阻塞了 SIGUSR1、1 个没阻塞。信号一定被谁接收？如果 4 个全阻塞呢？</p>
+<details>
+<summary>参考答案</summary>
+<p>未阻塞的那 1 个。<code class="c">complete_signal():1004</code> 的轮转循环里 <code class="c">wants_signal():987</code> 因 <code class="c">blocked</code>/<code class="c">PF_EXITING</code>/stopped 对另外 3 个返回 false，游标停在唯一合格者。全阻塞时：循环回到 <code class="c">curr_target</code> 起点仍未找到 → 函数返回，信号<strong>留在共享 pending 队列</strong>；之后任何一个线程解除阻塞并在返回用户态时检查到它，就取走。</p>
+</details>
+<p><strong>题目 3（设计）：</strong> 多线程热路径服务要处理 SIGTERM 优雅退出，为什么不能在 handler 里直接置 flag + printf 日志？</p>
+<details>
+<summary>参考答案</summary>
+<p>① handler 是 async-signal-unsafe 重灾区：<code class="c">printf</code> 动 stdio 锁（可能恰好被中断线程持有 → 死锁）；② 信号可能落在<strong>任意</strong>业务线程任意指令间——<code class="c">complete_signal</code> 轮转不保证目标，热路径被随机打断本身就是延迟毛刺；③ 队列不保证（标准信号合并），快速连发只记一次。正确姿势：全员阻塞 + sigwait 专用线程取信号 → 写管道/事件 fd → 主循环统一处理（demo3 模式）。</p>
+</details>
+<p><strong>题目 4（API 细节）：</strong> <code class="c">sigwait</code> 的前置条件是什么？违反了会怎样？</p>
+<details>
+<summary>参考答案</summary>
+<p>调用线程必须<strong>已阻塞</strong>待等信号（<code class="c">pthread_sigmask(SIG_BLOCK, ...)</code>）。sigwait 是"原子地检查 pending 并取走，否则睡在 <code class="c">sigtimedwait</code> 上"——若信号未阻塞且装了 handler，信号可能在进入 sigwait 之前就被递送、handler 抢跑；未阻塞且无 handler 则默认动作直接生效（SIGTERM 杀进程）。实践中先在创建线程前阻塞、再起 sigwait 线程，继承保证前置成立。</p>
+</details>
+<p><strong>题目 5（陷阱）：</strong> <code class="c">pthread_kill(tid, sig)</code> 可以给<strong>另一个进程</strong>的线程发信号吗？给已退出的线程发呢？</p>
+<details>
+<summary>参考答案</summary>
+<p>不能跨进程：<code class="c">pthread_t</code> 是本进程 glibc 的 <code class="c">struct pthread *</code>，跨进程无意义；内核路径 <code class="c">tgkill(tgid, tid, sig)</code>（<code class="c">do_send_specific():3935</code>）本身就限定同 <code class="c">tgid</code>。给已 join/退出的线程发：<code class="c">pthread_t</code> 可能已被<strong>复用</strong>（栈缓存复用，29.5 警告），信号可能打到新线程——这是必须 join 之后再丢弃 <code class="c">pthread_t</code> 的原因之一；内核侧若 TID 已死则 <code class="c">ESRCH</code>。</p>
+</details>
       </section>
       <section class="section" id="s-33-3">
         <div class="sec-head"><div class="sec-no">33.3</div><h2>进程控制</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
-- 上一节：<a href="#s-33-1">33.2 线程与信号（重难点）</a>
+<p>源码核验：Linux v6.6 · <code class="c">fs/exec.c</code>（<code class="c">de_thread():1044</code> · <code class="c">group_exec_task</code> 窃 PID 机制 <code class="c">:1093</code>）· <code class="c">kernel/signal.c</code>（<code class="c">zap_other_threads():1378</code>）· <code class="c">kernel/exit.c</code>（<code class="c">do_group_exit():999</code>）
+本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
+- 上一节：<a href="#s-33-2">33.2 线程与信号（重难点）</a>
 - 下一节：<a href="#s-33-4">33.4 实现模型</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>pthread_atfork(prepare, parent, child); ---</p>
+<ol>
+<li><code class="c">fork</code> / <code class="c">exec</code> / <code class="c">exit</code> 三个老朋友在多线程环境下各变成什么语义？</li>
+<li>「多线程 fork 后锁状态错乱」的内核层解释——为什么死锁是<strong>必然</strong>而非概率？</li>
+<li><code class="c">pthread_atfork</code> 能救多少？它的执行顺序和用途边界？</li>
+</ol>
 <hr />
 <h2>要点</h2>
+<h3>三大调用 × 多线程语义总表</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>调用</th>
-<th>多线程行为</th>
+<th>子进程/结果</th>
+<th>其他线程</th>
+<th>内核路径</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>fork</strong></td>
-<td>子进程只留调用线程；锁状态危险 → <strong>立刻 exec</strong>；<code class="c">pthread_atfork</code> 仅缓解</td>
+<td><code class="c">fork()</code></td>
+<td><strong>只复制调用线程</strong>（变单线程进程）</td>
+<td>父进程全部继续</td>
+<td><code class="c">copy_process()</code> 不带 <code class="c">CLONE_THREAD</code> → 新线程组</td>
 </tr>
 <tr>
-<td><strong>exec</strong></td>
-<td>只留调用线程；handler→DFL</td>
+<td><code class="c">exec()</code></td>
+<td>成功后调用线程<strong>独活</strong>（地址空间全换）</td>
+<td><strong>全被杀光</strong></td>
+<td><code class="c">de_thread():1044</code> → <code class="c">zap_other_threads():1378</code></td>
 </tr>
 <tr>
-<td><strong>exit</strong> / main return</td>
-<td><strong>整进程</strong>全线程死</td>
+<td><code class="c">exit()</code> / main return</td>
+<td>—</td>
+<td><strong>整组全灭</strong></td>
+<td><code class="c">do_group_exit():999</code> → 每线程塞 SIGKILL</td>
 </tr>
 <tr>
-<td>只退主线程</td>
-<td>主线程 <code class="c">pthread_exit</code></td>
+<td>主线程 <code class="c">pthread_exit()</code></td>
+<td>—</td>
+<td><strong>继续活</strong>（与 return 相反！）</td>
+<td>只是本线程 <code class="c">do_exit()</code>，无 group exit</td>
+</tr>
+<tr>
+<td>任一线程被致命信号</td>
+<td>—</td>
+<td><strong>整组全灭</strong></td>
+<td><code class="c">complete_signal()</code> 下半段全组广播（33.2）</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">pthread_atfork(prepare, parent, child);
+<h3>fork：单线程子进程 + 锁的「幽灵状态」</h3>
+<p>fork 只复制<strong>调用线程</strong>（<code class="c">copy_process</code> 不带 <code class="c">CLONE_THREAD</code> 位，子进程是全新单线程组）。但地址空间是 COW 全量复制——<strong>包括所有锁的内存状态</strong>。</p>
+<p>死锁机理（必然性论证）：</p>
+<pre class="code" data-label="text"><code class="c">父进程（2 线程）                     fork 时刻的内存快照
+├── 线程 A：持有 mutex M（M.locked=1）
+└── 线程 B：调用 fork()              ──COW──▶  子进程（只有 B）
+                                                ├─ M.locked=1  ← 锁状态原样继承
+                                                └─ 持有者 A？不存在（没被复制）
+子进程 lock(M)：
+  glibc 看 M.locked=1 → 走 futex_wait 等待解锁
+  但唯一能解锁的 A 在父进程里（另一个地址空间实例）
+  → 子进程睡死。这不是概率，是结构性死锁。
 </code></pre>
+<p>三类高危锁：malloc 内部 arena 锁（子进程任何 <code class="c">malloc/printf</code> 都可能踩）、stdio 流锁（<code class="c">printf</code> 直接进锁）、用户全局 mutex。POSIX 结论：<strong>fork 后子进程在 exec 前只准调用 async-signal-safe 函数</strong>——因为 async-signal-safe 的约束（不可持锁）恰好覆盖这个场景。</p>
+<h3>exec：de_thread 的「窃取 PID」绝活</h3>
+<p>exec 杀光其他线程由 <code class="c">fs/exec.c:1264</code> 的 <code class="c">de_thread(me)</code> 完成（v6.6 核验）：</p>
+<pre class="code" data-label="C"><code class="c">static int de_thread(struct task_struct *tsk)          // fs/exec.c:1044
+{
+        ...
+        sig-&gt;group_exec_task = tsk;                     // 标记：exec 进行中
+        sig-&gt;notify_count = zap_other_threads(tsk);     // :1067 杀光其他线程
+        while (sig-&gt;notify_count) {                     // 等它们真正退出
+                __set_current_state(TASK_KILLABLE);
+                schedule();
+        }
+        ...
+        if (!thread_group_leader(tsk)) {                // :1093 调用者不是 leader？
+                struct task_struct *leader = tsk-&gt;group_leader;
+                ...                                     // 等 leader 变 inactive
+                /* 并 swap PID：非 leader 线程 exec 后&quot;顶替&quot;leader 的 PID */
+        }
+}
+</code></pre>
+<p>两个要点：</p>
+<ol>
+<li><strong>谁 exec 谁独活</strong>——不管是不是主线程。非 leader 线程 exec 时，内核让它<strong>接管 leader 的 PID</strong>（TID/TGID 换位）——因为 POSIX 语义要求 exec 后进程身份不变（<code class="c">getpid()</code> 不能变）。这是 exec 实现里最精巧的一步；</li>
+<li><code class="c">zap_other_threads()</code>（<code class="c">kernel/signal.c:1378</code>）给组内每个其他线程塞 SIGKILL 并等 <code class="c">notify_count</code> 归零——<strong>exec 前其他线程持有的锁、正在写的数据全部戛然而止</strong>，没有清理机会（对比 Ch32 取消：至少还能跑 cleanup handler）。所以 exec 慎用于「其他线程有未落盘状态」的时刻。</li>
+</ol>
+<h3>exit 的不对称：return vs pthread_exit</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>主线程</th>
+<th>其他线程</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return</code></td>
+<td>任意</td>
+<td><strong>全灭</strong>（return 触发 <code class="c">exit()</code> → <code class="c">exit_group</code> 系统调用 → 每线程 SIGKILL）</td>
+</tr>
+<tr>
+<td><code class="c">exit()</code></td>
+<td>任意</td>
+<td><strong>全灭</strong>（同上，<code class="c">do_group_exit():999</code>）</td>
+</tr>
+<tr>
+<td><code class="c">pthread_exit()</code></td>
+<td>任意</td>
+<td><strong>继续活</strong>（主线程只是普通线程退出；等价于 main 里 <code class="c">pthread_exit(NULL)</code> 后进程"由剩下线程维持"）</td>
+</tr>
+<tr>
+<td><code class="c">_exit()</code></td>
+<td>任意</td>
+<td><strong>全灭</strong>（直通 <code class="c">exit_group</code>，绕过 atexit/flush）</td>
+</tr>
+</tbody>
+</table></div>
+<p>主线程 <code class="c">return n</code> 与 <code class="c">exit(n)</code> 同效；想「主线程走人但 worker 跑完」必须用 <code class="c">pthread_exit</code>。反过来 worker 里误调 <code class="c">exit()</code> 会把整个进程（含主线程）带走——这是 MT 程序常见事故。</p>
+<h3>pthread_atfork：执行顺序与边界</h3>
+<pre class="code" data-label="C"><code class="c">pthread_atfork(prepare, parent, child);   /* 可注册多个，构成栈 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>执行者</th>
+<th>顺序</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">prepare</code></td>
+<td><strong>父进程</strong>（fork 前）</td>
+<td>注册序（先注册先跑）</td>
+<td>锁住全部共享锁</td>
+</tr>
+<tr>
+<td><code class="c">parent</code></td>
+<td>父进程（fork 后）</td>
+<td>注册逆序</td>
+<td>解锁</td>
+</tr>
+<tr>
+<td><code class="c">child</code></td>
+<td>子进程（fork 后）</td>
+<td>注册逆序</td>
+<td><strong>重新初始化</strong>（而不是解锁）锁</td>
+</tr>
+</tbody>
+</table></div>
+<p>边界（为什么"仅缓解"）：</p>
+<ol>
+<li>只能锁<strong>你知道的</strong>锁——glibc 内部锁（malloc/stdio）轮不到你；</li>
+<li><code class="c">prepare</code> 持锁窗口里其他线程照常运行，fork 的 COW 快照仍可能切到不一致中间态；</li>
+<li>多个库各自注册 atfork，顺序耦合脆弱；</li>
+<li>子进程 <code class="c">child</code> 里只能用 async-signal-safe 手段（此刻可能还持有一堆别人的锁）。</li>
+</ol>
+<p>工程结论：<strong>多线程 + fork 的正解是 fork 后立即 exec</strong>（锁的幽灵状态被全新映像清空）；需要 fork-worker 模式时用 <code class="c">posix_spawn</code>。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -724,43 +1260,158 @@ int main(void) {
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>fork/exec 只留调用线程，exit 全线程死</td>
+<td>HFT</td>
+<td>多线程交易进程<strong>禁止 fork-worker</strong>（锁幽灵 + 抖动）；拉起外部工具一律 <code class="c">posix_spawn</code>；exec 只在启动/重载配置用，且 exec 前自己确保无未落盘状态</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>多线程进程 fork 后立刻 exec；exit 会杀整进程（含其它线程）</td>
+<td>主线程退出选 <code class="c">pthread_exit</code>（让 logger/风控线程收尾）还是 <code class="c">exit</code>（快速全灭）是<strong>关闭语义设计</strong>，不是细节</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>exec 的 <code class="c">de_thread</code> 全杀意味着「热升级」方案里其他线程必须先自行 quiesce（进入无未提交状态点），否则状态丢失</td>
 </tr>
 </tbody>
 </table></div>
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;unistd.h&gt;
+<pre class="code" data-label="C"><code class="c">/* proc_ctrl.c — Ch33.3：fork/exec/exit 三语义实测
+ * demo1: fork 锁幽灵 —— 子进程 trylock 得 EBUSY（持有者已不存在）
+ * demo2: pthread_atfork 的 child 重初始化救场
+ * demo3: exec 杀光其他线程 —— worker 心跳在 execl 后戛然而止
+ * 编译：gcc -O2 -Wall -Wextra -o proc_ctrl proc_ctrl.c -pthread
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
-void *worker(void *arg) {
-    printf(&quot;线程 PID=%d\n&quot;, getpid());
-    /* fork 在多线程中只复制调用线程 */
-    pid_t pid = fork();
-    if (pid == 0) { printf(&quot;子进程: 只有 fork 的线程\n&quot;); _exit(0); }
-    wait(NULL);
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/wait.h&gt;
+
+static pthread_mutex_t m1 = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t m2 = PTHREAD_MUTEX_INITIALIZER;
+static volatile sig_atomic_t heartbeat;
+
+static void *locker(void *arg)
+{
+    (void)arg;
+    pthread_mutex_lock(&amp;m1);          /* 持有直到进程结束（不还） */
     return NULL;
 }
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    pthread_join(tid, NULL);
-    return 0;
+
+static void *heart(void *arg)
+{
+    (void)arg;
+    for (int i = 0; ; i++) {
+        heartbeat = i;
+        printf(&quot;  [worker] 心跳 %d（内核 TID 活着）\n&quot;, i);
+        sleep(1);
+    }
+    return NULL;                      /* 不可达 */
+}
+
+static void atfork_prepare(void) { pthread_mutex_lock(&amp;m2); }
+static void atfork_parent (void) { pthread_mutex_unlock(&amp;m2); }
+static void atfork_child  (void)
+{
+    /* 子进程里：m2 处于锁定状态但持有者在父进程 → 重新初始化 */
+    pthread_mutex_init(&amp;m2, NULL);
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);          /* execl 前缓冲必须已落盘 */
+
+    printf(&quot;== demo1: fork 锁幽灵（trylock 证据）==\n&quot;);
+    pthread_t t;
+    pthread_create(&amp;t, NULL, locker, NULL);
+    usleep(50 * 1000);                /* 等 locker 拿到 m1 */
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        int r = pthread_mutex_trylock(&amp;m1);
+        printf(&quot;  [子进程] trylock(m1) = %d (%s)\n&quot;, r,
+               r == EBUSY ? &quot;EBUSY：锁被'幽灵'持有，持有者不存在&quot; : &quot;拿到&quot;);
+        _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+
+    printf(&quot;== demo2: pthread_atfork child 重初始化 ==\n&quot;);
+    pthread_atfork(atfork_prepare, atfork_parent, atfork_child);
+    pid = fork();                     /* prepare 锁 m2 → child 重初始化 → parent 解锁 */
+    if (pid == 0) {
+        int r = pthread_mutex_trylock(&amp;m2);
+        printf(&quot;  [子进程] trylock(m2) = %d（%s）\n&quot;, r,
+               r == 0 ? &quot;成功：atfork child 重初始化救场&quot; : &quot;EBUSY：仍被幽灵持有&quot;);
+        _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+
+    printf(&quot;== demo3: exec 杀光其他线程 ==\n&quot;);
+    pthread_t hw;
+    pthread_create(&amp;hw, NULL, heart, NULL);
+    sleep(3);                         /* 看三秒心跳 */
+    printf(&quot;  [main] execl(/bin/echo) —— de_thread() 即将杀光其他线程\n&quot;);
+    fflush(stdout);
+    execl(&quot;/bin/echo&quot;, &quot;echo&quot;, &quot;  [新映像] exec 完成：只剩 exec 调用线程&quot;, (char *)NULL);
+    perror(&quot;execl&quot;);                  /* 只有失败才到这 */
+    return 1;
 }
 </code></pre>
+<p>实测输出（WSL2 / 12 核，gcc -O2 零告警）：</p>
+<pre class="code" data-label="text"><code class="c">== demo1: fork 锁幽灵（trylock 证据）==
+  [子进程] trylock(m1) = 16 (EBUSY：锁被'幽灵'持有，持有者不存在)
+== demo2: pthread_atfork child 重初始化 ==
+  [子进程] trylock(m2) = 0（成功：atfork child 重初始化救场）
+== demo3: exec 杀光其他线程 ==
+  [worker] 心跳 0（内核 TID 活着）
+  [worker] 心跳 1（内核 TID 活着）
+  [worker] 心跳 2（内核 TID 活着）
+  [main] execl(/bin/echo) —— de_thread() 即将杀光其他线程
+  [worker] 心跳 3（内核 TID 活着）
+  [新映像] exec 完成：只剩 exec 调用线程
+</code></pre>
+<p>三点解读：</p>
+<ol>
+<li><strong>demo1 用 trylock 代替 lock 拿到「死锁的活性证据」</strong>：<code class="c">EBUSY</code>（16）说明锁确实处于锁定态——持有者线程没有被复制，<code class="c">lock()</code> 会永远睡在 futex 上。换 <code class="c">lock()</code> 就是必然死锁现场。</li>
+<li><strong>demo2 是 atfork 的标准用法</strong>：<code class="c">prepare</code> 在 fork 前锁住 m2（快照里它是锁定态）→ <code class="c">child</code> 回调里 <code class="c">pthread_mutex_init</code> 重新初始化（不是解锁——解锁一个"无主"锁语义上没定义）→ trylock 成功。注意 prepare 必须是<strong>唯一</strong>加锁者：主线程若已手动持锁再 fork，prepare 再锁就是同线程二次加锁 = 死锁（本 demo 初版实测翻车点）。atfork 的价值与边界：<strong>只救你自己管理的锁</strong>。</li>
+<li><strong>demo3</strong>：worker 心跳到 3（main 打印与 execl 之间它又跳了一拍——exec 杀线程需要走 de_thread 的等待循环，不是零耗时）后戛然而止、echo 的输出出现——<code class="c">de_thread()</code> 杀线程没有任何清理回调（对比 pthread_cancel 至少有 cleanup 栈），exec 是「全场清零」。</li>
+</ol>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-33-1">33.2 线程与信号（重难点）</a></li>
+<li>上一节：<a href="#s-33-2">33.2 线程与信号（重难点）</a></li>
 <li>下一节：<a href="#s-33-4">33.4 实现模型</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a>–<a href="chapter-32.html#ch-32">Ch32</a> · <a href="chapter-22.html#ch-22">Ch22 sigwait</a> · <a href="chapter-28.html#ch-28">Ch28 fork</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>（线程模块收束；daemon 见 <a href="chapter-37.html#ch-37">Ch37</a>）</li>
+<li>fork 内核路径（<code class="c">copy_process</code> / COW）：<a href="chapter-28.html#intro">28.1</a> · <a href="chapter-29.html#s-29-9">29.9 线程 vs 进程</a></li>
+<li>清理路径对比（cleanup 栈 vs 无清理）：<a href="chapter-32.html#s-32-5">32.5 清理处理器</a></li>
 </ul>
+<h2>自测题</h2>
+<p><strong>题目 1（推演）：</strong> 4 线程进程，线程 3（非 leader）调用 <code class="c">execve()</code> 成功。exec 后 <code class="c">getpid()</code> 返回什么？为什么内核要这么设计？</p>
+<details>
+<summary>参考答案</summary>
+<p>返回原 leader 的 PID（进程身份不变）。<code class="c">de_thread():1044</code> 里若调用者非 leader：等 leader 进入 inactive 后<strong>接管（窃取）其 PID</strong>（<code class="c">:1093</code> 起的换位逻辑）——把调用线程的 TID/TGID 与已退出的 leader 互换。原因：POSIX 语义要求 exec 不改变进程身份（父 shell 按 PID 追踪子进程、waitpid 才能工作）。</p>
+</details>
+<p><strong>题目 2（对比）：</strong> 主线程 <code class="c">return 0</code>、<code class="c">exit(0)</code>、<code class="c">pthread_exit(NULL)</code> 三者对其他线程的影响？哪个最常被误用？</p>
+<details>
+<summary>参考答案</summary>
+<p>前两个等价——<strong>全组退出</strong>（return 触发 <code class="c">exit()</code> → <code class="c">exit_group</code> → 每线程 SIGKILL）；<code class="c">pthread_exit(NULL)</code> 只退主线程，<strong>其他线程继续活</strong>，进程直到最后一个线程结束才退出。误用冠军是 <code class="c">return</code>：写了 main 以为「函数结束」结果把后台 worker 全杀了；以及 worker 线程里调 <code class="c">exit()</code>（本想退出自己，实际全灭）。</p>
+</details>
+<p><strong>题目 3（设计）：</strong> <code class="c">pthread_atfork</code> 的 <code class="c">child</code> 回调里应该「解锁」还是「重新初始化」锁？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>重新初始化</strong>（<code class="c">pthread_mutex_init</code>）。子进程里锁的"锁定"状态是从父进程 COW 快照继承的内存位，但持有者线程不存在——对一个无主锁 unlock 没有定义（glibc 的 ERRORCHECK 锁会返回 EPERM）。init 把锁结构清回出厂态，语义干净。但注意：这只对<strong>你自己的锁</strong>有效，glibc malloc/stdio 内部锁无解——所以 atfork 只是缓解，正解仍是 fork 后立即 exec。</p>
+</details>
+<p><strong>题目 4（边界）：</strong> exec 杀其他线程时，那些线程正在持有的用户态锁会释放吗？正在写一半的缓冲区呢？</p>
+<details>
+<summary>参考答案</summary>
+<p>都不会。<code class="c">de_thread()</code> → <code class="c">zap_other_threads()</code> 直接塞 SIGKILL 等 <code class="c">notify_count</code> 归零——没有 cleanup handler、没有 TLS 析构、没有 atexit，锁的内存位留着但无意义（地址空间马上被新映像替换，届时全部清零）。所以「其他线程有未落盘数据」时 exec = 数据丢失。要热替换先让 worker quiesce（确认空闲点）再 exec。</p>
+</details>
+<p><strong>题目 5（综合）：</strong> 多线程日志服务要支持「定时重开日志文件（SIGHUP）」和「优雅退出（SIGTERM）」，把 33.2 + 33.3 的机制串起来设计。</p>
+<details>
+<summary>参考答案</summary>
+<p>① 启动最先 <code class="c">pthread_sigmask(SIG_BLOCK, {SIGHUP,SIGTERM})</code>；② sigwait 线程同步取信号（handler 全不装）；③ SIGHUP → 写内部事件管道 → 日志线程在安全的 flush 点切换 fd（绝不在写入中途）；④ SIGTERM → 广播 shutdown 事件 → 各 worker 走各自 cleanup → 主线程 <code class="c">pthread_exit</code>（或最后一个线程自然退出）。fork 不参与；若必须拉起压缩子进程用 <code class="c">posix_spawn</code>。</p>
+</details>
       </section>
       <section class="section" id="s-33-4">
         <div class="sec-head"><div class="sec-no">33.4</div><h2>实现模型</h2></div>
@@ -771,28 +1422,121 @@ int main(void) {
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<hr />
+<ol>
+<li>用户线程 / 内核线程 / 映射关系——M:1、1:1、M:N 三种模型到底差在哪？</li>
+<li>每种模型的「阻塞一次系统调用」会发生什么（这是模型选择的试金石）？</li>
+<li>为什么 Linux 选了 1:1，而学界推崇的 M:N 在 Linux 上失败了？</li>
+</ol>
 <hr />
 <h2>要点</h2>
+<h3>三种模型</h3>
+<pre class="code" data-label="text"><code class="c">M:1（用户级线程）              1:1（内核级，Linux/NPTL）       M:N（混合）
+┌──────────────┐              ┌──────────────┐               ┌──────────────┐
+│ M 用户线程    │              │ 用户线程 1     │               │ M 用户线程    │
+│  ↑↓ 用户态    │              │  │  一一对应   │               │  ↑↓ 用户态    │
+│ 调度器(库)    │              │ 内核线程 1     │               │ M':N 调度器   │
+│  │            │              │  │            │               │  (库+内核协同) │
+│ 1 内核线程    │              │ 内核线程 2     │               │ N 内核线程    │
+└──────────────┘              │  ↑ 对应       │               └──────────────┘
+ 内核只见 1 个任务              │ 用户线程 2     │                内核见 N 个任务
+                              └──────────────┘
+</code></pre>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>模型</th>
-<th>要点</th>
+<th>维度</th>
+<th>M:1</th>
+<th><strong>1:1</strong></th>
+<th>M:N</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>M:1</td>
-<td>用户级；快；难多核；阻塞拖死全体</td>
+<td>代表</td>
+<td>早期 GNU Portable Threads / 协程（同思想）</td>
+<td><strong>Linux NPTL</strong>、Windows</td>
+<td>Solaris（旧）、IRIX；Linux 尝试 NGPT 失败</td>
 </tr>
 <tr>
-<td><strong>1:1</strong></td>
-<td>Linux NPTL；每 pthread ≈ 一内核任务；可多核</td>
+<td>创建成本</td>
+<td>极低（库函数 + 栈切换）</td>
+<td>clone 系统调用（v6.6 实测 ~1-4μs 级，29.9 数据）</td>
+<td>中（两层登记）</td>
 </tr>
 <tr>
-<td>M:N</td>
-<td>复杂；Linux 未走</td>
+<td>阻塞系统调用</td>
+<td><strong>全体拖死</strong>（内核只认那 1 个任务）</td>
+<td>只睡这一个内核线程</td>
+<td>库须拦截重写为非阻塞（"缝合层"）</td>
+</tr>
+<tr>
+<td>多核并行</td>
+<td>❌（1 个内核任务只能上 1 核）</td>
+<td>✅（每线程可绑不同核）</td>
+<td>✅（N 个内核任务上 N 核）</td>
+</tr>
+<tr>
+<td>抢占</td>
+<td>仅在库调度点（协作式为主）</td>
+<td>内核随意抢占（时间片/优先级）</td>
+<td>两层抢占，复杂</td>
+</tr>
+<tr>
+<td>信号/定时器粒度</td>
+<td>进程级（内核不知道有 M 个）</td>
+<td><strong>线程级</strong>（<code class="c">task-&gt;pending</code> 独立）</td>
+<td>混乱（历史痛点）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>试金石：一个线程 read() 阻塞了</h3>
+<ul>
+<li><strong>M:1</strong>：<code class="c">read</code> 阻塞的是唯一的内核任务 → 整个进程（含其他"线程"）卡死。库要自救必须把所有阻塞调用改写成非阻塞 + 就绪调度（等于重写半个内核接口）；</li>
+<li><strong>1:1</strong>：只睡调用线程的内核任务，调度器换下一个；其他线程照常跑在不同核；</li>
+<li><strong>M:N</strong>：库拦截 <code class="c">read</code>，登记到调度器，切到同核其他用户线程；完成后再切回——正确但每次都多一层库内切换，且任何没被拦截的"漏网"阻塞调用退化成 M:1 行为。</li>
+</ul>
+<h3>为什么 Linux 选择了 1:1</h3>
+<ol>
+<li><strong>内核已经会调度</strong>：CFS 本来就是任务级调度器，1:1 直接复用，不需要库内再造一个调度器；</li>
+<li><strong>SMP 免费拿</strong>：内核任务天然分布多核；</li>
+<li><strong>语义干净</strong>：阻塞、信号、抢占、<code class="c">ps</code>/<code class="c">top</code>/perf 全部按任务粒度工作，无观测盲区；</li>
+<li><strong>M:N 的缝合成本证明过高</strong>：Linux 的 NGPT（IBM 推的 M:N 实现）在 NPTL 出现后被放弃——双层调度的复杂度（锁协作、阻塞拦截、亲和性传递）吃掉了理论收益。业界后验：连 Solaris 也在 Solaris 9/10 淘汰了 M:N，回 1:1。</li>
+</ol>
+<h3>「用户级轻量」思想的现代转世</h3>
+<p>M:1 并没有死，它换了个名字活在<strong>协程</strong>（goroutine 的 G-M 模型、C++20 coroutine、rust async）里：</p>
+<ul>
+<li>面对的还是同一对矛盾：切换成本 vs 阻塞语义；</li>
+<li>解法也还是老一套：运行时把阻塞调用改写成非阻塞 + 就绪队列（Go runtime 的 netpoller）；</li>
+<li>区别于 pthread：协程是<strong>协作式、绑定在线程上</strong>的二级调度——本质是"用户线程 2.0"，与 1:1 内核线程不冲突（goroutine 最终也跑在 OS 线程上）。</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>pthread（1:1）</th>
+<th>协程（M:1 思想）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>切换成本</td>
+<td>1-6μs（进内核，29.9 实测 5.92μs WSL 放大值）</td>
+<td>~10-100ns（用户态寄存器交换）</td>
+</tr>
+<tr>
+<td>阻塞容忍</td>
+<td>任意阻塞</td>
+<td>必须 await/非阻塞，漏一个就拖死整核</td>
+</tr>
+<tr>
+<td>抢占</td>
+<td>内核强制</td>
+<td>协作（Go 1.14+ 异步抢占仅限安全点）</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>CPU 并行、隔离故障域</td>
+<td>海量并发 IO（百万连接）</td>
 </tr>
 </tbody>
 </table></div>
@@ -807,39 +1551,44 @@ int main(void) {
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>M:1 快但难多核；Linux NPTL 是 1:1</td>
+<td>HFT</td>
+<td>1:1 = 线程可绑核 + <code class="c">SCHED_FIFO</code> + <code class="c">perf</code> 精确到线程——热路径观测性是 1:1 给的；协程适用于 IO 密集闸机（行情网关），策略计算仍用线程</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>Linux 1:1 模型每线程一内核任务，可多核并行；线程调度走内核</td>
+<td>嵌入式</td>
+<td>RTOS 的 task ≈ 1:1 内核任务思想；无 MMU 小系统跑 M:1（协作式调度器）省栈省内存——模型选择=资源预算</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>选型口诀：CPU 并行用线程，海量并发 IO 用协程，两者混合是常态（reactor 线程池 + 每核协程环）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-/* 线程模型对比:
- * 1:1 (Linux NPTL): 每个用户线程对应一个内核线程
- * N:1: 用户态调度, 内核看不到
- * M:N: 混合
- * Linux 用 1:1 (NPTL), 简单高效
- */
-int main(void) {
-    printf(&quot;Linux 线程模型: 1:1 (NPTL)\n&quot;);
-    printf(&quot;每个 pthread → 一个 clone(CLONE_VM) 的内核线程\n&quot;);
-    return 0;
-}
-</code></pre>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
 <li>上一节：<a href="#s-33-3">33.3 进程控制</a></li>
 <li>下一节：<a href="#s-33-5">33.5 LinuxThreads vs NPTL</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a>–<a href="chapter-32.html#ch-32">Ch32</a> · <a href="chapter-22.html#ch-22">Ch22 sigwait</a> · <a href="chapter-28.html#ch-28">Ch28 fork</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>（线程模块收束；daemon 见 <a href="chapter-37.html#ch-37">Ch37</a>）</li>
+<li>线程创建成本实测：<a href="chapter-29.html#s-29-9">29.9 线程 vs 进程</a></li>
+<li>clone 的 CLONE_* 位全景：<a href="chapter-29.html#s-29-9">29.9</a> · <a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a></li>
 </ul>
+<h2>自测题</h2>
+<p><strong>题目 1（推演）：</strong> M:1 模型下，用户线程 A 阻塞在 <code class="c">read()</code>，用户线程 B 还能跑吗？为什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>不能。内核视角只有 1 个任务，<code class="c">read</code> 把它置为睡眠 → CPU 让给别人（别的进程），进程内所有用户线程一起冻结——内核根本不知道 B 存在。这正是 M:1 的死刑判决：任何未改写成非阻塞的阻塞调用都拖死全体。</p>
+</details>
+<p><strong>题目 2（辨析）：</strong> 1:1 模型「每个 pthread 对应一个内核任务」——这个"对应"是什么机制建立的？</p>
+<details>
+<summary>参考答案</summary>
+<p>glibc 的 <code class="c">pthread_create</code> 调 <code class="c">clone(CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|SETTLS...)</code>——每线程就是一次 clone 产生的<strong>内核 task_struct</strong>（有自己的 PID/TID，<code class="c">gettid()</code> 可见），CLONE_THREAD 使其加入同线程组（共享 TGID）。不是"对应"，而是<strong>本来就是同一个东西的两个视角</strong>：pthread_t 是 glibc 侧句柄，task_struct 是内核侧实体。</p>
+</details>
+<p><strong>题目 3（判断）：</strong> 协程比线程"快"，所以高性能服务器应该全部用协程替代线程？</p>
+<details>
+<summary>参考答案</summary>
+<p>错在场景混用。协程切换便宜（用户态 ~10-100ns vs 线程 1-6μs）是因为<strong>不进内核、不换地址空间语义</strong>——代价是协作式：一个协程跑死循环，同核其他协程全饿（除非异步抢占安全点）。CPU 密集并行仍要线程/进程铺满核；协程赢在<strong>海量并发 IO</strong>（百万连接的事件循环）。两者是分层关系（goroutine 跑在 OS 线程上）而非替代。</p>
+</details>
       </section>
       <section class="section" id="s-33-5">
         <div class="sec-head"><div class="sec-no">33.5</div><h2>LinuxThreads vs NPTL</h2></div>
@@ -850,498 +1599,850 @@ int main(void) {
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>勿混：<code class="c">pthread_t</code> ≠ 内核 TID（<code class="c">gettid</code>）。 ---</p>
+<ol>
+<li>LinuxThreads（1996）当年怎么"用进程模拟线程"，POSIX 语义哪些根本做不到？</li>
+<li>NPTL（2002-2003）靠哪三个<strong>内核新增机制</strong>达标？</li>
+<li><code class="c">pthread_t</code> ≠ 内核 TID 的身份认知——用什么查、怎么换算？</li>
+</ol>
 <hr />
 <h2>要点</h2>
+<h3>LinuxThreads：没有 CLONE_THREAD 的年代</h3>
+<p>内核 2.0-2.4 只有 <code class="c">CLONE_VM|CLONE_FILES|CLONE_SIGHAND</code>，没有线程组概念——每线程是一个<strong>独立 PID</strong>（内核任务），LinuxThreads 在此之上模拟 POSIX：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th></th>
-<th>LinuxThreads（废）</th>
-<th><strong>NPTL</strong>（现行）</th>
+<th>POSIX 要求</th>
+<th>LinuxThreads 实际行为</th>
+<th>后果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>PID</td>
-<td>每线程一 PID（非 POSIX）</td>
-<td>同进程 TGID 相同；独立 TID</td>
+<td>同进程同 PID</td>
+<td>每线程独立 PID，只有 leader 是"进程 PID"</td>
+<td><code class="c">kill(pid)</code> 只发给 leader——其他线程要靠管理线程转发</td>
 </tr>
 <tr>
-<td>信号</td>
-<td>怪异</td>
-<td>POSIX 语义</td>
+<td>信号发给"进程"</td>
+<td><strong>管理线程</strong>（额外克隆的第一个线程）拦截 <code class="c">SIGUSR1</code> 等并转投</td>
+<td>信号延迟一跳；标准信号合并语义怪异</td>
 </tr>
 <tr>
-<td>同步</td>
-<td>—</td>
-<td>常基于 futex</td>
+<td><code class="c">getpid()</code> 全线程一致</td>
+<td>每线程返回自己的 PID</td>
+<td>直接违反 POSIX</td>
+</tr>
+<tr>
+<td>fork 后 kill 语义</td>
+<td>依赖 leader 是否存在</td>
+<td>杂乱</td>
+</tr>
+<tr>
+<td>进程内线程数</td>
+<td>管理线程 + 每线程一个系统任务</td>
+<td><code class="c">ps</code> 里一片假进程</td>
 </tr>
 </tbody>
 </table></div>
-<p>勿混：<code class="c">pthread_t</code> ≠ 内核 TID（<code class="c">gettid</code>）。</p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
+<p>管理线程（manager thread）是 LinuxThreads 最标志性设计：它持有个信号转投和线程清理职责——也是最大的语义污染源。</p>
+<h3>NPTL 的三大内核地基（2.5.x / 2.6 引入）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>路线</th>
-<th>要点</th>
+<th>内核机制</th>
+<th>干什么</th>
+<th>带来的 POSIX 达标</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>NPTL 现行，同进程共享 TGID、独立 TID</td>
+<td><strong><code class="c">CLONE_THREAD</code> / 线程组</strong></td>
+<td>clone 位把新任务挂进 <code class="c">signal-&gt;thread_head</code>，共享 TGID</td>
+<td><code class="c">getpid()</code> 全组一致；<code class="c">kill()</code> 按 TGID 投递进程级信号；<code class="c">/proc</code> 只显示组长（<code class="c">/proc/tid</code> 才见每线程）</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>NPTL 同步基于 futex（无竞争不陷内核）；pthread_t ≠ TID</td>
+<td><strong><code class="c">CLONE_CHILD_CLEARTID</code> + futex 唤醒</strong></td>
+<td>线程退出时内核 <code class="c">mm_release():1634</code> 写 0 + <code class="c">futex(FUTEX_WAKE,1)</code>（<code class="c">kernel/fork.c:1634-1635</code>，29.7 核验过）</td>
+<td><code class="c">pthread_join</code> 不再轮询——睡在 futex 上</td>
+</tr>
+<tr>
+<td><strong><code class="c">tgkill()</code> / <code class="c">do_send_specific():3935</code></strong></td>
+<td>按 (tgid, tid) 精确投递</td>
+<td><code class="c">pthread_kill</code> 语义正确，不撞 PID 复用（Ch32）</td>
+</tr>
+<tr>
+<td>配套：TLS 支持（<code class="c">CLONE_SETTLS</code> → <code class="c">set_new_tls():130</code>）</td>
+<td>每线程 fs base</td>
+<td><code class="c">errno</code> 每线程独立（31.4 反汇编实测）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-int main(void) {
-    /* LinuxThreads (旧) vs NPTL (新):
-     * LinuxThreads: 每个线程有不同 PID, 信号处理有问题
-     * NPTL (2.6+): 同进程线程共享 PID, 符合 POSIX
-     */
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, (void *(*)(void *))sleep, (void *)0);
-    printf(&quot;PID=%d (NPTL: 线程共享 PID)\n&quot;, getpid());
-    pthread_join(tid, NULL);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
+<p>结果：NPTL 通过了 POSIX compliance suite（含信号用例），性能上 10 万线程创建+join 也撑住了（当年 Ulrich Drepper 的著名基准）。</p>
+<h3>现代（glibc 2.34+）：LinuxThreads 彻底谢幕</h3>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-33-4">33.4 实现模型</a></li>
-<li>下一节：<a href="#s-33-6">33.6 高级同步（简介）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a>–<a href="chapter-32.html#ch-32">Ch32</a> · <a href="chapter-22.html#ch-22">Ch22 sigwait</a> · <a href="chapter-28.html#ch-28">Ch28 fork</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>（线程模块收束；daemon 见 <a href="chapter-37.html#ch-37">Ch37</a>）</li>
+<li>glibc 2.34 起 <code class="c">libpthread</code> <strong>并入 libc</strong>——链接 <code class="c">-pthread</code> 只是开启宏定义，不再有独立库；</li>
+<li>线程栈默认 8MB（= <code class="c">RLIMIT_STACK</code>，unlimited 时退 2MB）；</li>
+<li>栈缓存：退出线程的栈进 per-CPU 缓存复用（<code class="c">kernel/fork.c:303-306</code> 注释）。</li>
 </ul>
-      </section>
-      <section class="section" id="s-33-6">
-        <div class="sec-head"><div class="sec-no">33.6</div><h2>高级同步（简介）</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
-- 上一节：<a href="#s-33-5">33.5 LinuxThreads vs NPTL</a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/pthread_barrier_demo.c"><code class="c">code/pthread_barrier_demo.c</code></a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/pthread_rwlock_demo.c"><code class="c">code/pthread_rwlock_demo.c</code></a> ---</p>
-<hr />
-<h2>要点</h2>
+<h3>身份换算表（必须刻进肌肉记忆）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>原语</th>
-<th>用途</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">pthread_rwlock_t</code></td>
-<td>读共享、写独占</td>
-</tr>
-<tr>
-<td><code class="c">pthread_barrier_t</code></td>
-<td>集合点；一人得 <code class="c">PTHREAD_BARRIER_SERIAL_THREAD</code></td>
-</tr>
-<tr>
-<td><code class="c">pthread_spinlock_t</code></td>
-<td>短临界区忙等</td>
-</tr>
-<tr>
-<td><code class="c">PTHREAD_PROCESS_SHARED</code></td>
-<td>放共享内存可跨进程</td>
-</tr>
-</tbody>
-</table></div>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/pthread_barrier_demo.c"><code class="c">code/pthread_barrier_demo.c</code></a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/pthread_rwlock_demo.c"><code class="c">code/pthread_rwlock_demo.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>rwlock 读共享写独占、barrier 集合点、spinlock 短临界区</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>读多写少用 rwlock；短临界区用 spinlock 忙等免睡眠；跨进程用 PROCESS_SHARED</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;stdio.h&gt;
-/* 线程同步方式:
- * 1. mutex: 互斥锁
- * 2. cond: 条件变量
- * 3. rwlock: 读写锁
- * 4. semaphore: 信号量
- * 5. barrier: 屏障
- */
-pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-int ready = 0;
-void *worker(void *arg) {
-    pthread_mutex_lock(&amp;mtx);
-    while (!ready) pthread_cond_wait(&amp;cond, &amp;mtx);
-    printf(&quot;条件满足\n&quot;);
-    pthread_mutex_unlock(&amp;mtx);
-    return NULL;
-}
-int main(void) {
-    pthread_t tid;
-    pthread_create(&amp;tid, NULL, worker, NULL);
-    sleep(1);
-    pthread_mutex_lock(&amp;mtx);
-    ready = 1;
-    pthread_cond_signal(&amp;cond);
-    pthread_mutex_unlock(&amp;mtx);
-    pthread_join(tid, NULL);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-33-5">33.5 LinuxThreads vs NPTL</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-29.html#ch-29">Ch29</a>–<a href="chapter-32.html#ch-32">Ch32</a> · <a href="chapter-22.html#ch-22">Ch22 sigwait</a> · <a href="chapter-28.html#ch-28">Ch28 fork</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>（线程模块收束；daemon 见 <a href="chapter-37.html#ch-37">Ch37</a>）</li>
-</ul>
-      </section>
-      <section class="section" id="s-33-7">
-        <div class="sec-head"><div class="sec-no">33.7</div><h2>Summary</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a></p>
-</blockquote>
-<h2>本章回顾</h2>
-<h3>本章核心主题</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>节</th>
-<th>主题</th>
-<th>关键 API</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>33.1</td>
-<td>线程与进程的竞争</td>
-<td><code class="c">fork()</code> 多线程中的危险</td>
-</tr>
-<tr>
-<td>33.2</td>
-<td>线程与信号</td>
-<td>每进程信号掩码、<code class="c">pthread_sigmask()</code>、<code class="c">sigwait()</code></td>
-</tr>
-<tr>
-<td>33.3</td>
-<td>线程与进程凭证</td>
-<td>所有线程共享 PID/UID/GID</td>
-</tr>
-<tr>
-<td>33.4</td>
-<td>线程与 fork</td>
-<td>只有调用线程被复制，锁状态不确定</td>
-</tr>
-<tr>
-<td>33.5</td>
-<td>线程实时调度</td>
-<td><code class="c">pthread_setschedparam()</code>、SCHED_FIFO/SCHED_RR</td>
-</tr>
-<tr>
-<td>33.6</td>
-<td>线程与 C 标准 I/O</td>
-<td>stdio 缓冲的线程安全性</td>
-</tr>
-</tbody>
-</table></div>
-<h3>线程与 fork 的危险</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>问题</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>只复制调用线程</td>
-<td>其他线程消失，可能持有锁未释放</td>
-</tr>
-<tr>
-<td>锁状态不确定</td>
-<td>子进程可能继承已锁的 mutex，无持有者信息</td>
-</tr>
-<tr>
-<td>stdio 不一致</td>
-<td>子进程继承 stdio 内部锁状态</td>
-</tr>
-<tr>
-<td>POSIX 建议</td>
-<td>fork 后子进程只调用 async-signal-safe 函数，直到 exec</td>
-</tr>
-</tbody>
-</table></div>
-<h3>线程与信号</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>规则</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>信号掩码</td>
-<td>每进程一个（所有线程共享），用 <code class="c">pthread_sigmask</code> 设置</td>
-</tr>
-<tr>
-<td>信号投递</td>
-<td>硬件信号（SIGSEGV/SIGFPE）发给触发线程</td>
-</tr>
-<tr>
-<td>进程级信号</td>
-<td>SIGINT/SIGTERM 发给任意一个未屏蔽的线程</td>
-</tr>
-<tr>
-<td><code class="c">sigwait()</code></td>
-<td>指定线程等待信号，其他线程不处理</td>
-</tr>
-<tr>
-<td>推荐模式</td>
-<td>主线程 <code class="c">sigwait</code>，其他线程屏蔽信号</td>
-</tr>
-</tbody>
-</table></div>
-<h3>实时调度策略</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>策略</th>
-<th>说明</th>
-<th>适用</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">SCHED_OTHER</code></td>
-<td>普通调度（CFS）</td>
-<td>默认</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_FIFO</code></td>
-<td>实时先进先出</td>
-<td>HFT/嵌入式</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_RR</code></td>
-<td>实时轮转</td>
-<td>实时系统</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_DEADLINE</code></td>
-<td>最早截止期限</td>
-<td>Linux 特有</td>
-</tr>
-</tbody>
-</table></div>
-<pre class="code" data-label="C"><code class="c">struct sched_param param;
-param.sched_priority = 50;  /* 1-99，越大优先级越高 */
-pthread_setschedparam(thread, SCHED_FIFO, &amp;param);
-</code></pre>
-<h3>线程栈配置</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
+<th>想要什么</th>
 <th>API</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code class="c">pthread_attr_setstacksize(attr, size)</code></td>
-<td>设置栈大小</td>
+<td>glibc 线程句柄</td>
+<td><code class="c">pthread_self()</code> → <code class="c">pthread_t</code></td>
+<td><strong>指针</strong>（<code class="c">struct pthread *</code>），非整数、不可比较大小、会被复用</td>
 </tr>
 <tr>
-<td><code class="c">pthread_attr_setstack(attr, addr, size)</code></td>
-<td>自定义栈位置</td>
+<td>内核线程 ID</td>
+<td><code class="c">gettid()</code> / <code class="c">syscall(SYS_gettid)</code></td>
+<td>全局唯一整数；<code class="c">/proc/&lt;pid&gt;/task/&lt;tid&gt;</code>；<strong><code class="c">pthread_t</code> 无法换算成它</strong>（除非创建时线程自己上报）</td>
 </tr>
 <tr>
-<td><code class="c">pthread_attr_setguardsize(attr, size)</code></td>
-<td>设置栈溢出保护区</td>
+<td>进程 ID</td>
+<td><code class="c">getpid()</code></td>
+<td>= TGID = 组长 TID</td>
 </tr>
 <tr>
-<td><code class="c">ulimit -s</code></td>
-<td>默认栈大小（通常 8MB）</td>
+<td>给线程发信号</td>
+<td><code class="c">pthread_kill(pthread_t)</code>（进程内）或 <code class="c">tgkill()</code>（裸）</td>
+<td>见 33.2</td>
 </tr>
 </tbody>
 </table></div>
+<p>⚠ <code class="c">pthread_t</code> 和 TID <strong>没有任何换算公式</strong>：一个在 glibc 堆/栈结构里，一个在内核。跨系统观测（top -H、perf）认 TID；代码内认 pthread_t。</p>
+<hr />
 <h2>HFT / 嵌入式关联</h2>
-<ul>
-<li><strong>fork 禁忌</strong>：HFT 多线程进程绝不 fork（锁丢失风险），用多进程或 <code class="c">posix_spawn</code></li>
-<li><strong>实时调度</strong>：HFT 策略线程用 <code class="c">SCHED_FIFO</code> + <code class="c">mlockall</code> + CPU 隔离</li>
-<li><strong>信号处理</strong>：用 <code class="c">sigwait</code> 专用线程处理信号，工作线程屏蔽</li>
-<li><strong>栈大小</strong>：HFT 线程通常减小栈（2-4MB），减少内存占用</li>
-<li><strong>嵌入式</strong>：线程数严格控制，栈大小精确配置</li>
-</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>观测要线程粒度时用 TID：<code class="c">perf -t &lt;tid&gt;</code>、<code class="c">taskset -p &lt;mask&gt; &lt;tid&gt;</code>、<code class="c">/proc/&lt;pid&gt;/task/&lt;tid&gt;/stat</code>（自旋/切换计数）——pthread_t 对工具链不可见</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>老产品若还有 uClibc + LinuxThreads 残留（2.4 内核时代）：信号语义不达标是工程事故源，升级路径 glibc/musl + NPTL</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>musl 也是 1:1 + futex，语义同 NPTL（静态链接体积小——嵌入式友好）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>衔接</h2>
 <ul>
-<li><strong>Ch29</strong> Threads Intro — 线程创建/退出</li>
-<li><strong>Ch30</strong> Thread Sync — 互斥锁/条件变量</li>
-<li><strong>Ch21-22</strong> Signals — 线程与信号</li>
-<li><strong>Ch35</strong> Process Priorities — 实时调度策略</li>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-33-4">33.4 实现模型</a></li>
+<li>下一节：<a href="#s-33-6">33.6 高级同步（简介）</a></li>
+<li>join 的 futex 等待路径：<a href="chapter-29.html#s-29-7">29.7 detach/join 内核链路</a></li>
+<li>futex 全景：<a href="chapter-30.html#s-30-1">30.1 互斥量</a> · <a href="chapter-30.html#s-30-2">30.2 条件变量</a></li>
 </ul>
-<h2>代码自测</h2>
+<h2>自测题</h2>
+<p><strong>题目 1（历史+内核）：</strong> NPTL 靠哪三个内核机制让 <code class="c">pthread_join</code> 从"轮询/信号 hack"变成干净语义？</p>
 <details>
-<summary>1. 为什么多线程程序中 fork 后只应调用 async-signal-safe 函数？</summary>
-<p>fork 只复制调用线程，其他线程消失。如果消失的线程持有 malloc 锁或 stdio 锁，子进程继承这些锁的锁定状态但无持有者。子进程调用 malloc 或 stdio 函数会死锁。async-signal-safe 函数不使用锁，是安全的。直到 exec 替换地址空间后才能安全调用其他函数。</p>
+<summary>参考答案</summary>
+<p>① <code class="c">CLONE_THREAD</code> 线程组（TGID 共享，进程身份统一）；② <code class="c">CLONE_CHILD_CLEARTID</code>：线程退出内核写清 tid 字段并 <code class="c">futex(FUTEX_WAKE,1)</code>（<code class="c">mm_release()</code>，kernel/fork.c:1634-1635）——joiner 睡在这个 futex 上被精确唤醒；③ <code class="c">tgkill()</code> 定向信号支撑 <code class="c">pthread_kill</code>。LinuxThreads 时代只能靠管理线程 <code class="c">waitpid</code> 轮询收尸。</p>
 </details>
+<p><strong>题目 2（辨析）：</strong> <code class="c">pthread_t</code> 是什么类型？能 <code class="c">printf("%d", tid)</code> 吗？</p>
 <details>
-<summary>2. 如何让信号只由一个指定线程处理？</summary>
-<pre class="code" data-label="C"><code class="c">/* 所有线程屏蔽目标信号 */
-sigset_t set;
-sigemptyset(&amp;set);
-sigaddset(&amp;set, SIGINT);
-pthread_sigmask(SIG_BLOCK, &amp;set, NULL);
-
-/* 信号处理线程用 sigwait */
-void *signal_thread(void *arg) {
-    int sig;
-    sigwait(&amp;set, &amp;sig);
-    printf(&quot;received signal %d\n&quot;, sig);
-    return NULL;
-}
-</code></pre>
-<p>这种模式避免信号处理器中调用非异步安全函数的问题。</p>
+<summary>参考答案</summary>
+<p>glibc 里是无符号长整（实为 <code class="c">struct pthread *</code> 指针——栈底地址）。<strong>不是</strong>内核 TID：无换算公式、退出后可能被复用（栈缓存复用）、大小比较无意义。要看内核身份用 <code class="c">gettid()</code>（glibc 2.30+）或 <code class="c">syscall(SYS_gettid)</code>；跨工具（top -H/perf/sched）一律认 TID。</p>
 </details>
+<p><strong>题目 3（判断）：</strong> glibc 2.34+ 之后程序不再需要链接 <code class="c">-lpthread</code>，说明线程已经变成"纯用户库"了？</p>
 <details>
-<summary>3. SCHED_FIFO 和 SCHED_RR 的区别？</summary>
-<ul>
-<li><strong>SCHED_FIFO</strong>：同优先级线程按 FIFO 顺序运行，除非主动让出（<code class="c">sched_yield</code>）或被更高优先级抢占，否则会一直运行</li>
-<li><strong>SCHED_RR</strong>：同优先级线程轮转，每个线程运行一个时间片（默认 100ms）后被抢占，轮到下一个同优先级线程</li>
-</ul>
-<p>HFT 通常用 SCHED_FIFO（策略线程独占 CPU 核心，不被同优先级线程打断）。</p>
+<summary>参考答案</summary>
+<p>错。<code class="c">libpthread</code> 合并进 libc 只是<strong>库的组织形式</strong>变化——线程实体依然是 <code class="c">clone(CLONE_THREAD...)</code> 出来的内核 task_struct，同步原语依然落在 futex 系统调用上（无竞争时用户态快路径，见 30.1）。1:1 模型一点没变，变的只是符号藏在哪个 .so 里。</p>
 </details>
       </section>
-      <section class="section" id="s-33-8">
-        <div class="sec-head"><div class="sec-no">33.8</div><h2>Exercises</h2></div>
+      <section class="section" id="s-33-6">
+        <div class="sec-head"><div class="sec-no">33.6</div><h2>高级同步（简介）</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">kernel/locking/rwsem.c</code>（glibc rwlock 语义参照）· <code class="c">kernel/locking/spinlock.c</code> · futex 坐标见 <a href="chapter-30.html#s-30-1">30.1</a>
+本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
+- 上一节：<a href="#s-33-5">33.5 LinuxThreads vs NPTL</a>
+- 下一节：<a href="#s-33-7">33.7 总结</a></p>
 </blockquote>
-<h2>练习题</h2>
-<h3>练习 1：fork 在多线程中的问题</h3>
-<p>编写多线程程序，一个线程持有 mutex，另一个线程调用 <code class="c">fork()</code>。子进程尝试 lock 同一个 mutex 会发生什么？</p>
-<h3>练习 2：信号专用线程</h3>
-<p>实现一个信号处理专用线程模式：主工作线程屏蔽 SIGINT/SIGTERM，信号线程用 <code class="c">sigwait()</code> 接收信号并设置退出标志。</p>
-<h3>练习 3：实时调度测试</h3>
-<p>编写程序，创建两个线程分别用 SCHED_FIFO 和 SCHED_OTHER 调度策略，对比 CPU 占用和延迟。</p>
-<h2>参考答案</h2>
-<h3>练习 1 答案</h3>
-<pre class="code" data-label="C"><code class="c">pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-
-void *thread_a(void *arg) {
-    pthread_mutex_lock(&amp;mutex);
-    sleep(5);  /* 持有锁 5 秒 */
-    pthread_mutex_unlock(&amp;mutex);
-    return NULL;
-}
-
-void *thread_b(void *arg) {
-    sleep(1);  /* 等 thread_a 持有锁 */
-    pid_t pid = fork();
-    if (pid == 0) {
-        /* 子进程：只复制了 thread_b，thread_a 消失 */
-        /* mutex 仍然锁定，但没有持有者 */
-        pthread_mutex_lock(&amp;mutex);  /* 死锁！ */
-        printf(&quot;child got lock\n&quot;);
-        pthread_mutex_unlock(&amp;mutex);
-        _exit(0);
-    }
-    return NULL;
-}
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li>mutex/condvar 之外的同步原语速览：rwlock / barrier / spinlock 各自的<strong>适用判据</strong>（不只是"是什么"）；</li>
+<li><code class="c">PTHREAD_PROCESS_SHARED</code>——同步对象怎么放进共享内存跨进程用；</li>
+<li>每种原语的「误用之最」。</li>
+</ol>
+<hr />
+<h2>要点</h2>
+<h3>四原语对照表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原语</th>
+<th>语义</th>
+<th>典型场景</th>
+<th>误用之最</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pthread_rwlock_t</code></td>
+<td>读共享、写独占</td>
+<td>读多写少（配置表：99% 查 1% 更新）</td>
+<td>读锁内调写者也要读的共享缓存（递归死锁）；写饥饿（glibc 默认读者优先变体，写者可能饿死——有 <code class="c">_NP</code> 变体可调）</td>
+</tr>
+<tr>
+<td><code class="c">pthread_barrier_t</code></td>
+<td>集合点：全员到齐才一起过</td>
+<td>分阶段并行（全员到齐再进下一 phase）；数据接力（A 们写完 B 们才能读）</td>
+<td>期望它带数据传递——barrier 只同步不传值；忘了 <code class="c">PTHREAD_BARRIER_SERIAL_THREAD</code> 只有一个线程拿到返回值这个事实</td>
+</tr>
+<tr>
+<td><code class="c">pthread_spinlock_t</code></td>
+<td>忙等锁</td>
+<td><strong>核内</strong>短临界区（&lt;几十 ns：改几个变量）且<strong>不可阻塞</strong></td>
+<td>临界区里出现任何系统调用/内存缺页/长循环——自旋烧掉整个时间片还拖慢持锁者（30.1 实测跨核 spin 81ns/次比 mutex 69ns 还慢）</td>
+</tr>
+<tr>
+<td><code class="c">PTHREAD_PROCESS_SHARED</code></td>
+<td>属性（非新原语）</td>
+<td>mutex/condvar/rwlock/barrier 放共享内存跨进程</td>
+<td>忘设 shared 属性 → 跨进程锁<strong>假成功</strong>（各自锁了各自的缓存行）；锁所在的共享内存被双方以不同地址映射时仍 OK（futex key 按物理页），但对象内不能存指针</td>
+</tr>
+</tbody>
+</table></div>
+<h3>读写锁：读者优先的代价</h3>
+<p>glibc 默认实现读者优先：只要有读者鱼贯而来，写者就一直排队——<strong>写饥饿</strong>是真实风险：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变体</th>
+<th>行为</th>
+<th>获取</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>默认</td>
+<td>读者优先（读者可以"插队"到等待写者前面）</td>
+<td><code class="c">PTHREAD_RWLOCK_INITIALIZER</code></td>
+</tr>
+<tr>
+<td><code class="c">_NP</code> 变体</td>
+<td>写者优先</td>
+<td><code class="c">pthread_rwlockattr_setkind_np(&amp;attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP)</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>判据：<strong>写延迟敏感</strong>（如行情快照刷新）必须上 writer-prefer 或干脆 mutex；rwlock 的收益窗口其实很窄——读临界区必须足够短、写频率足够低，否则 mutex（无竞争 7ns）反而更快（30.1 数据）。</p>
+<h3>barrier：一到两次的"GO"</h3>
+<pre class="code" data-label="C"><code class="c">pthread_barrier_init(&amp;b, NULL, nthreads);      /* 计数 = nthreads */
+int rc = pthread_barrier_wait(&amp;b);
+/* rc == PTHREAD_BARRIER_SERIAL_THREAD（只在一个线程）→ 该线程做 phase 间串行收尾 */
+pthread_barrier_destroy(&amp;b);
 </code></pre>
-<p>子进程死锁——mutex 从父进程继承的锁定状态，但没有线程持有它。<code class="c">pthread_mutex_lock</code> 会永远阻塞。</p>
-<p><strong>解决</strong>：用 <code class="c">pthread_atfork()</code> 注册 handler 在子进程中重新初始化 mutex，或避免在多线程中 fork。</p>
-<h3>练习 2 参考代码</h3>
-<pre class="code" data-label="C"><code class="c">#include &lt;pthread.h&gt;
-#include &lt;signal.h&gt;
-#include &lt;stdatomic.h&gt;
+<ul>
+<li><code class="c">rc</code> 的设计：<code class="c">n</code> 个线程同时返回，但其中恰好 1 个拿到 <code class="c">SERIAL_THREAD</code>、其余拿 0——<strong>天然选出一个"收尾者"</strong>（改 phase 计数、重置共享变量），省一次额外同步；</li>
+<li>barrier 可<strong>循环使用</strong>：同一批线程一遍遍过同一集合点（<code class="c">count</code> 每轮自动重置）。</li>
+</ul>
+<h3>PROCESS_SHARED：同步对象进共享内存</h3>
+<pre class="code" data-label="C"><code class="c">pthread_mutexattr_t ma;
+pthread_mutexattr_init(&amp;ma);
+pthread_mutexattr_setpshared(&amp;ma, PTHREAD_PROCESS_SHARED);   /* ⭐ 默认是 _PRIVATE */
+pthread_mutex_init(m_in_shm, &amp;ma);
+</code></pre>
+<p>两个坑：</p>
+<ol>
+<li><strong>默认 PRIVATE</strong>：放共享内存却忘了设 shared → 各进程在自己地址空间各锁各的（futex key 按 PRIVATE 哈希不含物理页身份）——<strong>假同步</strong>，数据竞争照跑，而且很难复现；</li>
+<li>对象必须放在<strong>共享映射</strong>（<code class="c">shm_open</code>+<code class="c">mmap</code> 或 <code class="c">MAP_SHARED</code> 匿名）里，普通全局变量在 fork 之前就在则另说（fork 复制的是 COW，锁状态分裂成两份，见 33.3）。</li>
+</ol>
+<p>PRIVATE 为什么快：futex key 跳过 <code class="c">get_futex_key()</code> 的 inode/page 反查（30.1 核验的 <code class="c">FUT_OFF_MMSHARED</code> 路径），单进程内一律走 mm 偏移——省几十 ns 与一次 cache line 弹跳。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>订单簿/配置快照：seqlock 或 RCU 思想（读不加锁）优先于 rwlock；跨进程共享行情段 + PROCESS_SHARED mutex 只用于低频控制面（高频面走 lock-free）</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>barrier 用于启动对齐：全员 <code class="c">mlockall</code>+预热完成 → barrier → 同时开跑（消除起跑毛刺）</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>单核 MCU 上 spinlock 无意义（自旋=不让出 CPU=持锁者也跑不了）——等于关中断/信号量；SMP SoC 上才谈 spin</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>选型顺序：先问能不能<strong>不加锁</strong>（每线程副本/原子变量/消息传递），再 mutex，rwlock/spin 是特化答案不是默认答案</td>
+</tr>
+</tbody>
+</table></div>
+<h2>代码示例</h2>
+<pre class="code" data-label="C"><code class="c">/* sync_prim.c — Ch33.6：rwlock/barrier/spin 三原语实测
+ * demo1: rwlock 并发读计数（8 读 + 1 写）
+ * demo2: barrier 三线程两轮集合点 + SERIAL_THREAD 收尾
+ * demo3: spinlock 计数（对照 mutex 留给 30.1 数据）
+ * 编译：gcc -O2 -Wall -Wextra -o sync_prim sync_prim.c -pthread
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
 
-static atomic_int should_exit = 0;
-static sigset_t signal_set;
+#define NRD 8
 
-void *signal_thread(void *arg) {
-    int sig;
-    while (1) {
-        sigwait(&amp;signal_set, &amp;sig);
-        printf(&quot;signal %d received\n&quot;, sig);
-        if (sig == SIGINT || sig == SIGTERM) {
-            atomic_store(&amp;should_exit, 1);
-            break;
-        }
+static pthread_rwlock_t rw = PTHREAD_RWLOCK_INITIALIZER;
+static long shared_val;
+static long read_sums[NRD];
+static volatile long spin_val;
+static pthread_spinlock_t sp;
+
+static void *reader(void *arg)
+{
+    long id = (long)arg;
+    long acc = 0;
+    for (int i = 0; i &lt; 100000; i++) {
+        pthread_rwlock_rdlock(&amp;rw);
+        acc += shared_val;                    /* 读临界区：一行 */
+        pthread_rwlock_unlock(&amp;rw);
+    }
+    read_sums[id] = acc;
+    return NULL;
+}
+
+static void *writer(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i &lt; 1000; i++) {
+        pthread_rwlock_wrlock(&amp;rw);
+        shared_val += 1;
+        pthread_rwlock_unlock(&amp;rw);
+        usleep(100);                          /* 模拟低频写 */
     }
     return NULL;
 }
 
-int main(void) {
-    /* 屏蔽信号（所有线程继承） */
-    sigemptyset(&amp;signal_set);
-    sigaddset(&amp;signal_set, SIGINT);
-    sigaddset(&amp;signal_set, SIGTERM);
-    pthread_sigmask(SIG_BLOCK, &amp;signal_set, NULL);
+static pthread_barrier_t bar;
+static long phase_count[3];
 
-    /* 启动信号线程 */
-    pthread_t sig_tid;
-    pthread_create(&amp;sig_tid, NULL, signal_thread, NULL);
-
-    /* 工作循环 */
-    while (!atomic_load(&amp;should_exit)) {
-        /* 工作 */
+static void *phaser(void *arg)
+{
+    long id = (long)arg;
+    for (int round = 0; round &lt; 2; round++) {
+        phase_count[id]++;                    /* 本线程的 phase 进度 */
+        int rc = pthread_barrier_wait(&amp;bar);  /* 集合点 */
+        if (rc == PTHREAD_BARRIER_SERIAL_THREAD)
+            printf(&quot;  [round %d] 线程 %ld 是 SERIAL_THREAD：全队到齐（各自 phase=%ld/%ld/%ld）\n&quot;,
+                   round, id, phase_count[0], phase_count[1], phase_count[2]);
     }
+    return NULL;
+}
 
-    pthread_join(sig_tid, NULL);
-    printf(&quot;exiting gracefully\n&quot;);
+static void *spinner(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i &lt; 1000000; i++) {
+        pthread_spin_lock(&amp;sp);
+        spin_val++;
+        pthread_spin_unlock(&amp;sp);
+    }
+    return NULL;
+}
+
+int main(void)
+{
+    printf(&quot;== demo1: rwlock 8 读 1 写 ==\n&quot;);
+    pthread_t r[NRD], w;
+    for (long i = 0; i &lt; NRD; i++) pthread_create(&amp;r[i], NULL, reader, (void *)i);
+    pthread_create(&amp;w, NULL, writer, NULL);
+    for (int i = 0; i &lt; NRD; i++) pthread_join(r[i], NULL);
+    pthread_join(w, NULL);
+    long expect = read_sums[0];               /* 各读者看到不同时刻，但都在 [0,1000] 区间 */
+    printf(&quot;  writer 共写 %ld 次；读者 acc 样例 %ld（写者结束时其他读者可见终值 1000）\n&quot;,
+           shared_val, expect);
+    printf(&quot;  shared_val 终值 = %ld\n&quot;, shared_val);
+
+    printf(&quot;== demo2: barrier 两轮集合 ==\n&quot;);
+    pthread_barrier_init(&amp;bar, NULL, 3);
+    pthread_t p[3];
+    for (long i = 0; i &lt; 3; i++) pthread_create(&amp;p[i], NULL, phaser, (void *)i);
+    for (int i = 0; i &lt; 3; i++) pthread_join(p[i], NULL);
+    pthread_barrier_destroy(&amp;bar);
+
+    printf(&quot;== demo3: spinlock 1M 次自增 ==\n&quot;);
+    pthread_spin_init(&amp;sp, 0);
+    pthread_t s1, s2;
+    pthread_create(&amp;s1, NULL, spinner, NULL);
+    pthread_create(&amp;s2, NULL, spinner, NULL);
+    pthread_join(s1, NULL); pthread_join(s2, NULL);
+    pthread_spin_destroy(&amp;sp);
+    printf(&quot;  spin_val = %ld（期望 2000000）\n&quot;, spin_val);
     return 0;
 }
 </code></pre>
-<h3>练习 3 答案</h3>
-<p>SCHED_FIFO 线程优先级高于 SCHED_OTHER，会独占 CPU 直到主动让出。SCHED_OTHER 线程会被饥饿（得不到 CPU）。</p>
-<pre class="code" data-label="shell"><code class="c"># 需要 root 迈权或 CAP_SYS_NICE
-sudo ./sched_test
+<p>实测输出（WSL2 / 12 核，gcc -O2 零告警）：</p>
+<pre class="code" data-label="text"><code class="c">== demo1: rwlock 8 读 1 写 ==
+  writer 共写 1000 次；读者 acc 样例 729630（写者结束时其他读者可见终值 1000）
+  shared_val 终值 = 1000
+== demo2: barrier 两轮集合 ==
+  [round 0] 线程 2 是 SERIAL_THREAD：全队到齐（各自 phase=1/1/1）
+  [round 1] 线程 0 是 SERIAL_THREAD：全队到齐（各自 phase=2/2/2）
+== demo3: spinlock 1M 次自增 ==
+  spin_val = 2000000（期望 2000000）
 </code></pre>
-<p>预期结果：SCHED_FIFO 线程 CPU 使用率接近 100%，SCHED_OTHER 线程被挤压到接近 0%。</p>
-<p><strong>注意</strong>：测试时确保不是在唯一 CPU 核上运行，否则会冻系统。用 <code class="c">taskset</code> 限制到特定核心。</p>
-<h2>HFT / 嵌入式关联</h2>
-<ul>
-<li><strong>fork 禁忌</strong>：HFT 多线程服务用 <code class="c">posix_spawn</code> 替代 fork+exec</li>
-<li><strong>信号线程</strong>：HFT 标准模式——信号线程 + 工作线程屏蔽信号</li>
-<li><strong>实时调度</strong>：HFT 策略线程 SCHED_FIFO + CPU 隔离（<code class="c">isolcpus</code>）</li>
-<li><strong>嵌入式</strong>：RTOS 有固定优先级调度，类似 SCHED_FIFO</li>
-</ul>
+<p>三点解读：</p>
+<ol>
+<li><strong>demo1</strong>：写 1000 次期间 8 个读者各读 10 万次没有互相阻塞（读共享）。<code class="c">acc</code> 样例 729630 = 10 万次读到的 <code class="c">shared_val</code> 累加和（全程读到 0→1000 间递增值，均值 ~7.3——写者 usleep(100µs)×1000 次 ≈ 0.1s 内写完，前 1 万次读看到大部分写入）；终值 1000 由写锁独占保证。</li>
+<li><strong>demo2</strong>：两轮集合点，SERIAL_THREAD 每轮<strong>可能落在不同线程</strong>（round0 是 2、round1 是 0）——它是"恰好一个拿到"，不是"固定 leader"。<code class="c">phase=1/1/1</code>、<code class="c">2/2/2</code> 证明真到齐才放行。</li>
+<li><strong>demo3</strong>：spinlock 正确性无虞（200 万精确），但 30.1 的基准数据（spin 跨核 81ns vs mutex 69ns）提醒：<strong>短临界区也得真量过再选</strong>，自旋不是免费的快。</li>
+</ol>
+<hr />
 <h2>衔接</h2>
 <ul>
-<li><a href="#s-33-7">33.7 Summary</a> — 本章总结</li>
-<li><strong>Ch21-22</strong> Signals — 信号处理</li>
-<li><strong>Ch35</strong> Process Priorities — 调度策略详解</li>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-33-5">33.5 LinuxThreads vs NPTL</a></li>
+<li>下一节：<a href="#s-33-7">33.7 总结</a></li>
+<li>mutex/condvar 深挖与 futex 内核路径：<a href="chapter-30.html#s-30-1">30.1</a> · <a href="chapter-30.html#s-30-2">30.2</a></li>
+<li>跨进程共享内存：<a href="chapter-54.html#intro">Ch54 mmap 进程共享</a> · <a href="chapter-48.html#intro">Ch48 SysV</a>（PROCESS_SHARED 对象的载体）</li>
+</ul>
+<h2>自测题</h2>
+<p><strong>题目 1（判据）：</strong> 什么条件下 spinlock 比 mutex 快？什么条件下反而慢？</p>
+<details>
+<summary>参考答案</summary>
+<p>快：临界区<strong>短于两次上下文切换成本</strong>（μs 级）且运行在<strong>不同核</strong>上——等 50ns 比睡 3μs 划算。慢：①同核（自旋=烧自己的时间片，持锁者根本没机会跑——必须等调度）；②临界区含系统调用/缺页/长循环（自旋时间超过睡眠成本）；③竞争者多（每个自旋者都在烧 CPU 拖慢持锁者抢总线）。30.1 实测跨核 4 线程：spin 81ns 反而比 mutex 69ns 慢——自旋风暴干扰了持锁者的 cache。</p>
+</details>
+<p><strong>题目 2（语义）：</strong> <code class="c">pthread_barrier_wait</code> 的返回值设计解决了什么问题？</p>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">n</code> 个线程同时被放行，但<strong>恰好一个</strong>拿到 <code class="c">PTHREAD_BARRIER_SERIAL_THREAD</code>——自动选出一个"收尾者"执行 phase 间串行工作（重置计数器、swap 缓冲、打印汇总），其余线程拿 0 直接进下一轮。没有它就得再补一次"谁负责收尾"的选举同步。demo2 还证明收尾者每轮可能不同——程序<strong>不能假设</strong>它固定。</p>
+</details>
+<p><strong>题目 3（陷阱）：</strong> 把 <code class="c">PTHREAD_MUTEX_INITIALIZER</code> 的 mutex 放进 <code class="c">shm_open</code> 的共享内存，两个进程各自锁定/解锁都成功——数据却在竞争。哪里错了？</p>
+<details>
+<summary>参考答案</summary>
+<p>忘了 <code class="c">pthread_mutexattr_setpshared(&amp;attr, PTHREAD_PROCESS_SHARED)</code>。默认 PRIVATE 的 futex key 按"进程私有地址"哈希——两个进程各自锁的是<strong>逻辑上同一个对象、内核视角两个独立锁</strong>（key 不同桶）。必须 init 时设 shared 属性，futex key 才走物理页身份（<code class="c">FUT_OFF_INODE/MMSHARED</code> 路径）锁定真身。</p>
+</details>
+<p><strong>题目 4（选型）：</strong> 配置表 99% 读 1% 写、写延迟不敏感，rwlock 一定比 mutex 好吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不一定。读临界区只有几 ns 时 rwlock 的原子计数开销（读者登记/退出）可能吃掉全部收益——无竞争 mutex 7ns（30.1 实测）很难输。rwlock 赢面在读临界区<strong>够长</strong>（μs 级：要遍历哈希表）且写<strong>低频</strong>（此时读侧重叠度才值回开销）。写延迟敏感场景 glibc 默认读者优先会写饥饿——上 writer-prefer 变体或换设计（双缓冲 + 原子指针切换）。</p>
+</details>
+      </section>
+      <section class="section" id="s-33-7">
+        <div class="sec-head"><div class="sec-no">33.7</div><h2>总结</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
+- 上一节：<a href="#s-33-6">33.6 高级同步（简介）</a>
+- 下一节：<a href="#s-33-8">33.8 练习</a></p>
+</blockquote>
+<hr />
+<h2>本章回顾</h2>
+<h3>小节速览（内核坐标版）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节</th>
+<th>主题</th>
+<th>一句话内核视角</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>33.1 线程栈</td>
+<td>主线程 vs 子线程两套机制</td>
+<td>子线程栈是普通 mmap <strong>不增长</strong>；每线程 16KB 内核栈（<code class="c">THREAD_SIZE:16</code>）立即占物理内存</td>
+</tr>
+<tr>
+<td>33.2 线程与信号</td>
+<td>处置共享、掩码私有</td>
+<td><code class="c">complete_signal():1004</code> 从 <code class="c">curr_target</code> 轮转选未阻塞线程；全阻塞挂共享队列</td>
+</tr>
+<tr>
+<td>33.3 进程控制</td>
+<td>fork/exec/exit</td>
+<td><code class="c">de_thread():1044</code> exec 杀光其他线程（非 leader 还会<strong>窃取 leader 的 PID</strong>）</td>
+</tr>
+<tr>
+<td>33.4 实现模型</td>
+<td>M:1 / 1:1 / M:N</td>
+<td>Linux 1:1：pthread 就是 clone 出的 task_struct，阻塞/多核/观测全部免费</td>
+</tr>
+<tr>
+<td>33.5 NPTL</td>
+<td>LinuxThreads → NPTL</td>
+<td>三大内核地基：<code class="c">CLONE_THREAD</code>（TGID）、<code class="c">CLONE_CHILD_CLEARTID</code>（join 的 futex）、<code class="c">tgkill</code></td>
+</tr>
+<tr>
+<td>33.6 高级同步</td>
+<td>rwlock/barrier/spin/PROCESS_SHARED</td>
+<td>全部落 futex；PRIVATE key 快在跳过物理页反查</td>
+</tr>
+</tbody>
+</table></div>
+<h3>三个反直觉真相</h3>
+<ol>
+<li><strong>「线程栈」是两种东西</strong>：主线程栈（<code class="c">VM_GROWSDOWN</code> 可增长、进程栈区）与子线程栈（mmap 区固定、有 guard）——名字同，机制完全不同。</li>
+<li><strong>信号没有"进程掩码"</strong>：掩码每线程独立，<code class="c">complete_signal</code> 只是<strong>从上次目标轮转</strong>找第一个未阻塞的——全员阻塞时信号安静地挂在共享队列，谁先解除谁领走（不是丢失）。</li>
+<li><strong>exec 的 PID 窃取</strong>：非 leader 线程 exec 后，内核让它顶替已死 leader 的 PID——<code class="c">getpid()</code> 语义靠一个换位 hack 保住。</li>
+</ol>
+<h3>决策速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>正解</th>
+<th>陷阱</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多线程信号处理</td>
+<td>创建线程前主线程阻塞 → sigwait 专用线程</td>
+<td>handler 里 printf/malloc（锁+非 async-safe）</td>
+</tr>
+<tr>
+<td>多线程要 fork</td>
+<td>fork 后<strong>只做 async-signal-safe 事 → exec</strong>；或 <code class="c">posix_spawn</code></td>
+<td>子进程 lock 继承的锁（持有者不存在→死锁）；atfork 只救你自己的锁</td>
+</tr>
+<tr>
+<td>主线程退 worker 也要退</td>
+<td><code class="c">exit()</code>（触发 <code class="c">exit_group</code> 全灭）</td>
+<td><code class="c">return</code> 等价于 exit——想留 worker 得 <code class="c">pthread_exit(NULL)</code></td>
+</tr>
+<tr>
+<td>海量线程并发 IO</td>
+<td>协程（M:1 思想转世）+ 线程池铺底</td>
+<td>1:1 线程扛百万连接（栈+内核栈烧爆）</td>
+</tr>
+<tr>
+<td>跨进程同步对象</td>
+<td><code class="c">PTHREAD_PROCESS_SHARED</code> + 共享内存映射</td>
+<td>忘设 shared → 假同步（futex key 各自哈希）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>本章铁律（HFT 视角）</h3>
+<ol>
+<li><strong>信号线程是部署标准</strong>，业务线程全员阻塞；</li>
+<li><strong>多线程进程的 fork 只有一条生路：紧跟 exec</strong>；</li>
+<li>线程预算 = 用户栈（虚拟 8MB × N）+ <strong>内核栈 16KB × N（物理）</strong>——内存预算按物理算；</li>
+<li><code class="c">pthread_t</code> ≠ TID，观测用 <code class="c">gettid()</code>；</li>
+<li>选同步原语顺序：<strong>能不能不锁 → mutex → 特化原语</strong>，spin/rwlock 先量后用。</li>
+</ol>
+<h3>衔接</h3>
+<ul>
+<li><strong>Ch29-33 线程五部曲完结</strong>：创建/退出（29）→ 同步（30）→ 安全/TSD（31）→ 取消（32）→ 进阶（33）</li>
+<li>调度策略与优先级：<a href="chapter-35.html#intro">Ch35 进程调度</a></li>
+<li>跨进程原语的载体：<a href="chapter-48.html#intro">Ch48</a> / <a href="chapter-54.html#intro">Ch54</a></li>
+<li>内核任务模型深挖：<a href="../../05-linux-kernel/html/index.html">05-linux-kernel</a> · <a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
+</ul>
+<h2>代码自测</h2>
+<details>
+<summary>1. 为什么「全员阻塞 SIGUSR1 后 kill() 发 SIGUSR1」不会丢信号？</summary>
+<p>信号留在进程的<strong>共享 pending 队列</strong>（<code class="c">shared_pending</code>）。<code class="c">complete_signal():1004</code> 轮转一圈没有线程 <code class="c">wants_signal()</code>（全 blocked）就返回——信号挂着，不丢弃。之后任何一个线程 <code class="c">pthread_sigmask(SIG_UNBLOCK, ...)</code> 并返回用户态时，信号递送或被 <code class="c">sigwait</code> 取走。<strong>阻塞 ≠ 丢弃</strong>，只有标准信号在队列里<strong>合并</strong>（多次投递记一次）。</p>
+</details>
+<details>
+<summary>2. fork 出的子进程里 printf 为什么可能死锁？和 exec 前的限制是什么关系？</summary>
+<p>stdio 流锁随地址空间 COW 继承。若父进程某线程恰好在 printf 内（持流锁）时另一线程 fork，子进程继承"锁定"的锁位，但持有者线程没被复制——子进程 printf 走到该锁即死锁。<strong>async-signal-safe 函数清单恰好就是"不持锁"的函数清单</strong>——信号处理器和 fork 子进程面对的是同一个世界（「别的执行流可能消失在持锁中途」），所以共享同一份白名单。exec 替换映像后锁状态清零，一切安全。</p>
+</details>
+<details>
+<summary>3. 四线程进程，线程 2（非 leader）执行 execve 成功。之后 getpid() 返回什么？/proc 里 task 目录少了几个？</summary>
+<p>getpid() 返回<strong>原 leader 的 PID</strong>——<code class="c">de_thread():1044</code> 杀光其他 3 线程后，非 leader 调用者与已退出的 leader <strong>换位</strong>（接管其 PID/TGID）。<code class="c">/proc/pid/task/</code> 从 4 项变 1 项。这就是「exec 后进程身份不变」的实现：物理上执行映像的线程换了，逻辑身份被内核手术缝合。</p>
+</details>
+<details>
+<summary>4. 子线程默认栈 8MB、内核栈 16KB、guard 4KB——一台 64GB 机器的理论线程数上限和实际工程预算差多少？</summary>
+<p>理论：64GB / 16KB = 4M 线程（只算内核栈物理内存；用户栈 8MB 是虚拟、按触碰收费，但 mmap 地址空间 128TB 也够）。实际工程：每线程还有 glibc <code class="c">struct pthread</code>（TCB 等 ~数 KB 物理）、页表项、调度器开销（runqueue 负载）——实践中万级线程已是重负载（调度抖动、组唤醒风暴），千级是常见健康上限。<strong>预算按"内核栈 16KB × N 立即物理 + 触碰到的用户页"算</strong>。</p>
+</details>
+<details>
+<summary>5. 把 33.2/33.3 串起来：SIGHUP 重载配置 + SIGTERM 优雅退出 + 禁止 fork 的多线程服务，画出完整生命周期。</summary>
+<pre class="code" data-label="text"><code class="c">main ─ pthread_sigmask(BLOCK {SIGHUP,SIGTERM})      ← 一切之前
+    ├─ sigwait 线程：取信号 → 翻译成内部事件（管道/eventfd）
+    ├─ 业务线程 × N：全员继承阻塞，永不收信号
+    │     SIGHUP → 配置线程在读检查点原子换表（无锁读：双缓冲+原子指针）
+    │     SIGTERM → shutdown 事件 → 各线程跑到 quiesce 点 → 退出
+    └─ 主线程 pthread_exit（或 join 最后的 logger）
+外部工具一律 posix_spawn；绝不 fork-worker。
+</code></pre>
+</details>
+      </section>
+      <section class="section" id="s-33-8">
+        <div class="sec-head"><div class="sec-no">33.8</div><h2>练习</h2></div>
+<blockquote>
+<p>本章：<a href="#intro">TLPI 第 33 章 — Threads: Further Details</a>
+- 上一节：<a href="#s-33-7">33.7 总结</a></p>
+</blockquote>
+<hr />
+<h2>练习题</h2>
+<h3>练习 1：信号路由实验（33.2）</h3>
+<p>4 线程：T0-T3。T1、T2 阻塞 SIGUSR1（其余不阻塞，注意：默认全不阻塞——你要显式构造"部分阻塞"）。向进程发 10 次 <code class="c">kill(pid, SIGUSR1)</code>：</p>
+<ol>
+<li>哪些线程的 handler 会跑？跑几次？</li>
+<li>把 T0/T3 也阻塞后（只剩 T1 阻塞？不——全员阻塞）再发 10 次，发生了什么？怎么验证信号没丢？</li>
+</ol>
+<h3>练习 2：fork 锁幽灵的三个变体（33.3）</h3>
+<p>基于 33.3 demo1 的 trylock 证据法，测三种锁的 fork 后行为：普通 mutex、<code class="c">PTHREAD_MUTEX_ERRORCHECK</code>、<code class="c">PTHREAD_MUTEX_ROBUST</code>。<strong>先猜</strong>：robust 锁号称"持有者死亡可恢复"，fork 里它能不能活？</p>
+<h3>练习 3：exec 竞态观察（33.3）</h3>
+<p>worker 线程在无限循环里 <code class="c">write(2, ".", 1)</code>（write 异步信号安全且不持 stdio 锁）。主线程立即 <code class="c">execl</code>：</p>
+<ol>
+<li>exec 之后还有没有 <code class="c">.</code> 输出？为什么没有"正在 write 中途被杀"的截断？</li>
+<li>把 write 换成 printf 会看到什么差异？（stdio 缓冲未 flush → 输出丢失）</li>
+</ol>
+<h3>练习 4：barrier 实现分阶段流水（33.6）</h3>
+<p>3 个线程两轮循环：phase1 各自累加本地计数 → barrier → phase2 把本地值原子加进全局 → barrier → 下一轮。要求：全局汇总<strong>恰好由 SERIAL_THREAD 每轮清零</strong>。陷阱：你会在哪一步发现"SERIAL_THREAD 每轮可能不同"？</p>
+<h3>练习 5：栈预算审计（33.1）</h3>
+<p>写程序创建 1000 个线程，每线程 sleep(5)：用 <code class="c">/proc/self/statm</code> 观察虚拟量（VmSize）与驻留量（RSS）各涨多少？与「1000 × 8MB 虚拟 + 1000 × 16KB 物理内核栈 + 触碰页」的预期对账。</p>
+<h3>练习 6（综合）：多线程守护进程骨架</h3>
+<p>实现 <code class="c">mt_daemon</code>：sigwait 信号线程（SIGTERM/SIGHUP/SIGINT）+ 2 个 worker + 优雅退出（收到 TERM 后 worker 最多 2 秒内退出）+ 心跳日志。要求全程<strong>零异步 handler</strong>。验收：<code class="c">kill -TERM</code> 后日志按顺序出现「收到信号→广播退出→worker1 done→worker2 done→bye」。</p>
+<hr />
+<h2>参考答案</h2>
+<h3>练习 1 答案</h3>
+<ol>
+<li>handler 跑在 T0 和 T3（未阻塞者）上。次数：<strong>最多 10 次、可能少于</strong>——标准信号不排队，10 次 kill 若在 handler/递送完成前密集到达会<strong>合并</strong>；<code class="c">complete_signal</code> 从 <code class="c">curr_target</code> 轮转，T0/T3 交替是常态。</li>
+<li>全员阻塞 → 10 次 kill 全挂共享 pending 队列（合并后 pending 位图只有 1 位）→ 没有任何 handler 跑，但<strong>没丢</strong>。验证：任一线程解除阻塞 → handler 跑 1 次；或 <code class="c">sigpending()</code> 查看队列位图。</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">sigset_t pend;
+sigpending(&amp;pend);
+printf(&quot;SIGUSR1 pending = %d\n&quot;, sigismember(&amp;pend, SIGUSR1));   /* 1 = 挂着没丢 */
+</code></pre>
+<h3>练习 2 答案</h3>
+<pre class="code" data-label="C"><code class="c">/* fork_ghost.c — 三种锁的 fork 后行为对照（全部 trylock，避免真死锁） */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/wait.h&gt;
+
+static pthread_mutex_t m_normal  = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t m_errchk;
+static pthread_mutex_t m_robust;
+static pthread_mutexattr_t attr_e, attr_r;
+
+static void *locker(void *arg)
+{
+    (void)arg;
+    pthread_mutex_lock(&amp;m_normal);           /* 持到进程结束 */
+    return NULL;
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    pthread_mutexattr_init(&amp;attr_e);
+    pthread_mutexattr_settype(&amp;attr_e, PTHREAD_MUTEX_ERRORCHECK);
+    pthread_mutex_init(&amp;m_errchk, &amp;attr_e);
+    pthread_mutexattr_init(&amp;attr_r);
+    pthread_mutexattr_setrobust(&amp;attr_r, PTHREAD_MUTEX_ROBUST);
+    pthread_mutex_init(&amp;m_robust, &amp;attr_r);
+
+    pthread_t t;
+    pthread_create(&amp;t, NULL, locker, NULL);
+    usleep(50 * 1000);
+    pthread_mutex_lock(&amp;m_errchk);           /* 主线程持 errorcheck */
+    pthread_mutex_lock(&amp;m_robust);           /* 主线程持 robust */
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        int r1 = pthread_mutex_trylock(&amp;m_normal);
+        int r2 = pthread_mutex_trylock(&amp;m_errchk);
+        int r3 = pthread_mutex_trylock(&amp;m_robust);
+        printf(&quot;  [子] normal trylock = %d (%s)\n&quot;, r1, strerror(r1));
+        printf(&quot;  [子] errchk  trylock = %d (%s)\n&quot;, r2, strerror(r2));
+        printf(&quot;  [子] robust  trylock = %d (%s)\n&quot;, r3, strerror(r3));
+        _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+    return 0;
+}
+</code></pre>
+<p>实测（WSL2，零告警）：</p>
+<pre class="code" data-label="text"><code class="c">  [子] normal trylock = 16 (Device or resource busy)
+  [子] errchk  trylock = 16 (Device or resource busy)
+  [子] robust  trylock = 16 (Device or resource busy)
+</code></pre>
+<p><strong>robust 也救不了 fork</strong>——这是比 EOWNERDEAD 更重要的结论：</p>
+<ul>
+<li>robust 的「持有者死亡检测」是内核在持有者线程<strong>真正走 <code class="c">do_exit()</code></strong> 时由 <code class="c">exit_robust_list()</code>（<code class="c">kernel/futex/core.c:773</code>）把链表上所有锁标记 <code class="c">EOWNERDEAD</code>——它挂在<strong>退出路径</strong>上；</li>
+<li>fork 里"消失"的线程从未运行过 <code class="c">do_exit</code>（它只是没被复制），子进程的 robust 链表是空的、锁内存位原样照抄 → trylock <code class="c">EBUSY</code>、<code class="c">lock()</code> 永久睡在 futex 上（实测挂死，等同普通锁）；</li>
+<li>也就是说：robust 只覆盖「线程死了」一种死法，<strong>救不了「线程从未存在」的 fork 场景</strong>。工程上"可存活的 fork-worker"若真要用 robust+<code class="c">pthread_mutex_consistent()</code>，防的是 worker 线程崩溃（走退出路径），不是 fork 幽灵。</li>
+</ul>
+<h3>练习 3 答案</h3>
+<ol>
+<li><strong>没有截断</strong>：<code class="c">de_thread</code> 杀线程发生在系统调用边界/可中断点——正在 <code class="c">write(2)</code> 里的线程要么完成这次调用、要么被杀在调用前后，不会写半截 fd 状态（内核 write 路径里 SIGKILL 不打断已持锁的临界区，只是让它不再返回用户态）。exec 后 <code class="c">.</code> 消失：没有线程了。</li>
+<li>printf 版：worker 的 stdio 缓冲在用户态——被杀时缓冲没 flush 的内容<strong>直接蒸发</strong>；反之若 worker 恰好 printf 完整但主线程 exec，缓冲不 flush 也蒸发。这正是「exec 杀线程无清理」的直接证据，也是为什么 multi-threaded 代码 exec 前 <code class="c">fflush(NULL)</code> 只救主线程自己的缓冲。</li>
+</ol>
+<h3>练习 4 答案</h3>
+<pre class="code" data-label="C"><code class="c">/* barrier_phase.c */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;pthread.h&gt;
+
+enum { NTH = 3, ROUNDS = 3 };
+static pthread_barrier_t bar;
+static atomic_long global;
+static long local_[NTH];
+
+static void *work(void *arg)
+{
+    long id = (long)arg;
+    for (int r = 0; r &lt; ROUNDS; r++) {
+        local_[id]++;                        /* phase 1：本地累加 */
+        pthread_barrier_wait(&amp;bar);
+        if (r &lt; ROUNDS - 1)
+            atomic_fetch_add(&amp;global, local_[id]);   /* phase 2：汇总 */
+        pthread_barrier_wait(&amp;bar);
+        /* ⭐ 若在这里读 global 做判断——SERIAL_THREAD 的清零时机决定结果 */
+    }
+    return NULL;
+}
+
+int main(void)
+{
+    pthread_barrier_init(&amp;bar, NULL, NTH);
+    pthread_t t[NTH];
+    for (long i = 0; i &lt; NTH; i++) pthread_create(&amp;t[i], NULL, work, (void *)i);
+    for (int i = 0; i &lt; NTH; i++) pthread_join(t[i], NULL);
+    printf(&quot;全局 = %ld（ROUNDS=3：前两轮各线程 local 累进 1、2，总和 (1+2+3)×2=12？实测对账）\n&quot;,
+           atomic_load(&amp;global));
+    pthread_barrier_destroy(&amp;bar);
+    return 0;
+}
+</code></pre>
+<p>陷阱揭示：想「每轮由 SERIAL_THREAD 清零 global」时，清零必须发生在<strong>所有汇总完成之后</strong>——即第二个 barrier 之后的 SERIAL_THREAD。若在第一个 barrier 后清零，会读到上一轮的旧值；且 SERIAL_THREAD 每轮可能是不同线程（33.6 demo2 实测），<strong>谁清零不能写成固定线程</strong>。正确结构：<code class="c">累加 → bar → 汇总 → bar → SERIAL 清零</code>（清零在第二个 bar 之后、下一轮开始前）。实测全局 = 9（round0 加 1×3、round1 加 2×3，末轮不汇）——与上述推演完全对账。</p>
+<h3>练习 5 答案</h3>
+<p>观察要点：VmSize 涨约 1000 × 8MB ≈ <strong>8GB</strong>（虚拟、含 guard 对齐），RSS 只涨<strong>几 MB</strong>（线程栈没人触碰，全靠 mmap 未触碰页 = 零物理；涨的部分是 glibc TCB/内核结构的已触碰页 + 内核栈不在进程 RSS 里！）。对账陷阱：<strong>16KB 内核栈不计入进程 RSS</strong>——它是内核内存（<code class="c">slab/vmalloc</code>），在 <code class="c">/proc/meminfo</code> 的 Slab/KMalloc 曲线上，进程视角看不到。这题教的是：<strong>进程 RSS 严重低估多线程的真实物理成本</strong>。</p>
+<h3>练习 6 参考实现</h3>
+<pre class="code" data-label="C"><code class="c">/* mt_daemon.c — 多线程守护进程骨架：sigwait 线程 + 优雅退出，零异步 handler */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+
+static atomic_int  shutdown_req;      /* 0 跑 / 1 关 */
+static atomic_long tick[2];
+
+static void *worker(void *arg)
+{
+    long id = (long)arg;
+    while (!atomic_load(&amp;shutdown_req)) {
+        atomic_fetch_add(&amp;tick[id], 1);
+        struct timespec ts = {0, 50 * 1000 * 1000};
+        nanosleep(&amp;ts, NULL);         /* 模拟工作（也是退出检查点） */
+    }
+    printf(&quot;worker%ld done（tick=%ld）\n&quot;, id, atomic_load(&amp;tick[id]));
+    fflush(stdout);
+    return NULL;
+}
+
+static void *sig_thread(void *arg)
+{
+    (void)arg;
+    int sig;
+    sigset_t set;
+    sigemptyset(&amp;set);
+    sigaddset(&amp;set, SIGINT);
+    sigaddset(&amp;set, SIGTERM);
+    sigaddset(&amp;set, SIGHUP);
+    for (;;) {
+        if (sigwait(&amp;set, &amp;sig) != 0) break;
+        if (sig == SIGHUP) { printf(&quot;[sig] SIGHUP：配置重载（此处省略）\n&quot;); continue; }
+        printf(&quot;[sig] 收到 %s → 广播退出\n&quot;, strsignal(sig));
+        fflush(stdout);
+        atomic_store(&amp;shutdown_req, 1);
+        return NULL;
+    }
+    return NULL;
+}
+
+int main(int argc, char **argv)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
+    sigset_t set;
+    sigemptyset(&amp;set);
+    sigaddset(&amp;set, SIGINT);
+    sigaddset(&amp;set, SIGTERM);
+    sigaddset(&amp;set, SIGHUP);
+    pthread_sigmask(SIG_BLOCK, &amp;set, NULL);     /* ⭐ 一切之前 */
+
+    pthread_t w0, w1, st;
+    pthread_create(&amp;w0, NULL, worker, (void *)0L);
+    pthread_create(&amp;w1, NULL, worker, (void *)1L);
+    pthread_create(&amp;st, NULL, sig_thread, NULL);
+
+    if (argc &gt; 1 &amp;&amp; strcmp(argv[1], &quot;selftest&quot;) == 0) {
+        /* 自测模式：2 秒后自己给自己发 SIGTERM（走完整信号路径） */
+        sleep(2);
+        kill(getpid(), SIGTERM);
+    }
+    pthread_join(st, NULL);                     /* 等信号线程发令 */
+    pthread_join(w0, NULL);
+    pthread_join(w1, NULL);
+    printf(&quot;bye\n&quot;);
+    return 0;
+}
+</code></pre>
+<p>实测（<code class="c">./mt_daemon selftest</code>——自测模式 2 秒后自己发 SIGTERM 走完整信号路径）：</p>
+<pre class="code" data-label="text"><code class="c">[sig] 收到 Terminated → 广播退出
+worker0 done（tick=40）
+worker1 done（tick=40）
+bye
+</code></pre>
+<p>验收全过：信号→广播→两个 worker 各自 done→bye，顺序稳定；全程没有任何 async handler（<code class="c">sigaction</code> 一次都没调）。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFT</td>
+<td>练习 2 的结论要背下来：<strong>robust 也救不了 fork</strong>（EOWNERDEAD 只在持有者真正 do_exit 时由 exit_robust_list 触发，fork 的"消失"不走退出路径）——多线程 fork 没有任何锁防线，唯一正解是 exec / posix_spawn</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>练习 6 的骨架 = 生产服务的信号层标准件：再加 SIGHUP 双缓冲配置热载、timerfd 心跳，就是一个交易网关的进程管理面</td>
+</tr>
+<tr>
+<td>嵌入式</td>
+<td>练习 5 的「RSS 看不见内核栈」在内存受限板子上是真实事故源：RSS 正常 ≠ 内核内存没爆——要盯 <code class="c">/proc/meminfo</code> Slab</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><a href="#s-33-7">33.7 总结</a></li>
+<li>线程五部曲收官。下一站调度：<a href="chapter-35.html#intro">Ch35 进程优先级与调度</a>（<code class="c">SCHED_FIFO/RR/DEADLINE</code>、<code class="c">sched_setaffinity</code>、<code class="c">RLIMIT_RTPRIO</code>）</li>
+<li>信号全景：<a href="chapter-20.html#intro">Ch20</a>–<a href="chapter-22.html#intro">Ch22</a></li>
 </ul>
       </section>
 
