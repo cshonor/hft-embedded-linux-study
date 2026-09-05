@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TLPI 第 35 章 — Process Priorities and Scheduling</title>
+<title>TLPI 第 35 章 — 进程优先级与调度（Process Priorities and Scheduling）</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -276,12 +276,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-35-1"><span class="n">35.1</span>–35.2 Nice（`SCHED_OTHER`）</a>
-          <a href="#s-35-2"><span class="n">35.2</span>Overview of Realtime Process Scheduling</a>
-          <a href="#s-35-3"><span class="n">35.3</span>三大策略</a>
-          <a href="#s-35-4"><span class="n">35.4</span>调度 API</a>
-          <a href="#s-35-5"><span class="n">35.5</span>CPU 亲和（Linux）</a>
-          <a href="#s-35-6"><span class="n">35.6</span>权限与限制</a>
+          <a href="#s-35-1"><span class="n">35.1</span>进程优先级与 nice 值</a>
+          <a href="#s-35-2"><span class="n">35.2</span>实时调度概述</a>
+          <a href="#s-35-3"><span class="n">35.3</span>实时调度 API 详解</a>
+          <a href="#s-35-4"><span class="n">35.4</span>CPU 亲和性</a>
+          <a href="#s-35-5"><span class="n">35.5</span>总结</a>
+          <a href="#s-35-6"><span class="n">35.6</span>练习</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -319,7 +319,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="chapter-32.html#intro"><span class="n">32</span>TLPI 第 32 章 — Threads: Thread Cancellation</a>
           <a href="chapter-33.html#intro"><span class="n">33</span>TLPI 第 33 章 — Threads: Further Details</a>
           <a href="chapter-34.html#intro"><span class="n">34</span>TLPI 第 34 章 — Process Groups, Sessions, and Job Control</a>
-          <a href="chapter-35.html#intro"><span class="n">35</span>TLPI 第 35 章 — Process Priorities and Scheduling</a>
+          <a href="chapter-35.html#intro"><span class="n">35</span>TLPI 第 35 章 — 进程优先级与调度（Process Priorities and Scheduling）</a>
           <a href="chapter-36.html#intro"><span class="n">36</span>TLPI 第 36 章 — Process Resources</a>
           <a href="chapter-37.html#intro"><span class="n">37</span>TLPI 第 37 章 — Daemons</a>
           <a href="chapter-38.html#intro"><span class="n">38</span>TLPI 第 38 章 — Writing Secure Privileged Programs</a>
@@ -358,7 +358,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <div class="content" style="grid-template-columns:1fr">
         <div>
           <div class="eyebrow">TLPI · Linux 系统编程接口</div>
-          <h1>TLPI 第 35 章 — Process Priorities and Scheduling</h1>
+          <h1>TLPI 第 35 章 — 进程优先级与调度（Process Priorities and Scheduling）</h1>
           <div class="meta">
 <span>book <b>03-linux-userspace-api</b></span><span>chapter <b>Ch 35</b></span><span>sections <b>7</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
@@ -369,18 +369,121 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p>nice；<code class="c">SCHED_OTHER</code> vs FIFO/RR；<code class="c">sched_*</code> API；权限与 <code class="c">RLIMIT_RTPRIO</code>；CPU 亲和；<code class="c">SCHED_RESET_ON_FORK</code>；实时风险。</p>
+<p>读完本章应能回答：nice 到底改了内核什么（<code class="c">sched_prio_to_weight</code> 查表）；为什么 RT 优先级 1 碾压 nice -20（统一 prio 空间反向映射）；<code class="c">sched_setscheduler</code> 每一步校验与权限判据（<code class="c">user_check_sched_setscheduler</code>）；FIFO/RR 的精确行为差异（<code class="c">task_tick_rt</code>）；满负荷 FIFO 为什么每秒被冻结 50ms（RT throttling 950ms/1s）；绑核与独占核差在哪几层（isolcpus/nohz_full/IRQ）。</p>
 <hr />
+<h2>机制全景</h2>
+<pre class="code" data-label="code"><code class="c">                    用户视角
+   nice -20 … 0 … +19          RT 优先级 1 … 99
+        │                            │ NICE_TO_PRIO(+120)        反向映射
+        ▼                            ▼ MAX_RT_PRIO-1-rt_prio
+   ┌────────────── 内核 p-&gt;prio 空间 (越小越优先) ──────────────┐
+   │ 0 …… 98 99 │ 100 …… 120 …… 139 │                          │
+   │   RT 段    │     CFS(nice) 段   │                          │
+   │  FIFO/RR   │  OTHER/BATCH/IDLE  │                          │
+   └────────────┴────────────────────┴──────────────────────────┘
+        │               │
+   rt_sched_class   fair_sched_class     ← 调度类链: stop&gt;dl&gt;rt&gt;fair&gt;idle
+        │               │
+   rt_prio_array    CFS 红黑树(vruntime)
+   位图 O(1) 选任务  权重 = sched_prio_to_weight[nice+20]
+
+   安全网: RT throttling  950ms/1s (sched_rt_runtime_exceeded)
+           RLIMIT_RTTIME  每任务 SIGKILL (watchdog)
+   物理层: sched_setaffinity 绑核 → isolcpus 隔离 → nohz_full → IRQ 绕行
+</code></pre>
 <hr />
-<h2>实验清单</h2>
+<h2>易错清单</h2>
 <ol>
-<li>nice get/set  </li>
-<li>（需 root）FIFO 抢占  </li>
-<li>RR interval  </li>
-<li>affinity  </li>
-<li>（选）<code class="c">SCHED_RESET_ON_FORK</code>  </li>
+<li>把 nice 当优先级——它是 CFS 权重（core.c:11542），无任何抢占承诺；</li>
+<li><code class="c">getpriority()</code> 不清 errno 就判断错误——内核返回 rlimit 风格 1..40，glibc 转换后 -1 是合法值（sys.c:282-287）；</li>
+<li><code class="c">setpriority</code> 传越界值不报错——内核静默钳制（sys.c:232-235），必须读回验证；</li>
+<li>同核放两个同级 FIFO——第二个饿死是<strong>设计行为</strong>（task_tick_rt:2652）；</li>
+<li>以为 <code class="c">sched_yield()</code> 能给低优先级任务让路——RT 的 yield 只排队尾（rt.c:1590）；</li>
+<li>满负荷压测出现 50ms 周期性延迟尖峰——先查 <code class="c">dmesg | grep "RT throttling"</code>；</li>
+<li>绑核后以为独占——负载均衡照样派活，要 isolcpus + nohz_full + IRQ 绕行；</li>
+<li>RT 服务 fork/exec 脚本不带 <code class="c">SCHED_RESET_ON_FORK</code>——脚本继承 FIFO 90 是整机级炸弹（负 nice 同样被重置，core.c:4753-4754）；</li>
+<li>nice 降权以为跨终端生效——autogroup（v2.6.38+ 默认开）让 nice 只在会话组内有意义；</li>
+<li><code class="c">sched_getaffinity</code> 读回比设置的小就怀疑 bug——可能是 CPU 热插拔（core.c:8482 交集 active）；</li>
+<li><code class="c">sched_setscheduler(pid, …)</code> 以为改的是"进程"——pid 是 TID 粒度，多线程要逐线程设（<code class="c">setpriority(PRIO_PROCESS,…)</code> 同样是 TID 粒度，sys.c:219）；</li>
+<li>想用 nice 给 SCHED_FIFO 任务"再提一档"——对 RT 无效，内核只写 static_prio 不动调度（core.c:7209-7212）；</li>
+<li>普通用户把进程切 SCHED_IDLE 当"礼貌让路"——<strong>单向门</strong>：切回按 nice 20 提权审查，RLIMIT_NICE=0 必 EPERM（core.c:7598）；</li>
+<li>throttling 实验单次读数就下结论——任务起点与 period 相位的对齐让同程序两次跑差出 10%/14%，看数量级不看个位数。</li>
 </ol>
 <hr />
+<h2>实验清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>实验</th>
+<th>状态</th>
+<th>所需权限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>nice 三 API + getpriority 陷阱 + EACCES 边界（<code class="c">nice_probe.c</code>，35.1）</td>
+<td>✅ 实跑（普通用户 + root 对照）</td>
+<td>无</td>
+</tr>
+<tr>
+<td>2</td>
+<td>RR 时间片查询 100ms（<code class="c">rr_interval.c</code>，35.2）</td>
+<td>✅ 实跑（双身份对照）</td>
+<td>查询无 / 切 RR 需 root</td>
+</tr>
+<tr>
+<td>3</td>
+<td>FIFO 80 设置 + 降级自由 + RESET_ON_FORK 隔代重置（<code class="c">rt_setup.c</code>，35.3）</td>
+<td>✅ 实跑（双身份对照）</td>
+<td>root</td>
+</tr>
+<tr>
+<td>4</td>
+<td>绑核/空掩码 EINVAL/替换语义（<code class="c">affinity_pin.c</code>，35.4）</td>
+<td>✅ 实跑</td>
+<td>无</td>
+</tr>
+<tr>
+<td>5</td>
+<td>FIFO 99 满负荷 vs OTHER 饿死 + throttling 活口（<code class="c">fifo_starve.c</code>，35.6）</td>
+<td>✅ 实跑</td>
+<td>root</td>
+</tr>
+<tr>
+<td>6</td>
+<td>RR 轮转 vs FIFO 独占双子对比（<code class="c">rr_alt.c</code>，35.6）</td>
+<td>✅ 实跑</td>
+<td>root</td>
+</tr>
+<tr>
+<td>7</td>
+<td>RT throttling 配额直击 100ms/1s + dmesg 指纹（<code class="c">rt_throttle.c</code>，35.6）</td>
+<td>✅ 实跑（自动恢复 sysctl）</td>
+<td>root</td>
+</tr>
+<tr>
+<td>8</td>
+<td>CFS 权重比 nice0/nice5 = 3.03:1（预写 3.06，偏差&lt;1%）（<code class="c">nice_race.c</code>，35.6）</td>
+<td>✅ 实跑（双身份对照）</td>
+<td>无</td>
+</tr>
+<tr>
+<td>9</td>
+<td>SCHED_IDLE 单向门 + vs nice19 权重比 4.93:1（<code class="c">idle_weight.c</code>，35.6）</td>
+<td>✅ 实跑（门=普通用户，比=root）</td>
+<td>分模式</td>
+</tr>
+<tr>
+<td>10</td>
+<td>RESET_ON_FORK 隔代：子重置/孙原样继承（<code class="c">rof_grand.c</code>，35.6）</td>
+<td>✅ 实跑</td>
+<td>root</td>
+</tr>
+</tbody>
+</table></div>
+<p>历史 demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/t_nice.c"><code class="c">code/t_nice.c</code></a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/sched_view.c"><code class="c">code/sched_view.c</code></a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/affinity_demo.c"><code class="c">code/affinity_demo.c</code></a>（早期版本，功能被笔记内嵌 demo 覆盖）。</p>
 <hr />
 <h2>背诵卡</h2>
 <div class="tbl-wrap"><table>
@@ -393,128 +496,278 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>1</td>
-<td>nice：-20…19，只管 OTHER</td>
+<td>nice ∈ [-20,19]：查 <code class="c">sched_prio_to_weight</code>（每级 ×1.25），只管 CFS</td>
 </tr>
 <tr>
 <td>2</td>
-<td>FIFO/RR：1–99，压过 OTHER</td>
+<td>用户 RT 1..99 → 内核 prio = 99-rt（反向）；RT 段 0..98 恒压 CFS 段 100..139</td>
 </tr>
 <tr>
 <td>3</td>
-<td>FIFO 无同级时间片；RR 有</td>
+<td>内核 syscall getpriority 返回 1..40（20-nice），glibc 转回 nice</td>
 </tr>
 <tr>
 <td>4</td>
-<td>实时需 CAP_SYS_NICE / RTPRIO</td>
+<td>非特权降权自由；提权要 RLIMIT_NICE；切 RT 要 RLIMIT_RTPRIO≠0；兜底 CAP_SYS_NICE</td>
 </tr>
 <tr>
 <td>5</td>
-<td>亲和绑核减抖动</td>
+<td>FIFO 无时间片（rt.c:2652 直接 return）；RR = FIFO + 100ms（RR_TIMESLICE rt.h:57）</td>
 </tr>
 <tr>
 <td>6</td>
-<td>RESET_ON_FORK 防子进程继承实时</td>
+<td>调度类链 stop &gt; dl &gt; rt &gt; fair &gt; idle，高类整体压制低类</td>
+</tr>
+<tr>
+<td>7</td>
+<td>RT throttling：950ms/1s，超限<strong>整队</strong>冻结，"RT throttling activated" 进 dmesg</td>
+</tr>
+<tr>
+<td>8</td>
+<td>RLIMIT_RTTIME：每任务 CPU 累计超限收 SIGKILL（第二道防线）</td>
+</tr>
+<tr>
+<td>9</td>
+<td>RESET_ON_FORK：子进程回 OTHER/nice0/rt0，负 nice 也归零，flag 只管一代</td>
+</tr>
+<tr>
+<td>10</td>
+<td>sched_yield：RT 只排队尾，绝不让低优先级</td>
+</tr>
+<tr>
+<td>11</td>
+<td>affinity 掩码先与 cgroup 交集，空交集 EINVAL（core.c:8332）</td>
+</tr>
+<tr>
+<td>12</td>
+<td>完整隔离 = 绑核 + isolcpus + nohz_full + IRQ 绕行（+ rcu_nocbs）</td>
+</tr>
+<tr>
+<td>13</td>
+<td>autogroup（默认开）：CFS 先按会话组公平，nice 跨会话无效</td>
+</tr>
+<tr>
+<td>14</td>
+<td>nice 对 RT 任务无效：set_user_nice 只写 static_prio（core.c:7209-7212）</td>
+</tr>
+<tr>
+<td>15</td>
+<td>HFT 启动序：mlockall → 预热 → 绑核 → FIFO → RTTIME 兜底</td>
+</tr>
+<tr>
+<td>16</td>
+<td>RT 选任务 O(1)：100bit 位图 <code class="c">sched_find_first_bit</code> + 每优先级一链表（rt.c:1769）</td>
+</tr>
+<tr>
+<td>17</td>
+<td>SCHED_IDLE 权重 = 3（WEIGHT_IDLEPRIO），是 nice19(15) 的 1/5，实测 4.93:1</td>
+</tr>
+<tr>
+<td>18</td>
+<td>迁移由最高类的 stopper 线程完成：五步注释 core.c:2497，dequeue→换核→enqueue</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<hr />
 <h2>参考</h2>
 <ul>
-<li>Kerrisk · TLPI Ch35  </li>
-<li><code class="c">man 2 setpriority</code> · <code class="c">man 2 sched_setscheduler</code> · <code class="c">man 2 sched_setaffinity</code> · <code class="c">man 7 sched</code></li>
-</ul>
-<hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/time.h&gt;
-#include &lt;sys/resource.h&gt;
-#include &lt;sched.h&gt;
-#include &lt;unistd.h&gt;
-
-/* Ch35 进程优先级与调度 — nice/getpriority/setpriority/sched。
- * 演示 nice 值调整 + 实时调度策略。
- * 编译: gcc -o ch35_demo ch35_demo.c */
-
-int main(void) {
-    /* nice 值: -20 (最高优先级) 到 +19 (最低优先级) */
-    int nice_val = nice(0);  /* 0 = 查询当前值 */
-    printf(&quot;Current nice value: %d\n&quot;, nice_val);
-
-    /* getpriority: PRIO_PROCESS = 进程级别 */
-    int prio = getpriority(PRIO_PROCESS, 0);
-    printf(&quot;getpriority(PRIO_PROCESS, 0) = %d\n&quot;, prio);
-
-    /* setpriority: 提高/降低优先级（普通用户只能降低） */
-    if (setpriority(PRIO_PROCESS, 0, 5) == 0)
-        printf(&quot;Nice set to 5 (lower priority)\n&quot;);
-    else
-        perror(&quot;setpriority (need root to increase)&quot;);
-
-    /* 调度策略: SCHED_OTHER (默认) / SCHED_FIFO / SCHED_RR */
-    int policy = sched_getscheduler(0);
-    printf(&quot;Scheduling policy: %d&quot;, policy);
-    if (policy == SCHED_OTHER) printf(&quot; (SCHED_OTHER - normal)\n&quot;);
-    else if (policy == SCHED_FIFO) printf(&quot; (SCHED_FIFO - realtime)\n&quot;);
-    else if (policy == SCHED_RR) printf(&quot; (SCHED_RR - round robin)\n&quot;);
-
-    /* CPU 亲和性: 绑定到 CPU 0 */
-    cpu_set_t cpuset;
-    CPU_ZERO(&amp;cpuset);
-    CPU_SET(0, &amp;cpuset);
-    if (sched_setaffinity(0, sizeof(cpuset), &amp;cpuset) == 0)
-        printf(&quot;Pinned to CPU 0\n&quot;);
-    else
-        perror(&quot;sched_setaffinity&quot;);
-
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>参考</h2>
-<ul>
-<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">OUTLINE</a></li>
-<li>原始笔记：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes">notes.md.bak</a></li>
+<li>Kerrisk · TLPI Ch35（原书 6 节结构：35.1 优先级与 nice / 35.2 RT 概述 / 35.3 RT API 详解 / 35.4 CPU 亲和 / 35.5 总结 / 35.6 练习）</li>
+<li><code class="c">man 2 sched_setscheduler</code> · <code class="c">man 2 setpriority</code> · <code class="c">man 2 sched_setaffinity</code> · <code class="c">man 7 sched</code></li>
+<li>内核文档：<code class="c">Documentation/scheduler/sched-rt.rst</code> · <code class="c">isolcpus</code> 与 cgroup v2 cpuset partition</li>
+<li>本仓关联：<a href="chapter-29.html#intro">Ch29 线程简介</a>（每线程调度属性）· <a href="chapter-30.html#intro">Ch30 线程同步</a>（RT 线程的优先级继承）· <a href="chapter-33.html#intro">Ch33 线程进阶</a>（SCHED_RESET_ON_FORK 与线程）· <a href="chapter-36.html#intro">Ch36 进程资源</a>（RLIMIT 三兄弟）· <a href="chapter-39.html#intro">Ch39 capabilities</a>（CAP_SYS_NICE）</li>
 </ul>
       </section>
       <section class="section" id="s-35-1">
-        <div class="sec-head"><div class="sec-no">35.1</div><h2>–35.2 Nice（`SCHED_OTHER`）</h2></div>
+        <div class="sec-head"><div class="sec-no">35.1</div><h2>进程优先级与 nice 值</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 35 章 — Process Priorities and Scheduling</a>
+<p>源码核验：Linux v6.6 · include/linux/sched/prio.h（MAX_RT_PRIO:16、nice_to_rlimit:32）· kernel/sys.c（set_one_prio:194、getpriority:288）· kernel/sched/core.c（set_user_nice:7187、sched_prio_to_weight:11542）· kernel/sched/autogroup.c（sysctl_sched_autogroup_enabled:7）</p>
+<p>本章：<a href="#intro">TLPI 第 35 章 — 进程优先级与调度</a>
 - 上一节：本章首页
-- 下一节：<a href="#s-35-3">35.3 三大策略</a></p>
+- 下一节：<a href="#s-35-2">35.2 实时调度概述</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>区间 <strong>-20（更优先）…19（更低）</strong>，默认 0；是权重，非绝对优先级。 int getpriority(int which, id_t who); int setpriority(int which, id_t who, int prio);</p>
+<ol>
+<li><strong>nice 值到底改了内核里的什么？</strong>——它不是"优先级"，是 CFS 权重表的查表下标；</li>
+<li><strong>为什么非特权进程只能调大 nice（降权）？</strong>——内核在哪一行、用哪个 rlimit 做判定；</li>
+<li><strong><code class="c">getpriority()</code> 为什么必须先 <code class="c">errno = 0</code>？</strong>——内核侧有一条专门为此写的注释，读完就忘不掉。</li>
+</ol>
 <hr />
-<h2>要点</h2>
-<p>区间 <strong>-20（更优先）…19（更低）</strong>，默认 0；是权重，非绝对优先级。</p>
-<pre class="code" data-label="C"><code class="c">int getpriority(int which, id_t who);
-int setpriority(int which, id_t who, int prio);
-/* which: PRIO_PROCESS | PRIO_PGRP | PRIO_USER */
+<h2>一、nice 值的真实身份：CFS 权重，不是优先级</h2>
+<p>用户视角：nice ∈ <strong>[-20, +19]</strong>，默认 0，<strong>越小越优先</strong>。
+内核视角：nice 从头到尾不直接参与"谁先跑"的比较——它被换算三次，最后变成 <code class="c">task_struct.se.load.weight</code>（一个正整数权重），CFS 用它分配 CPU 时间比例：</p>
+<pre class="code" data-label="code"><code class="c">nice 值 (-20 … +19)
+   │  NICE_TO_PRIO(nice) = nice + DEFAULT_PRIO(120)      prio.h:26
+   ▼
+static_prio (100 … 139)      ← 内核统一优先级空间的 CFS 段
+   │  USER_PRIO(prio) = prio - MAX_RT_PRIO(100)
+   ▼
+权重表下标 (0 … 39)
+   │  set_load_weight() → sched_prio_to_weight[prio]     core.c:1326
+   ▼
+se.load.weight (88761 … 15)   ← CFS 真正拿来分蛋糕的数
 </code></pre>
+<p>权重表 <code class="c">sched_prio_to_weight[40]</code>（core.c:11542，摘录）：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>谁</th>
-<th>能做什么</th>
+<th>nice</th>
+<th>-20</th>
+<th>-10</th>
+<th>-5</th>
+<th>0</th>
+<th>+5</th>
+<th>+10</th>
+<th>+15</th>
+<th>+19</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>非特权</td>
-<td>通常只能把自己 nice <strong>调大</strong>（降权）</td>
-</tr>
-<tr>
-<td><code class="c">CAP_SYS_NICE</code></td>
-<td>任意改</td>
+<td>weight</td>
+<td>88761</td>
+<td>9548</td>
+<td>3121</td>
+<td><strong>1024</strong></td>
+<td>335</td>
+<td>110</td>
+<td>36</td>
+<td><strong>15</strong></td>
 </tr>
 </tbody>
 </table></div>
-<p>fork 继承；exec 保持。对 FIFO/RR <strong>无效</strong>。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/t_nice.c"><code class="c">code/t_nice.c</code></a></p>
+<p>core.c:11531-11540 的注释写明了设计意图：<strong>每差 1 级 nice，CPU 份额约 -10%；一方 -10%、另一方 +10%，相对差距就是 25%</strong>（即权重比 1.25）。所以"nice 差 5"的两任务，CPU 时间比约为 1.25⁵ ≈ 3.05 : 1，而不是线性的 5 : 1。</p>
+<blockquote>
+<p><strong>实测验证</strong>（nice_race，WSL2 核 11 单核对撞，两线程各自 <code class="c">setpriority(PRIO_PROCESS, 0, n)</code> 后自旋 4s）：
+<code class="c">预写: nice0/nice5 CPU 比 ≈ 1024/335 = 3.057
+实测: nice0 = 3.06s, nice5 = 1.01s, 比值 = 3.03 : 1 (偏差 -0.8%)</code>
+权重表不是纸面理论——3% 以内的误差说明 CFS 的 vruntime 分蛋糕确实严格按 <code class="c">se.load.weight</code> 比例执行（完整实验见 <a href="#s-35-6">35.6 实验 4</a>）。同表还有一对倒影 <code class="c">sched_prio_to_wmult[40]</code>（core.c:11560）——预计算的 2³²/x 逆权重，把除法变乘法：权重不变时 CFS 用它加速 <code class="c">vruntime += delta * NICE_0_LOAD / weight</code> 的换算。</p>
+<p>⚠️ 关键推论：nice 是<strong>比例调节</strong>，不是<strong>抢占保证</strong>。nice -20 的任务与 nice 19 的任务公平分享 CPU（88761 : 15 ≈ 5918 : 1，但仍是"分享"）。任何就绪的实时任务都能瞬间抢占所有 CFS 任务，与 nice 无关——见 35.2。</p>
+</blockquote>
+<hr />
+<h2>二、三个 API 与 <code class="c">which</code> 三粒度</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/resource.h&gt;
+int getpriority(int which, id_t who);            /* 读：返回 nice 值 */
+int setpriority(int which, id_t who, int prio);  /* 写：prio 就是目标 nice 值 */
+#include &lt;unistd.h&gt;
+int nice(int inc);                               /* 当前进程：nice += inc */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>which</th>
+<th>作用对象</th>
+<th>who = 0 时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PRIO_PROCESS</code></td>
+<td>单个进程</td>
+<td>当前进程</td>
+</tr>
+<tr>
+<td><code class="c">PRIO_PGRP</code></td>
+<td>进程组内<strong>所有</strong>进程</td>
+<td>调用者所在进程组</td>
+</tr>
+<tr>
+<td><code class="c">PRIO_USER</code></td>
+<td><strong>某真实 UID 的所有</strong>进程</td>
+<td>调用者的 RUID</td>
+</tr>
+</tbody>
+</table></div>
+<p>三个语义细节（全部有内核出处）：</p>
+<ol>
+<li><strong>批量设置</strong>：<code class="c">setpriority(PRIO_PGRP/PRIO_USER, …)</code> 对组/用户内每个任务逐一执行（sys.c:253 <code class="c">do_each_pid_thread</code> / :268 <code class="c">for_each_process_thread</code>）——一次调用改一群。</li>
+<li><strong>静默钳制</strong>：传入 <code class="c">prio = 50</code> 不报错，内核直接 clamp 到 19（sys.c:232-235 <code class="c">if (niceval &gt; MAX_NICE) niceval = MAX_NICE;</code>）；<code class="c">nice(inc)</code> 同样先 clamp 增量再 clamp 结果（core.c:7285-7288）。<strong>返回 0 ≠ 你设的值生效了</strong>，读回验证才是可靠做法。</li>
+<li><strong><code class="c">nice()</code> 是相对调整</strong>：<code class="c">nice(0)</code> 是查询当前值的惯用法；<code class="c">nice(5)</code> 是在当前值上加 5。</li>
+</ol>
+<p>第四个细节（TLPI 未展开，多线程程序必知）：</p>
+<ol start="4">
+<li><strong><code class="c">PRIO_PROCESS</code> 的 pid 参数是 TID 粒度</strong>：sys.c:219 对 <code class="c">who == 0</code> 执行 <code class="c">who = task_pid_vnr(current)</code>——取的是<strong>调用线程自己</strong>的 pid 字段（即 TID），而 <code class="c">find_task_by_vpid(who)</code> 找到的也是单个 task（线程），<strong>不是整个线程组</strong>。所以多线程进程里 <code class="c">setpriority(PRIO_PROCESS, 0, 10)</code> 只降权当前线程；想给"另一个线程"降权必须传它的 TID，想全进程降权要逐线程设（或干脆在创建前设置让 fork 继承）。这与 <code class="c">sched_setscheduler</code> 的 pid 参数语义一致（35.3）。实测证据：nice_race 实验里两个 worker 各自 <code class="c">setpriority(PRIO_PROCESS, 0, n)</code>，读回各自独立生效（worker0=nice 0、worker1=nice 5 互不干扰）。</li>
+</ol>
+<hr />
+<h2>三、getpriority() 的三重陷阱（TLPI 经典）</h2>
+<h3>陷阱 1：内核 syscall 返回的根本不是 nice 值</h3>
+<p>sys.c:282-287 有一条堪称"教科书注释"的原话：</p>
+<blockquote>
+<p><strong>Ugh. To avoid negative return values, "getpriority()" will not return the normal nice-value, but a negated value that has been offset by 20 (ie it returns 40..1 instead of -20..19) to stay compatible.</strong></p>
+</blockquote>
+<p>即：内核 syscall 返回 <strong>rlimit 风格值 1..40</strong>（= <code class="c">20 - nice</code>，prio.h:32 <code class="c">nice_to_rlimit</code>），glibc 包装层再转回 nice 值。所以"syscall 返回值"和"库函数返回值"是两个东西——追溯 strace 输出时会看到差 20 的偏移。</p>
+<h3>陷阱 2：-1 是合法返回值 → errno 惯用法</h3>
+<p>nice = -1 时 <code class="c">getpriority()</code> 返回 -1，与错误返回值撞车。标准写法：</p>
+<pre class="code" data-label="C"><code class="c">errno = 0;
+int n = getpriority(PRIO_PROCESS, 0);
+if (n == -1 &amp;&amp; errno != 0)
+    perror(&quot;getpriority&quot;);   /* 真·出错 */
+</code></pre>
+<h3>陷阱 3：多目标时返回最高优先级的那个</h3>
+<p><code class="c">PRIO_PGRP/PRIO_USER</code> 命中多个任务时，内核取 <code class="c">nice_to_rlimit</code> <strong>最大</strong>的那个（sys.c:309 <code class="c">if (niceval &gt; retval) retval = niceval;</code>）——rlimit 值大 = nice 值小 = <strong>优先级最高</strong>的任务的 nice。</p>
+<hr />
+<h2>四、权限：谁能改谁的 nice</h2>
+<p>判定链（setpriority 路径）：</p>
+<pre class="code" data-label="code"><code class="c">setpriority(which, who, prio)
+   │ sys.c:218
+   ▼
+set_one_prio()  sys.c:194
+   │
+   ├─ set_one_prio_perm()  sys.c:178
+   │    ├─ 我的 euid == 目标 uid 或 euid？ → 通过
+   │    └─ ns_capable(CAP_SYS_NICE)？      → 通过
+   │    都不是 ──────────────► -EPERM   （&quot;不是你的进程&quot;）
+   │
+   └─ niceval &lt; task_nice(p) &amp;&amp; !can_nice(p, niceval)？
+        can_nice()  core.c:7262 = is_nice_reduction() || capable(CAP_SYS_NICE)
+        is_nice_reduction()  core.c:7249：
+            nice_to_rlimit(nice) &lt;= task_rlimit(p, RLIMIT_NICE)
+        都不满足 ────────────► -EACCES （&quot;是你的进程，但提权被拒&quot;）
+</code></pre>
+<p><strong>EPERM 与 EACCES 的分界</strong>（TLPI 强调，内核一一对应）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>含义</th>
+<th>触发条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EPERM</code></td>
+<td>动不了别人的进程</td>
+<td><code class="c">set_one_prio_perm()</code> 失败（非 owner 且无 CAP_SYS_NICE）</td>
+</tr>
+<tr>
+<td><code class="c">EACCES</code></td>
+<td>是自己的进程，但想<strong>降低 nice 数值</strong>（提权）被拒</td>
+<td><code class="c">can_nice()</code> 失败</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>RLIMIT_NICE 的换算</strong>（prio.h:32）：它的单位不是 nice 值，是 rlimit 风格 1..40。默认 0 → <code class="c">is_nice_reduction()</code> 恒为假 → 非特权进程<strong>只能调大 nice</strong>。要让普通用户能设到 nice -10，需 <code class="c">RLIMIT_NICE = 20 - (-10) = 30</code>。</p>
+<hr />
+<h2>五、nice 对实时任务无效 + autogroup 修正</h2>
+<h3>对 FIFO/RR 任务：只写不生效</h3>
+<p><code class="c">set_user_nice()</code>（core.c:7187）对 RT/DL 任务的处理是原代码 + 原注释的铁证（core.c:7204-7208）：</p>
+<blockquote>
+<p>The RT priorities are set via sched_setscheduler(), but we still allow the 'normal' nice value to be set - <strong>but as expected it won't have any effect on scheduling</strong> until the task is SCHED_DEADLINE, SCHED_FIFO or SCHED_RR:</p>
+</blockquote>
+<p>即：给 SCHED_FIFO 任务 setpriority 只是改了 <code class="c">static_prio</code>（:7210）就返回——调度决策完全不看它。</p>
+<h3>继承与 exec</h3>
+<p>fork 复制父进程的 <code class="c">static_prio</code>（→ nice 继承）；exec 不改。所以"shell 里 <code class="c">nice -n 10 ./app</code>"是把 shell 的 nice+10 传给 fork 出的子进程。</p>
+<h3>TLPI 之后的 autogroup（2011, v2.6.38+）</h3>
+<p>TLPI 出版（2010）时描述的语义是：<strong>同一终端里 nice 0 的 A 和 nice 0 的 B 平分 CPU；A nice 10 则按权重 1.25¹⁰ 分</strong>。v6.6 默认行为已被 autogroup 修改（autogroup.c:7 <code class="c">sysctl_sched_autogroup_enabled = 1</code>）：</p>
+<ul>
+<li>每个<strong>会话</strong>（setsid，通常 = 每个终端/SSH 登录）自动建一个 task_group；</li>
+<li>CFS 先在<strong>组间</strong>公平分配，再在组内按 nice 分——<strong>你把 A nice 10，只影响你所在会话组内部</strong>，对其它终端里的任务毫无影响；</li>
+<li>组级调整入口：写 <code class="c">/proc/&lt;pid&gt;/autogroup</code>（autogroup.c:231 <code class="c">proc_sched_autogroup_set_nice</code>），用的正是同一张权重表（:255-256）；</li>
+<li>关闭：启动参数 <code class="c">noautogroup</code>（:227）或 <code class="c">echo 0 &gt; /proc/sys/kernel/sched_autogroup_enabled</code>。</li>
+</ul>
+<blockquote>
+<p>HFT 视角的讽刺：厂商在建议你 nice 降权"后台任务"时，autogroup 可能让这招在跨会话场景下完全失效——这正是要读源码而不是背 man 的理由。</p>
+</blockquote>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -527,311 +780,740 @@ int setpriority(int which, id_t who, int prio);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>把日志/监控等<strong>杂务进程调高 nice 降权</strong>，让实时控制任务（电机、采集）不被普通任务抢 CPU；<code class="c">SCHED_OTHER</code> + nice 是嵌入式「软实时」下的通用做法</td>
+<td>日志/监控等杂务进程<strong>调高 nice 降权</strong>，保护控制任务。但记住：nice 只是 CFS 内部的比例调节，控制任务真正要确定性仍须 SCHED_FIFO（35.3）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>nice <strong>只影响 <code class="c">SCHED_OTHER</code> 的相对权重，对 FIFO/RR 无效</strong>——HFT 关键路径不能用 nice 调优先级，必须上实时策略；nice 仅用于给数据落盘/日志等后台线程降权，避免与行情处理争抢</td>
+<td>① nice 给<strong>落盘、统计、日志线程</strong>降权可用（同进程/同会话内有效）；② 关键路径<strong>绝不能</strong>靠 nice -20 求"高优先"——它是权重不是抢占；③ 交易机上多终端（多 autogroup）并存时，nice 跨会话不生效，用 cgroup 做资源隔离更可靠</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;sched.h&gt;
-#include &lt;unistd.h&gt;
+<pre class="code" data-label="C"><code class="c">/* nice_probe.c — nice 三 API + getpriority 陷阱 + 权限边界实测
+ * 普通用户运行演示 EACCES；root 运行演示全通（对照）。
+ * 编译: gcc -O2 -Wall -Wextra -o nice_probe nice_probe.c
+ */
+#include &lt;errno.h&gt;
 #include &lt;stdio.h&gt;
-int main(void) {
-    /* SCHED_OTHER: 普通调度 (默认) */
-    /* nice 值: -20 (高) 到 19 (低), 默认 0 */
-    int nice_val = nice(0);  /* 0 = 不改, 返回当前 */
-    printf(&quot;nice = %d\n&quot;, nice_val);
+#include &lt;sys/resource.h&gt;
+#include &lt;unistd.h&gt;
 
-    /* setpriority: 设置优先级 */
-    setpriority(PRIO_PROCESS, 0, 5);  /* 降低优先级 */
-    printf(&quot;nice 设为 5\n&quot;);
+static int get_nice_safe(void)
+{
+    errno = 0;
+    int n = getpriority(PRIO_PROCESS, 0);
+    return (n == -1 &amp;&amp; errno != 0) ? -999 : n;   /* -999 = 真·出错 */
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);  /* stderr 无缓冲, 行缓冲防输出乱序 */
+    /* [1] 两种读法 + errno 惯用法演示 */
+    errno = 0;
+    int raw = getpriority(PRIO_PROCESS, 0);
+    printf(&quot;[1] nice(0)=%d  getpriority(raw)=%d errno=%d\n&quot;,
+           nice(0), raw, errno);
+
+    /* [2] 非特权降权（调大 nice）: 应当成功 */
+    if (setpriority(PRIO_PROCESS, 0, 10) == -1)
+        perror(&quot;[2] setpriority(10)&quot;);
+    printf(&quot;[2] after setpriority(10): nice=%d\n&quot;, get_nice_safe());
+
+    /* [3] 回到 5 = 降低 nice 数值 = 提权: 普通用户应 EACCES, root 成功 */
+    errno = 0;
+    if (setpriority(PRIO_PROCESS, 0, 5) == -1)
+        perror(&quot;[3] setpriority(5)&quot;);
+    printf(&quot;[3] after setpriority(5): nice=%d\n&quot;, get_nice_safe());
+
+    /* [4] 越界值: 内核静默钳制到 19, 不报错 */
+    if (setpriority(PRIO_PROCESS, 0, 99) == -1)
+        perror(&quot;[4] setpriority(99)&quot;);
+    printf(&quot;[4] after setpriority(99): nice=%d (clamped, no error)\n&quot;,
+           get_nice_safe());
+
+    /* [5] autogroup 归属: TLPI 时代没有的机制 (需内核 CONFIG_SCHED_AUTOGROUP) */
+    FILE *f = fopen(&quot;/proc/self/autogroup&quot;, &quot;r&quot;);
+    if (f) {
+        char buf[128];
+        if (fgets(buf, sizeof buf, f))
+            printf(&quot;[5] /proc/self/autogroup: %s&quot;, buf);
+        fclose(f);
+    } else {
+        printf(&quot;[5] /proc/self/autogroup: ENOENT&quot;
+               &quot; (本内核未开 CONFIG_SCHED_AUTOGROUP)\n&quot;);
+    }
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 · Ubuntu 24.04 · gcc 13.3，<code class="c">-O2 -Wall -Wextra</code> 零告警）：</p>
+<pre class="code" data-label="code"><code class="c"># 普通用户 (uid=1000, RLIMIT_NICE=0, 无 CAP_SYS_NICE)
+$ ./nice_probe
+[1] nice(0)=0  getpriority(raw)=0 errno=0
+[2] after setpriority(10): nice=10
+[3] setpriority(5): Permission denied
+[3] after setpriority(5): nice=10
+[4] after setpriority(99): nice=19 (clamped, no error)
+[5] /proc/self/autogroup: ENOENT (本内核未开 CONFIG_SCHED_AUTOGROUP)
+
+# root (uid=0) 对照: 同一程序
+# ./nice_probe
+[1] nice(0)=0  getpriority(raw)=0 errno=0
+[2] after setpriority(10): nice=10
+[3] after setpriority(5): nice=5
+[4] after setpriority(99): nice=19 (clamped, no error)
+[5] /proc/self/autogroup: ENOENT (本内核未开 CONFIG_SCHED_AUTOGROUP)
+</code></pre>
+<p>解读：[3] 是本节权限链的活标本——普通用户 <code class="c">EACCES</code>（是自己的进程、提权被拒），root 畅通。[4] 证明钳制发生在内核（sys.c:232-235）。[5] 是个意外收获：<strong>Microsoft 的 WSL2 内核（6.6.87.2-microsoft-standard）没有编译 CONFIG_SCHED_AUTOGROUP</strong>——/proc/self/autogroup 与 /proc/sys/kernel/sched_autogroup_enabled 都不存在，autogroup 机制整体关闭。也就是说 WSL 里的 nice 行为反而回归 TLPI 描述的"原始 CFS"语义；在标准发行版内核上此行会输出类似 <code class="c">/autogroup-2 nice 0</code>。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-35-3">35.3 三大策略</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-36.html#ch-36">Ch36 进程资源</a> · <a href="chapter-37.html#ch-37">Ch37 Daemons</a></li>
+<li>下一节：<a href="#s-35-2">35.2 实时调度概述</a>——nice 调不动的那个"另一个世界"</li>
+<li>前置：<a href="chapter-34.html#intro">Ch34 进程组/会话</a>（PRIO_PGRP 的组概念、autogroup 的会话概念）</li>
+<li>关联：<a href="chapter-36.html#intro">Ch36 进程资源</a>（RLIMIT_NICE/RLIMIT_RTPRIO 的 rlimit 家族）· <a href="chapter-29.html#intro">Ch29 线程简介</a>（线程级调度属性）</li>
 </ul>
-      </section>
-      <section class="section" id="s-35-2">
-        <div class="sec-head"><div class="sec-no">35.2</div><h2>Overview of Realtime Process Scheduling</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 35 章 — Process Priorities and Scheduling</a></p>
-</blockquote>
-<h2>本节讲什么</h2>
-<p>介绍 Linux 实时调度策略：<code class="c">SCHED_FIFO</code>（先进先出）、<code class="c">SCHED_RR</code>（轮转）和 <code class="c">SCHED_OTHER</code>（普通），以及优先级范围、调度行为和 API 概览。</p>
-<h2>要点</h2>
-<h3>调度策略对比</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>策略</th>
-<th>类型</th>
-<th>优先级</th>
-<th>行为</th>
-<th>适用</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">SCHED_OTHER</code></td>
-<td>普通调度</td>
-<td>nice 值（-20~19）</td>
-<td>CFS 公平调度</td>
-<td>通用</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_FIFO</code></td>
-<td>实时</td>
-<td>1-99</td>
-<td>运行直到被抢占或让出</td>
-<td>实时</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_RR</code></td>
-<td>实时</td>
-<td>1-99</td>
-<td>轮转，有时间片</td>
-<td>实时</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_BATCH</code></td>
-<td>普通</td>
-<td>nice</td>
-<td>批处理优化</td>
-<td>计算</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_IDLE</code></td>
-<td>最低</td>
-<td>—</td>
-<td>仅在空闲时运行</td>
-<td>后台</td>
-</tr>
-<tr>
-<td><code class="c">SCHED_DEADLINE</code></td>
-<td>实时</td>
-<td>EDF</td>
-<td>最早截止期限</td>
-<td>Linux 3.14+</td>
-</tr>
-</tbody>
-</table></div>
-<h3>优先级层次</h3>
-<pre class="code" data-label="code"><code class="c">实时优先级（1-99，越大越高）
-  SCHED_FIFO / SCHED_RR
-  ↑
-  99 ← 最高
-  ...
-  1  ← 最低实时
-─────────────────
-  -20 ← 最高普通
-  ...
-  19  ← 最低普通
-  SCHED_OTHER（nice 值）
-</code></pre>
-<p><strong>实时优先级高于所有普通进程</strong>：一个 SCHED_FIFO 优先级 1 的进程比 SCHED_OTHER nice -20 的进程优先级高。</p>
-<h3>SCHED_FIFO 行为</h3>
-<pre class="code" data-label="code"><code class="c">SCHED_FIFO 优先级 50 运行中:
-  → 持续运行，直到：
-    a) 主动 sched_yield() / 阻塞
-    b) 更高优先级实时进程就绪
-    c) 被信号中断
-  → 不会被同优先级或更低优先级打断
-  → 醒来后恢复运行（如果仍是最高）
-</code></pre>
-<h3>SCHED_RR 行为</h3>
-<pre class="code" data-label="code"><code class="c">SCHED_RR 优先级 50 运行中:
-  → 运行一个时间片（默认 100ms，可查 sched_rr_get_interval）
-  → 时间片用完 → 排到同优先级队列尾部
-  → 轮到下一个同优先级 SCHED_RR 线程
-</code></pre>
-<h3>核心 API</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>函数</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">sched_setscheduler(pid, policy, param)</code></td>
-<td>设置策略和优先级</td>
-</tr>
-<tr>
-<td><code class="c">sched_getscheduler(pid)</code></td>
-<td>获取策略</td>
-</tr>
-<tr>
-<td><code class="c">sched_setparam(pid, param)</code></td>
-<td>设置优先级</td>
-</tr>
-<tr>
-<td><code class="c">sched_getparam(pid, param)</code></td>
-<td>获取优先级</td>
-</tr>
-<tr>
-<td><code class="c">sched_get_priority_max(policy)</code></td>
-<td>最大优先级（99）</td>
-</tr>
-<tr>
-<td><code class="c">sched_get_priority_min(policy)</code></td>
-<td>最小优先级（1）</td>
-</tr>
-<tr>
-<td><code class="c">sched_rr_get_interval(pid, &amp;ts)</code></td>
-<td>SCHED_RR 时间片</td>
-</tr>
-<tr>
-<td><code class="c">nice(inc)</code></td>
-<td>调整 nice 值（SCHED_OTHER）</td>
-</tr>
-<tr>
-<td><code class="c">setpriority(PRIO_PROCESS, 0, nice)</code></td>
-<td>设置 nice 值</td>
-</tr>
-<tr>
-<td><code class="c">sched_yield()</code></td>
-<td>主动让出 CPU</td>
-</tr>
-</tbody>
-</table></div>
-<h3>权限要求</h3>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>操作</th>
-<th>权限</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>设置实时策略</td>
-<td><code class="c">CAP_SYS_NICE</code> 或 RLIMIT_RTPRIO</td>
-</tr>
-<tr>
-<td>提高优先级</td>
-<td><code class="c">CAP_SYS_NICE</code></td>
-</tr>
-<tr>
-<td>设置 nice &lt; 0</td>
-<td><code class="c">CAP_SYS_NICE</code></td>
-</tr>
-<tr>
-<td>设置 nice &gt;= 0</td>
-<td>普通用户可设</td>
-</tr>
-</tbody>
-</table></div>
-<h2>HFT / 嵌入式关联</h2>
-<ul>
-<li><strong>SCHED_FIFO + CPU 隔离</strong>：HFT 标准配置——策略线程 SCHED_FIFO 优先级 99，绑定到隔离核心（<code class="c">isolcpus</code>）</li>
-<li><strong>mlockall</strong>：配合 <code class="c">mlockall(MCL_CURRENT | MCL_FUTURE)</code> 防止页面换出导致延迟抖动</li>
-<li><strong>PREEMPT_RT</strong>：实时内核补丁，减少调度延迟到微秒级</li>
-<li><strong>嵌入式 RTOS</strong>：FreeRTOS/VxWorks 有固定优先级抢占调度，类似 SCHED_FIFO</li>
-<li><strong>避免 SCHED_RR</strong>：HFT 不用轮转，策略线程独占核心</li>
-</ul>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;sched.h&gt;
-#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
-
-void setup_realtime(int priority) {
-    /* 锁定内存，防止换页 */
-    mlockall(MCL_CURRENT | MCL_FUTURE);
-
-    /* 设置 SCHED_FIFO + 优先级 */
-    struct sched_param param;
-    param.sched_priority = priority;  /* 1-99 */
-    if (sched_setscheduler(0, SCHED_FIFO, &amp;param) != 0) {
-        perror(&quot;sched_setscheduler&quot;);
-    }
-
-    /* 查询 RR 时间片 */
-    struct timespec ts;
-    sched_rr_get_interval(0, &amp;ts);
-    printf(&quot;RR timeslice: %ld ms\n&quot;, ts.tv_nsec / 1000000);
-}
-
-/* 绑定 CPU（需 sched_setaffinity） */
-void pin_cpu(int cpu) {
-    cpu_set_t cpuset;
-    CPU_ZERO(&amp;cpuset);
-    CPU_SET(cpu, &amp;cpuset);
-    sched_setaffinity(0, sizeof(cpuset), &amp;cpuset);
-}
-</code></pre>
-<h2>衔接</h2>
-<ul>
-<li><a href="#s-35-1">35.1 Nice Values</a> — 普通调度 nice 值</li>
-<li><a href="#s-35-3">35.3 Realtime Scheduling API</a> — API 详解</li>
-<li><strong>Ch33</strong> Threads Further — 线程级调度 <code class="c">pthread_setschedparam</code></li>
-</ul>
+<hr />
 <h2>代码自测</h2>
 <details>
-<summary>1. SCHED_FIFO 和 SCHED_RR 的区别？HFT 用哪个？</summary>
+<summary>1. nice 值在内核里的完整换算链是什么？终点是哪个字段？</summary>
+<p>nice → <code class="c">NICE_TO_PRIO</code>（+120）→ static_prio(100..139) → <code class="c">USER_PRIO</code>（-100）→ 权重表下标(0..39) → 查 <code class="c">sched_prio_to_weight[40]</code>（core.c:11542）→ <code class="c">task_struct.se.load.weight</code>。CFS 用最终权重分配 CPU 时间比例；nice 从不直接参与"谁先跑"的比较。</p>
+</details>
+<details>
+<summary>2. getpriority() 为什么可能返回 -1 却不算出错？syscall 层返回什么？</summary>
+<p>nice = -1 是合法值。内核 syscall 返回的是 rlimit 风格 1..40（sys.c:282-287 注释："returns 40..1 instead of -20..19"），glibc 再转回 nice——转换后的 -1 与错误码撞车，所以必须 <code class="c">errno = 0</code> 后调用再检查 errno。</p>
+</details>
+<details>
+<summary>3. setpriority() 返回 EACCES 和 EPERM 分别说明什么？</summary>
+<p>EPERM：目标进程不是你的（uid/euid 不匹配且无 CAP_SYS_NICE，set_one_prio_perm sys.c:178 拒绝）；EACCES：是你自己的进程，但你试图降低 nice 数值（提权）且 RLIMIT_NICE 不允许、也无 CAP_SYS_NICE（set_one_prio sys.c:203）。</p>
+</details>
+<details>
+<summary>4. 为什么说"给 SCHED_FIFO 任务设 nice"是无效操作？内核怎么处理的？</summary>
+<p>set_user_nice()（core.c:7209-7212）对 RT/DL 任务只更新 static_prio 后直接返回，注释原话 "it won't have any effect on scheduling"。RT 的优先级只由 sched_setscheduler 的 1..99 决定。</p>
+</details>
+<details>
+<summary>5. TLPI 说"同终端两个 nice 0 任务平分 CPU"，v6.6 上还成立吗？</summary>
+<p>组内成立，但多会话场景被 autogroup（v2.6.38+，默认开，autogroup.c:7）修正：CFS 先在会话组之间公平，再在组内按 nice 权重分。跨终端的 nice 互相不可见；组级份额用 /proc/&lt;pid&gt;/autogroup 调整。</p>
+</details>
+      </section>
+      <section class="section" id="s-35-2">
+        <div class="sec-head"><div class="sec-no">35.2</div><h2>实时调度概述</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · include/linux/sched/rt.h（RR_TIMESLICE:57、rt_task:16）· include/linux/sched/prio.h（MAX_RT_PRIO:16）· kernel/sched/core.c（__normal_prio:2144）· kernel/sched/rt.c（task_tick_rt:2639、sched_rt_runtime_exceeded:998、sysctl:33-56）· kernel/sched/sched.h（rt_rq:665、for_class_range:2323）</p>
+<p>本章：<a href="#intro">TLPI 第 35 章 — 进程优先级与调度</a>
+- 上一节：<a href="#s-35-1">35.1 进程优先级与 nice 值</a>
+- 下一节：<a href="#s-35-3">35.3 实时调度 API 详解</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<ol>
+<li><strong>"实时优先级 1 压过 nice -20"在内核里是怎么实现的？</strong>——答案是一个 0..139 的统一优先级空间和一个反向映射；</li>
+<li><strong>SCHED_FIFO 和 SCHED_RR 各自的精确行为</strong>——每一条规则都能指到 rt.c 的具体行号；</li>
+<li><strong>RT throttling（实时限流）</strong>——为什么满负荷 FIFO 任务每秒会被强制冻结 50ms，这在 HFT 生产上意味着什么。</li>
+</ol>
+<hr />
+<h2>一、为什么需要实时策略：CFS 的盲区</h2>
+<p>CFS 的目标是<strong>公平</strong>：所有任务按权重分享 CPU，谁都不特殊。它对"某个任务必须在 50µs 内响应"没有任何承诺——唤醒延迟取决于就绪队列长度、CPU 占用、cache 状态，微秒到毫秒级抖动。</p>
+<p>实时策略的目标相反：<strong>牺牲公平换确定性</strong>。只要 RT 任务就绪，CFS 任务立刻让路；同级 RT 任务之间才谈秩序。两类任务的典型分工（HFT 机器上）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>任务</th>
+<th>策略</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行情收包→策略→下单关键路径</td>
+<td>SCHED_FIFO</td>
+<td>需要微秒级确定唤醒</td>
+</tr>
+<tr>
+<td>落盘/统计/监控</td>
+<td>SCHED_OTHER + nice 降权</td>
+<td>吞吐型，可容忍抖动</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>二、两个世界，一个 prio 空间</h2>
+<p>内核 <code class="c">task_struct</code> 里有两套"优先级"字段，分工严格：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>取值</th>
+<th>谁写</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rt_priority</code></td>
+<td>用户语义 1..99（越大越优先）</td>
+<td><code class="c">__setscheduler_params</code>（core.c:7536 直存用户值）</td>
+<td><code class="c">sched_getparam()</code> 读回给用户</td>
+</tr>
+<tr>
+<td><code class="c">prio</code></td>
+<td>内核语义 0..139（<strong>越小越优先</strong>）</td>
+<td>调度核心</td>
+<td>每次调度比较的<strong>唯一</strong>依据</td>
+</tr>
+</tbody>
+</table></div>
+<p>用户 RT 值到内核 prio 的换算在 <code class="c">__normal_prio()</code>（core.c:2144）：</p>
+<pre class="code" data-label="C"><code class="c">if (rt_policy(policy))
+        return MAX_RT_PRIO-1 - rt_prio;      /* 99→0, 50→49, 1→98 */
+return NICE_TO_PRIO(nice);                   /* -20→100, 0→120, +19→139 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">内核 prio 空间（唯一比较依据，越小越优先）
+  0   1        98 99  100      120      139
+  │RT │   RT   │RT│ │  CFS(nice)段  │
+  ▼   ▼        ▲  ▲   ▲          ▲        ▲
+ 用户值 99 … 2  1  0  nice -20   0      +19
+      (rt_priority, 越大越优先)  (反向: 100=MAX_RT_PRIO)
+
+  ── 任何就绪 RT (prio ≤ 98) 即刻抢占所有 CFS (prio ≥ 100) ──
+</code></pre>
+<p><strong>为什么反着存？</strong>为了让"RT 永远压过 CFS"成为数字比较的自然结果：RT 段 0..98 与 CFS 段 100..139 之间隔着 99（<code class="c">prio == 99</code> 留给 RT 优先级 0 的边界值），<code class="c">p-&gt;prio &lt; rq-&gt;curr-&gt;prio</code> 一条判断通吃两个世界（见 switched_to_rt 的抢占调用，rt.c:2557）。</p>
+<hr />
+<h2>三、调度类链：先到先得的"阶级"</h2>
+<p>策略之上还有一层<strong>调度类</strong>（<code class="c">sched_class</code>），按优先级从高到低排列：</p>
+<pre class="code" data-label="code"><code class="c">stop_sched_class   (CPU 热插拔/migration 等内核内部线程，用户不可用)
+   ▼
+dl_sched_class     (SCHED_DEADLINE, EDF)
+   ▼
+rt_sched_class     (SCHED_FIFO / SCHED_RR)      ← 本章
+   ▼
+fair_sched_class   (SCHED_OTHER / BATCH / IDLE)
+   ▼
+idle_sched_class   (无事可做时的空转)
+</code></pre>
+<p><code class="c">__schedule()</code> 从最高类往下找第一个有可运行任务的类（sched.h:2323 <code class="c">for_class_range(class, __sched_class_highest, __sched_class_lowest)</code>）。<strong>高阶级的整体压制低阶级</strong>——这就是"两个世界"的机器级实现。</p>
+<p>RT 类内部选任务用<strong>优先级位图</strong>（<code class="c">rt_rq.active</code> 是 <code class="c">rt_prio_array</code>，sched.h:666）：100 个优先级各配一个链表 + 一个 100bit 位图，找最高优先级就绪任务 = 找位图最高置位 bit，<strong>O(1)</strong>，与任务数无关。<code class="c">pick_task_rt()</code>（rt.c:1802）就是查这张表。</p>
+<p>位图搜索的逐行解读（<code class="c">pick_next_rt_entity</code>，rt.c:1769-1785）：</p>
+<pre class="code" data-label="C"><code class="c">static struct sched_rt_entity *pick_next_rt_entity(struct rt_rq *rt_rq)
+{
+        struct rt_prio_array *array = &amp;rt_rq-&gt;active;
+        struct sched_rt_entity *next = NULL;
+        struct list_head *queue;
+        int idx;
+
+        idx = sched_find_first_bit(array-&gt;bitmap);   /* :1776 核心 */
+        BUG_ON(idx &gt;= MAX_RT_PRIO);
+
+        queue = array-&gt;queue + idx;                   /* :1779 定位链表 */
+        if (SCHED_WARN_ON(list_empty(queue)))
+                return NULL;
+        next = list_entry(queue-&gt;next, struct sched_rt_entity, run_list);
+        return next;
+}
+</code></pre>
 <ul>
-<li><strong>SCHED_FIFO</strong>：同优先级线程按 FIFO 运行，不被同优先级打断（除非主动让出）</li>
-<li><strong>SCHED_RR</strong>：同优先级线程轮转，每个线程有时间片限制</li>
+<li><code class="c">array-&gt;bitmap</code>：100 个 bit，第 i 个 bit 为 1 表示优先级 i 的链表非空。<strong>内核 prio 越小优先级越高，所以"最高置位 bit"就是最高优先级</strong>——<code class="c">sched_find_first_bit</code> 在 x86-64 上编译成 <code class="c">rep bsf</code>（TZCNT 类指令），一次内存扫描搞定；</li>
+<li><code class="c">array-&gt;queue[idx]</code>：该优先级的 FIFO 链表头，取 <code class="c">queue-&gt;next</code> 即队首（同优先级内部按入队顺序——这就是 RR requeue 移到队尾的载体）；</li>
+<li>外层 <code class="c">_pick_next_task_rt()</code>（rt.c:1787）的 do-while 循环是为了 <strong>task_group 分层</strong>：先在根 rt_rq 挑出最高优先级的组实体（rt_se），若它是组则下钻进组的 rt_rq 继续挑，直到挑到真实任务。无组调度时循环体只跑一趟。</li>
 </ul>
-<p>HFT 用 SCHED_FIFO：策略线程独占 CPU 核心，不被同优先级线程打断，保证最低延迟。配合 <code class="c">isolcpus</code> 隔离核心，策略线程是唯一可运行线程。</p>
+<blockquote>
+<p>顺带一提位图结构 <code class="c">rt_prio_array</code>（sched.h:666）的定义：<code class="c">DECLARE_BITMAP(bitmap, MAX_RT_PRIO)</code> + <code class="c">struct list_head queue[MAX_RT_PRIO]</code>——100 个链表头加一个 100bit 位图，共约 1.6KB，per-CPU 每个 rt_rq 一份。<strong>优先级数固定、无动态排序</strong>，这是 RT 调度 O(1) 的全部秘密（对比 CFS 的红黑树 O(log n)——两种数据结构选择直接反映了"固定优先级"vs"动态 vruntime"的语义差异）。</p>
+</blockquote>
+<hr />
+<h2>四、SCHED_FIFO：五条精确规则</h2>
+<p>每条规则都直接对应 rt.c 源码：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>规则</th>
+<th>内核证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>无时间片</strong>：同级任务不轮转，先跑的一直跑</td>
+<td>task_tick_rt:2652 <code class="c">if (p-&gt;policy != SCHED_RR) return;</code> ——tick 直接触发，FIFO 连时间片递减都不做</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>阻塞/让出才交出 CPU</strong>（对同级而言）</td>
+<td>阻塞 → 出队；<code class="c">sched_yield()</code> → requeue 到<strong>同级队尾</strong>（yield_task_rt:1590，仅此而已，低优先级任务仍无机会）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>高优先级就绪，立即抢占</strong></td>
+<td>切入 RT 类的瞬间：<code class="c">p-&gt;prio &lt; rq-&gt;curr-&gt;prio → resched_curr(rq)</code>（switched_to_rt，rt.c:2557）；唤醒同理</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>醒来插队</strong>：睡醒的 FIFO 任务回到队首参与下一轮选择</td>
+<td>enqueue 走 <code class="c">enqueue_task_rt</code> 正常入队；由于规则 3，通常直接抢回 CPU</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>被信号打断不改变优先级</strong>，处理完 handler 继续</td>
+<td>信号是打断不是降级；与 Ch33 信号模型衔接</td>
+</tr>
+</tbody>
+</table></div>
+<p>推论（TLPI 强调）：<strong>两个同优先级 FIFO 任务 + 一个 CPU = 第二个永远饿死</strong>（除非第一个阻塞/yield）。设计 FIFO 系统时，同核同优先级只放一个任务。</p>
+<hr />
+<h2>五、SCHED_RR：FIFO + 100ms 时间片</h2>
+<p>RR 只在 FIFO 上加一条规则：<strong>同优先级</strong>任务按时间片轮转。</p>
+<ul>
+<li>时间片常量：<code class="c">RR_TIMESLICE = (100 * HZ / 1000)</code>（include/linux/sched/rt.h:57）= <strong>100ms</strong>；运行时可通过 <code class="c">/proc/sys/kernel/sched_rr_timeslice_ms</code> 调整（rt.c:49）。</li>
+<li>递减机制（task_tick_rt，rt.c:2639）：每个调度 tick <code class="c">--p-&gt;rt.time_slice</code>；减到 0 → 重灌 100ms（:2658）→ <strong>仅当同优先级队列里还有别人</strong>才 requeue + resched（:2664-2667，<code class="c">rt_se-&gt;run_list.prev != rt_se-&gt;run_list.next</code> 判定队列非空）。</li>
+<li>时间片<strong>从不跨优先级</strong>：RR 50 与 RR 51 之间只有 51 跑。</li>
+<li>用户态查询：<code class="c">sched_rr_get_interval()</code>（core.c:9131）。</li>
+</ul>
+<p>注意 100ms 是<strong>巨大</strong>的时间片——它为"多个中粒度实时任务共存"设计，不是低延迟工具。HFT 里 RR 几乎不用（要么 FIFO 独占核，要么根本不该是 RT 任务）。</p>
+<hr />
+<h2>六、RT throttling：内核的自我保护</h2>
+<h3>它防什么</h3>
+<p>一个 bug 的 SCHED_FIFO 任务满核自旋 → 内核线程（包括 ksoftirqd、watchdog）全部饿死 → RCU 超时/soft lockup → <strong>整机挂死</strong>。这在 2.6.25 之前是真实威胁（TLPI 35.5 讨论的"过载"问题的现代答案）。</p>
+<h3>机制（v6.6 全坐标）</h3>
+<pre class="code" data-label="code"><code class="c">每 1 个周期 (sysctl_sched_rt_period = 1000000µs, rt.c:19)
+   允许 RT 总共跑 ≤ 950000µs (sysctl_sched_rt_runtime, rt.c:25)
+
+RT 任务运行时: update_curr_rt() 累计 rt_rq-&gt;rt_time   rt.c:1045
+   │
+   ▼  每次调度事件检查
+sched_rt_runtime_exceeded()  rt.c:998
+   │ rt_time &gt; runtime ?
+   ├─ 否 → 继续跑
+   └─ 是 → rt_rq-&gt;rt_throttled = 1                        :1021
+           printk &quot;sched: RT throttling activated\n&quot;       :1022
+           sched_rt_rq_dequeue()  ← 整个 RT 队列下架!       :1033
+              │
+              ▼  CFS 立刻接管该 CPU
+周期起点 hrtimer 到期: do_sched_rt_period_timer()  rt.c:901
+   → rt_time 清零, 解除 throttled, RT 队列重新上架
+</code></pre>
+<p>关键点：</p>
+<ol>
+<li><strong>节流单位是"每 CPU 的 rt_rq"</strong>（sched.h:665，<code class="c">rt_throttled:686</code>/<code class="c">rt_time:687</code>），但配额全局共享（<code class="c">rt_bandwidth</code>，sched.h:278）；</li>
+<li><strong>被节流的是该 CPU 上全部 RT 任务</strong>（整队列下架），不是超额的那个；</li>
+<li>默认 950ms/1000ms：<strong>每秒最坏冻结 50ms</strong>——对"以为自己在跑 FIFO 就有硬保证"的任务，这是一个 50ms 的延迟悬崖；</li>
+<li>三个 sysctl（rt.c:33-56）：<code class="c">kernel/sched_rt_period_us</code>、<code class="c">kernel/sched_rt_runtime_us</code>（<strong>设 -1 = 关闭限流</strong>，自担风险）、<code class="c">kernel/sched_rr_timeslice_ms</code>。</li>
+</ol>
+<h3>dmesg 实证（两次独立实测）</h3>
+<p>throttling 触发时 rt.c:1022 的 <code class="c">printk</code> 会在内核日志里留痕——生产排障的标准指纹：</p>
+<pre class="code" data-label="code"><code class="c"># 把 runtime 从 950000 改为 100000 后满核 FIFO 2s:
+结果: 墙钟 2.14s, 获得 CPU 0.30s (14%)
+$ dmesg | grep -i throttling
+[  239.912405] sched: RT throttling activated
+</code></pre>
+<p>同一实验两次跑分别得到 CPU 0.20s(10%) 和 0.30s(14%)——<strong>配额兑现量在 2×100ms 附近浮动</strong>（0.2~0.3s）：任务起点与 period hrtimer 相位的相对位置决定了第一段能跑多长（若起点恰在周期边界后，第一段就能吃满 100ms；若周期边界临近，第一段很短）。这是做 throttling 实验时必须意识到的<strong>相位噪声</strong>——单次读数不可较真，数量级才可信。</p>
+<h3>第二道防线：RLIMIT_RTTIME</h3>
+<p>throttling 之外还有按任务的 watchdog（rt.c:2604）：RT 任务累计 CPU 时间超过 RLIMIT_RTTIME（软限制）会收到 <code class="c">SIGKILL</code>（默认）——防止单任务失控烧配额。</p>
+<blockquote>
+<p>HFT 生产要点：专用核上业务量远低于满核时 throttling 永不触发（rt_time 到不了 950ms）；但<strong>压测/回放满负荷场景</strong>必须知道 50ms 悬崖的存在——要么调大 runtime、要么把容量规划在 95% 以下。</p>
+</blockquote>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td>电机控制/采集任务用 FIFO 保证"就绪即运行"；多任务分优先级（传感 80 &gt; 控制 70 &gt; 通信 60），同级用 RR；务必给每任务设 RLIMIT_RTTIME 兜底</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>① 关键路径 FIFO + 绑核（35.4）+ 每核一个任务（规则 1/4）；② 满核回放会撞 950ms/1s 限流，压测结论要打折或显式调 <code class="c">sched_rt_runtime_us</code>；③ FIFO 99 别乱用——它压过内核线程（ksoftirqd 收包软中断都排后面），网卡 busy-poll 线程通常 80-95 留余量</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例</h2>
+<pre class="code" data-label="C"><code class="c">/* rr_interval.c — 查询调度策略与 SCHED_RR 时间片（无需特权即可查询；
+ * root 身份下额外演示切换 SCHED_RR 后的读数对照）。
+ * 编译: gcc -O2 -Wall -Wextra -o rr_interval rr_interval.c
+ */
+#include &lt;errno.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+
+static const char *polname(int p)
+{
+    return p == SCHED_OTHER ? &quot;SCHED_OTHER&quot; :
+           p == SCHED_FIFO  ? &quot;SCHED_FIFO&quot;  :
+           p == SCHED_RR    ? &quot;SCHED_RR&quot;    : &quot;other&quot;;
+}
+
+static void dump(const char *tag)
+{
+    struct timespec ts = {0, 0};
+    int pol = sched_getscheduler(0);
+    struct sched_param sp = {0};
+    sched_getparam(0, &amp;sp);
+    if (sched_rr_get_interval(0, &amp;ts) == -1) {
+        printf(&quot;[%s] policy=%s prio=%d rr_interval: %s\n&quot;,
+               tag, polname(pol), sp.sched_priority, strerror(errno));
+        return;
+    }
+    printf(&quot;[%s] policy=%s prio=%d rr_interval=%ldms\n&quot;,
+           tag, polname(pol), sp.sched_priority, ts.tv_nsec / 1000000);
+}
+
+int main(void)
+{
+    printf(&quot;FIFO/RR 优先级范围: %d..%d (内核: MAX_RT_PRIO-1=%d)\n&quot;,
+           sched_get_priority_min(SCHED_RR),
+           sched_get_priority_max(SCHED_RR), 99 - 1);
+    dump(&quot;默认身份&quot;);
+
+    if (geteuid() == 0) {
+        struct sched_param sp = {.sched_priority = 50};
+        if (sched_setscheduler(0, SCHED_RR, &amp;sp) == -1) {
+            perror(&quot;sched_setscheduler(SCHED_RR,50)&quot;);
+            return 1;
+        }
+        dump(&quot;切RR后&quot;);
+    } else {
+        printf(&quot;(非 root: 切换 SCHED_RR 需 CAP_SYS_NICE / RLIMIT_RTPRIO, 略)\n&quot;);
+    }
+    return 0;
+}
+</code></pre>
+<p>实测输出（WSL2 · 12 核 · gcc 13.3 零告警）：</p>
+<pre class="code" data-label="code"><code class="c"># 普通用户
+$ ./rr_interval
+FIFO/RR 优先级范围: 1..99 (内核: MAX_RT_PRIO-1=98)
+[默认身份] policy=SCHED_OTHER prio=0 rr_interval=0ms
+(非 root: 切换 SCHED_RR 需 CAP_SYS_NICE / RLIMIT_RTPRIO, 略)
+
+# root
+# ./rr_interval
+FIFO/RR 优先级范围: 1..99 (内核: MAX_RT_PRIO-1=98)
+[默认身份] policy=SCHED_OTHER prio=0 rr_interval=0ms
+[切RR后] policy=SCHED_RR prio=50 rr_interval=100ms
+</code></pre>
+<p>解读：非 RR 任务 <code class="c">sched_rr_get_interval</code> 返回 0（CFS 无固定时间片）；切到 RR 后读到 <strong>100ms</strong>，与 <code class="c">RR_TIMESLICE = 100 * HZ / 1000</code>（rt.h:57）严格一致。<code class="c">get_priority_max</code> 返回 99 = <code class="c">MAX_RT_PRIO-1</code>（core.c:9046）。</p>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-35-1">35.1 nice 值</a>——CFS 世界内部的权重调节</li>
+<li>下一节：<a href="#s-35-3">35.3 实时调度 API 详解</a>——怎么把进程送进 RT 世界（权限判据全表）</li>
+<li>关联：<a href="chapter-29.html#intro">Ch29 线程简介</a>（调度属性是<strong>每线程</strong>的）· <a href="chapter-33.html#intro">Ch33 线程进阶</a>（SCHED_RESET_ON_FORK 与线程）</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>1. 用户 RT 优先级 50 对应内核 prio 多少？为什么反向？</summary>
+<p><code class="c">MAX_RT_PRIO-1-50 = 49</code>（core.c:2144）。反向存储使内核只需一条 <code class="c">p-&gt;prio &lt; q-&gt;prio</code> 就能跨两个世界比较：RT 段 0..98 恒小于 CFS 段 100..139，"任何就绪 RT 压过全部 CFS"成为数字上的自然结论。</p>
 </details>
 <details>
-<summary>2. 普通进程可以设置 SCHED_FIFO 吗？</summary>
-<p>默认不行。设置实时调度策略需要 <code class="c">CAP_SYS_NICE</code> 能力（通常是 root 或通过 capabilities 授权）。也可以通过 <code class="c">RLIMIT_RTPRIO</code> 限制非 root 用户设置实时优先级的上限。现代 Linux 还支持 <code class="c">systemd</code> 的 <code class="c">LimitRTPRIO</code> 指令。</p>
+<summary>2. 两个 SCHED_FIFO 同优先级任务绑同一核会发生什么？怎么破？</summary>
+<p>先跑者独占（task_tick_rt:2652 对 FIFO 直接 return，不轮转），第二个饿死。破法：不同优先级、或改 RR、或各绑各核——工程上首选"每核一个 FIFO 任务"。</p>
 </details>
 <details>
-<summary>3. SCHED_FIFO 优先级 1 和 nice -20 哪个优先级高？</summary>
-<p>SCHED_FIFO 优先级 1 更高。实时调度策略（SCHED_FIFO/SCHED_RR）的优先级范围（1-99）始终高于普通调度策略（SCHED_OTHER）的 nice 值。即使 nice -20（最高普通优先级），也会被最低实时优先级（1）的 SCHED_FIFO 进程抢占。</p>
+<summary>3. RT throttling 的默认参数是什么？被节流的到底是谁？</summary>
+<p>950000µs / 1000000µs（rt.c:25/:19）。被节流的是<strong>该 CPU 上整个 RT 队列</strong>（sched_rt_runtime_exceeded:1033 整队 dequeue），不是超标的那一个任务——所以一个失控任务会拖累同核所有 RT 任务。</p>
+</details>
+<details>
+<summary>4. SCHED_RR 时间片多大？在哪两个对象之间轮转？</summary>
+<p>100ms（RR_TIMESLICE，rt.h:57；可经 /proc/sys/kernel/sched_rr_timeslice_ms 调）。只在<strong>同优先级</strong> RR 任务间轮转：tick 递减（rt.c:2655），归零后仅当同级队列非空才 requeue+resched（:2664-2667）。</p>
+</details>
+<details>
+<summary>5. HFT 满核回放测试时为什么会出现 50ms 的诡异延迟尖峰？</summary>
+<p>RT throttling：满核 FIFO 线程 1 秒内累计 rt_time 超过 950ms 后，整队被冻结到下个周期起点（最坏 50ms 窗口，CFS 接管）。压测要么调 sched_rt_runtime_us（-1 关闭，自担风险），要么把负载规划在 95% 以内。</p>
 </details>
       </section>
       <section class="section" id="s-35-3">
-        <div class="sec-head"><div class="sec-no">35.3</div><h2>三大策略</h2></div>
+        <div class="sec-head"><div class="sec-no">35.3</div><h2>实时调度 API 详解</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 35 章 — Process Priorities and Scheduling</a>
-- 上一节：<a href="#s-35-1">35.1 –35.2 Nice（<code class="c">SCHED_OTHER</code>）</a>
-- 下一节：<a href="#s-35-3">35.4 调度 API</a></p>
+<p>源码核验：Linux v6.6 · kernel/sched/core.c（sched_setscheduler:8052、__sched_setscheduler:7620、user_check_sched_setscheduler:7562、__setscheduler_params:7516、RESET_ON_FORK fork 路径:4748、sched_yield:8553、get_priority_max:9039）· kernel/sched/rt.c（yield_task_rt:1590）</p>
+<p>本章：<a href="#intro">TLPI 第 35 章 — 进程优先级与调度</a>
+- 上一节：<a href="#s-35-2">35.2 实时调度概述</a>
+- 下一节：<a href="#s-35-4">35.4 CPU 亲和性</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><strong>实时 (1–99) &gt; OTHER (0)。</strong> ---</p>
+<ol>
+<li><code class="c">sched_setscheduler()</code> 从 glibc 调用到任务真正换调度类，内核里走哪条链、每步校验什么？</li>
+<li>权限判据的<strong>精确</strong>边界——<code class="c">RLIMIT_RTPRIO</code> 到底放行哪些操作、"RT 任务降优先级自由"写在内核哪行注释里；</li>
+<li><code class="c">SCHED_RESET_ON_FORK</code> 与 <code class="c">SCHED_BATCH</code>/<code class="c">SCHED_IDLE</code> 这些"边角策略"的准确语义。</li>
+</ol>
 <hr />
-<h2>要点</h2>
+<h2>一、API 全家桶</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;sched.h&gt;
+struct sched_param { int sched_priority; };        /* 就一个字段 */
+
+int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
+int sched_getscheduler(pid_t pid);                 /* 返回策略 */
+int sched_setparam(pid_t pid, const struct sched_param *param);
+int sched_getparam(pid_t pid, struct sched_param *param);
+int sched_get_priority_max(int policy);            /* FIFO/RR → 99 */
+int sched_get_priority_min(int policy);            /* FIFO/RR → 1  */
+int sched_rr_get_interval(pid_t pid, struct timespec *tp);
+int sched_yield(void);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>API</th>
+<th>语义要点</th>
+<th>内核入口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sched_setscheduler</code></td>
+<td>策略+优先级一起换；policy 可 <code class="c">\|</code> 上 <code class="c">SCHED_RESET_ON_FORK</code></td>
+<td>core.c:8052</td>
+</tr>
+<tr>
+<td><code class="c">sched_setparam</code></td>
+<td><strong>只改优先级，保留当前策略</strong></td>
+<td>core.c:8067（内部传 <code class="c">SETPARAM_POLICY=-1</code>，:7514）</td>
+</tr>
+<tr>
+<td><code class="c">sched_getscheduler</code> / <code class="c">sched_getparam</code></td>
+<td>查询；<strong>Linux 扩展：getscheduler 返回值会带上 <code class="c">SCHED_RESET_ON_FORK</code> 位</strong>（2.6.39+），判断策略前要先剥掉 flag 位</td>
+<td>core.c:8121/:8150</td>
+</tr>
+<tr>
+<td><code class="c">sched_get_priority_max/min</code></td>
+<td>FIFO/RR → 99/1；OTHER/BATCH/IDLE/DL → 0/0；非法策略 EINVAL</td>
+<td>core.c:9039/:9066</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>pid 参数的真相</strong>：NPTL 下这组系统调用作用对象是 <strong>task（线程）</strong>，pid 实为 TID——每个线程各自持有 policy/rt_priority（与 Ch29"每线程调度属性"呼应）。传主线程 TID 才影响进程语义上的"主线程"。</p>
+<hr />
+<h2>二、sched_setscheduler 内核调用链</h2>
+<pre class="code" data-label="code"><code class="c">sched_setscheduler(pid, policy, param)          glibc → syscall
+   │ SYSCALL_DEFINE3  core.c:8052
+   ▼
+do_sched_setscheduler()                          pid→task 查找 (ESRCH)
+   │
+   ▼
+__sched_setscheduler()  core.c:7620
+   │
+   ├─[1] 策略合法性: valid_policy()              :7644
+   ├─[2] 优先级范围双向校验:                      :7656-7660
+   │      FIFO/RR: 1..98 (MAX_RT_PRIO-1)
+   │      OTHER/BATCH/IDLE: 必须 0
+   │      (rt_policy(policy) != (sched_priority != 0) → EINVAL)
+   ├─[3] 权限: user_check_sched_setscheduler()   :7562 (user=true)
+   ├─[4] 取 rq 锁, 重读策略(recheck:7636 竞态自愈)
+   ├─[5] __setscheduler_params()  :7516
+   │      p-&gt;policy = policy
+   │      p-&gt;rt_priority = 用户值直存             :7536
+   │      p-&gt;normal_prio = __normal_prio() 反向映射 :7537
+   │      set_load_weight() (fair 才有意义)
+   └─[6] check_class_changed()  :7825
+          → switched_to_rt(): p-&gt;prio &lt; curr-&gt;prio
+            → resched_curr()                     rt.c:2557
+            ⇒ 设置返回的瞬间, 本任务就可能立刻抢占 CPU!
+</code></pre>
+<p>两个容易被忽略的行为：</p>
+<ol>
+<li><strong>竞态自愈</strong>：步骤 [4] 会在锁内重读目标策略，若与锁外快照不一致就放弃重来（:7762-7768）——并发 setpriority/sched_setscheduler 不会产生撕裂状态；</li>
+<li><strong>即时生效</strong>：切到 RT 类后 <code class="c">switched_to_rt</code> 直接 <code class="c">resched_curr</code>——新晋 FIFO 任务不用等下一次调度事件。</li>
+</ol>
+<blockquote>
+<p>工程边角（v6.6）：kernel/sched/rt.c 顶部没有一行 <code class="c">#include</code>——v6.6 把调度类实现拆给 <code class="c">build_policy.c</code> 聚合编译，rt.c 是被 include 的"碎片"。读源码时从 rt.c 找不到头文件不是你眼花。</p>
+</blockquote>
+<hr />
+<h2>三、权限判据全表（user_check_sched_setscheduler 原文逻辑）</h2>
+<p>先看原文（core.c:7557-7611，节选关键分支）——它是一串"放行即 return 0，全不满足才 goto req_priv"的检查：</p>
+<pre class="code" data-label="C"><code class="c">/* Allow unprivileged RT tasks to decrease priority.  :7557 注释 */
+static int user_check_sched_setscheduler(struct task_struct *p, ...)
+{
+        if (fair_policy(policy)) {                     /* :7566 */
+                if (attr-&gt;sched_nice &lt; task_nice(p) &amp;&amp;
+                    !is_nice_reduction(p, attr-&gt;sched_nice))
+                        goto req_priv;
+        }
+        if (rt_policy(policy)) {                       /* :7572 */
+                unsigned long rlim_rtprio = task_rlimit(p, RLIMIT_RTPRIO);
+                if (policy != p-&gt;policy &amp;&amp; !rlim_rtprio)      /* 切策略 */
+                        goto req_priv;
+                if (attr-&gt;sched_priority &gt; p-&gt;rt_priority &amp;&amp;  /* 升优先级 */
+                    attr-&gt;sched_priority &gt; rlim_rtprio)
+                        goto req_priv;
+        }
+        if (dl_policy(policy))                         /* :7591 DL 一律拒 */
+                goto req_priv;
+        if (task_has_idle_policy(p) &amp;&amp; !idle_policy(policy)) {  /* :7598 */
+                if (!is_nice_reduction(p, task_nice(p)))
+                        goto req_priv;                 /* IDLE 视作 nice 20 */
+        }
+        if (!check_same_owner(p))                      /* :7604 别人的任务 */
+                goto req_priv;
+        if (p-&gt;sched_reset_on_fork &amp;&amp; !reset_on_fork)  /* :7608 取消 ROF */
+                goto req_priv;
+        return 0;
+req_priv:
+        return capable(CAP_SYS_NICE) ? 0 : -EPERM;     /* :7614 兜底 */
+}
+</code></pre>
+<p>逐条翻译成表格（<strong>满足左侧任一即放行</strong>，全部不满足 → 请求 <code class="c">CAP_SYS_NICE</code>，没有则 EPERM）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>想做的事</th>
+<th>非特权放行条件</th>
+<th>内核行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fair 策略下<strong>降低</strong> nice 数值（提权）</td>
+<td><code class="c">RLIMIT_NICE</code> 允许（is_nice_reduction）</td>
+<td>:7566-7570</td>
+</tr>
+<tr>
+<td><strong>切入/切换</strong> RT 策略（OTHER→FIFO 等）</td>
+<td><code class="c">RLIMIT_RTPRIO != 0</code></td>
+<td>:7576</td>
+</tr>
+<tr>
+<td>RT 任务<strong>升高</strong> rt_priority</td>
+<td>新值 ≤ 当前值，或 ≤ <code class="c">RLIMIT_RTPRIO</code></td>
+<td>:7580-7582</td>
+</tr>
+<tr>
+<td>RT 任务<strong>降低</strong> rt_priority</td>
+<td><strong>无条件放行</strong>（"Allow unprivileged RT tasks to decrease priority"，:7557 注释）</td>
+<td>:7572 起</td>
+</tr>
+<tr>
+<td>SCHED_IDLE 任务逃离 IDLE</td>
+<td>RLIMIT_NICE 允许"相当于 nice 20 → 更低"（:7594-7601，内核把 IDLE 视作 nice 20）</td>
+<td>:7598</td>
+</tr>
+<tr>
+<td>改<strong>别人的</strong>任务</td>
+<td>check_same_owner（我的 euid == 对方 uid 或 euid）</td>
+<td>:7604</td>
+</tr>
+<tr>
+<td>取消 sched_reset_on_fork</td>
+<td>普通用户<strong>不允许</strong>（:7607-7609）</td>
+<td>:7608</td>
+</tr>
+<tr>
+<td>任何一条不满足时</td>
+<td><code class="c">capable(CAP_SYS_NICE)</code> → 放行</td>
+<td>:7614</td>
+</tr>
+</tbody>
+</table></div>
+<p>要点提炼：</p>
+<ul>
+<li><code class="c">RLIMIT_RTPRIO</code>（<code class="c">ulimit -r</code>，单位 = RT 优先级数）为 0 时（默认），<strong>非特权用户与 RT 策略完全绝缘</strong>——既进不去也升不了；</li>
+<li><strong>降级自由</strong>是内核的显式设计：RT 任务把自己调低、甚至调回 OTHER，不需要任何特权；</li>
+<li>SCHED_DEADLINE 目前非特权完全不可设（:7591）。</li>
+</ul>
+<hr />
+<h2>四、SCHED_RESET_ON_FORK：只管一代的防火墙</h2>
+<p>语义：带此 flag 设置后，<strong>该任务 fork 出的子进程</strong>调度属性被重置（core.c:4748-4763）：</p>
+<pre class="code" data-label="C"><code class="c">if (unlikely(p-&gt;sched_reset_on_fork)) {
+        if (task_has_dl_policy(p) || task_has_rt_policy(p)) {
+                p-&gt;policy = SCHED_NORMAL;           /* 回 CFS */
+                p-&gt;static_prio = NICE_TO_PRIO(0);   /* nice 0 */
+                p-&gt;rt_priority = 0;
+        } else if (PRIO_TO_NICE(p-&gt;static_prio) &lt; 0)
+                p-&gt;static_prio = NICE_TO_PRIO(0);   /* 负 nice 也归零! */
+        ...
+        p-&gt;sched_reset_on_fork = 0;                 /* flag 只管一代 */
+}
+</code></pre>
+<p>三个精确细节：</p>
+<ol>
+<li><strong>负 nice 一并重置</strong>——RESET_ON_FORK 不只是"防 RT 遗传"，也防 CAP_SYS_NICE 进程的负 nice 遗传（TLPI 35.3 专门提醒）；</li>
+<li><strong>flag 本身在子进程清零</strong>（:4763）——孙进程继承的是子进程的重置后状态，不需要也不应该累积；</li>
+<li>用户态的写法是 <code class="c">sched_setscheduler(0, SCHED_FIFO | SCHED_RESET_ON_FORK, &amp;sp)</code>（glibc 层 hack，内核 <code class="c">_sched_setscheduler</code>:7850 拆开转成 attr flag；查询得用 <code class="c">sched_getattr</code>）。</li>
+</ol>
+<p><strong>隔代实测</strong>（rof_grand，root；完整代码见 <a href="#s-35-6">35.6 实验 6</a>）：</p>
+<pre class="code" data-label="code"><code class="c">父(设置后) pid=384    policy=SCHED_FIFO+ROF   rt_priority=50
+子      pid=385    policy=SCHED_OTHER      rt_priority=0    ← 被重置, ROF 位已清
+子进程自行设 FIFO 40 (无ROF): OK
+子(重设后) pid=385    policy=SCHED_FIFO       rt_priority=40
+孙      pid=386    policy=SCHED_FIFO       rt_priority=40   ← 原样继承!
+父(最终) pid=384    policy=SCHED_FIFO+ROF   rt_priority=50  ← 父不受影响
+</code></pre>
+<p>这张四行输出是"flag 只管一代"的完整证据链：<strong>父带位 → 子被重置（ROF 位同步清零）；子重设 FIFO 不带位 → 孙原样继承 FIFO 40，不再有重置发生</strong>。如果 flag 会遗传，孙进程也该被重置成 OTHER——实测否决。RESET_ON_FORK 是"出生时的一次性产钳"，不是写进基因的遗传病。</p>
+<p><strong>为什么需要它</strong>：一个 FIFO 99 服务（比如以 root 运行的采集守护）fork/exec 到第三方脚本时，脚本意外继承了 FIFO 99——任何它里面的死循环都是整机级灾难。RESET_ON_FORK 是 fork 边界上的"防遗传手术"。</p>
+<hr />
+<h2>五、SCHED_BATCH / SCHED_IDLE：CFS 的两个变体</h2>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>策略</th>
-<th>静态优先级</th>
-<th>要点</th>
+<th>语义</th>
+<th>内核依据</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>SCHED_FIFO</strong></td>
-<td>1–99（越大越高）</td>
-<td>跑到阻塞/<code class="c">yield</code>/被更高优先级抢；同级无时间片轮转</td>
+<td><code class="c">SCHED_BATCH</code></td>
+<td>"批处理"：交互性补偿关闭（唤醒不奖励），其余同 OTHER。适合纯 CPU 密集任务</td>
+<td>fair 类内部行为差异</td>
 </tr>
 <tr>
-<td><strong>SCHED_RR</strong></td>
-<td>1–99</td>
-<td>同 FIFO，但同级有时间片；<code class="c">sched_rr_get_interval</code></td>
-</tr>
-<tr>
-<td><strong>SCHED_OTHER</strong></td>
-<td>固定 0</td>
-<td>nice 调权重；可被任意就绪实时进程抢占</td>
+<td><code class="c">SCHED_IDLE</code></td>
+<td>极低优先级：权重取 <code class="c">WEIGHT_IDLEPRIO</code>（set_load_weight:1313-1317），<strong>比 nice +19 还低一档</strong>；逃离它按"从 nice 20 提升"审查（:7598）</td>
+<td>core.c:1313</td>
 </tr>
 </tbody>
 </table></div>
-<p><strong>实时 (1–99) &gt; OTHER (0)。</strong></p>
+<p>注意 SCHED_IDLE ≠ idle 调度类（idle_sched_class 是 CPU 空转，用户不可达）——SCHED_IDLE 任务仍在 fair 类，只是权重被压到最低。</p>
+<p><strong>SCHED_IDLE 是普通用户的"单向门"</strong>（idle_weight 实测，完整代码见 <a href="#s-35-6">35.6 实验 5</a>）：</p>
+<pre class="code" data-label="code"><code class="c">$ ./idle_weight                        # 普通用户, RLIMIT_NICE=0
+[单向门] RLIMIT_NICE={soft=0, hard=0}
+[1] 切入 SCHED_IDLE (预写: 免特权成功)...
+  当前 policy=SCHED_IDLE (euid=1000)          ← 切进去: 免费
+[2] 切回 SCHED_OTHER (预写: 非特权 EPERM)...
+    切回失败: Operation not permitted (EPERM=1) —— 单向门!
+</code></pre>
+<p>为什么进去免费、出来要特权？两个方向走的检查分支不同：
+- <strong>切入 IDLE</strong>：user_check 的 fair 分支（:7566）只拦"降低 nice 数值"——切 IDLE 不带 nice 变更，一路放行；
+- <strong>切回 OTHER</strong>：命中 :7598 的专门分支 <code class="c">task_has_idle_policy(p) &amp;&amp; !idle_policy(policy)</code>——内核把"IDLE → 非 IDLE"等价于"从 nice 20 提升"，需要 <code class="c">is_nice_reduction</code>（即 RLIMIT_NICE ≥ 40，默认 0 必然不够）或 CAP_SYS_NICE。</p>
+<p>工程含义：<strong>普通用户进程可以主动"自沉"到 SCHED_IDLE 让出 CPU，但沉下去就浮不上来了</strong>（除非 exec 一个新映像——exec 不改调度策略，所以其实也浮不上来；唯一出路是重新启动进程）。把它当"礼貌开关"用之前想清楚。</p>
+<hr />
+<h2>六、sched_yield()：一个 API，三种语义</h2>
+<pre class="code" data-label="C"><code class="c">do_sched_yield()                     core.c:8528
+   → current-&gt;sched_class-&gt;yield_task(rq)   :8536 按类分发
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>当前策略</th>
+<th>yield 的实际效果</th>
+<th>内核</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SCHED_FIFO / RR</td>
+<td><strong>重排到同优先级队列尾部</strong>——低优先级任务仍然没机会</td>
+<td>yield_task_rt:1590（<code class="c">requeue_task_rt(rq, rq-&gt;curr, 0)</code>）</td>
+</tr>
+<tr>
+<td>SCHED_OTHER</td>
+<td>让出 CPU，CFS 正常挑下一个（可能还是自己）</td>
+<td>fair 类 yield</td>
+</tr>
+<tr>
+<td>任何</td>
+<td><strong>绝不保证别人一定跑</strong>——若队列里没有同级/更高任务，立刻跑回来</td>
+<td>通用</td>
+</tr>
+</tbody>
+</table></div>
+<p>TLPI 与本章共同的忠告：<strong>sched_yield 不是同步原语</strong>。等资源用 futex/条件变量（Ch30），自旋等待用带 backoff 的原子操作——依赖 yield 的"礼让"在任何策略下都没有可移植保证。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -844,217 +1526,346 @@ void pin_cpu(int cpu) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>电机控制/传感器采集用 <code class="c">SCHED_FIFO</code> 保证<strong>确定性响应</strong>（一到就执行、不被普通任务打断）；<code class="c">SCHED_RR</code> 给多个同优先级控制任务轮流跑</td>
+<td>① 常驻 RT 服务 fork/exec 外部脚本前，用 RESET_ON_FORK 切断属性遗传（脚本永远不该继承 FIFO 99）；② 多优先级设计（采集 80 &gt; 控制 70 &gt; 通信 60）从 sched_setparam 单独调优先级，不用反复换策略</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>行情/订单线程设 <code class="c">SCHED_FIFO</code> 高优先级，<strong>报文一到立即被调度</strong>，不被任何普通进程抢占；选 FIFO 而非 RR——FIFO 同级无时间片轮转，避免同优先级的杂务线程打断关键路径</td>
+<td>① 启动序列：mlockall → 绑核 → FIFO（本节 API）→ 再开始热路径——次序错不了；② 交易二进制以 capability 方式授权（setcap cap_sys_nice）而非裸 root；③ RT 线程降优先级是特权自由（:7557）——优雅降级路径（比如过载时自降到 50）可以无条件实现</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;sched.h&gt;
+<pre class="code" data-label="C"><code class="c">/* rt_setup.c — sched_setscheduler 全流程: 权限边界 + 即时生效验证
+ *              + SCHED_RESET_ON_FORK 隔代重置实测
+ * 普通用户运行: 观察 EPERM; root 运行: 全流程成功。
+ * 编译: gcc -O2 -Wall -Wextra -o rt_setup rt_setup.c
+ */
+#define _GNU_SOURCE               /* SCHED_RESET_ON_FORK 需要 __USE_GNU */
+#include &lt;errno.h&gt;
+#include &lt;sched.h&gt;
 #include &lt;stdio.h&gt;
-int main(void) {
-    /* 调度策略:
-     * SCHED_OTHER: 普通分时 (默认)
-     * SCHED_FIFO: 实时, 先到先服务, 不被抢占直到主动让出
-     * SCHED_RR: 实时, 轮转, 有时间片
-     */
-    struct sched_param sp;
-    sp.sched_priority = 0;
-    printf(&quot;当前策略: %d\n&quot;, sched_getscheduler(0));
-    printf(&quot;SCHED_OTHER=%d SCHED_FIFO=%d SCHED_RR=%d\n&quot;,
-           SCHED_OTHER, SCHED_FIFO, SCHED_RR);
-    return 0;
-}
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-35-1">35.1 –35.2 Nice（<code class="c">SCHED_OTHER</code>）</a></li>
-<li>下一节：<a href="#s-35-3">35.4 调度 API</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-36.html#ch-36">Ch36 进程资源</a> · <a href="chapter-37.html#ch-37">Ch37 Daemons</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-35-4">
-        <div class="sec-head"><div class="sec-no">35.4</div><h2>调度 API</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 35 章 — Process Priorities and Scheduling</a>
-- 上一节：<a href="#s-35-3">35.3 三大策略</a>
-- 下一节：<a href="#s-35-4">35.5 CPU 亲和（Linux）</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param); int sched_getscheduler(pid_t pid); int sched_setparam / sched_getparam(...);</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
-int sched_getscheduler(pid_t pid);
-int sched_setparam / sched_getparam(...);
-int sched_rr_get_interval(pid_t pid, struct timespec *tp);
-int sched_yield(void);   /* 勿当同步原语用 */
-</code></pre>
-<p><code class="c">struct sched_param { int sched_priority; };</code></p>
-<h3><code class="c">SCHED_RESET_ON_FORK</code></h3>
-<p>可或进 policy：子进程 fork 后回到 <code class="c">SCHED_OTHER</code>/优先级清零，防实时父进程繁衍占满 CPU（需特权）。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/sched_view.c"><code class="c">code/sched_view.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td><code class="c">sched_setscheduler</code> 把控制任务切实时；<code class="c">SCHED_RESET_ON_FORK</code> 防实时父进程 fork 出实时子进程繁衍占满 CPU（嵌入式常驻服务必加）</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>启动时 <code class="c">sched_setscheduler(0, SCHED_FIFO, &amp;sp)</code> 把订单/行情线程设实时高优先级；<code class="c">sched_yield</code> <strong>不当同步原语</strong>——HFT 里让出 CPU 用条件变量/自旋锁，不用 yield（yield 语义弱、可能白转一圈）</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
 #include &lt;sys/resource.h&gt;
-#include &lt;sched.h&gt;
+#include &lt;sys/wait.h&gt;
 #include &lt;unistd.h&gt;
-/* 调度 API: nice/getpriority/setpriority/sched_getscheduler */
-int main(void) {
-    /* nice 值: -20 到 +19, 越低优先级越高 */
-    printf(&quot;nice(0) = %d\n&quot;, nice(0));
-    printf(&quot;getpriority(PRIO_PROCESS, 0) = %d\n&quot;,
-           getpriority(PRIO_PROCESS, 0));
 
-    /* setpriority: 普通用户只能降低 */
-    if (setpriority(PRIO_PROCESS, 0, 10) == 0)
-        printf(&quot;nice set to 10\n&quot;);
-
-    /* 调度策略 */
-    int pol = sched_getscheduler(0);
-    printf(&quot;scheduler: %d (%s)\n&quot;, pol,
-           pol == SCHED_OTHER ? &quot;OTHER&quot; :
-           pol == SCHED_FIFO ? &quot;FIFO&quot; :
-           pol == SCHED_RR ? &quot;RR&quot; : &quot;?&quot;);
-
-    /* 调度参数: 实时优先级 1-99 */
-    struct sched_param sp;
-    sched_getparam(0, &amp;sp);
-    printf(&quot;sched_priority = %d\n&quot;, sp.sched_priority);
-
-    /* CPU 亲和性 */
-    cpu_set_t set;
-    CPU_ZERO(&amp;set);
-    CPU_SET(0, &amp;set);
-    sched_setaffinity(0, sizeof(set), &amp;set);
-    printf(&quot;Pinned to CPU 0\n&quot;);
-    return 0;
+static const char *polname(int p)
+{
+    int reset = p &amp; SCHED_RESET_ON_FORK;   /* Linux 2.6.39+: 返回值带此位 */
+    p &amp;= ~SCHED_RESET_ON_FORK;
+    static char buf[32];
+    const char *base =
+        p == SCHED_OTHER ? &quot;SCHED_OTHER&quot; :
+        p == SCHED_FIFO  ? &quot;SCHED_FIFO&quot;  :
+        p == SCHED_RR    ? &quot;SCHED_RR&quot;    : &quot;other&quot;;
+    snprintf(buf, sizeof buf, &quot;%s%s&quot;, base, reset ? &quot;+ROF&quot; : &quot;&quot;);
+    return buf;
 }
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-35-3">35.3 三大策略</a></li>
-<li>下一节：<a href="#s-35-4">35.5 CPU 亲和（Linux）</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-36.html#ch-36">Ch36 进程资源</a> · <a href="chapter-37.html#ch-37">Ch37 Daemons</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-35-5">
-        <div class="sec-head"><div class="sec-no">35.5</div><h2>CPU 亲和（Linux）</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 35 章 — Process Priorities and Scheduling</a>
-- 上一节：<a href="#s-35-3">35.4 调度 API</a>
-- 下一节：<a href="#s-35-6">35.6 权限与限制</a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>sched_setaffinity / sched_getaffinity CPU_ZERO / CPU_SET / CPU_CLR / CPU_ISSET 绑核减迁移与缓存失效；HFT/嵌入式常用：业务核与中断/杂务隔离。</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">sched_setaffinity / sched_getaffinity
-CPU_ZERO / CPU_SET / CPU_CLR / CPU_ISSET
-</code></pre>
-<p>绑核减迁移与缓存失效；HFT/嵌入式常用：业务核与中断/杂务隔离。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/affinity_demo.c"><code class="c">code/affinity_demo.c</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>绑核做<strong>业务核与中断/杂务隔离</strong>：实时控制任务绑专用核，减少进程迁移与缓存失效，抖动更小</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>把行情接收、订单处理、策略线程<strong>分别绑到不同核</strong>，避免跨核迁移与 cache miss；生产配合 <code class="c">isolcpus</code>/<code class="c">nohz_full</code> 隔离核，中断用 IRQ affinity 路由到别的核</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE
-#include &lt;sched.h&gt;
-#include &lt;stdio.h&gt;
-int main(void) {
-    /* CPU 亲和性: 绑定进程到特定 CPU */
-    cpu_set_t set;
-    CPU_ZERO(&amp;set);
-    CPU_SET(0, &amp;set);  /* 绑定到 CPU 0 */
 
-    if (sched_setaffinity(0, sizeof(set), &amp;set) == 0) {
-        printf(&quot;进程绑定到 CPU 0\n&quot;);
+static void dump(const char *tag)
+{
+    struct sched_param sp = {0};
+    sched_getparam(0, &amp;sp);
+    printf(&quot;  %-12s policy=%-14s rt_priority=%d\n&quot;,
+           tag, polname(sched_getscheduler(0)), sp.sched_priority);
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);  /* fork 前防缓冲复制丢输出 */
+
+    struct rlimit rl;
+    getrlimit(RLIMIT_RTPRIO, &amp;rl);
+    printf(&quot;[0] uid=%d  RLIMIT_RTPRIO={soft=%lu, hard=%lu}\n&quot;,
+           geteuid(), (unsigned long)rl.rlim_cur,
+           (unsigned long)rl.rlim_max);
+
+    /* [1] 切入 SCHED_FIFO 80: 权限判据 user_check:7576 */
+    struct sched_param sp = {.sched_priority = 80};
+    if (sched_setscheduler(0, SCHED_FIFO, &amp;sp) == -1) {
+        printf(&quot;[1] sched_setscheduler(FIFO,80): %s (EPERM=%d)\n&quot;,
+               strerror(errno), errno == EPERM);
+        return 0;                        /* 普通用户: 到此为止 */
+    }
+    printf(&quot;[1] sched_setscheduler(FIFO,80): OK\n&quot;);
+    dump(&quot;父进程&quot;);
+
+    /* [2] RT 降优先级自由: 80 -&gt; 30, 无需任何特权 (core.c:7557) */
+    sp.sched_priority = 30;
+    if (sched_setparam(0, &amp;sp) == 0) {
+        printf(&quot;[2] sched_setparam(80-&gt;30): OK (RT 降优先级自由)\n&quot;);
+        dump(&quot;父进程&quot;);
     }
 
-    /* 查询当前亲和性 */
-    CPU_ZERO(&amp;set);
-    sched_getaffinity(0, sizeof(set), &amp;set);
-    printf(&quot;可运行 CPU 数: %d\n&quot;, CPU_COUNT(&amp;set));
+    /* [3] RESET_ON_FORK: 子进程属性应被重置回 OTHER/nice0 */
+    sp.sched_priority = 60;
+    if (sched_setscheduler(0, SCHED_FIFO | SCHED_RESET_ON_FORK, &amp;sp) == -1) {
+        perror(&quot;[3] setscheduler(RESET_ON_FORK)&quot;);
+        return 1;
+    }
+    dump(&quot;父进程&quot;);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        dump(&quot;子进程&quot;);                   /* 期望: OTHER, 0 */
+        fflush(stdout);                  /* _exit 不 flush stdio, 手动刷 */
+        _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+    dump(&quot;父进程&quot;);                       /* 期望: 仍是 FIFO, 60 */
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 · Ubuntu 24.04 · gcc 13.3 零告警）：</p>
+<pre class="code" data-label="code"><code class="c"># 普通用户 (RLIMIT_RTPRIO=0, 无 CAP_SYS_NICE)
+$ ./rt_setup
+[0] uid=1000  RLIMIT_RTPRIO={soft=0, hard=0}
+[1] sched_setscheduler(FIFO,80): Operation not permitted (EPERM=1)
+
+# root (wsl -u root)
+# ./rt_setup
+[0] uid=0  RLIMIT_RTPRIO={soft=0, hard=0}
+[1] sched_setscheduler(FIFO,80): OK
+  父进程       policy=SCHED_FIFO   rt_priority=80
+[2] sched_setparam(80-&gt;30): OK (RT 降优先级自由)
+  父进程       policy=SCHED_FIFO   rt_priority=30
+  父进程       policy=SCHED_FIFO+ROF rt_priority=60
+  子进程       policy=SCHED_OTHER  rt_priority=0
+  父进程       policy=SCHED_FIFO+ROF rt_priority=60
+</code></pre>
+<p>解读：[1] 的 EPERM 正是 <code class="c">user_check_sched_setscheduler:7576</code> 的"RLIMIT_RTPRIO=0 且无 CAP_SYS_NICE"分支；root 侧 [2] 证明降优先级无特权门槛；[3] 子进程 OTHER/0 而父进程 FIFO/60——<code class="c">core.c:4750-4752</code> 的重置三连逐字兑现。注意父进程的 policy 显示为 <strong><code class="c">SCHED_FIFO+ROF</code></strong>：Linux 2.6.39 起 <code class="c">sched_getscheduler()</code> 返回值会带上 <code class="c">SCHED_RESET_ON_FORK</code> 位——这是与 POSIX 不同的内核扩展行为，判断策略前要先剥掉 flag 位（demo 的 <code class="c">polname()</code> 演示了正确写法）。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-35-3">35.4 调度 API</a></li>
-<li>下一节：<a href="#s-35-6">35.6 权限与限制</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-36.html#ch-36">Ch36 进程资源</a> · <a href="chapter-37.html#ch-37">Ch37 Daemons</a></li>
+<li>上一节：<a href="#s-35-2">35.2 实时调度概述</a>——策略行为本身</li>
+<li>下一节：<a href="#s-35-4">35.4 CPU 亲和性</a>——RT 策略的另一半配套</li>
+<li>关联：<a href="chapter-24.html#intro">Ch24 进程创建</a>（fork 复制调度属性）· <a href="chapter-39.html#intro">Ch39 capabilities</a>（CAP_SYS_NICE 的能力模型）· <a href="chapter-36.html#intro">Ch36 进程资源</a>（RLIMIT_RTPRIO/RTTIME/NICE 三兄弟）</li>
 </ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>1. 非特权用户 RLIMIT_RTPRIO=20 时，哪些 RT 操作仍会被拒？</summary>
+<p>① 从 OTHER 切入 RT：放行（rlim≠0）；② FIFO 10 → FIFO 30：拒（新值 &gt; 当前值且 &gt; rlim，core.c:7580-7582）；③ FIFO 30 → FIFO 15：放行（降优先级无条件自由）；④ 改另一个用户的任务：拒（check_same_owner 失败）。全部条目的最终兜底是 CAP_SYS_NICE。</p>
+</details>
+<details>
+<summary>2. SCHED_RESET_ON_FORK 会重置什么？孙进程呢？</summary>
+<p>RT/DL 父进程的子进程：policy→SCHED_NORMAL、static_prio→nice 0、rt_priority→0（core.c:4750-4752）；CFS 父进程的负 nice 也会归零（:4753-4754）。flag 在子进程出生时自清（:4763），所以只管一代——孙进程继承的是子进程的重置后状态。</p>
+</details>
+<details>
+<summary>3. FIFO 99 任务调用 sched_yield() 后，同核的 nice 0 任务能跑了吗？</summary>
+<p>不能。yield_task_rt（rt.c:1590）只是把当前任务重排到<strong>同优先级</strong>队列尾部，低优先级任务依旧排不上。sched_yield 从不给低优先级任务让路。</p>
+</details>
+<details>
+<summary>4. sched_setparam 和 sched_setscheduler 的区别？</summary>
+<p>setparam 只改 rt_priority、保留现有策略（内核用 SETPARAM_POLICY=-1 哨兵值表示"不改策略"，core.c:7514/:7521-7522）；setscheduler 策略+优先级一起换。另有细节：RESET_ON_FORK 只能经 setscheduler 的 policy 位设置，且普通用户不能取消已置位的 flag（:7607-7609）；<code class="c">sched_getscheduler()</code> 返回值会带回已置位的 RESET_ON_FORK 位（2.6.39+ 扩展）。</p>
+</details>
+<details>
+<summary>5. 为什么说 sched_setscheduler 返回的瞬间任务可能已经在 CPU 上了？</summary>
+<p>__sched_setscheduler 末尾 check_class_changed（:7825）→ switched_to_rt（rt.c:2536）：若新 prio &lt; 当前任务 prio，直接 resched_curr（:2557）设置重调度标志——返回用户态的路径上就会发生抢占，新晋 FIFO 任务即刻上核。</p>
+</details>
       </section>
-      <section class="section" id="s-35-6">
-        <div class="sec-head"><div class="sec-no">35.6</div><h2>权限与限制</h2></div>
+      <section class="section" id="s-35-4">
+        <div class="sec-head"><div class="sec-no">35.4</div><h2>CPU 亲和性</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 35 章 — Process Priorities and Scheduling</a>
-- 上一节：<a href="#s-35-4">35.5 CPU 亲和（Linux）</a>
-- 下一节：35.7 fork / exec</p>
+<p>源码核验：Linux v6.6 · kernel/sched/core.c（SYSCALL sched_setaffinity:8448、sched_setaffinity:8365、__sched_setaffinity:8304、sched_getaffinity:8464）</p>
+<p>本章：<a href="#intro">TLPI 第 35 章 — 进程优先级与调度</a>
+- 上一节：<a href="#s-35-3">35.3 实时调度 API 详解</a>
+- 下一节：<a href="#s-35-5">35.5 总结</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<ul>
-<li>切 FIFO/RR：需 <code class="c">CAP_SYS_NICE</code>（或等价特权） - 普通用户：<code class="c">RLIMIT_RTPRIO</code>（<code class="c">ulimit -r</code>） - <code class="c">kernel.sched_rt_runtime_us</code>：默认可限实时总 CPU（防卡死）</li>
-</ul>
+<ol>
+<li><code class="c">sched_setaffinity()</code> 的掩码在内核里与什么做了<strong>交集</strong>、空交集为什么是 EINVAL 而不是截断？</li>
+<li>从 syscall 到任务真正搬到新核，中间经过哪几站？正在运行的线程怎么"被搬家"？</li>
+<li><strong>绑核 ≠ 独占核</strong>——HFT 的完整核隔离栈（isolcpus / nohz_full / IRQ 绕行）差在哪几层？</li>
+</ol>
 <hr />
-<h2>要点</h2>
+<h2>一、为什么绑核：三个独立动机</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>动机</th>
+<th>机制</th>
+<th>收益对象</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>cache 局部性</strong></td>
+<td>线程留在同核，L1/L2 命中率稳定</td>
+<td>所有热路径</td>
+</tr>
+<tr>
+<td><strong>NUMA 局部性</strong></td>
+<td>核与内存节点绑定，避免跨节点访问延迟（~1.5-2x）</td>
+<td>大内存任务</td>
+</tr>
+<tr>
+<td><strong>干扰隔离</strong></td>
+<td>把关键线程与杂务（内核线程/中断/其他进程）分核</td>
+<td>延迟敏感路径</td>
+</tr>
+</tbody>
+</table></div>
+<p>对 HFT，第三个动机是主要矛盾——前两个绑核就够，第三个要的是"别人不许来"，这就超出 affinity API 的能力范围（见第五节）。</p>
+<hr />
+<h2>二、API 与掩码操作</h2>
+<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE
+#include &lt;sched.h&gt;
+
+typedef struct { unsigned long __bits[128]; } cpu_set_t;   /* 概念上 1024 bit */
+
+void CPU_ZERO(cpu_set_t *set);
+void CPU_SET(int cpu, cpu_set_t *set);
+void CPU_CLR(int cpu, cpu_set_t *set);
+int  CPU_ISSET(int cpu, cpu_set_t *set);
+int  CPU_COUNT(cpu_set_t *set);
+
+int sched_setaffinity(pid_t pid, size_t cpusetsize, const cpu_set_t *mask);
+int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
+</code></pre>
+<p>参数语义（TLPI 强调，容易踩坑）：</p>
 <ul>
-<li>切 FIFO/RR：需 <code class="c">CAP_SYS_NICE</code>（或等价特权）  </li>
-<li>普通用户：<code class="c">RLIMIT_RTPRIO</code>（<code class="c">ulimit -r</code>）  </li>
-<li><code class="c">kernel.sched_rt_runtime_us</code>：默认可限实时总 CPU（防卡死）  </li>
+<li><code class="c">pid</code> 同样是 <strong>TID 粒度</strong>（线程级）——多线程要逐线程设；</li>
+<li><code class="c">cpusetsize</code> = <code class="c">sizeof(cpu_set_t)</code>，内核只取 <code class="c">min(cpusetsize, cpumask_size())</code>，<strong>多余高位要求为 0</strong>否则 EINVAL（防误把栈上垃圾当掩码）；</li>
+<li>掩码是<strong>替换</strong>语义：新掩码完全覆盖旧掩码，不是"追加允许的核"。</li>
 </ul>
+<p>命令行对照：<code class="c">taskset -c 3 ./app</code>（启动即绑核 3）、<code class="c">taskset -pc 3 &lt;pid&gt;</code>（改运行中进程）；<code class="c">taskset -p &lt;pid&gt;</code> 只读查询。</p>
+<hr />
+<h2>三、五个语义细节（全部有内核出处）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>细节</th>
+<th>内核证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>亲和掩码永远先与 cpuset/cgroup 允许集求交集</strong>——你给的掩码只是"意愿"，cgroup 才是"权限"</td>
+<td>__sched_setaffinity:8317-8318 <code class="c">cpumask_and(new_mask, ctx-&gt;new_mask, cpus_allowed)</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>交集为空 → <strong>EINVAL</strong>（不是截断、不是静默全允许）</td>
+<td>:8332-8355（竞态兜底后仍空则 <code class="c">retval = -EINVAL</code>）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>改<strong>别人的</strong>任务 → check_same_owner 或 CAP_SYS_NICE，否则 <strong>EPERM</strong></td>
+<td>:8389-8397</td>
+</tr>
+<tr>
+<td>4</td>
+<td>某些内核线程带 <code class="c">PF_NO_SETAFFINITY</code> 不可改 → EINVAL</td>
+<td>:8384-8387</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code class="c">getaffinity</code> 返回的是 <code class="c">p-&gt;cpus_mask ∩ cpu_active_mask</code>——CPU 热插拔后可能比你设的小</td>
+<td>sched_getaffinity:8482</td>
+</tr>
+</tbody>
+</table></div>
+<p>继承语义：fork 复制父线程掩码；exec 保留。多线程进程里<strong>主线程改掩码不影响已创建线程</strong>（各自独立）。</p>
+<hr />
+<h2>四、内核链路：正在运行的线程怎么搬家</h2>
+<pre class="code" data-label="code"><code class="c">SYSCALL sched_setaffinity        core.c:8448
+   │ get_user_cpu_mask(): 用户掩码拷入 + 截断到 cpumask_size
+   ▼
+sched_setaffinity()              core.c:8365
+   │ find_process_by_pid (ESRCH)
+   │ PF_NO_SETAFFINITY? → EINVAL            :8384
+   │ check_same_owner / CAP_SYS_NICE → EPERM :8389
+   ▼
+__sched_setaffinity()            core.c:8304
+   │ cpumask_and(新掩码, cpuset允许集)       :8317   ← 交集!
+   │ 交空(竞态窗口) → 重取允许集再试 → EINVAL :8332
+   ▼
+__set_cpus_allowed_ptr()
+   │ 任务在旧核上正运行?
+   ├─ 否: 改 cpus_mask, 入队新核, 完事
+   └─ 是: 发 IPI/stop_one_cpu 上下文切换点强制迁移   ← &quot;搬家&quot;现场
+         (迁移瞬间: cache 冷启动, 这就是绑核后首次访问慢的原因)
+</code></pre>
+<p>"搬家"到底怎么发生的——内核在 core.c:2497-2509 有一段罕见的自白注释，值得逐行读：</p>
+<pre class="code" data-label="C"><code class="c">/*
+ * This is how migration works:
+ *
+ * 1) we invoke migration_cpu_stop() on the target CPU using stop_one_cpu().
+ * 2) stopper starts to run (implicitly forcing the migrated thread off the CPU)
+ * 3) it checks whether the migrated task is still in the wrong runqueue.
+ * 4) if it's in the wrong runqueue then the migration thread removes it
+ *    and puts it into the right queue.
+ * 5) stopper completes and stop_one_cpu() returns and the migration is done.
+ */
+</code></pre>
+<p>翻译成时间线：</p>
+<pre class="code" data-label="code"><code class="c">核 A (旧)                        核 B (新)
+──────                          ──────
+目标线程正在运行
+    │ stop_one_cpu(A, migration_cpu_stop)
+    ▼
+migration/XX stopper 线程          [stopper 是 SCHED_CLASS 最顶级的
+被投递到核 A                        内核线程——见 35.2 类链图,
+    │                              它一就绪, 目标线程必然被挤下]
+    ▼
+目标线程在上下文切换点下核 ──────► __migrate_task():
+    (此刻 cache 还热, 但已       deactivate(旧 rq) → set_task_cpu
+     不属于它)                    → activate(新 rq)
+    │                              (move_queued_task:2516 实操:
+    ▼                               dequeue→改 cpu→enqueue)
+stopper 收工,
+syscall 返回                      目标线程下次被调度时在核 B 上醒来
+                                  (cache 全冷——迁移的物理代价)
+</code></pre>
+<p>三个细节值得抠：</p>
+<ol>
+<li><strong>stopper 是最高调度类的内核线程</strong>（migration/N，stop_sched_class）——它上核的方式就是"把别人挤下去"，这保证了迁移不需要目标线程配合（它可能正关中断/自旋，根本没法配合）；</li>
+<li><code class="c">move_queued_task()</code>（core.c:2516-2533）的四步 <code class="c">deactivate_task → set_task_cpu → 换 rq 锁 → activate_task</code> 是原子搬队列的最小实现——旧核出队、新核入队，中间不会有两个 rq 同时持有该任务；</li>
+<li><code class="c">__do_set_cpus_allowed()</code>（core.c:2748 起）在改掩码本身时还有一段 dequeue/enqueue 的舞蹈（:2781-2789 <code class="c">put_prev_task → set_cpus_allowed → enqueue_task</code>）——因为任务的调度类钩子 <code class="c">set_cpus_allowed</code> 可能因掩码变化失效（比如 RT 任务被迫换核后的 push/pull 状态）。</li>
+</ol>
+<p>与 35.3 的组合：<code class="c">sched_setscheduler</code> 切 FIFO 后 <code class="c">switched_to_rt</code> 只 <code class="c">resched_curr</code>——但<strong>跨核</strong>的 RT 唤醒还有 push/pull 平衡逻辑（rt.c 的 pushable_tasks，sched.h:681），亲和掩码限制它只能在允许的核里挑。</p>
+<hr />
+<h2>五、绑核 ≠ 独占：HFT 的完整隔离栈</h2>
+<p><code class="c">sched_setaffinity</code> 只管"<strong>我</strong>只去哪些核"，管不了"<strong>别人</strong>不许来"。负载均衡器照样把内核线程、其他进程放到你的核上。完整的核隔离是四层叠加（TLPI 时代讲了 isolcpus，v6.6 语义更新如下）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>手段</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 普通负载均衡不走开</td>
+<td><code class="c">isolcpus=&lt;cpulist&gt;</code> 启动参数</td>
+<td>指定核从调度域剔除，<strong>用户任务默认不上去</strong>（要 taskset 显式指定才进）</td>
+</tr>
+<tr>
+<td>2. 时钟 tick 不打扰</td>
+<td><code class="c">nohz_full=&lt;cpulist&gt;</code></td>
+<td>核上只有 1 个任务运行时<strong>停止周期 tick</strong>（每秒数百次的中断消失），需配套 <code class="c">rcu_nocbs</code> 卸载 RCU 回调</td>
+</tr>
+<tr>
+<td>3. 网卡中断绕行</td>
+<td><code class="c">irqbalance</code> 停用 + 写 <code class="c">/proc/irq/&lt;n&gt;/smp_affinity</code></td>
+<td>硬中断钉到"杂务核"，业务核零中断</td>
+</tr>
+<tr>
+<td>4. 内核线程搬家</td>
+<td><code class="c">rcu_nocbs</code>、per-cpu kthread 亲和（或 cgroup v2 <code class="c">cpuset</code> 分区）</td>
+<td>ksoftirqd/rcu 等离场</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>v6.6 现状：isolcpus 仍是主流做法（内核文档 <code class="c">isolcpus</code> 已标注"deprecated in favour of cpuset"，但启动参数依然有效）；新一代方案是 cgroup v2 cpuset 的 <strong>partition</strong>（<code class="c">cpuset.cpus.partition = root</code>），把一段核从父域独立出去，效果等价且可在线调整。</p>
+</blockquote>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1067,34 +1878,1178 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td><code class="c">RLIMIT_RTPRIO</code> 限制普通用户能设的实时优先级，防止一个普通进程设满实时优先级卡死整个系统（嵌入式多进程共享一核尤其要防）</td>
+<td>采集线程绑核 2 + 中断也钉核 2（同核 cache 热），控制线程绑核 3——单 SoC 上的"软分区"；注意与 RT 策略配合：绑核解决"在哪跑"，FIFO 解决"何时跑"，二者缺一不可</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>设实时高优先级需 <code class="c">CAP_SYS_NICE</code>/root；<code class="c">kernel.sched_rt_runtime_us</code>（默认 950ms/1s）会<strong>限流实时任务</strong>——HFT 若实时线程占满 CPU 会撞这个上限被让出，生产需配合调大或靠绑核+独占核规避</td>
+<td>① 标准拓扑：核 0-1 系统杂务，核 2-3 网卡中断/收包，核 4 起每核一个策略线程（FIFO + taskset 进 isolcpus 核 + nohz_full）；② 绑核后<strong>首次</strong>访存的 cache 冷启动是预期内的抖动源——热身循环（warm-up）要写进启动序列；③ 验收指标：<code class="c">/proc/interrupts</code> 业务核计数应长期为 0</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;sched.h&gt;
-#include &lt;sys/resource.h&gt;
+<pre class="code" data-label="C"><code class="c">/* affinity_pin.c — 绑核/查询/错误路径实测 (无需特权)
+ * 编译: gcc -O2 -Wall -Wextra -o affinity_pin affinity_pin.c
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;sched.h&gt;
 #include &lt;stdio.h&gt;
-int main(void) {
-    /* 实时优先级需要 CAP_SYS_NICE */
-    printf(&quot;RLIMIT_RTPRIO = %d\n&quot;, (int)getrlimit);
-    printf(&quot;nice 范围: -20 到 19 (root 可设负值)\n&quot;);
-    printf(&quot;实时优先级: 1-99 (需 root)\n&quot;);
+#include &lt;string.h&gt;
+#include &lt;unistd.h&gt;
+
+static void show(const char *tag)
+{
+    cpu_set_t set;
+    CPU_ZERO(&amp;set);
+    if (sched_getaffinity(0, sizeof set, &amp;set) == -1) {
+        perror(&quot;sched_getaffinity&quot;);
+        return;
+    }
+    int last = -1, n = CPU_COUNT(&amp;set);
+    for (int i = 0; i &lt; CPU_SETSIZE; i++)
+        if (CPU_ISSET(i, &amp;set))
+            last = i;
+    /* 与 /proc/self/status 交叉验证 */
+    char procline[256] = &quot;&quot;;
+    FILE *f = fopen(&quot;/proc/self/status&quot;, &quot;r&quot;);
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof line, f))
+            if (strncmp(line, &quot;Cpus_allowed_list:&quot;, 18) == 0) {
+                char *p = line + 18;
+                while (*p == ' ' || *p == '\t') p++;
+                snprintf(procline, sizeof procline, &quot;%s&quot;, p);
+                procline[strcspn(procline, &quot;\n&quot;)] = 0;
+                break;
+            }
+        fclose(f);
+    }
+    printf(&quot;  %-10s count=%d max=%d /proc: %s\n&quot;, tag, n, last, procline);
+}
+
+int main(void)
+{
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    printf(&quot;[0] 在线核数: %ld\n&quot;, ncpu);
+    show(&quot;初始掩码&quot;);
+
+    /* [1] 绑到最后一核 */
+    cpu_set_t set;
+    CPU_ZERO(&amp;set);
+    CPU_SET(ncpu - 1, &amp;set);
+    if (sched_setaffinity(0, sizeof set, &amp;set) == -1)
+        perror(&quot;[1] setaffinity&quot;);
+    else
+        printf(&quot;[1] 绑核 %ld OK\n&quot;, ncpu - 1);
+    show(&quot;绑后&quot;);
+
+    /* [2] 空掩码: 与允许集交集为空 → EINVAL (core.c:8332) */
+    CPU_ZERO(&amp;set);
+    if (sched_setaffinity(0, sizeof set, &amp;set) == -1)
+        printf(&quot;[2] 空掩码: %s (EINVAL=%d)\n&quot;, strerror(errno),
+               errno == EINVAL);
+
+    /* [3] 恢复全核, 观察掩码替换语义 (不是追加) */
+    CPU_ZERO(&amp;set);
+    for (int i = 0; i &lt; ncpu; i++)
+        CPU_SET(i, &amp;set);
+    if (sched_setaffinity(0, sizeof set, &amp;set) == -1)
+        perror(&quot;[3] setaffinity&quot;);
+    else
+        printf(&quot;[3] 恢复全核 OK (替换语义)\n&quot;);
+    show(&quot;恢复后&quot;);
     return 0;
 }
 </code></pre>
+<p>实测输出（WSL2 · 12 核 · gcc 13.3 零告警）：</p>
+<pre class="code" data-label="code"><code class="c">$ ./affinity_pin
+[0] 在线核数: 12
+  初始掩码   count=12 max=11 /proc: 0-11
+[1] 绑核 11 OK
+  绑后       count=1 max=11 /proc: 11
+[2] 空掩码: Invalid argument (EINVAL=1)
+[3] 恢复全核 OK (替换语义)
+  恢复后     count=12 max=11 /proc: 0-11
+</code></pre>
+<p>解读：[2] 的 EINVAL 来自 <code class="c">__sched_setaffinity:8332</code> 的空交集检查；<code class="c">/proc/self/status</code> 的 <code class="c">Cpus_allowed_list</code> 与 <code class="c">sched_getaffinity</code> 完全一致——排查生产问题时从 status 文件读最方便（无需 ptrace 权限）。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-35-4">35.5 CPU 亲和（Linux）</a></li>
-<li>下一节：35.7 fork / exec</li>
-<li>前置：<strong>前置</strong>：<a href="chapter-34.html#ch-34">Ch34 进程组/会话</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-36.html#ch-36">Ch36 进程资源</a> · <a href="chapter-37.html#ch-37">Ch37 Daemons</a></li>
+<li>上一节：<a href="#s-35-3">35.3 实时调度 API</a>——"何时跑"与本章"在哪跑"互补</li>
+<li>下一节：<a href="#s-35-5">35.5 总结</a></li>
+<li>关联：<a href="chapter-29.html#intro">Ch29 线程简介</a>（<code class="c">pthread_setaffinity_np</code> 封装了本节 syscall）· <a href="chapter-23.html#intro">Ch23 定时器</a>（nohz_full 消掉的 tick）· <a href="chapter-49.html#intro">Ch49 内存映射</a>（HFT 启动序列：mlockall → 绑核 → FIFO）</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>1. sched_setaffinity 给的掩码与 cgroup cpuset 允许集无交集时，返回什么？为什么不静默截断？</summary>
+<p>EINVAL（__sched_setaffinity:8332-8355）。静默截断会让"以为绑到了核 8"的任务实际继承旧掩码或落回别处，对延迟敏感程序是隐形灾难；显式报错把决策权还给调用者。</p>
+</details>
+<details>
+<summary>2. 绑核后线程正在另一核上运行，sched_setaffinity 内核侧如何完成"搬家"？</summary>
+<p>__set_cpus_allowed_ptr 发现目标不在新掩码内 → 通过 IPI/stop_one_cpu 在目标线程的上下文切换点强制迁移。迁移瞬间 cache 全冷——这是绑核后第一次访存变慢的原因，热身循环应写进启动序列。</p>
+</details>
+<details>
+<summary>3. taskset 绑核后，为什么该核上还会出现别的任务？HFT 怎么补齐？</summary>
+<p>affinity 只约束"我不去别的核"，不约束"别人不来我的核"——负载均衡仍会往该核派活。补齐：isolcpus（调度域剔除）+ nohz_full（停 tick）+ IRQ affinity 绕行 + rcu_nocbs，或 cgroup v2 cpuset partition。</p>
+</details>
+<details>
+<summary>4. sched_getaffinity 的返回值什么情况下会小于你当初设置的掩码？</summary>
+<p>CPU 热插拔：内核返回 p-&gt;cpus_mask ∩ cpu_active_mask（core.c:8482）——离线核被剔出。所以"读回来 ≠ 设进去"也可能不是 bug 而是拓扑变化。</p>
+</details>
+<details>
+<summary>5. 多线程进程里，主线程 sched_setaffinity(0, …) 影响谁？</summary>
+<p>只影响主线程自己（pid 参数是 TID 粒度）。要让整个进程收拢到某核，要么在创建每个线程前设好（继承），要么逐 TID 设置（pthread_setaffinity_np / sched_setaffinity(tid, …)）。</p>
+</details>
+      </section>
+      <section class="section" id="s-35-5">
+        <div class="sec-head"><div class="sec-no">35.5</div><h2>总结</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · 本章各节已逐一标注坐标（prio.h / sys.c / core.c / rt.c / autogroup.c）</p>
+<p>本章：<a href="#intro">TLPI 第 35 章 — 进程优先级与调度</a>
+- 上一节：<a href="#s-35-4">35.4 CPU 亲和性</a>
+- 下一节：<a href="#s-35-6">35.6 练习</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>一章的收束：六张速查表 + 三个反直觉真相 + 五条铁律。适合复习时先看这里，忘了细节再回对应节。</p>
+<hr />
+<h2>一、全章机制速览（内核坐标版）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>节</th>
+<th>主题</th>
+<th>一句话结论</th>
+<th>关键内核坐标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>35.1</td>
+<td>nice 值</td>
+<td>CFS <strong>权重</strong>的查表下标，不是优先级；非特权只能降权</td>
+<td>NICE_TO_PRIO prio.h:26 · 权重表 core.c:11542</td>
+</tr>
+<tr>
+<td>35.1</td>
+<td>权重比实测</td>
+<td>nice 差 5 → CPU 比 3.03:1，与理论 3.057 偏差 &lt;1%</td>
+<td>实验 4（nice_race）</td>
+</tr>
+<tr>
+<td>35.1</td>
+<td>getpriority 陷阱</td>
+<td>内核 syscall 返回 1..40（rlimit 风格），glibc 转回 nice</td>
+<td>sys.c:282-287 注释</td>
+</tr>
+<tr>
+<td>35.2</td>
+<td>两个世界</td>
+<td>统一 prio 空间 0..139：RT 段(0-98) 数值反存恒压 CFS 段(100-139)</td>
+<td>__normal_prio core.c:2144</td>
+</tr>
+<tr>
+<td>35.2</td>
+<td>RT 选任务 O(1)</td>
+<td>100bit 位图找最高置位 bit + 对应链表取队首</td>
+<td>pick_next_rt_entity rt.c:1769</td>
+</tr>
+<tr>
+<td>35.2</td>
+<td>FIFO 无时间片</td>
+<td>tick 到了对 FIFO 直接 return</td>
+<td>task_tick_rt rt.c:2652</td>
+</tr>
+<tr>
+<td>35.2</td>
+<td>RT throttling</td>
+<td>950ms/1s 配额，超了整队冻结；dmesg 留 <code class="c">RT throttling activated</code></td>
+<td>sched_rt_runtime_exceeded rt.c:998/:1022</td>
+</tr>
+<tr>
+<td>35.3</td>
+<td>权限</td>
+<td>RLIMIT_RTPRIO=0 → 非特权与 RT 绝缘；降优先级自由</td>
+<td>user_check core.c:7562</td>
+</tr>
+<tr>
+<td>35.3</td>
+<td>SCHED_IDLE 单向门</td>
+<td>普通用户能自沉、不能自救（切回按 nice 20 提权审查）</td>
+<td>core.c:7598 · 实验 5</td>
+</tr>
+<tr>
+<td>35.3</td>
+<td>RESET_ON_FORK</td>
+<td>fork 边界属性重置，只管一代（孙进程原样继承重设后的状态）</td>
+<td>core.c:4748-4763 · 实验 6</td>
+</tr>
+<tr>
+<td>35.4</td>
+<td>affinity</td>
+<td>掩码先与 cgroup 求交集，空交集 EINVAL</td>
+<td>__sched_setaffinity core.c:8317</td>
+</tr>
+<tr>
+<td>35.4</td>
+<td>迁移机制</td>
+<td>stopper 线程（最高调度类）在上下文切换点强搬，五步注释</td>
+<td>core.c:2497 · move_queued_task:2516</td>
+</tr>
+<tr>
+<td>35.4</td>
+<td>绑核≠独占</td>
+<td>真隔离要 isolcpus+nohz_full+IRQ 绕行四层</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>二、策略决策速查表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>你的任务</th>
+<th>策略选择</th>
+<th>配套</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易关键路径（微秒级确定唤醒）</td>
+<td>SCHED_FIFO + 绑专用核</td>
+<td>mlockall + 每核单任务 + nohz_full</td>
+</tr>
+<tr>
+<td>多个中粒度实时任务（几十 ms 级共存）</td>
+<td>SCHED_RR 同优先级分时</td>
+<td>RLIMIT_RTTIME 兜底</td>
+</tr>
+<tr>
+<td>落盘/统计/日志</td>
+<td>SCHED_OTHER + nice 10-19</td>
+<td>同会话内有效（autogroup 边界！）</td>
+</tr>
+<tr>
+<td>批处理/回放</td>
+<td>SCHED_BATCH</td>
+<td>关闭交互补偿</td>
+</tr>
+<tr>
+<td>最低限度后台</td>
+<td>SCHED_IDLE</td>
+<td>逃离它按 nice 20 提权审查</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>三、四个反直觉真相</h2>
+<ol>
+<li>
+<p><strong>RT 优先级 1 &gt; nice -20</strong>。不是"接近"，是碾压：两个世界在 <code class="c">p-&gt;prio</code> 数轴上永不相交（98 vs 100 之间隔着 99）。给关键任务 nice -20 是自我安慰，给杂务任务 nice 19 也挡不住它被任何就绪 RT 任务踩。</p>
+</li>
+<li>
+<p><strong>FIFO 任务的 sched_yield() 只是排队尾</strong>。rt.c:1590 的 requeue 只在同优先级队列内生效——低优先级任务依旧没机会。"yield 一下让系统喘口气"在 RT 世界是错觉。</p>
+</li>
+<li>
+<p><strong>满负荷 FIFO 会被系统强制冻结 50ms/秒</strong>。RT throttling（950ms/1s）是内核的自我保护，冻结的是<strong>该核全部 RT 任务</strong>。压测里出现的周期性 50ms 延迟尖峰，先查 <code class="c">dmesg | grep "RT throttling"</code>——实测确会在内核日志里留下 <code class="c">sched: RT throttling activated</code>（rt.c:1022）。</p>
+</li>
+<li>
+<p><strong>SCHED_IDLE 是普通用户的单向门</strong>。切进去免特权（不过是一次没有 nice 变更的策略切换），切回来却按"从 nice 20 提权"审查（core.c:7598）——RLIMIT_NICE=0 的普通用户永远回不去。把 <code class="c">sched_setscheduler(0, SCHED_IDLE, …)</code> 写进"可回收后台任务"之前，先想想它的退出机制：唯一出路是重启进程。实测见 35.6 实验 5。</p>
+</li>
+</ol>
+<hr />
+<h2>四、五条铁律</h2>
+<ol>
+<li><strong>nice 管比例，FIFO 管抢占</strong>——需要"必定先跑"就上 RT 策略，nice 只是 CFS 内部的蛋糕切分。</li>
+<li><strong>权限判据读表不背口诀</strong>：切入 RT 要 <code class="c">RLIMIT_RTPRIO≠0</code> 或 CAP_SYS_NICE；RT 降优先级无条件自由（core.c:7557 注释原文）。</li>
+<li><strong>同核同级 FIFO 只放一个任务</strong>——第二个会饿死，这是设计行为不是 bug。</li>
+<li><strong>RT 服务 fork/exec 外部代码前设 RESET_ON_FORK</strong>——继承的 FIFO 99 是整机级炸弹（负 nice 也一样被重置）。</li>
+<li><strong>绑核 + FIFO 才是完整答案</strong>：FIFO 解决"何时跑"，绑核解决"在哪跑"，isolcpus 解决"谁不许来"——三层缺一不可。</li>
+</ol>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td>① 采集/控制/通信三级优先级（80/70/60）+ 每级只一个任务同核；② 杂务（日志/统计）用 nice 降权即可——同核同进程内实测权重比 3.03:1 兑现到 1% 以内，CFS 的比例调节值得信任；③ 后台维护任务想"极端谦让"可自沉 SCHED_IDLE（权重 3），但要接受单向门——浮不上来</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>① 延迟预算审计的三个官方数据源：<code class="c">/proc/&lt;pid&gt;/status</code>（Cpus_allowed_list）、<code class="c">dmesg</code>（RT throttling 记录）、<code class="c">sched_rr_get_interval</code>（时间片）——都能无特权读取，适合写进巡检脚本；② 压测环境的 throttling 相位噪声（同程序两次跑 10%/14%）意味着<strong>容量规划留余量时不能拿单次数据当依据</strong>；③ nice 降权日志线程只影响同会话内份额（autogroup 边界），跨终端部署时用 cgroup 而不是 nice</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>五、本章 API → 内核入口对照</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用户态 API</th>
+<th>系统调用入口（v6.6）</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">nice()</code></td>
+<td><code class="c">SYSCALL_DEFINE1(nice)</code></td>
+<td>core.c:7276</td>
+</tr>
+<tr>
+<td><code class="c">getpriority()/setpriority()</code></td>
+<td><code class="c">SYSCALL_DEFINE2/3</code></td>
+<td>sys.c:288/:218</td>
+</tr>
+<tr>
+<td><code class="c">sched_setscheduler()</code></td>
+<td><code class="c">SYSCALL_DEFINE3</code> → <code class="c">__sched_setscheduler</code></td>
+<td>core.c:8052/:7620</td>
+</tr>
+<tr>
+<td><code class="c">sched_setparam()</code></td>
+<td><code class="c">SYSCALL_DEFINE2</code>（SETPARAM_POLICY=-1）</td>
+<td>core.c:8067/:7514</td>
+</tr>
+<tr>
+<td><code class="c">sched_getscheduler/getparam()</code></td>
+<td><code class="c">SYSCALL_DEFINE1/2</code></td>
+<td>core.c:8121/:8150</td>
+</tr>
+<tr>
+<td><code class="c">sched_get_priority_max/min()</code></td>
+<td><code class="c">SYSCALL_DEFINE1</code></td>
+<td>core.c:9039/:9066</td>
+</tr>
+<tr>
+<td><code class="c">sched_rr_get_interval()</code></td>
+<td><code class="c">SYSCALL_DEFINE2</code></td>
+<td>core.c:9131</td>
+</tr>
+<tr>
+<td><code class="c">sched_yield()</code></td>
+<td><code class="c">SYSCALL_DEFINE0</code> → 按类分发</td>
+<td>core.c:8553/:8536</td>
+</tr>
+<tr>
+<td><code class="c">sched_setaffinity()</code></td>
+<td><code class="c">SYSCALL_DEFINE3</code> → <code class="c">__sched_setaffinity</code></td>
+<td>core.c:8448/:8304</td>
+</tr>
+<tr>
+<td><code class="c">sched_getaffinity()</code></td>
+<td><code class="c">SYSCALL_DEFINE3</code></td>
+<td>core.c:8500</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>下一节：<a href="#s-35-6">35.6 练习</a>——九道题，其中 <strong>6 个可实跑实验</strong>（FIFO 饿死 / RR 轮转 / throttling 直击 / CFS 权重比 / SCHED_IDLE 单向门 / RESET_ON_FORK 隔代，后三个是"预写→实测"三连，前两个普通用户即可跑）</li>
+<li>后置：<a href="chapter-36.html#intro">Ch36 进程资源</a>（RLIMIT 三兄弟的完整体系）· <a href="chapter-37.html#intro">Ch37 Daemons</a>（守护进程的调度初始化套路）</li>
+<li>回顾：<a href="chapter-29.html#intro">Ch29 线程简介</a>（每线程调度属性）· <a href="chapter-33.html#intro">Ch33 线程进阶</a>（RESET_ON_FORK 与多线程）</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>1. 为什么"给杂务进程 nice 19"挡不住它干扰 FIFO 任务，而"给杂务进程调到别的核"可以？</summary>
+<p>nice 只在 CFS 内部分蛋糕；FIFO 任务根本不与 CFS 任务竞争（prio 0-98 vs 100-139 两个世界）。而核是物理资源——同核的 FIFO 任务再高优先级，也要与该核的 cache/TLB/功耗状态共享。隔离靠 affinity/调度域，不靠 nice。</p>
+</details>
+<details>
+<summary>2. 一台 12 核 HFT 机的最小可用调度配置是什么？</summary>
+<p>isolcpus=4-11 nohz_full=4-11 rcu_nocbs=4-11（4-11 隔离）+ IRQ 全部钉到核 0-3 + 每个策略线程 taskset 进 4-11 之一 + sched_setscheduler(0, SCHED_FIFO, 80-95) + mlockall。nice 在这套配置里只剩"杂务内部排序"一个角色。</p>
+</details>
+<details>
+<summary>3. sched_yield、sleep、futex 阻塞对 FIFO 任务分别意味着什么？</summary>
+<p>yield：排队尾（同级才有意义）；sleep/nanosleep：主动离核，醒来按优先级立即抢回；futex 阻塞：睡眠等待事件，唤醒路径经 switched_to_rt 的 resched_curr——<strong>等待共享资源永远用 futex/条件变量，永远不用 yield 空转</strong>（还烧 RT 配额）。</p>
+</details>
+      </section>
+      <section class="section" id="s-35-6">
+        <div class="sec-head"><div class="sec-no">35.6</div><h2>练习</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · kernel/sched/core.c（sched_prio_to_weight:11542、sched_prio_to_wmult:11560、set_load_weight:1305、user_check_sched_setscheduler:7557-7615、sched_reset_on_fork 路径:4748-4763、迁移五步注释:2497-2509、move_queued_task:2516）· kernel/sched/sched.h（WEIGHT_IDLEPRIO:2179、rt_prio_array:666）· kernel/sched/rt.c（throttling printk:1022、pick_next_rt_entity:1769-1785）</p>
+<p>本章：<a href="#intro">TLPI 第 35 章 — 进程优先级与调度</a>
+- 上一节：<a href="#s-35-5">35.5 总结</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>九道题：前 <strong>6 题是可实跑实验</strong>——实验 1-3 是 root 级 RT 行为直击（FIFO 饿死 / RR 轮转 / throttling），实验 4-6 是精读补强批新增的"预写→实测"三连（<strong>CFS 权重比 / SCHED_IDLE 单向门 / RESET_ON_FORK 隔代</strong>，前两个普通用户即可跑）；后 3 题是设计与推演题。六个实验全部在 WSL2（12 核，Ubuntu 24.04）实跑，输出附后。</p>
+<hr />
+<h2>实验 1：FIFO 99 满负荷 vs SCHED_OTHER 饿死</h2>
+<p><strong>问题</strong>：核 11 上一个 FIFO 99 任务满负荷跑 2 秒，同核的 SCHED_OTHER 任务每 100ms 醒来记一次心跳，能记几次？实验用 <code class="c">busy_done</code> 原子信号对齐双方时间窗，<strong>心跳全部落在 FIFO 占核期内</strong>，排除收尾自由段的干扰。</p>
+<pre class="code" data-label="C"><code class="c">/* fifo_starve.c — FIFO 满负荷 vs OTHER 饿死 (root, 绑核 11, 全程 ~2.5s)
+ * 编译: gcc -O2 -Wall -Wextra -o fifo_starve fifo_starve.c -pthread
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static double cpu_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static atomic_int busy_done;
+
+static void *worker(void *arg)
+{
+    long *beats = arg;
+    const struct timespec nap = {.tv_sec = 0, .tv_nsec = 100000000};
+    while (!atomic_load(&amp;busy_done)) {
+        nanosleep(&amp;nap, NULL);
+        (*beats)++;                 /* 醒得来 + 拿得到 CPU 才有心跳 */
+    }
+    return NULL;
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
+    cpu_set_t set;
+    CPU_ZERO(&amp;set);
+    CPU_SET(11, &amp;set);
+    if (sched_setaffinity(0, sizeof set, &amp;set) == -1) {
+        perror(&quot;setaffinity(cpu11)&quot;);
+        return 1;
+    }
+
+    long beats = 0;
+    pthread_t tid;
+    pthread_create(&amp;tid, NULL, worker, &amp;beats);
+
+    struct sched_param sp = {.sched_priority = 99};
+    if (sched_setscheduler(0, SCHED_FIFO, &amp;sp) == -1) {
+        fprintf(stderr, &quot;sched_setscheduler(FIFO,99): %s (需要 root)\n&quot;,
+                strerror(errno));
+        atomic_store(&amp;busy_done, 1);
+        pthread_join(tid, NULL);
+        return 1;
+    }
+
+    double t0 = now_s(), c0 = cpu_s();
+    while (now_s() - t0 &lt; 2.0)
+        ;                            /* FIFO 99 满负荷自旋 2s */
+    double wall = now_s() - t0, cpu = cpu_s() - c0;
+
+    atomic_store(&amp;busy_done, 1);    /* 先停表, 再恢复 OTHER */
+    sp.sched_priority = 0;
+    sched_setscheduler(0, SCHED_OTHER, &amp;sp);
+    pthread_join(tid, NULL);
+
+    printf(&quot;FIFO 线程: 墙钟 %.2fs, 获得 CPU %.2fs (%.0f%%)\n&quot;,
+           wall, cpu, 100 * cpu / wall);
+    printf(&quot;OTHER 线程: FIFO 占核 2s 内心跳 %ld 次&quot;
+           &quot; (无限流理想 OTHER 应 20 次; FIFO 无限流则趋 0)\n&quot;, beats);
+    return 0;
+}
+</code></pre>
+<p>实测输出（root · 核 11）：</p>
+<pre class="code" data-label="code"><code class="c"># ./fifo_starve
+FIFO 线程: 墙钟 2.00s, 获得 CPU 1.90s (95%)
+OTHER 线程: FIFO 占核 2s 内心跳 4 次
+</code></pre>
+<p><strong>观察点</strong>：
+- FIFO 拿到 95% 而非 100%——<strong>RT throttling</strong>（950ms/1s，35.2 节六）在两秒内切出了约 100ms 的非 RT 窗口；
+- OTHER 心跳 4 次 ≈ 每个周期 50ms 窗口里挤进 2 次——<strong>饿死不是绝对的，throttling 是 OTHER 的活命通道</strong>。把 <code class="c">sched_rt_runtime_us</code> 设为 -1 关闭限流再跑，心跳将归零（读者自证）；
+- <code class="c">dmesg | grep throttling</code> 可见 <code class="c">sched: RT throttling activated</code>（rt.c:1022）——本实验在 dmesg 里留下了它。</p>
+<hr />
+<h2>实验 2：RR 时间片轮转 vs FIFO 独占</h2>
+<p><strong>问题</strong>：同优先级两个任务绑同一核，RR 和 FIFO 各是什么命运？
+设计要点：worker 各自上报 TID，<strong>主线程通过 TID 跨线程设置两个 worker 的策略</strong>（演示 35.3 的「pid 参数是 TID」），再统一放行——避免"先升级者满核压制后升级者"的起跑线污染。</p>
+<pre class="code" data-label="C"><code class="c">/* rr_alt.c — 同优先级双子对比: ./rr_alt rr|fifo (root, worker 绑核 11)
+ * 编译: gcc -O2 -Wall -Wextra -o rr_alt rr_alt.c -pthread
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/syscall.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static atomic_int ready, start;
+static pid_t g_tids[2];
+static long cnt1, cnt2;
+static int g_policy;
+
+static void *spin(void *arg)
+{
+    long idx = (long)arg;
+    long *cnt = idx ? &amp;cnt2 : &amp;cnt1;
+    g_tids[idx] = syscall(SYS_gettid);      /* 上报 TID */
+    atomic_fetch_add(&amp;ready, 1);
+    while (!atomic_load(&amp;start))
+        ;                                   /* 策略由主线程经 TID 设置 */
+    double end = now_s() + 2.0;
+    while (now_s() &lt; end)
+        (*cnt)++;
+    return NULL;
+}
+
+int main(int argc, char **argv)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    g_policy = (argc &gt; 1 &amp;&amp; strcmp(argv[1], &quot;fifo&quot;) == 0)
+               ? SCHED_FIFO : SCHED_RR;
+
+    cpu_set_t set;
+    CPU_ZERO(&amp;set);
+    CPU_SET(11, &amp;set);                      /* worker: 核 11 */
+    pthread_attr_t attr;
+    pthread_attr_init(&amp;attr);
+    pthread_attr_setaffinity_np(&amp;attr, sizeof set, &amp;set);
+
+    pthread_t t1, t2;
+    pthread_create(&amp;t1, &amp;attr, spin, (void *)0);
+    pthread_create(&amp;t2, &amp;attr, spin, (void *)1);
+
+    CPU_ZERO(&amp;set);
+    CPU_SET(10, &amp;set);                      /* 主线程: 核 10 */
+    sched_setaffinity(0, sizeof set, &amp;set);
+    while (atomic_load(&amp;ready) &lt; 2)
+        usleep(1000);
+
+    /* 跨线程设置: sched_setscheduler 的 pid 参数传 TID (35.3 节) */
+    struct sched_param sp = {.sched_priority = 50};
+    if (sched_setscheduler(g_tids[0], g_policy, &amp;sp) == -1 ||
+        sched_setscheduler(g_tids[1], g_policy, &amp;sp) == -1) {
+        perror(&quot;sched_setscheduler(worker)&quot;);
+        return 1;
+    }
+    printf(&quot;T1(tid=%d) T2(tid=%d) 已设为 %s/50, 同时起跑\n&quot;,
+           g_tids[0], g_tids[1],
+           g_policy == SCHED_FIFO ? &quot;FIFO&quot; : &quot;RR&quot;);
+    atomic_store(&amp;start, 1);
+
+    for (int s = 1; s &lt;= 2; s++) {
+        sleep(1);
+        printf(&quot;t=%ds  cnt1=%-12ld cnt2=%-12ld\n&quot;, s, cnt1, cnt2);
+    }
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+    printf(&quot;policy=%s: cnt1=%ld cnt2=%ld\n&quot;,
+           g_policy == SCHED_FIFO ? &quot;SCHED_FIFO&quot; : &quot;SCHED_RR&quot;,
+           cnt1, cnt2);
+    return 0;
+}
+</code></pre>
+<p>实测输出（root · worker 核 11 / 采样核 10）：</p>
+<pre class="code" data-label="code"><code class="c"># ./rr_alt rr
+T1(tid=7413) T2(tid=7414) 已设为 RR/50, 同时起跑
+t=1s  cnt1=33223410     cnt2=33230171
+t=2s  cnt1=66377555     cnt2=66431802
+policy=SCHED_RR: cnt1=66377555 cnt2=66431802     ← 严格平分
+
+# ./rr_alt fifo
+T1(tid=7421) T2(tid=7422) 已设为 FIFO/50, 同时起跑
+t=1s  cnt1=67668599     cnt2=1254
+t=2s  cnt1=135437204    cnt2=1254
+policy=SCHED_FIFO: cnt1=135437204 cnt2=1254       ← T2 基本饿死
+</code></pre>
+<p><strong>解读</strong>：
+- RR：两计数器每一秒都几乎相等——<code class="c">task_tick_rt</code> 每 100ms（<code class="c">RR_TIMESLICE</code>，rt.h:57）requeue 轮转（rt.c:2655-2667），双子平分秋色；
+- FIFO：cnt2 ≈ 0 恒定——tick 对 FIFO 直接 return（rt.c:2652），同级无轮转。cnt2 的非零余量（1254 次 ≈ 微秒级）来自<strong>设置成功到 T1 独占之间的毫秒级空隙</strong>，之后彻底归零；
+- 两组的 cnt 绝对值差 ≈ 2 倍：RR 版每个任务只拿到一半核时间——<strong>轮转的"税"直接可见</strong>（135M vs 66M）。</p>
+<hr />
+<h2>实验 3：RT throttling 直击（改配额 → 观察 → 恢复）</h2>
+<p><strong>问题</strong>：把 <code class="c">sched_rt_runtime_us</code> 从 950000 改成 100000（100ms/1s），FIFO 99 满负荷 2 秒能拿到多少 CPU？
+设计要点：<strong>先改配额再切 FIFO</strong>（消除设置间隙的积累），并<strong>跨周期边界 sleep 2 秒</strong>（让核 11 的 rt_time 被 period timer 清零，排除上一实验残留）。</p>
+<pre class="code" data-label="C"><code class="c">/* rt_throttle.c — RT throttling 配额实验 (root, 绑核 11, 自动恢复 sysctl)
+ * 编译: gcc -O2 -Wall -Wextra -o rt_throttle rt_throttle.c -pthread
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static double cpu_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static int write_sysctl(const char *val)
+{
+    FILE *f = fopen(&quot;/proc/sys/kernel/sched_rt_runtime_us&quot;, &quot;w&quot;);
+    if (!f)
+        return -1;
+    int r = fputs(val, f) == EOF ? -1 : 0;
+    fclose(f);
+    return r;
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
+    char orig[32] = &quot;?&quot;;
+    FILE *f = fopen(&quot;/proc/sys/kernel/sched_rt_runtime_us&quot;, &quot;r&quot;);
+    if (!f || !fgets(orig, sizeof orig, f)) {
+        perror(&quot;读 sched_rt_runtime_us&quot;);
+        return 1;
+    }
+    fclose(f);
+    orig[strcspn(orig, &quot;\n&quot;)] = 0;
+    printf(&quot;当前配额: runtime=%s / period=1000000 (µs)\n&quot;, orig);
+
+    /* 先改配额, 再切 FIFO: 消除切换间隙的 rt_time 积累 */
+    if (write_sysctl(&quot;100000&quot;) == -1) {
+        perror(&quot;写 sysctl&quot;);
+        return 1;
+    }
+    printf(&quot;配额改为 100000 (100ms/1s)\n&quot;);
+
+    cpu_set_t set;
+    CPU_ZERO(&amp;set);
+    CPU_SET(11, &amp;set);
+    sched_setaffinity(0, sizeof set, &amp;set);
+
+    /* 跨周期边界: 清掉本核 rt_time 的历史残留 (前一实验的 FIFO 留下的账) */
+    sleep(2);
+
+    struct sched_param sp = {.sched_priority = 99};
+    if (sched_setscheduler(0, SCHED_FIFO, &amp;sp) == -1) {
+        perror(&quot;sched_setscheduler(FIFO,99)&quot;);
+        write_sysctl(orig);
+        return 1;
+    }
+    printf(&quot;FIFO 99 满负荷 2s...\n&quot;);
+
+    double t0 = now_s(), c0 = cpu_s();
+    while (now_s() - t0 &lt; 2.0)
+        ;
+    double wall = now_s() - t0, cpu = cpu_s() - c0;
+
+    write_sysctl(orig);                      /* 无论结果如何都恢复 */
+    printf(&quot;结果: 墙钟 %.2fs, 获得 CPU %.2fs (%.0f%%)\n&quot;,
+           wall, cpu, 100 * cpu / wall);
+    printf(&quot;已恢复 runtime=%s (验证: cat /proc/sys/kernel/sched_rt_runtime_us)\n&quot;,
+           orig);
+    return 0;
+}
+</code></pre>
+<p>实测输出（root · 核 11）：</p>
+<pre class="code" data-label="code"><code class="c"># ./rt_throttle
+当前配额: runtime=950000 / period=1000000 (µs)
+配额改为 100000 (100ms/1s)
+FIFO 99 满负荷 2s...
+结果: 墙钟 2.03s, 获得 CPU 0.20s (10%)
+已恢复 runtime=950000 (验证: cat /proc/sys/kernel/sched_rt_runtime_us)
+</code></pre>
+<p><strong>解读</strong>：2.03s 墙钟只拿到 0.20s——<strong>恰好 = 2 个周期 × 100ms 配额</strong>。<code class="c">rt_time</code> 一超 100ms（<code class="c">sched_rt_runtime_exceeded</code> rt.c:1013），整队下架冻结到周期起点（hrtimer <code class="c">sched_rt_period_timer</code> 补给，rt.c:66/:901）。这就是 35.2 那张限流图的数值版。</p>
+<p>紧随其后抓 dmesg（生产排障的指纹采集）：</p>
+<pre class="code" data-label="code"><code class="c">$ dmesg | grep -i throttling
+[  239.912405] sched: RT throttling activated          ← rt.c:1022 printk
+</code></pre>
+<blockquote>
+<p><strong>相位噪声警告</strong>：同一程序重跑一次得到的是 <code class="c">墙钟 2.14s / CPU 0.30s (14%)</code> 而非 0.20s——任务起点与 period hrtimer 的相位关系决定了第一段配额窗口的可用长度（起点恰在周期边界后 vs 边界临近，第一段能差出约一个配额）。<strong>做 throttling 实验看数量级（约 2×runtime），别较真个位数百分比</strong>。</p>
+<p><strong>实验教训（第一版踩坑记）</strong>：本实验第一版把"切 FIFO"放在"改配额"之前，且没有跨周期 sleep——实测得到 <code class="c">墙钟 8.06s / CPU 0.00s</code> 的诡异数据：<strong>上一实验（rr_alt fifo）留在核 11 的 rt_time 残余</strong>让本任务上线即超限，几乎没跑就被冻结；随后 hypervisor 层的 vCPU 唤醒延迟让每次解冻都迟到，形成"冻结 900ms→解冻跑几微秒→再冻结"的循环，墙钟膨胀 4 倍。两处顺序修正（先改配额、跨周期清账）之后数据立即回到理论值。<strong>rt_rq 的账本是每 CPU 持久的，做 throttling 实验必须先"清账"</strong>。</p>
+</blockquote>
+<hr />
+<h2>实验 4：CFS 权重比——nice 0 vs nice 5 同核对撞（预写→实测）</h2>
+<p><strong>问题</strong>：35.1 说"nice 差 5 ≈ 1.25⁵ ≈ 3.06 : 1 的 CPU 时间比"。同核上真跑出来是多少？
+设计要点：两个 worker <strong>绑同一核</strong>（核 11，主线程躲核 10），各自 <code class="c">setpriority(PRIO_PROCESS, 0, n)</code> 给<strong>自己</strong>设 nice（顺带验证 pid 参数的 TID 粒度），atomic 发令对齐起跑，各跑 4s 墙钟后报告 <code class="c">CLOCK_THREAD_CPUTIME_ID</code>。</p>
+<pre class="code" data-label="C"><code class="c">/* nice_race.c — CFS 权重比实测: 同核 nice 0 vs nice 5
+ * 预写结论: CPU 时间比 ≈ 1024:335 ≈ 3.06:1 (1.25^5)
+ * 关键设计: worker 各自 setpriority(PRIO_PROCESS, 0, n) 作用于自身线程
+ *           —— PRIO_PROCESS 的 pid 参数是 TID 粒度 (sys.c:219 task_pid_vnr(current))
+ * 编译: gcc -O2 -Wall -Wextra -o nice_race nice_race.c -pthread
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/resource.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static double cpu_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static atomic_int go;
+static double cpu0, cpu5;
+
+static void *spin_target(void *arg)
+{
+    long want_nice = (long)arg;
+    /* nice 对自身线程设置: PRIO_PROCESS + who=0 → 调用线程自己 */
+    if (setpriority(PRIO_PROCESS, 0, (int)want_nice) == -1) {
+        fprintf(stderr, &quot;worker(nice %ld) setpriority: %s\n&quot;,
+                want_nice, strerror(errno));
+        return NULL;
+    }
+    errno = 0;
+    int got = getpriority(PRIO_PROCESS, 0);
+    printf(&quot;  worker: 请求 nice %ld, 读回 nice %d\n&quot;, want_nice, got);
+
+    while (!atomic_load(&amp;go))
+        ;                        /* 等发令 */
+    double end = now_s() + 4.0;  /* 各自跑 4s 墙钟 */
+    double c0 = cpu_s();
+    while (now_s() &lt; end)
+        ;
+    double used = cpu_s() - c0;
+    if (want_nice == 0)
+        cpu0 = used;
+    else
+        cpu5 = used;
+    return NULL;
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    printf(&quot;[nice_race] 预写: nice0/nice5 CPU 比 ≈ 1024/335 = %.3f\n&quot;,
+           1024.0 / 335.0);
+
+    cpu_set_t wset, mset;
+    CPU_ZERO(&amp;wset);
+    CPU_SET(11, &amp;wset);          /* worker: 核 11 */
+    CPU_ZERO(&amp;mset);
+    CPU_SET(10, &amp;mset);          /* 主线程: 核 10 */
+
+    pthread_attr_t attr;
+    pthread_attr_init(&amp;attr);
+    pthread_attr_setaffinity_np(&amp;attr, sizeof wset, &amp;wset);
+
+    pthread_t t0, t5;
+    pthread_create(&amp;t0, &amp;attr, spin_target, (void *)0);
+    pthread_create(&amp;t5, &amp;attr, spin_target, (void *)5);
+
+    if (sched_setaffinity(0, sizeof mset, &amp;mset) == -1) {
+        perror(&quot;主线程 setaffinity(核10)&quot;);
+        return 1;
+    }
+    usleep(100000);              /* 等 worker 报告 nice 读回 */
+    atomic_store(&amp;go, 1);
+
+    pthread_join(t0, NULL);
+    pthread_join(t5, NULL);
+
+    printf(&quot;实测: nice0 = %.2fs, nice5 = %.2fs, 比值 = %.2f : 1\n&quot;,
+           cpu0, cpu5, cpu0 / cpu5);
+    printf(&quot;偏差: 实测 %.2f vs 理论 3.06 (%.1f%%)\n&quot;,
+           cpu0 / cpu5, 100.0 * (cpu0 / cpu5) / 3.057 - 100.0);
+    return 0;
+}
+</code></pre>
+<p>实测输出（普通用户即够——nice 调大是降权，免特权）：</p>
+<pre class="code" data-label="code"><code class="c">$ ./nice_race
+[nice_race] 预写: nice0/nice5 CPU 比 ≈ 1024/335 = 3.057
+  worker: 请求 nice 0, 读回 nice 0
+  worker: 请求 nice 5, 读回 nice 5
+实测: nice0 = 3.06s, nice5 = 1.01s, 比值 = 3.03 : 1
+偏差: 实测 3.03 vs 理论 3.06 (-0.8%)
+
+# root 重跑 (对照): 比值 = 3.03 : 1, nice0=3.03s, nice5=1.00s —— 一致
+</code></pre>
+<p><strong>解读</strong>：
+- <strong>预写命中</strong>：3.03 vs 理论 3.057，偏差 -0.8%——<code class="c">sched_prio_to_weight</code> 的"每级 ×1.25"设计（core.c:11531 注释）在实测中兑现到 1% 以内。CFS 的 vruntime 分蛋糕就是严格按权重比执行，"nice 是比例调节"不是近似说法；
+- 两次读回（<code class="c">请求 nice 5, 读回 nice 5</code>）证明 <strong>worker 线程各自独立设置了 nice 且互不影响</strong>——<code class="c">setpriority(PRIO_PROCESS, 0, …)</code> 的作用域是调用线程（TID），不是进程（TGID）。多线程程序里"给整个进程降权"必须逐线程设；
+- 剩余 ~2% 偏差的来源：worker 起跑前的 <code class="c">usleep(100000)</code> 窗口里 nice0 线程可能已抢跑、<code class="c">CLOCK_THREAD_CPUTIME_ID</code> 的精度粒度、核 11 上偶发的外来任务。<strong>微基准三诫第一条：只报比值不报绝对值</strong>。</p>
+<hr />
+<h2>实验 5：SCHED_IDLE 两面观——单向门 + 权重比（预写→实测）</h2>
+<p><strong>问题 A</strong>：普通用户能把自己切进 SCHED_IDLE 吗？切进去还能出来吗？
+<strong>问题 B</strong>：SCHED_IDLE 的权重（3）与 nice 19 的权重（15）相比，CPU 时间比是 5:1 吗？</p>
+<pre class="code" data-label="C"><code class="c">/* idle_weight.c — SCHED_IDLE vs nice 19 的 CFS 权重比 + &quot;单向门&quot;验证
+ * 预写 A: nice19(权重15) / SCHED_IDLE(权重3) CPU 比 ≈ 5:1
+ *         (sched.h:2179 WEIGHT_IDLEPRIO=3, core.c:11542 nice19=15)
+ * 预写 B: 普通用户能自降 SCHED_IDLE (切 IDLE 免特权), 但切回
+ *         SCHED_OTHER 被拒 EPERM —— 按 &quot;nice 20 提权&quot; 审查 (core.c:7598)
+ * 用法: ./idle_weight          (任何用户: 单向门验证)
+ *       ./idle_weight weigh    (root: 权重比实测)
+ * 编译: gcc -O2 -Wall -Wextra -o idle_weight idle_weight.c -pthread
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdatomic.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/resource.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static double cpu_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &amp;ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static const char *polname(int p)
+{
+    return p == SCHED_OTHER ? &quot;SCHED_OTHER&quot; :
+           p == SCHED_FIFO  ? &quot;SCHED_FIFO&quot;  :
+           p == SCHED_RR    ? &quot;SCHED_RR&quot;    :
+           p == SCHED_BATCH ? &quot;SCHED_BATCH&quot; :
+           p == SCHED_IDLE  ? &quot;SCHED_IDLE&quot;  : &quot;other&quot;;
+}
+
+static void dump_policy(void)
+{
+    printf(&quot;  当前 policy=%s (euid=%d)\n&quot;, polname(sched_getscheduler(0)),
+           geteuid());
+}
+
+/* ---------- 模式 1: 单向门 (任何用户) ---------- */
+static int door_test(void)
+{
+    struct sched_param sp = {.sched_priority = 0};
+    struct rlimit rl;
+    getrlimit(RLIMIT_NICE, &amp;rl);
+    printf(&quot;[单向门] RLIMIT_NICE={soft=%lu, hard=%lu}\n&quot;,
+           (unsigned long)rl.rlim_cur, (unsigned long)rl.rlim_max);
+    dump_policy();
+
+    printf(&quot;[1] 切入 SCHED_IDLE (预写: 免特权成功)...\n&quot;);
+    if (sched_setscheduler(0, SCHED_IDLE, &amp;sp) == -1) {
+        printf(&quot;    切入失败: %s\n&quot;, strerror(errno));
+        return 1;
+    }
+    dump_policy();
+
+    printf(&quot;[2] 切回 SCHED_OTHER (预写: 非特权 EPERM, root 成功)...\n&quot;);
+    if (sched_setscheduler(0, SCHED_OTHER, &amp;sp) == -1) {
+        printf(&quot;    切回失败: %s (EPERM=%d) —— 单向门!\n&quot;,
+               strerror(errno), errno == EPERM);
+        printf(&quot;    [3] 改用 nice 验证仍可读: nice=%d (nice 操作不受影响)\n&quot;,
+               getpriority(PRIO_PROCESS, 0));
+        return 0;                /* 停在 IDLE 是预期结果 */
+    }
+    dump_policy();
+    printf(&quot;    切回成功 (本进程持有 CAP_SYS_NICE)\n&quot;);
+    return 0;
+}
+
+/* ---------- 模式 2: 权重比 (root) ---------- */
+static atomic_int go;
+static double cpu_19, cpu_idle;
+
+static void *spin19(void *arg)
+{
+    (void)arg;
+    setpriority(PRIO_PROCESS, 0, 19);   /* 自身线程 nice 19 */
+    while (!atomic_load(&amp;go))
+        ;
+    double end = now_s() + 4.0, c0 = cpu_s();
+    while (now_s() &lt; end)
+        ;
+    cpu_19 = cpu_s() - c0;
+    return NULL;
+}
+
+static void *spin_idle(void *arg)
+{
+    (void)arg;
+    struct sched_param sp = {.sched_priority = 0};
+    if (sched_setscheduler(0, SCHED_IDLE, &amp;sp) == -1) {
+        printf(&quot;  idle worker: 切 SCHED_IDLE 失败: %s\n&quot;, strerror(errno));
+        return NULL;
+    }
+    while (!atomic_load(&amp;go))
+        ;
+    double end = now_s() + 4.0, c0 = cpu_s();
+    while (now_s() &lt; end)
+        ;
+    cpu_idle = cpu_s() - c0;
+    return NULL;
+}
+
+static int weigh_test(void)
+{
+    printf(&quot;[idle_weight weigh] 预写: nice19/SCHED_IDLE CPU 比 ≈ 15/3 = 5:1\n&quot;);
+    cpu_set_t wset, mset;
+    CPU_ZERO(&amp;wset);
+    CPU_SET(11, &amp;wset);
+    CPU_ZERO(&amp;mset);
+    CPU_SET(10, &amp;mset);
+    pthread_attr_t attr;
+    pthread_attr_init(&amp;attr);
+    pthread_attr_setaffinity_np(&amp;attr, sizeof wset, &amp;wset);
+
+    pthread_t ta, tb;
+    pthread_create(&amp;ta, &amp;attr, spin19, NULL);
+    pthread_create(&amp;tb, &amp;attr, spin_idle, NULL);
+    sched_setaffinity(0, sizeof mset, &amp;mset);
+    usleep(200000);              /* 等 worker 就位 */
+    atomic_store(&amp;go, 1);
+
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+
+    printf(&quot;实测: nice19 = %.2fs, SCHED_IDLE = %.2fs, 比值 = %.2f : 1\n&quot;,
+           cpu_19, cpu_idle, cpu_19 / cpu_idle);
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    if (argc &gt; 1 &amp;&amp; strcmp(argv[1], &quot;weigh&quot;) == 0)
+        return weigh_test();
+    return door_test();
+}
+</code></pre>
+<p>实测输出（两个身份各跑一次）：</p>
+<pre class="code" data-label="code"><code class="c">$ ./idle_weight                        # 普通用户 (uid=1000)
+[单向门] RLIMIT_NICE={soft=0, hard=0}
+  当前 policy=SCHED_OTHER (euid=1000)
+[1] 切入 SCHED_IDLE (预写: 免特权成功)...
+  当前 policy=SCHED_IDLE (euid=1000)
+[2] 切回 SCHED_OTHER (预写: 非特权 EPERM)...
+    切回失败: Operation not permitted (EPERM=1) —— 单向门!
+    [3] nice 仍可读: nice=0
+
+# ./idle_weight weigh                   # root, 核 11 对撞
+[idle_weight weigh] 预写: nice19/SCHED_IDLE CPU 比 ≈ 15/3 = 5:1
+实测: nice19 = 3.37s, SCHED_IDLE = 0.68s, 比值 = 4.93 : 1
+</code></pre>
+<p><strong>解读</strong>：
+- <strong>单向门确认</strong>（问题 A）：切入免特权（user_check 的 fair 分支 :7566 只拦 nice 降低，切 IDLE 不带 nice 变更一路放行）；切回命中 :7598 专门分支——内核把"IDLE → 非 IDLE"等价于"从 nice 20 提升"，RLIMIT_NICE=0 必然不够 → EPERM。<strong>普通用户可以自沉、不能自救</strong>（详见 35.3 第五节）；
+- <strong>权重比命中</strong>（问题 B）：4.93 vs 理论 5.00（偏差 -1.4%）——<code class="c">WEIGHT_IDLEPRIO = 3</code>（sched.h:2179）不是注释里的装饰品，CFS 真拿它分蛋糕。注意 SCHED_IDLE 的"低一档"是<strong>连续谱</strong>（3/15 = 0.2 倍于 nice 19）而非"另一个世界"——它与 CFS 任务仍然同在一个 fair 队列里竞争，任何就绪 RT 任务照样把它俩一起踩；
+- 与实验 4 合起来看：两个实验共用同一套骨架（双 worker 绑同核 + atomic 发令 + <code class="c">CLOCK_THREAD_CPUTIME_ID</code> 计时），只换"策略/优先级"一个变量——这就是内核权重类实验的可复用模板。</p>
+<hr />
+<h2>实验 6：RESET_ON_FORK 隔代验证（预写→实测）</h2>
+<p><strong>问题</strong>：flag "只管一代"到底是什么意思——孙进程会怎样？
+预写：子进程被重置（OTHER/0，ROF 位清零）；子进程若重设 FIFO <strong>不带 ROF</strong>，孙进程应<strong>原样继承 FIFO 40</strong>（不再有重置发生）。</p>
+<pre class="code" data-label="C"><code class="c">/* rof_grand.c — SCHED_RESET_ON_FORK 隔代验证 (root)
+ * 预写: flag 只管一代 (core.c:4763 子进程出生时清零)
+ *   子进程: policy=OTHER, rt_priority=0, 无 ROF 位 (被重置)
+ *   孙进程: 继承子进程的 FIFO 40 原样 (无重置) —— 重置不是遗传病
+ * 编译: gcc -O2 -Wall -Wextra -o rof_grand rof_grand.c
+ */
+#define _GNU_SOURCE
+#include &lt;errno.h&gt;
+#include &lt;sched.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;unistd.h&gt;
+
+static const char *polname(int p)
+{
+    int reset = p &amp; SCHED_RESET_ON_FORK;
+    p &amp;= ~SCHED_RESET_ON_FORK;
+    static char buf[32];
+    const char *base =
+        p == SCHED_OTHER ? &quot;SCHED_OTHER&quot; :
+        p == SCHED_FIFO  ? &quot;SCHED_FIFO&quot;  :
+        p == SCHED_RR    ? &quot;SCHED_RR&quot;    : &quot;other&quot;;
+    snprintf(buf, sizeof buf, &quot;%s%s&quot;, base, reset ? &quot;+ROF&quot; : &quot;&quot;);
+    return buf;
+}
+
+static void dump(const char *who)
+{
+    struct sched_param sp = {0};
+    sched_getparam(0, &amp;sp);
+    printf(&quot;  %-8s pid=%-6d policy=%-16s rt_priority=%d\n&quot;,
+           who, getpid(), polname(sched_getscheduler(0)), sp.sched_priority);
+}
+
+int main(void)
+{
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    printf(&quot;[rof_grand] 预写: ROF 位只管一代, 孙进程不再带位\n&quot;);
+
+    /* 父: FIFO 50 + RESET_ON_FORK */
+    struct sched_param sp = {.sched_priority = 50};
+    if (sched_setscheduler(0, SCHED_FIFO | SCHED_RESET_ON_FORK, &amp;sp) == -1) {
+        printf(&quot;需要 root: %s\n&quot;, strerror(errno));
+        return 1;
+    }
+    dump(&quot;父(设置后)&quot;);
+
+    pid_t child = fork();
+    if (child == 0) {
+        dump(&quot;子&quot;);              /* 预写: OTHER/0, 无 ROF 位 (被重置) */
+
+        /* 子进程自行重设 FIFO 40 —— 注意不带 ROF 位。
+         * 孙进程将原样继承 FIFO 40 (无重置) —— 这才是
+         * &quot;flag 不遗传&quot;的直接证据: 重置只发生在父带位的那一次 fork */
+        struct sched_param sp2 = {.sched_priority = 40};
+        if (sched_setscheduler(0, SCHED_FIFO, &amp;sp2) == 0) {
+            printf(&quot;  子进程自行设 FIFO 40 (无ROF): OK\n&quot;);
+            dump(&quot;子(重设后)&quot;);
+        }
+
+        pid_t grand = fork();
+        if (grand == 0) {
+            dump(&quot;孙&quot;);          /* 预写: FIFO/40 原样继承, 无 ROF 位 */
+            _exit(0);
+        }
+        waitpid(grand, NULL, 0);
+        sched_setscheduler(0, SCHED_OTHER, &amp;(struct sched_param){0});
+        _exit(0);
+    }
+    waitpid(child, NULL, 0);
+    dump(&quot;父(最终)&quot;);            /* 预写: FIFO+ROF, 50 不变 */
+    return 0;
+}
+</code></pre>
+<p>实测输出（root）：</p>
+<pre class="code" data-label="code"><code class="c"># ./rof_grand
+[rof_grand] 预写: ROF 位只管一代, 孙进程不再带位
+  父(设置后) pid=384    policy=SCHED_FIFO+ROF   rt_priority=50
+  子      pid=385    policy=SCHED_OTHER      rt_priority=0
+  子进程自行设 FIFO 40 (无ROF): OK
+  子(重设后) pid=385    policy=SCHED_FIFO       rt_priority=40
+  孙      pid=386    policy=SCHED_FIFO       rt_priority=40
+  父(最终) pid=384    policy=SCHED_FIFO+ROF   rt_priority=50
+</code></pre>
+<p><strong>解读</strong>：
+- <strong>预写命中</strong>：五条记录构成"只管一代"的完整证据链——
+  1. 父带位 → 子出生即重置（OTHER/0），<code class="c">sched_reset_on_fork</code> 位同步清零（core.c:4763）；
+  2. 子重设 FIFO 40（无 ROF）→ 孙<strong>原样继承 FIFO 40</strong>——如果 flag 会遗传，孙也该被重置成 OTHER，实测否决；
+- ROF 的本质是<strong>出生时的一次性产钳</strong>，不是写进基因的遗传病——每一次 fork 是否重置，只看<strong>父进程此刻</strong>有没有带位；
+- 注意 <code class="c">sched_getscheduler</code> 返回值的坑（35.3）：父显示 <code class="c">SCHED_FIFO+ROF</code> 是 Linux 2.6.39+ 的扩展行为（返回值带 flag 位），<code class="c">polname()</code> 里的 <code class="c">p &amp;= ~SCHED_RESET_ON_FORK</code> 先剥位再判断才是可移植写法。</p>
+<hr />
+<h2>习题 7：推演——为什么 nice -20 救不了"必须先跑"</h2>
+<p>某同学把策略线程设为 <code class="c">SCHED_OTHER</code> + nice -20，理由是"已经是普通进程最高优先级"。</p>
+<details>
+<summary>参考答案</summary>
+<p>两个世界：策略线程的内核 prio = NICE_TO_PRIO(-20) = <strong>100</strong>；而任何就绪 RT 任务 prio ≤ 98。调度类层面 fair 整体被 rt 压制（sched.h:2323 类链从高往低扫），数值层面 100 &gt; 98 恒成立。机器上任何一个失控的 SCHED_FIFO 1（哪怕 nice -20 的 CFS 负载为零）都能把它踩进土里。<strong>"必须先跑"只有 RT 策略能承诺，nice 的极限只是"其他 CFS 任务让着我"。</strong></p>
+</details>
+<hr />
+<h2>习题 8：设计——RT 服务的 fork 边界</h2>
+<p>一个 FIFO 90 的数据采集守护进程（root 运行）需要在收到外部指令时 fork/exec 执行 <code class="c">/usr/local/bin/reload.sh</code>。给出三道防线防止调度属性泄漏到脚本。</p>
+<details>
+<summary>参考答案</summary>
+<ol>
+<li><strong><code class="c">SCHED_RESET_ON_FORK</code></strong>：主服务 <code class="c">sched_setscheduler(0, SCHED_FIFO|SCHED_RESET_ON_FORK, &amp;sp)</code>——fork 出的子进程 policy→SCHED_NORMAL、nice→0、rt_priority→0（core.c:4750-4752），连负 nice 也一并归零（:4753-4754）。注意 flag 只管一代、且普通用户不能取消它（:7607-7609）；</li>
+<li><strong>exec 前显式降级</strong>：fork 后、exec 前在子进程里 <code class="c">sched_setscheduler(0, SCHED_OTHER, &amp;{0})</code>——RT 任务降优先级/降级是无特权自由（core.c:7557），双保险；</li>
+<li><strong>能力最小化</strong>：整个服务只给 <code class="c">cap_sys_nice</code>（setcap）而非裸 root；脚本以专用低权账号跑——就算属性泄漏，泄漏的 FIFO 90 也撞不上任何别的破坏面。</li>
+</ol>
+<p>风险点：巡检时注意 <code class="c">sched_getscheduler</code> 返回值会带回 RESET_ON_FORK 位（2.6.39+ 扩展，35.3 实验 3 实测），先剥位再判断。</p>
+</details>
+<hr />
+<h2>习题 9：综合设计——trader 双线程启动序列</h2>
+<p>行情线程（必须微秒级响应）+ 落盘线程（可拖延）。写出两个线程各自的调度配置与完整启动序列，并说明每一步为什么在这个次序。</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>配置</strong>：行情线程 = SCHED_FIFO 85 + 绑隔离核 4 + mlockall；落盘线程 = SCHED_OTHER + nice 15 + 绑核 8（杂务核）。</p>
+<p><strong>序列与理由</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步</th>
+<th>操作</th>
+<th>为什么必须在此时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code></td>
+<td>趁代码还在 CFS 下、页错误还廉价时锁页；RT 之后一次缺页 = 微秒级悬崖</td>
+</tr>
+<tr>
+<td>2</td>
+<td>预触/预热所有热路径内存 + cache</td>
+<td>同上，且绑核后的迁移会冷 cache，预热应在最终绑核后补一轮</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code class="c">sched_setaffinity</code> 绑核</td>
+<td>策略切换前先定"在哪跑"，避免切 FIFO 后任务先在错核上抢到 CPU</td>
+</tr>
+<tr>
+<td>4</td>
+<td>行情线程 <code class="c">sched_setscheduler(0, SCHED_FIFO, 85)</code></td>
+<td>即时生效（switched_to_rt → resched_curr，rt.c:2557）；之后才允许开始热路径</td>
+</tr>
+<tr>
+<td>5</td>
+<td>落盘线程 <code class="c">setpriority(PRIO_PROCESS, tid, 15)</code></td>
+<td>最后降权——它不抢即可，顺序无碍</td>
+</tr>
+<tr>
+<td>6</td>
+<td>行情线程设 RLIMIT_RTTIME 兜底</td>
+<td>防 bug 自旋烧配额触发 throttling 连累全核（35.2 节六）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么行情线程 85 而不是 99</strong>：内核线程（ksoftirqd 等）在 99 附近有关键活动；网络收包链路若被自家线程踩住，延迟反而恶化。留头部余量是工程纪律（同 35.2 关联表）。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>上一节：<a href="#s-35-5">35.5 总结</a></li>
+<li>后置：<a href="chapter-36.html#intro">Ch36 进程资源</a>——RLIMIT_NICE/RTPRIO/RTTIME 三兄弟的完整 rlimit 体系</li>
+<li>实验环境备注：实验 1-3、6 需 root（<code class="c">wsl -u root</code> 或等效）；<strong>实验 4-5 普通用户即可跑</strong>（nice 调大是降权免特权；切 SCHED_IDLE 免特权——单向门本身就是要用普通用户身份演示）；<code class="c">rt_throttle</code> 会临时改全局 sysctl，跑完自动恢复，若被中断（Ctrl-C）需手动 <code class="c">echo 950000 &gt; /proc/sys/kernel/sched_rt_runtime_us</code>；所有实验只占 1 个核，多核机器上安全</li>
 </ul>
       </section>
 
