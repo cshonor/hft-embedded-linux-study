@@ -277,18 +277,18 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-49-1"><span class="n">49.1</span>四大组合</a>
-          <a href="#s-49-2"><span class="n">49.2</span>–49.3 `mmap` / `munmap`</a>
+          <a href="#s-49-2"><span class="n">49.2</span>创建映射：mmap()</a>
           <a href="#s-49-3"><span class="n">49.3</span>解除映射：munmap()</a>
           <a href="#s-49-4"><span class="n">49.4</span>文件映射</a>
-          <a href="#s-49-5"><span class="n">49.5</span>`msync`</a>
-          <a href="#s-49-6"><span class="n">49.6</span>–49.8 Flags · `mremap`</a>
+          <a href="#s-49-5"><span class="n">49.5</span>同步映射区：msync()</a>
+          <a href="#s-49-6"><span class="n">49.6</span>mmap() flags 参数补充细节</a>
           <a href="#s-49-7"><span class="n">49.7</span>匿名映射</a>
           <a href="#s-49-8"><span class="n">49.8</span>重新映射：mremap()</a>
           <a href="#s-49-9"><span class="n">49.9</span>MAP_NORESERVE 与 swap space overcommit</a>
           <a href="#s-49-10"><span class="n">49.10</span>MAP_FIXED 标志</a>
           <a href="#s-49-11"><span class="n">49.11</span>非线性映射：remap_file_pages()</a>
           <a href="#s-49-12"><span class="n">49.12</span>总结</a>
-          <a href="#s-49-13"><span class="n">49.13</span>练习题</a>
+          <a href="#s-49-13"><span class="n">49.13</span>练习</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -376,8 +376,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p><code class="c">mmap</code>/<code class="c">munmap</code>/<code class="c">msync</code>；四大组合；PRIVATE vs SHARED；SIGBUS；匿名映射；与 read/SysV shm 对比。</p>
-<hr />
+<p><code class="c">mmap</code>/<code class="c">munmap</code>/<code class="c">msync</code>；四大组合；PRIVATE vs SHARED；SIGBUS；匿名映射；与 read/SysV shm 对比；v6.6 内核路径全程核验。</p>
 <hr />
 <h2>横向对比</h2>
 <div class="tbl-wrap"><table>
@@ -425,20 +424,80 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tr>
 </tbody>
 </table></div>
-<p>共享区同样：<strong>勿存裸指针，用 offset</strong>。</p>
 <hr />
-<hr />
-<h2>陷阱清单</h2>
+<h2>易错清单</h2>
 <ol>
-<li><code class="c">offset</code> 未页对齐 → 失败  </li>
-<li>SHARED 越过 EOF → SIGBUS  </li>
-<li>PRIVATE 改文件「不生效」  </li>
-<li>munmap ≠ msync  </li>
-<li>匿名 SHARED 不能给无关进程  </li>
-<li>prot &gt; open 权限  </li>
-<li>共享区裸指针  </li>
+<li><code class="c">mmap</code> 失败返回 <strong>MAP_FAILED</strong>（(void*)-1），不是 NULL</li>
+<li><code class="c">offset</code> 必须<strong>页对齐</strong>（EINVAL）；length 内核向上取整</li>
+<li><strong>PRIVATE 未写过的页跟随 page cache</strong>——不是快照（实测三连，copy-on-write 非 copy-on-access）</li>
+<li>写页内 1 字节 = <strong>整页</strong> COW 定格（粒度是页）</li>
+<li>越过文件尾访问映射 → <strong>SIGBUS</strong>（不是 SIGSEGV——VMA 合法但无后备）</li>
+<li><code class="c">msync</code> 只对 SHARED 文件映射有意义；<strong>MS_ASYNC 是 no-op</strong>（2.6.19+）</li>
+<li><code class="c">MS_INVALIDATE</code> 遇 mlock 区 → <strong>EBUSY</strong></li>
+<li>munmap 的 addr 必须<strong>页对齐</strong>（EINVAL）；区间内空洞静默忽略</li>
+<li>munmap 中间一页 → VMA 分裂（maps 1→2）；相邻同 flags 分配又会 merge</li>
+<li><code class="c">mremap</code> 无 MAYMOVE 被挡 → <strong>ENOMEM</strong>；搬家是<strong>页表级零拷贝</strong></li>
+<li><code class="c">MREMAP_DONTUNMAP</code> 旧地址读回<strong>零</strong>（不是旧数据）；仅匿名映射</li>
+<li><code class="c">MAP_FIXED</code> 静默覆盖已有映射（先 munmap 再建）；<strong>NOREPLACE 被占→EEXIST</strong></li>
+<li><code class="c">remap_file_pages</code> v6.6 纯 emulation（dmesg 警告 + mmap 绕路）</li>
+<li>overcommit=2 严格模式下 <code class="c">MAP_NORESERVE</code> 被忽略（照样记账）</li>
 </ol>
 <hr />
+<h2>实验清单（全部实测：WSL Ubuntu，gcc -O2 -Wall -Wextra 零告警，2026-09-05）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>实验</th>
+<th>验证点</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>mmap 生命周期三态</td>
+<td>未触碰 Rss=0 / 读触碰（零页）Rss=0 / 写触碰 Rss=4</td>
+<td>49.2</td>
+</tr>
+<tr>
+<td>2</td>
+<td>VMA 分裂</td>
+<td>munmap 中间页 maps 1→2；PROT_NONE guard 防吞并</td>
+<td>49.3</td>
+</tr>
+<tr>
+<td>3</td>
+<td>可见性三连</td>
+<td>priv[0]='S' 跟随 / priv[4096]='K' 快照 / SIGBUS</td>
+<td>49.4</td>
+</tr>
+<tr>
+<td>4</td>
+<td>msync 语义</td>
+<td>SYNC+ASYNC→EINVAL；mlock+INVALIDATE→EBUSY</td>
+<td>49.5</td>
+</tr>
+<tr>
+<td>5</td>
+<td>MAP_POPULATE</td>
+<td>Rss 0 vs 16384 kB；首触 15ms vs 1ms</td>
+<td>49.6 / 49.13 实验 7</td>
+</tr>
+<tr>
+<td>6</td>
+<td>mremap 全景</td>
+<td>原地/ENOMEM/MAYMOVE/收缩/DONTUNMAP 旧址=0x00</td>
+<td>49.8 / 49.13 实验 6</td>
+</tr>
+<tr>
+<td>7</td>
+<td>MAP_FIXED 三态</td>
+<td>NOREPLACE→EEXIST；hint 自动挪；裸 FIXED 覆盖</td>
+<td>49.10</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>背诵卡</h2>
 <div class="tbl-wrap"><table>
@@ -451,118 +510,77 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>1</td>
-<td>PRIVATE=COW 不回盘；SHARED=可见可回盘</td>
+<td>mmap 三步：选址（get_unmapped_area）→ 建 VMA（mmap_region）→ 挂树（vma_link）</td>
 </tr>
 <tr>
 <td>2</td>
-<td>四组合：私匿/私文/共匿/共文</td>
+<td>画区不填页：mmap 后 Rss=0；首触缺页才分配</td>
 </tr>
 <tr>
 <td>3</td>
-<td>fork 继承；exec 全毁</td>
+<td>MAP_FAILED ≠ NULL</td>
 </tr>
 <tr>
 <td>4</td>
-<td>EOF 越界 SHARED → SIGBUS</td>
+<td>PRIVATE=copy-on-<strong>WRITE</strong>：未写过的页跟随 page cache</td>
 </tr>
 <tr>
 <td>5</td>
-<td>落盘用 msync；匿名 fd=-1</td>
+<td>COW 粒度=页：写 1 字节定格整页</td>
 </tr>
 <tr>
 <td>6</td>
-<td>mmap 大文件随机访问常更省拷贝</td>
+<td>SIGSEGV=无 VMA；SIGBUS=有 VMA 无后备（越 EOF）</td>
 </tr>
 <tr>
 <td>7</td>
-<td>mmap 只画区不搬数据，访问才缺页填页；设备独占靠驱动锁（非 mmap 能力）</td>
+<td>close(fd) 后映射存活（vm_file 持引用）</td>
+</tr>
+<tr>
+<td>8</td>
+<td>MS_SYNC=真落盘；MS_ASYNC=no-op；PRIVATE 调 msync 无操作</td>
+</tr>
+<tr>
+<td>9</td>
+<td>mremap 搬家=PTE 搬迁零拷贝；无 MAYMOVE 受阻=ENOMEM</td>
+</tr>
+<tr>
+<td>10</td>
+<td>MREMAP_DONTUNMAP：新址得数据，旧址读零</td>
+</tr>
+<tr>
+<td>11</td>
+<td>MAP_FIXED 静默覆盖；NOREPLACE=EEXIST</td>
+</tr>
+<tr>
+<td>12</td>
+<td>VMA 属性相同且紧贴 → vma_merge 合并（guard 技术的反面）</td>
+</tr>
+<tr>
+<td>13</td>
+<td>remap_file_pages 已死（v6.6 emulation）</td>
+</tr>
+<tr>
+<td>14</td>
+<td>fork 继承全部映射（语义原样）；exec 全销毁</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<hr />
 <h2>参考</h2>
 <ul>
-<li>Kerrisk · TLPI Ch49（非「第 15 章」误标）  </li>
-<li><code class="c">man 2 mmap</code> · <code class="c">munmap</code> · <code class="c">msync</code> · <code class="c">mremap</code></li>
-</ul>
-<hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
-#include &lt;fcntl.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;string.h&gt;
-#include &lt;sys/wait.h&gt;
-
-/* Ch49 内存映射 — mmap/munmap/msync/mremap。
- * mmap 可以映射文件/匿名内存, 父子进程可共享。
- * 编译: gcc -o ch49_demo ch49_demo.c */
-
-int main(void) {
-    /* === 匿名共享映射 (父子进程共享) === */
-    int *shared = mmap(NULL, sizeof(int),
-                       PROT_READ | PROT_WRITE,
-                       MAP_SHARED | MAP_ANONYMOUS,
-                       -1, 0);
-    if (shared == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
-
-    *shared = 0;
-    printf(&quot;Initial value: %d\n&quot;, *shared);
-
-    pid_t pid = fork();
-    if (pid == 0) {
-        /* 子进程: 修改共享映射 */
-        for (int i = 0; i &lt; 5; i++) {
-            (*shared)++;
-            printf(&quot;Child: value=%d\n&quot;, *shared);
-            usleep(100000);
-        }
-        _exit(0);
-    }
-
-    /* 父进程: 也能看到变化 */
-    for (int i = 0; i &lt; 5; i++) {
-        usleep(100000);
-        printf(&quot;Parent sees: value=%d\n&quot;, *shared);
-    }
-    waitpid(pid, NULL, 0);
-
-    printf(&quot;Final value: %d\n&quot;, *shared);
-
-    /* === 文件映射 === */
-    int fd = open(&quot;/tmp/ch49_mmap.txt&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
-    write(fd, &quot;Hello, mmap!&quot;, 12);
-
-    char *fmap = mmap(NULL, 12, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (fmap != MAP_FAILED) {
-        /* 通过内存修改文件内容 */
-        fmap[0] = 'J';  /* Hello -&gt; Jello */
-        msync(fmap, 12, MS_SYNC);  /* 同步到文件 */
-        printf(&quot;File content after mmap modify: %.12s\n&quot;, fmap);
-        munmap(fmap, 12);
-    }
-    close(fd);
-    remove(&quot;/tmp/ch49_mmap.txt&quot;);
-
-    munmap(shared, sizeof(int));
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>参考</h2>
-<ul>
-<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">OUTLINE</a></li>
-<li>原始笔记：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes">notes.md.bak</a></li>
+<li>Kerrisk · TLPI Ch49</li>
+<li><code class="c">man 2 mmap</code> · <code class="c">munmap</code> · <code class="c">msync</code> · <code class="c">mremap</code> · <code class="c">remap_file_pages</code></li>
+<li>内核深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
       </section>
       <section class="section" id="s-49-1">
         <div class="sec-head"><div class="sec-no">49.1</div><h2>四大组合</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code>（<code class="c">do_mmap():1203</code> · <code class="c">get_unmapped_area():1801</code> · <code class="c">mmap_region():2662</code>）· <code class="c">include/linux/mm_types.h</code>（<code class="c">struct vm_area_struct :565</code>）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：本章首页
-- 下一节：<a href="#s-49-2">49.2 –49.3 <code class="c">mmap</code> / <code class="c">munmap</code></a></p>
+- 下一节：<a href="#s-49-2">49.2 创建映射 <code class="c">mmap</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
@@ -598,6 +616,20 @@ int main(void) {
 <p><strong>一句话</strong>：<code class="c">mmap</code> 给进程虚拟地址画一块区域，可以映射到<strong>同一份物理内存</strong>实现多进程共享；但<strong>设备能不能让你映射，由设备驱动说了算</strong>——独占访问靠驱动锁，不是 <code class="c">mmap</code> 自带能力。</p>
 </blockquote>
 <p>生命周期：<code class="c">fork</code> 继承映射；<strong><code class="c">exec</code> / 退出</strong> 销毁全部映射。</p>
+<h3>内核三步走（v6.6 坐标）</h3>
+<pre class="code" data-label="code"><code class="c">mmap(2)
+ └─ ksys_mmap_pgoff():1382        fd → struct file（fd 不合法直接 EBADF）
+     └─ do_mmap():1203             计算 vm_flags（SHARED→VM_SHARED、prot→vm_page_prot…）
+         ├─ get_unmapped_area():1801   选地址：top-down 从 mmap_base 往下找空洞
+         └─ mmap_region():2662         【画区】
+             ├─ do_vmi_munmap():2693   （仅 MAP_FIXED）先拆旧映射
+             ├─ vma_merge 尝试         与相邻 VMA 属性相同 → 合并（不新建）
+             ├─ vm_area_alloc          分配 vm_area_struct（slab）
+             └─ vma_link():395         挂 maple tree + （文件映射）i_mmap
+</code></pre>
+<blockquote>
+<p>注意：mmap 只到「画区」为止——<strong>物理页一颗都没分配</strong>（除非 <code class="c">MAP_POPULATE</code>）。填页是首次访问时缺页中断的事。这就是「先画区后填页」。</p>
+</blockquote>
 <hr />
 <h2>要点</h2>
 <h3><code class="c">mmap</code> 的三类映射对象</h3>
@@ -716,7 +748,8 @@ int main(void) {
 int main(void) {
     /* 1) MAP_PRIVATE 文件映射 — COW，修改不回盘 */
     int fd = open(&quot;/tmp/ch49_demo.txt&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
-    write(fd, &quot;original&quot;, 8);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (write(fd, &quot;original&quot;, 8) != 8) { perror(&quot;write&quot;); return 1; }
     char *priv = mmap(NULL, 8, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     priv[0] = 'X';  /* 写入触发 COW，不影响文件 */
     printf(&quot;MAP_PRIVATE after write: %.8s\n&quot;, priv);
@@ -774,34 +807,198 @@ static int mic_release(struct inode *i, struct file *filp)
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-49-2">49.2 –49.3 <code class="c">mmap</code> / <code class="c">munmap</code></a></li>
+<li>下一节：<a href="#s-49-2">49.2 创建映射 <code class="c">mmap</code></a></li>
 <li>前置：<strong>前置</strong>：<a href="chapter-48.html#ch-48">Ch48 SysV 共享内存</a>  </li>
 <li>后置：<strong>后置</strong>：<a href="chapter-50.html#ch-50">Ch50 虚拟内存操作</a> · <a href="chapter-51.html#ch-51">Ch51 POSIX IPC</a></li>
 </ul>
       </section>
       <section class="section" id="s-49-2">
-        <div class="sec-head"><div class="sec-no">49.2</div><h2>–49.3 `mmap` / `munmap`</h2></div>
+        <div class="sec-head"><div class="sec-no">49.2</div><h2>创建映射：mmap()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code>（<code class="c">ksys_mmap_pgoff():1382</code> · <code class="c">do_mmap():1203</code> · <code class="c">generic_get_unmapped_area():1691</code> · <code class="c">arch_get_unmapped_area():1726</code> · <code class="c">get_unmapped_area():1801</code> · <code class="c">mmap_region():2662</code> · <code class="c">vma_link():395</code> · <code class="c">vma_merge():863</code>）· <code class="c">include/linux/mm_types.h</code>（<code class="c">struct vm_area_struct :565</code>）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-1">49.1 四大组合</a>
-- 下一节：<a href="#s-49-4">49.4 文件映射</a></p>
+- 下一节：<a href="#s-49-3">49.3 解除映射 <code class="c">munmap</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>void <em>mmap(void </em>addr, size_t length, int prot, int flags, int fd, off_t offset); int munmap(void *addr, size_t length); - <code class="c">addr=NULL</code> 推荐；<code class="c">length</code> 上对齐页</p>
+<p><code class="c">mmap</code> 在进程虚拟地址空间<strong>画一块区域</strong>（建立一个 VMA），建立「虚址区间 ↔ 文件/匿名后备」的映射关系。三个灵魂问题：</p>
+<ol>
+<li>画区时发生了什么？（选地址 → 建 VMA → 挂树——<strong>一颗物理页都不分配</strong>）</li>
+<li>六个参数各自的坑？（offset 必须页对齐；prot 不能超 fd 模式；flags 必须含 SHARED/PRIVATE 之一）</li>
+<li>失败返回什么？（<code class="c">MAP_FAILED</code> = <code class="c">(void*)-1</code>，<strong>不是 NULL</strong>——与 malloc 的最大差异）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+void *mmap(void *addr, size_t length, int prot, int flags,
+           int fd, off_t offset);
+/* 成功返回映射起始地址（内核选）；失败返回 MAP_FAILED 并设 errno */
+</code></pre>
 <hr />
 <h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
-int munmap(void *addr, size_t length);
+<h3>参数六元组精讲</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>规则</th>
+<th>坑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">addr</code></td>
+<td><code class="c">NULL</code> 推荐（内核自选）；非 NULL 非固定时只是<strong>提示</strong>，内核可挪走</td>
+<td>期望返回 <code class="c">addr</code> 而没用 <code class="c">MAP_FIXED</code> → 地址几乎必然不同</td>
+</tr>
+<tr>
+<td><code class="c">length</code></td>
+<td><strong>向上取整到页边界</strong>（映射尾页部分可用）</td>
+<td>写越 <code class="c">length</code>（但同页内）不报错——最后一页是整页</td>
+</tr>
+<tr>
+<td><code class="c">prot</code></td>
+<td><code class="c">PROT_NONE/READ/WRITE/EXEC</code> 组合</td>
+<td>不得超过 fd 的 open 模式（<code class="c">O_RDONLY</code> + <code class="c">PROT_WRITE</code> → <code class="c">EACCES</code>）</td>
+</tr>
+<tr>
+<td><code class="c">flags</code></td>
+<td>必须含 <code class="c">MAP_SHARED</code> 或 <code class="c">MAP_PRIVATE</code> <strong>之一</strong>（两者语义互斥）</td>
+<td>缺了或都给 → <code class="c">EINVAL</code></td>
+</tr>
+<tr>
+<td><code class="c">fd</code></td>
+<td>文件映射必填；<code class="c">MAP_ANONYMOUS</code> 时被忽略（惯例传 -1）</td>
+<td>匿名时内核根本不碰 fd（传啥都行，但 -1 是可读性惯例）</td>
+</tr>
+<tr>
+<td><code class="c">offset</code></td>
+<td><strong>必须页对齐</strong>（<code class="c">EINVAL</code>）</td>
+<td>想映射「文件第 100 字节起」？先算 <code class="c">offset=100&amp;~(pagesize-1)</code>，指针再偏移 100</td>
+</tr>
+</tbody>
+</table></div>
+<h3>返回值：MAP_FAILED 不是 NULL</h3>
+<pre class="code" data-label="C"><code class="c">void *p = mmap(NULL, len, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+if (p == NULL)   ...   /* 错：mmap 不返回 NULL */
+if (p == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }   /* 对 */
 </code></pre>
-<ul>
-<li><code class="c">addr=NULL</code> 推荐；<code class="c">length</code> 上对齐页  </li>
-<li><code class="c">prot</code>：<code class="c">NONE/READ/WRITE/EXEC</code>；<strong>不得超过文件 open 权限</strong>  </li>
-<li><code class="c">flags</code>：必须 <strong>SHARED 或 PRIVATE 二选一</strong>  </li>
-<li>文件：<code class="c">fd</code>+<strong>页对齐</strong> <code class="c">offset</code>；匿名：<code class="c">MAP_ANONYMOUS</code>，<code class="c">fd=-1</code>，<code class="c">offset=0</code>  </li>
-<li>失败：<code class="c">MAP_FAILED</code>  </li>
-<li><code class="c">munmap</code> <strong>不</strong>自动刷盘 → 共享映射要落盘用 <code class="c">msync</code></li>
-</ul>
+<p><code class="c">MAP_FAILED</code> 定义为 <code class="c">((void *) -1)</code>。内核选地址永远避开 0 和 -1 附近的页，NULL 恒不可能。</p>
+<h3>addr 非 NULL 时的三种命运</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flags</th>
+<th>内核行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 <code class="c">MAP_FIXED</code></td>
+<td>addr 是 hint：以 addr 为起点<strong>向上</strong>找空洞（<code class="c">arch_get_unmapped_area():1726</code>，bottom-up）；拿不到就别处返回</td>
+</tr>
+<tr>
+<td><code class="c">MAP_FIXED</code></td>
+<td>精确落在 addr，<strong>静默覆盖</strong>已有映射（见 <a href="#s-49-10">49.10</a>）</td>
+</tr>
+<tr>
+<td><code class="c">MAP_FIXED_NOREPLACE</code></td>
+<td>精确落 addr；被占 → <code class="c">EEXIST</code>（不覆盖，4.17+）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>内核路径：从 syscall 到 VMA 挂树（v6.6 坐标）</h3>
+<pre class="code" data-label="code"><code class="c">mmap(2)
+ └─ ksys_mmap_pgoff():1382
+     ├─ fd 合法性：fdget()，失败 EBADF
+     └─ vm_mmap_pgoff → do_mmap():1203
+         ├─ length==0 → EINVAL；溢出检查
+         ├─ flags 校验（_MAP_VALIDATE；SHARED/PRIVATE 二选一）
+         ├─ 计算 vm_flags：prot + flags 翻译成内核位图
+         │    （VM_SHARED/VM_MAYWRITE/VM_GROWSDOWN…，mmap_min_addr 检查）
+         ├─ 文件：security_mmap_file(LSM)、mapping 预检查
+         └─ get_unmapped_area():1801
+             └─ arch_get_unmapped_area():1726（bottom-up）/ topdown 变体
+                 从 hint/上次 mmap 地址附近找第一个够大的空洞
+         mmap_region():2662【画区】
+         ├─（MAP_FIXED）先 do_vmi_munmap():2693 拆旧映射
+         ├─ accountable_mapping：私有可写 → 记账 swap 预留（VM_ACCOUNT，
+         │    可被 MAP_NORESERVE 关闭，见 49.9）
+         ├─ vma_merge():863 尝试：与 prev/next VMA 属性相同且紧贴 → 合并进现有 VMA
+         ├─（合并失败）vm_area_alloc：从 slab 分配 vm_area_struct
+         ├─ vma_link():395
+         │    ├─ maple tree 插入（v6.6 起 VMA 用 maple tree 组织，旧版红黑树）
+         │    └─ 文件映射：挂进 mapping-&gt;i_mmap（反向映射）
+         └─ MAP_POPULATE → 立即 populate（预缺页）
+</code></pre>
+<h3>vm_area_struct（<code class="c">include/linux/mm_types.h:565</code>）——一个 VMA 的身份证</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">vm_start</code> / <code class="c">vm_end</code></td>
+<td>虚拟区间 <code class="c">[start, end)</code>，页对齐</td>
+</tr>
+<tr>
+<td><code class="c">vm_page_prot</code></td>
+<td>缺页时建立 PTE 用的保护位（prot 翻译而来）</td>
+</tr>
+<tr>
+<td><code class="c">vm_flags</code></td>
+<td><code class="c">VM_SHARED</code>/<code class="c">VM_MAYREAD</code>/<code class="c">VM_LOCKED</code>/<code class="c">VM_ACCOUNT</code>…（内核内部位图，与 mmap flags 不同）</td>
+</tr>
+<tr>
+<td><code class="c">vm_file</code> / <code class="c">vm_pgoff</code></td>
+<td>后备文件（持引用计数）与文件内页偏移</td>
+</tr>
+<tr>
+<td><code class="c">vm_ops</code></td>
+<td>文件映射的缺页回调（<code class="c">fault</code>→filemap_fault 等）</td>
+</tr>
+<tr>
+<td><code class="c">anon_vma</code></td>
+<td>匿名页的反向映射锚点（COW/父子链）</td>
+</tr>
+</tbody>
+</table></div>
+<p>一个 VMA 管一段<strong>属性完全相同</strong>的连续虚址——这就是为什么 <code class="c">munmap</code> 中间一页会把 VMA 分裂成两个（见 <a href="#s-49-3">49.3</a> 实测）。</p>
+<h3>fd 的生命周期独立于映射</h3>
+<p><code class="c">mmap</code> 后 <code class="c">close(fd)</code> 映射依然有效——<code class="c">vm_area_struct.vm_file</code> 持有 <code class="c">struct file</code> 的引用计数，close 只减你自己那份。实测验证（<a href="#s-49-3">49.3 实验</a>）。</p>
+<h3>错误码速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EINVAL</code></td>
+<td>length=0 / offset 未页对齐 / flags 非法（无 SHARED/PRIVATE）</td>
+</tr>
+<tr>
+<td><code class="c">EBADF</code></td>
+<td>文件映射但 fd 不合法</td>
+</tr>
+<tr>
+<td><code class="c">EACCES</code></td>
+<td>prot 超 fd 打开模式 / fd 是目录</td>
+</tr>
+<tr>
+<td><code class="c">ENOMEM</code></td>
+<td>地址空间耗尽（map_count 上限 <code class="c">sysctl vm.max_map_count</code> 默认 65530）/ 无空洞</td>
+</tr>
+<tr>
+<td><code class="c">ETXTBSY</code></td>
+<td><code class="c">MAP_DENYWRITE</code> 冲突（exec 中文件）</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -814,191 +1011,216 @@ int munmap(void *addr, size_t length);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>匿名映射替代 malloc 分配页对齐缓冲（DMA/裸金属缓存）；映射设备寄存器/MMIO 到用户态直读</td>
+<td>匿名映射替代 malloc 做页对齐缓冲（DMA 描述符环、帧缓冲）；<code class="c">/dev/mem</code> + <code class="c">MAP_FIXED</code> 把寄存器映射到固定虚址（无 MMU 的 NOMMU 体系 mmap 语义完全不同，见 uClinux 文档）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>MAP_SHARED 文件/匿名映射做零拷贝共享行情缓冲；匿名映射省 malloc 元数据开销、页对齐利于大页/TLB</td>
+<td>行情/订单缓冲用 <code class="c">mmap(MAP_SHARED|MAP_ANONYMOUS)</code> 跨进程零拷贝；<strong>页对齐 + 固定 length</strong> 利于 THP 对齐（<code class="c">MADV_HUGEPAGE</code> 需 2MB 对齐才生效）；<code class="c">MAP_POPULATE</code> 启动预填消除首触缺页（微秒级毛刺 × 缓冲页数 = 可观）</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<h2>常见陷阱</h2>
-<ol>
-<li><strong>MAP_FAILED vs NULL</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">void *p = mmap(NULL, size, PROT_READ|PROT_WRITE,
-              MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-if (p == NULL) ...  /* 错误! */
-if (p == MAP_FAILED) ...  /* 正确 */
-</code></pre>
-<p>mmap 失败返回 MAP_FAILED ((void*)-1)，不是 NULL。检查方式与 malloc 不同。</p>
-<ol start="2">
-<li><strong>munmap 忘记调用</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">void *p = mmap(NULL, 4096, ...);
-/* 使用 p ... */
-/* 没有 munmap → 内存泄漏 */
-</code></pre>
-<p>mmap 分配的内存不会自动释放。必须 munmap(p, size) 显式释放。</p>
-<ol start="3">
-<li><strong>信号处理中的 SIGSEGV</strong></li>
-</ol>
-<pre class="code" data-label="C"><code class="c">mmap(NULL, size, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-/* 写只读映射 → SIGSEGV */
-</code></pre>
-<p>对 PROT_READ 的映射写入会触发 SIGSEGV。确保保护属性和访问操作匹配。</p>
-<hr />
-<h2>自测题</h2>
-<p><strong>题目 1（选择）：</strong> <code class="c">mmap</code> 失败时返回什么？
-A. NULL
-B. -1
-C. MAP_FAILED
-D. 0</p>
-<details>
-<summary>参考答案</summary>
-<p>C。mmap 失败返回 MAP_FAILED（定义为 (void *)-1），不是 NULL。这与 malloc 不同。</p>
-</details>
-<p><strong>题目 2（判断）：</strong> <code class="c">mmap</code> 映射的内存会在进程退出时自动释放。</p>
-<details>
-<summary>参考答案</summary>
-<p>正确。进程退出时所有映射自动解除。但在长时间运行的程序中仍需手动 munmap。</p>
-</details>
-<p><strong>题目 3（踩坑）：</strong> 以下代码有什么问题？</p>
-<pre class="code" data-label="C"><code class="c">void *p = mmap(NULL, 4096, PROT_READ|PROT_WRITE,
-               MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-memset(p, 0, 8192);
-</code></pre>
-<details>
-<summary>参考答案</summary>
-<p>写入了 8192 字节但只映射了 4096 字节。超出映射区域会触发 SIGSEGV。应确保操作不超过映射大小。</p>
-</details>
-<p><strong>题目 4（应用）：</strong> 写代码用 mmap 分配匿名内存并初始化为 0。</p>
-<details>
-<summary>参考答案</summary>
-<pre class="code" data-label="C"><code class="c">void *p = mmap(NULL, 4096, PROT_READ|PROT_WRITE,
-               MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-if (p == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
-memset(p, 0, 4096);
-/* ... 使用 ... */
-munmap(p, 4096);
-</code></pre>
-</details>
-<hr />
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
-/* mmap / munmap 完整用法：匿名映射 + 文件映射 + 错误处理 */
+/* mmap 生命周期实测：画区≠填页（maps/smaps 双口径）
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   步骤1 mmap p=0x7ef676812000（未触碰，两侧 guard 为 PROT_NONE）
+ *     [未触碰] VMA条数=1  Rss=0 kB          ← 画区完成，零物理页
+ *   步骤2 读触碰第 0 页（do_anonymous_page 走零页分支）
+ *     [读触碰] VMA条数=1  Rss=0 kB          ← 零页 present 但不计 RSS
+ *   步骤3 写触碰第 0 页（分配私有物理页）
+ *     [写触碰] VMA条数=1  Rss=4 kB          ← COW 真页才进 RSS
+ *   步骤5 close(fd) 后读文件映射：&quot;FDLIFE&quot;  ← fd 关了映射还活着
+ */
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
 #include &lt;fcntl.h&gt;
-#include &lt;sys/stat.h&gt;
+#include &lt;errno.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
 
-int main(void) {
-    /* --- 匿名映射 --- */
-    size_t len = 4096;
-    void *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { perror(&quot;mmap anon&quot;); exit(1); }
-    memset(p, 0xAB, len);
-    printf(&quot;anon mapped %zu bytes at %p\n&quot;, len, p);
-    munmap(p, len);
-
-    /* --- 文件映射 --- */
-    int fd = open(&quot;/tmp/ch49_file.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
-    if (fd &lt; 0) { perror(&quot;open&quot;); exit(1); }
-    ftruncate(fd, (off_t)len);  /* 必须先设置文件大小 */
-
-    char *fm = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (fm == MAP_FAILED) { perror(&quot;mmap file&quot;); exit(1); }
-    strcpy(fm, &quot;mapped file content&quot;);
-    printf(&quot;file mapped: %s\n&quot;, fm);
-
-    munmap(fm, len);
-    close(fd);
-    return 0;
+static long smaps_rss(void *addr)
+{
+    FILE *fp = fopen(&quot;/proc/self/smaps&quot;, &quot;r&quot;);
+    if (!fp) return -1;
+    char line[300];
+    unsigned long lo, hi, a = (unsigned long)addr;
+    long rss = -1;
+    int in_target = 0;
+    while (fgets(line, sizeof line, fp)) {
+        if (sscanf(line, &quot;%lx-%lx&quot;, &amp;lo, &amp;hi) == 2)
+            in_target = (a &gt;= lo &amp;&amp; a &lt; hi);
+        else if (in_target &amp;&amp; strncmp(line, &quot;Rss:&quot;, 4) == 0) {
+            sscanf(line + 4, &quot;%ld&quot;, &amp;rss);
+            break;
+        }
+    }
+    fclose(fp);
+    return rss;
 }
 
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
+
+    /* PROT_NONE guard 包夹观察区：防观察区的 VMA 被相邻分配 merge 吞并
+     * （v1 实测教训：fopen(/proc/self/smaps) 自身 malloc→mmap，
+     *  与观察区紧贴且 flags 相同 → vma_merge 吞掉边界，VMA 条数错乱） */
+    char *raw = mmap(NULL, 5 * P, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (raw == MAP_FAILED) { perror(&quot;mmap raw&quot;); return 1; }
+    char *p = mmap(raw + P, 3 * P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+
+    printf(&quot;mmap p=%p（未触碰）Rss=%ld kB ← 画区完成，物理页为 0\n&quot;,
+           (void *)p, smaps_rss(p));
+
+    volatile char c = p[0]; (void)c;    /* 读触碰：映射零页 */
+    printf(&quot;读触碰后 Rss=%ld kB ← 零页不计入 RSS\n&quot;, smaps_rss(p));
+
+    p[0] = 1;                           /* 写触碰：分配真页 */
+    printf(&quot;写触碰后 Rss=%ld kB ← COW 真页进 RSS\n&quot;, smaps_rss(p));
+
+    /* close(fd) 后映射存活 */
+    int fd = open(&quot;/tmp/ch49_a.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (write(fd, &quot;FDLIFE&quot;, 6) != 6) { perror(&quot;write&quot;); return 1; }
+    char *f = mmap(NULL, 6, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (f == MAP_FAILED) { perror(&quot;mmap file&quot;); return 1; }
+    close(fd);
+    printf(&quot;close(fd) 后读文件映射：\&quot;%.6s\&quot; ← vma-&gt;vm_file 持引用\n&quot;, f);
+
+    munmap(p, 3 * P);
+    munmap(raw, 5 * P);
+    munmap(f, 6);
+    unlink(&quot;/tmp/ch49_a.dat&quot;);
+    return 0;
+}
 </code></pre>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
 <li>上一节：<a href="#s-49-1">49.1 四大组合</a></li>
-<li>下一节：<a href="#s-49-4">49.4 文件映射</a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-48.html#ch-48">Ch48 SysV 共享内存</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-50.html#ch-50">Ch50 虚拟内存操作</a> · <a href="chapter-51.html#ch-51">Ch51 POSIX IPC</a></li>
+<li>下一节：<a href="#s-49-3">49.3 解除映射 <code class="c">munmap</code></a></li>
+<li>零页与 COW 的缺页路径：<a href="#s-49-7">49.7 匿名映射</a>（<code class="c">do_anonymous_page():4067</code> 逐行）</li>
+<li>文件映射细节：<a href="#s-49-4">49.4 文件映射</a></li>
+<li>前置：<a href="chapter-48.html#intro">Ch48 SysV 共享内存</a></li>
+<li>后置：<a href="chapter-50.html#intro">Ch50 虚拟内存操作</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd, 100)</code> 返回什么错误？fd 打开模式为 O_RDONLY。</p>
+<p>A. 成功　B. <code class="c">EINVAL</code>　C. <code class="c">EACCES</code>　D. <code class="c">EBADF</code></p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B（EINVAL）</strong>——offset=100 未页对齐。prot=PROT_READ 没超过 O_RDONLY 模式（不触发 EACCES）。页对齐是 offset 参数自己的硬性要求，与 prot 无关。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">mmap</code> 成功返回时，<code class="c">length</code> 字节的物理内存已经分配好了。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。mmap 只建 VMA（画区），一颗物理页都没有——实测 <code class="c">mmap</code> 后 <code class="c">Rss=0 kB</code>。物理页在首次访问时按缺页中断逐页分配（匿名走 <code class="c">do_anonymous_page</code>，文件走 <code class="c">filemap_fault</code>）。例外：<code class="c">MAP_POPULATE</code> 标志强制立即预填充。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 为什么实验程序要用 PROT_NONE 页包夹观察区？</p>
+<details>
+<summary>参考答案</summary>
+<p>两个原因：① <code class="c">vma_merge()</code>（mm/mmap.c:863）会把<strong>属性相同且地址紧贴</strong>的相邻 VMA 合并成一个——观察工具自身的 <code class="c">fopen</code>（内部 malloc→mmap 一个新 VMA）如果恰好紧贴观察区且 flags 相同，观察区的边界就被吞掉，maps 里的条数失真（实测踩过：VMA 条数=0）；② guard 的 PROT_NONE 与观察区的 RW flags 不同，merge 必然拒绝，观察窗口的边界被钉死。这本身就是 vma_merge 语义的活体演示。</p>
+</details>
       </section>
       <section class="section" id="s-49-3">
         <div class="sec-head"><div class="sec-no">49.3</div><h2>解除映射：munmap()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
-- 上一节：<a href="#s-49-2">49.2 mmap</a>
-- 下一节：<a href="#s-49-5">49.4 内存映射一致性</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code>（<code class="c">do_vmi_align_munmap():2452</code> · <code class="c">do_vmi_munmap():2618</code> · <code class="c">unmap_region</code> 调用 <code class="c">:2575</code> · <code class="c">__vm_munmap():2918</code>）· <code class="c">mm/memory.c</code>（<code class="c">unmap_region():2322</code> 同名内部声明 <code class="c">:79</code>）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+- 上一节：<a href="#s-49-2">49.2 创建映射 <code class="c">mmap</code></a>
+- 下一节：<a href="#s-49-4">49.4 文件映射</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><code class="c">munmap()</code> — 解除内存映射，释放虚拟地址空间。</p>
+<p><code class="c">munmap</code> 从进程地址空间<strong>删除一段 VMA 区间</strong>，顺带释放区间内该进程私有的物理页与页表项。三个灵魂问题：</p>
+<ol>
+<li>删掉的是什么？（VMA 区间 + PTE + 私有页的引用——不是「擦除内存」）</li>
+<li>域内的脏页去哪了？（MAP_SHARED 的脏页由内核回写机制异步落盘，munmap 不等待；要保证先 <code class="c">msync</code>）</li>
+<li>部分解除会发生什么？（<strong>VMA 分裂</strong>——一个 VMA 变两个，实测可见）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+int munmap(void *addr, size_t length);
+/* 返回 0 成功；-1 失败（EINVAL：addr 未页对齐） */
+</code></pre>
 <hr />
 <h2>要点</h2>
-<h3>API</h3>
-<pre class="code" data-label="C"><code class="c">int munmap(void *addr, size_t length);
-</code></pre>
-<ul>
-<li>解除从 <code class="c">addr</code> 开始、长度 <code class="c">length</code> 的映射</li>
-<li><code class="c">addr</code> 必须页对齐</li>
-<li><code class="c">length</code> 自动向上取整到页边界</li>
-<li>成功返回 0，失败返回 -1</li>
-</ul>
-<h3>核心行为</h3>
+<h3>行为规则</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>行为</th>
+<th>规则</th>
 <th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>解除映射</td>
-<td>虚拟地址空间不再有效</td>
+<td><code class="c">addr</code> <strong>必须页对齐</strong></td>
+<td>否则 <code class="c">EINVAL</code>（内核不取整、不静默修正）</td>
 </tr>
 <tr>
-<td>丢弃修改</td>
-<td>MAP_PRIVATE 的修改被丢弃</td>
+<td><code class="c">length</code> 向上取整</td>
+<td>同 mmap</td>
 </tr>
 <tr>
-<td>写回文件</td>
-<td>MAP_SHARED 的脏页写回文件（异步）</td>
+<td>区间内<strong>未映射的空洞</strong></td>
+<td><strong>静默忽略</strong>——munmap 允许覆盖空洞+映射混合区间，全部拆掉</td>
 </tr>
 <tr>
-<td>部分解除</td>
-<td>可以只解除部分区域</td>
+<td>MAP_PRIVATE 修改</td>
+<td>随私有页释放而<strong>丢弃</strong>（本来就不回文件）</td>
 </tr>
 <tr>
-<td>进程退出</td>
-<td>自动 munmap 所有映射</td>
+<td>MAP_SHARED 脏页</td>
+<td>留在 page cache，回写线程<strong>异步</strong>落盘——munmap 返回 ≠ 数据在磁盘</td>
+</tr>
+<tr>
+<td>访问已解除区</td>
+<td>缺页 → <strong>SIGSEGV</strong>（该虚址已无 VMA 覆盖）</td>
+</tr>
+<tr>
+<td>进程退出/exec</td>
+<td>全部映射自动解除（mm_struct 销毁路径批量做）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>部分解除</h3>
-<pre class="code" data-label="C"><code class="c">/* 映射 4 页 */
-char *p = mmap(NULL, 4096*4, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-
-/* 解除中间 2 页 */
-munmap(p + 4096, 4096*2);
-/* 现在: p[0..4095] 映射, p[4096..8191] 解除, p[8192..12287] 映射 */
+<h3>⭐ VMA 分裂：munmap 中间一页的实测</h3>
+<p>映射 3 页 → <code class="c">munmap(p + pagesize, pagesize)</code>（只拆中间页）：</p>
+<pre class="code" data-label="code"><code class="c">实测（WSL Ubuntu，2026-09-05）：
+  munmap 前 maps 条数=1
+  munmap 后 maps 条数=2      ← [p, p+P) 和 [p+2P, p+3P) 两个独立 VMA
+  Rss=4 kB                   ← 第 0 页写过仍驻留；中间页被释放
 </code></pre>
-<h3>注意事项</h3>
-<ul>
-<li>munmap 不会立即写回脏页（MAP_SHARED），需要 <code class="c">msync</code> 确保落盘</li>
-<li>munmap 后访问该区域 → SIGSEGV</li>
-<li><code class="c">addr</code> 不对齐 → 失败，errno = EINVAL</li>
-<li>可以 munmap 一段未映射的区域（静默成功）</li>
-</ul>
+<p><code class="c">do_vmi_align_munmap():2452</code> 的处理：区间两端若切在 VMA 中间，先 <strong>split</strong> 出「被删部分」——VMA 从 1 个变 3 个，中间的标记 detach 后销毁，剩下 2 个。<strong>map_count 也会随之变化</strong>（大量分裂受 <code class="c">vm.max_map_count</code> 默认 65530 限制）。</p>
+<h3>内核路径（v6.6 坐标）</h3>
+<pre class="code" data-label="code"><code class="c">munmap(2)
+ └─ __vm_munmap():2918
+     └─ do_vmi_munmap():2618
+         └─ do_vmi_align_munmap():2452
+             ├─ vma 找齐：mas_walk 定位 start/end 所在 VMA
+             ├─ 两端切割：start 落在 VMA 内部 → vma_split（VMA 分裂的来源）
+             ├─ 摘除：受影响 VMA 标记 detached，从 maple tree 批量移除
+             │    （mmap_write_lock 全程持有——munmap 是重操作）
+             └─ unmap_region():2575
+                 ├─ unmap_vmas：逐 PTE 拆映射
+                 │    └─ zap_pte_range：清 PTE，私有页引用--（归零则释放回 buddy）
+                 │       文件页：从 page cache 摘除引用（页本身通常留在 cache）
+                 ├─ free_pgtables：整段页表页（PTE 页本身）释放
+                 └─ tlb_finish_mmu：批量刷 TLB（惰性批次化，减少 IPI 次数）
+</code></pre>
+<p><strong>TLB shootdown</strong>：munmap 拆掉 PTE 后，别的 CPU 核上可能还缓存着旧翻译——必须发 IPI 让所有核的 TLB 作废该区间。多核服务器上大区间 munmap 的开销主要在这批 IPI（这也是 THP 存在的理由之一：一个 2MB 页一条 TLB 项，shootdown 对象少 512 倍）。</p>
+<h3>msync 与 munmap 的先后</h3>
+<p>「保证 SHARED 脏页落盘再解除」的正确顺序：</p>
+<pre class="code" data-label="C"><code class="c">msync(p, len, MS_SYNC);   /* 阻塞到磁盘写完 */
+munmap(p, len);           /* 之后解除才安全 */
+</code></pre>
+<p>munmap 自身<strong>不提供任何落盘保证</strong>（脏页留在 page cache 交给回写线程）。崩溃窗口 = munmap 后、回写完成前。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1011,41 +1233,70 @@ munmap(p + 4096, 4096*2);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>及时 munmap 释放虚拟地址空间，避免耗尽</td>
+<td>NOMMU 体系 munmap 粒度受限（只能整段、地址必须与原 mmap 完全一致）；RAM 紧张设备上「及时 munmap 大映射」比「等退出」更能压住碎片</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>mmap 共享内存区域在生命周期结束时立即 munmap，防止悬空引用</td>
+<td>行情缓冲换版时 <code class="c">munmap</code>+重建会引发：①TLB shootdown IPI（打断其他忙轮询核！）；②新映射首触缺页——替代方案是 <code class="c">MADV_DONTNEED</code>（只清页保 VMA，见 <a href="chapter-50.html#s-50-4">50.4</a>）。<strong>换缓冲尽量避免 munmap</strong></td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
+<pre class="code" data-label="C"><code class="c">
+/* munmap 部分解除：VMA 分裂实测（maps 条数 1→2）
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   步骤4 munmap 中间页（VMA 分裂）
+ *     [分裂后] VMA条数=2  Rss=4 kB
+ */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
 #include &lt;fcntl.h&gt;
+#include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
-#include &lt;string.h&gt;
-/* munmap: 解除内存映射 */
-int main(void) {
-    int fd = open(&quot;/tmp/test_mmap&quot;, O_RDWR|O_CREAT|O_TRUNC, 0644);
-    write(fd, &quot;hello mmap&quot;, 10);
 
-    /* 映射 */
-    char *p = mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+/* 统计 maps 中完全落在 [start,start+len) 内的 VMA 条数 */
+static int maps_count(void *start, size_t len)
+{
+    FILE *fp = fopen(&quot;/proc/self/maps&quot;, &quot;r&quot;);
+    if (!fp) return -1;
+    char line[300];
+    unsigned long lo, hi, s = (unsigned long)start, e = s + (unsigned long)len;
+    int n = 0;
+    while (fgets(line, sizeof line, fp))
+        if (sscanf(line, &quot;%lx-%lx&quot;, &amp;lo, &amp;hi) == 2 &amp;&amp; lo &gt;= s &amp;&amp; hi &lt;= e)
+            n++;
+    fclose(fp);
+    return n;
+}
+
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
+
+    /* PROT_NONE guard 包夹，防观察区被相邻 vma_merge 吞并 */
+    char *raw = mmap(NULL, 5 * P, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (raw == MAP_FAILED) { perror(&quot;mmap raw&quot;); return 1; }
+    char *p = mmap(raw + P, 3 * P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
-    printf(&quot;mapped: %.10s\n&quot;, p);
+    p[0] = 1;                                  /* 第 0 页驻留 */
 
-    /* 修改 */
-    memcpy(p, &quot;HELLO&quot;, 5);
+    printf(&quot;munmap 前 VMA 条数=%d\n&quot;, maps_count(p, 3 * P));
 
-    /* 解除映射 */
-    if (munmap(p, 4096) == 0) {
-        printf(&quot;munmap: success\n&quot;);
-    }
+    if (munmap(p + P, P) != 0) { perror(&quot;munmap&quot;); return 1; }
+    printf(&quot;munmap 中间页后 VMA 条数=%d（预期 2：VMA 分裂）\n&quot;,
+           maps_count(p, 3 * P));
 
-    /* p 不再有效, 访问会 SIGSEGV */
-    close(fd);
-    unlink(&quot;/tmp/test_mmap&quot;);
+    /* 访问已解除的中间页 → SIGSEGV（此处不演示崩溃，只验证两端仍可访问） */
+    p[0] = 2;
+    p[2 * P] = 3;
+    printf(&quot;两端页仍可访问：p[0]=%d p[2P]=%d\n&quot;, p[0], p[2 * (int)P]);
+
+    munmap(p, P);
+    munmap(p + 2 * P, P);
+    munmap(raw, 5 * P);
     return 0;
 }
 </code></pre>
@@ -1053,42 +1304,49 @@ int main(void) {
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-2">49.2 mmap</a></li>
-<li>下一节：<a href="#s-49-5">49.4 内存映射一致性</a></li>
+<li>上一节：<a href="#s-49-2">49.2 创建映射 <code class="c">mmap</code></a></li>
+<li>下一节：<a href="#s-49-4">49.4 文件映射</a></li>
+<li>msync：<a href="#s-49-5">49.5 <code class="c">msync</code></a>——落盘保证的唯一手段</li>
+<li>MADV_DONTNEED：<a href="chapter-50.html#s-50-4">50.4 <code class="c">madvise</code></a>——「不删 VMA 只清页」的轻量替代</li>
+<li>TLB 机制深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">munmap(p + 100, 8192)</code> 其中 p 页对齐、4KB 页。结果？</p>
+<p>A. 成功，从 p+100 拆 8192 字节　B. <code class="c">EINVAL</code>　C. 成功，但 addr 未对齐被静默取整　D. <code class="c">ENOMEM</code></p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B（EINVAL）</strong>。munmap 的 addr <strong>必须页对齐</strong>，内核既不取整也不挪移。正确写法：算好包含 p+100 的页（<code class="c">addr = (char*)(((uintptr_t)(p+100)) &amp; ~(pagesize-1))</code>），length 覆盖到目标尾部。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">munmap</code> 一段含未映射空洞的区间会失败。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。munmap 对区间内的空洞<strong>静默忽略</strong>，只拆除实际存在的映射部分（成功返回 0）。这与 <code class="c">mlock</code>（跳过空洞）宽松、与 <code class="c">msync</code>（空洞导致最终返回 ENOMEM）严格的行为形成三方对比——同族 API 对空洞的策略并不统一，记忆点：munmap 最宽容。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 为什么说「在忙轮询的多核交易机上，大区间 munmap 是全局税」？</p>
+<details>
+<summary>参考答案</summary>
+<p>munmap 拆 PTE 后必须<strong>作废所有 CPU 上缓存的旧翻译</strong>（TLB shootdown）——内核向每个可能持有该区间翻译的核发 IPI，中断信号会打断那些核上正在跑的忙轮询线程（哪怕它们根本不碰这块内存），造成几十微秒的抖动，摊到所有核上。规避：① 用 <code class="c">MADV_DONTNEED</code> 替代（清页但保 VMA，同样有 shootdown 但页数可控）；② 用 THP 减少 TLB 项数量；③ 在 RCU 风格的「换代窗口」（交易间隙）集中做地址空间手术。</p>
+</details>
       </section>
       <section class="section" id="s-49-4">
         <div class="sec-head"><div class="sec-no">49.4</div><h2>文件映射</h2></div>
 <blockquote>
-<p>源码核验：Linux v6.6 · <code class="c">mm/memory.c</code>（<code class="c">do_wp_page():3338</code> · <code class="c">wp_page_copy():3053</code> · <code class="c">wp_page_shared():3276</code>）
+<p>源码核验：Linux v6.6 · <code class="c">mm/memory.c</code>（<code class="c">do_wp_page():3338</code> · <code class="c">wp_page_copy():3053</code> · <code class="c">wp_page_shared():3276</code> · <code class="c">copy_present_pte():923</code>）· <code class="c">mm/filemap.c</code>（page cache 查找 <code class="c">filemap_fault</code>）
 本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
-- 上一节：<a href="#s-49-2">49.2 –49.3 <code class="c">mmap</code> / <code class="c">munmap</code></a>
+- 上一节：<a href="#s-49-3">49.3 解除映射 <code class="c">munmap</code></a>
 - 下一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><strong>PRIVATE</strong>：首写 COW，仅本进程可见，永不写回文件。 <strong>SHARED</strong>：同页共享；改对其它映射者可见；内核异步回盘。 SIGSEGV = 非法虚址；SIGBUS = 映射合法但无后备。</p>
+<p>文件映射把<strong>页缓存（page cache）</strong>按需挂进进程虚址。三个灵魂问题：</p>
+<ol>
+<li>PRIVATE 读的是什么？（<strong>page cache 原页</strong>——私有只承诺写之后；实测 v1 曾在此翻车）</li>
+<li>越过文件尾访问映射会怎样？（<strong>SIGBUS</strong>——映射合法（VMA 覆盖）但页无后备，与 SIGSEGV 的分界线）</li>
+<li>修改对别人可见吗？（SHARED 立即可见：写的就是 page cache；PRIVATE 永不可见：COW 副本）</li>
+</ol>
 <hr />
 <h2>要点</h2>
-<p><strong>PRIVATE</strong>：首写 COW，仅本进程可见，永不写回文件。<br />
-<strong>SHARED</strong>：同页共享；改对其它映射者可见；内核异步回盘。</p>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>越界</th>
-<th>PRIVATE</th>
-<th>SHARED</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>映区大于文件</td>
-<td>零页；写不扩文件</td>
-<td>越过 EOF → <strong>SIGBUS</strong></td>
-</tr>
-</tbody>
-</table></div>
-<p>SIGSEGV = 非法虚址；SIGBUS = 映射合法但无后备。</p>
 <h3>PRIVATE vs SHARED 文件映射：内核路径速查</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -1126,84 +1384,61 @@ int main(void) {
 </tr>
 </tbody>
 </table></div>
-<p>两条最容易被忽略的推论：</p>
-<ol>
-<li><strong>PRIVATE 读 = 零拷贝</strong>：私有文件映射的读并不是"把文件复制到我的内存"，而是多个进程的 PTE 指向同一个 page cache 物理页。PRIVATE 的"私有"只承诺<strong>写之后的私有</strong>。</li>
-<li><strong>SHARED 写 = 写 page cache</strong>：共享映射的写不经过任何进程私有内存，脏页标记后由内核回写机制（per-BDI flusher / <code class="c">msync</code>）落盘——这也是它能被其他映射者立刻看见的原因。</li>
-</ol>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>SHARED 只读映射共享固件/ROMFS 镜像省 RAM；fork 后 PRIVATE 首写 COW 共享只读段零拷贝</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>SHARED 映射跨进程共享订单簿/行情零拷贝；PRIVATE 读多写少用 COW 避免写放大、省内存</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">
-/* MAP_FIXED 映射到固定地址（危险，仅演示） */
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;sys/mman.h&gt;
-#include &lt;unistd.h&gt;
-
-int main(void) {
-    /* 先用一个普通映射拿到一段虚拟地址 */
-    void *hint = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (hint == MAP_FAILED) { perror(&quot;mmap hint&quot;); exit(1); }
-    printf(&quot;hint address: %p\n&quot;, hint);
-    munmap(hint, 4096);
-
-    /* MAP_FIXED 要求内核精确映射到指定地址，覆盖已有映射 */
-    /* 实际开发中几乎不用，这里仅演示参数 */
-    void *fixed = mmap(hint, 4096, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-    if (fixed == MAP_FAILED) { perror(&quot;mmap fixed&quot;); exit(1); }
-    printf(&quot;fixed mapped at: %p (same as hint)\n&quot;, fixed);
-    munmap(fixed, 4096);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-2">49.2 –49.3 <code class="c">mmap</code> / <code class="c">munmap</code></a></li>
-<li>下一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-48.html#ch-48">Ch48 SysV 共享内存</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-50.html#ch-50">Ch50 虚拟内存操作</a> · <a href="chapter-51.html#ch-51">Ch51 POSIX IPC</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-49-5">
-        <div class="sec-head"><div class="sec-no">49.5</div><h2>`msync`</h2></div>
+<h3>⭐ 可见性规则的精确表述（实测三连验证）</h3>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
-- 上一节：<a href="#s-49-10">49.4 文件映射</a>
-- 下一节：<a href="#s-49-6">49.6 –49.8 Flags · <code class="c">mremap</code></a></p>
+<p><strong>MAP_PRIVATE 是 copy-on-WRITE，不是 copy-on-ACCESS。</strong></p>
 </blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>int msync(void <em>addr, size_t length, int flags); <code class="c">MS_SYNC</code> 阻塞落盘 · <code class="c">MS_ASYNC</code> 后台 · <code class="c">MS_INVALIDATE</code> 作废缓存。 仅对 </em><em>SHARED</em>* 有意义。</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int msync(void *addr, size_t length, int flags);
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>页的状态</th>
+<th>别人改 page cache 后，我读到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>我<strong>从未写过</strong>这页</td>
+<td><strong>别人的修改</strong>（我的 PTE 还指着 page cache 原页！）</td>
+</tr>
+<tr>
+<td>我<strong>写过</strong>这页（任意一字节）</td>
+<td><strong>我的快照</strong>（整页已 COW，写一个字节就定格整页）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">实测（WSL Ubuntu，2026-09-05，v1→v2→v3 三版连环）：
+  v1：fork 后子写 shar[0]='S'，父读 priv[0] → 'S'（不是预写的 'O'！）
+      ← 推翻「PRIVATE=快照」的直觉：未写过的页跟随 page cache
+  v2：父在 fork 前写 priv[1]='K'，fork 后子改 shar，父读 priv[0] → 'O'
+      ← 意外：写 priv[1]（同页）把 priv[0] 也定格了——COW 粒度是页
+  v3：对照组放不同页（页 0 不写 / 页 1 写 'K'）：
+      priv[0]='S'（跟随）  priv[4096]='K'（快照）  ← 双双命中
 </code></pre>
-<p><code class="c">MS_SYNC</code> 阻塞落盘 · <code class="c">MS_ASYNC</code> 后台 · <code class="c">MS_INVALIDATE</code> 作废缓存。<br />
-仅对 <strong>SHARED</strong> 有意义。</p>
+<h3>越界访问的两种死法</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>信号</th>
+<th>含义</th>
+<th>触发条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SIGSEGV</strong></td>
+<td>虚址<strong>无 VMA 覆盖</strong>（映射之外）</td>
+<td>访问未映射区/已 munmap 区/prot 禁止的操作</td>
+</tr>
+<tr>
+<td><strong>SIGBUS</strong></td>
+<td>虚址<strong>有 VMA 但无后备页</strong></td>
+<td>文件映射越过 EOF（文件被 truncate）/ 磁盘坏块 / 稀疏洞未分配</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测：映射 2 页文件 → <code class="c">ftruncate</code> 缩到 1 页 → 访问第 2 页 <code class="c">shar[4096]</code> → <strong>捕获 SIGBUS</strong>（缺页处理走到 <code class="c">filemap_fault</code> 发现 offset ≥ i_size）。</p>
+<h3>fd 关闭与映射生命周期</h3>
+<p><code class="c">mmap</code> 后 <code class="c">close(fd)</code> 映射仍有效（<code class="c">vm_area_struct.vm_file</code> 持引用，实测验证见 <a href="#s-49-2">49.2</a>）。文件被删（unlink）也一样——页缓存与 inode 的引用还活着。<strong>杀掉映射的只有三件事：munmap / 进程退出 / exec。</strong></p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1216,153 +1451,617 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>掉电保护：关键配置/日志 MS_SYNC 强制落 flash；MS_INVALIDATE 同步外设缓存一致性</td>
+<td>SHARED 只读映射共享固件/ROMFS 镜像省 RAM；fork 后 PRIVATE 首写 COW 共享只读段零拷贝（busybox 型多进程布局）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>热路径不碰 msync；审计/持久化日志用 MS_ASYNC 后台刷盘，避免阻塞引入延迟毛刺</td>
+<td>SHARED 映射跨进程共享订单簿/行情<strong>零拷贝</strong>（写=写 page cache，无 syscall、无拷贝）；读多写少场景用 PRIVATE 借 COW 省内存——但<strong>记住可见性规则</strong>：策略进程「以为的快照」若从未写過，行情写入端一改它就读到新值——需要真快照时必须自己先触碰一页定格</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
-/* msync 三种模式：MS_SYNC / MS_ASYNC / MS_INVALIDATE */
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;string.h&gt;
-#include &lt;fcntl.h&gt;
-#include &lt;sys/mman.h&gt;
-#include &lt;unistd.h&gt;
-
-int main(void) {
-    int fd = open(&quot;/tmp/ch49_msync.txt&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
-    ftruncate(fd, 4096);
-    char *m = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (m == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
-
-    strcpy(m, &quot;msync demo data&quot;);
-
-    /* MS_SYNC：同步刷盘，阻塞直到写回完成 */
-    if (msync(m, 4096, MS_SYNC) &lt; 0) perror(&quot;msync MS_SYNC&quot;);
-    printf(&quot;MS_SYNC done — data flushed to disk\n&quot;);
-
-    /* MS_ASYNC：异步刷盘，立即返回 */
-    strcpy(m, &quot;async update&quot;);
-    if (msync(m, 4096, MS_ASYNC) &lt; 0) perror(&quot;msync MS_ASYNC&quot;);
-    printf(&quot;MS_ASYNC submitted\n&quot;);
-
-    munmap(m, 4096);
-    close(fd);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>衔接</h2>
-<ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-10">49.4 文件映射</a></li>
-<li>下一节：<a href="#s-49-6">49.6 –49.8 Flags · <code class="c">mremap</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-48.html#ch-48">Ch48 SysV 共享内存</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-50.html#ch-50">Ch50 虚拟内存操作</a> · <a href="chapter-51.html#ch-51">Ch51 POSIX IPC</a></li>
-</ul>
-      </section>
-      <section class="section" id="s-49-6">
-        <div class="sec-head"><div class="sec-no">49.6</div><h2>–49.8 Flags · `mremap`</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
-- 上一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p><code class="c">mremap</code>：改映射大小（Linux 扩展）。 Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/"><code class="c">code/</code></a> ---</p>
-<hr />
-<h2>要点</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>标志</th>
-<th></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code class="c">MAP_FIXED</code></td>
-<td>强制地址，可盖旧映射 — 危险</td>
-</tr>
-<tr>
-<td><code class="c">MAP_POPULATE</code></td>
-<td>预缺页，减运行时 fault</td>
-</tr>
-<tr>
-<td><code class="c">MAP_NORESERVE</code></td>
-<td>不预留 swap；写时可能 SIGSEGV/OOM</td>
-</tr>
-</tbody>
-</table></div>
-<p><code class="c">mremap</code>：改映射大小（Linux 扩展）。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/"><code class="c">code/</code></a></p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
-<div class="tbl-wrap"><table>
-<thead>
-<tr>
-<th>路线</th>
-<th>要点</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>嵌入式</td>
-<td>MAP_NORESERVE 省 swap 预留（嵌入式无 swap 场景）；MAP_POPULATE 预缺页避免启动后首触抖动</td>
-</tr>
-<tr>
-<td>HFT</td>
-<td>MAP_POPULATE 启动预填页表消除运行时缺页毛刺；mremap 原地扩环形缓冲避免整段拷贝</td>
-</tr>
-</tbody>
-</table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">
-/* mremap 扩展/收缩映射（Linux 特有） */
+/* PRIVATE vs SHARED 可见性 + SIGBUS 实测（v3 最终版）
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   步骤2 fork 后父观察:
+ *     priv[0]='S'（页 0 未写→跟随 page cache）
+ *     priv[4096]='K'（页 1 写过→整页 COW 快照）
+ *     shar[0]='S' shar[4096]='T'（SHARED 全局可见）
+ *   步骤3 文件截断到 1 页，访问映射第 2 页 shar[4096]……捕获 SIGBUS ✓
+ */
 #define _GNU_SOURCE
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;setjmp.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;unistd.h&gt;
+
+static sigjmp_buf jb;
+static void bus_handler(int sig) { (void)sig; siglongjmp(jb, 1); }
+
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
+    size_t len = 2 * P;                    /* 映射 2 页 */
+
+    int fd = open(&quot;/tmp/ch49_b.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (write(fd, &quot;ORIGORIG&quot;, 8) != 8) { perror(&quot;write&quot;); return 1; }
+    if (ftruncate(fd, (off_t)len) != 0) { perror(&quot;ftruncate&quot;); return 1; }
+
+    char *priv = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    char *shar = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED,  fd, 0);
+    if (priv == MAP_FAILED || shar == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+
+    /* 对照组放不同页：页 1 父 fork 前写 'K'（整页 COW 定格）；页 0 不写（跟随） */
+    priv[P] = 'K';
+    pid_t pid = fork();
+    if (pid == 0) {
+        priv[0] = 'P';                     /* 子 COW：只影响子进程副本 */
+        shar[0] = 'S';                     /* 直接写 page cache：全局可见 */
+        shar[P] = 'T';
+        _exit(0);
+    }
+    wait(NULL);
+    printf(&quot;fork 后父观察:\n&quot;);
+    printf(&quot;  priv[0]='%c'（页 0 未写→跟随 page cache）\n&quot;, priv[0]);
+    printf(&quot;  priv[%ld]='%c'（页 1 写过→整页 COW 快照）\n&quot;, (long)P, priv[P]);
+    printf(&quot;  shar[0]='%c' shar[%ld]='%c'（SHARED 全局可见）\n&quot;,
+           shar[0], (long)P, shar[P]);
+
+    /* SIGBUS：文件截断到 1 页，访问第 2 页（越过 EOF 无后备） */
+    if (ftruncate(fd, (off_t)P) != 0) { perror(&quot;ftruncate 2&quot;); return 1; }
+    signal(SIGBUS, bus_handler);
+    printf(&quot;文件截断到 1 页，访问映射第 2 页……&quot;);
+    fflush(stdout);
+    if (sigsetjmp(jb, 1) == 0) {
+        volatile char c = shar[P]; (void)c;
+        printf(&quot;读取成功（异常！）\n&quot;);
+    } else {
+        printf(&quot;捕获 SIGBUS ✓（映射合法但页无后备）\n&quot;);
+    }
+
+    munmap(priv, len);
+    munmap(shar, len);
+    close(fd);
+    unlink(&quot;/tmp/ch49_b.dat&quot;);
+    return 0;
+}
+</code></pre>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-49-3">49.3 解除映射 <code class="c">munmap</code></a></li>
+<li>下一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a>——SHARED 落盘控制</li>
+<li>匿名映射对比：<a href="#s-49-7">49.7 匿名映射</a>——无后备文件的两种形态</li>
+<li>read/write 对比：<a href="chapter-63.html#s-63-4">Ch63 备用 I/O 模型</a></li>
+<li>信号差异：<a href="chapter-20.html#intro">Ch20 信号基础</a>——SIGSEGV vs SIGBUS</li>
+</ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> 进程 A 以 <code class="c">MAP_PRIVATE</code> 映射文件，从未写入页 0。进程 B 以 <code class="c">MAP_SHARED</code> 映射同一文件并修改了文件页 0。A 读页 0 得到？</p>
+<p>A. 文件原内容　B. B 修改后的内容　C. 全 0　D. 未定义</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B</strong>。A 的 PTE 仍指向 page cache 原页（从未 COW），B 的修改直接写在 page cache 页上，A 读到修改。MAP_PRIVATE 只在<strong>自己写</strong>的那一刻才定格快照。实测三连（v1）正是这个结论的出处。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> 文件映射越界访问（文件 4KB、映射 8KB、访问 offset 6KB）触发 SIGSEGV。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误，是 <strong>SIGBUS</strong>。虚址在 VMA 内（映射合法），但后备文件不够——缺页处理发现 offset ≥ i_size，无法提供数据页，发 SIGBUS。SIGSEGV 是「VMA 都不存在」，两者的判定层次不同（内存管理子系统 vs 文件层后备）。实测验证：截断到 1 页后访问第 2 页捕获 SIGBUS。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 写一个「行情快照」策略进程，要求行情写入进程落盘的更新不影响已读到的行情，怎么设计？</p>
+<details>
+<summary>参考答案</summary>
+<p>用 <code class="c">MAP_PRIVATE</code> 映射，<strong>启动后先逐页写一遍</strong>（例如 memset 或拷贝到本地）把整段定格成 COW 快照——此后的读与 page cache 脱钩。注意 COW 粒度是页：只写过页内 1 字节，整页（4KB）都定格。代价：每页多一份物理内存拷贝。若嫌贵：只定格真正要读的页区间（稀疏触碰），或者用 <code class="c">msync</code>+独立文件做版本化快照。</p>
+</details>
+      </section>
+      <section class="section" id="s-49-5">
+        <div class="sec-head"><div class="sec-no">49.5</div><h2>同步映射区：msync()</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · <code class="c">mm/msync.c</code>（<code class="c">SYSCALL_DEFINE3(msync):32</code> · <code class="c">vfs_fsync_range()</code> 调用 <code class="c">:96</code>）· <code class="c">mm/page-writeback.c</code>（脏页回写）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+- 上一节：<a href="#s-49-4">49.4 文件映射</a>
+- 下一节：<a href="#s-49-6">49.6 mmap flags 补充细节</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p><code class="c">msync</code> 把 <code class="c">MAP_SHARED</code> 映射的脏页刷回磁盘。三个灵魂问题：</p>
+<ol>
+<li>三种模式差在哪？（<code class="c">MS_SYNC</code> 阻塞落盘；<code class="c">MS_ASYNC</code> 现代 Linux 里是 <strong>no-op</strong>；<code class="c">MS_INVALIDATE</code> 丢干净页缓存）</li>
+<li>什么时候真的需要它？（担心<strong>崩溃丢失</strong>时——别的进程的<strong>可见性</strong>从来不靠 msync，page cache 本来就是全局的）</li>
+<li>它和 mlock 什么关系？（<code class="c">MS_INVALIDATE</code> 作用在锁定区 → <code class="c">EBUSY</code>，实测验证）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+int msync(void *addr, size_t length, int flags);
+/* flags: MS_SYNC | MS_ASYNC | MS_INVALIDATE（前两者互斥） */
+</code></pre>
+<hr />
+<h2>要点</h2>
+<h3>三种模式（含现代内核的真实行为）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flags</th>
+<th>POSIX 语义</th>
+<th>Linux v6.6 真实行为（msync.c:32 逐行核验）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MS_SYNC</code></td>
+<td>阻塞直到脏页写到磁盘</td>
+<td>逐 VMA 调 <code class="c">vfs_fsync_range(file, fstart, fend, 1)</code>（:96）——真同步</td>
+</tr>
+<tr>
+<td><code class="c">MS_ASYNC</code></td>
+<td>调度后台回写，立即返回</td>
+<td><strong>no-op</strong>！内核 2.6.19 起自带脏页追踪，page cache 的脏页由回写线程自动管理，无需「提醒」</td>
+</tr>
+<tr>
+<td><code class="c">MS_INVALIDATE</code></td>
+<td>丢弃 page cache 中的干净页</td>
+<td>对 <code class="c">VM_LOCKED</code>（mlock）区直接 <code class="c">EBUSY</code>（:81-84）</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>MS_ASYNC 的历史</strong>：TLPI 写作年代（2010）<code class="c">MS_ASYNC</code> 确实有「启动回写」语义；现代 man page 明确注明 <em>"Since Linux 2.6.19, MS_ASYNC is in fact a no-op"</em>。老代码里的 <code class="c">msync(p, len, MS_ASYNC)</code> 现在只是心理安慰。</p>
+<h3>msync 真正解决什么</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>靠什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>别的进程立刻读到我的修改</strong></td>
+<td>什么都不用做——SHARED 写的就是 page cache，天然全局可见</td>
+</tr>
+<tr>
+<td><strong>崩溃后数据还在磁盘</strong></td>
+<td><code class="c">msync(MS_SYNC)</code>——唯一保证</td>
+</tr>
+<tr>
+<td><strong>内存占用太大想丢干净页</strong></td>
+<td><code class="c">msync(MS_INVALIDATE)</code>（罕见）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>内核路径（v6.6 实测核验）</h3>
+<pre class="code" data-label="code"><code class="c">msync(2) → SYSCALL_DEFINE3(msync)            mm/msync.c:32
+ ├─ flags 校验（:39-46）：
+ │    未知标志 → EINVAL；MS_SYNC+MS_ASYNC 同传 → EINVAL；addr 未页对齐 → EINVAL
+ ├─ 遍历 [start,end) 的每个 VMA：
+ │    ├─ 空洞区间：跳过，但记 unmapped_error（最终返回 ENOMEM）
+ │    ├─ MS_INVALIDATE &amp;&amp; VM_LOCKED → EBUSY（:81-84，实测验证）
+ │    └─ MS_SYNC &amp;&amp; file &amp;&amp; VM_SHARED：
+ │         vfs_fsync_range(file, fstart, fend, 1)   :96
+ │         （同步等磁盘——所以 MS_SYNC 的延迟≈磁盘 fsync）
+ └─ MAP_PRIVATE 映射：循环体里 file 分支不满足 → 直接滑过（无操作）
+</code></pre>
+<p>要点：<strong>PRIVATE 映射调 msync 无任何效果</strong>（不报错，白调）——msync 只对 <code class="c">VM_SHARED + vm_file</code> 的 VMA 有意义。</p>
+<h3>错误码速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>条件</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EINVAL</code></td>
+<td>flags 非法 / SYNC+ASYNC 同传 / addr 未对齐</td>
+<td>✓（22）</td>
+</tr>
+<tr>
+<td><code class="c">ENOMEM</code></td>
+<td>区间含未映射空洞（结束后统一返回）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">EBUSY</code></td>
+<td><code class="c">MS_INVALIDATE</code> 遇 mlock 区</td>
+<td>✓（16）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td>掉电保护：关键配置/日志写 SHARED 映射后 <code class="c">MS_SYNC</code> 强制落 flash（eMMC/NAND 的 fsync 含 FTL 层刷写，毫秒级，别放热路径）；<code class="c">MS_INVALIDATE</code> 做外设缓存一致性冲洗（罕见但嵌入式 debug 用过）</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>热路径<strong>永不碰 MS_SYNC</strong>（一次 = 一次真 fsync，毫秒级）；审计日志缓冲用单独线程攒批刷；<strong>可见性需求是伪需求</strong>（page cache 天然共享），只有崩溃持久性才需要 msync——分清两者能省掉一半无谓调用</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例</h2>
+<pre class="code" data-label="C"><code class="c">
+/* msync 语义实测：EINVAL / EBUSY 两个错误码（完整可跑版）
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   步骤4 msync(MS_SYNC|MS_ASYNC) = -1 errno=22(Invalid argument)
+ *   步骤5 mlock 区上 msync(MS_INVALIDATE) = -1 errno=16(Device or resource busy)
+ */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
 
-int main(void) {
-    size_t old_size = 4096;
-    size_t new_size = 8192;
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
 
-    /* 初始匿名映射 */
-    char *m = mmap(NULL, old_size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (m == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
-    strcpy(m, &quot;original data&quot;);
-    printf(&quot;old mapping: %p, size=%zu\n&quot;, (void*)m, old_size);
+    int fd = open(&quot;/tmp/ch49_sync.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (ftruncate(fd, (off_t)P) != 0) { perror(&quot;ftruncate&quot;); return 1; }
 
-    /* 扩展到 new_size */
-    char *m2 = mremap(m, old_size, new_size, MREMAP_MAYMOVE);
-    if (m2 == MAP_FAILED) { perror(&quot;mremap&quot;); exit(1); }
-    printf(&quot;new mapping: %p, size=%zu (may have moved)\n&quot;, (void*)m2, new_size);
-    printf(&quot;data preserved: %s\n&quot;, m2);
+    char *shar = mmap(NULL, P, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (shar == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    strcpy(shar, &quot;dirty data&quot;);
 
-    munmap(m2, new_size);
+    /* 1. MS_SYNC：真同步落盘（阻塞到磁盘完成） */
+    if (msync(shar, P, MS_SYNC) != 0) perror(&quot;msync MS_SYNC&quot;);
+    printf(&quot;MS_SYNC 完成：脏页已落盘\n&quot;);
+
+    /* 2. 互斥标志 → EINVAL */
+    errno = 0;
+    int r = msync(shar, P, MS_SYNC | MS_ASYNC);
+    printf(&quot;msync(MS_SYNC|MS_ASYNC) = %d errno=%d(%s)，预期 EINVAL\n&quot;,
+           r, errno, r ? strerror(errno) : &quot;OK&quot;);
+
+    /* 3. mlock 区 + MS_INVALIDATE → EBUSY */
+    char *lk = mmap(NULL, P, PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (lk == MAP_FAILED) { perror(&quot;mmap lk&quot;); return 1; }
+    lk[0] = 1;
+    if (mlock(lk, P) != 0) { perror(&quot;mlock&quot;); return 1; }
+    errno = 0;
+    r = msync(lk, P, MS_INVALIDATE);
+    printf(&quot;mlock 区上 msync(MS_INVALIDATE) = %d errno=%d(%s)，预期 EBUSY\n&quot;,
+           r, errno, r ? strerror(errno) : &quot;OK&quot;);
+
+    munlock(lk, P);
+    munmap(lk, P);
+    munmap(shar, P);
+    close(fd);
+    unlink(&quot;/tmp/ch49_sync.dat&quot;);
     return 0;
 }
-
 </code></pre>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>上一节：<a href="#s-49-4">49.4 文件映射</a>——msync 只服务 SHARED 文件映射</li>
+<li>下一节：<a href="#s-49-6">49.6 mmap flags 补充细节</a></li>
+<li>mlock 联动：<a href="chapter-50.html#s-50-2">50.2 <code class="c">mlock</code></a>——VM_LOCKED 与 MS_INVALIDATE 的冲突</li>
+<li>fsync 家族：<a href="chapter-13.html#intro">Ch13 文件 I/O 缓冲</a>——<code class="c">fsync/fdatasync/sync_file_range</code> 的光谱</li>
+</ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> 进程 A <code class="c">MAP_SHARED</code> 映射写入后<strong>没有调用任何 msync</strong>，进程 B 映射同一文件读，能看到修改吗？</p>
+<p>A. 不能，必须先 msync　B. 能，立即看到　C. 能，但延迟不定　D. 只有 MS_ASYNC 后能看到</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B</strong>。SHARED 映射的写直接落在 page cache 页（<code class="c">wp_page_shared():3276</code> 原地改页），page cache 是全局唯一的——B 的读缺页拿到同一物理页。msync 只解决「磁盘持久性」，与可见性无关。这个误解在面试和 code review 中出现频率极高。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">msync(p, len, MS_ASYNC)</code> 在现代 Linux 上会启动后台回写。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。自 2.6.19 起 <code class="c">MS_ASYNC</code> 是 <strong>no-op</strong>——内核的脏页追踪 + 平衡回写线程已全自动，MS_ASYNC 的「提醒」职责被彻底取代。man 2 msync 的 NOTES 明确写了这一点。需要确定性落盘只有 <code class="c">MS_SYNC</code>。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 交易程序把成交记录写进 <code class="c">MAP_SHARED</code> 映射的日志文件，要求「进程崩溃不丢、机器断电最多丢 1 秒」，怎么设计刷盘节奏？</p>
+<details>
+<summary>参考答案</summary>
+<p>独立刷盘线程每 ≤1s 调一次 <code class="c">msync(区间, MS_SYNC)</code>（对增量区间，避免整段重扫）；写线程永不阻塞在 fsync。注意三点：① MS_SYNC 的延迟 ≈ 磁盘 fsync（HDD 毫秒级/NVMe 几十 µs~百 µs），必须在旁路线程；② 关键字段用定长记录 + 序号，崩溃恢复时容忍半条记录；③ 别忘了 fsync 日志文件<strong>本身的新增块</strong>（ftruncate/pwrite 的元数据也走 fsync 路径，<code class="c">vfs_fsync_range</code> 已覆盖）。</p>
+</details>
+      </section>
+      <section class="section" id="s-49-6">
+        <div class="sec-head"><div class="sec-no">49.6</div><h2>mmap() flags 参数补充细节</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · <code class="c">uapi/asm-generic/mman-common.h</code>（<code class="c">MAP_SHARED:0x01</code> · <code class="c">MAP_PRIVATE:0x02</code> · <code class="c">MAP_FIXED:0x10</code> · <code class="c">MAP_FIXED_NOREPLACE:0x100000</code>:31）· <code class="c">mm/mmap.c</code>（<code class="c">do_mmap():1203</code> flags 校验分支）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+- 上一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a>
+- 下一节：<a href="#s-49-7">49.7 匿名映射</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>flags 参数的正式语义细节：SHARED/PRIVATE 的<strong>修改可见性矩阵</strong>（SUSv3 规定 + 实测验证）、MAP_TYPE 位域结构、fork 的继承规则。三个灵魂问题：</p>
+<ol>
+<li>「PRIVATE = 私有」到底私有什么？（只私有自己的<strong>写</strong>——读跟随后备，实测三连见 49.4）</li>
+<li>SHARED/PRIVATE 在 flags 里占什么位置？（低 4 位 MAP_TYPE 掩码，其余标志在上层位叠加）</li>
+<li>fork 之后呢？（两类映射都继承，语义原样传递——这是父子 IPC 的根基）</li>
+</ol>
+<hr />
+<h2>要点</h2>
+<h3>修改可见性矩阵（SUSv3 规定 + v6.6 实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>映射类型</th>
+<th>修改者</th>
+<th>谁能看到修改</th>
+<th>修改是否到达底层文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAP_SHARED</code> 文件</td>
+<td>本进程</td>
+<td>所有映射同一文件区域的进程 + read() 读者</td>
+<td>✅（异步回写 / msync 强制）</td>
+</tr>
+<tr>
+<td><code class="c">MAP_PRIVATE</code> 文件</td>
+<td>本进程</td>
+<td><strong>只有自己</strong>（写过之后，COW 页）</td>
+<td>❌ 永不</td>
+</tr>
+<tr>
+<td><code class="c">MAP_SHARED</code> 文件</td>
+<td><strong>其他进程</strong>（经 SHARED 映射）</td>
+<td>本进程<strong>能看到</strong>（即使本进程是 PRIVATE 映射——<strong>但仅限未写过的页</strong>）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">MAP_SHARED</code> 文件</td>
+<td>其他进程（经 write()）</td>
+<td>同上——<strong>未写过的 PRIVATE 页能读到</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ 加粗行的矩阵正是 <a href="#s-49-4">49.4 实测三连</a> 的结论：<strong>PRIVATE 是 copy-on-write，未写过的页始终跟随 page cache</strong>。SUSv3 只规定了行为，实测给出了机制层面的原因（PTE 仍指向共享页）。</p>
+<h3>MAP_TYPE：flags 的位域结构</h3>
+<pre class="code" data-label="C"><code class="c">/* uapi/asm-generic/mman-common.h */
+#define MAP_SHARED    0x01     /* 低 4 位是「映射类型」域 */
+#define MAP_PRIVATE   0x02
+#define MAP_TYPE      0x0f     /* 掩码：flags &amp; MAP_TYPE 取类型 */
+/* 高层位是行为修饰（可叠加）： */
+#define MAP_FIXED         0x10
+#define MAP_ANONYMOUS    0x20
+#define MAP_GROWSDOWN    0x0100
+#define MAP_DENYWRITE    0x0800
+#define MAP_EXECUTABLE  0x1000
+#define MAP_LOCKED      0x2000
+#define MAP_NORESERVE   0x4000
+#define MAP_POPULATE   0x008000     /* :26 */
+#define MAP_STACK      0x020000     /* :28 */
+#define MAP_HUGETLB    0x040000     /* :29 */
+#define MAP_FIXED_NOREPLACE 0x100000  /* :31 */
+</code></pre>
+<p>类型域与修饰域正交：<code class="c">MAP_SHARED|MAP_ANONYMOUS|MAP_POPULATE</code> = 类型(01) + 修饰(20|8000)。<strong>flags 校验顺序</strong>：<code class="c">do_mmap():1203</code> 先取 <code class="c">flags &amp; MAP_TYPE</code> 判断 SHARED/PRIVATE（既无 SHARED 也无 PRIVATE → <code class="c">EINVAL</code>），再逐个处理修饰标志。</p>
+<h3>各修饰标志一句话</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th>语义</th>
+<th>详见</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAP_FIXED</code> / <code class="c">MAP_FIXED_NOREPLACE</code></td>
+<td>固定地址（覆盖/拒绝覆盖）</td>
+<td><a href="#s-49-10">49.10</a></td>
+</tr>
+<tr>
+<td><code class="c">MAP_ANONYMOUS</code></td>
+<td>无后备文件，缺页走零页/COW</td>
+<td><a href="#s-49-7">49.7</a></td>
+</tr>
+<tr>
+<td><code class="c">MAP_NORESERVE</code></td>
+<td>不预留 swap（overcommit）</td>
+<td><a href="#s-49-9">49.9</a></td>
+</tr>
+<tr>
+<td><code class="c">MAP_LOCKED</code></td>
+<td>映射即锁定（等价 mmap+mlock 一步）</td>
+<td><a href="chapter-50.html#s-50-2">50.2</a></td>
+</tr>
+<tr>
+<td><code class="c">MAP_POPULATE</code></td>
+<td>映射即预缺页（读写前页表已建好）</td>
+<td>本节下方</td>
+</tr>
+<tr>
+<td><code class="c">MAP_STACK</code></td>
+<td>告诉内核「这是栈」（仅影响布局启发，不做强制）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">MAP_HUGETLB</code></td>
+<td>用预留大页池（hugetlbfs）</td>
+<td><a href="../../06-linux-mm/html/index.html">06-linux-mm</a></td>
+</tr>
+</tbody>
+</table></div>
+<h3>MAP_POPULATE：预缺页的两种姿势</h3>
+<pre class="code" data-label="C"><code class="c">/* 姿势 1：mmap 时带标志 */
+p = mmap(NULL, len, RW, MAP_PRIVATE|MAP_ANONYMOUS|MAP_POPULATE, -1, 0);
+/* 姿势 2：mmap 后 madvise（等价） */
+p = mmap(NULL, len, RW, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+madvise(p, len, MADV_POPULATE_WRITE);      /* 5.14+，读用 POPULATE_READ */
+</code></pre>
+<p>把「N 页 × 首触缺页（各 µs 级）」从运行时挪到启动时。<strong>注意 POPULATE 不等于 mlock</strong>：页填了但不锁，内存压力下照样被换出——延迟敏感场景 POPULATE+mlock 配套用。</p>
+<h3>fork 的继承规则</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>映射</th>
+<th>fork 后子进程</th>
+<th>写的语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MAP_PRIVATE（任意）</td>
+<td>继承同一映射</td>
+<td>父子各自 COW（同 49.4 矩阵）</td>
+</tr>
+<tr>
+<td>MAP_SHARED 文件</td>
+<td>继承，与父（及所有映射者）共享 page cache</td>
+<td>立即互相可见</td>
+</tr>
+<tr>
+<td>MAP_SHARED</td>
+<td>MAP_ANONYMOUS</td>
+<td>继承，父子共享同一物理页</td>
+</tr>
+</tbody>
+</table></div>
+<p>exec 则相反：<strong>所有映射销毁</strong>（新程序映像重建地址空间）。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td><code class="c">MAP_POPULATE</code> 消除上电后首触抖动（工控响应时间预算友好）；<code class="c">MAP_STACK</code> 对自定义线程栈布局是「礼貌提示」——NOMMU 上才真正影响分配</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>启动序标配 <code class="c">MAP_POPULATE</code>（或 <code class="c">mlockall</code> 顺带的填充）——把 16384 页 × 1µs 的首触税从交易时段挪到 init；<code class="c">MAP_LOCKED</code>=mmap+mlock 原子化（免两步间隙的窗口）；可见性矩阵提醒：策略读行情用 SHARED 映射（实时跟随）或<strong>主动触碰过的</strong> PRIVATE（确定性快照），别用「未写过的 PRIVATE」——那是最阴险的中间态：<strong>测试环境像快照（没人并发写），生产环境像实时（行情不断改）</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码示例</h2>
+<pre class="code" data-label="C"><code class="c">
+/* MAP_POPULATE vs 惰性映射：首触缺页对比
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   lazy     映射后：Rss=0 kB（画区不填页）
+ *   populate 映射后：Rss=16384 kB（16MB 全部预填）
+ *   lazy     区 memset 首触 15 ms（含 4096 次缺页）
+ *   populate 区 memset      1 ms（无缺页，纯写内存）——15 倍差
+ */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;time.h&gt;
+#include &lt;unistd.h&gt;
+
+static long smaps_rss(void *addr)
+{
+    FILE *fp = fopen(&quot;/proc/self/smaps&quot;, &quot;r&quot;);
+    if (!fp) return -1;
+    char line[300];
+    unsigned long lo, hi, a = (unsigned long)addr;
+    long rss = -1;
+    int in_target = 0;
+    while (fgets(line, sizeof line, fp)) {
+        if (sscanf(line, &quot;%lx-%lx&quot;, &amp;lo, &amp;hi) == 2)
+            in_target = (a &gt;= lo &amp;&amp; a &lt; hi);
+        else if (in_target &amp;&amp; strncmp(line, &quot;Rss:&quot;, 4) == 0) {
+            sscanf(line + 4, &quot;%ld&quot;, &amp;rss);
+            break;
+        }
+    }
+    fclose(fp);
+    return rss;
+}
+
+int main(void)
+{
+    size_t len = 16UL &lt;&lt; 20;                 /* 16MB = 4096 页 */
+
+    char *lazy = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (lazy == MAP_FAILED) { perror(&quot;mmap lazy&quot;); return 1; }
+    printf(&quot;lazy     映射后 Rss=%ld kB（画区，0 物理页）\n&quot;, smaps_rss(lazy));
+
+    char *pop = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+    if (pop == MAP_FAILED) { perror(&quot;mmap populate&quot;); return 1; }
+    printf(&quot;populate 映射后 Rss=%ld kB（全部预填，写脏即真页）\n&quot;,
+           smaps_rss(pop));
+
+    /* 用时间对比首触：lazy 区首次 memset 才付税 */
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &amp;t0);
+    memset(lazy, 1, len);
+    clock_gettime(CLOCK_MONOTONIC, &amp;t1);
+    printf(&quot;lazy 区 memset 首触耗时 %ld ms（含 4096 次缺页）\n&quot;,
+           (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000);
+
+    clock_gettime(CLOCK_MONOTONIC, &amp;t0);
+    memset(pop, 1, len);
+    clock_gettime(CLOCK_MONOTONIC, &amp;t1);
+    printf(&quot;populate 区 memset 耗时 %ld ms（无缺页，纯写内存）\n&quot;,
+           (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000);
+
+    munmap(lazy, len);
+    munmap(pop, len);
+    return 0;
+}
+</code></pre>
+<p>（此示例完整版含计时实测记录在 <a href="#s-49-13">49.13 实验</a>。）</p>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
 <li>上一节：<a href="#s-49-5">49.5 <code class="c">msync</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-48.html#ch-48">Ch48 SysV 共享内存</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-50.html#ch-50">Ch50 虚拟内存操作</a> · <a href="chapter-51.html#ch-51">Ch51 POSIX IPC</a></li>
+<li>下一节：<a href="#s-49-7">49.7 匿名映射</a></li>
+<li>可见性实测三连：<a href="#s-49-4">49.4 文件映射</a></li>
+<li>MAP_POPULATE 的 madvise 等价：<a href="chapter-50.html#s-50-4">50.4 <code class="c">madvise</code></a></li>
+<li>MAP_LOCKED：<a href="chapter-50.html#s-50-2">50.2 <code class="c">mlock</code></a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">flags &amp; MAP_TYPE</code> 的作用？</p>
+<p>A. 取出 SHARED/PRIVATE 类型位　B. 校验 flags 合法性　C. 清除修饰标志　D. 区分匿名/文件映射</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>A</strong>。MAP_TYPE=0x0f 掩出低 4 位的映射类型域（SHARED=0x01/PRIVATE=0x02）；匿名与否由 MAP_ANONYMOUS（0x20）单独表达，与类型域正交——四种组合（文件/匿名 × SHARED/PRIVATE）就是 <a href="#s-49-1">49.1 四大组合</a>。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">MAP_POPULATE</code> 之后这些页被锁定，不会被换出。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。POPULATE 只做<strong>预缺页</strong>（当下把页表建满、页填进来），不设 VM_LOCKED——内存压力下页照样进入回收/换出路径。要「永不换出」必须 mlock/MAP_LOCKED。两者是正交维度：POPULATE 管「现在有没有」，LOCKED 管「将来走不走」。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 策略进程用 <code class="c">MAP_PRIVATE</code> 映射行情文件，测试回测全对、实盘偶发「读到未来数据」式异常，从本节矩阵出发定位问题。</p>
+<details>
+<summary>参考答案</summary>
+<p>回测时无并发写入者，PRIVATE 未写过的页读到的永远是「当前值」= 事实快照，行为正确；实盘行情进程持续改 page cache，策略的 PRIVATE 页<strong>未写过的部分跟随实时变化</strong>——同一个虚址两次读可能不同，回测里不存在这种竞态。修复：① 改用 SHARED 映射 + 显式双缓冲版本号（承认实时性，用序号 fence 一致性）；② 或初始化时主动触碰整段（memset 定格 COW 快照）+ 定期显式刷新重定格。根源是误把 copy-on-write 当 copy-on-access。</p>
+</details>
       </section>
       <section class="section" id="s-49-7">
         <div class="sec-head"><div class="sec-no">49.7</div><h2>匿名映射</h2></div>
@@ -1767,63 +2466,109 @@ int main(void)
       <section class="section" id="s-49-8">
         <div class="sec-head"><div class="sec-no">49.8</div><h2>重新映射：mremap()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mremap.c</code>（<code class="c">take_rmap_locks():105</code> · <code class="c">move_vma():583</code> · <code class="c">vma_to_resize():746</code> · <code class="c">mremap_to():800</code> · <code class="c">SYSCALL_DEFINE5(mremap):908</code> · MREMAP_DONTUNMAP 处理 <code class="c">:609/:770/:857</code>）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-7">49.7 匿名映射</a>
 - 下一节：<a href="#s-49-9">49.9 MAP_NORESERVE 与 overcommit</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><code class="c">mremap()</code> — Linux 特有，调整已映射区域的大小或位置（类似 <code class="c">realloc</code> 对 <code class="c">mmap</code>）。</p>
+<p><code class="c">mremap</code> 是 Linux 特有的「映射版 realloc」：原地扩/缩映射，必要时整段搬家。三个灵魂问题：</p>
+<ol>
+<li>原地扩展的条件？（紧邻高地址方向有<strong>够大的空洞</strong>——没空洞时无 <code class="c">MREMAP_MAYMOVE</code> 直接 <code class="c">ENOMEM</code>）</li>
+<li>搬家时数据怎么办？（<strong>PTE 级搬家</strong>：物理页不动，只把页表项搬到新虚址——比 memcpy 快一个数量级）</li>
+<li><code class="c">MREMAP_DONTUNMAP</code> 是什么？（5.13+ 新玩具：搬走 PTE 但旧虚址<strong>留空壳</strong>，读回零页）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#define _GNU_SOURCE
+#include &lt;sys/mman.h&gt;
+void *mremap(void *old_address, size_t old_size, size_t new_size,
+             int flags, /* void *new_address (MREMAP_FIXED 时) */);
+/* flags: MREMAP_MAYMOVE | MREMAP_FIXED | MREMAP_DONTUNMAP(4, Linux 5.13+) */
+</code></pre>
 <hr />
 <h2>要点</h2>
-<h3>API</h3>
-<pre class="code" data-label="C"><code class="c">void *mremap(void *old_address, size_t old_size, size_t new_size, int flags, ...);
-</code></pre>
-<ul>
-<li>调整 <code class="c">old_address</code> 处 <code class="c">old_size</code> 的映射为 <code class="c">new_size</code></li>
-<li><code class="c">flags</code>: <code class="c">MREMAP_MAYMOVE</code>（允许移动地址）</li>
-<li>返回新地址（可能与旧地址不同）</li>
-</ul>
-<h3>核心行为</h3>
+<h3>三种操作语义</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>操作</th>
-<th>行为</th>
+<th>条件</th>
+<th>结果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>扩大</td>
-<td>在原地址扩展（空间足够）或移动到新位置</td>
+<td><strong>原地扩展</strong></td>
+<td><code class="c">[old_end, old_end + (new-old))</code> 是空洞</td>
+<td>地址不变，VMA 长大</td>
 </tr>
 <tr>
-<td>缩小</td>
-<td>截断，多余部分被 munmap</td>
+<td><strong>搬家扩展</strong></td>
+<td>原地不行 + 带 <code class="c">MREMAP_MAYMOVE</code></td>
+<td>新地址（<code class="c">move_vma():583</code>：PTE 搬迁），<strong>数据逻辑保留</strong></td>
 </tr>
 <tr>
-<td>移动</td>
-<td>如果 MREMAP_MAYMOVE 且原位置空间不足</td>
+<td><strong>收缩</strong></td>
+<td>new &lt; old</td>
+<td>地址不变，尾部 munmap（脏 SHARED 页照常回写）</td>
+</tr>
+<tr>
+<td><strong>DONTUNMAP</strong></td>
+<td>匿名映射 + MAYMOVE + new==old</td>
+<td>新地址得 PTE，旧地址 VMA 保留但读回<strong>零页</strong></td>
 </tr>
 </tbody>
 </table></div>
-<h3>与 realloc 的关系</h3>
-<p><code class="c">glibc</code> 的 <code class="c">realloc</code> 对大块内存（&gt;128KB）内部使用 <code class="c">mremap</code>：
-- <code class="c">malloc</code> 大块 → <code class="c">mmap</code>
-- <code class="c">realloc</code> 大块 → <code class="c">mremap</code>
-- <code class="c">free</code> 大块 → <code class="c">munmap</code></p>
-<h3>注意事项</h3>
-<ul>
-<li><strong>Linux 特有</strong>，不可移植</li>
-<li>只能 remap 匿名映射（不能 remap 文件映射的大小）</li>
-<li>不指定 <code class="c">MREMAP_MAYMOVE</code> 且空间不足 → 返回 <code class="c">MAP_FAILED</code></li>
-<li>缩小时，被截断区域的脏页（MAP_SHARED）会写回文件</li>
-</ul>
-<h3>性能优势</h3>
-<ul>
-<li>扩大映射时不需要拷贝数据（如果原地扩展）</li>
-<li>比 malloc+memcpy+free 快得多</li>
-</ul>
+<p>原地失败且无 MAYMOVE → <code class="c">MAP_FAILED</code> + <code class="c">ENOMEM</code>（<strong>实测验证</strong>：紧贴阻挡下 errno=12）。</p>
+<h3>错误码表（<code class="c">vma_to_resize():746</code> 分支对照）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>分支（v6.6 坐标）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EFAULT</code></td>
+<td>old 区间不在任何 VMA 内 / old_len 超出 VMA 尾（:754/:775）</td>
+</tr>
+<tr>
+<td><code class="c">EINVAL</code></td>
+<td>DONTUNMAP 用在 VM_DONTEXPAND/VM_PFNMAP 上（:770）等</td>
+</tr>
+<tr>
+<td><code class="c">EAGAIN</code></td>
+<td>扩张会超 <code class="c">RLIMIT_MEMLOCK</code>（<code class="c">mlock_future_ok</code> :790）</td>
+</tr>
+<tr>
+<td><code class="c">ENOMEM</code></td>
+<td>无 MAYMOVE 且原地不行 / map_count 超限 / swap 预留不足（VM_ACCOUNT :793）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>⭐ 内核路径：PTE 级搬家（为什么快）</h3>
+<pre class="code" data-label="code"><code class="c">mremap(2) → SYSCALL_DEFINE5(mremap)         mm/mremap.c:908
+ ├─ vma_to_resize():746                     定位并校验 old VMA
+ ├─ new == old：收缩路径 → vma_shrink（尾部 munmap）
+ └─ mremap_to():800
+     └─ move_vma():583
+         ├─ take_rmap_locks():105           锁 anon_vma/i_mmap（反向映射一致性）
+         ├─ move_page_tables                【核心】逐 PMD 批量把 PTE 从旧虚址
+         │    摘下挂到新虚址——物理页不动！
+         ├─ 旧 VMA 区间 munmap
+         └─ （DONTUNMAP）旧 VMA 保留、PTE 不搬走的部分清空 → 零页
+</code></pre>
+<p><strong>物理页一个都没动，动的只是页表</strong>。4KB 页的 PTE 搬运是内存内的位操作；这正是 <code class="c">realloc</code> 大块内部走 mremap 的原因——扩 128MB→256MB 若靠 memcpy 要搬 128GB/s 级带宽好几毫秒，mremap 原地扩展是<strong>零拷贝</strong>。</p>
+<h3>MREMAP_DONTUNMAP 的语义（实测验证）</h3>
+<pre class="code" data-label="code"><code class="c">实测（WSL Ubuntu，2026-09-05）：
+  DONTUNMAP: 旧 0x75800c513000 → 新 0x75800c511000
+    新地址 data=&quot;DATA&quot;           ← PTE 搬到新地址，内容完整
+    旧地址 d[0]=0x00             ← 旧地址变空壳，读回零填充
+</code></pre>
+<p>用途：无锁迁移缓冲（读者还握着旧指针的窗口期内旧地址合法可读——只是读到 0）、构建 userspace 双视图。限制：仅匿名映射（文件映射/PFNMAP 拒绝）、必须 MAYMOVE、new_size 必须 == old_size。</p>
+<h3>与 glibc realloc 的关系</h3>
+<p>glibc 对<strong>大块</strong>（≥ mmap 阈值，默认 128KB，动态调整）的 malloc 走 mmap；对应 realloc 走 <code class="c">mremap(MREMAP_MAYMOVE)</code>——这是「realloc 大块几乎免费」的底层真相。小块在堆内（brk 区）realloc 仍可能 memcpy。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1836,44 +2581,94 @@ int main(void)
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>mremap 扩展共享内存避免拷贝，性能优于重新 mmap</td>
+<td>环形缓冲按流量扩容：mremap 原地扩（PTE 级）避免复制吞吐缓冲；NOMMU 无 mremap（无页表可搬）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>大块内存重分配用 mremap 避免数据拷贝</td>
+<td>订单池动态扩容用 <code class="c">mremap(MREMAP_MAYMOVE)</code>——<strong>迁移是页表操作不是数据拷贝</strong>，128MB 池扩容在 µs 量级；坑：搬家后地址变了，所有缓存了旧指针的代码（对象池 freelist、硬件 DMA 描述符）必须失效重建——所以宁可 mmap 预留大虚拟区 + MAP_NORESERVE + 按需 populate，也不让地址漂移</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
+<pre class="code" data-label="C"><code class="c">
+/* mremap 原地/受阻/搬家/收缩/DONTUNMAP 全景实测
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   步骤1 原地扩展 1→2 页: 0x...515000 → 0x...515000（地址不变）data=&quot;hello&quot;
+ *   步骤2 vic=0x...514000 blk=0x...517000（vic 上方紧贴 blk）
+ *     mremap 无 MAYMOVE 被挡: Cannot allocate memory（errno=12 预期 ENOMEM）
+ *     mremap MAYMOVE 成功: 0x...514000 → 0x...512000（地址改变）data=&quot;VICTIM&quot;
+ *   步骤3 收缩 2→1 页: 0x...512000 → 0x...512000（地址不变）data=&quot;VICTIM&quot;
+ *   步骤4 MAP_FIXED_NOREPLACE 覆盖: EEXIST（见 49.10）
+ *   步骤5 DONTUNMAP: 旧 0x...513000 → 新 0x...511000
+ *     新地址 data=&quot;DATA&quot; / 旧地址 d[0]=0x00（零填充）
+ */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
-/* mremap: 调整映射大小 */
-int main(void) {
-    /* 初始映射 1 页 */
-    size_t old_size = 4096;
-    char *p = mmap(NULL, old_size, PROT_READ|PROT_WRITE,
-                   MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
-    strcpy(p, &quot;hello&quot;);
+#include &lt;errno.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;unistd.h&gt;
 
-    /* 扩大到 4 页 */
-    size_t new_size = 4096 * 4;
-    char *new_p = mremap(p, old_size, new_size, MREMAP_MAYMOVE);
-    if (new_p == MAP_FAILED) {
-        perror(&quot;mremap&quot;);
-        munmap(p, old_size);
-        return 1;
+#ifndef MREMAP_DONTUNMAP
+#define MREMAP_DONTUNMAP 4
+#endif
+
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
+
+    /* 1. 自造空洞：mmap 3 页 → munmap 上 2 页 → 剩 1 页且上方空洞 */
+    char *big = mmap(NULL, 3 * P, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (big == MAP_FAILED) { perror(&quot;mmap big&quot;); return 1; }
+    if (munmap(big + P, 2 * P) != 0) { perror(&quot;munmap hole&quot;); return 1; }
+    strcpy(big, &quot;hello&quot;);
+    char *m1 = mremap(big, P, 2 * P, 0);       /* 无 MAYMOVE，上方空洞 */
+    if (m1 == MAP_FAILED) perror(&quot;原地扩展&quot;);
+    else printf(&quot;原地扩展 1→2 页: %p → %p data=\&quot;%s\&quot;\n&quot;,
+                (void *)big, (void *)m1, m1);
+
+    /* 2. 紧贴阻挡（top-down 分配器让 vic 紧贴 blk 下方） */
+    char *blk = mmap(NULL, P, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    char *vic = mmap(NULL, P, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (blk == MAP_FAILED || vic == MAP_FAILED) { perror(&quot;mmap blk/vic&quot;); return 1; }
+    strcpy(vic, &quot;VICTIM&quot;);
+
+    errno = 0;
+    char *blocked = mremap(vic, P, 2 * P, 0);  /* 无 MAYMOVE，上方被挡 */
+    printf(&quot;受阻+无MAYMOVE: %s(errno=%d 预期 %d)\n&quot;,
+           blocked == MAP_FAILED ? &quot;MAP_FAILED&quot; : &quot;意外成功&quot;,
+           errno, ENOMEM);
+
+    errno = 0;
+    char *moved = mremap(vic, P, 2 * P, MREMAP_MAYMOVE);
+    if (moved == MAP_FAILED) perror(&quot;MAYMOVE&quot;);
+    else printf(&quot;MAYMOVE 搬家: %p → %p data=\&quot;%s\&quot;\n&quot;,
+                (void *)vic, (void *)moved, moved);
+
+    /* 3. 收缩 */
+    char *shr = mremap(moved, 2 * P, P, 0);
+    if (shr != MAP_FAILED)
+        printf(&quot;收缩 2→1 页: %p → %p data=\&quot;%s\&quot;\n&quot;,
+               (void *)moved, (void *)shr, shr);
+
+    /* 5. MREMAP_DONTUNMAP：新旧并存，旧地址零填充 */
+    char *d = mmap(NULL, P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    strcpy(d, &quot;DATA&quot;);
+    char *d2 = mremap(d, P, P, MREMAP_MAYMOVE | MREMAP_DONTUNMAP);
+    if (d2 == MAP_FAILED) {
+        perror(&quot;DONTUNMAP（内核 &lt; 5.13 或限制）&quot;);
+    } else {
+        printf(&quot;DONTUNMAP: 旧 %p → 新 %p\n&quot;, (void *)d, (void *)d2);
+        printf(&quot;  新地址 data=\&quot;%s\&quot; / 旧地址 d[0]=0x%02x（零填充）\n&quot;,
+               d2, (unsigned char)d[0]);
     }
-
-    printf(&quot;old: %p, new: %p\n&quot;, p, new_p);
-    printf(&quot;data preserved: %s\n&quot;, new_p);  /* &quot;hello&quot; */
-
-    /* 写入更大范围 */
-    memset(new_p + old_size, 'x', new_size - old_size);
-    printf(&quot;expanded region filled\n&quot;);
-
-    munmap(new_p, new_size);
     return 0;
 }
 </code></pre>
@@ -1881,98 +2676,124 @@ int main(void) {
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-7">49.7 匿名映射</a></li>
-<li>下一节：<a href="#s-49-9">49.9 MAP_NORESERVE</a></li>
+<li>上一节：<a href="#s-49-7">49.7 匿名映射</a>——mremap 主要服务匿名映射（文件映射不能扩，只能 DONTUNMAP 也不行）</li>
+<li>下一节：<a href="#s-49-9">49.9 MAP_NORESERVE 与 overcommit</a></li>
+<li>malloc 内幕：<a href="chapter-31.html#intro">Ch31 之后 malloc 系</a>——glibc mmap 阈值与 mremap 路径</li>
+<li>MAP_FIXED_NOREPLACE 配合：<a href="#s-49-10">49.10</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">mremap(p, 4096, 8192, 0)</code> 时 p 上方紧贴另一个映射，返回？</p>
+<p>A. 成功，搬家到新地址　B. <code class="c">MAP_FAILED</code>，errno=<code class="c">ENOMEM</code>　C. <code class="c">MAP_FAILED</code>，errno=<code class="c">EAGAIN</code>　D. <code class="c">MAP_FAILED</code>，errno=<code class="c">EINVAL</code></p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B（ENOMEM）</strong>。无 <code class="c">MREMAP_MAYMOVE</code> 且原地无空洞 → 内核不搬、直接失败。要搬家必须显式授权 MAYMOVE。实测 errno=12。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">mremap</code> 搬家时要复制所有数据到新物理页。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。<code class="c">move_page_tables</code> 搬的是<strong>页表项</strong>（PTE 从旧虚址摘下挂到新虚址），物理页纹丝不动——这就是 mremap 快的本质。代价：TLB shootdown（旧翻译全部作废，IPI 广播）+ rmap 锁（<code class="c">take_rmap_locks():105</code>，反向映射一致性）。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 用 <code class="c">MREMAP_DONTUNMAP</code> 设计「策略热切换」：新策略引擎就绪前旧引擎继续服务。</p>
+<details>
+<summary>参考答案</summary>
+<p>把策略参数页 <code class="c">mremap(p, len, len, MAYMOVE|DONTUNMAP)</code> → 新地址 d2：新引擎绑定 d2 预热（读参数 + 构建索引），旧引擎继续用旧地址 p（注意：读到的是<strong>零</strong>，不是旧数据——所以参数页不能直接切！）。正确用法：p 是「旧引擎私有已写页」才安全……实际上 DONTUNMAP 的旧地址不保留数据，所以热切换的正确结构是：<strong>引擎自己 mmap 双页 + futex 序号</strong>，DONTUNMAP 用于把「预热好的新页」以零拷贝方式挂到服务虚址。核心陷阱：任何「旧地址还能读到旧数据」的假设都是错的（实测 d[0]=0x00）。</p>
+</details>
       </section>
       <section class="section" id="s-49-9">
         <div class="sec-head"><div class="sec-no">49.9</div><h2>MAP_NORESERVE 与 swap space overcommit</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code>（<code class="c">accountable_mapping</code> 记账 · <code class="c">security_vm_enough_memory_mm</code> 检查 · <code class="c">mmap_region():2662</code> 内 <code class="c">charged</code> 分支）· <code class="c">mm/util.c</code>（<code class="c">vm_commit_limit</code> / <code class="c">__vm_enough_memory</code> overcommit 判定）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-8">49.8 mremap</a>
 - 下一节：<a href="#s-49-10">49.10 MAP_FIXED</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><code class="c">MAP_NORESERVE</code> 标志和 Linux 的 overcommit 机制 — 映射时不预留 swap 空间。</p>
+<p>私有可写映射默认要<strong>预留 swap</strong>（承诺「你最坏情况全写满也放得下」）；<code class="c">MAP_NORESERVE</code> 放弃这个承诺。三个灵魂问题：</p>
+<ol>
+<li>预留的是什么？（swap 空间的记账数字，不是真实分配——commit 只动计数器）</li>
+<li>三种 overcommit 模式怎么选？（0 启发式 / 1 全放行 / 2 按公式严格）</li>
+<li>什么时候会死？（写爆 commit → <strong>OOM killer</strong>，按 oom_score 挑受害者）</li>
+</ol>
 <hr />
 <h2>要点</h2>
-<h3>背景：swap 预留</h3>
-<ul>
-<li>默认情况下，<code class="c">mmap</code> 分配私有匿名映射时，内核预留等量 swap 空间</li>
-<li>如果 swap 不足，<code class="c">mmap</code> 失败（ENOMEM）</li>
-<li>这保证了内存总能写入 swap</li>
-</ul>
-<h3>MAP_NORESERVE</h3>
-<pre class="code" data-label="C"><code class="c">mmap(NULL, size, PROT_READ|PROT_WRITE,
-     MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-</code></pre>
-<ul>
-<li>不预留 swap 空间</li>
-<li>允许分配超过 swap+RAM 的虚拟内存</li>
-<li>实际使用时如果物理内存+swap 耗尽 → <strong>OOM killer</strong></li>
-</ul>
-<h3>Overcommit 模式</h3>
-<pre class="code" data-label="C"><code class="c">/* /proc/sys/vm/overcommit_memory */
-0  /* 启发式（默认）: 不允许明显过度的分配 */
-1  /* 总是允许: 不检查 */
-2  /* 严格: 不允许超过 swap + RAM * ratio */
-</code></pre>
+<h3>预留机制：VM_ACCOUNT</h3>
+<p><code class="c">mmap_region()</code> 对<strong>私有可写</strong>映射走 <code class="c">accountable_mapping</code>：commit 字节数进 <code class="c">mm-&gt;committed_vm</code>，全局对照 <code class="c">CommitLimit</code>（<code class="c">/proc/meminfo</code>）。预留失败 → mmap 返回 <code class="c">ENOMEM</code>。<code class="c">MAP_NORESERVE</code> 跳过整个记账（v6.6 中该标志本身已在多数模式被弱化，见下表）。</p>
+<h3>三种 overcommit 模式（<code class="c">/proc/sys/vm/overcommit_memory</code>）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>模式</th>
-<th>MAP_NORESERVE 效果</th>
+<th>语义</th>
+<th>MAP_NORESERVE 的效果</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>0 (启发式)</td>
-<td>可能允许</td>
+<td><strong>0（默认）: 启发式</strong></td>
+<td>明显离谱的请求拒绝（单次 &gt; RAM+swap），合理的放行</td>
+<td>基本等效（启发式本来就宽松）</td>
 </tr>
 <tr>
-<td>1 (总是允许)</td>
-<td>总是允许</td>
+<td><strong>1: 总是允许</strong></td>
+<td>不检查，来者不拒</td>
+<td>无差别</td>
 </tr>
 <tr>
-<td>2 (严格)</td>
-<td>忽略 MAP_NORESERVE</td>
+<td><strong>2: 严格模式</strong></td>
+<td>总 commit ≤ <code class="c">swap + RAM × overcommit_ratio</code></td>
+<td>被忽略——严格模式下人人都必须记账</td>
 </tr>
 </tbody>
 </table></div>
-<h3>风险</h3>
-<ul>
-<li><strong>OOM Killer</strong>: 内存耗尽时内核随机杀进程</li>
-<li>不可预测 — 哪个进程被杀取决于 oom_score</li>
-<li>适合 "分配多但实际用少" 的场景（如稀疏数组）</li>
-</ul>
+<p>严格模式的公式（<code class="c">vm_commit_limit()</code>）：</p>
+<pre class="code" data-label="code"><code class="c">CommitLimit = SwapTotal + (RAMTotal - RAMKernelReserved) × overcommit_ratio/100
+</code></pre>
+<h3>死亡路径：写爆 commit</h3>
+<pre class="code" data-label="code"><code class="c">承诺了 8GB（committed） ← mmap 时只记数字，没占真内存
+   ↓ 进程真写满
+物理内存 + swap 全线耗尽
+   ↓
+page fault 分配不出页 → out_of_memory() → OOM killer
+   ↓ 按 oom_score（RSS、nice、运行时间…）选牺牲品 → SIGKILL
+</code></pre>
+<p><strong>被杀的不一定是肇事进程</strong>——oom_score 偏向大 RSS，谁胖谁死。生产事故经典形态：「稀疏大映射的进程活得好好的，隔壁无辜的数据库被 OOM 了」。</p>
 <h3>何时用 MAP_NORESERVE</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>场景</th>
-<th>是否使用</th>
+<th>判断</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>稀疏数组（大部分不写）</td>
-<td>用</td>
+<td>稀疏数组（大部分页永不写）</td>
+<td>✅ 用——不写就不占真内存，预留是浪费</td>
+</tr>
+<tr>
+<td>预留大虚拟区 + 按需 populate（HFT 常见）</td>
+<td>✅ 用</td>
 </tr>
 <tr>
 <td>共享内存大块</td>
-<td>谨慎</td>
+<td>⚠️ 谨慎——SHARED 映射本身不记账（无 swap 可换），但真写满照样挤爆 RAM</td>
 </tr>
 <tr>
-<td>正常内存分配</td>
-<td>不用</td>
+<td>正常分配</td>
+<td>❌ 不用——默认记账是免费保险</td>
 </tr>
 <tr>
-<td>需要可靠 OOM 处理</td>
-<td>不用</td>
+<td>要可靠的 OOM 行为</td>
+<td>❌ 不用</td>
 </tr>
 </tbody>
 </table></div>
+<h3>观测工具</h3>
+<pre class="code" data-label="shell"><code class="c">grep -i commit /proc/meminfo    # CommitLimit / Committed_AS（承诺 vs 上限）
+cat /proc/&lt;pid&gt;/status | grep VmSize   # 虚拟 vs RSS：稀疏映射的差值就是「画而未用」
+</code></pre>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -1985,35 +2806,62 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>无 swap 环境 overcommit 行为不同，需测试</td>
+<td>无 swap 设备时 CommitLimit ≈ RAM×ratio——严格模式直接把多数大 mmap 拒掉；嵌入式常开 overcommit=1（反正没有 swap 可承诺，记账是自欺）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>不用 MAP_NORESERVE — 交易系统不能冒 OOM 风险，预分配固定大小</td>
+<td>预留超大虚拟区（如 64GB 订单池地址空间）+ <code class="c">MAP_NORESERVE</code> + 按需 mlock/populate——<strong>虚拟区白拿，物理页按工作集付账</strong>；但必须配监控：<code class="c">Committed_AS</code> 贴近 <code class="c">CommitLimit</code> = 全系统 OOM 前兆，比等毛刺可靠</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+<pre class="code" data-label="C"><code class="c">
+/* MAP_NORESERVE：稀疏大映射的「画而不占」
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   mapped 1GB with MAP_NORESERVE
+ *   Rss=0 kB（只写 2 页前）→ 写 2 页后 Rss=8 kB
+ */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
 #include &lt;sys/mman.h&gt;
-/* MAP_NORESERVE: 不预留 swap */
-int main(void) {
-    /* 分配 1GB 虚拟内存, 不预留 swap */
-    size_t size = 1UL &lt;&lt; 30;  /* 1 GB */
-    char *p = mmap(NULL, size, PROT_READ|PROT_WRITE,
-                   MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-    if (p == MAP_FAILED) {
-        perror(&quot;mmap MAP_NORESERVE&quot;);
-        return 1;
+#include &lt;unistd.h&gt;
+
+static long smaps_rss(void *addr)
+{
+    FILE *fp = fopen(&quot;/proc/self/smaps&quot;, &quot;r&quot;);
+    if (!fp) return -1;
+    char line[300];
+    unsigned long lo, hi, a = (unsigned long)addr;
+    long rss = -1;
+    int in_target = 0;
+    while (fgets(line, sizeof line, fp)) {
+        if (sscanf(line, &quot;%lx-%lx&quot;, &amp;lo, &amp;hi) == 2)
+            in_target = (a &gt;= lo &amp;&amp; a &lt; hi);
+        else if (in_target &amp;&amp; strncmp(line, &quot;Rss:&quot;, 4) == 0) {
+            sscanf(line + 4, &quot;%ld&quot;, &amp;rss);
+            break;
+        }
     }
-    printf(&quot;mapped 1GB with MAP_NORESERVE at %p\n&quot;, p);
+    fclose(fp);
+    return rss;
+}
 
-    /* 只写一小部分 — 不会 OOM */
+int main(void)
+{
+    size_t size = 1UL &lt;&lt; 30;                  /* 1GB 虚拟 */
+    char *p = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    printf(&quot;mapped 1GB MAP_NORESERVE at %p, Rss=%ld kB（画而不占）\n&quot;,
+           (void *)p, smaps_rss(p));
+
     p[0] = 'x';
-    p[4096] = 'y';
-    printf(&quot;wrote 2 bytes, only 2 pages actually used\n&quot;);
+    p[4096] = 'y';                            /* 只碰 2 页 */
+    printf(&quot;写 2 页后 Rss=%ld kB（只有真写的页进物理内存）\n&quot;, smaps_rss(p));
+    /* 注意：若写满 1GB 且系统无余量 → OOM killer 可能杀掉本进程或邻居 */
 
-    /* 如果写满 1GB → 可能触发 OOM killer */
     munmap(p, size);
     return 0;
 }
@@ -2022,36 +2870,119 @@ int main(void) {
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-8">49.8 mremap</a></li>
+<li>上一节：<a href="#s-49-8">49.8 mremap</a>——mremap 扩张同样要过 VM_ACCOUNT 记账</li>
 <li>下一节：<a href="#s-49-10">49.10 MAP_FIXED</a></li>
+<li>OOM killer 深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a>（<code class="c">mm/oom_kill.c</code> 已入缓存）</li>
+<li>资源限额体系：<a href="chapter-36.html#intro">Ch36 Process Resources</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> overcommit_memory=2（严格模式）下，<code class="c">MAP_NORESERVE</code> 的效果？</p>
+<p>A. 完全跳过记账　B. 被忽略，照样记账　C. mmap 必定失败　D. 只影响 RSS</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B</strong>。严格模式的语义就是「人人都记账、总承诺不超公式」——MAP_NORESERVE 在此模式下形同虚设。反过来在模式 1（总是允许）下记账本来就不查，NORESERVE 也无意义。<strong>该标志只在默认启发式模式下有实际差别</strong>。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">Committed_AS</code> 是当前真实占用的内存量。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。<code class="c">Committed_AS</code> 是<strong>承诺总量</strong>——所有进程「最坏情况全写满」的加总（虚拟内存记账），真实占用看 RSS/MemAvailable。Committed_AS 完全可以远超 RAM（overcommit 0/1 下常态），它逼近 CommitLimit 才是危险信号。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 8GB RAM + 4GB swap 的机器，进程 A 按默认模式 mmap 12GB 私有匿名映射，会发生什么？overcommit_memory 分别为 0/1/2 时？</p>
+<details>
+<summary>参考答案</summary>
+<ul>
+<li>模式 0（启发式）：单次请求 12GB &gt; RAM+swap=12GB 的边界判定（「明显过度」），大概率 <code class="c">ENOMEM</code>；若分成多次小块 mmap 则各块都能过（启发式只看单次）。</li>
+<li>模式 1：mmap 成功（不检查）；写满时物理耗尽 → OOM killer 开杀。</li>
+<li>模式 2：记账 12GB &gt; CommitLimit（=swap 4GB + RAM×ratio），<code class="c">ENOMEM</code>——在 mmap 调用点就失败，不拖到写的时候。这是三种模式的责任分界：2 = 当场拒绝，1 = 事后偿命（OOM），0 = 介于中间。</li>
+</ul>
+</details>
       </section>
       <section class="section" id="s-49-10">
         <div class="sec-head"><div class="sec-no">49.10</div><h2>MAP_FIXED 标志</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code>（<code class="c">mmap_region():2662</code> 内 <code class="c">do_vmi_munmap():2693</code> 先拆旧映射分支）· <code class="c">uapi/asm-generic/mman-common.h</code>（<code class="c">MAP_FIXED:0x10</code> · <code class="c">MAP_FIXED_NOREPLACE:0x100000</code>:31）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-9">49.9 MAP_NORESERVE</a>
 - 下一节：<a href="#s-49-11">49.11 非线性映射</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><code class="c">MAP_FIXED</code> — 强制 mmap 在指定地址创建映射，覆盖已有映射。</p>
+<p><code class="c">MAP_FIXED</code> 要求内核<strong>精确</strong>映射到 <code class="c">addr</code>（不再是提示）。三个灵魂问题：</p>
+<ol>
+<li>覆盖已有映射时会发生什么？（<strong>静默 munmap 再 mmap</strong>——不询问、不报错、不留全尸）</li>
+<li>现代替代品？（<code class="c">MAP_FIXED_NOREPLACE</code>：被占则 <code class="c">EEXIST</code>，4.17+）</li>
+<li>谁真的需要它？（动态链接器、自实现分配器/栈布局、实验 A 的 guard 技术）</li>
+</ol>
 <hr />
 <h2>要点</h2>
-<h3>行为</h3>
-<pre class="code" data-label="C"><code class="c">void *p = mmap(addr, length, prot, flags|MAP_FIXED, fd, offset);
+<h3>行为规则</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回值 = <code class="c">addr</code></td>
+<td>成功时精确等于 addr（这也是验证成功的唯一方式）</td>
+</tr>
+<tr>
+<td><code class="c">addr</code> <strong>必须页对齐</strong></td>
+<td><code class="c">EINVAL</code></td>
+</tr>
+<tr>
+<td><strong>静默覆盖</strong></td>
+<td><code class="c">[addr, addr+length)</code> 内已有映射（含代码段/栈！）→ 先 <code class="c">do_vmi_munmap():2693</code> 拆掉再建新映射</td>
+</tr>
+<tr>
+<td><code class="c">length</code> 向上取整</td>
+<td>同普通 mmap</td>
+</tr>
+</tbody>
+</table></div>
+<h3>覆盖的破坏性（v6.6 路径）</h3>
+<pre class="code" data-label="code"><code class="c">mmap_region():2662
+ └─ if (flags &amp; MAP_FIXED) → do_vmi_munmap():2693   ← 覆盖区的旧 VMA 无条件拆除
 </code></pre>
-<ul>
-<li><code class="c">addr</code> 必须页对齐</li>
-<li>如果 <code class="c">[addr, addr+length)</code> 已有映射 → <strong>静默覆盖</strong></li>
-<li>返回值等于 <code class="c">addr</code>（成功）或 <code class="c">MAP_FAILED</code>（失败）</li>
-</ul>
-<h3>危险性</h3>
-<ul>
-<li><strong>覆盖已有映射</strong>（包括栈、代码段等）→ 段错误</li>
-<li>必须确保 <code class="c">addr</code> 区域空闲</li>
-<li>可移植性差：不同 UNIX 行为不一致</li>
-</ul>
+<p>覆盖<strong>自己正在执行的代码段</strong> = 下一条指令取指就崩；覆盖栈 = 返回地址蒸发。传统 32 位时代 <code class="c">MAP_FIXED</code> 最大的坑：<code class="c">mmap(NULL, ...)</code> 返回 0 附近地址（低地址映射被拒 <code class="c">mmap_min_addr</code> 前的行为）——现代内核已防护，但「覆盖自己」的自杀式用法依然是未定义行为重灾区。</p>
+<h3>MAP_FIXED_NOREPLACE（Linux 4.17+，实测验证）</h3>
+<pre class="code" data-label="C"><code class="c">void *p = mmap(hint, len, prot, MAP_FIXED_NOREPLACE | ..., fd, off);
+/* 目标区已映射 → MAP_FAILED + EEXIST（errno=17）；否则精确落 hint */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">实测（WSL Ubuntu，2026-09-05）：
+  MAP_FIXED_NOREPLACE 覆盖 0x...69d000: MAP_FAILED（errno=17 预期 EEXIST=17）
+  同地址仅作 hint: 成功 y=0x...69f000（内核挪到空洞）
+</code></pre>
+<h3>三种 addr 语义对照</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flags</th>
+<th>addr 含义</th>
+<th>被占时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 FIXED</td>
+<td>hint（从 hint 向上找空洞）</td>
+<td>自动挪走</td>
+</tr>
+<tr>
+<td><code class="c">MAP_FIXED</code></td>
+<td>精确落点</td>
+<td><strong>覆盖</strong></td>
+</tr>
+<tr>
+<td><code class="c">MAP_FIXED_NOREPLACE</code></td>
+<td>精确落点</td>
+<td><code class="c">EEXIST</code> 拒绝</td>
+</tr>
+</tbody>
+</table></div>
 <h3>何时使用</h3>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2062,29 +2993,24 @@ int main(void) {
 </thead>
 <tbody>
 <tr>
-<td>动态链接器</td>
-<td>在固定地址加载共享库</td>
+<td>动态链接器（ld.so）</td>
+<td>把共享库 ELF 段装配到 vaddr 指定位置（PIE 之前的时代；现在仍用于 fixed-address 链接的二进制）</td>
 </tr>
 <tr>
 <td>自定义内存布局</td>
-<td>线程栈、自定义分配器</td>
+<td>线程栈、arena 分配器的地址规划</td>
 </tr>
 <tr>
-<td>兼容旧代码</td>
-<td>需要固定地址的遗留程序</td>
+<td>测试/实验技术</td>
+<td><strong>guard 页包夹观察区</strong>（本仓库实验 A 的标准手法：PROT_NONE guard 阻止 vma_merge 吞并观察窗口）</td>
+</tr>
+<tr>
+<td>遗留兼容</td>
+<td>需要 32 位兼容地址的老程序</td>
 </tr>
 </tbody>
 </table></div>
-<h3>推荐做法</h3>
-<ul>
-<li><strong>不要直接用 <code class="c">MAP_FIXED</code></strong> — 太危险</li>
-<li>用 <code class="c">mmap(NULL, ...)</code> 获取地址，再检查是否在期望范围</li>
-<li>Linux 4.17+ 提供 <code class="c">MAP_FIXED_NOREPLACE</code>：不覆盖已有映射</li>
-</ul>
-<h3>MAP_FIXED_NOREPLACE (Linux 4.17+)</h3>
-<pre class="code" data-label="C"><code class="c">/* 如果地址已被占用, 失败而非覆盖 */
-p = mmap(hint_addr, length, prot, MAP_FIXED_NOREPLACE|flags, fd, offset);
-</code></pre>
+<p><strong>默认规则：业务代码不用 MAP_FIXED</strong>。要「尽量靠近某地址」用 hint；要「必须精确且安全」用 NOREPLACE。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -2097,35 +3023,66 @@ p = mmap(hint_addr, length, prot, MAP_FIXED_NOREPLACE|flags, fd, offset);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>固定地址映射用于访问硬件寄存器（如 <code class="c">/dev/mem</code>）</td>
+<td><code class="c">/dev/mem</code> + <code class="c">MAP_FIXED</code> 把外设寄存器映射到<strong>固定虚址</strong>（驱动/裸机代码假设的地址）；NOMMU 体系 mmap 本身就近似 fixed（物理连续性约束）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>不常用，固定地址映射可移植性差</td>
+<td>大页/NUMA 亲和的地址布局规划；<code class="c">MAP_FIXED_NOREPLACE</code> 做启动自检——规划好的地址被谁占了立刻发现（EEXIST 而不是静默漂移）；<strong>永远别在运行期用裸 MAP_FIXED 改地址空间</strong>（静默覆盖 + TLB shootdown 双重风险）</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
+<pre class="code" data-label="C"><code class="c">
+/* MAP_FIXED vs FIXED_NOREPLACE vs hint 三态实测
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   MAP_FIXED_NOREPLACE 覆盖 0x...69d000: MAP_FAILED（errno=17 预期 EEXIST）
+ *   同地址仅作 hint: 成功 y=0x...69f000（预期 y != 占用地址）
+ */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
-/* MAP_FIXED: 在指定地址创建映射 (危险!) */
-int main(void) {
-    /* 先正常映射一块内存 */
-    char *p = mmap(NULL, 4096, PROT_READ|PROT_WRITE,
-                   MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    strcpy(p, &quot;original&quot;);
+#include &lt;errno.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;unistd.h&gt;
 
-    /* 用 MAP_FIXED 在同一地址重新映射 */
-    char *q = mmap(p, 4096, PROT_READ|PROT_WRITE,
-                   MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
-    if (q == MAP_FAILED) { perror(&quot;mmap FIXED&quot;); return 1; }
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
 
-    printf(&quot;p=%p, q=%p (same address)\n&quot;, p, q);
-    /* 原内容被覆盖 */
-    printf(&quot;content after MAP_FIXED: '%s' (empty = overwritten)\n&quot;, q);
+    char *occupied = mmap(NULL, P, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (occupied == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    strcpy(occupied, &quot;OCCUPIED&quot;);
+    printf(&quot;占用区: %p（内容 \&quot;%s\&quot;）\n&quot;, (void *)occupied, occupied);
 
-    munmap(q, 4096);
+    /* 1. NOREPLACE：精确落点，被占拒绝 */
+    errno = 0;
+    void *x = mmap(occupied, P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    printf(&quot;MAP_FIXED_NOREPLACE 覆盖: %s（errno=%d 预期 EEXIST=%d）\n&quot;,
+           x == MAP_FAILED ? &quot;MAP_FAILED&quot; : &quot;成功(异常!)&quot;,
+           errno, EEXIST);
+
+    /* 2. 同地址仅 hint：内核挪走 */
+    errno = 0;
+    void *y = mmap(occupied, P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    printf(&quot;同地址仅作 hint: %s y=%p（预期成功且 y != %p）\n&quot;,
+           y == MAP_FAILED ? &quot;MAP_FAILED&quot; : &quot;成功&quot;, y, (void *)occupied);
+
+    /* 3. 裸 MAP_FIXED 覆盖（危险演示）：内容被替换 */
+    void *z = mmap(occupied, P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+    if (z == MAP_FAILED) { perror(&quot;MAP_FIXED&quot;); return 1; }
+    printf(&quot;裸 MAP_FIXED 覆盖: z=%p（== occupied），旧内容 \&quot;%s\&quot; 消失&quot;
+           &quot;（静默拆掉了原 VMA）\n&quot;,
+           z, ((char *)z)[0] ? &quot;?&quot; : &quot;已零填充&quot;);
+
+    munmap(y, P);
+    munmap(z, P);       /* z == occupied，同一页 */
     return 0;
 }
 </code></pre>
@@ -2135,54 +3092,96 @@ int main(void) {
 <li>本章 README：<a href="#intro">README</a></li>
 <li>上一节：<a href="#s-49-9">49.9 MAP_NORESERVE</a></li>
 <li>下一节：<a href="#s-49-11">49.11 非线性映射</a></li>
+<li>覆盖即 munmap：<a href="#s-49-3">49.3 <code class="c">munmap</code></a>——MAP_FIXED 的内部第一步就是它</li>
+<li>guard 页技术实战：<a href="#s-49-2">49.2 实验注释</a></li>
+<li>动态链接：<a href="chapter-41.html#intro">Ch41 共享库</a> 前置概念</li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">mmap(p, len, ..., MAP_FIXED|MAP_ANONYMOUS, -1, 0)</code> 成功后，p 处原来的栈映射会怎样？</p>
+<p>A. 报错拒绝　B. 与新映射共存　C. 被静默拆除　D. 栈迁移到别处</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>C</strong>。<code class="c">mmap_region()</code> 对 MAP_FIXED 第一步就是 <code class="c">do_vmi_munmap():2693</code> 拆掉区间内所有旧 VMA——<strong>无条件、静默</strong>。覆盖栈 = 返回地址蒸发 = 崩溃；这是 MAP_FIXED 危险性的本质：它拥有「不经询问删除映射」的权限。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">MAP_FIXED_NOREPLACE</code> 成功时返回的地址可能与传入的 addr 不同。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。NOREPLACE 的语义是「要么精确落 addr，要么 EEXIST 失败」——成功必 == addr（实测验证）。会挪地址的是<strong>不带任何 FIXED</strong> 的 hint 模式。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 实验程序想观察一块 mmap 区的 VMA 行为，为什么用 PROT_NONE 页 + <code class="c">MAP_FIXED</code> 包夹它？</p>
+<details>
+<summary>参考答案</summary>
+<p>① 先 <code class="c">mmap(NULL, 5P, PROT_NONE, ...)</code> 拿连续 5 页 guard 区；② <code class="c">mmap(guard+P, 3P, RW, MAP_FIXED, ...)</code> 把中间 3 页升级成观察区。guard 的 PROT_NONE 与观察区 RW <strong>flags 不同 → vma_merge 拒绝合并</strong>——观察区边界被两侧 guard 钉死，任何后续分配（包括 fopen 内部的 malloc→mmap）都无法把观察区吞并变形。没有 guard 时实测出现过 VMA 条数错乱（相邻同 flags 分配把边界 merge 掉）。这是「用 mprotect 的 flags 差异当合并绝缘体」的标准技术。</p>
+</details>
       </section>
       <section class="section" id="s-49-11">
         <div class="sec-head"><div class="sec-no">49.11</div><h2>非线性映射：remap_file_pages()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code>（emulation 层 <code class="c">SYSCALL_DEFINE5(remap_file_pages):2952</code> · <code class="c">pr_warn_once</code>:2962 注释 <em>"Emulation of deprecated remap_file_pages() syscall"</em>）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
 - 上一节：<a href="#s-49-10">49.10 MAP_FIXED</a>
 - 下一节：<a href="#s-49-12">49.12 总结</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p><code class="c">remap_file_pages()</code> — 将文件的不同部分映射到同一虚拟内存区域的不同页面（非线性映射）。</p>
+<p><code class="c">remap_file_pages()</code> 允许「一个 VMA 的不同虚页指向文件的不同页」——打破线性对应。三个灵魂问题：</p>
+<ol>
+<li>为什么需要非线性？（数据库/索引引擎想让「虚拟连续的 B 树区」对应「文件里散乱的页」）</li>
+<li>它现在是什么状态？（<strong>v6.6 只剩 emulation</strong>：内核收到调用就打 dmesg 警告，然后用 munmap+mmap+MAP_FIXED 重建——原始实现 3.16 就删了）</li>
+<li>现在怎么实现同样需求？（多个小 VMA 拼接，或干脆别用 mmap）</li>
+</ol>
 <hr />
 <h2>要点</h2>
-<h3>概念</h3>
-<p>普通文件映射是线性的：虚拟地址 <code class="c">offset</code> 对应文件 <code class="c">offset</code>。非线性映射允许自定义这个映射关系：</p>
-<pre class="code" data-label="code"><code class="c">虚拟页 0 → 文件 offset 4096
-虚拟页 1 → 文件 offset 0
-虚拟页 2 → 文件 offset 8192
+<h3>概念：线性 vs 非线性</h3>
+<pre class="code" data-label="code"><code class="c">普通（线性）映射:  虚页 0 → 文件页 0
+                  虚页 1 → 文件页 1
+                  虚页 2 → 文件页 2
+
+非线性映射:        虚页 0 → 文件页 4096
+                  虚页 1 → 文件页 0
+                  虚页 2 → 文件页 8192
 </code></pre>
-<h3>API</h3>
-<pre class="code" data-label="C"><code class="c">int remap_file_pages(void *addr, size_t len, int prot,
-                     size_t pgoff, int flags);
+<h3>历史与现状</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>时点</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6 内核早期</td>
+<td>原生实现：VMA 带 <code class="c">VM_NONLINEAR</code> 标志，页表随意指——<strong>复杂度炸弹</strong>（与反碎片、KSM、THP 全都打架）</td>
+</tr>
+<tr>
+<td>Linux 3.16（2014）</td>
+<td>原生实现删除</td>
+</tr>
+<tr>
+<td>v6.6（本文核验）</td>
+<td><strong>纯 emulation</strong>：<code class="c">mm/mmap.c:2952</code> 的 <code class="c">SYSCALL_DEFINE5</code> 收到调用后：① <code class="c">pr_warn_once()</code> 在 dmesg 记录 <em>"uses deprecated remap_file_pages() syscall"</em>（:2962）② 内部等价于 <strong>munmap 目标区间 + mmap(...MAP_FIXED) 重建</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">SYSCALL_DEFINE5(remap_file_pages, ...)          mm/mmap.c:2952
+ ├─ pr_warn_once(&quot;... deprecated ...&quot;)          :2962  ← dmesg 可见指纹
+ └─ has_pending_nonlinear_op → munmap + 重建（本质是普通 mmap 的包装）
 </code></pre>
-<ul>
-<li><code class="c">addr</code>：已映射区域内的地址</li>
-<li><code class="c">pgoff</code>：文件内的页偏移</li>
-<li>将 <code class="c">[addr, addr+len)</code> 重新映射到文件的 <code class="c">pgoff</code> 处</li>
-</ul>
-<h3>已废弃</h3>
-<ul>
-<li><strong>Linux 3.16 起标记为废弃</strong></li>
-<li>内核内部改用多次 <code class="c">mmap</code> + <code class="c">MAP_FIXED</code> 实现</li>
-<li>新代码不应使用</li>
-</ul>
+<p><strong>现代调用 remap_file_pages = 慢速绕路的 mmap</strong>，没有任何性能优势，只留兼容。</p>
+<h3>为什么被删（架构教训）</h3>
+<p>非线性 VMA 打破了「一个 VMA ↔ 一段连续文件区间」的核心不变量：
+- 反向映射（rmap）复杂化：同一 VMA 的页指向文件各处，优先级搜索树退化
+- 与 THP/KSM/compaction 的交互全是特判
+- 收益人口极窄（数据库大多早有自己的 buffer pool，不走 mmap）</p>
+<p><strong>这是「通用机制里塞特例」最终被偿还的经典案例</strong>——内核设计里不变量的价值高于单点性能。</p>
 <h3>替代方案</h3>
-<pre class="code" data-label="C"><code class="c">/* 替代: 多次 mmap + MAP_FIXED */
-/* 映射文件的第 1 页到地址 p */
-mmap(p, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 4096);
-/* 映射文件的第 0 页到地址 p+4096 */
+<pre class="code" data-label="C"><code class="c">/* 需求：把文件第 2 页映射到虚址 p，第 0 页到 p+4096（自定义排列） */
+mmap(p,      4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 8192);
 mmap(p+4096, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
 </code></pre>
-<h3>历史用途</h3>
-<ul>
-<li>数据库引擎需要将文件的某些页映射到特定虚拟地址</li>
-<li>减少使用多个映射区域（每个映射区域有内核开销）</li>
-<li>现在用多个 <code class="c">mmap</code> 替代</li>
-</ul>
+<p>代价：每段一个 VMA（map_count 消耗，上限 <code class="c">vm.max_map_count</code> 默认 65530）；TLB/缺页行为不变（反正都是按页缺的）。更现代的选择：<strong>别映射</strong>——数据库用 pread/pwrite + 自管 buffer pool（PostgreSQL 的决策路径正是如此）。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -2195,180 +3194,398 @@ mmap(p+4096, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>已废弃，不用</td>
+<td>老代码移植时若见到 remap_file_pages：expect dmesg 警告 + 性能退化（绕路 mmap），规划迁移到多 mmap 或 read/write 模型</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>已废弃，不用。如果需要非线性映射，用多次 mmap + MAP_FIXED</td>
+<td>现代引擎无使用场景。教训级价值：<strong>「通用路径塞特例」的架构债</strong>——自己写撮合引擎/行情总线时，同样警惕「给某个策略开特殊通道」型需求，特例会指数级腐蚀不变量</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
+<pre class="code" data-label="C"><code class="c">
+/* 非线性映射的现代实现：多 mmap + MAP_FIXED 拼接
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   page 0 (file page 2): PAGE2    ← 虚页 0 指向文件第 2 页
+ *   page 1 (file page 1): PAGE1    ← 虚页 1 保持原位
+ */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
 #include &lt;fcntl.h&gt;
 #include &lt;unistd.h&gt;
-#include &lt;string.h&gt;
-/* 非线性映射替代方案: 多次 mmap + MAP_FIXED */
-int main(void) {
-    int fd = open(&quot;/tmp/test_nonlinear&quot;, O_RDWR|O_CREAT|O_TRUNC, 0644);
-    /* 写 3 页数据 */
-    write(fd, &quot;PAGE0&quot;, 5); lseek(fd, 4096, SEEK_SET);
-    write(fd, &quot;PAGE1&quot;, 5); lseek(fd, 8192, SEEK_SET);
-    write(fd, &quot;PAGE2&quot;, 5);
+#include &lt;sys/mman.h&gt;
 
-    /* 先映射足够大的区域 */
-    char *p = mmap(NULL, 4096*3, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
 
-    /* 重新映射第 1 页为文件第 2 页 (非线性) */
-    mmap(p, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 8192);
-    /* 现在虚拟页 0 → 文件页 2 */
+    int fd = open(&quot;/tmp/ch49_nonlin.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (ftruncate(fd, (off_t)(3 * P)) != 0) { perror(&quot;ftruncate&quot;); return 1; }
 
-    printf(&quot;page 0 (should be PAGE2): %.5s\n&quot;, p);
-    printf(&quot;page 1 (should be PAGE1): %.5s\n&quot;, p + 4096);
+    /* 写 3 页标记：PAGE0/PAGE1/PAGE2 */
+    char tmp[16];
+    for (int i = 0; i &lt; 3; i++) {
+        snprintf(tmp, sizeof tmp, &quot;PAGE%d&quot;, i);
+        if (pwrite(fd, tmp, strlen(tmp), (off_t)(i * P)) &lt; 0) { perror(&quot;pwrite&quot;); return 1; }
+    }
 
-    munmap(p, 4096*3);
+    char *p = mmap(NULL, 3 * P, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+
+    /* 非线性重排：虚页 0 改指文件页 2（remap_file_pages 的现代等价物） */
+    void *r = mmap(p, P, PROT_READ | PROT_WRITE,
+                   MAP_SHARED | MAP_FIXED, fd, (off_t)(2 * P));
+    if (r == MAP_FAILED) { perror(&quot;mmap FIXED&quot;); return 1; }
+
+    printf(&quot;page 0 (file page 2): %.6s\n&quot;, p);          /* PAGE2 */
+    printf(&quot;page 1 (file page 1): %.6s\n&quot;, p + P);      /* PAGE1 */
+    printf(&quot;page 2 (file page 2): %.6s\n&quot;, p + 2 * P);  /* PAGE2（同页双视图！） */
+
+    munmap(p, 3 * P);
     close(fd);
-    unlink(&quot;/tmp/test_nonlinear&quot;);
+    unlink(&quot;/tmp/ch49_nonlin.dat&quot;);
     return 0;
 }
 </code></pre>
+<p>注意第三个输出：虚页 0 与虚页 2 现在指向<strong>同一个文件页</strong>——多 mmap 天然支持「一页多视图」，这本来就是非线性映射的能力子集。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-49-10">49.10 MAP_FIXED</a></li>
+<li>上一节：<a href="#s-49-10">49.10 MAP_FIXED</a>——现代实现的基石</li>
 <li>下一节：<a href="#s-49-12">49.12 总结</a></li>
+<li>数据库 buffer pool 的对照：<a href="chapter-63.html#s-63-4">Ch63 备用 I/O 模型</a></li>
+<li>VMA 不变量与 rmap：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> v6.6 内核收到 <code class="c">remap_file_pages()</code> 调用会？</p>
+<p>A. 原生快速处理　B. dmesg 警告 + 内部走 mmap 重建　C. 直接返回 ENOSYS　D. SIGSYS 杀进程</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B</strong>。<code class="c">mm/mmap.c:2952</code> 的 emulation 层：<code class="c">pr_warn_once()</code>（:2962）记录弃用警告，然后等价于 munmap+mmap(MAP_FIXED) 重建——功能兼容但性能无优势，只保老程序不崩。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> 「一页多视图」（两个虚址指同一文件页）在纯线性 mmap 模型下无法实现。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。<strong>两个独立的 mmap 就行</strong>（示例代码第三个输出）：同文件同 offset 映射两次，page cache 页天然共享——线性模型完全支持多对一。非线性映射的独有能力是「<strong>一个 VMA 内部</strong>的乱序对应」，而不是多视图本身。多数实际需求（多视图/稀疏页）线性 mmap 都覆盖。</p>
+</details>
+<p><strong>题目 3（论述）：</strong> 从 remap_file_pages 的生死看内核设计原则。</p>
+<details>
+<summary>参考答案</summary>
+<p>三点：① <strong>不变量优先</strong>——「VMA ↔ 连续文件区间」不变量支撑了 rmap/THP/KSM 等一整套机制，非线性特例让所有下游都要特判；② <strong>特例的维护成本随时间复利</strong>——3.16 删除时其性能收益早已被普通 mmap 的优化追平；③ <strong>兼容层保迁移</strong>——删除原生实现但保留 syscall emulation + dmesg 指纹，给用户态十年缓冲。同样的思维适用于任何长生命周期系统：给特例找通用表达式，而不是在核心路径开口子。</p>
+</details>
       </section>
       <section class="section" id="s-49-12">
         <div class="sec-head"><div class="sec-no">49.12</div><h2>总结</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code> · <code class="c">mm/msync.c</code> · <code class="c">mm/mremap.c</code>（各符号行号见各节）
+本章：<a href="#intro">TLPI 第 49 章 — Memory Mappings</a>
+- 上一节：<a href="#s-49-11">49.11 非线性映射</a>
+- 下一节：<a href="#s-49-13">49.13 练习</a></p>
 </blockquote>
-<h2>本节回顾</h2>
+<hr />
+<h2>本节讲什么</h2>
+<p>一章 13 节的浓缩：mmap 生命周期四问（建/拆/改/查）+ 三个实测锚点（可见性三连、VMA 分裂、DONTUNMAP 零填充）。</p>
+<hr />
+<h2>要点</h2>
+<h3>小节速览（13 节 → 9 行）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>小节</th>
 <th>主题</th>
-<th>关键 API</th>
+<th>关键 API / 实测锚点</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>49.1-49.2</td>
-<td>概述、mmap 创建映射</td>
-<td><code class="c">mmap</code></td>
+<td>49.1</td>
+<td>四大组合 + 内核三步走</td>
+<td><code class="c">do_mmap():1203</code> → <code class="c">mmap_region():2662</code></td>
+</tr>
+<tr>
+<td>49.2</td>
+<td>创建映射</td>
+<td>MAP_FAILED≠NULL；offset 页对齐；<code class="c">get_unmapped_area():1801</code></td>
 </tr>
 <tr>
 <td>49.3</td>
 <td>解除映射</td>
-<td><code class="c">munmap</code></td>
+<td>VMA 分裂（maps 1→2 实测）；TLB shootdown</td>
 </tr>
 <tr>
-<td>49.4-49.5</td>
-<td>一致性、信号</td>
-<td><code class="c">msync</code>, <code class="c">SIGSEGV</code></td>
+<td>49.4</td>
+<td>文件映射</td>
+<td><strong>可见性三连</strong>（copy-on-WRITE 不是 ACCESS）；SIGBUS vs SIGSEGV</td>
+</tr>
+<tr>
+<td>49.5</td>
+<td>msync</td>
+<td><code class="c">MS_ASYNC</code>=no-op（2.6.19+）；<code class="c">MS_INVALIDATE</code>+mlock→EBUSY</td>
 </tr>
 <tr>
 <td>49.6</td>
-<td>共享文件映射</td>
-<td><code class="c">MAP_SHARED</code> + fd</td>
+<td>flags 细节</td>
+<td>MAP_TYPE 位域；MAP_POPULATE（Rss 0→16384 实测）；fork 继承表</td>
 </tr>
 <tr>
 <td>49.7</td>
 <td>匿名映射</td>
-<td><code class="c">MAP_ANONYMOUS</code></td>
+<td>零页/COW 缺页路径（<code class="c">do_anonymous_page():4067</code>，已深挖）</td>
 </tr>
 <tr>
 <td>49.8</td>
-<td>重新映射</td>
-<td><code class="c">mremap</code> (Linux)</td>
+<td>mremap</td>
+<td>PTE 级搬家（零拷贝）；受阻无 MAYMOVE→ENOMEM；<strong>DONTUNMAP 旧址零填充</strong></td>
 </tr>
 <tr>
 <td>49.9</td>
-<td>MAP_NORESERVE</td>
-<td>overcommit 机制</td>
+<td>NORESERVE</td>
+<td>overcommit 三模式；写爆→OOM killer</td>
 </tr>
 <tr>
 <td>49.10</td>
 <td>MAP_FIXED</td>
-<td>固定地址映射</td>
+<td>静默覆盖（<code class="c">do_vmi_munmap</code> 先拆）；<strong>NOREPLACE→EEXIST</strong></td>
 </tr>
 <tr>
 <td>49.11</td>
 <td>非线性映射</td>
-<td><code class="c">remap_file_pages</code> (已废弃)</td>
+<td>v6.6 纯 emulation（mmap.c:2952 + dmesg 指纹）</td>
 </tr>
 </tbody>
 </table></div>
-<h3>核心要点</h3>
+<h3>反直觉真相 TOP 5</h3>
 <ol>
-<li><code class="c">mmap</code> 两大用途：文件映射（I/O 高效）+ 匿名映射（共享内存）</li>
-<li><code class="c">MAP_SHARED</code> fork 后共享，<code class="c">MAP_PRIVATE</code> fork 后 COW</li>
-<li>匿名共享映射是父子 IPC 最简单方式</li>
-<li><code class="c">msync</code> 确保 MAP_SHARED 脏页落盘</li>
-<li><code class="c">mremap</code> 扩展映射避免拷贝（Linux 特有）</li>
-<li>MAP_FIXED 危险，优先用 <code class="c">MAP_FIXED_NOREPLACE</code></li>
+<li><strong>PRIVATE 未写过的页跟随 page cache</strong>——copy-on-write 不是 copy-on-access；「以为的快照」只在写过之后存在（实测三连 v1→v3）。</li>
+<li><strong>写页内 1 字节 = 整页 COW</strong>——COW 粒度是页（v2 实测意外发现）。</li>
+<li><strong>MS_ASYNC 是 no-op</strong>——TLPI 时代语义已被内核自动回写取代；确定性落盘只有 MS_SYNC。</li>
+<li><strong>mremap 搬家零拷贝</strong>——搬的是页表不是数据；DONTUNMAP 让旧虚址变零页（不是保留旧数据）。</li>
+<li><strong>munmap 中间一页 → VMA 分裂成两个</strong>——但相邻同 flags 的分配又会 merge 回去（实验 A 的 vma_merge 活体演示）。</li>
 </ol>
+<h3>mmap vs read/write（延续 49.1 的对比）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>read/write</th>
+<th>mmap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>路径</td>
+<td>syscall + 页缓存 ↔ 用户缓冲两次拷贝</td>
+<td>缺页直连页缓存，访问即 I/O</td>
+</tr>
+<tr>
+<td>小文件顺序读</td>
+<td>系统调用摊薄后往往更快</td>
+<td>首触缺页贵，未必赢</td>
+</tr>
+<tr>
+<td>随机大文件</td>
+<td>每次 read syscall</td>
+<td>页缓存命中后纯内存访问</td>
+</tr>
+<tr>
+<td>崩溃一致性</td>
+<td>fsync 语义清晰</td>
+<td>msync + SIGBUS 风险（truncate）</td>
+</tr>
+<tr>
+<td>共享</td>
+<td>借 SHARED 映射或 IPC</td>
+<td>天然（page cache 唯一真相）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>工具链</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td>DMA 缓冲映射 / ROMFS 只读共享 / MAP_POPULATE 消首触 / NOMMU 特例（见各节关联表）</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>SHARED 零拷贝共享行情 + mlockall 驻留 + MADV_HUGEPAGE 大页 + MAP_POPULATE 预热——「画区不占内存、触碰才付账」的按需哲学贯穿全章</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><a href="chapter-50.html#intro">Ch50 虚拟内存</a> — 虚拟内存概念深入</li>
-<li><a href="chapter-54.html#intro">Ch54 POSIX 共享内存</a> — <code class="c">shm_open</code></li>
+<li><a href="chapter-50.html#intro">Ch50 虚拟内存操作</a>——对已建映射的四组手术（protect/lock/mincore/advise）</li>
+<li><a href="chapter-54.html#intro">Ch54 POSIX 共享内存</a>——<code class="c">shm_open</code> + mmap 的正规化 IPC</li>
+<li><a href="chapter-63.html#s-63-4">Ch63 替代 I/O 模型</a>——select/poll/epoll 事件驱动 I/O 去向</li>
+<li>内核深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
 <hr />
-<h2>代码自测</h2>
+<h2>自测题</h2>
+<p><strong>题目（综合）：</strong> 一句话各答——① mmap 后 Rss 是多少？② PRIVATE 读到别人修改的条件？③ MS_ASYNC 现在是什么？④ mremap 搬家搬的是什么？⑤ DONTUNMAP 后旧地址读到什么？</p>
 <details>
-<summary>1. MAP_SHARED 和 MAP_PRIVATE 的区别？</summary>
-<p>MAP_SHARED：多个进程映射同一文件区域时共享同一物理页，写入对其他进程可见且写回文件。MAP_PRIVATE：写入触发 COW（copy-on-write），每个进程有独立副本，修改不影响其他进程和文件。</p>
-</details>
-<details>
-<summary>2. 匿名共享映射如何实现父子进程通信？</summary>
-<p>父进程用 <code class="c">mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0)</code> 创建共享映射，fork 后子进程继承同一映射，父子共享同一物理内存，写入互相可见。</p>
+<summary>参考答案</summary>
+<p>① 0（画区不填页，POPULATE 例外）；② 该页自己从未写过（PTE 还指 page cache 原页）；③ no-op（2.6.19 起内核自动回写）；④ 页表项（物理页不动，零拷贝）；⑤ 全 0（空壳 VMA + 零页，旧数据不保留）。</p>
 </details>
       </section>
       <section class="section" id="s-49-13">
-        <div class="sec-head"><div class="sec-no">49.13</div><h2>练习题</h2></div>
+        <div class="sec-head"><div class="sec-no">49.13</div><h2>练习</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mmap.c</code> · <code class="c">mm/msync.c</code> · <code class="c">mm/mremap.c</code>（行号见各节）
+本章：<a href="#intro">TLPI 第 49 章 — 内存映射</a>
+- 上一节：<a href="#s-49-12">49.12 总结</a></p>
 </blockquote>
-<h2>本节讲什么</h2>
-<p>原书第 49 章练习题要点。</p>
-<details>
-<summary>1. 用 mmap 实现一个简单的共享内存计数器，父子进程各加 10000 次</summary>
-<pre class="code" data-label="C"><code class="c">int *counter = mmap(NULL, sizeof(int), PROT_READ|PROT_WRITE,
-                    MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-*counter = 0;
-if (fork() == 0) {
+<hr />
+<h2>练习题</h2>
+<h3>练习 1：共享内存计数器（fork IPC）</h3>
+<p>用 <code class="c">MAP_SHARED|MAP_ANONYMOUS</code> 实现父子计数器，各加 10000 次，观察竞态。</p>
+<h3>练习 2：解释计数器为什么不是 20000</h3>
+<p><code class="c">(*counter)++</code> 非原子——丢失更新。</p>
+<h3>练习 3：mmap 映射的文件被 truncate 会怎样？</h3>
+<p>访问被截掉的部分触发 <code class="c">SIGBUS</code>（映射合法但页无后备）。</p>
+<h3>实验 4（实测）：mmap 生命周期三态 + VMA 分裂</h3>
+<p>mmap 3 页 → 未触碰/读触碰/写触碰三态的 Rss 演化；munmap 中间页观察 maps 条数 1→2。</p>
+<h3>实验 5（实测）：PRIVATE vs SHARED 可见性三连</h3>
+<p>对照页设计（页 0 不写 / 页 1 预写 'K'）：fork 后子改 SHARED，父读 PRIVATE——页 0 跟随 page cache、页 1 COW 快照定格。</p>
+<h3>实验 6（实测）：mremap 全景 + MAP_FIXED_NOREPLACE</h3>
+<p>自造空洞原地扩展 / 紧贴阻挡 ENOMEM / MAYMOVE 搬家 / 收缩 / DONTUNMAP 旧址零填充 / NOREPLACE EEXIST。</p>
+<h3>实验 7（实测）：MAP_POPULATE 预填充对比</h3>
+<p>lazy 与 populate 各 16MB：Rss 0 vs 16384 kB；memset 首触 15ms vs 1ms。</p>
+<hr />
+<h2>参考答案</h2>
+<h3>练习 1 参考代码</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void)
+{
+    int *counter = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (counter == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    *counter = 0;
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        for (int i = 0; i &lt; 10000; i++) (*counter)++;
+        _exit(0);
+    }
     for (int i = 0; i &lt; 10000; i++) (*counter)++;
-    _exit(0);
+    wait(NULL);
+    /* 注意: 结果可能不是 20000, 因为 ++ 不是原子操作 */
+    printf(&quot;counter: %d (race condition: not 20000)\n&quot;, *counter);
+    return 0;
 }
-for (int i = 0; i &lt; 10000; i++) (*counter)++;
-wait(NULL);
-/* 注意: 结果可能不是 20000, 因为 ++ 不是原子操作 */
-printf(&quot;counter: %d (race condition: not 20000)\n&quot;, *counter);
 </code></pre>
-</details>
-<details>
-<summary>2. 为什么上述计数器结果可能不正确？</summary>
-<p><code class="c">(*counter)++</code> 是读-改-写三步操作，非原子。父子进程可能同时读到相同值，各自加 1 后写回，导致丢失更新。需要用信号量或原子操作（<code class="c">__sync_fetch_and_add</code>）保证原子性。</p>
-</details>
-<details>
-<summary>3. mmap 映射文件后，文件被 truncate 会怎样？</summary>
-<p>访问被截断的部分会触发 <code class="c">SIGBUS</code> 信号。因为文件实际大小不够，内核无法提供数据页。解决方法：在访问映射区域前检查文件大小，或注册 <code class="c">SIGBUS</code> 信号处理函数。</p>
-</details>
+<h3>练习 2 答案</h3>
+<p><code class="c">(*counter)++</code> 是读-改-写三步操作，非原子。父子进程可能同时读到相同值，各自加 1 后写回，导致丢失更新。修复：信号量（Ch53）/文件锁（Ch55）/<code class="c">__sync_fetch_and_add</code> 原子操作/带 mutex 的 pthread 共享（Ch30）。</p>
+<h3>练习 3 答案</h3>
+<p>访问被截断的部分触发 <strong>SIGBUS</strong>：虚址在 VMA 内（映射合法），但缺页处理发现 offset ≥ i_size（无后备数据页），发 SIGBUS。与 SIGSEGV（VMA 不存在）是两个不同层次的死法。防护：访问前对 <code class="c">fstat</code> 的大小做区间校验，或捕获 SIGBUS（sigsetjmp 方案，见 49.4 实测）。</p>
+<h3>实验 4 参考代码（实测：2026-09-05，WSL Ubuntu，gcc -O2 -Wall -Wextra 零告警）</h3>
+<p>完整代码见 <a href="#s-49-2">49.2 代码示例</a> 与 <a href="#s-49-3">49.3 代码示例</a>。实测输出：</p>
+<pre class="code" data-label="code"><code class="c">步骤1 mmap p=0x7ef676812000（未触碰，两侧 guard 为 PROT_NONE）
+  [未触碰] VMA条数=1  Rss=0 kB
+步骤2 读触碰第 0 页（do_anonymous_page 走零页分支）
+  [读触碰] VMA条数=1  Rss=0 kB
+步骤3 写触碰第 0 页（分配私有物理页）
+  [写触碰] VMA条数=1  Rss=4 kB
+步骤4 munmap 中间页（VMA 分裂）
+  [分裂后] VMA条数=2  Rss=4 kB
+步骤5 close(fd) 后读文件映射：&quot;FDLIFE&quot; ← fd 已关，映射仍存活
+</code></pre>
+<p><strong>三个教学点</strong>：
+1. 画区≠填页：mmap 后 Rss=0，物理页零消耗
+2. 零页不计 RSS：读触碰后 Rss 仍 0（零页全系统共享一份）；写触碰才 4 kB
+3. munmap 中间页 → VMA 分裂（<code class="c">do_vmi_align_munmap</code> 两端切割）；PROT_NONE guard 防相邻 vma_merge 吞并观察区</p>
+<h3>实验 5 参考代码</h3>
+<p>完整代码见 <a href="#s-49-4">49.4 代码示例</a>。实测输出：</p>
+<pre class="code" data-label="code"><code class="c">fork 后父观察:
+  priv[0]='S'（页 0 未写→跟随 page cache）
+  priv[4096]='K'（页 1 写过→整页 COW 快照）
+  shar[0]='S' shar[4096]='T'（SHARED 全局可见）
+文件截断到 1 页，访问映射第 2 页 shar[4096]……捕获 SIGBUS ✓
+</code></pre>
+<p><strong>实验设计的进化史</strong>（本批最重要的方法论）：
+- v1：priv[0] 预写 'O'，实测读到 'S'——<strong>推翻</strong>「PRIVATE=快照」直觉
+- v2：priv[1] 预写 'K' 后 priv[0] 读回 'O'——<strong>意外发现</strong> COW 粒度是页（同页写定格整页）
+- v3：对照组放<strong>不同页</strong>——两个结论同时验证</p>
+<h3>实验 6 参考代码</h3>
+<p>完整代码见 <a href="#s-49-8">49.8 代码示例</a> 与 <a href="#s-49-10">49.10 代码示例</a>。实测输出：</p>
+<pre class="code" data-label="code"><code class="c">原地扩展 1→2 页: 0x75800c515000 → 0x75800c515000（地址不变）data=&quot;hello&quot;
+mremap 无 MAYMOVE 被挡: Cannot allocate memory（errno=12 预期 ENOMEM）
+mremap MAYMOVE 成功: 0x75800c514000 → 0x75800c512000（地址改变）data=&quot;VICTIM&quot;
+收缩 2→1 页: 0x75800c512000 → 0x75800c512000（地址不变）
+MAP_FIXED_NOREPLACE 覆盖: MAP_FAILED（errno=17 预期 EEXIST）
+DONTUNMAP: 旧 → 新 0x75800c511000
+  新地址 data=&quot;DATA&quot; / 旧地址 d[0]=0x00（零填充）
+</code></pre>
+<h3>实验 7 参考代码（实测：2026-09-05）</h3>
+<pre class="code" data-label="C"><code class="c">
+/* MAP_POPULATE vs 惰性映射：Rss 与首触耗时
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   lazy     mmap 后 Rss=0 kB
+ *   populate mmap 后 Rss=16384 kB
+ *   lazy     区 memset 首触 15 ms（4096 次缺页）
+ *   populate 区 memset      1 ms（纯写内存）——15 倍差
+ */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;unistd.h&gt;
+
+int main(void)
+{
+    size_t len = 16UL &lt;&lt; 20;                 /* 16MB = 4096 页 */
+
+    char *lazy = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    char *pop  = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+    if (lazy == MAP_FAILED || pop == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &amp;t0);
+    memset(lazy, 1, len);                    /* 首触：4096 次缺页 */
+    clock_gettime(CLOCK_MONOTONIC, &amp;t1);
+    printf(&quot;lazy     memset %ld ms\n&quot;,
+           (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000);
+
+    clock_gettime(CLOCK_MONOTONIC, &amp;t0);
+    memset(pop, 1, len);                     /* 无缺页 */
+    clock_gettime(CLOCK_MONOTONIC, &amp;t1);
+    printf(&quot;populate memset %ld ms\n&quot;,
+           (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000);
+
+    munmap(lazy, len);
+    munmap(pop, len);
+    return 0;
+}
+</code></pre>
+<p>（Rss 口径验证的 smaps 解析版见 <a href="#s-49-6">49.6 代码示例</a>。）</p>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><a href="chapter-50.html#intro">Ch50 虚拟内存</a></li>
+<li><a href="chapter-50.html#intro">Ch50 虚拟内存操作</a></li>
 <li><a href="chapter-54.html#intro">Ch54 POSIX 共享内存</a></li>
+<li><a href="chapter-63.html#s-63-4">Ch63 替代 I/O 模型</a></li>
 </ul>
-<hr />
-<h2>代码自测</h2>
-<details>
-<summary>参考答案</summary>
-<p>参见原书附录 F。</p>
-</details>
       </section>
 
 

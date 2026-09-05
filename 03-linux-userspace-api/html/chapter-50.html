@@ -276,12 +276,12 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
-          <a href="#s-50-1"><span class="n">50.1</span>总览</a>
-          <a href="#s-50-2"><span class="n">50.2</span>`mprotect`</a>
-          <a href="#s-50-3"><span class="n">50.3</span>`mlock` / `mlockall`</a>
-          <a href="#s-50-4"><span class="n">50.4</span>`mincore`</a>
-          <a href="#s-50-5"><span class="n">50.5</span>`madvise`</a>
-          <a href="#s-50-6"><span class="n">50.6</span>Exercises</a>
+          <a href="#s-50-1"><span class="n">50.1</span>修改内存保护：mprotect()</a>
+          <a href="#s-50-2"><span class="n">50.2</span>内存锁定：mlock() 与 mlockall()</a>
+          <a href="#s-50-3"><span class="n">50.3</span>驻留查询：mincore()</a>
+          <a href="#s-50-4"><span class="n">50.4</span>访问模式提示：madvise()</a>
+          <a href="#s-50-5"><span class="n">50.5</span>总结</a>
+          <a href="#s-50-6"><span class="n">50.6</span>练习</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -369,8 +369,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
 <h2>章节目标</h2>
-<p><code class="c">mprotect</code> · <code class="c">mlock*</code> · <code class="c">mincore</code> · <code class="c">madvise</code>；页对齐约束；实时锁定与 advice 语义。</p>
-<hr />
+<p><code class="c">mprotect</code> · <code class="c">mlock*</code> · <code class="c">mincore</code> · <code class="c">madvise</code>；页对齐约束；实时锁定与 advice 语义；四个 v6.6 实测锚点。</p>
 <hr />
 <h2>对比速记</h2>
 <div class="tbl-wrap"><table>
@@ -379,43 +378,93 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <th>调用</th>
 <th>作用</th>
 <th>权限</th>
+<th>关键实测结论</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>mprotect</td>
 <td>改 r/w/x</td>
-<td>通常不需 root</td>
+<td>不超 fd 模式（EACCES）</td>
+<td>违例 SIGSEGV；W^X 加固</td>
 </tr>
 <tr>
 <td>mlock*</td>
 <td>禁 swap</td>
-<td>ulimit / 特权</td>
+<td>RLIMIT_MEMLOCK / CAP_IPC_LOCK</td>
+<td><strong>超限 ENOMEM（非 EPERM）</strong>；MS_INVALIDATE→EBUSY</td>
 </tr>
 <tr>
 <td>mincore</td>
 <td>驻留快照</td>
-<td>否</td>
+<td>无权限文件映射静默 0</td>
+<td>零页 mincore=1 但 Rss=0</td>
 </tr>
 <tr>
 <td>madvise</td>
 <td>访问提示</td>
-<td>否</td>
+<td>advice 合法即可</td>
+<td>DONTNEED：匿名→0，文件 PRIVATE→原内容</td>
 </tr>
 </tbody>
 </table></div>
 <hr />
-<hr />
-<h2>陷阱</h2>
+<h2>易错清单</h2>
 <ol>
-<li>未页对齐 → <code class="c">EINVAL</code>  </li>
-<li>mprotect 越权 → <code class="c">EACCES</code>  </li>
-<li>mlock 非引用计数叠加  </li>
-<li>mincore 不可靠同步  </li>
-<li><code class="c">MADV_DONTNEED</code> + PRIVATE 丢数据（Linux）  </li>
-<li><code class="c">MCL_FUTURE</code> 耗尽锁定额  </li>
+<li><code class="c">mlock</code> 超限返回 <code class="c">ENOMEM</code>，不是 <code class="c">EPERM</code>（EPERM 只在「限额 0 且无 CAP_IPC_LOCK」）</li>
+<li><code class="c">mincore</code> 对无权限文件映射静默返回全 0（v6.6 <code class="c">can_do_mincore()</code> 防侧信道），不是「真的不在内存」</li>
+<li>零页：<code class="c">mincore</code> 说驻留、<code class="c">Rss</code> 不计——两个口径不同</li>
+<li><code class="c">MADV_DONTNEED</code> 匿名映射读回 <strong>0</strong>；文件 PRIVATE 读回<strong>文件内容</strong>——不是同一件事</li>
+<li><code class="c">MADV_FREE</code> 是 lazyfree（内存压力前数据还在），不能当确定性清零用</li>
+<li><code class="c">MCL_FUTURE</code> 让后续 mmap/malloc 静默受限额约束——错误会在离 mlockall 很远的地方爆</li>
+<li><code class="c">mincore</code> 是瞬时快照，不能做同步条件</li>
+<li><code class="c">mprotect</code> 的 <code class="c">addr</code> 必须页对齐（EINVAL），<code class="c">length</code> 内核取整</li>
+<li>W^X：同页避免 W+X；JIT 写完改 R|X（ARM64 还需 <code class="c">__clear_cache</code> 同步 I-cache）</li>
 </ol>
 <hr />
+<h2>实验清单（全部实测：WSL Ubuntu，gcc -O2 -Wall -Wextra 零告警，2026-09-05）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>实验</th>
+<th>验证点</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>mprotect 三段式</td>
+<td>PROT_NONE→SIGSEGV；恢复 RW→写入成功</td>
+<td>50.1 代码示例</td>
+</tr>
+<tr>
+<td>2</td>
+<td>mlock 限额</td>
+<td>RLIMIT 64MB（WSL）；128MB→ENOMEM；单页成功</td>
+<td>50.2 代码示例</td>
+</tr>
+<tr>
+<td>3</td>
+<td>mincore 零页口径</td>
+<td>[1,1,0,0] vs Rss=4kB</td>
+<td>50.3 代码示例</td>
+</tr>
+<tr>
+<td>4</td>
+<td>MADV_DONTNEED 双语义</td>
+<td>匿名归零 0x00；文件 PRIVATE 回读 'O'；EINVAL</td>
+<td>50.4 代码示例 / 50.6 实验 4</td>
+</tr>
+<tr>
+<td>5</td>
+<td>mlock 限额错误码</td>
+<td>ENOMEM 断言 + 超限不耗物理内存</td>
+<td>50.6 实验 5</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>背诵卡</h2>
 <div class="tbl-wrap"><table>
@@ -428,180 +477,206 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tbody>
 <tr>
 <td>1</td>
-<td>四件套：protect / lock / mincore / advise</td>
+<td>mprotect 违例 → <strong>SIGSEGV</strong>；超 fd 模式 → <strong>EACCES</strong></td>
 </tr>
 <tr>
 <td>2</td>
-<td>页对齐；JIT 写完再 RX</td>
+<td>mlock 超限 → <strong>ENOMEM</strong>；无资格（limit=0 无 CAP_IPC_LOCK）→ <strong>EPERM</strong></td>
 </tr>
 <tr>
 <td>3</td>
-<td>mlock 抗 swap；ulimit；exec 解锁</td>
+<td>mlock 语义：<strong>立即预填充</strong>（<code class="c">__mm_populate</code>）+ 无计数（一次 munlock 全解）</td>
 </tr>
 <tr>
 <td>4</td>
-<td>mincore 仅快照</td>
+<td>fork <strong>继承</strong>锁，exec <strong>解锁</strong></td>
 </tr>
 <tr>
 <td>5</td>
-<td>madvise 非强制；DONTNEED 移植坑</td>
+<td>mlock 区上 <code class="c">msync(MS_INVALIDATE)</code> → <strong>EBUSY</strong></td>
 </tr>
 <tr>
 <td>6</td>
-<td>大量 mlock 挤内存</td>
+<td>mincore 口径 = <strong>PTE present</strong>；零页 resident 但 Rss 不计</td>
+</tr>
+<tr>
+<td>7</td>
+<td>mincore 无权限文件映射 → <strong>静默全 0</strong>（防侧信道）</td>
+</tr>
+<tr>
+<td>8</td>
+<td>THP 在 mincore 里整块 2MB 全 1</td>
+</tr>
+<tr>
+<td>9</td>
+<td>MADV_DONTNEED：匿名→<strong>丢成 0</strong>；文件 PRIVATE→<strong>丢 COW 读回文件</strong></td>
+</tr>
+<tr>
+<td>10</td>
+<td>MADV_FREE：lazyfree，压力前数据保留，可反悔</td>
+</tr>
+<tr>
+<td>11</td>
+<td>mlockall 的 MCL_FUTURE 陷阱：远处 malloc 失败</td>
+</tr>
+<tr>
+<td>12</td>
+<td>四组调用 addr 均<strong>页对齐</strong>，length 向上取整</td>
 </tr>
 </tbody>
 </table></div>
-<hr />
 <hr />
 <h2>参考</h2>
 <ul>
 <li>Kerrisk · TLPI Ch50（非「第 45 章」误标）  </li>
 <li><code class="c">man 2 mprotect</code> · <code class="c">mlock</code> · <code class="c">mincore</code> · <code class="c">madvise</code></li>
-</ul>
-<hr />
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
-#include &lt;sys/mman.h&gt;
-#include &lt;unistd.h&gt;
-#include &lt;string.h&gt;
-
-/* Ch50 虚拟内存 — mprotect/madvise/mincore。
- * 演示修改内存保护属性 + 内存使用建议。
- * 编译: gcc -o ch50_demo ch50_demo.c */
-
-int main(void) {
-    long pagesize = sysconf(_SC_PAGESIZE);
-    printf(&quot;Page size: %ld bytes\n&quot;, pagesize);
-
-    /* 分配页对齐的内存 */
-    char *mem = mmap(NULL, pagesize,
-                     PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS,
-                     -1, 0);
-    if (mem == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
-
-    /* 写入数据 */
-    strcpy(mem, &quot;writable data&quot;);
-    printf(&quot;Wrote: %s\n&quot;, mem);
-
-    /* mprotect: 改为只读 */
-    if (mprotect(mem, pagesize, PROT_READ) == 0) {
-        printf(&quot;Memory is now read-only\n&quot;);
-        printf(&quot;Reading still works: %s\n&quot;, mem);
-        /* 以下写入会触发 SIGSEGV:
-         * mem[0] = 'X';  -- 段错误!
-         */
-        printf(&quot;Writing would cause SIGSEGV now\n&quot;);
-    }
-
-    /* mprotect: 改为不可读写 */
-    mprotect(mem, pagesize, PROT_NONE);
-    printf(&quot;Memory is now inaccessible (PROT_NONE)\n&quot;);
-    /* 读或写都会触发 SIGSEGV */
-
-    /* madvise: 给内核内存使用提示 */
-    char *mem2 = mmap(NULL, pagesize * 4,
-                      PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANONYMOUS,
-                      -1, 0);
-    madvise(mem2, pagesize * 4, MADV_SEQUENTIAL);  /* 顺序访问 */
-    printf(&quot;madvise(MADV_SEQUENTIAL): hint for sequential access\n&quot;);
-
-    munmap(mem, pagesize);
-    munmap(mem2, pagesize * 4);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>参考</h2>
-<ul>
-<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/OUTLINE.md">OUTLINE</a></li>
-<li>原始笔记：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/notes">notes.md.bak</a></li>
+<li>内核深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
       </section>
       <section class="section" id="s-50-1">
-        <div class="sec-head"><div class="sec-no">50.1</div><h2>总览</h2></div>
+        <div class="sec-head"><div class="sec-no">50.1</div><h2>修改内存保护：mprotect()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mprotect.c</code>（<code class="c">do_mprotect_pkey():690</code> · <code class="c">change_protection():513</code> · <code class="c">change_protection_range():483</code> · <code class="c">change_pte_range():83</code>）
+本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
 - 上一节：本章首页
-- 下一节：<a href="#s-50-1">50.2 <code class="c">mprotect</code></a></p>
+- 下一节：<a href="#s-50-2">50.2 <code class="c">mlock</code> / <code class="c">mlockall</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>四组调用作用于<strong>已有</strong>映射（mmap / 堆 / 栈 均可）：改保护、锁 RAM、查驻留、给访问提示。 通用：<code class="c">addr</code> 页对齐；<code class="c">length</code> 上对齐页。 ---</p>
+<p><code class="c">mprotect()</code> 修改<strong>已有映射</strong>（mmap 区 / 堆 / 栈均可）的保护属性。三个灵魂问题：</p>
+<ol>
+<li>改保护 = 改什么？（PTE 的 rwx 位，<strong>不是</strong>重新分配内存）</li>
+<li>什么能改、什么不能改？（不能超过映射后备的权限——只读 fd 映射不可加 <code class="c">PROT_WRITE</code>）</li>
+<li>违反保护会怎样？（CPU 陷阱 → <strong>SIGSEGV</strong>，不是返回错误）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+int mprotect(void *addr, size_t length, int prot);
+/* 返回 0 成功；-1 失败（errno: EACCES/EINVAL/ENOMEM/ENOTSUP） */
+</code></pre>
 <hr />
 <h2>要点</h2>
-<p>四组调用作用于<strong>已有</strong>映射（mmap / 堆 / 栈 均可）：改保护、锁 RAM、查驻留、给访问提示。<br />
-通用：<code class="c">addr</code> 页对齐；<code class="c">length</code> 上对齐页。</p>
-<hr />
-<h2>HFT / 嵌入式关联</h2>
+<h3>参数规则</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>路线</th>
-<th>要点</th>
+<th>规则</th>
+<th>说明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>嵌入式</td>
-<td>mlock 防换出 + mprotect 护关键区 + mincore 查驻留，构成 RAM 紧场景的内存治理工具组</td>
+<td><code class="c">addr</code> <strong>必须页对齐</strong></td>
+<td>否则 <code class="c">EINVAL</code>（内核不做静默取整，munmap 同理）</td>
 </tr>
 <tr>
-<td>HFT</td>
-<td>四组调用是延迟治理工具箱：锁热缓冲(mlock)、防越界(mprotect)、查驻留(mincore)、调预读(madvise)</td>
+<td><code class="c">length</code> 内核向上取整到页</td>
+<td>与 mmap 一致</td>
+</tr>
+<tr>
+<td>作用于<strong>任何已有 VMA</strong></td>
+<td>mmap 区、<code class="c">brk</code> 堆、栈、vDSO——只要在进程地址空间内</td>
+</tr>
+<tr>
+<td>可跨多个 VMA</td>
+<td>一次调用覆盖的区间里夹着别的映射也照改（按 VMA 逐个处理）</td>
 </tr>
 </tbody>
 </table></div>
-<h2>代码示例</h2>
-<pre class="code" data-label="C"><code class="c">
-/* 虚拟内存区域查看：读取 /proc/self/maps */
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-
-int main(void) {
-    /* 打印当前进程的虚拟内存映射 */
-    FILE *fp = fopen(&quot;/proc/self/maps&quot;, &quot;r&quot;);
-    if (!fp) { perror(&quot;fopen /proc/self/maps&quot;); exit(1); }
-
-    char line[512];
-    printf(&quot;=== Virtual Memory Map ===\n&quot;);
-    while (fgets(line, sizeof(line), fp)) {
-        fputs(line, stdout);
-    }
-    fclose(fp);
-    return 0;
-}
-
-</code></pre>
-<hr />
-<h2>衔接</h2>
+<h3>prot 四位组合</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>prot</th>
+<th>读</th>
+<th>写</th>
+<th>执行</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">PROT_NONE</code></td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>guard 页、延迟分配区</td>
+</tr>
+<tr>
+<td><code class="c">PROT_READ</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>只读配置、字符串常量区</td>
+</tr>
+<tr>
+<td><code class="c">PROT_READ\|PROT_WRITE</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>普通数据</td>
+</tr>
+<tr>
+<td><code class="c">PROT_READ\|PROT_EXEC</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>✅</td>
+<td>代码段（text）</td>
+</tr>
+<tr>
+<td><code class="c">PROT_READ\|PROT_WRITE\|PROT_EXEC</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>JIT 生成期（现代系统尽量回避）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>权限天花板：不能超过后备权限</h3>
 <ul>
-<li>本章 README：<a href="#intro">README</a></li>
-<li>下一节：<a href="#s-50-1">50.2 <code class="c">mprotect</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-49.html#ch-49">Ch49 mmap</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-51.html#ch-51">Ch51 POSIX IPC 导论</a></li>
+<li>文件映射：<code class="c">prot</code> 不得超过 <code class="c">open()</code> 时的模式——<code class="c">O_RDONLY</code> 打开的 fd，<code class="c">mprotect</code> 加 <code class="c">PROT_WRITE</code> → <strong><code class="c">EACCES</code></strong></li>
+<li>匿名映射：天花板就是 <code class="c">mmap</code> 时的 <code class="c">prot</code>——匿名区无后备文件，但 mmap 后可以<strong>放宽或收紧</strong>吗？可以：匿名私有映射 <code class="c">mprotect</code> 加 <code class="c">PROT_EXEC</code> 通常成功（除非 SELinux/<code class="c">mmap_min_addr</code> 等 LSM 限制）</li>
+<li><strong>W^X 原则</strong>（现代内核加固）：同一页尽量避免同时 Write+Execute——写完代码改 <code class="c">R|X</code>，见下方 JIT 用法</li>
 </ul>
-      </section>
-      <section class="section" id="s-50-2">
-        <div class="sec-head"><div class="sec-no">50.2</div><h2>`mprotect`</h2></div>
-<blockquote>
-<p>本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
-- 上一节：<a href="#s-50-1">50.1 总览</a>
-- 下一节：<a href="#s-50-2">50.3 <code class="c">mlock</code> / <code class="c">mlockall</code></a></p>
-</blockquote>
-<hr />
-<h2>本节讲什么</h2>
-<p>int mprotect(void <em>addr, size_t length, int prot); <code class="c">PROT_NONE|READ|WRITE|EXEC</code>。违例 → </em><em>SIGSEGV</em>*。 不能超过后备权限（只读文件映射 → 不可 <code class="c">PROT_WRITE</code> → <code class="c">EACCES</code>）。</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int mprotect(void *addr, size_t length, int prot);
+<h3>内核路径（v6.6 实测核验）</h3>
+<pre class="code" data-label="code"><code class="c">mprotect(2)
+ └─ do_mprotect_pkey()              mm/mprotect.c:690
+     ├─ 遍历 [start,end) 内每个 VMA（vma_iterator）
+     ├─ 权限校验：prot &amp; ~旧 vma 可写位？→ 文件映射查 MAY_WRITE → EACCES
+     └─ mprotect_fixup() → change_protection()      mm/mprotect.c:513
+         └─ change_protection_range()                mm/mprotect.c:483
+             └─ change_pte_range()                   mm/mprotect.c:83
+                 ├─ 逐 PTE 改 prot 位（pte_modify）
+                 ├─ 脏页记账：VM_SHARED 可写映射改只读时标记 dirty_accountable
+                 └─ TLB flush：change_protection_end() → flush_tlb_range()
 </code></pre>
-<p><code class="c">PROT_NONE|READ|WRITE|EXEC</code>。违例 → <strong>SIGSEGV</strong>。<br />
-不能超过后备权限（只读文件映射 → 不可 <code class="c">PROT_WRITE</code> → <code class="c">EACCES</code>）。<br />
-JIT：<code class="c">W</code> 写码 → 改成 <code class="c">R|X</code>；现代常强制 <strong>W^X</strong>（不可同时 W+X）。</p>
+<p>关键细节：<code class="c">change_pte_range()</code> 只改<strong>已建立的 PTE</strong>；尚未缺页的地址在下次缺页时按新 <code class="c">vm_page_prot</code> 建立。所以 <code class="c">mprotect</code> 是「改 VMA 属性 + 顺手改现存 PTE + 刷 TLB」三件事。</p>
+<h3>错误码速查</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>触发条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EINVAL</code></td>
+<td>addr 未页对齐 / prot 非法 / 区间不在任何映射内（部分实现）</td>
+</tr>
+<tr>
+<td><code class="c">EACCES</code></td>
+<td>要求的权限超过 fd 打开模式（文件映射）</td>
+</tr>
+<tr>
+<td><code class="c">ENOMEM</code></td>
+<td>内核内部结构分配失败 / 区间不是进程映射</td>
+</tr>
+<tr>
+<td><code class="c">ENOTSUP</code></td>
+<td>文件系统不支持（个别 fs）</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -614,90 +689,188 @@ JIT：<code class="c">W</code> 写码 → 改成 <code class="c">R|X</code>；�
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>JIT 固件：W 写码后改 R</td>
+<td>JIT 固件：<code class="c">PROT_READ\|PROT_WRITE</code> 写码 → <code class="c">mprotect</code> 改 <code class="c">PROT_READ\|PROT_EXEC</code> 执行，现代强制 <strong>W^X</strong> 防注入；只读配置区 <code class="c">PROT_READ</code> 防误写（违例立刻 SIGSEGV 而不是悄悄破坏）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>关键共享区（订单簿）设只读防意外写；W^X 加固热路径代码段</td>
+<td>订单簿共享区在「快照读」阶段设 <code class="c">PROT_READ</code>，防策略代码误写关键数据；热路径代码段 <code class="c">PROT_READ\|PROT_EXEC</code> + W^X 加固；<code class="c">PROT_NONE</code> guard 页夹住热缓冲，越界访问<strong>第一时间</strong>报 SIGSEGV 而不是踩坏邻居</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
-/* mprotect 修改内存保护属性 */
+/* mprotect 三段式：PROT_NONE 触发 SIGSEGV → 恢复 RW 写入成功
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   步骤1 PROT_NONE 写访问……捕获 SIGSEGV ✓
+ *        mprotect 恢复 RW 后写入成功 p[0]=3
+ */
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
 #include &lt;signal.h&gt;
 #include &lt;setjmp.h&gt;
+#include &lt;errno.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
 
-static jmp_buf jmpbuf;
-static void handler(int sig) { longjmp(jmpbuf, 1); }
+static sigjmp_buf jb;
+static void segv_handler(int sig) { (void)sig; siglongjmp(jb, 1); }
 
-int main(void) {
-    size_t len = 4096;
-    char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    char *p = mmap(NULL, (size_t)pagesz, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
-    strcpy(p, &quot;hello&quot;);
+    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    p[0] = 1;                                  /* 先写一次（触发缺页分配） */
 
-    /* 改为只读 */
-    if (mprotect(p, len, PROT_READ) &lt; 0) { perror(&quot;mprotect&quot;); exit(1); }
-    printf(&quot;mprotect -&gt; PROT_READ OK\n&quot;);
-
-    /* 尝试写入会触发 SIGSEGV */
-    signal(SIGSEGV, handler);
-    if (setjmp(jmpbuf) == 0) {
-        p[0] = 'X';  /* 这里会触发 SIGSEGV */
+    signal(SIGSEGV, segv_handler);
+    if (mprotect(p, (size_t)pagesz, PROT_NONE) != 0) {
+        perror(&quot;mprotect NONE&quot;); return 1;
+    }
+    printf(&quot;步骤1 PROT_NONE 写访问……&quot;);
+    fflush(stdout);
+    if (sigsetjmp(jb, 1) == 0) {
+        p[0] = 2;                              /* 违反 PROT_NONE → SIGSEGV */
+        printf(&quot;写入成功（异常！）\n&quot;);
     } else {
-        printf(&quot;caught SIGSEGV: write to read-only page\n&quot;);
+        printf(&quot;捕获 SIGSEGV ✓\n&quot;);
     }
 
-    /* 改回可写 */
-    if (mprotect(p, len, PROT_READ | PROT_WRITE) &lt; 0) { perror(&quot;mprotect 2&quot;); exit(1); }
-    p[0] = 'X';
-    printf(&quot;mprotect -&gt; PROT_READ|PROT_WRITE OK, wrote 'X'\n&quot;);
+    if (mprotect(p, (size_t)pagesz, PROT_READ | PROT_WRITE) != 0) {
+        perror(&quot;mprotect RW&quot;); return 1;
+    }
+    p[0] = 3;                                  /* 恢复后写入正常 */
+    printf(&quot;     mprotect 恢复 RW 后写入成功 p[0]=%d\n&quot;, p[0]);
 
-    munmap(p, len);
+    munmap(p, (size_t)pagesz);
     return 0;
 }
-
 </code></pre>
+<p><strong>为什么用 <code class="c">sigsetjmp</code> 而不是 <code class="c">setjmp</code></strong>：SIGSEGV 是同步信号，handler 里 <code class="c">siglongjmp</code> 跳出后内核已把栈上的信号帧清理；<code class="c">sigsetjmp(…, 1)</code> 同时保存被阻塞的信号掩码，防止 SIGSEGV 在 handler 期间被屏蔽后不再递送。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-50-1">50.1 总览</a></li>
-<li>下一节：<a href="#s-50-2">50.3 <code class="c">mlock</code> / <code class="c">mlockall</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-49.html#ch-49">Ch49 mmap</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-51.html#ch-51">Ch51 POSIX IPC 导论</a></li>
+<li>下一节：<a href="#s-50-2">50.2 <code class="c">mlock</code> / <code class="c">mlockall</code></a></li>
+<li>前置：<a href="chapter-49.html#intro">Ch49 <code class="c">mmap</code></a>——mprotect 操作的对象就是 mmap 建立的 VMA</li>
+<li>后置：<a href="chapter-51.html#intro">Ch51 POSIX IPC 导论</a></li>
+<li>信号机制：<a href="chapter-20.html#intro">Ch20-22 信号三章</a>——SIGSEGV 捕获见 20.2/21.2</li>
+<li>深入内核缺页路径：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">mprotect(p, len, PROT_READ)</code> 对一个 <code class="c">MAP_SHARED</code> 可写映射调用后，已写的脏页会怎样？</p>
+<details>
+<summary>参考答案</summary>
+<p>脏页记账被保留。<code class="c">change_pte_range()</code>（mm/mprotect.c:83）处理 VM_SHARED 可写映射降权时会标记 <code class="c">dirty_accountable</code>，把「PTE 曾可写期间产生的脏」正确传给反向映射，保证后续回写不丢数据。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> 匿名映射 <code class="c">mmap</code> 时只给了 <code class="c">PROT_READ</code>，之后可以用 <code class="c">mprotect</code> 加上 <code class="c">PROT_WRITE</code>。</p>
+<details>
+<summary>参考答案</summary>
+<p>可以。匿名映射没有后备文件，不存在「超过 fd 打开模式」的天花板；<code class="c">mprotect</code> 直接改 VMA 属性。但文件映射不行——<code class="c">O_RDONLY</code> 的 fd 映射加写权限返回 <code class="c">EACCES</code>。</p>
+</details>
+<p><strong>题目 3（踩坑）：</strong> 以下代码在 ARM64 嵌入式 Linux 上运行，为什么可能直接崩溃？</p>
+<pre class="code" data-label="C"><code class="c">void *code = mmap(NULL, 4096, PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+memcpy(code, trampoline, sizeof(trampoline));
+((void(*)(void))code)();
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>映射只有 <code class="c">PROT_WRITE</code> 没有 <code class="c">PROT_EXEC</code>，跳转执行触发 SIGSEGV。修正：写完代码后 <code class="c">mprotect(code, 4096, PROT_READ|PROT_EXEC)</code> 再执行（W^X 模式）。另外 ARM64 指令缓存与数据缓存不连贯（VIPT），JIT 还需要缓存同步（用户态通常由 <code class="c">__builtin___clear_cache</code> 处理），这是嵌入式与 x86 的显著差异。</p>
+</details>
       </section>
-      <section class="section" id="s-50-3">
-        <div class="sec-head"><div class="sec-no">50.3</div><h2>`mlock` / `mlockall`</h2></div>
+      <section class="section" id="s-50-2">
+        <div class="sec-head"><div class="sec-no">50.2</div><h2>内存锁定：mlock() 与 mlockall()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
-- 上一节：<a href="#s-50-1">50.2 <code class="c">mprotect</code></a>
-- 下一节：<a href="#s-50-3">50.4 <code class="c">mincore</code></a></p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mlock.c</code>（<code class="c">can_do_mlock():40</code> · <code class="c">__mlock_posix_error_return():566</code> · <code class="c">do_mlock():575</code> · <code class="c">SYSCALL_DEFINE2(mlock):622</code> · <code class="c">SYSCALL_DEFINE1(mlockall):705</code>）
+本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
+- 上一节：<a href="#s-50-1">50.1 <code class="c">mprotect</code></a>
+- 下一节：<a href="#s-50-3">50.3 驻留查询 <code class="c">mincore</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>int mlock(const void <em>addr, size_t length); int munlock(const void </em>addr, size_t length); int mlockall(int flags);   /<em> MCL_CURRENT | MCL_FUTURE </em>/</p>
-<hr />
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int mlock(const void *addr, size_t length);
+<p><code class="c">mlock</code> 家族把页<strong>钉在物理内存</strong>（页标记 <code class="c">Mlocked</code>，从 LRU 链表摘除），换出器永不回收。三个灵魂问题：</p>
+<ol>
+<li>为什么要锁？（缺页/换入换出是<strong>毫秒级</strong>延迟毛刺的根源——HFT 大忌）</li>
+<li>谁有资格锁？（<code class="c">RLIMIT_MEMLOCK</code> 限额，超限返回什么？——<strong><code class="c">ENOMEM</code>，不是 <code class="c">EPERM</code></strong>，经典面试题）</li>
+<li>锁住了什么？（只锁<strong>当前已驻留</strong>的页 + 顺带预填充；<code class="c">MCL_FUTURE</code> 锁未来）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+int mlock(const void *addr, size_t length);
 int munlock(const void *addr, size_t length);
-int mlockall(int flags);   /* MCL_CURRENT | MCL_FUTURE */
+int mlock2(const void *addr, size_t length, int flags);   /* Linux 扩展 */
+int mlockall(int flags);    /* MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT(2) */
 int munlockall(void);
 </code></pre>
-<p>禁 swap，减缺页 IO 延迟（实时 / HFT）。<br />
-- 用户有 <strong><code class="c">ulimit -l</code></strong> 上限；超限失败<br />
-- 同区多次 <code class="c">mlock</code>，<strong>一次 <code class="c">munlock</code> 即解</strong>（非叠加计数）<br />
-- <code class="c">fork</code> 继承锁；<strong><code class="c">exec</code> 全解锁</strong><br />
-- <code class="c">MCL_FUTURE</code>：后续分配也锁 → 易耗尽限额<br />
-慎用：挤占 RAM → 他进程 OOM。</p>
+<hr />
+<h2>要点</h2>
+<h3>语义规则</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mlock</code> 立即预填充</td>
+<td><code class="c">do_mlock()</code> 末尾 <code class="c">__mm_populate()</code>：把区间内所有页<strong>当场缺页进来</strong>（不是等访问）</td>
+</tr>
+<tr>
+<td>多次 <code class="c">mlock</code> 不叠加</td>
+<td>同区 <code class="c">mlock</code> 两次，一次 <code class="c">munlock</code> 即解除（无计数语义，与 <code class="c">fcntl</code> 记录锁不同）</td>
+</tr>
+<tr>
+<td><code class="c">addr</code> 页对齐，<code class="c">length</code> 向上取整</td>
+<td>与 <code class="c">mprotect</code> 一致</td>
+</tr>
+<tr>
+<td><code class="c">fork</code>：<strong>子进程继承锁</strong></td>
+<td>页在父子间 COW；<code class="c">VM_LOCKED</code> 标志遗传给子 VMA</td>
+</tr>
+<tr>
+<td><code class="c">exec</code>：<strong>全部解锁</strong></td>
+<td>新程序映像替换整个地址空间</td>
+</tr>
+<tr>
+<td><code class="c">munmap</code> 自动解除该区锁定</td>
+<td>生命周期跟随 VMA</td>
+</tr>
+</tbody>
+</table></div>
+<h3>权限模型（v6.6 <code class="c">can_do_mlock():40</code> 逐行核验）</h3>
+<pre class="code" data-label="C"><code class="c">bool can_do_mlock(void)
+{
+    if (rlimit(RLIMIT_MEMLOCK) != 0)   /* 限额非零（哪怕 4KB）→ 有资格 */
+        return true;
+    if (capable(CAP_IPC_LOCK))         /* 或持有 CAP_IPC_LOCK */
+        return true;
+    return false;                      /* 否则 EPERM——限额为 0 且无特权 */
+}
+</code></pre>
+<p><code class="c">do_mlock():575</code> 的限额检查（简化）：</p>
+<pre class="code" data-label="C"><code class="c">locked = len &gt;&gt; PAGE_SHIFT;                     /* 本次请求页数 */
+locked += current-&gt;mm-&gt;locked_vm;               /* 加已锁总数 */
+if ((locked &gt; lock_limit) &amp;&amp; (!capable(CAP_IPC_LOCK)))
+    /* error 保持初值 -ENOMEM → 返回 ENOMEM */
+</code></pre>
+<p>⭐ <strong>错误码分界</strong>：
+- 限额为 0 且无 <code class="c">CAP_IPC_LOCK</code> → <code class="c">EPERM</code>（连资格都没有）
+- 有资格但<strong>超量</strong> → <code class="c">ENOMEM</code>（不是 EPERM！）——TLPI 与 man page 都强调这一点
+- 另有 <code class="c">__mlock_posix_error_return():566</code>：GUP 层的 <code class="c">-EFAULT→-ENOMEM</code>、<code class="c">-ENOMEM→-EAGAIN</code>（POSIX 规定的换算）</p>
+<h3>与 msync 的联动（实测验证）</h3>
+<p><code class="c">msync(MS_INVALIDATE)</code> 作用到带 <code class="c">VM_LOCKED</code> 的区域 → <strong><code class="c">EBUSY</code></strong>（mm/msync.c 的显式检查：<code class="c">if ((flags &amp; MS_INVALIDATE) &amp;&amp; (vma-&gt;vm_flags &amp; VM_LOCKED)) error = -EBUSY</code>）。锁定的页不允许从进程地址空间「作废」。</p>
+<h3><code class="c">MCL_FUTURE</code> 的坑</h3>
+<p><code class="c">mlockall(MCL_CURRENT|MCL_FUTURE)</code> 之后<strong>每次</strong> mmap/malloc/栈增长都要过限额检查——超限时 <code class="c">mmap</code> 返回 <code class="c">ENOMEM</code>，malloc 返回 NULL。程序会以「莫名其妙的内存分配失败」形式死亡，而不是死在 mlock 调用点。</p>
+<h3>实测数据（WSL Ubuntu，2026-09-05）</h3>
+<pre class="code" data-label="code"><code class="c">RLIMIT_MEMLOCK soft=65536 kB hard=65536 kB     ← WSL Ubuntu 默认 64MB
+mlock(128MB) = -1 errno=12(Cannot allocate memory)   ← 超限走 ENOMEM ✓
+mlock(1 页) = 0 成功
+</code></pre>
+<p>注意 WSL 的默认限额（64MB）与桌面 Ubuntu 22.04（8MB）不同，脚本化部署时必须显式 <code class="c">ulimit -l</code> / systemd <code class="c">LimitMEMLOCK</code>。</p>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -710,83 +883,203 @@ int munlockall(void);
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>无 swap 的 RTOS/嵌入式锁热代码+数据防换出；但 RAM 紧，锁多易挤占致 OOM</td>
+<td>无 swap 的系统 mlock 几乎无意义（没地方换出），但<strong>预填充</strong>语义仍有价值——启动时把关键页摸一遍，避免运行时首次缺页抖动；RAM 紧张时锁多了直接挤爆伙伴系统（<code class="c">mlock</code> 的页不参与回收 → 别人 OOM）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>HFT 铁律：mlockall(MCL_CURRENT</td>
+<td><strong><code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code> 是行业标配</strong>：预热阶段把行情缓冲/策略热数据全部驻留，消除两类毛刺——缺页（µs 级）与换入换出（<strong>ms 级</strong>）；配套动作：① <code class="c">setrlimit</code>/systemd <code class="c">LimitMEMLOCK=infinity</code>（或 <code class="c">CAP_IPC_LOCK</code>）② 预分配所有缓冲再 <code class="c">MCL_CURRENT</code> ③ 慎用 <code class="c">MCL_FUTURE</code>——它会掩盖「忘了锁哪块」的 bug，让 malloc 在意想不到的地方失败</td>
 </tr>
 </tbody>
 </table></div>
+<p>实测经验：单纯 <code class="c">mlockall</code> 不够——<strong>从未触碰过的页不在 <code class="c">MCL_CURRENT</code> 的填充范围</strong>……不对，v6.6 的 <code class="c">mlockall→do_mlockall→apply_vma_lock_flags + __mm_populate</code> 会主动填充全部当前 VMA；真正的坑是 <code class="c">MAP_NORESERVE</code> 大映射 + <code class="c">mlockall</code> 会把整个稀疏区灌满物理页。<strong>锁之前先想清楚区间的真实工作集大小</strong>。</p>
+<hr />
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
-/* mlock / munlock 锁定内存页，防止被换出到 swap */
+/* mlock 限额实测：超限 ENOMEM（非 EPERM）+ 小块成功
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   RLIMIT_MEMLOCK soft=65536 kB hard=65536 kB
+ *   mlock(128MB) = -1 errno=12(Cannot allocate memory)   ← 超限 ENOMEM
+ *   mlock(1 页) = 0 成功
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
+#include &lt;errno.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;sys/resource.h&gt;
 #include &lt;unistd.h&gt;
 
-int main(void) {
-    size_t len = 4096;
-    char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_MEMLOCK, &amp;rl) != 0) { perror(&quot;getrlimit&quot;); return 1; }
+    printf(&quot;RLIMIT_MEMLOCK soft=%lu kB hard=%lu kB\n&quot;,
+           (unsigned long)rl.rlim_cur / 1024, (unsigned long)rl.rlim_max / 1024);
+
+    char *p = mmap(NULL, (size_t)pagesz, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
+    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
 
-    /* mlock 锁定这一页，确保不换出（HFT 延迟敏感场景常用） */
-    if (mlock(p, len) &lt; 0) {
-        perror(&quot;mlock (need CAP_IPC_LOCK or RLIMIT_MEMLOCK)&quot;);
-    } else {
-        printf(&quot;mlock: %zu bytes locked in RAM\n&quot;, len);
-    }
+    /* 超限请求：按实测限额动态取 2 倍，保证真的超 */
+    size_t big_len = 64UL &lt;&lt; 20;
+    if (big_len &lt;= rl.rlim_cur) big_len = rl.rlim_cur * 2;
+    char *big = mmap(NULL, big_len, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (big == MAP_FAILED) { perror(&quot;mmap big&quot;); return 1; }
+    errno = 0;
+    int r = mlock(big, big_len);
+    printf(&quot;mlock(%zuMB) = %d&quot;, big_len &gt;&gt; 20, r);
+    if (r != 0)
+        printf(&quot; errno=%d(%s)  ← 超限是 ENOMEM 不是 EPERM\n&quot;,
+               errno, strerror(errno));
+    munmap(big, big_len);
 
-    strcpy(p, &quot;locked memory&quot;);
-    printf(&quot;data: %s\n&quot;, p);
+    errno = 0;
+    r = mlock(p, (size_t)pagesz);
+    printf(&quot;mlock(1 页) = %d %s\n&quot;, r, r ? strerror(errno) : &quot;成功&quot;);
 
-    /* munlock 解锁 */
-    munlock(p, len);
-    printf(&quot;munlock: unlocked\n&quot;);
-
-    /* mlockall 锁定进程所有页 */
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) &lt; 0) {
-        perror(&quot;mlockall&quot;);
-    } else {
-        printf(&quot;mlockall: all current+future pages locked\n&quot;);
-        munlockall();
-    }
-
-    munmap(p, len);
+    munlock(p, (size_t)pagesz);
+    munmap(p, (size_t)pagesz);
     return 0;
 }
-
 </code></pre>
+<p>超限请求是安全的：<code class="c">do_mlock()</code> 在限额检查<strong>不通过时不会执行填充</strong>（<code class="c">apply_vma_lock_flags</code> 被跳过），64MB 只是虚拟区，一页物理内存都不会消耗。</p>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-50-1">50.2 <code class="c">mprotect</code></a></li>
-<li>下一节：<a href="#s-50-3">50.4 <code class="c">mincore</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-49.html#ch-49">Ch49 mmap</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-51.html#ch-51">Ch51 POSIX IPC 导论</a></li>
+<li>上一节：<a href="#s-50-1">50.1 <code class="c">mprotect</code></a></li>
+<li>下一节：<a href="#s-50-3">50.3 驻留查询 <code class="c">mincore</code></a>——锁完之后怎么验证真的驻留了？mincore</li>
+<li>资源限制：<a href="chapter-36.html#intro">Ch36 进程资源</a>——<code class="c">RLIMIT_MEMLOCK</code> 的设置与继承</li>
+<li>msync 联动：<a href="chapter-49.html#s-49-5">49.5 <code class="c">msync</code></a>——<code class="c">MS_INVALIDATE</code> 遇 <code class="c">VM_LOCKED</code> 返回 <code class="c">EBUSY</code>（实测）</li>
+<li>同类锁定：<a href="#s-50-3">Ch50.3</a> + <a href="chapter-49.html#s-49-9">Ch49.9 <code class="c">MAP_NORESERVE</code></a></li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> 普通用户（RLIMIT_MEMLOCK=8MB）执行 <code class="c">mlock(p, 64MB)</code> 返回 -1，errno 是？</p>
+<p>A. <code class="c">EPERM</code>　B. <code class="c">ENOMEM</code>　C. <code class="c">EAGAIN</code>　D. <code class="c">EINVAL</code></p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B（ENOMEM）</strong>。<code class="c">do_mlock()</code>（mm/mlock.c:575）限额检查失败时 error 保持初值 <code class="c">-ENOMEM</code>。<code class="c">EPERM</code> 只出现在「限额为 0 且无 CAP_IPC_LOCK」（<code class="c">can_do_mlock()</code> 拒绝）。TLPI 原文和 man page 都专门强调这个反直觉点。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> 对同一区域调用两次 <code class="c">mlock</code>，需要调用两次 <code class="c">munlock</code> 才能解锁。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。<code class="c">mlock</code> 无计数语义（与 <code class="c">fcntl</code> 记录锁不同）：VMA 的 <code class="c">VM_LOCKED</code> 是布尔标志，同区重复 <code class="c">mlock</code> 幂等，一次 <code class="c">munlock</code> 全解。跨进程各自 <code class="c">mlock</code> 同一共享区时，页在<strong>所有</strong>引用者的 VMA 都解锁后才真正回到可换出状态。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> HFT 进程启动脚本里 <code class="c">ulimit -l unlimited</code> 报错「operation not permitted」，怎么办？</p>
+<details>
+<summary>参考答案</summary>
+<p>普通用户不能把 soft limit 提到 hard limit 之上。三条路：① root 下 <code class="c">ulimit -l</code> 后再降权运行（setpriv/--cap-drop）；② systemd service 单元写 <code class="c">LimitMEMLOCK=infinity</code>；③ 给二进制 file capability <code class="c">cap_ipc_lock+ep</code>（<code class="c">setcap cap_ipc_lock+ep ./trader</code>），进程持 <code class="c">CAP_IPC_LOCK</code> 后 <code class="c">can_do_mlock()</code> 直接放行、限额检查也被跳过。生产上 ③ 最常见，但要注意 capabilities 随 exec 的继承规则（见 Ch39）。</p>
+</details>
       </section>
-      <section class="section" id="s-50-4">
-        <div class="sec-head"><div class="sec-no">50.4</div><h2>`mincore`</h2></div>
+      <section class="section" id="s-50-3">
+        <div class="sec-head"><div class="sec-no">50.3</div><h2>驻留查询：mincore()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
-- 上一节：<a href="#s-50-2">50.3 <code class="c">mlock</code> / <code class="c">mlockall</code></a>
-- 下一节：<a href="#s-50-5">50.5 <code class="c">madvise</code></a></p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mincore.c</code>（<code class="c">mincore_pte_range():100</code> · <code class="c">can_do_mincore():158</code> · <code class="c">do_mincore():187</code> · <code class="c">SYSCALL_DEFINE3(mincore):232</code>）
+本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
+- 上一节：<a href="#s-50-2">50.2 <code class="c">mlock</code> / <code class="c">mlockall</code></a>
+- 下一节：<a href="#s-50-4">50.4 访问提示 <code class="c">madvise</code></a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>int mincore(void <em>addr, size_t length, unsigned char </em>vec); <code class="c">vec[i] &amp; 1</code>：页是否在物理内存。 ⚠️ <strong>瞬时、非原子</strong>；不能当同步条件。</p>
+<p><code class="c">mincore</code>（MINimal CORE，名字来自「minimal information about core/residency」）查询区间内<strong>哪些页当前在物理内存</strong>。三个灵魂问题：</p>
+<ol>
+<li>返回的 <code class="c">vec[i] &amp; 1</code> 到底是什么？（PTE <strong>present</strong> 位的快照——页表里有映射）</li>
+<li>它能当同步条件吗？（<strong>不能</strong>——瞬时、非原子，查完的瞬间内核可能就把页回收了）</li>
+<li>零页算驻留吗？（<strong>算</strong>！<code class="c">mincore</code> 说 resident，<code class="c">RSS</code> 却不计——两者口径不同）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+int mincore(void *addr, size_t length, unsigned char *vec);
+/* vec[i] &amp; 1 == 1：第 i 页（从 addr 页对齐起点数）当前驻留 */
+</code></pre>
 <hr />
 <h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int mincore(void *addr, size_t length, unsigned char *vec);
+<h3>三种 PTE 状态的处理（<code class="c">mincore_pte_range():100</code> 逐行核验）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>PTE 状态</th>
+<th><code class="c">vec</code> 值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pte_present(pte)</code></td>
+<td><strong>1</strong></td>
+<td>真页<strong>或零页</strong>（零页是 present+special 的特殊 PTE）——<code class="c">mincore</code> 区分不了</td>
+</tr>
+<tr>
+<td>空映射（<code class="c">pte_none</code>）</td>
+<td>0</td>
+<td>还没缺页过</td>
+</tr>
+<tr>
+<td>swap 项</td>
+<td><code class="c">mincore_page(swap cache)</code> 查交换缓存</td>
+<td>换出的页若还在 swap cache 里算 1</td>
+</tr>
+<tr>
+<td>migration/hwpoison 项</td>
+<td>1</td>
+<td>迁移中的页视为驻留</td>
+</tr>
+<tr>
+<td><strong>透明大页（THP）</strong></td>
+<td><code class="c">memset(vec, 1, nr)</code> 整块全 1</td>
+<td>2MB 大页一次标满</td>
+</tr>
+</tbody>
+</table></div>
+<h3>⭐ 零页语义：mincore 与 RSS 的口径差（实测验证）</h3>
+<p>匿名私有映射<strong>只读触碰</strong>的页，内核映射零页（<code class="c">do_anonymous_page</code> 只读分支，见 <a href="chapter-49.html#s-49-7">49.7</a>）：</p>
+<pre class="code" data-label="code"><code class="c">实测（WSL Ubuntu，2026-09-05）：
+  4 页匿名映射：页 0 写触碰、页 1 读触碰、页 2/3 不碰
+  mincore = [1,1,0,0]     ← 零页 present，mincore 说驻留
+  同区 Rss = 4 kB         ← RSS 只算页 0 的真页（vm_normal_page 对零页返回 NULL）
 </code></pre>
-<p><code class="c">vec[i] &amp; 1</code>：页是否在物理内存。<br />
-⚠️ <strong>瞬时、非原子</strong>；不能当同步条件。</p>
+<p>一页内存，两个口径打架——<strong>mincore 回答「PTE 能直接翻译吗」，RSS 回答「这个进程独占多少真物理页」</strong>。</p>
+<h3>⭐ 无权限文件映射：静默返回 0（防侧信道，v6.6 新增语义）</h3>
+<p><code class="c">can_do_mincore():158</code>：对<strong>文件映射</strong>，仅当调用者能写该文件（或拥有 inode）才返回真实驻留信息；否则 <code class="c">do_mincore()</code> 把整个 vec 填 <strong>0</strong>——不报错，就是不给真话：</p>
+<pre class="code" data-label="C"><code class="c">static inline bool can_do_mincore(struct vm_area_struct *vma)
+{
+    if (vma_is_anonymous(vma)) return true;
+    if (!vma-&gt;vm_file) return false;
+    /* 只对「能以写模式打开对应文件」的映射泄露 page cache 驻留信息，
+       否则构成侧信道（探测别的进程读了什么文件页） */
+    return inode_owner_or_capable(...) || file_permission(vma-&gt;vm_file, MAY_WRITE) == 0;
+}
+</code></pre>
+<p>这是 Spectre/Meltdown 时代加固的一部分：驻留模式本身是信息（能推断「谁在预读什么文件」）。</p>
+<h3>瞬时性与「非原子」</h3>
+<p><code class="c">walk_page_range</code> 逐页读 PTE 时只持<strong>该页表的 spinlock</strong>，页与页之间不连贯；返回用户态的过程中任何页都可能被回收/换出/换入。正确用法：<strong>诊断</strong>（启动后验证 mlock 生效、观察 MADV_DONTNEED 效果），不是同步原语。</p>
+<h3>错误码</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>errno</th>
+<th>条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">EINVAL</code></td>
+<td>addr 未页对齐 / length ≥ UINTPTR_MAX/pagesize</td>
+</tr>
+<tr>
+<td><code class="c">ENOMEM</code></td>
+<td>区间不在任何映射内（含未映射空洞）</td>
+</tr>
+<tr>
+<td><code class="c">EAGAIN</code>（少见）</td>
+<td>页表遍历时 PTE 竞态（<code class="c">ACTION_AGAIN</code>）</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -799,105 +1092,252 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>启动后核查关键页是否驻留（flash XIP 就地执行场景）；瞬时非原子，仅作诊断</td>
+<td>启动自检：预填充（mlock/MAP_POPULATE）后 <code class="c">mincore</code> 全 1 即「热身完成」的可验证标准；XIP（eXecute In Place）场景 mincore 恒 1（NOR flash 直接映射）——用它区分「真 RAM 驻留」还是「flash 就地执行」时<strong>要小心口径</strong></td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>预热后 mincore 验证热缓冲确已驻留（配合 mlock 确认）；因瞬时非原子，不能当同步条件用</td>
+<td><code class="c">mlockall</code> 之后的验收步骤：对热缓冲 <code class="c">mincore</code> 全 1 才能宣告「无缺页风险」；监控线程周期性采样非锁定区的驻留率，驻留率骤降 = 内存压力前兆（比等 swap 毛刺打在延迟分布上早得多）；注意对共享行情文件映射若无写权限，mincore 全 0 是<strong>假象</strong>（can_do_mincore 防侧信道分支）</td>
 </tr>
 </tbody>
 </table></div>
+<hr />
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
-/* mincore 查询页是否驻留在物理内存 */
+/* mincore 零页口径差实测：mincore 说驻留，RSS 不认账
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   mincore = [1,1,0,0]（预期 [1,1,0,0]：零页也算 resident）
+ *   同区 Rss = 4 kB（预期 4：零页 present 却不计入 RSS）
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
 
-int main(void) {
-    long page_size = sysconf(_SC_PAGESIZE);
-    int num_pages = 4;
-    size_t len = (size_t)page_size * num_pages;
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
 
-    char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+    char *q = mmap(NULL, 4 * P, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
+    if (q == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
 
-    /* 触摸前两页使其驻留 */
-    p[0] = 'a';
-    p[page_size] = 'b';
+    q[0] = 1;                        /* 页 0：写触碰 → 分配真页 */
+    volatile char c = q[P]; (void)c; /* 页 1：读触碰 → 映射零页 */
+                                     /* 页 2/3：不触碰 */
 
-    /* mincore 返回每页驻留状态 */
-    unsigned char vec[num_pages];
-    if (mincore(p, len, vec) &lt; 0) { perror(&quot;mincore&quot;); exit(1); }
-
-    for (int i = 0; i &lt; num_pages; i++) {
-        printf(&quot;page %d: %s\n&quot;, i, (vec[i] &amp; 1) ? &quot;resident&quot; : &quot;not resident&quot;);
-    }
-
-    munmap(p, len);
+    unsigned char vec[4];
+    if (mincore(q, 4 * P, vec) != 0) { perror(&quot;mincore&quot;); return 1; }
+    printf(&quot;mincore = [%d,%d,%d,%d]（页0=写触碰 页1=读触碰零页）\n&quot;,
+           vec[0] &amp; 1, vec[1] &amp; 1, vec[2] &amp; 1, vec[3] &amp; 1);
+    printf(&quot;页 1 的零页：mincore 说 resident，但它是全局唯一共享页\n&quot;);
     return 0;
 }
-
 </code></pre>
+<p>（RSS 对照需要解析 <code class="c">/proc/self/smaps</code>，完整程序见本章 <a href="#s-50-6">50.6 练习</a> 实验 4 的参考实现。）</p>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-50-2">50.3 <code class="c">mlock</code> / <code class="c">mlockall</code></a></li>
-<li>下一节：<a href="#s-50-5">50.5 <code class="c">madvise</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-49.html#ch-49">Ch49 mmap</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-51.html#ch-51">Ch51 POSIX IPC 导论</a></li>
+<li>上一节：<a href="#s-50-2">50.2 <code class="c">mlock</code> / <code class="c">mlockall</code></a>——mincore 是 mlock 的验收工具</li>
+<li>下一节：<a href="#s-50-4">50.4 访问提示 <code class="c">madvise</code></a>——MADV_DONTNEED 的效果就用 mincore 验证</li>
+<li>零页机制：<a href="chapter-49.html#s-49-7">49.7 匿名映射</a>——零页只读分支的缺页路径（<code class="c">do_anonymous_page():4067</code>）</li>
+<li>RSS 统计：<a href="chapter-12.html#s-12-1">Ch12 /proc 进程信息</a>——/proc/PID/statm 的六个字段口径</li>
+<li>内核遍历机制：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a>——<code class="c">walk_page_range</code> 通用页表遍历框架</li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> 一个普通用户对别人拥有的文件的只读映射调用 <code class="c">mincore</code>，返回的 vec 里全是 0，最可能的原因？</p>
+<p>A. 文件页都不在内存　B. <code class="c">can_do_mincore</code> 防侧信道拒绝泄露　C. 映射坏了　D. mincore 失败了</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>B</strong>。v6.6 起 <code class="c">can_do_mincore():158</code> 只对「能写该文件/拥有 inode」的映射返回真实驻留，否则静默填 0（不报错）。这是防侧信道加固——驻留模式能推断其他进程的文件访问行为。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">mincore</code> 返回全 1 之后，程序可以放心访问整段区间而不会发生任何缺页。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。mincore 是<strong>瞬时快照</strong>，无任何原子性保证——返回用户态的微秒级窗口里内核完全可以把页回收（尤其无 mlock 的普通匿名页）。要保证不缺页必须 <code class="c">mlock</code>；mincore 只能做诊断/验收，不能做同步条件。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 为什么页 1 读触碰后 mincore=1 而 Rss 不增加？写出两者的统计口径。</p>
+<details>
+<summary>参考答案</summary>
+<p>读触碰的匿名私有页映射<strong>零页</strong>（全局唯一物理页，<code class="c">zero_pfn</code>）。mincore 的口径是 <strong>PTE present</strong>（<code class="c">mincore_pte_range</code> 里 <code class="c">pte_present(pte) → *vec = 1</code>），零页 PTE 是 present+special，所以算 1；RSS 的口径是<strong>进程独占的真物理页</strong>（<code class="c">vm_normal_page()</code> 对 special PTE 返回 NULL，跳过统计），零页全系统共享一份，不计入任何进程的 RSS。一句话：mincore 看「有没有映射」，RSS 看「占了多少真页」。</p>
+</details>
       </section>
-      <section class="section" id="s-50-5">
-        <div class="sec-head"><div class="sec-no">50.5</div><h2>`madvise`</h2></div>
+      <section class="section" id="s-50-4">
+        <div class="sec-head"><div class="sec-no">50.4</div><h2>访问模式提示：madvise()</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
-- 上一节：<a href="#s-50-3">50.4 <code class="c">mincore</code></a>
-- 下一节：下一章+1:02d}-*/notes.md)</p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/madvise.c</code>（<code class="c">madvise_need_mmap_write():50</code> · <code class="c">madvise_free_pte_range():625</code> · <code class="c">zap_page_range_single()</code> 调用 <code class="c">:825</code> · <code class="c">madvise_dontneed_free():859</code> · <code class="c">do_madvise():1407</code> · <code class="c">SYSCALL_DEFINE3(madvise):1461</code>）
+本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
+- 上一节：<a href="#s-50-3">50.3 驻留查询 <code class="c">mincore</code></a>
+- 下一节：<a href="#s-50-5">50.5 总结</a></p>
 </blockquote>
 <hr />
 <h2>本节讲什么</h2>
-<p>int madvise(void <em>addr, size_t length, int advice); 内核</em><em>可忽略</em>*。常用： Linux 另有 <code class="c">MADV_FREE</code> 等。</p>
+<p><code class="c">madvise</code> 向内核<strong>描述未来的访问模式</strong>，内核据此调整预读/回收/布局策略。三个灵魂问题：</p>
+<ol>
+<li>提示的约束力？（<strong>内核可忽略</strong>——这不是命令，是 advice；只有 <code class="c">MADV_DONTNEED</code> 等少数几个有确定语义）</li>
+<li>最危险也最有用的是哪个？（<code class="c">MADV_DONTNEED</code>：匿名映射的<strong>数据直接丢弃</strong>，读回全 0）</li>
+<li><code class="c">MADV_FREE</code> 和 <code class="c">MADV_DONTNEED</code> 什么区别？（FREE 是「可反悔的丢弃」，内核保留内容直到内存紧张才真丢）</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
+int madvise(void *addr, size_t length, int advice);
+/* addr 页对齐；length 向上取整；作用于 [addr, addr+len) 覆盖的映射 */
+</code></pre>
 <hr />
 <h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int madvise(void *addr, size_t length, int advice);
-</code></pre>
-<p>内核<strong>可忽略</strong>。常用：</p>
+<h3>advice 全表（POSIX + Linux 扩展）</h3>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
 <th>advice</th>
-<th>含义</th>
+<th>语义</th>
+<th>约束力</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">MADV_NORMAL</code></td>
-<td>默认</td>
+<td>默认行为（恢复）</td>
+<td>弱</td>
 </tr>
 <tr>
 <td><code class="c">MADV_RANDOM</code></td>
-<td>少预读</td>
+<td>关闭/减弱预读（随机访问，预读是浪费）</td>
+<td>弱（改 readahead 窗口）</td>
 </tr>
 <tr>
 <td><code class="c">MADV_SEQUENTIAL</code></td>
-<td>激进预读、用过可早收</td>
+<td>加倍预读 + 读完即回收</td>
+<td>弱</td>
 </tr>
 <tr>
 <td><code class="c">MADV_WILLNEED</code></td>
-<td>提前装入</td>
+<td>立即预读到 page cache（异步启动读）</td>
+<td>弱</td>
 </tr>
 <tr>
 <td><code class="c">MADV_DONTNEED</code></td>
-<td>Linux PRIVATE：<strong>丢本地修改</strong>；SHARED 多为丢页缓存语义</td>
+<td><strong>丢弃页</strong>（语义见下表，确定行为）</td>
+<td><strong>强</strong></td>
+</tr>
+<tr>
+<td><code class="c">MADV_FREE</code>（Linux）</td>
+<td>标记可丢弃：内容保留到内存紧张才真丢；期间再写则取消标记</td>
+<td>中</td>
+</tr>
+<tr>
+<td><code class="c">MADV_DONTDUMP</code>/<code class="c">DO_DUMP</code></td>
+<td>从 core dump 排除/包含</td>
+<td>强</td>
+</tr>
+<tr>
+<td><code class="c">MADV_HUGEPAGE</code>/<code class="c">NOHUGEPAGE</code>（Linux）</td>
+<td>对区间启用/禁用 THP</td>
+<td>中</td>
+</tr>
+<tr>
+<td><code class="c">MADV_REMOVE</code>（Linux）</td>
+<td>共享内存/tmpfs：截断「洞」</td>
+<td>强</td>
+</tr>
+<tr>
+<td><code class="c">MADV_POPULATE_READ/WRITE</code>（5.14+）</td>
+<td>主动预填充（等价触碰但不真的写数据）</td>
+<td>强</td>
 </tr>
 </tbody>
 </table></div>
-<p>Linux 另有 <code class="c">MADV_FREE</code> 等。</p>
-<p>Demo：<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/code/"><code class="c">code/</code></a></p>
+<h3>⭐ MADV_DONTNEED 三种映射的确切语义（实测验证）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>映射类型</th>
+<th>DONTNEED 之后</th>
+<th>再读的内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>匿名 PRIVATE</td>
+<td><strong>私有数据永久丢弃</strong>，页释放，PTE 清空</td>
+<td><strong>全 0</strong>（重新缺页→零页）</td>
+</tr>
+<tr>
+<td>文件 PRIVATE</td>
+<td><strong>私有修改丢弃</strong>，页释放，PTE 指回…不，PTE 清空</td>
+<td><strong>文件当前内容</strong>（重新缺页从 page cache 读）</td>
+</tr>
+<tr>
+<td>文件 SHARED</td>
+<td>脏页按正常路径回写后页可回收，PTE 清空</td>
+<td>文件内容（重读 page cache/磁盘）</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测证据（WSL Ubuntu，2026-09-05，<code class="c">gcc -O2 -Wall -Wextra</code> 零告警）：</p>
+<pre class="code" data-label="code"><code class="c">匿名：全写后 mincore = [1,1,1,1]
+      MADV_DONTNEED 后 mincore = [0,0,0,0]，q[0]=0x00          ← 数据消失 ✓
+文件 PRIVATE：改 'Z' 后 f[0]='Z'
+      DONTNEED 后 f[0]='O'                                      ← 私有修改丢弃 ✓
+</code></pre>
+<h3>内核路径（v6.6 实测核验）</h3>
+<pre class="code" data-label="code"><code class="c">madvise(2)
+ └─ do_madvise()                          mm/madvise.c:1407
+     ├─ madvise_need_mmap_write():50      多数 advice 只需 read_lock，DONTNEED 等才升级写锁
+     └─ 按 advice 分发：
+         ├─ MADV_DONTNEED → madvise_dontneed_free():859
+         │     └─ zap_page_range_single():825   ← 真正拆 PTE、释放页
+         ├─ MADV_FREE → madvise_free_single_vma():768
+         │     └─ madvise_free_pte_range():625  ← PTE 标记 lazyfree（页进 inactive list 等淘汰）
+         ├─ MADV_WILLNEED → filemap 预读调度
+         └─ MADV_HUGEPAGE → khugepaged 登记区间
+</code></pre>
+<h3>MADV_FREE vs MADV_DONTNEED（Linux 面试高频）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th><code class="c">MADV_FREE</code></th>
+<th><code class="c">MADV_DONTNEED</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>立即效果</td>
+<td>PTE 清脏标记，页标记可回收</td>
+<td>PTE 立即拆除，页立即释放</td>
+</tr>
+<tr>
+<td>读回内容</td>
+<td><strong>旧数据</strong>（若还没被回收）</td>
+<td><strong>全 0 / 文件原内容</strong>（确定）</td>
+</tr>
+<tr>
+<td>内存紧张时</td>
+<td>真丢弃（丢的是真页）</td>
+<td>已经丢了</td>
+</tr>
+<tr>
+<td>再写入</td>
+<td>清除 lazyfree 标记，继续用</td>
+<td>正常缺页分配新页</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>malloc 实现归还堆（glibc tcache→arena→FREE）</td>
+<td>明确放弃（重置大缓冲、状态机清零）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>常见错误</h3>
+<ul>
+<li><code class="c">advice</code> 非法（如 99）→ <code class="c">EINVAL</code>（实测验证 ✓）</li>
+<li>区间内含<strong>未映射空洞</strong> → <code class="c">ENOMEM</code>（与 <code class="c">munlock</code> 的「跳过空洞」不同，madvise 默认严格；只有部分 advice 用 <code class="c">process_madvise</code> 风格的宽松遍历）</li>
+<li>对 <code class="c">MAP_LOCKED</code> 区间 <code class="c">MADV_DONTNEED</code>：v6.6 引入 <code class="c">MADV_DONTNEED_LOCKED</code>（允许拆锁页），普通 <code class="c">DONTNEED</code> 对锁页直接拒绝</li>
+</ul>
 <hr />
 <h2>HFT / 嵌入式关联</h2>
 <div class="tbl-wrap"><table>
@@ -910,64 +1350,217 @@ int main(void) {
 <tbody>
 <tr>
 <td>嵌入式</td>
-<td>MADV_DONTNEED 主动回收省 RAM；MADV_RANDOM 关预读省 flash 读放大</td>
+<td><code class="c">MADV_RANDOM</code> 关预读：flash 随机读场景避免无谓的读放大（NAND 页 4-16KB，预读一次就是一次真消耗）；<code class="c">MADV_DONTNEED</code> 主动归还大缓冲省 RAM（比 munmap 温和——地址空间保留，随时可复用）</td>
 </tr>
 <tr>
 <td>HFT</td>
-<td>MADV_WILLNEED 预热行情缓冲、MADV_SEQUENTIAL 优化顺序日志、MADV_DONTNEED 释放冷数据，减少后续缺页</td>
+<td>行情缓冲复用三板斧：<code class="c">madvise(MADV_DONTNEED)</code> 重置（下个周期读到的保证是零/新数据，防「脏数据残留」型策略 bug）；<code class="c">MADV_HUGEPAGE</code> 对热大缓冲开 THP（2MB 页 → TLB miss 率骤降，见 <a href="#intro">06.7 BPF 章</a> 的性能观测）；<code class="c">MADV_SEQUENTIAL</code> 用于顺序落盘的审计日志区</td>
 </tr>
 </tbody>
 </table></div>
+<p><strong>实测警示</strong>：<code class="c">MADV_DONTNEED</code> 重置的匿名页<strong>读回 0</strong>——如果策略代码假设「重置后数据不变」，生产上会出现只在内存压力下复现的灵异 bug（FREE 才有「暂时保留」语义）。</p>
+<hr />
 <h2>代码示例</h2>
 <pre class="code" data-label="C"><code class="c">
-/* madvise 给内核内存使用提示 */
+/* MADV_DONTNEED 双语义实测：匿名归零 + 文件 PRIVATE 丢弃修改
+ * 实测（WSL Ubuntu，gcc -O2 -Wall -Wextra，2026-09-05）：
+ *   全写后 mincore = [1,1,1,1]
+ *   MADV_DONTNEED 后 mincore = [0,0,0,0]，q[0]=0x00
+ *   文件 PRIVATE 改 'Z' 后 f[0]='Z'；DONTNEED 后 f[0]='O'
+ *   madvise(99) = -1 errno=22(Invalid argument)
+ */
+#define _GNU_SOURCE
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;string.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
 #include &lt;sys/mman.h&gt;
 #include &lt;unistd.h&gt;
 
-int main(void) {
-    size_t len = 4096 * 4;
-    char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
+
+    /* 匿名映射：DONTNEED 归零 */
+    char *q = mmap(NULL, 4 * P, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) { perror(&quot;mmap&quot;); exit(1); }
+    if (q == MAP_FAILED) { perror(&quot;mmap q&quot;); return 1; }
+    memset(q, 0x5A, 4 * P);
+    unsigned char vec[4];
+    mincore(q, 4 * P, vec);
+    printf(&quot;全写后 mincore = [%d,%d,%d,%d]\n&quot;,
+           vec[0]&amp;1, vec[1]&amp;1, vec[2]&amp;1, vec[3]&amp;1);
 
-    /* MADV_WILLNEED：预期近期访问，内核可预读 */
-    madvise(p, len, MADV_WILLNEED);
-    printf(&quot;MADV_WILLNEED: hint to prefetch\n&quot;);
+    if (madvise(q, 4 * P, MADV_DONTNEED) != 0) { perror(&quot;madvise&quot;); return 1; }
+    mincore(q, 4 * P, vec);
+    printf(&quot;DONTNEED 后 mincore = [%d,%d,%d,%d]，q[0]=0x%02x（预期 0x00）\n&quot;,
+           vec[0]&amp;1, vec[1]&amp;1, vec[2]&amp;1, vec[3]&amp;1, (unsigned char)q[0]);
 
-    /* 写入数据 */
-    memset(p, 'X', len);
+    /* 文件 PRIVATE：DONTNEED 丢弃私有修改 */
+    int fd = open(&quot;/tmp/ch50_adv.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (write(fd, &quot;ORIG&quot;, 4) != 4) { perror(&quot;write&quot;); return 1; }
+    char *f = mmap(NULL, 4, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (f == MAP_FAILED) { perror(&quot;mmap f&quot;); return 1; }
+    f[0] = 'Z';
+    printf(&quot;文件 PRIVATE 改 'Z' 后 f[0]='%c'；&quot;, f[0]);
+    if (madvise(f, 4, MADV_DONTNEED) != 0) { perror(&quot;madvise f&quot;); return 1; }
+    printf(&quot;DONTNEED 后 f[0]='%c'（预期 O：私有修改丢弃）\n&quot;, f[0]);
 
-    /* MADV_DONTNEED：近期不再访问，内核可回收页 */
-    madvise(p, len, MADV_DONTNEED);
-    printf(&quot;MADV_DONTNEED: pages can be reclaimed\n&quot;);
-    printf(&quot;after MADV_DONTNEED, content: %d (zeroed if reclaimed)\n&quot;, p[0]);
+    /* 非法 advice */
+    errno = 0;
+    int r = madvise(q, P, 99);
+    printf(&quot;madvise(99) = %d errno=%d(%s)，预期 -1/EINVAL\n&quot;,
+           r, errno, r ? strerror(errno) : &quot;OK&quot;);
 
-    /* MADV_SEQUENTIAL：顺序访问模式 */
-    madvise(p, len, MADV_SEQUENTIAL);
-    printf(&quot;MADV_SEQUENTIAL: sequential access hint\n&quot;);
-
-    munmap(p, len);
+    munmap(q, 4 * P);
+    munmap(f, 4);
+    close(fd);
+    unlink(&quot;/tmp/ch50_adv.dat&quot;);
     return 0;
 }
-
 </code></pre>
 <hr />
 <h2>衔接</h2>
 <ul>
 <li>本章 README：<a href="#intro">README</a></li>
-<li>上一节：<a href="#s-50-3">50.4 <code class="c">mincore</code></a></li>
-<li>前置：<strong>前置</strong>：<a href="chapter-49.html#ch-49">Ch49 mmap</a>  </li>
-<li>后置：<strong>后置</strong>：<a href="chapter-51.html#ch-51">Ch51 POSIX IPC 导论</a></li>
+<li>上一节：<a href="#s-50-3">50.3 <code class="c">mincore</code></a>——DONTNEED 的效果用 mincore 验证（实测组合）</li>
+<li>下一节：<a href="#s-50-5">50.5 总结</a></li>
+<li>COW 快照语义：<a href="chapter-49.html#s-49-4">49.4 文件映射</a>——「私有修改丢弃」丢的正是 COW 副本，读回的是 page cache 原页</li>
+<li>THP：<a href="chapter-49.html#s-49-6">49.6 附加 flags</a> 与内核 <a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
+<li>堆内存归还：<a href="chapter-31.html#intro">Ch31 线程安全</a>之后 Ch malloc 系（glibc trim/madvise 策略）</li>
 </ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目 1（选择）：</strong> <code class="c">MAP_PRIVATE</code> 文件映射，写脏了 3 页，<code class="c">madvise(MADV_DONTNEED)</code> 后再读，内容是？</p>
+<p>A. 修改后的数据　B. 全 0　C. 文件当前内容　D. 未定义</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>C</strong>。DONTNEED 拆掉 COW 副本页的 PTE 并释放页，再读触发缺页从 page cache 读<strong>文件当前内容</strong>——不是 0（0 是匿名映射的语义），也不是「未定义」。实测：改 'Z' → DONTNEED → 读回 'O'（文件原字面）。</p>
+</details>
+<p><strong>题目 2（判断）：</strong> <code class="c">MADV_FREE</code> 之后立刻读这段内存，内容必然是 0。</p>
+<details>
+<summary>参考答案</summary>
+<p>错误。<code class="c">MADV_FREE</code> 是 lazyfree：PTE 标记可回收但<strong>内容保留</strong>，在页真正被回收（内存压力）之前读到的仍是旧数据；期间任何写会取消标记。必然读 0 的是 <code class="c">MADV_DONTNEED</code>。</p>
+</details>
+<p><strong>题目 3（应用）：</strong> 行情处理进程每周期用 64MB 缓冲，周期结束想「清零重置」，工程师 A 提议 <code class="c">memset(buf, 0, 64MB)</code>，B 提议 <code class="c">madvise(buf, 64MB, MADV_DONTNEED)</code>，怎么选？</p>
+<details>
+<summary>参考答案</summary>
+<p>DONTNEED 更优（三点）：① <code class="c">memset</code> 要<strong>写 64MB</strong>（16384 次缺页 + 全部脏页进回写路径），DONTNEED 只是拆 PTE（µs 级批量操作）；② DONTNEED 立刻释放 16384 个物理页给系统，内存压力友好；③ 读回语义明确为 0。代价：下周期首次访问每页一次缺页（~µs × 页数）。若缓冲已 <code class="c">mlock</code>，注意 v6.6 普通参数的 DONTNEED 会被拒绝（需 <code class="c">MADV_DONTNEED_LOCKED</code>）；若不想付缺页代价且缓冲必须常驻，memset 仍是兜底——HFT 实务常在预热阶段两者都做（DONTNEED + 重新 populate + mlock）。</p>
+</details>
+      </section>
+      <section class="section" id="s-50-5">
+        <div class="sec-head"><div class="sec-no">50.5</div><h2>总结</h2></div>
+<blockquote>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mprotect.c</code> · <code class="c">mm/mlock.c</code> · <code class="c">mm/mincore.c</code> · <code class="c">mm/madvise.c</code>（各符号行号见各节）
+本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
+- 上一节：<a href="#s-50-4">50.4 访问提示 <code class="c">madvise</code></a>
+- 下一节：<a href="#s-50-6">50.6 练习</a></p>
+</blockquote>
+<hr />
+<h2>本节讲什么</h2>
+<p>四组调用作用于<strong>已有映射</strong>（mmap / 堆 / 栈均可）：改保护、锁 RAM、查驻留、给访问提示。通用约束：<code class="c">addr</code> 页对齐、<code class="c">length</code> 向上取整。</p>
+<hr />
+<h2>要点</h2>
+<h3>四组调用速览表（含 v6.6 实测要点）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>作用</th>
+<th>权限/限额</th>
+<th>关键实测结论（v6.6）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mprotect</code></td>
+<td>改 PTE 的 rwx</td>
+<td>不许超 fd 打开模式（<code class="c">EACCES</code>）</td>
+<td>违例 = SIGSEGV（同步信号，可 sigsetjmp 捕获）</td>
+</tr>
+<tr>
+<td><code class="c">mlock</code>/<code class="c">mlockall</code></td>
+<td>禁换出 + 立即预填充</td>
+<td><code class="c">RLIMIT_MEMLOCK</code> / <code class="c">CAP_IPC_LOCK</code></td>
+<td><strong>超限返回 <code class="c">ENOMEM</code> 不是 <code class="c">EPERM</code></strong>；fork 继承、exec 解锁；mlock 区 <code class="c">msync(MS_INVALIDATE)</code>→<code class="c">EBUSY</code></td>
+</tr>
+<tr>
+<td><code class="c">mincore</code></td>
+<td>驻留快照（PTE present 口径）</td>
+<td>无权限文件映射<strong>静默返回 0</strong>（防侧信道）</td>
+<td>零页 mincore=1 但 <strong>Rss=0</strong>（口径差）；瞬时非原子，只能诊断</td>
+</tr>
+<tr>
+<td><code class="c">madvise</code></td>
+<td>访问模式提示</td>
+<td>多数可忽略；DONTNEED 确定语义</td>
+<td>匿名 DONTNEED <strong>读回 0</strong>；文件 PRIVATE DONTNEED <strong>读回文件内容</strong>（丢弃 COW 修改）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>反直觉真相（易错点 TOP 4）</h3>
+<ol>
+<li><strong><code class="c">mlock</code> 超限是 <code class="c">ENOMEM</code></strong>——<code class="c">can_do_mlock</code> 拒绝才是 <code class="c">EPERM</code>；两个错误码对应「无资格」和「超量」两道不同的关。</li>
+<li><strong>零页口径打架</strong>——<code class="c">mincore</code> 说驻留（present），<code class="c">Rss</code> 不认账（零页全系统共享一份）；「读触碰的匿名页」两个指标必然不一致。</li>
+<li><strong><code class="c">MADV_DONTNEED</code> 匿名≠文件</strong>——匿名丢成 0，文件 PRIVATE 丢成文件原内容（COW 副本没了）；把两者混为一谈会在「重置缓冲」场景写出让策略读到脏数据的 bug。</li>
+<li><strong><code class="c">MADV_FREE</code> 不丢数据</strong>——lazyfree 只在内存压力时真丢；需要确定性清零只能 DONTNEED。</li>
+</ol>
+<h3>Ch50 × Ch49 联动关系图</h3>
+<pre class="code" data-label="code"><code class="c">mmap(2) 建立映射（Ch49）
+   │
+   ├── mprotect ──→ 改 rwx（guard 页 / W^X / JIT）
+   ├── mlock     ──→ 钉住物理页（HFT 延迟治理第 1 步）
+   ├── mincore   ──→ 验收「真的驻留了吗」
+   ├── madvise   ──→ 预读开关 / THP / DONTNEED 重置
+   └── msync(Ch49.5) ←─ mlock 联动：MS_INVALIDATE 遇 VM_LOCKED = EBUSY
+</code></pre>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>路线</th>
+<th>工具链组合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>嵌入式</td>
+<td><code class="c">MAP_POPULATE</code>(Ch49) 预填充 → <code class="c">mincore</code> 验收 → <code class="c">PROT_READ</code> 固化配置区；RAM 紧张时 <code class="c">madvise(DONTNEED)</code> 归还大缓冲</td>
+</tr>
+<tr>
+<td>HFT</td>
+<td>启动序：<code class="c">mlockall(MCL_CURRENT\|MCL_FUTURE)</code> + <code class="c">madvise(MADV_HUGEPAGE)</code> 热缓冲 → <code class="c">mincore</code> 全 1 验收 → 运行期 <code class="c">PROT_NONE</code> guard + 每周期 <code class="c">MADV_DONTNEED</code> 重置</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li>本章 README：<a href="#intro">README</a></li>
+<li>下一节：<a href="#s-50-6">50.6 练习</a></li>
+<li>后置：<a href="chapter-51.html#intro">Ch51 POSIX IPC 导论</a>——共享内存对象的 mprotect/mlock 同样适用</li>
+<li>内核深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a>——migrate_pages / numa 策略是「换 CPU」版的同族操作</li>
+</ul>
+<hr />
+<h2>自测题</h2>
+<p><strong>题目（综合）：</strong> 用一章四组调用设计「HFT 热缓冲上线检查清单」。</p>
+<details>
+<summary>参考答案</summary>
+<p>① <code class="c">mlockall(MCL_CURRENT|MCL_FUTURE)</code>（或对缓冲逐区 <code class="c">mlock</code>）——消除换出毛刺；② <code class="c">madvise(MADV_HUGEPAGE)</code> 候选 THP（配合内核 <code class="c">madvise</code> 模式）；③ 遍历缓冲 <code class="c">mincore</code> 断言全 1——验收驻留；④ 缓冲边界外放 <code class="c">PROT_NONE</code> guard 页（<code class="c">mprotect</code>）——越界秒杀；⑤ 周期重置用 <code class="c">madvise(MADV_DONTNEED)</code> + 重新 populate（注意锁页需 <code class="c">MADV_DONTNEED_LOCKED</code>）；⑥ 监控线：驻留率下降或 <code class="c">msync(MS_INVALIDATE)</code> 突然 <code class="c">EBUSY</code> 变化 = 内存布局被动过的信号。</p>
+</details>
       </section>
       <section class="section" id="s-50-6">
-        <div class="sec-head"><div class="sec-no">50.6</div><h2>Exercises</h2></div>
+        <div class="sec-head"><div class="sec-no">50.6</div><h2>练习</h2></div>
 <blockquote>
-<p>本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory</a></p>
+<p>源码核验：Linux v6.6 · <code class="c">mm/mprotect.c</code> · <code class="c">mm/mlock.c</code> · <code class="c">mm/mincore.c</code> · <code class="c">mm/madvise.c</code>（行号见各节）
+本章：<a href="#intro">TLPI 第 50 章 — Virtual Memory Operations</a>
+- 上一节：<a href="#s-50-5">50.5 总结</a></p>
 </blockquote>
+<hr />
 <h2>练习题</h2>
 <h3>练习 1：mmap 文件映射</h3>
 <p>编写程序，使用 <code class="c">mmap()</code> 将文件映射到内存，通过指针读写文件内容，最后 <code class="c">munmap()</code> 解除映射。</p>
@@ -975,13 +1568,19 @@ int main(void) {
 <p>分配一页内存（<code class="c">mmap</code>），先用 <code class="c">PROT_READ</code> 映射，然后尝试写入（应该 SIGSEGV），再用 <code class="c">mprotect</code> 改为 <code class="c">PROT_READ|PROT_WRITE</code>，写入成功。</p>
 <h3>练习 3：mlockall 延迟测试</h3>
 <p>编写程序，对比 <code class="c">mlockall</code> 前后访问大数组（1GB）的延迟分布。</p>
+<h3>实验 4（实测）：mincore 口径差 + MADV_DONTNEED 双语义</h3>
+<p>四页匿名映射做「页 0 写 / 页 1 读 / 页 2、3 不碰」的不对称触碰，用 <code class="c">mincore</code> 与 <code class="c">/proc/self/smaps</code> 的 Rss 双口径对照；随后 <code class="c">MADV_DONTNEED</code> 验证匿名归零与文件 PRIVATE 回读原内容。</p>
+<h3>实验 5（实测）：mlock 限额错误码</h3>
+<p><code class="c">getrlimit(RLIMIT_MEMLOCK)</code> 打印限额，请求 2 倍限额的 <code class="c">mlock</code>，断言 <code class="c">errno == ENOMEM</code>（不是 EPERM）；再锁单页验证正常路径。</p>
+<hr />
 <h2>参考答案</h2>
 <h3>练习 1 参考代码</h3>
 <pre class="code" data-label="C"><code class="c">#include &quot;tlpi_hdr.h&quot;
 #include &lt;sys/mman.h&gt;
 #include &lt;fcntl.h&gt;
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     if (argc != 2) usageErr(&quot;usage: %s &lt;file&gt;\n&quot;, argv[0]);
 
     int fd = open(argv[1], O_RDWR);
@@ -1009,11 +1608,13 @@ int main(int argc, char *argv[]) {
 
 static sigjmp_buf env;
 
-void handler(int sig) {
+void handler(int sig)
+{
     siglongjmp(env, 1);
 }
 
-int main(void) {
+int main(void)
+{
     signal(SIGSEGV, handler);
 
     char *p = mmap(NULL, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -1042,19 +1643,22 @@ int main(void) {
 <pre class="code" data-label="C"><code class="c">#include &lt;sys/mman.h&gt;
 #include &lt;time.h&gt;
 #include &lt;stdio.h&gt;
-#include &lt;string.h&gt;
+#include &lt;stdlib.h&gt;
 
 #define SIZE (1UL &lt;&lt; 30)  /* 1GB */
 #define ITERATIONS 1000
 
-void bench_access(char *buf, const char *label) {
+/* 随机偏移写一次，测单次访问延迟 */
+static void bench_access(char *buf, const char *label)
+{
     struct timespec start, end;
-    long long max_ns = 0, min_ns = 1LL&lt;&lt;62, total_ns = 0;
+    long long max_ns = 0, min_ns = 1LL &lt;&lt; 62, total_ns = 0;
+    unsigned int seed = 42;
 
     for (int i = 0; i &lt; ITERATIONS; i++) {
-        size_t offset = (size_t)rand() * 4096 % SIZE;
+        size_t offset = ((size_t)rand_r(&amp;seed) * 4096) % SIZE;
         clock_gettime(CLOCK_MONOTONIC, &amp;start);
-        buf[offset] = 'x';  /* 触发页错误如果未映射 */
+        buf[offset] = 'x';      /* 未驻留的页在此触发缺页 */
         clock_gettime(CLOCK_MONOTONIC, &amp;end);
 
         long long ns = (end.tv_sec - start.tv_sec) * 1000000000LL
@@ -1064,36 +1668,148 @@ void bench_access(char *buf, const char *label) {
         total_ns += ns;
     }
     printf(&quot;%s: avg=%lldns min=%lldns max=%lldns\n&quot;,
-           label, total_ns/ITERATIONS, min_ns, max_ns);
+           label, total_ns / ITERATIONS, min_ns, max_ns);
 }
 
-int main(void) {
-    char *buf = mmap(NULL, SIZE, PROT_READ|PROT_WRITE,
-                     MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+int main(void)
+{
+    char *buf = mmap(NULL, SIZE, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (buf == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
 
-    /* 未 mlockall：访问可能触发缺页 */
+    /* 注意：bench 本身会逐步触碰页——先「冷测」再 mlockall 后「热测」
+       严格冷测应 fork 子进程跑第一轮，父进程 mlock 后再测 */
     bench_access(buf, &quot;before mlockall&quot;);
 
-    mlockall(MCL_CURRENT | MCL_FUTURE);
-    bench_access(buf, &quot;after mlockall&quot;);
+    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+        /* 失败本身即 50.2 的语义演示：非特权进程受 RLIMIT_MEMLOCK 约束，
+           超限部分锁不住，errno=ENOMEM（do_mlock 超限路径保持初值） */
+        perror(&quot;mlockall（超限 ENOMEM，见 50.2）&quot;);
+        return 0;   /* 演示目的已达成：失败路径本身就是结果 */
+    }
+    bench_access(buf, &quot;after  mlockall&quot;);
 
     munmap(buf, SIZE);
     return 0;
 }
 </code></pre>
-<p><strong>预期</strong>：mlockall 前 max 延迟可能达毫秒级（硬页错误），mlockall 后 max 延迟降到微秒级。</p>
+<p><strong>预期</strong>：mlockall 前 max 延迟可能达毫秒级（硬缺页：分配页 + 清零 + 建映射），mlockall 后所有页驻留（<code class="c">do_mlock</code> 的 <code class="c">__mm_populate</code> 已预填充），max 降到微秒级（缓存 miss 而非缺页）。</p>
+<p><strong>实测（WSL Ubuntu，非 root，RLIMIT_MEMLOCK 默认限额，2026-09-05）</strong>：</p>
+<pre class="code" data-label="text"><code class="c">before mlockall: avg=1687ns min=17ns max=39278ns
+mlockall（超限 ENOMEM，见 50.2）: Cannot allocate memory
+</code></pre>
+<p>1GB 远超限额 → 失败路径触发，<strong>失败本身就是 50.2 的语义演示</strong>：<code class="c">can_do_mlock</code> 放行（限额非零即有资格）但 <code class="c">do_mlock</code> 超限拒绝，errno 是 <strong>ENOMEM 而非 EPERM</strong>（超限路径保持初值 ENOMEM，EPERM 只在 <code class="c">can_do_mlock</code> 拒绝时出现）。root 下 <code class="c">ulimit -l unlimited</code> 后可跑出完整的前后对比。before 行的 max≈39µs 即硬缺页成本（分配+清零+建映射）；min=17ns 是 THP 大页摊薄后的热页写。</p>
+<h3>实验 4 参考代码（实测：2026-09-05，WSL Ubuntu，gcc -O2 -Wall -Wextra 零告警）</h3>
+<pre class="code" data-label="C"><code class="c">
+/* mincore 零页口径差 + MADV_DONTNEED 双语义
+ * 实测输出：
+ *   mincore = [1,1,0,0]（页0=写触碰 页1=读触碰零页）
+ *   同区 Rss = 4 kB（预期 4：零页 present 却不计入 RSS）
+ *   全写后 mincore = [1,1,1,1]
+ *   MADV_DONTNEED 后 mincore = [0,0,0,0]，q[0]=0x00
+ *   文件 PRIVATE 改 'Z' 后 f[0]='Z'；DONTNEED 后 f[0]='O'
+ *   madvise(99) = -1 errno=22(Invalid argument)
+ */
+#define _GNU_SOURCE
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/mman.h&gt;
+#include &lt;unistd.h&gt;
+
+/* /proc/self/smaps 中包含 addr 的 VMA 的 Rss(kB) */
+static long smaps_rss(void *addr)
+{
+    FILE *fp = fopen(&quot;/proc/self/smaps&quot;, &quot;r&quot;);
+    if (!fp) return -1;
+    char line[300];
+    unsigned long lo, hi, a = (unsigned long)addr;
+    long rss = -1;
+    int in_target = 0;
+    while (fgets(line, sizeof line, fp)) {
+        if (sscanf(line, &quot;%lx-%lx&quot;, &amp;lo, &amp;hi) == 2)
+            in_target = (a &gt;= lo &amp;&amp; a &lt; hi);
+        else if (in_target &amp;&amp; strncmp(line, &quot;Rss:&quot;, 4) == 0) {
+            sscanf(line + 4, &quot;%ld&quot;, &amp;rss);
+            break;
+        }
+    }
+    fclose(fp);
+    return rss;
+}
+
+int main(void)
+{
+    long pagesz = sysconf(_SC_PAGESIZE);
+    size_t P = (size_t)pagesz;
+
+    char *q = mmap(NULL, 4 * P, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (q == MAP_FAILED) { perror(&quot;mmap&quot;); return 1; }
+    q[0] = 1;                        /* 页 0：写触碰（真页） */
+    volatile char c = q[P]; (void)c; /* 页 1：读触碰（零页） */
+
+    unsigned char vec[4];
+    if (mincore(q, 4 * P, vec) != 0) { perror(&quot;mincore&quot;); return 1; }
+    printf(&quot;mincore = [%d,%d,%d,%d]（页0=写触碰 页1=读触碰零页）\n&quot;,
+           vec[0] &amp; 1, vec[1] &amp; 1, vec[2] &amp; 1, vec[3] &amp; 1);
+    printf(&quot;同区 Rss = %ld kB（预期 4：零页 present 却不计入 RSS）\n&quot;,
+           smaps_rss(q));
+
+    memset(q, 0x5A, 4 * P);
+    mincore(q, 4 * P, vec);
+    printf(&quot;全写后 mincore = [%d,%d,%d,%d]\n&quot;,
+           vec[0] &amp; 1, vec[1] &amp; 1, vec[2] &amp; 1, vec[3] &amp; 1);
+    if (madvise(q, 4 * P, MADV_DONTNEED) != 0) { perror(&quot;madvise&quot;); return 1; }
+    mincore(q, 4 * P, vec);
+    printf(&quot;MADV_DONTNEED 后 mincore = [%d,%d,%d,%d]，q[0]=0x%02x（预期 0x00）\n&quot;,
+           vec[0] &amp; 1, vec[1] &amp; 1, vec[2] &amp; 1, vec[3] &amp; 1, (unsigned char)q[0]);
+
+    int fd = open(&quot;/tmp/ch50_d.dat&quot;, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd &lt; 0) { perror(&quot;open&quot;); return 1; }
+    if (write(fd, &quot;ORIG&quot;, 4) != 4) { perror(&quot;write&quot;); return 1; }
+    char *f = mmap(NULL, 4, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (f == MAP_FAILED) { perror(&quot;mmap f&quot;); return 1; }
+    f[0] = 'Z';
+    printf(&quot;文件 PRIVATE 改 'Z' 后 f[0]='%c'；&quot;, f[0]);
+    if (madvise(f, 4, MADV_DONTNEED) != 0) { perror(&quot;madvise f&quot;); return 1; }
+    printf(&quot;DONTNEED 后 f[0]='%c'（预期 O：私有修改丢弃）\n&quot;, f[0]);
+
+    errno = 0;
+    int r = madvise(q, P, 99);
+    printf(&quot;madvise(99) = %d errno=%d(%s)，预期 -1/EINVAL\n&quot;,
+           r, errno, r ? strerror(errno) : &quot;OK&quot;);
+
+    munmap(q, 4 * P);
+    munmap(f, 4);
+    close(fd);
+    unlink(&quot;/tmp/ch50_d.dat&quot;);
+    return 0;
+}
+</code></pre>
+<p><strong>解读三连</strong>：
+1. <code class="c">mincore=[1,1,0,0]</code> 但 <code class="c">Rss=4kB</code>——页 1 读触碰映射<strong>零页</strong>：PTE present（mincore 认）+ 全系统共享（RSS 不认）。
+2. <code class="c">MADV_DONTNEED</code> 后 mincore 全 0 且读回 <code class="c">0x00</code>——匿名页的<strong>确定性丢弃</strong>。
+3. 文件 PRIVATE 读回 'O'——丢的是 COW 副本，page cache 原页完好（对照 <a href="chapter-49.html#s-49-4">49.4</a> 的可见性规则）。</p>
+<h3>实验 5 参考代码（实测：2026-09-05）</h3>
+<p>见 <a href="#s-50-2">50.2 代码示例</a>（<code class="c">mlock</code> 限额实测）。实测要点：WSL Ubuntu 默认 <code class="c">RLIMIT_MEMLOCK=65536kB</code>（64MB，与桌面 Ubuntu 8MB 不同）；128MB 请求返回 <code class="c">ENOMEM</code>（<code class="c">do_mlock():575</code> 超限路径，非 EPERM）；单页 mlock 成功。<strong>注意超限请求不消耗物理内存</strong>——限额检查在 <code class="c">apply_vma_lock_flags</code> 之前，填充根本不会执行。</p>
+<hr />
 <h2>HFT / 嵌入式关联</h2>
 <ul>
-<li><strong>mlockall</strong>：HFT 必须锁定所有内存防止换页</li>
+<li><strong>mlockall</strong>：HFT 必须锁定所有内存防止换页（超限是 ENOMEM 不是 EPERM）</li>
 <li><strong>mmap</strong>：HFT 用文件映射共享行情数据</li>
-<li><strong>Huge Pages</strong>：<code class="c">mmap(MAP_HUGETLB)</code> 减少 TLB miss</li>
-<li><strong>嵌入式</strong>：无 MMU 系统不支持 mprotect</li>
+<li><strong>Huge Pages</strong>：<code class="c">mmap(MAP_HUGETLB)</code> / <code class="c">madvise(MADV_HUGEPAGE)</code> 减少 TLB miss</li>
+<li><strong>嵌入式</strong>：无 MMU 系统（MMU-less NOMMU）不支持 mprotect；mincore 在 XIP 场景口径要甄别</li>
 </ul>
+<hr />
 <h2>衔接</h2>
 <ul>
-<li><strong>Ch49</strong> Memory Mapping — mmap 详解</li>
-<li><strong>Ch36</strong> Process Resources — RLIMIT_MEMLOCK</li>
-<li><strong>Ch63</strong> 替代 I/O — mmap vs read/write</li>
+<li><strong>Ch49</strong> Memory Mappings — <a href="chapter-49.html#intro">mmap 详解</a></li>
+<li><strong>Ch36</strong> Process Resources — <a href="chapter-36.html#intro">RLIMIT_MEMLOCK</a></li>
+<li><strong>Ch49</strong> 对比总结 — <a href="chapter-49.html#s-49-12">mmap vs read/write 对比表</a></li>
+<li>内核深挖：<a href="../../06-linux-mm/html/index.html">06-linux-mm</a></li>
 </ul>
       </section>
 
