@@ -454,6 +454,113 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 - <code class="c">malloc</code> 堆内存（调用者 <code class="c">free</code>）
 - <code class="c">static</code> 缓冲（非线程安全）
 - 调用者提供的缓冲区（最干净）</p>
+<h4>返回指针安全的判定标准：看指向的内存，不看变量是不是 static</h4>
+<p><strong>返回指针是否安全，不看变量带不带 static，看【指针指向那块内存的生命周期】</strong>：</p>
+<ul>
+<li>指向 static 局部 / 全局 / malloc 堆内存 → return 指针没问题</li>
+<li>指向函数栈上局部变量 → 千万不能 return，函数结束栈销毁，野指针 UB</li>
+</ul>
+<h4>static 局部指针的两种写法（易踩坑区分）</h4>
+<pre class="code" data-label="C"><code class="c">/* 写法 A：安全，可以返回 */
+char *foo_a(void) {
+    static char arr[64];   /* static 局部数组：整体在数据段，永久存在 */
+    return arr;            /* ✅ 生命周期不随函数结束销毁 */
+}
+
+/* 写法 B：灾难，不能返回 */
+char *foo_b(void) {
+    static char *p;        /* static 只修饰指针变量 p 本身！ */
+    char stack_buf[32];
+    p = stack_buf;         /* p 存的是栈地址 */
+    return p;              /* ❌ 函数退出 stack_buf 销毁，p 成野指针 */
+}
+</code></pre>
+<p><strong><code class="c">static char *p</code> 只是指针变量 p 自己活很久，它指向的对象不一定！</strong> p 在数据段、存着一个栈地址——指向的栈内存照样随帧销毁。static 修饰的是变量本身，护不住它指向的目标。</p>
+<h4>速记表：能不能返回它的地址</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变量</th>
+<th>存放位置</th>
+<th>生命周期</th>
+<th>能否返回其地址</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通局部变量</td>
+<td>栈</td>
+<td>函数调用期间</td>
+<td>❌ 禁止返回地址</td>
+</tr>
+<tr>
+<td>static 局部变量</td>
+<td>数据段（<code class="c">.data</code>/<code class="c">.bss</code>）</td>
+<td>整个程序运行</td>
+<td>✅ 可以返回地址</td>
+</tr>
+<tr>
+<td>全局变量</td>
+<td>数据段</td>
+<td>整个程序运行</td>
+<td>✅ 可以返回地址</td>
+</tr>
+<tr>
+<td>malloc 申请</td>
+<td>堆</td>
+<td><code class="c">free</code> 之前</td>
+<td>✅ 可以返回地址</td>
+</tr>
+</tbody>
+</table></div>
+<h3>static 局部变量：作用域在函数内，生命周期是全局</h3>
+<pre class="code" data-label="C"><code class="c">void test(void) {
+    static int a = 10;   /* 不在栈上！ */
+    a++;
+    printf(&quot;%d\n&quot;, a);
+}
+
+test();   /* 输出 11 */
+test();   /* 输出 12 */
+test();   /* 输出 13 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>普通局部变量</th>
+<th>static 局部变量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>存放位置</td>
+<td>栈帧（随调用临时开辟）</td>
+<td><strong>全局数据段（<code class="c">.data</code>/<code class="c">.bss</code>）</strong></td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td>函数退出即销毁</td>
+<td><strong>程序整个运行期间存活</strong></td>
+</tr>
+<tr>
+<td>初始化</td>
+<td>每次进入都初始化</td>
+<td><strong>只初始化 1 次</strong>（首次进入函数时）</td>
+</tr>
+<tr>
+<td>作用域</td>
+<td>本函数</td>
+<td>本函数（<strong>别的函数不能直接访问</strong>）</td>
+</tr>
+<tr>
+<td>值的延续</td>
+<td>不保留</td>
+<td>保留上次的值</td>
+</tr>
+</tbody>
+</table></div>
+<p>本质：<strong>作用域是局部的，生命周期是全局的</strong>——数据段里给这个变量留了永久位置，只是名字只在函数内可见。</p>
 <h3>inline（C99）</h3>
 <pre class="code" data-label="C"><code class="c">static inline uint32_t get_flags(const struct rte_mbuf *m)
 {
@@ -466,6 +573,23 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li>过大函数勿 inline：I-cache 膨胀、代码段增大</li>
 <li>DPDK/内核：<code class="c">static inline</code> 是标配</li>
 </ul>
+<h4>头文件里能不能直接写函数体？</h4>
+<blockquote>
+<p>头文件可以写函数<strong>声明</strong>（只有签名没有函数体），<strong>不能直接写普通函数实现</strong>。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">/* demo.h */
+void func(void);      /* ✅ 声明，没问题 */
+
+void func(void) { }   /* ❌ 普通函数体写进 .h！ */
+</code></pre>
+<p>多个 <code class="c">.c</code> 都 <code class="c">#include "demo.h"</code>，预处理后<strong>每个翻译单元都生成一份 <code class="c">func</code> 实体</strong>，链接阶段报<strong>多重定义（multiple definition）</strong>。</p>
+<p>头文件放函数体的两种合法写法：</p>
+<pre class="code" data-label="C"><code class="c">static inline void func(void) { }   /* ① 最常用：内核头文件大量使用 */
+inline void func(void) { }          /* ② 少用：C99 纯 inline 不发射外部符号，
+                                       取地址/未内联时需在唯一 .c 里再提供
+                                       一份外部定义（extern inline 配合） */
+</code></pre>
+<p><strong>简单记：h 文件带函数体，优先 <code class="c">static inline</code></strong>——每个 TU 一份私有副本，永不撞符号。</p>
 <h2>底层映射</h2>
 <h3>call/ret 栈帧（<strong>ch18</strong> 详）</h3>
 <pre class="code" data-label="code"><code class="c">调用者                 被调函数
@@ -544,6 +668,18 @@ add:
 <td>"static 函数和普通函数一样"</td>
 <td>static 改链接属性，仅本 TU 可见</td>
 </tr>
+<tr>
+<td>"static 局部变量在栈上"</td>
+<td>在数据段（.data/.bss），程序全程存活</td>
+</tr>
+<tr>
+<td>"static 修饰的指针返回就安全"</td>
+<td>static 只护指针变量本身，护不住它指向的目标（指向栈照样野）</td>
+</tr>
+<tr>
+<td>"头文件里写函数体必须 static inline"</td>
+<td>或者纯 inline + 唯一 .c 提供外部定义；但工程上首选 static inline</td>
+</tr>
 </tbody>
 </table></div>
 <h2>实操</h2>
@@ -563,6 +699,9 @@ gcc -c t.c -o t.o &amp;&amp; nm t.o | grep ' t '   # t = local text
 <li><code class="c">int add(int a, int b)</code> 在 x86-64 上参数走哪些寄存器？返回值在哪？</li>
 <li><code class="c">call</code> 和 <code class="c">ret</code> 在栈上分别做什么？栈帧由谁建立、谁销毁？</li>
 <li><code class="c">static inline</code> 为什么是 DPDK/内核 helper 的标配？过大函数为何不 inline？</li>
+<li>static 局部变量存在哪里？初始化几次？作用域和生命周期分别是什么范围？</li>
+<li><code class="c">static char *p</code> 里 static 修饰的是谁？它能保证 <code class="c">return p</code> 安全吗？</li>
+<li>头文件里直接写普通函数体，链接时会发生什么？两种合法写法？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -579,6 +718,32 @@ gcc -c t.c -o t.o &amp;&amp; nm t.o | grep ' t '   # t = local text
 <details>
 <summary>参考答案</summary>
 <p>printf 永远不会执行——两个分支都有 return，if-else 后的代码是死代码。编译器可能会警告 unreachable code。虽然语法合法，但说明逻辑可能有误——如果 printf 是有意写的，说明 if-else 逻辑写错了。</p>
+</details>
+<p><strong>题目 2：</strong> 这个函数安全吗？多次调用返回的指针是同一个地址吗？</p>
+<pre class="code" data-label="C"><code class="c">int *f(void)
+{
+    static int x = 100;
+    return &amp;x;
+}
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>返回本身安全，但共享是坑。</strong></p>
+<ol>
+<li>
+<p><strong>安全</strong>：<code class="c">x</code> 是 static 局部变量，存在 <code class="c">.data</code> 段（初值 100），生命周期覆盖整个程序——<code class="c">&amp;x</code> 在任何时刻解引用都有效，不会悬垂。</p>
+</li>
+<li>
+<p><strong>是同一个地址</strong>：x 在数据段只有<strong>一份实体</strong>，无论调用多少次 f()，返回的都是同一个 <code class="c">&amp;x</code>。</p>
+</li>
+<li>
+<p><strong>真正的坑在共享</strong>：所有调用者拿到的是同一个 x——
+   - 两次调用想各自持有一份独立结果？不可能，互相覆盖；
+   - 多线程下无任何保护，竞态条件；
+   - 不可重入：信号处理函数/递归里再调 f() 会破坏外层的值。</p>
+</li>
+</ol>
+<p>这就是 static 缓冲的固有代价——<code class="c">inet_ntoa()</code> 的经典坑：两个返回值在同一条 printf 里互相覆盖。安全替代：调用者传入缓冲区（<code class="c">inet_ntop</code> 的设计），或返回 malloc 堆内存由调用者释放。</p>
 </details>
       </section>
       <section class="section" id="s-7-3">
