@@ -4,144 +4,85 @@
 **前置**：[Ch49 mmap](../chapter-49-memory-mappings/README.md)  
 **后置**：[Ch51 POSIX IPC 导论](../chapter-51-posix-ipc-intro/README.md)
 
+> 源码核验基准：Linux v6.6 · `mm/mprotect.c` · `mm/mlock.c` · `mm/mincore.c` · `mm/madvise.c`（2026-09-05 实测）
+
 ---
 
 ## 小节目录
 
-- [50.1 总览](notes/50.1-changing-memory-protection-mprotect.md)
-- [50.2 `mprotect`](notes/50.1-changing-memory-protection-mprotect.md)
-- [50.3 `mlock` / `mlockall`](notes/50.2-memory-locking-mlock-and-mlockall.md)
-- [50.4 `mincore`](notes/50.3-determining-memory-residence-mincore.md)
-- [50.5 `madvise`](notes/50.5-summary.md)
+- [50.1 修改保护 `mprotect`](notes/50.1-changing-memory-protection-mprotect.md)
+- [50.2 内存锁定 `mlock` / `mlockall`](notes/50.2-memory-locking-mlock-and-mlockall.md)
+- [50.3 驻留查询 `mincore`](notes/50.3-determining-memory-residence-mincore.md)
+- [50.4 访问提示 `madvise`](notes/50.4-advising-future-memory-usage-patterns-ma.md)
+- [50.5 总结](notes/50.5-summary.md)
+- [50.6 练习](notes/50.6-exercises.md)
 
 ---
 
 ## 章节目标
 
-
-`mprotect` · `mlock*` · `mincore` · `madvise`；页对齐约束；实时锁定与 advice 语义。
-
----
-
+`mprotect` · `mlock*` · `mincore` · `madvise`；页对齐约束；实时锁定与 advice 语义；四个 v6.6 实测锚点。
 
 ---
 
 ## 对比速记
 
-
-| 调用 | 作用 | 权限 |
-|------|------|------|
-| mprotect | 改 r/w/x | 通常不需 root |
-| mlock* | 禁 swap | ulimit / 特权 |
-| mincore | 驻留快照 | 否 |
-| madvise | 访问提示 | 否 |
-
----
-
+| 调用 | 作用 | 权限 | 关键实测结论 |
+|------|------|------|-------------|
+| mprotect | 改 r/w/x | 不超 fd 模式（EACCES） | 违例 SIGSEGV；W^X 加固 |
+| mlock* | 禁 swap | RLIMIT_MEMLOCK / CAP_IPC_LOCK | **超限 ENOMEM（非 EPERM）**；MS_INVALIDATE→EBUSY |
+| mincore | 驻留快照 | 无权限文件映射静默 0 | 零页 mincore=1 但 Rss=0 |
+| madvise | 访问提示 | advice 合法即可 | DONTNEED：匿名→0，文件 PRIVATE→原内容 |
 
 ---
 
-## 陷阱
+## 易错清单
 
-
-1. 未页对齐 → `EINVAL`  
-2. mprotect 越权 → `EACCES`  
-3. mlock 非引用计数叠加  
-4. mincore 不可靠同步  
-5. `MADV_DONTNEED` + PRIVATE 丢数据（Linux）  
-6. `MCL_FUTURE` 耗尽锁定额  
+1. `mlock` 超限返回 `ENOMEM`，不是 `EPERM`（EPERM 只在「限额 0 且无 CAP_IPC_LOCK」）
+2. `mincore` 对无权限文件映射静默返回全 0（v6.6 `can_do_mincore()` 防侧信道），不是「真的不在内存」
+3. 零页：`mincore` 说驻留、`Rss` 不计——两个口径不同
+4. `MADV_DONTNEED` 匿名映射读回 **0**；文件 PRIVATE 读回**文件内容**——不是同一件事
+5. `MADV_FREE` 是 lazyfree（内存压力前数据还在），不能当确定性清零用
+6. `MCL_FUTURE` 让后续 mmap/malloc 静默受限额约束——错误会在离 mlockall 很远的地方爆
+7. `mincore` 是瞬时快照，不能做同步条件
+8. `mprotect` 的 `addr` 必须页对齐（EINVAL），`length` 内核取整
+9. W^X：同页避免 W+X；JIT 写完改 R|X（ARM64 还需 `__clear_cache` 同步 I-cache）
 
 ---
 
+## 实验清单（全部实测：WSL Ubuntu，gcc -O2 -Wall -Wextra 零告警，2026-09-05）
+
+| # | 实验 | 验证点 | 位置 |
+|---|------|--------|------|
+| 1 | mprotect 三段式 | PROT_NONE→SIGSEGV；恢复 RW→写入成功 | 50.1 代码示例 |
+| 2 | mlock 限额 | RLIMIT 64MB（WSL）；128MB→ENOMEM；单页成功 | 50.2 代码示例 |
+| 3 | mincore 零页口径 | [1,1,0,0] vs Rss=4kB | 50.3 代码示例 |
+| 4 | MADV_DONTNEED 双语义 | 匿名归零 0x00；文件 PRIVATE 回读 'O'；EINVAL | 50.4 代码示例 / 50.6 实验 4 |
+| 5 | mlock 限额错误码 | ENOMEM 断言 + 超限不耗物理内存 | 50.6 实验 5 |
 
 ---
 
 ## 背诵卡
 
-
 | # | 要点 |
 |---|------|
-| 1 | 四件套：protect / lock / mincore / advise |
-| 2 | 页对齐；JIT 写完再 RX |
-| 3 | mlock 抗 swap；ulimit；exec 解锁 |
-| 4 | mincore 仅快照 |
-| 5 | madvise 非强制；DONTNEED 移植坑 |
-| 6 | 大量 mlock 挤内存 |
-
----
-
+| 1 | mprotect 违例 → **SIGSEGV**；超 fd 模式 → **EACCES** |
+| 2 | mlock 超限 → **ENOMEM**；无资格（limit=0 无 CAP_IPC_LOCK）→ **EPERM** |
+| 3 | mlock 语义：**立即预填充**（`__mm_populate`）+ 无计数（一次 munlock 全解） |
+| 4 | fork **继承**锁，exec **解锁** |
+| 5 | mlock 区上 `msync(MS_INVALIDATE)` → **EBUSY** |
+| 6 | mincore 口径 = **PTE present**；零页 resident 但 Rss 不计 |
+| 7 | mincore 无权限文件映射 → **静默全 0**（防侧信道） |
+| 8 | THP 在 mincore 里整块 2MB 全 1 |
+| 9 | MADV_DONTNEED：匿名→**丢成 0**；文件 PRIVATE→**丢 COW 读回文件** |
+| 10 | MADV_FREE：lazyfree，压力前数据保留，可反悔 |
+| 11 | mlockall 的 MCL_FUTURE 陷阱：远处 malloc 失败 |
+| 12 | 四组调用 addr 均**页对齐**，length 向上取整 |
 
 ---
 
 ## 参考
-
 
 - Kerrisk · TLPI Ch50（非「第 45 章」误标）  
 - `man 2 mprotect` · `mlock` · `mincore` · `madvise`
-
-
----
-
-## 代码示例
-
-```c
-#include <stdio.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <string.h>
-
-/* Ch50 虚拟内存 — mprotect/madvise/mincore。
- * 演示修改内存保护属性 + 内存使用建议。
- * 编译: gcc -o ch50_demo ch50_demo.c */
-
-int main(void) {
-    long pagesize = sysconf(_SC_PAGESIZE);
-    printf("Page size: %ld bytes\n", pagesize);
-
-    /* 分配页对齐的内存 */
-    char *mem = mmap(NULL, pagesize,
-                     PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS,
-                     -1, 0);
-    if (mem == MAP_FAILED) { perror("mmap"); return 1; }
-
-    /* 写入数据 */
-    strcpy(mem, "writable data");
-    printf("Wrote: %s\n", mem);
-
-    /* mprotect: 改为只读 */
-    if (mprotect(mem, pagesize, PROT_READ) == 0) {
-        printf("Memory is now read-only\n");
-        printf("Reading still works: %s\n", mem);
-        /* 以下写入会触发 SIGSEGV:
-         * mem[0] = 'X';  -- 段错误!
-         */
-        printf("Writing would cause SIGSEGV now\n");
-    }
-
-    /* mprotect: 改为不可读写 */
-    mprotect(mem, pagesize, PROT_NONE);
-    printf("Memory is now inaccessible (PROT_NONE)\n");
-    /* 读或写都会触发 SIGSEGV */
-
-    /* madvise: 给内核内存使用提示 */
-    char *mem2 = mmap(NULL, pagesize * 4,
-                      PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANONYMOUS,
-                      -1, 0);
-    madvise(mem2, pagesize * 4, MADV_SEQUENTIAL);  /* 顺序访问 */
-    printf("madvise(MADV_SEQUENTIAL): hint for sequential access\n");
-
-    munmap(mem, pagesize);
-    munmap(mem2, pagesize * 4);
-    return 0;
-}
-
-```
-
----
-
-## 参考
-
-- [OUTLINE](../OUTLINE.md)
-- 原始笔记：[notes.md.bak](notes)
+- 内核深挖：[06-linux-mm](../../06-linux-mm/README.md)
