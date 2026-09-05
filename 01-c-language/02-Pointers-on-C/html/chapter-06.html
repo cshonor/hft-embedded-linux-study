@@ -2919,6 +2919,77 @@ const char *proto = &quot;FIX.4.2&quot;;  /* 推荐：const 标记只读意图 *
 </tbody>
 </table></div>
 <p><code class="c">char *s = "abc"</code> 在 C89 合法但 C11 起 deprecated，C23 起 UB——应一律用 <code class="c">const char *</code>。</p>
+<h3>拆解 <code class="c">*(uint32_t *)&amp;f</code>：从右往左一步一块</h3>
+<p><strong>指针表达式的通读法：从右往左，一步一个操作。</strong> 以"偷看 float 位模式"的经典写法为例：</p>
+<pre class="code" data-label="C"><code class="c">float f = 1.0f;                /* f 是 float，占 4 字节 */
+uint32_t bits = *(uint32_t *)&amp;f;
+</code></pre>
+<p>画符号拆分：</p>
+<pre class="code" data-label="C"><code class="c">uint32_t bits =  *  (uint32_t *)  &amp;f;
+                 ↑        ↑         ↑
+                 │        │         │
+              解引用    强制转换   取 f 的地址
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>表达式</th>
+<th>做了什么</th>
+<th>结果类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><code class="c">&amp;f</code></td>
+<td>取地址符 <code class="c">&amp;</code>：拿变量 f 的内存地址</td>
+<td><code class="c">float *</code></td>
+</tr>
+<tr>
+<td>②</td>
+<td><code class="c">(uint32_t *)&amp;f</code></td>
+<td>强制转换 cast：让编译器把<strong>这个地址</strong>强行解释成"指向 <code class="c">uint32_t</code> 的指针"。<strong>只改指针类型，地址本身一个字节都没动</strong>，还是 f 原来那块内存</td>
+<td><code class="c">uint32_t *</code></td>
+</tr>
+<tr>
+<td>③</td>
+<td><code class="c">*(uint32_t *)&amp;f</code></td>
+<td>最前面的 <code class="c">*</code> 解引用：顺着指针去内存，读 4 个字节，<strong>当作 <code class="c">uint32_t</code> 整数</strong></td>
+<td><code class="c">uint32_t</code>（右值）</td>
+</tr>
+</tbody>
+</table></div>
+<p>整句翻译成人话：<strong>拿到 f 的地址，假装那里存的不是 float 而是 uint32_t，把 4 字节原样读出来，赋给 bits。</strong> 得到的就是 IEEE 754 位模式：<code class="c">f = 1.0f</code> 时 <code class="c">bits == 0x3F800000</code>。</p>
+<h4>为什么这个写法是 UB（严格别名规则）</h4>
+<p>内存里真实存放的是 <code class="c">float</code>，却用 <code class="c">uint32_t *</code> 类型的指针去访问它——<strong>C 标准的严格别名规则（strict aliasing）禁止用不匹配类型的指针解引用一块内存</strong>（有效类型规则，C11 6.5p7）。合法的别名例外只有：完全同类型、<code class="c">signed/unsigned</code> 配对、<code class="c">char *</code> 可以别名任何对象。</p>
+<p>后果的诡异之处在于"看场合发作"：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译条件</th>
+<th>表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code> 调试</td>
+<td>大多数时候跑着"正常"——没触发别名相关优化</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code> 优化</td>
+<td>编译器基于"不同类型指针不会指向同一内存"的假设重排/删除代码，这行可能被整个干掉，或读出错误数值——<strong>灵异 bug</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h4>安全写法：memcpy</h4>
+<pre class="code" data-label="C"><code class="c">uint32_t bits;
+memcpy(&amp;bits, &amp;f, sizeof(bits));   /* 按原始字节拷贝，标准明确允许，绕开严格别名 */
+</code></pre>
+<p><code class="c">memcpy</code> 逐字节复制，是标准认可的"重新解释内存"通道。现代编译器（gcc/clang <code class="c">-O2</code>）会把这种定长 <code class="c">memcpy</code> 优化成一条 <code class="c">mov</code>，<strong>零性能损失</strong>——没有任何理由再用指针 cast 的写法。</p>
+<blockquote>
+<p>同族合法工具：union 类型双关（C11 起明确合法：写一个成员、读另一个是允许的）；<code class="c">char *</code> 别名任何类型读字节也合法。<code class="c">*(uint32_t *)&amp;f</code> 是三者中唯一踩 UB 的。</p>
+</blockquote>
 <h2>底层映射</h2>
 <h3><code class="c">buf[3]</code> 的汇编</h3>
 <pre class="code" data-label="C"><code class="c">char buf[64];
@@ -2961,7 +3032,11 @@ char c = p[3];
 </tr>
 <tr>
 <td>报文头部访问</td>
-<td><code class="c">*(uint16_t *)(pkt + 12)</code> 取以太类型</td>
+<td><code class="c">*(uint16_t *)(pkt + 12)</code> 取以太类型（DPDK 保证对齐/字节序，独立处理）</td>
+</tr>
+<tr>
+<td>行情字段位模式</td>
+<td>查 NaN payload、快速 float 格式化前先取位模式——<strong>用 <code class="c">memcpy</code>，不用指针 cast</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -2994,6 +3069,18 @@ char c = p[3];
 <td>"<code class="c">T *a[N]</code> 和 <code class="c">T (*a)[N]</code> 一样"</td>
 <td>完全不同：前者 N 个指针，后者 1 个指向数组的指针</td>
 </tr>
+<tr>
+<td>"<code class="c">(uint32_t *)&amp;f</code> 这一步就 UB 了"</td>
+<td>不是——cast 只改指针类型不碰内存，<strong>解引用那一刻才 UB</strong></td>
+</tr>
+<tr>
+<td>"<code class="c">*(uint32_t *)&amp;f</code> 一直能跑就没事"</td>
+<td>违反严格别名是 UB，<code class="c">-O0</code> 正常 <code class="c">-O2</code> 出灵异 bug</td>
+</tr>
+<tr>
+<td>"改类型转换太丑，cast 写法更快"</td>
+<td>定长 <code class="c">memcpy</code> 会被优化成一条 <code class="c">mov</code>，零开销且合法</td>
+</tr>
 </tbody>
 </table></div>
 <h2>实操</h2>
@@ -3018,6 +3105,8 @@ gcc t.c -o t &amp;&amp; ./t   # 打印 8（指针大小），不是 40
 <li><code class="c">char *s = "abc"</code> 和 <code class="c">char t[] = "abc"</code> 在存储和可改性上有什么区别？</li>
 <li><code class="c">T *a[N]</code> 和 <code class="c">T (*a)[N]</code> 分别是什么？画图说明。</li>
 <li>为什么函数参数 <code class="c">int arr[10]</code> 拿不到数组大小？退化成什么？</li>
+<li>从右往左拆 <code class="c">*(uint32_t *)&amp;f</code>，每一步的类型分别是什么？哪一步触发 UB？</li>
+<li>严格别名规则下，<code class="c">memcpy</code> 和 union 为什么合法？编译器优化后 memcpy 有性能损失吗？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -3032,6 +3121,21 @@ char *cp = &amp;ch;
 <details>
 <summary>参考答案</summary>
 <p>A 和 C 可以是左值。A <em>cp 解引用指针，得到 ch，可赋值。C </em>(cp + 1) 解引用 cp+1 处的地址，语法上是左值（虽然此处可能越界）。B cp + 1 是指针运算结果，是右值。D ++cp 修改 cp 本身，表达式结果是右值。</p>
+</details>
+<p><strong>题目 2：</strong> 逐行标注，哪一行出错？</p>
+<pre class="code" data-label="C"><code class="c">float f = 1.0f;
+float *pf = &amp;f;                 // 行 1
+uint32_t *pu = (uint32_t *)&amp;f;  // 行 2
+uint32_t x = *pu;               // 行 3
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>行 1、行 2 都合法，UB 发生在行 3（解引用那一行）。</strong></p>
+<ul>
+<li>行 2 只是定义一个指针并赋值：cast 改变的是<strong>指针变量的类型</strong>，让它合法地持有这个地址——不读也不写 f 的内存，没有任何内存访问发生，所以不出错。</li>
+<li>行 3 <code class="c">*pu</code> 才真正顺着指针去<strong>访问内存</strong>。此时用 <code class="c">uint32_t *</code> 读一块有效类型为 <code class="c">float</code> 的对象，违反严格别名规则（C11 6.5p7），UB 在这一刻触发。</li>
+</ul>
+<p>教训：<strong>指针 cast 本身无罪，解引用才是分水岭。</strong>（另外 <code class="c">pf</code> 没被使用，只是示例对照。）</p>
 </details>
       </section>
       <section class="section" id="s-6-12">
