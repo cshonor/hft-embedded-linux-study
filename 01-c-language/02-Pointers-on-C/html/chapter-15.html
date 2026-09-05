@@ -279,6 +279,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-15-1"><span class="n">15.1</span>错误报告</a>
           <a href="#s-15-2"><span class="n">15.2</span>终止执行</a>
           <a href="#s-15-3"><span class="n">15.3</span>标准 I/O 函数库</a>
+          <a href="#s-15-4"><span class="n">15.4</span>ANSI I/O 概念</a>
+          <a href="#s-15-4-1"><span class="n">15.4.1</span>流</a>
+          <a href="#s-15-4-2"><span class="n">15.4.2</span>文件</a>
           <a href="#s-15-5"><span class="n">15.5</span>流 I/O 总览</a>
           <a href="#s-15-6"><span class="n">15.6</span>打开流</a>
           <a href="#s-15-7"><span class="n">15.7</span>关闭流</a>
@@ -325,7 +328,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Kenneth Reek · 指针与 C 精读</div>
           <h1>第 15 章 输入/输出函数</h1>
           <div class="meta">
-<span>book <b>01-c-language · 02-Pointers-on-C</b></span><span>chapter <b>Ch 15</b></span><span>sections <b>16</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>01-c-language · 02-Pointers-on-C</b></span><span>chapter <b>Ch 15</b></span><span>sections <b>19</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -1304,6 +1307,821 @@ fputs_unlocked(&quot;hello&quot;, fp);   /* 快但不安全 */
 <li>stdio 的缓冲机制有什么好处和代价？<strong>100 次 <code class="c">fwrite</code> 各 100 字节，会触发几次 <code class="c">write</code> syscall</strong>（缓冲区 4KB）？崩溃时缓冲区数据会怎样？</li>
 <li>HFT 数据面为什么绕过 stdio？<strong>DPDK 报文收发用什么替代 stdio</strong>？延迟从什么量级降到什么量级？</li>
 <li>HFT 日志系统怎么分层？<strong>数据面热路径用什么写日志</strong>（内存还是 stdio）？日志线程用什么落盘？为什么不直接 <code class="c">fprintf</code>？</li>
+</ol>
+      </section>
+      <section class="section" id="s-15-4">
+        <div class="sec-head"><div class="sec-no">15.4</div><h2>ANSI I/O 概念</h2></div>
+<h2>本节讲什么</h2>
+<p>标准 I/O 建立在两大抽象之上：<strong>流（stream）</strong> 和 <strong>文件（file）</strong>。流是 <code class="c">FILE *</code> 封装的「可读写的数据通道」，文件是「磁盘/管道/设备上的持久化对象」。<code class="c">fopen</code> 把文件绑定到流，后续 I/O 通过流进行。这一节是后续 15.4.1（流）和 15.4.2（文件）的入口。</p>
+<p>认知锚点：理解「流」与「文件」的分离，才能理解为什么 <code class="c">freopen</code> 能把已打开的流重定向到新文件、为什么同一文件可被多个流打开、为什么管道和设备也能用 stdio 操作——<strong>流是抽象，文件是实现</strong>。</p>
+<h2>要点</h2>
+<h3>两大抽象</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>抽象</th>
+<th>本质</th>
+<th>对应代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>流 stream</strong></td>
+<td>可读写的数据通道 + 状态</td>
+<td><code class="c">FILE *</code></td>
+</tr>
+<tr>
+<td><strong>文件 file</strong></td>
+<td>持久化或虚拟的数据源</td>
+<td>路径/fd</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">FILE *fp = fopen(&quot;quote.dat&quot;, &quot;rb&quot;);
+/*  fp  →  流（FILE *）
+    &quot;quote.dat&quot;  →  文件（磁盘对象）
+    fopen  →  把文件绑定到流 */
+</code></pre>
+<h3>流与文件的分离</h3>
+<pre class="code" data-label="C"><code class="c">/* 同一文件可被多个流打开 */
+FILE *fp1 = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+FILE *fp2 = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+/* fp1 和 fp2 是独立的流，各自有缓冲和读写位置 */
+
+/* 一个流可重定向到不同文件 */
+freopen(&quot;new.txt&quot;, &quot;r&quot;, fp1);
+/* fp1 现在指向 new.txt，原 data.txt 的流关闭 */
+</code></pre>
+<p><strong>流与文件是多对多关系</strong>：一个文件可被多个流打开（各自独立），一个流可通过 <code class="c">freopen</code> 切换到不同文件。</p>
+<h3>流的来源</h3>
+<p>stdio 的流可以绑定到多种「文件」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件类型</th>
+<th>打开方式</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>磁盘文件</td>
+<td><code class="c">fopen("path", mode)</code></td>
+<td><code class="c">/data/quote.dat</code></td>
+</tr>
+<tr>
+<td>标准流</td>
+<td>预定义</td>
+<td><code class="c">stdin</code>/<code class="c">stdout</code>/<code class="c">stderr</code></td>
+</tr>
+<tr>
+<td>管道</td>
+<td><code class="c">popen</code> 或 <code class="c">fdopen(pipe_fd)</code></td>
+<td>进程间通信</td>
+</tr>
+<tr>
+<td>设备</td>
+<td><code class="c">fopen("/dev/xxx")</code></td>
+<td><code class="c">/dev/null</code>、<code class="c">/dev/urandom</code></td>
+</tr>
+<tr>
+<td>内存</td>
+<td><code class="c">fmemopen</code>（POSIX）</td>
+<td>内存缓冲区当流</td>
+</tr>
+<tr>
+<td>套接字</td>
+<td><code class="c">fdopen(socket_fd)</code></td>
+<td>网络通信</td>
+</tr>
+</tbody>
+</table></div>
+<p>所有这些「文件」都能用 <code class="c">fread</code>/<code class="c">fwrite</code>/<code class="c">fprintf</code> 操作——这是 stdio 抽象的威力。</p>
+<h3>文本流 vs 二进制流</h3>
+<pre class="code" data-label="C"><code class="c">FILE *t1 = fopen(&quot;data.txt&quot;, &quot;r&quot;);    /* 文本流 */
+FILE *t2 = fopen(&quot;data.dat&quot;, &quot;rb&quot;);   /* 二进制流 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>换行处理</th>
+<th>平台差异</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文本 <code class="c">r</code>/<code class="c">w</code></td>
+<td>平台默认换行转换</td>
+<td>Windows: <code class="c">\n</code> ↔ <code class="c">\r\n</code></td>
+</tr>
+<tr>
+<td>二进制 <code class="c">rb</code>/<code class="c">wb</code></td>
+<td>不转换，原样读写</td>
+<td>跨平台一致</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Linux 下 <code class="c">r</code> 和 <code class="c">rb</code> 行为相同</strong>（换行就是 <code class="c">\n</code>）。<strong>Windows 下 <code class="c">r</code> 会把 <code class="c">\r\n</code> 转成 <code class="c">\n</code>，<code class="c">rb</code> 不转换</strong>。跨平台代码统一用 <code class="c">b</code>，避免换行污染二进制数据。</p>
+<h2>HFT 关联</h2>
+<h3>行情数据文件</h3>
+<pre class="code" data-label="C"><code class="c">FILE *fp = fopen(&quot;/data/market_20240101.dat&quot;, &quot;rb&quot;);
+/* 磁盘文件 → 流 → fread 读取 */
+</code></pre>
+<p>HFT 行情数据用二进制流读写，保证跨平台一致。</p>
+<h3>管道流</h3>
+<pre class="code" data-label="C"><code class="c">FILE *pp = popen(&quot;gzip -dc quote.dat.gz&quot;, &quot;r&quot;);
+/* 管道：gzip 解压输出 → 流 → fread 读取 */
+char buf[4096];
+while (fgets(buf, sizeof(buf), pp)) {
+    parse_line(buf);
+}
+pclose(pp);
+</code></pre>
+<p><code class="c">popen</code> 创建管道连接外部命令，用 stdio 接口读取命令输出。HFT 运维脚本常用。</p>
+<h3>内存流</h3>
+<pre class="code" data-label="C"><code class="c">char membuf[4096];
+FILE *mf = fmemopen(membuf, sizeof(membuf), &quot;w+&quot;);
+fprintf(mf, &quot;seq=%u price=%u&quot;, seq, price);
+fflush(mf);
+/* membuf 内已有格式化结果，无需磁盘 I/O */
+</code></pre>
+<p><code class="c">fmemopen</code> 把内存缓冲区当流操作，适合内存内格式化。详见 15.15。</p>
+<h3>设备流</h3>
+<pre class="code" data-label="C"><code class="c">FILE *null_fp = fopen(&quot;/dev/null&quot;, &quot;w&quot;);
+/* 丢弃输出，用于性能测试 */
+fprintf(null_fp, &quot;this goes nowhere\n&quot;);
+</code></pre>
+<p><code class="c">/dev/null</code> 是特殊设备文件，写入的数据被丢弃。性能测试时用 <code class="c">/dev/null</code> 作为输出，避免磁盘 I/O 干扰。</p>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong>15.4.1 流</strong>：<code class="c">FILE *</code> 结构、三个标准流、缓冲模式。</li>
+<li><strong>15.4.2 文件</strong>：<code class="c">fopen</code> 绑定、文本 vs 二进制、跨平台。</li>
+<li><strong>15.6 打开流</strong>：<code class="c">fopen</code> 模式详解。</li>
+<li><strong>15.15 临时文件</strong>：<code class="c">tmpfile</code>、<code class="c">fmemopen</code> 的特殊流。</li>
+</ul>
+<h2>口述自测题</h2>
+<ol>
+<li>标准 I/O 的两大抽象是什么？<strong>流和文件分别对应什么代码</strong>？<code class="c">fopen</code> 做了什么？</li>
+<li>同一文件能否被多个流打开？<strong>两个流读同一文件，各自的读写位置独立吗</strong>？<code class="c">freopen</code> 做了什么？</li>
+<li>stdio 的流可以绑定到哪些类型的「文件」？举五种。<strong>为什么所有这些都能用 <code class="c">fread</code>/<code class="c">fwrite</code> 操作</strong>？</li>
+<li>文本流和二进制流的区别是什么？<strong>Linux 下 <code class="c">r</code> 和 <code class="c">rb</code> 行为相同吗</strong>？Windows 下有什么区别？跨平台代码应该用哪个？</li>
+<li><code class="c">popen("gzip -dc quote.dat.gz", "r")</code> 创建的是什么流？<strong>它连接了什么</strong>？为什么能用 <code class="c">fgets</code> 读取？</li>
+</ol>
+      </section>
+      <section class="section" id="s-15-4-1">
+        <div class="sec-head"><div class="sec-no">15.4</div><h2>.1 流</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>流（stream）</strong> 是 stdio 的核心抽象——<code class="c">FILE *</code> 类型封装了文件描述符、用户态缓冲区、读写位置、错误/EOF 标志。这一节给出 <code class="c">FILE</code> 结构的内部组成、三个预定义标准流（<code class="c">stdin</code>/<code class="c">stdout</code>/<code class="c">stderr</code>）的缓冲特性，以及 HFT 工程里绕过 stdio 的原因。</p>
+<p>认知锚点：<code class="c">FILE *</code> 不是「文件指针」，而是<strong>流对象指针</strong>。流可以绑定到磁盘文件、管道、设备、套接字——任何能读写的东西。理解流的内部结构，才能理解缓冲行为、错误判断、性能调优。</p>
+<h2>要点</h2>
+<h3>FILE 结构（典型实现）</h3>
+<pre class="code" data-label="C"><code class="c">/* glibc 的 FILE 结构（简化） */
+struct _IO_FILE {
+    int     _flags;            /* 标志位：_IO_READ|_IO_WRITE|_IO_UNBUFFERED 等 */
+    char   *_IO_read_ptr;      /* 当前读位置（缓冲区内） */
+    char   *_IO_read_end;      /* 已读数据末尾 */
+    char   *_IO_read_base;     /* 读缓冲区起始 */
+    char   *_IO_write_base;    /* 写缓冲区起始 */
+    char   *_IO_write_ptr;     /* 当前写位置 */
+    char   *_IO_write_end;     /* 写缓冲区末尾 */
+    char   *_IO_buf_base;      /* 缓冲区起始 */
+    char   *_IO_buf_end;       /* 缓冲区末尾 */
+    int     _fileno;           /* 底层文件描述符 fd */
+    int     _chain;            /* 链表下一个 FILE */
+    int     _mode;             /* 文本/二进制 */
+    /* ... 更多字段 ... */
+};
+</code></pre>
+<p>每个 <code class="c">FILE</code> 封装：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>文件描述符 <code class="c">_fileno</code></strong></td>
+<td>底层 POSIX fd，最终 I/O 通过它</td>
+</tr>
+<tr>
+<td><strong>用户态缓冲区</strong></td>
+<td>减少 syscall，提高吞吐</td>
+</tr>
+<tr>
+<td><strong>读位置指针</strong></td>
+<td>当前读到哪里</td>
+</tr>
+<tr>
+<td><strong>写位置指针</strong></td>
+<td>当前写到哪里</td>
+</tr>
+<tr>
+<td><strong>错误/EOF 标志</strong></td>
+<td><code class="c">ferror</code>/<code class="c">feof</code> 查询</td>
+</tr>
+<tr>
+<td><strong>缓冲模式</strong></td>
+<td>全缓冲/行缓冲/无缓冲</td>
+</tr>
+</tbody>
+</table></div>
+<h3>三个预定义标准流</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+
+extern FILE *stdin;    /* 标准输入，fd=0 */
+extern FILE *stdout;   /* 标准输出，fd=1 */
+extern FILE *stderr;   /* 标准错误，fd=2 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>流</th>
+<th>fd</th>
+<th>默认缓冲</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">stdin</code></td>
+<td>0</td>
+<td>行缓冲（终端）/ 全缓冲（文件）</td>
+<td>读取用户输入</td>
+</tr>
+<tr>
+<td><code class="c">stdout</code></td>
+<td>1</td>
+<td>行缓冲（终端）/ 全缓冲（文件）</td>
+<td>正常输出</td>
+</tr>
+<tr>
+<td><code class="c">stderr</code></td>
+<td>2</td>
+<td><strong>无缓冲</strong></td>
+<td>错误日志、调试输出</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>stderr 无缓冲</strong>是关键——每次 <code class="c">fprintf(stderr, ...)</code> 立即输出，崩溃前的最后一条日志不会丢失。<strong>致命错误日志必须用 stderr</strong>。</p>
+<h3>缓冲模式</h3>
+<pre class="code" data-label="C"><code class="c">/* stdio 三种缓冲模式 */
+_IOFBF   /* 全缓冲：缓冲区满才 flush */
+_IOLBF   /* 行缓冲：遇 \n 或满才 flush */
+_IONBF   /* 无缓冲：每次 fwrite 立即 syscall */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>触发 flush 的条件</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全缓冲 <code class="c">_IOFBF</code></td>
+<td>缓冲区满、<code class="c">fflush</code>、<code class="c">fclose</code></td>
+<td>磁盘文件、批量数据</td>
+</tr>
+<tr>
+<td>行缓冲 <code class="c">_IOLBF</code></td>
+<td>遇 <code class="c">\n</code>、缓冲区满、<code class="c">fflush</code></td>
+<td>终端输出（stdout 默认）</td>
+</tr>
+<tr>
+<td>无缓冲 <code class="c">_IONBF</code></td>
+<td>每次操作立即 flush</td>
+<td>stderr、调试输出</td>
+</tr>
+</tbody>
+</table></div>
+<p>默认规则：</p>
+<ul>
+<li><strong>stderr</strong>：永远无缓冲。</li>
+<li><strong>stdout/stderr 指向终端</strong>：行缓冲。</li>
+<li><strong>stdout/stderr 指向文件/管道</strong>：全缓冲（重定向时自动切换）。</li>
+</ul>
+<h3>缓冲的可见性陷阱</h3>
+<pre class="code" data-label="C"><code class="c">printf(&quot;step 1\n&quot;);     /* 行缓冲，遇 \n flush */
+printf(&quot;step 2&quot;);       /* 未 flush，可能看不到 */
+fprintf(stderr, &quot;error\n&quot;);  /* stderr 无缓冲，立即输出 */
+/* 程序崩溃：step 2 可能丢失 */
+</code></pre>
+<p><strong>stdout 行缓冲</strong>：遇 <code class="c">\n</code> 才 flush。若输出不含 <code class="c">\n</code>（如 <code class="c">printf("step 2")</code>），崩溃时缓冲数据丢失。<strong>调试输出加 <code class="c">\n</code> 或用 stderr</strong>。</p>
+<h3>FILE 的生命周期</h3>
+<pre class="code" data-label="code"><code class="c">fopen(path, mode)
+   |
+   | 1. 调用 open(path, flags) 得到 fd
+   | 2. 分配 FILE 结构
+   | 3. 分配用户态缓冲区（默认 4KB）
+   | 4. 初始化读/写指针、标志
+   v
+FILE *（可用）
+   |
+   | fread/fwrite/fprintf/... 操作缓冲
+   v
+fclose(fp)
+   |
+   | 1. fflush：把缓冲区剩余数据 write 到 fd
+   | 2. close(fd)
+   | 3. 释放缓冲区
+   | 4. 释放 FILE 结构
+   v
+（fp 悬空，不可再用）
+</code></pre>
+<h3>fdopen：从 fd 创建流</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+
+int fd = open(&quot;data.txt&quot;, O_RDONLY);
+FILE *fp = fdopen(fd, &quot;r&quot;);   /* 把已打开的 fd 包装成 FILE * */
+/* fclose(fp) 会同时 close(fd) */
+</code></pre>
+<p><code class="c">fdopen</code> 把底层 fd 包装成 stdio 流，用于需要 stdio 接口但 fd 来自其他途径（socket、pipe、open 等）的场景。<strong><code class="c">fclose</code> 会关闭底层 fd</strong>，不要重复 close。</p>
+<h2>HFT 关联</h2>
+<h3>DPDK 绕过 stdio 的原因</h3>
+<pre class="code" data-label="C"><code class="c">/* stdio 路径：4 次拷贝 + 2 次系统调用 */
+应用 fwrite → stdio 缓冲 → write syscall → 内核页缓存 → 磁盘
+
+/* DPDK 路径：0 次系统调用，用户态直接操作网卡 */
+应用 rte_eth_rx_burst → 网卡环形队列（内存映射）→ 用户态缓冲
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>stdio</th>
+<th>DPDK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统调用</td>
+<td>每次 flush 一次</td>
+<td>零系统调用</td>
+</tr>
+<tr>
+<td>缓冲层</td>
+<td>用户态缓冲</td>
+<td>直接操作硬件</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>微秒级</td>
+<td>纳秒级</td>
+</tr>
+<tr>
+<td>吞吐</td>
+<td>受 syscall 限制</td>
+<td>受硬件限制</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>控制面、日志</td>
+<td>数据面报文</td>
+</tr>
+</tbody>
+</table></div>
+<p>DPDK 完全绕过 stdio 和内核网络栈，用用户态网卡驱动（PMD）直接操作硬件。<strong>这是 HFT 数据面的标准做法</strong>。</p>
+<h3>stderr 用于致命错误</h3>
+<pre class="code" data-label="C"><code class="c">#define LOG_FATAL(fmt, ...) do { \
+    fprintf(stderr, &quot;[FATAL %s:%d] &quot; fmt &quot;\n&quot;, \
+            __FILE__, __LINE__, ##__VA_ARGS__); \
+    fflush(stderr); \
+} while (0)
+
+LOG_FATAL(&quot;orderbook corrupted, seq=%lu&quot;, seq);
+exit(EXIT_FAILURE);
+</code></pre>
+<p>stderr 无缓冲，致命错误立即输出。<strong>即使后续 exit 触发 stdio 刷新，stderr 的内容也已先输出</strong>，不会因缓冲丢失。</p>
+<h3>stdout 重定向到文件时的缓冲变化</h3>
+<pre class="code" data-label="shell"><code class="c">./hft_app &gt; log.txt
+# stdout 指向文件，自动切换为全缓冲
+# 崩溃时缓冲区数据可能丢失
+
+./hft_app 2&gt;&amp;1 | tee log.txt
+# stdout 指向管道，全缓冲
+# tee 实时输出，但程序崩溃仍可能丢缓冲
+</code></pre>
+<p>HFT 生产环境日志建议：① 直接用文件 + <code class="c">fprintf</code> + 定期 <code class="c">fflush</code>；② 或用专门的日志线程 + 内存环形缓冲。<strong>不要依赖 stdout 重定向</strong>（缓冲行为不可控）。</p>
+<h3>自定义缓冲调优</h3>
+<pre class="code" data-label="C"><code class="c">/* 日志文件用大缓冲区减少 syscall */
+static char log_buf[64 * 1024];   /* 64KB 缓冲 */
+FILE *log_fp = fopen(&quot;hft.log&quot;, &quot;a&quot;);
+setvbuf(log_fp, log_buf, _IOFBF, sizeof(log_buf));
+/* fprintf 积累到 64KB 才一次 write syscall */
+</code></pre>
+<p><code class="c">setvbuf</code> 自定义缓冲区大小。大缓冲减少 syscall，但崩溃丢失更多数据。详见 15.13。</p>
+<h2>UB 边界</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>后果</th>
+<th>防护</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">FILE *</code> 未初始化使用</td>
+<td>野指针，崩溃</td>
+<td><code class="c">fopen</code> 后判空</td>
+</tr>
+<tr>
+<td><code class="c">fclose</code> 后用 <code class="c">FILE *</code></td>
+<td>UAF</td>
+<td><code class="c">fclose</code> 后置 NULL</td>
+</tr>
+<tr>
+<td>多线程并发用同一 <code class="c">FILE *</code></td>
+<td>数据竞争</td>
+<td>加锁或 <code class="c">flockfile</code></td>
+</tr>
+<tr>
+<td>直接操作 <code class="c">FILE</code> 内部字段</td>
+<td>实现相关，UB</td>
+<td>只通过公开 API 操作</td>
+</tr>
+<tr>
+<td>缓冲区指针越界</td>
+<td>内存损坏</td>
+<td>用 <code class="c">fread</code>/<code class="c">fwrite</code>，不手动操作缓冲</td>
+</tr>
+</tbody>
+</table></div>
+<h3>stdio 的线程安全</h3>
+<pre class="code" data-label="C"><code class="c">/* glibc 的 FILE 默认加锁 */
+fputs(&quot;hello\n&quot;, fp);   /* 内部自动加锁解锁 */
+
+/* 手动控制锁（减少重复加锁开销） */
+flockfile(fp);
+fputs(&quot;hello &quot;, fp);
+fputs(&quot;world\n&quot;, fp);
+funlockfile(fp);
+
+/* 不加锁版本（需外部保护） */
+fputs_unlocked(&quot;hello\n&quot;, fp);   /* 快但不安全 */
+</code></pre>
+<p>stdio 默认线程安全（内部锁），但锁开销在热路径显著。HFT 高频日志可用 <code class="c">_unlocked</code> 版本 + 外部锁，或每线程独立缓冲。</p>
+<h3>FILE 链表</h3>
+<pre class="code" data-label="C"><code class="c">/* glibc 维护所有打开的 FILE 链表 */
+/* exit() 时遍历链表 fflush 所有流 */
+/* _IO_list_all 是链表头 */
+</code></pre>
+<p><code class="c">exit</code> 通过遍历 FILE 链表刷新所有打开的流。这也是为什么 <code class="c">fclose</code> 会从链表移除——避免 exit 重复刷新已关闭的流。</p>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong>15.4.2 文件</strong>：<code class="c">fopen</code> 把文件绑定到流。</li>
+<li><strong>15.6 打开流</strong>：<code class="c">fopen</code> 模式详解。</li>
+<li><strong>15.13 改变缓冲方式</strong>：<code class="c">setvbuf</code> 调整缓冲模式。</li>
+<li><strong>15.14 流错误函数</strong>：<code class="c">ferror</code>/<code class="c">feof</code> 查询流状态。</li>
+<li><strong>ch18 运行时环境</strong>：用户态/内核态切换、系统调用机制。</li>
+</ul>
+<h2>口述自测题</h2>
+<ol>
+<li><code class="c">FILE *</code> 结构里封装了哪些组件？<strong>底层文件描述符存在哪里</strong>？读写位置指针有几个（读方向/写方向）？</li>
+<li>三个标准流 <code class="c">stdin</code>/<code class="c">stdout</code>/<code class="c">stderr</code> 分别是什么 fd？<strong>默认缓冲模式分别是什么</strong>？为什么 stderr 无缓冲？</li>
+<li>stdio 有哪三种缓冲模式？<strong>全缓冲、行缓冲、无缓冲分别什么时候 flush</strong>？stdout 指向终端和指向文件时，缓冲模式有什么不同？</li>
+<li><code class="c">printf("step 2")</code> 不含 <code class="c">\n</code>，程序崩溃后这条输出可能丢失。<strong>为什么</strong>？调试输出应该怎么写才能保证不丢？</li>
+<li>DPDK 为什么完全绕过 stdio？<strong>stdio 路径有几次拷贝和系统调用</strong>？DPDK 路径有什么不同？延迟从什么量级降到什么量级？</li>
+</ol>
+      </section>
+      <section class="section" id="s-15-4-2">
+        <div class="sec-head"><div class="sec-no">15.4</div><h2>.2 文件</h2></div>
+<h2>本节讲什么</h2>
+<p><strong>文件（file）</strong> 在 stdio 语境下是 <code class="c">fopen</code> 打开的路径对象——可以是磁盘文件、管道、设备、套接字。这一节给出文件与流的绑定关系、文本 vs 二进制的平台差异、<code class="c">fopen</code> 多次打开同一路径的行为，以及 HFT 工程里行情数据文件、pcap 文件的实际形态。</p>
+<p>认知锚点：「文件」是操作系统层面的概念，「流」是 stdio 层的抽象。一个文件可被多个流打开（各自独立），一个流可通过 <code class="c">freopen</code> 切换文件。理解这种分离，才能理解 <code class="c">fopen</code> 的语义和 stdio 的灵活性。</p>
+<h2>要点</h2>
+<h3>文件与流的绑定</h3>
+<pre class="code" data-label="C"><code class="c">FILE *fp = fopen(&quot;quote.dat&quot;, &quot;rb&quot;);
+/*  &quot;quote.dat&quot;  →  文件（操作系统对象）
+    fp           →  流（stdio 抽象）
+    fopen        →  把文件绑定到流 */
+</code></pre>
+<p><code class="c">fopen</code> 做两件事：</p>
+<ol>
+<li><strong>调用底层 <code class="c">open(path, flags)</code></strong> 得到文件描述符 fd。</li>
+<li><strong>分配 <code class="c">FILE</code> 结构</strong>，封装 fd + 缓冲 + 状态，返回 <code class="c">FILE *</code>。</li>
+</ol>
+<p>文件与流是多对多关系：</p>
+<pre class="code" data-label="C"><code class="c">/* 一个文件可被多个流打开 */
+FILE *fp1 = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+FILE *fp2 = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+/* fp1、fp2 各自独立，缓冲和读写位置不共享 */
+
+/* 一个流可切换文件 */
+freopen(&quot;new.txt&quot;, &quot;r&quot;, fp1);
+/* fp1 现在指向 new.txt，原 data.txt 的 fd 关闭 */
+</code></pre>
+<h3>文件的类型</h3>
+<p>stdio 的 <code class="c">fopen</code> 可以打开多种「文件」：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件类型</th>
+<th>路径示例</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>磁盘文件</td>
+<td><code class="c">/data/quote.dat</code></td>
+<td>普通文件</td>
+</tr>
+<tr>
+<td>设备文件</td>
+<td><code class="c">/dev/null</code>、<code class="c">/dev/urandom</code></td>
+<td>特殊设备</td>
+</tr>
+<tr>
+<td>命名管道</td>
+<td><code class="c">/tmp/mypipe</code></td>
+<td>FIFO，进程间通信</td>
+</tr>
+<tr>
+<td>套接字</td>
+<td>（需 <code class="c">fdopen</code>）</td>
+<td>网络通信</td>
+</tr>
+<tr>
+<td>符号链接</td>
+<td><code class="c">symlink -&gt; target</code></td>
+<td>跟随链接到目标</td>
+</tr>
+<tr>
+<td>/proc 文件</td>
+<td><code class="c">/proc/cpuinfo</code></td>
+<td>内核虚拟文件系统</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">FILE *null_fp = fopen(&quot;/dev/null&quot;, &quot;w&quot;);    /* 丢弃输出 */
+FILE *rand_fp = fopen(&quot;/dev/urandom&quot;, &quot;rb&quot;); /* 随机数 */
+FILE *cpu_fp = fopen(&quot;/proc/cpuinfo&quot;, &quot;r&quot;);  /* CPU 信息 */
+</code></pre>
+<p>所有这些都能用 stdio 接口操作——这是「文件」抽象的威力。</p>
+<h3>文本文件 vs 二进制文件</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>文本文件</th>
+<th>二进制文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内容</td>
+<td>可打印字符 + 换行</td>
+<td>任意字节</td>
+</tr>
+<tr>
+<td>换行</td>
+<td>平台相关（<code class="c">\n</code> / <code class="c">\r\n</code>）</td>
+<td>无换行概念</td>
+</tr>
+<tr>
+<td>打开模式</td>
+<td><code class="c">r</code>/<code class="c">w</code>/<code class="c">a</code></td>
+<td><code class="c">rb</code>/<code class="c">wb</code>/<code class="c">ab</code></td>
+</tr>
+<tr>
+<td>stdio 行为</td>
+<td>平台换行转换</td>
+<td>原样读写</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>配置、日志、源码</td>
+<td>行情数据、pcap、结构体</td>
+</tr>
+</tbody>
+</table></div>
+<h4>平台换行差异</h4>
+<pre class="code" data-label="code"><code class="c">Linux/macOS:   \n    (LF)
+Windows:       \r\n  (CRLF)
+旧 Mac:         \r    (CR)
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* 文本模式打开，Windows 上 fread 会把 \r\n 转成 \n */
+FILE *t = fopen(&quot;data.txt&quot;, &quot;r&quot;);    /* 文本模式 */
+
+/* 二进制模式打开，不转换 */
+FILE *b = fopen(&quot;data.dat&quot;, &quot;rb&quot;);   /* 二进制模式 */
+</code></pre>
+<p><strong>Linux 下 <code class="c">r</code> 和 <code class="c">rb</code> 行为相同</strong>（换行就是 <code class="c">\n</code>，无需转换）。<strong>Windows 下 <code class="c">r</code> 会把 <code class="c">\r\n</code> 转成 <code class="c">\n</code></strong>，破坏二进制数据。</p>
+<h3>跨平台统一用 <code class="c">b</code></h3>
+<pre class="code" data-label="C"><code class="c">/* 推荐：所有文件都用二进制模式打开 */
+FILE *fp = fopen(&quot;data.dat&quot;, &quot;rb&quot;);   /* 读二进制 */
+FILE *fp = fopen(&quot;log.txt&quot;, &quot;wb&quot;);    /* 写文本也用 wb */
+FILE *fp = fopen(&quot;config.cfg&quot;, &quot;rb&quot;); /* 读配置也用 rb */
+</code></pre>
+<p><strong>跨平台代码统一加 <code class="c">b</code></strong>，避免 Windows 换行转换破坏数据。Linux 下 <code class="c">b</code> 无影响，Windows 下保证二进制一致。HFT 工程强制 <code class="c">b</code> 模式。</p>
+<h3>文件大小与 ftell 技巧</h3>
+<pre class="code" data-label="C"><code class="c">/* 获取文件大小（二进制模式） */
+FILE *fp = fopen(&quot;quote.dat&quot;, &quot;rb&quot;);
+fseek(fp, 0, SEEK_END);
+long size = ftell(fp);
+rewind(fp);
+/* size 是文件字节数 */
+</code></pre>
+<p><strong>此技巧只在二进制模式可靠</strong>——文本模式下 <code class="c">ftell</code> 返回的值可能因换行转换而不准确。C 标准未保证 <code class="c">ftell</code> 对二进制流返回字节数，但 POSIX 保证。</p>
+<h3>文件描述符与 FILE 的对应</h3>
+<pre class="code" data-label="C"><code class="c">FILE *fp = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+int fd = fileno(fp);   /* 获取底层 fd */
+
+/* 反向：fd → FILE * */
+int fd = open(&quot;data.txt&quot;, O_RDONLY);
+FILE *fp = fdopen(fd, &quot;r&quot;);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">fileno(fp)</code></td>
+<td>获取 <code class="c">FILE *</code> 对应的 fd</td>
+</tr>
+<tr>
+<td><code class="c">fdopen(fd, mode)</code></td>
+<td>把 fd 包装成 <code class="c">FILE *</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">fdopen</code> 用于 fd 来自其他途径（socket、pipe）但想用 stdio 接口的场景。<strong><code class="c">fclose(fp)</code> 会同时关闭底层 fd</strong>，不要重复 close。</p>
+<h3>同一文件多次打开</h3>
+<pre class="code" data-label="C"><code class="c">FILE *fp1 = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+FILE *fp2 = fopen(&quot;data.txt&quot;, &quot;r&quot;);
+
+/* fp1 和 fp2 各自独立 */
+fgetc(fp1);   /* fp1 读第 1 字节 */
+fgetc(fp2);   /* fp2 读第 1 字节（独立位置） */
+
+/* 各自的缓冲不共享 */
+fclose(fp1);  /* 不影响 fp2 */
+</code></pre>
+<p>同一文件多次 <code class="c">fopen</code> 得到独立的流，各自有缓冲和读写位置。<strong>多线程读同一文件时，每线程独立 <code class="c">fopen</code> 比共享一个流更安全</strong>（避免锁竞争）。</p>
+<h2>HFT 关联</h2>
+<h3>行情数据文件</h3>
+<pre class="code" data-label="C"><code class="c">/* 行情数据用二进制文件存储，packed 结构 */
+#pragma pack(push, 1)
+struct quote_record {
+    uint64_t timestamp_ns;
+    uint32_t symbol_id;
+    uint32_t bid_price;
+    uint32_t bid_qty;
+    uint32_t ask_price;
+    uint32_t ask_qty;
+};
+#pragma pack(pop)
+
+_Static_assert(sizeof(struct quote_record) == 32, &quot;size mismatch&quot;);
+
+FILE *fp = fopen(&quot;market_20240101.dat&quot;, &quot;wb&quot;);
+struct quote_record rec = { ... };
+fwrite(&amp;rec, sizeof(rec), 1, fp);
+fclose(fp);
+</code></pre>
+<p>HFT 行情数据用 <code class="c">packed</code> 结构 + 二进制 <code class="c">fwrite</code>，保证跨平台字节布局一致。<code class="c">_Static_assert</code> 锁定大小，防止误改。</p>
+<h3>pcap 文件格式</h3>
+<pre class="code" data-label="C"><code class="c">/* pcap 全局头（24 字节） */
+#pragma pack(push, 1)
+struct pcap_hdr {
+    uint32_t magic_number;   /* 0xa1b2c3d4 */
+    uint16_t version_major;
+    uint16_t version_minor;
+    int32_t  thiszone;
+    uint32_t sigfigs;
+    uint32_t snaplen;
+    uint32_t network;
+};
+
+struct pcap_record_hdr {
+    uint32_t ts_sec;
+    uint32_t ts_usec;
+    uint32_t incl_len;
+    uint32_t orig_len;
+};
+#pragma pack(pop)
+
+FILE *fp = fopen(&quot;capture.pcap&quot;, &quot;rb&quot;);
+struct pcap_hdr hdr;
+fread(&amp;hdr, sizeof(hdr), 1, fp);
+
+struct pcap_record_hdr rec;
+while (fread(&amp;rec, sizeof(rec), 1, fp) == 1) {
+    char pkt_data[65535];
+    fread(pkt_data, rec.incl_len, 1, fp);
+    /* 解析报文 */
+}
+</code></pre>
+<p>pcap 是网络抓包标准格式，HFT 回放引擎常读 pcap 文件重现报文序列。二进制 <code class="c">fread</code> + packed 结构是标准读法。</p>
+<h3>历史行情索引文件</h3>
+<pre class="code" data-label="C"><code class="c">/* 索引文件：按 seq 跳转 */
+struct index_entry {
+    uint64_t seq;
+    uint64_t offset;   /* 在数据文件中的偏移 */
+};
+
+FILE *idx_fp = fopen(&quot;market.idx&quot;, &quot;rb&quot;);
+FILE *dat_fp = fopen(&quot;market.dat&quot;, &quot;rb&quot;);
+
+/* 按 seq 查找 */
+uint64_t target_seq = 12345;
+struct index_entry ie;
+while (fread(&amp;ie, sizeof(ie), 1, idx_fp) == 1) {
+    if (ie.seq == target_seq) {
+        fseek(dat_fp, ie.offset, SEEK_SET);
+        struct quote_record q;
+        fread(&amp;q, sizeof(q), 1, dat_fp);
+        break;
+    }
+}
+</code></pre>
+<p>历史行情回放按 seq 跳转，索引文件记录每个 seq 在数据文件中的偏移。<code class="c">fseek</code> + <code class="c">fread</code> 实现随机访问。</p>
+<h3>滚动日志文件</h3>
+<pre class="code" data-label="C"><code class="c">/* 日志按天滚动 */
+char path[256];
+time_t now = time(NULL);
+struct tm *tm = localtime(&amp;now);
+snprintf(path, sizeof(path), &quot;/var/log/hft_%04d%02d%02d.log&quot;,
+         tm-&gt;tm_year + 1900, tm-&gt;tm_mon + 1, tm-&gt;tm_mday);
+
+FILE *log_fp = fopen(path, &quot;a&quot;);   /* 追加模式 */
+setvbuf(log_fp, NULL, _IOLBF, 0);  /* 行缓冲，崩溃少丢 */
+</code></pre>
+<p>日志按天滚动，每天一个文件。<code class="c">a</code> 追加模式不覆盖旧日志。行缓冲保证每行 <code class="c">\n</code> 后落盘。</p>
+<h2>UB 边界</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>后果</th>
+<th>防护</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文本模式读二进制文件</td>
+<td>Windows 换行转换破坏数据</td>
+<td>统一用 <code class="c">rb</code>/<code class="c">wb</code></td>
+</tr>
+<tr>
+<td><code class="c">ftell</code> 在文本流</td>
+<td>返回值可能不准确</td>
+<td>用二进制模式 + <code class="c">fseek/ftell</code></td>
+</tr>
+<tr>
+<td><code class="c">fclose</code> 后用 <code class="c">FILE *</code></td>
+<td>UAF</td>
+<td><code class="c">fclose</code> 后置 NULL</td>
+</tr>
+<tr>
+<td>多个 <code class="c">FILE *</code> 写同一文件</td>
+<td>数据交错、覆盖</td>
+<td>用锁或单写者</td>
+</tr>
+<tr>
+<td><code class="c">fdopen</code> 后重复 close fd</td>
+<td>double close</td>
+<td><code class="c">fclose</code> 会关 fd，不要手动 close</td>
+</tr>
+<tr>
+<td>打开已删除文件（Linux）</td>
+<td>仍可读写，直到所有 fd 关闭</td>
+<td>理解 Linux unlink 语义</td>
+</tr>
+</tbody>
+</table></div>
+<h3>Linux 的 unlink 语义</h3>
+<pre class="code" data-label="C"><code class="c">FILE *fp = fopen(&quot;data.txt&quot;, &quot;w&quot;);
+remove(&quot;data.txt&quot;);   /* unlink */
+/* 文件已从目录删除，但 fp 仍可读写 */
+/* 直到 fclose，inode 才真正释放 */
+fprintf(fp, &quot;still works\n&quot;);   /* 成功 */
+fclose(fp);
+</code></pre>
+<p>Linux 下 <code class="c">unlink</code> 只删除目录项，若仍有进程打开该文件，inode 保留到所有 fd 关闭。这一特性用于临时文件安全（<code class="c">tmpfile</code> 利用此机制）。</p>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong>15.4.1 流</strong>：<code class="c">FILE *</code> 结构与缓冲机制。</li>
+<li><strong>15.6 打开流</strong>：<code class="c">fopen</code> 模式详解。</li>
+<li><strong>15.11 二进制 I/O</strong>：<code class="c">fread</code>/<code class="c">fwrite</code> 与 packed 结构。</li>
+<li><strong>15.16 文件操纵函数</strong>：<code class="c">remove</code>/<code class="c">rename</code> 与日志轮转。</li>
+</ul>
+<h2>口述自测题</h2>
+<ol>
+<li><code class="c">fopen("data.txt", "r")</code> 和 <code class="c">fopen("data.txt", "rb")</code> 在 Linux 和 Windows 上分别有什么区别？<strong>为什么跨平台代码统一用 <code class="c">b</code></strong>？</li>
+<li>同一文件被 <code class="c">fopen</code> 两次，得到两个 <code class="c">FILE *</code>。<strong>这两个流的缓冲和读写位置共享吗</strong>？多线程读同一文件，应该共享一个流还是各自 <code class="c">fopen</code>？</li>
+<li><code class="c">ftell</code> 获取文件大小的技巧（<code class="c">fseek(SEEK_END) + ftell + rewind</code>）为什么只在二进制模式可靠？<strong>文本模式下 <code class="c">ftell</code> 返回值可能有什么问题</strong>？</li>
+<li><code class="c">fdopen(fd, mode)</code> 把已打开的 fd 包装成 <code class="c">FILE *</code>。<strong><code class="c">fclose(fp)</code> 会关闭底层 fd 吗</strong>？为什么不要手动 close fd？</li>
+<li>Linux 下 <code class="c">remove("data.txt")</code> 后，已打开该文件的 <code class="c">FILE *</code> 仍可读写。<strong>这是为什么</strong>？<code class="c">tmpfile</code> 如何利用这一特性实现「fclose 后自动删除」？</li>
 </ol>
       </section>
       <section class="section" id="s-15-5">

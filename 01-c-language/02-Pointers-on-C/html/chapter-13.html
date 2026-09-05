@@ -278,6 +278,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-13-1"><span class="n">13.1</span>进一步探讨指向指针的指针</a>
           <a href="#s-13-2"><span class="n">13.2</span>高级声明</a>
+          <a href="#s-13-3"><span class="n">13.3</span>函数指针</a>
+          <a href="#s-13-3-1"><span class="n">13.3.1</span>回调函数</a>
+          <a href="#s-13-3-2"><span class="n">13.3.2</span>转移表</a>
           <a href="#s-13-4"><span class="n">13.4</span>命令行参数</a>
           <a href="#s-13-5"><span class="n">13.5</span>字符串常量</a>
           <a href="#quiz"><span class="n">★</span>章节自测</a>
@@ -314,7 +317,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Kenneth Reek · 指针与 C 精读</div>
           <h1>第 13 章 高级指针话题</h1>
           <div class="meta">
-<span>book <b>01-c-language · 02-Pointers-on-C</b></span><span>chapter <b>Ch 13</b></span><span>sections <b>5</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>01-c-language · 02-Pointers-on-C</b></span><span>chapter <b>Ch 13</b></span><span>sections <b>8</b></span><span>quiz <b>yes</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -855,6 +858,990 @@ if (cb) cb(args);             /* 调用前判空 */
 <li>为什么工业代码强制要求函数指针必须 typedef？<strong>裸声明有哪些具体危害</strong>？typedef 在修改签名时的成本优势体现在哪里？</li>
 <li>Linux <code class="c">struct file_operations</code> 的字段 <code class="c">.read = my_read</code> 是什么初始化语法？未指定的字段默认是什么值？内核 VFS 层调用时如何处理这些默认值？</li>
 <li>C 标准不保证函数指针能转 <code class="c">void *</code> 再转回来，<strong>为什么</strong>？POSIX 为什么强制要求可以？<code class="c">dlsym</code> 返回 <code class="c">void *</code> 这种设计在哈佛建筑架构（哈佛架构）上会有什么问题？</li>
+</ol>
+      </section>
+      <section class="section" id="s-13-3">
+        <div class="sec-head"><div class="sec-no">13.3</div><h2>函数指针</h2></div>
+<h2>本节讲什么</h2>
+<p>函数指针是 C 实现<strong>运行时多态</strong>的唯一通用机制——把「调哪个函数」从编译期推迟到运行期。这一节给出函数指针的声明、调用、typedef 封装的完整模板，以及它在数据面分发、驱动表、回调机制里的三大实战形态。</p>
+<p>认知锚点：函数指针本身只是「存函数入口地址的变量」，但它的<strong>工程意义远超语法</strong>。Linux VFS 的 <code class="c">file_operations</code>、DPDK 的 <code class="c">eth_dev_ops</code>、glibc 的 <code class="c">qsort</code>、nginx 的模块链——所有 C 写的大型框架都用函数指针做扩展点。看不懂函数指针，就读不懂 C 工程的「多态」。</p>
+<h2>要点</h2>
+<h3>从零理解：函数指针是什么</h3>
+<p><strong>普通指针</strong>：存数据变量的内存地址（<code class="c">int</code>、<code class="c">char</code>、结构体）。
+<strong>函数指针</strong>：存函数的内存地址。</p>
+<p>C 语言里，函数本身也放在内存<strong>代码段（.text）</strong>，它也有地址，可以存到指针变量里。</p>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+
+int add(int a, int b)
+{
+    return a + b;
+}
+
+/* fp：函数指针变量，只能存&quot;返回int、接收两个int&quot;的函数 */
+int (*fp)(int, int);
+
+int main(void)
+{
+    fp = add;           /* 把add的地址赋给fp，不用写&amp; */
+    int res = fp(3,5);  /* 通过函数指针调用，等价 add(3,5) */
+    printf(&quot;%d\n&quot;, res);
+    return 0;
+}
+</code></pre>
+<p><strong>关键易错点——括号不能少：</strong></p>
+<pre class="code" data-label="C"><code class="c">int *p(int a, int b);   /* 这是返回 int* 的函数声明，不是函数指针！ */
+int (*p)(int a, int b); /* p 才是函数指针 */
+</code></pre>
+<p><strong>typedef 封装</strong>（函数指针是 C 里唯一不写 typedef 基本没法维护的场景）：</p>
+<pre class="code" data-label="C"><code class="c">typedef int (*fp_t)(int, int);
+fp_t fp;                /* 等价 int (*fp)(int, int); */
+</code></pre>
+<p><code class="c">fp_t</code> 不是变量，是<strong>函数指针类型</strong>——就像 <code class="c">int</code> 是整数类型。qsort 不知道你要怎么比较数据，它把比较逻辑写死在库里；你写比较函数，把函数地址通过函数指针传进去，qsort 内部回调你的逻辑——这就是<strong>回调函数</strong>，函数指针最大的现实用途。</p>
+<h3>声明与调用</h3>
+<pre class="code" data-label="C"><code class="c">int add(int x, int y) { return x + y; }
+
+int (*calc)(int, int);    /* 函数指针变量 */
+calc = add;               /* 函数名退化为函数指针 */
+int res = calc(3, 5);     /* 等价 add(3, 5) */
+int res2 = (*calc)(3, 5); /* 显式解引用，等价 */
+</code></pre>
+<p><strong>函数名退化为函数指针</strong>与数组名退化为指针同构（见 ch08）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th>类型</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">add</code></td>
+<td><code class="c">int (*)(int, int)</code></td>
+<td>函数首地址</td>
+</tr>
+<tr>
+<td><code class="c">&amp;add</code></td>
+<td><code class="c">int (*)(int, int)</code></td>
+<td>同上（函数无「整体」概念）</td>
+</tr>
+<tr>
+<td><code class="c">add(3, 5)</code></td>
+<td><code class="c">int</code></td>
+<td>调用</td>
+</tr>
+<tr>
+<td><code class="c">calc = add</code></td>
+<td>赋值</td>
+<td>函数指针赋值</td>
+</tr>
+<tr>
+<td><code class="c">calc(3, 5)</code></td>
+<td><code class="c">int</code></td>
+<td>间接调用</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">add</code> 与 <code class="c">&amp;add</code> 在函数语境下等价（不像数组 <code class="c">arr</code> 与 <code class="c">&amp;arr</code> 类型不同），这是 C 标准的特例。</p>
+<h3>标准依据：函数指示符转换（与数组退化平行）</h3>
+<p>C11 §6.3.2.1p4：<strong>函数指示符</strong>（function designator，具有函数类型的表达式）除了作为 <code class="c">sizeof</code>、<code class="c">&amp;</code> 的操作数外，转换为指向函数的指针。这与数组退化（§6.3.2.1p3）是完全平行的机制——不是"函数名隐式取地址"，是标准规定的类型转换。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th>转换路径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">add</code>（函数指示符）</td>
+<td>→ <code class="c">int (*)(int, int)</code>（函数指针）</td>
+</tr>
+<tr>
+<td><code class="c">&amp;add</code></td>
+<td>不转换，<code class="c">&amp;</code> 直接得函数指针</td>
+</tr>
+<tr>
+<td><code class="c">*fp</code>（解引用函数指针）</td>
+<td>得函数类型 → 右值上下文又转回函数指针（循环）</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 <code class="c">fp = add</code> 和 <code class="c">fp = &amp;add</code> 等价——不是"两种写法效果一样"，是<strong>标准保证它们是同一个东西</strong>。</p>
+<p><strong>调用时为什么不用显式 <code class="c">*</code></strong>：C11 §6.5.2.2p1 规定函数调用表达式里，代表被调用函数的部分可以是函数类型<strong>或</strong>指向函数的指针；如果是指针，自动解引用。因此三种写法全部合法且等价：</p>
+<pre class="code" data-label="C"><code class="c">fp(3, 5);        /* 指针 → 自动解引用 → 调用 */
+(*fp)(3, 5);     /* 解引用得函数类型 → 直接调用 */
+(**fp)(3, 5);    /* *fp 又转回指针 → 再自动解引用（合法但没必要） */
+</code></pre>
+<p>"解引用函数指针"和"函数指示符转指针"互相抵消，这就是函数指针调用不像数据指针那样需要显式 <code class="c">*</code> 的原因。</p>
+<h3>底层视角：函数指针里到底存了什么</h3>
+<p>函数地址是<strong>代码段里函数第一条机器指令的地址</strong>：</p>
+<pre class="code" data-label="code"><code class="c">.text 段（x86-64 示意）:
+0x401000:  push   rbp          ← add 函数入口，add = 0x401000
+0x401001:  mov    rbp, rsp
+0x401004:  mov    edx, edi
+0x401006:  add    edx, esi
+...
+</code></pre>
+<p><code class="c">fp = add</code> 后，<code class="c">fp</code> 的值就是 <code class="c">0x401000</code>。<code class="c">fp(3,5)</code> 编译成一条 <strong><code class="c">call</code> 指令</strong>，operand 是 <code class="c">fp</code> 里存的地址——CPU 跳过去执行。</p>
+<p><strong>与普通数据指针的唯一本质区别</strong>：数据指针指向数据段（可读可写），函数指针指向代码段（只读，写就 segfault）。<code class="c">*fp = 42</code> 是内存保护违例——这也解释了为什么不能给函数类型赋值（见下方 Quiz）。</p>
+<p><strong>速判 Quiz：</strong></p>
+<pre class="code" data-label="C"><code class="c">void hello(void) {}
+void (*f)(void);
+/* 哪条是把 hello 的地址存进 f？ */
+/* A. f = hello;      */
+/* B. *f = hello;     */
+</code></pre>
+<details>
+<summary>答案</summary>
+<p>A 正确：<code class="c">hello</code> 是函数指示符 → 转换为函数指针 → 赋值给 <code class="c">f</code>，类型匹配。</p>
+<p>B 错误：<code class="c">*f</code> 解引用函数指针得到<strong>函数类型</strong> <code class="c">void(void)</code>。函数类型不能作为赋值左值——转换只发生在右值上下文（读取值时），<code class="c">*f = hello</code> 里 <code class="c">*f</code> 在左值位置不发生转换，保持函数类型，约束违反。函数既不是对象也不是可修改的左值。</p>
+</details>
+<h3>typedef：强制规范</h3>
+<pre class="code" data-label="C"><code class="c">/* 错误示范：裸函数指针 */
+void register_cb(int (*cb)(int, void *));
+
+/* 正确：typedef */
+typedef int (*event_cb_t)(int, void *);
+void register_cb(event_cb_t cb);
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* DPDK 报文处理函数类型 */
+typedef void (*pkt_handler_t)(struct rte_mbuf *pkt);
+
+pkt_handler_t handler = process_quote;
+handler(mbuf);
+</code></pre>
+<p>typedef 的好处：① 可读性（名字即语义）；② 修改签名一处生效；③ 编译错误信息清晰；④ 团队强制规范。详见 13.2。</p>
+<h3>函数指针数组（分发器模式）</h3>
+<pre class="code" data-label="C"><code class="c">typedef void (*pkt_handler_t)(struct rte_mbuf *pkt);
+
+static pkt_handler_t pkt_dispatch[] = {
+    process_heartbeat,   /* type 0 */
+    process_quote,       /* type 1 */
+    process_order,       /* type 2 */
+    process_cancel,      /* type 3 */
+};
+
+void on_packet(struct rte_mbuf *mbuf, uint8_t type)
+{
+    if (type &lt; sizeof(pkt_dispatch) / sizeof(pkt_dispatch[0]))
+        pkt_dispatch[type](mbuf);   /* O(1) 间接跳转 */
+}
+</code></pre>
+<p>这是<strong>转移表（jump table）</strong>模式，详见 13.3.2。核心优势：</p>
+<ol>
+<li><strong>O(1) 分发</strong>：一次数组索引 + 一次间接调用。</li>
+<li><strong>分支预测友好</strong>：固定索引的间接跳转，CPU 分支预测器可学习。</li>
+<li><strong>表驱动扩展</strong>：新增类型只需加表项，不改分发逻辑。</li>
+</ol>
+<p>对比 <code class="c">if-else if</code> 链：平均要 n/2 次比较，分支预测失败率高，HFT 数据面不可接受。</p>
+<h3>内核 file_operations 风格</h3>
+<pre class="code" data-label="C"><code class="c">struct file_operations {
+    ssize_t (*read)(struct file *, char __user *, size_t, loff_t *);
+    ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
+    int (*open)(struct inode *, struct file *);
+    int (*release)(struct inode *, struct file *);
+    long (*unlocked_ioctl)(struct file *, unsigned int, unsigned long);
+    /* ... */
+};
+
+static const struct file_operations my_fops = {
+    .read    = my_read,
+    .write   = my_write,
+    .open    = my_open,
+    .release = my_release,
+};
+</code></pre>
+<p>设计要点：</p>
+<ul>
+<li><strong>结构体里全是函数指针</strong>：每个字段是一个「操作槽位」。</li>
+<li><strong>指定初始化（C99）</strong>：<code class="c">.read = my_read</code> 只填关心的字段，其余默认 NULL。</li>
+<li><strong>VFS 层调用时判空</strong>：<code class="c">if (fops-&gt;read) fops-&gt;read(...)</code>，未实现的操作返回 <code class="c">-ENOSYS</code>。</li>
+<li><strong><code class="c">const</code> 修饰</strong>：操作表只读，放 <code class="c">.rodata</code>，多进程共享一份物理页。</li>
+</ul>
+<p>这是 C 实现「接口 + 实现」分离的标准范式。DPDK <code class="c">eth_dev_ops</code>、<code class="c">rte_mempool_ops</code>、nginx <code class="c">ngx_module_t</code> 全部沿用。</p>
+<h3>函数指针的存储与对齐</h3>
+<pre class="code" data-label="C"><code class="c">sizeof(handler_fn_t) = 8;   /* x86-64，与数据指针同宽 */
+</code></pre>
+<p>x86-64 上函数指针与数据指针都是 8 字节，但对齐要求可能不同（函数地址通常 16 字节对齐，<code class="c">-falign-functions</code>）。函数指针数组在 cache 上的表现：每个槽位 8 字节，8 个槽位占一个 cache 行，索引访问高效。</p>
+<h2>HFT 关联</h2>
+<h3>PMD 驱动表</h3>
+<p>DPDK 物理网卡轮询驱动（PMD）的核心结构：</p>
+<pre class="code" data-label="C"><code class="c">struct eth_dev_ops {
+    eth_dev_configure_t           dev_configure;
+    eth_dev_start_t               dev_start;
+    eth_dev_stop_t                dev_stop;
+    eth_rx_queue_setup_t          rx_queue_setup;
+    eth_tx_queue_setup_t          tx_queue_setup;
+    eth_link_update_t             link_update;
+    /* ... */
+};
+</code></pre>
+<p>不同厂商（Intel、Mellanox、Netcope）各提供一份 <code class="c">eth_dev_ops</code> 实例。DPDK 框架代码只调用函数指针，<strong>不知道也不关心底层硬件</strong>——这是 C 多态的极致体现。HFT 团队自研 FPGA 网卡驱动时，只需实现这套函数指针表即可接入 DPDK 框架。</p>
+<h3>策略回调</h3>
+<pre class="code" data-label="C"><code class="c">typedef int (*strategy_on_quote_t)(struct strategy *, const struct quote *);
+typedef int (*strategy_on_trade_t)(struct strategy *, const struct trade *);
+
+struct strategy {
+    const char                *name;
+    strategy_on_quote_t        on_quote;
+    strategy_on_trade_t        on_trade;
+    void                      *priv;
+};
+</code></pre>
+<p>策略模块以 <code class="c">.so</code> 形式 <code class="c">dlopen</code> 加载，通过 <code class="c">dlsym</code> 拿到 <code class="c">struct strategy *</code>。策略切换不停机——换函数指针即可。<strong>热加载的核心机制就是函数指针</strong>。</p>
+<h3>qsort 与比较函数</h3>
+<pre class="code" data-label="C"><code class="c">typedef int (*cmp_fn_t)(const void *, const void *);
+
+void sort_orders(struct order *arr, size_t n, cmp_fn_t cmp)
+{
+    qsort(arr, n, sizeof(*arr), cmp);
+}
+
+/* 按价格升序 */
+int cmp_price_asc(const void *a, const void *b) {
+    return ((const struct order *)a)-&gt;price - ((const struct order *)b)-&gt;price;
+}
+</code></pre>
+<p><code class="c">qsort</code> 是 C 标准库最经典的函数指针应用。HFT 场景下排序不常用（数据面追求 O(1)），但在初始化、风控批量处理时仍有用。</p>
+<h3>间接调用的性能代价</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用形式</th>
+<th>延迟（x86-64，大致量级）</th>
+<th>分支预测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>直接调用 <code class="c">add(a,b)</code></td>
+<td>1-2 ns</td>
+<td>100% 准确</td>
+</tr>
+<tr>
+<td>内联后</td>
+<td>0 ns（指令融合）</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td>间接调用 <code class="c">(*fp)(a,b)</code></td>
+<td>2-4 ns</td>
+<td>70-95%（依赖历史）</td>
+</tr>
+<tr>
+<td>间接跳转（转移表）</td>
+<td>3-5 ns</td>
+<td>BTB 学习</td>
+</tr>
+</tbody>
+</table></div>
+<p>间接调用的开销主要在<strong>分支预测失败</strong>：CPU 不知道下一条指令地址，必须等取指完成。现代 CPU 有 BTB（Branch Target Buffer）学习历史，但策略变化时仍会预测失败，导致流水线冲刷 10-20 周期。HFT 数据面优化：</p>
+<ol>
+<li><strong>PGO</strong>：让编译器基于 profile 优化间接跳转。</li>
+<li><strong>手工展开热点</strong>：高频类型单独 if-else，低频走转移表。</li>
+<li><strong><code class="c">__builtin_expect</code> / <code class="c">likely</code>/<code class="c">unlikely</code></strong>：辅助分支预测。</li>
+</ol>
+<h2>UB 边界</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>后果</th>
+<th>防护</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未初始化的函数指针调用</td>
+<td>跳野地址，崩溃或执行任意代码</td>
+<td><code class="c">= NULL</code> 初始化，调用前判空</td>
+</tr>
+<tr>
+<td>赋值不同签名函数</td>
+<td>栈帧错乱，UB</td>
+<td>typedef 锁定签名，编译器 <code class="c">-Werror=incompatible-pointer-types</code></td>
+</tr>
+<tr>
+<td>函数指针与数据指针互转</td>
+<td>哈佛架构不兼容</td>
+<td>不要互转，POSIX 场景才用 <code class="c">void *</code> 中转</td>
+</tr>
+<tr>
+<td><code class="c">NULL</code> 函数指针调用</td>
+<td>UB，可能跳 0 地址</td>
+<td><code class="c">if (cb) cb(...)</code> 判空</td>
+</tr>
+<tr>
+<td>释放含函数指针的结构后调用</td>
+<td>UAF</td>
+<td>free 后置 NULL</td>
+</tr>
+<tr>
+<td>通过 <code class="c">dlsym</code> 拿到 <code class="c">void *</code> 不强转直接调用</td>
+<td>编译错误</td>
+<td>强转到正确函数指针类型</td>
+</tr>
+</tbody>
+</table></div>
+<h3>不同签名赋值的危险</h3>
+<pre class="code" data-label="C"><code class="c">typedef int (*cb_t)(int);
+void f(long x);            /* 签名不同 */
+
+cb_t cb = (cb_t)f;         /* 强转，编译通过 */
+cb(42);                    /* UB：f 期望 long，收到 int 的位模式 */
+</code></pre>
+<p>强转能绕过编译器检查，但<strong>行为未定义</strong>。x86-64 上 <code class="c">int</code> 和 <code class="c">long</code> 都在寄存器传参，碰巧能跑，但 ARM、RISC-V 上参数传递规则不同，立刻崩。<code class="c">-Werror=incompatible-pointer-types</code> 把这类隐患堵死在编译期。</p>
+<h3><code class="c">dlsym</code> 的强制转换</h3>
+<pre class="code" data-label="C"><code class="c">void *sym = dlsym(handle, &quot;my_function&quot;);
+my_fn_t fn = *(my_fn_t *)&amp;sym;   /* 严格别名安全 */
+/* 或 POSIX 风格 */
+my_fn_t fn = (my_fn_t)sym;       /* POSIX 允许，C 标准不允许 */
+</code></pre>
+<p>C 标准不允许 <code class="c">void *</code> 转函数指针，POSIX 强制允许（为了 <code class="c">dlsym</code>）。可移植代码用 union 或 memcpy 桥接，工程代码直接强转。</p>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong>13.3.1 回调函数</strong>：函数指针 + <code class="c">void *priv</code> 的解耦设计。</li>
+<li><strong>13.3.2 转移表</strong>：函数指针数组的分发器模式深入。</li>
+<li><strong>ch07 函数</strong>：函数原型、调用约定、栈帧的基础。</li>
+<li><strong>ch11 动态内存</strong>：含函数指针结构的释放顺序。</li>
+<li><strong>ch14 预处理</strong>：宏生成函数指针表、<code class="c">X-macro</code> 技巧。</li>
+<li><strong>ch17 经典 ADT</strong>：基于函数指针的通用容器回调。</li>
+</ul>
+<h2>口述自测题</h2>
+<ol>
+<li><code class="c">add</code> 和 <code class="c">&amp;add</code> 在函数语境下<strong>是否等价</strong>？这与数组 <code class="c">arr</code> 和 <code class="c">&amp;arr</code> 的关系有什么不同？为什么函数没有「整体」概念？</li>
+<li>函数指针数组 <code class="c">pkt_dispatchtype</code> 的分发是 O(1)，对比 <code class="c">if-else if</code> 链平均 O(n/2)。<strong>间接跳转的分支预测</strong>为什么比 <code class="c">if-else</code> 更可控？CPU 的 BTB 是怎么学习的？</li>
+<li>Linux <code class="c">struct file_operations</code> 为什么用 <code class="c">const</code> 修饰？放 <code class="c">.rodata</code> 段有什么好处？多进程共享同一份驱动代码时，物理页是怎么节省的？</li>
+<li><code class="c">cb_t cb = (cb_t)f;</code> 把不同签名的函数强转赋值，<strong>为什么是 UB</strong>？x86-64 上「碰巧能跑」的原因是什么？ARM 上为什么会立刻崩？</li>
+<li><code class="c">dlsym</code> 返回 <code class="c">void *</code>，但 C 标准不允许 <code class="c">void *</code> 转函数指针。<strong>POSIX 为什么强制允许</strong>？可移植代码应该怎么写才能既兼容 C 标准又使用 <code class="c">dlsym</code>？</li>
+</ol>
+      </section>
+      <section class="section" id="s-13-3-1">
+        <div class="sec-head"><div class="sec-no">13.3</div><h2>.1 回调函数</h2></div>
+<h2>本节讲什么</h2>
+<p>回调（callback）的本质是<strong>「调用方把函数指针交给被调用方，由被调用方在合适时机反向调用」</strong>。这一节给出回调机制的三大要素——<strong>typedef 函数指针 + <code class="c">void *priv</code> 私有数据 + 注册/触发分离</strong>——以及它在 DPDK、内核、事件引擎里的标准范式。</p>
+<p>认知锚点：回调不是语法糖，而是<strong>解耦设计的核心工具</strong>。它让框架代码（被调用方）无需知道业务逻辑（调用方传入的函数），实现「控制反转」。C 没有闭包，<code class="c">void *priv</code> 就是闭包捕获状态的等价物——这是 C 工程师必须建立的思维模型。</p>
+<h2>要点</h2>
+<h3>回调三要素</h3>
+<pre class="code" data-label="C"><code class="c">/* 1. typedef 函数指针 */
+typedef void (*event_cb_t)(uint32_t event_type, void *priv);
+
+/* 2. void *priv 私有数据 */
+struct event_mgr {
+    event_cb_t  cb;
+    void       *priv_data;
+};
+
+/* 3. 注册 / 触发分离 */
+void event_register(struct event_mgr *mgr, event_cb_t cb, void *priv)
+{
+    mgr-&gt;cb        = cb;
+    mgr-&gt;priv_data = priv;
+}
+
+void event_trigger(struct event_mgr *mgr, uint32_t type)
+{
+    if (mgr-&gt;cb)                          /* 判空再调 */
+        mgr-&gt;cb(type, mgr-&gt;priv_data);    /* 把 priv 回传 */
+}
+</code></pre>
+<p>三个要素缺一不可：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要素</th>
+<th>作用</th>
+<th>缺失后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>typedef 函数指针</td>
+<td>锁定回调签名</td>
+<td>签名漂移，UB</td>
+</tr>
+<tr>
+<td><code class="c">void *priv</code></td>
+<td>传递上下文状态</td>
+<td>回调拿不到业务数据，闭包失效</td>
+</tr>
+<tr>
+<td>注册/触发分离</td>
+<td>解耦「谁调」与「何时调」</td>
+<td>强耦合，无法复用框架</td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">void *priv</code> 的闭包语义</h3>
+<p>C 没有闭包，但 <code class="c">void *priv</code> 等价于「闭包捕获的状态」。回调函数收到 <code class="c">priv</code> 后强转回真实类型，访问业务数据：</p>
+<pre class="code" data-label="C"><code class="c">struct order_ctx {
+    uint64_t  user_id;
+    uint32_t  max_qty;
+    FILE     *log;
+};
+
+static void on_quote_arrived(uint32_t type, void *priv)
+{
+    struct order_ctx *ctx = priv;            /* 强转回真实类型 */
+    if (ctx-&gt;max_qty &gt; 0) {
+        fprintf(ctx-&gt;log, &quot;quote type=%u user=%lu\n&quot;,
+                type, ctx-&gt;user_id);
+        /* ... 下单逻辑 ... */
+    }
+}
+
+/* 注册 */
+struct order_ctx ctx = { .user_id = 42, .max_qty = 100, .log = stderr };
+event_register(&amp;mgr, on_quote_arrived, &amp;ctx);
+</code></pre>
+<p><code class="c">priv</code> 是 <code class="c">void *</code>，框架代码完全不知道它指向什么——这就是<strong>类型擦除</strong>。回调函数自己负责强转回正确类型，类型约定由注册方和回调方私下保证。</p>
+<h3>判空再调：工程铁律</h3>
+<pre class="code" data-label="C"><code class="c">if (mgr-&gt;cb) mgr-&gt;cb(type, mgr-&gt;priv_data);
+</code></pre>
+<p>未注册回调时 <code class="c">cb == NULL</code>，直接调用 <code class="c">NULL(type, priv)</code> 是 UB，通常崩溃但<strong>不保证</strong>——某些平台可能跳到 0 地址执行。判空是工程铁律，所有框架代码必须遵守。</p>
+<h3>释放回调：函数指针 + <code class="c">void *</code></h3>
+<pre class="code" data-label="C"><code class="c">typedef void (*free_cb_t)(void *obj);
+
+void pool_destroy(void **list, int cnt, free_cb_t free_func)
+{
+    if (!free_func) {                /* 允许调用方不提供 */
+        free(list);
+        return;
+    }
+    for (int i = 0; i &lt; cnt; i++)
+        free_func(list[i]);          /* 调用方决定怎么释放 */
+    free(list);
+}
+
+/* 调用方提供释放函数 */
+static void order_free_cb(void *obj) {
+    struct order *o = obj;
+    free(o-&gt;payload);
+    free(o);
+}
+</code></pre>
+<p><code class="c">free_cb_t</code> 让 <code class="c">pool_destroy</code> 不需要知道元素是什么类型——调用方传入 <code class="c">order_free_cb</code>，框架代码通用。<strong>这是 C 实现泛型容器的核心机制</strong>，详见 ch17。</p>
+<h3>多回调链表</h3>
+<pre class="code" data-label="C"><code class="c">struct listener {
+    event_cb_t      cb;
+    void           *priv;
+    struct listener *next;
+};
+
+struct event_mgr {
+    struct listener *head;
+};
+
+void event_notify_all(struct event_mgr *mgr, uint32_t type)
+{
+    for (struct listener *l = mgr-&gt;head; l; l = l-&gt;next) {
+        if (l-&gt;cb)
+            l-&gt;cb(type, l-&gt;priv);
+    }
+}
+</code></pre>
+<p>观察者模式的标准实现：多个监听者挂链表，事件触发时遍历调用。注意遍历中删除监听者要用 safe 版本（见 ch12.3.2）。</p>
+<h3>回调签名的设计原则</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>原则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>入参明确</td>
+<td>回调需要的状态都通过参数传，不依赖全局变量</td>
+</tr>
+<tr>
+<td><code class="c">void *priv</code> 最后</td>
+<td>约定俗成，priv 作为「捕获状态」放最后</td>
+</tr>
+<tr>
+<td>返回值统一</td>
+<td>成功/失败码或 void，框架据此决定是否继续</td>
+</tr>
+<tr>
+<td>线程安全声明</td>
+<td>文档说明回调在哪个线程触发，调用方负责同步</td>
+</tr>
+</tbody>
+</table></div>
+<h2>HFT 关联</h2>
+<h3>DPDK mempool 钩子</h3>
+<pre class="code" data-label="C"><code class="c">struct rte_mempool {
+    /* ... */
+    rte_mempool_ctor_t  *ctor;   /* 对象初始化钩子 */
+    void                *ctor_arg;
+};
+</code></pre>
+<p>mempool 分配新对象时调用 <code class="c">ctor(obj, ctor_arg)</code>，让调用方自定义初始化逻辑（例如填充订单号、时间戳）。这是回调 + <code class="c">void *</code> 的典型应用——mempool 框架代码通用，业务初始化由回调决定。</p>
+<h3>订单事件回调</h3>
+<pre class="code" data-label="C"><code class="c">typedef enum {
+    EVENT_ORDER_NEW,
+    EVENT_ORDER_ACK,
+    EVENT_ORDER_FILLED,
+    EVENT_ORDER_CANCELLED,
+    EVENT_ORDER_REJECTED,
+} order_event_t;
+
+typedef void (*order_cb_t)(order_event_t evt,
+                            const struct order *o,
+                            void *priv);
+
+struct order_engine {
+    order_cb_t  callbacks[5];   /* 每种事件一个回调槽 */
+    void       *privs[5];
+};
+
+void order_engine_dispatch(struct order_engine *e,
+                           order_event_t evt,
+                           const struct order *o)
+{
+    if (e-&gt;callbacks[evt])
+        e-&gt;callbacks[evt](evt, o, e-&gt;privs[evt]);
+}
+</code></pre>
+<p>这是<strong>转移表 + 回调</strong>的混合形态：事件类型作数组索引取回调，再调用。风控、日志、统计模块各自注册关心的回调，订单引擎只负责分发，不知道谁在监听。</p>
+<h3>定时器回调</h3>
+<pre class="code" data-label="C"><code class="c">typedef void (*timer_cb_t)(void *priv);
+
+struct timer {
+    uint64_t    expire_ns;
+    timer_cb_t  cb;
+    void       *priv;
+    struct list_head link;
+};
+</code></pre>
+<p>定时器到期时调用 <code class="c">cb(priv)</code>，<code class="c">priv</code> 携带定时器关联的业务上下文（订单号、检查点等）。这是 HFT 定时器轮的核心数据结构。</p>
+<h3>间接调用的性能考量</h3>
+<p>回调是间接调用，每次 2-4 ns 开销 + 分支预测风险。HFT 数据面对回调的使用原则：</p>
+<ol>
+<li><strong>批量回调</strong>：一次回调传一批事件，减少间接调用次数。</li>
+<li><strong>热路径内联</strong>：最高频的回调手工展开成直接调用，低频走回调。</li>
+<li><strong>回调表常驻 L1</strong>：函数指针数组对齐到 cache 行，避免 cache miss。</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">/* 批量回调示例 */
+typedef void (*quote_batch_cb_t)(const struct quote *qts,
+                                  int n, void *priv);
+</code></pre>
+<p>一次调用处理 N 个报价，比 N 次单报价回调高效得多。</p>
+<h2>UB 边界</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>后果</th>
+<th>防护</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">priv</code> 类型与回调约定不符</td>
+<td>强转读到错位字段</td>
+<td>文档明确，单元测试覆盖</td>
+</tr>
+<tr>
+<td>回调在错误线程触发</td>
+<td>数据竞争</td>
+<td>框架文档说明触发线程，调用方加锁</td>
+</tr>
+<tr>
+<td>回调中销毁自己（mgr）</td>
+<td>UAF，链表遍历崩溃</td>
+<td>延迟到下一轮事件循环销毁</td>
+</tr>
+<tr>
+<td>注册前触发</td>
+<td><code class="c">cb == NULL</code> 调用 UB</td>
+<td><code class="c">if (cb) cb(...)</code> 判空</td>
+</tr>
+<tr>
+<td>回调抛异常（C++）</td>
+<td>C 框架 UB</td>
+<td>C 回调禁止抛异常，<code class="c">noexcept</code></td>
+</tr>
+<tr>
+<td><code class="c">priv</code> 指向已释放对象</td>
+<td>UAF</td>
+<td>注销回调与释放对象成对</td>
+</tr>
+</tbody>
+</table></div>
+<h3>回调中销毁自己的陷阱</h3>
+<pre class="code" data-label="C"><code class="c">static void on_done(uint32_t type, void *priv)
+{
+    struct task *t = priv;
+    free(t);                  /* 销毁 priv */
+    /* 但 event_notify_all 还在遍历链表，t-&gt;link 已释放！ */
+}
+</code></pre>
+<p>解决方案：</p>
+<ol>
+<li><strong>延迟销毁</strong>：标记 <code class="c">t-&gt;pending_free = true</code>，事件循环下一轮再 free。</li>
+<li><strong>safe 遍历</strong>：<code class="c">list_for_each_safe</code> 预存 next（见 ch12.3.2）。</li>
+<li><strong>引用计数</strong>：<code class="c">t-&gt;refcnt--</code>，归零才 free。</li>
+</ol>
+<p>这是事件驱动框架的经典陷阱，libevent、libev、DPDK 事件循环都遇到并解决过。</p>
+<h3><code class="c">priv</code> 生命周期管理</h3>
+<pre class="code" data-label="C"><code class="c">/* 正确：注册方管理 priv 生命周期 */
+event_register(&amp;mgr, on_event, &amp;ctx);   /* ctx 在栈，必须比 mgr 活得久 */
+/* ... */
+event_unregister(&amp;mgr);                 /* 先注销，再释放 ctx */
+</code></pre>
+<p><code class="c">priv</code> 的生命周期是注册方的责任，框架代码不负责释放。<strong>注销回调与释放 priv 必须成对</strong>，否则回调触发时 priv 已释放 = UAF。</p>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong>13.3.2 转移表</strong>：函数指针数组的分发器模式，回调的批量形态。</li>
+<li><strong>ch11 动态内存</strong>：<code class="c">priv</code> 的生命周期与堆对象释放顺序。</li>
+<li><strong>ch12 链表</strong>：多回调链表的遍历、safe 删除。</li>
+<li><strong>ch15 I/O</strong>：epoll 回调、信号回调、事件循环框架。</li>
+<li><strong>ch17 经典 ADT</strong>：基于回调的通用容器 destroy、遍历、查找。</li>
+</ul>
+<h2>口述自测题</h2>
+<ol>
+<li>回调三要素是哪三个？<strong><code class="c">void *priv</code> 的作用</strong>是什么？为什么说它是「C 的闭包捕获状态」？没有它回调机制会退化成什么样？</li>
+<li>回调函数收到 <code class="c">void *priv</code> 后要强转回真实类型。<strong>类型约定由谁保证</strong>？框架代码为什么不能在 <code class="c">priv</code> 上做类型检查？这种「类型擦除」与 C++ 模板、Java 泛型有什么本质区别？</li>
+<li><code class="c">if (mgr-&gt;cb) mgr-&gt;cb(...)</code> 判空是工程铁律。<strong>NULL 函数指针调用是 UB</strong>，为什么「不保证崩溃」？某些平台会发生什么？</li>
+<li>回调中销毁自己的 <code class="c">priv</code>（<code class="c">free(t)</code>）会导致什么问题？<strong>event_notify_all 遍历链表时</strong>会遇到什么状况？三种解决方案分别是什么？</li>
+<li>HFT 数据面对回调的使用有哪三条原则？<strong>批量回调</strong>为什么比 N 次单事件回调高效？间接调用的延迟量级是多少？</li>
+</ol>
+      </section>
+      <section class="section" id="s-13-3-2">
+        <div class="sec-head"><div class="sec-no">13.3</div><h2>.2 转移表</h2></div>
+<h2>本节讲什么</h2>
+<p>转移表（jump table / dispatch table）是函数指针数组的<strong>工程化形态</strong>——用「数组索引 → 函数指针」的查表替代 <code class="c">if-else if</code> 链，把 O(n) 的分支判断压缩成 O(1) 的间接跳转。这一节给出转移表的完整实现、边界检查、与 <code class="c">if-else</code> 的性能对比，以及它在报文分发、状态机、PMD 驱动表里的实际部署。</p>
+<p>认知锚点：转移表不是「炫技优化」，而是<strong>数据面代码的默认选择</strong>。HFT 报文分发、内核系统调用表、CPU 指令译码器——所有「类型 → 处理函数」的高频映射都用转移表。理解它就理解了 C 工程里「表驱动」的核心思想。</p>
+<h2>要点</h2>
+<h3>基本形态：索引即类型</h3>
+<pre class="code" data-label="C"><code class="c">typedef void (*pkt_handler_t)(struct rte_mbuf *pkt);
+
+static pkt_handler_t dispatch[] = {
+    [0] = handle_heartbeat,   /* MSG_HEARTBEAT = 0 */
+    [1] = handle_quote,       /* MSG_QUOTE     = 1 */
+    [2] = handle_order,       /* MSG_ORDER     = 2 */
+    [3] = handle_cancel,      /* MSG_CANCEL    = 3 */
+};
+
+void on_packet(struct rte_mbuf *mbuf, uint8_t type)
+{
+    if (type &lt; sizeof(dispatch) / sizeof(dispatch[0]))
+        dispatchtype;   /* O(1) 间接跳转 */
+    else
+        handle_unknown(mbuf);   /* 越界保护 */
+}
+</code></pre>
+<p>三个关键设计：</p>
+<ol>
+<li><strong>指定初始化 <code class="c">[type] = handler</code></strong>（C99）：表项与类型显式绑定，新增类型只需加一行。</li>
+<li><strong>边界检查</strong>：<code class="c">type &lt; sizeof(dispatch) / sizeof(dispatch[0])</code>，防越界访问野指针。</li>
+<li><strong>ARRAY_SIZE 宏</strong>：</li>
+</ol>
+<pre class="code" data-label="C"><code class="c">#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+if (type &lt; ARRAY_SIZE(dispatch))
+    dispatchtype;
+</code></pre>
+<h3>转移表 vs if-else 链</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>转移表</th>
+<th>if-else 链</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时间复杂度</td>
+<td>O(1)</td>
+<td>O(n) 平均 n/2 次比较</td>
+</tr>
+<tr>
+<td>分支预测</td>
+<td>BTB 学习间接跳转</td>
+<td>多级条件分支，失败率高</td>
+</tr>
+<tr>
+<td>扩展性</td>
+<td>表驱动加一行</td>
+<td>改代码加 if-else</td>
+</tr>
+<tr>
+<td>缺省处理</td>
+<td>越界走 default</td>
+<td>最后 else 兜底</td>
+</tr>
+<tr>
+<td>表大小</td>
+<td>占内存（每项 8 字节）</td>
+<td>不占额外内存</td>
+</tr>
+<tr>
+<td>调试</td>
+<td>难（间接跳转）</td>
+<td>易（直接看条件）</td>
+</tr>
+<tr>
+<td>编译优化</td>
+<td>难内联</td>
+<td>易内联（编译器可见）</td>
+</tr>
+<tr>
+<td>HFT 数据面</td>
+<td><strong>首选</strong></td>
+<td>少量分支可接受</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>选型口诀</strong>：<strong>类型数 ≥ 4 且高频 → 转移表</strong>；<strong>类型数 ≤ 3 或低频 → if-else</strong>。HFT 报文分发通常 4-16 种消息类型，转移表是标配。</p>
+<h3>性能量级（x86-64）</h3>
+<pre class="code" data-label="code"><code class="c">if-else 4 分支：  约 5-8 ns（含 1-2 次分支预测失败）
+转移表 4 项：     约 3-5 ns（BTB 命中间接跳转）
+转移表 16 项：    约 3-5 ns（与项数无关，O(1)）
+</code></pre>
+<p>转移表的延迟基本与项数无关，这是 O(1) 的本质。<code class="c">if-else</code> 随分支数线性增长，4 分支以上转移表必胜。</p>
+<h3>状态机：枚举驱动转移表</h3>
+<pre class="code" data-label="C"><code class="c">typedef enum {
+    ST_IDLE,
+    ST_WAIT_ACK,
+    ST_OPEN,
+    ST_CLOSE_PENDING,
+    ST_NUM
+} state_t;
+
+typedef enum {
+    EV_SEND,
+    EV_ACK,
+    EV_TIMEOUT,
+    EV_CLOSE,
+    EV_NUM
+} event_t;
+
+typedef state_t (*transition_fn_t)(state_t, event_t, void *ctx);
+
+/* 状态转移表：[当前状态][事件] = 转移函数 */
+static transition_fn_t fsm[ST_NUM][EV_NUM] = {
+    [ST_IDLE] = {
+        [EV_SEND]   = idle_to_wait_ack,
+        [EV_CLOSE]  = idle_stay,
+    },
+    [ST_WAIT_ACK] = {
+        [EV_ACK]     = wait_ack_to_open,
+        [EV_TIMEOUT] = wait_ack_to_idle,
+    },
+    [ST_OPEN] = {
+        [EV_CLOSE]   = open_to_close_pending,
+    },
+};
+
+state_t fsm_step(state_t cur, event_t ev, void *ctx)
+{
+    if (cur &lt; ST_NUM &amp;&amp; ev &lt; EV_NUM &amp;&amp; fsm[cur][ev])
+        return fsm[cur][ev](cur, ev, ctx);
+    return cur;   /* 无转移，保持当前状态 */
+}
+</code></pre>
+<p><strong>二维转移表</strong>是状态机的标准实现。<code class="c">fsm[cur][ev]</code> 查表得到转移函数，未定义的转移为 NULL（保持原状态）。这种写法把状态机逻辑变成数据，新增状态/事件只需改表，不动代码。</p>
+<h3>内核与驱动：file_operations、sys_call_table、eth_dev_ops</h3>
+<pre class="code" data-label="C"><code class="c">/* Linux 系统调用表（arch/x86/entry/syscalls） */
+const sys_call_ptr_t sys_call_table[] = {
+    [0]  = sys_read,
+    [1]  = sys_write,
+    [2]  = sys_open,
+    /* ... */
+    [__NR_execve] = sys_execve,
+};
+
+/* DPDK eth_dev_ops */
+static const struct eth_dev_ops my_pmd_ops = {
+    .dev_configure   = my_configure,
+    .dev_start       = my_start,
+    .dev_stop        = my_stop,
+    .rx_queue_setup  = my_rx_setup,
+    .tx_queue_setup  = my_tx_setup,
+};
+</code></pre>
+<p>三类转移表的共同点：</p>
+<ol>
+<li><strong>索引/字段名 → 函数指针</strong>：查表替代分支。</li>
+<li><strong><code class="c">const</code> 修饰</strong>：只读放 <code class="c">.rodata</code>，多进程共享。</li>
+<li><strong>指定初始化</strong>：未实现的槽位默认 NULL，调用方判空。</li>
+<li><strong>统一调用约定</strong>：所有函数指针同签名，框架代码通用。</li>
+</ol>
+<h3>二级函数指针表（插件热切换）</h3>
+<pre class="code" data-label="C"><code class="c">typedef void (*pkt_handler_t)(struct rte_mbuf *);
+pkt_handler_t *table;   /* 指向函数指针数组的指针 */
+
+/* 切换策略表 */
+void switch_strategy(pkt_handler_t *new_table)
+{
+    /* 内存屏障确保其他核看到完整表 */
+    smp_wmb();
+    table = new_table;
+}
+</code></pre>
+<p><code class="c">pkt_handler_t *table</code> 是「指向函数指针数组的指针」，可以整体替换数组。用于策略热切换：新表预构建完成后，原子替换指针。这是 RCU 模式的简化形态——读端无锁，写端替换整个表。</p>
+<h3>字符串 key 的转移表</h3>
+<pre class="code" data-label="C"><code class="c">struct cmd_entry {
+    const char  *name;
+    handler_fn_t fn;
+};
+
+static const struct cmd_entry cmd_table[] = {
+    {&quot;buy&quot;,    cmd_buy},
+    {&quot;sell&quot;,   cmd_sell},
+    {&quot;cancel&quot;, cmd_cancel},
+    {&quot;query&quot;,  cmd_query},
+};
+
+void exec_cmd(const char *name, void *arg)
+{
+    for (size_t i = 0; i &lt; ARRAY_SIZE(cmd_table); i++) {
+        if (strcmp(cmd_table[i].name, name) == 0) {
+            cmd_table[i].fn(arg);
+            return;
+        }
+    }
+    fprintf(stderr, &quot;unknown command: %s\n&quot;, name);
+}
+</code></pre>
+<p>字符串 key 无法用数组索引，只能线性查找或哈希表。<strong>命令分发、配置解析</strong>常用这种形态。高频场景下用哈希表（O(1) 平均），低频用线性查找（O(n)，但 n 通常很小）。</p>
+<h2>HFT 关联</h2>
+<h3>报文分发</h3>
+<pre class="code" data-label="C"><code class="c">typedef void (*msg_handler_t)(const struct market_msg *);
+
+static const msg_handler_t msg_dispatch[] = {
+    [MSG_HEARTBEAT] = on_heartbeat,
+    [MSG_QUOTE]     = on_quote,
+    [MSG_TRADE]     = on_trade,
+    [MSG_ORDER]     = on_order,
+    [MSG_CANCEL]    = on_cancel,
+    [MSG_DEPTH]     = on_depth,
+};
+
+static inline void dispatch_msg(const struct market_msg *m)
+{
+    uint16_t type = m-&gt;msg_type;
+    if (type &lt; ARRAY_SIZE(msg_dispatch) &amp;&amp; msg_dispatch[type]) {
+        msg_dispatchtype;
+    } else {
+        stats_inc(STATS_UNKNOWN_MSG);
+    }
+}
+</code></pre>
+<p>这是 HFT 数据面最热的代码路径。每个报文进来都要走一次转移表分发，<strong>延迟要求纳秒级</strong>。优化点：</p>
+<ol>
+<li><strong>表常驻 L1</strong>：<code class="c">msg_dispatch</code> 数组 6 项 × 8 字节 = 48 字节，刚好一个 cache 行，热点必命中。</li>
+<li><strong><code class="c">msg_type</code> 在报文头部固定偏移</strong>：取类型不需要解析变长字段，1 条 <code class="c">mov</code> 指令。</li>
+<li><strong><code class="c">static inline</code></strong>：内联到调用点，消除函数调用开销。</li>
+<li><strong><code class="c">__builtin_expect</code></strong>：标记 <code class="c">type &lt; ARRAY_SIZE</code> 为 <code class="c">likely</code>，分支预测器优化。</li>
+</ol>
+<h3>策略热切换</h3>
+<pre class="code" data-label="C"><code class="c">/* 双表 + 原子切换 */
+static msg_handler_t *active_table = table_v1;
+
+void switch_to_v2(void)
+{
+    /* 确保 table_v2 完全可见 */
+    smp_wmb();
+    active_table = table_v2;
+    /* 旧表延迟释放（RCU 或 epoch） */
+    synchronize_rcu();
+    free(table_v1);
+}
+</code></pre>
+<p>策略升级不停机：新表预构建 → 写屏障 → 原子换指针 → RCU 等待读者退出 → 释放旧表。<strong>读端完全无锁</strong>，写端承担同步成本。这是 HFT 高可用部署的核心机制。</p>
+<h3>状态机：订单生命周期</h3>
+<pre class="code" data-label="C"><code class="c">/* 订单状态转移表 */
+static const transition_fn_t order_fsm[ORD_ST_NUM][ORD_EV_NUM] = {
+    [ORD_NEW] = {
+        [EV_ACK]      = new_to_pending,
+        [EV_REJECT]   = new_to_rejected,
+    },
+    [ORD_PENDING] = {
+        [EV_FILL]     = pending_to_filled,
+        [EV_CANCEL]   = pending_to_cancelled,
+        [EV_TIMEOUT]  = pending_to_expired,
+    },
+    /* ... */
+};
+</code></pre>
+<p>订单从 NEW → PENDING → FILLED/CANCELLED 的转移用表驱动，新增状态/事件改表不改代码。这是订单引擎核心数据结构。</p>
+<h3>CPU 指令译码器</h3>
+<p>CPU 的指令译码本质上是转移表：操作码作索引，查表得到执行函数。<code class="c">switch-case</code> 长链（≥ 4 个 case 且密集）编译器会自动生成转移表（<code class="c">-foptimize-jump-tables</code>）。理解这一点就能解释为什么 <code class="c">switch</code> 在密集 case 下比 <code class="c">if-else</code> 快——编译器帮你生成了转移表。</p>
+<h2>UB 边界</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>后果</th>
+<th>防护</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>越界访问 <code class="c">dispatch[type]</code></td>
+<td>野指针，崩溃</td>
+<td><code class="c">if (type &lt; ARRAY_SIZE(...))</code> 边界检查</td>
+</tr>
+<tr>
+<td>未初始化的表项调用</td>
+<td>跳野地址</td>
+<td><code class="c">static</code> 数组零初始化，调用前判空 <code class="c">if (dispatch[type])</code></td>
+</tr>
+<tr>
+<td>表项函数签名不一致</td>
+<td>栈帧错乱，UB</td>
+<td>typedef 锁定签名，编译器 <code class="c">-Werror</code></td>
+</tr>
+<tr>
+<td>多核读写表的同时切换</td>
+<td>数据竞争</td>
+<td>RCU 或写屏障 + 延迟释放</td>
+</tr>
+<tr>
+<td>表构建未完成就发布</td>
+<td>读端看到半成品</td>
+<td>写屏障 + 原子指针替换</td>
+</tr>
+<tr>
+<td>转移表与枚举不同步</td>
+<td>漏处理或越界</td>
+<td><code class="c">_Static_assert(MSG_NUM == ARRAY_SIZE(dispatch))</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>静态断言锁定表大小</h3>
+<pre class="code" data-label="C"><code class="c">_Static_assert(ARRAY_SIZE(msg_dispatch) == MSG_TYPE_NUM,
+               &quot;dispatch table size mismatch with enum&quot;);
+</code></pre>
+<p>枚举新增类型但忘记加表项是经典 bug。<code class="c">_Static_assert</code> 在编译期锁定两者一致，漏加立刻编译失败。这是 C11 引入的零成本防护。</p>
+<h3>越界检查的性能权衡</h3>
+<pre class="code" data-label="C"><code class="c">/* 严格版：每次调用都检查 */
+if (type &lt; ARRAY_SIZE(dispatch) &amp;&amp; dispatch[type])
+    dispatchtype;
+
+/* 信任版：报文已在上层校验 */
+dispatchtype;   /* type 一定合法 */
+</code></pre>
+<p>HFT 数据面在报文入口已校验 <code class="c">type</code> 合法，分发处可省略检查省 1-2 周期。但<strong>省略检查的前提是上层 100% 可信</strong>，外部协议解析层不能省。安全与性能的权衡。</p>
+<h2>与后续衔接</h2>
+<ul>
+<li><strong>ch14 预处理</strong>：宏生成转移表项、<code class="c">X-macro</code> 保证枚举与表同步。</li>
+<li><strong>ch17 经典 ADT</strong>：基于转移表的通用容器操作表。</li>
+<li><strong>ch18 运行时环境</strong>：CPU 译码器、间接跳转的分支预测、BTB 工作原理。</li>
+<li><strong>ch15 I/O</strong>：epoll 事件表、信号处理表。</li>
+<li><strong>ch07 函数</strong>：函数调用约定、栈帧布局，间接调用的底层机制。</li>
+</ul>
+<h2>口述自测题</h2>
+<ol>
+<li>转移表 <code class="c">dispatchtype</code> 是 O(1)，<code class="c">if-else if</code> 链是 O(n/2)。<strong>4 分支时转移表大约快多少纳秒</strong>？项数从 4 增到 16，转移表延迟会变化吗？为什么？</li>
+<li><code class="c">static pkt_handler_t dispatch[] = { [0] = handle_a, [2] = handle_c };</code> 这种声明，<strong><code class="c">dispatch[1]</code> 是什么值</strong>？为什么？调用前判空 <code class="c">if (dispatch[type])</code> 防的是什么？</li>
+<li>二维转移表 <code class="c">fsm[cur][ev]</code> 实现状态机。<strong>新增一个状态和一个事件</strong>要改哪几处？为什么说「状态机逻辑变成数据」？对比 <code class="c">switch-case</code> 嵌套实现的优势是什么？</li>
+<li>策略热切换用 <code class="c">pkt_handler_t *table</code>（二级函数指针），新表预构建后 <code class="c">smp_wmb(); table = new_table;</code>。<strong>为什么需要写屏障</strong>？读端为什么可以无锁？旧表为什么不能立即 free？</li>
+<li><code class="c">_Static_assert(ARRAY_SIZE(msg_dispatch) == MSG_TYPE_NUM, ...)</code> 锁定表大小与枚举一致。<strong>这能防哪类 bug</strong>？为什么编译期检查比运行期检查更可靠？这种检查有运行时开销吗？</li>
 </ol>
       </section>
       <section class="section" id="s-13-4">

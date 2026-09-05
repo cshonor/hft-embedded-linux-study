@@ -121,6 +121,7 @@ def chapter_no(name):
 
 SEC_NO_RE = re.compile(r"^(?:section[-_])?(\d+(?:\.\d+)*(?:\.[xX]+)?)[-_.](.+)$")
 SEC_NAME_RE = re.compile(r"^section[-_](.+)$")
+SUBSEC_DIR_RE = re.compile(r"^\d+(?:\.\d+)*[-_]")
 
 def section_no(stem):
     """小节文件名(stem) → (anchor, label, sortkey)；非小节 → (None, None, None)。
@@ -144,7 +145,9 @@ def section_no(stem):
     return None, None, None
 
 def collect_sections(chapter_dir):
-    """收集章节下的所有小节：优先 notes/，兼顾目录直接平铺的 md。返回 [(anchor, label, md_path)]。"""
+    """收集章节下的所有小节：优先 notes/，然后顶层平铺 md，最后子目录收纳的 md。
+    返回 [(anchor, label, md_path)]。子目录结构如 7.2-function-declarations/7.2-函数声明.md，
+    修复前只扫顶层导致这类小节从未进入章节页（全站 146+ 节缺失）。"""
     found = []
     notes_dir = chapter_dir / "notes"
     if notes_dir.is_dir():
@@ -154,6 +157,20 @@ def collect_sections(chapter_dir):
                 found.append((anchor, label, key, f))
     for f in sorted(chapter_dir.glob("*.md")):
         if f.name.upper() == "README.MD":
+            continue
+        anchor, label, key = section_no(f.stem)
+        if anchor:
+            found.append((anchor, label, key, f))
+    # 子目录收纳的小节：只认「编号目录」（如 7.2-function-declarations/）下的编号 md，
+    # 避免把章节内克隆的第三方仓库/杂项目录卷进来（如 04_Learn-LLVM-17 里的 GBK 文件）。
+    # 顶层/notes 已收过的由锚点去重兜底（stable sort 下 notes > 顶层 > 子目录优先）
+    for f in sorted(chapter_dir.rglob("*.md")):
+        if f.parent == chapter_dir or notes_dir in f.parents:
+            continue
+        if f.name.upper() == "README.MD":
+            continue
+        rel = f.relative_to(chapter_dir)
+        if not any(SUBSEC_DIR_RE.match(part) for part in rel.parts[:-1]):
             continue
         anchor, label, key = section_no(f.stem)
         if anchor:
