@@ -3465,7 +3465,14 @@ READ of size 1 at 0x50200000004f
       <section class="section" id="s-7-5">
         <div class="sec-head"><div class="sec-no">7.5</div><h2>递归</h2></div>
 <h2>本节讲什么</h2>
-<p>函数<strong>调用自身</strong>；每层调用占一层<strong>栈帧</strong>。递归是树/链表遍历的天然写法，但 HFT 数据面<strong>禁止深递归</strong>——栈深度不可控、call/ret 开销、cache 不友好。这一节是总览，细节在 7.5.1（追踪）和 7.5.2（与迭代）。</p>
+<p>函数<strong>调用自身</strong>；每层调用占一层<strong>栈帧</strong>。递归是树/链表遍历的天然写法，但 HFT 数据面<strong>禁止深递归</strong>——栈深度不可控、call/ret 开销、cache 不友好。</p>
+<p>本节除了总览，还下探到<strong>机器层面</strong>：</p>
+<ol>
+<li>函数调用指令的<strong>架构差异</strong>——x86-64 是 <code class="c">call</code>/<code class="c">ret</code>（返回地址压<strong>栈</strong>），AArch64（树莓派 5）是 <code class="c">bl</code>/<code class="c">ret</code>（返回地址优先进<strong>寄存器 X30</strong>，嵌套调用才备份到栈）</li>
+<li><strong>递归吃栈的精确对账</strong>（gcc 13.3 实测）：每帧 = 局部变量 + 48 字节固定开销；六档实测 <code class="c">深度 × 每帧</code> 全部精确等于 7.99 MB</li>
+<li>⚠️ <strong>反直觉</strong>：<code class="c">-O2</code> 能把<strong>非尾</strong>递归也整个变成循环（零 <code class="c">call</code>），以及它给调试带来的坑</li>
+</ol>
+<p>细节在 7.5.1（追踪）和 7.5.2（与迭代）。</p>
 <h2>要点</h2>
 <ul>
 <li>组成：<strong>基线条件</strong>（base case）+ 向基线推进的递归步</li>
@@ -3523,12 +3530,253 @@ sum(0) → return 0                  ← 基线，开始回退
 <pre class="code" data-label="shell"><code class="c">$ ulimit -s        # 栈大小，单位 KB，典型 8192（8MB）
 8192
 </code></pre>
-<p>每栈帧几十到几百字节，8MB 栈大约能撑几万到几十万层递归。深递归爆栈时：</p>
+<p>实测（gcc 13.3 <code class="c">-O0</code>，8 MB 栈，<code class="c">PAD</code> = 每层的局部数组大小）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>每帧大小</th>
+<th>能撑的层数</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>48 B（零局部变量）</td>
+<td>174,599</td>
+<td>地板价：返回地址 + <code class="c">rbp</code> + 对齐</td>
+</tr>
+<tr>
+<td>112 B（64 B 局部）</td>
+<td>74,804</td>
+<td>一个 <code class="c">char buf[64]</code> 就用掉 1/3</td>
+</tr>
+<tr>
+<td>1072 B（1 KB 局部）</td>
+<td>7,818</td>
+<td></td>
+</tr>
+<tr>
+<td>4144 B（4 KB 局部）</td>
+<td>2,021</td>
+<td>⚠️ 嵌入式常见栈才 8~16 KB</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>每帧多 1 KB，深度直接掉两个数量级。</strong> 深递归爆栈时：</p>
 <pre class="code" data-label="code"><code class="c">sum(1000000) → 栈帧叠加超过 8MB → 踩到栈保护区 → SIGSEGV
 </code></pre>
 <p>栈保护区（guard page）让溢出确定性崩溃，而非静默踩堆。</p>
+<h3>机器层面：函数调用在 x86-64 与 AArch64 上长什么样</h3>
+<p>递归在机器层面就是「反复调用自己」，但<strong>不同架构的"调用"指令完全不同</strong>。先把两个架构的指令名和机制拆开（这俩最容易记混）。</p>
+<h4>一、x86-64：<code class="c">call</code> / <code class="c">ret</code>，返回地址在<strong>栈内存</strong>上</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指令</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">call label</code></td>
+<td>把<strong>返回地址压入栈内存</strong>，<code class="c">rip</code> 跳到目标函数</td>
+</tr>
+<tr>
+<td><code class="c">ret</code></td>
+<td>从<strong>栈内存弹出</strong>返回地址，跳回去</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测（gcc 13.3，<code class="c">-O0</code>）递归函数 <code class="c">sum()</code> 的反汇编：</p>
+<pre class="code" data-label="code"><code class="c">0000000000000000 &lt;sum&gt;:
+   4:  push   %rbp              ← 建立栈帧
+   8:  sub    $0x10,%rsp        ← 开出 16 字节局部空间
+  1f:  sub    $0x1,%eax         ← n - 1
+  24:  call   29 &lt;sum+0x29&gt;     ← 递归：就是 call 自己
+  2c:  add    %edx,%eax         ← n + sum(n-1)
+  2f:  ret                      ← 返回
+</code></pre>
+<p><strong>递归 = 反复执行 <code class="c">call</code></strong>，一层一层往栈上压返回地址。</p>
+<h5>硬证据：返回地址确实躺在栈上</h5>
+<p>拿 <code class="c">__builtin_return_address(0)</code> 的值，去本层栈帧附近的内存里<strong>把它搜出来</strong>（实测输出）：</p>
+<pre class="code" data-label="code"><code class="c">  层 2: 返回地址 0x5f97096112bc  存在 [&amp;anchor +24] 处
+  层 1: 返回地址 0x5f9709611271  存在 [&amp;anchor +24] 处
+  层 0: 返回地址 0x5f9709611271  存在 [&amp;anchor -112] 处
+</code></pre>
+<p>每层都在<strong>自己的栈帧内部固定偏移</strong>处找到了自己的返回地址。这就是「x86 返回地址强制在栈上」的实证。</p>
+<h4>二、AArch64（树莓派 5）：<code class="c">bl</code> / <code class="c">ret</code>，返回地址优先在<strong>寄存器 X30</strong></h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指令</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">bl func</code></td>
+<td>branch-and-link：把返回地址写入<strong>寄存器 LR（X30，链接寄存器）</strong>，跳转</td>
+</tr>
+<tr>
+<td><code class="c">ret</code></td>
+<td>从 <strong>X30</strong> 取返回地址，跳回</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ <strong>澄清一个常见记混</strong>：ARM/AArch64 里<strong>没有叫 <code class="c">node</code> 的指令</strong>，不存在这个东西。
+另外 <code class="c">ret</code> 是 <strong>AArch64 才正式有的助记符</strong>——ARM32（老 32 位 ARM）做调用同样是 <code class="c">bl</code>，
+但返回通常写成 <code class="c">bx lr</code> 或 <code class="c">mov pc, lr</code>，没有标准的 <code class="c">ret</code> 助记符。</p>
+</blockquote>
+<h5>关键差异：X30 只有一个，嵌套调用必须"备份到栈"</h5>
+<p><code class="c">bl</code> 会把 X30 <strong>覆盖掉</strong>。所以只要这个函数<strong>还要再调用别的函数</strong>（递归正好就是！），
+就必须在函数开头手动把 X30 存到栈上、结尾再取回来：</p>
+<pre class="code" data-label="asm"><code class="c">recurse:
+    stp  x30, x29, [sp, #-16]   // prologue：把 LR(x30) 和 FP(x29) 压栈保存
+    …
+    bl   recurse                // 递归调用 —— 这一句会改写 x30
+    …
+    ldp  x30, x29, [sp], #16    // epilogue：把 LR 恢复回来
+    ret                          // 用恢复后的 x30 返回
+</code></pre>
+<p>而<strong>叶子函数</strong>（不再调用任何函数的函数）完全不用碰栈——X30 一直好好待在寄存器里，直接 <code class="c">ret</code> 就行。</p>
+<blockquote>
+<p>🔑 所以「AArch64 返回地址在寄存器」这句话的完整版是：
+<strong>第一层返回地址在 X30 寄存器；一旦发生嵌套调用，每一层的返回地址最终还是得落到栈上。</strong>
+递归是最典型的嵌套调用，所以 AArch64 上递归<strong>照样吃栈</strong>，只是路径比 x86 多绕一步。</p>
+</blockquote>
+<h4>三、两架构对照</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>x86-64</th>
+<th>AArch64（Pi 5）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调用指令</td>
+<td><code class="c">call</code></td>
+<td><code class="c">bl</code></td>
+</tr>
+<tr>
+<td>返回指令</td>
+<td><code class="c">ret</code></td>
+<td><code class="c">ret</code></td>
+</tr>
+<tr>
+<td>返回地址<strong>首选位置</strong></td>
+<td><strong>栈内存</strong>（强制）</td>
+<td><strong>寄存器 X30</strong>（LR）</td>
+</tr>
+<tr>
+<td>嵌套调用时</td>
+<td>每层的返回地址本来就在栈上</td>
+<td>函数 prologue 把 X30 <strong>压栈备份</strong>，epilogue 恢复</td>
+</tr>
+<tr>
+<td>叶子函数</td>
+<td>仍可能建栈帧（<code class="c">-O0</code> 下有）</td>
+<td><strong>可以完全不碰栈</strong></td>
+</tr>
+<tr>
+<td>递归时</td>
+<td>栈随深度线性增长</td>
+<td><strong>一样线性增长</strong>（只是每层多一次 LR 存取）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>📌 关于"AArch64 更快"：<strong>理论上</strong>用寄存器存返回地址省了一次内存访问。
+但<strong>实际上</strong>现代 x86-64 CPU 有专门的 <strong>返回地址预测器（return stack buffer / RSB）</strong>，
+<code class="c">call</code>/<code class="c">ret</code> 的返回地址访问基本被预测器消化掉了，真实差距远没有"寄存器 vs 内存"看起来那么大。
+<strong>不要因为这条就在选型时偏向某个架构</strong>——x86 的 <code class="c">call</code> 并不比 AArch64 的 <code class="c">bl</code> 慢多少。</p>
+<p>⚠️ 本节 AArch64 部分为<strong>架构知识 + 标准汇编模板</strong>，未在 Pi 5 上实测
+（当前 WSL 环境无 aarch64 交叉工具链）。x86-64 部分全部为 gcc 13.3 实测。</p>
+</blockquote>
+<h4>四、递归的本质：架构无关，都是栈帧累积</h4>
+<p>不管 x86 的 <code class="c">call</code>/<code class="c">ret</code> 还是 AArch64 的 <code class="c">bl</code>/<code class="c">ret</code>：</p>
+<blockquote>
+<p><strong>每递归一层，就要保存一个返回位置；保存的位置最终落到栈上，栈帧不断累积。</strong>
+<strong>栈溢出 = 递归太深，栈空间被耗尽。</strong></p>
+</blockquote>
+<p>这条可以用实测精确对账。用 <code class="c">SIGSEGV</code> handler（配 <code class="c">sigaltstack</code>，因为栈已经耗尽、handler 自己也需要新栈）抓爆栈瞬间的深度，同一个程序里同时量出每帧字节数：</p>
+<pre class="code" data-label="code"><code class="c">ulimit -s = 8192 KB（8 MB）
+
+  PAD=0     每帧=   48 B   爆栈深度= 174599   乘积= 8380752 B (7.99 MB)
+  PAD=16    每帧=   64 B   爆栈深度= 130871   乘积= 8375744 B (7.99 MB)
+  PAD=64    每帧=  112 B   爆栈深度=  74804   乘积= 8378048 B (7.99 MB)
+  PAD=256   每帧=  304 B   爆栈深度=  27559   乘积= 8377936 B (7.99 MB)
+  PAD=1024  每帧= 1072 B   爆栈深度=   7818   乘积= 8380896 B (7.99 MB)
+  PAD=4096  每帧= 4144 B   爆栈深度=   2021   乘积= 8375024 B (7.99 MB)
+</code></pre>
+<p><strong>六档全中 7.99 MB</strong>——<code class="c">深度 × 每帧字节数 = 栈容量</code>，误差不到 0.1%。两条规律：</p>
+<ol>
+<li><strong>每帧 = 局部变量(PAD) + 48 字节固定开销</strong>（x86-64 <code class="c">-O0</code>：返回地址 8B + <code class="c">push rbp</code> 8B + 对齐填充）
+   —— 哪怕你一个局部变量都不写（PAD=0），每层也要吃掉 48 字节</li>
+<li><strong>深度 ∝ 栈容量 ÷ 每帧大小</strong>，精确线性。改 <code class="c">ulimit -s</code> 立刻验证：</li>
+</ol>
+<pre class="code" data-label="code"><code class="c">  ulimit -s 1024   → PAD=64：深度 9300　乘积 0.99 MB
+  ulimit -s 32768  → PAD=64：深度 299499　乘积 31.99 MB
+</code></pre>
+<p>这就是 <strong>7.5.2</strong> 说"递归 vs 迭代"的物理根因：迭代的栈占用是 <strong>O(1)</strong>，递归是 <strong>O(深度)</strong>。</p>
+<h4>五、⚠️ 反直觉实测：<code class="c">-O2</code> 能把<strong>非尾</strong>递归也变成循环</h4>
+<p>教科书常说「只有尾递归才能被优化成循环」。实测打脸——gcc 13.3 <code class="c">-O2</code> 下，<strong>普通的非尾递归 <code class="c">sum(n) = n + sum(n-1)</code> 也完全没有 <code class="c">call</code> 了</strong>：</p>
+<pre class="code" data-label="code"><code class="c">0000000000000000 &lt;sum&gt;:          ← -O2，非尾递归！
+   4:  xor    %eax,%eax          # acc = 0
+   6:  test   %edi,%edi
+   8:  jle    17                 # n &lt;= 0 就退出
+  10:  add    %edi,%eax          # acc += n
+  12:  sub    $0x1,%edi          # n--
+  15:  jne    10                 # ← 循环！没有 call，没有栈增长
+  17:  ret
+</code></pre>
+<p><strong><code class="c">call</code> 出现次数：0。</strong> 编译器认出这是等差数列求和的累加形式，直接转成了循环——栈占用从 O(n) 塌成 O(1)。</p>
+<p>尾递归（<code class="c">-O2</code>）同样零 <code class="c">call</code>，而且还被<strong>循环展开 2 次</strong>：</p>
+<pre class="code" data-label="code"><code class="c">  20:  lea    -0x1(%rax,%rdi,2),%eax    # 一次算两层（展开）
+  24:  sub    $0x2,%edi                 # n -= 2
+  27:  jne    20
+  29:  ret
+</code></pre>
+<p>对照 <code class="c">-O0</code>：尾递归 <code class="c">call</code> 出现 <strong>1</strong> 次（真递归）。</p>
+<p>最能说明问题的是<strong>没有基线的无限尾递归</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译</th>
+<th>行为</th>
+<th>退出码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code></td>
+<td>真递归 → 爆栈</td>
+<td><strong>139</strong>（SIGSEGV）</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code></td>
+<td>被折叠成一条自跳转 <code class="c">jmp</code> → 死循环，不崩</td>
+<td><strong>124</strong>（timeout 杀掉）</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">-O2</code> 下 <code class="c">main</code> 的汇编就剩一句 <code class="c">jmp 1048 &lt;main+0x8&gt;</code>——<strong>跳自己，永远不返回</strong>。</p>
+<blockquote>
+<p>⚠️ 这条对<strong>调试</strong>影响很大：debug 版（<code class="c">-O0</code>）崩溃的递归 bug，release 版（<code class="c">-O2</code>）可能变成<strong>静默死循环</strong>——
+不再 <code class="c">SIGSEGV</code>，而是 CPU 100% 挂死，更难排查。</p>
+<p>但<strong>不能依赖它</strong>：C 标准<strong>不保证</strong>任何尾调用/递归优化，gcc 只对"足够简单"的情形下手。
+数据结构一复杂（比如树递归、递归后还有操作），<code class="c">call</code> 立刻回来。工程上仍按"递归 = 吃栈"来设计（<strong>7.5.2</strong>）。</p>
+</blockquote>
 <h3>call/ret 开销（<strong>7.1</strong>）</h3>
 <p>每层递归 = 一次 <code class="c">call</code> + 一次 <code class="c">ret</code> + 栈帧建立/销毁。叶子函数优化（省栈帧）对递归有限——递归不是叶子。深度 N 的递归 = N 次 call/ret，远慢于一个循环。</p>
+<p>补充上面实测的两个细节：</p>
+<ul>
+<li><strong>固定开销 48 字节/帧</strong>是"什么都不放"的地板价，真实递归函数的局部变量直接往上加</li>
+<li><strong><code class="c">-O2</code> 可能把整个递归消掉</strong>（见上一节），所以"递归一定慢/一定吃栈"只在<strong>未优化或编译器放弃优化</strong>时成立；
+  <strong>写程序时不能赌编译器会救你</strong></li>
+</ul>
 <h2>HFT / DPDK</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -3560,6 +3808,41 @@ sum(0) → return 0                  ← 基线，开始回退
 </tr>
 </tbody>
 </table></div>
+<h3>嵌入式：栈不是 8 MB，是几 KB</h3>
+<p>上面实测全是在 <strong>8 MB 栈</strong>（Linux 主线程默认）下做的。嵌入式 Linux 的默认线程栈常常只有 <strong>8 KB</strong>，
+按实测的 <code class="c">深度 = 栈容量 ÷ 每帧</code> 线性外推：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环境</th>
+<th>栈大小</th>
+<th><code class="c">char buf[64]</code> 每帧 112 B 时能撑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux 主线程（默认）</td>
+<td>8 MB</td>
+<td>74,804 层</td>
+</tr>
+<tr>
+<td>glibc pthread 默认线程</td>
+<td>8 MB</td>
+<td>74,804 层</td>
+</tr>
+<tr>
+<td>嵌入式 pthread（常见配置）</td>
+<td><strong>8 KB</strong></td>
+<td><strong>约 73 层</strong></td>
+</tr>
+<tr>
+<td>RTOS 任务栈（常见）</td>
+<td>1~4 KB</td>
+<td><strong>9~37 层</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>同一个递归函数，在开发机跑得好好的，<strong>挪到板子上 70 多层就爆</strong>。这就是为什么嵌入式领域几乎把递归当禁区——不是"风格问题"，是算得出来的硬约束。在 Pi 5 上写内核模块时更要小心：<strong>内核栈只有 8 KB（ARM64 上是 16 KB）且不可动态增长</strong>，递归几乎没有生存空间。</p>
 <h2>常见误区</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -3584,6 +3867,26 @@ sum(0) → return 0                  ← 基线，开始回退
 <tr>
 <td>"栈大小无限"</td>
 <td><code class="c">ulimit -s</code> 限制，默认 8MB</td>
+</tr>
+<tr>
+<td>"只有尾递归才能被优化成循环"</td>
+<td>❌ 实测 gcc <code class="c">-O2</code> 把<strong>非尾</strong>递归 <code class="c">n + sum(n-1)</code> 也变成了循环（<code class="c">call</code> 数 = 0）。但<strong>不能依赖</strong>——C 标准不保证，复杂递归照样回来</td>
+</tr>
+<tr>
+<td>"ARM 的调用指令是 <code class="c">node</code>"</td>
+<td>❌ 没有这条指令。AArch64 是 <code class="c">bl</code>（调用）+ <code class="c">ret</code>（返回）；ARM32 也是 <code class="c">bl</code>，但返回写 <code class="c">bx lr</code></td>
+</tr>
+<tr>
+<td>"AArch64 返回地址在寄存器，所以递归不吃栈"</td>
+<td>❌ X30 只有一个，<strong>嵌套调用必须把 LR 压栈备份</strong>——递归照样线性吃栈，只是多一步存取</td>
+</tr>
+<tr>
+<td>"AArch64 用寄存器存返回地址，函数调用明显更快"</td>
+<td>⚠️ 理论如此，但 x86-64 有<strong>返回地址预测器（RSB）</strong>抵消了大部分差距，别拿这条当选型依据</td>
+</tr>
+<tr>
+<td>"局部变量写小点，递归就能深很多"</td>
+<td>⚠️ 有用但有限：实测<strong>地板价就是 48 字节/帧</strong>（零局部变量），写再小也省不掉</td>
 </tr>
 </tbody>
 </table></div>
@@ -3613,6 +3916,10 @@ gdb ./t -ex r -ex bt | head -50  # 一长串 f 帧
 <li><code class="c">sum(1000000)</code> 为什么崩？guard page 起什么作用？</li>
 <li>HFT 数据面为什么禁止深递归？需要"栈式"处理时怎么办？</li>
 <li><code class="c">ulimit -s</code> 默认多少？调大能解决深递归吗？根因解决靠什么？</li>
+<li>x86-64 的 <code class="c">call</code>/<code class="c">ret</code> 与 AArch64 的 <code class="c">bl</code>/<code class="c">ret</code>，返回地址分别放在哪里？ARM 里到底有没有 <code class="c">node</code> 指令？</li>
+<li>AArch64 的 X30（LR）只有一个，递归时会发生什么？因此"AArch64 递归不吃栈"对吗？</li>
+<li>实测每帧 = 局部变量 + 48 字节。8 MB 栈、每层 <code class="c">char buf[64]</code>（112 B/帧）能撑多少层？换成嵌入式 8 KB 栈呢？</li>
+<li><code class="c">-O2</code> 能对<strong>非尾</strong>递归做什么？这给 debug/release 的排障带来什么坑？能依赖它吗？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -3625,6 +3932,85 @@ gdb ./t -ex r -ex bt | head -50  # 一长串 f 帧
 <details>
 <summary>参考答案</summary>
 <p>递归调用传入的是 n 而非 n-1，导致无限递归直到栈溢出。正确写法：return n * factorial(n - 1);。此外还缺少对负数的处理——如果传入负数，n 永远不等于 0，也会无限递归。</p>
+</details>
+<p><strong>题目 2：</strong> 判定下列说法，并说明机器层面的理由：</p>
+<pre class="code" data-label="C"><code class="c">// a. ARM/AArch64 的函数调用指令是 node
+// b. x86-64 的 call 把返回地址压入栈内存
+// c. AArch64 的 bl 把返回地址写入寄存器 X30，永远不碰栈
+// d. AArch64 里 ret 和 x86-64 里 ret 是同一条指令
+// e. 递归在两种架构上最终都会线性消耗栈空间
+// f. 叶子函数在 AArch64 上可以完全不碰栈
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项</th>
+<th>判定</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a</td>
+<td>❌</td>
+<td><strong>不存在 <code class="c">node</code> 指令</strong>。AArch64 是 <code class="c">bl</code>（branch-and-link）；ARM32 同样是 <code class="c">bl</code>，返回写 <code class="c">bx lr</code> 或 <code class="c">mov pc, lr</code>（AArch64 才正式有 <code class="c">ret</code> 助记符）</td>
+</tr>
+<tr>
+<td>b</td>
+<td>✅</td>
+<td><code class="c">call</code> 把下一条指令地址<strong>压栈</strong>，<code class="c">ret</code> 再弹出来跳回——x86-64 返回地址<strong>强制在栈</strong></td>
+</tr>
+<tr>
+<td>c</td>
+<td>❌</td>
+<td>只说对一半。<code class="c">bl</code> 确实写 X30，但 <strong>X30 只有一个</strong>，函数若还要再调用（递归正是），必须在 prologue 用 <code class="c">stp x30, x29, [sp,#-16]</code> 把 LR <strong>压栈备份</strong>，epilogue <code class="c">ldp</code> 恢复后才能 <code class="c">ret</code></td>
+</tr>
+<tr>
+<td>d</td>
+<td>❌</td>
+<td>助记符同名、语义相近，但<strong>是两条不同的指令</strong>（不同架构、不同编码、取返回地址的来源也不同：栈 vs 寄存器）</td>
+</tr>
+<tr>
+<td>e</td>
+<td>✅</td>
+<td>架构无关：<strong>每层都要保存一个返回位置，最终都落到栈上</strong>。x86 直接压栈；AArch64 先入 X30、嵌套时再转存栈，总量同样是 O(深度)</td>
+</tr>
+<tr>
+<td>f</td>
+<td>✅</td>
+<td>叶子函数不再调用别人，X30 不会被覆盖，全程待在寄存器里，<code class="c">ret</code> 直接返回，<strong>零栈操作</strong></td>
+</tr>
+</tbody>
+</table></div>
+</details>
+<p><strong>题目 3：</strong> 计算 + 设计题（用本节实测数据）</p>
+<p>实测：x86-64 <code class="c">-O0</code>，每帧 = 局部变量 + <strong>48 字节</strong>固定开销；<code class="c">深度 × 每帧 = 栈容量</code>。</p>
+<ol>
+<li>Linux 主线程 8 MB 栈，递归函数每层有一个 <code class="c">char buf[256]</code>（即 304 B/帧），能撑多少层？</li>
+<li>同一函数搬到嵌入式板子（pthread 栈 8 KB），能撑多少层？</li>
+<li>你的策略代码必须在 8 KB 栈上处理深度为 500 的树，每层最多能留多少字节局部变量？</li>
+<li>如果改成 <code class="c">-O2</code>，上面这些数字还成立吗？为什么？</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1.</strong> <code class="c">8 × 1024 × 1024 ÷ 304 = 27,559</code> 层（实测值就是 27,559，误差 &lt; 0.1%）</p>
+<p><strong>2.</strong> <code class="c">8 × 1024 ÷ 304 = 26</code> 层 😬</p>
+<p><strong>3.</strong> <code class="c">8192 ÷ 500 = 16.4</code> 字节，减去 48 字节固定开销 → <strong>负数，根本放不下</strong>。
+即使一层局部变量都不写（48 B/帧），<code class="c">8192 ÷ 48 = 170</code> 层 &lt; 500 层。
+→ <strong>结论：8 KB 栈上做 500 层递归是不可能的</strong>，必须改成显式栈的迭代写法（<strong>7.5.2</strong>、<strong>ch17</strong>），
+或者把栈调大（需要改线程属性，且要有依据地算）。</p>
+<p><strong>4.</strong> <strong>不一定成立</strong>，这是最容易答错的一问：</p>
+<ul>
+<li><code class="c">-O2</code> 可能<strong>完全消除递归</strong>——实测非尾递归 <code class="c">sum</code> 在 <code class="c">-O2</code> 下 <code class="c">call</code> 数为 0，被转成循环，
+  栈占用从 O(n) 塌成 O(1)，上面的计算全部作废</li>
+<li>但<strong>不能依赖</strong>：C 标准不保证任何递归/尾调用优化，gcc 只对"足够简单"的情形下手
+  （树递归、递归后还有复杂操作的，立刻回到真 <code class="c">call</code>）</li>
+</ul>
+<p><strong>工程做法</strong>：<strong>按 <code class="c">-O0</code> 的数字做设计</strong>（也就是上面 1~3 的答案），把 <code class="c">-O2</code> 的消除当作"可能拿到的额外红利"，
+绝不当成设计依据。排障时反过来：debug 版崩 <code class="c">SIGSEGV</code> 的递归，release 版可能变成<strong>静默死循环</strong>
+（实测无基线尾递归 <code class="c">-O0</code> 退出码 139、<code class="c">-O2</code> 退出码 124 timeout），更难查。</p>
 </details>
       </section>
       <section class="section" id="s-7-5-1">
@@ -3888,8 +4274,25 @@ int sum_tail(int n, int acc) {
 <p><strong>但 C 标准不保证 TCO</strong>。gcc/clang 在 <code class="c">-O2</code> 通常会做（叶子函数 + 尾调用），但不总能——尤其有调试信息、复杂栈帧、或非纯尾调用时。<strong>不要依赖 TCO 保证不爆栈</strong>，要 O(1) 就显式写循环。</p>
 <pre class="code" data-label="shell"><code class="c"># 看尾递归是否被优化成循环（jmp 而非 call）
 gcc -O2 -S t.c -o -
-# 尾递归优化后：sum_tail 内是 jmp sum_tail（循环），无 call
-# 非尾递归 sum：仍是 call sum（递归），有 call/ret
+# 尾递归优化后：sum_tail 内是 jmp（循环），无 call
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>实测修正（gcc 13.3）</strong>：这里原先写着"非尾递归 <code class="c">sum</code> 仍是 <code class="c">call sum</code>"——<strong>这句话是错的，已实测推翻</strong>。</p>
+<p><code class="c">-O2</code> 下 <code class="c">int sum(int n){ return n&lt;=0 ? 0 : n + sum(n-1); }</code>（<strong>非</strong>尾递归）的汇编里
+<strong><code class="c">call</code> 出现 0 次</strong>——gcc 认出它是累加形式，直接转成了循环：</p>
+<p><code class="c">4:  xor    %eax,%eax        # acc = 0
+  10:  add    %edi,%eax        # acc += n
+  12:  sub    $0x1,%edi        # n--
+  15:  jne    10               # ← 循环，没有 call
+  17:  ret</code></p>
+<p>也就是说：<strong>"非尾递归一定保留 <code class="c">call</code>"不成立</strong>。能否消除取决于编译器能否识别，
+光看"是不是尾递归"猜不准。完整实测见 <strong>7.5</strong>。</p>
+<p>但本节结论不变——<strong>C 标准不保证任何这类优化，不能依赖</strong>。</p>
+</blockquote>
+<p><strong>可靠的判定方法</strong>：别猜，直接数 <code class="c">call</code>。</p>
+<pre class="code" data-label="shell"><code class="c">gcc -O2 -c t.c -o t.o
+objdump -d --no-show-raw-insn t.o | sed -n '/&lt;sum&gt;:/,/^$/p' | grep -c call
+# 0 = 已被转成循环（栈 O(1)）；&gt;=1 = 仍是真递归（栈 O(深度)）
 </code></pre>
 <h3>显式栈模拟递归</h3>
 <p>深度不可控但需要"栈式"处理时，用显式栈数组替代：</p>
@@ -3920,6 +4323,8 @@ $ perf stat -e instructions,cache-misses ./iter
 # 迭代版：指令数少（无 call/ret/prologue），cache-miss 少（栈帧少）
 </code></pre>
 <p>递归每层 = <code class="c">call</code> + prologue + body + epilogue + <code class="c">ret</code>，指令数和 cache 压力都更高。</p>
+<p>（严格说：<strong>未经优化、或编译器未能迭代化</strong>时才如此。<code class="c">-O2</code> 有可能把整个递归消掉，见上面修正块与 <strong>7.5</strong>。
+但设计上仍按"递归 = 每层一次 call + 一帧栈"来算，因为<strong>你不能赌编译器会救你</strong>。）</p>
 <h3>gcc TCO 的实际行为</h3>
 <pre class="code" data-label="C"><code class="c">int sum_tail(int n, int acc) {
     return n &lt;= 0 ? acc : sum_tail(n - 1, acc + n);
