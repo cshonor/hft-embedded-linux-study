@@ -276,6 +276,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-00"><span class="n">2.0</span>GDB 总览：能干什么、不能干什么</a>
           <a href="#s-01"><span class="n">2.1</span>gdb 入门与调试信息（-g 编译 / debuginfo / 加载方式）</a>
           <a href="#s-02"><span class="n">2.2</span>断点与观察点（break / 条件断点 / watchpoint）</a>
           <a href="#s-03"><span class="n">2.3</span>栈帧与回溯（backtrace / frame / 调用约定 / 变量查看）</a>
@@ -303,7 +304,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">gdb / strace / valgrind / sanitizer / perf</div>
           <h1>Ch2 崩溃类：段错误与栈破坏</h1>
           <div class="meta">
-<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>7</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>03.6-userspace-debugging</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>8</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -316,6 +317,311 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <li><strong>崩溃是交易系统的红线</strong>：一个段错误可能让整个下单链路中断，定位速度决定损失。<code class="c">bt</code> + core 回溯是「崩溃后 5 分钟定位到行」的标准动作；</li>
 <li><strong>偶发崩溃必须开 core</strong>：生产环境崩溃不可复现，唯一证据是 core。上线前务必配好 <code class="c">ulimit -c</code> + <code class="c">core_pattern</code>（见 2.4），否则崩溃了连现场都没有；</li>
 <li><strong>符号二进制成对归档</strong>：core 是内存快照，没有配套的调试符号二进制就回溯不到源码行（见 2.5），两者必须一起留档。</li>
+</ul>
+      </section>
+      <section class="section" id="s-00">
+        <div class="sec-head"><div class="sec-no">2.0</div><h2>GDB 总览：能干什么、不能干什么</h2></div>
+<blockquote>
+<p>🔴 精读 · 用户态正确性调试</p>
+</blockquote>
+<h2>本节要点</h2>
+<p>GDB（GNU Debugger）是 Linux <strong>用户态</strong>源码级调试器，x86-64 与 AArch64（树莓派 5）都支持。</p>
+<p><strong>前提：编译必须加 <code class="c">-g</code></strong>，生成 DWARF 调试符号；不加 <code class="c">-g</code> 只能看汇编和裸地址。</p>
+<p>这一节是 Ch2 的<strong>总览</strong>：先把 GDB 的能力边界划清楚——<strong>它能精确观察用户态的一切，但看不见内核内部，也和 ASAN 八字不合</strong>。细节分散在 2.1（<code class="c">-g</code> 与加载方式）、2.2（断点）、2.3（栈帧回溯）、2.4–2.6（core 尸检）。</p>
+<blockquote>
+<p>⚠️ <strong>实测说明</strong>：本节的 <code class="c">-g</code> 段结构、ASAN 插桩、ASAN 报错输出均为 gcc 13.3 <strong>实测</strong>；
+但 <strong>gdb 命令本身未在本机实测</strong>——当前 WSL 环境没有安装 gdb（<code class="c">gdb: command not found</code>），
+且 <code class="c">sudo</code> 需要密码无法安装。涉及 gdb 交互输出的部分为工具知识与标准用法，已如实标注。</p>
+</blockquote>
+<h2>一、GDB 能干什么（用户态）</h2>
+<h3>1. 控制执行流</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">b</code> 行号/函数名</td>
+<td>设断点</td>
+</tr>
+<tr>
+<td><code class="c">r</code></td>
+<td>从头运行</td>
+</tr>
+<tr>
+<td><code class="c">c</code></td>
+<td>继续到下一个断点</td>
+</tr>
+<tr>
+<td><code class="c">n</code></td>
+<td>单步<strong>跨过</strong>函数（next）</td>
+</tr>
+<tr>
+<td><code class="c">s</code></td>
+<td>单步<strong>跳入</strong>函数（step）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2. 查看栈帧（<strong>递归调试的重点</strong>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">bt</code></td>
+<td>完整调用栈，每层函数名 + 参数</td>
+</tr>
+<tr>
+<td><code class="c">info locals</code></td>
+<td>当前栈帧的全部局部变量</td>
+</tr>
+<tr>
+<td><code class="c">p var</code></td>
+<td>打印参数 / 局部 / 全局变量</td>
+</tr>
+<tr>
+<td><code class="c">x</code></td>
+<td>按地址看内存</td>
+</tr>
+<tr>
+<td><code class="c">info registers</code></td>
+<td>看寄存器</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">bt</code> 是读递归的核心：<strong>同名函数连续出现 N 次 = 递归了 N 层</strong>。配合 <code class="c">frame N</code> 切到第 N 层，再 <code class="c">info locals</code> 看那一层的变量。详见 2.3，递归实战见 <strong>ch07 的 7.5.1</strong>。</p>
+<h3>3. 运行时修改变量</h3>
+<p><code class="c">p var =  newValue</code> 可以直接改内存里的值，<strong>强行走另一个分支</strong>——验证"如果这里是 0 会不会走另一条路"，不用改代码重编译。</p>
+<h3>4. 捕获系统调用</h3>
+<p><code class="c">catch syscall</code> 能拦截系统调用的<strong>进入/退出</strong>（如 <code class="c">catch syscall write</code>）。</p>
+<blockquote>
+<p>⚠️ <strong>但它只能看到"出入口"</strong>——能看到"调用了 <code class="c">write(1, ...)</code>、参数是什么、返回什么"，
+<strong>看不到内核内部变量、看不到内核源码</strong>。想看系统调用的完整行为用 <code class="c">strace</code>（见 Ch5）；
+想看内核内部得用 <code class="c">ftrace</code> / <code class="c">perf</code> / <code class="c">bpftrace</code>，那已经不是 gdb 的活了。</p>
+</blockquote>
+<h3>5. 分析 core 转储</h3>
+<p>程序崩了之后 <code class="c">gdb ./prog core</code> + <code class="c">bt</code> 还原崩溃现场（详见 2.4–2.6）。对偶发崩溃，core 是<strong>唯一硬证据</strong>。</p>
+<h2>二、GDB 做不好 / 看不到</h2>
+<h3>1. ASAN（地址消毒器）—— 体验很差</h3>
+<p><strong>根因是 ASAN 会大量插桩改写程序</strong>。同一个极简函数 <code class="c">int add_one(int *p){ return *p + 1; }</code>，实测（gcc 13.3 <code class="c">-O0</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>普通编译</th>
+<th><code class="c">-fsanitize=address</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">add_one</code> 指令条数</td>
+<td><strong>9</strong></td>
+<td><strong>27</strong></td>
+</tr>
+<tr>
+<td>引入的 <code class="c">__asan_*</code> 外部符号</td>
+<td>0</td>
+<td><strong>8</strong></td>
+</tr>
+<tr>
+<td>目标文件体积</td>
+<td>1752 B</td>
+<td>3768 B</td>
+</tr>
+</tbody>
+</table></div>
+<p>普通版 9 条指令干干净净：</p>
+<pre class="code" data-label="code"><code class="c">   8:  mov    %rdi,-0x8(%rbp)
+   c:  mov    -0x8(%rbp),%rax
+  10:  mov    (%rax),%eax        ← 真正的解引用
+  12:  add    $0x1,%eax
+  16:  ret
+</code></pre>
+<p>ASAN 版 27 条，真正的业务逻辑被淹没在<strong>影子内存（shadow memory）检查</strong>里：</p>
+<pre class="code" data-label="code"><code class="c">  10:  mov    -0x8(%rbp),%rax
+  14:  mov    %rax,%rdx
+  17:  shr    $0x3,%rdx          ← 算影子地址
+  1b:  add    $0x7fff8000,%rdx   ← shadow memory 基址
+  22:  movzbl (%rdx),%edx        ← 读影子字节
+  25:  test   %dl,%dl
+  ...（一串 test/setne/and/cmp/setge 判断）
+  3d:  je     47
+  3f:  mov    %rax,%rdi
+  42:  call   47                 ← 越界则调 __asan_report_load4
+  47:  mov    -0x8(%rbp),%rax
+  4b:  mov    (%rax),%eax        ← 真正的解引用，就这一条
+  4d:  add    $0x1,%eax
+  51:  ret
+</code></pre>
+<p><strong>这就是"GDB 断点经常落到 asan 内部桩代码、栈帧很乱、变量显示混乱"的物理原因</strong>：
+你在一行源码上下断点，那一行展开成了 27 条指令，其中只有 1 条是你写的逻辑。</p>
+<blockquote>
+<p>✅ <strong>正确用法：ASAN 优先直接跑程序看报错日志，不要拿 GDB 深度源码调试。</strong></p>
+<p>ASAN 自己给的信息已经足够精准，实测输出（<code class="c">-O0 -g -fsanitize=address</code>）：</p>
+<p>```
+==376==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x502000000020
+WRITE of size 4 at 0x502000000020 thread T0
+    #0 0x5e31dc69a2a1 in main /mnt/d/.kernel-ref/demo-gdb/uaf.c:6     ← 精确到源码行
+    #1 0x763c2c62a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9)</p>
+<p>0x502000000020 is located 0 bytes after 16-byte region [0x502000000010,0x502000000020)
+allocated by thread T0 here:
+    #0 ... in malloc ...
+    #1 0x5e31dc69a25e in main /mnt/d/.kernel-ref/demo-gdb/uaf.c:5      ← 连分配点都给你
+退出码=1
+```</p>
+<p><strong>函数名 + 源码行 + 越界字节数 + 分配位置，一次跑完全都有</strong>——根本不需要 gdb。</p>
+</blockquote>
+<p><strong>ASAN 自身的坑（实测）</strong>：优化会削弱它。同一个越界写：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code></td>
+<td>✅ 报错，退出码 1，精确到 <code class="c">uaf.c:6</code></td>
+</tr>
+<tr>
+<td><code class="c">-O1</code></td>
+<td>❌ <strong>静默，退出码 0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>原因：<code class="c">a[4] = 42</code> 写入后没人读，被当<strong>死代码优化掉</strong>了，<code class="c">objdump</code> 里 <code class="c">main</code> 只剩 <code class="c">malloc</code> 和 <code class="c">free</code>，越界访问根本没发生。
+另一例：<code class="c">a[4]=42; printf("%d", a[4]);</code> 被<strong>常量传播</strong>成直接打印 42，也不读内存，同样不报。</p>
+<blockquote>
+<p>🔑 <strong>让 ASAN 真正生效</strong>：用 <code class="c">-O0</code>/<code class="c">-O1</code>，并确保访问不会被优化掉
+（用运行时索引、<code class="c">volatile</code>，或让结果真的被外部使用）。</p>
+</blockquote>
+<h3>2. 内核内部逻辑 —— 完全看不到</h3>
+<p>普通用户态 gdb 只能看到<strong>用户侧</strong>。想看内核内部（内核变量、内核栈、内核源码行）需要 <strong>KGDB 远程调试内核</strong>（两台机器串口/网口互联，或 <code class="c">qemu + gdbstub</code>）。</p>
+<p>内核态调试见仓库 <strong><code class="c">05.6-kernel-debugging</code></strong> 模块，那是完全不同的工具链（KGDB、crash、ftrace、kprobe）。</p>
+<h3>3. 无调试符号的程序</h3>
+<p>没有 <code class="c">-g</code>，gdb 只能看汇编、裸地址，没有源码、没有变量名。</p>
+<p>实测 <code class="c">-g</code> 到底往 ELF 里塞了什么：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>无 <code class="c">-g</code></th>
+<th>有 <code class="c">-g</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">.debug_*</code> 段数量</td>
+<td><strong>0</strong></td>
+<td><strong>9</strong></td>
+</tr>
+<tr>
+<td>目标文件体积</td>
+<td>1752 B</td>
+<td>4152 B（2.4×）</td>
+</tr>
+</tbody>
+</table></div>
+<p>那 9 个段：<code class="c">debug_info</code>、<code class="c">debug_line</code>（行号映射，<code class="c">bt</code> 靠它）、<code class="c">debug_abbrev</code>、<code class="c">debug_aranges</code>、<code class="c">debug_str</code>、<code class="c">debug_line_str</code> 等。</p>
+<h2>三、高频极简命令速记</h2>
+<pre class="code" data-label="code"><code class="c">b 行号/函数名   设置断点
+r              从头运行
+s              步入函数
+n              步过函数
+bt             打印调用栈（递归必用）
+p 变量         打印值
+info locals    本层全部局部变量
+c              继续执行
+q              退出
+</code></pre>
+<h2>四、一句话概括</h2>
+<blockquote>
+<p><strong>GDB 主要用于用户态源码级调试</strong>：观察调用栈、参数、局部变量，控制程序执行；
+系统调用只能抓出入口，看不见内核内部；和 ASAN 一起使用体验很差。</p>
+</blockquote>
+<h2>五、HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用 gdb</th>
+<th>用别的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>交易进程崩溃（有 core）</td>
+<td>✅ <code class="c">gdb prog core</code> + <code class="c">bt</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>进程卡死/死循环，不能重启</td>
+<td>✅ <code class="c">gdb -p &lt;PID&gt;</code> attach 后 <code class="c">bt</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>内存越界 / use-after-free</td>
+<td>❌</td>
+<td><strong>ASAN</strong>（直接看报错，实测精确到行）</td>
+</tr>
+<tr>
+<td>系统调用行为 / 卡顿在哪</td>
+<td>⚠️ 只能看出入口</td>
+<td><strong>strace</strong> / <code class="c">perf trace</code></td>
+</tr>
+<tr>
+<td>内核内部（驱动、协议栈）</td>
+<td>❌</td>
+<td><strong>KGDB</strong> / ftrace / bpftrace</td>
+</tr>
+<tr>
+<td>树莓派 5 板端调试</td>
+<td>✅ gdbserver + 本地 gdb 远程连</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>选型口诀</strong>：<strong>崩溃看 core（gdb），内存看 ASAN，系统调用看 strace，内核看 ftrace/bpftrace</strong>。
+四类问题对应四套工具，别指望 gdb 一把梭。</p>
+<hr />
+<details>
+<summary>自测题（点击展开）</summary>
+<p><strong>Q1:</strong> gdb 能调试的前提是什么？不加 <code class="c">-g</code> 会怎样？</p>
+<blockquote>
+<p>前提是二进制里带 DWARF 调试信息（编译加 <code class="c">-g</code>）。不加 <code class="c">-g</code>：ELF 里一个 <code class="c">.debug_*</code> 段都没有（实测 0 个 vs 9 个），gdb 只能反汇编看裸地址，没有源码行、没有变量名、没有类型信息，几乎没法用。</p>
+</blockquote>
+<p><strong>Q2:</strong> <code class="c">n</code> 和 <code class="c">s</code> 有什么区别？调试递归时看调用栈用什么命令？</p>
+<blockquote>
+<p><code class="c">n</code>（next）单步<strong>跨过</strong>函数调用，不进入被调函数；<code class="c">s</code>（step）单步<strong>跳入</strong>函数内部。看调用栈用 <code class="c">bt</code>（backtrace）：同名函数连续出现 N 次就说明递归了 N 层，再用 <code class="c">frame N</code> 切到某一层、<code class="c">info locals</code> 看那一层的局部变量。</p>
+</blockquote>
+<p><strong>Q3:</strong> 为什么 ASAN 和 gdb 一起用体验很差？正确做法是什么？</p>
+<blockquote>
+<p>ASAN 会在编译期大量插桩：实测同一个函数从 9 条指令膨胀到 27 条，真正的业务逻辑只剩 1 条，其余全是影子内存检查（算 shadow 地址、读 shadow 字节、判断、失败则 <code class="c">call __asan_report_*</code>）。gdb 下断点常常落在桩代码上，栈帧和变量显示都很乱。<strong>正确做法是让 ASAN 直接跑程序看报错</strong>——它自己就会输出函数名、源码行、越界字节数、分配位置，信息比 gdb 手翻还全。</p>
+</blockquote>
+<p><strong>Q4:</strong> <code class="c">catch syscall</code> 能看到什么？看不到什么？</p>
+<blockquote>
+<p>能看到系统调用的<strong>进入/退出</strong>时机、调用号、参数、返回值——即"出入口"。<strong>看不到内核内部变量、内核源码行、内核栈</strong>。想看系统调用的完整行为用 <code class="c">strace</code>；想看内核内部要上 KGDB / ftrace / bpftrace，不是 gdb 的能力范围。</p>
+</blockquote>
+<p><strong>Q5:</strong> 程序崩了但有 ASAN 报告了越界，还要用 gdb 吗？</p>
+<blockquote>
+<p>通常不用——ASAN 报告已经给出精确源码行和分配点。gdb 的用武之地是 ASAN <strong>抓不到</strong>的场景：逻辑错误（走错分支、算错值）、死锁/死循环（attach 后 <code class="c">bt</code>）、以及<strong>没有 ASAN 构建</strong>的生产/production 二进制崩溃（此时靠 core + <code class="c">bt</code>）。另外 ASAN 报告本身也可能被优化"吃掉"（实测 <code class="c">-O1</code> 下死代码被消除，越界访问根本没发生、退出码 0），用 <code class="c">-O0</code> 复查能确认。</p>
+</blockquote>
+</details>
+<h2>交叉引用</h2>
+<ul>
+<li><a href="chapter-07.html#s-01">2.1 gdb 入门与调试信息（-g / debuginfo / 加载方式）</a></li>
+<li><a href="chapter-07.html#s-02">2.2 断点与观察点</a></li>
+<li><a href="chapter-07.html#s-03">2.3 栈帧与回溯</a></li>
+<li><a href="chapter-07.html#s-04">2.4 core 文件生成配置</a></li>
+<li><a href="#intro">Ch2 崩溃类</a> · <a href="#intro">03.6 模块导读</a></li>
 </ul>
       </section>
       <section class="section" id="s-01">
@@ -545,6 +851,7 @@ gdb ./matching_engine core
 </details>
 <h2>交叉引用</h2>
 <ul>
+<li><a href="#s-00">2.0 GDB 总览：能干什么、不能干什么</a> —— 先看这节划清能力边界（与 ASAN 的冲突、看不到内核）</li>
 <li><a href="chapter-07.html#s-02">2.2 断点与观察点</a></li>
 <li><a href="chapter-07.html#s-03">2.3 栈帧与回溯</a></li>
 <li><a href="#intro">03.6 模块导读</a></li>
