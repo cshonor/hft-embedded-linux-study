@@ -2930,7 +2930,7 @@ int sum_tail(int n, int acc) {
       <section class="section" id="s-7-6">
         <div class="sec-head"><div class="sec-no">7.6</div><h2>可变参数列表</h2></div>
 <h2>本节讲什么</h2>
-<p><strong><code class="c">...</code> 可变参数</strong>函数：<code class="c">printf</code>、<code class="c">rte_log</code> 等的基础。可变参是 C 的"灵活陷阱"——能写通用接口，但类型不检查、靠格式串或 count 约定。这一节是总览，实现细节在 7.6.1（stdarg 宏），限制在 7.6.2。</p>
+<p><strong><code class="c">...</code> 可变参数</strong>函数：<code class="c">printf</code>、<code class="c">rte_log</code>、<code class="c">printk</code> 等的基础。可变参是 C 的"灵活陷阱"——能写通用接口，但类型不检查、靠格式串或 count 约定。这一节是总览：语法与最小示例、四个 stdarg 宏、与"原型"概念的衔接，以及 <strong>C23 对 <code class="c">void f(...)</code> 的解禁</strong>；实现细节在 7.6.1（stdarg 宏），限制在 7.6.2。</p>
 <h2>要点</h2>
 <ul>
 <li>至少一个<strong>固定参数</strong>（常为 <code class="c">format</code> 或 <code class="c">count</code>），作为 <code class="c">va_start</code> 的锚点</li>
@@ -2942,8 +2942,154 @@ int sum_tail(int n, int acc) {
 void rte_log(uint32_t level, const char *format, ...); /* DPDK 日志 */
 void err(int status, const char *format, ...);    /* 自定义错误 */
 </code></pre>
+<h3>语法规则</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdarg.h&gt;
+
+void foo(int last, ...);   /* last 是固定参数，... 代表可变数量参数 */
+</code></pre>
+<ul>
+<li><code class="c">...</code> <strong>必须放在参数列表最后</strong></li>
+<li><code class="c">...</code> <strong>前面至少要有 1 个固定参数</strong>（C17 及以前的硬性要求——<strong>C23 有变化，见下</strong>）</li>
+<li><code class="c">...</code> 前后可有逗号可无：<code class="c">foo(int a, ...)</code> ≡ <code class="c">foo(int a, ...)</code></li>
+<li>标准库最典型的例子：<code class="c">int printf(const char *fmt, ...);</code></li>
+</ul>
+<h3>最小可运行示例</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;stdio.h&gt;
+#include &lt;stdarg.h&gt;
+
+void sum(int count, ...)
+{
+    va_list ap;
+    va_start(ap, count);            /* 从最后一个固定参数 count 启动 */
+
+    for (int i = 0; i &lt; count; i++) {
+        int val = va_arg(ap, int);  /* 取出下一个 int 参数 */
+        printf(&quot;%d &quot;, val);
+    }
+    va_end(ap);                     /* 清理 */
+}
+
+int main(void)
+{
+    sum(3, 10, 20, 30);   /* 输出: 10 20 30 */
+    return 0;
+}
+</code></pre>
+<p>四个核心宏（<strong>7.6.1</strong> 详）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">va_list ap</code></td>
+<td>可变参数的迭代变量（不透明类型）</td>
+</tr>
+<tr>
+<td><code class="c">va_start(ap, 固定参数名)</code></td>
+<td>初始化，<strong>必须传紧邻 <code class="c">...</code> 前面的那个固定参数</strong></td>
+</tr>
+<tr>
+<td><code class="c">va_arg(ap, 类型)</code></td>
+<td>取下一个参数，<strong>要显式指定类型</strong></td>
+</tr>
+<tr>
+<td><code class="c">va_end(ap)</code></td>
+<td>结束清理，必须与 <code class="c">va_start</code> 配对</td>
+</tr>
+</tbody>
+</table></div>
+<h3>与"原型"的关联（→ <strong>7.2.1</strong>）</h3>
+<pre class="code" data-label="C"><code class="c">void sum(int count, ...);   /* ✅ 这是完整原型——编译器知道后面是可变参数 */
+void sum();                 /* ❌ 这不是可变参数，是&quot;参数信息完全未知&quot;的旧式声明 */
+</code></pre>
+<p>两码事，别混为一谈。<code class="c">void sum();</code> 只是说"返回 void，参数未知"，它既不是原型也不声明可变参。</p>
+<p><strong>带 <code class="c">...</code> 的原型检查范围是不对称的</strong>（gcc 13 实测 <code class="c">-Wall -Wextra</code>）：</p>
+<pre class="code" data-label="C"><code class="c">void sum(int count, ...);
+sum(&quot;not-an-int&quot;, 1, 2);   /* 固定参数类型错 → warning: passing argument 1 of 'sum'
+                              makes integer from pointer without a cast */
+sum(2, 3.14, 9.9);         /* 可变部分传 double → 零警告（不检查） */
+</code></pre>
+<p><strong>固定参数照常检查，可变部分完全不检查</strong>——这是 <code class="c">...</code> 型原型的真实语义，不是"整个函数都不检查"。</p>
+<h3>C 没有重载，所以靠 <code class="c">...</code> 处理参数数量变化</h3>
+<p>C++ 可以写多个同名不同参的重载；C 里函数名全局唯一（<strong>7.2</strong>），要接受"参数数量不定"只能用 <code class="c">...</code>。代价就是<strong>放弃编译期类型检查</strong>——这是语言层面的取舍，不是用法问题。</p>
 <h3>为什么需要至少一个固定参数</h3>
 <p><code class="c">va_start(ap, last)</code> 需要 <code class="c">last</code> 作为"最后一个固定参数"来定位可变参在栈/寄存器里的起始位置（<strong>7.6.1</strong>）。没有固定参数就找不到起点——所以 <code class="c">...</code> 不能是唯一的参数。</p>
+<blockquote>
+<h4>⚠️ 但 C23 改了这条：可以不要固定参数了</h4>
+<p><strong>C23（N2975 "Relax requirements for <code class="c">va_start</code>"）允许 <code class="c">void f(...)</code> 这种完全无固定参数的写法</strong>，配套 <code class="c">va_start(ap, ...)</code> 的新形式：</p>
+<p><code class="c">c
+void sum_all(...)                 /* C23 起合法：没有任何固定参数 */
+{
+    va_list ap;
+    va_start(ap, ...);            /* C23 新形式：第二个参数直接写 ... */
+    for (int i = 0; i &lt; 3; i++)
+        printf("%d ", va_arg(ap, int));
+    va_end(ap);
+}</code></p>
+<p>gcc 13.3 <code class="c">-pedantic-errors</code> 逐标准实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>C99</th>
+<th>C11</th>
+<th>C17</th>
+<th>C2X (C23)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">void f(...);</code> 仅声明</td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">void f(...) {}</code> + <code class="c">va_start(ap, ...)</code></td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅ 且正确运行</td>
+</tr>
+<tr>
+<td><code class="c">void sum(int count, ...)</code> 传统写法</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ 行为不变</td>
+</tr>
+</tbody>
+</table></div>
+<p>拒绝信息本身就是证据：<code class="c">error: ISO C requires a named argument before '...' **before C2X**</code>——
+措辞里的 "before C2X" 说明 C2X 起这条约束被撤掉了。</p>
+<p>注意 gcc/clang 在<strong>不加 <code class="c">-pedantic</code></strong> 时默认把它当扩展静默接受（<code class="c">-Wall -Wextra</code> 也零警告），
+所以"我的 C11 项目里 <code class="c">void f(...)</code> 也能编过"不代表它合法——加上 <code class="c">-pedantic-errors</code> 就现形。</p>
+<p><strong>C23 没改的</strong>：默认参数提升、<code class="c">va_arg</code> 无类型检查、必须 <code class="c">va_end</code> 配对——这些老规则全部保留。
+所以"至少一个固定参数"在 C17 及以前是硬性要求，在 C23 只是<strong>可选项</strong>；写可移植代码仍应保留固定参数。</p>
+</blockquote>
+<h3>count 说谎：可变参最典型的运行期 UB</h3>
+<p><code class="c">va_arg</code> 不会告诉你"还有没有下一个"。<code class="c">count</code> 写大了就往栈/寄存器残留区继续读：</p>
+<pre class="code" data-label="C"><code class="c">sum(3, 10, 20);   /* count 说 3 个，实际只传 2 个 */
+</code></pre>
+<p>实测三次运行（<code class="c">-O0</code>）：</p>
+<pre class="code" data-label="code"><code class="c">10 20 -619250256
+10 20 1228213680
+10 20 1531653552
+</code></pre>
+<p>第三次读的是上一个函数留下的寄存器残留——<strong>每次都不一样，退出码 0，零警告</strong>。
+这也是为什么可变参的"个数约定"必须由调用方严格履行：格式串（printf）、NULL 哨兵（execl）、显式 count，本质都是同一个问题的不同解法。</p>
+<h3>内核 printk</h3>
+<pre class="code" data-label="C"><code class="c">/* Linux 内核 —— printk 本身就是可变参函数 */
+asmlinkage int printk(const char *fmt, ...);
+/* 驱动里的典型包装 */
+#define dev_err(dev, fmt, ...) ...
+</code></pre>
+<p>内核大量使用 <code class="c">&lt;stdarg.h&gt;</code>，<code class="c">printk</code> 族、<code class="c">dev_err/dev_info</code>、seq_file 的 <code class="c">seq_printf</code> 全是变参接口。内核的规则是：<strong>热路径（数据面/中断上半部）不用变参</strong>，因为它类型不安全、格式串解析有开销。</p>
 <h3>可变参 vs 数组传参</h3>
 <pre class="code" data-label="C"><code class="c">/* 可变参：类型异质，不检查 */
 void logf(const char *fmt, ...);          /* %d 给 int，%f 给 double */
@@ -3027,6 +3173,26 @@ void log_n(int n, const struct evt *evs); /* 每个元素都是 evt */
 <td>"可变参类型编译器会检查"</td>
 <td>不会，靠 format 串或人工约定</td>
 </tr>
+<tr>
+<td>"带 <code class="c">...</code> 的原型整个函数都不检查"</td>
+<td>不对称——固定参数照常检查，只有可变部分不检查</td>
+</tr>
+<tr>
+<td>"<code class="c">void sum();</code> 也是可变参数"</td>
+<td>不是——旧式未指定参数，连原型都不是（→ <strong>7.2.1</strong>）</td>
+</tr>
+<tr>
+<td>"<code class="c">void f(...)</code> 在所有 C 标准里都非法"</td>
+<td>C23（N2975）起合法；C17 及以前非法，但 gcc/clang 不加 -pedantic 会静默接受</td>
+</tr>
+<tr>
+<td>"C23 改了可变参数规则"</td>
+<td>只改了"必须有固定参数"这一条；提升/无类型检查/va_end 配对都没变</td>
+</tr>
+<tr>
+<td>"count 写错了会崩"</td>
+<td>往往不崩，读寄存器残留得到垃圾值，退出码仍是 0</td>
+</tr>
 </tbody>
 </table></div>
 <h2>实操</h2>
@@ -3050,6 +3216,10 @@ gcc -Wformat t.c -o t &amp;&amp; ./t        # 告警 + 运行时垃圾值
 <li>可变参和"数组 + count"批量传参，哪个类型安全？各适合什么场景？</li>
 <li><code class="c">printf("%d", 3.14)</code> 为什么是 UB？编译器能拦吗？</li>
 <li>x86-64 上可变参怎么传递？<code class="c">va_arg(ap, int)</code> 和 <code class="c">va_arg(ap, double)</code> 分别从哪取？</li>
+<li><code class="c">void sum(int count, ...);</code> 是完整原型吗？它的类型检查覆盖范围到哪？<code class="c">void sum();</code> 呢？</li>
+<li>C23 对可变参数做了什么改动？<code class="c">void f(...)</code> 在各标准下的合法性如何？</li>
+<li><code class="c">count</code> 传得比实际参数多会发生什么？为什么退出码仍是 0？</li>
+<li>C 没有函数重载，要支持参数数量变化只能靠什么？代价是什么？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -3070,6 +3240,64 @@ gcc -Wformat t.c -o t &amp;&amp; ./t        # 告警 + 运行时垃圾值
 <details>
 <summary>参考答案</summary>
 <p>使用 0 作为结束标记——如果调用方忘记传 0，函数会越界读取内存。这是可变参数函数的常见陷阱：编译器无法检查参数数量。更安全的方法：(1) 像 printf 那样用格式串指定参数数量；(2) 像 execl 那样用 NULL 结尾（但仍有忘记的风险）；(3) 显式传参数个数。</p>
+</details>
+<p><strong>题目 2：</strong> 逐项判定下列声明是否合法（按 C17 与 C23 分别回答），并说明哪些是原型：</p>
+<pre class="code" data-label="C"><code class="c">void a(int n, ...);     // 行 1
+void b(...);            // 行 2
+void c();               // 行 3
+void d(void);           // 行 4
+int  e(const char *fmt, ...);  // 行 5
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行</th>
+<th>C17</th>
+<th>C23</th>
+<th>是原型？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 <code class="c">void a(int n, ...)</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ 是（带 <code class="c">...</code> 的原型）</td>
+</tr>
+<tr>
+<td>2 <code class="c">void b(...)</code></td>
+<td>❌ ISO C requires a named argument before '...'</td>
+<td>✅ C23 起合法</td>
+<td>✅ 是</td>
+</tr>
+<tr>
+<td>3 <code class="c">void c()</code></td>
+<td>✅ 但危险</td>
+<td>⚠️ C23 起语义 = <code class="c">c(void)</code></td>
+<td>❌ 不是（旧式未指定参数）</td>
+</tr>
+<tr>
+<td>4 <code class="c">void d(void)</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ 是</td>
+</tr>
+<tr>
+<td>5 <code class="c">int e(const char *, ...)</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ 是（printf 就是这个形状）</td>
+</tr>
+</tbody>
+</table></div>
+<p>要点：
+- 行 2 在 C17 下是约束违反，但 gcc/clang <strong>不加 <code class="c">-pedantic</code> 会静默接受</strong>（当扩展），
+  <code class="c">-Wall -Wextra</code> 也不报——只有 <code class="c">-pedantic-errors</code> 才让它现形。
+- 行 3 与行 4 的差别就是 <strong>7.2.2</strong> 的主题：<code class="c">()</code> 是"不检查"，<code class="c">(void)</code> 是"不要参数"。
+  行 3 不是原型，所以调用 <code class="c">c(1,2,3)</code> 不检查；C23 起它等价于 <code class="c">c(void)</code>。
+- 行 2 在 C23 下可以配 <code class="c">va_start(ap, ...)</code> 使用（N2975），但可移植代码仍应保留固定参数。</p>
 </details>
       </section>
       <section class="section" id="s-7-6-1">
@@ -3287,6 +3515,15 @@ log_msg(&quot;%s&quot;, 42);      /* UB：期望 char* 给了 int */
 log_msg(&quot;%d&quot;, &amp;x);      /* UB：期望 int 给了指针 */
 </code></pre>
 <p>编译器<strong>不检查</strong>可变参与格式串的匹配——除非你加 <code class="c">__attribute__((format))</code>（见下）。运行时取错类型 → 读错位置 → 垃圾值或崩。</p>
+<blockquote>
+<p><strong>注意检查范围的不对称性</strong>：带 <code class="c">...</code> 的原型<strong>仍然检查固定参数</strong>。实测 <code class="c">-Wall -Wextra</code> 下
+<code class="c">sum("not-an-int", 1, 2)</code> 会报 <code class="c">-Wint-conversion</code>，而 <code class="c">sum(2, 3.14, 9.9)</code> 的可变部分零警告。
+也就是说"可变参不检查"只针对 <code class="c">...</code> 覆盖的那一段（→ <strong>7.6</strong>）。</p>
+</blockquote>
+<h3>限制 0：至少一个固定参数（C23 起不再强制）</h3>
+<p>C17 及以前硬性要求 <code class="c">...</code> 前必须有具名参数；<strong>C23（N2975）解禁了 <code class="c">void f(...)</code>
+并引入 <code class="c">va_start(ap, ...)</code> 新形式</strong>（→ <strong>7.6</strong> 的实测矩阵）。这一条是限制也是语言演进的样本：
+写需要跨 C17/C23 移植的代码时，保留固定参数仍是唯一稳妥选择。</p>
 <h3>限制 2：默认参数提升</h3>
 <p>可变参里实参做<strong>默认参数提升</strong>（<strong>7.2.2</strong> 同规则）：</p>
 <div class="tbl-wrap"><table>
