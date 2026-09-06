@@ -41,20 +41,32 @@ L4  低延迟专项          ── cache / NUMA / 内存序 / 无锁 / 绑核 /
 L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + 全链路测量
 ```
 
-| 级 | 对应模块 | 主线知识 | 交付项目 | 硬验收指标 |
-|----|---------|---------|---------|-----------|
-| **L0** | [`01` C 语言](../01-c-language/) · [`02` CSAPP](../02-computer-systems/) | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
-| **L1** | [`03` TLPI](../03-linux-userspace-api/) · [`03.5` UNP](../03.5-unix-network-api/) · [`03.6` 调试](../03.6-userspace-debugging/) · [`04` C++](../04-cpp/) | TLPI：fd、线程、mmap、信号、epoll | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
-| **L2** | [`05` LKD](../05-linux-kernel/) · [`05.5`](../05.5-modern-kernel/) [`05.6`](../05.6-kernel-debugging/) · [`06` MM](../06-linux-mm/) · [`06.5`](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6-systems-performance/) | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
-| **L3** | [`11` TCP/IP](../11-tcpip-protocols/) · [`11.5` 抓包](../11.5-wireshark-packet-analysis/) · [`12` 内核网](../12-kernel-networking/) · [`12.5` 现代网络](../12.5-modern-networking/) | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下 **零丢包**，能说出丢包在哪一层 |
-| **L4** | [`15` 体系结构](../15-computer-architecture/) · [`07` ARM64](../07-arm-architecture/) · [`02` CSAPP](../02-computer-systems/) · [ch07 无锁](./chapter-07-lockless-data-structures-memory-layout/README.md) | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | [`13` DPDK](../13-dpdk/) · [本模块 ch06/ch09/ch13](./README.md) · [`19` 微观结构](../19-markets-microstructure/) · [`06.7` BPF](../06.7-bpf-observability/) | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
+| 级 | 对应模块 | 主线知识 | 交付项目 | 硬验收指标 | 调试手段 |
+|----|---------|---------|---------|-----------|---------|
+| **L0** | [`01` C 语言](../01-c-language/) · [`02` CSAPP](../02-computer-systems/) | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` | gdb 看布局 · ASan · valgrind |
+| **L1** | [`03` TLPI](../03-linux-userspace-api/) · [`03.5` UNP](../03.5-unix-network-api/) · [`03.6` 调试](../03.6-userspace-debugging/) · [`04` C++](../04-cpp/) | TLPI：fd、线程、mmap、信号、epoll | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 | `strace -T` · gdb 多线程 · `03.6` |
+| **L2** | [`05` LKD](../05-linux-kernel/) · [`05.5`](../05.5-modern-kernel/) [`05.6`](../05.6-kernel-debugging/) · [`06` MM](../06-linux-mm/) · [`06.5`](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6-systems-performance/) | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 | ftrace · KASAN · `05.6` |
+| **L3** | [`11` TCP/IP](../11-tcpip-protocols/) · [`11.5` 抓包](../11.5-wireshark-packet-analysis/) · [`12` 内核网](../12-kernel-networking/) · [`12.5` 现代网络](../12.5-modern-networking/) | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下 **零丢包**，能说出丢包在哪一层 | tcpdump · `ethtool -S` · `11.5` |
+| **L4** | [`15` 体系结构](../15-computer-architecture/) · [`07` ARM64](../07-arm-architecture/) · [`02` CSAPP](../02-computer-systems/) · [ch07 无锁](./chapter-07-lockless-data-structures-memory-layout/README.md) | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 | `perf c2c` · TSan · `06.6`/`06.7` |
+| **L5** | [`13` DPDK](../13-dpdk/) · [本模块 ch06/ch09/ch13](./README.md) · [`19` 微观结构](../19-markets-microstructure/) · [`06.7` BPF](../06.7-bpf-observability/) | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） | 全链路埋点 · PTP 比对 · `06.7` |
 
 ---
 
 ## 三、L0 · C 语言与指针
 
 > **对应模块：** [`01` C 语言](../01-c-language/)（K&R / Pointers on C / Expert C / Modern C / 嵌入式 C 自我修养 / C 陷阱）· [`02` CSAPP](../02-computer-systems/) Ch3 Ch6 Ch9
+
+### 调试手段
+
+| 工具 | 查什么 | 典型用法 |
+|------|--------|---------|
+| gdb 看内存 | struct 真实布局、对齐与填充 | `p sizeof(s)` · `p &((T*)0)->f` · `x/16xb &s` |
+| ASan / UBSan | 越界、use-after-free、未定义行为 | `gcc -fsanitize=address,undefined -g` |
+| valgrind | 内存泄漏、非法读写 | `valgrind --leak-check=full ./a.out` |
+| core dump | 崩溃现场反查 | `ulimit -c unlimited` → `gdb ./a.out core` |
+
+> 自实现 `malloc` 时，**valgrind 会报你的分配器是 leaks**——先学会区分「分配器本身的残留」
+> 与「调用方漏了 free」，这本身就是一课。
 
 ### 知识点
 
@@ -93,6 +105,18 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 
 > **对应模块：** [`03` TLPI](../03-linux-userspace-api/)（主线）· [`03.5` UNP](../03.5-unix-network-api/) · [`03.6` 用户态调试](../03.6-userspace-debugging/) · [`04` C++](../04-cpp/)
 
+### 调试手段
+
+| 工具 | 查什么 | 典型用法 |
+|------|--------|---------|
+| `strace -T -tt` | 每个系统调用耗时、卡在哪 | `strace -T -tt -p <pid>` 看 `epoll_wait` 占多久 |
+| `lsof -p` | fd 泄漏、socket 状态 | 连接数莫名上涨时第一件事 |
+| gdb 多线程 | 线程卡死、锁竞争 | `info threads` · `thread apply all bt` |
+| `perf record` | CPU 时间花在哪 | `perf record -g -- ./server` → `perf report` |
+| TSan | 数据竞争 | `gcc -fsanitize=thread` |
+
+> **模块：** [`03.6` 用户态调试](../03.6-userspace-debugging/)（gdb / strace / valgrind / ASan / TSan 全套）
+
 ### 高价值章节（HFT 视角重排，非原书顺序）
 
 | 优先级 | TLPI 章节 | 核心 API | HFT 用途 |
@@ -129,6 +153,19 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 ## 五、L2 · 内核机制与内存
 
 > **对应模块：** [`05` LKD](../05-linux-kernel/) · [`05.5` 现代内核](../05.5-modern-kernel/) · [`05.6` 内核调试](../05.6-kernel-debugging/) · [`06` Gorman MM](../06-linux-mm/) · [`06.5` 现代 MM](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6-systems-performance/)（perf 方法论）
+
+### 调试手段
+
+| 工具 | 查什么 | 典型用法 |
+|------|--------|---------|
+| `ftrace` / `trace-cmd` | 调度延迟、中断关了多久 | `trace-cmd record -e sched_switch` |
+| KASAN / KCSAN | 内核内存越界、数据竞争 | 需重编译内核开启 |
+| `crash` / KGDB | 内核崩溃与死锁现场 | vmcore 事后分析 |
+| `/proc/<pid>/smaps` · `numastat` | 页分布、NUMA 远端访问 | 判断内存是否跨节点 |
+| `perf stat` | cache miss / TLB miss / 缺页 | `perf stat -e cache-misses,dTLB-load-misses` |
+
+> **模块：** [`05.6` 内核调试](../05.6-kernel-debugging/)（printk / Kprobes / KASAN / KGDB / Ftrace / Lockdep）
+> · [`06.6` Systems Performance](../06.6-systems-performance/)（perf 方法论）
 
 ### 必须吃透的六个机制
 
@@ -168,6 +205,18 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 
 > **对应模块：** [`11` TCP/IP](../11-tcpip-protocols/) · [`11.5` 抓包](../11.5-wireshark-packet-analysis/) · [`12` 内核网络](../12-kernel-networking/) · [`12.5` 现代网络](../12.5-modern-networking/)（XDP / NAPI / AF_XDP）
 
+### 调试手段
+
+| 工具 | 查什么 | 典型用法 |
+|------|--------|---------|
+| `tcpdump` / Wireshark | 报文到底有没有到 | `tcpdump -i eth0 -nn udp port 12345` |
+| `ss -tin` | TCP RTT、拥塞窗口、重传 | 判断是协议问题还是应用问题 |
+| `ethtool -S` | 网卡硬件丢包计数 | `rx_missed` / `rx_no_buffer` 是关键 |
+| `dropwatch` | 内核在哪一层丢包 | 配合 `perf` 定位 `kfree_skb` 调用点 |
+| `nstat` / `netstat -s` | 协议栈统计 | 组播丢包先查这个 |
+
+> **模块：** [`11.5` 抓包分析](../11.5-wireshark-packet-analysis/)（含 HFT 场景：低延迟 TCP / 卸载 / bypass）
+
 ### 知识地图
 
 | 层 | 要掌握 | 关键旋钮 |
@@ -201,6 +250,21 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 ## 七、L4 · 低延迟专项（HFT 的核心竞争力）
 
 > **对应模块：** [`15` 体系结构](../15-computer-architecture/)（cache / MESI）· [`07` ARM64](../07-arm-architecture/)（弱内存序）· [`02` CSAPP](../02-computer-systems/) Ch6 Ch12 · [本模块 ch07 无锁与内存布局](./chapter-07-lockless-data-structures-memory-layout/README.md)
+
+### 调试手段
+
+| 工具 | 查什么 | 典型用法 |
+|------|--------|---------|
+| `perf c2c` | **伪共享**（HITM 事件） | `perf c2c record -- ./bench` → `perf c2c report` |
+| `perf stat` | cache miss / 分支预测失败 | `perf stat -e L1-dcache-load-misses,branch-misses` |
+| TSan | 无锁结构的真实数据竞争 | `gcc -fsanitize=thread` |
+| `bpftrace` | 热路径探针、函数级耗时 | `bpftrace -e 'kprobe:xxx { @=hist(nsecs); }'` |
+| `taskset` + `numactl` | 绑核与 NUMA 验证 | 改完配置要能证明生效 |
+
+> ⚠️ **无锁代码的 bug 用 printf 调不出来**——加日志就改变了时序。
+> 必须用 TSan + `perf c2c` + 离线 core dump 三件套。
+>
+> **模块：** [`06.6` Systems Performance](../06.6-systems-performance/) · [`06.7` BPF 可观测](../06.7-bpf-observability/)
 
 这是**唯一别人替代不了你**的一级。前面三级是通用系统能力，这一级是 HFT 专属。
 
@@ -289,6 +353,21 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 ## 八、L5 · 系统整合
 
 > **对应模块：** [`13` DPDK](../13-dpdk/) · 本模块 [ch06 网络](./chapter-06-low-latency-network-protocol/README.md) / [ch09 测量](./chapter-09-latency-measurement-benchmarking/README.md) / [ch13 FPGA](./chapter-13-fpga-crypto-hft/README.md) · [`19` 市场微观结构](../19-markets-microstructure/) · [`06.7` BPF](../06.7-bpf-observability/)
+
+### 调试手段
+
+| 工具 | 查什么 | 典型用法 |
+|------|--------|---------|
+| 全链路埋点 + histogram | p50 / p99 / p999 分层尾延迟 | 平均值没有意义，只看分位数 |
+| `bpftrace` 分段计时 | 内核收包 → 用户态各段耗时 | 每一跳打时间戳求差 |
+| `phc2sys` / `pmc` | PTP 时钟偏移与抖动 | 时钟不准，所有延迟数据都作废 |
+| `testpmd` / `dpdk-procinfo` | DPDK 收发包与队列统计 | 旁路后内核工具全部失效 |
+| `perf` 火焰图 | 全链路 CPU 热点 | 找到真正的瓶颈函数 |
+
+> ⚠️ **旁路之后 `tcpdump` 就不工作了**——包不经过内核。
+> 只能靠 DPDK 自带统计 + 硬件时间戳 + 应用层埋点。
+>
+> **模块：** [`06.7` BPF 可观测](../06.7-bpf-observability/) · 本模块 [ch09 延迟测量](./chapter-09-latency-measurement-benchmarking/README.md)
 
 ### 8.1 内核旁路选型
 

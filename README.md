@@ -86,15 +86,26 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 
 | 级 | 对应模块 | 核心知识 | 交付项目 | 硬验收指标 |
 |:--:|----------|----------|----------|------------|
-| **L0** | `01` C 语言 | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
-| **L1** | `03` TLPI · `03.5` UNP | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
-| **L2** | `05` LKD · `06` MM | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
-| **L3** | `11` TCP/IP · `12` 内核网 | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
-| **L4** | `15` 体系结构 · `07` ARM64 | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | `13` DPDK · `14` HFT · `19` 微观结构 | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
+| **L0** | `01` C 语言 · `03.6` | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
+| **L1** | `03` TLPI · `03.5` UNP · `03.6` 调试 | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
+| **L2** | `05` LKD · `06` MM · `05.6` 内核调试 | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
+| **L3** | `11` TCP/IP · `12` 内核网 · `11.5` 抓包 | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
+| **L4** | `15` 体系结构 · `07` ARM64 · `06.6` 性能 | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
+| **L5** | `13` DPDK · `14` HFT · `19` 微观结构 · `06.7` 观测 | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
 
 > 模块编号对应[上方总览表](#模块总览编号--学习顺序)的文件夹。完整知识点 / 交付细节 / 验收清单 → [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
->
+
+#### 调试三层（贯穿 L0–L5）
+
+| 层 | 回答什么 | 模块 | 工具 |
+|----|---------|------|------|
+| **正确性** | 为什么崩了 / 错了 | `03.6` 用户态调试 · `05.6` 内核调试 | gdb · ASan/TSan · valgrind · KASAN · Ftrace |
+| **性能** | 为什么慢了 | `06.6` Systems Performance | `perf` · 火焰图 · `perf c2c` |
+| **可观测** | 现在在做什么 | `06.7` BPF 可观测 | bpftrace · BCC |
+
+> 顺序固定：**先正确性 → 再性能 → 最后持续观测**。
+> 每级阶梯的调试清单见 [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)。
+
 > **ARM64 汇编在 L4 第一次变现：** x86 是 TSO 强序，`acquire/release` 编译成零指令——「忘了写 `memory_order`」在 x86 上常常碰巧能跑；ARM64 弱序，`ldar`/`stlr` 少一条就直接崩。
 
 ### 项目 P1 → P10
