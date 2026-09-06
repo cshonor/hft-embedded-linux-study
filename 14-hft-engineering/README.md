@@ -2,7 +2,11 @@
 
 **文件夹 16** · [返回总清单](../READING-LIST.md#与-14-hft-engineering-章节映射)
 
+> **原书：** *Developing High-Frequency Trading Systems* — Donadio / Ghosh / Rossier（Packt 2022 · 320 页 · ISBN 9781803242811）
+> —— 本模块「原书 Ch N」即指此书，章节裁剪见 [READING-LIST §9.1](../READING-LIST.md#91-developing-high-frequency-trading-systems--donadio--ghosh--rossier)
+>
 > **前置：** `03` TLPI → `05` LKD → `12`–`15` 网络栈  
+> **动手路线（项目 + 验收指标）：** [HFT-ENGINEERING-LADDER.md](./HFT-ENGINEERING-LADDER.md)  
 > 全链路 → [README.md](../README.md)
 
 ## 与网络板块的分界
@@ -53,6 +57,8 @@
 
 ## 交叉阅读
 
+- **动手路线（L0–L5 工程阶梯 + 验收指标）** → [HFT-ENGINEERING-LADDER.md](./HFT-ENGINEERING-LADDER.md)
+- **原版书单（低延迟 / 微观结构 / 策略 / 纪实）** → [READING-LIST §9](../READING-LIST.md#9-hft-原版专题书目低延迟工程--微观结构--策略数学--纪实)
 - [03-linux-userspace-api](../03-linux-userspace-api/) · [12-PNP](../04-cpp/M2-cpp-network-programming/)
 - [13-DPDK](../13-dpdk/) · [19-markets-microstructure](../19-markets-microstructure/)
 - [18-Rust](../18-rust-quant/) · [projects/P9-os-from-scratch](../projects/P9-os-from-scratch/)
