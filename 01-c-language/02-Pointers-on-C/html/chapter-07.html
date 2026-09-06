@@ -758,7 +758,7 @@ gcc -c t.c -o t.o &amp;&amp; nm t.o | grep ' t '   # t = local text
       <section class="section" id="s-7-2">
         <div class="sec-head"><div class="sec-no">7.2</div><h2>函数声明</h2></div>
 <h2>本节讲什么</h2>
-<p><strong>声明（原型）</strong> vs <strong>定义</strong>：声明告知签名，可重复多处；定义分配代码，外部符号全局唯一（ODR）。这一节讲清两者在编译/链接阶段的分工，以及"头文件 + 实现文件"工程模式的根因。</p>
+<p><strong>声明（原型）</strong> vs <strong>定义</strong>：声明告知签名，可重复多处；定义分配代码，外部符号全局唯一（ODR）。这一节讲清两者在编译/链接阶段的分工（声明管编译期类型检查、定义管链接期实体）、"头文件 + 实现文件"工程模式的根因，以及<strong>签名不一致时为什么定义不会修正错误声明</strong>。</p>
 <h2>要点</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -870,6 +870,139 @@ int g_val = 10;
 </tbody>
 </table></div>
 <p>（#include 机制详解 → <strong>ch14</strong>）</p>
+<h3>声明与定义的签名必须一致：定义不会修复错误的声明</h3>
+<p>职责分工——一句话记住：</p>
+<blockquote>
+<p><strong>声明负责编译期类型检查；定义负责链接期代码实体。两者签名必须一致，定义不会修复错误的声明。</strong></p>
+</blockquote>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>声明</th>
+<th>定义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>干什么</td>
+<td>告诉编译器"有这个函数，长这样"</td>
+<td>给出函数体，产生真实机器码</td>
+</tr>
+<tr>
+<td>谁用它</td>
+<td><strong>编译期</strong>：调用点按此处可见的声明做类型检查</td>
+<td><strong>链接期</strong>：提供符号实体（ODR 全局唯一）</td>
+</tr>
+<tr>
+<td>能有几份</td>
+<td>无数份（须全部兼容）</td>
+<td>恰好 1 份</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心规则</strong>：同一个函数，<strong>不允许出现签名不一样的声明</strong>。所有声明的返回类型、参数类型必须完全匹配，否则是约束违反 → <strong>UB</strong>。</p>
+<p>常见误解是"后面写对了定义，前面写错的声明会被自动修正"——<strong>C 语言不这么工作</strong>：</p>
+<ul>
+<li>定义是真实实现代码；</li>
+<li>但<strong>每个调用点用的是该位置可见的那份声明</strong>做类型检查；</li>
+<li>声明签名与定义签名不一致 → 行为未定义，<strong>不会自动对齐到定义</strong>。</li>
+</ul>
+<h4>情况一：同一翻译单元内——编译器当场拦下（error，不是警告）</h4>
+<pre class="code" data-label="C"><code class="c">void foo(void);                     /* 错误声明 */
+int  foo(int x) { return x + 1; }   /* 真实定义 */
+int main(void) { foo(); }
+</code></pre>
+<p>GCC 13 实测（<code class="c">gcc -std=c11 -Wall</code>）：</p>
+<pre class="code" data-label="code"><code class="c">demo1.c:6:5: error: conflicting types for 'foo'; have 'int(int)'
+demo1.c:4:6: note: previous declaration of 'foo' with type 'void(void)'
+demo1.c:9:5: error: too few arguments to function 'foo'
+demo1.c:6:5: note: declared here
+</code></pre>
+<p>两个 error：第一个是<strong>声明/定义冲突</strong>（约束违反，标准强制要求诊断）；第二个 <code class="c">too few arguments</code> 的 note 指向<strong>定义那一行</strong>——因为在同一 TU 里，定义本身就是一份声明，第 9 行的调用点看到的是第 6 行的定义，不是第 4 行的错误声明。</p>
+<h4>情况二：跨翻译单元——编译器和链接器全都沉默，运行期静默损坏（真正的雷）</h4>
+<pre class="code" data-label="C"><code class="c">/* bad.h        */  void foo(void);        /* 声明：无参、返回 void */
+/* main_bad.c   */  #include &quot;bad.h&quot;
+                    int main(void){ foo(); }        /* 按声明检查：不传参 */
+/* foo_impl.c   */  int foo(int x){ printf(&quot;%d&quot;, x); return x+1; }  /* 故意不 include bad.h */
+</code></pre>
+<p>实现文件<strong>忘了 include 自己的头文件</strong>——这是真实工程里最常见的翻车方式。实测结果：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=c11 -Wall -c main_bad.c   # 零输出
+$ gcc -std=c11 -Wall -c foo_impl.c   # 零输出
+$ gcc main_bad.o foo_impl.o -o prog  # 链接零报错
+$ ./prog
+calling foo()...
+  inside foo: x = 654333712          # 读的是未初始化的寄存器垃圾
+returned
+$ ./prog ; ./prog ; ./prog
+  inside foo: x = -1870637296
+  inside foo: x = -1839180016
+  inside foo: x = 1801475856         # 每次都不一样
+</code></pre>
+<p><strong>零警告、零错误、退出码 0</strong>——调用点不传参，被调函数却去读 <code class="c">edi</code> 寄存器，读到什么全看上一个函数留下的残留。注意它并不总是"崩溃"，更多时候是<strong>静默的数据损坏</strong>：某次侥幸读到 0 就"看起来正常"，换个编译选项/换个调用上下文立刻翻脸。这比崩溃更难查。</p>
+<p>根因在符号表里一目了然：</p>
+<pre class="code" data-label="code"><code class="c">$ nm prog | grep &quot; T foo&quot;
+000000000000119b T foo          # C 符号只有名字，没有参数/返回值信息
+</code></pre>
+<p>链接器拿到的只是名字 <code class="c">foo</code>，无从比对类型——这就是 C 无法在链接期发现签名不匹配的机制根源。</p>
+<h4>防御：三种手段，只有第一种可靠</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>效果</th>
+<th>评价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>实现文件 include 自己的头文件</strong></td>
+<td>编译期立即 <code class="c">error: conflicting types</code></td>
+<td>✅ <strong>唯一可靠</strong>，必须做</td>
+</tr>
+<tr>
+<td><code class="c">-flto -O2</code></td>
+<td><code class="c">warning: type of 'foo' does not match original declaration [-Wlto-type-mismatch]</code></td>
+<td>⚠️ 只是 warning，程序照样跑出垃圾；要配 <code class="c">-Werror=lto-type-mismatch</code></td>
+</tr>
+<tr>
+<td>靠运行时"崩给你看"</td>
+<td>往往不崩，只静默损坏</td>
+<td>❌ 不可靠</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">$ gcc -std=c11 -Wall -flto -O2 main_bad.c foo_impl.c -o prog
+bad.h:2:6: warning: type of 'foo' does not match original declaration [-Wlto-type-mismatch]
+foo_impl.c:4:5: note: return value type mismatch
+</code></pre>
+<h4>完全相同的重复声明：合法</h4>
+<pre class="code" data-label="C"><code class="c">int foo(int a);
+int foo(int a);   /* 重复相同声明，合法 */
+</code></pre>
+<p><code class="c">-Wall -Wextra</code> 下零输出——允许多次声明，前提是<strong>签名全部一模一样</strong>（对应本节开头对照表里声明"可重复"那一格）。</p>
+<h4>C++ 对照：同一份代码在 C++ 里是另一回事</h4>
+<p>把情况一的那段代码丢给 <code class="c">g++</code>，<strong>编译通过</strong>——因为 <code class="c">void foo(void)</code> 和 <code class="c">int foo(int)</code> 参数不同，在 C++ 里构成一个<strong>合法的重载集</strong>；随后 <code class="c">foo()</code> 重载决议选中了那个<strong>从未定义</strong>的版本：</p>
+<pre class="code" data-label="code"><code class="c">$ g++ -std=c++17 demo1.cpp -o demo1pp
+/usr/bin/ld: undefined reference to `foo()'
+</code></pre>
+<p>而只改返回值、不改参数时两边都拒绝（返回值不参与重载）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代码</th>
+<th>C（gcc）</th>
+<th>C++（g++）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">int foo(int);</code> + <code class="c">void foo(int);</code></td>
+<td><code class="c">error: conflicting types for 'foo'; have 'void(int)'</code></td>
+<td><code class="c">error: ambiguating new declaration of 'void foo(int)'</code></td>
+</tr>
+</tbody>
+</table></div>
 <h3>C 为什么没有函数重载（overload）</h3>
 <p><strong>直接结论：C 语言没有函数重载。函数名字就是全部——函数名必须独一无二，不看参数、不看返回值。</strong></p>
 <p>C 的符号规则：函数符号<strong>只由函数名字决定，参数列表、返回类型完全不参与符号生成</strong>：</p>
@@ -944,6 +1077,7 @@ C 链接器根本不看参数，只看名字。若在同一翻译单元里写两
 <li>全局变量：h 写 extern，c 做唯一的定义</li>
 <li>h 里面要带函数体，就用 <code class="c">static inline</code></li>
 <li><strong>声明随便复制，定义只能一份</strong></li>
+<li><strong>声明管编译期类型检查，定义管链接期实体——签名必须一致，定义不会修复错误的声明</strong></li>
 </ol>
 <h2>底层映射</h2>
 <h3>符号表视角</h3>
@@ -1049,6 +1183,18 @@ C++ 代码要被 C 链接器找到，必须关掉 mangling，副作用是<strong
 <td>"返回值不同算两个函数"</td>
 <td>返回值不参与符号生成，<code class="c">void f()</code> 和 <code class="c">int f()</code> 同样冲突</td>
 </tr>
+<tr>
+<td>"签名写错了，后面的定义会修正前面的声明"</td>
+<td>不会——每个调用点只看该位置可见的声明；跨 TU 时编译链接全静默，运行期读垃圾</td>
+</tr>
+<tr>
+<td>"声明/定义不一致会崩溃，容易发现"</td>
+<td>未必崩——跨 TU 时常表现为<strong>静默数据损坏</strong>（读未初始化寄存器），退出码仍为 0</td>
+</tr>
+<tr>
+<td>"完全相同的声明重复写不合法"</td>
+<td>合法，<code class="c">-Wall -Wextra</code> 零输出；只要签名一模一样</td>
+</tr>
 </tbody>
 </table></div>
 <h2>实操</h2>
@@ -1064,6 +1210,8 @@ EOF
 gcc a.c b.c -o prog   # multiple definition
 # 强制声明与定义一致检查
 gcc -Werror=strict-prototypes -c t.c
+# 跨 TU 签名不一致：只有 LTO 能报（且默认只是 warning）
+gcc -std=c11 -Wall -flto -O2 -Werror=lto-type-mismatch a.c b.c -o prog
 </code></pre>
 <h2>与后续衔接</h2>
 <p><strong>7.2.1</strong> 原型细节；<strong>7.2.2</strong> 缺省认定陷阱；<strong>ch02</strong> 声明/定义总论；<strong>ch14</strong> 头文件与宏。</p>
@@ -1079,6 +1227,9 @@ gcc -Werror=strict-prototypes -c t.c
 <li><code class="c">#include</code> 的本质是什么？为什么声明可以粘无数次、定义只能一份？</li>
 <li><code class="c">void calc(int)</code> 在 file1.c、<code class="c">int calc(double)</code> 在 file2.c：编译和链接各发生什么？</li>
 <li>C 没有重载的根源机制是什么？C++ 靠什么实现重载？C 模拟多态的三种方案？</li>
+<li>声明与定义签名不一致时，同一 TU 和跨 TU 分别会怎样？为什么后者编译链接全静默？</li>
+<li>防御签名不一致的三种手段各是什么？为什么只有"实现文件 include 自己的头"可靠？</li>
+<li>调用点做类型检查时依据的是"该位置可见的声明"还是"最终的定义"？同一 TU 内定义在调用点之前时会怎样？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -1130,6 +1281,30 @@ GCC/Clang 直接报 <code class="c">error: conflicting types for 'test'</code>�
 <p>根源：C 的符号名就是函数名本身，参数/返回值不参与；C++ 把参数类型编码进符号名。
 这也是 <code class="c">extern "C"</code> 的意义——C++ 函数要让 C 链接器找到必须关掉 mangling，
 代价是该函数不能重载。</p>
+</details>
+<p><strong>题目 4：</strong> 三个文件，编译、链接、运行各会发生什么？</p>
+<pre class="code" data-label="C"><code class="c">/* bad.h      */ void foo(void);
+/* main_bad.c */ #include &quot;bad.h&quot;
+                 int main(void) { foo(); return 0; }
+/* foo_impl.c */ #include &lt;stdio.h&gt;
+                 int foo(int x) { printf(&quot;x = %d\n&quot;, x); return x + 1; }
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>编译：两个 TU 都零警告零错误通过。</strong> main_bad.c 按 <code class="c">void foo(void)</code> 检查 <code class="c">foo()</code>，
+完全合规；foo_impl.c 没有 include bad.h，编译器根本不知道还有另一份声明。</p>
+<p><strong>链接：零报错。</strong> <code class="c">nm</code> 里两边都只有一个裸符号 <code class="c">foo</code>——C 符号不带参数/返回值信息，
+链接器无从比对类型，直接配对成功。</p>
+<p><strong>运行：静默错误。</strong> 调用点不传参，被调函数却去读第一个整型参数寄存器（x86-64 的
+<code class="c">edi</code>），读到的是上一个函数留下的残留值。实测多次运行输出 <code class="c">x = 654333712</code>、
+<code class="c">x = -1870637296</code>、<code class="c">x = -1839180016</code>、<code class="c">x = 1801475856</code>——每次都不同，<strong>退出码仍是 0</strong>。
+它不一定崩溃，更多时候是静默数据损坏，比崩溃难查得多。</p>
+<p><strong>修复/防御</strong>：
+1. foo_impl.c 加上 <code class="c">#include "bad.h"</code> → 编译期立即 <code class="c">error: conflicting types for
+   'foo'; have 'int(int)'</code>，把运行期灾难提前到编译期。这是唯一可靠的手段。
+2. <code class="c">-flto -O2 -Werror=lto-type-mismatch</code> 能让链接期优化阶段报出
+   <code class="c">type of 'foo' does not match original declaration</code>——但默认只是 warning，必须升级成 error。
+3. 靠"运行时会崩"来发现是不可靠的：本例就不崩。</p>
 </details>
       </section>
       <section class="section" id="s-7-2-1">
