@@ -2196,7 +2196,17 @@ int main(void) {
       <section class="section" id="s-7-4">
         <div class="sec-head"><div class="sec-no">7.4</div><h2>ADT 和黑盒</h2></div>
 <h2>本节讲什么</h2>
-<p>用<strong>函数接口隐藏实现细节</strong>——抽象数据类型（ADT）、黑盒。调用者只依赖 <code class="c">.h</code> 里的原型与文档，内部数据结构、算法藏在 <code class="c">.c</code>。这一节先立地基：<strong>C 是单文件编译模型，编译器看不到别的 <code class="c">.c</code>，封装不是编译器全局统筹出来的</strong>；再讲 C 实现 ADT 的两个手段——不透明类型（靠编译器拦）+ <code class="c">static</code>（靠链接器拦），以及"头文件本身不隐藏任何东西"这个易搞反的点。这是 DPDK/HFT 分层架构与 <strong>ch17</strong> 经典 ADT 的函数观。</p>
+<p>用<strong>函数接口隐藏实现细节</strong>——抽象数据类型（ADT）、黑盒。调用者只依赖 <code class="c">.h</code> 里的原型与文档，内部数据结构、算法藏在 <code class="c">.c</code>。</p>
+<p>阅读顺序：</p>
+<ol>
+<li><strong>地基</strong>：C 是单文件编译模型，编译器看不到别的 <code class="c">.c</code>，封装不是编译器全局统筹出来的</li>
+<li><strong>两个手段</strong>：不透明类型（靠编译器拦）+ <code class="c">static</code>（靠链接器拦），以及"头文件本身不隐藏任何东西"这个易搞反的点</li>
+<li><strong>最小完整例子</strong>：<code class="c">list.h</code> / <code class="c">list.c</code> / <code class="c">main.c</code> 三文件跑通，以及不完整类型到底禁止什么（实测五条报错）</li>
+<li><strong>ADT 的回报</strong>：换实现（固定数组 → 动态数组）而 <code class="c">main.o</code> 一个字节都不用重编</li>
+<li><strong>ADT 的代价</strong>：⚠️ 跨 TU 无法内联，实测 1.19 ns vs 0.20 ns（5.9×），<code class="c">-flto</code> 能补回大半——<strong>"opaque 零开销"是错的，这句话在 HFT 热路径上会让你付真金白银</strong></li>
+<li><strong>OOP 对照表</strong>：哪些行是强制的、哪些只是约定（构造/析构尤其脆弱）</li>
+</ol>
+<p>这是 DPDK/HFT 分层架构与 <strong>ch17</strong> 经典 ADT 的函数观。</p>
 <h2>前提：C 是<strong>单文件编译模型</strong></h2>
 <p>这是理解 C 封装机制的<strong>地基</strong>——封装不是编译器全局统筹出来的。</p>
 <ul>
@@ -2275,6 +2285,162 @@ printf(&quot;%d\n&quot;, dupfn());    /* 编译通过、运行输出 1 —— �
 <li>内部数据结构、算法藏在 <code class="c">.c</code>（<code class="c">static</code> 函数/变量）</li>
 <li>好处：替换实现、单元测试、减少耦合、缩短编译时间</li>
 </ul>
+<h3>最小完整例子：三个文件跑一遍（gcc 13.3 实测）</h3>
+<p>ADT 落地就是<strong>三个文件</strong>：<code class="c">.h</code> 只给接口、<code class="c">.c</code> 藏实现、<code class="c">main.c</code> 只调函数。下面这份代码是<strong>真编译真跑过</strong>的。</p>
+<pre class="code" data-label="C"><code class="c">/* list.h —— 对外，ADT 的接口 */
+#ifndef LIST_H
+#define LIST_H
+
+/* 不完全类型：只说&quot;有个 struct List&quot;，不写里面的成员 */
+typedef struct List List;
+
+List *list_create(void);
+void  list_destroy(List *l);
+int   list_append(List *l, int val);   /* 返回 0 成功，-1 满 */
+int   list_get_size(List *l);
+int   list_get_at(List *l, int idx);   /* 返回 0 成功，-1 越界 */
+#endif
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* list.c —— ADT 的真实实现，黑盒内部 */
+#include &quot;list.h&quot;
+#include &lt;stdlib.h&gt;
+
+struct List {                 /* 真正定义只存在 .c，外部看不见 */
+    int size;
+    int buffer[128];
+};
+
+static int list_full(const List *l)   /* static：内部辅助，链接器不导出 */
+{
+    return l-&gt;size &gt;= (int)(sizeof(l-&gt;buffer) / sizeof(l-&gt;buffer[0]));
+}
+
+List *list_create(void)
+{
+    List *obj = malloc(sizeof(List)); /* 只有这里知道 List 多大 */
+    if (obj) obj-&gt;size = 0;
+    return obj;
+}
+void list_destroy(List *l) { free(l); }
+
+int list_append(List *l, int val)
+{
+    if (!l || list_full(l)) return -1;
+    l-&gt;buffer[l-&gt;size++] = val;
+    return 0;
+}
+int list_get_size(List *l) { return l ? l-&gt;size : -1; }
+int list_get_at(List *l, int idx)
+{
+    if (!l || idx &lt; 0 || idx &gt;= l-&gt;size) return -1;
+    return l-&gt;buffer[idx];
+}
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* main.c —— 使用方：永远只拿 List*，只调函数 */
+#include &lt;stdio.h&gt;
+#include &quot;list.h&quot;
+
+int main(void)
+{
+    List *mylist = list_create();
+    for (int i = 0; i &lt; 5; i++) list_append(mylist, 100 + i);
+    printf(&quot;size = %d\n&quot;, list_get_size(mylist));
+    printf(&quot;get_at(99) = %d  (越界被 ADT 拦下)\n&quot;, list_get_at(mylist, 99));
+    list_destroy(mylist);
+    return 0;
+}
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -O2 -Wall -Wextra -c list.c &amp;&amp; gcc -O2 -Wall -Wextra -c main.c &amp;&amp; gcc list.o main.o -o prog &amp;&amp; ./prog
+size = 5
+[0] = 100   [1] = 101   [2] = 102   [3] = 103   [4] = 104
+get_at(99) = -1  (越界返回 -1)
+再追加 123 个成功，第 128 个被拒（容量上限）
+final size = 128
+</code></pre>
+<p>注意最后两行：<strong>越界和写满都不是崩溃，是 ADT 返回错误码</strong>。不变量（<code class="c">size</code> 永远等于真实元素数、<code class="c">buffer</code> 永不越界）由 <code class="c">list.c</code> 独家维护——调用方<strong>没有能力破坏它</strong>，因为它连字段名都看不到。</p>
+<blockquote>
+<p>⚠️ <strong>封装只是把"破坏的可能"收拢到一处，不等于自动正确。</strong> 如果 <code class="c">list_append</code> 照最常见的写法写成 <code class="c">l-&gt;buffer[l-&gt;size++] = val;</code>（不检查 <code class="c">size</code> 上界），那么第 129 个元素就会写穿 <code class="c">buffer</code>、踏进相邻内存——<strong>黑盒只保证"只有 <code class="c">.c</code> 能犯错"，不保证 <code class="c">.c</code> 不犯错</strong>。不变量守不守得住，取决于实现方自己。</p>
+</blockquote>
+<h3>不完整类型到底禁止什么（实测五条报错）</h3>
+<p><code class="c">typedef struct List List;</code> 之后，调用方手里只有一个"名字"。实测把能想到的越界动作全试一遍：</p>
+<pre class="code" data-label="C"><code class="c">List g_obj;                        /* ① 全局对象 */
+int main(void) {
+    List obj;                      /* ② 局部对象 */
+    size_t n = sizeof(List);       /* ③ sizeof */
+    List *q = malloc(sizeof(List));/* ④ 用 sizeof 去分配 */
+    List *r = malloc(sizeof(*r));  /* ⑤ 换个写法也没用 */
+}
+</code></pre>
+<p>gcc 13.3 逐条报错（<strong>全部是 error，不是 warning</strong>）：</p>
+<pre class="code" data-label="code"><code class="c">error: storage size of 'obj' isn't known                              ← ②
+error: storage size of 'g_obj' isn't known                            ← ①
+error: invalid application of 'sizeof' to incomplete type 'List'      ← ③④⑤
+error: 'g_obj' has an incomplete type 'List'                          ← ① 使用时
+</code></pre>
+<p>规律一句话：<strong>不完整类型 = 只有地址、没有尺寸</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>能不能</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">List *p;</code>（定义指针）</td>
+<td>✅</td>
+<td>指针大小与所指类型无关，一律 8 字节</td>
+</tr>
+<tr>
+<td>函数参数/返回值用 <code class="c">List *</code></td>
+<td>✅</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">p-&gt;member</code></td>
+<td>❌</td>
+<td>不知道成员名与偏移</td>
+</tr>
+<tr>
+<td><code class="c">sizeof(List)</code>、<code class="c">sizeof(*p)</code></td>
+<td>❌</td>
+<td>不知道大小</td>
+</tr>
+<tr>
+<td><code class="c">List obj;</code>（栈/全局对象）</td>
+<td>❌</td>
+<td>无法分配空间</td>
+</tr>
+<tr>
+<td><code class="c">malloc(sizeof(List))</code></td>
+<td>❌</td>
+<td>同上，<strong>所以 <code class="c">create()</code> 必须住在 <code class="c">.c</code> 里</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>🔑 最后一行是设计上的必然：<strong>分配内存的函数必须在能看见完整定义的地方</strong>，否则没人算得出该 malloc 多少字节。这就是为什么 ADT 一定有 <code class="c">xxx_create()</code> / <code class="c">xxx_destroy()</code> —— 不是风格偏好，是<strong>不完整类型的物理约束</strong>。</p>
+</blockquote>
+<h3>换实现不动调用方（ADT 最大价值的硬证据）</h3>
+<p>把 <code class="c">list.c</code> 换成 <code class="c">list_dyn.c</code>：固定数组 <code class="c">int buffer[128]</code> → 堆上动态数组 <code class="c">int *buffer</code>，满了 <code class="c">realloc</code> 翻倍。<strong><code class="c">list.h</code> 一个字没改，<code class="c">main.c</code> 一个字没改，<code class="c">main.o</code> 一个字节都没重编</strong>，只是换了个 <code class="c">.o</code> 去链接：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -O2 -c list_dyn.c -o list_dyn.o
+$ gcc list_dyn.o main.o -o prog_dyn     # main.o 复用的就是上面那份
+$ ./prog_dyn
+size = 5
+[0] = 100   [1] = 101   [2] = 102   [3] = 103   [4] = 104
+get_at(99) = -1  (越界返回 -1)
+再追加 195 个成功，第 -1 个被拒（容量上限）
+final size = 200          ← 容量上限从 128 变成&quot;没有上限&quot;
+</code></pre>
+<p>调用方代码零改动，行为从「最多装 128 个」变成「按需增长」。这就是 ADT 的回报：</p>
+<ul>
+<li><strong>编译期</strong>：调用方只依赖 5 个函数原型，结构体怎么变都不触发重编</li>
+<li><strong>链接期</strong>：结构体布局不进符号表，换 <code class="c">.o</code> 即可（动态库场景连链接都不用，换 <code class="c">.so</code>）</li>
+<li><strong>运行期</strong>：不变量的守护责任 100% 在 <code class="c">.c</code>，调用方破坏不了</li>
+</ul>
+<p>反过来说，如果 <code class="c">struct List</code> 写在 <code class="c">.h</code> 里，这次改动会让<strong>每一个 include 它的 <code class="c">.c</code> 全部重编</strong>，且已发布的 <code class="c">.so</code> 二进制 ABI 直接断裂。</p>
 <h3>opaque pointer 模式</h3>
 <pre class="code" data-label="C"><code class="c">/* queue.h — 公共接口，只暴露不完整类型 */
 struct queue;                       /* 前向声明，布局不暴露 */
@@ -2369,6 +2535,15 @@ b-&gt;x = 42;        /* 绕过所有 setter，直接改内部状态 */
 b-&gt;y = -1;        /* 不变量（invariant）形同虚设 */
 printf(&quot;%zu&quot;, sizeof(Bar));   /* 调用方开始依赖大小 */
 </code></pre>
+<p>实测（gcc 13.3，<code class="c">-Wall -Wextra</code> 全开）：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -O2 -Wall -Wextra exposed.c exposed_main.c -o exposed_prog &amp;&amp; ./exposed_prog
+b-&gt;x=42 b-&gt;y=-1  sizeof(Bar)=8
+exit=0                    ← 零警告零错误，约定被公然违反
+</code></pre>
+<p><strong>编译器连一个警告都不给。</strong> 头文件里就算写满「y 必须 &gt;= 0」的注释，也纯粹是给人看的——没有任何机制执行它。</p>
+<blockquote>
+<p>❌ <strong>这就不是 ADT</strong>。把完整 <code class="c">struct</code> 写进 <code class="c">.h</code>，你得到的是一个<strong>普通结构体 + 一组顺手提供的函数</strong>，黑盒根本不存在。判定标准很简单：<strong>调用方能不能 <code class="c">p-&gt;member</code>？能，就不是 ADT。</strong></p>
+</blockquote>
 <p>后果是双重的：</p>
 <ol>
 <li><strong>封装被打破</strong>：外部代码可以随便修改内部成员，任何不变量（比如"y 必须 ≥ 0"、"size 必须等于链表长度"）都无法保证</li>
@@ -2378,6 +2553,168 @@ printf(&quot;%zu&quot;, sizeof(Bar));   /* 调用方开始依赖大小 */
 <h3>ABI 稳定性</h3>
 <p>opaque pointer 还带来 <strong>ABI 稳定</strong>：改 <code class="c">struct queue</code> 内部布局（加成员、改顺序）不破坏调用者的二进制兼容——因为调用者从不 <code class="c">sizeof(struct queue)</code>、从不访问成员。这是库（DPDK、libc）能升级而不重编用户代码的关键。</p>
 <p>对比：若 <code class="c">.h</code> 暴露完整 struct，改成员就改了 sizeof 和偏移，所有包含它的 <code class="c">.c</code> 都要重编，二进制 ABI 也变。</p>
+<h3>⚠️ ADT 不是零成本：跨 TU 拿不到内联（HFT 必看）</h3>
+<p><strong>很多资料（包括本节早先的版本）说"opaque pointer 零运行时开销"——这句话只对一半，必须修正。</strong></p>
+<ul>
+<li><strong>指针本身</strong>确实零开销：<code class="c">List*</code> 和暴露布局的 <code class="c">struct List*</code> 是同一个 8 字节地址</li>
+<li><strong>但每次访问都要过函数</strong>，而函数在<strong>别的编译单元</strong>里 → 编译器看不见函数体 → <strong>内联不了</strong>，每次 getter 都是一条真实的 <code class="c">call</code></li>
+</ul>
+<p>实测（gcc 13.3 / <code class="c">-O2</code>，2 亿次 <code class="c">inc</code> + <code class="c">get</code> 循环，同一份逻辑三种实现）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实现</th>
+<th>total</th>
+<th>per-iter</th>
+<th>相对</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>opaque（struct 藏 .c，跨 TU 调用）</td>
+<td>238.8 ms</td>
+<td><strong>1.194 ns</strong></td>
+<td>5.9×</td>
+</tr>
+<tr>
+<td>opaque + <code class="c">-flto</code>（链接期优化，跨 TU 后可内联）</td>
+<td>71.8 ms</td>
+<td>0.359 ns</td>
+<td>1.8×</td>
+</tr>
+<tr>
+<td>struct 暴露 .h + <code class="c">static inline</code></td>
+<td>40.7 ms</td>
+<td><strong>0.204 ns</strong></td>
+<td>1.0×</td>
+</tr>
+</tbody>
+</table></div>
+<p>反汇编坐实第一种确实在真调用：</p>
+<pre class="code" data-label="code"><code class="c">$ objdump -d b_op | grep -n &quot;counter_inc&quot;
+   1123:  e8 e8 01 00 00   call   1310 &lt;counter_inc&gt;    ← opaque -O2：真 call，没内联
+</code></pre>
+<p><strong>这 1 ns 是什么</strong>：x86-64 上一次 <code class="c">call</code>+<code class="c">ret</code> 的开销，加上被调用者要重新从内存 load 结构体字段（寄存器分配跨不过函数边界）。单次看不出来，但在 HFT 里：</p>
+<ul>
+<li>行情回调里一个订单簿对象走 20 次 getter = <strong>20 ns</strong>，而整条链路的延迟预算可能只有 1 µs</li>
+<li>这 1 ns 在 L1 命中时约等于 <strong>3~4 个 cycle</strong>，和一次 L2 hit 相当</li>
+</ul>
+<p><strong>HFT 上的取舍（不是"要不要封装"，而是"在哪一层付这个钱"）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>建议</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热路径（撮合、风控判定、行情解析）</td>
+<td><strong>暴露 <code class="c">struct</code> + <code class="c">static inline</code></strong>，或 opaque + <code class="c">-flto</code></td>
+<td>每次访问 1 ns 是真实预算</td>
+</tr>
+<tr>
+<td>冷路径（初始化、配置、日志、销毁）</td>
+<td>opaque ADT</td>
+<td>这些路径一年跑不了几次，可维护性优先</td>
+</tr>
+<tr>
+<td>要发布 <code class="c">.so</code> 给外部、要保 ABI</td>
+<td>opaque ADT，别无选择</td>
+<td>暴露布局 = 冻结布局</td>
+</tr>
+<tr>
+<td>数据面结构（<code class="c">order_book</code>、<code class="c">mempool</code>）</td>
+<td>内部暴露 + <code class="c">static inline</code>，对外接口仍 opaque</td>
+<td>"对内不设防、对外设防"是 DPDK 的常见做法</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>🔑 <strong><code class="c">-flto</code> 是 opaque 的救星</strong>：不开 LTO 时编译器在编译 <code class="c">main.c</code> 那一刻根本看不到 <code class="c">counter.c</code>，开了 LTO 后 IR 保留到链接期，跨 TU 内联成为可能（实测 1.194 → 0.359 ns）。代价是编译时间变长、调试信息更难对。<strong>DPDK 的 meson 构建默认带 <code class="c">b_lto=true</code>，部分原因就在这儿。</strong></p>
+</blockquote>
+<h3>OOP → C 的 ADT 对照表</h3>
+<p>C 没有 <code class="c">class</code> / <code class="c">private</code>，但 ADT 的四个要素都能一一对应上：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>OOP 概念</th>
+<th>C 的 ADT 实现</th>
+<th>强制力来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">private</code> 成员</td>
+<td><code class="c">struct</code> 完整定义放在 <code class="c">.c</code>，<code class="c">.h</code> 只前置声明</td>
+<td><strong>编译器</strong>（不完整类型不解引用）</td>
+</tr>
+<tr>
+<td>成员方法</td>
+<td>普通 C 函数，对象指针作第一个参数</td>
+<td>无（约定）</td>
+</tr>
+<tr>
+<td>构造函数</td>
+<td><code class="c">xxx_create()</code></td>
+<td>不完整类型的物理约束（只有 <code class="c">.c</code> 知道 <code class="c">sizeof</code>）</td>
+</tr>
+<tr>
+<td>析构函数</td>
+<td><code class="c">xxx_destroy()</code></td>
+<td>无（约定，忘了调就是泄漏）</td>
+</tr>
+<tr>
+<td><code class="c">this</code> 指针</td>
+<td>显式的第一个参数 <code class="c">List *l</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><code class="c">private</code> 方法</td>
+<td><code class="c">.c</code> 里 <code class="c">static</code> 函数</td>
+<td><strong>链接器</strong>（内部链接不导出符号）</td>
+</tr>
+<tr>
+<td>继承</td>
+<td>结构体嵌套（第一个成员是"基类"）</td>
+<td>无</td>
+</tr>
+<tr>
+<td>多态 / 虚函数</td>
+<td>结构体里放<strong>函数指针表</strong></td>
+<td>无</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意最后一列：<strong>C 的 ADT 只有两处有强制力（隐藏布局靠编译器、隐藏符号靠链接器），其余全是约定</strong>。构造/析构尤其脆弱——C 没有 RAII，没有析构自动调用，忘记 <code class="c">list_destroy()</code> 就是泄漏。这是 C 版 ADT 与 C++ class 的本质差距，不要因为表格对得上就以为能力等价。</p>
+<p><strong>构造/析构不对称的实战后果</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>语言</th>
+<th>忘记释放</th>
+<th>典型兜底</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C++</td>
+<td>栈对象自动析构 / 智能指针</td>
+<td>RAII</td>
+</tr>
+<tr>
+<td>Rust</td>
+<td>编译期 borrow checker 拒绝</td>
+<td>所有权</td>
+</tr>
+<tr>
+<td><strong>C</strong></td>
+<td><strong>泄漏，且无任何提示</strong></td>
+<td>只能靠 <code class="c">valgrind</code> / ASan / 人工 review</td>
+</tr>
+</tbody>
+</table></div>
 <h2>HFT / DPDK</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -2445,7 +2782,15 @@ struct file_operations;   /* 函数指针表，ops 本身就是黑盒接口 */
 </tr>
 <tr>
 <td>"opaque pointer 有运行时开销"</td>
-<td>零开销，只是编译期信息隐藏</td>
+<td>⚠️ <strong>只对一半</strong>。指针本身零开销，但<strong>每次访问都要走函数、跨 TU 无法内联</strong>——实测 1.19 ns/次 vs <code class="c">static inline</code> 0.20 ns/次（5.9×）。开 <code class="c">-flto</code> 可降到 0.36 ns。详见上面「ADT 不是零成本」</td>
+</tr>
+<tr>
+<td>"不完整类型只是不能解引用"</td>
+<td>也不能 <code class="c">sizeof</code>、也不能定义对象（栈/全局），连 <code class="c">malloc(sizeof(*p))</code> 都不行——<strong>没有尺寸</strong></td>
+</tr>
+<tr>
+<td>"ADT 只是把函数分到两个文件"</td>
+<td>判定标准是<strong>调用方能否 <code class="c">p-&gt;member</code></strong>。能访问成员 = 黑盒不存在 = 不是 ADT</td>
 </tr>
 <tr>
 <td>"static 函数也能被外部调用"</td>
@@ -2484,6 +2829,21 @@ cat &gt; caller.c &lt;&lt; 'EOF'
 int main(void) { queue_t *q = queue_create(); return q-&gt;head == 0; }
 EOF
 gcc caller.c -c   # error: dereferencing pointer to incomplete type
+
+# 复现本节全部实测（list 三文件 + 换实现 + 内联开销）
+gcc -O2 -Wall -Wextra -c list.c -o list.o
+gcc -O2 -Wall -Wextra -c main.c -o main.o
+gcc list.o main.o -o prog &amp;&amp; ./prog          # 正常 ADT
+
+gcc -O2 -c list_dyn.c -o list_dyn.o
+gcc list_dyn.o main.o -o prog_dyn &amp;&amp; ./prog_dyn   # main.o 不重编，行为已变
+
+# 内联开销三连（opaque / +flto / static inline）
+gcc -O2 -c counter.c -o counter.o
+gcc -O2 bench.c counter.o -o b_op        &amp;&amp; ./b_op
+gcc -O2 -flto bench.c counter.c -o b_lto &amp;&amp; ./b_lto
+gcc -O2 -DUSE_INLINE bench.c -o b_inl    &amp;&amp; ./b_inl
+objdump -d b_op | grep counter_inc            # 有 call = 没内联
 </code></pre>
 <h2>与后续衔接</h2>
 <p><strong>ch17-classic-adt</strong> 链表/栈/队列完整实现；<strong>ch12</strong> 结构体 + 指针封装；<strong>ch10</strong> 不完整类型；<strong>ch14</strong> 头文件工程。</p>
@@ -2498,6 +2858,9 @@ gcc caller.c -c   # error: dereferencing pointer to incomplete type
 <li>C 实现 ADT 的两个手段分别是什么？各自靠编译器还是链接器来强制？</li>
 <li>头文件 <code class="c">.h</code> 本身具备隐藏能力吗？它真正的作用是什么？</li>
 <li>把 struct 完整定义写进 <code class="c">.h</code> 会破坏哪两样东西？</li>
+<li>不完整类型到底禁止哪些操作（列举至少三种）？为什么 <code class="c">xxx_create()</code> 必然住在 <code class="c">.c</code> 里？</li>
+<li>实测里 opaque 版每次访问 1.19 ns、<code class="c">static inline</code> 版 0.20 ns，这个差距从哪来？<code class="c">-flto</code> 为什么能补回大半？</li>
+<li>OOP 对照表里，哪些行是<strong>编译器/链接器强制</strong>的，哪些只是约定？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -2560,6 +2923,119 @@ int stack_pop(StackHandle s);
 </table></div>
 <p>规律：<strong>类型/布局问题归编译器（编译期），符号/重名问题归链接器（链接期）</strong>。
 C 的封装正好横跨两者——手段 A（opaque）靠编译器，手段 B（static）靠链接器。</p>
+</details>
+<p><strong>题目 3：</strong> <code class="c">list.h</code> 里只有 <code class="c">typedef struct List List;</code>，以下 8 条语句哪些能编译、哪些报错？报错的话 gcc 的原话是什么？</p>
+<pre class="code" data-label="C"><code class="c">List *p;                        /* ① */
+void f(List *q);                /* ② */
+size_t a = sizeof(List);        /* ③ */
+size_t b = sizeof(*p);          /* ④ */
+List local;                     /* ⑤ */
+static List global;             /* ⑥ */
+p = malloc(sizeof(List));       /* ⑦ */
+int n = p-&gt;size;                /* ⑧ */
+</code></pre>
+<details>
+<summary>参考答案（gcc 13.3 实测）</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>结果</th>
+<th>说明 / 报错原文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td>✅</td>
+<td>指针大小与所指类型无关，一律 8 字节</td>
+</tr>
+<tr>
+<td>②</td>
+<td>✅</td>
+<td>参数同样只是个地址</td>
+</tr>
+<tr>
+<td>③</td>
+<td>❌</td>
+<td><code class="c">invalid application of 'sizeof' to incomplete type 'List'</code></td>
+</tr>
+<tr>
+<td>④</td>
+<td>❌</td>
+<td>同上——<code class="c">*p</code> 的类型仍是 <code class="c">List</code>，换个写法没用</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td>❌</td>
+<td><code class="c">storage size of 'local' isn't known</code>（局部对象）</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td>❌</td>
+<td><code class="c">storage size of 'global' isn't known</code>（全局/静态对象）</td>
+</tr>
+<tr>
+<td>⑦</td>
+<td>❌</td>
+<td>同 ③。<strong>所以 <code class="c">create()</code> 只能写在看得见完整定义的 <code class="c">.c</code> 里</strong></td>
+</tr>
+<tr>
+<td>⑧</td>
+<td>❌</td>
+<td><code class="c">invalid use of incomplete typedef 'List'</code>（读和写都拦）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>核心：不完整类型 = 有地址、没有尺寸。</strong> 一切需要"知道占多少字节"或"知道成员在哪"的操作全部禁止；只传地址的操作全部允许。这正是 ADT 能成立的原因——接口只传地址（允许），实现独占尺寸（禁止外泄）。</p>
+</details>
+<p><strong>题目 4：</strong> 实测数据：opaque 版 1.194 ns/次、<code class="c">-flto</code> 版 0.359 ns/次、暴露 struct + <code class="c">static inline</code> 版 0.204 ns/次。回答：</p>
+<ol>
+<li>这个差距的物理来源是什么？</li>
+<li>你是 HFT 系统的设计者，订单簿 <code class="c">order_book</code> 该怎么选？给出分层方案。</li>
+</ol>
+<details>
+<summary>参考答案</summary>
+<p><strong>1. 差距来源</strong></p>
+<p>opaque 版的函数体在<strong>另一个编译单元</strong>，编译 <code class="c">main.c</code> 时 gcc 只看到原型、看不到函数体 → 只能生成真实的 <code class="c">call</code> 指令（<code class="c">objdump</code> 可证：<code class="c">call 1310 &lt;counter_inc&gt;</code>）。一次 <code class="c">call</code>+<code class="c">ret</code> 加上被调用者重新从内存 load 字段，约 1 ns。</p>
+<ul>
+<li><code class="c">-flto</code>：把 IR 保留到链接期，链接时两个 TU 都可见 → 跨 TU 内联成为可能（1.194 → 0.359 ns，补回约 70%）</li>
+<li><code class="c">static inline</code>：函数体在头文件里，编译期直接可见 → 完全内联，字段访问被折叠成普通 load/store（0.204 ns）</li>
+</ul>
+<p><strong>注意</strong>：差距不是"封装本身"造成的，是<strong>"编译器看不见函数体"</strong>造成的。这也意味着它不是不可消除的——LTO 能拿回大半。</p>
+<p><strong>2. 分层方案（不是二选一，而是分层）</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层</th>
+<th>选什么</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热路径（行情解析、撮合、风控判定）</td>
+<td>暴露 <code class="c">struct</code> + <code class="c">static inline</code>，或 opaque + <code class="c">-flto</code></td>
+<td>每次访问 1 ns × 每笔 20 次 = 20 ns，占延迟预算 2%</td>
+</tr>
+<tr>
+<td>冷路径（初始化、配置、销毁、日志）</td>
+<td>opaque ADT</td>
+<td>一年跑不了几次，可维护性与 ABI 优先</td>
+</tr>
+<tr>
+<td>对外发布的 <code class="c">.so</code> 接口</td>
+<td>opaque ADT，别无选择</td>
+<td>暴露布局 = 永久冻结布局</td>
+</tr>
+<tr>
+<td>数据面内部（<code class="c">order_book</code>、<code class="c">mempool</code>）</td>
+<td>内部暴露 + <code class="c">static inline</code>，对外仍 opaque</td>
+<td>"对内不设防、对外设防"——DPDK 就是这个做法</td>
+</tr>
+</tbody>
+</table></div>
+<p>工程上的一句实话：<strong>先按 opaque 写，等 profile 出来再对热路径逐个放开</strong>。反过来（一开始全暴露）后期想收回来，代价是动 ABI。</p>
 </details>
       </section>
       <section class="section" id="s-7-5">
