@@ -3,28 +3,34 @@
 > **执行顺序定稿：** [README.md](./README.md)（**编号 = 读序**）。  
 > 本文保留分章精读细节；与锁定 Phase 冲突时 **以锁定文档为准**。摘要 → [README.md](./README.md)
 
-### 核心段（文件夹编号 = 读序）
+> ⚠️ **2026-09-06 编号修订：** 本文原用一套早期编号（DPDK=`15`、SysPerf=`16`、BPF=`17`、HFT=`18`、市场=`22`），
+> 与当前目录已全错位。下表已按**现行目录**重排。**文件夹编号 = 读序，以 [README.md](./README.md) 为准。**
+
+### 核心段（文件夹编号 = 读序 · 现行目录）
 
 | 文件夹 | 内容 | 阶段 |
 |--------|------|------|
 | **00** | digital-logic-cpu | 硬件底层 |
-| **01** → **02**（**19** 可后） | C → computer-systems（→ architecture） | 语言 + 程序=机器 |
-| **03** → **04** | userspace-api · cpp | 用户态 + C++ |
-| **05** · **06**（**20** 可后） | linux-kernel · linux-mm | 内核共同基础 |
-| **07**–**11** | ARM · 构建 · 驱动/DT · 实战 · 飞控 | 嵌入式支线 |
-| **12**–**15** | sockets · TCP/IP · 内核网 · DPDK | 网络纵深 |
-| **16**–**17** | systems-performance · BPF | 性能观测 |
-| **18**–**22** | hft-engineering · rust-quant · markets | HFT 上层 |
+| **01** → **02**（**15** 可后） | C → computer-systems（→ architecture） | 语言 + 程序=机器 |
+| **03** → **03.5** → **03.6** → **04** | userspace-api · UNP socket · 用户态调试 · cpp | 用户态 + C++ |
+| **05** · **06**（**16** 可后） ·（+ **05.5** **05.6** **06.5** 现代补充） | linux-kernel · linux-mm（→ ULK 深度） | 内核共同基础 |
+| **07**–**10** | ARM · 构建 · 驱动/DT · 飞控 | 嵌入式支线 |
+| **11** · **11.5** · **12** · **12.5** · **13** | TCP/IP · 抓包 · 内核网络 · 现代网络 · DPDK | 网络纵深 |
+| **06.6** · **06.7** | systems-performance · bpf-observability | 性能观测 |
+| **14** · **17** · **18** · **19** | hft-engineering · rust · rust-quant · markets | HFT 上层 |
 
-### Gregg 双书 · 16 → 17（后置）
+> 📌 **`06.6` / `06.7` 编号虽是 `.6`/`.7`，却排在 `13` DPDK 之后读**——性能方法论需要有真实系统可 profile 才有意义，
+> 所以编号顺序 ≠ 阅读顺序，此处是唯一例外（详见下节）。
 
-| 16 systems-performance | 17 bpf-observability |
+### Gregg 双书 · `06.6` → `06.7`（后置）
+
+| 06.6 systems-performance | 06.7 bpf-observability |
 |------------------------|----------------------|
 | USE/RED、延迟分解、perf/Ftrace | bpftrace/BCC 生产落地 |
 
-**执行顺序：** 先完成 **03–06** 与 **12–15 网络/DPDK**，再开 **16 → 17** — 有真实系统可 profile 后再读方法论。
+**执行顺序：** 先完成 **03–06** 与 **11**–**13** 网络/DPDK，再开 **`06.6` → `06.7`** — 有真实系统可 profile 后再读方法论。
 
-### 16/17 为何不在 02 之后立刻读
+### `06.6` / `06.7` 为何不在 `02` 之后立刻读
 
 | 过早读 SysPerf/BPF | 更合适的时机 |
 |--------------------|--------------|
@@ -280,7 +286,7 @@
 | [01 C](./01-c-language/) · [02 计算机系统](./02-computer-systems/) | 01–02 |
 | [03 用户态](./03-linux-userspace-api/) · [05 内核](./05-linux-kernel/) · [06 MM](./06-linux-mm/) | 03 · 05 · 06 |
 | [07–10 嵌入式](./HFT-READING-ROADMAP.md#六嵌入式-linux-支线07–10) | 07–10 |
-| [12–14 网络](./04-cpp/M2-cpp-network-programming/) · [16–17 性能](./06.6-systems-performance/) · [14 HFT](./14-hft-engineering/) | 12–18 |
+| [11–13 网络](./11-tcpip-protocols/) · [06.6–06.7 性能](./06.6-systems-performance/) · [14 HFT](./14-hft-engineering/) | 11–13 · 06.6/06.7 · 14 |
 
 → [README.md](./README.md) · [README.md](./README.md)
 
