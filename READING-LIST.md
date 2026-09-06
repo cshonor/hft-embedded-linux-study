@@ -257,112 +257,12 @@
 
 ---
 
-## 9. HFT 原版专题书目（低延迟工程 / 微观结构 / 策略数学 / 纪实）
+## 9. HFT 原版专题书目（7 本）
 
-> 本节 7 本为 **HFT 专题原版**，与上面 1–8 的通用系统书（内核/网络/性能）**互补不重叠**。
-> **工程侧怎么落地** → [14-hft-engineering/HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
+> **本节已迁至 [`14-hft-engineering/README.md`](./14-hft-engineering/README.md#hft-原版专题书目7-本)**
+> —— 含 Donadio（**= 该模块原书**）、Ghosh、Williams、Aldridge、Cartea、Lewis 的章节级裁剪，
+> 以及**笔记 chN ↔ 原书 ChM 对照表**。集中在 `14` 模块维护，此处只留索引，避免两处重复。
 
-| 类别 | 书目 | 对本仓库的价值 |
-|------|------|---------------|
-| 低延迟系统工程 | Donadio《Developing HFT Systems》· Ghosh《Building Low Latency Applications with C++》· Williams《Low-Latency C++ Programming》 | **核心** — 直接对应 `14` 模块 |
-| 市场微观结构 | Harris《Trading and Exchanges》（见 [§7](#7-trading-and-exchanges--larry-harris)）· Aldridge《HFT》 | 业务地基 |
-| 策略数学建模 | Cartea 等《Algorithmic and HFT》 | **暂缓** — 底层开发不前置 |
-| 行业纪实 | Lewis《Flash Boys》 | 背景，无代码 |
-
-### 9.1 Developing High-Frequency Trading Systems — Donadio / Ghosh / Rossier
-
-> ⭐ **这就是本仓库 `14-hft-engineering` 的「原书」**（Packt 2022 · 320 页 · ISBN 9781803242811）。
-> 此前 [14/README](./14-hft-engineering/README.md) 只标「原书 Ch5 / Ch6 / Ch8 / Ch11」未署名；
-> 经逐章标题比对（*Networking in Motion* / *C++ – The Quest for Microsecond Latency* /
-> *High-Frequency FPGA and Crypto*）**完全吻合**。
-
-| 原书章 | 标题 | 标签 | 本仓库章节 | HFT 关联 |
-|--------|------|------|-----------|---------|
-| Ch 1 | Fundamentals of a HFT System | 🟡 | [14/ch01](./14-hft-engineering/chapter-01-hft-fundamentals-ecosystem/README.md) | 历史与全景，可选 |
-| Ch 2 | The Critical Components of a Trading System | **精读** | [14/ch02](./14-hft-engineering/chapter-02-exchange-architecture-matching/README.md) | Gateway / Book / Strategy / OMS 分工 |
-| Ch 3 | Understanding the Trading Exchange Dynamics | **精读** | [14/ch03](./14-hft-engineering/chapter-03-orderbook-depth-market-data/README.md) | 撮合引擎规模化、LOB |
-| Ch 4 | HFT System Foundations – From Hardware to OS | **精读** | [14/ch04](./14-hft-engineering/chapter-04-hardware-selection-server-config/README.md) | 硬件选型、OS 代价、编译器角色 |
-| Ch 5 | **Networking in Motion** | **精读** | [14/ch06](./14-hft-engineering/chapter-06-low-latency-network-protocol/README.md) | 协议、包生命周期、**时间分发(PTP)** |
-| Ch 6 §1 | Performance mental model / Context switches | **精读** | [14/ch05](./14-hft-engineering/chapter-05-os-kernel-tuning/README.md) | 上下文切换危害 |
-| Ch 6 §2–3 | Lock-free structures / Pre-allocate | **精读** | [14/ch07](./14-hft-engineering/chapter-07-lockless-data-structures-memory-layout/README.md) | 无锁 + 内存池 |
-| Ch 7 | Logging, Performance, Networking | **精读** | [14/ch09](./14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md) | Kernel bypass、mmap、微波/空芯光纤、测量 |
-| Ch 8 | C++ – The Quest for Microsecond Latency | **精读** | [14/ch08](./14-hft-engineering/chapter-08-ultra-low-latency-engine-dev/README.md) | 内存模型、去运行时决策、模板、静态分析 |
-| Ch 9 | Java and JVM for Low-Latency Systems | 🟡 | — | GC/JMH/Disruptor，Java 岗才读 |
-| Ch 10 | Python – Interpreted but Open to HP | ⚪ | — | 只做研究/编排时不读 |
-| Ch 11 | High-Frequency FPGA and Crypto | 🟡 | [14/ch13](./14-hft-engineering/chapter-13-fpga-crypto-hft/README.md) | ns 级硬件 + 加密市场 |
-
-### 9.2 Building Low Latency Applications with C++ — Sourav Ghosh
-
-> Packt 2023 · 506 页 · ISBN 9781837639359 · **12 章 + 配套代码仓库**。
-> 定位：**从零搭一个完整交易生态**（撮合引擎 + 行情发布 + 订单网关 + 策略）→ **L5 项目参考**。
-> 目录已核对 Packt 官方 TOC（2026-09-06）。
-
-| 章 | 标题 | 标签 | HFT 关联 |
-|----|------|------|---------|
-| Ch 1 | Introducing Low Latency App Development | 🟡 | 概念铺垫，快读 |
-| Ch 2 | Designing Common Low Latency Applications | ⚪ | 视频/游戏/IoT —— **跳过**，直奔 Ch3 |
-| Ch 3 | C++ Concepts from a Low-Latency Perspective | **精读** | 哪些 C++ 特性该避、编译器优化参数 |
-| Ch 4 | **Building Blocks**：内存池 / 无锁队列 / 低延迟日志 / socket | **精读** | 与 [14/ch07](./14-hft-engineering/chapter-07-lockless-data-structures-memory-layout/README.md) 直接对应，四件套 |
-| Ch 5 | Designing Our Trading Ecosystem | **精读** | 生态布局总图 |
-| Ch 6 | **Building the C++ Matching Engine** | **精读** | LOB + 撮合 —— 做 P5-1 时逐节对照 |
-| Ch 7 | Communicating with Market Participants | **精读** | 自定义行情/订单协议、订单网关、行情发布 |
-| Ch 8 | Processing Market Data and Sending Orders | **精读** | 组播订阅 + 解码 + 重建 LOB |
-| Ch 9 | Trading Algorithm Building Blocks | 🟡 | 仓位/PnL/风控 —— 业务侧 |
-| Ch 10 | Market Making and Liquidity Taking | 🟡 | 做市与吃单 —— 业务侧 |
-| Ch 11 | **Adding Instrumentation and Measuring Performance** | **精读** | 埋点 + 分段延迟 —— 与 [14/ch09](./14-hft-engineering/chapter-09-latency-measurement-benchmarking/README.md) 互补 |
-| Ch 12 | Analyzing and Optimizing Performance | **精读** | 优化技巧收尾 |
-
-### 9.3 Low-Latency C++ Programming — Antony Williams
-
-> ⚠️ **目录未核对**（未检索到官方 TOC），下表按**主题**给，不按章号。
-> 作者 = *C++ Concurrency in Action* 作者（本仓库 [04/M3 C++ 并发](./04-cpp/M3-deep-principles/02-Cpp-Concurrency) 同一人）。
-
-| 主题 | 标签 | 嵌入级别 |
-|------|------|---------|
-| CPU cache / cache line / 伪共享 | **精读** | **L4** — 与 Hennessy Ch2 交叉 |
-| NUMA 与内存布局 | **精读** | L4 |
-| 内存序与屏障（acquire/release/seq_cst） | **精读** | L4 — **与 ARM64 弱序对照** |
-| 无锁队列 | **精读** | L4 — 与 [14/ch07](./14-hft-engineering/chapter-07-lockless-data-structures-memory-layout/README.md) 交叉 |
-| 锁的开销与确定性行为 | **精读** | L4 |
-| 微秒级服务的测量方法 | **精读** | L5 |
-
-### 9.4 High-Frequency Trading — Irene Aldridge
-
-> 有中译本。**⚠️ 注意：国内流传的《高频交易》中文版与 Aldridge 原书内容差异需自行甄别。**
-
-| 主题 | 标签 | 说明 |
-|------|------|------|
-| HFT 策略分类（做市 / 统计套利 / 延迟套利） | 🟡 | **业务视角**，理解上层在干什么 |
-| 风险框架 | 🟡 | 上实盘前补 |
-| 微观结构实证 | 🟡 | 与 Harris 对照 |
-
-> 定位：**L5 之后再补**。做底层网关/网络层时它不阻塞你。
-
-### 9.5 Algorithmic and High-Frequency Trading — Cartea / Jaimungal / Penalva
-
-> 剑桥大学出版社。**暂缓**。
-
-| 主题 | 标签 | 说明 |
-|------|------|------|
-| 随机过程、最优执行 | ⚪ | 目标底层开发 → **不前置** |
-| 做市商模型（Avellaneda-Stoikov 一类） | ⚪ | 转策略研究时再开 |
-| 订单簿动态建模 | 🟡 | 唯一可提前看的部分 |
-
-### 9.6 Flash Boys — Michael Lewis
-
-> 行业纪实，**无代码**。理解 HFT 行业生态与历史（光纤直连、IEX、暗池）。任意空隙读。
-
-### 阅读优先级（对应你当前位置）
-
-| 梯队 | 书目 | 触发条件 |
-|------|------|---------|
-| **一** | [§7 Harris](./19-markets-microstructure/) · §9.3 Williams | **现在就能开** — 一个管业务、一个管底层 C++ |
-| **二** | §9.2 Ghosh | 开始做三进程交易链路（L5 项目）时按章对照 |
-| **三** | §9.1 Donadio（架构全景）· §9.4 Aldridge（业务） | L3 网络之后 |
-| 后置 | §9.5 Cartea（数学） | 除非转向策略研究 |
-| 消遣 | §9.6 Flash Boys | 随时 |
-
----
 
 ## 外部书目（笔记在另一仓库 · 本仓库仅索引）
 
@@ -483,11 +383,11 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 
 ---
 
-## 补充：嵌入式 Linux 支线（`07`–`11` 文件夹）
+## 补充：嵌入式 Linux 支线（`07`–`10` 文件夹）
 
 > **定位：** **第二职业退路**（飞行器 / 网关 / 车载）；**主线仍是 HFT**。  
 > **范围：** 仅 **ARM-A + 嵌入式 Linux** — **排除** STM32 / MCU 裸机 / FreeRTOS 飞控 / PCB。  
-> **顺序：** `07 → 08 → 09`（`11` 业余；原 `10` 实战已并入 [P5](./projects/P5-raspberry-pi-embedded/)）· 建议 Phase4 后再开。
+> **顺序：** `07 → 08 → 09`（`10` 业余；原实战已并入 [P5](./projects/P5-raspberry-pi-embedded/)）· 建议 Phase4 后再开。
 
 | 文件夹 | 定位 | 索引 |
 |--------|------|------|
@@ -495,6 +395,37 @@ L5  拓展 19 · 20 · 21 · 22 ·（兴趣）11
 | **07** ARM | Smith · 《ARM64体系结构编程与实践》 | [07-arm-architecture/](./07-arm-architecture/) |
 | **08** 构建 | Primer → MELP | [08-embedded-boot-build/](./08-embedded-boot-build/) |
 | **09** 驱动+DT | Madieu → LDD3（按需） | [09-device-drivers-dt/](./09-device-drivers-dt/) |
-| **11** 运动控制 | PID / Kalman | [10-motion-control/](./10-motion-control/) |
+| **10** 运动控制 | PID / Kalman | [10-motion-control/](./10-motion-control/) |
 
 **可复用 HFT 链：** C · 用户态/内核 · 06.6–06.7 性能/BPF · 13 DPDK · 14 HFT 与 **PREEMPT_RT / 绑核**。
+
+
+---
+
+## 附录：按主题查，该翻经典模块还是 `.5` 补丁层
+
+> 30 个高频主题全量扫描后的结论：**绝大多数主题主场清晰**，少数几处已用双向链接打通。
+> 查东西按这张表走，不用两层都翻。
+
+| 主题 | 主场（查这里） | 另一侧的情况 |
+|------|--------------|------------|
+| qspinlock | **05.5** 专题 | `05` Ch10.2 有 55 处（自旋锁章节必然要讲）— **双向已通** |
+| maple tree / XArray | **06.5** 专题 | `05` Ch6.6 只讲**选型维度**（46 / 33 处）— **双向已通** |
+| per-VMA lock | **06.5** 专题 | `05` Ch9.6 只讲**争用测量** — **双向已通** |
+| memblock | **06.5** | ⚠️ 见下方警示 — **双向已通** |
+| SLUB | **06.5** | `05` Ch12.7 讲原理与接口（47 处），`06` 也有 93 处 — **双向已通** |
+| folio | **06.5**（4 个专题） | `06` 有 147 处但**全分散顺带提及**（无单篇 ≥20）→ 健康分工 |
+| THP | **`06` Ch3 专题** | 06.5 无专题（仅 4 处提及），原书也未专章 |
+| MGLRU / DAMON / zswap / PSI | **06.5**（专题） | `06` 仅顺带提及 |
+| EEVDF 调度 | **05.5**（82 处） | `05` 10 处 |
+| XDP / AF_XDP / page_pool | **12.5**（1734 / 240 / 231） | `12` 仅个位数（原书基于 3.x，早于 XDP） |
+| NAPI | **12.5**（02 / 03 专题） | `12` 有 36 处 |
+| nftables / tc-BPF | **12.5**（85 / 82） | `12` 有 8 / 0 |
+| io_uring | **12.5**（121） | `05` 有 84 处（作为 syscall 演进提及） |
+
+> ⚠️ **最容易踩的一个**：`06` Ch5「启动内存分配器」原书讲的是 **bootmem**，而 bootmem 在 **v4.x 后已彻底移除**。
+> 想查取代它的 `memblock` 要去 **06.5**；`06` 那章里的 156 处 memblock 属于「旧书章节的现代补充」，不是主场。
+>
+> 🔑 **判定「撞车」的方法**：看**有没有专题文件**，不是看关键词总命中次数。
+> 例如 folio 在 `06`（147）与 `06.5`（179）总数接近，看似最大重叠，
+> 实际 `06.5` 有 4 个专题而 `06` 里**没有任何单篇 ≥20 次** —— 这是健康分工，不是重复。
