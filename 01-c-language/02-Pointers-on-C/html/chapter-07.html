@@ -845,6 +845,16 @@ int g_val = 10;
 <li><strong>GCC 10 起默认 <code class="c">-fno-common</code></strong>：直接 multiple definition 链接报错</li>
 </ul>
 <p><strong>行为不可靠，不要使用</strong>——全局变量永远写"<code class="c">.h</code> extern + 唯一 <code class="c">.c</code> 带初始化定义"的完整形式。</p>
+<blockquote>
+<p>🔑 实测补刀（gcc 13.3，见 <strong>7.4</strong>）：<strong><code class="c">-fcommon</code> 是编译期选项，写在链接命令里完全无效</strong>。
+<code class="c">gcc a.o b.o -fcommon</code> 照旧报 multiple definition——因为 <code class="c">.o</code> 里的符号早已定型
+（<code class="c">-fno-common</code> 编出来是 <code class="c">B</code>，不会因为链接时加了 <code class="c">-fcommon</code> 就变回 <code class="c">C</code>）。
+必须回到 <code class="c">gcc -fcommon -c a.c</code> 才生效。老项目升到 gcc 10+ 突然冒出一堆
+multiple definition，就是这个默认值翻转导致的，不是代码变了。</p>
+<p>📌 延伸：<strong>变量的声明/定义 vs 结构体的声明/定义</strong>是两套规则（struct 类型定义不分配内存、
+<code class="c">nm</code> 里零符号，放头文件合法；但 <code class="c">struct S obj;</code> 是变量定义，照样炸）。
+完整对照表与实测见 <strong>7.4「变量的声明/定义 vs 结构体的声明/定义」</strong>。</p>
+</blockquote>
 <h3>#include 的本质：文本粘贴</h3>
 <p><code class="c">#include</code> 只是简单文本粘贴，头文件本身<strong>不产生内存、不运行代码</strong>：</p>
 <div class="tbl-wrap"><table>
@@ -2202,6 +2212,7 @@ int main(void) {
 <li><strong>地基</strong>：C 是单文件编译模型，编译器看不到别的 <code class="c">.c</code>，封装不是编译器全局统筹出来的</li>
 <li><strong>两个手段</strong>：不透明类型（靠编译器拦）+ <code class="c">static</code>（靠链接器拦），以及"头文件本身不隐藏任何东西"这个易搞反的点</li>
 <li><strong>最小完整例子</strong>：<code class="c">list.h</code> / <code class="c">list.c</code> / <code class="c">main.c</code> 三文件跑通，以及不完整类型到底禁止什么（实测五条报错）</li>
+<li><strong>⭐ 变量 vs 结构体的声明/定义</strong>：为什么 <code class="c">struct Foo {...};</code> 放头文件合法、<code class="c">struct Foo obj;</code> 就炸；<code class="c">nm</code> 实测证明"图纸零符号"，以及试探性定义的隐藏开关 <code class="c">-fcommon</code></li>
 <li><strong>ADT 的回报</strong>：换实现（固定数组 → 动态数组）而 <code class="c">main.o</code> 一个字节都不用重编</li>
 <li><strong>ADT 的代价</strong>：⚠️ 跨 TU 无法内联，实测 1.19 ns vs 0.20 ns（5.9×），<code class="c">-flto</code> 能补回大半——<strong>"opaque 零开销"是错的，这句话在 HFT 热路径上会让你付真金白银</strong></li>
 <li><strong>OOP 对照表</strong>：哪些行是强制的、哪些只是约定（构造/析构尤其脆弱）</li>
@@ -2361,6 +2372,265 @@ final size = 128
 <p>注意最后两行：<strong>越界和写满都不是崩溃，是 ADT 返回错误码</strong>。不变量（<code class="c">size</code> 永远等于真实元素数、<code class="c">buffer</code> 永不越界）由 <code class="c">list.c</code> 独家维护——调用方<strong>没有能力破坏它</strong>，因为它连字段名都看不到。</p>
 <blockquote>
 <p>⚠️ <strong>封装只是把"破坏的可能"收拢到一处，不等于自动正确。</strong> 如果 <code class="c">list_append</code> 照最常见的写法写成 <code class="c">l-&gt;buffer[l-&gt;size++] = val;</code>（不检查 <code class="c">size</code> 上界），那么第 129 个元素就会写穿 <code class="c">buffer</code>、踏进相邻内存——<strong>黑盒只保证"只有 <code class="c">.c</code> 能犯错"，不保证 <code class="c">.c</code> 不犯错</strong>。不变量守不守得住，取决于实现方自己。</p>
+</blockquote>
+<h3>⭐ 变量的声明/定义 vs 结构体的声明/定义（最易混淆的一组）</h3>
+<p>上面 <code class="c">list.h</code> 里那行 <code class="c">typedef struct List List;</code> 为什么能堂而皇之地待在头文件里、被无数 <code class="c">.c</code> include 却不报重复定义？因为<strong>「结构体」和「变量」是两套完全不同的规则</strong>，混在一起就会得出"头文件里不能放定义"这种以偏概全的结论。</p>
+<p>一句话区分：</p>
+<blockquote>
+<p><strong>变量定义 = 造出一个实体（要内存、要符号）→ 全项目只能一处</strong>
+<strong>struct 定义 = 画一张图纸（零内存、零符号）→ 复制一万份无所谓</strong></p>
+</blockquote>
+<h4>一、全局变量：定义只能有一处，声明可以多处</h4>
+<pre class="code" data-label="C"><code class="c">/* foo.h */
+extern int g_val;   /* 声明：只告诉编译器&quot;有这东西&quot;，不分配内存 */
+/* foo.c */
+int g_val = 100;    /* 定义：分配内存、产生符号，仅此一处 */
+</code></pre>
+<p>实测（gcc 13.3）：两个 <code class="c">.c</code> 都 include 这个头，各自 <code class="c">g_val += 1</code> / <code class="c">+= 2</code>——</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -Wall -Wextra g_def.c v_ok_a.c v_ok_b.c v_ok_main.c -o prog &amp;&amp; ./prog
+g_val = 103        ← 三个 TU 操作的是同一个实体，exit=0
+</code></pre>
+<p><strong>反例</strong>：把定义写进头文件 <code class="c">int g_val = 100;</code></p>
+<pre class="code" data-label="code"><code class="c">$ gcc -Wall -Wextra -c v_a.c    → exit 0   ← 编译器毫无意见
+$ gcc -Wall -Wextra -c v_b.c    → exit 0   ← 编译器毫无意见
+$ gcc -Wall -Wextra -c v_main.c → exit 0   ← 编译器毫无意见
+$ gcc v_a.o v_b.o v_main.o -o prog
+/usr/bin/ld: multiple definition of `g_val'; v_a.o: first defined here
+</code></pre>
+<p>注意这个节奏：<strong>编译期三个文件全部 exit 0，是链接器报的</strong>。又一次印证「符号/重名归链接器」——编译器从头到尾不知道别人也定义了一份。</p>
+<h5>⚠️ 隐藏开关：试探性定义与 <code class="c">-fcommon</code></h5>
+<p>上面是 <code class="c">int g_val = 100;</code>（带初始化，强定义）。如果写成 <code class="c">int g_val;</code>（不带 <code class="c">extern</code>、不带初始化），性质就变了——这是 <strong>试探性定义</strong>，行为取决于一个编译选项：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译选项</th>
+<th><code class="c">nm</code> 里的符号</th>
+<th>多 TU 链接</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-fno-common</code>（<strong>gcc 10+ 默认</strong>）</td>
+<td><code class="c">B g_val</code>（bss，强定义）</td>
+<td>❌ <code class="c">multiple definition</code></td>
+<td>现代默认</td>
+</tr>
+<tr>
+<td><code class="c">-fcommon</code>（<strong>gcc 9 及更早默认</strong>）</td>
+<td><code class="c">C g_val</code>（common symbol）</td>
+<td>✅ <strong>静默合并成一份，通过</strong></td>
+<td>历史行为</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测同一份代码，只差一个编译选项：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -fno-common -c tent_a.c &amp;&amp; nm tent_a.o | grep g_val
+0000000000000000 B g_val                      ← B：进了 .bss
+$ gcc tent_a.o tent_b.o tent_main.o -o p
+/usr/bin/ld: multiple definition of `g_val'; tent_a.o: first defined here
+
+$ gcc -fcommon -c tent_a.c &amp;&amp; nm tent_a.o | grep g_val
+0000000000000004 C g_val                      ← C：common symbol
+$ gcc -fcommon tent_a_c.o tent_b_c.o tent_main_c.o -o p2 &amp;&amp; ./p2
+g_val = 103                                   ← exit 0，居然过了
+</code></pre>
+<blockquote>
+<p>🔑 <strong><code class="c">-fcommon</code> 是编译期选项，不是链接期选项。</strong> 实测踩过：在 <code class="c">gcc a.o b.o -fcommon</code> 这条<strong>链接</strong>命令里加它完全无效（<code class="c">.o</code> 里符号早已定型，<code class="c">B</code> 不会变回 <code class="c">C</code>），必须回到 <code class="c">gcc -fcommon -c a.c</code>。这也是为什么老项目升级编译器到 gcc 10+ 时会<strong>突然冒出一堆 multiple definition</strong>——不是代码变了，是默认值变了。</p>
+</blockquote>
+<h4>二、struct 类型定义不是变量定义</h4>
+<p><code class="c">struct</code> 定义只描述"这个类型长什么样、成员有哪些、占多少字节"，<strong>不分配内存、不产生符号、不占存储</strong>。它是一张图纸。</p>
+<p><strong>最硬的证据在 <code class="c">nm</code> 里</strong>——实测 <code class="c">t_a.c</code>（里面完整定义了 <code class="c">struct Foo {int a; int b;}</code> 并用它建了对象）：</p>
+<pre class="code" data-label="code"><code class="c">$ nm t_a.o
+                 U printf
+0000000000000000 T ta
+$ nm t_a.o | grep -ci foo
+0                          ← 零个符号！struct 定义连个影子都没留下
+</code></pre>
+<p>对照同一个实验里 <code class="c">v_a.o</code>（头文件里写了 <code class="c">int g_val = 100;</code>）：</p>
+<pre class="code" data-label="code"><code class="c">$ nm v_a.o | grep g_val
+0000000000000000 D g_val   ← D：稳稳占着 .data 的 4 个字节
+</code></pre>
+<p><strong>情况 A：头文件写完整 struct 定义 → 合法</strong></p>
+<pre class="code" data-label="C"><code class="c">/* foo.h */
+struct Foo { int a; int b; };
+</code></pre>
+<p>三个 TU 各 include 一次，实测<strong>编译链接运行全过</strong>，每个 TU 拿到同一张图纸、<code class="c">sizeof</code> 都是 8。因为类型信息不创建任何变量、不占任何内存，<code class="c">#include</code> 把它文本粘贴一万次也不会冲突。</p>
+<p><strong>情况 B：只前置声明 → 不完整类型</strong></p>
+<pre class="code" data-label="C"><code class="c">/* foo.h */
+struct Foo;         /* 只有名字，没有布局 —— 见下一节的完整约束清单 */
+</code></pre>
+<p><strong>情况 C：⚠️ 大坑 —— 紧跟在 <code class="c">}</code> 后面的名字是变量，不是类型</strong></p>
+<pre class="code" data-label="C"><code class="c">/* foo.h —— 这两行看着像一家人，性质完全不同 */
+struct Foo { int a; };   /* ① 类型定义（图纸）      → 重复 include 合法 */
+struct Foo obj;          /* ② 定义一个全局变量 obj  → 重复 include 报错 */
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -c ov_a.c ov_b.c ov_main.c        # 三个都 exit 0
+$ gcc ov_a.o ov_b.o ov_main.o -o p
+/usr/bin/ld: multiple definition of `obj'; ov_a.o: first defined here
+</code></pre>
+<p>而且它<strong>完全吃试探性定义那一套规则</strong>（因为 <code class="c">obj</code> 本来就是个变量，与 <code class="c">struct</code> 无关）：</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -fcommon -c ov_a.c &amp;&amp; nm ov_a_c.o | grep obj
+0000000000000004 C obj          ← C：合并成功
+$ gcc -fcommon ov_a_c.o ov_b_c.o ov_main_c.o -o p2 &amp;&amp; ./p2
+obj.a = 103                     ← exit 0，也过了
+</code></pre>
+<blockquote>
+<p>🔑 这个坑的本质：<strong><code class="c">struct Foo obj;</code> 里的 <code class="c">struct Foo</code> 是类型说明符，<code class="c">obj</code> 才是被定义的实体</strong>。判断标准很简单——<strong>看它会不会占内存</strong>：会占的就是变量定义，不占的就是类型定义。</p>
+</blockquote>
+<h4>三、极简对照表</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代码</th>
+<th>是什么</th>
+<th>放在 <code class="c">.h</code> 被多文件 include 会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">extern int g;</code></td>
+<td>变量<strong>声明</strong></td>
+<td>✅ 安全，到处可 include</td>
+</tr>
+<tr>
+<td><code class="c">int g = 10;</code></td>
+<td>全局变量<strong>定义</strong></td>
+<td>❌ <code class="c">multiple definition</code>（编译期 exit 0，<strong>链接期</strong>才报）</td>
+</tr>
+<tr>
+<td><code class="c">int g;</code></td>
+<td>试探性定义</td>
+<td>⚠️ gcc 10+ 默认 ❌ 报错；<code class="c">-fcommon</code> 下 ✅ 静默合并</td>
+</tr>
+<tr>
+<td><code class="c">struct S { int x; };</code></td>
+<td>结构体<strong>类型</strong>定义</td>
+<td>✅ 安全，只是图纸，<strong><code class="c">nm</code> 里零符号</strong></td>
+</tr>
+<tr>
+<td><code class="c">struct S;</code></td>
+<td>结构体前置声明</td>
+<td>✅ 安全，不完整类型（ADT 黑盒用）</td>
+</tr>
+<tr>
+<td><code class="c">struct S obj;</code></td>
+<td>定义全局结构体<strong>变量</strong></td>
+<td>❌ 同 <code class="c">int g;</code> 完全一致的一套规则</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意第 3、6 行：<strong>它们的行为一模一样</strong>——因为 <code class="c">struct S obj;</code> 和 <code class="c">int g;</code> 骨子里是同一件事（定义一个变量），<code class="c">struct</code> 只是类型说明符。<strong>规则只按"是不是变量"分，不按"类型是不是结构体"分。</strong></p>
+<h4>四、回到 ADT 场景</h4>
+<pre class="code" data-label="C"><code class="c">/* list.h */
+typedef struct List List;   /* 只有名字，没有图纸 → 不完整类型 */
+
+/* list.c */
+struct List { int size; int buf[128]; };   /* 完整图纸，仅在 .c 内部 */
+</code></pre>
+<p><code class="c">.h</code> 不给图纸，外部只能拿指针、不知道布局，黑盒成立。注意这里<strong>两种合法手段的区别</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头文件里的写法</th>
+<th>合法？</th>
+<th>封装？</th>
+<th>用在</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct List { ... };</code> 完整定义</td>
+<td>✅ 合法</td>
+<td>❌ <strong>封装失效</strong></td>
+<td>内部模块、热路径（换内联，见下节）</td>
+</tr>
+<tr>
+<td><code class="c">struct List;</code> 前置声明</td>
+<td>✅ 合法</td>
+<td>✅ 黑盒成立</td>
+<td>对外接口、发布 <code class="c">.so</code></td>
+</tr>
+</tbody>
+</table></div>
+<h4>五、面试高频坑</h4>
+<blockquote>
+<p><strong>问：头文件里可以放 struct 完整定义吗？</strong></p>
+</blockquote>
+<p><strong>答：可以</strong>，因为这是<strong>类型定义，不是变量定义</strong>——不分配内存、不产生符号，不触发重复定义。<strong>但要做 ADT 封装就不能放</strong>，放了黑盒当场失效（上一节实测：<code class="c">-Wall -Wextra</code> 全开也零警告放行 <code class="c">b-&gt;y = -1</code>）。</p>
+<p>常见追问与正解：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>追问</th>
+<th>正解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>那为什么还是建议放 <code class="c">.c</code>？</td>
+<td>不是怕重复定义，是<strong>怕 ABI 冻结 + 封装失效</strong>（改成员 = 所有 include 它的 <code class="c">.c</code> 全重编）</td>
+</tr>
+<tr>
+<td>头文件里能放全局变量吗？</td>
+<td>能放 <code class="c">extern</code> <strong>声明</strong>，不能放<strong>定义</strong>；定义放某一个 <code class="c">.c</code></td>
+</tr>
+<tr>
+<td><code class="c">static int g;</code> 放头文件行不行？</td>
+<td>❌ 每个 include 的 TU 各得一份独立副本，不冲突但<strong>语义几乎一定错</strong>（以为是共享，实则各改各的）</td>
+</tr>
+</tbody>
+</table></div>
+<h4>六、⚠️ 图纸能复制一万份，但没人检查两份图纸是否一样</h4>
+<p>上面说"图纸复制一万份也没关系"——这句话有个<strong>重要前提被省掉了：复制出去的每一份必须一致</strong>。如果每个 <code class="c">.c</code> <strong>各自定义一份同名但不同布局</strong>的 <code class="c">struct Foo</code>，编译器和链接器<strong>都不会管</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* conf_a.c */  struct Foo { int a; int b; };   /* 8 字节，两个 int */
+/* conf_b.c */  struct Foo { double d; };       /* 8 字节，一个 double */
+/* 两个 TU 通过 struct Foo* 传递同一个对象 */
+</code></pre>
+<p>实测（<code class="c">-O2 -Wall -Wextra</code>）：</p>
+<pre class="code" data-label="code"><code class="c">a.c   : sizeof(struct Foo) = 8
+a.c   : 写入 a=3 b=4
+b.c   : sizeof(struct Foo) = 8
+b.c   : 读出来 p-&gt;d = 8.487983e-314      ← 把 {3,4} 的位模式当 double 解释
+编译+链接 exit=0，运行 exit=0，全程零警告
+</code></pre>
+<p><strong>这是比 multiple definition 危险得多的故障</strong>：后者链接期就拦住了，前者一路绿灯跑到运行期，输出一个看似合理的垃圾数字（<code class="c">8.49e-314</code>），exit 0。</p>
+<p>能不能提前抓到？实测三种手段：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>能否抓到</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-Wall -Wextra</code></td>
+<td>❌</td>
+<td>零警告</td>
+</tr>
+<tr>
+<td><code class="c">-flto</code>（链接期优化）</td>
+<td>⚠️ 基本不能</td>
+<td>只给了一条误导性的 <code class="c">-Wuninitialized</code>，exit 0（没报 type mismatch）</td>
+</tr>
+<tr>
+<td>ASan</td>
+<td>⚠️ <strong>看运气</strong></td>
+<td>两份图纸<strong>同样大小</strong>（8 vs 8）时<strong>抓不到</strong>；只有大小不同导致越界访问时才报 <code class="c">heap-buffer-overflow</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>ASan 能抓到的那种情况实测（b2.c 定义成 <code class="c">char name[64]</code>，对象实际只有 8 字节）：</p>
+<pre class="code" data-label="code"><code class="c">==459==ERROR: AddressSanitizer: heap-buffer-overflow
+READ of size 1 at 0x50200000004f
+    #0 foo_show conf_b2.c:16
+0x50200000004f is located 55 bytes after 8-byte region
+</code></pre>
+<blockquote>
+<p>🔑 <strong>这条规律的工程含义</strong>：C 把"两份图纸是否一致"这件事<strong>完全交给人</strong>。唯一的可靠防御是<strong>让图纸只有一份</strong>——放进共享的 <code class="c">.h</code>（大家一起 include），或者做成 opaque（谁也不给看）。这正好是 ADT 的第三个理由：除了封装和 ABI，它还能<strong>消除"同名不同布局"这一类根本没法静态检查的 bug</strong>。</p>
 </blockquote>
 <h3>不完整类型到底禁止什么（实测五条报错）</h3>
 <p><code class="c">typedef struct List List;</code> 之后，调用方手里只有一个"名字"。实测把能想到的越界动作全试一遍：</p>
@@ -2781,6 +3051,22 @@ struct file_operations;   /* 函数指针表，ops 本身就是黑盒接口 */
 <td>只用指针的接口，前向声明即可（opaque）</td>
 </tr>
 <tr>
+<td>"头文件里不能放 struct 定义"</td>
+<td>反了——<strong>类型定义</strong>放 <code class="c">.h</code> 完全合法（<code class="c">nm</code> 零符号、不分配内存）；不能放的是<strong>变量定义</strong></td>
+</tr>
+<tr>
+<td>"<code class="c">struct S obj;</code> 跟在 struct 定义后面，是类型的一部分"</td>
+<td>那是<strong>全局变量定义</strong>，多 TU include 照样 <code class="c">multiple definition</code>，和 <code class="c">int g;</code> 规则完全相同</td>
+</tr>
+<tr>
+<td>"两个 .c 各写一份同名 struct，链接器会检查布局一致"</td>
+<td><strong>不会</strong>——编译链接全过、零警告，运行才读出垃圾（实测 <code class="c">8.49e-314</code>）；<code class="c">-flto</code> 也基本抓不到，ASan 只在大小不同越界时能抓</td>
+</tr>
+<tr>
+<td>"<code class="c">-fcommon</code> 加在链接命令里能救 multiple definition"</td>
+<td>无效——它是<strong>编译期</strong>选项，<code class="c">.o</code> 里符号早已定型（<code class="c">B</code> 变不回 <code class="c">C</code>）</td>
+</tr>
+<tr>
 <td>"opaque pointer 有运行时开销"</td>
 <td>⚠️ <strong>只对一半</strong>。指针本身零开销，但<strong>每次访问都要走函数、跨 TU 无法内联</strong>——实测 1.19 ns/次 vs <code class="c">static inline</code> 0.20 ns/次（5.9×）。开 <code class="c">-flto</code> 可降到 0.36 ns。详见上面「ADT 不是零成本」</td>
 </tr>
@@ -2861,6 +3147,9 @@ objdump -d b_op | grep counter_inc            # 有 call = 没内联
 <li>不完整类型到底禁止哪些操作（列举至少三种）？为什么 <code class="c">xxx_create()</code> 必然住在 <code class="c">.c</code> 里？</li>
 <li>实测里 opaque 版每次访问 1.19 ns、<code class="c">static inline</code> 版 0.20 ns，这个差距从哪来？<code class="c">-flto</code> 为什么能补回大半？</li>
 <li>OOP 对照表里，哪些行是<strong>编译器/链接器强制</strong>的，哪些只是约定？</li>
+<li>为什么 <code class="c">struct Foo {...};</code> 写进 <code class="c">.h</code> 不会触发重复定义？<code class="c">nm</code> 里能给出什么证据？对照 <code class="c">int g_val = 100;</code> 呢？</li>
+<li><code class="c">struct Foo obj;</code> 与 <code class="c">int g;</code> 放在 <code class="c">.h</code> 里，行为有什么异同？<code class="c">-fcommon</code> / <code class="c">-fno-common</code> 下分别怎样，该选项要在哪个阶段传？</li>
+<li>两个 TU 各自定义同名不同布局的 <code class="c">struct Foo</code>：编译器、链接器、<code class="c">-flto</code>、ASan 四者分别能拦到什么程度？工程上怎么根除？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -3036,6 +3325,141 @@ int n = p-&gt;size;                /* ⑧ */
 </tbody>
 </table></div>
 <p>工程上的一句实话：<strong>先按 opaque 写，等 profile 出来再对热路径逐个放开</strong>。反过来（一开始全暴露）后期想收回来，代价是动 ABI。</p>
+</details>
+<p><strong>题目 5：</strong> 以下 8 行代码，如果各自单独写进 <code class="c">foo.h</code> 并被两个以上 <code class="c">.c</code> include，结果分别是什么？</p>
+<pre class="code" data-label="C"><code class="c">extern int  g1;              /* ① */
+        int g2 = 10;         /* ② */
+        int g3;              /* ③ */
+struct S { int x; };         /* ④ */
+struct S;                    /* ⑤ */
+struct S  s1;                /* ⑥ */
+extern struct S s2;          /* ⑦ */
+static int g4;               /* ⑧ */
+</code></pre>
+<details>
+<summary>参考答案（gcc 13.3 实测）</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>性质</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td>变量<strong>声明</strong></td>
+<td>✅ 安全</td>
+</tr>
+<tr>
+<td>②</td>
+<td>全局变量<strong>定义</strong>（强定义）</td>
+<td>❌ 链接期 <code class="c">multiple definition</code>。注意<strong>编译期每个 <code class="c">.c</code> 都 exit 0</strong></td>
+</tr>
+<tr>
+<td>③</td>
+<td>试探性定义</td>
+<td>⚠️ gcc 10+ 默认（<code class="c">-fno-common</code>）❌ 报错；<code class="c">-fcommon</code> 下 ✅ 静默合并成一份（<code class="c">nm</code> 显示 <code class="c">C</code>）</td>
+</tr>
+<tr>
+<td>④</td>
+<td>结构体<strong>类型</strong>定义</td>
+<td>✅ 安全。<code class="c">nm</code> 里<strong>零符号</strong>，不分配内存</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td>结构体前置声明</td>
+<td>✅ 安全，不完整类型（ADT 用）</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td>定义全局结构体<strong>变量</strong></td>
+<td>❌ 与 ③ <strong>完全同一套规则</strong>（<code class="c">struct S</code> 只是类型说明符，<code class="c">s1</code> 才是实体）</td>
+</tr>
+<tr>
+<td>⑦</td>
+<td>结构体变量的 <code class="c">extern</code> <strong>声明</strong></td>
+<td>✅ 安全，需配某个 <code class="c">.c</code> 里的唯一定义</td>
+</tr>
+<tr>
+<td>⑧</td>
+<td><code class="c">static</code> 变量定义</td>
+<td>⚠️ <strong>不报错，但语义几乎一定错</strong>：每个 include 的 TU 各得一份独立副本，互不共享</td>
+</tr>
+</tbody>
+</table></div>
+<p>三条易错：</p>
+<ul>
+<li><strong>② 的报错时机</strong>：编译期三个 <code class="c">.c</code> 全部 exit 0，是<strong>链接器</strong>报的——编译器看不到别的 TU</li>
+<li><strong>③/⑥ 的开关</strong>：<code class="c">-fcommon</code> 是<strong>编译期</strong>选项，写在链接命令里完全无效（<code class="c">.o</code> 里的 <code class="c">B</code> 变不回 <code class="c">C</code>）</li>
+<li><strong>⑧ 不报错 ≠ 正确</strong>：<code class="c">static</code> 解决了重名，却让每个 TU 拿到私有副本，"以为是共享计数器，实际各加各的"</li>
+</ul>
+</details>
+<p><strong>题目 6：</strong> 两个 <code class="c">.c</code> 各自写了一份同名 struct，布局不同：</p>
+<pre class="code" data-label="C"><code class="c">/* a.c */  struct Foo { int a; int b; };  struct Foo *make(void){...malloc(sizeof(struct Foo))...}
+/* b.c */  struct Foo { double d; };      void show(struct Foo *p){ printf(&quot;%e\n&quot;, p-&gt;d); }
+/* main.c 通过 struct Foo* 把 a 制造的对象传给 b */
+</code></pre>
+<ol>
+<li>编译、链接、运行分别会发生什么？<code class="c">-Wall -Wextra</code>、<code class="c">-flto</code> 能拦住吗？</li>
+<li>如果 b.c 改成 <code class="c">struct Foo { char name[64]; };</code>，ASan 为什么又能抓到？</li>
+<li>工程上怎么根除这一类 bug？</li>
+</ol>
+<details>
+<summary>参考答案（gcc 13.3 实测）</summary>
+<p><strong>1. 全程绿灯，运行出垃圾</strong></p>
+<pre class="code" data-label="code"><code class="c">编译+链接 exit=0（-Wall -Wextra 零警告），运行 exit=0
+a.c   : sizeof(struct Foo) = 8
+a.c   : 写入 a=3 b=4
+b.c   : sizeof(struct Foo) = 8
+b.c   : 读出来 p-&gt;d = 8.487983e-314      ← {3,4} 的位模式被当 double 解释
+</code></pre>
+<ul>
+<li><code class="c">-Wall -Wextra</code>：<strong>零警告</strong></li>
+<li><code class="c">-flto</code>：<strong>基本抓不到</strong>——只给了一条误导性的 <code class="c">-Wuninitialized</code>，exit 0（没有 type mismatch 告警）</li>
+<li>比 <code class="c">multiple definition</code> 危险得多：后者链接期就拦死，前者一路跑到运行期，输出一个"看起来像个数"的垃圾值，exit 0</li>
+</ul>
+<p><strong>2. ASan 为什么这回能抓</strong></p>
+<p>两份图纸<strong>同样大小</strong>（8 vs 8）时，所有访问都落在 malloc 出来的 8 字节内，<strong>ASan 看不到任何越界，自然抓不到</strong>——布局冲突不等于内存越界。</p>
+<p>改成 <code class="c">char name[64]</code> 后，<code class="c">foo_show</code> 会去读第 64 字节，而对象只有 8 字节，于是触发真正的越界读：</p>
+<pre class="code" data-label="code"><code class="c">==459==ERROR: AddressSanitizer: heap-buffer-overflow
+READ of size 1 at 0x50200000004f
+    #0 foo_show conf_b2.c:16
+0x50200000004f is located 55 bytes after 8-byte region
+</code></pre>
+<p><strong>ASan 抓的是"读越界"，不是"布局冲突"</strong>——能抓到纯属巧合（这回恰好大小不同）。</p>
+<p><strong>3. 根除办法</strong></p>
+<p>C 不提供任何跨 TU 的类型一致性检查，所以只能<strong>从源头消除"多份图纸"</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>办法</th>
+<th>做法</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>图纸只留一份</strong></td>
+<td>struct 定义放进共享 <code class="c">.h</code>，所有 TU 一起 include</td>
+<td>内部模块、热路径</td>
+</tr>
+<tr>
+<td><strong>干脆不给图纸</strong></td>
+<td>opaque：<code class="c">.h</code> 只前置声明，完整定义锁在 <code class="c">.c</code></td>
+<td>对外接口、发布 <code class="c">.so</code></td>
+</tr>
+<tr>
+<td>编译期自检</td>
+<td>在共享 <code class="c">.h</code> 里放 <code class="c">_Static_assert(sizeof(struct Foo) == N)</code></td>
+<td>只防大小变化，防不了成员顺序/类型变化</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>🔑 这也是 ADT 的<strong>第三个理由</strong>（前两个是封装与 ABI 稳定）：opaque 让"同名不同布局"这类<strong>无法静态检查的 bug</strong> 从物理上不可能发生——因为根本不存在第二份图纸。</p>
+</blockquote>
 </details>
       </section>
       <section class="section" id="s-7-5">
