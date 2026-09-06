@@ -82,29 +82,27 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 
 ### 能力阶梯 L0 → L5
 
-> 完整版（每级知识点表 + 交付细节 + 硬验收指标）→ [14-hft-engineering/HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
+> 完整版（每级知识点表 + 交付细节 + 可操作调试命令）→ [14-hft-engineering/HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
+>
+> ⚠️ **「调试技术」列与「交付项目」列同权重**：右侧验收指标（p99、丢包率、单跳延迟）全部只能靠该列工具测出来。开发写不出来是做不完，调试不会是**做完了也证明不了**。
 
-| 级 | 对应模块 | 核心知识 | 交付项目 | 硬验收指标 |
-|:--:|----------|----------|----------|------------|
-| **L0** | `01` C 语言 · `03.6` | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
-| **L1** | `03` TLPI · `03.5` UNP · `03.6` 调试 | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
-| **L2** | `05` LKD · `06` MM · `05.6` 内核调试 | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
-| **L3** | `11` TCP/IP · `12` 内核网 · `11.5` 抓包 | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
-| **L4** | `15` 体系结构 · `07` ARM64 · `06.6` 性能 | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | `13` DPDK · `14` HFT · `19` 微观结构 · `06.7` 观测 | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
+| 级 | 开发模块 | 核心知识 | 交付项目 | **调试技术（模块）** | 硬验收指标 |
+|:--:|----------|----------|----------|---------------------|------------|
+| **L0** | `01` · `02` | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | gdb 看 struct 布局 · ASan/UBSan · valgrind · core dump —— `03.6` | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
+| **L1** | `03` · `03.5` · `04` | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | `strace -T -tt` · gdb 多线程 · `lsof` · TSan —— `03.6` | p99 < 200μs；能画出请求完整路径 |
+| **L2** | `05` · `05.5` · `06` · `06.5` | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | ftrace · KASAN/KCSAN · `crash`/KGDB · `perf stat` · smaps/numastat —— `05.6` + `06.6` | 能用火焰图 + `perf stat` 说清瓶颈归属 |
+| **L3** | `11` · `12` · `12.5` | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | tcpdump/Wireshark · `ss -tin` · `ethtool -S` · dropwatch · `nstat` —— `11.5` + `06.7` | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
+| **L4** | `15` · `07` · `02` | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | **`perf c2c`** · TSan · bpftrace · `taskset`/`numactl` 验证 —— `06.6` + `06.7` | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
+| **L5** | `13` · `14` · `19` | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 全链路埋点 histogram · bpftrace 分段计时 · PTP 比对 · `testpmd` —— `06.6` + `06.7` + `13` | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
 
 > 模块编号对应[上方总览表](#模块总览编号--学习顺序)的文件夹。完整知识点 / 交付细节 / 验收清单 → [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
 
-#### 调试三层（贯穿 L0–L5）
-
-| 层 | 回答什么 | 模块 | 工具 |
-|----|---------|------|------|
-| **正确性** | 为什么崩了 / 错了 | `03.6` 用户态调试 · `05.6` 内核调试 | gdb · ASan/TSan · valgrind · KASAN · Ftrace |
-| **性能** | 为什么慢了 | `06.6` Systems Performance | `perf` · 火焰图 · `perf c2c` |
-| **可观测** | 现在在做什么 | `06.7` BPF 可观测 | bpftrace · BCC |
-
-> 顺序固定：**先正确性 → 再性能 → 最后持续观测**。
-> 每级阶梯的调试清单见 [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)。
+> **为什么调试单独占一列，而不是写在下面：** 右列那些验收指标（p99 < 200μs、零丢包、单跳 < 100ns）
+> **不是靠感觉判断的，只能靠本列工具测出来**——不会调试，就等于证明不了项目做完了。
+> 新手最常见的失败是重开发轻调试：代码写完跑通就以为结束，结果答不出「慢在哪、丢在哪、崩在哪」。
+>
+> **三层顺序固定：正确性（`03.6` / `05.6`）→ 性能（`06.6`）→ 持续观测（`06.7`）** —— 先让它对，再让它快，最后让它可观测。
+> 每级的可操作命令清单（含具体参数）→ [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)。
 
 > **ARM64 汇编在 L4 第一次变现：** x86 是 TSO 强序，`acquire/release` 编译成零指令——「忘了写 `memory_order`」在 x86 上常常碰巧能跑；ARM64 弱序，`ldar`/`stlr` 少一条就直接崩。
 
