@@ -206,6 +206,7 @@ gdb ./matching_engine core
 
 ## 交叉引用
 
+- [2.0 GDB 总览：能干什么、不能干什么](00-gdb-overview.md) —— 先看这节划清能力边界（与 ASAN 的冲突、看不到内核）
 - [2.2 断点与观察点](02-breakpoints.md)
 - [2.3 栈帧与回溯](03-stack-backtrace.md)
 - [03.6 模块导读](../../README.md)
