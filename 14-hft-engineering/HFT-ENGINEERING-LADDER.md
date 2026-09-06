@@ -41,20 +41,20 @@ L4  低延迟专项          ── cache / NUMA / 内存序 / 无锁 / 绑核 /
 L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + 全链路测量
 ```
 
-| 级 | 主线知识 | 交付项目 | 硬验收指标 |
-|----|---------|---------|-----------|
-| **L0** | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
-| **L1** | TLPI：fd、线程、mmap、信号、epoll | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
-| **L2** | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
-| **L3** | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下 **零丢包**，能说出丢包在哪一层 |
-| **L4** | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
-
-> 📌 你当前位置：**L0 尾 / L1 中**（Pointers on C §7.1；TLPI 20 章 151 篇；LKD 批 F = Ch14 块 IO + Ch16 页缓存）。
+| 级 | 对应模块 | 主线知识 | 交付项目 | 硬验收指标 |
+|----|---------|---------|---------|-----------|
+| **L0** | [`01` C 语言](../01-c-language/) · [`02` CSAPP](../02-computer-systems/) | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
+| **L1** | [`03` TLPI](../03-linux-userspace-api/) · [`03.5` UNP](../03.5-unix-network-api/) · [`03.6` 调试](../03.6-userspace-debugging/) · [`04` C++](../04-cpp/) | TLPI：fd、线程、mmap、信号、epoll | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
+| **L2** | [`05` LKD](../05-linux-kernel/) · [`05.5`](../05.5-modern-kernel/) [`05.6`](../05.6-kernel-debugging/) · [`06` MM](../06-linux-mm/) · [`06.5`](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6-systems-performance/) | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
+| **L3** | [`11` TCP/IP](../11-tcpip-protocols/) · [`11.5` 抓包](../11.5-wireshark-packet-analysis/) · [`12` 内核网](../12-kernel-networking/) · [`12.5` 现代网络](../12.5-modern-networking/) | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下 **零丢包**，能说出丢包在哪一层 |
+| **L4** | [`15` 体系结构](../15-computer-architecture/) · [`07` ARM64](../07-arm-architecture/) · [`02` CSAPP](../02-computer-systems/) · [ch07 无锁](./chapter-07-lockless-data-structures-memory-layout/README.md) | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
+| **L5** | [`13` DPDK](../13-dpdk/) · [本模块 ch06/ch09/ch13](./README.md) · [`19` 微观结构](../19-markets-microstructure/) · [`06.7` BPF](../06.7-bpf-observability/) | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
 
 ---
 
-## 三、L0 · C 语言与指针（当前位置）
+## 三、L0 · C 语言与指针
+
+> **对应模块：** [`01` C 语言](../01-c-language/)（K&R / Pointers on C / Expert C / Modern C / 嵌入式 C 自我修养 / C 陷阱）· [`02` CSAPP](../02-computer-systems/) Ch3 Ch6 Ch9
 
 ### 知识点
 
@@ -84,12 +84,14 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 - [ ] 能解释：`brk` vs `mmap` 的 128KB 分界线，以及超过后为什么整块归还
 - [ ] 能解释：为什么 `realloc` 可能原地扩容也可能搬迁（热路径不能依赖）
 
-> 📌 **你正在学的《Pointers on C》§7.1（stream model / FILE 对象）落在这一级**——
+> 📌 **《Pointers on C》§7.1（stream model / FILE 对象）落在这一级**——
 > 看似只是 I/O，实际是「用户态缓冲 vs 系统调用」的第一课，**直接决定后面日志怎么写**。
 
 ---
 
 ## 四、L1 · 用户态系统编程（TLPI 主线）
+
+> **对应模块：** [`03` TLPI](../03-linux-userspace-api/)（主线）· [`03.5` UNP](../03.5-unix-network-api/) · [`03.6` 用户态调试](../03.6-userspace-debugging/) · [`04` C++](../04-cpp/)
 
 ### 高价值章节（HFT 视角重排，非原书顺序）
 
@@ -125,6 +127,8 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 ---
 
 ## 五、L2 · 内核机制与内存
+
+> **对应模块：** [`05` LKD](../05-linux-kernel/) · [`05.5` 现代内核](../05.5-modern-kernel/) · [`05.6` 内核调试](../05.6-kernel-debugging/) · [`06` Gorman MM](../06-linux-mm/) · [`06.5` 现代 MM](../06.5-modern-mm/) · [`06.6` SysPerf](../06.6-systems-performance/)（perf 方法论）
 
 ### 必须吃透的六个机制
 
@@ -162,6 +166,8 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 
 ## 六、L3 · 网络与协议栈
 
+> **对应模块：** [`11` TCP/IP](../11-tcpip-protocols/) · [`11.5` 抓包](../11.5-wireshark-packet-analysis/) · [`12` 内核网络](../12-kernel-networking/) · [`12.5` 现代网络](../12.5-modern-networking/)（XDP / NAPI / AF_XDP）
+
 ### 知识地图
 
 | 层 | 要掌握 | 关键旋钮 |
@@ -194,6 +200,8 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 
 ## 七、L4 · 低延迟专项（HFT 的核心竞争力）
 
+> **对应模块：** [`15` 体系结构](../15-computer-architecture/)（cache / MESI）· [`07` ARM64](../07-arm-architecture/)（弱内存序）· [`02` CSAPP](../02-computer-systems/) Ch6 Ch12 · [本模块 ch07 无锁与内存布局](./chapter-07-lockless-data-structures-memory-layout/README.md)
+
 这是**唯一别人替代不了你**的一级。前面三级是通用系统能力，这一级是 HFT 专属。
 
 ### 7.1 cache 与内存布局
@@ -221,7 +229,7 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 | **ARM64** | **弱序** | 读写任意重排；`acquire/release` 要 `ldar`/`stlr` |
 | POWER | 更弱 | — |
 
-> ⭐ **你在 `07-arm-architecture` 学的 ARM64 汇编，在这里第一次产生 HFT 价值**：
+> ⭐ **`07-arm-architecture` 的 ARM64 汇编，在这里第一次产生 HFT 价值**：
 > 在 x86 上「忘记写 memory_order」往往**碰巧能跑**；在 ARM64 上会**直接崩**。
 > 能解释为什么 = 真正理解了内存序，而不是背了 C++ 的六个枚举。
 
@@ -280,6 +288,8 @@ L5  系统整合            ── 内核旁路 + 撮合引擎 + PTP 时钟 + �
 
 ## 八、L5 · 系统整合
 
+> **对应模块：** [`13` DPDK](../13-dpdk/) · 本模块 [ch06 网络](./chapter-06-low-latency-network-protocol/README.md) / [ch09 测量](./chapter-09-latency-measurement-benchmarking/README.md) / [ch13 FPGA](./chapter-13-fpga-crypto-hft/README.md) · [`19` 市场微观结构](../19-markets-microstructure/) · [`06.7` BPF](../06.7-bpf-observability/)
+
 ### 8.1 内核旁路选型
 
 | 方案 | 延迟 | 代价 | 适用 |
@@ -336,11 +346,11 @@ FeedHandler（组播收包+解码）→ [无锁 ring] → Book（维护 LOB）�
 | **Algorithmic and High-Frequency Trading**（Cartea 等） | 策略数学建模 | **暂缓** | 目标底层开发，随机微分方程不前置 |
 | **Flash Boys**（Michael Lewis） | 行业纪实 | 任意空隙 | 无代码，理解行业生态 |
 
-### 阅读优先级（对应你当前位置）
+### 阅读优先级
 
 | 梯队 | 书 | 触发条件 |
 |------|----|---------|
-| **第一梯队** | `Trading and Exchanges`（业务地基）+ `Low-Latency C++ Programming`（底层 C++） | **现在就能开** |
+| **第一梯队** | `Trading and Exchanges`（业务地基）+ `Low-Latency C++ Programming`（底层 C++） | 无前置，可先读 |
 | **第二梯队** | `Building Low Latency Applications with C++` | 开始做 P5-1 三进程链路时 |
 | **第三梯队** | `Developing HFT Systems`（架构全景）、`HFT (Aldridge)`（业务） | L3 网络之后 |
 | **后置** | `Algorithmic and HFT`（数学） | 除非转向策略研究 |

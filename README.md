@@ -83,17 +83,18 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 ### 能力阶梯 L0 → L5
 
 > 完整版（每级知识点表 + 交付细节 + 硬验收指标）→ [14-hft-engineering/HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
-> **当前位置：L0**（《Pointers on C》§7.1 stream model / FILE 对象，与 L0 的「自实现 `malloc`」正好咬合）
 
-| 级 | 核心知识 | 交付项目 | 硬验收指标 |
-|:--:|----------|----------|------------|
-| **L0** | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
-| **L1** | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
-| **L2** | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
-| **L3** | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
-| **L4** | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
-| **L5** | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
+| 级 | 对应模块 | 核心知识 | 交付项目 | 硬验收指标 |
+|:--:|----------|----------|----------|------------|
+| **L0** | `01` C 语言 | 指针算术、struct 布局、堆分配、ABI | 自实现 `malloc` + 对齐/合并 benchmark | 能解释 chunk header / bins / `M_MMAP_THRESHOLD` |
+| **L1** | `03` TLPI · `03.5` UNP | TLPI：fd、线程、`mmap`、信号、`epoll` | 多线程 TCP echo server（epoll ET + 线程池） | p99 < 200μs；能画出请求完整路径 |
+| **L2** | `05` LKD · `06` MM | LKD + Gorman：调度/中断/VMA/页表/slab | `perf` 定位并消除一次真实抖动 | 能用火焰图 + `perf stat` 说清瓶颈归属 |
+| **L3** | `11` TCP/IP · `12` 内核网 | 组播、UDP、socket 选项、NAPI | UDP 组播行情接收器（含丢包统计） | 10 万 pps 下**零丢包**，能说出丢包在哪一层 |
+| **L4** | `15` 体系结构 · `07` ARM64 | cache line / NUMA / 内存序 / 无锁 | SPSC 无锁 ring（padding 前后对比） | 单跳 < 100ns，p99 < 200ns，**批量消费**版更快 |
+| **L5** | `13` DPDK · `14` HFT · `19` 微观结构 | DPDK/AF_XDP、LOB、PTP、T2T 测量 | 三进程：FeedHandler → Book → Strategy | 软件栈 tick-to-trade **p99 < 10μs**（自测环境如实记录） |
 
+> 模块编号对应[上方总览表](#模块总览编号--学习顺序)的文件夹。完整知识点 / 交付细节 / 验收清单 → [HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md)
+>
 > **ARM64 汇编在 L4 第一次变现：** x86 是 TSO 强序，`acquire/release` 编译成零指令——「忘了写 `memory_order`」在 x86 上常常碰巧能跑；ARM64 弱序，`ldar`/`stlr` 少一条就直接崩。
 
 ### 项目 P1 → P10
@@ -116,12 +117,6 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 
 ---
 
-## 当前状态
-
-- **正在：** `03` TLPI 逐章精读（主线，64 章推进中）· `05` LKD 薄笔记扩写（剩 Ch10 同步方法 8 篇 + 散落 7 篇）· `09` Madieu 驱动 Ch12 DMA（12.4/12.5 待写）· `06.7` eBPF 双书 · `01` Pointers on C（Ch7）
-- **下一站：** Madieu 12.4 / 12.5 · LKD Ch10 收官 · TLPI 后续章节
-- **板卡清单（Pi5）：** [RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)
-
 ---
 
 ## 相关仓库与文档
@@ -133,3 +128,4 @@ Phase6  拓展: 15 · 16 · 17 · 18 · 19
 | [READING-LIST.md](./READING-LIST.md) | **某本书具体读哪几章**（精读 / 选读 / 跳过标签） |
 | [HFT-READING-ROADMAP.md](./HFT-READING-ROADMAP.md) | 分书小节指引 · HFT 不漏项检查清单 · 嵌入式支线 |
 | [14-hft-engineering/HFT-ENGINEERING-LADDER.md](./14-hft-engineering/HFT-ENGINEERING-LADDER.md) | L0–L5 每级交付项目与硬验收指标 |
+| [RASPBERRY-PI5-LABS.md](./projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) | 树莓派板卡动手清单（A→G 执行序） |
