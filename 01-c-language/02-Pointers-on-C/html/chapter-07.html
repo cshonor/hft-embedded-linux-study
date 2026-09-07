@@ -4620,6 +4620,9 @@ void log_n(int n, const struct evt *evs); /* 每个元素都是 evt */
   栈上可能还有保存区
 </code></pre>
 <p><code class="c">va_arg(ap, int)</code> 从 <code class="c">rsi</code> 区取，<code class="c">va_arg(ap, double)</code> 从 <code class="c">xmm</code> 区取。类型错了就读错位置 → 垃圾或崩。</p>
+<blockquote>
+<p><strong>既然参数在寄存器里，能不能手动拿 <code class="c">&amp;last</code> 往后偏移去够可变参？</strong> 不能——实测 <code class="c">-O0</code>/<code class="c">-O2</code> 全是垃圾，<code class="c">gp</code>/<code class="c">fp</code> 两个游标还得各走各的。完整实测与 <code class="c">va_list</code> 四个字段的真实数值见 <strong>7.6.1</strong>。</p>
+</blockquote>
 <h3>默认参数提升（<strong>7.6.2</strong> 详）</h3>
 <p>可变参里 <code class="c">float</code> → <code class="c">double</code>，<code class="c">char/short</code> → <code class="c">int</code>。所以 <code class="c">va_arg(ap, float)</code> 是<strong>错的</strong>，要 <code class="c">va_arg(ap, double)</code>。固定参数<strong>不</strong>做这个提升。</p>
 <h2>HFT / DPDK</h2>
@@ -4815,7 +4818,11 @@ int  e(const char *fmt, ...);  // 行 5
       <section class="section" id="s-7-6-1">
         <div class="sec-head"><div class="sec-no">7.6</div><h2>.1 stdarg 宏</h2></div>
 <h2>本节讲什么</h2>
-<p><strong><code class="c">va_list</code> / <code class="c">va_start</code> / <code class="c">va_arg</code> / <code class="c">va_end</code></strong>（C99 另有 <strong><code class="c">va_copy</code></strong>）—— <code class="c">&lt;stdarg.h&gt;</code> 提供的可变参迭代宏。这一节讲清五个宏的精确用法和它们在栈/寄存器层面的实现。</p>
+<p><strong><code class="c">va_list</code> / <code class="c">va_start</code> / <code class="c">va_arg</code> / <code class="c">va_end</code></strong>（C99 另有 <strong><code class="c">va_copy</code></strong>）—— <code class="c">&lt;stdarg.h&gt;</code> 提供的可变参迭代宏。这一节讲清五个宏的精确用法、它们在栈/寄存器层面的实现，以及最关键的一问：</p>
+<blockquote>
+<p><strong>能不能不用这套宏，直接拿 <code class="c">&amp;last</code> 往后偏移去够可变参？实测：不能，而且差得离谱。</strong></p>
+</blockquote>
+<p>原因是 C 语言把"参数怎么传"完全甩给了 ABI——x86-64 上前 6 个整数参数<strong>在寄存器里，压根不在栈上</strong>。这套宏的本质是<strong>把调用约定的细节封进编译器内建</strong>（<code class="c">__builtin_va_start</code> / <code class="c">__builtin_va_arg</code>），让同一份 C 源码在寄存器传参和栈传参的机器上都能跑。下面全部用 gcc 13.3 x86-64 实测坐实。</p>
 <h2>要点</h2>
 <pre class="code" data-label="C"><code class="c">#include &lt;stdarg.h&gt;
 
@@ -4863,6 +4870,72 @@ void log_msg(const char *fmt, ...)
 </tr>
 </tbody>
 </table></div>
+<h3>默认参数提升：只提升可变参，不提升固定参数</h3>
+<p>提升<strong>不是</strong>对所有参数生效，只对 <code class="c">...</code> 里的实参生效。实测（<code class="c">-O0</code>）：</p>
+<pre class="code" data-label="code"><code class="c">调用方实参的真实大小：  sizeof(char)=1  sizeof(float)=4
+固定参数：sizeof(c)=1  sizeof(f)=4          ← 原样，没提升
+可变参数：用 int/double 接 -&gt; 65 / 1.500    ← 已提升
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实参声明类型</th>
+<th>作固定参数时</th>
+<th>作可变参时（提升后）</th>
+<th><code class="c">va_arg</code> 该写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">char</code> / <code class="c">signed char</code> / <code class="c">unsigned char</code></td>
+<td><code class="c">char</code>(1B)</td>
+<td><strong><code class="c">int</code></strong></td>
+<td><code class="c">va_arg(ap, int)</code></td>
+</tr>
+<tr>
+<td><code class="c">short</code></td>
+<td><code class="c">short</code>(2B)</td>
+<td><strong><code class="c">int</code></strong></td>
+<td><code class="c">va_arg(ap, int)</code></td>
+</tr>
+<tr>
+<td><code class="c">_Bool</code></td>
+<td><code class="c">_Bool</code>(1B)</td>
+<td><strong><code class="c">int</code></strong></td>
+<td><code class="c">va_arg(ap, int)</code></td>
+</tr>
+<tr>
+<td><code class="c">float</code></td>
+<td><code class="c">float</code>(4B)</td>
+<td><strong><code class="c">double</code></strong></td>
+<td><code class="c">va_arg(ap, double)</code></td>
+</tr>
+<tr>
+<td><code class="c">int</code> / <code class="c">long</code> / 指针 / <code class="c">double</code></td>
+<td>不变</td>
+<td>不变</td>
+<td>原类型</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么要提升？</strong> 调用点编译到 <code class="c">...</code> 就<strong>丢掉了类型信息</strong>——被调函数没有原型可查，调用方只能按一套"谁都装得下"的通用规则把实参塞进去（整型统一到 <code class="c">int</code>，浮点统一到 <code class="c">double</code>）。固定参数有完整原型，调用方知道精确类型，不需要这套保守规则。</p>
+<p>顺带一个常见误解：C 里字符常量 <code class="c">'A'</code> 的类型<strong>本身就是 <code class="c">int</code></strong>（<code class="c">sizeof('A') == 4</code>，C++ 里才是 <code class="c">char</code>），所以它进可变参根本没"被提升"，它生来就是 int。</p>
+<h3><code class="c">va_arg</code> 类型写错：gcc 不是读垃圾，是直接 abort</h3>
+<p>对 <code class="c">char</code>/<code class="c">short</code>/<code class="c">float</code> 这类"提升后类型"写错，gcc 13.3 实测：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'char' is promoted to 'int' when passed through '...'
+note: (so you should pass 'int' not 'char' to 'va_arg')
+note: if this code is reached, the program will abort
+</code></pre>
+<p>汇编里 <code class="c">wrong_char</code> 的<strong>第 37 条指令是 <code class="c">ud2</code></strong>（未定义指令），运行直接 <code class="c">Illegal instruction (core dumped)</code>。</p>
+<blockquote>
+<p>标准只说 UB；gcc 选择<strong>插一条陷阱指令当场 SIGILL</strong>，而不是让你读到一个错值、然后再查三小时。这是编译器的善意，不是标准的保证。</p>
+</blockquote>
+<p>但<strong>别指望这个保护兜住所有类型错误</strong>——它只覆盖"提升规则"这一类。传 <code class="c">int</code> 却用 <code class="c">double</code> 读，不属于提升错误，而是<strong>读错了区</strong>（下面 gp/fp 双游标会解释），gcc 一声不吭：</p>
+<pre class="code" data-label="code"><code class="c">=== 同一个实参 42，两种读法 ===
+  va_arg(double) 读一个 int 实参 = 2.42843e-319   ← 读的是 xmm 区残留
+  va_arg(int)    读同一个实参    = 42
+</code></pre>
+<p>零警告、退出码 0、输出一个"看起来像个数"的垃圾。<strong>这才是可变参最危险的地方：真实类型错误往往不报错。</strong></p>
 <h3>包装 printf 的标准模式</h3>
 <pre class="code" data-label="C"><code class="c">#include &lt;stdarg.h&gt;
 #include &lt;stdio.h&gt;
@@ -4879,6 +4952,29 @@ void err(const char *fmt, ...)
 err(&quot;bad magic: 0x%x at %s:%d\n&quot;, magic, file, line);
 </code></pre>
 <p><code class="c">vprintf</code>/<code class="c">vfprintf</code>/<code class="c">vsprintf</code>/<code class="c">vsnprintf</code> 是 printf 族的 va_list 版——包装层把可变参原样转发，不重新解包。</p>
+<h3>为什么非得有 <code class="c">v</code> 版：可变参不能二次转发</h3>
+<p>想把一组 <code class="c">...</code> 原样转交给另一个 <code class="c">...</code> 函数，最直觉的写法是：</p>
+<pre class="code" data-label="C"><code class="c">void outer_bad(const char *fmt, ...) { inner(fmt, ...); }   /* 想直接转发 */
+</code></pre>
+<p>实测（gcc 13.3）：</p>
+<pre class="code" data-label="code"><code class="c">error: expected expression before '...' token
+</code></pre>
+<p><code class="c">...</code> 是<strong>声明语法</strong>，不是能当实参传递的运行时对象——进入函数体时它已经展开成若干个独立实参，而 C 没有任何语法让你"把这批实参整体交给下家"。</p>
+<p>唯一出路是先把 <code class="c">...</code> <strong>收进 <code class="c">va_list</code></strong>，再交给 <code class="c">v</code> 版函数：</p>
+<pre class="code" data-label="C"><code class="c">void outer_ok(const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt); vprintf(fmt, ap); va_end(ap);
+}
+/* outer_ok(&quot;x=%d y=%s\n&quot;, 42, &quot;ok&quot;);  →  x=42 y=ok */
+</code></pre>
+<blockquote>
+<p><strong><code class="c">v</code> 版函数存在的唯一理由，就是让可变参能被二次转发。</strong> 没有它，任何日志包装、错误上报、格式化缓冲都写不出来。</p>
+</blockquote>
+<p><strong>内核原样照搬这套分层</strong>（典型写法；本次未逐行比对 v6.6 源码）：</p>
+<pre class="code" data-label="code"><code class="c">pr_info(fmt, ...)        →  printk(KERN_INFO fmt, ...)  →  vprintk(fmt, ap)
+dev_err(dev, fmt, ...)   →  dev_printk(...)             →  vprintk(fmt, ap)
+seq_printf(m, fmt, ...)  →                                 seq_vprintf(m, fmt, ap)
+</code></pre>
+<p>规律一致：<strong>对外接口收 <code class="c">...</code>，内部一律转成收 <code class="c">va_list</code> 的 <code class="c">v</code> 版</strong>。你写自己的日志层时照抄这个分层就行。</p>
 <h3>va_copy：多次遍历</h3>
 <pre class="code" data-label="C"><code class="c">int count_and_print(const char *fmt, ...) {
     va_list ap1, ap2;
@@ -4896,8 +4992,160 @@ err(&quot;bad magic: 0x%x at %s:%d\n&quot;, magic, file, line);
     return n;
 }
 </code></pre>
-<p>直接 <code class="c">ap2 = ap1</code> 在某些 ABI 上不安全（<code class="c">va_list</code> 可能是数组类型，赋值语义不定）。<code class="c">va_copy</code> 是 C99 起的可移植写法。</p>
+<p>实测（<code class="c">-O0</code>）：</p>
+<pre class="code" data-label="code"><code class="c">  第一次遍历: 7 abc 3.14
+  第二次遍历: 7 abc 3.14     ← 两个游标互不干扰
+</code></pre>
+<h4>直接 <code class="c">ap2 = ap1</code> 会怎样？x86-64：根本编译不过</h4>
+<pre class="code" data-label="C"><code class="c">va_list ap1, ap2;
+va_start(ap1, n);
+ap2 = ap1;          /* ← 实测：error: assignment to expression with array type */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">assign_probe.c:8:9: error: assignment to expression with array type
+</code></pre>
+<p>因为 x86-64 上 <code class="c">va_list</code> 是 <strong><code class="c">__va_list_tag[1]</code>——数组类型</strong>，而 C 里<strong>数组不可赋值</strong>。所以在这台机器上你连"碰巧能跑"的机会都没有，编译期就死了。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ABI</th>
+<th><code class="c">va_list</code> 是什么</th>
+<th><code class="c">ap2 = ap1</code> 的下场</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64 SysV</td>
+<td><code class="c">__va_list_tag[1]</code>（数组）</td>
+<td><strong>编译错误</strong>（数组不可赋值）</td>
+</tr>
+<tr>
+<td>x86-32 cdecl</td>
+<td><code class="c">char *</code>（标量）</td>
+<td>编译过，但两个名字共享同一游标位置 → 第二次遍历从第一次停下的地方接着走，不是从头</td>
+</tr>
+<tr>
+<td>AArch64 (AAPCS64)</td>
+<td><code class="c">__va_list</code>（结构体）</td>
+<td>结构体浅拷贝，行为"看似正常"但不可移植</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>三种 ABI 三种失败模式，唯一共同点是<strong>都不对</strong>。这就是必须 <code class="c">va_copy</code> 的原因——它是 C99 起唯一可移植的写法。（AArch64 一行未在 Pi 5 实测，依据 AAPCS64 文档。）</p>
+</blockquote>
 <h2>底层映射</h2>
+<h3>为什么不能手动指针偏移（Quiz 回答）★</h3>
+<p>最自然的想法：可变参不就跟在最后一个固定参数后面吗？那我 <code class="c">char *p = (char *)&amp;count; p += 8;</code> 一个个读不就行了？</p>
+<p>实测（gcc 13.3，x86-64，<code class="c">sum(3,10,20,30)</code> 正确值 <strong>60</strong>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>读法</th>
+<th><code class="c">-O0</code></th>
+<th><code class="c">-O2</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">va_arg(ap, int)</code></td>
+<td><strong>60</strong> ✅</td>
+<td><strong>60</strong> ✅</td>
+</tr>
+<tr>
+<td><code class="c">&amp;count</code> 按 8 字节走</td>
+<td>55040 ❌</td>
+<td>-2076147457 ❌</td>
+</tr>
+<tr>
+<td><code class="c">&amp;count</code> 按 4 字节走</td>
+<td>961130009 ❌</td>
+<td>-2076180224 ❌</td>
+</tr>
+<tr>
+<td>8 个参数时（按 8 字节走）</td>
+<td>32813 ❌</td>
+<td>2005195492 ❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两个优化级别、两种步长，全是垃圾，一次都没碰巧对上。</strong> 把 <code class="c">&amp;count</code> 附近 64 字节打出来看，10/20/30 一个都不在：</p>
+<pre class="code" data-label="code"><code class="c">    &amp;count = 0x7ffd3949adfc
+    [+ 0*8] = 0x0000001000000003   ← 低 4 字节是 count=3，高 4 字节是残留
+    [+ 1*8] = 0x0000000300000001
+    [+ 2*8] = 0x3949adfc00000003
+    [+ 3*8] = 0xb8ecec0000007ffd
+    ...
+</code></pre>
+<p><code class="c">-O2</code> 下 gcc 还会直接诊断：</p>
+<pre class="code" data-label="code"><code class="c">warning: array subscript 2 is outside array bounds of 'int[1]'
+note: at offset 8 into object 'count' of size 4
+</code></pre>
+<p>编译器很清楚 <code class="c">count</code> 只有一个 int 那么大——你往外走就是越界，它连对象大小都报给你了。</p>
+<h4>三条根本原因</h4>
+<p><strong>① 参数根本不在栈上。</strong></p>
+<p>x86-64 System V：前 6 个整数/指针参数走 <code class="c">rdi rsi rdx rcx r8 r9</code>，前 8 个浮点走 <code class="c">xmm0–xmm7</code>。<code class="c">sum(3,10,20,30)</code> 里 3/10/20/30 <strong>四个全在寄存器里</strong>，栈上连影子都没有。你去 <code class="c">&amp;count</code> 后面翻，翻到的是被调者自己的栈帧内容——返回地址、被保存的寄存器、局部变量的邻居、栈金丝雀——跟实参毫无关系。</p>
+<blockquote>
+<p><strong>这个错误写法在 x86-32 cdecl（全栈传参）上确实能碰巧跑通</strong>，这正是它至今还在流传的原因。它在一个架构上"能用"，换个架构就废了。C 标准从没保证过参数在栈上——是各 ABI 自己定的，而 ABI 可以（且已经）把它挪进寄存器。</p>
+</blockquote>
+<p><strong>② 就算在栈上，类型决定你该读哪个区，不是"下一个槽"。</strong></p>
+<p>整数和浮点存在<strong>两个互不相干的区域</strong>里（gp 区 / fp 区）。同一个"下一个参数"，<code class="c">va_arg(ap, int)</code> 和 <code class="c">va_arg(ap, double)</code> 读的是<strong>两个不同的地址</strong>，两个游标各走各的。单纯往后挪一个固定步长，没有任何一种步长能同时满足两种类型——见下面游标实测。</p>
+<p><strong>③ 寄存器保存区是编译器看到 <code class="c">va_start</code> 才建的，手写代码拿不到。</strong></p>
+<p>看 prologue 实测：<code class="c">subq $240, %rsp</code> + 5 条 <code class="c">movq</code> + <code class="c">testb %al,%al</code> + 8 条 <code class="c">movaps</code>。这些指令是编译器检测到你在用 <code class="c">va_start</code> 后<strong>专门生成</strong>的，普通函数完全没有。你手写偏移，这块区域压根不存在。</p>
+<p>其中 <code class="c">testb %al, %al</code> 是 SysV ABI 给可变参开的特例：<strong>调用可变参函数时，调用方必须把所用向量寄存器个数放进 <code class="c">al</code></strong>（0–8），被调方据此决定要不要存 xmm。这套"调用方/被调方协作"是你手写几行 C 复现不出来的。</p>
+<blockquote>
+<p><strong>一句话回答 Quiz</strong>：手动偏移的写法把"参数在栈上连续排列"当成了事实，但那只是某个老 ABI 的巧合。真实情况由 ABI 决定（寄存器 / 栈 / 双区 / 调用约定协作），<code class="c">&lt;stdarg.h&gt;</code> 的宏是<strong>编译器内建</strong>（<code class="c">__builtin_va_start</code> / <code class="c">__builtin_va_arg</code>）——编译器知道目标机器的 ABI，你不知道。</p>
+</blockquote>
+<h3>va_list 游标实测：那四个字段到底怎么动</h3>
+<p>x86-64 上 <code class="c">va_list</code> 是 <code class="c">__va_list_tag[1]</code>（<code class="c">sizeof = 24</code>）。直接把成员打出来看（<code class="c">-O0</code>）：</p>
+<p><strong>整数参数——<code class="c">gp_offset</code> 每次 +8：</strong></p>
+<pre class="code" data-label="code"><code class="c">  va_start 后        gp_offset= 8 fp_offset=48 overflow=0x7ffea1359b90 reg_save=0x7ffea1359ad0
+    va_arg(int) -&gt; 10
+    取完一个 int 后  gp_offset=16 fp_offset=48 ...
+    va_arg(int) -&gt; 20
+    取完一个 int 后  gp_offset=24 fp_offset=48 ...
+</code></pre>
+<p>注意起点是 <strong>8 不是 0</strong>——<code class="c">count</code> 占了寄存器保存区的第一个 8 字节槽，<code class="c">va_start(ap, count)</code> 就把游标设到它之后。<strong>这就是"最后一个固定参数"这个名字的物理含义</strong>：它决定游标初值。</p>
+<p><strong>混合类型——两个游标各走各的：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>动作</th>
+<th><code class="c">gp_offset</code></th>
+<th><code class="c">fp_offset</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">va_start</code> 后</td>
+<td>8</td>
+<td>48</td>
+</tr>
+<tr>
+<td><code class="c">va_arg(int)</code> → 42</td>
+<td><strong>16</strong></td>
+<td>48</td>
+</tr>
+<tr>
+<td><code class="c">va_arg(double)</code> → 3.140</td>
+<td>16</td>
+<td><strong>64</strong></td>
+</tr>
+<tr>
+<td><code class="c">va_arg(long)</code> → 999</td>
+<td><strong>24</strong></td>
+<td>64</td>
+</tr>
+</tbody>
+</table></div>
+<p>取 <code class="c">double</code> 时 <strong><code class="c">gp_offset</code> 纹丝不动</strong>——它在 <code class="c">fp_offset</code> 区里走，两者互不干扰。<code class="c">fp_offset</code> 起点 48 = 6×8，即整数区之后才是浮点区。</p>
+<p><strong>9 个 long——寄存器耗尽后 <code class="c">overflow_arg_area</code> 接管：</strong></p>
+<pre class="code" data-label="code"><code class="c">  va_start 后   gp_offset= 8  overflow=0x...b70
+    ... 取到第 5 个后 gp_offset=48（到顶，6 个整数寄存器用完）
+    va_arg(long) -&gt; 6   gp_offset=48  overflow=0x...b78   ← +8
+    va_arg(long) -&gt; 7   gp_offset=48  overflow=0x...b80   ← +8
+    va_arg(long) -&gt; 8   gp_offset=48  overflow=0x...b88   ← +8
+</code></pre>
+<p><code class="c">gp_offset</code> 卡在 48 不动，<code class="c">overflow_arg_area</code> 每次 +8 往栈溢出区走。<strong>"游标"不是一根指针在一条直线上走，而是"两个区 + 两个偏移 + 一个溢出指针"的状态机</strong>——这就是为什么你没法用一个 <code class="c">char*</code> 模拟它。</p>
 <h3>va_list 在 x86-64 的实现</h3>
 <p>x86-64 System V：<code class="c">va_list</code> 是一个结构：</p>
 <pre class="code" data-label="C"><code class="c">typedef struct {
@@ -4910,6 +5158,76 @@ err(&quot;bad magic: 0x%x at %s:%d\n&quot;, magic, file, line);
 <p><code class="c">va_arg(ap, int)</code> 按 <code class="c">gp_offset</code> 从寄存器保存区取（用完转栈溢出区）；<code class="c">va_arg(ap, double)</code> 按 <code class="c">fp_offset</code> 从 <code class="c">xmm</code> 保存区取。类型决定了从哪个区取——错类型读错位置。</p>
 <h3>为什么 last 不能是寄存器变量</h3>
 <p><code class="c">va_start</code> 需要 <code class="c">last</code> 的地址来定位保存区。若 <code class="c">last</code> 在寄存器（如 <code class="c">register int</code>），无地址 → <code class="c">va_start</code> 行为未定义。现代代码几乎不会显式用 <code class="c">register</code>，但仍要避免。</p>
+<h3>可变参函数的无条件开销：写不写 <code class="c">va_arg</code> 都得付</h3>
+<p>实测三个函数的 <code class="c">-O0</code> prologue：</p>
+<pre class="code" data-label="C"><code class="c">int v1(int n, ...) { va_start(ap,n); va_arg(ap,int); va_end(ap); }  /* 只读 1 个 */
+int v0(int n, ...) { va_start(ap,n); va_end(ap); }                  /* 一个都不读 */
+int p1(int a, int b) { return a + b; }                              /* 普通函数 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>栈预留</th>
+<th>关键 prologue 指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">v1</code></td>
+<td><code class="c">subq $240</code></td>
+<td><code class="c">movq %rsi/%rdx/%rcx/%r8/%r9</code> + <code class="c">testb %al</code> + <code class="c">movaps %xmm0..7</code>（8 条）</td>
+</tr>
+<tr>
+<td><code class="c">v0</code></td>
+<td><code class="c">subq $224</code></td>
+<td>同上（<strong>一个可变参都不读，照样全溢出</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">p1</code></td>
+<td><strong>无</strong></td>
+<td>只有 4 条 <code class="c">movl</code> 到自己的栈槽</td>
+</tr>
+</tbody>
+</table></div>
+<p>编译器看到 <code class="c">va_start</code> 就把六个整数寄存器和八个向量寄存器<strong>无条件溢出</strong>到栈上的 register save area——因为它不知道运行时会传几个、什么类型。这是<strong>约 224 字节栈 + 14 条 store 指令，每次调用都付</strong>。</p>
+<blockquote>
+<p>HFT 视角：这是"数据面禁用可变参"的第二个物理理由。第一个是格式串解析与类型不安全，第二个就是这个——哪怕你只传一个 int，prologue 也把 6+8 个寄存器全写进内存。热路径日志要么走编译期开关彻底关掉，要么用无格式的定长二进制（binlog）。</p>
+</blockquote>
+<p>（对照组：<code class="c">-O2</code> 下编译器能裁掉未使用的溢出，但这属于优化，不是 ABI 保证。）</p>
+<h3><code class="c">va_end</code> 到底做了什么？x86-64 上：什么都没做</h3>
+<p>写两个只差一个 <code class="c">va_end</code> 的函数，看 <code class="c">-O0</code> 汇编：</p>
+<pre class="code" data-label="C"><code class="c">int sum_with_end(int count, ...) { ...; va_end(ap);  return t; }
+int sum_no_end  (int count, ...) { ...; /* 不调 */   return t; }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>指令数</th>
+<th>尾部</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sum_with_end</code></td>
+<td>59</td>
+<td><code class="c">leave; ret</code></td>
+</tr>
+<tr>
+<td><code class="c">sum_no_end</code></td>
+<td><strong>59</strong>（完全相同）</td>
+<td><code class="c">leave; ret</code>（逐字节一致）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>在 x86-64 glibc 上 <code class="c">va_end</code> 展开成空操作</strong>，忘记它在这台机器上没有任何可观测后果。所以"忘了 <code class="c">va_end</code> 就会出错"是<strong>不准确</strong>的说法——准确说法是：</p>
+<ul>
+<li>标准规定 <code class="c">va_start</code> 必须配对 <code class="c">va_end</code>，否则<strong>未定义行为</strong>（UB 不等于"必然出错"，而是"不保证"）</li>
+<li>在这个 ABI 上 <code class="c">va_end</code> 恰好无事可做；在另一些 ABI 上它可能要释放资源或恢复状态，那时漏掉就是真泄漏</li>
+<li>静态分析器和代码审查靠这个配对关系确认遍历已结束</li>
+</ul>
+<p><strong>结论照旧：必须写。</strong> 但理由是可移植性与可维护性，不是"不写就会崩"。</p>
 <h2>HFT / DPDK</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -4954,16 +5272,36 @@ err(&quot;bad magic: 0x%x at %s:%d\n&quot;, magic, file, line);
 </thead>
 <tbody>
 <tr>
+<td>"手动拿 <code class="c">&amp;last</code> 往后偏移就能读可变参"</td>
+<td>❌ 实测 <code class="c">-O0</code>/<code class="c">-O2</code> 全是垃圾。<strong>x86-64 前 6 个参数在寄存器里，栈上根本没有</strong>；<code class="c">&amp;count</code> 后面是被调者自己的栈帧</td>
+</tr>
+<tr>
+<td>"参数在栈上连续排列"</td>
+<td>只是 x86-32 cdecl 的巧合。x86-64 / AArch64 都是寄存器传参，ABI 说了算，C 标准没保证过</td>
+</tr>
+<tr>
+<td>"<code class="c">va_arg</code> 类型写错只是读错值"</td>
+<td>提升类错误（char/short/float）gcc 插 <code class="c">ud2</code> 当场 SIGILL；但 int/double <strong>读错区</strong>是零警告 + 垃圾值，更危险</td>
+</tr>
+<tr>
+<td>"忘了 <code class="c">va_end</code> 会崩"</td>
+<td>x86-64 上 <code class="c">va_end</code> 是空操作（实测两函数汇编逐字节相同）。仍必须写——理由是 UB 与可移植性，不是"不写就崩"</td>
+</tr>
+<tr>
+<td>"可变参只是语法糖，零开销"</td>
+<td>prologue 无条件 <code class="c">subq $224~240</code> + 5 条 <code class="c">movq</code> + 8 条 <code class="c">movaps</code>，<strong>一个可变参都不读也照付</strong></td>
+</tr>
+<tr>
+<td>"固定参数也会默认提升"</td>
+<td>不提升。实测固定参数 <code class="c">sizeof(c)=1</code>；只有 <code class="c">...</code> 里的才提升</td>
+</tr>
+<tr>
 <td>"<code class="c">va_arg(ap, float)</code> 取 float"</td>
 <td>错——可变参 float 提升为 double，要 <code class="c">va_arg(ap, double)</code></td>
 </tr>
 <tr>
 <td>"<code class="c">ap2 = ap1</code> 复制遍历状态"</td>
-<td>某些 ABI 不安全，用 <code class="c">va_copy</code></td>
-</tr>
-<tr>
-<td>"<code class="c">va_end</code> 可省"</td>
-<td>必须配对，否则某些 ABI 上资源泄漏</td>
+<td>x86-64 上<strong>编译错误</strong>（<code class="c">va_list</code> 是数组类型）；其他 ABI 能编译过但语义错。用 <code class="c">va_copy</code></td>
 </tr>
 <tr>
 <td>"<code class="c">last</code> 可以是 register 变量"</td>
@@ -4976,9 +5314,40 @@ err(&quot;bad magic: 0x%x at %s:%d\n&quot;, magic, file, line);
 </tbody>
 </table></div>
 <h2>实操</h2>
-<pre class="code" data-label="shell"><code class="c"># 看 va_list 在 x86-64 的结构
-grep -A8 'va_list' /usr/include/x86_64-linux-gnu/bits/types/__va_list_tag.h
-# 写包装 printf，看 vfprintf 转发
+<pre class="code" data-label="shell"><code class="c"># 1. 看 va_list 在 x86-64 的真实定义（数组类型！）
+grep -A8 'struct __va_list_tag\|__va_list_tag\[1\]' \
+     /usr/lib/gcc/x86_64-linux-gnu/*/include/stdarg.h
+#   typedef __builtin_va_list va_list;   ← 数组类型 __va_list_tag[1]
+
+# 2. 证明参数在寄存器里：手动偏移只能读到垃圾
+cat &gt; manual.c &lt;&lt; 'EOF'
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+static int sum_va(int count, ...) {
+    va_list ap; va_start(ap, count);
+    int t = 0; for (int i=0;i&lt;count;i++) t += va_arg(ap, int);
+    va_end(ap); return t;
+}
+static int sum_manual(int count, ...) {
+    int t = 0; char *p = (char *)&amp;count;
+    for (int i=0;i&lt;count;i++) { p += sizeof(long); t += *(int *)p; }
+    return t;
+}
+int main(void) {
+    printf(&quot;va=%d  manual=%d\n&quot;, sum_va(3,10,20,30), sum_manual(3,10,20,30));
+}
+EOF
+gcc -O0 -Wall manual.c -o m0 &amp;&amp; ./m0     # va=60  manual=55040（垃圾）
+gcc -O2 -Wall manual.c -o m2 &amp;&amp; ./m2     # va=60  manual=随机垃圾 + -Warray-bounds
+
+# 3. 看可变参函数 prologue 的无条件寄存器溢出
+echo 'int v(int n, ...){va_list ap;va_start(ap,n);int x=va_arg(ap,int);va_end(ap);return x;}
+int p(int a,int b){return a+b;}' &gt; ov.c
+gcc -O0 -S ov.c -o - | grep -E 'subq|movq\s+%r|movaps|testb'
+#   v: subq $240 + movq %rsi/%rdx/%rcx/%r8/%r9 + testb %al + movaps ×8
+#   p: 无 subq  ← 普通函数没有保存区
+
+# 4. 包装 printf，看 vfprintf 转发
 cat &gt; t.c &lt;&lt; 'EOF'
 #include &lt;stdarg.h&gt;
 #include &lt;stdio.h&gt;
@@ -4987,11 +5356,21 @@ void err(const char *fmt, ...) {
 }
 EOF
 gcc -O2 -S t.c -o - | grep -A15 '^err:'
-# va_copy 多次遍历
+
+# 5. va_copy 多次遍历 / 直接赋值会怎样
 gcc -std=c11 t.c -o t
+echo 'void f(int n,...){va_list a,b;va_start(a,n);b=a;va_end(a);}' &gt; asg.c
+gcc -c asg.c -o /dev/null   # error: assignment to expression with array type
+
+# 6. va_arg 类型写错的后果
+echo '#include &lt;stdarg.h&gt;
+void g(int n,...){va_list ap;va_start(ap,n);char c=va_arg(ap,char);(void)c;va_end(ap);}' &gt; bt.c
+gcc -Wall -c bt.c -o /dev/null
+#   warning: 'char' is promoted to 'int' when passed through '...'
+#   note: if this code is reached, the program will abort   ← 汇编里是 ud2
 </code></pre>
 <h2>与后续衔接</h2>
-<p><strong>7.6.2</strong> 限制与 <code class="c">format</code> 属性；<strong>ch15</strong> printf 族与 vprintf；DPDK <code class="c">RTE_LOG</code>；<strong>ch14</strong> 宏与可变参（<code class="c">__VA_ARGS__</code>）。</p>
+<p><strong>7.6.2</strong> 限制与 <code class="c">format</code> 属性；<strong>7.6</strong> 总览与「count 说谎」实测；<strong>ch15</strong> printf 族与 vprintf 的实现；<strong>ch14</strong> 宏与可变参（<code class="c">__VA_ARGS__</code>——注意那是<strong>预处理器</strong>层的可变参，与本节<strong>运行时</strong>层的 <code class="c">va_list</code> 是两套完全不同的机制，只是名字像）；DPDK <code class="c">RTE_LOG</code>；<strong>03.6</strong> 崩溃调试：可变参类型错位导致的乱读，ASAN 能抓到的和抓不到的边界。</p>
 <h2>自测要点</h2>
 <ol>
 <li><code class="c">va_start(ap, last)</code> 里 <code class="c">last</code> 是什么？为什么不能是寄存器变量？</li>
@@ -4999,6 +5378,10 @@ gcc -std=c11 t.c -o t
 <li><code class="c">va_copy</code> 解决什么问题？为什么不能直接 <code class="c">ap2 = ap1</code>？</li>
 <li>包装 printf 时为什么优先用 <code class="c">vprintf</code> 族，而不是手动 <code class="c">va_arg</code> 循环？</li>
 <li>x86-64 上 <code class="c">va_list</code> 是什么结构？<code class="c">va_arg(ap, int)</code> 和 <code class="c">va_arg(ap, double)</code> 分别从哪取？</li>
+<li><strong>为什么不能手动 <code class="c">&amp;last</code> 偏移读可变参？</strong>（提示：x86-64 上前 6 个整数参数在哪？）</li>
+<li><code class="c">gp_offset</code> 起点为什么是 8 而不是 0？它和 <code class="c">va_start(ap, last)</code> 的 <code class="c">last</code> 什么关系？</li>
+<li>可变参函数的 prologue 无条件付出什么代价？数据面禁用变参的物理理由是什么？</li>
+<li><code class="c">va_end</code> 在 x86-64 上展开成什么？既然是空操作，为什么还是必须写？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -5013,6 +5396,123 @@ gcc -std=c11 t.c -o t
 <details>
 <summary>参考答案</summary>
 <p>va_start 需要通过最后一个有名参数的地址来定位可变参数在栈上的起始位置。不同调用约定下，参数压栈方向和布局不同，va_start 的实现依赖这个参数来找到可变参数区域。如果传错参数名，va_start 的行为是未定义的。</p>
+</details>
+<p><strong>题目 2：</strong> 下面两种写法，<code class="c">-O0</code> 和 <code class="c">-O2</code> 下分别输出什么？为什么？</p>
+<pre class="code" data-label="C"><code class="c">static int sum_va(int count, ...) {
+    va_list ap; va_start(ap, count);
+    int t = 0;
+    for (int i = 0; i &lt; count; i++) t += va_arg(ap, int);
+    va_end(ap); return t;
+}
+static int sum_manual(int count, ...) {
+    int t = 0;
+    char *p = (char *)&amp;count;
+    for (int i = 0; i &lt; count; i++) { p += sizeof(long); t += *(int *)p; }
+    return t;
+}
+/* main: printf(&quot;%d %d\n&quot;, sum_va(3,10,20,30), sum_manual(3,10,20,30)); */
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>实测（gcc 13.3 x86-64）：</p>
+<pre class="code" data-label="code"><code class="c">-O0:  60  55040
+-O2:  60  -2076147457
+</code></pre>
+<p><code class="c">sum_va</code> 恒为 60；<code class="c">sum_manual</code> 在<strong>两个优化级别下都是垃圾，且值还不一样</strong>。</p>
+<p>原因不是"偏移步长算错了"，而是<strong>那块内存里根本没有参数</strong>：x86-64 SysV 规定前 6 个整数参数用 <code class="c">rdi/rsi/rdx/rcx/r8/r9</code> 传，<code class="c">sum(3,10,20,30)</code> 的四个实参全在寄存器里。<code class="c">&amp;count</code> 后面是被调者自己的栈帧（返回地址、被保存寄存器、局部变量、栈金丝雀），跟实参毫无关系。</p>
+<p>补充证据：<code class="c">-O2</code> 下 gcc 会给出 <code class="c">warning: array subscript 2 is outside array bounds of 'int[1]' / note: at offset 8 into object 'count' of size 4</code>——它知道 <code class="c">count</code> 只有一个 int 大。</p>
+<p>（这个写法在 x86-32 cdecl 全栈传参时能碰巧跑通，这正是它流传至今的原因。但 C 标准从未保证参数在栈上。）</p>
+</details>
+<p><strong>题目 3：</strong> 在 x86-64 上执行下面这段，<code class="c">gp_offset</code> / <code class="c">fp_offset</code> 各是多少？</p>
+<pre class="code" data-label="C"><code class="c">void probe(int n, ...) {
+    va_list ap;
+    va_start(ap, n);            /* A */
+    int    a = va_arg(ap, int); /* B */
+    double d = va_arg(ap, double); /* C */
+    long   l = va_arg(ap, long);   /* D */
+    va_end(ap);
+}
+/* 调用: probe(3, 42, 3.14, 999L); */
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>位置</th>
+<th><code class="c">gp_offset</code></th>
+<th><code class="c">fp_offset</code></th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A（<code class="c">va_start</code> 后）</td>
+<td><strong>8</strong></td>
+<td>48</td>
+<td><code class="c">n</code> 占第一个 8 字节槽，游标设在它之后</td>
+</tr>
+<tr>
+<td>B（取完 int 42）</td>
+<td><strong>16</strong></td>
+<td>48</td>
+<td>整数走 gp 区，+8</td>
+</tr>
+<tr>
+<td>C（取完 double 3.140）</td>
+<td>16</td>
+<td><strong>64</strong></td>
+<td>浮点走 fp 区，+16；<strong>gp 区纹丝不动</strong></td>
+</tr>
+<tr>
+<td>D（取完 long 999）</td>
+<td><strong>24</strong></td>
+<td>64</td>
+<td>回到 gp 区，+8</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键点三个：</p>
+<ol>
+<li>起点 8 而非 0——<code class="c">va_start(ap, n)</code> 的 <code class="c">n</code> 决定了游标初值，这就是"最后一个固定参数"的物理含义</li>
+<li><code class="c">fp_offset</code> 起点 48 = 6×8，整数区之后才是浮点区</li>
+<li>取 <code class="c">double</code> 时 <code class="c">gp_offset</code> 不变——两个游标独立推进，所以"一个游标往后挪"的模型从根上就是错的</li>
+</ol>
+</details>
+<p><strong>题目 4：</strong> 以下三行分别会怎样？（x86-64 / x86-32 / AArch64）</p>
+<pre class="code" data-label="C"><code class="c">va_list ap1, ap2;
+va_start(ap1, n);
+ap2 = ap1;
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>ABI</th>
+<th><code class="c">va_list</code> 的真实类型</th>
+<th><code class="c">ap2 = ap1</code> 的下场</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64 SysV</td>
+<td><code class="c">__va_list_tag[1]</code>（<strong>数组</strong>）</td>
+<td><strong>编译错误</strong> <code class="c">assignment to expression with array type</code>——C 里数组不可赋值</td>
+</tr>
+<tr>
+<td>x86-32 cdecl</td>
+<td><code class="c">char *</code>（标量）</td>
+<td>编译过，但两个名字共享同一游标状态：第二次遍历从第一次停下的地方<strong>接着走</strong>，不是从头</td>
+</tr>
+<tr>
+<td>AArch64 AAPCS64</td>
+<td><code class="c">__va_list</code>（结构体）</td>
+<td>浅拷贝，本机"看似正常"，但不可移植</td>
+</tr>
+</tbody>
+</table></div>
+<p>三种 ABI 三种失败模式，唯一共同点是<strong>都不对</strong>。C99 的 <code class="c">va_copy(ap2, ap1)</code> 是唯一可移植写法，且必须各自 <code class="c">va_end</code>。</p>
 </details>
       </section>
       <section class="section" id="s-7-6-2">
