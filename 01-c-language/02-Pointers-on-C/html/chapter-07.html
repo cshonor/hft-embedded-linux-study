@@ -5524,6 +5524,7 @@ ap2 = ap1;
 <li><strong><code class="c">va_arg(args, float)</code> 到底怎么个 UB？</strong> 实测是<strong>编译器插 <code class="c">ud2</code> 当场 SIGILL</strong>（退出码 132），不是"读个错值"。</li>
 <li><strong><code class="c">__attribute__((format(printf, 2, 3)))</code> 的 2 和 3 是什么？</strong> 用在普通函数上是<strong>索引越界、属性静默失效</strong>；它真正对应的是 <strong>C++ 非静态成员函数</strong>（<code class="c">this</code> 隐式占第 1 位）。</li>
 <li><strong>"没有元信息"到底会错成什么样？</strong> 实测 <code class="c">printf("%d %d", 1, 2.0)</code> 打出 <code class="c">1 1068962088</code>——<strong>不是值偏一点，是走了另一个寄存器区</strong>；而且格式串类有 <code class="c">-Wformat</code> 兜底，<code class="c">open</code> 漏写 <code class="c">mode</code> 这类<strong>连一个警告都没有</strong>（实测建出带 setuid 位的文件）。</li>
+<li><strong><code class="c">void sum(...)</code> 能自动知道传了几个吗？</strong> 两层坑：① 这行声明在 C99/C11/C17 下<strong>根本不合法</strong>（<code class="c">before C2X</code>），C2X 才解禁；② 即使 C2X 下合法，<code class="c">sum(1,2)</code> 读出 <code class="c">3</code> 也是<strong>巧合</strong>——污染寄存器后同一次调用得到 <code class="c">303</code> / <code class="c">603</code>。根因：变参调用点唯一多传的元信息是 <code class="c">al</code>（<strong>向量寄存器个数</strong>），<strong>不是参数个数</strong>。</li>
 </ul>
 <h2>要点</h2>
 <h3>限制 1：无类型检查</h3>
@@ -5607,7 +5608,7 @@ f(3.14f);        /* 实参提升为 double，va_arg(ap, double) —— 不是 fl
 </table></div>
 <p>关键点：<strong><code class="c">3.14f</code> 本身不是问题，取法才是</strong>。实参提升成 double 之后，用 <code class="c">double</code> 取是完全正当的——这是 printf 里 <code class="c">%f</code> 能同时吃 <code class="c">float</code> 和 <code class="c">double</code> 实参的原因。</p>
 <h3>限制 3：无法获知个数与类型</h3>
-<p>可变参不携带"有几个、什么类型"的元信息。必须靠：</p>
+<p>可变参不携带"有几个、什么类型"的元信息——<code class="c">va_start</code> 之后你手里的 <code class="c">va_list</code> 只是<strong>几个游标字段</strong>（x86-64 上是 <code class="c">gp_offset</code> / <code class="c">fp_offset</code> / <code class="c">overflow_arg_area</code> / <code class="c">reg_save_area</code>，见 <strong>7.6.1</strong> 的实测），<strong>里面没有任何"还剩几个"的计数</strong>。函数看到的确实只是一串原始字节 + 一个不知道终点在哪的游标。所以必须靠外部渠道告诉它：</p>
 <ul>
 <li><strong>格式串</strong>（<code class="c">printf</code> 的 <code class="c">%d %s %f</code>）</li>
 <li><strong>显式 count + 约定</strong>（<code class="c">void log_n(int n, ...)</code> 约定每个都是 <code class="c">int</code>）</li>
@@ -5721,6 +5722,98 @@ printf(&quot;C: %d %d %d\n&quot;, 1, 2.0, 3);  /* C: 1 3 0        */
 </tbody>
 </table></div>
 <p><strong>这就是元信息缺失最狠的地方：错位会接力。</strong> 一个类型不匹配，后续所有实参的解读全部错位一路到底，而且没有 EOF 标记，<code class="c">va_arg</code> 会一直读到栈上去。</p>
+<h4>调用点汇编：被调方能拿到的唯一元信息是 <code class="c">al</code></h4>
+<p>会有人问："编译器明明知道我传了几个，为什么不能顺手塞个个数进去？"——<strong>它没塞</strong>。看 <code class="c">-O0</code> 下 4 个调用点的实测汇编（gcc 13.3）：</p>
+<pre class="code" data-label="asm"><code class="c"># fixed3(1, 2, 3)                  定参：个数编译期已知
+mov $0x3,%edx
+mov $0x2,%esi
+mov $0x1,%edi
+call fixed3                  ← 没有任何&quot;共 3 个&quot;的信息
+
+# fixed3(1, 2, 0)                  第 3 个是 0 也得老老实实写
+mov $0x0,%edx                ← 编译器不会替你省
+
+# varf(3, 1, 2, 3)                 变参：edi=3 是源码里自己写的 count
+mov $0x3,%ecx
+mov $0x2,%edx
+mov $0x1,%esi
+mov $0x3,%edi                ← 这个 3 是第一个实参 n，不是编译器生成的
+mov $0x0,%eax                ← al = 0
+call varf
+
+# varf(2, 1, 2)
+mov $0x2,%edx
+mov $0x1,%esi
+mov $0x2,%edi                ← edi=2 同样是源码里那个 n
+mov $0x0,%eax
+call varf
+</code></pre>
+<p>两件事值得记住：</p>
+<ol>
+<li><strong>变参调用点唯一多出来的元信息是 <code class="c">mov $0x0,%eax</code></strong>——也就是 <code class="c">al</code> 寄存器。x86-64 SysV 规定：变参调用时 <code class="c">al</code> = <strong>实际用到的向量寄存器（SSE）个数</strong>。这是给被调方的<strong>优化提示</strong>（决定要不要把 8 个 xmm 全存进保存区），<strong>不是参数个数</strong>。</li>
+<li><code class="c">varf(3,1,2,3)</code> 里那个 <code class="c">3</code> 是<strong>你自己写的第一个实参</strong>。写 <code class="c">sum(1,2,3)</code>（不传 count）时这个位置就没有值，被调方于是一个字节的元信息都拿不到。</li>
+</ol>
+<blockquote>
+<p>这也从根上解释了为什么 <code class="c">printf</code> 必须有格式串：除了 <code class="c">%</code> 占位符，<strong>ABI 里没有任何字段写着"这次传了几个"</strong>。</p>
+</blockquote>
+<h4>小思考题：<code class="c">void sum(...)</code> 能自动知道传了 3 个 int 吗？</h4>
+<pre class="code" data-label="C"><code class="c">int sum(...);
+sum(1, 2, 3);
+</code></pre>
+<p><strong>答案：不能。而且这道题有两层坑。</strong></p>
+<p><strong>第一层：这行声明在 C99/C11/C17 下根本不合法。</strong></p>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=c11 -pedantic-errors -c t.c
+error: ISO C requires a named argument before '...' before C2X [-Wpedantic]
+</code></pre>
+<p><code class="c">c99</code> / <code class="c">c17</code> 同样报错（措辞里那句 <strong>before C2X</strong> 就是标准自己给出的时间线），<strong>只有 <code class="c">-std=c2x</code> 通过</strong>——C23 的 N2975 解禁了无固定参数形式（详见 <strong>7.6.1</strong>）。不加 <code class="c">-pedantic-errors</code> 时 gcc 会当扩展默默接受，所以你可能从没见过这个报错；但换个编译器或在 CI 里开 <code class="c">-pedantic-errors</code>，它就是硬错误。</p>
+<p><strong>第二层：即使 C2X 下合法，函数内部也拿不到个数。</strong></p>
+<p>C2X 配套允许了 <code class="c">va_start(ap, )</code>（省略 last 参数），但<strong>没有配套任何"查询个数"的接口</strong>。所以只能硬编码读几次：</p>
+<pre class="code" data-label="C"><code class="c">int sum(...)
+{
+    va_list ap; va_start(ap, );
+    int t = 0;
+    for (int i = 0; i &lt; 3; i++)          /* ← 这个 3 只能写死 */
+        t += va_arg(ap, int);
+    va_end(ap);
+    return t;
+}
+</code></pre>
+<p>实测（gcc 13.3，<code class="c">-std=c2x</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th><code class="c">-O0</code></th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sum(1,2,3)</code></td>
+<td><strong>6</strong></td>
+<td>唯一正确的用法</td>
+</tr>
+<tr>
+<td><code class="c">sum(1,2)</code></td>
+<td><strong>3</strong></td>
+<td>看着像"自动知道没有第 3 个"——<strong>纯属巧合</strong></td>
+</tr>
+<tr>
+<td><code class="c">sum(1,2,3,4)</code></td>
+<td><strong>6</strong></td>
+<td>第 4 个 <code class="c">4</code> 被丢掉，零警告</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">sum(1,2)</code> 那个 <code class="c">3</code> 是假的。</strong> 让它现形：先在旁边调一个函数把第 3 个参数寄存器（<code class="c">edx</code>）污染掉，再调 <code class="c">sum(1,2)</code>：</p>
+<pre class="code" data-label="code"><code class="c">A) poison3(100,200,777)    之后： sum(1,2) = 303   ← 1 + 2 + 300（残留）
+B) poison4(100,200,300,555) 之后： sum(1,2) = 603  ← 1 + 2 + 600（残留）
+   -O2 下同一份代码：        4 和 3                  ← 换优化级别，残留也跟着变
+</code></pre>
+<p>多读出来的那个"实参"是<strong>上一个函数调用留下的寄存器残留</strong>，值随上下文和优化级别变化。第一次测出 <code class="c">3</code> 只是因为那个时刻 <code class="c">edx</code> 恰好是 0——巧合到像设计过一样，而这正是它危险的地方：<strong>错的代码在最简单的测试里表现正常</strong>。</p>
+<blockquote>
+<p><strong>限制 3 的完整说法</strong>：不是"元信息不好拿"，而是 <strong>ABI 里压根没有这个字段</strong>。<code class="c">va_arg</code> 是一个完全靠你报数记账的游标——多报一个就往后多读一格垃圾，少报一个就悄悄丢掉尾部实参，<strong>两种方向编译器都一声不吭</strong>。</p>
+</blockquote>
 <h4>三类失败模式汇总</h4>
 <div class="tbl-wrap"><table>
 <thead>
@@ -5766,6 +5859,72 @@ $ gcc -Wall -Wextra -fno-builtin -c t.c
 </code></pre>
 <blockquote>
 <p>⚠️ 注意 sentinel 检查挂在 <strong><code class="c">-Wformat</code></strong> 下（不是自己的 <code class="c">-Wsentinel</code>），且只是 warning。CI 里要兜底就加 <code class="c">-Werror=format</code>。</p>
+</blockquote>
+<h4>哨兵的两个实测后果</h4>
+<p><strong>① 中间出现 NULL 会被当成"到此结束"。</strong> 哨兵的本质是"拿某个值当终止符"，那业务数据里就不能出现这个值：</p>
+<pre class="code" data-label="C"><code class="c">static void run_all(const char *first, ...)
+{
+    va_list ap; va_start(ap, first);
+    int n = 0;
+    for (const char *s = first; s != NULL; s = va_arg(ap, const char *))
+        fprintf(stderr, &quot;    arg[%d] = %s\n&quot;, n++, s);
+    va_end(ap);
+    fprintf(stderr, &quot;    total = %d\n&quot;, n);
+}
+</code></pre>
+<p>实测（gcc 13.3，<code class="c">-O0</code> 与 <code class="c">-O2</code> 结果一致）：</p>
+<pre class="code" data-label="code"><code class="c">[case1] run_all(&quot;ls&quot;, &quot;-l&quot;, &quot;-a&quot;, NULL)
+    arg[0] = ls   arg[1] = -l   arg[2] = -a      total = 3     ← 正常
+
+[case2] run_all(&quot;ls&quot;, NULL, &quot;-a&quot;, NULL)
+    arg[0] = ls                                  total = 1     ← &quot;-a&quot; 整段丢失
+</code></pre>
+<p><strong>零警告、退出码 0，<code class="c">-a</code> 就这么没了。</strong> 这正是"哨兵不能当业务数据用"的具体代价。选型判据很简单：<strong>你的数据集合里允不允许出现那个终止值？</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>能否用哨兵</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">execl</code> 的 argv 字符串列表</td>
+<td>✅</td>
+<td>argv 元素本身不会是 NULL</td>
+</tr>
+<tr>
+<td>fd 列表用 <code class="c">-1</code> 当哨兵</td>
+<td>✅</td>
+<td><code class="c">-1</code> 不是合法 fd</td>
+</tr>
+<tr>
+<td>价格/数量列表用 <code class="c">0</code> 当哨兵</td>
+<td>❌</td>
+<td>0 是合法业务值</td>
+</tr>
+<tr>
+<td>指针列表用 <code class="c">NULL</code> 当哨兵，但允许"空槽"</td>
+<td>❌</td>
+<td>空槽会被当成终止</td>
+</tr>
+<tr>
+<td>长度可变的二进制数据</td>
+<td>❌</td>
+<td>任意字节都可能出现，用 count</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>② 漏写哨兵不一定崩，可能只是多读一个。</strong> 实测 <code class="c">run_all("ls", "-l")</code>（故意不写末尾 NULL）：</p>
+<pre class="code" data-label="code"><code class="c">[case3] 完全忘记写末尾 NULL：
+    arg[0] = ls
+    arg[1] = -l
+    total = 2        ← 停下来了，exit=0
+</code></pre>
+<p>它停住是因为第 3 次 <code class="c">va_arg</code> 恰好读到一个 0。<strong>这绝不意味着安全</strong>——换个调用上下文残留值就非 0，循环会继续往下扫，拿到的野指针被当字符串解引用就是段错误。用污染寄存器的方式逼它现形：漏写哨兵时读到 <strong>3</strong> 个才停（正确是 2 个），多出来的那个是残留值，<strong>不崩溃、退出码 0、静默多处理一个野指针</strong>。</p>
+<blockquote>
+<p>两个方案的失败形状不同：count <strong>说大</strong>了 → 多读垃圾，<strong>说小</strong>了 → 丢尾部实参；哨兵<strong>漏写</strong> ≡ count 说大了。三种情况都没有任何诊断。</p>
 </blockquote>
 <h4>反面实测：<code class="c">open</code> 漏写 mode 是零警告 + 真实权限漏洞</h4>
 <p><code class="c">open</code> 是 <code class="c">int open(const char *, int, ...)</code>——<code class="c">O_CREAT</code> 时必须有第三个参数。实测漏写：</p>
@@ -6191,6 +6350,9 @@ gcc -Wall -Wextra mode.c -o mode 2&gt;&amp;1 | head -3      # 零警告
 <li><code class="c">printf("%d %d", 1, 2.0)</code> 实测打什么？为什么不是"读错一点"而是"走错区"？后续实参会怎样？</li>
 <li><code class="c">execl</code> 漏写 <code class="c">NULL</code>，gcc 的警告从哪来？怎么实测证明它不来自头文件？</li>
 <li><code class="c">open(path, O_CREAT)</code> 漏写 <code class="c">mode</code> 会怎样？为什么说它比"权限随机"更严重？</li>
+<li><code class="c">void sum(...)</code> 在 C99/C11/C17 下合法吗？C2X 呢？即使合法，函数内部能不能知道传了几个？</li>
+<li>变参调用点唯一多传给被调方的元信息是什么寄存器？它表示的是"参数个数"吗？</li>
+<li>哨兵方案的两个实测后果是什么？什么场景下不能用哨兵？漏写哨兵一定崩吗？</li>
 <li>实测里可变参比定参慢约 4 倍，原因是什么？为什么说"因为要压栈"是错的？</li>
 <li><code class="c">va_arg(args, float)</code> 在 gcc 上的可观测后果是什么（退出码几）？这跟"标准说 UB"是什么关系？</li>
 </ol>
@@ -6305,6 +6467,68 @@ note: if this code is reached, the program will abort
 </code></pre>
 <p>第 1 个参数的类型是 <code class="c">Log*</code>，就是 <code class="c">this</code>。</p>
 <p><strong>记忆法</strong>：两个数字是<strong>从 1 开始的位置编号，不是偏移量</strong>。数清楚"格式串前面站了几个参数"。而排查"属性写了却没生效"，唯一线索是 <strong><code class="c">-Wattributes</code></strong>。</p>
+</details>
+<details>
+<summary>题目 4（小思考题）：<code class="c">int sum(...); sum(1,2,3);</code> —— 函数内部能不能自动知道"传了 3 个 int"？为什么？</summary>
+<p><strong>参考答案：不能。分两层回答。</strong></p>
+<p><strong>第一层：这行声明在 C99/C11/C17 下根本不合法。</strong></p>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=c11 -pedantic-errors -c t.c
+error: ISO C requires a named argument before '...' before C2X [-Wpedantic]
+</code></pre>
+<p><code class="c">c99</code>/<code class="c">c17</code> 同样报错，<strong>只有 <code class="c">-std=c2x</code> 通过</strong>（C23 N2975 解禁无固定参数形式）。不加 <code class="c">-pedantic-errors</code> 时 gcc 当扩展默默接受，所以很多人没见过这条报错——但它在 CI 里就是硬错误。</p>
+<p>注意报错措辞自带时间线：<strong>before C2X</strong>。</p>
+<p><strong>第二层：即使 C2X 下合法，也拿不到个数。</strong></p>
+<p><code class="c">va_start(ap, )</code> 允许省略 last 参数，但没有任何配套接口能查询"还剩几个"。你只能硬编码读几次：</p>
+<pre class="code" data-label="C"><code class="c">int sum(...)
+{
+    va_list ap; va_start(ap, );
+    int t = 0;
+    for (int i = 0; i &lt; 3; i++)
+        t += va_arg(ap, int);       /* 这个 3 只能写死 */
+    va_end(ap);
+    return t;
+}
+</code></pre>
+<p>实测（gcc 13.3，<code class="c">-std=c2x</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>结果</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sum(1,2,3)</code></td>
+<td>6</td>
+<td>唯一正确用法</td>
+</tr>
+<tr>
+<td><code class="c">sum(1,2)</code></td>
+<td><strong>3</strong></td>
+<td>看着像"自动知道没有第 3 个"——<strong>巧合</strong></td>
+</tr>
+<tr>
+<td><code class="c">sum(1,2,3,4)</code></td>
+<td><strong>6</strong></td>
+<td>第 4 个被丢掉，零警告</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么 <code class="c">sum(1,2)</code> 那个 3 不能信？</strong> 把第 3 个参数寄存器（<code class="c">edx</code>）先用另一个函数污染掉：</p>
+<pre class="code" data-label="code"><code class="c">poison3(100,200,777)      之后： sum(1,2) = 303   ← 1 + 2 + 300（残留）
+poison4(100,200,300,555)  之后： sum(1,2) = 603   ← 1 + 2 + 600（残留）
+-O2 下同一份代码：          4 和 3                  ← 换优化级别，残留也变
+</code></pre>
+<p>多读出来的那个"实参"是<strong>上一个函数调用留下的寄存器残留</strong>。第一次测出 <code class="c">3</code> 只是因为那一刻 <code class="c">edx</code> 恰好是 0。</p>
+<p><strong>第三层（根因）</strong>：调用点汇编里，变参调用唯一多传的一条元信息是 <code class="c">mov $0x0,%eax</code>（即 <code class="c">al</code>），它表示<strong>用到的向量寄存器个数</strong>——是给被调方的优化提示，<strong>不是参数个数</strong>。<code class="c">varf(3,1,2,3)</code> 里 <code class="c">edi=3</code> 是源码自己写的第一个实参 n，编译器没有额外生成任何"还有 N 个"的标记。</p>
+<p><strong>结论</strong>：C 的 <code class="c">...</code> 从 ABI 到语言都没有"个数"字段。<code class="c">va_arg</code> 完全靠你报数记账——多报一个读垃圾，少报一个丢实参，两个方向都无诊断。</p>
+<p><strong>正确写法</strong>（三选一）：</p>
+<pre class="code" data-label="C"><code class="c">int sum_n(int n, ...);                        /* 显式 count */
+int sum_arr(int n, const int *a);             /* 数组 + count（工程首选） */
+#define sum3(a,b,c) sum_n(3,(a),(b),(c))      /* 或者干脆用宏固定个数 */
+</code></pre>
 </details>
       </section>
 
