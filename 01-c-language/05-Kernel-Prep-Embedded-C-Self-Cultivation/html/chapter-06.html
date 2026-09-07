@@ -2519,107 +2519,1259 @@ void early_init(void) { /* ... */ }
       </section>
       <section class="section" id="s-6-6-1">
         <div class="sec-head"><div class="sec-no">6.6</div><h2>.1 GNU C编译器扩展关键字：__attribute__</h2></div>
+<p><a href="#s-6-6">← 6.6 属性声明 section</a> · <a href="#intro">ch06 GNU C 扩展</a></p>
+<blockquote>
+<p><strong>本篇是 <code class="c">__attribute__</code> 的完整总纲</strong>——覆盖全部常用属性（诊断类 / 优化类 / 链接类 / 布局类），每个都有可编译示例与本机实测结论。
+单个属性的<strong>深度实测与性能数据</strong>在 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-Pointers-on-C/ch18-runtime-environment/18.10-GCC属性总览.md">18.10 GCC 属性总览（Pointers on C ch18）</a>；<code class="c">packed</code>/<code class="c">aligned</code> 的对齐计算在 <a href="#s-6-7">6.7</a>，<code class="c">section</code> 在 <a href="chapter-06.html#s-6-6-2">6.6.2</a>，<code class="c">weak</code>/<code class="c">alias</code> 在 <a href="#s-6-9">6.9</a>，<code class="c">noinline</code> 在 <a href="#s-6-10">6.10.1</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong><code class="c">__attribute__((...))</code></strong> 是 GCC 附着于 <strong>声明</strong> 的编译指示，不改变 C 类型系统，却影响 <strong>布局、链接、优化、诊断</strong>。可写在类型、变量、函数前后；内核用宏封装成 <code class="c">__packed</code>、<code class="c">__init</code> 等。</p>
-<h2>要点</h2>
-<h3>语法形式</h3>
-<pre class="code" data-label="C"><code class="c">int x __attribute__((aligned(4)));
-__attribute__((noreturn)) void panic(void);
-void foo(void) __attribute__((section(&quot;.text.foo&quot;)));
-</code></pre>
-<pre class="code" data-label="C"><code class="c">/* 多个属性 */
-__attribute__((section(&quot;.init&quot;), unused, noinline))
-static void early_init(void) { }
-</code></pre>
+<p><strong><code class="c">__attribute__((...))</code></strong> 是 GCC/Clang 附着于<strong>声明</strong>的编译指示。它不改变 C 的类型系统，却影响四件事：<strong>布局、链接、优化、诊断</strong>。</p>
+<p>一句话定性：<strong>它是给编译器的"元信息通道"</strong>——把你在源码里知道、但 C 语法表达不出来的事实（"这个函数不会返回"、"这块内存 32 字节对齐"、"这个指针可以和 float 别名"）告诉编译器，让它敢做原本不敢做的优化、或能报原本报不出的错。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
-<th>常见属性</th>
+<th>关键事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不是 C 标准</td>
+<td>GNU 扩展。MSVC 不认，必须条件编译（见 <a href="#可移植写法三种层次">可移植写法</a>）</td>
+</tr>
+<tr>
+<td>Clang 支持绝大多数</td>
+<td>但<strong>不是全部</strong>——<code class="c">optimize</code> 在 Clang 上被静默忽略（实测见 <a href="#6-optimizeargs的坑">组 12</a>）</td>
+</tr>
+<tr>
+<td>C23 有标准替代</td>
+<td><code class="c">[[deprecated]]</code> / <code class="c">[[nodiscard]]</code> / <code class="c">[[fallthrough]]</code> / <code class="c">[[maybe_unused]]</code> 等，见 <a href="#c23-标准属性-vs-gnu-属性对照表">对照表</a></td>
+</tr>
+<tr>
+<td>属性写错可能<strong>静默失效</strong></td>
+<td>位置错、索引越界、被链接器覆盖，三种失效模式见 <a href="#坑点清单">坑点</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、语法：写在三种对象上</h2>
+<pre class="code" data-label="C"><code class="c">/* 变量：类型之后、变量名之前，或声明末尾 */
+int x __attribute__((aligned(64)));
+__attribute__((aligned(64))) int y;
+
+/* 函数：声明前（推荐，可读性好）或声明后 */
+__attribute__((noreturn)) void panic(void);
+void foo(void) __attribute__((section(&quot;.text.foo&quot;)));
+
+/* 类型：struct/union/enum */
+struct __attribute__((packed)) msg { char c; int i; };
+typedef int __attribute__((may_alias)) int_alias;
+</code></pre>
+<p>多个属性用逗号分隔：</p>
+<pre class="code" data-label="C"><code class="c">__attribute__((section(&quot;.init&quot;), unused, noinline))
+static void early_init(void) { }
+</code></pre>
+<h3>⚠️ 位置写错 = 静默失效（实测三种写法）</h3>
+<p>这条最容易被 Python/Java 的装饰器习惯带偏。以 <code class="c">[[gnu::packed]]</code> 为例（gcc 13.3 实测）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th><code class="c">sizeof</code></th>
+<th>是否生效</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct [[gnu::packed]] S { ... };</code></td>
+<td><strong>5</strong></td>
+<td>✅ 唯一正确</td>
+</tr>
+<tr>
+<td><code class="c">struct S { ... } [[gnu::packed]];</code></td>
+<td>8</td>
+<td>❌ <code class="c">warning: attribute ignored</code></td>
+</tr>
+<tr>
+<td><code class="c">[[gnu::packed]] struct S { ... };</code></td>
+<td>8</td>
+<td>❌ <code class="c">warning: empty declaration</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>规则</strong>：属性写在 <code class="c">struct</code> 关键字<strong>之后</strong>、结构体名<strong>之前</strong>。后两种只是 warning，<strong>不会拦住编译</strong>——你以为生效了，其实没有。Clang 对后两种直接 error，所以"能过 gcc 不等于对"。</p>
+<hr />
+<h2>二、属性总表</h2>
+<p>按用途分四类。<code class="c">◇</code> 表示本篇有完整实测，<code class="c">✓</code> 表示要点 + 示例（深度实测见 18.10）。</p>
+<h3>A. 诊断与检查类（把运行期错误提前到编译期）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>修饰</th>
 <th>作用</th>
+<th>覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">format(archtype, m, n)</code></td>
+<td>函数</td>
+<td>按 printf/scanf 规则校验格式串与实参</td>
+<td><a href="#a-诊断与检查类">详</a> ◇</td>
+</tr>
+<tr>
+<td><code class="c">nonnull(idx, ...)</code></td>
+<td>函数</td>
+<td>指定参数不可为 NULL</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">sentinel</code></td>
+<td>函数</td>
+<td>变参必须以 NULL 结尾</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">warn_unused_result</code></td>
+<td>函数</td>
+<td>忽略返回值就警告</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">returns_nonnull</code></td>
+<td>函数</td>
+<td>承诺返回值非 NULL</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">deprecated("msg")</code></td>
+<td>函数/变量/类型</td>
+<td>调用点给弃用警告</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">error("msg")</code></td>
+<td>函数</td>
+<td>调用即<strong>编译错误</strong></td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">warning("msg")</code></td>
+<td>函数</td>
+<td>调用即编译警告（仍生成代码）</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">fallthrough</code></td>
+<td>语句</td>
+<td>标记 switch 故意落空</td>
+<td>◇</td>
+</tr>
+</tbody>
+</table></div>
+<h3>B. 优化提示类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>修饰</th>
+<th>作用</th>
+<th>覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">pure</code></td>
+<td>函数</td>
+<td>无副作用，只读全局内存</td>
+<td>18.10 ✓</td>
+</tr>
+<tr>
+<td><code class="c">const</code></td>
+<td>函数</td>
+<td>无副作用，连全局内存都不读</td>
+<td>18.10 ✓</td>
+</tr>
+<tr>
+<td><code class="c">noreturn</code></td>
+<td>函数</td>
+<td>永不返回（<code class="c">exit</code>/<code class="c">panic</code>）</td>
+<td>18.10 ✓</td>
+</tr>
+<tr>
+<td><code class="c">hot</code> / <code class="c">cold</code></td>
+<td>函数</td>
+<td>冷热路径分离，影响段布局</td>
+<td><a href="#1-hot--cold段布局实测">详</a> ◇</td>
+</tr>
+<tr>
+<td><code class="c">always_inline</code> / <code class="c">noinline</code></td>
+<td>函数</td>
+<td>强制/禁止内联</td>
+<td>◇ / <a href="#s-6-10">6.10.1</a></td>
+</tr>
+<tr>
+<td><code class="c">flatten</code></td>
+<td>函数</td>
+<td>把被调函数也一并内联进来</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">malloc</code></td>
+<td>函数</td>
+<td>返回全新内存，不与任何指针别名</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">alloc_size(n, ...)</code></td>
+<td>函数</td>
+<td>第 n 参数是分配字节数</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">assume_aligned(n)</code></td>
+<td>函数</td>
+<td>承诺返回地址至少 n 字节对齐</td>
+<td>◇</td>
+</tr>
+<tr>
+<td><code class="c">optimize("O0")</code></td>
+<td>函数</td>
+<td>单独指定该函数的优化级别</td>
+<td>⚠️ <a href="#4-optimizeargs的坑">详</a> ◇</td>
+</tr>
+<tr>
+<td><code class="c">used</code></td>
+<td>变量/函数</td>
+<td>即使未被引用也保留符号</td>
+<td>18.10 ✓</td>
+</tr>
+<tr>
+<td><code class="c">unused</code></td>
+<td>变量/函数/参数</td>
+<td>抑制 <code class="c">-Wunused</code> 警告</td>
+<td>18.10 ✓</td>
+</tr>
+</tbody>
+</table></div>
+<h3>C. 符号与链接类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>修饰</th>
+<th>作用</th>
+<th>覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">section("name")</code></td>
+<td>函数/变量</td>
+<td>放入自定义 ELF 段</td>
+<td><a href="chapter-06.html#s-6-6-2">6.6.2</a></td>
+</tr>
+<tr>
+<td><code class="c">visibility("hidden"\|"default"\|"protected")</code></td>
+<td>函数/变量</td>
+<td>控制动态符号表可见性</td>
+<td><a href="#c-符号与链接类">详</a> ◇</td>
+</tr>
+<tr>
+<td><code class="c">weak</code></td>
+<td>函数/变量</td>
+<td>弱符号，可被覆盖</td>
+<td><a href="#s-6-9">6.9</a></td>
+</tr>
+<tr>
+<td><code class="c">alias("target")</code></td>
+<td>函数/变量</td>
+<td>符号别名</td>
+<td><a href="#s-6-9">6.9.4</a></td>
+</tr>
+<tr>
+<td><code class="c">constructor(prio)</code> / <code class="c">destructor(prio)</code></td>
+<td>函数</td>
+<td>main 前/后自动执行</td>
+<td>18.10 ✓</td>
+</tr>
+</tbody>
+</table></div>
+<h3>D. 内存布局类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>修饰</th>
+<th>作用</th>
+<th>覆盖</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code class="c">packed</code></td>
-<td>取消结构体填充</td>
+<td>struct/union</td>
+<td>取消填充，紧凑排布</td>
+<td><a href="#s-6-7">6.7.4</a></td>
 </tr>
 <tr>
 <td><code class="c">aligned(n)</code></td>
-<td>指定对齐</td>
+<td>变量/类型</td>
+<td>强制 n 字节对齐</td>
+<td><a href="#s-6-7">6.7.1</a></td>
 </tr>
 <tr>
-<td><code class="c">section(s)</code></td>
-<td>自定义段名</td>
+<td><code class="c">may_alias</code></td>
+<td>类型</td>
+<td>该类型左值可与任意类型别名（严格别名豁免）</td>
+<td><a href="#d-内存布局类">详</a> ◇</td>
 </tr>
 <tr>
-<td><code class="c">weak</code></td>
-<td>弱符号</td>
+<td><code class="c">cleanup(fn)</code></td>
+<td><strong>局部变量</strong></td>
+<td>离开作用域自动调用 fn（C 的 RAII）</td>
+<td><a href="#cleanup专题c-唯一像样的自动释放">详</a> ◇</td>
 </tr>
 <tr>
-<td><code class="c">format(printf,n,m)</code></td>
-<td>格式检查</td>
-</tr>
-<tr>
-<td><code class="c">noreturn</code></td>
-<td>不返回</td>
-</tr>
-<tr>
-<td><code class="c">constructor</code>/<code class="c">destructor</code></td>
-<td>main 前后执行</td>
-</tr>
-<tr>
-<td><code class="c">unused</code></td>
-<td>抑制未使用警告</td>
-</tr>
-<tr>
-<td><code class="c">deprecated</code></td>
-<td>调用时警告</td>
-</tr>
-<tr>
-<td><code class="c">noinline</code>/<code class="c">always_inline</code></td>
-<td>内联控制</td>
+<td><code class="c">transparent_union</code></td>
+<td>union 类型</td>
+<td>调用时自动把成员类型转成 union</td>
+<td>—</td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">/* 内核封装示例 */
-#define __packed __attribute__((packed))
-#define __init   __attribute__((section(&quot;.init.text&quot;)))
-#define __exit   __attribute__((section(&quot;.exit.text&quot;)))
+<hr />
+<h2>A. 诊断与检查类</h2>
+<p>这类是<strong>最实用</strong>的——把"运行期偶发崩溃"变成"编译期必报"。</p>
+<h3>1. <code class="c">format(archtype, m, n)</code></h3>
+<pre class="code" data-label="C"><code class="c">/* 单固定参：格式串在第 1 位，变参从第 2 位开始 */
+void log_msg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+/* 两个固定参（你的 Quiz）：格式串在第 2 位，变参从第 3 位开始 */
+void my_log(int prio, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 </code></pre>
-<pre class="code" data-label="shell"><code class="c">gcc -fdump-tree-optimized -c attr.c   # 观察优化
+<p><strong>记忆法</strong>：两个数字是<strong>从 1 开始的位置编号，不是偏移量</strong>。</p>
+<p>能拦四类错误（实测）：</p>
+<pre class="code" data-label="C"><code class="c">log_msg(&quot;%d&quot;, 3.14);    /* -Wformat: expected 'int' but arg is 'double' */
+log_msg(&quot;%s&quot;, 42);      /* -Wformat: expected 'char *' but arg is 'int' */
+log_msg(&quot;%d %d&quot;, 1);    /* -Wformat: too few arguments */
+log_msg(&quot;%d&quot;, 1, 2);    /* -Wformat: too many arguments */
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>必须开 <code class="c">-Wformat</code></strong>（<code class="c">-Wall</code> 已含）；<code class="c">-Werror=format</code> 升级为错误。
+⚠️ <strong>索引写错 = 静默失效</strong>：<code class="c">test(const char *fmt, ...)</code> 上写 <code class="c">2,3</code> 时报
+<code class="c">warning: 'format' attribute argument 2 value '2' exceeds the number of function parameters 1 [-Wattributes]</code>，
+之后所有调用点<strong>零报警</strong>。排查索引越界的唯一开关是 <strong><code class="c">-Wattributes</code></strong>。
+⚠️ C++ 成员函数 <code class="c">this</code> 隐式占第 1 位，所以要写 <code class="c">2,3</code>（详见 7.6.2 / 18.10）。</p>
+</blockquote>
+<h3>2. <code class="c">nonnull</code> / <code class="c">returns_nonnull</code></h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((nonnull(1)))
+int str_len(const char *s) { int n = 0; while (s[n]) n++; return n; }
+
+__attribute__((returns_nonnull))
+void *alloc_never_null(void);
+</code></pre>
+<p>实测（gcc / clang 一致）：</p>
+<pre class="code" data-label="code"><code class="c">warning: argument 1 null where non-null expected [-Wnonnull]
+   42 |     str_len(NULL);
+</code></pre>
+<p><strong>局限</strong>：只在你<strong>传 NULL 常量</strong>时静态发现。传一个运行时才为 NULL 的指针，它发现不了——所以它是"文档 + 常量检查"，不是运行时防护。</p>
+<h3>3. <code class="c">sentinel</code></h3>
+<p>变参必须以 NULL 结尾（呼应 <a href="chapter-07.html#s-7-6-2">7.6.2 哨兵</a>）：</p>
+<pre class="code" data-label="C"><code class="c">__attribute__((sentinel))
+int run_all(const char *first, ...);
+</code></pre>
+<p>实测 <code class="c">run_all("a", "b", "c")</code>（漏 NULL）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>输出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc</td>
+<td><code class="c">warning: missing sentinel in function call [-Wformat=]</code></td>
+</tr>
+<tr>
+<td>clang</td>
+<td><code class="c">warning: missing sentinel in function call [-Wsentinel]</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>注意 gcc 把它挂在 <code class="c">-Wformat</code> 下——<code class="c">sentinel</code> <strong>没有自己的独立开关</strong>。</p>
+<h3>4. <code class="c">warn_unused_result</code> / <code class="c">deprecated</code></h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((warn_unused_result))
+int must_check(void);
+
+__attribute__((deprecated))
+void old_api(void);
+
+__attribute__((deprecated(&quot;use new_api2 instead&quot;)))
+void old_api2(void);
+</code></pre>
+<p>实测（gcc 与 clang <strong>完全一致</strong>）：</p>
+<pre class="code" data-label="code"><code class="c">warning: ignoring return value of 'must_check' declared with attribute 'warn_unused_result' [-Wunused-result]
+warning: 'old_api' is deprecated [-Wdeprecated-declarations]
+warning: 'old_api2' is deprecated: use new_api2 instead [-Wdeprecated-declarations]
+</code></pre>
+<p><code class="c">deprecated</code> 带消息的版本最有价值——<strong>在调用点直接告诉你该换成什么</strong>。</p>
+<h3>5. <code class="c">error</code> / <code class="c">warning</code>（编译期强制）</h3>
+<pre class="code" data-label="C"><code class="c">/* error：调用即编译错误。内核常用它把&quot;配置禁用的路径&quot;钉死 */
+extern void forbidden(void) __attribute__((error(&quot;forbidden: 此路径被配置禁用&quot;)));
+
+/* warning：调用即警告，但仍生成代码 */
+extern void risky(void) __attribute__((warning(&quot;risky: 建议改用 safe_api&quot;)));
+</code></pre>
+<p>实测 gcc：</p>
+<pre class="code" data-label="code"><code class="c">error: call to 'forbidden' declared with attribute error: forbidden: 此路径被配置禁用
+   13 |     forbidden();
+</code></pre>
+<p>Clang 18 同样支持（措辞 <code class="c">'error' attribute</code>）。<strong>这是唯一能把"不该调用的函数"在编译期拦住的手段</strong>——比注释和 code review 可靠得多。</p>
+<blockquote>
+<p>⚠️ 注意 <code class="c">error</code>/<code class="c">warning</code> 属性只在<strong>调用点可达</strong>时触发。若函数只有声明（如上面的 <code class="c">extern</code>），且代码路径实际执行到，链接期会因找不到定义而失败——所以这两个属性通常配 <code class="c">#ifdef</code> 或内联定义使用。</p>
+</blockquote>
+<h3>6. <code class="c">fallthrough</code></h3>
+<pre class="code" data-label="C"><code class="c">switch (n) {
+case 1:
+    r = 10;
+    __attribute__((fallthrough));   /* 告诉编译器：我是故意落空的 */
+case 2:
+    r += 20;
+    break;
+}
+</code></pre>
+<p>实测 <code class="c">gcc -std=c11 -Wextra</code>：不加属性报 <code class="c">warning: this statement may fall through [-Wimplicit-fallthrough=]</code>，加了就不报。</p>
+<p>⚠️ <strong>Clang 18 在 <code class="c">-Wextra</code> 下默认不报 implicit fallthrough</strong>（实测 0 条警告）——<strong>别拿一个编译器的警告数当代码质量的度量</strong>。C23 标准写法是 <code class="c">[[fallthrough]];</code>。</p>
+<hr />
+<h2>B. 优化提示类</h2>
+<h3>1. <code class="c">hot</code> / <code class="c">cold</code>（段布局实测）</h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((hot))  int  hot_path(int n);
+__attribute__((cold)) void cold_error(const char *msg);
+</code></pre>
+<p><code class="c">-O2</code> 实测段分布：</p>
+<pre class="code" data-label="code"><code class="c">  0 .text           00000045        ← dispatch
+  3 .text.hot       00000035        ← hot_path
+  5 .text.unlikely  00000049        ← cold_error, cold_calc
+  6 .text.startup   0000003f
+
+符号表：
+000000000000003c t dispatch.cold    ← gcc 自动把冷分支拆出主函数！
+</code></pre>
+<p><strong>关键证据是 <code class="c">dispatch.cold</code></strong>——gcc 不只是把 cold 函数放进 <code class="c">.text.unlikely</code>，还会<strong>把热函数里的冷分支（错误处理）抽出来</strong>单独放。收益是热路径的代码全挤在同一个页/cache 行附近，取指更集中。</p>
+<p>对 HFT 的意义：<code class="c">cold</code> 让错误处理路径不占热路径的 i-cache，比手写 <code class="c">if (unlikely)</code> 更进一步。实测与 <code class="c">__builtin_expect</code> 的对照见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-Pointers-on-C/ch18-runtime-environment/18.10-GCC属性总览.md">18.10</a>。</p>
+<h3>2. <code class="c">flatten</code></h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((flatten))
+int flatten_sum(int n)
+{
+    int s = 0;
+    for (int i = 0; i &lt; n; i++) s += helper_add(i);
+    return s;
+}
+</code></pre>
+<p><code class="c">-O2</code> 实测：<code class="c">flatten_sum</code> 内 <strong><code class="c">call</code> 数 = 0</strong>（<code class="c">helper_add</code> 被内联进来了），但 <code class="c">helper_add</code> 的独立函数体仍保留（因为它是外部链接，可能被别处调用）。</p>
+<p>与 <code class="c">always_inline</code> 的区别：<code class="c">always_inline</code> 是<strong>指定某一个函数</strong>必须内联；<code class="c">flatten</code> 是<strong>指定某个函数内</strong>的所有调用都尽量内联——批量操作，适合"这一条路径我要全部展开"。</p>
+<h3>3. <code class="c">malloc</code> / <code class="c">alloc_size</code> / <code class="c">assume_aligned</code></h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((malloc))
+void *my_alloc(size_t n);
+
+__attribute__((malloc, alloc_size(1)))      /* 第 1 参数是字节数 */
+void *my_alloc2(size_t n);
+
+__attribute__((assume_aligned(32)))
+void *my_aligned_alloc(size_t n);
 </code></pre>
 <ul>
-<li>C23 <strong><code class="c">[[attributes]]</code></strong> 语法不同，可移植性更好</li>
-<li>Clang 兼容大部分 GNU attribute</li>
+<li><code class="c">malloc</code>：告诉编译器"返回的是全新内存，不与任何现存指针别名"——<strong>省掉一次可能的重新加载</strong>，与 <code class="c">const</code>/<code class="c">pure</code> 同类思路。</li>
+<li><code class="c">alloc_size(n)</code>：让 <code class="c">__builtin_object_size</code> 能推断大小，<code class="c">-D_FORTIFY_SOURCE</code> 的边界检查依赖它。</li>
+<li><code class="c">assume_aligned(32)</code>：实测返回地址 <code class="c">c % 32 == 0</code>，调用方可以放心用对齐的 SIMD 指令访问。</li>
 </ul>
+<blockquote>
+<p>⚠️ 这组属性是<strong>承诺不是检查</strong>。你标了 <code class="c">assume_aligned(32)</code> 却返回未对齐地址，编译器不会报错，只会在生成对齐访问指令时让你 SIGBUS。</p>
+</blockquote>
+<h3>4. <code class="c">optimize("args")</code> 的坑</h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((optimize(&quot;O0&quot;)))
+int forced_o0(int n) { int s = 0; for (int i = 0; i &lt; n; i++) s += i; return s; }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc 13.3</td>
+<td>接受，输出 <code class="c">10 10</code></td>
+</tr>
+<tr>
+<td><strong>clang 18</strong></td>
+<td><code class="c">warning: unknown attribute 'optimize' ignored [-Wunknown-attributes]</code> —— <strong>静默忽略</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>而且 gcc 文档自己也警告：<code class="c">optimize</code> 属性会<strong>重置该函数的所有其它优化选项</strong>（不只是你指定的那个），行为难以预测。<strong>工程上不要用</strong>，需要不同优化级别就拆文件、用 <code class="c">#pragma GCC optimize</code> 或单独编译。</p>
+<hr />
+<h2>C. 符号与链接类</h2>
+<h3><code class="c">visibility</code>：.so 的 ABI 边界</h3>
+<pre class="code" data-label="C"><code class="c">int public_add(int a, int b)                                    { return a + b; }
+
+__attribute__((visibility(&quot;hidden&quot;)))
+int hidden_add(int a, int b)                                    { return a + b; }
+
+__attribute__((visibility(&quot;protected&quot;)))
+int prot_add(int a, int b)                                      { return a + b; }
+</code></pre>
+<p><code class="c">gcc -shared -fPIC</code> 后实测：</p>
+<pre class="code" data-label="code"><code class="c">$ nm -D libvis.so | grep add
+0000000000001119 T public_add      ← 在动态符号表里
+0000000000001149 T prot_add        ← 在
+                                   ← hidden_add 不在！
+
+$ readelf -sW libvis.so | grep add
+public_add  GLOBAL
+hidden_add  LOCAL                  ← 可见性被降级为 LOCAL
+prot_add    GLOBAL
+
+$ # 整体隐藏：-fvisibility=hidden
+$ nm -D libvis2.so | grep add
+0000000000001129 T prot_add        ← 只剩显式声明的
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>可见性</th>
+<th>在 <code class="c">.dynsym</code></th>
+<th>能否被外部引用</th>
+<th>能否被 LD_PRELOAD 抢占</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">default</code>（默认）</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">hidden</code></td>
+<td>❌</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><code class="c">protected</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>❌（本模块内引用绑死）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>工程实践</strong>：编译 <code class="c">.so</code> 时用 <code class="c">-fvisibility=hidden</code> 全局隐藏，再对真正的导出 API 显式标 <code class="c">__attribute__((visibility("default")))</code>。收益：</p>
+<ol>
+<li><strong>ABI 收窄</strong>——内部函数不会意外变成对外承诺</li>
+<li><strong>加载更快</strong>——动态符号表小了，符号解析的 hash 查找更少</li>
+<li><strong>调用更快</strong>——<code class="c">hidden</code> 调用不经过 PLT，直接 PC 相对跳转（HFT 热路径上这是真实收益）</li>
+<li><strong>防抢占</strong>——内部工具函数不会被 LD_PRELOAD 的恶意同名符号截获</li>
+</ol>
+<p>这也是为什么你看到的库代码里到处是 <code class="c">__attribute__((visibility("default")))</code>。</p>
+<hr />
+<h2>D. 内存布局类</h2>
+<h3><code class="c">cleanup</code> 专题：C 唯一像样的自动释放</h3>
+<p><code class="c">cleanup</code> 只修饰<strong>局部变量</strong>，变量离开作用域时自动调用指定函数，<strong>参数是该变量的地址</strong>。</p>
+<pre class="code" data-label="C"><code class="c">static void free_buf(void *p)
+{
+    void **pp = (void **)p;          /* 注意：收到的是变量地址，不是变量值 */
+    if (*pp) { free(*pp); *pp = NULL; }
+}
+
+int main(void)
+{
+    {
+        void *b1 __attribute__((cleanup(free_buf))) = malloc(64);
+        void *b2 __attribute__((cleanup(free_buf))) = malloc(64);
+        /* ... 用 b1 b2 ... */
+    }   /* 离开作用域自动 free，不需要写 goto cleanup */
+}
+</code></pre>
+<p>实测输出（<code class="c">-O0</code> 与 <code class="c">-O2</code> <strong>完全一致</strong>）：</p>
+<pre class="code" data-label="code"><code class="c">=== 1. 基本 ===
+  b1=0x55612a9382b0 b2=0x55612a938300
+  [cleanup] free(0x55612a938300)     ← b2 先释放
+  [cleanup] free(0x55612a9382b0)     ← b1 后释放
+  已离开作用域
+
+=== 2. 多个 cleanup 的顺序 ===
+  [cleanup] close tag 3              ← z（最后声明）
+  [cleanup] close tag 2              ← y
+  [cleanup] close tag 1              ← x（最先声明）
+
+=== 3. 提前 return ===
+  early: b=0x55612a938350
+  early: return -1 (提前返回)
+  [cleanup] free(0x55612a938350)     ← 照样触发
+
+=== 4. 嵌套作用域 ===
+  外层 o=0x...380
+  内层 i=0x...3a0
+  [cleanup] free(0x...3a0)           ← 内层先结束
+  内层已结束
+  [cleanup] free(0x...380)           ← 外层后结束
+</code></pre>
+<p>三条确定结论：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>执行顺序</strong></td>
+<td><strong>逆序（LIFO）</strong>——后声明的先清理，与 C++ 析构顺序一致</td>
+</tr>
+<tr>
+<td><strong>提前 <code class="c">return</code></strong></td>
+<td>✅ 照样触发（这正是它优于手写清理的地方）</td>
+</tr>
+<tr>
+<td><strong>嵌套作用域</strong></td>
+<td>内层先清理，各管各的</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这是 C 里最接近 RAII 的东西</strong>，而且是唯一一个"提前 return 也不会漏"的清理机制。用它替代 <code class="c">goto cleanup</code> 模式能显著减少资源泄漏。</p>
+<blockquote>
+<p>⚠️ 三个限制：
+1. 只能修饰<strong>自动变量</strong>（局部变量），不能修饰全局/静态
+2. <code class="c">longjmp</code> 跳出作用域时<strong>不保证</strong>触发（GNU 文档明示）——有 setjmp 的代码别依赖它
+3. 清理函数的参数是 <code class="c">void*</code> 指向变量，所以释放指针要写成 <code class="c">void **pp</code> 再 <code class="c">*pp</code></p>
+</blockquote>
+<h3><code class="c">may_alias</code> 专题：严格别名的解药</h3>
+<p>这条直接回答 <a href="chapter-06.html#s-6-11">6.11 / ch06 指针表达式</a> 里那个经典 UB：<code class="c">*(uint32_t *)&amp;f</code> 为什么是未定义行为，以及<strong>怎么合法地做同样的事</strong>。</p>
+<pre class="code" data-label="C"><code class="c">typedef int __attribute__((may_alias)) int_alias;
+
+/* A：普通 int* —— 编译器可假设它与 float* 不别名 */
+static int strict(int *ip, float *fp)
+{
+    *ip = 1;
+    *fp = 2.0f;
+    return *ip;          /* 编译器认为 fp 不会动 ip，直接返回 1 */
+}
+
+/* B：may_alias —— 编译器必须假定可能别名，每次重新加载 */
+static int aliased(int_alias *ip, float *fp)
+{
+    *ip = 1;
+    *fp = 2.0f;
+    return *ip;
+}
+
+/* 调用时两者传同一个地址 */
+float storage;
+strict ((int *)      &amp;storage, &amp;storage);
+aliased((int_alias *)&amp;storage, &amp;storage);
+</code></pre>
+<p><code class="c">2.0f</code> 的位模式是 <code class="c">0x40000000</code> = 1073741824。实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译选项</th>
+<th>A 普通 <code class="c">int*</code></th>
+<th>B <code class="c">may_alias</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O1</code></td>
+<td>1073741824（重新加载）</td>
+<td>1073741824</td>
+</tr>
+<tr>
+<td><strong><code class="c">-O2</code></strong></td>
+<td><strong>1（读的是旧值！）</strong></td>
+<td><strong>1073741824</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">-O3</code></strong></td>
+<td><strong>1</strong></td>
+<td><strong>1073741824</strong></td>
+</tr>
+<tr>
+<td><code class="c">-O2 -fno-strict-aliasing</code></td>
+<td>1073741824</td>
+<td>1073741824</td>
+</tr>
+<tr>
+<td><strong>clang -O2</strong></td>
+<td><strong>1</strong></td>
+<td><strong>1073741824</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这就是严格别名 UB 的可观测后果</strong>：<code class="c">-O2</code> 下 A 返回 1（编译器省掉了重新加载，因为按 C11 6.5p7 它有权假设 <code class="c">int*</code> 和 <code class="c">float*</code> 不指向同一对象），而实际内存已被 <code class="c">*fp = 2.0f</code> 改成 1073741824。加 <code class="c">-fno-strict-aliasing</code> 就"修好"了——<strong>但那是用放弃优化换来的</strong>。</p>
+<p><code class="c">may_alias</code> 是<strong>精准解药</strong>：只在这一个类型上声明"我就要别名"，其余代码照常享受严格别名优化。</p>
+<blockquote>
+<p>⚠️ 适用边界：<code class="c">may_alias</code> 解决的是<strong>类型双关（type punning）</strong>。日常读写还是应该用 <code class="c">memcpy</code>——现代编译器会把小 <code class="c">memcpy</code> 完全优化成一条 <code class="c">mov</code>，零成本且绝对合法。<code class="c">may_alias</code> 留给"我确实要长期用两个类型视角看同一块内存"的场景（如协议解析、SIMD 寄存器复用）。</p>
+</blockquote>
+<h3><code class="c">transparent_union</code></h3>
+<pre class="code" data-label="C"><code class="c">typedef union __attribute__((transparent_union)) {
+    int    i;
+    float  f;
+    void  *p;
+} any_t;
+
+void take(any_t a);      /* 调用方可以直接传 int / float / void*，无需显式构造 union */
+take(42); take(3.14f); take(ptr);
+</code></pre>
+<p>主要用于消除旧 API 的调用噪音，新代码少见。</p>
+<hr />
+<h2>可移植写法（三种层次）</h2>
+<p><code class="c">__attribute__</code> 是 GNU 扩展，MSVC 完全不认。工程上按三层封装：</p>
+<h3>层次 1：条件编译宏（最通用）</h3>
+<pre class="code" data-label="C"><code class="c">#ifdef __GNUC__
+#  define FMT_PRINTF(a, b)  __attribute__((format(printf, a, b)))
+#  define NORETURN          __attribute__((noreturn))
+#  define UNUSED            __attribute__((unused))
+#  define PACKED            __attribute__((packed))
+#  define ALIGNED(n)        __attribute__((aligned(n)))
+#  define EXPORT            __attribute__((visibility(&quot;default&quot;)))
+#else
+#  define FMT_PRINTF(a, b)
+#  define NORETURN
+#  define UNUSED
+#  define PACKED
+#  define ALIGNED(n)
+#  define EXPORT
+#endif
+
+void log_msg(const char *fmt, ...) FMT_PRINTF(1, 2);
+</code></pre>
+<h3>层次 2：<code class="c">__has_attribute</code> 探测（GCC 10+ / Clang）</h3>
+<p>属性支持情况随编译器版本变化，用探测宏代替版本判断：</p>
+<pre class="code" data-label="C"><code class="c">#if defined(__has_attribute)
+#  if __has_attribute(cleanup)
+#    define AUTOFREE(fn) __attribute__((cleanup(fn)))
+#  endif
+#endif
+#ifndef AUTOFREE
+#  define AUTOFREE(fn)          /* 不支持就退化成无效果 */
+#endif
+</code></pre>
+<p>实测 gcc 13.3 与 clang 18 的差异：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>gcc 13.3</th>
+<th>clang 18</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">cleanup</code></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code class="c">format</code></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code class="c">may_alias</code></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong><code class="c">counted_by</code></strong></td>
+<td><strong>0</strong></td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">counted_by</code>（C23 柔性数组的计数绑定）gcc 14 才支持——<strong>这就是探测宏存在的意义</strong>，写版本判断会漏掉" gcc 13 vs 14 "这种细粒度差异。</p>
+<h3>层次 3：C23 标准属性（最推荐，能用就用）</h3>
+<p>C23 把最常用的几个属性纳入了标准语法 <code class="c">[[...]]</code>。<strong>新项目优先用标准写法</strong>——MSVC 也认其中的 <code class="c">[[deprecated]]</code> / <code class="c">[[nodiscard]]</code> / <code class="c">[[maybe_unused]]</code>，跨编译器零成本。</p>
+<h3>C23 标准属性 vs GNU 属性对照表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C23 标准</th>
+<th>GNU 等价</th>
+<th>实测支持情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">[[deprecated("msg")]]</code></td>
+<td><code class="c">__attribute__((deprecated("msg")))</code></td>
+<td>gcc 13.3 在 <strong><code class="c">-std=c11</code> 下也接受</strong>（作为扩展）；gcc 13.3 <strong>不认 <code class="c">-std=c23</code></strong>（要写 <code class="c">-std=c2x</code>）</td>
+</tr>
+<tr>
+<td><code class="c">[[nodiscard]]</code></td>
+<td><code class="c">__attribute__((warn_unused_result))</code></td>
+<td>同上，实测产生 3 条警告</td>
+</tr>
+<tr>
+<td><code class="c">[[maybe_unused]]</code></td>
+<td><code class="c">__attribute__((unused))</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">[[fallthrough]]</code></td>
+<td><code class="c">__attribute__((fallthrough))</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">[[gnu::packed]]</code> / <code class="c">[[gnu::aligned(n)]]</code></td>
+<td>同名 GNU 属性</td>
+<td>gcc 13.3 支持（注意<a href="#-位置写错--静默失效实测三种写法">位置</a>）</td>
+</tr>
+<tr>
+<td><code class="c">[[unsequenced]]</code> / <code class="c">[[reproducible]]</code></td>
+<td><code class="c">const</code> / <code class="c">pure</code></td>
+<td>C23 新增，编译器支持尚不完整</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：新项目优先用 <code class="c">[[ ]]</code> 标准语法（可移植、MSVC 也认几个），只在标准没有对应物时（如 <code class="c">section</code>、<code class="c">cleanup</code>、<code class="c">visibility</code>、<code class="c">format</code>）才退回 <code class="c">__attribute__</code>。</p>
+<hr />
+<h2>内核 / DPDK 里的封装宏对照</h2>
+<p>内核从不裸写 <code class="c">__attribute__</code>，一律封成短宏。认得这些宏 = 认得属性：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内核宏</th>
+<th>展开</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__init</code></td>
+<td><code class="c">__attribute__((section(".init.text")))</code></td>
+<td>启动后释放</td>
+</tr>
+<tr>
+<td><code class="c">__exit</code></td>
+<td><code class="c">__attribute__((section(".exit.text")))</code></td>
+<td>模块卸载后释放</td>
+</tr>
+<tr>
+<td><code class="c">__initdata</code></td>
+<td><code class="c">__attribute__((section(".init.data")))</code></td>
+<td>启动期数据</td>
+</tr>
+<tr>
+<td><code class="c">__packed</code></td>
+<td><code class="c">__attribute__((packed))</code></td>
+<td>协议头紧凑排布</td>
+</tr>
+<tr>
+<td><code class="c">__aligned(n)</code></td>
+<td><code class="c">__attribute__((aligned(n)))</code></td>
+<td>cache 行对齐</td>
+</tr>
+<tr>
+<td><code class="c">__weak</code></td>
+<td><code class="c">__attribute__((weak))</code></td>
+<td>可被覆盖的默认实现</td>
+</tr>
+<tr>
+<td><code class="c">__maybe_unused</code></td>
+<td><code class="c">__attribute__((unused))</code></td>
+<td>抑制条件编译下的未使用警告</td>
+</tr>
+<tr>
+<td><code class="c">__printf(a, b)</code></td>
+<td><code class="c">__attribute__((format(printf, a, b)))</code></td>
+<td>日志函数格式检查</td>
+</tr>
+<tr>
+<td><code class="c">__must_check</code></td>
+<td><code class="c">__attribute__((warn_unused_result))</code></td>
+<td>返回值必须检查</td>
+</tr>
+<tr>
+<td><code class="c">__noreturn</code></td>
+<td><code class="c">__attribute__((noreturn))</code></td>
+<td><code class="c">panic</code> / <code class="c">do_exit</code></td>
+</tr>
+<tr>
+<td><code class="c">__alias(name)</code></td>
+<td><code class="c">__attribute__((alias(name)))</code></td>
+<td>符号别名</td>
+</tr>
+<tr>
+<td><code class="c">__visible</code></td>
+<td><code class="c">__attribute__((visibility("default")))</code></td>
+<td>显式导出</td>
+</tr>
+<tr>
+<td><code class="c">__force</code></td>
+<td><code class="c">__attribute__((force))</code>（sparse 用）</td>
+<td>强制类型转换不被静态检查报</td>
+</tr>
+</tbody>
+</table></div>
+<p>DPDK 同构：<code class="c">__rte_packed</code>、<code class="c">__rte_aligned(n)</code>、<code class="c">__rte_cache_aligned</code>、<code class="c">__rte_always_inline</code>、<code class="c">__rte_noinline</code>、<code class="c">__rte_format_printf</code>。</p>
+<hr />
+<h2>坑点清单</h2>
+<p>属性失效有三类，<strong>都不会导致编译失败</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>失效模式</th>
+<th>例子</th>
+<th>症状</th>
+<th>排查手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>位置写错</strong></td>
+<td><code class="c">struct S {} [[gnu::packed]];</code></td>
+<td>属性被忽略，<code class="c">sizeof</code> 不变</td>
+<td>看 <code class="c">sizeof</code>；开 <code class="c">-Wattributes</code></td>
+</tr>
+<tr>
+<td><strong>索引越界</strong></td>
+<td><code class="c">format(printf, 2, 3)</code> 用在单参函数</td>
+<td>检查静默消失，调用点零报警</td>
+<td><strong><code class="c">-Wattributes</code></strong> 是唯一会报的开关</td>
+</tr>
+<tr>
+<td><strong>被链接器覆盖</strong></td>
+<td><code class="c">used</code> + <code class="c">--gc-sections</code></td>
+<td>编译器保留了 <code class="c">t kept</code>，链接器照样 <code class="c">removing unused section</code></td>
+<td>需链接脚本 <code class="c">KEEP()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>其余高频坑：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不是 C 标准</td>
+<td>MSVC 下语法错误，必须条件编译</td>
+</tr>
+<tr>
+<td>部分属性 Clang 不认</td>
+<td><code class="c">optimize</code> 被<strong>静默忽略</strong>（实测 warning 而已）</td>
+</tr>
+<tr>
+<td><code class="c">packed</code> 的地址不能外传</td>
+<td>直接访问成员安全（gcc 生成字节级代码）；把成员地址赋给普通 <code class="c">int*</code> 再解引用 → UBSan <code class="c">store to misaligned address</code>。要取值用 <code class="c">memcpy</code></td>
+</tr>
+<tr>
+<td><code class="c">pure</code>/<code class="c">const</code>/<code class="c">noreturn</code> 撒谎是静默出错</td>
+<td>与 <code class="c">always_inline</code>（做不到直接 error）不同。实测谎称 <code class="c">noreturn</code> → <strong>SIGSEGV，退出码 139</strong></td>
+</tr>
+<tr>
+<td><code class="c">format</code> 只做编译期检查</td>
+<td>运行时传错类型照样崩，它管不了</td>
+</tr>
+<tr>
+<td><code class="c">assume_aligned</code> 是承诺不是检查</td>
+<td>标了却返回未对齐地址，不报错，只会在对齐访问时 SIGBUS</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>场景</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">visibility("hidden")</code></td>
+<td><code class="c">.so</code> 内部调用不过 PLT，直接 PC 相对跳转；收窄 ABI</td>
+<td>配合 <code class="c">-fvisibility=hidden</code> 全局默认</td>
+</tr>
+<tr>
+<td><code class="c">hot</code> / <code class="c">cold</code></td>
+<td>错误处理路径不占热路径 i-cache</td>
+<td>实测会生成 <code class="c">dispatch.cold</code>，自动拆冷分支</td>
+</tr>
+<tr>
+<td><code class="c">packed</code></td>
+<td>行情协议头（交易所二进制协议）紧凑排布</td>
+<td>别把成员地址外传</td>
+</tr>
+<tr>
+<td><code class="c">aligned(64)</code></td>
+<td>每个 worker 的 ring buffer / 计数器独占 cache 行，消除伪共享</td>
+<td>数组场景要让 <code class="c">sizeof</code> 也是 64 的倍数</td>
+</tr>
+<tr>
+<td><code class="c">always_inline</code></td>
+<td>热路径小函数（订单校验）</td>
+<td>做不到会 error，不像 <code class="c">inline</code> 静默退化</td>
+</tr>
+<tr>
+<td><code class="c">cleanup</code></td>
+<td>作用域自动释放，替代 <code class="c">goto cleanup</code></td>
+<td>有 <code class="c">setjmp</code> 的地方不可靠</td>
+</tr>
+<tr>
+<td><code class="c">may_alias</code></td>
+<td>协议解析 / SIMD 寄存器双视角</td>
+<td>日常双关优先 <code class="c">memcpy</code></td>
+</tr>
+<tr>
+<td><code class="c">format</code></td>
+<td>日志函数必备</td>
+<td>索引写错会静默失效</td>
+</tr>
+<tr>
+<td><strong>可变参 + <code class="c">format</code></strong></td>
+<td>—</td>
+<td><strong>即便加了 format，HFT 数据面仍不推荐可变参</strong>（实测 4.26× 开销，见 7.6.2）</td>
+</tr>
+<tr>
+<td><code class="c">optimize</code></td>
+<td>❌ 不要用</td>
+<td>Clang 静默忽略，且 gcc 下会重置其它优化选项</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>完整示例（可直接编译）</h2>
+<pre class="code" data-label="C"><code class="c">/* attr_demo.c: gcc -Wall -Wextra -O2 attr_demo.c -o attr_demo */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;stdarg.h&gt;
+
+/* --- 可移植封装 --- */
+#ifdef __GNUC__
+#  define FMT(a, b)   __attribute__((format(printf, a, b)))
+#  define NORETURN    __attribute__((noreturn))
+#  define EXPORT      __attribute__((visibility(&quot;default&quot;)))
+#  define AUTOFREE(f) __attribute__((cleanup(f)))
+#else
+#  define FMT(a, b)
+#  define NORETURN
+#  define EXPORT
+#  define AUTOFREE(f)
+#endif
+
+/* --- 诊断类 --- */
+EXPORT void log_msg(const char *fmt, ...) FMT(1, 2);
+void log_msg(const char *fmt, ...)
+{
+    va_list ap; va_start(ap, fmt); vprintf(fmt, ap); va_end(ap);
+}
+
+NORETURN void die(const char *msg) { fprintf(stderr, &quot;fatal: %s\n&quot;, msg); exit(1); }
+
+/* --- cleanup --- */
+static void freep(void *p) { void **pp = p; if (*pp) { free(*pp); *pp = NULL; } }
+
+int main(void)
+{
+    log_msg(&quot;hello %s, %d\n&quot;, &quot;world&quot;, 42);
+
+    int *buf  AUTOFREE(freep) = malloc(64);
+    char *s   AUTOFREE(freep) = malloc(32);
+    (void)buf; (void)s;
+
+    if (!buf || !s) die(&quot;oom&quot;);   /* die 标了 noreturn，后面不需要 else */
+    return 0;                      /* 离开 main 自动 free(s) 再 free(buf) */
+}
+</code></pre>
+<p>（需要 <code class="c">#include &lt;stdarg.h&gt;</code> 才能编译，此处略。）</p>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.6.2</strong> section；<strong>6.7–6.10</strong> 各属性专章</li>
+<li><strong>6.6.2</strong> <code class="c">section</code> 属性与 U-boot 自复制 · <strong>6.7</strong> <code class="c">aligned</code>/<code class="c">packed</code> 详论 · <strong>6.8</strong> <code class="c">format</code> 与日志实现</li>
+<li><strong>6.9</strong> <code class="c">weak</code>/<code class="c">alias</code> · <strong>6.10.1</strong> <code class="c">noinline</code> · <strong>6.11</strong> 内建函数 <code class="c">__builtin_expect</code></li>
+<li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-Pointers-on-C/ch18-runtime-environment/18.10-GCC属性总览.md">18.10 GCC 属性总览</a>：<code class="c">noreturn</code>/<code class="c">pure</code>/<code class="c">const</code>/<code class="c">used</code>/<code class="c">constructor</code> 的深度实测与性能数据</li>
+<li><a href="chapter-07.html#s-7-6-2">7.6.2 可变参数的限制</a>：<code class="c">format</code> 索引越界与哨兵</li>
+<li><a href="chapter-06.html#s-6-11">6.11 指针表达式</a>：<code class="c">*(uint32_t*)&amp;f</code> 的 UB 与 <code class="c">may_alias</code> 解法</li>
 </ul>
 <hr />
+<h2>自测要点</h2>
+<ol>
+<li><code class="c">__attribute__</code> 影响哪四件事？它改变 C 的类型系统吗？</li>
+<li>属性写在三种对象（函数/变量/类型）上的语法位置各是什么？<code class="c">[[gnu::packed]]</code> 唯一正确的位置是哪？</li>
+<li><code class="c">format(printf, m, n)</code> 的两个数字是什么？写成 <code class="c">2,3</code> 的两种正当场景是什么？索引越界会怎样？</li>
+<li>诊断类九属性各自拦什么？<code class="c">error</code> 与 <code class="c">deprecated</code> 的区别？</li>
+<li><code class="c">cleanup</code> 的执行顺序、能否覆盖提前 return、对 <code class="c">longjmp</code> 是否有效？</li>
+<li><code class="c">may_alias</code> 解决什么问题？<code class="c">*(uint32_t*)&amp;f</code> 在 <code class="c">-O2</code> 下的实测后果是什么？为什么日常还是推荐 <code class="c">memcpy</code>？</li>
+<li>visibility 三档在 <code class="c">.dynsym</code> 与抢占上的差别？<code class="c">-fvisibility=hidden</code> 的工程收益？</li>
+<li><code class="c">hot</code>/<code class="c">cold</code> 的实测效果（段名 + <code class="c">dispatch.cold</code>）？</li>
+<li>属性静默失效的三类模式与唯一排查开关？</li>
+<li>C23 标准属性与 GNU 属性的对照？gcc 13.3 对 <code class="c">-std=c23</code> 的支持情况？</li>
+<li><code class="c">__has_attribute</code> 相比版本判断的优势（举 <code class="c">counted_by</code> 的实测差异）？</li>
+<li>内核 <code class="c">__init</code> / <code class="c">__must_check</code> / <code class="c">__maybe_unused</code> 各展开成什么？</li>
+</ol>
+<hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> <strong>attribute</strong> 机制的作用是什么？以下声明各有什么效果？</p>
-<pre class="code" data-label="C"><code class="c">__attribute__((aligned(64))) int cache_line;
-__attribute__((packed)) struct { char c; int i; };
-__attribute__((section(&quot;.init.text&quot;))) void f(void);
-__attribute__((noreturn)) void exit_(int);
-</code></pre>
 <details>
-<summary>参考答案</summary>
-<p><code class="c">__attribute__</code> 是 GCC 扩展机制，给变量/函数/类型添加特殊属性。</p>
+<summary>题目 1：下面这份声明有几个问题？逐个指出并给出正确写法</summary>
+<pre class="code" data-label="C"><code class="c">struct Packet { char type; int len; char payload[8]; } __attribute__((packed));
+
+void handle(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+
+void must_use(void) __attribute__((warn_unused_result));
+
+__attribute__((noreturn)) int parse(const char *s);
+</code></pre>
+<p><strong>问题 1：<code class="c">packed</code> 位置错。</strong> <code class="c">[[gnu::packed]]</code> / <code class="c">__attribute__((packed))</code> 对 struct 必须写在 <code class="c">struct</code> 关键字之后、名字之前：</p>
+<pre class="code" data-label="C"><code class="c">struct __attribute__((packed)) Packet { char type; int len; char payload[8]; };
+</code></pre>
+<p>写在 <code class="c">}</code> 之后 gcc 只给 <code class="c">warning: attribute ignored</code>，<strong>不拦编译</strong>，<code class="c">sizeof</code> 仍是 16 而不是 13。用 <code class="c">sizeof</code> 验证是唯一可靠手段。</p>
+<p><strong>问题 2：<code class="c">format</code> 索引越界。</strong> <code class="c">handle</code> 只有 1 个具名参数，却说格式串在第 2 位：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'format' attribute argument 2 value '2' exceeds the number of function parameters 1 [-Wattributes]
+</code></pre>
+<p>后果是<strong>属性被丢弃、所有调用点不再检查</strong>，实测 <code class="c">handle("%d", 3.14)</code> 零报警。正确写法 <code class="c">format(printf, 1, 2)</code>。<code class="c">2,3</code> 只对 C++ 成员函数（<code class="c">this</code> 占第 1 位）或两固定参函数成立。</p>
+<p><strong>问题 3：<code class="c">warn_unused_result</code> 用在 <code class="c">void</code> 函数上无意义。</strong> 返回值类型是 <code class="c">void</code>，没什么可"忽略"的。该属性只对有返回值的函数生效——想表达"必须调用"应该用别的手段（静态分析或 <code class="c">[[nodiscard]]</code> 同理）。</p>
+<p><strong>问题 4：<code class="c">noreturn</code> 撒谎。</strong> 声明说永不返回，返回类型却是 <code class="c">int</code>。若 <code class="c">parse</code> 实际会返回，调用方编译器生成的代码会在调用后直接掉进未定义区域——实测谎称 <code class="c">noreturn</code> 是 <strong>SIGSEGV、退出码 139</strong>。<code class="c">noreturn</code> 函数的返回类型必须是 <code class="c">void</code>。</p>
+</details>
+<details>
+<summary>题目 2：以下函数在 -O2 下输出什么？为什么？如何修？</summary>
+<pre class="code" data-label="C"><code class="c">int f(int *ip, float *fp)
+{
+    *ip = 1;
+    *fp = 2.0f;
+    return *ip;
+}
+
+float storage = 0.0f;
+printf(&quot;%d\n&quot;, f((int *)&amp;storage, &amp;storage));
+</code></pre>
+<p><strong>输出 <code class="c">1</code></strong>（不是 1073741824）。</p>
+<p>按 C11 6.5p7（严格别名），<code class="c">int*</code> 与 <code class="c">float*</code> 是不同类型，编译器有权假设它们不指向同一对象。于是它认为 <code class="c">*fp = 2.0f</code> 不可能改动 <code class="c">*ip</code>，优化时省掉了第二次加载，直接返回常量 1。</p>
+<p><code class="c">-O1</code> 下实测返回 1073741824（还没做这个优化），<code class="c">-O2</code>/<code class="c">-O3</code> 返回 1，clang <code class="c">-O2</code> 同样返回 1。加 <code class="c">-fno-strict-aliasing</code> 后返回 1073741824——<strong>但那是用放弃一类优化换来的</strong>。</p>
+<p>三种修法：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>修法</th>
+<th>写法</th>
+<th>评价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">may_alias</code> 类型</td>
+<td><code class="c">typedef int __attribute__((may_alias)) int_alias;</code> 参数改 <code class="c">int_alias *</code></td>
+<td>精准，只在这一个类型上放开别名假设，其余代码照常优化</td>
+</tr>
+<tr>
+<td><code class="c">memcpy</code></td>
+<td>写入/读出都走 <code class="c">memcpy</code></td>
+<td><strong>首选</strong>。合法且小 <code class="c">memcpy</code> 会被优化成一条 <code class="c">mov</code>，零成本</td>
+</tr>
+<tr>
+<td><code class="c">-fno-strict-aliasing</code></td>
+<td>全局关闭</td>
+<td>全局性能倒退，只为局部一处不值</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意：这段代码在 <code class="c">-O1</code> 或 debug 构建下"看起来是对的"——<strong>这正是它危险的地方</strong>，测试通过不代表没有 UB。</p>
+</details>
+<details>
+<summary>题目 3：设计一个资源获取函数，要求「任何返回路径都不泄漏」，并说明 cleanup 相比 goto 的取舍</summary>
+<pre class="code" data-label="C"><code class="c">static void freep(void *p) { void **pp = p; if (*pp) { free(*pp); *pp = NULL; } }
+static void closep(int *fd) { if (*fd &gt;= 0) { close(*fd); *fd = -1; } }
+
+int process(const char *path)
+{
+    int   fd  __attribute__((cleanup(closep))) = open(path, O_RDONLY);
+    char *buf __attribute__((cleanup(freep)))  = malloc(4096);
+    if (fd &lt; 0 || !buf) return -1;          /* 提前 return 也清理 */
+
+    ssize_t n = read(fd, buf, 4096);
+    if (n &lt;= 0) return -2;                  /* 第二个提前 return */
+
+    if (buf[0] == '#') return -3;           /* 第三个 */
+
+    process_data(buf, n);
+    return 0;                               /* 正常路径也清理 */
+}
+</code></pre>
+<p><strong>cleanup 的优势</strong></p>
 <ul>
-<li><code class="c">aligned(64)</code>：强制变量 64 字节对齐（Cache Line 对齐，防止 false sharing）</li>
-<li><code class="c">packed</code>：取消结构体填充，<code class="c">sizeof</code> = 5（char 1 + int 4，无填充）</li>
-<li><code class="c">section(".init.text")</code>：将函数放入 .init.text 段（内核启动后可释放）</li>
-<li><code class="c">noreturn</code>：函数不会返回（如 <code class="c">exit</code>/<code class="c">abort</code>），帮助编译器优化和消除警告</li>
+<li><strong>提前 return 不漏</strong>：实测 <code class="c">early(-5)</code> 的 <code class="c">return -1</code> 照样触发清理函数。<code class="c">goto cleanup</code> 模式每加一个 return 就要加一次跳转，最容易漏。</li>
+<li>清理逻辑与声明写在一起，读代码时"这个变量怎么释放"就在眼前。</li>
+<li>顺序<strong>逆序 LIFO</strong>（后声明的先清理），与 C++ 析构一致，天然满足"后获取的先释放"。</li>
 </ul>
-<p>其他常用属性：
-- <code class="c">weak</code>：弱符号声明
-- <code class="c">unused</code>：抑制未使用警告
-- <code class="c">deprecated</code>：标记弃用
-- <code class="c">always_inline</code>：强制内联
-- <code class="c">format(printf, 1, 2)</code>：检查 printf 格式字符串</p>
-<p>C23 引入标准属性 <code class="c">[[ ]]</code> 语法替代部分 <code class="c">__attribute__</code>。</p>
+<p><strong>取舍（什么时候仍该用 goto）</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代码里有 <code class="c">setjmp</code>/<code class="c">longjmp</code></td>
+<td>GNU 文档明示 <code class="c">cleanup</code> 在 <code class="c">longjmp</code> 跳出作用域时<strong>不保证</strong>触发</td>
+</tr>
+<tr>
+<td>清理顺序需要非 LIFO</td>
+<td><code class="c">cleanup</code> 固定逆序，goto 可以任意安排</td>
+</tr>
+<tr>
+<td>需要跨函数/跨模块统一的错误处理</td>
+<td><code class="c">cleanup</code> 是编译期绑定，不好做运行时策略</td>
+</tr>
+<tr>
+<td>要支持 MSVC</td>
+<td><code class="c">cleanup</code> 是 GNU 扩展，MSVC 无对应物，goto 到处都能用</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：Linux 内核与 GNU 系项目可以放心用 <code class="c">cleanup</code>（它已是 glibc/gcc 生态的事实标准）；需要跨 MSVC 或对 <code class="c">setjmp</code> 有依赖的代码，<code class="c">goto cleanup</code> 仍是更稳的选择。</p>
+</details>
+<details>
+<summary>题目 4：为什么 .so 工程要全局 -fvisibility=hidden？给出四条实测支撑的理由</summary>
+<p>实测对照（同一个 <code class="c">vis_lib.c</code>）：</p>
+<pre class="code" data-label="code"><code class="c">默认：            nm -D → public_add, prot_add, entry   （hidden_add 不在）
+-fvisibility=hidden: nm -D → 只剩 prot_add
+</code></pre>
+<p>四条理由：</p>
+<ol>
+<li>
+<p><strong>ABI 收窄</strong>：默认可见性下，<strong>每一个</strong>非 <code class="c">static</code> 函数都进入 <code class="c">.dynsym</code>，等于向外界承诺"这些符号永远存在"。实测 <code class="c">hidden_add</code> 标了 <code class="c">hidden</code> 后从 <code class="c">nm -D</code> 里消失（<code class="c">readelf</code> 显示被降级为 <code class="c">LOCAL</code>），不再是对外承诺。想改内部函数时不必担心破坏调用方。</p>
+</li>
+<li>
+<p><strong>加载更快</strong>：动态符号表小了，符号解析的 hash 查找次数下降。对有大量符号的库（如 DPDK、OpenSSL）这是可测量的启动收益。</p>
+</li>
+<li>
+<p><strong>调用更快（HFT 最关心的一条）</strong>：<code class="c">hidden</code> 可见性的调用<strong>不经过 PLT</strong>，编译器直接生成 PC 相对跳转。默认可见性下，为了允许 LD_PRELOAD 抢占，每次跨模块调用都要走 PLT + GOT 间接跳转。热路径上这是实打实的分支与额外访存。</p>
+</li>
+<li>
+<p><strong>防抢占</strong>：<code class="c">protected</code> 一档更进一步——它在 <code class="c">.dynsym</code> 里（外部可引用），但<strong>本模块内的引用绑死到本地定义</strong>，不会被 LD_PRELOAD 的同名符号截获。实测 <code class="c">-fvisibility=hidden</code> 后 <code class="c">prot_add</code> 仍在 <code class="c">.dynsym</code>，正是因为它显式声明了 <code class="c">protected</code>。</p>
+</li>
+</ol>
+<p><strong>推荐写法</strong>：</p>
+<pre class="code" data-label="shell"><code class="c">gcc -shared -fPIC -fvisibility=hidden -o libfoo.so *.c
+</code></pre>
+<pre class="code" data-label="C"><code class="c">#define EXPORT __attribute__((visibility(&quot;default&quot;)))
+EXPORT int  public_api(int);      /* 只有真正要导出的才标 */
+int         internal_helper(void); /* 自动 hidden */
+</code></pre>
 </details>
       </section>
       <section class="section" id="s-6-6-2">
