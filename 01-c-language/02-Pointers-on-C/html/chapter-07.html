@@ -5519,6 +5519,11 @@ ap2 = ap1;
         <div class="sec-head"><div class="sec-no">7.6</div><h2>.2 可变参数的限制</h2></div>
 <h2>本节讲什么</h2>
 <p>可变参的<strong>类型安全、可移植性、默认参数提升</strong>限制——《C 陷阱与缺陷》里库函数陷阱的集中地。这一节讲清三大限制，并给出 <code class="c">__attribute__((format))</code> 让编译器帮你检查格式串的工程利器。</p>
+<p>两个容易想当然、实测才准的点，本节用 gcc 13.3 实测钉死：</p>
+<ul>
+<li><strong><code class="c">va_arg(args, float)</code> 到底怎么个 UB？</strong> 实测是<strong>编译器插 <code class="c">ud2</code> 当场 SIGILL</strong>（退出码 132），不是"读个错值"。</li>
+<li><strong><code class="c">__attribute__((format(printf, 2, 3)))</code> 的 2 和 3 是什么？</strong> 用在普通函数上是<strong>索引越界、属性静默失效</strong>；它真正对应的是 <strong>C++ 非静态成员函数</strong>（<code class="c">this</code> 隐式占第 1 位）。</li>
+</ul>
 <h2>要点</h2>
 <h3>限制 1：无类型检查</h3>
 <pre class="code" data-label="C"><code class="c">void log_msg(const char *fmt, ...);
@@ -5569,6 +5574,37 @@ f('a');          /* 实参提升为 int，va_arg(ap, int) */
 f(3.14f);        /* 实参提升为 double，va_arg(ap, double) —— 不是 float！ */
 </code></pre>
 <p><code class="c">va_arg(ap, float)</code> 永远错——可变参里没有 <code class="c">float</code>，都是 <code class="c">double</code>。</p>
+<h4>提升的物证：同一个 3.14，两种位模式</h4>
+<p>实测（小端，x86-64）：</p>
+<pre class="code" data-label="code"><code class="c">  float  3.14f : 4 字节  c3 f5 48 40
+  double 3.14  : 8 字节  1f 85 eb 51 b8 1e 09 40
+</code></pre>
+<p><strong>注意 double 3.14 不是"float 3.14 后面补 4 个零"</strong>——浮点格式完全不同（指数的位数和偏移都不一样）。所以"提升"对浮点而言<strong>不是零扩展，是重新编码</strong>。这也解释了为什么拿 4 字节 float 当 8 字节 double 读，必然连吃后面 4 字节邻居。</p>
+<h4>提升会让调用"合法"还是"UB"？看你怎么取</h4>
+<pre class="code" data-label="C"><code class="c">print_all(&quot;ddf&quot;, 1, 2, 3.14f);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>判定</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">va_arg(args, double)</code> 取 <code class="c">3.14f</code></td>
+<td>✅ <strong>合法、定义明确</strong></td>
+<td>输出 <code class="c">123.140000</code></td>
+</tr>
+<tr>
+<td><code class="c">va_arg(args, float)</code> 取 <code class="c">3.14f</code></td>
+<td>❌ <strong>UB</strong></td>
+<td><code class="c">ud2</code> → SIGILL，退出码 <strong>132</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>关键点：<strong><code class="c">3.14f</code> 本身不是问题，取法才是</strong>。实参提升成 double 之后，用 <code class="c">double</code> 取是完全正当的——这是 printf 里 <code class="c">%f</code> 能同时吃 <code class="c">float</code> 和 <code class="c">double</code> 实参的原因。</p>
 <h3>限制 3：无法获知个数与类型</h3>
 <p>可变参不携带"有几个、什么类型"的元信息。必须靠：</p>
 <ul>
@@ -5592,16 +5628,135 @@ log_msg(&quot;%s&quot;, 42);      /* -Wformat: expected 'char *' but arg is 'int
 log_msg(&quot;%d %d&quot;, 1);    /* -Wformat: too few arguments */
 log_msg(&quot;%d&quot;, 1, 2);    /* -Wformat: too many arguments */
 </code></pre>
+<blockquote>
+<p>实测（<code class="c">-Wall -Wextra</code>）：<code class="c">log_msg("%d", 3.14)</code> 报
+<code class="c">warning: format '%d' expects argument of type 'int', but argument 2 has type 'double' [-Wformat=]</code></p>
+</blockquote>
+<h3>Quiz：<code class="c">format(printf, 2, 3)</code> 里的 2 和 3 是什么？</h3>
+<pre class="code" data-label="C"><code class="c">void test(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+</code></pre>
+<p><strong>如果这个 <code class="c">test</code> 是普通函数（上面这种写法），那 2 和 3 是错的。</strong> 实测：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'format' attribute argument 2 value '2' exceeds the number of function parameters 1 [-Wattributes]
+</code></pre>
+<p>它只有 <strong>1 个具名参数</strong>（<code class="c">fmt</code>），你却说格式串在第 2 位——<strong>索引越界，gcc 直接把这条属性丢掉</strong>，而且<strong>不会检查 <code class="c">test</code> 的任何调用点</strong>（实测 <code class="c">test("%d", 3.14)</code> 零报警）。</p>
+<blockquote>
+<p>⚠️ 这是最阴险的失效方式：<strong>属性写错不会让编译失败，只会让检查静默消失</strong>。你以为有保护，其实一点都没有。</p>
+</blockquote>
+<h4>那 2 和 3 什么时候才对？</h4>
+<p>两种场景：</p>
+<p><strong>① C++ 非静态成员函数</strong>——<code class="c">this</code> 隐式占第 1 位，所以 <code class="c">fmt</code> 是 2、<code class="c">...</code> 是 3：</p>
+<pre class="code" data-label="cpp"><code class="c">struct Log {
+    void good(const char *fmt, ...) __attribute__((format(printf, 2, 3)));  /* ✅ */
+    void bad (const char *fmt, ...) __attribute__((format(printf, 1, 2)));  /* ❌ */
+};
+</code></pre>
+<p>实测（g++ 13.3）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">format(printf, 2, 3)</code></td>
+<td>✅ 生效，<code class="c">L.good("%d", 3.14)</code> 报 <code class="c">argument 3 has type 'double'</code></td>
+</tr>
+<tr>
+<td><code class="c">format(printf, 1, 2)</code></td>
+<td>❌ <strong>编译错误</strong>：<code class="c">'format' attribute argument 2 value '1' refers to parameter type 'Log*'</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>gcc 的报错直接说出了答案——<strong>第 1 个参数的类型是 <code class="c">Log*</code>，也就是 <code class="c">this</code></strong>。</p>
+<p><strong>② 有两个（及以上）固定参数的函数</strong>——格式串不在第 1 位：</p>
+<pre class="code" data-label="C"><code class="c">void two(int lvl, const char *fmt, ...) __attribute__((format(printf, 2, 3)));  /* ✅ */
+/*                                                                    ↑   ↑
+                                                             fmt 是第 2 参  ... 从第 3 参开始 */
+</code></pre>
+<p>实测：<code class="c">two(1, "%d", 3.14)</code> 报 <code class="c">argument 3 has type 'double'</code> ✅</p>
+<h4>四种场景对照（全部实测）</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>正确写法</th>
+<th>写错会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通函数 <code class="c">f(fmt, ...)</code></td>
+<td><code class="c">format(printf, 1, 2)</code></td>
+<td>写 <code class="c">2,3</code> → <code class="c">-Wattributes</code> 越界警告 + <strong>检查静默失效</strong></td>
+</tr>
+<tr>
+<td>两个固定参 <code class="c">f(a, fmt, ...)</code></td>
+<td><code class="c">format(printf, 2, 3)</code></td>
+<td>写 <code class="c">1,2</code> → 把 <code class="c">a</code> 当格式串，误报一堆</td>
+</tr>
+<tr>
+<td>C++ 成员函数 <code class="c">C::f(fmt, ...)</code></td>
+<td><code class="c">format(printf, 2, 3)</code>（<code class="c">this</code>=1）</td>
+<td>写 <code class="c">1,2</code> → <strong>编译错误</strong>，提示参数类型是 <code class="c">Log*</code></td>
+</tr>
+<tr>
+<td>C++ <strong>static</strong> 成员函数</td>
+<td><code class="c">format(printf, 1, 2)</code>（无 <code class="c">this</code>）</td>
+<td>实测生效，报 <code class="c">argument 2</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>记忆法</strong>：这两个数字是<strong>从 1 开始的位置编号，不是偏移量</strong>。先数清楚"格式串前面站了几个参数"——普通函数 0 个（fmt 就是 1），成员函数多一个 <code class="c">this</code>，前置参数各自 +1。</p>
+</blockquote>
 <pre class="code" data-label="shell"><code class="c"># 开启格式串检查（强烈建议 CI 必开）
 gcc -Wformat -Wformat-security -Werror=format t.c
 # 跨平台：__attribute__ 是 GCC/Clang 扩展，MSVC 用 _Analysis_assume_
+# 排查&quot;属性写了却没生效&quot;：单独看 -Wattributes，它是唯一会告诉你索引越界的开关
+gcc -Wall -Wextra -Wattributes t.c
 </code></pre>
 <h3>格式串安全漏洞</h3>
 <p><code class="c">printf(user_input)</code> 是<strong>格式串漏洞</strong>——攻击者控制 <code class="c">%n</code>（写内存）、<code class="c">%x</code>（泄漏栈）：</p>
 <pre class="code" data-label="C"><code class="c">printf(buf);            /* 危险：若 buf 含 %n 可改内存 */
 printf(&quot;%s&quot;, buf);      /* 安全：buf 是数据不是格式 */
 </code></pre>
-<p><code class="c">-Wformat-security</code> 拦"无格式串的 printf"。</p>
+<h4>实测：<code class="c">%x</code> 真的把栈读出来了</h4>
+<pre class="code" data-label="code"><code class="c">user_input = &quot;%x %x %x %x&quot;
+  危险写法 printf(buf)      :  596045c0 0 0 25      ← 栈上的原始值，每次运行都不同
+  安全写法 printf(&quot;%s&quot;, buf):  %x %x %x %x          ← 原样打印，只是普通字符
+</code></pre>
+<p>同一份输入，两种写法，一个把栈内容吐出来、一个老实当字符串。这就是<strong>"数据"和"代码"混淆</strong>的经典形态——<code class="c">printf</code> 的第一个参数不是数据，是一段<strong>被解释的程序</strong>。</p>
+<h4>实测：<code class="c">%n</code> 是<strong>写入</strong>，不是打印</h4>
+<pre class="code" data-label="C"><code class="c">int written = 0;
+printf(&quot;hello%n world\n&quot;, &amp;written);
+printf(&quot;written = %d\n&quot;, written);   /* written = 5 */
+</code></pre>
+<p><code class="c">%n</code> 把"到目前为止已输出的字符数"写进指针参数。<code class="c">hello</code> 是 5 个字符 → <code class="c">written == 5</code>。<strong>它不打印任何东西，它是往内存里写。</strong> 攻击者控制格式串时，就能让这个"写入"落到可控地址上。</p>
+<blockquote>
+<p>关于防护：实测在 <code class="c">-O2 -D_FORTIFY_SOURCE=2</code> 下，<strong>字面量格式串的 <code class="c">%n</code> 仍然照写不误</strong>（<code class="c">w=5</code>，退出码 0）。不要以为开了 <code class="c">_FORTIFY_SOURCE</code> 就万事大吉——真正的防线是<strong>永远不让外部输入当格式串</strong>。</p>
+</blockquote>
+<h4>编译器能拦多少</h4>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开关</th>
+<th>实测效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-Wformat-security</code></td>
+<td><code class="c">warning: format not a string literal and no format arguments</code></td>
+</tr>
+<tr>
+<td><code class="c">-Werror=format-security</code></td>
+<td><strong>变成 error，退出码 1</strong>，CI 直接挂</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">-Wformat-security</code> 拦的是"格式串不是字面量且没有格式参数"这一类——<strong>它拦得住 <code class="c">printf(buf)</code>，拦不住 <code class="c">printf(buf, x)</code></strong>（有额外实参时 gcc 认为你"可能是故意的"）。所以这关必须开，但不能只靠它。</p>
 <h2>HFT / DPDK 工程规范</h2>
 <div class="tbl-wrap"><table>
 <thead>
@@ -5633,6 +5788,42 @@ printf(&quot;%s&quot;, buf);      /* 安全：buf 是数据不是格式 */
 </tr>
 </tbody>
 </table></div>
+<h3>实测：每次调用到底差多少</h3>
+<p>2 亿次调用，用 <code class="c">volatile</code> 函数指针防内联（<code class="c">-O2</code>，gcc 13.3）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用形式</th>
+<th>ns/次</th>
+<th>相对定参</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>定参 <code class="c">fixed(1,2,3)</code></td>
+<td><strong>2.125</strong></td>
+<td>1.0×</td>
+</tr>
+<tr>
+<td>数组 + count <code class="c">arr(v,3)</code></td>
+<td><strong>5.209</strong></td>
+<td>2.45×</td>
+</tr>
+<tr>
+<td>可变参 <code class="c">va(3,1,2,3)</code></td>
+<td><strong>9.053</strong></td>
+<td><strong>4.26×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>1 ns 在 HFT 里不是小数</strong>：行情回调里一个订单对象走 20 次 getter 就是 20 ns，已经吃掉一整个 tick-to-trade 预算的相当一部分。</p>
+<h4>⚠️ 但"压栈开销"这个说法不准确</h4>
+<p>常见解释是"可变参要压栈所以慢"——<strong>恰恰相反</strong>：x86-64 上前 6 个整数参数<strong>本来就在寄存器里，根本不压栈</strong>。可变参慢在两处（→ <strong>7.6.1</strong> 实测）：</p>
+<ol>
+<li><strong>prologue 无条件建寄存器保存区</strong>——<code class="c">subq $240</code> + 5 条 <code class="c">movq</code> + <code class="c">testb %al</code> + 8 条 <code class="c">movaps</code>，约 14 条 store，<strong>哪怕一个可变参都不读也照付</strong></li>
+<li><strong><code class="c">va_arg</code> 每次都要判断</strong> <code class="c">gp_offset</code> 有没有越界、要不要切到 <code class="c">overflow_arg_area</code>——这是运行时分支，不是编译期算好的偏移</li>
+</ol>
+<p>所以准确的结论是：<strong>可变参的代价是"把编译期能定的事推到了运行期"</strong>，而不是"多压了几个栈"。这个区别在优化时很关键——减少参数个数救不了你，因为 prologue 开销与参数个数无关。</p>
 <h3>DPDK RTE_LOG 的做法</h3>
 <pre class="code" data-label="C"><code class="c">#define RTE_LOG(l, t, ...) \
     rte_log(RTE_LOG_##l, RTE_LOGTYPE_##t, ##__VA_ARGS__)
@@ -5650,6 +5841,30 @@ RTE_LOG(INFO, &quot;pkt=%p len=%zu\n&quot;, pkt, len);
 </thead>
 <tbody>
 <tr>
+<td>"<code class="c">va_arg(ap, float)</code> 只是读错值"</td>
+<td>gcc 实测插 <code class="c">ud2</code> → <strong>SIGILL，退出码 132</strong>。但这是编译器善意，标准仍只说 UB</td>
+</tr>
+<tr>
+<td>"<code class="c">format(printf, 2, 3)</code> 是"两参函数"专用"</td>
+<td>也对（两个固定参时），但<strong>典型用途是 C++ 成员函数</strong>（<code class="c">this</code> 占 1）。用在普通函数上不报错，只<strong>静默失效</strong></td>
+</tr>
+<tr>
+<td>"属性写错了编译会失败"</td>
+<td>不会——只有 <code class="c">-Wattributes</code> 一条警告，检查悄悄消失</td>
+</tr>
+<tr>
+<td>"开了 <code class="c">_FORTIFY_SOURCE</code> 就不怕 <code class="c">%n</code>"</td>
+<td>实测字面量格式串的 <code class="c">%n</code> 照写（<code class="c">w=5</code>，退出码 0）</td>
+</tr>
+<tr>
+<td>"可变参慢是因为要压栈"</td>
+<td>恰恰相反：x86-64 前 6 个参数在寄存器里<strong>不压栈</strong>。慢在 prologue 无条件建保存区 + <code class="c">va_arg</code> 运行时分支</td>
+</tr>
+<tr>
+<td>"可变参开销随参数个数增长"</td>
+<td>不随：<code class="c">subq $240</code> 与个数无关，一个可变参都不读也照付</td>
+</tr>
+<tr>
 <td>"<code class="c">va_arg(ap, float)</code> 取 float"</td>
 <td>错，可变参 float 提升为 double</td>
 </tr>
@@ -5659,7 +5874,7 @@ RTE_LOG(INFO, &quot;pkt=%p len=%zu\n&quot;, pkt, len);
 </tr>
 <tr>
 <td>"<code class="c">printf(buf)</code> 没事"</td>
-<td>格式串漏洞，<code class="c">%n</code> 可写内存</td>
+<td>格式串漏洞，<code class="c">%n</code> 可写内存、<code class="c">%x</code> 泄栈（实测读出 <code class="c">596045c0 0 0 25</code>）</td>
 </tr>
 <tr>
 <td>"可变参能传任意类型"</td>
@@ -5686,6 +5901,34 @@ cat &gt; vuln.c &lt;&lt; 'EOF'
 int main(int argc, char **argv) { printf(argv[1]); return 0; }  /* 危险 */
 EOF
 gcc -Wformat-security vuln.c    # warning: format not a string literal
+gcc -Werror=format-security vuln.c   # 变 error，退出码 1
+
+# ⭐ 查&quot;属性写了却没生效&quot;：只有 -Wattributes 会告诉你索引越界
+cat &gt; attr.c &lt;&lt; 'EOF'
+void quiz(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void quiz(const char *fmt, ...) { (void)fmt; }
+int main(void) { quiz(&quot;%d&quot;, 3.14); return 0; }   /* 零报警 = 属性已失效 */
+EOF
+gcc -Wall -Wextra -Wattributes attr.c
+#   warning: 'format' attribute argument 2 value '2' exceeds the number of function parameters 1
+
+# ⭐ C++ 成员函数：gcc 的报错直接说出 this 占第 1 位
+cat &gt; attr.cpp &lt;&lt; 'EOF'
+struct Log {
+    void good(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+    void bad(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+};
+void Log::good(const char *fmt, ...) { (void)fmt; }
+void Log::bad(const char *fmt, ...) { (void)fmt; }
+int main() { Log L; L.good(&quot;%d&quot;, 3.14); L.bad(&quot;%d&quot;, 3.14); return 0; }
+EOF
+g++ -Wall attr.cpp
+#   error: 'format' attribute argument 2 value '1' refers to parameter type 'Log*'
+#   warning: format '%d' expects 'int' but argument 3 has 'double'   ← good 生效了
+
+# ⭐ %n 是写入不是打印（现代 glibc 下仍可用）
+printf '#include &lt;stdio.h&gt;\nint main(void){int w=0;printf(&quot;hello%%n\\n&quot;,&amp;w);printf(&quot;w=%%d\\n&quot;,w);return 0;}\n' &gt; n.c
+gcc -O2 -D_FORTIFY_SOURCE=2 n.c -o n &amp;&amp; ./n     # w=5，退出码 0
 </code></pre>
 <h2>与后续衔接</h2>
 <p><strong>ch15</strong> printf 族完整；<strong>ch14</strong> <code class="c">__VA_ARGS__</code> 宏与可变参；GCC <code class="c">__printf__</code> 属性；<strong>7.6.1</strong> stdarg 五宏。</p>
@@ -5696,6 +5939,10 @@ gcc -Wformat-security vuln.c    # warning: format not a string literal
 <li><code class="c">__attribute__((format(printf, 1, 2)))</code> 的两个数字分别表示什么？能拦哪类错误？</li>
 <li><code class="c">printf(user_input)</code> 为什么危险？<code class="c">%n</code> 能做什么？</li>
 <li>为什么 HFT 数据面核心路径禁可变参？批量数据应该用什么替代？</li>
+<li><code class="c">format(printf, 2, 3)</code> 用在<strong>普通函数</strong>上会怎样？gcc 给什么诊断？为什么这比编译失败更危险？</li>
+<li>C++ 非静态成员函数为什么要用 <code class="c">2, 3</code>？gcc 报错里怎么说的？<code class="c">static</code> 成员函数呢？</li>
+<li>实测里可变参比定参慢约 4 倍，原因是什么？为什么说"因为要压栈"是错的？</li>
+<li><code class="c">va_arg(args, float)</code> 在 gcc 上的可观测后果是什么（退出码几）？这跟"标准说 UB"是什么关系？</li>
 </ol>
 <hr />
 <h2>代码自测</h2>
@@ -5715,7 +5962,99 @@ print_all(&quot;ddf&quot;, 1, 2, 3.14f);
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>3.14f 是 float 类型，但在可变参数中 float 会被提升为 double（默认参数提升）。va_arg(args, double) 读取 double 是正确的。但如果不做提升（比如传 short），va_arg(args, short) 是错误的——应该用 va_arg(args, int) 读取再转换。可变参数中 char/short 提升为 int，float 提升为 double。</p>
+<p><strong>实测输出：<code class="c">123.140000</code>。本调用合法、行为定义明确。</strong></p>
+<p>拆解：</p>
+<ol>
+<li><code class="c">3.14f</code> 是 <code class="c">float</code>，但作为可变参传入时触发<strong>默认参数提升</strong> → 变成 <code class="c">double</code></li>
+<li><code class="c">va_arg(args, double)</code> 取的类型 == 提升后的类型 → <strong>匹配，无 UB</strong></li>
+<li><code class="c">"ddf"</code> 前两个 <code class="c">d</code> 各取一个 <code class="c">int</code>（1 和 2），第三个 <code class="c">f</code> 取 <code class="c">double</code>（3.14）</li>
+<li><code class="c">printf("%f")</code> 本来就期待 <code class="c">double</code> → 输出 <code class="c">3.140000</code></li>
+</ol>
+<p>位模式证明了提升不是"补零"：</p>
+<pre class="code" data-label="code"><code class="c">  float  3.14f : 4 字节  c3 f5 48 40
+  double 3.14  : 8 字节  1f 85 eb 51 b8 1e 09 40
+</code></pre>
+<p>推广规律：<strong><code class="c">va_arg</code> 的 type 必须写"提升之后"的类型</strong>——<code class="c">char</code>/<code class="c">short</code>/<code class="c">_Bool</code> → <code class="c">int</code>，<code class="c">float</code> → <code class="c">double</code>。</p>
+</details>
+<p><strong>题目 2：</strong> 把上题的 <code class="c">'f'</code> 分支改成 <code class="c">va_arg(args, float)</code>，会发生什么？请给出可观测后果，不要只说"UB"。</p>
+<pre class="code" data-label="C"><code class="c">if (*fmt == 'f') printf(&quot;%f&quot;, va_arg(args, float));   /* ★ 改这一行 */
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>实测（gcc 13.3，x86-64）：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'float' is promoted to 'double' when passed through '...'
+note: (so you should pass 'double' not 'float' to 'va_arg')
+note: if this code is reached, the program will abort
+</code></pre>
+<ul>
+<li>反汇编里 <code class="c">print_bad</code> 的<strong>第 70 条指令是 <code class="c">ud2</code></strong>（未定义指令）</li>
+<li>运行：<strong><code class="c">Illegal instruction (core dumped)</code>，退出码 132</strong>（128+SIGILL）</li>
+</ul>
+<p>所以可观测后果是<strong>当场 SIGILL 崩溃</strong>，不是"读到一个错值"。</p>
+<p>⚠️ 但要分清两层：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层面</th>
+<th>说法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C 标准</td>
+<td>UB——没规定编译器该怎么做</td>
+</tr>
+<tr>
+<td>gcc/Clang 实测</td>
+<td>插 <code class="c">ud2</code> 主动 abort（<strong>善意陷阱</strong>，省得你查三小时）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>别把 gcc 的善意当成保证。</strong> 换个编译器（或 <code class="c">va_arg</code> 类型不是"提升类"错误，比如传 <code class="c">int</code> 却用 <code class="c">double</code> 读），就是真的静默读垃圾——那种情况<strong>零警告、退出码 0</strong>（→ <strong>7.6.1</strong>）。</p>
+<p>另注：<code class="c">printf("%f", ...)</code> 本身期待 <code class="c">double</code>，所以即使 <code class="c">va_arg</code> 返回了 float，它也会再被提升成 double 传进去——<strong>错误发生在 <code class="c">va_arg</code> 那一步，与 printf 无关</strong>。</p>
+</details>
+<p><strong>题目 3：</strong> 下面这个声明有什么问题？2 和 3 到底代表什么？</p>
+<pre class="code" data-label="C"><code class="c">void test(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>问题：索引越界，属性静默失效。</strong></p>
+<p><code class="c">test</code> 只有 1 个具名参数 <code class="c">fmt</code>，却说格式串在第 2 位。实测 gcc 13.3：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'format' attribute argument 2 value '2' exceeds the number of function parameters 1 [-Wattributes]
+</code></pre>
+<p>后果不是"报错"，而是<strong>属性被丢掉，所有调用点都不再检查</strong>——实测 <code class="c">test("%d", 3.14)</code> 零报警。<strong>你以为有保护，其实没有。</strong></p>
+<p>正确写法取决于场景：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>正确写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通函数 <code class="c">test(fmt, ...)</code></td>
+<td><code class="c">format(printf, 1, 2)</code></td>
+</tr>
+<tr>
+<td>两个固定参 <code class="c">test(a, fmt, ...)</code></td>
+<td><code class="c">format(printf, 2, 3)</code></td>
+</tr>
+<tr>
+<td>C++ 成员函数 <code class="c">C::test(fmt, ...)</code></td>
+<td><code class="c">format(printf, 2, 3)</code>——<strong><code class="c">this</code> 隐式占第 1 位</strong></td>
+</tr>
+<tr>
+<td>C++ <code class="c">static</code> 成员函数</td>
+<td><code class="c">format(printf, 1, 2)</code>——无 <code class="c">this</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>gcc 对成员函数写 <code class="c">1,2</code> 的报错直接点破了原因：</p>
+<pre class="code" data-label="code"><code class="c">error: 'format' attribute argument 2 value '1' refers to parameter type 'Log*'
+</code></pre>
+<p>第 1 个参数的类型是 <code class="c">Log*</code>，就是 <code class="c">this</code>。</p>
+<p><strong>记忆法</strong>：两个数字是<strong>从 1 开始的位置编号，不是偏移量</strong>。数清楚"格式串前面站了几个参数"。而排查"属性写了却没生效"，唯一线索是 <strong><code class="c">-Wattributes</code></strong>。</p>
 </details>
       </section>
 
