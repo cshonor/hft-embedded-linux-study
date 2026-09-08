@@ -1,6 +1,6 @@
-# 00 · 本书取舍与补写顺序（GNU C 扩展 × 嵌入式应用主线）
+# 00 · 本书取舍与补写顺序（六章结构）
 
-[← 第 5 本书 README](./README.md) · [ch06 GNU C 扩展](./01-gnu-c-extensions/README.md)
+[← 第 5 本书 README](./README.md) · [ch06 GNU C 扩展](./01-ch1-gnu-c-basics/README.md)
 
 ## 为什么要有这份文件
 
@@ -25,9 +25,17 @@
 | **它们没讲，但嵌入式 C 必须会**（MMIO 怎么用 C 表达、字节序怎么转、屏障怎么写） | **改写成 GNU C 扩展视角**：不写硬件原理，只写"这件事怎么用 C 语言表达"，落位到 A 档对应小节 |
 
 > **2026-09-08 执行**：按上面第一条，ch02 整章 48 篇 + ch03 的 3.1–3.5/3.9 共 **73 篇已物理删除**，**文件夹也已删掉**。
-> **同日重组**：全书目录不再按原书章号排列，改按两条主线：
-> `01-gnu-c-extensions/`（主线一）· `02-embedded-c/`（主线二）· `03~10-xxx/`（支撑与参考）。
-> 想看某一节原来属于第几章，见 [书 README](./README.md) 的对照表。
+> **同日重组**：全书目录既不再按原书章号排列，也不再按两条主线——细化为**六章**
+>（每条主线拆两段 + 新增两条战线），使每章聚焦一个核心：
+>
+> ```text
+>  工具           战场               边界
+>  CH1 基础语法 -> CH3 嵌入式驱动  -> CH5 跨平台模块化
+>  CH2 高级特性 -> CH4 内核模块    -> CH6 编译链定制
+>  90/91/92 附录（OS 通识 / 内存堆栈 / ARM 汇编残留）
+> ```
+>
+> 想看某一节**原来属于第几章**，见 [书 README](./README.md) 的「六章 ↔ 原书对照」表。
 > 恢复命令：`git log --diff-filter=D --name-only -- 01-c-language/05-Kernel-Prep-Embedded-C-Self-Cultivation/`。
 
 第二条是本书的独有价值——**CSAPP 讲硬件不讲 C，标准 C 教材讲 C 不讲硬件**，中间这段正是嵌入式 C 的地盘。
@@ -36,12 +44,12 @@
 
 | 原书位置 | 原主题 | 改造后（C 语言视角） | 落位 | 状态 |
 |---|---|---|---|---|
-| ch02 2.8 总线与 MMIO | 地址译码、MMIO 原理 | 设备寄存器的三种 C 表达、`volatile` 该加在哪 | [10.8 寄存器操作](./02-embedded-c/10.8-register/10.8-寄存器操作.md) | ✅ 已写 |
+| ch02 2.8 总线与 MMIO | 地址译码、MMIO 原理 | 设备寄存器的三种 C 表达、`volatile` 该加在哪 | [10.8 寄存器操作](./03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md) | ✅ 已写 |
 | ch02 2.8.4 大小端 | 字节序原理 | `__builtin_bswap*`、主机序探测、什么时候需要转 | 10.8 第七节 | ✅ 已写 |
 | ch02 2.4 Cache / DMA 一致性 | Cache 行、伪共享 | `volatile` **管不了** Cache；要用 `dma_sync_*` / `__builtin___clear_cache` | 10.8 第一节（一句带过） | ✅ 已写 |
-| ch03.6 内联汇编 | ARM 汇编指令 | `__asm__ __volatile__("" ::: "memory")` 屏障宏 | [ch03.6](./01-gnu-c-extensions/3.6-mixed-programming/) | ⏳ 待写（A 档） |
-| ch10.3 中断 | 中断向量、现场保存 | ISR 与主循环的共享数据、`__atomic_*`、volatile 标志 | [10.3 中断](./02-embedded-c/10.3-interrupt/10.3-中断.md) | ⏳ 待改造 |
-| ch04 链接脚本 | 段、地址分配 | 向量表定位、`__attribute__((section()))`、链接脚本语法 | [4.14 链接脚本](./02-embedded-c/4.14-链接脚本.md) | ⏳ 待写（A2） |
+| ch03.6 内联汇编 | ARM 汇编指令 | `__asm__ __volatile__("" ::: "memory")` 屏障宏 | [ch03.6](./02-ch2-gnu-c-advanced/3.6-mixed-programming/) | ⏳ 待写（A 档） |
+| ch10.3 中断 | 中断向量、现场保存 | ISR 与主循环的共享数据、`__atomic_*`、volatile 标志 | [10.3 中断](./03-ch3-embedded-driver/10.3-interrupt/10.3-中断.md) | ⏳ 待改造 |
+| ch04 链接脚本 | 段、地址分配 | 向量表定位、`__attribute__((section()))`、链接脚本语法 | [4.14 链接脚本](./06-ch6-toolchain-custom/4.14-链接脚本.md) | ⏳ 待写（A2） |
 | ch02 2.4/2.5/2.6/2.7/2.9 | Cache / 流水线 / 多核 / 异构 / ISA | — | CSAPP ch1–ch6 更深 | 🗑️ **原文已删**（2026-09-08） |
 
 ---
@@ -52,18 +60,18 @@
 
 | 档 | 章 | 目录 | 篇 | 中位 | 骨架% | 定位 | 与已有资源的重叠 | 处置 |
 |----|----|------|----|------|-------|------|------|------|
-| **A** | ch06 | [GNU C 扩展](./01-gnu-c-extensions/) | 67 | 2125 | 74% | **全书唯一核心**。标准 C → 内核的桥 | 无（唯一来源） | 逐节精写 + WSL 实测，目标 10–40 KB/篇 |
-| **A** | ch04 | [编译链接安装运行](./04-compile-and-link/) | 34 | 2222 | 88% | **嵌入式落地地基**：链接脚本、静态/动态库、内核模块、U-boot 重定位 | CSAPP ch7 只讲 ELF 与链接概念，不讲链接脚本与重定位实战 | 精写，目标 15–30 KB/篇 |
-| **A** | ch05 | [内存堆栈管理](./05-memory-and-stack/) | 33 | 2033 | 84% | **嵌入式最致命的部分**：栈布局、堆、mmap、泄漏、内存错误 | TLPI ch6/ch7/ch10 覆盖进程内存，但栈帧/裸机堆管理不重叠 | 精写，目标 15–30 KB/篇 |
-| **A** | ch01 | [工具链](./03-toolchain/) | 23 | 1403 | 73% | 天天要用的 binutils / ELF / make / gdb | 部分与平时工具使用重叠 | 精写常用部分（1.4 ELF、1.2 make），1.1 vim / 1.3 git 保持索引 |
-| **B** | ch09 | [模块化编程](./08-modular-c/) | 28 | 3677 | 3% | 工程实践：头文件、模块封装、goto | 已达标 | 维持，只补 9.2/9.7 |
-| **B** | ch07 | [数据存储与指针](./06-pointers-and-data/) | 43 | 2545 | 37% | **只挑与嵌入式强相关的节** | 指针基础与 [Pointers on C](../02-Pointers-on-C/) 重叠 | 精挑 7.2 对齐 / 7.3 可移植性 / 7.4 size_t / 7.13 void；其余维持 |
-| **B** | ch08 | [OOP in C](./07-oop-in-c/) | 18 | 3496 | 5% | 与 6.4 container_of 联动的面向对象套路 | 已达标 | 维持，与 6.4 双向链接 |
-| **A** | ch10.8 | [寄存器操作（嵌入式 C 开门）](./02-embedded-c/10.8-register/10.8-寄存器操作.md) | 3 | — | — | **嵌入式 C 第一课**：`volatile` / `barrier()` / `BIT()`·`GENMASK()` / 未对齐访问 / 字节序 | CSAPP 讲硬件不讲 C 表达，标准 C 教材两头都不讲 | ✅ 已写（实测篇，由 ch02 硬件内容改造而来） |
-| **B** | ch10 | [多任务与 OS](./09-os-reference/) | 45 | 2928 | 13% | **只挑嵌入式侧**：裸机、中断 | 进程/线程/文件系统/IO 属 OS 通识 | 精挑 10.1 裸机 / 10.3 中断；其余维持索引 |
-| **A** | ch03.6/3.7 | [C 与汇编混合编程 / GNU ARM 工具链](./10-arm-asm-reference/) | 12 | 1718 | — | **内联汇编本质是 GNU C 扩展**（`__asm__ __volatile__` 的操作数约束/clobber/volatile 语义全是编译器层面）；`.section` 与链接脚本联动 | CSAPP 不教 GNU 扩展汇编语法 | **A 档精写**，与 ch06 联动 |
+| **A** | ch06 | [GNU C 扩展](./01-ch1-gnu-c-basics/) | 67 | 2125 | 74% | **全书唯一核心**。标准 C → 内核的桥 | 无（唯一来源） | 逐节精写 + WSL 实测，目标 10–40 KB/篇 |
+| **A** | ch04 | [编译链接安装运行](./06-ch6-toolchain-custom/2-compile-and-link/) | 34 | 2222 | 88% | **嵌入式落地地基**：链接脚本、静态/动态库、内核模块、U-boot 重定位 | CSAPP ch7 只讲 ELF 与链接概念，不讲链接脚本与重定位实战 | 精写，目标 15–30 KB/篇 |
+| **A** | ch05 | [内存堆栈管理](./91-ref-memory/) | 33 | 2033 | 84% | **嵌入式最致命的部分**：栈布局、堆、mmap、泄漏、内存错误 | TLPI ch6/ch7/ch10 覆盖进程内存，但栈帧/裸机堆管理不重叠 | 精写，目标 15–30 KB/篇 |
+| **A** | ch01 | [工具链](./06-ch6-toolchain-custom/1-toolchain/) | 23 | 1403 | 73% | 天天要用的 binutils / ELF / make / gdb | 部分与平时工具使用重叠 | 精写常用部分（1.4 ELF、1.2 make），1.1 vim / 1.3 git 保持索引 |
+| **B** | ch09 | [模块化编程](./05-ch5-portable-modular/9-modular-c/) | 28 | 3677 | 3% | 工程实践：头文件、模块封装、goto | 已达标 | 维持，只补 9.2/9.7 |
+| **B** | ch07 | [数据存储与指针](./05-ch5-portable-modular/7-data-and-pointers/) | 43 | 2545 | 37% | **只挑与嵌入式强相关的节** | 指针基础与 [Pointers on C](../02-Pointers-on-C/) 重叠 | 精挑 7.2 对齐 / 7.3 可移植性 / 7.4 size_t / 7.13 void；其余维持 |
+| **B** | ch08 | [OOP in C](./05-ch5-portable-modular/8-oop-in-c/) | 18 | 3496 | 5% | 与 6.4 container_of 联动的面向对象套路 | 已达标 | 维持，与 6.4 双向链接 |
+| **A** | ch10.8 | [寄存器操作（嵌入式 C 开门）](./03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md) | 3 | — | — | **嵌入式 C 第一课**：`volatile` / `barrier()` / `BIT()`·`GENMASK()` / 未对齐访问 / 字节序 | CSAPP 讲硬件不讲 C 表达，标准 C 教材两头都不讲 | ✅ 已写（实测篇，由 ch02 硬件内容改造而来） |
+| **B** | ch10 | [多任务与 OS](./90-ref-os/) | 45 | 2928 | 13% | **只挑嵌入式侧**：裸机、中断 | 进程/线程/文件系统/IO 属 OS 通识 | 精挑 10.1 裸机 / 10.3 中断；其余维持索引 |
+| **A** | ch03.6/3.7 | [C 与汇编混合编程 / GNU ARM 工具链](./92-ref-arm-asm/) | 12 | 1718 | — | **内联汇编本质是 GNU C 扩展**（`__asm__ __volatile__` 的操作数约束/clobber/volatile 语义全是编译器层面）；`.section` 与链接脚本联动 | CSAPP 不教 GNU 扩展汇编语法 | **A 档精写**，与 ch06 联动 |
 | **A** | ch03.8 | AArch64 拓展 | 1 | 2548 | — | 选读：X0–X30、无 Thumb | — | 维持，与递归栈帧笔记对照 |
-| **C** | ch02 | **计算机体系结构**（已删） | ~~49~~ | 1189 | 97% | **🗑️ 已删除 48 篇** | **CSAPP ch1/3/4/5/6 讲得更深**（流水线、cache、多核、ISA） | **文件夹已整个删除**；2.8 总线/大小端已改造进 [10.8](./02-embedded-c/10.8-register/10.8-寄存器操作.md) |
+| **C** | ch02 | **计算机体系结构**（已删） | ~~49~~ | 1189 | 97% | **🗑️ 已删除 48 篇** | **CSAPP ch1/3/4/5/6 讲得更深**（流水线、cache、多核、ISA） | **文件夹已整个删除**；2.8 总线/大小端已改造进 [10.8](./03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md) |
 | **C** | ch03.1–3.5, 3.9 | ARM 指令/寻址/伪指令/异常 | ~~24~~ | 1415 | 90% | **🗑️ 已删除 25 篇** | 纯硬件/纯汇编，无法改造成 C 语言视角 | 3.6 / 3.7 / 3.8 保留（见下） |
 
 > **一句话判据**：这件事"离开这本书就没人系统讲"吗？是 → A 档；"别的书讲得更深" → C 档；"只有部分节属于 C 语言范畴" → B 档。
@@ -72,33 +80,36 @@
 
 ## 二、A 档补写顺序（每批一节，实测优先）
 
-### 批次 A1 —— ch06 全章扫平（最高优先级）
+### 批次 A1 —— CH1 / CH2 GNU C 扩展（最高优先级）
 
-| 序 | 节 | 现状 | 说明 |
-|----|----|------|------|
-| ✅ | [6.6 属性声明 section](./01-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | 37 KB | 已完成（第 20 批） |
-| ✅ | [6.4 typeof 与 container_of](./01-gnu-c-extensions/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | 28 KB | 已完成（第 21 批） |
-| ✅ | [10.8 嵌入式 C 开门：寄存器/位操作/屏障](./02-embedded-c/10.8-register/10.8-寄存器操作.md) | 28 KB | 已完成（第 22 批，由 ch02 硬件内容改造而来） |
-| ✅ | [6.3 语句表达式](./01-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 27 KB | 已完成（第 23 批）：自我初始化 UB、零开销、MMIO 双读事故 |
-| ✅ | [6.5 零长度数组与柔性数组](./01-gnu-c-extensions/6.5-zero-length-array/6.5-零长度数组.md) | 39 KB | 已完成（第 24 批）：sizeof≠offsetof 静默错位、struct_size 溢出、counted_by |
-| ✅ | [6.7 aligned 与 packed](./01-gnu-c-extensions/6.7-aligned/6.7-属性声明-aligned.md) | 32 KB | 已完成（第 25 批）：aligned 管不了 malloc、packed 绕过 UBSan、伪共享 1.60x |
-| ✅ | [6.9 weak 与 alias](./01-gnu-c-extensions/6.9-weak/6.9-属性声明-weak.md) | 31 KB | 已完成（第 26 批）：weak 不触发静态库提取、热路径慢 3.2x、-fno-common |
-| ▶ | [6.10 inline](./01-gnu-c-extensions/6.10-inline/) | 8 KB/6 篇 | **下一批**：与 HFT 热点路径相关 |
-| 8 | [6.11 builtin](./01-gnu-c-extensions/6.11-builtin/) | 14 KB/7 篇 | `__builtin_expect` / `__builtin_types_compatible_p` |
-| 9 | [6.12 变参宏](./01-gnu-c-extensions/6.12-vararg-macro/) | 7 KB/5 篇 | `##__VA_ARGS__` 与日志宏 |
-| 10 | [6.8 format](./01-gnu-c-extensions/6.8-format/) | 8 KB/4 篇 | 已由 [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) 深度覆盖，回链即可 |
-| 11 | [6.2 指定初始化](./01-gnu-c-extensions/6.2-designated-init/) | 10 KB/5 篇 | 驱动里的 `.member = value` 套路 |
-| 12 | [6.1 C 标准](./01-gnu-c-extensions/6.1-c-standard/) | 12 KB/6 篇 | 与 [6.0 GNU C 占比](./01-gnu-c-extensions/6.0-driver-how-much-gnu-c.md) 联动 |
+> 原书第 6 章被拆成**基础语法（CH1）**与**高级特性（CH2）**两半；下表「章」列标明该节现在在哪：
 
-### 批次 A2 —— ch04 编译链接（嵌入式落地）
+| 序 | 章 | 节 | 现状 | 说明 |
+|----|----|----|------|------|
+| ✅ | **CH2** | [6.6 属性声明 section](./02-ch2-gnu-c-advanced/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | 37 KB | 已完成（第 20 批） |
+| ✅ | **CH1** | [6.4 typeof 与 container_of](./01-ch1-gnu-c-basics/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | 28 KB | 已完成（第 21 批） |
+| ✅ | **CH3** | [10.8 嵌入式 C 开门：寄存器/位操作/屏障](./03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md) | 28 KB | 已完成（第 22 批，由 ch02 硬件内容改造而来） |
+| ✅ | **CH1** | [6.3 语句表达式](./01-ch1-gnu-c-basics/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 27 KB | 已完成（第 23 批）：自我初始化 UB、零开销、MMIO 双读事故 |
+| ✅ | **CH1** | [6.5 零长度数组与柔性数组](./01-ch1-gnu-c-basics/6.5-zero-length-array/6.5-零长度数组.md) | 39 KB | 已完成（第 24 批）：sizeof≠offsetof 静默错位、struct_size 溢出、counted_by |
+| ✅ | **CH2** | [6.7 aligned 与 packed](./02-ch2-gnu-c-advanced/6.7-aligned/6.7-属性声明-aligned.md) | 32 KB | 已完成（第 25 批）：aligned 管不了 malloc、packed 绕过 UBSan、伪共享 1.60x |
+| ✅ | **CH2** | [6.9 weak 与 alias](./02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md) | 31 KB | 已完成（第 26 批）：weak 不触发静态库提取、热路径慢 3.2x、-fno-common |
+| ▶ | **CH1** | [6.10 inline](./01-ch1-gnu-c-basics/6.10-inline/) | 8 KB/6 篇 | **下一批**：与 HFT 热点路径相关 |
+| 8 | **CH2** | [6.11 builtin](./02-ch2-gnu-c-advanced/6.11-builtin/) | 14 KB/7 篇 | `__builtin_expect` / `__builtin_types_compatible_p` |
+| 9 | **CH1** | [6.12 变参宏](./01-ch1-gnu-c-basics/6.12-vararg-macro/) | 7 KB/5 篇 | `##__VA_ARGS__` 与日志宏 |
+| 10 | **CH2** | [6.8 format](./02-ch2-gnu-c-advanced/6.8-format/) | 8 KB/4 篇 | 已由 [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) 深度覆盖，回链即可 |
+| 11 | **CH1** | [6.2 指定初始化](./01-ch1-gnu-c-basics/6.2-designated-init/) | 10 KB/5 篇 | 驱动里的 `.member = value` 套路 |
+| 12 | **CH1** | [6.1 C 标准](./01-ch1-gnu-c-basics/6.1-c-standard/) | 12 KB/6 篇 | 与 [6.0 GNU C 占比](./01-ch1-gnu-c-basics/6.0-driver-how-much-gnu-c.md) 联动 |
+
+### 批次 A2 —— CH6 编译与链接（嵌入式落地）
 4.14 链接脚本 → 4.7 静态库 → 4.8 动态链接 → 4.9 插件 → 4.10 内核模块 → 4.12 U-boot 重定位 → 4.13 binutils。
 
-### 批次 A3 —— ch05 内存堆栈
+### 批次 A3 —— 附录 B 内存与堆栈
 5.3 栈（栈帧、栈溢出检测）→ 5.4 堆（裸机 malloc 实现）→ 5.5 mmap → 5.6 泄漏 → 5.7 内存错误。
 
-### 批次 A4 —— ch01 工具链 + ch03.6 内联汇编
+### 批次 A4 —— CH6 工具链 + CH2 3.6 内联汇编
 
-### 批次 B —— ch10 裸机/中断（按改造规则写 ISR 共享数据）+ ch07 对齐 + ch03.6 内联汇编
+### 批次 B —— CH3 裸机/中断 + CH4 内核模块（6.10 之后的主战场）
+10.3 中断（按改造规则写 ISR 与主循环共享数据）→ 10.1 裸机 → **CH4 整章**（initcall / container_of / .ko 加载）→ CH5 的 7.2 对齐。
 
 ---
 
@@ -115,7 +126,7 @@
 | ch02 2.5 | 流水线：冒险 / 分支预测 / 乱序 / SIMD | 8 | **CSAPP ch4/5 更深** |
 | ch02 2.6 | 多核：互连 / big.LITTLE / 超线程 | 6 | CSAPP ch1/6 |
 | ch02 2.7 | 异构：GPU / DSP / FPGA / TPU / NPU | 8 | 与本书主线无关 |
-| ch02 2.8 | 总线与地址 / 大小端 | 5 | **已改造成 C 视角 → [10.8](./02-embedded-c/10.8-register/10.8-寄存器操作.md)** |
+| ch02 2.8 | 总线与地址 / 大小端 | 5 | **已改造成 C 视角 → [10.8](./03-ch3-embedded-driver/10.8-register/10.8-寄存器操作.md)** |
 | ch02 2.9 | 指令集与微架构 | 4 | **CSAPP ch3/4 更深** |
 | ch03 3.1 | ARM 体系结构（模式 / CPSR / 寄存器组） | 1 | 纯硬件 |
 | ch03 3.2 | ARM 汇编指令集 | 8 | 纯汇编，不能改造成 C 视角 |
@@ -135,10 +146,10 @@ cache line 64 B → 决定 padding / `aligned(64)`；分支预测失败 → 决�
 
 | 主题 | 主战场 | 关联笔记 |
 |------|--------|----------|
-| `container_of` / 侵入式链表 | [6.4](./01-gnu-c-extensions/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | [ch08 OOP in C](./07-oop-in-c/) |
-| `__attribute__` 全族 | [6.6.1](./01-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | [Pointers on C 18.10 深度实测](../02-Pointers-on-C/ch18-runtime-environment/18.10-GCC属性总览.md) |
-| 变参 + format 属性 | [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) | [6.8](./01-gnu-c-extensions/6.8-format/) |
-| 对齐 / 未对齐访问 | [6.7 aligned](./01-gnu-c-extensions/6.7-aligned/) | [ch07 7.2 对齐](./06-pointers-and-data/7.2-alignment/) |
+| `container_of` / 侵入式链表 | [6.4](./01-ch1-gnu-c-basics/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | [ch08 OOP in C](./05-ch5-portable-modular/8-oop-in-c/) |
+| `__attribute__` 全族 | [6.6.1](./02-ch2-gnu-c-advanced/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | [Pointers on C 18.10 深度实测](../02-Pointers-on-C/ch18-runtime-environment/18.10-GCC属性总览.md) |
+| 变参 + format 属性 | [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) | [6.8](./02-ch2-gnu-c-advanced/6.8-format/) |
+| 对齐 / 未对齐访问 | [6.7 aligned](./02-ch2-gnu-c-advanced/6.7-aligned/) | [ch07 7.2 对齐](./05-ch5-portable-modular/7-data-and-pointers/7.2-alignment/) |
 
 ---
 

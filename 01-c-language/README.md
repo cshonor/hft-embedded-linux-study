@@ -1,6 +1,6 @@
 # 02 · C 语言 · 系统级编程
 
-**文件夹 `02`** · [README](../README.md) · [OUTLINE](./OUTLINE.md)
+**文件夹 `02`** · [README](./README.md) · [OUTLINE](./OUTLINE.md)
 
 > **定位：** 面向 **底层 / Linux 内核** 的经典 C 书单（五书 + `code`）。  
 > 路线：**K&R（C89）→ 进阶标准 C → GNU C → 内核**。  
@@ -33,7 +33,7 @@
 
 来源副本说明 → [README.external.md](./README.external.md)
 
-> **CSAPP 实验在 [02-computer-systems/code](../02-computer-systems/code/)** — **不在 02 重复**。
+> **CSAPP 实验在 [02-computer-systems/code](./code)** — **不在 02 重复**。
 
 ---
 
@@ -95,4 +95,4 @@
 |------|--------|------|
 | [01 CSAPP](../02-computer-systems/) | **指针、内存、GNU-C** | [19 Hennessy](../15-computer-architecture/) → [04–07](../05-linux-kernel/) → [08 MikanOS](../projects/P9-os-from-scratch/mikanos/) |
 
-**下一步：** 打开 **[01-Primer-K-and-R-C](./01-Primer-K-and-R-C/)**；若已过标准 C，直奔 **[05 · ch06 GNU C](./05-Kernel-Prep-Embedded-C-Self-Cultivation/01-gnu-c-extensions/)** 再进 LKD。
+**下一步：** 打开 **[01-Primer-K-and-R-C](./01-Primer-K-and-R-C/)**；若已过标准 C，直奔 **[05 · ch06 GNU C](05-Kernel-Prep-Embedded-C-Self-Cultivation/01-ch1-gnu-c-basics/)** 再进 LKD。

@@ -69,7 +69,7 @@
 
 ## Demo
 
-见 [demo/](./demo/README.md)。
+见 [demo/](../README.md)。
 
 ---
 

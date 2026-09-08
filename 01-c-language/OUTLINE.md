@@ -49,7 +49,7 @@
 
 | 练习 | 目的 |
 |------|------|
-| CSAPP 实验 | 01 [code/](../02-computer-systems/code/) · [ABI](../02-computer-systems/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) · [指针步长](../02-computer-systems/chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md) |
+| CSAPP 实验 | 01 [code/](./code) · [ABI](../02-computer-systems/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) · [指针步长](../02-computer-systems/chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md) |
 | QEMU **ARM 裸机 hello + 异常**（可选） | CPU 模式/异常向量 — 预演 07 ARM64 |
 | 结构体对齐 / cache line 微测 | 对接 Hennessy Ch2 · 后接 HFT 伪共享 |
 
@@ -69,4 +69,4 @@
 
 在 [README.md](./README.md) 勾选；上游原文见 [README.external.md](./README.external.md)。
 
-← [README](./README.md) · [README](../README.md)
+← [README](./README.md) · [README](./README.md)

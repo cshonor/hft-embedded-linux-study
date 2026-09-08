@@ -66,7 +66,7 @@ make all
 ./demo05_max_munch/main
 ```
 
-`demo02` 为 **故意编译失败** 的注释嵌套示例，见 [demo/README.md](./demo/README.md)。
+`demo02` 为 **故意编译失败** 的注释嵌套示例，见 [demo/README.md](../README.md)。
 
 ## 面试题
 
