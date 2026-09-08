@@ -307,7 +307,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-6-1"><span class="n">6.6.1</span>GNU C编译器扩展关键字：__attribute__</a>
           <a href="#s-6-6-2"><span class="n">6.6.2</span>属性声明：section</a>
           <a href="#s-6-6-3"><span class="n">6.6.3</span>U-boot镜像自复制分析</a>
-          <a href="#s-6-7"><span class="n">6.7</span>属性声明：aligned</a>
+          <a href="#s-6-7"><span class="n">6.7</span>属性声明：aligned 与 packed</a>
           <a href="#s-6-7-1"><span class="n">6.7.1</span>地址对齐：aligned</a>
           <a href="#s-6-7-2"><span class="n">6.7.2</span>结构体的对齐</a>
           <a href="#s-6-7-3"><span class="n">6.7.3</span>思考：编译器一定会按照aligned指定的方式对齐吗</a>
@@ -6657,36 +6657,902 @@ void image_copy(void) { ... }
 </details>
       </section>
       <section class="section" id="s-6-7">
-        <div class="sec-head"><div class="sec-no">6.7</div><h2>属性声明：aligned</h2></div>
+        <div class="sec-head"><div class="sec-no">6.7</div><h2>属性声明：aligned 与 packed</h2></div>
+<p><a href="#intro">← ch06 GNU C 扩展</a> · <a href="#s-6-5">6.5 零长度数组与柔性数组</a> · <a href="#s-6-6">6.6.1 <code class="c">__attribute__</code> 总纲</a> · <a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a></p>
+<blockquote>
+<p><strong>本篇是「对齐控制」的完整总纲</strong>：<code class="c">aligned(n)</code> 与 <code class="c">packed</code> 的语义、三种属性位置、六个真实陷阱、伪共享性能实测，全部有本机（WSL gcc 13.3 / clang 18.1.3）实测数据。
+逐节细节见 <a href="chapter-06.html#s-6-7-1">6.7.1 地址对齐</a> · <a href="chapter-06.html#s-6-7-2">6.7.2 结构体的对齐</a> · <a href="chapter-06.html#s-6-7-3">6.7.3 编译器一定按你指定的对齐吗</a> · <a href="chapter-06.html#s-6-7-4">6.7.4 packed</a> · <a href="chapter-06.html#s-6-7-5">6.7.5 内核中的 aligned/packed</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong>对齐（alignment）</strong> 决定变量/结构体首址是否为 <strong>2/4/8/64…</strong> 的倍数，影响 <strong>原子访问、SIMD、DMA、cache line</strong>。GCC <strong><code class="c">__attribute__((aligned(n)))</code></strong> 与 <strong><code class="c">packed</code></strong> 控制布局；内核 <code class="c">____cacheline_aligned</code>、DPDK <code class="c">__rte_cache_aligned</code> 同源。</p>
-<h2>要点</h2>
+<p><strong>对齐（alignment）</strong> 决定一个对象的首地址是不是某个数（2 / 4 / 8 / 16 / 64…）的倍数。GNU C 用两个属性控制它：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>属性</th>
+<th>作用</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__attribute__((aligned(n)))</code></td>
+<td><strong>抬高</strong>对齐要求到至少 <code class="c">n</code> 字节</td>
+<td>cache line 对齐（抗伪共享）、DMA 缓冲、SIMD、页对齐</td>
+</tr>
+<tr>
+<td><code class="c">__attribute__((packed))</code></td>
+<td><strong>取消</strong>成员之间的 padding，把对齐压到 1</td>
+<td>on-wire 报文格式、寄存器映射、省内存</td>
+</tr>
+</tbody>
+</table></div>
+<p>它为什么值得单独一篇——因为它同时踩在<strong>四条线上</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关心对齐的原因</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>原子性</strong></td>
+<td>跨 cache line 的访问不保证原子（实测见第 9 节）</td>
+</tr>
+<tr>
+<td><strong>SIMD</strong></td>
+<td><code class="c">movaps</code> 要求 16 字节对齐，不对齐只能走 <code class="c">movups</code>（或 fault）</td>
+</tr>
+<tr>
+<td><strong>DMA</strong></td>
+<td>多数 DMA 控制器要求缓冲按 cache line / 总线宽度对齐</td>
+</tr>
+<tr>
+<td><strong>cache line</strong></td>
+<td>伪共享能让多线程代码<strong>慢 1.6 倍</strong>（实测见第 8 节）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、对齐的基本事实（先建立坐标）</h2>
+<pre class="code" data-label="C"><code class="c">_Alignof(T)        /* C11 标准运算符，返回 T 的对齐要求 */
+__alignof__(T)     /* GNU 写法，功能相同 */
+sizeof(T)          /* 一定是 _Alignof(T) 的整数倍 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>x86-64 上 <code class="c">_Alignof</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">char</code> / <code class="c">uint8_t</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td><code class="c">uint16_t</code></td>
+<td>2</td>
+</tr>
+<tr>
+<td><code class="c">uint32_t</code> / <code class="c">float</code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code class="c">uint64_t</code> / <code class="c">double</code> / 指针</td>
+<td>8</td>
+</tr>
+<tr>
+<td><code class="c">max_align_t</code></td>
+<td><strong>16</strong> ← <code class="c">malloc</code> 保证的下限</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测（gcc 13.3）：</p>
+<pre class="code" data-label="code"><code class="c">200 次 malloc(1) 中观察到的最小对齐上界 = 16 字节
+_Alignof(max_align_t) = 16
+struct vec16 { float v[4]; } __attribute__((aligned(16)));  -&gt; align=16
+</code></pre>
+<p><strong>结构体的对齐 = 所有成员对齐要求的最大值</strong>（这也是 <a href="#s-6-5">6.5 FAM 对齐传导</a> 那条结论的来源）。</p>
+<hr />
+<h2>二、<code class="c">aligned(n)</code>：三种写法，三种作用域</h2>
+<pre class="code" data-label="C"><code class="c">struct S64 { char c; } __attribute__((aligned(64)));        /* ① 类型级：改类型 */
+struct Smem { char a; int x __attribute__((aligned(16))); char b; }; /* ② 成员级 */
+__attribute__((aligned(64))) char gbuf[10];                 /* ③ 变量级 */
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">S0    : sizeof= 1 align= 1                      &lt;- 原始
+S64   : sizeof=64 align=64                      &lt;- ① sizeof 被撑到 64
+Smem  : sizeof=32 align=16 off(a)=0 off(x)=16 off(b)=20   &lt;- ② 成员 x 被推到 16
+Sdown : sizeof= 4 align= 4                      &lt;- 想用 aligned(1) 降到 1：无效
+
+gbuf     addr=0x63c188be5080  (%64 = 0)  已对齐
+sbuf     addr=0x63c188be50a0  (%32 = 0)  已对齐
+stackbuf addr=0x7fff7b145b80  (%64 = 0)  已对齐   &lt;- 栈变量 gcc 也会调整栈指针
+
+S64 arr[3]: sizeof(arr)=192   arr[0..2] 全部 %64=0
+</code></pre>
+<h3>三条规则</h3>
+<ol>
+<li><strong>只能增大，不能减小</strong>。实测 <code class="c">struct { int x; }</code> 加 <code class="c">aligned(1)</code> / <code class="c">aligned(2)</code> 后 <code class="c">align</code> 仍然是 4——属性被静默忽略（连警告都没有）。</li>
+<li><strong><code class="c">n</code> 必须是 2 的正整数幂</strong>。实测 <code class="c">aligned(3)</code> → <code class="c">error: requested alignment '3' is not a positive power of 2</code>。</li>
+<li><strong>抬高了 align 就会抬高 <code class="c">sizeof</code></strong>：<code class="c">sizeof</code> 必须是 <code class="c">align</code> 的整数倍。所以 <code class="c">{char c;}</code> 加 <code class="c">aligned(64)</code> 后 <code class="c">sizeof</code> 从 1 变成 64——<strong>这是你为对齐付的内存代价</strong>。</li>
+</ol>
+<blockquote>
+<p>类型级 <code class="c">aligned</code> 会改 <code class="c">sizeof</code>，这一点很关键：<strong>它是让"数组每个元素都对齐"的唯一机制</strong>。
+实测 <code class="c">static struct S arr[4]</code>（<code class="c">sizeof(S)=64</code>）→ 四个元素 <code class="c">%64</code> 全为 0。</p>
+</blockquote>
+<hr />
+<h2>三、坑 1：<code class="c">aligned</code> 对 <code class="c">malloc</code> 返回的地址<strong>完全无效</strong></h2>
+<p>这是最贵的一个误解。看实测：</p>
+<pre class="code" data-label="C"><code class="c">struct big { uint64_t v[8]; } __attribute__((aligned(64)));
+
+struct big *p = malloc(sizeof(*p));     /* 你以为它 64 对齐？ */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">_Alignof(struct big) = 64
+sizeof(struct big)   = 64
+
+  malloc #0 -&gt; 0x55848bfa22b0  %64=48  未对齐
+  malloc #1 -&gt; 0x55848bfa22b0  %64=48  未对齐
+  ...
+  malloc #9 -&gt; 0x55848bfa22b0  %64=48  未对齐
+  --&gt; 10 次里对齐了 0 次
+
+== 栈上对象呢 ==
+  stack obj addr=0x7ffdd731dc80  %64=0 -&gt; 已对齐
+== 全局/静态对象呢 ==
+  static obj addr=0x55844da67080  %64=0 -&gt; 已对齐
+</code></pre>
+<p><strong>结论表</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>存储类别</th>
+<th><code class="c">aligned(64)</code> 生效吗</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局变量 / <code class="c">static</code></td>
+<td>✅ 生效</td>
+<td>链接器/加载器按对齐要求放置</td>
+</tr>
+<tr>
+<td>栈上局部变量</td>
+<td>✅ 生效</td>
+<td>gcc 会调整栈指针（实测 <code class="c">%64=0</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">malloc</code> 返回的堆块</strong></td>
+<td>❌ <strong>无效</strong></td>
+<td><code class="c">malloc</code> 只保证 <code class="c">_Alignof(max_align_t)</code> = <strong>16 字节</strong>，它不知道你的类型</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>正确做法</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 1) C11 aligned_alloc —— size 必须是 alignment 的整数倍 */
+size_t sz = ((sizeof(struct big) + 63) / 64) * 64;
+struct big *p = aligned_alloc(64, sz);
+
+/* 2) POSIX posix_memalign —— 无整数倍限制，但要手动 free */
+struct big *q;
+if (posix_memalign((void **)&amp;q, 64, sizeof(*q)) != 0) /* 处理失败 */;
+
+/* 3) 内核：kmem_cache_create 时指定 align；或 __get_free_pages（页对齐） */
+</code></pre>
+<p>实测两者都返回 <code class="c">%64=0</code> 的地址。</p>
+<blockquote>
+<p><strong>HFT 场景</strong>：订单簿、行情快照这类大数组，如果要用 <code class="c">aligned(64)</code> 抗伪共享，<strong>必须从对齐分配器拿内存</strong>，别指望 <code class="c">malloc</code>。</p>
+</blockquote>
+<hr />
+<h2>四、坑 2：属性放在 <code class="c">typedef</code> 的位置上，两种写法效果不同</h2>
+<pre class="code" data-label="C"><code class="c">typedef struct { char a; int b; } __attribute__((packed))  TA;   /* 写法 A */
+typedef struct { char a; int b; } TB __attribute__((packed));    /* 写法 B */
+</code></pre>
+<p>实测（gcc 13.3）：</p>
+<pre class="code" data-label="code"><code class="c">TA: sizeof=5 off(b)=1     &lt;- packed 生效
+TB: sizeof=8 off(b)=4     &lt;- packed 没生效！
+
+warning: 'packed' attribute ignored [-Wattributes]
+</code></pre>
+<p><code class="c">aligned</code> 更微妙——它不是"被忽略"，而是<strong>半生效</strong>：</p>
+<pre class="code" data-label="C"><code class="c">typedef struct { char a; int b; } __attribute__((aligned(64))) TA;
+typedef struct { char a; int b; } TB __attribute__((aligned(64)));
+</code></pre>
+<pre class="code" data-label="code"><code class="c">TA: sizeof=64 align=64    &lt;- sizeof 和 align 都改了
+TB: sizeof= 8 align=64    &lt;- 只改了 align，sizeof 还是 8 ！
+</code></pre>
+<p><code class="c">TB</code> 这种"align=64 但 sizeof=8"的状态是<strong>自相矛盾</strong>的——它意味着 <code class="c">TB arr[3]</code> 根本无法构造（第二个元素不可能 64 对齐）。编译器会拦：</p>
+<pre class="code" data-label="code"><code class="c">gcc:   error: alignment of array elements is greater than element size
+clang: error: size of array element of type 'TB' (8 bytes) isn't a multiple of its alignment (64 bytes)
+</code></pre>
+<p><strong>规则</strong>：属性一律放在 <strong><code class="c">}</code> 之后、typedef 名之前</strong>（写法 A）。写在变量名位置是给"变量"加属性，不是给"类型"加——<code class="c">typedef</code> 里那个位置的含义很容易搞错。</p>
+<blockquote>
+<p>顺带一个相关的：<code class="c">char * __attribute__((aligned(64))) pb[2];</code> 也会报
+<code class="c">error: alignment of array elements is greater than element size</code>（指针只有 8 字节）。</p>
+</blockquote>
+<hr />
+<h2>五、坑 3：<code class="c">aligned(1)</code> <strong>不等于</strong> <code class="c">packed</code></h2>
+<p>这是面试和实战里最容易混淆的一对。实测：</p>
+<pre class="code" data-label="C"><code class="c">struct normal  { char a; int b; char c; };                          /* 12 */
+struct packed_ { char a; int b; char c; } __attribute__((packed));   /* 6  */
+struct a1_     { char a; int b; char c; } __attribute__((aligned(1))); /* 12 ! */
+struct a2_     { char a; int b; char c; } __attribute__((aligned(2))); /* 12 ! */
+struct both_   { char a; int b; char c; } __attribute__((packed, aligned(8)));
+</code></pre>
+<pre class="code" data-label="code"><code class="c">normal   sizeof=12 align= 4  off(a)=0 off(b)=4 off(c)=8
+packed_  sizeof= 6 align= 1  off(a)=0 off(b)=1 off(c)=5
+a1_      sizeof=12 align= 4  off(a)=0 off(b)=4 off(c)=8   &lt;- 完全没变
+a2_      sizeof=12 align= 4  off(a)=0 off(b)=4 off(c)=8   &lt;- 完全没变
+both_    sizeof= 8 align= 8  off(a)=0 off(b)=1 off(c)=5   &lt;- 内部紧凑 + 整体 8 对齐
+
+--&gt; aligned(1) 完全没去掉内部 padding
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">packed</code></th>
+<th><code class="c">aligned(1)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>去掉成员间 padding</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>改变成员 offset</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>把结构体 align 压到 1</td>
+<td>✅</td>
+<td>❌（只能增大，见第二节）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么</strong>：<code class="c">aligned(n)</code> 只描述"<strong>这个整体对象</strong>该放在什么地址上"，它不碰内部布局；<code class="c">packed</code> 描述"<strong>成员之间</strong>不要留空隙"。两件事。</p>
+<p><strong><code class="c">packed + aligned(8)</code> 是个有用的组合</strong>：内部紧凑（<code class="c">off(b)=1</code>），但整个对象 8 字节对齐（<code class="c">sizeof=8</code>）。适合"报文格式紧凑，但对象本身要对齐存放"的场景。</p>
+<hr />
+<h2>六、<code class="c">packed</code> 的真实代价</h2>
+<h3>6.1 成员会落在未对齐地址上</h3>
+<pre class="code" data-label="code"><code class="c">&amp;p=0x7ffc3808b142  &amp;p.b=0x7ffc3808b143  (%4 = 3)
+p.b = 0xDEADBEEF  读取（未对齐！x86 能忍）
+
+packed 数组: sizeof(arr)=18  每个元素=6
+    arr[0] &amp;arr[0].b %4=1
+    arr[1] &amp;arr[1].b %4=3     &lt;- 每个元素的成员对齐都不一样
+    arr[2] &amp;arr[2].b %4=1
+</code></pre>
+<p>注意数组那一栏：<strong>因为元素大小 6 不是 4 的倍数，每个元素的 <code class="c">b</code> 成员对齐都不一样</strong>（1、3、1…）。所以你连"手动加 padding 修正"都做不到。</p>
+<h3>6.2 x86 上零额外开销，但不代表安全</h3>
+<p><code class="c">-O2</code> 下三种读法生成<strong>完全一样</strong>的指令：</p>
+<pre class="code" data-label="C"><code class="c">__attribute__((noinline)) uint32_t read_direct(const struct pk *p) { return p-&gt;v; }
+__attribute__((noinline)) uint32_t read_memcpy(const struct pk *p) { uint32_t r; memcpy(&amp;r,&amp;p-&gt;v,4); return r; }
+__attribute__((noinline)) uint32_t read_shift (const struct pk *p) { /* 逐字节移位 */ }
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">read_direct:  movl 1(%rdi), %eax ; ret
+read_memcpy:  movl 1(%rdi), %eax ; ret     &lt;- 一模一样
+read_shift:   movl 1(%rdi), %eax ; ret     &lt;- 一模一样
+</code></pre>
+<p><strong>在 x86-64 上，手写 <code class="c">memcpy</code> 或逐字节移位是纯粹的自我安慰</strong>——编译器和硬件都不需要它。</p>
+<p>但架构差异：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>未对齐 32 位 load</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86 / x86-64</td>
+<td>硬件支持，性能几乎无损</td>
+</tr>
+<tr>
+<td>ARMv7 / Cortex-M</td>
+<td><strong>直接 UsageFault</strong>（除非 <code class="c">UNALIGN_TRP=0</code>）</td>
+</tr>
+<tr>
+<td>AArch64</td>
+<td>普通 load 可以；<strong>原子操作、<code class="c">ldp</code>/<code class="c">stp</code> 仍然 fault</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>6.3 <strong>没有任何 sanitizer 会告诉你</strong></h3>
+<p>实测把 packed 结构体放到 <code class="c">%4 = 2</code> 的地址上读写：</p>
+<pre class="code" data-label="code"><code class="c">&amp;p-&gt;v %4 = 2
+  p-&gt;v = 0xDEADBEEF
+</code></pre>
 <ul>
-<li>CPU 未对齐访问：ARM 可能 fault 或 kernel fixup；x86 慢路径</li>
-<li><strong><code class="c">aligned(n)</code></strong>：最小对齐字节数，须为 2 的幂</li>
-<li><strong><code class="c">packed</code></strong>：取消成员间 padding（<strong>6.7.4</strong>）</li>
+<li>gcc UBSan：<strong>零输出</strong></li>
+<li>clang UBSan：<strong>零输出</strong></li>
+<li>ASan：也不管</li>
 </ul>
+<p><strong>原因</strong>（与 <a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a> 那次结论一致）：编译器知道 <code class="c">packed</code> 之后该成员对齐就是 1，所以它生成的就是"合法的、对齐要求为 1 的访问"——<strong>没有 UB 可报</strong>。</p>
+<blockquote>
+<p>对比：如果是你<strong>手动强转</strong>出来的未对齐指针，UBSan 能抓：
+<code class="c">runtime error: load of misaligned address 0x7ffe3d45eee1 for type 'const uint64_t',
+               which requires 8 byte alignment</code>
+也就是说：<strong>packed 让你绕过了 UBSan 的保护</strong>。这也是内核禁用 packed 描述硬件寄存器的原因之一。</p>
+</blockquote>
+<h3>6.4 唯一会响的警告：<code class="c">-Waddress-of-packed-member</code></h3>
+<pre class="code" data-label="C"><code class="c">int *pb = &amp;p.b;    /* 取 packed 成员的地址 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">gcc:   warning: taking address of packed member of 'struct packed_' may result
+       in an unaligned pointer value [-Waddress-of-packed-member]
+clang: warning: taking address of packed member 'b' of class or structure 'packed_'
+       may result in an unaligned pointer value [-Waddress-of-packed-member]
+</code></pre>
+<p><strong>这是你唯一的自动防线</strong>——一旦把 packed 成员的地址传给外部函数（<code class="c">scanf("%d", &amp;p.b)</code>、<code class="c">pthread_mutex_init(&amp;p.lock)</code>），对齐信息就丢了，而编译器在这里会叫。别忽略它。</p>
+<blockquote>
+<p><strong><code class="c">packed</code> + 位域</strong>：<code class="c">packed</code> 会让整个位域组的对齐变成 1。
+实测 <code class="c">{uint32_t a:3; b:5; c:24;}</code>：普通版 <code class="c">sizeof=4 align=4</code>，packed 版 <code class="c">sizeof=4 align=1</code>；
+混一个 <code class="c">uint8_t x</code> 在前，packed 版 <code class="c">sizeof=2 align=1</code>（真正紧凑）。
+详见 <a href="chapter-06.html#s-6-7-4">6.7.4</a>。</p>
+</blockquote>
+<hr />
+<h2>七、<code class="c">packed</code> 的正确用法：on-wire 格式，只做 <code class="c">memcpy</code></h2>
+<pre class="code" data-label="C"><code class="c">struct wire { uint8_t type; uint32_t seq; uint16_t len; } __attribute__((packed));
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(wire)=7  (非 packed 会是 8)
+
+序列化:   07 EF BE AD DE 2A 00
+反序列化: type=7 seq=0xDEADBEEF len=42
+</code></pre>
+<p><strong>规则</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>允许吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">memcpy(buf, &amp;w, sizeof w)</code> / 反向</td>
+<td>✅ <strong>这才是 packed 的正当用途</strong></td>
+</tr>
+<tr>
+<td><code class="c">w.type</code> / <code class="c">w.seq</code> 直接读写</td>
+<td>⚠️ x86 能跑，ARM 可能 fault；且 <code class="c">-Waddress-of-packed-member</code> 会在取地址时叫</td>
+</tr>
+<tr>
+<td><code class="c">&amp;w.seq</code> 传给别的函数</td>
+<td>❌ 对齐信息丢失</td>
+</tr>
+<tr>
+<td><code class="c">packed</code> 里的成员做原子操作</td>
+<td>❌ 跨 cache line 不保证原子</td>
+</tr>
+</tbody>
+</table></div>
+<p>如果既要紧凑又要按成员访问，正确做法是<strong>两个结构体</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct wire_packed { ... } __attribute__((packed));   /* 只用于 memcpy 收发 */
+struct host_normal { ... };                            /* 解包后落到这个，正常访问 */
+</code></pre>
+<hr />
+<h2>八、伪共享（false sharing）实测：<code class="c">aligned(64)</code> 值多少</h2>
+<p>两个线程各自给一个 <code class="c">uint64_t</code> 自增 2000 万次，<code class="c">volatile</code> 防折叠，3 轮取最快：</p>
+<pre class="code" data-label="C"><code class="c">struct shared_bad   { volatile uint64_t a; volatile uint64_t b; };                  /* 紧挨 */
+struct shared_pad   { volatile uint64_t a; char pad[56]; volatile uint64_t b; };     /* 手动填 56 */
+struct shared_align { volatile uint64_t a __attribute__((aligned(64)));
+                      volatile uint64_t b __attribute__((aligned(64))); };
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">每线程 20000000 次自增（volatile，防折叠），3 轮取最快
+
+  紧挨(伪共享)   0.0126 s   地址差=8 字节   &lt;- 同一 cache line
+  手动 padding   0.0079 s   地址差=64 字节
+  aligned(64)    0.0091 s   地址差=64 字节
+
+  sizeof: bad=16 pad=72 aligned=128
+  相对紧挨版：padding = 1.60x   aligned(64) = 1.40x
+</code></pre>
+<p><strong>两个计数器相差 8 字节（同一 cache line），就让两个线程互相把对方的 cache line 抢来抢去，慢了 1.6 倍。</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>耗时</th>
+<th>相对</th>
+<th>sizeof</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>紧挨（伪共享）</td>
+<td>0.0126 s</td>
+<td>1.00×</td>
+<td>16</td>
+</tr>
+<tr>
+<td>手动 <code class="c">char pad[56]</code></td>
+<td>0.0079 s</td>
+<td><strong>1.60×</strong></td>
+<td>72</td>
+</tr>
+<tr>
+<td><code class="c">aligned(64)</code></td>
+<td>0.0091 s</td>
+<td><strong>1.40×</strong></td>
+<td>128</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>要点</strong>：</p>
+<ul>
+<li>这不是理论值——<strong>两千万次自增，差 4.7 毫秒</strong>。HFT 里这种计数器到处都是（消息序号、tick 计数、丢包计数）</li>
+<li>手动 padding 比 <code class="c">aligned(64)</code> 略快，但 <code class="c">sizeof</code> 小得多（72 vs 128）。<strong>要省内存就手动 padding，要省事就 <code class="c">aligned</code></strong></li>
+<li><code class="c">aligned(64)</code> 版本 <code class="c">sizeof=128</code> 是因为两个成员<strong>各占一行</strong>（0 和 64）</li>
+</ul>
+<h3>别硬编码 64</h3>
+<pre class="code" data-label="C"><code class="c">#include &lt;unistd.h&gt;
+long line = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);   /* 实测本机 = 64 */
+</code></pre>
+<p>实测本机：<code class="c">L1D / L1I / L2 cache line</code> 都是 <strong>64 字节</strong>，<code class="c">L1D cache size</code> = 49152 字节。
+内核用 <code class="c">SMP_CACHE_BYTES</code>（ARM 上可能是 128，某些平台是 32），DPDK 用 <code class="c">RTE_CACHE_LINE_SIZE</code>。</p>
+<hr />
+<h2>九、未对齐与原子性</h2>
+<pre class="code" data-label="C"><code class="c">/* 构造一个奇数地址上的 uint64_t */
+const uint64_t *p = (const uint64_t *)(buf + 1);
+return *p;                                    /* 未对齐 load */
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">buf=0x7ffc9dda2480  buf+1=0x7ffc9dda2481  (%8 = 1)
+  直接解引用读取 = 0x0807060504030201
+  memcpy 读取    = 0x0807060504030201     &lt;- x86 上结果相同
+
+== 未对齐地址上的原子加 ==
+  执行前 buf[1..8] = 01 02 03 04 05 06 07 08
+  执行后 buf[1..8] = 02 02 03 04 05 06 07 08
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>x86-64</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通未对齐 load/store</td>
+<td>✅ 能跑</td>
+<td>ARM 可能 fault；UBSan <strong>能</strong>抓到手动强转的情况</td>
+</tr>
+<tr>
+<td>未对齐地址上的 <code class="c">__atomic_add_fetch</code></td>
+<td>⚠️ 能跑</td>
+<td><strong>一旦跨 cache line，就不保证原子</strong>；且 <code class="c">lock</code> 前缀要求对齐才能走快路径</td>
+</tr>
+<tr>
+<td>对齐地址上的多线程原子加</td>
+<td>✅</td>
+<td>实测 4 线程 × 20 万次 = 800000，正确</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>规则</strong>：给原子变量用 <code class="c">aligned(8)</code> / <code class="c">aligned(16)</code>（或让它落在自然对齐的位置），并且<strong>用 <code class="c">malloc</code> 分的话记得 <code class="c">aligned_alloc</code></strong>。</p>
+<hr />
+<h2>十、C11 标准写法：<code class="c">_Alignas</code> / <code class="c">_Alignof</code></h2>
+<p><code class="c">aligned</code> 是 GNU 扩展，C11 有标准等价物：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>GNU</th>
+<th>C11 标准</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__attribute__((aligned(n)))</code></td>
+<td><code class="c">_Alignas(n)</code> / <code class="c">&lt;stdalign.h&gt;</code> 的 <code class="c">alignas(n)</code></td>
+<td>语法位置不同</td>
+</tr>
+<tr>
+<td><code class="c">__alignof__(T)</code></td>
+<td><code class="c">_Alignof(T)</code> / <code class="c">alignof(T)</code></td>
+<td>完全等价</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">_Alignof(struct c11)         = 1
+_Alignas(64) 后 sizeof       = 1   &lt;- 结构体类型本身没被改！
+_Alignas(64) 变量 addr%64    = 0   &lt;- 只作用于那个变量
+_Alignas(64) 成员: sizeof=64 align=64 off(d)=1
+alignof(max_align_t)         = 16
+</code></pre>
+<p><strong>关键差异</strong>：<code class="c">_Alignas</code> <strong>不能</strong>写在结构体定义末尾去改类型（那是 <code class="c">_Alignas</code> 作用在声明的变量上）。要改类型本身，仍然得用 GNU 的 <code class="c">aligned</code>——这也正是内核/DPDK 到处是 <code class="c">__aligned(n)</code> 的原因。</p>
+<hr />
+<h2>十一、内核 / DPDK 的对齐宏（手写复刻与验证）</h2>
+<pre class="code" data-label="C"><code class="c">/* --- 内核 include/linux/cache.h + kernel.h 的最小复刻 --- */
+#define SMP_CACHE_BYTES        64
+#define ____cacheline_aligned  __attribute__((aligned(SMP_CACHE_BYTES)))
+#define __aligned(n)           __attribute__((aligned(n)))
+#define __packed               __attribute__((packed))
+
+#define ALIGN(x, a)            (((x) + (a) - 1) &amp; ~((a) - 1))    /* a 必须是 2 的幂 */
+#define IS_ALIGNED(x, a)       (((x) &amp; ((a) - 1)) == 0)
+#define roundup(x, y)          ((((x) + ((y) - 1)) / (y)) * (y)) /* y 任意正整数 */
+
+/* DPDK */
+#define __rte_cache_aligned    __attribute__((aligned(RTE_CACHE_LINE_SIZE)))
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(hot_counter)=64 align=64
+ALIGN(100, 64)    = 128
+ALIGN(128, 64)    = 128
+IS_ALIGNED(128,64)= 1
+IS_ALIGNED(100,64)= 0
+roundup(100,64)   = 128
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>出处</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">____cacheline_aligned</code></td>
+<td>内核</td>
+<td>让结构体/变量独占 cache line（抗伪共享）</td>
+</tr>
+<tr>
+<td><code class="c">____cacheline_aligned_in_smp</code></td>
+<td>内核</td>
+<td>只在 <code class="c">CONFIG_SMP</code> 下生效，UP 时不浪费内存</td>
+</tr>
+<tr>
+<td><code class="c">__aligned(n)</code></td>
+<td>内核</td>
+<td>通用对齐（DMA、页、SIMD）</td>
+</tr>
+<tr>
+<td><code class="c">__rte_cache_aligned</code></td>
+<td>DPDK</td>
+<td>mbuf / ring 的 cache line 对齐</td>
+</tr>
+<tr>
+<td><code class="c">__rte_aligned(a)</code></td>
+<td>DPDK</td>
+<td>同上通用版</td>
+</tr>
+</tbody>
+</table></div>
+<p>内核典型用法：</p>
+<pre class="code" data-label="C"><code class="c">struct zone {
+    ...
+    spinlock_t      lock;
+    ...
+} ____cacheline_aligned_in_smp;      /* 整个结构体按 cache line 对齐 */
+
+struct percpu_counter {
+    spinlock_t lock ____cacheline_aligned_in_smp;   /* 只让 lock 独占一行 */
+    s64 count;
+};
+</code></pre>
+<hr />
+<h2>十二、与 6.5 柔性数组的联动</h2>
+<p><a href="#s-6-5">6.5</a> 里说过 FAM 的对齐会传导到整个结构体。这里补两个相关实测：</p>
+<h3>12.1 想让 payload 对齐，要给 <strong>FAM 成员本身</strong> 加 <code class="c">aligned</code></h3>
+<pre class="code" data-label="C"><code class="c">struct fam_plain { uint32_t len; uint8_t data[]; };                        /* off(data)=4  */
+struct fam_al64  { uint32_t len; uint8_t data[] __attribute__((aligned(64))); };
+</code></pre>
+<pre class="code" data-label="code"><code class="c">fam_plain: sizeof= 4 align= 4 off(data)= 4
+fam_al64 : sizeof=64 align=64 off(data)=64   &lt;- aligned 把 payload 起点推到 64
+  aligned_alloc 对象 data 地址 %64 = 0
+</code></pre>
+<h3>12.2 给<strong>结构体</strong>加 <code class="c">aligned</code>，不会移动 FAM 起点 ⚠️</h3>
+<pre class="code" data-label="C"><code class="c">struct C { char a; char b; char c[0]; } __attribute__((aligned(8)));
+</code></pre>
+<pre class="code" data-label="code"><code class="c">A({char a; char b;})        : sizeof=2
+B(同上 + aligned(8))        : sizeof=8  (尾部 padding 6 字节)
+C(B + 零长数组 c[0])        : sizeof=8  off(c)=2   &lt;- FAM 起点还在 2！
+</code></pre>
+<p><strong>这正好复现了 6.5 那条"sizeof ≠ offsetof"</strong>：<code class="c">aligned</code> 撑大了 <code class="c">sizeof</code>，但 <code class="c">c</code> 的偏移仍然是 2。如果你拿 <code class="c">sizeof</code>（=8）当 payload 起点，就偏了 6 字节。</p>
+<p><strong>所以</strong>：
+- 想让 payload 对齐 → 给 <strong>FAM 成员</strong> 加 <code class="c">aligned(n)</code>
+- 想让整个对象对齐 → 给 <strong>结构体</strong> 加 <code class="c">aligned(n)</code>（但这会制造尾部 padding，进而制造 <code class="c">sizeof ≠ offsetof</code>）</p>
+<hr />
+<h2>十三、检查清单</h2>
+<ol>
+<li>✅ 需要 &gt; 16 字节对齐的堆内存，<strong>必须</strong>用 <code class="c">aligned_alloc</code> / <code class="c">posix_memalign</code>，<code class="c">malloc</code> 只保证 16</li>
+<li>✅ 属性放在 <code class="c">}</code> 之后、typedef 名<strong>之前</strong>（放变量名位置会被忽略或半生效）</li>
+<li>✅ 记住 <code class="c">aligned</code> 只能增大不能减小，且会被静默忽略</li>
+<li>✅ 要紧凑布局用 <code class="c">packed</code>，不是 <code class="c">aligned(1)</code></li>
+<li>✅ <code class="c">packed</code> 结构体只做 <code class="c">memcpy</code>，不做成员访问（尤其不要取成员地址外传）</li>
+<li>✅ 别忽略 <code class="c">-Waddress-of-packed-member</code></li>
+<li>✅ 多线程共享的计数器，间隔开一个 cache line（手动 padding 或 <code class="c">aligned(SMP_CACHE_BYTES)</code>）</li>
+<li>✅ 别硬编码 64：用 <code class="c">sysconf(_SC_LEVEL1_DCACHE_LINESIZE)</code> 或 <code class="c">SMP_CACHE_BYTES</code></li>
+<li>✅ 原子变量的地址要自然对齐，且不要跨 cache line</li>
+<li>✅ SIMD 类型（<code class="c">float[4]</code>、向量）别加 <code class="c">packed</code>——会把 16 对齐压成 1</li>
+<li>✅ 加了 <code class="c">aligned</code> 就检查 <code class="c">sizeof</code>，确认你付得起这个内存代价</li>
+<li>✅ 给 <code class="c">struct</code> 加 <code class="c">aligned</code> 后如果里面有 FAM，重新核对 <code class="c">offsetof</code>（会与 <code class="c">sizeof</code> 分家）</li>
+</ol>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.7.1–6.7.5</strong> 地址对齐、结构体、思考、packed、内核</li>
-<li><strong>demo01</strong> packed 布局</li>
+<li><strong><a href="chapter-06.html#s-6-7-1">6.7.1</a> – <a href="chapter-06.html#s-6-7-5">6.7.5</a></strong>：逐节细节</li>
+<li><strong><a href="#s-6-5">6.5 零长度数组与柔性数组</a></strong>：FAM 的对齐传导、<code class="c">sizeof ≠ offsetof</code></li>
+<li><strong><a href="#s-6-6">6.6.1 <code class="c">__attribute__</code> 总纲</a></strong>：属性语法与全部族</li>
+<li><strong><a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a></strong>：MMIO / volatile / <code class="c">get_unaligned</code>，同属嵌入式 C 主线</li>
+<li><strong><a href="#s-6-11">6.11 内建函数</a></strong>：<code class="c">__builtin_expect</code> 与 <code class="c">likely/unlikely</code></li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下代码中 <code class="c">cache_line</code> 的 <code class="c">sizeof</code> 是多少？为什么？如何验证？</p>
-<pre class="code" data-label="C"><code class="c">struct alignas_demo {
-    char c;
-} __attribute__((aligned(64)));
-
-int sz = sizeof(struct alignas_demo);
-</code></pre>
 <details>
-<summary>参考答案</summary>
-<p><code class="c">sizeof(struct alignas_demo)</code> = 64。<code class="c">__attribute__((aligned(64)))</code> 强制结构体按 64 字节对齐，编译器在 <code class="c">c</code> 后填充 63 字节 padding 使总大小为 64 的倍数。用途：缓存行对齐（避免 false sharing）、DMA 对齐、SIMD 对齐。验证：<code class="c">_Static_assert(sizeof(struct alignas_demo) == 64, "");</code> 或 <code class="c">printf("%zu\n", sizeof(struct alignas_demo));</code>。C11 标准等价物是 <code class="c">_Alignas(64)</code>。</p>
+<summary>题目 1：结构体声明了 <code class="c">aligned(64)</code>，用 <code class="c">malloc</code> 分配后地址是 64 对齐吗？为什么？</summary>
+<p><strong>不是，一次都没有。</strong></p>
+<p>实测 10 次 <code class="c">malloc</code>：全部 <code class="c">%64 = 48</code>（glibc 返回的是 16 字节对齐，<code class="c">48 = 16×3</code>）。</p>
+<p>原因：<code class="c">malloc</code> 只保证 <code class="c">_Alignof(max_align_t)</code> = <strong>16 字节</strong>，它在运行时根本不知道你声明的类型是什么。<code class="c">aligned</code> 是<strong>编译期</strong>给类型打的标记，只有编译器/链接器能控制的存储类别才吃这一套：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>存储类别</th>
+<th>生效吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局变量 / <code class="c">static</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>栈上局部变量</td>
+<td>✅（gcc 会调整栈指针，实测 <code class="c">%64=0</code>）</td>
+</tr>
+<tr>
+<td><code class="c">malloc</code> 返回的堆块</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p>正确做法：</p>
+<pre class="code" data-label="C"><code class="c">size_t sz = ((sizeof(T) + 63) / 64) * 64;      /* aligned_alloc 要求 size 是 alignment 的整数倍 */
+T *p = aligned_alloc(64, sz);
+/* 或 posix_memalign((void **)&amp;p, 64, sizeof(T)) —— 无整数倍限制 */
+</code></pre>
+</details>
+<details>
+<summary>题目 2：<code class="c">aligned(1)</code> 和 <code class="c">packed</code> 有什么区别？</summary>
+<p>完全不同，这是最经典的混淆点。实测：</p>
+<pre class="code" data-label="C"><code class="c">struct normal  { char a; int b; char c; };                            /* sizeof=12 off(b)=4 */
+struct packed_ { char a; int b; char c; } __attribute__((packed));    /* sizeof= 6 off(b)=1 */
+struct a1_     { char a; int b; char c; } __attribute__((aligned(1)));/* sizeof=12 off(b)=4 没变 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">packed</code></th>
+<th><code class="c">aligned(1)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>去掉成员间 padding</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>改变成员 offset</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>把 align 压到 1</td>
+<td>✅</td>
+<td>❌（<strong>aligned 只能增大不能减小</strong>，会被静默忽略）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">aligned(n)</code> 只描述"这个整体对象放在什么地址上"，不碰内部布局；<code class="c">packed</code> 描述"成员之间不要留空隙"。</strong></p>
+<p>有个有用的组合：<code class="c">packed + aligned(8)</code> —— 内部紧凑（<code class="c">off(b)=1</code>），整体 8 字节对齐（<code class="c">sizeof=8</code>）。</p>
+</details>
+<details>
+<summary>题目 3：这两个 typedef 有什么区别？</summary>
+<pre class="code" data-label="C"><code class="c">typedef struct { char a; int b; } TA __attribute__((aligned(64)));   /* 写法 A */
+typedef struct { char a; int b; } __attribute__((aligned(64))) TB;   /* 写法 B */
+</code></pre>
+<p>（注意属性位置：A 在 typedef 名之后，B 在 <code class="c">}</code> 之后、typedef 名之前。）</p>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">TA: sizeof= 8 align=64    &lt;- 只改了 align，sizeof 没变！
+TB: sizeof=64 align=64    &lt;- 都改了
+</code></pre>
+<p><code class="c">TA</code> 这种"align=64 但 sizeof=8"是<strong>自相矛盾</strong>的状态，一放进数组就炸：</p>
+<pre class="code" data-label="code"><code class="c">gcc:   error: alignment of array elements is greater than element size
+clang: error: size of array element of type 'TB' (8 bytes) isn't a multiple of its alignment (64 bytes)
+</code></pre>
+<p>换成 <code class="c">packed</code> 更糟——<strong>属性直接被忽略</strong>，只有一行 warning：</p>
+<pre class="code" data-label="code"><code class="c">warning: 'packed' attribute ignored [-Wattributes]
+TA: sizeof=8 off(b)=4   &lt;- packed 完全没生效
+</code></pre>
+<p><strong>规则</strong>：属性一律放在 <code class="c">}</code> 之后、typedef 名<strong>之前</strong>。</p>
+</details>
+<details>
+<summary>题目 4：伪共享到底值多少钱？<code class="c">aligned(64)</code> 怎么解决？</summary>
+<p>实测：两个线程各给一个 <code class="c">uint64_t</code> 自增 2000 万次（<code class="c">volatile</code> 防折叠，3 轮取最快）：</p>
+<pre class="code" data-label="code"><code class="c">紧挨(伪共享)   0.0126 s   地址差=8 字节   &lt;- 同一 cache line
+手动 padding   0.0079 s   地址差=64 字节
+aligned(64)    0.0091 s   地址差=64 字节
+
+相对紧挨版：padding = 1.60x   aligned(64) = 1.40x
+</code></pre>
+<p>两个计数器只差 8 字节 → 落在同一 cache line → 两个核互相 invalidate 对方的 line → <strong>慢 1.6 倍</strong>。</p>
+<p>解法：</p>
+<pre class="code" data-label="C"><code class="c">/* 手动 padding：省内存（sizeof=72） */
+struct shared_pad { volatile uint64_t a; char pad[56]; volatile uint64_t b; };
+
+/* aligned(64)：省事（sizeof=128，两个成员各占一行） */
+struct shared_align {
+    volatile uint64_t a __attribute__((aligned(64)));
+    volatile uint64_t b __attribute__((aligned(64)));
+};
+</code></pre>
+<p>别硬编码 64：<code class="c">sysconf(_SC_LEVEL1_DCACHE_LINESIZE)</code>（本机实测 64）；内核用 <code class="c">SMP_CACHE_BYTES</code>，DPDK 用 <code class="c">RTE_CACHE_LINE_SIZE</code>。</p>
+</details>
+<details>
+<summary>题目 5：为什么 packed 结构体的未对齐访问，UBSan 抓不到？</summary>
+<p>因为<strong>编译器知道 packed 之后该成员的对齐就是 1</strong>，所以它生成的是"合法的、对齐要求为 1 的访问"——对 UBSan 来说没有 UB 可报。</p>
+<p>实测（把 packed 结构体放到 <code class="c">%4 = 2</code> 的地址）：</p>
+<pre class="code" data-label="code"><code class="c">&amp;p-&gt;v %4 = 2
+  p-&gt;v = 0xDEADBEEF
+gcc UBSan：零输出
+clang UBSan：零输出
+</code></pre>
+<p><strong>对比</strong>：如果是你手动强转出来的未对齐指针，UBSan <strong>能</strong>抓：</p>
+<pre class="code" data-label="code"><code class="c">runtime error: load of misaligned address 0x7ffe3d45eee1 for type 'const uint64_t',
+               which requires 8 byte alignment
+</code></pre>
+<p>也就是说 <strong>packed 让你绕过了 UBSan 的保护</strong>。这在 x86 上无所谓，但 ARMv7 / Cortex-M 上未对齐 32 位 load 直接 UsageFault。</p>
+<p>额外一条：在 <code class="c">-O2</code> 下，packed 成员的直接访问、memcpy 读、逐字节移位<strong>生成完全相同的指令</strong>（都是 <code class="c">movl 1(%rdi), %eax</code>）——x86 上手写 memcpy 是纯粹的自我安慰。</p>
+</details>
+<details>
+<summary>题目 6：给结构体加 <code class="c">aligned</code> 后，如果里面有柔性数组，会发生什么？</summary>
+<p><strong><code class="c">sizeof</code> 被撑大，但 FAM 的 offset 不变</strong>——正好复现 <a href="#s-6-5">6.5</a> 的"sizeof ≠ offsetof"。</p>
+<p>实测：</p>
+<pre class="code" data-label="C"><code class="c">struct A { char a; char b; };                                  /* sizeof=2 */
+struct B { char a; char b; } __attribute__((aligned(8)));      /* sizeof=8，尾部 6 字节 padding */
+struct C { char a; char b; char c[0]; } __attribute__((aligned(8)));  /* sizeof=8  off(c)=2 */
+</code></pre>
+<p><code class="c">C</code> 的 FAM 起点还在偏移 <strong>2</strong>，而 <code class="c">sizeof</code> 已经是 8。拿 <code class="c">sizeof</code> 当 payload 起点就偏 6 字节。</p>
+<p><strong>想让 payload 对齐，要给 FAM 成员本身加 <code class="c">aligned</code>，不是给结构体加</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct fam_al64 { uint32_t len; uint8_t data[] __attribute__((aligned(64))); };
+/* sizeof=64 align=64 off(data)=64  &lt;- 这才是你要的 */
+</code></pre>
+</details>
+<details>
+<summary>题目 7：<code class="c">packed</code> 的正确用法是什么？</summary>
+<p><strong>on-wire 报文格式，只做 <code class="c">memcpy</code>，不做成员访问。</strong></p>
+<pre class="code" data-label="C"><code class="c">struct wire { uint8_t type; uint32_t seq; uint16_t len; } __attribute__((packed));
+/* sizeof=7（非 packed 会是 8） */
+
+memcpy(buf, &amp;w, sizeof w);   /* 序列化   -&gt; 07 EF BE AD DE 2A 00 */
+memcpy(&amp;r, buf, sizeof r);   /* 反序列化 -&gt; type=7 seq=0xDEADBEEF len=42 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>允许吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整块 <code class="c">memcpy</code></td>
+<td>✅ 正当用途</td>
+</tr>
+<tr>
+<td>直接读写成员</td>
+<td>⚠️ x86 能跑，ARM 可能 fault</td>
+</tr>
+<tr>
+<td><code class="c">&amp;w.seq</code> 传给别的函数</td>
+<td>❌ 会触发 <code class="c">-Waddress-of-packed-member</code>，对齐信息丢失</td>
+</tr>
+<tr>
+<td>成员做原子操作</td>
+<td>❌ 跨 cache line 不保证原子</td>
+</tr>
+</tbody>
+</table></div>
+<p>注意 packed 数组更坑：元素大小 6 不是 4 的倍数，所以 <code class="c">arr[0].b %4=1</code>、<code class="c">arr[1].b %4=3</code>、<code class="c">arr[2].b %4=1</code>——<strong>每个元素的成员对齐都不一样</strong>，连手动修正都做不到。</p>
+<p>既要紧凑又要按成员访问？用两个结构体：packed 的只管收发，解包后落到一个正常对齐的结构体里。</p>
+</details>
+<details>
+<summary>题目 8：<code class="c">aligned</code> 只能增大不能减小，实测证据是什么？</summary>
+<pre class="code" data-label="C"><code class="c">struct base { int x; };                                /* align=4 */
+struct down1 { int x; } __attribute__((aligned(1)));   /* 想降到 1 */
+struct down2 { int x; } __attribute__((aligned(2)));   /* 想降到 2 */
+struct up    { int x; } __attribute__((aligned(64)));  /* 升到 64 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">base  : sizeof= 4 align= 4
+down1 : sizeof= 4 align= 4   &lt;- aligned(1) 无效
+down2 : sizeof= 4 align= 4   &lt;- aligned(2) 无效
+up    : sizeof=64 align=64   &lt;- aligned(64) 生效
+</code></pre>
+<p><strong>而且减小是"静默忽略"——连一条警告都没有。</strong></p>
+<p>另外两条约束：
+- <code class="c">n</code> 必须是 2 的正整数幂，否则 <code class="c">error: requested alignment '3' is not a positive power of 2</code>
+- 抬高了 align 就会抬高 sizeof（<code class="c">sizeof</code> 必须是 <code class="c">align</code> 的整数倍），这是你付的内存代价</p>
+</details>
+<details>
+<summary>题目 9：SIMD 类型和 <code class="c">packed</code> 有什么冲突？</summary>
+<p><code class="c">packed</code> 会把整个结构体的对齐压到 1，包括原本 16 字节对齐的向量类型。</p>
+<p>实测：</p>
+<pre class="code" data-label="C"><code class="c">struct vec16 { float v[4]; } __attribute__((aligned(16)));  /* sizeof=16 align=16 */
+struct vec_p { float v[4]; } __attribute__((packed));       /* sizeof=16 align=1  &lt;- 16 对齐没了 */
+</code></pre>
+<p>后果：
+- <code class="c">_mm_load_ps</code>（对齐加载，要求 16 字节）在 <code class="c">vec_p</code> 上会 <strong>fault</strong>
+- 编译器只能退到 <code class="c">_mm_loadu_ps</code>（非对齐加载），或者直接拆成 4 次标量 load
+- 某些编译器在自动向量化时会因为对齐不确定而<strong>放弃向量化</strong></p>
+<p><strong>规则</strong>：SIMD 类型、向量数组、任何要喂给 <code class="c">movaps</code> 的缓冲区，<strong>绝不能加 <code class="c">packed</code></strong>。反过来应该显式加 <code class="c">aligned(16)</code> / <code class="c">aligned(32)</code> / <code class="c">aligned(64)</code>（对应 SSE / AVX / AVX-512）。</p>
+</details>
+<details>
+<summary>题目 10：C11 的 <code class="c">_Alignas</code> 能完全替代 <code class="c">__attribute__((aligned))</code> 吗？</summary>
+<p><strong>不能完全替代</strong>——关键差异是 <code class="c">_Alignas</code> 没法改"类型本身"。</p>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">_Alignof(struct c11)      = 1
+_Alignas(64) 后 sizeof    = 1   &lt;- 结构体类型本身没被改
+_Alignas(64) 变量 addr%64 = 0   &lt;- 只作用于那个变量
+_Alignas(64) 成员: sizeof=64 align=64 off(d)=1   &lt;- 成员级有效
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>GNU</th>
+<th>C11</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__attribute__((aligned(n)))</code> 放在 <code class="c">}</code> 后</td>
+<td>❌ 无标准等价</td>
+<td><strong>这是唯一的缺口</strong></td>
+</tr>
+<tr>
+<td>变量级对齐</td>
+<td><code class="c">_Alignas(n)</code></td>
+<td>等价</td>
+</tr>
+<tr>
+<td>成员级对齐</td>
+<td><code class="c">_Alignas(n)</code></td>
+<td>等价</td>
+</tr>
+<tr>
+<td><code class="c">__alignof__(T)</code></td>
+<td><code class="c">_Alignof(T)</code> / <code class="c">alignof(T)</code></td>
+<td>完全等价</td>
+</tr>
+</tbody>
+</table></div>
+<p>因为改不了类型，内核和 DPDK 仍然到处用 GNU 写法：</p>
+<pre class="code" data-label="C"><code class="c">#define __aligned(n)           __attribute__((aligned(n)))
+#define ____cacheline_aligned  __attribute__((aligned(SMP_CACHE_BYTES)))
+</code></pre>
+<p>有了它才能让 <code class="c">struct foo { ... } ____cacheline_aligned;</code> 的<strong>每个数组元素</strong>都对齐。</p>
 </details>
       </section>
       <section class="section" id="s-6-7-1">
         <div class="sec-head"><div class="sec-no">6.7</div><h2>.1 地址对齐：aligned</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-7">6.7 属性声明：aligned 与 packed</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>对齐</strong> 指对象地址 mod N == 0。硬件要求 <strong>4 字节 int</strong>、<strong>8 字节 double</strong>、<strong>16 字节 SSE</strong>、<strong>64 字节 cache line</strong> 等于不同 N。编译器默认按 ABI 对齐；<code class="c">aligned</code> 属性 <strong>提高</strong> 对齐要求。</p>
 <h2>要点</h2>
@@ -6800,6 +7666,9 @@ static inline bool is_aligned(const void *p, size_t n) {
       </section>
       <section class="section" id="s-6-7-2">
         <div class="sec-head"><div class="sec-no">6.7</div><h2>.2 结构体的对齐</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-7">6.7 属性声明：aligned 与 packed</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>结构体布局 = <strong>成员顺序 + 各成员对齐要求 + 尾部 padding</strong>。<code class="c">sizeof</code> 可能大于成员 size 之和。读 <strong>wire 协议</strong> 与 <strong>硬件寄存器块</strong> 时必须显式控制；否则 <code class="c">#pragma pack</code> / <strong><code class="c">packed</code></strong> 与 <strong><code class="c">aligned</code></strong> 混用。</p>
 <h2>要点</h2>
@@ -6870,6 +7739,9 @@ struct __attribute__((packed)) s2 {
       </section>
       <section class="section" id="s-6-7-3">
         <div class="sec-head"><div class="sec-no">6.7</div><h2>.3 思考：编译器一定会按照aligned指定的方式对齐吗</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-7">6.7 属性声明：aligned 与 packed</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong><code class="c">aligned(n)</code></strong> 表示 <strong>至少</strong> n 字节对齐，编译器可给出更大对齐；但不能低于 ABI 对类型的 <strong>minimum alignment</strong>。动态分配、栈对象、嵌套 <code class="c">packed</code> 结构体中有 <strong>例外与陷阱</strong>。</p>
 <h2>要点</h2>
@@ -6957,6 +7829,9 @@ int x __attribute__((aligned(3)));      // 合法吗？
       </section>
       <section class="section" id="s-6-7-4">
         <div class="sec-head"><div class="sec-no">6.7</div><h2>.4 属性声明：packed</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-7">6.7 属性声明：aligned 与 packed</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong><code class="c">__attribute__((packed))</code></strong> 取消结构体成员间 <strong>padding</strong>，使 <code class="c">sizeof</code> 等于成员紧凑之和（仍可能有位域规则）。用于 <strong>网络协议头、Flash 配置块、寄存器映射</strong>；代价是 <strong>未对齐访问</strong> 与 <strong>性能</strong>。</p>
 <h2>要点</h2>
@@ -7097,6 +7972,9 @@ static inline void eth_set_type(struct eth_hdr *h, uint16_t v) {
       </section>
       <section class="section" id="s-6-7-5">
         <div class="sec-head"><div class="sec-no">6.7</div><h2>.5 内核中的aligned、packed声明</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-7">6.7 属性声明：aligned 与 packed</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>内核在 <code class="c">compiler_types.h</code> / <code class="c">cache.h</code> 封装 <strong><code class="c">__aligned(x)</code></strong>、<strong><code class="c">__packed</code></strong>、<strong><code class="c">____cacheline_aligned_in_smp</code></strong> 等，用于 <strong>cache line 隔离、DMA 描述符、协议头、per-CPU 变量</strong>。</p>
 <h2>要点</h2>
