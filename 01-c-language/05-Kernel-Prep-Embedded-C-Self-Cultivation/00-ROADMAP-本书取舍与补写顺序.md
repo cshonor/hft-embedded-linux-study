@@ -76,9 +76,8 @@
 | ✅ | [6.6 属性声明 section](./ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | 37 KB | 已完成（第 20 批） |
 | ✅ | [6.4 typeof 与 container_of](./ch06-gnu-c-extensions/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | 28 KB | 已完成（第 21 批） |
 | ✅ | [10.8 嵌入式 C 开门：寄存器/位操作/屏障](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md) | 28 KB | 已完成（第 22 批，由 ch02 硬件内容改造而来） |
-| ▶ | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 1.7 KB | **下一批** |
-| 3 | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 1.7 KB | 与 6.4 配套（typeof + 语句表达式 = 内核宏两件套） |
-| 4 | [6.5 零长度数组](./ch06-gnu-c-extensions/6.5-zero-length-array/6.5-零长度数组.md) | 1.5 KB | 柔性数组、变长报文 |
+| ✅ | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 27 KB | 已完成（第 23 批）：自我初始化 UB、零开销、MMIO 双读事故 |
+| ▶ | [6.5 零长度数组](./ch06-gnu-c-extensions/6.5-zero-length-array/6.5-零长度数组.md) | 1.5 KB | **下一批**：柔性数组、变长报文 |
 | 5 | [6.7 aligned](./ch06-gnu-c-extensions/6.7-aligned/) | 19 KB/6 篇 | 与 cache line、DMA 对齐联动 |
 | 6 | [6.9 weak / alias](./ch06-gnu-c-extensions/6.9-weak/) | 16 KB/5 篇 | 驱动/SDK 的符号覆盖机制 |
 | 7 | [6.10 inline](./ch06-gnu-c-extensions/6.10-inline/) | 8 KB/6 篇 | 与 HFT 热点路径相关 |
