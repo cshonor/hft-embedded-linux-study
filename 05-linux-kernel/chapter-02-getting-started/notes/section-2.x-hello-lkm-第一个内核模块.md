@@ -58,7 +58,7 @@ module_init(hello_init);
 module_exit(hello_exit);
 ```
 
-- `static`：符号不对外导出（链接属性等同文件级 `static`，参考 [01-c-language/3.6.2 内部链接](../../../01-c-language/02-进阶-指针与内存/ch03-data/3.6-linkage/3.6.2-内部链接.md)）。内核模块里的"私有"就靠这个。
+- `static`：符号不对外导出（链接属性等同文件级 `static`，参考 [01-c-language/3.6.2 内部链接](../../../01-c-language/02-advanced-pointers-and-memory/ch03-data/3.6-linkage/3.6.2-内部链接.md)）。内核模块里的"私有"就靠这个。
 - `__init`：展开成 `__section(".init.text")`。加载完执行一次后，这段代码所在页可以释放回伙伴系统——模块 init 跑完就丢掉它，省内存。
 - `__exit`：展开成 `__section(".exit.text")`。**编进内核 built-in 时链接器整段丢掉**（built-in 永不卸载，exit 永不执行）；可卸载模块才保留它，`rmmod` 时调用。
 - `module_init` / `module_exit`：宏，把函数指针登记进模块的 `.modinfo` 段，insmod/rmmod 从这里找入口。

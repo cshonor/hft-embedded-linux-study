@@ -21,15 +21,15 @@
 
 | 目录 | 书 | 一句话 |
 |------|-----|--------|
-| [01-入门-语法与类型](./01-入门-语法与类型/) | 《C 程序设计语言》**K&R 第2版** | **= C89** 奠基（≠ C99/C11） |
-| [02-进阶-指针与内存](./02-进阶-指针与内存/) | 《C 和指针》· Kenneth Reek · *Pointers on C* | 指针 / 数组 / 内存模型（内核重中之重） |
-| [03-提高-声明与链接](./03-提高-声明与链接/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
-| [04-规范-现代C标准](./04-规范-现代C标准/) | 《Modern C》3rd · Gustedt（免费在线） | C99–C23 增量 + 内存模型/原子并发（标准 C 收官） |
-| [05-实战-嵌入式与内核](./05-实战-嵌入式与内核/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
-| [06-参考-陷阱与缺陷](./06-参考-陷阱与缺陷/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |
+| [01-basics-syntax-and-types](./01-basics-syntax-and-types/) | 《C 程序设计语言》**K&R 第2版** | **= C89** 奠基（≠ C99/C11） |
+| [02-advanced-pointers-and-memory](./02-advanced-pointers-and-memory/) | 《C 和指针》· Kenneth Reek · *Pointers on C* | 指针 / 数组 / 内存模型（内核重中之重） |
+| [03-expert-declarations-and-linking](./03-expert-declarations-and-linking/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
+| [04-modern-c-standards](./04-modern-c-standards/) | 《Modern C》3rd · Gustedt（免费在线） | C99–C23 增量 + 内存模型/原子并发（标准 C 收官） |
+| [05-embedded-kernel-practice](./05-embedded-kernel-practice/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
+| [06-reference-pitfalls](./06-reference-pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |
 | [code](./code/) | 配套示例 | 练习与索引 |
 
-> **纠正常见书名混淆：** `02-进阶-指针与内存` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
+> **纠正常见书名混淆：** `02-advanced-pointers-and-memory` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
 
 来源副本说明 → [README.external.md](./README.external.md)
 
@@ -76,7 +76,7 @@
 
 > **关键提醒**：别在 01–03 上磨太久。K&R + Reek 够你读懂指针和结构体，03 专家编程只读 ch05–ch07 即可。04 Modern C 补完 C99–C23 标准增量后，真正的分水岭是 **05（GNU C）** —— 标准书不讲、内核天天用的东西主要在这里补齐。03 的 ch05–ch07 与 05 的 ch06/ch08/ch10 已补"常见陷阱 + 自测题"段落，精读时可用。06 是工具书，遇到坑再翻。
 
-> **"其余五本书过时了吗"**（2026-08 讨论确定）：没有。内核主体仍是 GNU C89/C99，其余五本书教的是标准无关的思维（指针/内存模型/声明解析/陷阱）。真正过时的只是 K&R 个别 C89 写法（隐式 int、old-style 声明、`gets()`），逐条跳过清单和 C99–C23 增量见 [04-规范-现代C标准 · 00 差异速查](./04-规范-现代C标准/00-C89-to-C23-diff-and-reading-map.md)。**Modern C 已立册为第 4 本书**（挑读策略见其 [README](./04-规范-现代C标准/README.md)）。
+> **"其余五本书过时了吗"**（2026-08 讨论确定）：没有。内核主体仍是 GNU C89/C99，其余五本书教的是标准无关的思维（指针/内存模型/声明解析/陷阱）。真正过时的只是 K&R 个别 C89 写法（隐式 int、old-style 声明、`gets()`），逐条跳过清单和 C99–C23 增量见 [04-modern-c-standards · 00 差异速查](./04-modern-c-standards/00-C89-to-C23-diff-and-reading-map.md)。**Modern C 已立册为第 4 本书**（挑读策略见其 [README](./04-modern-c-standards/README.md)）。
 
 ### 学习进度
 
@@ -95,4 +95,4 @@
 |------|--------|------|
 | [01 CSAPP](../02-computer-systems/) | **指针、内存、GNU-C** | [19 Hennessy](../15-computer-architecture/) → [04–07](../05-linux-kernel/) → [08 MikanOS](../projects/P9-os-from-scratch/mikanos/) |
 
-**下一步：** 打开 **[01-入门-语法与类型](./01-入门-语法与类型/)**；若已过标准 C，直奔 **[05 · ch06 GNU C](05-实战-嵌入式与内核/01-ch1-gnu-c-basics/)** 再进 LKD。
+**下一步：** 打开 **[01-basics-syntax-and-types](./01-basics-syntax-and-types/)**；若已过标准 C，直奔 **[05 · ch06 GNU C](05-embedded-kernel-practice/01-ch1-gnu-c-basics/)** 再进 LKD。

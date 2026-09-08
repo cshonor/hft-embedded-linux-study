@@ -33,12 +33,12 @@ def _b(root, title, sub, group):
 
 BOOKS = [
     # ---- C 语言 ----
-    _b("01-c-language/01-入门-语法与类型", "入门 · 语法与类型", "K&R《The C Programming Language》· 8 章 + 3 附录精读", "c-lang"),
-    _b("01-c-language/02-进阶-指针与内存", "进阶 · 指针与内存", "Kenneth Reek《Pointers on C》· 指针与 C 精读", "c-lang"),
-    _b("01-c-language/03-提高-声明与链接", "提高 · 声明与链接", "van der Linden《Expert C Programming》· 深 C 语言", "c-lang"),
-    _b("01-c-language/04-规范-现代C标准", "规范 · 现代 C 标准", "Jens Gustedt《Modern C》· C99–C23 精读", "c-lang"),
-    _b("01-c-language/05-实战-嵌入式与内核", "实战 · 嵌入式与内核", "《嵌入式 C 语言自我修养》· 从编译链接到内核素养", "c-lang"),
-    _b("01-c-language/06-参考-陷阱与缺陷", "参考 · 陷阱与缺陷", "Koenig《C Traps and Pitfalls》· C 陷阱与缺陷", "c-lang"),
+    _b("01-c-language/01-basics-syntax-and-types", "入门 · 语法与类型", "K&R《The C Programming Language》· 8 章 + 3 附录精读", "c-lang"),
+    _b("01-c-language/02-advanced-pointers-and-memory", "进阶 · 指针与内存", "Kenneth Reek《Pointers on C》· 指针与 C 精读", "c-lang"),
+    _b("01-c-language/03-expert-declarations-and-linking", "提高 · 声明与链接", "van der Linden《Expert C Programming》· 深 C 语言", "c-lang"),
+    _b("01-c-language/04-modern-c-standards", "规范 · 现代 C 标准", "Jens Gustedt《Modern C》· C99–C23 精读", "c-lang"),
+    _b("01-c-language/05-embedded-kernel-practice", "实战 · 嵌入式与内核", "《嵌入式 C 语言自我修养》· 从编译链接到内核素养", "c-lang"),
+    _b("01-c-language/06-reference-pitfalls", "参考 · 陷阱与缺陷", "Koenig《C Traps and Pitfalls》· C 陷阱与缺陷", "c-lang"),
     # ---- 数字逻辑 · 体系结构 ----
     _b("00-digital-logic-cpu", "数字逻辑与 CPU", "Digital Design 实践笔记 · RPi", "digital"),
     _b("02-computer-systems", "Computer Systems", "CSAPP · 深入理解计算机系统", "digital"),

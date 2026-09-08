@@ -70,7 +70,7 @@ readelf -p .modinfo ixgbe.ko
 # parm=num_queues:Number of queues (uint)
 ```
 
-> **交叉引用：** ELF 文件结构详解见 C 笔记 `02-进阶-指针与内存/ch18/18.4-ELF文件回顾.md`，readelf 全选项见 `18.6-readelf-ELF结构全景.md`。
+> **交叉引用：** ELF 文件结构详解见 C 笔记 `02-advanced-pointers-and-memory/ch18/18.4-ELF文件回顾.md`，readelf 全选项见 `18.6-readelf-ELF结构全景.md`。
 
 ---
 
@@ -107,7 +107,7 @@ nm ixgbe.ko | grep ' U ' | wc -l   # 统计依赖多少个外部符号
 | `B` | BSS 段未初始化数据 | 全局变量 |
 | `U` | 未定义符号 | **依赖内核提供的函数** |
 
-> **HFT 排错：** 内核模块加载报 `undefined symbol` → `nm -u mod.ko` 列出所有未定义符号 → 逐个在 `vmlinux` 中 `nm vmlinux | grep <symbol>` 确认内核是否导出。详见 C 笔记 `02-进阶-指针与内存/ch18/18.5-nm符号表查看.md`。
+> **HFT 排错：** 内核模块加载报 `undefined symbol` → `nm -u mod.ko` 列出所有未定义符号 → 逐个在 `vmlinux` 中 `nm vmlinux | grep <symbol>` 确认内核是否导出。详见 C 笔记 `02-advanced-pointers-and-memory/ch18/18.5-nm符号表查看.md`。
 
 ---
 
@@ -193,7 +193,7 @@ readelf -r ixgbe.ko | head -20
 | Sym.Name | 要查找的符号名 |
 | Addend | 偏移调整 |
 
-> 内核加载模块时，对每个重定位项：查 `find_symbol()` 得到符号的实际地址 → 计算最终地址 → 写入 `.text` 的对应 offset。这就是 `.ko` 的灵魂——**加载时修补地址**。详见 C 笔记 `02-进阶-指针与内存/ch18/18.6-readelf-ELF结构全景.md` 重定位段部分。
+> 内核加载模块时，对每个重定位项：查 `find_symbol()` 得到符号的实际地址 → 计算最终地址 → 写入 `.text` 的对应 offset。这就是 `.ko` 的灵魂——**加载时修补地址**。详见 C 笔记 `02-advanced-pointers-and-memory/ch18/18.6-readelf-ELF结构全景.md` 重定位段部分。
 
 ---
 

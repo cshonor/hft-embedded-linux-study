@@ -82,8 +82,8 @@
 
 ## 参考模块
 
-- [01-c-language/01-入门-语法与类型/ch08-unix-system-interface/](../../01-c-language/01-入门-语法与类型/ch08-unix-system-interface/) — K&R ch8 文件描述符/read/write
-- [01-c-language/02-进阶-指针与内存/](../../01-c-language/02-进阶-指针与内存/) — 指针/内存模型/ABI
+- [01-c-language/01-basics-syntax-and-types/ch08-unix-system-interface/](../../01-c-language/01-basics-syntax-and-types/ch08-unix-system-interface/) — K&R ch8 文件描述符/read/write
+- [01-c-language/02-advanced-pointers-and-memory/](../../01-c-language/02-advanced-pointers-and-memory/) — 指针/内存模型/ABI
 - [02-computer-systems/chapter-08-exceptional-control-flow/](../../02-computer-systems/chapter-08-exceptional-control-flow/) — CSAPP ch8 进程/信号/管道
 - [02-computer-systems/chapter-09-virtual-memory/](../../02-computer-systems/chapter-09-virtual-memory/) — CSAPP ch9 malloc/堆/虚拟内存
 - [02-computer-systems/chapter-10-system-io/](../../02-computer-systems/chapter-10-system-io/) — CSAPP ch10 fd/dup2/重定向

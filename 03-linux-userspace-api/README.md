@@ -14,10 +14,10 @@ TLPI 全书代码用 C 编写，开始前需具备 C 基础。**必读两本即�
 
 | 书 | 目录 | 为什么需要 |
 |---|---|---|
-| **K&R《C 程序设计语言》** | [01-入门-语法与类型](../01-c-language/01-入门-语法与类型/) | C89 全基础：变量、控制流、函数、指针、结构体、预处理器、文件 I/O。TLPI 每个例子都建立在此之上 |
-| **Reek《C 和指针》** | [02-进阶-指针与内存](../01-c-language/02-进阶-指针与内存/) | 指针与内存模型深入。TLPI 系统调用大量传指针（`struct stat *`、`sigaction` 函数指针、`mmap` 返回值），结构体对齐也在此讲透 |
+| **K&R《C 程序设计语言》** | [01-basics-syntax-and-types](../01-c-language/01-basics-syntax-and-types/) | C89 全基础：变量、控制流、函数、指针、结构体、预处理器、文件 I/O。TLPI 每个例子都建立在此之上 |
+| **Reek《C 和指针》** | [02-advanced-pointers-and-memory](../01-c-language/02-advanced-pointers-and-memory/) | 指针与内存模型深入。TLPI 系统调用大量传指针（`struct stat *`、`sigaction` 函数指针、`mmap` 返回值），结构体对齐也在此讲透 |
 
-> 两本读完即可直接上手 TLPI。其余三本（[专家编程](../01-c-language/03-提高-声明与链接/) ch05-07 / [嵌入式自我修养](../01-c-language/05-实战-嵌入式与内核/) / [C 陷阱与缺陷](../01-c-language/06-参考-陷阱与缺陷/)）是锦上添花，遇到不懂的 C 细节再回翻对应章节即可。
+> 两本读完即可直接上手 TLPI。其余三本（[专家编程](../01-c-language/03-expert-declarations-and-linking/) ch05-07 / [嵌入式自我修养](../01-c-language/05-embedded-kernel-practice/) / [C 陷阱与缺陷](../01-c-language/06-reference-pitfalls/)）是锦上添花，遇到不懂的 C 细节再回翻对应章节即可。
 
 ---
 
