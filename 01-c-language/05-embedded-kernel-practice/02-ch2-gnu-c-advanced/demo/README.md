@@ -29,6 +29,9 @@ nm demo02_custom_section | grep g_custom
 
 # format 属性：编译期诊断测试（不生成可执行程序，看编译器输出）
 cd 08-format && bash run.sh && bash run2.sh
+
+# 内建函数：bitops/bswap/constant_p/expect/prefetch/overflow/libc folding
+cd 09-builtin && bash run.sh
 ```
 
 ## 工具验证
@@ -39,6 +42,8 @@ objdump -t demo02_custom_section | grep my_
 gcc -Wall -Wformat -o fmt_test demo06_log_macro.c   # format 属性见 6.8
 # 完整的 format 属性实测矩阵（archetype 支持 / -Wformat 家族 / no_printk 零开销）
 cd 08-format && bash run.sh && bash run2.sh           # 见 6.8 与 08-format/README.md
+# 内建函数实测（popcount 陷阱 / constant_p -O0 陷阱 / libc 折叠 / overflow）
+cd 09-builtin && bash run.sh                            # 见 6.11 与 09-builtin/README.md
 ```
 
 ## demo03 说明
