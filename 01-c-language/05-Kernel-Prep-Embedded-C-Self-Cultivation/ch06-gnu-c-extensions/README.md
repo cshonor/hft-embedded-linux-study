@@ -4,6 +4,36 @@
 
 > **驱动向优先读：** [要学多少？](./6.0-driver-how-much-gnu-c.md) · [速查表](./DRIVER-GNU-C-CHEATSHEET.md)（不必先通读全章冷门属性）
 
+---
+
+## 本书两条主线（按这个读，不要按章节号读）
+
+**主线一 · GNU C 扩展**（本章，本书唯一核心）
+
+| 序 | 小节 | 状态 |
+|----|------|------|
+| 1 | [6.3 语句表达式](./6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | ✅ 29 KB |
+| 2 | [6.4 typeof 与 container_of](./6.4-typeof-container-of/6.4-typeof与container_of宏.md) | ✅ 28 KB |
+| 3 | [6.5 零长度数组与柔性数组](./6.5-zero-length-array/6.5-零长度数组.md) | ✅ 39 KB |
+| 4 | [6.6 __attribute__ 总纲](./6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | ✅ 37 KB |
+| 5 | [6.7 aligned 与 packed](./6.7-aligned/6.7-属性声明-aligned.md) | ✅ 32 KB |
+| 6 | [6.9 weak 与 alias](./6.9-weak/6.9-属性声明-weak.md) | ✅ 31 KB |
+| 7 | [6.10 inline](./6.10-inline/) | ▶ 下一批 |
+| 8 | 6.11 内建函数 · 6.12 变参宏 · 6.2 指定初始化 · 6.1 C 标准 | 待扩 |
+| 附 | [ch03.6 内联汇编](../ch03-arm-architecture-and-assembly/)（`__asm__ __volatile__` 本质是 GNU 扩展） | 待扩 |
+
+**主线二 · 嵌入式 C 落地**
+
+| 序 | 小节 | 状态 |
+|----|------|------|
+| 1 | [10.8 嵌入式 C 开门](../ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md)（volatile / 屏障 / 位操作 / 字节序 / 未对齐） | ✅ 29 KB |
+| 2 | 10.3 中断（ISR 与主循环共享数据） | 待改造 |
+| 3 | ch04 链接脚本（`section` 属性 + 链接脚本） | 待扩 |
+| 4 | ch05 内存堆栈 · ch01 工具链 | 待扩 |
+
+> ch02 体系结构、ch03.1–3.5 ARM 指令已**物理删除 73 篇**（CSAPP 讲得更深，不重复读第二遍），不用再管。
+> 完整取舍见 [00 · 本书取舍与补写顺序](../00-ROADMAP-本书取舍与补写顺序.md)。
+
 ## 本章目标
 
 分清 **ISO C99/C11** 与 **GNU 扩展**；掌握 **`__attribute__`**（packed/aligned/section/weak/format/noinline 等）、**语句表达式**、**typeof/container_of**、**零长度数组**、**指定初始化**、**inline/builtins**、**可变参宏**。能读 **Linux 内核 / U-Boot / DPDK** 头文件宏，并编写带 **format 检查** 的日志与 **weak hook** 默认实现。衔接 **ch05 堆布局**、**ch07 指针**、**ch08 位操作**。
