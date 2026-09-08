@@ -274,9 +274,9 @@ runqlat       # 运行队列延迟分布
 |----------|---------------|
 | gdb 基本操作 | C 笔记 `05-Embedded/1.5-gdb/1.5.1~1.5.5`（GDB 详解） |
 | core dump 分析 | C 笔记 `05-Embedded/1.5-gdb/1.5.4-GDB调试core-dump.md` |
-| vmlinux/vmcore ELF 格式 | C 笔记 `02-Pointers-on-C/ch18/18.4~18.9`（ELF 二进制分析） |
-| nm 看内核符号 | C 笔记 `02-Pointers-on-C/ch18/18.5-nm符号表查看.md` |
-| objdump 反汇编内核 | C 笔记 `02-Pointers-on-C/ch18/18.7-objdump反汇编.md` |
+| vmlinux/vmcore ELF 格式 | C 笔记 `02-进阶-指针与内存/ch18/18.4~18.9`（ELF 二进制分析） |
+| nm 看内核符号 | C 笔记 `02-进阶-指针与内存/ch18/18.5-nm符号表查看.md` |
+| objdump 反汇编内核 | C 笔记 `02-进阶-指针与内存/ch18/18.7-objdump反汇编.md` |
 | crash dis 反汇编 | 同上 |
 
 > 内核调试本质是**用户态调试的超集**：gdb/kgdb 操作和用户态一样，但多了 kdb/crash/ftrace/eBPF 等内核特有工具。先掌握 C 笔记里的 GDB 和 ELF 工具，再来这里就只需要理解内核侧的差异。
