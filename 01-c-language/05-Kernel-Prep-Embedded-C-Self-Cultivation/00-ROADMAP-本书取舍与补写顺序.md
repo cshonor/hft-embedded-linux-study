@@ -93,7 +93,7 @@
 | ✅ | **CH1** | [6.5 零长度数组与柔性数组](./01-ch1-gnu-c-basics/6.5-zero-length-array/6.5-零长度数组.md) | 39 KB | 已完成（第 24 批）：sizeof≠offsetof 静默错位、struct_size 溢出、counted_by |
 | ✅ | **CH2** | [6.7 aligned 与 packed](./02-ch2-gnu-c-advanced/6.7-aligned/6.7-属性声明-aligned.md) | 32 KB | 已完成（第 25 批）：aligned 管不了 malloc、packed 绕过 UBSan、伪共享 1.60x |
 | ✅ | **CH2** | [6.9 weak 与 alias](./02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md) | 31 KB | 已完成（第 26 批）：weak 不触发静态库提取、热路径慢 3.2x、-fno-common |
-| ▶ | **CH1** | [6.10 inline](./01-ch1-gnu-c-basics/6.10-inline/) | 8 KB/6 篇 | **下一批**：与 HFT 热点路径相关 |
+| ✅ | **CH1** | [6.10 inline](./01-ch1-gnu-c-basics/6.10-inline/6.10-内联函数.md) | 29 KB | 已完成（第 27 批）：C99/gnu89 语义反转、薛定谔链接、优化可见性基准、weak 对立 |
 | 8 | **CH2** | [6.11 builtin](./02-ch2-gnu-c-advanced/6.11-builtin/) | 14 KB/7 篇 | `__builtin_expect` / `__builtin_types_compatible_p` |
 | 9 | **CH1** | [6.12 变参宏](./01-ch1-gnu-c-basics/6.12-vararg-macro/) | 7 KB/5 篇 | `##__VA_ARGS__` 与日志宏 |
 | 10 | **CH2** | [6.8 format](./02-ch2-gnu-c-advanced/6.8-format/) | 8 KB/4 篇 | 已由 [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) 深度覆盖，回链即可 |
