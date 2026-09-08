@@ -309,7 +309,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-10-3"><span class="n">6.10.3</span>内联函数与宏</a>
           <a href="#s-6-10-4"><span class="n">6.10.4</span>编译器对内联函数的处理</a>
           <a href="#s-6-10-5"><span class="n">6.10.5</span>思考：内联函数为什么定义在头文件中</a>
-          <a href="#s-6-12"><span class="n">6.12</span>可变参数宏</a>
+          <a href="#s-6-12"><span class="n">6.12</span>可变参数宏：`__VA_ARGS__`、`##__VA_ARGS__` 与 `__VA_OPT__`</a>
           <a href="#s-6-12-1"><span class="n">6.12.1</span>什么是可变参数宏</a>
           <a href="#s-6-12-2"><span class="n">6.12.2</span>继续改进我们的宏</a>
           <a href="#s-6-12-3"><span class="n">6.12.3</span>可变参数宏的另一种写法</a>
@@ -448,8 +448,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tr>
 <td>7</td>
 <td><a href="#s-6-12">6.12 可变参数宏</a></td>
-<td>待扩</td>
-<td><code class="c">##__VA_ARGS__</code> 吃掉多余逗号</td>
+<td>✅ 23 KB</td>
+<td>四种写法空参矩阵；逗号陷阱；PP_NARG 零参 bug</td>
 </tr>
 <tr>
 <td>附</td>
@@ -470,7 +470,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   |
 6.2  指定初始化          &lt;- 读内核驱动代码必需
   |
-6.10 inline ✅ -&gt; 6.12 变参宏（下一站）
+6.10 inline ✅ -&gt; 6.12 变参宏 ✅ -&gt; 6.2 指定初始化（下一站）
 </code></pre>
 <p><strong>两个要点</strong>：</p>
 <ol>
@@ -5950,34 +5950,470 @@ static inline int max(int a, int b) { return a &gt; b ? a : b; }
 </details>
       </section>
       <section class="section" id="s-6-12">
-        <div class="sec-head"><div class="sec-no">6.12</div><h2>可变参数宏</h2></div>
+        <div class="sec-head"><div class="sec-no">6.12</div><h2>可变参数宏：`__VA_ARGS__`、`##__VA_ARGS__` 与 `__VA_OPT__`</h2></div>
+<blockquote>
+<p><strong>归属</strong>：CH1 GNU C 基础扩展语法 ·（<code class="c">...</code> 写在宏参数表里，源码表面看得见）
+<strong>实测环境</strong>：WSL · gcc 13.3.0 / clang 18.1.3 · x86-64
+<strong>配套小节</strong>：<a href="chapter-01.html#s-6-12-1">6.12.1 什么是可变参数宏</a> · <a href="chapter-01.html#s-6-12-2">6.12.2 继续改进我们的宏</a> · <a href="chapter-01.html#s-6-12-3">6.12.3 另一种写法</a> · <a href="chapter-01.html#s-6-12-4">6.12.4 内核中的可变参数宏</a>
+<strong>相关</strong>：<a href="#s-6-3">6.3 语句表达式</a>（日志宏的另一半）· <a href="chapter-02.html#ch-2">6.8 format</a>（格式串检查）· <a href="#s-6-10">6.10 inline</a>（宏 vs 内联的分工）· <a href="chapter-03.html#s-10-8">10.8 寄存器操作</a></p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p>C99 <strong>可变参数宏</strong> 与 GNU <strong><code class="c">##__VA_ARGS__</code></strong> 构成 <strong><code class="c">printk</code>/<code class="c">RTE_LOG</code></strong> 风格 API。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">#define LOG(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
+<p>变参宏是 <strong>C 语言里唯一能写出"参数个数可变、且零运行时开销"接口</strong>的手段——<code class="c">printk</code>、<code class="c">RTE_LOG</code>、各类 <code class="c">dev_err</code>/<code class="c">pr_debug</code>、HFT 的零开销日志，全靠它。</p>
+<p>它同时也是<strong>唯一一个"标准写法必然写错"的 C 特性</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)   /* 标准 C99 写法 */
+LOG(&quot;started\n&quot;);                                 /* ❌ 编译不过 */
 </code></pre>
-<h2>与后续衔接</h2>
+<p>标准 C99 的 <code class="c">__VA_ARGS__</code> 要求<strong>至少一个</strong>变参。而实际使用中，<code class="c">LOG("字符串")</code> 恰恰是最常见的调用形式。所以工程上几乎没人用标准写法，大家用的是三种 GNU / C23 方案之一。</p>
+<p>本节把四种写法的<strong>方言差异、展开产物、空参行为、逗号陷阱、参数计数、以及内核里的真实用法</strong>全部实测钉死（gcc 13.3 / clang 18.1.3，四轮测试，脚本见 <code class="c">D:\.kernel-ref\demo-vararg\</code>）。</p>
+<p>一句话概括：</p>
+<blockquote>
+<p><strong><code class="c">__VA_ARGS__</code> 解决"参数从哪来"，<code class="c">##</code>/<code class="c">__VA_OPT__</code> 解决"没有参数时那个逗号怎么办"，而逗号陷阱决定你的宏在别人手里会不会炸。</strong></p>
+</blockquote>
+<hr />
+<h2>一、四种写法：空参行为实测矩阵</h2>
+<pre class="code" data-label="C"><code class="c">/* (A) 标准 C99 */
+#define LOG_A(fmt, ...) printf(fmt, __VA_ARGS__)
+/* (B) GNU 逗号吞除 */
+#define LOG_B(fmt, ...) printf(fmt, ##__VA_ARGS__)
+/* (C) GNU 命名变参 */
+#define LOG_C(fmt, args...) printf(fmt, ##args)
+/* (D) C23 __VA_OPT__ */
+#define LOG_D(fmt, ...) printf(fmt __VA_OPT__(,) __VA_ARGS__)
+</code></pre>
+<p>测试程序都包含一个 <code class="c">LOG("no extra args\n")</code> 零参调用，结果（✅=编译通过并运行正确）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法 / 编译器选项</th>
+<th>gcc <code class="c">-std=c99</code></th>
+<th>gcc <code class="c">-std=gnu11</code></th>
+<th>gcc <code class="c">-pedantic</code></th>
+<th>gcc <code class="c">-pedantic-errors</code></th>
+<th>clang <code class="c">-std=c99</code></th>
+<th>clang <code class="c">-pedantic-errors</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(A) <code class="c">__VA_ARGS__</code></td>
+<td>❌ error</td>
+<td>❌ error</td>
+<td>❌ + ISO 警告</td>
+<td>❌</td>
+<td>❌ error</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>(B) <code class="c">##__VA_ARGS__</code></td>
+<td>✅（+1 warning 于 pedantic）</td>
+<td>✅</td>
+<td>✅ + 1 warning</td>
+<td>❌ <strong>error</strong></td>
+<td>✅ + 3 warnings</td>
+<td>❌ <strong>3 errors</strong></td>
+</tr>
+<tr>
+<td>(C) <code class="c">args...</code> 命名</td>
+<td>✅</td>
+<td>✅</td>
+<td>⚠️ "ISO C does not permit named variadic macros"</td>
+<td>❌</td>
+<td>⚠️ 扩展警告</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>(D) <code class="c">__VA_OPT__</code></td>
+<td>—（C99 无此特性）</td>
+<td>✅（作扩展）</td>
+<td>⚠️ "not available until C2X"</td>
+<td>❌ <strong>error</strong></td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键读数</strong>：</p>
+<ol>
+<li><strong>(A) 标准写法在所有配置下都失败</strong>——只要出现一次零参调用。错误是 <code class="c">error: expected expression before ')' token</code>，因为展开成了 <code class="c">printf("no extra args\n", )</code>。</li>
+<li><strong>(B) 是事实标准</strong>：<code class="c">gnu11</code> 下零警告通过；<code class="c">-pedantic</code> 下 gcc 只给 1 条警告、clang 给 3 条；<strong><code class="c">-pedantic-errors</code> 下两个编译器都变成硬错误</strong>。内核用 <code class="c">-std=gnu11</code>（不是 <code class="c">-pedantic-errors</code>），所以 (B) 在内核里畅通无阻。</li>
+<li><strong>(C) 命名变参</strong>：可读性最好（<code class="c">args</code> 像个真参数），但 <code class="c">-pedantic</code> 明确说"ISO C 不允许"。gcc 在 <code class="c">-std=c11</code>（无 pedantic）下也接受。</li>
+<li><strong>(D) <code class="c">__VA_OPT__</code> 是未来</strong>：<code class="c">-std=c2x</code> / <code class="c">-std=gnu23</code> 下 gcc 和 clang 都零警告通过。<strong>好消息</strong>：gcc 13 在 <code class="c">gnu11</code> 模式下也把它当扩展接受（0 警告），clang 17+ 在 <code class="c">gnu17</code> 下同样接受——意味着<strong>你现在就可以开始用</strong>。</li>
+</ol>
+<blockquote>
+<p><strong>选型建议</strong>
+- 新项目、能上 <code class="c">-std=c2x</code>：用 <strong>(D) <code class="c">__VA_OPT__</code></strong>，标准、干净、语义精确。
+- 现有 GNU 项目 / 内核风格：用 <strong>(B) <code class="c">##__VA_ARGS__</code></strong>，兼容性最好。
+- (C) 命名变参：可读性略好但兼容性最差，只在纯 GNU 项目里用。
+- (A)：只在"保证永远有变参"时用（比如强制传级别 <code class="c">LOG(lvl, fmt, ...)</code>）。</p>
+</blockquote>
+<h3>展开产物对照（<code class="c">-E</code> 实测）</h3>
+<pre class="code" data-label="C"><code class="c">/* (A) */  printf(&quot;no extra args\n&quot;, );      /* 多余逗号 -&gt; 语法错误 */
+/* (B) */  printf(&quot;no extra args\n&quot;);         /* 逗号被吞 */
+/* (D) */  printf(&quot;no extra args\n&quot; );        /* 空格留在 fmt 后面，无逗号 */
+</code></pre>
+<p>注意 (D) 的空格：<code class="c">fmt __VA_OPT__(,) __VA_ARGS__</code> 在零参时变成 <code class="c">fmt</code>——多一个空格但语法正确。</p>
+<hr />
+<h2>二、为什么零参是个真问题：<code class="c">##</code> 与 <code class="c">__VA_OPT__</code> 的机制差异</h2>
 <ul>
-<li><strong>6.12.1–6.12.4</strong>；<strong>demo06</strong></li>
+<li><strong><code class="c">##__VA_ARGS__</code>（GNU）</strong>：<code class="c">##</code> 夹在逗号和 <code class="c">__VA_ARGS__</code> 之间时，若变参为空则<strong>删除前面的逗号</strong>；非空时 <code class="c">##</code> 不起粘贴作用（这是 GNU 特例，否则 <code class="c">,</code> 和第一个 token 会被粘成非法 token）。</li>
+<li><strong><code class="c">__VA_OPT__(x)</code>（C23）</strong>：变参非空时展开为 <code class="c">x</code>，为空时展开为<strong>空</strong>。语义更一般化——不仅能放逗号，能放任意 token 序列。</li>
+</ul>
+<p>两者都不完美：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>限制</th>
+<th>实测现象</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">##</code> 只认"前面是逗号"</strong></td>
+<td>写成 <code class="c">printf(fmt ##__VA_ARGS__)</code> → 展开成 <code class="c">printf("x=%d\n" 1)</code> → <strong>error: pasting does not give a valid preprocessing token</strong>。格式串被和参数粘在一起了。</td>
+</tr>
+<tr>
+<td><strong>显式空实参救不回来</strong></td>
+<td><code class="c">LOG("hello\n", )</code>（留了个空参数）→ 展开 <code class="c">printf("hello\n",)</code> → <strong>error</strong>。空参 ≠ 无参——<code class="c">##</code> 只吞"没有实参"的情况，实参存在但为空时逗号照样留下。</td>
+</tr>
+<tr>
+<td><strong><code class="c">__VA_OPT__</code> 方言门槛</strong></td>
+<td>C17 及更早 + <code class="c">-pedantic-errors</code> → 硬错误 <code class="c">__VA_OPT__ is not available until C2X</code>。</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>三、逗号陷阱：只有圆括号能保护逗号</h2>
+<p>预处理器<strong>只认圆括号</strong>为参数边界。方括号、花括号里的逗号照样把宏参数劈开。实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">ONE((1,2))</code> 圆括号（逗号表达式）</td>
+<td>✅ 合法，值为 2</td>
+</tr>
+<tr>
+<td><code class="c">ONE(f(1,2))</code> 函数调用括号</td>
+<td>✅ 合法（括号保护）</td>
+</tr>
+<tr>
+<td><code class="c">ONE(arr[1,2])</code> 方括号</td>
+<td>❌ <code class="c">error: macro "ONE" passed 2 arguments, but takes just 1</code></td>
+</tr>
+<tr>
+<td><code class="c">DECL(int a[] = {1,2})</code> 花括号</td>
+<td>❌ <code class="c">error: macro "DECL" passed 2 arguments, but takes just 1</code></td>
+</tr>
+<tr>
+<td><code class="c">DECL((int a[] = {1,2}))</code> 圆括号包整段</td>
+<td>❌ 声明语句不能套括号（<code class="c">expected ')' before 'a'</code>）</td>
+</tr>
+<tr>
+<td><strong><code class="c">DECL(...)</code> 改变参宏</strong></td>
+<td>✅ 通过——<code class="c">...</code> 吸收一切逗号</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>这条规则解释了一大堆"莫名其妙"的编译错误</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#define CHECK(expr) do { if (!(expr)) return -1; } while (0)
+CHECK(memcmp(a, b, 4) == 0);        /* ✅ 函数调用的括号保护了逗号 */
+CHECK(arr[i, j] == 0);              /* ❌ 方括号不保护 */
+
+#define REG(name, val) reg_##name = val
+REG(int_table[2], 3);               /* ❌ 方括号里的逗号被当成参数分隔 */
+</code></pre>
+<p><strong>修法优先级</strong>：① 给宏参数套圆括号（表达式场景）→ ② 把宏改成变参宏 <code class="c">...</code>（声明/初始化列表场景）→ ③ 拆成两个宏。</p>
+<hr />
+<h2>四、双重求值：变参宏最容易埋的雷</h2>
+<pre class="code" data-label="C"><code class="c">#define LOG_BOTH(fmt, ...)                   \
+    do {                                      \
+        printf(&quot;[A] &quot; fmt, ##__VA_ARGS__);    \
+        printf(&quot;[B] &quot; fmt, ##__VA_ARGS__);    \
+    } while (0)
+
+int i = 0;
+LOG_BOTH(&quot;i=%d\n&quot;, i++);
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="text"><code class="c">[A] i=0
+[B] i=1
+after: i=2
+</code></pre>
+<p><code class="c">i++</code> 被调用了两次。变参宏把实参<strong>文本复制</strong>到每个使用点，副作用随之复制。这在日志宏里杀伤力极大——你以为只是打日志，实际改了状态。</p>
+<p><strong>规则</strong>：日志宏的宏体里，<code class="c">__VA_ARGS__</code> <strong>只能出现一次</strong>。需要多次使用（比如同时写文件和 stderr）就先存到临时变量，或者干脆写成真函数 + <code class="c">va_list</code>。</p>
+<hr />
+<h2>五、参数计数与宏分发（内核/HFT 常用技巧）</h2>
+<h3>5.1 经典 PP_NARG 的零参 bug（实测）</h3>
+<pre class="code" data-label="C"><code class="c">#define PP_NARG(...)  PP_NARG_(__VA_ARGS__, 8,7,6,5,4,3,2,1,0)
+#define PP_NARG_(...) PP_ARG_N(__VA_ARGS__)
+#define PP_ARG_N(_1,_2,_3,_4,_5,_6,_7,_8,N,...) N
+</code></pre>
+<p>实测：<code class="c">PP_NARG(a)</code>=1、<code class="c">PP_NARG(a,b)</code>=2、<code class="c">PP_NARG(a,...,h)</code>=8 都对，但 <strong><code class="c">PP_NARG()</code> 返回 1，不是 0</strong>。</p>
+<p>原因：零参调用展开成 <code class="c">PP_NARG_(, 8,7,...,0)</code>——逗号前面的<strong>空参数也算一个参数</strong>，序列整体右移一位。</p>
+<h3>5.2 修正：多一位助手 + <code class="c">__VA_OPT__</code></h3>
+<pre class="code" data-label="C"><code class="c">#define NEW_NARG(...)   NEW_HELPER(__VA_ARGS__ __VA_OPT__(,) 9,8,7,6,5,4,3,2,1,0)
+#define NEW_HELPER(_1,_2,_3,_4,_5,_6,_7,_8,_9,N,...) N
+</code></pre>
+<p>实测（gcc c2x / gnu11、clang gnu17 三处一致）：</p>
+<pre class="code" data-label="text"><code class="c">旧 NARG: 0-&gt;1  1-&gt;1  2-&gt;2
+新 NARG: 0-&gt;0  1-&gt;1  2-&gt;2  8-&gt;8
+</code></pre>
+<p><code class="c">__VA_OPT__</code> 让"无参时不补逗号"，助手多一位吸收偏移，零参正确落到 0。</p>
+<h3>5.3 空参探测（比计数更常用的原语）</h3>
+<pre class="code" data-label="C"><code class="c">#define HAS_ARGS(...) (0 __VA_OPT__(+1))
+</code></pre>
+<p>实测：<code class="c">HAS_ARGS()</code> = 0，<code class="c">HAS_ARGS(a,b)</code> = 1。这是 <code class="c">__VA_OPT__</code> 相对 <code class="c">##__VA_ARGS__</code> 的决定性优势——GNU 的 <code class="c">##</code> 只能在"逗号"这一个场景用，<code class="c">__VA_OPT__</code> 能放任意 token，于是"有没有参数"变成了一个可计算的值。</p>
+<h3>5.4 按参数个数分发（宏重载）</h3>
+<pre class="code" data-label="C"><code class="c">#define GET_MACRO(_1,_2,NAME,...) NAME
+#define LOG(...) GET_MACRO(__VA_ARGS__, LOG2, LOG1)(__VA_ARGS__)
+#define LOG1(a)      printf(&quot;one: %d\n&quot;, (int)(a))
+#define LOG2(a,b)    printf(&quot;two: %d %d\n&quot;, (int)(a), (int)(b))
+</code></pre>
+<p>实测 gcc / clang 均通过：<code class="c">LOG(1)</code> → <code class="c">one: 1</code>，<code class="c">LOG(1,2)</code> → <code class="c">two: 1 2</code>。</p>
+<p>机制：<code class="c">LOG(1)</code> 展开为 <code class="c">GET_MACRO(1, LOG2, LOG1)(1)</code>，<code class="c">GET_MACRO</code> 取第 3 个参数 = <code class="c">LOG1</code>。参数少的时候右边的名字被"推"到正确位置——这是 C 里唯一的多态手段。</p>
+<blockquote>
+<p>⚠️ 注意：变参宏<strong>不能递归</strong>（实测 <code class="c">#define FOO(x) x + FOO(x)</code> 展开成 <code class="c">1 + FOO(1)</code> 就停了，剩下的 <code class="c">FOO(1)</code> 被当成函数调用 → 链接错误）。想递归请用 5.4 的分发做有限层数展开。</p>
+</blockquote>
+<hr />
+<h2>六、字符串化与粘贴：和 <code class="c">__VA_ARGS__</code> 的三种组合</h2>
+<pre class="code" data-label="C"><code class="c">#define STR(...)  #__VA_ARGS__
+STR(a, b, 3)      /* 实测 -&gt; &quot;a, b, 3&quot;（逗号原样保留在字符串里） */
+
+#define DECLARE_HANDLER(name) int handle_##name(void) { return 1; }
+#define REGISTER(name, ...) do { printf(&quot;%s:%d\n&quot;, #name, handle_##name(__VA_ARGS__)); } while (0)
+</code></pre>
+<p>实测：<code class="c">REGISTER(open)</code> → <code class="c">open:1</code>。这是"用宏生成一批同名族函数/注册项"的标准手法（中断向量表、命令表、测试框架都这么写）。</p>
+<p><strong>反面案例</strong>（§二已述）：<code class="c">printf(fmt ##__VA_ARGS__)</code> → 粘贴出 <code class="c">printf("x=%d\n" 1)</code> → 硬错误。<code class="c">##</code> 会把<strong>字面量本身</strong>和下一个 token 焊在一起，只有"标识符 + 标识符"的粘贴才是安全的。</p>
+<hr />
+<h2>七、与 <code class="c">format</code> 属性联动：格式检查穿过宏层吗</h2>
+<pre class="code" data-label="C"><code class="c">void mylog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+#define LOG(...) mylog(__VA_ARGS__)
+</code></pre>
+<p>实测 <strong>穿过</strong>：<code class="c">LOG("%d %s\n", 42)</code> 被 gcc 抓到 <code class="c">warning: format '%s' expects a matching 'char *' argument</code>。宏展开发生在语义分析之前，所以 <code class="c">format</code> 检查看到的是展开后的调用。</p>
+<p><code class="c">-Wformat-security</code>（非字面量格式串）实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>gcc <code class="c">-Wformat-security</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">LOG(msg)</code>（msg 是变量、无变参）</td>
+<td>⚠️ 1 条 <code class="c">format not a string literal and no format arguments</code></td>
+</tr>
+<tr>
+<td><code class="c">LOG("%s", msg)</code>（字面量格式串）</td>
+<td>0 条</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>规则</strong>：永远让<strong>字面量</strong>当格式串，用户输入走 <code class="c">%s</code> 参数。内核 <code class="c">pr_fmt(fmt)</code> 的做法是在字面量前面拼前缀，格式串仍然是编译期常量。</p>
+<hr />
+<h2>八、内核实战：三种真实模式（v6.6 源码）</h2>
+<h3>8.1 <code class="c">##__VA_ARGS__</code> 的转发模式（<code class="c">include/linux/device_driver.h</code>）</h3>
+<pre class="code" data-label="C"><code class="c">#define __driver_register(...)  ... return __register(&amp;(__driver) , ##__VA_ARGS__); ...
+</code></pre>
+<p>变参被<strong>原样转发</strong>给下层宏/函数。<code class="c">##</code> 在这里处理"注册时不带额外参数"的调用。</p>
+<h3>8.2 编译期静默：<code class="c">no_printk</code>（<code class="c">include/linux/net.h</code> 第 304 行）</h3>
+<pre class="code" data-label="C"><code class="c">#if !defined(CONFIG_DYNAMIC_DEBUG)
+    ...
+    no_printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__);   /* 静默替代 */
+</code></pre>
+<p><code class="c">no_printk</code> 是个空实现的内联函数。日志被关闭时，调用仍然存在（保证参数被"用过"、不产生 unused 警告），但什么都不做。</p>
+<p><strong>实测复刻</strong>（<code class="c">-O2</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define LOG_LEVEL 2
+#define pr_level(lvl, fmt, ...)                    \
+    do {                                            \
+        if ((lvl) &lt;= LOG_LEVEL) printf(fmt, ##__VA_ARGS__);  \
+        else                    no_printk(fmt, ##__VA_ARGS__); \
+    } while (0)
+</code></pre>
+<p><code class="c">-O2</code> 下 <code class="c">pr_level(5, "dbg: %d\n", 5)</code> 的<strong>整个分支和字符串字面量都从目标文件里消失</strong>（<code class="c">grep -c 'dbg'</code> = 0）。这就是"生产构建零成本"的实现原理——不是运行时判断，是编译期删除。</p>
+<h3>8.3 限速日志：<code class="c">net_ratelimited_function</code>（<code class="c">include/linux/net.h</code>）</h3>
+<pre class="code" data-label="C"><code class="c">#define net_ratelimited_function(function, ...)     \
+do {                                                \
+    if (net_ratelimit())                            \
+        function(__VA_ARGS__);                      \
+} while (0)
+#define net_emerg_ratelimited(fmt, ...)             \
+    net_ratelimited_function(pr_emerg, fmt, ##__VA_ARGS__)
+</code></pre>
+<p>两层变参宏嵌套：外层接 <code class="c">fmt, ...</code>，内层把<strong>函数名当参数</strong>转发。这是变参宏最有价值的用法之一——<strong>把策略（限速、级别、动态调试开关）和机制（真正打印）解耦</strong>。注意内层用的是 <code class="c">__VA_ARGS__</code>（一定有参数，<code class="c">fmt</code> 会被传下去），外层用 <code class="c">##__VA_ARGS__</code>（可能零参）。</p>
+<h3>8.4 和语句表达式联动（6.3）</h3>
+<pre class="code" data-label="C"><code class="c">#define LOG(fmt, ...) ({ log_count++; printf(fmt, ##__VA_ARGS__); })
+</code></pre>
+<p>实测：<code class="c">int r = LOG("x=%d\n", 1);</code> → <code class="c">r</code> = 4（printf 的返回值），<code class="c">log_count</code> = 1。语句表达式让"带副作用的日志宏"能返回值，代价是丢失了 <code class="c">do{}while(0)</code> 的语句安全性——只在你确定不需要 <code class="c">if/else</code> 场景时用。</p>
+<hr />
+<h2>九、HFT 视角：零开销日志的实测收益</h2>
+<pre class="code" data-label="C"><code class="c">#define LOG_LEVEL 1
+#define LOG(lvl, fmt, ...)                                     \
+    do {                                                        \
+        if (__builtin_expect(!!((lvl) &lt;= LOG_LEVEL), 0))         \
+            printf(fmt, ##__VA_ARGS__);                          \
+    } while (0)
+</code></pre>
+<p>实测（<code class="c">-O2</code>，输出重定向到 <code class="c">/dev/null</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>耗时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">LOG(5, ...)</code> 关闭的日志调用 <strong>2 亿次</strong></td>
+<td><strong>0.000000 s</strong>（整段循环被删）</td>
+</tr>
+<tr>
+<td><code class="c">LOG(1, ...)</code> 开启的日志 200 万次（折算 2 亿次）</td>
+<td>0.215057 s（折算 <strong>21.5 s</strong>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>反汇编里关闭分支的 <code class="c">printf</code> 调用<strong>完全不存在</strong>。</p>
+<p><strong>工程含义</strong>：热路径里的日志<strong>可以是免费的</strong>——前提是级别判断必须在编译期可见（<code class="c">LOG_LEVEL</code> 是常量、宏体里没有 opaque 函数调用）。这也是为什么 HFT 代码宁愿用宏而不是 <code class="c">if (log_enabled) log_printf(...)</code> 函数：后者在 <code class="c">-O2</code> 下也可能被优化掉，但<strong>字符串拼接和参数求值的副作用会留下</strong>（见 §四的双重求值）。</p>
+<p><strong>反面教训（和 6.10 同源）</strong>：这个 0.000000 s 说明 benchmark 的循环被删了。写日志性能测试时，确认你测的不是"什么都没发生"。</p>
+<hr />
+<h2>十、误区表与检查清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>实测真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"C99 的 <code class="c">__VA_ARGS__</code> 能处理零参"</td>
+<td>不能。零参展开出 <code class="c">printf(fmt, )</code> → 硬错误，所有编译器所有 std 都一样</td>
+</tr>
+<tr>
+<td>"<code class="c">##__VA_ARGS__</code> 是标准 C"</td>
+<td>GNU 扩展。<code class="c">-pedantic</code> 警告、<code class="c">-pedantic-errors</code> <strong>硬错误</strong>（gcc 1 条、clang 3 条）</td>
+</tr>
+<tr>
+<td>"<code class="c">__VA_OPT__</code> 要等 C23 才能用"</td>
+<td>gcc 13 / clang 17+ 在 <code class="c">gnu11</code>/<code class="c">gnu17</code> 下已作扩展支持（0 警告）；C17 + <code class="c">-pedantic-errors</code> 才报错</td>
+</tr>
+<tr>
+<td>"<code class="c">##</code> 能吞掉任何多余的逗号"</td>
+<td>只吞"紧邻且变参为空"的那个逗号；<code class="c">LOG("x", )</code> 显式空实参仍然报错</td>
+</tr>
+<tr>
+<td>"花括号/方括号能保护逗号"</td>
+<td>只有圆括号能。方括号 <code class="c">arr[1,2]</code>、花括号 <code class="c">{1,2}</code> 经宏都被劈开</td>
+</tr>
+<tr>
+<td>"<code class="c">PP_NARG()</code> 返回 0"</td>
+<td>返回 1（空参数也算一个）。修法见 §5.2</td>
+</tr>
+<tr>
+<td>"变参宏能递归"</td>
+<td>不能，展开到自身即停，剩下的被当函数调用 → 链接错误</td>
+</tr>
+<tr>
+<td>"日志宏多写几次 <code class="c">__VA_ARGS__</code> 无所谓"</td>
+<td>每次出现都重新求值一次实参副作用（实测 <code class="c">i++</code> 变两次）</td>
+</tr>
+<tr>
+<td>"非字面量格式串没问题"</td>
+<td><code class="c">-Wformat-security</code> 会抓（无变参时）；有变参时不抓但语义同样危险</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>写日志宏的检查清单</strong>：</p>
+<pre class="code" data-label="text"><code class="c">1. 零参调用要合法吗？
+   ├─ 要   -&gt; ##__VA_ARGS__（GNU）或 __VA_OPT__（C2x）
+   └─ 不要 -&gt; 强制传级别/模块名，用标准 __VA_ARGS__
+2. 会不会用在 if/else 后面？ -&gt; 必须 do { } while (0)
+3. 宏体里 __VA_ARGS__ 出现了几次？ -&gt; 超过 1 次就有双重求值风险
+4. 热路径吗？ -&gt; 级别判断用编译期常量 + __builtin_expect
+5. 格式串是字面量吗？ -&gt; 不是就 -Wformat-security 会抓
+6. 需要参数个数分发吗？ -&gt; GET_MACRO 技巧（注意 PP_NARG 零参 bug）
+</code></pre>
+<hr />
+<h2>十一、与全书其他节的衔接</h2>
+<ul>
+<li><strong><a href="#s-6-3">6.3 语句表达式</a></strong>：<code class="c">do{}while(0)</code> 解决"宏要像语句"，语句表达式解决"宏要像表达式"。日志宏用前者，计数/返回值的宏用后者（§8.4）。</li>
+<li><strong><a href="chapter-02.html#ch-2">6.8 format</a></strong>：<code class="c">__attribute__((format(printf,1,2)))</code> 与变参宏联动（§七），格式检查穿过宏层。</li>
+<li><strong><a href="#s-6-10">6.10 inline</a></strong>：变参宏和内联函数的分工——宏赢在"编译期常量上下文"（数组长度、case 标签、<code class="c">##</code> 造名字）和"零成本删除"（§九），内联函数赢在类型检查和调试。6.10 里"编译器看穿函数体"的模型同样适用于宏：宏展开后编译器能看到全部代码，所以更容易被优化掉。</li>
+<li><strong><a href="chapter-03.html#s-10-8">CH3 10.8</a></strong>：嵌入式里的 <code class="c">MMIO_LOG</code> / 寄存器 dump 宏，是本节技巧的直接应用。</li>
+<li><strong>下一节</strong>：CH1 剩下 <strong>6.2 指定初始化</strong>（内核 <code class="c">file_operations</code> 的 <code class="c">{ .owner = THIS_MODULE }</code> 写法，与变参宏同为"内核 Daily 写法"），然后 <strong>6.1 C 标准与 gnu11</strong>（回到 6.12 开头那张方言表的源头）。</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 可变参数宏 <code class="c">__VA_ARGS__</code> 和可变参数函数 <code class="c">va_list</code> 有什么区别？</p>
-<pre class="code" data-label="C"><code class="c">// 宏
-#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
-// 函数
-void log_fn(const char *fmt, ...) {
-    va_list ap; va_start(ap, fmt);
-    vprintf(fmt, ap); va_end(ap);
-}
+<p><strong>题目 1：</strong> 这个宏为什么编译不过？给出两种修法并说明各自的适用条件。</p>
+<pre class="code" data-label="C"><code class="c">#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+LOG(&quot;system started\n&quot;);
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>可变参数宏是编译期文本展开，<code class="c">__VA_ARGS__</code> 替换为 <code class="c">...</code> 对应的实参序列，没有类型检查；可变参数函数是运行期处理，通过 <code class="c">va_list</code> 遍历参数，需要格式串推断类型。区别：(1) 宏在编译期展开，无运行时开销；函数有调用开销；(2) 宏的 <code class="c">__VA_ARGS__</code> 可以为空（GNU 扩展 <code class="c">##__VA_ARGS__</code> 处理空参），<code class="c">va_list</code> 需要知道参数个数；(3) 宏不能递归，函数可以。内核 <code class="c">printk</code> 用宏实现，应用层 <code class="c">printf</code> 是函数。</p>
+<p>标准 C99 的 <code class="c">__VA_ARGS__</code> 要求至少一个变参。零参调用展开成 <code class="c">printf("system started\n", )</code>，多一个逗号 → <code class="c">error: expected expression before ')' token</code>。所有编译器、所有 std 都一样。</p>
+<p>修法一（GNU）：<code class="c">printf(fmt, ##__VA_ARGS__)</code>——<code class="c">##</code> 在变参为空时吞掉前面的逗号。适用：GNU/gcc/clang 项目，不用 <code class="c">-pedantic-errors</code>。</p>
+<p>修法二（C23）：<code class="c">printf(fmt __VA_OPT__(,) __VA_ARGS__)</code>——<code class="c">__VA_OPT__</code> 在变参非空时展开为逗号。适用：能上 <code class="c">-std=c2x</code>；或者用 gcc 13+/clang 17+ 在 <code class="c">gnu11</code> 模式下（已作扩展支持，实测 0 警告）。</p>
+</details>
+<p><strong>题目 2：</strong> 下面这个宏在别人的调用下炸了，为什么？怎么改？</p>
+<pre class="code" data-label="C"><code class="c">#define CHECK(expr) do { if (!(expr)) return -1; } while (0)
+/* 调用方这么写： */
+CHECK(memcmp(a, b, 4) == 0);     /* OK */
+CHECK(arr[i, j] == 0);           /* 报错 */
+CHECK((int[]){1,2}[0] == 1);     /* OK */
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>预处理器<strong>只把圆括号当参数边界</strong>。方括号 <code class="c">[...]</code> 和花括号 <code class="c">{...}</code> 里的逗号照样分隔宏参数：</p>
+<ul>
+<li><code class="c">CHECK(arr[i, j] == 0)</code> → 逗号把参数劈成 <code class="c">arr[i</code> 和 <code class="c">j] == 0</code> 两个 → <code class="c">error: macro "CHECK" passed 2 arguments, but takes just 1</code>。</li>
+<li><code class="c">CHECK((int[]){1,2}[0] == 1)</code> 能过，是因为整个 <code class="c">(int[]){1,2}[0] == 1</code> 被<strong>最外层圆括号</strong>保护住了——里面的花括号逗号在括号内部，不参与分隔。</li>
+</ul>
+<p>修法：① 调用方给整个表达式套圆括号（注意：声明语句不能套括号，<code class="c">DECL(int a[] = {1,2})</code> 只能改用变参宏 <code class="c">#define DECL(...)</code>）；② 把宏定义成变参宏 <code class="c">#define CHECK(...)</code> 让 <code class="c">...</code> 吸收逗号；③ 拆成两个参数 <code class="c">CHECK(a, i, j)</code> → 改成 <code class="c">CHECK(arr_at(a,i,j))</code> 之类的辅助函数。</p>
+</details>
+<p><strong>题目 3：</strong> 这个日志宏有什么隐藏 bug？</p>
+<pre class="code" data-label="C"><code class="c">#define LOG_ERR(fmt, ...)                          \
+    do {                                            \
+        fprintf(stderr, &quot;[ERR] &quot; fmt, ##__VA_ARGS__); \
+        fprintf(logfp,  &quot;[ERR] &quot; fmt, ##__VA_ARGS__); \
+    } while (0)
+/* 调用： */
+LOG_ERR(&quot;retry %d\n&quot;, ++retry_count);
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>双重求值</strong>：<code class="c">##__VA_ARGS__</code> 在第 2、3 行各出现一次，<code class="c">++retry_count</code> 被执行两次（实测同型宏：<code class="c">LOG_BOTH("i=%d\n", i++)</code> 输出 <code class="c">[A] i=0 [B] i=1</code>，调用后 <code class="c">i=2</code>）。日志宏把状态改了，这是最难查的一类 bug——它只在"同时写两处日志"时触发，而 debug 时你往往只看一处。</p>
+<p>修法：宏体里 <code class="c">__VA_ARGS__</code> 只出现一次。需要写两处就转成真函数：</p>
+<pre class="code" data-label="C"><code class="c">static void log_err_real(const char *fmt, ...) __attribute__((format(printf,1,2)));
+static void log_err_real(const char *fmt, ...) { /* va_list 走两遍写两处 */ }
+#define LOG_ERR(...) log_err_real(__VA_ARGS__)
+</code></pre>
+<p>这样 <code class="c">++retry_count</code> 只求值一次，而且 <code class="c">format</code> 属性检查照常生效（实测检查能穿过宏层）。</p>
+</details>
+<p><strong>题目 4：</strong> 你用经典 <code class="c">PP_NARG</code> 做参数分发，发现 <code class="c">MY_MACRO()</code>（零参）总是分到"1 个参数"的分支。为什么？怎么修？</p>
+<details>
+<summary>参考答案</summary>
+<p>经典写法：</p>
+<pre class="code" data-label="C"><code class="c">#define PP_NARG(...) PP_NARG_(__VA_ARGS__, 8,7,6,5,4,3,2,1,0)
+</code></pre>
+<p>零参调用展开成 <code class="c">PP_NARG_(, 8,7,...,0)</code>——<strong>逗号前面的空参数也算一个参数</strong>，整个序列右移一位，于是计数结果比真实值大 1（实测：<code class="c">PP_NARG()</code> = 1）。</p>
+<p>修法（C23 / gcc 13+ / clang 17+）：</p>
+<pre class="code" data-label="C"><code class="c">#define NEW_NARG(...)   NEW_HELPER(__VA_ARGS__ __VA_OPT__(,) 9,8,7,6,5,4,3,2,1,0)
+#define NEW_HELPER(_1,_2,_3,_4,_5,_6,_7,_8,_9,N,...) N
+</code></pre>
+<p><code class="c">__VA_OPT__</code> 在无参时不补逗号，助手多一位吸收偏移。实测：零参 = 0、一参 = 1、八参 = 8，gcc c2x / gnu11 / clang gnu17 三处一致。</p>
+<p>如果只想知道"有没有参数"，更简单的原语：<code class="c">#define HAS_ARGS(...) (0 __VA_OPT__(+1))</code>（实测空 = 0、非空 = 1）。</p>
 </details>
       </section>
       <section class="section" id="s-6-12-1">
         <div class="sec-head"><div class="sec-no">6.12</div><h2>.1 什么是可变参数宏</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-12">6.12 可变参数宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>可变参数宏</strong> 在预处理阶段 <strong>文本替换</strong> 为函数调用。C99 引入；GNU <strong><code class="c">##__VA_ARGS__</code></strong> 改善空参。</p>
 <h2>要点</h2>
@@ -6019,6 +6455,9 @@ LOG(&quot;val=%d\n&quot;, 42);  // (B) 正常？
       </section>
       <section class="section" id="s-6-12-2">
         <div class="sec-head"><div class="sec-no">6.12</div><h2>.2 继续改进我们的宏</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-12">6.12 可变参数宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>逐步完善 <strong><code class="c">LOG</code> 宏</strong>：加入 <strong>级别</strong>、<strong><code class="c">__FILE__</code>/<code class="c">__LINE__</code>/<code class="c">__FUNCTION__</code></strong>、<strong><code class="c">##__VA_ARGS__</code> 空参</strong>、<strong>do-while(0)</strong> 包装，并与 <strong>6.8 format 属性</strong> 底层函数配合。</p>
 <h2>要点</h2>
@@ -6107,6 +6546,9 @@ else  // 这个 else 绑定到内层 if！
       </section>
       <section class="section" id="s-6-12-3">
         <div class="sec-head"><div class="sec-no">6.12</div><h2>.3 可变参数宏的另一种写法</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-12">6.12 可变参数宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>除 <strong><code class="c">##__VA_ARGS__</code></strong> 外，可用 <strong>C20 <code class="c">__VA_OPT__</code></strong>、<strong>重载宏计数</strong>、GNU <strong><code class="c">args...</code></strong> 旧语法。</p>
 <h2>要点</h2>
@@ -6150,6 +6592,9 @@ else  // 这个 else 绑定到内层 if！
       </section>
       <section class="section" id="s-6-12-4">
         <div class="sec-head"><div class="sec-no">6.12</div><h2>.4 内核中的可变参数宏</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-12">6.12 可变参数宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>内核 <strong><code class="c">printk</code></strong>、<strong><code class="c">pr_info</code>/<code class="c">dev_err</code></strong> 等均 <strong>可变参宏 + format 属性</strong>。</p>
 <h2>要点</h2>
