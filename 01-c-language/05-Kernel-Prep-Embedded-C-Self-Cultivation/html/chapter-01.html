@@ -303,7 +303,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-5-2"><span class="n">6.5.2</span>零长度数组使用示例</a>
           <a href="#s-6-5-3"><span class="n">6.5.3</span>内核中的零长度数组</a>
           <a href="#s-6-5-4"><span class="n">6.5.4</span>思考：指针与零长度数组</a>
-          <a href="#s-6-10"><span class="n">6.10</span>内联函数</a>
+          <a href="#s-6-10"><span class="n">6.10</span>内联函数：inline、static inline 与 always_inline</a>
           <a href="#s-6-10-1"><span class="n">6.10.1</span>属性声明：noinline</a>
           <a href="#s-6-10-2"><span class="n">6.10.2</span>什么是内联函数</a>
           <a href="#s-6-10-3"><span class="n">6.10.3</span>内联函数与宏</a>
@@ -442,8 +442,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tr>
 <td>6</td>
 <td><a href="#s-6-10">6.10 inline 内联函数</a></td>
-<td>▶ 下一批</td>
-<td>「建议」不是「命令」；与 CH2 的 weak 语义对立</td>
+<td>✅ 29 KB</td>
+<td>C99/gnu89 语义反转；薛定谔链接；与 CH2 的 weak 语义对立</td>
 </tr>
 <tr>
 <td>7</td>
@@ -470,11 +470,11 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   |
 6.2  指定初始化          &lt;- 读内核驱动代码必需
   |
-6.12 变参宏 -&gt; 6.10 inline
+6.10 inline ✅ -&gt; 6.12 变参宏（下一站）
 </code></pre>
 <p><strong>两个要点</strong>：</p>
 <ol>
-<li><strong>6.3 + 6.4 是孪生alin</strong>。所有内核里的「类型安全宏」都同时用到二者（<code class="c">container_of</code>、<code class="c">min</code>/<code class="c">max</code>、<code class="c">swap</code>）。单独看任何一个都不完整。</li>
+<li><strong>6.3 + 6.4 是孪生两件套</strong>。所有内核里的「类型安全宏」都同时用到二者（<code class="c">container_of</code>、<code class="c">min</code>/<code class="c">max</code>、<code class="c">swap</code>）。单独看任何一个都不完整。</li>
 <li><strong>6.5 柔性数组是 CH3 嵌入式实战的地基</strong>。网络包、DMA 描述符、命令队列全靠它——到 <a href="chapter-03.html#ch-3">CH3</a> 会频繁回头查。</li>
 </ol>
 <h2>跨平台 / 标准兼容提醒</h2>
@@ -5126,31 +5126,575 @@ struct C { int len; int *data; };      // 指针
 </details>
       </section>
       <section class="section" id="s-6-10">
-        <div class="sec-head"><div class="sec-no">6.10</div><h2>内联函数</h2></div>
+        <div class="sec-head"><div class="sec-no">6.10</div><h2>内联函数：inline、static inline 与 always_inline</h2></div>
+<blockquote>
+<p><strong>归属</strong>：CH1 GNU C 基础扩展语法 ·（写在函数签名上的关键字，源码表面看得见）
+<strong>实测环境</strong>：WSL · gcc 13.3.0（GNU ld 2.42）/ clang 18.1.3 · x86-64
+<strong>配套小节</strong>：<a href="chapter-01.html#s-6-10-1">6.10.1 noinline</a> · <a href="chapter-01.html#s-6-10-2">6.10.2 什么是内联函数</a> · <a href="chapter-01.html#s-6-10-3">6.10.3 内联函数与宏</a> · <a href="chapter-01.html#s-6-10-4">6.10.4 编译器的处理</a> · <a href="chapter-01.html#s-6-10-5">6.10.5 为什么定义在头文件</a>
+<strong>相关</strong>：<a href="chapter-02.html#s-6-9">6.9 weak 与 alias</a>（语义对立面）· <a href="chapter-02.html#s-6-6-1">6.6.1 <code class="c">__attribute__</code> 总纲</a> · <a href="chapter-03.html#s-10-8">10.8 寄存器操作</a>（屏障与内联的配合）</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong>inline 函数</strong> 建议编译器 <strong>就地展开</strong>，消除调用开销；C99 标准 inline 与 <strong>GNU <code class="c">always_inline</code>/<code class="c">noinline</code></strong> 并存。内核/DPDK <strong>热点路径</strong>大量使用 <strong>static inline</strong> 于头文件。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">static inline int square(int x) { return x * x; }
+<p><code class="c">inline</code> 表面是个性能提示——"建议编译器把函数体就地展开，省掉 call/ret"。这是教科书的第一句话，也是最误导人的一句话。实测五轮（gcc 13.3 / clang 18.1.3 / x86-64）之后，真实图景是：</p>
+<blockquote>
+<p><strong>inline 一半是链接语义，一半是优化可见性，唯独不是"省几条 call 指令"。</strong></p>
+</blockquote>
+<p>三个认知翻转，全部有实测背书：</p>
+<ol>
+<li><strong>链接语义比性能语义危险得多。</strong> 同一份代码，<code class="c">-O0</code> 下链接失败、<code class="c">-O2</code> 下链接通过（实测）；C99 和 gnu89 的 <code class="c">inline</code> / <code class="c">extern inline</code> 语义<strong>完全相反</strong>（实测反转表）；头文件里裸写 <code class="c">inline</code> 是 C 语言最著名的链接错误之一。</li>
+<li><strong>内联的收益主要不是省 call/ret。</strong> 在优化器"看不穿"的依赖链上（xor 链），noinline / static inline / always_inline 三者性能几乎相同（0.31s vs 0.31s vs 0.32s）——现代乱序 CPU 的分支预测把直接调用的开销基本藏干净了。真正的大头是<strong>编译器看穿函数体之后的连锁优化</strong>：常量传播、归纳变量识别、死代码消除。同一循环，noinline 跑 0.273s，inline 后<strong>整个循环被删掉</strong>（0.000000s）。</li>
+<li><strong><code class="c">inline</code> 关键字在 <code class="c">-O2</code> 下几乎没有话语权。</strong> 一个 24 行的中等函数，带不带 <code class="c">inline</code> 都被 gcc/clang 内联（0 call）。想真正控制内联，只有 <code class="c">__attribute__((always_inline))</code> 和 <code class="c">__attribute__((noinline))</code>。</li>
+</ol>
+<p>本节按"语义 → 控制 → 收益机理 → 内核实践"四层展开，所有结论均来自 <code class="c">D:\.kernel-ref\demo-inline\</code>（run.sh ~ run7.sh）的实测输出。</p>
+<hr />
+<h2>一、两种标准语义：C99 vs gnu89，一张反转表</h2>
+<p><code class="c">inline</code> 关键字从 C99 才进入 ISO 标准。但 GNU89 inline（gcc 的传统方言，Linux 内核 5.18 之前一直用 <code class="c">-std=gnu89</code> 编译）的语义和 C99 <strong>恰好相反</strong>。这不是风格差异，是同一个关键字在两种方言下做相反的事。</p>
+<h3>1.1 规则原文</h3>
+<p><strong>C99（6.7.4p7）</strong>：一个 TU 里，若函数的所有声明都带 <code class="c">inline</code> 且不带 <code class="c">extern</code>，则该定义是 <em>inline definition</em>——<strong>不提供外部定义</strong>（别的 TU 链接不到它）；若同 TU 中出现一个带 <code class="c">extern</code> 的声明，该定义<strong>同时</strong>也是外部定义。</p>
+<p><strong>gnu89</strong>：<code class="c">inline</code> 单独出现 = 普通外部定义（一定发射符号）+ 建议内联；<code class="c">extern inline</code> = 不发射外部定义。</p>
+<h3>1.2 实测反转表（gcc 13.3，两 TU 场景）</h3>
+<p>测试：头文件里写 <code class="c">inline int g(int x){ return x+1; }</code>（或加 <code class="c">extern</code> 声明），两个 <code class="c">.c</code> 各 include 一次，链接：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>std=c11</th>
+<th>std=gnu89</th>
+<th>符号表（单 TU 编译）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">inline int g(...)</code> 裸</td>
+<td>-O0: <strong>undefined reference</strong>（两 TU 都要 out-of-line 副本，谁都不提供）<br>-O2: <strong>通过</strong>（各自 TU 内被内联，见 §二）</td>
+<td><strong>multiple definition</strong>（每个 TU 都发射外部定义）</td>
+<td>c11: <code class="c">U g</code>（未定义）<br>gnu89: <code class="c">T g</code></td>
+</tr>
+<tr>
+<td><code class="c">extern inline int g(...)</code></td>
+<td><strong>通过</strong>（extern 声明让定义成为外部定义）</td>
+<td><strong>undefined reference</strong>（gnu89 的 extern inline 不发射符号）</td>
+<td>c11: <code class="c">T g</code><br>gnu89: <code class="c">U g</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>看清楚了吗——<strong>两个方言的 <code class="c">inline</code> / <code class="c">extern inline</code> 行为完全对调</strong>。这正是 C99 与 gnu89 的著名语义反转：</p>
+<pre class="code" data-label="code"><code class="c">C99   的 inline        ≈  gnu89 的 extern inline   （不发射外部符号）
+C99   的 inline+extern ≈  gnu89 的 inline          （发射外部符号）
 </code></pre>
-<h2>与后续衔接</h2>
+<blockquote>
+<p><strong>读老代码的教训</strong>：2018 年之前的 Linux 内核（<code class="c">-std=gnu89</code>）里满地的 <code class="c">extern inline</code> 和裸 <code class="c">inline</code>，语义和你在 C11 书上学的相反。读 v4.x 内核头文件时必须切到 gnu89 脑模式，否则 <code class="c">static inline</code> 之外的一切都会读反。</p>
+</blockquote>
+<h3>1.3 最经典的坑：C99 裸 inline 连自己 TU 的调用都链不上</h3>
+<pre class="code" data-label="C"><code class="c">/* w1-bare-inline.c —— 只有一个文件 */
+#include &lt;stdio.h&gt;
+inline int add(int a, int b) { return a + b; }
+int main(void) { printf(&quot;%d\n&quot;, add(1, 2)); }
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">$ gcc -std=c11 w1-bare-inline.c          # -O0
+/usr/bin/ld: w1-bare-inline.c:(.text+0x13): undefined reference to `add'
+$ gcc -std=c11 -O2 w1-bare-inline.c      # 同一代码，只换优化级别
+$ ./a.out
+3
+</code></pre>
+<p><strong>同一份代码，改一个编译选项，链接结果翻转</strong>。机制：</p>
 <ul>
-<li><strong>6.10.1–6.10.5</strong> noinline、语义、宏对比、编译器行为、头文件</li>
+<li><code class="c">-O0</code>：<code class="c">inline</code> 不生效（不内联），<code class="c">main</code> 里生成 <code class="c">call add</code>；但 C99 语义下 inline definition <strong>不发射</strong> <code class="c">add</code> 的函数体 → 链接器找不到符号。</li>
+<li><code class="c">-O2</code>：调用点被内联成 <code class="c">lea</code>/<code class="c">add</code>，<code class="c">call add</code> 消失 → 不需要符号 → 链接通过。</li>
+</ul>
+<p>这就是"薛定谔的链接"：代码能不能链接，取决于编译器<strong>碰巧</strong>有没有把调用内联掉。单元测试用 <code class="c">-O0</code>、生产用 <code class="c">-O2</code> 的项目，这类 bug 只在测试环境复现。</p>
+<h3>1.4 正确的 C99 三件套用法</h3>
+<pre class="code" data-label="C"><code class="c">/* add.h —— 定义放头文件，裸 inline */
+inline int add(int a, int b) { return a + b; }
+
+/* add.c —— 恰好一个 TU 里补 extern 声明：让定义成为外部定义 */
+extern int add(int, int);
+</code></pre>
+<p>实测：<code class="c">gcc -std=c11 impl.c user.c</code> 链接通过，符号表 <code class="c">T sub</code>/<code class="c">T add</code>。其余 TU 照常 <code class="c">extern int add(int,int);</code> 声明后调用。这份契约要求你<strong>记住</strong>在哪个 <code class="c">.c</code> 里补 extern——忘了就是 §1.3 的薛定谔链接。</p>
+<p><strong>为什么大家最后都选 <code class="c">static inline</code></strong>：它不需要任何配合文件、任何 TU 组合都安全、未使用时 <code class="c">-O2</code> 下零代价。见下节矩阵。</p>
+<hr />
+<h2>二、头文件四种写法的链接安全矩阵（实测全景）</h2>
+<p>把"函数想放头文件"的所有写法一次测全。场景：头文件 + 两个 <code class="c">.c</code> 各 include 一次并调用，gcc 13.3：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头文件写法</th>
+<th>c11 <code class="c">-O0</code></th>
+<th>c11 <code class="c">-O2</code></th>
+<th>gnu89 <code class="c">-O0</code></th>
+<th>gnu89 <code class="c">-O2</code></th>
+<th>单 TU 符号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">static inline int g(...)</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td><code class="c">t g</code>（局部）</td>
+</tr>
+<tr>
+<td><code class="c">inline int g(...)</code></td>
+<td>❌ undefined</td>
+<td>✅</td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td>c11: <code class="c">U g</code> / g89: <code class="c">T g</code></td>
+</tr>
+<tr>
+<td><code class="c">inline</code> + 头文件里 <code class="c">extern</code> 声明</td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td><code class="c">T g</code></td>
+</tr>
+<tr>
+<td><code class="c">__attribute__((gnu_inline)) inline</code></td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td>❌ multiple def</td>
+<td><code class="c">T g</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>（第 3 行失败原因：头文件里的 <code class="c">extern</code> 声明让<strong>每个</strong> TU 的定义都成为外部定义 → 冲突。extern 声明必须只出现在<strong>一个</strong> <code class="c">.c</code> 里，这正是 §1.4 的契约。）</p>
+<p><strong>结论只有一行：头文件里写 <code class="c">static inline</code>，永远正确。</strong> 它是唯一在所有 std × 所有优化级别 × 任意 TU 组合下都链接安全的写法。这不是巧合：</p>
+<ul>
+<li><code class="c">static</code> → 每个 TU 一份私有副本，符号是 <code class="c">t</code>（小写，局部），永不 multiple definition；</li>
+<li>未使用时，<code class="c">-O2</code> 下编译器直接丢弃（实测：<code class="c">nm</code> 里 <code class="c">t mul</code> 消失；<code class="c">-O0</code> 下保留但只占一个局部符号）；</li>
+<li>对比裸 <code class="c">inline</code>（gnu89）：<strong>未使用的</strong> <code class="c">inline</code> 函数也发射 <code class="c">T</code> 符号（实测 <code class="c">T unused_fn</code>）——老代码头文件里一堆没人用的 inline，每份目标文件都膨胀。</li>
+</ul>
+<blockquote>
+<p><strong>和 CH1 分章判据对照</strong>：<code class="c">inline</code> 的链接语义坑（本节）属于"源码看不见却真实发生"——写错了编译期不报错，到链接期甚至运行期才炸。之所以把 6.10 放在 CH1，是因为关键字本身和 <code class="c">static inline</code> 的日常写法都写在函数签名上、看得见；但语义反转和薛定谔链接这些深层行为，请按 CH2 的标准对待：<strong>写之前想清楚，写完实测链接</strong>。</p>
+</blockquote>
+<hr />
+<h2>三、真正的控制权：always_inline 与 noinline</h2>
+<h3>3.1 <code class="c">-O0</code> 下三兄弟的行为</h3>
+<pre class="code" data-label="C"><code class="c">__attribute__((always_inline)) inline int square(int x) { return x * x; }
+</code></pre>
+<p>实测 <code class="c">-O0</code> 反汇编：<code class="c">main</code> 里 <strong>0 个 <code class="c">call square</code></strong>——完全展开。对照：普通 <code class="c">inline</code> 在 <code class="c">-O0</code> 完全被忽略（C99 语义下还会导致 §1.3 的链接失败）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th><code class="c">-O0</code></th>
+<th><code class="c">-O2</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">inline</code>（关键字）</td>
+<td>忽略，生成 call</td>
+<td>大概率内联，但编译器说了算</td>
+</tr>
+<tr>
+<td><code class="c">__attribute__((always_inline))</code></td>
+<td><strong>强制内联</strong></td>
+<td><strong>强制内联</strong></td>
+</tr>
+<tr>
+<td><code class="c">__attribute__((noinline))</code></td>
+<td>不内联</td>
+<td><strong>强制不内联</strong>（哪怕 1 行函数也保留 call）</td>
+</tr>
+<tr>
+<td><code class="c">-fno-inline</code>（全局开关）</td>
+<td>不内联</td>
+<td>普通内联关闭（实测小函数退化为尾调用 <code class="c">jmp</code>）；<strong>关不掉 always_inline</strong></td>
+</tr>
+<tr>
+<td><code class="c">-Og</code>（调试优化）</td>
+<td>—</td>
+<td>平凡 <code class="c">static inline</code> 照常内联</td>
+</tr>
+</tbody>
+</table></div>
+<h3>3.2 always_inline 的三条铁律（实测）</h3>
+<ol>
+<li><strong>必须搭配 <code class="c">inline</code> 关键字</strong>。只写 <code class="c">__attribute__((always_inline)) int f(...)</code> → gcc 警告 <code class="c">'always_inline' function might not be inlinable</code>，clang 静默。内核的写法是宏：<code class="c">static __always_inline int ...</code>，其中 <code class="c">__always_inline = inline __attribute__((always_inline))</code>。</li>
+<li><strong>递归是硬错误（gcc）</strong>：
+   <code class="c">bash
+   $ gcc -std=c11 -c recur.c
+   error: inlining failed in call to 'always_inline' 'fact': function not considered for inlining</code>
+   <strong>clang 对同一代码静默编译</strong>，生成 <code class="c">call fact</code>——两个编译器对失败 always_inline 的处理完全不同（见 §六分歧表）。想强制展开固定深度，老实用宏或模板思维拆开写。</li>
+<li><strong>压过 <code class="c">-fno-inline</code></strong>（实测）：<code class="c">-O2 -fno-inline</code> 下普通 <code class="c">static inline</code> 退化为尾调用 <code class="c">jmp add_i</code>，而 always_inline 函数<strong>照常展开</strong>。这就是内核敢在全局编译选项上折腾的底气。</li>
+</ol>
+<h3>3.3 noinline 的两个用途</h3>
+<ol>
+<li><strong>性能反证</strong>：把小函数钉成 call，用于测量调用开销本身（本节所有 noinline 数据点就是这么来的）。</li>
+<li><strong>保护栈布局 / 抑制代码膨胀</strong>：错误路径的大函数、栈敏感代码。链接器视角 noinline 函数照常发射符号。</li>
+</ol>
+<h3>3.4 取地址会强制生成 out-of-line 副本</h3>
+<pre class="code" data-label="C"><code class="c">static inline int twice(int x) { return 2 * x; }
+int (*fp)(int) = twice;    /* 必须存在一个真实的 twice 函数体 */
+</code></pre>
+<p>实测 <code class="c">-O2</code>：符号 <code class="c">twice</code> 的函数体<strong>依然存在</strong>（<code class="c">grep '^twice:'</code> 命中）。内联只是复制代码，不是删除函数——只要有一个调用点没被内联（取地址就是最常见的），副本就得留着。</p>
+<hr />
+<h2>四、内联的收益机理：不是省 call，是优化可见性</h2>
+<p>这是本节最重要的实测，两组对照实验讲清楚"内联到底买到了什么"。</p>
+<h3>4.1 实验 A：优化器看不穿时，三者性能相同</h3>
+<p>让每次迭代依赖上一次结果（<code class="c">s = add(s ^ i, i)</code>，非线性递推，编译器无法闭式化），2 亿次：</p>
+<pre class="code" data-label="text"><code class="c">noinline call          0.310672 s
+static inline (O2)     0.314261 s
+always_inline          0.316396 s
+</code></pre>
+<p><strong>几乎没差别。</strong> 乱序执行的 CPU 用返回地址栈（RAS）精确预测 call/ret，直接调用的开销被流水线藏得干干净净。反汇编里三者的关键路径都一样：xor + add 的依赖链。</p>
+<blockquote>
+<p>这也是对"内联 = 快"这条直觉的修正：<strong>现代 x86 上，一个方向正确的直接 call 不是性能问题的第一嫌疑人。</strong> 别一看到 call 就想内联。</p>
+</blockquote>
+<h3>4.2 实验 B：优化器看穿时，能快到"无穷大"</h3>
+<p>经典计数循环（<code class="c">s += add(i, 1)</code>，线性归纳，编译器<strong>能</strong>看穿）：</p>
+<pre class="code" data-label="text"><code class="c">noinline  归纳循环    0.273227 s      &lt;- 2 亿次真实 call
+inline    归纳循环    0.000000 s      &lt;- 整个循环被删除
+</code></pre>
+<p>inline 版发生了什么？不是"每次调用省了 5 个周期"——是 gcc 看穿函数体后，识别出 <code class="c">s</code> 是归纳变量，直接把<strong>整个循环</strong>换成了等价的闭式计算（或向量化）。noinline 版的 <code class="c">call</code> 是一堵墙：编译器知道函数名、参数，但<strong>看不见函数体语义</strong>，归纳分析在墙前止步。</p>
+<h3>4.3 看穿之后的三连优化（反汇编实证）</h3>
+<p><strong>常量传播</strong>——<code class="c">add_i(3, 4)</code> 在编译期算完：</p>
+<pre class="code" data-label="asm"><code class="c">use_n:                        # noinline 版：运行期才算
+        movl    $4, %esi
+        movl    $3, %edi
+        jmp     add_n         # 尾调用（call+ret 融合成 jmp，省一个 ret）
+use_i:                        # inline 版：编译期已有答案
+        movl    $7, %eax
+        ret
+</code></pre>
+<p>注意 use_n 的形态：gcc 做了<strong>尾调用优化</strong>（<code class="c">jmp</code> 代替 <code class="c">call</code>），把返回开销也省了——但常量折叠做不到，因为它看不见函数体。这两个函数的差距不是"一次调用"，是"有没有计算"。</p>
+<p><strong>归纳变量 + 循环删除</strong>——见 4.2，<code class="c">0.273s → 0.000000s</code>。</p>
+<p><strong>死代码消除（跨函数）</strong>——调用点已知条件与被调函数分支重叠时，<code class="c">if (x &lt; 0)</code> 的负面分支整块消失（实测：<code class="c">classify(7)</code> 的 <code class="c">cmp/jmp</code> 不复存在）。⚠️ 但注意：函数体里有 <code class="c">volatile</code> 访问时 DCE 会被 volatile 挡住——volatile 是编译器的另一个墙，见 <a href="chapter-03.html#s-10-8">10.8</a>。</p>
+<h3>4.4 一句话总结收益模型</h3>
+<blockquote>
+<p><strong>内联的收益 ≈ 编译器从"函数边界"看进去之后能做的所有优化的总和。</strong> 边界一透明，常量传播、归纳、DCE、向量化全部连锁触发；边界一 opaque（call / weak / 函数指针），这些全部停止。</p>
+<p>所以 HFT 热点路径的工程顺序是：<strong>先保证热路径对编译器透明（可内联、无函数指针间接、无 opaque barrier），再看有没有必要 always_inline。</strong></p>
+</blockquote>
+<hr />
+<h2>五、<code class="c">inline</code> 关键字在 <code class="c">-O2</code> 下的话语权：基本为零</h2>
+<p>一个 24 行的中等函数（8 组 <code class="c">x += k</code> 之类），两档测试：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>gcc <code class="c">-O2</code> 调用点</th>
+<th>clang <code class="c">-O2</code> 调用点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">static int medium(...)</code>（无 inline）</td>
+<td><strong>0 个 call（被内联）</strong></td>
+<td>0 个 call</td>
+</tr>
+<tr>
+<td><code class="c">static inline int medium(...)</code></td>
+<td><strong>0 个 call（被内联）</strong></td>
+<td>0 个 call</td>
+</tr>
+</tbody>
+</table></div>
+<p>带不带 <code class="c">inline</code>，<strong>一个字都不差</strong>。gcc/clang 在 <code class="c">-O2</code> 下的内联决策由成本模型驱动（函数大小、调用点上下文、寄存器压力），关键字 <code class="c">inline</code> 的权重约等于零。</p>
+<p>那 <code class="c">inline</code> 关键字今天还有什么用？</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用途</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>承载 always_inline</strong></td>
+<td><code class="c">__attribute__((always_inline))</code> 必须挂在 inline 函数上才可靠（§3.2）</td>
+</tr>
+<tr>
+<td><strong>链接语义标记</strong></td>
+<td>C99 的 inline definition 机制（§一）——虽然你通常想要的是 static inline</td>
+</tr>
+<tr>
+<td><strong><code class="c">-Winline</code> 诊断</strong></td>
+<td><code class="c">gcc -O1 -Winline</code> 会对"标了 inline 但超限没被内联"的函数告警（实测：<code class="c">--param max-inline-insns-single limit reached</code>）；clang 没有对应告警</td>
+</tr>
+<tr>
+<td><strong>低优化级别的偏置</strong></td>
+<td><code class="c">-O1</code>/<code class="c">-Og</code> 下带 inline 的函数更容易被早期内联（实测 <code class="c">-Og</code> 会内联平凡 static inline）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>实践结论</strong>：在 <code class="c">-O2</code> 时代，<code class="c">inline</code> 关键字更像一个"此函数放头文件"的<strong>文档标记</strong>（因为它必须配合 static 用），性能决策权在编译器手里。想拍板，用 always_inline / noinline。</p>
+<hr />
+<h2>六、gcc vs clang 分歧表（同代码不同行为）</h2>
+<p>实测撞见的编译器分歧，跨编译器项目要小心：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>行为</th>
+<th>gcc 13.3</th>
+<th>clang 18.1.3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>递归 <code class="c">always_inline</code></td>
+<td><strong>error: inlining failed</strong>（硬错误，编不过）</td>
+<td><strong>静默编译</strong>，生成 <code class="c">call fact</code>（承诺没兑现也不吭声）</td>
+</tr>
+<tr>
+<td><code class="c">always_inline</code> 无 <code class="c">inline</code> 关键字</td>
+<td><code class="c">-Wattributes</code> 警告</td>
+<td>静默</td>
+</tr>
+<tr>
+<td><code class="c">-Winline</code> 大函数告警</td>
+<td><code class="c">-O1</code> 触发，给出具体超限参数</td>
+<td>无告警</td>
+</tr>
+<tr>
+<td>默认方言</td>
+<td>gnu17（C99 inline 语义）</td>
+<td>gnu17（同 gcc，实测 <code class="c">U add</code> 一致）</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code> 中等函数内联决策</td>
+<td>与 clang 基本一致</td>
+<td>一致</td>
+</tr>
+<tr>
+<td>200M 调用基准</td>
+<td>noinline 0.27s / inline 0.31s*</td>
+<td>noinline 0.25s / inline 0.39s*（clang 内联后反而略慢——寄存器分配差异，量级相同）</td>
+</tr>
+</tbody>
+</table></div>
+<p>* 实验 A 的 xor 链基准，均属"无差别"档。</p>
+<p><strong>最要命的是第一条</strong>：<code class="c">always_inline</code> 递归在 gcc 下是构建错误（好事，早发现），在 clang 下静默降级——CI 只跑 clang 的话，你以为强制的内联其实没发生。跨编译器项目建议在关键路径用 <code class="c">__attribute__((__always_inline__, __unused__))</code> 组合并检查反汇编，别信关键字。</p>
+<hr />
+<h2>七、与 weak 的对立：一个必须对立着记的对子</h2>
+<p><a href="chapter-02.html#s-6-9">6.9</a> 实测过 weak 的代价（慢 3.2 倍），本节从 inline 侧再钉一次：</p>
+<pre class="code" data-label="C"><code class="c">int addw(int a, int b) __attribute__((weak));
+int addw(int a, int b) { return a + b; }   /* 2 行小函数 */
+</code></pre>
+<p>gcc <code class="c">-O2</code> 反汇编：<code class="c">main</code> 里 <code class="c">call addw</code> <strong>保留</strong>（对照：无 weak 的同款函数 0 个 call）。符号表 <code class="c">W addw</code>。</p>
+<p>机制：weak 意味着"这个符号运行期可被别的定义覆盖"——内联展开等于把"可能被覆盖的函数"的当前版本硬编码进调用方，语义直接破坏。所以<strong>编译器对 weak 函数一律不内联，无论函数多小</strong>。</p>
+<p>把两者放在一张表里记（这是 CH1/CH2 交界处最重要的对子）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">inline</code>（+always_inline）</th>
+<th><code class="c">__attribute__((weak))</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语义目标</td>
+<td>编译期<strong>绑定</strong>：把函数体复制进调用方</td>
+<td>链接期<strong>解绑</strong>：定义可被运行方替换</td>
+</tr>
+<tr>
+<td>代码生成</td>
+<td>展开副本，边界透明，连锁优化</td>
+<td>强制 call，优化墙，永不内联</td>
+</tr>
+<tr>
+<td>代码膨胀</td>
+<td>每个调用点一份副本</td>
+<td>单一函数体</td>
+</tr>
+<tr>
+<td>用在</td>
+<td>热路径、小工具函数、头文件</td>
+<td>冷路径钩子、板级适配、测试替身</td>
+</tr>
+<tr>
+<td>合用</td>
+<td>❌ 语义矛盾（实测：weak 定义即使 tiny 也不内联）</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>记忆钩子：<strong>inline 是"编译期焊死"，weak 是"链接期留活口"。一个函数只能选一头。</strong> 这就是为什么内核里 <code class="c">__weak</code> 的默认钩子全在冷路径（board init、panic 处理），而热路径（<code class="c">arch_atomic_*</code>、<code class="c">get_current</code>）清一色 <code class="c">static __always_inline</code>。</p>
+</blockquote>
+<hr />
+<h2>八、内核实践：<code class="c">static __always_inline</code> 为什么长这样</h2>
+<h3>8.1 真实源码（v6.6，本仓库内核缓存）</h3>
+<pre class="code" data-label="C"><code class="c">/* arch/x86/include/asm/current.h */
+static __always_inline struct task_struct *get_current(void)
+{
+    return this_cpu_read_stable(pcpu_hot.current_task);
+}
+#define current get_current()
+
+/* arch/x86/include/asm/atomic.h —— 整个文件几十个原子操作全是这个签名 */
+static __always_inline int arch_atomic_read(const atomic_t *v) { ... }
+static __always_inline void arch_atomic_add(int i, atomic_t *v) { ... }
+</code></pre>
+<p>（<code class="c">__always_inline</code> 在 <code class="c">include/linux/compiler_types.h</code> 中定义为 <code class="c">inline __attribute__((__always_inline))</code>。）</p>
+<h3>8.2 为什么必须是 always，光 inline 不行</h3>
+<p>内核热路径用 <code class="c">__always_inline</code> 而不是普通 inline，三个理由，前两个与性能无关：</p>
+<ol>
+<li><strong>编译期常量依赖</strong>：<code class="c">this_cpu_read_stable</code> 要把 per-CPU 基址作为<strong>立即数</strong>编进指令（<code class="c">mov %gs:offset</code> 形态）。不内联 → 基址是运行期值 → 指令形态完全不同且更慢。这类代码"不内联 = 功能错误"，不只是慢。</li>
+<li><strong>屏障的正确性</strong>：<code class="c">barrier()</code>（<code class="c">asm volatile("" ::: "memory")</code>）必须<strong>在调用点原地展开</strong>才能挡住编译器重排——变成函数调用的话，重排挡在函数边界外面，语义直接失效。见 <a href="chapter-03.html#s-10-8">10.8 屏障</a>。</li>
+<li><strong>性能确定性</strong>：内核从不 <code class="c">-O0</code> 构建，但会在 <code class="c">-Os</code>（体积优化）和各 arch 之间切换；always_inline 保证这些配置下热路径行为一致，不靠启发式的脸色。</li>
+</ol>
+<p>实测最小复刻（kernel_style2.c）：</p>
+<pre class="code" data-label="C"><code class="c">#define __always_inline __attribute__((always_inline)) inline
+static __always_inline int arch_atomic_read(const volatile int *v)
+{
+    return *v;   /* READ_ONCE 的简化：一条 mov */
+}
+volatile int counter = 42;
+int use(void) { return arch_atomic_read(&amp;counter); }
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">use:
+        movl    counter(%rip), %eax    # 一条指令，无 call，无栈帧
+        ret
+</code></pre>
+<p>正是 <code class="c">arch_atomic_read</code> 在真实内核里的形态。</p>
+<h3>8.3 内核里 static inline / __always_inline / noinline 的分工</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>内核里的场合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">static inline</code></td>
+<td>头文件工具函数的<strong>默认</strong>写法（list.h 的 <code class="c">container_of</code> 系列、绝大多数内联工具）</td>
+</tr>
+<tr>
+<td><code class="c">static __always_inline</code></td>
+<td>原子操作、屏障、per-CPU 访问——"不内联 = 语义错误"的函数</td>
+</tr>
+<tr>
+<td><code class="c">noinline</code></td>
+<td>栈敏感路径（__builtin_return_address 相关）、防代码膨胀</td>
+</tr>
+<tr>
+<td><code class="c">__weak</code></td>
+<td>板级钩子、可选覆盖点（冷路径，见 6.9）</td>
+</tr>
+<tr>
+<td>裸 <code class="c">inline</code> / <code class="c">extern inline</code></td>
+<td><strong>几乎不出现</strong>（gnu89 时代的遗产，读老代码才需要，见 §1.2）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>九、决策表与误区表</h2>
+<h3>9.1 写代码时怎么选（决策树）</h3>
+<pre class="code" data-label="text"><code class="c">函数要放头文件吗？
+├─ 否（只在本 .c 用）→ 什么都不写，编译器自己会内联（-O2 下关键字无效，§五）
+└─ 是
+   ├─ 普通工具函数        → static inline（唯一全场景安全的写法，§二矩阵）
+   ├─ 原子/屏障/编译期常量依赖 → static __always_inline
+   ├─ 大函数/错误路径      → 头文件声明 + .c 定义（正常函数）
+   └─ 可被板子/测试覆盖的钩子 → .c 里 __weak（不是头文件，见 6.9）
+</code></pre>
+<h3>9.2 误区清理表</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>实测真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"inline 能让函数变快"</td>
+<td>优化器看不穿时三者同速（0.31 vs 0.31 vs 0.32s，§4.1）；快是因为连锁优化（§4.2），不是省 call</td>
+</tr>
+<tr>
+<td>"inline 是给编译器的建议，编译器自己决定"</td>
+<td><code class="c">-O2</code> 下它对内联决策的影响≈0（§五）；它真正的现代职能是链接语义 + 承载 always_inline</td>
+</tr>
+<tr>
+<td>"头文件写 inline 就行"</td>
+<td>C99 下 -O0 链接失败、-O2 通过（薛定谔，§1.3）；gnu89 下 multiple definition。唯一安全写法是 static inline</td>
+</tr>
+<tr>
+<td>"always_inline 肯定会被内联"</td>
+<td>递归时 gcc 报错、clang 静默降级（§六）；无 inline 关键字时 gcc 警告"might not be inlinable"</td>
+</tr>
+<tr>
+<td>"weak 函数小就能内联"</td>
+<td>永不内联，与大小无关（§七）</td>
+</tr>
+<tr>
+<td>"inline 函数没有函数体了"</td>
+<td>取地址 / 有一个未内联调用点 → out-of-line 副本必然存在（§3.4）</td>
+</tr>
+<tr>
+<td>"-fno-inline 能禁掉所有内联"</td>
+<td>禁不掉 always_inline（§3.2）</td>
+</tr>
+<tr>
+<td>"noinline 的调用结果不能编译期算出"</td>
+<td>gcc 对<strong>同 TU 内</strong>的 noinline 调用仍会做尾调用等局部优化，但<strong>不做</strong>跨边界的常量折叠（use_n 仍需运行期 jmp，§4.3）；跨 TU 更不可能，除非 LTO</td>
+</tr>
+</tbody>
+</table></div>
+<h3>9.3 调试视角补丁</h3>
+<p><code class="c">-Og</code>（gdb 推荐档位）会内联平凡 <code class="c">static inline</code>，但行为接近 <code class="c">-O0</code>：单步时能看到函数调用，<code class="c">call</code> 还在。想逐指令调试 inline 代码时用 <code class="c">-O0 -fno-inline</code>，注意这<strong>同时废掉</strong> C99 裸 inline 的链接（薛定谔链接的另一半）——又一个 <code class="c">static inline</code> 优于裸 inline 的理由。</p>
+<hr />
+<h2>十、与全书其他节的衔接</h2>
+<ul>
+<li><strong><a href="chapter-02.html#s-6-9">6.9 weak/alias</a></strong>：语义对立面。weak=链接期留活口（永不内联），inline=编译期焊死。两者只能选一。</li>
+<li><strong><a href="#s-6-3">6.3 语句表达式</a></strong>：inline 出现之前，宏是唯一的"零调用开销"手段。inline 修复了宏的所有类型/作用域问题，所以现代内核新代码几乎不再写函数式宏——但宏仍然赢在：可用于编译期常量上下文（数组长度、case 标签），inline 函数不行。</li>
+<li><strong><a href="chapter-03.html#s-10-8">10.8 寄存器操作</a></strong>：<code class="c">barrier()</code>、MMIO 读写的 <code class="c">static inline</code> 包装。屏障必须内联才有效（§8.2），那一节的 demo 和本节 kernel_style 是同一个原理。</li>
+<li><strong><a href="chapter-02.html#s-6-6-1">6.6.1 <code class="c">__attribute__</code> 总纲</a></strong>：always_inline/noinline 的属性语法细节。</li>
+<li><strong>下一节 <a href="chapter-02.html#ch-2">6.11 内建函数</a></strong>：<code class="c">__builtin_constant_p</code> 的一个经典用途就是和 always_inline 配合做"编译期双路径"（内核 <code class="c">__put_user</code> 的一半灵魂）。</li>
+<li><strong>HFT 关联</strong>：热路径优化顺序 = ①保证对编译器透明（可内联、无间接调用）→ ②消除依赖链或提高 ILP → ③才轮到手工 always_inline。反着做是玄学调优。另外本节 4.1 的教训直接适用：<strong>写 benchmark 前先确认你的循环没被闭式化删掉</strong>（inline 掉以后 0.000000s 的"无穷加速"是测量事故，不是优化成果）。</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> <code class="c">inline</code> 关键字只是"建议"编译器内联，编译器可能不内联。GNU C 有哪些方式强制控制内联行为？</p>
-<pre class="code" data-label="C"><code class="c">inline void f1(void) { ... }           // (A)
-static inline void f2(void) { ... }    // (B)
-__attribute__((always_inline)) inline void f3(void) { ... }  // (C)
-__attribute__((noinline)) void f4(void) { ... }  // (D)
+<p><strong>题目 1：</strong> 下面这个头文件被两个 <code class="c">.c</code> include，分别用 <code class="c">gcc -std=c11 -O0</code> 和 <code class="c">-std=gnu89 -O0</code> 编译链接，各自发生什么？为什么？</p>
+<pre class="code" data-label="C"><code class="c">/* util.h */
+inline int f(void) { return 42; }
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>(A) <code class="c">inline</code>：标准 C99，只是建议，编译器可忽略，且需要 out-of-line 副本；(B) <code class="c">static inline</code>：GNU C 常用，建议内联，不产生外部符号；(C) <code class="c">always_inline</code>：强制内联，编译器必须展开（除非不可行如递归）；(D) <code class="c">noinline</code>：强制不内联。内核用 <code class="c">__always_inline</code> 和 <code class="c">noinline</code> 宏包装。<code class="c">always_inline</code> 用于：(1) 性能关键路径；(2) 依赖编译期常量优化的代码（如 <code class="c">container_of</code>）。</p>
+<ul>
+<li><code class="c">-std=c11 -O0</code>：<strong>undefined reference</strong>。C99 语义下裸 inline 定义是 inline definition，不提供外部定义；两个 TU 的调用都生成 <code class="c">call f</code>，但谁都没发射 <code class="c">f</code> 的函数体。</li>
+<li><code class="c">-std=gnu89 -O0</code>：<strong>multiple definition</strong>。gnu89 语义下 inline 定义发射外部定义，两个 TU 各一个 <code class="c">T f</code>，冲突。</li>
+</ul>
+<p>修法：改成 <code class="c">static inline</code>（每个 TU 私有一份，任何方言、任何优化级别都安全）。</p>
+</details>
+<p><strong>题目 2：</strong> 为什么内核的 <code class="c">barrier()</code> 和 <code class="c">arch_atomic_read()</code> 必须用 <code class="c">__always_inline</code>，普通 <code class="c">inline</code> 不够吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>两个原因，都与性能无关：</p>
+<ol>
+<li><code class="c">barrier()</code> 是 <code class="c">asm volatile("" ::: "memory")</code>，语义是"在<strong>这个位置</strong>挡住编译器重排"。如果不内联，它变成一个函数调用，编译器把重排挡在<strong>函数边界外</strong>——调用点两侧的访存照样可以互换，屏障失效。这是语义错误，不是性能问题。</li>
+<li><code class="c">arch_atomic_read</code> / per-CPU 访问依赖编译期常量（如 <code class="c">%gs</code> 基址偏移作为立即数编进指令）。不内联则常量传播断链，生成的指令形态错误或显著变慢。</li>
+</ol>
+<p>普通 <code class="c">inline</code> 在 <code class="c">-O2</code> 下对内联决策没有强制力（§五实测：中等函数带不带 inline 都被内联，但启发式<strong>可以</strong>选择不内联，尤其 <code class="c">-Os</code> 或寄存器压力大时）。语义依赖内联的函数必须 always_inline。</p>
+</details>
+<p><strong>题目 3：</strong> 你写了 <code class="c">__attribute__((always_inline)) int f(int x) { return x+1; }</code>（忘了 inline 关键字），并在递归函数里调用了带 always_inline 的另一个函数。项目 CI 用 clang 全绿，换 gcc 编译炸了。发生了什么？</p>
+<details>
+<summary>参考答案</summary>
+<p>两件事叠加：</p>
+<ol>
+<li>always_inline 不带 inline 关键字：gcc 给 <code class="c">-Wattributes</code> 警告（"might not be inlinable"），clang 静默——所以 clang CI 没发现问题。</li>
+<li>always_inline 的函数<strong>直接或间接递归</strong>：gcc 报硬错误 <code class="c">inlining failed in call to 'always_inline'</code>，clang 静默降级成普通调用。你大概写了一个（传递）递归的 always_inline 函数，gcc 拒绝编译，clang 假装没看见。</li>
+</ol>
+<p>教训：always_inline 要配 inline 关键字（用内核式 <code class="c">__always_inline</code> 宏）；依赖它的代码在 gcc 上做一次编译验证，或检查反汇编里 <code class="c">call</code> 是否真的消失。</p>
+</details>
+<p><strong>题目 4：</strong> benchmark 里 <code class="c">for (i=0;i&lt;200M;i++) s += add(i, 1);</code>，add 是 <code class="c">static inline</code>，测出 0.000000s，比 noinline 版快了"无穷倍"。这个结果说明 inline 优化效果拔群吗？</p>
+<details>
+<summary>参考答案</summary>
+<p>不说明。0.000000s 是因为编译器看穿了函数体，识别出 <code class="c">s</code> 是归纳变量，把<strong>整个循环</strong>换成了闭式计算——测试的代码被删了，测的是"没有发生的循环"。要测内联的真实收益：用编译器无法闭式化的依赖链（如 <code class="c">s = add(s ^ i, i)</code>，实测此时三者同速 0.31s），或者接受"内联收益=连锁优化"的模型，直接对比两个完整业务路径。</p>
+<p>同时这反过来是内联的真实价值证明：noinline 的 <code class="c">call</code> 是优化墙，归纳/常量/DCE 全部止步（0.273s）。性能差距来自"编译器能不能看穿"，不是 call 指令本身。</p>
 </details>
       </section>
       <section class="section" id="s-6-10-1">
         <div class="sec-head"><div class="sec-no">6.10</div><h2>.1 属性声明：noinline</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-10">6.10 内联函数：inline、static inline 与 always_inline</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong><code class="c">noinline</code></strong> 禁止内联；<strong><code class="c">always_inline</code></strong> 强制内联。用于 <strong>调试栈回溯</strong>、<strong>控制代码体积</strong> 或 <strong>极热路径必 inline</strong>。</p>
 <h2>要点</h2>
@@ -5186,6 +5730,9 @@ void hot_loop(void) {
       </section>
       <section class="section" id="s-6-10-2">
         <div class="sec-head"><div class="sec-no">6.10</div><h2>.2 什么是内联函数</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-10">6.10 内联函数：inline、static inline 与 always_inline</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>内联</strong> = 编译器把函数体 <strong>插入调用点</strong>，像宏但 <strong>有类型检查</strong> 与 <strong>单求值</strong>。C99 <strong><code class="c">inline</code> 关键字</strong> 与 <strong><code class="c">static inline</code></strong> 头文件模式是内核/DPDK 默认写法。</p>
 <h2>要点</h2>
@@ -5261,6 +5808,9 @@ square(i++);     // 问题?
       </section>
       <section class="section" id="s-6-10-3">
         <div class="sec-head"><div class="sec-no">6.10</div><h2>.3 内联函数与宏</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-10">6.10 内联函数：inline、static inline 与 always_inline</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>宏</strong> 灵活但缺类型、双求值；<strong>inline 函数</strong> 更安全。内核仍大量宏因 <strong>typeof/语句表达式</strong>；新代码优先 <strong>static inline</strong>。</p>
 <h2>要点</h2>
@@ -5305,6 +5855,9 @@ int r = SQUARE(i++);  // 问题？
       </section>
       <section class="section" id="s-6-10-4">
         <div class="sec-head"><div class="sec-no">6.10</div><h2>.4 编译器对内联函数的处理</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-10">6.10 内联函数：inline、static inline 与 always_inline</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>是否 inline 由 <strong>启发式</strong> 决定：函数大小、<code class="c">-O</code> 级别、<strong><code class="c">always_inline</code></strong>、<strong>LTO</strong>。</p>
 <h2>要点</h2>
@@ -5351,6 +5904,9 @@ int caller(int x) { return add(x, 1); }
       </section>
       <section class="section" id="s-6-10-5">
         <div class="sec-head"><div class="sec-no">6.10</div><h2>.5 思考：内联函数为什么定义在头文件中</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-10">6.10 内联函数：inline、static inline 与 always_inline</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>定义放头文件</strong> 是为让 <strong>每个编译单元</strong> 都看到函数体，从而 <strong>就地 inline</strong>。若只在 <code class="c">.c</code> 定义，其他 TU 只能 <strong>extern 调用</strong>（除非 LTO）。</p>
 <h2>要点</h2>
