@@ -408,8 +408,8 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
 <tr>
 <td>3</td>
 <td><a href="#s-6-8">6.8 format（格式串检查）</a></td>
-<td>待扩</td>
-<td>编译期诊断</td>
+<td>✅ 30 KB</td>
+<td>编译期诊断（archetype 支持矩阵 / <code class="c">-Wformat</code> 家族 / <code class="c">no_printk</code> 零开销）</td>
 </tr>
 <tr>
 <td>4</td>
@@ -432,7 +432,7 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
 <tr>
 <td>附</td>
 <td><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/">demo/</a></td>
-<td>8 个示例</td>
+<td>8 个示例 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/08-format/">08-format</a> 12 个实测</td>
 <td>本章全部可编译复现</td>
 </tr>
 </tbody>
@@ -3693,33 +3693,783 @@ struct tcp_hdr_min {
       </section>
       <section class="section" id="s-6-8">
         <div class="sec-head"><div class="sec-no">6.8</div><h2>属性声明：format</h2></div>
+<blockquote>
+<p><strong>归属</strong>：A 档 · CH2 GNU C 高级特性（源码看不见，但真实发生）
+<strong>实测环境</strong>：WSL · gcc 13.3.0（GNU ld 2.42）/ clang 18.1.3 · x86-64 · glibc 2.39
+<strong>源码核对</strong>：Linux v6.6 <code class="c">include/linux/compiler_attributes.h:171</code>、<code class="c">include/linux/printk.h:126/134/149</code>
+<strong>配套小节</strong>：<a href="chapter-02.html#s-6-8-1">6.8.1 变参函数的格式检查</a> · <a href="chapter-02.html#s-6-8-2">6.8.2 变参函数的设计与实现</a> · <a href="chapter-02.html#s-6-8-3">6.8.3 实现自己的日志打印函数</a>
+<strong>相关</strong>：<a href="#s-6-6">6.6.1 <code class="c">__attribute__</code> 总纲</a> · <a href="#s-6-7">6.7 aligned/packed</a> · <a href="#s-6-9">6.9 weak/alias</a> · <a href="chapter-01.html#s-6-12">6.12 变参宏</a> · <a href="chapter-01.html#s-6-1">6.1 C 标准与 gnu11</a></p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong><code class="c">__attribute__((format(printf, fmt_idx, arg_start)))</code></strong> 让 GCC 对 <strong>自定义 printf 风格函数</strong> 做 <strong>格式串与实参</strong> 编译期检查，捕获 <code class="c">%d</code> 配 <code class="c">"string"</code> 类错误。内核 <code class="c">printk</code>、DPDK <code class="c">RTE_LOG</code>、自研日志层都依赖此属性。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">void my_log(int level, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
+<p>前面 6.3–6.7 的属性（<code class="c">typeof</code>、语句表达式、柔性数组、<code class="c">aligned</code>/<code class="c">packed</code>）都作用于<strong>编译期可见的类型与布局</strong>。<code class="c">format</code> 是第一个<strong>让编译器去读一个字符串</strong>的属性——它把「格式串」从「运行时的黑盒数据」变成「编译器能静态解析的微型程序」。</p>
+<p>一句话概括：</p>
+<blockquote>
+<p><strong><code class="c">format</code> 属性告诉编译器：第 N 个参数是一段按 printf/scanf 规则书写的代码，请照着它检查后面的实参。</strong></p>
+</blockquote>
+<p>它的价值不在"少写几行"，而在<strong>把一类必崩的运行期错误搬到编译期</strong>：</p>
+<pre class="code" data-label="C"><code class="c">log_err(&quot;order %d rejected: %s\n&quot;, reason_str, order_id);
+/*              ^^^^                 ^^^^^^^^^^^  char* 喂给 %d */
+</code></pre>
+<p>没有 <code class="c">format</code> 属性，这行代码编译通过、上线崩溃（x86-64 上 <code class="c">%d</code> 读的是 <code class="c">esi</code>，而传进去的是指针低 32 位，打印出一串垃圾；在 varargs 的 ABI 下更糟——<code class="c">va_arg</code> 的取值位置会整体错位，后面的 <code class="c">%s</code> 直接段错误）。</p>
+<p>加了属性，它是这样：</p>
+<pre class="code" data-label="code"><code class="c">warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’
+</code></pre>
+<p>而本节要钉死的，是<strong>书里没讲、但工程上天天踩</strong>的六件事：</p>
+<ol>
+<li><code class="c">first-to-check = 0</code> 才是 <code class="c">va_list</code> 版本的正确写法，写成 2 在 gcc 下是<strong>硬错误</strong>；</li>
+<li><strong>gcc 和 clang 支持的 archetype 完全不是同一套</strong>，内核为此只用 <code class="c">printf</code> 不用 <code class="c">gnu_printf</code>；</li>
+<li><code class="c">-Wformat</code> 家族里有一半是<strong>默认不开</strong>的；</li>
+<li>属性写错位置，gcc 报 error 而 clang 只报 warning；</li>
+<li>内核的 <code class="c">%pK</code>/<code class="c">%pI4</code> 这类扩展格式符，<strong>两个编译器都不检查</strong>；</li>
+<li><code class="c">no_printk</code> 那个 <code class="c">if (0)</code> 技巧能同时拿到<strong>格式检查</strong>和<strong>零开销</strong>——这是日志系统设计的分水岭。</li>
+</ol>
+<hr />
+<h2>一、三个参数到底在说什么</h2>
+<pre class="code" data-label="C"><code class="c">__attribute__((format(archetype, string-index, first-to-check)))
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+<th>常见误解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">archetype</code></td>
+<td>按哪套格式规则检查</td>
+<td>以为只有 <code class="c">printf</code>；以为 <code class="c">gnu_printf</code> 到处都能用（见第三节）</td>
+</tr>
+<tr>
+<td><code class="c">string-index</code></td>
+<td>格式串是<strong>第几个参数</strong>（<strong>从 1 开始</strong>）</td>
+<td>按 C 习惯从 0 数</td>
+</tr>
+<tr>
+<td><code class="c">first-to-check</code></td>
+<td>第一个<strong>待检查的可变参</strong>是第几个；<strong>0 = 本函数收的是 <code class="c">va_list</code></strong></td>
+<td>以为 0 表示"不检查"</td>
+</tr>
+</tbody>
+</table></div>
+<p>先跑一遍基本盘（<code class="c">-Wall -Wformat=2</code>）：</p>
+<pre class="code" data-label="C"><code class="c">/* t1_basic.c */
+void log_ok (const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void log_bad(const char *fmt, ...);                              /* 故意不加 */
+void log_lvl(int level, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));                       /* 固定前缀 */
+
+log_ok (&quot;%d %s\n&quot;, &quot;hello&quot;, 42);   /* A */
+log_bad(&quot;%d %s\n&quot;, &quot;hello&quot;, 42);   /* B */
+log_ok (&quot;%d\n&quot;);                   /* C  缺参 */
+log_ok (&quot;%d %d\n&quot;, 1);             /* D  缺参 */
+log_ok (&quot;%d\n&quot;, 1, 2);             /* E  多参 */
+log_ok (&quot;%Q\n&quot;, 1);                /* F  非法转换 */
+log_lvl(3, &quot;%s\n&quot;, 42);            /* G  索引 2/3 生效 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -Wall -Wformat=2 -c t1_basic.c
+t1_basic.c:28: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’
+t1_basic.c:28: warning: format ‘%s’ expects argument of type ‘char *’, but argument 3 has type ‘int’
+t1_basic.c:30: warning: format ‘%d’ expects a matching ‘int’ argument
+t1_basic.c:31: warning: format ‘%d’ expects a matching ‘int’ argument
+t1_basic.c:32: warning: too many arguments for format            [-Wformat-extra-args]
+t1_basic.c:33: warning: unknown conversion type character ‘Q’ in format
+t1_basic.c:34: warning: format ‘%s’ expects argument of type ‘char *’, but argument 3 has type ‘int’
+</code></pre>
+<p><strong>B 行一声不响</strong>——这就是"加不加属性"的全部区别。gcc 与 clang 的措辞对照：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>gcc 13.3</th>
+<th>clang 18</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类型不匹配</td>
+<td><code class="c">format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’</code></td>
+<td><code class="c">format specifies type 'int' but the argument has type 'char *'</code></td>
+</tr>
+<tr>
+<td>缺参</td>
+<td><code class="c">format ‘%d’ expects a matching ‘int’ argument</code></td>
+<td><code class="c">more '%' conversions than data arguments [-Wformat-insufficient-args]</code></td>
+</tr>
+<tr>
+<td>多参</td>
+<td><code class="c">too many arguments for format [-Wformat-extra-args]</code></td>
+<td><code class="c">data argument not used by format string</code></td>
+</tr>
+<tr>
+<td>非法转换符</td>
+<td><code class="c">unknown conversion type character ‘Q’ in format</code></td>
+<td><code class="c">invalid conversion specifier 'Q'</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>clang 多报一条 gcc 没有的：包装函数体内 <code class="c">vprintf(fmt, ap)</code> 会触发 <code class="c">-Wformat-nonliteral</code>（<code class="c">fmt</code> 不是字面量）。<strong>这是 clang 的噪音</strong>，抑制方式是在包装函数里改用 <code class="c">#pragma</code> 局部关闭，或给内部实现另起一个不带属性的函数。</p>
+<hr />
+<h2>二、<code class="c">first-to-check = 0</code>：va_list 版本才是重点</h2>
+<p>这是本节<strong>最容易被忽略、也最容易写错</strong>的地方。</p>
+<p>任何一个成熟的日志层都有两个函数：</p>
+<pre class="code" data-label="C"><code class="c">void  logf (const char *fmt, ...);        /* 对外：收 ...      */
+void vlogf (const char *fmt, va_list ap); /* 对内：收 va_list  */
+</code></pre>
+<p><code class="c">vlogf</code> 的属性该怎么写？<strong><code class="c">first-to-check</code> 必须是 0</strong>——因为它没有可变参，参数已经打包进 <code class="c">va_list</code> 了。写成 2 会怎样：</p>
+<pre class="code" data-label="C"><code class="c">void vlog_wrong(const char *fmt, va_list ap) __attribute__((format(printf, 1, 2)));
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -Wall -Wformat=2 -c t2_valist.c
+t2_valist.c:10: error: ‘format’ attribute argument 3 value ‘2’ does not refer to a variable argument list
+
+$ clang -std=gnu11 -Wall -Wformat=2 -c t2_valist.c
+t2_valist.c:10: warning: GCC requires a function with the 'format' attribute to be variadic [-Wgcc-compat]
+</code></pre>
+<blockquote>
+<p><strong>gcc 是硬错误，clang 只是 warning。</strong> 同一份代码在 gcc 下直接编译失败，在 clang 下带着警告继续过——<strong>CI 只跑 clang 就会漏掉这个 bug</strong>。</p>
+</blockquote>
+<p>内核 v6.6 就是这么写的（<code class="c">include/linux/printk.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">extern asmlinkage __printf(1, 2)
+int vprintk_emit(int facility, int level, const char *dict, const char *fmt, va_list args);  /* 实际是 __printf(4, 0) */
+asmlinkage __printf(1, 2) __cold
+int printk(const char *fmt, ...);
+
+asmlinkage __printf(1, 0)
+int vprintk(const char *fmt, va_list args);      /* &lt;- 0：收 va_list */
+</code></pre>
+<p>注意 <code class="c">vprintk_emit</code> 是 <code class="c">__printf(4, 0)</code>（第 144–145 行）：格式串排第 4（<code class="c">facility</code>/<code class="c">level</code>/<code class="c">dict</code> 在前），<code class="c">0</code> 表示后面跟的是 <code class="c">va_list</code>。</p>
+<p><strong>速记</strong>：函数签名里有 <code class="c">...</code> → 写第一个可变参的下标；签名里是 <code class="c">va_list</code> → 写 <code class="c">0</code>。</p>
+<hr />
+<h2>三、archetype：gcc 与 clang 根本不是同一套</h2>
+<p>书里会列一张"printf / scanf / strftime / strfmon"的表，但<strong>实测支持矩阵完全不同</strong>。逐个探测：</p>
+<pre class="code" data-label="C"><code class="c">void a1(...) __attribute__((format(printf, 1, 2)));
+void a2(...) __attribute__((format(gnu_printf, 1, 2)));
+void a3(...) __attribute__((format(scanf, 1, 2)));
+void a4(...) __attribute__((format(gnu_scanf, 1, 2)));
+void a5(...) __attribute__((format(strftime, 3, 0)));
+void a6(...) __attribute__((format(strfmon, 1, 2)));
+void a7(...) __attribute__((format(ms_printf, 1, 2)));
+void a8(...) __attribute__((format(syslog, 1, 2)));
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>archetype</th>
+<th>gcc 13.3 (Linux)</th>
+<th>clang 18</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">printf</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">scanf</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">strftime</code></td>
+<td>✅（要求 <code class="c">first-to-check = 0</code>）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">strfmon</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">gnu_printf</code></td>
+<td>✅</td>
+<td>❌ <code class="c">'format' attribute argument not supported</code></td>
+</tr>
+<tr>
+<td><code class="c">gnu_scanf</code></td>
+<td>✅</td>
+<td>❌ 同上</td>
+</tr>
+<tr>
+<td><code class="c">ms_printf</code></td>
+<td>❌ <code class="c">unrecognized format function type</code></td>
+<td>❌ not supported</td>
+</tr>
+<tr>
+<td><code class="c">syslog</code></td>
+<td>❌ <code class="c">unrecognized format function type</code></td>
+<td>❌ not supported</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">$ gcc   ... → warning: ‘ms_printf’ is an unrecognized format function type [-Wformat=]
+           → warning: ‘syslog’    is an unrecognized format function type [-Wformat=]
+$ clang ... → warning: 'format' attribute argument not supported: gnu_printf [-Wignored-attributes]
+           → warning: 'format' attribute argument not supported: gnu_scanf  [-Wignored-attributes]
+</code></pre>
+<p><strong>两个编译器正好互补地各缺一半。</strong> 而且失败方式不同：</p>
+<ul>
+<li>gcc 对不认识的 archetype 报 <strong>warning</strong> 然后<strong>忽略该属性</strong>（静默失去检查）；</li>
+<li>clang 同样报 <code class="c">-Wignored-attributes</code> 后<strong>忽略</strong>。</li>
+</ul>
+<p>于是引出一个关键问题：内核同时要被 gcc 和 clang 编译，它用哪个？</p>
+<p>v6.6 <code class="c">include/linux/compiler_attributes.h:171</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define __printf(a, b)   __attribute__((__format__(printf, a, b)))
+#define __scanf(a, b)    __attribute__((__format__(scanf, a, b)))
+</code></pre>
+<p><strong>是 <code class="c">printf</code>，不是 <code class="c">gnu_printf</code>。</strong> 因为 clang 不认后者——内核为了 clang 可编译，主动放弃了 <code class="c">gnu_printf</code> 的额外检查能力。</p>
+<blockquote>
+<p><strong>实践结论</strong>：跨编译器项目<strong>只能用 <code class="c">printf</code> / <code class="c">scanf</code> / <code class="c">strftime</code> / <code class="c">strfmon</code> 这四个</strong>。想用 <code class="c">gnu_printf</code> 换更严的检查，必须确认工具链只有 gcc。</p>
+</blockquote>
+<p>顺带一个反直觉的实测：<strong>archetype 的检查规则与 <code class="c">-std=</code> 方言无关</strong>。</p>
+<pre class="code" data-label="code"><code class="c">$ for std in c89 c99 c11 c17 gnu89 gnu11 gnu17; do gcc -std=$std -Wall -Wformat=2 -c t7_dialect.c; done
+（全部 7 次：0 warning，包括 glibc 扩展 %m 与 GNU 千分位 %'d）
+</code></pre>
+<p><code class="c">printf</code> archetype 永远按 glibc/GNU 规则检查，不管你写 <code class="c">-std=c99</code> 还是 <code class="c">-std=gnu11</code>。这与 6.1 讲的"<code class="c">-std=cXX</code> 会关掉裸 <code class="c">typeof</code>/<code class="c">asm</code>"是两回事——<strong>方言管关键字，不管格式串检查</strong>。</p>
+<hr />
+<h2>四、<code class="c">-Wformat</code> 家族：哪些默认开</h2>
+<p><code class="c">-Wformat</code>(在 <code class="c">-Wall</code> 里) 只是基础档，实用的一半要靠显式打开。实测逐个确认：</p>
+<pre class="code" data-label="C"><code class="c">/* t4_woptions.c */
+logf(s, 1);                  /* A: 格式串是变量            */
+printf(&quot;%d\n&quot;);              /* B: 缺参                    */
+printf(&quot;&quot;);                  /* C: 空格式串                */
+printf(&quot;%d\n&quot;, u);           /* D: unsigned 喂给 %d        */
+printf(&quot;%n\n&quot;, &amp;n);          /* E: %n                      */
+snprintf(small, 8, &quot;%s\n&quot;, &quot;a very long string here&quot;);  /* F: 截断 */
+sprintf (small,    &quot;%s\n&quot;, &quot;a very long string here&quot;);  /* G: 溢出 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -Wall -Wformat=2 -Wformat-signedness -Wformat-truncation -Wformat-overflow -O2 -c t4_woptions.c
+A: warning: format not a string literal, argument types not checked        [-Wformat-nonliteral]
+B: warning: format ‘%d’ expects a matching ‘int’ argument                 [-Wformat=]
+C: warning: zero-length gnu_printf format string                          [-Wformat-zero-length]
+D: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘unsigned int’
+F: warning: ‘%s’ directive output truncated writing 23 bytes into a region of size 8
+                                                                          [-Wformat-truncation=]
+G: warning: ‘%s’ directive writing 23 bytes into a region of size 8       [-Wformat-overflow=]
+E: （无警告 —— 见第八节）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>作用</th>
+<th>默认</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-Wformat</code></td>
+<td>基础匹配检查</td>
+<td>✅（<code class="c">-Wall</code>）</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-extra-args</code></td>
+<td>参数多于转换符</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-nonliteral</code></td>
+<td>格式串非字面量</td>
+<td>❌（<code class="c">-Wformat=2</code> 才开）</td>
+<td>表驱动/国际化代码会刷屏</td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-security</code></td>
+<td>格式串非字面量<strong>且无参数</strong></td>
+<td>❌</td>
+<td><strong>真·安全漏洞</strong>，务必开</td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-zero-length</code></td>
+<td>空格式串</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-signedness</code></td>
+<td><code class="c">%d</code> 收 <code class="c">unsigned</code></td>
+<td>❌</td>
+<td><strong>clang 不认此选项</strong></td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-truncation</code></td>
+<td><code class="c">snprintf</code> 截断</td>
+<td><code class="c">-O1+</code> 隐式</td>
+<td>需优化才生效</td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-overflow</code></td>
+<td><code class="c">sprintf</code> 溢出</td>
+<td><code class="c">-O1+</code> 隐式</td>
+<td>需优化才生效</td>
+</tr>
+<tr>
+<td><code class="c">-Wformat-y2k</code></td>
+<td><code class="c">%y</code> 两位数年份</td>
+<td>❌（<code class="c">-Wformat=2</code> 才开）</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<p>两个要点：</p>
+<ol>
+<li><strong><code class="c">-Wformat-truncation</code> / <code class="c">-Wformat-overflow</code> 依赖优化</strong>：<code class="c">-O0</code> 下 gcc 看不到目标缓冲区长度，不会报。<strong>CI 里用 <code class="c">-O0</code> 跑 warning 检查等于没做。</strong></li>
+<li><strong>clang 不认 <code class="c">-Wformat-signedness</code></strong>：<code class="c">warning: unknown warning option '-Wformat-signedness'</code>。跨平台构建脚本里要按编译器分流（<code class="c">-Wno-unknown-warning-option</code> 也压不住这条诊断本身的刷屏）。</li>
+</ol>
+<hr />
+<h2>五、属性写在哪儿才生效（六个场景实测）</h2>
+<pre class="code" data-label="C"><code class="c">/* A */ void a_decl(...) __attribute__((format(printf,1,2)));  void a_decl(...) {}       /* 声明上 */
+/* B */ void b_def (...) __attribute__((format(printf,1,2)));  void b_def (...) {}       /* 定义前（同上，实为声明） */
+/* C */ void c_two (...) __attribute__((format(printf,1,2)));  void c_two (...);         /* 二次声明不带属性 */
+        void c_two (...) {}
+/* D */ void d_defonly(...) __attribute__((format(printf,1,2))) { }                      /* 写在定义体前 */
+/* E */ #define LOG(fmt,...) a_decl(fmt, ##__VA_ARGS__)                                  /* 宏包装 */
+/* F */ void (*fp)(const char*, ...) __attribute__((format(printf,1,2))); fp(&quot;%d\n&quot;,&quot;z&quot;);/* 函数指针 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>gcc</th>
+<th>clang</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 前置声明带属性</td>
+<td>✅ 检查</td>
+<td>✅</td>
+<td><strong>推荐写法</strong></td>
+</tr>
+<tr>
+<td>B 定义（带独立声明）</td>
+<td>✅</td>
+<td>✅</td>
+<td>同 A</td>
+</tr>
+<tr>
+<td>C 二次声明丢掉属性</td>
+<td>✅ <strong>仍检查</strong></td>
+<td>✅</td>
+<td>属性在多次声明间<strong>累积保留</strong></td>
+</tr>
+<tr>
+<td>D 属性写在定义体前</td>
+<td>❌ <strong>error</strong>：<code class="c">attributes should be specified before the declarator in a function definition</code></td>
+<td>⚠️ warning <code class="c">-Wgcc-compat</code> 后接受</td>
+<td><strong>gcc 硬失败、clang 放行</strong></td>
+</tr>
+<tr>
+<td>E 宏包装</td>
+<td>✅</td>
+<td>✅</td>
+<td>宏展开后就是普通调用</td>
+</tr>
+<tr>
+<td>F <strong>函数指针</strong>带属性</td>
+<td>✅</td>
+<td>✅</td>
+<td>多数人不知道这个能用</td>
+</tr>
+</tbody>
+</table></div>
+<p>D 是实战中最常踩的：图省事把属性跟着函数体一起写，gcc 直接编译失败而 clang 过，于是"本地能编、CI 挂了"。</p>
+<p>F 很有用——<strong>回调表里的日志钩子也能检查</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct log_ops {
+    void (*info)(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+    void (*err )(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+};
+</code></pre>
+<p>以及一条反面实测：<strong>属性不能写进宏</strong>。</p>
+<pre class="code" data-label="C"><code class="c">#define attr_log(fmt, ...) __attribute__((format(printf,1,2))) real_log(fmt, ##__VA_ARGS__)
+attr_log(&quot;%d\n&quot;, &quot;z&quot;);
+</code></pre>
+<pre class="code" data-label="code"><code class="c">gcc:  error: expected declaration specifiers or ‘...’ before string constant
+clang: error: expected identifier or '('
+</code></pre>
+<p>属性是<strong>声明说明符</strong>的一部分，必须附着在声明上；宏展开到语句位置就成了语法错误。</p>
+<hr />
+<h2>六、内核扩展格式符 <code class="c">%pK</code> / <code class="c">%pI4</code> / <code class="c">%pS</code> 的真相</h2>
+<p>内核 <code class="c">printk</code> 支持一大票标准 printf 没有的转换：<code class="c">%pK</code>（哈希指针）、<code class="c">%pI4</code>（IPv4）、<code class="c">%pS</code>（符号名）、<code class="c">%ptT</code>（时间戳）……它们由 <code class="c">lib/vsprintf.c</code> 自己解析。那 <code class="c">-Wformat</code> 会不会因它们误报？</p>
+<pre class="code" data-label="C"><code class="c">void kprintf    (const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void kprintf_gnu(const char *fmt, ...) __attribute__((format(gnu_printf, 1, 2)));
+
+kprintf    (&quot;%pK\n&quot;, p);   /* A */
+kprintf_gnu(&quot;%pK\n&quot;, p);   /* B */
+kprintf    (&quot;%pI4\n&quot;, p);  /* C */
+kprintf    (&quot;%pS\n&quot;, p);   /* D */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -Wall -Wformat=2 -c t7_kernel.c
+（0 warning —— 完全静默）
+$ clang ...
+（只有一条 gnu_printf not supported，格式串本身无诊断）
+</code></pre>
+<p><strong>两个编译器都不报。</strong> 原因是 <code class="c">%p</code> 本身就是一个完整的转换说明符，编译器解析完 <code class="c">p</code> 就结束了，<strong>后面的 <code class="c">K</code>/<code class="c">I</code>/<code class="c">S</code> 被当成普通字符</strong>。</p>
+<p>这是把双刃剑：</p>
+<ul>
+<li>✅ <strong>好处</strong>：内核代码不会因为扩展格式符被 <code class="c">-Wformat</code> 刷屏，所以内核才敢用 <code class="c">printf</code> 而不是自己造 archetype；</li>
+<li>❌ <strong>坏处</strong>：<code class="c">%pZ</code> 这种<strong>拼错的</strong>扩展符也一样静默通过——编译器不会帮你抓。</li>
+</ul>
+<p>内核对此的补偿是构建期的 <code class="c">scripts/checkpatch.pl</code> 与运行时的 <code class="c">vsprintf</code> 探测，不在编译器这边。</p>
+<hr />
+<h2>七、<code class="c">no_printk</code>：把「检查」和「零开销」同时拿下</h2>
+<p>关掉调试日志时，有人这么写：</p>
+<pre class="code" data-label="C"><code class="c">#define pr_debug(fmt, ...) do { } while (0)     /* 干净，但格式串错误从此没人管 */
+</code></pre>
+<p>代码是没了，<strong>格式检查也没了</strong>。内核 v6.6 <code class="c">printk.h:126</code> 的写法是：</p>
+<pre class="code" data-label="C"><code class="c">#define no_printk(fmt, ...)             \
+({                                      \
+        if (0)                          \
+                printk(fmt, ##__VA_ARGS__); \
+        0;                              \
+})
+</code></pre>
+<p><code class="c">if (0)</code> 里的代码永远不执行、不生成指令，但<strong>编译器仍然会做语义分析和格式检查</strong>。实测（<code class="c">-O2</code>）：</p>
+<pre class="code" data-label="C"><code class="c">int  real_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+#define no_log(fmt, ...) ({ if (0) real_log(fmt, ##__VA_ARGS__); 0; })
+
+int main(void) { no_log(&quot;%d\n&quot;, &quot;x&quot;); return 0; }
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -Wall -Wformat=2 -O2 -c t8_noprintk.c
+warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’   &lt;- 检查还在
+
+$ objdump -d t8.o
+0000000000000000 &lt;main&gt;:
+   0:   f3 0f 1e fa     endbr64
+   4:   31 c0           xor    %eax,%eax        &lt;- 直接 return 0
+   6:   c3              ret
+
+$ objdump -s -j .rodata t8.o     -&gt; （空：字符串 &quot;%d\n&quot; 与 &quot;x&quot; 都没进二进制）
+$ nm -u t8.o                     -&gt; （空：没有引用任何外部符号）
+</code></pre>
+<p><strong>三条证据</strong>：</p>
+<ol>
+<li><strong>警告还在</strong> —— 检查发生在语义分析阶段，早于优化；</li>
+<li><strong><code class="c">main</code> 只剩 3 条指令</strong> —— 调用被完全消除；</li>
+<li><strong><code class="c">.rodata</code> 为空、无未定义符号</strong> —— 连格式字符串都没留下。</li>
+</ol>
+<p>再看一个更狠的：参数里的<strong>副作用</strong>还执行吗？</p>
+<pre class="code" data-label="C"><code class="c">int side(void) { return ++counter; }
+no_log(&quot;%d\n&quot;, side());                       /* 编译期死 */
+if (g_level) real_log(&quot;%d\n&quot;, side());        /* 运行时门 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -O2 -c t9_sideeffect.c &amp;&amp; objdump -d t9.o
+   0:   mov  0x0(%rip),%eax        # 读 g_level
+   a:   test %eax,%eax
+   c:   je   15 &lt;main+0x15&gt;
+   e:   addl $0x1,0x0(%rip)        # side() 被内联：counter++
+  15:   xor  %eax,%eax
+  17:   ret
+</code></pre>
+<p><code class="c">no_log</code> 那一行<strong>连 <code class="c">side()</code> 的调用都不存在</strong>；运行时门那行则保留了 <code class="c">counter++</code>（此处 gcc 把 <code class="c">side()</code> 内联了）。</p>
+<blockquote>
+<p><strong>结论</strong>：编译期关闭的日志，<strong>参数不求值</strong>；运行时判断的日志，<strong>参数一定求值</strong>。
+所以 <code class="c">LOG_DEBUG("price=%f", compute_expensive_thing())</code> 这种写法——只有编译期门才是真免费；运行时门照样把 <code class="c">compute_expensive_thing()</code> 算完，只是不打印。<strong>这是 HFT 里最常见的"关了日志还是慢"的根因。</strong></p>
+</blockquote>
+<hr />
+<h2>八、<code class="c">%n</code> 与 <code class="c">-Wformat-security</code>：编译器其实不管</h2>
+<p><code class="c">%n</code> 会把已输出字节数写进指针参数，是典型的格式化串攻击跳板。但实测：</p>
+<pre class="code" data-label="C"><code class="c">printf(argv[0]);        /* A: 非常量格式串、无参数  */
+printf(argv[0], 1);     /* B: 非常量格式串、有参数  */
+printf(&quot;%n\n&quot;, &amp;n);     /* C: 常量格式串里的 %n     */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -Wall -Wformat=2 [-D_FORTIFY_SOURCE=2 -O2] -c t7_security.c
+A: warning: format not a string literal and no format arguments   [-Wformat-security]
+B: warning: format not a string literal, argument types not checked [-Wformat-nonliteral]
+C: （无警告 —— 两个编译器、加不加 _FORTIFY_SOURCE 都没有）
 </code></pre>
 <ul>
-<li>第 2 参为 format 串下标（从 1 计）</li>
-<li>第 3 参为 <strong>第一个可变参</strong> 下标</li>
-<li>配合 <strong>6.12</strong> 宏转发 <code class="c">...</code></li>
+<li><strong><code class="c">-Wformat-security</code> 只在"格式串非常量 且 没有参数"时触发</strong>；一旦带了参数，它降级成普通的 <code class="c">-Wformat-nonliteral</code>。</li>
+<li><strong>字面量里的 <code class="c">%n</code>，gcc 和 clang 都不报警</strong>，<code class="c">_FORTIFY_SOURCE=2</code> 也不管（glibc 的 fortify 检查的是缓冲区长度，不是 <code class="c">%n</code>）。</li>
 </ul>
+<p>所以 <code class="c">%n</code> 只能靠<strong>代码审计 / 禁用策略</strong>挡住（内核的 <code class="c">checkpatch.pl</code> 会提示；很多项目直接 <code class="c">-Werror=format-security</code> + 禁止 <code class="c">%n</code>）。</p>
+<hr />
+<h2>九、HFT 视角：日志的四级成本</h2>
+<p>把上面的实测叠起来，一条日志的成本可以分成四级，<strong>每一级都需要不同的手段才能消掉</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>级别</th>
+<th>成本</th>
+<th>消除手段</th>
+<th>实测证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1 <strong>调用点</strong></td>
+<td>一次 call + 参数装寄存器</td>
+<td>编译期常量门 <code class="c">if (LEVEL &lt;= MAX)</code></td>
+<td>T6：<code class="c">main</code> 里只剩运行时门的那一个 call</td>
+</tr>
+<tr>
+<td>L2 <strong>参数求值</strong></td>
+<td><code class="c">side()</code> / <code class="c">compute_x()</code></td>
+<td><strong>只有编译期门</strong>（或把昂贵表达式移出参数）</td>
+<td>T9：<code class="c">no_log</code> 的 <code class="c">side()</code> 消失，运行时门保留</td>
+</tr>
+<tr>
+<td>L3 <strong>字符串与格式化</strong></td>
+<td><code class="c">vsnprintf</code> 遍历格式串</td>
+<td>编译期门（字符串进不了 <code class="c">.rodata</code>）</td>
+<td>T8：<code class="c">.rodata</code> 为空</td>
+</tr>
+<tr>
+<td>L4 <strong>函数体</strong></td>
+<td>日志函数自身的 <code class="c">.text</code></td>
+<td><code class="c">static</code> + 无引用（让链接器丢弃）</td>
+<td>T6：<code class="c">log_at</code> 是外部链接，函数体仍在</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>要点：L1–L3 靠编译期门一次全消，L4 需要 static 或链接期 GC。</strong></p>
+<p>一个可直接用的模板（综合本节所有结论）：</p>
+<pre class="code" data-label="C"><code class="c">/* log.h —— 纯 ASCII，跨 gcc/clang */
+#ifndef MAX_LOG_LEVEL
+#define MAX_LOG_LEVEL 2          /* 0:ERR 1:WARN 2:INFO 3:DEBUG */
+#endif
+
+enum { L_ERR = 0, L_WARN, L_INFO, L_DEBUG };
+
+void log_emit(int level, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));        /* 对外：... 版本 */
+void log_vemit(int level, const char *fmt, va_list ap)
+    __attribute__((format(printf, 2, 0)));        /* 对内：va_list，0! */
+
+/* 编译期门：LEVEL 是常量，整段（含参数求值）消失 */
+#define LOG_AT(level, fmt, ...)                                  \
+    do {                                                         \
+        if ((level) &lt;= MAX_LOG_LEVEL)                            \
+            log_emit(level, fmt, ##__VA_ARGS__);                 \
+    } while (0)
+
+/* 关掉时仍保留格式检查：no_printk 同款 */
+#define LOG_OFF(level, fmt, ...)                                 \
+    ({                                                           \
+        if (0)                                                   \
+            log_emit(level, fmt, ##__VA_ARGS__);                 \
+        0;                                                       \
+    })
+</code></pre>
+<p><code class="c">##__VA_ARGS__</code> 是 GNU 扩展，零参时吃掉前导逗号（详见 6.12）；C++20/C23 可用标准的 <code class="c">__VA_OPT__</code>。</p>
+<hr />
+<h2>十、误区表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>误区</th>
+<th>实测事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>"<code class="c">format</code> 属性加上就一定检查"</td>
+<td>archetype 不被支持时<strong>静默失效</strong>，只有一个 <code class="c">-Wignored-attributes</code> / <code class="c">unrecognized</code> 警告</td>
+</tr>
+<tr>
+<td>2</td>
+<td>"<code class="c">gnu_printf</code> 比 <code class="c">printf</code> 好，随时可用"</td>
+<td>clang 完全不支持；内核 v6.6 因此只用 <code class="c">printf</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>"va_list 版本写 <code class="c">format(printf, 1, 2)</code>"</td>
+<td>gcc <strong>硬错误</strong>；必须写 <code class="c">0</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>"属性写在函数定义前就行"</td>
+<td>gcc 报 error（<code class="c">before the declarator</code>），clang 只警告</td>
+</tr>
+<tr>
+<td>5</td>
+<td>"第二次声明不带属性就会丢"</td>
+<td>属性<strong>累积保留</strong>，仍然检查</td>
+</tr>
+<tr>
+<td>6</td>
+<td>"<code class="c">-Wall</code> 就够了"</td>
+<td><code class="c">-Wformat-nonliteral</code>/<code class="c">-security</code>/<code class="c">-signedness</code> 都要显式加；<code class="c">-truncation</code>/<code class="c">-overflow</code> 还要 <code class="c">-O1+</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>"<code class="c">%n</code> 会被编译器拦下"</td>
+<td>字面量里的 <code class="c">%n</code> gcc/clang 都不报</td>
+</tr>
+<tr>
+<td>8</td>
+<td>"<code class="c">%pK</code> 会让 <code class="c">-Wformat</code> 报错"</td>
+<td>不会——<code class="c">%p</code> 后面的字符编译器不解析，<strong>拼错也不报</strong></td>
+</tr>
+<tr>
+<td>9</td>
+<td>"关掉日志参数就不会算了"</td>
+<td>只有<strong>编译期</strong>门才不求值；运行时门照样算</td>
+</tr>
+<tr>
+<td>10</td>
+<td>"<code class="c">-std=c99</code> 下格式检查会变严"</td>
+<td>不会，format 检查与 <code class="c">-std=</code> 方言无关</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>十一、速查：什么时候该加 format 属性</h2>
+<pre class="code" data-label="code"><code class="c">你的函数签名里有 const char *fmt 吗？
+├── 有，且后面跟 ...        -&gt; format(printf, fmt下标, 第一个可变参下标)
+├── 有，且后面跟 va_list    -&gt; format(printf, fmt下标, 0)
+├── 是 scanf 风格           -&gt; format(scanf,  同上)
+├── 是 strftime 风格        -&gt; format(strftime, fmt下标, 0)   &lt;- 必须为 0
+└── 格式串是运行时拼接的    -&gt; 加也没用（会刷 -Wformat-nonliteral），
+                               改为在入口处做一次显式校验
+</code></pre>
+<p>配套开关建议（Makefile）：</p>
+<pre class="code" data-label="make"><code class="c"># 开发期
+CFLAGS += -Wall -Wextra -Wformat=2 -Wformat-signedness -Werror=format-security
+# 发布期（-truncation/-overflow 需要优化）
+CFLAGS += -O2 -Wall -Wformat=2 -Wformat-truncation -Wformat-overflow
+</code></pre>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.8.1–6.8.3</strong> 检查规则、va_list 实现、日志函数</li>
-<li><strong>demo06</strong> log macro</li>
+<li><strong>6.8.1–6.8.3</strong>：格式检查规则、<code class="c">va_list</code> 实现、完整日志函数</li>
+<li><strong>6.12</strong>：<code class="c">##__VA_ARGS__</code> 与 <code class="c">__VA_OPT__</code>，零参时逗号的两种处理</li>
+<li><strong>6.11</strong>：<code class="c">__builtin_expect</code> / <code class="c">likely-unlikely</code>——本节 T6 的运行时门该怎么提示分支预测</li>
+<li><strong>6.9</strong>：<code class="c">weak</code>——把 <code class="c">log_emit</code> 做成弱符号，测试时替换成内存缓冲</li>
+<li><strong>CH3 10.8</strong>：嵌入式寄存器读写里 <code class="c">debug_printf</code> 的同类写法</li>
+<li><strong>demo</strong>：<code class="c">demo/08-format/</code>（本节 t1–t9 全部源码 + <code class="c">run.sh</code> / <code class="c">run2.sh</code>，一键复现所有实测）</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下自定义日志函数加了 <code class="c">format</code> 属性，它的作用是什么？不加会怎样？</p>
-<pre class="code" data-label="C"><code class="c">void my_log(const char *fmt, ...)
-    __attribute__((format(printf, 1, 2)));
-
-my_log(&quot;%d %s\n&quot;, &quot;hello&quot;, 42);  // 这里会怎样？
+<p><strong>题目 1：</strong> 下面两个声明，哪个在 gcc 下会编译失败？为什么？</p>
+<pre class="code" data-label="C"><code class="c">void va1(const char *fmt, va_list ap) __attribute__((format(printf, 1, 0)));
+void va2(const char *fmt, va_list ap) __attribute__((format(printf, 1, 2)));
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p><code class="c">format(printf, 1, 2)</code> 告诉编译器：第 1 个参数是格式串，第 2 个参数起是可变参数，按 <code class="c">printf</code> 规则检查。调用 <code class="c">my_log("%d %s\n", "hello", 42)</code> 时编译器报警告：<code class="c">%d</code> 期望 int 但传了 char<em>，<code class="c">%s</code> 期望 char</em> 但传了 int。不加 <code class="c">format</code> 属性则编译器不检查格式串与参数的匹配，运行时才崩溃。内核的 <code class="c">printk</code>、<code class="c">pr_err</code> 等都有此属性。</p>
+<p><code class="c">va2</code> 在 gcc 下<strong>硬失败</strong>：</p>
+<pre class="code" data-label="code"><code class="c">error: ‘format’ attribute argument 3 value ‘2’ does not refer to a variable argument list
+</code></pre>
+<p><code class="c">first-to-check</code> 为 0 表示"本函数接收的是 <code class="c">va_list</code>，没有可变参需要检查"。<code class="c">va2</code> 明明收 <code class="c">va_list</code>，却声明第 2 个参数起是可变参 → gcc 直接报错。</p>
+<p>clang 只给 <code class="c">-Wgcc-compat</code> 警告并继续编译 —— <strong>这正是"本地 clang 通过、CI gcc 挂掉"的典型来源</strong>。</p>
+<p>内核 v6.6 的正确写法：<code class="c">asmlinkage __printf(1, 0) int vprintk(const char *fmt, va_list args);</code></p>
+</details>
+<p><strong>题目 2：</strong> 团队要求"debug 日志在 release 构建里零开销，但格式串写错仍要在编译期发现"。下面两种写法哪种满足？</p>
+<pre class="code" data-label="C"><code class="c">/* 方案 A */
+#if DEBUG
+#define DBG(fmt, ...) real_log(fmt, ##__VA_ARGS__)
+#else
+#define DBG(fmt, ...) do { } while (0)
+#endif
+
+/* 方案 B */
+#if DEBUG
+#define DBG(fmt, ...) real_log(fmt, ##__VA_ARGS__)
+#else
+#define DBG(fmt, ...) ({ if (0) real_log(fmt, ##__VA_ARGS__); 0; })
+#endif
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>只有 B 满足</strong>，A 不满足。</p>
+<ul>
+<li>A：release 下 <code class="c">DBG("%d\n", "str")</code> 完全不展开成任何调用，<strong>格式检查也一起没了</strong>。开发期在 <code class="c">#if DEBUG</code> 下没暴露的错误，release 构建里悄悄潜伏。</li>
+<li>B：<code class="c">if (0)</code> 分支在<strong>语义分析阶段</strong>就要做类型与格式检查（会报 <code class="c">-Wformat</code>），但<strong>优化阶段</strong>整段被消除。</li>
+</ul>
+<p>实测证据（gcc 13.3 <code class="c">-O2</code>）：</p>
+<pre class="code" data-label="code"><code class="c">warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘char *’   &lt;- 检查在
+
+objdump -d:  main 只剩 endbr64 / xor eax,eax / ret                                      &lt;- 代码没了
+objdump -s -j .rodata:  (空)                                                            &lt;- 字符串也没了
+nm -u:       (空)                                                                       &lt;- 无外部引用
+</code></pre>
+<p>这就是内核 v6.6 <code class="c">no_printk</code> 的做法（<code class="c">printk.h:126</code>）。</p>
+<p><strong>额外提醒</strong>：B 还有一个 A 没有的好处——<strong>参数不求值</strong>。<code class="c">DBG("x=%d", expensive())</code> 在 B 里 <code class="c">expensive()</code> 不会被调用，在"运行时 if 判断"的写法里则一定会调用。</p>
+</details>
+<p><strong>题目 3：</strong> 一份代码要同时用 gcc 和 clang 编译，下列哪些 archetype 可以安全使用？</p>
+<pre class="code" data-label="C"><code class="c">__attribute__((format(printf, 1, 2)))
+__attribute__((format(gnu_printf, 1, 2)))
+__attribute__((format(scanf, 1, 2)))
+__attribute__((format(ms_printf, 1, 2)))
+__attribute__((format(strftime, 1, 0)))
+__attribute__((format(syslog, 1, 2)))
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>安全的只有 <strong><code class="c">printf</code>、<code class="c">scanf</code>、<code class="c">strftime</code></strong>（<code class="c">strfmon</code> 也可）。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>archetype</th>
+<th>gcc 13.3</th>
+<th>clang 18</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">printf</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">scanf</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">strftime</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">strfmon</code></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">gnu_printf</code></td>
+<td>✅</td>
+<td>❌ not supported</td>
+</tr>
+<tr>
+<td><code class="c">gnu_scanf</code></td>
+<td>✅</td>
+<td>❌ not supported</td>
+</tr>
+<tr>
+<td><code class="c">ms_printf</code></td>
+<td>❌ unrecognized</td>
+<td>❌ not supported</td>
+</tr>
+<tr>
+<td><code class="c">syslog</code></td>
+<td>❌ unrecognized</td>
+<td>❌ not supported</td>
+</tr>
+</tbody>
+</table></div>
+<p>两个编译器<strong>各缺一半，且缺失的部分不重叠</strong>。失败时都只给 warning 然后<strong>静默忽略属性</strong>——所以你以为有检查，其实没有。</p>
+<p>内核 v6.6 <code class="c">compiler_attributes.h:171</code> 因此定义 <code class="c">#define __printf(a,b) __attribute__((__format__(printf, a, b)))</code>，用的是 <code class="c">printf</code> 而不是检查更严的 <code class="c">gnu_printf</code>——为了让 clang 也能编译内核。</p>
+</details>
+<p><strong>题目 4：</strong> 为什么这段内核代码在 gcc 下没有任何 <code class="c">-Wformat</code> 警告？</p>
+<pre class="code" data-label="C"><code class="c">printk(&quot;%pK %pI4 %pZ\n&quot;, ptr, addr, sym);   /* %pZ 是拼错的（内核没有这个） */
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>因为编译器解析到 <code class="c">%p</code> 就认为<strong>转换说明符已经结束</strong>了，后面的 <code class="c">K</code>/<code class="c">I4</code>/<code class="c">Z</code> 被当成普通字符直接输出。</p>
+<p>实测（gcc 13.3 与 clang 18，<code class="c">-Wall -Wformat=2</code>）：<code class="c">%pK</code>、<code class="c">%pI4</code>、<code class="c">%pS</code> 全部 0 警告。</p>
+<p>这是<strong>好处也是坏处</strong>：</p>
+<ul>
+<li>好处：内核那几十个扩展格式符（<code class="c">%pK</code> 哈希指针、<code class="c">%pI4</code> IPv4、<code class="c">%pS</code> 符号名……）不会被 <code class="c">-Wformat</code> 刷屏，内核才敢用标准 <code class="c">printf</code> archetype；</li>
+<li>坏处：<strong>拼错的 <code class="c">%pZ</code> 也一样静默通过</strong>。编译器在这里帮不上忙，只能靠 code review 或 <code class="c">checkpatch.pl</code>。</li>
+</ul>
 </details>
       </section>
       <section class="section" id="s-6-8-1">
