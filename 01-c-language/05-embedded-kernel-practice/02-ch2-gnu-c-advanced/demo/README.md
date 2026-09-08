@@ -26,6 +26,9 @@ nm demo02_custom_section | grep g_custom
 
 # 内嵌汇编 / 寄存器约束
 ./demo07_reg_asm
+
+# format 属性：编译期诊断测试（不生成可执行程序，看编译器输出）
+cd 08-format && bash run.sh && bash run2.sh
 ```
 
 ## 工具验证
@@ -34,6 +37,8 @@ nm demo02_custom_section | grep g_custom
 size demo01_packed_struct demo02_custom_section
 objdump -t demo02_custom_section | grep my_
 gcc -Wall -Wformat -o fmt_test demo06_log_macro.c   # format 属性见 6.8
+# 完整的 format 属性实测矩阵（archetype 支持 / -Wformat 家族 / no_printk 零开销）
+cd 08-format && bash run.sh && bash run2.sh           # 见 6.8 与 08-format/README.md
 ```
 
 ## demo03 说明

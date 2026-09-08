@@ -27,11 +27,11 @@ CH1 的东西写错会**编译报错**，你立刻知道。CH2 的东西写错�
 |----|------|------|--------------|
 | 1 | [6.6 `__attribute__` 总纲](./6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | ✅ 37 KB | 语法 + 全属性表（**先读这篇当字典**） |
 | 2 | [6.7 aligned 与 packed](./6.7-aligned/6.7-属性声明-aligned.md) | ✅ 32 KB | **ABI / 内存布局** |
-| 3 | [6.8 format（格式串检查）](./6.8-format/6.8-属性声明-format.md) | 待扩 | 编译期诊断 |
+| 3 | [6.8 format（格式串检查）](./6.8-format/6.8-属性声明-format.md) | ✅ 30 KB | 编译期诊断（archetype 支持矩阵 / `-Wformat` 家族 / `no_printk` 零开销） |
 | 4 | [6.9 weak 与 alias](./6.9-weak/6.9-属性声明-weak.md) | ✅ 31 KB | **链接期**（唯一一条） |
 | 5 | [6.11 内建函数（likely/unlikely）](./6.11-builtin/6.11.6-Linux内核中的likely和unlikely.md) | 6 KB | 编译期优化 + 分支预测 |
 | 6 | [3.6 内联汇编](./3.6-mixed-programming/) | 待扩 | **代码生成**（`__asm__ __volatile__`、操作数约束、clobber） |
-| 附 | [demo/](./demo/) | 8 个示例 | 本章全部可编译复现 |
+| 附 | [demo/](./demo/) | 8 个示例 + [08-format](./demo/08-format/) 12 个实测 | 本章全部可编译复现 |
 
 ## 三条主线一看就懂的分工
 
