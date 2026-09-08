@@ -2,6 +2,10 @@
 
 **Computer Architecture and CPU**
 
+> ⚠️ **本章已降级为索引（2026-09-08）**：芯片制造、CPU 设计、Cache、流水线、多核异构、总线 ISA——**CSAPP 第 1/3/4/5/6 章讲得更深**，不再投入补写。
+> 真正需要记住的两条结论（cache line 64 B 决定 padding、分支预测失败有代价决定 `likely/unlikely`），在用到它们的 [ch06 GNU C 扩展](../ch06-gnu-c-extensions/) 笔记里就地讲。
+> 取舍依据见 [00 · 本书取舍与补写顺序](../00-ROADMAP-本书取舍与补写顺序.md)。
+
 ## 本章目标
 
 建立 **从硅片到指令** 的完整硬件图景：芯片制造、CPU 设计、冯/哈佛体系结构、Cache 与流水线、多核与异构、总线编址与 ISA——能解释 C 语句在 CPU/内存/外设上的行为，为 ARM 汇编、内核/DPDK 编程打底。
