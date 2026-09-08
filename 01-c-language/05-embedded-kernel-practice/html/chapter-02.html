@@ -419,9 +419,9 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
 </tr>
 <tr>
 <td>5</td>
-<td><a href="#s-6-11">6.11 内建函数（likely/unlikely）</a></td>
-<td>6 KB</td>
-<td>编译期优化 + 分支预测</td>
+<td><a href="#s-6-11">6.11 内建函数（likely/unlikely/popcount/overflow）</a></td>
+<td>✅ 40 KB</td>
+<td>编译期优化 + 分支布局 + 位操作 + 溢出检查</td>
 </tr>
 <tr>
 <td>6</td>
@@ -432,7 +432,7 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
 <tr>
 <td>附</td>
 <td><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/">demo/</a></td>
-<td>8 个示例 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/08-format/">08-format</a> 12 个实测</td>
+<td>8 个示例 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/08-format/">08-format</a> 12 个 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/09-builtin/">09-builtin</a> 14 个</td>
 <td>本章全部可编译复现</td>
 </tr>
 </tbody>
@@ -6027,26 +6027,1448 @@ void memcpy(void *d, const void *s, size_t n)
       </section>
       <section class="section" id="s-6-11">
         <div class="sec-head"><div class="sec-no">6.11</div><h2>内建函数</h2></div>
+<blockquote>
+<p><strong>归属</strong>：A 档 · CH2 GNU C 高级特性（源码看不见，但真实发生）
+<strong>实测环境</strong>：WSL · gcc 13.3.0（GNU ld 2.42）/ clang 18.1.3 · x86-64 · glibc 2.39
+<strong>源码核对</strong>：Linux v6.6 <code class="c">include/linux/compiler.h</code>、<code class="c">include/linux/log2.h</code>、<code class="c">include/asm-generic/bitops/__fls.h</code>
+<strong>配套小节</strong>：<a href="chapter-02.html#s-6-11-1">6.11.1 什么是内建函数</a> · <a href="chapter-02.html#s-6-11-2">6.11.2 常用的内建函数</a> · <a href="chapter-02.html#s-6-11-3">6.11.3 C 标准库的内建函数</a> · <a href="chapter-02.html#s-6-11-4">6.11.4 <code class="c">__builtin_constant_p</code></a> · <a href="chapter-02.html#s-6-11-5">6.11.5 <code class="c">__builtin_expect</code></a> · <a href="chapter-02.html#s-6-11-6">6.11.6 内核中的 likely/unlikely</a>
+<strong>相关</strong>：<a href="#s-6-6">6.6 <code class="c">__attribute__</code> 总纲</a> · <a href="#s-6-8">6.8 format</a> · <a href="chapter-01.html#s-6-10">6.10 inline</a> · <a href="chapter-01.html#s-6-1">6.1 C 标准与 gnu11</a></p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong>内建函数（builtins）</strong> 由编译器直接识别；<code class="c">__builtin_*</code> 前缀。涵盖 <strong>位操作、分支预测、常量检测</strong> 等。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">if (likely(err == 0)) { /* hot */ }
+<p>前面 6.6–6.9 讲的 <code class="c">__attribute__</code> 是<strong>告诉编译器某个声明有什么性质</strong>。内建函数（builtins）走的是另一条路——<strong>它本身就是编译器内置的伪函数</strong>：语法上像函数调用，编译期被编译器「拦截」，展开成零到多条目标指令。</p>
+<p>一句话概括：</p>
+<blockquote>
+<p><strong><code class="c">__builtin_*</code> 是编译器「看得懂」的函数名。编译器遇到它，直接生成对应的目标平台指令（或编译期常量），不需要链接、不产生符号表条目。</strong></p>
+</blockquote>
+<p>但「直接映射到目标指令」这句话有<strong>一个致命陷阱</strong>——书里没讲、实测才暴露：</p>
+<ol>
+<li><strong><code class="c">__builtin_popcount</code> 不加 <code class="c">-mpopcnt</code> 根本不用 <code class="c">POPCNT</code> 指令</strong>——它偷偷调用 <code class="c">__popcountdi2</code>（libgcc 软件实现）。你以为零开销，其实有一个函数调用 + 30 条 SWAR 指令；</li>
+<li><strong><code class="c">__builtin_constant_p</code> 在 <code class="c">-O0</code> 下几乎全返回 0</strong>——连 <code class="c">static const</code> 都不认。内核永远 <code class="c">-O2</code> 没事，但你用 <code class="c">-O0 -g</code> 调试时宏的行为会变；</li>
+<li><strong><code class="c">__builtin_expect</code> 改变的是基本块排列顺序</strong>——标错方向会把 hot path 变成跳转目标，实测汇编一目了然；</li>
+<li><strong>libc 函数被自动当 builtin 处理</strong>——<code class="c">strlen("hello")</code> 在 <code class="c">-O2</code> 下折叠成编译期常量 <code class="c">5</code>，但加 <code class="c">-fno-builtin</code> 后变成真实的 <code class="c">strlen@plt</code> 调用。<strong><code class="c">__builtin_strlen</code> 不受 <code class="c">-fno-builtin</code> 影响</strong>；</li>
+<li><strong><code class="c">__builtin_add_overflow</code> 只需一条 <code class="c">add</code> + 一条 <code class="c">seto</code>（溢出标志读取）</strong>——比手写的溢出检查快且安全；</li>
+<li><strong><code class="c">__builtin_unreachable</code> 让编译器删除不可能到达的分支</strong>——但如果你骗了它，函数返回的是寄存器里的垃圾值（UB）。</li>
+</ol>
+<hr />
+<h2>一、内建函数不是函数</h2>
+<p>先建立一个直觉：内建函数在编译完成后<strong>不存在于任何符号表</strong>。</p>
+<pre class="code" data-label="C"><code class="c">/* t6_control.c 片段 */
+void do_trap(void) {
+    __builtin_trap();    /* 不是函数调用 */
+}
 </code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -O2 -c t6_control.c -o t6.o
+$ objdump -d t6.o | sed -n '/&lt;do_trap&gt;:/,/^\$/p'
+00000000000011f0 &lt;do_trap&gt;:
+    11f0:  endbr64
+    11f4:  push   %rax
+    11f5:  pop    %rax
+    11f6:  lea    0xe07(%rip),%rdi        # 字符串地址
+    11fd:  sub    $0x8,%rsp
+    1201:  call   1080 &lt;puts@plt&gt;          # printf(&quot;before trap\n&quot;)
+    1206:  ud2                             # ← __builtin_trap() = 一条指令
+    1208:  nopl   ...
+$ nm -u t6.o        # ← 没有 __builtin_trap 符号
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>普通函数</th>
+<th>内建函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>符号表</td>
+<td>有（<code class="c">nm</code> 可见）</td>
+<td><strong>无</strong>（编译期消解）</td>
+</tr>
+<tr>
+<td>链接依赖</td>
+<td>需要 <code class="c">.o</code> / 库</td>
+<td><strong>无</strong></td>
+</tr>
+<tr>
+<td><code class="c">#include</code></td>
+<td>需要</td>
+<td><strong>不需要</strong>（编译器直接识别）</td>
+</tr>
+<tr>
+<td>常量参数</td>
+<td>运行时计算</td>
+<td><strong>可能编译期折叠</strong></td>
+</tr>
+<tr>
+<td>目标指令</td>
+<td><code class="c">call func</code></td>
+<td><strong>零到多条指令内联展开</strong></td>
+</tr>
+<tr>
+<td><code class="c">-fno-builtin</code></td>
+<td>不影响</td>
+<td><strong>影响 libc 隐式识别；不影响 <code class="c">__builtin_*</code> 显式形式</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>验证 <code class="c">__builtin_*</code> 不受 <code class="c">-fno-builtin</code> 影响</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* t10_fno_builtin.c 片段 */
+size_t my_strlen_const(void)  { return strlen(&quot;hello&quot;); }           /* libc 隐式 */
+size_t my_builtin_strlen(void) { return __builtin_strlen(&quot;hello&quot;); } /* 显式 */
+</code></pre>
+<pre class="code" data-label="code"><code class="c">$ gcc -O2 -fno-builtin -c t10_fno_builtin.c
+$ objdump -d t10_nobuiltin.o
+&lt;my_strlen_const&gt;:         jmp  strlen@plt     ← libc 被 -fno-builtin 关了
+&lt;my_builtin_strlen&gt;:       mov  $0x5,%eax       ← __builtin_ 不受影响
+</code></pre>
+<p><strong>规则</strong>：<code class="c">-fno-builtin</code> 关掉的是「编译器把 <code class="c">strlen</code>/<code class="c">memcpy</code>/<code class="c">strcmp</code> 等 libc 函数当 builtin 处理」的隐式行为；显式 <code class="c">__builtin_strlen</code> 永远是编译器内建，不受任何 flag 影响。</p>
+<hr />
+<h2>二、位操作全家桶：六个函数，五个映射到硬件，一个不是</h2>
+<p>这是嵌入式和 HFT 里用得最多的一组。先把实测结果列出来：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内建函数</th>
+<th>含义</th>
+<th>gcc -O2 生成（x86-64）</th>
+<th>硬件指令？</th>
+<th>需要额外 flag？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_popcount(v)</code></td>
+<td>数 1 的个数</td>
+<td><strong><code class="c">call __popcountdi2</code></strong></td>
+<td><strong>否！软件实现</strong></td>
+<td><strong><code class="c">-mpopcnt</code> 才用 <code class="c">POPCNT</code></strong></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_popcountll(v)</code></td>
+<td>64 位版</td>
+<td><strong><code class="c">call __popcountdi2</code></strong></td>
+<td><strong>否！</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_clz(v)</code></td>
+<td>前导零计数</td>
+<td><code class="c">bsr %edi,%eax; xor $0x1f,%eax</code></td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_ctz(v)</code></td>
+<td>尾随零计数</td>
+<td><code class="c">tzcnt %edi,%eax</code></td>
+<td>是（BMI1）</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_ffs(v)</code></td>
+<td>最低位 1 的位置（1-based）</td>
+<td><code class="c">bsf %edi,%eax; cmove; add $1</code></td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_parity(v)</code></td>
+<td>奇偶校验（1 的个数 mod 2）</td>
+<td><code class="c">shr; xor; xor; setnp</code></td>
+<td>是（用 PF 标志位）</td>
+<td>否</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.1 popcount 的陷阱</h3>
+<p>这是<strong>本节最反直觉的发现</strong>。很多人写 <code class="c">__builtin_popcount</code> 时以为它在 x86 上一定生成 <code class="c">POPCNT</code> 指令——<strong>错</strong>。</p>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -O2 -c t13_popcnt.c -o t13_def.o
+$ objdump -d t13_def.o | sed -n '/&lt;do_popcount_default&gt;:/,/^\$/p'
+0000000000000000 &lt;do_popcount_default&gt;:
+   0:  endbr64
+   4:  sub    $0x8,%rsp
+   8:  mov    %edi,%edi
+   a:  call   f &lt;do_popcount_default+0xf&gt;     # ← 调 __popcountdi2！
+   f:  add    $0x8,%rsp
+  13:  ret
+
+$ gcc -std=gnu11 -O2 -mpopcnt -c t13_popcnt.c -o t13_popcnt.o
+$ objdump -d t13_popcnt.o | sed -n '/&lt;do_popcount_default&gt;:/,/^\$/p'
+0000000000000000 &lt;do_popcount_default&gt;:
+   0:  endbr64
+   4:  xor    %eax,%eax
+   6:  popcnt %edi,%eax                        # ← 硬件指令！
+   a:  ret
+</code></pre>
+<p><strong><code class="c">__popcountdi2</code> 是什么</strong>？它是 libgcc 的运行时函数，用 SWAR（SIMD Within A Register）算法软件计算 popcount：</p>
+<pre class="code" data-label="code"><code class="c">__popcountdi2:
+    movabs $0x5555555555555555,%rdx    # 0x55 = 01010101...
+    mov    %rdi,%rax
+    shr    $1,%rax
+    and    %rdx,%rax                    # 每 2 位一组
+    sub    %rax,%rdi
+    movabs $0x3333333333333333,%rax     # 0x33 = 00110011...
+    ...（共 13 条指令）
+    imul   %rdx,%rax
+    shr    $0x38,%rax
+    ret
+</code></pre>
+<p><strong>总结</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译选项</th>
+<th><code class="c">__builtin_popcount</code> 生成的代码</th>
+<th>开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O2</code>（默认）</td>
+<td><code class="c">call __popcountdi2</code></td>
+<td>函数调用 + 13 条 SWAR 指令</td>
+</tr>
+<tr>
+<td><code class="c">-O2 -mpopcnt</code></td>
+<td><code class="c">popcnt %edi,%eax</code></td>
+<td><strong>1 条指令</strong></td>
+</tr>
+<tr>
+<td><code class="c">-O2 -march=native</code></td>
+<td><code class="c">popcnt %edi,%eax</code></td>
+<td>1 条指令（CPU 支持 POPCNT 时）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT/嵌入式教训</strong>：如果你的热点循环用 <code class="c">__builtin_popcount</code> 做位图统计，<strong>一定要在 Makefile 里加 <code class="c">-mpopcnt</code>（或 <code class="c">-march=native</code>）</strong>，否则你以为的一条指令其实是 14 条指令 + 一次函数调用。内核不担心这个——内核的 <code class="c">hweight32()</code> 在编译时根据 <code class="c">CONFIG_ARCH_HAS_FAST_MULTIPLIER</code> 等选项选择内联汇编或 builtin。</p>
+</blockquote>
+<h3>2.2 clang 的 popcount：直接内联 SWAR</h3>
+<p>clang 不调用 <code class="c">__popcountdi2</code>，而是<strong>直接内联</strong> SWAR 算法（不生成 <code class="c">popcnt</code> 指令，但也不生成 <code class="c">call</code>）：</p>
+<pre class="code" data-label="code"><code class="c">$ clang -std=gnu11 -O2 -c t1_bitops.c -o t1_clang
+$ objdump -d t1_clang | sed -n '/&lt;do_popcount&gt;:/,/^\$/p'
+0000000000001150 &lt;do_popcount&gt;:
+    1150:  mov    %edi,%eax
+    1152:  shr    $1,%eax
+    1154:  and    $0x55555555,%eax
+    1159:  sub    %eax,%edi
+    ...（内联 SWAR，约 12 条指令）
+    1182:  ret
+</code></pre>
+<p>clang 也不加 <code class="c">-mpopcnt</code> 就不生成 <code class="c">popcnt</code> 指令。但至少它内联了，省了函数调用开销。加了 <code class="c">-mpopcnt</code> 后 clang 也用 <code class="c">popcnt</code> 指令。</p>
+<h3>2.3 clz/ctz/ffs/parity：直接硬件</h3>
+<p>这四个不加任何 flag 就映射到硬件指令：</p>
+<pre class="code" data-label="C"><code class="c">int do_clz(uint32_t v)     { return __builtin_clz(v); }
+int do_ctz(uint32_t v)     { return __builtin_ctz(v); }
+int do_ffs(uint32_t v)     { return __builtin_ffs(v); }
+int do_parity(uint32_t v)  { return __builtin_parity(v); }
+</code></pre>
+<pre class="code" data-label="code"><code class="c">do_clz:    bsr    %edi,%eax ; xor $0x1f,%eax        # Bit Scan Reverse + 补码
+do_ctz:    tzcnt  %edi,%eax                         # Trailing Zero Count (BMI1)
+do_ffs:    bsf    %edi,%eax ; cmove ; add $1        # Bit Scan Forward + 空值保护 + 1-based
+do_parity: shr $16 ; xor ; xor %ah,%al ; setnp %al  # 用 x86 PF（奇偶）标志位！
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>对应 x86 指令</th>
+<th>输入为 0 的行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_clz(0)</code></td>
+<td><code class="c">bsr 0</code> → <code class="c">ZF=1</code>，<code class="c">xor $0x1f</code> 后返回 32</td>
+<td><strong>UB</strong>（返回 32，但标准未定义）</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_ctz(0)</code></td>
+<td><code class="c">tzcnt 0</code> → 返回 32（BMI1 语义）</td>
+<td>BMI1 下返回 32（非 UB）；无 BMI1 时 <code class="c">bsf 0</code> → <strong>UB</strong></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_ffs(0)</code></td>
+<td><code class="c">bsf 0</code> + <code class="c">cmove $-1</code> → 返回 0</td>
+<td>安全：返回 0</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_parity(0)</code></td>
+<td>算出 0 → <code class="c">setnp</code> → 0</td>
+<td>安全</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>安全规则</strong>：<code class="c">__builtin_ffs(0)</code> 返回 0（安全）；<code class="c">__builtin_clz(0)</code> 和 <code class="c">__builtin_ctz(0)</code> 是 <strong>UB</strong>。内核 <code class="c">fls()</code> 在 <code class="c">include/asm-generic/bitops/__fls.h</code> 中先检查 <code class="c">v == 0</code> 再调用 <code class="c">__builtin_clz</code>。</p>
+</blockquote>
+<h3>2.4 clang 对比：生成完全相同的指令</h3>
+<pre class="code" data-label="code"><code class="c">$ objdump -d t1_clang | sed -n '/&lt;do_clz&gt;:/,/^\$/p'
+do_clz:    bsr    %edi,%eax ; xor $0x1f,%eax        # 与 gcc 完全相同
+do_ctz:    tzcnt  %edi,%eax                         # 与 gcc 完全相同
+do_ffs:    bsf    %edi,%ecx ; cmove ; inc           # clang 用 inc 替代 add 1
+do_parity: shr $16 ; xor ; xor %ch,%cl ; setnp      # 等价但寄存器分配不同
+</code></pre>
+<p>除了 popcount（gcc 调函数、clang 内联），其他五个位的 builtin 在两个编译器上生成的指令<strong>本质相同</strong>。</p>
+<h3>2.5 宽度变体</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变体</th>
+<th>操作宽度</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_popcount</code></td>
+<td><code class="c">unsigned int</code>（通常 32 位）</td>
+<td><code class="c">__builtin_popcount(0xFF)</code> → 8</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_popcountl</code></td>
+<td><code class="c">unsigned long</code>（LP64 = 64 位）</td>
+<td><code class="c">__builtin_popcountl(0xFFFFFFFFFFFFFFFFL)</code> → 64</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_popcountll</code></td>
+<td><code class="c">unsigned long long</code>（64 位）</td>
+<td><code class="c">__builtin_popcountll(1ULL &lt;&lt; 63)</code> → 1</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_clz</code> / <code class="c">clzl</code> / <code class="c">clzll</code></td>
+<td>32/64/64</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_ctz</code> / <code class="c">ctzl</code> / <code class="c">ctzll</code></td>
+<td>32/64/64</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_ffs</code> / <code class="c">ffsl</code> / <code class="c">ffsll</code></td>
+<td>32/64/64</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>内核用 <code class="c">__builtin_clzl</code> 居多（<code class="c">unsigned long</code> 在 LP64 = 64 位，一次处理一个 <code class="c">unsigned long</code> 的位图字）。</p>
+</blockquote>
+<hr />
+<h2>三、字节序：bswap 三件套</h2>
+<pre class="code" data-label="C"><code class="c">uint16_t do_bswap16(uint16_t v) { return __builtin_bswap16(v); }
+uint32_t do_bswap32(uint32_t v) { return __builtin_bswap32(v); }
+uint64_t do_bswap64(uint64_t v) { return __builtin_bswap64(v); }
+</code></pre>
+<pre class="code" data-label="code"><code class="c">do_bswap16:  rol $0x8,%ax          # x86 没有 bswap16，用 rotate left 8
+do_bswap32:  bswap %eax            # 硬件 bswap 指令
+do_bswap64:  bswap %rax            # 硬件 bswap 指令（64 位版）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>生成指令</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_bswap16</code></td>
+<td><code class="c">rol $8, %ax</code></td>
+<td>16 位没有专用 bswap，用 8 位旋转</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_bswap32</code></td>
+<td><code class="c">bswap %eax</code></td>
+<td>专用指令</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_bswap64</code></td>
+<td><code class="c">bswap %rax</code></td>
+<td>专用指令</td>
+</tr>
+</tbody>
+</table></div>
+<p>gcc 和 clang 生成<strong>完全相同</strong>的指令。常量参数时编译期折叠：<code class="c">__builtin_bswap32(0xAABBCCDDu)</code> → <code class="c">0xDDCCBBAA</code>。</p>
+<blockquote>
+<p><strong>内核</strong>：<code class="c">include/linux/byteorder/generic.h</code> 在大端机上 <code class="c">#define cpu_to_le32(x) ((__force __le32)__builtin_bswap32(x))</code>，小端机上 <code class="c">#define cpu_to_le32(x) ((__force __le32)(x))</code>（no-op）。</p>
+</blockquote>
+<hr />
+<h2>四、<code class="c">__builtin_constant_p</code>：编译期常量检测器</h2>
+<pre class="code" data-label="C"><code class="c">int r1 = __builtin_constant_p(5);           // → 1
+int r2 = __builtin_constant_p(volatile_var); // → 0
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th><code class="c">-O2</code> 返回</th>
+<th><code class="c">-O0</code> 返回</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_constant_p(5)</code></td>
+<td>1</td>
+<td>1</td>
+<td>字面量永远是常量</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p(volatile v)</code></td>
+<td>0</td>
+<td>0</td>
+<td>volatile 永远不是常量</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p(static const g)</code></td>
+<td>1</td>
+<td><strong>0</strong></td>
+<td>static const 在 -O0 下不识别</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p(&amp;local)</code></td>
+<td><strong>0</strong></td>
+<td>0</td>
+<td>栈地址不是编译期常量</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p(local)</code></td>
+<td><strong>1</strong></td>
+<td>0</td>
+<td>local=10 未被修改，-O2 能推断</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p(n)</code> (运行时变量)</td>
+<td>0</td>
+<td>0</td>
+<td>运行时变量</td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.1 <code class="c">-O0</code> 的陷阱</h3>
+<pre class="code" data-label="code"><code class="c">=== gcc -O2 ===
+constant_p(5) = 1
+constant_p(volatile v) = 0
+constant_p(static const g) = 1      ← -O2 识别
+constant_p(&amp;local) = 0
+constant_p(local) = 1               ← -O2 推断出 local=10
+
+=== gcc -O0 ===
+constant_p(5) = 1
+constant_p(volatile v) = 0
+constant_p(static const g) = 0      ← -O0 不识别！
+constant_p(&amp;local) = 0
+constant_p(local) = 0               ← -O0 不推断！
+</code></pre>
+<p><strong>根因</strong>：<code class="c">__builtin_constant_p</code> 依赖编译器的常量传播（constant propagation）能力。<code class="c">-O0</code> 不做任何优化，不做常量传播，所以除了字面量以外几乎全返回 0。</p>
+<blockquote>
+<p><strong>工程教训</strong>：如果你写了一个用 <code class="c">__builtin_constant_p</code> 做编译期分流的宏，在 <code class="c">-O0 -g</code> 调试模式下<strong>走的永远是 else 分支</strong>。内核永远 <code class="c">-O2</code> 编译，不会遇到；但用户态调试时要注意。</p>
+</blockquote>
+<h3>4.2 内核的用法</h3>
+<p>内核用 <code class="c">__builtin_constant_p</code> 实现 memset/memcpy 的编译期大小分流：</p>
+<pre class="code" data-label="C"><code class="c">/* 简化版，实际在 include/linux/string.h / lib/string.c */
+#define __memset(s, c, n) ({                              \
+    size_t _n = (n);                                      \
+    if (__builtin_constant_p(_n) &amp;&amp; _n &lt;= 16) {           \
+        /* 编译器内联展开：几条 mov 指令 */               \
+        char *_p = (s);                                    \
+        switch (_n) {                                      \
+        case 16: _p[15] = c;                              \
+        /* ... fall through ... */                         \
+        case 1:  _p[0] = c;                               \
+        }                                                 \
+    } else {                                               \
+        __real_memset(s, c, _n);  /* 调库函数 */            \
+    }                                                     \
+})
+</code></pre>
+<p>实测 <code class="c">my_memset(buf, 'X', 5)</code> 在 <code class="c">-O2</code> 下生成：</p>
+<pre class="code" data-label="code"><code class="c">main:
+    movl   $0x58585858,(%rsp)        # 4 个 'X'
+    movb   $0x58,0x4(%rsp)           # 1 个 'X' = 共 5 字节
+    # 无 call 指令！
+</code></pre>
+<p>而 <code class="c">my_memset(buf, 'Y', n)</code>（n 是运行时变量）生成 <code class="c">call memset@plt</code>。</p>
+<h3>4.3 <code class="c">__builtin_choose_expr</code></h3>
+<pre class="code" data-label="C"><code class="c">int y = __builtin_choose_expr(
+    __builtin_constant_p(x),    // 编译期条件
+    x * 2,                      // 真：编译期保留
+    -1                          // 假：编译期丢弃
+);
+</code></pre>
+<p><code class="c">__builtin_choose_expr</code> 像 <code class="c">?:</code>，但<strong>在编译期选择</strong>——非选中分支的代码<strong>完全不生成</strong>。与 <code class="c">__builtin_constant_p</code> 配合，可以在宏里写「编译期分流」。</p>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">choose_expr(var x)  = -1     ← x 是运行时变量 → 走 else
+choose_expr(const 10) = 20   ← 10 是常量 → 走 then，10*2=20
+</code></pre>
+<blockquote>
+<p><strong>gcc 和 clang 都支持 <code class="c">__builtin_choose_expr</code></strong>（实测确认）。</p>
+</blockquote>
+<hr />
+<h2>五、<code class="c">__builtin_expect</code>：分支布局，不是分支预测</h2>
+<pre class="code" data-label="C"><code class="c">#define likely(x)   __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+</code></pre>
+<p>书里说了「告诉编译器分支大概率方向」，但<strong>没展示汇编</strong>。实测一目了然：</p>
+<h3>5.1 不标 expect</h3>
+<pre class="code" data-label="C"><code class="c">int check_plain(int *p) {
+    if (!p) return -1;     // 没标
+    return *p;
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">check_plain:
+    test   %rdi,%rdi        # 检查 NULL
+    je     .Lerr            # 为空 → 跳错误路径
+    mov    (%rdi),%eax      # 成功路径（fall-through）
+    ret
+.Lerr:
+    mov    $0xffffffff,%eax # 错误路径
+    ret
+</code></pre>
+<p>gcc 猜对了：成功路径在 fall-through 位置。</p>
+<h3>5.2 标 <code class="c">unlikely</code>（正确方向）</h3>
+<pre class="code" data-label="C"><code class="c">int check_unlikely(int *p) {
+    if (__builtin_expect(!p, 0)) return -1;  // !p 大概率为 0（假）
+    return *p;
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">check_unlikely:
+    test   %rdi,%rdi
+    je     .Lerr              # 错误跳走
+    mov    (%rdi),%eax        # 成功路径（fall-through）
+    ret
+    nopl   0x0(%rax)          # ← padding！把错误路径推远
+.Lerr:
+    mov    $0xffffffff,%eax
+    ret
+</code></pre>
+<p>与 plain 版的差异：<strong>多了 padding</strong>（<code class="c">nopl</code>），把错误路径推到更远的地址。icache 中 hot path 更紧凑。</p>
+<h3>5.3 标 <code class="c">likely</code>（故意标反方向）</h3>
+<pre class="code" data-label="C"><code class="c">int check_likely(int *p) {
+    if (__builtin_expect(!p, 1)) return -1;  // 告诉编译器 !p 大概率为 1（真）= p 大概率为 NULL
+    return *p;
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">check_likely:
+    mov    $0xffffffff,%eax   # ← 预先加载错误返回值！
+    test   %rdi,%rdi
+    jne    .Lok               # p != NULL → 跳到成功路径
+    ret                        # p == NULL → 返回 -1（fall-through）
+.Lok:
+    mov    (%rdi),%eax
+    ret
+</code></pre>
+<p><strong>完全反转</strong>：错误路径变成了 fall-through（hot），成功路径变成了跳转目标（cold）。如果实际运行中 <code class="c">p</code> 经常非 NULL，<strong>每次都要跳转</strong>——icache miss。</p>
+<h3>5.4 clang 的行为</h3>
+<p>clang 生成的指令<strong>完全相同</strong>（<code class="c">test/je/mov/ret</code>），但布局顺序一致。说明 <code class="c">__builtin_expect</code> 对两个编译器的作用机制相同：<strong>重排基本块</strong>，不改指令选择。</p>
+<h3>5.5 <code class="c">!!</code> 归一化</h3>
+<pre class="code" data-label="C"><code class="c">#define likely(x)   __builtin_expect(!!(x), 1)
+</code></pre>
+<p><code class="c">!!(x)</code> 把任意类型归一化为 0/1。为什么？因为 <code class="c">__builtin_expect</code> 的第二参数是 <code class="c">long</code>，如果 <code class="c">x</code> 是指针或浮点，直接传会出类型问题。<code class="c">!!</code> 强制转 int 0/1。</p>
+<p>实测：<code class="c">likely(NULL)</code> → 0、<code class="c">likely(42)</code> → 1、<code class="c">likely((void*)0)</code> → 0。归一化生效。</p>
+<h3>5.6 使用准则</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>准则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>profile 验证</strong></td>
+<td>先用 <code class="c">perf record</code> / <code class="c">gcov</code> 确认分支偏斜度。50/50 分支不要标</td>
+</tr>
+<tr>
+<td><strong>仅热路径</strong></td>
+<td>冷函数里标 likely 毫无意义</td>
+</tr>
+<tr>
+<td><strong>猜错代价</strong></td>
+<td>5-20% 性能损失（icache miss）</td>
+</tr>
+<tr>
+<td><strong>替代方案</strong></td>
+<td>PGO（<code class="c">-fprofile-generate</code>/<code class="c">-fprofile-use</code>）让编译器自己学</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>详见 <a href="chapter-02.html#s-6-11-5">6.11.5</a> 和 <a href="chapter-02.html#s-6-11-6">6.11.6 内核中的 likely/unlikely</a>。</p>
+</blockquote>
+<hr />
+<h2>六、<code class="c">__builtin_prefetch</code>：缓存预取</h2>
+<pre class="code" data-label="C"><code class="c">__builtin_prefetch(ptr, rw, locality);
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>取值</th>
+<th>含义</th>
+<th>x86 生成指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">rw</code></td>
+<td>0</td>
+<td>读预取</td>
+<td><code class="c">prefetcht0</code> / <code class="c">prefetchnta</code> / <code class="c">prefetcht1</code> / <code class="c">prefetcht2</code></td>
+</tr>
+<tr>
+<td><code class="c">rw</code></td>
+<td>1</td>
+<td>写预取</td>
+<td><code class="c">prefetcht0</code>（x86 不区分读写预取）</td>
+</tr>
+<tr>
+<td><code class="c">locality</code></td>
+<td>0</td>
+<td>无时间局部性</td>
+<td><code class="c">prefetchnta</code>（Non-Temporal Access，不污染 cache）</td>
+</tr>
+<tr>
+<td><code class="c">locality</code></td>
+<td>1</td>
+<td>低时间局部性</td>
+<td><code class="c">prefetcht2</code>（L2）</td>
+</tr>
+<tr>
+<td><code class="c">locality</code></td>
+<td>2</td>
+<td>中时间局部性</td>
+<td><code class="c">prefetcht1</code>（L1）</td>
+</tr>
+<tr>
+<td><code class="c">locality</code></td>
+<td>3</td>
+<td>高时间局部性</td>
+<td><code class="c">prefetcht0</code>（all levels）</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测 <code class="c">demo_prefetch_args</code>：</p>
+<pre class="code" data-label="code"><code class="c">demo_prefetch_args:
+    prefetchnta (%rdi)        # (p, 0, 0) → Non-Temporal
+    prefetcht2 (%rdi)         # (p, 0, 1) → L2
+    prefetcht1 (%rdi)         # (p, 0, 2) → L1
+    prefetcht0 (%rdi)         # (p, 0, 3) → all levels
+    prefetcht0 0x4(%rdi)      # (p+1, 1, 3) → write, all levels
+    ret
+</code></pre>
+<h3>6.1 在 <code class="c">-O0</code> 下也生成真指令</h3>
+<pre class="code" data-label="code"><code class="c">$ gcc -O0 -c t5_prefetch.c -o t5_O0.o
+$ objdump -d t5_O0.o | sed -n '/&lt;prefetch_at_O0&gt;:/,/^\$/p'
+prefetch_at_O0:
+    push   %rbp
+    mov    %rsp,%rbp
+    mov    %rdi,-0x8(%rbp)
+    mov    -0x8(%rbp),%rax
+    prefetcht0 (%rax)          # ← 真指令！
+    nop
+    pop    %rbp
+    ret
+</code></pre>
+<p>与 <code class="c">__builtin_constant_p</code> 在 <code class="c">-O0</code> 下失效不同，<code class="c">__builtin_prefetch</code> 在任何优化级别下都生成真实预取指令。</p>
+<h3>6.2 链表遍历中的实际效果</h3>
+<pre class="code" data-label="C"><code class="c">int sum_with_prefetch(struct node *head) {
+    int sum = 0;
+    struct node *p = head;
+    while (p) {
+        __builtin_prefetch(p-&gt;next, 0, 3);  // 预取下一个节点
+        sum += p-&gt;val;
+        p = p-&gt;next;
+    }
+    return sum;
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">sum_with_prefetch:
+    xor    %eax,%eax
+    test   %rdi,%rdi
+    je     .Ldone
+.Lloop:
+    mov    %rdi,%rdx
+    mov    0x8(%rdi),%rdi      # 加载 p-&gt;next
+    add    (%rdx),%eax          # sum += p-&gt;val
+    prefetcht0 (%rdi)           # ← 预取 p-&gt;next 指向的数据
+    test   %rdi,%rdi
+    jne    .Lloop
+    ret
+</code></pre>
+<p>编译器把 <code class="c">prefetch</code> 指令插在 <code class="c">p-&gt;next</code> 加载之后、<code class="c">p = p-&gt;next</code> 赋值之前——让 CPU 在处理当前节点时<strong>后台预取下一个节点的 cache line</strong>。</p>
+<hr />
+<h2>七、控制流内建：trap / unreachable / abort</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内建函数</th>
+<th>作用</th>
+<th>gcc 生成</th>
+<th>clang 生成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_trap()</code></td>
+<td>触发非法指令异常</td>
+<td><code class="c">ud2</code></td>
+<td><code class="c">ud2</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_unreachable()</code></td>
+<td>告诉编译器此路径不可达</td>
+<td><strong>无指令</strong>（后续代码被删除）</td>
+<td><strong>无指令</strong></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_abort()</code></td>
+<td>等价于 <code class="c">abort()</code></td>
+<td><code class="c">call abort@plt</code></td>
+<td><code class="c">call abort@plt</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>7.1 <code class="c">__builtin_trap</code> → <code class="c">ud2</code></h3>
+<pre class="code" data-label="code"><code class="c">do_trap:
+    push   %rax
+    lea    &quot;before trap\n&quot;,%rdi
+    call   puts@plt
+    ud2                          # ← __builtin_trap() = 一条指令，触发 SIGILL
+    # &quot;after trap&quot; 那行 printf 被编译器删了（死代码消除）
+</code></pre>
+<p><code class="c">ud2</code>（0F 0B）是 x86 的「未定义指令」，CPU 执行到它时触发 <code class="c">SIGILL</code>（非法指令信号）。ARM 上等价物是 <code class="c">UDF</code> 或 <code class="c">BKPT</code>。</p>
+<h3>7.2 <code class="c">__builtin_unreachable</code> → 什么也不生成</h3>
+<pre class="code" data-label="C"><code class="c">int do_unreachable(int x) {
+    switch (x) {
+    case 0:  return 0;
+    case 1:  return 1;
+    case 2:  return 2;
+    }
+    __builtin_unreachable();  // 告诉编译器 x 只会是 0/1/2
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">do_unreachable:
+    mov    %edi,%eax           # 直接返回 x（编译器知道只可能是 0/1/2）
+    ret
+    # 没有 switch 跳转表！编译器内联了所有 case。
+</code></pre>
+<h3>7.3 骗编译器的代价</h3>
+<pre class="code" data-label="C"><code class="c">int lie_to_compiler(int x) {
+    if (x &gt; 0) return x;
+    __builtin_unreachable();  // &quot;x 永远 &gt; 0&quot;
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">lie_to_compiler:
+    mov    %edi,%eax           # 直接返回 x
+    ret
+</code></pre>
+<p>编译器删除了 <code class="c">x &lt;= 0</code> 分支。如果你传 <code class="c">lie_to_compiler(-5)</code>，返回的是 <code class="c">%edi</code> 寄存器里的值（即 -5 本身）——<strong>但标准说是 UB，什么结果都可能</strong>。</p>
+<blockquote>
+<p><strong>内核用法</strong>：<code class="c">BUG()</code> → <code class="c">__builtin_trap()</code>；<code class="c">BUG_ON(cond)</code> → <code class="c">if (cond) __builtin_trap()</code>。<code class="c">unreachable()</code> 用于标注不可能到达的 default 分支。见 <code class="c">include/asm-generic/bug.h</code>。</p>
+</blockquote>
+<hr />
+<h2>八、libc 折叠：<code class="c">strlen("hello")</code> → <code class="c">mov $5, %eax</code></h2>
+<p>gcc 默认把很多 libc 函数当作 builtin 处理——<strong>当参数是编译期常量时，直接折叠成常量</strong>。</p>
+<h3>8.1 折叠演示</h3>
+<pre class="code" data-label="C"><code class="c">size_t do_strlen_const(void)  { return strlen(&quot;hello&quot;); }  // 常量参数
+size_t do_strlen_rt(const char *s) { return strlen(s); }  // 运行时参数
+</code></pre>
+<pre class="code" data-label="code"><code class="c">=== gcc -O2 ===
+do_strlen_const:
+    mov    $0x5,%eax           # ← strlen(&quot;hello&quot;) 编译期折叠成 5
+    ret
+
+do_strlen_rt:
+    jmp    strlen@plt          # ← 运行时参数 → 调真实函数
+</code></pre>
+<p><strong>同理</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>libc 函数</th>
+<th>常量参数（-O2）</th>
+<th>运行时参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">strlen("hello")</code></td>
+<td><code class="c">mov $5, %eax</code></td>
+<td><code class="c">jmp strlen@plt</code></td>
+</tr>
+<tr>
+<td><code class="c">memcpy(dst, src, 5)</code></td>
+<td>5 条 <code class="c">mov</code> 指令内联</td>
+<td><code class="c">jmp memcpy@plt</code></td>
+</tr>
+<tr>
+<td><code class="c">memcpy(dst, src, 256)</code></td>
+<td>16 条 <code class="c">movups</code>（SSE 128 位）</td>
+<td><code class="c">jmp memcpy@plt</code></td>
+</tr>
+<tr>
+<td><code class="c">strcmp("abc","abd")</code></td>
+<td><code class="c">mov $-1, %eax</code></td>
+<td><code class="c">jmp strcmp@plt</code></td>
+</tr>
+<tr>
+<td><code class="c">memset(buf, 0, 16)</code></td>
+<td>1 条 <code class="c">movups %xmm0,(%rdi)</code></td>
+<td><code class="c">jmp memset@plt</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>8.2 <code class="c">-fno-builtin</code> 的效果</h3>
+<pre class="code" data-label="code"><code class="c">=== gcc -O2 -fno-builtin ===
+my_strlen_const:
+    lea    &quot;hello&quot;,%rdi
+    jmp    strlen@plt          # ← 不再折叠！调真实函数
+
+my_builtin_strlen:
+    mov    $0x5,%eax           # ← __builtin_strlen 不受影响
+    ret
+</code></pre>
+<p><strong>三层对照</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>标志</th>
+<th><code class="c">strlen("hello")</code></th>
+<th><code class="c">__builtin_strlen("hello")</code></th>
+<th><code class="c">memcpy(dst, src, 5)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O2</code>（默认）</td>
+<td><code class="c">mov $5, %eax</code></td>
+<td><code class="c">mov $5, %eax</code></td>
+<td>5 条 <code class="c">mov</code> 内联</td>
+</tr>
+<tr>
+<td><code class="c">-O2 -fno-builtin</code></td>
+<td><code class="c">jmp strlen@plt</code></td>
+<td><strong><code class="c">mov $5, %eax</code></strong></td>
+<td>5 条 <code class="c">mov</code> 内联</td>
+</tr>
+<tr>
+<td><code class="c">-O2 -fno-builtin-strlen</code></td>
+<td><code class="c">jmp strlen@plt</code></td>
+<td><strong><code class="c">mov $5, %eax</code></strong></td>
+<td>5 条 <code class="c">mov</code> 内联</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键</strong>：<code class="c">-fno-builtin</code> 关掉的是<strong>隐式识别</strong>（编译器看到 <code class="c">strlen</code> 就当 builtin）；<code class="c">__builtin_strlen</code> 是<strong>显式形式</strong>，永远不被 <code class="c">-fno-builtin</code> 关掉。<code class="c">memcpy</code> 的内联属于 tree-ssa 的 <code class="c">BUILTIN_MEMCPY</code> 优化路径，与 <code class="c">-fno-builtin</code> 独立——实测在 <code class="c">-fno-builtin</code> 下 memcpy 仍然内联。</p>
+<h3>8.3 <code class="c">-ffreestanding</code> 与内核</h3>
+<pre class="code" data-label="code"><code class="c">$ gcc -std=gnu11 -O2 -ffreestanding -c t7_libc.c -o t7_free.o
+# 编译成功，无报错
+</code></pre>
+<p><code class="c">-ffreestanding</code> 告诉编译器「不假设有 hosted 环境（没有标准库）」。但它<strong>不关掉 <code class="c">__builtin_*</code></strong>——因为内建函数是编译器自带的，不依赖 libc。</p>
+<p>内核 Makefile 里 <code class="c">-ffreestanding</code> 一直开着，<code class="c">__builtin_*</code> 照用。但 libc 隐式识别在 <code class="c">-ffreestanding</code> 下会被关掉——内核自己实现了 <code class="c">memcpy</code>/<code class="c">memset</code>/<code class="c">strlen</code> 等，不需要编译器隐式折叠。</p>
+<h3>8.4 C23：<code class="c">__builtin_stdc_*</code> 标准化</h3>
+<p>C23（ISO/IEC 9899:2024）把一组 freestanding 安全的 libc 函数标准化为内建函数，前缀 <code class="c">__builtin_stdc_</code>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>C23 内建</th>
+<th>等价 libc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_stdc_memcmp</code></td>
+<td><code class="c">memcmp</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_memcpy</code></td>
+<td><code class="c">memcpy</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_memmove</code></td>
+<td><code class="c">memmove</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_memset</code></td>
+<td><code class="c">memset</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_strlen</code></td>
+<td><code class="c">strlen</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_strcmp</code></td>
+<td><code class="c">strcmp</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_strchr</code></td>
+<td><code class="c">strchr</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>这些在 freestanding 模式下也可用，且不受 <code class="c">-fno-builtin</code> 影响。GCC 14+ 和 Clang 19+ 支持。当前 WSL gcc 13.3 尚未完全支持，但 <code class="c">__builtin_memset</code> 等旧形式仍可用。</p>
+<hr />
+<h2>九、溢出检查：<code class="c">__builtin_add_overflow</code> 等</h2>
+<pre class="code" data-label="C"><code class="c">int __builtin_add_overflow(T1 a, T2 b, T3 *res);  // *res = a + b，返回是否溢出
+int __builtin_sub_overflow(T1 a, T2 b, T3 *res);
+int __builtin_mul_overflow(T1 a, T2 b, T3 *res);
+</code></pre>
+<h3>9.1 硬件映射</h3>
+<pre class="code" data-label="C"><code class="c">int safe_add(int a, int b, int *result) {
+    return __builtin_add_overflow(a, b, result);
+}
+int safe_mul(int a, int b, int *result) {
+    return __builtin_mul_overflow(a, b, result);
+}
+int safe_add_u(uint32_t a, uint32_t b, uint32_t *r) {
+    return __builtin_add_overflow(a, b, r);
+}
+</code></pre>
+<pre class="code" data-label="code"><code class="c">safe_add:         add %esi,%edi ; mov %edi,(%rdx) ; seto %al ; ret
+                  #                              ^^^ 溢出标志 → 布尔
+
+safe_mul:         imul %esi,%edi ; mov %edi,(%rdx) ; seto %al ; ret
+                  #                               ^^^ 溢出标志
+
+safe_add_u:       add %esi,%edi ; mov %edi,(%rdx) ; setb %al ; ret
+                  #                              ^^^ 进位标志（无符号）
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作类型</th>
+<th>溢出检测指令</th>
+<th>x86 标志</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>有符号加法</td>
+<td><code class="c">seto</code></td>
+<td>OF（Overflow Flag）</td>
+</tr>
+<tr>
+<td>有符号乘法</td>
+<td><code class="c">seto</code></td>
+<td>OF</td>
+</tr>
+<tr>
+<td>无符号加法</td>
+<td><code class="c">setb</code></td>
+<td>CF（Carry Flag）</td>
+</tr>
+<tr>
+<td>无符号乘法</td>
+<td><code class="c">setb</code> / <code class="c">seto</code>（取决于类型宽度）</td>
+<td>CF 或 OF</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>两条指令搞定</strong>——比手写检查（<code class="c">if (a &gt; INT_MAX - b)</code>）更短、更安全、更优化。</p>
+<h3>9.2 宽度截断检测</h3>
+<pre class="code" data-label="C"><code class="c">uint8_t r8;
+int ovf = __builtin_add_overflow(300, 300, &amp;r8);
+// → ovf=1, r8 = (uint8_t)(600 % 256) = 88
+</code></pre>
+<p>当结果类型比操作数窄时，builtin 会自动做宽度截断并正确检测溢出。</p>
+<h3>9.3 常量折叠</h3>
+<p>当操作数是编译期常量时，结果在编译期确定：</p>
+<pre class="code" data-label="code"><code class="c">test_all_overflow:
+    ...
+    mov    $0x1,%edx           # ← INT_MAX+1 overflow=1（编译期常量）
+    mov    $0x80000000,%ecx    # ← result=INT_MIN（编译期常量）
+    ...
+</code></pre>
+<p>编译器在编译期就算出了 <code class="c">INT_MAX + 1</code> 溢出、结果为 <code class="c">INT_MIN</code>，直接嵌入了常量。</p>
+<blockquote>
+<p><strong>内核</strong>：<code class="c">include/linux/overflow.h</code> 定义了 <code class="c">check_add_overflow(a, b, d)</code> → <code class="c">__builtin_add_overflow(a, b, d)</code>。GCC 5+ 和 Clang 3.5+ 支持。</p>
+</blockquote>
+<hr />
+<h2>十、类型与对齐内建</h2>
+<h3>10.1 <code class="c">__builtin_types_compatible_p</code></h3>
+<pre class="code" data-label="C"><code class="c">__builtin_types_compatible_p(type1, type2)  // 编译期返回 0 或 1
+</code></pre>
+<p>实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>检查</th>
+<th>返回</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">types_compatible_p(int, int)</code></td>
+<td>1</td>
+<td>同类型</td>
+</tr>
+<tr>
+<td><code class="c">types_compatible_p(int, unsigned)</code></td>
+<td>0</td>
+<td>signed ≠ unsigned</td>
+</tr>
+<tr>
+<td><code class="c">types_compatible_p(int, long)</code></td>
+<td>0</td>
+<td>int ≠ long（LP64）</td>
+</tr>
+<tr>
+<td><code class="c">types_compatible_p(struct A, struct B)</code></td>
+<td>0</td>
+<td>不同结构体（即使布局相同）</td>
+</tr>
+<tr>
+<td><code class="c">types_compatible_p(char*, const char*)</code></td>
+<td><strong>0</strong></td>
+<td>顶层 const 使类型不兼容</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>注意</strong>：C 标准里 <code class="c">char*</code> 和 <code class="c">const char*</code> 在某些上下文里是「兼容」的（例如赋值），但 <code class="c">__builtin_types_compatible_p</code> 按<strong>严格类型规则</strong>返回 0。gcc 和 clang 行为一致。</p>
+</blockquote>
+<p>内核用 <code class="c">typeof</code> + <code class="c">__builtin_types_compatible_p</code> 做 <code class="c">min()</code>/<code class="c">max()</code> 宏的类型检查（<code class="c">include/linux/minmax.h</code>）。</p>
+<h3>10.2 <code class="c">__builtin_assume_aligned</code></h3>
+<pre class="code" data-label="C"><code class="c">int *ap = __builtin_assume_aligned(p, 16);
+</code></pre>
+<p>告诉编译器「<code class="c">p</code> 至少 16 字节对齐」，编译器据此生成向量化指令（SSE/AVX）。</p>
+<p>实测 <code class="c">sum_aligned</code> vs <code class="c">sum_plain</code> 在当前 gcc 版本下生成的代码<strong>相同</strong>（因为简单标量循环没有向量化机会）。但如果循环体适合向量化（如 <code class="c">s += p[i] * 2</code>），<code class="c">assume_aligned</code> 版本会使用 <code class="c">movdqa</code>（对齐加载），而 plain 版本用 <code class="c">movdqu</code>（未对齐加载，慢）。</p>
+<h3>10.3 <code class="c">__builtin_offsetof</code></h3>
+<pre class="code" data-label="C"><code class="c">struct S { char a; int b; char c; };
+size_t off = __builtin_offsetof(struct S, b);  // → 4
+</code></pre>
+<p>等价于标准 <code class="c">&lt;stddef.h&gt;</code> 的 <code class="c">offsetof</code>，但 <code class="c">__builtin_offsetof</code> 是编译器内建，不需要 <code class="c">#include</code>。</p>
+<hr />
+<h2>十一、GCC vs Clang 支持矩阵</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内建函数</th>
+<th>gcc</th>
+<th>clang</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_popcount/ll</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>但不加 <code class="c">-mpopcnt</code> 都不生成 <code class="c">popcnt</code> 指令</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_clz/ctz/ffs/parity</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>指令完全一致</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_bswap16/32/64</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>指令完全一致</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p</code></td>
+<td>✅</td>
+<td>✅</td>
+<td><code class="c">-O0</code> 行为一致（都几乎全返回 0）</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_expect</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>基本块布局一致</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_prefetch</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>指令一致</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_trap</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>都生成 <code class="c">ud2</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_unreachable</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>都删除死代码</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_abort</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>都调用 <code class="c">abort@plt</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_add/sub/mul_overflow</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>都用 <code class="c">seto</code>/<code class="c">setb</code></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_types_compatible_p</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>行为一致</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_choose_expr</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>行为一致</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_assume_aligned</code></td>
+<td>✅</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_offsetof</code></td>
+<td>✅</td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td><code class="c">__builtin_strlen/memcpy/memset</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>libc 内建</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_stdc_*</code> (C23)</td>
+<td>GCC 14+</td>
+<td>Clang 19+</td>
+<td>尚未在当前环境测试</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_return_address</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>内核用（见下文）</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_frame_address</code></td>
+<td>✅</td>
+<td>✅</td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论</strong>：在当前 gcc 13.3 / clang 18.1 测试范围内，<strong>核心内建函数的支持矩阵完全一致</strong>。差异主要在 popcount 的 fallback 策略（gcc 调函数、clang 内联）。</p>
+</blockquote>
+<hr />
+<h2>十二、<code class="c">__builtin_return_address</code>：调用链追踪</h2>
+<pre class="code" data-label="C"><code class="c">void *__builtin_return_address(unsigned int level);
+</code></pre>
+<p>返回 <code class="c">level</code> 层调用者的返回地址。<code class="c">level=0</code> 是当前函数的调用者，<code class="c">1</code> 是调用者的调用者，以此类推。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>level</th>
+<th>返回</th>
+<th>可靠性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>直接调用者的返回地址</td>
+<td><strong>可靠</strong></td>
+</tr>
+<tr>
+<td>1</td>
+<td>祖父调用者</td>
+<td>依赖栈帧完整性</td>
+</tr>
+<tr>
+<td>≥ 2</td>
+<td>更深层</td>
+<td><strong>不可靠</strong>（可能因优化/内联导致栈帧不存在）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>内核</strong>：<code class="c">include/linux/kallsyms.h</code> 用 <code class="c">__builtin_return_address(0)</code> 做 stack trace。<code class="c">dump_stack()</code> 底层也依赖它。<strong>使用前提</strong>：函数不能被内联（否则没有独立栈帧）。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">/* 内核 dump_stack 简化版 */
+void dump_stack(void) {
+    unsigned long sp = (unsigned long)__builtin_frame_address(0);
+    void *ra = __builtin_return_address(0);
+    printk(&quot;Call trace:\n&quot;);
+    printk(&quot;  [&lt;%p&gt;] %pS\n&quot;, ra, ra);   /* %pS = 打印符号名 */
+    /* 继续 unwind... */
+}
+</code></pre>
+<p><code class="c">__builtin_frame_address(level)</code> 类似，返回第 <code class="c">level</code> 层栈帧的基地址。</p>
+<hr />
+<h2>十三、速查表</h2>
+<h3>13.1 按场景分类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐内建</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分支布局</td>
+<td><code class="c">likely()</code> / <code class="c">unlikely()</code></td>
+<td>错误检查标 unlikely，成功路径标 likely</td>
+</tr>
+<tr>
+<td>编译期常量分流</td>
+<td><code class="c">__builtin_constant_p</code> + <code class="c">__builtin_choose_expr</code></td>
+<td>小尺寸内联、大尺寸调库</td>
+</tr>
+<tr>
+<td>位图统计</td>
+<td><code class="c">__builtin_popcount</code>（<strong>记得 <code class="c">-mpopcnt</code></strong>）</td>
+<td></td>
+</tr>
+<tr>
+<td>对齐/桶排序</td>
+<td><code class="c">__builtin_clz</code> / <code class="c">ctz</code></td>
+<td>注意 0 输入是 UB</td>
+</tr>
+<tr>
+<td>网络字节序</td>
+<td><code class="c">__builtin_bswap32/64</code></td>
+<td></td>
+</tr>
+<tr>
+<td>链表预取</td>
+<td><code class="c">__builtin_prefetch(p-&gt;next, 0, 3)</code></td>
+<td></td>
+</tr>
+<tr>
+<td>断言/panic</td>
+<td><code class="c">__builtin_trap()</code> → <code class="c">ud2</code></td>
+<td></td>
+</tr>
+<tr>
+<td>不可达标注</td>
+<td><code class="c">__builtin_unreachable()</code></td>
+<td>消除 default 分支</td>
+</tr>
+<tr>
+<td>溢出检查</td>
+<td><code class="c">__builtin_add/sub/mul_overflow</code></td>
+<td>比手写检查快</td>
+</tr>
+<tr>
+<td>调用链追踪</td>
+<td><code class="c">__builtin_return_address(0)</code></td>
+<td>调试/panic 栈打印</td>
+</tr>
+<tr>
+<td>类型检查</td>
+<td><code class="c">__builtin_types_compatible_p</code></td>
+<td>泛型宏类型安全</td>
+</tr>
+<tr>
+<td>对齐假设</td>
+<td><code class="c">__builtin_assume_aligned</code></td>
+<td>允许向量化</td>
+</tr>
+</tbody>
+</table></div>
+<h3>13.2 编译选项交互</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>选项</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code></td>
+<td><code class="c">__builtin_constant_p</code> 几乎全返回 0；<code class="c">__builtin_prefetch</code> 仍生成真指令</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code></td>
+<td><code class="c">__builtin_constant_p</code> 可以推断 <code class="c">static const</code>、未修改的局部变量</td>
+</tr>
+<tr>
+<td><code class="c">-fno-builtin</code></td>
+<td>关掉 libc 隐式识别（<code class="c">strlen</code>/<code class="c">memcpy</code>/<code class="c">strcmp</code>）；<strong>不影响 <code class="c">__builtin_*</code> 显式形式</strong></td>
+</tr>
+<tr>
+<td><code class="c">-fno-builtin-strlen</code></td>
+<td>只关 <code class="c">strlen</code> 的隐式识别</td>
+</tr>
+<tr>
+<td><code class="c">-ffreestanding</code></td>
+<td>假设无 hosted 环境；不影响 <code class="c">__builtin_*</code>；libc 隐式识别关闭</td>
+</tr>
+<tr>
+<td><code class="c">-mpopcnt</code></td>
+<td>让 <code class="c">__builtin_popcount</code> 生成 <code class="c">POPCNT</code> 硬件指令</td>
+</tr>
+<tr>
+<td><code class="c">-march=native</code></td>
+<td>隐含 <code class="c">-mpopcnt</code>（CPU 支持时）</td>
+</tr>
+<tr>
+<td><code class="c">-fprofile-generate/-use</code></td>
+<td>PGO，替代手写 <code class="c">likely</code>/<code class="c">unlikely</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>常见陷阱</h2>
+<h3>1. 以为 <code class="c">__builtin_popcount</code> 一定用硬件指令</h3>
+<p><strong>错</strong>。不加 <code class="c">-mpopcnt</code>（或 <code class="c">-march=native</code>），gcc 调用 <code class="c">__popcountdi2</code>（13 条 SWAR 指令 + 函数调用），clang 内联 SWAR（12 条指令）。都不用 <code class="c">popcnt</code> 指令。</p>
+<p><strong>解法</strong>：Makefile 里加 <code class="c">-mpopcnt</code> 或 <code class="c">-march=native</code>。</p>
+<h3>2. 在 <code class="c">-O0 -g</code> 调试时宏行为变了</h3>
+<p>用了 <code class="c">__builtin_constant_p</code> 的宏在 <code class="c">-O0</code> 下走 else 分支（因为 <code class="c">__builtin_constant_p</code> 几乎全返回 0）。</p>
+<p><strong>解法</strong>：知道这是预期的；要测宏行为用 <code class="c">-O2 -g</code>。</p>
+<h3>3. <code class="c">__builtin_clz(0)</code> / <code class="c">__builtin_ctz(0)</code> 是 UB</h3>
+<p><code class="c">__builtin_ffs(0)</code> 返回 0（安全），但 <code class="c">clz</code>/<code class="c">ctz</code> 对 0 输入是 UB。内核先检查 <code class="c">v == 0</code>。</p>
+<h3>4. <code class="c">__builtin_unreachable</code> 骗了编译器</h3>
+<p>标了 <code class="c">__builtin_unreachable()</code> 的路径如果真的被执行，返回值是<strong>寄存器里的垃圾</strong>。编译器还可能基于「不可达」假设做更激进的优化（删除其他分支的检查），导致更严重的 UB。</p>
+<h3>5. <code class="c">__builtin_expect</code> 标错方向</h3>
+<p><code class="c">likely</code> 标在实际冷路径上，编译器把冷路径放 fall-through，hot path 变成跳转——每次都 icache miss。<strong>必须 profile</strong>。</p>
+<h3>6. <code class="c">-fno-builtin</code> 不影响 <code class="c">__builtin_*</code></h3>
+<p>以为 <code class="c">-fno-builtin</code> 能关掉 <code class="c">__builtin_strlen</code>——<strong>不能</strong>。<code class="c">-fno-builtin</code> 只关 libc 隐式识别。要关 <code class="c">__builtin_*</code> 没有标准方法（也没必要——它们是编译器内建，不是库函数）。</p>
+<hr />
+<h2>HFT/嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>内建</th>
+<th>HFT 场景</th>
+<th>嵌入式场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_expect</code></td>
+<td>快速路径标 likely，错误检查标 unlikely</td>
+<td>ISR 入口检查 unlikely</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_constant_p</code></td>
+<td>日志级别编译期决定（关了就不生成格式串到 <code class="c">.rodata</code>）</td>
+<td>配置参数编译期分流</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_popcount</code></td>
+<td>订单位图统计</td>
+<td>位图 IRQ 掩码统计</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_clz</code></td>
+<td>快速 log2 求桶号</td>
+<td>优先级编码器</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_bswap64</code></td>
+<td>FIX/SBE 字段解包</td>
+<td>网络包头部解析</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_prefetch</code></td>
+<td>预取下一批订单指针</td>
+<td>DMA 描述符预取</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_add_overflow</code></td>
+<td>下单数量×价格溢出检查</td>
+<td>计数器溢出检查</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_trap</code></td>
+<td>断言/panic</td>
+<td>assert_panic</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_unreachable</code></td>
+<td>switch case 覆盖标注</td>
+<td>状态机 default 标注</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.11.1–6.11.6</strong>；<strong>demo07</strong></li>
+<li><strong>[6.11.1–6.11.6]</strong>：子节展开每个类别</li>
+<li><strong><a href="chapter-02.html#ch-2">3.6 内联汇编</a></strong>：<code class="c">__asm__</code> 与 <code class="c">__builtin_*</code> 的关系——有些 builtin 本质上是内联汇编的语法糖（如 <code class="c">__builtin_prefetch</code> = <code class="c">prefetcht0</code> 指令）</li>
+<li><strong><a href="chapter-01.html#s-6-10">6.10 inline</a></strong>：<code class="c">always_inline</code> + <code class="c">__builtin_constant_p</code> = 编译期生成特化版本</li>
+<li><strong><a href="#s-6-8">6.8 format</a></strong>：<code class="c">no_printk</code> 的 <code class="c">if (0)</code> 技巧依赖 <code class="c">__builtin_constant_p</code> 判断日志级别</li>
+<li>
+<p><strong><a href="chapter-01.html#s-6-1">6.1 C 标准与 gnu11</a></strong>：<code class="c">__builtin_*</code> 在所有方言（c89/c99/c11/gnu11）下都可用——因为双下划线前缀是 ISO C 保留给实现的</p>
+</li>
+<li>
+<p><strong>demo</strong>：<code class="c">demo/09-builtin/</code>（含本节 t1–t13 全部源码与 <code class="c">run.sh</code>/<code class="c">run2.sh</code>）</p>
+</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> GCC 内建函数（<code class="c">__builtin_*</code>）和普通函数有什么区别？为什么不直接用对应的库函数？</p>
-<pre class="code" data-label="C"><code class="c">// 内建
-int n = __builtin_popcount(0xFF);  // 8
-// 库函数
-int n2 = __builtin_popcount(volatile_var);
+<p><strong>题目 1：</strong> 以下代码在 <code class="c">gcc -O2</code> 下，<code class="c">do_popcount</code> 生成的是 <code class="c">popcnt</code> 指令还是软件函数调用？为什么？</p>
+<pre class="code" data-label="C"><code class="c">int do_popcount(uint32_t v) { return __builtin_popcount(v); }
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>区别：(1) 内建函数不需要 <code class="c">#include</code>，编译器直接识别；(2) 常量参数时编译期求值（<code class="c">__builtin_popcount(0xFF)</code> 编译期得到 8）；(3) 某些内建没有对应库函数（如 <code class="c">__builtin_expect</code>、<code class="c">__builtin_prefetch</code>）；(4) 内建直接映射到目标平台指令（如 <code class="c">popcount</code> → x86 <code class="c">POPCNT</code>、ARM <code class="c">VCNT</code>），无函数调用开销。不用库函数的原因：库函数需要链接、有调用开销、且不是所有平台都有对应实现。</p>
+<p><strong>软件函数调用</strong>（<code class="c">call __popcountdi2</code>）。因为默认编译选项<strong>不包含 <code class="c">-mpopcnt</code></strong>，gcc 不知道目标 CPU 支持 <code class="c">POPCNT</code> 指令，所以回退到 libgcc 的 <code class="c">__popcountdi2</code>（SWAR 算法，13 条指令 + 一次函数调用）。</p>
+<p>要生成 <code class="c">popcnt %edi,%eax</code>（1 条指令），需要加 <code class="c">-mpopcnt</code> 或 <code class="c">-march=native</code>。这是最常见的 builtin 误解——不是所有 <code class="c">__builtin_*</code> 都无条件映射到硬件指令，有些取决于目标架构标志。</p>
+</details>
+<p><strong>题目 2：</strong> 以下宏在 <code class="c">gcc -O0</code> 和 <code class="c">gcc -O2</code> 下行为有何不同？</p>
+<pre class="code" data-label="C"><code class="c">#define OPT_MEMSET(s, c, n) do {                                  \
+    if (__builtin_constant_p(n) &amp;&amp; (n) &lt;= 16)                     \
+        /* 内联展开 */                                            \
+    else                                                          \
+        memset(s, c, n);                                         \
+} while (0)
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong><code class="c">-O0</code></strong>：<code class="c">__builtin_constant_p</code> 几乎对所有非字面量表达式返回 0（包括 <code class="c">static const</code> 和赋值后未修改的局部变量）。因此宏<strong>几乎总是走 else 分支</strong>调用 <code class="c">memset</code>，即使 <code class="c">n</code> 是 <code class="c">static const int = 5</code>。</p>
+<p><strong><code class="c">-O2</code></strong>：编译器做常量传播，能识别 <code class="c">static const</code>、未修改的局部变量等为编译期常量。当 <code class="c">n</code> 是编译期常量且 ≤ 16 时，走内联展开路径。</p>
+<p><strong>根因</strong>：<code class="c">__builtin_constant_p</code> 依赖编译器的常量传播能力，<code class="c">-O0</code> 不做任何优化传播。</p>
+</details>
+<p><strong>题目 3：</strong> 以下三种方式检查溢出，哪个在 <code class="c">-O2</code> 下生成的代码最优？</p>
+<pre class="code" data-label="C"><code class="c">// A: 手写
+if (a &gt; INT_MAX - b) { /* overflow */ }
+
+// B: 编译器扩展
+int r;
+if (__builtin_add_overflow(a, b, &amp;r)) { /* overflow */ }
+
+// C: 内联汇编
+int r, ovf;
+asm(&quot;add %2, %1\n\tseto %0&quot; : &quot;=r&quot;(ovf), &quot;=r&quot;(r) : &quot;r&quot;(a), &quot;1&quot;(b));
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>B 最优</strong>。<code class="c">__builtin_add_overflow</code> 生成 <code class="c">add; seto; ret</code>（3 条指令），且编译器理解其语义，可以做常量折叠等优化。手写 A 需要额外比较和分支，且对无符号不适用。内联汇编 C 虽然也能用 <code class="c">seto</code>，但编译器不理解 asm 的语义，不能做后续优化（如常量折叠、死代码消除），且不可移植。</p>
+<p>实测 <code class="c">safe_add</code> 的汇编：<code class="c">add %esi,%edi; mov %edi,(%rdx); seto %al; ret</code>——干净利落。</p>
+</details>
+<p><strong>题目 4：</strong> <code class="c">__builtin_unreachable()</code> 标注的路径如果真的被执行了，会发生什么？</p>
+<pre class="code" data-label="C"><code class="c">int f(int x) {
+    if (x &gt; 0) return x;
+    __builtin_unreachable();  // &quot;x 永远 &gt; 0&quot;
+}
+// 调用：f(-5)
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>UB（未定义行为）</strong>。编译器删除了 <code class="c">x &lt;= 0</code> 分支后，<code class="c">f(-5)</code> 会直接返回 <code class="c">%edi</code> 寄存器的值（即 -5 本身），但这只是巧合——标准说结果是未定义的。更危险的是，编译器可能基于「不可达」假设做更激进的优化，例如删除函数中对 <code class="c">x &lt;= 0</code> 的其他检查（如果有的话），导致连锁 UB。</p>
+<p>实测汇编：<code class="c">mov %edi,%eax; ret</code>——连比较都没了。</p>
 </details>
       </section>
       <section class="section" id="s-6-11-1">
