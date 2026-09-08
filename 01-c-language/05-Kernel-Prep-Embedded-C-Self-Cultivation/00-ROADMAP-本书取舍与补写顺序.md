@@ -15,6 +15,31 @@
 
 ---
 
+## 零、遇到硬件知识怎么办（改造规则）
+
+这本书里到处是硬件内容。处理方式不是"读"也不是"删"，而是**按下面两条分流**：
+
+| 判定 | 处置 |
+|------|------|
+| **CSAPP / 内核书已经讲过**（Cache 原理、流水线、多核、ISA、大小端原理、MMU） | **保留索引**：每篇顶部一句"→ 见 CSAPP 第 X 章"，不补写、不实测 |
+| **它们没讲，但嵌入式 C 必须会** | **改写成 GNU C 扩展视角**：不写硬件原理，只写"这件事怎么用 C 语言表达" |
+
+第二条是本书的独有价值——**CSAPP 讲硬件不讲 C，标准 C 教材讲 C 不讲硬件**，中间这段正是嵌入式 C 的地盘。
+
+### 已改造 / 待改造清单
+
+| 原书位置 | 原主题 | 改造后（C 语言视角） | 落位 | 状态 |
+|---|---|---|---|---|
+| ch02 2.8 总线与 MMIO | 地址译码、MMIO 原理 | 设备寄存器的三种 C 表达、`volatile` 该加在哪 | [10.8 寄存器操作](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md) | ✅ 已写 |
+| ch02 2.8.4 大小端 | 字节序原理 | `__builtin_bswap*`、主机序探测、什么时候需要转 | 10.8 第七节 | ✅ 已写 |
+| ch02 2.4 Cache / DMA 一致性 | Cache 行、伪共享 | `volatile` **管不了** Cache；要用 `dma_sync_*` / `__builtin___clear_cache` | 10.8 第一节（一句带过） | ✅ 已写 |
+| ch03.6 内联汇编 | ARM 汇编指令 | `__asm__ __volatile__("" ::: "memory")` 屏障宏 | [ch03.6](./ch03-arm-architecture-and-assembly/3.6-mixed-programming/) | ⏳ 待写（A 档） |
+| ch10.3 中断 | 中断向量、现场保存 | ISR 与主循环的共享数据、`__atomic_*`、volatile 标志 | [10.3 中断](./ch10-multitasking-and-os/10.3-interrupt/10.3-中断.md) | ⏳ 待改造 |
+| ch04 链接脚本 | 段、地址分配 | 向量表定位、`__attribute__((section()))`、链接脚本语法 | [4.14 链接脚本](./ch04-compile-link-install-run/4.14-链接脚本.md) | ⏳ 待写（A2） |
+| ch02 2.9 ISA | 指令集 | — | CSAPP ch4/5 更深 | ❌ 不投入 |
+
+---
+
 ## 一、三档定位总表
 
 数据为 2026-09-08 实测统计（篇数 / 中位字节 / 骨架占比，骨架 = 小于 2.5 KB）。
@@ -28,7 +53,8 @@
 | **B** | ch09 | [模块化编程](./ch09-modular-programming-in-c/) | 28 | 3677 | 3% | 工程实践：头文件、模块封装、goto | 已达标 | 维持，只补 9.2/9.7 |
 | **B** | ch07 | [数据存储与指针](./ch07-data-storage-and-pointers/) | 43 | 2545 | 37% | **只挑与嵌入式强相关的节** | 指针基础与 [Pointers on C](../02-Pointers-on-C/) 重叠 | 精挑 7.2 对齐 / 7.3 可移植性 / 7.4 size_t / 7.13 void；其余维持 |
 | **B** | ch08 | [OOP in C](./ch08-oop-in-c/) | 18 | 3496 | 5% | 与 6.4 container_of 联动的面向对象套路 | 已达标 | 维持，与 6.4 双向链接 |
-| **B** | ch10 | [多任务与 OS](./ch10-multitasking-and-os/) | 45 | 2928 | 13% | **只挑嵌入式侧**：裸机、中断、寄存器/MMIO | 进程/线程/文件系统/IO 属 OS 通识 | 精挑 10.1 裸机 / 10.3 中断 / 10.8 寄存器；其余维持索引 |
+| **A** | ch10.8 | [寄存器操作（嵌入式 C 开门）](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md) | 3 | — | — | **嵌入式 C 第一课**：`volatile` / `barrier()` / `BIT()`·`GENMASK()` / 未对齐访问 / 字节序 | CSAPP 讲硬件不讲 C 表达，标准 C 教材两头都不讲 | ✅ 已写（实测篇，由 ch02 硬件内容改造而来） |
+| **B** | ch10 | [多任务与 OS](./ch10-multitasking-and-os/) | 45 | 2928 | 13% | **只挑嵌入式侧**：裸机、中断 | 进程/线程/文件系统/IO 属 OS 通识 | 精挑 10.1 裸机 / 10.3 中断；其余维持索引 |
 | **B*** | ch03.6/3.7 | [C 与汇编混合编程 / GNU ARM 工具链](./ch03-arm-architecture-and-assembly/) | — | — | — | **内联汇编本质是 GNU C 扩展**（`__asm__ __volatile__`），不属于"硬件课" | — | 提到 A 档精写，与 ch06 联动 |
 | **C** | ch02 | [计算机体系结构](./ch02-computer-architecture-and-cpu/) | 49 | 1189 | 97% | 降级 | **CSAPP ch1/3/4/5/6 讲得更深**（流水线、cache、多核、ISA） | **不再投入**。保留目录索引 + 每篇一句"→ 见 CSAPP chX" |
 | **C** | ch03.1–3.5, 3.9 | ARM 指令/寻址/伪指令/异常 | — | 1415 | 90% | 降级 | 有 ARM 汇编专书 + 树莓派实操通道 | 保留索引；真要用时按 Pi 实测补 |
@@ -44,7 +70,9 @@
 | 序 | 节 | 现状 | 说明 |
 |----|----|------|------|
 | ✅ | [6.6 属性声明 section](./ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | 37 KB | 已完成（第 20 批） |
-| ▶ | [6.4 typeof 与 container_of](./ch06-gnu-c-extensions/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | 1.5 KB | **本批** |
+| ✅ | [6.4 typeof 与 container_of](./ch06-gnu-c-extensions/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | 28 KB | 已完成（第 21 批） |
+| ✅ | [10.8 嵌入式 C 开门：寄存器/位操作/屏障](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md) | 28 KB | 已完成（第 22 批，由 ch02 硬件内容改造而来） |
+| ▶ | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 1.7 KB | **下一批** |
 | 3 | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 1.7 KB | 与 6.4 配套（typeof + 语句表达式 = 内核宏两件套） |
 | 4 | [6.5 零长度数组](./ch06-gnu-c-extensions/6.5-zero-length-array/6.5-零长度数组.md) | 1.5 KB | 柔性数组、变长报文 |
 | 5 | [6.7 aligned](./ch06-gnu-c-extensions/6.7-aligned/) | 19 KB/6 篇 | 与 cache line、DMA 对齐联动 |
@@ -64,7 +92,7 @@
 
 ### 批次 A4 —— ch01 工具链 + ch03.6 内联汇编
 
-### 批次 B —— ch10 裸机/中断/寄存器 + ch07 对齐
+### 批次 B —— ch10 裸机/中断（按改造规则写 ISR 共享数据）+ ch07 对齐 + ch03.6 内联汇编
 
 ---
 
