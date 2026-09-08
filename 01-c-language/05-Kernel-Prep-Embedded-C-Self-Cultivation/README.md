@@ -14,7 +14,34 @@ Linux 内核、内核模块、DPDK 代码大量依赖 GNU-C 扩展；标准 C �
 
 > **本书只取两块**：**GNU C 扩展**（ch06 是唯一核心）+ **嵌入式 C 落地**（ch04 链接、ch05 内存、ch01 工具链、ch10 裸机/中断/寄存器）。
 > **ch02 体系结构、ch03.1–3.5 ARM 指令** 🗑️ **已删除 73 篇**——CSAPP 讲得更深，不重复读第二遍。
+> **ch02 不用再管**：现在只剩一个 README 说明页（记"删了什么、去哪找"），不占学习时间。
 > 完整取舍与补写顺序见 **[00 · 本书取舍与补写顺序](./00-ROADMAP-本书取舍与补写顺序.md)**。
+
+### 两条主线（按这个读，不要按章节号读）
+
+**主线一 · GNU C 扩展**（ch06，本书唯一核心）
+
+| 序 | 小节 | 状态 |
+|----|------|------|
+| 1 | [6.1/6.2 预处理与宏基础](./ch06-gnu-c-extensions/) | 待扩 |
+| 2 | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | ✅ 29 KB |
+| 3 | [6.4 typeof 与 container_of](./ch06-gnu-c-extensions/6.4-typeof-container-of/6.4-typeof与container_of宏.md) | ✅ 28 KB |
+| 4 | [6.5 零长度数组与柔性数组](./ch06-gnu-c-extensions/6.5-zero-length-array/6.5-零长度数组.md) | ✅ 39 KB |
+| 5 | [6.6 `__attribute__` 总纲](./ch06-gnu-c-extensions/6.6-section/6.6.1-GNU-C编译器扩展关键字-__attribute__.md) | ✅ 37 KB |
+| 6 | [6.7 aligned 与 packed](./ch06-gnu-c-extensions/6.7-aligned/6.7-属性声明-aligned.md) | ✅ 32 KB |
+| 7 | [6.9 weak 与 alias](./ch06-gnu-c-extensions/6.9-weak/6.9-属性声明-weak.md) | ✅ 31 KB |
+| 8 | [6.10 inline](./ch06-gnu-c-extensions/6.10-inline/) · 6.11 内建函数 · 6.12 变参宏 | ▶ 下一批 |
+| 附 | [ch03.6 内联汇编](./ch03-arm-architecture-and-assembly/)（`__asm__ __volatile__` 本质是 GNU 扩展） | 待扩 |
+
+**主线二 · 嵌入式 C 落地**
+
+| 序 | 小节 | 状态 |
+|----|------|------|
+| 1 | [10.8 嵌入式 C 开门](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md)（volatile / 屏障 / 位操作 / 字节序 / 未对齐） | ✅ 29 KB |
+| 2 | 10.3 中断（ISR 与主循环共享数据） | 待改造 |
+| 3 | ch04 链接脚本（`section` 属性 + 链接脚本） | 待扩 |
+| 4 | ch05 内存堆栈（栈帧、栈溢出） | 待扩 |
+| 5 | ch01 工具链（交叉编译、`objdump`） | 待扩 |
 
 | 档 | 章 | 处置 |
 |----|----|------|
