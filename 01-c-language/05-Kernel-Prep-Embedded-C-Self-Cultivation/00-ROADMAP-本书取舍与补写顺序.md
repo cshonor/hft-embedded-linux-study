@@ -97,7 +97,7 @@
 | 8 | **CH2** | [6.11 builtin](./02-ch2-gnu-c-advanced/6.11-builtin/) | 14 KB/7 篇 | `__builtin_expect` / `__builtin_types_compatible_p` |
 | ✅ | **CH1** | [6.12 变参宏](./01-ch1-gnu-c-basics/6.12-vararg-macro/6.12-可变参数宏.md) | 23 KB | 已完成（第 28 批）：四种写法空参矩阵、逗号陷阱、PP_NARG 零参 bug、零开销日志 |
 | 10 | **CH2** | [6.8 format](./02-ch2-gnu-c-advanced/6.8-format/) | 8 KB/4 篇 | 已由 [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) 深度覆盖，回链即可 |
-| 11 | **CH1** | [6.2 指定初始化](./01-ch1-gnu-c-basics/6.2-designated-init/) | 10 KB/5 篇 | 驱动里的 `.member = value` 套路 |
+| ✅ | **CH1** | [6.2 指定初始化](./01-ch1-gnu-c-basics/6.2-designated-init/6.2-指定初始化.md) | 30 KB | 已完成（第 29 批）：稀疏不稀疏、padding 泄露、C/C++ 分歧矩阵、memset 成本 |
 | 12 | **CH1** | [6.1 C 标准](./01-ch1-gnu-c-basics/6.1-c-standard/) | 12 KB/6 篇 | 与 [6.0 GNU C 占比](./01-ch1-gnu-c-basics/6.0-driver-how-much-gnu-c.md) 联动 |
 
 ### 批次 A2 —— CH6 编译与链接（嵌入式落地）
