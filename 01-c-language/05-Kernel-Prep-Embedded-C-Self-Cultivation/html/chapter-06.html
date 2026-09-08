@@ -298,7 +298,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-4-2"><span class="n">6.4.2</span>typeof使用示例</a>
           <a href="#s-6-4-3"><span class="n">6.4.3</span>Linux内核中的container_of宏</a>
           <a href="#s-6-4-4"><span class="n">6.4.4</span>container_of宏实现分析</a>
-          <a href="#s-6-5"><span class="n">6.5</span>零长度数组</a>
+          <a href="#s-6-5"><span class="n">6.5</span>零长度数组与柔性数组（FAM）</a>
           <a href="#s-6-5-1"><span class="n">6.5.1</span>什么是零长度数组</a>
           <a href="#s-6-5-2"><span class="n">6.5.2</span>零长度数组使用示例</a>
           <a href="#s-6-5-3"><span class="n">6.5.3</span>内核中的零长度数组</a>
@@ -3729,38 +3729,1085 @@ printf(&quot;%p %p\n&quot;, (void*)p, (void*)&amp;x);
 </ul>
       </section>
       <section class="section" id="s-6-5">
-        <div class="sec-head"><div class="sec-no">6.5</div><h2>零长度数组</h2></div>
+        <div class="sec-head"><div class="sec-no">6.5</div><h2>零长度数组与柔性数组（FAM）</h2></div>
+<p><a href="#intro">← ch06 GNU C 扩展</a> · <a href="#s-6-3">6.3 语句表达式</a> · <a href="#s-6-4">6.4 typeof 与 container_of</a> · <a href="#s-6-7">6.7 aligned / packed</a> · <a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a></p>
+<blockquote>
+<p><strong>本篇是「结构体尾部变长数据」的完整总纲</strong>：<code class="c">char data[0]</code>（GNU 零长）、<code class="c">char data[]</code>（C99 FAM）、<code class="c">char data[1]</code>（老式 hack）三种写法的语义、布局、分配、越界、溢出、性能，全部有本机（WSL gcc 13.3 / clang 18.1.3）实测数据。
+逐节细节见 <a href="chapter-06.html#s-6-5-1">6.5.1 什么是零长度数组</a> · <a href="chapter-06.html#s-6-5-2">6.5.2 使用示例</a> · <a href="chapter-06.html#s-6-5-3">6.5.3 内核中的零长度数组</a> · <a href="chapter-06.html#s-6-5-4">6.5.4 思考：指针与零长度数组</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong>零长度数组</strong>（GNU：<code class="c">char data[0]</code>）与 C99 <strong>灵活数组成员（FAM）</strong> <code class="c">char data[]</code> 允许结构体 <strong>末尾变长 payload</strong>，一次 <code class="c">malloc(sizeof(hdr)+payload_len)</code> 分配。内核 skbuff、NVMe 命令、DPDK mbuf 扩展区都属此类模式。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">struct pkt_hdr {
+<p><strong>零长度数组</strong>（GNU：<code class="c">char data[0]</code>）与 <strong>C99 柔性数组成员 FAM</strong>（flexible array member，<code class="c">char data[]</code>）解决同一件事：<strong>让结构体最后一个成员的长度在运行时才定</strong>。</p>
+<pre class="code" data-label="C"><code class="c">struct pkt {
     uint32_t len;
-    uint8_t  data[0];   /* GNU 零长度；C99 写 data[] */
+    uint8_t  data[];        /* 或 GNU 写法 data[0] */
+};
+
+struct pkt *p = malloc(sizeof(*p) + payload_len);   /* 一次分配，头尾相连 */
+</code></pre>
+<p>这是<strong>嵌入式与网络编程里最常用的一条 GNU C 扩展</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>变长报文 / on-wire 格式</td>
+<td>网卡驱动、协议栈、netlink、ioctl</td>
+</tr>
+<tr>
+<td>一次分配 + 一次 <code class="c">send()</code></td>
+<td>HFT 行情快照、订单簿增量</td>
+</tr>
+<tr>
+<td>内核 skb / DPDK mbuf 扩展区</td>
+<td>头部元数据 + 尾部数据区</td>
+</tr>
+<tr>
+<td>避免二次分配</td>
+<td>内存池、arena、嵌入式无 MMU 环境</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>为什么值得单独写一篇</strong>：它的坑不在"会不会用"，而在<strong>布局计算</strong>——<code class="c">sizeof</code> 和 <code class="c">offsetof</code> 在 FAM 上<strong>不一定相等</strong>，混用会造成<strong>ASan 都抓不到的静默数据错位</strong>（见第五节）。</p>
+<hr />
+<h2>一、三种写法：谁是谁</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>名字</th>
+<th>标准性</th>
+<th><code class="c">sizeof</code> 含 payload 吗</th>
+<th>推荐度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">char data[1]</code></td>
+<td>老式 hack（struct hack）</td>
+<td>C89 也能编</td>
+<td><strong>含 1 字节</strong>（且撑大结构体）</td>
+<td>❌ 淘汰</td>
+</tr>
+<tr>
+<td><code class="c">char data[0]</code></td>
+<td><strong>零长度数组</strong>（GNU 扩展）</td>
+<td>GNU，非 ISO</td>
+<td>不含</td>
+<td>⚠️ 旧代码兼容</td>
+</tr>
+<tr>
+<td><code class="c">char data[]</code></td>
+<td><strong>柔性数组成员 FAM</strong></td>
+<td><strong>C99 标准</strong></td>
+<td>不含</td>
+<td>✅ <strong>新代码一律用这个</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">struct A1 { uint32_t len; uint8_t data[1]; };   /* sizeof = 8, offsetof = 4 */
+struct A0 { uint32_t len; uint8_t data[0]; };   /* sizeof = 4, offsetof = 4 */
+struct AF { uint32_t len; uint8_t data[];  };   /* sizeof = 4, offsetof = 4 */
+</code></pre>
+<blockquote>
+<p>实测（gcc 13.3 / clang 18.1.3，<code class="c">-std=gnu11</code>）：上面三行右侧的注释就是真实输出。
+<code class="c">data[1]</code> 让结构体从 <strong>4 字节涨到 8 字节</strong>——因为 <code class="c">data[1]</code> 占 1 字节后要补齐到 4 字节对齐。</p>
+</blockquote>
+<h3>标准与诊断矩阵（实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译选项</th>
+<th><code class="c">data[1]</code></th>
+<th><code class="c">data[0]</code></th>
+<th><code class="c">data[]</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">gcc -std=c99/c11/c17/c2x/gnu*</code> （不带 <code class="c">-pedantic</code>）</td>
+<td>零诊断</td>
+<td>零诊断</td>
+<td>零诊断</td>
+</tr>
+<tr>
+<td><code class="c">gcc -std=c* -pedantic</code></td>
+<td>零诊断</td>
+<td>⚠️ <code class="c">ISO C forbids zero-size array</code></td>
+<td>零诊断</td>
+</tr>
+<tr>
+<td><code class="c">gcc -std=c89 -pedantic</code></td>
+<td>零诊断</td>
+<td>⚠️ 同上</td>
+<td>⚠️ <code class="c">ISO C90 does not support flexible array members</code></td>
+</tr>
+<tr>
+<td><strong><code class="c">clang -std=*</code> （任何模式，含 gnu*）</strong></td>
+<td>零诊断</td>
+<td>⚠️ <code class="c">zero size arrays are an extension [-Wzero-length-array]</code></td>
+<td>零诊断</td>
+</tr>
+<tr>
+<td><code class="c">g++ -std=gnu++17 -pedantic</code></td>
+<td>⚠️ <code class="c">ISO C++ forbids zero-size array</code></td>
+<td>⚠️ 同上</td>
+<td>⚠️ <code class="c">ISO C++ forbids flexible array member</code></td>
+</tr>
+<tr>
+<td><code class="c">clang++ -std=gnu++17</code></td>
+<td>零诊断</td>
+<td>零诊断</td>
+<td>零诊断</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>三条可操作结论</strong>：</p>
+<ol>
+<li><strong>新代码写 <code class="c">data[]</code></strong>——C99 起就是标准的，gcc/clang 在任何模式下都零诊断。</li>
+<li><code class="c">data[0]</code> 在 <strong>clang 下即使不加 <code class="c">-pedantic</code> 也会警告</strong>（<code class="c">-Wzero-length-array</code>），在 <strong>gcc 下只有 <code class="c">-pedantic</code> 才警告</strong>——所以它在跨编译器项目里是持续的噪音源。</li>
+<li><strong>C++ 里两者都是扩展</strong>。gcc 需要 <code class="c">-pedantic</code> 才说；clang++ 一声不吭。要在 C++ 里用变长尾，通常改用模板或 <code class="c">std::vector</code>。</li>
+</ol>
+<blockquote>
+<p>⚠️ <strong>gcc 13.3 没有 <code class="c">-Wzero-length-array</code> 和 <code class="c">-Wflex-array-member-not-at-end</code> 这两个开关</strong>（实测 <code class="c">unrecognized command-line option</code>）。前者是 clang 的，后者要 gcc 14+。
+想让 gcc 对 <code class="c">data[0]</code> 发声，只能加 <code class="c">-pedantic</code>。</p>
+</blockquote>
+<hr />
+<h2>二、布局规则：<code class="c">sizeof</code> / <code class="c">offsetof</code> / <code class="c">_Alignof</code></h2>
+<h3>2.1 FAM 的对齐要求会<strong>抬高整个结构体</strong></h3>
+<p>这是最容易忽略的一条。看实测：</p>
+<pre class="code" data-label="C"><code class="c">struct t_u8  { uint8_t tag; uint8_t  data[]; };   /* sizeof=1 align=1 off=1  头部浪费 0 */
+struct t_u16 { uint8_t tag; uint16_t data[]; };   /* sizeof=2 align=2 off=2  头部浪费 1 */
+struct t_u32 { uint8_t tag; uint32_t data[]; };   /* sizeof=4 align=4 off=4  头部浪费 3 */
+struct t_u64 { uint8_t tag; uint64_t data[]; };   /* sizeof=8 align=8 off=8  头部浪费 7 */
+struct t_dbl { uint8_t tag; double   data[]; };   /* sizeof=8 align=8 off=8  头部浪费 7 */
+</code></pre>
+<p><strong>payload 元素类型的对齐要求，会反向传导到整个结构体</strong>。原本 1 字节的 <code class="c">{ uint8_t tag; }</code>，只因为尾部挂了 <code class="c">uint64_t data[]</code>，<code class="c">sizeof</code> 就变成了 8——<strong>白扔 7 字节</strong>。</p>
+<p>在嵌入式/HFT 里这意味着：一个 2000 万条的行情表，每条多 7 字节 = <strong>140 MB</strong>。</p>
+<p><strong>怎么办</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>又要紧凑、又要对齐访问</td>
+<td>调整成员顺序，把 <code class="c">tag</code> 排到对齐边界之后；或显式加 padding 字段让意图可见</td>
+</tr>
+<tr>
+<td>必须零浪费（on-wire 格式）</td>
+<td><code class="c">__attribute__((packed))</code>，代价见第 7 节</td>
+</tr>
+<tr>
+<td>只是想省内存</td>
+<td>重新想想 payload 元素类型是否真需要 8 字节对齐</td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.2 <code class="c">sizeof</code> 可能<strong>大于</strong> <code class="c">offsetof</code>（尾部 padding）</h3>
+<p>这条是本篇最值钱的实测。当 <strong>FAM 元素对齐 &lt; 结构体对齐</strong> 时，尾部会出现 padding：</p>
+<pre class="code" data-label="C"><code class="c">struct tail_pad { uint32_t a; uint8_t b; uint32_t fam[]; };  /* sizeof=8  off=8  差 0 */
+struct tail_chr { uint32_t a; uint8_t b; uint8_t  fam[]; };  /* sizeof=8  off=5  差 3 */
+                                                             /*                  ↑ 尾部 padding */
+</code></pre>
+<p><code class="c">struct tail_chr</code> 的 <code class="c">fam</code> 真实起点是偏移 <strong>5</strong>，但 <code class="c">sizeof</code> 是 <strong>8</strong>——中间 3 字节是 padding。</p>
+<p><strong>于是 payload 起点到底是 <code class="c">sizeof</code> 还是 <code class="c">offsetof</code>？</strong></p>
+<blockquote>
+<p><strong>答案只有一个：必须是 <code class="c">offsetof</code>。</strong>
+<code class="c">m-&gt;fam</code> 的地址就是 <code class="c">(char *)m + offsetof(struct msg, fam)</code>，这是编译器决定的，不由你选。</p>
+</blockquote>
+<p>如果你习惯性地写 <code class="c">(uint8_t *)m + sizeof(struct msg)</code> 去找 payload，<strong>就偏了 3 字节</strong>。详见第五节的事故复现。</p>
+<h3>2.3 分配大小该用哪个</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>值</th>
+<th>是否够用</th>
+<th>评价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">offsetof(T, fam) + n * sizeof(elem)</code></td>
+<td>精确</td>
+<td>✅ 够</td>
+<td>精确，但<strong>如果结构体本身 <code class="c">sizeof</code> 更大，尾部就少了</strong>（一般无害）</td>
+</tr>
+<tr>
+<td><code class="c">sizeof(T) + n * sizeof(elem)</code></td>
+<td>偏大</td>
+<td>✅ 够</td>
+<td><strong>内核 <code class="c">struct_size()</code> 就是这么算的</strong>，保守但永远安全</td>
+</tr>
+<tr>
+<td><code class="c">sizeof(T) - 1 + n</code>（<code class="c">[1]</code> hack 专用）</td>
+<td>偏大</td>
+<td>✅ 够</td>
+<td>丑，且对齐后仍可能浪费</td>
+</tr>
+<tr>
+<td>用 <code class="c">sizeof(T)</code> 当 payload 起点</td>
+<td>—</td>
+<td>❌ <strong>错</strong></td>
+<td>见第五节</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推荐</strong>：直接用第 4 节的 <code class="c">struct_size()</code> 宏，它同时解决"算哪里"和"溢出"两件事。</p>
+<hr />
+<h2>三、<code class="c">[0]</code> 与 <code class="c">[]</code> 的真实差异（不只是"标准不标准"）</h2>
+<p>很多人以为 <code class="c">[0]</code> 和 <code class="c">[]</code> 只是写法不同。实测下来，<strong>在"FAM 不在末尾"这件事上它们行为完全不同</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th><code class="c">char data[]</code>（FAM）</th>
+<th><code class="c">char data[0]</code>（GNU 零长）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>放在结构体中间</strong></td>
+<td>❌ <strong>硬错误</strong> <code class="c">flexible array member not at end of struct</code>（gcc 与 clang 都是 error，不是 warning）</td>
+<td>✅ <strong>允许</strong>（GNU 扩展），但后续成员与它<strong>重叠</strong></td>
+</tr>
+<tr>
+<td><strong>含它的结构体被内嵌</strong></td>
+<td>⚠️ 仅 <code class="c">-pedantic</code> 下 <code class="c">invalid use of structure with flexible array member</code></td>
+<td>✅ 允许，零诊断（<code class="c">-pedantic</code> 下才报零长数组本身）</td>
+</tr>
+<tr>
+<td><strong>做数组成员</strong> <code class="c">struct inner e[2]</code></td>
+<td>⚠️ <code class="c">-pedantic</code> 下警告</td>
+<td>✅ 允许</td>
+</tr>
+<tr>
+<td><strong>做 union 成员</strong></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>独立变量</strong> <code class="c">int g[0];</code></td>
+<td>—</td>
+<td>✅ <code class="c">sizeof == 0</code>，但有地址</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测（gcc 13.3 / clang 18.1.3，<code class="c">-Wall -Wextra</code>）：</p>
+<pre class="code" data-label="C"><code class="c">struct z_mid { uint32_t len; uint32_t data[0]; uint32_t tail; };
+/* 编译通过！ */
+/* sizeof=8  offsetof(data)=4  offsetof(tail)=4  -&gt; data[0] 与 tail 是同一块内存 */
+</code></pre>
+<pre class="code" data-label="C"><code class="c">struct fam_mid { uint32_t len; uint32_t data[]; uint32_t tail; };
+/* error: flexible array member not at end of struct   &lt;- gcc */
+/* error: flexible array member 'data' ... is not at the end of struct  &lt;- clang */
+</code></pre>
+<p><strong>结论</strong>：<code class="c">[]</code> 是<strong>受约束的标准工具</strong>——编译器强制它只能在末尾；<code class="c">[0]</code> 是<strong>不受约束的 GNU 玩具</strong>——编译器不拦你，代价是你可以写出 data 与 tail 重叠的代码而零警告。这也是 <strong>Linux 内核从 2022 年起系统性把 <code class="c">[0]</code> 和 <code class="c">[1]</code> 换成 <code class="c">[]</code></strong> 的原因之一。</p>
+<h3>独立零长度数组</h3>
+<pre class="code" data-label="C"><code class="c">static int g_zero[0];
+/* sizeof(g_zero) == 0，但 &amp;g_zero 是一个真实地址 */
+</code></pre>
+<p><code class="c">-pedantic</code> 下报 <code class="c">ISO C forbids zero-size array</code>。实际用途很少，内核里主要用于<strong>尾部占位标记</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct foo {
+    uint32_t a;
+    uint32_t b;
+    uint32_t reserved[0];   /* 占 0 字节，仅作「以后可以在这里扩展」的标记 */
+};
+/* sizeof = 8, offsetof(reserved) = 8 —— 不影响任何布局 */
+</code></pre>
+<hr />
+<h2>四、坑 1：分配大小的整数溢出（FAM 头号安全漏洞）</h2>
+<p>FAM 的分配表达式天然带一次乘法：<code class="c">sizeof(hdr) + n * sizeof(elem)</code>。当 <code class="c">n</code> 来自外部输入（报文长度字段、ioctl 参数、文件大小）而<strong>乘法在窄类型上做</strong>时，就会溢出回绕 → <strong>分配极小 → 后续写入堆溢出</strong>。</p>
+<h3>实测：32 位乘法回绕</h3>
+<pre class="code" data-label="code"><code class="c">n = 1073741824                    (2^30 个元素)
+  uint32_t 上: n*4 = 0            &lt;- 回绕成 0
+  size_t   上: n*4 = 4294967296   (4 GiB)
+  --&gt; 若用 uint32_t 算完再传给 malloc，malloc 只分配 4 字节
+</code></pre>
+<p>真实后果（实测输出）：</p>
+<pre class="code" data-label="code"><code class="c">wrong size = 4（应该是 4294967300）
+malloc 返回 0x6502b71452b0，只分了 4 字节
+写 data[0] 成功；写 data[1] 就越界了
+</code></pre>
+<p>这类漏洞在 CVE 里有个专门的名字族：<strong>integer overflow → heap buffer overflow</strong>。内核在 2021–2024 年修了大量 <code class="c">struct_size()</code> 相关 CVE，根因就是这里。</p>
+<blockquote>
+<p>⚠️ 注意：<code class="c">uint32_t n</code> 提升到 <code class="c">size_t</code> 的时机很关键。
+<code class="c">sizeof(struct pkt) + n * sizeof(uint32_t)</code> 这个表达式里，<code class="c">sizeof</code> 是 <code class="c">size_t</code>，所以<strong>整个表达式其实是在 64 位上算的</strong>——不会溢出。
+真正的危险写法是<strong>先把结果存进窄变量 / 窄参数</strong>：
+<code class="c">uint32_t total = sizeof(hdr) + n * 4;</code> 或 <code class="c">alloc_size(len * 4)</code> 其中 <code class="c">alloc_size(uint32_t)</code>。</p>
+</blockquote>
+<h3>正确做法：内核 <code class="c">struct_size()</code> 三件套</h3>
+<pre class="code" data-label="C"><code class="c">/* --- 内核 include/linux/overflow.h 的最小复刻 --- */
+#define SIZE_MAX_ ((size_t)-1)
+
+#define size_mul(a, b) ({                                    \
+    size_t _r;                                               \
+    __builtin_mul_overflow((size_t)(a), (size_t)(b), &amp;_r)    \
+        ? SIZE_MAX_ : _r;                                    \
+})
+#define size_add(a, b) ({                                    \
+    size_t _r;                                               \
+    __builtin_add_overflow((size_t)(a), (size_t)(b), &amp;_r)    \
+        ? SIZE_MAX_ : _r;                                    \
+})
+
+/* 三大宏 */
+#define array_size(n, sz)                 size_mul(n, sz)
+#define struct_size(p, member, n)         size_add(sizeof(*(p)), array_size(n, sizeof(*(p)-&gt;member)))
+#define flex_array_size(p, member, n)     array_size(n, sizeof(*(p)-&gt;member))
+</code></pre>
+<p>用法（<code class="c">p</code> 只用于取类型，不解引用，传 NULL 也安全）：</p>
+<pre class="code" data-label="C"><code class="c">struct pkt *p = NULL;                       /* 只取类型 */
+size_t bytes = struct_size(p, data, n);
+if (bytes == SIZE_MAX_)  return -EOVERFLOW; /* 必须检查！ */
+struct pkt *q = malloc(bytes);
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(struct pkt)          = 4
+array_size(10, 4)           = 40
+struct_size(p, data, 10)    = 44
+flex_array_size(p, data, 10)= 40
+
+struct_size(p, data, SIZE_MAX)   = 18446744073709551615  (SIZE_MAX -&gt; 溢出)
+struct_size(p, data, SIZE_MAX/4) = 18446744073709551615  (SIZE_MAX -&gt; 溢出)
+</code></pre>
+<p>溢出拦截实测（<code class="c">size_t</code> 参数版本）：</p>
+<pre class="code" data-label="code"><code class="c">正常 10        n=                  10 -&gt; ok
+SIZE_MAX/4     n= 4611686018427387903 -&gt; OVERFLOW 被拦住
+SIZE_MAX/4 + 1 n= 4611686018427387904 -&gt; OVERFLOW 被拦住
+SIZE_MAX       n=18446744073709551615 -&gt; OVERFLOW 被拦住
+SIZE_MAX/2     n= 9223372036854775807 -&gt; OVERFLOW 被拦住
+</code></pre>
+<p><strong>要点</strong>：</p>
+<ul>
+<li><code class="c">__builtin_mul_overflow</code> / <code class="c">__builtin_add_overflow</code> 在 <code class="c">-O1</code> 以上被编译成<strong>一条乘法 + 一条 <code class="c">jo</code>（溢出跳转）</strong>，几乎零成本</li>
+<li><code class="c">struct_size()</code> 溢出返回 <code class="c">SIZE_MAX</code>，<strong>你必须显式检查</strong>——宏本身不会 <code class="c">malloc</code> 失败</li>
+<li><code class="c">sizeof(*(p)-&gt;member)</code> 用到了 <a href="#s-6-4">6.4 typeof</a> 那套"指针只取类型"的技巧</li>
+</ul>
+<hr />
+<h2>五、坑 2：<code class="c">sizeof</code> 当 payload 起点 → 静默数据错位（ASan 抓不到）</h2>
+<p>这是本篇最有杀伤力的一条，因为它<strong>没有任何工具会报警</strong>。</p>
+<h3>复现</h3>
+<pre class="code" data-label="C"><code class="c">struct msg {
+    uint32_t a;
+    uint8_t  b;
+    uint8_t  fam[];      /* offsetof = 5，但 sizeof = 8（尾部 3 字节 padding） */
+};
+
+size_t n = 8;
+struct msg *m = malloc(sizeof(*m) + n);          /* 16 字节 */
+
+uint8_t *right = (uint8_t *)m + offsetof(struct msg, fam);   /* base + 5  ✓ 正确 */
+uint8_t *wrong = (uint8_t *)m + sizeof(struct msg);          /* base + 8  ✗ 偏 3 */
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(struct msg)  = 8
+offsetof(msg, fam)  = 5
+尾部 padding        = 3 字节
+
+对象基址          = 0x60d277a632b0
+正确起点(offsetof) = 0x60d277a632b5
+错误起点(sizeof)   = 0x60d277a632b8   （偏了 3 字节）
+</code></pre>
+<h3>后果</h3>
+<p>按错误起点写 8 字节 <code class="c">0xEE</code>：</p>
+<pre class="code" data-label="code"><code class="c">按 sizeof 起点写 8 字节后：
+  fam[0..2] = 00 00 00   &lt;- 本该被写，却是 0
+  fam[3..7] = EE EE EE EE EE
+  fam[8..10]= EE EE EE   &lt;- 写到了 payload 之外
+  ASan 报了吗？没有 -&gt; 静默数据错位
+</code></pre>
+<p><strong>为什么 ASan 抓不到</strong>：<code class="c">malloc(sizeof(*m) + n)</code> 给了 <code class="c">8 + 8 = 16</code> 字节，而错误写入区间是 <code class="c">[8, 16)</code>——<strong>完全落在 malloc 块内</strong>。ASan 只管块边界，不管你的逻辑边界。</p>
+<p>所以这个 bug 的表现是：<strong>数据整体偏移 3 字节，前 3 字节是上一次的残留，最后 3 字节写到别人地盘</strong>，而且 Valgrind / ASan / UBSan 全都安静。</p>
+<h3>三条防线</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>防线</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. 永远用 <code class="c">offsetof</code> 定位 payload</strong></td>
+<td>或者干脆直接用 <code class="c">m-&gt;fam</code>（编译器帮你算）</td>
+</tr>
+<tr>
+<td><strong>2. 别自己算</strong></td>
+<td>用 <code class="c">struct_size()</code> 分配，用 <code class="c">m-&gt;fam</code> 访问，两者都不会错</td>
+</tr>
+<tr>
+<td><strong>3. 静态断言</strong></td>
+<td><code class="c">_Static_assert(sizeof(struct msg) == offsetof(struct msg, fam), "尾部有 padding，别用 sizeof 当起点");</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>反过来说，<code class="c">struct_size()</code> 用 <code class="c">sizeof(*p)</code> 做<strong>分配大小</strong>是安全的（偏大无害）；危险的是用 <code class="c">sizeof</code> 做<strong>payload 起点</strong>。两件事别混。</p>
+</blockquote>
+<hr />
+<h2>六、坑 3：赋值 / 传参 / <code class="c">memcpy</code> 只拷头部</h2>
+<p><code class="c">sizeof(T)</code> 不含 payload，所以<strong>任何基于 <code class="c">sizeof</code> 的拷贝都会悄悄丢掉 payload</strong>。</p>
+<h3>实测（gcc 13.3）</h3>
+<pre class="code" data-label="C"><code class="c">struct buf { uint32_t len; uint32_t data[]; };
+struct buf *a = malloc(sizeof(*a) + 4 * sizeof(a-&gt;data[0]));
+/* a-&gt;len=4, a-&gt;data[] = 100 101 102 103 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">a2 = *a;</code>（结构体赋值）</td>
+<td><code class="c">sizeof(struct buf)=4 -&gt; 只拷了头部，payload 完全没复制</code>；<code class="c">a2.len=4</code> 拷过来了，但 <code class="c">a2.data</code> 根本不在栈对象里</td>
+</tr>
+<tr>
+<td><code class="c">by_value(*a);</code>（按值传参）</td>
+<td><code class="c">sizeof(b)=4  b.len=4  b.data[0]=31995</code>（垃圾）</td>
+</tr>
+<tr>
+<td><code class="c">memcpy(c, a, sizeof(*c));</code></td>
+<td><code class="c">c-&gt;len=4  c-&gt;data[0]=0</code>（残留堆垃圾）</td>
+</tr>
+<tr>
+<td><code class="c">memcpy(c, a, sizeof(*c) + n*sizeof(a-&gt;data[0]));</code></td>
+<td>✅ <code class="c">c-&gt;data[3]=103</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>gcc 还会给一个历史提醒：</p>
+<pre class="code" data-label="code"><code class="c">note: the ABI of passing struct with a flexible array member has changed in GCC 4.4
+</code></pre>
+<p><strong>规则</strong>：含 FAM 的结构体<strong>只能传指针，不能传值</strong>。拷贝必须显式算全长：</p>
+<pre class="code" data-label="C"><code class="c">memcpy(dst, src, sizeof(*src) + src-&gt;len * sizeof(src-&gt;data[0]));
+/* 或更安全：memcpy(dst, src, struct_size(src, data, src-&gt;len)); */
+</code></pre>
+<hr />
+<h2>七、坑 4：<code class="c">packed</code> + FAM → payload 未对齐，且<strong>没有工具会告诉你</strong></h2>
+<p>想省掉第 2.1 节那 7 字节 padding，有人会加 <code class="c">__attribute__((packed))</code>（详见 <a href="#s-6-7">6.7.4 packed</a>）：</p>
+<pre class="code" data-label="C"><code class="c">struct pk { uint8_t tag; uint32_t data[]; } __attribute__((packed));
+struct nk { uint8_t tag; uint32_t data[]; };
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">packed: sizeof=1 align=1 off(data)=1
+normal: sizeof=4 align=4 off(data)=4
+
+packed 对象 data 地址 = 0x55628ab672b1  (%4 = 1)   &lt;- 未对齐！
+  data[0]=0xDEAD0000  读取（未对齐！x86 能忍，ARM 可能 fault）
+normal 对象 data 地址 = 0x55628ab672d4  (%4 = 0)   &lt;- 已对齐
+</code></pre>
+<p><strong>UBSan 也不报</strong>。原因和 <a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a> 里那次结论一致：编译器知道 <code class="c">packed</code> 之后该成员的对齐就是 1，所以它生成的是合法的"对齐为 1 的访问"，<strong>没有任何 UB 可报</strong>——但你的 <code class="c">uint32_t</code> 落在了奇数地址上。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86-64</td>
+<td>能跑，性能略降（可能拆成两次访问）</td>
+</tr>
+<tr>
+<td>ARMv7 / Cortex-M</td>
+<td><strong>未对齐的 32 位 load 直接 UsageFault</strong>（除非配了 <code class="c">UNALIGN_TRP=0</code>）</td>
+</tr>
+<tr>
+<td>ARMv8 / AArch64</td>
+<td>普通 load 允许未对齐，但原子操作 / <code class="c">ldp</code> 仍然 fault</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论</strong>：on-wire 结构体可以 packed（因为只做 <code class="c">memcpy</code>，不做成员访问）；<strong>一旦要按成员读写 payload，就不要 packed</strong>。</p>
+<hr />
+<h2>八、坑 5：含 FAM 的结构体不能放进数组或容器</h2>
+<p>标准 C 明确规定：含 FAM 的结构体<strong>不能作为另一个结构体的成员、也不能作为数组元素</strong>。GNU 允许（作为扩展），但语义是"只有头部"：</p>
+<pre class="code" data-label="C"><code class="c">struct fam { uint32_t n; uint32_t d[]; };
+
+struct holder_array  { struct fam a[3]; };          /* sizeof = 12 —— 3 个都只有头部 */
+struct holder_single { uint32_t x; struct fam f; }; /* sizeof = 8 */
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(struct fam)          = 4
+sizeof(holder_array)        = 12   (3 个都只有头部)
+sizeof(holder_single)       = 8
+offsetof(holder_single, f)  = 4
+offsetof(holder_single, f.d)= 8    &lt;- 已越出 sizeof(holder_single)！
+</code></pre>
+<p>注意最后一行：<strong><code class="c">f.d</code> 的偏移是 8，而整个结构体只有 8 字节</strong>——访问 <code class="c">f.d[0]</code> 就已经出界了。</p>
+<p>诊断情况：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>默认</th>
+<th><code class="c">-pedantic</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc</td>
+<td><strong>零诊断</strong></td>
+<td>⚠️ <code class="c">invalid use of structure with flexible array member</code></td>
+</tr>
+<tr>
+<td>clang</td>
+<td><strong>零诊断</strong></td>
+<td>⚠️ 同上</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>所以一定要开 <code class="c">-pedantic</code></strong>（或对这类代码做 code review），否则这种"看起来能编过"的容器会静默吞掉 payload。</p>
+<p><strong>正确做法</strong>：容器里存<strong>指针</strong>，<code class="c">struct fam *items[]</code>，每个元素单独 <code class="c">malloc(struct_size(...))</code>。</p>
+<hr />
+<h2>九、老式 <code class="c">[1]</code> 技巧：代价与一个被证伪的传言</h2>
+<h3>真实代价（实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代价</th>
+<th>数据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>撑大结构体</strong></td>
+<td><code class="c">struct {uint32_t len; uint8_t data[1];}</code> → <code class="c">sizeof</code> 从 4 涨到 <strong>8</strong></td>
+</tr>
+<tr>
+<td><strong><code class="c">sizeof</code> 不准</strong></td>
+<td>要写 <code class="c">sizeof(T) - 1 + n</code> 这种反直觉表达式</td>
+</tr>
+<tr>
+<td><strong>放进数组时浪费</strong></td>
+<td>数组每个元素都按 <code class="c">sizeof=8</code> 排布</td>
+</tr>
+<tr>
+<td><strong>语义欺骗</strong></td>
+<td>编译器认为 <code class="c">data</code> 只有 1 字节，你的 <code class="c">memcpy(a-&gt;data, src, 100)</code> 在它眼里是越界的</td>
+</tr>
+</tbody>
+</table></div>
+<h3>被证伪的传言：「<code class="c">[1]</code> 会让 <code class="c">_FORTIFY_SOURCE</code> 误杀你的 <code class="c">memcpy</code>」</h3>
+<p>我本来想验证这个说法（<code class="c">__builtin_object_size</code> 会返回 1，导致 <code class="c">__memcpy_chk</code> abort）。<strong>实测没有复现</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th><code class="c">__builtin_object_size(a-&gt;data, 1)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">malloc</code> 与访问在同一函数，<code class="c">-O2</code></td>
+<td><code class="c">[1]</code> / <code class="c">[0]</code> / <code class="c">[]</code> <strong>三者都返回 64</strong>（gcc 能推断出 malloc 大小）</td>
+</tr>
+<tr>
+<td>分配在 <code class="c">noinline</code> 函数里，<code class="c">-O2</code></td>
+<td>三者都返回 <code class="c">SIZE_MAX</code>（= 不知道）</td>
+</tr>
+<tr>
+<td><code class="c">-D_FORTIFY_SOURCE=3</code></td>
+<td>三种写法 <code class="c">memcpy</code> 全部成功，无 abort</td>
+</tr>
+</tbody>
+</table></div>
+<p>也就是说，<strong>gcc 13.3 对 FAM 的 <code class="c">[1]</code> 并不会给出 1 字节的 object_size</strong>，FORTIFY 不会因此误杀。</p>
+<blockquote>
+<p>这条我留在这里是因为<strong>它被证伪本身就是结论</strong>：不要凭"听说"给代码加防御，实测才知道。
+但 <code class="c">[1]</code> 依然不该用——理由是真代价那四条，不是 FORTIFY。</p>
+</blockquote>
+<hr />
+<h2>十、性能：FAM 为什么比指针快（实测）</h2>
+<h3>代码生成（<code class="c">-O2</code>）</h3>
+<pre class="code" data-label="C"><code class="c">uint32_t get_fam(const struct fam_s *f, uint32_t i){ return f-&gt;data[i]; }
+uint32_t get_ptr(const struct ptr_s *p, uint32_t i){ return p-&gt;data[i]; }
+</code></pre>
+<pre class="code" data-label="asm"><code class="c">get_fam:                            get_ptr:
+    movl    %esi, %esi                  movq    8(%rdi), %rax     ; 先取出指针
+    movl    4(%rdi,%rsi,4), %eax        movl    %esi, %esi
+    ret                                 movl    (%rax,%rsi,4), %eax
+                                        ret
+</code></pre>
+<p><strong>FAM 少一次内存访问</strong>：偏移 <code class="c">4</code> 是编译期常量，直接 <code class="c">base + 4 + i*4</code>；指针版要先 <code class="c">load</code> 出 <code class="c">data</code> 的地址，再一次 <code class="c">load</code> 取数据。<strong>两次依赖的内存访问 vs 一次</strong>。</p>
+<h3>端到端 benchmark（20 万对象 × 32 元素 × 20 轮，<code class="c">-O2</code>）</h3>
+<pre class="code" data-label="code"><code class="c">构建耗时  FAM=0.0202s   指针=0.0372s   比值=1.84x
+遍历耗时  FAM=0.0733s   指针=0.0881s   比值=1.20x
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>FAM</th>
+<th>指针</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>构建</td>
+<td>0.0202 s</td>
+<td>0.0372 s</td>
+<td><strong>1.84×</strong>——少一半 <code class="c">malloc</code> 调用</td>
+</tr>
+<tr>
+<td>顺序遍历</td>
+<td>0.0733 s</td>
+<td>0.0881 s</td>
+<td><strong>1.20×</strong>——少一次间接 + 更好的 cache 局部性</td>
+</tr>
+</tbody>
+</table></div>
+<p>对 HFT 的意义：<strong>热路径上每减少一次 cache miss，就是几十纳秒</strong>。行情快照、订单簿增量这类"头部元数据 + 定长数组"的结构，用 FAM 一次分配能把遍历延迟压下来。</p>
+<hr />
+<h2>十一、<code class="c">__counted_by</code>：让编译器知道 payload 有多长</h2>
+<p><code class="c">__attribute__((counted_by(len)))</code> 是给 FAM 加"长度注解"的新属性——告诉编译器 <strong>payload 的元素个数由哪个成员给出</strong>：</p>
+<pre class="code" data-label="C"><code class="c">struct pkt {
+    uint32_t len;
+    uint32_t data[] __attribute__((counted_by(len)));
 };
 </code></pre>
-<ul>
-<li>只能作 <strong>结构体最后成员</strong></li>
-<li>sizeof(struct pkt_hdr) <strong>不含</strong> data 占用</li>
-<li>分配：<code class="c">malloc(sizeof(*h) + payload_len)</code></li>
-</ul>
+<h3>支持情况（实测）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>支持</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>clang 18.1.3</td>
+<td>✅ <code class="c">__has_attribute(counted_by)</code> 为真</td>
+</tr>
+<tr>
+<td>gcc 13.3</td>
+<td>❌ 不支持（需 gcc 15+）</td>
+</tr>
+</tbody>
+</table></div>
+<p>可移植写法：</p>
+<pre class="code" data-label="C"><code class="c">#if defined(__has_attribute) &amp;&amp; __has_attribute(counted_by)
+#  define COUNTED_BY(m) __attribute__((counted_by(m)))
+#else
+#  define COUNTED_BY(m)
+#endif
+
+struct pkt { uint32_t len; uint32_t data[] COUNTED_BY(len); };
+</code></pre>
+<h3>它的实际价值（实测）</h3>
+<p>这就是它存在的意义——<strong>让 <code class="c">__builtin_dynamic_object_size</code> 算得出来</strong>，从而让 bounds sanitizer 工作：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th><code class="c">__builtin_dynamic_object_size(p-&gt;data, 1)</code></th>
+<th>实际 payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>clang + counted_by</strong></td>
+<td><strong>32</strong> ✅</td>
+<td>32 字节</td>
+</tr>
+<tr>
+<td>gcc（无 counted_by）</td>
+<td><code class="c">SIZE_MAX</code>（= 不知道）</td>
+<td>32 字节</td>
+</tr>
+</tbody>
+</table></div>
+<p>进而，clang 的 <code class="c">-fsanitize=array-bounds</code> 就能抓到越界：</p>
+<pre class="code" data-label="code"><code class="c">ok data[3]=3
+越界读 data[4] ...
+runtime error: index 4 out of bounds for type 'uint32_t[]'
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior
+</code></pre>
+<p><strong>没有 <code class="c">counted_by</code> 时，同一个越界读什么都报不出来。</strong></p>
+<blockquote>
+<p>这是本篇唯一"新工具能解决老问题"的地方。嵌入式项目如果能上 clang，<strong>强烈建议给所有 FAM 加 <code class="c">counted_by</code></strong>。</p>
+</blockquote>
+<hr />
+<h2>十二、实战：变长 TLV 报文（一次分配 + 一次 send）</h2>
+<pre class="code" data-label="C"><code class="c">struct msg {
+    uint16_t magic;     /* 0xA5A5 */
+    uint16_t count;     /* TLV 个数 */
+    uint8_t  tlv[];     /* 每个 TLV: [type:1][len:1][value:len] */
+};
+
+static size_t tlv_room(uint8_t len) { return 2u + len; }
+
+/* 算出当前已用总字节数（遍历 TLV 链） */
+static size_t msg_size(const struct msg *m)
+{
+    size_t used = sizeof(*m);
+    const uint8_t *p = m-&gt;tlv;
+    for (uint16_t i = 0; i &lt; m-&gt;count; i++) { used += tlv_room(p[1]); p += tlv_room(p[1]); }
+    return used;
+}
+
+/* 追加一个 TLV，容量不够就翻倍 realloc */
+static struct msg *msg_add(struct msg *m, size_t *cap,
+                           uint8_t type, const void *val, uint8_t vlen)
+{
+    size_t need = tlv_room(vlen);
+    size_t used = msg_size(m);
+    if (used + need &gt; sizeof(*m) + *cap) {
+        while (used + need &gt; sizeof(*m) + *cap) *cap *= 2;
+        struct msg *nm = realloc(m, sizeof(*nm) + *cap);
+        if (!nm) { free(m); return NULL; }
+        m = nm;                       /* ← 关键：realloc 可能搬家 */
+    }
+    uint8_t *p = m-&gt;tlv;
+    for (uint16_t i = 0; i &lt; m-&gt;count; i++) p += tlv_room(p[1]);
+    p[0] = type;
+    p[1] = vlen;
+    memcpy(p + 2, val, vlen);
+    m-&gt;count++;
+    return m;
+}
+</code></pre>
+<p>实测输出：</p>
+<pre class="code" data-label="code"><code class="c">magic=0xA5A5 count=3  tlv: [t=1 len=4 v=78563412] [t=2 len=7 v=73656E736F7230] [t=3 len=2 v=CDAB]
+整块报文 23 字节 -&gt; 可一次 send(fd, m, 23, 0)
+追加 20 个后：cap=256  指针已搬家（0x5f3a366192a0 -&gt; 0x5f3a3661a2e0）
+最终 count=23  总长=143 字节（cap=256）
+</code></pre>
+<p><strong>三个要点</strong>：</p>
+<ol>
+<li><strong>一次 <code class="c">send()</code></strong>：内存连续，不用 <code class="c">writev</code>，也不用先发头再发体（避免 Nagle / 分片）</li>
+<li><strong><code class="c">realloc</code> 会搬家</strong>：任何指向对象内部（尤其指向 <code class="c">tlv</code> 中间）的指针全部失效。上面 <code class="c">cap=8</code> 起步，追加 23 个 TLV 后指针确实从 <code class="c">...92a0</code> 变成了 <code class="c">...a2e0</code></li>
+<li><strong>长度字段必须自己维护</strong>：<code class="c">count</code> 与 <code class="c">tlv</code> 的实际长度没有任何编译器层面的绑定（除非用 <code class="c">counted_by</code>）</li>
+</ol>
+<hr />
+<h2>十三、边界用法速查</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用法</th>
+<th>结论（实测）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">alloca(sizeof(T) + n)</code> + FAM</td>
+<td>✅ 能跑，但<strong>函数返回即失效</strong>，绝不能返回其指针；栈溢出风险</td>
+</tr>
+<tr>
+<td>VLA <code class="c">int vla[k];</code></td>
+<td>完全不同的东西：栈上变长，<code class="c">sizeof</code> 是<strong>运行时求值</strong>（实测 <code class="c">sizeof vla == 20</code>）；FAM 的 <code class="c">sizeof</code> 是编译期常量</td>
+</tr>
+<tr>
+<td>独立 <code class="c">int g[0];</code></td>
+<td><code class="c">sizeof == 0</code>，<strong>有地址</strong>，<code class="c">-pedantic</code> 下警告</td>
+</tr>
+<tr>
+<td><code class="c">[0]</code> 放结构体中间</td>
+<td>✅ 允许，与后续成员<strong>重叠</strong>（实测 offset 相同）</td>
+</tr>
+<tr>
+<td><code class="c">[]</code> 放结构体中间</td>
+<td>❌ <strong>error</strong>（gcc / clang 都是）</td>
+</tr>
+<tr>
+<td>union 里放含 FAM 的结构体</td>
+<td>✅ 允许，零诊断</td>
+</tr>
+<tr>
+<td>C++（<code class="c">g++</code> / <code class="c">clang++</code>）</td>
+<td>都是扩展；<code class="c">g++ -pedantic</code> 会警告，<code class="c">clang++</code> 一声不吭</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>十四、检查清单</h2>
+<p>写 FAM 代码时逐条过：</p>
+<ol>
+<li>✅ 新代码用 <code class="c">data[]</code>，不用 <code class="c">[0]</code> / <code class="c">[1]</code></li>
+<li>✅ 分配用 <code class="c">struct_size(p, member, n)</code> 并<strong>检查 <code class="c">== SIZE_MAX</code></strong></li>
+<li>✅ 长度 <code class="c">n</code> 若来自外部，先做上界校验（<code class="c">n &gt; MAX_REASONABLE</code> 直接拒）</li>
+<li>✅ 定位 payload 用 <code class="c">p-&gt;member</code> 或 <code class="c">offsetof</code>，<strong>绝不用 <code class="c">sizeof</code></strong></li>
+<li>✅ <code class="c">_Static_assert(sizeof(T) == offsetof(T, fam))</code> 或至少知道它们不等</li>
+<li>✅ 复制用 <code class="c">memcpy(dst, src, sizeof(*src) + n * sizeof(...))</code>，不要用 <code class="c">sizeof</code> 单独拷</li>
+<li>✅ 含 FAM 的结构体<strong>只传指针，不传值</strong></li>
+<li>✅ 不放进数组 / 不放进别的 <code class="c">struct</code> / 不放进容器（容器里存指针）</li>
+<li>✅ <code class="c">realloc</code> 后<strong>重新计算</strong>所有内部指针</li>
+<li>✅ 不要给 FAM 加 <code class="c">packed</code>（除非只做 <code class="c">memcpy</code>）</li>
+<li>✅ 能上 clang 就加 <code class="c">__attribute__((counted_by(len)))</code>，配合 <code class="c">-fsanitize=array-bounds</code></li>
+<li>✅ 编译时开 <code class="c">-pedantic</code>（gcc 靠它才能发现 <code class="c">data[0]</code> 和"含 FAM 被内嵌"）</li>
+</ol>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.5.1–6.5.4</strong> 语义、示例、内核、指针对比</li>
-<li><strong>demo05</strong> flex array；<strong>ch05</strong> 堆分配</li>
+<li><strong><a href="chapter-06.html#s-6-5-1">6.5.1</a> – <a href="chapter-06.html#s-6-5-4">6.5.4</a></strong>：逐节细节</li>
+<li><strong><a href="#s-6-4">6.4 typeof 与 container_of</a></strong>：<code class="c">struct_size()</code> 里的 <code class="c">sizeof(*(p)-&gt;member)</code> 用的就是"指针只取类型"技巧；FAM 也能做 <code class="c">container_of</code> 目标（会有 <code class="c">-Wincompatible-pointer-types</code> 警告，实测结果正确）</li>
+<li><strong><a href="#s-6-7">6.7 aligned / packed</a></strong>：FAM 的对齐传导与 packed 陷阱</li>
+<li><strong><a href="#s-6-11">6.11 内建函数</a></strong>：<code class="c">__builtin_mul_overflow</code> / <code class="c">__builtin_add_overflow</code> / <code class="c">__builtin_object_size</code></li>
+<li><strong><a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a></strong>：MMIO 与 volatile，同属嵌入式 C 主线</li>
+<li><strong>ch05 内存堆栈</strong>：<code class="c">malloc</code> / <code class="c">realloc</code> 语义</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 零长度数组 <code class="c">data[0]</code> 和普通指针 <code class="c">*data</code> 作为结构体末尾成员有什么区别？</p>
-<pre class="code" data-label="C"><code class="c">struct hdr0 { int len; char data[0]; };  // 零长度数组
-struct hdr1 { int len; char *data; };     // 指针
-</code></pre>
 <details>
-<summary>参考答案</summary>
-<p>零长度数组 <code class="c">data[0]</code>：(1) <code class="c">sizeof(struct hdr0)</code> 不含 data（通常 4 字节）；(2) data 紧跟在 len 后面，一次 <code class="c">malloc(sizeof(struct hdr0) + payload)</code> 即可；(3) data 和 len 内存连续，缓存友好。指针 <code class="c">*data</code>：(1) <code class="c">sizeof(struct hdr1)</code> 含指针（通常 16 字节）；(2) 需要两次 <code class="c">malloc</code>（结构体一次 + data 一次）；(3) data 指向的内存不连续。零长度数组适合固定头 + 变长 payload（如网络包）。C99 用 <code class="c">char data[]</code> 替代 GNU <code class="c">char data[0]</code>。</p>
+<summary>题目 1：<code class="c">sizeof(T)</code> 和 <code class="c">offsetof(T, fam)</code> 什么时候不相等？不相等会造成什么 bug？</summary>
+<p><strong>当 FAM 元素的对齐要求小于结构体整体对齐要求时</strong>，结构体尾部会出现 padding，<code class="c">sizeof</code> 就大于 <code class="c">offsetof</code>。</p>
+<p>实测：</p>
+<pre class="code" data-label="C"><code class="c">struct tail_chr { uint32_t a; uint8_t b; uint8_t fam[]; };
+/* sizeof = 8, offsetof(fam) = 5, 差 3 */
+</code></pre>
+<p><strong>造成的 bug</strong>：如果拿 <code class="c">sizeof</code> 当 payload 起点（<code class="c">(uint8_t *)m + sizeof(T)</code>），就比真实起点偏了 3 字节。实测写 8 字节的结果：</p>
+<pre class="code" data-label="code"><code class="c">fam[0..2] = 00 00 00   &lt;- 本该被写，却是 0
+fam[3..7] = EE EE EE EE EE
+fam[8..10]= EE EE EE   &lt;- 写到 payload 之外
+</code></pre>
+<p><strong>最阴险的地方</strong>：因为分配时用的是 <code class="c">malloc(sizeof(T) + n)</code>，块大小比 <code class="c">offsetof + n</code> 大 3 字节，所以这个错位写入<strong>完全落在 malloc 块内</strong>——ASan / Valgrind / UBSan <strong>全都抓不到</strong>。</p>
+<p>防线：一律用 <code class="c">p-&gt;fam</code> 或 <code class="c">offsetof</code> 定位；或者加 <code class="c">_Static_assert(sizeof(T) == offsetof(T, fam))</code>。</p>
+</details>
+<details>
+<summary>题目 2：为什么 <code class="c">struct_size()</code> 溢出时返回 <code class="c">SIZE_MAX</code> 而不是报错？调用方该怎么做？</summary>
+<p>因为宏要在<strong>常量表达式</strong>里也能用（比如 <code class="c">_Static_assert</code>、数组维度），不能调用 <code class="c">panic()</code>/<code class="c">BUG_ON()</code> 这类运行时函数。返回 <code class="c">SIZE_MAX</code> 是"带内错误码"——它不可能是合法的分配大小，所以调用方一定能识别。</p>
+<p>调用方<strong>必须显式检查</strong>：</p>
+<pre class="code" data-label="C"><code class="c">size_t bytes = struct_size(p, data, n);
+if (bytes == SIZE_MAX)  return -EOVERFLOW;   /* 漏了这行就等于没检查 */
+q = malloc(bytes);
+if (!q) return -ENOMEM;
+</code></pre>
+<p>实测溢出拦截：</p>
+<pre class="code" data-label="code"><code class="c">SIZE_MAX/4     n= 4611686018427387903 -&gt; OVERFLOW 被拦住
+SIZE_MAX       n=18446744073709551615 -&gt; OVERFLOW 被拦住
+</code></pre>
+<p>注意 <code class="c">struct_size</code> 用的是 <code class="c">sizeof(*p) + n*sizeof(elem)</code>，是<strong>偏保守</strong>的（可能多算尾部 padding），所以它是"永远不会少分配"的安全写法。</p>
+</details>
+<details>
+<summary>题目 3：<code class="c">data[0]</code> 和 <code class="c">data[]</code> 在"放在结构体中间"时行为有什么不同？</summary>
+<p>完全不同：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>放中间的结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">data[]</code>（FAM）</td>
+<td>❌ <strong>硬错误</strong>：<code class="c">flexible array member not at end of struct</code>（gcc 与 clang 都是 error）</td>
+</tr>
+<tr>
+<td><code class="c">data[0]</code>（GNU 零长）</td>
+<td>✅ <strong>编译通过</strong>，但后续成员与它<strong>重叠</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>实测：</p>
+<pre class="code" data-label="C"><code class="c">struct z_mid { uint32_t len; uint32_t data[0]; uint32_t tail; };
+/* sizeof=8  offsetof(data)=4  offsetof(tail)=4  -&gt; data[0] 与 tail 是同一块内存 */
+</code></pre>
+<p>这解释了为什么 Linux 内核从 2022 年起系统性把 <code class="c">[0]</code> / <code class="c">[1]</code> 换成 <code class="c">[]</code>：<code class="c">[]</code> 是<strong>编译器会帮你把门的</strong>标准工具，<code class="c">[0]</code> 是编译器不管的 GNU 玩具。</p>
+</details>
+<details>
+<summary>题目 4：为什么 FAM 比"头部 + 指针"快？快在哪两步？</summary>
+<p><strong>两步</strong>：</p>
+<ol>
+<li>
+<p><strong>构建</strong>：FAM 只需 <strong>1 次</strong> <code class="c">malloc</code>，指针版需要 <strong>2 次</strong>（结构体 + payload）。实测 20 万对象：0.0202 s vs 0.0372 s = <strong>1.84×</strong>。</p>
+</li>
+<li>
+<p><strong>访问</strong>：偏移是编译期常量，少一次间接访存：</p>
+</li>
+</ol>
+<pre class="code" data-label="asm"><code class="c">get_fam:  movl 4(%rdi,%rsi,4), %eax        ; 1 次访存
+get_ptr:  movq 8(%rdi), %rax               ; 先取 data 指针
+          movl (%rax,%rsi,4), %eax         ; 再取数据 —— 2 次依赖访存
+</code></pre>
+<p>实测顺序遍历：0.0733 s vs 0.0881 s = <strong>1.20×</strong>。</p>
+<p>另外 FAM 的头尾在同一块连续内存，cache 局部性更好（头部和 payload 通常落在同一 cache line 或相邻行）。</p>
+</details>
+<details>
+<summary>题目 5：含 FAM 的结构体 <code class="c">a2 = *a;</code> 会发生什么？为什么？</summary>
+<p><strong>只拷头部，payload 完全丢失。</strong></p>
+<p>因为 <code class="c">sizeof(struct buf) == 4</code>（只有 <code class="c">len</code>），结构体赋值的语义就是拷贝 <code class="c">sizeof</code> 个字节。实测：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(struct buf)=4 -&gt; 只拷了头部，payload 完全没复制
+a2.len=4（头拷过来了）
+</code></pre>
+<p>而且 <code class="c">a2</code> 是栈对象，<code class="c">a2.data</code> 指向的内存<strong>根本不在 <code class="c">a2</code> 里面</strong>——访问 <code class="c">a2.data[0]</code> 读到的是栈上的垃圾（实测 <code class="c">b.data[0]=31995</code>）。</p>
+<p>正确拷贝必须显式给全长度：</p>
+<pre class="code" data-label="C"><code class="c">memcpy(dst, src, sizeof(*src) + src-&gt;len * sizeof(src-&gt;data[0]));
+</code></pre>
+<p><strong>规则</strong>：含 FAM 的结构体只能传指针，不能传值、不能按值返回、不能用 <code class="c">=</code> 赋值。</p>
+</details>
+<details>
+<summary>题目 6：<code class="c">__attribute__((counted_by(len)))</code> 解决了什么问题？支持情况如何？</summary>
+<p><strong>解决的问题</strong>：让编译器知道 FAM 的元素个数由哪个成员给出，从而能算出 <code class="c">__builtin_dynamic_object_size</code>，进而让 bounds sanitizer 工作。</p>
+<p>实测对比（<code class="c">noinline</code> 分配，<code class="c">-O2</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th><code class="c">__builtin_dynamic_object_size(p-&gt;data, 1)</code></th>
+<th>实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>clang 18 + <code class="c">counted_by</code></td>
+<td><strong>32</strong> ✅</td>
+<td>32 字节</td>
+</tr>
+<tr>
+<td>gcc 13（无 counted_by）</td>
+<td><code class="c">SIZE_MAX</code>（不知道）</td>
+<td>32 字节</td>
+</tr>
+</tbody>
+</table></div>
+<p>有了它，clang <code class="c">-fsanitize=array-bounds</code> 能抓到越界：</p>
+<pre class="code" data-label="code"><code class="c">runtime error: index 4 out of bounds for type 'uint32_t[]'
+</code></pre>
+<p><strong>没有它，同一个越界读什么都报不出来。</strong></p>
+<p>支持情况：clang 16+ / gcc 15+。gcc 13.3 不支持（实测 <code class="c">__has_attribute(counted_by)</code> 为假）。可移植写法用 <code class="c">#if defined(__has_attribute) &amp;&amp; __has_attribute(counted_by)</code> 包一层宏。</p>
+</details>
+<details>
+<summary>题目 7：想让 <code class="c">struct { uint8_t tag; uint64_t data[]; }</code> 紧凑一点，加 <code class="c">packed</code> 会怎样？</summary>
+<p><strong>会让 payload 落在未对齐地址，而且没有任何工具报警。</strong></p>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">packed: sizeof=1 align=1 off(data)=1
+normal: sizeof=4 align=4 off(data)=4
+
+packed 对象 data 地址 = 0x55628ab672b1  (%4 = 1)   &lt;- 未对齐
+normal 对象 data 地址 = 0x55628ab672d4  (%4 = 0)   &lt;- 已对齐
+</code></pre>
+<p><code class="c">packed</code> 之后 <code class="c">data</code> 紧跟 <code class="c">tag</code>（偏移 1），<code class="c">uint32_t</code> 落在奇数地址上。</p>
+<p><strong>UBSan 也不报</strong>——因为编译器知道 packed 后该成员对齐就是 1，生成的是合法的"对齐为 1 的访问"，没有 UB 可报。</p>
+<p>后果按架构分：
+- x86-64：能跑，性能略降
+- ARMv7 / Cortex-M：<strong>未对齐 32 位 load 直接 UsageFault</strong>
+- AArch64：普通 load 可以，原子操作仍 fault</p>
+<p><strong>规则</strong>：on-wire 结构体可以 packed（只做 <code class="c">memcpy</code>）；一旦要按成员读写 payload，就不要 packed。想省内存就调整成员顺序或换 payload 元素类型。</p>
+</details>
+<details>
+<summary>题目 8：「<code class="c">[1]</code> 老式写法会让 <code class="c">_FORTIFY_SOURCE</code> 误杀 memcpy」这个说法对吗？</summary>
+<p><strong>实测未复现，这个说法在当前工具链上不成立。</strong></p>
+<p>我本来想验证它：<code class="c">[1]</code> 让编译器认为 <code class="c">data</code> 只有 1 字节 → <code class="c">__builtin_object_size</code> 返回 1 → <code class="c">__memcpy_chk</code> abort。实测：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th><code class="c">__builtin_object_size(a-&gt;data, 1)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>malloc 与访问同函数，<code class="c">-O2</code></td>
+<td><code class="c">[1]</code> / <code class="c">[0]</code> / <code class="c">[]</code> <strong>都是 64</strong>（gcc 推断出了 malloc 大小）</td>
+</tr>
+<tr>
+<td>分配在 <code class="c">noinline</code> 函数，<code class="c">-O2</code></td>
+<td>三者都是 <code class="c">SIZE_MAX</code></td>
+</tr>
+<tr>
+<td><code class="c">-D_FORTIFY_SOURCE=3</code></td>
+<td>三种写法 memcpy 全部成功，<code class="c">exit=0</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>也就是说 gcc 13.3 不会因为 <code class="c">[1]</code> 就给出 1 字节的 object_size。</p>
+<p><strong>但 <code class="c">[1]</code> 依然不该用</strong>，真代价是：
+1. 撑大结构体（<code class="c">sizeof</code> 从 4 涨到 8）
+2. <code class="c">sizeof</code> 不准，要写 <code class="c">sizeof(T) - 1 + n</code>
+3. 放进数组时每个元素都浪费
+4. 语义欺骗（编译器以为只有 1 字节）</p>
+<p>留这道题是因为<strong>"被证伪"本身也是结论</strong>：不要凭听说加防御，实测才知道。</p>
+</details>
+<details>
+<summary>题目 9：<code class="c">struct fam a[3];</code> 会怎样？</summary>
+<p>标准 C 禁止（含 FAM 的结构体不能做数组元素）。GNU 允许作为扩展，但<strong>每个元素只有头部</strong>：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(struct fam)   = 4
+sizeof(holder_array) = 12   (3 个都只有头部)
+sizeof(holder_single)= 8
+offsetof(holder_single, f.d) = 8   &lt;- 已越出 sizeof(holder_single)=8！
+</code></pre>
+<p>最后一行是关键：<code class="c">f.d</code> 的偏移是 8，而结构体只有 8 字节——访问 <code class="c">f.d[0]</code> 就已经出界。</p>
+<p>诊断：<strong>gcc 和 clang 默认零诊断</strong>，只有 <code class="c">-pedantic</code> 才报 <code class="c">invalid use of structure with flexible array member</code>。所以<strong>一定要开 <code class="c">-pedantic</code></strong>。</p>
+<p>正确做法：容器里存指针 <code class="c">struct fam *items[]</code>，每个元素单独 <code class="c">malloc(struct_size(...))</code>。</p>
+</details>
+<details>
+<summary>题目 10：一条 FAM 报文 <code class="c">realloc</code> 扩容后要注意什么？</summary>
+<p><strong><code class="c">realloc</code> 可能搬家，所有指向对象内部（尤其 payload 中间）的指针全部失效。</strong></p>
+<p>实测（TLV 报文从 <code class="c">cap=8</code> 起步，追加 23 个 TLV）：</p>
+<pre class="code" data-label="code"><code class="c">追加 20 个后：cap=256  指针已搬家（0x5f3a366192a0 -&gt; 0x5f3a3661a2e0）
+</code></pre>
+<p>注意点：
+1. <code class="c">realloc</code> 失败时返回 NULL，<strong>原块仍然有效</strong>——要先把返回值存临时变量，不要把 <code class="c">m = realloc(m, ...)</code> 写成会丢原指针的形式
+2. 任何 <code class="c">uint8_t *cur = m-&gt;tlv + off;</code> 这类游标<strong>必须重新计算</strong>
+3. 如果别处持有指向 payload 的指针（比如另一个结构体的 <code class="c">container_of</code> 反向引用），全部要更新
+4. 容量策略用翻倍（实测 8 → 256），摊还 O(1)
+5. 分配大小同样要走 <code class="c">struct_size</code> + 溢出检查</p>
+</details>
+<details>
+<summary>题目 11：为什么 FAM 元素类型会影响整个结构体的 sizeof？</summary>
+<p>因为 <strong>FAM 的对齐要求会参与结构体整体对齐的计算</strong>。实测：</p>
+<pre class="code" data-label="C"><code class="c">struct t_u8  { uint8_t tag; uint8_t  data[]; };  /* sizeof=1 align=1  头部浪费 0 */
+struct t_u16 { uint8_t tag; uint16_t data[]; };  /* sizeof=2 align=2  头部浪费 1 */
+struct t_u32 { uint8_t tag; uint32_t data[]; };  /* sizeof=4 align=4  头部浪费 3 */
+struct t_u64 { uint8_t tag; uint64_t data[]; };  /* sizeof=8 align=8  头部浪费 7 */
+</code></pre>
+<p>原本 1 字节的 tag，只因为尾部挂了 <code class="c">uint64_t data[]</code>，结构体就变成 8 字节对齐、8 字节大小——<strong>白扔 7 字节</strong>。</p>
+<p>在 2000 万条的行情表里，这就是 <strong>140 MB</strong> 的差别。</p>
+<p>对策：调整成员顺序 / 换 payload 元素类型 / 显式写出 padding 字段让意图可见 / 只在纯 on-wire 场景用 packed。</p>
+</details>
+<details>
+<summary>题目 12：<code class="c">-pedantic</code> 对 FAM 代码为什么重要？</summary>
+<p>因为 gcc 对 FAM 的几类误用<strong>默认一声不吭</strong>，只有 <code class="c">-pedantic</code> 才说：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>gcc 默认</th>
+<th>gcc <code class="c">-pedantic</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">char data[0]</code></td>
+<td>零诊断</td>
+<td>⚠️ <code class="c">ISO C forbids zero-size array</code></td>
+</tr>
+<tr>
+<td>含 FAM 的结构体做数组成员</td>
+<td><strong>零诊断</strong></td>
+<td>⚠️ <code class="c">invalid use of structure with flexible array member</code></td>
+</tr>
+<tr>
+<td>含 FAM 的结构体内嵌进别的 struct</td>
+<td><strong>零诊断</strong></td>
+<td>⚠️ 同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>（clang 对 <code class="c">data[0]</code> 默认就会报 <code class="c">-Wzero-length-array</code>，但后两类同样只在 <code class="c">-pedantic</code> 下报。）</p>
+<p>不过<strong>有一条 <code class="c">-pedantic</code> 拦不住</strong>：FAM 不在末尾是<strong>硬 error</strong>（gcc / clang 都是），任何模式下都编不过。</p>
+<p>所以在 CI 里给 C 代码加 <code class="c">-pedantic</code>（配合 <code class="c">-Werror</code> 或至少把新告警当门禁），是发现这类"能编过但语义错"的最低成本手段。</p>
 </details>
       </section>
       <section class="section" id="s-6-5-1">
         <div class="sec-head"><div class="sec-no">6.5</div><h2>.1 什么是零长度数组</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-5">6.5 零长度数组与柔性数组</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>零长度数组是 <strong>不完整类型数组</strong> 放在结构体末尾的 GNU 写法；C99 标准化为 <strong>flexible array member</strong>（<code class="c">[]</code> 无长度）。语义：结构体是 <strong>头部</strong>，实际对象大小 = 头 + 变长尾部。</p>
 <h2>要点</h2>
@@ -3843,6 +4890,9 @@ b2-&gt;data = malloc(100);
       </section>
       <section class="section" id="s-6-5-2">
         <div class="sec-head"><div class="sec-no">6.5</div><h2>.2 零长度数组使用示例</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-5">6.5 零长度数组与柔性数组</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>演示 <strong>动态分配</strong>、<strong>访问尾部数据</strong>、<strong>释放</strong> 完整流程；对应 <strong>demo05</strong> 可编译验证 <code class="c">sizeof</code> 与布局。</p>
 <h2>要点</h2>
@@ -3940,6 +4990,9 @@ printf(&quot;%zu\n&quot;, sizeof(struct packet));  // ?
       </section>
       <section class="section" id="s-6-5-3">
         <div class="sec-head"><div class="sec-no">6.5</div><h2>.3 内核中的零长度数组</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-5">6.5 零长度数组与柔性数组</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>内核大量使用 FAM / <code class="c">[0]</code>：<strong>sk_buff 尾部</strong>、<strong>netlink 属性</strong>、<strong>ioctl 结构</strong>、<strong>BPF map 值</strong>。读 <code class="c">include/linux/skbuff.h</code> 等头文件时识别「头 + 变长」模式。</p>
 <h2>要点</h2>
@@ -4000,6 +5053,9 @@ grep -r 'flexible array' Documentation/ 2&gt;/dev/null | head
       </section>
       <section class="section" id="s-6-5-4">
         <div class="sec-head"><div class="sec-no">6.5</div><h2>.4 思考：指针与零长度数组</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-5">6.5 零长度数组与柔性数组</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>结构体末尾放 <strong><code class="c">char *ptr</code></strong> 还是 <strong><code class="c">char data[]</code></strong>？涉及 <strong>一次 vs 两次分配</strong>、<strong>cache 局部性</strong>、<strong>序列化/on-wire 布局</strong>、<strong>ABI 稳定性</strong>。本节对比决策树。</p>
 <h2>要点</h2>
