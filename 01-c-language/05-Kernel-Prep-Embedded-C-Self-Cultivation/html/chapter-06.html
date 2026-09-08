@@ -293,7 +293,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-3-2"><span class="n">6.3.2</span>语句表达式</a>
           <a href="#s-6-3-3"><span class="n">6.3.3</span>在宏定义中使用语句表达式</a>
           <a href="#s-6-3-4"><span class="n">6.3.4</span>内核中的语句表达式</a>
-          <a href="#s-6-4"><span class="n">6.4</span>typeof与container_of宏</a>
+          <a href="#s-6-4"><span class="n">6.4</span>typeof 与 container_of 宏</a>
           <a href="#s-6-4-1"><span class="n">6.4.1</span>typeof关键字</a>
           <a href="#s-6-4-2"><span class="n">6.4.2</span>typeof使用示例</a>
           <a href="#s-6-4-3"><span class="n">6.4.3</span>Linux内核中的container_of宏</a>
@@ -373,6 +373,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 
       <section class="section" id="intro">
         <div class="sec-head"><div class="sec-no">00</div><h2>导读</h2></div>
+<p><strong>GNU C Extensions for Kernel, Bootloader &amp; DPDK</strong></p>
+<blockquote>
+<p><strong>驱动向优先读：</strong> <a href="#s-6-0">要学多少？</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/DRIVER-GNU-C-CHEATSHEET.md">速查表</a>（不必先通读全章冷门属性）</p>
+</blockquote>
 <h2>本章目标</h2>
 <p>分清 <strong>ISO C99/C11</strong> 与 <strong>GNU 扩展</strong>；掌握 <strong><code class="c">__attribute__</code></strong>（packed/aligned/section/weak/format/noinline 等）、<strong>语句表达式</strong>、<strong>typeof/container_of</strong>、<strong>零长度数组</strong>、<strong>指定初始化</strong>、<strong>inline/builtins</strong>、<strong>可变参宏</strong>。能读 <strong>Linux 内核 / U-Boot / DPDK</strong> 头文件宏，并编写带 <strong>format 检查</strong> 的日志与 <strong>weak hook</strong> 默认实现。衔接 <strong>ch05 堆布局</strong>、<strong>ch07 指针</strong>、<strong>ch08 位操作</strong>。</p>
 <h2>前置依赖</h2>
@@ -1715,40 +1719,821 @@ gcc -E -I/path/to/kernel/headers test.c | grep -A5 'min('
 </details>
       </section>
       <section class="section" id="s-6-4">
-        <div class="sec-head"><div class="sec-no">6.4</div><h2>typeof与container_of宏</h2></div>
+        <div class="sec-head"><div class="sec-no">6.4</div><h2>typeof 与 container_of 宏</h2></div>
+<p><a href="#intro">← ch06 GNU C 扩展</a> · <a href="#s-6-3">6.3 语句表达式</a> · <a href="#s-6-5">6.5 零长度数组</a></p>
+<blockquote>
+<p><strong>本篇是 <code class="c">typeof</code> + <code class="c">container_of</code> 的完整总纲</strong>：从语法、编译期语义、代码生成，到侵入式链表的完整可运行实现，全部有本机（WSL gcc 13.3 / clang 18.1.3）实测数据。
+逐行拆解见 <a href="chapter-06.html#s-6-4-1">6.4.1 typeof 关键字</a> · <a href="chapter-06.html#s-6-4-2">6.4.2 typeof 使用示例</a> · <a href="chapter-06.html#s-6-4-3">6.4.3 内核中的 container_of</a> · <a href="chapter-06.html#s-6-4-4">6.4.4 宏实现分析</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong>typeof</strong> 在编译期取得表达式类型；<strong>container_of</strong> 从结构体成员指针反推宿主结构体地址。二者是 Linux 内核 <strong>侵入式链表</strong>、<strong>device model</strong> 的基石；DPDK 部分代码沿用相同技巧。</p>
-<h2>要点</h2>
-<ul>
-<li><code class="c">typeof(x)</code> 等价于 <code class="c">x</code> 的类型，可声明临时变量</li>
-<li><code class="c">container_of(ptr, type, member)</code> = <code class="c">ptr</code> 所在 <code class="c">type</code> 的首地址</li>
-<li>依赖 <strong>GNU typeof</strong> + <strong>语句表达式</strong> + <strong><code class="c">offsetof</code></strong></li>
-</ul>
+<p><strong><code class="c">typeof</code></strong> 在编译期取出一个表达式的类型；<strong><code class="c">container_of</code></strong> 从"结构体某成员的地址"反推出"宿主结构体的首地址"。</p>
+<p>一句话定性：<strong>它们是 C 语言里唯一的"泛型"机制</strong>。C 没有模板、没有 <code class="c">decltype</code>（C23 之前）、没有反射，<code class="c">typeof</code> 让宏能"看见"实参的类型，<code class="c">container_of</code> 让一份链表代码能挂住任意宿主结构体——这正是 Linux 内核里 <code class="c">list_head</code>、<code class="c">device</code>、<code class="c">work_struct</code>、<code class="c">sk_buff</code> 能在不知道宿主类型的情况下工作的原因。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关键事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>都是 GNU 扩展</td>
+<td><code class="c">typeof</code> 在 C23 才进标准；<code class="c">container_of</code> 从来不是标准，是内核/DPDK 自己定义的宏</td>
+</tr>
+<tr>
+<td><code class="c">container_of</code> 运行时<strong>零开销</strong></td>
+<td><code class="c">offsetof</code> 是编译期常量，<code class="c">-O2</code> 下只剩一条 <code class="c">lea</code>（见 <a href="#33-零开销实测-o0-vs-o2-的反汇编">零开销实测</a>）</td>
+</tr>
+<tr>
+<td>类型检查<strong>很弱</strong></td>
+<td>只检查"成员类型是否匹配"，<strong>完全不检查宿主类型</strong>（见 <a href="#34-类型检查的能力边界实测">类型检查边界</a>）</td>
+</tr>
+<tr>
+<td>会<strong>丢掉 const</strong></td>
+<td>从 <code class="c">const</code> 对象的成员反推，得到的是<strong>可写</strong>指针，默认开 <code class="c">-Wextra</code> 也抓不到（见 <a href="#35-const-丢失陷阱实测">const 陷阱</a>）</td>
+</tr>
+<tr>
+<td>位域、柔性数组是禁区</td>
+<td>位域 <code class="c">offsetof</code> 直接编译错误；柔性数组成员会触发类型不匹配警告（见 <a href="#六坑点清单">坑点</a>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、typeof：在编译期问一句"你是什么类型"</h2>
+<h3>1.1 四种拼写，别用错</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>拼写</th>
+<th>来源</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">typeof(x)</code></td>
+<td>GNU 老扩展 / <strong>C23 标准关键字</strong></td>
+<td>在 <code class="c">-std=c2x</code> 下是标准；在老 ISO 模式下是 GNU 扩展</td>
+</tr>
+<tr>
+<td><code class="c">__typeof__(x)</code></td>
+<td>GNU 保留标识符</td>
+<td><strong>最安全</strong>：带下划线前缀，任何 <code class="c">-std</code> 下都可用，不与用户标识符冲突</td>
+</tr>
+<tr>
+<td><code class="c">__typeof(x)</code></td>
+<td>GNU 老拼写</td>
+<td>等价于 <code class="c">__typeof__</code>，历史兼容用</td>
+</tr>
+<tr>
+<td><code class="c">typeof_unqual(x)</code></td>
+<td>C23</td>
+<td>去掉限定符的版本（<code class="c">const int</code> → <code class="c">int</code>）</td>
+</tr>
+<tr>
+<td><code class="c">__auto_type</code></td>
+<td>GCC 4.9+ / Clang</td>
+<td>只能用于<strong>带初始化</strong>的声明，比 <code class="c">typeof</code> 更省字</td>
+</tr>
+</tbody>
+</table></div>
+<h4>实测：裸 <code class="c">typeof</code> 在哪些 <code class="c">-std</code> 下会挂</h4>
+<p>同一份代码 <code class="c">typeof(x) a = 2;</code>（WSL gcc 13.3 / clang 18.1.3）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器 + <code class="c">-std</code></th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc <code class="c">-std=c99</code> / <code class="c">c11</code> / <code class="c">c17</code>（<code class="c">-pedantic</code>）</td>
+<td>❌ <strong>编译失败</strong>：<code class="c">typeof</code> 不被当作关键字，被解析成隐式函数调用，随后 <code class="c">expected ';' before 'a'</code></td>
+</tr>
+<tr>
+<td>gcc <code class="c">-std=gnu99</code> / <code class="c">gnu11</code> / <code class="c">gnu17</code></td>
+<td>✅ 通过，无警告</td>
+</tr>
+<tr>
+<td>gcc <code class="c">-std=c2x</code> / <code class="c">gnu2x</code></td>
+<td>✅ 通过（C23 关键字）</td>
+</tr>
+<tr>
+<td>clang <code class="c">-std=c99</code> / <code class="c">c11</code> / <code class="c">c17</code></td>
+<td>❌ <code class="c">error: call to undeclared function 'typeof'</code></td>
+</tr>
+<tr>
+<td>clang <code class="c">-std=gnu99</code></td>
+<td>⚠️ 通过但有 <code class="c">warning: extension used [-Wlanguage-extension-token]</code></td>
+</tr>
+<tr>
+<td>clang <code class="c">-std=c2x</code></td>
+<td>✅ 通过，无警告</td>
+</tr>
+</tbody>
+</table></div>
+<p>而 <code class="c">__typeof__(x) b = 3;</code> 在 <strong>gcc <code class="c">-std=c99 -pedantic</code> 下干净通过</strong>，零警告。</p>
+<blockquote>
+<p><strong>结论</strong>：写库代码/头文件一律用 <code class="c">__typeof__</code>；只有在确定编译环境是 C23 或 GNU 模式时才用裸 <code class="c">typeof</code>。</p>
+</blockquote>
+<pre class="code" data-label="C"><code class="c">/* 推荐的可移植写法 */
+#if defined(__STDC_VERSION__) &amp;&amp; __STDC_VERSION__ &gt; 201710L &amp;&amp; !defined(__GNUC__)
+#  define my_typeof(x)  typeof(x)        /* C23 标准拼写 */
+#else
+#  define my_typeof(x)  __typeof__(x)    /* GNU 保留拼写，任何模式都行 */
+#endif
+</code></pre>
+<p><code class="c">typeof_unqual</code> 实测：gcc 13.3 与 clang 18 在 <code class="c">-std=c2x</code> 下都支持，<code class="c">const int ci</code> 的 <code class="c">typeof_unqual(ci)</code> 得到可写的 <code class="c">int</code>。</p>
+<h3>1.2 typeof 的操作数<strong>不被求值</strong></h3>
+<p>这是最容易踩的一条，也是它能安全用在宏里的前提。</p>
+<pre class="code" data-label="C"><code class="c">int i = 0;
+typeof(i++) j;      /* 会不会让 i 变成 1？ */
+(void)j;
+printf(&quot;i=%d\n&quot;, i);          /* 实测输出：i=0 */
+
+static int side;
+static int bump(void) { side++; return 42; }
+typeof(bump()) k = 0;         /* 会不会调用 bump()？ */
+(void)k;
+printf(&quot;side=%d\n&quot;, side);    /* 实测输出：side=0 */
+</code></pre>
+<p>实测结论：<strong><code class="c">typeof</code> 与 <code class="c">sizeof</code> 一样只做类型推导，不生成任何运行时代码</strong>，副作用不会发生。</p>
+<h3>1.3 typeof 保留什么：限定符、数组、函数类型</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>写法</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>const 限定符</td>
+<td><code class="c">const int ci=5; typeof(ci) v = 7;</code></td>
+<td><strong>保留</strong>：后续 <code class="c">v = 8;</code> → <code class="c">error: assignment of read-only variable 'v'</code></td>
+</tr>
+<tr>
+<td>数组</td>
+<td><code class="c">int arr[5]; typeof(arr) arr2;</code></td>
+<td><strong>保留数组类型</strong>：<code class="c">sizeof(arr2)</code> = <strong>20</strong>，不是指针的 8</td>
+</tr>
+<tr>
+<td>VLA</td>
+<td><code class="c">int n=4; int vla[n]; typeof(vla) v2;</code></td>
+<td>保留 VLA 类型：<code class="c">sizeof(v2)</code> = 16</td>
+</tr>
+<tr>
+<td>数组参数</td>
+<td><code class="c">void f(int n, int a[n]) { typeof(a) b; }</code></td>
+<td><strong>退化成指针</strong>：<code class="c">sizeof</code> = 8（参数本就是指针，与 <code class="c">typeof</code> 无关）</td>
+</tr>
+<tr>
+<td>函数</td>
+<td><code class="c">int func(int); typeof(func) *pf = func;</code></td>
+<td>保留函数类型，只能用来声明<strong>函数指针</strong></td>
+</tr>
+<tr>
+<td>多变量声明</td>
+<td><code class="c">int *p; typeof(p) a, b;</code></td>
+<td><code class="c">a</code>、<code class="c">b</code> <strong>都是 <code class="c">int *</code></strong>（<code class="c">sizeof</code> 都是 8）</td>
+</tr>
+</tbody>
+</table></div>
+<p>最后一行是 <code class="c">typeof</code> 相对手写类型的真正价值：</p>
+<pre class="code" data-label="C"><code class="c">int *p;
+typeof(p)  a, b;   /* 两个都是 int* —— 类型是&quot;一块&quot;的 */
+int       *c, d;   /* c 是 int*，d 只是 int —— 经典的星号陷阱 */
+</code></pre>
+<h3>1.4 typeof 的头号用途：让宏只求值一次</h3>
+<p><code class="c">typeof</code> + <a href="#s-6-3">语句表达式</a> 是 GNU C 的"宏两件套"，解决朴素宏重复求值的老毛病。</p>
+<pre class="code" data-label="C"><code class="c">#define MAX_naive(a,b) ((a) &gt; (b) ? (a) : (b))
+#define MAX_gnu(a,b)  ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a &gt; _b ? _a : _b; })
+
+static int calls;
+static int tick(void) { calls++; return 1; }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表达式</th>
+<th><code class="c">tick()</code> 被调用次数（实测）</th>
+<th><code class="c">i++</code> 后 <code class="c">i</code> 的值（初值 5）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAX_naive(tick(), 0)</code></td>
+<td><strong>2</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">MAX_gnu(tick(), 0)</code></td>
+<td><strong>1</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code class="c">MAX_naive(i++, 0)</code></td>
+<td>—</td>
+<td><strong>7</strong>（自增执行了两次）</td>
+</tr>
+<tr>
+<td><code class="c">MAX_gnu(i++, 0)</code></td>
+<td>—</td>
+<td><strong>6</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>但 <code class="c">typeof</code> 救不了整型提升</strong>：<code class="c">MAX_gnu(-1, 1u)</code> 实测输出 <code class="c">4294967295</code>——因为 <code class="c">_a</code> 是 <code class="c">int</code>、<code class="c">_b</code> 是 <code class="c">unsigned</code>，比较时 <code class="c">int</code> 被提升为 <code class="c">unsigned</code>，<code class="c">-1</code> 变成 <code class="c">UINT_MAX</code>。<strong>宏不会替你做类型检查，它只保证不求值两次。</strong></p>
+<p><strong>typeof 宏的两个硬边界</strong>（实测）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实参类型</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结构体（<code class="c">struct big</code>）</td>
+<td><code class="c">error: invalid operands to binary &gt;</code> —— 结构体不能比较</td>
+</tr>
+<tr>
+<td>数组（<code class="c">int a1[4]</code>）</td>
+<td><code class="c">error: invalid initializer</code> —— <code class="c">__typeof__(a) _a = (a)</code> 里数组不能用数组初始化</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以内核的 <code class="c">max()</code> 才会在 C 里写得那么复杂（<code class="c">__careful_cmp</code> + <code class="c">__cmp_once</code> + <code class="c">__builtin_types_compatible_p</code>）。</p>
+<h3>1.5 __auto_type：更短但有约束</h3>
+<pre class="code" data-label="C"><code class="c">int i = 3;
+__auto_type  a = i;    /* OK：自动推导 */
+__typeof__(i) b = i;   /* OK */
+__typeof__(i) c;       /* OK：可以先声明后赋值 */
+/* __auto_type x; */   /* error: '__auto_type' requires an initialized data declaration */
+</code></pre>
+<p>gcc 与 clang 表现一致。写宏里想少打一个括号可以用它，但<strong>不能声明未初始化的变量</strong>，作用域比 <code class="c">typeof</code> 窄。</p>
+<hr />
+<h2>二、offsetof：成员偏移是编译期常量</h2>
+<pre class="code" data-label="C"><code class="c">#include &lt;stddef.h&gt;
+offsetof(type, member)   /* 返回 size_t，是整型常量表达式 */
+</code></pre>
+<p><strong>"常量表达式"这一点可以直接验证</strong>——拿它当数组维度：</p>
+<pre class="code" data-label="C"><code class="c">struct s { char c; int i; double d; };
+static char arr[offsetof(struct s, d)];   /* 编译通过 = 它确实是常量表达式 */
+</code></pre>
+<p>实测（<code class="c">gcc -std=c99 -pedantic -Wall</code>）：<code class="c">sizeof(arr)=8</code>，<code class="c">offsetof(struct s, d)=8</code>。</p>
+<h3>位域是禁区</h3>
+<pre class="code" data-label="C"><code class="c">struct s { unsigned a:3; unsigned b:5; unsigned :4; int c; };
+offsetof(struct s, c);   /* OK */
+offsetof(struct s, b);   /* error */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>报错信息</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc 13.3</td>
+<td><code class="c">error: attempt to take address of bit-field structure member 'b'</code></td>
+</tr>
+<tr>
+<td>clang 18</td>
+<td><code class="c">error: cannot compute offset of bit-field 'b'</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>原因很实在：位域<strong>没有地址</strong>，<code class="c">&amp;s.b</code> 本身就非法，偏移无从谈起。</p>
+<hr />
+<h2>三、container_of：从成员地址回到宿主</h2>
+<h3>3.1 三步推导</h3>
+<pre class="code" data-label="code"><code class="c">宿主结构体 struct dev 在内存里的样子：
+
+ &amp;d ──► ┌─────────┐
+        │   id    │  offset 0
+        ├─────────┤
+        │  name   │  offset 8
+        ├─────────┤
+        │   irq   │  offset 24   ◄── ptr 指向这里
+        └─────────┘
+
+已知 ptr = &amp;d.irq，求 &amp;d：
+    &amp;d = (char *)ptr - offsetof(struct dev, irq)
+</code></pre>
+<ol>
+<li>用 <code class="c">offsetof</code> 拿到成员在结构体内的<strong>字节偏移</strong>（编译期常量）；</li>
+<li>把成员指针转成 <code class="c">char *</code>，按<strong>字节</strong>往回退这么多；</li>
+<li>转回 <code class="c">struct dev *</code>。</li>
+</ol>
+<h3>3.2 内核版逐字拆解</h3>
+<pre class="code" data-label="C"><code class="c">#define offsetof(TYPE, MEMBER)  __builtin_offsetof(TYPE, MEMBER)
+
+#define container_of(ptr, type, member) ({                      \
+    const typeof(((type *)0)-&gt;member) *__mptr = (ptr);          \
+    (type *)((char *)__mptr - offsetof(type, member)); })
+</code></pre>
+<p>每一处都不是随手写的：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>片段</th>
+<th>为什么这么写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">({ ... })</code></td>
+<td><strong>语句表达式</strong>（<a href="#s-6-3">6.3</a>）：让宏能先声明局部变量 <code class="c">__mptr</code>，并把最后一句当返回值。普通宏做不到</td>
+</tr>
+<tr>
+<td><code class="c">((type *)0)-&gt;member</code></td>
+<td><strong>只用于取类型，不求值</strong>。<code class="c">typeof</code> 的操作数不生成代码，所以这里没有真的解引用 NULL（见 <a href="#12-typeof-的操作数不被求值">1.2</a>）</td>
+</tr>
+<tr>
+<td><code class="c">typeof(...)</code></td>
+<td>取出"成员自身的类型"，后面加 <code class="c">*</code>，得到<strong>成员指针类型</strong></td>
+</tr>
+<tr>
+<td><code class="c">const</code></td>
+<td>让 <code class="c">__mptr</code> 能同时接住 <code class="c">const</code> 与非 <code class="c">const</code> 实参（代价见 <a href="#35-const-丢失陷阱实测">3.5</a>）</td>
+</tr>
+<tr>
+<td><code class="c">*__mptr = (ptr)</code></td>
+<td><strong>这一句是类型检查的全部</strong>：如果 <code class="c">ptr</code> 的类型和成员类型不兼容，编译器在这里报警。同时保证 <code class="c">ptr</code> <strong>只求值一次</strong></td>
+</tr>
+<tr>
+<td><code class="c">(char *)</code></td>
+<td>按字节做减法。不能用 <code class="c">void *</code>——<code class="c">void *</code> 的算术是 GNU 扩展，ISO C 未定义；<code class="c">char *</code> 是标准保证 1 字节步进的唯一类型</td>
+</tr>
+<tr>
+<td><code class="c">__mptr</code> 的双下划线</td>
+<td>避免与调用方作用域里的变量撞名</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">ptr</code> 只求值一次，可以直接验证：</p>
+<pre class="code" data-label="C"><code class="c">static int *next_irq(void) { return &amp;devs[idx++].irq; }   /* 有副作用 */
+struct dev *d = container_of(next_irq(), struct dev, irq);
+/* 实测：idx 从 0 变成 1 —— 只调用了一次 */
+</code></pre>
+<h3>3.3 零开销实测：-O0 vs -O2 的反汇编</h3>
+<pre class="code" data-label="C"><code class="c">struct big {
+    char             pad[64];
+    int              irq;
+    struct list_head { struct list_head *n, *p; } node;  /* offsetof = 72 */
+    unsigned long long stamp;
+};
+struct big *get_host(struct list_head *node) {
+    return container_of(node, struct big, node);
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优化级别</th>
+<th>生成的 x86-64 指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-O0</code></td>
+<td><code class="c">mov %rdi,-0x18(%rbp)</code> / <code class="c">mov -0x18(%rbp),%rax</code> / <code class="c">mov %rax,-0x8(%rbp)</code> / <code class="c">mov -0x8(%rbp),%rax</code> / <code class="c">sub $0x48,%rax</code>（0x48 = 72）</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code></td>
+<td><code class="c">lea -0x48(%rdi),%rax</code> + <code class="c">ret</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code class="c">-O2</code> 下只剩一条 <code class="c">lea</code></strong>——<code class="c">typeof</code> 的类型检查完全发生在编译期，<code class="c">offsetof</code> 被折叠成常量，运行时开销为零。这是 <code class="c">container_of</code> 能在内核热路径（网络协议栈、调度器）里到处用的底气。</p>
+<h3>3.4 类型检查的能力边界（实测）</h3>
+<p>这是本节最该记住的表。四种典型误用，只有一种会被编译器拦下：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误用</th>
+<th>gcc <code class="c">-Wall -Wextra</code> 的反应</th>
+<th>实际后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>成员名写错，但两个成员类型相同</strong><br><code class="c">container_of(&amp;d.id, struct dev, irq)</code>（<code class="c">id</code>、<code class="c">irq</code> 都是 <code class="c">int</code>）</td>
+<td><strong>无任何警告</strong></td>
+<td>地址算错，读到相邻成员/越界内存</td>
+</tr>
+<tr>
+<td><strong>宿主类型写错，成员类型相同</strong><br><code class="c">container_of(&amp;o.irq, struct dev, irq)</code>（<code class="c">o</code> 是别的 struct）</td>
+<td><strong>无任何警告</strong></td>
+<td>读到另一个对象的内存；若宿主更大则<strong>越界</strong></td>
+</tr>
+<tr>
+<td><strong>成员类型不同</strong><br><code class="c">container_of(&amp;d.name, struct dev, irq)</code>（<code class="c">char[16]</code> vs <code class="c">int</code>）</td>
+<td>⚠️ <code class="c">warning: initialization of 'const int *' from incompatible pointer type 'char (*)[16]'</code></td>
+<td>地址算错，但<strong>只是警告</strong>，<code class="c">-Werror</code> 才会拦</td>
+</tr>
+<tr>
+<td><strong>传 NULL / 0</strong></td>
+<td>无告警</td>
+<td>UBSan 才抓：<code class="c">runtime error: applying non-zero offset 18446744073709551612 to null pointer</code>，结果 <code class="c">0xfffffffffffffffc</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结论：<code class="c">container_of</code> 检查的是"成员类型"，不是"宿主类型"。</strong> 两个 <code class="c">int</code> 成员、或两份布局相同的 struct，编译器一律放行——它无法替你确认"这个指针真的来自你说的那个结构体"。</p>
+<p>越界这条可以实锤：把 8 字节 <code class="c">struct small</code> 的成员当成 72 字节 <code class="c">struct big</code> 的成员传进去，普通编译<strong>零警告</strong>，<code class="c">-fsanitize=address</code> 立刻报 <code class="c">stack-buffer-overflow READ of size 1</code>。</p>
+<h3>3.5 const 丢失陷阱（实测）</h3>
+<pre class="code" data-label="C"><code class="c">const struct dev d = { 1, 2 };
+struct dev *p = container_of(&amp;d.irq, struct dev, irq);
+p-&gt;id = 99;                 /* 从 const 对象里&quot;洗&quot;出了一个可写指针 */
+printf(&quot;d.id=%d\n&quot;, d.id);  /* 实测输出：d.id=99 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开关</th>
+<th>是否报警</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">gcc -Wall -Wextra</code>（默认）</td>
+<td>❌ 静默</td>
+</tr>
+<tr>
+<td><code class="c">gcc -Wcast-qual</code></td>
+<td>✅ <code class="c">warning: cast discards 'const' qualifier from pointer target type</code></td>
+</tr>
+<tr>
+<td><code class="c">clang -Wcast-qual</code></td>
+<td>✅ <code class="c">warning: cast from 'const int *' to 'char *' drops const qualifier</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>宏里的 <code class="c">(char *)__mptr</code> 就是那个丢 <code class="c">const</code> 的转型——<code class="c">(char *)</code> 而不是 <code class="c">(const char *)</code>。<strong>默认编译选项抓不到</strong>，必须显式加 <code class="c">-Wcast-qual</code>。内核为此在新版本引入了 <code class="c">container_of_const()</code>，返回 <code class="c">const type *</code>，让 const 性质传递下去：</p>
+<pre class="code" data-label="C"><code class="c">#define container_of_const(ptr, type, member) ({                     \
+    const __typeof__(((type *)0)-&gt;member) *__mptr = (ptr);           \
+    (const type *)((const char *)__mptr - offsetof(type, member)); })
+</code></pre>
+<p>实测：非 <code class="c">const</code> 指针传给 <code class="c">container_of_const</code> 不会报错（加 const 是安全的），<code class="c">const</code> 对象的成员也只能得到 <code class="c">const</code> 宿主指针——写操作在编译期就被挡住。</p>
+<hr />
+<h2>四、嵌入式与内核里的实战</h2>
+<h3>4.1 侵入式链表：完整可运行实现</h3>
+<p>普通链表是"链表节点装着数据指针"；<strong>侵入式链表是"数据里嵌一个链表节点"</strong>，一份链表代码服务所有结构体。</p>
+<pre class="code" data-label="C"><code class="c">struct list_head { struct list_head *next, *prev; };
+
+#define container_of(ptr, type, member) ({                      \
+    const __typeof__(((type *)0)-&gt;member) *__mptr = (ptr);      \
+    (type *)((char *)__mptr - offsetof(type, member)); })
+#define list_entry(ptr, type, member) container_of(ptr, type, member)
+
+#define list_for_each(pos, head) \
+    for (pos = (head)-&gt;next; pos != (head); pos = pos-&gt;next)
+
+static void list_add(struct list_head *new, struct list_head *head)
+{
+    new-&gt;next = head-&gt;next;
+    new-&gt;prev = head;
+    head-&gt;next-&gt;prev = new;
+    head-&gt;next = new;
+}
+
+/* 宿主：一个&quot;设备&quot; */
+struct device {
+    int              id;
+    char             name[16];
+    struct list_head node;      /* 挂在设备链表上 */
+    unsigned         irq;
+    struct list_head irq_node;  /* 同时挂在 IRQ 链表上 */
+};
+</code></pre>
+<p>实测输出（<code class="c">gcc -std=gnu11 -Wall -Wextra</code>）：</p>
+<pre class="code" data-label="code"><code class="c">sizeof(struct device)=64 offsetof(node)=24 offsetof(irq_node)=48
+--- dev_list (逆序，头插) ---
+  id=2 name=i2c2 irq=32
+  id=1 name=spi1 irq=31
+  id=0 name=uart0 irq=30
+--- irq_list ---
+  id=2 name=i2c2 irq=32
+  id=1 name=spi1 irq=31
+  id=0 name=uart0 irq=30
+via_irq: id=1 name=spi1 (==&amp;d1 ? yes)
+</code></pre>
+<p><strong>关键观察</strong>：<code class="c">node</code> 和 <code class="c">irq_node</code> 是同一个 <code class="c">struct device</code> 里的两个节点，偏移分别是 24 和 48。同一份 <code class="c">list_add</code>/<code class="c">list_for_each</code> 代码，靠调用方传入的 <strong><code class="c">member</code> 参数</strong>决定回推到哪个偏移——<code class="c">container_of</code> 把"链表算法"和"宿主类型"彻底解耦。这就是内核 <code class="c">struct list_head</code> 只有两个指针却能挂住上万物种结构体的原因。</p>
+<p>对比一下传统做法的代价：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>每次插入的分配</th>
+<th>内存局部性</th>
+<th>一个结构体挂多张链表</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>传统链表（节点持有 <code class="c">void *data</code>）</td>
+<td>额外 <code class="c">malloc</code> 一个节点</td>
+<td>差（数据与控制块分离，多一次 cache miss）</td>
+<td>需要多套节点</td>
+</tr>
+<tr>
+<td><strong>侵入式链表（<code class="c">list_head</code> 内嵌）</strong></td>
+<td><strong>无</strong></td>
+<td><strong>好</strong>（节点就在宿主结构体里，与热点数据同 cache line）</td>
+<td><strong>同一个结构体多放几个 <code class="c">list_head</code> 即可</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>对 HFT/嵌入式都是决定性的：前者少一次内存分配、少一次指针追逐；后者<strong>根本用不了 malloc</strong>的场景（裸机、中断上下文）也能用链表。</p>
+<h3>4.2 驱动里的 private data</h3>
+<p><code class="c">container_of</code> 在内核里最常见的另一处用法，是把"通用对象"还原成"具体设备对象"：</p>
+<pre class="code" data-label="C"><code class="c">/* 内核里的典型形态（示意） */
+struct platform_device *pdev = ...;
+struct mydrv_priv *priv = container_of(pdev-&gt;dev, struct mydrv_priv, dev);
+
+/* 网络设备：netdev 后面紧跟私有数据 */
+static inline void *netdev_priv(const struct net_device *dev)
+{
+    return (char *)dev + ALIGN(sizeof(struct net_device), NETDEV_ALIGN);
+}
+</code></pre>
+<p>前者是 <code class="c">container_of</code>（成员在结构体内），后者是<strong>固定偏移加法</strong>（私有数据分配在 <code class="c">net_device</code> 之后）——后者更快，因为不需要减偏移，代价是私有数据只能在尾部、且大小在分配时确定。</p>
+<h3>4.3 与 packed / 柔性数组的边界</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>实测结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">packed</code> 结构体的成员做 <code class="c">container_of</code></td>
+<td>地址算得<strong>对</strong>（<code class="c">offsetof</code> 拿到的是真实偏移），但 <code class="c">&amp;p.seq</code> 未对齐 → gcc 默认开 <code class="c">-Waddress-of-packed-member</code> 警告；<strong>x86 上访问正常，ARMv5/ARMv7 上未对齐访问会触发 alignment fault</strong></td>
+</tr>
+<tr>
+<td>柔性数组 <code class="c">unsigned char data[]</code> 做 <code class="c">member</code></td>
+<td>⚠️ <code class="c">warning: initialization of 'const unsigned char (*)[]' from incompatible pointer type 'unsigned char *'</code>——<code class="c">typeof</code> 取出的是<strong>数组类型</strong>，加 <code class="c">*</code> 后变成"指向数组的指针"。能编译、结果也对，但类型不匹配；<strong>不要这么写</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3>4.4 HFT / 嵌入式视角</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>零分配</strong></td>
+<td>数据结构内嵌节点，热路径上不碰 allocator，尾延迟可控</td>
+</tr>
+<tr>
+<td><strong>cache 友好</strong></td>
+<td>节点与业务字段同处一个结构体，遍历时一次 cache line 就能拿到判断所需的数据</td>
+</tr>
+<tr>
+<td><strong>零运行时开销</strong></td>
+<td><code class="c">-O2</code> 下是一条 <code class="c">lea</code>，可以放心放在行情回调、订单簿遍历里</td>
+</tr>
+<tr>
+<td><strong>裸机可用</strong></td>
+<td>没有 OS、没有堆也能用侵入式容器，这是嵌入式选它而不是 glib 的根本原因</td>
+</tr>
+<tr>
+<td><strong>代价</strong></td>
+<td>类型安全弱（见 <a href="#34-类型检查的能力边界实测">3.4</a>），单元测试里必须开 ASan/UBSan 兜底</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>五、没有 typeof 怎么办（可移植写法）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>适用</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__typeof__</code></td>
+<td>任何 GCC/Clang + 任何 <code class="c">-std</code></td>
+<td><strong>首选</strong>，见 <a href="#11-四种拼写别用错">1.1</a></td>
+</tr>
+<tr>
+<td>C23 <code class="c">typeof</code></td>
+<td><code class="c">-std=c2x</code> / <code class="c">gnu2x</code></td>
+<td>标准拼写，gcc 13+ / clang 都支持</td>
+</tr>
+<tr>
+<td><code class="c">__auto_type</code></td>
+<td>GCC 4.9+ / Clang</td>
+<td>更短，但必须带初始化</td>
+</tr>
+<tr>
+<td>标准 C 版 <code class="c">container_of</code></td>
+<td>任何 C 编译器</td>
+<td>丢掉类型检查，见下</td>
+</tr>
+<tr>
+<td>MSVC</td>
+<td>—</td>
+<td>不支持 <code class="c">typeof</code>，需要用 <code class="c">_Generic</code> 或放弃检查</td>
+</tr>
+</tbody>
+</table></div>
+<p>退而求其次的标准 C 版本（没有 <code class="c">typeof</code>，也就<strong>没有类型检查</strong>）：</p>
+<pre class="code" data-label="C"><code class="c">/* 无 typeof：能编译、能算对，但传错指针类型不会有任何提示 */
+#define container_of_unsafe(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+</code></pre>
+<p>工程上的三层封装建议：</p>
+<pre class="code" data-label="C"><code class="c">#if defined(__GNUC__) || defined(__clang__)
+#  define CT_TYPEOF(x)      __typeof__(x)
+#  define HAVE_TYPEOF       1
+#elif defined(__STDC_VERSION__) &amp;&amp; __STDC_VERSION__ &gt; 201710L
+#  define CT_TYPEOF(x)      typeof(x)
+#  define HAVE_TYPEOF       1
+#else
+#  define HAVE_TYPEOF       0        /* 退化到无检查版本 */
+#endif
+</code></pre>
+<hr />
+<h2>六、坑点清单</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>坑</th>
+<th>现象</th>
+<th>规避</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>裸 <code class="c">typeof</code> 在严格 ISO 模式下不认</td>
+<td>clang <code class="c">-std=c11</code> 直接 <code class="c">error</code></td>
+<td>一律写 <code class="c">__typeof__</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>位域做 <code class="c">offsetof</code></td>
+<td>编译错误（<code class="c">attempt to take address of bit-field</code>）</td>
+<td>位域不能做 <code class="c">container_of</code> 的成员，也没法取地址</td>
+</tr>
+<tr>
+<td>3</td>
+<td>同类型成员/同布局宿主传错</td>
+<td><strong>零警告</strong>，静默读错内存</td>
+<td>代码审查；测试开 ASan</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code class="c">const</code> 被丢弃</td>
+<td><code class="c">-Wall -Wextra</code> 抓不到，真能改写 const 对象</td>
+<td>加 <code class="c">-Wcast-qual</code>；用 <code class="c">container_of_const</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>传 NULL</td>
+<td>静默得到 <code class="c">0xfffffffffffffffc</code> 之类的野地址</td>
+<td>开 UBSan；入口处判空</td>
+</tr>
+<tr>
+<td>6</td>
+<td>柔性数组成员做 <code class="c">member</code></td>
+<td><code class="c">incompatible pointer types</code> 警告（数组类型 + <code class="c">*</code>）</td>
+<td>用结构体起始成员或显式 <code class="c">(char *)</code> 偏移</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code class="c">packed</code> 成员取地址</td>
+<td><code class="c">-Waddress-of-packed-member</code>；ARM 上未对齐访问 fault</td>
+<td>用 <code class="c">memcpy</code>/<code class="c">get_unaligned</code> 读写，不要直接解引用</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code class="c">typeof</code> 宏遇上数组/结构体实参</td>
+<td><code class="c">invalid initializer</code> / <code class="c">invalid operands to binary &gt;</code></td>
+<td><code class="c">typeof</code> 宏只用于标量；数组场景用函数或 <code class="c">min_t/max_t</code> 风格（显式传类型）</td>
+</tr>
+<tr>
+<td>9</td>
+<td>手动写 <code class="c">((type *)0)-&gt;member</code> 取地址</td>
+<td>真解引用 NULL，运行期崩溃</td>
+<td>记住 <code class="c">typeof(...)</code> 只取类型；取地址要用 <code class="c">offsetof</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>以为 <code class="c">container_of</code> 检查了宿主类型</td>
+<td>—</td>
+<td>它只检查成员类型，见 <a href="#34-类型检查的能力边界实测">3.4</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.4.1–6.4.4</strong> 语法、示例、内核宏展开</li>
-<li><strong>ch07</strong> 指针运算；<strong>6.3</strong> 语句表达式</li>
+<li><strong><a href="#s-6-3">6.3 语句表达式</a></strong> —— <code class="c">container_of</code> 的 <code class="c">({ ... })</code> 外壳；两者合起来才是内核宏的标准写法</li>
+<li><strong><a href="#s-6-5">6.5 零长度数组</a></strong> —— 变长报文的尾部数据；与本文 4.3 的柔性数组边界呼应</li>
+<li><strong><a href="#s-6-6">6.6.1 <code class="c">__attribute__</code> 总纲</a></strong> —— 另一大类 GNU 扩展</li>
+<li><strong><a href="chapter-08.html#ch-8">ch08 OOP in C</a></strong> —— 侵入式链表是 C 实现"泛型容器"的基础设施</li>
+<li><strong><a href="chapter-07.html#ch-7">ch07 7.2 对齐</a></strong> —— <code class="c">offsetof</code> 与 padding 的计算</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 写出一个简化版 <code class="c">container_of</code> 宏，并解释它如何工作。为什么不能用简单的指针减法？</p>
-<pre class="code" data-label="C"><code class="c">struct node { int data; struct node *next; };
-struct node n;
-struct node *np = &amp;n.next;  // 假设有这个成员
-// 如何从 np 得到 &amp;n ?
+<p><strong>题目 1：</strong> 下面这段在 <code class="c">gcc -std=c11</code> 下会怎样？为什么？</p>
+<pre class="code" data-label="C"><code class="c">int x = 1;
+typeof(x) a = 2;
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<pre class="code" data-label="C"><code class="c">#define container_of(ptr, type, member) ({ \
-    const typeof(((type *)0)-&gt;member) *__mptr = (ptr); \
-    (type *)((char *)__mptr - offsetof(type, member)); \
-})
+<summary>答案</summary>
+<p><strong>编译失败</strong>（clang 下是硬性 <code class="c">error</code>，gcc 下 <code class="c">typeof</code> 被当成隐式函数声明，随后语法错误）。<code class="c">-std=c11</code> 是严格 ISO 模式，<code class="c">typeof</code> 不是关键字；它在 C23 才进标准。
+改成 <code class="c">__typeof__(x)</code> 即可在任何 <code class="c">-std</code> 下通过；或者改用 <code class="c">-std=gnu11</code> / <code class="c">-std=c2x</code>。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">typeof(i++)</code> 会不会让 <code class="c">i</code> 自增？<code class="c">typeof(bump())</code> 会不会调用 <code class="c">bump()</code>？</p>
+<details>
+<summary>答案</summary>
+<p><strong>都不会</strong>。<code class="c">typeof</code> 与 <code class="c">sizeof</code> 一样，操作数只参与类型推导，不生成运行时代码。实测：<code class="c">i</code> 保持 0，副作用计数 <code class="c">side</code> 保持 0。
+这也是 <code class="c">((type *)0)-&gt;member</code> 这种写法安全的原因——它没有真的解引用 NULL。</p>
+</details>
+<p><strong>题目 3：</strong> <code class="c">int *p; typeof(p) a, b;</code> 与 <code class="c">int *c, d;</code> 里，<code class="c">b</code> 和 <code class="c">d</code> 分别是什么类型？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">b</code> 是 <code class="c">int *</code>（<code class="c">typeof(p)</code> 展开成完整类型 <code class="c">int *</code>，修饰后面所有变量）；<code class="c">d</code> 是 <code class="c">int</code>（星号只绑定 <code class="c">c</code>）。
+实测 <code class="c">sizeof</code>：a=8、b=8、c=8、d=4。这是用 <code class="c">typeof</code> 声明多个同类型变量的好处。</p>
+</details>
+<p><strong>题目 4：</strong> 为什么 <code class="c">container_of</code> 里用 <code class="c">(char *)</code> 而不是 <code class="c">(void *)</code> 做减法？</p>
+<details>
+<summary>答案</summary>
+<p><code class="c">void *</code> 的指针算术在 ISO C 中<strong>未定义</strong>（GNU C 把它当 1 字节扩展，但不可移植）。<code class="c">char *</code> 是标准保证 <code class="c">sizeof(char) == 1</code>、按字节步进的类型，所以在所有编译器上行为一致。</p>
+</details>
+<p><strong>题目 5：</strong> 下面代码有没有问题？编译器会报什么？</p>
+<pre class="code" data-label="C"><code class="c">struct dev { int id; int irq; };
+struct dev d = { .id = 7, .irq = 30 };
+struct dev *q = container_of(&amp;d.id, struct dev, irq);
 </code></pre>
-<p>原理：(1) <code class="c">typeof</code> 取成员指针类型，确保类型安全；(2) <code class="c">offsetof(type, member)</code> 算出成员在结构体中的偏移；(3) 成员指针减偏移得到宿主结构体首地址。不能简单减法是因为不同成员偏移不同，且需要类型检查。<code class="c">typeof</code> 是 GNU 扩展。Linux 内核侵入式链表 <code class="c">list_entry</code> 就基于此。</p>
+<details>
+<summary>答案</summary>
+<p><strong>编译器什么都不报</strong>。因为 <code class="c">id</code> 和 <code class="c">irq</code> 都是 <code class="c">int</code>，<code class="c">typeof</code> 检查通过。
+但地址算错了：<code class="c">&amp;d.id</code> 回退 <code class="c">offsetof(struct dev, irq)</code>，得到 <code class="c">&amp;d - 4</code>，落在结构体之前的内存。实测 <code class="c">q != &amp;d</code>，读 <code class="c">q-&gt;irq</code> 实际读到 <code class="c">d.id</code>。
+<code class="c">container_of</code> 只检查<strong>成员类型</strong>，不检查<strong>成员是不是你以为的那个</strong>。</p>
+</details>
+<p><strong>题目 6：</strong> 如何从 <code class="c">const</code> 对象安全地做 <code class="c">container_of</code>？</p>
+<details>
+<summary>答案</summary>
+<p>标准 <code class="c">container_of</code> 会<strong>丢掉 const</strong>（<code class="c">(char *)__mptr</code> 是去 const 的转型），默认 <code class="c">-Wall -Wextra</code> 抓不到，实测能把 <code class="c">const struct dev d</code> 的字段改写成功。
+两个办法：
+1. 编译时加 <code class="c">-Wcast-qual</code>——实测 gcc/clang 都能报出 <code class="c">cast discards 'const' qualifier</code>；
+2. 用 <code class="c">container_of_const()</code>（返回 <code class="c">const type *</code>），让 const 性质传递到结果指针上，写操作在编译期就被拦。</p>
+</details>
+<p><strong>题目 7（判断）：</strong> <code class="c">offsetof</code> 可以用于位域成员。</p>
+<details>
+<summary>答案</summary>
+<p><strong>错</strong>。位域没有独立地址，<code class="c">&amp;s.bitfield</code> 本身就非法。
+实测：gcc 报 <code class="c">error: attempt to take address of bit-field structure member</code>；clang 报 <code class="c">error: cannot compute offset of bit-field</code>。</p>
+</details>
+<p><strong>题目 8：</strong> 为什么侵入式链表在嵌入式和 HFT 里比传统链表更受欢迎？</p>
+<details>
+<summary>答案</summary>
+<p>三点：
+1. <strong>零分配</strong>——节点内嵌在宿主结构体里，插入不需要 <code class="c">malloc</code>，裸机和中断上下文都能用；
+2. <strong>cache 友好</strong>——遍历时节点与业务字段在同一块内存，少一次指针追逐（传统链表要跳到别处取数据）；
+3. <strong>一个结构体能挂多张链表</strong>——多放几个 <code class="c">list_head</code> 成员即可，靠 <code class="c">container_of</code> 的 <code class="c">member</code> 参数区分（实测同一个 <code class="c">struct device</code> 用 <code class="c">node</code> 和 <code class="c">irq_node</code> 同时挂两张链表，都能正确回推）。</p>
+<p>代价是类型安全弱，所以测试要开 ASan/UBSan。</p>
+</details>
+<p><strong>题目 9：</strong> <code class="c">container_of</code> 在 <code class="c">-O2</code> 下的运行时开销是多少？</p>
+<details>
+<summary>答案</summary>
+<p><strong>零</strong>。实测 <code class="c">-O2</code> 下 <code class="c">get_host()</code> 只剩两条指令：<code class="c">lea -0x48(%rdi),%rax</code> + <code class="c">ret</code>（<code class="c">-0x48</code> = <code class="c">offsetof</code> 算出的常量偏移 72）。
+<code class="c">-O0</code> 下还有几次栈上搬运和一条 <code class="c">sub $0x48,%rax</code>，优化后全部折叠。<code class="c">typeof</code> 的检查是纯编译期行为。</p>
+</details>
+<p><strong>题目 10：</strong> 写一个 <code class="c">container_of</code> 的简化版，并说明它相对内核版少了什么保护。</p>
+<details>
+<summary>答案</summary>
+<pre class="code" data-label="C"><code class="c">#define container_of_unsafe(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+</code></pre>
+<p>相对内核版少了三样：
+1. <strong>类型检查</strong>——没有 <code class="c">typeof</code>，传任何指针都能编译；
+2. <strong>只求值一次</strong>——<code class="c">ptr</code> 在表达式里出现一次所以这条其实也满足，但一旦有人改写宏引入第二处 <code class="c">ptr</code> 就会重复求值；内核版用 <code class="c">__mptr</code> 局部变量强制只求值一次；
+3. <strong>const 处理</strong>——内核版的 <code class="c">const typeof(...)</code> 能接住 <code class="c">const</code> 指针，简化版直接 <code class="c">(char *)(ptr)</code> 会在传 <code class="c">const</code> 指针时报 <code class="c">discards qualifiers</code>（也算一种提醒，但表达不了 <code class="c">container_of_const</code> 的语义）。</p>
 </details>
       </section>
       <section class="section" id="s-6-4-1">
         <div class="sec-head"><div class="sec-no">6.4</div><h2>.1 typeof关键字</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-4">6.4 typeof 与 container_of 宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>typeof</strong>（GNU 扩展；C23 标准关键字同名）在编译期复制操作数的类型，用于宏中声明与参数同类型的临时变量，避免 <code class="c">void*</code> 或多次求值。</p>
 <h2>要点</h2>
@@ -1822,6 +2607,9 @@ typeof(&quot;hello&quot;) s;    // s 的类型?
       </section>
       <section class="section" id="s-6-4-2">
         <div class="sec-head"><div class="sec-no">6.4</div><h2>.2 typeof使用示例</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-4">6.4 typeof 与 container_of 宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>通过 <strong>链表节点嵌入</strong>、<strong>泛型 min 宏</strong>、<strong>指针赋值</strong> 三类示例掌握 typeof 在工程中的典型用法。</p>
 <h2>要点</h2>
@@ -1897,6 +2685,9 @@ SWAP(p1, p2);         // OK, _tmp 自动是 struct point
       </section>
       <section class="section" id="s-6-4-3">
         <div class="sec-head"><div class="sec-no">6.4</div><h2>.3 Linux内核中的container_of宏</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-4">6.4 typeof 与 container_of 宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p><strong>container_of</strong> 实现「从成员指针得到结构体指针」，支撑 <code class="c">list_for_each_entry</code>、<code class="c">device</code> 嵌套 <code class="c">platform_device</code> 等模式。定义在 <code class="c">include/linux/container_of.h</code>（或经 <code class="c">kernel.h</code> 间接包含）。</p>
 <h2>要点</h2>
@@ -1987,6 +2778,9 @@ struct task *t = container_of(p, struct task, link);
       </section>
       <section class="section" id="s-6-4-4">
         <div class="sec-head"><div class="sec-no">6.4</div><h2>.4 container_of宏实现分析</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-4">6.4 typeof 与 container_of 宏</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>逐步展开 <strong>container_of</strong> 的指针运算与类型转换，理解为何用 <strong><code class="c">char *</code></strong> 做字节级减法、<strong><code class="c">offsetof</code></strong> 如何取得成员偏移，以及内核版本中的 <strong>const 检查</strong> trick。</p>
 <h2>要点</h2>

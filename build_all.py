@@ -421,7 +421,13 @@ def render_readme(chapter_dir, cur_html_rel):
             quiz_block = b
         elif head.startswith("## 小节") or head.startswith("## 目录"):
             continue
-        elif not head.startswith("# "):
+        elif head.startswith("# "):
+            # 标题块：只丢标题行本身（页面标题由 page() 单独渲染），
+            # 保留标题行以下的内容——否则章首的导读/提示横幅会被静默丢弃。
+            rest = b.split("\n", 1)[1] if "\n" in b else ""
+            if rest.strip():
+                intro_blocks.append(rest)
+        else:
             intro_blocks.append(b)
     intro_html = convert_body("\n".join(intro_blocks), cur_html_rel) if intro_blocks else ""
     quiz_html = ""
