@@ -425,14 +425,14 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
 </tr>
 <tr>
 <td>6</td>
-<td><a href="#s-3-6">3.6 内联汇编</a></td>
-<td>待扩</td>
-<td><strong>代码生成</strong>（<code class="c">__asm__ __volatile__</code>、操作数约束、clobber）</td>
+<td><a href="#s-3-6">3.6 内联汇编（四段式/约束/clobber/volatile/asm goto）</a></td>
+<td>✅ 27 KB</td>
+<td><strong>代码生成</strong>（操作数约束矩阵 / earlyclobber / 漏 clobber 的 gcc-clang 分裂 / volatile 删除实测 / asm goto）</td>
 </tr>
 <tr>
 <td>附</td>
 <td><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/">demo/</a></td>
-<td>8 个示例 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/08-format/">08-format</a> 12 个 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/09-builtin/">09-builtin</a> 14 个</td>
+<td>8 个示例 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/08-format/">08-format</a> 12 个 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/09-builtin/">09-builtin</a> 14 个 + <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/10-asm/">10-asm</a> 15 个</td>
 <td>本章全部可编译复现</td>
 </tr>
 </tbody>
@@ -525,8 +525,8 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
       <section class="section" id="s-3-6">
         <div class="sec-head"><div class="sec-no">3.6</div><h2>C语言和汇编语言混合编程</h2></div>
 <h2>本节讲什么</h2>
-<p>同一工程内 <strong>C 调汇编</strong>、<strong>汇编调 C</strong>、<strong>C 内嵌汇编</strong> 三种路径；须共同遵守 <strong>AAPCS/ATPCS</strong> 调用约定，否则参数、返回值、栈帧错乱——内核 <code class="c">asm/</code> 与驱动里极常见。</p>
-<h2>要点</h2>
+<p>同一工程里 C 与汇编的三条交汇路径：<strong>C 调汇编函数</strong>、<strong>C 内嵌汇编</strong>、<strong>汇编调 C</strong>。三者都必须共同遵守一套 <strong>ABI（调用约定）</strong>——参数在哪、返回值在哪、哪些寄存器要保存、栈怎么排——否则参数错位、返回值丢失、栈帧崩坏。内核 <code class="c">asm/</code>、驱动、裸机启动代码里全是这三条路径。</p>
+<p>本篇是总纲。内联汇编的语法（四段式、操作数约束、clobber、<code class="c">volatile</code>、<code class="c">asm goto</code>）是 GNU C 扩展里最硬核、最容易出静默 bug 的一块——<strong>编译器无法检查你的汇编模板和约束是否匹配</strong>，写错要么编译期炸（算你运气好），要么运行时静默 corrupt。全部结论经 WSL x86-64 实测（gcc 13.3 / clang 18.1.3 / binutils 2.42），ARM 部分讲原理并标注"未实测"（无 aarch64 交叉工具链）。</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -537,57 +537,1048 @@ CH1 的语法你看得懂就完事了；<strong>这一章的每一条都能让�
 </thead>
 <tbody>
 <tr>
-<td>C → 汇编函数</td>
-<td>热点、平台原语</td>
-<td><strong>3.6.1</strong> + demo</td>
+<td>C → 汇编函数（<code class="c">.S</code> 文件）</td>
+<td>热点优化、平台原语</td>
+<td><a href="chapter-02.html#s-3-6-1">3.6.1</a></td>
 </tr>
 <tr>
-<td>C 内嵌汇编</td>
-<td>读协处理器、屏障</td>
-<td><strong>3.6.2</strong></td>
+<td>C 内嵌汇编（<code class="c">asm</code> 关键字）</td>
+<td>读写协处理器/系统寄存器、屏障、原子操作</td>
+<td><a href="chapter-02.html#s-3-6-2">3.6.2</a></td>
 </tr>
 <tr>
-<td>汇编 → C</td>
-<td>启动代码调 <code class="c">main</code></td>
-<td><strong>3.6.3</strong></td>
+<td>汇编 → C（<code class="c">bl main</code> / <code class="c">call</code>）</td>
+<td>启动代码、异常向量、裸机 reset</td>
+<td><a href="chapter-02.html#s-3-6-3">3.6.3</a></td>
 </tr>
 </tbody>
 </table></div>
-<pre class="code" data-label="C"><code class="c">// demo03_main.c
-extern int add_asm(int a, int b);
-sum = add_asm(3, 5);
+<hr />
+<h2>一、三种路径总览</h2>
+<h3>1. C 调汇编函数</h3>
+<p>C 侧 <code class="c">extern</code> 声明，汇编侧 <code class="c">.global</code> 导出，按 ABI 传参：</p>
+<pre class="code" data-label="C"><code class="c">/* C 侧 */
+extern int add_asm(int a, int b);   /* 声明 */
+int sum = add_asm(3, 5);            /* 调用 */
 </code></pre>
-<pre class="code" data-label="arm"><code class="c">@ add_asm.S — AAPCS：r0,r1 入参，r0 返回
-add r0, r0, r1
-bx  lr
+<pre class="code" data-label="asm"><code class="c">/* x86-64 SysV ABI: a-&gt;edi, b-&gt;esi, return-&gt;eax */
+        .text
+        .globl add_asm
+        .type  add_asm, @function
+add_asm:
+        mov    %esi, %eax      /* eax = b */
+        add    %edi, %eax      /* eax += a */
+        ret
 </code></pre>
-<ul>
-<li>交叉编译：<code class="c">CROSS_COMPILE=arm-linux-gnueabihf- make</code>（<strong>demo/Makefile</strong>）</li>
-<li>DPDK <code class="c">rte_pause()</code>、内核 <code class="c">barrier()</code> 等为内联汇编封装</li>
-</ul>
+<pre class="code" data-label="arm"><code class="c">/* ARM AAPCS: a-&gt;r0, b-&gt;r1, return-&gt;r0 (未实测，无交叉工具链) */
+        .global add_asm
+        .type  add_asm, %function
+add_asm:
+        add    r0, r0, r1      @ r0 = a + b (ARM 是三操作数)
+        bx     lr
+</code></pre>
+<h3>2. C 内嵌汇编（核心，本篇重点）</h3>
+<pre class="code" data-label="C"><code class="c">int add_inline(int a, int b)
+{
+    int s;
+    asm volatile (
+        &quot;mov %1, %0\n\t&quot;        /* x86 两操作数：先 mov 再 add */
+        &quot;add %2, %0&quot;
+        : &quot;=r&quot; (s)              /* 输出：写一个寄存器 */
+        : &quot;r&quot; (a), &quot;r&quot; (b)      /* 输入：各读一个寄存器 */
+    );
+    return s;
+}
+</code></pre>
+<p>四种要素：<code class="c">volatile</code>、模板字符串、操作数约束、clobber。下面逐个拆解。</p>
+<h3>3. 汇编调 C</h3>
+<pre class="code" data-label="asm"><code class="c">        .global _start
+_start:
+        mov    $3, %edi          /* x86-64: 第一个参数 -&gt; edi */
+        mov    $5, %esi          /* 第二个参数 -&gt; esi */
+        call   c_add             /* 调 C 函数，返回值在 eax */
+        ...
+</code></pre>
+<hr />
+<h2>二、内联汇编四段式语法</h2>
+<h3>完整形式</h3>
+<pre class="code" data-label="C"><code class="c">asm [volatile] [goto] (
+    &quot;汇编模板&quot;           // 指令字符串，%0/%[name] 是操作数占位符
+    : 输出操作数         // 逗号分隔，&quot;=r&quot;(x) 或 [name]&quot;=r&quot;(x)
+    : 输入操作数         // 逗号分隔，&quot;r&quot;(a) 或 [name]&quot;r&quot;(a)
+    : clobber 列表       // &quot;memory&quot;/&quot;cc&quot;/寄存器名
+    : 标签列表           // 仅 asm goto，放 C 标签名
+);
+</code></pre>
+<h3>basic asm vs extended asm</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>basic asm <code class="c">asm("...")</code></th>
+<th>extended asm <code class="c">asm("..." : ...)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>操作数段</td>
+<td>无（没有 <code class="c">:</code>）</td>
+<td>有（至少一个 <code class="c">:</code>）</td>
+</tr>
+<tr>
+<td><code class="c">%</code> 的含义</td>
+<td><strong>字面量</strong>（直接输出 <code class="c">%</code>）</td>
+<td><strong>操作数引用</strong>（<code class="c">%0</code>/<code class="c">%[name]</code>），字面 <code class="c">%</code> 要写 <code class="c">%%</code></td>
+</tr>
+<tr>
+<td>能引用 C 变量</td>
+<td>不能</td>
+<td>能（通过约束绑定）</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>单条无副作用的裸指令</td>
+<td>与 C 变量交互、有输入输出</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>坑</strong>：basic asm 里写 <code class="c">.ascii "%"</code> 会把 <code class="c">%</code> 字节注入 <code class="c">.text</code> 段 → 运行时 <code class="c">Illegal instruction</code>。basic asm 应只用于无害指令（如 <code class="c">nop</code>）。</p>
+</blockquote>
+<h3>命名约束 <code class="c">%[name]</code> vs 位置约束 <code class="c">%0</code></h3>
+<pre class="code" data-label="C"><code class="c">/* 位置约束：%0=out, %1=a, %2=b — 顺序敏感 */
+asm volatile (&quot;mov %1, %0\n\tadd %2, %0&quot;
+    : &quot;=r&quot;(s) : &quot;r&quot;(a), &quot;r&quot;(b));
+
+/* 命名约束： %[sum] %[x] %[y] — 重排操作数不用改模板 */
+asm volatile (&quot;mov %[x], %[sum]\n\tadd %[y], %[sum]&quot;
+    : [sum]&quot;=r&quot;(s) : [x]&quot;r&quot;(a), [y]&quot;r&quot;(b));
+</code></pre>
+<p>命名约束更稳健（加/删/重排操作数不影响模板），内核新代码倾向用命名。<strong>混用位置和命名约束</strong>在文档里说"不允许"，但实测 gcc 13.3 / clang 18.1 <strong>都不报错</strong>（静默通过，行为未定义）——不要依赖这个"宽容"。</p>
+<hr />
+<h2>三、操作数约束矩阵</h2>
+<p>约束是内联汇编的核心——它告诉 gcc/clang"这个操作数放在哪里"。</p>
+<h3>输出约束（<code class="c">=</code> / <code class="c">+</code>）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>约束</th>
+<th>含义</th>
+<th>模板里</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">=r</code></td>
+<td>只写寄存器</td>
+<td>写 <code class="c">%0</code></td>
+<td>计算结果放寄存器</td>
+</tr>
+<tr>
+<td><code class="c">=m</code></td>
+<td>只写内存</td>
+<td>写 <code class="c">%0</code>（生成 store）</td>
+<td>强制写回特定地址</td>
+</tr>
+<tr>
+<td><code class="c">+r</code></td>
+<td>读写寄存器</td>
+<td>读旧值 + 写新值</td>
+<td><code class="c">add $5, %0</code>（原地修改）</td>
+</tr>
+<tr>
+<td><code class="c">+m</code></td>
+<td>读写内存</td>
+<td>读旧值 + 写新值</td>
+<td>原子操作的目标</td>
+</tr>
+<tr>
+<td><code class="c">=&amp;r</code></td>
+<td>earlyclobber 只写</td>
+<td>写 <code class="c">%0</code>（见下节 <code class="c">&amp;</code>）</td>
+<td>输出在输入消费完之前就写</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>bug</strong>：用 <code class="c">=r</code> 但模板里<strong>也读</strong> <code class="c">%0</code> 的旧值 → gcc 以为 <code class="c">%0</code> 是只写，可能把它和某个输入别名到同一寄存器 → 输入被覆盖。正确写法是 <code class="c">+r</code>（告诉 gcc 这个操作数既读又写）。</p>
+</blockquote>
+<h3>输入约束</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>约束</th>
+<th>含义</th>
+<th>gcc 行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">r</code></td>
+<td>任意通用寄存器</td>
+<td>gcc 选一个空闲寄存器</td>
+</tr>
+<tr>
+<td><code class="c">m</code></td>
+<td>内存操作数</td>
+<td>生成 load（地址在栈/全局）</td>
+</tr>
+<tr>
+<td><code class="c">i</code></td>
+<td>立即数常量（编译期已知）</td>
+<td>值烘焙进指令</td>
+</tr>
+<tr>
+<td><code class="c">n</code></td>
+<td>立即数（某些架构限制大小）</td>
+<td>同 <code class="c">i</code>（x86 上等价）</td>
+</tr>
+<tr>
+<td><code class="c">g</code></td>
+<td>通用（reg 或 mem 或 imm）</td>
+<td>最宽松</td>
+</tr>
+<tr>
+<td><code class="c">0</code>–<code class="c">9</code></td>
+<td>绑定到另一个操作数（同约束）</td>
+<td>输入与输出用同一寄存器</td>
+</tr>
+<tr>
+<td><code class="c">D</code></td>
+<td>x86 的 <code class="c">di</code>/<code class="c">edi</code>/<code class="c">rdi</code></td>
+<td>强制放 <code class="c">di</code> 系列寄存器</td>
+</tr>
+<tr>
+<td><code class="c">a</code>/<code class="c">b</code>/<code class="c">c</code>/<code class="c">d</code></td>
+<td>x86 的 <code class="c">ax</code>/<code class="c">bx</code>/<code class="c">cx</code>/<code class="c">dx</code></td>
+<td>强制特定寄存器</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>gcc vs clang 差异</strong>：clang 18 <strong>不接受</strong> <code class="c">"0"</code> 绑定约束配 <code class="c">"+r"</code>（报 <code class="c">invalid input constraint '0' in asm</code>），gcc 接受。<code class="c">+r</code> 本身已携带读写，<code class="c">"0"</code> 绑定是冗余的——避开即可。</p>
+</blockquote>
+<h3>修饰符</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>修饰符</th>
+<th>位置</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">&amp;</code></td>
+<td>约束字母前（<code class="c">=&amp;r</code>）</td>
+<td>earlyclobber：输出在所有输入消费完之前就写，不能与输入别名</td>
+</tr>
+<tr>
+<td><code class="c">%</code></td>
+<td>约束字母前（<code class="c">"%r"</code>）</td>
+<td>commutative：此操作数与下一个可交换，给寄存器分配器更多自由</td>
+</tr>
+<tr>
+<td><code class="c">!</code></td>
+<td>约束字母前</td>
+<td>偏好内存操作数</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>四、earlyclobber <code class="c">&amp;</code>——最容易 corrupt 的约束</h2>
+<h3>问题场景</h3>
+<pre class="code" data-label="C"><code class="c">/* BUG: 没有 &amp; */
+int bug_no_amp(int a, int b) {
+    int out;
+    asm volatile (
+        &quot;mov %2, %0\n\t&quot;    /* 先写 out = b（early!）*/
+        &quot;add %1, %0&quot;        /* 再 out += a */
+        : &quot;=r&quot;(out)         /* gcc 以为 out 只写，可能和 a 别名 */
+        : &quot;r&quot;(a), &quot;r&quot;(b)
+    );
+    return out;
+}
+</code></pre>
+<p>如果 gcc 把 <code class="c">out</code> 和 <code class="c">a</code> 分配到同一个寄存器（比如 <code class="c">eax</code>），那么 <code class="c">mov %2,%0</code>（<code class="c">mov b, eax</code>）会把 <code class="c">a</code> 的值覆盖掉，后续 <code class="c">add %1,%0</code>（<code class="c">add eax, eax</code>）读到的 <code class="c">a</code> 已经是 <code class="c">b</code> 了 → 结果变成 <code class="c">2*b</code> 而不是 <code class="c">a+b</code>。</p>
+<h3>实测反汇编（gcc -O0 -fno-inline）</h3>
+<pre class="code" data-label="code"><code class="c">--- bug_no_amp (=r, 可能别名) ---
+  mov -0x14(%rbp),%eax     ; eax = a  (操作数 %1 = a -&gt; eax)
+  mov -0x18(%rbp),%edx     ; edx = b  (操作数 %2 = b -&gt; edx)
+  mov %edx,%eax            ; asm: mov %2,%0 -&gt; out = b  (eax 被覆盖！a 没了)
+  add %eax,%eax            ; asm: add %1,%0 -&gt; out += a... 但 %1 也是 eax
+                           ; 结果 = 2*b = 10 (应为 8)
+
+--- fix_amp (=&amp;r, 保证不别名) ---
+  mov -0x14(%rbp),%edx     ; edx = a
+  mov -0x18(%rbp),%ecx     ; ecx = b
+  mov %ecx,%eax            ; asm: mov %2,%0 -&gt; out = b  (eax)
+  add %edx,%eax            ; asm: add %1,%0 -&gt; out += a (edx，没被破坏)
+                           ; 结果 = a+b = 8 ✓
+</code></pre>
+<p><code class="c">=&amp;r</code> 让 gcc 给输出分配一个<strong>不与任何输入重合</strong>的寄存器。</p>
+<h3>-O0 vs -O2 的不可预测性</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译</th>
+<th><code class="c">bug_no_amp(3,5)</code> 结果</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc -O0</td>
+<td>10（错）</td>
+<td>a 放在 eax，被 asm 覆盖</td>
+</tr>
+<tr>
+<td>gcc -O2</td>
+<td>8（对，巧合）</td>
+<td>-O2 的寄存器分配把 a 放在别的寄存器，eax 没冲突</td>
+</tr>
+<tr>
+<td>clang -O2</td>
+<td>8（对，巧合）</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>教训</strong>：漏 <code class="c">&amp;</code> 在 -O0 下会出错，在 -O2 下<strong>可能</strong>恰好不出错。<strong>只在 -O0 测试过的内联汇编 = 没测。</strong> 内核永远 -O2，但你的 -O2 测试通过不代表所有代码上下文都安全——换个调用点，寄存器分配变了，bug 可能就冒出来。</p>
+</blockquote>
+<hr />
+<h2>五、clobber 列表</h2>
+<p>clobber 告诉编译器"这段 asm 会弄脏这些东西，超出输出操作数的范围"。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>clobber</th>
+<th>含义</th>
+<th>x86 上</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">"memory"</code></td>
+<td>asm 读写了你无法追踪的内存</td>
+<td>强制重载所有 live 内存（编译器屏障）</td>
+</tr>
+<tr>
+<td><code class="c">"cc"</code></td>
+<td>条件标志被改</td>
+<td>x86 的 EFLAGS；ARM 的 NZCV</td>
+</tr>
+<tr>
+<td><code class="c">"rax"</code>/<code class="c">"rbx"</code>/...</td>
+<td>特定寄存器被破坏</td>
+<td>必须声明，否则 gcc 可能把重要变量放在那里</td>
+</tr>
+</tbody>
+</table></div>
+<h3>漏 clobber 的后果——实测</h3>
+<pre class="code" data-label="C"><code class="c">/* demo_bug: asm 用了 eax 当 scratch，没声明 &quot;rax&quot; clobber */
+int demo_bug(int a, int b) {
+    int x = a;
+    asm volatile (
+        &quot;movl %2, %%eax\n\t&quot;   /* eax = b  (clobbers eax!) */
+        &quot;addl %1, %%eax\n\t&quot;   /* eax += a */
+        &quot;movl %%eax, %0&quot;       /* x = eax */
+        : &quot;=r&quot;(x)
+        : &quot;r&quot;(a), &quot;r&quot;(b)
+        /* 缺少 &quot;rax&quot; */
+    );
+    return x;
+}
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>-O 级别</th>
+<th><code class="c">demo_bug(3,5)</code> 结果</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc 13.3</td>
+<td>-O2</td>
+<td><strong>8</strong>（对，巧合）</td>
+<td>gcc 把 <code class="c">a</code> 放在 <code class="c">esi</code>，eax 被破坏不影响</td>
+</tr>
+<tr>
+<td>clang 18.1</td>
+<td>-O2</td>
+<td><strong>10</strong>（<strong>错！</strong>）</td>
+<td>clang 把 <code class="c">a</code> 放在 <code class="c">eax</code>（<code class="c">mov $0x3,%eax</code>），asm 的 <code class="c">movl %2,%%eax</code> 把 a 覆盖成 b=5，后续 <code class="c">addl %1,%%eax</code> 读到的 a 已经是 5 → 5+5=10</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>同一份代码，gcc 返回 8，clang 返回 10。</strong> 这就是漏 clobber 的本质——<strong>后果取决于编译器的寄存器分配，而你无法控制</strong>。</p>
+<h3><code class="c">-O0</code> vs <code class="c">-O2</code> 对 clobber 的影响</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>-O 级别</th>
+<th>变量存放</th>
+<th>漏 clobber 的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-O0</td>
+<td>全在栈上（每次用都从栈加载到临时寄存器）</td>
+<td>通常<strong>不触发</strong>（变量不在寄存器里跨 asm 存活）</td>
+</tr>
+<tr>
+<td>-O2</td>
+<td>可能留在寄存器里跨语句存活</td>
+<td><strong>直接破坏</strong>寄存器里的值</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>教训</strong>：-O0 测试通过的内联汇编<strong>不能</strong>证明 clobber 声明正确。必须用 -O2 测。</p>
+</blockquote>
+<hr />
+<h2>六、<code class="c">volatile</code> 的真正语义——最大的误解</h2>
+<h3>三个"不是"</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误解</th>
+<th>真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">volatile</code> 是 CPU 内存屏障</td>
+<td>❌ 它不生成任何 fence 指令。CPU 屏障要 <code class="c">mfence</code>/<code class="c">dmb</code>/<code class="c">sfence</code></td>
+</tr>
+<tr>
+<td><code class="c">volatile</code> 禁止编译器重排所有代码</td>
+<td>❌ 它只禁止把 asm <strong>跨跳转</strong>移动；不阻止其他语句的常规重排</td>
+</tr>
+<tr>
+<td>不写 <code class="c">volatile</code> 的 asm 一定被删</td>
+<td>❌ 只在"输出未被使用 <strong>且</strong> 无副作用"时才删</td>
+</tr>
+</tbody>
+</table></div>
+<h3><code class="c">volatile</code> 做什么</h3>
+<ol>
+<li><strong>不删除</strong>：即使 asm 的输出没被使用，也保留这段 asm。</li>
+<li><strong>不跨跳转移动</strong>：不能把 asm 移到 jump 的另一侧（影响控制流分析）。</li>
+</ol>
+<h3>实测：<code class="c">-O2</code> 下的差异</h3>
+<pre class="code" data-label="C"><code class="c">/* dead_asm: 没有 volatile, 输出 unused */
+static int dead_asm(int a) {
+    int unused;
+    asm (&quot;mov %1, %0&quot; : &quot;=r&quot;(unused) : &quot;r&quot;(a));   /* 无 volatile */
+    return a;   /* unused 没用 */
+}
+
+/* kept_asm: 有 volatile, 输出 unused */
+static int kept_asm(int a) {
+    int unused;
+    asm volatile (&quot;mov %1, %0&quot; : &quot;=r&quot;(unused) : &quot;r&quot;(a));
+    return a;
+}
+</code></pre>
+<p>gcc -O2 反汇编：</p>
+<pre class="code" data-label="code"><code class="c">--- dead_asm (无 volatile, 输出未用) ---
+  mov %edi,%eax    ; 直接 return a，asm 被完全删除！
+  ret
+
+--- kept_asm (有 volatile, 输出未用) ---
+  mov %edi,%eax    ; eax = a (return value)
+  mov %edi,%edx    ; asm 保留了！(mov %1,%0 翻译成 mov edi, edx)
+  ret
+</code></pre>
+<p><strong>dead_asm 的 asm 被完全删除</strong>（只剩 <code class="c">return a</code>）；<strong>kept_asm 的 asm 被保留</strong>（多了一条 <code class="c">mov</code>）。这就是 <code class="c">volatile</code> 的核心作用。</p>
+<h3>内核的 <code class="c">barrier()</code> 是什么</h3>
+<pre class="code" data-label="C"><code class="c">#define barrier() asm volatile(&quot;&quot; ::: &quot;memory&quot;)
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要素</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">""</code>（空模板）</td>
+<td>不生成任何指令</td>
+</tr>
+<tr>
+<td><code class="c">volatile</code></td>
+<td>保留这个空 asm（不被删）</td>
+</tr>
+<tr>
+<td><code class="c">"memory"</code> clobber</td>
+<td>告诉 gcc "我读写了你不知道的内存" → 重载所有 live 内存变量</td>
+</tr>
+</tbody>
+</table></div>
+<p>三者合起来 = <strong>编译器屏障</strong>（compiler barrier）：不生成指令，但阻止 gcc 把内存读写跨越这个点重排。<strong>注意：这不是 CPU 屏障</strong>——CPU 仍然可能乱序执行。要 CPU 屏障得加 <code class="c">mfence</code>/<code class="c">dmb</code>。</p>
+<hr />
+<h2>七、ARM vs x86 指令语法差异</h2>
+<p>在 x86-64 上实测 ARM 汇编时最容易踩的坑：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>差异点</th>
+<th>ARM (A32/A64)</th>
+<th>x86-64 (AT&amp;T)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">add</code> 操作数数量</td>
+<td><strong>三操作数</strong> <code class="c">add dst, src1, src2</code></td>
+<td><strong>两操作数</strong> <code class="c">add src, dst</code>（dst += src）</td>
+</tr>
+<tr>
+<td><code class="c">mov</code> 操作数</td>
+<td><code class="c">mov dst, src</code></td>
+<td><code class="c">mov src, dst</code>（AT&amp;T 顺序：源在前，目的在后）</td>
+</tr>
+<tr>
+<td>寄存器名</td>
+<td><code class="c">r0</code>/<code class="c">x0</code>/<code class="c">w0</code></td>
+<td><code class="c">%rax</code>/<code class="c">%edi</code>/...</td>
+</tr>
+<tr>
+<td>立即数前缀</td>
+<td><code class="c">#</code></td>
+<td><code class="c">$</code></td>
+</tr>
+<tr>
+<td>注释</td>
+<td><code class="c">@</code></td>
+<td><code class="c">#</code>（GNU as）/ <code class="c">//</code></td>
+</tr>
+<tr>
+<td>条件执行</td>
+<td><code class="c">addeq</code>/<code class="c">addne</code>（后缀）</td>
+<td><code class="c">jz</code>/<code class="c">jnz</code>（单独跳转指令）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>实测翻车</strong>：在 x86 上写 <code class="c">add %0, %1, %2</code>（ARM 三操作数语法）→ GNU as 不报错，但生成的机器码是非法的 → 运行时 <code class="c">Illegal instruction (core dumped)</code>。跨平台内联汇编必须注意操作数数量。x86 要用 <code class="c">mov %1, %0; add %2, %0</code> 模拟 ARM 的一条 <code class="c">add</code>。</p>
+</blockquote>
+<hr />
+<h2>八、ABI 对照——x86-64 SysV vs ARM AAPCS</h2>
+<h3>x86-64 System V ABI（Linux/macOS 通用）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>角色</th>
+<th>寄存器</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整型参数（前 6 个）</td>
+<td><code class="c">rdi, rsi, rdx, rcx, r8, r9</code></td>
+<td>多余的入栈（右往左压）</td>
+</tr>
+<tr>
+<td>返回值</td>
+<td><code class="c">rax</code>（+ <code class="c">rdx</code> 给 128 位）</td>
+<td><code class="c">__int128</code> 用 <code class="c">rdx:rax</code></td>
+</tr>
+<tr>
+<td>浮点参数（前 8 个）</td>
+<td><code class="c">xmm0</code>–<code class="c">xmm7</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>callee-saved</td>
+<td><code class="c">rbx, rbp, r12, r13, r14, r15</code></td>
+<td>被调函数必须保存</td>
+</tr>
+<tr>
+<td>caller-saved</td>
+<td><code class="c">rax, rcx, rdx, rsi, rdi, r8-r11</code></td>
+<td>调用者负责</td>
+</tr>
+<tr>
+<td>栈对齐</td>
+<td>调用前 16 字节对齐</td>
+<td><code class="c">call</code> 压入 8 字节返回地址后变成 <code class="c">8 mod 16</code></td>
+</tr>
+<tr>
+<td>red zone</td>
+<td><code class="c">rsp</code> 下方 128 字节</td>
+<td>叶子函数可免 reservation（-O2）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>ARM AAPCS（A32 / AArch64）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>角色</th>
+<th>A32</th>
+<th>AArch64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整型参数（前 4/8 个）</td>
+<td><code class="c">r0-r3</code></td>
+<td><code class="c">x0-x7</code></td>
+</tr>
+<tr>
+<td>返回值</td>
+<td><code class="c">r0</code></td>
+<td><code class="c">x0</code></td>
+</tr>
+<tr>
+<td>callee-saved</td>
+<td><code class="c">r4-r11</code></td>
+<td><code class="c">x19-x29</code></td>
+</tr>
+<tr>
+<td>栈指针</td>
+<td><code class="c">r13 (sp)</code>，满递减</td>
+<td><code class="c">sp</code>，16 字节对齐</td>
+</tr>
+<tr>
+<td>返回地址</td>
+<td><code class="c">r14 (lr)</code></td>
+<td><code class="c">x30 (lr)</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>ARM 部分标注"未实测"——本机无 aarch64 交叉工具链。</p>
+</blockquote>
+<hr />
+<h2>九、约束写错的后果分层</h2>
+<p>编译器无法检查你的汇编模板和约束是否匹配。写错的后果分三个层次，<strong>越往后越危险</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>触发时机</th>
+<th>表现</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>编译期错误</td>
+<td>汇编阶段（<code class="c">-c</code>）</td>
+<td><code class="c">as</code> 报 error</td>
+<td><code class="c">movl</code> 配 64 位操作数 → <code class="c">incorrect register '%rdx' used with 'l' suffix</code></td>
+</tr>
+<tr>
+<td>运行时数据错误</td>
+<td>程序运行</td>
+<td>值不对但不崩</td>
+<td><code class="c">movl</code> 搬 32 位 → <code class="c">0x100000005</code> 变成 <code class="c">0x5</code>（高 32 位丢）</td>
+</tr>
+<tr>
+<td>静默 corrupt</td>
+<td>程序运行</td>
+<td>垃圾值/UB</td>
+<td><code class="c">=r</code> 但模板不写 → 输出是栈上残留（gcc 恰好 7，clang 是 92846224）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>坑</strong>：<code class="c">-fsyntax-only</code> <strong>不检查</strong> asm 约束的合法性（它只做语法分析，跳过汇编生成阶段）。要用 <code class="c">-c</code>（编译到目标文件）才能抓到约束错误。</p>
+</blockquote>
+<h3>gcc vs clang 对约束错误的差异</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>错误类型</th>
+<th>gcc</th>
+<th>clang</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">movl</code> + 64 位操作数</td>
+<td><code class="c">Error: incorrect register '%rdx' used with 'l' suffix</code></td>
+<td><code class="c">error: invalid operand for instruction</code> + <code class="c">movl %rax, %rax</code></td>
+</tr>
+<tr>
+<td><code class="c">"i"</code> + 运行时变量</td>
+<td>汇编阶段 error</td>
+<td>汇编阶段 error</td>
+</tr>
+<tr>
+<td><code class="c">=r</code> 不写但输出未用</td>
+<td>不报（asm 可能被删）</td>
+<td>不报</td>
+</tr>
+<tr>
+<td>输出垃圾值</td>
+<td>恰好是 7（栈残留巧合）</td>
+<td>92846224（真垃圾）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>十、<code class="c">asm goto</code>——从汇编跳到 C 标签</h2>
+<pre class="code" data-label="C"><code class="c">asm goto (
+    &quot;bt $0, %%rax\n\t&quot;      /* 测试 rax 的 bit 0 */
+    &quot;jc %l[yes]&quot;            /* 如果 set，跳到 C 标签 yes */
+    :: &quot;a&quot;(1)               /* 输入：rax = 1 */
+    : &quot;cc&quot;                  /* clobber: 条件标志 */
+    : yes                    /* 标签列表 */
+);
+/* fallthrough: bit 未 set */
+return 0;
+yes:
+return 1;
+</code></pre>
+<p>实测反汇编（gcc -O0 -fno-inline）：</p>
+<pre class="code" data-label="code"><code class="c">  mov $0x1,%eax            ; 输入 a(1)=1
+  bt  $0x0,%rax            ; 测试 bit 0
+  jb  27 &lt;try_feature+0x27&gt;; 条件跳转到 yes 标签
+  ; fallthrough path
+  movl $0x0,-0x4(%rbp)
+  ...
+27:
+  movl $0x1,-0x4(%rbp)
+  ...
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>要素</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第 5 段（<code class="c">:</code> 后）</td>
+<td>放 C 标签名，<code class="c">%l[label]</code> 在模板里引用</td>
+</tr>
+<tr>
+<td>无输出操作数</td>
+<td>经典形式（gcc 4.5+）不允许输出</td>
+</tr>
+<tr>
+<td>带输出</td>
+<td>gcc 14+ / clang 18+ 才支持</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>锁获取重试、特性检测的条件分支</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>十一、内核实例实测</h2>
+<h3>barrier / rmb / wmb / mb</h3>
+<pre class="code" data-label="C"><code class="c">#define barrier() asm volatile(&quot;&quot; ::: &quot;memory&quot;)
+static inline void mb(void)  { asm volatile(&quot;mfence&quot; ::: &quot;memory&quot;); }
+static inline void rmb(void) { asm volatile(&quot;lfence&quot; ::: &quot;memory&quot;); }
+static inline void wmb(void) { asm volatile(&quot;sfence&quot; ::: &quot;memory&quot;); }
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>生成的指令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">barrier()</code></td>
+<td>无指令（空 asm）</td>
+<td>编译器屏障（阻止 gcc 重排）</td>
+</tr>
+<tr>
+<td><code class="c">mb()</code></td>
+<td><code class="c">mfence</code></td>
+<td>CPU 全屏障（读+写）</td>
+</tr>
+<tr>
+<td><code class="c">rmb()</code></td>
+<td><code class="c">lfence</code></td>
+<td>CPU 读屏障</td>
+</tr>
+<tr>
+<td><code class="c">wmb()</code></td>
+<td><code class="c">sfence</code></td>
+<td>CPU 写屏障</td>
+</tr>
+</tbody>
+</table></div>
+<h3>rdtsc</h3>
+<pre class="code" data-label="C"><code class="c">static inline uint64_t rdtsc(void) {
+    unsigned lo, hi;
+    asm volatile(&quot;rdtsc&quot; : &quot;=a&quot;(lo), &quot;=d&quot;(hi));
+    return ((uint64_t)hi &lt;&lt; 32) | lo;
+}
+</code></pre>
+<p><code class="c">rdtsc</code> 把时间戳计数器的低 32 位放 <code class="c">eax</code>、高 32 位放 <code class="c">edx</code>。约束 <code class="c">=a</code>/<code class="c">=d</code> 强制输出到这两个寄存器。</p>
+<h3>xchg / cmpxchg（原子操作）</h3>
+<pre class="code" data-label="C"><code class="c">static inline long xchg(volatile long *p, long v) {
+    long out;
+    asm volatile(&quot;xchg %0, %1&quot;
+        : &quot;=r&quot;(out), &quot;+m&quot;(*p) : &quot;0&quot;(v) : &quot;memory&quot;);
+    return out;
+}
+
+static inline int cmpxchg(volatile int *p, int old, int new) {
+    int cur;
+    asm volatile(&quot;lock cmpxchg %2, %1\n\tmov %3, %0&quot;
+        : &quot;=r&quot;(cur) : &quot;m&quot;(*p), &quot;r&quot;(new), &quot;a&quot;(old)
+        : &quot;cc&quot;, &quot;memory&quot;);
+    return cur == old;
+}
+</code></pre>
+<p>实测反汇编确认：<code class="c">xchg</code> 生成 <code class="c">xchg</code> 指令（隐含 lock 前缀，x86 上是全屏障）；<code class="c">cmpxchg</code> 生成 <code class="c">lock cmpxchg %ecx,(%rdx)</code>（<code class="c">f0 0f b1 0a</code>）。</p>
+<h3>cpuid</h3>
+<pre class="code" data-label="C"><code class="c">asm volatile(&quot;cpuid&quot;
+    : &quot;=a&quot;(*eax), &quot;=b&quot;(*ebx), &quot;=c&quot;(*ecx), &quot;=d&quot;(*edx)
+    : &quot;a&quot;(0));
+</code></pre>
+<p>实测输出：<code class="c">max_leaf=28 vendor=GenuineIntel</code>（Intel CPU）。<code class="c">cpuid</code> 用 <code class="c">eax</code> 作输入（leaf 号），<code class="c">eax/ebx/ecx/edx</code> 作输出。约束 <code class="c">"=b"</code> 强制输出到 <code class="c">rbx</code>——在 PIC 代码里 <code class="c">rbx</code> 是保留的，需要 <code class="c">-fno-pie</code>。</p>
+<hr />
+<h2>十二、.S 文件调 C</h2>
+<pre class="code" data-label="asm"><code class="c">/* t12_asm_calls_c.S — 大写 .S 会跑预处理 */
+        .text
+        .globl asm_call_c
+        .type  asm_call_c, @function
+asm_call_c:
+        mov %edi, %eax     ; 保存 a
+        mov %esi, %ecx     ; 保存 b
+        mov %ecx, %edi     ; 第一个参数 = b (交换)
+        mov %eax, %esi     ; 第二个参数 = a
+        call c_add          ; 调 C 函数, 返回值在 eax
+        ret
+</code></pre>
+<p>实测反汇编确认：<code class="c">call 401170 &lt;c_add&gt;</code> 成功链接到 C 函数。</p>
+<blockquote>
+<p><strong>坑</strong>：.S 文件缺 <code class="c">.note.GNU-stack</code> section → 链接器 warning <code class="c">implies executable stack</code>。在 .S 里加 <code class="c">.section .note.GNU-stack,"",@progbits</code> 消除。Linux 内核的所有 .S 文件都有这行。</p>
+</blockquote>
+<hr />
+<h2>十三、HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用到的内联汇编</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内存序保证</td>
+<td><code class="c">mfence</code>/<code class="c">lfence</code>/<code class="c">sfence</code> + <code class="c">volatile</code> + <code class="c">"memory"</code></td>
+<td>HFT 要求精确控制读写顺序，编译器屏障不够，还要 CPU 屏障</td>
+</tr>
+<tr>
+<td>原子操作</td>
+<td><code class="c">lock cmpxchg</code>/<code class="c">xchg</code></td>
+<td>无锁数据结构（ring buffer、MPSC 队列）</td>
+</tr>
+<tr>
+<td>时间戳</td>
+<td><code class="c">rdtsc</code>/<code class="c">rdtscp</code></td>
+<td>延迟测量（纳秒级），<code class="c">rdtscp</code> 是 serializing 版本</td>
+</tr>
+<tr>
+<td>CPU 特性检测</td>
+<td><code class="c">cpuid</code></td>
+<td>运行时探测 SIMD 指令集（AVX2/AVX-512）</td>
+</tr>
+<tr>
+<td>自旋锁</td>
+<td><code class="c">asm goto</code> + <code class="c">lock cmpxchg</code></td>
+<td>获取失败跳到重试标签，避免函数调用开销</td>
+</tr>
+<tr>
+<td>编译器屏障</td>
+<td><code class="c">barrier()</code></td>
+<td>阻止 gcc 把关键路径的内存读写重排（配合 <code class="c">READ_ONCE</code>/<code class="c">WRITE_ONCE</code>）</td>
+</tr>
+<tr>
+<td>裸机/内核启动</td>
+<td><code class="c">.S</code> 调 <code class="c">main</code></td>
+<td>SP 初始化、BSS 清零后 <code class="c">bl main</code>/<code class="c">call main</code></td>
+</tr>
+<tr>
+<td>volatile MMIO</td>
+<td><code class="c">volatile</code> 指针 + <code class="c">barrier()</code></td>
+<td>寄存器读写不能被 gcc 优化掉或重排</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>HFT 最重要的教训</strong>：如果你关了日志但还慢——检查你的日志宏是不是只关了打印、没关参数求值。<code class="c">if (log_level &gt;= level) printk(fmt, args)</code> 在 log_level 不够时<strong>仍会求值 args</strong>（<code class="c">compute_expensive_thing()</code> 照跑）。正确写法用 <code class="c">__builtin_constant_p</code> 或宏在编译期裁掉整个调用链（见 <a href="chapter-01.html#s-6-12">6.12 变参宏</a> 的零开销日志）。</p>
+</blockquote>
+<hr />
+<h2>误区表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>真相</th>
+<th>实测证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">volatile</code> 是 CPU 内存屏障</td>
+<td>❌ 不生成 fence 指令</td>
+<td><code class="c">barrier()</code> 反汇编只有 <code class="c">push/mov/ret</code>，无 fence</td>
+</tr>
+<tr>
+<td>不写 <code class="c">volatile</code> 的 asm 一定被删</td>
+<td>❌ 只在"输出未用 且 无副作用"时删</td>
+<td><code class="c">dead_asm</code> 被删，<code class="c">kept_asm</code> 保留</td>
+</tr>
+<tr>
+<td><code class="c">-O0</code> 测过就行</td>
+<td>❌ -O0 变量在栈上，漏 clobber 不触发</td>
+<td><code class="c">demo_bug</code> -O0 返回 8（对），-O2 clang 返回 10（错）</td>
+</tr>
+<tr>
+<td>gcc 过了 clang 就过</td>
+<td>❌ 两者寄存器分配不同</td>
+<td><code class="c">demo_bug</code> gcc-8 clang-10；<code class="c">bad_nowrite</code> gcc=7 clang=92846224</td>
+</tr>
+<tr>
+<td>约束写错一定编译报错</td>
+<td>❌ 只有大小不匹配报错；<code class="c">=r</code> 不写是静默垃圾</td>
+<td><code class="c">bad_nowrite</code> 编译通过，返回垃圾值</td>
+</tr>
+<tr>
+<td><code class="c">-fsyntax-only</code> 能查 asm</td>
+<td>❌ 跳过汇编生成阶段</td>
+<td>DEMO_BAD 用 <code class="c">-fsyntax-only</code> 不报错，用 <code class="c">-c</code> 才报</td>
+</tr>
+<tr>
+<td>ARM 三操作数 add 在 x86 也能跑</td>
+<td>❌ 生成非法指令</td>
+<td><code class="c">add %0,%1,%2</code> → <code class="c">Illegal instruction</code></td>
+</tr>
+<tr>
+<td><code class="c">"0"</code> 绑定约束两编译器都支持</td>
+<td>❌ clang 不接受配 <code class="c">+r</code></td>
+<td>clang 报 <code class="c">invalid input constraint '0'</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>ch05</strong> 栈帧细节；<strong>ch06</strong> 扩展 <code class="c">asm goto</code></li>
-<li><strong>3.9</strong> 异常处理汇编与 C handler 衔接</li>
+<li><strong><a href="chapter-02.html#s-3-6-1">3.6.1 ATPCS</a></strong>：ARM 调用约定的寄存器分工、栈帧布局</li>
+<li><strong><a href="chapter-02.html#s-3-6-2">3.6.2 内嵌汇编</a></strong>：本篇的子篇，ARM 视角的语法入门</li>
+<li><strong><a href="chapter-02.html#s-3-6-3">3.6.3 汇编调 C</a></strong>：启动代码、异常向量</li>
+<li><strong><a href="#s-6-9">6.9 weak/alias</a></strong>：汇编符号的弱定义与别名</li>
+<li><strong><a href="#s-6-11">6.11 内建函数</a></strong>：<code class="c">__builtin_expect</code>/<code class="c">__builtin_constant_p</code> 与内联汇编配合做分支预测</li>
+<li><strong><a href="chapter-03.html#ch-3">CH3 嵌入式驱动</a></strong>：volatile MMIO、barrier 在驱动里的实战</li>
+</ul>
+<hr />
+<h2>demo</h2>
+<ul>
+<li><strong>demo</strong>：<code class="c">demo/10-asm/</code>（含本节 t1–t13 全部源码与 <code class="c">run.sh</code>，一键复现全部结论）</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> C 和汇编混合编程有哪几种方式？各适用什么场景？</p>
+<p><strong>题目 1：</strong> 内联汇编的 <code class="c">volatile</code> 关键字的作用是什么？它和 C 语言的 <code class="c">volatile</code> 限定符是同一个东西吗？</p>
 <details>
 <summary>参考答案</summary>
-<p>三种主要方式：</p>
-<ol>
+<p>不是同一个东西。</p>
+<ul>
 <li>
-<p><strong>内联汇编</strong>（Inline Assembly）：C 函数中直接嵌入汇编，用 <code class="c">asm</code>/<code class="c">__asm__</code> 关键字。适用于少量特殊指令（如 MSR/CP15 操作寄存器、内存屏障）。</p>
+<p><strong>C 语言的 <code class="c">volatile</code> 限定符</strong>（<code class="c">volatile int *p</code>）：告诉编译器"这个变量可能被外部修改，每次访问都要真正读写内存，不要缓存到寄存器"。用于 MMIO、信号处理、<code class="c">setjmp</code>/<code class="c">longjmp</code>。</p>
 </li>
 <li>
-<p><strong>C 调汇编</strong>：C 中声明 <code class="c">extern</code> 函数，汇编中用 <code class="c">.global</code> 导出。适用于性能关键路径的手写优化。</p>
+<p><strong>内联汇编的 <code class="c">asm volatile</code></strong>：告诉编译器"这段汇编有副作用，不要删除它（即使输出未使用），不要跨跳转移动它"。它不生成任何 fence 指令，不是 CPU 内存屏障。</p>
 </li>
-<li>
-<p><strong>汇编调 C</strong>：汇编中按 ATPCS 约定传参（R0-R3），<code class="c">BL</code> 调用 C 函数。适用于启动代码（如 U-Boot 的 <code class="c">_start</code> 调用 C 的 <code class="c">board_init</code>）。</p>
-</li>
-</ol>
-<p>内核中常见内联汇编：读写系统寄存器、原子操作、内存屏障。</p>
+</ul>
+<p>两者完全独立：C 的 <code class="c">volatile</code> 管变量访问，asm 的 <code class="c">volatile</code> 管汇编块的存留。</p>
+</details>
+<p><strong>题目 2：</strong> 以下代码有什么 bug？在什么条件下会出错？</p>
+<pre class="code" data-label="C"><code class="c">int bad(int a, int b) {
+    int out;
+    asm volatile (
+        &quot;mov %2, %0\n\t&quot;
+        &quot;add %1, %0&quot;
+        : &quot;=r&quot;(out)
+        : &quot;r&quot;(a), &quot;r&quot;(b)
+    );
+    return out;
+}
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>漏了 earlyclobber <code class="c">&amp;</code>。</strong> <code class="c">=r</code> 让 gcc 可以把 <code class="c">out</code> 和某个输入（比如 <code class="c">a</code>）分配到同一个寄存器。<code class="c">mov %2,%0</code> 先把 <code class="c">out</code> 写成 <code class="c">b</code>，如果 <code class="c">out</code> 和 <code class="c">a</code> 共用寄存器，<code class="c">a</code> 的值就被覆盖了，后续 <code class="c">add %1,%0</code> 读到的 <code class="c">a</code> 已经是 <code class="c">b</code> 了 → 结果变成 <code class="c">2*b</code> 而不是 <code class="c">a+b</code>。</p>
+<ul>
+<li><strong>触发条件</strong>：gcc 恰好把 <code class="c">out</code> 和 <code class="c">a</code> 分配到同一个寄存器（取决于代码上下文和 -O 级别）。</li>
+<li><strong>-O0</strong>：变量在栈上，可能触发（实测返回 <code class="c">2*b</code>）。</li>
+<li><strong>-O2</strong>：可能恰好不触发（gcc 选了不同寄存器）。</li>
+<li><strong>修复</strong>：<code class="c">"=&amp;r"(out)</code>，强制输出寄存器不与任何输入别名。</li>
+</ul>
+</details>
+<p><strong>题目 3：</strong> <code class="c">barrier()</code> 宏（<code class="c">asm volatile("" ::: "memory")</code>）生成的指令是什么？它和 <code class="c">mfence</code> 有什么区别？</p>
+<details>
+<summary>参考答案</summary>
+<ul>
+<li><strong>生成的指令</strong>：无（空模板 <code class="c">""</code> 不产生任何机器码）。</li>
+<li><strong>作用</strong>：编译器屏障——告诉 gcc"我读写了你不知道的内存"（<code class="c">"memory"</code> clobber），强制 gcc 在这个点之后重新加载所有可能被修改的内存变量，阻止 gcc 把内存读写跨越这个点重排。</li>
+<li><strong>与 <code class="c">mfence</code> 的区别</strong>：</li>
+<li><code class="c">barrier()</code> 是<strong>编译器</strong>屏障——只管 gcc 的指令调度，CPU 仍可能乱序执行。</li>
+<li><code class="c">mfence</code> 是 <strong>CPU</strong> 屏障——在 CPU 流水线里插入栅栏，阻止 CPU 乱序。</li>
+<li>要同时阻止两者，得 <code class="c">barrier()</code> + <code class="c">mfence</code>（或内核的 <code class="c">mb()</code> = <code class="c">asm volatile("mfence" ::: "memory")</code> 两者合一）。</li>
+</ul>
+</details>
+<p><strong>题目 4：</strong> 以下代码在 gcc -O2 和 clang -O2 下行为不同，为什么？</p>
+<pre class="code" data-label="C"><code class="c">int demo_bug(int a, int b) {
+    int x = a;
+    asm volatile (
+        &quot;movl %2, %%eax\n\t&quot;
+        &quot;addl %1, %%eax\n\t&quot;
+        &quot;movl %%eax, %0&quot;
+        : &quot;=r&quot;(x)
+        : &quot;r&quot;(a), &quot;r&quot;(b)
+        /* 缺少 &quot;rax&quot; clobber */
+    );
+    return x;
+}
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><strong>漏了 <code class="c">"rax"</code> clobber。</strong> asm 用 <code class="c">%%eax</code> 作为 scratch 寄存器，但没告诉 gcc <code class="c">eax</code> 会被破坏。</p>
+<ul>
+<li><strong>gcc -O2</strong>：把 <code class="c">a</code> 分配到 <code class="c">esi</code>（不在 <code class="c">eax</code>）→ <code class="c">eax</code> 被破坏不影响 <code class="c">a</code> → 返回 8（正确，巧合）。</li>
+<li><strong>clang -O2</strong>：把 <code class="c">a</code> 分配到 <code class="c">eax</code>（<code class="c">mov $0x3,%eax</code>）→ asm 的 <code class="c">movl %2,%%eax</code> 把 <code class="c">a</code> 覆盖成 <code class="c">b=5</code> → <code class="c">addl %1,%%eax</code> 读到的 <code class="c">a</code> 已经是 5 → 返回 10（错误）。</li>
+</ul>
+<p><strong>根本原因</strong>：漏 clobber 的后果取决于编译器的寄存器分配策略，而你无法控制。修复：加 <code class="c">"rax"</code> 到 clobber 列表。</p>
+</details>
+<p><strong>题目 5：</strong> 以下两段代码在 -O2 下生成的汇编有什么区别？</p>
+<pre class="code" data-label="C"><code class="c">/* A: 无 volatile */
+asm (&quot;mov %1, %0&quot; : &quot;=r&quot;(unused) : &quot;r&quot;(a));
+
+/* B: 有 volatile */
+asm volatile (&quot;mov %1, %0&quot; : &quot;=r&quot;(unused) : &quot;r&quot;(a));
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>（假设 <code class="c">unused</code> 在后续代码中没有被使用）</p>
+<ul>
+<li><strong>A（无 volatile）</strong>：gcc 判定 asm 的输出 <code class="c">unused</code> 未被使用且无副作用 → <strong>删除整个 asm</strong>。反汇编只剩 <code class="c">return a</code>（<code class="c">mov %edi,%eax; ret</code>）。</li>
+<li><strong>B（有 volatile）</strong>：gcc 保留 asm。反汇编多一条 <code class="c">mov %edi,%edx</code>（asm 的 <code class="c">mov %1,%0</code> 翻译）。</li>
+</ul>
+<p><code class="c">volatile</code> 的核心作用就是"不要删我"。</p>
 </details>
       </section>
       <section class="section" id="s-3-6-1">
