@@ -2,21 +2,29 @@
 
 **ARM Architecture and Assembly**
 
-> ⚠️ **本章拆分（2026-09-08）**：
-> **3.6 C/汇编混合编程 + 3.7 GNU ARM 工具链 → 提到 A 档**（内联汇编 `__asm__ __volatile__` 本质是 **GNU C 扩展**，归 ch06 主线）；
-> **3.1–3.5 指令/寻址/伪指令 + 3.9 异常 → 降级为索引**（有 ARM 汇编专书，且真要用时走树莓派 Pi 5 实操）。
+> 🗑️ **本章已大幅瘦身（2026-09-08）**
+>
+> **删除**：3.1 ARM 体系结构（模式/CPSR/寄存器组）、3.2 汇编指令集、3.3 寻址方式、3.4 伪指令、3.5 汇编程序设计、3.9 异常与中断汇编
+> —— 这些是**纯硬件/纯汇编**内容，CSAPP ch3/4（x86-64）与 ARM 汇编资料覆盖，且**不能改造成 C 语言视角**，按"别的书讲过的不重复"原则删除。
+> 需要回看：`git log --diff-filter=D --name-only -- ch03-arm-architecture-and-assembly/`。
+>
+> **保留并提到 A 档**：**3.6 C/汇编混合编程**（`__asm__ __volatile__` 的操作数约束、clobber、volatile 语义全是**编译器层面**知识 = GNU C 扩展）、**3.7 GNU ARM 工具链**（`.section` 与链接脚本联动、读懂 `objdump -dS`）、**3.8 AArch64**（选读）。
+>
 > 取舍依据见 [00 · 本书取舍与补写顺序](../00-ROADMAP-本书取舍与补写顺序.md)。
 
 ## 本章目标
 
-掌握 **ARM32 load-store 体系**、常用指令与寻址、GNU 汇编程序结构、**C/汇编混合编程（AAPCS）**，并能用 `objdump -dS` 读懂反汇编。了解 **AArch64** 寄存器与 **异常现场保存**，为内核启动、驱动 IRQ、DPDK ARM 平台优化和 **ch04–ch06** 打底。
+从 **C 程序员视角**打通汇编这一层：**C/汇编混合编程（ATPCS/AAPCS）**、**GNU ARM 汇编语法**（`.section` 与链接脚本），能用 `objdump -dS` 读懂反汇编并验证编译器优化。补充 **AArch64** 寄存器差异。
+
+> 本章不教 ARM 指令集本身——指令集是硬件知识，已删除。
+> 本章教的是**「C 代码怎么跟汇编打交道」**，这属于 GNU C 扩展的一部分。
 
 ## 前置依赖
 
 | 章节 | 内容 |
 |------|------|
 | **[ch01](../ch01-tools-of-the-trade/)** | `gcc`、`gdb`、`objdump`、`make`、交叉编译概念 |
-| **[ch02](../ch02-computer-architecture-and-cpu/)** | ISA、load/store、流水线、Cache、MMIO、大小端 |
+| **[10.8 嵌入式 C 开门](../ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md)** | 读得懂 MMIO 的 C 表达；原 ch02 硬件内容已删 |
 
 ## 环境
 
@@ -42,75 +50,41 @@ ${CROSS_COMPILE}objdump -d add_asm.o
 make clean
 ```
 
-## 七大知识模块
+## 保留下来的三块（都是 C 语言视角）
 
-| 模块 | 目录 | 核心 |
+| 模块 | 目录 | 为什么留 |
 |------|------|------|
-| **1 ARM 体系结构** | 3.1 | RISC load-store、7 模式、CPSR/SPSR、R0–R15 |
-| **2 汇编指令** | 3.2 | ldr/str/mov/add/cmp/bl/stm、条件执行 |
-| **3 寻址方式** | 3.3 | 七种寻址、栈与批量传送 |
-| **4 伪指令** | 3.4 | LDR=、ADR |
-| **5 程序设计** | 3.5 | 段、标号、伪操作 |
-| **6 混合编程** | 3.6 | ATPCS 栈帧、inline asm volatile |
-| **7 GNU 语法** | 3.7 | .section、literal、objdump 实战 |
-
-**拓展**：**3.8** AArch64（X0–X30、无 Thumb）；**3.9** 异常与中断汇编（ch10 预备）。
+| **混合编程** | 3.6 | `__asm__ __volatile__` 是 **GNU C 扩展**，不是硬件课 |
+| **GNU 语法** | 3.7 | `.section` 直接对应 [ch04 链接脚本](../ch04-compile-link-install-run/)；读懂 `objdump -dS` 是验证 C 优化的刚需 |
+| **AArch64** | 3.8 | 选读：X0–X30、无 Thumb；与 [递归栈帧实测](../../02-Pointers-on-C/ch07-functions/7.5-recursion/7.5-递归.md) 里的 AArch64 对照 |
 
 ## Demo 清单
 
 | Demo | 内容 | 对应小节 |
 |------|------|----------|
-| **demo01_ldr_str** | 内存读写与寻址（练习） | **3.2.1**、**3.3** |
-| **demo02_branch** | cmp + b/beq 分支（练习） | **3.2.5**、**3.2.7** |
 | **demo03_mixed** | C 调 `add_asm.S`（**demo/** 已提供） | **3.6**、**3.6.1** |
 | **demo04_inline** | `asm volatile` 屏障/运算（练习） | **3.6.2** |
 | **demo05_objdump** | `objdump -dS` 对照栈帧 | **3.7.7** |
-| **demo06_vector** | 异常向量表骨架（练习） | **3.9** |
 
-## 考核要点
+## 考核要点（删掉硬件后剩下的）
 
-1. 说明 **load-store** 与 CISC 访存差异；列出 **ARM32 七种模式** 及 CPSR 作用  
-2. 画出 **AAPCS** 下 `add(int,int)` 栈帧（**3.6.1**）并解释 demo `add_asm` 为何可省略压栈  
-3. 手写 **ldr/str/mov/add/cmp/bl** 片段，解释 `[r1, r2, lsl #2]`  
-4. 区分 **LDR 伪指令** 与 **ADR**；何时需要 `.ltorg`  
-5. 写一段 **asm volatile** 并说明 `volatile` 与 clobber  
-6. 用 **objdump -dS** 指出参数寄存器与返回寄存器  
-7. 简述 **AArch64 X0–X30** 与 ARM32 差异；口述 IRQ **上下文保存** 步骤  
+1. 画出 **AAPCS** 下 `add(int,int)` 栈帧（**3.6.1**）并解释 demo `add_asm` 为何可省略压栈  
+2. 写一段 **`asm volatile`** 并说明 `volatile` 与 clobber（`"memory"` 为什么能阻止死存储消除）  
+3. 用 **objdump -dS** 指出参数寄存器与返回寄存器  
+4. 简述 **AArch64 X0–X30** 与 ARM32 差异  
+5. `.section` 伪操作与链接脚本里的段如何对应（→ [ch04](../ch04-compile-link-install-run/)）
 
 ## 前后章节
 
 | 方向 | 章节 |
 |------|------|
-| 前置 | **ch01** 工具链、**ch02** 体系结构 |
-| 后置 | **ch04** 编译链接；**ch05** 堆栈；**ch06** GNU C/asm；**ch10** 中断与 OS |
+| 前置 | **ch01** 工具链 |
+| 后置 | **ch04** 编译链接；**ch05** 堆栈；**ch06** GNU C/asm；**ch10.8** 嵌入式 C 开门 |
 
 ## 小节
 
-- [3.1 ARM体系结构](./3.1-ARM体系结构.md)
-- [3.2 ARM汇编指令](./3.2-instructions/3.2-ARM汇编指令.md)
-  - [3.2.1 存储访问指令](./3.2-instructions/3.2.1-存储访问指令.md)
-  - [3.2.2 数据传送指令](./3.2-instructions/3.2.2-数据传送指令.md)
-  - [3.2.3 算术逻辑运算指令](./3.2-instructions/3.2.3-算术逻辑运算指令.md)
-  - [3.2.4 操作数：operand2详解](./3.2-instructions/3.2.4-操作数-operand2详解.md)
-  - [3.2.5 比较指令](./3.2-instructions/3.2.5-比较指令.md)
-  - [3.2.6 条件执行指令](./3.2-instructions/3.2.6-条件执行指令.md)
-  - [3.2.7 跳转指令](./3.2-instructions/3.2.7-跳转指令.md)
-- [3.3 ARM寻址方式](./3.3-addressing/3.3-ARM寻址方式.md)
-  - [3.3.1 寄存器寻址](./3.3-addressing/3.3.1-寄存器寻址.md)
-  - [3.3.2 立即数寻址](./3.3-addressing/3.3.2-立即数寻址.md)
-  - [3.3.3 寄存器偏移寻址](./3.3-addressing/3.3.3-寄存器偏移寻址.md)
-  - [3.3.4 寄存器间接寻址](./3.3-addressing/3.3.4-寄存器间接寻址.md)
-  - [3.3.5 基址寻址](./3.3-addressing/3.3.5-基址寻址.md)
-  - [3.3.6 多寄存器寻址](./3.3-addressing/3.3.6-多寄存器寻址.md)
-  - [3.3.7 相对寻址](./3.3-addressing/3.3.7-相对寻址.md)
-- [3.4 ARM伪指令](./3.4-pseudo-instructions/3.4-ARM伪指令.md)
-  - [3.4.1 LDR伪指令](./3.4-pseudo-instructions/3.4.1-LDR伪指令.md)
-  - [3.4.2 ADR伪指令](./3.4-pseudo-instructions/3.4.2-ADR伪指令.md)
-- [3.5 ARM汇编程序设计](./3.5-asm-design/3.5-ARM汇编程序设计.md)
-  - [3.5.1 ARM汇编程序格式](./3.5-asm-design/3.5.1-ARM汇编程序格式.md)
-  - [3.5.2 符号与标号](./3.5-asm-design/3.5.2-符号与标号.md)
-  - [3.5.3 伪操作](./3.5-asm-design/3.5.3-伪操作.md)
-- [3.6 C语言和汇编语言混合编程](./3.6-mixed-programming/3.6-C语言和汇编语言混合编程.md)
+- ~~3.1 ARM 体系结构 / 3.2 汇编指令 / 3.3 寻址方式 / 3.4 伪指令 / 3.5 汇编程序设计 / 3.9 异常与中断汇编~~ —— **已删除**（纯硬件/纯汇编，无法改造成 C 语言视角）
+- **A 档** [3.6 C语言和汇编语言混合编程](./3.6-mixed-programming/3.6-C语言和汇编语言混合编程.md)
   - [3.6.1 ATPCS规则](./3.6-mixed-programming/3.6.1-ATPCS规则.md)
   - [3.6.2 在C程序中内嵌汇编代码](./3.6-mixed-programming/3.6.2-在C程序中内嵌汇编代码.md)
   - [3.6.3 在汇编程序中调用C程序](./3.6-mixed-programming/3.6.3-在汇编程序中调用C程序.md)
@@ -122,14 +96,13 @@ make clean
   - [3.7.5 基本数据格式](./3.7-gnu-arm/3.7.5-基本数据格式.md)
   - [3.7.6 数据定义](./3.7-gnu-arm/3.7.6-数据定义.md)
   - [3.7.7 汇编代码分析实战](./3.7-gnu-arm/3.7.7-汇编代码分析实战.md)
-- [3.8 AArch64拓展](./3.8-aarch64/3.8-AArch64拓展.md)
-- [3.9 异常与中断汇编](./3.9-exception/3.9-异常与中断汇编.md)
+- [3.8 AArch64拓展](./3.8-aarch64/3.8-AArch64拓展.md)（选读）
 
 ---
 
 ## 代码自测
 
-**题目 1：** 以下 ARM 汇编代码做了什么？对应的 C 代码是什么？
+**题目 1：** 下面这段 ARM 汇编是驱动里最常见的 MMIO 读改写，对应的 C 代码是什么？（保留这道题的理由：能读懂反汇编是 C 程序员的刚需，不是 ARM 汇编课）
 ```c
 /* ARM 汇编 */
     ldr r0, =0x1000
@@ -152,7 +125,9 @@ volatile int *p = (volatile int *)0x1000;
 - add r1, r1, #1：r1 = r1 + 1
 - str r1, [r0]：将 r1 写回 r0 指向的地址（*p = ...）
 
-ARM 汇编的核心概念：LDR/STR 是加载/存储指令（RISC 架构只有访存指令能访问内存），寄存器命名为 r0-r15。ARM 是 Load/Store 架构，所有运算在寄存器间进行。这是 ch03 ARM 架构与汇编的核心知识。
+注意 `volatile` 是必需的：没有它编译器会把两次读合并成一次、或把整个读改写优化掉。
+MMIO 的完整 C 表达、`volatile` 该加在哪、`barrier()` 为什么能阻止死存储消除，见
+[10.8 嵌入式 C 开门](../ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md)。
 
 </details>
 

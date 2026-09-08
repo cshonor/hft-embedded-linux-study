@@ -13,14 +13,14 @@ Linux 内核、内核模块、DPDK 代码大量依赖 GNU-C 扩展；标准 C �
 ## 阅读建议（2026-09-08 重排）
 
 > **本书只取两块**：**GNU C 扩展**（ch06 是唯一核心）+ **嵌入式 C 落地**（ch04 链接、ch05 内存、ch01 工具链、ch10 裸机/中断/寄存器）。
-> **ch02 体系结构、ch03.1–3.5 ARM 指令** 降级为索引——CSAPP 讲得更深，不重复投入。
+> **ch02 体系结构、ch03.1–3.5 ARM 指令** 🗑️ **已删除 73 篇**——CSAPP 讲得更深，不重复读第二遍。
 > 完整取舍与补写顺序见 **[00 · 本书取舍与补写顺序](./00-ROADMAP-本书取舍与补写顺序.md)**。
 
 | 档 | 章 | 处置 |
 |----|----|------|
 | **A 主战场** | ch06 GNU C 扩展 · ch04 编译链接 · ch05 内存堆栈 · ch01 工具链 · ch03.6 内联汇编 | 逐节精写 + WSL 实测 |
 | **B 挑着学** | ch09 模块化 · ch08 OOP · ch07 对齐/可移植性 · ch10 裸机/中断/寄存器 | 只补与 C 语言、嵌入式强相关的节 |
-| **C 降级** | ch02 计算机体系结构 · ch03.1–3.5 ARM 指令/寻址 | 保留索引，见 CSAPP / ARM 专书 |
+| **C 已删** | ch02 计算机体系结构（48 篇）· ch03.1–3.5/3.9 ARM 指令/寻址/伪指令/异常（24 篇） | **物理删除**。只留 ch02/ch03 README 说明去向；ch02 的 MMIO/大小端已改造成 C 视角写进 [10.8](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md) |
 
 原始顺序（按原书结构）保留如下，供查阅：
 
@@ -35,8 +35,8 @@ Linux 内核、内核模块、DPDK 代码大量依赖 GNU-C 扩展；标准 C �
 | 章 | 目录 | 主题 |
 |----|------|------|
 | 第 1 章 | [ch01-tools-of-the-trade](./ch01-tools-of-the-trade/) | 工欲善其事，必先利其器 |
-| 第 2 章 | [ch02-computer-architecture-and-cpu](./ch02-computer-architecture-and-cpu/) | 计算机体系结构与 CPU 工作原理 |
-| 第 3 章 | [ch03-arm-architecture-and-assembly](./ch03-arm-architecture-and-assembly/) | ARM 体系结构与汇编语言 |
+| 第 2 章 | [ch02-computer-architecture-and-cpu](./ch02-computer-architecture-and-cpu/) | 计算机体系结构与 CPU 工作原理 —— **🗑️ 正文已删 48 篇**（CSAPP 更深，仅保留去向说明）|
+| 第 3 章 | [ch03-arm-architecture-and-assembly](./ch03-arm-architecture-and-assembly/) | ARM 体系结构与汇编语言 —— **🗑️ 已删 24 篇**（指令/寻址/伪指令/异常），**保留 3.6 内联汇编 / 3.7 GNU ARM / 3.8 AArch64** |
 | 第 4 章 | [ch04-compile-link-install-run](./ch04-compile-link-install-run/) | 程序的编译、链接、安装和运行 |
 | 第 5 章 | [ch05-memory-stack-management](./ch05-memory-stack-management/) | 内存堆栈管理 |
 | 第 6 章 | [ch06-gnu-c-extensions](./ch06-gnu-c-extensions/) | GNU C 编译器扩展语法精讲 |
@@ -48,8 +48,8 @@ Linux 内核、内核模块、DPDK 代码大量依赖 GNU-C 扩展；标准 C �
 ## 学习进度
 
 - [x] 第 1 章 工欲善其事，必先利其器
-- [x] 第 2 章 计算机体系结构与 CPU 工作原理
-- [x] 第 3 章 ARM 体系结构与汇编语言
+- [x] 第 2 章 计算机体系结构与 CPU 工作原理 —— 🗑️ 已删（CSAPP 覆盖）
+- [x] 第 3 章 ARM 体系结构与汇编语言 —— 🗑️ 部分已删，保留 C/汇编混合编程
 - [x] 第 4 章 程序的编译、链接、安装和运行
 - [x] 第 5 章 内存堆栈管理
 - [x] 第 6 章 GNU C 编译器扩展语法精讲
