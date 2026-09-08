@@ -418,8 +418,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 <tr>
 <td>2</td>
 <td><a href="#s-6-2">6.2 指定初始化</a></td>
-<td>待扩</td>
-<td><code class="c">.field = v</code>；让结构体初始化与字段顺序解耦</td>
+<td>✅ 30 KB</td>
+<td><code class="c">.field = v</code>；稀疏不稀疏、padding 泄露、C/C++ 分歧</td>
 </tr>
 <tr>
 <td>3</td>
@@ -470,7 +470,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
   |
 6.2  指定初始化          &lt;- 读内核驱动代码必需
   |
-6.10 inline ✅ -&gt; 6.12 变参宏 ✅ -&gt; 6.2 指定初始化（下一站）
+6.10 inline ✅ -&gt; 6.12 变参宏 ✅ -&gt; 6.2 指定初始化 ✅ -&gt; 6.1 C 标准（收官）
 </code></pre>
 <p><strong>两个要点</strong>：</p>
 <ol>
@@ -1030,36 +1030,869 @@ gcc -dM -E - &lt; /dev/null | grep __builtin | head
       </section>
       <section class="section" id="s-6-2">
         <div class="sec-head"><div class="sec-no">6.2</div><h2>指定初始化</h2></div>
-<h2>本节讲什么</h2>
-<p><strong>指定初始化（designated initializer）</strong> 允许按 <strong>下标或成员名</strong> 初始化聚合类型，不必按顺序填零。C99 纳入标准；GNU 更早支持。内核驱动表、DPDK 静态配置、协议常量表均大量使用。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">int a[10] = { [3] = 1, [7] = 2 };
-struct cfg { int port; const char *name; } c = { .port = 8080, .name = &quot;dpdk0&quot; };
-</code></pre>
+<blockquote>
+<p>一句话概括这一节：<strong>指定初始化是 C 语言里唯一「按名字而不是按位置」写数据的语法</strong>，
+它把「结构体里剩下的字段怎么办」从程序员的责任变成了编译器的责任。</p>
+</blockquote>
+<h2>目录</h2>
 <ul>
-<li>未指定元素 <strong>零初始化</strong></li>
-<li>可与普通初始化混用（C99 起顺序规则需查标准）</li>
-<li>C++ 不支持相同语法（C++20 有不同 designated init）</li>
+<li><a href="#本节讲什么">本节讲什么</a></li>
+<li><a href="#核心语法速览">核心语法速览</a></li>
+<li><a href="#一数组的当前位置规则">一、数组的「当前位置」规则</a></li>
+<li><a href="#二范围语法-a--bgnu-扩展">二、范围语法 A--B（GNU 扩展）</a></li>
+<li><a href="#三结构体未指定成员去哪了">三、结构体：未指定成员去哪了</a></li>
+<li><a href="#四稀疏不稀疏静态数据的真实代价">四、稀疏不稀疏：静态数据的真实代价</a></li>
+<li><a href="#五const-表真的只读吗段归属">五、const 表真的只读吗：段归属</a></li>
+<li><a href="#六c-与-c-的分歧矩阵">六、C 与 C++ 的分歧矩阵</a></li>
+<li><a href="#七c89-完全不支持连-gnu89-也不行">七、C89 完全不支持，连 gnu89 也不行</a></li>
+<li><a href="#八designator-必须是常量表达式">八、designator 必须是常量表达式</a></li>
+<li><a href="#九成本部分初始化会付整块-memset-的钱">九、成本：部分初始化会付整块 memset 的钱</a></li>
+<li><a href="#十编译器开关三个相关的--w">十、编译器开关：三个相关的 -W</a></li>
+<li><a href="#十一实战跳转表--接口表--sentinel--复合字面量">十一、实战：跳转表 / 接口表 / sentinel / 复合字面量</a></li>
+<li><a href="#误区速查表">误区速查表</a></li>
+<li><a href="#代码自测">代码自测</a></li>
 </ul>
+<hr />
+<h2>本节讲什么</h2>
+<p>先看一组数字。Linux v6.6 的 <code class="c">struct file_operations</code>（<code class="c">include/linux/fs.h:1852</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>数字</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>成员个数</td>
+<td><strong>34 个</strong>（含 <code class="c">#ifndef CONFIG_MMU</code> 下的 <code class="c">mmap_capabilities</code>）</td>
+</tr>
+<tr>
+<td>尾部属性</td>
+<td><code class="c">__randomize_layout</code>（<strong>编译时随机重排成员顺序</strong>）</td>
+</tr>
+<tr>
+<td>典型驱动实现的成员</td>
+<td>3～6 个</td>
+</tr>
+</tbody>
+</table></div>
+<p>用位置初始化写这张表意味着：你要记住 34 个成员的<strong>精确顺序</strong>，而内核每次升级都可能往中间插一个新回调；更糟的是 <code class="c">__randomize_layout</code> 让顺序在编译期就变了。所以内核里没有任何一处用位置初始化写 <code class="c">file_operations</code>——<strong>全部是指定初始化</strong>。</p>
+<p>这一节把指定初始化的<strong>规则边界、方言差异、内存代价、与 C++ 的分歧</strong>全部实测钉死（gcc 13.3 / clang 18.1.3，六轮测试，脚本见 <code class="c">D:\.kernel-ref\demo-desig\</code>）。</p>
+<p><strong>它属于 CH1 而不是 CH2 的理由</strong>：写错了立刻编译报错（下标越界、成员不存在、designator 非常量），不会静默出错。这是「源码表面看得见」的语法。</p>
+<hr />
+<h2>核心语法速览</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>作用</th>
+<th>例子</th>
+<th>标准地位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">[N] = v</code></td>
+<td>数组按下标</td>
+<td><code class="c">int a[] = {[3]=1};</code></td>
+<td>C99</td>
+</tr>
+<tr>
+<td><code class="c">[A ... B] = v</code></td>
+<td>数组按范围</td>
+<td><code class="c">int a[] = {[0 ... 9]=1};</code></td>
+<td><strong>GNU 扩展</strong></td>
+</tr>
+<tr>
+<td><code class="c">.member = v</code></td>
+<td>结构体按成员</td>
+<td><code class="c">struct S s = {.b=2};</code></td>
+<td>C99</td>
+</tr>
+<tr>
+<td><code class="c">.a.b = v</code></td>
+<td>嵌套成员链</td>
+<td><code class="c">{.geo.x = 5}</code></td>
+<td><strong>GNU 扩展</strong>（实测 <code class="c">-pedantic-errors</code> 下两个编译器都干净）</td>
+</tr>
+<tr>
+<td><code class="c">member: v</code></td>
+<td>老式 GNU 冒号写法</td>
+<td><code class="c">{a: 1}</code></td>
+<td><strong>已废弃</strong></td>
+</tr>
+<tr>
+<td><code class="c">{}</code></td>
+<td>空初始化器</td>
+<td><code class="c">struct S s = {};</code></td>
+<td><strong>C23</strong> 才标准</td>
+</tr>
+<tr>
+<td><code class="c">[N] = v</code> 用于枚举下标</td>
+<td>名字当下标</td>
+<td><code class="c">color_name[RED] = "red"</code></td>
+<td>C99（枚举常量是常量表达式）</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>方言支持总表</strong>（实测，<code class="c">D:\.kernel-ref\demo-desig\run.sh</code> / <code class="c">run2.sh</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>gcc gnu11</th>
+<th>gcc c11 <code class="c">-pedantic</code></th>
+<th>gcc <code class="c">-pedantic-errors</code></th>
+<th>clang gnu11 <code class="c">-pedantic</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">[N] = v</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">[A ... B] = v</code></td>
+<td>✅</td>
+<td>⚠️ <code class="c">ISO C forbids specifying range</code></td>
+<td>❌ 硬错误</td>
+<td>⚠️ <code class="c">-Wgnu-designator</code></td>
+</tr>
+<tr>
+<td><code class="c">.member = v</code></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code class="c">.a.b = v</code></td>
+<td>✅</td>
+<td>✅ 干净</td>
+<td>✅ 干净</td>
+<td>✅ 干净</td>
+</tr>
+<tr>
+<td><code class="c">member: v</code></td>
+<td>✅</td>
+<td>⚠️</td>
+<td>❌ <code class="c">obsolete use of designated initializer with ':'</code></td>
+<td>⚠️ <code class="c">-Wgnu-designator</code></td>
+</tr>
+<tr>
+<td><code class="c">{}</code></td>
+<td>✅</td>
+<td>⚠️</td>
+<td>❌ <code class="c">ISO C forbids empty initializer braces before C2X</code></td>
+<td>⚠️ C23 extension</td>
+</tr>
+<tr>
+<td>C89 / gnu89 下任何指定初始化</td>
+<td>—</td>
+<td>—</td>
+<td>❌ <code class="c">ISO C90 forbids specifying subobject</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、数组的「当前位置」规则</h2>
+<p>初始化器有一个隐藏的<strong>游标</strong>：处理完一个 designator 后，游标停在它的下一位，后续的普通值从这里继续填。</p>
+<p>实测（<code class="c">d1-array.c</code>，gcc / clang、c99 / c11 / gnu11 六组结果完全一致）：</p>
+<pre class="code" data-label="C"><code class="c">int a1[] = { [5] = 1 };                  /* -&gt; 0 0 0 0 0 1        ，长度 6  */
+int a2[] = { [3] = 10, 20, 30 };         /* -&gt; 0 0 0 10 20 30     ，长度 6  */
+int a3[] = { 1, 2, [5] = 50, 6, 7 };     /* -&gt; 1 2 0 0 0 50 6 7   ，长度 8  */
+int a4[] = { [0 ... 9] = 1 };            /* -&gt; 十个 1             ，长度 10 */
+int a5[] = { [2] = 2, [2] = 222 };       /* -&gt; 0 0 222            ，长度 3  */
+</code></pre>
+<p>三条规则：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>规则</th>
+<th>实测证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>长度 = 最大指定下标 + 1</strong>（不是写了几个值）</td>
+<td><code class="c">a1</code> 只写 1 个值，长度却是 6</td>
+</tr>
+<tr>
+<td><strong>游标推进</strong>：指定后的普通值从指定下标 +1 开始落</td>
+<td><code class="c">a2[4]=20</code>（接着 <code class="c">[3]</code>）、<code class="c">a3[6]=6</code>（接着 <code class="c">[5]</code>）</td>
+</tr>
+<tr>
+<td><strong>重复指定取最后一个</strong></td>
+<td><code class="c">a5[2]=222</code>，编译器给 <code class="c">-Woverride-init</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>下标可以倒着写</strong>（实测 <code class="c">run3.sh</code> §9）：</p>
+<pre class="code" data-label="C"><code class="c">int a[] = { [5] = 1, [2] = 2 };      /* -&gt; 0 0 2 0 0 1，长度 6，合法 */
+int b[] = { [2] = 20, 30, [0] = 10 };/* -&gt; 10 0 20 30，长度 4，合法 */
+</code></pre>
+<p>结构体同理（游标停在指定成员之后）：</p>
+<pre class="code" data-label="C"><code class="c">struct S { int x; int y; int z; };
+struct S s = { .y = 2, 1 };          /* -&gt; x=0 y=2 z=1 ，那个 1 落给了 z */
+</code></pre>
+<blockquote>
+<p>⚠️ <strong>这条规则是「部分位置初始化」的坑源</strong>：<code class="c">struct S s = { 1 };</code> 只初始化 <code class="c">x</code>，而 <code class="c">struct S s = { .y = 2, 1 };</code> 里的 <code class="c">1</code> 根本不是给 <code class="c">x</code> 的。混用指定与位置初始化时，读代码的人必须自己维护游标。</p>
+</blockquote>
+<hr />
+<h2>二、范围语法 <code class="c">[A ... B]</code>（GNU 扩展）</h2>
+<p>内核里最常见的用途是<strong>枚举下标数组</strong>：</p>
+<pre class="code" data-label="C"><code class="c">enum { RED, GREEN, BLUE, YELLOW, COLOR_NR };
+
+static const char *const color_name[] = {
+    [RED]    = &quot;red&quot;,
+    [GREEN]  = &quot;green&quot;,
+    [YELLOW] = &quot;yellow&quot;,
+    /* BLUE 没写 -&gt; NULL，长度仍是 4 */
+};
+
+static int flags[COLOR_NR] = {
+    [RED ... BLUE] = 1,        /* -&gt; 1 1 1 0 */
+};
+</code></pre>
+<h3>两个实测出来的语法陷阱</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">[0 ... 3] = 1</code></td>
+<td>✅ 正常</td>
+</tr>
+<tr>
+<td><code class="c">[0...3] = 1</code>（<strong>省略空格</strong>）</td>
+<td>❌ <code class="c">error: too many decimal points in number</code> —— 预处理器把 <code class="c">0...3</code> 当成一个浮点数</td>
+</tr>
+<tr>
+<td><code class="c">[3 ... 0] = 1</code>（<strong>倒序</strong>）</td>
+<td>❌ <code class="c">error: empty index range in initializer</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>第一条是<strong>必踩坑</strong>：<code class="c">...</code> 两侧必须有空格，否则词法分析阶段就被切成数字字面量了。</p>
+<h3>标准符合性</h3>
+<p>范围语法是纯 GNU 扩展，在 <code class="c">-pedantic</code> 下 gcc 给 warning、<code class="c">-pedantic-errors</code> 下变<strong>硬错误</strong>（<code class="c">ISO C forbids specifying range of elements to initialize</code>），clang 则始终是 warning（<code class="c">-Wgnu-designator</code>）。内核用 <code class="c">-std=gnu11</code> 不开 pedantic，所以可以放心用。</p>
+<hr />
+<h2>三、结构体：未指定成员去哪了</h2>
+<p><strong>全部零初始化</strong>——不是「不初始化」，是编译器负责填 0。实测 <code class="c">d3-struct.c</code>：</p>
+<pre class="code" data-label="C"><code class="c">static struct cfg c1 = {
+    .cb   = NULL,
+    .name = &quot;dpdk0&quot;,
+    .geo  = { .y = 7 },          /* 标准嵌套写法：只给 y，x 为 0 */
+};
+/* 实测输出：port=0 name=dpdk0 ratio=0.000000 geo.x=0 geo.y=7 cb=NULL */
+</code></pre>
+<p>指针变 <code class="c">NULL</code>、浮点变 <code class="c">0.0</code>、嵌套结构体的未指定成员继续递归清零。栈上的局部结构体也一样（实测：40 字节的 <code class="c">struct cfg x = {.port=1}</code>，除 port 的 4 字节外<strong>全部为 0</strong>）。</p>
+<h3>3.1 嵌套两种写法</h3>
+<pre class="code" data-label="C"><code class="c">/* 标准 C99：一层一层套括号 */
+struct cfg c = { .geo = { .x = 5, .y = 6 } };
+
+/* GNU 扩展：designator 链直接指到内层 */
+struct cfg c = { .geo.x = 5, .geo.y = 6 };
+</code></pre>
+<p>后者在两个编译器、<code class="c">-std=c99 -pedantic-errors</code> 下<strong>都是干净的</strong>（实测 <code class="c">run2.sh</code> §4）——虽然 GCC 手册把它列为扩展，但实测 <code class="c">-pedantic-errors</code> 不报错，可以放心用。</p>
+<h3>3.2 union 与位域</h3>
+<pre class="code" data-label="C"><code class="c">union u_t { int i; float f; char buf[8]; };
+static union u_t u1 = { .f = 3.14f };     /* 实测 u1.i = 1078523331（同一块内存的 int 视图）*/
+static union u_t u2 = { .buf = &quot;hi&quot; };    /* 实测 u2.i = 0x00006968 */
+
+struct bits { unsigned a:3; unsigned b:5; unsigned c:24; };
+static struct bits b1 = { .b = 0x1f, .c = 0x1234 };   /* 实测 a=0 b=31 c=0x1234，sizeof=4 */
+</code></pre>
+<p><strong>union 的指定初始化只会初始化你命名的那一个成员</strong>，其余成员是同一块内存的别名视图（不是 0！）。这条和 struct 的行为完全不同。</p>
+<h3>3.3 padding 也被清零——这是免费的信息泄露防护</h3>
+<p>这是本轮最值得记住的一条。实测 <code class="c">run5.sh</code> §20：</p>
+<pre class="code" data-label="C"><code class="c">struct hole { char a; /* 3 字节 padding */ int b; };
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>初始化方式</th>
+<th>-O0 下 padding</th>
+<th>-O2 下 padding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct hole h = { .a = 1, .b = 2 };</code></td>
+<td><code class="c">00 00 00</code></td>
+<td><code class="c">00 00 00</code></td>
+</tr>
+<tr>
+<td><code class="c">struct hole h = { 0 };</code></td>
+<td><code class="c">00 00 00</code></td>
+<td><code class="c">00 00 00</code></td>
+</tr>
+<tr>
+<td><code class="c">struct hole h; h.a=1; h.b=2;</code>（逐字段）</td>
+<td><code class="c">00 00 00</code></td>
+<td><strong><code class="c">76 57 1a</code>（栈上的垃圾！）</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">-O2</code> 下逐字段赋值<strong>不会</strong>清 padding，编译器只写 <code class="c">a</code> 和 <code class="c">b</code> 两个字段。如果这个结构体随后被 <code class="c">write()</code> 出去、<code class="c">copy_to_user()</code> 拷给用户、或写进日志文件，<strong>3 字节栈内容就泄露了</strong>——这是内核历史上反复出现的一类 CVE。</p>
+<p>而指定初始化（和 <code class="c">{0}</code>）强制编译器把整个对象清零，天然免疫。</p>
+<blockquote>
+<p><strong>推论</strong>：凡是会离开进程边界的结构体（网络报文头、ioctl 参数、日志、持久化格式），用指定初始化或 <code class="c">= {0}</code>，不要用逐字段赋值。</p>
+</blockquote>
+<hr />
+<h2>四、稀疏不稀疏：静态数据的真实代价</h2>
+<p><code class="c">int a[1000] = { [999] = 1 };</code> 会不会像 Python 字典那样只存一个元素？<strong>不会。</strong> 实测 <code class="c">run2.sh</code> §6：</p>
+<pre class="code" data-label="C"><code class="c">const int big[1001] = { [1000] = 1 };   /* 实测 sizeof = 4004 字节，nm 显示 size=0xfa4，段 R */
+</code></pre>
+<h3>段布局完整矩阵（实测 <code class="c">run3.sh</code> §8，每个数组 4096 个 int = 16 KB）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>声明</th>
+<th>段</th>
+<th>占目标文件？</th>
+<th>实测 size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">const int A[4096] = {0};</code></td>
+<td><code class="c">.rodata</code>（<strong>R</strong>）</td>
+<td>✅ 全量 16 KB</td>
+<td>16384</td>
+</tr>
+<tr>
+<td><code class="c">int B[4096] = {0};</code></td>
+<td><code class="c">.bss</code>（<strong>B</strong>）</td>
+<td>❌ 不占</td>
+<td>16384</td>
+</tr>
+<tr>
+<td><code class="c">const int C[4096] = {[0]=1};</code></td>
+<td><code class="c">.rodata</code>（<strong>R</strong>）</td>
+<td>✅ 全量</td>
+<td>16384</td>
+</tr>
+<tr>
+<td><code class="c">int D[4096] = {[0]=1};</code></td>
+<td><code class="c">.data</code>（<strong>D</strong>）</td>
+<td>✅ 全量</td>
+<td>16384</td>
+</tr>
+<tr>
+<td><code class="c">const int E[4096] = {[4095]=1};</code></td>
+<td><code class="c">.rodata</code>（<strong>R</strong>）</td>
+<td>✅ 全量</td>
+<td>16384</td>
+</tr>
+<tr>
+<td><code class="c">int F[4096] = {[4095]=1};</code></td>
+<td><code class="c">.data</code>（<strong>D</strong>）</td>
+<td>✅ <strong>全量 16 KB</strong></td>
+<td>16384</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>只有「可写 + 全 0」能进 <code class="c">.bss</code>。</strong> 加 <code class="c">const</code>、或只要有<strong>任何一个</strong>非 0 值（哪怕在末尾），整块数据就实打实进文件。</p>
+<p>放大版实测（<code class="c">run2.sh</code> §6b）：<code class="c">int zw2[100000] = { [99999] = 1 };</code> → <code class="c">.data</code> 400 000 字节，目标文件 <strong>801 584 字节</strong>。</p>
+<blockquote>
+<p>⚠️ <strong>嵌入式第一坑</strong>：在 Flash 只有几百 KB 的 MCU 上写一句 <code class="c">static const uint32_t tbl[65536] = {[65535] = 1};</code>，256 KB 就没了。
+指定初始化是<strong>静态数据布局工具</strong>，不是稀疏容器。真要稀疏，得用运行时构建（哈希表 / 按需分配）。</p>
+</blockquote>
+<hr />
+<h2>五、const 表真的只读吗：段归属</h2>
+<p>函数指针跳转表实测（<code class="c">run3.sh</code> §11 / <code class="c">run4.sh</code> §15）：</p>
+<pre class="code" data-label="C"><code class="c">static int (*const handlers[OP_NR])(int,int) = { [ADD]=op_add, [SUB]=op_sub, [MUL]=op_mul };
+</code></pre>
+<pre class="code" data-label="text"><code class="c">nm -S:  0000000000000000 0000000000000028 d handlers     &lt;- 小写 d，不是 r！
+size -A: .data.rel.ro.local   40
+</code></pre>
+<p><strong>它不在 <code class="c">.rodata</code>，在 <code class="c">.data.rel.ro.local</code>。</strong> 原因：函数指针的值在链接/加载时才能确定，需要<strong>重定位</strong>，所以这一页必须先可写、重定位完再由动态链接器 <code class="c">mprotect</code> 成只读（这就是 RELRO）。</p>
+<p>纯数据的 const 表没有这个问题（实测 <code class="c">run5.sh</code> §21：<code class="c">static const int T_di[256]</code> → <code class="c">r</code>，落在 <code class="c">.rodata</code>）。</p>
+<h3>顺带的实测性能数据</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>表</th>
+<th>段</th>
+<th>2 亿次累加（20 万轮 × 256 项）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">static const int T_di[256]</code> 编译期常量</td>
+<td><code class="c">.rodata</code>（r）</td>
+<td><strong>0.008890 s</strong></td>
+</tr>
+<tr>
+<td><code class="c">static int T_rt[256]</code> 运行期填</td>
+<td><code class="c">.bss</code>（b）</td>
+<td>0.013672 s</td>
+</tr>
+</tbody>
+</table></div>
+<p>const 表快 35%——编译期已知内容让编译器能做常量传播，而运行期填的表每次都可能被别名改写。</p>
+<hr />
+<h2>六、C 与 C++ 的分歧矩阵</h2>
+<p>同一份代码在 C 和 C++ 下命运完全不同。实测 <code class="c">run2.sh</code> §5 / <code class="c">run3.sh</code> §5b：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>情形</th>
+<th>C（c99/c11/gnu11）</th>
+<th>g++ 17/20</th>
+<th>clang++ 20</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">.a=1, .c=3</code>（跳过 b）</td>
+<td>✅</td>
+<td>✅ 干净</td>
+<td>✅ 干净</td>
+</tr>
+<tr>
+<td><code class="c">.c=3, .a=1</code>（<strong>乱序</strong>）</td>
+<td>✅</td>
+<td>❌ <code class="c">designator order for field does not match declaration order</code></td>
+<td>⚠️ warning</td>
+</tr>
+<tr>
+<td><code class="c">[3]=1</code>（<strong>数组下标</strong>）</td>
+<td>✅</td>
+<td>❌ <strong><code class="c">sorry, unimplemented: non-trivial designated initializers not supported</code></strong></td>
+<td>⚠️ <code class="c">-Wc99-designator</code></td>
+</tr>
+<tr>
+<td><code class="c">.a=1, .a=2</code>（<strong>重复</strong>）</td>
+<td>✅ 取最后 + <code class="c">-Woverride-init</code></td>
+<td>❌ <code class="c">designator used multiple times in the same initializer list</code></td>
+<td>⚠️ warning</td>
+</tr>
+<tr>
+<td><code class="c">[0 ... 3]=1</code>（<strong>范围</strong>）</td>
+<td>✅ GNU</td>
+<td>❌ <code class="c">expected identifier before numeric constant</code></td>
+<td>⚠️ <code class="c">-Wc99-designator</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>三条要点：</p>
+<ol>
+<li><strong>C++ 要求按声明顺序</strong>（C++20 标准引入的 designated initializer 明确规定），乱序在 g++ 是硬错误。所以给 C/C++ 双用头文件写默认值时，<strong>必须按结构体声明顺序逐个写</strong>。</li>
+<li><strong>g++ 至今不支持数组下标 designator</strong>——报的是 <code class="c">sorry, unimplemented</code>，这是 GCC C++ 前端长期未实现项，不是你写错了。clang++ 作为扩展支持。</li>
+<li><strong>C 里重复指定是 warning，C++ 里是 error</strong>。这一条决定了：C 项目必须依赖 <code class="c">-Woverride-init</code> 来抓（见 §10）。</li>
+</ol>
+<hr />
+<h2>七、C89 完全不支持，连 gnu89 也不行</h2>
+<p>实测 <code class="c">run4.sh</code> §14：</p>
+<pre class="code" data-label="text"><code class="c">gcc -std=c89   -pedantic-errors: error: ISO C90 forbids specifying subobject to initialize
+gcc -std=c90   -pedantic-errors: error: （同上）
+gcc -std=gnu89 -pedantic-errors: error: （同上）
+</code></pre>
+<p>指定初始化是 <strong>C99</strong> 特性，GNU 扩展<strong>没有</strong>把它回植到 gnu89。这和 GNU 的一贯做法不同（大部分 GNU 扩展在 gnu89 下可用）。</p>
+<blockquote>
+<p>影响面：内核从 <strong>v5.18 起把 <code class="c">-std=gnu89</code> 换成了 <code class="c">-std=gnu11</code></strong>（本仓库缓存的 v6.x Makefile:560 就是 <code class="c">KBUILD_CFLAGS += -std=gnu11</code>）。
+也就是说：<strong>5.18 之前的内核源码里不会出现 C99 指定初始化</strong>；读老驱动时看到的位置初始化表，是方言限制而不是作者偷懒。</p>
+</blockquote>
+<hr />
+<h2>八、designator 必须是常量表达式</h2>
+<p>实测 <code class="c">run4.sh</code> §13：</p>
+<pre class="code" data-label="C"><code class="c">int n = 3;
+int a[] = { [n] = 1 };              /* ❌ error: nonconstant array index in initializer */
+
+int main(void){
+    int k = 2;
+    int a[8] = { [k] = 5 };         /* ❌ 同样 error，块作用域也不行 */
+}
+</code></pre>
+<p><strong>文件作用域和块作用域都要求常量</strong>。想「按下标动态初始化」只能改用运行时赋值：</p>
+<pre class="code" data-label="C"><code class="c">int a[8] = {0};
+a[k] = 5;                            /* 运行期 */
+</code></pre>
+<p>枚举常量、sizeof、常量算术都是合法的（它们都是常量表达式），所以 <code class="c">[COLOR_NR] = 0</code>、<code class="c">[NR_CPUS] = 1</code> 这类写法没问题。</p>
+<h3>另外三个边界情形（实测 <code class="c">run4.sh</code> §17）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>代码</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">int a[4] = { [4] = 1 };</code></td>
+<td>❌ <code class="c">array index in initializer exceeds array bounds</code></td>
+</tr>
+<tr>
+<td><code class="c">struct S {int a;}; struct S s = {.b=1};</code></td>
+<td>❌ <code class="c">struct S has no member named 'b'</code></td>
+</tr>
+<tr>
+<td><code class="c">int a[] = {[1]=1, [1]=2, [1]=3};</code></td>
+<td>⚠️ 三次 <code class="c">-Woverride-init</code>，最终 <code class="c">a[1]=3</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>前两条是<strong>编译期硬错误</strong>，这正是把 6.2 划进 CH1 的理由：写错立刻发现。</p>
+<hr />
+<h2>九、成本：部分初始化会付整块 memset 的钱</h2>
+<p>「未指定成员自动清零」不是免费的。实测 <code class="c">run5.sh</code> §19，结构体含 4096 字节 payload：</p>
+<pre class="code" data-label="C"><code class="c">struct big { int hdr; char payload[4096]; int tail; };
+
+static int f_di(void)     { struct big x = { .tail = 7 }; return x.tail; }   /* 部分初始化 */
+static int f_manual(void) { struct big x; x.tail = 7;     return x.tail; }   /* 逐字段 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>优化级别</th>
+<th>部分初始化</th>
+<th>逐字段</th>
+<th>全零 + 赋值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>-O0</strong></td>
+<td><strong>0.025447 s</strong></td>
+<td>0.000707 s</td>
+<td>0.016459 s</td>
+</tr>
+<tr>
+<td>-O2</td>
+<td>0.000750 s</td>
+<td>0.000886 s</td>
+<td>0.000839 s</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">-O0</code> 下<strong>部分初始化比逐字段慢 36 倍</strong>。看下汇编就明白了：</p>
+<pre class="code" data-label="asm"><code class="c">; f_di, -O0
+movl    $513, %ecx      # 513 个 quad word = 4104 字节
+rep stosq               # 整块 memset
+movl    $7, -12(%rbp)   # 再写 tail
+</code></pre>
+<p>而 <code class="c">-O2</code> 下三者同速——因为 <code class="c">x.tail</code> 是唯一被用到的字段，编译器把整个结构体删掉了：</p>
+<pre class="code" data-label="asm"><code class="c">; f_di, -O2
+movl    $7, %eax
+ret
+</code></pre>
+<blockquote>
+<p><strong>给 HFT / 热路径的建议</strong>：
+- <code class="c">-O2</code> 且结构体不 escape 时无所谓，编译器会删掉。
+- 一旦结构体<strong>取地址传给外部函数</strong>（-O0 调试构建、跨 TU 调用），<code class="c">struct big x = {.tail=7}</code> 每次进函数都要 memset 整块——此时该改成逐字段赋值 + 显式写关键字段。
+- 反过来，如果<strong>正确性依赖其余字段为 0</strong>（见 §3.3 的 padding 泄露），这个 memset 就是必须付的钱。</p>
+</blockquote>
+<hr />
+<h2>十、编译器开关：三个相关的 -W</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>开关</th>
+<th>抓什么</th>
+<th>gcc</th>
+<th>clang</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">-Woverride-init</code></td>
+<td>同一元素/成员被指定两次</td>
+<td>✅ 默认就在 <code class="c">-Wall</code> 之外，需显式开（实测 <code class="c">-Wall -Wextra</code> 也抓到 1 条）</td>
+<td>对应 <code class="c">-Winitializer-overrides</code>（<code class="c">-Wall -Wextra</code> 自带）</td>
+<td>名字不同，<strong>跨编译器 CI 要写两个</strong></td>
+</tr>
+<tr>
+<td><code class="c">-Wmissing-field-initializers</code></td>
+<td>部分<strong>位置</strong>初始化</td>
+<td>✅</td>
+<td>✅</td>
+<td><strong>指定初始化不触发</strong>（实测：只报 <code class="c">{1}</code> 那行，<code class="c">.b=2</code> 和 <code class="c">{0}</code> 都不报）</td>
+</tr>
+<tr>
+<td><code class="c">-Wgnu-designator</code> / <code class="c">-Wpedantic</code></td>
+<td>GNU 扩展（范围语法、冒号写法）</td>
+<td>走 <code class="c">-Wpedantic</code></td>
+<td>专用 <code class="c">-Wgnu-designator</code></td>
+<td>clang 分得更细</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测 <code class="c">run2.sh</code> §7 的重复初始化用例：</p>
+<pre class="code" data-label="C"><code class="c">static struct ops o = {
+    .open = my_open,
+    .read = my_read,
+    .open = my_open,     /* 复制粘贴导致的重复 */
+};
+/* gcc -Woverride-init:  warning: initialized field overwritten */
+/* clang -Wall:          warning: initializer overrides prior initialization */
+</code></pre>
+<p>这在内核这种「30+ 成员的接口表」里是高频错误——复制一行改个名字，结果把上一行覆盖了，而<strong>因为两个值一样（同一个函数），功能测试根本发现不了</strong>（§11 的 HFT 案例里如果 <code class="c">min_len</code> 被覆盖才会暴露）。</p>
+<p><strong><code class="c">-Wmissing-field-initializers</code> 不报指定初始化</strong>是它的一大实用优势：你可以用 <code class="c">-Wextra</code> 抓「忘了初始化某字段」，同时用指定初始化只写关心的那几个，两者不冲突（实测：<code class="c">{1}</code> 报警，<code class="c">.b=2</code> 和 <code class="c">{0}</code> 都不报；数组完全不触发该警告）。</p>
+<hr />
+<h2>十一、实战：跳转表 / 接口表 / sentinel / 复合字面量</h2>
+<h3>11.1 稀疏跳转表（HFT 协议分发）</h3>
+<p>实测 <code class="c">run6.sh</code> §24，完整可跑：</p>
+<pre class="code" data-label="C"><code class="c">enum { OP_LOGIN=1, OP_ORDER=2, OP_CANCEL=3, OP_QUOTE=5, OP_NR=8 };
+
+struct opdesc {
+    const char *name;
+    int  (*handler)(const void*, int);
+    unsigned min_len;
+    unsigned flags;
+};
+
+static const struct opdesc OPS[OP_NR] = {
+    [OP_LOGIN]  = { .name=&quot;LOGIN&quot;,  .handler=h_login,  .min_len=16, .flags=F_AUTH },
+    [OP_ORDER]  = { .name=&quot;ORDER&quot;,  .handler=h_order,  .min_len=32, .flags=F_AUTH|F_HOT },
+    [OP_CANCEL] = { .name=&quot;CANCEL&quot;, .handler=h_cancel, .min_len=12 },
+    [OP_QUOTE]  = { .name=&quot;QUOTE&quot;,  .min_len=4,        .flags=F_HOT },  /* 无 handler */
+    /* opcode 0/4/6/7 全部为 0 —— 包括 name=NULL */
+};
+
+static int dispatch(unsigned op, const void *pkt, int len, int authed)
+{
+    if (op &gt;= OP_NR)                     return -1;   /* 越界 */
+    const struct opdesc *d = &amp;OPS[op];
+    if (!d-&gt;name)                        return -2;   /* 未定义 opcode */
+    if ((d-&gt;flags &amp; F_AUTH) &amp;&amp; !authed)  return -3;   /* 需要认证 */
+    if (!d-&gt;handler)                     return -4;   /* 已定义但不可处理 */
+    if (len &lt; (int)d-&gt;min_len)           return -5;   /* 长度不足 */
+    return d-&gt;handler(pkt, len);
+}
+</code></pre>
+<p>实测输出：<code class="c">LOGIN ok→0</code> / <code class="c">LOGIN 未认证→-3</code> / <code class="c">ORDER 太短→-5</code> / <code class="c">QUOTE 无处理→-4</code> / <code class="c">opcode 0→-2</code> / <code class="c">opcode 99→-1</code>，表 192 字节落在 <code class="c">.data.rel.ro.local</code>。</p>
+<p><strong>这张表把「哪些 opcode 存在、要不要认证、最小长度、有没有处理函数」四件事放在一处</strong>，新增 opcode 只需加一行，不碰 <code class="c">dispatch</code>。位置初始化做不到这件事——你没法只写第 5 项。</p>
+<h3>11.2 sentinel 表（内核 <code class="c">of_device_id</code> 模式）</h3>
+<p>实测 <code class="c">run3.sh</code> §12：</p>
+<pre class="code" data-label="C"><code class="c">static const struct dev_entry table[] = {
+    { .name = &quot;dev-a&quot;, .id = 0x10, .probe = p_a },
+    { .name = &quot;dev-b&quot;, .id = 0x20, .flags = 0x3 },   /* 无 probe */
+    { .name = &quot;dev-c&quot;, .id = 0x30, .probe = p_c },
+    { },                                              /* sentinel：全 0 */
+};
+
+for (int i = 0; table[i].name; i++)  ...              /* 靠 name==NULL 停 */
+</code></pre>
+<p>实测 sentinel：<code class="c">name=(NULL) id=0 probe=无 flags=0</code>。<code class="c">{ }</code> 是 C23 的空初始化器（在 gnu11 下无 flag 时 gcc/clang 都接受，实测 <code class="c">run6.sh</code> §22），等价于全 0。</p>
+<p>内核的 <code class="c">of_device_id</code>、<code class="c">pci_device_id</code>、<code class="c">platform_device_id</code> 全是这个模式——末尾一个全 0 项当终止哨兵，遍历代码不需要知道表长。</p>
+<h3>11.3 复合字面量 + 指定初始化 = 全零重置</h3>
+<p>实测 <code class="c">run3.sh</code> §10：</p>
+<pre class="code" data-label="C"><code class="c">struct cfg c = { .port = 1, .name = &quot;a&quot;, .retries = 9 };
+c = (struct cfg){ .port = 2 };      /* 其余字段被清零，不是保留！ */
+</code></pre>
+<p>实测输出：<code class="c">port=2 name=(NULL) retries=0</code>。这是 C 里「重置一个结构体」的标准写法——比 <code class="c">memset(&amp;c, 0, sizeof c); c.port = 2;</code> 更不容易漏字段。</p>
+<p>也常用于传参：<code class="c">apply(&amp;(struct cfg){ .port = 8080 });</code>（未指定成员自动 0）。</p>
+<h3>11.4 内核里的位置：file_operations</h3>
+<p>回到开头那张表。v6.6 <code class="c">include/linux/fs.h:1852</code> 的 <code class="c">file_operations</code> 有 34 个成员，尾部是 <code class="c">__randomize_layout</code>：</p>
+<pre class="code" data-label="C"><code class="c">static const struct file_operations demo_fops = {
+    .owner  = THIS_MODULE,
+    .open   = demo_open,
+    .read   = demo_read,
+    /* 其余 31 个成员自动为 NULL */
+};
+</code></pre>
+<p>三条指定初始化在这里的价值：</p>
+<ol>
+<li><strong>只写实现的 3 个</strong>，其余 31 个自动 NULL，不用背顺序。</li>
+<li><strong>内核升级插新成员不影响</strong>——位置初始化插一个成员就会整体错位。</li>
+<li><strong><code class="c">__randomize_layout</code> 让位置初始化在物理上不可能</strong>（顺序是编译期随机的）。</li>
+</ol>
+<p>更多内核案例见 <a href="chapter-01.html#s-6-2-3">6.2.3 Linux 内核驱动注册</a>。</p>
+<hr />
+<h2>误区速查表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>误区</th>
+<th>实测真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「<code class="c">int a[1000]={[999]=1}</code> 只占一个 int 的空间」</td>
+<td>❌ 实打实 4004 字节进 <code class="c">.rodata</code>/<code class="c">.data</code>。<strong>只有「可写 + 全 0」进 <code class="c">.bss</code></strong></td>
+</tr>
+<tr>
+<td>「<code class="c">const</code> 数组全 0 不占空间」</td>
+<td>❌ <code class="c">const int A[4096]={0}</code> 仍占 16 KB <code class="c">.rodata</code>。const 不能进 bss</td>
+</tr>
+<tr>
+<td>「范围语法 <code class="c">[0...3]</code> 可以不加空格」</td>
+<td>❌ <code class="c">error: too many decimal points in number</code></td>
+</tr>
+<tr>
+<td>「范围语法可以倒着写」</td>
+<td>❌ <code class="c">error: empty index range in initializer</code></td>
+</tr>
+<tr>
+<td>「同一成员写两次，编译会报错」</td>
+<td>❌ C 下取最后一个，只给 warning；<strong>C++ 下才是 error</strong></td>
+</tr>
+<tr>
+<td>「指定初始化能按下标变量初始化」</td>
+<td>❌ designator 必须是常量表达式，块作用域也一样</td>
+</tr>
+<tr>
+<td>「C89 项目用 GNU 扩展也能写指定初始化」</td>
+<td>❌ gnu89 照样是硬错误，C99 起才有</td>
+</tr>
+<tr>
+<td>「C++ 支持和 C 一样的指定初始化」</td>
+<td>❌ 乱序在 g++ 是 error；<strong>数组下标 designator 在 g++ 是 <code class="c">sorry, unimplemented</code></strong></td>
+</tr>
+<tr>
+<td>「含函数指针的 const 表在 <code class="c">.rodata</code>」</td>
+<td>❌ 在 <code class="c">.data.rel.ro.local</code>（要重定位，加载后 RELRO 保护）</td>
+</tr>
+<tr>
+<td>「逐字段赋值和指定初始化等价」</td>
+<td>❌ <code class="c">-O2</code> 下逐字段<strong>不清 padding</strong>，可能泄露栈内容</td>
+</tr>
+<tr>
+<td>「热路径上 <code class="c">struct big x = {.a=1}</code> 没有代价」</td>
+<td>❌ <code class="c">-O0</code> 下每次调用 <code class="c">rep stosq</code> 整块清零，实测慢 36 倍</td>
+</tr>
+<tr>
+<td>「<code class="c">-Wmissing-field-initializers</code> 会抱怨我只写了几个字段」</td>
+<td>❌ 指定初始化不触发该警告（位置初始化才会）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>与后续衔接</h2>
 <ul>
-<li><strong>6.2.1–6.2.2</strong> 数组与结构体细节</li>
-<li><strong>6.2.3</strong> <code class="c">module_init</code> / <code class="c">platform_driver</code> 表</li>
-<li><strong>6.4</strong> <code class="c">container_of</code> 常配合静态初始化结构体</li>
+<li><strong><a href="chapter-01.html#s-6-2-1">6.2.1 指定初始化数组元素</a></strong> · <strong><a href="chapter-01.html#s-6-2-2">6.2.2 指定初始化结构体成员</a></strong>：本节规则的分项展开</li>
+<li><strong><a href="chapter-01.html#s-6-2-3">6.2.3 Linux 内核驱动注册</a></strong> · <strong><a href="chapter-01.html#s-6-2-4">6.2.4 指定初始化的好处</a></strong></li>
+<li><strong><a href="#s-6-4">6.4 typeof 与 container_of</a></strong>：静态初始化的结构体常被 <code class="c">container_of</code> 反推宿主</li>
+<li><strong><a href="#s-6-5">6.5 零长度数组</a></strong>：变长报文与静态表的另一种布局手段</li>
+<li><strong><a href="chapter-02.html#s-6-9">6.9 weak 与 alias</a></strong>：<code class="c">__weak</code> 默认 ops 可被板级 strong 覆盖——与指定初始化是「填表」的两种手段（编译期 vs 链接期）</li>
+<li><strong><a href="chapter-02.html#s-6-6-1">6.6 <code class="c">__attribute__</code> 总纲</a></strong> 的 <code class="c">section</code>：把静态表钉到指定段</li>
+<li><strong><a href="chapter-03.html#s-10-8">10.8 寄存器操作</a></strong>：裸机侧同样依赖静态常量表描述寄存器布局</li>
+<li><strong><a href="chapter-04.html#intro">CH4 内核模块</a></strong>：<code class="c">module_init</code> / initcall 的注册本质也是「填一张编译期表」</li>
 </ul>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 以下两种初始化方式有什么区别？指定初始化的优势是什么？</p>
-<pre class="code" data-label="C"><code class="c">struct conf c1 = {0, 0, 8080, 1, 0};   // 位置初始化
-struct conf c2 = {.port = 8080, .enable = 1};  // 指定初始化
+<p><strong>题目 1：</strong> 写出以下初始化的完整内容和数组长度，并说明 <code class="c">20</code> 落在哪里。</p>
+<pre class="code" data-label="C"><code class="c">int a[] = { [3] = 10, 20, [1] = 5 };
 </code></pre>
 <details>
 <summary>参考答案</summary>
-<p>位置初始化需要记住字段顺序，容易写错（如把 port 写成第 2 个），且未列出的字段自动清零。指定初始化通过 <code class="c">.field = value</code> 按名赋值，不依赖字段顺序，未指定的字段自动清零。优势：(1) 可读性好；(2) 结构体增删字段不影响已有初始化代码；(3) 只初始化关心的字段。这是 C99 标准，GNU C 也支持 <code class="c">[index] = value</code> 用于数组。</p>
+<p><code class="c">0 5 0 10 20</code>，长度 5。</p>
+<p>游标规则：<code class="c">[3]=10</code> 把游标推到下标 4，紧接着的 <code class="c">20</code> 落在 <code class="c">a[4]</code>；然后 <code class="c">[1]=5</code> 回退覆盖 <code class="c">a[1]</code>。
+长度取最大指定下标 +1 = 4，但 <code class="c">a[4]=20</code> 又把它推到 5。</p>
+<p>实测同类用例（<code class="c">run3.sh</code> §9）：<code class="c">int b[] = {[2]=20, 30, [0]=10}</code> → <code class="c">10 0 20 30</code>，长度 4。</p>
+</details>
+<p><strong>题目 2：</strong> 这段代码能编译吗？<code class="c">a[2]</code> 是多少？想动态指定下标该怎么办？</p>
+<pre class="code" data-label="C"><code class="c">void f(int k) { int a[8] = { [k] = 5 }; (void)a; }
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>不能。<code class="c">error: nonconstant array index in initializer</code>——<strong>designator 必须是常量表达式，块作用域也一样</strong>（实测 <code class="c">run4.sh</code> §13，文件作用域和块作用域都报这个错）。</p>
+<p>想动态指定只能改成运行时赋值：</p>
+<pre class="code" data-label="C"><code class="c">void f(int k) { int a[8] = {0}; a[k] = 5; (void)a; }
+</code></pre>
+<p>枚举常量、<code class="c">sizeof</code>、常量算术都是合法的（都是常量表达式），所以 <code class="c">[COLOR_NR] = 0</code> 这类写法没问题。</p>
+</details>
+<p><strong>题目 3：</strong> 一个 256 项的函数指针表，只实现了其中 3 项。用指定初始化和不用它，在<strong>占用空间</strong>上有区别吗？这个表会落在哪个段？</p>
+<details>
+<summary>参考答案</summary>
+<p><strong>占用空间没有区别</strong>——指定初始化不产生稀疏存储。实测 <code class="c">const int big[1001] = {[1000]=1}</code> 是 4004 字节，<code class="c">int F[4096] = {[4095]=1}</code> 是完整 16 KB 且落在 <code class="c">.data</code>。差别只在于<strong>源代码可读性</strong>和「未指定项自动 NULL」这个语义保证。</p>
+<p>段归属取决于<strong>表的内容</strong>而不是写法：</p>
+<ul>
+<li>纯数据（int / 字符串指针常量）的 <code class="c">static const</code> 表 → <code class="c">.rodata</code>（实测 <code class="c">nm</code> 显示 <code class="c">r</code>）</li>
+<li><strong>含函数指针</strong>的 <code class="c">static ... const</code> 表 → <code class="c">.data.rel.ro.local</code>（实测 <code class="c">nm</code> 显示小写 <code class="c">d</code>，<code class="c">size -A</code> 有该段 40/192 字节）</li>
+</ul>
+<p>原因：函数指针的值要等加载时重定位，所以这一页必须先可写，重定位完再由动态链接器 <code class="c">mprotect</code> 成只读（RELRO）。</p>
+<p>顺带一提，实测静态 const 表比运行期填充的可写表快 35%（0.008890 s vs 0.013672 s），因为编译期已知内容让编译器能做常量传播。</p>
+</details>
+<p><strong>题目 4：</strong> 下面两个函数，谁更安全？为什么？</p>
+<pre class="code" data-label="C"><code class="c">struct hole { char a; int b; };          /* a 后面有 3 字节 padding */
+void f1(void) { struct hole h = { .a = 1, .b = 2 }; send_out(&amp;h, sizeof h); }
+void f2(void) { struct hole h; h.a = 1; h.b = 2;    send_out(&amp;h, sizeof h); }
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p><code class="c">f1</code> 安全，<code class="c">f2</code> 有信息泄露风险。</p>
+<p>实测（<code class="c">run5.sh</code> §20，<code class="c">-O2</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>padding 内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">f1</code> 指定初始化</td>
+<td><code class="c">01 00 00 00 02 00 00 00</code> ← padding 全 0</td>
+</tr>
+<tr>
+<td><code class="c">f2</code> 逐字段赋值</td>
+<td><code class="c">01 76 57 1a 02 00 00 00</code> ← <strong>padding 是栈上的垃圾</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>指定初始化强制编译器把整个对象清零（<code class="c">-O0</code> 下生成 memset，<code class="c">-O2</code> 下也保证 padding 为 0）；逐字段赋值只写 <code class="c">a</code> 和 <code class="c">b</code>，padding 保持未初始化状态。<code class="c">-O2</code> 下 gcc 还会给 <code class="c">f2</code> 报 <code class="c">-Wuninitialized</code>。</p>
+<p><code class="c">send_out</code> 把整个 <code class="c">sizeof h</code>（含 padding）送出去时，<code class="c">f2</code> 就把 3 字节栈内容泄露给了对端/用户空间/日志。这是内核历史上反复出现的一类 CVE。</p>
+<p>规则：<strong>凡是会离开进程边界的结构体（网络报文头、ioctl 参数、日志、持久化格式），用指定初始化或 <code class="c">= {0}</code>。</strong></p>
+</details>
+<p><strong>题目 5：</strong> 一个 <code class="c">-O0</code> 编译的调试构建里，热路径上这两行哪个快？差多少？</p>
+<pre class="code" data-label="C"><code class="c">struct big { int hdr; char payload[4096]; int tail; };
+struct big x1 = { .tail = 7 };     /* A */
+struct big x2; x2.tail = 7;        /* B */
+</code></pre>
+<details>
+<summary>参考答案</summary>
+<p>B 快得多，实测（20 万次调用，<code class="c">run5.sh</code> §19）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>-O0</th>
+<th>-O2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 部分初始化</td>
+<td><strong>0.025447 s</strong></td>
+<td>0.000750 s</td>
+</tr>
+<tr>
+<td>B 逐字段</td>
+<td>0.000707 s</td>
+<td>0.000886 s</td>
+</tr>
+<tr>
+<td>全零 + 赋值</td>
+<td>0.016459 s</td>
+<td>0.000839 s</td>
+</tr>
+</tbody>
+</table></div>
+<p><code class="c">-O0</code> 下 A 慢 <strong>36 倍</strong>：汇编是 <code class="c">movl $513,%ecx; rep stosq</code>（清 4104 字节）再 <code class="c">movl $7</code>。</p>
+<p><code class="c">-O2</code> 下三者同速，因为 <code class="c">x.tail</code> 是唯一被用到的字段，编译器把整个结构体删了（A 直接变成 <code class="c">movl $7,%eax; ret</code>）。</p>
+<p><strong>所以这条只在「结构体真的被用到了 / escape 了 / -O0 调试构建」时才成立。</strong> 判断依据：如果结构体的地址传给了外部函数（跨 TU、取地址），编译器不敢删，那个 memset 就是实打实的。</p>
+<p>反过来，如果正确性依赖其余字段为 0（padding 不泄露），这个 memset 是必须付的钱——见题目 4。</p>
 </details>
       </section>
       <section class="section" id="s-6-2-1">
         <div class="sec-head"><div class="sec-no">6.2</div><h2>.1 指定初始化数组元素</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-2">6.2 指定初始化</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>数组指定初始化用 <strong><code class="c">[index] = value</code></strong> 语法，稀疏数组与查找表尤其清晰。ROM 中只占用实际元素，未写明的下标为 0（静态存储期）。</p>
 <h2>要点</h2>
@@ -1124,6 +1957,9 @@ for (int i = 0; i &lt; 10; i++)
       </section>
       <section class="section" id="s-6-2-2">
         <div class="sec-head"><div class="sec-no">6.2</div><h2>.2 指定初始化结构体成员</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-2">6.2 指定初始化</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>结构体用 <strong><code class="c">.member = value</code></strong> 初始化，顺序任意、可只写部分成员。嵌套结构体、数组字段同样支持 designated。这是内核 <strong><code class="c">file_operations</code></strong>、<strong><code class="c">of_device_id</code></strong> 等结构最常用写法。</p>
 <h2>要点</h2>
@@ -1210,6 +2046,9 @@ struct point p2 = { .x = 10, .y = 20 };
       </section>
       <section class="section" id="s-6-2-3">
         <div class="sec-head"><div class="sec-no">6.2</div><h2>.3 Linux内核驱动注册</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-2">6.2 指定初始化</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>内核驱动用 <strong>静态常量结构体 + 指定初始化</strong> 向子系统注册：字段多、版本演进快，指定初始化避免「位错列」Bug。典型：<code class="c">file_operations</code>、<code class="c">platform_driver</code>、<code class="c">pci_driver</code>、<code class="c">of_match_table</code>。</p>
 <h2>要点</h2>
@@ -1281,6 +2120,9 @@ grep -r '\.open\s*=' drivers/ --include='*.c' | head
       </section>
       <section class="section" id="s-6-2-4">
         <div class="sec-head"><div class="sec-no">6.2</div><h2>.4 指定初始化的好处</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-2">6.2 指定初始化</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>指定初始化提升 <strong>可读性、可维护性、Review 安全性</strong>；在大型结构体与配置表中收益最大。对比 positional 初始化，字段增删时 merge conflict 更小。</p>
 <h2>要点</h2>
