@@ -78,8 +78,8 @@
 | ✅ | [10.8 嵌入式 C 开门：寄存器/位操作/屏障](./ch10-multitasking-and-os/10.8-register/10.8-寄存器操作.md) | 28 KB | 已完成（第 22 批，由 ch02 硬件内容改造而来） |
 | ✅ | [6.3 语句表达式](./ch06-gnu-c-extensions/6.3-statement-expr/6.3-宏构造-利器-语句表达式.md) | 27 KB | 已完成（第 23 批）：自我初始化 UB、零开销、MMIO 双读事故 |
 | ✅ | [6.5 零长度数组与柔性数组](./ch06-gnu-c-extensions/6.5-zero-length-array/6.5-零长度数组.md) | 39 KB | 已完成（第 24 批）：sizeof≠offsetof 静默错位、struct_size 溢出、counted_by |
-| ▶ | [6.7 aligned](./ch06-gnu-c-extensions/6.7-aligned/) | 19 KB/6 篇 | **下一批**：与 cache line、DMA 对齐联动 |
-| 6 | [6.9 weak / alias](./ch06-gnu-c-extensions/6.9-weak/) | 16 KB/5 篇 | 驱动/SDK 的符号覆盖机制 |
+| ✅ | [6.7 aligned 与 packed](./ch06-gnu-c-extensions/6.7-aligned/6.7-属性声明-aligned.md) | 32 KB | 已完成（第 25 批）：aligned 管不了 malloc、packed 绕过 UBSan、伪共享 1.60x |
+| ▶ | [6.9 weak / alias](./ch06-gnu-c-extensions/6.9-weak/) | 16 KB/5 篇 | **下一批**：驱动/SDK 的符号覆盖机制 |
 | 7 | [6.10 inline](./ch06-gnu-c-extensions/6.10-inline/) | 8 KB/6 篇 | 与 HFT 热点路径相关 |
 | 8 | [6.11 builtin](./ch06-gnu-c-extensions/6.11-builtin/) | 14 KB/7 篇 | `__builtin_expect` / `__builtin_types_compatible_p` |
 | 9 | [6.12 变参宏](./ch06-gnu-c-extensions/6.12-vararg-macro/) | 7 KB/5 篇 | `##__VA_ARGS__` 与日志宏 |
