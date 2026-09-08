@@ -95,7 +95,7 @@
 | ✅ | **CH2** | [6.9 weak 与 alias](./02-ch2-gnu-c-advanced/6.9-weak/6.9-属性声明-weak.md) | 31 KB | 已完成（第 26 批）：weak 不触发静态库提取、热路径慢 3.2x、-fno-common |
 | ✅ | **CH1** | [6.10 inline](./01-ch1-gnu-c-basics/6.10-inline/6.10-内联函数.md) | 29 KB | 已完成（第 27 批）：C99/gnu89 语义反转、薛定谔链接、优化可见性基准、weak 对立 |
 | 8 | **CH2** | [6.11 builtin](./02-ch2-gnu-c-advanced/6.11-builtin/) | 14 KB/7 篇 | `__builtin_expect` / `__builtin_types_compatible_p` |
-| 9 | **CH1** | [6.12 变参宏](./01-ch1-gnu-c-basics/6.12-vararg-macro/) | 7 KB/5 篇 | `##__VA_ARGS__` 与日志宏 |
+| ✅ | **CH1** | [6.12 变参宏](./01-ch1-gnu-c-basics/6.12-vararg-macro/6.12-可变参数宏.md) | 23 KB | 已完成（第 28 批）：四种写法空参矩阵、逗号陷阱、PP_NARG 零参 bug、零开销日志 |
 | 10 | **CH2** | [6.8 format](./02-ch2-gnu-c-advanced/6.8-format/) | 8 KB/4 篇 | 已由 [Pointers on C 7.6.2](../02-Pointers-on-C/ch07-functions/7.6-variable-argument-lists/7.6.2-可变参数的限制.md) 深度覆盖，回链即可 |
 | 11 | **CH1** | [6.2 指定初始化](./01-ch1-gnu-c-basics/6.2-designated-init/) | 10 KB/5 篇 | 驱动里的 `.member = value` 套路 |
 | 12 | **CH1** | [6.1 C 标准](./01-ch1-gnu-c-basics/6.1-c-standard/) | 12 KB/6 篇 | 与 [6.0 GNU C 占比](./01-ch1-gnu-c-basics/6.0-driver-how-much-gnu-c.md) 联动 |
