@@ -32,6 +32,9 @@ cd 08-format && bash run.sh && bash run2.sh
 
 # 内建函数：bitops/bswap/constant_p/expect/prefetch/overflow/libc folding
 cd 09-builtin && bash run.sh
+
+# 内联汇编：四段式/约束/clobber/volatile/asm goto/ABI/内核实例
+cd 10-asm && bash run.sh
 ```
 
 ## 工具验证
@@ -44,6 +47,8 @@ gcc -Wall -Wformat -o fmt_test demo06_log_macro.c   # format 属性见 6.8
 cd 08-format && bash run.sh && bash run2.sh           # 见 6.8 与 08-format/README.md
 # 内建函数实测（popcount 陷阱 / constant_p -O0 陷阱 / libc 折叠 / overflow）
 cd 09-builtin && bash run.sh                            # 见 6.11 与 09-builtin/README.md
+# 内联汇编全量实测（earlyclobber/漏clobber/gcc-clang分裂/volatile删除/asm goto）
+cd 10-asm && bash run.sh                               # 见 3.6 与 10-asm/README.md
 ```
 
 ## demo03 说明

@@ -30,8 +30,8 @@ CH1 的东西写错会**编译报错**，你立刻知道。CH2 的东西写错�
 | 3 | [6.8 format（格式串检查）](./6.8-format/6.8-属性声明-format.md) | ✅ 30 KB | 编译期诊断（archetype 支持矩阵 / `-Wformat` 家族 / `no_printk` 零开销） |
 | 4 | [6.9 weak 与 alias](./6.9-weak/6.9-属性声明-weak.md) | ✅ 31 KB | **链接期**（唯一一条） |
 | 5 | [6.11 内建函数（likely/unlikely/popcount/overflow）](./6.11-builtin/6.11-内建函数.md) | ✅ 40 KB | 编译期优化 + 分支布局 + 位操作 + 溢出检查 |
-| 6 | [3.6 内联汇编](./3.6-mixed-programming/) | 待扩 | **代码生成**（`__asm__ __volatile__`、操作数约束、clobber） |
-| 附 | [demo/](./demo/) | 8 个示例 + [08-format](./demo/08-format/) 12 个 + [09-builtin](./demo/09-builtin/) 14 个 | 本章全部可编译复现 |
+| 6 | [3.6 内联汇编（四段式/约束/clobber/volatile/asm goto）](./3.6-mixed-programming/3.6-C语言和汇编语言混合编程.md) | ✅ 27 KB | **代码生成**（操作数约束矩阵 / earlyclobber / 漏 clobber 的 gcc-clang 分裂 / volatile 删除实测 / asm goto） |
+| 附 | [demo/](./demo/) | 8 个示例 + [08-format](./demo/08-format/) 12 个 + [09-builtin](./demo/09-builtin/) 14 个 + [10-asm](./demo/10-asm/) 15 个 | 本章全部可编译复现 |
 
 ## 三条主线一看就懂的分工
 
