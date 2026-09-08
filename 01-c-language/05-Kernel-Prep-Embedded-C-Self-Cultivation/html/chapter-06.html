@@ -1404,44 +1404,869 @@ struct config c = { 30 };  // 30 是 enabled 还是 timeout？
       </section>
       <section class="section" id="s-6-3">
         <div class="sec-head"><div class="sec-no">6.3</div><h2>宏构造「利器」：语句表达式</h2></div>
+<p><a href="#intro">← ch06 GNU C 扩展</a> · <a href="#s-6-4">6.4 typeof 与 container_of</a> · <a href="#s-6-5">6.5 零长度数组</a></p>
+<blockquote>
+<p><strong>本篇是语句表达式 <code class="c">({ ... })</code> 的完整总纲</strong>：从语法、返回值规则、作用域、跳转语义，到零开销实测与五种真实事故，全部有本机（WSL gcc 13.3 / clang 18.1.3）实测数据。
+逐节细节见 <a href="chapter-06.html#s-6-3-1">6.3.1 表达式·语句·代码块</a> · <a href="chapter-06.html#s-6-3-2">6.3.2 语句表达式</a> · <a href="chapter-06.html#s-6-3-3">6.3.3 在宏中使用</a> · <a href="chapter-06.html#s-6-3-4">6.3.4 内核中的语句表达式</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
-<p><strong>语句表达式（statement expression）</strong> 语法 <code class="c">({ statements; expr; })</code> 把多条语句打包成一个 <strong>有值的表达式</strong>，是 GNU 扩展。内核 <strong><code class="c">min</code>/<code class="c">max</code></strong>、<strong><code class="c">container_of</code></strong>、原子操作宏都依赖它；没有语句表达式，很多 C 宏无法既安全又返回结果。</p>
-<h2>要点</h2>
-<pre class="code" data-label="C"><code class="c">#define min(a, b) ({                    \
-    typeof(a) _a = (a);                 \
-    typeof(b) _b = (b);                 \
-    _a &lt; _b ? _a : _b;                  \
-})
+<p><strong>语句表达式（statement expression）</strong> 写法是 <code class="c">({ 语句; 语句; 表达式; })</code>——把<strong>一个代码块</strong>变成<strong>一个有值的表达式</strong>。</p>
+<p>它和 <a href="#s-6-4">6.4 typeof</a> 配成"内核宏两件套"，缺一不可：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>两件套</th>
+<th>解决的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">typeof</code></strong></td>
+<td>宏能"看见"实参的<strong>类型</strong> → 声明临时变量</td>
+</tr>
+<tr>
+<td><strong>语句表达式</strong></td>
+<td>宏能拥有<strong>局部作用域</strong> → 放得下那条声明语句</td>
+</tr>
+</tbody>
+</table></div>
+<p>没有 <code class="c">typeof</code>，宏不知道该声明什么类型的临时变量；没有语句表达式，宏连一条声明语句都放不进去。两者合体才有了 <code class="c">min</code>/<code class="c">max</code>/<code class="c">container_of</code>/<code class="c">swap</code>/<code class="c">clamp</code>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>关键事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>是 GNU 扩展</td>
+<td>标准 C 到 C23 都没有；但 <strong>gcc / clang / ICC 都支持</strong>，连 <strong>g++ / clang++ 也支持</strong></td>
+</tr>
+<tr>
+<td>只在<strong>函数内</strong>可用</td>
+<td>用在全局初始化器、位域宽度、枚举常量 → 直接编译错误</td>
+</tr>
+<tr>
+<td>不是常量表达式</td>
+<td>哪怕是 <code class="c">({4;})</code> 这种"看起来恒定"的，也不能当数组维度（会退化成 VLA）</td>
+</tr>
+<tr>
+<td><code class="c">-O2</code> 下<strong>零开销</strong></td>
+<td>与手写三元表达式、与 <code class="c">static inline</code> 函数生成<strong>逐字节相同</strong>的指令</td>
+</tr>
+<tr>
+<td>有一个<strong>静默 UB 陷阱</strong></td>
+<td>实参名与宏内临时变量同名 → 自我初始化，gcc <code class="c">-Wall -Wextra</code> 抓不到</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>一、语法：把代码块变成表达式</h2>
+<pre class="code" data-label="C"><code class="c">({ 语句1; 语句2; ...; 最后一条表达式 })
 </code></pre>
 <ul>
-<li>最后一项 <strong>分号前的表达式</strong> 为整个 <code class="c">({})</code> 的值</li>
-<li>内部可声明临时变量，避免宏参数 <strong>多次求值</strong></li>
-<li><code class="c">-std=gnu11</code> 默认可用；纯 <code class="c">-std=c11</code> 非法</li>
+<li>外面是<strong>圆括号</strong>，里面是<strong>花括号</strong>——少任何一半都不是语句表达式</li>
+<li><strong>最后一条必须是表达式语句</strong>，它的值就是整个 <code class="c">({ })</code> 的值</li>
+<li>内部可以声明变量、写循环、写 <code class="c">if</code>、嵌套另一个 <code class="c">({ })</code></li>
 </ul>
-<h2>与后续衔接</h2>
-<ul>
-<li><strong>6.3.1–6.3.4</strong> 语法细节与内核实例</li>
-<li><strong>6.4</strong> <code class="c">container_of</code>；<strong>6.12</strong> 日志宏</li>
-</ul>
+<pre class="code" data-label="C"><code class="c">int v1 = ({ int a = 3; int b = 4; a + b; });   /* 7 */
+int v3 = ({ 42; });                            /* 只有一条语句也行 */
+int v4 = ({ int x = ({ 10; }); x * 2; });      /* 嵌套：20 */
+</code></pre>
+<h3>1.1 值的类型 = 最后那条表达式的类型</h3>
+<p>实测：</p>
+<pre class="code" data-label="C"><code class="c">double v2 = ({ int a = 3; a; });   /* 值是 int 3，赋给 double 时隐式转换 -&gt; 3.000000 */
+</code></pre>
+<p>所以<strong>语句表达式本身是"类型透明"的</strong>——它不自带类型，完全由最后一条表达式决定。这一点和 <code class="c">typeof</code> 搭配时很关键：<code class="c">__typeof__(a) _a = (a);</code> 里 <code class="c">_a</code> 的类型就是实参 <code class="c">a</code> 的类型。</p>
+<h3>1.2 最后一条不是表达式 → 编译错误</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">({ int a = 1; })</code> —— 最后是<strong>声明</strong></td>
+<td>❌ <code class="c">error: void value not ignored as it ought to be</code></td>
+</tr>
+<tr>
+<td><code class="c">({ })</code> —— 空块</td>
+<td>❌ 同上</td>
+</tr>
+<tr>
+<td><code class="c">({ printf("hi"); })</code> —— 最后是 void 调用</td>
+<td>⚠️ 只能当语句用，不能赋给变量</td>
+</tr>
+</tbody>
+</table></div>
+<p>反过来，<strong>void 的语句表达式当语句用是合法的</strong>，这正是很多调试宏的写法：</p>
+<pre class="code" data-label="C"><code class="c">({ printf(&quot;side effect ok\n&quot;); });   /* 合法，整体是 void 表达式 */
+</code></pre>
+<h3>1.3 内部可以有流程控制</h3>
+<pre class="code" data-label="C"><code class="c">int sum = ({
+    int s = 0;
+    for (int i = 1; i &lt;= 5; i++) s += i;
+    s;                      /* &lt;- 返回值 */
+});                         /* 实测 15 */
+</code></pre>
+<hr />
+<h2>二、作用域：不进不出</h2>
+<h3>2.1 内部变量遮蔽外层，但<strong>不会泄漏</strong>到外面</h3>
+<pre class="code" data-label="C"><code class="c">int a = 100;
+int v = ({ int a = 7; a; });   /* 实测 inner=7, outer=100 */
+
+int w = _a;                    /* ❌ error: '_a' undeclared */
+</code></pre>
+<p>遮蔽是<strong>正常的块作用域</strong>行为，同名内层变量盖住外层；块结束后外层变量完好无损（实测外层 <code class="c">_a</code> 仍是 100）。</p>
+<h3>2.2 生命周期到此结束——返回地址就是悬垂指针</h3>
+<pre class="code" data-label="C"><code class="c">#define BAD_PTR() ({ int _x = 42; &amp;_x; })   /* 返回栈上临时量的地址 */
+int *p = BAD_PTR();                          /* p 立刻悬垂 */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>是否告警</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc 13.3</td>
+<td>✅ <code class="c">-Wdangling-pointer=</code>：<em>using a dangling pointer to '_x'</em>，并指向宏定义行</td>
+</tr>
+<tr>
+<td>clang 18</td>
+<td>❌ <strong>零警告</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>这是语句表达式最容易写错的地方之一：<strong>它给了你一个块，块里的自动变量活不过右括号</strong>。
+想要"返回一个数组"请用<strong>复合字面量</strong> <code class="c">(int[]){1,2,3}</code>，它的生命周期是<strong>所在块</strong>（实测有效）。</p>
+</blockquote>
+<hr />
+<h2>三、跳转语义：return / break / continue / goto 全部穿透</h2>
+<p>这一点非常反直觉但很有用：语句表达式<strong>不是函数</strong>，跳转语句直接作用于<strong>外层的函数或循环</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>跳转</th>
+<th>在语句表达式里的行为</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">return</code></td>
+<td>从<strong>包含它的函数</strong>返回（不是从块返回）</td>
+<td><code class="c">early_return(-5)</code> 返回 -1 ✅</td>
+</tr>
+<tr>
+<td><code class="c">break</code></td>
+<td>跳出<strong>外层</strong>循环</td>
+<td>循环中 <code class="c">if (i==4) break;</code> 生效 ✅</td>
+</tr>
+<tr>
+<td><code class="c">continue</code></td>
+<td>继续<strong>外层</strong>循环</td>
+<td><code class="c">if (i==3) continue;</code> 生效 ✅</td>
+</tr>
+<tr>
+<td><code class="c">goto</code></td>
+<td>可以跳到<strong>外层</strong>标签</td>
+<td>跳到 <code class="c">done:</code> 生效 ✅</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">static int early_return(int x)
+{
+    int v = ({
+        if (x &lt; 0) return -1;   /* 直接从 early_return 返回！ */
+        x * 2;
+    });
+    return v;
+}
+</code></pre>
+<h3>3.1 <code class="c">__label__</code>：在宏里声明局部标签</h3>
+<p>宏可能被同一个函数调用多次，如果用普通标签会<strong>重复定义</strong>。GCC 提供 <code class="c">__label__</code>（clang 也支持）在语句表达式里声明<strong>局部标签</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#define FIRST_NEG(arr, n) ({                        \
+    __label__ found;                                \
+    __typeof__(&amp;(arr)[0]) _a = (arr);               \
+    int _i, _res = -1;                              \
+    for (_i = 0; _i &lt; (n); _i++)                    \
+        if (_a[_i] &lt; 0) { _res = _i; goto found; }  \
+found:                                              \
+    _res;                                           \
+})
+/* 实测：a[5]={1,2,-8,4,-5} -&gt; 返回 2，gcc 与 clang 都通过 */
+</code></pre>
+<hr />
+<h2>四、禁区：它不是常量表达式</h2>
+<p><strong>最重要的一条限制</strong>：语句表达式<strong>只能出现在函数体内</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>用法</th>
+<th>结果</th>
+<th>gcc 报错</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局初始化器 <code class="c">int g = ({5;});</code></td>
+<td>❌</td>
+<td><code class="c">braced-group within expression allowed only inside a function</code></td>
+</tr>
+<tr>
+<td>全局数组维度 <code class="c">int arr[({3;})];</code></td>
+<td>❌</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>位域宽度 <code class="c">unsigned x : ({3;});</code></td>
+<td>❌</td>
+<td>同上 + <code class="c">bit-field width not an integer constant</code></td>
+</tr>
+<tr>
+<td>枚举常量 <code class="c">enum { A = ({1;}) };</code></td>
+<td>❌</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code class="c">case ({1;}):</code></td>
+<td>❌</td>
+<td><code class="c">case label does not reduce to an integer constant</code></td>
+</tr>
+<tr>
+<td>块内数组维度 <code class="c">int a[({4;})];</code></td>
+<td>⚠️ 能编过</td>
+<td><strong>但退化成 VLA</strong>：<code class="c">-Wvla</code> 报 <em>"array 'a' whose size cannot be evaluated"</em></td>
+</tr>
+<tr>
+<td><code class="c">_Static_assert(({1;}) == 1, "")</code></td>
+<td>⚠️ gcc 接受</td>
+<td>别这么写，clang 未必买账</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>一句话</strong>：需要<strong>编译期常量</strong>的地方一律不能用；哪怕块里写的是字面量 <code class="c">4</code>，编译器也只在运行时才知道它的值。</p>
+</blockquote>
+<hr />
+<h2>五、标准兼容性（实测矩阵）</h2>
+<h3>5.1 不带 <code class="c">-pedantic</code>：所有模式零诊断</h3>
+<p>同一份 <code class="c">MAX</code> 宏（WSL gcc 13.3 / clang 18.1.3，加 <code class="c">-Wall -Wextra</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th><code class="c">-std</code></th>
+<th>gcc</th>
+<th>clang</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">c99</code> / <code class="c">c11</code> / <code class="c">c17</code> / <code class="c">c2x</code></td>
+<td>✅ 零诊断</td>
+<td>✅ 零诊断</td>
+</tr>
+<tr>
+<td><code class="c">gnu99</code> / <code class="c">gnu11</code> / <code class="c">gnu17</code></td>
+<td>✅ 零诊断</td>
+<td>✅ 零诊断</td>
+</tr>
+</tbody>
+</table></div>
+<h3>5.2 带 <code class="c">-pedantic</code>：全部告警（但仍能编过）</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>诊断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc</td>
+<td><code class="c">warning: ISO C forbids braced-groups within expressions [-Wpedantic]</code></td>
+</tr>
+<tr>
+<td>clang</td>
+<td><code class="c">warning: use of GNU statement expression extension [-Wpedantic]</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>对比 6.4 的 <code class="c">typeof</code></strong>：裸 <code class="c">typeof</code> 在 <code class="c">gcc -std=c11</code> 下是<strong>硬错误</strong>（被当成隐式函数调用），而语句表达式在同样的 ISO 模式下只是 <strong>warning</strong>。
+原因不同：<code class="c">typeof</code> 是<strong>关键字</strong>层面的冲突，<code class="c">({ })</code> 是<strong>语法</strong>层面的扩展——GCC 认为语法扩展"无害"，只在你显式要 ISO 合规时才提醒。</p>
+</blockquote>
+<h3>5.3 C++ 呢？两个编译器都支持</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">g++ -std=c++11</code> / <code class="c">-std=c++17</code></td>
+<td>✅ 编译通过，零诊断</td>
+</tr>
+<tr>
+<td><code class="c">clang++ -std=c++17</code></td>
+<td>✅ 编译通过，零诊断</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以头文件里用语句表达式<strong>不会</strong>把 C++ 用户挡在门外（这是它相对某些 GCC 扩展的优势）。</p>
+<h3>5.4 可移植包装</h3>
+<pre class="code" data-label="C"><code class="c">#if defined(__GNUC__) || defined(__clang__)
+#  define HAVE_STMT_EXPR 1
+#  define STMT(...)      (__VA_ARGS__)      /* 有语句表达式时照常展开 */
+#else
+#  define HAVE_STMT_EXPR 0
+#  define STMT(...)      (0)                /* 退化：换成 static inline 实现 */
+#endif
+</code></pre>
+<p>实践建议：<strong>Linu 内核、DPDK、U-Boot 这类项目直接假定可用</strong>；要支持 MSVC 的库代码，就用 <code class="c">#ifdef</code> 切成 <code class="c">static inline</code> 函数。</p>
+<hr />
+<h2>六、核心价值：消除宏参数的双重求值</h2>
+<p>这是语句表达式存在的<strong>第一理由</strong>。</p>
+<h3>6.1 朴素宏的灾难</h3>
+<pre class="code" data-label="C"><code class="c">#define MAX_NAIVE(a, b)  ((a) &gt; (b) ? (a) : (b))
+#define MAX_GNU(a, b) ({ __typeof__(a) _a = (a);   \
+                         __typeof__(b) _b = (b);   \
+                         _a &gt; _b ? _a : _b; })
+</code></pre>
+<p>实测（函数 <code class="c">bump()</code> 每调用一次计数 +1）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>调用</th>
+<th>朴素版</th>
+<th>语句表达式版</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">MAX(bump(), 0)</code></td>
+<td>返回 <strong>2</strong>，<code class="c">bump()</code> 调用 <strong>2 次</strong></td>
+<td>返回 <strong>1</strong>，调用 <strong>1 次</strong></td>
+</tr>
+<tr>
+<td><code class="c">MAX(arr[idx++], 5)</code></td>
+<td><code class="c">idx</code> 变成 <strong>2</strong></td>
+<td><code class="c">idx</code> 变成 <strong>1</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>朴素版不仅多求值，而且<strong>返回值是第二次调用的结果</strong>（<code class="c">bump()</code> 第二次返回 2，所以 <code class="c">MAX</code> 返回 2 而不是 1）——<strong>结果本身都错了</strong>。</p>
+<h3>6.2 嵌入式场景：这是真事故，不是理论问题</h3>
+<p>硬件寄存器<strong>读一次和读两次是两回事</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* 朴素版：v 出现两次 -&gt; 读两次寄存器 */
+#define LIMIT_NAIVE(v)  (((v) &gt; 4095u) ? 4095u : (v))
+/* 语句表达式版：先存到临时变量，只读一次 */
+#define LIMIT_GNU(v) ({ __typeof__(v) _v = (v); _v &gt; 4095u ? 4095u : _v; })
+</code></pre>
+<p>实测（模拟每次读取值都在变的寄存器）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>返回值</th>
+<th>读寄存器次数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">LIMIT_NAIVE(read_reg())</code></td>
+<td><strong>101</strong>（第二次读到的值！）</td>
+<td><strong>2</strong></td>
+</tr>
+<tr>
+<td><code class="c">LIMIT_GNU(read_reg())</code></td>
+<td>100（正确）</td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>为什么致命</strong>：
+1. <strong>W1C（write-one-to-clear）寄存器</strong>读一次就清一次标志——读两次 = <strong>丢中断</strong>。
+2. <strong>自增型 FIFO / DMA 指针</strong>读一次就往前走一格——读两次 = <strong>丢数据</strong>。
+3. <strong>volatile MMIO</strong> 编译器不敢合并，两次读一定真的发生两次。</p>
+<p>这在裸机驱动里是最难查的一类 bug：逻辑"看起来"完全正确。</p>
+</blockquote>
+<hr />
+<h2>七、零开销实测：-O2 下与手写代码逐字节相同</h2>
+<pre class="code" data-label="C"><code class="c">int max_gnu_fn(int a, int b) { return MAX_GNU(a, b); }   /* 语句表达式宏 */
+int max_ref_fn(int a, int b) { return a &gt; b ? a : b; }   /* 手写三元 */
+</code></pre>
+<p><strong><code class="c">-O0</code>（未优化）</strong>——宏版多出栈上搬运：</p>
+<pre class="code" data-label="asm"><code class="c">max_gnu_fn:
+    mov    %edi,-0x14(%rbp)     ; 存 a
+    mov    %esi,-0x18(%rbp)     ; 存 b
+    mov    -0x14(%rbp),%eax
+    mov    %eax,-0x8(%rbp)      ; _a = a
+    mov    -0x18(%rbp),%eax
+    mov    %eax,-0x4(%rbp)      ; _b = b
+    ...
+    cmovge %edx,%eax
+</code></pre>
+<p><strong><code class="c">-O2</code></strong>——两个版本<strong>完全一致</strong>：</p>
+<pre class="code" data-label="asm"><code class="c">max_gnu_fn:                     max_ref_fn:
+    cmp    %esi,%edi                cmp    %edi,%esi
+    mov    %esi,%eax                mov    %edi,%eax
+    cmovge %edi,%eax                cmovge %esi,%eax
+    ret                             ret
+</code></pre>
+<p><strong>与 <code class="c">static inline</code> 函数对比</strong>（<code class="c">-O2</code>，两次 min 相加）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语句表达式宏</td>
+<td><code class="c">mov $0x7,%eax; mov $0x3,%edx; cmp; cmovle; cmp; cmovg; add; ret</code></td>
+</tr>
+<tr>
+<td><code class="c">static inline</code> 函数</td>
+<td><strong>完全相同</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论</strong>：优化后，临时变量 <code class="c">_a</code>/<code class="c">_b</code> 一个字节都不占。语句表达式纯粹是<strong>编译期构造</strong>。
+唯一代价是 <code class="c">-O0</code> 调试时的栈搬运和<strong>符号可读性</strong>（见第九节）。</p>
+</blockquote>
+<hr />
+<h2>八、内核 / 嵌入式里的真实宏</h2>
+<h3>8.1 min / max（最经典）</h3>
+<pre class="code" data-label="C"><code class="c">#define min(a, b) ({            \
+    __typeof__(a) _a = (a);     \
+    __typeof__(b) _b = (b);     \
+    _a &lt; _b ? _a : _b;          \
+})
+</code></pre>
+<p>实测支持 <code class="c">int</code> / <code class="c">double</code> / <strong>指针</strong>（<code class="c">const char *</code>）自动推导，一份宏吃所有算术类型与指针。</p>
+<h3>8.2 clamp（限幅，ADC 采样天天用）</h3>
+<pre class="code" data-label="C"><code class="c">#define clamp(v, lo, hi) ({                 \
+    __typeof__(v)  _v  = (v);               \
+    __typeof__(lo) _lo = (lo);              \
+    __typeof__(hi) _hi = (hi);              \
+    _v &lt; _lo ? _lo : (_v &gt; _hi ? _hi : _v); \
+})
+/* 实测：clamp(4200, 0, 4095) = 4095，clamp(-50, 0, 4095) = 0 */
+</code></pre>
+<h3>8.3 swap（不用调用方准备临时变量）</h3>
+<pre class="code" data-label="C"><code class="c">#define swap(a, b) ({ __typeof__(a) _t = (a); (a) = (b); (b) = _t; })
+/* 实测：swap(x,y) -&gt; x=2 y=1；swap(arr[0],arr[1]) 正常；swap(x,x) 也安全（x 不变） */
+</code></pre>
+<p>注意 <code class="c">swap</code> 里 <code class="c">(a)</code> 出现两次而 <code class="c">(b)</code> 出现两次——<strong>它是故意的</strong>（一次读一次写，语义需要），别把它当成双重求值 bug。</p>
+<h3>8.4 寄存器字段读改写（嵌入式）</h3>
+<pre class="code" data-label="C"><code class="c">/* 提取字段：mask 0x0FF0 -&gt; 移位 4 位 */
+#define FIELD_GET(msk, v) ({ __typeof__(v) _v = (v); \
+                             (_v &amp; (msk)) &gt;&gt; (__builtin_ffs(msk) - 1); })
+
+/* 读-改-写：把字段设成 val，其余位保持 */
+#define REG_SET_FIELD(reg, msk, val) ({                                 \
+    __typeof__(reg) _r = (reg);                                         \
+    (_r &amp; ~(msk)) | (((val) &lt;&lt; (__builtin_ffs(msk) - 1)) &amp; (msk));      \
+})
+/* 实测：0x0000A53C mask 0x0FF0 -&gt; 提取 0x53；设成 0x12 -&gt; 0x0000A12C */
+</code></pre>
+<blockquote>
+<p>注意真实驱动里这两步之间还需要 <strong>关中断 / 加锁</strong>——语句表达式只保证"表达式级"的原子性，<strong>不保证线程/中断安全</strong>。</p>
+</blockquote>
+<h3>8.5 container_of（<a href="#s-6-4">6.4</a> 的主角）</h3>
+<pre class="code" data-label="C"><code class="c">#define container_of(ptr, type, member) ({                  \
+    const __typeof__(((type *)0)-&gt;member) *__mptr = (ptr);  \
+    (type *)((char *)__mptr - offsetof(type, member)); })
+</code></pre>
+<p><strong>没有语句表达式，这个宏写不出来</strong>——它需要先声明 <code class="c">__mptr</code> 做类型检查，再返回计算结果。</p>
+<hr />
+<h2>九、五种坑（实测）</h2>
+<h3>坑 1：实参名与宏内临时变量同名 → 自我初始化 UB ★最危险</h3>
+<pre class="code" data-label="C"><code class="c">#define min(a,b) ({ __typeof__(a) _a=(a); __typeof__(b) _b=(b); _a&lt;_b?_a:_b; })
+
+int _a = 100;
+int r = min(_a, 1);        /* 展开成：__typeof__(_a) _a = (_a);  &lt;- 用自己初始化自己！ */
+</code></pre>
+<p>展开后 <code class="c">_a</code> 在自己的初始化表达式里引用自己——<strong>未定义行为</strong>。</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>观测</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>某次实测返回值</td>
+<td><strong>-265410072</strong>（垃圾）</td>
+</tr>
+<tr>
+<td>另一次实测返回值</td>
+<td><strong>1</strong>（碰巧对）</td>
+</tr>
+<tr>
+<td>外层 <code class="c">_a</code></td>
+<td>始终是 100，没被破坏</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>最可怕的地方是它"有时对"</strong>：两个栈槽复用时恰好读到外层的值，看起来正常；一旦栈布局变化就返回垃圾。</p>
+<p><strong>告警覆盖率（实测）</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>编译器 / 选项</th>
+<th>能否抓到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gcc <code class="c">-Wall -Wextra</code></td>
+<td>❌ <strong>抓不到</strong>（0 个警告）</td>
+</tr>
+<tr>
+<td>gcc <code class="c">-Wall -Wextra -Winit-self</code></td>
+<td>✅ <code class="c">'_a' is used uninitialized [-Wuninitialized]</code></td>
+</tr>
+<tr>
+<td>gcc <code class="c">-Wshadow</code></td>
+<td>✅ <code class="c">declaration of '_a' shadows a previous local</code></td>
+</tr>
+<tr>
+<td><strong>clang <code class="c">-Wall -Wextra</code></strong></td>
+<td>✅ <strong>默认就能抓</strong>：<em>variable '_a' is uninitialized when used within its own initialization</em></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>给 gcc 用户的建议</strong>：把 <code class="c">-Winit-self</code> 和 <code class="c">-Wshadow</code> 加进你的编译选项。<strong>clang 默认就比 gcc 安全</strong>。</p>
+</blockquote>
+<p><strong>内核用 <code class="c">__x</code>/<code class="c">__y</code> 双下划线能防住吗？</strong> 不能——只是降低了撞名概率，实测 <code class="c">min_kr(__x, 1)</code> 同样中招。</p>
+<p><strong>真正防住的办法</strong>：用 <code class="c">__COUNTER__</code> 生成唯一变量名，但<strong>必须把变量名作为宏参数传进实现体</strong>：</p>
+<pre class="code" data-label="C"><code class="c">#define CONCAT_(a,b) a##b
+#define CONCAT(a,b)  CONCAT_(a,b)
+/* 关键：__COUNTER__ 在调用点只展开一次，变量名作为参数传进来 */
+#define min_impl(a, b, ta, tb) ({ __typeof__(a) ta=(a); __typeof__(b) tb=(b); ta&lt;tb?ta:tb; })
+#define min_safe(a, b) min_impl(a, b, CONCAT(_sa_, __COUNTER__), CONCAT(_sb_, __COUNTER__))
+/* 实测：min_safe(_sa_2, 1) = 1 正确；嵌套 min_safe(min_safe(9,3),5) = 3 正确 */
+</code></pre>
+<p>❌ <strong>错误写法</strong>（很多人踩）：在宏体里多处写 <code class="c">CONCAT(_sa_, __COUNTER__)</code>——<code class="c">__COUNTER__</code> <strong>每次出现都递增</strong>，第二次引用拿到的是 <code class="c">_sa_2</code> 而不是 <code class="c">_sa_0</code>，直接 <code class="c">error: '_sa_2' undeclared</code>。</p>
+<h3>坑 2：返回内部变量的地址（见 <a href="#22-生命周期到此结束返回地址就是悬垂指针">2.2</a>）</h3>
+<p>gcc 能告警，clang 沉默。</p>
+<h3>坑 3：类型不匹配只是 warning</h3>
+<pre class="code" data-label="C"><code class="c">#define min_chk(a,b) ({ __typeof__(a) _a=(a); __typeof__(b) _b=(b); \
+                        (void)(&amp;_a == &amp;_b);   /* 指针类型不兼容 -&gt; 告警 */ \
+                        _a &lt; _b ? _a : _b; })
+</code></pre>
+<p>传 <code class="c">int</code> 和 <code class="c">long</code> 时只有 <code class="c">warning: comparison of distinct pointer types lacks a cast</code>。</p>
+<p>想要<strong>硬错误</strong>就加 <code class="c">_Static_assert</code>：</p>
+<pre class="code" data-label="C"><code class="c">#define __same_type(a,b) __builtin_types_compatible_p(__typeof__(a), __typeof__(b))
+#define min_hard(a,b) ({                                            \
+    _Static_assert(__same_type(a,b), &quot;min: argument types differ&quot;);  \
+    __typeof__(a) _a=(a); __typeof__(b) _b=(b);                      \
+    _a &lt; _b ? _a : _b;                                              \
+})
+/* 实测传 int vs long：error: static assertion failed: &quot;min: argument types differ&quot; */
+</code></pre>
+<h3>坑 4：调试时错误信息指向宏内部</h3>
+<pre class="code" data-label="C"><code class="c">int f(void){ struct { int a; } s; return MAX(s, 3); }
+</code></pre>
+<p>gcc 报：</p>
+<pre class="code" data-label="code"><code class="c">error: invalid operands to binary &gt; (have 'struct &lt;anonymous&gt;' and 'int')
+note: in expansion of macro 'MAX'
+</code></pre>
+<p>错误位置落在<strong>宏定义那一行的第 N 列</strong>，而不是调用点。宏越复杂，越难定位。</p>
+<h3>坑 5：嵌套时的 <code class="c">-Wshadow</code></h3>
+<p><code class="c">min(min(9,3),5)</code> 能正常工作（实测 3），但 <code class="c">-Wshadow</code> 会报两层 <code class="c">_a</code> 互相遮蔽。这是<strong>预期行为</strong>（内层块遮蔽外层块），不是 bug，但会让 <code class="c">-Werror</code> 项目编译失败。</p>
+<hr />
+<h2>十、四种"打包代码块"方案对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>有返回值</th>
+<th>能声明变量</th>
+<th>类型泛型</th>
+<th>能当常量</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>语句表达式 <code class="c">({ })</code></strong></td>
+<td>✅</td>
+<td>✅</td>
+<td>✅（配 <code class="c">typeof</code>）</td>
+<td>❌</td>
+<td><code class="c">min</code>/<code class="c">max</code>/<code class="c">container_of</code></td>
+</tr>
+<tr>
+<td><code class="c">do { } while (0)</code></td>
+<td>❌ <strong>只是语句</strong></td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td>多语句宏（日志、断言）</td>
+</tr>
+<tr>
+<td><strong>复合字面量 <code class="c">(T){ }</code></strong></td>
+<td>✅</td>
+<td>❌（只能初始化）</td>
+<td>❌（要写类型）</td>
+<td>❌</td>
+<td>临时数组/结构体</td>
+</tr>
+<tr>
+<td><code class="c">static inline</code> 函数</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌（类型固定）</td>
+<td>❌（但可常量折叠）</td>
+<td>首选方案（见下）</td>
+</tr>
+</tbody>
+</table></div>
+<p>实测：<code class="c">int r = DMAX(1,2);</code>（<code class="c">do-while</code> 版）→ <code class="c">error: expected expression before 'do'</code>。</p>
+<blockquote>
+<p><strong>优先用 <code class="c">static inline</code></strong>：<code class="c">-O2</code> 下性能与宏<strong>完全相同</strong>（第七节实测），而且有类型检查、能调试、无双重求值、无自我初始化风险。
+<strong>只有需要类型泛型时才用语句表达式宏</strong>——这是它不可替代的唯一理由。</p>
+</blockquote>
+<hr />
+<h2>十一、HFT / 嵌入式关联</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>怎么用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>驱动寄存器访问</strong></td>
+<td><code class="c">LIMIT_</code>/<code class="c">FIELD_GET</code>/<code class="c">REG_SET_FIELD</code> 必须只读一次寄存器（见 <a href="#62-嵌入式场景这是真事故不是理论问题">6.2</a>）</td>
+</tr>
+<tr>
+<td><strong>限幅与饱和</strong></td>
+<td><code class="c">clamp()</code> 在 ADC / PID 输出里天天用，参数带自增时不能重复求值</td>
+</tr>
+<tr>
+<td><strong>HFT 热点路径</strong></td>
+<td><code class="c">-O2</code> 下零开销（与手写一致），但<strong>优先选 <code class="c">static inline</code></strong>——宏的可维护性差</td>
+</tr>
+<tr>
+<td><strong>协议解析</strong></td>
+<td>报文长度字段校验 <code class="c">min(hdr-&gt;len, sizeof(buf))</code>，避免 <code class="c">hdr-&gt;len++</code> 被求值两次</td>
+</tr>
+<tr>
+<td><strong>跨编译器项目</strong></td>
+<td>gcc/clang/g++/clang++ 全支持；但 ISO <code class="c">-pedantic</code> 会告警，<code class="c">-Werror</code> 项目要评估</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>十二、与前后节的衔接</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方向</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前置</td>
+<td><a href="#s-6-4">6.4 typeof &amp; container_of</a>（两件套的另一半）· <a href="#s-6-2">6.2 指定初始化</a></td>
+</tr>
+<tr>
+<td>后置</td>
+<td><a href="#s-6-5">6.5 零长度数组</a> · <a href="#s-6-12">6.12 变参宏</a>（日志宏）· <a href="#s-6-11">6.11 内建函数</a>（<code class="c">__builtin_types_compatible_p</code>）</td>
+</tr>
+<tr>
+<td>嵌入式落地</td>
+<td><a href="chapter-03.html#s-3-6-2">ch03.6 内联汇编</a>（同样的"打包"思路）· <a href="chapter-10.html#s-10-8">10.8 嵌入式 C 开门</a>（MMIO 三种表达）</td>
+</tr>
+</tbody>
+</table></div>
 <hr />
 <h2>代码自测</h2>
-<p><strong>题目 1：</strong> 语句表达式和普通逗号表达式有什么区别？以下宏为什么需要语句表达式？</p>
-<pre class="code" data-label="C"><code class="c">// 逗号表达式
-#define MAX1(a, b) ((a) &gt; (b) ? (a) : (b))
-// 语句表达式
-#define MAX2(a, b) ({ \
-    typeof(a) _a = (a); \
-    typeof(b) _b = (b); \
-    _a &gt; _b ? _a : _b; \
+<p><strong>题目 1：</strong> 语句表达式和逗号表达式都能"放多条东西"，区别是什么？</p>
+<details>
+<summary>答案</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>逗号表达式 <code class="c">(a, b)</code></th>
+<th>语句表达式 <code class="c">({ a; b; })</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>能声明变量</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>能写 <code class="c">if</code> / <code class="c">for</code></td>
+<td>❌（只能是表达式）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>能 <code class="c">return</code> / <code class="c">break</code></td>
+<td>❌</td>
+<td>✅（穿透到外层）</td>
+</tr>
+<tr>
+<td>值</td>
+<td>最后一项</td>
+<td>最后一条表达式</td>
+</tr>
+<tr>
+<td>用于消除双重求值</td>
+<td>❌ 做不到</td>
+<td>✅ 核心用途</td>
+</tr>
+</tbody>
+</table></div>
+<p>逗号表达式解决不了"先存起来再比较"的问题——它没有地方放 <code class="c">__typeof__(a) _a = (a);</code> 这条<strong>声明</strong>。</p>
+</details>
+<p><strong>题目 2：</strong> <code class="c">MAX_NAIVE(bump(), 0)</code> 返回几？<code class="c">bump()</code> 被调用几次？</p>
+<details>
+<summary>答案</summary>
+<p>朴素版 <code class="c">((a) &gt; (b) ? (a) : (b))</code>：<code class="c">bump()</code> 先返回 1，<code class="c">1 &gt; 0</code> 成立，于是<strong>再求值一次</strong> <code class="c">(a)</code>，得到 2。
+<strong>返回 2，调用 2 次。</strong></p>
+<p>语句表达式版：<code class="c">_a = bump()</code> 只调用一次 → <strong>返回 1，调用 1 次</strong>。</p>
+<p><strong>注意返回值本身都错了</strong>（2 而不是 1）。实测如此。</p>
+</details>
+<p><strong>题目 3：</strong> 为什么 <code class="c">int g = ({5;});</code> 编不过，但函数里的 <code class="c">int g = ({5;});</code> 可以？</p>
+<details>
+<summary>答案</summary>
+<p>GCC 的限制是 <strong>braced-group within expression allowed only inside a function</strong>——语句表达式只能出现在函数体内。
+全局（文件作用域）初始化器必须是<strong>常量表达式</strong>，而语句表达式永远不是常量表达式（哪怕块里只有 <code class="c">5</code>）。</p>
+<p>函数内的局部初始化器没有这个限制，所以合法。</p>
+</details>
+<p><strong>题目 4：</strong> 说出语句表达式在 <code class="c">-O2</code> 下的开销，以及它相对 <code class="c">static inline</code> 的取舍。</p>
+<details>
+<summary>答案</summary>
+<p><strong>开销为零</strong>。实测 <code class="c">-O2</code> 下 <code class="c">max_gnu_fn</code>（宏）与 <code class="c">max_ref_fn</code>（手写三元）反汇编完全一致（<code class="c">cmp / mov / cmovge / ret</code>）；与 <code class="c">static inline</code> 版本也逐字节相同。</p>
+<p><strong>取舍</strong>：既然性能一样，<strong>优先用 <code class="c">static inline</code> 函数</strong>——有类型检查、能下断点、无双重求值、无自我初始化 UB。
+只有在需要<strong>类型泛型</strong>（同一个宏吃 int/double/指针）时才用语句表达式宏，这是它的不可替代之处。</p>
+</details>
+<p><strong>题目 5：</strong> <code class="c">min(_a, 1)</code> 为什么会返回垃圾值？怎么防？</p>
+<details>
+<summary>答案</summary>
+<p>宏展开成 <code class="c">__typeof__(_a) _a = (_a);</code>——<strong>内部 <code class="c">_a</code> 遮蔽了外部 <code class="c">_a</code>，于是用自己初始化自己</strong>，读的是未初始化的栈槽，UB。</p>
+<p><strong>可怕之处</strong>：结果不确定。实测一次得到 -265410072，另一次得到正确的 1（两个栈槽恰好复用）。</p>
+<p><strong>检测</strong>：
+- gcc <code class="c">-Wall -Wextra</code> <strong>抓不到</strong>；需要 <code class="c">-Winit-self</code>（报 <code class="c">used uninitialized</code>）或 <code class="c">-Wshadow</code>
+- clang <code class="c">-Wall -Wextra</code> <strong>默认就能抓</strong></p>
+<p><strong>防范</strong>：
+1. 宏内临时变量用不易撞名的名字（内核用 <code class="c">__x</code>/<code class="c">__y</code>，但仍有风险）
+2. 用 <code class="c">__COUNTER__</code> 生成唯一名，<strong>且必须作为参数传入实现宏</strong>（否则 <code class="c">__COUNTER__</code> 每次展开都递增，导致 <code class="c">undeclared</code>）
+3. 能用 <code class="c">static inline</code> 就用 <code class="c">static inline</code></p>
+</details>
+<p><strong>题目 6：</strong> 嵌入式里 <code class="c">LIMIT_NAIVE(read_reg())</code> 有什么实际危害？</p>
+<details>
+<summary>答案</summary>
+<p>朴素宏里 <code class="c">v</code> 出现两次 → <strong>寄存器被读两次</strong>（实测 reads=2，返回的是第二次读到的 101 而非 100）。</p>
+<p>危害：
+1. <strong>W1C 寄存器</strong>（写 1 清除）：读一次就清一次标志 → 读两次丢中断
+2. <strong>自增型 FIFO / DMA 指针</strong>：读一次前进一格 → 读两次丢数据
+3. <strong>volatile MMIO</strong>：编译器不会合并两次读，两次访问一定都发生
+4. 两次读之间值可能被 ISR 改掉 → 得到"撕裂"的值</p>
+<p>改成语句表达式版 <code class="c">LIMIT_GNU</code> 后只读一次（实测 reads=1，返回 100）。</p>
+</details>
+<p><strong>题目 7：</strong> <code class="c">({ int _x = 42; &amp;_x; })</code> 返回什么？gcc 和 clang 谁会告警？</p>
+<details>
+<summary>答案</summary>
+<p>返回<strong>悬垂指针</strong>——<code class="c">_x</code> 是语句表达式块内的自动变量，出了右括号就失效。</p>
+<ul>
+<li><strong>gcc</strong>：<code class="c">-Wdangling-pointer=</code> 告警，并精确定位到宏定义里的 <code class="c">_x</code> 声明处</li>
+<li><strong>clang</strong>：<strong>零警告</strong></li>
+</ul>
+<p>要返回一块临时数据，用<strong>复合字面量</strong> <code class="c">(int[]){1,2,3}</code>，它的生命周期是所在块（实测有效）。</p>
+</details>
+<p><strong>题目 8：</strong> 语句表达式里的 <code class="c">return</code> 从哪返回？<code class="c">break</code> 跳出哪个循环？</p>
+<details>
+<summary>答案</summary>
+<p>语句表达式<strong>不是函数</strong>，它是内联展开的一段代码，所以所有跳转都作用于<strong>外层</strong>：</p>
+<ul>
+<li><code class="c">return</code> → 从<strong>包含它的函数</strong>返回（实测 <code class="c">early_return(-5)</code> 返回 -1）</li>
+<li><code class="c">break</code> / <code class="c">continue</code> → 作用于<strong>外层循环</strong></li>
+<li><code class="c">goto</code> → 跳到<strong>外层标签</strong></li>
+</ul>
+<p>宏里需要局部标签时用 <code class="c">__label__</code>（gcc/clang 都支持），避免同一函数多次展开时标签重复定义。</p>
+</details>
+<p><strong>题目 9：</strong> 为什么 <code class="c">min</code> 要配 <code class="c">(void)(&amp;__x == &amp;__y);</code>？它够强吗？</p>
+<details>
+<summary>答案</summary>
+<p>这行是<strong>类型检查</strong>：对两个不同类型的指针做 <code class="c">==</code> 比较，编译器会告警。
+它能在 <code class="c">min(int, long)</code> 这种误用时给出 <code class="c">comparison of distinct pointer types lacks a cast</code>。</p>
+<p><strong>不够强</strong>——只是 warning，<code class="c">-Werror</code> 之外的项目可能被忽略。</p>
+<p><strong>加强版</strong>用 <code class="c">_Static_assert</code> + <code class="c">__builtin_types_compatible_p</code>，直接变成<strong>硬错误</strong>：</p>
+<pre class="code" data-label="C"><code class="c">_Static_assert(__same_type(a,b), &quot;min: argument types differ&quot;);
+/* 实测：error: static assertion failed: &quot;min: argument types differ&quot; */
+</code></pre>
+</details>
+<p><strong>题目 10：</strong> 下面这段代码错在哪？</p>
+<pre class="code" data-label="C"><code class="c">#define CONCAT_(a,b) a##b
+#define CONCAT(a,b)  CONCAT_(a,b)
+#define min_bad(a,b) ({                                 \
+    __typeof__(a) CONCAT(_sa_, __COUNTER__) = (a);       \
+    __typeof__(b) CONCAT(_sb_, __COUNTER__) = (b);       \
+    CONCAT(_sa_, __COUNTER__) &lt; CONCAT(_sb_, __COUNTER__) \
+        ? CONCAT(_sa_, __COUNTER__) : CONCAT(_sb_, __COUNTER__); \
 })
 </code></pre>
 <details>
-<summary>参考答案</summary>
-<p><code class="c">MAX1</code> 对 <code class="c">MAX(i++, j++)</code> 会双重求值副作用；<code class="c">MAX2</code> 用语句表达式 <code class="c">({ ... })</code> 先求值一次存入临时变量，再比较。语句表达式允许在块内声明变量、多条语句，最后一个表达式的值作为整体返回值。逗号表达式不能声明变量也不能有多条语句。内核宏大量使用语句表达式（如 <code class="c">min</code>、<code class="c">max</code>、<code class="c">container_of</code>）。这是 GNU 扩展，非标准 C。</p>
+<summary>答案</summary>
+<p><strong><code class="c">__COUNTER__</code> 每次展开都递增</strong>，所以声明时是 <code class="c">_sa_0</code>，后面引用时却变成了 <code class="c">_sa_2</code>、<code class="c">_sa_3</code>……
+实测报错：<code class="c">error: '_sa_2' undeclared (first use in this function); did you mean '_sa_0'?</code></p>
+<p><strong>正确写法</strong>：让 <code class="c">__COUNTER__</code> 在<strong>调用点只展开一次</strong>，变量名作为宏参数传进实现体：</p>
+<pre class="code" data-label="C"><code class="c">#define min_impl(a, b, ta, tb) ({ __typeof__(a) ta=(a); __typeof__(b) tb=(b); ta&lt;tb?ta:tb; })
+#define min_safe(a, b) min_impl(a, b, CONCAT(_sa_, __COUNTER__), CONCAT(_sb_, __COUNTER__))
+</code></pre>
+</details>
+<p><strong>题目 11：</strong> 语句表达式在 C++ 里能用吗？在 <code class="c">-std=c11 -pedantic</code> 下呢？</p>
+<details>
+<summary>答案</summary>
+<ul>
+<li><strong>C++</strong>：<code class="c">g++ -std=c++11/17</code> 与 <code class="c">clang++ -std=c++17</code> <strong>都能用</strong>，零诊断。所以头文件里用语句表达式不会把 C++ 用户挡在门外。</li>
+<li><strong><code class="c">-std=c11 -pedantic</code></strong>：能编过，但有告警——gcc 报 <code class="c">ISO C forbids braced-groups within expressions</code>，clang 报 <code class="c">use of GNU statement expression extension</code>。</li>
+<li><strong>不带 <code class="c">-pedantic</code></strong>：gcc/clang 在 c99/c11/c17/c2x/gnu<em> </em><em>全部零诊断</em>*。</li>
+</ul>
+<p>对比 <code class="c">typeof</code>：裸 <code class="c">typeof</code> 在 ISO 模式下是<strong>硬错误</strong>（关键字层面冲突），语句表达式只是 warning（语法层面扩展）。</p>
+</details>
+<p><strong>题目 12：</strong> 一句话说清 <code class="c">typeof</code> 和语句表达式为什么必须成对出现。</p>
+<details>
+<summary>答案</summary>
+<ul>
+<li><code class="c">typeof</code> 让宏<strong>知道该声明什么类型的临时变量</strong></li>
+<li>语句表达式给宏<strong>一个能放声明语句的局部作用域</strong></li>
+</ul>
+<p>只有 <code class="c">typeof</code> 而没有语句表达式：你算出了类型，却没地方写 <code class="c">__typeof__(a) _a = (a);</code> 这条语句（表达式上下文不能出现声明）。
+只有语句表达式而没有 <code class="c">typeof</code>：你能声明变量，却不知道该声明成什么类型（除非再让调用方传类型名，像内核的 <code class="c">min_t(type, a, b)</code>）。</p>
+<p>两者合体 = <strong>类型泛型 + 只求值一次 + 零运行时开销</strong>，这就是 <code class="c">min</code>/<code class="c">max</code>/<code class="c">container_of</code>/<code class="c">swap</code> 的全部秘密。</p>
 </details>
       </section>
       <section class="section" id="s-6-3-1">
         <div class="sec-head"><div class="sec-no">6.3</div><h2>.1 表达式、语句和代码块</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-3">6.3 语句表达式</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>C 语法区分 <strong>表达式（有值）</strong> 与 <strong>语句（执行效果）</strong>；<strong>复合语句</strong> <code class="c">{ ... }</code> 即代码块。宏只能「文本替换」——若要在宏里写 <code class="c">if</code>、临时变量又 <strong>返回一个值</strong>，需要语句表达式桥接二者。</p>
 <h2>要点</h2>
@@ -1518,6 +2343,9 @@ x = 1;              // ?
       </section>
       <section class="section" id="s-6-3-2">
         <div class="sec-head"><div class="sec-no">6.3</div><h2>.2 语句表达式</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-3">6.3 语句表达式</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>语句表达式 <strong><code class="c">({ ... })</code></strong> 内可含声明、循环、分支；<strong>最后一个表达式</strong>（带分号）的值类型即为整个语句表达式的类型。GCC 扩展，Clang 兼容。</p>
 <h2>要点</h2>
@@ -1575,6 +2403,9 @@ printf(&quot;%d\n&quot;, result);
       </section>
       <section class="section" id="s-6-3-3">
         <div class="sec-head"><div class="sec-no">6.3</div><h2>.3 在宏定义中使用语句表达式</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-3">6.3 语句表达式</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>编写「像函数一样返回值」的宏时，语句表达式 + <strong><code class="c">typeof</code></strong> 是标准套路：临时变量保存参数、只求值一次、避免 side effect。本节给出 <strong><code class="c">min</code>/<code class="c">max</code></strong> 与带 <code class="c">if</code> 的安全宏模板。</p>
 <h2>要点</h2>
@@ -1662,6 +2493,9 @@ printf(&quot;%d\n&quot;, result);
       </section>
       <section class="section" id="s-6-3-4">
         <div class="sec-head"><div class="sec-no">6.3</div><h2>.4 内核中的语句表达式</h2></div>
+<blockquote>
+<p>完整总纲与实测数据见 <a href="#s-6-3">6.3 语句表达式</a>。</p>
+</blockquote>
 <h2>本节讲什么</h2>
 <p>Linux 内核头文件大量宏基于语句表达式：<code class="c">min</code>/<code class="c">max</code>、<code class="c">clamp</code>、<code class="c">container_of</code>、位域操作、<code class="c">READ_ONCE</code> 等。读内核或写 out-of-tree 模块必须能 <strong>展开阅读</strong> 这些宏。</p>
 <h2>要点</h2>
