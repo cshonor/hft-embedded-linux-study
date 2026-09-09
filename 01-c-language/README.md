@@ -1,11 +1,13 @@
 # 02 · C 语言 · 系统级编程
 
-**文件夹 `02`** · [README](./README.md) · [OUTLINE](./OUTLINE.md)
+**文件夹 `02`** · [README](./README.md) · [全链路](../README.md)
 
-> **定位：** 面向 **底层 / Linux 内核** 的经典 C 书单（五书 + `code`）。  
-> 路线：**K&R（C89）→ 进阶标准 C → GNU C → 内核**。  
+> **定位：** 面向 **底层 / Linux 内核** 的经典 C 书单（6 本书）。  
+> **路线：** K&R（C89）→ 进阶标准 C → GNU C → 内核。  
 > 上游 [01 CSAPP](../02-computer-systems/)；下游 [04 LKD](../05-linux-kernel/)（`-std=gnu11` / GNU C 见 [Ch2 §2.4](../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)）。  
 > **09 C++** 是后续加 RAII，不是跳过 C。
+
+> **CSAPP 实验在 [02-computer-systems/code](../02-computer-systems/code)** — **不在 02 重复**。
 
 ---
 
@@ -27,13 +29,10 @@
 | [04-modern-c-standards](./04-modern-c-standards/) | 《Modern C》3rd · Gustedt（免费在线） | C99–C23 增量 + 内存模型/原子并发（标准 C 收官） |
 | [05-embedded-kernel-practice](./05-embedded-kernel-practice/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
 | [06-reference-pitfalls](./06-reference-pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |
-| [code](./code/) | 配套示例 | 练习与索引 |
 
 > **纠正常见书名混淆：** `02-advanced-pointers-and-memory` 是 Reek 的 *Pointers on C*（中译《C 和指针》），**不是** O'Reilly 的 *Understanding and Using C Pointers*（《C 指针：理解与运用》）。
 
-来源副本说明 → [README.external.md](./README.external.md)
-
-> **CSAPP 实验在 [02-computer-systems/code](./code)** — **不在 02 重复**。
+> **来源：** 笔记原文 fork 自 [cpp-learning-notes / 00-Linux-Kernel-DPDK-Network-C](https://github.com/cshonor/cpp-learning-notes/tree/main/00-Linux-Kernel-DPDK-Network-C)（旧 5 本书版，已扩展为 6 本书 + 加 Modern C）。
 
 ---
 
@@ -59,11 +58,9 @@
 **重点收尾是 05**：标准 C 教材不讲、`typeof` / 语句表达式 / `__attribute__` / 内嵌汇编等内核天天用的东西，主要在这里补齐。  
 对照清单也在 [LKD §2.4「K&R 有 / 内核缺」](../05-linux-kernel/chapter-02-getting-started/notes/section-2.4-内核开发的特点.md)。
 
-完整裁剪与验收 → [OUTLINE.md](./OUTLINE.md)
-
 ### 阅读优先级（精读 / 略读 / 跳过）
 
-针对 **HFT / 内核方向**，5 本书的投入策略（2026-08 讨论确定）：
+针对 **HFT / 内核方向**，6 本书的投入策略（2026-08 讨论确定）：
 
 | 书 | 策略 | 理由 |
 |----|------|------|
@@ -78,13 +75,54 @@
 
 > **"其余五本书过时了吗"**（2026-08 讨论确定）：没有。内核主体仍是 GNU C89/C99，其余五本书教的是标准无关的思维（指针/内存模型/声明解析/陷阱）。真正过时的只是 K&R 个别 C89 写法（隐式 int、old-style 声明、`gets()`），逐条跳过清单和 C99–C23 增量见 [04-modern-c-standards · 00 差异速查](./04-modern-c-standards/00-C89-to-C23-diff-and-reading-map.md)。**Modern C 已立册为第 4 本书**（挑读策略见其 [README](./04-modern-c-standards/README.md)）。
 
-### 学习进度
+---
+
+## 🔴 必做 / 🟡 选读 / 🟢 实践
+
+### 🔴 必做（开 19 Hennessy 前至少完成）
+
+| 来源 | 内容 | HFT 为何读 |
+|------|------|------------|
+| **`01` K&R** | Ch1–5、8 | 标准 C、指针、结构体 |
+| **`02` Pointers on C** | 核心章 | 内存布局、ABI — **读内核结构体基础** |
+| **01 CSAPP** | Ch2、Ch3、Ch5 导论 | 与 C **对照**，不另开纯语法课 |
+
+**验收：** 能写无 UB 的指针操作、解释结构体对齐、读懂简单 `malloc`/栈布局；能说出 **API vs ABI** → [01 CSAPP · ABI 笔记](../02-computer-systems/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md)
+
+### 🟡 选读 / 可后移（LKD 前建议补完）
+
+| 来源 | 何时 |
+|------|------|
+| **`03` C 专家编程** | 链接器、段、内存布局 — **只读 ch05–ch07**，05 LKD 前 |
+| **`05` 嵌入式 C 自我修养** | `__attribute__`、`typeof`、内嵌汇编、ELF — **05 LKD / 13 DPDK 前必读** |
+| **`06` C 陷阱与缺陷** | 宏、链接、库函数陷阱 — 工具书，遇坑再查 |
+| **K&R** Ch6–7 | 与 03 TLPI I/O 对照 |
+
+### 🟢 同步实践（学 C · 学 Hennessy 时穿插）
+
+| 练习 | 目的 |
+|------|------|
+| CSAPP 实验 | [02-computer-systems/code](../02-computer-systems/code) · [ABI](../02-computer-systems/chapter-02-representing-information/notes/section-2.1.2-abi-application-binary-interface.md) · [指针步长](../02-computer-systems/chapter-03-machine-level-programs/notes/section-3.8-指针步长详解.md) |
+| QEMU **ARM 裸机 hello + 异常**（可选） | CPU 模式/异常向量 — 预演 07 ARM64 |
+| 结构体对齐 / cache line 微测 | 对接 Hennessy Ch2 · 后接 HFT 伪共享 |
+
+### 阶段衔接
+
+```text
+01 CSAPP → 02 C（本目录 01–02 必过；04 在 05 LKD 前）
+    → 19 Hennessy → 03–05 内核/TLPI
+    → P9 MikanOS → 04 C++ → … → 13 DPDK → 14 HFT
+```
+
+---
+
+## 学习进度
 
 - [ ] ① 01 K&R
 - [ ] ② 02 C 和指针
 - [ ] ③ 03 C 专家编程（只读 ch05–ch07）
 - [ ] ④ 04 Modern C（挑读 Ch12/13/16；DPDK 前 Ch20/21）
-- [ ] ⑤ 05 嵌入式 C 语言自我修养
+- [ ] ⑤ 05 嵌入式 C 自我修养
 - [ ] ⑥ 06 C 陷阱与缺陷（工具书，遇坑再查）
 
 ---
