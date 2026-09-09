@@ -44,19 +44,19 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 
 | 序 | 小节 | 状态 | 内容 |
 |----|------|------|------|
-| 1 | [4.10 Linux 内核模块运行机制](./4.10-Linux内核模块运行机制.md) | 骨架 2 KB | `.ko` 的加载流程、`ELF` 视角下的模块、符号导出与版本校验 |
+| 1 | [4.10 内核模块的加载与符号决议](./4.10-module-loading/4.10-内核模块加载与符号决议.md) | ✅ 38 KB | **`.ko` 是可重定位 ELF** / 内核当手写动态链接器（`load_module` 全流程）/ `EXPORT_SYMBOL` 两阶段（`.export_symbol`→`__ksymtab`）/ `resolve_symbol`+CRC / `apply_relocate_add` 真实公式（S+A / S+A-P）/ vermagic 门禁 / `__this_module` 指定初始化+alias 闭环 / 7 类内存布局与 `.init` 释放 |
 | 2 | [4.11 initcall 机制全解](./4.11-initcall/4.11-initcall机制全解.md) | ✅ 32 KB | **`module_init` 双版本**（`alias` vs `section`）/ 8 级别 / 链接脚本段收集 / `do_initcalls` 循环 / `__init` 释放 / PREL32 / KEEP 陷阱 |
 | 3 | [4.12 container_of 与侵入式链表](./4.12-container-of-list/4.12-container_of与侵入式链表.md) | ✅ 30 KB | **侵入式 vs 外挂** / 多链表（member 参数区分偏移）/ POISON 投毒 / 遍历宏家族（safe 版）/ hlist pprev 妙用 / RCU 写入顺序 / 零开销实测 / 数组比链表快 568 倍 |
 
 ## 补写计划（按优先级）
 
-本章目前 **4.11 initcall + 4.12 container_of 已精写**（62 KB），其余骨架状态（2 × 2 KB）。建议顺序：
+本章目前 **4.10 模块加载 + 4.11 initcall + 4.12 container_of 已精写**（合计 100 KB），其余骨架状态。建议顺序：
 
 | 优先级 | 主题 | 状态 | 为什么先写它 |
 |--------|------|------|-------------|
 | ★★★ | **`initcall` 机制全解** | ✅ 已完成 | 唯一把 CH2 的 `section` 用到出神入化的地方；搞懂它，`module_init` 就再也不是黑魔法 |
 | ★★★ | **`container_of` 与侵入式链表** | ✅ 已完成 | CH1 讲了宏本身，这里讲内核为什么这么设计（对比「链表挂数据」的常规做法） |
-| ★★☆ | **`.ko` 的加载与符号决议** | 待补 | 接 4.10；本质是 CH2 的强弱符号 + CH6 的动态链接 |
+| ★★☆ | **`.ko` 的加载与符号决议** | ✅ 已完成 | 接 4.10；本质是 CH2 的强弱符号 + CH6 的动态链接 |
 | ★★☆ | **协议结构体的 `packed` 实践** | 待补 | 接 4.10 + CH2 6.7；看 `struct tcphdr` 怎么处理位域与字节序 |
 | ★☆☆ | **per-CPU 与 `aligned`** | 待补 | 需要一点调度背景，见 [附录 A](../90-ref-os/) |
 | ★☆☆ | U-Boot 重定位 | 待补 | 深度可选，做 bootloader 才用得上 |
@@ -82,6 +82,7 @@ CH1/CH2 告诉你**有这些工具**。但你第一次打开 `include/linux/list
 | 目录 | 内容 | 对应小节 |
 |------|------|------|
 | [demo/11-initcall/](./demo/11-initcall/) | 11 个源文件 + 4 个链接脚本 + run.sh | [4.11 initcall 机制全解](./4.11-initcall/4.11-initcall机制全解.md) |
+| [demo/13-module/](./demo/13-module/) | 5 个源文件 + t5_module.o + run.sh | [4.10 内核模块加载与符号决议](./4.10-module-loading/4.10-内核模块加载与符号决议.md) |
 
 > 所有 demo 可在 WSL 一键复现：`cd demo/11-initcall && bash run.sh`
 
