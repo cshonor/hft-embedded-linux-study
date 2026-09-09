@@ -72,7 +72,7 @@ DTS 侧挂在控制器下：
 
 - **传感器采集是"退路"也是"入口"**：工业网关 / 飞控要接 SPI/I2C 传感器，这是嵌入式最稳的就业面。
 - **速率对比值得记**：I2C 慢但省引脚，SPI 快但占 4 根线。选型本质是**引脚预算 vs 带宽预算**的权衡，和 HFT 里"网卡带宽 vs PCIe 通道数"是同一类问题。
-- 高频采样（IMU）会直接进 [06-dma-mmap](../06-dma-mmap/) 和 [10-motion-control](../../10-motion-control/) 的地盘。
+- 高频采样（IMU）会直接进 [06-dma-mmap](../06-dma-mmap/) 和 [10-motion-control](../../10-motion-control) 的地盘。
 
 ---
 

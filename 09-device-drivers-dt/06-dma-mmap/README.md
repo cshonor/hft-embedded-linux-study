@@ -81,9 +81,9 @@ static int my_mmap(struct file *filp, struct vm_area_struct *vma)
 
 ## HFT / 嵌入式关联
 
-- **`mmap` + 轮询 = 零拷贝数据面**，这正是 DPDK / VFIO 旁路的内核侧基础（[13-dpdk](../../13-dpdk/)）。用户态直接看到网卡 DMA 写的内存，没有 syscall、没有拷贝。
+- **`mmap` + 轮询 = 零拷贝数据面**，这正是 DPDK / VFIO 旁路的内核侧基础（[13-dpdk](../../13-dpdk)）。用户态直接看到网卡 DMA 写的内存，没有 syscall、没有拷贝。
 - **缓存一致性在 HFT 是日常**：用户态无锁队列 + DMA 场景下，一个漏掉的 `dma_sync_single_for_cpu` 就是"偶发读到旧数据"的灵异 bug 来源。
-- **描述符环（ring buffer）** 这结构在网卡、DMA、eBPF ringbuf、HFT 无锁队列里反复出现，值得单独吃透（对照 [06.7-bpf-observability](../../06.7-bpf-observability/) 的 ring buffer）。
+- **描述符环（ring buffer）** 这结构在网卡、DMA、eBPF ringbuf、HFT 无锁队列里反复出现，值得单独吃透（对照 [06.7-bpf-observability](../../06.7-bpf-observability) 的 ring buffer）。
 
 ---
 
@@ -99,5 +99,5 @@ static int my_mmap(struct file *filp, struct vm_area_struct *vma)
 ## 衔接
 
 - **上一步：** [05-irq-locking](../05-irq-locking/)
-- **下一步：** [10-motion-control](../../10-motion-control/)（传感器数据流）或回 [14-hft-engineering](../../14-hft-engineering/)
+- **下一步：** [10-motion-control](../../10-motion-control)（传感器数据流）或回 [14-hft-engineering](../../14-hft-engineering)
 - **卡住查书：** Madieu Ch11–12 · LDD3 Ch15、Ch8

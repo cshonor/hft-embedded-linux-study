@@ -62,7 +62,7 @@ cat /proc/cmdline
 
 ## HFT / 嵌入式关联
 
-- `systemd-analyze critical-chain` 是**启动耗时的火焰图入口**，与后面 [06.6-systems-performance](../../06.6-systems-performance/) 的方法论同源：先量化，再优化。
+- `systemd-analyze critical-chain` 是**启动耗时的火焰图入口**，与后面 [06.6-systems-performance](../../06.6-systems-performance) 的方法论同源：先量化，再优化。
 - 生产环境常把关键进程做成 **PID 1 直管的最小 init**（不要 systemd 的不确定性），或干脆用 `init=/opt/app` 直接跑交易进程——这是"去掉一切不必要"的极致形态。
 
 ---
@@ -81,4 +81,4 @@ cat /proc/cmdline
 - **上一步：** [05-rootfs](../05-rootfs/)
 - **下一步：** [07-storage-ota](../07-storage-ota/)
 - **卡住查书：** MELP Ch13–14 · Primer Ch6
-- **驱动侧：** 设备节点由 udev/mdev 创建 → [09 · 01-hello-module](../../09-device-drivers-dt/01-hello-module/)
+- **驱动侧：** 设备节点由 udev/mdev 创建 → [09 · 01-hello-module](../../09-device-drivers-dt/01-hello-module)

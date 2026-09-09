@@ -73,8 +73,8 @@ request_threaded_irq(irq, my_handler, my_thread,
 
 ## HFT / 嵌入式关联
 
-- **中断处理时间 = 延迟抖动源**。这是 HFT 里"为什么要把中断绑到隔离核、为什么要 NAPI"的根因：NAPI 本质是 **中断 + 轮询的混合**（收一个中断后进轮询，避免每包一中断），见 [12.5-modern-networking](../../12.5-modern-networking/)。
-- **per-CPU 数据结构避免加锁**，这个思路在 HFT 用户态无锁队列里是同一个招式（[14-hft-engineering](../../14-hft-engineering/)）。
+- **中断处理时间 = 延迟抖动源**。这是 HFT 里"为什么要把中断绑到隔离核、为什么要 NAPI"的根因：NAPI 本质是 **中断 + 轮询的混合**（收一个中断后进轮询，避免每包一中断），见 [12.5-modern-networking](../../12.5-modern-networking)。
+- **per-CPU 数据结构避免加锁**，这个思路在 HFT 用户态无锁队列里是同一个招式（[14-hft-engineering](../../14-hft-engineering)）。
 - 锁的选型本质是"能不能睡"，而"能不能睡"取决于**当前在什么上下文**——判断上下文是内核编程的基本功。
 
 ---

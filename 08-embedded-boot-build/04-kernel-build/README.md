@@ -50,7 +50,7 @@ ls arch/arm64/boot/dts/broadcom/*.dtb | head
 ## HFT / 嵌入式关联
 
 - **裁剪 = 延迟确定性**：无关驱动越少，中断处理路径上的不确定性越少。
-- **PREEMPT_RT**：低延迟场景要开 `CONFIG_PREEMPT_RT`，但它会牺牲一部分吞吐——这是 HFT 里"延迟 vs 吞吐"经典权衡在内核配置层的体现（深入见 [05-linux-kernel](../../05-linux-kernel/) / [05.5](../../05.5-modern-kernel/)）。
+- **PREEMPT_RT**：低延迟场景要开 `CONFIG_PREEMPT_RT`，但它会牺牲一部分吞吐——这是 HFT 里"延迟 vs 吞吐"经典权衡在内核配置层的体现（深入见 [05-linux-kernel](../../05-linux-kernel) / [05.5](../../05.5-modern-kernel)）。
 - 内核版本号必须和模块路径严格对应，这个"版本即契约"的思路在 [02-toolchain](../02-toolchain/) 的 sysroot 那里已经出现过一次。
 
 ---

@@ -12,8 +12,8 @@
 |------|-----|------|----------|------|
 | **B** | *Embedded Linux Primer*, 2nd | Hallinan | 2.6 | 概念模型 · 先查它搞清"为什么" |
 | **A** | *Mastering Embedded Linux Programming*, 3rd | Simmonds | 4.x/5.x | 全流程实操 · 查"怎么做" |
-| **D** | *Linux Device Drivers Development* | Madieu | 4.1–4.13 | 现代驱动写法（在 [09](../09-device-drivers-dt/)） |
-| **C** | *Linux Device Drivers*, 3rd（LDD3） | Corbet / Rubini / Kroah-Hartman | **2.6.10** | 驱动原理补课（在 [09](../09-device-drivers-dt/)） |
+| **D** | *Linux Device Drivers Development* | Madieu | 4.1–4.13 | 现代驱动写法（在 [09](../../09-device-drivers-dt)） |
+| **C** | *Linux Device Drivers*, 3rd（LDD3） | Corbet / Rubini / Kroah-Hartman | **2.6.10** | 驱动原理补课（在 [09](../../09-device-drivers-dt)） |
 
 四书分工与重合度：[FOUR-BOOKS-OVERLAP.md](./FOUR-BOOKS-OVERLAP.md)
 

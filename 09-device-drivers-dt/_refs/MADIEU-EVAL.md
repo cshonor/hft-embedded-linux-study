@@ -3,8 +3,8 @@
 > **书名：** *Linux Device Drivers Development: Develop customized drivers for embedded Linux*  
 > **作者：** John Madieu  
 > **成书内核：** 约 Linux **4.1–4.13**（2017）  
-> **模块：** [21 README](../README.md) · **全书大纲：** [OUTLINE-MADIEU.md](./OUTLINE-MADIEU.md)（22 章）  
-> 四书分工：[FOUR-BOOKS-OVERLAP](../08-embedded-boot-build/FOUR-BOOKS-OVERLAP.md)（代号 **D**）  
+> **模块：** [21 README](../../README.md) · **全书大纲：** [OUTLINE-MADIEU.md](./OUTLINE-MADIEU.md)（22 章）  
+> 四书分工：[FOUR-BOOKS-OVERLAP](../../08-embedded-boot-build/_refs/FOUR-BOOKS-OVERLAP.md)（代号 **D**）  
 > **板卡：** 书内示例偏 i.MX6；框架与写法**适配树莓派 ARM64**（5.x+ 需少量 API 适配）
 
 ---
@@ -45,7 +45,7 @@
 
 ### 3. 设备树讲得细（树莓派刚需）
 
-DTS 语法、phandle、资源解析、OF 匹配；写/编 dtb、读寄存器/中断/GPIO — 老书 board-file 时代已废，本章价值高。深挖另见 [21 驱动/DT](../09-device-drivers-dt/)。
+DTS 语法、phandle、资源解析、OF 匹配；写/编 dtb、读寄存器/中断/GPIO — 老书 board-file 时代已废，本章价值高。深挖另见 [21 驱动/DT](..)。
 
 ### 4. 内核工具讲透（稳定 / 低延迟基础）
 
@@ -63,7 +63,7 @@ IIO、Regmap、Regulator、GPIO 控制器、中断级联、网卡等 — 工业�
 |----|------|
 | **内核 4.x** | 树莓派 5.15/6.x 有 API 微调（宏/函数改名）；**架构与思想不变**，代码需少量适配 |
 | **少 PCIe 深度** | 重心在 I2C/SPI/Platform；PCIe/NVMe 需另补 |
-| **不讲调度/VM 原理** | 只写驱动；CFS、缺页、PREEMPT_RT → 搭配 [LKD](../05-linux-kernel/) |
+| **不讲调度/VM 原理** | 只写驱动；CFS、缺页、PREEMPT_RT → 搭配 [LKD](../../05-linux-kernel) |
 | **少用户态性能路径** | 无 epoll/mmap 批量低延迟专项；仅基础 poll/ioctl → 用户态仍靠 TLPI / UNP / DPDK |
 
 ---
@@ -86,7 +86,7 @@ IIO、Regmap、Regulator、GPIO 控制器、中断级联、网卡等 — 工业�
 
 - C：指针 / 内存  
 - Linux 基础命令  
-- 用户态：`read`/`write`/`ioctl`（[TLPI](../03-linux-userspace-api/) 已覆盖则可）
+- 用户态：`read`/`write`/`ioctl`（[TLPI](../../03-linux-userspace-api) 已覆盖则可）
 
 ### 顺序
 
@@ -117,8 +117,8 @@ IIO、Regmap、Regulator、GPIO 控制器、中断级联、网卡等 — 工业�
 
 ## 仓库内链接
 
-- 模块总览：[README](../README.md)  
+- 模块总览：[README](../../README.md)  
 - **全书 22 章大纲：** [OUTLINE-MADIEU.md](./OUTLINE-MADIEU.md)  
-- 与 LDD3 / Primer / MELP：[FOUR-BOOKS-OVERLAP](../08-embedded-boot-build/FOUR-BOOKS-OVERLAP.md)  
-- 设备树：[README 设备树节](../README.md) · Madieu Ch6  
-- 内核原理：[04 LKD](../05-linux-kernel/)
+- 与 LDD3 / Primer / MELP：[FOUR-BOOKS-OVERLAP](../../08-embedded-boot-build/_refs/FOUR-BOOKS-OVERLAP.md)  
+- 设备树：[README 设备树节](../../README.md) · Madieu Ch6  
+- 内核原理：[04 LKD](../../05-linux-kernel)

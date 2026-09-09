@@ -30,7 +30,7 @@ bootloader 把 DTB 物理地址放进寄存器 / 按 arm64 boot protocol 传入
 platform/i2c/spi 总线按 compatible 匹配驱动
 ```
 
-这是 [09 驱动 03-platform-dt](../../09-device-drivers-dt/03-platform-dt/) 的前置——**驱动能 probe 成功，前提是 DTB 里有正确的节点**。
+这是 [09 驱动 03-platform-dt](../../09-device-drivers-dt/03-platform-dt) 的前置——**驱动能 probe 成功，前提是 DTB 里有正确的节点**。
 
 ---
 
@@ -52,7 +52,7 @@ sudo rpi-eeprom-update
 ## HFT / 嵌入式关联
 
 - 启动时间就是**故障恢复时间**。HFT 网关重启一次的成本按秒算，所以理解启动链不只是"能起来"，还要知道**每一段能不能砍**（去掉 U-Boot 交互延时、裁剪内核、跳过 initrd）。
-- `cmdline` 里的 `isolcpus`、`nohz_full`、`rcu_nocbs` 是后面做绑核/隔离的入口，属于 [06-boot-to-shell](../06-boot-to-shell/) 和 [14-hft-engineering](../../14-hft-engineering/) 的内容。
+- `cmdline` 里的 `isolcpus`、`nohz_full`、`rcu_nocbs` 是后面做绑核/隔离的入口，属于 [06-boot-to-shell](../06-boot-to-shell/) 和 [14-hft-engineering](../../14-hft-engineering) 的内容。
 
 ---
 

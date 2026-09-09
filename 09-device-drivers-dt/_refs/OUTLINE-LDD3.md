@@ -1,30 +1,30 @@
 # Linux Device Drivers, 3rd ed（LDD3）· 全书大纲
 
 > **Corbet / Rubini / Kroah-Hartman** · O'Reilly · **18 章**  
-> 内核：**2.6.10** · **无设备树** · 评测：[LDD3-EVAL.md](../LDD3-EVAL.md)
+> 内核：**2.6.10** · **无设备树** · 评测：[LDD3-EVAL.md](./LDD3-EVAL.md)
 
 ## 章目录一览
 
 | Ch | 目录 |
 |----|------|
-| 1 | [chapter-01-introduction-to-device-drivers](./chapter-01-introduction-to-device-drivers/) |
-| 2 | [chapter-02-building-and-running-modules](./chapter-02-building-and-running-modules/) |
-| 3 | [chapter-03-character-device-drivers](./chapter-03-character-device-drivers/) |
-| 4 | [chapter-04-debugging-techniques](./chapter-04-debugging-techniques/) |
-| 5 | [chapter-05-concurrency-and-race-conditions](./chapter-05-concurrency-and-race-conditions/) |
-| 6 | [chapter-06-advanced-char-driver-operations](./chapter-06-advanced-char-driver-operations/) |
-| 7 | [chapter-07-time-delays-deferred-work](./chapter-07-time-delays-deferred-work/) |
-| 8 | [chapter-08-allocating-memory](./chapter-08-allocating-memory/) |
-| 9 | [chapter-09-communicating-with-hardware](./chapter-09-communicating-with-hardware/) |
-| 10 | [chapter-10-interrupt-handling](./chapter-10-interrupt-handling/) |
-| 11 | [chapter-11-kernel-data-types](./chapter-11-kernel-data-types/) |
-| 12 | [chapter-12-pci-drivers](./chapter-12-pci-drivers/) |
-| 13 | [chapter-13-usb-drivers](./chapter-13-usb-drivers/) |
-| 14 | [chapter-14-linux-device-model](./chapter-14-linux-device-model/) |
-| 15 | [chapter-15-memory-mapping-and-dma](./chapter-15-memory-mapping-and-dma/) |
-| 16 | [chapter-16-block-drivers](./chapter-16-block-drivers/) |
-| 17 | [chapter-17-network-drivers](./chapter-17-network-drivers/) |
-| 18 | [chapter-18-tty-drivers](./chapter-18-tty-drivers/) |
+| 1 | [chapter-01-introduction-to-device-drivers](./BOOK-MAP.md) |
+| 2 | [chapter-02-building-and-running-modules](./BOOK-MAP.md) |
+| 3 | [chapter-03-character-device-drivers](./BOOK-MAP.md) |
+| 4 | [chapter-04-debugging-techniques](./BOOK-MAP.md) |
+| 5 | [chapter-05-concurrency-and-race-conditions](./BOOK-MAP.md) |
+| 6 | [chapter-06-advanced-char-driver-operations](./BOOK-MAP.md) |
+| 7 | [chapter-07-time-delays-deferred-work](./BOOK-MAP.md) |
+| 8 | [chapter-08-allocating-memory](./BOOK-MAP.md) |
+| 9 | [chapter-09-communicating-with-hardware](./BOOK-MAP.md) |
+| 10 | [chapter-10-interrupt-handling](./BOOK-MAP.md) |
+| 11 | [chapter-11-kernel-data-types](./BOOK-MAP.md) |
+| 12 | [chapter-12-pci-drivers](./BOOK-MAP.md) |
+| 13 | [chapter-13-usb-drivers](./BOOK-MAP.md) |
+| 14 | [chapter-14-linux-device-model](./BOOK-MAP.md) |
+| 15 | [chapter-15-memory-mapping-and-dma](./BOOK-MAP.md) |
+| 16 | [chapter-16-block-drivers](./BOOK-MAP.md) |
+| 17 | [chapter-17-network-drivers](./BOOK-MAP.md) |
+| 18 | [chapter-18-tty-drivers](./BOOK-MAP.md) |
 
 ## 阅读标签
 

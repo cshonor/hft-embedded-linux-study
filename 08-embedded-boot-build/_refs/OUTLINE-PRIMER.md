@@ -14,24 +14,24 @@
 
 ---
 
-## 第 1 章 Introduction — [chapter-01-introduction](./chapter-01-introduction/)
+## 第 1 章 Introduction — [chapter-01-introduction](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| 1.1 Why Linux? | 硬件兼容、无版权费、协议多、社区；扩展 [Linux vs RTOS](./chapter-01-introduction/1.1-linux-vs-rtos.md) | 选读 |
+| 1.1 Why Linux? | 硬件兼容、无版权费、协议多、社区；扩展 [Linux vs RTOS](../01-orientation/1.1-linux-vs-rtos.md) | 选读 |
 | 1.2 Embedded Linux Today | 市场与消费/通信落地 | 速览 |
 | 1.3 Open Source and the GPL · 1.3.1 Free vs Freedom | 「免费啤酒」vs「自由」；GPL 传染 | 精读 |
-| 1.4 Standards…（LSB / LF / CGL / Moblin / SA Forum） | LSB **工程可忘掉**；FAQ [为何书讲 LSB / vs POSIX](./chapter-01-introduction/1.4-lsb-vs-posix.md)；对照 [TLPI Ch1](../../03-linux-userspace-api/chapter-01-introduction/) | 速览 |
+| 1.4 Standards…（LSB / LF / CGL / Moblin / SA Forum） | LSB **工程可忘掉**；FAQ [为何书讲 LSB / vs POSIX](../01-orientation/1.2-lsb-vs-posix.md)；对照 [TLPI Ch1](./BOOK-MAP.md) | 速览 |
 
 | 1.5 Summary | — | — |
 
 ---
 
-## 第 2 章 The Big Picture — [chapter-02-big-picture](./chapter-02-big-picture/)
+## 第 2 章 The Big Picture — [chapter-02-big-picture](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| 2.1 Embedded or Not? · 2.1.1 BIOS vs Bootloader | PC 固件 vs 嵌入式引导；今日读 [U-Boot vs BIOS vs UEFI](./chapter-02-big-picture/2.1-uboot-bios-uefi.md) | **精读** |
+| 2.1 Embedded or Not? · 2.1.1 BIOS vs Bootloader | PC 固件 vs 嵌入式引导；今日读 [U-Boot vs BIOS vs UEFI](../03-u-boot/3.1-uboot-bios-uefi.md) | **精读** |
 | 2.2 Anatomy… · 2.2.1–2.2.5 | 硬件框图；上电→U-Boot→内核→`init` | **精读** |
 | 2.3 Storage… · 2.3.1–2.3.8 | Flash/NAND/NOR、分区、FS、地址空间、内核/用户态、交叉开发架构 | **精读** |
 | 2.4 Embedded Linux Distributions | 商业发行版 vs 自制（LFS/Buildroot 思路） | 精读 |
@@ -40,18 +40,18 @@
 
 ---
 
-## 第 3 章 Processor Basics — [chapter-03-processor-basics](./chapter-03-processor-basics/)
+## 第 3 章 Processor Basics — [chapter-03-processor-basics](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| （学习优先级） | **重心 SoC**；独立 CPU 拓展 — [focus](./chapter-03-processor-basics/3.0-focus-on-soc.md)；BSP=[模板非成品](./chapter-03-processor-basics/3.2-bsp-is-template-not-product.md) | — |
+| （学习优先级） | **重心 SoC**；独立 CPU 拓展 — [focus](../01-orientation/1.3-focus-on-soc.md)；BSP=[模板非成品](../01-orientation/1.5-bsp-is-template-not-product.md) | — |
 | 3.1 Stand-Alone（Power 970 / Pentium M / Atom / MPC7448…） | 独立 CPU + 芯片组时代 | 速览 |
-| 3.2 Integrated SoC（PowerQUICC/QorIQ、MIPS、**ARM/i.MX**…） | SoC 主流；树莓 BCM 归类见 [Pi = SoC](./chapter-03-processor-basics/3.2-raspberry-pi-is-soc.md) | 选读（ARM 精读） |
+| 3.2 Integrated SoC（PowerQUICC/QorIQ、MIPS、**ARM/i.MX**…） | SoC 主流；树莓 BCM 归类见 [Pi = SoC](../01-orientation/1.4-raspberry-pi-is-soc.md) | 选读（ARM 精读） |
 | 3.3 小众架构 · 3.4 CompactPCI / ATCA | 工业机箱 | 按需 |
 
 ---
 
-## 第 4 章 The Linux Kernel: A Different Perspective — [chapter-04-kernel-construction](./chapter-04-kernel-construction/)
+## 第 4 章 The Linux Kernel: A Different Perspective — [chapter-04-kernel-construction](./BOOK-MAP.md)
 
 > 工程视角：编译与目录结构，**不是** LKD 级原理。
 
@@ -64,7 +64,7 @@
 
 ---
 
-## 第 5 章 Kernel Initialization — [chapter-05-kernel-initialization](./chapter-05-kernel-initialization/)
+## 第 5 章 Kernel Initialization — [chapter-05-kernel-initialization](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -76,7 +76,7 @@
 
 ---
 
-## 第 6 章 User Space Initialization — [chapter-06-user-space-initialization](./chapter-06-user-space-initialization/)
+## 第 6 章 User Space Initialization — [chapter-06-user-space-initialization](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -87,32 +87,32 @@
 
 ---
 
-## 第 7 章 Bootloaders — [chapter-07-bootloaders](./chapter-07-bootloaders/)
+## 第 7 章 Bootloaders — [chapter-07-bootloaders](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
 | 7.1–7.2 | Bootloader 职责与硬件难点 | **精读** |
 | 7.3 U-Boot 使用 | 获取/编译/配置/串口网络命令 | **精读** |
 | 7.4 移植实战 | 板级移植要点 | 精读（落地跟 MELP） |
-| 7.5 DTB | DTS→dtb；≠ UEFI，见 [DT FAQ](./chapter-07-bootloaders/7.0-device-tree-vs-uefi.md)；接 [09 驱动/DT](../../09-device-drivers-dt/) | **精读** |
+| 7.5 DTB | DTS→dtb；≠ UEFI，见 [DT FAQ](../01-orientation/1.6-device-tree-vs-uefi.md)；接 [09 驱动/DT](../../09-device-drivers-dt) | **精读** |
 | 7.6 LILO/GRUB | PC 引导对比 | 速览 |
 
 ---
 
-## 第 8 章 Device Driver Basics — [chapter-08-device-driver-basics](./chapter-08-device-driver-basics/)
+## 第 8 章 Device Driver Basics — [chapter-08-device-driver-basics](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| （加硬件 / 内核） | [8.0](./chapter-08-device-driver-basics/8.0-new-hw-dts-vs-driver.md)–[8.6 排针↔DTS](./chapter-08-device-driver-basics/8.6-gpio-header-vs-dts.md) | — |
+| （加硬件 / 内核） | [8.0](../../09-device-drivers-dt/03-platform-dt/3.1-new-hw-dts-vs-driver.md)–[8.6 排针↔DTS](../../09-device-drivers-dt/04-gpio-i2c-spi/4.2-gpio-header-vs-dts.md) | — |
 | 8.1 模块 · 最简字符驱动 | 概念预告 | 选读 |
 | 8.2 insmod/rmmod/lsmod/depmod | 模块工具 | 选读 |
 | 8.3 设备号 · mknod · fops | 节点与接口 | 选读 |
 
-→ **深入交给 [12 LDD3 + Madieu](../../09-device-drivers-dt/)**，此处勿当驱动主教材。
+→ **深入交给 [12 LDD3 + Madieu](../../09-device-drivers-dt)**，此处勿当驱动主教材。
 
 ---
 
-## 第 9 章 File Systems — [chapter-09-file-systems](./chapter-09-file-systems/)
+## 第 9 章 File Systems — [chapter-09-file-systems](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -122,7 +122,7 @@
 
 ---
 
-## 第 10 章 MTD Subsystem — [chapter-10-mtd-subsystem](./chapter-10-mtd-subsystem/)
+## 第 10 章 MTD Subsystem — [chapter-10-mtd-subsystem](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -132,7 +132,7 @@
 
 ---
 
-## 第 11 章 BusyBox — [chapter-11-busybox](./chapter-11-busybox/)
+## 第 11 章 BusyBox — [chapter-11-busybox](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -142,7 +142,7 @@
 
 ---
 
-## 第 12 章 Embedded Development Environment — [chapter-12-development-environment](./chapter-12-development-environment/)
+## 第 12 章 Embedded Development Environment — [chapter-12-development-environment](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -151,7 +151,7 @@
 
 ---
 
-## 第 13 章 Development Tools — [chapter-13-development-tools](./chapter-13-development-tools/)
+## 第 13 章 Development Tools — [chapter-13-development-tools](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -161,7 +161,7 @@
 
 ---
 
-## 第 14 章 Kernel Debugging Techniques — [chapter-14-kernel-debugging](./chapter-14-kernel-debugging/)
+## 第 14 章 Kernel Debugging Techniques — [chapter-14-kernel-debugging](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -171,7 +171,7 @@
 
 ---
 
-## 第 15 章 Debugging Embedded Applications — [chapter-15-debugging-applications](./chapter-15-debugging-applications/)
+## 第 15 章 Debugging Embedded Applications — [chapter-15-debugging-applications](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -179,7 +179,7 @@
 
 ---
 
-## 第 16 章 Open Source Build Systems — [chapter-16-open-source-build-systems](./chapter-16-open-source-build-systems/)
+## 第 16 章 Open Source Build Systems — [chapter-16-open-source-build-systems](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -189,7 +189,7 @@
 
 ---
 
-## 第 17 章 Linux and Real Time — [chapter-17-linux-and-real-time](./chapter-17-linux-and-real-time/)
+## 第 17 章 Linux and Real Time — [chapter-17-linux-and-real-time](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -199,7 +199,7 @@
 
 ---
 
-## 第 18 章 Universal Serial Bus — [chapter-18-usb](./chapter-18-usb/)
+## 第 18 章 Universal Serial Bus — [chapter-18-usb](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -207,7 +207,7 @@
 
 ---
 
-## 第 19 章 udev — [chapter-19-udev](./chapter-19-udev/)
+## 第 19 章 udev — [chapter-19-udev](./BOOK-MAP.md)
 
 | 节 | 重点 | 标签 |
 |----|------|------|
@@ -239,4 +239,4 @@ Ch2 全景 → Ch5–7 启动链（内核/用户态/U-Boot）
   → Ch8 仅速览 → 转 21 驱动
 ```
 
-然后进 [MELP OUTLINE](.../OUTLINE.md) 动手；启动/rootfs 已懂可跳 MELP 重复章。
+然后进 [MELP OUTLINE](./BOOK-MAP.md) 动手；启动/rootfs 已懂可跳 MELP 重复章。

@@ -70,6 +70,6 @@ mount -o remount,ro /
 ## 衔接
 
 - **上一步：** [06-boot-to-shell](../06-boot-to-shell/)
-- **下一步：** [09-device-drivers-dt](../../09-device-drivers-dt/) — 开始写驱动
+- **下一步：** [09-device-drivers-dt](../../09-device-drivers-dt) — 开始写驱动
 - **卡住查书：** MELP Ch9–10 · Primer Ch10（MTD）
 - **延伸：** 电源管理 MELP Ch15 · 实时性 MELP Ch21 / Primer Ch17

@@ -74,7 +74,7 @@ sudo rmmod hello && dmesg -T | tail -3
 
 ## HFT / 嵌入式关联
 
-- **内核态 vs 用户态的分界**：这是 HFT 里"旁路（DPDK/VFIO）还是走内核"的原点问题。走内核 = 用现成协议栈、有上下文切换；旁路 = 自己管 NIC、零拷贝但失去内核设施。见 [13-dpdk](../../13-dpdk/)。
+- **内核态 vs 用户态的分界**：这是 HFT 里"旁路（DPDK/VFIO）还是走内核"的原点问题。走内核 = 用现成协议栈、有上下文切换；旁路 = 自己管 NIC、零拷贝但失去内核设施。见 [13-dpdk](../../13-dpdk)。
 - `__init` 标记为**初始化后释放内存**——这种"用完即弃"的思路在延迟敏感代码里同样适用（初始化路径不占用常驻缓存）。
 
 ---
@@ -90,6 +90,6 @@ sudo rmmod hello && dmesg -T | tail -3
 
 ## 衔接
 
-- **上一步：** [08 · 07-storage-ota](../../08-embedded-boot-build/07-storage-ota/)
+- **上一步：** [08 · 07-storage-ota](../../08-embedded-boot-build/07-storage-ota)
 - **下一步：** [02-char-device](../02-char-device/)
 - **卡住查书：** Madieu Ch1–3 · LDD3 Ch1–2、Ch11

@@ -4,7 +4,7 @@
 > **作者：** Jonathan Corbet · Alessandro Rubini · Greg Kroah-Hartman  
 > **内核：** 约 **2.6.10**（2005）  
 > **大纲：** [OUTLINE-LDD3.md](./OUTLINE-LDD3.md)（18 章）  
-> 四书代号 **C**：[FOUR-BOOKS-OVERLAP](../08-embedded-boot-build/FOUR-BOOKS-OVERLAP.md)
+> 四书代号 **C**：[FOUR-BOOKS-OVERLAP](../../08-embedded-boot-build/_refs/FOUR-BOOKS-OVERLAP.md)
 
 ---
 
@@ -48,7 +48,7 @@
 
 | 书 | 角色 |
 |----|------|
-| [Embedded Linux Primer](../08-embedded-boot-build/) | 系统全景：Boot / rootfs / 交叉环境 |
+| [Embedded Linux Primer](../../08-embedded-boot-build) | 系统全景：Boot / rootfs / 交叉环境 |
 | [Madieu](../) | ARM · DTS · I2C/SPI/GPIO **实操**（树莓派主书） |
 | **LDD3（本书）** | 原理补课：锁 / DMA / 内存 / 并发 / PCI·USB |
 

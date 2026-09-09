@@ -3,7 +3,7 @@
 > **定位：** **内核态** — 补齐 HFT 链里「只写用户态」的缺口。
 > **组织方式：** 目录是**要写出什么驱动**，不是书的章节。书降级为工具书，见 [`_refs/BOOK-MAP.md`](./_refs/BOOK-MAP.md)。
 > **动手不在这里：** 实际命令与板上结果放 [`projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md`](../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) 的 Phase C。
-> **前置：** [08 构建链](../08-embedded-boot-build/) · [05 内核](../05-linux-kernel/) · [01 C](../01-c-language/)
+> **前置：** [08 构建链](../08-embedded-boot-build) · [05 内核](../05-linux-kernel) · [01 C](../01-c-language)
 
 ---
 
@@ -41,8 +41,8 @@ LDD3 的 18 章里值得回头精读的只有 **Ch3 / 5 / 6 / 9 / 10 / 15**；Ch
 |----------|-----------|
 | 用户态 `epoll` / `mmap` | 内核 `poll`/`wait_queue` · `remap_pfn_range` |
 | 无锁 / spinlock 概念 | 内核 `spinlock_t` · 中断上下文 |
-| [12.5 现代网络](../12.5-modern-networking/) | NAPI 就是「中断 + 轮询」混合 |
-| [13 DPDK](../13-dpdk/) | UIO/VFIO **旁路** vs 内核驱动**标准路径** |
+| [12.5 现代网络](../12.5-modern-networking) | NAPI 就是「中断 + 轮询」混合 |
+| [13 DPDK](../13-dpdk) | UIO/VFIO **旁路** vs 内核驱动**标准路径** |
 
 **为什么 HFT 要学驱动：** 不是为了写驱动，是为了知道**用户态那层抽象下面到底发生了什么**——一次 `read()` 的代价、一次中断的抖动来源、旁路技术到底绕过了什么。
 

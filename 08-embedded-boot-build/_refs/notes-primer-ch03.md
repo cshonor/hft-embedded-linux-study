@@ -2,13 +2,13 @@
 
 > 对应目录：`chapter-03-processor-basics/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan（约 2010/2011，芯片清单偏当年）  
-> 大纲：[../OUTLINE.md](../OUTLINE.md)
+> 大纲：[../OUTLINE.md](./BOOK-MAP.md)
 
 **优先级**：3.1 速览；3.2 SoC **选读（ARM 精读）**；3.3–3.4 按需  
-**学什么：** [3.0-focus-on-soc.md](./3.0-focus-on-soc.md) — **重心 SoC**；独立 CPU 仅拓展  
-**BSP 真相：** [3.2-bsp-is-template-not-product.md](./3.2-bsp-is-template-not-product.md) — 原厂包能开箱，**自研板仍要大改**  
-**前置**：[Ch2 Big Picture](../chapter-02-big-picture/notes.md) · [U-Boot vs UEFI](../chapter-02-big-picture/2.1-uboot-bios-uefi.md)  
-**后置**：[Ch4 内核工程视角](../chapter-04-kernel-construction/) · [Ch7 U-Boot](../chapter-07-bootloaders/) · [07 ARM](../../../07-arm-architecture/)
+**学什么：** [3.0-focus-on-soc.md](../01-orientation/1.3-focus-on-soc.md) — **重心 SoC**；独立 CPU 仅拓展  
+**BSP 真相：** [3.2-bsp-is-template-not-product.md](../01-orientation/1.5-bsp-is-template-not-product.md) — 原厂包能开箱，**自研板仍要大改**  
+**前置**：[Ch2 Big Picture](./BOOK-MAP.md) · [U-Boot vs UEFI](../03-u-boot/3.1-uboot-bios-uefi.md)  
+**后置**：[Ch4 内核工程视角](./BOOK-MAP.md) · [Ch7 U-Boot](./BOOK-MAP.md) · [07 ARM](../../07-arm-architecture)
 
 ---
 
@@ -24,7 +24,7 @@
 ## 3.0 硬前提：必须有 MMU
 
 本章（及本书 Linux 主线）处理器均带 **MMU**。  
-虚拟内存、用户/内核隔离依赖 MMU；无 MMU 的 8 位 MCU、多数 Cortex-M **不在本章范围**（与 [Linux vs RTOS](../chapter-01-introduction/1.1-linux-vs-rtos.md) 边界一致）。
+虚拟内存、用户/内核隔离依赖 MMU；无 MMU 的 8 位 MCU、多数 Cortex-M **不在本章范围**（与 [Linux vs RTOS](../01-orientation/1.1-linux-vs-rtos.md) 边界一致）。
 
 ---
 
@@ -85,11 +85,11 @@ PowerQUICC / QorIQ：通信设备标杆；常有 **CPM / 数据通路加速**，
 | Freescale / NXP **i.MX** | ARM9/11 → Cortex-A；编解码 | 车载、工业 HMI |
 | 三星等 | 大量消费 SoC | 家电、便携 |
 
-深挖 ISA / 异常 / 启动：→ [07-arm-architecture](../../../07-arm-architecture/)。  
-板级今日例：Pi5 = 应用核 SoC + **RP1** 外设（见 [Pi Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)）。  
+深挖 ISA / 异常 / 启动：→ [07-arm-architecture](../../07-arm-architecture)。  
+板级今日例：Pi5 = 应用核 SoC + **RP1** 外设（见 [Pi Labs](../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)）。  
 
-**FAQ：树莓派算哪一类？** → [3.2-raspberry-pi-is-soc.md](./3.2-raspberry-pi-is-soc.md)（结论：**SoC，不是独立处理器**）。  
-**FAQ：原厂驱动/DTS 能否直接量产？** → [3.2-bsp-is-template-not-product.md](./3.2-bsp-is-template-not-product.md)（评估板开箱 ≠ 自研板成品）。
+**FAQ：树莓派算哪一类？** → [3.2-raspberry-pi-is-soc.md](../01-orientation/1.4-raspberry-pi-is-soc.md)（结论：**SoC，不是独立处理器**）。  
+**FAQ：原厂驱动/DTS 能否直接量产？** → [3.2-bsp-is-template-not-product.md](../01-orientation/1.5-bsp-is-template-not-product.md)（评估板开箱 ≠ 自研板成品）。
 
 ---
 
@@ -124,16 +124,16 @@ PowerQUICC / QorIQ：通信设备标杆；常有 **CPM / 数据通路加速**，
 
 | 点 | 落到 |
 |----|------|
-| 这些板的 Bootloader | 多为 **U-Boot**（≠ PC BIOS/UEFI）→ [2.1 FAQ](../chapter-02-big-picture/2.1-uboot-bios-uefi.md) · [Ch7](../chapter-07-bootloaders/) |
-| 编内核时架构 | `ARCH=powerpc` / `arm` / `mips` / `x86` 等 → [Ch4](../chapter-04-kernel-construction/) |
+| 这些板的 Bootloader | 多为 **U-Boot**（≠ PC BIOS/UEFI）→ [2.1 FAQ](../03-u-boot/3.1-uboot-bios-uefi.md) · [Ch7](./BOOK-MAP.md) |
+| 编内核时架构 | `ARCH=powerpc` / `arm` / `mips` / `x86` 等 → [Ch4](./BOOK-MAP.md) |
 | 书中移植案例板 | Freescale / AMCC / TI 等 → 读到案例时回对照本节芯片族 |
 | 你现在的板 | Pi5 / 现代 ARM SoC；芯片名变了，**SoC + DT + 交叉编译** 框架不变 |
 
-**下一章：** [Ch4 Kernel Construction](../chapter-04-kernel-construction/notes.md)（工程视角编内核，非 LKD 原理）。
+**下一章：** [Ch4 Kernel Construction](./BOOK-MAP.md)（工程视角编内核，非 LKD 原理）。
 
 ---
 
 ## 参考
 
 - Hallinan, *Embedded Linux Primer*, 2nd ed, Chapter 3  
-- 大纲：[../OUTLINE.md](../OUTLINE.md) §第 3 章
+- 大纲：[../OUTLINE.md](./BOOK-MAP.md) §第 3 章

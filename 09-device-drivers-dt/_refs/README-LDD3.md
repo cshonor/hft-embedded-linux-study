@@ -5,8 +5,8 @@
 
 | | |
 |--|--|
-| 全书大纲 | [OUTLINE.md](./OUTLINE.md)（18 章 + 小节） |
-| 优缺点 / 路线 | [../LDD3-EVAL.md](../LDD3-EVAL.md) |
+| 全书大纲 | [OUTLINE.md](./BOOK-MAP.md)（18 章 + 小节） |
+| 优缺点 / 路线 | [../LDD3-EVAL.md](./LDD3-EVAL.md) |
 | 现代实操主书 | [.../](.../)（Madieu） |
 
 **用法：** 思想精读；**代码勿照搬 5.x**。树莓派动手以 Madieu + DTS 为准。

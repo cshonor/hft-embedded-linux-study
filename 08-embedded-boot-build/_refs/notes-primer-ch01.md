@@ -2,10 +2,10 @@
 
 > 对应目录：`chapter-01-introduction/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  
-> 大纲：[../OUTLINE.md](../OUTLINE.md) · 标签以 OUTLINE 为准
+> 大纲：[../OUTLINE.md](./BOOK-MAP.md) · 标签以 OUTLINE 为准
 
 **优先级**：1.3 GPL **精读**；1.1 选读；1.2 / 1.4 速览  
-**后置**：同模块 [MELP](../../build-toolchain-yocto/)（实操落地）· 板级动手 [13 Pi Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)
+**后置**：同模块 [MELP](./OUTLINE-MELP.md)（实操落地）· 板级动手 [13 Pi Labs](../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)
 
 ---
 
@@ -29,10 +29,10 @@
 | 5 | **社区迭代** | 新平台、新外设驱动跟得快 |
 | 6 | **原厂 BSP** | 主流 SoC 厂几乎都给 Linux 配套包 |
 
-对本仓库：树莓派 / ARM 板子走 Linux，正是吃这套优势；驱动与启动仍要自己学（[12](../../../09-device-drivers-dt/) · [11](../../)）。
+对本仓库：树莓派 / ARM 板子走 Linux，正是吃这套优势；驱动与启动仍要自己学（[12](../../09-device-drivers-dt) · [11](../../)）。
 
 **扩展精读（优势 / 短板 / PREEMPT_RT / 混合架构）：**  
-[1.1-linux-vs-rtos.md](./1.1-linux-vs-rtos.md) — Linux 替代 RTOS 的动因、边界与选型口诀。
+[1.1-linux-vs-rtos.md](../01-orientation/1.1-linux-vs-rtos.md) — Linux 替代 RTOS 的动因、边界与选型口诀。
 
 ---
 
@@ -73,7 +73,7 @@
 
 | 组织 / 规范 | 书中角色 | 今日怎么对待 |
 |-------------|----------|--------------|
-| **LSB**（Linux Standard Base） | 统一发行版二进制/库/命令/目录/init，多架构 | **工程上可忘掉**；为何书还讲、与 POSIX 分层见 [1.4-lsb-vs-posix.md](./1.4-lsb-vs-posix.md) · [TLPI Ch1](../../../03-linux-userspace-api/chapter-01-introduction/) |
+| **LSB**（Linux Standard Base） | 统一发行版二进制/库/命令/目录/init，多架构 | **工程上可忘掉**；为何书还讲、与 POSIX 分层见 [1.4-lsb-vs-posix.md](../01-orientation/1.2-lsb-vs-posix.md) · [TLPI Ch1](./BOOK-MAP.md) |
 | **Linux Foundation** | 非营利联盟；资助内核与生态工作组 | 知存在即可；规范多在专项组 |
 | **CGL**（Carrier-Grade Linux） | 电信级：HA、集群、运维、性能、合规、硬件、安全 | 做基站/核心网时再翻；Pi 驱动课不需要 |
 | **Moblin → MeeGo** | 便携设备工作组（工具、IO、内存、多媒体、功耗…） | **历史名词**；当代看 Android / 各 SoC 厂商栈 |
@@ -104,14 +104,14 @@
 | 本章收获 | 下一步 |
 |----------|--------|
 | 为何板子跑 Linux、GPL 底线 | **Ch2 Big Picture**（上电→Boot→内核→init）精读 |
-| Linux vs RTOS 边界 | [1.1-linux-vs-rtos](./1.1-linux-vs-rtos.md) → 日后 [Ch17](../chapter-17-linux-and-real-time/notes.md) |
-| LSB 已废但书为何讲 / vs POSIX | [1.4-lsb-vs-posix](./1.4-lsb-vs-posix.md) |
-| 动手 | [Project #1 / Pi Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) 刷卡上板 |
-| 驱动深入 | [09 设备驱动](../../../09-device-drivers-dt/)；本书 Ch8 仅入门 |
+| Linux vs RTOS 边界 | [1.1-linux-vs-rtos](../01-orientation/1.1-linux-vs-rtos.md) → 日后 [Ch17](./BOOK-MAP.md) |
+| LSB 已废但书为何讲 / vs POSIX | [1.4-lsb-vs-posix](../01-orientation/1.2-lsb-vs-posix.md) |
+| 动手 | [Project #1 / Pi Labs](../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md) 刷卡上板 |
+| 驱动深入 | [09 设备驱动](../../09-device-drivers-dt)；本书 Ch8 仅入门 |
 
 ---
 
 ## 参考
 
 - Hallinan, *Embedded Linux Primer*, 2nd ed, Chapter 1  
-- 大纲标签：[../OUTLINE.md](../OUTLINE.md) §第 1 章
+- 大纲标签：[../OUTLINE.md](./BOOK-MAP.md) §第 1 章

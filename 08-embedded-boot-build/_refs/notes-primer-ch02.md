@@ -2,10 +2,10 @@
 
 > 对应目录：`chapter-02-big-picture/`  
 > 书：*Embedded Linux Primer*, 2nd ed — Christopher Hallinan  
-> 大纲：[../OUTLINE.md](../OUTLINE.md) · **全章精读**（发行版节亦精读）
+> 大纲：[../OUTLINE.md](./BOOK-MAP.md) · **全章精读**（发行版节亦精读）
 
 **优先级**：2.1–2.3 **精读**；2.4 精读（商业 vs DIY）  
-**后置**：[Ch7 Bootloaders](../chapter-07-bootloaders/) · [Ch5 内核初始化](../chapter-05-kernel-initialization/) · [MELP](../../build-toolchain-yocto/) · [13 Pi Labs](../../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)
+**后置**：[Ch7 Bootloaders](./BOOK-MAP.md) · [Ch5 内核初始化](./BOOK-MAP.md) · [MELP](./OUTLINE-MELP.md) · [13 Pi Labs](../../projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md)
 
 ---
 
@@ -40,9 +40,9 @@
 
 自定义板几乎都要移植 Bootloader；标准 ATCA/cPCI 等可能自带成熟方案。  
 
-**今日对照（BIOS → UEFI）：** 功能类比成立，但不能把 U-Boot 当成 UEFI。完整对比 → [2.1-uboot-bios-uefi.md](./2.1-uboot-bios-uefi.md)。  
-**设备树也不是 UEFI：** DT 是静态清单；初始化在 U-Boot — [07-device-tree-vs-uefi.md](../chapter-07-bootloaders/7.0-device-tree-vs-uefi.md)。  
-深挖 U-Boot → [Ch7](../chapter-07-bootloaders/notes.md)。
+**今日对照（BIOS → UEFI）：** 功能类比成立，但不能把 U-Boot 当成 UEFI。完整对比 → [2.1-uboot-bios-uefi.md](../03-u-boot/3.1-uboot-bios-uefi.md)。  
+**设备树也不是 UEFI：** DT 是静态清单；初始化在 U-Boot — [07-device-tree-vs-uefi.md](../01-orientation/1.6-device-tree-vs-uefi.md)。  
+深挖 U-Boot → [Ch7](./BOOK-MAP.md)。
 
 ---
 
@@ -53,7 +53,7 @@
 - SoC：32 位 RISC，集成 UART / USB / 以太 MAC 等  
 - 外设：NOR 或 NAND（固件）、SDRAM（运行）、RTC、无线模组、RS-232、网口  
 
-对照今日：Pi5 = 应用核 + **RP1** 外设；存储常是 **microSD**（见 [Project #1 卡笔记](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/02-microsd-card-reader.md)），Flash 分区思想仍适用。
+对照今日：Pi5 = 应用核 + **RP1** 外设；存储常是 **microSD**（见 [Project #1 卡笔记](../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/02-microsd-card-reader.md)），Flash 分区思想仍适用。
 
 ### 2.2.2 交叉开发环境
 
@@ -90,7 +90,7 @@
 | 权限 | 可直访硬件与物理内存（在内核模型内） | 经系统调用；独立虚拟地址空间 |
 | 约束 | ISR **禁止睡眠** | 进程崩溃默认不毁内核/他进程 |
 
-与 [Project #1 三层图](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/01-userspace-kernel-hardware.md)、[Linux vs RTOS · MMU](../chapter-01-introduction/1.1-linux-vs-rtos.md) 同一条线。
+与 [Project #1 三层图](../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/01-userspace-kernel-hardware.md)、[Linux vs RTOS · MMU](../01-orientation/1.1-linux-vs-rtos.md) 同一条线。
 
 ---
 
@@ -114,12 +114,12 @@
 3. Ramdisk / 根文件系统  
 4. 升级预留（或用户数据）  
 
-深挖 MTD → [Ch10](../chapter-10-mtd-subsystem/notes.md)。
+深挖 MTD → [Ch10](./BOOK-MAP.md)。
 
 ### 2.3.4 Flash 文件系统
 
 普通 ext2/3 **不**直接适配 Flash 擦写特性。嵌入式常用 **JFFS2 / UBIFS** 等：磨损均衡、断电友好、常带压缩。  
-（eMMC/SD 上量产也常见 ext4；介质不同，选型不同。）FS 章 → [Ch9](../chapter-09-file-systems/notes.md)。
+（eMMC/SD 上量产也常见 ext4；介质不同，选型不同。）FS 章 → [Ch9](./BOOK-MAP.md)。
 
 ### 2.3.5 平面内存 vs 虚拟内存
 
@@ -136,7 +136,7 @@
 - **交叉编译器**：跑在主机，产出目标 ABI 的二进制  
 - 头文件 / 库必须跟**目标**走；和主机库混链 → 跑不起来的「四不像」  
 
-工具链实操 → [MELP Ch2](../../build-toolchain-yocto/chapter-02-toolchain/) · Labs **D1**。
+工具链实操 → [MELP Ch2](./BOOK-MAP.md) · Labs **D1**。
 
 ---
 
@@ -149,7 +149,7 @@
 
 **发行版本质（缺一不可）：** 交叉工具链 + 内核（及驱动）+ 系统库 + 用户态工具（常 BusyBox）+ rootfs 构建脚本 → 才能打出可运行固件。
 
-本仓库：世界观用 Primer；落地构建用 [MELP / Yocto 目录](../../build-toolchain-yocto/)。
+本仓库：世界观用 Primer；落地构建用 [MELP / Yocto 目录](./OUTLINE-MELP.md)。
 
 ---
 
@@ -166,7 +166,7 @@
 - *Linux Kernel Development*（内核基础）  
 - *Understanding the Linux Virtual Memory Manager*（Gorman，虚拟内存）  
 
-仓库对应：[05 内核](../../../05-linux-kernel/) · 内存管理书目链。
+仓库对应：[05 内核](../../05-linux-kernel) · 内存管理书目链。
 
 ---
 
@@ -175,17 +175,17 @@
 | 本章概念 | 落到哪里 |
 |----------|----------|
 | 串口 + SSH/网 | Pi 刷机后 Phase A；串口日志看 Boot/内核 |
-| 四阶段启动 | Phase B；[Ch5](../chapter-05-kernel-initialization/) · [Ch6](../chapter-06-user-space-initialization/) · [Ch7](../chapter-07-bootloaders/) |
-| 处理器 / SoC 选型背景 | [Ch3](../chapter-03-processor-basics/notes.md)（ARM 精读） |
+| 四阶段启动 | Phase B；[Ch5](./BOOK-MAP.md) · [Ch6](./BOOK-MAP.md) · [Ch7](./BOOK-MAP.md) |
+| 处理器 / SoC 选型背景 | [Ch3](./BOOK-MAP.md)（ARM 精读） |
 | 交叉编译 | MELP · Labs D1 |
-| 内核 vs 用户 | [01 三层图](../../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/01-userspace-kernel-hardware.md) · [03 TLPI](../../../03-linux-userspace-api/) |
-| rootfs / BusyBox | [Ch11](../chapter-11-busybox/) · MELP rootfs 章 |
+| 内核 vs 用户 | [01 三层图](../../projects/P5-raspberry-pi-embedded/P5f-pi-driver-course/01-userspace-kernel-hardware.md) · [03 TLPI](../../03-linux-userspace-api) |
+| rootfs / BusyBox | [Ch11](./BOOK-MAP.md) · MELP rootfs 章 |
 
-**下一章：** [Ch3 Processor Basics](../chapter-03-processor-basics/notes.md)（ARM/SoC 选读精读）。
+**下一章：** [Ch3 Processor Basics](./BOOK-MAP.md)（ARM/SoC 选读精读）。
 
 ---
 
 ## 参考
 
 - Hallinan, *Embedded Linux Primer*, 2nd ed, Chapter 2  
-- 大纲：[../OUTLINE.md](../OUTLINE.md) §第 2 章
+- 大纲：[../OUTLINE.md](./BOOK-MAP.md) §第 2 章

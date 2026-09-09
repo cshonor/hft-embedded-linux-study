@@ -2,34 +2,34 @@
 
 > **John Madieu** · Packt · **22 章**  
 > 内核：**4.1–4.13** · 示例：i.MX6 UDOO · 源码随书  
-> 评测：[MADIEU-EVAL.md](../MADIEU-EVAL.md) · 笔记树：本目录 `chapter-*/`
+> 评测：[MADIEU-EVAL.md](./MADIEU-EVAL.md) · 笔记树：本目录 `chapter-*/`
 
 ## 章目录一览
 
 | Ch | 目录 |
 |----|------|
-| 1 | [chapter-01-introduction-to-kernel-development](./chapter-01-introduction-to-kernel-development/) |
-| 2 | [chapter-02-device-driver-basis](./chapter-02-device-driver-basis/) |
-| 3 | [chapter-03-kernel-facilities-helpers](./chapter-03-kernel-facilities-helpers/) |
-| 4 | [chapter-04-character-device-drivers](./chapter-04-character-device-drivers/) |
-| 5 | [chapter-05-platform-device-drivers](./chapter-05-platform-device-drivers/) |
-| 6 | [chapter-06-device-tree](./chapter-06-device-tree/) |
-| 7 | [chapter-07-i2c-client-drivers](./chapter-07-i2c-client-drivers/) |
-| 8 | [chapter-08-spi-device-drivers](./chapter-08-spi-device-drivers/) |
-| 9 | [chapter-09-regmap-api](./chapter-09-regmap-api/) |
-| 10 | [chapter-10-iio-framework](./chapter-10-iio-framework/) |
-| 11 | [chapter-11-kernel-memory-management](./chapter-11-kernel-memory-management/) |
-| 12 | [chapter-12-dma](./chapter-12-dma/) |
-| 13 | [chapter-13-linux-device-model](./chapter-13-linux-device-model/) |
-| 14 | [chapter-14-pinctrl-gpio](./chapter-14-pinctrl-gpio/) |
-| 15 | [chapter-15-gpio-controller-drivers](./chapter-15-gpio-controller-drivers/) |
-| 16 | [chapter-16-advanced-irq-management](./chapter-16-advanced-irq-management/) |
-| 17 | [chapter-17-input-devices-drivers](./chapter-17-input-devices-drivers/) |
-| 18 | [chapter-18-rtc-drivers](./chapter-18-rtc-drivers/) |
-| 19 | [chapter-19-pwm-drivers](./chapter-19-pwm-drivers/) |
-| 20 | [chapter-20-regulator-framework](./chapter-20-regulator-framework/) |
-| 21 | [chapter-21-framebuffer-drivers](./chapter-21-framebuffer-drivers/) |
-| 22 | [chapter-22-nic-drivers](./chapter-22-nic-drivers/) |
+| 1 | [chapter-01-introduction-to-kernel-development](./BOOK-MAP.md) |
+| 2 | [chapter-02-device-driver-basis](./BOOK-MAP.md) |
+| 3 | [chapter-03-kernel-facilities-helpers](./BOOK-MAP.md) |
+| 4 | [chapter-04-character-device-drivers](./BOOK-MAP.md) |
+| 5 | [chapter-05-platform-device-drivers](./BOOK-MAP.md) |
+| 6 | [chapter-06-device-tree](./BOOK-MAP.md) |
+| 7 | [chapter-07-i2c-client-drivers](./BOOK-MAP.md) |
+| 8 | [chapter-08-spi-device-drivers](./BOOK-MAP.md) |
+| 9 | [chapter-09-regmap-api](./BOOK-MAP.md) |
+| 10 | [chapter-10-iio-framework](./BOOK-MAP.md) |
+| 11 | [chapter-11-kernel-memory-management](./BOOK-MAP.md) |
+| 12 | [chapter-12-dma](./BOOK-MAP.md) |
+| 13 | [chapter-13-linux-device-model](./BOOK-MAP.md) |
+| 14 | [chapter-14-pinctrl-gpio](./BOOK-MAP.md) |
+| 15 | [chapter-15-gpio-controller-drivers](./BOOK-MAP.md) |
+| 16 | [chapter-16-advanced-irq-management](./BOOK-MAP.md) |
+| 17 | [chapter-17-input-devices-drivers](./BOOK-MAP.md) |
+| 18 | [chapter-18-rtc-drivers](./BOOK-MAP.md) |
+| 19 | [chapter-19-pwm-drivers](./BOOK-MAP.md) |
+| 20 | [chapter-20-regulator-framework](./BOOK-MAP.md) |
+| 21 | [chapter-21-framebuffer-drivers](./BOOK-MAP.md) |
+| 22 | [chapter-22-nic-drivers](./BOOK-MAP.md) |
 
 ## 阅读标签
 
@@ -135,7 +135,7 @@
 | 6.6 Platform + OF 匹配 | | **精读** |
 | 6.7 兼容旧板级数据 | | 速览 |
 
-→ 深化：[21 README · 设备树](../README.md) · 官方 usage-model
+→ 深化：[21 README · 设备树](../../README.md) · 官方 usage-model
 
 ---
 
@@ -302,7 +302,7 @@
 
 | 节 | 重点 | 标签 |
 |----|------|------|
-| 22.1 `sk_buff` | | 选读（接 [13 内核网络](../../12-kernel-networking/)） |
+| 22.1 `sk_buff` | | 选读（接 [13 内核网络](../../12-kernel-networking)） |
 | 22.2 open/close / 收发包 | | 选读 |
 | 22.3 ethtool | | 选读 |
 
@@ -326,7 +326,7 @@ Ch2 模块 → Ch3 通用工具 → Ch4 字符设备
 
 - **无 PCIe 专章** — NVMe/PCIe 另查内核 PCI 子系统文档  
 - 5.x/6.x API 有微调 — 思想不变，代码需适配  
-- 调度 / CFS / PREEMPT_RT → [LKD](../../05-linux-kernel/)
+- 调度 / CFS / PREEMPT_RT → [LKD](../../05-linux-kernel)
 
 ## 最短路径（动手）
 

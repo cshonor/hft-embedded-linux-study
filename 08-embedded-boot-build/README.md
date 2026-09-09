@@ -75,11 +75,11 @@ projects/P5  ←  具体命令、板上结果、踩坑记录（"执行层"）
 
 | 模块 | 关系 |
 |------|------|
-| [09 驱动](../09-device-drivers-dt/) | 本模块让系统起来，09 让硬件能用 |
-| [07 ARM 架构](../07-arm-architecture/) | 启动与 AArch64 汇编 |
-| [05 内核](../05-linux-kernel/) / [05.5](../05.5-modern-kernel/) | 内核机制与 PREEMPT_RT |
-| [03 TLPI](../03-linux-userspace-api/) | 用户态进程/IPC/内存 |
-| [P5 树莓派实战](../projects/P5-raspberry-pi-embedded/) | 动手清单 |
+| [09 驱动](../09-device-drivers-dt) | 本模块让系统起来，09 让硬件能用 |
+| [07 ARM 架构](../07-arm-architecture) | 启动与 AArch64 汇编 |
+| [05 内核](../05-linux-kernel) / [05.5](../05.5-modern-kernel) | 内核机制与 PREEMPT_RT |
+| [03 TLPI](../03-linux-userspace-api) | 用户态进程/IPC/内存 |
+| [P5 树莓派实战](../projects/P5-raspberry-pi-embedded) | 动手清单 |
 
 ---
 
