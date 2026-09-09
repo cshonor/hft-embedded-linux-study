@@ -153,7 +153,7 @@ qemu-system-x86_64 \
 | 问题 | 翻哪篇 |
 |------|--------|
 | 内核编译流程 | `05-linux-kernel/chapter-02-getting-started/notes/section-2.3-编译和安装内核.md` |
-| 启动链概念 | `08-embedded-boot-build/primer-system-overview/` |
+| 启动链概念 | `08-embedded-boot-build/` |
 | CSAPP 异常控制流 | `02-computer-systems/chapter-08-exceptional-control-flow/` |
 | initramfs 原理 | [内核文档 initramfs.txt](https://docs.kernel.org/admin-guide/initrd.html) |
 

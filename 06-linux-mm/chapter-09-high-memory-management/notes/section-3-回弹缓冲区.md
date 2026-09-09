@@ -110,7 +110,7 @@ dma_map_page(dev, page, ...)
 ## 5. 衔接
 
 - 下节 [§4 紧急内存池](./section-4-紧急内存池.md)：bounce 需要「内存再紧也要能拿到」的保底
-- DMA 机制：[09-device-drivers-dt Ch12 DMA](../../../09-device-drivers-dt/modern-driver-practice/chapter-12-dma/)（`dma_need_sync`、`dma_map_ops`）
+- DMA 机制：[09-device-drivers-dt Ch12 DMA](../../../09-device-drivers-dt/06-dma-mmap/)（`dma_need_sync`、`dma_map_ops`）
 
 ---
 

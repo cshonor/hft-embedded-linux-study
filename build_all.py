@@ -99,10 +99,8 @@ BOOKS = [
     _b("17-rust-foundation/06_Compilers-and-LLVM-Learning", "Rust · 编译器与 LLVM", "编译原理与 LLVM 学习", "rust"),
     _b("17-rust-foundation/07-Programming-WebAssembly-with-Rust", "Rust · WebAssembly", "Programming WebAssembly with Rust", "rust"),
     # ---- 嵌入式 · 驱动 ----
-    _b("08-embedded-boot-build/primer-system-overview", "嵌入式系统入门", "系统启动与内核构建概览", "embed"),
-    _b("08-embedded-boot-build/build-toolchain-yocto", "工具链与 Yocto", "交叉工具链与 Yocto 构建", "embed"),
-    _b("09-device-drivers-dt/classic-driver-theory", "Linux 设备驱动 · 经典", "LDD3 · 字符设备与并发", "embed"),
-    _b("09-device-drivers-dt/modern-driver-practice", "Linux 设备驱动 · 现代", "platform / DT / i2c / regmap / IIO", "embed"),
+    _b("08-embedded-boot-build", "嵌入式构建", "点亮一块板：工具链 → 内核 → rootfs", "embed"),
+    _b("09-device-drivers-dt", "Linux 设备驱动", "Pi 5 上跑通一个驱动 + 设备树", "embed"),
 ]
 
 # ---------- 通用结构识别 ----------

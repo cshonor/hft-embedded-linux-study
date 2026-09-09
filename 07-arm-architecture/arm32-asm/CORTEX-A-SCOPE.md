@@ -31,7 +31,7 @@
 | **Ch2 / 14 / 15** | 7 模式（ARM7 类）vs M 的 Thread/Handler；向量表差异；A 有 MMU、M 无 | Linux 页表、异常与 GIC 实操 |
 | **浮点章** | A 侧完整 VFP 叙事 vs M4 简化 FPU | AArch64 SIMD 主线 |
 
-用途：搞懂 **为何一块芯片跑 Linux、一块只能裸机/RTOS**（与 [Primer · Linux vs RTOS](../../08-embedded-boot-build/primer-system-overview/chapter-01-introduction/1.1-linux-vs-rtos.md)、[SoC 重心](../../08-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/3.0-focus-on-soc.md) 一致）。
+用途：搞懂 **为何一块芯片跑 Linux、一块只能裸机/RTOS**（与 [Primer · Linux vs RTOS](../../08-embedded-boot-build/01-orientation/1.1-linux-vs-rtos.md)、[SoC 重心](../../08-embedded-boot-build/01-orientation/1.3-focus-on-soc.md) 一致）。
 
 ---
 

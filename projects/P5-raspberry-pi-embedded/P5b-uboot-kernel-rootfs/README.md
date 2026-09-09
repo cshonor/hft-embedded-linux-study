@@ -9,10 +9,10 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [MELP ch03 bootloader](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-03-bootloader/) | U-Boot 是什么、bootcmd 怎么写 |
-| [MELP ch04 kernel](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-04-configuring-building-kernel/) | 内核配置/编译流程 |
-| [MELP ch05 rootfs](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-05-building-root-filesystem/) | rootfs 最小组成 |
-| [MELP ch13 booting](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) | init 进程、启动序列 |
+| [MELP ch03 bootloader](../../../08-embedded-boot-build/03-u-boot/) | U-Boot 是什么、bootcmd 怎么写 |
+| [MELP ch04 kernel](../../../08-embedded-boot-build/04-kernel-build/) | 内核配置/编译流程 |
+| [MELP ch05 rootfs](../../../08-embedded-boot-build/05-rootfs/) | rootfs 最小组成 |
+| [MELP ch13 booting](../../../08-embedded-boot-build/06-boot-to-shell/) | init 进程、启动序列 |
 
 ---
 
@@ -66,8 +66,8 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| U-Boot bootcmd | [MELP ch03](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-03-bootloader/) |
-| SD 卡布局 | [MELP ch09 storage](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-09-storage-strategy/) |
+| U-Boot bootcmd | [MELP ch03](../../../08-embedded-boot-build/03-u-boot/) |
+| SD 卡布局 | [MELP ch09 storage](../../../08-embedded-boot-build/07-storage-ota/) |
 
 ---
 
@@ -122,9 +122,9 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 内核配置 | [MELP ch04](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-04-configuring-building-kernel/) |
-| 设备树 | [MELP ch11](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-11-device-drivers-interaction/) |
-| bootargs 参数 | [MELP ch13](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) |
+| 内核配置 | [MELP ch04](../../../08-embedded-boot-build/04-kernel-build/) |
+| 设备树 | [MELP ch11](../../../09-device-drivers-dt/) |
+| bootargs 参数 | [MELP ch13](../../../08-embedded-boot-build/06-boot-to-shell/) |
 
 ---
 
@@ -175,9 +175,9 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| rootfs 组成 | [MELP ch05](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-05-building-root-filesystem/) |
-| init 流程 | [MELP ch13](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-13-booting-init/) |
-| 构建系统对比 | [MELP ch06](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-06-choosing-build-system/) |
+| rootfs 组成 | [MELP ch05](../../../08-embedded-boot-build/05-rootfs/) |
+| init 流程 | [MELP ch13](../../../08-embedded-boot-build/06-boot-to-shell/) |
+| 构建系统对比 | [MELP ch06](../../../08-embedded-boot-build/05-rootfs/) |
 
 ---
 

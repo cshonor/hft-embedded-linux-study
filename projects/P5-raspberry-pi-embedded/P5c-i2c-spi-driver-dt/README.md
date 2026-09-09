@@ -9,8 +9,8 @@
 
 | 瞄一眼 | 只要留下印象 |
 |--------|-------------|
-| [驱动理论 refs](../../../09-device-drivers-dt/classic-driver-theory/) | LDD3：file_operations、probe/remove |
-| [现代驱动实践](../../../09-device-drivers-dt/modern-driver-practice/) | 平台驱动、I2C/SPI 子系统 |
+| [字符设备](../../../09-device-drivers-dt/02-char-device/) · [platform+DT](../../../09-device-drivers-dt/03-platform-dt/) | file_operations、probe/remove |
+| [platform+DT](../../../09-device-drivers-dt/03-platform-dt/) · [GPIO/I2C/SPI](../../../09-device-drivers-dt/04-gpio-i2c-spi/) | 平台驱动、I2C/SPI 子系统 |
 
 ---
 
@@ -57,8 +57,8 @@
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 设备树语法 | [MELP ch11](../../../08-embedded-boot-build/build-toolchain-yocto/chapter-11-device-drivers-interaction/) |
-| compatible 匹配 | [驱动理论 refs](../../../09-device-drivers-dt/classic-driver-theory/) |
+| 设备树语法 | [platform+DT](../../../09-device-drivers-dt/03-platform-dt/) |
+| compatible 匹配 | [platform+DT](../../../09-device-drivers-dt/03-platform-dt/) |
 
 ---
 
@@ -168,8 +168,8 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| 平台驱动模型 | [驱动理论 refs](../../../09-device-drivers-dt/classic-driver-theory/) |
-| I2C 子系统 | [现代驱动实践](../../../09-device-drivers-dt/modern-driver-practice/) |
+| 平台驱动模型 | [platform+DT](../../../09-device-drivers-dt/03-platform-dt/) |
+| I2C 子系统 | [GPIO/I2C/SPI](../../../09-device-drivers-dt/04-gpio-i2c-spi/) |
 | probe/remove 生命周期 | [LKD 17.2 设备模型](../../../05-linux-kernel/chapter-17-devices-modules/notes/section-17.2-统一设备模型.md) |
 
 ---
@@ -191,7 +191,7 @@ MODULE_LICENSE("GPL");
 
 | 卡住了… | 翻这里 |
 |---------|--------|
-| iio 子系统 | [现代驱动实践](../../../09-device-drivers-dt/modern-driver-practice/) |
+| iio 子系统 | [书本索引](../../../09-device-drivers-dt/_refs/BOOK-MAP.md)（按需拓展） |
 | 字符设备注册 | P4 Part A（你已经做过了！）|
 
 ---
@@ -229,7 +229,7 @@ MODULE_LICENSE("GPL");
 | 卡住了… | 翻这里 |
 |---------|--------|
 | 内核中断 | [ULK ch04 中断](../../../16-linux-kernel-deep/chapter-04-interrupts-and-exceptions/) |
-| threaded_irq | [现代驱动实践](../../../09-device-drivers-dt/modern-driver-practice/) |
+| threaded_irq | [中断与并发](../../../09-device-drivers-dt/05-irq-locking/) |
 
 ---
 

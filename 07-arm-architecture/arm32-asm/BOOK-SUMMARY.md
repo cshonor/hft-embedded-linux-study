@@ -156,7 +156,7 @@ UART/ADC/定时器/GPIO 寄存器汇编读写（Tiva/LPC 例）。思维迁到 L
 | **选读** | 1、6、12、14–15、17 | 背景、文字池、查表、异常细节、Thumb |
 | **跳过（多数）** | 9–11、附录 A/B | 浮点专章、Keil/CCS 工程步骤 |
 
-精读完 → [aarch64-practice](../aarch64-practice/)（Pi5）→ [09 驱动·DT](../../09-device-drivers-dt/) · [Primer](../../08-embedded-boot-build/primer-system-overview/)。
+精读完 → [aarch64-practice](../aarch64-practice/)（Pi5）→ [09 驱动·DT](../../09-device-drivers-dt/) · [Primer](../../08-embedded-boot-build/)。
 
 ---
 

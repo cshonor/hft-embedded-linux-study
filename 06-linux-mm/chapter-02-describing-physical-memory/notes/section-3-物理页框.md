@@ -24,7 +24,7 @@
 1. **字段按用途复用**（一个 union 塞进 page cache 页、匿名页、slab 页、网络页池……多种身份）
 2. **低位借位**（指针/整型没用的低位拿来存标志）
 
-这与 [09-DMA §12.3 `scatterlist.page_link` 低 2 位复用](../../../09-device-drivers-dt/modern-driver-practice/chapter-12-dma/12.3-scatter-gather.md) 是**同一族技巧**。
+这与 [09-DMA §12.3 `scatterlist.page_link` 低 2 位复用](../../../09-device-drivers-dt/06-dma-mmap/6.4-scatter-gather.md) 是**同一族技巧**。
 
 ---
 
@@ -168,7 +168,7 @@ put_page(page);   /* 引用 -1，归零触发释放 */
 - 上节 [§2 内存区域](./section-2-内存区域.md)：`struct page` 挂在 zone 的 `free_area[]` 里
 - [§4 高端内存](./section-4-高端内存.md)：32 位下部分页不能被内核直接寻址
 - 分配/回收：[Ch 6 物理页分配](../../chapter-06-physical-page-allocation/) · [Ch 10 页框回收](../../chapter-10-page-frame-reclamation/)
-- 字段复用同族技巧：[09-DMA 12.3 scatterlist](../../../09-device-drivers-dt/modern-driver-practice/chapter-12-dma/12.3-scatter-gather.md)
+- 字段复用同族技巧：[09-DMA 12.3 scatterlist](../../../09-device-drivers-dt/06-dma-mmap/6.4-scatter-gather.md)
 
 ---
 

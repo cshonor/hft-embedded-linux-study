@@ -165,7 +165,7 @@ Acorn → ARM1（Furber / Wilson，1985）→ 1990 ARM Ltd（**卖 IP 授权，�
 |------|------|
 | [CSAPP](../../../../02-computer-systems/) | 另一 ISA，同一「表示」层 |
 | [01 C](../../../../01-c-language/) | 补码、类型宽度 |
-| [Primer SoC](../../../../08-embedded-boot-build/primer-system-overview/chapter-03-processor-basics/) | Cortex-A SoC 跑 Linux |
+| [Primer SoC](../../../../08-embedded-boot-build/chapter-03-processor-basics/) | Cortex-A SoC 跑 Linux |
 | [aarch64-practice](../../../aarch64-practice/) | Pi5 主战场 |
 
 ---
