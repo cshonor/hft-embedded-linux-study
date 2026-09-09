@@ -79,6 +79,16 @@ request_threaded_irq(irq, my_handler, my_thread,
 
 ---
 
+## 本节笔记
+
+| # | 笔记 |
+|---|------|
+| 5.1 | [中断上下文：为什么不能 sleep](./5.1-irq-context.md) |
+| 5.2 | [锁的选型：只看"能不能睡"](./5.2-lock-selection.md) |
+| 5.3 | [threaded IRQ 实践](./5.3-threaded-irq.md) |
+
+---
+
 ## 验收
 
 - [ ] 能说出至少 3 个在硬中断里**不能**调用的函数

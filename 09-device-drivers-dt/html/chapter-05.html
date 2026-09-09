@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-5-1"><span class="n">5.1</span>5.1-irq-context</a>
+          <a href="#s-5-2"><span class="n">5.2</span>5.2-lock-selection</a>
+          <a href="#s-5-3"><span class="n">5.3</span>5.3-threaded-irq</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -296,7 +299,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Pi 5 上跑通一个驱动 + 设备树</div>
           <h1>05 · 中断与并发：硬中断里为什么不能 sleep</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 5</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -430,6 +433,30 @@ request_threaded_irq(irq, my_handler, my_thread,
 <li>锁的选型本质是"能不能睡"，而"能不能睡"取决于<strong>当前在什么上下文</strong>——判断上下文是内核编程的基本功。</li>
 </ul>
 <hr />
+<h2>本节笔记</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.1</td>
+<td><a href="#s-5-1">中断上下文：为什么不能 sleep</a></td>
+</tr>
+<tr>
+<td>5.2</td>
+<td><a href="#s-5-2">锁的选型：只看"能不能睡"</a></td>
+</tr>
+<tr>
+<td>5.3</td>
+<td><a href="#s-5-3">threaded IRQ 实践</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>验收</h2>
 <ul>
 <li>[ ] 能说出至少 3 个在硬中断里<strong>不能</strong>调用的函数</li>
@@ -443,6 +470,635 @@ request_threaded_irq(irq, my_handler, my_thread,
 <li><strong>上一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/04-gpio-i2c-spi/">04-gpio-i2c-spi</a></li>
 <li><strong>下一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06-dma-mmap</a></li>
 <li><strong>卡住查书：</strong> Madieu Ch16、Ch3 · LDD3 Ch5、Ch10、Ch7</li>
+</ul>
+      </section>
+      <section class="section" id="s-5-1">
+        <div class="sec-head"><div class="sec-no">5.1</div><h2>中断上下文：为什么硬中断里不能 sleep</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 中断上下文到底是什么、为什么不关联任何进程、以及"不能睡眠"这条铁律的<strong>物理原因</strong>。
+<strong>一句话：</strong> 中断是"借尸还魂"—— 它借用被打断进程的<strong>内核栈</strong>执行，但<strong>不代表那个进程</strong>，所以没有可被调度的实体。
+<strong>后续：</strong> <a href="#s-5-2">5.2 锁的选型</a> · <a href="#s-5-3">5.3 threaded_irq 实践</a><br />
+<strong>卡住查书：</strong> LDD3 Ch10、Ch5 · Madieu Ch16</p>
+</blockquote>
+<hr />
+<h2>中断上下文 vs 进程上下文</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>进程上下文</th>
+<th>中断上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代表谁</td>
+<td>某个进程（<code class="c">current</code> 有效）</td>
+<td><strong>谁都不代表</strong>（<code class="c">current</code> 指向被打断的进程，但<strong>无关</strong>）</td>
+</tr>
+<tr>
+<td>能被调度</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>能睡眠</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>能访问用户空间</td>
+<td>✅</td>
+<td>❌（没有进程地址空间）</td>
+</tr>
+<tr>
+<td>栈</td>
+<td>进程内核栈（8K/16K）</td>
+<td><strong>借用</strong>被中断进程的内核栈（或独立 irq stack）</td>
+</tr>
+<tr>
+<td>优先级</td>
+<td>受调度器管理</td>
+<td><strong>高于一切</strong>，谁都能打断（除更高优先级中断）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="code"><code class="c">进程 A 正在跑  ──────────────────────────────►
+                    │
+                    │  硬件中断到来
+                    ▼
+              ┌───────────────────┐
+              │  中断 handler      │  ← 借用 A 的内核栈，但 A 被&quot;冻结&quot;
+              │  (中断上下文)      │     current == A，但 A 与此无关
+              └───────────────────┘
+                    │
+                    │  返回
+                    ▼
+进程 A 继续  ────────────────────────────────►
+</code></pre>
+<p><strong>关键推论：</strong> 如果在中断里调用 <code class="c">schedule()</code>（睡眠的本质），调度器会去选下一个进程运行，而<strong>中断上下文本身没有被保存进任何可恢复的位置</strong>——它只是栈上的一段临时执行流，不属于任何 <code class="c">task_struct</code>。于是：</p>
+<ul>
+<li>要么内核检测到非法调度 → <code class="c">BUG: scheduling while atomic</code> → <strong>oops</strong></li>
+<li>要么调度走了，中断永远无法返回 → <strong>中断丢失、系统卡死</strong></li>
+</ul>
+<hr />
+<h2>硬中断里<strong>不能</strong>调用的函数</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>具体</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>睡眠/调度</strong></td>
+<td><code class="c">msleep</code>、<code class="c">schedule</code>、<code class="c">wait_event_*</code>、<code class="c">ssleep</code></td>
+<td>无调度实体</td>
+</tr>
+<tr>
+<td><strong>可能睡眠的分配</strong></td>
+<td><code class="c">kmalloc(GFP_KERNEL)</code>、<code class="c">vmalloc</code>、<code class="c">kzalloc(GFP_KERNEL)</code></td>
+<td>内存不足时会触发回收/睡眠</td>
+</tr>
+<tr>
+<td><strong>互斥锁</strong></td>
+<td><code class="c">mutex_lock</code>、<code class="c">down(&amp;sem)</code>、读写信号量</td>
+<td>拿不到就睡</td>
+</tr>
+<tr>
+<td><strong>用户空间访问</strong></td>
+<td><code class="c">copy_to_user</code>、<code class="c">copy_from_user</code></td>
+<td>可能缺页 → 睡眠；且不该访问用户地址空间</td>
+</tr>
+<tr>
+<td><strong>可能睡眠的同步</strong></td>
+<td><code class="c">flush_work</code>（不指定 <code class="c">WQ_MEM_RECLAIM</code> 时）</td>
+<td>会等待</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>反过来，中断里可以用的：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>具体</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配</td>
+<td><code class="c">kmalloc(GFP_ATOMIC)</code>（不睡眠，失败立即返回 NULL）</td>
+</tr>
+<tr>
+<td>同步</td>
+<td><code class="c">spinlock</code>、<code class="c">atomic_*</code>、<code class="c">bitops</code></td>
+</tr>
+<tr>
+<td>记录</td>
+<td><code class="c">printk</code>（但别刷屏，串口是慢设备）</td>
+</tr>
+<tr>
+<td>调度下半部</td>
+<td><code class="c">tasklet_schedule</code>、<code class="c">queue_work</code>、<code class="c">IRQ_WAKE_THREAD</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* 判错技巧：内核提供了断言 */
+might_sleep();          /* 放在函数开头，若在原子上下文被调用会打印警告栈 */
+in_interrupt();         /* 是否在中断上下文 */
+in_atomic();            /* 是否在原子上下文（含持 spinlock） */
+</code></pre>
+<hr />
+<h2>上半部 / 下半部：为什么必须切分</h2>
+<p><strong>硬中断执行期间，同级/低优先级中断被屏蔽。</strong> 在这段时间里：</p>
+<ul>
+<li>系统不响应其他中断 → <strong>丢中断</strong>（串口 FIFO 溢出、网卡丢包）</li>
+<li>其他 CPU 不受影响，但本 CPU 上的所有任务被推迟 → <strong>延迟尖刺</strong></li>
+</ul>
+<p>所以铁律：<strong>上半部只做"不做就会丢数据"的事</strong>，其余推给下半部。</p>
+<pre class="code" data-label="code"><code class="c">硬中断 top half（中断上下文，不能睡）
+   ├─ 读硬件状态寄存器，判断是不是我的中断
+   ├─ 清中断源（★ 必须，否则中断会反复触发）
+   ├─ 把数据搬到内存（少量）
+   └─ 调度下半部
+            │
+            ▼
+下半部 bottom half（可以是内核线程，能睡）
+   └─ 解析数据、调 I2C、唤醒用户进程、拷贝给用户
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>下半部机制</th>
+<th>执行上下文</th>
+<th>能睡眠</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>softirq</strong></td>
+<td>软中断（中断下半部的底层）</td>
+<td>❌</td>
+<td>静态注册，可并发在不同 CPU；网络收发用它</td>
+</tr>
+<tr>
+<td><strong>tasklet</strong></td>
+<td>基于 softirq</td>
+<td>❌</td>
+<td>同一 tasklet <strong>串行</strong>（不跨 CPU 并发），用起来简单</td>
+</tr>
+<tr>
+<td><strong>workqueue</strong></td>
+<td><strong>内核线程</strong></td>
+<td>✅</td>
+<td>可睡眠；<code class="c">schedule_work</code> 用系统默认队列</td>
+</tr>
+<tr>
+<td><strong>threaded IRQ</strong></td>
+<td><strong>专属内核线程</strong></td>
+<td>✅</td>
+<td><code class="c">request_threaded_irq</code>；<strong>现代推荐</strong></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>现代建议：</strong> 直接用 <code class="c">request_threaded_irq()</code>。它把"上半部快速处理 + 线程慢慢做"封装成一步，比手写 tasklet/workqueue 更不容易出错。详见 <a href="#s-5-3">5.3</a>。</p>
+</blockquote>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>中断处理时长 = 延迟尖刺的直接来源。</strong> HFT 里做中断绑核（把网卡中断绑到隔离核之外）的本质，就是避免中断处理抢占关键线程。</li>
+<li><strong>NAPI 是"中断 + 轮询"的混合</strong>：网卡收到第一个包发中断，之后<strong>关中断转轮询</strong>把队列里的包一次性收完。这样既避免了"每包一中断"的开销，又不会像纯轮询那样空转。这是"上下半部"思想在网络栈的终极形态（见 <a href="../../12.5-modern-networking/html/index.html">12.5-modern-networking</a>）。</li>
+<li><strong><code class="c">GFP_ATOMIC</code> 失败率高于 <code class="c">GFP_KERNEL</code></strong> —— 这是"不能睡"换来的代价：内存紧张时它宁可失败也不等待。高频路径要预先分配好缓冲池，别在中断里分配（HFT 里的内存池同理）。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：中断 handler 里 <code class="c">current</code> 指向谁？能用它吗？</summary>
+<p><code class="c">current</code> 会指向<strong>被中断的那个进程</strong>，但这个进程与中断处理<strong>毫无关系</strong>（中断只是借用了它的内核栈）。
+用它做任何判断都是错的 —— 比如"当前进程是不是 root"在中断里毫无意义。</p>
+</details>
+<details>
+<summary>Q2：为什么 <code class="c">kmalloc(GFP_KERNEL)</code> 不能在中断里用，而 <code class="c">GFP_ATOMIC</code> 可以？</summary>
+<p><code class="c">GFP_KERNEL</code> 允许在内存不足时<strong>触发页回收、回写、甚至等待 I/O</strong>，这些都可能睡眠。
+<code class="c">GFP_ATOMIC</code> 禁止睡眠：只用紧急保留池，不够就<strong>立刻返回 NULL</strong>。代价是失败率更高。</p>
+</details>
+<details>
+<summary>Q3：如果上半部忘了清中断源会怎样？</summary>
+<p>中断控制器认为"中断仍在处理"，该 IRQ 线持续有效 → <strong>退出 handler 后立刻再次触发</strong>，陷入死循环，系统看起来卡死（<code class="c">dmesg</code> 会被刷屏）。
+所以"清中断"是上半部<strong>必须</strong>做的第一步 —— 尤其是<strong>电平触发</strong>（level-triggered）的中断。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>下一篇：</strong> <a href="#s-5-2">5.2 锁的选型</a></li>
+<li><strong>上一篇节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/04-gpio-i2c-spi/">04-gpio-i2c-spi</a></li>
+<li><strong>卡住查书：</strong> LDD3 Ch10（中断）、Ch5（并发）· Madieu Ch16</li>
+</ul>
+      </section>
+      <section class="section" id="s-5-2">
+        <div class="sec-head"><div class="sec-no">5.2</div><h2>锁怎么选：只看一件事——临界区能不能睡眠</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> spinlock / mutex / atomic / RCU 的选型依据，以及"持自旋锁睡眠会死锁"到底怎么发生的。
+<strong>决策树只有一问：</strong> 临界区里会不会调用可能睡眠的函数？
+<strong>前置：</strong> <a href="#s-5-1">5.1 中断上下文</a><br />
+<strong>卡住查书：</strong> LDD3 Ch5 · Madieu Ch3、Ch16</p>
+</blockquote>
+<hr />
+<h2>决策树</h2>
+<pre class="code" data-label="code"><code class="c">临界区里会睡眠吗？（调 I2C/SPI、access_user、kmalloc(GFP_KERNEL)、msleep）
+   │
+   ├─ 会  ──► mutex（或 rt_mutex / semaphore）
+   │
+   └─ 不会 ──► 会不会在中断上下文里执行？
+                   │
+                   ├─ 会  ──► spinlock（+ 必要时 spin_lock_irqsave）
+                   │
+                   └─ 不会 ──► 临界区多长？
+                                 ├─ 极短（几条指令）──► atomic_t / bitops
+                                 ├─ 短 ──────────────► spinlock
+                                 └─ 读多写少 ────────► rwlock / seqlock / RCU
+</code></pre>
+<blockquote>
+<p><strong>最快的锁是不加锁。</strong> 优先考虑：per-CPU 变量、无锁环形缓冲、RCU —— 把共享拆成不共享。</p>
+</blockquote>
+<hr />
+<h2>spinlock vs mutex 正面对比</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">spinlock_t</code></th>
+<th><code class="c">mutex</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>拿不到时</td>
+<td><strong>忙等</strong>（原地打转，CPU 100%）</td>
+<td><strong>睡眠</strong>（让出 CPU）</td>
+</tr>
+<tr>
+<td>能否在中断上下文用</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>持有期间能否睡眠</td>
+<td>❌ <strong>严禁</strong></td>
+<td>✅ 可以</td>
+</tr>
+<tr>
+<td>临界区长度</td>
+<td>必须<strong>极短</strong></td>
+<td>可以长</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>小（几条原子指令）</td>
+<td>大（可能睡眠/唤醒，上下文切换）</td>
+</tr>
+<tr>
+<td>递归获取</td>
+<td>死锁（不递归）</td>
+<td>死锁（不递归）</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>中断 handler、短临界区、数据结构自洽更新</td>
+<td>进程上下文、可能调 I2C/SPI 的操作</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* mutex：可以睡，可以调 I2C */
+static int my_read_reg(struct my_dev *dev, u8 reg, u8 *val)
+{
+    mutex_lock(&amp;dev-&gt;lock);            /* 拿不到就睡 */
+    *val = i2c_smbus_read_byte_data(dev-&gt;client, reg);  /* 会睡眠，OK */
+    mutex_unlock(&amp;dev-&gt;lock);
+    return 0;
+}
+
+/* spinlock：中断里用，临界区极短 */
+static irqreturn_t my_handler(int irq, void *p)
+{
+    struct my_dev *dev = p;
+    unsigned long flags;
+
+    spin_lock_irqsave(&amp;dev-&gt;slock, flags);   /* 关中断 + 拿锁，一步到位 */
+    dev-&gt;irq_count++;
+    spin_unlock_irqrestore(&amp;dev-&gt;slock, flags);
+    return IRQ_WAKE_THREAD;
+}
+</code></pre>
+<hr />
+<h2>为什么持自旋锁睡眠 = 死锁</h2>
+<pre class="code" data-label="code"><code class="c">CPU0: 进程 P 拿到 spinlock，然后调用 copy_to_user（睡眠）
+      → P 被挂起，但锁还握在手里
+CPU1: 另一个进程 Q 想拿同一把锁
+      → 自旋等待（不睡眠，因为它是 spinlock）
+      → 在**抢占式内核**上，Q 占着 CPU 空转
+      → P 永远等不到 CPU 来释放锁
+      → 两核一起卡死
+</code></pre>
+<p><strong>单核 + 非抢占内核</strong>下，Q 自旋时没法让出 CPU，同样卡死。所以内核有 <code class="c">CONFIG_DEBUG_ATOMIC_SLEEP</code> 专门抓这类 bug。</p>
+<hr />
+<h2>spinlock 的三个变体（选错就是死锁或丢中断）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变体</th>
+<th>做的事</th>
+<th>用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">spin_lock</code> / <code class="c">spin_unlock</code></td>
+<td>只拿锁</td>
+<td><strong>仅进程上下文</strong>，且确定不会有中断来抢同一把锁</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock_irqsave</code> / <code class="c">irqrestore</code></td>
+<td><strong>关本地中断 + 保存 flags + 拿锁</strong></td>
+<td><strong>进程与中断共享</strong>数据时（最常用、最安全）</td>
+</tr>
+<tr>
+<td><code class="c">spin_lock_bh</code> / <code class="c">unlock_bh</code></td>
+<td>关<strong>下半部</strong>（softirq），不关硬中断</td>
+<td>只与 tasklet/softirq 竞争时</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* 为什么中断 handler 里必须用 irqsave 版本？ */
+spin_lock(&amp;lock);        /* 只拿锁，不关中断 */
+    /* 此时本 CPU 来了同一个中断 → handler 也 spin_lock 同一把锁 */
+    /* → 自己等自己，永久自旋 —— 死锁 */
+</code></pre>
+<hr />
+<h2>更快的选项</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只改一个计数器</td>
+<td><code class="c">atomic_inc(&amp;c)</code> / <code class="c">atomic64_t</code></td>
+</tr>
+<tr>
+<td>只置位/清位</td>
+<td><code class="c">set_bit</code> / <code class="c">clear_bit</code>（原子位操作）</td>
+</tr>
+<tr>
+<td>每 CPU 一份数据</td>
+<td><code class="c">DEFINE_PER_CPU</code> / <code class="c">this_cpu_*</code>（无需加锁）</td>
+</tr>
+<tr>
+<td>读极多、写极少</td>
+<td><code class="c">seqlock</code>（读不加锁，靠序号重试）或 <strong>RCU</strong></td>
+</tr>
+<tr>
+<td>单生产者单消费者环形缓冲</td>
+<td>无锁（内存屏障 + <code class="c">smp_store_release</code>/<code class="c">smp_load_acquire</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>per-CPU 数据结构避免加锁</strong>，这个招式在 HFT 用户态无锁队列里是同一个内核：把共享拆成每核一份，写入本地、读取合并，彻底消除争用（见 <a href="../../14-hft-engineering/html/index.html">14-hft-engineering</a>）。</li>
+<li><strong><code class="c">spin_lock_irqsave</code> 的代价是关中断</strong> —— 关中断期间本 CPU 无法响应任何中断，直接制造延迟尖刺。HFT 里"中断绑核 + 关键线程绑核"就是在<strong>物理上隔离</strong>这两种争用。</li>
+<li><strong>RCU 的思想</strong>（读者不加锁、写者延迟回收）在无锁数据结构里反复出现。理解 RCU 对写高性能并发代码帮助极大。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：临界区里要调 <code class="c">i2c_transfer</code>（会睡眠），该用哪种锁？</summary>
+<p><strong>mutex。</strong> I2C 传输会睡眠，spinlock 持有期间禁止睡眠 → 只能用 mutex。
+这也意味着这段代码<strong>不能</strong>在中断 handler 里执行，必须放到下半部线程（workqueue / threaded IRQ）。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">spin_lock_irqsave</code> 比 <code class="c">spin_lock</code> 多做了什么？为什么中断里必须用它？</summary>
+<p>多做了<strong>关本地中断 + 保存中断状态到 flags</strong>。
+如果只 <code class="c">spin_lock</code> 不关中断：进程上下文拿着锁时，本 CPU 来了中断，handler 也请求同一把锁 → <strong>自己等自己，永久自旋</strong>。
+<code class="c">irqsave</code> 关掉中断后，handler 根本不会在本 CPU 上跑，竞争消失。</p>
+</details>
+<details>
+<summary>Q3：什么情况下连 spinlock 都不需要？</summary>
+<ul>
+<li>数据是 <strong>per-CPU</strong> 的（每核一份，天然无竞争）；</li>
+<li>操作本身是<strong>原子的</strong>（<code class="c">atomic_t</code>、原子位操作）；</li>
+<li>单生产者单消费者的<strong>环形缓冲</strong>（配合内存屏障）。</li>
+</ul>
+<p>"最快的锁是不加锁" —— 能拆成不共享就别加锁。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-5-1">5.1 中断上下文</a></li>
+<li><strong>下一篇：</strong> <a href="#s-5-3">5.3 threaded_irq 实践</a></li>
+<li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06-dma-mmap</a></li>
+<li><strong>卡住查书：</strong> LDD3 Ch5 · Madieu Ch3、Ch16</li>
+</ul>
+      </section>
+      <section class="section" id="s-5-3">
+        <div class="sec-head"><div class="sec-no">5.3</div><h2>threaded IRQ 实践：现代中断处理的默认姿势</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 用 <code class="c">request_threaded_irq()</code> 把中断拆成"硬中断快速判断 + 内核线程慢慢做"，以及如何拿到中断号、设为唤醒源、绑核、调试。
+<strong>为什么推荐它：</strong> 比自己搭 tasklet/workqueue 更安全；handler 里不睡、线程里随便睡，边界天然清晰。
+<strong>前置：</strong> <a href="#s-5-1">5.1 中断上下文</a> · <a href="#s-5-2">5.2 锁的选型</a><br />
+<strong>卡住查书：</strong> Madieu Ch16 · LDD3 Ch10</p>
+</blockquote>
+<hr />
+<h2>为什么需要它</h2>
+<p>传统写法：上半部干活、下半部用 tasklet 或 workqueue。问题是要<strong>自己管理两套机制</strong>，容易出错。</p>
+<p><code class="c">request_threaded_irq</code> 把这个模式<strong>内建</strong>：内核为你的 IRQ 起一个<strong>专属内核线程</strong>，handler 返回 <code class="c">IRQ_WAKE_THREAD</code> 就唤醒它。</p>
+<pre class="code" data-label="code"><code class="c">硬中断 handler (my_handler)      ← 中断上下文：不能睡
+   ├─ 判断是不是我的中断（读状态寄存器）
+   ├─ 清中断
+   └─ return IRQ_WAKE_THREAD
+              │
+              ▼  内核唤醒专属线程
+IRQ 线程 (my_thread)             ← 进程上下文：可以睡
+   └─ 读 I2C 数据、mutex_lock、copy_to_user、唤醒等待队列
+</code></pre>
+<p><strong>额外好处：</strong> 线程有 <code class="c">task_struct</code>，可以被 <code class="c">chrt</code> 提优先级、可以绑核、可以被调试器看到。这在实时性调优时非常有用。</p>
+<hr />
+<h2>返回值（三选一）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">IRQ_NONE</code></td>
+<td><strong>不是我的中断</strong>（共享 IRQ 时常见）</td>
+<td>内核继续问下一个共享者</td>
+</tr>
+<tr>
+<td><code class="c">IRQ_HANDLED</code></td>
+<td>已处理完，不需要线程</td>
+<td>线程不唤醒</td>
+</tr>
+<tr>
+<td><code class="c">IRQ_WAKE_THREAD</code></td>
+<td>已做紧急处理，请唤醒线程</td>
+<td><strong>线程被调度执行</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>完整示例（含设备树取中断号）</h2>
+<p><strong>DTS 侧：</strong></p>
+<pre class="code" data-label="dts"><code class="c">mydev@fe200000 {
+    compatible = &quot;wzp,my-device&quot;;
+    reg = &lt;0x0 0xfe200000 0x0 0x1000&gt;;
+    interrupts = &lt;GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH&gt;;   /* 或 IRQ_TYPE_EDGE_FALLING */
+    interrupt-names = &quot;data&quot;;
+};
+</code></pre>
+<p><strong>驱动侧：</strong></p>
+<pre class="code" data-label="C"><code class="c">static irqreturn_t my_handler(int irq, void *dev_id)
+{
+    struct my_dev *dev = dev_id;
+    u32 status;
+
+    status = readl(dev-&gt;base + REG_STATUS);
+    if (!(status &amp; IRQ_MINE))
+        return IRQ_NONE;              /* 共享中断：不是我的 */
+
+    writel(status &amp; IRQ_MINE, dev-&gt;base + REG_CLEAR);   /* ★ 清中断，必须 */
+    return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t my_thread(int irq, void *dev_id)
+{
+    struct my_dev *dev = dev_id;
+
+    mutex_lock(&amp;dev-&gt;lock);                 /* 可以睡眠 */
+    /* 读数据、调 I2C/SPI、解析 */
+    mutex_unlock(&amp;dev-&gt;lock);
+
+    wake_up_interruptible(&amp;dev-&gt;wq);        /* 唤醒等待的用户进程 */
+    return IRQ_HANDLED;
+}
+
+/* probe 里注册 —— 中断号来自设备树，不硬编码 */
+static int my_probe(struct platform_device *pdev)
+{
+    struct my_dev *dev;
+    int irq;
+
+    irq = platform_get_irq(pdev, 0);        /* 从 DT 的 interrupts 属性解析 */
+    if (irq &lt; 0)
+        return dev_err_probe(&amp;pdev-&gt;dev, irq, &quot;no irq&quot;);
+
+    ret = devm_request_threaded_irq(&amp;pdev-&gt;dev, irq,
+                                    my_handler, my_thread,
+                                    IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
+                                    &quot;mydev&quot;, dev);
+    if (ret)
+        return dev_err_probe(&amp;pdev-&gt;dev, ret, &quot;request irq failed&quot;);
+    return 0;
+}
+</code></pre>
+<h3><code class="c">IRQF_ONESHOT</code> 是什么</h3>
+<p><strong>线程处理完之前，保持该中断线屏蔽。</strong> 对<strong>电平触发</strong>中断几乎是必需的：</p>
+<ul>
+<li>电平触发：只要硬件引脚还是高电平，中断就持续有效。若线程还没跑完就放开中断线，会<strong>立刻重复触发</strong>。</li>
+<li><code class="c">IRQF_ONESHOT</code> 让内核在 handler 返回后<strong>保持屏蔽</strong>，直到线程执行完才 unmask。</li>
+</ul>
+<p><strong>边沿触发</strong>通常不需要，但加上无害且更安全。</p>
+<hr />
+<h2>常用 flag</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>flag</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">IRQF_SHARED</code></td>
+<td>多个设备共享同一 IRQ 线；<code class="c">dev_id</code> 必须唯一（用于卸载时区分）</td>
+</tr>
+<tr>
+<td><code class="c">IRQF_ONESHOT</code></td>
+<td>线程执行完前保持中断屏蔽（电平触发必加）</td>
+</tr>
+<tr>
+<td><code class="c">IRQF_TRIGGER_HIGH/LOW/RISING/FALLING</code></td>
+<td>触发方式；<strong>通常从 DT 读，不写死</strong></td>
+</tr>
+<tr>
+<td><code class="c">IRQF_NOBALANCING</code></td>
+<td>禁止内核自动均衡该中断到其他 CPU（做绑核隔离时用）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>调试与验证</h2>
+<pre class="code" data-label="shell"><code class="c"># 看中断分布：谁在第几个 CPU 上、触发了多少次
+cat /proc/interrupts | grep mydev
+
+# 看中断线程的优先级（threaded IRQ 会显示为 irq/xx-mydev）
+ps -eo pid,comm,pri,psr | grep irq
+
+# 绑核：把 IRQ 42 绑到 CPU3（HFT/低延迟常用）
+echo 8 &gt; /proc/irq/42/smp_affinity      # 8 = 0b1000 = CPU3
+
+# 提线程优先级
+chrt -f -p 50 $(pgrep -f &quot;irq/42-mydev&quot;)
+
+# 模拟/触发（无硬件时可用软件中断调试）
+cat /proc/irq/42/spurious
+</code></pre>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>中断绑核是低延迟的标准动作</strong>：把网卡/存储中断绑到<strong>非关键核</strong>，让交易线程所在的核不被中断打扰。<code class="c">/proc/irq/N/smp_affinity</code> 就是入口（配合 <code class="c">isolcpus</code> 启动参数）。</li>
+<li><strong>threaded IRQ 的线程可以被 <code class="c">chrt</code> 提优先级</strong> —— 这是普通 tasklet 做不到的（tasklet 没有 task_struct）。实时性调优时这是关键差异。</li>
+<li><strong>NAPI 与 threaded IRQ 是两种思路</strong>：NAPI 靠"关中断转轮询"减少中断次数；threaded IRQ 靠"线程化"让长工作可睡眠。网卡走 NAPI，普通外设走 threaded IRQ（见 <a href="../../12.5-modern-networking/html/index.html">12.5-modern-networking</a>）。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：handler 返回 <code class="c">IRQ_NONE</code> 会怎样？</summary>
+<p>告诉内核"这不是我的中断"。共享 IRQ 时内核会继续调用链上的下一个 handler。
+如果所有人都返回 <code class="c">IRQ_NONE</code>，内核记一次 <strong>spurious interrupt</strong>（可在 <code class="c">/proc/irq/N/spurious</code> 看到）。</p>
+</details>
+<details>
+<summary>Q2：电平触发的中断为什么几乎必须加 <code class="c">IRQF_ONESHOT</code>？</summary>
+<p>电平触发下，只要硬件引脚保持有效电平，<strong>中断控制器就持续认为有中断</strong>。
+若 handler 一返回就放开中断线，中断会<strong>立刻再次触发</strong>，而线程还没来得及清掉硬件状态 → 反复触发甚至死循环。
+<code class="c">IRQF_ONESHOT</code> 让中断线保持屏蔽，直到线程跑完（这时硬件状态已清）。</p>
+</details>
+<details>
+<summary>Q3：中断号能从设备树拿，为什么不要硬编码？</summary>
+<p>中断号在不同 SoC / 不同板卡上<strong>编号规则不同</strong>（GIC SPI 编号、GPIO 转中断的映射都是动态的）。
+硬编码的号换个板子就错，而且<strong>不报错</strong>——只是中断永远不触发，非常难查。
+<code class="c">platform_get_irq()</code> 从 DT 的 <code class="c">interrupts</code> 属性解析，是唯一正确做法。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-5-2">5.2 锁的选型</a></li>
+<li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06-dma-mmap</a>（DMA + <code class="c">mmap</code> 零拷贝）</li>
+<li><strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · C 阶段</a></li>
+<li><strong>卡住查书：</strong> Madieu Ch16 · LDD3 Ch10</li>
 </ul>
       </section>
 

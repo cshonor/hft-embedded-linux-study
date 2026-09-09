@@ -276,6 +276,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-2-1"><span class="n">2.1</span>2.1-majorminor-devt</a>
+          <a href="#s-2-2"><span class="n">2.2</span>2.2-syscall-to-driver</a>
+          <a href="#s-2-3"><span class="n">2.3</span>2.3-user-kernel-boundary</a>
+          <a href="#s-2-4"><span class="n">2.4</span>2.4-ioctl-and-registration</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -296,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">Pi 5 上跑通一个驱动 + 设备树</div>
           <h1>02 · 字符设备：让 open/read/ioctl 落到你的代码</h1>
           <div class="meta">
-<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>09-device-drivers-dt</b></span><span>chapter <b>Ch 2</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -383,6 +387,34 @@ static const struct file_operations my_fops = {
 <li><strong><code class="c">copy_to_user</code> 的开销</strong> 就是"用户态/内核态边界"的具象成本——这正是内核旁路技术要消灭的东西。</li>
 </ul>
 <hr />
+<h2>本节笔记</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.1</td>
+<td><a href="#s-2-1">主次设备号与 dev_t</a></td>
+</tr>
+<tr>
+<td>2.2</td>
+<td><a href="#s-2-2"><strong><code class="c">open()</code> 如何落到驱动</strong>（完整调用链）</a></td>
+</tr>
+<tr>
+<td>2.3</td>
+<td><a href="#s-2-3">用户/内核数据边界 · <code class="c">copy_to_user</code></a></td>
+</tr>
+<tr>
+<td>2.4</td>
+<td><a href="#s-2-4">ioctl 命令编码 + 现代注册骨架</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>验收</h2>
 <ul>
 <li>[ ] 写过最小字符设备，<code class="c">open/read/ioctl</code> 都能从用户态调用成功</li>
@@ -396,6 +428,800 @@ static const struct file_operations my_fops = {
 <li><strong>上一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/01-hello-module/">01-hello-module</a></li>
 <li><strong>下一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03-platform-dt/">03-platform-dt</a></li>
 <li><strong>卡住查书：</strong> Madieu Ch4 · LDD3 Ch3、Ch6</li>
+</ul>
+      </section>
+      <section class="section" id="s-2-1">
+        <div class="sec-head"><div class="sec-no">2.1</div><h2>主次设备号：内核怎么从一个 `/dev/xxx` 找到你的驱动</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">ls -l /dev/ttyS0</code> 里那两个数字是什么、为什么不能硬编码、以及现代内核为什么放弃静态申请。
+<strong>前置：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/01-hello-module/">01-hello-module</a>（<code class="c">insmod</code> 能跑通）<br />
+<strong>后续：</strong> <a href="#s-2-2">2.2 open() 如何落到驱动</a> · <a href="#s-2-3">2.3 用户/内核边界</a><br />
+<strong>卡住查书：</strong> Madieu Ch4 · LDD3 Ch3</p>
+</blockquote>
+<hr />
+<h2>从一个现象说起</h2>
+<pre class="code" data-label="shell"><code class="c">$ ls -l /dev/ttyS0 /dev/null /dev/sda
+crw-rw---- 1 root dialout   4,  64  ttyS0
+crw-rw-rw- 1 root root      1,   3  null
+brw-rw---- 1 root disk      8,   0  sda
+</code></pre>
+<p>开头 <code class="c">c</code> = 字符设备，<code class="c">b</code> = 块设备。后面那<strong>两个数字</strong>就是本篇主角：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>主设备号</strong>（major）</td>
+<td><code class="c">4</code></td>
+<td><strong>哪个驱动</strong> — 内核用它索引驱动表</td>
+</tr>
+<tr>
+<td><strong>次设备号</strong>（minor）</td>
+<td><code class="c">64</code></td>
+<td><strong>这个驱动的第几个设备</strong> — 驱动自己解释</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>比喻：主设备号 = 快递公司（顺丰/中通），次设备号 = 你在这家公司的会员编号。<br />
+内核看主号决定"派给谁"，驱动看次号决定"具体操作哪个硬件实例"。</p>
+</blockquote>
+<p>注意 <code class="c">sda</code> 是 <code class="c">8, 0</code> —— <strong>块设备也用同一套编号空间</strong>，但主号 8 对应的是块驱动，与字符驱动互不冲突（两套独立的表）。</p>
+<hr />
+<h2>内核里的表示：<code class="c">dev_t</code></h2>
+<p><code class="c">dev_t</code> 是 32 位整数，切分方式（<code class="c">include/linux/kdev_t.h</code>）：</p>
+<pre class="code" data-label="C"><code class="c">#define MINORBITS    20
+#define MINORMASK    ((1U &lt;&lt; MINORBITS) - 1)
+
+#define MAJOR(dev)   ((unsigned int) ((dev) &gt;&gt; MINORBITS))   /* 高 12 位 */
+#define MINOR(dev)   ((unsigned int) ((dev) &amp; MINORMASK))    /* 低 20 位 */
+#define MKDEV(ma,mi) (((ma) &lt;&lt; MINORBITS) | (mi))
+</code></pre>
+<pre class="code" data-label="code"><code class="c">   31                    20 19                          0
+   ┌───────────────────────┬──────────────────────────────┐
+   │   major (12 bit)      │      minor (20 bit)          │
+   └───────────────────────┴──────────────────────────────┘
+</code></pre>
+<p>主号只有 12 位 = 最多 4096 个驱动，而且<strong>静态分配的主号早就耗尽了</strong>（<code class="c">Documentation/admin-guide/devices.txt</code> 里能看到一堆历史遗留）。<strong>所以现在必须动态申请。</strong></p>
+<hr />
+<h2>两套申请方式</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>静态 <code class="c">register_chrdev_region</code></th>
+<th>动态 <code class="c">alloc_chrdev_region</code>（<strong>用这个</strong>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用法</td>
+<td>你指定主号</td>
+<td>内核挑一个没占用的给你</td>
+</tr>
+<tr>
+<td>风险</td>
+<td><strong>冲突则失败</strong>，且不同机器占用情况不同</td>
+<td>无冲突</td>
+</tr>
+<tr>
+<td>能否提前 <code class="c">mknod</code></td>
+<td>可以（号固定）</td>
+<td>不行 → 必须配合 <code class="c">device_create</code> 让 udev 自动建节点</td>
+</tr>
+<tr>
+<td>现状</td>
+<td>教学用 / 老代码</td>
+<td><strong>现代写法</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">static dev_t devno;          /* 申请到的设备号 */
+static int major;
+
+/* 动态申请：baseminor=0，count=2，名字出现在 /proc/devices */
+alloc_chrdev_region(&amp;devno, 0, 2, &quot;mydev&quot;);
+major = MAJOR(devno);
+printk(&quot;mydev: major=%d minor0=%d\n&quot;, major, MINOR(devno));
+</code></pre>
+<p>卸载时一定要还回去：</p>
+<pre class="code" data-label="C"><code class="c">unregister_chrdev_region(devno, 2);
+</code></pre>
+<hr />
+<h2>设备节点从哪来</h2>
+<p><strong>节点（<code class="c">/dev/mydev</code>）本身只是「名字 + 设备号」的映射</strong>，不是驱动的一部分。三种产生方式：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>命令/API</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>手工</td>
+<td><code class="c">mknod /dev/mydev c 240 0</code></td>
+<td>调试、动态主号时很痛苦</td>
+</tr>
+<tr>
+<td>devtmpfs + udev</td>
+<td>内核 <code class="c">device_create()</code> 发 uevent → udev 建节点</td>
+<td><strong>现代标准</strong></td>
+</tr>
+<tr>
+<td>devtmpfs 自动</td>
+<td>内核启动时自动为已注册设备建</td>
+<td>大部分情况够用</td>
+</tr>
+</tbody>
+</table></div>
+<p>现代驱动只要在 probe/init 里：</p>
+<pre class="code" data-label="C"><code class="c">my_class = class_create(&quot;mydev&quot;);                    /* /sys/class/mydev/ */
+device_create(my_class, NULL, devno, NULL, &quot;mydev%d&quot;, 0);  /* -&gt; /dev/mydev0 */
+</code></pre>
+<p>这样<strong>不需要知道主号是多少</strong>，udev 会读 sysfs 里的 <code class="c">dev</code> 属性自动创建。</p>
+<hr />
+<h2>常见坑</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mknod</code> 后 <code class="c">open</code> 报 <code class="c">ENODEV (No such device)</code></td>
+<td>节点的主号与驱动实际注册的<strong>不一致</strong>（动态分配后你还在用旧号）</td>
+</tr>
+<tr>
+<td><code class="c">open</code> 报 <code class="c">EACCES</code></td>
+<td>节点权限问题，与驱动无关；检查 <code class="c">ls -l</code> 或 udev 规则</td>
+</tr>
+<tr>
+<td><code class="c">cat /proc/devices</code> 里有但 <code class="c">/dev</code> 下没有</td>
+<td>只注册了驱动，没建节点（<code class="c">device_create</code> 没调用或 udev 没跑）</td>
+</tr>
+<tr>
+<td>卸载后 <code class="c">/dev/mydev0</code> 还在</td>
+<td>没调 <code class="c">device_destroy</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><code class="c">/dev</code> 这套"名字 → 号 → 驱动"的间接层，是<strong>一切皆文件</strong>的代价：每次 <code class="c">open</code>/<code class="c">read</code> 都要走 VFS 查找。HFT 里数据面避开它的办法就是 <code class="c">mmap</code> 一次映射、之后直接访存（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06-dma-mmap</a>）。</li>
+<li><strong>次设备号的语义由驱动自己定义</strong> —— 这个"内核只管分发、解释权归驱动"的模式，在设备树 <code class="c">compatible</code>、在 netlink 协议号、在 PCIe 的 class code 上反复出现。理解一次，后面到处都能认出来。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：主设备号 12 位、次设备号 20 位，那 <code class="c">MKDEV(4, 64)</code> 的值是多少？</summary>
+<p><code class="c">4 &lt;&lt; 20 | 64</code> = <code class="c">4194304 + 64</code> = <strong>4194368</strong>。
+反推：<code class="c">MAJOR(4194368) = 4</code>，<code class="c">MINOR(4194368) = 64</code>。</p>
+</details>
+<details>
+<summary>Q2：动态申请主号后，为什么不能提前 <code class="c">mknod</code>？</summary>
+<p>因为主号是内核在 <code class="c">alloc_chrdev_region</code> 时<strong>临时决定</strong>的，每次加载可能不同（取决于当时哪些号空闲）。提前 <code class="c">mknod</code> 写死一个号，下次加载就可能对不上 → <code class="c">open</code> 返回 <code class="c">ENODEV</code>。
+正确做法是让 <code class="c">device_create</code> 通知 udev 动态建节点。</p>
+</details>
+<details>
+<summary>Q3：同一个驱动管理 4 个相同硬件，需要几个主设备号？</summary>
+<p><strong>1 个主号 + 4 个次号</strong>。主号标识驱动，次号 0–3 由驱动自己解释成"第几个硬件"。
+申请时 <code class="c">count</code> 传 4：<code class="c">alloc_chrdev_region(&amp;devno, 0, 4, "mydev")</code>。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>下一篇：</strong> <a href="#s-2-2">2.2 · <code class="c">open()</code> 从用户态到驱动的完整路径</a></li>
+<li><strong>上一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/01-hello-module/">01-hello-module</a></li>
+<li><strong>卡住查书：</strong> Madieu Ch4 · LDD3 Ch3（<code class="c">[_refs/BOOK-MAP.md](../_refs/BOOK-MAP.md)</code>）</li>
+</ul>
+      </section>
+      <section class="section" id="s-2-2">
+        <div class="sec-head"><div class="sec-no">2.2</div><h2>`open()` 是怎么落到驱动的：一条必须能默出来的路径</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 从用户态 <code class="c">fd = open("/dev/mydev", O_RDWR)</code> 到驱动里 <code class="c">my_open()</code> 被执行的<strong>完整调用链</strong>。
+<strong>为什么重要：</strong> 这是「用户态 / 内核态」这条抽象线的<strong>具体接缝</strong>。默不出来，后面 <code class="c">read</code>/<code class="c">ioctl</code>/<code class="c">mmap</code> 全是黑盒。
+<strong>前置：</strong> <a href="#s-2-1">2.1 主次设备号</a><br />
+<strong>卡住查书：</strong> LDD3 Ch3 · Madieu Ch4</p>
+</blockquote>
+<hr />
+<h2>全景图</h2>
+<pre class="code" data-label="code"><code class="c">用户态                          内核态
+─────────────────────────────  ──────────────────────────────────────
+fd = open(&quot;/dev/mydev&quot;, O_RDWR)
+  │
+  │  glibc 封装
+  ▼
+syscall(SYS_openat, ...)  ──►  sys_openat()            [fs/open.c]
+                                 │
+                                 │  1. 路径查找
+                                 ▼
+                          path_openat() → 逐段解析 &quot;/dev/mydev&quot;
+                                 │
+                                 │  2. 找到 inode
+                                 ▼
+                          ┌──────────────────────┐
+                          │  inode (磁盘/devtmpfs)│
+                          │   i_rdev = dev_t      │ ← 主/次设备号
+                          │   i_fop  = &amp;def_chr_fops│
+                          └──────────────────────┘
+                                 │
+                                 │  3. 字符设备专用 open
+                                 ▼
+                          chrdev_open()            [fs/char_dev.c]
+                                 │  ├─ 用 i_rdev 查 cdev 表（主号索引）
+                                 │  └─ 找到驱动的 cdev
+                                 │
+                                 │  4. 换掉 fops！！
+                                 ▼
+                          filp-&gt;f_op = cdev-&gt;ops    ← ★ 关键一步
+                                 │
+                                 ▼
+                          filp-&gt;f_op-&gt;open(inode, filp)
+                                 │
+                                 ▼
+                          驱动的 my_open(inode, filp)   ← 你写的代码
+                                 │
+                                 ▼  返回 0 → 分配 fd，返回用户态
+</code></pre>
+<p><strong>★ 最关键的一步是 <code class="c">filp-&gt;f_op = cdev-&gt;ops</code>。</strong></p>
+<p><code class="c">inode-&gt;i_fop</code> 原本指向 <code class="c">def_chr_fops</code>（内核的通用字符设备占位），<code class="c">chrdev_open()</code> 在查到真正的 <code class="c">cdev</code> 后，<strong>把 <code class="c">file</code> 结构的操作集整个换成了驱动自己的 <code class="c">file_operations</code></strong>。之后这个 fd 上的 <code class="c">read</code>/<code class="c">write</code>/<code class="c">ioctl</code> 全部直接走驱动，不再经过 <code class="c">chrdev_open</code>。</p>
+<blockquote>
+<p>比喻：<code class="c">inode</code> 是"这栋楼的门牌号"（持久、全局唯一），<code class="c">file</code> 是"这一次拜访"（临时、可多次）。<br />
+第一次进门要查户口（<code class="c">chrdev_open</code> 找驱动），认完人之后直接给你对方手机号（<code class="c">f_op</code> 替换），下次打电话不用再查。</p>
+</blockquote>
+<hr />
+<h2>三个容易混的结构</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>是谁</th>
+<th>生命周期</th>
+<th>关键字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">struct inode</code></td>
+<td><strong>文件/设备本身</strong></td>
+<td>持久，一个设备一个</td>
+<td><code class="c">i_rdev</code>（设备号）、<code class="c">i_cdev</code></td>
+</tr>
+<tr>
+<td><code class="c">struct file</code></td>
+<td><strong>一次打开</strong></td>
+<td><code class="c">open</code> 到 <code class="c">close</code></td>
+<td><code class="c">f_op</code>、<code class="c">f_pos</code>（读写偏移）、<code class="c">private_data</code></td>
+</tr>
+<tr>
+<td><code class="c">struct dentry</code></td>
+<td><strong>路径项</strong>（<code class="c">"/dev/mydev"</code>）</td>
+<td>缓存，可回收</td>
+<td>路径解析用，驱动基本不碰</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>推论：</strong> 同一个设备被 <code class="c">open</code> 两次 → <strong>两个 <code class="c">struct file</code>，各自独立的 <code class="c">f_pos</code></strong>，但共享一个 <code class="c">inode</code>。</p>
+<p>驱动里常用的：</p>
+<pre class="code" data-label="C"><code class="c">static int my_open(struct inode *inode, struct file *filp)
+{
+    /* 从 inode 拿次设备号，判断是第几个硬件 */
+    unsigned int minor = iminor(inode);
+
+    /* 把设备私有数据挂到 filp 上，后面 read/write 直接取，不用再查 */
+    filp-&gt;private_data = container_of(inode-&gt;i_cdev, struct my_dev, cdev);
+    return 0;
+}
+</code></pre>
+<hr />
+<h2>fd 是什么</h2>
+<p>用户态拿到的是个<strong>小整数</strong> <code class="c">fd</code>，内核里其实是：</p>
+<pre class="code" data-label="code"><code class="c">进程的 task_struct
+   └── files (struct files_struct)
+         └── fdt (fdtable)
+               └── fd[] 数组
+                     ├── fd 0 -&gt; struct file*  (stdin)
+                     ├── fd 1 -&gt; struct file*  (stdout)
+                     ├── fd 2 -&gt; struct file*  (stderr)
+                     └── fd 3 -&gt; struct file*  ← 你的 /dev/mydev
+</code></pre>
+<p>所以 <strong><code class="c">fd</code> 就是进程 fdtable 的下标</strong>，内核通过它 O(1) 拿到 <code class="c">struct file *</code>。这也是为什么 <code class="c">fd</code> 不能跨进程用——每个进程有自己的 fdtable（<code class="c">fork</code> 后是拷贝，<code class="c">dup</code> 是共享同一个 <code class="c">struct file</code>）。</p>
+<hr />
+<h2>怎么亲眼验证</h2>
+<pre class="code" data-label="shell"><code class="c"># 1. 看用户态发起了哪些 syscall
+strace -e trace=openat,read,ioctl,close ./myapp
+
+# 2. 看内核里走了哪些函数（需要 CONFIG_FUNCTION_TRACER）
+sudo trace-cmd record -p function_graph -g chrdev_open ./myapp
+sudo trace-cmd report | head -40
+
+# 3. 看进程打开了什么
+ls -l /proc/$$/fd
+cat /proc/$$/fdinfo/3        # 含 pos、flags
+</code></pre>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>这条路径的开销就是「syscall 的成本」</strong>：用户/内核切换（栈切换 + 特权级切换）、路径查找、fdtable 查表、vfs 层函数调用。<strong>每一次 <code class="c">read()</code> 都要重走一遍</strong>，这正是 HFT 数据面要消灭的对象。</li>
+<li>对比旁路方案（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/13-dpdk">13-dpdk</a>）：DPDK 的 PMD 驱动<strong>绕开整个 VFS + 协议栈</strong>，用户态直接轮询网卡 DMA 到的内存——省掉的就是上面这条链。</li>
+<li>但 <code class="c">ioctl</code>/控制面<strong>必须</strong>走这条链：配置、状态查询用 syscall，数据面用 <code class="c">mmap</code> 后的直接访存。这个「控制面走内核、数据面绕过」的切分是 HFT 的标准姿势。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：<code class="c">inode-&gt;i_fop</code> 和 <code class="c">filp-&gt;f_op</code> 是同一个东西吗？</summary>
+<p><strong>不是，而且这是本节的核心。</strong>
+- <code class="c">inode-&gt;i_fop</code> 最初指向 <code class="c">def_chr_fops</code>（内核占位）；
+- <code class="c">chrdev_open()</code> 查到驱动的 <code class="c">cdev</code> 后，执行 <code class="c">filp-&gt;f_op = fops_get(cdev-&gt;ops)</code>，<strong>把 <code class="c">file</code> 的操作集替换成驱动的</strong>；
+- 之后该 fd 上的所有操作都走驱动的 <code class="c">file_operations</code>。</p>
+</details>
+<details>
+<summary>Q2：同一设备 <code class="c">open</code> 两次，<code class="c">f_pos</code> 是共享的还是独立的？</summary>
+<p><strong>独立的。</strong> 每次 <code class="c">open</code> 创建新的 <code class="c">struct file</code>，各有自己的 <code class="c">f_pos</code>。
+两个 fd 各自 <code class="c">read</code>，偏移互不干扰 —— 与 <code class="c">dup()</code> 相反，<code class="c">dup</code> 共享同一个 <code class="c">struct file</code>，因此共享 <code class="c">f_pos</code>。</p>
+</details>
+<details>
+<summary>Q3：驱动怎么知道用户这次打开的是哪个硬件实例？</summary>
+<p>从 <code class="c">inode</code> 取次设备号：<code class="c">iminor(inode)</code> 或 <code class="c">MINOR(inode-&gt;i_rdev)</code>。
+典型做法是在 <code class="c">open</code> 里用 <code class="c">container_of(inode-&gt;i_cdev, struct my_dev, cdev)</code> 拿到设备结构体，存进 <code class="c">filp-&gt;private_data</code>，后续 <code class="c">read/write</code> 直接取用。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-2-1">2.1 主次设备号</a></li>
+<li><strong>下一篇：</strong> <a href="#s-2-3">2.3 用户/内核数据边界</a></li>
+<li><strong>卡住查书：</strong> LDD3 Ch3 · Madieu Ch4（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/_refs/BOOK-MAP.md">_refs/BOOK-MAP.md</a>）</li>
+</ul>
+      </section>
+      <section class="section" id="s-2-3">
+        <div class="sec-head"><div class="sec-no">2.3</div><h2>用户态 / 内核态的数据边界：为什么不能直接解引用用户指针</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">copy_to_user</code> / <code class="c">copy_from_user</code> 存在的理由，以及怎么写才不会踩坑。
+<strong>一句话：</strong> 用户传进来的指针，<strong>在内核里就是个不可信的整数</strong>。直接用 = 内核崩或被打穿。
+<strong>前置：</strong> <a href="#s-2-2">2.2 open() 的路径</a><br />
+<strong>卡住查书：</strong> LDD3 Ch3、Ch6 · Madieu Ch4</p>
+</blockquote>
+<hr />
+<h2>为什么不能 <code class="c">memcpy(buf, ...)</code></h2>
+<p>用户态传给 <code class="c">read(fd, buf, len)</code> 的 <code class="c">buf</code> 是一个<strong>用户空间虚拟地址</strong>。内核不能直接解引用，四个理由：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>理由</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>地址空间不同</strong></td>
+<td>内核与用户进程页表不同；同一个数值在两边指向完全不同的物理页（<code class="c">swapper_pg_dir</code> vs 进程 pgd）</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>页可能不在内存</strong></td>
+<td>用户页可能被换出到磁盘，解引用会触发缺页；内核态缺页处理受限，可能直接 oops</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>可能是恶意地址</strong></td>
+<td>用户故意传 <code class="c">0x0</code> 或内核地址 → 内核读写自己的数据 = <strong>提权漏洞</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>SMAP / SMEP 硬件拦截</strong></td>
+<td>现代 CPU（x86 SMAP、ARM PAN）<strong>硬件禁止</strong>内核访问用户页；绕过需临时关标志，只有 <code class="c">copy_*_user</code> 有这个权限</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>比喻：用户给你一张纸条写着"仓库 A 区 3 号货架"——这是<strong>用户仓库的编号体系</strong>。你在内核仓库里照着找，找到的是别人的东西，甚至可能是承重墙（崩溃）。<br />
+正确做法是走<strong>正规搬运通道</strong>（<code class="c">copy_*_user</code>）：它会先核对权限、处理缺页、搬完再报告结果。</p>
+</blockquote>
+<hr />
+<h2>正确写法</h2>
+<h3>批量拷贝</h3>
+<pre class="code" data-label="C"><code class="c">static ssize_t my_read(struct file *filp, char __user *buf,
+                       size_t len, loff_t *off)
+{
+    char kbuf[64];
+    size_t n = min(len, sizeof(kbuf));
+
+    /* ... 填充 kbuf ... */
+
+    /* 返回「没拷成功的字节数」，0 才是成功 */
+    if (copy_to_user(buf, kbuf, n))
+        return -EFAULT;          /* 用户给的 buf 有问题 */
+
+    *off += n;
+    return n;                     /* 返回值 = 实际读取字节数 */
+}
+</code></pre>
+<p><strong>注意 <code class="c">__user</code> 注解</strong>：它不做任何运行时检查，是给 <code class="c">sparse</code> 静态分析工具看的，用来抓"忘了 copy 就解引用"的 bug。编译内核时 <code class="c">make C=1</code> 会跑。</p>
+<h3>单值拷贝</h3>
+<pre class="code" data-label="C"><code class="c">int val;
+if (copy_from_user(&amp;val, (int __user *)arg, sizeof(val)))
+    return -EFAULT;
+/* 或更简洁： */
+get_user(val, (int __user *)arg);     /* 单值版本 */
+put_user(val, (int __user *)arg);
+</code></pre>
+<hr />
+<h2>返回值陷阱（最容易写错的地方）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>函数</th>
+<th>返回</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">copy_to_user</code> / <code class="c">copy_from_user</code></td>
+<td><strong>未拷贝成功的字节数</strong></td>
+<td><code class="c">!= 0</code> 即失败 → 返回 <code class="c">-EFAULT</code></td>
+</tr>
+<tr>
+<td><code class="c">get_user</code> / <code class="c">put_user</code></td>
+<td><code class="c">0</code> 成功，<code class="c">-EFAULT</code> 失败</td>
+<td><code class="c">!= 0</code> 即失败</td>
+</tr>
+<tr>
+<td><code class="c">access_ok()</code></td>
+<td>布尔（地址是否合法）</td>
+<td>通常不用手动调，<code class="c">copy_*_user</code> 内部已做</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* 错：把&quot;剩余字节数&quot;当成返回值传给用户 */
+return copy_to_user(buf, kbuf, n);      /* 成功时返回 0，用户以为读到 0 字节 */
+
+/* 对 */
+if (copy_to_user(buf, kbuf, n))
+    return -EFAULT;
+return n;
+</code></pre>
+<hr />
+<h2>什么时候可以直接访问用户内存</h2>
+<p>三种例外，<strong>都需要显式"打开通道"</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>API</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">mmap</code> 之后</td>
+<td><code class="c">remap_pfn_range</code> / <code class="c">vm_insert_page</code></td>
+<td>内核内存映射到用户空间，两边看到同一块物理页 → 无拷贝（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06-dma-mmap</a>）</td>
+</tr>
+<tr>
+<td>临时借用用户缓冲</td>
+<td><code class="c">get_user_pages()</code> → <code class="c">kmap()</code></td>
+<td>钉住用户页再映射到内核；用完必须 <code class="c">put_page</code></td>
+</tr>
+<tr>
+<td>大块且需要零拷贝</td>
+<td><code class="c">splice</code> / <code class="c">sendfile</code></td>
+<td>内核内部管道搬运，不经过用户态</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong><code class="c">copy_to_user</code> 的开销 = 一次内存拷贝 + 边界检查</strong>，这就是"内核旁路"要消灭的成本之一。DPDK 的做法是<strong>启动时 <code class="c">mmap</code> 一次，之后所有数据收发都在用户态直接访存</strong>，运行期零 copy、零 syscall。</li>
+<li><strong>控制面 vs 数据面</strong>的切分标准就是看<strong>数据量</strong>：几字节的配置用 <code class="c">ioctl</code>（走 copy），几 MB 的报文流用 <code class="c">mmap</code> + 轮询（不走 copy）。</li>
+<li>这个"拷贝即边界"的思想在系统里到处都是：TLB shootdown、DMA bounce buffer、甚至 HFT 里的无锁队列跨核传递——<strong>凡是跨越信任边界，都得付一份搬运费</strong>。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：<code class="c">copy_to_user</code> 返回 5 是什么意思？</summary>
+<p><strong>还有 5 个字节没拷成功</strong>（用户给的缓冲区非法或访问时缺页失败）。
+约定俗成的处理是返回 <code class="c">-EFAULT</code> 给用户态，让 <code class="c">read()</code> 失败并置 <code class="c">errno = EFAULT</code>。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">__user</code> 这个修饰符有运行时作用吗？</summary>
+<p><strong>没有。</strong> 它只是给 <code class="c">sparse</code> 静态检查工具的注解，编译后完全消失。
+作用是让 <code class="c">make C=1</code> / <code class="c">make C=2</code> 能抓出"把用户指针当内核指针直接用"的错误。写上它是好习惯，成本为零。</p>
+</details>
+<details>
+<summary>Q3：为什么 <code class="c">mmap</code> 之后就不需要 <code class="c">copy_to_user</code> 了？</summary>
+<p>因为 <code class="c">mmap</code> 把<strong>同一块物理页</strong>同时映射进内核和用户地址空间，两边访问的是同一内存，根本不存在"搬运"。
+但代价是<strong>没有同步保护</strong>——需要自己用锁或内存序保证一致性（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-irq-locking/">05-irq-locking</a>）。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-2-2">2.2 open() 的路径</a></li>
+<li><strong>下一篇：</strong> <a href="#s-2-4">2.4 ioctl 与现代注册</a></li>
+<li><strong>卡住查书：</strong> LDD3 Ch3、Ch6 · Madieu Ch4</li>
+</ul>
+      </section>
+      <section class="section" id="s-2-4">
+        <div class="sec-head"><div class="sec-no">2.4</div><h2>ioctl 命令编码 + 现代字符设备注册（可直接抄的骨架）</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">ioctl</code> 的 <code class="c">cmd</code> 为什么不能直接写 <code class="c">1</code>/<code class="c">2</code>/<code class="c">3</code>，以及一份<strong>能编过、能跑</strong>的现代字符设备完整骨架。
+<strong>前置：</strong> <a href="#s-2-1">2.1 主次设备号</a> · <a href="#s-2-3">2.3 用户/内核边界</a><br />
+<strong>卡住查书：</strong> Madieu Ch4 · LDD3 Ch6</p>
+</blockquote>
+<hr />
+<h2>一、<code class="c">ioctl</code> 的 <code class="c">cmd</code> 不是随便一个整数</h2>
+<p>内核规定 <code class="c">cmd</code> 是一个 <strong>32 位编码</strong>，四个字段：</p>
+<pre class="code" data-label="code"><code class="c">  31     30   29       16 15        8 7             0
+  ┌──────┬────┬──────────┬──────────┬───────────────┐
+  │ dir  │    │   size   │   type   │      nr       │
+  │ 2bit │    │  14 bit  │  8 bit   │     8 bit     │
+  └──────┴────┴──────────┴──────────┴───────────────┘
+    方向      数据大小     魔数(类型)    序号
+</code></pre>
+<p>用宏构造（<code class="c">include/uapi/asm-generic/ioctl.h</code>）：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>宏</th>
+<th>方向</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">_IO(type, nr)</code></td>
+<td>无数据</td>
+<td>纯命令，如"复位"</td>
+</tr>
+<tr>
+<td><code class="c">_IOR(type, nr, datatype)</code></td>
+<td>内核 → 用户</td>
+<td>读配置</td>
+</tr>
+<tr>
+<td><code class="c">_IOW(type, nr, datatype)</code></td>
+<td>用户 → 内核</td>
+<td>写配置</td>
+</tr>
+<tr>
+<td><code class="c">_IOWR(type, nr, datatype)</code></td>
+<td>双向</td>
+<td>传参并返回</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="C"><code class="c">/* mydev.h —— 驱动与用户态共用 */
+#define MYDEV_MAGIC  'k'                                  /* 魔数，挑个没人用的字符 */
+
+#define MYDEV_RESET    _IO (MYDEV_MAGIC, 0)
+#define MYDEV_GET_VAL  _IOR(MYDEV_MAGIC, 1, int)
+#define MYDEV_SET_VAL  _IOW(MYDEV_MAGIC, 2, int)
+#define MYDEV_XFER     _IOWR(MYDEV_MAGIC, 3, struct mydev_xfer)
+</code></pre>
+<p><strong>为什么必须这样编：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>好处</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>大小写进命令</strong></td>
+<td>内核可校验 <code class="c">arg</code> 指向的缓冲区够不够，防止越界</td>
+</tr>
+<tr>
+<td><strong>方向写进命令</strong></td>
+<td>内核检查用户指针的读写权限是否匹配</td>
+</tr>
+<tr>
+<td><strong>魔数隔离</strong></td>
+<td>命令发到错误的设备时，驱动能识别"这不是我的命令"并返回 <code class="c">ENOTTY</code></td>
+</tr>
+<tr>
+<td><strong>32/64 位兼容</strong></td>
+<td><code class="c">compat_ioctl</code> 能根据 <code class="c">size</code> 字段自动转换结构体布局</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>如果你写 <code class="c">ioctl(fd, 1, ...)</code> 这种裸数字：命令冲突、越界、跨平台全都要自己扛。</p>
+</blockquote>
+<h3>驱动侧实现</h3>
+<pre class="code" data-label="C"><code class="c">static long my_unlocked_ioctl(struct file *filp, unsigned int cmd,
+                              unsigned long arg)
+{
+    struct my_dev *dev = filp-&gt;private_data;
+    int val;
+
+    /* 1. 校验魔数（不是我的命令 -&gt; ENOTTY） */
+    if (_IOC_TYPE(cmd) != MYDEV_MAGIC)
+        return -ENOTTY;
+
+    switch (cmd) {
+    case MYDEV_RESET:
+        dev-&gt;val = 0;
+        return 0;
+
+    case MYDEV_GET_VAL:
+        val = dev-&gt;val;
+        if (put_user(val, (int __user *)arg))
+            return -EFAULT;
+        return 0;
+
+    case MYDEV_SET_VAL:
+        if (get_user(val, (int __user *)arg))
+            return -EFAULT;
+        dev-&gt;val = val;
+        return 0;
+
+    default:
+        return -ENOTTY;      /* 未知命令 */
+    }
+}
+</code></pre>
+<blockquote>
+<p><strong>注意：</strong> 现代用 <code class="c">.unlocked_ioctl</code>（不持 BKL），<strong>不要</strong>再用老的 <code class="c">.ioctl</code>。</p>
+</blockquote>
+<hr />
+<h2>二、现代注册骨架（可直接抄）</h2>
+<pre class="code" data-label="C"><code class="c">// mydev.c
+#include &lt;linux/module.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/cdev.h&gt;
+#include &lt;linux/device.h&gt;
+#include &lt;linux/uaccess.h&gt;
+#include &quot;mydev.h&quot;
+
+#define DEV_NAME &quot;mydev&quot;
+#define DEV_CNT  2
+
+struct my_dev {
+    struct cdev cdev;
+    int val;
+};
+
+static struct my_dev  mydevs[DEV_CNT];
+static dev_t          devno_base;
+static struct class  *my_class;
+
+static int my_open(struct inode *inode, struct file *filp)
+{
+    /* 从 inode 反推设备结构体，挂到 filp 上供后续使用 */
+    filp-&gt;private_data = container_of(inode-&gt;i_cdev, struct my_dev, cdev);
+    return 0;
+}
+static int my_release(struct inode *inode, struct file *filp) { return 0; }
+
+static ssize_t my_read(struct file *filp, char __user *buf,
+                       size_t len, loff_t *off)
+{
+    struct my_dev *dev = filp-&gt;private_data;
+    int v = dev-&gt;val;
+    if (*off &gt; 0) return 0;                     /* 简单示例：读完一次返回 0 */
+    if (copy_to_user(buf, &amp;v, sizeof(v))) return -EFAULT;
+    *off += sizeof(v);
+    return sizeof(v);
+}
+
+static const struct file_operations my_fops = {
+    .owner          = THIS_MODULE,
+    .open           = my_open,
+    .release        = my_release,
+    .read           = my_read,
+    .unlocked_ioctl = my_unlocked_ioctl,
+};
+
+static int __init my_init(void)
+{
+    int i, ret;
+
+    /* 1. 动态申请设备号（count 个次设备号） */
+    ret = alloc_chrdev_region(&amp;devno_base, 0, DEV_CNT, DEV_NAME);
+    if (ret &lt; 0) return ret;
+
+    /* 2. 创建 class -&gt; /sys/class/mydev/ */
+    my_class = class_create(DEV_NAME);
+    if (IS_ERR(my_class)) { ret = PTR_ERR(my_class); goto err_region; }
+
+    /* 3. 每个次设备号：初始化 cdev + 加入内核 + 建 /dev 节点 */
+    for (i = 0; i &lt; DEV_CNT; i++) {
+        cdev_init(&amp;mydevs[i].cdev, &amp;my_fops);
+        mydevs[i].cdev.owner = THIS_MODULE;
+        ret = cdev_add(&amp;mydevs[i].cdev, MKDEV(MAJOR(devno_base), i), 1);
+        if (ret) goto err_cdev;
+
+        device_create(my_class, NULL,
+                      MKDEV(MAJOR(devno_base), i), NULL, &quot;mydev%d&quot;, i);
+    }
+    pr_info(&quot;mydev: major=%d\n&quot;, MAJOR(devno_base));
+    return 0;
+
+err_cdev:
+    while (i-- &gt; 0) {
+        device_destroy(my_class, MKDEV(MAJOR(devno_base), i));
+        cdev_del(&amp;mydevs[i].cdev);
+    }
+    class_destroy(my_class);
+err_region:
+    unregister_chrdev_region(devno_base, DEV_CNT);
+    return ret;
+}
+
+static void __exit my_exit(void)
+{
+    int i;
+    for (i = 0; i &lt; DEV_CNT; i++) {
+        device_destroy(my_class, MKDEV(MAJOR(devno_base), i));
+        cdev_del(&amp;mydevs[i].cdev);
+    }
+    class_destroy(my_class);
+    unregister_chrdev_region(devno_base, DEV_CNT);
+}
+
+module_init(my_init);
+module_exit(my_exit);
+MODULE_LICENSE(&quot;GPL&quot;);
+</code></pre>
+<pre class="code" data-label="make"><code class="c">obj-m += mydev.o
+KDIR ?= /lib/modules/$(shell uname -r)/build
+all:
+    make -C $(KDIR) M=$(PWD) modules
+clean:
+    make -C $(KDIR) M=$(PWD) clean
+</code></pre>
+<hr />
+<h2>三、init / exit 的顺序（背下来）</h2>
+<pre class="code" data-label="code"><code class="c">init:  alloc_chrdev_region  →  class_create  →  cdev_add  →  device_create
+exit:  device_destroy       ←  cdev_del      ←  class_destroy ← unregister_chrdev_region
+</code></pre>
+<p><strong>铁律：exit 是 init 的逆序。</strong> 顺序错了会导致：节点还在但驱动没了（访问即崩）、或 <code class="c">cdev</code> 已删但还在被引用（use-after-free）。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong><code class="c">ioctl</code> 是控制面</strong>：数据量小、需要权限校验、频率低 → 走 syscall 完全够。</li>
+<li><strong>数据面不走这里</strong>：一次 <code class="c">read()</code> = 一次 syscall + 一次 <code class="c">copy_to_user</code>。高频采样/报文收发必须 <code class="c">mmap</code>（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/06-dma-mmap/">06-dma-mmap</a>）。</li>
+<li><strong><code class="c">container_of(inode-&gt;i_cdev, ...)</code></strong> 这个"从内嵌成员反推外层结构"的技法是内核的通用套路，在 <code class="c">list_head</code>、<code class="c">kobject</code>、<code class="c">work_struct</code> 上到处都是 —— 值得单独吃透（<a href="../../01-c-language/01-basics-syntax-and-types/html/chapter-06.html#s-6-0">01-c-language struct 向</a>）。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：<code class="c">_IOW('k', 2, int)</code> 里编码了哪些信息？</summary>
+<p>魔数 <code class="c">'k'</code>（8 bit）、序号 2（8 bit）、数据大小 <code class="c">sizeof(int)</code> = 4（14 bit）、方向 = 用户写向内核（2 bit）。
+内核据此校验：命令是否属于本设备、缓冲区大小是否匹配、用户指针是否可写。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">ioctl</code> 返回 <code class="c">-ENOTTY</code> 是什么含义？</summary>
+<p><strong>"这不是我的命令"</strong>。当魔数不匹配或 <code class="c">switch</code> 落到 <code class="c">default</code> 时返回它，
+用户态会看到 <code class="c">errno = ENOTTY</code>（Inappropriate ioctl for device）。这是约定俗成的返回值，不要返回 <code class="c">-EINVAL</code>。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">cdev_add</code> 之后能立刻 <code class="c">open</code> 这个设备吗？</summary>
+<p><strong>能，但有风险。</strong> <code class="c">cdev_add</code> 一返回，设备就"活"了，内核可能立刻收到 <code class="c">open</code>。
+所以必须保证 <code class="c">cdev_add</code> 之前<strong>所有初始化都已完成</strong>（数据结构填好、硬件就绪）。
+同理 <code class="c">device_create</code> 要在最后，否则节点先出现而驱动还没准备好。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-2-3">2.3 用户/内核边界</a></li>
+<li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03-platform-dt/">03-platform-dt</a>（设备树 + platform 驱动，本模块核心）</li>
+<li><strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · C1</a></li>
+<li><strong>卡住查书：</strong> Madieu Ch4 · LDD3 Ch6</li>
 </ul>
       </section>
 

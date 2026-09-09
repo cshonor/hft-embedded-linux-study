@@ -70,6 +70,17 @@ static const struct file_operations my_fops = {
 
 ---
 
+## 本节笔记
+
+| # | 笔记 |
+|---|------|
+| 2.1 | [主次设备号与 dev_t](./2.1-majorminor-devt.md) |
+| 2.2 | [**`open()` 如何落到驱动**（完整调用链）](./2.2-syscall-to-driver.md) |
+| 2.3 | [用户/内核数据边界 · `copy_to_user`](./2.3-user-kernel-boundary.md) |
+| 2.4 | [ioctl 命令编码 + 现代注册骨架](./2.4-ioctl-and-registration.md) |
+
+---
+
 ## 验收
 
 - [ ] 写过最小字符设备，`open/read/ioctl` 都能从用户态调用成功

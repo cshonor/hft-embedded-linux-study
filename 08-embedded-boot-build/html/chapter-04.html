@@ -276,6 +276,9 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <div class="nav-label">本章</div>
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
+          <a href="#s-4-1"><span class="n">4.1</span>4.1-defconfig-and-kconfig</a>
+          <a href="#s-4-2"><span class="n">4.2</span>4.2-cross-compile-pi5</a>
+          <a href="#s-4-3"><span class="n">4.3</span>4.3-modules-and-version-magic</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -297,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">点亮一块板：工具链 → 内核 → rootfs</div>
           <h1>04 · 内核构建：从 defconfig 到能启动的 Image</h1>
           <div class="meta">
-<span>book <b>08-embedded-boot-build</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>1</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>08-embedded-boot-build</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -371,6 +374,30 @@ ls arch/arm64/boot/dts/broadcom/*.dtb | head
 <li>内核版本号必须和模块路径严格对应，这个"版本即契约"的思路在 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-toolchain/">02-toolchain</a> 的 sysroot 那里已经出现过一次。</li>
 </ul>
 <hr />
+<h2>本节笔记</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>笔记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4.1</td>
+<td><a href="#s-4-1">Kconfig 与 defconfig：三种符号与裁剪思路</a></td>
+</tr>
+<tr>
+<td>4.2</td>
+<td><a href="#s-4-2">Pi 5 交叉编译实战（含回滚方案）</a></td>
+</tr>
+<tr>
+<td>4.3</td>
+<td><a href="#s-4-3">模块版本魔法 vermagic</a></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
 <h2>验收</h2>
 <ul>
 <li>[ ] 自编内核能在 Pi 5 上启动，<code class="c">uname -r</code> 显示自己的版本号</li>
@@ -384,6 +411,633 @@ ls arch/arm64/boot/dts/broadcom/*.dtb | head
 <li><strong>上一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03-u-boot/">03-u-boot</a></li>
 <li><strong>下一步：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-rootfs/">05-rootfs</a></li>
 <li><strong>卡住查书：</strong> MELP Ch4 · Primer Ch4–5</li>
+</ul>
+      </section>
+      <section class="section" id="s-4-1">
+        <div class="sec-head"><div class="sec-no">4.1</div><h2>Kconfig 与 defconfig：内核配置的三种符号与裁剪思路</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> <code class="c">.config</code> 是怎么生成的、<code class="c">=y</code> / <code class="c">=m</code> / <code class="c">=n</code> 的区别、以及<strong>裁剪内核到底在裁什么</strong>。
+<strong>前置：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-toolchain/">02-toolchain</a>（交叉编译器就位）<br />
+<strong>后续：</strong> <a href="#s-4-2">4.2 Pi 5 交叉编译实战</a> · <a href="#s-4-3">4.3 模块与版本魔法</a><br />
+<strong>卡住查书：</strong> MELP Ch4 · Primer Ch4</p>
+</blockquote>
+<hr />
+<h2>配置从哪来</h2>
+<pre class="code" data-label="code"><code class="c">arch/arm64/configs/defconfig        ← 架构默认（通用，很大）
+arch/arm64/configs/bcm2712_defconfig  ← 厂商基线（Pi 5，★ 从这里开始）
+        │  make bcm2712_defconfig
+        ▼
+     .config                        ← 实际生效的配置（隐藏文件）
+        │  make menuconfig 修改
+        ▼
+     .config（更新） → make savedefconfig → defconfig（最小化回写）
+</code></pre>
+<p><strong>永远从厂商 <code class="c">defconfig</code> 开始，不要从 <code class="c">make defconfig</code> 或 <code class="c">allnoconfig</code> 起步。</strong> 前者是"能跑的基线"，后者是"学术练习"。</p>
+<hr />
+<h2>三种符号</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>符号</th>
+<th>含义</th>
+<th>产物</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">=y</code></td>
+<td><strong>编进内核镜像</strong></td>
+<td>代码进 <code class="c">Image</code>，启动时就在</td>
+<td>功能一定可用；镜像变大</td>
+</tr>
+<tr>
+<td><code class="c">=m</code></td>
+<td><strong>编成可加载模块</strong></td>
+<td>生成 <code class="c">.ko</code>，需要 <code class="c">insmod</code> 或自动加载</td>
+<td>镜像小；但依赖 rootfs 里有对应 <code class="c">.ko</code></td>
+</tr>
+<tr>
+<td><code class="c">=n</code></td>
+<td>不编译</td>
+<td>—</td>
+<td>功能不存在</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>关键判断：哪些必须 <code class="c">=y</code>？</strong></p>
+<pre class="code" data-label="code"><code class="c">内核启动 → 挂载 rootfs → 才能读 .ko 文件
+                    ↑
+        这一步之前需要的功能，必须编进内核（=y）
+</code></pre>
+<p>所以这些<strong>必须 <code class="c">=y</code></strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>存储/文件系统</td>
+<td>MMC/SD 控制器、ext4、NVMe（若根分区在 NVMe）</td>
+</tr>
+<tr>
+<td>块设备层</td>
+<td><code class="c">CONFIG_BLK_DEV_*</code></td>
+</tr>
+<tr>
+<td>控制台</td>
+<td>串口驱动（<code class="c">8250</code> / <code class="c">amba-pl011</code>）、<code class="c">CONFIG_SERIAL_*</code></td>
+</tr>
+<tr>
+<td>网络启动相关</td>
+<td>NFS root 时需要网卡驱动 + <code class="c">CONFIG_IP_PNP</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>反例：</strong> 把 ext4 编成 <code class="c">=m</code>，内核启动挂载 rootfs 时找不到模块文件（因为 rootfs 还没挂上）→ <strong>Kernel panic - not syncing: VFS: Unable to mount root fs</strong>。这是新手最经典的启动失败原因。</p>
+<hr />
+<h2>常用配置命令</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">make bcm2712_defconfig</code></td>
+<td>载入厂商基线</td>
+</tr>
+<tr>
+<td><code class="c">make menuconfig</code></td>
+<td>交互式（ncurses）修改</td>
+</tr>
+<tr>
+<td><code class="c">make nconfig</code></td>
+<td>新版交互界面（支持跳转搜索）</td>
+</tr>
+<tr>
+<td><code class="c">make oldconfig</code></td>
+<td>基于旧 <code class="c">.config</code> 补问<strong>新增</strong>选项</td>
+</tr>
+<tr>
+<td><code class="c">make olddefconfig</code></td>
+<td>同上，新增选项全取默认值（<strong>脚本/CI 用这个</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">make savedefconfig</code></td>
+<td>把当前 <code class="c">.config</code> 最小化后回写 <code class="c">defconfig</code></td>
+</tr>
+<tr>
+<td><code class="c">make localmodconfig</code></td>
+<td>只保留<strong>当前已加载</strong>的模块（裁剪利器）</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># 裁剪流程（本机已跑着目标系统的前提下）
+make localmodconfig     # 按当前加载的模块大幅裁剪
+make menuconfig         # 手工确认
+make savedefconfig      # 回写成最小 defconfig
+cp defconfig arch/arm64/configs/my_custom_defconfig
+</code></pre>
+<blockquote>
+<p><code class="c">menuconfig</code> 里按 <code class="c">/</code> 可以搜索符号名，显示结果里有 <code class="c">Symbol: XXX [=y]</code> 和<strong>依赖关系</strong>。<br />
+找不到某个选项，99% 是它的<strong>依赖没满足</strong> —— 看搜索结果里的 <code class="c">Depends on:</code>。</p>
+</blockquote>
+<hr />
+<h2>裁剪到底在裁什么</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>裁掉的东西</th>
+<th>收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用不到的驱动</td>
+<td>镜像变小；<strong>少一次 probe</strong>；少一份代码占内存</td>
+</tr>
+<tr>
+<td>用不到的子系统（如 <code class="c">CONFIG_BT</code>、<code class="c">CONFIG_WIRELESS</code>）</td>
+<td>启动更快；攻击面更小</td>
+</tr>
+<tr>
+<td>调试选项（<code class="c">CONFIG_DEBUG_*</code>、<code class="c">CONFIG_KASAN</code>）</td>
+<td><strong>显著提升性能</strong>，但丢掉调试能力</td>
+</tr>
+<tr>
+<td><code class="c">CONFIG_MODULES=n</code>（全静态）</td>
+<td>无模块加载开销；但失去灵活性</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>反面：<code class="c">=m</code> 不是万能的。</strong> 模块相比 <code class="c">=y</code>：</p>
+<ul>
+<li>✅ 不占内核镜像空间</li>
+<li>✅ 可以单独更新</li>
+<li>❌ 有加载开销（启动时 <code class="c">udev</code> 遍历 + 加载）</li>
+<li>❌ 依赖 rootfs 里有对应文件（版本还必须匹配，见 <a href="#s-4-3">4.3</a>）</li>
+</ul>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>裁剪 = 减少不确定性。</strong> 每少一个驱动，就少一个可能在中断上下文跑、抢锁、制造延迟尖刺的代码路径。HFT 生产内核基本都是"什么都不开"的极简配置。</li>
+<li><strong>PREEMPT_RT 是配置层的第一个大抉择</strong>：<code class="c">CONFIG_PREEMPT_RT</code> 把大部分自旋锁变成可抢占的 rt_mutex、把中断线程化。<strong>用吞吐换延迟确定性</strong> —— 这是"延迟 vs 吞吐"权衡在配置层的体现（深入见 <a href="../../05.5-modern-kernel/html/index.html">05.5-modern-kernel</a>）。</li>
+<li><strong>配置即契约</strong>：<code class="c">.config</code> 决定了内核 ABI，模块必须与之匹配。这个"版本一致"的思路在容器镜像、在 HFT 的部署包里都是同一条纪律。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：把根文件系统所在的磁盘驱动编成 <code class="c">=m</code> 会怎样？</summary>
+<p>启动失败：<code class="c">Kernel panic - not syncing: VFS: Unable to mount root fs</code>。
+因为加载 <code class="c">.ko</code> 需要先挂载 rootfs，而挂载 rootfs 需要该驱动 —— <strong>死锁</strong>。
+解决：用 <strong>initramfs/initrd</strong> 先加载模块再挂载真 rootfs，或者干脆把驱动改回 <code class="c">=y</code>。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">menuconfig</code> 里搜不到某个配置项，最常见原因是什么？</summary>
+<p><strong>依赖未满足。</strong> 按 <code class="c">/</code> 搜索，看结果里的 <code class="c">Depends on: XXX</code>，先把依赖项打开（且依赖项自身也要满足其依赖）。
+其次是搜索时用了错的名字（不带 <code class="c">CONFIG_</code> 前缀搜）。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">make oldconfig</code> 和 <code class="c">make olddefconfig</code> 的区别？</summary>
+<ul>
+<li><code class="c">oldconfig</code>：遇到 <code class="c">.config</code> 里<strong>没有的新选项</strong>时，<strong>逐个交互式询问</strong>；</li>
+<li><code class="c">olddefconfig</code>：新增选项<strong>全部取默认值</strong>，不问。</li>
+</ul>
+<p>脚本/CI 里必须用 <code class="c">olddefconfig</code>，否则会卡在交互提示上。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/03-u-boot/">03-u-boot</a></li>
+<li><strong>下一篇：</strong> <a href="#s-4-2">4.2 Pi 5 交叉编译实战</a></li>
+<li><strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · B1</a></li>
+<li><strong>卡住查书：</strong> MELP Ch4 · Primer Ch4</li>
+</ul>
+      </section>
+      <section class="section" id="s-4-2">
+        <div class="sec-head"><div class="sec-no">4.2</div><h2>Pi 5 交叉编译实战：从拉源码到替换运行内核</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 在 x86 主机（或 WSL）上交叉编译 Pi 5 内核并让它真正启动起来，<strong>含回滚方案</strong>。
+<strong>前置：</strong> <a href="#s-4-1">4.1 Kconfig</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-toolchain/">02-toolchain</a><br />
+<strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · B1</a><br />
+<strong>卡住查书：</strong> MELP Ch4 · 官方 <a href="https://www.raspberrypi.com/documentation/computers/linux_kernel.html">Building the kernel</a></p>
+</blockquote>
+<hr />
+<h2>一句话流程</h2>
+<pre class="code" data-label="code"><code class="c">拉源码 → bcm2712_defconfig → (裁剪) → 交叉编译 → 装模块 → 拷镜像/DTB → 改 config.txt → 重启
+</code></pre>
+<hr />
+<h2>1. 拉源码</h2>
+<pre class="code" data-label="shell"><code class="c"># 官方树（分支随版本调整，写本文时是 rpi-6.12.y）
+git clone --depth=1 --branch rpi-6.12.y https://github.com/raspberrypi/linux
+cd linux
+</code></pre>
+<p><code class="c">--depth=1</code> 省时间省空间（完整树几个 GB）。<strong>注意分支要与板子上的固件版本大致匹配。</strong></p>
+<hr />
+<h2>2. 配置</h2>
+<pre class="code" data-label="shell"><code class="c">export ARCH=arm64
+export CROSS_COMPILE=aarch64-linux-gnu-
+
+make bcm2712_defconfig          # Pi 5 的厂商基线
+make menuconfig                 # 可选：裁剪
+</code></pre>
+<p>想基于<strong>当前运行内核</strong>的配置起步（最省事）：</p>
+<pre class="code" data-label="shell"><code class="c"># 在 Pi 上导出当前配置
+zcat /proc/config.gz &gt; .config      # 需要 CONFIG_IKCONFIG_PROC
+# 拷回主机后
+make olddefconfig
+</code></pre>
+<hr />
+<h2>3. 编译</h2>
+<pre class="code" data-label="shell"><code class="c">make -j$(nproc) Image.gz modules dtbs
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>目标</th>
+<th>产物</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">Image.gz</code></td>
+<td><code class="c">arch/arm64/boot/Image.gz</code></td>
+<td>压缩内核镜像</td>
+</tr>
+<tr>
+<td><code class="c">modules</code></td>
+<td>各目录 <code class="c">.ko</code></td>
+<td>可加载模块</td>
+</tr>
+<tr>
+<td><code class="c">dtbs</code></td>
+<td><code class="c">arch/arm64/boot/dts/broadcom/*.dtb</code></td>
+<td>设备树二进制，<strong>必须与内核同源</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>校验产物：</strong></p>
+<pre class="code" data-label="shell"><code class="c">file arch/arm64/boot/Image.gz                       # gzip compressed data
+ls -la arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dtb
+</code></pre>
+<hr />
+<h2>4. 安装模块与头文件</h2>
+<pre class="code" data-label="shell"><code class="c"># 挂载 Pi 的 rootfs（SD 卡第二分区）到 /mnt/rootfs
+sudo mount /dev/sdb2 /mnt/rootfs
+
+sudo make INSTALL_MOD_PATH=/mnt/rootfs modules_install
+# -&gt; /mnt/rootfs/lib/modules/6.12.x-v8-16k/
+</code></pre>
+<p><code class="c">modules_install</code> 会顺带跑 <code class="c">depmod</code>，生成 <code class="c">modules.dep</code>、<code class="c">modules.alias</code> 等（若交叉环境没跑，需在 Pi 上补一次 <code class="c">sudo depmod -a</code>）。</p>
+<hr />
+<h2>5. 部署镜像与 DTB</h2>
+<pre class="code" data-label="shell"><code class="c">sudo mount /dev/sdb1 /mnt/boot      # boot 分区（FAT）
+
+# 内核：换个名字，不要覆盖官方的，方便回滚
+sudo cp arch/arm64/boot/Image.gz /mnt/boot/kernel-my.img
+sudo cp arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dtb /mnt/boot/
+sudo cp -r arch/arm64/boot/dts/overlays /mnt/boot/
+</code></pre>
+<p><strong><code class="c">config.txt</code> 里指定：</strong></p>
+<pre class="code" data-label="code"><code class="c">kernel=kernel-my.img
+</code></pre>
+<blockquote>
+<p><strong>★ 回滚方案（必须先准备好）：</strong> 不覆盖原 <code class="c">kernel8.img</code>，用独立文件名 + <code class="c">kernel=</code> 指定。<br />
+起不来时把 SD 卡插回电脑，改回 <code class="c">kernel=kernel8.img</code>（或删掉这一行）即可。<br />
+<strong>别一上来就覆盖原内核 —— 刷坏内核虽然不如刷坏 EEPROM 严重，但一样要重刷卡。</strong></p>
+</blockquote>
+<hr />
+<h2>6. 验证</h2>
+<pre class="code" data-label="shell"><code class="c">uname -a                 # 应显示你编译的版本与编译时间
+cat /proc/version        # 含 GCC 版本、SMP PREEMPT 等
+zcat /proc/config.gz | grep CONFIG_PREEMPT   # 确认配置生效
+dmesg -T | head -30      # 看早期启动消息
+</code></pre>
+<hr />
+<h2>常见错误对照表</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因 / 处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">aarch64-linux-gnu-gcc: command not found</code></td>
+<td>没装交叉编译器（见 <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-toolchain/">02-toolchain</a>）</td>
+</tr>
+<tr>
+<td><code class="c">make: *** No rule to make target 'bcm2712_defconfig'</code></td>
+<td>分支不对（拉错树）或 ARCH 没设</td>
+</tr>
+<tr>
+<td>编译出的镜像是 x86 的</td>
+<td>忘了 <code class="c">ARCH=arm64</code> / <code class="c">CROSS_COMPILE</code></td>
+</tr>
+<tr>
+<td>启动卡在 <code class="c">Starting kernel ...</code></td>
+<td>DTB 与内核不匹配 / 串口配置错 / <code class="c">config.txt</code> 里 kernel 路径错</td>
+</tr>
+<tr>
+<td><code class="c">Kernel panic - VFS: Unable to mount root fs</code></td>
+<td>存储或文件系统驱动编成了 <code class="c">=m</code>（见 <a href="#s-4-1">4.1</a>）</td>
+</tr>
+<tr>
+<td>模块版本不匹配 <code class="c">version magic</code></td>
+<td><code class="c">.ko</code> 与运行内核不是同一次构建（见 <a href="#s-4-3">4.3</a>）</td>
+</tr>
+<tr>
+<td>启动后外设不工作</td>
+<td>DTB 没更新，或 <code class="c">overlays</code> 没拷</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>时间预期（参考）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>环境</th>
+<th>首次全量编译</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8 核 x86 主机</td>
+<td>10–25 分钟</td>
+</tr>
+<tr>
+<td>4 核笔记本</td>
+<td>30–60 分钟</td>
+</tr>
+<tr>
+<td><strong>Pi 5 本机编译</strong>（<code class="c">make -j4</code>）</td>
+<td><strong>1–2 小时</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>改一个驱动后增量编译通常几十秒。<strong>但改了 <code class="c">.config</code> 会触发大面积重编。</strong></p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"别覆盖原内核"这条纪律</strong>，与 HFT 部署的"蓝绿发布 / 快速回退"是同一个原则：任何变更都要有<strong>一次操作即可回退</strong>的路径。</li>
+<li><strong>本机编译 vs 交叉编译</strong>：Pi 5 其实够快，本机编译能省掉"版本不匹配"的一大类问题（模块、头文件天然一致）。只有需要频繁构建或做 CI 时才必须交叉。</li>
+<li>编译产物必须与<strong>运行内核严格同源</strong> —— 这个"版本即契约"的纪律后面在 rootfs（<a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-rootfs/">05-rootfs</a>）和模块（<a href="#s-4-3">4.3</a>）会反复遇到。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：为什么 <code class="c">dtbs</code> 必须和内核一起编？</summary>
+<p>DTB 里的 <code class="c">compatible</code> 字符串要与驱动里的 <code class="c">of_device_id</code> 表匹配，而驱动是内核的一部分。
+内核与 DTB 版本不一致 → 某些节点匹配不上 → 设备不 probe 或行为异常，<strong>且不报错</strong>。
+所以官方流程里 <code class="c">make ... modules dtbs</code> 是一体的。</p>
+</details>
+<details>
+<summary>Q2：不覆盖原内核、用 <code class="c">kernel=</code> 指定的好处是什么？</summary>
+<p><strong>回滚成本降到一次文本编辑</strong>：新内核起不来时，把 SD 卡插回电脑改 <code class="c">config.txt</code>（或删掉 <code class="c">kernel=</code> 行回落到默认），立刻能启动。
+若直接覆盖原内核，则必须重新编译或从备份恢复。这是 bring-up 阶段最重要的保险。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">INSTALL_MOD_PATH</code> 不设会怎样？</summary>
+<p>模块会被安装到<strong>主机</strong>的 <code class="c">/lib/modules/$(uname -r)</code> —— 可能污染甚至破坏主机系统。
+交叉编译时<strong>必须</strong>指向目标 rootfs 的挂载点。这是最容易酿成事故的疏忽之一。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-4-1">4.1 Kconfig</a></li>
+<li><strong>下一篇：</strong> <a href="#s-4-3">4.3 模块与版本魔法</a></li>
+<li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-rootfs/">05-rootfs</a></li>
+<li><strong>卡住查书：</strong> MELP Ch4</li>
+</ul>
+      </section>
+      <section class="section" id="s-4-3">
+        <div class="sec-head"><div class="sec-no">4.3</div><h2>模块版本魔法：`insmod` 报 `version magic` 到底在说什么</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 内核模块与运行内核之间的"版本契约"，以及模块是怎么被自动加载的。
+<strong>前置：</strong> <a href="#s-4-2">4.2 交叉编译实战</a><br />
+<strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-rootfs/">05-rootfs</a><br />
+<strong>卡住查书：</strong> MELP Ch4 · LDD3 Ch2</p>
+</blockquote>
+<hr />
+<h2>一个必然会遇到的问题</h2>
+<pre class="code" data-label="shell"><code class="c">$ sudo insmod mydrv.ko
+insmod: ERROR: could not insert module mydrv.ko: Invalid module format
+$ dmesg | tail -3
+mydrv: version magic '6.12.20-v8-16k SMP preempt mod_unload aarch64' should be
+'6.12.25-v8+ SMP preempt mod_unload aarch64'
+</code></pre>
+<p><strong>含义：</strong> 这个 <code class="c">.ko</code> 是为 <code class="c">6.12.20-v8-16k</code> 编的，但当前跑的是 <code class="c">6.12.25-v8+</code>。内核拒绝加载。</p>
+<hr />
+<h2>vermagic 里有什么</h2>
+<pre class="code" data-label="code"><code class="c">6.12.20-v8-16k   SMP   preempt   mod_unload   aarch64
+└── 版本号 ──┘   └SMP┘ └抢占模式┘ └允许卸载┘   └─ 架构 ─┘
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>来源</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>版本号</td>
+<td><code class="c">uname -r</code>（<code class="c">UTS_RELEASE</code>）</td>
+<td>内核源码树版本 + <code class="c">CONFIG_LOCALVERSION</code></td>
+</tr>
+<tr>
+<td>SMP</td>
+<td><code class="c">CONFIG_SMP</code></td>
+<td>是否对称多处理</td>
+</tr>
+<tr>
+<td>preempt</td>
+<td><code class="c">CONFIG_PREEMPT*</code></td>
+<td>抢占模型（<code class="c">preempt</code> / <code class="c">none</code> / <code class="c">rt</code>）</td>
+</tr>
+<tr>
+<td>mod_unload</td>
+<td><code class="c">CONFIG_MODULE_UNLOAD</code></td>
+<td>是否允许 <code class="c">rmmod</code></td>
+</tr>
+<tr>
+<td>aarch64</td>
+<td>架构</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>任何一项不同 → 拒绝加载。</strong> 这不是内核"太挑剔"：模块直接链接到内核符号、使用内核内部结构布局，配置不同意味着<strong>内存布局可能不同</strong>，强行加载 = 随机踩内存。</p>
+<pre class="code" data-label="shell"><code class="c"># 查看模块的 vermagic
+modinfo mydrv.ko | grep vermagic
+
+# 查看当前内核
+uname -r
+</code></pre>
+<hr />
+<h2>怎么保证匹配</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>做法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>同一棵树编译</strong></td>
+<td>模块用的内核源码树 == 目标运行内核的源码树（推荐）</td>
+</tr>
+<tr>
+<td>用目标内核的 headers</td>
+<td><code class="c">KDIR=/lib/modules/$(uname -r)/build</code>（本机编译时最稳）</td>
+</tr>
+<tr>
+<td><strong>本机编译</strong></td>
+<td>在 Pi 上直接 <code class="c">make</code>，天然一致，最省心</td>
+</tr>
+<tr>
+<td>交叉编译时</td>
+<td><code class="c">INSTALL_MOD_PATH</code> 指向目标 rootfs，且<strong>内核与模块一次构建</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="make"><code class="c"># 本机编译（Pi 上）—— 最不容易出错
+KDIR ?= /lib/modules/$(shell uname -r)/build
+all:
+    make -C $(KDIR) M=$(PWD) modules
+</code></pre>
+<pre class="code" data-label="shell"><code class="c"># 交叉编译（主机上）—— KDIR 指向你编译的那棵树
+make -C /path/to/rpi-linux M=$(PWD) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+</code></pre>
+<hr />
+<h2><code class="c">/lib/modules/$(uname -r)</code> 目录结构</h2>
+<pre class="code" data-label="code"><code class="c">/lib/modules/6.12.25-v8+/
+├── kernel/              # 各子系统的 .ko
+│   ├── drivers/...
+│   └── net/...
+├── modules.dep          # 依赖关系（depmod 生成）★
+├── modules.alias        # 设备别名 -&gt; 模块（自动加载靠它）★
+├── modules.symbols
+├── modules.builtin      # 编进内核的模块清单
+└── build -&gt; /path/to/src   # 指向源码树（编译外部模块时需要）
+</code></pre>
+<p><strong>改了模块必须重跑 <code class="c">depmod</code>：</strong></p>
+<pre class="code" data-label="shell"><code class="c">sudo depmod -a                          # 当前内核
+sudo depmod -a 6.12.25-v8+              # 指定版本
+</code></pre>
+<hr />
+<h2>模块是怎么被自动加载的</h2>
+<pre class="code" data-label="code"><code class="c">内核枚举设备（PCI / DT / USB / ACPI）
+        │
+        ▼
+生成 modalias 字符串，如：
+   pci:v00001106d00003038sv...
+   of:NmydevT(null)Cwzp,my-device      ← 设备树设备的 modalias
+        │
+        ▼
+内核发 uevent 给用户态 udev
+        │
+        ▼
+udev 查 /lib/modules/.../modules.alias，找到匹配的 .ko
+        │
+        ▼
+modprobe &lt;module&gt;    ← 自动解析依赖并加载
+</code></pre>
+<h3><code class="c">insmod</code> vs <code class="c">modprobe</code></h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">insmod</code></th>
+<th><code class="c">modprobe</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>依赖处理</td>
+<td>❌ <strong>不管</strong>，缺依赖直接失败</td>
+<td>✅ 自动先加载依赖</td>
+</tr>
+<tr>
+<td>模块查找</td>
+<td>需要完整路径</td>
+<td>按名字在 <code class="c">/lib/modules/$(uname -r)</code> 下找</td>
+</tr>
+<tr>
+<td>用途</td>
+<td>调试、开发</td>
+<td><strong>日常使用</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c">sudo modprobe mydrv          # 自动处理依赖
+sudo modprobe -r mydrv       # 卸载（含不再被依赖的依赖）
+lsmod                        # 看已加载
+modinfo mydrv                # 看模块信息（依赖、参数、vermagic）
+</code></pre>
+<p><strong>模块参数：</strong></p>
+<pre class="code" data-label="C"><code class="c">static int debug = 0;
+module_param(debug, int, 0644);       /* /sys/module/mydrv/parameters/debug */
+MODULE_PARM_DESC(debug, &quot;Enable debug output&quot;);
+</code></pre>
+<pre class="code" data-label="shell"><code class="c">sudo modprobe mydrv debug=1
+# 或运行时（若权限允许）
+echo 1 | sudo tee /sys/module/mydrv/parameters/debug
+</code></pre>
+<hr />
+<h2><code class="c">CONFIG_MODVERSIONS</code>：可选的宽容模式</h2>
+<p>开启后，内核为每个导出符号记录 <strong>CRC 校验值</strong>，模块加载时比对：</p>
+<ul>
+<li>只有<strong>实际用到的符号</strong>变了才拒绝；</li>
+<li>允许小版本差异（只要 API 语义未变）。</li>
+</ul>
+<p><strong>代价：</strong> 需要在<strong>同一个 <code class="c">.config</code></strong> 下编译模块；而且它只检查符号 CRC，<strong>不检查结构体布局</strong>。发行版常用，嵌入式/自研内核通常<strong>不开</strong>（宁可严格失败也不要随机崩溃）。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"版本即契约"这条纪律在部署里反复出现</strong>：容器镜像 tag、HFT 交易二进制与其链接的库版本、FPGA bitstream 与驱动版本——<strong>不一致就快速失败</strong>，好过运行期随机出错。内核的 vermagic 是这种设计哲学最严格的体现。</li>
+<li><strong><code class="c">modprobe</code> 的依赖解析</strong> 本质是静态图拓扑排序，与包管理器、systemd 的依赖解析同源。理解一次，到处能用。</li>
+<li>生产环境常把关键驱动编进内核（<code class="c">=y</code>）而非模块：省掉加载环节、避免 rootfs 损坏导致驱动缺失，<strong>启动路径更短更确定</strong>。</li>
+</ul>
+<hr />
+<h2>代码自测</h2>
+<details>
+<summary>Q1：<code class="c">insmod</code> 报 <code class="c">version magic</code> 不匹配，最快的解决方式是什么？</summary>
+<p><strong>在目标机上用 <code class="c">/lib/modules/$(uname -r)/build</code> 重编模块</strong>（本机编译），天然一致。
+若必须交叉编译，则内核源码树必须与目标运行内核<strong>完全一致</strong>（同一次 checkout + 同 <code class="c">.config</code> + 同 <code class="c">LOCALVERSION</code>）。
+临时绕过可用 <code class="c">modprobe --force-vermagic</code>（<strong> debug 用，生产禁用 </strong>）。</p>
+</details>
+<details>
+<summary>Q2：拷了 .ko 到目标板，<code class="c">modprobe</code> 却说找不到该模块？</summary>
+<p><code class="c">modprobe</code> 按名字在 <code class="c">/lib/modules/$(uname -r)/</code> 下查找，需要：
+1. <code class="c">.ko</code> 放到 <code class="c">/lib/modules/$(uname -r)/kernel/...</code> 下（不是随便一个目录）；
+2. <strong>跑过 <code class="c">depmod -a</code></strong> 生成 <code class="c">modules.dep</code> / <code class="c">modules.alias</code>。</p>
+<p>用完整路径 <code class="c">insmod /path/to/mydrv.ko</code> 可绕过，但不处理依赖。</p>
+</details>
+<details>
+<summary>Q3：为什么不推荐用 <code class="c">--force-vermagic</code>？</summary>
+<p>vermagic 不匹配意味着内核配置/版本不同，<strong>结构体布局、函数签名可能已经变了</strong>。
+强行加载后模块会按错误的偏移读写内核内存 → 随机崩溃、数据损坏，而且<strong>极难排查</strong>（症状与原因相隔很远）。
+宁可构建流程做对，也不要运行期赌运气。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-4-2">4.2 交叉编译实战</a></li>
+<li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-rootfs/">05-rootfs</a></li>
+<li><strong>驱动侧：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/09-device-drivers-dt/01-hello-module">09 · 01-hello-module</a></li>
+<li><strong>卡住查书：</strong> MELP Ch4 · LDD3 Ch2</li>
 </ul>
       </section>
 

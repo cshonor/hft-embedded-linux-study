@@ -87,9 +87,9 @@ projects/P5  ←  具体命令、板上结果、踩坑记录（"执行层"）
 
 - [x] 去书本化重构：80 章书目录 → 7 个任务节点
 - [x] 01-orientation（6 篇）
+- [x] 03-u-boot（1 篇）
+- [x] 04-kernel-build（3 篇）
 - [ ] 02-toolchain
-- [ ] 03-u-boot（1 篇）
-- [ ] 04-kernel-build
 - [ ] 05-rootfs
 - [ ] 06-boot-to-shell
 - [ ] 07-storage-ota

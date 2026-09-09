@@ -55,6 +55,16 @@ ls arch/arm64/boot/dts/broadcom/*.dtb | head
 
 ---
 
+## 本节笔记
+
+| # | 笔记 |
+|---|------|
+| 4.1 | [Kconfig 与 defconfig：三种符号与裁剪思路](./4.1-defconfig-and-kconfig.md) |
+| 4.2 | [Pi 5 交叉编译实战（含回滚方案）](./4.2-cross-compile-pi5.md) |
+| 4.3 | [模块版本魔法 vermagic](./4.3-modules-and-version-magic.md) |
+
+---
+
 ## 验收
 
 - [ ] 自编内核能在 Pi 5 上启动，`uname -r` 显示自己的版本号

@@ -95,8 +95,9 @@ LDD3 的 18 章里值得回头精读的只有 **Ch3 / 5 / 6 / 9 / 10 / 15**；Ch
 
 - [x] 去书本化重构：40 章书目录 → 6 个任务节点
 - [x] 01-hello-module（3 篇）
+- [x] 02-char-device（4 篇）
 - [x] 03-platform-dt（2 篇）
 - [x] 04-gpio-i2c-spi（2 篇）
+- [x] 05-irq-locking（3 篇）
 - [x] 06-dma-mmap（4 篇）
-- [ ] 02-char-device
-- [ ] 05-irq-locking
+- [ ] 各节点随动手推进补充
