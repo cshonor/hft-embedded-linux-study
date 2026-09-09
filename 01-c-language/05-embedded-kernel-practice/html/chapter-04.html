@@ -279,6 +279,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-4-10"><span class="n">4.10</span>Linux内核模块运行机制</a>
           <a href="#s-4-11"><span class="n">4.11</span>Linux内核编译和启动分析</a>
           <a href="#s-4-12"><span class="n">4.12</span>U-boot重定位分析</a>
+          <a href="#s-4-13"><span class="n">4.13</span>协议结构体的 packed 实践</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -302,7 +303,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">《嵌入式 C 语言自我修养》· 从编译链接到内核素养</div>
           <h1>CH4 · 内核模块与子系统的 GNU C 应用</h1>
           <div class="meta">
-<span>book <b>01-c-language · 05-embedded-kernel-practice</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>01-c-language · 05-embedded-kernel-practice</b></span><span>chapter <b>Ch 4</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -433,10 +434,16 @@ CH3 是「没有 OS 的裸机」；这一章是「有内核的情况下，同一
 <td>✅ 30 KB</td>
 <td><strong>侵入式 vs 外挂</strong> / 多链表（member 参数区分偏移）/ POISON 投毒 / 遍历宏家族（safe 版）/ hlist pprev 妙用 / RCU 写入顺序 / 零开销实测 / 数组比链表快 568 倍</td>
 </tr>
+<tr>
+<td>4</td>
+<td><a href="chapter-06.html#s-4-13">4.13 协议结构体的 packed 实践</a></td>
+<td>✅ 26 KB</td>
+<td><strong>TCP/IP 头不加 packed</strong>（成员自然对齐）/ 位域双版本（<code class="c">__LITTLE_ENDIAN_BITFIELD</code>）/ <code class="c">__be16</code>=<code class="c">__u16 __bitwise</code>（sparse 标注零开销）/ 热路径 <code class="c">union tcp_word_hdr</code>+整字 <code class="c">TCP_FLAG_*</code> / <code class="c">htonl</code>→<code class="c">__builtin_bswap32</code>（1 条 BSWAP）/ <code class="c">__struct_group</code> / USB 描述符为何加 packed</td>
+</tr>
 </tbody>
 </table></div>
 <h2>补写计划（按优先级）</h2>
-<p>本章目前 <strong>4.10 模块加载 + 4.11 initcall + 4.12 container_of 已精写</strong>（合计 100 KB），其余骨架状态。建议顺序：</p>
+<p>本章目前 <strong>4.10 模块加载 + 4.11 initcall + 4.12 container_of + 4.13 packed 实践已精写</strong>（合计 126 KB），其余骨架状态。建议顺序：</p>
 <div class="tbl-wrap"><table>
 <thead>
 <tr>
@@ -468,7 +475,7 @@ CH3 是「没有 OS 的裸机」；这一章是「有内核的情况下，同一
 <tr>
 <td>★★☆</td>
 <td><strong>协议结构体的 <code class="c">packed</code> 实践</strong></td>
-<td>待补</td>
+<td>✅ 已完成</td>
 <td>接 4.10 + CH2 6.7；看 <code class="c">struct tcphdr</code> 怎么处理位域与字节序</td>
 </tr>
 <tr>
@@ -548,6 +555,11 @@ CH3 是「没有 OS 的裸机」；这一章是「有内核的情况下，同一
 <td><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/13-module/">demo/13-module/</a></td>
 <td>5 个源文件 + t5_module.o + run.sh</td>
 <td><a href="#s-4-10">4.10 内核模块加载与符号决议</a></td>
+</tr>
+<tr>
+<td><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/demo/14-packed/">demo/14-packed/</a></td>
+<td>5 个源文件 + run.sh</td>
+<td><a href="chapter-06.html#s-4-13">4.13 协议结构体的 packed 实践</a></td>
 </tr>
 </tbody>
 </table></div>
@@ -830,6 +842,706 @@ relocate_code(relocaddr, gd-&gt;reloc_off, relocaddr);
 2. <code class="c">relocate_code</code>：修正 GOT 表、所有绝对地址符号（加上 reloc_off）
 3. 跳转到新地址继续执行</p>
 <p>这是嵌入式启动的常见模式：Bootloader 先在低端地址运行，然后搬自己到高端地址，腾出空间给内核。</p>
+</details>
+      </section>
+      <section class="section" id="s-4-13">
+        <div class="sec-head"><div class="sec-no">4.13</div><h2>协议结构体的 packed 实践</h2></div>
+<p><a href="#intro">← CH4 内核模块</a> · <a href="#s-4-12">4.12 container_of 与侵入式链表</a> · <a href="chapter-02.html#s-6-7">CH2 6.7 aligned 与 packed</a> · <a href="chapter-03.html#s-10-8">CH3 10.8 寄存器操作</a></p>
+<blockquote>
+<p><strong>本篇把 CH2 <a href="chapter-02.html#s-6-7">6.7 aligned/packed</a> 的 <code class="c">__attribute__((packed))</code> 放回它真正被用的地方——内核网络协议头</strong>。
+你会发现一个反直觉的事实：<strong>TCP/IP 头根本不加 <code class="c">packed</code></strong>，真正加 <code class="c">packed</code> 的是 USB 描述符和 Ethernet 头。
+全部 v6.6 源码核对，WSL 实测 5 个 demo（gcc 13.3 / clang 18.1.3 双编译）。</p>
+</blockquote>
+<h2>本节讲什么</h2>
+<p>CH2 的 <a href="chapter-02.html#s-6-7">6.7</a> 讲了 <code class="c">packed</code> 的语法（取消 padding、降对齐到 1）。但真正打开 <code class="c">include/uapi/linux/tcp.h</code> 时，你会看到三个互相缠绕的 C 语言话题：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>话题</th>
+<th>涉及的 GNU C 扩展</th>
+<th>这篇的落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>线上格式怎么用 C struct 表达</strong></td>
+<td><code class="c">__attribute__((packed))</code>、位域</td>
+<td>TCP/IP/USB/Ethernet 头</td>
+</tr>
+<tr>
+<td><strong>字节序怎么标注</strong></td>
+<td><code class="c">__bitwise</code>（sparse 标注）、<code class="c">__be16</code>/<code class="c">__be32</code></td>
+<td><code class="c">htonl</code>/<code class="c">ntohl</code> → <code class="c">__builtin_bswap32</code></td>
+</tr>
+<tr>
+<td><strong>热路径怎么操作 flag</strong></td>
+<td><code class="c">union</code> cast（绕过 strict-aliasing）</td>
+<td><code class="c">tcp_flag_word()</code> + <code class="c">TCP_FLAG_*</code> 整字常量</td>
+</tr>
+</tbody>
+</table></div>
+<p>它和 CH2 的分工：<strong>CH2 讲 <code class="c">packed</code> 的语法和代价</strong>（伪共享、未对齐访问、UBSan 绕过），<strong>这篇讲内核为什么这么用它</strong>——哪些头该加、哪些不该加、为什么用位域双版本、热路径为什么用 union 整字操作。</p>
+<hr />
+<h2>一、反直觉的发现：TCP/IP 头不加 packed</h2>
+<p>很多人第一次看内核协议头代码时的预期是「网络头一定有 <code class="c">__attribute__((packed))</code>，因为它要精确匹配线上格式」。但 v6.6 源码告诉你<strong>不是</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/tcp.h —— 注意：没有 __attribute__((packed)) */
+struct tcphdr {
+    __be16  source;
+    __be16  dest;
+    __be32  seq;
+    __be32  ack_seq;
+    __u16   res1:4, doff:4, fin:1, syn:1, ...;  /* 位域 */
+    __be16  window;
+    __sum16 check;
+    __be16  urg_ptr;
+};
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/ip.h —— 同样没有 packed */
+struct iphdr {
+    __u8    ihl:4, version:4;  /* 位域 */
+    __u8    tos;
+    __be16  tot_len;
+    ...
+};
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/udp.h —— 同样没有 packed */
+struct udphdr {
+    __be16  source;
+    __be16  dest;
+    __be16  len;
+    __sum16 check;
+};
+</code></pre>
+<p>T1 demo 实测（WSL gcc 13.3, x86-64 小端）打印了真实布局：</p>
+<pre class="code" data-label="code"><code class="c">struct tcphdr    sizeof=20  align=4    &lt;- 5 个 32 位字
+struct iphdr     sizeof=20  align=4
+struct udphdr    sizeof=8   align=2
+</code></pre>
+<p><strong>为什么不加 <code class="c">packed</code> 也不出问题？</strong> 因为这三个头的设计有一个共同特征：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头</th>
+<th>成员类型</th>
+<th>位域所在单元</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tcphdr</code></td>
+<td>全 <code class="c">__be16</code>/<code class="c">__be32</code>（2/4 字节）</td>
+<td><code class="c">res1+doff+8 flags</code> = 16 bit = 1 个 <code class="c">__u16</code></td>
+</tr>
+<tr>
+<td><code class="c">iphdr</code></td>
+<td><code class="c">__u8</code> + <code class="c">__be16</code>/<code class="c">__be32</code></td>
+<td><code class="c">ihl+version</code> = 8 bit = 1 个 <code class="c">__u8</code></td>
+</tr>
+<tr>
+<td><code class="c">udphdr</code></td>
+<td>全 <code class="c">__be16</code>/<code class="c">__sum16</code></td>
+<td>无位域</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>结构体的对齐 = 所有成员对齐要求的最大值</strong>。这些头的成员都是 2/4 字节对齐，结构体对齐就是 4（或 2），而 <code class="c">sizeof</code> 恰好是 4（或 2）的整数倍——<strong>没有 padding 需要消除，<code class="c">packed</code> 多余</strong>。</p>
+<blockquote>
+<p><a href="chapter-02.html#s-6-7">CH2 6.7</a> 的结论在这里得到了验证：<strong><code class="c">packed</code> 只在成员排列会产生 padding 时才需要</strong>。TCP/IP 头的设计者刻意让所有成员都落在自然对齐的偏移上，就是为了不用 <code class="c">packed</code>。</p>
+</blockquote>
+<h3>那谁加了 packed？</h3>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/if_ether.h —— 加了 packed */
+struct ethhdr {
+    unsigned char h_dest[ETH_ALEN];     /* 6 字节，对齐 1 */
+    unsigned char h_source[ETH_ALEN];   /* 6 字节，对齐 1 */
+    __be16        h_proto;              /* 2 字节，对齐 2 */
+} __attribute__((packed));
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/usb/ch9.h —— USB 描述符全族都加了 packed */
+struct usb_device_descriptor {
+    __u8  bLength;
+    __u8  bDescriptorType;
+    __le16 bcdUSB;                      /* offset 2 */
+    __u8  bDeviceClass;
+    ...
+} __attribute__((packed));
+
+struct usb_ctrlrequest {
+    __u8 bRequestType;
+    __u8 bRequest;
+    __le16 wValue;                      /* offset 2 */
+    __le16 wIndex;
+    __le16 wLength;
+} __attribute__((packed));
+</code></pre>
+<p>T1 demo 对比了 packed 和不加 packed 的版本：</p>
+<pre class="code" data-label="code"><code class="c">struct ethhdr        sizeof=14  align=1   &lt;- packed
+struct ethhdr_nopack sizeof=14  align=2   &lt;- 不加 packed 也是 14 字节！
+struct usb_device_descriptor      sizeof=18  align=1   &lt;- packed
+struct usb_device_descriptor_nopack sizeof=18  align=2 &lt;- 不加也是 18 字节！
+</code></pre>
+<p><strong>反直觉的发现</strong>：Ethernet 头和 USB 描述符在 gcc 上<strong>不加 <code class="c">packed</code> 也恰好不产生 padding</strong>——因为这个排列下 2 字节成员都落在偶数偏移上。<code class="c">packed</code> 唯一的效果是把 <code class="c">align</code> 从 2 降到 1。</p>
+<p>但这不代表 <code class="c">packed</code> 多余——<strong>T1 加了一个「坏排列」的对比</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* __u8 紧跟 __le16：不加 packed 就会产生 padding */
+struct usb_bad_order_packed {
+    __u8  bLength;
+    __le16 wValue;   /* offset 1, 不对齐 2 -&gt; packed 必须有 */
+    __u8  bType;
+} __packed;
+
+struct usb_bad_order_nopack {
+    __u8  bLength;
+    __le16 wValue;   /* offset 2, 编译器自动 padding */
+    __u8  bType;
+};
+</code></pre>
+<p>实测：</p>
+<pre class="code" data-label="code"><code class="c">struct usb_bad_order_packed   sizeof=4  align=1  wValue off=1
+struct usb_bad_order_nopack   sizeof=6  align=2  wValue off=2
+</code></pre>
+<p><strong>这才是 <code class="c">packed</code> 不可省的场景</strong>：<code class="c">wValue</code> 在 offset 1（不对齐 2），不加 <code class="c">packed</code> 编译器会在 <code class="c">bLength</code> 后插入 1 字节 padding 把 <code class="c">wValue</code> 推到 offset 2。</p>
+<h3>packed 三档分类</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th><code class="c">packed</code> 作用</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>不加也没 padding</strong></td>
+<td><strong>防御性</strong>（保证所有编译器/排列下不出 padding）</td>
+<td><code class="c">tcphdr</code>、<code class="c">iphdr</code>、<code class="c">udphdr</code></td>
+</tr>
+<tr>
+<td><strong>不加也有 padding</strong></td>
+<td><strong>必须</strong>（否则 <code class="c">sizeof</code> 不等于线上字节数）</td>
+<td><code class="c">usb_bad_order</code>、各种 USB 描述符</td>
+</tr>
+<tr>
+<td><strong>不加没 padding 但 align 不同</strong></td>
+<td><strong>防御性 + 降 align</strong></td>
+<td><code class="c">ethhdr</code>、<code class="c">usb_device_descriptor</code></td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>结论</strong>：<code class="c">packed</code> 的真正作用 = <strong>消除 padding + 降 align 到 1</strong>。好排列时是防御性的，坏排列时是必须的。TCP/IP 头的设计者刻意排列成员使其不需要 <code class="c">packed</code>，这是<strong>设计上的选择</strong>而非疏漏。</p>
+</blockquote>
+<hr />
+<h2>二、__be16/__be32：字节序的类型标注</h2>
+<p>你看到的 <code class="c">__be16</code>、<code class="c">__be32</code>、<code class="c">__sum16</code>、<code class="c">__le16</code>、<code class="c">__le32</code> 不是编译器内置类型，而是内核的 typedef：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/types.h */
+typedef __u16 __bitwise __le16;   /* little-endian 16-bit */
+typedef __u16 __bitwise __be16;   /* big-endian (network order) 16-bit */
+typedef __u32 __bitwise __le32;
+typedef __u32 __bitwise __be32;
+typedef __u16 __bitwise __sum16;  /* checksum 16-bit */
+typedef __u32 __bitwise __wsum;   /* wide checksum */
+</code></pre>
+<p><code class="c">__bitwise</code> 是什么？看 <code class="c">include/linux/compiler_types.h</code>：</p>
+<pre class="code" data-label="C"><code class="c">#ifdef __CHECKER__
+# define __bitwise     __attribute__((bitwise))
+# define __force      __attribute__((force))
+#else
+# define __bitwise
+# define __force
+#endif
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th><code class="c">__bitwise</code> 展开</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>sparse 运行时</strong>（<code class="c">__CHECKER__</code> 定义）</td>
+<td><code class="c">__attribute__((bitwise))</code></td>
+<td>sparse 把 <code class="c">__be16</code> 和 <code class="c">__u16</code> 当<strong>不同类型</strong>，直接赋值会报 warning</td>
+</tr>
+<tr>
+<td><strong>gcc/clang 编译时</strong></td>
+<td><strong>空宏</strong></td>
+<td><code class="c">__be16</code> 就是 <code class="c">unsigned short</code>，<strong>零运行时开销</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>所以 <code class="c">__be16</code> 的意义是：<strong>给 sparse（内核静态检查工具）看的类型标注</strong>，提醒你「这个值是网络字节序，必须用 <code class="c">ntohs()</code> 转成主机序才能用」。在编译器层面，<code class="c">__be16</code> 和 <code class="c">__u16</code> 完全相同。</p>
+<blockquote>
+<p><a href="chapter-02.html#s-6-8">CH2 6.8 format</a> 讲了 <code class="c">format</code> 属性让编译器在编译期检查 <code class="c">printf</code> 格式串。<code class="c">__bitwise</code> 是类似的设计哲学——<strong>用类型系统把容易犯的错变成可检测的</strong>。区别是 <code class="c">format</code> 用 gcc/clang 内置支持，<code class="c">__bitwise</code> 用 sparse 外部工具。</p>
+</blockquote>
+<h3>__force：允许「明知故犯」的转换</h3>
+<p>你会在内核代码里看到 <code class="c">(__force __be32)</code> 这样的写法：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/byteorder/little_endian.h */
+#define __constant_htonl(x) ((__force __be32)___constant_swab32((x)))
+</code></pre>
+<p><code class="c">__force</code> 告诉 sparse「我知道这是不同字节序的类型，但我有意要这么转换，别报警」。在 gcc/clang 层面 <code class="c">__force</code> 也是空宏。</p>
+<hr />
+<h2>三、位域双版本：编译期解决字节序</h2>
+<p>TCP 头的 <code class="c">doff</code>（4 bit）+ <code class="c">res1</code>（4 bit）+ 8 个 flag（各 1 bit）合占 16 位。但<strong>这 16 位在大端和小端机器上的内存排列不同</strong>：</p>
+<pre class="code" data-label="code"><code class="c">RFC 793 定义的线上格式（网络序 = 大端）：
+  byte 12: [doff(4bit)] [reserved(4bit)]
+  byte 13: [CWR ECE URG ACK PSH RST SYN FIN]
+</code></pre>
+<p>在<strong>大端机器</strong>上，位域 <code class="c">doff:4, res1:4</code> 的内存排列自然和线上格式一致（高位在前）。
+在<strong>小端机器</strong>上，同一个 <code class="c">__u16</code> 的位域排列是<strong>反过来的</strong>（低位在前）。</p>
+<p>内核的解法不是运行时判断，而是<strong>编译期用 <code class="c">#if</code> 选两套位域定义</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/tcp.h */
+struct tcphdr {
+    ...
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+    __u16   res1:4,          /* 低 4 bit */
+            doff:4,          /* 高 4 bit */
+            fin:1,           /* byte 13 最低位 */
+            syn:1,
+            rst:1,
+            psh:1,
+            ack:1,
+            urg:1,
+            ece:1,
+            cwr:1;           /* byte 13 最高位 */
+#elif defined(__BIG_ENDIAN_BITFIELD)
+    __u16   doff:4,          /* 高 4 bit */
+            res1:4,          /* 低 4 bit */
+            cwr:1,           /* byte 13 最高位 */
+            ece:1,
+            urg:1,
+            ack:1,
+            psh:1,
+            rst:1,
+            syn:1,
+            fin:1;           /* byte 13 最低位 */
+#else
+#error  &quot;Adjust your &lt;asm/byteorder.h&gt; defines&quot;
+#endif
+    ...
+};
+</code></pre>
+<p><code class="c">__LITTLE_ENDIAN_BITFIELD</code> / <code class="c">__BIG_ENDIAN_BITFIELD</code> 在 <code class="c">include/uapi/linux/byteorder/little_endian.h</code> 或 <code class="c">big_endian.h</code> 里定义，由 <code class="c">asm/byteorder.h</code> 根据架构包含其中之一：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/byteorder/little_endian.h */
+#ifndef __LITTLE_ENDIAN_BITFIELD
+#define __LITTLE_ENDIAN_BITFIELD
+#endif
+</code></pre>
+<p>T2 demo 验证了这一点（x86-64 小端）：</p>
+<pre class="code" data-label="code"><code class="c">目标: version=4, ihl=5 -&gt; 线上字节 0x45
+位域写: ihl=5, version=4 -&gt; 生成的字节: 45   &lt;- LE 版本生成正确的线上字节
+手动写: ihl=5, version=4 -&gt; 0x45              &lt;- 手动移位也一致
+两者一致: YES
+</code></pre>
+<blockquote>
+<p><strong>关键洞察</strong>：位域双版本保证<strong>无论本机什么字节序，用位域生成的线上字节都符合 RFC</strong>。这是编译期解决，不是运行时——零开销。</p>
+</blockquote>
+<h3>位域跨存储单元边界：C 标准的未定义行为</h3>
+<p>C 标准（C11 6.7.2.1）不保证位域跨存储单元边界的行为。内核的位域设计刻意让每个位域组<strong>不跨边界</strong>：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头</th>
+<th>位域</th>
+<th>总位数</th>
+<th>所在单元</th>
+<th>跨边界？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tcphdr</code></td>
+<td><code class="c">res1:4 + doff:4 + 8x1bit</code></td>
+<td>16 bit</td>
+<td>1 个 <code class="c">__u16</code></td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">iphdr</code></td>
+<td><code class="c">ihl:4 + version:4</code></td>
+<td>8 bit</td>
+<td>1 个 <code class="c">__u8</code></td>
+<td>否</td>
+</tr>
+<tr>
+<td><code class="c">tcp_info</code></td>
+<td><code class="c">tcpi_snd_wscale:4, tcpi_rcv_wscale:4</code></td>
+<td>8 bit</td>
+<td>1 个 <code class="c">__u8</code></td>
+<td>否</td>
+</tr>
+</tbody>
+</table></div>
+<p>如果有人写 <code class="c">res1:4, doff:4, bigfield:9</code>（共 17 bit 超过 <code class="c">__u16</code>），C 标准未定义，gcc 和 clang 的行为可能不一致——<strong>不可移植</strong>。内核刻意把每段位域控制在单个存储单元内。</p>
+<hr />
+<h2>四、热路径的 union cast：一条指令设/清多个 flag</h2>
+<p>位域版本的可读性好（<code class="c">th-&gt;doff = 5; th-&gt;syn = 1; th-&gt;ack = 1;</code>），但<strong>热路径</strong>上逐个访问位域效率不高——每个位域是独立的读-改-写。</p>
+<p>内核的解法是 <code class="c">union</code> cast：把整个 TCP 头看成一串 32 位字，对 flags 所在的那个字做<strong>整字 AND/OR</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/tcp.h */
+union tcp_word_hdr {
+    struct tcphdr hdr;
+    __be32        words[5];     /* TCP 头 = 5 个 32 位字 */
+};
+
+/* 取第 4 个字（含 doff + 8 个 flag） */
+#define tcp_flag_word(tp) (((union tcp_word_hdr *)(tp))-&gt;words[3])
+
+/* TCP_FLAG_* 是 __constant_cpu_to_be32 常量 */
+enum {
+    TCP_FLAG_ACK = __constant_cpu_to_be32(0x00100000),
+    TCP_FLAG_SYN = __constant_cpu_to_be32(0x00020000),
+    TCP_FLAG_FIN = __constant_cpu_to_be32(0x00010000),
+    ...
+};
+</code></pre>
+<p>热路径用法：</p>
+<pre class="code" data-label="C"><code class="c">/* 一次性设置 SYN + ACK（一条 OR 指令） */
+tcp_flag_word(tp) |= (TCP_FLAG_SYN | TCP_FLAG_ACK);
+
+/* 一次性清除 SYN + ACK + PSH + URG（一条 AND 指令） */
+tcp_flag_word(tp) &amp;= ~(TCP_FLAG_SYN | TCP_FLAG_ACK | TCP_FLAG_PSH | TCP_FLAG_URG);
+</code></pre>
+<p>T4 demo 验证了两种写法的结果一致性：</p>
+<pre class="code" data-label="code"><code class="c">A (位域):   syn=1 ack=1 fin=0 rst=0
+B (整字OR): syn=1 ack=1 fin=0 rst=0
+一致: YES
+
+清除前: syn=1 ack=1 psh=1 urg=1
+清除后: syn=0 ack=0 psh=0 urg=0
+-&gt; 一条 AND 指令清除 4 个 flag（位域要 4 次写）
+</code></pre>
+<blockquote>
+<p><strong>这个设计的精妙之处</strong>：<code class="c">TCP_FLAG_*</code> 常量用 <code class="c">__constant_cpu_to_be32()</code> 转换——<strong>在小端机器上编译期 bswap 成网络序</strong>。所以 <code class="c">tcp_flag_word(tp) |= TCP_FLAG_ACK</code> 编译成一条 <code class="c">or</code> 指令，常量已经在正确的字节序了。</p>
+</blockquote>
+<h3>union cast 与 strict-aliasing</h3>
+<p><code class="c">tcp_flag_word(tp)</code> 用 <code class="c">union tcp_word_hdr *</code> 类型双关访问 <code class="c">struct tcphdr</code>。在 <code class="c">-fstrict-aliasing</code> 下，编译器可能认为这是 UB。内核的解法是<strong>全局 <code class="c">-fno-strict-aliasing</code></strong>：</p>
+<pre class="code" data-label="make"><code class="c"># Linux 顶层 Makefile
+KBUILD_CFLAGS += -fno-strict-aliasing
+</code></pre>
+<blockquote>
+<p>C 标准允许通过 union 访问<strong>任意成员</strong>（C11 6.5.2.3），但 gcc 的 strict-aliasing 优化可能不完全遵守这一点。内核选择全局关闭 <code class="c">-fstrict-aliasing</code> 来让 union cast 安全。T4 demo 编译时也加了 <code class="c">-fno-strict-aliasing</code>。</p>
+</blockquote>
+<hr />
+<h2>五、htonl/ntohl：__builtin_bswap32 的一条指令</h2>
+<p>字节序转换的本质是字节交换。内核的 <code class="c">htonl</code>/<code class="c">ntohl</code> 在小端机器上等于 <code class="c">__swab32</code>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/byteorder/little_endian.h */
+#define __constant_htonl(x) ((__force __be32)___constant_swab32((x)))
+#define __be32_to_cpu(x) __swab32((__force __u32)(__be32)(x))
+#define ntohl(x) __be32_to_cpu(x)
+#define htonl(x) __cpu_to_be32(x)
+</code></pre>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/swab.h */
+#if defined(__has_builtin) &amp;&amp; __has_builtin(__builtin_bswap32)
+#define __swab32(x) (__u32)__builtin_bswap32((__u32)(x))
+#else
+/* 手动移位回退 */
+#define ___constant_swab32(x) ((__u32)(        \
+    (((__u32)(x) &amp; (__u32)0x000000ffUL) &lt;&lt; 24) | \
+    (((__u32)(x) &amp; (__u32)0x0000ff00UL) &lt;&lt;  8) | \
+    (((__u32)(x) &amp; (__u32)0x00ff0000UL) &gt;&gt;  8) | \
+    (((__u32)(x) &amp; (__u32)0xff000000UL) &gt;&gt; 24)))
+#endif
+</code></pre>
+<p>三种实现：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>实现</th>
+<th>代码</th>
+<th>编译结果（-O2）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">__builtin_bswap32</code></td>
+<td>编译器内置</td>
+<td>1 条 <code class="c">bswap</code> 指令（x86）/ <code class="c">rev</code>（ARM）</td>
+</tr>
+<tr>
+<td>手动移位</td>
+<td>4 次 <code class="c">&lt;&lt;</code>/<code class="c">&gt;&gt;</code> + 3 次 <code class="c">\|</code></td>
+<td><strong>gcc 识别为 bswap 模式，也编译成 1 条 <code class="c">bswap</code></strong></td>
+</tr>
+<tr>
+<td>union 重解释</td>
+<td>字节交换</td>
+<td>多条 <code class="c">mov</code> + 字节操作</td>
+</tr>
+</tbody>
+</table></div>
+<p>T5 demo 验证（-O2）：</p>
+<pre class="code" data-label="code"><code class="c">__builtin_bswap32: 0x78563412
+手动移位:          0x78563412
+union 重解释:      0x78563412
+三者一致: YES
+
+bswap 汇编指令验证 --
+✓ 编译器生成了 3 条 BSWAP 指令:
+    bswap  %ecx
+    bswap  %ecx
+    bswap  %ecx
+</code></pre>
+<blockquote>
+<p><strong>关键洞察</strong>：<code class="c">__builtin_bswap32</code> 和手动移位在 <code class="c">-O2</code> 下编译成<strong>同一条 <code class="c">bswap</code> 指令</strong>——gcc 的 pattern recognizer 能识别 <code class="c">(x&lt;&lt;24)|(x&lt;&lt;8&amp;...)|(x&gt;&gt;8&amp;...)|(x&gt;&gt;24)</code> 就是 bswap。所以用哪个都行，但 <code class="c">__builtin_bswap32</code> 更可读。</p>
+</blockquote>
+<h3>大端机器上的零开销</h3>
+<p>在大端机器上（如某些 PowerPC、SPARC），<code class="c">htonl</code>/<code class="c">ntohl</code> 是 <strong>no-op</strong>：</p>
+<pre class="code" data-label="C"><code class="c">/* include/uapi/linux/byteorder/big_endian.h */
+#define __be32_to_cpu(x) ((__force __u32)(__be32)(x))  /* 直接返回，不转换 */
+</code></pre>
+<p>编译器看到 <code class="c">(__force __u32)(__be32)(x)</code> 就是一个空转换，优化后什么都不生成。</p>
+<hr />
+<h2>六、__struct_group：iphdr 的地址组</h2>
+<p>v6.6 的 <code class="c">struct iphdr</code> 用了一个你可能没见过的特性——<code class="c">__struct_group</code>：</p>
+<pre class="code" data-label="C"><code class="c">struct iphdr {
+    __u8    ihl:4, version:4;
+    __u8    tos;
+    __be16  tot_len;
+    __be16  id;
+    __be16  frag_off;
+    __u8    ttl;
+    __u8    protocol;
+    __sum16 check;
+    __struct_group(/* no tag */, addrs, /* no attrs */,
+        __be32  saddr;
+        __be32  daddr;
+    );
+};
+</code></pre>
+<p><code class="c">__struct_group</code> 是 Linux 5.16 引入的宏，展开为 C11 的匿名结构体成员：</p>
+<pre class="code" data-label="C"><code class="c">/* 等价于 */
+struct iphdr {
+    ...
+    struct {
+        __be32  saddr;
+        __be32  daddr;
+    } addrs;   /* 有名子结构体 */
+};
+
+/* 访问方式 */
+iph-&gt;saddr;          /* 直接访问（向后兼容） */
+iph-&gt;addrs.saddr;    /* 通过子结构体访问 */
+</code></pre>
+<p>好处：可以用 <code class="c">memcpy(&amp;iph-&gt;addrs, ...)</code> 一次拷贝两个地址，或者用 <code class="c">iph-&gt;addrs</code> 取地址做指针运算。<code class="c">__struct_group</code> 让「既能直接访问字段，又能作为子组访问」成为可能。</p>
+<blockquote>
+<p>这是 <a href="chapter-01.html#s-6-2">CH1 6.2 指定初始化</a> 的一个进阶应用——<code class="c">__struct_group</code> 让结构体的组合性更好，同时不破坏向后兼容的字段访问。</p>
+</blockquote>
+<hr />
+<h2>七、完整对照表：协议头用什么</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>头</th>
+<th><code class="c">packed</code></th>
+<th>位域</th>
+<th>位域双版本</th>
+<th><code class="c">__be</code>/<code class="c">__le</code> 标注</th>
+<th>union cast</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">tcphdr</code></td>
+<td>❌</td>
+<td>✅ <code class="c">doff:4,flags:1*8</code></td>
+<td>✅ LE/BE</td>
+<td>✅ <code class="c">__be16/__be32</code></td>
+<td>✅ <code class="c">tcp_word_hdr</code></td>
+<td>uapi/linux/tcp.h</td>
+</tr>
+<tr>
+<td><code class="c">iphdr</code></td>
+<td>❌</td>
+<td>✅ <code class="c">ihl:4,version:4</code></td>
+<td>✅ LE/BE</td>
+<td>✅ <code class="c">__be16/__be32</code></td>
+<td>❌</td>
+<td>uapi/linux/ip.h</td>
+</tr>
+<tr>
+<td><code class="c">udphdr</code></td>
+<td>❌</td>
+<td>❌</td>
+<td>—</td>
+<td>✅ <code class="c">__be16/__sum16</code></td>
+<td>❌</td>
+<td>uapi/linux/udp.h</td>
+</tr>
+<tr>
+<td><code class="c">ethhdr</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>—</td>
+<td>✅ <code class="c">__be16</code></td>
+<td>❌</td>
+<td>uapi/linux/if_ether.h</td>
+</tr>
+<tr>
+<td><code class="c">usb_*</code></td>
+<td>✅</td>
+<td>❌</td>
+<td>—</td>
+<td>✅ <code class="c">__le16</code></td>
+<td>❌</td>
+<td>uapi/linux/usb/ch9.h</td>
+</tr>
+<tr>
+<td><code class="c">tcp_info</code></td>
+<td>❌</td>
+<td>✅ <code class="c">wscale:4,4</code></td>
+<td>❌</td>
+<td>❌ <code class="c">__u8</code></td>
+<td>❌</td>
+<td>uapi/linux/tcp.h</td>
+</tr>
+</tbody>
+</table></div>
+<h3>设计规律</h3>
+<ol>
+<li><strong>网络协议头</strong>（TCP/IP/UDP）：成员全 2/4 字节对齐 → 不加 <code class="c">packed</code>；位域在单个存储单元内 → 用双版本</li>
+<li><strong>USB/硬件描述符</strong>：<code class="c">__u8</code>/<code class="c">__le16</code> 混合 → 加 <code class="c">packed</code> 确保紧凑；不用位域（USB 字段都是整字节）</li>
+<li><strong>热路径 flag 操作</strong>：用 <code class="c">union</code> cast + 整字常量，而非逐个位域访问</li>
+<li><strong>字节序标注</strong>：用 <code class="c">__be</code>/<code class="c">__le</code> + <code class="c">__bitwise</code> 给 sparse 看，编译器层面零开销</li>
+<li><strong><code class="c">__struct_group</code></strong>：让相邻字段既能直接访问又能作为子组操作</li>
+</ol>
+<hr />
+<h2>八、packed 的未对齐访问代价</h2>
+<p><code class="c">packed</code> 结构体的成员可能不在自然对齐地址上。访问未对齐成员的代价取决于架构：</p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>架构</th>
+<th>未对齐访问</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>x86/x86-64</strong></td>
+<td>硬件支持</td>
+<td>有性能代价（跨 cache line 可能慢 2x+），但不会异常</td>
+</tr>
+<tr>
+<td><strong>ARM (传统)</strong></td>
+<td>部分支持</td>
+<td><code class="c">ALIGN</code> 模式下可能触发 <code class="c">SIGBUS</code>；<code class="c">unaligned</code> 模式下软件处理（很慢）</td>
+</tr>
+<tr>
+<td><strong>SPARC/Alpha</strong></td>
+<td>不支持</td>
+<td>直接触发异常，内核需 <code class="c">fixup</code>（极慢）</td>
+</tr>
+</tbody>
+</table></div>
+<p>T3 demo 实测（x86-64，-O2）：</p>
+<pre class="code" data-label="code"><code class="c">uint32_t 未对齐 (offset=1) vs 对齐 (offset=4):
+  unaligned:  26.73 ms
+  aligned:    30.48 ms
+  ratio: 0.88x  &lt;- x86 硬件支持，差异小（可能被预取抵消）
+</code></pre>
+<blockquote>
+<p>x86 的未对齐访问代价小是因为硬件有专门的未对齐支持逻辑。但在 ARM/SPARC 上代价可能大 10x 以上——这就是为什么内核在非 x86 架构上对 <code class="c">packed</code> 结构体用 <code class="c">get_unaligned()</code>/<code class="c">put_unaligned()</code> 辅助函数。</p>
+</blockquote>
+<h3>内核的应对：get_unaligned / put_unaligned</h3>
+<pre class="code" data-label="C"><code class="c">/* include/asm-generic/unaligned.h */
+/* 用 memcpy 辅助，编译器生成最优的未对齐访问指令 */
+static inline u32 get_unaligned_le32(const void *p)
+{
+    return __get_unaligned_le32((const u8 *)p);
+}
+</code></pre>
+<p>内核不直接 <code class="c">*(u32 *)p</code> 访问未对齐地址，而是用 <code class="c">get_unaligned()</code> 包装——在 x86 上编译成普通 <code class="c">mov</code>，在 ARM 上编译成多条 <code class="c">ldrb</code> + <code class="c">orr</code>。</p>
+<hr />
+<h2>九、uapi：内核和用户态共用一份头文件</h2>
+<p>你注意到所有协议头都在 <code class="c">include/uapi/linux/</code> 目录下。<code class="c">uapi</code> = <strong>User API</strong>，这些头文件：</p>
+<ol>
+<li><strong>被内核</strong>（C 代码）和<strong>用户态程序</strong>（如 <code class="c">tcpdump</code>、<code class="c">wireshark</code>）共用</li>
+<li>通过 <code class="c">make headers_install</code> 安装到 <code class="c">/usr/include/linux/</code></li>
+<li>用户态 <code class="c">#include &lt;linux/tcp.h&gt;</code> 和内核 <code class="c">#include &lt;linux/tcp.h&gt;</code> 包含的是<strong>同一份文件</strong></li>
+</ol>
+<p>这解释了为什么协议头结构体要用 <code class="c">__be16</code> 而不是 <code class="c">__u16</code>——<strong>类型标注对用户态程序也有意义</strong>（用 sparse 检查用户态代码时）。而 <code class="c">__bitwise</code> 在用户态的 gcc/clang 编译中是空宏，不影响编译。</p>
+<blockquote>
+<p>这是 GNU C 扩展在<strong>系统编程</strong>层面的实践：用类型系统（即使是 sparse 这种外部工具的类型系统）来防止字节序错误，比靠注释和人肉审查可靠得多。</p>
+</blockquote>
+<hr />
+<h2>十、与既有笔记的衔接</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>这篇讲的</th>
+<th>之前在哪讲的</th>
+<th>区别</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">packed</code> 的内核实践</td>
+<td><a href="chapter-02.html#s-6-7">CH2 6.7</a> 语法+代价</td>
+<td>CH2 讲 <strong>怎么用</strong>，这篇讲 <strong>内核为什么这么用</strong></td>
+</tr>
+<tr>
+<td>位域字节序</td>
+<td><a href="chapter-03.html#s-10-8">CH3 10.8</a> 第七节</td>
+<td>10.8 讲 MMIO 寄存器的字节序，这里讲协议头的位域</td>
+</tr>
+<tr>
+<td><code class="c">__builtin_bswap32</code></td>
+<td><a href="chapter-02.html#s-6-11">CH2 6.11</a></td>
+<td>6.11 讲内建函数总览，这里看它在 <code class="c">htonl</code> 里的具体落点</td>
+</tr>
+<tr>
+<td>指定初始化</td>
+<td><a href="chapter-01.html#s-6-2">CH1 6.2</a></td>
+<td>6.2 讲 <code class="c">.field = val</code>，这里看 <code class="c">__struct_group</code> 怎么扩展它</td>
+</tr>
+<tr>
+<td><code class="c">section</code> + <code class="c">alias</code></td>
+<td><a href="#s-4-10">4.10 模块加载</a></td>
+<td>4.10 讲 <code class="c">.mod.c</code> 的 <code class="c">__this_module</code>，这里讲协议头（无关联，但都是 C 扩展的内核落点）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>代码自测（点击展开）</h2>
+<p><strong>Q1：为什么 <code class="c">struct tcphdr</code> 不加 <code class="c">__attribute__((packed))</code> 也能正确匹配线上格式？</strong></p>
+<details>
+<summary>答案</summary>
+<p>因为 <code class="c">tcphdr</code> 的所有成员都是 2 或 4 字节类型（<code class="c">__be16</code>/<code class="c">__be32</code>），它们的自然对齐就是 2 或 4。结构体布局时所有成员都落在自然对齐的偏移上——<strong>没有 padding 需要消除</strong>。位域部分（<code class="c">res1:4 + doff:4 + 8 个 flag</code>）正好占满 1 个 <code class="c">__u16</code>（16 bit），也不跨存储单元边界。</p>
+<p><code class="c">packed</code> 的作用是取消 padding，但这里本来就没有 padding。加了反而会降低 <code class="c">align</code> 到 1，可能导致某些场景下不必要的未对齐访问。<strong>TCP/IP 头的设计者刻意让成员排列不需要 <code class="c">packed</code></strong>——这是设计上的选择。</p>
+</details>
+<p><strong>Q2：<code class="c">__be16</code> 和 <code class="c">__u16</code> 在编译器层面有什么区别？为什么要用 <code class="c">__be16</code>？</strong></p>
+<details>
+<summary>答案</summary>
+<p>在 gcc/clang 编译器层面<strong>完全相同</strong>——<code class="c">__be16</code> 就是 <code class="c">typedef __u16 __bitwise __be16</code>，而 <code class="c">__bitwise</code> 在非 sparse 编译时是空宏。</p>
+<p>用 <code class="c">__be16</code> 的意义是给 <strong>sparse</strong>（内核静态检查工具）看的：sparse 把 <code class="c">__be16</code> 和 <code class="c">__u16</code> 当不同类型，如果你直接 <code class="c">__u16 x = some_be16_var;</code>（忘了 <code class="c">ntohs</code> 转换），sparse 会报 warning。这把「忘了转字节序」这种运行时很难发现的 bug 变成了<strong>编译期可检测</strong>的问题。</p>
+</details>
+<p><strong>Q3：内核为什么用位域双版本（<code class="c">#if __LITTLE_ENDIAN_BITFIELD</code>）而不是运行时判断字节序？</strong></p>
+<details>
+<summary>答案</summary>
+<p>两个原因：</p>
+<ol>
+<li><strong>零开销</strong>：<code class="c">#if</code> 是预处理期判断，编译后只有一套代码，没有运行时分支。</li>
+<li><strong>正确性</strong>：位域的内存排列依赖编译器实现，<code class="c">#if</code> 保证选中的版本能生成正确的线上字节。运行时判断无法改变已编译的位域排列。</li>
+</ol>
+<p>双版本的设计：小端机器选 LE 版（位域从低位排列），大端机器选 BE 版（位域从高位排列），两者生成的线上字节都符合 RFC。</p>
+</details>
+<p><strong>Q4：<code class="c">tcp_flag_word(tp) |= TCP_FLAG_ACK</code> 为什么能一条指令设置一个 flag？</strong></p>
+<details>
+<summary>答案</summary>
+<p><code class="c">tcp_flag_word(tp)</code> 通过 <code class="c">union tcp_word_hdr</code> cast 取出 TCP 头的第 4 个 32 位字（<code class="c">words[3]</code>），这个字包含 <code class="c">res1(4) + doff(4) + 8 个 flag(8) + window(16)</code> 的原始字节。</p>
+<p><code class="c">TCP_FLAG_ACK = __constant_cpu_to_be32(0x00100000)</code> 是一个<strong>编译期常量</strong>，已经在本机字节序下正确排列。<code class="c">words[3] |= TCP_FLAG_ACK</code> 编译成一条 <code class="c">or</code> 指令——读 32 位、OR 常量、写回 32 位。</p>
+<p>对比位域写法 <code class="c">th-&gt;ack = 1</code>：编译器要读整个 <code class="c">__u16</code>（含 doff 和其他 flag）、用位掩码设置 ack 位、写回 <code class="c">__u16</code>。如果只设一个 flag，两者差异不大；但如果要<strong>同时设/清多个 flag</strong>（如 SYN+ACK），整字 OR/AND 只需一条指令，位域要多次读-改-写。</p>
+</details>
+<p><strong>Q5：<code class="c">usb_device_descriptor</code> 的成员排列已经让 <code class="c">__le16</code> 落在偶数偏移，为什么还要加 <code class="c">packed</code>？</strong></p>
+<details>
+<summary>答案</summary>
+<p>三个理由：</p>
+<ol>
+<li><strong>防御性</strong>：不同编译器（非 gcc）可能给 <code class="c">__le16</code> 不同的对齐策略。<code class="c">packed</code> 保证<strong>所有编译器</strong>下 <code class="c">sizeof</code> 都等于 18（线上字节数）。</li>
+<li><strong>降 align 到 1</strong>：USB 描述符可能出现在任意地址（不对齐的 USB 缓冲区），<code class="c">align=1</code> 允许结构体指针指向任意地址。</li>
+<li><strong>API 约定</strong>：<code class="c">include/uapi/linux/usb/ch9.h</code> 开头明确注释：「Note all descriptors are declared '<strong>attribute</strong>((packed))'」——这是 USB 子系统的约定，所有描述符统一加 <code class="c">packed</code>，避免遗漏。</li>
+</ol>
 </details>
       </section>
 
