@@ -41,7 +41,7 @@
 自定义板几乎都要移植 Bootloader；标准 ATCA/cPCI 等可能自带成熟方案。  
 
 **今日对照（BIOS → UEFI）：** 功能类比成立，但不能把 U-Boot 当成 UEFI。完整对比 → [2.1-uboot-bios-uefi.md](../03-u-boot/3.1-uboot-bios-uefi.md)。  
-**设备树也不是 UEFI：** DT 是静态清单；初始化在 U-Boot — [07-device-tree-vs-uefi.md](../01-orientation/1.6-device-tree-vs-uefi.md)。  
+**UEFI 的对位不是 DT，是 U-Boot：** UEFI ≈ U-Boot（上电运行的可执行引导固件），ACPI ≈ DTB（向内核传递的硬件清单）；DTS 只是生成 DTB 的文本源码，与 UEFI 不同层 — [1.6 FAQ](../01-orientation/1.6-device-tree-vs-uefi.md)。  
 深挖 U-Boot → [Ch7](./BOOK-MAP.md)。
 
 ---

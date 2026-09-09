@@ -34,7 +34,7 @@
 | 1.3 | [把注意力放在 SoC 上](./1.3-focus-on-soc.md) |
 | 1.4 | [树莓派是 SoC，不是 CPU](./1.4-raspberry-pi-is-soc.md) |
 | 1.5 | [BSP 是模板不是产品](./1.5-bsp-is-template-not-product.md) |
-| 1.6 | [设备树 vs UEFI](./1.6-device-tree-vs-uefi.md) |
+| 1.6 | [UEFI ≈ U-Boot，不是 DTS · ACPI 与 DTB 才是对位关系](./1.6-device-tree-vs-uefi.md) |
 
 ---
 

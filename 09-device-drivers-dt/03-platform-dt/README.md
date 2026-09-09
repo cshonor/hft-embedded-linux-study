@@ -72,7 +72,7 @@ static int my_probe(struct platform_device *pdev)
 
 - [3.1 · 加新硬件：改 DTS 还是写驱动](./3.1-new-hw-dts-vs-driver.md)
 - [3.2 · DTS 与驱动的关系](./3.2-dts-driver-relationship.md)
-- [设备树 vs UEFI](../../08-embedded-boot-build/01-orientation/1.6-device-tree-vs-uefi.md)
+- [UEFI ≈ U-Boot，不是 DTS · ACPI 与 DTB 才是对位关系](../../08-embedded-boot-build/01-orientation/1.6-device-tree-vs-uefi.md)
 
 ---
 
