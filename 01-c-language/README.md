@@ -25,7 +25,7 @@
 |------|-----|--------|
 | [01-basics-syntax-and-types](./01-basics-syntax-and-types/) | 《C 程序设计语言》**K&R 第2版** | **= C89** 奠基（≠ C99/C11） |
 | [02-advanced-pointers-and-memory](./02-advanced-pointers-and-memory/) | 《C 和指针》· Kenneth Reek · *Pointers on C* | 指针 / 数组 / 内存模型（内核重中之重） |
-| [03-expert-declarations-and-linking](./03-expert-declarations-and-linking/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
+| [03-expert-linking-and-memory](./03-expert-linking-and-memory/) | 《C 专家编程》（鱼封面） | 内存布局、段、链接器、ANSI 历史 |
 | [04-modern-c-standards](./04-modern-c-standards/) | 《Modern C》3rd · Gustedt（免费在线） | C99–C23 增量 + 内存模型/原子并发（标准 C 收官） |
 | [05-embedded-kernel-practice](./05-embedded-kernel-practice/) | 《嵌入式 C 语言自我修养》· 王利涛 | ✅ **GNU C**：`__attribute__` / `typeof` / 内嵌汇编 / ELF |
 | [06-reference-pitfalls](./06-reference-pitfalls/) | 《C 陷阱与缺陷》 | 优先级、数组指针、链接、UB 避坑（工具书，遇坑再查） |

@@ -35,7 +35,7 @@ BOOKS = [
     # ---- C 语言 ----
     _b("01-c-language/01-basics-syntax-and-types", "入门 · 语法与类型", "K&R《The C Programming Language》· 8 章 + 3 附录精读", "c-lang"),
     _b("01-c-language/02-advanced-pointers-and-memory", "进阶 · 指针与内存", "Kenneth Reek《Pointers on C》· 指针与 C 精读", "c-lang"),
-    _b("01-c-language/03-expert-declarations-and-linking", "提高 · 声明与链接", "van der Linden《Expert C Programming》· 深 C 语言", "c-lang"),
+    _b("01-c-language/03-expert-linking-and-memory", "提高 · 链接与内存", "van der Linden《Expert C Programming》· 只读 ch05–ch07", "c-lang"),
     _b("01-c-language/04-modern-c-standards", "规范 · 现代 C 标准", "Jens Gustedt《Modern C》· C99–C23 精读", "c-lang"),
     _b("01-c-language/05-embedded-kernel-practice", "实战 · 嵌入式与内核", "《嵌入式 C 语言自我修养》· 从编译链接到内核素养", "c-lang"),
     _b("01-c-language/06-reference-pitfalls", "参考 · 陷阱与缺陷", "Koenig《C Traps and Pitfalls》· C 陷阱与缺陷", "c-lang"),
