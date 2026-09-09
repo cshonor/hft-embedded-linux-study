@@ -277,6 +277,8 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
     <nav class="nav">
           <a href="#intro"><span class="n">00</span>导读</a>
           <a href="#s-3-1"><span class="n">3.1</span>3.1-uboot-bios-uefi</a>
+          <a href="#s-3-2"><span class="n">3.2</span>3.2-u-boot-env-and-bootcmd</a>
+          <a href="#s-3-3"><span class="n">3.3</span>3.3-u-boot-build-and-flash</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -298,7 +300,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">点亮一块板：工具链 → 内核 → rootfs</div>
           <h1>03 · Bootloader：板子上电后发生了什么</h1>
           <div class="meta">
-<span>book <b>08-embedded-boot-build</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>2</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>08-embedded-boot-build</b></span><span>chapter <b>Ch 3</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -380,6 +382,8 @@ sudo rpi-eeprom-update
 <h2>本节笔记</h2>
 <ul>
 <li><a href="#s-3-1">3.1 · U-Boot / BIOS / UEFI 对比</a></li>
+<li><a href="#s-3-2">3.2 · 环境变量与 bootcmd</a> — bootcmd/bootargs、run 的"函数调用"、Pi 5 的等价物</li>
+<li><a href="#s-3-3">3.3 · 编译与烧录 U-Boot</a> — 三条路径（Pi 固件 / QEMU / 真板）+ SPL 是什么</li>
 <li><a href="chapter-01.html#s-1-6">1.6 · 设备树 vs UEFI</a></li>
 </ul>
 <hr />
@@ -541,6 +545,504 @@ sudo rpi-eeprom-update
 <ul>
 <li>Hallinan, <em>Embedded Linux Primer</em>, 2nd ed, §2.1.2  </li>
 <li><a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/_refs/BOOK-MAP.md">Ch7 Bootloaders</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-3-2">
+        <div class="sec-head"><div class="sec-no">3.2</div><h2>U-Boot 环境变量与 bootcmd：启动脚本到底怎么跑</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> U-Boot 的"大脑"就是环境变量。搞懂 <code class="c">bootcmd</code> / <code class="c">bootargs</code> / <code class="c">boot_targets</code>，你就知道"改一行配置让系统换个方式启动"是怎么发生的。
+<strong>前置：</strong> <a href="#s-3-1">3.1 U-Boot vs BIOS/UEFI</a>
+<strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · B3</a>
+<strong>卡住查书：</strong> MELP Ch3 · Primer Ch7</p>
+</blockquote>
+<hr />
+<h2>一句话</h2>
+<p><strong>U-Boot 启动 = 执行 <code class="c">bootcmd</code> 这个环境变量里的一串命令。</strong></p>
+<pre class="code" data-label="code"><code class="c">上电 → U-Boot 初始化 → 等 bootdelay 秒（可按键打断进命令行）
+                            ↓
+                    执行 bootcmd
+                            ↓
+        （加载内核、DTB、initramfs → 设置 bootargs → bootm/booti 启动内核）
+</code></pre>
+<p>打断后你就在 U-Boot 命令行里，可以 <code class="c">printenv</code>、<code class="c">setenv</code>、<code class="c">saveenv</code>、<code class="c">run</code> —— <strong>这就是"引导加载器的 shell"</strong>。</p>
+<hr />
+<h2>三个最核心的变量</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>变量</th>
+<th>作用</th>
+<th>谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code class="c">bootcmd</code></strong></td>
+<td>自动执行的启动脚本</td>
+<td>U-Boot 自己</td>
+</tr>
+<tr>
+<td><strong><code class="c">bootargs</code></strong></td>
+<td><strong>传给内核的命令行</strong></td>
+<td>内核（等价于 x86 上 GRUB 的 <code class="c">linux ...</code> 行）</td>
+</tr>
+<tr>
+<td><strong><code class="c">boot_targets</code></strong></td>
+<td>尝试从哪些设备启动，按序</td>
+<td>U-Boot 的 <code class="c">distro_bootcmd</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># U-Boot 命令行里
+=&gt; printenv bootcmd
+bootcmd=run distro_bootcmd
+
+=&gt; printenv bootargs
+bootargs=console=ttyAMA0,115200 root=/dev/mmcblk0p2 rootwait
+
+=&gt; printenv boot_targets
+boot_targets=mmc0 usb0 pxe dhcp
+</code></pre>
+<hr />
+<h2>bootcmd 的执行模型</h2>
+<p><code class="c">bootcmd</code> 通常不是一长串命令，而是<strong>调用别的变量</strong>（U-Boot 里的"函数"）：</p>
+<pre class="code" data-label="code"><code class="c">bootcmd = run distro_bootcmd
+              │
+              └─ distro_bootcmd = for target in ${boot_targets}; do run bootcmd_${target}; done
+                                        │
+                                        └─ bootcmd_mmc0 = ... 加载内核并启动
+</code></pre>
+<p><strong>关键机制：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">run &lt;var&gt;</code></td>
+<td>把变量的内容当脚本执行（<strong>U-Boot 的"函数调用"</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">${var}</code></td>
+<td>变量展开</td>
+</tr>
+<tr>
+<td><code class="c">if &lt;cmd&gt;; then ...; else ...; fi</code></td>
+<td>条件（依赖<strong>命令的返回值</strong>，不是表达式）</td>
+</tr>
+<tr>
+<td><code class="c">for v in &lt;list&gt;; do ...; done</code></td>
+<td>循环</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>U-Boot 的 if 判断的是命令是否执行成功</strong>（返回码 0 = 成功），不是布尔表达式。这是它跟普通 shell 最大的不同：</p>
+<pre class="code" data-label="code"><code class="c">if load mmc 0:1 ${kernel_addr_r} /Image; then echo &quot;OK&quot;; else echo &quot;FAIL&quot;; fi
+#  ↑ 判的是 load 命令的成败
+</code></pre>
+<hr />
+<h2>bootargs：内核命令行从哪来</h2>
+<pre class="code" data-label="code"><code class="c">bootargs=console=ttyAMA0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait
+</code></pre>
+<p>U-Boot 启动内核时（<code class="c">booti</code> / <code class="c">bootz</code> / <code class="c">bootm</code>）会<strong>自动把 bootargs 塞进设备树的 <code class="c">/chosen/bootargs</code> 属性</strong>（或直接传给内核），内核解析后出现在 <code class="c">/proc/cmdline</code>。</p>
+<pre class="code" data-label="shell"><code class="c"># 启动后核对（永远先看这个）
+cat /proc/cmdline
+</code></pre>
+<p><strong>常见参数：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">console=</code></td>
+<td>内核 printk 输出到哪（见 <a href="chapter-06.html#s-6-2">6.2</a>）</td>
+</tr>
+<tr>
+<td><code class="c">root=</code></td>
+<td>根设备</td>
+</tr>
+<tr>
+<td><code class="c">rootwait</code> / <code class="c">rootdelay=</code></td>
+<td>等设备就绪（SD/USB 必须）</td>
+</tr>
+<tr>
+<td><code class="c">init=</code> / <code class="c">rdinit=</code></td>
+<td>指定 PID 1（见 <a href="chapter-06.html#s-6-1">6.1</a>）</td>
+</tr>
+<tr>
+<td><code class="c">earlycon</code></td>
+<td>早期控制台</td>
+</tr>
+<tr>
+<td><code class="c">initcall_debug</code></td>
+<td>打印每个 initcall 耗时（见 <a href="chapter-06.html#s-6-3">6.3</a>）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>环境存储：环境变量存在哪</h2>
+<pre class="code" data-label="code"><code class="c">saveenv  → 写到持久化存储（SPI NOR / eMMC 的 boot 分区 / SD 卡的固定偏移）
+printenv → 从内存读（启动时从存储加载）
+</code></pre>
+<p>⚠️ <strong>最常见的坑</strong>：<code class="c">setenv</code> 只改内存，<strong>不 <code class="c">saveenv</code> 重启就丢</strong>。</p>
+<pre class="code" data-label="shell"><code class="c">=&gt; setenv bootargs &quot;...新参数...&quot;
+=&gt; saveenv                      # ← 漏了这步就白改
+Saving Environment to SPI Flash...
+</code></pre>
+<p>配置文件是 <code class="c">include/configs/&lt;board&gt;.h</code> 里的 <code class="c">CONFIG_EXTRA_ENV_SETTINGS</code>，或 <code class="c">CONFIG_ENV_OFFSET</code> / <code class="c">CONFIG_ENV_SIZE</code> 指定存储位置。</p>
+<p><strong>从 Linux 用户态改（不用进 U-Boot）：</strong></p>
+<pre class="code" data-label="shell"><code class="c">fw_printenv bootargs
+fw_setenv bootargs &quot;console=ttyAMA0,115200 root=PARTUUID=...-02 rootwait&quot;
+</code></pre>
+<p>⚠️ <code class="c">fw_setenv</code> 需要一个 <code class="c">/etc/fw_env.config</code> 描述环境区的位置和大小 —— <strong>这个文件写错会写坏存储</strong>，务必对照 U-Boot 配置里的 <code class="c">CONFIG_ENV_OFFSET/SIZE</code>。</p>
+<hr />
+<h2>Pi 5 的现实：默认不走 U-Boot</h2>
+<p>⚠️ <strong>重要</strong>：Pi 5 默认用<strong>闭源固件启动</strong>，不是 U-Boot：</p>
+<pre class="code" data-label="code"><code class="c">上电 → 片内 ROM → SD 卡上的 start4.elf（GPU 固件）
+                    → 读 config.txt
+                    → 加载 kernel8.img + DTB
+                    → 启动内核
+</code></pre>
+<p><strong>等价物：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>U-Boot 概念</th>
+<th>Pi 5 对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">bootcmd</code></td>
+<td>固化在固件里，不可编程</td>
+</tr>
+<tr>
+<td><code class="c">bootargs</code></td>
+<td><strong><code class="c">/boot/firmware/cmdline.txt</code></strong>（一整行）</td>
+</tr>
+<tr>
+<td>环境变量</td>
+<td><strong><code class="c">/boot/firmware/config.txt</code></strong>（<code class="c">key=value</code>）</td>
+</tr>
+<tr>
+<td><code class="c">saveenv</code></td>
+<td>直接编辑那两个文本文件</td>
+</tr>
+</tbody>
+</table></div>
+<pre class="code" data-label="shell"><code class="c"># Pi 5 上改内核命令行
+sudo vi /boot/firmware/cmdline.txt     # 一整行！不能换行
+sudo vi /boot/firmware/config.txt      # enable_uart=1 等
+sudo reboot
+</code></pre>
+<p>⭐ <strong>学习建议</strong>：Pi 5 上先按 <code class="c">cmdline.txt</code> 的方式玩（成本低），要理解 U-Boot 的完整机制，<strong>用 QEMU 虚拟 ARM 板</strong>（<code class="c">qemu-system-aarch64 -M virt</code> + U-Boot）练手，那里能真正进 U-Boot 命令行。</p>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong><code class="c">bootcmd</code> 是"启动脚本即配置"的范例</strong>：整条启动流程是可读、可版本管理、可回滚的文本。HFT 的部署配置同样该是<strong>声明式的文本</strong>，而不是"某台机器上跑过一堆命令"。</li>
+<li><strong>"改内存不 saveenv 就丢"</strong> 对应生产环境的经典事故：<strong>改了配置没持久化 / 改了配置没生效</strong>。判据永远是"重启后 <code class="c">cat /proc/cmdline</code> 看到的是什么"，而不是"我记得我改了"。</li>
+<li><strong>bootcount + altbootcmd 的自动回退</strong>（见 <a href="chapter-07.html#s-7-3">7.3</a>）是"失败检测独立于被检测对象"的典范 —— 这条原则在交易系统的健康检查里同样关键。</li>
+</ul>
+<hr />
+<details>
+<summary>Q1：为什么 <code class="c">setenv</code> 了但重启后没变？</summary>
+<p>因为 <code class="c">setenv</code> 只改<strong>内存中的环境副本</strong>。U-Boot 启动时从持久存储（SPI Flash / eMMC / SD 卡固定偏移）加载环境到 RAM，所有修改都在 RAM 里，掉电即失。</p>
+<p>必须 <code class="c">saveenv</code> 才会写回存储。</p>
+<p><strong>排查</strong>：<code class="c">printenv</code> 看当前内存值，重启后再 <code class="c">printenv</code> 对比 —— 如果不同，说明没保存成功（也可能是存储写保护或 <code class="c">CONFIG_ENV_OFFSET</code> 与实际不符导致写到了错误位置）。</p>
+</details>
+<details>
+<summary>Q2：U-Boot 的 <code class="c">if</code> 和普通 shell 的 <code class="c">if</code> 有什么不同？</summary>
+<p>U-Boot 的 <code class="c">if</code> <strong>只能判断命令的退出码</strong>（0 = 成功），<strong>没有 <code class="c">test</code> 之外的表达式能力</strong>，而且语法细节不同：</p>
+<pre class="code" data-label="code"><code class="c"># U-Boot（then/else 前要有分号或换行，fi 结尾）
+if load mmc 0:1 ${loadaddr} /Image; then echo OK; else echo FAIL; fi
+
+# 判断字符串相等要用专门的 test 命令
+if test &quot;${boot_part}&quot; = &quot;2&quot;; then ...; fi
+</code></pre>
+<p>常见陷阱：
+- <code class="c">${var}</code> 展开后为空会导致语法错误 → 用 <code class="c">"${var}"</code> 加引号
+- U-Boot 的 <code class="c">if</code> <strong>不支持</strong> <code class="c">[ ]</code>，要用 <code class="c">test</code> 命令
+- 没有 <code class="c">&amp;&amp;</code> / <code class="c">||</code> 的短路组合（部分版本支持 <code class="c">;</code> 串联）</p>
+<p><strong>调试技巧</strong>：先在命令行单独跑那条命令，看它返回什么，再包进 <code class="c">if</code>。</p>
+</details>
+<details>
+<summary>Q3：<code class="c">booti</code> / <code class="c">bootz</code> / <code class="c">bootm</code> 有什么区别？</summary>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>命令</th>
+<th>镜像格式</th>
+<th>用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">booti</code></td>
+<td><strong>Image</strong>（未压缩的原始 ARM64 内核）</td>
+<td>⭐ ARM64 现代内核</td>
+</tr>
+<tr>
+<td><code class="c">bootz</code></td>
+<td><strong>zImage</strong>（自解压的 32 位 ARM 内核）</td>
+<td>ARM32</td>
+</tr>
+<tr>
+<td><code class="c">bootm</code></td>
+<td><strong>uImage</strong>（U-Boot 封装格式，带 64 字节头）</td>
+<td>老式/多镜像（<code class="c">bootm &lt;kernel&gt; &lt;ramdisk&gt; &lt;dtb&gt;</code>）</td>
+</tr>
+</tbody>
+</table></div>
+<p>参数格式：</p>
+<pre class="code" data-label="code"><code class="c">booti &lt;内核地址&gt; - &lt;dtb地址&gt;          # &quot;-&quot; 表示没有 initramfs
+booti ${kernel_addr_r} - ${fdt_addr_r}
+</code></pre>
+<p>选错了内核不会启动，通常报 <code class="c">Bad Linux ARM64 Image magic!</code> —— <strong>这不是镜像坏了，是你用错了命令。</strong></p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-3-1">3.1 U-Boot vs BIOS/UEFI</a></li>
+<li><strong>下一篇：</strong> <a href="#s-3-3">3.3 编译与烧录 U-Boot</a></li>
+<li><strong>相关：</strong> <a href="chapter-06.html#s-6-1">6.1 内核找 init</a>（<code class="c">bootargs</code> 里 <code class="c">init=</code> 的效果）</li>
+<li><strong>卡住查书：</strong> MELP Ch3 · Primer Ch7</li>
+</ul>
+      </section>
+      <section class="section" id="s-3-3">
+        <div class="sec-head"><div class="sec-no">3.3</div><h2>编译与烧录 U-Boot（以及 Pi 5 为什么可以不做这一步）</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 从源码编出一个 U-Boot、烧到板上；以及<strong>诚实地说明 Pi 5 为什么通常跳过 U-Boot</strong>。知道何时可以不做一件事，和知道怎么做同样重要。
+<strong>前置：</strong> <a href="#s-3-2">3.2 环境变量与 bootcmd</a> · <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/02-toolchain/">02-toolchain</a>
+<strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · B3</a>
+<strong>卡住查书：</strong> MELP Ch3 · Primer Ch7</p>
+</blockquote>
+<hr />
+<h2>先决定：你这步到底需不需要做</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>你的目标</th>
+<th>要不要编 U-Boot</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>让 Pi 5 启动、进 shell、跑驱动</td>
+<td>❌ <strong>不用</strong>，用官方固件即可</td>
+</tr>
+<tr>
+<td>理解启动流程、改启动参数</td>
+<td>❌ 改 <code class="c">cmdline.txt</code> / <code class="c">config.txt</code> 就够</td>
+</tr>
+<tr>
+<td>做 <strong>A/B 升级 + 自动回退</strong></td>
+<td>✅ 需要（bootcount 依赖 U-Boot）</td>
+</tr>
+<tr>
+<td>学 U-Boot 本身 / 面试 / 通用技能</td>
+<td>✅ 用 <strong>QEMU 虚拟板</strong>练手（零硬件风险）</td>
+</tr>
+<tr>
+<td>做自己的板子</td>
+<td>✅ 必须</td>
+</tr>
+</tbody>
+</table></div>
+<p>⭐ <strong>Pi 5 的现实</strong>：它用<strong>闭源 GPU 固件</strong>（<code class="c">start4.elf</code>）启动，U-Boot 不是必需的。强行在 Pi 5 上跑 U-Boot 是"可行但增加复杂度"的事，而你现在的目标是<strong>搞懂启动链并尽快开始写驱动</strong>。</p>
+<p><strong>推荐路径</strong>：Pi 5 上跳过 U-Boot → 用 QEMU 学 U-Boot 机制 → 真需要时再往 Pi 上移植。</p>
+<hr />
+<h2>路径 A：Pi 5 用官方固件（默认，推荐）</h2>
+<pre class="code" data-label="shell"><code class="c">ls /boot/firmware/
+#   config.txt      ← 硬件配置（相当于 U-Boot 环境变量）
+#   cmdline.txt     ← 内核命令行（相当于 bootargs）
+#   kernel8.img / kernel_2712.img  ← 内核
+#   bcm2712-rpi-5-b.dtb            ← 设备树
+#   start4.elf / fixup4.dat        ← GPU 固件（真正的&quot;第一阶段&quot;）
+</code></pre>
+<p>改启动参数：</p>
+<pre class="code" data-label="shell"><code class="c"># 内核命令行（★ 必须一整行）
+sudo sh -c 'echo &quot;console=serial0,115200 root=PARTUUID=xxxx-02 rootfstype=ext4 rootwait initcall_debug&quot; &gt; /boot/firmware/cmdline.txt'
+
+# 硬件配置
+sudo sh -c 'echo &quot;enable_uart=1&quot; &gt;&gt; /boot/firmware/config.txt'
+</code></pre>
+<p><strong>这就是 Pi 5 上"改 bootloader 配置"的全部。</strong> 没有编译、没有烧录、还能随时用读卡器在电脑上改回来。</p>
+<hr />
+<h2>路径 B：QEMU 虚拟板（学 U-Boot 机制的最佳环境）</h2>
+<pre class="code" data-label="shell"><code class="c"># ① 装工具
+sudo apt install qemu-system-arm gcc-aarch64-linux-gnu device-tree-compiler
+
+# ② 编 U-Boot
+git clone https://github.com/u-boot/u-boot
+cd u-boot
+export CROSS_COMPILE=aarch64-linux-gnu-
+make qemu_arm64_defconfig
+make -j$(nproc)
+#   产物：u-boot.bin（还有 u-boot-nodtb.bin、u-boot.dtb）
+
+# ③ 跑起来
+qemu-system-aarch64 \
+  -M virt -cpu cortex-a57 -m 1G -nographic \
+  -bios u-boot.bin
+</code></pre>
+<p>启动后你会看到：</p>
+<pre class="code" data-label="code"><code class="c">U-Boot 2024.xx (...)
+Hit any key to stop autoboot:  3  ← 赶紧按回车
+=&gt;                                ← U-Boot 命令行
+</code></pre>
+<p>然后就能练：</p>
+<pre class="code" data-label="shell"><code class="c">=&gt; printenv                       # 看所有环境变量
+=&gt; printenv bootcmd bootargs
+=&gt; setenv bootargs &quot;console=ttyAMA0 root=/dev/vda&quot;
+=&gt; saveenv                        # QEMU 里可能没有持久存储，会报错（正常）
+=&gt; mmc list / usb start / dhcp    # 设备操作
+=&gt; help                           # 所有命令
+</code></pre>
+<p>⭐ <strong>QEMU 的最大好处</strong>：<strong>刷坏了不花钱</strong>。真实板子上把 bootloader 写坏会变砖（需要 SWD/JTAG 救），QEMU 里重启一次就好。</p>
+<hr />
+<h2>路径 C：真板子烧录（要点，不做详细步骤）</h2>
+<pre class="code" data-label="shell"><code class="c"># 编 U-Boot（以厂商 defconfig 为准）
+make &lt;board&gt;_defconfig
+make -j$(nproc) CROSS_COMPILE=aarch64-linux-gnu-
+
+# 烧到 SD 卡的固定偏移（不同 SoC 不同，必须查手册）
+#   例：某些全志/瑞芯微平台 SPL 在 8KB 偏移处
+sudo dd if=u-boot-sunxi-with-spl.bin of=/dev/sdX bs=1024 seek=8 conv=fsync
+
+# 或烧到 SPI NOR（需要编程器或已有系统里用 flashrom）
+sudo flashrom -p linux_spi:dev=/dev/spidev0.0 -w u-boot.bin
+</code></pre>
+<p>⚠️ <strong>三条保命规则</strong>：</p>
+<ol>
+<li><strong><code class="c">of=/dev/sdX</code> 一定要确认设备名</strong>（<code class="c">lsblk</code>）。写错盘 = 主机系统报废。这是嵌入式新手最惨的一次性学费。</li>
+<li><strong>烧之前先备份原来的 bootloader</strong>：<code class="c">dd if=/dev/sdX of=bootloader.bak bs=1M count=4</code></li>
+<li><strong>保留一个可回退的启动方式</strong>（SD 卡启动优先于 SPI，或者留着串口 + SWD 接口）</li>
+</ol>
+<hr />
+<h2>产物说明（编出来的一堆文件是什么）</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">u-boot.bin</code></td>
+<td>完整 U-Boot（含 DTB，<strong>QEMU/多数平台用这个</strong>）</td>
+</tr>
+<tr>
+<td><code class="c">u-boot-nodtb.bin</code></td>
+<td>不含设备树的纯代码</td>
+</tr>
+<tr>
+<td><code class="c">u-boot.dtb</code></td>
+<td>U-Boot 自己用的设备树</td>
+</tr>
+<tr>
+<td><code class="c">u-boot-spl.bin</code> / <code class="c">*-with-spl.bin</code></td>
+<td><strong>SPL</strong>：第一阶段，片内 SRAM 里跑，负责初始化 DRAM</td>
+</tr>
+<tr>
+<td><code class="c">u-boot.itb</code></td>
+<td>FIT 镜像（把多个组件打包成一个，带签名）</td>
+</tr>
+</tbody>
+</table></div>
+<h3>为什么要有 SPL</h3>
+<pre class="code" data-label="code"><code class="c">片内 ROM → SPL（在片内 SRAM 里，几十 KB） → 初始化 DRAM
+                                              ↓
+                                       真正的 U-Boot（加载到 DRAM，几百 KB）
+</code></pre>
+<p><strong>鸡生蛋 again</strong>：U-Boot 太大，片内 SRAM（通常几十 KB）放不下；而 DRAM 还没初始化。所以先跑一个极小的 SPL 把 DRAM 初始化好。</p>
+<p>这与 <a href="chapter-05.html#s-5-2">5.2 initramfs</a> 的"用小自足层引导大层"是<strong>同一个模式</strong>。</p>
+<hr />
+<h2>常见故障</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>串口<strong>完全无输出</strong></td>
+<td>串口没接对/没启用；或镜像烧错偏移</td>
+</tr>
+<tr>
+<td>输出乱码</td>
+<td><strong>波特率不对</strong>（常见：实际是 115200 而你设了 9600）</td>
+</tr>
+<tr>
+<td><code class="c">Bad Linux ARM64 Image magic!</code></td>
+<td>用了 <code class="c">bootm</code> 而不是 <code class="c">booti</code>（见 <a href="#s-3-2">3.2</a> Q3）</td>
+</tr>
+<tr>
+<td>卡在 <code class="c">Hit any key to stop autoboot</code></td>
+<td>正常，按回车进命令行，或等它继续</td>
+</tr>
+<tr>
+<td><code class="c">Wrong Image Format for bootm command</code></td>
+<td>内核镜像格式不对（zImage vs Image vs uImage）</td>
+</tr>
+<tr>
+<td><code class="c">Saving Environment to... Failed</code></td>
+<td>环境区未配置或写保护（QEMU 里正常）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>"先决定要不要做"比"怎么做"更重要</strong>。嵌入式学习最大的时间陷阱就是<strong>在 bring-up 细节上耗尽热情，却没摸到真正想学的东西</strong>（你这里的目标是驱动与低延迟，不是 bootloader）。<strong>识别并主动跳过非关键路径，是工程判断力的一部分。</strong></li>
+<li><strong><code class="c">dd</code> 写错盘的教训</strong>：破坏性命令要<strong>先确认目标再执行</strong>。HFT 里等价的是"生产环境命令必须先 <code class="c">dry-run</code> / 先在影子环境验证"。一次性学费能免则免。</li>
+<li><strong>SPL 的"分层引导"</strong> 是系统设计的通用手法：每一层只负责"让下一层能跑"。bootloader→内核→initramfs→真根→服务，五层同构。</li>
+</ul>
+<hr />
+<details>
+<summary>Q1：U-Boot 和 SPL 都要烧吗？</summary>
+<p>看平台：</p>
+<ul>
+<li><strong>有 SPL 的平台</strong>（全志、瑞芯微、部分 NXP）：烧 <code class="c">u-boot-with-spl.bin</code> 到 SPL 的偏移（通常 8KB 或 32KB 处），SPL 会自己加载后续部分。</li>
+<li><strong>无 SPL 的平台</strong>（QEMU virt、部分有片内 ROM 能直接加载完整 U-Boot 的）：只烧 <code class="c">u-boot.bin</code>。</li>
+<li><strong>多阶段</strong>（ARM Trusted Firmware）：顺序是 <code class="c">ROM → SPL → ATF(BL31) → U-Boot(BL33) → Linux</code>，每个烧到不同偏移。</li>
+</ul>
+<p><strong>判据：查 SoC 的启动手册或 U-Boot 的 <code class="c">board/</code> 目录下该板子的 README。</strong> 不要猜 —— 偏移量错一个字节都不启动。</p>
+</details>
+<details>
+<summary>Q2：为什么 QEMU 里 <code class="c">saveenv</code> 会失败？</summary>
+<p>因为 <code class="c">qemu_arm64_defconfig</code> <strong>没有配置环境存储位置</strong>（没有 SPI NOR、没有指定 MMC 环境分区），U-Boot 不知道往哪存。</p>
+<p>这不是 bug，是 QEMU 环境的正常状态 —— 它本来就用于"跑一次看看"，环境不持久化。</p>
+<p>想练 <code class="c">saveenv</code>：给 QEMU 加一个虚拟磁盘并在 U-Boot 里配置 <code class="c">CONFIG_ENV_IS_IN_MMC</code>，或者直接接受"内存里改着玩就行"。</p>
+</details>
+<details>
+<summary>Q3：把 bootloader 刷坏了怎么救？</summary>
+<p>按救援难度递增：</p>
+<ol>
+<li><strong>SD 卡优先的板子</strong>：拔掉/换一张好卡即可（eMMC 里的坏 bootloader 不会被用到）</li>
+<li><strong>串口 + U-Boot 还能进</strong>：命令行里重刷</li>
+<li><strong>SWD/JTAG</strong>（STM32、部分 NXP）：用调试器直接写 Flash，绕过 bootloader</li>
+<li><strong>MaskROM / 下载模式</strong>（全志的 FEL、瑞芯微的 MaskROM）：SoC 片内 ROM 支持的 USB 下载，专门用来救砖</li>
+<li><strong>拆芯片编程器</strong>：最后的手段</li>
+</ol>
+<p>⭐ <strong>所以 bring-up 阶段的第一件事应该是：确认救援路径存在并且你练过一次。</strong> 这跟"上线前先验证回滚方案"是同一个道理 —— <strong>没验证过的备份等于没有备份。</strong></p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇：</strong> <a href="#s-3-2">3.2 环境变量与 bootcmd</a></li>
+<li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/04-kernel-build/">04-kernel-build</a></li>
+<li><strong>相关：</strong> <a href="chapter-07.html#s-7-3">7.3 A/B 升级</a>（bootcount 需要 U-Boot）</li>
+<li><strong>卡住查书：</strong> MELP Ch3 · Primer Ch7</li>
 </ul>
       </section>
 

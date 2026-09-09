@@ -87,9 +87,12 @@ projects/P5  ←  具体命令、板上结果、踩坑记录（"执行层"）
 
 - [x] 去书本化重构：80 章书目录 → 7 个任务节点
 - [x] 01-orientation（6 篇）
-- [x] 03-u-boot（1 篇）
+- [x] 02-toolchain（3 篇）
+- [x] 03-u-boot（3 篇）
 - [x] 04-kernel-build（3 篇）
-- [ ] 02-toolchain
-- [ ] 05-rootfs
-- [ ] 06-boot-to-shell
-- [ ] 07-storage-ota
+- [x] 05-rootfs（3 篇）
+- [x] 06-boot-to-shell（3 篇）
+- [x] 07-storage-ota（3 篇）
+
+> **7 个节点全部有实质笔记（共 24 篇）。** 剩下的是**动手**——按 P5 的 Phase B 跑一遍，
+> 把板上实测结果回填到对应笔记的「实测」小节。先动手再记，比先记再动手扎实。

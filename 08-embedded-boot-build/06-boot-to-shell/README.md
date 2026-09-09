@@ -67,6 +67,16 @@ cat /proc/cmdline
 
 ---
 
+## 本节笔记
+
+| 篇 | 主题 |
+|----|------|
+| [6.1 内核怎么找 init](./6.1-kernel-init-search.md) | v6.6 `init/main.c` 四级尝试、**`init=` 失败直接 panic**、`try_to_run_init_process` 的错误分类 |
+| [6.2 控制台从哪来](./6.2-console-and-serial.md) | 内核 console vs `/dev/console`、串口接线、`earlycon` |
+| [6.3 启动耗时怎么测](./6.3-boot-timing.md) | 三段分开测；`initcall_debug`；为什么 `blame` 会骗人 |
+
+---
+
 ## 验收
 
 - [ ] 能默出内核查找 init 的顺序

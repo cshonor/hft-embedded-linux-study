@@ -58,6 +58,16 @@ mount -o remount,ro /
 
 ---
 
+## 本节笔记
+
+| 篇 | 主题 |
+|----|------|
+| [7.1 介质与文件系统](./7.1-media-and-filesystem.md) | 块设备 vs 裸 Flash、为什么 NAND 不能用 ext4、决策树 |
+| [7.2 只读 rootfs 与 overlayfs](./7.2-readonly-and-overlay.md) | 三层结构、copy-up 的代价、谁在写 |
+| [7.3 A/B 升级与回滚](./7.3-ab-update.md) | 切换指针三种方式、bootcount、签名与防回滚 |
+
+---
+
 ## 验收
 
 - [ ] 能说出 microSD / eMMC / NAND 各自的适用边界

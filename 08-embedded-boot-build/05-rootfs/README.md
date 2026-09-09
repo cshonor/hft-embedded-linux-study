@@ -68,6 +68,16 @@ sudo mknod rootfs/dev/console c 5 1
 
 ---
 
+## 本节笔记
+
+| 篇 | 主题 |
+|----|------|
+| [5.1 手工最小 rootfs](./5.1-minimal-rootfs-by-hand.md) | 内核启动到底需要什么；六个必需项；可直接抄的流程 |
+| [5.2 initramfs](./5.2-initramfs.md) | 与 initrd 的本质区别；`init_eaccess("/init")` 判据；三种打包 |
+| [5.3 Buildroot 第一次出镜像](./5.3-buildroot-first-image.md) | 目录结构、四个定制手段、故障对照 |
+
+---
+
 ## 验收
 
 - [ ] 用 Buildroot 出过一个能启动的镜像

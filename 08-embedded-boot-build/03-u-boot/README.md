@@ -59,6 +59,8 @@ sudo rpi-eeprom-update
 ## 本节笔记
 
 - [3.1 · U-Boot / BIOS / UEFI 对比](./3.1-uboot-bios-uefi.md)
+- [3.2 · 环境变量与 bootcmd](./3.2-u-boot-env-and-bootcmd.md) — bootcmd/bootargs、run 的"函数调用"、Pi 5 的等价物
+- [3.3 · 编译与烧录 U-Boot](./3.3-u-boot-build-and-flash.md) — 三条路径（Pi 固件 / QEMU / 真板）+ SPL 是什么
 - [1.6 · 设备树 vs UEFI](../01-orientation/1.6-device-tree-vs-uefi.md)
 
 ---

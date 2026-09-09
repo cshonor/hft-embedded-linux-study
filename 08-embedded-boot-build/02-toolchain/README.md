@@ -43,6 +43,16 @@ aarch64-linux-gnu-readelf -d hello | grep NEEDED
 
 ---
 
+## 笔记
+
+| 篇 | 主题 |
+|----|------|
+| [2.1 为什么要交叉](./2.1-why-cross-and-triple.md) | build/host/target、triple 拆解、工具链从哪来 |
+| [2.2 sysroot 与 C 库](./2.2-sysroot-and-libc.md) | sysroot 是什么、glibc/musl/静态链接怎么选 |
+| [2.3 产物验证与踩坑清单](./2.3-verify-and-pitfalls.md) | 三道检查 + 五个高频坑 |
+
+---
+
 ## 验收
 
 - [ ] `aarch64-linux-gnu-gcc` 能编出 `file` 认得出的 aarch64 ELF
