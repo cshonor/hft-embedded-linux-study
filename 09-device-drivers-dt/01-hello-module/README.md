@@ -69,6 +69,7 @@ sudo rmmod hello && dmesg -T | tail -3
 | 1.1 | [为什么驱动要放在内核里](./1.1-why-drivers-in-kernel.md) |
 | 1.2 | [为什么大多数驱动是共享的](./1.2-why-most-drivers-are-shared.md) |
 | 1.3 | [驱动生命周期与中断](./1.3-driver-lifecycle-and-irq.md) |
+| 1.4 | [为什么不能用 libc · MODULE_LICENSE 后果](./1.4-why-no-libc-and-module-metadata.md) ★ 对应验收 2、3 |
 
 ---
 

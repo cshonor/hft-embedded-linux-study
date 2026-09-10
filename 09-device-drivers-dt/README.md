@@ -99,5 +99,6 @@ LDD3 的 18 章里值得回头精读的只有 **Ch3 / 5 / 6 / 9 / 10 / 15**；Ch
 - [x] 03-platform-dt（5 篇）
 - [x] 04-gpio-i2c-spi（5 篇）
 - [x] 05-irq-locking（3 篇）
-- [x] 06-dma-mmap（4 篇）
+- [x] 06-dma-mmap（6 篇）
+- [x] 01-hello-module（4 篇）
 - [ ] 各节点随动手推进补充

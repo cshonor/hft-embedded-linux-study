@@ -53,18 +53,38 @@ dma_map_sg(dev, sglist, nents, DMA_FROM_DEVICE);
 
 ## mmap：把内核内存交给用户态
 
+**两种情况写法不同，别混用：**
+
 ```c
-static int my_mmap(struct file *filp, struct vm_area_struct *vma)
+/* ① DMA 缓冲 —— 用 dma_mmap_coherent，它会自动设对缓存属性 */
+static int my_mmap_dma(struct file *filp, struct vm_area_struct *vma)
 {
-    /* 一次性把整段物理区间映射过去 */
+    return dma_mmap_coherent(m->dev, vma, m->cpu_addr,
+                             m->dma_addr, m->size);
+}
+
+/* ② MMIO 寄存器 / 保留内存 —— 手写 remap_pfn_range，但必须做两件事 */
+static int my_mmap_mmio(struct file *filp, struct vm_area_struct *vma)
+{
+    unsigned long off  = vma->vm_pgoff << PAGE_SHIFT;
+    unsigned long size = vma->vm_end - vma->vm_start;
+
+    if (off + size > m->region_size)          /* ★ ① 边界检查：vm_pgoff 是用户可控的 */
+        return -EINVAL;
+
+    vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);   /* ★ ② 必须关缓存 */
+
     return remap_pfn_range(vma, vma->vm_start,
-                           virt_to_phys(buf) >> PAGE_SHIFT,
-                           vma->vm_end - vma->vm_start,
-                           vma->vm_page_prot);
+                           (m->phys_addr + off) >> PAGE_SHIFT,
+                           size, vma->vm_page_prot);
 }
 ```
 
-用户态 `mmap(fd, ...)` 之后直接读写，**不再有 `read()` 的一次拷贝**。
+⚠️ **最常见的错：DMA 缓冲也用 `remap_pfn_range` 且不动 `vm_page_prot`。**
+默认 prot 是 **cached**，而 `dma_alloc_coherent` 的内核侧映射是 noncached——两侧属性不一致，
+症状是**数据偶尔不对**（不是必崩，极难查）。详见 [6.5](./6.5-mmap-remap-pfn-range.md) 与 [6.6](./6.6-mmap-caching-and-fault.md)。
+
+用户态 `mmap(fd, ...)` 之后直接读写，**不再有 `read()` 的一次拷贝**。记得用 `MAP_SHARED`。
 
 ---
 
@@ -76,6 +96,8 @@ static int my_mmap(struct file *filp, struct vm_area_struct *vma)
 | 6.2 | [缓存一致性](./6.2-cache-coherence.md) |
 | 6.3 | [一致性与流式映射](./6.3-coherent-streaming-mappings.md) |
 | 6.4 | [散聚传输](./6.4-scatter-gather.md) |
+| 6.5 | [mmap 与 remap_pfn_range](./6.5-mmap-remap-pfn-range.md) ★ 三种 API 选型 |
+| 6.6 | [缓存属性与惰性 fault](./6.6-mmap-caching-and-fault.md) ★ MMIO 必须 noncached |
 
 ---
 
