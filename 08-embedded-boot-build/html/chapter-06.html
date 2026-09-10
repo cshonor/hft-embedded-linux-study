@@ -279,6 +279,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <a href="#s-6-1"><span class="n">6.1</span>6.1-kernel-init-search</a>
           <a href="#s-6-2"><span class="n">6.2</span>6.2-console-and-serial</a>
           <a href="#s-6-3"><span class="n">6.3</span>6.3-boot-timing</a>
+          <a href="#s-6-4"><span class="n">6.4</span>6.4-inittab-and-init-actions</a>
     </nav>
     <div class="nav-label">全书</div>
     <nav class="nav">
@@ -300,7 +301,7 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
           <div class="eyebrow">点亮一块板：工具链 → 内核 → rootfs</div>
           <h1>06 · 启动到 shell：从 PID 1 到可用系统</h1>
           <div class="meta">
-<span>book <b>08-embedded-boot-build</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>4</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
+<span>book <b>08-embedded-boot-build</b></span><span>chapter <b>Ch 6</b></span><span>sections <b>5</b></span><span>quiz <b>—</b></span><span class="hft">hft-embedded-linux-study</span>
           </div>
         </div>
       </div>
@@ -354,6 +355,10 @@ hr{border:none;border-top:1px solid var(--line);margin:34px 0}
 </tbody>
 </table></div>
 <p><strong>BusyBox <code class="c">inittab</code> 的样子：</strong></p>
+<blockquote>
+<p>格式是 <code class="c">可选tty:被忽略的runlevel:action:command</code>。<strong>runlevel 字段 BusyBox 完全不看</strong>，
+且 <strong>BusyBox 不做 respawn 频率抑制</strong>（启动即崩 = fork 炸弹）。详见 <a href="#s-6-4">6.4</a>。</p>
+</blockquote>
 <pre class="code" data-label="code"><code class="c">::sysinit:/etc/init.d/rcS
 ::respawn:/sbin/getty -L 115200 ttyAMA0 vt100
 ::ctrlaltdel:/sbin/reboot
@@ -400,6 +405,10 @@ cat /proc/cmdline
 <tr>
 <td><a href="#s-6-3">6.3 启动耗时怎么测</a></td>
 <td>三段分开测；<code class="c">initcall_debug</code>；为什么 <code class="c">blame</code> 会骗人</td>
+</tr>
+<tr>
+<td><a href="#s-6-4">6.4 init 之后：inittab 四字段</a></td>
+<td>runlevel 字段<strong>被忽略</strong>；<code class="c">sysinit</code>/<code class="c">wait</code>/<code class="c">once</code>/<code class="c">respawn</code> 的执行时机；★★ <strong>BusyBox 不做 respawn 频率抑制</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -1142,6 +1151,351 @@ cat /proc/uptime
 <li><strong>下一节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/07-storage-ota/">07-storage-ota</a></li>
 <li><strong>方法论延伸：</strong> <a href="../../06.6-systems-performance/html/index.html">06.6-systems-performance</a>（先量化，再优化）</li>
 <li><strong>驱动侧：</strong> 驱动 initcall 慢 → <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/09-device-drivers-dt/03-platform-dt/">09 · 03-platform-dt</a></li>
+</ul>
+      </section>
+      <section class="section" id="s-6-4">
+        <div class="sec-head"><div class="sec-no">6.4</div><h2>init 之后：`inittab` 的四个字段，与 `respawn` 为什么能 fork 炸机器</h2></div>
+<blockquote>
+<p><strong>本节讲什么：</strong> 内核把 PID 1 拉起来之后（见 <a href="#s-6-1">6.1</a>），用户态由谁接手。以 <strong>BusyBox init</strong> 为对象，按源码逐个字段拆 <code class="c">/etc/inittab</code>，说清 <code class="c">sysinit</code> / <code class="c">wait</code> / <code class="c">once</code> / <code class="c">respawn</code> 的执行时机差别，以及两个反直觉点：<strong>runlevel 字段是被彻底忽略的</strong>、<strong>BusyBox 不做 respawn 频率抑制</strong>。
+<strong>前置：</strong> <a href="#s-6-1">6.1 内核怎么找 init</a> · <a href="chapter-05.html#s-5-1">05-rootfs/5.1 手工最小 rootfs</a>
+<strong>动手：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/projects/P5-raspberry-pi-embedded/RASPBERRY-PI5-LABS.md">P5 · B2</a>
+<strong>卡住查书：</strong> MELP Ch13–14 · Primer Ch6
+<strong>对应验收：</strong> 06 第 3 条「写过 <code class="c">inittab</code>，知道 <code class="c">respawn</code> 与 <code class="c">sysinit</code> 的区别」</p>
+</blockquote>
+<hr />
+<h2>一句话</h2>
+<p><code class="c">inittab</code> 就是一张<strong>"什么时候该跑什么"的表</strong>。四个字段里真正起作用的只有三个——<strong>第二个字段（runlevel）是历史遗迹，BusyBox 直接无视</strong>。</p>
+<hr />
+<h2>四个字段（源码注释原文）</h2>
+<p>BusyBox <code class="c">init/init.c</code> 里 <code class="c">parse_inittab()</code> 的注释写得比任何文档都清楚：</p>
+<pre class="code" data-label="C"><code class="c">/* optional_tty:ignored_runlevel:action:command
+ * Delims are not to be collapsed and need exactly 4 tokens
+ */
+</code></pre>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">id</code> / <code class="c">optional_tty</code></td>
+<td>该进程的<strong>控制终端</strong>。留空 = 用 console</td>
+<td><code class="c">ttyAMA0</code></td>
+</tr>
+<tr>
+<td><code class="c">runlevel</code></td>
+<td>⚠️ <strong>被忽略</strong>，见下</td>
+<td>（留空）</td>
+</tr>
+<tr>
+<td><code class="c">action</code></td>
+<td>什么时候跑、跑完怎么办</td>
+<td><code class="c">sysinit</code> / <code class="c">respawn</code></td>
+</tr>
+<tr>
+<td><code class="c">command</code></td>
+<td>要执行的命令</td>
+<td><code class="c">/etc/init.d/rcS</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>对应 06 README 里那两行：</p>
+<pre class="code" data-label="code"><code class="c">::sysinit:/etc/init.d/rcS                        ← id 空、runlevel 空
+::respawn:/sbin/getty -L 115200 ttyAMA0 vt100    ← id 空、runlevel 空
+</code></pre>
+<blockquote>
+<p><code class="c">id</code> 留空意味着进程继承 init 自己的 console——所以 <code class="c">respawn</code> 一个 shell 时，<strong>日志会直接打在你接的串口上</strong>。</p>
+</blockquote>
+<hr />
+<h2>⭐ 反直觉点 1：runlevel 字段被完全忽略</h2>
+<p>BusyBox 官方 usage 原文：</p>
+<blockquote>
+<p>BusyBox init doesn't support multiple runlevels. <strong>The runlevels field of the <code class="c">/etc/inittab</code> file is completely ignored</strong> by BusyBox init.</p>
+</blockquote>
+<p><strong>实践含义（两个方向都有坑）：</strong></p>
+<ol>
+<li><strong>照抄 SysV 的写法不会生效。</strong> 从网上抄来 <code class="c">1:2345:respawn:/sbin/getty ...</code>，那个 <code class="c">2345</code> 只是被当作分隔用的占位符——不是"只在 2/3/4/5 级别跑"。BusyBox <strong>没有 runlevel 概念</strong>，所有条目都跑。</li>
+<li><strong>别指望用它做"维护模式"。</strong> 想切换运行级别，得自己写脚本逻辑（读 <code class="c">cmdline.txt</code> 里的参数 / 读某个文件 / 按 GPIO 按键），<code class="c">inittab</code> 帮不了你。</li>
+</ol>
+<hr />
+<h2>八个 action：位掩码与执行时机</h2>
+<p>源码里 action 是位掩码，注释直接说明了时序：</p>
+<pre class="code" data-label="C"><code class="c">#define SYSINIT     0x01   /* Start these first */
+#define WAIT        0x02   /* Start these after SYSINIT and wait for completion */
+#define ONCE        0x04   /* Start these after WAIT and *dont* wait for completion */
+#define RESPAWN     0x08   /* Start these after ONCE are started, restart on exit */
+#define ASKFIRST    0x10   /* Like RESPAWN, but wait for &lt;Enter&gt; to be pressed on tty */
+#define CTRLALTDEL  0x20
+#define SHUTDOWN    0x40
+#define RESTART     0x80
+</code></pre>
+<p>字符串表顺序与之一一对应（<code class="c">init.c:706</code>）：</p>
+<pre class="code" data-label="C"><code class="c">static const char actions[] ALIGN1 =
+    &quot;sysinit\0&quot;&quot;wait\0&quot;&quot;once\0&quot;&quot;respawn\0&quot;&quot;askfirst\0&quot;
+    &quot;ctrlaltdel\0&quot;&quot;shutdown\0&quot;&quot;restart\0&quot;;
+</code></pre>
+<h3>时序图</h3>
+<pre class="code" data-label="code"><code class="c">时间 ──────────────────────────────────────────────────────────►
+
+① SYSINIT   顺序执行，★ 等它跑完
+   │  例：::sysinit:/etc/init.d/rcS   ← 挂 /proc /sys、配网络、起守护进程
+   ▼
+② WAIT      顺序执行，★ 也等跑完（与 sysinit 的差别只在&quot;阶段&quot;）
+   ▼
+③ ONCE      启动，★ 不等（fire-and-forget）
+   ▼
+④ RESPAWN / ASKFIRST   启动后进入无限循环：
+   │      进程退出 → 立刻重启（ASKFIRST 多一步&quot;等回车&quot;）
+   │      ★ 这一阶段永不结束，init 就停在这当&quot;守护者&quot;
+   ▼
+   ♾️ （Ctrl-Alt-Del → CTRLALTDEL；关机 → SHUTDOWN；SIGQUIT → RESTART）
+</code></pre>
+<h3>逐个说明</h3>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>action</th>
+<th>是否等待完成</th>
+<th>退出后</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">sysinit</code></td>
+<td>✅ 等</td>
+<td>不重启</td>
+<td><strong>系统初始化脚本</strong>（挂文件系统、配网络）—— 必须最先、且必须跑完</td>
+</tr>
+<tr>
+<td><code class="c">wait</code></td>
+<td>✅ 等</td>
+<td>不重启</td>
+<td>需要完成才能继续的一次性任务（如格式化/校验）</td>
+</tr>
+<tr>
+<td><code class="c">once</code></td>
+<td>❌ 不等</td>
+<td>不重启</td>
+<td>后台一次性任务</td>
+</tr>
+<tr>
+<td><code class="c">respawn</code></td>
+<td>❌ 不等</td>
+<td>✅ <strong>立刻重启</strong></td>
+<td><strong>getty（登录终端）、关键服务守护</strong></td>
+</tr>
+<tr>
+<td><code class="c">askfirst</code></td>
+<td>❌ 不等</td>
+<td>✅ 重启（先等回车）</td>
+<td>控制台上的 shell，防刷屏</td>
+</tr>
+<tr>
+<td><code class="c">ctrlaltdel</code></td>
+<td>—</td>
+<td>—</td>
+<td>按 Ctrl-Alt-Del 时执行</td>
+</tr>
+<tr>
+<td><code class="c">shutdown</code></td>
+<td>—</td>
+<td>—</td>
+<td>关机/重启时执行（<code class="c">umount -a -r</code>、<code class="c">swapoff -a</code>）</td>
+</tr>
+<tr>
+<td><code class="c">restart</code></td>
+<td>—</td>
+<td>—</td>
+<td>收到 SIGQUIT 时，init <strong>exec 自己替换成它</strong>（只用第一条）</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2><code class="c">sysinit</code> vs <code class="c">respawn</code>：一句话差别</h2>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><code class="c">sysinit</code></th>
+<th><code class="c">respawn</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>时机</strong></td>
+<td>最先，且<strong>阻塞</strong>后续所有阶段</td>
+<td>最后，进入永久守护循环</td>
+</tr>
+<tr>
+<td><strong>退出后</strong></td>
+<td>不重启（跑了就跑了）</td>
+<td><strong>立刻重启</strong></td>
+</tr>
+<tr>
+<td><strong>典型对象</strong></td>
+<td>一次性初始化脚本</td>
+<td>需要"活着"的东西：getty、服务</td>
+</tr>
+<tr>
+<td><strong>写错的后果</strong></td>
+<td>卡在这儿，后面全不执行</td>
+<td>fork 炸弹（见下）</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⭐ 验收项问的就是这个：<strong><code class="c">sysinit</code> = "开机做一次，做完才准继续"；<code class="c">respawn</code> = "这东西必须一直活着，死了就拉起来"。</strong>
+把 getty 写成 <code class="c">sysinit</code> → 登出后就没终端了；把 <code class="c">rcS</code> 写成 <code class="c">respawn</code> → 初始化脚本反复执行。</p>
+</blockquote>
+<hr />
+<h2>⭐⭐ 反直觉点 2：BusyBox <strong>不做</strong> respawn 频率抑制</h2>
+<p>官方 usage 原文：</p>
+<blockquote>
+<p>When a process started with a 'respawn' action exits, init automatically restarts it. <strong>Unlike sysvinit, BusyBox init does not stop processes from respawning out of control.</strong></p>
+</blockquote>
+<p><strong>实践含义：</strong> 如果你 <code class="c">respawn</code> 一个<strong>启动即失败</strong>的程序（配置错、依赖还没起、二进制缺库），BusyBox 会<strong>以最快速度无限重启它</strong>——CPU 打满、日志刷爆，真机能把串口控制台彻底淹掉，你连敲命令的机会都没有。</p>
+<p><strong>怎么救：</strong></p>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>临时停手</strong></td>
+<td><code class="c">kill -TSTP 1</code> —— 官方支持：<code class="c">TSTP: stop respawning until CONT</code>。修好后 <code class="c">kill -CONT 1</code> 恢复</td>
+</tr>
+<tr>
+<td><strong>改配置</strong></td>
+<td>从 <code class="c">respawn</code> 改成 <code class="c">once</code> + 在脚本里自己 <code class="c">sleep</code>；或让脚本失败时 <code class="c">sleep 5</code> 再退</td>
+</tr>
+<tr>
+<td><strong>根治</strong></td>
+<td><code class="c">respawn</code> 的对象应该是"简单、几乎不会失败"的东西（getty / supervise），<strong>业务逻辑不要直接 respawn</strong>，交给 runit/s6 这类带退避的 supervisor</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>⚠️ 这正是为什么产品级系统不会把业务进程直接写进 <code class="c">inittab</code> 的 <code class="c">respawn</code>——<strong>需要一个自带 backoff 的监督层</strong>。</p>
+</blockquote>
+<hr />
+<h2>没有 <code class="c">/etc/inittab</code> 时会怎样</h2>
+<p>源码 <code class="c">parse_inittab()</code> 里有完整兜底（<code class="c">init.c:679</code>）：</p>
+<pre class="code" data-label="C"><code class="c">if (parser == NULL) {
+    /* No inittab file - set up some default behavior */
+    new_init_action(SYSINIT,  INIT_SCRIPT, &quot;&quot;);              // /etc/init.d/rcS
+    new_init_action(ASKFIRST, bb_default_login_shell, &quot;&quot;);   // console
+    new_init_action(ASKFIRST, bb_default_login_shell, VC_2); // tty2
+    new_init_action(ASKFIRST, bb_default_login_shell, VC_3); // tty3
+    new_init_action(ASKFIRST, bb_default_login_shell, VC_4); // tty4
+    new_init_action(CTRLALTDEL, &quot;reboot&quot;, &quot;&quot;);
+    new_init_action(SHUTDOWN,   &quot;umount -a -r&quot;, &quot;&quot;);
+    new_init_action(SHUTDOWN,   &quot;swapoff -a&quot;, &quot;&quot;);
+    new_init_action(RESTART,    &quot;init&quot;, &quot;&quot;);
+    return;
+}
+</code></pre>
+<p>⭐ <strong>所以：手写最小 rootfs 时如果没建 <code class="c">/etc/inittab</code>，系统照样能起来</strong>——BusyBox 会跑 <code class="c">/etc/init.d/rcS</code> 并在 console 上给一个 shell。</p>
+<p>⚠️ <strong>但别依赖它</strong>：默认行为会在 tty2/3/4 各开一个 askfirst shell。做产品时这是<strong>安全隐患</strong>（物理接键盘就能进 shell），应显式写自己的 <code class="c">inittab</code>。</p>
+<hr />
+<h2>重读 <code class="c">inittab</code>（SIGHUP）的陷阱</h2>
+<p>源码注释（<code class="c">init.c:170</code>）：</p>
+<blockquote>
+<p>SIGHUP ("reread /etc/inittab") will be processed only after each group of actions. <strong>If new inittab adds, say, a SYSINIT action, it will not be run, since init is already "past SYSINIT stage".</strong></p>
+</blockquote>
+<p><strong>实践含义：</strong> <code class="c">kill -HUP 1</code> 能让你加的 <code class="c">respawn</code> 条目生效，但<strong>新加的 <code class="c">sysinit</code> 条目不会被执行</strong>——init 已经过了那个阶段。想跑初始化逻辑，得手动执行或重启。</p>
+<hr />
+<h2>其它源码级细节</h2>
+<ul>
+<li><strong><code class="c">initdefault</code> 不被支持。</strong> 官方 usage：Unrecognized actions (like <code class="c">initdefault</code>) will cause init to emit an error message, and then go along with its business. —— 抄 SysV 配置时这个关键字会报一行错然后被跳过。</li>
+<li><strong>所有条目按文件里的出现顺序执行</strong>（All actions are run in the order they appear in <code class="c">/etc/inittab</code>）—— 所以 <code class="c">sysinit</code> 写两行时，顺序就是你写的顺序。</li>
+<li><strong>少于 4 个 token = 坏条目</strong>（<code class="c">if (!token[3]) goto bad_entry</code>），会被跳过并告警。</li>
+<li><strong>init 支持的信号</strong>：</li>
+</ul>
+<div class="tbl-wrap"><table>
+<thead>
+<tr>
+<th>信号</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code class="c">HUP</code></td>
+<td>重读 <code class="c">/etc/inittab</code></td>
+</tr>
+<tr>
+<td><code class="c">TSTP</code></td>
+<td>停止 respawn，直到收到 <code class="c">CONT</code></td>
+</tr>
+<tr>
+<td><code class="c">QUIT</code></td>
+<td>re-exec 另一个 init（走 <code class="c">restart</code> 条目）</td>
+</tr>
+<tr>
+<td><code class="c">USR1</code>/<code class="c">TERM</code>/<code class="c">USR2</code>/<code class="c">INT</code></td>
+<td>halt / reboot / poweroff / Ctrl-Alt-Del</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2>HFT / 嵌入式关联</h2>
+<ul>
+<li><strong>进程监督是低延迟系统的基础设施。</strong> 交易网关里"行情断流"和"进程死了"是两件事——前者要报警，后者要立刻拉起。<code class="c">respawn</code> 提供的是最朴素的 liveness，但<strong>没有 backoff 就没有保护</strong>。生产环境要么用带退避的 supervisor（runit/s6），要么在 entrypoint 脚本里自己做 <code class="c">sleep</code> 退避。</li>
+<li><strong><code class="c">sysinit</code> 阶段是串行的，会直接计入启动时间。</strong> 想在 30 秒内恢复服务，<code class="c">rcS</code> 里每一条命令都是临界路径上的成本。测量方法见 <a href="#s-6-3">6.3 启动耗时怎么测</a>。</li>
+<li><strong>别在 <code class="c">respawn</code> 里放会打日志的东西。</strong> 串口 115200 大约只有 11 KB/s，一个疯狂重启的进程能把 console 彻底堵死，让你失去唯一的调试通道。这也是 <a href="chapter-06.html#s-6-2">6.2</a> 强调"先接串口"的配套注意事项。</li>
+<li><strong>默认 inittab 的 tty2/3/4 shell 是攻击面。</strong> 量产镜像必须覆盖。</li>
+</ul>
+<hr />
+<h2>自测</h2>
+<details>
+<summary>Q1：<code class="c">inittab</code> 第二个字段（runlevel）写 2345 会怎样？</summary>
+<p><strong>完全被忽略。</strong> BusyBox 官方 usage 原文：the runlevels field of the <code class="c">/etc/inittab</code> file is completely ignored by BusyBox init.</p>
+<p>BusyBox 没有 runlevel 概念，所有条目都会执行。那个字段只是为了满足四字段格式而存在的占位符（源码注释直接叫它 <code class="c">ignored_runlevel</code>）。</p>
+<p>要做"维护模式"必须自己写逻辑。</p>
+</details>
+<details>
+<summary>Q2：<code class="c">sysinit</code> 和 <code class="c">wait</code> 都"等待完成"，区别在哪？</summary>
+<p><strong>阶段不同，语义不同。</strong></p>
+<ul>
+<li><code class="c">sysinit</code>：最先执行的一批，代表"系统初始化"，阻塞后续所有阶段</li>
+<li><code class="c">wait</code>：在 sysinit <strong>之后</strong>执行，同样等待完成</li>
+</ul>
+<p>功能上都能阻塞，差别是<strong>语义分组</strong>——把"初始化"和"依赖初始化完成的一次性任务"分开写，可读性和可维护性更好。真正需要区分的是 <code class="c">wait</code>（等）vs <code class="c">once</code>（不等）。</p>
+</details>
+<details>
+<summary>Q3：把 getty 写成 <code class="c">sysinit</code> 会怎样？</summary>
+<p><strong>登出一次就再没有终端了。</strong></p>
+<p><code class="c">sysinit</code> 条目执行完（进程退出）后不会重启。getty 在用户 logout 时退出 → 没有 respawn → 该终端永久失效 → 串口/控制台再也进不去。</p>
+<p>正确写法是 <code class="c">::respawn:/sbin/getty -L 115200 ttyAMA0 vt100</code>。</p>
+</details>
+<details>
+<summary>Q4：一个配置错误的程序被写成 <code class="c">respawn</code>，启动后立刻崩溃。会发生什么？</summary>
+<p><strong>fork 炸弹。</strong> 官��� usage 原文：Unlike sysvinit, BusyBox init does not stop processes from respawning out of control.</p>
+<p>BusyBox 会以最快速度无限重启它，CPU 打满、串口被日志淹没，你可能连敲命令的机会都没有。</p>
+<p><strong>急救</strong>：<code class="c">kill -TSTP 1</code> 让 init 停止 respawn（修好后 <code class="c">kill -CONT 1</code> 恢复）。</p>
+<p><strong>根治</strong>：只把简单可靠的东西（getty / supervisor）放进 <code class="c">respawn</code>；业务进程交给带 backoff 的 supervisor，或在脚本里失败时先 <code class="c">sleep</code> 再退出。</p>
+</details>
+<details>
+<summary>Q5：手工 rootfs 忘了建 /etc/inittab，系统能起来吗？</summary>
+<p><strong>能。</strong> BusyBox 有兜底（<code class="c">init.c:679</code>）：跑 <code class="c">/etc/init.d/rcS</code>，在 console 和 tty2/3/4 上各开一个 askfirst shell，另加 <code class="c">reboot</code>/<code class="c">umount -a -r</code>/<code class="c">swapoff -a</code>/<code class="c">init</code> 四条默认动作。</p>
+<p>但<strong>别在产品里依赖它</strong>：tty2/3/4 上那几个 shell 意味着物理接触即可获得 root shell，是明确的安全隐患。</p>
+</details>
+<hr />
+<h2>衔接</h2>
+<ul>
+<li><strong>上一篇节点：</strong> <a href="https://github.com/cshonor/hft-embedded-linux-study/blob/main/05-rootfs/">05-rootfs</a> —— rootfs 里必须有哪些目录</li>
+<li><strong>本篇上游：</strong> <a href="#s-6-1">6.1 内核怎么找 init</a> —— PID 1 怎么被选出来</li>
+<li><strong>配套：</strong> <a href="#s-6-2">6.2 控制台与串口</a>（respawn 的日志打在哪）· <a href="#s-6-3">6.3 启动耗时</a>（sysinit 阶段的时间成本）</li>
+<li><strong>进阶：</strong> 生产环境建议看 runit / s6 的 supervise 语义（带退避与可靠重启）</li>
+<li><strong>卡住查书：</strong> MELP Ch13–14（init 与启动）· Primer Ch6（根文件系统与 init）</li>
 </ul>
       </section>
 
