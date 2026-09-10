@@ -71,14 +71,45 @@ LLVM 本体是 C++，但它用的是**非典型 C++**——禁用异常、禁用
 
 ---
 
-## 与既有编译器笔记的关系（不重复建设）
+## 与 `17-rust-foundation/06` 的分工：共享 LLVM IR，方向相反
+
+```text
+17/06 · Rust 侧（消费者）              20 · C++ 侧（生产者，本模块）
+Rust → AST → HIR → MIR ──┐             C → AST ──────────────┐
+                          ├──→ LLVM IR ←─────────────────────┘
+                          ↓                                   ↓
+                    读 asm（HFT 优化）                   造机器码（03 后端·冻结）
+```
+
+| | `17-rust-foundation/06` | 本模块 |
+|---|---|---|
+| 视角 | **消费者**：Rust 代码怎么变成 IR | **生产者**：怎么用 LLVM API 造 IR |
+| 语言 | Rust（不写 C++） | C++ |
+| 关键层 | **MIR**（Rust 独有） | 无 MIR 层 |
+| 产出 | 读懂 rustc 的 MIR / IR / asm | 能造一个编译器 |
+
+> **纠正一个常见说法**：「rustc 就是 LLVM」**不准确**。rustc **默认**用 LLVM 后端，但后端**可插拔**
+> （另有 Cranelift / GCC / SPIR-V / NVVM）。且 rustc 走的是 `MIR → LLVM IR`，
+> **MIR 这一层是本模块这条 C 编译器路径没有的**。
+
+### ⚠️ 前端部分与 01/03 重复 —— 请降级处理
+
+本模块 **01 任务**（课程 3–11 讲：词法 → 语法 → AST → codegen）与
+`17/06/01_Crafting-Interpreters`、`03_Build-Your-Own-Compiler` **是同一件事**，只是换成 C++ / LLVM 实现。
+
+**所以 01 任务不是「再学一遍编译前端」，而是「把已学到的理论用 LLVM C++ API 落地」：**
 
 | 已有 | 定位 | 与本模块 |
 |------|------|----------|
-| `17-rust-foundation/06/01_Crafting-Interpreters` | 前端直觉（手写解释器） | **01 任务的同构参照**，三边互证 |
-| `17-rust-foundation/06/03_Build-Your-Own-Compiler` | 《自制编译器》C♭ → cbc | 同上 |
-| `17-rust-foundation/06/04_Learn-LLVM-17` | Rust 导出 IR 对照实验 | **留原处不动**；本模块是它的 C++ 侧镜像 |
-| `17-rust-foundation/06/02_Compiler-Principles` | 《编译器工程》（橡书）理论 | 本模块是它的**工程实践对照** |
+| `17/06/01_Crafting-Interpreters` | 前端直觉（手写解释器） | 理论基础 —— 本模块**不重复学** |
+| `17/06/03_Build-Your-Own-Compiler` | 《自制编译器》C♭ → cbc | 同上 |
+| `17/06/04_Learn-LLVM-17` | Rust 导出 IR 对照实验 | **留原处不动**；本模块是它的 C++ 侧镜像 |
+| `17/06/02_Compiler-Principles` | 《编译器工程》（橡书）理论 | 03 后端（冻结）的理论对照 |
+| `17/06/05_rustc-pipeline` | MIR → LLVM IR → asm（新建） | **汇合点**：它看 IR 的输入，本模块看 IR 的生成 |
+
+**结论要想清楚**：如果目标是「理解 rustc 为什么生成这样的机器码」，那门课 **ROI 有限**——
+rustc 的独特性在 MIR，而本模块讲 C 编译器（无 MIR），后端又冻结。
+本模块真正的独特价值只有一条：**LLVM C++ API 实操 + 造编译器的完整工程体验**。
 
 ---
 

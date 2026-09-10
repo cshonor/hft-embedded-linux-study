@@ -27,7 +27,7 @@
 
 ---
 
-## 目录（四本书）
+## 目录（四本书 + 一个 Rust 专属节点）
 
 | # | 目录 | 当前选用 | 状态 |
 |---|------|----------|------|
@@ -35,6 +35,31 @@
 | **2** | [02_Compiler-Principles](./02_Compiler-Principles/) | **《编译器工程》** Cooper/Torczon **3e** | **以后** · 占位 |
 | **3** | [03_Build-Your-Own-Compiler](./03_Build-Your-Own-Compiler/) | **《自制编译器》**（青木峰郎） | 目录已建 · 逐章笔记待读 |
 | **4** | [04_Learn-LLVM-17](./04_Learn-LLVM-17/) | *Learn LLVM 17* · `llvm_insight_lab` | **已有** 笔记 + `ir_samples` |
+| **5** | [05_rustc-pipeline](./05_rustc-pipeline/) | **rustc：MIR → LLVM IR → asm** | **新建** · 补四本书的缺口 |
+
+---
+
+## ⚠️ 四本书的共同缺口：MIR
+
+**上面四本书没有一本讲 MIR**，而 rustc 的独特性全在这一层：
+
+```text
+Rust → AST → HIR → MIR → LLVM IR → 机器码
+                    ↑
+        借用检查 · 单态化 · drop 时机 —— 四本书都没覆盖
+```
+
+- `01` 停在与字节码 VM（**不是** SSA 形式的 MIR）
+- `03` 直接 C♭ → 汇编，中间没有 IR 层
+- `02` 讲通用 IR / SSA 理论，但不是 Rust 的 MIR
+- `04` 从 **LLVM IR** 讲起，而 MIR 在它的**上游**
+
+→ 所以补了 [`05_rustc-pipeline`](./05_rustc-pipeline/)：导出 **MIR / LLVM IR / asm** 三份产物并对照。
+这是**看懂 Rust 性能特性的唯一入口**——drop 时机、单态化膨胀、边界检查、panic 冷路径，全在 MIR 或它下游可见。
+
+> **顺带纠正一个常见说法**：「rustc 就是 LLVM」**不准确**。
+> rustc **默认**用 LLVM 后端，但后端**可插拔**（另有 Cranelift / GCC / SPIR-V / NVVM 五个已知后端）。
+> 且 rustc 走的是 `MIR → LLVM IR`，**MIR 这一层是 C/C++ 编译器路径没有的**。
 
 ---
 
