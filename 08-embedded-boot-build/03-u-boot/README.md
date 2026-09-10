@@ -61,6 +61,8 @@ sudo rpi-eeprom-update
 - [3.1 · U-Boot / BIOS / UEFI 对比](./3.1-uboot-bios-uefi.md)
 - [3.2 · 环境变量与 bootcmd](./3.2-u-boot-env-and-bootcmd.md) — bootcmd/bootargs、run 的"函数调用"、Pi 5 的等价物
 - [3.3 · 编译与烧录 U-Boot](./3.3-u-boot-build-and-flash.md) — 三条路径（Pi 固件 / QEMU / 真板）+ SPL 是什么
+- [3.4 · **Pi 5 从上电到 start_kernel**（七级链路）](./3.4-pi5-boot-chain.md) ★ 验收第 1 条的答案
+  Pi 5 **没有** `start4.elf`（VPU blob 已移入 EEPROM）；`kernel_2712.img` 是 16K 页；DTB 靠 `x0` 传地址
 - [1.6 · UEFI ≈ U-Boot，不是 DTS](../01-orientation/1.6-device-tree-vs-uefi.md)
 
 ---

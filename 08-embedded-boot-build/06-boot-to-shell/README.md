@@ -33,6 +33,9 @@ start_kernel()  →  rest_init()
 
 **BusyBox `inittab` 的样子：**
 
+> 格式是 `可选tty:被忽略的runlevel:action:command`。**runlevel 字段 BusyBox 完全不看**，
+> 且 **BusyBox 不做 respawn 频率抑制**（启动即崩 = fork 炸弹）。详见 [6.4](./6.4-inittab-and-init-actions.md)。
+
 ```
 ::sysinit:/etc/init.d/rcS
 ::respawn:/sbin/getty -L 115200 ttyAMA0 vt100
@@ -74,6 +77,7 @@ cat /proc/cmdline
 | [6.1 内核怎么找 init](./6.1-kernel-init-search.md) | v6.6 `init/main.c` 四级尝试、**`init=` 失败直接 panic**、`try_to_run_init_process` 的错误分类 |
 | [6.2 控制台从哪来](./6.2-console-and-serial.md) | 内核 console vs `/dev/console`、串口接线、`earlycon` |
 | [6.3 启动耗时怎么测](./6.3-boot-timing.md) | 三段分开测；`initcall_debug`；为什么 `blame` 会骗人 |
+| [6.4 init 之后：inittab 四字段](./6.4-inittab-and-init-actions.md) | runlevel 字段**被忽略**；`sysinit`/`wait`/`once`/`respawn` 的执行时机；★★ **BusyBox 不做 respawn 频率抑制** |
 
 ---
 

@@ -88,10 +88,10 @@ projects/P5  ←  具体命令、板上结果、踩坑记录（"执行层"）
 - [x] 去书本化重构：80 章书目录 → 7 个任务节点
 - [x] 01-orientation（6 篇）
 - [x] 02-toolchain（3 篇）
-- [x] 03-u-boot（3 篇）
+- [x] 03-u-boot（4 篇）— 含 [3.4 Pi 5 完整启动链](./03-u-boot/3.4-pi5-boot-chain.md)
 - [x] 04-kernel-build（3 篇）
 - [x] 05-rootfs（3 篇）
-- [x] 06-boot-to-shell（3 篇）
+- [x] 06-boot-to-shell（4 篇）— 含 [6.4 inittab](./06-boot-to-shell/6.4-inittab-and-init-actions.md)
 - [x] 07-storage-ota（3 篇）
 
 > **7 个节点全部有实质笔记（共 24 篇）。** 剩下的是**动手**——按 P5 的 Phase B 跑一遍，
