@@ -50,6 +50,7 @@ aarch64-linux-gnu-readelf -d hello | grep NEEDED
 | [2.1 为什么要交叉](./2.1-why-cross-and-triple.md) | build/host/target、triple 拆解、工具链从哪来 |
 | [2.2 sysroot 与 C 库](./2.2-sysroot-and-libc.md) | sysroot 是什么、glibc/musl/静态链接怎么选 |
 | [2.3 产物验证与踩坑清单](./2.3-verify-and-pitfalls.md) | 三道检查 + 五个高频坑 |
+| [2.4 宿主机是 Mac（Apple Silicon）](./2.4-mac-host-to-pi5.md) ★ | 按产物选机器：模块在 Pi 上编、程序在 arm64 容器里编、内核别在 macOS 编 |
 
 ---
 

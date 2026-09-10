@@ -28,7 +28,13 @@
 
 ### 分步实现
 
-1. **装交叉工具链**：`sudo apt install gcc-aarch64-linux-gnu bc bison flex libssl-dev`
+1. **准备构建环境**（⚠ 取决于你的宿主机，别照抄 apt）：
+   - **x86 Linux**：`sudo apt install gcc-aarch64-linux-gnu bc bison flex libssl-dev`
+   - **Apple Silicon Mac**：**不要**在 macOS 原生编（APFS 不区分大小写 + Apple make 3.81）。
+     用 arm64 Linux 容器：`docker run -it --platform linux/arm64 -v "$PWD:/work" -w /work debian:trixie bash`，
+     进容器后再 `apt install ...`（**不用装 `gcc-aarch64-linux-gnu`**，容器本身就是 aarch64）。
+     ⚠ 进容器第一件事：`uname -m` 必须是 `aarch64`，否则你在 QEMU 下编出 x86 产物。
+   - 详见 [08/02 · 2.4 宿主机是 Mac](../../../08-embedded-boot-build/02-toolchain/2.4-mac-host-to-pi5.md)
 2. **下载 U-Boot**：`git clone https://source.denx.de/u-boot/u-boot.git`
 3. **配置**：
    ```bash
@@ -200,6 +206,8 @@ uname -a      # 内核版本
 
 ## 状态
 
-⬜ 未开始 → 建议先装交叉工具链，确认 `aarch64-linux-gnu-gcc --version` 能跑。
+⬜ 未开始 → 按宿主机选构建环境（Mac 用 arm64 容器，见上文步骤 1），
+     确认能编出一个 `file` 认得出 `ARM aarch64` 的 ELF——
+     在 arm64 容器里用发行版 `gcc` 即可，无需 `aarch64-linux-gnu-gcc`。
 
 ← [P5 索引](../README.md) · [11 模块](../../../08-embedded-boot-build/)
